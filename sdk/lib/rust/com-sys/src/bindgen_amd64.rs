@@ -1843,9 +1843,9 @@ pub struct tagTEXTMETRICW {
 }
 pub type TEXTMETRICW = tagTEXTMETRICW;
 pub type ICMENUMPROCA =
-    ::core::option::Option<unsafe extern "C" fn(arg1: LPSTR, arg2: LPARAM) -> ::core::ffi::c_int>;
+    ::core::option::Option<unsafe extern "system" fn(arg1: LPSTR, arg2: LPARAM) -> ::core::ffi::c_int>;
 pub type ICMENUMPROCW =
-    ::core::option::Option<unsafe extern "C" fn(arg1: LPWSTR, arg2: LPARAM) -> ::core::ffi::c_int>;
+    ::core::option::Option<unsafe extern "system" fn(arg1: LPWSTR, arg2: LPARAM) -> ::core::ffi::c_int>;
 #[repr(C)]
 #[derive(Debug, Copy, Clone)]
 pub struct tagMSG {
@@ -2073,7 +2073,7 @@ pub struct tagIMECHARPOSITION {
 }
 pub type IMECHARPOSITION = tagIMECHARPOSITION;
 pub type IMCENUMPROC =
-    ::core::option::Option<unsafe extern "C" fn(hIMC: HIMC, lParam: LPARAM) -> BOOL>;
+    ::core::option::Option<unsafe extern "system" fn(hIMC: HIMC, lParam: LPARAM) -> BOOL>;
 pub type byte = ::core::ffi::c_uchar;
 pub type hyper = INT64;
 pub const _IDL_CS_CONVERT_IDL_CS_NO_CONVERT: _IDL_CS_CONVERT = 0;
@@ -2320,14 +2320,14 @@ pub type VARENUM = ::core::ffi::c_uint;
 #[derive(Debug, Copy, Clone)]
 pub struct IUnknownVtbl {
     pub QueryInterface: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IUnknown,
             riid: *const IID,
             ppvObject: *mut *mut ::core::ffi::c_void,
         ) -> HRESULT,
     >,
-    pub AddRef: ::core::option::Option<unsafe extern "C" fn(This: *mut IUnknown) -> ULONG>,
-    pub Release: ::core::option::Option<unsafe extern "C" fn(This: *mut IUnknown) -> ULONG>,
+    pub AddRef: ::core::option::Option<unsafe extern "system" fn(This: *mut IUnknown) -> ULONG>,
+    pub Release: ::core::option::Option<unsafe extern "system" fn(This: *mut IUnknown) -> ULONG>,
 }
 #[repr(C)]
 #[derive(Debug, Copy, Clone)]
@@ -2338,16 +2338,16 @@ pub struct IUnknown {
 #[derive(Debug, Copy, Clone)]
 pub struct IClassFactoryVtbl {
     pub QueryInterface: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IClassFactory,
             riid: *const IID,
             ppvObject: *mut *mut ::core::ffi::c_void,
         ) -> HRESULT,
     >,
-    pub AddRef: ::core::option::Option<unsafe extern "C" fn(This: *mut IClassFactory) -> ULONG>,
-    pub Release: ::core::option::Option<unsafe extern "C" fn(This: *mut IClassFactory) -> ULONG>,
+    pub AddRef: ::core::option::Option<unsafe extern "system" fn(This: *mut IClassFactory) -> ULONG>,
+    pub Release: ::core::option::Option<unsafe extern "system" fn(This: *mut IClassFactory) -> ULONG>,
     pub CreateInstance: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IClassFactory,
             pUnkOuter: *mut IUnknown,
             riid: *const IID,
@@ -2355,7 +2355,7 @@ pub struct IClassFactoryVtbl {
         ) -> HRESULT,
     >,
     pub LockServer: ::core::option::Option<
-        unsafe extern "C" fn(This: *mut IClassFactory, fLock: BOOL) -> HRESULT,
+        unsafe extern "system" fn(This: *mut IClassFactory, fLock: BOOL) -> HRESULT,
     >,
 }
 #[repr(C)]
@@ -2391,16 +2391,16 @@ pub type COSERVERINFO = _COSERVERINFO;
 #[derive(Debug, Copy, Clone)]
 pub struct IMarshalVtbl {
     pub QueryInterface: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IMarshal,
             riid: *const IID,
             ppvObject: *mut *mut ::core::ffi::c_void,
         ) -> HRESULT,
     >,
-    pub AddRef: ::core::option::Option<unsafe extern "C" fn(This: *mut IMarshal) -> ULONG>,
-    pub Release: ::core::option::Option<unsafe extern "C" fn(This: *mut IMarshal) -> ULONG>,
+    pub AddRef: ::core::option::Option<unsafe extern "system" fn(This: *mut IMarshal) -> ULONG>,
+    pub Release: ::core::option::Option<unsafe extern "system" fn(This: *mut IMarshal) -> ULONG>,
     pub GetUnmarshalClass: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IMarshal,
             riid: *const IID,
             pv: *mut ::core::ffi::c_void,
@@ -2411,7 +2411,7 @@ pub struct IMarshalVtbl {
         ) -> HRESULT,
     >,
     pub GetMarshalSizeMax: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IMarshal,
             riid: *const IID,
             pv: *mut ::core::ffi::c_void,
@@ -2422,7 +2422,7 @@ pub struct IMarshalVtbl {
         ) -> HRESULT,
     >,
     pub MarshalInterface: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IMarshal,
             pStm: *mut IStream,
             riid: *const IID,
@@ -2433,7 +2433,7 @@ pub struct IMarshalVtbl {
         ) -> HRESULT,
     >,
     pub UnmarshalInterface: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IMarshal,
             pStm: *mut IStream,
             riid: *const IID,
@@ -2441,10 +2441,10 @@ pub struct IMarshalVtbl {
         ) -> HRESULT,
     >,
     pub ReleaseMarshalData: ::core::option::Option<
-        unsafe extern "C" fn(This: *mut IMarshal, pStm: *mut IStream) -> HRESULT,
+        unsafe extern "system" fn(This: *mut IMarshal, pStm: *mut IStream) -> HRESULT,
     >,
     pub DisconnectObject: ::core::option::Option<
-        unsafe extern "C" fn(This: *mut IMarshal, dwReserved: DWORD) -> HRESULT,
+        unsafe extern "system" fn(This: *mut IMarshal, dwReserved: DWORD) -> HRESULT,
     >,
 }
 #[repr(C)]
@@ -2456,14 +2456,14 @@ pub struct IMarshal {
 #[derive(Debug, Copy, Clone)]
 pub struct IAgileObjectVtbl {
     pub QueryInterface: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IAgileObject,
             riid: *const IID,
             ppvObject: *mut *mut ::core::ffi::c_void,
         ) -> HRESULT,
     >,
-    pub AddRef: ::core::option::Option<unsafe extern "C" fn(This: *mut IAgileObject) -> ULONG>,
-    pub Release: ::core::option::Option<unsafe extern "C" fn(This: *mut IAgileObject) -> ULONG>,
+    pub AddRef: ::core::option::Option<unsafe extern "system" fn(This: *mut IAgileObject) -> ULONG>,
+    pub Release: ::core::option::Option<unsafe extern "system" fn(This: *mut IAgileObject) -> ULONG>,
 }
 #[repr(C)]
 #[derive(Debug, Copy, Clone)]
@@ -2474,16 +2474,16 @@ pub struct IAgileObject {
 #[derive(Debug, Copy, Clone)]
 pub struct IAgileReferenceVtbl {
     pub QueryInterface: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IAgileReference,
             riid: *const IID,
             ppvObject: *mut *mut ::core::ffi::c_void,
         ) -> HRESULT,
     >,
-    pub AddRef: ::core::option::Option<unsafe extern "C" fn(This: *mut IAgileReference) -> ULONG>,
-    pub Release: ::core::option::Option<unsafe extern "C" fn(This: *mut IAgileReference) -> ULONG>,
+    pub AddRef: ::core::option::Option<unsafe extern "system" fn(This: *mut IAgileReference) -> ULONG>,
+    pub Release: ::core::option::Option<unsafe extern "system" fn(This: *mut IAgileReference) -> ULONG>,
     pub Resolve: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IAgileReference,
             riid: *const IID,
             object: *mut *mut ::core::ffi::c_void,
@@ -2499,14 +2499,14 @@ pub struct IAgileReference {
 #[derive(Debug, Copy, Clone)]
 pub struct INoMarshalVtbl {
     pub QueryInterface: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut INoMarshal,
             riid: *const IID,
             ppvObject: *mut *mut ::core::ffi::c_void,
         ) -> HRESULT,
     >,
-    pub AddRef: ::core::option::Option<unsafe extern "C" fn(This: *mut INoMarshal) -> ULONG>,
-    pub Release: ::core::option::Option<unsafe extern "C" fn(This: *mut INoMarshal) -> ULONG>,
+    pub AddRef: ::core::option::Option<unsafe extern "system" fn(This: *mut INoMarshal) -> ULONG>,
+    pub Release: ::core::option::Option<unsafe extern "system" fn(This: *mut INoMarshal) -> ULONG>,
 }
 #[repr(C)]
 #[derive(Debug, Copy, Clone)]
@@ -2517,16 +2517,16 @@ pub struct INoMarshal {
 #[derive(Debug, Copy, Clone)]
 pub struct IMarshal2Vtbl {
     pub QueryInterface: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IMarshal2,
             riid: *const IID,
             ppvObject: *mut *mut ::core::ffi::c_void,
         ) -> HRESULT,
     >,
-    pub AddRef: ::core::option::Option<unsafe extern "C" fn(This: *mut IMarshal2) -> ULONG>,
-    pub Release: ::core::option::Option<unsafe extern "C" fn(This: *mut IMarshal2) -> ULONG>,
+    pub AddRef: ::core::option::Option<unsafe extern "system" fn(This: *mut IMarshal2) -> ULONG>,
+    pub Release: ::core::option::Option<unsafe extern "system" fn(This: *mut IMarshal2) -> ULONG>,
     pub GetUnmarshalClass: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IMarshal2,
             riid: *const IID,
             pv: *mut ::core::ffi::c_void,
@@ -2537,7 +2537,7 @@ pub struct IMarshal2Vtbl {
         ) -> HRESULT,
     >,
     pub GetMarshalSizeMax: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IMarshal2,
             riid: *const IID,
             pv: *mut ::core::ffi::c_void,
@@ -2548,7 +2548,7 @@ pub struct IMarshal2Vtbl {
         ) -> HRESULT,
     >,
     pub MarshalInterface: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IMarshal2,
             pStm: *mut IStream,
             riid: *const IID,
@@ -2559,7 +2559,7 @@ pub struct IMarshal2Vtbl {
         ) -> HRESULT,
     >,
     pub UnmarshalInterface: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IMarshal2,
             pStm: *mut IStream,
             riid: *const IID,
@@ -2567,10 +2567,10 @@ pub struct IMarshal2Vtbl {
         ) -> HRESULT,
     >,
     pub ReleaseMarshalData: ::core::option::Option<
-        unsafe extern "C" fn(This: *mut IMarshal2, pStm: *mut IStream) -> HRESULT,
+        unsafe extern "system" fn(This: *mut IMarshal2, pStm: *mut IStream) -> HRESULT,
     >,
     pub DisconnectObject: ::core::option::Option<
-        unsafe extern "C" fn(This: *mut IMarshal2, dwReserved: DWORD) -> HRESULT,
+        unsafe extern "system" fn(This: *mut IMarshal2, dwReserved: DWORD) -> HRESULT,
     >,
 }
 #[repr(C)]
@@ -2582,16 +2582,16 @@ pub struct IMarshal2 {
 #[derive(Debug, Copy, Clone)]
 pub struct IStdMarshalInfoVtbl {
     pub QueryInterface: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IStdMarshalInfo,
             riid: *const IID,
             ppvObject: *mut *mut ::core::ffi::c_void,
         ) -> HRESULT,
     >,
-    pub AddRef: ::core::option::Option<unsafe extern "C" fn(This: *mut IStdMarshalInfo) -> ULONG>,
-    pub Release: ::core::option::Option<unsafe extern "C" fn(This: *mut IStdMarshalInfo) -> ULONG>,
+    pub AddRef: ::core::option::Option<unsafe extern "system" fn(This: *mut IStdMarshalInfo) -> ULONG>,
+    pub Release: ::core::option::Option<unsafe extern "system" fn(This: *mut IStdMarshalInfo) -> ULONG>,
     pub GetClassForHandler: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IStdMarshalInfo,
             dwDestContext: DWORD,
             pvDestContext: *mut ::core::ffi::c_void,
@@ -2613,25 +2613,25 @@ pub use self::tagEXTCONN as EXTCONN;
 #[derive(Debug, Copy, Clone)]
 pub struct IExternalConnectionVtbl {
     pub QueryInterface: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IExternalConnection,
             riid: *const IID,
             ppvObject: *mut *mut ::core::ffi::c_void,
         ) -> HRESULT,
     >,
     pub AddRef:
-        ::core::option::Option<unsafe extern "C" fn(This: *mut IExternalConnection) -> ULONG>,
+        ::core::option::Option<unsafe extern "system" fn(This: *mut IExternalConnection) -> ULONG>,
     pub Release:
-        ::core::option::Option<unsafe extern "C" fn(This: *mut IExternalConnection) -> ULONG>,
+        ::core::option::Option<unsafe extern "system" fn(This: *mut IExternalConnection) -> ULONG>,
     pub AddConnection: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IExternalConnection,
             extconn: DWORD,
             reserved: DWORD,
         ) -> DWORD,
     >,
     pub ReleaseConnection: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IExternalConnection,
             extconn: DWORD,
             reserved: DWORD,
@@ -2656,16 +2656,16 @@ pub type MULTI_QI = tagMULTI_QI;
 #[derive(Debug, Copy, Clone)]
 pub struct IMultiQIVtbl {
     pub QueryInterface: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IMultiQI,
             riid: *const IID,
             ppvObject: *mut *mut ::core::ffi::c_void,
         ) -> HRESULT,
     >,
-    pub AddRef: ::core::option::Option<unsafe extern "C" fn(This: *mut IMultiQI) -> ULONG>,
-    pub Release: ::core::option::Option<unsafe extern "C" fn(This: *mut IMultiQI) -> ULONG>,
+    pub AddRef: ::core::option::Option<unsafe extern "system" fn(This: *mut IMultiQI) -> ULONG>,
+    pub Release: ::core::option::Option<unsafe extern "system" fn(This: *mut IMultiQI) -> ULONG>,
     pub QueryMultipleInterfaces: ::core::option::Option<
-        unsafe extern "C" fn(This: *mut IMultiQI, cMQIs: ULONG, pMQIs: *mut MULTI_QI) -> HRESULT,
+        unsafe extern "system" fn(This: *mut IMultiQI, cMQIs: ULONG, pMQIs: *mut MULTI_QI) -> HRESULT,
     >,
 }
 #[repr(C)]
@@ -2677,26 +2677,26 @@ pub struct IMultiQI {
 #[derive(Debug, Copy, Clone)]
 pub struct IMallocVtbl {
     pub QueryInterface: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IMalloc,
             riid: *const IID,
             ppvObject: *mut *mut ::core::ffi::c_void,
         ) -> HRESULT,
     >,
-    pub AddRef: ::core::option::Option<unsafe extern "C" fn(This: *mut IMalloc) -> ULONG>,
-    pub Release: ::core::option::Option<unsafe extern "C" fn(This: *mut IMalloc) -> ULONG>,
+    pub AddRef: ::core::option::Option<unsafe extern "system" fn(This: *mut IMalloc) -> ULONG>,
+    pub Release: ::core::option::Option<unsafe extern "system" fn(This: *mut IMalloc) -> ULONG>,
     pub Alloc:
-        ::core::option::Option<unsafe extern "C" fn(This: *mut IMalloc, cb: SIZE_T) -> LPVOID>,
+        ::core::option::Option<unsafe extern "system" fn(This: *mut IMalloc, cb: SIZE_T) -> LPVOID>,
     pub Realloc: ::core::option::Option<
-        unsafe extern "C" fn(This: *mut IMalloc, pv: LPVOID, cb: SIZE_T) -> LPVOID,
+        unsafe extern "system" fn(This: *mut IMalloc, pv: LPVOID, cb: SIZE_T) -> LPVOID,
     >,
-    pub Free: ::core::option::Option<unsafe extern "C" fn(This: *mut IMalloc, pv: LPVOID)>,
+    pub Free: ::core::option::Option<unsafe extern "system" fn(This: *mut IMalloc, pv: LPVOID)>,
     pub GetSize:
-        ::core::option::Option<unsafe extern "C" fn(This: *mut IMalloc, pv: LPVOID) -> SIZE_T>,
+        ::core::option::Option<unsafe extern "system" fn(This: *mut IMalloc, pv: LPVOID) -> SIZE_T>,
     pub DidAlloc: ::core::option::Option<
-        unsafe extern "C" fn(This: *mut IMalloc, pv: LPVOID) -> ::core::ffi::c_int,
+        unsafe extern "system" fn(This: *mut IMalloc, pv: LPVOID) -> ::core::ffi::c_int,
     >,
-    pub HeapMinimize: ::core::option::Option<unsafe extern "C" fn(This: *mut IMalloc)>,
+    pub HeapMinimize: ::core::option::Option<unsafe extern "system" fn(This: *mut IMalloc)>,
 }
 #[repr(C)]
 #[derive(Debug, Copy, Clone)]
@@ -2707,16 +2707,16 @@ pub struct IMalloc {
 #[derive(Debug, Copy, Clone)]
 pub struct IInternalUnknownVtbl {
     pub QueryInterface: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IInternalUnknown,
             riid: *const IID,
             ppvObject: *mut *mut ::core::ffi::c_void,
         ) -> HRESULT,
     >,
-    pub AddRef: ::core::option::Option<unsafe extern "C" fn(This: *mut IInternalUnknown) -> ULONG>,
-    pub Release: ::core::option::Option<unsafe extern "C" fn(This: *mut IInternalUnknown) -> ULONG>,
+    pub AddRef: ::core::option::Option<unsafe extern "system" fn(This: *mut IInternalUnknown) -> ULONG>,
+    pub Release: ::core::option::Option<unsafe extern "system" fn(This: *mut IInternalUnknown) -> ULONG>,
     pub QueryInternalInterface: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IInternalUnknown,
             riid: *const IID,
             ppv: *mut *mut ::core::ffi::c_void,
@@ -2732,16 +2732,16 @@ pub struct IInternalUnknown {
 #[derive(Debug, Copy, Clone)]
 pub struct IEnumUnknownVtbl {
     pub QueryInterface: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IEnumUnknown,
             riid: *const IID,
             ppvObject: *mut *mut ::core::ffi::c_void,
         ) -> HRESULT,
     >,
-    pub AddRef: ::core::option::Option<unsafe extern "C" fn(This: *mut IEnumUnknown) -> ULONG>,
-    pub Release: ::core::option::Option<unsafe extern "C" fn(This: *mut IEnumUnknown) -> ULONG>,
+    pub AddRef: ::core::option::Option<unsafe extern "system" fn(This: *mut IEnumUnknown) -> ULONG>,
+    pub Release: ::core::option::Option<unsafe extern "system" fn(This: *mut IEnumUnknown) -> ULONG>,
     pub Next: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IEnumUnknown,
             celt: ULONG,
             rgelt: *mut *mut IUnknown,
@@ -2749,11 +2749,11 @@ pub struct IEnumUnknownVtbl {
         ) -> HRESULT,
     >,
     pub Skip: ::core::option::Option<
-        unsafe extern "C" fn(This: *mut IEnumUnknown, celt: ULONG) -> HRESULT,
+        unsafe extern "system" fn(This: *mut IEnumUnknown, celt: ULONG) -> HRESULT,
     >,
-    pub Reset: ::core::option::Option<unsafe extern "C" fn(This: *mut IEnumUnknown) -> HRESULT>,
+    pub Reset: ::core::option::Option<unsafe extern "system" fn(This: *mut IEnumUnknown) -> HRESULT>,
     pub Clone: ::core::option::Option<
-        unsafe extern "C" fn(This: *mut IEnumUnknown, ppenum: *mut *mut IEnumUnknown) -> HRESULT,
+        unsafe extern "system" fn(This: *mut IEnumUnknown, ppenum: *mut *mut IEnumUnknown) -> HRESULT,
     >,
 }
 #[repr(C)]
@@ -2765,19 +2765,19 @@ pub struct IEnumUnknown {
 #[derive(Debug, Copy, Clone)]
 pub struct ISurrogateVtbl {
     pub QueryInterface: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut ISurrogate,
             riid: *const IID,
             ppvObject: *mut *mut ::core::ffi::c_void,
         ) -> HRESULT,
     >,
-    pub AddRef: ::core::option::Option<unsafe extern "C" fn(This: *mut ISurrogate) -> ULONG>,
-    pub Release: ::core::option::Option<unsafe extern "C" fn(This: *mut ISurrogate) -> ULONG>,
+    pub AddRef: ::core::option::Option<unsafe extern "system" fn(This: *mut ISurrogate) -> ULONG>,
+    pub Release: ::core::option::Option<unsafe extern "system" fn(This: *mut ISurrogate) -> ULONG>,
     pub LoadDllServer: ::core::option::Option<
-        unsafe extern "C" fn(This: *mut ISurrogate, Clsid: *const CLSID) -> HRESULT,
+        unsafe extern "system" fn(This: *mut ISurrogate, Clsid: *const CLSID) -> HRESULT,
     >,
     pub FreeSurrogate:
-        ::core::option::Option<unsafe extern "C" fn(This: *mut ISurrogate) -> HRESULT>,
+        ::core::option::Option<unsafe extern "system" fn(This: *mut ISurrogate) -> HRESULT>,
 }
 #[repr(C)]
 #[derive(Debug, Copy, Clone)]
@@ -2788,18 +2788,18 @@ pub struct ISurrogate {
 #[derive(Debug, Copy, Clone)]
 pub struct IGlobalInterfaceTableVtbl {
     pub QueryInterface: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IGlobalInterfaceTable,
             riid: *const IID,
             ppvObject: *mut *mut ::core::ffi::c_void,
         ) -> HRESULT,
     >,
     pub AddRef:
-        ::core::option::Option<unsafe extern "C" fn(This: *mut IGlobalInterfaceTable) -> ULONG>,
+        ::core::option::Option<unsafe extern "system" fn(This: *mut IGlobalInterfaceTable) -> ULONG>,
     pub Release:
-        ::core::option::Option<unsafe extern "C" fn(This: *mut IGlobalInterfaceTable) -> ULONG>,
+        ::core::option::Option<unsafe extern "system" fn(This: *mut IGlobalInterfaceTable) -> ULONG>,
     pub RegisterInterfaceInGlobal: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IGlobalInterfaceTable,
             pUnk: *mut IUnknown,
             riid: *const IID,
@@ -2807,10 +2807,10 @@ pub struct IGlobalInterfaceTableVtbl {
         ) -> HRESULT,
     >,
     pub RevokeInterfaceFromGlobal: ::core::option::Option<
-        unsafe extern "C" fn(This: *mut IGlobalInterfaceTable, dwCookie: DWORD) -> HRESULT,
+        unsafe extern "system" fn(This: *mut IGlobalInterfaceTable, dwCookie: DWORD) -> HRESULT,
     >,
     pub GetInterfaceFromGlobal: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IGlobalInterfaceTable,
             dwCookie: DWORD,
             riid: *const IID,
@@ -2827,16 +2827,16 @@ pub struct IGlobalInterfaceTable {
 #[derive(Debug, Copy, Clone)]
 pub struct IEnumStringVtbl {
     pub QueryInterface: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IEnumString,
             riid: *const IID,
             ppvObject: *mut *mut ::core::ffi::c_void,
         ) -> HRESULT,
     >,
-    pub AddRef: ::core::option::Option<unsafe extern "C" fn(This: *mut IEnumString) -> ULONG>,
-    pub Release: ::core::option::Option<unsafe extern "C" fn(This: *mut IEnumString) -> ULONG>,
+    pub AddRef: ::core::option::Option<unsafe extern "system" fn(This: *mut IEnumString) -> ULONG>,
+    pub Release: ::core::option::Option<unsafe extern "system" fn(This: *mut IEnumString) -> ULONG>,
     pub Next: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IEnumString,
             celt: ULONG,
             rgelt: *mut LPOLESTR,
@@ -2844,11 +2844,11 @@ pub struct IEnumStringVtbl {
         ) -> HRESULT,
     >,
     pub Skip: ::core::option::Option<
-        unsafe extern "C" fn(This: *mut IEnumString, celt: ULONG) -> HRESULT,
+        unsafe extern "system" fn(This: *mut IEnumString, celt: ULONG) -> HRESULT,
     >,
-    pub Reset: ::core::option::Option<unsafe extern "C" fn(This: *mut IEnumString) -> HRESULT>,
+    pub Reset: ::core::option::Option<unsafe extern "system" fn(This: *mut IEnumString) -> HRESULT>,
     pub Clone: ::core::option::Option<
-        unsafe extern "C" fn(This: *mut IEnumString, ppenum: *mut *mut IEnumString) -> HRESULT,
+        unsafe extern "system" fn(This: *mut IEnumString, ppenum: *mut *mut IEnumString) -> HRESULT,
     >,
 }
 #[repr(C)]
@@ -2860,17 +2860,17 @@ pub struct IEnumString {
 #[derive(Debug, Copy, Clone)]
 pub struct ISequentialStreamVtbl {
     pub QueryInterface: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut ISequentialStream,
             riid: *const IID,
             ppvObject: *mut *mut ::core::ffi::c_void,
         ) -> HRESULT,
     >,
-    pub AddRef: ::core::option::Option<unsafe extern "C" fn(This: *mut ISequentialStream) -> ULONG>,
+    pub AddRef: ::core::option::Option<unsafe extern "system" fn(This: *mut ISequentialStream) -> ULONG>,
     pub Release:
-        ::core::option::Option<unsafe extern "C" fn(This: *mut ISequentialStream) -> ULONG>,
+        ::core::option::Option<unsafe extern "system" fn(This: *mut ISequentialStream) -> ULONG>,
     pub Read: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut ISequentialStream,
             pv: *mut ::core::ffi::c_void,
             cb: ULONG,
@@ -2878,7 +2878,7 @@ pub struct ISequentialStreamVtbl {
         ) -> HRESULT,
     >,
     pub Write: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut ISequentialStream,
             pv: *const ::core::ffi::c_void,
             cb: ULONG,
@@ -2912,16 +2912,16 @@ pub type STATSTG = tagSTATSTG;
 #[derive(Debug, Copy, Clone)]
 pub struct IStreamVtbl {
     pub QueryInterface: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IStream,
             riid: *const IID,
             ppvObject: *mut *mut ::core::ffi::c_void,
         ) -> HRESULT,
     >,
-    pub AddRef: ::core::option::Option<unsafe extern "C" fn(This: *mut IStream) -> ULONG>,
-    pub Release: ::core::option::Option<unsafe extern "C" fn(This: *mut IStream) -> ULONG>,
+    pub AddRef: ::core::option::Option<unsafe extern "system" fn(This: *mut IStream) -> ULONG>,
+    pub Release: ::core::option::Option<unsafe extern "system" fn(This: *mut IStream) -> ULONG>,
     pub Read: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IStream,
             pv: *mut ::core::ffi::c_void,
             cb: ULONG,
@@ -2929,7 +2929,7 @@ pub struct IStreamVtbl {
         ) -> HRESULT,
     >,
     pub Write: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IStream,
             pv: *const ::core::ffi::c_void,
             cb: ULONG,
@@ -2937,7 +2937,7 @@ pub struct IStreamVtbl {
         ) -> HRESULT,
     >,
     pub Seek: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IStream,
             dlibMove: LARGE_INTEGER,
             dwOrigin: DWORD,
@@ -2945,10 +2945,10 @@ pub struct IStreamVtbl {
         ) -> HRESULT,
     >,
     pub SetSize: ::core::option::Option<
-        unsafe extern "C" fn(This: *mut IStream, libNewSize: ULARGE_INTEGER) -> HRESULT,
+        unsafe extern "system" fn(This: *mut IStream, libNewSize: ULARGE_INTEGER) -> HRESULT,
     >,
     pub CopyTo: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IStream,
             pstm: *mut IStream,
             cb: ULARGE_INTEGER,
@@ -2957,11 +2957,11 @@ pub struct IStreamVtbl {
         ) -> HRESULT,
     >,
     pub Commit: ::core::option::Option<
-        unsafe extern "C" fn(This: *mut IStream, grfCommitFlags: DWORD) -> HRESULT,
+        unsafe extern "system" fn(This: *mut IStream, grfCommitFlags: DWORD) -> HRESULT,
     >,
-    pub Revert: ::core::option::Option<unsafe extern "C" fn(This: *mut IStream) -> HRESULT>,
+    pub Revert: ::core::option::Option<unsafe extern "system" fn(This: *mut IStream) -> HRESULT>,
     pub LockRegion: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IStream,
             libOffset: ULARGE_INTEGER,
             cb: ULARGE_INTEGER,
@@ -2969,7 +2969,7 @@ pub struct IStreamVtbl {
         ) -> HRESULT,
     >,
     pub UnlockRegion: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IStream,
             libOffset: ULARGE_INTEGER,
             cb: ULARGE_INTEGER,
@@ -2977,14 +2977,14 @@ pub struct IStreamVtbl {
         ) -> HRESULT,
     >,
     pub Stat: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IStream,
             pstatstg: *mut STATSTG,
             grfStatFlag: DWORD,
         ) -> HRESULT,
     >,
     pub Clone: ::core::option::Option<
-        unsafe extern "C" fn(This: *mut IStream, ppstm: *mut *mut IStream) -> HRESULT,
+        unsafe extern "system" fn(This: *mut IStream, ppstm: *mut *mut IStream) -> HRESULT,
     >,
 }
 #[repr(C)]
@@ -3009,41 +3009,41 @@ pub type RPCOLEMESSAGE = tagRPCOLEMESSAGE;
 #[derive(Debug, Copy, Clone)]
 pub struct IRpcChannelBufferVtbl {
     pub QueryInterface: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IRpcChannelBuffer,
             riid: *const IID,
             ppvObject: *mut *mut ::core::ffi::c_void,
         ) -> HRESULT,
     >,
-    pub AddRef: ::core::option::Option<unsafe extern "C" fn(This: *mut IRpcChannelBuffer) -> ULONG>,
+    pub AddRef: ::core::option::Option<unsafe extern "system" fn(This: *mut IRpcChannelBuffer) -> ULONG>,
     pub Release:
-        ::core::option::Option<unsafe extern "C" fn(This: *mut IRpcChannelBuffer) -> ULONG>,
+        ::core::option::Option<unsafe extern "system" fn(This: *mut IRpcChannelBuffer) -> ULONG>,
     pub GetBuffer: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IRpcChannelBuffer,
             pMessage: *mut RPCOLEMESSAGE,
             riid: *const IID,
         ) -> HRESULT,
     >,
     pub SendReceive: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IRpcChannelBuffer,
             pMessage: *mut RPCOLEMESSAGE,
             pStatus: *mut ULONG,
         ) -> HRESULT,
     >,
     pub FreeBuffer: ::core::option::Option<
-        unsafe extern "C" fn(This: *mut IRpcChannelBuffer, pMessage: *mut RPCOLEMESSAGE) -> HRESULT,
+        unsafe extern "system" fn(This: *mut IRpcChannelBuffer, pMessage: *mut RPCOLEMESSAGE) -> HRESULT,
     >,
     pub GetDestCtx: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IRpcChannelBuffer,
             pdwDestContext: *mut DWORD,
             ppvDestContext: *mut *mut ::core::ffi::c_void,
         ) -> HRESULT,
     >,
     pub IsConnected:
-        ::core::option::Option<unsafe extern "C" fn(This: *mut IRpcChannelBuffer) -> HRESULT>,
+        ::core::option::Option<unsafe extern "system" fn(This: *mut IRpcChannelBuffer) -> HRESULT>,
 }
 #[repr(C)]
 #[derive(Debug, Copy, Clone)]
@@ -3054,47 +3054,47 @@ pub struct IRpcChannelBuffer {
 #[derive(Debug, Copy, Clone)]
 pub struct IRpcChannelBuffer2Vtbl {
     pub QueryInterface: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IRpcChannelBuffer2,
             riid: *const IID,
             ppvObject: *mut *mut ::core::ffi::c_void,
         ) -> HRESULT,
     >,
     pub AddRef:
-        ::core::option::Option<unsafe extern "C" fn(This: *mut IRpcChannelBuffer2) -> ULONG>,
+        ::core::option::Option<unsafe extern "system" fn(This: *mut IRpcChannelBuffer2) -> ULONG>,
     pub Release:
-        ::core::option::Option<unsafe extern "C" fn(This: *mut IRpcChannelBuffer2) -> ULONG>,
+        ::core::option::Option<unsafe extern "system" fn(This: *mut IRpcChannelBuffer2) -> ULONG>,
     pub GetBuffer: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IRpcChannelBuffer2,
             pMessage: *mut RPCOLEMESSAGE,
             riid: *const IID,
         ) -> HRESULT,
     >,
     pub SendReceive: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IRpcChannelBuffer2,
             pMessage: *mut RPCOLEMESSAGE,
             pStatus: *mut ULONG,
         ) -> HRESULT,
     >,
     pub FreeBuffer: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IRpcChannelBuffer2,
             pMessage: *mut RPCOLEMESSAGE,
         ) -> HRESULT,
     >,
     pub GetDestCtx: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IRpcChannelBuffer2,
             pdwDestContext: *mut DWORD,
             ppvDestContext: *mut *mut ::core::ffi::c_void,
         ) -> HRESULT,
     >,
     pub IsConnected:
-        ::core::option::Option<unsafe extern "C" fn(This: *mut IRpcChannelBuffer2) -> HRESULT>,
+        ::core::option::Option<unsafe extern "system" fn(This: *mut IRpcChannelBuffer2) -> HRESULT>,
     pub GetProtocolVersion: ::core::option::Option<
-        unsafe extern "C" fn(This: *mut IRpcChannelBuffer2, pdwVersion: *mut DWORD) -> HRESULT,
+        unsafe extern "system" fn(This: *mut IRpcChannelBuffer2, pdwVersion: *mut DWORD) -> HRESULT,
     >,
 }
 #[repr(C)]
@@ -3106,57 +3106,57 @@ pub struct IRpcChannelBuffer2 {
 #[derive(Debug, Copy, Clone)]
 pub struct IRpcChannelBuffer3Vtbl {
     pub QueryInterface: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IRpcChannelBuffer3,
             riid: *const IID,
             ppvObject: *mut *mut ::core::ffi::c_void,
         ) -> HRESULT,
     >,
     pub AddRef:
-        ::core::option::Option<unsafe extern "C" fn(This: *mut IRpcChannelBuffer3) -> ULONG>,
+        ::core::option::Option<unsafe extern "system" fn(This: *mut IRpcChannelBuffer3) -> ULONG>,
     pub Release:
-        ::core::option::Option<unsafe extern "C" fn(This: *mut IRpcChannelBuffer3) -> ULONG>,
+        ::core::option::Option<unsafe extern "system" fn(This: *mut IRpcChannelBuffer3) -> ULONG>,
     pub GetBuffer: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IRpcChannelBuffer3,
             pMessage: *mut RPCOLEMESSAGE,
             riid: *const IID,
         ) -> HRESULT,
     >,
     pub SendReceive: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IRpcChannelBuffer3,
             pMessage: *mut RPCOLEMESSAGE,
             pStatus: *mut ULONG,
         ) -> HRESULT,
     >,
     pub FreeBuffer: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IRpcChannelBuffer3,
             pMessage: *mut RPCOLEMESSAGE,
         ) -> HRESULT,
     >,
     pub GetDestCtx: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IRpcChannelBuffer3,
             pdwDestContext: *mut DWORD,
             ppvDestContext: *mut *mut ::core::ffi::c_void,
         ) -> HRESULT,
     >,
     pub IsConnected:
-        ::core::option::Option<unsafe extern "C" fn(This: *mut IRpcChannelBuffer3) -> HRESULT>,
+        ::core::option::Option<unsafe extern "system" fn(This: *mut IRpcChannelBuffer3) -> HRESULT>,
     pub GetProtocolVersion: ::core::option::Option<
-        unsafe extern "C" fn(This: *mut IRpcChannelBuffer3, pdwVersion: *mut DWORD) -> HRESULT,
+        unsafe extern "system" fn(This: *mut IRpcChannelBuffer3, pdwVersion: *mut DWORD) -> HRESULT,
     >,
     pub Send: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IRpcChannelBuffer3,
             pMsg: *mut RPCOLEMESSAGE,
             pulStatus: *mut ULONG,
         ) -> HRESULT,
     >,
     pub Receive: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IRpcChannelBuffer3,
             pMsg: *mut RPCOLEMESSAGE,
             ulSize: ULONG,
@@ -3164,10 +3164,10 @@ pub struct IRpcChannelBuffer3Vtbl {
         ) -> HRESULT,
     >,
     pub Cancel: ::core::option::Option<
-        unsafe extern "C" fn(This: *mut IRpcChannelBuffer3, pMsg: *mut RPCOLEMESSAGE) -> HRESULT,
+        unsafe extern "system" fn(This: *mut IRpcChannelBuffer3, pMsg: *mut RPCOLEMESSAGE) -> HRESULT,
     >,
     pub GetCallContext: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IRpcChannelBuffer3,
             pMsg: *mut RPCOLEMESSAGE,
             riid: *const IID,
@@ -3175,7 +3175,7 @@ pub struct IRpcChannelBuffer3Vtbl {
         ) -> HRESULT,
     >,
     pub GetDestCtxEx: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IRpcChannelBuffer3,
             pMsg: *mut RPCOLEMESSAGE,
             pdwDestContext: *mut DWORD,
@@ -3183,14 +3183,14 @@ pub struct IRpcChannelBuffer3Vtbl {
         ) -> HRESULT,
     >,
     pub GetState: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IRpcChannelBuffer3,
             pMsg: *mut RPCOLEMESSAGE,
             pState: *mut DWORD,
         ) -> HRESULT,
     >,
     pub RegisterAsync: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IRpcChannelBuffer3,
             pMsg: *mut RPCOLEMESSAGE,
             pAsyncMgr: *mut IAsyncManager,
@@ -3206,50 +3206,50 @@ pub struct IRpcChannelBuffer3 {
 #[derive(Debug, Copy, Clone)]
 pub struct IAsyncRpcChannelBufferVtbl {
     pub QueryInterface: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IAsyncRpcChannelBuffer,
             riid: *const IID,
             ppvObject: *mut *mut ::core::ffi::c_void,
         ) -> HRESULT,
     >,
     pub AddRef:
-        ::core::option::Option<unsafe extern "C" fn(This: *mut IAsyncRpcChannelBuffer) -> ULONG>,
+        ::core::option::Option<unsafe extern "system" fn(This: *mut IAsyncRpcChannelBuffer) -> ULONG>,
     pub Release:
-        ::core::option::Option<unsafe extern "C" fn(This: *mut IAsyncRpcChannelBuffer) -> ULONG>,
+        ::core::option::Option<unsafe extern "system" fn(This: *mut IAsyncRpcChannelBuffer) -> ULONG>,
     pub GetBuffer: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IAsyncRpcChannelBuffer,
             pMessage: *mut RPCOLEMESSAGE,
             riid: *const IID,
         ) -> HRESULT,
     >,
     pub SendReceive: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IAsyncRpcChannelBuffer,
             pMessage: *mut RPCOLEMESSAGE,
             pStatus: *mut ULONG,
         ) -> HRESULT,
     >,
     pub FreeBuffer: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IAsyncRpcChannelBuffer,
             pMessage: *mut RPCOLEMESSAGE,
         ) -> HRESULT,
     >,
     pub GetDestCtx: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IAsyncRpcChannelBuffer,
             pdwDestContext: *mut DWORD,
             ppvDestContext: *mut *mut ::core::ffi::c_void,
         ) -> HRESULT,
     >,
     pub IsConnected:
-        ::core::option::Option<unsafe extern "C" fn(This: *mut IAsyncRpcChannelBuffer) -> HRESULT>,
+        ::core::option::Option<unsafe extern "system" fn(This: *mut IAsyncRpcChannelBuffer) -> HRESULT>,
     pub GetProtocolVersion: ::core::option::Option<
-        unsafe extern "C" fn(This: *mut IAsyncRpcChannelBuffer, pdwVersion: *mut DWORD) -> HRESULT,
+        unsafe extern "system" fn(This: *mut IAsyncRpcChannelBuffer, pdwVersion: *mut DWORD) -> HRESULT,
     >,
     pub Send: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IAsyncRpcChannelBuffer,
             pMsg: *mut RPCOLEMESSAGE,
             pSync: *mut ISynchronize,
@@ -3257,14 +3257,14 @@ pub struct IAsyncRpcChannelBufferVtbl {
         ) -> HRESULT,
     >,
     pub Receive: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IAsyncRpcChannelBuffer,
             pMsg: *mut RPCOLEMESSAGE,
             pulStatus: *mut ULONG,
         ) -> HRESULT,
     >,
     pub GetDestCtxEx: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IAsyncRpcChannelBuffer,
             pMsg: *mut RPCOLEMESSAGE,
             pdwDestContext: *mut DWORD,
@@ -3281,18 +3281,18 @@ pub struct IAsyncRpcChannelBuffer {
 #[derive(Debug, Copy, Clone)]
 pub struct IRpcSyntaxNegotiateVtbl {
     pub QueryInterface: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IRpcSyntaxNegotiate,
             riid: *const IID,
             ppvObject: *mut *mut ::core::ffi::c_void,
         ) -> HRESULT,
     >,
     pub AddRef:
-        ::core::option::Option<unsafe extern "C" fn(This: *mut IRpcSyntaxNegotiate) -> ULONG>,
+        ::core::option::Option<unsafe extern "system" fn(This: *mut IRpcSyntaxNegotiate) -> ULONG>,
     pub Release:
-        ::core::option::Option<unsafe extern "C" fn(This: *mut IRpcSyntaxNegotiate) -> ULONG>,
+        ::core::option::Option<unsafe extern "system" fn(This: *mut IRpcSyntaxNegotiate) -> ULONG>,
     pub NegotiateSyntax: ::core::option::Option<
-        unsafe extern "C" fn(This: *mut IRpcSyntaxNegotiate, pMsg: *mut RPCOLEMESSAGE) -> HRESULT,
+        unsafe extern "system" fn(This: *mut IRpcSyntaxNegotiate, pMsg: *mut RPCOLEMESSAGE) -> HRESULT,
     >,
 }
 #[repr(C)]
@@ -3304,21 +3304,21 @@ pub struct IRpcSyntaxNegotiate {
 #[derive(Debug, Copy, Clone)]
 pub struct IRpcProxyBufferVtbl {
     pub QueryInterface: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IRpcProxyBuffer,
             riid: *const IID,
             ppvObject: *mut *mut ::core::ffi::c_void,
         ) -> HRESULT,
     >,
-    pub AddRef: ::core::option::Option<unsafe extern "C" fn(This: *mut IRpcProxyBuffer) -> ULONG>,
-    pub Release: ::core::option::Option<unsafe extern "C" fn(This: *mut IRpcProxyBuffer) -> ULONG>,
+    pub AddRef: ::core::option::Option<unsafe extern "system" fn(This: *mut IRpcProxyBuffer) -> ULONG>,
+    pub Release: ::core::option::Option<unsafe extern "system" fn(This: *mut IRpcProxyBuffer) -> ULONG>,
     pub Connect: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IRpcProxyBuffer,
             pRpcChannelBuffer: *mut IRpcChannelBuffer,
         ) -> HRESULT,
     >,
-    pub Disconnect: ::core::option::Option<unsafe extern "C" fn(This: *mut IRpcProxyBuffer)>,
+    pub Disconnect: ::core::option::Option<unsafe extern "system" fn(This: *mut IRpcProxyBuffer)>,
 }
 #[repr(C)]
 #[derive(Debug, Copy, Clone)]
@@ -3329,37 +3329,37 @@ pub struct IRpcProxyBuffer {
 #[derive(Debug, Copy, Clone)]
 pub struct IRpcStubBufferVtbl {
     pub QueryInterface: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IRpcStubBuffer,
             riid: *const IID,
             ppvObject: *mut *mut ::core::ffi::c_void,
         ) -> HRESULT,
     >,
-    pub AddRef: ::core::option::Option<unsafe extern "C" fn(This: *mut IRpcStubBuffer) -> ULONG>,
-    pub Release: ::core::option::Option<unsafe extern "C" fn(This: *mut IRpcStubBuffer) -> ULONG>,
+    pub AddRef: ::core::option::Option<unsafe extern "system" fn(This: *mut IRpcStubBuffer) -> ULONG>,
+    pub Release: ::core::option::Option<unsafe extern "system" fn(This: *mut IRpcStubBuffer) -> ULONG>,
     pub Connect: ::core::option::Option<
-        unsafe extern "C" fn(This: *mut IRpcStubBuffer, pUnkServer: *mut IUnknown) -> HRESULT,
+        unsafe extern "system" fn(This: *mut IRpcStubBuffer, pUnkServer: *mut IUnknown) -> HRESULT,
     >,
-    pub Disconnect: ::core::option::Option<unsafe extern "C" fn(This: *mut IRpcStubBuffer)>,
+    pub Disconnect: ::core::option::Option<unsafe extern "system" fn(This: *mut IRpcStubBuffer)>,
     pub Invoke: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IRpcStubBuffer,
             _prpcmsg: *mut RPCOLEMESSAGE,
             _pRpcChannelBuffer: *mut IRpcChannelBuffer,
         ) -> HRESULT,
     >,
     pub IsIIDSupported: ::core::option::Option<
-        unsafe extern "C" fn(This: *mut IRpcStubBuffer, riid: *const IID) -> *mut IRpcStubBuffer,
+        unsafe extern "system" fn(This: *mut IRpcStubBuffer, riid: *const IID) -> *mut IRpcStubBuffer,
     >,
-    pub CountRefs: ::core::option::Option<unsafe extern "C" fn(This: *mut IRpcStubBuffer) -> ULONG>,
+    pub CountRefs: ::core::option::Option<unsafe extern "system" fn(This: *mut IRpcStubBuffer) -> ULONG>,
     pub DebugServerQueryInterface: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IRpcStubBuffer,
             ppv: *mut *mut ::core::ffi::c_void,
         ) -> HRESULT,
     >,
     pub DebugServerRelease: ::core::option::Option<
-        unsafe extern "C" fn(This: *mut IRpcStubBuffer, pv: *mut ::core::ffi::c_void),
+        unsafe extern "system" fn(This: *mut IRpcStubBuffer, pv: *mut ::core::ffi::c_void),
     >,
 }
 #[repr(C)]
@@ -3371,16 +3371,16 @@ pub struct IRpcStubBuffer {
 #[derive(Debug, Copy, Clone)]
 pub struct IPSFactoryBufferVtbl {
     pub QueryInterface: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IPSFactoryBuffer,
             riid: *const IID,
             ppvObject: *mut *mut ::core::ffi::c_void,
         ) -> HRESULT,
     >,
-    pub AddRef: ::core::option::Option<unsafe extern "C" fn(This: *mut IPSFactoryBuffer) -> ULONG>,
-    pub Release: ::core::option::Option<unsafe extern "C" fn(This: *mut IPSFactoryBuffer) -> ULONG>,
+    pub AddRef: ::core::option::Option<unsafe extern "system" fn(This: *mut IPSFactoryBuffer) -> ULONG>,
+    pub Release: ::core::option::Option<unsafe extern "system" fn(This: *mut IPSFactoryBuffer) -> ULONG>,
     pub CreateProxy: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IPSFactoryBuffer,
             pUnkOuter: *mut IUnknown,
             riid: *const IID,
@@ -3389,7 +3389,7 @@ pub struct IPSFactoryBufferVtbl {
         ) -> HRESULT,
     >,
     pub CreateStub: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IPSFactoryBuffer,
             riid: *const IID,
             pUnkServer: *mut IUnknown,
@@ -3406,16 +3406,16 @@ pub struct IPSFactoryBuffer {
 #[derive(Debug, Copy, Clone)]
 pub struct IChannelHookVtbl {
     pub QueryInterface: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IChannelHook,
             riid: *const IID,
             ppvObject: *mut *mut ::core::ffi::c_void,
         ) -> HRESULT,
     >,
-    pub AddRef: ::core::option::Option<unsafe extern "C" fn(This: *mut IChannelHook) -> ULONG>,
-    pub Release: ::core::option::Option<unsafe extern "C" fn(This: *mut IChannelHook) -> ULONG>,
+    pub AddRef: ::core::option::Option<unsafe extern "system" fn(This: *mut IChannelHook) -> ULONG>,
+    pub Release: ::core::option::Option<unsafe extern "system" fn(This: *mut IChannelHook) -> ULONG>,
     pub ClientGetSize: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IChannelHook,
             uExtent: *const GUID,
             riid: *const IID,
@@ -3423,7 +3423,7 @@ pub struct IChannelHookVtbl {
         ),
     >,
     pub ClientFillBuffer: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IChannelHook,
             uExtent: *const GUID,
             riid: *const IID,
@@ -3432,7 +3432,7 @@ pub struct IChannelHookVtbl {
         ),
     >,
     pub ClientNotify: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IChannelHook,
             uExtent: *const GUID,
             riid: *const IID,
@@ -3443,7 +3443,7 @@ pub struct IChannelHookVtbl {
         ),
     >,
     pub ServerNotify: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IChannelHook,
             uExtent: *const GUID,
             riid: *const IID,
@@ -3453,7 +3453,7 @@ pub struct IChannelHookVtbl {
         ),
     >,
     pub ServerGetSize: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IChannelHook,
             uExtent: *const GUID,
             riid: *const IID,
@@ -3462,7 +3462,7 @@ pub struct IChannelHookVtbl {
         ),
     >,
     pub ServerFillBuffer: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IChannelHook,
             uExtent: *const GUID,
             riid: *const IID,
@@ -3481,16 +3481,16 @@ pub struct IChannelHook {
 #[derive(Debug, Copy, Clone)]
 pub struct IClientSecurityVtbl {
     pub QueryInterface: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IClientSecurity,
             riid: *const IID,
             ppvObject: *mut *mut ::core::ffi::c_void,
         ) -> HRESULT,
     >,
-    pub AddRef: ::core::option::Option<unsafe extern "C" fn(This: *mut IClientSecurity) -> ULONG>,
-    pub Release: ::core::option::Option<unsafe extern "C" fn(This: *mut IClientSecurity) -> ULONG>,
+    pub AddRef: ::core::option::Option<unsafe extern "system" fn(This: *mut IClientSecurity) -> ULONG>,
+    pub Release: ::core::option::Option<unsafe extern "system" fn(This: *mut IClientSecurity) -> ULONG>,
     pub QueryBlanket: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IClientSecurity,
             pProxy: *mut IUnknown,
             pAuthnSvc: *mut DWORD,
@@ -3503,7 +3503,7 @@ pub struct IClientSecurityVtbl {
         ) -> HRESULT,
     >,
     pub SetBlanket: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IClientSecurity,
             pProxy: *mut IUnknown,
             AuthnSvc: DWORD,
@@ -3516,7 +3516,7 @@ pub struct IClientSecurityVtbl {
         ) -> HRESULT,
     >,
     pub CopyProxy: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IClientSecurity,
             pProxy: *mut IUnknown,
             ppCopy: *mut *mut IUnknown,
@@ -3532,16 +3532,16 @@ pub struct IClientSecurity {
 #[derive(Debug, Copy, Clone)]
 pub struct IServerSecurityVtbl {
     pub QueryInterface: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IServerSecurity,
             riid: *const IID,
             ppvObject: *mut *mut ::core::ffi::c_void,
         ) -> HRESULT,
     >,
-    pub AddRef: ::core::option::Option<unsafe extern "C" fn(This: *mut IServerSecurity) -> ULONG>,
-    pub Release: ::core::option::Option<unsafe extern "C" fn(This: *mut IServerSecurity) -> ULONG>,
+    pub AddRef: ::core::option::Option<unsafe extern "system" fn(This: *mut IServerSecurity) -> ULONG>,
+    pub Release: ::core::option::Option<unsafe extern "system" fn(This: *mut IServerSecurity) -> ULONG>,
     pub QueryBlanket: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IServerSecurity,
             pAuthnSvc: *mut DWORD,
             pAuthzSvc: *mut DWORD,
@@ -3553,11 +3553,11 @@ pub struct IServerSecurityVtbl {
         ) -> HRESULT,
     >,
     pub ImpersonateClient:
-        ::core::option::Option<unsafe extern "C" fn(This: *mut IServerSecurity) -> HRESULT>,
+        ::core::option::Option<unsafe extern "system" fn(This: *mut IServerSecurity) -> HRESULT>,
     pub RevertToSelf:
-        ::core::option::Option<unsafe extern "C" fn(This: *mut IServerSecurity) -> HRESULT>,
+        ::core::option::Option<unsafe extern "system" fn(This: *mut IServerSecurity) -> HRESULT>,
     pub IsImpersonating:
-        ::core::option::Option<unsafe extern "C" fn(This: *mut IServerSecurity) -> BOOL>,
+        ::core::option::Option<unsafe extern "system" fn(This: *mut IServerSecurity) -> BOOL>,
 }
 #[repr(C)]
 #[derive(Debug, Copy, Clone)]
@@ -3568,16 +3568,16 @@ pub struct IServerSecurity {
 #[derive(Debug, Copy, Clone)]
 pub struct IAsyncSetupVtbl {
     pub QueryInterface: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IAsyncSetup,
             riid: *const IID,
             ppvObject: *mut *mut ::core::ffi::c_void,
         ) -> HRESULT,
     >,
-    pub AddRef: ::core::option::Option<unsafe extern "C" fn(This: *mut IAsyncSetup) -> ULONG>,
-    pub Release: ::core::option::Option<unsafe extern "C" fn(This: *mut IAsyncSetup) -> ULONG>,
+    pub AddRef: ::core::option::Option<unsafe extern "system" fn(This: *mut IAsyncSetup) -> ULONG>,
+    pub Release: ::core::option::Option<unsafe extern "system" fn(This: *mut IAsyncSetup) -> ULONG>,
     pub GetAsyncManager: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IAsyncSetup,
             riid: *const IID,
             pOuter: *mut IUnknown,
@@ -3596,23 +3596,23 @@ pub struct IAsyncSetup {
 #[derive(Debug, Copy, Clone)]
 pub struct ISynchronizeVtbl {
     pub QueryInterface: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut ISynchronize,
             riid: *const IID,
             ppvObject: *mut *mut ::core::ffi::c_void,
         ) -> HRESULT,
     >,
-    pub AddRef: ::core::option::Option<unsafe extern "C" fn(This: *mut ISynchronize) -> ULONG>,
-    pub Release: ::core::option::Option<unsafe extern "C" fn(This: *mut ISynchronize) -> ULONG>,
+    pub AddRef: ::core::option::Option<unsafe extern "system" fn(This: *mut ISynchronize) -> ULONG>,
+    pub Release: ::core::option::Option<unsafe extern "system" fn(This: *mut ISynchronize) -> ULONG>,
     pub Wait: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut ISynchronize,
             dwFlags: DWORD,
             dwMilliseconds: DWORD,
         ) -> HRESULT,
     >,
-    pub Signal: ::core::option::Option<unsafe extern "C" fn(This: *mut ISynchronize) -> HRESULT>,
-    pub Reset: ::core::option::Option<unsafe extern "C" fn(This: *mut ISynchronize) -> HRESULT>,
+    pub Signal: ::core::option::Option<unsafe extern "system" fn(This: *mut ISynchronize) -> HRESULT>,
+    pub Reset: ::core::option::Option<unsafe extern "system" fn(This: *mut ISynchronize) -> HRESULT>,
 }
 #[repr(C)]
 #[derive(Debug, Copy, Clone)]
@@ -3623,18 +3623,18 @@ pub struct ISynchronize {
 #[derive(Debug, Copy, Clone)]
 pub struct ISynchronizeHandleVtbl {
     pub QueryInterface: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut ISynchronizeHandle,
             riid: *const IID,
             ppvObject: *mut *mut ::core::ffi::c_void,
         ) -> HRESULT,
     >,
     pub AddRef:
-        ::core::option::Option<unsafe extern "C" fn(This: *mut ISynchronizeHandle) -> ULONG>,
+        ::core::option::Option<unsafe extern "system" fn(This: *mut ISynchronizeHandle) -> ULONG>,
     pub Release:
-        ::core::option::Option<unsafe extern "C" fn(This: *mut ISynchronizeHandle) -> ULONG>,
+        ::core::option::Option<unsafe extern "system" fn(This: *mut ISynchronizeHandle) -> ULONG>,
     pub GetHandle: ::core::option::Option<
-        unsafe extern "C" fn(This: *mut ISynchronizeHandle, ph: *mut HANDLE) -> HRESULT,
+        unsafe extern "system" fn(This: *mut ISynchronizeHandle, ph: *mut HANDLE) -> HRESULT,
     >,
 }
 #[repr(C)]
@@ -3646,20 +3646,20 @@ pub struct ISynchronizeHandle {
 #[derive(Debug, Copy, Clone)]
 pub struct ISynchronizeEventVtbl {
     pub QueryInterface: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut ISynchronizeEvent,
             riid: *const IID,
             ppvObject: *mut *mut ::core::ffi::c_void,
         ) -> HRESULT,
     >,
-    pub AddRef: ::core::option::Option<unsafe extern "C" fn(This: *mut ISynchronizeEvent) -> ULONG>,
+    pub AddRef: ::core::option::Option<unsafe extern "system" fn(This: *mut ISynchronizeEvent) -> ULONG>,
     pub Release:
-        ::core::option::Option<unsafe extern "C" fn(This: *mut ISynchronizeEvent) -> ULONG>,
+        ::core::option::Option<unsafe extern "system" fn(This: *mut ISynchronizeEvent) -> ULONG>,
     pub GetHandle: ::core::option::Option<
-        unsafe extern "C" fn(This: *mut ISynchronizeEvent, ph: *mut HANDLE) -> HRESULT,
+        unsafe extern "system" fn(This: *mut ISynchronizeEvent, ph: *mut HANDLE) -> HRESULT,
     >,
     pub SetEventHandle: ::core::option::Option<
-        unsafe extern "C" fn(This: *mut ISynchronizeEvent, ph: *mut HANDLE) -> HRESULT,
+        unsafe extern "system" fn(This: *mut ISynchronizeEvent, ph: *mut HANDLE) -> HRESULT,
     >,
 }
 #[repr(C)]
@@ -3671,21 +3671,21 @@ pub struct ISynchronizeEvent {
 #[derive(Debug, Copy, Clone)]
 pub struct ISynchronizeContainerVtbl {
     pub QueryInterface: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut ISynchronizeContainer,
             riid: *const IID,
             ppvObject: *mut *mut ::core::ffi::c_void,
         ) -> HRESULT,
     >,
     pub AddRef:
-        ::core::option::Option<unsafe extern "C" fn(This: *mut ISynchronizeContainer) -> ULONG>,
+        ::core::option::Option<unsafe extern "system" fn(This: *mut ISynchronizeContainer) -> ULONG>,
     pub Release:
-        ::core::option::Option<unsafe extern "C" fn(This: *mut ISynchronizeContainer) -> ULONG>,
+        ::core::option::Option<unsafe extern "system" fn(This: *mut ISynchronizeContainer) -> ULONG>,
     pub AddSynchronize: ::core::option::Option<
-        unsafe extern "C" fn(This: *mut ISynchronizeContainer, pSync: *mut ISynchronize) -> HRESULT,
+        unsafe extern "system" fn(This: *mut ISynchronizeContainer, pSync: *mut ISynchronize) -> HRESULT,
     >,
     pub WaitMultiple: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut ISynchronizeContainer,
             dwFlags: DWORD,
             dwTimeOut: DWORD,
@@ -3702,28 +3702,28 @@ pub struct ISynchronizeContainer {
 #[derive(Debug, Copy, Clone)]
 pub struct ISynchronizeMutexVtbl {
     pub QueryInterface: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut ISynchronizeMutex,
             riid: *const IID,
             ppvObject: *mut *mut ::core::ffi::c_void,
         ) -> HRESULT,
     >,
-    pub AddRef: ::core::option::Option<unsafe extern "C" fn(This: *mut ISynchronizeMutex) -> ULONG>,
+    pub AddRef: ::core::option::Option<unsafe extern "system" fn(This: *mut ISynchronizeMutex) -> ULONG>,
     pub Release:
-        ::core::option::Option<unsafe extern "C" fn(This: *mut ISynchronizeMutex) -> ULONG>,
+        ::core::option::Option<unsafe extern "system" fn(This: *mut ISynchronizeMutex) -> ULONG>,
     pub Wait: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut ISynchronizeMutex,
             dwFlags: DWORD,
             dwMilliseconds: DWORD,
         ) -> HRESULT,
     >,
     pub Signal:
-        ::core::option::Option<unsafe extern "C" fn(This: *mut ISynchronizeMutex) -> HRESULT>,
+        ::core::option::Option<unsafe extern "system" fn(This: *mut ISynchronizeMutex) -> HRESULT>,
     pub Reset:
-        ::core::option::Option<unsafe extern "C" fn(This: *mut ISynchronizeMutex) -> HRESULT>,
+        ::core::option::Option<unsafe extern "system" fn(This: *mut ISynchronizeMutex) -> HRESULT>,
     pub ReleaseMutex:
-        ::core::option::Option<unsafe extern "C" fn(This: *mut ISynchronizeMutex) -> HRESULT>,
+        ::core::option::Option<unsafe extern "system" fn(This: *mut ISynchronizeMutex) -> HRESULT>,
 }
 #[repr(C)]
 #[derive(Debug, Copy, Clone)]
@@ -3734,21 +3734,21 @@ pub struct ISynchronizeMutex {
 #[derive(Debug, Copy, Clone)]
 pub struct ICancelMethodCallsVtbl {
     pub QueryInterface: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut ICancelMethodCalls,
             riid: *const IID,
             ppvObject: *mut *mut ::core::ffi::c_void,
         ) -> HRESULT,
     >,
     pub AddRef:
-        ::core::option::Option<unsafe extern "C" fn(This: *mut ICancelMethodCalls) -> ULONG>,
+        ::core::option::Option<unsafe extern "system" fn(This: *mut ICancelMethodCalls) -> ULONG>,
     pub Release:
-        ::core::option::Option<unsafe extern "C" fn(This: *mut ICancelMethodCalls) -> ULONG>,
+        ::core::option::Option<unsafe extern "system" fn(This: *mut ICancelMethodCalls) -> ULONG>,
     pub Cancel: ::core::option::Option<
-        unsafe extern "C" fn(This: *mut ICancelMethodCalls, ulSeconds: ULONG) -> HRESULT,
+        unsafe extern "system" fn(This: *mut ICancelMethodCalls, ulSeconds: ULONG) -> HRESULT,
     >,
     pub TestCancel:
-        ::core::option::Option<unsafe extern "C" fn(This: *mut ICancelMethodCalls) -> HRESULT>,
+        ::core::option::Option<unsafe extern "system" fn(This: *mut ICancelMethodCalls) -> HRESULT>,
 }
 #[repr(C)]
 #[derive(Debug, Copy, Clone)]
@@ -3759,26 +3759,26 @@ pub struct ICancelMethodCalls {
 #[derive(Debug, Copy, Clone)]
 pub struct IAsyncManagerVtbl {
     pub QueryInterface: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IAsyncManager,
             riid: *const IID,
             ppvObject: *mut *mut ::core::ffi::c_void,
         ) -> HRESULT,
     >,
-    pub AddRef: ::core::option::Option<unsafe extern "C" fn(This: *mut IAsyncManager) -> ULONG>,
-    pub Release: ::core::option::Option<unsafe extern "C" fn(This: *mut IAsyncManager) -> ULONG>,
+    pub AddRef: ::core::option::Option<unsafe extern "system" fn(This: *mut IAsyncManager) -> ULONG>,
+    pub Release: ::core::option::Option<unsafe extern "system" fn(This: *mut IAsyncManager) -> ULONG>,
     pub CompleteCall: ::core::option::Option<
-        unsafe extern "C" fn(This: *mut IAsyncManager, Result: HRESULT) -> HRESULT,
+        unsafe extern "system" fn(This: *mut IAsyncManager, Result: HRESULT) -> HRESULT,
     >,
     pub GetCallContext: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IAsyncManager,
             riid: *const IID,
             pInterface: *mut *mut ::core::ffi::c_void,
         ) -> HRESULT,
     >,
     pub GetState: ::core::option::Option<
-        unsafe extern "C" fn(This: *mut IAsyncManager, pulStateFlags: *mut ULONG) -> HRESULT,
+        unsafe extern "system" fn(This: *mut IAsyncManager, pulStateFlags: *mut ULONG) -> HRESULT,
     >,
 }
 #[repr(C)]
@@ -3790,16 +3790,16 @@ pub struct IAsyncManager {
 #[derive(Debug, Copy, Clone)]
 pub struct ICallFactoryVtbl {
     pub QueryInterface: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut ICallFactory,
             riid: *const IID,
             ppvObject: *mut *mut ::core::ffi::c_void,
         ) -> HRESULT,
     >,
-    pub AddRef: ::core::option::Option<unsafe extern "C" fn(This: *mut ICallFactory) -> ULONG>,
-    pub Release: ::core::option::Option<unsafe extern "C" fn(This: *mut ICallFactory) -> ULONG>,
+    pub AddRef: ::core::option::Option<unsafe extern "system" fn(This: *mut ICallFactory) -> ULONG>,
+    pub Release: ::core::option::Option<unsafe extern "system" fn(This: *mut ICallFactory) -> ULONG>,
     pub CreateCall: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut ICallFactory,
             riid: *const IID,
             pCtrlUnk: *mut IUnknown,
@@ -3817,16 +3817,16 @@ pub struct ICallFactory {
 #[derive(Debug, Copy, Clone)]
 pub struct IRpcOptionsVtbl {
     pub QueryInterface: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IRpcOptions,
             riid: *const IID,
             ppvObject: *mut *mut ::core::ffi::c_void,
         ) -> HRESULT,
     >,
-    pub AddRef: ::core::option::Option<unsafe extern "C" fn(This: *mut IRpcOptions) -> ULONG>,
-    pub Release: ::core::option::Option<unsafe extern "C" fn(This: *mut IRpcOptions) -> ULONG>,
+    pub AddRef: ::core::option::Option<unsafe extern "system" fn(This: *mut IRpcOptions) -> ULONG>,
+    pub Release: ::core::option::Option<unsafe extern "system" fn(This: *mut IRpcOptions) -> ULONG>,
     pub Set: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IRpcOptions,
             pPrx: *mut IUnknown,
             dwProperty: DWORD,
@@ -3834,7 +3834,7 @@ pub struct IRpcOptionsVtbl {
         ) -> HRESULT,
     >,
     pub Query: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IRpcOptions,
             pPrx: *mut IUnknown,
             dwProperty: DWORD,
@@ -3851,19 +3851,19 @@ pub struct IRpcOptions {
 #[derive(Debug, Copy, Clone)]
 pub struct IRpcHelperVtbl {
     pub QueryInterface: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IRpcHelper,
             riid: *const IID,
             ppvObject: *mut *mut ::core::ffi::c_void,
         ) -> HRESULT,
     >,
-    pub AddRef: ::core::option::Option<unsafe extern "C" fn(This: *mut IRpcHelper) -> ULONG>,
-    pub Release: ::core::option::Option<unsafe extern "C" fn(This: *mut IRpcHelper) -> ULONG>,
+    pub AddRef: ::core::option::Option<unsafe extern "system" fn(This: *mut IRpcHelper) -> ULONG>,
+    pub Release: ::core::option::Option<unsafe extern "system" fn(This: *mut IRpcHelper) -> ULONG>,
     pub GetDCOMProtocolVersion: ::core::option::Option<
-        unsafe extern "C" fn(This: *mut IRpcHelper, pComVersion: *mut DWORD) -> HRESULT,
+        unsafe extern "system" fn(This: *mut IRpcHelper, pComVersion: *mut DWORD) -> HRESULT,
     >,
     pub GetIIDFromOBJREF: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IRpcHelper,
             pObjRef: *mut ::core::ffi::c_void,
             piid: *mut *mut IID,
@@ -3879,18 +3879,18 @@ pub struct IRpcHelper {
 #[derive(Debug, Copy, Clone)]
 pub struct IReleaseMarshalBuffersVtbl {
     pub QueryInterface: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IReleaseMarshalBuffers,
             riid: *const IID,
             ppvObject: *mut *mut ::core::ffi::c_void,
         ) -> HRESULT,
     >,
     pub AddRef:
-        ::core::option::Option<unsafe extern "C" fn(This: *mut IReleaseMarshalBuffers) -> ULONG>,
+        ::core::option::Option<unsafe extern "system" fn(This: *mut IReleaseMarshalBuffers) -> ULONG>,
     pub Release:
-        ::core::option::Option<unsafe extern "C" fn(This: *mut IReleaseMarshalBuffers) -> ULONG>,
+        ::core::option::Option<unsafe extern "system" fn(This: *mut IReleaseMarshalBuffers) -> ULONG>,
     pub ReleaseMarshalBuffer: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IReleaseMarshalBuffers,
             pMsg: *mut RPCOLEMESSAGE,
             dwFlags: DWORD,
@@ -3907,23 +3907,23 @@ pub struct IReleaseMarshalBuffers {
 #[derive(Debug, Copy, Clone)]
 pub struct IWaitMultipleVtbl {
     pub QueryInterface: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IWaitMultiple,
             riid: *const IID,
             ppvObject: *mut *mut ::core::ffi::c_void,
         ) -> HRESULT,
     >,
-    pub AddRef: ::core::option::Option<unsafe extern "C" fn(This: *mut IWaitMultiple) -> ULONG>,
-    pub Release: ::core::option::Option<unsafe extern "C" fn(This: *mut IWaitMultiple) -> ULONG>,
+    pub AddRef: ::core::option::Option<unsafe extern "system" fn(This: *mut IWaitMultiple) -> ULONG>,
+    pub Release: ::core::option::Option<unsafe extern "system" fn(This: *mut IWaitMultiple) -> ULONG>,
     pub WaitMultiple: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IWaitMultiple,
             timeout: DWORD,
             pSync: *mut *mut ISynchronize,
         ) -> HRESULT,
     >,
     pub AddSynchronize: ::core::option::Option<
-        unsafe extern "C" fn(This: *mut IWaitMultiple, pSync: *mut ISynchronize) -> HRESULT,
+        unsafe extern "system" fn(This: *mut IWaitMultiple, pSync: *mut ISynchronize) -> HRESULT,
     >,
 }
 #[repr(C)]
@@ -3935,20 +3935,20 @@ pub struct IWaitMultiple {
 #[derive(Debug, Copy, Clone)]
 pub struct IAddrTrackingControlVtbl {
     pub QueryInterface: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IAddrTrackingControl,
             riid: *const IID,
             ppvObject: *mut *mut ::core::ffi::c_void,
         ) -> HRESULT,
     >,
     pub AddRef:
-        ::core::option::Option<unsafe extern "C" fn(This: *mut IAddrTrackingControl) -> ULONG>,
+        ::core::option::Option<unsafe extern "system" fn(This: *mut IAddrTrackingControl) -> ULONG>,
     pub Release:
-        ::core::option::Option<unsafe extern "C" fn(This: *mut IAddrTrackingControl) -> ULONG>,
+        ::core::option::Option<unsafe extern "system" fn(This: *mut IAddrTrackingControl) -> ULONG>,
     pub EnableCOMDynamicAddrTracking:
-        ::core::option::Option<unsafe extern "C" fn(This: *mut IAddrTrackingControl) -> HRESULT>,
+        ::core::option::Option<unsafe extern "system" fn(This: *mut IAddrTrackingControl) -> HRESULT>,
     pub DisableCOMDynamicAddrTracking:
-        ::core::option::Option<unsafe extern "C" fn(This: *mut IAddrTrackingControl) -> HRESULT>,
+        ::core::option::Option<unsafe extern "system" fn(This: *mut IAddrTrackingControl) -> HRESULT>,
 }
 #[repr(C)]
 #[derive(Debug, Copy, Clone)]
@@ -3959,25 +3959,25 @@ pub struct IAddrTrackingControl {
 #[derive(Debug, Copy, Clone)]
 pub struct IAddrExclusionControlVtbl {
     pub QueryInterface: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IAddrExclusionControl,
             riid: *const IID,
             ppvObject: *mut *mut ::core::ffi::c_void,
         ) -> HRESULT,
     >,
     pub AddRef:
-        ::core::option::Option<unsafe extern "C" fn(This: *mut IAddrExclusionControl) -> ULONG>,
+        ::core::option::Option<unsafe extern "system" fn(This: *mut IAddrExclusionControl) -> ULONG>,
     pub Release:
-        ::core::option::Option<unsafe extern "C" fn(This: *mut IAddrExclusionControl) -> ULONG>,
+        ::core::option::Option<unsafe extern "system" fn(This: *mut IAddrExclusionControl) -> ULONG>,
     pub GetCurrentAddrExclusionList: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IAddrExclusionControl,
             riid: *const IID,
             ppEnumerator: *mut *mut ::core::ffi::c_void,
         ) -> HRESULT,
     >,
     pub UpdateAddrExclusionList: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IAddrExclusionControl,
             pEnumerator: *mut IUnknown,
         ) -> HRESULT,
@@ -4011,29 +4011,29 @@ pub use self::_THDTYPE as THDTYPE;
 #[derive(Debug, Copy, Clone)]
 pub struct IComThreadingInfoVtbl {
     pub QueryInterface: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IComThreadingInfo,
             riid: *const IID,
             ppvObject: *mut *mut ::core::ffi::c_void,
         ) -> HRESULT,
     >,
-    pub AddRef: ::core::option::Option<unsafe extern "C" fn(This: *mut IComThreadingInfo) -> ULONG>,
+    pub AddRef: ::core::option::Option<unsafe extern "system" fn(This: *mut IComThreadingInfo) -> ULONG>,
     pub Release:
-        ::core::option::Option<unsafe extern "C" fn(This: *mut IComThreadingInfo) -> ULONG>,
+        ::core::option::Option<unsafe extern "system" fn(This: *mut IComThreadingInfo) -> ULONG>,
     pub GetCurrentApartmentType: ::core::option::Option<
-        unsafe extern "C" fn(This: *mut IComThreadingInfo, pAptType: *mut APTTYPE) -> HRESULT,
+        unsafe extern "system" fn(This: *mut IComThreadingInfo, pAptType: *mut APTTYPE) -> HRESULT,
     >,
     pub GetCurrentThreadType: ::core::option::Option<
-        unsafe extern "C" fn(This: *mut IComThreadingInfo, pThreadType: *mut THDTYPE) -> HRESULT,
+        unsafe extern "system" fn(This: *mut IComThreadingInfo, pThreadType: *mut THDTYPE) -> HRESULT,
     >,
     pub GetCurrentLogicalThreadId: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IComThreadingInfo,
             pguidLogicalThreadId: *mut GUID,
         ) -> HRESULT,
     >,
     pub SetCurrentLogicalThreadId: ::core::option::Option<
-        unsafe extern "C" fn(This: *mut IComThreadingInfo, rguid: *const GUID) -> HRESULT,
+        unsafe extern "system" fn(This: *mut IComThreadingInfo, rguid: *const GUID) -> HRESULT,
     >,
 }
 #[repr(C)]
@@ -4045,18 +4045,18 @@ pub struct IComThreadingInfo {
 #[derive(Debug, Copy, Clone)]
 pub struct IProcessInitControlVtbl {
     pub QueryInterface: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IProcessInitControl,
             riid: *const IID,
             ppvObject: *mut *mut ::core::ffi::c_void,
         ) -> HRESULT,
     >,
     pub AddRef:
-        ::core::option::Option<unsafe extern "C" fn(This: *mut IProcessInitControl) -> ULONG>,
+        ::core::option::Option<unsafe extern "system" fn(This: *mut IProcessInitControl) -> ULONG>,
     pub Release:
-        ::core::option::Option<unsafe extern "C" fn(This: *mut IProcessInitControl) -> ULONG>,
+        ::core::option::Option<unsafe extern "system" fn(This: *mut IProcessInitControl) -> ULONG>,
     pub ResetInitializerTimeout: ::core::option::Option<
-        unsafe extern "C" fn(This: *mut IProcessInitControl, dwSecondsRemaining: DWORD) -> HRESULT,
+        unsafe extern "system" fn(This: *mut IProcessInitControl, dwSecondsRemaining: DWORD) -> HRESULT,
     >,
 }
 #[repr(C)]
@@ -4078,23 +4078,23 @@ pub use self::tagGLOBALOPT_PROPERTIES as GLOBALOPT_PROPERTIES;
 #[derive(Debug, Copy, Clone)]
 pub struct IGlobalOptionsVtbl {
     pub QueryInterface: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IGlobalOptions,
             riid: *const IID,
             ppvObject: *mut *mut ::core::ffi::c_void,
         ) -> HRESULT,
     >,
-    pub AddRef: ::core::option::Option<unsafe extern "C" fn(This: *mut IGlobalOptions) -> ULONG>,
-    pub Release: ::core::option::Option<unsafe extern "C" fn(This: *mut IGlobalOptions) -> ULONG>,
+    pub AddRef: ::core::option::Option<unsafe extern "system" fn(This: *mut IGlobalOptions) -> ULONG>,
+    pub Release: ::core::option::Option<unsafe extern "system" fn(This: *mut IGlobalOptions) -> ULONG>,
     pub Set: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IGlobalOptions,
             property: GLOBALOPT_PROPERTIES,
             value: ULONG_PTR,
         ) -> HRESULT,
     >,
     pub Query: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IGlobalOptions,
             property: GLOBALOPT_PROPERTIES,
             value: *mut ULONG_PTR,
@@ -4110,26 +4110,26 @@ pub struct IGlobalOptions {
 #[derive(Debug, Copy, Clone)]
 pub struct IMallocSpyVtbl {
     pub QueryInterface: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IMallocSpy,
             riid: *const IID,
             ppvObject: *mut *mut ::core::ffi::c_void,
         ) -> HRESULT,
     >,
-    pub AddRef: ::core::option::Option<unsafe extern "C" fn(This: *mut IMallocSpy) -> ULONG>,
-    pub Release: ::core::option::Option<unsafe extern "C" fn(This: *mut IMallocSpy) -> ULONG>,
+    pub AddRef: ::core::option::Option<unsafe extern "system" fn(This: *mut IMallocSpy) -> ULONG>,
+    pub Release: ::core::option::Option<unsafe extern "system" fn(This: *mut IMallocSpy) -> ULONG>,
     pub PreAlloc: ::core::option::Option<
-        unsafe extern "C" fn(This: *mut IMallocSpy, cbRequest: SIZE_T) -> SIZE_T,
+        unsafe extern "system" fn(This: *mut IMallocSpy, cbRequest: SIZE_T) -> SIZE_T,
     >,
     pub PostAlloc: ::core::option::Option<
-        unsafe extern "C" fn(This: *mut IMallocSpy, pActual: LPVOID) -> LPVOID,
+        unsafe extern "system" fn(This: *mut IMallocSpy, pActual: LPVOID) -> LPVOID,
     >,
     pub PreFree: ::core::option::Option<
-        unsafe extern "C" fn(This: *mut IMallocSpy, pRequest: LPVOID, fSpyed: BOOL) -> LPVOID,
+        unsafe extern "system" fn(This: *mut IMallocSpy, pRequest: LPVOID, fSpyed: BOOL) -> LPVOID,
     >,
-    pub PostFree: ::core::option::Option<unsafe extern "C" fn(This: *mut IMallocSpy, fSpyed: BOOL)>,
+    pub PostFree: ::core::option::Option<unsafe extern "system" fn(This: *mut IMallocSpy, fSpyed: BOOL)>,
     pub PreRealloc: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IMallocSpy,
             pRequest: LPVOID,
             cbRequest: SIZE_T,
@@ -4138,27 +4138,27 @@ pub struct IMallocSpyVtbl {
         ) -> SIZE_T,
     >,
     pub PostRealloc: ::core::option::Option<
-        unsafe extern "C" fn(This: *mut IMallocSpy, pActual: LPVOID, fSpyed: BOOL) -> LPVOID,
+        unsafe extern "system" fn(This: *mut IMallocSpy, pActual: LPVOID, fSpyed: BOOL) -> LPVOID,
     >,
     pub PreGetSize: ::core::option::Option<
-        unsafe extern "C" fn(This: *mut IMallocSpy, pRequest: LPVOID, fSpyed: BOOL) -> LPVOID,
+        unsafe extern "system" fn(This: *mut IMallocSpy, pRequest: LPVOID, fSpyed: BOOL) -> LPVOID,
     >,
     pub PostGetSize: ::core::option::Option<
-        unsafe extern "C" fn(This: *mut IMallocSpy, cbActual: SIZE_T, fSpyed: BOOL) -> SIZE_T,
+        unsafe extern "system" fn(This: *mut IMallocSpy, cbActual: SIZE_T, fSpyed: BOOL) -> SIZE_T,
     >,
     pub PreDidAlloc: ::core::option::Option<
-        unsafe extern "C" fn(This: *mut IMallocSpy, pRequest: LPVOID, fSpyed: BOOL) -> LPVOID,
+        unsafe extern "system" fn(This: *mut IMallocSpy, pRequest: LPVOID, fSpyed: BOOL) -> LPVOID,
     >,
     pub PostDidAlloc: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IMallocSpy,
             pRequest: LPVOID,
             fSpyed: BOOL,
             fActual: ::core::ffi::c_int,
         ) -> ::core::ffi::c_int,
     >,
-    pub PreHeapMinimize: ::core::option::Option<unsafe extern "C" fn(This: *mut IMallocSpy)>,
-    pub PostHeapMinimize: ::core::option::Option<unsafe extern "C" fn(This: *mut IMallocSpy)>,
+    pub PreHeapMinimize: ::core::option::Option<unsafe extern "system" fn(This: *mut IMallocSpy)>,
+    pub PostHeapMinimize: ::core::option::Option<unsafe extern "system" fn(This: *mut IMallocSpy)>,
 }
 #[repr(C)]
 #[derive(Debug, Copy, Clone)]
@@ -4207,46 +4207,46 @@ pub type BIND_OPTS3 = tagBIND_OPTS3;
 #[derive(Debug, Copy, Clone)]
 pub struct IBindCtxVtbl {
     pub QueryInterface: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IBindCtx,
             riid: *const IID,
             ppvObject: *mut *mut ::core::ffi::c_void,
         ) -> HRESULT,
     >,
-    pub AddRef: ::core::option::Option<unsafe extern "C" fn(This: *mut IBindCtx) -> ULONG>,
-    pub Release: ::core::option::Option<unsafe extern "C" fn(This: *mut IBindCtx) -> ULONG>,
+    pub AddRef: ::core::option::Option<unsafe extern "system" fn(This: *mut IBindCtx) -> ULONG>,
+    pub Release: ::core::option::Option<unsafe extern "system" fn(This: *mut IBindCtx) -> ULONG>,
     pub RegisterObjectBound: ::core::option::Option<
-        unsafe extern "C" fn(This: *mut IBindCtx, punk: *mut IUnknown) -> HRESULT,
+        unsafe extern "system" fn(This: *mut IBindCtx, punk: *mut IUnknown) -> HRESULT,
     >,
     pub RevokeObjectBound: ::core::option::Option<
-        unsafe extern "C" fn(This: *mut IBindCtx, punk: *mut IUnknown) -> HRESULT,
+        unsafe extern "system" fn(This: *mut IBindCtx, punk: *mut IUnknown) -> HRESULT,
     >,
     pub ReleaseBoundObjects:
-        ::core::option::Option<unsafe extern "C" fn(This: *mut IBindCtx) -> HRESULT>,
+        ::core::option::Option<unsafe extern "system" fn(This: *mut IBindCtx) -> HRESULT>,
     pub SetBindOptions: ::core::option::Option<
-        unsafe extern "C" fn(This: *mut IBindCtx, pbindopts: *mut BIND_OPTS) -> HRESULT,
+        unsafe extern "system" fn(This: *mut IBindCtx, pbindopts: *mut BIND_OPTS) -> HRESULT,
     >,
     pub GetBindOptions: ::core::option::Option<
-        unsafe extern "C" fn(This: *mut IBindCtx, pbindopts: *mut BIND_OPTS) -> HRESULT,
+        unsafe extern "system" fn(This: *mut IBindCtx, pbindopts: *mut BIND_OPTS) -> HRESULT,
     >,
     pub GetRunningObjectTable: ::core::option::Option<
-        unsafe extern "C" fn(This: *mut IBindCtx, pprot: *mut *mut IRunningObjectTable) -> HRESULT,
+        unsafe extern "system" fn(This: *mut IBindCtx, pprot: *mut *mut IRunningObjectTable) -> HRESULT,
     >,
     pub RegisterObjectParam: ::core::option::Option<
-        unsafe extern "C" fn(This: *mut IBindCtx, pszKey: LPOLESTR, punk: *mut IUnknown) -> HRESULT,
+        unsafe extern "system" fn(This: *mut IBindCtx, pszKey: LPOLESTR, punk: *mut IUnknown) -> HRESULT,
     >,
     pub GetObjectParam: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IBindCtx,
             pszKey: LPOLESTR,
             ppunk: *mut *mut IUnknown,
         ) -> HRESULT,
     >,
     pub EnumObjectParam: ::core::option::Option<
-        unsafe extern "C" fn(This: *mut IBindCtx, ppenum: *mut *mut IEnumString) -> HRESULT,
+        unsafe extern "system" fn(This: *mut IBindCtx, ppenum: *mut *mut IEnumString) -> HRESULT,
     >,
     pub RevokeObjectParam: ::core::option::Option<
-        unsafe extern "C" fn(This: *mut IBindCtx, pszKey: LPOLESTR) -> HRESULT,
+        unsafe extern "system" fn(This: *mut IBindCtx, pszKey: LPOLESTR) -> HRESULT,
     >,
 }
 #[repr(C)]
@@ -4258,16 +4258,16 @@ pub struct IBindCtx {
 #[derive(Debug, Copy, Clone)]
 pub struct IEnumMonikerVtbl {
     pub QueryInterface: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IEnumMoniker,
             riid: *const IID,
             ppvObject: *mut *mut ::core::ffi::c_void,
         ) -> HRESULT,
     >,
-    pub AddRef: ::core::option::Option<unsafe extern "C" fn(This: *mut IEnumMoniker) -> ULONG>,
-    pub Release: ::core::option::Option<unsafe extern "C" fn(This: *mut IEnumMoniker) -> ULONG>,
+    pub AddRef: ::core::option::Option<unsafe extern "system" fn(This: *mut IEnumMoniker) -> ULONG>,
+    pub Release: ::core::option::Option<unsafe extern "system" fn(This: *mut IEnumMoniker) -> ULONG>,
     pub Next: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IEnumMoniker,
             celt: ULONG,
             rgelt: *mut *mut IMoniker,
@@ -4275,11 +4275,11 @@ pub struct IEnumMonikerVtbl {
         ) -> HRESULT,
     >,
     pub Skip: ::core::option::Option<
-        unsafe extern "C" fn(This: *mut IEnumMoniker, celt: ULONG) -> HRESULT,
+        unsafe extern "system" fn(This: *mut IEnumMoniker, celt: ULONG) -> HRESULT,
     >,
-    pub Reset: ::core::option::Option<unsafe extern "C" fn(This: *mut IEnumMoniker) -> HRESULT>,
+    pub Reset: ::core::option::Option<unsafe extern "system" fn(This: *mut IEnumMoniker) -> HRESULT>,
     pub Clone: ::core::option::Option<
-        unsafe extern "C" fn(This: *mut IEnumMoniker, ppenum: *mut *mut IEnumMoniker) -> HRESULT,
+        unsafe extern "system" fn(This: *mut IEnumMoniker, ppenum: *mut *mut IEnumMoniker) -> HRESULT,
     >,
 }
 #[repr(C)]
@@ -4291,30 +4291,30 @@ pub struct IEnumMoniker {
 #[derive(Debug, Copy, Clone)]
 pub struct IRunnableObjectVtbl {
     pub QueryInterface: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IRunnableObject,
             riid: *const IID,
             ppvObject: *mut *mut ::core::ffi::c_void,
         ) -> HRESULT,
     >,
-    pub AddRef: ::core::option::Option<unsafe extern "C" fn(This: *mut IRunnableObject) -> ULONG>,
-    pub Release: ::core::option::Option<unsafe extern "C" fn(This: *mut IRunnableObject) -> ULONG>,
+    pub AddRef: ::core::option::Option<unsafe extern "system" fn(This: *mut IRunnableObject) -> ULONG>,
+    pub Release: ::core::option::Option<unsafe extern "system" fn(This: *mut IRunnableObject) -> ULONG>,
     pub GetRunningClass: ::core::option::Option<
-        unsafe extern "C" fn(This: *mut IRunnableObject, lpClsid: LPCLSID) -> HRESULT,
+        unsafe extern "system" fn(This: *mut IRunnableObject, lpClsid: LPCLSID) -> HRESULT,
     >,
     pub Run: ::core::option::Option<
-        unsafe extern "C" fn(This: *mut IRunnableObject, pbc: LPBINDCTX) -> HRESULT,
+        unsafe extern "system" fn(This: *mut IRunnableObject, pbc: LPBINDCTX) -> HRESULT,
     >,
-    pub IsRunning: ::core::option::Option<unsafe extern "C" fn(This: *mut IRunnableObject) -> BOOL>,
+    pub IsRunning: ::core::option::Option<unsafe extern "system" fn(This: *mut IRunnableObject) -> BOOL>,
     pub LockRunning: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IRunnableObject,
             fLock: BOOL,
             fLastUnlockCloses: BOOL,
         ) -> HRESULT,
     >,
     pub SetContainedObject: ::core::option::Option<
-        unsafe extern "C" fn(This: *mut IRunnableObject, fContained: BOOL) -> HRESULT,
+        unsafe extern "system" fn(This: *mut IRunnableObject, fContained: BOOL) -> HRESULT,
     >,
 }
 #[repr(C)]
@@ -4326,18 +4326,18 @@ pub struct IRunnableObject {
 #[derive(Debug, Copy, Clone)]
 pub struct IRunningObjectTableVtbl {
     pub QueryInterface: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IRunningObjectTable,
             riid: *const IID,
             ppvObject: *mut *mut ::core::ffi::c_void,
         ) -> HRESULT,
     >,
     pub AddRef:
-        ::core::option::Option<unsafe extern "C" fn(This: *mut IRunningObjectTable) -> ULONG>,
+        ::core::option::Option<unsafe extern "system" fn(This: *mut IRunningObjectTable) -> ULONG>,
     pub Release:
-        ::core::option::Option<unsafe extern "C" fn(This: *mut IRunningObjectTable) -> ULONG>,
+        ::core::option::Option<unsafe extern "system" fn(This: *mut IRunningObjectTable) -> ULONG>,
     pub Register: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IRunningObjectTable,
             grfFlags: DWORD,
             punkObject: *mut IUnknown,
@@ -4346,37 +4346,37 @@ pub struct IRunningObjectTableVtbl {
         ) -> HRESULT,
     >,
     pub Revoke: ::core::option::Option<
-        unsafe extern "C" fn(This: *mut IRunningObjectTable, dwRegister: DWORD) -> HRESULT,
+        unsafe extern "system" fn(This: *mut IRunningObjectTable, dwRegister: DWORD) -> HRESULT,
     >,
     pub IsRunning: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IRunningObjectTable,
             pmkObjectName: *mut IMoniker,
         ) -> HRESULT,
     >,
     pub GetObjectA: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IRunningObjectTable,
             pmkObjectName: *mut IMoniker,
             ppunkObject: *mut *mut IUnknown,
         ) -> HRESULT,
     >,
     pub NoteChangeTime: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IRunningObjectTable,
             dwRegister: DWORD,
             pfiletime: *mut FILETIME,
         ) -> HRESULT,
     >,
     pub GetTimeOfLastChange: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IRunningObjectTable,
             pmkObjectName: *mut IMoniker,
             pfiletime: *mut FILETIME,
         ) -> HRESULT,
     >,
     pub EnumRunning: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IRunningObjectTable,
             ppenumMoniker: *mut *mut IEnumMoniker,
         ) -> HRESULT,
@@ -4391,16 +4391,16 @@ pub struct IRunningObjectTable {
 #[derive(Debug, Copy, Clone)]
 pub struct IPersistVtbl {
     pub QueryInterface: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IPersist,
             riid: *const IID,
             ppvObject: *mut *mut ::core::ffi::c_void,
         ) -> HRESULT,
     >,
-    pub AddRef: ::core::option::Option<unsafe extern "C" fn(This: *mut IPersist) -> ULONG>,
-    pub Release: ::core::option::Option<unsafe extern "C" fn(This: *mut IPersist) -> ULONG>,
+    pub AddRef: ::core::option::Option<unsafe extern "system" fn(This: *mut IPersist) -> ULONG>,
+    pub Release: ::core::option::Option<unsafe extern "system" fn(This: *mut IPersist) -> ULONG>,
     pub GetClassID: ::core::option::Option<
-        unsafe extern "C" fn(This: *mut IPersist, pClassID: *mut CLSID) -> HRESULT,
+        unsafe extern "system" fn(This: *mut IPersist, pClassID: *mut CLSID) -> HRESULT,
     >,
 }
 #[repr(C)]
@@ -4412,30 +4412,30 @@ pub struct IPersist {
 #[derive(Debug, Copy, Clone)]
 pub struct IPersistStreamVtbl {
     pub QueryInterface: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IPersistStream,
             riid: *const IID,
             ppvObject: *mut *mut ::core::ffi::c_void,
         ) -> HRESULT,
     >,
-    pub AddRef: ::core::option::Option<unsafe extern "C" fn(This: *mut IPersistStream) -> ULONG>,
-    pub Release: ::core::option::Option<unsafe extern "C" fn(This: *mut IPersistStream) -> ULONG>,
+    pub AddRef: ::core::option::Option<unsafe extern "system" fn(This: *mut IPersistStream) -> ULONG>,
+    pub Release: ::core::option::Option<unsafe extern "system" fn(This: *mut IPersistStream) -> ULONG>,
     pub GetClassID: ::core::option::Option<
-        unsafe extern "C" fn(This: *mut IPersistStream, pClassID: *mut CLSID) -> HRESULT,
+        unsafe extern "system" fn(This: *mut IPersistStream, pClassID: *mut CLSID) -> HRESULT,
     >,
-    pub IsDirty: ::core::option::Option<unsafe extern "C" fn(This: *mut IPersistStream) -> HRESULT>,
+    pub IsDirty: ::core::option::Option<unsafe extern "system" fn(This: *mut IPersistStream) -> HRESULT>,
     pub Load: ::core::option::Option<
-        unsafe extern "C" fn(This: *mut IPersistStream, pStm: *mut IStream) -> HRESULT,
+        unsafe extern "system" fn(This: *mut IPersistStream, pStm: *mut IStream) -> HRESULT,
     >,
     pub Save: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IPersistStream,
             pStm: *mut IStream,
             fClearDirty: BOOL,
         ) -> HRESULT,
     >,
     pub GetSizeMax: ::core::option::Option<
-        unsafe extern "C" fn(This: *mut IPersistStream, pcbSize: *mut ULARGE_INTEGER) -> HRESULT,
+        unsafe extern "system" fn(This: *mut IPersistStream, pcbSize: *mut ULARGE_INTEGER) -> HRESULT,
     >,
 }
 #[repr(C)]
@@ -4447,29 +4447,29 @@ pub struct IPersistStream {
 #[derive(Debug, Copy, Clone)]
 pub struct IMonikerVtbl {
     pub QueryInterface: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IMoniker,
             riid: *const IID,
             ppvObject: *mut *mut ::core::ffi::c_void,
         ) -> HRESULT,
     >,
-    pub AddRef: ::core::option::Option<unsafe extern "C" fn(This: *mut IMoniker) -> ULONG>,
-    pub Release: ::core::option::Option<unsafe extern "C" fn(This: *mut IMoniker) -> ULONG>,
+    pub AddRef: ::core::option::Option<unsafe extern "system" fn(This: *mut IMoniker) -> ULONG>,
+    pub Release: ::core::option::Option<unsafe extern "system" fn(This: *mut IMoniker) -> ULONG>,
     pub GetClassID: ::core::option::Option<
-        unsafe extern "C" fn(This: *mut IMoniker, pClassID: *mut CLSID) -> HRESULT,
+        unsafe extern "system" fn(This: *mut IMoniker, pClassID: *mut CLSID) -> HRESULT,
     >,
-    pub IsDirty: ::core::option::Option<unsafe extern "C" fn(This: *mut IMoniker) -> HRESULT>,
+    pub IsDirty: ::core::option::Option<unsafe extern "system" fn(This: *mut IMoniker) -> HRESULT>,
     pub Load: ::core::option::Option<
-        unsafe extern "C" fn(This: *mut IMoniker, pStm: *mut IStream) -> HRESULT,
+        unsafe extern "system" fn(This: *mut IMoniker, pStm: *mut IStream) -> HRESULT,
     >,
     pub Save: ::core::option::Option<
-        unsafe extern "C" fn(This: *mut IMoniker, pStm: *mut IStream, fClearDirty: BOOL) -> HRESULT,
+        unsafe extern "system" fn(This: *mut IMoniker, pStm: *mut IStream, fClearDirty: BOOL) -> HRESULT,
     >,
     pub GetSizeMax: ::core::option::Option<
-        unsafe extern "C" fn(This: *mut IMoniker, pcbSize: *mut ULARGE_INTEGER) -> HRESULT,
+        unsafe extern "system" fn(This: *mut IMoniker, pcbSize: *mut ULARGE_INTEGER) -> HRESULT,
     >,
     pub BindToObject: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IMoniker,
             pbc: *mut IBindCtx,
             pmkToLeft: *mut IMoniker,
@@ -4478,7 +4478,7 @@ pub struct IMonikerVtbl {
         ) -> HRESULT,
     >,
     pub BindToStorage: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IMoniker,
             pbc: *mut IBindCtx,
             pmkToLeft: *mut IMoniker,
@@ -4487,7 +4487,7 @@ pub struct IMonikerVtbl {
         ) -> HRESULT,
     >,
     pub Reduce: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IMoniker,
             pbc: *mut IBindCtx,
             dwReduceHowFar: DWORD,
@@ -4496,7 +4496,7 @@ pub struct IMonikerVtbl {
         ) -> HRESULT,
     >,
     pub ComposeWith: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IMoniker,
             pmkRight: *mut IMoniker,
             fOnlyIfNotGeneric: BOOL,
@@ -4504,20 +4504,20 @@ pub struct IMonikerVtbl {
         ) -> HRESULT,
     >,
     pub Enum: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IMoniker,
             fForward: BOOL,
             ppenumMoniker: *mut *mut IEnumMoniker,
         ) -> HRESULT,
     >,
     pub IsEqual: ::core::option::Option<
-        unsafe extern "C" fn(This: *mut IMoniker, pmkOtherMoniker: *mut IMoniker) -> HRESULT,
+        unsafe extern "system" fn(This: *mut IMoniker, pmkOtherMoniker: *mut IMoniker) -> HRESULT,
     >,
     pub Hash: ::core::option::Option<
-        unsafe extern "C" fn(This: *mut IMoniker, pdwHash: *mut DWORD) -> HRESULT,
+        unsafe extern "system" fn(This: *mut IMoniker, pdwHash: *mut DWORD) -> HRESULT,
     >,
     pub IsRunning: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IMoniker,
             pbc: *mut IBindCtx,
             pmkToLeft: *mut IMoniker,
@@ -4525,7 +4525,7 @@ pub struct IMonikerVtbl {
         ) -> HRESULT,
     >,
     pub GetTimeOfLastChange: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IMoniker,
             pbc: *mut IBindCtx,
             pmkToLeft: *mut IMoniker,
@@ -4533,24 +4533,24 @@ pub struct IMonikerVtbl {
         ) -> HRESULT,
     >,
     pub Inverse: ::core::option::Option<
-        unsafe extern "C" fn(This: *mut IMoniker, ppmk: *mut *mut IMoniker) -> HRESULT,
+        unsafe extern "system" fn(This: *mut IMoniker, ppmk: *mut *mut IMoniker) -> HRESULT,
     >,
     pub CommonPrefixWith: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IMoniker,
             pmkOther: *mut IMoniker,
             ppmkPrefix: *mut *mut IMoniker,
         ) -> HRESULT,
     >,
     pub RelativePathTo: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IMoniker,
             pmkOther: *mut IMoniker,
             ppmkRelPath: *mut *mut IMoniker,
         ) -> HRESULT,
     >,
     pub GetDisplayName: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IMoniker,
             pbc: *mut IBindCtx,
             pmkToLeft: *mut IMoniker,
@@ -4558,7 +4558,7 @@ pub struct IMonikerVtbl {
         ) -> HRESULT,
     >,
     pub ParseDisplayName: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IMoniker,
             pbc: *mut IBindCtx,
             pmkToLeft: *mut IMoniker,
@@ -4568,7 +4568,7 @@ pub struct IMonikerVtbl {
         ) -> HRESULT,
     >,
     pub IsSystemMoniker: ::core::option::Option<
-        unsafe extern "C" fn(This: *mut IMoniker, pdwMksys: *mut DWORD) -> HRESULT,
+        unsafe extern "system" fn(This: *mut IMoniker, pdwMksys: *mut DWORD) -> HRESULT,
     >,
 }
 #[repr(C)]
@@ -4580,16 +4580,16 @@ pub struct IMoniker {
 #[derive(Debug, Copy, Clone)]
 pub struct IROTDataVtbl {
     pub QueryInterface: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IROTData,
             riid: *const IID,
             ppvObject: *mut *mut ::core::ffi::c_void,
         ) -> HRESULT,
     >,
-    pub AddRef: ::core::option::Option<unsafe extern "C" fn(This: *mut IROTData) -> ULONG>,
-    pub Release: ::core::option::Option<unsafe extern "C" fn(This: *mut IROTData) -> ULONG>,
+    pub AddRef: ::core::option::Option<unsafe extern "system" fn(This: *mut IROTData) -> ULONG>,
+    pub Release: ::core::option::Option<unsafe extern "system" fn(This: *mut IROTData) -> ULONG>,
     pub GetComparisonData: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IROTData,
             pbData: *mut byte,
             cbMax: ULONG,
@@ -4606,16 +4606,16 @@ pub struct IROTData {
 #[derive(Debug, Copy, Clone)]
 pub struct IClassActivatorVtbl {
     pub QueryInterface: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IClassActivator,
             riid: *const IID,
             ppvObject: *mut *mut ::core::ffi::c_void,
         ) -> HRESULT,
     >,
-    pub AddRef: ::core::option::Option<unsafe extern "C" fn(This: *mut IClassActivator) -> ULONG>,
-    pub Release: ::core::option::Option<unsafe extern "C" fn(This: *mut IClassActivator) -> ULONG>,
+    pub AddRef: ::core::option::Option<unsafe extern "system" fn(This: *mut IClassActivator) -> ULONG>,
+    pub Release: ::core::option::Option<unsafe extern "system" fn(This: *mut IClassActivator) -> ULONG>,
     pub GetClassObject: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IClassActivator,
             rclsid: *const CLSID,
             dwClassContext: DWORD,
@@ -4634,16 +4634,16 @@ pub struct IClassActivator {
 #[derive(Debug, Copy, Clone)]
 pub struct IEnumSTATSTGVtbl {
     pub QueryInterface: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IEnumSTATSTG,
             riid: *const IID,
             ppvObject: *mut *mut ::core::ffi::c_void,
         ) -> HRESULT,
     >,
-    pub AddRef: ::core::option::Option<unsafe extern "C" fn(This: *mut IEnumSTATSTG) -> ULONG>,
-    pub Release: ::core::option::Option<unsafe extern "C" fn(This: *mut IEnumSTATSTG) -> ULONG>,
+    pub AddRef: ::core::option::Option<unsafe extern "system" fn(This: *mut IEnumSTATSTG) -> ULONG>,
+    pub Release: ::core::option::Option<unsafe extern "system" fn(This: *mut IEnumSTATSTG) -> ULONG>,
     pub Next: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IEnumSTATSTG,
             celt: ULONG,
             rgelt: *mut STATSTG,
@@ -4651,11 +4651,11 @@ pub struct IEnumSTATSTGVtbl {
         ) -> HRESULT,
     >,
     pub Skip: ::core::option::Option<
-        unsafe extern "C" fn(This: *mut IEnumSTATSTG, celt: ULONG) -> HRESULT,
+        unsafe extern "system" fn(This: *mut IEnumSTATSTG, celt: ULONG) -> HRESULT,
     >,
-    pub Reset: ::core::option::Option<unsafe extern "C" fn(This: *mut IEnumSTATSTG) -> HRESULT>,
+    pub Reset: ::core::option::Option<unsafe extern "system" fn(This: *mut IEnumSTATSTG) -> HRESULT>,
     pub Clone: ::core::option::Option<
-        unsafe extern "C" fn(This: *mut IEnumSTATSTG, ppenum: *mut *mut IEnumSTATSTG) -> HRESULT,
+        unsafe extern "system" fn(This: *mut IEnumSTATSTG, ppenum: *mut *mut IEnumSTATSTG) -> HRESULT,
     >,
 }
 #[repr(C)]
@@ -4668,16 +4668,16 @@ pub type SNB = *mut *mut OLECHAR;
 #[derive(Debug, Copy, Clone)]
 pub struct IStorageVtbl {
     pub QueryInterface: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IStorage,
             riid: *const IID,
             ppvObject: *mut *mut ::core::ffi::c_void,
         ) -> HRESULT,
     >,
-    pub AddRef: ::core::option::Option<unsafe extern "C" fn(This: *mut IStorage) -> ULONG>,
-    pub Release: ::core::option::Option<unsafe extern "C" fn(This: *mut IStorage) -> ULONG>,
+    pub AddRef: ::core::option::Option<unsafe extern "system" fn(This: *mut IStorage) -> ULONG>,
+    pub Release: ::core::option::Option<unsafe extern "system" fn(This: *mut IStorage) -> ULONG>,
     pub CreateStream: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IStorage,
             pwcsName: LPCOLESTR,
             grfMode: DWORD,
@@ -4687,7 +4687,7 @@ pub struct IStorageVtbl {
         ) -> HRESULT,
     >,
     pub OpenStream: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IStorage,
             pwcsName: LPCOLESTR,
             reserved1: *mut ::core::ffi::c_void,
@@ -4697,7 +4697,7 @@ pub struct IStorageVtbl {
         ) -> HRESULT,
     >,
     pub CreateStorage: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IStorage,
             pwcsName: LPCOLESTR,
             grfMode: DWORD,
@@ -4707,7 +4707,7 @@ pub struct IStorageVtbl {
         ) -> HRESULT,
     >,
     pub OpenStorage: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IStorage,
             pwcsName: LPCOLESTR,
             pstgPriority: *mut IStorage,
@@ -4718,7 +4718,7 @@ pub struct IStorageVtbl {
         ) -> HRESULT,
     >,
     pub CopyTo: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IStorage,
             ciidExclude: DWORD,
             rgiidExclude: *const IID,
@@ -4727,7 +4727,7 @@ pub struct IStorageVtbl {
         ) -> HRESULT,
     >,
     pub MoveElementTo: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IStorage,
             pwcsName: LPCOLESTR,
             pstgDest: *mut IStorage,
@@ -4736,11 +4736,11 @@ pub struct IStorageVtbl {
         ) -> HRESULT,
     >,
     pub Commit: ::core::option::Option<
-        unsafe extern "C" fn(This: *mut IStorage, grfCommitFlags: DWORD) -> HRESULT,
+        unsafe extern "system" fn(This: *mut IStorage, grfCommitFlags: DWORD) -> HRESULT,
     >,
-    pub Revert: ::core::option::Option<unsafe extern "C" fn(This: *mut IStorage) -> HRESULT>,
+    pub Revert: ::core::option::Option<unsafe extern "system" fn(This: *mut IStorage) -> HRESULT>,
     pub EnumElements: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IStorage,
             reserved1: DWORD,
             reserved2: *mut ::core::ffi::c_void,
@@ -4749,17 +4749,17 @@ pub struct IStorageVtbl {
         ) -> HRESULT,
     >,
     pub DestroyElement: ::core::option::Option<
-        unsafe extern "C" fn(This: *mut IStorage, pwcsName: LPCOLESTR) -> HRESULT,
+        unsafe extern "system" fn(This: *mut IStorage, pwcsName: LPCOLESTR) -> HRESULT,
     >,
     pub RenameElement: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IStorage,
             pwcsOldName: LPCOLESTR,
             pwcsNewName: LPCOLESTR,
         ) -> HRESULT,
     >,
     pub SetElementTimes: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IStorage,
             pwcsName: LPCOLESTR,
             pctime: *const FILETIME,
@@ -4768,13 +4768,13 @@ pub struct IStorageVtbl {
         ) -> HRESULT,
     >,
     pub SetClass: ::core::option::Option<
-        unsafe extern "C" fn(This: *mut IStorage, clsid: *const CLSID) -> HRESULT,
+        unsafe extern "system" fn(This: *mut IStorage, clsid: *const CLSID) -> HRESULT,
     >,
     pub SetStateBits: ::core::option::Option<
-        unsafe extern "C" fn(This: *mut IStorage, grfStateBits: DWORD, grfMask: DWORD) -> HRESULT,
+        unsafe extern "system" fn(This: *mut IStorage, grfStateBits: DWORD, grfMask: DWORD) -> HRESULT,
     >,
     pub Stat: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IStorage,
             pstatstg: *mut STATSTG,
             grfStatFlag: DWORD,
@@ -4790,37 +4790,37 @@ pub struct IStorage {
 #[derive(Debug, Copy, Clone)]
 pub struct IPersistFileVtbl {
     pub QueryInterface: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IPersistFile,
             riid: *const IID,
             ppvObject: *mut *mut ::core::ffi::c_void,
         ) -> HRESULT,
     >,
-    pub AddRef: ::core::option::Option<unsafe extern "C" fn(This: *mut IPersistFile) -> ULONG>,
-    pub Release: ::core::option::Option<unsafe extern "C" fn(This: *mut IPersistFile) -> ULONG>,
+    pub AddRef: ::core::option::Option<unsafe extern "system" fn(This: *mut IPersistFile) -> ULONG>,
+    pub Release: ::core::option::Option<unsafe extern "system" fn(This: *mut IPersistFile) -> ULONG>,
     pub GetClassID: ::core::option::Option<
-        unsafe extern "C" fn(This: *mut IPersistFile, pClassID: *mut CLSID) -> HRESULT,
+        unsafe extern "system" fn(This: *mut IPersistFile, pClassID: *mut CLSID) -> HRESULT,
     >,
-    pub IsDirty: ::core::option::Option<unsafe extern "C" fn(This: *mut IPersistFile) -> HRESULT>,
+    pub IsDirty: ::core::option::Option<unsafe extern "system" fn(This: *mut IPersistFile) -> HRESULT>,
     pub Load: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IPersistFile,
             pszFileName: LPCOLESTR,
             dwMode: DWORD,
         ) -> HRESULT,
     >,
     pub Save: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IPersistFile,
             pszFileName: LPCOLESTR,
             fRemember: BOOL,
         ) -> HRESULT,
     >,
     pub SaveCompleted: ::core::option::Option<
-        unsafe extern "C" fn(This: *mut IPersistFile, pszFileName: LPCOLESTR) -> HRESULT,
+        unsafe extern "system" fn(This: *mut IPersistFile, pszFileName: LPCOLESTR) -> HRESULT,
     >,
     pub GetCurFile: ::core::option::Option<
-        unsafe extern "C" fn(This: *mut IPersistFile, ppszFileName: *mut LPOLESTR) -> HRESULT,
+        unsafe extern "system" fn(This: *mut IPersistFile, ppszFileName: *mut LPOLESTR) -> HRESULT,
     >,
 }
 #[repr(C)]
@@ -4832,37 +4832,37 @@ pub struct IPersistFile {
 #[derive(Debug, Copy, Clone)]
 pub struct IPersistStorageVtbl {
     pub QueryInterface: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IPersistStorage,
             riid: *const IID,
             ppvObject: *mut *mut ::core::ffi::c_void,
         ) -> HRESULT,
     >,
-    pub AddRef: ::core::option::Option<unsafe extern "C" fn(This: *mut IPersistStorage) -> ULONG>,
-    pub Release: ::core::option::Option<unsafe extern "C" fn(This: *mut IPersistStorage) -> ULONG>,
+    pub AddRef: ::core::option::Option<unsafe extern "system" fn(This: *mut IPersistStorage) -> ULONG>,
+    pub Release: ::core::option::Option<unsafe extern "system" fn(This: *mut IPersistStorage) -> ULONG>,
     pub GetClassID: ::core::option::Option<
-        unsafe extern "C" fn(This: *mut IPersistStorage, pClassID: *mut CLSID) -> HRESULT,
+        unsafe extern "system" fn(This: *mut IPersistStorage, pClassID: *mut CLSID) -> HRESULT,
     >,
     pub IsDirty:
-        ::core::option::Option<unsafe extern "C" fn(This: *mut IPersistStorage) -> HRESULT>,
+        ::core::option::Option<unsafe extern "system" fn(This: *mut IPersistStorage) -> HRESULT>,
     pub InitNew: ::core::option::Option<
-        unsafe extern "C" fn(This: *mut IPersistStorage, pStg: *mut IStorage) -> HRESULT,
+        unsafe extern "system" fn(This: *mut IPersistStorage, pStg: *mut IStorage) -> HRESULT,
     >,
     pub Load: ::core::option::Option<
-        unsafe extern "C" fn(This: *mut IPersistStorage, pStg: *mut IStorage) -> HRESULT,
+        unsafe extern "system" fn(This: *mut IPersistStorage, pStg: *mut IStorage) -> HRESULT,
     >,
     pub Save: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IPersistStorage,
             pStgSave: *mut IStorage,
             fSameAsLoad: BOOL,
         ) -> HRESULT,
     >,
     pub SaveCompleted: ::core::option::Option<
-        unsafe extern "C" fn(This: *mut IPersistStorage, pStgNew: *mut IStorage) -> HRESULT,
+        unsafe extern "system" fn(This: *mut IPersistStorage, pStgNew: *mut IStorage) -> HRESULT,
     >,
     pub HandsOffStorage:
-        ::core::option::Option<unsafe extern "C" fn(This: *mut IPersistStorage) -> HRESULT>,
+        ::core::option::Option<unsafe extern "system" fn(This: *mut IPersistStorage) -> HRESULT>,
 }
 #[repr(C)]
 #[derive(Debug, Copy, Clone)]
@@ -4873,16 +4873,16 @@ pub struct IPersistStorage {
 #[derive(Debug, Copy, Clone)]
 pub struct IRootStorageVtbl {
     pub QueryInterface: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IRootStorage,
             riid: *const IID,
             ppvObject: *mut *mut ::core::ffi::c_void,
         ) -> HRESULT,
     >,
-    pub AddRef: ::core::option::Option<unsafe extern "C" fn(This: *mut IRootStorage) -> ULONG>,
-    pub Release: ::core::option::Option<unsafe extern "C" fn(This: *mut IRootStorage) -> ULONG>,
+    pub AddRef: ::core::option::Option<unsafe extern "system" fn(This: *mut IRootStorage) -> ULONG>,
+    pub Release: ::core::option::Option<unsafe extern "system" fn(This: *mut IRootStorage) -> ULONG>,
     pub SwitchToFile: ::core::option::Option<
-        unsafe extern "C" fn(This: *mut IRootStorage, pszFile: LPOLESTR) -> HRESULT,
+        unsafe extern "system" fn(This: *mut IRootStorage, pszFile: LPOLESTR) -> HRESULT,
     >,
 }
 #[repr(C)]
@@ -4894,16 +4894,16 @@ pub struct IRootStorage {
 #[derive(Debug, Copy, Clone)]
 pub struct ILockBytesVtbl {
     pub QueryInterface: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut ILockBytes,
             riid: *const IID,
             ppvObject: *mut *mut ::core::ffi::c_void,
         ) -> HRESULT,
     >,
-    pub AddRef: ::core::option::Option<unsafe extern "C" fn(This: *mut ILockBytes) -> ULONG>,
-    pub Release: ::core::option::Option<unsafe extern "C" fn(This: *mut ILockBytes) -> ULONG>,
+    pub AddRef: ::core::option::Option<unsafe extern "system" fn(This: *mut ILockBytes) -> ULONG>,
+    pub Release: ::core::option::Option<unsafe extern "system" fn(This: *mut ILockBytes) -> ULONG>,
     pub ReadAt: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut ILockBytes,
             ulOffset: ULARGE_INTEGER,
             pv: *mut ::core::ffi::c_void,
@@ -4912,7 +4912,7 @@ pub struct ILockBytesVtbl {
         ) -> HRESULT,
     >,
     pub WriteAt: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut ILockBytes,
             ulOffset: ULARGE_INTEGER,
             pv: *const ::core::ffi::c_void,
@@ -4920,12 +4920,12 @@ pub struct ILockBytesVtbl {
             pcbWritten: *mut ULONG,
         ) -> HRESULT,
     >,
-    pub Flush: ::core::option::Option<unsafe extern "C" fn(This: *mut ILockBytes) -> HRESULT>,
+    pub Flush: ::core::option::Option<unsafe extern "system" fn(This: *mut ILockBytes) -> HRESULT>,
     pub SetSize: ::core::option::Option<
-        unsafe extern "C" fn(This: *mut ILockBytes, cb: ULARGE_INTEGER) -> HRESULT,
+        unsafe extern "system" fn(This: *mut ILockBytes, cb: ULARGE_INTEGER) -> HRESULT,
     >,
     pub LockRegion: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut ILockBytes,
             libOffset: ULARGE_INTEGER,
             cb: ULARGE_INTEGER,
@@ -4933,7 +4933,7 @@ pub struct ILockBytesVtbl {
         ) -> HRESULT,
     >,
     pub UnlockRegion: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut ILockBytes,
             libOffset: ULARGE_INTEGER,
             cb: ULARGE_INTEGER,
@@ -4941,7 +4941,7 @@ pub struct ILockBytesVtbl {
         ) -> HRESULT,
     >,
     pub Stat: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut ILockBytes,
             pstatstg: *mut STATSTG,
             grfStatFlag: DWORD,
@@ -4957,16 +4957,16 @@ pub struct ILockBytes {
 #[derive(Debug, Copy, Clone)]
 pub struct IFillLockBytesVtbl {
     pub QueryInterface: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IFillLockBytes,
             riid: *const IID,
             ppvObject: *mut *mut ::core::ffi::c_void,
         ) -> HRESULT,
     >,
-    pub AddRef: ::core::option::Option<unsafe extern "C" fn(This: *mut IFillLockBytes) -> ULONG>,
-    pub Release: ::core::option::Option<unsafe extern "C" fn(This: *mut IFillLockBytes) -> ULONG>,
+    pub AddRef: ::core::option::Option<unsafe extern "system" fn(This: *mut IFillLockBytes) -> ULONG>,
+    pub Release: ::core::option::Option<unsafe extern "system" fn(This: *mut IFillLockBytes) -> ULONG>,
     pub FillAppend: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IFillLockBytes,
             pv: *const ::core::ffi::c_void,
             cb: ULONG,
@@ -4974,7 +4974,7 @@ pub struct IFillLockBytesVtbl {
         ) -> HRESULT,
     >,
     pub FillAt: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IFillLockBytes,
             ulOffset: ULARGE_INTEGER,
             pv: *const ::core::ffi::c_void,
@@ -4983,10 +4983,10 @@ pub struct IFillLockBytesVtbl {
         ) -> HRESULT,
     >,
     pub SetFillSize: ::core::option::Option<
-        unsafe extern "C" fn(This: *mut IFillLockBytes, ulSize: ULARGE_INTEGER) -> HRESULT,
+        unsafe extern "system" fn(This: *mut IFillLockBytes, ulSize: ULARGE_INTEGER) -> HRESULT,
     >,
     pub Terminate: ::core::option::Option<
-        unsafe extern "C" fn(This: *mut IFillLockBytes, bCanceled: BOOL) -> HRESULT,
+        unsafe extern "system" fn(This: *mut IFillLockBytes, bCanceled: BOOL) -> HRESULT,
     >,
 }
 #[repr(C)]
@@ -4998,16 +4998,16 @@ pub struct IFillLockBytes {
 #[derive(Debug, Copy, Clone)]
 pub struct IProgressNotifyVtbl {
     pub QueryInterface: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IProgressNotify,
             riid: *const IID,
             ppvObject: *mut *mut ::core::ffi::c_void,
         ) -> HRESULT,
     >,
-    pub AddRef: ::core::option::Option<unsafe extern "C" fn(This: *mut IProgressNotify) -> ULONG>,
-    pub Release: ::core::option::Option<unsafe extern "C" fn(This: *mut IProgressNotify) -> ULONG>,
+    pub AddRef: ::core::option::Option<unsafe extern "system" fn(This: *mut IProgressNotify) -> ULONG>,
+    pub Release: ::core::option::Option<unsafe extern "system" fn(This: *mut IProgressNotify) -> ULONG>,
     pub OnProgress: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IProgressNotify,
             dwProgressCurrent: DWORD,
             dwProgressMaximum: DWORD,
@@ -5034,16 +5034,16 @@ pub type StorageLayout = tagStorageLayout;
 #[derive(Debug, Copy, Clone)]
 pub struct ILayoutStorageVtbl {
     pub QueryInterface: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut ILayoutStorage,
             riid: *const IID,
             ppvObject: *mut *mut ::core::ffi::c_void,
         ) -> HRESULT,
     >,
-    pub AddRef: ::core::option::Option<unsafe extern "C" fn(This: *mut ILayoutStorage) -> ULONG>,
-    pub Release: ::core::option::Option<unsafe extern "C" fn(This: *mut ILayoutStorage) -> ULONG>,
+    pub AddRef: ::core::option::Option<unsafe extern "system" fn(This: *mut ILayoutStorage) -> ULONG>,
+    pub Release: ::core::option::Option<unsafe extern "system" fn(This: *mut ILayoutStorage) -> ULONG>,
     pub LayoutScript: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut ILayoutStorage,
             pStorageLayout: *mut StorageLayout,
             nEntries: DWORD,
@@ -5051,14 +5051,14 @@ pub struct ILayoutStorageVtbl {
         ) -> HRESULT,
     >,
     pub BeginMonitor:
-        ::core::option::Option<unsafe extern "C" fn(This: *mut ILayoutStorage) -> HRESULT>,
+        ::core::option::Option<unsafe extern "system" fn(This: *mut ILayoutStorage) -> HRESULT>,
     pub EndMonitor:
-        ::core::option::Option<unsafe extern "C" fn(This: *mut ILayoutStorage) -> HRESULT>,
+        ::core::option::Option<unsafe extern "system" fn(This: *mut ILayoutStorage) -> HRESULT>,
     pub ReLayoutDocfile: ::core::option::Option<
-        unsafe extern "C" fn(This: *mut ILayoutStorage, pwcsNewDfName: *mut OLECHAR) -> HRESULT,
+        unsafe extern "system" fn(This: *mut ILayoutStorage, pwcsNewDfName: *mut OLECHAR) -> HRESULT,
     >,
     pub ReLayoutDocfileOnILockBytes: ::core::option::Option<
-        unsafe extern "C" fn(This: *mut ILayoutStorage, pILockBytes: *mut ILockBytes) -> HRESULT,
+        unsafe extern "system" fn(This: *mut ILayoutStorage, pILockBytes: *mut ILockBytes) -> HRESULT,
     >,
 }
 #[repr(C)]
@@ -5070,18 +5070,18 @@ pub struct ILayoutStorage {
 #[derive(Debug, Copy, Clone)]
 pub struct IBlockingLockVtbl {
     pub QueryInterface: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IBlockingLock,
             riid: *const IID,
             ppvObject: *mut *mut ::core::ffi::c_void,
         ) -> HRESULT,
     >,
-    pub AddRef: ::core::option::Option<unsafe extern "C" fn(This: *mut IBlockingLock) -> ULONG>,
-    pub Release: ::core::option::Option<unsafe extern "C" fn(This: *mut IBlockingLock) -> ULONG>,
+    pub AddRef: ::core::option::Option<unsafe extern "system" fn(This: *mut IBlockingLock) -> ULONG>,
+    pub Release: ::core::option::Option<unsafe extern "system" fn(This: *mut IBlockingLock) -> ULONG>,
     pub Lock: ::core::option::Option<
-        unsafe extern "C" fn(This: *mut IBlockingLock, dwTimeout: DWORD) -> HRESULT,
+        unsafe extern "system" fn(This: *mut IBlockingLock, dwTimeout: DWORD) -> HRESULT,
     >,
-    pub Unlock: ::core::option::Option<unsafe extern "C" fn(This: *mut IBlockingLock) -> HRESULT>,
+    pub Unlock: ::core::option::Option<unsafe extern "system" fn(This: *mut IBlockingLock) -> HRESULT>,
 }
 #[repr(C)]
 #[derive(Debug, Copy, Clone)]
@@ -5092,18 +5092,18 @@ pub struct IBlockingLock {
 #[derive(Debug, Copy, Clone)]
 pub struct ITimeAndNoticeControlVtbl {
     pub QueryInterface: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut ITimeAndNoticeControl,
             riid: *const IID,
             ppvObject: *mut *mut ::core::ffi::c_void,
         ) -> HRESULT,
     >,
     pub AddRef:
-        ::core::option::Option<unsafe extern "C" fn(This: *mut ITimeAndNoticeControl) -> ULONG>,
+        ::core::option::Option<unsafe extern "system" fn(This: *mut ITimeAndNoticeControl) -> ULONG>,
     pub Release:
-        ::core::option::Option<unsafe extern "C" fn(This: *mut ITimeAndNoticeControl) -> ULONG>,
+        ::core::option::Option<unsafe extern "system" fn(This: *mut ITimeAndNoticeControl) -> ULONG>,
     pub SuppressChanges: ::core::option::Option<
-        unsafe extern "C" fn(This: *mut ITimeAndNoticeControl, res1: DWORD, res2: DWORD) -> HRESULT,
+        unsafe extern "system" fn(This: *mut ITimeAndNoticeControl, res1: DWORD, res2: DWORD) -> HRESULT,
     >,
 }
 #[repr(C)]
@@ -5115,16 +5115,16 @@ pub struct ITimeAndNoticeControl {
 #[derive(Debug, Copy, Clone)]
 pub struct IOplockStorageVtbl {
     pub QueryInterface: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IOplockStorage,
             riid: *const IID,
             ppvObject: *mut *mut ::core::ffi::c_void,
         ) -> HRESULT,
     >,
-    pub AddRef: ::core::option::Option<unsafe extern "C" fn(This: *mut IOplockStorage) -> ULONG>,
-    pub Release: ::core::option::Option<unsafe extern "C" fn(This: *mut IOplockStorage) -> ULONG>,
+    pub AddRef: ::core::option::Option<unsafe extern "system" fn(This: *mut IOplockStorage) -> ULONG>,
+    pub Release: ::core::option::Option<unsafe extern "system" fn(This: *mut IOplockStorage) -> ULONG>,
     pub CreateStorageEx: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IOplockStorage,
             pwcsName: LPCWSTR,
             grfMode: DWORD,
@@ -5135,7 +5135,7 @@ pub struct IOplockStorageVtbl {
         ) -> HRESULT,
     >,
     pub OpenStorageEx: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IOplockStorage,
             pwcsName: LPCWSTR,
             grfMode: DWORD,
@@ -5176,16 +5176,16 @@ pub type FORMATETC = tagFORMATETC;
 #[derive(Debug, Copy, Clone)]
 pub struct IEnumFORMATETCVtbl {
     pub QueryInterface: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IEnumFORMATETC,
             riid: *const IID,
             ppvObject: *mut *mut ::core::ffi::c_void,
         ) -> HRESULT,
     >,
-    pub AddRef: ::core::option::Option<unsafe extern "C" fn(This: *mut IEnumFORMATETC) -> ULONG>,
-    pub Release: ::core::option::Option<unsafe extern "C" fn(This: *mut IEnumFORMATETC) -> ULONG>,
+    pub AddRef: ::core::option::Option<unsafe extern "system" fn(This: *mut IEnumFORMATETC) -> ULONG>,
+    pub Release: ::core::option::Option<unsafe extern "system" fn(This: *mut IEnumFORMATETC) -> ULONG>,
     pub Next: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IEnumFORMATETC,
             celt: ULONG,
             rgelt: *mut FORMATETC,
@@ -5193,11 +5193,11 @@ pub struct IEnumFORMATETCVtbl {
         ) -> HRESULT,
     >,
     pub Skip: ::core::option::Option<
-        unsafe extern "C" fn(This: *mut IEnumFORMATETC, celt: ULONG) -> HRESULT,
+        unsafe extern "system" fn(This: *mut IEnumFORMATETC, celt: ULONG) -> HRESULT,
     >,
-    pub Reset: ::core::option::Option<unsafe extern "C" fn(This: *mut IEnumFORMATETC) -> HRESULT>,
+    pub Reset: ::core::option::Option<unsafe extern "system" fn(This: *mut IEnumFORMATETC) -> HRESULT>,
     pub Clone: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IEnumFORMATETC,
             ppenum: *mut *mut IEnumFORMATETC,
         ) -> HRESULT,
@@ -5221,16 +5221,16 @@ pub type STATDATA = tagSTATDATA;
 #[derive(Debug, Copy, Clone)]
 pub struct IEnumSTATDATAVtbl {
     pub QueryInterface: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IEnumSTATDATA,
             riid: *const IID,
             ppvObject: *mut *mut ::core::ffi::c_void,
         ) -> HRESULT,
     >,
-    pub AddRef: ::core::option::Option<unsafe extern "C" fn(This: *mut IEnumSTATDATA) -> ULONG>,
-    pub Release: ::core::option::Option<unsafe extern "C" fn(This: *mut IEnumSTATDATA) -> ULONG>,
+    pub AddRef: ::core::option::Option<unsafe extern "system" fn(This: *mut IEnumSTATDATA) -> ULONG>,
+    pub Release: ::core::option::Option<unsafe extern "system" fn(This: *mut IEnumSTATDATA) -> ULONG>,
     pub Next: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IEnumSTATDATA,
             celt: ULONG,
             rgelt: *mut STATDATA,
@@ -5238,11 +5238,11 @@ pub struct IEnumSTATDATAVtbl {
         ) -> HRESULT,
     >,
     pub Skip: ::core::option::Option<
-        unsafe extern "C" fn(This: *mut IEnumSTATDATA, celt: ULONG) -> HRESULT,
+        unsafe extern "system" fn(This: *mut IEnumSTATDATA, celt: ULONG) -> HRESULT,
     >,
-    pub Reset: ::core::option::Option<unsafe extern "C" fn(This: *mut IEnumSTATDATA) -> HRESULT>,
+    pub Reset: ::core::option::Option<unsafe extern "system" fn(This: *mut IEnumSTATDATA) -> HRESULT>,
     pub Clone: ::core::option::Option<
-        unsafe extern "C" fn(This: *mut IEnumSTATDATA, ppenum: *mut *mut IEnumSTATDATA) -> HRESULT,
+        unsafe extern "system" fn(This: *mut IEnumSTATDATA, ppenum: *mut *mut IEnumSTATDATA) -> HRESULT,
     >,
 }
 #[repr(C)]
@@ -5274,28 +5274,28 @@ pub type STGMEDIUM = uSTGMEDIUM;
 #[derive(Debug, Copy, Clone)]
 pub struct IAdviseSinkVtbl {
     pub QueryInterface: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IAdviseSink,
             riid: *const IID,
             ppvObject: *mut *mut ::core::ffi::c_void,
         ) -> HRESULT,
     >,
-    pub AddRef: ::core::option::Option<unsafe extern "C" fn(This: *mut IAdviseSink) -> ULONG>,
-    pub Release: ::core::option::Option<unsafe extern "C" fn(This: *mut IAdviseSink) -> ULONG>,
+    pub AddRef: ::core::option::Option<unsafe extern "system" fn(This: *mut IAdviseSink) -> ULONG>,
+    pub Release: ::core::option::Option<unsafe extern "system" fn(This: *mut IAdviseSink) -> ULONG>,
     pub OnDataChange: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IAdviseSink,
             pFormatetc: *mut FORMATETC,
             pStgmed: *mut STGMEDIUM,
         ),
     >,
     pub OnViewChange: ::core::option::Option<
-        unsafe extern "C" fn(This: *mut IAdviseSink, dwAspect: DWORD, lindex: LONG),
+        unsafe extern "system" fn(This: *mut IAdviseSink, dwAspect: DWORD, lindex: LONG),
     >,
     pub OnRename:
-        ::core::option::Option<unsafe extern "C" fn(This: *mut IAdviseSink, pmk: *mut IMoniker)>,
-    pub OnSave: ::core::option::Option<unsafe extern "C" fn(This: *mut IAdviseSink)>,
-    pub OnClose: ::core::option::Option<unsafe extern "C" fn(This: *mut IAdviseSink)>,
+        ::core::option::Option<unsafe extern "system" fn(This: *mut IAdviseSink, pmk: *mut IMoniker)>,
+    pub OnSave: ::core::option::Option<unsafe extern "system" fn(This: *mut IAdviseSink)>,
+    pub OnClose: ::core::option::Option<unsafe extern "system" fn(This: *mut IAdviseSink)>,
 }
 #[repr(C)]
 #[derive(Debug, Copy, Clone)]
@@ -5306,30 +5306,30 @@ pub struct IAdviseSink {
 #[derive(Debug, Copy, Clone)]
 pub struct IAdviseSink2Vtbl {
     pub QueryInterface: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IAdviseSink2,
             riid: *const IID,
             ppvObject: *mut *mut ::core::ffi::c_void,
         ) -> HRESULT,
     >,
-    pub AddRef: ::core::option::Option<unsafe extern "C" fn(This: *mut IAdviseSink2) -> ULONG>,
-    pub Release: ::core::option::Option<unsafe extern "C" fn(This: *mut IAdviseSink2) -> ULONG>,
+    pub AddRef: ::core::option::Option<unsafe extern "system" fn(This: *mut IAdviseSink2) -> ULONG>,
+    pub Release: ::core::option::Option<unsafe extern "system" fn(This: *mut IAdviseSink2) -> ULONG>,
     pub OnDataChange: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IAdviseSink2,
             pFormatetc: *mut FORMATETC,
             pStgmed: *mut STGMEDIUM,
         ),
     >,
     pub OnViewChange: ::core::option::Option<
-        unsafe extern "C" fn(This: *mut IAdviseSink2, dwAspect: DWORD, lindex: LONG),
+        unsafe extern "system" fn(This: *mut IAdviseSink2, dwAspect: DWORD, lindex: LONG),
     >,
     pub OnRename:
-        ::core::option::Option<unsafe extern "C" fn(This: *mut IAdviseSink2, pmk: *mut IMoniker)>,
-    pub OnSave: ::core::option::Option<unsafe extern "C" fn(This: *mut IAdviseSink2)>,
-    pub OnClose: ::core::option::Option<unsafe extern "C" fn(This: *mut IAdviseSink2)>,
+        ::core::option::Option<unsafe extern "system" fn(This: *mut IAdviseSink2, pmk: *mut IMoniker)>,
+    pub OnSave: ::core::option::Option<unsafe extern "system" fn(This: *mut IAdviseSink2)>,
+    pub OnClose: ::core::option::Option<unsafe extern "system" fn(This: *mut IAdviseSink2)>,
     pub OnLinkSrcChange:
-        ::core::option::Option<unsafe extern "C" fn(This: *mut IAdviseSink2, pmk: *mut IMoniker)>,
+        ::core::option::Option<unsafe extern "system" fn(This: *mut IAdviseSink2, pmk: *mut IMoniker)>,
 }
 #[repr(C)]
 #[derive(Debug, Copy, Clone)]
@@ -5341,40 +5341,40 @@ pub type LPDATAOBJECT = *mut IDataObject;
 #[derive(Debug, Copy, Clone)]
 pub struct IDataObjectVtbl {
     pub QueryInterface: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IDataObject,
             riid: *const IID,
             ppvObject: *mut *mut ::core::ffi::c_void,
         ) -> HRESULT,
     >,
-    pub AddRef: ::core::option::Option<unsafe extern "C" fn(This: *mut IDataObject) -> ULONG>,
-    pub Release: ::core::option::Option<unsafe extern "C" fn(This: *mut IDataObject) -> ULONG>,
+    pub AddRef: ::core::option::Option<unsafe extern "system" fn(This: *mut IDataObject) -> ULONG>,
+    pub Release: ::core::option::Option<unsafe extern "system" fn(This: *mut IDataObject) -> ULONG>,
     pub GetData: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IDataObject,
             pformatetcIn: *mut FORMATETC,
             pmedium: *mut STGMEDIUM,
         ) -> HRESULT,
     >,
     pub GetDataHere: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IDataObject,
             pformatetc: *mut FORMATETC,
             pmedium: *mut STGMEDIUM,
         ) -> HRESULT,
     >,
     pub QueryGetData: ::core::option::Option<
-        unsafe extern "C" fn(This: *mut IDataObject, pformatetc: *mut FORMATETC) -> HRESULT,
+        unsafe extern "system" fn(This: *mut IDataObject, pformatetc: *mut FORMATETC) -> HRESULT,
     >,
     pub GetCanonicalFormatEtc: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IDataObject,
             pformatectIn: *mut FORMATETC,
             pformatetcOut: *mut FORMATETC,
         ) -> HRESULT,
     >,
     pub SetData: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IDataObject,
             pformatetc: *mut FORMATETC,
             pmedium: *mut STGMEDIUM,
@@ -5382,14 +5382,14 @@ pub struct IDataObjectVtbl {
         ) -> HRESULT,
     >,
     pub EnumFormatEtc: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IDataObject,
             dwDirection: DWORD,
             ppenumFormatEtc: *mut *mut IEnumFORMATETC,
         ) -> HRESULT,
     >,
     pub DAdvise: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IDataObject,
             pformatetc: *mut FORMATETC,
             advf: DWORD,
@@ -5398,10 +5398,10 @@ pub struct IDataObjectVtbl {
         ) -> HRESULT,
     >,
     pub DUnadvise: ::core::option::Option<
-        unsafe extern "C" fn(This: *mut IDataObject, dwConnection: DWORD) -> HRESULT,
+        unsafe extern "system" fn(This: *mut IDataObject, dwConnection: DWORD) -> HRESULT,
     >,
     pub EnumDAdvise: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IDataObject,
             ppenumAdvise: *mut *mut IEnumSTATDATA,
         ) -> HRESULT,
@@ -5416,17 +5416,17 @@ pub struct IDataObject {
 #[derive(Debug, Copy, Clone)]
 pub struct IDataAdviseHolderVtbl {
     pub QueryInterface: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IDataAdviseHolder,
             riid: *const IID,
             ppvObject: *mut *mut ::core::ffi::c_void,
         ) -> HRESULT,
     >,
-    pub AddRef: ::core::option::Option<unsafe extern "C" fn(This: *mut IDataAdviseHolder) -> ULONG>,
+    pub AddRef: ::core::option::Option<unsafe extern "system" fn(This: *mut IDataAdviseHolder) -> ULONG>,
     pub Release:
-        ::core::option::Option<unsafe extern "C" fn(This: *mut IDataAdviseHolder) -> ULONG>,
+        ::core::option::Option<unsafe extern "system" fn(This: *mut IDataAdviseHolder) -> ULONG>,
     pub Advise: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IDataAdviseHolder,
             pDataObject: *mut IDataObject,
             pFetc: *mut FORMATETC,
@@ -5436,16 +5436,16 @@ pub struct IDataAdviseHolderVtbl {
         ) -> HRESULT,
     >,
     pub Unadvise: ::core::option::Option<
-        unsafe extern "C" fn(This: *mut IDataAdviseHolder, dwConnection: DWORD) -> HRESULT,
+        unsafe extern "system" fn(This: *mut IDataAdviseHolder, dwConnection: DWORD) -> HRESULT,
     >,
     pub EnumAdvise: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IDataAdviseHolder,
             ppenumAdvise: *mut *mut IEnumSTATDATA,
         ) -> HRESULT,
     >,
     pub SendOnDataChange: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IDataAdviseHolder,
             pDataObject: *mut IDataObject,
             dwReserved: DWORD,
@@ -5471,16 +5471,16 @@ pub type LPINTERFACEINFO = *mut tagINTERFACEINFO;
 #[derive(Debug, Copy, Clone)]
 pub struct IMessageFilterVtbl {
     pub QueryInterface: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IMessageFilter,
             riid: *const IID,
             ppvObject: *mut *mut ::core::ffi::c_void,
         ) -> HRESULT,
     >,
-    pub AddRef: ::core::option::Option<unsafe extern "C" fn(This: *mut IMessageFilter) -> ULONG>,
-    pub Release: ::core::option::Option<unsafe extern "C" fn(This: *mut IMessageFilter) -> ULONG>,
+    pub AddRef: ::core::option::Option<unsafe extern "system" fn(This: *mut IMessageFilter) -> ULONG>,
+    pub Release: ::core::option::Option<unsafe extern "system" fn(This: *mut IMessageFilter) -> ULONG>,
     pub HandleInComingCall: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IMessageFilter,
             dwCallType: DWORD,
             htaskCaller: HTASK,
@@ -5489,7 +5489,7 @@ pub struct IMessageFilterVtbl {
         ) -> DWORD,
     >,
     pub RetryRejectedCall: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IMessageFilter,
             htaskCallee: HTASK,
             dwTickCount: DWORD,
@@ -5497,7 +5497,7 @@ pub struct IMessageFilterVtbl {
         ) -> DWORD,
     >,
     pub MessagePending: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IMessageFilter,
             htaskCallee: HTASK,
             dwTickCount: DWORD,
@@ -5514,22 +5514,22 @@ pub struct IMessageFilter {
 #[derive(Debug, Copy, Clone)]
 pub struct IDirectWriterLockVtbl {
     pub QueryInterface: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IDirectWriterLock,
             riid: *const IID,
             ppvObject: *mut *mut ::core::ffi::c_void,
         ) -> HRESULT,
     >,
-    pub AddRef: ::core::option::Option<unsafe extern "C" fn(This: *mut IDirectWriterLock) -> ULONG>,
+    pub AddRef: ::core::option::Option<unsafe extern "system" fn(This: *mut IDirectWriterLock) -> ULONG>,
     pub Release:
-        ::core::option::Option<unsafe extern "C" fn(This: *mut IDirectWriterLock) -> ULONG>,
+        ::core::option::Option<unsafe extern "system" fn(This: *mut IDirectWriterLock) -> ULONG>,
     pub WaitForWriteAccess: ::core::option::Option<
-        unsafe extern "C" fn(This: *mut IDirectWriterLock, dwTimeout: DWORD) -> HRESULT,
+        unsafe extern "system" fn(This: *mut IDirectWriterLock, dwTimeout: DWORD) -> HRESULT,
     >,
     pub ReleaseWriteAccess:
-        ::core::option::Option<unsafe extern "C" fn(This: *mut IDirectWriterLock) -> HRESULT>,
+        ::core::option::Option<unsafe extern "system" fn(This: *mut IDirectWriterLock) -> HRESULT>,
     pub HaveWriteAccess:
-        ::core::option::Option<unsafe extern "C" fn(This: *mut IDirectWriterLock) -> HRESULT>,
+        ::core::option::Option<unsafe extern "system" fn(This: *mut IDirectWriterLock) -> HRESULT>,
 }
 #[repr(C)]
 #[derive(Debug, Copy, Clone)]
@@ -5540,16 +5540,16 @@ pub struct IDirectWriterLock {
 #[derive(Debug, Copy, Clone)]
 pub struct IUrlMonVtbl {
     pub QueryInterface: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IUrlMon,
             riid: *const IID,
             ppvObject: *mut *mut ::core::ffi::c_void,
         ) -> HRESULT,
     >,
-    pub AddRef: ::core::option::Option<unsafe extern "C" fn(This: *mut IUrlMon) -> ULONG>,
-    pub Release: ::core::option::Option<unsafe extern "C" fn(This: *mut IUrlMon) -> ULONG>,
+    pub AddRef: ::core::option::Option<unsafe extern "system" fn(This: *mut IUrlMon) -> ULONG>,
+    pub Release: ::core::option::Option<unsafe extern "system" fn(This: *mut IUrlMon) -> ULONG>,
     pub AsyncGetClassBits: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IUrlMon,
             rclsid: *const CLSID,
             pszTYPE: LPCWSTR,
@@ -5573,18 +5573,18 @@ pub struct IUrlMon {
 #[derive(Debug, Copy, Clone)]
 pub struct IForegroundTransferVtbl {
     pub QueryInterface: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IForegroundTransfer,
             riid: *const IID,
             ppvObject: *mut *mut ::core::ffi::c_void,
         ) -> HRESULT,
     >,
     pub AddRef:
-        ::core::option::Option<unsafe extern "C" fn(This: *mut IForegroundTransfer) -> ULONG>,
+        ::core::option::Option<unsafe extern "system" fn(This: *mut IForegroundTransfer) -> ULONG>,
     pub Release:
-        ::core::option::Option<unsafe extern "C" fn(This: *mut IForegroundTransfer) -> ULONG>,
+        ::core::option::Option<unsafe extern "system" fn(This: *mut IForegroundTransfer) -> ULONG>,
     pub AllowForegroundTransfer: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IForegroundTransfer,
             lpvReserved: *mut ::core::ffi::c_void,
         ) -> HRESULT,
@@ -5599,23 +5599,23 @@ pub struct IForegroundTransfer {
 #[derive(Debug, Copy, Clone)]
 pub struct IInitializeSpyVtbl {
     pub QueryInterface: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IInitializeSpy,
             riid: *const IID,
             ppvObject: *mut *mut ::core::ffi::c_void,
         ) -> HRESULT,
     >,
-    pub AddRef: ::core::option::Option<unsafe extern "C" fn(This: *mut IInitializeSpy) -> ULONG>,
-    pub Release: ::core::option::Option<unsafe extern "C" fn(This: *mut IInitializeSpy) -> ULONG>,
+    pub AddRef: ::core::option::Option<unsafe extern "system" fn(This: *mut IInitializeSpy) -> ULONG>,
+    pub Release: ::core::option::Option<unsafe extern "system" fn(This: *mut IInitializeSpy) -> ULONG>,
     pub PreInitialize: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IInitializeSpy,
             dwCoInit: DWORD,
             dwCurThreadAptRefs: DWORD,
         ) -> HRESULT,
     >,
     pub PostInitialize: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IInitializeSpy,
             hrCoInit: HRESULT,
             dwCoInit: DWORD,
@@ -5623,10 +5623,10 @@ pub struct IInitializeSpyVtbl {
         ) -> HRESULT,
     >,
     pub PreUninitialize: ::core::option::Option<
-        unsafe extern "C" fn(This: *mut IInitializeSpy, dwCurThreadAptRefs: DWORD) -> HRESULT,
+        unsafe extern "system" fn(This: *mut IInitializeSpy, dwCurThreadAptRefs: DWORD) -> HRESULT,
     >,
     pub PostUninitialize: ::core::option::Option<
-        unsafe extern "C" fn(This: *mut IInitializeSpy, dwNewThreadAptRefs: DWORD) -> HRESULT,
+        unsafe extern "system" fn(This: *mut IInitializeSpy, dwNewThreadAptRefs: DWORD) -> HRESULT,
     >,
 }
 #[repr(C)]
@@ -5638,18 +5638,18 @@ pub struct IInitializeSpy {
 #[derive(Debug, Copy, Clone)]
 pub struct IThumbnailExtractorVtbl {
     pub QueryInterface: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IThumbnailExtractor,
             riid: *const IID,
             ppvObject: *mut *mut ::core::ffi::c_void,
         ) -> HRESULT,
     >,
     pub AddRef:
-        ::core::option::Option<unsafe extern "C" fn(This: *mut IThumbnailExtractor) -> ULONG>,
+        ::core::option::Option<unsafe extern "system" fn(This: *mut IThumbnailExtractor) -> ULONG>,
     pub Release:
-        ::core::option::Option<unsafe extern "C" fn(This: *mut IThumbnailExtractor) -> ULONG>,
+        ::core::option::Option<unsafe extern "system" fn(This: *mut IThumbnailExtractor) -> ULONG>,
     pub ExtractThumbnail: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IThumbnailExtractor,
             pStg: *mut IStorage,
             ulLength: ULONG,
@@ -5660,7 +5660,7 @@ pub struct IThumbnailExtractorVtbl {
         ) -> HRESULT,
     >,
     pub OnFileUpdated: ::core::option::Option<
-        unsafe extern "C" fn(This: *mut IThumbnailExtractor, pStg: *mut IStorage) -> HRESULT,
+        unsafe extern "system" fn(This: *mut IThumbnailExtractor, pStg: *mut IStorage) -> HRESULT,
     >,
 }
 #[repr(C)]
@@ -5672,18 +5672,18 @@ pub struct IThumbnailExtractor {
 #[derive(Debug, Copy, Clone)]
 pub struct IDummyHICONIncluderVtbl {
     pub QueryInterface: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IDummyHICONIncluder,
             riid: *const IID,
             ppvObject: *mut *mut ::core::ffi::c_void,
         ) -> HRESULT,
     >,
     pub AddRef:
-        ::core::option::Option<unsafe extern "C" fn(This: *mut IDummyHICONIncluder) -> ULONG>,
+        ::core::option::Option<unsafe extern "system" fn(This: *mut IDummyHICONIncluder) -> ULONG>,
     pub Release:
-        ::core::option::Option<unsafe extern "C" fn(This: *mut IDummyHICONIncluder) -> ULONG>,
+        ::core::option::Option<unsafe extern "system" fn(This: *mut IDummyHICONIncluder) -> ULONG>,
     pub Dummy: ::core::option::Option<
-        unsafe extern "C" fn(This: *mut IDummyHICONIncluder, hIcon: HICON, hdc: HDC) -> HRESULT,
+        unsafe extern "system" fn(This: *mut IDummyHICONIncluder, hIcon: HICON, hdc: HDC) -> HRESULT,
     >,
 }
 #[repr(C)]
@@ -5695,18 +5695,18 @@ pub struct IDummyHICONIncluder {
 #[derive(Debug, Copy, Clone)]
 pub struct IApartmentShutdownVtbl {
     pub QueryInterface: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IApartmentShutdown,
             riid: *const IID,
             ppvObject: *mut *mut ::core::ffi::c_void,
         ) -> HRESULT,
     >,
     pub AddRef:
-        ::core::option::Option<unsafe extern "C" fn(This: *mut IApartmentShutdown) -> ULONG>,
+        ::core::option::Option<unsafe extern "system" fn(This: *mut IApartmentShutdown) -> ULONG>,
     pub Release:
-        ::core::option::Option<unsafe extern "C" fn(This: *mut IApartmentShutdown) -> ULONG>,
+        ::core::option::Option<unsafe extern "system" fn(This: *mut IApartmentShutdown) -> ULONG>,
     pub OnUninitialize: ::core::option::Option<
-        unsafe extern "C" fn(This: *mut IApartmentShutdown, identifier: UINT64),
+        unsafe extern "system" fn(This: *mut IApartmentShutdown, identifier: UINT64),
     >,
 }
 #[repr(C)]
@@ -5737,19 +5737,19 @@ pub use self::tagOLERENDER as OLERENDER;
 #[derive(Debug, Copy, Clone)]
 pub struct IOleWindowVtbl {
     pub QueryInterface: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IOleWindow,
             riid: *const IID,
             ppvObject: *mut *mut ::core::ffi::c_void,
         ) -> HRESULT,
     >,
-    pub AddRef: ::core::option::Option<unsafe extern "C" fn(This: *mut IOleWindow) -> ULONG>,
-    pub Release: ::core::option::Option<unsafe extern "C" fn(This: *mut IOleWindow) -> ULONG>,
+    pub AddRef: ::core::option::Option<unsafe extern "system" fn(This: *mut IOleWindow) -> ULONG>,
+    pub Release: ::core::option::Option<unsafe extern "system" fn(This: *mut IOleWindow) -> ULONG>,
     pub GetWindow: ::core::option::Option<
-        unsafe extern "C" fn(This: *mut IOleWindow, phwnd: *mut HWND) -> HRESULT,
+        unsafe extern "system" fn(This: *mut IOleWindow, phwnd: *mut HWND) -> HRESULT,
     >,
     pub ContextSensitiveHelp: ::core::option::Option<
-        unsafe extern "C" fn(This: *mut IOleWindow, fEnterMode: BOOL) -> HRESULT,
+        unsafe extern "system" fn(This: *mut IOleWindow, fEnterMode: BOOL) -> HRESULT,
     >,
 }
 #[repr(C)]
@@ -5761,34 +5761,34 @@ pub struct IOleWindow {
 #[derive(Debug, Copy, Clone)]
 pub struct IOleInPlaceObjectVtbl {
     pub QueryInterface: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IOleInPlaceObject,
             riid: *const IID,
             ppvObject: *mut *mut ::core::ffi::c_void,
         ) -> HRESULT,
     >,
-    pub AddRef: ::core::option::Option<unsafe extern "C" fn(This: *mut IOleInPlaceObject) -> ULONG>,
+    pub AddRef: ::core::option::Option<unsafe extern "system" fn(This: *mut IOleInPlaceObject) -> ULONG>,
     pub Release:
-        ::core::option::Option<unsafe extern "C" fn(This: *mut IOleInPlaceObject) -> ULONG>,
+        ::core::option::Option<unsafe extern "system" fn(This: *mut IOleInPlaceObject) -> ULONG>,
     pub GetWindow: ::core::option::Option<
-        unsafe extern "C" fn(This: *mut IOleInPlaceObject, phwnd: *mut HWND) -> HRESULT,
+        unsafe extern "system" fn(This: *mut IOleInPlaceObject, phwnd: *mut HWND) -> HRESULT,
     >,
     pub ContextSensitiveHelp: ::core::option::Option<
-        unsafe extern "C" fn(This: *mut IOleInPlaceObject, fEnterMode: BOOL) -> HRESULT,
+        unsafe extern "system" fn(This: *mut IOleInPlaceObject, fEnterMode: BOOL) -> HRESULT,
     >,
     pub InPlaceDeactivate:
-        ::core::option::Option<unsafe extern "C" fn(This: *mut IOleInPlaceObject) -> HRESULT>,
+        ::core::option::Option<unsafe extern "system" fn(This: *mut IOleInPlaceObject) -> HRESULT>,
     pub UIDeactivate:
-        ::core::option::Option<unsafe extern "C" fn(This: *mut IOleInPlaceObject) -> HRESULT>,
+        ::core::option::Option<unsafe extern "system" fn(This: *mut IOleInPlaceObject) -> HRESULT>,
     pub SetObjectRects: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IOleInPlaceObject,
             lprcPosRect: LPCRECT,
             lprcClipRect: LPCRECT,
         ) -> HRESULT,
     >,
     pub ReactivateAndUndo:
-        ::core::option::Option<unsafe extern "C" fn(This: *mut IOleInPlaceObject) -> HRESULT>,
+        ::core::option::Option<unsafe extern "system" fn(This: *mut IOleInPlaceObject) -> HRESULT>,
 }
 #[repr(C)]
 #[derive(Debug, Copy, Clone)]
@@ -5800,39 +5800,39 @@ pub type LPCBORDERWIDTHS = LPCRECT;
 #[derive(Debug, Copy, Clone)]
 pub struct IOleInPlaceUIWindowVtbl {
     pub QueryInterface: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IOleInPlaceUIWindow,
             riid: *const IID,
             ppvObject: *mut *mut ::core::ffi::c_void,
         ) -> HRESULT,
     >,
     pub AddRef:
-        ::core::option::Option<unsafe extern "C" fn(This: *mut IOleInPlaceUIWindow) -> ULONG>,
+        ::core::option::Option<unsafe extern "system" fn(This: *mut IOleInPlaceUIWindow) -> ULONG>,
     pub Release:
-        ::core::option::Option<unsafe extern "C" fn(This: *mut IOleInPlaceUIWindow) -> ULONG>,
+        ::core::option::Option<unsafe extern "system" fn(This: *mut IOleInPlaceUIWindow) -> ULONG>,
     pub GetWindow: ::core::option::Option<
-        unsafe extern "C" fn(This: *mut IOleInPlaceUIWindow, phwnd: *mut HWND) -> HRESULT,
+        unsafe extern "system" fn(This: *mut IOleInPlaceUIWindow, phwnd: *mut HWND) -> HRESULT,
     >,
     pub ContextSensitiveHelp: ::core::option::Option<
-        unsafe extern "C" fn(This: *mut IOleInPlaceUIWindow, fEnterMode: BOOL) -> HRESULT,
+        unsafe extern "system" fn(This: *mut IOleInPlaceUIWindow, fEnterMode: BOOL) -> HRESULT,
     >,
     pub GetBorder: ::core::option::Option<
-        unsafe extern "C" fn(This: *mut IOleInPlaceUIWindow, lprectBorder: LPRECT) -> HRESULT,
+        unsafe extern "system" fn(This: *mut IOleInPlaceUIWindow, lprectBorder: LPRECT) -> HRESULT,
     >,
     pub RequestBorderSpace: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IOleInPlaceUIWindow,
             pborderwidths: LPCBORDERWIDTHS,
         ) -> HRESULT,
     >,
     pub SetBorderSpace: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IOleInPlaceUIWindow,
             pborderwidths: LPCBORDERWIDTHS,
         ) -> HRESULT,
     >,
     pub SetActiveObject: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IOleInPlaceUIWindow,
             pActiveObject: *mut IOleInPlaceActiveObject,
             pszObjName: LPCOLESTR,
@@ -5865,51 +5865,51 @@ pub type HOLEMENU = HGLOBAL;
 #[derive(Debug, Copy, Clone)]
 pub struct IOleInPlaceFrameVtbl {
     pub QueryInterface: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IOleInPlaceFrame,
             riid: *const IID,
             ppvObject: *mut *mut ::core::ffi::c_void,
         ) -> HRESULT,
     >,
-    pub AddRef: ::core::option::Option<unsafe extern "C" fn(This: *mut IOleInPlaceFrame) -> ULONG>,
-    pub Release: ::core::option::Option<unsafe extern "C" fn(This: *mut IOleInPlaceFrame) -> ULONG>,
+    pub AddRef: ::core::option::Option<unsafe extern "system" fn(This: *mut IOleInPlaceFrame) -> ULONG>,
+    pub Release: ::core::option::Option<unsafe extern "system" fn(This: *mut IOleInPlaceFrame) -> ULONG>,
     pub GetWindow: ::core::option::Option<
-        unsafe extern "C" fn(This: *mut IOleInPlaceFrame, phwnd: *mut HWND) -> HRESULT,
+        unsafe extern "system" fn(This: *mut IOleInPlaceFrame, phwnd: *mut HWND) -> HRESULT,
     >,
     pub ContextSensitiveHelp: ::core::option::Option<
-        unsafe extern "C" fn(This: *mut IOleInPlaceFrame, fEnterMode: BOOL) -> HRESULT,
+        unsafe extern "system" fn(This: *mut IOleInPlaceFrame, fEnterMode: BOOL) -> HRESULT,
     >,
     pub GetBorder: ::core::option::Option<
-        unsafe extern "C" fn(This: *mut IOleInPlaceFrame, lprectBorder: LPRECT) -> HRESULT,
+        unsafe extern "system" fn(This: *mut IOleInPlaceFrame, lprectBorder: LPRECT) -> HRESULT,
     >,
     pub RequestBorderSpace: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IOleInPlaceFrame,
             pborderwidths: LPCBORDERWIDTHS,
         ) -> HRESULT,
     >,
     pub SetBorderSpace: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IOleInPlaceFrame,
             pborderwidths: LPCBORDERWIDTHS,
         ) -> HRESULT,
     >,
     pub SetActiveObject: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IOleInPlaceFrame,
             pActiveObject: *mut IOleInPlaceActiveObject,
             pszObjName: LPCOLESTR,
         ) -> HRESULT,
     >,
     pub InsertMenus: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IOleInPlaceFrame,
             hmenuShared: HMENU,
             lpMenuWidths: LPOLEMENUGROUPWIDTHS,
         ) -> HRESULT,
     >,
     pub SetMenu: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IOleInPlaceFrame,
             hmenuShared: HMENU,
             holemenu: HOLEMENU,
@@ -5917,16 +5917,16 @@ pub struct IOleInPlaceFrameVtbl {
         ) -> HRESULT,
     >,
     pub RemoveMenus: ::core::option::Option<
-        unsafe extern "C" fn(This: *mut IOleInPlaceFrame, hmenuShared: HMENU) -> HRESULT,
+        unsafe extern "system" fn(This: *mut IOleInPlaceFrame, hmenuShared: HMENU) -> HRESULT,
     >,
     pub SetStatusText: ::core::option::Option<
-        unsafe extern "C" fn(This: *mut IOleInPlaceFrame, pszStatusText: LPCOLESTR) -> HRESULT,
+        unsafe extern "system" fn(This: *mut IOleInPlaceFrame, pszStatusText: LPCOLESTR) -> HRESULT,
     >,
     pub EnableModeless: ::core::option::Option<
-        unsafe extern "C" fn(This: *mut IOleInPlaceFrame, fEnable: BOOL) -> HRESULT,
+        unsafe extern "system" fn(This: *mut IOleInPlaceFrame, fEnable: BOOL) -> HRESULT,
     >,
     pub TranslateAcceleratorA: ::core::option::Option<
-        unsafe extern "C" fn(This: *mut IOleInPlaceFrame, lpmsg: LPMSG, wID: WORD) -> HRESULT,
+        unsafe extern "system" fn(This: *mut IOleInPlaceFrame, lpmsg: LPMSG, wID: WORD) -> HRESULT,
     >,
 }
 #[repr(C)]
@@ -5938,33 +5938,33 @@ pub struct IOleInPlaceFrame {
 #[derive(Debug, Copy, Clone)]
 pub struct IOleInPlaceActiveObjectVtbl {
     pub QueryInterface: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IOleInPlaceActiveObject,
             riid: *const IID,
             ppvObject: *mut *mut ::core::ffi::c_void,
         ) -> HRESULT,
     >,
     pub AddRef:
-        ::core::option::Option<unsafe extern "C" fn(This: *mut IOleInPlaceActiveObject) -> ULONG>,
+        ::core::option::Option<unsafe extern "system" fn(This: *mut IOleInPlaceActiveObject) -> ULONG>,
     pub Release:
-        ::core::option::Option<unsafe extern "C" fn(This: *mut IOleInPlaceActiveObject) -> ULONG>,
+        ::core::option::Option<unsafe extern "system" fn(This: *mut IOleInPlaceActiveObject) -> ULONG>,
     pub GetWindow: ::core::option::Option<
-        unsafe extern "C" fn(This: *mut IOleInPlaceActiveObject, phwnd: *mut HWND) -> HRESULT,
+        unsafe extern "system" fn(This: *mut IOleInPlaceActiveObject, phwnd: *mut HWND) -> HRESULT,
     >,
     pub ContextSensitiveHelp: ::core::option::Option<
-        unsafe extern "C" fn(This: *mut IOleInPlaceActiveObject, fEnterMode: BOOL) -> HRESULT,
+        unsafe extern "system" fn(This: *mut IOleInPlaceActiveObject, fEnterMode: BOOL) -> HRESULT,
     >,
     pub TranslateAcceleratorA: ::core::option::Option<
-        unsafe extern "C" fn(This: *mut IOleInPlaceActiveObject, lpmsg: LPMSG) -> HRESULT,
+        unsafe extern "system" fn(This: *mut IOleInPlaceActiveObject, lpmsg: LPMSG) -> HRESULT,
     >,
     pub OnFrameWindowActivate: ::core::option::Option<
-        unsafe extern "C" fn(This: *mut IOleInPlaceActiveObject, fActivate: BOOL) -> HRESULT,
+        unsafe extern "system" fn(This: *mut IOleInPlaceActiveObject, fActivate: BOOL) -> HRESULT,
     >,
     pub OnDocWindowActivate: ::core::option::Option<
-        unsafe extern "C" fn(This: *mut IOleInPlaceActiveObject, fActivate: BOOL) -> HRESULT,
+        unsafe extern "system" fn(This: *mut IOleInPlaceActiveObject, fActivate: BOOL) -> HRESULT,
     >,
     pub ResizeBorder: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IOleInPlaceActiveObject,
             prcBorder: LPCRECT,
             pUIWindow: *mut IOleInPlaceUIWindow,
@@ -5972,7 +5972,7 @@ pub struct IOleInPlaceActiveObjectVtbl {
         ) -> HRESULT,
     >,
     pub EnableModeless: ::core::option::Option<
-        unsafe extern "C" fn(This: *mut IOleInPlaceActiveObject, fEnable: BOOL) -> HRESULT,
+        unsafe extern "system" fn(This: *mut IOleInPlaceActiveObject, fEnable: BOOL) -> HRESULT,
     >,
 }
 #[repr(C)]
@@ -5984,28 +5984,28 @@ pub struct IOleInPlaceActiveObject {
 #[derive(Debug, Copy, Clone)]
 pub struct IOleInPlaceSiteVtbl {
     pub QueryInterface: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IOleInPlaceSite,
             riid: *const IID,
             ppvObject: *mut *mut ::core::ffi::c_void,
         ) -> HRESULT,
     >,
-    pub AddRef: ::core::option::Option<unsafe extern "C" fn(This: *mut IOleInPlaceSite) -> ULONG>,
-    pub Release: ::core::option::Option<unsafe extern "C" fn(This: *mut IOleInPlaceSite) -> ULONG>,
+    pub AddRef: ::core::option::Option<unsafe extern "system" fn(This: *mut IOleInPlaceSite) -> ULONG>,
+    pub Release: ::core::option::Option<unsafe extern "system" fn(This: *mut IOleInPlaceSite) -> ULONG>,
     pub GetWindow: ::core::option::Option<
-        unsafe extern "C" fn(This: *mut IOleInPlaceSite, phwnd: *mut HWND) -> HRESULT,
+        unsafe extern "system" fn(This: *mut IOleInPlaceSite, phwnd: *mut HWND) -> HRESULT,
     >,
     pub ContextSensitiveHelp: ::core::option::Option<
-        unsafe extern "C" fn(This: *mut IOleInPlaceSite, fEnterMode: BOOL) -> HRESULT,
+        unsafe extern "system" fn(This: *mut IOleInPlaceSite, fEnterMode: BOOL) -> HRESULT,
     >,
     pub CanInPlaceActivate:
-        ::core::option::Option<unsafe extern "C" fn(This: *mut IOleInPlaceSite) -> HRESULT>,
+        ::core::option::Option<unsafe extern "system" fn(This: *mut IOleInPlaceSite) -> HRESULT>,
     pub OnInPlaceActivate:
-        ::core::option::Option<unsafe extern "C" fn(This: *mut IOleInPlaceSite) -> HRESULT>,
+        ::core::option::Option<unsafe extern "system" fn(This: *mut IOleInPlaceSite) -> HRESULT>,
     pub OnUIActivate:
-        ::core::option::Option<unsafe extern "C" fn(This: *mut IOleInPlaceSite) -> HRESULT>,
+        ::core::option::Option<unsafe extern "system" fn(This: *mut IOleInPlaceSite) -> HRESULT>,
     pub GetWindowContext: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IOleInPlaceSite,
             ppFrame: *mut *mut IOleInPlaceFrame,
             ppDoc: *mut *mut IOleInPlaceUIWindow,
@@ -6015,19 +6015,19 @@ pub struct IOleInPlaceSiteVtbl {
         ) -> HRESULT,
     >,
     pub Scroll: ::core::option::Option<
-        unsafe extern "C" fn(This: *mut IOleInPlaceSite, scrollExtent: SIZE) -> HRESULT,
+        unsafe extern "system" fn(This: *mut IOleInPlaceSite, scrollExtent: SIZE) -> HRESULT,
     >,
     pub OnUIDeactivate: ::core::option::Option<
-        unsafe extern "C" fn(This: *mut IOleInPlaceSite, fUndoable: BOOL) -> HRESULT,
+        unsafe extern "system" fn(This: *mut IOleInPlaceSite, fUndoable: BOOL) -> HRESULT,
     >,
     pub OnInPlaceDeactivate:
-        ::core::option::Option<unsafe extern "C" fn(This: *mut IOleInPlaceSite) -> HRESULT>,
+        ::core::option::Option<unsafe extern "system" fn(This: *mut IOleInPlaceSite) -> HRESULT>,
     pub DiscardUndoState:
-        ::core::option::Option<unsafe extern "C" fn(This: *mut IOleInPlaceSite) -> HRESULT>,
+        ::core::option::Option<unsafe extern "system" fn(This: *mut IOleInPlaceSite) -> HRESULT>,
     pub DeactivateAndUndo:
-        ::core::option::Option<unsafe extern "C" fn(This: *mut IOleInPlaceSite) -> HRESULT>,
+        ::core::option::Option<unsafe extern "system" fn(This: *mut IOleInPlaceSite) -> HRESULT>,
     pub OnPosRectChange: ::core::option::Option<
-        unsafe extern "C" fn(This: *mut IOleInPlaceSite, lprcPosRect: LPCRECT) -> HRESULT,
+        unsafe extern "system" fn(This: *mut IOleInPlaceSite, lprcPosRect: LPCRECT) -> HRESULT,
     >,
 }
 #[repr(C)]
@@ -6039,17 +6039,17 @@ pub struct IOleInPlaceSite {
 #[derive(Debug, Copy, Clone)]
 pub struct IParseDisplayNameVtbl {
     pub QueryInterface: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IParseDisplayName,
             riid: *const IID,
             ppvObject: *mut *mut ::core::ffi::c_void,
         ) -> HRESULT,
     >,
-    pub AddRef: ::core::option::Option<unsafe extern "C" fn(This: *mut IParseDisplayName) -> ULONG>,
+    pub AddRef: ::core::option::Option<unsafe extern "system" fn(This: *mut IParseDisplayName) -> ULONG>,
     pub Release:
-        ::core::option::Option<unsafe extern "C" fn(This: *mut IParseDisplayName) -> ULONG>,
+        ::core::option::Option<unsafe extern "system" fn(This: *mut IParseDisplayName) -> ULONG>,
     pub ParseDisplayName: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IParseDisplayName,
             pbc: *mut IBindCtx,
             pszDisplayName: LPOLESTR,
@@ -6067,16 +6067,16 @@ pub struct IParseDisplayName {
 #[derive(Debug, Copy, Clone)]
 pub struct IOleContainerVtbl {
     pub QueryInterface: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IOleContainer,
             riid: *const IID,
             ppvObject: *mut *mut ::core::ffi::c_void,
         ) -> HRESULT,
     >,
-    pub AddRef: ::core::option::Option<unsafe extern "C" fn(This: *mut IOleContainer) -> ULONG>,
-    pub Release: ::core::option::Option<unsafe extern "C" fn(This: *mut IOleContainer) -> ULONG>,
+    pub AddRef: ::core::option::Option<unsafe extern "system" fn(This: *mut IOleContainer) -> ULONG>,
+    pub Release: ::core::option::Option<unsafe extern "system" fn(This: *mut IOleContainer) -> ULONG>,
     pub ParseDisplayName: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IOleContainer,
             pbc: *mut IBindCtx,
             pszDisplayName: LPOLESTR,
@@ -6085,14 +6085,14 @@ pub struct IOleContainerVtbl {
         ) -> HRESULT,
     >,
     pub EnumObjects: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IOleContainer,
             grfFlags: DWORD,
             ppenum: *mut *mut IEnumUnknown,
         ) -> HRESULT,
     >,
     pub LockContainer: ::core::option::Option<
-        unsafe extern "C" fn(This: *mut IOleContainer, fLock: BOOL) -> HRESULT,
+        unsafe extern "system" fn(This: *mut IOleContainer, fLock: BOOL) -> HRESULT,
     >,
 }
 #[repr(C)]
@@ -6111,17 +6111,17 @@ pub use self::tagOLECONTF as OLECONTF;
 #[derive(Debug, Copy, Clone)]
 pub struct IOleItemContainerVtbl {
     pub QueryInterface: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IOleItemContainer,
             riid: *const IID,
             ppvObject: *mut *mut ::core::ffi::c_void,
         ) -> HRESULT,
     >,
-    pub AddRef: ::core::option::Option<unsafe extern "C" fn(This: *mut IOleItemContainer) -> ULONG>,
+    pub AddRef: ::core::option::Option<unsafe extern "system" fn(This: *mut IOleItemContainer) -> ULONG>,
     pub Release:
-        ::core::option::Option<unsafe extern "C" fn(This: *mut IOleItemContainer) -> ULONG>,
+        ::core::option::Option<unsafe extern "system" fn(This: *mut IOleItemContainer) -> ULONG>,
     pub ParseDisplayName: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IOleItemContainer,
             pbc: *mut IBindCtx,
             pszDisplayName: LPOLESTR,
@@ -6130,17 +6130,17 @@ pub struct IOleItemContainerVtbl {
         ) -> HRESULT,
     >,
     pub EnumObjects: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IOleItemContainer,
             grfFlags: DWORD,
             ppenum: *mut *mut IEnumUnknown,
         ) -> HRESULT,
     >,
     pub LockContainer: ::core::option::Option<
-        unsafe extern "C" fn(This: *mut IOleItemContainer, fLock: BOOL) -> HRESULT,
+        unsafe extern "system" fn(This: *mut IOleItemContainer, fLock: BOOL) -> HRESULT,
     >,
     pub GetObjectA: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IOleItemContainer,
             pszItem: LPOLESTR,
             dwSpeedNeeded: DWORD,
@@ -6150,7 +6150,7 @@ pub struct IOleItemContainerVtbl {
         ) -> HRESULT,
     >,
     pub GetObjectStorage: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IOleItemContainer,
             pszItem: LPOLESTR,
             pbc: *mut IBindCtx,
@@ -6159,7 +6159,7 @@ pub struct IOleItemContainerVtbl {
         ) -> HRESULT,
     >,
     pub IsRunning: ::core::option::Option<
-        unsafe extern "C" fn(This: *mut IOleItemContainer, pszItem: LPOLESTR) -> HRESULT,
+        unsafe extern "system" fn(This: *mut IOleItemContainer, pszItem: LPOLESTR) -> HRESULT,
     >,
 }
 #[repr(C)]
@@ -6178,46 +6178,46 @@ pub use self::tagOLELINKBIND as OLELINKBIND;
 #[derive(Debug, Copy, Clone)]
 pub struct IOleLinkVtbl {
     pub QueryInterface: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IOleLink,
             riid: *const IID,
             ppvObject: *mut *mut ::core::ffi::c_void,
         ) -> HRESULT,
     >,
-    pub AddRef: ::core::option::Option<unsafe extern "C" fn(This: *mut IOleLink) -> ULONG>,
-    pub Release: ::core::option::Option<unsafe extern "C" fn(This: *mut IOleLink) -> ULONG>,
+    pub AddRef: ::core::option::Option<unsafe extern "system" fn(This: *mut IOleLink) -> ULONG>,
+    pub Release: ::core::option::Option<unsafe extern "system" fn(This: *mut IOleLink) -> ULONG>,
     pub SetUpdateOptions: ::core::option::Option<
-        unsafe extern "C" fn(This: *mut IOleLink, dwUpdateOpt: DWORD) -> HRESULT,
+        unsafe extern "system" fn(This: *mut IOleLink, dwUpdateOpt: DWORD) -> HRESULT,
     >,
     pub GetUpdateOptions: ::core::option::Option<
-        unsafe extern "C" fn(This: *mut IOleLink, pdwUpdateOpt: *mut DWORD) -> HRESULT,
+        unsafe extern "system" fn(This: *mut IOleLink, pdwUpdateOpt: *mut DWORD) -> HRESULT,
     >,
     pub SetSourceMoniker: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IOleLink,
             pmk: *mut IMoniker,
             rclsid: *const CLSID,
         ) -> HRESULT,
     >,
     pub GetSourceMoniker: ::core::option::Option<
-        unsafe extern "C" fn(This: *mut IOleLink, ppmk: *mut *mut IMoniker) -> HRESULT,
+        unsafe extern "system" fn(This: *mut IOleLink, ppmk: *mut *mut IMoniker) -> HRESULT,
     >,
     pub SetSourceDisplayName: ::core::option::Option<
-        unsafe extern "C" fn(This: *mut IOleLink, pszStatusText: LPCOLESTR) -> HRESULT,
+        unsafe extern "system" fn(This: *mut IOleLink, pszStatusText: LPCOLESTR) -> HRESULT,
     >,
     pub GetSourceDisplayName: ::core::option::Option<
-        unsafe extern "C" fn(This: *mut IOleLink, ppszDisplayName: *mut LPOLESTR) -> HRESULT,
+        unsafe extern "system" fn(This: *mut IOleLink, ppszDisplayName: *mut LPOLESTR) -> HRESULT,
     >,
     pub BindToSource: ::core::option::Option<
-        unsafe extern "C" fn(This: *mut IOleLink, bindflags: DWORD, pbc: *mut IBindCtx) -> HRESULT,
+        unsafe extern "system" fn(This: *mut IOleLink, bindflags: DWORD, pbc: *mut IBindCtx) -> HRESULT,
     >,
-    pub BindIfRunning: ::core::option::Option<unsafe extern "C" fn(This: *mut IOleLink) -> HRESULT>,
+    pub BindIfRunning: ::core::option::Option<unsafe extern "system" fn(This: *mut IOleLink) -> HRESULT>,
     pub GetBoundSource: ::core::option::Option<
-        unsafe extern "C" fn(This: *mut IOleLink, ppunk: *mut *mut IUnknown) -> HRESULT,
+        unsafe extern "system" fn(This: *mut IOleLink, ppunk: *mut *mut IUnknown) -> HRESULT,
     >,
-    pub UnbindSource: ::core::option::Option<unsafe extern "C" fn(This: *mut IOleLink) -> HRESULT>,
+    pub UnbindSource: ::core::option::Option<unsafe extern "system" fn(This: *mut IOleLink) -> HRESULT>,
     pub Update: ::core::option::Option<
-        unsafe extern "C" fn(This: *mut IOleLink, pbc: *mut IBindCtx) -> HRESULT,
+        unsafe extern "system" fn(This: *mut IOleLink, pbc: *mut IBindCtx) -> HRESULT,
     >,
 }
 #[repr(C)]
@@ -6229,18 +6229,18 @@ pub struct IOleLink {
 #[derive(Debug, Copy, Clone)]
 pub struct IOleClientSiteVtbl {
     pub QueryInterface: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IOleClientSite,
             riid: *const IID,
             ppvObject: *mut *mut ::core::ffi::c_void,
         ) -> HRESULT,
     >,
-    pub AddRef: ::core::option::Option<unsafe extern "C" fn(This: *mut IOleClientSite) -> ULONG>,
-    pub Release: ::core::option::Option<unsafe extern "C" fn(This: *mut IOleClientSite) -> ULONG>,
+    pub AddRef: ::core::option::Option<unsafe extern "system" fn(This: *mut IOleClientSite) -> ULONG>,
+    pub Release: ::core::option::Option<unsafe extern "system" fn(This: *mut IOleClientSite) -> ULONG>,
     pub SaveObject:
-        ::core::option::Option<unsafe extern "C" fn(This: *mut IOleClientSite) -> HRESULT>,
+        ::core::option::Option<unsafe extern "system" fn(This: *mut IOleClientSite) -> HRESULT>,
     pub GetMoniker: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IOleClientSite,
             dwAssign: DWORD,
             dwWhichMoniker: DWORD,
@@ -6248,18 +6248,18 @@ pub struct IOleClientSiteVtbl {
         ) -> HRESULT,
     >,
     pub GetContainer: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IOleClientSite,
             ppContainer: *mut *mut IOleContainer,
         ) -> HRESULT,
     >,
     pub ShowObject:
-        ::core::option::Option<unsafe extern "C" fn(This: *mut IOleClientSite) -> HRESULT>,
+        ::core::option::Option<unsafe extern "system" fn(This: *mut IOleClientSite) -> HRESULT>,
     pub OnShowWindow: ::core::option::Option<
-        unsafe extern "C" fn(This: *mut IOleClientSite, fShow: BOOL) -> HRESULT,
+        unsafe extern "system" fn(This: *mut IOleClientSite, fShow: BOOL) -> HRESULT,
     >,
     pub RequestNewObjectLayout:
-        ::core::option::Option<unsafe extern "C" fn(This: *mut IOleClientSite) -> HRESULT>,
+        ::core::option::Option<unsafe extern "system" fn(This: *mut IOleClientSite) -> HRESULT>,
 }
 #[repr(C)]
 #[derive(Debug, Copy, Clone)]
@@ -6270,16 +6270,16 @@ pub struct IOleClientSite {
 #[derive(Debug, Copy, Clone)]
 pub struct IOleCacheVtbl {
     pub QueryInterface: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IOleCache,
             riid: *const IID,
             ppvObject: *mut *mut ::core::ffi::c_void,
         ) -> HRESULT,
     >,
-    pub AddRef: ::core::option::Option<unsafe extern "C" fn(This: *mut IOleCache) -> ULONG>,
-    pub Release: ::core::option::Option<unsafe extern "C" fn(This: *mut IOleCache) -> ULONG>,
+    pub AddRef: ::core::option::Option<unsafe extern "system" fn(This: *mut IOleCache) -> ULONG>,
+    pub Release: ::core::option::Option<unsafe extern "system" fn(This: *mut IOleCache) -> ULONG>,
     pub Cache: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IOleCache,
             pformatetc: *mut FORMATETC,
             advf: DWORD,
@@ -6287,19 +6287,19 @@ pub struct IOleCacheVtbl {
         ) -> HRESULT,
     >,
     pub Uncache: ::core::option::Option<
-        unsafe extern "C" fn(This: *mut IOleCache, dwConnection: DWORD) -> HRESULT,
+        unsafe extern "system" fn(This: *mut IOleCache, dwConnection: DWORD) -> HRESULT,
     >,
     pub EnumCache: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IOleCache,
             ppenumSTATDATA: *mut *mut IEnumSTATDATA,
         ) -> HRESULT,
     >,
     pub InitCache: ::core::option::Option<
-        unsafe extern "C" fn(This: *mut IOleCache, pDataObject: *mut IDataObject) -> HRESULT,
+        unsafe extern "system" fn(This: *mut IOleCache, pDataObject: *mut IDataObject) -> HRESULT,
     >,
     pub SetData: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IOleCache,
             pformatetc: *mut FORMATETC,
             pmedium: *mut STGMEDIUM,
@@ -6316,16 +6316,16 @@ pub struct IOleCache {
 #[derive(Debug, Copy, Clone)]
 pub struct IOleCache2Vtbl {
     pub QueryInterface: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IOleCache2,
             riid: *const IID,
             ppvObject: *mut *mut ::core::ffi::c_void,
         ) -> HRESULT,
     >,
-    pub AddRef: ::core::option::Option<unsafe extern "C" fn(This: *mut IOleCache2) -> ULONG>,
-    pub Release: ::core::option::Option<unsafe extern "C" fn(This: *mut IOleCache2) -> ULONG>,
+    pub AddRef: ::core::option::Option<unsafe extern "system" fn(This: *mut IOleCache2) -> ULONG>,
+    pub Release: ::core::option::Option<unsafe extern "system" fn(This: *mut IOleCache2) -> ULONG>,
     pub Cache: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IOleCache2,
             pformatetc: *mut FORMATETC,
             advf: DWORD,
@@ -6333,19 +6333,19 @@ pub struct IOleCache2Vtbl {
         ) -> HRESULT,
     >,
     pub Uncache: ::core::option::Option<
-        unsafe extern "C" fn(This: *mut IOleCache2, dwConnection: DWORD) -> HRESULT,
+        unsafe extern "system" fn(This: *mut IOleCache2, dwConnection: DWORD) -> HRESULT,
     >,
     pub EnumCache: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IOleCache2,
             ppenumSTATDATA: *mut *mut IEnumSTATDATA,
         ) -> HRESULT,
     >,
     pub InitCache: ::core::option::Option<
-        unsafe extern "C" fn(This: *mut IOleCache2, pDataObject: *mut IDataObject) -> HRESULT,
+        unsafe extern "system" fn(This: *mut IOleCache2, pDataObject: *mut IDataObject) -> HRESULT,
     >,
     pub SetData: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IOleCache2,
             pformatetc: *mut FORMATETC,
             pmedium: *mut STGMEDIUM,
@@ -6353,7 +6353,7 @@ pub struct IOleCache2Vtbl {
         ) -> HRESULT,
     >,
     pub UpdateCache: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IOleCache2,
             pDataObject: LPDATAOBJECT,
             grfUpdf: DWORD,
@@ -6361,7 +6361,7 @@ pub struct IOleCache2Vtbl {
         ) -> HRESULT,
     >,
     pub DiscardCache: ::core::option::Option<
-        unsafe extern "C" fn(This: *mut IOleCache2, dwDiscardOptions: DWORD) -> HRESULT,
+        unsafe extern "system" fn(This: *mut IOleCache2, dwDiscardOptions: DWORD) -> HRESULT,
     >,
 }
 #[repr(C)]
@@ -6373,19 +6373,19 @@ pub struct IOleCache2 {
 #[derive(Debug, Copy, Clone)]
 pub struct IOleCacheControlVtbl {
     pub QueryInterface: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IOleCacheControl,
             riid: *const IID,
             ppvObject: *mut *mut ::core::ffi::c_void,
         ) -> HRESULT,
     >,
-    pub AddRef: ::core::option::Option<unsafe extern "C" fn(This: *mut IOleCacheControl) -> ULONG>,
-    pub Release: ::core::option::Option<unsafe extern "C" fn(This: *mut IOleCacheControl) -> ULONG>,
+    pub AddRef: ::core::option::Option<unsafe extern "system" fn(This: *mut IOleCacheControl) -> ULONG>,
+    pub Release: ::core::option::Option<unsafe extern "system" fn(This: *mut IOleCacheControl) -> ULONG>,
     pub OnRun: ::core::option::Option<
-        unsafe extern "C" fn(This: *mut IOleCacheControl, pDataObject: LPDATAOBJECT) -> HRESULT,
+        unsafe extern "system" fn(This: *mut IOleCacheControl, pDataObject: LPDATAOBJECT) -> HRESULT,
     >,
     pub OnStop:
-        ::core::option::Option<unsafe extern "C" fn(This: *mut IOleCacheControl) -> HRESULT>,
+        ::core::option::Option<unsafe extern "system" fn(This: *mut IOleCacheControl) -> HRESULT>,
 }
 #[repr(C)]
 #[derive(Debug, Copy, Clone)]
@@ -6405,16 +6405,16 @@ pub type LPOLEVERB = *mut tagOLEVERB;
 #[derive(Debug, Copy, Clone)]
 pub struct IEnumOLEVERBVtbl {
     pub QueryInterface: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IEnumOLEVERB,
             riid: *const IID,
             ppvObject: *mut *mut ::core::ffi::c_void,
         ) -> HRESULT,
     >,
-    pub AddRef: ::core::option::Option<unsafe extern "C" fn(This: *mut IEnumOLEVERB) -> ULONG>,
-    pub Release: ::core::option::Option<unsafe extern "C" fn(This: *mut IEnumOLEVERB) -> ULONG>,
+    pub AddRef: ::core::option::Option<unsafe extern "system" fn(This: *mut IEnumOLEVERB) -> ULONG>,
+    pub Release: ::core::option::Option<unsafe extern "system" fn(This: *mut IEnumOLEVERB) -> ULONG>,
     pub Next: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IEnumOLEVERB,
             celt: ULONG,
             rgelt: LPOLEVERB,
@@ -6422,11 +6422,11 @@ pub struct IEnumOLEVERBVtbl {
         ) -> HRESULT,
     >,
     pub Skip: ::core::option::Option<
-        unsafe extern "C" fn(This: *mut IEnumOLEVERB, celt: ULONG) -> HRESULT,
+        unsafe extern "system" fn(This: *mut IEnumOLEVERB, celt: ULONG) -> HRESULT,
     >,
-    pub Reset: ::core::option::Option<unsafe extern "C" fn(This: *mut IEnumOLEVERB) -> HRESULT>,
+    pub Reset: ::core::option::Option<unsafe extern "system" fn(This: *mut IEnumOLEVERB) -> HRESULT>,
     pub Clone: ::core::option::Option<
-        unsafe extern "C" fn(This: *mut IEnumOLEVERB, ppenum: *mut *mut IEnumOLEVERB) -> HRESULT,
+        unsafe extern "system" fn(This: *mut IEnumOLEVERB, ppenum: *mut *mut IEnumOLEVERB) -> HRESULT,
     >,
 }
 #[repr(C)]
@@ -6454,42 +6454,42 @@ pub use self::tagOLECLOSE as OLECLOSE;
 #[derive(Debug, Copy, Clone)]
 pub struct IOleObjectVtbl {
     pub QueryInterface: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IOleObject,
             riid: *const IID,
             ppvObject: *mut *mut ::core::ffi::c_void,
         ) -> HRESULT,
     >,
-    pub AddRef: ::core::option::Option<unsafe extern "C" fn(This: *mut IOleObject) -> ULONG>,
-    pub Release: ::core::option::Option<unsafe extern "C" fn(This: *mut IOleObject) -> ULONG>,
+    pub AddRef: ::core::option::Option<unsafe extern "system" fn(This: *mut IOleObject) -> ULONG>,
+    pub Release: ::core::option::Option<unsafe extern "system" fn(This: *mut IOleObject) -> ULONG>,
     pub SetClientSite: ::core::option::Option<
-        unsafe extern "C" fn(This: *mut IOleObject, pClientSite: *mut IOleClientSite) -> HRESULT,
+        unsafe extern "system" fn(This: *mut IOleObject, pClientSite: *mut IOleClientSite) -> HRESULT,
     >,
     pub GetClientSite: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IOleObject,
             ppClientSite: *mut *mut IOleClientSite,
         ) -> HRESULT,
     >,
     pub SetHostNames: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IOleObject,
             szContainerApp: LPCOLESTR,
             szContainerObj: LPCOLESTR,
         ) -> HRESULT,
     >,
     pub Close: ::core::option::Option<
-        unsafe extern "C" fn(This: *mut IOleObject, dwSaveOption: DWORD) -> HRESULT,
+        unsafe extern "system" fn(This: *mut IOleObject, dwSaveOption: DWORD) -> HRESULT,
     >,
     pub SetMoniker: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IOleObject,
             dwWhichMoniker: DWORD,
             pmk: *mut IMoniker,
         ) -> HRESULT,
     >,
     pub GetMoniker: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IOleObject,
             dwAssign: DWORD,
             dwWhichMoniker: DWORD,
@@ -6497,7 +6497,7 @@ pub struct IOleObjectVtbl {
         ) -> HRESULT,
     >,
     pub InitFromData: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IOleObject,
             pDataObject: *mut IDataObject,
             fCreation: BOOL,
@@ -6505,14 +6505,14 @@ pub struct IOleObjectVtbl {
         ) -> HRESULT,
     >,
     pub GetClipboardData: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IOleObject,
             dwReserved: DWORD,
             ppDataObject: *mut *mut IDataObject,
         ) -> HRESULT,
     >,
     pub DoVerb: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IOleObject,
             iVerb: LONG,
             lpmsg: LPMSG,
@@ -6523,62 +6523,62 @@ pub struct IOleObjectVtbl {
         ) -> HRESULT,
     >,
     pub EnumVerbs: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IOleObject,
             ppEnumOleVerb: *mut *mut IEnumOLEVERB,
         ) -> HRESULT,
     >,
-    pub Update: ::core::option::Option<unsafe extern "C" fn(This: *mut IOleObject) -> HRESULT>,
-    pub IsUpToDate: ::core::option::Option<unsafe extern "C" fn(This: *mut IOleObject) -> HRESULT>,
+    pub Update: ::core::option::Option<unsafe extern "system" fn(This: *mut IOleObject) -> HRESULT>,
+    pub IsUpToDate: ::core::option::Option<unsafe extern "system" fn(This: *mut IOleObject) -> HRESULT>,
     pub GetUserClassID: ::core::option::Option<
-        unsafe extern "C" fn(This: *mut IOleObject, pClsid: *mut CLSID) -> HRESULT,
+        unsafe extern "system" fn(This: *mut IOleObject, pClsid: *mut CLSID) -> HRESULT,
     >,
     pub GetUserType: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IOleObject,
             dwFormOfType: DWORD,
             pszUserType: *mut LPOLESTR,
         ) -> HRESULT,
     >,
     pub SetExtent: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IOleObject,
             dwDrawAspect: DWORD,
             psizel: *mut SIZEL,
         ) -> HRESULT,
     >,
     pub GetExtent: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IOleObject,
             dwDrawAspect: DWORD,
             psizel: *mut SIZEL,
         ) -> HRESULT,
     >,
     pub Advise: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IOleObject,
             pAdvSink: *mut IAdviseSink,
             pdwConnection: *mut DWORD,
         ) -> HRESULT,
     >,
     pub Unadvise: ::core::option::Option<
-        unsafe extern "C" fn(This: *mut IOleObject, dwConnection: DWORD) -> HRESULT,
+        unsafe extern "system" fn(This: *mut IOleObject, dwConnection: DWORD) -> HRESULT,
     >,
     pub EnumAdvise: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IOleObject,
             ppenumAdvise: *mut *mut IEnumSTATDATA,
         ) -> HRESULT,
     >,
     pub GetMiscStatus: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IOleObject,
             dwAspect: DWORD,
             pdwStatus: *mut DWORD,
         ) -> HRESULT,
     >,
     pub SetColorScheme: ::core::option::Option<
-        unsafe extern "C" fn(This: *mut IOleObject, pLogpal: *mut LOGPALETTE) -> HRESULT,
+        unsafe extern "system" fn(This: *mut IOleObject, pLogpal: *mut LOGPALETTE) -> HRESULT,
     >,
 }
 #[repr(C)]
@@ -6590,37 +6590,37 @@ pub struct IOleObject {
 #[derive(Debug, Copy, Clone)]
 pub struct IOleAdviseHolderVtbl {
     pub QueryInterface: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IOleAdviseHolder,
             riid: *const IID,
             ppvObject: *mut *mut ::core::ffi::c_void,
         ) -> HRESULT,
     >,
-    pub AddRef: ::core::option::Option<unsafe extern "C" fn(This: *mut IOleAdviseHolder) -> ULONG>,
-    pub Release: ::core::option::Option<unsafe extern "C" fn(This: *mut IOleAdviseHolder) -> ULONG>,
+    pub AddRef: ::core::option::Option<unsafe extern "system" fn(This: *mut IOleAdviseHolder) -> ULONG>,
+    pub Release: ::core::option::Option<unsafe extern "system" fn(This: *mut IOleAdviseHolder) -> ULONG>,
     pub Advise: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IOleAdviseHolder,
             pAdvise: *mut IAdviseSink,
             pdwConnection: *mut DWORD,
         ) -> HRESULT,
     >,
     pub Unadvise: ::core::option::Option<
-        unsafe extern "C" fn(This: *mut IOleAdviseHolder, dwConnection: DWORD) -> HRESULT,
+        unsafe extern "system" fn(This: *mut IOleAdviseHolder, dwConnection: DWORD) -> HRESULT,
     >,
     pub EnumAdvise: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IOleAdviseHolder,
             ppenumAdvise: *mut *mut IEnumSTATDATA,
         ) -> HRESULT,
     >,
     pub SendOnRename: ::core::option::Option<
-        unsafe extern "C" fn(This: *mut IOleAdviseHolder, pmk: *mut IMoniker) -> HRESULT,
+        unsafe extern "system" fn(This: *mut IOleAdviseHolder, pmk: *mut IMoniker) -> HRESULT,
     >,
     pub SendOnSave:
-        ::core::option::Option<unsafe extern "C" fn(This: *mut IOleAdviseHolder) -> HRESULT>,
+        ::core::option::Option<unsafe extern "system" fn(This: *mut IOleAdviseHolder) -> HRESULT>,
     pub SendOnClose:
-        ::core::option::Option<unsafe extern "C" fn(This: *mut IOleAdviseHolder) -> HRESULT>,
+        ::core::option::Option<unsafe extern "system" fn(This: *mut IOleAdviseHolder) -> HRESULT>,
 }
 #[repr(C)]
 #[derive(Debug, Copy, Clone)]
@@ -6631,15 +6631,15 @@ pub struct IOleAdviseHolder {
 #[derive(Debug, Copy, Clone)]
 pub struct IContinueVtbl {
     pub QueryInterface: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IContinue,
             riid: *const IID,
             ppvObject: *mut *mut ::core::ffi::c_void,
         ) -> HRESULT,
     >,
-    pub AddRef: ::core::option::Option<unsafe extern "C" fn(This: *mut IContinue) -> ULONG>,
-    pub Release: ::core::option::Option<unsafe extern "C" fn(This: *mut IContinue) -> ULONG>,
-    pub FContinue: ::core::option::Option<unsafe extern "C" fn(This: *mut IContinue) -> HRESULT>,
+    pub AddRef: ::core::option::Option<unsafe extern "system" fn(This: *mut IContinue) -> ULONG>,
+    pub Release: ::core::option::Option<unsafe extern "system" fn(This: *mut IContinue) -> ULONG>,
+    pub FContinue: ::core::option::Option<unsafe extern "system" fn(This: *mut IContinue) -> HRESULT>,
 }
 #[repr(C)]
 #[derive(Debug, Copy, Clone)]
@@ -6650,16 +6650,16 @@ pub struct IContinue {
 #[derive(Debug, Copy, Clone)]
 pub struct IViewObjectVtbl {
     pub QueryInterface: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IViewObject,
             riid: *const IID,
             ppvObject: *mut *mut ::core::ffi::c_void,
         ) -> HRESULT,
     >,
-    pub AddRef: ::core::option::Option<unsafe extern "C" fn(This: *mut IViewObject) -> ULONG>,
-    pub Release: ::core::option::Option<unsafe extern "C" fn(This: *mut IViewObject) -> ULONG>,
+    pub AddRef: ::core::option::Option<unsafe extern "system" fn(This: *mut IViewObject) -> ULONG>,
+    pub Release: ::core::option::Option<unsafe extern "system" fn(This: *mut IViewObject) -> ULONG>,
     pub Draw: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IViewObject,
             dwDrawAspect: DWORD,
             lindex: LONG,
@@ -6669,12 +6669,12 @@ pub struct IViewObjectVtbl {
             hdcDraw: HDC,
             lprcBounds: LPCRECTL,
             lprcWBounds: LPCRECTL,
-            pfnContinue: ::core::option::Option<unsafe extern "C" fn(dwContinue: ULONG_PTR) -> BOOL>,
+            pfnContinue: ::core::option::Option<unsafe extern "system" fn(dwContinue: ULONG_PTR) -> BOOL>,
             dwContinue: ULONG_PTR,
         ) -> HRESULT,
     >,
     pub GetColorSet: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IViewObject,
             dwDrawAspect: DWORD,
             lindex: LONG,
@@ -6685,7 +6685,7 @@ pub struct IViewObjectVtbl {
         ) -> HRESULT,
     >,
     pub Freeze: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IViewObject,
             dwDrawAspect: DWORD,
             lindex: LONG,
@@ -6694,10 +6694,10 @@ pub struct IViewObjectVtbl {
         ) -> HRESULT,
     >,
     pub Unfreeze: ::core::option::Option<
-        unsafe extern "C" fn(This: *mut IViewObject, dwFreeze: DWORD) -> HRESULT,
+        unsafe extern "system" fn(This: *mut IViewObject, dwFreeze: DWORD) -> HRESULT,
     >,
     pub SetAdvise: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IViewObject,
             aspects: DWORD,
             advf: DWORD,
@@ -6705,7 +6705,7 @@ pub struct IViewObjectVtbl {
         ) -> HRESULT,
     >,
     pub GetAdvise: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IViewObject,
             pAspects: *mut DWORD,
             pAdvf: *mut DWORD,
@@ -6722,16 +6722,16 @@ pub struct IViewObject {
 #[derive(Debug, Copy, Clone)]
 pub struct IViewObject2Vtbl {
     pub QueryInterface: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IViewObject2,
             riid: *const IID,
             ppvObject: *mut *mut ::core::ffi::c_void,
         ) -> HRESULT,
     >,
-    pub AddRef: ::core::option::Option<unsafe extern "C" fn(This: *mut IViewObject2) -> ULONG>,
-    pub Release: ::core::option::Option<unsafe extern "C" fn(This: *mut IViewObject2) -> ULONG>,
+    pub AddRef: ::core::option::Option<unsafe extern "system" fn(This: *mut IViewObject2) -> ULONG>,
+    pub Release: ::core::option::Option<unsafe extern "system" fn(This: *mut IViewObject2) -> ULONG>,
     pub Draw: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IViewObject2,
             dwDrawAspect: DWORD,
             lindex: LONG,
@@ -6741,12 +6741,12 @@ pub struct IViewObject2Vtbl {
             hdcDraw: HDC,
             lprcBounds: LPCRECTL,
             lprcWBounds: LPCRECTL,
-            pfnContinue: ::core::option::Option<unsafe extern "C" fn(dwContinue: ULONG_PTR) -> BOOL>,
+            pfnContinue: ::core::option::Option<unsafe extern "system" fn(dwContinue: ULONG_PTR) -> BOOL>,
             dwContinue: ULONG_PTR,
         ) -> HRESULT,
     >,
     pub GetColorSet: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IViewObject2,
             dwDrawAspect: DWORD,
             lindex: LONG,
@@ -6757,7 +6757,7 @@ pub struct IViewObject2Vtbl {
         ) -> HRESULT,
     >,
     pub Freeze: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IViewObject2,
             dwDrawAspect: DWORD,
             lindex: LONG,
@@ -6766,10 +6766,10 @@ pub struct IViewObject2Vtbl {
         ) -> HRESULT,
     >,
     pub Unfreeze: ::core::option::Option<
-        unsafe extern "C" fn(This: *mut IViewObject2, dwFreeze: DWORD) -> HRESULT,
+        unsafe extern "system" fn(This: *mut IViewObject2, dwFreeze: DWORD) -> HRESULT,
     >,
     pub SetAdvise: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IViewObject2,
             aspects: DWORD,
             advf: DWORD,
@@ -6777,7 +6777,7 @@ pub struct IViewObject2Vtbl {
         ) -> HRESULT,
     >,
     pub GetAdvise: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IViewObject2,
             pAspects: *mut DWORD,
             pAdvf: *mut DWORD,
@@ -6785,7 +6785,7 @@ pub struct IViewObject2Vtbl {
         ) -> HRESULT,
     >,
     pub GetExtent: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IViewObject2,
             dwDrawAspect: DWORD,
             lindex: LONG,
@@ -6803,23 +6803,23 @@ pub struct IViewObject2 {
 #[derive(Debug, Copy, Clone)]
 pub struct IDropSourceVtbl {
     pub QueryInterface: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IDropSource,
             riid: *const IID,
             ppvObject: *mut *mut ::core::ffi::c_void,
         ) -> HRESULT,
     >,
-    pub AddRef: ::core::option::Option<unsafe extern "C" fn(This: *mut IDropSource) -> ULONG>,
-    pub Release: ::core::option::Option<unsafe extern "C" fn(This: *mut IDropSource) -> ULONG>,
+    pub AddRef: ::core::option::Option<unsafe extern "system" fn(This: *mut IDropSource) -> ULONG>,
+    pub Release: ::core::option::Option<unsafe extern "system" fn(This: *mut IDropSource) -> ULONG>,
     pub QueryContinueDrag: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IDropSource,
             fEscapePressed: BOOL,
             grfKeyState: DWORD,
         ) -> HRESULT,
     >,
     pub GiveFeedback: ::core::option::Option<
-        unsafe extern "C" fn(This: *mut IDropSource, dwEffect: DWORD) -> HRESULT,
+        unsafe extern "system" fn(This: *mut IDropSource, dwEffect: DWORD) -> HRESULT,
     >,
 }
 #[repr(C)]
@@ -6831,16 +6831,16 @@ pub struct IDropSource {
 #[derive(Debug, Copy, Clone)]
 pub struct IDropTargetVtbl {
     pub QueryInterface: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IDropTarget,
             riid: *const IID,
             ppvObject: *mut *mut ::core::ffi::c_void,
         ) -> HRESULT,
     >,
-    pub AddRef: ::core::option::Option<unsafe extern "C" fn(This: *mut IDropTarget) -> ULONG>,
-    pub Release: ::core::option::Option<unsafe extern "C" fn(This: *mut IDropTarget) -> ULONG>,
+    pub AddRef: ::core::option::Option<unsafe extern "system" fn(This: *mut IDropTarget) -> ULONG>,
+    pub Release: ::core::option::Option<unsafe extern "system" fn(This: *mut IDropTarget) -> ULONG>,
     pub DragEnter: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IDropTarget,
             pDataObj: *mut IDataObject,
             grfKeyState: DWORD,
@@ -6849,16 +6849,16 @@ pub struct IDropTargetVtbl {
         ) -> HRESULT,
     >,
     pub DragOver: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IDropTarget,
             grfKeyState: DWORD,
             pt: POINTL,
             pdwEffect: *mut DWORD,
         ) -> HRESULT,
     >,
-    pub DragLeave: ::core::option::Option<unsafe extern "C" fn(This: *mut IDropTarget) -> HRESULT>,
+    pub DragLeave: ::core::option::Option<unsafe extern "system" fn(This: *mut IDropTarget) -> HRESULT>,
     pub Drop: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IDropTarget,
             pDataObj: *mut IDataObject,
             grfKeyState: DWORD,
@@ -6876,20 +6876,20 @@ pub struct IDropTarget {
 #[derive(Debug, Copy, Clone)]
 pub struct IDropSourceNotifyVtbl {
     pub QueryInterface: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IDropSourceNotify,
             riid: *const IID,
             ppvObject: *mut *mut ::core::ffi::c_void,
         ) -> HRESULT,
     >,
-    pub AddRef: ::core::option::Option<unsafe extern "C" fn(This: *mut IDropSourceNotify) -> ULONG>,
+    pub AddRef: ::core::option::Option<unsafe extern "system" fn(This: *mut IDropSourceNotify) -> ULONG>,
     pub Release:
-        ::core::option::Option<unsafe extern "C" fn(This: *mut IDropSourceNotify) -> ULONG>,
+        ::core::option::Option<unsafe extern "system" fn(This: *mut IDropSourceNotify) -> ULONG>,
     pub DragTargetEnter: ::core::option::Option<
-        unsafe extern "C" fn(This: *mut IDropSourceNotify, hwnd: HWND) -> HRESULT,
+        unsafe extern "system" fn(This: *mut IDropSourceNotify, hwnd: HWND) -> HRESULT,
     >,
     pub DragTargetLeave:
-        ::core::option::Option<unsafe extern "C" fn(This: *mut IDropSourceNotify) -> HRESULT>,
+        ::core::option::Option<unsafe extern "system" fn(This: *mut IDropSourceNotify) -> HRESULT>,
 }
 #[repr(C)]
 #[derive(Debug, Copy, Clone)]
@@ -6900,16 +6900,16 @@ pub struct IDropSourceNotify {
 #[derive(Debug, Copy, Clone)]
 pub struct IServiceProviderVtbl {
     pub QueryInterface: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IServiceProvider,
             riid: *const IID,
             ppvObject: *mut *mut ::core::ffi::c_void,
         ) -> HRESULT,
     >,
-    pub AddRef: ::core::option::Option<unsafe extern "C" fn(This: *mut IServiceProvider) -> ULONG>,
-    pub Release: ::core::option::Option<unsafe extern "C" fn(This: *mut IServiceProvider) -> ULONG>,
+    pub AddRef: ::core::option::Option<unsafe extern "system" fn(This: *mut IServiceProvider) -> ULONG>,
+    pub Release: ::core::option::Option<unsafe extern "system" fn(This: *mut IServiceProvider) -> ULONG>,
     pub QueryService: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IServiceProvider,
             guidService: *const GUID,
             riid: *const IID,
@@ -7284,7 +7284,7 @@ pub struct tagEXCEPINFO {
     pub dwHelpContext: DWORD,
     pub pvReserved: PVOID,
     pub pfnDeferredFillIn:
-        ::core::option::Option<unsafe extern "C" fn(arg1: *mut tagEXCEPINFO) -> HRESULT>,
+        ::core::option::Option<unsafe extern "system" fn(arg1: *mut tagEXCEPINFO) -> HRESULT>,
     pub scode: SCODE,
 }
 pub type EXCEPINFO = tagEXCEPINFO;
@@ -7381,19 +7381,19 @@ pub type CUSTDATA = tagCUSTDATA;
 #[derive(Debug, Copy, Clone)]
 pub struct IDispatchVtbl {
     pub QueryInterface: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IDispatch,
             riid: *const IID,
             ppvObject: *mut *mut ::core::ffi::c_void,
         ) -> HRESULT,
     >,
-    pub AddRef: ::core::option::Option<unsafe extern "C" fn(This: *mut IDispatch) -> ULONG>,
-    pub Release: ::core::option::Option<unsafe extern "C" fn(This: *mut IDispatch) -> ULONG>,
+    pub AddRef: ::core::option::Option<unsafe extern "system" fn(This: *mut IDispatch) -> ULONG>,
+    pub Release: ::core::option::Option<unsafe extern "system" fn(This: *mut IDispatch) -> ULONG>,
     pub GetTypeInfoCount: ::core::option::Option<
-        unsafe extern "C" fn(This: *mut IDispatch, pctinfo: *mut UINT) -> HRESULT,
+        unsafe extern "system" fn(This: *mut IDispatch, pctinfo: *mut UINT) -> HRESULT,
     >,
     pub GetTypeInfo: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IDispatch,
             iTInfo: UINT,
             lcid: LCID,
@@ -7401,7 +7401,7 @@ pub struct IDispatchVtbl {
         ) -> HRESULT,
     >,
     pub GetIDsOfNames: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IDispatch,
             riid: *const IID,
             rgszNames: *mut LPOLESTR,
@@ -7411,7 +7411,7 @@ pub struct IDispatchVtbl {
         ) -> HRESULT,
     >,
     pub Invoke: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IDispatch,
             dispIdMember: DISPID,
             riid: *const IID,
@@ -7433,16 +7433,16 @@ pub struct IDispatch {
 #[derive(Debug, Copy, Clone)]
 pub struct IEnumVARIANTVtbl {
     pub QueryInterface: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IEnumVARIANT,
             riid: *const IID,
             ppvObject: *mut *mut ::core::ffi::c_void,
         ) -> HRESULT,
     >,
-    pub AddRef: ::core::option::Option<unsafe extern "C" fn(This: *mut IEnumVARIANT) -> ULONG>,
-    pub Release: ::core::option::Option<unsafe extern "C" fn(This: *mut IEnumVARIANT) -> ULONG>,
+    pub AddRef: ::core::option::Option<unsafe extern "system" fn(This: *mut IEnumVARIANT) -> ULONG>,
+    pub Release: ::core::option::Option<unsafe extern "system" fn(This: *mut IEnumVARIANT) -> ULONG>,
     pub Next: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IEnumVARIANT,
             celt: ULONG,
             rgVar: *mut VARIANT,
@@ -7450,11 +7450,11 @@ pub struct IEnumVARIANTVtbl {
         ) -> HRESULT,
     >,
     pub Skip: ::core::option::Option<
-        unsafe extern "C" fn(This: *mut IEnumVARIANT, celt: ULONG) -> HRESULT,
+        unsafe extern "system" fn(This: *mut IEnumVARIANT, celt: ULONG) -> HRESULT,
     >,
-    pub Reset: ::core::option::Option<unsafe extern "C" fn(This: *mut IEnumVARIANT) -> HRESULT>,
+    pub Reset: ::core::option::Option<unsafe extern "system" fn(This: *mut IEnumVARIANT) -> HRESULT>,
     pub Clone: ::core::option::Option<
-        unsafe extern "C" fn(This: *mut IEnumVARIANT, ppEnum: *mut *mut IEnumVARIANT) -> HRESULT,
+        unsafe extern "system" fn(This: *mut IEnumVARIANT, ppEnum: *mut *mut IEnumVARIANT) -> HRESULT,
     >,
 }
 #[repr(C)]
@@ -7482,16 +7482,16 @@ pub type BINDPTR = tagBINDPTR;
 #[derive(Debug, Copy, Clone)]
 pub struct ITypeCompVtbl {
     pub QueryInterface: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut ITypeComp,
             riid: *const IID,
             ppvObject: *mut *mut ::core::ffi::c_void,
         ) -> HRESULT,
     >,
-    pub AddRef: ::core::option::Option<unsafe extern "C" fn(This: *mut ITypeComp) -> ULONG>,
-    pub Release: ::core::option::Option<unsafe extern "C" fn(This: *mut ITypeComp) -> ULONG>,
+    pub AddRef: ::core::option::Option<unsafe extern "system" fn(This: *mut ITypeComp) -> ULONG>,
+    pub Release: ::core::option::Option<unsafe extern "system" fn(This: *mut ITypeComp) -> ULONG>,
     pub Bind: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut ITypeComp,
             szName: LPOLESTR,
             lHashVal: ULONG,
@@ -7502,7 +7502,7 @@ pub struct ITypeCompVtbl {
         ) -> HRESULT,
     >,
     pub BindType: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut ITypeComp,
             szName: LPOLESTR,
             lHashVal: ULONG,
@@ -7520,36 +7520,36 @@ pub struct ITypeComp {
 #[derive(Debug, Copy, Clone)]
 pub struct ITypeInfoVtbl {
     pub QueryInterface: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut ITypeInfo,
             riid: *const IID,
             ppvObject: *mut *mut ::core::ffi::c_void,
         ) -> HRESULT,
     >,
-    pub AddRef: ::core::option::Option<unsafe extern "C" fn(This: *mut ITypeInfo) -> ULONG>,
-    pub Release: ::core::option::Option<unsafe extern "C" fn(This: *mut ITypeInfo) -> ULONG>,
+    pub AddRef: ::core::option::Option<unsafe extern "system" fn(This: *mut ITypeInfo) -> ULONG>,
+    pub Release: ::core::option::Option<unsafe extern "system" fn(This: *mut ITypeInfo) -> ULONG>,
     pub GetTypeAttr: ::core::option::Option<
-        unsafe extern "C" fn(This: *mut ITypeInfo, ppTypeAttr: *mut *mut TYPEATTR) -> HRESULT,
+        unsafe extern "system" fn(This: *mut ITypeInfo, ppTypeAttr: *mut *mut TYPEATTR) -> HRESULT,
     >,
     pub GetTypeComp: ::core::option::Option<
-        unsafe extern "C" fn(This: *mut ITypeInfo, ppTComp: *mut *mut ITypeComp) -> HRESULT,
+        unsafe extern "system" fn(This: *mut ITypeInfo, ppTComp: *mut *mut ITypeComp) -> HRESULT,
     >,
     pub GetFuncDesc: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut ITypeInfo,
             index: UINT,
             ppFuncDesc: *mut *mut FUNCDESC,
         ) -> HRESULT,
     >,
     pub GetVarDesc: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut ITypeInfo,
             index: UINT,
             ppVarDesc: *mut *mut VARDESC,
         ) -> HRESULT,
     >,
     pub GetNames: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut ITypeInfo,
             memid: MEMBERID,
             rgBstrNames: *mut BSTR,
@@ -7558,17 +7558,17 @@ pub struct ITypeInfoVtbl {
         ) -> HRESULT,
     >,
     pub GetRefTypeOfImplType: ::core::option::Option<
-        unsafe extern "C" fn(This: *mut ITypeInfo, index: UINT, pRefType: *mut HREFTYPE) -> HRESULT,
+        unsafe extern "system" fn(This: *mut ITypeInfo, index: UINT, pRefType: *mut HREFTYPE) -> HRESULT,
     >,
     pub GetImplTypeFlags: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut ITypeInfo,
             index: UINT,
             pImplTypeFlags: *mut INT,
         ) -> HRESULT,
     >,
     pub GetIDsOfNames: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut ITypeInfo,
             rgszNames: *mut LPOLESTR,
             cNames: UINT,
@@ -7576,7 +7576,7 @@ pub struct ITypeInfoVtbl {
         ) -> HRESULT,
     >,
     pub Invoke: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut ITypeInfo,
             pvInstance: PVOID,
             memid: MEMBERID,
@@ -7588,7 +7588,7 @@ pub struct ITypeInfoVtbl {
         ) -> HRESULT,
     >,
     pub GetDocumentation: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut ITypeInfo,
             memid: MEMBERID,
             pBstrName: *mut BSTR,
@@ -7598,7 +7598,7 @@ pub struct ITypeInfoVtbl {
         ) -> HRESULT,
     >,
     pub GetDllEntry: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut ITypeInfo,
             memid: MEMBERID,
             invKind: INVOKEKIND,
@@ -7608,14 +7608,14 @@ pub struct ITypeInfoVtbl {
         ) -> HRESULT,
     >,
     pub GetRefTypeInfo: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut ITypeInfo,
             hRefType: HREFTYPE,
             ppTInfo: *mut *mut ITypeInfo,
         ) -> HRESULT,
     >,
     pub AddressOfMember: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut ITypeInfo,
             memid: MEMBERID,
             invKind: INVOKEKIND,
@@ -7623,7 +7623,7 @@ pub struct ITypeInfoVtbl {
         ) -> HRESULT,
     >,
     pub CreateInstance: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut ITypeInfo,
             pUnkOuter: *mut IUnknown,
             riid: *const IID,
@@ -7631,27 +7631,27 @@ pub struct ITypeInfoVtbl {
         ) -> HRESULT,
     >,
     pub GetMops: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut ITypeInfo,
             memid: MEMBERID,
             pBstrMops: *mut BSTR,
         ) -> HRESULT,
     >,
     pub GetContainingTypeLib: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut ITypeInfo,
             ppTLib: *mut *mut ITypeLib,
             pIndex: *mut UINT,
         ) -> HRESULT,
     >,
     pub ReleaseTypeAttr: ::core::option::Option<
-        unsafe extern "C" fn(This: *mut ITypeInfo, pTypeAttr: *mut TYPEATTR),
+        unsafe extern "system" fn(This: *mut ITypeInfo, pTypeAttr: *mut TYPEATTR),
     >,
     pub ReleaseFuncDesc: ::core::option::Option<
-        unsafe extern "C" fn(This: *mut ITypeInfo, pFuncDesc: *mut FUNCDESC),
+        unsafe extern "system" fn(This: *mut ITypeInfo, pFuncDesc: *mut FUNCDESC),
     >,
     pub ReleaseVarDesc:
-        ::core::option::Option<unsafe extern "C" fn(This: *mut ITypeInfo, pVarDesc: *mut VARDESC)>,
+        ::core::option::Option<unsafe extern "system" fn(This: *mut ITypeInfo, pVarDesc: *mut VARDESC)>,
 }
 #[repr(C)]
 #[derive(Debug, Copy, Clone)]
@@ -7662,36 +7662,36 @@ pub struct ITypeInfo {
 #[derive(Debug, Copy, Clone)]
 pub struct ITypeInfo2Vtbl {
     pub QueryInterface: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut ITypeInfo2,
             riid: *const IID,
             ppvObject: *mut *mut ::core::ffi::c_void,
         ) -> HRESULT,
     >,
-    pub AddRef: ::core::option::Option<unsafe extern "C" fn(This: *mut ITypeInfo2) -> ULONG>,
-    pub Release: ::core::option::Option<unsafe extern "C" fn(This: *mut ITypeInfo2) -> ULONG>,
+    pub AddRef: ::core::option::Option<unsafe extern "system" fn(This: *mut ITypeInfo2) -> ULONG>,
+    pub Release: ::core::option::Option<unsafe extern "system" fn(This: *mut ITypeInfo2) -> ULONG>,
     pub GetTypeAttr: ::core::option::Option<
-        unsafe extern "C" fn(This: *mut ITypeInfo2, ppTypeAttr: *mut *mut TYPEATTR) -> HRESULT,
+        unsafe extern "system" fn(This: *mut ITypeInfo2, ppTypeAttr: *mut *mut TYPEATTR) -> HRESULT,
     >,
     pub GetTypeComp: ::core::option::Option<
-        unsafe extern "C" fn(This: *mut ITypeInfo2, ppTComp: *mut *mut ITypeComp) -> HRESULT,
+        unsafe extern "system" fn(This: *mut ITypeInfo2, ppTComp: *mut *mut ITypeComp) -> HRESULT,
     >,
     pub GetFuncDesc: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut ITypeInfo2,
             index: UINT,
             ppFuncDesc: *mut *mut FUNCDESC,
         ) -> HRESULT,
     >,
     pub GetVarDesc: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut ITypeInfo2,
             index: UINT,
             ppVarDesc: *mut *mut VARDESC,
         ) -> HRESULT,
     >,
     pub GetNames: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut ITypeInfo2,
             memid: MEMBERID,
             rgBstrNames: *mut BSTR,
@@ -7700,21 +7700,21 @@ pub struct ITypeInfo2Vtbl {
         ) -> HRESULT,
     >,
     pub GetRefTypeOfImplType: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut ITypeInfo2,
             index: UINT,
             pRefType: *mut HREFTYPE,
         ) -> HRESULT,
     >,
     pub GetImplTypeFlags: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut ITypeInfo2,
             index: UINT,
             pImplTypeFlags: *mut INT,
         ) -> HRESULT,
     >,
     pub GetIDsOfNames: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut ITypeInfo2,
             rgszNames: *mut LPOLESTR,
             cNames: UINT,
@@ -7722,7 +7722,7 @@ pub struct ITypeInfo2Vtbl {
         ) -> HRESULT,
     >,
     pub Invoke: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut ITypeInfo2,
             pvInstance: PVOID,
             memid: MEMBERID,
@@ -7734,7 +7734,7 @@ pub struct ITypeInfo2Vtbl {
         ) -> HRESULT,
     >,
     pub GetDocumentation: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut ITypeInfo2,
             memid: MEMBERID,
             pBstrName: *mut BSTR,
@@ -7744,7 +7744,7 @@ pub struct ITypeInfo2Vtbl {
         ) -> HRESULT,
     >,
     pub GetDllEntry: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut ITypeInfo2,
             memid: MEMBERID,
             invKind: INVOKEKIND,
@@ -7754,14 +7754,14 @@ pub struct ITypeInfo2Vtbl {
         ) -> HRESULT,
     >,
     pub GetRefTypeInfo: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut ITypeInfo2,
             hRefType: HREFTYPE,
             ppTInfo: *mut *mut ITypeInfo,
         ) -> HRESULT,
     >,
     pub AddressOfMember: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut ITypeInfo2,
             memid: MEMBERID,
             invKind: INVOKEKIND,
@@ -7769,7 +7769,7 @@ pub struct ITypeInfo2Vtbl {
         ) -> HRESULT,
     >,
     pub CreateInstance: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut ITypeInfo2,
             pUnkOuter: *mut IUnknown,
             riid: *const IID,
@@ -7777,35 +7777,35 @@ pub struct ITypeInfo2Vtbl {
         ) -> HRESULT,
     >,
     pub GetMops: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut ITypeInfo2,
             memid: MEMBERID,
             pBstrMops: *mut BSTR,
         ) -> HRESULT,
     >,
     pub GetContainingTypeLib: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut ITypeInfo2,
             ppTLib: *mut *mut ITypeLib,
             pIndex: *mut UINT,
         ) -> HRESULT,
     >,
     pub ReleaseTypeAttr: ::core::option::Option<
-        unsafe extern "C" fn(This: *mut ITypeInfo2, pTypeAttr: *mut TYPEATTR),
+        unsafe extern "system" fn(This: *mut ITypeInfo2, pTypeAttr: *mut TYPEATTR),
     >,
     pub ReleaseFuncDesc: ::core::option::Option<
-        unsafe extern "C" fn(This: *mut ITypeInfo2, pFuncDesc: *mut FUNCDESC),
+        unsafe extern "system" fn(This: *mut ITypeInfo2, pFuncDesc: *mut FUNCDESC),
     >,
     pub ReleaseVarDesc:
-        ::core::option::Option<unsafe extern "C" fn(This: *mut ITypeInfo2, pVarDesc: *mut VARDESC)>,
+        ::core::option::Option<unsafe extern "system" fn(This: *mut ITypeInfo2, pVarDesc: *mut VARDESC)>,
     pub GetTypeKind: ::core::option::Option<
-        unsafe extern "C" fn(This: *mut ITypeInfo2, pTypeKind: *mut TYPEKIND) -> HRESULT,
+        unsafe extern "system" fn(This: *mut ITypeInfo2, pTypeKind: *mut TYPEKIND) -> HRESULT,
     >,
     pub GetTypeFlags: ::core::option::Option<
-        unsafe extern "C" fn(This: *mut ITypeInfo2, pTypeFlags: *mut ULONG) -> HRESULT,
+        unsafe extern "system" fn(This: *mut ITypeInfo2, pTypeFlags: *mut ULONG) -> HRESULT,
     >,
     pub GetFuncIndexOfMemId: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut ITypeInfo2,
             memid: MEMBERID,
             invKind: INVOKEKIND,
@@ -7813,21 +7813,21 @@ pub struct ITypeInfo2Vtbl {
         ) -> HRESULT,
     >,
     pub GetVarIndexOfMemId: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut ITypeInfo2,
             memid: MEMBERID,
             pVarIndex: *mut UINT,
         ) -> HRESULT,
     >,
     pub GetCustData: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut ITypeInfo2,
             guid: *const GUID,
             pVarVal: *mut VARIANT,
         ) -> HRESULT,
     >,
     pub GetFuncCustData: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut ITypeInfo2,
             index: UINT,
             guid: *const GUID,
@@ -7835,7 +7835,7 @@ pub struct ITypeInfo2Vtbl {
         ) -> HRESULT,
     >,
     pub GetParamCustData: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut ITypeInfo2,
             indexFunc: UINT,
             indexParam: UINT,
@@ -7844,7 +7844,7 @@ pub struct ITypeInfo2Vtbl {
         ) -> HRESULT,
     >,
     pub GetVarCustData: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut ITypeInfo2,
             index: UINT,
             guid: *const GUID,
@@ -7852,7 +7852,7 @@ pub struct ITypeInfo2Vtbl {
         ) -> HRESULT,
     >,
     pub GetImplTypeCustData: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut ITypeInfo2,
             index: UINT,
             guid: *const GUID,
@@ -7860,7 +7860,7 @@ pub struct ITypeInfo2Vtbl {
         ) -> HRESULT,
     >,
     pub GetDocumentation2: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut ITypeInfo2,
             memid: MEMBERID,
             lcid: LCID,
@@ -7870,17 +7870,17 @@ pub struct ITypeInfo2Vtbl {
         ) -> HRESULT,
     >,
     pub GetAllCustData: ::core::option::Option<
-        unsafe extern "C" fn(This: *mut ITypeInfo2, pCustData: *mut CUSTDATA) -> HRESULT,
+        unsafe extern "system" fn(This: *mut ITypeInfo2, pCustData: *mut CUSTDATA) -> HRESULT,
     >,
     pub GetAllFuncCustData: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut ITypeInfo2,
             index: UINT,
             pCustData: *mut CUSTDATA,
         ) -> HRESULT,
     >,
     pub GetAllParamCustData: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut ITypeInfo2,
             indexFunc: UINT,
             indexParam: UINT,
@@ -7888,14 +7888,14 @@ pub struct ITypeInfo2Vtbl {
         ) -> HRESULT,
     >,
     pub GetAllVarCustData: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut ITypeInfo2,
             index: UINT,
             pCustData: *mut CUSTDATA,
         ) -> HRESULT,
     >,
     pub GetAllImplTypeCustData: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut ITypeInfo2,
             index: UINT,
             pCustData: *mut CUSTDATA,
@@ -7928,40 +7928,40 @@ pub type TLIBATTR = tagTLIBATTR;
 #[derive(Debug, Copy, Clone)]
 pub struct ITypeLibVtbl {
     pub QueryInterface: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut ITypeLib,
             riid: *const IID,
             ppvObject: *mut *mut ::core::ffi::c_void,
         ) -> HRESULT,
     >,
-    pub AddRef: ::core::option::Option<unsafe extern "C" fn(This: *mut ITypeLib) -> ULONG>,
-    pub Release: ::core::option::Option<unsafe extern "C" fn(This: *mut ITypeLib) -> ULONG>,
-    pub GetTypeInfoCount: ::core::option::Option<unsafe extern "C" fn(This: *mut ITypeLib) -> UINT>,
+    pub AddRef: ::core::option::Option<unsafe extern "system" fn(This: *mut ITypeLib) -> ULONG>,
+    pub Release: ::core::option::Option<unsafe extern "system" fn(This: *mut ITypeLib) -> ULONG>,
+    pub GetTypeInfoCount: ::core::option::Option<unsafe extern "system" fn(This: *mut ITypeLib) -> UINT>,
     pub GetTypeInfo: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut ITypeLib,
             index: UINT,
             ppTInfo: *mut *mut ITypeInfo,
         ) -> HRESULT,
     >,
     pub GetTypeInfoType: ::core::option::Option<
-        unsafe extern "C" fn(This: *mut ITypeLib, index: UINT, pTKind: *mut TYPEKIND) -> HRESULT,
+        unsafe extern "system" fn(This: *mut ITypeLib, index: UINT, pTKind: *mut TYPEKIND) -> HRESULT,
     >,
     pub GetTypeInfoOfGuid: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut ITypeLib,
             guid: *const GUID,
             ppTinfo: *mut *mut ITypeInfo,
         ) -> HRESULT,
     >,
     pub GetLibAttr: ::core::option::Option<
-        unsafe extern "C" fn(This: *mut ITypeLib, ppTLibAttr: *mut *mut TLIBATTR) -> HRESULT,
+        unsafe extern "system" fn(This: *mut ITypeLib, ppTLibAttr: *mut *mut TLIBATTR) -> HRESULT,
     >,
     pub GetTypeComp: ::core::option::Option<
-        unsafe extern "C" fn(This: *mut ITypeLib, ppTComp: *mut *mut ITypeComp) -> HRESULT,
+        unsafe extern "system" fn(This: *mut ITypeLib, ppTComp: *mut *mut ITypeComp) -> HRESULT,
     >,
     pub GetDocumentation: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut ITypeLib,
             index: INT,
             pBstrName: *mut BSTR,
@@ -7971,7 +7971,7 @@ pub struct ITypeLibVtbl {
         ) -> HRESULT,
     >,
     pub IsName: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut ITypeLib,
             szNameBuf: LPOLESTR,
             lHashVal: ULONG,
@@ -7979,7 +7979,7 @@ pub struct ITypeLibVtbl {
         ) -> HRESULT,
     >,
     pub FindName: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut ITypeLib,
             szNameBuf: LPOLESTR,
             lHashVal: ULONG,
@@ -7989,7 +7989,7 @@ pub struct ITypeLibVtbl {
         ) -> HRESULT,
     >,
     pub ReleaseTLibAttr:
-        ::core::option::Option<unsafe extern "C" fn(This: *mut ITypeLib, pTLibAttr: *mut TLIBATTR)>,
+        ::core::option::Option<unsafe extern "system" fn(This: *mut ITypeLib, pTLibAttr: *mut TLIBATTR)>,
 }
 #[repr(C)]
 #[derive(Debug, Copy, Clone)]
@@ -8000,41 +8000,41 @@ pub struct ITypeLib {
 #[derive(Debug, Copy, Clone)]
 pub struct ITypeLib2Vtbl {
     pub QueryInterface: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut ITypeLib2,
             riid: *const IID,
             ppvObject: *mut *mut ::core::ffi::c_void,
         ) -> HRESULT,
     >,
-    pub AddRef: ::core::option::Option<unsafe extern "C" fn(This: *mut ITypeLib2) -> ULONG>,
-    pub Release: ::core::option::Option<unsafe extern "C" fn(This: *mut ITypeLib2) -> ULONG>,
+    pub AddRef: ::core::option::Option<unsafe extern "system" fn(This: *mut ITypeLib2) -> ULONG>,
+    pub Release: ::core::option::Option<unsafe extern "system" fn(This: *mut ITypeLib2) -> ULONG>,
     pub GetTypeInfoCount:
-        ::core::option::Option<unsafe extern "C" fn(This: *mut ITypeLib2) -> UINT>,
+        ::core::option::Option<unsafe extern "system" fn(This: *mut ITypeLib2) -> UINT>,
     pub GetTypeInfo: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut ITypeLib2,
             index: UINT,
             ppTInfo: *mut *mut ITypeInfo,
         ) -> HRESULT,
     >,
     pub GetTypeInfoType: ::core::option::Option<
-        unsafe extern "C" fn(This: *mut ITypeLib2, index: UINT, pTKind: *mut TYPEKIND) -> HRESULT,
+        unsafe extern "system" fn(This: *mut ITypeLib2, index: UINT, pTKind: *mut TYPEKIND) -> HRESULT,
     >,
     pub GetTypeInfoOfGuid: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut ITypeLib2,
             guid: *const GUID,
             ppTinfo: *mut *mut ITypeInfo,
         ) -> HRESULT,
     >,
     pub GetLibAttr: ::core::option::Option<
-        unsafe extern "C" fn(This: *mut ITypeLib2, ppTLibAttr: *mut *mut TLIBATTR) -> HRESULT,
+        unsafe extern "system" fn(This: *mut ITypeLib2, ppTLibAttr: *mut *mut TLIBATTR) -> HRESULT,
     >,
     pub GetTypeComp: ::core::option::Option<
-        unsafe extern "C" fn(This: *mut ITypeLib2, ppTComp: *mut *mut ITypeComp) -> HRESULT,
+        unsafe extern "system" fn(This: *mut ITypeLib2, ppTComp: *mut *mut ITypeComp) -> HRESULT,
     >,
     pub GetDocumentation: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut ITypeLib2,
             index: INT,
             pBstrName: *mut BSTR,
@@ -8044,7 +8044,7 @@ pub struct ITypeLib2Vtbl {
         ) -> HRESULT,
     >,
     pub IsName: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut ITypeLib2,
             szNameBuf: LPOLESTR,
             lHashVal: ULONG,
@@ -8052,7 +8052,7 @@ pub struct ITypeLib2Vtbl {
         ) -> HRESULT,
     >,
     pub FindName: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut ITypeLib2,
             szNameBuf: LPOLESTR,
             lHashVal: ULONG,
@@ -8062,24 +8062,24 @@ pub struct ITypeLib2Vtbl {
         ) -> HRESULT,
     >,
     pub ReleaseTLibAttr: ::core::option::Option<
-        unsafe extern "C" fn(This: *mut ITypeLib2, pTLibAttr: *mut TLIBATTR),
+        unsafe extern "system" fn(This: *mut ITypeLib2, pTLibAttr: *mut TLIBATTR),
     >,
     pub GetCustData: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut ITypeLib2,
             guid: *const GUID,
             pVarVal: *mut VARIANT,
         ) -> HRESULT,
     >,
     pub GetLibStatistics: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut ITypeLib2,
             pcUniqueNames: *mut ULONG,
             pcchUniqueNames: *mut ULONG,
         ) -> HRESULT,
     >,
     pub GetDocumentation2: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut ITypeLib2,
             index: INT,
             lcid: LCID,
@@ -8089,7 +8089,7 @@ pub struct ITypeLib2Vtbl {
         ) -> HRESULT,
     >,
     pub GetAllCustData: ::core::option::Option<
-        unsafe extern "C" fn(This: *mut ITypeLib2, pCustData: *mut CUSTDATA) -> HRESULT,
+        unsafe extern "system" fn(This: *mut ITypeLib2, pCustData: *mut CUSTDATA) -> HRESULT,
     >,
 }
 #[repr(C)]
@@ -8111,17 +8111,17 @@ pub use self::tagCHANGEKIND as CHANGEKIND;
 #[derive(Debug, Copy, Clone)]
 pub struct ITypeChangeEventsVtbl {
     pub QueryInterface: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut ITypeChangeEvents,
             riid: *const IID,
             ppvObject: *mut *mut ::core::ffi::c_void,
         ) -> HRESULT,
     >,
-    pub AddRef: ::core::option::Option<unsafe extern "C" fn(This: *mut ITypeChangeEvents) -> ULONG>,
+    pub AddRef: ::core::option::Option<unsafe extern "system" fn(This: *mut ITypeChangeEvents) -> ULONG>,
     pub Release:
-        ::core::option::Option<unsafe extern "C" fn(This: *mut ITypeChangeEvents) -> ULONG>,
+        ::core::option::Option<unsafe extern "system" fn(This: *mut ITypeChangeEvents) -> ULONG>,
     pub RequestTypeChange: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut ITypeChangeEvents,
             changeKind: CHANGEKIND,
             pTInfoBefore: *mut ITypeInfo,
@@ -8130,7 +8130,7 @@ pub struct ITypeChangeEventsVtbl {
         ) -> HRESULT,
     >,
     pub AfterTypeChange: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut ITypeChangeEvents,
             changeKind: CHANGEKIND,
             pTInfoAfter: *mut ITypeInfo,
@@ -8147,28 +8147,28 @@ pub struct ITypeChangeEvents {
 #[derive(Debug, Copy, Clone)]
 pub struct IErrorInfoVtbl {
     pub QueryInterface: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IErrorInfo,
             riid: *const IID,
             ppvObject: *mut *mut ::core::ffi::c_void,
         ) -> HRESULT,
     >,
-    pub AddRef: ::core::option::Option<unsafe extern "C" fn(This: *mut IErrorInfo) -> ULONG>,
-    pub Release: ::core::option::Option<unsafe extern "C" fn(This: *mut IErrorInfo) -> ULONG>,
+    pub AddRef: ::core::option::Option<unsafe extern "system" fn(This: *mut IErrorInfo) -> ULONG>,
+    pub Release: ::core::option::Option<unsafe extern "system" fn(This: *mut IErrorInfo) -> ULONG>,
     pub GetGUID: ::core::option::Option<
-        unsafe extern "C" fn(This: *mut IErrorInfo, pGUID: *mut GUID) -> HRESULT,
+        unsafe extern "system" fn(This: *mut IErrorInfo, pGUID: *mut GUID) -> HRESULT,
     >,
     pub GetSource: ::core::option::Option<
-        unsafe extern "C" fn(This: *mut IErrorInfo, pBstrSource: *mut BSTR) -> HRESULT,
+        unsafe extern "system" fn(This: *mut IErrorInfo, pBstrSource: *mut BSTR) -> HRESULT,
     >,
     pub GetDescription: ::core::option::Option<
-        unsafe extern "C" fn(This: *mut IErrorInfo, pBstrDescription: *mut BSTR) -> HRESULT,
+        unsafe extern "system" fn(This: *mut IErrorInfo, pBstrDescription: *mut BSTR) -> HRESULT,
     >,
     pub GetHelpFile: ::core::option::Option<
-        unsafe extern "C" fn(This: *mut IErrorInfo, pBstrHelpFile: *mut BSTR) -> HRESULT,
+        unsafe extern "system" fn(This: *mut IErrorInfo, pBstrHelpFile: *mut BSTR) -> HRESULT,
     >,
     pub GetHelpContext: ::core::option::Option<
-        unsafe extern "C" fn(This: *mut IErrorInfo, pdwHelpContext: *mut DWORD) -> HRESULT,
+        unsafe extern "system" fn(This: *mut IErrorInfo, pdwHelpContext: *mut DWORD) -> HRESULT,
     >,
 }
 #[repr(C)]
@@ -8180,28 +8180,28 @@ pub struct IErrorInfo {
 #[derive(Debug, Copy, Clone)]
 pub struct ICreateErrorInfoVtbl {
     pub QueryInterface: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut ICreateErrorInfo,
             riid: *const IID,
             ppvObject: *mut *mut ::core::ffi::c_void,
         ) -> HRESULT,
     >,
-    pub AddRef: ::core::option::Option<unsafe extern "C" fn(This: *mut ICreateErrorInfo) -> ULONG>,
-    pub Release: ::core::option::Option<unsafe extern "C" fn(This: *mut ICreateErrorInfo) -> ULONG>,
+    pub AddRef: ::core::option::Option<unsafe extern "system" fn(This: *mut ICreateErrorInfo) -> ULONG>,
+    pub Release: ::core::option::Option<unsafe extern "system" fn(This: *mut ICreateErrorInfo) -> ULONG>,
     pub SetGUID: ::core::option::Option<
-        unsafe extern "C" fn(This: *mut ICreateErrorInfo, rguid: *const GUID) -> HRESULT,
+        unsafe extern "system" fn(This: *mut ICreateErrorInfo, rguid: *const GUID) -> HRESULT,
     >,
     pub SetSource: ::core::option::Option<
-        unsafe extern "C" fn(This: *mut ICreateErrorInfo, szSource: LPOLESTR) -> HRESULT,
+        unsafe extern "system" fn(This: *mut ICreateErrorInfo, szSource: LPOLESTR) -> HRESULT,
     >,
     pub SetDescription: ::core::option::Option<
-        unsafe extern "C" fn(This: *mut ICreateErrorInfo, szDescription: LPOLESTR) -> HRESULT,
+        unsafe extern "system" fn(This: *mut ICreateErrorInfo, szDescription: LPOLESTR) -> HRESULT,
     >,
     pub SetHelpFile: ::core::option::Option<
-        unsafe extern "C" fn(This: *mut ICreateErrorInfo, szHelpFile: LPOLESTR) -> HRESULT,
+        unsafe extern "system" fn(This: *mut ICreateErrorInfo, szHelpFile: LPOLESTR) -> HRESULT,
     >,
     pub SetHelpContext: ::core::option::Option<
-        unsafe extern "C" fn(This: *mut ICreateErrorInfo, dwHelpContext: DWORD) -> HRESULT,
+        unsafe extern "system" fn(This: *mut ICreateErrorInfo, dwHelpContext: DWORD) -> HRESULT,
     >,
 }
 #[repr(C)]
@@ -8213,17 +8213,17 @@ pub struct ICreateErrorInfo {
 #[derive(Debug, Copy, Clone)]
 pub struct ISupportErrorInfoVtbl {
     pub QueryInterface: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut ISupportErrorInfo,
             riid: *const IID,
             ppvObject: *mut *mut ::core::ffi::c_void,
         ) -> HRESULT,
     >,
-    pub AddRef: ::core::option::Option<unsafe extern "C" fn(This: *mut ISupportErrorInfo) -> ULONG>,
+    pub AddRef: ::core::option::Option<unsafe extern "system" fn(This: *mut ISupportErrorInfo) -> ULONG>,
     pub Release:
-        ::core::option::Option<unsafe extern "C" fn(This: *mut ISupportErrorInfo) -> ULONG>,
+        ::core::option::Option<unsafe extern "system" fn(This: *mut ISupportErrorInfo) -> ULONG>,
     pub InterfaceSupportsErrorInfo: ::core::option::Option<
-        unsafe extern "C" fn(This: *mut ISupportErrorInfo, riid: *const IID) -> HRESULT,
+        unsafe extern "system" fn(This: *mut ISupportErrorInfo, riid: *const IID) -> HRESULT,
     >,
 }
 #[repr(C)]
@@ -8235,16 +8235,16 @@ pub struct ISupportErrorInfo {
 #[derive(Debug, Copy, Clone)]
 pub struct ITypeFactoryVtbl {
     pub QueryInterface: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut ITypeFactory,
             riid: *const IID,
             ppvObject: *mut *mut ::core::ffi::c_void,
         ) -> HRESULT,
     >,
-    pub AddRef: ::core::option::Option<unsafe extern "C" fn(This: *mut ITypeFactory) -> ULONG>,
-    pub Release: ::core::option::Option<unsafe extern "C" fn(This: *mut ITypeFactory) -> ULONG>,
+    pub AddRef: ::core::option::Option<unsafe extern "system" fn(This: *mut ITypeFactory) -> ULONG>,
+    pub Release: ::core::option::Option<unsafe extern "system" fn(This: *mut ITypeFactory) -> ULONG>,
     pub CreateFromTypeInfo: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut ITypeFactory,
             pTypeInfo: *mut ITypeInfo,
             riid: *const IID,
@@ -8261,16 +8261,16 @@ pub struct ITypeFactory {
 #[derive(Debug, Copy, Clone)]
 pub struct ITypeMarshalVtbl {
     pub QueryInterface: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut ITypeMarshal,
             riid: *const IID,
             ppvObject: *mut *mut ::core::ffi::c_void,
         ) -> HRESULT,
     >,
-    pub AddRef: ::core::option::Option<unsafe extern "C" fn(This: *mut ITypeMarshal) -> ULONG>,
-    pub Release: ::core::option::Option<unsafe extern "C" fn(This: *mut ITypeMarshal) -> ULONG>,
+    pub AddRef: ::core::option::Option<unsafe extern "system" fn(This: *mut ITypeMarshal) -> ULONG>,
+    pub Release: ::core::option::Option<unsafe extern "system" fn(This: *mut ITypeMarshal) -> ULONG>,
     pub Size: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut ITypeMarshal,
             pvType: PVOID,
             dwDestContext: DWORD,
@@ -8279,7 +8279,7 @@ pub struct ITypeMarshalVtbl {
         ) -> HRESULT,
     >,
     pub Marshal: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut ITypeMarshal,
             pvType: PVOID,
             dwDestContext: DWORD,
@@ -8290,7 +8290,7 @@ pub struct ITypeMarshalVtbl {
         ) -> HRESULT,
     >,
     pub Unmarshal: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut ITypeMarshal,
             pvType: PVOID,
             dwFlags: DWORD,
@@ -8300,7 +8300,7 @@ pub struct ITypeMarshalVtbl {
         ) -> HRESULT,
     >,
     pub Free: ::core::option::Option<
-        unsafe extern "C" fn(This: *mut ITypeMarshal, pvType: PVOID) -> HRESULT,
+        unsafe extern "system" fn(This: *mut ITypeMarshal, pvType: PVOID) -> HRESULT,
     >,
 }
 #[repr(C)]
@@ -8312,37 +8312,37 @@ pub struct ITypeMarshal {
 #[derive(Debug, Copy, Clone)]
 pub struct IRecordInfoVtbl {
     pub QueryInterface: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IRecordInfo,
             riid: *const IID,
             ppvObject: *mut *mut ::core::ffi::c_void,
         ) -> HRESULT,
     >,
-    pub AddRef: ::core::option::Option<unsafe extern "C" fn(This: *mut IRecordInfo) -> ULONG>,
-    pub Release: ::core::option::Option<unsafe extern "C" fn(This: *mut IRecordInfo) -> ULONG>,
+    pub AddRef: ::core::option::Option<unsafe extern "system" fn(This: *mut IRecordInfo) -> ULONG>,
+    pub Release: ::core::option::Option<unsafe extern "system" fn(This: *mut IRecordInfo) -> ULONG>,
     pub RecordInit: ::core::option::Option<
-        unsafe extern "C" fn(This: *mut IRecordInfo, pvNew: PVOID) -> HRESULT,
+        unsafe extern "system" fn(This: *mut IRecordInfo, pvNew: PVOID) -> HRESULT,
     >,
     pub RecordClear: ::core::option::Option<
-        unsafe extern "C" fn(This: *mut IRecordInfo, pvExisting: PVOID) -> HRESULT,
+        unsafe extern "system" fn(This: *mut IRecordInfo, pvExisting: PVOID) -> HRESULT,
     >,
     pub RecordCopy: ::core::option::Option<
-        unsafe extern "C" fn(This: *mut IRecordInfo, pvExisting: PVOID, pvNew: PVOID) -> HRESULT,
+        unsafe extern "system" fn(This: *mut IRecordInfo, pvExisting: PVOID, pvNew: PVOID) -> HRESULT,
     >,
     pub GetGuid: ::core::option::Option<
-        unsafe extern "C" fn(This: *mut IRecordInfo, pguid: *mut GUID) -> HRESULT,
+        unsafe extern "system" fn(This: *mut IRecordInfo, pguid: *mut GUID) -> HRESULT,
     >,
     pub GetName: ::core::option::Option<
-        unsafe extern "C" fn(This: *mut IRecordInfo, pbstrName: *mut BSTR) -> HRESULT,
+        unsafe extern "system" fn(This: *mut IRecordInfo, pbstrName: *mut BSTR) -> HRESULT,
     >,
     pub GetSize: ::core::option::Option<
-        unsafe extern "C" fn(This: *mut IRecordInfo, pcbSize: *mut ULONG) -> HRESULT,
+        unsafe extern "system" fn(This: *mut IRecordInfo, pcbSize: *mut ULONG) -> HRESULT,
     >,
     pub GetTypeInfo: ::core::option::Option<
-        unsafe extern "C" fn(This: *mut IRecordInfo, ppTypeInfo: *mut *mut ITypeInfo) -> HRESULT,
+        unsafe extern "system" fn(This: *mut IRecordInfo, ppTypeInfo: *mut *mut ITypeInfo) -> HRESULT,
     >,
     pub GetField: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IRecordInfo,
             pvData: PVOID,
             szFieldName: LPCOLESTR,
@@ -8350,7 +8350,7 @@ pub struct IRecordInfoVtbl {
         ) -> HRESULT,
     >,
     pub GetFieldNoCopy: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IRecordInfo,
             pvData: PVOID,
             szFieldName: LPCOLESTR,
@@ -8359,7 +8359,7 @@ pub struct IRecordInfoVtbl {
         ) -> HRESULT,
     >,
     pub PutField: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IRecordInfo,
             wFlags: ULONG,
             pvData: PVOID,
@@ -8368,7 +8368,7 @@ pub struct IRecordInfoVtbl {
         ) -> HRESULT,
     >,
     pub PutFieldNoCopy: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IRecordInfo,
             wFlags: ULONG,
             pvData: PVOID,
@@ -8377,25 +8377,25 @@ pub struct IRecordInfoVtbl {
         ) -> HRESULT,
     >,
     pub GetFieldNames: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IRecordInfo,
             pcNames: *mut ULONG,
             rgBstrNames: *mut BSTR,
         ) -> HRESULT,
     >,
     pub IsMatchingType: ::core::option::Option<
-        unsafe extern "C" fn(This: *mut IRecordInfo, pRecordInfo: *mut IRecordInfo) -> BOOL,
+        unsafe extern "system" fn(This: *mut IRecordInfo, pRecordInfo: *mut IRecordInfo) -> BOOL,
     >,
-    pub RecordCreate: ::core::option::Option<unsafe extern "C" fn(This: *mut IRecordInfo) -> PVOID>,
+    pub RecordCreate: ::core::option::Option<unsafe extern "system" fn(This: *mut IRecordInfo) -> PVOID>,
     pub RecordCreateCopy: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IRecordInfo,
             pvSource: PVOID,
             ppvDest: *mut PVOID,
         ) -> HRESULT,
     >,
     pub RecordDestroy: ::core::option::Option<
-        unsafe extern "C" fn(This: *mut IRecordInfo, pvRecord: PVOID) -> HRESULT,
+        unsafe extern "system" fn(This: *mut IRecordInfo, pvRecord: PVOID) -> HRESULT,
     >,
 }
 #[repr(C)]
@@ -8407,76 +8407,76 @@ pub struct IRecordInfo {
 #[derive(Debug, Copy, Clone)]
 pub struct ICreateTypeInfoVtbl {
     pub QueryInterface: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut ICreateTypeInfo,
             riid: *const IID,
             ppvObject: *mut *mut ::core::ffi::c_void,
         ) -> HRESULT,
     >,
-    pub AddRef: ::core::option::Option<unsafe extern "C" fn(This: *mut ICreateTypeInfo) -> ULONG>,
-    pub Release: ::core::option::Option<unsafe extern "C" fn(This: *mut ICreateTypeInfo) -> ULONG>,
+    pub AddRef: ::core::option::Option<unsafe extern "system" fn(This: *mut ICreateTypeInfo) -> ULONG>,
+    pub Release: ::core::option::Option<unsafe extern "system" fn(This: *mut ICreateTypeInfo) -> ULONG>,
     pub SetGuid: ::core::option::Option<
-        unsafe extern "C" fn(This: *mut ICreateTypeInfo, guid: *const GUID) -> HRESULT,
+        unsafe extern "system" fn(This: *mut ICreateTypeInfo, guid: *const GUID) -> HRESULT,
     >,
     pub SetTypeFlags: ::core::option::Option<
-        unsafe extern "C" fn(This: *mut ICreateTypeInfo, uTypeFlags: UINT) -> HRESULT,
+        unsafe extern "system" fn(This: *mut ICreateTypeInfo, uTypeFlags: UINT) -> HRESULT,
     >,
     pub SetDocString: ::core::option::Option<
-        unsafe extern "C" fn(This: *mut ICreateTypeInfo, pStrDoc: LPOLESTR) -> HRESULT,
+        unsafe extern "system" fn(This: *mut ICreateTypeInfo, pStrDoc: LPOLESTR) -> HRESULT,
     >,
     pub SetHelpContext: ::core::option::Option<
-        unsafe extern "C" fn(This: *mut ICreateTypeInfo, dwHelpContext: DWORD) -> HRESULT,
+        unsafe extern "system" fn(This: *mut ICreateTypeInfo, dwHelpContext: DWORD) -> HRESULT,
     >,
     pub SetVersion: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut ICreateTypeInfo,
             wMajorVerNum: WORD,
             wMinorVerNum: WORD,
         ) -> HRESULT,
     >,
     pub AddRefTypeInfo: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut ICreateTypeInfo,
             pTInfo: *mut ITypeInfo,
             phRefType: *mut HREFTYPE,
         ) -> HRESULT,
     >,
     pub AddFuncDesc: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut ICreateTypeInfo,
             index: UINT,
             pFuncDesc: *mut FUNCDESC,
         ) -> HRESULT,
     >,
     pub AddImplType: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut ICreateTypeInfo,
             index: UINT,
             hRefType: HREFTYPE,
         ) -> HRESULT,
     >,
     pub SetImplTypeFlags: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut ICreateTypeInfo,
             index: UINT,
             implTypeFlags: INT,
         ) -> HRESULT,
     >,
     pub SetAlignment: ::core::option::Option<
-        unsafe extern "C" fn(This: *mut ICreateTypeInfo, cbAlignment: WORD) -> HRESULT,
+        unsafe extern "system" fn(This: *mut ICreateTypeInfo, cbAlignment: WORD) -> HRESULT,
     >,
     pub SetSchema: ::core::option::Option<
-        unsafe extern "C" fn(This: *mut ICreateTypeInfo, pStrSchema: LPOLESTR) -> HRESULT,
+        unsafe extern "system" fn(This: *mut ICreateTypeInfo, pStrSchema: LPOLESTR) -> HRESULT,
     >,
     pub AddVarDesc: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut ICreateTypeInfo,
             index: UINT,
             pVarDesc: *mut VARDESC,
         ) -> HRESULT,
     >,
     pub SetFuncAndParamNames: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut ICreateTypeInfo,
             index: UINT,
             rgszNames: *mut LPOLESTR,
@@ -8484,13 +8484,13 @@ pub struct ICreateTypeInfoVtbl {
         ) -> HRESULT,
     >,
     pub SetVarName: ::core::option::Option<
-        unsafe extern "C" fn(This: *mut ICreateTypeInfo, index: UINT, szName: LPOLESTR) -> HRESULT,
+        unsafe extern "system" fn(This: *mut ICreateTypeInfo, index: UINT, szName: LPOLESTR) -> HRESULT,
     >,
     pub SetTypeDescAlias: ::core::option::Option<
-        unsafe extern "C" fn(This: *mut ICreateTypeInfo, pTDescAlias: *mut TYPEDESC) -> HRESULT,
+        unsafe extern "system" fn(This: *mut ICreateTypeInfo, pTDescAlias: *mut TYPEDESC) -> HRESULT,
     >,
     pub DefineFuncAsDllEntry: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut ICreateTypeInfo,
             index: UINT,
             szDllName: LPOLESTR,
@@ -8498,40 +8498,40 @@ pub struct ICreateTypeInfoVtbl {
         ) -> HRESULT,
     >,
     pub SetFuncDocString: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut ICreateTypeInfo,
             index: UINT,
             szDocString: LPOLESTR,
         ) -> HRESULT,
     >,
     pub SetVarDocString: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut ICreateTypeInfo,
             index: UINT,
             szDocString: LPOLESTR,
         ) -> HRESULT,
     >,
     pub SetFuncHelpContext: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut ICreateTypeInfo,
             index: UINT,
             dwHelpContext: DWORD,
         ) -> HRESULT,
     >,
     pub SetVarHelpContext: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut ICreateTypeInfo,
             index: UINT,
             dwHelpContext: DWORD,
         ) -> HRESULT,
     >,
     pub SetMops: ::core::option::Option<
-        unsafe extern "C" fn(This: *mut ICreateTypeInfo, index: UINT, bstrMops: BSTR) -> HRESULT,
+        unsafe extern "system" fn(This: *mut ICreateTypeInfo, index: UINT, bstrMops: BSTR) -> HRESULT,
     >,
     pub SetTypeIdldesc: ::core::option::Option<
-        unsafe extern "C" fn(This: *mut ICreateTypeInfo, pIdlDesc: *mut IDLDESC) -> HRESULT,
+        unsafe extern "system" fn(This: *mut ICreateTypeInfo, pIdlDesc: *mut IDLDESC) -> HRESULT,
     >,
-    pub LayOut: ::core::option::Option<unsafe extern "C" fn(This: *mut ICreateTypeInfo) -> HRESULT>,
+    pub LayOut: ::core::option::Option<unsafe extern "system" fn(This: *mut ICreateTypeInfo) -> HRESULT>,
 }
 #[repr(C)]
 #[derive(Debug, Copy, Clone)]
@@ -8542,76 +8542,76 @@ pub struct ICreateTypeInfo {
 #[derive(Debug, Copy, Clone)]
 pub struct ICreateTypeInfo2Vtbl {
     pub QueryInterface: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut ICreateTypeInfo2,
             riid: *const IID,
             ppvObject: *mut *mut ::core::ffi::c_void,
         ) -> HRESULT,
     >,
-    pub AddRef: ::core::option::Option<unsafe extern "C" fn(This: *mut ICreateTypeInfo2) -> ULONG>,
-    pub Release: ::core::option::Option<unsafe extern "C" fn(This: *mut ICreateTypeInfo2) -> ULONG>,
+    pub AddRef: ::core::option::Option<unsafe extern "system" fn(This: *mut ICreateTypeInfo2) -> ULONG>,
+    pub Release: ::core::option::Option<unsafe extern "system" fn(This: *mut ICreateTypeInfo2) -> ULONG>,
     pub SetGuid: ::core::option::Option<
-        unsafe extern "C" fn(This: *mut ICreateTypeInfo2, guid: *const GUID) -> HRESULT,
+        unsafe extern "system" fn(This: *mut ICreateTypeInfo2, guid: *const GUID) -> HRESULT,
     >,
     pub SetTypeFlags: ::core::option::Option<
-        unsafe extern "C" fn(This: *mut ICreateTypeInfo2, uTypeFlags: UINT) -> HRESULT,
+        unsafe extern "system" fn(This: *mut ICreateTypeInfo2, uTypeFlags: UINT) -> HRESULT,
     >,
     pub SetDocString: ::core::option::Option<
-        unsafe extern "C" fn(This: *mut ICreateTypeInfo2, pStrDoc: LPOLESTR) -> HRESULT,
+        unsafe extern "system" fn(This: *mut ICreateTypeInfo2, pStrDoc: LPOLESTR) -> HRESULT,
     >,
     pub SetHelpContext: ::core::option::Option<
-        unsafe extern "C" fn(This: *mut ICreateTypeInfo2, dwHelpContext: DWORD) -> HRESULT,
+        unsafe extern "system" fn(This: *mut ICreateTypeInfo2, dwHelpContext: DWORD) -> HRESULT,
     >,
     pub SetVersion: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut ICreateTypeInfo2,
             wMajorVerNum: WORD,
             wMinorVerNum: WORD,
         ) -> HRESULT,
     >,
     pub AddRefTypeInfo: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut ICreateTypeInfo2,
             pTInfo: *mut ITypeInfo,
             phRefType: *mut HREFTYPE,
         ) -> HRESULT,
     >,
     pub AddFuncDesc: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut ICreateTypeInfo2,
             index: UINT,
             pFuncDesc: *mut FUNCDESC,
         ) -> HRESULT,
     >,
     pub AddImplType: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut ICreateTypeInfo2,
             index: UINT,
             hRefType: HREFTYPE,
         ) -> HRESULT,
     >,
     pub SetImplTypeFlags: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut ICreateTypeInfo2,
             index: UINT,
             implTypeFlags: INT,
         ) -> HRESULT,
     >,
     pub SetAlignment: ::core::option::Option<
-        unsafe extern "C" fn(This: *mut ICreateTypeInfo2, cbAlignment: WORD) -> HRESULT,
+        unsafe extern "system" fn(This: *mut ICreateTypeInfo2, cbAlignment: WORD) -> HRESULT,
     >,
     pub SetSchema: ::core::option::Option<
-        unsafe extern "C" fn(This: *mut ICreateTypeInfo2, pStrSchema: LPOLESTR) -> HRESULT,
+        unsafe extern "system" fn(This: *mut ICreateTypeInfo2, pStrSchema: LPOLESTR) -> HRESULT,
     >,
     pub AddVarDesc: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut ICreateTypeInfo2,
             index: UINT,
             pVarDesc: *mut VARDESC,
         ) -> HRESULT,
     >,
     pub SetFuncAndParamNames: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut ICreateTypeInfo2,
             index: UINT,
             rgszNames: *mut LPOLESTR,
@@ -8619,13 +8619,13 @@ pub struct ICreateTypeInfo2Vtbl {
         ) -> HRESULT,
     >,
     pub SetVarName: ::core::option::Option<
-        unsafe extern "C" fn(This: *mut ICreateTypeInfo2, index: UINT, szName: LPOLESTR) -> HRESULT,
+        unsafe extern "system" fn(This: *mut ICreateTypeInfo2, index: UINT, szName: LPOLESTR) -> HRESULT,
     >,
     pub SetTypeDescAlias: ::core::option::Option<
-        unsafe extern "C" fn(This: *mut ICreateTypeInfo2, pTDescAlias: *mut TYPEDESC) -> HRESULT,
+        unsafe extern "system" fn(This: *mut ICreateTypeInfo2, pTDescAlias: *mut TYPEDESC) -> HRESULT,
     >,
     pub DefineFuncAsDllEntry: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut ICreateTypeInfo2,
             index: UINT,
             szDllName: LPOLESTR,
@@ -8633,69 +8633,69 @@ pub struct ICreateTypeInfo2Vtbl {
         ) -> HRESULT,
     >,
     pub SetFuncDocString: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut ICreateTypeInfo2,
             index: UINT,
             szDocString: LPOLESTR,
         ) -> HRESULT,
     >,
     pub SetVarDocString: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut ICreateTypeInfo2,
             index: UINT,
             szDocString: LPOLESTR,
         ) -> HRESULT,
     >,
     pub SetFuncHelpContext: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut ICreateTypeInfo2,
             index: UINT,
             dwHelpContext: DWORD,
         ) -> HRESULT,
     >,
     pub SetVarHelpContext: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut ICreateTypeInfo2,
             index: UINT,
             dwHelpContext: DWORD,
         ) -> HRESULT,
     >,
     pub SetMops: ::core::option::Option<
-        unsafe extern "C" fn(This: *mut ICreateTypeInfo2, index: UINT, bstrMops: BSTR) -> HRESULT,
+        unsafe extern "system" fn(This: *mut ICreateTypeInfo2, index: UINT, bstrMops: BSTR) -> HRESULT,
     >,
     pub SetTypeIdldesc: ::core::option::Option<
-        unsafe extern "C" fn(This: *mut ICreateTypeInfo2, pIdlDesc: *mut IDLDESC) -> HRESULT,
+        unsafe extern "system" fn(This: *mut ICreateTypeInfo2, pIdlDesc: *mut IDLDESC) -> HRESULT,
     >,
     pub LayOut:
-        ::core::option::Option<unsafe extern "C" fn(This: *mut ICreateTypeInfo2) -> HRESULT>,
+        ::core::option::Option<unsafe extern "system" fn(This: *mut ICreateTypeInfo2) -> HRESULT>,
     pub DeleteFuncDesc: ::core::option::Option<
-        unsafe extern "C" fn(This: *mut ICreateTypeInfo2, index: UINT) -> HRESULT,
+        unsafe extern "system" fn(This: *mut ICreateTypeInfo2, index: UINT) -> HRESULT,
     >,
     pub DeleteFuncDescByMemId: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut ICreateTypeInfo2,
             memid: MEMBERID,
             invKind: INVOKEKIND,
         ) -> HRESULT,
     >,
     pub DeleteVarDesc: ::core::option::Option<
-        unsafe extern "C" fn(This: *mut ICreateTypeInfo2, index: UINT) -> HRESULT,
+        unsafe extern "system" fn(This: *mut ICreateTypeInfo2, index: UINT) -> HRESULT,
     >,
     pub DeleteVarDescByMemId: ::core::option::Option<
-        unsafe extern "C" fn(This: *mut ICreateTypeInfo2, memid: MEMBERID) -> HRESULT,
+        unsafe extern "system" fn(This: *mut ICreateTypeInfo2, memid: MEMBERID) -> HRESULT,
     >,
     pub DeleteImplType: ::core::option::Option<
-        unsafe extern "C" fn(This: *mut ICreateTypeInfo2, index: UINT) -> HRESULT,
+        unsafe extern "system" fn(This: *mut ICreateTypeInfo2, index: UINT) -> HRESULT,
     >,
     pub SetCustData: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut ICreateTypeInfo2,
             guid: *const GUID,
             pVarVal: *mut VARIANT,
         ) -> HRESULT,
     >,
     pub SetFuncCustData: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut ICreateTypeInfo2,
             index: UINT,
             guid: *const GUID,
@@ -8703,7 +8703,7 @@ pub struct ICreateTypeInfo2Vtbl {
         ) -> HRESULT,
     >,
     pub SetParamCustData: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut ICreateTypeInfo2,
             indexFunc: UINT,
             indexParam: UINT,
@@ -8712,7 +8712,7 @@ pub struct ICreateTypeInfo2Vtbl {
         ) -> HRESULT,
     >,
     pub SetVarCustData: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut ICreateTypeInfo2,
             index: UINT,
             guid: *const GUID,
@@ -8720,7 +8720,7 @@ pub struct ICreateTypeInfo2Vtbl {
         ) -> HRESULT,
     >,
     pub SetImplTypeCustData: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut ICreateTypeInfo2,
             index: UINT,
             guid: *const GUID,
@@ -8728,26 +8728,26 @@ pub struct ICreateTypeInfo2Vtbl {
         ) -> HRESULT,
     >,
     pub SetHelpStringContext: ::core::option::Option<
-        unsafe extern "C" fn(This: *mut ICreateTypeInfo2, dwHelpStringContext: ULONG) -> HRESULT,
+        unsafe extern "system" fn(This: *mut ICreateTypeInfo2, dwHelpStringContext: ULONG) -> HRESULT,
     >,
     pub SetFuncHelpStringContext: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut ICreateTypeInfo2,
             index: UINT,
             dwHelpStringContext: ULONG,
         ) -> HRESULT,
     >,
     pub SetVarHelpStringContext: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut ICreateTypeInfo2,
             index: UINT,
             dwHelpStringContext: ULONG,
         ) -> HRESULT,
     >,
     pub Invalidate:
-        ::core::option::Option<unsafe extern "C" fn(This: *mut ICreateTypeInfo2) -> HRESULT>,
+        ::core::option::Option<unsafe extern "system" fn(This: *mut ICreateTypeInfo2) -> HRESULT>,
     pub SetName: ::core::option::Option<
-        unsafe extern "C" fn(This: *mut ICreateTypeInfo2, szName: LPOLESTR) -> HRESULT,
+        unsafe extern "system" fn(This: *mut ICreateTypeInfo2, szName: LPOLESTR) -> HRESULT,
     >,
 }
 #[repr(C)]
@@ -8759,16 +8759,16 @@ pub struct ICreateTypeInfo2 {
 #[derive(Debug, Copy, Clone)]
 pub struct ICreateTypeLibVtbl {
     pub QueryInterface: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut ICreateTypeLib,
             riid: *const IID,
             ppvObject: *mut *mut ::core::ffi::c_void,
         ) -> HRESULT,
     >,
-    pub AddRef: ::core::option::Option<unsafe extern "C" fn(This: *mut ICreateTypeLib) -> ULONG>,
-    pub Release: ::core::option::Option<unsafe extern "C" fn(This: *mut ICreateTypeLib) -> ULONG>,
+    pub AddRef: ::core::option::Option<unsafe extern "system" fn(This: *mut ICreateTypeLib) -> ULONG>,
+    pub Release: ::core::option::Option<unsafe extern "system" fn(This: *mut ICreateTypeLib) -> ULONG>,
     pub CreateTypeInfo: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut ICreateTypeLib,
             szName: LPOLESTR,
             tkind: TYPEKIND,
@@ -8776,35 +8776,35 @@ pub struct ICreateTypeLibVtbl {
         ) -> HRESULT,
     >,
     pub SetName: ::core::option::Option<
-        unsafe extern "C" fn(This: *mut ICreateTypeLib, szName: LPOLESTR) -> HRESULT,
+        unsafe extern "system" fn(This: *mut ICreateTypeLib, szName: LPOLESTR) -> HRESULT,
     >,
     pub SetVersion: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut ICreateTypeLib,
             wMajorVerNum: WORD,
             wMinorVerNum: WORD,
         ) -> HRESULT,
     >,
     pub SetGuid: ::core::option::Option<
-        unsafe extern "C" fn(This: *mut ICreateTypeLib, guid: *const GUID) -> HRESULT,
+        unsafe extern "system" fn(This: *mut ICreateTypeLib, guid: *const GUID) -> HRESULT,
     >,
     pub SetDocString: ::core::option::Option<
-        unsafe extern "C" fn(This: *mut ICreateTypeLib, szDoc: LPOLESTR) -> HRESULT,
+        unsafe extern "system" fn(This: *mut ICreateTypeLib, szDoc: LPOLESTR) -> HRESULT,
     >,
     pub SetHelpFileName: ::core::option::Option<
-        unsafe extern "C" fn(This: *mut ICreateTypeLib, szHelpFileName: LPOLESTR) -> HRESULT,
+        unsafe extern "system" fn(This: *mut ICreateTypeLib, szHelpFileName: LPOLESTR) -> HRESULT,
     >,
     pub SetHelpContext: ::core::option::Option<
-        unsafe extern "C" fn(This: *mut ICreateTypeLib, dwHelpContext: DWORD) -> HRESULT,
+        unsafe extern "system" fn(This: *mut ICreateTypeLib, dwHelpContext: DWORD) -> HRESULT,
     >,
     pub SetLcid: ::core::option::Option<
-        unsafe extern "C" fn(This: *mut ICreateTypeLib, lcid: LCID) -> HRESULT,
+        unsafe extern "system" fn(This: *mut ICreateTypeLib, lcid: LCID) -> HRESULT,
     >,
     pub SetLibFlags: ::core::option::Option<
-        unsafe extern "C" fn(This: *mut ICreateTypeLib, uLibFlags: UINT) -> HRESULT,
+        unsafe extern "system" fn(This: *mut ICreateTypeLib, uLibFlags: UINT) -> HRESULT,
     >,
     pub SaveAllChanges:
-        ::core::option::Option<unsafe extern "C" fn(This: *mut ICreateTypeLib) -> HRESULT>,
+        ::core::option::Option<unsafe extern "system" fn(This: *mut ICreateTypeLib) -> HRESULT>,
 }
 #[repr(C)]
 #[derive(Debug, Copy, Clone)]
@@ -8815,16 +8815,16 @@ pub struct ICreateTypeLib {
 #[derive(Debug, Copy, Clone)]
 pub struct ICreateTypeLib2Vtbl {
     pub QueryInterface: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut ICreateTypeLib2,
             riid: *const IID,
             ppvObject: *mut *mut ::core::ffi::c_void,
         ) -> HRESULT,
     >,
-    pub AddRef: ::core::option::Option<unsafe extern "C" fn(This: *mut ICreateTypeLib2) -> ULONG>,
-    pub Release: ::core::option::Option<unsafe extern "C" fn(This: *mut ICreateTypeLib2) -> ULONG>,
+    pub AddRef: ::core::option::Option<unsafe extern "system" fn(This: *mut ICreateTypeLib2) -> ULONG>,
+    pub Release: ::core::option::Option<unsafe extern "system" fn(This: *mut ICreateTypeLib2) -> ULONG>,
     pub CreateTypeInfo: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut ICreateTypeLib2,
             szName: LPOLESTR,
             tkind: TYPEKIND,
@@ -8832,50 +8832,50 @@ pub struct ICreateTypeLib2Vtbl {
         ) -> HRESULT,
     >,
     pub SetName: ::core::option::Option<
-        unsafe extern "C" fn(This: *mut ICreateTypeLib2, szName: LPOLESTR) -> HRESULT,
+        unsafe extern "system" fn(This: *mut ICreateTypeLib2, szName: LPOLESTR) -> HRESULT,
     >,
     pub SetVersion: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut ICreateTypeLib2,
             wMajorVerNum: WORD,
             wMinorVerNum: WORD,
         ) -> HRESULT,
     >,
     pub SetGuid: ::core::option::Option<
-        unsafe extern "C" fn(This: *mut ICreateTypeLib2, guid: *const GUID) -> HRESULT,
+        unsafe extern "system" fn(This: *mut ICreateTypeLib2, guid: *const GUID) -> HRESULT,
     >,
     pub SetDocString: ::core::option::Option<
-        unsafe extern "C" fn(This: *mut ICreateTypeLib2, szDoc: LPOLESTR) -> HRESULT,
+        unsafe extern "system" fn(This: *mut ICreateTypeLib2, szDoc: LPOLESTR) -> HRESULT,
     >,
     pub SetHelpFileName: ::core::option::Option<
-        unsafe extern "C" fn(This: *mut ICreateTypeLib2, szHelpFileName: LPOLESTR) -> HRESULT,
+        unsafe extern "system" fn(This: *mut ICreateTypeLib2, szHelpFileName: LPOLESTR) -> HRESULT,
     >,
     pub SetHelpContext: ::core::option::Option<
-        unsafe extern "C" fn(This: *mut ICreateTypeLib2, dwHelpContext: DWORD) -> HRESULT,
+        unsafe extern "system" fn(This: *mut ICreateTypeLib2, dwHelpContext: DWORD) -> HRESULT,
     >,
     pub SetLcid: ::core::option::Option<
-        unsafe extern "C" fn(This: *mut ICreateTypeLib2, lcid: LCID) -> HRESULT,
+        unsafe extern "system" fn(This: *mut ICreateTypeLib2, lcid: LCID) -> HRESULT,
     >,
     pub SetLibFlags: ::core::option::Option<
-        unsafe extern "C" fn(This: *mut ICreateTypeLib2, uLibFlags: UINT) -> HRESULT,
+        unsafe extern "system" fn(This: *mut ICreateTypeLib2, uLibFlags: UINT) -> HRESULT,
     >,
     pub SaveAllChanges:
-        ::core::option::Option<unsafe extern "C" fn(This: *mut ICreateTypeLib2) -> HRESULT>,
+        ::core::option::Option<unsafe extern "system" fn(This: *mut ICreateTypeLib2) -> HRESULT>,
     pub DeleteTypeInfo: ::core::option::Option<
-        unsafe extern "C" fn(This: *mut ICreateTypeLib2, szName: LPOLESTR) -> HRESULT,
+        unsafe extern "system" fn(This: *mut ICreateTypeLib2, szName: LPOLESTR) -> HRESULT,
     >,
     pub SetCustData: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut ICreateTypeLib2,
             guid: *const GUID,
             pVarVal: *mut VARIANT,
         ) -> HRESULT,
     >,
     pub SetHelpStringContext: ::core::option::Option<
-        unsafe extern "C" fn(This: *mut ICreateTypeLib2, dwHelpStringContext: ULONG) -> HRESULT,
+        unsafe extern "system" fn(This: *mut ICreateTypeLib2, dwHelpStringContext: ULONG) -> HRESULT,
     >,
     pub SetHelpStringDll: ::core::option::Option<
-        unsafe extern "C" fn(This: *mut ICreateTypeLib2, szFileName: LPOLESTR) -> HRESULT,
+        unsafe extern "system" fn(This: *mut ICreateTypeLib2, szFileName: LPOLESTR) -> HRESULT,
     >,
 }
 #[repr(C)]
@@ -8887,16 +8887,16 @@ pub struct ICreateTypeLib2 {
 #[derive(Debug, Copy, Clone)]
 pub struct IErrorLogVtbl {
     pub QueryInterface: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IErrorLog,
             riid: *const IID,
             ppvObject: *mut *mut ::core::ffi::c_void,
         ) -> HRESULT,
     >,
-    pub AddRef: ::core::option::Option<unsafe extern "C" fn(This: *mut IErrorLog) -> ULONG>,
-    pub Release: ::core::option::Option<unsafe extern "C" fn(This: *mut IErrorLog) -> ULONG>,
+    pub AddRef: ::core::option::Option<unsafe extern "system" fn(This: *mut IErrorLog) -> ULONG>,
+    pub Release: ::core::option::Option<unsafe extern "system" fn(This: *mut IErrorLog) -> ULONG>,
     pub AddError: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IErrorLog,
             pszPropName: LPCOLESTR,
             pExcepInfo: *mut EXCEPINFO,
@@ -8912,16 +8912,16 @@ pub struct IErrorLog {
 #[derive(Debug, Copy, Clone)]
 pub struct IPropertyBagVtbl {
     pub QueryInterface: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IPropertyBag,
             riid: *const IID,
             ppvObject: *mut *mut ::core::ffi::c_void,
         ) -> HRESULT,
     >,
-    pub AddRef: ::core::option::Option<unsafe extern "C" fn(This: *mut IPropertyBag) -> ULONG>,
-    pub Release: ::core::option::Option<unsafe extern "C" fn(This: *mut IPropertyBag) -> ULONG>,
+    pub AddRef: ::core::option::Option<unsafe extern "system" fn(This: *mut IPropertyBag) -> ULONG>,
+    pub Release: ::core::option::Option<unsafe extern "system" fn(This: *mut IPropertyBag) -> ULONG>,
     pub Read: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IPropertyBag,
             pszPropName: LPCOLESTR,
             pVar: *mut VARIANT,
@@ -8929,7 +8929,7 @@ pub struct IPropertyBagVtbl {
         ) -> HRESULT,
     >,
     pub Write: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IPropertyBag,
             pszPropName: LPCOLESTR,
             pVar: *mut VARIANT,
@@ -8960,19 +8960,19 @@ pub use self::tagDOMNodeType as DOMNodeType;
 #[derive(Debug, Copy, Clone)]
 pub struct IXMLDOMNodeVtbl {
     pub QueryInterface: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IXMLDOMNode,
             riid: *const IID,
             ppvObject: *mut *mut ::core::ffi::c_void,
         ) -> HRESULT,
     >,
-    pub AddRef: ::core::option::Option<unsafe extern "C" fn(This: *mut IXMLDOMNode) -> ULONG>,
-    pub Release: ::core::option::Option<unsafe extern "C" fn(This: *mut IXMLDOMNode) -> ULONG>,
+    pub AddRef: ::core::option::Option<unsafe extern "system" fn(This: *mut IXMLDOMNode) -> ULONG>,
+    pub Release: ::core::option::Option<unsafe extern "system" fn(This: *mut IXMLDOMNode) -> ULONG>,
     pub GetTypeInfoCount: ::core::option::Option<
-        unsafe extern "C" fn(This: *mut IXMLDOMNode, pctinfo: *mut UINT) -> HRESULT,
+        unsafe extern "system" fn(This: *mut IXMLDOMNode, pctinfo: *mut UINT) -> HRESULT,
     >,
     pub GetTypeInfo: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IXMLDOMNode,
             iTInfo: UINT,
             lcid: LCID,
@@ -8980,7 +8980,7 @@ pub struct IXMLDOMNodeVtbl {
         ) -> HRESULT,
     >,
     pub GetIDsOfNames: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IXMLDOMNode,
             riid: *const IID,
             rgszNames: *mut LPOLESTR,
@@ -8990,7 +8990,7 @@ pub struct IXMLDOMNodeVtbl {
         ) -> HRESULT,
     >,
     pub Invoke: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IXMLDOMNode,
             dispIdMember: DISPID,
             riid: *const IID,
@@ -9003,49 +9003,49 @@ pub struct IXMLDOMNodeVtbl {
         ) -> HRESULT,
     >,
     pub get_nodeName: ::core::option::Option<
-        unsafe extern "C" fn(This: *mut IXMLDOMNode, name: *mut BSTR) -> HRESULT,
+        unsafe extern "system" fn(This: *mut IXMLDOMNode, name: *mut BSTR) -> HRESULT,
     >,
     pub get_nodeValue: ::core::option::Option<
-        unsafe extern "C" fn(This: *mut IXMLDOMNode, value: *mut VARIANT) -> HRESULT,
+        unsafe extern "system" fn(This: *mut IXMLDOMNode, value: *mut VARIANT) -> HRESULT,
     >,
     pub put_nodeValue: ::core::option::Option<
-        unsafe extern "C" fn(This: *mut IXMLDOMNode, value: VARIANT) -> HRESULT,
+        unsafe extern "system" fn(This: *mut IXMLDOMNode, value: VARIANT) -> HRESULT,
     >,
     pub get_nodeType: ::core::option::Option<
-        unsafe extern "C" fn(This: *mut IXMLDOMNode, type_: *mut DOMNodeType) -> HRESULT,
+        unsafe extern "system" fn(This: *mut IXMLDOMNode, type_: *mut DOMNodeType) -> HRESULT,
     >,
     pub get_parentNode: ::core::option::Option<
-        unsafe extern "C" fn(This: *mut IXMLDOMNode, parent: *mut *mut IXMLDOMNode) -> HRESULT,
+        unsafe extern "system" fn(This: *mut IXMLDOMNode, parent: *mut *mut IXMLDOMNode) -> HRESULT,
     >,
     pub get_childNodes: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IXMLDOMNode,
             childList: *mut *mut IXMLDOMNodeList,
         ) -> HRESULT,
     >,
     pub get_firstChild: ::core::option::Option<
-        unsafe extern "C" fn(This: *mut IXMLDOMNode, firstChild: *mut *mut IXMLDOMNode) -> HRESULT,
+        unsafe extern "system" fn(This: *mut IXMLDOMNode, firstChild: *mut *mut IXMLDOMNode) -> HRESULT,
     >,
     pub get_lastChild: ::core::option::Option<
-        unsafe extern "C" fn(This: *mut IXMLDOMNode, lastChild: *mut *mut IXMLDOMNode) -> HRESULT,
+        unsafe extern "system" fn(This: *mut IXMLDOMNode, lastChild: *mut *mut IXMLDOMNode) -> HRESULT,
     >,
     pub get_previousSibling: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IXMLDOMNode,
             previousSibling: *mut *mut IXMLDOMNode,
         ) -> HRESULT,
     >,
     pub get_nextSibling: ::core::option::Option<
-        unsafe extern "C" fn(This: *mut IXMLDOMNode, nextSibling: *mut *mut IXMLDOMNode) -> HRESULT,
+        unsafe extern "system" fn(This: *mut IXMLDOMNode, nextSibling: *mut *mut IXMLDOMNode) -> HRESULT,
     >,
     pub get_attributes: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IXMLDOMNode,
             attributeMap: *mut *mut IXMLDOMNamedNodeMap,
         ) -> HRESULT,
     >,
     pub insertBefore: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IXMLDOMNode,
             newChild: *mut IXMLDOMNode,
             refChild: VARIANT,
@@ -9053,7 +9053,7 @@ pub struct IXMLDOMNodeVtbl {
         ) -> HRESULT,
     >,
     pub replaceChild: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IXMLDOMNode,
             newChild: *mut IXMLDOMNode,
             oldChild: *mut IXMLDOMNode,
@@ -9061,102 +9061,102 @@ pub struct IXMLDOMNodeVtbl {
         ) -> HRESULT,
     >,
     pub removeChild: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IXMLDOMNode,
             childNode: *mut IXMLDOMNode,
             oldChild: *mut *mut IXMLDOMNode,
         ) -> HRESULT,
     >,
     pub appendChild: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IXMLDOMNode,
             newChild: *mut IXMLDOMNode,
             outNewChild: *mut *mut IXMLDOMNode,
         ) -> HRESULT,
     >,
     pub hasChildNodes: ::core::option::Option<
-        unsafe extern "C" fn(This: *mut IXMLDOMNode, hasChild: *mut VARIANT_BOOL) -> HRESULT,
+        unsafe extern "system" fn(This: *mut IXMLDOMNode, hasChild: *mut VARIANT_BOOL) -> HRESULT,
     >,
     pub get_ownerDocument: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IXMLDOMNode,
             DOMDocument: *mut *mut IXMLDOMDocument,
         ) -> HRESULT,
     >,
     pub cloneNode: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IXMLDOMNode,
             deep: VARIANT_BOOL,
             cloneRoot: *mut *mut IXMLDOMNode,
         ) -> HRESULT,
     >,
     pub get_nodeTypeString: ::core::option::Option<
-        unsafe extern "C" fn(This: *mut IXMLDOMNode, nodeType: *mut BSTR) -> HRESULT,
+        unsafe extern "system" fn(This: *mut IXMLDOMNode, nodeType: *mut BSTR) -> HRESULT,
     >,
     pub get_text: ::core::option::Option<
-        unsafe extern "C" fn(This: *mut IXMLDOMNode, text: *mut BSTR) -> HRESULT,
+        unsafe extern "system" fn(This: *mut IXMLDOMNode, text: *mut BSTR) -> HRESULT,
     >,
     pub put_text:
-        ::core::option::Option<unsafe extern "C" fn(This: *mut IXMLDOMNode, text: BSTR) -> HRESULT>,
+        ::core::option::Option<unsafe extern "system" fn(This: *mut IXMLDOMNode, text: BSTR) -> HRESULT>,
     pub get_specified: ::core::option::Option<
-        unsafe extern "C" fn(This: *mut IXMLDOMNode, isSpecified: *mut VARIANT_BOOL) -> HRESULT,
+        unsafe extern "system" fn(This: *mut IXMLDOMNode, isSpecified: *mut VARIANT_BOOL) -> HRESULT,
     >,
     pub get_definition: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IXMLDOMNode,
             definitionNode: *mut *mut IXMLDOMNode,
         ) -> HRESULT,
     >,
     pub get_nodeTypedValue: ::core::option::Option<
-        unsafe extern "C" fn(This: *mut IXMLDOMNode, typedValue: *mut VARIANT) -> HRESULT,
+        unsafe extern "system" fn(This: *mut IXMLDOMNode, typedValue: *mut VARIANT) -> HRESULT,
     >,
     pub put_nodeTypedValue: ::core::option::Option<
-        unsafe extern "C" fn(This: *mut IXMLDOMNode, typedValue: VARIANT) -> HRESULT,
+        unsafe extern "system" fn(This: *mut IXMLDOMNode, typedValue: VARIANT) -> HRESULT,
     >,
     pub get_dataType: ::core::option::Option<
-        unsafe extern "C" fn(This: *mut IXMLDOMNode, dataTypeName: *mut VARIANT) -> HRESULT,
+        unsafe extern "system" fn(This: *mut IXMLDOMNode, dataTypeName: *mut VARIANT) -> HRESULT,
     >,
     pub put_dataType: ::core::option::Option<
-        unsafe extern "C" fn(This: *mut IXMLDOMNode, dataTypeName: BSTR) -> HRESULT,
+        unsafe extern "system" fn(This: *mut IXMLDOMNode, dataTypeName: BSTR) -> HRESULT,
     >,
     pub get_xml: ::core::option::Option<
-        unsafe extern "C" fn(This: *mut IXMLDOMNode, xmlString: *mut BSTR) -> HRESULT,
+        unsafe extern "system" fn(This: *mut IXMLDOMNode, xmlString: *mut BSTR) -> HRESULT,
     >,
     pub transformNode: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IXMLDOMNode,
             styleSheet: *mut IXMLDOMNode,
             xmlString: *mut BSTR,
         ) -> HRESULT,
     >,
     pub selectNodes: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IXMLDOMNode,
             queryString: BSTR,
             resultList: *mut *mut IXMLDOMNodeList,
         ) -> HRESULT,
     >,
     pub selectSingleNode: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IXMLDOMNode,
             queryString: BSTR,
             resultNode: *mut *mut IXMLDOMNode,
         ) -> HRESULT,
     >,
     pub get_parsed: ::core::option::Option<
-        unsafe extern "C" fn(This: *mut IXMLDOMNode, isParsed: *mut VARIANT_BOOL) -> HRESULT,
+        unsafe extern "system" fn(This: *mut IXMLDOMNode, isParsed: *mut VARIANT_BOOL) -> HRESULT,
     >,
     pub get_namespaceURI: ::core::option::Option<
-        unsafe extern "C" fn(This: *mut IXMLDOMNode, namespaceURI: *mut BSTR) -> HRESULT,
+        unsafe extern "system" fn(This: *mut IXMLDOMNode, namespaceURI: *mut BSTR) -> HRESULT,
     >,
     pub get_prefix: ::core::option::Option<
-        unsafe extern "C" fn(This: *mut IXMLDOMNode, prefixString: *mut BSTR) -> HRESULT,
+        unsafe extern "system" fn(This: *mut IXMLDOMNode, prefixString: *mut BSTR) -> HRESULT,
     >,
     pub get_baseName: ::core::option::Option<
-        unsafe extern "C" fn(This: *mut IXMLDOMNode, nameString: *mut BSTR) -> HRESULT,
+        unsafe extern "system" fn(This: *mut IXMLDOMNode, nameString: *mut BSTR) -> HRESULT,
     >,
     pub transformNodeToObject: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IXMLDOMNode,
             stylesheet: *mut IXMLDOMNode,
             outputObject: VARIANT,
@@ -9172,19 +9172,19 @@ pub struct IXMLDOMNode {
 #[derive(Debug, Copy, Clone)]
 pub struct IXMLDOMDocumentVtbl {
     pub QueryInterface: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IXMLDOMDocument,
             riid: *const IID,
             ppvObject: *mut *mut ::core::ffi::c_void,
         ) -> HRESULT,
     >,
-    pub AddRef: ::core::option::Option<unsafe extern "C" fn(This: *mut IXMLDOMDocument) -> ULONG>,
-    pub Release: ::core::option::Option<unsafe extern "C" fn(This: *mut IXMLDOMDocument) -> ULONG>,
+    pub AddRef: ::core::option::Option<unsafe extern "system" fn(This: *mut IXMLDOMDocument) -> ULONG>,
+    pub Release: ::core::option::Option<unsafe extern "system" fn(This: *mut IXMLDOMDocument) -> ULONG>,
     pub GetTypeInfoCount: ::core::option::Option<
-        unsafe extern "C" fn(This: *mut IXMLDOMDocument, pctinfo: *mut UINT) -> HRESULT,
+        unsafe extern "system" fn(This: *mut IXMLDOMDocument, pctinfo: *mut UINT) -> HRESULT,
     >,
     pub GetTypeInfo: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IXMLDOMDocument,
             iTInfo: UINT,
             lcid: LCID,
@@ -9192,7 +9192,7 @@ pub struct IXMLDOMDocumentVtbl {
         ) -> HRESULT,
     >,
     pub GetIDsOfNames: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IXMLDOMDocument,
             riid: *const IID,
             rgszNames: *mut LPOLESTR,
@@ -9202,7 +9202,7 @@ pub struct IXMLDOMDocumentVtbl {
         ) -> HRESULT,
     >,
     pub Invoke: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IXMLDOMDocument,
             dispIdMember: DISPID,
             riid: *const IID,
@@ -9215,58 +9215,58 @@ pub struct IXMLDOMDocumentVtbl {
         ) -> HRESULT,
     >,
     pub get_nodeName: ::core::option::Option<
-        unsafe extern "C" fn(This: *mut IXMLDOMDocument, name: *mut BSTR) -> HRESULT,
+        unsafe extern "system" fn(This: *mut IXMLDOMDocument, name: *mut BSTR) -> HRESULT,
     >,
     pub get_nodeValue: ::core::option::Option<
-        unsafe extern "C" fn(This: *mut IXMLDOMDocument, value: *mut VARIANT) -> HRESULT,
+        unsafe extern "system" fn(This: *mut IXMLDOMDocument, value: *mut VARIANT) -> HRESULT,
     >,
     pub put_nodeValue: ::core::option::Option<
-        unsafe extern "C" fn(This: *mut IXMLDOMDocument, value: VARIANT) -> HRESULT,
+        unsafe extern "system" fn(This: *mut IXMLDOMDocument, value: VARIANT) -> HRESULT,
     >,
     pub get_nodeType: ::core::option::Option<
-        unsafe extern "C" fn(This: *mut IXMLDOMDocument, type_: *mut DOMNodeType) -> HRESULT,
+        unsafe extern "system" fn(This: *mut IXMLDOMDocument, type_: *mut DOMNodeType) -> HRESULT,
     >,
     pub get_parentNode: ::core::option::Option<
-        unsafe extern "C" fn(This: *mut IXMLDOMDocument, parent: *mut *mut IXMLDOMNode) -> HRESULT,
+        unsafe extern "system" fn(This: *mut IXMLDOMDocument, parent: *mut *mut IXMLDOMNode) -> HRESULT,
     >,
     pub get_childNodes: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IXMLDOMDocument,
             childList: *mut *mut IXMLDOMNodeList,
         ) -> HRESULT,
     >,
     pub get_firstChild: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IXMLDOMDocument,
             firstChild: *mut *mut IXMLDOMNode,
         ) -> HRESULT,
     >,
     pub get_lastChild: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IXMLDOMDocument,
             lastChild: *mut *mut IXMLDOMNode,
         ) -> HRESULT,
     >,
     pub get_previousSibling: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IXMLDOMDocument,
             previousSibling: *mut *mut IXMLDOMNode,
         ) -> HRESULT,
     >,
     pub get_nextSibling: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IXMLDOMDocument,
             nextSibling: *mut *mut IXMLDOMNode,
         ) -> HRESULT,
     >,
     pub get_attributes: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IXMLDOMDocument,
             attributeMap: *mut *mut IXMLDOMNamedNodeMap,
         ) -> HRESULT,
     >,
     pub insertBefore: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IXMLDOMDocument,
             newChild: *mut IXMLDOMNode,
             refChild: VARIANT,
@@ -9274,7 +9274,7 @@ pub struct IXMLDOMDocumentVtbl {
         ) -> HRESULT,
     >,
     pub replaceChild: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IXMLDOMDocument,
             newChild: *mut IXMLDOMNode,
             oldChild: *mut IXMLDOMNode,
@@ -9282,168 +9282,168 @@ pub struct IXMLDOMDocumentVtbl {
         ) -> HRESULT,
     >,
     pub removeChild: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IXMLDOMDocument,
             childNode: *mut IXMLDOMNode,
             oldChild: *mut *mut IXMLDOMNode,
         ) -> HRESULT,
     >,
     pub appendChild: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IXMLDOMDocument,
             newChild: *mut IXMLDOMNode,
             outNewChild: *mut *mut IXMLDOMNode,
         ) -> HRESULT,
     >,
     pub hasChildNodes: ::core::option::Option<
-        unsafe extern "C" fn(This: *mut IXMLDOMDocument, hasChild: *mut VARIANT_BOOL) -> HRESULT,
+        unsafe extern "system" fn(This: *mut IXMLDOMDocument, hasChild: *mut VARIANT_BOOL) -> HRESULT,
     >,
     pub get_ownerDocument: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IXMLDOMDocument,
             DOMDocument: *mut *mut IXMLDOMDocument,
         ) -> HRESULT,
     >,
     pub cloneNode: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IXMLDOMDocument,
             deep: VARIANT_BOOL,
             cloneRoot: *mut *mut IXMLDOMNode,
         ) -> HRESULT,
     >,
     pub get_nodeTypeString: ::core::option::Option<
-        unsafe extern "C" fn(This: *mut IXMLDOMDocument, nodeType: *mut BSTR) -> HRESULT,
+        unsafe extern "system" fn(This: *mut IXMLDOMDocument, nodeType: *mut BSTR) -> HRESULT,
     >,
     pub get_text: ::core::option::Option<
-        unsafe extern "C" fn(This: *mut IXMLDOMDocument, text: *mut BSTR) -> HRESULT,
+        unsafe extern "system" fn(This: *mut IXMLDOMDocument, text: *mut BSTR) -> HRESULT,
     >,
     pub put_text: ::core::option::Option<
-        unsafe extern "C" fn(This: *mut IXMLDOMDocument, text: BSTR) -> HRESULT,
+        unsafe extern "system" fn(This: *mut IXMLDOMDocument, text: BSTR) -> HRESULT,
     >,
     pub get_specified: ::core::option::Option<
-        unsafe extern "C" fn(This: *mut IXMLDOMDocument, isSpecified: *mut VARIANT_BOOL) -> HRESULT,
+        unsafe extern "system" fn(This: *mut IXMLDOMDocument, isSpecified: *mut VARIANT_BOOL) -> HRESULT,
     >,
     pub get_definition: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IXMLDOMDocument,
             definitionNode: *mut *mut IXMLDOMNode,
         ) -> HRESULT,
     >,
     pub get_nodeTypedValue: ::core::option::Option<
-        unsafe extern "C" fn(This: *mut IXMLDOMDocument, typedValue: *mut VARIANT) -> HRESULT,
+        unsafe extern "system" fn(This: *mut IXMLDOMDocument, typedValue: *mut VARIANT) -> HRESULT,
     >,
     pub put_nodeTypedValue: ::core::option::Option<
-        unsafe extern "C" fn(This: *mut IXMLDOMDocument, typedValue: VARIANT) -> HRESULT,
+        unsafe extern "system" fn(This: *mut IXMLDOMDocument, typedValue: VARIANT) -> HRESULT,
     >,
     pub get_dataType: ::core::option::Option<
-        unsafe extern "C" fn(This: *mut IXMLDOMDocument, dataTypeName: *mut VARIANT) -> HRESULT,
+        unsafe extern "system" fn(This: *mut IXMLDOMDocument, dataTypeName: *mut VARIANT) -> HRESULT,
     >,
     pub put_dataType: ::core::option::Option<
-        unsafe extern "C" fn(This: *mut IXMLDOMDocument, dataTypeName: BSTR) -> HRESULT,
+        unsafe extern "system" fn(This: *mut IXMLDOMDocument, dataTypeName: BSTR) -> HRESULT,
     >,
     pub get_xml: ::core::option::Option<
-        unsafe extern "C" fn(This: *mut IXMLDOMDocument, xmlString: *mut BSTR) -> HRESULT,
+        unsafe extern "system" fn(This: *mut IXMLDOMDocument, xmlString: *mut BSTR) -> HRESULT,
     >,
     pub transformNode: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IXMLDOMDocument,
             styleSheet: *mut IXMLDOMNode,
             xmlString: *mut BSTR,
         ) -> HRESULT,
     >,
     pub selectNodes: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IXMLDOMDocument,
             queryString: BSTR,
             resultList: *mut *mut IXMLDOMNodeList,
         ) -> HRESULT,
     >,
     pub selectSingleNode: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IXMLDOMDocument,
             queryString: BSTR,
             resultNode: *mut *mut IXMLDOMNode,
         ) -> HRESULT,
     >,
     pub get_parsed: ::core::option::Option<
-        unsafe extern "C" fn(This: *mut IXMLDOMDocument, isParsed: *mut VARIANT_BOOL) -> HRESULT,
+        unsafe extern "system" fn(This: *mut IXMLDOMDocument, isParsed: *mut VARIANT_BOOL) -> HRESULT,
     >,
     pub get_namespaceURI: ::core::option::Option<
-        unsafe extern "C" fn(This: *mut IXMLDOMDocument, namespaceURI: *mut BSTR) -> HRESULT,
+        unsafe extern "system" fn(This: *mut IXMLDOMDocument, namespaceURI: *mut BSTR) -> HRESULT,
     >,
     pub get_prefix: ::core::option::Option<
-        unsafe extern "C" fn(This: *mut IXMLDOMDocument, prefixString: *mut BSTR) -> HRESULT,
+        unsafe extern "system" fn(This: *mut IXMLDOMDocument, prefixString: *mut BSTR) -> HRESULT,
     >,
     pub get_baseName: ::core::option::Option<
-        unsafe extern "C" fn(This: *mut IXMLDOMDocument, nameString: *mut BSTR) -> HRESULT,
+        unsafe extern "system" fn(This: *mut IXMLDOMDocument, nameString: *mut BSTR) -> HRESULT,
     >,
     pub transformNodeToObject: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IXMLDOMDocument,
             stylesheet: *mut IXMLDOMNode,
             outputObject: VARIANT,
         ) -> HRESULT,
     >,
     pub get_doctype: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IXMLDOMDocument,
             documentType: *mut *mut IXMLDOMDocumentType,
         ) -> HRESULT,
     >,
     pub get_implementation: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IXMLDOMDocument,
             impl_: *mut *mut IXMLDOMImplementation,
         ) -> HRESULT,
     >,
     pub get_documentElement: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IXMLDOMDocument,
             DOMElement: *mut *mut IXMLDOMElement,
         ) -> HRESULT,
     >,
     pub putref_documentElement: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IXMLDOMDocument,
             DOMElement: *mut IXMLDOMElement,
         ) -> HRESULT,
     >,
     pub createElement: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IXMLDOMDocument,
             tagname: BSTR,
             element: *mut *mut IXMLDOMElement,
         ) -> HRESULT,
     >,
     pub createDocumentFragment: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IXMLDOMDocument,
             docFrag: *mut *mut IXMLDOMDocumentFragment,
         ) -> HRESULT,
     >,
     pub createTextNode: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IXMLDOMDocument,
             data: BSTR,
             text: *mut *mut IXMLDOMText,
         ) -> HRESULT,
     >,
     pub createComment: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IXMLDOMDocument,
             data: BSTR,
             comment: *mut *mut IXMLDOMComment,
         ) -> HRESULT,
     >,
     pub createCDATASection: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IXMLDOMDocument,
             data: BSTR,
             cdata: *mut *mut IXMLDOMCDATASection,
         ) -> HRESULT,
     >,
     pub createProcessingInstruction: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IXMLDOMDocument,
             target: BSTR,
             data: BSTR,
@@ -9451,28 +9451,28 @@ pub struct IXMLDOMDocumentVtbl {
         ) -> HRESULT,
     >,
     pub createAttribute: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IXMLDOMDocument,
             name: BSTR,
             attribute: *mut *mut IXMLDOMAttribute,
         ) -> HRESULT,
     >,
     pub createEntityReference: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IXMLDOMDocument,
             name: BSTR,
             entityRef: *mut *mut IXMLDOMEntityReference,
         ) -> HRESULT,
     >,
     pub getElementsByTagName: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IXMLDOMDocument,
             tagName: BSTR,
             resultList: *mut *mut IXMLDOMNodeList,
         ) -> HRESULT,
     >,
     pub createNode: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IXMLDOMDocument,
             Type: VARIANT,
             name: BSTR,
@@ -9481,80 +9481,80 @@ pub struct IXMLDOMDocumentVtbl {
         ) -> HRESULT,
     >,
     pub nodeFromID: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IXMLDOMDocument,
             idString: BSTR,
             node: *mut *mut IXMLDOMNode,
         ) -> HRESULT,
     >,
     pub load: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IXMLDOMDocument,
             xmlSource: VARIANT,
             isSuccessful: *mut VARIANT_BOOL,
         ) -> HRESULT,
     >,
     pub get_readyState: ::core::option::Option<
-        unsafe extern "C" fn(This: *mut IXMLDOMDocument, value: *mut LONG) -> HRESULT,
+        unsafe extern "system" fn(This: *mut IXMLDOMDocument, value: *mut LONG) -> HRESULT,
     >,
     pub get_parseError: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IXMLDOMDocument,
             errorObj: *mut *mut IXMLDOMParseError,
         ) -> HRESULT,
     >,
     pub get_url: ::core::option::Option<
-        unsafe extern "C" fn(This: *mut IXMLDOMDocument, urlString: *mut BSTR) -> HRESULT,
+        unsafe extern "system" fn(This: *mut IXMLDOMDocument, urlString: *mut BSTR) -> HRESULT,
     >,
     pub get_async: ::core::option::Option<
-        unsafe extern "C" fn(This: *mut IXMLDOMDocument, isAsync: *mut VARIANT_BOOL) -> HRESULT,
+        unsafe extern "system" fn(This: *mut IXMLDOMDocument, isAsync: *mut VARIANT_BOOL) -> HRESULT,
     >,
     pub put_async: ::core::option::Option<
-        unsafe extern "C" fn(This: *mut IXMLDOMDocument, isAsync: VARIANT_BOOL) -> HRESULT,
+        unsafe extern "system" fn(This: *mut IXMLDOMDocument, isAsync: VARIANT_BOOL) -> HRESULT,
     >,
-    pub abort: ::core::option::Option<unsafe extern "C" fn(This: *mut IXMLDOMDocument) -> HRESULT>,
+    pub abort: ::core::option::Option<unsafe extern "system" fn(This: *mut IXMLDOMDocument) -> HRESULT>,
     pub loadXML: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IXMLDOMDocument,
             bstrXML: BSTR,
             isSuccessful: *mut VARIANT_BOOL,
         ) -> HRESULT,
     >,
     pub save: ::core::option::Option<
-        unsafe extern "C" fn(This: *mut IXMLDOMDocument, destination: VARIANT) -> HRESULT,
+        unsafe extern "system" fn(This: *mut IXMLDOMDocument, destination: VARIANT) -> HRESULT,
     >,
     pub get_validateOnParse: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IXMLDOMDocument,
             isValidating: *mut VARIANT_BOOL,
         ) -> HRESULT,
     >,
     pub put_validateOnParse: ::core::option::Option<
-        unsafe extern "C" fn(This: *mut IXMLDOMDocument, isValidating: VARIANT_BOOL) -> HRESULT,
+        unsafe extern "system" fn(This: *mut IXMLDOMDocument, isValidating: VARIANT_BOOL) -> HRESULT,
     >,
     pub get_resolveExternals: ::core::option::Option<
-        unsafe extern "C" fn(This: *mut IXMLDOMDocument, isResolving: *mut VARIANT_BOOL) -> HRESULT,
+        unsafe extern "system" fn(This: *mut IXMLDOMDocument, isResolving: *mut VARIANT_BOOL) -> HRESULT,
     >,
     pub put_resolveExternals: ::core::option::Option<
-        unsafe extern "C" fn(This: *mut IXMLDOMDocument, isValidating: VARIANT_BOOL) -> HRESULT,
+        unsafe extern "system" fn(This: *mut IXMLDOMDocument, isValidating: VARIANT_BOOL) -> HRESULT,
     >,
     pub get_preserveWhiteSpace: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IXMLDOMDocument,
             isPreserving: *mut VARIANT_BOOL,
         ) -> HRESULT,
     >,
     pub put_preserveWhiteSpace: ::core::option::Option<
-        unsafe extern "C" fn(This: *mut IXMLDOMDocument, isPreserving: VARIANT_BOOL) -> HRESULT,
+        unsafe extern "system" fn(This: *mut IXMLDOMDocument, isPreserving: VARIANT_BOOL) -> HRESULT,
     >,
     pub put_onreadystatechange: ::core::option::Option<
-        unsafe extern "C" fn(This: *mut IXMLDOMDocument, readystatechangeSink: VARIANT) -> HRESULT,
+        unsafe extern "system" fn(This: *mut IXMLDOMDocument, readystatechangeSink: VARIANT) -> HRESULT,
     >,
     pub put_ondataavailable: ::core::option::Option<
-        unsafe extern "C" fn(This: *mut IXMLDOMDocument, ondataavailableSink: VARIANT) -> HRESULT,
+        unsafe extern "system" fn(This: *mut IXMLDOMDocument, ondataavailableSink: VARIANT) -> HRESULT,
     >,
     pub put_ontransformnode: ::core::option::Option<
-        unsafe extern "C" fn(This: *mut IXMLDOMDocument, ontransformnodeSink: VARIANT) -> HRESULT,
+        unsafe extern "system" fn(This: *mut IXMLDOMDocument, ontransformnodeSink: VARIANT) -> HRESULT,
     >,
 }
 #[repr(C)]
@@ -9566,19 +9566,19 @@ pub struct IXMLDOMDocument {
 #[derive(Debug, Copy, Clone)]
 pub struct IXMLDOMNodeListVtbl {
     pub QueryInterface: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IXMLDOMNodeList,
             riid: *const IID,
             ppvObject: *mut *mut ::core::ffi::c_void,
         ) -> HRESULT,
     >,
-    pub AddRef: ::core::option::Option<unsafe extern "C" fn(This: *mut IXMLDOMNodeList) -> ULONG>,
-    pub Release: ::core::option::Option<unsafe extern "C" fn(This: *mut IXMLDOMNodeList) -> ULONG>,
+    pub AddRef: ::core::option::Option<unsafe extern "system" fn(This: *mut IXMLDOMNodeList) -> ULONG>,
+    pub Release: ::core::option::Option<unsafe extern "system" fn(This: *mut IXMLDOMNodeList) -> ULONG>,
     pub GetTypeInfoCount: ::core::option::Option<
-        unsafe extern "C" fn(This: *mut IXMLDOMNodeList, pctinfo: *mut UINT) -> HRESULT,
+        unsafe extern "system" fn(This: *mut IXMLDOMNodeList, pctinfo: *mut UINT) -> HRESULT,
     >,
     pub GetTypeInfo: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IXMLDOMNodeList,
             iTInfo: UINT,
             lcid: LCID,
@@ -9586,7 +9586,7 @@ pub struct IXMLDOMNodeListVtbl {
         ) -> HRESULT,
     >,
     pub GetIDsOfNames: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IXMLDOMNodeList,
             riid: *const IID,
             rgszNames: *mut LPOLESTR,
@@ -9596,7 +9596,7 @@ pub struct IXMLDOMNodeListVtbl {
         ) -> HRESULT,
     >,
     pub Invoke: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IXMLDOMNodeList,
             dispIdMember: DISPID,
             riid: *const IID,
@@ -9609,24 +9609,24 @@ pub struct IXMLDOMNodeListVtbl {
         ) -> HRESULT,
     >,
     pub get_item: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IXMLDOMNodeList,
             index: LONG,
             listItem: *mut *mut IXMLDOMNode,
         ) -> HRESULT,
     >,
     pub get_length: ::core::option::Option<
-        unsafe extern "C" fn(This: *mut IXMLDOMNodeList, listLength: *mut LONG) -> HRESULT,
+        unsafe extern "system" fn(This: *mut IXMLDOMNodeList, listLength: *mut LONG) -> HRESULT,
     >,
     pub nextNode: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IXMLDOMNodeList,
             nextItem: *mut *mut IXMLDOMNode,
         ) -> HRESULT,
     >,
-    pub reset: ::core::option::Option<unsafe extern "C" fn(This: *mut IXMLDOMNodeList) -> HRESULT>,
+    pub reset: ::core::option::Option<unsafe extern "system" fn(This: *mut IXMLDOMNodeList) -> HRESULT>,
     pub _newEnum: ::core::option::Option<
-        unsafe extern "C" fn(This: *mut IXMLDOMNodeList, ppUnk: *mut *mut IUnknown) -> HRESULT,
+        unsafe extern "system" fn(This: *mut IXMLDOMNodeList, ppUnk: *mut *mut IUnknown) -> HRESULT,
     >,
 }
 #[repr(C)]
@@ -9638,21 +9638,21 @@ pub struct IXMLDOMNodeList {
 #[derive(Debug, Copy, Clone)]
 pub struct IXMLDOMNamedNodeMapVtbl {
     pub QueryInterface: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IXMLDOMNamedNodeMap,
             riid: *const IID,
             ppvObject: *mut *mut ::core::ffi::c_void,
         ) -> HRESULT,
     >,
     pub AddRef:
-        ::core::option::Option<unsafe extern "C" fn(This: *mut IXMLDOMNamedNodeMap) -> ULONG>,
+        ::core::option::Option<unsafe extern "system" fn(This: *mut IXMLDOMNamedNodeMap) -> ULONG>,
     pub Release:
-        ::core::option::Option<unsafe extern "C" fn(This: *mut IXMLDOMNamedNodeMap) -> ULONG>,
+        ::core::option::Option<unsafe extern "system" fn(This: *mut IXMLDOMNamedNodeMap) -> ULONG>,
     pub GetTypeInfoCount: ::core::option::Option<
-        unsafe extern "C" fn(This: *mut IXMLDOMNamedNodeMap, pctinfo: *mut UINT) -> HRESULT,
+        unsafe extern "system" fn(This: *mut IXMLDOMNamedNodeMap, pctinfo: *mut UINT) -> HRESULT,
     >,
     pub GetTypeInfo: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IXMLDOMNamedNodeMap,
             iTInfo: UINT,
             lcid: LCID,
@@ -9660,7 +9660,7 @@ pub struct IXMLDOMNamedNodeMapVtbl {
         ) -> HRESULT,
     >,
     pub GetIDsOfNames: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IXMLDOMNamedNodeMap,
             riid: *const IID,
             rgszNames: *mut LPOLESTR,
@@ -9670,7 +9670,7 @@ pub struct IXMLDOMNamedNodeMapVtbl {
         ) -> HRESULT,
     >,
     pub Invoke: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IXMLDOMNamedNodeMap,
             dispIdMember: DISPID,
             riid: *const IID,
@@ -9683,38 +9683,38 @@ pub struct IXMLDOMNamedNodeMapVtbl {
         ) -> HRESULT,
     >,
     pub getNamedItem: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IXMLDOMNamedNodeMap,
             name: BSTR,
             namedItem: *mut *mut IXMLDOMNode,
         ) -> HRESULT,
     >,
     pub setNamedItem: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IXMLDOMNamedNodeMap,
             newItem: *mut IXMLDOMNode,
             namedItem: *mut *mut IXMLDOMNode,
         ) -> HRESULT,
     >,
     pub removeNamedItem: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IXMLDOMNamedNodeMap,
             name: BSTR,
             namedItem: *mut *mut IXMLDOMNode,
         ) -> HRESULT,
     >,
     pub get_item: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IXMLDOMNamedNodeMap,
             index: LONG,
             listItem: *mut *mut IXMLDOMNode,
         ) -> HRESULT,
     >,
     pub get_length: ::core::option::Option<
-        unsafe extern "C" fn(This: *mut IXMLDOMNamedNodeMap, listLength: *mut LONG) -> HRESULT,
+        unsafe extern "system" fn(This: *mut IXMLDOMNamedNodeMap, listLength: *mut LONG) -> HRESULT,
     >,
     pub getQualifiedItem: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IXMLDOMNamedNodeMap,
             baseName: BSTR,
             namespaceURI: BSTR,
@@ -9722,7 +9722,7 @@ pub struct IXMLDOMNamedNodeMapVtbl {
         ) -> HRESULT,
     >,
     pub removeQualifiedItem: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IXMLDOMNamedNodeMap,
             baseName: BSTR,
             namespaceURI: BSTR,
@@ -9730,15 +9730,15 @@ pub struct IXMLDOMNamedNodeMapVtbl {
         ) -> HRESULT,
     >,
     pub nextNode: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IXMLDOMNamedNodeMap,
             nextItem: *mut *mut IXMLDOMNode,
         ) -> HRESULT,
     >,
     pub reset:
-        ::core::option::Option<unsafe extern "C" fn(This: *mut IXMLDOMNamedNodeMap) -> HRESULT>,
+        ::core::option::Option<unsafe extern "system" fn(This: *mut IXMLDOMNamedNodeMap) -> HRESULT>,
     pub _newEnum: ::core::option::Option<
-        unsafe extern "C" fn(This: *mut IXMLDOMNamedNodeMap, ppUnk: *mut *mut IUnknown) -> HRESULT,
+        unsafe extern "system" fn(This: *mut IXMLDOMNamedNodeMap, ppUnk: *mut *mut IUnknown) -> HRESULT,
     >,
 }
 #[repr(C)]
@@ -9750,21 +9750,21 @@ pub struct IXMLDOMNamedNodeMap {
 #[derive(Debug, Copy, Clone)]
 pub struct IXMLDOMDocumentFragmentVtbl {
     pub QueryInterface: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IXMLDOMDocumentFragment,
             riid: *const IID,
             ppvObject: *mut *mut ::core::ffi::c_void,
         ) -> HRESULT,
     >,
     pub AddRef:
-        ::core::option::Option<unsafe extern "C" fn(This: *mut IXMLDOMDocumentFragment) -> ULONG>,
+        ::core::option::Option<unsafe extern "system" fn(This: *mut IXMLDOMDocumentFragment) -> ULONG>,
     pub Release:
-        ::core::option::Option<unsafe extern "C" fn(This: *mut IXMLDOMDocumentFragment) -> ULONG>,
+        ::core::option::Option<unsafe extern "system" fn(This: *mut IXMLDOMDocumentFragment) -> ULONG>,
     pub GetTypeInfoCount: ::core::option::Option<
-        unsafe extern "C" fn(This: *mut IXMLDOMDocumentFragment, pctinfo: *mut UINT) -> HRESULT,
+        unsafe extern "system" fn(This: *mut IXMLDOMDocumentFragment, pctinfo: *mut UINT) -> HRESULT,
     >,
     pub GetTypeInfo: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IXMLDOMDocumentFragment,
             iTInfo: UINT,
             lcid: LCID,
@@ -9772,7 +9772,7 @@ pub struct IXMLDOMDocumentFragmentVtbl {
         ) -> HRESULT,
     >,
     pub GetIDsOfNames: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IXMLDOMDocumentFragment,
             riid: *const IID,
             rgszNames: *mut LPOLESTR,
@@ -9782,7 +9782,7 @@ pub struct IXMLDOMDocumentFragmentVtbl {
         ) -> HRESULT,
     >,
     pub Invoke: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IXMLDOMDocumentFragment,
             dispIdMember: DISPID,
             riid: *const IID,
@@ -9795,64 +9795,64 @@ pub struct IXMLDOMDocumentFragmentVtbl {
         ) -> HRESULT,
     >,
     pub get_nodeName: ::core::option::Option<
-        unsafe extern "C" fn(This: *mut IXMLDOMDocumentFragment, name: *mut BSTR) -> HRESULT,
+        unsafe extern "system" fn(This: *mut IXMLDOMDocumentFragment, name: *mut BSTR) -> HRESULT,
     >,
     pub get_nodeValue: ::core::option::Option<
-        unsafe extern "C" fn(This: *mut IXMLDOMDocumentFragment, value: *mut VARIANT) -> HRESULT,
+        unsafe extern "system" fn(This: *mut IXMLDOMDocumentFragment, value: *mut VARIANT) -> HRESULT,
     >,
     pub put_nodeValue: ::core::option::Option<
-        unsafe extern "C" fn(This: *mut IXMLDOMDocumentFragment, value: VARIANT) -> HRESULT,
+        unsafe extern "system" fn(This: *mut IXMLDOMDocumentFragment, value: VARIANT) -> HRESULT,
     >,
     pub get_nodeType: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IXMLDOMDocumentFragment,
             type_: *mut DOMNodeType,
         ) -> HRESULT,
     >,
     pub get_parentNode: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IXMLDOMDocumentFragment,
             parent: *mut *mut IXMLDOMNode,
         ) -> HRESULT,
     >,
     pub get_childNodes: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IXMLDOMDocumentFragment,
             childList: *mut *mut IXMLDOMNodeList,
         ) -> HRESULT,
     >,
     pub get_firstChild: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IXMLDOMDocumentFragment,
             firstChild: *mut *mut IXMLDOMNode,
         ) -> HRESULT,
     >,
     pub get_lastChild: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IXMLDOMDocumentFragment,
             lastChild: *mut *mut IXMLDOMNode,
         ) -> HRESULT,
     >,
     pub get_previousSibling: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IXMLDOMDocumentFragment,
             previousSibling: *mut *mut IXMLDOMNode,
         ) -> HRESULT,
     >,
     pub get_nextSibling: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IXMLDOMDocumentFragment,
             nextSibling: *mut *mut IXMLDOMNode,
         ) -> HRESULT,
     >,
     pub get_attributes: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IXMLDOMDocumentFragment,
             attributeMap: *mut *mut IXMLDOMNamedNodeMap,
         ) -> HRESULT,
     >,
     pub insertBefore: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IXMLDOMDocumentFragment,
             newChild: *mut IXMLDOMNode,
             refChild: VARIANT,
@@ -9860,7 +9860,7 @@ pub struct IXMLDOMDocumentFragmentVtbl {
         ) -> HRESULT,
     >,
     pub replaceChild: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IXMLDOMDocumentFragment,
             newChild: *mut IXMLDOMNode,
             oldChild: *mut IXMLDOMNode,
@@ -9868,124 +9868,124 @@ pub struct IXMLDOMDocumentFragmentVtbl {
         ) -> HRESULT,
     >,
     pub removeChild: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IXMLDOMDocumentFragment,
             childNode: *mut IXMLDOMNode,
             oldChild: *mut *mut IXMLDOMNode,
         ) -> HRESULT,
     >,
     pub appendChild: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IXMLDOMDocumentFragment,
             newChild: *mut IXMLDOMNode,
             outNewChild: *mut *mut IXMLDOMNode,
         ) -> HRESULT,
     >,
     pub hasChildNodes: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IXMLDOMDocumentFragment,
             hasChild: *mut VARIANT_BOOL,
         ) -> HRESULT,
     >,
     pub get_ownerDocument: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IXMLDOMDocumentFragment,
             DOMDocument: *mut *mut IXMLDOMDocument,
         ) -> HRESULT,
     >,
     pub cloneNode: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IXMLDOMDocumentFragment,
             deep: VARIANT_BOOL,
             cloneRoot: *mut *mut IXMLDOMNode,
         ) -> HRESULT,
     >,
     pub get_nodeTypeString: ::core::option::Option<
-        unsafe extern "C" fn(This: *mut IXMLDOMDocumentFragment, nodeType: *mut BSTR) -> HRESULT,
+        unsafe extern "system" fn(This: *mut IXMLDOMDocumentFragment, nodeType: *mut BSTR) -> HRESULT,
     >,
     pub get_text: ::core::option::Option<
-        unsafe extern "C" fn(This: *mut IXMLDOMDocumentFragment, text: *mut BSTR) -> HRESULT,
+        unsafe extern "system" fn(This: *mut IXMLDOMDocumentFragment, text: *mut BSTR) -> HRESULT,
     >,
     pub put_text: ::core::option::Option<
-        unsafe extern "C" fn(This: *mut IXMLDOMDocumentFragment, text: BSTR) -> HRESULT,
+        unsafe extern "system" fn(This: *mut IXMLDOMDocumentFragment, text: BSTR) -> HRESULT,
     >,
     pub get_specified: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IXMLDOMDocumentFragment,
             isSpecified: *mut VARIANT_BOOL,
         ) -> HRESULT,
     >,
     pub get_definition: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IXMLDOMDocumentFragment,
             definitionNode: *mut *mut IXMLDOMNode,
         ) -> HRESULT,
     >,
     pub get_nodeTypedValue: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IXMLDOMDocumentFragment,
             typedValue: *mut VARIANT,
         ) -> HRESULT,
     >,
     pub put_nodeTypedValue: ::core::option::Option<
-        unsafe extern "C" fn(This: *mut IXMLDOMDocumentFragment, typedValue: VARIANT) -> HRESULT,
+        unsafe extern "system" fn(This: *mut IXMLDOMDocumentFragment, typedValue: VARIANT) -> HRESULT,
     >,
     pub get_dataType: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IXMLDOMDocumentFragment,
             dataTypeName: *mut VARIANT,
         ) -> HRESULT,
     >,
     pub put_dataType: ::core::option::Option<
-        unsafe extern "C" fn(This: *mut IXMLDOMDocumentFragment, dataTypeName: BSTR) -> HRESULT,
+        unsafe extern "system" fn(This: *mut IXMLDOMDocumentFragment, dataTypeName: BSTR) -> HRESULT,
     >,
     pub get_xml: ::core::option::Option<
-        unsafe extern "C" fn(This: *mut IXMLDOMDocumentFragment, xmlString: *mut BSTR) -> HRESULT,
+        unsafe extern "system" fn(This: *mut IXMLDOMDocumentFragment, xmlString: *mut BSTR) -> HRESULT,
     >,
     pub transformNode: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IXMLDOMDocumentFragment,
             styleSheet: *mut IXMLDOMNode,
             xmlString: *mut BSTR,
         ) -> HRESULT,
     >,
     pub selectNodes: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IXMLDOMDocumentFragment,
             queryString: BSTR,
             resultList: *mut *mut IXMLDOMNodeList,
         ) -> HRESULT,
     >,
     pub selectSingleNode: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IXMLDOMDocumentFragment,
             queryString: BSTR,
             resultNode: *mut *mut IXMLDOMNode,
         ) -> HRESULT,
     >,
     pub get_parsed: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IXMLDOMDocumentFragment,
             isParsed: *mut VARIANT_BOOL,
         ) -> HRESULT,
     >,
     pub get_namespaceURI: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IXMLDOMDocumentFragment,
             namespaceURI: *mut BSTR,
         ) -> HRESULT,
     >,
     pub get_prefix: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IXMLDOMDocumentFragment,
             prefixString: *mut BSTR,
         ) -> HRESULT,
     >,
     pub get_baseName: ::core::option::Option<
-        unsafe extern "C" fn(This: *mut IXMLDOMDocumentFragment, nameString: *mut BSTR) -> HRESULT,
+        unsafe extern "system" fn(This: *mut IXMLDOMDocumentFragment, nameString: *mut BSTR) -> HRESULT,
     >,
     pub transformNodeToObject: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IXMLDOMDocumentFragment,
             stylesheet: *mut IXMLDOMNode,
             outputObject: VARIANT,
@@ -10001,21 +10001,21 @@ pub struct IXMLDOMDocumentFragment {
 #[derive(Debug, Copy, Clone)]
 pub struct IXMLDOMCharacterDataVtbl {
     pub QueryInterface: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IXMLDOMCharacterData,
             riid: *const IID,
             ppvObject: *mut *mut ::core::ffi::c_void,
         ) -> HRESULT,
     >,
     pub AddRef:
-        ::core::option::Option<unsafe extern "C" fn(This: *mut IXMLDOMCharacterData) -> ULONG>,
+        ::core::option::Option<unsafe extern "system" fn(This: *mut IXMLDOMCharacterData) -> ULONG>,
     pub Release:
-        ::core::option::Option<unsafe extern "C" fn(This: *mut IXMLDOMCharacterData) -> ULONG>,
+        ::core::option::Option<unsafe extern "system" fn(This: *mut IXMLDOMCharacterData) -> ULONG>,
     pub GetTypeInfoCount: ::core::option::Option<
-        unsafe extern "C" fn(This: *mut IXMLDOMCharacterData, pctinfo: *mut UINT) -> HRESULT,
+        unsafe extern "system" fn(This: *mut IXMLDOMCharacterData, pctinfo: *mut UINT) -> HRESULT,
     >,
     pub GetTypeInfo: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IXMLDOMCharacterData,
             iTInfo: UINT,
             lcid: LCID,
@@ -10023,7 +10023,7 @@ pub struct IXMLDOMCharacterDataVtbl {
         ) -> HRESULT,
     >,
     pub GetIDsOfNames: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IXMLDOMCharacterData,
             riid: *const IID,
             rgszNames: *mut LPOLESTR,
@@ -10033,7 +10033,7 @@ pub struct IXMLDOMCharacterDataVtbl {
         ) -> HRESULT,
     >,
     pub Invoke: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IXMLDOMCharacterData,
             dispIdMember: DISPID,
             riid: *const IID,
@@ -10046,61 +10046,61 @@ pub struct IXMLDOMCharacterDataVtbl {
         ) -> HRESULT,
     >,
     pub get_nodeName: ::core::option::Option<
-        unsafe extern "C" fn(This: *mut IXMLDOMCharacterData, name: *mut BSTR) -> HRESULT,
+        unsafe extern "system" fn(This: *mut IXMLDOMCharacterData, name: *mut BSTR) -> HRESULT,
     >,
     pub get_nodeValue: ::core::option::Option<
-        unsafe extern "C" fn(This: *mut IXMLDOMCharacterData, value: *mut VARIANT) -> HRESULT,
+        unsafe extern "system" fn(This: *mut IXMLDOMCharacterData, value: *mut VARIANT) -> HRESULT,
     >,
     pub put_nodeValue: ::core::option::Option<
-        unsafe extern "C" fn(This: *mut IXMLDOMCharacterData, value: VARIANT) -> HRESULT,
+        unsafe extern "system" fn(This: *mut IXMLDOMCharacterData, value: VARIANT) -> HRESULT,
     >,
     pub get_nodeType: ::core::option::Option<
-        unsafe extern "C" fn(This: *mut IXMLDOMCharacterData, type_: *mut DOMNodeType) -> HRESULT,
+        unsafe extern "system" fn(This: *mut IXMLDOMCharacterData, type_: *mut DOMNodeType) -> HRESULT,
     >,
     pub get_parentNode: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IXMLDOMCharacterData,
             parent: *mut *mut IXMLDOMNode,
         ) -> HRESULT,
     >,
     pub get_childNodes: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IXMLDOMCharacterData,
             childList: *mut *mut IXMLDOMNodeList,
         ) -> HRESULT,
     >,
     pub get_firstChild: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IXMLDOMCharacterData,
             firstChild: *mut *mut IXMLDOMNode,
         ) -> HRESULT,
     >,
     pub get_lastChild: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IXMLDOMCharacterData,
             lastChild: *mut *mut IXMLDOMNode,
         ) -> HRESULT,
     >,
     pub get_previousSibling: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IXMLDOMCharacterData,
             previousSibling: *mut *mut IXMLDOMNode,
         ) -> HRESULT,
     >,
     pub get_nextSibling: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IXMLDOMCharacterData,
             nextSibling: *mut *mut IXMLDOMNode,
         ) -> HRESULT,
     >,
     pub get_attributes: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IXMLDOMCharacterData,
             attributeMap: *mut *mut IXMLDOMNamedNodeMap,
         ) -> HRESULT,
     >,
     pub insertBefore: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IXMLDOMCharacterData,
             newChild: *mut IXMLDOMNode,
             refChild: VARIANT,
@@ -10108,7 +10108,7 @@ pub struct IXMLDOMCharacterDataVtbl {
         ) -> HRESULT,
     >,
     pub replaceChild: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IXMLDOMCharacterData,
             newChild: *mut IXMLDOMNode,
             oldChild: *mut IXMLDOMNode,
@@ -10116,131 +10116,131 @@ pub struct IXMLDOMCharacterDataVtbl {
         ) -> HRESULT,
     >,
     pub removeChild: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IXMLDOMCharacterData,
             childNode: *mut IXMLDOMNode,
             oldChild: *mut *mut IXMLDOMNode,
         ) -> HRESULT,
     >,
     pub appendChild: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IXMLDOMCharacterData,
             newChild: *mut IXMLDOMNode,
             outNewChild: *mut *mut IXMLDOMNode,
         ) -> HRESULT,
     >,
     pub hasChildNodes: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IXMLDOMCharacterData,
             hasChild: *mut VARIANT_BOOL,
         ) -> HRESULT,
     >,
     pub get_ownerDocument: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IXMLDOMCharacterData,
             DOMDocument: *mut *mut IXMLDOMDocument,
         ) -> HRESULT,
     >,
     pub cloneNode: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IXMLDOMCharacterData,
             deep: VARIANT_BOOL,
             cloneRoot: *mut *mut IXMLDOMNode,
         ) -> HRESULT,
     >,
     pub get_nodeTypeString: ::core::option::Option<
-        unsafe extern "C" fn(This: *mut IXMLDOMCharacterData, nodeType: *mut BSTR) -> HRESULT,
+        unsafe extern "system" fn(This: *mut IXMLDOMCharacterData, nodeType: *mut BSTR) -> HRESULT,
     >,
     pub get_text: ::core::option::Option<
-        unsafe extern "C" fn(This: *mut IXMLDOMCharacterData, text: *mut BSTR) -> HRESULT,
+        unsafe extern "system" fn(This: *mut IXMLDOMCharacterData, text: *mut BSTR) -> HRESULT,
     >,
     pub put_text: ::core::option::Option<
-        unsafe extern "C" fn(This: *mut IXMLDOMCharacterData, text: BSTR) -> HRESULT,
+        unsafe extern "system" fn(This: *mut IXMLDOMCharacterData, text: BSTR) -> HRESULT,
     >,
     pub get_specified: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IXMLDOMCharacterData,
             isSpecified: *mut VARIANT_BOOL,
         ) -> HRESULT,
     >,
     pub get_definition: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IXMLDOMCharacterData,
             definitionNode: *mut *mut IXMLDOMNode,
         ) -> HRESULT,
     >,
     pub get_nodeTypedValue: ::core::option::Option<
-        unsafe extern "C" fn(This: *mut IXMLDOMCharacterData, typedValue: *mut VARIANT) -> HRESULT,
+        unsafe extern "system" fn(This: *mut IXMLDOMCharacterData, typedValue: *mut VARIANT) -> HRESULT,
     >,
     pub put_nodeTypedValue: ::core::option::Option<
-        unsafe extern "C" fn(This: *mut IXMLDOMCharacterData, typedValue: VARIANT) -> HRESULT,
+        unsafe extern "system" fn(This: *mut IXMLDOMCharacterData, typedValue: VARIANT) -> HRESULT,
     >,
     pub get_dataType: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IXMLDOMCharacterData,
             dataTypeName: *mut VARIANT,
         ) -> HRESULT,
     >,
     pub put_dataType: ::core::option::Option<
-        unsafe extern "C" fn(This: *mut IXMLDOMCharacterData, dataTypeName: BSTR) -> HRESULT,
+        unsafe extern "system" fn(This: *mut IXMLDOMCharacterData, dataTypeName: BSTR) -> HRESULT,
     >,
     pub get_xml: ::core::option::Option<
-        unsafe extern "C" fn(This: *mut IXMLDOMCharacterData, xmlString: *mut BSTR) -> HRESULT,
+        unsafe extern "system" fn(This: *mut IXMLDOMCharacterData, xmlString: *mut BSTR) -> HRESULT,
     >,
     pub transformNode: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IXMLDOMCharacterData,
             styleSheet: *mut IXMLDOMNode,
             xmlString: *mut BSTR,
         ) -> HRESULT,
     >,
     pub selectNodes: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IXMLDOMCharacterData,
             queryString: BSTR,
             resultList: *mut *mut IXMLDOMNodeList,
         ) -> HRESULT,
     >,
     pub selectSingleNode: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IXMLDOMCharacterData,
             queryString: BSTR,
             resultNode: *mut *mut IXMLDOMNode,
         ) -> HRESULT,
     >,
     pub get_parsed: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IXMLDOMCharacterData,
             isParsed: *mut VARIANT_BOOL,
         ) -> HRESULT,
     >,
     pub get_namespaceURI: ::core::option::Option<
-        unsafe extern "C" fn(This: *mut IXMLDOMCharacterData, namespaceURI: *mut BSTR) -> HRESULT,
+        unsafe extern "system" fn(This: *mut IXMLDOMCharacterData, namespaceURI: *mut BSTR) -> HRESULT,
     >,
     pub get_prefix: ::core::option::Option<
-        unsafe extern "C" fn(This: *mut IXMLDOMCharacterData, prefixString: *mut BSTR) -> HRESULT,
+        unsafe extern "system" fn(This: *mut IXMLDOMCharacterData, prefixString: *mut BSTR) -> HRESULT,
     >,
     pub get_baseName: ::core::option::Option<
-        unsafe extern "C" fn(This: *mut IXMLDOMCharacterData, nameString: *mut BSTR) -> HRESULT,
+        unsafe extern "system" fn(This: *mut IXMLDOMCharacterData, nameString: *mut BSTR) -> HRESULT,
     >,
     pub transformNodeToObject: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IXMLDOMCharacterData,
             stylesheet: *mut IXMLDOMNode,
             outputObject: VARIANT,
         ) -> HRESULT,
     >,
     pub get_data: ::core::option::Option<
-        unsafe extern "C" fn(This: *mut IXMLDOMCharacterData, data: *mut BSTR) -> HRESULT,
+        unsafe extern "system" fn(This: *mut IXMLDOMCharacterData, data: *mut BSTR) -> HRESULT,
     >,
     pub put_data: ::core::option::Option<
-        unsafe extern "C" fn(This: *mut IXMLDOMCharacterData, data: BSTR) -> HRESULT,
+        unsafe extern "system" fn(This: *mut IXMLDOMCharacterData, data: BSTR) -> HRESULT,
     >,
     pub get_length: ::core::option::Option<
-        unsafe extern "C" fn(This: *mut IXMLDOMCharacterData, dataLength: *mut LONG) -> HRESULT,
+        unsafe extern "system" fn(This: *mut IXMLDOMCharacterData, dataLength: *mut LONG) -> HRESULT,
     >,
     pub substringData: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IXMLDOMCharacterData,
             offset: LONG,
             count: LONG,
@@ -10248,16 +10248,16 @@ pub struct IXMLDOMCharacterDataVtbl {
         ) -> HRESULT,
     >,
     pub appendData: ::core::option::Option<
-        unsafe extern "C" fn(This: *mut IXMLDOMCharacterData, data: BSTR) -> HRESULT,
+        unsafe extern "system" fn(This: *mut IXMLDOMCharacterData, data: BSTR) -> HRESULT,
     >,
     pub insertData: ::core::option::Option<
-        unsafe extern "C" fn(This: *mut IXMLDOMCharacterData, offset: LONG, data: BSTR) -> HRESULT,
+        unsafe extern "system" fn(This: *mut IXMLDOMCharacterData, offset: LONG, data: BSTR) -> HRESULT,
     >,
     pub deleteData: ::core::option::Option<
-        unsafe extern "C" fn(This: *mut IXMLDOMCharacterData, offset: LONG, count: LONG) -> HRESULT,
+        unsafe extern "system" fn(This: *mut IXMLDOMCharacterData, offset: LONG, count: LONG) -> HRESULT,
     >,
     pub replaceData: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IXMLDOMCharacterData,
             offset: LONG,
             count: LONG,
@@ -10274,19 +10274,19 @@ pub struct IXMLDOMCharacterData {
 #[derive(Debug, Copy, Clone)]
 pub struct IXMLDOMAttributeVtbl {
     pub QueryInterface: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IXMLDOMAttribute,
             riid: *const IID,
             ppvObject: *mut *mut ::core::ffi::c_void,
         ) -> HRESULT,
     >,
-    pub AddRef: ::core::option::Option<unsafe extern "C" fn(This: *mut IXMLDOMAttribute) -> ULONG>,
-    pub Release: ::core::option::Option<unsafe extern "C" fn(This: *mut IXMLDOMAttribute) -> ULONG>,
+    pub AddRef: ::core::option::Option<unsafe extern "system" fn(This: *mut IXMLDOMAttribute) -> ULONG>,
+    pub Release: ::core::option::Option<unsafe extern "system" fn(This: *mut IXMLDOMAttribute) -> ULONG>,
     pub GetTypeInfoCount: ::core::option::Option<
-        unsafe extern "C" fn(This: *mut IXMLDOMAttribute, pctinfo: *mut UINT) -> HRESULT,
+        unsafe extern "system" fn(This: *mut IXMLDOMAttribute, pctinfo: *mut UINT) -> HRESULT,
     >,
     pub GetTypeInfo: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IXMLDOMAttribute,
             iTInfo: UINT,
             lcid: LCID,
@@ -10294,7 +10294,7 @@ pub struct IXMLDOMAttributeVtbl {
         ) -> HRESULT,
     >,
     pub GetIDsOfNames: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IXMLDOMAttribute,
             riid: *const IID,
             rgszNames: *mut LPOLESTR,
@@ -10304,7 +10304,7 @@ pub struct IXMLDOMAttributeVtbl {
         ) -> HRESULT,
     >,
     pub Invoke: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IXMLDOMAttribute,
             dispIdMember: DISPID,
             riid: *const IID,
@@ -10317,58 +10317,58 @@ pub struct IXMLDOMAttributeVtbl {
         ) -> HRESULT,
     >,
     pub get_nodeName: ::core::option::Option<
-        unsafe extern "C" fn(This: *mut IXMLDOMAttribute, name: *mut BSTR) -> HRESULT,
+        unsafe extern "system" fn(This: *mut IXMLDOMAttribute, name: *mut BSTR) -> HRESULT,
     >,
     pub get_nodeValue: ::core::option::Option<
-        unsafe extern "C" fn(This: *mut IXMLDOMAttribute, value: *mut VARIANT) -> HRESULT,
+        unsafe extern "system" fn(This: *mut IXMLDOMAttribute, value: *mut VARIANT) -> HRESULT,
     >,
     pub put_nodeValue: ::core::option::Option<
-        unsafe extern "C" fn(This: *mut IXMLDOMAttribute, value: VARIANT) -> HRESULT,
+        unsafe extern "system" fn(This: *mut IXMLDOMAttribute, value: VARIANT) -> HRESULT,
     >,
     pub get_nodeType: ::core::option::Option<
-        unsafe extern "C" fn(This: *mut IXMLDOMAttribute, type_: *mut DOMNodeType) -> HRESULT,
+        unsafe extern "system" fn(This: *mut IXMLDOMAttribute, type_: *mut DOMNodeType) -> HRESULT,
     >,
     pub get_parentNode: ::core::option::Option<
-        unsafe extern "C" fn(This: *mut IXMLDOMAttribute, parent: *mut *mut IXMLDOMNode) -> HRESULT,
+        unsafe extern "system" fn(This: *mut IXMLDOMAttribute, parent: *mut *mut IXMLDOMNode) -> HRESULT,
     >,
     pub get_childNodes: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IXMLDOMAttribute,
             childList: *mut *mut IXMLDOMNodeList,
         ) -> HRESULT,
     >,
     pub get_firstChild: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IXMLDOMAttribute,
             firstChild: *mut *mut IXMLDOMNode,
         ) -> HRESULT,
     >,
     pub get_lastChild: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IXMLDOMAttribute,
             lastChild: *mut *mut IXMLDOMNode,
         ) -> HRESULT,
     >,
     pub get_previousSibling: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IXMLDOMAttribute,
             previousSibling: *mut *mut IXMLDOMNode,
         ) -> HRESULT,
     >,
     pub get_nextSibling: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IXMLDOMAttribute,
             nextSibling: *mut *mut IXMLDOMNode,
         ) -> HRESULT,
     >,
     pub get_attributes: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IXMLDOMAttribute,
             attributeMap: *mut *mut IXMLDOMNamedNodeMap,
         ) -> HRESULT,
     >,
     pub insertBefore: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IXMLDOMAttribute,
             newChild: *mut IXMLDOMNode,
             refChild: VARIANT,
@@ -10376,7 +10376,7 @@ pub struct IXMLDOMAttributeVtbl {
         ) -> HRESULT,
     >,
     pub replaceChild: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IXMLDOMAttribute,
             newChild: *mut IXMLDOMNode,
             oldChild: *mut IXMLDOMNode,
@@ -10384,119 +10384,119 @@ pub struct IXMLDOMAttributeVtbl {
         ) -> HRESULT,
     >,
     pub removeChild: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IXMLDOMAttribute,
             childNode: *mut IXMLDOMNode,
             oldChild: *mut *mut IXMLDOMNode,
         ) -> HRESULT,
     >,
     pub appendChild: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IXMLDOMAttribute,
             newChild: *mut IXMLDOMNode,
             outNewChild: *mut *mut IXMLDOMNode,
         ) -> HRESULT,
     >,
     pub hasChildNodes: ::core::option::Option<
-        unsafe extern "C" fn(This: *mut IXMLDOMAttribute, hasChild: *mut VARIANT_BOOL) -> HRESULT,
+        unsafe extern "system" fn(This: *mut IXMLDOMAttribute, hasChild: *mut VARIANT_BOOL) -> HRESULT,
     >,
     pub get_ownerDocument: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IXMLDOMAttribute,
             DOMDocument: *mut *mut IXMLDOMDocument,
         ) -> HRESULT,
     >,
     pub cloneNode: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IXMLDOMAttribute,
             deep: VARIANT_BOOL,
             cloneRoot: *mut *mut IXMLDOMNode,
         ) -> HRESULT,
     >,
     pub get_nodeTypeString: ::core::option::Option<
-        unsafe extern "C" fn(This: *mut IXMLDOMAttribute, nodeType: *mut BSTR) -> HRESULT,
+        unsafe extern "system" fn(This: *mut IXMLDOMAttribute, nodeType: *mut BSTR) -> HRESULT,
     >,
     pub get_text: ::core::option::Option<
-        unsafe extern "C" fn(This: *mut IXMLDOMAttribute, text: *mut BSTR) -> HRESULT,
+        unsafe extern "system" fn(This: *mut IXMLDOMAttribute, text: *mut BSTR) -> HRESULT,
     >,
     pub put_text: ::core::option::Option<
-        unsafe extern "C" fn(This: *mut IXMLDOMAttribute, text: BSTR) -> HRESULT,
+        unsafe extern "system" fn(This: *mut IXMLDOMAttribute, text: BSTR) -> HRESULT,
     >,
     pub get_specified: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IXMLDOMAttribute,
             isSpecified: *mut VARIANT_BOOL,
         ) -> HRESULT,
     >,
     pub get_definition: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IXMLDOMAttribute,
             definitionNode: *mut *mut IXMLDOMNode,
         ) -> HRESULT,
     >,
     pub get_nodeTypedValue: ::core::option::Option<
-        unsafe extern "C" fn(This: *mut IXMLDOMAttribute, typedValue: *mut VARIANT) -> HRESULT,
+        unsafe extern "system" fn(This: *mut IXMLDOMAttribute, typedValue: *mut VARIANT) -> HRESULT,
     >,
     pub put_nodeTypedValue: ::core::option::Option<
-        unsafe extern "C" fn(This: *mut IXMLDOMAttribute, typedValue: VARIANT) -> HRESULT,
+        unsafe extern "system" fn(This: *mut IXMLDOMAttribute, typedValue: VARIANT) -> HRESULT,
     >,
     pub get_dataType: ::core::option::Option<
-        unsafe extern "C" fn(This: *mut IXMLDOMAttribute, dataTypeName: *mut VARIANT) -> HRESULT,
+        unsafe extern "system" fn(This: *mut IXMLDOMAttribute, dataTypeName: *mut VARIANT) -> HRESULT,
     >,
     pub put_dataType: ::core::option::Option<
-        unsafe extern "C" fn(This: *mut IXMLDOMAttribute, dataTypeName: BSTR) -> HRESULT,
+        unsafe extern "system" fn(This: *mut IXMLDOMAttribute, dataTypeName: BSTR) -> HRESULT,
     >,
     pub get_xml: ::core::option::Option<
-        unsafe extern "C" fn(This: *mut IXMLDOMAttribute, xmlString: *mut BSTR) -> HRESULT,
+        unsafe extern "system" fn(This: *mut IXMLDOMAttribute, xmlString: *mut BSTR) -> HRESULT,
     >,
     pub transformNode: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IXMLDOMAttribute,
             styleSheet: *mut IXMLDOMNode,
             xmlString: *mut BSTR,
         ) -> HRESULT,
     >,
     pub selectNodes: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IXMLDOMAttribute,
             queryString: BSTR,
             resultList: *mut *mut IXMLDOMNodeList,
         ) -> HRESULT,
     >,
     pub selectSingleNode: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IXMLDOMAttribute,
             queryString: BSTR,
             resultNode: *mut *mut IXMLDOMNode,
         ) -> HRESULT,
     >,
     pub get_parsed: ::core::option::Option<
-        unsafe extern "C" fn(This: *mut IXMLDOMAttribute, isParsed: *mut VARIANT_BOOL) -> HRESULT,
+        unsafe extern "system" fn(This: *mut IXMLDOMAttribute, isParsed: *mut VARIANT_BOOL) -> HRESULT,
     >,
     pub get_namespaceURI: ::core::option::Option<
-        unsafe extern "C" fn(This: *mut IXMLDOMAttribute, namespaceURI: *mut BSTR) -> HRESULT,
+        unsafe extern "system" fn(This: *mut IXMLDOMAttribute, namespaceURI: *mut BSTR) -> HRESULT,
     >,
     pub get_prefix: ::core::option::Option<
-        unsafe extern "C" fn(This: *mut IXMLDOMAttribute, prefixString: *mut BSTR) -> HRESULT,
+        unsafe extern "system" fn(This: *mut IXMLDOMAttribute, prefixString: *mut BSTR) -> HRESULT,
     >,
     pub get_baseName: ::core::option::Option<
-        unsafe extern "C" fn(This: *mut IXMLDOMAttribute, nameString: *mut BSTR) -> HRESULT,
+        unsafe extern "system" fn(This: *mut IXMLDOMAttribute, nameString: *mut BSTR) -> HRESULT,
     >,
     pub transformNodeToObject: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IXMLDOMAttribute,
             stylesheet: *mut IXMLDOMNode,
             outputObject: VARIANT,
         ) -> HRESULT,
     >,
     pub get_name: ::core::option::Option<
-        unsafe extern "C" fn(This: *mut IXMLDOMAttribute, attributeName: *mut BSTR) -> HRESULT,
+        unsafe extern "system" fn(This: *mut IXMLDOMAttribute, attributeName: *mut BSTR) -> HRESULT,
     >,
     pub get_value: ::core::option::Option<
-        unsafe extern "C" fn(This: *mut IXMLDOMAttribute, attributeValue: *mut VARIANT) -> HRESULT,
+        unsafe extern "system" fn(This: *mut IXMLDOMAttribute, attributeValue: *mut VARIANT) -> HRESULT,
     >,
     pub put_value: ::core::option::Option<
-        unsafe extern "C" fn(This: *mut IXMLDOMAttribute, attributeValue: VARIANT) -> HRESULT,
+        unsafe extern "system" fn(This: *mut IXMLDOMAttribute, attributeValue: VARIANT) -> HRESULT,
     >,
 }
 #[repr(C)]
@@ -10508,19 +10508,19 @@ pub struct IXMLDOMAttribute {
 #[derive(Debug, Copy, Clone)]
 pub struct IXMLDOMElementVtbl {
     pub QueryInterface: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IXMLDOMElement,
             riid: *const IID,
             ppvObject: *mut *mut ::core::ffi::c_void,
         ) -> HRESULT,
     >,
-    pub AddRef: ::core::option::Option<unsafe extern "C" fn(This: *mut IXMLDOMElement) -> ULONG>,
-    pub Release: ::core::option::Option<unsafe extern "C" fn(This: *mut IXMLDOMElement) -> ULONG>,
+    pub AddRef: ::core::option::Option<unsafe extern "system" fn(This: *mut IXMLDOMElement) -> ULONG>,
+    pub Release: ::core::option::Option<unsafe extern "system" fn(This: *mut IXMLDOMElement) -> ULONG>,
     pub GetTypeInfoCount: ::core::option::Option<
-        unsafe extern "C" fn(This: *mut IXMLDOMElement, pctinfo: *mut UINT) -> HRESULT,
+        unsafe extern "system" fn(This: *mut IXMLDOMElement, pctinfo: *mut UINT) -> HRESULT,
     >,
     pub GetTypeInfo: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IXMLDOMElement,
             iTInfo: UINT,
             lcid: LCID,
@@ -10528,7 +10528,7 @@ pub struct IXMLDOMElementVtbl {
         ) -> HRESULT,
     >,
     pub GetIDsOfNames: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IXMLDOMElement,
             riid: *const IID,
             rgszNames: *mut LPOLESTR,
@@ -10538,7 +10538,7 @@ pub struct IXMLDOMElementVtbl {
         ) -> HRESULT,
     >,
     pub Invoke: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IXMLDOMElement,
             dispIdMember: DISPID,
             riid: *const IID,
@@ -10551,58 +10551,58 @@ pub struct IXMLDOMElementVtbl {
         ) -> HRESULT,
     >,
     pub get_nodeName: ::core::option::Option<
-        unsafe extern "C" fn(This: *mut IXMLDOMElement, name: *mut BSTR) -> HRESULT,
+        unsafe extern "system" fn(This: *mut IXMLDOMElement, name: *mut BSTR) -> HRESULT,
     >,
     pub get_nodeValue: ::core::option::Option<
-        unsafe extern "C" fn(This: *mut IXMLDOMElement, value: *mut VARIANT) -> HRESULT,
+        unsafe extern "system" fn(This: *mut IXMLDOMElement, value: *mut VARIANT) -> HRESULT,
     >,
     pub put_nodeValue: ::core::option::Option<
-        unsafe extern "C" fn(This: *mut IXMLDOMElement, value: VARIANT) -> HRESULT,
+        unsafe extern "system" fn(This: *mut IXMLDOMElement, value: VARIANT) -> HRESULT,
     >,
     pub get_nodeType: ::core::option::Option<
-        unsafe extern "C" fn(This: *mut IXMLDOMElement, type_: *mut DOMNodeType) -> HRESULT,
+        unsafe extern "system" fn(This: *mut IXMLDOMElement, type_: *mut DOMNodeType) -> HRESULT,
     >,
     pub get_parentNode: ::core::option::Option<
-        unsafe extern "C" fn(This: *mut IXMLDOMElement, parent: *mut *mut IXMLDOMNode) -> HRESULT,
+        unsafe extern "system" fn(This: *mut IXMLDOMElement, parent: *mut *mut IXMLDOMNode) -> HRESULT,
     >,
     pub get_childNodes: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IXMLDOMElement,
             childList: *mut *mut IXMLDOMNodeList,
         ) -> HRESULT,
     >,
     pub get_firstChild: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IXMLDOMElement,
             firstChild: *mut *mut IXMLDOMNode,
         ) -> HRESULT,
     >,
     pub get_lastChild: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IXMLDOMElement,
             lastChild: *mut *mut IXMLDOMNode,
         ) -> HRESULT,
     >,
     pub get_previousSibling: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IXMLDOMElement,
             previousSibling: *mut *mut IXMLDOMNode,
         ) -> HRESULT,
     >,
     pub get_nextSibling: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IXMLDOMElement,
             nextSibling: *mut *mut IXMLDOMNode,
         ) -> HRESULT,
     >,
     pub get_attributes: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IXMLDOMElement,
             attributeMap: *mut *mut IXMLDOMNamedNodeMap,
         ) -> HRESULT,
     >,
     pub insertBefore: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IXMLDOMElement,
             newChild: *mut IXMLDOMNode,
             refChild: VARIANT,
@@ -10610,7 +10610,7 @@ pub struct IXMLDOMElementVtbl {
         ) -> HRESULT,
     >,
     pub replaceChild: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IXMLDOMElement,
             newChild: *mut IXMLDOMNode,
             oldChild: *mut IXMLDOMNode,
@@ -10618,150 +10618,150 @@ pub struct IXMLDOMElementVtbl {
         ) -> HRESULT,
     >,
     pub removeChild: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IXMLDOMElement,
             childNode: *mut IXMLDOMNode,
             oldChild: *mut *mut IXMLDOMNode,
         ) -> HRESULT,
     >,
     pub appendChild: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IXMLDOMElement,
             newChild: *mut IXMLDOMNode,
             outNewChild: *mut *mut IXMLDOMNode,
         ) -> HRESULT,
     >,
     pub hasChildNodes: ::core::option::Option<
-        unsafe extern "C" fn(This: *mut IXMLDOMElement, hasChild: *mut VARIANT_BOOL) -> HRESULT,
+        unsafe extern "system" fn(This: *mut IXMLDOMElement, hasChild: *mut VARIANT_BOOL) -> HRESULT,
     >,
     pub get_ownerDocument: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IXMLDOMElement,
             DOMDocument: *mut *mut IXMLDOMDocument,
         ) -> HRESULT,
     >,
     pub cloneNode: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IXMLDOMElement,
             deep: VARIANT_BOOL,
             cloneRoot: *mut *mut IXMLDOMNode,
         ) -> HRESULT,
     >,
     pub get_nodeTypeString: ::core::option::Option<
-        unsafe extern "C" fn(This: *mut IXMLDOMElement, nodeType: *mut BSTR) -> HRESULT,
+        unsafe extern "system" fn(This: *mut IXMLDOMElement, nodeType: *mut BSTR) -> HRESULT,
     >,
     pub get_text: ::core::option::Option<
-        unsafe extern "C" fn(This: *mut IXMLDOMElement, text: *mut BSTR) -> HRESULT,
+        unsafe extern "system" fn(This: *mut IXMLDOMElement, text: *mut BSTR) -> HRESULT,
     >,
     pub put_text: ::core::option::Option<
-        unsafe extern "C" fn(This: *mut IXMLDOMElement, text: BSTR) -> HRESULT,
+        unsafe extern "system" fn(This: *mut IXMLDOMElement, text: BSTR) -> HRESULT,
     >,
     pub get_specified: ::core::option::Option<
-        unsafe extern "C" fn(This: *mut IXMLDOMElement, isSpecified: *mut VARIANT_BOOL) -> HRESULT,
+        unsafe extern "system" fn(This: *mut IXMLDOMElement, isSpecified: *mut VARIANT_BOOL) -> HRESULT,
     >,
     pub get_definition: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IXMLDOMElement,
             definitionNode: *mut *mut IXMLDOMNode,
         ) -> HRESULT,
     >,
     pub get_nodeTypedValue: ::core::option::Option<
-        unsafe extern "C" fn(This: *mut IXMLDOMElement, typedValue: *mut VARIANT) -> HRESULT,
+        unsafe extern "system" fn(This: *mut IXMLDOMElement, typedValue: *mut VARIANT) -> HRESULT,
     >,
     pub put_nodeTypedValue: ::core::option::Option<
-        unsafe extern "C" fn(This: *mut IXMLDOMElement, typedValue: VARIANT) -> HRESULT,
+        unsafe extern "system" fn(This: *mut IXMLDOMElement, typedValue: VARIANT) -> HRESULT,
     >,
     pub get_dataType: ::core::option::Option<
-        unsafe extern "C" fn(This: *mut IXMLDOMElement, dataTypeName: *mut VARIANT) -> HRESULT,
+        unsafe extern "system" fn(This: *mut IXMLDOMElement, dataTypeName: *mut VARIANT) -> HRESULT,
     >,
     pub put_dataType: ::core::option::Option<
-        unsafe extern "C" fn(This: *mut IXMLDOMElement, dataTypeName: BSTR) -> HRESULT,
+        unsafe extern "system" fn(This: *mut IXMLDOMElement, dataTypeName: BSTR) -> HRESULT,
     >,
     pub get_xml: ::core::option::Option<
-        unsafe extern "C" fn(This: *mut IXMLDOMElement, xmlString: *mut BSTR) -> HRESULT,
+        unsafe extern "system" fn(This: *mut IXMLDOMElement, xmlString: *mut BSTR) -> HRESULT,
     >,
     pub transformNode: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IXMLDOMElement,
             styleSheet: *mut IXMLDOMNode,
             xmlString: *mut BSTR,
         ) -> HRESULT,
     >,
     pub selectNodes: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IXMLDOMElement,
             queryString: BSTR,
             resultList: *mut *mut IXMLDOMNodeList,
         ) -> HRESULT,
     >,
     pub selectSingleNode: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IXMLDOMElement,
             queryString: BSTR,
             resultNode: *mut *mut IXMLDOMNode,
         ) -> HRESULT,
     >,
     pub get_parsed: ::core::option::Option<
-        unsafe extern "C" fn(This: *mut IXMLDOMElement, isParsed: *mut VARIANT_BOOL) -> HRESULT,
+        unsafe extern "system" fn(This: *mut IXMLDOMElement, isParsed: *mut VARIANT_BOOL) -> HRESULT,
     >,
     pub get_namespaceURI: ::core::option::Option<
-        unsafe extern "C" fn(This: *mut IXMLDOMElement, namespaceURI: *mut BSTR) -> HRESULT,
+        unsafe extern "system" fn(This: *mut IXMLDOMElement, namespaceURI: *mut BSTR) -> HRESULT,
     >,
     pub get_prefix: ::core::option::Option<
-        unsafe extern "C" fn(This: *mut IXMLDOMElement, prefixString: *mut BSTR) -> HRESULT,
+        unsafe extern "system" fn(This: *mut IXMLDOMElement, prefixString: *mut BSTR) -> HRESULT,
     >,
     pub get_baseName: ::core::option::Option<
-        unsafe extern "C" fn(This: *mut IXMLDOMElement, nameString: *mut BSTR) -> HRESULT,
+        unsafe extern "system" fn(This: *mut IXMLDOMElement, nameString: *mut BSTR) -> HRESULT,
     >,
     pub transformNodeToObject: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IXMLDOMElement,
             stylesheet: *mut IXMLDOMNode,
             outputObject: VARIANT,
         ) -> HRESULT,
     >,
     pub get_tagName: ::core::option::Option<
-        unsafe extern "C" fn(This: *mut IXMLDOMElement, tagName: *mut BSTR) -> HRESULT,
+        unsafe extern "system" fn(This: *mut IXMLDOMElement, tagName: *mut BSTR) -> HRESULT,
     >,
     pub getAttribute: ::core::option::Option<
-        unsafe extern "C" fn(This: *mut IXMLDOMElement, name: BSTR, value: *mut VARIANT) -> HRESULT,
+        unsafe extern "system" fn(This: *mut IXMLDOMElement, name: BSTR, value: *mut VARIANT) -> HRESULT,
     >,
     pub setAttribute: ::core::option::Option<
-        unsafe extern "C" fn(This: *mut IXMLDOMElement, name: BSTR, value: VARIANT) -> HRESULT,
+        unsafe extern "system" fn(This: *mut IXMLDOMElement, name: BSTR, value: VARIANT) -> HRESULT,
     >,
     pub removeAttribute: ::core::option::Option<
-        unsafe extern "C" fn(This: *mut IXMLDOMElement, name: BSTR) -> HRESULT,
+        unsafe extern "system" fn(This: *mut IXMLDOMElement, name: BSTR) -> HRESULT,
     >,
     pub getAttributeNode: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IXMLDOMElement,
             name: BSTR,
             attributeNode: *mut *mut IXMLDOMAttribute,
         ) -> HRESULT,
     >,
     pub setAttributeNode: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IXMLDOMElement,
             DOMAttribute: *mut IXMLDOMAttribute,
             attributeNode: *mut *mut IXMLDOMAttribute,
         ) -> HRESULT,
     >,
     pub removeAttributeNode: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IXMLDOMElement,
             DOMAttribute: *mut IXMLDOMAttribute,
             attributeNode: *mut *mut IXMLDOMAttribute,
         ) -> HRESULT,
     >,
     pub getElementsByTagName: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IXMLDOMElement,
             tagName: BSTR,
             resultList: *mut *mut IXMLDOMNodeList,
         ) -> HRESULT,
     >,
     pub normalize:
-        ::core::option::Option<unsafe extern "C" fn(This: *mut IXMLDOMElement) -> HRESULT>,
+        ::core::option::Option<unsafe extern "system" fn(This: *mut IXMLDOMElement) -> HRESULT>,
 }
 #[repr(C)]
 #[derive(Debug, Copy, Clone)]
@@ -10772,19 +10772,19 @@ pub struct IXMLDOMElement {
 #[derive(Debug, Copy, Clone)]
 pub struct IXMLDOMTextVtbl {
     pub QueryInterface: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IXMLDOMText,
             riid: *const IID,
             ppvObject: *mut *mut ::core::ffi::c_void,
         ) -> HRESULT,
     >,
-    pub AddRef: ::core::option::Option<unsafe extern "C" fn(This: *mut IXMLDOMText) -> ULONG>,
-    pub Release: ::core::option::Option<unsafe extern "C" fn(This: *mut IXMLDOMText) -> ULONG>,
+    pub AddRef: ::core::option::Option<unsafe extern "system" fn(This: *mut IXMLDOMText) -> ULONG>,
+    pub Release: ::core::option::Option<unsafe extern "system" fn(This: *mut IXMLDOMText) -> ULONG>,
     pub GetTypeInfoCount: ::core::option::Option<
-        unsafe extern "C" fn(This: *mut IXMLDOMText, pctinfo: *mut UINT) -> HRESULT,
+        unsafe extern "system" fn(This: *mut IXMLDOMText, pctinfo: *mut UINT) -> HRESULT,
     >,
     pub GetTypeInfo: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IXMLDOMText,
             iTInfo: UINT,
             lcid: LCID,
@@ -10792,7 +10792,7 @@ pub struct IXMLDOMTextVtbl {
         ) -> HRESULT,
     >,
     pub GetIDsOfNames: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IXMLDOMText,
             riid: *const IID,
             rgszNames: *mut LPOLESTR,
@@ -10802,7 +10802,7 @@ pub struct IXMLDOMTextVtbl {
         ) -> HRESULT,
     >,
     pub Invoke: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IXMLDOMText,
             dispIdMember: DISPID,
             riid: *const IID,
@@ -10815,49 +10815,49 @@ pub struct IXMLDOMTextVtbl {
         ) -> HRESULT,
     >,
     pub get_nodeName: ::core::option::Option<
-        unsafe extern "C" fn(This: *mut IXMLDOMText, name: *mut BSTR) -> HRESULT,
+        unsafe extern "system" fn(This: *mut IXMLDOMText, name: *mut BSTR) -> HRESULT,
     >,
     pub get_nodeValue: ::core::option::Option<
-        unsafe extern "C" fn(This: *mut IXMLDOMText, value: *mut VARIANT) -> HRESULT,
+        unsafe extern "system" fn(This: *mut IXMLDOMText, value: *mut VARIANT) -> HRESULT,
     >,
     pub put_nodeValue: ::core::option::Option<
-        unsafe extern "C" fn(This: *mut IXMLDOMText, value: VARIANT) -> HRESULT,
+        unsafe extern "system" fn(This: *mut IXMLDOMText, value: VARIANT) -> HRESULT,
     >,
     pub get_nodeType: ::core::option::Option<
-        unsafe extern "C" fn(This: *mut IXMLDOMText, type_: *mut DOMNodeType) -> HRESULT,
+        unsafe extern "system" fn(This: *mut IXMLDOMText, type_: *mut DOMNodeType) -> HRESULT,
     >,
     pub get_parentNode: ::core::option::Option<
-        unsafe extern "C" fn(This: *mut IXMLDOMText, parent: *mut *mut IXMLDOMNode) -> HRESULT,
+        unsafe extern "system" fn(This: *mut IXMLDOMText, parent: *mut *mut IXMLDOMNode) -> HRESULT,
     >,
     pub get_childNodes: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IXMLDOMText,
             childList: *mut *mut IXMLDOMNodeList,
         ) -> HRESULT,
     >,
     pub get_firstChild: ::core::option::Option<
-        unsafe extern "C" fn(This: *mut IXMLDOMText, firstChild: *mut *mut IXMLDOMNode) -> HRESULT,
+        unsafe extern "system" fn(This: *mut IXMLDOMText, firstChild: *mut *mut IXMLDOMNode) -> HRESULT,
     >,
     pub get_lastChild: ::core::option::Option<
-        unsafe extern "C" fn(This: *mut IXMLDOMText, lastChild: *mut *mut IXMLDOMNode) -> HRESULT,
+        unsafe extern "system" fn(This: *mut IXMLDOMText, lastChild: *mut *mut IXMLDOMNode) -> HRESULT,
     >,
     pub get_previousSibling: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IXMLDOMText,
             previousSibling: *mut *mut IXMLDOMNode,
         ) -> HRESULT,
     >,
     pub get_nextSibling: ::core::option::Option<
-        unsafe extern "C" fn(This: *mut IXMLDOMText, nextSibling: *mut *mut IXMLDOMNode) -> HRESULT,
+        unsafe extern "system" fn(This: *mut IXMLDOMText, nextSibling: *mut *mut IXMLDOMNode) -> HRESULT,
     >,
     pub get_attributes: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IXMLDOMText,
             attributeMap: *mut *mut IXMLDOMNamedNodeMap,
         ) -> HRESULT,
     >,
     pub insertBefore: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IXMLDOMText,
             newChild: *mut IXMLDOMNode,
             refChild: VARIANT,
@@ -10865,7 +10865,7 @@ pub struct IXMLDOMTextVtbl {
         ) -> HRESULT,
     >,
     pub replaceChild: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IXMLDOMText,
             newChild: *mut IXMLDOMNode,
             oldChild: *mut IXMLDOMNode,
@@ -10873,117 +10873,117 @@ pub struct IXMLDOMTextVtbl {
         ) -> HRESULT,
     >,
     pub removeChild: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IXMLDOMText,
             childNode: *mut IXMLDOMNode,
             oldChild: *mut *mut IXMLDOMNode,
         ) -> HRESULT,
     >,
     pub appendChild: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IXMLDOMText,
             newChild: *mut IXMLDOMNode,
             outNewChild: *mut *mut IXMLDOMNode,
         ) -> HRESULT,
     >,
     pub hasChildNodes: ::core::option::Option<
-        unsafe extern "C" fn(This: *mut IXMLDOMText, hasChild: *mut VARIANT_BOOL) -> HRESULT,
+        unsafe extern "system" fn(This: *mut IXMLDOMText, hasChild: *mut VARIANT_BOOL) -> HRESULT,
     >,
     pub get_ownerDocument: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IXMLDOMText,
             DOMDocument: *mut *mut IXMLDOMDocument,
         ) -> HRESULT,
     >,
     pub cloneNode: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IXMLDOMText,
             deep: VARIANT_BOOL,
             cloneRoot: *mut *mut IXMLDOMNode,
         ) -> HRESULT,
     >,
     pub get_nodeTypeString: ::core::option::Option<
-        unsafe extern "C" fn(This: *mut IXMLDOMText, nodeType: *mut BSTR) -> HRESULT,
+        unsafe extern "system" fn(This: *mut IXMLDOMText, nodeType: *mut BSTR) -> HRESULT,
     >,
     pub get_text: ::core::option::Option<
-        unsafe extern "C" fn(This: *mut IXMLDOMText, text: *mut BSTR) -> HRESULT,
+        unsafe extern "system" fn(This: *mut IXMLDOMText, text: *mut BSTR) -> HRESULT,
     >,
     pub put_text:
-        ::core::option::Option<unsafe extern "C" fn(This: *mut IXMLDOMText, text: BSTR) -> HRESULT>,
+        ::core::option::Option<unsafe extern "system" fn(This: *mut IXMLDOMText, text: BSTR) -> HRESULT>,
     pub get_specified: ::core::option::Option<
-        unsafe extern "C" fn(This: *mut IXMLDOMText, isSpecified: *mut VARIANT_BOOL) -> HRESULT,
+        unsafe extern "system" fn(This: *mut IXMLDOMText, isSpecified: *mut VARIANT_BOOL) -> HRESULT,
     >,
     pub get_definition: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IXMLDOMText,
             definitionNode: *mut *mut IXMLDOMNode,
         ) -> HRESULT,
     >,
     pub get_nodeTypedValue: ::core::option::Option<
-        unsafe extern "C" fn(This: *mut IXMLDOMText, typedValue: *mut VARIANT) -> HRESULT,
+        unsafe extern "system" fn(This: *mut IXMLDOMText, typedValue: *mut VARIANT) -> HRESULT,
     >,
     pub put_nodeTypedValue: ::core::option::Option<
-        unsafe extern "C" fn(This: *mut IXMLDOMText, typedValue: VARIANT) -> HRESULT,
+        unsafe extern "system" fn(This: *mut IXMLDOMText, typedValue: VARIANT) -> HRESULT,
     >,
     pub get_dataType: ::core::option::Option<
-        unsafe extern "C" fn(This: *mut IXMLDOMText, dataTypeName: *mut VARIANT) -> HRESULT,
+        unsafe extern "system" fn(This: *mut IXMLDOMText, dataTypeName: *mut VARIANT) -> HRESULT,
     >,
     pub put_dataType: ::core::option::Option<
-        unsafe extern "C" fn(This: *mut IXMLDOMText, dataTypeName: BSTR) -> HRESULT,
+        unsafe extern "system" fn(This: *mut IXMLDOMText, dataTypeName: BSTR) -> HRESULT,
     >,
     pub get_xml: ::core::option::Option<
-        unsafe extern "C" fn(This: *mut IXMLDOMText, xmlString: *mut BSTR) -> HRESULT,
+        unsafe extern "system" fn(This: *mut IXMLDOMText, xmlString: *mut BSTR) -> HRESULT,
     >,
     pub transformNode: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IXMLDOMText,
             styleSheet: *mut IXMLDOMNode,
             xmlString: *mut BSTR,
         ) -> HRESULT,
     >,
     pub selectNodes: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IXMLDOMText,
             queryString: BSTR,
             resultList: *mut *mut IXMLDOMNodeList,
         ) -> HRESULT,
     >,
     pub selectSingleNode: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IXMLDOMText,
             queryString: BSTR,
             resultNode: *mut *mut IXMLDOMNode,
         ) -> HRESULT,
     >,
     pub get_parsed: ::core::option::Option<
-        unsafe extern "C" fn(This: *mut IXMLDOMText, isParsed: *mut VARIANT_BOOL) -> HRESULT,
+        unsafe extern "system" fn(This: *mut IXMLDOMText, isParsed: *mut VARIANT_BOOL) -> HRESULT,
     >,
     pub get_namespaceURI: ::core::option::Option<
-        unsafe extern "C" fn(This: *mut IXMLDOMText, namespaceURI: *mut BSTR) -> HRESULT,
+        unsafe extern "system" fn(This: *mut IXMLDOMText, namespaceURI: *mut BSTR) -> HRESULT,
     >,
     pub get_prefix: ::core::option::Option<
-        unsafe extern "C" fn(This: *mut IXMLDOMText, prefixString: *mut BSTR) -> HRESULT,
+        unsafe extern "system" fn(This: *mut IXMLDOMText, prefixString: *mut BSTR) -> HRESULT,
     >,
     pub get_baseName: ::core::option::Option<
-        unsafe extern "C" fn(This: *mut IXMLDOMText, nameString: *mut BSTR) -> HRESULT,
+        unsafe extern "system" fn(This: *mut IXMLDOMText, nameString: *mut BSTR) -> HRESULT,
     >,
     pub transformNodeToObject: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IXMLDOMText,
             stylesheet: *mut IXMLDOMNode,
             outputObject: VARIANT,
         ) -> HRESULT,
     >,
     pub get_data: ::core::option::Option<
-        unsafe extern "C" fn(This: *mut IXMLDOMText, data: *mut BSTR) -> HRESULT,
+        unsafe extern "system" fn(This: *mut IXMLDOMText, data: *mut BSTR) -> HRESULT,
     >,
     pub put_data:
-        ::core::option::Option<unsafe extern "C" fn(This: *mut IXMLDOMText, data: BSTR) -> HRESULT>,
+        ::core::option::Option<unsafe extern "system" fn(This: *mut IXMLDOMText, data: BSTR) -> HRESULT>,
     pub get_length: ::core::option::Option<
-        unsafe extern "C" fn(This: *mut IXMLDOMText, dataLength: *mut LONG) -> HRESULT,
+        unsafe extern "system" fn(This: *mut IXMLDOMText, dataLength: *mut LONG) -> HRESULT,
     >,
     pub substringData: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IXMLDOMText,
             offset: LONG,
             count: LONG,
@@ -10991,15 +10991,15 @@ pub struct IXMLDOMTextVtbl {
         ) -> HRESULT,
     >,
     pub appendData:
-        ::core::option::Option<unsafe extern "C" fn(This: *mut IXMLDOMText, data: BSTR) -> HRESULT>,
+        ::core::option::Option<unsafe extern "system" fn(This: *mut IXMLDOMText, data: BSTR) -> HRESULT>,
     pub insertData: ::core::option::Option<
-        unsafe extern "C" fn(This: *mut IXMLDOMText, offset: LONG, data: BSTR) -> HRESULT,
+        unsafe extern "system" fn(This: *mut IXMLDOMText, offset: LONG, data: BSTR) -> HRESULT,
     >,
     pub deleteData: ::core::option::Option<
-        unsafe extern "C" fn(This: *mut IXMLDOMText, offset: LONG, count: LONG) -> HRESULT,
+        unsafe extern "system" fn(This: *mut IXMLDOMText, offset: LONG, count: LONG) -> HRESULT,
     >,
     pub replaceData: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IXMLDOMText,
             offset: LONG,
             count: LONG,
@@ -11007,7 +11007,7 @@ pub struct IXMLDOMTextVtbl {
         ) -> HRESULT,
     >,
     pub splitText: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IXMLDOMText,
             offset: LONG,
             rightHandTextNode: *mut *mut IXMLDOMText,
@@ -11023,19 +11023,19 @@ pub struct IXMLDOMText {
 #[derive(Debug, Copy, Clone)]
 pub struct IXMLDOMCommentVtbl {
     pub QueryInterface: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IXMLDOMComment,
             riid: *const IID,
             ppvObject: *mut *mut ::core::ffi::c_void,
         ) -> HRESULT,
     >,
-    pub AddRef: ::core::option::Option<unsafe extern "C" fn(This: *mut IXMLDOMComment) -> ULONG>,
-    pub Release: ::core::option::Option<unsafe extern "C" fn(This: *mut IXMLDOMComment) -> ULONG>,
+    pub AddRef: ::core::option::Option<unsafe extern "system" fn(This: *mut IXMLDOMComment) -> ULONG>,
+    pub Release: ::core::option::Option<unsafe extern "system" fn(This: *mut IXMLDOMComment) -> ULONG>,
     pub GetTypeInfoCount: ::core::option::Option<
-        unsafe extern "C" fn(This: *mut IXMLDOMComment, pctinfo: *mut UINT) -> HRESULT,
+        unsafe extern "system" fn(This: *mut IXMLDOMComment, pctinfo: *mut UINT) -> HRESULT,
     >,
     pub GetTypeInfo: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IXMLDOMComment,
             iTInfo: UINT,
             lcid: LCID,
@@ -11043,7 +11043,7 @@ pub struct IXMLDOMCommentVtbl {
         ) -> HRESULT,
     >,
     pub GetIDsOfNames: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IXMLDOMComment,
             riid: *const IID,
             rgszNames: *mut LPOLESTR,
@@ -11053,7 +11053,7 @@ pub struct IXMLDOMCommentVtbl {
         ) -> HRESULT,
     >,
     pub Invoke: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IXMLDOMComment,
             dispIdMember: DISPID,
             riid: *const IID,
@@ -11066,58 +11066,58 @@ pub struct IXMLDOMCommentVtbl {
         ) -> HRESULT,
     >,
     pub get_nodeName: ::core::option::Option<
-        unsafe extern "C" fn(This: *mut IXMLDOMComment, name: *mut BSTR) -> HRESULT,
+        unsafe extern "system" fn(This: *mut IXMLDOMComment, name: *mut BSTR) -> HRESULT,
     >,
     pub get_nodeValue: ::core::option::Option<
-        unsafe extern "C" fn(This: *mut IXMLDOMComment, value: *mut VARIANT) -> HRESULT,
+        unsafe extern "system" fn(This: *mut IXMLDOMComment, value: *mut VARIANT) -> HRESULT,
     >,
     pub put_nodeValue: ::core::option::Option<
-        unsafe extern "C" fn(This: *mut IXMLDOMComment, value: VARIANT) -> HRESULT,
+        unsafe extern "system" fn(This: *mut IXMLDOMComment, value: VARIANT) -> HRESULT,
     >,
     pub get_nodeType: ::core::option::Option<
-        unsafe extern "C" fn(This: *mut IXMLDOMComment, type_: *mut DOMNodeType) -> HRESULT,
+        unsafe extern "system" fn(This: *mut IXMLDOMComment, type_: *mut DOMNodeType) -> HRESULT,
     >,
     pub get_parentNode: ::core::option::Option<
-        unsafe extern "C" fn(This: *mut IXMLDOMComment, parent: *mut *mut IXMLDOMNode) -> HRESULT,
+        unsafe extern "system" fn(This: *mut IXMLDOMComment, parent: *mut *mut IXMLDOMNode) -> HRESULT,
     >,
     pub get_childNodes: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IXMLDOMComment,
             childList: *mut *mut IXMLDOMNodeList,
         ) -> HRESULT,
     >,
     pub get_firstChild: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IXMLDOMComment,
             firstChild: *mut *mut IXMLDOMNode,
         ) -> HRESULT,
     >,
     pub get_lastChild: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IXMLDOMComment,
             lastChild: *mut *mut IXMLDOMNode,
         ) -> HRESULT,
     >,
     pub get_previousSibling: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IXMLDOMComment,
             previousSibling: *mut *mut IXMLDOMNode,
         ) -> HRESULT,
     >,
     pub get_nextSibling: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IXMLDOMComment,
             nextSibling: *mut *mut IXMLDOMNode,
         ) -> HRESULT,
     >,
     pub get_attributes: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IXMLDOMComment,
             attributeMap: *mut *mut IXMLDOMNamedNodeMap,
         ) -> HRESULT,
     >,
     pub insertBefore: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IXMLDOMComment,
             newChild: *mut IXMLDOMNode,
             refChild: VARIANT,
@@ -11125,7 +11125,7 @@ pub struct IXMLDOMCommentVtbl {
         ) -> HRESULT,
     >,
     pub replaceChild: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IXMLDOMComment,
             newChild: *mut IXMLDOMNode,
             oldChild: *mut IXMLDOMNode,
@@ -11133,119 +11133,119 @@ pub struct IXMLDOMCommentVtbl {
         ) -> HRESULT,
     >,
     pub removeChild: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IXMLDOMComment,
             childNode: *mut IXMLDOMNode,
             oldChild: *mut *mut IXMLDOMNode,
         ) -> HRESULT,
     >,
     pub appendChild: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IXMLDOMComment,
             newChild: *mut IXMLDOMNode,
             outNewChild: *mut *mut IXMLDOMNode,
         ) -> HRESULT,
     >,
     pub hasChildNodes: ::core::option::Option<
-        unsafe extern "C" fn(This: *mut IXMLDOMComment, hasChild: *mut VARIANT_BOOL) -> HRESULT,
+        unsafe extern "system" fn(This: *mut IXMLDOMComment, hasChild: *mut VARIANT_BOOL) -> HRESULT,
     >,
     pub get_ownerDocument: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IXMLDOMComment,
             DOMDocument: *mut *mut IXMLDOMDocument,
         ) -> HRESULT,
     >,
     pub cloneNode: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IXMLDOMComment,
             deep: VARIANT_BOOL,
             cloneRoot: *mut *mut IXMLDOMNode,
         ) -> HRESULT,
     >,
     pub get_nodeTypeString: ::core::option::Option<
-        unsafe extern "C" fn(This: *mut IXMLDOMComment, nodeType: *mut BSTR) -> HRESULT,
+        unsafe extern "system" fn(This: *mut IXMLDOMComment, nodeType: *mut BSTR) -> HRESULT,
     >,
     pub get_text: ::core::option::Option<
-        unsafe extern "C" fn(This: *mut IXMLDOMComment, text: *mut BSTR) -> HRESULT,
+        unsafe extern "system" fn(This: *mut IXMLDOMComment, text: *mut BSTR) -> HRESULT,
     >,
     pub put_text: ::core::option::Option<
-        unsafe extern "C" fn(This: *mut IXMLDOMComment, text: BSTR) -> HRESULT,
+        unsafe extern "system" fn(This: *mut IXMLDOMComment, text: BSTR) -> HRESULT,
     >,
     pub get_specified: ::core::option::Option<
-        unsafe extern "C" fn(This: *mut IXMLDOMComment, isSpecified: *mut VARIANT_BOOL) -> HRESULT,
+        unsafe extern "system" fn(This: *mut IXMLDOMComment, isSpecified: *mut VARIANT_BOOL) -> HRESULT,
     >,
     pub get_definition: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IXMLDOMComment,
             definitionNode: *mut *mut IXMLDOMNode,
         ) -> HRESULT,
     >,
     pub get_nodeTypedValue: ::core::option::Option<
-        unsafe extern "C" fn(This: *mut IXMLDOMComment, typedValue: *mut VARIANT) -> HRESULT,
+        unsafe extern "system" fn(This: *mut IXMLDOMComment, typedValue: *mut VARIANT) -> HRESULT,
     >,
     pub put_nodeTypedValue: ::core::option::Option<
-        unsafe extern "C" fn(This: *mut IXMLDOMComment, typedValue: VARIANT) -> HRESULT,
+        unsafe extern "system" fn(This: *mut IXMLDOMComment, typedValue: VARIANT) -> HRESULT,
     >,
     pub get_dataType: ::core::option::Option<
-        unsafe extern "C" fn(This: *mut IXMLDOMComment, dataTypeName: *mut VARIANT) -> HRESULT,
+        unsafe extern "system" fn(This: *mut IXMLDOMComment, dataTypeName: *mut VARIANT) -> HRESULT,
     >,
     pub put_dataType: ::core::option::Option<
-        unsafe extern "C" fn(This: *mut IXMLDOMComment, dataTypeName: BSTR) -> HRESULT,
+        unsafe extern "system" fn(This: *mut IXMLDOMComment, dataTypeName: BSTR) -> HRESULT,
     >,
     pub get_xml: ::core::option::Option<
-        unsafe extern "C" fn(This: *mut IXMLDOMComment, xmlString: *mut BSTR) -> HRESULT,
+        unsafe extern "system" fn(This: *mut IXMLDOMComment, xmlString: *mut BSTR) -> HRESULT,
     >,
     pub transformNode: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IXMLDOMComment,
             styleSheet: *mut IXMLDOMNode,
             xmlString: *mut BSTR,
         ) -> HRESULT,
     >,
     pub selectNodes: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IXMLDOMComment,
             queryString: BSTR,
             resultList: *mut *mut IXMLDOMNodeList,
         ) -> HRESULT,
     >,
     pub selectSingleNode: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IXMLDOMComment,
             queryString: BSTR,
             resultNode: *mut *mut IXMLDOMNode,
         ) -> HRESULT,
     >,
     pub get_parsed: ::core::option::Option<
-        unsafe extern "C" fn(This: *mut IXMLDOMComment, isParsed: *mut VARIANT_BOOL) -> HRESULT,
+        unsafe extern "system" fn(This: *mut IXMLDOMComment, isParsed: *mut VARIANT_BOOL) -> HRESULT,
     >,
     pub get_namespaceURI: ::core::option::Option<
-        unsafe extern "C" fn(This: *mut IXMLDOMComment, namespaceURI: *mut BSTR) -> HRESULT,
+        unsafe extern "system" fn(This: *mut IXMLDOMComment, namespaceURI: *mut BSTR) -> HRESULT,
     >,
     pub get_prefix: ::core::option::Option<
-        unsafe extern "C" fn(This: *mut IXMLDOMComment, prefixString: *mut BSTR) -> HRESULT,
+        unsafe extern "system" fn(This: *mut IXMLDOMComment, prefixString: *mut BSTR) -> HRESULT,
     >,
     pub get_baseName: ::core::option::Option<
-        unsafe extern "C" fn(This: *mut IXMLDOMComment, nameString: *mut BSTR) -> HRESULT,
+        unsafe extern "system" fn(This: *mut IXMLDOMComment, nameString: *mut BSTR) -> HRESULT,
     >,
     pub transformNodeToObject: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IXMLDOMComment,
             stylesheet: *mut IXMLDOMNode,
             outputObject: VARIANT,
         ) -> HRESULT,
     >,
     pub get_data: ::core::option::Option<
-        unsafe extern "C" fn(This: *mut IXMLDOMComment, data: *mut BSTR) -> HRESULT,
+        unsafe extern "system" fn(This: *mut IXMLDOMComment, data: *mut BSTR) -> HRESULT,
     >,
     pub put_data: ::core::option::Option<
-        unsafe extern "C" fn(This: *mut IXMLDOMComment, data: BSTR) -> HRESULT,
+        unsafe extern "system" fn(This: *mut IXMLDOMComment, data: BSTR) -> HRESULT,
     >,
     pub get_length: ::core::option::Option<
-        unsafe extern "C" fn(This: *mut IXMLDOMComment, dataLength: *mut LONG) -> HRESULT,
+        unsafe extern "system" fn(This: *mut IXMLDOMComment, dataLength: *mut LONG) -> HRESULT,
     >,
     pub substringData: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IXMLDOMComment,
             offset: LONG,
             count: LONG,
@@ -11253,16 +11253,16 @@ pub struct IXMLDOMCommentVtbl {
         ) -> HRESULT,
     >,
     pub appendData: ::core::option::Option<
-        unsafe extern "C" fn(This: *mut IXMLDOMComment, data: BSTR) -> HRESULT,
+        unsafe extern "system" fn(This: *mut IXMLDOMComment, data: BSTR) -> HRESULT,
     >,
     pub insertData: ::core::option::Option<
-        unsafe extern "C" fn(This: *mut IXMLDOMComment, offset: LONG, data: BSTR) -> HRESULT,
+        unsafe extern "system" fn(This: *mut IXMLDOMComment, offset: LONG, data: BSTR) -> HRESULT,
     >,
     pub deleteData: ::core::option::Option<
-        unsafe extern "C" fn(This: *mut IXMLDOMComment, offset: LONG, count: LONG) -> HRESULT,
+        unsafe extern "system" fn(This: *mut IXMLDOMComment, offset: LONG, count: LONG) -> HRESULT,
     >,
     pub replaceData: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IXMLDOMComment,
             offset: LONG,
             count: LONG,
@@ -11279,26 +11279,26 @@ pub struct IXMLDOMComment {
 #[derive(Debug, Copy, Clone)]
 pub struct IXMLDOMProcessingInstructionVtbl {
     pub QueryInterface: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IXMLDOMProcessingInstruction,
             riid: *const IID,
             ppvObject: *mut *mut ::core::ffi::c_void,
         ) -> HRESULT,
     >,
     pub AddRef: ::core::option::Option<
-        unsafe extern "C" fn(This: *mut IXMLDOMProcessingInstruction) -> ULONG,
+        unsafe extern "system" fn(This: *mut IXMLDOMProcessingInstruction) -> ULONG,
     >,
     pub Release: ::core::option::Option<
-        unsafe extern "C" fn(This: *mut IXMLDOMProcessingInstruction) -> ULONG,
+        unsafe extern "system" fn(This: *mut IXMLDOMProcessingInstruction) -> ULONG,
     >,
     pub GetTypeInfoCount: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IXMLDOMProcessingInstruction,
             pctinfo: *mut UINT,
         ) -> HRESULT,
     >,
     pub GetTypeInfo: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IXMLDOMProcessingInstruction,
             iTInfo: UINT,
             lcid: LCID,
@@ -11306,7 +11306,7 @@ pub struct IXMLDOMProcessingInstructionVtbl {
         ) -> HRESULT,
     >,
     pub GetIDsOfNames: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IXMLDOMProcessingInstruction,
             riid: *const IID,
             rgszNames: *mut LPOLESTR,
@@ -11316,7 +11316,7 @@ pub struct IXMLDOMProcessingInstructionVtbl {
         ) -> HRESULT,
     >,
     pub Invoke: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IXMLDOMProcessingInstruction,
             dispIdMember: DISPID,
             riid: *const IID,
@@ -11329,67 +11329,67 @@ pub struct IXMLDOMProcessingInstructionVtbl {
         ) -> HRESULT,
     >,
     pub get_nodeName: ::core::option::Option<
-        unsafe extern "C" fn(This: *mut IXMLDOMProcessingInstruction, name: *mut BSTR) -> HRESULT,
+        unsafe extern "system" fn(This: *mut IXMLDOMProcessingInstruction, name: *mut BSTR) -> HRESULT,
     >,
     pub get_nodeValue: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IXMLDOMProcessingInstruction,
             value: *mut VARIANT,
         ) -> HRESULT,
     >,
     pub put_nodeValue: ::core::option::Option<
-        unsafe extern "C" fn(This: *mut IXMLDOMProcessingInstruction, value: VARIANT) -> HRESULT,
+        unsafe extern "system" fn(This: *mut IXMLDOMProcessingInstruction, value: VARIANT) -> HRESULT,
     >,
     pub get_nodeType: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IXMLDOMProcessingInstruction,
             type_: *mut DOMNodeType,
         ) -> HRESULT,
     >,
     pub get_parentNode: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IXMLDOMProcessingInstruction,
             parent: *mut *mut IXMLDOMNode,
         ) -> HRESULT,
     >,
     pub get_childNodes: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IXMLDOMProcessingInstruction,
             childList: *mut *mut IXMLDOMNodeList,
         ) -> HRESULT,
     >,
     pub get_firstChild: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IXMLDOMProcessingInstruction,
             firstChild: *mut *mut IXMLDOMNode,
         ) -> HRESULT,
     >,
     pub get_lastChild: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IXMLDOMProcessingInstruction,
             lastChild: *mut *mut IXMLDOMNode,
         ) -> HRESULT,
     >,
     pub get_previousSibling: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IXMLDOMProcessingInstruction,
             previousSibling: *mut *mut IXMLDOMNode,
         ) -> HRESULT,
     >,
     pub get_nextSibling: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IXMLDOMProcessingInstruction,
             nextSibling: *mut *mut IXMLDOMNode,
         ) -> HRESULT,
     >,
     pub get_attributes: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IXMLDOMProcessingInstruction,
             attributeMap: *mut *mut IXMLDOMNamedNodeMap,
         ) -> HRESULT,
     >,
     pub insertBefore: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IXMLDOMProcessingInstruction,
             newChild: *mut IXMLDOMNode,
             refChild: VARIANT,
@@ -11397,7 +11397,7 @@ pub struct IXMLDOMProcessingInstructionVtbl {
         ) -> HRESULT,
     >,
     pub replaceChild: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IXMLDOMProcessingInstruction,
             newChild: *mut IXMLDOMNode,
             oldChild: *mut IXMLDOMNode,
@@ -11405,152 +11405,152 @@ pub struct IXMLDOMProcessingInstructionVtbl {
         ) -> HRESULT,
     >,
     pub removeChild: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IXMLDOMProcessingInstruction,
             childNode: *mut IXMLDOMNode,
             oldChild: *mut *mut IXMLDOMNode,
         ) -> HRESULT,
     >,
     pub appendChild: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IXMLDOMProcessingInstruction,
             newChild: *mut IXMLDOMNode,
             outNewChild: *mut *mut IXMLDOMNode,
         ) -> HRESULT,
     >,
     pub hasChildNodes: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IXMLDOMProcessingInstruction,
             hasChild: *mut VARIANT_BOOL,
         ) -> HRESULT,
     >,
     pub get_ownerDocument: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IXMLDOMProcessingInstruction,
             DOMDocument: *mut *mut IXMLDOMDocument,
         ) -> HRESULT,
     >,
     pub cloneNode: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IXMLDOMProcessingInstruction,
             deep: VARIANT_BOOL,
             cloneRoot: *mut *mut IXMLDOMNode,
         ) -> HRESULT,
     >,
     pub get_nodeTypeString: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IXMLDOMProcessingInstruction,
             nodeType: *mut BSTR,
         ) -> HRESULT,
     >,
     pub get_text: ::core::option::Option<
-        unsafe extern "C" fn(This: *mut IXMLDOMProcessingInstruction, text: *mut BSTR) -> HRESULT,
+        unsafe extern "system" fn(This: *mut IXMLDOMProcessingInstruction, text: *mut BSTR) -> HRESULT,
     >,
     pub put_text: ::core::option::Option<
-        unsafe extern "C" fn(This: *mut IXMLDOMProcessingInstruction, text: BSTR) -> HRESULT,
+        unsafe extern "system" fn(This: *mut IXMLDOMProcessingInstruction, text: BSTR) -> HRESULT,
     >,
     pub get_specified: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IXMLDOMProcessingInstruction,
             isSpecified: *mut VARIANT_BOOL,
         ) -> HRESULT,
     >,
     pub get_definition: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IXMLDOMProcessingInstruction,
             definitionNode: *mut *mut IXMLDOMNode,
         ) -> HRESULT,
     >,
     pub get_nodeTypedValue: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IXMLDOMProcessingInstruction,
             typedValue: *mut VARIANT,
         ) -> HRESULT,
     >,
     pub put_nodeTypedValue: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IXMLDOMProcessingInstruction,
             typedValue: VARIANT,
         ) -> HRESULT,
     >,
     pub get_dataType: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IXMLDOMProcessingInstruction,
             dataTypeName: *mut VARIANT,
         ) -> HRESULT,
     >,
     pub put_dataType: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IXMLDOMProcessingInstruction,
             dataTypeName: BSTR,
         ) -> HRESULT,
     >,
     pub get_xml: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IXMLDOMProcessingInstruction,
             xmlString: *mut BSTR,
         ) -> HRESULT,
     >,
     pub transformNode: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IXMLDOMProcessingInstruction,
             styleSheet: *mut IXMLDOMNode,
             xmlString: *mut BSTR,
         ) -> HRESULT,
     >,
     pub selectNodes: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IXMLDOMProcessingInstruction,
             queryString: BSTR,
             resultList: *mut *mut IXMLDOMNodeList,
         ) -> HRESULT,
     >,
     pub selectSingleNode: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IXMLDOMProcessingInstruction,
             queryString: BSTR,
             resultNode: *mut *mut IXMLDOMNode,
         ) -> HRESULT,
     >,
     pub get_parsed: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IXMLDOMProcessingInstruction,
             isParsed: *mut VARIANT_BOOL,
         ) -> HRESULT,
     >,
     pub get_namespaceURI: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IXMLDOMProcessingInstruction,
             namespaceURI: *mut BSTR,
         ) -> HRESULT,
     >,
     pub get_prefix: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IXMLDOMProcessingInstruction,
             prefixString: *mut BSTR,
         ) -> HRESULT,
     >,
     pub get_baseName: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IXMLDOMProcessingInstruction,
             nameString: *mut BSTR,
         ) -> HRESULT,
     >,
     pub transformNodeToObject: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IXMLDOMProcessingInstruction,
             stylesheet: *mut IXMLDOMNode,
             outputObject: VARIANT,
         ) -> HRESULT,
     >,
     pub get_target: ::core::option::Option<
-        unsafe extern "C" fn(This: *mut IXMLDOMProcessingInstruction, name: *mut BSTR) -> HRESULT,
+        unsafe extern "system" fn(This: *mut IXMLDOMProcessingInstruction, name: *mut BSTR) -> HRESULT,
     >,
     pub get_data: ::core::option::Option<
-        unsafe extern "C" fn(This: *mut IXMLDOMProcessingInstruction, value: *mut BSTR) -> HRESULT,
+        unsafe extern "system" fn(This: *mut IXMLDOMProcessingInstruction, value: *mut BSTR) -> HRESULT,
     >,
     pub put_data: ::core::option::Option<
-        unsafe extern "C" fn(This: *mut IXMLDOMProcessingInstruction, value: BSTR) -> HRESULT,
+        unsafe extern "system" fn(This: *mut IXMLDOMProcessingInstruction, value: BSTR) -> HRESULT,
     >,
 }
 #[repr(C)]
@@ -11562,21 +11562,21 @@ pub struct IXMLDOMProcessingInstruction {
 #[derive(Debug, Copy, Clone)]
 pub struct IXMLDOMCDATASectionVtbl {
     pub QueryInterface: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IXMLDOMCDATASection,
             riid: *const IID,
             ppvObject: *mut *mut ::core::ffi::c_void,
         ) -> HRESULT,
     >,
     pub AddRef:
-        ::core::option::Option<unsafe extern "C" fn(This: *mut IXMLDOMCDATASection) -> ULONG>,
+        ::core::option::Option<unsafe extern "system" fn(This: *mut IXMLDOMCDATASection) -> ULONG>,
     pub Release:
-        ::core::option::Option<unsafe extern "C" fn(This: *mut IXMLDOMCDATASection) -> ULONG>,
+        ::core::option::Option<unsafe extern "system" fn(This: *mut IXMLDOMCDATASection) -> ULONG>,
     pub GetTypeInfoCount: ::core::option::Option<
-        unsafe extern "C" fn(This: *mut IXMLDOMCDATASection, pctinfo: *mut UINT) -> HRESULT,
+        unsafe extern "system" fn(This: *mut IXMLDOMCDATASection, pctinfo: *mut UINT) -> HRESULT,
     >,
     pub GetTypeInfo: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IXMLDOMCDATASection,
             iTInfo: UINT,
             lcid: LCID,
@@ -11584,7 +11584,7 @@ pub struct IXMLDOMCDATASectionVtbl {
         ) -> HRESULT,
     >,
     pub GetIDsOfNames: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IXMLDOMCDATASection,
             riid: *const IID,
             rgszNames: *mut LPOLESTR,
@@ -11594,7 +11594,7 @@ pub struct IXMLDOMCDATASectionVtbl {
         ) -> HRESULT,
     >,
     pub Invoke: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IXMLDOMCDATASection,
             dispIdMember: DISPID,
             riid: *const IID,
@@ -11607,61 +11607,61 @@ pub struct IXMLDOMCDATASectionVtbl {
         ) -> HRESULT,
     >,
     pub get_nodeName: ::core::option::Option<
-        unsafe extern "C" fn(This: *mut IXMLDOMCDATASection, name: *mut BSTR) -> HRESULT,
+        unsafe extern "system" fn(This: *mut IXMLDOMCDATASection, name: *mut BSTR) -> HRESULT,
     >,
     pub get_nodeValue: ::core::option::Option<
-        unsafe extern "C" fn(This: *mut IXMLDOMCDATASection, value: *mut VARIANT) -> HRESULT,
+        unsafe extern "system" fn(This: *mut IXMLDOMCDATASection, value: *mut VARIANT) -> HRESULT,
     >,
     pub put_nodeValue: ::core::option::Option<
-        unsafe extern "C" fn(This: *mut IXMLDOMCDATASection, value: VARIANT) -> HRESULT,
+        unsafe extern "system" fn(This: *mut IXMLDOMCDATASection, value: VARIANT) -> HRESULT,
     >,
     pub get_nodeType: ::core::option::Option<
-        unsafe extern "C" fn(This: *mut IXMLDOMCDATASection, type_: *mut DOMNodeType) -> HRESULT,
+        unsafe extern "system" fn(This: *mut IXMLDOMCDATASection, type_: *mut DOMNodeType) -> HRESULT,
     >,
     pub get_parentNode: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IXMLDOMCDATASection,
             parent: *mut *mut IXMLDOMNode,
         ) -> HRESULT,
     >,
     pub get_childNodes: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IXMLDOMCDATASection,
             childList: *mut *mut IXMLDOMNodeList,
         ) -> HRESULT,
     >,
     pub get_firstChild: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IXMLDOMCDATASection,
             firstChild: *mut *mut IXMLDOMNode,
         ) -> HRESULT,
     >,
     pub get_lastChild: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IXMLDOMCDATASection,
             lastChild: *mut *mut IXMLDOMNode,
         ) -> HRESULT,
     >,
     pub get_previousSibling: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IXMLDOMCDATASection,
             previousSibling: *mut *mut IXMLDOMNode,
         ) -> HRESULT,
     >,
     pub get_nextSibling: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IXMLDOMCDATASection,
             nextSibling: *mut *mut IXMLDOMNode,
         ) -> HRESULT,
     >,
     pub get_attributes: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IXMLDOMCDATASection,
             attributeMap: *mut *mut IXMLDOMNamedNodeMap,
         ) -> HRESULT,
     >,
     pub insertBefore: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IXMLDOMCDATASection,
             newChild: *mut IXMLDOMNode,
             refChild: VARIANT,
@@ -11669,7 +11669,7 @@ pub struct IXMLDOMCDATASectionVtbl {
         ) -> HRESULT,
     >,
     pub replaceChild: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IXMLDOMCDATASection,
             newChild: *mut IXMLDOMNode,
             oldChild: *mut IXMLDOMNode,
@@ -11677,128 +11677,128 @@ pub struct IXMLDOMCDATASectionVtbl {
         ) -> HRESULT,
     >,
     pub removeChild: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IXMLDOMCDATASection,
             childNode: *mut IXMLDOMNode,
             oldChild: *mut *mut IXMLDOMNode,
         ) -> HRESULT,
     >,
     pub appendChild: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IXMLDOMCDATASection,
             newChild: *mut IXMLDOMNode,
             outNewChild: *mut *mut IXMLDOMNode,
         ) -> HRESULT,
     >,
     pub hasChildNodes: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IXMLDOMCDATASection,
             hasChild: *mut VARIANT_BOOL,
         ) -> HRESULT,
     >,
     pub get_ownerDocument: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IXMLDOMCDATASection,
             DOMDocument: *mut *mut IXMLDOMDocument,
         ) -> HRESULT,
     >,
     pub cloneNode: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IXMLDOMCDATASection,
             deep: VARIANT_BOOL,
             cloneRoot: *mut *mut IXMLDOMNode,
         ) -> HRESULT,
     >,
     pub get_nodeTypeString: ::core::option::Option<
-        unsafe extern "C" fn(This: *mut IXMLDOMCDATASection, nodeType: *mut BSTR) -> HRESULT,
+        unsafe extern "system" fn(This: *mut IXMLDOMCDATASection, nodeType: *mut BSTR) -> HRESULT,
     >,
     pub get_text: ::core::option::Option<
-        unsafe extern "C" fn(This: *mut IXMLDOMCDATASection, text: *mut BSTR) -> HRESULT,
+        unsafe extern "system" fn(This: *mut IXMLDOMCDATASection, text: *mut BSTR) -> HRESULT,
     >,
     pub put_text: ::core::option::Option<
-        unsafe extern "C" fn(This: *mut IXMLDOMCDATASection, text: BSTR) -> HRESULT,
+        unsafe extern "system" fn(This: *mut IXMLDOMCDATASection, text: BSTR) -> HRESULT,
     >,
     pub get_specified: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IXMLDOMCDATASection,
             isSpecified: *mut VARIANT_BOOL,
         ) -> HRESULT,
     >,
     pub get_definition: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IXMLDOMCDATASection,
             definitionNode: *mut *mut IXMLDOMNode,
         ) -> HRESULT,
     >,
     pub get_nodeTypedValue: ::core::option::Option<
-        unsafe extern "C" fn(This: *mut IXMLDOMCDATASection, typedValue: *mut VARIANT) -> HRESULT,
+        unsafe extern "system" fn(This: *mut IXMLDOMCDATASection, typedValue: *mut VARIANT) -> HRESULT,
     >,
     pub put_nodeTypedValue: ::core::option::Option<
-        unsafe extern "C" fn(This: *mut IXMLDOMCDATASection, typedValue: VARIANT) -> HRESULT,
+        unsafe extern "system" fn(This: *mut IXMLDOMCDATASection, typedValue: VARIANT) -> HRESULT,
     >,
     pub get_dataType: ::core::option::Option<
-        unsafe extern "C" fn(This: *mut IXMLDOMCDATASection, dataTypeName: *mut VARIANT) -> HRESULT,
+        unsafe extern "system" fn(This: *mut IXMLDOMCDATASection, dataTypeName: *mut VARIANT) -> HRESULT,
     >,
     pub put_dataType: ::core::option::Option<
-        unsafe extern "C" fn(This: *mut IXMLDOMCDATASection, dataTypeName: BSTR) -> HRESULT,
+        unsafe extern "system" fn(This: *mut IXMLDOMCDATASection, dataTypeName: BSTR) -> HRESULT,
     >,
     pub get_xml: ::core::option::Option<
-        unsafe extern "C" fn(This: *mut IXMLDOMCDATASection, xmlString: *mut BSTR) -> HRESULT,
+        unsafe extern "system" fn(This: *mut IXMLDOMCDATASection, xmlString: *mut BSTR) -> HRESULT,
     >,
     pub transformNode: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IXMLDOMCDATASection,
             styleSheet: *mut IXMLDOMNode,
             xmlString: *mut BSTR,
         ) -> HRESULT,
     >,
     pub selectNodes: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IXMLDOMCDATASection,
             queryString: BSTR,
             resultList: *mut *mut IXMLDOMNodeList,
         ) -> HRESULT,
     >,
     pub selectSingleNode: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IXMLDOMCDATASection,
             queryString: BSTR,
             resultNode: *mut *mut IXMLDOMNode,
         ) -> HRESULT,
     >,
     pub get_parsed: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IXMLDOMCDATASection,
             isParsed: *mut VARIANT_BOOL,
         ) -> HRESULT,
     >,
     pub get_namespaceURI: ::core::option::Option<
-        unsafe extern "C" fn(This: *mut IXMLDOMCDATASection, namespaceURI: *mut BSTR) -> HRESULT,
+        unsafe extern "system" fn(This: *mut IXMLDOMCDATASection, namespaceURI: *mut BSTR) -> HRESULT,
     >,
     pub get_prefix: ::core::option::Option<
-        unsafe extern "C" fn(This: *mut IXMLDOMCDATASection, prefixString: *mut BSTR) -> HRESULT,
+        unsafe extern "system" fn(This: *mut IXMLDOMCDATASection, prefixString: *mut BSTR) -> HRESULT,
     >,
     pub get_baseName: ::core::option::Option<
-        unsafe extern "C" fn(This: *mut IXMLDOMCDATASection, nameString: *mut BSTR) -> HRESULT,
+        unsafe extern "system" fn(This: *mut IXMLDOMCDATASection, nameString: *mut BSTR) -> HRESULT,
     >,
     pub transformNodeToObject: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IXMLDOMCDATASection,
             stylesheet: *mut IXMLDOMNode,
             outputObject: VARIANT,
         ) -> HRESULT,
     >,
     pub get_data: ::core::option::Option<
-        unsafe extern "C" fn(This: *mut IXMLDOMCDATASection, data: *mut BSTR) -> HRESULT,
+        unsafe extern "system" fn(This: *mut IXMLDOMCDATASection, data: *mut BSTR) -> HRESULT,
     >,
     pub put_data: ::core::option::Option<
-        unsafe extern "C" fn(This: *mut IXMLDOMCDATASection, data: BSTR) -> HRESULT,
+        unsafe extern "system" fn(This: *mut IXMLDOMCDATASection, data: BSTR) -> HRESULT,
     >,
     pub get_length: ::core::option::Option<
-        unsafe extern "C" fn(This: *mut IXMLDOMCDATASection, dataLength: *mut LONG) -> HRESULT,
+        unsafe extern "system" fn(This: *mut IXMLDOMCDATASection, dataLength: *mut LONG) -> HRESULT,
     >,
     pub substringData: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IXMLDOMCDATASection,
             offset: LONG,
             count: LONG,
@@ -11806,16 +11806,16 @@ pub struct IXMLDOMCDATASectionVtbl {
         ) -> HRESULT,
     >,
     pub appendData: ::core::option::Option<
-        unsafe extern "C" fn(This: *mut IXMLDOMCDATASection, data: BSTR) -> HRESULT,
+        unsafe extern "system" fn(This: *mut IXMLDOMCDATASection, data: BSTR) -> HRESULT,
     >,
     pub insertData: ::core::option::Option<
-        unsafe extern "C" fn(This: *mut IXMLDOMCDATASection, offset: LONG, data: BSTR) -> HRESULT,
+        unsafe extern "system" fn(This: *mut IXMLDOMCDATASection, offset: LONG, data: BSTR) -> HRESULT,
     >,
     pub deleteData: ::core::option::Option<
-        unsafe extern "C" fn(This: *mut IXMLDOMCDATASection, offset: LONG, count: LONG) -> HRESULT,
+        unsafe extern "system" fn(This: *mut IXMLDOMCDATASection, offset: LONG, count: LONG) -> HRESULT,
     >,
     pub replaceData: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IXMLDOMCDATASection,
             offset: LONG,
             count: LONG,
@@ -11823,7 +11823,7 @@ pub struct IXMLDOMCDATASectionVtbl {
         ) -> HRESULT,
     >,
     pub splitText: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IXMLDOMCDATASection,
             offset: LONG,
             rightHandTextNode: *mut *mut IXMLDOMText,
@@ -11839,21 +11839,21 @@ pub struct IXMLDOMCDATASection {
 #[derive(Debug, Copy, Clone)]
 pub struct IXMLDOMDocumentTypeVtbl {
     pub QueryInterface: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IXMLDOMDocumentType,
             riid: *const IID,
             ppvObject: *mut *mut ::core::ffi::c_void,
         ) -> HRESULT,
     >,
     pub AddRef:
-        ::core::option::Option<unsafe extern "C" fn(This: *mut IXMLDOMDocumentType) -> ULONG>,
+        ::core::option::Option<unsafe extern "system" fn(This: *mut IXMLDOMDocumentType) -> ULONG>,
     pub Release:
-        ::core::option::Option<unsafe extern "C" fn(This: *mut IXMLDOMDocumentType) -> ULONG>,
+        ::core::option::Option<unsafe extern "system" fn(This: *mut IXMLDOMDocumentType) -> ULONG>,
     pub GetTypeInfoCount: ::core::option::Option<
-        unsafe extern "C" fn(This: *mut IXMLDOMDocumentType, pctinfo: *mut UINT) -> HRESULT,
+        unsafe extern "system" fn(This: *mut IXMLDOMDocumentType, pctinfo: *mut UINT) -> HRESULT,
     >,
     pub GetTypeInfo: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IXMLDOMDocumentType,
             iTInfo: UINT,
             lcid: LCID,
@@ -11861,7 +11861,7 @@ pub struct IXMLDOMDocumentTypeVtbl {
         ) -> HRESULT,
     >,
     pub GetIDsOfNames: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IXMLDOMDocumentType,
             riid: *const IID,
             rgszNames: *mut LPOLESTR,
@@ -11871,7 +11871,7 @@ pub struct IXMLDOMDocumentTypeVtbl {
         ) -> HRESULT,
     >,
     pub Invoke: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IXMLDOMDocumentType,
             dispIdMember: DISPID,
             riid: *const IID,
@@ -11884,61 +11884,61 @@ pub struct IXMLDOMDocumentTypeVtbl {
         ) -> HRESULT,
     >,
     pub get_nodeName: ::core::option::Option<
-        unsafe extern "C" fn(This: *mut IXMLDOMDocumentType, name: *mut BSTR) -> HRESULT,
+        unsafe extern "system" fn(This: *mut IXMLDOMDocumentType, name: *mut BSTR) -> HRESULT,
     >,
     pub get_nodeValue: ::core::option::Option<
-        unsafe extern "C" fn(This: *mut IXMLDOMDocumentType, value: *mut VARIANT) -> HRESULT,
+        unsafe extern "system" fn(This: *mut IXMLDOMDocumentType, value: *mut VARIANT) -> HRESULT,
     >,
     pub put_nodeValue: ::core::option::Option<
-        unsafe extern "C" fn(This: *mut IXMLDOMDocumentType, value: VARIANT) -> HRESULT,
+        unsafe extern "system" fn(This: *mut IXMLDOMDocumentType, value: VARIANT) -> HRESULT,
     >,
     pub get_nodeType: ::core::option::Option<
-        unsafe extern "C" fn(This: *mut IXMLDOMDocumentType, type_: *mut DOMNodeType) -> HRESULT,
+        unsafe extern "system" fn(This: *mut IXMLDOMDocumentType, type_: *mut DOMNodeType) -> HRESULT,
     >,
     pub get_parentNode: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IXMLDOMDocumentType,
             parent: *mut *mut IXMLDOMNode,
         ) -> HRESULT,
     >,
     pub get_childNodes: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IXMLDOMDocumentType,
             childList: *mut *mut IXMLDOMNodeList,
         ) -> HRESULT,
     >,
     pub get_firstChild: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IXMLDOMDocumentType,
             firstChild: *mut *mut IXMLDOMNode,
         ) -> HRESULT,
     >,
     pub get_lastChild: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IXMLDOMDocumentType,
             lastChild: *mut *mut IXMLDOMNode,
         ) -> HRESULT,
     >,
     pub get_previousSibling: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IXMLDOMDocumentType,
             previousSibling: *mut *mut IXMLDOMNode,
         ) -> HRESULT,
     >,
     pub get_nextSibling: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IXMLDOMDocumentType,
             nextSibling: *mut *mut IXMLDOMNode,
         ) -> HRESULT,
     >,
     pub get_attributes: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IXMLDOMDocumentType,
             attributeMap: *mut *mut IXMLDOMNamedNodeMap,
         ) -> HRESULT,
     >,
     pub insertBefore: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IXMLDOMDocumentType,
             newChild: *mut IXMLDOMNode,
             refChild: VARIANT,
@@ -11946,7 +11946,7 @@ pub struct IXMLDOMDocumentTypeVtbl {
         ) -> HRESULT,
     >,
     pub replaceChild: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IXMLDOMDocumentType,
             newChild: *mut IXMLDOMNode,
             oldChild: *mut IXMLDOMNode,
@@ -11954,128 +11954,128 @@ pub struct IXMLDOMDocumentTypeVtbl {
         ) -> HRESULT,
     >,
     pub removeChild: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IXMLDOMDocumentType,
             childNode: *mut IXMLDOMNode,
             oldChild: *mut *mut IXMLDOMNode,
         ) -> HRESULT,
     >,
     pub appendChild: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IXMLDOMDocumentType,
             newChild: *mut IXMLDOMNode,
             outNewChild: *mut *mut IXMLDOMNode,
         ) -> HRESULT,
     >,
     pub hasChildNodes: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IXMLDOMDocumentType,
             hasChild: *mut VARIANT_BOOL,
         ) -> HRESULT,
     >,
     pub get_ownerDocument: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IXMLDOMDocumentType,
             DOMDocument: *mut *mut IXMLDOMDocument,
         ) -> HRESULT,
     >,
     pub cloneNode: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IXMLDOMDocumentType,
             deep: VARIANT_BOOL,
             cloneRoot: *mut *mut IXMLDOMNode,
         ) -> HRESULT,
     >,
     pub get_nodeTypeString: ::core::option::Option<
-        unsafe extern "C" fn(This: *mut IXMLDOMDocumentType, nodeType: *mut BSTR) -> HRESULT,
+        unsafe extern "system" fn(This: *mut IXMLDOMDocumentType, nodeType: *mut BSTR) -> HRESULT,
     >,
     pub get_text: ::core::option::Option<
-        unsafe extern "C" fn(This: *mut IXMLDOMDocumentType, text: *mut BSTR) -> HRESULT,
+        unsafe extern "system" fn(This: *mut IXMLDOMDocumentType, text: *mut BSTR) -> HRESULT,
     >,
     pub put_text: ::core::option::Option<
-        unsafe extern "C" fn(This: *mut IXMLDOMDocumentType, text: BSTR) -> HRESULT,
+        unsafe extern "system" fn(This: *mut IXMLDOMDocumentType, text: BSTR) -> HRESULT,
     >,
     pub get_specified: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IXMLDOMDocumentType,
             isSpecified: *mut VARIANT_BOOL,
         ) -> HRESULT,
     >,
     pub get_definition: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IXMLDOMDocumentType,
             definitionNode: *mut *mut IXMLDOMNode,
         ) -> HRESULT,
     >,
     pub get_nodeTypedValue: ::core::option::Option<
-        unsafe extern "C" fn(This: *mut IXMLDOMDocumentType, typedValue: *mut VARIANT) -> HRESULT,
+        unsafe extern "system" fn(This: *mut IXMLDOMDocumentType, typedValue: *mut VARIANT) -> HRESULT,
     >,
     pub put_nodeTypedValue: ::core::option::Option<
-        unsafe extern "C" fn(This: *mut IXMLDOMDocumentType, typedValue: VARIANT) -> HRESULT,
+        unsafe extern "system" fn(This: *mut IXMLDOMDocumentType, typedValue: VARIANT) -> HRESULT,
     >,
     pub get_dataType: ::core::option::Option<
-        unsafe extern "C" fn(This: *mut IXMLDOMDocumentType, dataTypeName: *mut VARIANT) -> HRESULT,
+        unsafe extern "system" fn(This: *mut IXMLDOMDocumentType, dataTypeName: *mut VARIANT) -> HRESULT,
     >,
     pub put_dataType: ::core::option::Option<
-        unsafe extern "C" fn(This: *mut IXMLDOMDocumentType, dataTypeName: BSTR) -> HRESULT,
+        unsafe extern "system" fn(This: *mut IXMLDOMDocumentType, dataTypeName: BSTR) -> HRESULT,
     >,
     pub get_xml: ::core::option::Option<
-        unsafe extern "C" fn(This: *mut IXMLDOMDocumentType, xmlString: *mut BSTR) -> HRESULT,
+        unsafe extern "system" fn(This: *mut IXMLDOMDocumentType, xmlString: *mut BSTR) -> HRESULT,
     >,
     pub transformNode: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IXMLDOMDocumentType,
             styleSheet: *mut IXMLDOMNode,
             xmlString: *mut BSTR,
         ) -> HRESULT,
     >,
     pub selectNodes: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IXMLDOMDocumentType,
             queryString: BSTR,
             resultList: *mut *mut IXMLDOMNodeList,
         ) -> HRESULT,
     >,
     pub selectSingleNode: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IXMLDOMDocumentType,
             queryString: BSTR,
             resultNode: *mut *mut IXMLDOMNode,
         ) -> HRESULT,
     >,
     pub get_parsed: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IXMLDOMDocumentType,
             isParsed: *mut VARIANT_BOOL,
         ) -> HRESULT,
     >,
     pub get_namespaceURI: ::core::option::Option<
-        unsafe extern "C" fn(This: *mut IXMLDOMDocumentType, namespaceURI: *mut BSTR) -> HRESULT,
+        unsafe extern "system" fn(This: *mut IXMLDOMDocumentType, namespaceURI: *mut BSTR) -> HRESULT,
     >,
     pub get_prefix: ::core::option::Option<
-        unsafe extern "C" fn(This: *mut IXMLDOMDocumentType, prefixString: *mut BSTR) -> HRESULT,
+        unsafe extern "system" fn(This: *mut IXMLDOMDocumentType, prefixString: *mut BSTR) -> HRESULT,
     >,
     pub get_baseName: ::core::option::Option<
-        unsafe extern "C" fn(This: *mut IXMLDOMDocumentType, nameString: *mut BSTR) -> HRESULT,
+        unsafe extern "system" fn(This: *mut IXMLDOMDocumentType, nameString: *mut BSTR) -> HRESULT,
     >,
     pub transformNodeToObject: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IXMLDOMDocumentType,
             stylesheet: *mut IXMLDOMNode,
             outputObject: VARIANT,
         ) -> HRESULT,
     >,
     pub get_name: ::core::option::Option<
-        unsafe extern "C" fn(This: *mut IXMLDOMDocumentType, rootName: *mut BSTR) -> HRESULT,
+        unsafe extern "system" fn(This: *mut IXMLDOMDocumentType, rootName: *mut BSTR) -> HRESULT,
     >,
     pub get_entities: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IXMLDOMDocumentType,
             entityMap: *mut *mut IXMLDOMNamedNodeMap,
         ) -> HRESULT,
     >,
     pub get_notations: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IXMLDOMDocumentType,
             notationMap: *mut *mut IXMLDOMNamedNodeMap,
         ) -> HRESULT,
@@ -12090,19 +12090,19 @@ pub struct IXMLDOMDocumentType {
 #[derive(Debug, Copy, Clone)]
 pub struct IXMLDOMNotationVtbl {
     pub QueryInterface: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IXMLDOMNotation,
             riid: *const IID,
             ppvObject: *mut *mut ::core::ffi::c_void,
         ) -> HRESULT,
     >,
-    pub AddRef: ::core::option::Option<unsafe extern "C" fn(This: *mut IXMLDOMNotation) -> ULONG>,
-    pub Release: ::core::option::Option<unsafe extern "C" fn(This: *mut IXMLDOMNotation) -> ULONG>,
+    pub AddRef: ::core::option::Option<unsafe extern "system" fn(This: *mut IXMLDOMNotation) -> ULONG>,
+    pub Release: ::core::option::Option<unsafe extern "system" fn(This: *mut IXMLDOMNotation) -> ULONG>,
     pub GetTypeInfoCount: ::core::option::Option<
-        unsafe extern "C" fn(This: *mut IXMLDOMNotation, pctinfo: *mut UINT) -> HRESULT,
+        unsafe extern "system" fn(This: *mut IXMLDOMNotation, pctinfo: *mut UINT) -> HRESULT,
     >,
     pub GetTypeInfo: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IXMLDOMNotation,
             iTInfo: UINT,
             lcid: LCID,
@@ -12110,7 +12110,7 @@ pub struct IXMLDOMNotationVtbl {
         ) -> HRESULT,
     >,
     pub GetIDsOfNames: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IXMLDOMNotation,
             riid: *const IID,
             rgszNames: *mut LPOLESTR,
@@ -12120,7 +12120,7 @@ pub struct IXMLDOMNotationVtbl {
         ) -> HRESULT,
     >,
     pub Invoke: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IXMLDOMNotation,
             dispIdMember: DISPID,
             riid: *const IID,
@@ -12133,58 +12133,58 @@ pub struct IXMLDOMNotationVtbl {
         ) -> HRESULT,
     >,
     pub get_nodeName: ::core::option::Option<
-        unsafe extern "C" fn(This: *mut IXMLDOMNotation, name: *mut BSTR) -> HRESULT,
+        unsafe extern "system" fn(This: *mut IXMLDOMNotation, name: *mut BSTR) -> HRESULT,
     >,
     pub get_nodeValue: ::core::option::Option<
-        unsafe extern "C" fn(This: *mut IXMLDOMNotation, value: *mut VARIANT) -> HRESULT,
+        unsafe extern "system" fn(This: *mut IXMLDOMNotation, value: *mut VARIANT) -> HRESULT,
     >,
     pub put_nodeValue: ::core::option::Option<
-        unsafe extern "C" fn(This: *mut IXMLDOMNotation, value: VARIANT) -> HRESULT,
+        unsafe extern "system" fn(This: *mut IXMLDOMNotation, value: VARIANT) -> HRESULT,
     >,
     pub get_nodeType: ::core::option::Option<
-        unsafe extern "C" fn(This: *mut IXMLDOMNotation, type_: *mut DOMNodeType) -> HRESULT,
+        unsafe extern "system" fn(This: *mut IXMLDOMNotation, type_: *mut DOMNodeType) -> HRESULT,
     >,
     pub get_parentNode: ::core::option::Option<
-        unsafe extern "C" fn(This: *mut IXMLDOMNotation, parent: *mut *mut IXMLDOMNode) -> HRESULT,
+        unsafe extern "system" fn(This: *mut IXMLDOMNotation, parent: *mut *mut IXMLDOMNode) -> HRESULT,
     >,
     pub get_childNodes: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IXMLDOMNotation,
             childList: *mut *mut IXMLDOMNodeList,
         ) -> HRESULT,
     >,
     pub get_firstChild: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IXMLDOMNotation,
             firstChild: *mut *mut IXMLDOMNode,
         ) -> HRESULT,
     >,
     pub get_lastChild: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IXMLDOMNotation,
             lastChild: *mut *mut IXMLDOMNode,
         ) -> HRESULT,
     >,
     pub get_previousSibling: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IXMLDOMNotation,
             previousSibling: *mut *mut IXMLDOMNode,
         ) -> HRESULT,
     >,
     pub get_nextSibling: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IXMLDOMNotation,
             nextSibling: *mut *mut IXMLDOMNode,
         ) -> HRESULT,
     >,
     pub get_attributes: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IXMLDOMNotation,
             attributeMap: *mut *mut IXMLDOMNamedNodeMap,
         ) -> HRESULT,
     >,
     pub insertBefore: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IXMLDOMNotation,
             newChild: *mut IXMLDOMNode,
             refChild: VARIANT,
@@ -12192,7 +12192,7 @@ pub struct IXMLDOMNotationVtbl {
         ) -> HRESULT,
     >,
     pub replaceChild: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IXMLDOMNotation,
             newChild: *mut IXMLDOMNode,
             oldChild: *mut IXMLDOMNode,
@@ -12200,113 +12200,113 @@ pub struct IXMLDOMNotationVtbl {
         ) -> HRESULT,
     >,
     pub removeChild: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IXMLDOMNotation,
             childNode: *mut IXMLDOMNode,
             oldChild: *mut *mut IXMLDOMNode,
         ) -> HRESULT,
     >,
     pub appendChild: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IXMLDOMNotation,
             newChild: *mut IXMLDOMNode,
             outNewChild: *mut *mut IXMLDOMNode,
         ) -> HRESULT,
     >,
     pub hasChildNodes: ::core::option::Option<
-        unsafe extern "C" fn(This: *mut IXMLDOMNotation, hasChild: *mut VARIANT_BOOL) -> HRESULT,
+        unsafe extern "system" fn(This: *mut IXMLDOMNotation, hasChild: *mut VARIANT_BOOL) -> HRESULT,
     >,
     pub get_ownerDocument: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IXMLDOMNotation,
             DOMDocument: *mut *mut IXMLDOMDocument,
         ) -> HRESULT,
     >,
     pub cloneNode: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IXMLDOMNotation,
             deep: VARIANT_BOOL,
             cloneRoot: *mut *mut IXMLDOMNode,
         ) -> HRESULT,
     >,
     pub get_nodeTypeString: ::core::option::Option<
-        unsafe extern "C" fn(This: *mut IXMLDOMNotation, nodeType: *mut BSTR) -> HRESULT,
+        unsafe extern "system" fn(This: *mut IXMLDOMNotation, nodeType: *mut BSTR) -> HRESULT,
     >,
     pub get_text: ::core::option::Option<
-        unsafe extern "C" fn(This: *mut IXMLDOMNotation, text: *mut BSTR) -> HRESULT,
+        unsafe extern "system" fn(This: *mut IXMLDOMNotation, text: *mut BSTR) -> HRESULT,
     >,
     pub put_text: ::core::option::Option<
-        unsafe extern "C" fn(This: *mut IXMLDOMNotation, text: BSTR) -> HRESULT,
+        unsafe extern "system" fn(This: *mut IXMLDOMNotation, text: BSTR) -> HRESULT,
     >,
     pub get_specified: ::core::option::Option<
-        unsafe extern "C" fn(This: *mut IXMLDOMNotation, isSpecified: *mut VARIANT_BOOL) -> HRESULT,
+        unsafe extern "system" fn(This: *mut IXMLDOMNotation, isSpecified: *mut VARIANT_BOOL) -> HRESULT,
     >,
     pub get_definition: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IXMLDOMNotation,
             definitionNode: *mut *mut IXMLDOMNode,
         ) -> HRESULT,
     >,
     pub get_nodeTypedValue: ::core::option::Option<
-        unsafe extern "C" fn(This: *mut IXMLDOMNotation, typedValue: *mut VARIANT) -> HRESULT,
+        unsafe extern "system" fn(This: *mut IXMLDOMNotation, typedValue: *mut VARIANT) -> HRESULT,
     >,
     pub put_nodeTypedValue: ::core::option::Option<
-        unsafe extern "C" fn(This: *mut IXMLDOMNotation, typedValue: VARIANT) -> HRESULT,
+        unsafe extern "system" fn(This: *mut IXMLDOMNotation, typedValue: VARIANT) -> HRESULT,
     >,
     pub get_dataType: ::core::option::Option<
-        unsafe extern "C" fn(This: *mut IXMLDOMNotation, dataTypeName: *mut VARIANT) -> HRESULT,
+        unsafe extern "system" fn(This: *mut IXMLDOMNotation, dataTypeName: *mut VARIANT) -> HRESULT,
     >,
     pub put_dataType: ::core::option::Option<
-        unsafe extern "C" fn(This: *mut IXMLDOMNotation, dataTypeName: BSTR) -> HRESULT,
+        unsafe extern "system" fn(This: *mut IXMLDOMNotation, dataTypeName: BSTR) -> HRESULT,
     >,
     pub get_xml: ::core::option::Option<
-        unsafe extern "C" fn(This: *mut IXMLDOMNotation, xmlString: *mut BSTR) -> HRESULT,
+        unsafe extern "system" fn(This: *mut IXMLDOMNotation, xmlString: *mut BSTR) -> HRESULT,
     >,
     pub transformNode: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IXMLDOMNotation,
             styleSheet: *mut IXMLDOMNode,
             xmlString: *mut BSTR,
         ) -> HRESULT,
     >,
     pub selectNodes: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IXMLDOMNotation,
             queryString: BSTR,
             resultList: *mut *mut IXMLDOMNodeList,
         ) -> HRESULT,
     >,
     pub selectSingleNode: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IXMLDOMNotation,
             queryString: BSTR,
             resultNode: *mut *mut IXMLDOMNode,
         ) -> HRESULT,
     >,
     pub get_parsed: ::core::option::Option<
-        unsafe extern "C" fn(This: *mut IXMLDOMNotation, isParsed: *mut VARIANT_BOOL) -> HRESULT,
+        unsafe extern "system" fn(This: *mut IXMLDOMNotation, isParsed: *mut VARIANT_BOOL) -> HRESULT,
     >,
     pub get_namespaceURI: ::core::option::Option<
-        unsafe extern "C" fn(This: *mut IXMLDOMNotation, namespaceURI: *mut BSTR) -> HRESULT,
+        unsafe extern "system" fn(This: *mut IXMLDOMNotation, namespaceURI: *mut BSTR) -> HRESULT,
     >,
     pub get_prefix: ::core::option::Option<
-        unsafe extern "C" fn(This: *mut IXMLDOMNotation, prefixString: *mut BSTR) -> HRESULT,
+        unsafe extern "system" fn(This: *mut IXMLDOMNotation, prefixString: *mut BSTR) -> HRESULT,
     >,
     pub get_baseName: ::core::option::Option<
-        unsafe extern "C" fn(This: *mut IXMLDOMNotation, nameString: *mut BSTR) -> HRESULT,
+        unsafe extern "system" fn(This: *mut IXMLDOMNotation, nameString: *mut BSTR) -> HRESULT,
     >,
     pub transformNodeToObject: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IXMLDOMNotation,
             stylesheet: *mut IXMLDOMNode,
             outputObject: VARIANT,
         ) -> HRESULT,
     >,
     pub get_publicId: ::core::option::Option<
-        unsafe extern "C" fn(This: *mut IXMLDOMNotation, publicId: *mut VARIANT) -> HRESULT,
+        unsafe extern "system" fn(This: *mut IXMLDOMNotation, publicId: *mut VARIANT) -> HRESULT,
     >,
     pub get_systemId: ::core::option::Option<
-        unsafe extern "C" fn(This: *mut IXMLDOMNotation, systemId: *mut VARIANT) -> HRESULT,
+        unsafe extern "system" fn(This: *mut IXMLDOMNotation, systemId: *mut VARIANT) -> HRESULT,
     >,
 }
 #[repr(C)]
@@ -12318,19 +12318,19 @@ pub struct IXMLDOMNotation {
 #[derive(Debug, Copy, Clone)]
 pub struct IXMLDOMEntityVtbl {
     pub QueryInterface: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IXMLDOMEntity,
             riid: *const IID,
             ppvObject: *mut *mut ::core::ffi::c_void,
         ) -> HRESULT,
     >,
-    pub AddRef: ::core::option::Option<unsafe extern "C" fn(This: *mut IXMLDOMEntity) -> ULONG>,
-    pub Release: ::core::option::Option<unsafe extern "C" fn(This: *mut IXMLDOMEntity) -> ULONG>,
+    pub AddRef: ::core::option::Option<unsafe extern "system" fn(This: *mut IXMLDOMEntity) -> ULONG>,
+    pub Release: ::core::option::Option<unsafe extern "system" fn(This: *mut IXMLDOMEntity) -> ULONG>,
     pub GetTypeInfoCount: ::core::option::Option<
-        unsafe extern "C" fn(This: *mut IXMLDOMEntity, pctinfo: *mut UINT) -> HRESULT,
+        unsafe extern "system" fn(This: *mut IXMLDOMEntity, pctinfo: *mut UINT) -> HRESULT,
     >,
     pub GetTypeInfo: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IXMLDOMEntity,
             iTInfo: UINT,
             lcid: LCID,
@@ -12338,7 +12338,7 @@ pub struct IXMLDOMEntityVtbl {
         ) -> HRESULT,
     >,
     pub GetIDsOfNames: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IXMLDOMEntity,
             riid: *const IID,
             rgszNames: *mut LPOLESTR,
@@ -12348,7 +12348,7 @@ pub struct IXMLDOMEntityVtbl {
         ) -> HRESULT,
     >,
     pub Invoke: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IXMLDOMEntity,
             dispIdMember: DISPID,
             riid: *const IID,
@@ -12361,55 +12361,55 @@ pub struct IXMLDOMEntityVtbl {
         ) -> HRESULT,
     >,
     pub get_nodeName: ::core::option::Option<
-        unsafe extern "C" fn(This: *mut IXMLDOMEntity, name: *mut BSTR) -> HRESULT,
+        unsafe extern "system" fn(This: *mut IXMLDOMEntity, name: *mut BSTR) -> HRESULT,
     >,
     pub get_nodeValue: ::core::option::Option<
-        unsafe extern "C" fn(This: *mut IXMLDOMEntity, value: *mut VARIANT) -> HRESULT,
+        unsafe extern "system" fn(This: *mut IXMLDOMEntity, value: *mut VARIANT) -> HRESULT,
     >,
     pub put_nodeValue: ::core::option::Option<
-        unsafe extern "C" fn(This: *mut IXMLDOMEntity, value: VARIANT) -> HRESULT,
+        unsafe extern "system" fn(This: *mut IXMLDOMEntity, value: VARIANT) -> HRESULT,
     >,
     pub get_nodeType: ::core::option::Option<
-        unsafe extern "C" fn(This: *mut IXMLDOMEntity, type_: *mut DOMNodeType) -> HRESULT,
+        unsafe extern "system" fn(This: *mut IXMLDOMEntity, type_: *mut DOMNodeType) -> HRESULT,
     >,
     pub get_parentNode: ::core::option::Option<
-        unsafe extern "C" fn(This: *mut IXMLDOMEntity, parent: *mut *mut IXMLDOMNode) -> HRESULT,
+        unsafe extern "system" fn(This: *mut IXMLDOMEntity, parent: *mut *mut IXMLDOMNode) -> HRESULT,
     >,
     pub get_childNodes: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IXMLDOMEntity,
             childList: *mut *mut IXMLDOMNodeList,
         ) -> HRESULT,
     >,
     pub get_firstChild: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IXMLDOMEntity,
             firstChild: *mut *mut IXMLDOMNode,
         ) -> HRESULT,
     >,
     pub get_lastChild: ::core::option::Option<
-        unsafe extern "C" fn(This: *mut IXMLDOMEntity, lastChild: *mut *mut IXMLDOMNode) -> HRESULT,
+        unsafe extern "system" fn(This: *mut IXMLDOMEntity, lastChild: *mut *mut IXMLDOMNode) -> HRESULT,
     >,
     pub get_previousSibling: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IXMLDOMEntity,
             previousSibling: *mut *mut IXMLDOMNode,
         ) -> HRESULT,
     >,
     pub get_nextSibling: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IXMLDOMEntity,
             nextSibling: *mut *mut IXMLDOMNode,
         ) -> HRESULT,
     >,
     pub get_attributes: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IXMLDOMEntity,
             attributeMap: *mut *mut IXMLDOMNamedNodeMap,
         ) -> HRESULT,
     >,
     pub insertBefore: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IXMLDOMEntity,
             newChild: *mut IXMLDOMNode,
             refChild: VARIANT,
@@ -12417,7 +12417,7 @@ pub struct IXMLDOMEntityVtbl {
         ) -> HRESULT,
     >,
     pub replaceChild: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IXMLDOMEntity,
             newChild: *mut IXMLDOMNode,
             oldChild: *mut IXMLDOMNode,
@@ -12425,116 +12425,116 @@ pub struct IXMLDOMEntityVtbl {
         ) -> HRESULT,
     >,
     pub removeChild: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IXMLDOMEntity,
             childNode: *mut IXMLDOMNode,
             oldChild: *mut *mut IXMLDOMNode,
         ) -> HRESULT,
     >,
     pub appendChild: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IXMLDOMEntity,
             newChild: *mut IXMLDOMNode,
             outNewChild: *mut *mut IXMLDOMNode,
         ) -> HRESULT,
     >,
     pub hasChildNodes: ::core::option::Option<
-        unsafe extern "C" fn(This: *mut IXMLDOMEntity, hasChild: *mut VARIANT_BOOL) -> HRESULT,
+        unsafe extern "system" fn(This: *mut IXMLDOMEntity, hasChild: *mut VARIANT_BOOL) -> HRESULT,
     >,
     pub get_ownerDocument: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IXMLDOMEntity,
             DOMDocument: *mut *mut IXMLDOMDocument,
         ) -> HRESULT,
     >,
     pub cloneNode: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IXMLDOMEntity,
             deep: VARIANT_BOOL,
             cloneRoot: *mut *mut IXMLDOMNode,
         ) -> HRESULT,
     >,
     pub get_nodeTypeString: ::core::option::Option<
-        unsafe extern "C" fn(This: *mut IXMLDOMEntity, nodeType: *mut BSTR) -> HRESULT,
+        unsafe extern "system" fn(This: *mut IXMLDOMEntity, nodeType: *mut BSTR) -> HRESULT,
     >,
     pub get_text: ::core::option::Option<
-        unsafe extern "C" fn(This: *mut IXMLDOMEntity, text: *mut BSTR) -> HRESULT,
+        unsafe extern "system" fn(This: *mut IXMLDOMEntity, text: *mut BSTR) -> HRESULT,
     >,
     pub put_text: ::core::option::Option<
-        unsafe extern "C" fn(This: *mut IXMLDOMEntity, text: BSTR) -> HRESULT,
+        unsafe extern "system" fn(This: *mut IXMLDOMEntity, text: BSTR) -> HRESULT,
     >,
     pub get_specified: ::core::option::Option<
-        unsafe extern "C" fn(This: *mut IXMLDOMEntity, isSpecified: *mut VARIANT_BOOL) -> HRESULT,
+        unsafe extern "system" fn(This: *mut IXMLDOMEntity, isSpecified: *mut VARIANT_BOOL) -> HRESULT,
     >,
     pub get_definition: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IXMLDOMEntity,
             definitionNode: *mut *mut IXMLDOMNode,
         ) -> HRESULT,
     >,
     pub get_nodeTypedValue: ::core::option::Option<
-        unsafe extern "C" fn(This: *mut IXMLDOMEntity, typedValue: *mut VARIANT) -> HRESULT,
+        unsafe extern "system" fn(This: *mut IXMLDOMEntity, typedValue: *mut VARIANT) -> HRESULT,
     >,
     pub put_nodeTypedValue: ::core::option::Option<
-        unsafe extern "C" fn(This: *mut IXMLDOMEntity, typedValue: VARIANT) -> HRESULT,
+        unsafe extern "system" fn(This: *mut IXMLDOMEntity, typedValue: VARIANT) -> HRESULT,
     >,
     pub get_dataType: ::core::option::Option<
-        unsafe extern "C" fn(This: *mut IXMLDOMEntity, dataTypeName: *mut VARIANT) -> HRESULT,
+        unsafe extern "system" fn(This: *mut IXMLDOMEntity, dataTypeName: *mut VARIANT) -> HRESULT,
     >,
     pub put_dataType: ::core::option::Option<
-        unsafe extern "C" fn(This: *mut IXMLDOMEntity, dataTypeName: BSTR) -> HRESULT,
+        unsafe extern "system" fn(This: *mut IXMLDOMEntity, dataTypeName: BSTR) -> HRESULT,
     >,
     pub get_xml: ::core::option::Option<
-        unsafe extern "C" fn(This: *mut IXMLDOMEntity, xmlString: *mut BSTR) -> HRESULT,
+        unsafe extern "system" fn(This: *mut IXMLDOMEntity, xmlString: *mut BSTR) -> HRESULT,
     >,
     pub transformNode: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IXMLDOMEntity,
             styleSheet: *mut IXMLDOMNode,
             xmlString: *mut BSTR,
         ) -> HRESULT,
     >,
     pub selectNodes: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IXMLDOMEntity,
             queryString: BSTR,
             resultList: *mut *mut IXMLDOMNodeList,
         ) -> HRESULT,
     >,
     pub selectSingleNode: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IXMLDOMEntity,
             queryString: BSTR,
             resultNode: *mut *mut IXMLDOMNode,
         ) -> HRESULT,
     >,
     pub get_parsed: ::core::option::Option<
-        unsafe extern "C" fn(This: *mut IXMLDOMEntity, isParsed: *mut VARIANT_BOOL) -> HRESULT,
+        unsafe extern "system" fn(This: *mut IXMLDOMEntity, isParsed: *mut VARIANT_BOOL) -> HRESULT,
     >,
     pub get_namespaceURI: ::core::option::Option<
-        unsafe extern "C" fn(This: *mut IXMLDOMEntity, namespaceURI: *mut BSTR) -> HRESULT,
+        unsafe extern "system" fn(This: *mut IXMLDOMEntity, namespaceURI: *mut BSTR) -> HRESULT,
     >,
     pub get_prefix: ::core::option::Option<
-        unsafe extern "C" fn(This: *mut IXMLDOMEntity, prefixString: *mut BSTR) -> HRESULT,
+        unsafe extern "system" fn(This: *mut IXMLDOMEntity, prefixString: *mut BSTR) -> HRESULT,
     >,
     pub get_baseName: ::core::option::Option<
-        unsafe extern "C" fn(This: *mut IXMLDOMEntity, nameString: *mut BSTR) -> HRESULT,
+        unsafe extern "system" fn(This: *mut IXMLDOMEntity, nameString: *mut BSTR) -> HRESULT,
     >,
     pub transformNodeToObject: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IXMLDOMEntity,
             stylesheet: *mut IXMLDOMNode,
             outputObject: VARIANT,
         ) -> HRESULT,
     >,
     pub get_publicId: ::core::option::Option<
-        unsafe extern "C" fn(This: *mut IXMLDOMEntity, publicId: *mut VARIANT) -> HRESULT,
+        unsafe extern "system" fn(This: *mut IXMLDOMEntity, publicId: *mut VARIANT) -> HRESULT,
     >,
     pub get_systemId: ::core::option::Option<
-        unsafe extern "C" fn(This: *mut IXMLDOMEntity, systemId: *mut VARIANT) -> HRESULT,
+        unsafe extern "system" fn(This: *mut IXMLDOMEntity, systemId: *mut VARIANT) -> HRESULT,
     >,
     pub get_notationName: ::core::option::Option<
-        unsafe extern "C" fn(This: *mut IXMLDOMEntity, name: *mut BSTR) -> HRESULT,
+        unsafe extern "system" fn(This: *mut IXMLDOMEntity, name: *mut BSTR) -> HRESULT,
     >,
 }
 #[repr(C)]
@@ -12546,21 +12546,21 @@ pub struct IXMLDOMEntity {
 #[derive(Debug, Copy, Clone)]
 pub struct IXMLDOMEntityReferenceVtbl {
     pub QueryInterface: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IXMLDOMEntityReference,
             riid: *const IID,
             ppvObject: *mut *mut ::core::ffi::c_void,
         ) -> HRESULT,
     >,
     pub AddRef:
-        ::core::option::Option<unsafe extern "C" fn(This: *mut IXMLDOMEntityReference) -> ULONG>,
+        ::core::option::Option<unsafe extern "system" fn(This: *mut IXMLDOMEntityReference) -> ULONG>,
     pub Release:
-        ::core::option::Option<unsafe extern "C" fn(This: *mut IXMLDOMEntityReference) -> ULONG>,
+        ::core::option::Option<unsafe extern "system" fn(This: *mut IXMLDOMEntityReference) -> ULONG>,
     pub GetTypeInfoCount: ::core::option::Option<
-        unsafe extern "C" fn(This: *mut IXMLDOMEntityReference, pctinfo: *mut UINT) -> HRESULT,
+        unsafe extern "system" fn(This: *mut IXMLDOMEntityReference, pctinfo: *mut UINT) -> HRESULT,
     >,
     pub GetTypeInfo: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IXMLDOMEntityReference,
             iTInfo: UINT,
             lcid: LCID,
@@ -12568,7 +12568,7 @@ pub struct IXMLDOMEntityReferenceVtbl {
         ) -> HRESULT,
     >,
     pub GetIDsOfNames: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IXMLDOMEntityReference,
             riid: *const IID,
             rgszNames: *mut LPOLESTR,
@@ -12578,7 +12578,7 @@ pub struct IXMLDOMEntityReferenceVtbl {
         ) -> HRESULT,
     >,
     pub Invoke: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IXMLDOMEntityReference,
             dispIdMember: DISPID,
             riid: *const IID,
@@ -12591,61 +12591,61 @@ pub struct IXMLDOMEntityReferenceVtbl {
         ) -> HRESULT,
     >,
     pub get_nodeName: ::core::option::Option<
-        unsafe extern "C" fn(This: *mut IXMLDOMEntityReference, name: *mut BSTR) -> HRESULT,
+        unsafe extern "system" fn(This: *mut IXMLDOMEntityReference, name: *mut BSTR) -> HRESULT,
     >,
     pub get_nodeValue: ::core::option::Option<
-        unsafe extern "C" fn(This: *mut IXMLDOMEntityReference, value: *mut VARIANT) -> HRESULT,
+        unsafe extern "system" fn(This: *mut IXMLDOMEntityReference, value: *mut VARIANT) -> HRESULT,
     >,
     pub put_nodeValue: ::core::option::Option<
-        unsafe extern "C" fn(This: *mut IXMLDOMEntityReference, value: VARIANT) -> HRESULT,
+        unsafe extern "system" fn(This: *mut IXMLDOMEntityReference, value: VARIANT) -> HRESULT,
     >,
     pub get_nodeType: ::core::option::Option<
-        unsafe extern "C" fn(This: *mut IXMLDOMEntityReference, type_: *mut DOMNodeType) -> HRESULT,
+        unsafe extern "system" fn(This: *mut IXMLDOMEntityReference, type_: *mut DOMNodeType) -> HRESULT,
     >,
     pub get_parentNode: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IXMLDOMEntityReference,
             parent: *mut *mut IXMLDOMNode,
         ) -> HRESULT,
     >,
     pub get_childNodes: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IXMLDOMEntityReference,
             childList: *mut *mut IXMLDOMNodeList,
         ) -> HRESULT,
     >,
     pub get_firstChild: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IXMLDOMEntityReference,
             firstChild: *mut *mut IXMLDOMNode,
         ) -> HRESULT,
     >,
     pub get_lastChild: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IXMLDOMEntityReference,
             lastChild: *mut *mut IXMLDOMNode,
         ) -> HRESULT,
     >,
     pub get_previousSibling: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IXMLDOMEntityReference,
             previousSibling: *mut *mut IXMLDOMNode,
         ) -> HRESULT,
     >,
     pub get_nextSibling: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IXMLDOMEntityReference,
             nextSibling: *mut *mut IXMLDOMNode,
         ) -> HRESULT,
     >,
     pub get_attributes: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IXMLDOMEntityReference,
             attributeMap: *mut *mut IXMLDOMNamedNodeMap,
         ) -> HRESULT,
     >,
     pub insertBefore: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IXMLDOMEntityReference,
             newChild: *mut IXMLDOMNode,
             refChild: VARIANT,
@@ -12653,7 +12653,7 @@ pub struct IXMLDOMEntityReferenceVtbl {
         ) -> HRESULT,
     >,
     pub replaceChild: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IXMLDOMEntityReference,
             newChild: *mut IXMLDOMNode,
             oldChild: *mut IXMLDOMNode,
@@ -12661,118 +12661,118 @@ pub struct IXMLDOMEntityReferenceVtbl {
         ) -> HRESULT,
     >,
     pub removeChild: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IXMLDOMEntityReference,
             childNode: *mut IXMLDOMNode,
             oldChild: *mut *mut IXMLDOMNode,
         ) -> HRESULT,
     >,
     pub appendChild: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IXMLDOMEntityReference,
             newChild: *mut IXMLDOMNode,
             outNewChild: *mut *mut IXMLDOMNode,
         ) -> HRESULT,
     >,
     pub hasChildNodes: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IXMLDOMEntityReference,
             hasChild: *mut VARIANT_BOOL,
         ) -> HRESULT,
     >,
     pub get_ownerDocument: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IXMLDOMEntityReference,
             DOMDocument: *mut *mut IXMLDOMDocument,
         ) -> HRESULT,
     >,
     pub cloneNode: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IXMLDOMEntityReference,
             deep: VARIANT_BOOL,
             cloneRoot: *mut *mut IXMLDOMNode,
         ) -> HRESULT,
     >,
     pub get_nodeTypeString: ::core::option::Option<
-        unsafe extern "C" fn(This: *mut IXMLDOMEntityReference, nodeType: *mut BSTR) -> HRESULT,
+        unsafe extern "system" fn(This: *mut IXMLDOMEntityReference, nodeType: *mut BSTR) -> HRESULT,
     >,
     pub get_text: ::core::option::Option<
-        unsafe extern "C" fn(This: *mut IXMLDOMEntityReference, text: *mut BSTR) -> HRESULT,
+        unsafe extern "system" fn(This: *mut IXMLDOMEntityReference, text: *mut BSTR) -> HRESULT,
     >,
     pub put_text: ::core::option::Option<
-        unsafe extern "C" fn(This: *mut IXMLDOMEntityReference, text: BSTR) -> HRESULT,
+        unsafe extern "system" fn(This: *mut IXMLDOMEntityReference, text: BSTR) -> HRESULT,
     >,
     pub get_specified: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IXMLDOMEntityReference,
             isSpecified: *mut VARIANT_BOOL,
         ) -> HRESULT,
     >,
     pub get_definition: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IXMLDOMEntityReference,
             definitionNode: *mut *mut IXMLDOMNode,
         ) -> HRESULT,
     >,
     pub get_nodeTypedValue: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IXMLDOMEntityReference,
             typedValue: *mut VARIANT,
         ) -> HRESULT,
     >,
     pub put_nodeTypedValue: ::core::option::Option<
-        unsafe extern "C" fn(This: *mut IXMLDOMEntityReference, typedValue: VARIANT) -> HRESULT,
+        unsafe extern "system" fn(This: *mut IXMLDOMEntityReference, typedValue: VARIANT) -> HRESULT,
     >,
     pub get_dataType: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IXMLDOMEntityReference,
             dataTypeName: *mut VARIANT,
         ) -> HRESULT,
     >,
     pub put_dataType: ::core::option::Option<
-        unsafe extern "C" fn(This: *mut IXMLDOMEntityReference, dataTypeName: BSTR) -> HRESULT,
+        unsafe extern "system" fn(This: *mut IXMLDOMEntityReference, dataTypeName: BSTR) -> HRESULT,
     >,
     pub get_xml: ::core::option::Option<
-        unsafe extern "C" fn(This: *mut IXMLDOMEntityReference, xmlString: *mut BSTR) -> HRESULT,
+        unsafe extern "system" fn(This: *mut IXMLDOMEntityReference, xmlString: *mut BSTR) -> HRESULT,
     >,
     pub transformNode: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IXMLDOMEntityReference,
             styleSheet: *mut IXMLDOMNode,
             xmlString: *mut BSTR,
         ) -> HRESULT,
     >,
     pub selectNodes: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IXMLDOMEntityReference,
             queryString: BSTR,
             resultList: *mut *mut IXMLDOMNodeList,
         ) -> HRESULT,
     >,
     pub selectSingleNode: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IXMLDOMEntityReference,
             queryString: BSTR,
             resultNode: *mut *mut IXMLDOMNode,
         ) -> HRESULT,
     >,
     pub get_parsed: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IXMLDOMEntityReference,
             isParsed: *mut VARIANT_BOOL,
         ) -> HRESULT,
     >,
     pub get_namespaceURI: ::core::option::Option<
-        unsafe extern "C" fn(This: *mut IXMLDOMEntityReference, namespaceURI: *mut BSTR) -> HRESULT,
+        unsafe extern "system" fn(This: *mut IXMLDOMEntityReference, namespaceURI: *mut BSTR) -> HRESULT,
     >,
     pub get_prefix: ::core::option::Option<
-        unsafe extern "C" fn(This: *mut IXMLDOMEntityReference, prefixString: *mut BSTR) -> HRESULT,
+        unsafe extern "system" fn(This: *mut IXMLDOMEntityReference, prefixString: *mut BSTR) -> HRESULT,
     >,
     pub get_baseName: ::core::option::Option<
-        unsafe extern "C" fn(This: *mut IXMLDOMEntityReference, nameString: *mut BSTR) -> HRESULT,
+        unsafe extern "system" fn(This: *mut IXMLDOMEntityReference, nameString: *mut BSTR) -> HRESULT,
     >,
     pub transformNodeToObject: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IXMLDOMEntityReference,
             stylesheet: *mut IXMLDOMNode,
             outputObject: VARIANT,
@@ -12788,21 +12788,21 @@ pub struct IXMLDOMEntityReference {
 #[derive(Debug, Copy, Clone)]
 pub struct IXMLDOMImplementationVtbl {
     pub QueryInterface: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IXMLDOMImplementation,
             riid: *const IID,
             ppvObject: *mut *mut ::core::ffi::c_void,
         ) -> HRESULT,
     >,
     pub AddRef:
-        ::core::option::Option<unsafe extern "C" fn(This: *mut IXMLDOMImplementation) -> ULONG>,
+        ::core::option::Option<unsafe extern "system" fn(This: *mut IXMLDOMImplementation) -> ULONG>,
     pub Release:
-        ::core::option::Option<unsafe extern "C" fn(This: *mut IXMLDOMImplementation) -> ULONG>,
+        ::core::option::Option<unsafe extern "system" fn(This: *mut IXMLDOMImplementation) -> ULONG>,
     pub GetTypeInfoCount: ::core::option::Option<
-        unsafe extern "C" fn(This: *mut IXMLDOMImplementation, pctinfo: *mut UINT) -> HRESULT,
+        unsafe extern "system" fn(This: *mut IXMLDOMImplementation, pctinfo: *mut UINT) -> HRESULT,
     >,
     pub GetTypeInfo: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IXMLDOMImplementation,
             iTInfo: UINT,
             lcid: LCID,
@@ -12810,7 +12810,7 @@ pub struct IXMLDOMImplementationVtbl {
         ) -> HRESULT,
     >,
     pub GetIDsOfNames: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IXMLDOMImplementation,
             riid: *const IID,
             rgszNames: *mut LPOLESTR,
@@ -12820,7 +12820,7 @@ pub struct IXMLDOMImplementationVtbl {
         ) -> HRESULT,
     >,
     pub Invoke: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IXMLDOMImplementation,
             dispIdMember: DISPID,
             riid: *const IID,
@@ -12833,7 +12833,7 @@ pub struct IXMLDOMImplementationVtbl {
         ) -> HRESULT,
     >,
     pub hasFeature: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IXMLDOMImplementation,
             feature: BSTR,
             version: BSTR,
@@ -12850,20 +12850,20 @@ pub struct IXMLDOMImplementation {
 #[derive(Debug, Copy, Clone)]
 pub struct IXMLDOMParseErrorVtbl {
     pub QueryInterface: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IXMLDOMParseError,
             riid: *const IID,
             ppvObject: *mut *mut ::core::ffi::c_void,
         ) -> HRESULT,
     >,
-    pub AddRef: ::core::option::Option<unsafe extern "C" fn(This: *mut IXMLDOMParseError) -> ULONG>,
+    pub AddRef: ::core::option::Option<unsafe extern "system" fn(This: *mut IXMLDOMParseError) -> ULONG>,
     pub Release:
-        ::core::option::Option<unsafe extern "C" fn(This: *mut IXMLDOMParseError) -> ULONG>,
+        ::core::option::Option<unsafe extern "system" fn(This: *mut IXMLDOMParseError) -> ULONG>,
     pub GetTypeInfoCount: ::core::option::Option<
-        unsafe extern "C" fn(This: *mut IXMLDOMParseError, pctinfo: *mut UINT) -> HRESULT,
+        unsafe extern "system" fn(This: *mut IXMLDOMParseError, pctinfo: *mut UINT) -> HRESULT,
     >,
     pub GetTypeInfo: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IXMLDOMParseError,
             iTInfo: UINT,
             lcid: LCID,
@@ -12871,7 +12871,7 @@ pub struct IXMLDOMParseErrorVtbl {
         ) -> HRESULT,
     >,
     pub GetIDsOfNames: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IXMLDOMParseError,
             riid: *const IID,
             rgszNames: *mut LPOLESTR,
@@ -12881,7 +12881,7 @@ pub struct IXMLDOMParseErrorVtbl {
         ) -> HRESULT,
     >,
     pub Invoke: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IXMLDOMParseError,
             dispIdMember: DISPID,
             riid: *const IID,
@@ -12894,25 +12894,25 @@ pub struct IXMLDOMParseErrorVtbl {
         ) -> HRESULT,
     >,
     pub get_errorCode: ::core::option::Option<
-        unsafe extern "C" fn(This: *mut IXMLDOMParseError, errCode: *mut LONG) -> HRESULT,
+        unsafe extern "system" fn(This: *mut IXMLDOMParseError, errCode: *mut LONG) -> HRESULT,
     >,
     pub get_url: ::core::option::Option<
-        unsafe extern "C" fn(This: *mut IXMLDOMParseError, p: *mut BSTR) -> HRESULT,
+        unsafe extern "system" fn(This: *mut IXMLDOMParseError, p: *mut BSTR) -> HRESULT,
     >,
     pub get_reason: ::core::option::Option<
-        unsafe extern "C" fn(This: *mut IXMLDOMParseError, p: *mut BSTR) -> HRESULT,
+        unsafe extern "system" fn(This: *mut IXMLDOMParseError, p: *mut BSTR) -> HRESULT,
     >,
     pub get_srcText: ::core::option::Option<
-        unsafe extern "C" fn(This: *mut IXMLDOMParseError, p: *mut BSTR) -> HRESULT,
+        unsafe extern "system" fn(This: *mut IXMLDOMParseError, p: *mut BSTR) -> HRESULT,
     >,
     pub get_line: ::core::option::Option<
-        unsafe extern "C" fn(This: *mut IXMLDOMParseError, lineNo: *mut LONG) -> HRESULT,
+        unsafe extern "system" fn(This: *mut IXMLDOMParseError, lineNo: *mut LONG) -> HRESULT,
     >,
     pub get_linepos: ::core::option::Option<
-        unsafe extern "C" fn(This: *mut IXMLDOMParseError, linePos: *mut LONG) -> HRESULT,
+        unsafe extern "system" fn(This: *mut IXMLDOMParseError, linePos: *mut LONG) -> HRESULT,
     >,
     pub get_filepos: ::core::option::Option<
-        unsafe extern "C" fn(This: *mut IXMLDOMParseError, filePos: *mut LONG) -> HRESULT,
+        unsafe extern "system" fn(This: *mut IXMLDOMParseError, filePos: *mut LONG) -> HRESULT,
     >,
 }
 #[repr(C)]
@@ -12924,19 +12924,19 @@ pub struct IXMLDOMParseError {
 #[derive(Debug, Copy, Clone)]
 pub struct IXMLHttpRequestVtbl {
     pub QueryInterface: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IXMLHttpRequest,
             riid: *const IID,
             ppvObject: *mut *mut ::core::ffi::c_void,
         ) -> HRESULT,
     >,
-    pub AddRef: ::core::option::Option<unsafe extern "C" fn(This: *mut IXMLHttpRequest) -> ULONG>,
-    pub Release: ::core::option::Option<unsafe extern "C" fn(This: *mut IXMLHttpRequest) -> ULONG>,
+    pub AddRef: ::core::option::Option<unsafe extern "system" fn(This: *mut IXMLHttpRequest) -> ULONG>,
+    pub Release: ::core::option::Option<unsafe extern "system" fn(This: *mut IXMLHttpRequest) -> ULONG>,
     pub GetTypeInfoCount: ::core::option::Option<
-        unsafe extern "C" fn(This: *mut IXMLHttpRequest, pctinfo: *mut UINT) -> HRESULT,
+        unsafe extern "system" fn(This: *mut IXMLHttpRequest, pctinfo: *mut UINT) -> HRESULT,
     >,
     pub GetTypeInfo: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IXMLHttpRequest,
             iTInfo: UINT,
             lcid: LCID,
@@ -12944,7 +12944,7 @@ pub struct IXMLHttpRequestVtbl {
         ) -> HRESULT,
     >,
     pub GetIDsOfNames: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IXMLHttpRequest,
             riid: *const IID,
             rgszNames: *mut LPOLESTR,
@@ -12954,7 +12954,7 @@ pub struct IXMLHttpRequestVtbl {
         ) -> HRESULT,
     >,
     pub Invoke: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IXMLHttpRequest,
             dispIdMember: DISPID,
             riid: *const IID,
@@ -12967,7 +12967,7 @@ pub struct IXMLHttpRequestVtbl {
         ) -> HRESULT,
     >,
     pub open: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IXMLHttpRequest,
             bstrMethod: BSTR,
             bstrUrl: BSTR,
@@ -12977,49 +12977,49 @@ pub struct IXMLHttpRequestVtbl {
         ) -> HRESULT,
     >,
     pub setRequestHeader: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IXMLHttpRequest,
             bstrHeader: BSTR,
             bstrValue: BSTR,
         ) -> HRESULT,
     >,
     pub getResponseHeader: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IXMLHttpRequest,
             bstrHeader: BSTR,
             pbstrValue: *mut BSTR,
         ) -> HRESULT,
     >,
     pub getAllResponseHeaders: ::core::option::Option<
-        unsafe extern "C" fn(This: *mut IXMLHttpRequest, pbstrHeaders: *mut BSTR) -> HRESULT,
+        unsafe extern "system" fn(This: *mut IXMLHttpRequest, pbstrHeaders: *mut BSTR) -> HRESULT,
     >,
     pub send: ::core::option::Option<
-        unsafe extern "C" fn(This: *mut IXMLHttpRequest, varBody: VARIANT) -> HRESULT,
+        unsafe extern "system" fn(This: *mut IXMLHttpRequest, varBody: VARIANT) -> HRESULT,
     >,
-    pub abort: ::core::option::Option<unsafe extern "C" fn(This: *mut IXMLHttpRequest) -> HRESULT>,
+    pub abort: ::core::option::Option<unsafe extern "system" fn(This: *mut IXMLHttpRequest) -> HRESULT>,
     pub get_status: ::core::option::Option<
-        unsafe extern "C" fn(This: *mut IXMLHttpRequest, plStatus: *mut LONG) -> HRESULT,
+        unsafe extern "system" fn(This: *mut IXMLHttpRequest, plStatus: *mut LONG) -> HRESULT,
     >,
     pub get_statusText: ::core::option::Option<
-        unsafe extern "C" fn(This: *mut IXMLHttpRequest, bstrStatus: *mut BSTR) -> HRESULT,
+        unsafe extern "system" fn(This: *mut IXMLHttpRequest, bstrStatus: *mut BSTR) -> HRESULT,
     >,
     pub get_responseXML: ::core::option::Option<
-        unsafe extern "C" fn(This: *mut IXMLHttpRequest, ppBody: *mut *mut IDispatch) -> HRESULT,
+        unsafe extern "system" fn(This: *mut IXMLHttpRequest, ppBody: *mut *mut IDispatch) -> HRESULT,
     >,
     pub get_responseText: ::core::option::Option<
-        unsafe extern "C" fn(This: *mut IXMLHttpRequest, pbstrBody: *mut BSTR) -> HRESULT,
+        unsafe extern "system" fn(This: *mut IXMLHttpRequest, pbstrBody: *mut BSTR) -> HRESULT,
     >,
     pub get_responseBody: ::core::option::Option<
-        unsafe extern "C" fn(This: *mut IXMLHttpRequest, pvarBody: *mut VARIANT) -> HRESULT,
+        unsafe extern "system" fn(This: *mut IXMLHttpRequest, pvarBody: *mut VARIANT) -> HRESULT,
     >,
     pub get_responseStream: ::core::option::Option<
-        unsafe extern "C" fn(This: *mut IXMLHttpRequest, pvarBody: *mut VARIANT) -> HRESULT,
+        unsafe extern "system" fn(This: *mut IXMLHttpRequest, pvarBody: *mut VARIANT) -> HRESULT,
     >,
     pub get_readyState: ::core::option::Option<
-        unsafe extern "C" fn(This: *mut IXMLHttpRequest, plState: *mut LONG) -> HRESULT,
+        unsafe extern "system" fn(This: *mut IXMLHttpRequest, plState: *mut LONG) -> HRESULT,
     >,
     pub put_onreadystatechange: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IXMLHttpRequest,
             pReadyStateSink: *mut IDispatch,
         ) -> HRESULT,
@@ -13034,19 +13034,19 @@ pub struct IXMLHttpRequest {
 #[derive(Debug, Copy, Clone)]
 pub struct IXMLDSOControlVtbl {
     pub QueryInterface: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IXMLDSOControl,
             riid: *const IID,
             ppvObject: *mut *mut ::core::ffi::c_void,
         ) -> HRESULT,
     >,
-    pub AddRef: ::core::option::Option<unsafe extern "C" fn(This: *mut IXMLDSOControl) -> ULONG>,
-    pub Release: ::core::option::Option<unsafe extern "C" fn(This: *mut IXMLDSOControl) -> ULONG>,
+    pub AddRef: ::core::option::Option<unsafe extern "system" fn(This: *mut IXMLDSOControl) -> ULONG>,
+    pub Release: ::core::option::Option<unsafe extern "system" fn(This: *mut IXMLDSOControl) -> ULONG>,
     pub GetTypeInfoCount: ::core::option::Option<
-        unsafe extern "C" fn(This: *mut IXMLDSOControl, pctinfo: *mut UINT) -> HRESULT,
+        unsafe extern "system" fn(This: *mut IXMLDSOControl, pctinfo: *mut UINT) -> HRESULT,
     >,
     pub GetTypeInfo: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IXMLDSOControl,
             iTInfo: UINT,
             lcid: LCID,
@@ -13054,7 +13054,7 @@ pub struct IXMLDSOControlVtbl {
         ) -> HRESULT,
     >,
     pub GetIDsOfNames: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IXMLDSOControl,
             riid: *const IID,
             rgszNames: *mut LPOLESTR,
@@ -13064,7 +13064,7 @@ pub struct IXMLDSOControlVtbl {
         ) -> HRESULT,
     >,
     pub Invoke: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IXMLDSOControl,
             dispIdMember: DISPID,
             riid: *const IID,
@@ -13077,22 +13077,22 @@ pub struct IXMLDSOControlVtbl {
         ) -> HRESULT,
     >,
     pub get_XMLDocument: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IXMLDSOControl,
             ppDoc: *mut *mut IXMLDOMDocument,
         ) -> HRESULT,
     >,
     pub put_XMLDocument: ::core::option::Option<
-        unsafe extern "C" fn(This: *mut IXMLDSOControl, ppDoc: *mut IXMLDOMDocument) -> HRESULT,
+        unsafe extern "system" fn(This: *mut IXMLDSOControl, ppDoc: *mut IXMLDOMDocument) -> HRESULT,
     >,
     pub get_JavaDSOCompatible: ::core::option::Option<
-        unsafe extern "C" fn(This: *mut IXMLDSOControl, fJavaDSOCompatible: *mut BOOL) -> HRESULT,
+        unsafe extern "system" fn(This: *mut IXMLDSOControl, fJavaDSOCompatible: *mut BOOL) -> HRESULT,
     >,
     pub put_JavaDSOCompatible: ::core::option::Option<
-        unsafe extern "C" fn(This: *mut IXMLDSOControl, fJavaDSOCompatible: BOOL) -> HRESULT,
+        unsafe extern "system" fn(This: *mut IXMLDSOControl, fJavaDSOCompatible: BOOL) -> HRESULT,
     >,
     pub get_readyState: ::core::option::Option<
-        unsafe extern "C" fn(This: *mut IXMLDSOControl, state: *mut LONG) -> HRESULT,
+        unsafe extern "system" fn(This: *mut IXMLDSOControl, state: *mut LONG) -> HRESULT,
     >,
 }
 #[repr(C)]
@@ -13104,21 +13104,21 @@ pub struct IXMLDSOControl {
 #[derive(Debug, Copy, Clone)]
 pub struct IXMLElementCollectionVtbl {
     pub QueryInterface: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IXMLElementCollection,
             riid: *const IID,
             ppvObject: *mut *mut ::core::ffi::c_void,
         ) -> HRESULT,
     >,
     pub AddRef:
-        ::core::option::Option<unsafe extern "C" fn(This: *mut IXMLElementCollection) -> ULONG>,
+        ::core::option::Option<unsafe extern "system" fn(This: *mut IXMLElementCollection) -> ULONG>,
     pub Release:
-        ::core::option::Option<unsafe extern "C" fn(This: *mut IXMLElementCollection) -> ULONG>,
+        ::core::option::Option<unsafe extern "system" fn(This: *mut IXMLElementCollection) -> ULONG>,
     pub GetTypeInfoCount: ::core::option::Option<
-        unsafe extern "C" fn(This: *mut IXMLElementCollection, pctinfo: *mut UINT) -> HRESULT,
+        unsafe extern "system" fn(This: *mut IXMLElementCollection, pctinfo: *mut UINT) -> HRESULT,
     >,
     pub GetTypeInfo: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IXMLElementCollection,
             iTInfo: UINT,
             lcid: LCID,
@@ -13126,7 +13126,7 @@ pub struct IXMLElementCollectionVtbl {
         ) -> HRESULT,
     >,
     pub GetIDsOfNames: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IXMLElementCollection,
             riid: *const IID,
             rgszNames: *mut LPOLESTR,
@@ -13136,7 +13136,7 @@ pub struct IXMLElementCollectionVtbl {
         ) -> HRESULT,
     >,
     pub Invoke: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IXMLElementCollection,
             dispIdMember: DISPID,
             riid: *const IID,
@@ -13149,19 +13149,19 @@ pub struct IXMLElementCollectionVtbl {
         ) -> HRESULT,
     >,
     pub put_length: ::core::option::Option<
-        unsafe extern "C" fn(This: *mut IXMLElementCollection, v: LONG) -> HRESULT,
+        unsafe extern "system" fn(This: *mut IXMLElementCollection, v: LONG) -> HRESULT,
     >,
     pub get_length: ::core::option::Option<
-        unsafe extern "C" fn(This: *mut IXMLElementCollection, p: *mut LONG) -> HRESULT,
+        unsafe extern "system" fn(This: *mut IXMLElementCollection, p: *mut LONG) -> HRESULT,
     >,
     pub get__newEnum: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IXMLElementCollection,
             ppUnk: *mut *mut IUnknown,
         ) -> HRESULT,
     >,
     pub item: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IXMLElementCollection,
             var1: VARIANT,
             var2: VARIANT,
@@ -13178,19 +13178,19 @@ pub struct IXMLElementCollection {
 #[derive(Debug, Copy, Clone)]
 pub struct IXMLElementVtbl {
     pub QueryInterface: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IXMLElement,
             riid: *const IID,
             ppvObject: *mut *mut ::core::ffi::c_void,
         ) -> HRESULT,
     >,
-    pub AddRef: ::core::option::Option<unsafe extern "C" fn(This: *mut IXMLElement) -> ULONG>,
-    pub Release: ::core::option::Option<unsafe extern "C" fn(This: *mut IXMLElement) -> ULONG>,
+    pub AddRef: ::core::option::Option<unsafe extern "system" fn(This: *mut IXMLElement) -> ULONG>,
+    pub Release: ::core::option::Option<unsafe extern "system" fn(This: *mut IXMLElement) -> ULONG>,
     pub GetTypeInfoCount: ::core::option::Option<
-        unsafe extern "C" fn(This: *mut IXMLElement, pctinfo: *mut UINT) -> HRESULT,
+        unsafe extern "system" fn(This: *mut IXMLElement, pctinfo: *mut UINT) -> HRESULT,
     >,
     pub GetTypeInfo: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IXMLElement,
             iTInfo: UINT,
             lcid: LCID,
@@ -13198,7 +13198,7 @@ pub struct IXMLElementVtbl {
         ) -> HRESULT,
     >,
     pub GetIDsOfNames: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IXMLElement,
             riid: *const IID,
             rgszNames: *mut LPOLESTR,
@@ -13208,7 +13208,7 @@ pub struct IXMLElementVtbl {
         ) -> HRESULT,
     >,
     pub Invoke: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IXMLElement,
             dispIdMember: DISPID,
             riid: *const IID,
@@ -13221,43 +13221,43 @@ pub struct IXMLElementVtbl {
         ) -> HRESULT,
     >,
     pub get_tagName: ::core::option::Option<
-        unsafe extern "C" fn(This: *mut IXMLElement, p: *mut BSTR) -> HRESULT,
+        unsafe extern "system" fn(This: *mut IXMLElement, p: *mut BSTR) -> HRESULT,
     >,
     pub put_tagName:
-        ::core::option::Option<unsafe extern "C" fn(This: *mut IXMLElement, p: BSTR) -> HRESULT>,
+        ::core::option::Option<unsafe extern "system" fn(This: *mut IXMLElement, p: BSTR) -> HRESULT>,
     pub get_parent: ::core::option::Option<
-        unsafe extern "C" fn(This: *mut IXMLElement, parent: *mut *mut IXMLElement) -> HRESULT,
+        unsafe extern "system" fn(This: *mut IXMLElement, parent: *mut *mut IXMLElement) -> HRESULT,
     >,
     pub setAttribute: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IXMLElement,
             strPropertyName: BSTR,
             PropertyValue: VARIANT,
         ) -> HRESULT,
     >,
     pub getAttribute: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IXMLElement,
             strPropertyName: BSTR,
             PropertyValue: *mut VARIANT,
         ) -> HRESULT,
     >,
     pub removeAttribute: ::core::option::Option<
-        unsafe extern "C" fn(This: *mut IXMLElement, strPropertyName: BSTR) -> HRESULT,
+        unsafe extern "system" fn(This: *mut IXMLElement, strPropertyName: BSTR) -> HRESULT,
     >,
     pub get_children: ::core::option::Option<
-        unsafe extern "C" fn(This: *mut IXMLElement, p: *mut *mut IXMLElementCollection) -> HRESULT,
+        unsafe extern "system" fn(This: *mut IXMLElement, p: *mut *mut IXMLElementCollection) -> HRESULT,
     >,
     pub get_type: ::core::option::Option<
-        unsafe extern "C" fn(This: *mut IXMLElement, p: *mut LONG) -> HRESULT,
+        unsafe extern "system" fn(This: *mut IXMLElement, p: *mut LONG) -> HRESULT,
     >,
     pub get_text: ::core::option::Option<
-        unsafe extern "C" fn(This: *mut IXMLElement, p: *mut BSTR) -> HRESULT,
+        unsafe extern "system" fn(This: *mut IXMLElement, p: *mut BSTR) -> HRESULT,
     >,
     pub put_text:
-        ::core::option::Option<unsafe extern "C" fn(This: *mut IXMLElement, p: BSTR) -> HRESULT>,
+        ::core::option::Option<unsafe extern "system" fn(This: *mut IXMLElement, p: BSTR) -> HRESULT>,
     pub addChild: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IXMLElement,
             pChildElem: *mut IXMLElement,
             lIndex: LONG,
@@ -13265,7 +13265,7 @@ pub struct IXMLElementVtbl {
         ) -> HRESULT,
     >,
     pub removeChild: ::core::option::Option<
-        unsafe extern "C" fn(This: *mut IXMLElement, pChildElem: *mut IXMLElement) -> HRESULT,
+        unsafe extern "system" fn(This: *mut IXMLElement, pChildElem: *mut IXMLElement) -> HRESULT,
     >,
 }
 #[repr(C)]
@@ -13277,19 +13277,19 @@ pub struct IXMLElement {
 #[derive(Debug, Copy, Clone)]
 pub struct IXMLDocumentVtbl {
     pub QueryInterface: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IXMLDocument,
             riid: *const IID,
             ppvObject: *mut *mut ::core::ffi::c_void,
         ) -> HRESULT,
     >,
-    pub AddRef: ::core::option::Option<unsafe extern "C" fn(This: *mut IXMLDocument) -> ULONG>,
-    pub Release: ::core::option::Option<unsafe extern "C" fn(This: *mut IXMLDocument) -> ULONG>,
+    pub AddRef: ::core::option::Option<unsafe extern "system" fn(This: *mut IXMLDocument) -> ULONG>,
+    pub Release: ::core::option::Option<unsafe extern "system" fn(This: *mut IXMLDocument) -> ULONG>,
     pub GetTypeInfoCount: ::core::option::Option<
-        unsafe extern "C" fn(This: *mut IXMLDocument, pctinfo: *mut UINT) -> HRESULT,
+        unsafe extern "system" fn(This: *mut IXMLDocument, pctinfo: *mut UINT) -> HRESULT,
     >,
     pub GetTypeInfo: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IXMLDocument,
             iTInfo: UINT,
             lcid: LCID,
@@ -13297,7 +13297,7 @@ pub struct IXMLDocumentVtbl {
         ) -> HRESULT,
     >,
     pub GetIDsOfNames: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IXMLDocument,
             riid: *const IID,
             rgszNames: *mut LPOLESTR,
@@ -13307,7 +13307,7 @@ pub struct IXMLDocumentVtbl {
         ) -> HRESULT,
     >,
     pub Invoke: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IXMLDocument,
             dispIdMember: DISPID,
             riid: *const IID,
@@ -13320,44 +13320,44 @@ pub struct IXMLDocumentVtbl {
         ) -> HRESULT,
     >,
     pub get_root: ::core::option::Option<
-        unsafe extern "C" fn(This: *mut IXMLDocument, p: *mut *mut IXMLElement) -> HRESULT,
+        unsafe extern "system" fn(This: *mut IXMLDocument, p: *mut *mut IXMLElement) -> HRESULT,
     >,
     pub get_fileSize: ::core::option::Option<
-        unsafe extern "C" fn(This: *mut IXMLDocument, p: *mut BSTR) -> HRESULT,
+        unsafe extern "system" fn(This: *mut IXMLDocument, p: *mut BSTR) -> HRESULT,
     >,
     pub get_fileModifiedDate: ::core::option::Option<
-        unsafe extern "C" fn(This: *mut IXMLDocument, p: *mut BSTR) -> HRESULT,
+        unsafe extern "system" fn(This: *mut IXMLDocument, p: *mut BSTR) -> HRESULT,
     >,
     pub get_fileUpdatedDate: ::core::option::Option<
-        unsafe extern "C" fn(This: *mut IXMLDocument, p: *mut BSTR) -> HRESULT,
+        unsafe extern "system" fn(This: *mut IXMLDocument, p: *mut BSTR) -> HRESULT,
     >,
     pub get_URL: ::core::option::Option<
-        unsafe extern "C" fn(This: *mut IXMLDocument, p: *mut BSTR) -> HRESULT,
+        unsafe extern "system" fn(This: *mut IXMLDocument, p: *mut BSTR) -> HRESULT,
     >,
     pub put_URL:
-        ::core::option::Option<unsafe extern "C" fn(This: *mut IXMLDocument, p: BSTR) -> HRESULT>,
+        ::core::option::Option<unsafe extern "system" fn(This: *mut IXMLDocument, p: BSTR) -> HRESULT>,
     pub get_mimeType: ::core::option::Option<
-        unsafe extern "C" fn(This: *mut IXMLDocument, p: *mut BSTR) -> HRESULT,
+        unsafe extern "system" fn(This: *mut IXMLDocument, p: *mut BSTR) -> HRESULT,
     >,
     pub get_readyState: ::core::option::Option<
-        unsafe extern "C" fn(This: *mut IXMLDocument, p: *mut LONG) -> HRESULT,
+        unsafe extern "system" fn(This: *mut IXMLDocument, p: *mut LONG) -> HRESULT,
     >,
     pub get_charset: ::core::option::Option<
-        unsafe extern "C" fn(This: *mut IXMLDocument, p: *mut BSTR) -> HRESULT,
+        unsafe extern "system" fn(This: *mut IXMLDocument, p: *mut BSTR) -> HRESULT,
     >,
     pub put_charset:
-        ::core::option::Option<unsafe extern "C" fn(This: *mut IXMLDocument, p: BSTR) -> HRESULT>,
+        ::core::option::Option<unsafe extern "system" fn(This: *mut IXMLDocument, p: BSTR) -> HRESULT>,
     pub get_version: ::core::option::Option<
-        unsafe extern "C" fn(This: *mut IXMLDocument, p: *mut BSTR) -> HRESULT,
+        unsafe extern "system" fn(This: *mut IXMLDocument, p: *mut BSTR) -> HRESULT,
     >,
     pub get_doctype: ::core::option::Option<
-        unsafe extern "C" fn(This: *mut IXMLDocument, p: *mut BSTR) -> HRESULT,
+        unsafe extern "system" fn(This: *mut IXMLDocument, p: *mut BSTR) -> HRESULT,
     >,
     pub get_dtdURl: ::core::option::Option<
-        unsafe extern "C" fn(This: *mut IXMLDocument, p: *mut BSTR) -> HRESULT,
+        unsafe extern "system" fn(This: *mut IXMLDocument, p: *mut BSTR) -> HRESULT,
     >,
     pub createElement: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IXMLDocument,
             vType: VARIANT,
             var1: VARIANT,
@@ -13374,19 +13374,19 @@ pub struct IXMLDocument {
 #[derive(Debug, Copy, Clone)]
 pub struct IXMLElement2Vtbl {
     pub QueryInterface: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IXMLElement2,
             riid: *const IID,
             ppvObject: *mut *mut ::core::ffi::c_void,
         ) -> HRESULT,
     >,
-    pub AddRef: ::core::option::Option<unsafe extern "C" fn(This: *mut IXMLElement2) -> ULONG>,
-    pub Release: ::core::option::Option<unsafe extern "C" fn(This: *mut IXMLElement2) -> ULONG>,
+    pub AddRef: ::core::option::Option<unsafe extern "system" fn(This: *mut IXMLElement2) -> ULONG>,
+    pub Release: ::core::option::Option<unsafe extern "system" fn(This: *mut IXMLElement2) -> ULONG>,
     pub GetTypeInfoCount: ::core::option::Option<
-        unsafe extern "C" fn(This: *mut IXMLElement2, pctinfo: *mut UINT) -> HRESULT,
+        unsafe extern "system" fn(This: *mut IXMLElement2, pctinfo: *mut UINT) -> HRESULT,
     >,
     pub GetTypeInfo: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IXMLElement2,
             iTInfo: UINT,
             lcid: LCID,
@@ -13394,7 +13394,7 @@ pub struct IXMLElement2Vtbl {
         ) -> HRESULT,
     >,
     pub GetIDsOfNames: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IXMLElement2,
             riid: *const IID,
             rgszNames: *mut LPOLESTR,
@@ -13404,7 +13404,7 @@ pub struct IXMLElement2Vtbl {
         ) -> HRESULT,
     >,
     pub Invoke: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IXMLElement2,
             dispIdMember: DISPID,
             riid: *const IID,
@@ -13417,46 +13417,46 @@ pub struct IXMLElement2Vtbl {
         ) -> HRESULT,
     >,
     pub get_tagName: ::core::option::Option<
-        unsafe extern "C" fn(This: *mut IXMLElement2, p: *mut BSTR) -> HRESULT,
+        unsafe extern "system" fn(This: *mut IXMLElement2, p: *mut BSTR) -> HRESULT,
     >,
     pub put_tagName:
-        ::core::option::Option<unsafe extern "C" fn(This: *mut IXMLElement2, p: BSTR) -> HRESULT>,
+        ::core::option::Option<unsafe extern "system" fn(This: *mut IXMLElement2, p: BSTR) -> HRESULT>,
     pub get_parent: ::core::option::Option<
-        unsafe extern "C" fn(This: *mut IXMLElement2, ppParent: *mut *mut IXMLElement2) -> HRESULT,
+        unsafe extern "system" fn(This: *mut IXMLElement2, ppParent: *mut *mut IXMLElement2) -> HRESULT,
     >,
     pub setAttribute: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IXMLElement2,
             strPropertyName: BSTR,
             PropertyValue: VARIANT,
         ) -> HRESULT,
     >,
     pub getAttribute: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IXMLElement2,
             strPropertyName: BSTR,
             PropertyValue: *mut VARIANT,
         ) -> HRESULT,
     >,
     pub removeAttribute: ::core::option::Option<
-        unsafe extern "C" fn(This: *mut IXMLElement2, strPropertyName: BSTR) -> HRESULT,
+        unsafe extern "system" fn(This: *mut IXMLElement2, strPropertyName: BSTR) -> HRESULT,
     >,
     pub get_children: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IXMLElement2,
             pp: *mut *mut IXMLElementCollection,
         ) -> HRESULT,
     >,
     pub get_type: ::core::option::Option<
-        unsafe extern "C" fn(This: *mut IXMLElement2, plType: *mut LONG) -> HRESULT,
+        unsafe extern "system" fn(This: *mut IXMLElement2, plType: *mut LONG) -> HRESULT,
     >,
     pub get_text: ::core::option::Option<
-        unsafe extern "C" fn(This: *mut IXMLElement2, p: *mut BSTR) -> HRESULT,
+        unsafe extern "system" fn(This: *mut IXMLElement2, p: *mut BSTR) -> HRESULT,
     >,
     pub put_text:
-        ::core::option::Option<unsafe extern "C" fn(This: *mut IXMLElement2, p: BSTR) -> HRESULT>,
+        ::core::option::Option<unsafe extern "system" fn(This: *mut IXMLElement2, p: BSTR) -> HRESULT>,
     pub addChild: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IXMLElement2,
             pChildElem: *mut IXMLElement2,
             lIndex: LONG,
@@ -13464,10 +13464,10 @@ pub struct IXMLElement2Vtbl {
         ) -> HRESULT,
     >,
     pub removeChild: ::core::option::Option<
-        unsafe extern "C" fn(This: *mut IXMLElement2, pChildElem: *mut IXMLElement2) -> HRESULT,
+        unsafe extern "system" fn(This: *mut IXMLElement2, pChildElem: *mut IXMLElement2) -> HRESULT,
     >,
     pub get_attributes: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IXMLElement2,
             pp: *mut *mut IXMLElementCollection,
         ) -> HRESULT,
@@ -13482,19 +13482,19 @@ pub struct IXMLElement2 {
 #[derive(Debug, Copy, Clone)]
 pub struct IXMLDocument2Vtbl {
     pub QueryInterface: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IXMLDocument2,
             riid: *const IID,
             ppvObject: *mut *mut ::core::ffi::c_void,
         ) -> HRESULT,
     >,
-    pub AddRef: ::core::option::Option<unsafe extern "C" fn(This: *mut IXMLDocument2) -> ULONG>,
-    pub Release: ::core::option::Option<unsafe extern "C" fn(This: *mut IXMLDocument2) -> ULONG>,
+    pub AddRef: ::core::option::Option<unsafe extern "system" fn(This: *mut IXMLDocument2) -> ULONG>,
+    pub Release: ::core::option::Option<unsafe extern "system" fn(This: *mut IXMLDocument2) -> ULONG>,
     pub GetTypeInfoCount: ::core::option::Option<
-        unsafe extern "C" fn(This: *mut IXMLDocument2, pctinfo: *mut UINT) -> HRESULT,
+        unsafe extern "system" fn(This: *mut IXMLDocument2, pctinfo: *mut UINT) -> HRESULT,
     >,
     pub GetTypeInfo: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IXMLDocument2,
             iTInfo: UINT,
             lcid: LCID,
@@ -13502,7 +13502,7 @@ pub struct IXMLDocument2Vtbl {
         ) -> HRESULT,
     >,
     pub GetIDsOfNames: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IXMLDocument2,
             riid: *const IID,
             rgszNames: *mut LPOLESTR,
@@ -13512,7 +13512,7 @@ pub struct IXMLDocument2Vtbl {
         ) -> HRESULT,
     >,
     pub Invoke: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IXMLDocument2,
             dispIdMember: DISPID,
             riid: *const IID,
@@ -13525,44 +13525,44 @@ pub struct IXMLDocument2Vtbl {
         ) -> HRESULT,
     >,
     pub get_root: ::core::option::Option<
-        unsafe extern "C" fn(This: *mut IXMLDocument2, p: *mut *mut IXMLElement2) -> HRESULT,
+        unsafe extern "system" fn(This: *mut IXMLDocument2, p: *mut *mut IXMLElement2) -> HRESULT,
     >,
     pub get_fileSize: ::core::option::Option<
-        unsafe extern "C" fn(This: *mut IXMLDocument2, p: *mut BSTR) -> HRESULT,
+        unsafe extern "system" fn(This: *mut IXMLDocument2, p: *mut BSTR) -> HRESULT,
     >,
     pub get_fileModifiedDate: ::core::option::Option<
-        unsafe extern "C" fn(This: *mut IXMLDocument2, p: *mut BSTR) -> HRESULT,
+        unsafe extern "system" fn(This: *mut IXMLDocument2, p: *mut BSTR) -> HRESULT,
     >,
     pub get_fileUpdatedDate: ::core::option::Option<
-        unsafe extern "C" fn(This: *mut IXMLDocument2, p: *mut BSTR) -> HRESULT,
+        unsafe extern "system" fn(This: *mut IXMLDocument2, p: *mut BSTR) -> HRESULT,
     >,
     pub get_URL: ::core::option::Option<
-        unsafe extern "C" fn(This: *mut IXMLDocument2, p: *mut BSTR) -> HRESULT,
+        unsafe extern "system" fn(This: *mut IXMLDocument2, p: *mut BSTR) -> HRESULT,
     >,
     pub put_URL:
-        ::core::option::Option<unsafe extern "C" fn(This: *mut IXMLDocument2, p: BSTR) -> HRESULT>,
+        ::core::option::Option<unsafe extern "system" fn(This: *mut IXMLDocument2, p: BSTR) -> HRESULT>,
     pub get_mimeType: ::core::option::Option<
-        unsafe extern "C" fn(This: *mut IXMLDocument2, p: *mut BSTR) -> HRESULT,
+        unsafe extern "system" fn(This: *mut IXMLDocument2, p: *mut BSTR) -> HRESULT,
     >,
     pub get_readyState: ::core::option::Option<
-        unsafe extern "C" fn(This: *mut IXMLDocument2, pl: *mut LONG) -> HRESULT,
+        unsafe extern "system" fn(This: *mut IXMLDocument2, pl: *mut LONG) -> HRESULT,
     >,
     pub get_charset: ::core::option::Option<
-        unsafe extern "C" fn(This: *mut IXMLDocument2, p: *mut BSTR) -> HRESULT,
+        unsafe extern "system" fn(This: *mut IXMLDocument2, p: *mut BSTR) -> HRESULT,
     >,
     pub put_charset:
-        ::core::option::Option<unsafe extern "C" fn(This: *mut IXMLDocument2, p: BSTR) -> HRESULT>,
+        ::core::option::Option<unsafe extern "system" fn(This: *mut IXMLDocument2, p: BSTR) -> HRESULT>,
     pub get_version: ::core::option::Option<
-        unsafe extern "C" fn(This: *mut IXMLDocument2, p: *mut BSTR) -> HRESULT,
+        unsafe extern "system" fn(This: *mut IXMLDocument2, p: *mut BSTR) -> HRESULT,
     >,
     pub get_doctype: ::core::option::Option<
-        unsafe extern "C" fn(This: *mut IXMLDocument2, p: *mut BSTR) -> HRESULT,
+        unsafe extern "system" fn(This: *mut IXMLDocument2, p: *mut BSTR) -> HRESULT,
     >,
     pub get_dtdURL: ::core::option::Option<
-        unsafe extern "C" fn(This: *mut IXMLDocument2, p: *mut BSTR) -> HRESULT,
+        unsafe extern "system" fn(This: *mut IXMLDocument2, p: *mut BSTR) -> HRESULT,
     >,
     pub createElement: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IXMLDocument2,
             vType: VARIANT,
             var: VARIANT,
@@ -13570,10 +13570,10 @@ pub struct IXMLDocument2Vtbl {
         ) -> HRESULT,
     >,
     pub get_async: ::core::option::Option<
-        unsafe extern "C" fn(This: *mut IXMLDocument2, pf: *mut VARIANT_BOOL) -> HRESULT,
+        unsafe extern "system" fn(This: *mut IXMLDocument2, pf: *mut VARIANT_BOOL) -> HRESULT,
     >,
     pub put_async: ::core::option::Option<
-        unsafe extern "C" fn(This: *mut IXMLDocument2, f: VARIANT_BOOL) -> HRESULT,
+        unsafe extern "system" fn(This: *mut IXMLDocument2, f: VARIANT_BOOL) -> HRESULT,
     >,
 }
 #[repr(C)]
@@ -13598,19 +13598,19 @@ pub type XML_ERROR = _xml_error;
 #[derive(Debug, Copy, Clone)]
 pub struct IXMLAttributeVtbl {
     pub QueryInterface: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IXMLAttribute,
             riid: *const IID,
             ppvObject: *mut *mut ::core::ffi::c_void,
         ) -> HRESULT,
     >,
-    pub AddRef: ::core::option::Option<unsafe extern "C" fn(This: *mut IXMLAttribute) -> ULONG>,
-    pub Release: ::core::option::Option<unsafe extern "C" fn(This: *mut IXMLAttribute) -> ULONG>,
+    pub AddRef: ::core::option::Option<unsafe extern "system" fn(This: *mut IXMLAttribute) -> ULONG>,
+    pub Release: ::core::option::Option<unsafe extern "system" fn(This: *mut IXMLAttribute) -> ULONG>,
     pub GetTypeInfoCount: ::core::option::Option<
-        unsafe extern "C" fn(This: *mut IXMLAttribute, pctinfo: *mut UINT) -> HRESULT,
+        unsafe extern "system" fn(This: *mut IXMLAttribute, pctinfo: *mut UINT) -> HRESULT,
     >,
     pub GetTypeInfo: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IXMLAttribute,
             iTInfo: UINT,
             lcid: LCID,
@@ -13618,7 +13618,7 @@ pub struct IXMLAttributeVtbl {
         ) -> HRESULT,
     >,
     pub GetIDsOfNames: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IXMLAttribute,
             riid: *const IID,
             rgszNames: *mut LPOLESTR,
@@ -13628,7 +13628,7 @@ pub struct IXMLAttributeVtbl {
         ) -> HRESULT,
     >,
     pub Invoke: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IXMLAttribute,
             dispIdMember: DISPID,
             riid: *const IID,
@@ -13641,10 +13641,10 @@ pub struct IXMLAttributeVtbl {
         ) -> HRESULT,
     >,
     pub get_name: ::core::option::Option<
-        unsafe extern "C" fn(This: *mut IXMLAttribute, p: *mut BSTR) -> HRESULT,
+        unsafe extern "system" fn(This: *mut IXMLAttribute, p: *mut BSTR) -> HRESULT,
     >,
     pub get_value: ::core::option::Option<
-        unsafe extern "C" fn(This: *mut IXMLAttribute, p: *mut BSTR) -> HRESULT,
+        unsafe extern "system" fn(This: *mut IXMLAttribute, p: *mut BSTR) -> HRESULT,
     >,
 }
 #[repr(C)]
@@ -13656,16 +13656,16 @@ pub struct IXMLAttribute {
 #[derive(Debug, Copy, Clone)]
 pub struct IXMLErrorVtbl {
     pub QueryInterface: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IXMLError,
             riid: *const IID,
             ppvObject: *mut *mut ::core::ffi::c_void,
         ) -> HRESULT,
     >,
-    pub AddRef: ::core::option::Option<unsafe extern "C" fn(This: *mut IXMLError) -> ULONG>,
-    pub Release: ::core::option::Option<unsafe extern "C" fn(This: *mut IXMLError) -> ULONG>,
+    pub AddRef: ::core::option::Option<unsafe extern "system" fn(This: *mut IXMLError) -> ULONG>,
+    pub Release: ::core::option::Option<unsafe extern "system" fn(This: *mut IXMLError) -> ULONG>,
     pub GetErrorInfo: ::core::option::Option<
-        unsafe extern "C" fn(This: *mut IXMLError, pErrorReturn: *mut XML_ERROR) -> HRESULT,
+        unsafe extern "system" fn(This: *mut IXMLError, pErrorReturn: *mut XML_ERROR) -> HRESULT,
     >,
 }
 #[repr(C)]
@@ -13677,23 +13677,23 @@ pub struct IXMLError {
 #[derive(Debug, Copy, Clone)]
 pub struct IXMLElementNotificationSinkVtbl {
     pub QueryInterface: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IXMLElementNotificationSink,
             riid: *const IID,
             ppvObject: *mut *mut ::core::ffi::c_void,
         ) -> HRESULT,
     >,
     pub AddRef: ::core::option::Option<
-        unsafe extern "C" fn(This: *mut IXMLElementNotificationSink) -> ULONG,
+        unsafe extern "system" fn(This: *mut IXMLElementNotificationSink) -> ULONG,
     >,
     pub Release: ::core::option::Option<
-        unsafe extern "C" fn(This: *mut IXMLElementNotificationSink) -> ULONG,
+        unsafe extern "system" fn(This: *mut IXMLElementNotificationSink) -> ULONG,
     >,
     pub GetTypeInfoCount: ::core::option::Option<
-        unsafe extern "C" fn(This: *mut IXMLElementNotificationSink, pctinfo: *mut UINT) -> HRESULT,
+        unsafe extern "system" fn(This: *mut IXMLElementNotificationSink, pctinfo: *mut UINT) -> HRESULT,
     >,
     pub GetTypeInfo: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IXMLElementNotificationSink,
             iTInfo: UINT,
             lcid: LCID,
@@ -13701,7 +13701,7 @@ pub struct IXMLElementNotificationSinkVtbl {
         ) -> HRESULT,
     >,
     pub GetIDsOfNames: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IXMLElementNotificationSink,
             riid: *const IID,
             rgszNames: *mut LPOLESTR,
@@ -13711,7 +13711,7 @@ pub struct IXMLElementNotificationSinkVtbl {
         ) -> HRESULT,
     >,
     pub Invoke: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IXMLElementNotificationSink,
             dispIdMember: DISPID,
             riid: *const IID,
@@ -13724,7 +13724,7 @@ pub struct IXMLElementNotificationSinkVtbl {
         ) -> HRESULT,
     >,
     pub ChildAdded: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IXMLElementNotificationSink,
             pChildElem: *mut IDispatch,
         ) -> HRESULT,
@@ -13739,14 +13739,14 @@ pub struct IXMLElementNotificationSink {
 #[derive(Debug, Copy, Clone)]
 pub struct IInternetVtbl {
     pub QueryInterface: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IInternet,
             riid: *const IID,
             ppvObject: *mut *mut ::core::ffi::c_void,
         ) -> HRESULT,
     >,
-    pub AddRef: ::core::option::Option<unsafe extern "C" fn(This: *mut IInternet) -> ULONG>,
-    pub Release: ::core::option::Option<unsafe extern "C" fn(This: *mut IInternet) -> ULONG>,
+    pub AddRef: ::core::option::Option<unsafe extern "system" fn(This: *mut IInternet) -> ULONG>,
+    pub Release: ::core::option::Option<unsafe extern "system" fn(This: *mut IInternet) -> ULONG>,
 }
 #[repr(C)]
 #[derive(Debug, Copy, Clone)]
@@ -13757,25 +13757,25 @@ pub struct IInternet {
 #[derive(Debug, Copy, Clone)]
 pub struct IBindingVtbl {
     pub QueryInterface: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IBinding,
             riid: *const IID,
             ppvObject: *mut *mut ::core::ffi::c_void,
         ) -> HRESULT,
     >,
-    pub AddRef: ::core::option::Option<unsafe extern "C" fn(This: *mut IBinding) -> ULONG>,
-    pub Release: ::core::option::Option<unsafe extern "C" fn(This: *mut IBinding) -> ULONG>,
-    pub Abort: ::core::option::Option<unsafe extern "C" fn(This: *mut IBinding) -> HRESULT>,
-    pub Suspend: ::core::option::Option<unsafe extern "C" fn(This: *mut IBinding) -> HRESULT>,
-    pub Resume: ::core::option::Option<unsafe extern "C" fn(This: *mut IBinding) -> HRESULT>,
+    pub AddRef: ::core::option::Option<unsafe extern "system" fn(This: *mut IBinding) -> ULONG>,
+    pub Release: ::core::option::Option<unsafe extern "system" fn(This: *mut IBinding) -> ULONG>,
+    pub Abort: ::core::option::Option<unsafe extern "system" fn(This: *mut IBinding) -> HRESULT>,
+    pub Suspend: ::core::option::Option<unsafe extern "system" fn(This: *mut IBinding) -> HRESULT>,
+    pub Resume: ::core::option::Option<unsafe extern "system" fn(This: *mut IBinding) -> HRESULT>,
     pub SetPriority: ::core::option::Option<
-        unsafe extern "C" fn(This: *mut IBinding, nPriority: LONG) -> HRESULT,
+        unsafe extern "system" fn(This: *mut IBinding, nPriority: LONG) -> HRESULT,
     >,
     pub GetPriority: ::core::option::Option<
-        unsafe extern "C" fn(This: *mut IBinding, pnPriority: *mut LONG) -> HRESULT,
+        unsafe extern "system" fn(This: *mut IBinding, pnPriority: *mut LONG) -> HRESULT,
     >,
     pub GetBindResult: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IBinding,
             pclsidProtocol: *mut CLSID,
             pdwResult: *mut DWORD,
@@ -13812,31 +13812,31 @@ pub type BINDINFO = _tagBINDINFO;
 #[derive(Debug, Copy, Clone)]
 pub struct IBindStatusCallbackVtbl {
     pub QueryInterface: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IBindStatusCallback,
             riid: *const IID,
             ppvObject: *mut *mut ::core::ffi::c_void,
         ) -> HRESULT,
     >,
     pub AddRef:
-        ::core::option::Option<unsafe extern "C" fn(This: *mut IBindStatusCallback) -> ULONG>,
+        ::core::option::Option<unsafe extern "system" fn(This: *mut IBindStatusCallback) -> ULONG>,
     pub Release:
-        ::core::option::Option<unsafe extern "C" fn(This: *mut IBindStatusCallback) -> ULONG>,
+        ::core::option::Option<unsafe extern "system" fn(This: *mut IBindStatusCallback) -> ULONG>,
     pub OnStartBinding: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IBindStatusCallback,
             dwReserved: DWORD,
             pib: *mut IBinding,
         ) -> HRESULT,
     >,
     pub GetPriority: ::core::option::Option<
-        unsafe extern "C" fn(This: *mut IBindStatusCallback, pnPriority: *mut LONG) -> HRESULT,
+        unsafe extern "system" fn(This: *mut IBindStatusCallback, pnPriority: *mut LONG) -> HRESULT,
     >,
     pub OnLowResource: ::core::option::Option<
-        unsafe extern "C" fn(This: *mut IBindStatusCallback, reserved: DWORD) -> HRESULT,
+        unsafe extern "system" fn(This: *mut IBindStatusCallback, reserved: DWORD) -> HRESULT,
     >,
     pub OnProgress: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IBindStatusCallback,
             ulProgress: ULONG,
             ulProgressMax: ULONG,
@@ -13845,21 +13845,21 @@ pub struct IBindStatusCallbackVtbl {
         ) -> HRESULT,
     >,
     pub OnStopBinding: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IBindStatusCallback,
             hresult: HRESULT,
             szError: LPCWSTR,
         ) -> HRESULT,
     >,
     pub GetBindInfo: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IBindStatusCallback,
             grfBINDF: *mut DWORD,
             pbindinfo: *mut BINDINFO,
         ) -> HRESULT,
     >,
     pub OnDataAvailable: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IBindStatusCallback,
             grfBSCF: DWORD,
             dwSize: DWORD,
@@ -13868,7 +13868,7 @@ pub struct IBindStatusCallbackVtbl {
         ) -> HRESULT,
     >,
     pub OnObjectAvailable: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IBindStatusCallback,
             riid: *const IID,
             punk: *mut IUnknown,
@@ -13884,31 +13884,31 @@ pub struct IBindStatusCallback {
 #[derive(Debug, Copy, Clone)]
 pub struct IBindStatusCallbackExVtbl {
     pub QueryInterface: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IBindStatusCallbackEx,
             riid: *const IID,
             ppvObject: *mut *mut ::core::ffi::c_void,
         ) -> HRESULT,
     >,
     pub AddRef:
-        ::core::option::Option<unsafe extern "C" fn(This: *mut IBindStatusCallbackEx) -> ULONG>,
+        ::core::option::Option<unsafe extern "system" fn(This: *mut IBindStatusCallbackEx) -> ULONG>,
     pub Release:
-        ::core::option::Option<unsafe extern "C" fn(This: *mut IBindStatusCallbackEx) -> ULONG>,
+        ::core::option::Option<unsafe extern "system" fn(This: *mut IBindStatusCallbackEx) -> ULONG>,
     pub OnStartBinding: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IBindStatusCallbackEx,
             dwReserved: DWORD,
             pib: *mut IBinding,
         ) -> HRESULT,
     >,
     pub GetPriority: ::core::option::Option<
-        unsafe extern "C" fn(This: *mut IBindStatusCallbackEx, pnPriority: *mut LONG) -> HRESULT,
+        unsafe extern "system" fn(This: *mut IBindStatusCallbackEx, pnPriority: *mut LONG) -> HRESULT,
     >,
     pub OnLowResource: ::core::option::Option<
-        unsafe extern "C" fn(This: *mut IBindStatusCallbackEx, reserved: DWORD) -> HRESULT,
+        unsafe extern "system" fn(This: *mut IBindStatusCallbackEx, reserved: DWORD) -> HRESULT,
     >,
     pub OnProgress: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IBindStatusCallbackEx,
             ulProgress: ULONG,
             ulProgressMax: ULONG,
@@ -13917,21 +13917,21 @@ pub struct IBindStatusCallbackExVtbl {
         ) -> HRESULT,
     >,
     pub OnStopBinding: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IBindStatusCallbackEx,
             hresult: HRESULT,
             szError: LPCWSTR,
         ) -> HRESULT,
     >,
     pub GetBindInfo: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IBindStatusCallbackEx,
             grfBINDF: *mut DWORD,
             pbindinfo: *mut BINDINFO,
         ) -> HRESULT,
     >,
     pub OnDataAvailable: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IBindStatusCallbackEx,
             grfBSCF: DWORD,
             dwSize: DWORD,
@@ -13940,14 +13940,14 @@ pub struct IBindStatusCallbackExVtbl {
         ) -> HRESULT,
     >,
     pub OnObjectAvailable: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IBindStatusCallbackEx,
             riid: *const IID,
             punk: *mut IUnknown,
         ) -> HRESULT,
     >,
     pub GetBindInfoEx: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IBindStatusCallbackEx,
             grfBINDF: *mut DWORD,
             pbindinfo: *mut BINDINFO,
@@ -13965,16 +13965,16 @@ pub struct IBindStatusCallbackEx {
 #[derive(Debug, Copy, Clone)]
 pub struct IAuthenticateVtbl {
     pub QueryInterface: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IAuthenticate,
             riid: *const IID,
             ppvObject: *mut *mut ::core::ffi::c_void,
         ) -> HRESULT,
     >,
-    pub AddRef: ::core::option::Option<unsafe extern "C" fn(This: *mut IAuthenticate) -> ULONG>,
-    pub Release: ::core::option::Option<unsafe extern "C" fn(This: *mut IAuthenticate) -> ULONG>,
+    pub AddRef: ::core::option::Option<unsafe extern "system" fn(This: *mut IAuthenticate) -> ULONG>,
+    pub Release: ::core::option::Option<unsafe extern "system" fn(This: *mut IAuthenticate) -> ULONG>,
     pub Authenticate: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IAuthenticate,
             phwnd: *mut HWND,
             pszUsername: *mut LPWSTR,
@@ -13991,16 +13991,16 @@ pub struct IAuthenticate {
 #[derive(Debug, Copy, Clone)]
 pub struct IHttpNegotiateVtbl {
     pub QueryInterface: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IHttpNegotiate,
             riid: *const IID,
             ppvObject: *mut *mut ::core::ffi::c_void,
         ) -> HRESULT,
     >,
-    pub AddRef: ::core::option::Option<unsafe extern "C" fn(This: *mut IHttpNegotiate) -> ULONG>,
-    pub Release: ::core::option::Option<unsafe extern "C" fn(This: *mut IHttpNegotiate) -> ULONG>,
+    pub AddRef: ::core::option::Option<unsafe extern "system" fn(This: *mut IHttpNegotiate) -> ULONG>,
+    pub Release: ::core::option::Option<unsafe extern "system" fn(This: *mut IHttpNegotiate) -> ULONG>,
     pub BeginningTransaction: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IHttpNegotiate,
             szURL: LPCWSTR,
             szHeaders: LPCWSTR,
@@ -14009,7 +14009,7 @@ pub struct IHttpNegotiateVtbl {
         ) -> HRESULT,
     >,
     pub OnResponse: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IHttpNegotiate,
             dwResponseCode: DWORD,
             szResponseHeaders: LPCWSTR,
@@ -14027,16 +14027,16 @@ pub struct IHttpNegotiate {
 #[derive(Debug, Copy, Clone)]
 pub struct IHttpNegotiate2Vtbl {
     pub QueryInterface: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IHttpNegotiate2,
             riid: *const IID,
             ppvObject: *mut *mut ::core::ffi::c_void,
         ) -> HRESULT,
     >,
-    pub AddRef: ::core::option::Option<unsafe extern "C" fn(This: *mut IHttpNegotiate2) -> ULONG>,
-    pub Release: ::core::option::Option<unsafe extern "C" fn(This: *mut IHttpNegotiate2) -> ULONG>,
+    pub AddRef: ::core::option::Option<unsafe extern "system" fn(This: *mut IHttpNegotiate2) -> ULONG>,
+    pub Release: ::core::option::Option<unsafe extern "system" fn(This: *mut IHttpNegotiate2) -> ULONG>,
     pub BeginningTransaction: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IHttpNegotiate2,
             szURL: LPCWSTR,
             szHeaders: LPCWSTR,
@@ -14045,7 +14045,7 @@ pub struct IHttpNegotiate2Vtbl {
         ) -> HRESULT,
     >,
     pub OnResponse: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IHttpNegotiate2,
             dwResponseCode: DWORD,
             szResponseHeaders: LPCWSTR,
@@ -14054,7 +14054,7 @@ pub struct IHttpNegotiate2Vtbl {
         ) -> HRESULT,
     >,
     pub GetRootSecurityId: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IHttpNegotiate2,
             pbSecurityId: *mut BYTE,
             pcbSecurityId: *mut DWORD,
@@ -14071,16 +14071,16 @@ pub struct IHttpNegotiate2 {
 #[derive(Debug, Copy, Clone)]
 pub struct IBindHostVtbl {
     pub QueryInterface: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IBindHost,
             riid: *const IID,
             ppvObject: *mut *mut ::core::ffi::c_void,
         ) -> HRESULT,
     >,
-    pub AddRef: ::core::option::Option<unsafe extern "C" fn(This: *mut IBindHost) -> ULONG>,
-    pub Release: ::core::option::Option<unsafe extern "C" fn(This: *mut IBindHost) -> ULONG>,
+    pub AddRef: ::core::option::Option<unsafe extern "system" fn(This: *mut IBindHost) -> ULONG>,
+    pub Release: ::core::option::Option<unsafe extern "system" fn(This: *mut IBindHost) -> ULONG>,
     pub CreateMoniker: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IBindHost,
             szName: LPOLESTR,
             pBC: *mut IBindCtx,
@@ -14089,7 +14089,7 @@ pub struct IBindHostVtbl {
         ) -> HRESULT,
     >,
     pub MonikerBindToStorage: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IBindHost,
             pMk: *mut IMoniker,
             pBC: *mut IBindCtx,
@@ -14099,7 +14099,7 @@ pub struct IBindHostVtbl {
         ) -> HRESULT,
     >,
     pub MonikerBindToObject: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IBindHost,
             pMk: *mut IMoniker,
             pBC: *mut IBindCtx,
@@ -14118,16 +14118,16 @@ pub struct IBindHost {
 #[derive(Debug, Copy, Clone)]
 pub struct IWinInetInfoVtbl {
     pub QueryInterface: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IWinInetInfo,
             riid: *const IID,
             ppvObject: *mut *mut ::core::ffi::c_void,
         ) -> HRESULT,
     >,
-    pub AddRef: ::core::option::Option<unsafe extern "C" fn(This: *mut IWinInetInfo) -> ULONG>,
-    pub Release: ::core::option::Option<unsafe extern "C" fn(This: *mut IWinInetInfo) -> ULONG>,
+    pub AddRef: ::core::option::Option<unsafe extern "system" fn(This: *mut IWinInetInfo) -> ULONG>,
+    pub Release: ::core::option::Option<unsafe extern "system" fn(This: *mut IWinInetInfo) -> ULONG>,
     pub QueryOption: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IWinInetInfo,
             dwOption: DWORD,
             pBuffer: LPVOID,
@@ -14144,16 +14144,16 @@ pub struct IWinInetInfo {
 #[derive(Debug, Copy, Clone)]
 pub struct IWinInetHttpInfoVtbl {
     pub QueryInterface: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IWinInetHttpInfo,
             riid: *const IID,
             ppvObject: *mut *mut ::core::ffi::c_void,
         ) -> HRESULT,
     >,
-    pub AddRef: ::core::option::Option<unsafe extern "C" fn(This: *mut IWinInetHttpInfo) -> ULONG>,
-    pub Release: ::core::option::Option<unsafe extern "C" fn(This: *mut IWinInetHttpInfo) -> ULONG>,
+    pub AddRef: ::core::option::Option<unsafe extern "system" fn(This: *mut IWinInetHttpInfo) -> ULONG>,
+    pub Release: ::core::option::Option<unsafe extern "system" fn(This: *mut IWinInetHttpInfo) -> ULONG>,
     pub QueryOption: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IWinInetHttpInfo,
             dwOption: DWORD,
             pBuffer: LPVOID,
@@ -14161,7 +14161,7 @@ pub struct IWinInetHttpInfoVtbl {
         ) -> HRESULT,
     >,
     pub QueryInfo: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IWinInetHttpInfo,
             dwOption: DWORD,
             pBuffer: LPVOID,
@@ -14180,18 +14180,18 @@ pub struct IWinInetHttpInfo {
 #[derive(Debug, Copy, Clone)]
 pub struct IWindowForBindingUIVtbl {
     pub QueryInterface: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IWindowForBindingUI,
             riid: *const IID,
             ppvObject: *mut *mut ::core::ffi::c_void,
         ) -> HRESULT,
     >,
     pub AddRef:
-        ::core::option::Option<unsafe extern "C" fn(This: *mut IWindowForBindingUI) -> ULONG>,
+        ::core::option::Option<unsafe extern "system" fn(This: *mut IWindowForBindingUI) -> ULONG>,
     pub Release:
-        ::core::option::Option<unsafe extern "C" fn(This: *mut IWindowForBindingUI) -> ULONG>,
+        ::core::option::Option<unsafe extern "system" fn(This: *mut IWindowForBindingUI) -> ULONG>,
     pub GetWindow: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IWindowForBindingUI,
             rguidReason: *const GUID,
             phwnd: *mut HWND,
@@ -14207,23 +14207,23 @@ pub struct IWindowForBindingUI {
 #[derive(Debug, Copy, Clone)]
 pub struct ICodeInstallVtbl {
     pub QueryInterface: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut ICodeInstall,
             riid: *const IID,
             ppvObject: *mut *mut ::core::ffi::c_void,
         ) -> HRESULT,
     >,
-    pub AddRef: ::core::option::Option<unsafe extern "C" fn(This: *mut ICodeInstall) -> ULONG>,
-    pub Release: ::core::option::Option<unsafe extern "C" fn(This: *mut ICodeInstall) -> ULONG>,
+    pub AddRef: ::core::option::Option<unsafe extern "system" fn(This: *mut ICodeInstall) -> ULONG>,
+    pub Release: ::core::option::Option<unsafe extern "system" fn(This: *mut ICodeInstall) -> ULONG>,
     pub GetWindow: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut ICodeInstall,
             rguidReason: *const GUID,
             phwnd: *mut HWND,
         ) -> HRESULT,
     >,
     pub OnCodeInstallProblem: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut ICodeInstall,
             ulStatusCode: ULONG,
             szDestination: LPCWSTR,
@@ -14241,23 +14241,23 @@ pub struct ICodeInstall {
 #[derive(Debug, Copy, Clone)]
 pub struct IHttpSecurityVtbl {
     pub QueryInterface: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IHttpSecurity,
             riid: *const IID,
             ppvObject: *mut *mut ::core::ffi::c_void,
         ) -> HRESULT,
     >,
-    pub AddRef: ::core::option::Option<unsafe extern "C" fn(This: *mut IHttpSecurity) -> ULONG>,
-    pub Release: ::core::option::Option<unsafe extern "C" fn(This: *mut IHttpSecurity) -> ULONG>,
+    pub AddRef: ::core::option::Option<unsafe extern "system" fn(This: *mut IHttpSecurity) -> ULONG>,
+    pub Release: ::core::option::Option<unsafe extern "system" fn(This: *mut IHttpSecurity) -> ULONG>,
     pub GetWindow: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IHttpSecurity,
             rguidReason: *const GUID,
             phwnd: *mut HWND,
         ) -> HRESULT,
     >,
     pub OnSecurityProblem: ::core::option::Option<
-        unsafe extern "C" fn(This: *mut IHttpSecurity, dwProblem: DWORD) -> HRESULT,
+        unsafe extern "system" fn(This: *mut IHttpSecurity, dwProblem: DWORD) -> HRESULT,
     >,
 }
 #[repr(C)]
@@ -14269,21 +14269,21 @@ pub struct IHttpSecurity {
 #[derive(Debug, Copy, Clone)]
 pub struct IPersistMonikerVtbl {
     pub QueryInterface: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IPersistMoniker,
             riid: *const IID,
             ppvObject: *mut *mut ::core::ffi::c_void,
         ) -> HRESULT,
     >,
-    pub AddRef: ::core::option::Option<unsafe extern "C" fn(This: *mut IPersistMoniker) -> ULONG>,
-    pub Release: ::core::option::Option<unsafe extern "C" fn(This: *mut IPersistMoniker) -> ULONG>,
+    pub AddRef: ::core::option::Option<unsafe extern "system" fn(This: *mut IPersistMoniker) -> ULONG>,
+    pub Release: ::core::option::Option<unsafe extern "system" fn(This: *mut IPersistMoniker) -> ULONG>,
     pub GetClassID: ::core::option::Option<
-        unsafe extern "C" fn(This: *mut IPersistMoniker, pClassID: *mut CLSID) -> HRESULT,
+        unsafe extern "system" fn(This: *mut IPersistMoniker, pClassID: *mut CLSID) -> HRESULT,
     >,
     pub IsDirty:
-        ::core::option::Option<unsafe extern "C" fn(This: *mut IPersistMoniker) -> HRESULT>,
+        ::core::option::Option<unsafe extern "system" fn(This: *mut IPersistMoniker) -> HRESULT>,
     pub Load: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IPersistMoniker,
             fFullyAvailable: BOOL,
             pimkName: *mut IMoniker,
@@ -14292,7 +14292,7 @@ pub struct IPersistMonikerVtbl {
         ) -> HRESULT,
     >,
     pub Save: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IPersistMoniker,
             pimkName: *mut IMoniker,
             pbc: LPBC,
@@ -14300,14 +14300,14 @@ pub struct IPersistMonikerVtbl {
         ) -> HRESULT,
     >,
     pub SaveCompleted: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IPersistMoniker,
             pimkName: *mut IMoniker,
             pibc: LPBC,
         ) -> HRESULT,
     >,
     pub GetCurMoniker: ::core::option::Option<
-        unsafe extern "C" fn(This: *mut IPersistMoniker, ppimkName: *mut *mut IMoniker) -> HRESULT,
+        unsafe extern "system" fn(This: *mut IPersistMoniker, ppimkName: *mut *mut IMoniker) -> HRESULT,
     >,
 }
 #[repr(C)]
@@ -14331,16 +14331,16 @@ pub use self::__WIDL_urlmon_generated_name_00000015 as MONIKERPROPERTY;
 #[derive(Debug, Copy, Clone)]
 pub struct IMonikerPropVtbl {
     pub QueryInterface: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IMonikerProp,
             riid: *const IID,
             ppvObject: *mut *mut ::core::ffi::c_void,
         ) -> HRESULT,
     >,
-    pub AddRef: ::core::option::Option<unsafe extern "C" fn(This: *mut IMonikerProp) -> ULONG>,
-    pub Release: ::core::option::Option<unsafe extern "C" fn(This: *mut IMonikerProp) -> ULONG>,
+    pub AddRef: ::core::option::Option<unsafe extern "system" fn(This: *mut IMonikerProp) -> ULONG>,
+    pub Release: ::core::option::Option<unsafe extern "system" fn(This: *mut IMonikerProp) -> ULONG>,
     pub PutProperty: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IMonikerProp,
             mkp: MONIKERPROPERTY,
             val: LPCWSTR,
@@ -14356,16 +14356,16 @@ pub struct IMonikerProp {
 #[derive(Debug, Copy, Clone)]
 pub struct IBindProtocolVtbl {
     pub QueryInterface: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IBindProtocol,
             riid: *const IID,
             ppvObject: *mut *mut ::core::ffi::c_void,
         ) -> HRESULT,
     >,
-    pub AddRef: ::core::option::Option<unsafe extern "C" fn(This: *mut IBindProtocol) -> ULONG>,
-    pub Release: ::core::option::Option<unsafe extern "C" fn(This: *mut IBindProtocol) -> ULONG>,
+    pub AddRef: ::core::option::Option<unsafe extern "system" fn(This: *mut IBindProtocol) -> ULONG>,
+    pub Release: ::core::option::Option<unsafe extern "system" fn(This: *mut IBindProtocol) -> ULONG>,
     pub CreateBinding: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IBindProtocol,
             szUrl: LPCWSTR,
             pbc: *mut IBindCtx,
@@ -14382,24 +14382,24 @@ pub struct IBindProtocol {
 #[derive(Debug, Copy, Clone)]
 pub struct IInternetBindInfoVtbl {
     pub QueryInterface: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IInternetBindInfo,
             riid: *const IID,
             ppvObject: *mut *mut ::core::ffi::c_void,
         ) -> HRESULT,
     >,
-    pub AddRef: ::core::option::Option<unsafe extern "C" fn(This: *mut IInternetBindInfo) -> ULONG>,
+    pub AddRef: ::core::option::Option<unsafe extern "system" fn(This: *mut IInternetBindInfo) -> ULONG>,
     pub Release:
-        ::core::option::Option<unsafe extern "C" fn(This: *mut IInternetBindInfo) -> ULONG>,
+        ::core::option::Option<unsafe extern "system" fn(This: *mut IInternetBindInfo) -> ULONG>,
     pub GetBindInfo: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IInternetBindInfo,
             grfBINDF: *mut DWORD,
             pbindinfo: *mut BINDINFO,
         ) -> HRESULT,
     >,
     pub GetBindString: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IInternetBindInfo,
             ulStringType: ULONG,
             ppwzStr: *mut LPOLESTR,
@@ -14417,20 +14417,20 @@ pub struct IInternetBindInfo {
 #[derive(Debug, Copy, Clone)]
 pub struct IInternetPriorityVtbl {
     pub QueryInterface: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IInternetPriority,
             riid: *const IID,
             ppvObject: *mut *mut ::core::ffi::c_void,
         ) -> HRESULT,
     >,
-    pub AddRef: ::core::option::Option<unsafe extern "C" fn(This: *mut IInternetPriority) -> ULONG>,
+    pub AddRef: ::core::option::Option<unsafe extern "system" fn(This: *mut IInternetPriority) -> ULONG>,
     pub Release:
-        ::core::option::Option<unsafe extern "C" fn(This: *mut IInternetPriority) -> ULONG>,
+        ::core::option::Option<unsafe extern "system" fn(This: *mut IInternetPriority) -> ULONG>,
     pub SetPriority: ::core::option::Option<
-        unsafe extern "C" fn(This: *mut IInternetPriority, nPriority: LONG) -> HRESULT,
+        unsafe extern "system" fn(This: *mut IInternetPriority, nPriority: LONG) -> HRESULT,
     >,
     pub GetPriority: ::core::option::Option<
-        unsafe extern "C" fn(This: *mut IInternetPriority, pnPriority: *mut LONG) -> HRESULT,
+        unsafe extern "system" fn(This: *mut IInternetPriority, pnPriority: *mut LONG) -> HRESULT,
     >,
 }
 #[repr(C)]
@@ -14451,18 +14451,18 @@ pub type PROTOCOLDATA = _tagPROTOCOLDATA;
 #[derive(Debug, Copy, Clone)]
 pub struct IInternetProtocolRootVtbl {
     pub QueryInterface: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IInternetProtocolRoot,
             riid: *const IID,
             ppvObject: *mut *mut ::core::ffi::c_void,
         ) -> HRESULT,
     >,
     pub AddRef:
-        ::core::option::Option<unsafe extern "C" fn(This: *mut IInternetProtocolRoot) -> ULONG>,
+        ::core::option::Option<unsafe extern "system" fn(This: *mut IInternetProtocolRoot) -> ULONG>,
     pub Release:
-        ::core::option::Option<unsafe extern "C" fn(This: *mut IInternetProtocolRoot) -> ULONG>,
+        ::core::option::Option<unsafe extern "system" fn(This: *mut IInternetProtocolRoot) -> ULONG>,
     pub Start: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IInternetProtocolRoot,
             szUrl: LPCWSTR,
             pOIProtSink: *mut IInternetProtocolSink,
@@ -14472,25 +14472,25 @@ pub struct IInternetProtocolRootVtbl {
         ) -> HRESULT,
     >,
     pub Continue: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IInternetProtocolRoot,
             pProtocolData: *mut PROTOCOLDATA,
         ) -> HRESULT,
     >,
     pub Abort: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IInternetProtocolRoot,
             hrReason: HRESULT,
             dwOptions: DWORD,
         ) -> HRESULT,
     >,
     pub Terminate: ::core::option::Option<
-        unsafe extern "C" fn(This: *mut IInternetProtocolRoot, dwOptions: DWORD) -> HRESULT,
+        unsafe extern "system" fn(This: *mut IInternetProtocolRoot, dwOptions: DWORD) -> HRESULT,
     >,
     pub Suspend:
-        ::core::option::Option<unsafe extern "C" fn(This: *mut IInternetProtocolRoot) -> HRESULT>,
+        ::core::option::Option<unsafe extern "system" fn(This: *mut IInternetProtocolRoot) -> HRESULT>,
     pub Resume:
-        ::core::option::Option<unsafe extern "C" fn(This: *mut IInternetProtocolRoot) -> HRESULT>,
+        ::core::option::Option<unsafe extern "system" fn(This: *mut IInternetProtocolRoot) -> HRESULT>,
 }
 #[repr(C)]
 #[derive(Debug, Copy, Clone)]
@@ -14501,31 +14501,31 @@ pub struct IInternetProtocolRoot {
 #[derive(Debug, Copy, Clone)]
 pub struct IInternetProtocolSinkVtbl {
     pub QueryInterface: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IInternetProtocolSink,
             riid: *const IID,
             ppvObject: *mut *mut ::core::ffi::c_void,
         ) -> HRESULT,
     >,
     pub AddRef:
-        ::core::option::Option<unsafe extern "C" fn(This: *mut IInternetProtocolSink) -> ULONG>,
+        ::core::option::Option<unsafe extern "system" fn(This: *mut IInternetProtocolSink) -> ULONG>,
     pub Release:
-        ::core::option::Option<unsafe extern "C" fn(This: *mut IInternetProtocolSink) -> ULONG>,
+        ::core::option::Option<unsafe extern "system" fn(This: *mut IInternetProtocolSink) -> ULONG>,
     pub Switch: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IInternetProtocolSink,
             pProtocolData: *mut PROTOCOLDATA,
         ) -> HRESULT,
     >,
     pub ReportProgress: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IInternetProtocolSink,
             ulStatusCode: ULONG,
             szStatusText: LPCWSTR,
         ) -> HRESULT,
     >,
     pub ReportData: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IInternetProtocolSink,
             grfBSCF: DWORD,
             ulProgress: ULONG,
@@ -14533,7 +14533,7 @@ pub struct IInternetProtocolSinkVtbl {
         ) -> HRESULT,
     >,
     pub ReportResult: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IInternetProtocolSink,
             hrResult: HRESULT,
             dwError: DWORD,
@@ -14550,17 +14550,17 @@ pub struct IInternetProtocolSink {
 #[derive(Debug, Copy, Clone)]
 pub struct IInternetProtocolVtbl {
     pub QueryInterface: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IInternetProtocol,
             riid: *const IID,
             ppvObject: *mut *mut ::core::ffi::c_void,
         ) -> HRESULT,
     >,
-    pub AddRef: ::core::option::Option<unsafe extern "C" fn(This: *mut IInternetProtocol) -> ULONG>,
+    pub AddRef: ::core::option::Option<unsafe extern "system" fn(This: *mut IInternetProtocol) -> ULONG>,
     pub Release:
-        ::core::option::Option<unsafe extern "C" fn(This: *mut IInternetProtocol) -> ULONG>,
+        ::core::option::Option<unsafe extern "system" fn(This: *mut IInternetProtocol) -> ULONG>,
     pub Start: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IInternetProtocol,
             szUrl: LPCWSTR,
             pOIProtSink: *mut IInternetProtocolSink,
@@ -14570,27 +14570,27 @@ pub struct IInternetProtocolVtbl {
         ) -> HRESULT,
     >,
     pub Continue: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IInternetProtocol,
             pProtocolData: *mut PROTOCOLDATA,
         ) -> HRESULT,
     >,
     pub Abort: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IInternetProtocol,
             hrReason: HRESULT,
             dwOptions: DWORD,
         ) -> HRESULT,
     >,
     pub Terminate: ::core::option::Option<
-        unsafe extern "C" fn(This: *mut IInternetProtocol, dwOptions: DWORD) -> HRESULT,
+        unsafe extern "system" fn(This: *mut IInternetProtocol, dwOptions: DWORD) -> HRESULT,
     >,
     pub Suspend:
-        ::core::option::Option<unsafe extern "C" fn(This: *mut IInternetProtocol) -> HRESULT>,
+        ::core::option::Option<unsafe extern "system" fn(This: *mut IInternetProtocol) -> HRESULT>,
     pub Resume:
-        ::core::option::Option<unsafe extern "C" fn(This: *mut IInternetProtocol) -> HRESULT>,
+        ::core::option::Option<unsafe extern "system" fn(This: *mut IInternetProtocol) -> HRESULT>,
     pub Read: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IInternetProtocol,
             pv: *mut ::core::ffi::c_void,
             cb: ULONG,
@@ -14598,7 +14598,7 @@ pub struct IInternetProtocolVtbl {
         ) -> HRESULT,
     >,
     pub Seek: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IInternetProtocol,
             dlibMove: LARGE_INTEGER,
             dwOrigin: DWORD,
@@ -14606,10 +14606,10 @@ pub struct IInternetProtocolVtbl {
         ) -> HRESULT,
     >,
     pub LockRequest: ::core::option::Option<
-        unsafe extern "C" fn(This: *mut IInternetProtocol, dwOptions: DWORD) -> HRESULT,
+        unsafe extern "system" fn(This: *mut IInternetProtocol, dwOptions: DWORD) -> HRESULT,
     >,
     pub UnlockRequest:
-        ::core::option::Option<unsafe extern "C" fn(This: *mut IInternetProtocol) -> HRESULT>,
+        ::core::option::Option<unsafe extern "system" fn(This: *mut IInternetProtocol) -> HRESULT>,
 }
 #[repr(C)]
 #[derive(Debug, Copy, Clone)]
@@ -14659,18 +14659,18 @@ pub use self::_tagQUERYOPTION as QUERYOPTION;
 #[derive(Debug, Copy, Clone)]
 pub struct IInternetProtocolInfoVtbl {
     pub QueryInterface: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IInternetProtocolInfo,
             riid: *const IID,
             ppvObject: *mut *mut ::core::ffi::c_void,
         ) -> HRESULT,
     >,
     pub AddRef:
-        ::core::option::Option<unsafe extern "C" fn(This: *mut IInternetProtocolInfo) -> ULONG>,
+        ::core::option::Option<unsafe extern "system" fn(This: *mut IInternetProtocolInfo) -> ULONG>,
     pub Release:
-        ::core::option::Option<unsafe extern "C" fn(This: *mut IInternetProtocolInfo) -> ULONG>,
+        ::core::option::Option<unsafe extern "system" fn(This: *mut IInternetProtocolInfo) -> ULONG>,
     pub ParseUrl: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IInternetProtocolInfo,
             pwzUrl: LPCWSTR,
             ParseAction: PARSEACTION,
@@ -14682,7 +14682,7 @@ pub struct IInternetProtocolInfoVtbl {
         ) -> HRESULT,
     >,
     pub CombineUrl: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IInternetProtocolInfo,
             pwzBaseUrl: LPCWSTR,
             pwzRelativeUrl: LPCWSTR,
@@ -14694,7 +14694,7 @@ pub struct IInternetProtocolInfoVtbl {
         ) -> HRESULT,
     >,
     pub CompareUrl: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IInternetProtocolInfo,
             pwzUrl1: LPCWSTR,
             pwzUrl2: LPCWSTR,
@@ -14702,7 +14702,7 @@ pub struct IInternetProtocolInfoVtbl {
         ) -> HRESULT,
     >,
     pub QueryInfo: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IInternetProtocolInfo,
             pwzUrl: LPCWSTR,
             OueryOption: QUERYOPTION,
@@ -14723,16 +14723,16 @@ pub struct IInternetProtocolInfo {
 #[derive(Debug, Copy, Clone)]
 pub struct IInternetSessionVtbl {
     pub QueryInterface: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IInternetSession,
             riid: *const IID,
             ppvObject: *mut *mut ::core::ffi::c_void,
         ) -> HRESULT,
     >,
-    pub AddRef: ::core::option::Option<unsafe extern "C" fn(This: *mut IInternetSession) -> ULONG>,
-    pub Release: ::core::option::Option<unsafe extern "C" fn(This: *mut IInternetSession) -> ULONG>,
+    pub AddRef: ::core::option::Option<unsafe extern "system" fn(This: *mut IInternetSession) -> ULONG>,
+    pub Release: ::core::option::Option<unsafe extern "system" fn(This: *mut IInternetSession) -> ULONG>,
     pub RegisterNameSpace: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IInternetSession,
             pCF: *mut IClassFactory,
             rclsid: *const CLSID,
@@ -14743,14 +14743,14 @@ pub struct IInternetSessionVtbl {
         ) -> HRESULT,
     >,
     pub UnregisterNameSpace: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IInternetSession,
             pCF: *mut IClassFactory,
             pszProtocol: LPCWSTR,
         ) -> HRESULT,
     >,
     pub RegisterMimeFilter: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IInternetSession,
             pCF: *mut IClassFactory,
             rclsid: *const CLSID,
@@ -14758,14 +14758,14 @@ pub struct IInternetSessionVtbl {
         ) -> HRESULT,
     >,
     pub UnregisterMimeFilter: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IInternetSession,
             pCF: *mut IClassFactory,
             pwzType: LPCWSTR,
         ) -> HRESULT,
     >,
     pub CreateBinding: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IInternetSession,
             pBC: LPBC,
             szUrl: LPCWSTR,
@@ -14776,7 +14776,7 @@ pub struct IInternetSessionVtbl {
         ) -> HRESULT,
     >,
     pub SetSessionOption: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IInternetSession,
             dwOption: DWORD,
             pBuffer: LPVOID,
@@ -14794,21 +14794,21 @@ pub struct IInternetSession {
 #[derive(Debug, Copy, Clone)]
 pub struct IInternetSecurityMgrSiteVtbl {
     pub QueryInterface: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IInternetSecurityMgrSite,
             riid: *const IID,
             ppvObject: *mut *mut ::core::ffi::c_void,
         ) -> HRESULT,
     >,
     pub AddRef:
-        ::core::option::Option<unsafe extern "C" fn(This: *mut IInternetSecurityMgrSite) -> ULONG>,
+        ::core::option::Option<unsafe extern "system" fn(This: *mut IInternetSecurityMgrSite) -> ULONG>,
     pub Release:
-        ::core::option::Option<unsafe extern "C" fn(This: *mut IInternetSecurityMgrSite) -> ULONG>,
+        ::core::option::Option<unsafe extern "system" fn(This: *mut IInternetSecurityMgrSite) -> ULONG>,
     pub GetWindow: ::core::option::Option<
-        unsafe extern "C" fn(This: *mut IInternetSecurityMgrSite, phwnd: *mut HWND) -> HRESULT,
+        unsafe extern "system" fn(This: *mut IInternetSecurityMgrSite, phwnd: *mut HWND) -> HRESULT,
     >,
     pub EnableModeless: ::core::option::Option<
-        unsafe extern "C" fn(This: *mut IInternetSecurityMgrSite, fEnable: BOOL) -> HRESULT,
+        unsafe extern "system" fn(This: *mut IInternetSecurityMgrSite, fEnable: BOOL) -> HRESULT,
     >,
 }
 #[repr(C)]
@@ -14820,30 +14820,30 @@ pub struct IInternetSecurityMgrSite {
 #[derive(Debug, Copy, Clone)]
 pub struct IInternetSecurityManagerVtbl {
     pub QueryInterface: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IInternetSecurityManager,
             riid: *const IID,
             ppvObject: *mut *mut ::core::ffi::c_void,
         ) -> HRESULT,
     >,
     pub AddRef:
-        ::core::option::Option<unsafe extern "C" fn(This: *mut IInternetSecurityManager) -> ULONG>,
+        ::core::option::Option<unsafe extern "system" fn(This: *mut IInternetSecurityManager) -> ULONG>,
     pub Release:
-        ::core::option::Option<unsafe extern "C" fn(This: *mut IInternetSecurityManager) -> ULONG>,
+        ::core::option::Option<unsafe extern "system" fn(This: *mut IInternetSecurityManager) -> ULONG>,
     pub SetSecuritySite: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IInternetSecurityManager,
             pSite: *mut IInternetSecurityMgrSite,
         ) -> HRESULT,
     >,
     pub GetSecuritySite: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IInternetSecurityManager,
             ppSite: *mut *mut IInternetSecurityMgrSite,
         ) -> HRESULT,
     >,
     pub MapUrlToZone: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IInternetSecurityManager,
             pwszUrl: LPCWSTR,
             pdwZone: *mut DWORD,
@@ -14851,7 +14851,7 @@ pub struct IInternetSecurityManagerVtbl {
         ) -> HRESULT,
     >,
     pub GetSecurityId: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IInternetSecurityManager,
             pwszUrl: LPCWSTR,
             pbSecurityId: *mut BYTE,
@@ -14860,7 +14860,7 @@ pub struct IInternetSecurityManagerVtbl {
         ) -> HRESULT,
     >,
     pub ProcessUrlAction: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IInternetSecurityManager,
             pwszUrl: LPCWSTR,
             dwAction: DWORD,
@@ -14873,7 +14873,7 @@ pub struct IInternetSecurityManagerVtbl {
         ) -> HRESULT,
     >,
     pub QueryCustomPolicy: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IInternetSecurityManager,
             pwszUrl: LPCWSTR,
             guidKey: *const GUID,
@@ -14885,7 +14885,7 @@ pub struct IInternetSecurityManagerVtbl {
         ) -> HRESULT,
     >,
     pub SetZoneMapping: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IInternetSecurityManager,
             dwZone: DWORD,
             lpszPattern: LPCWSTR,
@@ -14893,7 +14893,7 @@ pub struct IInternetSecurityManagerVtbl {
         ) -> HRESULT,
     >,
     pub GetZoneMappings: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IInternetSecurityManager,
             dwZone: DWORD,
             ppenumString: *mut *mut IEnumString,
@@ -14910,32 +14910,32 @@ pub struct IInternetSecurityManager {
 #[derive(Debug, Copy, Clone)]
 pub struct IInternetSecurityManagerExVtbl {
     pub QueryInterface: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IInternetSecurityManagerEx,
             riid: *const IID,
             ppvObject: *mut *mut ::core::ffi::c_void,
         ) -> HRESULT,
     >,
     pub AddRef: ::core::option::Option<
-        unsafe extern "C" fn(This: *mut IInternetSecurityManagerEx) -> ULONG,
+        unsafe extern "system" fn(This: *mut IInternetSecurityManagerEx) -> ULONG,
     >,
     pub Release: ::core::option::Option<
-        unsafe extern "C" fn(This: *mut IInternetSecurityManagerEx) -> ULONG,
+        unsafe extern "system" fn(This: *mut IInternetSecurityManagerEx) -> ULONG,
     >,
     pub SetSecuritySite: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IInternetSecurityManagerEx,
             pSite: *mut IInternetSecurityMgrSite,
         ) -> HRESULT,
     >,
     pub GetSecuritySite: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IInternetSecurityManagerEx,
             ppSite: *mut *mut IInternetSecurityMgrSite,
         ) -> HRESULT,
     >,
     pub MapUrlToZone: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IInternetSecurityManagerEx,
             pwszUrl: LPCWSTR,
             pdwZone: *mut DWORD,
@@ -14943,7 +14943,7 @@ pub struct IInternetSecurityManagerExVtbl {
         ) -> HRESULT,
     >,
     pub GetSecurityId: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IInternetSecurityManagerEx,
             pwszUrl: LPCWSTR,
             pbSecurityId: *mut BYTE,
@@ -14952,7 +14952,7 @@ pub struct IInternetSecurityManagerExVtbl {
         ) -> HRESULT,
     >,
     pub ProcessUrlAction: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IInternetSecurityManagerEx,
             pwszUrl: LPCWSTR,
             dwAction: DWORD,
@@ -14965,7 +14965,7 @@ pub struct IInternetSecurityManagerExVtbl {
         ) -> HRESULT,
     >,
     pub QueryCustomPolicy: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IInternetSecurityManagerEx,
             pwszUrl: LPCWSTR,
             guidKey: *const GUID,
@@ -14977,7 +14977,7 @@ pub struct IInternetSecurityManagerExVtbl {
         ) -> HRESULT,
     >,
     pub SetZoneMapping: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IInternetSecurityManagerEx,
             dwZone: DWORD,
             lpszPattern: LPCWSTR,
@@ -14985,7 +14985,7 @@ pub struct IInternetSecurityManagerExVtbl {
         ) -> HRESULT,
     >,
     pub GetZoneMappings: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IInternetSecurityManagerEx,
             dwZone: DWORD,
             ppenumString: *mut *mut IEnumString,
@@ -14993,7 +14993,7 @@ pub struct IInternetSecurityManagerExVtbl {
         ) -> HRESULT,
     >,
     pub ProcessUrlActionEx: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IInternetSecurityManagerEx,
             pwszUrl: LPCWSTR,
             dwAction: DWORD,
@@ -15016,32 +15016,32 @@ pub struct IInternetSecurityManagerEx {
 #[derive(Debug, Copy, Clone)]
 pub struct IInternetSecurityManagerEx2Vtbl {
     pub QueryInterface: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IInternetSecurityManagerEx2,
             riid: *const IID,
             ppvObject: *mut *mut ::core::ffi::c_void,
         ) -> HRESULT,
     >,
     pub AddRef: ::core::option::Option<
-        unsafe extern "C" fn(This: *mut IInternetSecurityManagerEx2) -> ULONG,
+        unsafe extern "system" fn(This: *mut IInternetSecurityManagerEx2) -> ULONG,
     >,
     pub Release: ::core::option::Option<
-        unsafe extern "C" fn(This: *mut IInternetSecurityManagerEx2) -> ULONG,
+        unsafe extern "system" fn(This: *mut IInternetSecurityManagerEx2) -> ULONG,
     >,
     pub SetSecuritySite: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IInternetSecurityManagerEx2,
             pSite: *mut IInternetSecurityMgrSite,
         ) -> HRESULT,
     >,
     pub GetSecuritySite: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IInternetSecurityManagerEx2,
             ppSite: *mut *mut IInternetSecurityMgrSite,
         ) -> HRESULT,
     >,
     pub MapUrlToZone: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IInternetSecurityManagerEx2,
             pwszUrl: LPCWSTR,
             pdwZone: *mut DWORD,
@@ -15049,7 +15049,7 @@ pub struct IInternetSecurityManagerEx2Vtbl {
         ) -> HRESULT,
     >,
     pub GetSecurityId: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IInternetSecurityManagerEx2,
             pwszUrl: LPCWSTR,
             pbSecurityId: *mut BYTE,
@@ -15058,7 +15058,7 @@ pub struct IInternetSecurityManagerEx2Vtbl {
         ) -> HRESULT,
     >,
     pub ProcessUrlAction: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IInternetSecurityManagerEx2,
             pwszUrl: LPCWSTR,
             dwAction: DWORD,
@@ -15071,7 +15071,7 @@ pub struct IInternetSecurityManagerEx2Vtbl {
         ) -> HRESULT,
     >,
     pub QueryCustomPolicy: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IInternetSecurityManagerEx2,
             pwszUrl: LPCWSTR,
             guidKey: *const GUID,
@@ -15083,7 +15083,7 @@ pub struct IInternetSecurityManagerEx2Vtbl {
         ) -> HRESULT,
     >,
     pub SetZoneMapping: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IInternetSecurityManagerEx2,
             dwZone: DWORD,
             lpszPattern: LPCWSTR,
@@ -15091,7 +15091,7 @@ pub struct IInternetSecurityManagerEx2Vtbl {
         ) -> HRESULT,
     >,
     pub GetZoneMappings: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IInternetSecurityManagerEx2,
             dwZone: DWORD,
             ppenumString: *mut *mut IEnumString,
@@ -15099,7 +15099,7 @@ pub struct IInternetSecurityManagerEx2Vtbl {
         ) -> HRESULT,
     >,
     pub ProcessUrlActionEx: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IInternetSecurityManagerEx2,
             pwszUrl: LPCWSTR,
             dwAction: DWORD,
@@ -15113,7 +15113,7 @@ pub struct IInternetSecurityManagerEx2Vtbl {
         ) -> HRESULT,
     >,
     pub MapUrlToZoneEx2: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IInternetSecurityManagerEx2,
             pUri: *mut IUri,
             pdwZone: *mut DWORD,
@@ -15123,7 +15123,7 @@ pub struct IInternetSecurityManagerEx2Vtbl {
         ) -> HRESULT,
     >,
     pub ProcessUrlActionEx2: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IInternetSecurityManagerEx2,
             pUri: *mut IUri,
             dwAction: DWORD,
@@ -15137,7 +15137,7 @@ pub struct IInternetSecurityManagerEx2Vtbl {
         ) -> HRESULT,
     >,
     pub GetSecurityIdEx2: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IInternetSecurityManagerEx2,
             pUri: *mut IUri,
             pbSecurityId: *mut BYTE,
@@ -15146,7 +15146,7 @@ pub struct IInternetSecurityManagerEx2Vtbl {
         ) -> HRESULT,
     >,
     pub QueryCustomPolicyEx2: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IInternetSecurityManagerEx2,
             pUri: *mut IUri,
             guidKey: *const GUID,
@@ -15167,20 +15167,20 @@ pub struct IInternetSecurityManagerEx2 {
 #[derive(Debug, Copy, Clone)]
 pub struct IInternetHostSecurityManagerVtbl {
     pub QueryInterface: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IInternetHostSecurityManager,
             riid: *const IID,
             ppvObject: *mut *mut ::core::ffi::c_void,
         ) -> HRESULT,
     >,
     pub AddRef: ::core::option::Option<
-        unsafe extern "C" fn(This: *mut IInternetHostSecurityManager) -> ULONG,
+        unsafe extern "system" fn(This: *mut IInternetHostSecurityManager) -> ULONG,
     >,
     pub Release: ::core::option::Option<
-        unsafe extern "C" fn(This: *mut IInternetHostSecurityManager) -> ULONG,
+        unsafe extern "system" fn(This: *mut IInternetHostSecurityManager) -> ULONG,
     >,
     pub GetSecurityId: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IInternetHostSecurityManager,
             pbSecurityId: *mut BYTE,
             pcbSecurityId: *mut DWORD,
@@ -15188,7 +15188,7 @@ pub struct IInternetHostSecurityManagerVtbl {
         ) -> HRESULT,
     >,
     pub ProcessUrlAction: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IInternetHostSecurityManager,
             dwAction: DWORD,
             pPolicy: *mut BYTE,
@@ -15200,7 +15200,7 @@ pub struct IInternetHostSecurityManagerVtbl {
         ) -> HRESULT,
     >,
     pub QueryCustomPolicy: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IInternetHostSecurityManager,
             guidKey: *const GUID,
             ppPolicy: *mut *mut BYTE,
@@ -15238,32 +15238,32 @@ pub use self::_URLZONEREG as URLZONEREG;
 #[derive(Debug, Copy, Clone)]
 pub struct IInternetZoneManagerVtbl {
     pub QueryInterface: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IInternetZoneManager,
             riid: *const IID,
             ppvObject: *mut *mut ::core::ffi::c_void,
         ) -> HRESULT,
     >,
     pub AddRef:
-        ::core::option::Option<unsafe extern "C" fn(This: *mut IInternetZoneManager) -> ULONG>,
+        ::core::option::Option<unsafe extern "system" fn(This: *mut IInternetZoneManager) -> ULONG>,
     pub Release:
-        ::core::option::Option<unsafe extern "C" fn(This: *mut IInternetZoneManager) -> ULONG>,
+        ::core::option::Option<unsafe extern "system" fn(This: *mut IInternetZoneManager) -> ULONG>,
     pub GetZoneAttributes: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IInternetZoneManager,
             dwZone: DWORD,
             pZoneAttributes: *mut ZONEATTRIBUTES,
         ) -> HRESULT,
     >,
     pub SetZoneAttributes: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IInternetZoneManager,
             dwZone: DWORD,
             pZoneAttributes: *mut ZONEATTRIBUTES,
         ) -> HRESULT,
     >,
     pub GetZoneCustomPolicy: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IInternetZoneManager,
             dwZone: DWORD,
             guidKey: *const GUID,
@@ -15273,7 +15273,7 @@ pub struct IInternetZoneManagerVtbl {
         ) -> HRESULT,
     >,
     pub SetZoneCustomPolicy: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IInternetZoneManager,
             dwZone: DWORD,
             guidKey: *const GUID,
@@ -15283,7 +15283,7 @@ pub struct IInternetZoneManagerVtbl {
         ) -> HRESULT,
     >,
     pub GetZoneActionPolicy: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IInternetZoneManager,
             dwZone: DWORD,
             dwAction: DWORD,
@@ -15293,7 +15293,7 @@ pub struct IInternetZoneManagerVtbl {
         ) -> HRESULT,
     >,
     pub SetZoneActionPolicy: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IInternetZoneManager,
             dwZone: DWORD,
             dwAction: DWORD,
@@ -15303,7 +15303,7 @@ pub struct IInternetZoneManagerVtbl {
         ) -> HRESULT,
     >,
     pub PromptAction: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IInternetZoneManager,
             dwAction: DWORD,
             hwndParent: HWND,
@@ -15313,7 +15313,7 @@ pub struct IInternetZoneManagerVtbl {
         ) -> HRESULT,
     >,
     pub LogAction: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IInternetZoneManager,
             dwAction: DWORD,
             pwszUrl: LPCWSTR,
@@ -15322,7 +15322,7 @@ pub struct IInternetZoneManagerVtbl {
         ) -> HRESULT,
     >,
     pub CreateZoneEnumerator: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IInternetZoneManager,
             pdwEnum: *mut DWORD,
             pdwCount: *mut DWORD,
@@ -15330,7 +15330,7 @@ pub struct IInternetZoneManagerVtbl {
         ) -> HRESULT,
     >,
     pub GetZoneAt: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IInternetZoneManager,
             dwEnum: DWORD,
             dwIndex: DWORD,
@@ -15338,10 +15338,10 @@ pub struct IInternetZoneManagerVtbl {
         ) -> HRESULT,
     >,
     pub DestroyZoneEnumerator: ::core::option::Option<
-        unsafe extern "C" fn(This: *mut IInternetZoneManager, dwEnum: DWORD) -> HRESULT,
+        unsafe extern "system" fn(This: *mut IInternetZoneManager, dwEnum: DWORD) -> HRESULT,
     >,
     pub CopyTemplatePoliciesToZone: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IInternetZoneManager,
             dwTemplate: DWORD,
             dwZone: DWORD,
@@ -15358,32 +15358,32 @@ pub struct IInternetZoneManager {
 #[derive(Debug, Copy, Clone)]
 pub struct IInternetZoneManagerExVtbl {
     pub QueryInterface: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IInternetZoneManagerEx,
             riid: *const IID,
             ppvObject: *mut *mut ::core::ffi::c_void,
         ) -> HRESULT,
     >,
     pub AddRef:
-        ::core::option::Option<unsafe extern "C" fn(This: *mut IInternetZoneManagerEx) -> ULONG>,
+        ::core::option::Option<unsafe extern "system" fn(This: *mut IInternetZoneManagerEx) -> ULONG>,
     pub Release:
-        ::core::option::Option<unsafe extern "C" fn(This: *mut IInternetZoneManagerEx) -> ULONG>,
+        ::core::option::Option<unsafe extern "system" fn(This: *mut IInternetZoneManagerEx) -> ULONG>,
     pub GetZoneAttributes: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IInternetZoneManagerEx,
             dwZone: DWORD,
             pZoneAttributes: *mut ZONEATTRIBUTES,
         ) -> HRESULT,
     >,
     pub SetZoneAttributes: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IInternetZoneManagerEx,
             dwZone: DWORD,
             pZoneAttributes: *mut ZONEATTRIBUTES,
         ) -> HRESULT,
     >,
     pub GetZoneCustomPolicy: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IInternetZoneManagerEx,
             dwZone: DWORD,
             guidKey: *const GUID,
@@ -15393,7 +15393,7 @@ pub struct IInternetZoneManagerExVtbl {
         ) -> HRESULT,
     >,
     pub SetZoneCustomPolicy: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IInternetZoneManagerEx,
             dwZone: DWORD,
             guidKey: *const GUID,
@@ -15403,7 +15403,7 @@ pub struct IInternetZoneManagerExVtbl {
         ) -> HRESULT,
     >,
     pub GetZoneActionPolicy: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IInternetZoneManagerEx,
             dwZone: DWORD,
             dwAction: DWORD,
@@ -15413,7 +15413,7 @@ pub struct IInternetZoneManagerExVtbl {
         ) -> HRESULT,
     >,
     pub SetZoneActionPolicy: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IInternetZoneManagerEx,
             dwZone: DWORD,
             dwAction: DWORD,
@@ -15423,7 +15423,7 @@ pub struct IInternetZoneManagerExVtbl {
         ) -> HRESULT,
     >,
     pub PromptAction: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IInternetZoneManagerEx,
             dwAction: DWORD,
             hwndParent: HWND,
@@ -15433,7 +15433,7 @@ pub struct IInternetZoneManagerExVtbl {
         ) -> HRESULT,
     >,
     pub LogAction: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IInternetZoneManagerEx,
             dwAction: DWORD,
             pwszUrl: LPCWSTR,
@@ -15442,7 +15442,7 @@ pub struct IInternetZoneManagerExVtbl {
         ) -> HRESULT,
     >,
     pub CreateZoneEnumerator: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IInternetZoneManagerEx,
             pdwEnum: *mut DWORD,
             pdwCount: *mut DWORD,
@@ -15450,7 +15450,7 @@ pub struct IInternetZoneManagerExVtbl {
         ) -> HRESULT,
     >,
     pub GetZoneAt: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IInternetZoneManagerEx,
             dwEnum: DWORD,
             dwIndex: DWORD,
@@ -15458,10 +15458,10 @@ pub struct IInternetZoneManagerExVtbl {
         ) -> HRESULT,
     >,
     pub DestroyZoneEnumerator: ::core::option::Option<
-        unsafe extern "C" fn(This: *mut IInternetZoneManagerEx, dwEnum: DWORD) -> HRESULT,
+        unsafe extern "system" fn(This: *mut IInternetZoneManagerEx, dwEnum: DWORD) -> HRESULT,
     >,
     pub CopyTemplatePoliciesToZone: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IInternetZoneManagerEx,
             dwTemplate: DWORD,
             dwZone: DWORD,
@@ -15469,7 +15469,7 @@ pub struct IInternetZoneManagerExVtbl {
         ) -> HRESULT,
     >,
     pub GetZoneActionPolicyEx: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IInternetZoneManagerEx,
             dwZone: DWORD,
             dwAction: DWORD,
@@ -15480,7 +15480,7 @@ pub struct IInternetZoneManagerExVtbl {
         ) -> HRESULT,
     >,
     pub SetZoneActionPolicyEx: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IInternetZoneManagerEx,
             dwZone: DWORD,
             dwAction: DWORD,
@@ -15500,32 +15500,32 @@ pub struct IInternetZoneManagerEx {
 #[derive(Debug, Copy, Clone)]
 pub struct IInternetZoneManagerEx2Vtbl {
     pub QueryInterface: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IInternetZoneManagerEx2,
             riid: *const IID,
             ppvObject: *mut *mut ::core::ffi::c_void,
         ) -> HRESULT,
     >,
     pub AddRef:
-        ::core::option::Option<unsafe extern "C" fn(This: *mut IInternetZoneManagerEx2) -> ULONG>,
+        ::core::option::Option<unsafe extern "system" fn(This: *mut IInternetZoneManagerEx2) -> ULONG>,
     pub Release:
-        ::core::option::Option<unsafe extern "C" fn(This: *mut IInternetZoneManagerEx2) -> ULONG>,
+        ::core::option::Option<unsafe extern "system" fn(This: *mut IInternetZoneManagerEx2) -> ULONG>,
     pub GetZoneAttributes: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IInternetZoneManagerEx2,
             dwZone: DWORD,
             pZoneAttributes: *mut ZONEATTRIBUTES,
         ) -> HRESULT,
     >,
     pub SetZoneAttributes: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IInternetZoneManagerEx2,
             dwZone: DWORD,
             pZoneAttributes: *mut ZONEATTRIBUTES,
         ) -> HRESULT,
     >,
     pub GetZoneCustomPolicy: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IInternetZoneManagerEx2,
             dwZone: DWORD,
             guidKey: *const GUID,
@@ -15535,7 +15535,7 @@ pub struct IInternetZoneManagerEx2Vtbl {
         ) -> HRESULT,
     >,
     pub SetZoneCustomPolicy: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IInternetZoneManagerEx2,
             dwZone: DWORD,
             guidKey: *const GUID,
@@ -15545,7 +15545,7 @@ pub struct IInternetZoneManagerEx2Vtbl {
         ) -> HRESULT,
     >,
     pub GetZoneActionPolicy: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IInternetZoneManagerEx2,
             dwZone: DWORD,
             dwAction: DWORD,
@@ -15555,7 +15555,7 @@ pub struct IInternetZoneManagerEx2Vtbl {
         ) -> HRESULT,
     >,
     pub SetZoneActionPolicy: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IInternetZoneManagerEx2,
             dwZone: DWORD,
             dwAction: DWORD,
@@ -15565,7 +15565,7 @@ pub struct IInternetZoneManagerEx2Vtbl {
         ) -> HRESULT,
     >,
     pub PromptAction: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IInternetZoneManagerEx2,
             dwAction: DWORD,
             hwndParent: HWND,
@@ -15575,7 +15575,7 @@ pub struct IInternetZoneManagerEx2Vtbl {
         ) -> HRESULT,
     >,
     pub LogAction: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IInternetZoneManagerEx2,
             dwAction: DWORD,
             pwszUrl: LPCWSTR,
@@ -15584,7 +15584,7 @@ pub struct IInternetZoneManagerEx2Vtbl {
         ) -> HRESULT,
     >,
     pub CreateZoneEnumerator: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IInternetZoneManagerEx2,
             pdwEnum: *mut DWORD,
             pdwCount: *mut DWORD,
@@ -15592,7 +15592,7 @@ pub struct IInternetZoneManagerEx2Vtbl {
         ) -> HRESULT,
     >,
     pub GetZoneAt: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IInternetZoneManagerEx2,
             dwEnum: DWORD,
             dwIndex: DWORD,
@@ -15600,10 +15600,10 @@ pub struct IInternetZoneManagerEx2Vtbl {
         ) -> HRESULT,
     >,
     pub DestroyZoneEnumerator: ::core::option::Option<
-        unsafe extern "C" fn(This: *mut IInternetZoneManagerEx2, dwEnum: DWORD) -> HRESULT,
+        unsafe extern "system" fn(This: *mut IInternetZoneManagerEx2, dwEnum: DWORD) -> HRESULT,
     >,
     pub CopyTemplatePoliciesToZone: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IInternetZoneManagerEx2,
             dwTemplate: DWORD,
             dwZone: DWORD,
@@ -15611,7 +15611,7 @@ pub struct IInternetZoneManagerEx2Vtbl {
         ) -> HRESULT,
     >,
     pub GetZoneActionPolicyEx: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IInternetZoneManagerEx2,
             dwZone: DWORD,
             dwAction: DWORD,
@@ -15622,7 +15622,7 @@ pub struct IInternetZoneManagerEx2Vtbl {
         ) -> HRESULT,
     >,
     pub SetZoneActionPolicyEx: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IInternetZoneManagerEx2,
             dwZone: DWORD,
             dwAction: DWORD,
@@ -15633,7 +15633,7 @@ pub struct IInternetZoneManagerEx2Vtbl {
         ) -> HRESULT,
     >,
     pub GetZoneAttributesEx: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IInternetZoneManagerEx2,
             dwZone: DWORD,
             pZoneAttributes: *mut ZONEATTRIBUTES,
@@ -15641,7 +15641,7 @@ pub struct IInternetZoneManagerEx2Vtbl {
         ) -> HRESULT,
     >,
     pub GetZoneSecurityState: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IInternetZoneManagerEx2,
             dwZoneIndex: DWORD,
             fRespectPolicy: BOOL,
@@ -15650,7 +15650,7 @@ pub struct IInternetZoneManagerEx2Vtbl {
         ) -> HRESULT,
     >,
     pub GetIESecurityState: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IInternetZoneManagerEx2,
             fRespectPolicy: BOOL,
             pdwState: LPDWORD,
@@ -15659,7 +15659,7 @@ pub struct IInternetZoneManagerEx2Vtbl {
         ) -> HRESULT,
     >,
     pub FixInsecureSettings:
-        ::core::option::Option<unsafe extern "C" fn(This: *mut IInternetZoneManagerEx2) -> HRESULT>,
+        ::core::option::Option<unsafe extern "system" fn(This: *mut IInternetZoneManagerEx2) -> HRESULT>,
 }
 #[repr(C)]
 #[derive(Debug, Copy, Clone)]
@@ -15699,16 +15699,16 @@ pub type LPCODEBASEHOLD = *mut _tagCODEBASEHOLD;
 #[derive(Debug, Copy, Clone)]
 pub struct ISoftDistExtVtbl {
     pub QueryInterface: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut ISoftDistExt,
             riid: *const IID,
             ppvObject: *mut *mut ::core::ffi::c_void,
         ) -> HRESULT,
     >,
-    pub AddRef: ::core::option::Option<unsafe extern "C" fn(This: *mut ISoftDistExt) -> ULONG>,
-    pub Release: ::core::option::Option<unsafe extern "C" fn(This: *mut ISoftDistExt) -> ULONG>,
+    pub AddRef: ::core::option::Option<unsafe extern "system" fn(This: *mut ISoftDistExt) -> ULONG>,
+    pub Release: ::core::option::Option<unsafe extern "system" fn(This: *mut ISoftDistExt) -> ULONG>,
     pub ProcessSoftDist: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut ISoftDistExt,
             szCDFURL: LPCWSTR,
             pSoftDistElement: *mut IXMLElement,
@@ -15716,21 +15716,21 @@ pub struct ISoftDistExtVtbl {
         ) -> HRESULT,
     >,
     pub GetFirstCodeBase: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut ISoftDistExt,
             szCodeBase: *mut LPWSTR,
             dwMaxSize: LPDWORD,
         ) -> HRESULT,
     >,
     pub GetNextCodeBase: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut ISoftDistExt,
             szCodeBase: *mut LPWSTR,
             dwMaxSize: LPDWORD,
         ) -> HRESULT,
     >,
     pub AsyncInstallDistributionUnit: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut ISoftDistExt,
             pbc: *mut IBindCtx,
             lpReserved: LPVOID,
@@ -15829,16 +15829,16 @@ pub use self::__WIDL_urlmon_generated_name_00000019 as Uri_PROPERTY;
 #[derive(Debug, Copy, Clone)]
 pub struct IUriVtbl {
     pub QueryInterface: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IUri,
             riid: *const IID,
             ppvObject: *mut *mut ::core::ffi::c_void,
         ) -> HRESULT,
     >,
-    pub AddRef: ::core::option::Option<unsafe extern "C" fn(This: *mut IUri) -> ULONG>,
-    pub Release: ::core::option::Option<unsafe extern "C" fn(This: *mut IUri) -> ULONG>,
+    pub AddRef: ::core::option::Option<unsafe extern "system" fn(This: *mut IUri) -> ULONG>,
+    pub Release: ::core::option::Option<unsafe extern "system" fn(This: *mut IUri) -> ULONG>,
     pub GetPropertyBSTR: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IUri,
             uriProp: Uri_PROPERTY,
             pbstrProperty: *mut BSTR,
@@ -15846,7 +15846,7 @@ pub struct IUriVtbl {
         ) -> HRESULT,
     >,
     pub GetPropertyLength: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IUri,
             uriProp: Uri_PROPERTY,
             pcchProperty: *mut DWORD,
@@ -15854,7 +15854,7 @@ pub struct IUriVtbl {
         ) -> HRESULT,
     >,
     pub GetPropertyDWORD: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IUri,
             uriProp: Uri_PROPERTY,
             pdwProperty: *mut DWORD,
@@ -15862,73 +15862,73 @@ pub struct IUriVtbl {
         ) -> HRESULT,
     >,
     pub HasProperty: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IUri,
             uriProp: Uri_PROPERTY,
             pfHasProperty: *mut BOOL,
         ) -> HRESULT,
     >,
     pub GetAbsoluteUri: ::core::option::Option<
-        unsafe extern "C" fn(This: *mut IUri, pbstrAbsoluteUri: *mut BSTR) -> HRESULT,
+        unsafe extern "system" fn(This: *mut IUri, pbstrAbsoluteUri: *mut BSTR) -> HRESULT,
     >,
     pub GetAuthority: ::core::option::Option<
-        unsafe extern "C" fn(This: *mut IUri, pbstrAuthority: *mut BSTR) -> HRESULT,
+        unsafe extern "system" fn(This: *mut IUri, pbstrAuthority: *mut BSTR) -> HRESULT,
     >,
     pub GetDisplayUri: ::core::option::Option<
-        unsafe extern "C" fn(This: *mut IUri, pbstrDisplayString: *mut BSTR) -> HRESULT,
+        unsafe extern "system" fn(This: *mut IUri, pbstrDisplayString: *mut BSTR) -> HRESULT,
     >,
     pub GetDomain: ::core::option::Option<
-        unsafe extern "C" fn(This: *mut IUri, pbstrDomain: *mut BSTR) -> HRESULT,
+        unsafe extern "system" fn(This: *mut IUri, pbstrDomain: *mut BSTR) -> HRESULT,
     >,
     pub GetExtension: ::core::option::Option<
-        unsafe extern "C" fn(This: *mut IUri, pbstrExtension: *mut BSTR) -> HRESULT,
+        unsafe extern "system" fn(This: *mut IUri, pbstrExtension: *mut BSTR) -> HRESULT,
     >,
     pub GetFragment: ::core::option::Option<
-        unsafe extern "C" fn(This: *mut IUri, pbstrFragment: *mut BSTR) -> HRESULT,
+        unsafe extern "system" fn(This: *mut IUri, pbstrFragment: *mut BSTR) -> HRESULT,
     >,
     pub GetHost: ::core::option::Option<
-        unsafe extern "C" fn(This: *mut IUri, pbstrHost: *mut BSTR) -> HRESULT,
+        unsafe extern "system" fn(This: *mut IUri, pbstrHost: *mut BSTR) -> HRESULT,
     >,
     pub GetPassword: ::core::option::Option<
-        unsafe extern "C" fn(This: *mut IUri, pbstrPassword: *mut BSTR) -> HRESULT,
+        unsafe extern "system" fn(This: *mut IUri, pbstrPassword: *mut BSTR) -> HRESULT,
     >,
     pub GetPath: ::core::option::Option<
-        unsafe extern "C" fn(This: *mut IUri, pbstrPath: *mut BSTR) -> HRESULT,
+        unsafe extern "system" fn(This: *mut IUri, pbstrPath: *mut BSTR) -> HRESULT,
     >,
     pub GetPathAndQuery: ::core::option::Option<
-        unsafe extern "C" fn(This: *mut IUri, pbstrPathAndQuery: *mut BSTR) -> HRESULT,
+        unsafe extern "system" fn(This: *mut IUri, pbstrPathAndQuery: *mut BSTR) -> HRESULT,
     >,
     pub GetQuery: ::core::option::Option<
-        unsafe extern "C" fn(This: *mut IUri, pbstrQuery: *mut BSTR) -> HRESULT,
+        unsafe extern "system" fn(This: *mut IUri, pbstrQuery: *mut BSTR) -> HRESULT,
     >,
     pub GetRawUri: ::core::option::Option<
-        unsafe extern "C" fn(This: *mut IUri, pbstrRawUri: *mut BSTR) -> HRESULT,
+        unsafe extern "system" fn(This: *mut IUri, pbstrRawUri: *mut BSTR) -> HRESULT,
     >,
     pub GetSchemeName: ::core::option::Option<
-        unsafe extern "C" fn(This: *mut IUri, pbstrSchemeName: *mut BSTR) -> HRESULT,
+        unsafe extern "system" fn(This: *mut IUri, pbstrSchemeName: *mut BSTR) -> HRESULT,
     >,
     pub GetUserInfo: ::core::option::Option<
-        unsafe extern "C" fn(This: *mut IUri, pbstrUserInfo: *mut BSTR) -> HRESULT,
+        unsafe extern "system" fn(This: *mut IUri, pbstrUserInfo: *mut BSTR) -> HRESULT,
     >,
     pub GetUserNameA: ::core::option::Option<
-        unsafe extern "C" fn(This: *mut IUri, pbstrUserName: *mut BSTR) -> HRESULT,
+        unsafe extern "system" fn(This: *mut IUri, pbstrUserName: *mut BSTR) -> HRESULT,
     >,
     pub GetHostType: ::core::option::Option<
-        unsafe extern "C" fn(This: *mut IUri, pdwHostType: *mut DWORD) -> HRESULT,
+        unsafe extern "system" fn(This: *mut IUri, pdwHostType: *mut DWORD) -> HRESULT,
     >,
     pub GetPort: ::core::option::Option<
-        unsafe extern "C" fn(This: *mut IUri, pdwPort: *mut DWORD) -> HRESULT,
+        unsafe extern "system" fn(This: *mut IUri, pdwPort: *mut DWORD) -> HRESULT,
     >,
     pub GetScheme: ::core::option::Option<
-        unsafe extern "C" fn(This: *mut IUri, pdwScheme: *mut DWORD) -> HRESULT,
+        unsafe extern "system" fn(This: *mut IUri, pdwScheme: *mut DWORD) -> HRESULT,
     >,
     pub GetZone: ::core::option::Option<
-        unsafe extern "C" fn(This: *mut IUri, pdwZone: *mut DWORD) -> HRESULT,
+        unsafe extern "system" fn(This: *mut IUri, pdwZone: *mut DWORD) -> HRESULT,
     >,
     pub GetProperties:
-        ::core::option::Option<unsafe extern "C" fn(This: *mut IUri, pdwFlags: LPDWORD) -> HRESULT>,
+        ::core::option::Option<unsafe extern "system" fn(This: *mut IUri, pdwFlags: LPDWORD) -> HRESULT>,
     pub IsEqual: ::core::option::Option<
-        unsafe extern "C" fn(This: *mut IUri, pUri: *mut IUri, pfEqual: *mut BOOL) -> HRESULT,
+        unsafe extern "system" fn(This: *mut IUri, pUri: *mut IUri, pfEqual: *mut BOOL) -> HRESULT,
     >,
 }
 #[repr(C)]
@@ -15940,16 +15940,16 @@ pub struct IUri {
 #[derive(Debug, Copy, Clone)]
 pub struct IUriContainerVtbl {
     pub QueryInterface: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IUriContainer,
             riid: *const IID,
             ppvObject: *mut *mut ::core::ffi::c_void,
         ) -> HRESULT,
     >,
-    pub AddRef: ::core::option::Option<unsafe extern "C" fn(This: *mut IUriContainer) -> ULONG>,
-    pub Release: ::core::option::Option<unsafe extern "C" fn(This: *mut IUriContainer) -> ULONG>,
+    pub AddRef: ::core::option::Option<unsafe extern "system" fn(This: *mut IUriContainer) -> ULONG>,
+    pub Release: ::core::option::Option<unsafe extern "system" fn(This: *mut IUriContainer) -> ULONG>,
     pub GetIUri: ::core::option::Option<
-        unsafe extern "C" fn(This: *mut IUriContainer, ppIUri: *mut *mut IUri) -> HRESULT,
+        unsafe extern "system" fn(This: *mut IUriContainer, ppIUri: *mut *mut IUri) -> HRESULT,
     >,
 }
 #[repr(C)]
@@ -15961,16 +15961,16 @@ pub struct IUriContainer {
 #[derive(Debug, Copy, Clone)]
 pub struct IUriBuilderVtbl {
     pub QueryInterface: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IUriBuilder,
             riid: *const IID,
             ppvObject: *mut *mut ::core::ffi::c_void,
         ) -> HRESULT,
     >,
-    pub AddRef: ::core::option::Option<unsafe extern "C" fn(This: *mut IUriBuilder) -> ULONG>,
-    pub Release: ::core::option::Option<unsafe extern "C" fn(This: *mut IUriBuilder) -> ULONG>,
+    pub AddRef: ::core::option::Option<unsafe extern "system" fn(This: *mut IUriBuilder) -> ULONG>,
+    pub Release: ::core::option::Option<unsafe extern "system" fn(This: *mut IUriBuilder) -> ULONG>,
     pub CreateUriSimple: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IUriBuilder,
             dwAllowEncodingPropertyMask: DWORD,
             dwReserved: DWORD_PTR,
@@ -15978,7 +15978,7 @@ pub struct IUriBuilderVtbl {
         ) -> HRESULT,
     >,
     pub CreateUri: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IUriBuilder,
             dwCreateFlags: DWORD,
             dwAllowEncodingPropertyMask: DWORD,
@@ -15987,7 +15987,7 @@ pub struct IUriBuilderVtbl {
         ) -> HRESULT,
     >,
     pub CreateUriWithFlags: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IUriBuilder,
             dwCreateFlags: DWORD,
             dwUriBuilderFlags: DWORD,
@@ -15997,96 +15997,96 @@ pub struct IUriBuilderVtbl {
         ) -> HRESULT,
     >,
     pub GetIUri: ::core::option::Option<
-        unsafe extern "C" fn(This: *mut IUriBuilder, ppIUri: *mut *mut IUri) -> HRESULT,
+        unsafe extern "system" fn(This: *mut IUriBuilder, ppIUri: *mut *mut IUri) -> HRESULT,
     >,
     pub SetIUri: ::core::option::Option<
-        unsafe extern "C" fn(This: *mut IUriBuilder, pIUri: *mut IUri) -> HRESULT,
+        unsafe extern "system" fn(This: *mut IUriBuilder, pIUri: *mut IUri) -> HRESULT,
     >,
     pub GetFragment: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IUriBuilder,
             pcchFragment: *mut DWORD,
             ppwzFragment: *mut LPCWSTR,
         ) -> HRESULT,
     >,
     pub GetHost: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IUriBuilder,
             pcchHost: *mut DWORD,
             ppwzHost: *mut LPCWSTR,
         ) -> HRESULT,
     >,
     pub GetPassword: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IUriBuilder,
             pcchPassword: *mut DWORD,
             ppwzPassword: *mut LPCWSTR,
         ) -> HRESULT,
     >,
     pub GetPath: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IUriBuilder,
             pcchPath: *mut DWORD,
             ppwzPath: *mut LPCWSTR,
         ) -> HRESULT,
     >,
     pub GetPort: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IUriBuilder,
             pfHasPort: *mut BOOL,
             pdwPort: *mut DWORD,
         ) -> HRESULT,
     >,
     pub GetQuery: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IUriBuilder,
             pcchQuery: *mut DWORD,
             ppwzQuery: *mut LPCWSTR,
         ) -> HRESULT,
     >,
     pub GetSchemeName: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IUriBuilder,
             pcchSchemeName: *mut DWORD,
             ppwzSchemeName: *mut LPCWSTR,
         ) -> HRESULT,
     >,
     pub GetUserNameA: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IUriBuilder,
             pcchUserName: *mut DWORD,
             ppwzUserName: *mut LPCWSTR,
         ) -> HRESULT,
     >,
     pub SetFragment: ::core::option::Option<
-        unsafe extern "C" fn(This: *mut IUriBuilder, pwzNewValue: LPCWSTR) -> HRESULT,
+        unsafe extern "system" fn(This: *mut IUriBuilder, pwzNewValue: LPCWSTR) -> HRESULT,
     >,
     pub SetHost: ::core::option::Option<
-        unsafe extern "C" fn(This: *mut IUriBuilder, pwzNewValue: LPCWSTR) -> HRESULT,
+        unsafe extern "system" fn(This: *mut IUriBuilder, pwzNewValue: LPCWSTR) -> HRESULT,
     >,
     pub SetPassword: ::core::option::Option<
-        unsafe extern "C" fn(This: *mut IUriBuilder, pwzNewValue: LPCWSTR) -> HRESULT,
+        unsafe extern "system" fn(This: *mut IUriBuilder, pwzNewValue: LPCWSTR) -> HRESULT,
     >,
     pub SetPath: ::core::option::Option<
-        unsafe extern "C" fn(This: *mut IUriBuilder, pwzNewValue: LPCWSTR) -> HRESULT,
+        unsafe extern "system" fn(This: *mut IUriBuilder, pwzNewValue: LPCWSTR) -> HRESULT,
     >,
     pub SetPort: ::core::option::Option<
-        unsafe extern "C" fn(This: *mut IUriBuilder, fHasPort: BOOL, dwNewValue: DWORD) -> HRESULT,
+        unsafe extern "system" fn(This: *mut IUriBuilder, fHasPort: BOOL, dwNewValue: DWORD) -> HRESULT,
     >,
     pub SetQuery: ::core::option::Option<
-        unsafe extern "C" fn(This: *mut IUriBuilder, pwzNewValue: LPCWSTR) -> HRESULT,
+        unsafe extern "system" fn(This: *mut IUriBuilder, pwzNewValue: LPCWSTR) -> HRESULT,
     >,
     pub SetSchemeName: ::core::option::Option<
-        unsafe extern "C" fn(This: *mut IUriBuilder, pwzNewValue: LPCWSTR) -> HRESULT,
+        unsafe extern "system" fn(This: *mut IUriBuilder, pwzNewValue: LPCWSTR) -> HRESULT,
     >,
     pub SetUserName: ::core::option::Option<
-        unsafe extern "C" fn(This: *mut IUriBuilder, pwzNewValue: LPCWSTR) -> HRESULT,
+        unsafe extern "system" fn(This: *mut IUriBuilder, pwzNewValue: LPCWSTR) -> HRESULT,
     >,
     pub RemoveProperties: ::core::option::Option<
-        unsafe extern "C" fn(This: *mut IUriBuilder, dwPropertyMask: DWORD) -> HRESULT,
+        unsafe extern "system" fn(This: *mut IUriBuilder, dwPropertyMask: DWORD) -> HRESULT,
     >,
     pub HasBeenModified: ::core::option::Option<
-        unsafe extern "C" fn(This: *mut IUriBuilder, pfModified: *mut BOOL) -> HRESULT,
+        unsafe extern "system" fn(This: *mut IUriBuilder, pfModified: *mut BOOL) -> HRESULT,
     >,
 }
 #[repr(C)]
@@ -16098,18 +16098,18 @@ pub struct IUriBuilder {
 #[derive(Debug, Copy, Clone)]
 pub struct IUriBuilderFactoryVtbl {
     pub QueryInterface: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IUriBuilderFactory,
             riid: *const IID,
             ppvObject: *mut *mut ::core::ffi::c_void,
         ) -> HRESULT,
     >,
     pub AddRef:
-        ::core::option::Option<unsafe extern "C" fn(This: *mut IUriBuilderFactory) -> ULONG>,
+        ::core::option::Option<unsafe extern "system" fn(This: *mut IUriBuilderFactory) -> ULONG>,
     pub Release:
-        ::core::option::Option<unsafe extern "C" fn(This: *mut IUriBuilderFactory) -> ULONG>,
+        ::core::option::Option<unsafe extern "system" fn(This: *mut IUriBuilderFactory) -> ULONG>,
     pub CreateIUriBuilder: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IUriBuilderFactory,
             dwFlags: DWORD,
             dwReserved: DWORD_PTR,
@@ -16117,7 +16117,7 @@ pub struct IUriBuilderFactoryVtbl {
         ) -> HRESULT,
     >,
     pub CreateInitializedIUriBuilder: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IUriBuilderFactory,
             dwFlags: DWORD,
             dwReserved: DWORD_PTR,
@@ -16134,18 +16134,18 @@ pub struct IUriBuilderFactory {
 #[derive(Debug, Copy, Clone)]
 pub struct IInternetProtocolExVtbl {
     pub QueryInterface: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IInternetProtocolEx,
             riid: *const IID,
             ppvObject: *mut *mut ::core::ffi::c_void,
         ) -> HRESULT,
     >,
     pub AddRef:
-        ::core::option::Option<unsafe extern "C" fn(This: *mut IInternetProtocolEx) -> ULONG>,
+        ::core::option::Option<unsafe extern "system" fn(This: *mut IInternetProtocolEx) -> ULONG>,
     pub Release:
-        ::core::option::Option<unsafe extern "C" fn(This: *mut IInternetProtocolEx) -> ULONG>,
+        ::core::option::Option<unsafe extern "system" fn(This: *mut IInternetProtocolEx) -> ULONG>,
     pub Start: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IInternetProtocolEx,
             szUrl: LPCWSTR,
             pOIProtSink: *mut IInternetProtocolSink,
@@ -16155,27 +16155,27 @@ pub struct IInternetProtocolExVtbl {
         ) -> HRESULT,
     >,
     pub Continue: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IInternetProtocolEx,
             pProtocolData: *mut PROTOCOLDATA,
         ) -> HRESULT,
     >,
     pub Abort: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IInternetProtocolEx,
             hrReason: HRESULT,
             dwOptions: DWORD,
         ) -> HRESULT,
     >,
     pub Terminate: ::core::option::Option<
-        unsafe extern "C" fn(This: *mut IInternetProtocolEx, dwOptions: DWORD) -> HRESULT,
+        unsafe extern "system" fn(This: *mut IInternetProtocolEx, dwOptions: DWORD) -> HRESULT,
     >,
     pub Suspend:
-        ::core::option::Option<unsafe extern "C" fn(This: *mut IInternetProtocolEx) -> HRESULT>,
+        ::core::option::Option<unsafe extern "system" fn(This: *mut IInternetProtocolEx) -> HRESULT>,
     pub Resume:
-        ::core::option::Option<unsafe extern "C" fn(This: *mut IInternetProtocolEx) -> HRESULT>,
+        ::core::option::Option<unsafe extern "system" fn(This: *mut IInternetProtocolEx) -> HRESULT>,
     pub Read: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IInternetProtocolEx,
             pv: *mut ::core::ffi::c_void,
             cb: ULONG,
@@ -16183,7 +16183,7 @@ pub struct IInternetProtocolExVtbl {
         ) -> HRESULT,
     >,
     pub Seek: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IInternetProtocolEx,
             dlibMove: LARGE_INTEGER,
             dwOrigin: DWORD,
@@ -16191,12 +16191,12 @@ pub struct IInternetProtocolExVtbl {
         ) -> HRESULT,
     >,
     pub LockRequest: ::core::option::Option<
-        unsafe extern "C" fn(This: *mut IInternetProtocolEx, dwOptions: DWORD) -> HRESULT,
+        unsafe extern "system" fn(This: *mut IInternetProtocolEx, dwOptions: DWORD) -> HRESULT,
     >,
     pub UnlockRequest:
-        ::core::option::Option<unsafe extern "C" fn(This: *mut IInternetProtocolEx) -> HRESULT>,
+        ::core::option::Option<unsafe extern "system" fn(This: *mut IInternetProtocolEx) -> HRESULT>,
     pub StartEx: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IInternetProtocolEx,
             pUri: *mut IUri,
             pOIProtSink: *mut IInternetProtocolSink,
@@ -16223,16 +16223,16 @@ pub use self::__WIDL_urlmon_generated_name_0000001B as BINDHANDLETYPES;
 #[derive(Debug, Copy, Clone)]
 pub struct IGetBindHandleVtbl {
     pub QueryInterface: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IGetBindHandle,
             riid: *const IID,
             ppvObject: *mut *mut ::core::ffi::c_void,
         ) -> HRESULT,
     >,
-    pub AddRef: ::core::option::Option<unsafe extern "C" fn(This: *mut IGetBindHandle) -> ULONG>,
-    pub Release: ::core::option::Option<unsafe extern "C" fn(This: *mut IGetBindHandle) -> ULONG>,
+    pub AddRef: ::core::option::Option<unsafe extern "system" fn(This: *mut IGetBindHandle) -> ULONG>,
+    pub Release: ::core::option::Option<unsafe extern "system" fn(This: *mut IGetBindHandle) -> ULONG>,
     pub GetBindHandle: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IGetBindHandle,
             enumRequestedHandle: BINDHANDLETYPES,
             pRetHandle: *mut HANDLE,
@@ -16248,18 +16248,18 @@ pub struct IGetBindHandle {
 #[derive(Debug, Copy, Clone)]
 pub struct IBindCallbackRedirectVtbl {
     pub QueryInterface: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IBindCallbackRedirect,
             riid: *const IID,
             ppvObject: *mut *mut ::core::ffi::c_void,
         ) -> HRESULT,
     >,
     pub AddRef:
-        ::core::option::Option<unsafe extern "C" fn(This: *mut IBindCallbackRedirect) -> ULONG>,
+        ::core::option::Option<unsafe extern "system" fn(This: *mut IBindCallbackRedirect) -> ULONG>,
     pub Release:
-        ::core::option::Option<unsafe extern "C" fn(This: *mut IBindCallbackRedirect) -> ULONG>,
+        ::core::option::Option<unsafe extern "system" fn(This: *mut IBindCallbackRedirect) -> ULONG>,
     pub Redirect: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IBindCallbackRedirect,
             lpcUrl: LPCWSTR,
             vbCancel: *mut VARIANT_BOOL,
@@ -16537,16 +16537,16 @@ pub type STATPROPSETSTG = tagSTATPROPSETSTG;
 #[derive(Debug, Copy, Clone)]
 pub struct IPropertyStorageVtbl {
     pub QueryInterface: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IPropertyStorage,
             riid: *const IID,
             ppvObject: *mut *mut ::core::ffi::c_void,
         ) -> HRESULT,
     >,
-    pub AddRef: ::core::option::Option<unsafe extern "C" fn(This: *mut IPropertyStorage) -> ULONG>,
-    pub Release: ::core::option::Option<unsafe extern "C" fn(This: *mut IPropertyStorage) -> ULONG>,
+    pub AddRef: ::core::option::Option<unsafe extern "system" fn(This: *mut IPropertyStorage) -> ULONG>,
+    pub Release: ::core::option::Option<unsafe extern "system" fn(This: *mut IPropertyStorage) -> ULONG>,
     pub ReadMultiple: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IPropertyStorage,
             cpspec: ULONG,
             rgpspec: *const PROPSPEC,
@@ -16554,7 +16554,7 @@ pub struct IPropertyStorageVtbl {
         ) -> HRESULT,
     >,
     pub WriteMultiple: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IPropertyStorage,
             cpspec: ULONG,
             rgpspec: *const PROPSPEC,
@@ -16563,14 +16563,14 @@ pub struct IPropertyStorageVtbl {
         ) -> HRESULT,
     >,
     pub DeleteMultiple: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IPropertyStorage,
             cpspec: ULONG,
             rgpspec: *const PROPSPEC,
         ) -> HRESULT,
     >,
     pub ReadPropertyNames: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IPropertyStorage,
             cpropid: ULONG,
             rgpropid: *const PROPID,
@@ -16578,7 +16578,7 @@ pub struct IPropertyStorageVtbl {
         ) -> HRESULT,
     >,
     pub WritePropertyNames: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IPropertyStorage,
             cpropid: ULONG,
             rgpropid: *const PROPID,
@@ -16586,25 +16586,25 @@ pub struct IPropertyStorageVtbl {
         ) -> HRESULT,
     >,
     pub DeletePropertyNames: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IPropertyStorage,
             cpropid: ULONG,
             rgpropid: *const PROPID,
         ) -> HRESULT,
     >,
     pub Commit: ::core::option::Option<
-        unsafe extern "C" fn(This: *mut IPropertyStorage, grfCommitFlags: DWORD) -> HRESULT,
+        unsafe extern "system" fn(This: *mut IPropertyStorage, grfCommitFlags: DWORD) -> HRESULT,
     >,
     pub Revert:
-        ::core::option::Option<unsafe extern "C" fn(This: *mut IPropertyStorage) -> HRESULT>,
+        ::core::option::Option<unsafe extern "system" fn(This: *mut IPropertyStorage) -> HRESULT>,
     pub Enum: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IPropertyStorage,
             ppenum: *mut *mut IEnumSTATPROPSTG,
         ) -> HRESULT,
     >,
     pub SetTimes: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IPropertyStorage,
             pctime: *const FILETIME,
             patime: *const FILETIME,
@@ -16612,10 +16612,10 @@ pub struct IPropertyStorageVtbl {
         ) -> HRESULT,
     >,
     pub SetClass: ::core::option::Option<
-        unsafe extern "C" fn(This: *mut IPropertyStorage, clsid: *const CLSID) -> HRESULT,
+        unsafe extern "system" fn(This: *mut IPropertyStorage, clsid: *const CLSID) -> HRESULT,
     >,
     pub Stat: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IPropertyStorage,
             statpsstg: *mut STATPROPSETSTG,
         ) -> HRESULT,
@@ -16630,18 +16630,18 @@ pub struct IPropertyStorage {
 #[derive(Debug, Copy, Clone)]
 pub struct IPropertySetStorageVtbl {
     pub QueryInterface: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IPropertySetStorage,
             riid: *const IID,
             ppvObject: *mut *mut ::core::ffi::c_void,
         ) -> HRESULT,
     >,
     pub AddRef:
-        ::core::option::Option<unsafe extern "C" fn(This: *mut IPropertySetStorage) -> ULONG>,
+        ::core::option::Option<unsafe extern "system" fn(This: *mut IPropertySetStorage) -> ULONG>,
     pub Release:
-        ::core::option::Option<unsafe extern "C" fn(This: *mut IPropertySetStorage) -> ULONG>,
+        ::core::option::Option<unsafe extern "system" fn(This: *mut IPropertySetStorage) -> ULONG>,
     pub Create: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IPropertySetStorage,
             rfmtid: *const FMTID,
             pclsid: *const CLSID,
@@ -16651,7 +16651,7 @@ pub struct IPropertySetStorageVtbl {
         ) -> HRESULT,
     >,
     pub Open: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IPropertySetStorage,
             rfmtid: *const FMTID,
             grfMode: DWORD,
@@ -16659,10 +16659,10 @@ pub struct IPropertySetStorageVtbl {
         ) -> HRESULT,
     >,
     pub Delete: ::core::option::Option<
-        unsafe extern "C" fn(This: *mut IPropertySetStorage, rfmtid: *const FMTID) -> HRESULT,
+        unsafe extern "system" fn(This: *mut IPropertySetStorage, rfmtid: *const FMTID) -> HRESULT,
     >,
     pub Enum: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IPropertySetStorage,
             ppenum: *mut *mut IEnumSTATPROPSETSTG,
         ) -> HRESULT,
@@ -16677,16 +16677,16 @@ pub struct IPropertySetStorage {
 #[derive(Debug, Copy, Clone)]
 pub struct IEnumSTATPROPSTGVtbl {
     pub QueryInterface: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IEnumSTATPROPSTG,
             riid: *const IID,
             ppvObject: *mut *mut ::core::ffi::c_void,
         ) -> HRESULT,
     >,
-    pub AddRef: ::core::option::Option<unsafe extern "C" fn(This: *mut IEnumSTATPROPSTG) -> ULONG>,
-    pub Release: ::core::option::Option<unsafe extern "C" fn(This: *mut IEnumSTATPROPSTG) -> ULONG>,
+    pub AddRef: ::core::option::Option<unsafe extern "system" fn(This: *mut IEnumSTATPROPSTG) -> ULONG>,
+    pub Release: ::core::option::Option<unsafe extern "system" fn(This: *mut IEnumSTATPROPSTG) -> ULONG>,
     pub Next: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IEnumSTATPROPSTG,
             celt: ULONG,
             rgelt: *mut STATPROPSTG,
@@ -16694,11 +16694,11 @@ pub struct IEnumSTATPROPSTGVtbl {
         ) -> HRESULT,
     >,
     pub Skip: ::core::option::Option<
-        unsafe extern "C" fn(This: *mut IEnumSTATPROPSTG, celt: ULONG) -> HRESULT,
+        unsafe extern "system" fn(This: *mut IEnumSTATPROPSTG, celt: ULONG) -> HRESULT,
     >,
-    pub Reset: ::core::option::Option<unsafe extern "C" fn(This: *mut IEnumSTATPROPSTG) -> HRESULT>,
+    pub Reset: ::core::option::Option<unsafe extern "system" fn(This: *mut IEnumSTATPROPSTG) -> HRESULT>,
     pub Clone: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IEnumSTATPROPSTG,
             ppenum: *mut *mut IEnumSTATPROPSTG,
         ) -> HRESULT,
@@ -16713,18 +16713,18 @@ pub struct IEnumSTATPROPSTG {
 #[derive(Debug, Copy, Clone)]
 pub struct IEnumSTATPROPSETSTGVtbl {
     pub QueryInterface: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IEnumSTATPROPSETSTG,
             riid: *const IID,
             ppvObject: *mut *mut ::core::ffi::c_void,
         ) -> HRESULT,
     >,
     pub AddRef:
-        ::core::option::Option<unsafe extern "C" fn(This: *mut IEnumSTATPROPSETSTG) -> ULONG>,
+        ::core::option::Option<unsafe extern "system" fn(This: *mut IEnumSTATPROPSETSTG) -> ULONG>,
     pub Release:
-        ::core::option::Option<unsafe extern "C" fn(This: *mut IEnumSTATPROPSETSTG) -> ULONG>,
+        ::core::option::Option<unsafe extern "system" fn(This: *mut IEnumSTATPROPSETSTG) -> ULONG>,
     pub Next: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IEnumSTATPROPSETSTG,
             celt: ULONG,
             rgelt: *mut STATPROPSETSTG,
@@ -16732,12 +16732,12 @@ pub struct IEnumSTATPROPSETSTGVtbl {
         ) -> HRESULT,
     >,
     pub Skip: ::core::option::Option<
-        unsafe extern "C" fn(This: *mut IEnumSTATPROPSETSTG, celt: ULONG) -> HRESULT,
+        unsafe extern "system" fn(This: *mut IEnumSTATPROPSETSTG, celt: ULONG) -> HRESULT,
     >,
     pub Reset:
-        ::core::option::Option<unsafe extern "C" fn(This: *mut IEnumSTATPROPSETSTG) -> HRESULT>,
+        ::core::option::Option<unsafe extern "system" fn(This: *mut IEnumSTATPROPSETSTG) -> HRESULT>,
     pub Clone: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IEnumSTATPROPSETSTG,
             ppenum: *mut *mut IEnumSTATPROPSETSTG,
         ) -> HRESULT,
@@ -16805,22 +16805,22 @@ pub struct IPrintDialogCallback {
 #[derive(Debug, Copy, Clone)]
 pub struct IPrintDialogCallbackVtbl {
     pub QueryInterface: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IPrintDialogCallback,
             arg1: *const IID,
             arg2: *mut *mut ::core::ffi::c_void,
         ) -> HRESULT,
     >,
     pub AddRef:
-        ::core::option::Option<unsafe extern "C" fn(This: *mut IPrintDialogCallback) -> ULONG>,
+        ::core::option::Option<unsafe extern "system" fn(This: *mut IPrintDialogCallback) -> ULONG>,
     pub Release:
-        ::core::option::Option<unsafe extern "C" fn(This: *mut IPrintDialogCallback) -> ULONG>,
+        ::core::option::Option<unsafe extern "system" fn(This: *mut IPrintDialogCallback) -> ULONG>,
     pub InitDone:
-        ::core::option::Option<unsafe extern "C" fn(This: *mut IPrintDialogCallback) -> HRESULT>,
+        ::core::option::Option<unsafe extern "system" fn(This: *mut IPrintDialogCallback) -> HRESULT>,
     pub SelectionChange:
-        ::core::option::Option<unsafe extern "C" fn(This: *mut IPrintDialogCallback) -> HRESULT>,
+        ::core::option::Option<unsafe extern "system" fn(This: *mut IPrintDialogCallback) -> HRESULT>,
     pub HandleMessage: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IPrintDialogCallback,
             arg1: HWND,
             arg2: UINT,
@@ -16839,32 +16839,32 @@ pub struct IPrintDialogServices {
 #[derive(Debug, Copy, Clone)]
 pub struct IPrintDialogServicesVtbl {
     pub QueryInterface: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IPrintDialogServices,
             arg1: *const IID,
             arg2: *mut *mut ::core::ffi::c_void,
         ) -> HRESULT,
     >,
     pub AddRef:
-        ::core::option::Option<unsafe extern "C" fn(This: *mut IPrintDialogServices) -> ULONG>,
+        ::core::option::Option<unsafe extern "system" fn(This: *mut IPrintDialogServices) -> ULONG>,
     pub Release:
-        ::core::option::Option<unsafe extern "C" fn(This: *mut IPrintDialogServices) -> ULONG>,
+        ::core::option::Option<unsafe extern "system" fn(This: *mut IPrintDialogServices) -> ULONG>,
     pub GetCurrentDevMode: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IPrintDialogServices,
             arg1: LPDEVMODEW,
             arg2: *mut UINT,
         ) -> HRESULT,
     >,
     pub GetCurrentPrinterName: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IPrintDialogServices,
             arg1: LPWSTR,
             arg2: *mut UINT,
         ) -> HRESULT,
     >,
     pub GetCurrentPortName: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IPrintDialogServices,
             arg1: LPWSTR,
             arg2: *mut UINT,
@@ -16938,72 +16938,72 @@ pub type TEXTMETRICOLE = TEXTMETRICW;
 #[derive(Debug, Copy, Clone)]
 pub struct IFontVtbl {
     pub QueryInterface: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IFont,
             riid: *const IID,
             ppvObject: *mut *mut ::core::ffi::c_void,
         ) -> HRESULT,
     >,
-    pub AddRef: ::core::option::Option<unsafe extern "C" fn(This: *mut IFont) -> ULONG>,
-    pub Release: ::core::option::Option<unsafe extern "C" fn(This: *mut IFont) -> ULONG>,
+    pub AddRef: ::core::option::Option<unsafe extern "system" fn(This: *mut IFont) -> ULONG>,
+    pub Release: ::core::option::Option<unsafe extern "system" fn(This: *mut IFont) -> ULONG>,
     pub get_Name:
-        ::core::option::Option<unsafe extern "C" fn(This: *mut IFont, pname: *mut BSTR) -> HRESULT>,
+        ::core::option::Option<unsafe extern "system" fn(This: *mut IFont, pname: *mut BSTR) -> HRESULT>,
     pub put_Name:
-        ::core::option::Option<unsafe extern "C" fn(This: *mut IFont, name: BSTR) -> HRESULT>,
+        ::core::option::Option<unsafe extern "system" fn(This: *mut IFont, name: BSTR) -> HRESULT>,
     pub get_Size:
-        ::core::option::Option<unsafe extern "C" fn(This: *mut IFont, psize: *mut CY) -> HRESULT>,
+        ::core::option::Option<unsafe extern "system" fn(This: *mut IFont, psize: *mut CY) -> HRESULT>,
     pub put_Size:
-        ::core::option::Option<unsafe extern "C" fn(This: *mut IFont, size: CY) -> HRESULT>,
+        ::core::option::Option<unsafe extern "system" fn(This: *mut IFont, size: CY) -> HRESULT>,
     pub get_Bold:
-        ::core::option::Option<unsafe extern "C" fn(This: *mut IFont, pbold: *mut BOOL) -> HRESULT>,
+        ::core::option::Option<unsafe extern "system" fn(This: *mut IFont, pbold: *mut BOOL) -> HRESULT>,
     pub put_Bold:
-        ::core::option::Option<unsafe extern "C" fn(This: *mut IFont, bold: BOOL) -> HRESULT>,
+        ::core::option::Option<unsafe extern "system" fn(This: *mut IFont, bold: BOOL) -> HRESULT>,
     pub get_Italic: ::core::option::Option<
-        unsafe extern "C" fn(This: *mut IFont, pitalic: *mut BOOL) -> HRESULT,
+        unsafe extern "system" fn(This: *mut IFont, pitalic: *mut BOOL) -> HRESULT,
     >,
     pub put_Italic:
-        ::core::option::Option<unsafe extern "C" fn(This: *mut IFont, italic: BOOL) -> HRESULT>,
+        ::core::option::Option<unsafe extern "system" fn(This: *mut IFont, italic: BOOL) -> HRESULT>,
     pub get_Underline: ::core::option::Option<
-        unsafe extern "C" fn(This: *mut IFont, punderline: *mut BOOL) -> HRESULT,
+        unsafe extern "system" fn(This: *mut IFont, punderline: *mut BOOL) -> HRESULT,
     >,
     pub put_Underline:
-        ::core::option::Option<unsafe extern "C" fn(This: *mut IFont, underline: BOOL) -> HRESULT>,
+        ::core::option::Option<unsafe extern "system" fn(This: *mut IFont, underline: BOOL) -> HRESULT>,
     pub get_Strikethrough: ::core::option::Option<
-        unsafe extern "C" fn(This: *mut IFont, pstrikethrough: *mut BOOL) -> HRESULT,
+        unsafe extern "system" fn(This: *mut IFont, pstrikethrough: *mut BOOL) -> HRESULT,
     >,
     pub put_Strikethrough: ::core::option::Option<
-        unsafe extern "C" fn(This: *mut IFont, strikethrough: BOOL) -> HRESULT,
+        unsafe extern "system" fn(This: *mut IFont, strikethrough: BOOL) -> HRESULT,
     >,
     pub get_Weight: ::core::option::Option<
-        unsafe extern "C" fn(This: *mut IFont, pweight: *mut SHORT) -> HRESULT,
+        unsafe extern "system" fn(This: *mut IFont, pweight: *mut SHORT) -> HRESULT,
     >,
     pub put_Weight:
-        ::core::option::Option<unsafe extern "C" fn(This: *mut IFont, weight: SHORT) -> HRESULT>,
+        ::core::option::Option<unsafe extern "system" fn(This: *mut IFont, weight: SHORT) -> HRESULT>,
     pub get_Charset: ::core::option::Option<
-        unsafe extern "C" fn(This: *mut IFont, pcharset: *mut SHORT) -> HRESULT,
+        unsafe extern "system" fn(This: *mut IFont, pcharset: *mut SHORT) -> HRESULT,
     >,
     pub put_Charset:
-        ::core::option::Option<unsafe extern "C" fn(This: *mut IFont, charset: SHORT) -> HRESULT>,
+        ::core::option::Option<unsafe extern "system" fn(This: *mut IFont, charset: SHORT) -> HRESULT>,
     pub get_hFont: ::core::option::Option<
-        unsafe extern "C" fn(This: *mut IFont, phfont: *mut HFONT) -> HRESULT,
+        unsafe extern "system" fn(This: *mut IFont, phfont: *mut HFONT) -> HRESULT,
     >,
     pub Clone: ::core::option::Option<
-        unsafe extern "C" fn(This: *mut IFont, ppfont: *mut *mut IFont) -> HRESULT,
+        unsafe extern "system" fn(This: *mut IFont, ppfont: *mut *mut IFont) -> HRESULT,
     >,
     pub IsEqual: ::core::option::Option<
-        unsafe extern "C" fn(This: *mut IFont, pFontOther: *mut IFont) -> HRESULT,
+        unsafe extern "system" fn(This: *mut IFont, pFontOther: *mut IFont) -> HRESULT,
     >,
     pub SetRatio: ::core::option::Option<
-        unsafe extern "C" fn(This: *mut IFont, cyLogical: LONG, cyHimetric: LONG) -> HRESULT,
+        unsafe extern "system" fn(This: *mut IFont, cyLogical: LONG, cyHimetric: LONG) -> HRESULT,
     >,
     pub QueryTextMetrics: ::core::option::Option<
-        unsafe extern "C" fn(This: *mut IFont, ptm: *mut TEXTMETRICOLE) -> HRESULT,
+        unsafe extern "system" fn(This: *mut IFont, ptm: *mut TEXTMETRICOLE) -> HRESULT,
     >,
     pub AddRefHfont:
-        ::core::option::Option<unsafe extern "C" fn(This: *mut IFont, hfont: HFONT) -> HRESULT>,
+        ::core::option::Option<unsafe extern "system" fn(This: *mut IFont, hfont: HFONT) -> HRESULT>,
     pub ReleaseHfont:
-        ::core::option::Option<unsafe extern "C" fn(This: *mut IFont, hfont: HFONT) -> HRESULT>,
-    pub SetHdc: ::core::option::Option<unsafe extern "C" fn(This: *mut IFont, hdc: HDC) -> HRESULT>,
+        ::core::option::Option<unsafe extern "system" fn(This: *mut IFont, hfont: HFONT) -> HRESULT>,
+    pub SetHdc: ::core::option::Option<unsafe extern "system" fn(This: *mut IFont, hdc: HDC) -> HRESULT>,
 }
 #[repr(C)]
 #[derive(Debug, Copy, Clone)]
@@ -17014,19 +17014,19 @@ pub struct IFont {
 #[derive(Debug, Copy, Clone)]
 pub struct IFontDispVtbl {
     pub QueryInterface: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IFontDisp,
             riid: *const IID,
             ppvObject: *mut *mut ::core::ffi::c_void,
         ) -> HRESULT,
     >,
-    pub AddRef: ::core::option::Option<unsafe extern "C" fn(This: *mut IFontDisp) -> ULONG>,
-    pub Release: ::core::option::Option<unsafe extern "C" fn(This: *mut IFontDisp) -> ULONG>,
+    pub AddRef: ::core::option::Option<unsafe extern "system" fn(This: *mut IFontDisp) -> ULONG>,
+    pub Release: ::core::option::Option<unsafe extern "system" fn(This: *mut IFontDisp) -> ULONG>,
     pub GetTypeInfoCount: ::core::option::Option<
-        unsafe extern "C" fn(This: *mut IFontDisp, pctinfo: *mut UINT) -> HRESULT,
+        unsafe extern "system" fn(This: *mut IFontDisp, pctinfo: *mut UINT) -> HRESULT,
     >,
     pub GetTypeInfo: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IFontDisp,
             iTInfo: UINT,
             lcid: LCID,
@@ -17034,7 +17034,7 @@ pub struct IFontDispVtbl {
         ) -> HRESULT,
     >,
     pub GetIDsOfNames: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IFontDisp,
             riid: *const IID,
             rgszNames: *mut LPOLESTR,
@@ -17044,7 +17044,7 @@ pub struct IFontDispVtbl {
         ) -> HRESULT,
     >,
     pub Invoke: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IFontDisp,
             dispIdMember: DISPID,
             riid: *const IID,
@@ -17066,19 +17066,19 @@ pub struct IFontDisp {
 #[derive(Debug, Copy, Clone)]
 pub struct IFontEventsDispVtbl {
     pub QueryInterface: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IFontEventsDisp,
             riid: *const IID,
             ppvObject: *mut *mut ::core::ffi::c_void,
         ) -> HRESULT,
     >,
-    pub AddRef: ::core::option::Option<unsafe extern "C" fn(This: *mut IFontEventsDisp) -> ULONG>,
-    pub Release: ::core::option::Option<unsafe extern "C" fn(This: *mut IFontEventsDisp) -> ULONG>,
+    pub AddRef: ::core::option::Option<unsafe extern "system" fn(This: *mut IFontEventsDisp) -> ULONG>,
+    pub Release: ::core::option::Option<unsafe extern "system" fn(This: *mut IFontEventsDisp) -> ULONG>,
     pub GetTypeInfoCount: ::core::option::Option<
-        unsafe extern "C" fn(This: *mut IFontEventsDisp, pctinfo: *mut UINT) -> HRESULT,
+        unsafe extern "system" fn(This: *mut IFontEventsDisp, pctinfo: *mut UINT) -> HRESULT,
     >,
     pub GetTypeInfo: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IFontEventsDisp,
             iTInfo: UINT,
             lcid: LCID,
@@ -17086,7 +17086,7 @@ pub struct IFontEventsDispVtbl {
         ) -> HRESULT,
     >,
     pub GetIDsOfNames: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IFontEventsDisp,
             riid: *const IID,
             rgszNames: *mut LPOLESTR,
@@ -17096,7 +17096,7 @@ pub struct IFontEventsDispVtbl {
         ) -> HRESULT,
     >,
     pub Invoke: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IFontEventsDisp,
             dispIdMember: DISPID,
             riid: *const IID,
@@ -17123,31 +17123,31 @@ pub type OLE_YSIZE_HIMETRIC = LONG;
 #[derive(Debug, Copy, Clone)]
 pub struct IPictureVtbl {
     pub QueryInterface: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IPicture,
             riid: *const IID,
             ppvObject: *mut *mut ::core::ffi::c_void,
         ) -> HRESULT,
     >,
-    pub AddRef: ::core::option::Option<unsafe extern "C" fn(This: *mut IPicture) -> ULONG>,
-    pub Release: ::core::option::Option<unsafe extern "C" fn(This: *mut IPicture) -> ULONG>,
+    pub AddRef: ::core::option::Option<unsafe extern "system" fn(This: *mut IPicture) -> ULONG>,
+    pub Release: ::core::option::Option<unsafe extern "system" fn(This: *mut IPicture) -> ULONG>,
     pub get_Handle: ::core::option::Option<
-        unsafe extern "C" fn(This: *mut IPicture, pHandle: *mut OLE_HANDLE) -> HRESULT,
+        unsafe extern "system" fn(This: *mut IPicture, pHandle: *mut OLE_HANDLE) -> HRESULT,
     >,
     pub get_hPal: ::core::option::Option<
-        unsafe extern "C" fn(This: *mut IPicture, phPal: *mut OLE_HANDLE) -> HRESULT,
+        unsafe extern "system" fn(This: *mut IPicture, phPal: *mut OLE_HANDLE) -> HRESULT,
     >,
     pub get_Type: ::core::option::Option<
-        unsafe extern "C" fn(This: *mut IPicture, pType: *mut SHORT) -> HRESULT,
+        unsafe extern "system" fn(This: *mut IPicture, pType: *mut SHORT) -> HRESULT,
     >,
     pub get_Width: ::core::option::Option<
-        unsafe extern "C" fn(This: *mut IPicture, pWidth: *mut OLE_XSIZE_HIMETRIC) -> HRESULT,
+        unsafe extern "system" fn(This: *mut IPicture, pWidth: *mut OLE_XSIZE_HIMETRIC) -> HRESULT,
     >,
     pub get_Height: ::core::option::Option<
-        unsafe extern "C" fn(This: *mut IPicture, pHeight: *mut OLE_YSIZE_HIMETRIC) -> HRESULT,
+        unsafe extern "system" fn(This: *mut IPicture, pHeight: *mut OLE_YSIZE_HIMETRIC) -> HRESULT,
     >,
     pub Render: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IPicture,
             hdc: HDC,
             x: LONG,
@@ -17162,13 +17162,13 @@ pub struct IPictureVtbl {
         ) -> HRESULT,
     >,
     pub set_hPal: ::core::option::Option<
-        unsafe extern "C" fn(This: *mut IPicture, hPal: OLE_HANDLE) -> HRESULT,
+        unsafe extern "system" fn(This: *mut IPicture, hPal: OLE_HANDLE) -> HRESULT,
     >,
     pub get_CurDC: ::core::option::Option<
-        unsafe extern "C" fn(This: *mut IPicture, phDC: *mut HDC) -> HRESULT,
+        unsafe extern "system" fn(This: *mut IPicture, phDC: *mut HDC) -> HRESULT,
     >,
     pub SelectPicture: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IPicture,
             hDCIn: HDC,
             phDCOut: *mut HDC,
@@ -17176,14 +17176,14 @@ pub struct IPictureVtbl {
         ) -> HRESULT,
     >,
     pub get_KeepOriginalFormat: ::core::option::Option<
-        unsafe extern "C" fn(This: *mut IPicture, pKeep: *mut BOOL) -> HRESULT,
+        unsafe extern "system" fn(This: *mut IPicture, pKeep: *mut BOOL) -> HRESULT,
     >,
     pub put_KeepOriginalFormat:
-        ::core::option::Option<unsafe extern "C" fn(This: *mut IPicture, keep: BOOL) -> HRESULT>,
+        ::core::option::Option<unsafe extern "system" fn(This: *mut IPicture, keep: BOOL) -> HRESULT>,
     pub PictureChanged:
-        ::core::option::Option<unsafe extern "C" fn(This: *mut IPicture) -> HRESULT>,
+        ::core::option::Option<unsafe extern "system" fn(This: *mut IPicture) -> HRESULT>,
     pub SaveAsFile: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IPicture,
             pStream: LPSTREAM,
             fSaveMemCopy: BOOL,
@@ -17191,7 +17191,7 @@ pub struct IPictureVtbl {
         ) -> HRESULT,
     >,
     pub get_Attributes: ::core::option::Option<
-        unsafe extern "C" fn(This: *mut IPicture, pDwAttr: *mut DWORD) -> HRESULT,
+        unsafe extern "system" fn(This: *mut IPicture, pDwAttr: *mut DWORD) -> HRESULT,
     >,
 }
 #[repr(C)]
@@ -17203,19 +17203,19 @@ pub struct IPicture {
 #[derive(Debug, Copy, Clone)]
 pub struct IPictureDispVtbl {
     pub QueryInterface: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IPictureDisp,
             riid: *const IID,
             ppvObject: *mut *mut ::core::ffi::c_void,
         ) -> HRESULT,
     >,
-    pub AddRef: ::core::option::Option<unsafe extern "C" fn(This: *mut IPictureDisp) -> ULONG>,
-    pub Release: ::core::option::Option<unsafe extern "C" fn(This: *mut IPictureDisp) -> ULONG>,
+    pub AddRef: ::core::option::Option<unsafe extern "system" fn(This: *mut IPictureDisp) -> ULONG>,
+    pub Release: ::core::option::Option<unsafe extern "system" fn(This: *mut IPictureDisp) -> ULONG>,
     pub GetTypeInfoCount: ::core::option::Option<
-        unsafe extern "C" fn(This: *mut IPictureDisp, pctinfo: *mut UINT) -> HRESULT,
+        unsafe extern "system" fn(This: *mut IPictureDisp, pctinfo: *mut UINT) -> HRESULT,
     >,
     pub GetTypeInfo: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IPictureDisp,
             iTInfo: UINT,
             lcid: LCID,
@@ -17223,7 +17223,7 @@ pub struct IPictureDispVtbl {
         ) -> HRESULT,
     >,
     pub GetIDsOfNames: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IPictureDisp,
             riid: *const IID,
             rgszNames: *mut LPOLESTR,
@@ -17233,7 +17233,7 @@ pub struct IPictureDispVtbl {
         ) -> HRESULT,
     >,
     pub Invoke: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IPictureDisp,
             dispIdMember: DISPID,
             riid: *const IID,
@@ -17264,25 +17264,25 @@ pub type CONTROLINFO = tagCONTROLINFO;
 #[derive(Debug, Copy, Clone)]
 pub struct IOleControlVtbl {
     pub QueryInterface: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IOleControl,
             riid: *const IID,
             ppvObject: *mut *mut ::core::ffi::c_void,
         ) -> HRESULT,
     >,
-    pub AddRef: ::core::option::Option<unsafe extern "C" fn(This: *mut IOleControl) -> ULONG>,
-    pub Release: ::core::option::Option<unsafe extern "C" fn(This: *mut IOleControl) -> ULONG>,
+    pub AddRef: ::core::option::Option<unsafe extern "system" fn(This: *mut IOleControl) -> ULONG>,
+    pub Release: ::core::option::Option<unsafe extern "system" fn(This: *mut IOleControl) -> ULONG>,
     pub GetControlInfo: ::core::option::Option<
-        unsafe extern "C" fn(This: *mut IOleControl, pCI: *mut CONTROLINFO) -> HRESULT,
+        unsafe extern "system" fn(This: *mut IOleControl, pCI: *mut CONTROLINFO) -> HRESULT,
     >,
     pub OnMnemonic: ::core::option::Option<
-        unsafe extern "C" fn(This: *mut IOleControl, pMsg: *mut MSG) -> HRESULT,
+        unsafe extern "system" fn(This: *mut IOleControl, pMsg: *mut MSG) -> HRESULT,
     >,
     pub OnAmbientPropertyChange: ::core::option::Option<
-        unsafe extern "C" fn(This: *mut IOleControl, dispID: DISPID) -> HRESULT,
+        unsafe extern "system" fn(This: *mut IOleControl, dispID: DISPID) -> HRESULT,
     >,
     pub FreezeEvents: ::core::option::Option<
-        unsafe extern "C" fn(This: *mut IOleControl, bFreeze: BOOL) -> HRESULT,
+        unsafe extern "system" fn(This: *mut IOleControl, bFreeze: BOOL) -> HRESULT,
     >,
 }
 #[repr(C)]
@@ -17301,24 +17301,24 @@ pub type POINTF = tagPOINTF;
 #[derive(Debug, Copy, Clone)]
 pub struct IOleControlSiteVtbl {
     pub QueryInterface: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IOleControlSite,
             riid: *const IID,
             ppvObject: *mut *mut ::core::ffi::c_void,
         ) -> HRESULT,
     >,
-    pub AddRef: ::core::option::Option<unsafe extern "C" fn(This: *mut IOleControlSite) -> ULONG>,
-    pub Release: ::core::option::Option<unsafe extern "C" fn(This: *mut IOleControlSite) -> ULONG>,
+    pub AddRef: ::core::option::Option<unsafe extern "system" fn(This: *mut IOleControlSite) -> ULONG>,
+    pub Release: ::core::option::Option<unsafe extern "system" fn(This: *mut IOleControlSite) -> ULONG>,
     pub OnControlInfoChanged:
-        ::core::option::Option<unsafe extern "C" fn(This: *mut IOleControlSite) -> HRESULT>,
+        ::core::option::Option<unsafe extern "system" fn(This: *mut IOleControlSite) -> HRESULT>,
     pub LockInPlaceActive: ::core::option::Option<
-        unsafe extern "C" fn(This: *mut IOleControlSite, fLock: BOOL) -> HRESULT,
+        unsafe extern "system" fn(This: *mut IOleControlSite, fLock: BOOL) -> HRESULT,
     >,
     pub GetExtendedControl: ::core::option::Option<
-        unsafe extern "C" fn(This: *mut IOleControlSite, ppDisp: *mut *mut IDispatch) -> HRESULT,
+        unsafe extern "system" fn(This: *mut IOleControlSite, ppDisp: *mut *mut IDispatch) -> HRESULT,
     >,
     pub TransformCoords: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IOleControlSite,
             pPtlHimetric: *mut POINTL,
             pPtfContainer: *mut POINTF,
@@ -17326,17 +17326,17 @@ pub struct IOleControlSiteVtbl {
         ) -> HRESULT,
     >,
     pub TranslateAcceleratorA: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IOleControlSite,
             pMsg: *mut MSG,
             grfModifiers: DWORD,
         ) -> HRESULT,
     >,
     pub OnFocus: ::core::option::Option<
-        unsafe extern "C" fn(This: *mut IOleControlSite, fGotFocus: BOOL) -> HRESULT,
+        unsafe extern "system" fn(This: *mut IOleControlSite, fGotFocus: BOOL) -> HRESULT,
     >,
     pub ShowPropertyFrame:
-        ::core::option::Option<unsafe extern "C" fn(This: *mut IOleControlSite) -> HRESULT>,
+        ::core::option::Option<unsafe extern "system" fn(This: *mut IOleControlSite) -> HRESULT>,
 }
 #[repr(C)]
 #[derive(Debug, Copy, Clone)]
@@ -17347,29 +17347,29 @@ pub struct IOleControlSite {
 #[derive(Debug, Copy, Clone)]
 pub struct IOleInPlaceSiteExVtbl {
     pub QueryInterface: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IOleInPlaceSiteEx,
             riid: *const IID,
             ppvObject: *mut *mut ::core::ffi::c_void,
         ) -> HRESULT,
     >,
-    pub AddRef: ::core::option::Option<unsafe extern "C" fn(This: *mut IOleInPlaceSiteEx) -> ULONG>,
+    pub AddRef: ::core::option::Option<unsafe extern "system" fn(This: *mut IOleInPlaceSiteEx) -> ULONG>,
     pub Release:
-        ::core::option::Option<unsafe extern "C" fn(This: *mut IOleInPlaceSiteEx) -> ULONG>,
+        ::core::option::Option<unsafe extern "system" fn(This: *mut IOleInPlaceSiteEx) -> ULONG>,
     pub GetWindow: ::core::option::Option<
-        unsafe extern "C" fn(This: *mut IOleInPlaceSiteEx, phwnd: *mut HWND) -> HRESULT,
+        unsafe extern "system" fn(This: *mut IOleInPlaceSiteEx, phwnd: *mut HWND) -> HRESULT,
     >,
     pub ContextSensitiveHelp: ::core::option::Option<
-        unsafe extern "C" fn(This: *mut IOleInPlaceSiteEx, fEnterMode: BOOL) -> HRESULT,
+        unsafe extern "system" fn(This: *mut IOleInPlaceSiteEx, fEnterMode: BOOL) -> HRESULT,
     >,
     pub CanInPlaceActivate:
-        ::core::option::Option<unsafe extern "C" fn(This: *mut IOleInPlaceSiteEx) -> HRESULT>,
+        ::core::option::Option<unsafe extern "system" fn(This: *mut IOleInPlaceSiteEx) -> HRESULT>,
     pub OnInPlaceActivate:
-        ::core::option::Option<unsafe extern "C" fn(This: *mut IOleInPlaceSiteEx) -> HRESULT>,
+        ::core::option::Option<unsafe extern "system" fn(This: *mut IOleInPlaceSiteEx) -> HRESULT>,
     pub OnUIActivate:
-        ::core::option::Option<unsafe extern "C" fn(This: *mut IOleInPlaceSiteEx) -> HRESULT>,
+        ::core::option::Option<unsafe extern "system" fn(This: *mut IOleInPlaceSiteEx) -> HRESULT>,
     pub GetWindowContext: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IOleInPlaceSiteEx,
             ppFrame: *mut *mut IOleInPlaceFrame,
             ppDoc: *mut *mut IOleInPlaceUIWindow,
@@ -17379,32 +17379,32 @@ pub struct IOleInPlaceSiteExVtbl {
         ) -> HRESULT,
     >,
     pub Scroll: ::core::option::Option<
-        unsafe extern "C" fn(This: *mut IOleInPlaceSiteEx, scrollExtent: SIZE) -> HRESULT,
+        unsafe extern "system" fn(This: *mut IOleInPlaceSiteEx, scrollExtent: SIZE) -> HRESULT,
     >,
     pub OnUIDeactivate: ::core::option::Option<
-        unsafe extern "C" fn(This: *mut IOleInPlaceSiteEx, fUndoable: BOOL) -> HRESULT,
+        unsafe extern "system" fn(This: *mut IOleInPlaceSiteEx, fUndoable: BOOL) -> HRESULT,
     >,
     pub OnInPlaceDeactivate:
-        ::core::option::Option<unsafe extern "C" fn(This: *mut IOleInPlaceSiteEx) -> HRESULT>,
+        ::core::option::Option<unsafe extern "system" fn(This: *mut IOleInPlaceSiteEx) -> HRESULT>,
     pub DiscardUndoState:
-        ::core::option::Option<unsafe extern "C" fn(This: *mut IOleInPlaceSiteEx) -> HRESULT>,
+        ::core::option::Option<unsafe extern "system" fn(This: *mut IOleInPlaceSiteEx) -> HRESULT>,
     pub DeactivateAndUndo:
-        ::core::option::Option<unsafe extern "C" fn(This: *mut IOleInPlaceSiteEx) -> HRESULT>,
+        ::core::option::Option<unsafe extern "system" fn(This: *mut IOleInPlaceSiteEx) -> HRESULT>,
     pub OnPosRectChange: ::core::option::Option<
-        unsafe extern "C" fn(This: *mut IOleInPlaceSiteEx, lprcPosRect: LPCRECT) -> HRESULT,
+        unsafe extern "system" fn(This: *mut IOleInPlaceSiteEx, lprcPosRect: LPCRECT) -> HRESULT,
     >,
     pub OnInPlaceActivateEx: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IOleInPlaceSiteEx,
             pfNoRedraw: *mut BOOL,
             dwFlags: DWORD,
         ) -> HRESULT,
     >,
     pub OnInPlaceDeactivateEx: ::core::option::Option<
-        unsafe extern "C" fn(This: *mut IOleInPlaceSiteEx, fNoRedraw: BOOL) -> HRESULT,
+        unsafe extern "system" fn(This: *mut IOleInPlaceSiteEx, fNoRedraw: BOOL) -> HRESULT,
     >,
     pub RequestUIActivate:
-        ::core::option::Option<unsafe extern "C" fn(This: *mut IOleInPlaceSiteEx) -> HRESULT>,
+        ::core::option::Option<unsafe extern "system" fn(This: *mut IOleInPlaceSiteEx) -> HRESULT>,
 }
 #[repr(C)]
 #[derive(Debug, Copy, Clone)]
@@ -17415,33 +17415,33 @@ pub struct IOleInPlaceSiteEx {
 #[derive(Debug, Copy, Clone)]
 pub struct IOleInPlaceSiteWindowlessVtbl {
     pub QueryInterface: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IOleInPlaceSiteWindowless,
             riid: *const IID,
             ppvObject: *mut *mut ::core::ffi::c_void,
         ) -> HRESULT,
     >,
     pub AddRef:
-        ::core::option::Option<unsafe extern "C" fn(This: *mut IOleInPlaceSiteWindowless) -> ULONG>,
+        ::core::option::Option<unsafe extern "system" fn(This: *mut IOleInPlaceSiteWindowless) -> ULONG>,
     pub Release:
-        ::core::option::Option<unsafe extern "C" fn(This: *mut IOleInPlaceSiteWindowless) -> ULONG>,
+        ::core::option::Option<unsafe extern "system" fn(This: *mut IOleInPlaceSiteWindowless) -> ULONG>,
     pub GetWindow: ::core::option::Option<
-        unsafe extern "C" fn(This: *mut IOleInPlaceSiteWindowless, phwnd: *mut HWND) -> HRESULT,
+        unsafe extern "system" fn(This: *mut IOleInPlaceSiteWindowless, phwnd: *mut HWND) -> HRESULT,
     >,
     pub ContextSensitiveHelp: ::core::option::Option<
-        unsafe extern "C" fn(This: *mut IOleInPlaceSiteWindowless, fEnterMode: BOOL) -> HRESULT,
+        unsafe extern "system" fn(This: *mut IOleInPlaceSiteWindowless, fEnterMode: BOOL) -> HRESULT,
     >,
     pub CanInPlaceActivate: ::core::option::Option<
-        unsafe extern "C" fn(This: *mut IOleInPlaceSiteWindowless) -> HRESULT,
+        unsafe extern "system" fn(This: *mut IOleInPlaceSiteWindowless) -> HRESULT,
     >,
     pub OnInPlaceActivate: ::core::option::Option<
-        unsafe extern "C" fn(This: *mut IOleInPlaceSiteWindowless) -> HRESULT,
+        unsafe extern "system" fn(This: *mut IOleInPlaceSiteWindowless) -> HRESULT,
     >,
     pub OnUIActivate: ::core::option::Option<
-        unsafe extern "C" fn(This: *mut IOleInPlaceSiteWindowless) -> HRESULT,
+        unsafe extern "system" fn(This: *mut IOleInPlaceSiteWindowless) -> HRESULT,
     >,
     pub GetWindowContext: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IOleInPlaceSiteWindowless,
             ppFrame: *mut *mut IOleInPlaceFrame,
             ppDoc: *mut *mut IOleInPlaceUIWindow,
@@ -17451,53 +17451,53 @@ pub struct IOleInPlaceSiteWindowlessVtbl {
         ) -> HRESULT,
     >,
     pub Scroll: ::core::option::Option<
-        unsafe extern "C" fn(This: *mut IOleInPlaceSiteWindowless, scrollExtent: SIZE) -> HRESULT,
+        unsafe extern "system" fn(This: *mut IOleInPlaceSiteWindowless, scrollExtent: SIZE) -> HRESULT,
     >,
     pub OnUIDeactivate: ::core::option::Option<
-        unsafe extern "C" fn(This: *mut IOleInPlaceSiteWindowless, fUndoable: BOOL) -> HRESULT,
+        unsafe extern "system" fn(This: *mut IOleInPlaceSiteWindowless, fUndoable: BOOL) -> HRESULT,
     >,
     pub OnInPlaceDeactivate: ::core::option::Option<
-        unsafe extern "C" fn(This: *mut IOleInPlaceSiteWindowless) -> HRESULT,
+        unsafe extern "system" fn(This: *mut IOleInPlaceSiteWindowless) -> HRESULT,
     >,
     pub DiscardUndoState: ::core::option::Option<
-        unsafe extern "C" fn(This: *mut IOleInPlaceSiteWindowless) -> HRESULT,
+        unsafe extern "system" fn(This: *mut IOleInPlaceSiteWindowless) -> HRESULT,
     >,
     pub DeactivateAndUndo: ::core::option::Option<
-        unsafe extern "C" fn(This: *mut IOleInPlaceSiteWindowless) -> HRESULT,
+        unsafe extern "system" fn(This: *mut IOleInPlaceSiteWindowless) -> HRESULT,
     >,
     pub OnPosRectChange: ::core::option::Option<
-        unsafe extern "C" fn(This: *mut IOleInPlaceSiteWindowless, lprcPosRect: LPCRECT) -> HRESULT,
+        unsafe extern "system" fn(This: *mut IOleInPlaceSiteWindowless, lprcPosRect: LPCRECT) -> HRESULT,
     >,
     pub OnInPlaceActivateEx: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IOleInPlaceSiteWindowless,
             pfNoRedraw: *mut BOOL,
             dwFlags: DWORD,
         ) -> HRESULT,
     >,
     pub OnInPlaceDeactivateEx: ::core::option::Option<
-        unsafe extern "C" fn(This: *mut IOleInPlaceSiteWindowless, fNoRedraw: BOOL) -> HRESULT,
+        unsafe extern "system" fn(This: *mut IOleInPlaceSiteWindowless, fNoRedraw: BOOL) -> HRESULT,
     >,
     pub RequestUIActivate: ::core::option::Option<
-        unsafe extern "C" fn(This: *mut IOleInPlaceSiteWindowless) -> HRESULT,
+        unsafe extern "system" fn(This: *mut IOleInPlaceSiteWindowless) -> HRESULT,
     >,
     pub CanWindowlessActivate: ::core::option::Option<
-        unsafe extern "C" fn(This: *mut IOleInPlaceSiteWindowless) -> HRESULT,
+        unsafe extern "system" fn(This: *mut IOleInPlaceSiteWindowless) -> HRESULT,
     >,
     pub GetCapture: ::core::option::Option<
-        unsafe extern "C" fn(This: *mut IOleInPlaceSiteWindowless) -> HRESULT,
+        unsafe extern "system" fn(This: *mut IOleInPlaceSiteWindowless) -> HRESULT,
     >,
     pub SetCapture: ::core::option::Option<
-        unsafe extern "C" fn(This: *mut IOleInPlaceSiteWindowless, fCapture: BOOL) -> HRESULT,
+        unsafe extern "system" fn(This: *mut IOleInPlaceSiteWindowless, fCapture: BOOL) -> HRESULT,
     >,
     pub GetFocus: ::core::option::Option<
-        unsafe extern "C" fn(This: *mut IOleInPlaceSiteWindowless) -> HRESULT,
+        unsafe extern "system" fn(This: *mut IOleInPlaceSiteWindowless) -> HRESULT,
     >,
     pub SetFocus: ::core::option::Option<
-        unsafe extern "C" fn(This: *mut IOleInPlaceSiteWindowless, fFocus: BOOL) -> HRESULT,
+        unsafe extern "system" fn(This: *mut IOleInPlaceSiteWindowless, fFocus: BOOL) -> HRESULT,
     >,
     pub GetDC: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IOleInPlaceSiteWindowless,
             pRect: LPCRECT,
             grfFlags: DWORD,
@@ -17505,24 +17505,24 @@ pub struct IOleInPlaceSiteWindowlessVtbl {
         ) -> HRESULT,
     >,
     pub ReleaseDC: ::core::option::Option<
-        unsafe extern "C" fn(This: *mut IOleInPlaceSiteWindowless, hDC: HDC) -> HRESULT,
+        unsafe extern "system" fn(This: *mut IOleInPlaceSiteWindowless, hDC: HDC) -> HRESULT,
     >,
     pub InvalidateRect: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IOleInPlaceSiteWindowless,
             pRect: LPCRECT,
             fErase: BOOL,
         ) -> HRESULT,
     >,
     pub InvalidateRgn: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IOleInPlaceSiteWindowless,
             hRGN: HRGN,
             fErase: BOOL,
         ) -> HRESULT,
     >,
     pub ScrollRect: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IOleInPlaceSiteWindowless,
             dx: INT,
             dy: INT,
@@ -17531,10 +17531,10 @@ pub struct IOleInPlaceSiteWindowlessVtbl {
         ) -> HRESULT,
     >,
     pub AdjustRect: ::core::option::Option<
-        unsafe extern "C" fn(This: *mut IOleInPlaceSiteWindowless, prc: LPRECT) -> HRESULT,
+        unsafe extern "system" fn(This: *mut IOleInPlaceSiteWindowless, prc: LPRECT) -> HRESULT,
     >,
     pub OnDefWindowMessage: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IOleInPlaceSiteWindowless,
             msg: UINT,
             wParam: WPARAM,
@@ -17552,42 +17552,42 @@ pub struct IOleInPlaceSiteWindowless {
 #[derive(Debug, Copy, Clone)]
 pub struct IOleInPlaceObjectWindowlessVtbl {
     pub QueryInterface: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IOleInPlaceObjectWindowless,
             riid: *const IID,
             ppvObject: *mut *mut ::core::ffi::c_void,
         ) -> HRESULT,
     >,
     pub AddRef: ::core::option::Option<
-        unsafe extern "C" fn(This: *mut IOleInPlaceObjectWindowless) -> ULONG,
+        unsafe extern "system" fn(This: *mut IOleInPlaceObjectWindowless) -> ULONG,
     >,
     pub Release: ::core::option::Option<
-        unsafe extern "C" fn(This: *mut IOleInPlaceObjectWindowless) -> ULONG,
+        unsafe extern "system" fn(This: *mut IOleInPlaceObjectWindowless) -> ULONG,
     >,
     pub GetWindow: ::core::option::Option<
-        unsafe extern "C" fn(This: *mut IOleInPlaceObjectWindowless, phwnd: *mut HWND) -> HRESULT,
+        unsafe extern "system" fn(This: *mut IOleInPlaceObjectWindowless, phwnd: *mut HWND) -> HRESULT,
     >,
     pub ContextSensitiveHelp: ::core::option::Option<
-        unsafe extern "C" fn(This: *mut IOleInPlaceObjectWindowless, fEnterMode: BOOL) -> HRESULT,
+        unsafe extern "system" fn(This: *mut IOleInPlaceObjectWindowless, fEnterMode: BOOL) -> HRESULT,
     >,
     pub InPlaceDeactivate: ::core::option::Option<
-        unsafe extern "C" fn(This: *mut IOleInPlaceObjectWindowless) -> HRESULT,
+        unsafe extern "system" fn(This: *mut IOleInPlaceObjectWindowless) -> HRESULT,
     >,
     pub UIDeactivate: ::core::option::Option<
-        unsafe extern "C" fn(This: *mut IOleInPlaceObjectWindowless) -> HRESULT,
+        unsafe extern "system" fn(This: *mut IOleInPlaceObjectWindowless) -> HRESULT,
     >,
     pub SetObjectRects: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IOleInPlaceObjectWindowless,
             lprcPosRect: LPCRECT,
             lprcClipRect: LPCRECT,
         ) -> HRESULT,
     >,
     pub ReactivateAndUndo: ::core::option::Option<
-        unsafe extern "C" fn(This: *mut IOleInPlaceObjectWindowless) -> HRESULT,
+        unsafe extern "system" fn(This: *mut IOleInPlaceObjectWindowless) -> HRESULT,
     >,
     pub OnWindowMessage: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IOleInPlaceObjectWindowless,
             msg: UINT,
             wParam: WPARAM,
@@ -17596,7 +17596,7 @@ pub struct IOleInPlaceObjectWindowlessVtbl {
         ) -> HRESULT,
     >,
     pub GetDropTarget: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IOleInPlaceObjectWindowless,
             ppDropTarget: *mut *mut IDropTarget,
         ) -> HRESULT,
@@ -17619,16 +17619,16 @@ pub type LICINFO = tagLICINFO;
 #[derive(Debug, Copy, Clone)]
 pub struct IClassFactory2Vtbl {
     pub QueryInterface: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IClassFactory2,
             riid: *const IID,
             ppvObject: *mut *mut ::core::ffi::c_void,
         ) -> HRESULT,
     >,
-    pub AddRef: ::core::option::Option<unsafe extern "C" fn(This: *mut IClassFactory2) -> ULONG>,
-    pub Release: ::core::option::Option<unsafe extern "C" fn(This: *mut IClassFactory2) -> ULONG>,
+    pub AddRef: ::core::option::Option<unsafe extern "system" fn(This: *mut IClassFactory2) -> ULONG>,
+    pub Release: ::core::option::Option<unsafe extern "system" fn(This: *mut IClassFactory2) -> ULONG>,
     pub CreateInstance: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IClassFactory2,
             pUnkOuter: *mut IUnknown,
             riid: *const IID,
@@ -17636,20 +17636,20 @@ pub struct IClassFactory2Vtbl {
         ) -> HRESULT,
     >,
     pub LockServer: ::core::option::Option<
-        unsafe extern "C" fn(This: *mut IClassFactory2, fLock: BOOL) -> HRESULT,
+        unsafe extern "system" fn(This: *mut IClassFactory2, fLock: BOOL) -> HRESULT,
     >,
     pub GetLicInfo: ::core::option::Option<
-        unsafe extern "C" fn(This: *mut IClassFactory2, pLicInfo: *mut LICINFO) -> HRESULT,
+        unsafe extern "system" fn(This: *mut IClassFactory2, pLicInfo: *mut LICINFO) -> HRESULT,
     >,
     pub RequestLicKey: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IClassFactory2,
             dwReserved: DWORD,
             pBstrKey: *mut BSTR,
         ) -> HRESULT,
     >,
     pub CreateInstanceLic: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IClassFactory2,
             pUnkOuter: *mut IUnknown,
             pUnkReserved: *mut IUnknown,
@@ -17676,16 +17676,16 @@ pub type DVEXTENTINFO = tagExtentInfo;
 #[derive(Debug, Copy, Clone)]
 pub struct IViewObjectExVtbl {
     pub QueryInterface: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IViewObjectEx,
             riid: *const IID,
             ppvObject: *mut *mut ::core::ffi::c_void,
         ) -> HRESULT,
     >,
-    pub AddRef: ::core::option::Option<unsafe extern "C" fn(This: *mut IViewObjectEx) -> ULONG>,
-    pub Release: ::core::option::Option<unsafe extern "C" fn(This: *mut IViewObjectEx) -> ULONG>,
+    pub AddRef: ::core::option::Option<unsafe extern "system" fn(This: *mut IViewObjectEx) -> ULONG>,
+    pub Release: ::core::option::Option<unsafe extern "system" fn(This: *mut IViewObjectEx) -> ULONG>,
     pub Draw: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IViewObjectEx,
             dwDrawAspect: DWORD,
             lindex: LONG,
@@ -17695,12 +17695,12 @@ pub struct IViewObjectExVtbl {
             hdcDraw: HDC,
             lprcBounds: LPCRECTL,
             lprcWBounds: LPCRECTL,
-            pfnContinue: ::core::option::Option<unsafe extern "C" fn(dwContinue: ULONG_PTR) -> BOOL>,
+            pfnContinue: ::core::option::Option<unsafe extern "system" fn(dwContinue: ULONG_PTR) -> BOOL>,
             dwContinue: ULONG_PTR,
         ) -> HRESULT,
     >,
     pub GetColorSet: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IViewObjectEx,
             dwDrawAspect: DWORD,
             lindex: LONG,
@@ -17711,7 +17711,7 @@ pub struct IViewObjectExVtbl {
         ) -> HRESULT,
     >,
     pub Freeze: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IViewObjectEx,
             dwDrawAspect: DWORD,
             lindex: LONG,
@@ -17720,10 +17720,10 @@ pub struct IViewObjectExVtbl {
         ) -> HRESULT,
     >,
     pub Unfreeze: ::core::option::Option<
-        unsafe extern "C" fn(This: *mut IViewObjectEx, dwFreeze: DWORD) -> HRESULT,
+        unsafe extern "system" fn(This: *mut IViewObjectEx, dwFreeze: DWORD) -> HRESULT,
     >,
     pub SetAdvise: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IViewObjectEx,
             aspects: DWORD,
             advf: DWORD,
@@ -17731,7 +17731,7 @@ pub struct IViewObjectExVtbl {
         ) -> HRESULT,
     >,
     pub GetAdvise: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IViewObjectEx,
             pAspects: *mut DWORD,
             pAdvf: *mut DWORD,
@@ -17739,7 +17739,7 @@ pub struct IViewObjectExVtbl {
         ) -> HRESULT,
     >,
     pub GetExtent: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IViewObjectEx,
             dwDrawAspect: DWORD,
             lindex: LONG,
@@ -17748,13 +17748,13 @@ pub struct IViewObjectExVtbl {
         ) -> HRESULT,
     >,
     pub GetRect: ::core::option::Option<
-        unsafe extern "C" fn(This: *mut IViewObjectEx, dwAspect: DWORD, pRect: LPRECTL) -> HRESULT,
+        unsafe extern "system" fn(This: *mut IViewObjectEx, dwAspect: DWORD, pRect: LPRECTL) -> HRESULT,
     >,
     pub GetViewStatus: ::core::option::Option<
-        unsafe extern "C" fn(This: *mut IViewObjectEx, pdwStatus: *mut DWORD) -> HRESULT,
+        unsafe extern "system" fn(This: *mut IViewObjectEx, pdwStatus: *mut DWORD) -> HRESULT,
     >,
     pub QueryHitPoint: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IViewObjectEx,
             dwAspect: DWORD,
             pRectBounds: LPCRECT,
@@ -17764,7 +17764,7 @@ pub struct IViewObjectExVtbl {
         ) -> HRESULT,
     >,
     pub QueryHitRect: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IViewObjectEx,
             dwAspect: DWORD,
             pRectBounds: LPCRECT,
@@ -17774,7 +17774,7 @@ pub struct IViewObjectExVtbl {
         ) -> HRESULT,
     >,
     pub GetNaturalExtent: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IViewObjectEx,
             dwAspect: DWORD,
             lindex: LONG,
@@ -17794,17 +17794,17 @@ pub struct IViewObjectEx {
 #[derive(Debug, Copy, Clone)]
 pub struct IProvideClassInfoVtbl {
     pub QueryInterface: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IProvideClassInfo,
             riid: *const IID,
             ppvObject: *mut *mut ::core::ffi::c_void,
         ) -> HRESULT,
     >,
-    pub AddRef: ::core::option::Option<unsafe extern "C" fn(This: *mut IProvideClassInfo) -> ULONG>,
+    pub AddRef: ::core::option::Option<unsafe extern "system" fn(This: *mut IProvideClassInfo) -> ULONG>,
     pub Release:
-        ::core::option::Option<unsafe extern "C" fn(This: *mut IProvideClassInfo) -> ULONG>,
+        ::core::option::Option<unsafe extern "system" fn(This: *mut IProvideClassInfo) -> ULONG>,
     pub GetClassInfoA: ::core::option::Option<
-        unsafe extern "C" fn(This: *mut IProvideClassInfo, ppTI: *mut *mut ITypeInfo) -> HRESULT,
+        unsafe extern "system" fn(This: *mut IProvideClassInfo, ppTI: *mut *mut ITypeInfo) -> HRESULT,
     >,
 }
 #[repr(C)]
@@ -17816,21 +17816,21 @@ pub struct IProvideClassInfo {
 #[derive(Debug, Copy, Clone)]
 pub struct IProvideClassInfo2Vtbl {
     pub QueryInterface: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IProvideClassInfo2,
             riid: *const IID,
             ppvObject: *mut *mut ::core::ffi::c_void,
         ) -> HRESULT,
     >,
     pub AddRef:
-        ::core::option::Option<unsafe extern "C" fn(This: *mut IProvideClassInfo2) -> ULONG>,
+        ::core::option::Option<unsafe extern "system" fn(This: *mut IProvideClassInfo2) -> ULONG>,
     pub Release:
-        ::core::option::Option<unsafe extern "C" fn(This: *mut IProvideClassInfo2) -> ULONG>,
+        ::core::option::Option<unsafe extern "system" fn(This: *mut IProvideClassInfo2) -> ULONG>,
     pub GetClassInfoA: ::core::option::Option<
-        unsafe extern "C" fn(This: *mut IProvideClassInfo2, ppTI: *mut *mut ITypeInfo) -> HRESULT,
+        unsafe extern "system" fn(This: *mut IProvideClassInfo2, ppTI: *mut *mut ITypeInfo) -> HRESULT,
     >,
     pub GetGUID: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IProvideClassInfo2,
             dwGuidKind: DWORD,
             pGUID: *mut GUID,
@@ -17846,34 +17846,34 @@ pub struct IProvideClassInfo2 {
 #[derive(Debug, Copy, Clone)]
 pub struct IProvideMultipleClassInfoVtbl {
     pub QueryInterface: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IProvideMultipleClassInfo,
             riid: *const IID,
             ppvObject: *mut *mut ::core::ffi::c_void,
         ) -> HRESULT,
     >,
     pub AddRef:
-        ::core::option::Option<unsafe extern "C" fn(This: *mut IProvideMultipleClassInfo) -> ULONG>,
+        ::core::option::Option<unsafe extern "system" fn(This: *mut IProvideMultipleClassInfo) -> ULONG>,
     pub Release:
-        ::core::option::Option<unsafe extern "C" fn(This: *mut IProvideMultipleClassInfo) -> ULONG>,
+        ::core::option::Option<unsafe extern "system" fn(This: *mut IProvideMultipleClassInfo) -> ULONG>,
     pub GetClassInfoA: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IProvideMultipleClassInfo,
             ppTI: *mut *mut ITypeInfo,
         ) -> HRESULT,
     >,
     pub GetGUID: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IProvideMultipleClassInfo,
             dwGuidKind: DWORD,
             pGUID: *mut GUID,
         ) -> HRESULT,
     >,
     pub GetMultiTypeInfoCount: ::core::option::Option<
-        unsafe extern "C" fn(This: *mut IProvideMultipleClassInfo, pcti: *mut ULONG) -> HRESULT,
+        unsafe extern "system" fn(This: *mut IProvideMultipleClassInfo, pcti: *mut ULONG) -> HRESULT,
     >,
     pub GetInfoOfIndex: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IProvideMultipleClassInfo,
             iti: ULONG,
             dwFlags: DWORD,
@@ -17895,35 +17895,35 @@ pub type LPCONNECTIONPOINT = *mut IConnectionPoint;
 #[derive(Debug, Copy, Clone)]
 pub struct IConnectionPointVtbl {
     pub QueryInterface: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IConnectionPoint,
             riid: *const IID,
             ppvObject: *mut *mut ::core::ffi::c_void,
         ) -> HRESULT,
     >,
-    pub AddRef: ::core::option::Option<unsafe extern "C" fn(This: *mut IConnectionPoint) -> ULONG>,
-    pub Release: ::core::option::Option<unsafe extern "C" fn(This: *mut IConnectionPoint) -> ULONG>,
+    pub AddRef: ::core::option::Option<unsafe extern "system" fn(This: *mut IConnectionPoint) -> ULONG>,
+    pub Release: ::core::option::Option<unsafe extern "system" fn(This: *mut IConnectionPoint) -> ULONG>,
     pub GetConnectionInterface: ::core::option::Option<
-        unsafe extern "C" fn(This: *mut IConnectionPoint, pIID: *mut IID) -> HRESULT,
+        unsafe extern "system" fn(This: *mut IConnectionPoint, pIID: *mut IID) -> HRESULT,
     >,
     pub GetConnectionPointContainer: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IConnectionPoint,
             ppCPC: *mut *mut IConnectionPointContainer,
         ) -> HRESULT,
     >,
     pub Advise: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IConnectionPoint,
             pUnkSink: *mut IUnknown,
             pdwCookie: *mut DWORD,
         ) -> HRESULT,
     >,
     pub Unadvise: ::core::option::Option<
-        unsafe extern "C" fn(This: *mut IConnectionPoint, dwCookie: DWORD) -> HRESULT,
+        unsafe extern "system" fn(This: *mut IConnectionPoint, dwCookie: DWORD) -> HRESULT,
     >,
     pub EnumConnections: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IConnectionPoint,
             ppEnum: *mut *mut IEnumConnections,
         ) -> HRESULT,
@@ -17938,24 +17938,24 @@ pub struct IConnectionPoint {
 #[derive(Debug, Copy, Clone)]
 pub struct IConnectionPointContainerVtbl {
     pub QueryInterface: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IConnectionPointContainer,
             riid: *const IID,
             ppvObject: *mut *mut ::core::ffi::c_void,
         ) -> HRESULT,
     >,
     pub AddRef:
-        ::core::option::Option<unsafe extern "C" fn(This: *mut IConnectionPointContainer) -> ULONG>,
+        ::core::option::Option<unsafe extern "system" fn(This: *mut IConnectionPointContainer) -> ULONG>,
     pub Release:
-        ::core::option::Option<unsafe extern "C" fn(This: *mut IConnectionPointContainer) -> ULONG>,
+        ::core::option::Option<unsafe extern "system" fn(This: *mut IConnectionPointContainer) -> ULONG>,
     pub EnumConnectionPoints: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IConnectionPointContainer,
             ppEnum: *mut *mut IEnumConnectionPoints,
         ) -> HRESULT,
     >,
     pub FindConnectionPoint: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IConnectionPointContainer,
             riid: *const IID,
             ppCP: *mut *mut IConnectionPoint,
@@ -17978,16 +17978,16 @@ pub type LPCONNECTDATA = *mut tagCONNECTDATA;
 #[derive(Debug, Copy, Clone)]
 pub struct IEnumConnectionsVtbl {
     pub QueryInterface: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IEnumConnections,
             riid: *const IID,
             ppvObject: *mut *mut ::core::ffi::c_void,
         ) -> HRESULT,
     >,
-    pub AddRef: ::core::option::Option<unsafe extern "C" fn(This: *mut IEnumConnections) -> ULONG>,
-    pub Release: ::core::option::Option<unsafe extern "C" fn(This: *mut IEnumConnections) -> ULONG>,
+    pub AddRef: ::core::option::Option<unsafe extern "system" fn(This: *mut IEnumConnections) -> ULONG>,
+    pub Release: ::core::option::Option<unsafe extern "system" fn(This: *mut IEnumConnections) -> ULONG>,
     pub Next: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IEnumConnections,
             cConnections: ULONG,
             rgcd: LPCONNECTDATA,
@@ -17995,11 +17995,11 @@ pub struct IEnumConnectionsVtbl {
         ) -> HRESULT,
     >,
     pub Skip: ::core::option::Option<
-        unsafe extern "C" fn(This: *mut IEnumConnections, cConnections: ULONG) -> HRESULT,
+        unsafe extern "system" fn(This: *mut IEnumConnections, cConnections: ULONG) -> HRESULT,
     >,
-    pub Reset: ::core::option::Option<unsafe extern "C" fn(This: *mut IEnumConnections) -> HRESULT>,
+    pub Reset: ::core::option::Option<unsafe extern "system" fn(This: *mut IEnumConnections) -> HRESULT>,
     pub Clone: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IEnumConnections,
             ppEnum: *mut *mut IEnumConnections,
         ) -> HRESULT,
@@ -18014,18 +18014,18 @@ pub struct IEnumConnections {
 #[derive(Debug, Copy, Clone)]
 pub struct IEnumConnectionPointsVtbl {
     pub QueryInterface: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IEnumConnectionPoints,
             riid: *const IID,
             ppvObject: *mut *mut ::core::ffi::c_void,
         ) -> HRESULT,
     >,
     pub AddRef:
-        ::core::option::Option<unsafe extern "C" fn(This: *mut IEnumConnectionPoints) -> ULONG>,
+        ::core::option::Option<unsafe extern "system" fn(This: *mut IEnumConnectionPoints) -> ULONG>,
     pub Release:
-        ::core::option::Option<unsafe extern "C" fn(This: *mut IEnumConnectionPoints) -> ULONG>,
+        ::core::option::Option<unsafe extern "system" fn(This: *mut IEnumConnectionPoints) -> ULONG>,
     pub Next: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IEnumConnectionPoints,
             cConnections: ULONG,
             ppCP: *mut LPCONNECTIONPOINT,
@@ -18033,12 +18033,12 @@ pub struct IEnumConnectionPointsVtbl {
         ) -> HRESULT,
     >,
     pub Skip: ::core::option::Option<
-        unsafe extern "C" fn(This: *mut IEnumConnectionPoints, cConnections: ULONG) -> HRESULT,
+        unsafe extern "system" fn(This: *mut IEnumConnectionPoints, cConnections: ULONG) -> HRESULT,
     >,
     pub Reset:
-        ::core::option::Option<unsafe extern "C" fn(This: *mut IEnumConnectionPoints) -> HRESULT>,
+        ::core::option::Option<unsafe extern "system" fn(This: *mut IEnumConnectionPoints) -> HRESULT>,
     pub Clone: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IEnumConnectionPoints,
             ppEnum: *mut *mut IEnumConnectionPoints,
         ) -> HRESULT,
@@ -18064,22 +18064,22 @@ pub type PROPPAGEINFO = tagPROPPAGEINFO;
 #[derive(Debug, Copy, Clone)]
 pub struct IPropertyPageVtbl {
     pub QueryInterface: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IPropertyPage,
             riid: *const IID,
             ppvObject: *mut *mut ::core::ffi::c_void,
         ) -> HRESULT,
     >,
-    pub AddRef: ::core::option::Option<unsafe extern "C" fn(This: *mut IPropertyPage) -> ULONG>,
-    pub Release: ::core::option::Option<unsafe extern "C" fn(This: *mut IPropertyPage) -> ULONG>,
+    pub AddRef: ::core::option::Option<unsafe extern "system" fn(This: *mut IPropertyPage) -> ULONG>,
+    pub Release: ::core::option::Option<unsafe extern "system" fn(This: *mut IPropertyPage) -> ULONG>,
     pub SetPageSite: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IPropertyPage,
             pPageSite: *mut IPropertyPageSite,
         ) -> HRESULT,
     >,
     pub Activate: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IPropertyPage,
             hWndParent: HWND,
             pRect: LPCRECT,
@@ -18087,31 +18087,31 @@ pub struct IPropertyPageVtbl {
         ) -> HRESULT,
     >,
     pub Deactivate:
-        ::core::option::Option<unsafe extern "C" fn(This: *mut IPropertyPage) -> HRESULT>,
+        ::core::option::Option<unsafe extern "system" fn(This: *mut IPropertyPage) -> HRESULT>,
     pub GetPageInfo: ::core::option::Option<
-        unsafe extern "C" fn(This: *mut IPropertyPage, pPageInfo: *mut PROPPAGEINFO) -> HRESULT,
+        unsafe extern "system" fn(This: *mut IPropertyPage, pPageInfo: *mut PROPPAGEINFO) -> HRESULT,
     >,
     pub SetObjects: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IPropertyPage,
             cObjects: ULONG,
             ppUnk: *mut *mut IUnknown,
         ) -> HRESULT,
     >,
     pub Show: ::core::option::Option<
-        unsafe extern "C" fn(This: *mut IPropertyPage, nCmdShow: UINT) -> HRESULT,
+        unsafe extern "system" fn(This: *mut IPropertyPage, nCmdShow: UINT) -> HRESULT,
     >,
     pub Move: ::core::option::Option<
-        unsafe extern "C" fn(This: *mut IPropertyPage, pRect: LPCRECT) -> HRESULT,
+        unsafe extern "system" fn(This: *mut IPropertyPage, pRect: LPCRECT) -> HRESULT,
     >,
     pub IsPageDirty:
-        ::core::option::Option<unsafe extern "C" fn(This: *mut IPropertyPage) -> HRESULT>,
-    pub Apply: ::core::option::Option<unsafe extern "C" fn(This: *mut IPropertyPage) -> HRESULT>,
+        ::core::option::Option<unsafe extern "system" fn(This: *mut IPropertyPage) -> HRESULT>,
+    pub Apply: ::core::option::Option<unsafe extern "system" fn(This: *mut IPropertyPage) -> HRESULT>,
     pub Help: ::core::option::Option<
-        unsafe extern "C" fn(This: *mut IPropertyPage, pszHelpDir: LPCOLESTR) -> HRESULT,
+        unsafe extern "system" fn(This: *mut IPropertyPage, pszHelpDir: LPCOLESTR) -> HRESULT,
     >,
     pub TranslateAcceleratorA: ::core::option::Option<
-        unsafe extern "C" fn(This: *mut IPropertyPage, pMsg: *mut MSG) -> HRESULT,
+        unsafe extern "system" fn(This: *mut IPropertyPage, pMsg: *mut MSG) -> HRESULT,
     >,
 }
 #[repr(C)]
@@ -18123,22 +18123,22 @@ pub struct IPropertyPage {
 #[derive(Debug, Copy, Clone)]
 pub struct IPropertyPage2Vtbl {
     pub QueryInterface: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IPropertyPage2,
             riid: *const IID,
             ppvObject: *mut *mut ::core::ffi::c_void,
         ) -> HRESULT,
     >,
-    pub AddRef: ::core::option::Option<unsafe extern "C" fn(This: *mut IPropertyPage2) -> ULONG>,
-    pub Release: ::core::option::Option<unsafe extern "C" fn(This: *mut IPropertyPage2) -> ULONG>,
+    pub AddRef: ::core::option::Option<unsafe extern "system" fn(This: *mut IPropertyPage2) -> ULONG>,
+    pub Release: ::core::option::Option<unsafe extern "system" fn(This: *mut IPropertyPage2) -> ULONG>,
     pub SetPageSite: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IPropertyPage2,
             pPageSite: *mut IPropertyPageSite,
         ) -> HRESULT,
     >,
     pub Activate: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IPropertyPage2,
             hWndParent: HWND,
             pRect: LPCRECT,
@@ -18146,34 +18146,34 @@ pub struct IPropertyPage2Vtbl {
         ) -> HRESULT,
     >,
     pub Deactivate:
-        ::core::option::Option<unsafe extern "C" fn(This: *mut IPropertyPage2) -> HRESULT>,
+        ::core::option::Option<unsafe extern "system" fn(This: *mut IPropertyPage2) -> HRESULT>,
     pub GetPageInfo: ::core::option::Option<
-        unsafe extern "C" fn(This: *mut IPropertyPage2, pPageInfo: *mut PROPPAGEINFO) -> HRESULT,
+        unsafe extern "system" fn(This: *mut IPropertyPage2, pPageInfo: *mut PROPPAGEINFO) -> HRESULT,
     >,
     pub SetObjects: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IPropertyPage2,
             cObjects: ULONG,
             ppUnk: *mut *mut IUnknown,
         ) -> HRESULT,
     >,
     pub Show: ::core::option::Option<
-        unsafe extern "C" fn(This: *mut IPropertyPage2, nCmdShow: UINT) -> HRESULT,
+        unsafe extern "system" fn(This: *mut IPropertyPage2, nCmdShow: UINT) -> HRESULT,
     >,
     pub Move: ::core::option::Option<
-        unsafe extern "C" fn(This: *mut IPropertyPage2, pRect: LPCRECT) -> HRESULT,
+        unsafe extern "system" fn(This: *mut IPropertyPage2, pRect: LPCRECT) -> HRESULT,
     >,
     pub IsPageDirty:
-        ::core::option::Option<unsafe extern "C" fn(This: *mut IPropertyPage2) -> HRESULT>,
-    pub Apply: ::core::option::Option<unsafe extern "C" fn(This: *mut IPropertyPage2) -> HRESULT>,
+        ::core::option::Option<unsafe extern "system" fn(This: *mut IPropertyPage2) -> HRESULT>,
+    pub Apply: ::core::option::Option<unsafe extern "system" fn(This: *mut IPropertyPage2) -> HRESULT>,
     pub Help: ::core::option::Option<
-        unsafe extern "C" fn(This: *mut IPropertyPage2, pszHelpDir: LPCOLESTR) -> HRESULT,
+        unsafe extern "system" fn(This: *mut IPropertyPage2, pszHelpDir: LPCOLESTR) -> HRESULT,
     >,
     pub TranslateAcceleratorA: ::core::option::Option<
-        unsafe extern "C" fn(This: *mut IPropertyPage2, pMsg: *mut MSG) -> HRESULT,
+        unsafe extern "system" fn(This: *mut IPropertyPage2, pMsg: *mut MSG) -> HRESULT,
     >,
     pub EditProperty: ::core::option::Option<
-        unsafe extern "C" fn(This: *mut IPropertyPage2, dispID: DISPID) -> HRESULT,
+        unsafe extern "system" fn(This: *mut IPropertyPage2, dispID: DISPID) -> HRESULT,
     >,
 }
 #[repr(C)]
@@ -18185,26 +18185,26 @@ pub struct IPropertyPage2 {
 #[derive(Debug, Copy, Clone)]
 pub struct IPropertyPageSiteVtbl {
     pub QueryInterface: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IPropertyPageSite,
             riid: *const IID,
             ppvObject: *mut *mut ::core::ffi::c_void,
         ) -> HRESULT,
     >,
-    pub AddRef: ::core::option::Option<unsafe extern "C" fn(This: *mut IPropertyPageSite) -> ULONG>,
+    pub AddRef: ::core::option::Option<unsafe extern "system" fn(This: *mut IPropertyPageSite) -> ULONG>,
     pub Release:
-        ::core::option::Option<unsafe extern "C" fn(This: *mut IPropertyPageSite) -> ULONG>,
+        ::core::option::Option<unsafe extern "system" fn(This: *mut IPropertyPageSite) -> ULONG>,
     pub OnStatusChange: ::core::option::Option<
-        unsafe extern "C" fn(This: *mut IPropertyPageSite, dwFlags: DWORD) -> HRESULT,
+        unsafe extern "system" fn(This: *mut IPropertyPageSite, dwFlags: DWORD) -> HRESULT,
     >,
     pub GetLocaleID: ::core::option::Option<
-        unsafe extern "C" fn(This: *mut IPropertyPageSite, pLocaleID: *mut LCID) -> HRESULT,
+        unsafe extern "system" fn(This: *mut IPropertyPageSite, pLocaleID: *mut LCID) -> HRESULT,
     >,
     pub GetPageContainer: ::core::option::Option<
-        unsafe extern "C" fn(This: *mut IPropertyPageSite, ppUnk: *mut *mut IUnknown) -> HRESULT,
+        unsafe extern "system" fn(This: *mut IPropertyPageSite, ppUnk: *mut *mut IUnknown) -> HRESULT,
     >,
     pub TranslateAcceleratorA: ::core::option::Option<
-        unsafe extern "C" fn(This: *mut IPropertyPageSite, pMsg: *mut MSG) -> HRESULT,
+        unsafe extern "system" fn(This: *mut IPropertyPageSite, pMsg: *mut MSG) -> HRESULT,
     >,
 }
 #[repr(C)]
@@ -18216,21 +18216,21 @@ pub struct IPropertyPageSite {
 #[derive(Debug, Copy, Clone)]
 pub struct IPropertyNotifySinkVtbl {
     pub QueryInterface: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IPropertyNotifySink,
             riid: *const IID,
             ppvObject: *mut *mut ::core::ffi::c_void,
         ) -> HRESULT,
     >,
     pub AddRef:
-        ::core::option::Option<unsafe extern "C" fn(This: *mut IPropertyNotifySink) -> ULONG>,
+        ::core::option::Option<unsafe extern "system" fn(This: *mut IPropertyNotifySink) -> ULONG>,
     pub Release:
-        ::core::option::Option<unsafe extern "C" fn(This: *mut IPropertyNotifySink) -> ULONG>,
+        ::core::option::Option<unsafe extern "system" fn(This: *mut IPropertyNotifySink) -> ULONG>,
     pub OnChanged: ::core::option::Option<
-        unsafe extern "C" fn(This: *mut IPropertyNotifySink, dispID: DISPID) -> HRESULT,
+        unsafe extern "system" fn(This: *mut IPropertyNotifySink, dispID: DISPID) -> HRESULT,
     >,
     pub OnRequestEdit: ::core::option::Option<
-        unsafe extern "C" fn(This: *mut IPropertyNotifySink, dispID: DISPID) -> HRESULT,
+        unsafe extern "system" fn(This: *mut IPropertyNotifySink, dispID: DISPID) -> HRESULT,
     >,
 }
 #[repr(C)]
@@ -18242,16 +18242,16 @@ pub struct IPropertyNotifySink {
 #[derive(Debug, Copy, Clone)]
 pub struct ISimpleFrameSiteVtbl {
     pub QueryInterface: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut ISimpleFrameSite,
             riid: *const IID,
             ppvObject: *mut *mut ::core::ffi::c_void,
         ) -> HRESULT,
     >,
-    pub AddRef: ::core::option::Option<unsafe extern "C" fn(This: *mut ISimpleFrameSite) -> ULONG>,
-    pub Release: ::core::option::Option<unsafe extern "C" fn(This: *mut ISimpleFrameSite) -> ULONG>,
+    pub AddRef: ::core::option::Option<unsafe extern "system" fn(This: *mut ISimpleFrameSite) -> ULONG>,
+    pub Release: ::core::option::Option<unsafe extern "system" fn(This: *mut ISimpleFrameSite) -> ULONG>,
     pub PreMessageFilter: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut ISimpleFrameSite,
             hWnd: HWND,
             msg: UINT,
@@ -18262,7 +18262,7 @@ pub struct ISimpleFrameSiteVtbl {
         ) -> HRESULT,
     >,
     pub PostMessageFilter: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut ISimpleFrameSite,
             hWnd: HWND,
             msg: UINT,
@@ -18282,39 +18282,39 @@ pub struct ISimpleFrameSite {
 #[derive(Debug, Copy, Clone)]
 pub struct IPersistStreamInitVtbl {
     pub QueryInterface: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IPersistStreamInit,
             riid: *const IID,
             ppvObject: *mut *mut ::core::ffi::c_void,
         ) -> HRESULT,
     >,
     pub AddRef:
-        ::core::option::Option<unsafe extern "C" fn(This: *mut IPersistStreamInit) -> ULONG>,
+        ::core::option::Option<unsafe extern "system" fn(This: *mut IPersistStreamInit) -> ULONG>,
     pub Release:
-        ::core::option::Option<unsafe extern "C" fn(This: *mut IPersistStreamInit) -> ULONG>,
+        ::core::option::Option<unsafe extern "system" fn(This: *mut IPersistStreamInit) -> ULONG>,
     pub GetClassID: ::core::option::Option<
-        unsafe extern "C" fn(This: *mut IPersistStreamInit, pClassID: *mut CLSID) -> HRESULT,
+        unsafe extern "system" fn(This: *mut IPersistStreamInit, pClassID: *mut CLSID) -> HRESULT,
     >,
     pub IsDirty:
-        ::core::option::Option<unsafe extern "C" fn(This: *mut IPersistStreamInit) -> HRESULT>,
+        ::core::option::Option<unsafe extern "system" fn(This: *mut IPersistStreamInit) -> HRESULT>,
     pub Load: ::core::option::Option<
-        unsafe extern "C" fn(This: *mut IPersistStreamInit, pStm: LPSTREAM) -> HRESULT,
+        unsafe extern "system" fn(This: *mut IPersistStreamInit, pStm: LPSTREAM) -> HRESULT,
     >,
     pub Save: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IPersistStreamInit,
             pStm: LPSTREAM,
             fClearDirty: BOOL,
         ) -> HRESULT,
     >,
     pub GetSizeMax: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IPersistStreamInit,
             pcbSize: *mut ULARGE_INTEGER,
         ) -> HRESULT,
     >,
     pub InitNew:
-        ::core::option::Option<unsafe extern "C" fn(This: *mut IPersistStreamInit) -> HRESULT>,
+        ::core::option::Option<unsafe extern "system" fn(This: *mut IPersistStreamInit) -> HRESULT>,
 }
 #[repr(C)]
 #[derive(Debug, Copy, Clone)]
@@ -18325,23 +18325,23 @@ pub struct IPersistStreamInit {
 #[derive(Debug, Copy, Clone)]
 pub struct IPersistMemoryVtbl {
     pub QueryInterface: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IPersistMemory,
             riid: *const IID,
             ppvObject: *mut *mut ::core::ffi::c_void,
         ) -> HRESULT,
     >,
-    pub AddRef: ::core::option::Option<unsafe extern "C" fn(This: *mut IPersistMemory) -> ULONG>,
-    pub Release: ::core::option::Option<unsafe extern "C" fn(This: *mut IPersistMemory) -> ULONG>,
+    pub AddRef: ::core::option::Option<unsafe extern "system" fn(This: *mut IPersistMemory) -> ULONG>,
+    pub Release: ::core::option::Option<unsafe extern "system" fn(This: *mut IPersistMemory) -> ULONG>,
     pub GetClassID: ::core::option::Option<
-        unsafe extern "C" fn(This: *mut IPersistMemory, pClassID: *mut CLSID) -> HRESULT,
+        unsafe extern "system" fn(This: *mut IPersistMemory, pClassID: *mut CLSID) -> HRESULT,
     >,
-    pub IsDirty: ::core::option::Option<unsafe extern "C" fn(This: *mut IPersistMemory) -> HRESULT>,
+    pub IsDirty: ::core::option::Option<unsafe extern "system" fn(This: *mut IPersistMemory) -> HRESULT>,
     pub Load: ::core::option::Option<
-        unsafe extern "C" fn(This: *mut IPersistMemory, pMem: LPVOID, cbSize: ULONG) -> HRESULT,
+        unsafe extern "system" fn(This: *mut IPersistMemory, pMem: LPVOID, cbSize: ULONG) -> HRESULT,
     >,
     pub Save: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IPersistMemory,
             pMem: LPVOID,
             fClearDirty: BOOL,
@@ -18349,9 +18349,9 @@ pub struct IPersistMemoryVtbl {
         ) -> HRESULT,
     >,
     pub GetSizeMax: ::core::option::Option<
-        unsafe extern "C" fn(This: *mut IPersistMemory, pCbSize: *mut ULONG) -> HRESULT,
+        unsafe extern "system" fn(This: *mut IPersistMemory, pCbSize: *mut ULONG) -> HRESULT,
     >,
-    pub InitNew: ::core::option::Option<unsafe extern "C" fn(This: *mut IPersistMemory) -> HRESULT>,
+    pub InitNew: ::core::option::Option<unsafe extern "system" fn(This: *mut IPersistMemory) -> HRESULT>,
 }
 #[repr(C)]
 #[derive(Debug, Copy, Clone)]
@@ -18362,30 +18362,30 @@ pub struct IPersistMemory {
 #[derive(Debug, Copy, Clone)]
 pub struct IPersistPropertyBagVtbl {
     pub QueryInterface: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IPersistPropertyBag,
             riid: *const IID,
             ppvObject: *mut *mut ::core::ffi::c_void,
         ) -> HRESULT,
     >,
     pub AddRef:
-        ::core::option::Option<unsafe extern "C" fn(This: *mut IPersistPropertyBag) -> ULONG>,
+        ::core::option::Option<unsafe extern "system" fn(This: *mut IPersistPropertyBag) -> ULONG>,
     pub Release:
-        ::core::option::Option<unsafe extern "C" fn(This: *mut IPersistPropertyBag) -> ULONG>,
+        ::core::option::Option<unsafe extern "system" fn(This: *mut IPersistPropertyBag) -> ULONG>,
     pub GetClassID: ::core::option::Option<
-        unsafe extern "C" fn(This: *mut IPersistPropertyBag, pClassID: *mut CLSID) -> HRESULT,
+        unsafe extern "system" fn(This: *mut IPersistPropertyBag, pClassID: *mut CLSID) -> HRESULT,
     >,
     pub InitNew:
-        ::core::option::Option<unsafe extern "C" fn(This: *mut IPersistPropertyBag) -> HRESULT>,
+        ::core::option::Option<unsafe extern "system" fn(This: *mut IPersistPropertyBag) -> HRESULT>,
     pub Load: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IPersistPropertyBag,
             pPropBag: *mut IPropertyBag,
             pErrorLog: *mut IErrorLog,
         ) -> HRESULT,
     >,
     pub Save: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IPersistPropertyBag,
             pPropBag: *mut IPropertyBag,
             fClearDirty: BOOL,
@@ -18413,16 +18413,16 @@ pub type PROPBAG2 = tagPROPBAG2;
 #[derive(Debug, Copy, Clone)]
 pub struct IPropertyBag2Vtbl {
     pub QueryInterface: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IPropertyBag2,
             riid: *const IID,
             ppvObject: *mut *mut ::core::ffi::c_void,
         ) -> HRESULT,
     >,
-    pub AddRef: ::core::option::Option<unsafe extern "C" fn(This: *mut IPropertyBag2) -> ULONG>,
-    pub Release: ::core::option::Option<unsafe extern "C" fn(This: *mut IPropertyBag2) -> ULONG>,
+    pub AddRef: ::core::option::Option<unsafe extern "system" fn(This: *mut IPropertyBag2) -> ULONG>,
+    pub Release: ::core::option::Option<unsafe extern "system" fn(This: *mut IPropertyBag2) -> ULONG>,
     pub Read: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IPropertyBag2,
             cProperties: ULONG,
             pPropBag: *mut PROPBAG2,
@@ -18432,7 +18432,7 @@ pub struct IPropertyBag2Vtbl {
         ) -> HRESULT,
     >,
     pub Write: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IPropertyBag2,
             cProperties: ULONG,
             pPropBag: *mut PROPBAG2,
@@ -18440,10 +18440,10 @@ pub struct IPropertyBag2Vtbl {
         ) -> HRESULT,
     >,
     pub CountProperties: ::core::option::Option<
-        unsafe extern "C" fn(This: *mut IPropertyBag2, pcProperties: *mut ULONG) -> HRESULT,
+        unsafe extern "system" fn(This: *mut IPropertyBag2, pcProperties: *mut ULONG) -> HRESULT,
     >,
     pub GetPropertyInfo: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IPropertyBag2,
             iProperty: ULONG,
             cProperties: ULONG,
@@ -18452,7 +18452,7 @@ pub struct IPropertyBag2Vtbl {
         ) -> HRESULT,
     >,
     pub LoadObject: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IPropertyBag2,
             pstrName: LPCOLESTR,
             dwHint: DWORD,
@@ -18470,30 +18470,30 @@ pub struct IPropertyBag2 {
 #[derive(Debug, Copy, Clone)]
 pub struct IPersistPropertyBag2Vtbl {
     pub QueryInterface: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IPersistPropertyBag2,
             riid: *const IID,
             ppvObject: *mut *mut ::core::ffi::c_void,
         ) -> HRESULT,
     >,
     pub AddRef:
-        ::core::option::Option<unsafe extern "C" fn(This: *mut IPersistPropertyBag2) -> ULONG>,
+        ::core::option::Option<unsafe extern "system" fn(This: *mut IPersistPropertyBag2) -> ULONG>,
     pub Release:
-        ::core::option::Option<unsafe extern "C" fn(This: *mut IPersistPropertyBag2) -> ULONG>,
+        ::core::option::Option<unsafe extern "system" fn(This: *mut IPersistPropertyBag2) -> ULONG>,
     pub GetClassID: ::core::option::Option<
-        unsafe extern "C" fn(This: *mut IPersistPropertyBag2, pClassID: *mut CLSID) -> HRESULT,
+        unsafe extern "system" fn(This: *mut IPersistPropertyBag2, pClassID: *mut CLSID) -> HRESULT,
     >,
     pub InitNew:
-        ::core::option::Option<unsafe extern "C" fn(This: *mut IPersistPropertyBag2) -> HRESULT>,
+        ::core::option::Option<unsafe extern "system" fn(This: *mut IPersistPropertyBag2) -> HRESULT>,
     pub Load: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IPersistPropertyBag2,
             pPropBag: *mut IPropertyBag2,
             pErrorLog: *mut IErrorLog,
         ) -> HRESULT,
     >,
     pub Save: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IPersistPropertyBag2,
             pPropBag: *mut IPropertyBag2,
             fClearDirty: BOOL,
@@ -18501,7 +18501,7 @@ pub struct IPersistPropertyBag2Vtbl {
         ) -> HRESULT,
     >,
     pub IsDirty:
-        ::core::option::Option<unsafe extern "C" fn(This: *mut IPersistPropertyBag2) -> HRESULT>,
+        ::core::option::Option<unsafe extern "system" fn(This: *mut IPersistPropertyBag2) -> HRESULT>,
 }
 #[repr(C)]
 #[derive(Debug, Copy, Clone)]
@@ -18519,18 +18519,18 @@ pub type CAUUID = tagCAUUID;
 #[derive(Debug, Copy, Clone)]
 pub struct ISpecifyPropertyPagesVtbl {
     pub QueryInterface: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut ISpecifyPropertyPages,
             riid: *const IID,
             ppvObject: *mut *mut ::core::ffi::c_void,
         ) -> HRESULT,
     >,
     pub AddRef:
-        ::core::option::Option<unsafe extern "C" fn(This: *mut ISpecifyPropertyPages) -> ULONG>,
+        ::core::option::Option<unsafe extern "system" fn(This: *mut ISpecifyPropertyPages) -> ULONG>,
     pub Release:
-        ::core::option::Option<unsafe extern "C" fn(This: *mut ISpecifyPropertyPages) -> ULONG>,
+        ::core::option::Option<unsafe extern "system" fn(This: *mut ISpecifyPropertyPages) -> ULONG>,
     pub GetPages: ::core::option::Option<
-        unsafe extern "C" fn(This: *mut ISpecifyPropertyPages, pPages: *mut CAUUID) -> HRESULT,
+        unsafe extern "system" fn(This: *mut ISpecifyPropertyPages, pPages: *mut CAUUID) -> HRESULT,
     >,
 }
 #[repr(C)]
@@ -18556,32 +18556,32 @@ pub type CADWORD = tagCADWORD;
 #[derive(Debug, Copy, Clone)]
 pub struct IPerPropertyBrowsingVtbl {
     pub QueryInterface: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IPerPropertyBrowsing,
             riid: *const IID,
             ppvObject: *mut *mut ::core::ffi::c_void,
         ) -> HRESULT,
     >,
     pub AddRef:
-        ::core::option::Option<unsafe extern "C" fn(This: *mut IPerPropertyBrowsing) -> ULONG>,
+        ::core::option::Option<unsafe extern "system" fn(This: *mut IPerPropertyBrowsing) -> ULONG>,
     pub Release:
-        ::core::option::Option<unsafe extern "C" fn(This: *mut IPerPropertyBrowsing) -> ULONG>,
+        ::core::option::Option<unsafe extern "system" fn(This: *mut IPerPropertyBrowsing) -> ULONG>,
     pub GetDisplayString: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IPerPropertyBrowsing,
             dispID: DISPID,
             pBstr: *mut BSTR,
         ) -> HRESULT,
     >,
     pub MapPropertyToPage: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IPerPropertyBrowsing,
             dispID: DISPID,
             pClsid: *mut CLSID,
         ) -> HRESULT,
     >,
     pub GetPredefinedStrings: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IPerPropertyBrowsing,
             dispID: DISPID,
             pCaStringsOut: *mut CALPOLESTR,
@@ -18589,7 +18589,7 @@ pub struct IPerPropertyBrowsingVtbl {
         ) -> HRESULT,
     >,
     pub GetPredefinedValue: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IPerPropertyBrowsing,
             dispID: DISPID,
             dwCookie: DWORD,
@@ -18606,30 +18606,30 @@ pub struct IPerPropertyBrowsing {
 #[derive(Debug, Copy, Clone)]
 pub struct IAdviseSinkExVtbl {
     pub QueryInterface: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IAdviseSinkEx,
             riid: *const IID,
             ppvObject: *mut *mut ::core::ffi::c_void,
         ) -> HRESULT,
     >,
-    pub AddRef: ::core::option::Option<unsafe extern "C" fn(This: *mut IAdviseSinkEx) -> ULONG>,
-    pub Release: ::core::option::Option<unsafe extern "C" fn(This: *mut IAdviseSinkEx) -> ULONG>,
+    pub AddRef: ::core::option::Option<unsafe extern "system" fn(This: *mut IAdviseSinkEx) -> ULONG>,
+    pub Release: ::core::option::Option<unsafe extern "system" fn(This: *mut IAdviseSinkEx) -> ULONG>,
     pub OnDataChange: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IAdviseSinkEx,
             pFormatetc: *mut FORMATETC,
             pStgmed: *mut STGMEDIUM,
         ),
     >,
     pub OnViewChange: ::core::option::Option<
-        unsafe extern "C" fn(This: *mut IAdviseSinkEx, dwAspect: DWORD, lindex: LONG),
+        unsafe extern "system" fn(This: *mut IAdviseSinkEx, dwAspect: DWORD, lindex: LONG),
     >,
     pub OnRename:
-        ::core::option::Option<unsafe extern "C" fn(This: *mut IAdviseSinkEx, pmk: *mut IMoniker)>,
-    pub OnSave: ::core::option::Option<unsafe extern "C" fn(This: *mut IAdviseSinkEx)>,
-    pub OnClose: ::core::option::Option<unsafe extern "C" fn(This: *mut IAdviseSinkEx)>,
+        ::core::option::Option<unsafe extern "system" fn(This: *mut IAdviseSinkEx, pmk: *mut IMoniker)>,
+    pub OnSave: ::core::option::Option<unsafe extern "system" fn(This: *mut IAdviseSinkEx)>,
+    pub OnClose: ::core::option::Option<unsafe extern "system" fn(This: *mut IAdviseSinkEx)>,
     pub OnViewStatusChange:
-        ::core::option::Option<unsafe extern "C" fn(This: *mut IAdviseSinkEx, dwViewStatus: DWORD)>,
+        ::core::option::Option<unsafe extern "system" fn(This: *mut IAdviseSinkEx, dwViewStatus: DWORD)>,
 }
 #[repr(C)]
 #[derive(Debug, Copy, Clone)]
@@ -18640,19 +18640,19 @@ pub struct IAdviseSinkEx {
 #[derive(Debug, Copy, Clone)]
 pub struct IPointerInactiveVtbl {
     pub QueryInterface: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IPointerInactive,
             riid: *const IID,
             ppvObject: *mut *mut ::core::ffi::c_void,
         ) -> HRESULT,
     >,
-    pub AddRef: ::core::option::Option<unsafe extern "C" fn(This: *mut IPointerInactive) -> ULONG>,
-    pub Release: ::core::option::Option<unsafe extern "C" fn(This: *mut IPointerInactive) -> ULONG>,
+    pub AddRef: ::core::option::Option<unsafe extern "system" fn(This: *mut IPointerInactive) -> ULONG>,
+    pub Release: ::core::option::Option<unsafe extern "system" fn(This: *mut IPointerInactive) -> ULONG>,
     pub GetActivationPolicy: ::core::option::Option<
-        unsafe extern "C" fn(This: *mut IPointerInactive, pdwPolicy: *mut DWORD) -> HRESULT,
+        unsafe extern "system" fn(This: *mut IPointerInactive, pdwPolicy: *mut DWORD) -> HRESULT,
     >,
     pub OnInactiveMouseMove: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IPointerInactive,
             pRectBounds: LPCRECT,
             x: LONG,
@@ -18661,7 +18661,7 @@ pub struct IPointerInactiveVtbl {
         ) -> HRESULT,
     >,
     pub OnInactiveSetCursor: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IPointerInactive,
             pRectBounds: LPCRECT,
             x: LONG,
@@ -18680,19 +18680,19 @@ pub struct IPointerInactive {
 #[derive(Debug, Copy, Clone)]
 pub struct IObjectWithSiteVtbl {
     pub QueryInterface: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IObjectWithSite,
             riid: *const IID,
             ppvObject: *mut *mut ::core::ffi::c_void,
         ) -> HRESULT,
     >,
-    pub AddRef: ::core::option::Option<unsafe extern "C" fn(This: *mut IObjectWithSite) -> ULONG>,
-    pub Release: ::core::option::Option<unsafe extern "C" fn(This: *mut IObjectWithSite) -> ULONG>,
+    pub AddRef: ::core::option::Option<unsafe extern "system" fn(This: *mut IObjectWithSite) -> ULONG>,
+    pub Release: ::core::option::Option<unsafe extern "system" fn(This: *mut IObjectWithSite) -> ULONG>,
     pub SetSite: ::core::option::Option<
-        unsafe extern "C" fn(This: *mut IObjectWithSite, pUnkSite: *mut IUnknown) -> HRESULT,
+        unsafe extern "system" fn(This: *mut IObjectWithSite, pUnkSite: *mut IUnknown) -> HRESULT,
     >,
     pub GetSite: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IObjectWithSite,
             riid: *const IID,
             ppvSite: *mut PVOID,
@@ -18708,31 +18708,31 @@ pub struct IObjectWithSite {
 #[derive(Debug, Copy, Clone)]
 pub struct IOleUndoUnitVtbl {
     pub QueryInterface: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IOleUndoUnit,
             riid: *const IID,
             ppvObject: *mut *mut ::core::ffi::c_void,
         ) -> HRESULT,
     >,
-    pub AddRef: ::core::option::Option<unsafe extern "C" fn(This: *mut IOleUndoUnit) -> ULONG>,
-    pub Release: ::core::option::Option<unsafe extern "C" fn(This: *mut IOleUndoUnit) -> ULONG>,
+    pub AddRef: ::core::option::Option<unsafe extern "system" fn(This: *mut IOleUndoUnit) -> ULONG>,
+    pub Release: ::core::option::Option<unsafe extern "system" fn(This: *mut IOleUndoUnit) -> ULONG>,
     pub Do: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IOleUndoUnit,
             pUndoManager: *mut IOleUndoManager,
         ) -> HRESULT,
     >,
     pub GetDescription: ::core::option::Option<
-        unsafe extern "C" fn(This: *mut IOleUndoUnit, pBstr: *mut BSTR) -> HRESULT,
+        unsafe extern "system" fn(This: *mut IOleUndoUnit, pBstr: *mut BSTR) -> HRESULT,
     >,
     pub GetUnitType: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IOleUndoUnit,
             pClsid: *mut CLSID,
             plID: *mut LONG,
         ) -> HRESULT,
     >,
-    pub OnNextAdd: ::core::option::Option<unsafe extern "C" fn(This: *mut IOleUndoUnit) -> HRESULT>,
+    pub OnNextAdd: ::core::option::Option<unsafe extern "system" fn(This: *mut IOleUndoUnit) -> HRESULT>,
 }
 #[repr(C)]
 #[derive(Debug, Copy, Clone)]
@@ -18743,55 +18743,55 @@ pub struct IOleUndoUnit {
 #[derive(Debug, Copy, Clone)]
 pub struct IOleParentUndoUnitVtbl {
     pub QueryInterface: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IOleParentUndoUnit,
             riid: *const IID,
             ppvObject: *mut *mut ::core::ffi::c_void,
         ) -> HRESULT,
     >,
     pub AddRef:
-        ::core::option::Option<unsafe extern "C" fn(This: *mut IOleParentUndoUnit) -> ULONG>,
+        ::core::option::Option<unsafe extern "system" fn(This: *mut IOleParentUndoUnit) -> ULONG>,
     pub Release:
-        ::core::option::Option<unsafe extern "C" fn(This: *mut IOleParentUndoUnit) -> ULONG>,
+        ::core::option::Option<unsafe extern "system" fn(This: *mut IOleParentUndoUnit) -> ULONG>,
     pub Do: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IOleParentUndoUnit,
             pUndoManager: *mut IOleUndoManager,
         ) -> HRESULT,
     >,
     pub GetDescription: ::core::option::Option<
-        unsafe extern "C" fn(This: *mut IOleParentUndoUnit, pBstr: *mut BSTR) -> HRESULT,
+        unsafe extern "system" fn(This: *mut IOleParentUndoUnit, pBstr: *mut BSTR) -> HRESULT,
     >,
     pub GetUnitType: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IOleParentUndoUnit,
             pClsid: *mut CLSID,
             plID: *mut LONG,
         ) -> HRESULT,
     >,
     pub OnNextAdd:
-        ::core::option::Option<unsafe extern "C" fn(This: *mut IOleParentUndoUnit) -> HRESULT>,
+        ::core::option::Option<unsafe extern "system" fn(This: *mut IOleParentUndoUnit) -> HRESULT>,
     pub Open: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IOleParentUndoUnit,
             pPUU: *mut IOleParentUndoUnit,
         ) -> HRESULT,
     >,
     pub Close: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IOleParentUndoUnit,
             pPUU: *mut IOleParentUndoUnit,
             fCommit: BOOL,
         ) -> HRESULT,
     >,
     pub Add: ::core::option::Option<
-        unsafe extern "C" fn(This: *mut IOleParentUndoUnit, pUU: *mut IOleUndoUnit) -> HRESULT,
+        unsafe extern "system" fn(This: *mut IOleParentUndoUnit, pUU: *mut IOleUndoUnit) -> HRESULT,
     >,
     pub FindUnit: ::core::option::Option<
-        unsafe extern "C" fn(This: *mut IOleParentUndoUnit, pUU: *mut IOleUndoUnit) -> HRESULT,
+        unsafe extern "system" fn(This: *mut IOleParentUndoUnit, pUU: *mut IOleUndoUnit) -> HRESULT,
     >,
     pub GetParentState: ::core::option::Option<
-        unsafe extern "C" fn(This: *mut IOleParentUndoUnit, pdwState: *mut DWORD) -> HRESULT,
+        unsafe extern "system" fn(This: *mut IOleParentUndoUnit, pdwState: *mut DWORD) -> HRESULT,
     >,
 }
 #[repr(C)]
@@ -18803,17 +18803,17 @@ pub struct IOleParentUndoUnit {
 #[derive(Debug, Copy, Clone)]
 pub struct IEnumOleUndoUnitsVtbl {
     pub QueryInterface: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IEnumOleUndoUnits,
             riid: *const IID,
             ppvObject: *mut *mut ::core::ffi::c_void,
         ) -> HRESULT,
     >,
-    pub AddRef: ::core::option::Option<unsafe extern "C" fn(This: *mut IEnumOleUndoUnits) -> ULONG>,
+    pub AddRef: ::core::option::Option<unsafe extern "system" fn(This: *mut IEnumOleUndoUnits) -> ULONG>,
     pub Release:
-        ::core::option::Option<unsafe extern "C" fn(This: *mut IEnumOleUndoUnits) -> ULONG>,
+        ::core::option::Option<unsafe extern "system" fn(This: *mut IEnumOleUndoUnits) -> ULONG>,
     pub Next: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IEnumOleUndoUnits,
             cElt: ULONG,
             rgElt: *mut *mut IOleUndoUnit,
@@ -18821,12 +18821,12 @@ pub struct IEnumOleUndoUnitsVtbl {
         ) -> HRESULT,
     >,
     pub Skip: ::core::option::Option<
-        unsafe extern "C" fn(This: *mut IEnumOleUndoUnits, cElt: ULONG) -> HRESULT,
+        unsafe extern "system" fn(This: *mut IEnumOleUndoUnits, cElt: ULONG) -> HRESULT,
     >,
     pub Reset:
-        ::core::option::Option<unsafe extern "C" fn(This: *mut IEnumOleUndoUnits) -> HRESULT>,
+        ::core::option::Option<unsafe extern "system" fn(This: *mut IEnumOleUndoUnits) -> HRESULT>,
     pub Clone: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IEnumOleUndoUnits,
             ppEnum: *mut *mut IEnumOleUndoUnits,
         ) -> HRESULT,
@@ -18841,59 +18841,59 @@ pub struct IEnumOleUndoUnits {
 #[derive(Debug, Copy, Clone)]
 pub struct IOleUndoManagerVtbl {
     pub QueryInterface: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IOleUndoManager,
             riid: *const IID,
             ppvObject: *mut *mut ::core::ffi::c_void,
         ) -> HRESULT,
     >,
-    pub AddRef: ::core::option::Option<unsafe extern "C" fn(This: *mut IOleUndoManager) -> ULONG>,
-    pub Release: ::core::option::Option<unsafe extern "C" fn(This: *mut IOleUndoManager) -> ULONG>,
+    pub AddRef: ::core::option::Option<unsafe extern "system" fn(This: *mut IOleUndoManager) -> ULONG>,
+    pub Release: ::core::option::Option<unsafe extern "system" fn(This: *mut IOleUndoManager) -> ULONG>,
     pub Open: ::core::option::Option<
-        unsafe extern "C" fn(This: *mut IOleUndoManager, pPUU: *mut IOleParentUndoUnit) -> HRESULT,
+        unsafe extern "system" fn(This: *mut IOleUndoManager, pPUU: *mut IOleParentUndoUnit) -> HRESULT,
     >,
     pub Close: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IOleUndoManager,
             pPUU: *mut IOleParentUndoUnit,
             fCommit: BOOL,
         ) -> HRESULT,
     >,
     pub Add: ::core::option::Option<
-        unsafe extern "C" fn(This: *mut IOleUndoManager, pUU: *mut IOleUndoUnit) -> HRESULT,
+        unsafe extern "system" fn(This: *mut IOleUndoManager, pUU: *mut IOleUndoUnit) -> HRESULT,
     >,
     pub GetOpenParentState: ::core::option::Option<
-        unsafe extern "C" fn(This: *mut IOleUndoManager, pdwState: *mut DWORD) -> HRESULT,
+        unsafe extern "system" fn(This: *mut IOleUndoManager, pdwState: *mut DWORD) -> HRESULT,
     >,
     pub DiscardFrom: ::core::option::Option<
-        unsafe extern "C" fn(This: *mut IOleUndoManager, pUU: *mut IOleUndoUnit) -> HRESULT,
+        unsafe extern "system" fn(This: *mut IOleUndoManager, pUU: *mut IOleUndoUnit) -> HRESULT,
     >,
     pub UndoTo: ::core::option::Option<
-        unsafe extern "C" fn(This: *mut IOleUndoManager, pUU: *mut IOleUndoUnit) -> HRESULT,
+        unsafe extern "system" fn(This: *mut IOleUndoManager, pUU: *mut IOleUndoUnit) -> HRESULT,
     >,
     pub RedoTo: ::core::option::Option<
-        unsafe extern "C" fn(This: *mut IOleUndoManager, pUU: *mut IOleUndoUnit) -> HRESULT,
+        unsafe extern "system" fn(This: *mut IOleUndoManager, pUU: *mut IOleUndoUnit) -> HRESULT,
     >,
     pub EnumUndoable: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IOleUndoManager,
             ppEnum: *mut *mut IEnumOleUndoUnits,
         ) -> HRESULT,
     >,
     pub EnumRedoable: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IOleUndoManager,
             ppEnum: *mut *mut IEnumOleUndoUnits,
         ) -> HRESULT,
     >,
     pub GetLastUndoDescription: ::core::option::Option<
-        unsafe extern "C" fn(This: *mut IOleUndoManager, pBstr: *mut BSTR) -> HRESULT,
+        unsafe extern "system" fn(This: *mut IOleUndoManager, pBstr: *mut BSTR) -> HRESULT,
     >,
     pub GetLastRedoDescription: ::core::option::Option<
-        unsafe extern "C" fn(This: *mut IOleUndoManager, pBstr: *mut BSTR) -> HRESULT,
+        unsafe extern "system" fn(This: *mut IOleUndoManager, pBstr: *mut BSTR) -> HRESULT,
     >,
     pub Enable: ::core::option::Option<
-        unsafe extern "C" fn(This: *mut IOleUndoManager, fEnable: BOOL) -> HRESULT,
+        unsafe extern "system" fn(This: *mut IOleUndoManager, fEnable: BOOL) -> HRESULT,
     >,
 }
 #[repr(C)]
@@ -18938,26 +18938,26 @@ pub type QACONTROL = tagQACONTROL;
 #[derive(Debug, Copy, Clone)]
 pub struct IQuickActivateVtbl {
     pub QueryInterface: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IQuickActivate,
             riid: *const IID,
             ppvObject: *mut *mut ::core::ffi::c_void,
         ) -> HRESULT,
     >,
-    pub AddRef: ::core::option::Option<unsafe extern "C" fn(This: *mut IQuickActivate) -> ULONG>,
-    pub Release: ::core::option::Option<unsafe extern "C" fn(This: *mut IQuickActivate) -> ULONG>,
+    pub AddRef: ::core::option::Option<unsafe extern "system" fn(This: *mut IQuickActivate) -> ULONG>,
+    pub Release: ::core::option::Option<unsafe extern "system" fn(This: *mut IQuickActivate) -> ULONG>,
     pub QuickActivate: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IQuickActivate,
             pQaContainer: *mut QACONTAINER,
             pQaControl: *mut QACONTROL,
         ) -> HRESULT,
     >,
     pub SetContentExtent: ::core::option::Option<
-        unsafe extern "C" fn(This: *mut IQuickActivate, pSizel: LPSIZEL) -> HRESULT,
+        unsafe extern "system" fn(This: *mut IQuickActivate, pSizel: LPSIZEL) -> HRESULT,
     >,
     pub GetContentExtent: ::core::option::Option<
-        unsafe extern "C" fn(This: *mut IQuickActivate, pSizel: LPSIZEL) -> HRESULT,
+        unsafe extern "system" fn(This: *mut IQuickActivate, pSizel: LPSIZEL) -> HRESULT,
     >,
 }
 #[repr(C)]

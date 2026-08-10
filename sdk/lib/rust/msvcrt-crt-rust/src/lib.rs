@@ -1576,14 +1576,26 @@ const STRUNCATE: i32 = 80;
 /// `((size_t)-1)` — the caller's "truncate rather than fail" sentinel.
 const TRUNCATE: usize = usize::MAX;
 
+// `_errno` and `_invalid_parameter` used to be declared `extern "C"` here, back when
+// errno.c was still C. This crate DEFINES both now (msvcrt/errno.rs), and an `extern`
+// declaration for a symbol your own crate defines is its own bug class: it links, so
+// nothing complains, while the declaration and the definition are free to disagree about
+// the signature. Import the items instead — then rustc checks them.
+//
+// `_errno` is msvcrt's per-thread errno slot; inside msvcrt.dll and inside the harness it
+// is the same Rust body, reading `msvcrt_get_thread_data()`. `_invalid_parameter`'s default
+// behaviour is "no handler installed → return", but an app CAN install one that aborts, so
+// the call itself is part of the contract and must actually happen.
+use crate::msvcrt::errno::_errno;
+
+/// `_invalid_parameter` follows its feature: this crate's body when it is on (every build
+/// that produces msvcrt.dll), and an import when it is off — the host harness DEFINES the
+/// plain name as its call counter. Either way the call itself must happen, because it is
+/// the observable the `_s` contract's `pmt` effect is measured from.
+#[cfg(feature = "invalid-parameter")]
+use crate::msvcrt::errno::_invalid_parameter;
+#[cfg(not(feature = "invalid-parameter"))]
 extern "C" {
-    /// msvcrt's own per-thread errno slot. Inside msvcrt.dll this is the real C
-    /// one; in the harness it is `subjectimpl.c`'s (deliberately separate from
-    /// the reference's, so each side's errno can be asserted independently).
-    fn _errno() -> *mut i32;
-    /// msvcrt's invalid-parameter handler. Default behaviour is "no handler
-    /// installed → return", but an app CAN install one that aborts, so the call
-    /// itself is part of the contract and must actually happen.
     fn _invalid_parameter(
         expr: *const u16,
         func: *const u16,
@@ -3234,12 +3246,18 @@ pub unsafe extern "C" fn _wcsupr(str_: *mut u16) -> *mut u16 {
 // `locinfo->lc_handle[LC_CTYPE]` and calls LCMapStringW, and that field IS a
 // struct offset we don't own. They stay C until Phase D.
 
+/// msvcrt's wide ctype table — a POINTER to 256 WORDs of mask bits.
+///
+/// In msvcrt.dll this is now `crate::msvcrt::ctype`'s own definition (`MSVCRT__wctype + 1`,
+/// generated and proven against ctype.c.obj). In the host harness the `ctype-tables`
+/// feature is off and subjectimpl.c owns the symbol, so it stays an `extern` there.
+/// (Data, so no calling convention — `extern "C"` is right for the `extern` arm.)
+#[cfg(not(feature = "ctype-tables"))]
 extern "C" {
-    /// msvcrt's wide ctype table — a POINTER to 256 WORDs of mask bits.
-    /// In msvcrt.dll this is the real table; in the harness, subjectimpl.c's.
-    /// (Data, so no calling convention — `extern "C"` is right here.)
     static MSVCRT__pwctype: *const u16;
 }
+#[cfg(feature = "ctype-tables")]
+use crate::msvcrt::ctype::MSVCRT__pwctype;
 
 // GetStringTypeW is `WINAPI` — i.e. **stdcall on i386** (`_GetStringTypeW@16`) and
 // cdecl on amd64/arm64. `extern "system"` is the one that resolves per-arch;
@@ -3525,11 +3543,23 @@ isc!(_isupper_l, isupper, sys::_UPPER as i32);
 isc!(_isxdigit_l, isxdigit, sys::_HEX as i32);
 isc!(_isleadbyte_l, isleadbyte, sys::_LEADBYTE as i32);
 
-/// `ispunct (MSVCRT.@)` — msvcrt exports NO `_ispunct_l`, only the plain form.
-/// (Checked against ctype.c's banner list; do not "complete the set".)
+/// `ispunct (MSVCRT.@)` and `_ispunct_l (MSVCR80.@)`.
+///
+/// The `isc!` macro above is not used here because the pair is asymmetric in the DLL:
+/// only `ispunct` is in `msvcrt.spec`, so only it is an EXPORT of msvcrt.dll. But
+/// `_ispunct_l` is still compiled — `llvm-nm --defined-only ctype.c.obj` lists
+/// `T __ispunct_l` — and an earlier note here read "msvcrt exports NO `_ispunct_l`, only
+/// the plain form. (Checked against ctype.c's banner list; do not 'complete the set'.)"
+/// The banner list is the DLL export list; it is not the object's symbol table, and it is
+/// the object that decides whether the C body stays live. This one symbol was the whole
+/// reason ctype.c.obj was still being pulled into the link.
 #[no_mangle]
 pub unsafe extern "C" fn ispunct(c: i32) -> i32 {
     _isctype_l(c, sys::_PUNCT as i32, core::ptr::null_mut())
+}
+#[no_mangle]
+pub unsafe extern "C" fn _ispunct_l(c: i32, locale: *mut core::ffi::c_void) -> i32 {
+    _isctype_l(c, sys::_PUNCT as i32, locale)
 }
 
 /// `_isblank_l` / `isblank` — the odd ones out, and they are odd in DIFFERENT ways.

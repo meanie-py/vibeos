@@ -533,44 +533,44 @@ pub struct _DEVICE_EXTENSION {
 }
 pub type DEVICE_EXTENSION = _DEVICE_EXTENSION;
 pub type PDEVICE_EXTENSION = *mut _DEVICE_EXTENSION;
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn FsRecCdfsFsControl(DeviceObject: PDEVICE_OBJECT, Irp: PIRP) -> NTSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn FsRecVfatFsControl(DeviceObject: PDEVICE_OBJECT, Irp: PIRP) -> NTSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn FsRecNtfsFsControl(DeviceObject: PDEVICE_OBJECT, Irp: PIRP) -> NTSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn FsRecUdfsFsControl(DeviceObject: PDEVICE_OBJECT, Irp: PIRP) -> NTSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn FsRecExtFsControl(DeviceObject: PDEVICE_OBJECT, Irp: PIRP) -> NTSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn FsRecBtrfsFsControl(DeviceObject: PDEVICE_OBJECT, Irp: PIRP) -> NTSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn FsRecReiserfsFsControl(DeviceObject: PDEVICE_OBJECT, Irp: PIRP) -> NTSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn FsRecFfsFsControl(DeviceObject: PDEVICE_OBJECT, Irp: PIRP) -> NTSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn FsRecFatxFsControl(DeviceObject: PDEVICE_OBJECT, Irp: PIRP) -> NTSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn FsRecGetDeviceSectors(
         DeviceObject: PDEVICE_OBJECT,
         SectorSize: ULONG,
         SectorCount: PLARGE_INTEGER,
     ) -> BOOLEAN;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn FsRecGetDeviceSectorSize(DeviceObject: PDEVICE_OBJECT, SectorSize: PULONG) -> BOOLEAN;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn FsRecReadBlock(
         DeviceObject: PDEVICE_OBJECT,
         Offset: PLARGE_INTEGER,
@@ -580,7 +580,7 @@ unsafe extern "stdcall" {
         DeviceError: PBOOLEAN,
     ) -> BOOLEAN;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn FsRecLoadFileSystem(DeviceObject: PDEVICE_OBJECT, DriverServiceName: PWCHAR)
         -> NTSTATUS;
 }

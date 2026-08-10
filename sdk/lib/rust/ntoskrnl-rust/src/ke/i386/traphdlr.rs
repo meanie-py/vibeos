@@ -61,7 +61,7 @@ extern "C" {
 }
 extern "C" {
     fn __readcr0() -> ULONG;
-    fn __writecr0(val: ULONG);
+    fn __writecr0(val: ULONG_PTR);
     fn __readcr2() -> ULONG_PTR;
 }
 // Assembly labels from trap.s — cdecl decoration
@@ -101,7 +101,7 @@ extern "C" {
     fn Ki386HandleOpcodeV86(TrapFrame: PKTRAP_FRAME) -> u8;
 }
 extern "system" {
-    fn KiDispatchExceptionFromTrapFrame( ExceptionCode: NTSTATUS, ExceptionFlags: ULONG, ExceptionAddress: ULONG, NumParams: ULONG, Param1: ULONG, Param2: ULONG, Param3: ULONG, TrapFrame: PKTRAP_FRAME, ) -> !;
+    fn KiDispatchExceptionFromTrapFrame( ExceptionCode: NTSTATUS, ExceptionFlags: ULONG, ExceptionAddress: ULONG_PTR, NumParams: ULONG, Param1: ULONG_PTR, Param2: ULONG_PTR, Param3: ULONG_PTR, TrapFrame: PKTRAP_FRAME, ) -> !;
 }
 
 static KiTrapPrefixTable: [UCHAR; 11] = [
@@ -269,11 +269,11 @@ pub unsafe extern "fastcall" fn KiDebugHandler(
     KiDispatchExceptionFromTrapFrame(
         STATUS_BREAKPOINT,
         0,
-        (*TrapFrame).Eip - eip_adjust,
+        ((*TrapFrame).Eip - eip_adjust) as ULONG_PTR,
         3,
-        Parameter1,
-        Parameter2,
-        Parameter3,
+        (Parameter1) as ULONG_PTR,
+        (Parameter2) as ULONG_PTR,
+        (Parameter3) as ULONG_PTR,
         TrapFrame,
     );
 }
@@ -302,11 +302,11 @@ pub unsafe extern "fastcall" fn KiNpxHandler(
     if (*Thread).NpxState == NPX_STATE_LOADED {
         let mut cr0 = __readcr0();
         cr0 &= !(CR0_MP | CR0_EM | CR0_TS);
-        __writecr0(cr0);
+        __writecr0((cr0) as ULONG_PTR);
         Ke386SaveFpuState(SaveArea);
         cr0 |= NPX_STATE_NOT_LOADED;
         cr0 |= (*SaveArea).Cr0NpxState;
-        __writecr0(cr0);
+        __writecr0((cr0) as ULONG_PTR);
         (*Thread).NpxState = NPX_STATE_NOT_LOADED as UCHAR;
         (*KeGetCurrentPrcb()).NpxThread = core::ptr::null_mut();
     }
@@ -515,7 +515,7 @@ pub unsafe extern "fastcall" fn KiTrap07Handler(TrapFrame: PKTRAP_FRAME) -> ! {
         let mut cr0 = __readcr0();
         if (*thread).NpxState != NPX_STATE_LOADED as UCHAR {
             cr0 &= !(CR0_MP | CR0_EM | CR0_TS);
-            __writecr0(cr0);
+            __writecr0((cr0) as ULONG_PTR);
             let npx_thread = (*KeGetCurrentPrcb()).NpxThread;
             if !npx_thread.is_null() {
                 let npx_save_area = KiGetThreadNpxArea(npx_thread);
@@ -532,12 +532,12 @@ pub unsafe extern "fastcall" fn KiTrap07Handler(TrapFrame: PKTRAP_FRAME) -> ! {
             _disable();
             cr0 = __readcr0();
             cr0 |= (*save_area).Cr0NpxState;
-            __writecr0(cr0);
+            __writecr0((cr0) as ULONG_PTR);
             _enable();
             if (cr0 & CR0_TS) != 0 {
                 KiEoiHelper(TrapFrame);
             }
-            __writecr0(__readcr0() & !CR0_TS);
+            __writecr0((__readcr0() & !CR0_TS) as ULONG_PTR);
             _disable();
         } else {
             break;
@@ -546,7 +546,7 @@ pub unsafe extern "fastcall" fn KiTrap07Handler(TrapFrame: PKTRAP_FRAME) -> ! {
     let cr0 = __readcr0();
     if (cr0 & CR0_TS) != 0 {
         if (cr0 & CR0_MP) != 0 {
-            __writecr0(__readcr0() & !CR0_TS);
+            __writecr0((__readcr0() & !CR0_TS) as ULONG_PTR);
             KiEoiHelper(TrapFrame);
         }
         KeBugCheckWithTf(TRAP_CAUSE_UNKNOWN, 2, cr0 as u32, 0, 0, TrapFrame);
@@ -814,11 +814,11 @@ pub unsafe extern "fastcall" fn KiTrap0EHandler(TrapFrame: PKTRAP_FRAME) -> ! {
     KiDispatchExceptionFromTrapFrame(
         STATUS_IN_PAGE_ERROR,
         0,
-        (*TrapFrame).Eip,
+        ((*TrapFrame).Eip) as ULONG_PTR,
         3,
-        ((*TrapFrame).ErrCode & 2) as ULONG,
-        cr2 as ULONG,
-        status as ULONG,
+        (((*TrapFrame).ErrCode & 2) as ULONG) as ULONG_PTR,
+        (cr2 as ULONG) as ULONG_PTR,
+        (status as ULONG) as ULONG_PTR,
         TrapFrame,
     );
 }
@@ -862,11 +862,11 @@ pub unsafe extern "fastcall" fn KiTrap13Handler(TrapFrame: PKTRAP_FRAME) -> ! {
     }
     let mut cr0 = __readcr0();
     cr0 &= !(CR0_MP | CR0_EM | CR0_TS);
-    __writecr0(cr0);
+    __writecr0((cr0) as ULONG_PTR);
     Ke386SaveFpuState(save_area);
     cr0 |= NPX_STATE_NOT_LOADED;
     cr0 |= (*save_area).Cr0NpxState;
-    __writecr0(cr0);
+    __writecr0((cr0) as ULONG_PTR);
     (*thread).NpxState = NPX_STATE_NOT_LOADED as UCHAR;
     (*KeGetCurrentPrcb()).NpxThread = core::ptr::null_mut();
     (*save_area).Cr0NpxState &= !CR0_TS;
@@ -889,9 +889,9 @@ pub unsafe extern "fastcall" fn KiRaiseSecurityCheckFailureHandler(TrapFrame: PK
         KiDispatchExceptionFromTrapFrame(
             STATUS_STACK_BUFFER_OVERRUN,
             EXCEPTION_NONCONTINUABLE,
-            (*TrapFrame).Eip,
+            ((*TrapFrame).Eip) as ULONG_PTR,
             1,
-            (*TrapFrame).Ecx,
+            ((*TrapFrame).Ecx) as ULONG_PTR,
             0,
             0,
             TrapFrame,

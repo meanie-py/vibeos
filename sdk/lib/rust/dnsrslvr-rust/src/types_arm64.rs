@@ -387,9 +387,9 @@ pub struct _QUERY_SERVICE_LOCK_STATUSW {
 pub type QUERY_SERVICE_LOCK_STATUSW = _QUERY_SERVICE_LOCK_STATUSW;
 pub type LPQUERY_SERVICE_LOCK_STATUSW = *mut _QUERY_SERVICE_LOCK_STATUSW;
 pub type LPSERVICE_MAIN_FUNCTIONA =
-    ::core::option::Option<unsafe extern "C" fn(arg1: DWORD, arg2: *mut LPSTR)>;
+    ::core::option::Option<unsafe extern "system" fn(arg1: DWORD, arg2: *mut LPSTR)>;
 pub type LPSERVICE_MAIN_FUNCTIONW =
-    ::core::option::Option<unsafe extern "C" fn(arg1: DWORD, arg2: *mut LPWSTR)>;
+    ::core::option::Option<unsafe extern "system" fn(arg1: DWORD, arg2: *mut LPWSTR)>;
 #[repr(C)]
 pub struct _SERVICE_TABLE_ENTRYA {
     pub lpServiceName: LPSTR,
@@ -418,9 +418,9 @@ pub struct SERVICE_STATUS_HANDLE__ {
     pub unused: ::core::ffi::c_int,
 }
 pub type SERVICE_STATUS_HANDLE = *mut SERVICE_STATUS_HANDLE__;
-pub type LPHANDLER_FUNCTION = ::core::option::Option<unsafe extern "C" fn(arg1: DWORD)>;
+pub type LPHANDLER_FUNCTION = ::core::option::Option<unsafe extern "system" fn(arg1: DWORD)>;
 pub type LPHANDLER_FUNCTION_EX = ::core::option::Option<
-    unsafe extern "C" fn(arg1: DWORD, arg2: DWORD, arg3: LPVOID, arg4: LPVOID) -> DWORD,
+    unsafe extern "system" fn(arg1: DWORD, arg2: DWORD, arg3: LPVOID, arg4: LPVOID) -> DWORD,
 >;
 #[repr(C)]
 pub struct _SERVICE_DESCRIPTIONA {
@@ -479,7 +479,7 @@ pub struct _SERVICE_REQUIRED_PRIVILEGES_INFOW {
 }
 pub type SERVICE_REQUIRED_PRIVILEGES_INFOW = _SERVICE_REQUIRED_PRIVILEGES_INFOW;
 pub type LPSERVICE_REQUIRED_PRIVILEGES_INFOW = *mut _SERVICE_REQUIRED_PRIVILEGES_INFOW;
-pub type PFN_SC_NOTIFY_CALLBACK = ::core::option::Option<unsafe extern "C" fn(arg1: PVOID)>;
+pub type PFN_SC_NOTIFY_CALLBACK = ::core::option::Option<unsafe extern "system" fn(arg1: PVOID)>;
 #[repr(C)]
 pub struct _SERVICE_NOTIFY_1 {
     pub dwVersion: DWORD,

@@ -20,7 +20,7 @@ elseif(ARCH STREQUAL "arm64")
 endif()
 set(USERENV_RUST_TARGET_DIR "${CMAKE_CURRENT_BINARY_DIR}/rust-userenv-target")
 set(USERENV_RUST_LIB "${CMAKE_CURRENT_BINARY_DIR}/libuserenv_rust.a")
-file(GLOB_RECURSE USERENV_RUST_SRCS "${USERENV_RUST_WORKSPACE_DIR}/userenv-rust/src/*.rs")
+rust_crate_sources(USERENV_RUST_SRCS "${USERENV_RUST_WORKSPACE_DIR}" userenv-rust)
 add_custom_command(
     OUTPUT ${USERENV_RUST_LIB}
     COMMAND ${CMAKE_COMMAND} -E env

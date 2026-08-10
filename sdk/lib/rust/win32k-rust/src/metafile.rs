@@ -26,20 +26,12 @@ pub struct _METATYPEOBJ {
 }
 pub type METATYPEOBJ = _METATYPEOBJ;
 pub type PMETATYPEOBJ = *mut _METATYPEOBJ;
-#[cfg(target_arch = "x86")]
 #[no_mangle]
-pub unsafe extern "stdcall" fn NtGdiCreateMetafileDC(hdc: HDC) -> HDC {
+pub unsafe extern "system" fn NtGdiCreateMetafileDC(hdc: HDC) -> HDC {
     GreCreateCompatibleDC(hdc, 1)
 }
-
-#[cfg(not(target_arch = "x86"))]
 #[no_mangle]
-pub unsafe extern "C" fn NtGdiCreateMetafileDC(hdc: HDC) -> HDC {
-    GreCreateCompatibleDC(hdc, 1)
-}
-#[cfg(target_arch = "x86")]
-#[no_mangle]
-pub unsafe extern "stdcall" fn NtGdiCreateServerMetaFile(
+pub unsafe extern "system" fn NtGdiCreateServerMetaFile(
     iType: DWORD,
     cjData: ULONG,
     pjData: PBYTE,
@@ -88,61 +80,8 @@ pub unsafe extern "stdcall" fn NtGdiCreateServerMetaFile(
     }
     core::ptr::null_mut()
 }
-
-#[cfg(not(target_arch = "x86"))]
 #[no_mangle]
-pub unsafe extern "C" fn NtGdiCreateServerMetaFile(
-    iType: DWORD,
-    cjData: ULONG,
-    pjData: PBYTE,
-    mm: DWORD,
-    xExt: DWORD,
-    yExt: DWORD,
-) -> HANDLE {
-    let mut Pass: BOOL = 1;
-    let pmto: PMETATYPEOBJ;
-    let Status: NTSTATUS;
-
-    if (iType == GDITAG_TYPE_EMF || iType == GDITAG_TYPE_MFP) && cjData != 0 && !pjData.is_null() {
-        pmto = GDIOBJ_AllocObjWithHandle(
-            GDILoObjType_LO_META_TYPE as _,
-            (core::mem::size_of::<METATYPEOBJ>() as ULONG + cjData) as _,
-        ) as PMETATYPEOBJ;
-        if !pmto.is_null() {
-            (*pmto).iType = iType;
-            (*pmto).mm = mm;
-            (*pmto).xExt = xExt;
-            (*pmto).yExt = yExt;
-            (*pmto).cjData = cjData;
-
-            Status = SafeProbeForRead(pjData as _, cjData as _, 1);
-            if !NT_SUCCESS(Status) {
-                Pass = 0;
-            } else {
-                RtlCopyMemory(
-                    core::ptr::addr_of_mut!((*pmto).pjData) as _,
-                    pjData as _,
-                    cjData as _,
-                );
-            }
-
-            if Pass != 0 {
-                GDIOBJ_vSetObjectOwner(
-                    core::ptr::addr_of_mut!((*pmto).BaseObject) as _,
-                    GDI_OBJ_HMGR_PUBLIC as _,
-                );
-                GDIOBJ_vUnlockObject(core::ptr::addr_of_mut!((*pmto).BaseObject) as _);
-                return (*pmto).BaseObject.hHmgr;
-            } else {
-                GDIOBJ_vDeleteObject(core::ptr::addr_of_mut!((*pmto).BaseObject) as _);
-            }
-        }
-    }
-    core::ptr::null_mut()
-}
-#[cfg(target_arch = "x86")]
-#[no_mangle]
-pub unsafe extern "stdcall" fn NtGdiGetServerMetaFileBits(
+pub unsafe extern "system" fn NtGdiGetServerMetaFileBits(
     hmo: HANDLE,
     cjData: ULONG,
     pjData: PBYTE,
@@ -201,77 +140,8 @@ pub unsafe extern "stdcall" fn NtGdiGetServerMetaFileBits(
     GDIOBJ_vUnlockObject(core::ptr::addr_of_mut!((*pmto).BaseObject));
     cjRet
 }
-
-#[cfg(not(target_arch = "x86"))]
 #[no_mangle]
-pub unsafe extern "C" fn NtGdiGetServerMetaFileBits(
-    hmo: HANDLE,
-    cjData: ULONG,
-    pjData: PBYTE,
-    piType: PDWORD,
-    pmm: PDWORD,
-    pxExt: PDWORD,
-    pyExt: PDWORD,
-) -> ULONG {
-    let mut cjRet: ULONG = 0;
-    let pmto: PMETATYPEOBJ;
-    let mut Status: NTSTATUS;
-
-    pmto = GDIOBJ_LockObject(hmo, GDIObjType_META_TYPE as u8) as PMETATYPEOBJ;
-
-    if pmto.is_null() {
-        return 0;
-    }
-
-    if (*pmto).iType == GDITAG_TYPE_EMF || (*pmto).iType == GDITAG_TYPE_MFP {
-        cjRet = (*pmto).cjData;
-
-        if cjData != 0 {
-            if cjData == (*pmto).cjData {
-                Status = SafeProbeForWrite(piType as *mut core::ffi::c_void, core::mem::size_of::<DWORD>() as _, 1);
-                if NT_SUCCESS(Status) {
-                    Status = SafeProbeForWrite(pmm as *mut core::ffi::c_void, core::mem::size_of::<DWORD>() as _, 1);
-                }
-                if NT_SUCCESS(Status) {
-                    Status = SafeProbeForWrite(pxExt as *mut core::ffi::c_void, core::mem::size_of::<DWORD>() as _, 1);
-                }
-                if NT_SUCCESS(Status) {
-                    Status = SafeProbeForWrite(pyExt as *mut core::ffi::c_void, core::mem::size_of::<DWORD>() as _, 1);
-                }
-                if NT_SUCCESS(Status) {
-                    Status = SafeProbeForWrite(pjData as *mut core::ffi::c_void, cjData as _, 1);
-                }
-                if !NT_SUCCESS(Status) {
-                    cjRet = 0;
-                } else {
-                    *piType = (*pmto).iType;
-                    *pmm = (*pmto).mm;
-                    *pxExt = (*pmto).xExt;
-                    *pyExt = (*pmto).yExt;
-                    RtlCopyMemory(
-                        pjData as *mut core::ffi::c_void,
-                        (*pmto).pjData.as_ptr() as *const core::ffi::c_void,
-                        cjData as usize,
-                    );
-                }
-            } else {
-                cjRet = 0;
-            }
-        }
-    }
-
-    GDIOBJ_vUnlockObject(core::ptr::addr_of_mut!((*pmto).BaseObject));
-    cjRet
-}
-#[cfg(target_arch = "x86")]
-#[no_mangle]
-pub unsafe extern "stdcall" fn NtGdiConvertMetafileRect(hDC: HDC, pRect: PRECTL) -> LONG {
-    0
-}
-
-#[cfg(not(target_arch = "x86"))]
-#[no_mangle]
-pub unsafe extern "C" fn NtGdiConvertMetafileRect(hDC: HDC, pRect: PRECTL) -> LONG {
+pub unsafe extern "system" fn NtGdiConvertMetafileRect(hDC: HDC, pRect: PRECTL) -> LONG {
     0
 }
 

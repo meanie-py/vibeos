@@ -205,9 +205,15 @@ pub unsafe extern "system" fn WahCreateSocketHandle(
         }
     }
 
+    // L"\Device\WS2IFSL\NifsSct"
+    static NIFS_SCT_DEVICE_NAME: [u16; 24] = [
+        b'\\' as u16, b'D' as u16, b'e' as u16, b'v' as u16, b'i' as u16, b'c' as u16, b'e' as u16, b'\\' as u16, b'W' as u16, b'S' as u16,
+        b'2' as u16, b'I' as u16, b'F' as u16, b'S' as u16, b'L' as u16, b'\\' as u16, b'N' as u16, b'i' as u16, b'f' as u16, b's' as u16,
+        b'S' as u16, b'c' as u16, b't' as u16, 0,
+    ];
     RtlInitUnicodeString(
         core::ptr::addr_of_mut!(Name),
-        b"\\Device\\WS2IFSL\\NifsSct\0".as_ptr() as *const u16,
+        NIFS_SCT_DEVICE_NAME.as_ptr() as *const u16,
     );
 
     ObjectAttributes.Length = core::mem::size_of::<_OBJECT_ATTRIBUTES>() as ULONG;
@@ -425,9 +431,15 @@ pub unsafe extern "system" fn WahOpenHandleHelper(HelperHandle: PHANDLE) -> DWOR
             core::ptr::addr_of_mut!(Tid)
         );
         if !(*Context).ThreadHandle.is_null() {
+            // L"\Device\WS2IFSL\NifsPvd"
+            static NIFS_PVD_DEVICE_NAME: [u16; 24] = [
+                b'\\' as u16, b'D' as u16, b'e' as u16, b'v' as u16, b'i' as u16, b'c' as u16, b'e' as u16, b'\\' as u16, b'W' as u16, b'S' as u16,
+                b'2' as u16, b'I' as u16, b'F' as u16, b'S' as u16, b'L' as u16, b'\\' as u16, b'N' as u16, b'i' as u16, b'f' as u16, b's' as u16,
+                b'P' as u16, b'v' as u16, b'd' as u16, 0,
+            ];
             RtlInitUnicodeString(
                 core::ptr::addr_of_mut!(Name),
-                b"\\Device\\WS2IFSL\\NifsPvd\0".as_ptr() as *const u16
+                NIFS_PVD_DEVICE_NAME.as_ptr() as *const u16
             );
             ObjectAttributes.Length = core::mem::size_of::<_OBJECT_ATTRIBUTES>() as ULONG;
             ObjectAttributes.RootDirectory = core::ptr::null_mut();

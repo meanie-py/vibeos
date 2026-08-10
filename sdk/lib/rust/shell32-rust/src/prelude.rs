@@ -70,16 +70,17 @@ pub use crate::shellcom::{
 // `atl.rs` documents the three invariants those call sites lean on (zeroable, transparent,
 // Drop-as-destructor).
 pub use crate::atl::{
-    CComAllocator, CComHeapPtr, CComPtr, CCRTAllocator, CHeapPtr, CLocalAllocator, CSimpleArray,
+    CAtlList, CComAllocator, CComHeapPtr, CComPtr, CCRTAllocator, CHeapPtr, CLocalAllocator,
+    CRegKey, CSimpleArray, CStringW,
 };
 
 // shellutils.h / utils.h header inlines. The explicit `use` deliberately shadows the island
 // glob for `CCidaChildArrayHelper`: bindgen renders the C++ class as a bare layout with no
 // constructor, and the translated call sites need the real one.
 pub use crate::shellutils::{
-    hida_clipformat, CCidaChildArrayHelper, DataObject_GetData, DataObject_GetOffset,
-    DataObject_SetData, DataObject_SetOffset, DestroyCIDA, HIDA_GetPIDLFolder, HIDA_GetPIDLItem,
-    ILIsSingle, ReleaseStgMedium, SHAlloc,
+    hida_clipformat, CCidaChildArrayHelper, CCoInit, COleInit, CScopedSetObjectWithSite,
+    DataObject_GetData, DataObject_GetOffset, DataObject_SetData, DataObject_SetOffset,
+    DestroyCIDA, HIDA_GetPIDLFolder, HIDA_GetPIDLItem, ILIsSingle, ReleaseStgMedium, SHAlloc,
 };
 
 // Accessor macros from `win32.rs`, but ONLY the ones whose signatures are type-neutral:
@@ -89,7 +90,10 @@ pub use crate::shellutils::{
 // would re-open exactly the nominal split the module header warns about.
 pub use crate::win32::{CopyMemory, HIWORD, LOWORD, ZeroMemory};
 // Crate-root `#[macro_export]` macros — text substitution, so no types to split on.
-pub use crate::{FIELD_OFFSET, TRACE_ON, UNREFERENCED_PARAMETER, V_BSTR, V_VT, _countof};
+pub use crate::{
+    FIELD_OFFSET, ImageList_AddIcon, MAKELONG, MAKEROP4, TRACE_ON, UNREFERENCED_PARAMETER, V_BSTR,
+    V_VT, _countof,
+};
 
 // shell32-internal helpers that already have a Rust home. These are shell32's own EXPORTS —
 // the island correctly omits them, because `BLOCKLIST_FUNCS_FROM_CRATE` drops every function
@@ -429,6 +433,30 @@ macro_rules! FAILED_UNEXPECTEDLY {
         (($hr) as $crate::island::HRESULT) < 0
     };
 }
+/// minwindef.h:188 `#define MAKELONG(wLow, wHigh) ((LONG)(((WORD)((DWORD_PTR)(wLow) & 0xffff)) |
+/// (((DWORD)((WORD)((DWORD_PTR)(wHigh) & 0xffff))) << 16)))`. The `& 0xffff` truncations are
+/// load-bearing: C narrows each half to a WORD before combining, so a caller passing a value
+/// wider than 16 bits must lose the high bits rather than corrupt the other half.
+#[macro_export]
+macro_rules! MAKELONG {
+    ($wLow:expr, $wHigh:expr $(,)?) => {
+        (((($wLow) as u32) & 0xffff) | (((($wHigh) as u32) & 0xffff) << 16)) as i32
+    };
+}
+/// wingdi.h:3392 `#define MAKEROP4(f,b) (DWORD)((((b)<<8)&0xFF000000)|(f))`.
+#[macro_export]
+macro_rules! MAKEROP4 {
+    ($f:expr, $b:expr $(,)?) => {
+        (((((($b) as u32) << 8) & 0xFF000000) | (($f) as u32)) as u32)
+    };
+}
+/// commctrl.h:415 `#define ImageList_AddIcon(himl,hicon) ImageList_ReplaceIcon(himl,-1,hicon)`.
+#[macro_export]
+macro_rules! ImageList_AddIcon {
+    ($himl:expr, $hicon:expr $(,)?) => {
+        $crate::island::ImageList_ReplaceIcon($himl, -1, $hicon)
+    };
+}
 /// shellutils.h:678 `#define MAKE_COMPARE_HRESULT(x) ((x)>0 ? S_GREATERTHAN : ((x)<0 ? S_LESSTHAN : S_EQUAL))`.
 #[macro_export]
 macro_rules! MAKE_COMPARE_HRESULT {
@@ -526,6 +554,233 @@ pub unsafe fn TreeView_Expand(
     ) as crate::island::BOOL
 }
 
+/// commctrl.h:3455. The five `TreeView_Get*` below are all this macro with a fixed `code`.
+#[inline]
+pub unsafe fn TreeView_GetNextItem(
+    hwnd: crate::island::HWND,
+    hitem: crate::island::HTREEITEM,
+    code: crate::island::UINT,
+) -> crate::island::HTREEITEM {
+    crate::island::SendMessageW(
+        hwnd,
+        crate::island::TVM_GETNEXTITEM,
+        code as crate::island::WPARAM,
+        hitem as crate::island::LPARAM,
+    ) as crate::island::HTREEITEM
+}
+#[inline]
+pub unsafe fn TreeView_GetRoot(hwnd: crate::island::HWND) -> crate::island::HTREEITEM {
+    TreeView_GetNextItem(hwnd, core::ptr::null_mut(), crate::island::TVGN_ROOT)
+}
+#[inline]
+pub unsafe fn TreeView_GetNextSibling(
+    hwnd: crate::island::HWND,
+    hitem: crate::island::HTREEITEM,
+) -> crate::island::HTREEITEM {
+    TreeView_GetNextItem(hwnd, hitem, crate::island::TVGN_NEXT)
+}
+#[inline]
+pub unsafe fn TreeView_GetParent(
+    hwnd: crate::island::HWND,
+    hitem: crate::island::HTREEITEM,
+) -> crate::island::HTREEITEM {
+    TreeView_GetNextItem(hwnd, hitem, crate::island::TVGN_PARENT)
+}
+
+// `TVM_GETITEM`/`TVM_SETITEM`/`TVM_INSERTITEM` are the A/W-mapped spellings; the DLL builds
+// UNICODE, so they are the `*W` messages. These take the item pointer generically for the same
+// reason `ZeroMemory` does — the message is type-agnostic and the call sites pass `TVITEMW`,
+// `TVITEMEXW` and `TV_ITEM` alike, which is exactly what the C macro's cast erased.
+#[inline]
+pub unsafe fn TreeView_GetItem<T>(hwnd: crate::island::HWND, pitem: *mut T) -> crate::island::BOOL {
+    crate::island::SendMessageW(hwnd, crate::island::TVM_GETITEMW, 0, pitem as crate::island::LPARAM)
+        as crate::island::BOOL
+}
+#[inline]
+pub unsafe fn TreeView_SetItem<T>(
+    hwnd: crate::island::HWND,
+    pitem: *const T,
+) -> crate::island::BOOL {
+    crate::island::SendMessageW(hwnd, crate::island::TVM_SETITEMW, 0, pitem as crate::island::LPARAM)
+        as crate::island::BOOL
+}
+#[inline]
+pub unsafe fn TreeView_InsertItem<T>(
+    hwnd: crate::island::HWND,
+    lpis: *const T,
+) -> crate::island::HTREEITEM {
+    crate::island::SendMessageW(
+        hwnd,
+        crate::island::TVM_INSERTITEMW,
+        0,
+        lpis as crate::island::LPARAM,
+    ) as crate::island::HTREEITEM
+}
+#[inline]
+pub unsafe fn TreeView_DeleteItem(
+    hwnd: crate::island::HWND,
+    hitem: crate::island::HTREEITEM,
+) -> crate::island::BOOL {
+    crate::island::SendMessageW(
+        hwnd,
+        crate::island::TVM_DELETEITEM,
+        0,
+        hitem as crate::island::LPARAM,
+    ) as crate::island::BOOL
+}
+/// commctrl.h:3486 `TreeView_SelectItem` = `TreeView_Select(.., TVGN_CARET)`.
+#[inline]
+pub unsafe fn TreeView_SelectItem(
+    hwnd: crate::island::HWND,
+    hitem: crate::island::HTREEITEM,
+) -> crate::island::BOOL {
+    crate::island::SendMessageW(
+        hwnd,
+        crate::island::TVM_SELECTITEM,
+        crate::island::TVGN_CARET as crate::island::WPARAM,
+        hitem as crate::island::LPARAM,
+    ) as crate::island::BOOL
+}
+#[inline]
+pub unsafe fn TreeView_SortChildren(
+    hwnd: crate::island::HWND,
+    hitem: crate::island::HTREEITEM,
+    recurse: crate::island::BOOL,
+) -> crate::island::BOOL {
+    crate::island::SendMessageW(
+        hwnd,
+        crate::island::TVM_SORTCHILDREN,
+        recurse as crate::island::WPARAM,
+        hitem as crate::island::LPARAM,
+    ) as crate::island::BOOL
+}
+#[inline]
+pub unsafe fn TreeView_HitTest<T>(
+    hwnd: crate::island::HWND,
+    lpht: *mut T,
+) -> crate::island::HTREEITEM {
+    crate::island::SendMessageW(hwnd, crate::island::TVM_HITTEST, 0, lpht as crate::island::LPARAM)
+        as crate::island::HTREEITEM
+}
+/// commctrl.h:3434. Note the comma operator in the C macro: the caller's `RECT` doubles as the
+/// IN parameter, so the item handle is written OVER its first bytes before the message goes out.
+/// Dropping that store leaves the control reading a garbage handle.
+#[inline]
+pub unsafe fn TreeView_GetItemRect(
+    hwnd: crate::island::HWND,
+    hitem: crate::island::HTREEITEM,
+    prc: *mut crate::island::RECT,
+    code: crate::island::BOOL,
+) -> crate::island::BOOL {
+    *(prc as *mut crate::island::HTREEITEM) = hitem;
+    crate::island::SendMessageW(
+        hwnd,
+        crate::island::TVM_GETITEMRECT,
+        code as crate::island::WPARAM,
+        prc as crate::island::LPARAM,
+    ) as crate::island::BOOL
+}
+#[inline]
+pub unsafe fn TreeView_GetEditControl(hwnd: crate::island::HWND) -> crate::island::HWND {
+    crate::island::SendMessageW(hwnd, crate::island::TVM_GETEDITCONTROL, 0, 0)
+        as crate::island::HWND
+}
+#[inline]
+pub unsafe fn TreeView_EditLabel(
+    hwnd: crate::island::HWND,
+    hitem: crate::island::HTREEITEM,
+) -> crate::island::HWND {
+    crate::island::SendMessageW(
+        hwnd,
+        crate::island::TVM_EDITLABELW,
+        0,
+        hitem as crate::island::LPARAM,
+    ) as crate::island::HWND
+}
+#[inline]
+pub unsafe fn TreeView_SetImageList(
+    hwnd: crate::island::HWND,
+    himl: crate::island::HIMAGELIST,
+    iImage: crate::island::INT,
+) -> crate::island::HIMAGELIST {
+    crate::island::SendMessageW(
+        hwnd,
+        crate::island::TVM_SETIMAGELIST,
+        iImage as crate::island::WPARAM,
+        himl as crate::island::LPARAM,
+    ) as crate::island::HIMAGELIST
+}
+
+/// commctrl.h `TV_ITEM` is the pre-Win32 spelling of `TVITEMW` in a UNICODE build.
+pub type TV_ITEM = crate::island::TVITEMW;
+
+/// `MAKEINTRESOURCEA` — the same cast as `MAKEINTRESOURCEW` above, narrow side.
+#[inline]
+pub fn MAKEINTRESOURCEA(i: crate::island::UINT) -> crate::island::LPSTR {
+    i as usize as crate::island::LPSTR
+}
+
+/// winuser.h `DWLP_USER = DWLP_DLGPROC + sizeof(DLGPROC)`, i.e. two pointers past the start of
+/// the dialog's extra bytes — so it is POINTER-WIDTH dependent, not a fixed 8.
+pub const DWLP_USER: crate::island::INT = (2 * core::mem::size_of::<usize>()) as crate::island::INT;
+
+/// windowsx.h — the signed halves of a packed mouse-position LPARAM.
+#[inline]
+pub fn GET_X_LPARAM(lp: crate::island::LPARAM) -> crate::island::INT {
+    (lp & 0xFFFF) as i16 as crate::island::INT
+}
+#[inline]
+pub fn GET_Y_LPARAM(lp: crate::island::LPARAM) -> crate::island::INT {
+    ((lp >> 16) & 0xFFFF) as i16 as crate::island::INT
+}
+
+/// shobjidl.h `SHGDN_NORMAL` — the island's include closure does not reach it.
+pub use crate::shellcom::SHGDN_NORMAL;
+
+// The shell32-private PIDL helpers that live in `wine/pidl.rs` and `shell_link.rs`. Imported
+// rather than re-declared: those modules are `extern "C"` and already typed compatibly here.
+pub use crate::shell_link::__SHCloneStrAtoW;
+pub use crate::wine::pidl::{_ILCreateDesktop, _ILGetDataPointer, _ILIsMyComputer};
+
+extern "system" {
+    /// `wine/shell32_main.h:190` — shell32's own menu-item helper.
+    pub fn _InsertMenuItemW(
+        hmenu: crate::island::HMENU,
+        indexMenu: crate::island::UINT,
+        fByPosition: crate::island::BOOL,
+        wID: crate::island::UINT,
+        fType: crate::island::UINT,
+        dwTypeData: crate::island::LPCWSTR,
+        fState: crate::island::UINT,
+    ) -> crate::island::BOOL;
+    /// C++ linkage in `utils.cpp`; reached through the WINAPI shim like its neighbours.
+    #[link_name = "SHILAppend_RustBridge"]
+    pub fn SHILAppend(
+        pidl: crate::island::LPITEMIDLIST,
+        ppidl: *mut crate::island::LPITEMIDLIST,
+    ) -> crate::island::HRESULT;
+}
+
+extern "C" {
+    /// msvcrt.
+    pub fn free(block: *mut core::ffi::c_void);
+    /// `precomp.h:291`, defined in `utils.cpp`. Plain __cdecl — NOT WINAPI — so it belongs in
+    /// the `extern "C"` block; `extern "system"` mangles it to `_SHELL_GetIDListTarget@8` on
+    /// i386, which is the only arch that catches the mismatch.
+    pub fn SHELL_GetIDListTarget(
+        pidl: crate::island::LPCITEMIDLIST,
+        ppidl: *mut crate::island::LPITEMIDLIST,
+    ) -> crate::island::HRESULT;
+}
+
+// `ui/layout.h` and the remaining `shellutils.h` / `compat_undoc.h` inlines. All header inlines,
+// so they live in no TU — see those modules' headers.
+pub use crate::layout::{LayoutDestroy, LayoutEnableResize, LayoutInit, LayoutShowGrip, LayoutUpdate};
+pub use crate::shellutils::{
+    RosGetProcessCompatVersion, RosGetProcessEffectiveVersion, SeeFlagsToCmicFlags,
+    SHELL_IsContextMenuMsg, SHILClone, __SHCloneStrW, __SHCloneStrWtoA,
+};
+
 // shell32's OWN exports. Declared, not imported, for the reason given above the
 // SHGetSetSettings block: the Rust modules that define them are typed against
 // `crate::types`, and mixing those aliases with the island's splits every call site.
@@ -547,7 +802,129 @@ extern "system" {
     pub fn SHFree(pv: crate::island::LPVOID);
     /// pidl.h — first-item clone, `#[no_mangle] extern "system"` in `wine/pidl.rs`.
     pub fn ILCloneFirst(pidl: crate::island::LPCITEMIDLIST) -> crate::island::LPITEMIDLIST;
+    pub fn ILRemoveLastID(pidl: crate::island::LPITEMIDLIST) -> crate::island::BOOL;
+    pub fn ILCreateFromPathW(path: crate::island::LPCWSTR) -> crate::island::LPITEMIDLIST;
+    /// shlobj.h SDK imports the island's include closure does not reach.
+    pub fn SHParseDisplayName(
+        pszName: crate::island::PCWSTR,
+        pbc: *mut core::ffi::c_void,
+        ppidl: *mut crate::island::LPITEMIDLIST,
+        sfgaoIn: crate::island::SFGAOF,
+        psfgaoOut: *mut crate::island::SFGAOF,
+    ) -> crate::island::HRESULT;
+    pub fn SHGetFolderPathW(
+        hwnd: crate::island::HWND,
+        csidl: crate::island::INT,
+        hToken: crate::island::HANDLE,
+        dwFlags: crate::island::DWORD,
+        pszPath: crate::island::LPWSTR,
+    ) -> crate::island::HRESULT;
+    pub fn SHGetFolderLocation(
+        hwnd: crate::island::HWND,
+        csidl: crate::island::INT,
+        hToken: crate::island::HANDLE,
+        dwReserved: crate::island::DWORD,
+        ppidl: *mut crate::island::LPITEMIDLIST,
+    ) -> crate::island::HRESULT;
+    pub fn SHGetPathFromIDListW(
+        pidl: crate::island::LPCITEMIDLIST,
+        pszPath: crate::island::LPWSTR,
+    ) -> crate::island::BOOL;
+    pub fn SHGetFileInfoW(
+        pszPath: crate::island::LPCWSTR,
+        dwFileAttributes: crate::island::DWORD,
+        psfi: *mut crate::island::SHFILEINFOW,
+        cbFileInfo: crate::island::UINT,
+        uFlags: crate::island::UINT,
+    ) -> crate::island::DWORD_PTR;
+    pub fn SHCloneSpecialIDList(
+        hwnd: crate::island::HWND,
+        csidl: crate::island::INT,
+        bCreate: crate::island::BOOL,
+    ) -> crate::island::LPITEMIDLIST;
+    pub fn StrRetToStrNW(
+        dest: crate::island::LPWSTR,
+        len: crate::island::DWORD,
+        pstr: *mut crate::island::STRRET,
+        pidl: crate::island::LPCITEMIDLIST,
+    ) -> crate::island::HRESULT;
+    pub fn PathYetAnotherMakeUniqueName(
+        pszUniqueName: crate::island::LPWSTR,
+        pszPath: crate::island::LPCWSTR,
+        pszShort: crate::island::LPCWSTR,
+        pszFileSpec: crate::island::LPCWSTR,
+    ) -> crate::island::BOOL;
+    /// `precomp.h:290` — a real function, not an inline, defined in `utils.cpp` with C++
+    /// linkage and no WINAPI, so it is reached through a shim rather than declared directly.
+    #[link_name = "SHGetAttributes_RustBridge"]
+    pub fn SHGetAttributes(
+        psf: *mut crate::shellcom::IShellFolder,
+        pidl: crate::island::LPCITEMIDLIST,
+        dwAttributes: crate::island::DWORD,
+    ) -> crate::island::DWORD;
+    /// `precomp.h:217` — maps a verb string to its DFM_CMD_*. C++ linkage; shimmed.
+    #[link_name = "GetDfmCmd_RustBridge"]
+    pub fn GetDfmCmd(
+        pCM: *mut core::ffi::c_void,
+        verba: crate::island::LPCSTR,
+    ) -> crate::island::UINT;
 }
+
+/// `SetWindowLongPtrW` is a winuser.h MACRO for `SetWindowLongW` on 32-bit — there is no export
+/// of that name to link against, which is why the i386 island does not carry one. Same split as
+/// `SetWindowLongPtr` above; kept under the `W` name because that is what the translated call
+/// sites in `brfolder`, `layout` and `shlfileop` emit.
+#[cfg(target_pointer_width = "32")]
+#[inline]
+pub unsafe fn SetWindowLongPtrW(
+    hWnd: crate::island::HWND,
+    nIndex: crate::island::INT,
+    dwNewLong: crate::island::LONG_PTR,
+) -> crate::island::LONG_PTR {
+    crate::island::SetWindowLongW(hWnd, nIndex, dwNewLong as crate::island::LONG)
+        as crate::island::LONG_PTR
+}
+#[cfg(target_pointer_width = "64")]
+#[inline]
+pub unsafe fn SetWindowLongPtrW(
+    hWnd: crate::island::HWND,
+    nIndex: crate::island::INT,
+    dwNewLong: crate::island::LONG_PTR,
+) -> crate::island::LONG_PTR {
+    crate::island::SetWindowLongPtrW(hWnd, nIndex, dwNewLong)
+}
+#[cfg(target_pointer_width = "32")]
+#[inline]
+pub unsafe fn GetWindowLongPtrW(
+    hWnd: crate::island::HWND,
+    nIndex: crate::island::INT,
+) -> crate::island::LONG_PTR {
+    crate::island::GetWindowLongW(hWnd, nIndex) as crate::island::LONG_PTR
+}
+#[cfg(target_pointer_width = "64")]
+#[inline]
+pub unsafe fn GetWindowLongPtrW(
+    hWnd: crate::island::HWND,
+    nIndex: crate::island::INT,
+) -> crate::island::LONG_PTR {
+    crate::island::GetWindowLongPtrW(hWnd, nIndex)
+}
+
+// The icon cache, flipped in `shell32::iconcache` — imported rather than re-declared, because
+// that module is already written against the island (it is a `shell32/` TU like this one).
+pub use crate::shell32::iconcache::{
+    SHMapPIDLToSystemImageListIndex, Shell_GetCachedImageIndexW, Shell_GetImageLists,
+};
+
+/// commctrl.h:3373 `#define TVI_ROOT ((HTREEITEM)(ULONG_PTR)-0x10000)`.
+pub const TVI_ROOT: crate::island::HTREEITEM = -0x10000isize as crate::island::HTREEITEM;
+/// winuser.h:695/697 — `MAKEINTRESOURCE`d cursor ids.
+pub const IDC_ARROW: crate::island::LPCWSTR = 32512isize as crate::island::LPCWSTR;
+pub const IDC_WAIT: crate::island::LPCWSTR = 32514isize as crate::island::LPCWSTR;
+/// shtypes.h — the PIDL type-safety family the island erases to one pointer type.
+pub type PCIDLIST_RELATIVE = crate::island::LPCITEMIDLIST;
+/// commctrl.h — the A/W mapping, UNICODE side.
+pub type NMTVDISPINFO = crate::island::NMTVDISPINFOW;
 
 // The shell32-private `_IL*` family. Same reasoning as the block above — these ARE defined in
 // this crate (`wine/pidl.rs`), but against `crate::types` aliases, so they are declared rather
@@ -622,16 +999,17 @@ extern "system" {
         punk: *mut crate::shellcom::IUnknown,
         ppidl: *mut crate::island::LPITEMIDLIST,
     ) -> crate::island::HRESULT;
-    /// win32.rs helpers, declared here for the same crate::types-vs-island reason as ILFree.
-    pub fn SHELL_CreateSHDESCRIPTIONID(
-        pVar: *mut crate::island::VARIANT,
-        Id: crate::island::DWORD,
-        pCLSID: *const crate::island::GUID,
-    ) -> crate::island::HRESULT;
-    pub fn SHELL_CreateVariantBuffer(
-        pVar: *mut crate::island::VARIANT,
-        cb: crate::island::UINT,
-    ) -> crate::island::HRESULT;
+    /// `CFSFolder::CompareUiStrings` is a C++ STATIC MEMBER, so it has no callable name from
+    /// Rust; CFSFolder.cpp exports this bridge for exactly that reason, and `recycle_bin.rs`
+    /// already goes through it. It is `extern "C" INT WINAPI` — the `extern "C"` is linkage,
+    /// the WINAPI is the CALLING CONVENTION, so this belongs in the `extern "system"` block.
+    /// Declaring it `extern "C"` cost an i386 link failure on `_CFSFolder_..._RustBridge`
+    /// against the defined `_CFSFolder_..._RustBridge@12`.
+    pub fn CFSFolder_CompareUiStrings_RustBridge(
+        a: crate::island::LPCWSTR,
+        b: crate::island::LPCWSTR,
+        lParam: crate::island::LPARAM,
+    ) -> ::core::ffi::c_int;
 }
 
 extern "C" {
@@ -641,15 +1019,11 @@ extern "C" {
         hOwner: crate::island::HWND,
         pDO: *mut crate::shellcom::IDataObject,
     ) -> crate::island::HRESULT;
-    /// `CFSFolder::CompareUiStrings` is a C++ STATIC MEMBER, so it has no callable name from
-    /// Rust; CFSFolder.cpp exports this extern "C" bridge for exactly that reason, and
-    /// `recycle_bin.rs` already goes through it.
-    pub fn CFSFolder_CompareUiStrings_RustBridge(
-        a: crate::island::LPCWSTR,
-        b: crate::island::LPCWSTR,
-        lParam: crate::island::LPARAM,
-    ) -> ::core::ffi::c_int;
 }
+
+/// `wine/shell32_main.h` property-system inlines — see `crate::shellutils` for why these are
+/// Rust now rather than declared.
+pub use crate::shellutils::{SHELL_CreateSHDESCRIPTIONID, SHELL_CreateVariantBuffer};
 
 /// shtypes.idl — STRRET carries an ANSI string inline in `cStr`.
 pub const STRRET_CSTR: crate::island::UINT = 2;
@@ -792,3 +1166,225 @@ extern "C" {
 /// wine's shell32 string shims are `#define`s onto the CRT wide entry points.
 pub use crate::island::{wcschr as strchrW, wcscmp as strcmpW, wcslen as strlenW};
 pub use wcscat as strcatW;
+
+// ── shlexec.cpp residue ────────────────────────────────────────────────────────────────────
+// Declared here against the ISLAND rather than imported from `win32.rs`, for the reason given
+// above the "shell32's OWN exports" block: those are typed against `crate::types`, and mixing
+// the two alias families splits every call site.
+
+extern "system" {
+    /// shlwapi ordinal 51. Resolves + qualifies a path in place.
+    pub fn PathResolveW(
+        path: crate::island::LPWSTR,
+        dirs: *mut crate::island::LPCWSTR,
+        flags: crate::island::DWORD,
+    ) -> crate::island::BOOL;
+    /// shlwapi `SHRegQueryValueExW` — defined in-crate (`wine/shellreg.rs`).
+    pub fn SHRegQueryValueExW(
+        hkey: crate::island::HKEY,
+        pszValue: crate::island::LPCWSTR,
+        pdwReserved: crate::island::LPDWORD,
+        pdwType: crate::island::LPDWORD,
+        pvData: crate::island::LPVOID,
+        pcbData: crate::island::LPDWORD,
+    ) -> crate::island::LONG;
+    pub fn SHBindToParent(
+        pidl: crate::island::PCIDLIST_ABSOLUTE,
+        riid: REFIID,
+        ppv: *mut *mut core::ffi::c_void,
+        ppidlLast: *mut crate::island::PCUITEMID_CHILD,
+    ) -> crate::island::HRESULT;
+    pub fn SHExtCoCreateInstance(
+        aclsid: crate::island::LPCWSTR,
+        clsid: *const crate::island::CLSID,
+        pUnkOuter: *mut core::ffi::c_void,
+        riid: REFIID,
+        ppv: *mut crate::island::LPVOID,
+    ) -> crate::island::HRESULT;
+}
+
+extern "C" {
+    /// `COpenWithMenu.cpp:32` `EXTERN_C BOOL PathIsExeW(LPCWSTR)` — EXTERN_C is LINKAGE; there
+    /// is no WINAPI here, so the convention is cdecl. `scan_cc_mismatch` caught this declared
+    /// as `extern "system"`, which on i386 is a stack-imbalance waiting to happen.
+    pub fn PathIsExeW(path: crate::island::LPCWSTR) -> crate::island::BOOL;
+    /// `wine/shell32_main.h:70` — no WINAPI, and that header wraps itself in `extern "C"`.
+    pub fn HCR_GetExecuteCommandW(
+        hkeyClass: crate::island::HKEY,
+        szClass: crate::island::LPCWSTR,
+        szVerb: crate::island::LPCWSTR,
+        szDest: crate::island::LPWSTR,
+        len: crate::island::DWORD,
+    ) -> crate::island::BOOL;
+    /// `precomp.h:294` — plain `HRESULT SHCoInitializeAnyApartment(VOID)`, no WINAPI.
+    pub fn SHCoInitializeAnyApartment() -> crate::island::HRESULT;
+    /// `precomp.h:296` — plain `HRESULT SHGetNameAndFlagsW(...)`, no WINAPI.
+    pub fn SHGetNameAndFlagsW(
+        pidl: crate::island::LPCITEMIDLIST,
+        dwFlags: crate::island::DWORD,
+        pszText: crate::island::LPWSTR,
+        cchBuf: crate::island::UINT,
+        pdwAttributes: *mut crate::island::DWORD,
+    ) -> crate::island::HRESULT;
+}
+
+// `wine/unicode.h`'s A/W-generic aliases. Text substitution in C, so they are `#[inline]`
+// forwarders here rather than a second extern for the same CRT symbol.
+/// `#define strcpyW(d,s) wcscpy((d),(s))`
+#[inline]
+pub unsafe fn strcpyW(d: crate::island::LPWSTR, s: crate::island::LPCWSTR) -> crate::island::LPWSTR {
+    crate::island::wcscpy(d, s)
+}
+/// `#define strstrW(d,s) wcsstr((d),(s))`
+#[inline]
+pub unsafe fn strstrW(d: crate::island::LPCWSTR, s: crate::island::LPCWSTR) -> crate::island::LPWSTR {
+    crate::island::wcsstr(d, s)
+}
+/// `#define strrchrW(s,c) wcsrchr((s),(c))`
+#[inline]
+pub unsafe fn strrchrW(s: crate::island::LPCWSTR, c: crate::island::WCHAR) -> crate::island::LPWSTR {
+    crate::island::wcsrchr(s, c)
+}
+/// `#define strncmpiW(s1,s2,n) _wcsnicmp((s1),(s2),(n))`
+#[inline]
+pub unsafe fn strncmpiW(
+    s1: crate::island::LPCWSTR,
+    s2: crate::island::LPCWSTR,
+    n: usize,
+) -> crate::island::INT {
+    crate::island::_wcsnicmp(s1, s2, n)
+}
+/// `#define isspaceW(n) iswspace((n))`
+#[inline]
+pub unsafe fn isspaceW(c: crate::island::WCHAR) -> crate::island::INT {
+    crate::island::iswspace(c as crate::island::INT)
+}
+
+extern "C" {
+    /// `strsafe.h:515` — the bounded `swprintf`. Rust can CALL a C variadic on stable, but
+    /// there is nothing here to call: `STRSAFEAPI` is `static __inline`, so this is a PHANTOM
+    /// SYMBOL with no export, and the `extern` decl this used to be linked nowhere. It now
+    /// binds to the forwarding trampoline in `dll/win32/shell32/rust_strsafe_shim.c` — its own
+    /// TU, NOT an append to `rust_varargs_shim.c`, which deliberately includes no Windows
+    /// headers so it can hand-declare the variadic it defines —
+    /// which calls the header's own `StringCchVPrintfW` and so keeps strsafe's truncation
+    /// contract rather than reimplementing it.
+    #[link_name = "StringCchPrintfW_RustBridge"]
+    pub fn StringCchPrintfW(
+        pszDest: crate::island::LPWSTR,
+        cchDest: usize,
+        pszFormat: crate::island::LPCWSTR,
+        ...
+    ) -> crate::island::HRESULT;
+}
+
+// ── dialogs/drive.cpp residue ──────────────────────────────────────────────────────────────
+
+/// `strsafe.h` `StringCchCatW` — an INLINE, so there is no symbol to import. Appends `src` to
+/// whatever `dst` already holds, never writing past `cchDest` chars and always NUL-terminating;
+/// `STRSAFE_E_INSUFFICIENT_BUFFER` on truncation. That truncation contract is the whole reason
+/// a caller reaches for strsafe instead of `wcscat`, so it is preserved rather than approximated.
+pub unsafe fn StringCchCatW(
+    dst: crate::island::LPWSTR,
+    cchDest: usize,
+    src: crate::island::LPCWSTR,
+) -> crate::island::HRESULT {
+    const STRSAFE_E_INVALID_PARAMETER: crate::island::HRESULT = 0x8007_0057u32 as _;
+    const STRSAFE_E_INSUFFICIENT_BUFFER: crate::island::HRESULT = 0x8007_007Au32 as _;
+    if dst.is_null() || cchDest == 0 {
+        return STRSAFE_E_INVALID_PARAMETER;
+    }
+    // Find the existing terminator; an unterminated destination is a caller error, and strsafe
+    // reports it rather than walking off the end.
+    let mut i = 0usize;
+    while i < cchDest && *dst.add(i) != 0 {
+        i += 1;
+    }
+    if i == cchDest {
+        return STRSAFE_E_INVALID_PARAMETER;
+    }
+    let mut j = 0usize;
+    if !src.is_null() {
+        while i + 1 < cchDest && *src.add(j) != 0 {
+            *dst.add(i) = *src.add(j);
+            i += 1;
+            j += 1;
+        }
+    }
+    *dst.add(i) = 0;
+    if !src.is_null() && *src.add(j) != 0 {
+        return STRSAFE_E_INSUFFICIENT_BUFFER;
+    }
+    S_OK
+}
+
+/// `strsafe.h` `StringCbCatW` — the same call with the destination size in BYTES. The `/ 2` is
+/// the whole difference and the whole hazard: passing a byte count to the `Cch` form would let
+/// the append run twice as far as the buffer.
+#[inline]
+pub unsafe fn StringCbCatW(
+    dst: crate::island::LPWSTR,
+    cbDest: usize,
+    src: crate::island::LPCWSTR,
+) -> crate::island::HRESULT {
+    StringCchCatW(dst, cbDest / core::mem::size_of::<crate::island::WCHAR>(), src)
+}
+
+/// `winioctl.h:143` `#define CTL_CODE(t,f,m,a) (((t)<<16)|((a)<<14)|((f)<<2)|(m))`.
+///
+/// A function-like macro, so bindgen emits nothing for it OR for the ~200 `IOCTL_*` codes
+/// defined through it — the island carries `FILE_DEVICE_*`, `METHOD_*` and `FILE_*_ACCESS` (it
+/// allowlists winioctl.h) but not a single assembled code. Computing them here from those parts
+/// keeps them derived from the header rather than transcribed as magic numbers.
+#[inline]
+pub const fn CTL_CODE(
+    DeviceType: crate::island::DWORD,
+    Function: crate::island::DWORD,
+    Method: crate::island::DWORD,
+    Access: crate::island::DWORD,
+) -> crate::island::DWORD {
+    (DeviceType << 16) | (Access << 14) | (Function << 2) | Method
+}
+
+/// `winioctl.h:180-202` — the four disk codes `dialogs/drive.rs` issues.
+pub const IOCTL_DISK_GET_DRIVE_GEOMETRY: crate::island::DWORD = CTL_CODE(
+    crate::island::FILE_DEVICE_DISK,
+    0,
+    crate::island::METHOD_BUFFERED,
+    crate::island::FILE_ANY_ACCESS,
+);
+pub const IOCTL_DISK_GET_PARTITION_INFO: crate::island::DWORD = CTL_CODE(
+    crate::island::FILE_DEVICE_DISK,
+    1,
+    crate::island::METHOD_BUFFERED,
+    crate::island::FILE_READ_ACCESS,
+);
+pub const IOCTL_DISK_GET_PARTITION_INFO_EX: crate::island::DWORD = CTL_CODE(
+    crate::island::FILE_DEVICE_DISK,
+    0x12,
+    crate::island::METHOD_BUFFERED,
+    crate::island::FILE_ANY_ACCESS,
+);
+pub const IOCTL_DISK_GET_LENGTH_INFO: crate::island::DWORD = CTL_CODE(
+    crate::island::FILE_DEVICE_DISK,
+    0x17,
+    crate::island::METHOD_BUFFERED,
+    crate::island::FILE_READ_ACCESS,
+);
+
+/// `basetsd.h` `#define UlongToHandle(h) ((HANDLE)(ULONG_PTR)(h))`.
+#[inline]
+pub fn UlongToHandle(h: crate::island::ULONG) -> crate::island::HANDLE {
+    h as usize as crate::island::HANDLE
+}
+
+/// `winnt.h` `SecureZeroMemory` — a zeroing the optimiser may not elide. `write_volatile`
+/// is the Rust spelling of that guarantee; a plain `write_bytes` is exactly what the C
+/// intrinsic exists to prevent.
+#[inline]
+pub unsafe fn SecureZeroMemory(ptr: *mut core::ffi::c_void, cnt: usize) {
+    let p = ptr as *mut u8;
+    for i in 0..cnt {
+        core::ptr::write_volatile(p.add(i), 0);
+    }
+}

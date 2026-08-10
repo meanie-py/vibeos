@@ -42,6 +42,11 @@ extern LONG (WINAPI *Wow64pBTCpuGetContext)(HANDLE, HANDLE, PVOID, PVOID);
 extern VOID (WINAPI *Wow64pBTCpuSimulate)(VOID);
 extern PVOID Wow64pKiUserCallbackDispatcher32; /* guest ntdll32 export */
 
+/* wow64.c — the guest/host last-error mirror. This file owns its 64->32
+ * boundary; wow64_win32k.c owns the 32->64 one. */
+ULONG Wow64LastErrorToHost(VOID);
+VOID Wow64LastErrorToGuest(VOID);
+
 #define WOW64_TEB_TLSSLOTS_OFFSET 0x1480
 #define WOW64_TLS_CBFRAME 12   /* FEX WOW64 layer uses 15..18; wow64.c uses 1,10 */
 #define WOW64_TEB_PEB_OFFSET 0x60
@@ -317,6 +322,15 @@ static void Wow64pEnterGuestCallback(WOW64_CB_FRAME *Frame, ULONG Index,
     Ctx.ContextFlags = WOW64_CB_CONTEXT_FULL | WOW64_CB_CONTEXT_EXTENDED;
     Wow64pBTCpuSetContext((HANDLE)(LONG_PTR)-2, WOW64_CURRENT_PROCESS, NULL, &Ctx);
 
+    /* Control is crossing into the guest, so last-error has to cross with it:
+     * from here until NtCallbackReturn, GetLastError() means TEB32. The
+     * matching copy back up is at the longjmp landing in
+     * Wow64pUserCallbackCommon. Without this pair, the guest's own win32k
+     * syscalls (which copy TEB32 up on entry) would overwrite an error the
+     * OUTER call had already set — co_IntSendMessageTimeout sets ERROR_TIMEOUT
+     * and BroadcastSystemMessage reads it back after the send. */
+    Wow64LastErrorToGuest();
+
     Wow64pBTCpuSimulate(); /* exits via guest NtCallbackReturn -> longjmp */
 
     DbgPrint("[WOW64CB] FATAL: nested BTCpuSimulate returned (idx %lu)\n", Index);
@@ -589,6 +603,9 @@ static NTSTATUS Wow64pUserCallbackCommon(ULONG Index, PVOID Arg, ULONG Len)
 
     /* longjmp landing: guest completed via NtCallbackReturn marshaller. */
     *Wow64pCbTlsSlot() = Frame.Prev;
+    /* ...and control is crossing back into the kernel, so last-error comes
+     * with it (pairs with the copy-down in Wow64pEnterGuestCallback). */
+    Wow64LastErrorToHost();
     Frame.SavedCtx.ContextFlags = WOW64_CB_CONTEXT_FULL | WOW64_CB_CONTEXT_EXTENDED;
     Wow64pBTCpuSetContext((HANDLE)(LONG_PTR)-2, WOW64_CURRENT_PROCESS, NULL,
                           &Frame.SavedCtx);

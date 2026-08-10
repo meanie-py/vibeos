@@ -908,7 +908,7 @@ unsafe extern "system" fn ioqueue_thread_proc(param: PVOID) -> ULONG {
     let mut skip: BOOL;
     let mut status: NTSTATUS;
 
-    set_thread_name(b"wine_threadpool_ioqueue\0".as_ptr() as *const WCHAR as *const u16 as *const WCHAR);
+    set_thread_name(L!("wine_threadpool_ioqueue"));
 
     RtlEnterCriticalSection(core::ptr::addr_of_mut!(ioqueue.cs));
 

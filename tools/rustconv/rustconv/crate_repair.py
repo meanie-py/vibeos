@@ -46,13 +46,38 @@ from .config import RUST_TARGETS
 # --- rules ------------------------------------------------------------------------------------
 
 RULE_NUMERIC_CAST = "truncating_numeric_cast"
+RULE_WIDTH_ALIAS = "width_alias_cast"
 RULE_NO_STD_PATH = "no_std_path"
 RULE_POINTER_CAST = "raw_pointer_cast"
 RULE_FLEX_ARRAY = "flex_array_index"
 RULE_PANICKING_CAST = "panicking_cast"
+RULE_ANON_UNION = "anon_union_field"
+RULE_MATCH_SCRUTINEE = "match_scrutinee_cast"
+RULE_PACKED_FIELD_PTR = "packed_field_ptr"
+RULE_INDEX_USIZE = "index_usize"
+RULE_MACRO_CALL = "macro_call_bang"
+RULE_SIZEOF_TYPE = "sizeof_type_name"
+RULE_ARRAY_DECAY = "array_decay"
 
-#: Rules driven by rustc diagnostics.
-DIAGNOSTIC_RULES: tuple[str, ...] = (RULE_NUMERIC_CAST, RULE_NO_STD_PATH, RULE_POINTER_CAST)
+#: Rules driven by rustc diagnostics. ``RULE_WIDTH_ALIAS`` is FIRST on purpose: it and
+#: ``RULE_NUMERIC_CAST`` fire on the same E0308 int->int shape, and the alias is the better
+#: answer wherever it is available, so it claims the span and the numeric rule stands down.
+DIAGNOSTIC_RULES: tuple[str, ...] = (
+    RULE_WIDTH_ALIAS,
+    RULE_NUMERIC_CAST,
+    RULE_MATCH_SCRUTINEE,
+    RULE_NO_STD_PATH,
+    # Before RULE_POINTER_CAST: both answer an E0308 whose EXPECTED side is a raw pointer, and
+    # decay is the more specific shape (found side is an array, not a pointer). They cannot both
+    # claim a span, but keeping the specific rule first makes that structural rather than lucky.
+    RULE_ARRAY_DECAY,
+    RULE_POINTER_CAST,
+    RULE_ANON_UNION,
+    RULE_PACKED_FIELD_PTR,
+    RULE_INDEX_USIZE,
+    RULE_MACRO_CALL,
+    RULE_SIZEOF_TYPE,
+)
 #: Rules driven by source + a generated declaration (rustc cannot see these: an out-of-bounds
 #: index on a bindgen ``[T; 1]`` flexible-array member is a RUNTIME panic, and the
 #: ``unconditional_panic`` lint that would catch a literal index does not even run under
@@ -453,6 +478,14 @@ def _next_code_byte(masked: bytes, pos: int) -> bytes:
     return masked[pos : pos + 1]
 
 
+def _prev_code_byte(masked: bytes, pos: int) -> bytes:
+    """The last non-space byte strictly before ``pos`` (b"" at the start of the file)."""
+    pos -= 1
+    while pos >= 0 and masked[pos : pos + 1].isspace():
+        pos -= 1
+    return masked[pos : pos + 1] if pos >= 0 else b""
+
+
 def _in_match_pattern(masked: bytes, end: int) -> bool:
     """True when the span ending at ``end`` sits in match-arm PATTERN position.
 
@@ -460,7 +493,7 @@ def _in_match_pattern(masked: bytes, end: int) -> bool:
     compiling match into `error: expected a pattern, found an expression` -- and it fires on
     exactly the constants that most want repairing, because a `match` on a C status code is
     where narrow-vs-wide integer mismatches surface. Two lanes hit this independently:
-    wlanapi's `WlanRpcStatusToWinError` lost all 5 of its arms, and msvcrt's `_setmbcp_l`
+    wlanapi's `WlanRpcStatusToWinError` lost all 5 of its arms, and msvcrt's `create_mbcinfo`
     lost its dispatch when bindgen typed one member of a four-macro `#define` block `u32`
     (its value is 0) and the other three `i32` (theirs are negative), splitting a family
     that is all `int` in C.
@@ -493,6 +526,45 @@ def _in_match_pattern(masked: bytes, end: int) -> bool:
                 return False
         pos += 1
     return False
+
+
+def _in_macro_definition(masked: bytes, start: int) -> bool:
+    """True when ``start`` lies inside a ``macro_rules!`` body.
+
+    rustc reports a type error arising inside a macro EXPANSION against the macro's
+    DEFINITION span, not the call site. So a repair keyed on that span edits the macro body,
+    which (a) is never the right fix -- the offending value came from the caller -- and (b)
+    does not converge: the next pass sees the same error, wraps the body again, and the cast
+    stack grows once per pass forever.
+
+    That is not hypothetical. `msvcrt-crt-rust`'s `ARRAY_SIZE!` is `($a).len()`, and one
+    caller passing it where an `i32` was wanted drove six passes of
+    `(((((($a).len()) as i32) as usize) as i32) as usize) as i32` -- corrupting a macro used
+    by every translated module in the crate, to fix one call site that was never touched.
+
+    Declining is the whole fix: the same error re-surfaces at the caller on the next run
+    once a human writes the cast there, which is where it belongs.
+    """
+    idx = masked.rfind(b"macro_rules!", 0, start)
+    if idx < 0:
+        return False
+    # Bound the macro's BODY exactly, rather than counting every bracket after the keyword:
+    # the arm list `($a:expr) => { ... }` is full of parens, and a caller further down the
+    # file sits inside its own `fn ... {`, so a naive running depth reports "still inside"
+    # for the whole rest of the file. Track the outer BRACE only, from its open to its match.
+    open_at = masked.find(b"{", idx)
+    if open_at < 0 or open_at > start:
+        return False
+    depth = 0
+    for pos in range(open_at, len(masked)):
+        byte = masked[pos : pos + 1]
+        if byte == b"{":
+            depth += 1
+        elif byte == b"}":
+            depth -= 1
+            if depth == 0:
+                return open_at < start < pos
+    return open_at < start  # unterminated body: treat the tail as inside
 
 
 def _after_enclosing_group(masked: bytes, end: int) -> int:
@@ -595,6 +667,17 @@ _CONVERT_HINT = re.compile(
     r"^you can convert (?:an?) `(?P<found>\w+)` to (?:an?) `(?P<expected>\w+)`"
 )
 _RAW_POINTER = re.compile(r"^\*(?P<mutability>mut|const)\s+(?P<pointee>.+)$")
+#: An array type as rustc spells it in a mismatch label: `[u16; 80]`, `[WCHAR; MAX_PATH]`.
+#: The length is captured but deliberately unused — decay is length-independent, and matching
+#: on it would only invent a reason to decline.
+_ARRAY_TYPE = re.compile(r"^\[\s*(?P<elem>.+?)\s*;\s*(?P<count>[^\[\]]+?)\s*\]$")
+#: E0605. The same array-decay bug in CAST position — C's ``(LPARAM)szBuffer`` — which rustc
+#: reports with a different code and no ``expected/found`` label, so ``_mismatch_sites`` is blind
+#: to it. On intl this shape was 39 sites per target against the argument shape's 52: skipping it
+#: would have mechanised barely half the class.
+_NON_PRIMITIVE_CAST = re.compile(
+    r"^non-primitive cast: `(?P<found>\[[^`]+\])` as `(?P<target>[^`]+)`$"
+)
 _STD_UNRESOLVED = "use of unresolved module or unlinked crate `std`"
 
 
@@ -683,6 +766,22 @@ FileReader = Callable[[str], bytes | None]
 class _Ctx:
     target: str
     width: int
+    #: ``fn name -> [declared param type, ...]``, harvested from THIS crate's own sources only.
+    #: Empty disables ``RULE_WIDTH_ALIAS`` entirely rather than letting it guess.
+    signatures: Mapping[str, Sequence[str]] = field(default_factory=dict)
+    #: Type aliases this crate itself declares — the scope proof for a cast written in the
+    #: caller using a name read off the callee.
+    local_aliases: frozenset[str] = frozenset()
+    #: Spans ``RULE_WIDTH_ALIAS`` has already answered, so ``RULE_NUMERIC_CAST`` stands down
+    #: instead of proposing a second, width-baked edit for the same bytes.
+    claimed: set[tuple[str, int, int]] = field(default_factory=set)
+    #: ``(struct, flattened field) -> dotted path through bindgen's ``__bindgen_anon_N``.
+    #: Derived from the crate's own type declarations; empty disables ``RULE_ANON_UNION``.
+    anon_unions: Mapping[tuple[str, str], str] = field(default_factory=dict)
+    #: ``scrutinee span -> {type each arm wants}``, accumulated across diagnostics so
+    #: ``propose_edits`` can drop a match whose arms do not agree. One ``match`` yields one
+    #: diagnostic PER offending arm, and no single-diagnostic rule can see the others.
+    match_wants: dict[tuple[str, int, int], set[str]] = field(default_factory=dict)
 
 
 def _shape_of(diagnostic: Mapping[str, Any]) -> str:
@@ -718,11 +817,40 @@ def _mismatch_sites(diagnostic: Mapping[str, Any]) -> list[tuple[dict[str, Any],
     against rustc 1.92).  Using labels finds both shapes and never invents a site.
     """
     sites = []
+    seen: set[tuple[str, int, int]] = set()
+
+    def record(span: Mapping[str, Any], expected: str, found: str) -> None:
+        key = (
+            str(span.get("file_name") or ""),
+            int(span.get("byte_start") or 0),
+            int(span.get("byte_end") or 0),
+        )
+        if key in seen:
+            return
+        seen.add(key)
+        sites.append((dict(span), expected, found))
+
     for span in diagnostic.get("spans") or []:
         match = _LABEL_MISMATCH.match(str(span.get("label") or ""))
         if match is None:
             continue
-        sites.append((dict(span), match.group("expected"), match.group("found")))
+        record(span, match.group("expected"), match.group("found"))
+    # THE MULTI-ARGUMENT RENDERING. When a call has 2+ bad arguments rustc switches shape: the
+    # message becomes "arguments to this function are incorrect", every top-level span loses its
+    # label, and each mismatch moves into a CHILD note whose MESSAGE carries the types and whose
+    # single span is the argument. Reading only top-level labels made every rule in this module
+    # silently blind to those calls -- intl had 7 per target sitting in RED for that reason
+    # alone, all of them ordinary two-argument `wcscpy(dst, src)`.
+    for child in diagnostic.get("children") or []:
+        match = _LABEL_MISMATCH.match(str(child.get("message") or ""))
+        if match is None:
+            continue
+        spans = child.get("spans") or []
+        if len(spans) != 1:
+            # Zero spans is the companion "expected raw pointer ...\n found array ..." note,
+            # which carries no location; several would be ambiguous. Neither is attributable.
+            continue
+        record(spans[0], match.group("expected"), match.group("found"))
     return sites
 
 
@@ -743,6 +871,185 @@ def _conversion_hints(diagnostic: Mapping[str, Any]) -> dict[int, str]:
             if start is not None and start == span.get("byte_end"):
                 hints[int(start)] = match.group("expected")
     return hints
+
+
+def _enclosing_call(masked: bytes, start: int) -> tuple[str | None, int]:
+    """``(callee name, argument index)`` for the call whose argument begins at ``start``.
+
+    Walks out to the nearest UNCLOSED ``(`` and then forward from it counting top-level commas.
+    ``<``/``>`` deliberately do not nest: ``size_of::<T>()`` and ``a >= b`` both appear in real
+    argument lists, and treating either as a bracket desynchronises the depth and silently
+    shifts the index — which reads the WRONG parameter's type off the callee.
+    """
+    depth, index, open_paren = 0, start - 1, None
+    while index >= 0:
+        char = masked[index : index + 1]
+        if char in b")]}":
+            depth += 1
+        elif char in b"([{":
+            if depth == 0:
+                open_paren = index if char == b"(" else None
+                break
+            depth -= 1
+        elif char == b";" and depth == 0:
+            break
+        index -= 1
+    if open_paren is None:
+        return None, 0
+    name_match = re.search(rb"(\w+)$", masked[:open_paren].rstrip())
+    if name_match is None:
+        return None, 0
+    arg_index, depth = 0, 0
+    for pos in range(open_paren + 1, start):
+        char = masked[pos : pos + 1]
+        if char in b"([{":
+            depth += 1
+        elif char in b")]}":
+            depth -= 1
+        elif char == b"," and depth == 0:
+            arg_index += 1
+    return name_match.group(1).decode("utf-8", "replace"), arg_index
+
+
+#: A trailing ``as <int primitive>`` on an argument expression — the width the translation baked.
+_RE_TRAILING_CAST = re.compile(r"\s+as\s+(?:" + "|".join(sorted(INT_PRIMITIVES)) + r")\s*$")
+
+
+def _width_alias_rule(
+    diagnostic: Mapping[str, Any], load: FileReader, ctx: _Ctx
+) -> tuple[list[Edit], list[Skipped], bool]:
+    """int-vs-int at an argument position -> cast to the callee's DECLARED TYPE NAME.
+
+    THE MEASUREMENT THAT MOTIVATES IT. ``RULE_NUMERIC_CAST`` answers the same E0308 with the
+    width rustc resolved on the target it ran on — ``as u32`` from an i386 run — and
+    ``merge_plans`` then withholds it unless another target independently asks for the same
+    width. On syssetup that almost never happens: of the 17 integer sites erroring on all three
+    targets, exactly ONE had three-way agreement, because the PARAMETER TYPES themselves differ
+    per arch (SIZE_T, WPARAM, UINT_PTR). Cross-target voting cannot resolve a class where the
+    targets are *correctly* asking for different widths.
+
+    What is portable is the NAME. ``HeapAlloc``'s third parameter is ``SIZE_T`` on every arch;
+    the alias is what varies, not the spelling. So this rule reads the type off the callee's own
+    declaration and writes ``as SIZE_T`` — one edit, right on all three, needing no vote.
+
+    THE SCOPE TRAP, and why the guard is what it is. The cast is written in the CALLER's scope
+    from a name read in the CALLEE's, so an alias that resolves differently in the two compiles
+    and is wrong (``propose_panicking_cast_edits`` ate exactly this: rtl-misc's ``SIZE_T`` is
+    ``usize``, ntkrnl-sys's amd64 bindgen declares the parameter ``u64``, and rustc holds those
+    distinct at equal width). The guard here is not "is it a primitive" — that would reject the
+    entire class — it is PROVENANCE: the callee must be declared in this crate's own sources,
+    and the alias must be one this crate itself declares. Same crate, same ``types`` island,
+    one meaning.
+    """
+    if not ctx.signatures:
+        return [], [], False
+    sites = [
+        (span, expected, found)
+        for span, expected, found in _mismatch_sites(diagnostic)
+        if expected in INT_PRIMITIVES and found in INT_PRIMITIVES and expected != found
+    ]
+    if not sites:
+        return [], [], False
+    edits: list[Edit] = []
+    skipped: list[Skipped] = []
+    for span, expected, found in sites:
+        file_name = str(span.get("file_name") or "")
+        line = int(span.get("line_start") or 0)
+        start = int(span.get("byte_start") or 0)
+        end = int(span.get("byte_end") or 0)
+
+        def decline(reason: str, detail: str = "", line: int = line, name: str = file_name) -> None:
+            skipped.append(Skipped(RULE_WIDTH_ALIAS, reason, name, line, detail))
+
+        if end <= start:
+            continue  # zero-length insertion hint; RULE_NUMERIC_CAST reports these
+        data = load(file_name)
+        if data is None:
+            continue
+        masked = _mask_lexical(data)
+        if _next_code_byte(masked, end) == b"(":
+            continue  # the callee's own span, not a value
+        if _in_macro_definition(masked, start) or _in_match_pattern(masked, end):
+            continue
+        text = data[start:end].decode("utf-8", "replace")
+        if not _balanced(masked[start:end]):
+            continue
+        if _prev_code_byte(masked, start) not in (b"(", b",") or _next_code_byte(
+            masked, end
+        ) not in (
+            b")",
+            b",",
+        ):
+            # The span must BE the whole argument, not a sub-expression of one. rustc blames the
+            # narrowest disagreeing operand, so in
+            #     SetAutoDaylight(SendDlgItemMessage(..) != (BST_UNCHECKED) as i64)
+            # it labels `(BST_UNCHECKED) as i64` — which sits inside argument 0, not at it.
+            # Casting THAT to SetAutoDaylight's `BOOL` is a well-formed edit that changes the
+            # wrong expression; the real repair is around the whole comparison.
+            decline("not_whole_argument", text)
+            continue
+        callee, arg_index = _enclosing_call(masked, start)
+        if callee is None:
+            continue  # not an argument — nothing to read a type name off
+        params = ctx.signatures.get(callee)
+        if params is None:
+            decline("callee_not_local", f"`{callee}` is not declared in this crate's own sources")
+            continue
+        if arg_index >= len(params) or not params[arg_index]:
+            decline(
+                "callee_arity", f"{callee}() declares {len(params)} params; this is {arg_index}"
+            )
+            continue
+        target = params[arg_index].strip()
+        if not re.fullmatch(r"[A-Za-z_][A-Za-z0-9_]*", target):
+            continue  # a pointer/array/fn-ptr parameter — a different rule's business
+        if target in INT_PRIMITIVES:
+            # The declaration already names a primitive, so there is no portable alias to
+            # prefer: RULE_NUMERIC_CAST's `as <expected>` is the same edit. Leave it to it.
+            continue
+        if target not in ctx.local_aliases:
+            decline(
+                "alias_not_local",
+                f"`{target}` is not a type this crate declares, so its meaning in the caller's "
+                "scope is not proven",
+            )
+            continue
+        # Strip a width the translation already baked (`(x) as u64`) rather than stacking a
+        # second cast on top of it — the value is unchanged and the source stays readable.
+        inner = _RE_TRAILING_CAST.sub("", text)
+        if inner != text and not _balanced(_mask_lexical(inner.encode())):
+            inner = text
+        inner = inner.strip()
+        # Already a single parenthesised group? Then `(inner) as T` would only add `((..))`.
+        wrapped = inner
+        if not (
+            inner.startswith("(")
+            and inner.endswith(")")
+            and _matching_closer(_mask_lexical(inner.encode()), 0) == len(inner) - 1
+        ):
+            wrapped = f"({inner})"
+        ctx.claimed.add((file_name, start, end))
+        edits.append(
+            Edit(
+                file_name=file_name,
+                byte_start=start,
+                byte_end=end,
+                replacement=f"{wrapped} as {target}",
+                rule=RULE_WIDTH_ALIAS,
+                authority=(
+                    f"{callee}() parameter {arg_index} is declared `{target}` in this crate's "
+                    f"own sources, and `{target}` is declared here too; rustc resolved it to "
+                    f"`{expected}` on {ctx.target} and the expression is `{found}`. Casting to "
+                    "the NAME is portable across all three targets, so it needs no width vote."
+                ),
+                original=text,
+                line=line,
+                column=int(span.get("column_start") or 0),
+                requires_target_agreement=False,
+                targets=(ctx.target,),
+            )
+        )
+    return edits, skipped, bool(edits)
 
 
 def _numeric_cast_rule(
@@ -771,6 +1078,12 @@ def _numeric_cast_rule(
             # Guard: rustc's child suggestion spans are zero-length INSERTION points.
             decline("zero_length_span", f"{expected} at byte {start}")
             continue
+        if (file_name, start, end) in ctx.claimed:
+            # RULE_WIDTH_ALIAS already answered this span with the callee's declared type NAME,
+            # which is portable. A second, width-baked edit for the same bytes would only
+            # collide in select_non_overlapping.
+            decline("claimed_by_width_alias", f"bytes {start}..{end}")
+            continue
         hint = hints.get(end)
         if hint is not None and hint != expected:
             decline("hint_label_disagreement", f"label={expected} hint={hint}")
@@ -784,6 +1097,12 @@ def _numeric_cast_rule(
             # Guard: a span followed by `(` is a CALLEE name (the primary span of the
             # "arguments to this function are incorrect" shape), not a value to cast.
             decline("callee_span", data[start:end].decode("utf-8", "replace"))
+            continue
+        if _in_macro_definition(masked, start):
+            # Guard: rustc blames a macro's DEFINITION for a type error in its expansion, so
+            # repairing that span edits the macro body -- wrong fix, and it re-fires every
+            # pass because the caller never changes. See _in_macro_definition.
+            decline("macro_definition", data[start:end].decode("utf-8", "replace"))
             continue
         if _in_match_pattern(masked, end):
             # Guard: a cast is an expression, and Rust forbids expressions in patterns. The
@@ -865,6 +1184,11 @@ def _pointer_cast_rule(
         if _next_code_byte(masked, end) == b"(":
             decline("callee_span", data[start:end].decode("utf-8", "replace"))
             continue
+        if _in_macro_definition(masked, start):
+            # Same reason as the numeric rule: a macro-expansion error is reported against
+            # the DEFINITION, and repairing there edits a body shared by every caller.
+            decline("macro_definition", data[start:end].decode("utf-8", "replace"))
+            continue
         if _in_match_pattern(masked, end):
             decline("match_pattern", data[start:end].decode("utf-8", "replace"))
             continue
@@ -894,6 +1218,257 @@ def _pointer_cast_rule(
             )
         )
     return edits, skipped, claimed
+
+
+def _split_cast(masked: bytes, start: int, end: int) -> int | None:
+    """Offset of the top-level ``as`` operator in the cast expression spanning ``[start, end)``.
+
+    The LAST one at depth zero: ``a as usize as *mut T`` is two casts and the span rustc gives us
+    ends at the outer one.  Depth-tracking on ``()[]{}`` keeps an ``as`` inside a nested call or
+    index from being mistaken for the operator — ``f(x as u32) as LPARAM`` has two, and picking
+    the inner one would splice the decay into the wrong expression.
+    """
+    found = None
+    for match in re.finditer(rb"\bas\b", masked[start:end]):
+        pos = start + match.start()
+        depth = 0
+        for index in range(start, pos):
+            byte = masked[index : index + 1]
+            if byte in b"([{":
+                depth += 1
+            elif byte in b")]}":
+                depth -= 1
+        if depth == 0:
+            found = pos
+    return found
+
+
+def _array_decay_rule(
+    diagnostic: Mapping[str, Any], load: FileReader, ctx: _Ctx
+) -> tuple[list[Edit], list[Skipped], bool]:
+    """``[T; N]`` where a ``*T`` is wanted -> ``.as_ptr()`` / ``.as_mut_ptr()``.
+
+    C's most basic idiom: ``WCHAR szBuf[80]`` passed to an ``LPWSTR`` parameter decays to a
+    pointer at the call.  Rust has no implicit decay, so every such argument arrives as
+    ``expected `*mut u16`, found `[u16; 80]``` and every module has paid for it by hand.
+
+    THE GUARD IS ELEMENT-TYPE IDENTITY, and it is the whole safety argument.  ``[u16; N]`` ->
+    ``*mut u8`` is NOT a decay, it is a REINTERPRET — the same shape as the wide-literal bug
+    class that shipped truncated registry names in wkssvc and an unbindable pipe name in
+    browser.  A rule that "helpfully" decayed across element types would silently bless exactly
+    that.  Mismatched elements stay RED, including ``c_void``: the void-pointer conversion C
+    performs for free is a second, separate step, and if it is genuinely wanted the next pass's
+    ``RULE_POINTER_CAST`` adds the ``.cast()`` on evidence rather than this rule guessing it.
+
+    NOTE the deliberate exception to this module's central discipline: the edit is emitted with
+    ``requires_target_agreement=False``.  Every other cast rule bakes a width and therefore needs
+    cross-target corroboration, but decay is width-INDEPENDENT — ``as_ptr`` names no type and
+    resolves identically at 32 and 64 bits — so demanding agreement here would withhold correct
+    edits at any site that happens to compile on one arch for an unrelated reason.
+    """
+    edits: list[Edit] = []
+    skipped: list[Skipped] = []
+    claimed = False
+    for span, expected, found in _mismatch_sites(diagnostic):
+        want = _RAW_POINTER.match(expected)
+        have = _ARRAY_TYPE.match(found)
+        if want is None or have is None:
+            continue
+        claimed = True
+        file_name = str(span.get("file_name") or "")
+        line = int(span.get("line_start") or 0)
+        start = int(span.get("byte_start") or 0)
+        end = int(span.get("byte_end") or 0)
+
+        def decline(reason: str, detail: str = "", line: int = line, name: str = file_name) -> None:
+            skipped.append(Skipped(RULE_ARRAY_DECAY, reason, name, line, detail))
+
+        pointee = want.group("pointee").strip()
+        element = have.group("elem").strip()
+        if pointee != element:
+            decline(
+                "element_type_mismatch",
+                f"expected {expected}, found {found}: decay yields *{element}, not *{pointee}. "
+                "This is a REINTERPRET, not an array decay — fix the declared type, or cast "
+                "explicitly if the reinterpret is genuinely intended.",
+            )
+            continue
+        if end <= start:
+            decline("zero_length_span", expected)
+            continue
+        data = load(file_name)
+        if data is None:
+            decline("unreadable_file")
+            continue
+        masked = _mask_lexical(data)
+        if _next_code_byte(masked, end) == b"(":
+            decline("callee_span", data[start:end].decode("utf-8", "replace"))
+            continue
+        if _in_macro_definition(masked, start):
+            decline("macro_definition", data[start:end].decode("utf-8", "replace"))
+            continue
+        if _in_match_pattern(masked, end):
+            decline("match_pattern", data[start:end].decode("utf-8", "replace"))
+            continue
+        text = data[start:end].decode("utf-8", "replace")
+        if not _balanced(masked[start:end]):
+            decline("unbalanced_span", text)
+            continue
+        if _is_assignment_target(masked, end):
+            # `buf = ...` wants the ARRAY, not a pointer to it; decaying the assignment target
+            # would compile to a discarded temporary in some shapes and is never the repair.
+            decline("assignment_target", text)
+            continue
+        stripped = text.rstrip()
+        if stripped.endswith(".as_ptr()") or stripped.endswith(".as_mut_ptr()"):
+            decline("already_decayed", text)
+            continue
+        method = "as_mut_ptr" if want.group("mutability") == "mut" else "as_ptr"
+        edits.append(
+            Edit(
+                file_name=file_name,
+                byte_start=start,
+                byte_end=end,
+                replacement=f"({text}).{method}()",
+                rule=RULE_ARRAY_DECAY,
+                authority=(
+                    f"rustc label 'expected `{expected}`, found `{found}`': the element type "
+                    f"`{element}` is IDENTICAL to the pointee, so this is C array-to-pointer "
+                    f"decay and `{method}()` is its exact Rust spelling. No type name is named "
+                    "and no width is baked, so the edit is target-independent"
+                ),
+                original=text,
+                line=line,
+                column=int(span.get("column_start") or 0),
+                targets=(ctx.target,),
+            )
+        )
+    cast_edits, cast_skipped, cast_claimed = _array_decay_cast(diagnostic, load, ctx)
+    return edits + cast_edits, skipped + cast_skipped, claimed or cast_claimed
+
+
+def _array_decay_cast(
+    diagnostic: Mapping[str, Any], load: FileReader, ctx: _Ctx
+) -> tuple[list[Edit], list[Skipped], bool]:
+    """E0605 ``[T; N] as X`` — the same decay wearing C's explicit cast, e.g. ``(LPARAM)szBuf``.
+
+    Two accepted targets, and the difference in how they are proven matters:
+
+    * ``X`` is a raw pointer, of ANY pointee. Note the deliberate asymmetry with the argument
+      shape above, which demands element identity: here a cast is WRITTEN IN THE SOURCE, so
+      ``(BYTE *)szBuffer`` is the author stating the reinterpret, and reproducing it is
+      faithfulness rather than guesswork. An implicit argument conversion carries no such
+      statement, and there a pointee mismatch is evidence the DECLARATION is wrong — which is
+      why it stays red there and is honoured here. Either way ``as`` cannot mean anything but
+      the address: an array is not pointer-sized, so no value interpretation exists.
+    * ``X`` is an integer that is POINTER-WIDE on the analysing target. This is C's
+      pointer-to-integer cast (``LPARAM``/``WPARAM``/``LRESULT``), and here the edit is emitted
+      with ``requires_target_agreement=True`` even though ``as_ptr`` bakes no width — because the
+      CLAIM being made is "this integer is a pointer-width alias", and that claim is exactly what
+      independent agreement across a 32- and a 64-bit target proves. A genuine byte-reinterpret
+      like ``[u8; 4] as u32`` resolves to 4 bytes everywhere, so it is pointer-wide on i386 ONLY,
+      fails to earn agreement, and is withheld instead of silently becoming an address.
+
+    The replacement keeps the target type EXACTLY as the source spells it. rustc's message
+    reports the resolved width (``i32``), and writing that back would bake i386's width into a
+    site whose source correctly says ``LPARAM`` — the mistake this module exists to prevent.
+    """
+    match = _NON_PRIMITIVE_CAST.match(str(diagnostic.get("message") or ""))
+    if match is None:
+        return [], [], False
+    array = _ARRAY_TYPE.match(match.group("found"))
+    if array is None:
+        return [], [], False
+    edits: list[Edit] = []
+    skipped: list[Skipped] = []
+    element = array.group("elem").strip()
+    resolved = match.group("target").strip()
+    for span in diagnostic.get("spans") or []:
+        if not span.get("is_primary"):
+            continue
+        file_name = str(span.get("file_name") or "")
+        line = int(span.get("line_start") or 0)
+        start = int(span.get("byte_start") or 0)
+        end = int(span.get("byte_end") or 0)
+
+        def decline(reason: str, detail: str = "", line: int = line, name: str = file_name) -> None:
+            skipped.append(Skipped(RULE_ARRAY_DECAY, reason, name, line, detail))
+
+        if end <= start:
+            decline("zero_length_span", resolved)
+            continue
+        data = load(file_name)
+        if data is None:
+            decline("unreadable_file")
+            continue
+        masked = _mask_lexical(data)
+        if _in_macro_definition(masked, start):
+            decline("macro_definition", data[start:end].decode("utf-8", "replace"))
+            continue
+        text = data[start:end].decode("utf-8", "replace")
+        if not _balanced(masked[start:end]):
+            decline("unbalanced_span", text)
+            continue
+        operator = _split_cast(masked, start, end)
+        if operator is None:
+            decline("no_cast_operator", text)
+            continue
+        expression = data[start:operator].decode("utf-8", "replace").rstrip()
+        written = data[operator + 2 : end].decode("utf-8", "replace").strip()
+        if not expression or not written:
+            decline("unsplittable_cast", text)
+            continue
+        pointer = _RAW_POINTER.match(resolved)
+        if pointer is not None:
+            method = "as_mut_ptr" if pointer.group("mutability") == "mut" else "as_ptr"
+            sensitive = False
+            same = pointer.group("pointee").strip() == element
+            authority = (
+                f"rustc E0605 on `{match.group('found')} as {resolved}`: an array cast to a raw "
+                "pointer can only mean its ADDRESS, so this is C array decay followed by the "
+                "cast the source already writes"
+                + (
+                    ""
+                    if same
+                    else f"; the pointee `{pointer.group('pointee').strip()}` differs from the "
+                    f"element `{element}`, which is the reinterpret the SOURCE CAST states "
+                    "explicitly (C's `(T *)arr`) — not an inference of ours"
+                )
+            )
+        elif resolved in INT_PRIMITIVES and (
+            resolved in POINTER_SIZED or INT_WIDTH.get(resolved) == ctx.width
+        ):
+            method = "as_ptr"
+            sensitive = resolved not in POINTER_SIZED
+            authority = (
+                f"rustc E0605 on `{match.group('found')} as {resolved}`: `{resolved}` is "
+                f"pointer-wide on {ctx.target}, so `{written}` is a pointer-to-integer cast of a "
+                "decayed array. The source spelling of the target type is preserved verbatim"
+            )
+        else:
+            decline(
+                "cast_target_not_pointer_wide",
+                f"`{text}`: `{resolved}` is neither a matching pointer nor pointer-wide on "
+                f"{ctx.target}. Decaying here would silently cast an ADDRESS where the code may "
+                "have meant the contents — fix it by hand.",
+            )
+            continue
+        edits.append(
+            Edit(
+                file_name=file_name,
+                byte_start=start,
+                byte_end=end,
+                replacement=f"({expression}).{method}() as {written}",
+                rule=RULE_ARRAY_DECAY,
+                authority=authority,
+                original=text,
+                line=line,
+                column=int(span.get("column_start") or 0),
+                requires_target_agreement=sensitive,
+                targets=(ctx.target,),
+            )
+        )
+    return edits, skipped, True
 
 
 def _no_std_path_rule(
@@ -949,12 +1524,543 @@ def _no_std_path_rule(
     return edits, skipped, True
 
 
+def _enclosing_match_scrutinee(masked: bytes, start: int) -> tuple[int, int] | None:
+    """Byte range of the scrutinee of the ``match`` whose ARM contains ``start``.
+
+    Walks out to the nearest UNCLOSED ``{`` — the brace that opens the arm block — then back
+    over the scrutinee to a ``match`` keyword at depth 0. Returns ``None`` unless BOTH are
+    found, so a span in some other braced construct (a struct literal arm body, a nested block)
+    is never mistaken for an arm.
+    """
+    depth, index, brace = 0, start - 1, None
+    while index >= 0:
+        char = masked[index : index + 1]
+        if char in b")]}":
+            depth += 1
+        elif char in b"([":
+            depth -= 1
+        elif char == b"{":
+            if depth == 0:
+                brace = index
+                break
+            depth -= 1
+        index -= 1
+    if brace is None:
+        return None
+    depth, index = 0, brace - 1
+    while index >= 0:
+        char = masked[index : index + 1]
+        if char in b")]}":
+            depth += 1
+        elif char in b"([{":
+            depth -= 1
+            if depth < 0:
+                return None  # the scrutinee cannot span out of its own enclosing group
+        elif depth == 0 and char == b"h" and masked[index - 4 : index + 1] == b"match":
+            keyword = index - 4
+            before = masked[keyword - 1 : keyword]
+            after = masked[index + 1 : index + 2]
+            if (before and (before.isalnum() or before == b"_")) or after.isalnum():
+                index -= 1
+                continue
+            body = masked[index + 1 : brace]
+            if not body.strip():
+                return None
+            lead = len(body) - len(body.lstrip())
+            return index + 1 + lead, brace - (len(body) - len(body.rstrip()))
+        elif depth == 0 and char in b";":
+            return None
+        index -= 1
+    return None
+
+
+def _match_scrutinee_rule(
+    diagnostic: Mapping[str, Any], load: FileReader, ctx: _Ctx
+) -> tuple[list[Edit], list[Skipped], bool]:
+    """int-vs-int on a match ARM -> cast the SCRUTINEE, never the pattern.
+
+    ``_in_match_pattern`` declines these for ``RULE_NUMERIC_CAST``, and is right to: an
+    expression is not legal in a pattern, and rewriting the CONSTANT in an arm is the §9.112
+    shape — an arm whose name stops resolving becomes a fresh binding that matches EVERYTHING,
+    silently. It was also by far the largest decline bucket on the modules that motivated this
+    (293 sites on desk.cpl alone), so leaving it unanswered means paying an LLM for it.
+
+    The scrutinee is the one edit that fixes every arm at once and cannot change which constant
+    an arm compares against. It is exactly what C's ``switch`` does implicitly: ``match
+    LOWORD!(wParam)`` yields a WORD and the arms are the island's UINT ``IDC_*``; ``match
+    (*lpnm).code`` yields a UINT and the arms are prsht.h's NEGATIVE ``PSN_*``.
+
+    EVERY ARM MUST WANT THE SAME TYPE. One ``match`` emits one diagnostic per offending arm, so
+    the wants are accumulated on ``ctx`` and ``propose_edits`` drops the whole match if they
+    disagree — two expectations mean the arms are not one constant family and a human should
+    look.
+    """
+    edits: list[Edit] = []
+    for span, expected, found in _mismatch_sites(diagnostic):
+        # `expected` is the SCRUTINEE's type and `found` the ARM constant's: rustc reports an
+        # arm mismatch from the arm's side. Casting to `expected` writes `match (x as u16) as
+        # u16` — a no-op that leaves the error and burns a pass.
+        if _normalise_type(expected) != "int" or found not in INT_PRIMITIVES:
+            continue
+        file_name = str(span.get("file_name") or "")
+        data = load(file_name)
+        if data is None:
+            continue
+        masked = _mask_lexical(data)
+        start, end = int(span.get("byte_start") or 0), int(span.get("byte_end") or 0)
+        if not _in_match_pattern(masked, end) or _in_macro_definition(masked, start):
+            continue
+        scrutinee = _enclosing_match_scrutinee(masked, start)
+        if scrutinee is None:
+            continue
+        key = (file_name, scrutinee[0], scrutinee[1])
+        ctx.match_wants.setdefault(key, set()).add(found)
+        text = data[scrutinee[0] : scrutinee[1]].decode("utf-8", "replace")
+        if _RE_TRAILING_CAST.search(text):
+            continue  # a previous pass already answered this match
+        edits.append(
+            Edit(
+                file_name=file_name,
+                byte_start=scrutinee[0],
+                byte_end=scrutinee[1],
+                replacement=f"({text}) as {found}",
+                rule=RULE_MATCH_SCRUTINEE,
+                authority=(
+                    f"arm at line {span.get('line_start')} is `{found}` and the scrutinee is "
+                    f"`{expected}`; C's switch converts the scrutinee, and a cast is not legal "
+                    "in a pattern"
+                ),
+                original=text,
+                line=int(span.get("line_start") or 0),
+                column=int(span.get("column_start") or 0),
+                targets=(ctx.target,),
+                # `found` is a resolved primitive, so on a width-varying family the three arches
+                # can legitimately ask for different ones. Let agreement settle it.
+                requires_target_agreement=True,
+            )
+        )
+    return edits, [], bool(edits)
+
+
+#: E0609 ``no field `X` on type `Y` `` — ``Y`` may arrive as a raw pointer or a reference.
+_RE_NO_FIELD = re.compile(r"no field `(?P<field>\w+)` on type `(?P<ty>[&*\w \n]+?)`", re.S)
+#: E0560 ``struct `Y` has no field named `X` `` — a struct-LITERAL field, which is not fixable
+#: by the same substitution (see the rule).
+_RE_NO_LITERAL_FIELD = re.compile(r"struct `(?P<ty>\w+)` has no field named `(?P<field>\w+)`")
+
+
+def _anon_union_rule(
+    diagnostic: Mapping[str, Any], load: FileReader, ctx: _Ctx
+) -> tuple[list[Edit], list[Skipped], bool]:
+    """A field C reached through an ANONYMOUS union -> route it through ``__bindgen_anon_N``.
+
+    C injects an anonymous union's members into the enclosing struct's name scope, so prsht.h's
+    ``PROPSHEETHEADERW`` is written ``psh.nStartPage`` even though ``nStartPage`` shares a union
+    with ``pStartPage``. Rust has no anonymous members, so bindgen names the union
+    ``__bindgen_anon_N`` and the flattened spelling stops compiling. Every property-sheet module
+    hits this (desk.cpl did; sysdm.cpl's ``psh.nStartPage``/``pszCaption``/``phpage`` will).
+
+    THE MAP IS DERIVED, NEVER GUESSED. ``harvest_anon_unions`` reads the crate's own ``pub
+    struct``/``pub union`` declarations and walks the ``__bindgen_anon_N`` members; a field the
+    outer struct resolves directly is left alone, which reproduces exactly the shadowing C does.
+    With no map the rule contributes nothing rather than inventing a path.
+
+    WHY E0560 IS DECLINED. rustc reports the struct-LITERAL spelling of the same mistake as
+    E0560, and it looks fixable by the same substitution — but it is not: ``S { a.b: v }`` is not
+    legal Rust at all. The faithful repair is a zeroed value plus field stores, which is a
+    rewrite and not a byte substitution, so the rule records the site and stands aside. (desk's
+    hand-rolled version of this pass did rewrite E0560 sites, and every one of them came back as
+    a parse error on the next pass.)
+    """
+    if not ctx.anon_unions:
+        return [], [], False
+    message = str(diagnostic.get("message") or "")
+
+    literal = _RE_NO_LITERAL_FIELD.search(message)
+    if literal is not None:
+        span = next(
+            (item for item in diagnostic.get("spans") or [] if item.get("is_primary")), None
+        )
+        struct, field_name = literal.group("ty"), literal.group("field")
+        if (struct, field_name) not in ctx.anon_unions:
+            return [], [], False
+        return (
+            [],
+            [
+                Skipped(
+                    RULE_ANON_UNION,
+                    "struct_literal_field",
+                    str((span or {}).get("file_name") or ""),
+                    int((span or {}).get("line_start") or 0),
+                    f"`{struct}.{field_name}` lives in "
+                    f"{ctx.anon_unions[(struct, field_name)]}, but a struct literal cannot name "
+                    "a nested field. Rewrite as a zeroed value plus field stores.",
+                )
+            ],
+            False,
+        )
+
+    match = _RE_NO_FIELD.search(message)
+    if match is None:
+        return [], [], False
+    field_name = match.group("field")
+    # `*mut _PROPSHEETHEADERW`, `&_PROPSHEETHEADERW`, `_PROPSHEETHEADERW` all name one struct.
+    struct = match.group("ty").replace("\n", " ").strip().lstrip("&*").strip()
+    for prefix in ("mut ", "const "):
+        if struct.startswith(prefix):
+            struct = struct[len(prefix) :].strip()
+    path = ctx.anon_unions.get((struct, field_name))
+    if path is None:
+        return [], [], False
+
+    span = next((item for item in diagnostic.get("spans") or [] if item.get("is_primary")), None)
+    if span is None:
+        return [], [], False
+    file_name = str(span.get("file_name") or "")
+    data = load(file_name)
+    if data is None:
+        return [], [], False
+    start, end = int(span.get("byte_start") or 0), int(span.get("byte_end") or 0)
+    actual = data[start:end].decode("utf-8", "replace")
+    if actual != field_name:
+        # The span did not land on the bare identifier (a macro expansion, or a rustc shape we
+        # have not seen). Say so rather than rewriting bytes we did not recognise.
+        return (
+            [],
+            [
+                Skipped(
+                    RULE_ANON_UNION,
+                    "span_is_not_the_field",
+                    file_name,
+                    int(span.get("line_start") or 0),
+                    f"expected `{field_name}` at the primary span, found `{actual}`",
+                )
+            ],
+            False,
+        )
+    return (
+        [
+            Edit(
+                file_name=file_name,
+                byte_start=start,
+                byte_end=end,
+                replacement=path,
+                rule=RULE_ANON_UNION,
+                authority=(
+                    f"`{struct}` declares no `{field_name}`; its `{path.rsplit('.', 1)[0]}` "
+                    f"anonymous union does, and no outer field shadows the name"
+                ),
+                original=field_name,
+                line=int(span.get("line_start") or 0),
+                column=int(span.get("column_start") or 0),
+                targets=(ctx.target,),
+            )
+        ],
+        [],
+        True,
+    )
+
+
+#: ``.as_ptr()`` / ``.as_mut_ptr()`` immediately after the offending place expression.
+_RE_AS_PTR = re.compile(r"\.as_(?P<mut>mut_)?ptr\(\)")
+
+
+def _packed_field_ptr_rule(
+    diagnostic: Mapping[str, Any], load: FileReader, ctx: _Ctx
+) -> tuple[list[Edit], list[Skipped], bool]:
+    """``packed.array.as_ptr()`` -> ``addr_of!(packed.array).cast()`` (E0793).
+
+    ``as_ptr()`` goes through ``&[T; N]``, and forming a reference to a field of a
+    ``#[repr(packed)]`` struct is undefined behaviour even when it is never read — which is why
+    rustc makes it a hard error rather than a lint. ``SP_DRVINFO_DETAIL_DATA`` and ``SHFILEINFO``
+    are both packed in the SDK and the C simply takes the address, so the faithful translation
+    is the one that never forms the reference.
+
+    ``addr_of!`` does exactly that; ``.cast()`` turns the resulting ``*const [T; N]`` into the
+    ``*const T`` the callee wants, which is what C's array-to-pointer decay says anyway. No
+    width is baked, so no cross-target agreement is needed.
+    """
+    if (diagnostic.get("code") or {}).get("code") != "E0793":
+        return [], [], False
+    span = next((item for item in diagnostic.get("spans") or [] if item.get("is_primary")), None)
+    if span is None:
+        return [], [], False
+    file_name = str(span.get("file_name") or "")
+    data = load(file_name)
+    if data is None:
+        return [], [], False
+    start, end = int(span.get("byte_start") or 0), int(span.get("byte_end") or 0)
+    masked = _mask_lexical(data)
+    if _in_macro_definition(masked, start):
+        return [], [], False
+    # The span covers the PLACE expression; the offending `.as_ptr()` follows it.
+    tail = _RE_AS_PTR.match(data[end : end + 16].decode("utf-8", "replace"))
+    place = data[start:end].decode("utf-8", "replace")
+    if tail is None or not _balanced(masked[start:end]):
+        return (
+            [],
+            [
+                Skipped(
+                    RULE_PACKED_FIELD_PTR,
+                    "not_an_as_ptr_call",
+                    file_name,
+                    int(span.get("line_start") or 0),
+                    f"`{place[:60]}` is a packed-field reference rustc rejects, but it is not "
+                    "the `.as_ptr()` shape this rule knows how to rewrite",
+                )
+            ],
+            False,
+        )
+    macro = "addr_of_mut!" if tail.group("mut") else "addr_of!"
+    return (
+        [
+            Edit(
+                file_name=file_name,
+                byte_start=start,
+                byte_end=end + tail.end(),
+                replacement=f"core::ptr::{macro}({place}).cast()",
+                rule=RULE_PACKED_FIELD_PTR,
+                authority=(
+                    f"rustc E0793: `{place[:40]}` is a field of a #[repr(packed)] struct, so "
+                    f"`as_ptr()`'s intermediate reference is UB; `{macro}` takes the address "
+                    "without ever forming one"
+                ),
+                original=f"{place}{tail.group(0)}",
+                line=int(span.get("line_start") or 0),
+                column=int(span.get("column_start") or 0),
+                targets=(ctx.target,),
+            )
+        ],
+        [],
+        True,
+    )
+
+
+#: E0277 ``the type `[T]` cannot be indexed by `u32` ``.
+_RE_CANNOT_INDEX = re.compile(r"cannot be indexed by `(?P<index>\w+)`")
+
+
+def _index_usize_rule(
+    diagnostic: Mapping[str, Any], load: FileReader, ctx: _Ctx
+) -> tuple[list[Edit], list[Skipped], bool]:
+    """Array/slice index of a non-``usize`` integer -> ``as usize``.
+
+    C indexes with whatever integer is handy. rustc reports the Rust requirement as E0277 (no
+    ``Index<u32>`` impl), NOT as a type mismatch, so no ``expected X, found Y`` label exists and
+    ``RULE_NUMERIC_CAST`` never sees the site at all.
+
+    ``usize`` is the width-varying alias itself, so the cast is portable by construction and
+    needs no cross-target agreement — unlike a concrete ``as u32``. The index type is required
+    to be an integer primitive so the rule cannot "fix" indexing by a struct.
+    """
+    if (diagnostic.get("code") or {}).get("code") != "E0277":
+        return [], [], False
+    match = _RE_CANNOT_INDEX.search(str(diagnostic.get("message") or ""))
+    if match is None or match.group("index") not in INT_PRIMITIVES:
+        return [], [], False
+    span = next((item for item in diagnostic.get("spans") or [] if item.get("is_primary")), None)
+    if span is None:
+        return [], [], False
+    file_name = str(span.get("file_name") or "")
+    data = load(file_name)
+    if data is None:
+        return [], [], False
+    start, end = int(span.get("byte_start") or 0), int(span.get("byte_end") or 0)
+    if start >= end:
+        return [], [], False
+    masked = _mask_lexical(data)
+    if _in_macro_definition(masked, start) or not _balanced(masked[start:end]):
+        return [], [], False
+    text = data[start:end].decode("utf-8", "replace")
+    if re.search(r"\bas\s+usize\s*$", text):
+        return [], [], False
+    return (
+        [
+            Edit(
+                file_name=file_name,
+                byte_start=start,
+                byte_end=end,
+                replacement=f"({text}) as usize",
+                rule=RULE_INDEX_USIZE,
+                authority=(
+                    f"rustc E0277: the indexed type has no `Index<{match.group('index')}>`; "
+                    "`usize` is the width-varying alias itself, so the cast is portable"
+                ),
+                original=text,
+                line=int(span.get("line_start") or 0),
+                column=int(span.get("column_start") or 0),
+                targets=(ctx.target,),
+            )
+        ],
+        [],
+        True,
+    )
+
+
+#: E0423 ``expected function[, tuple struct or tuple variant], found macro `X` `` — a header
+#: macro rendered as a call. rustc uses the long wording at most call sites and the short one at
+#: the rest; matching only the short one found 1 site of 61 on sysdm.cpl and looked like a rule
+#: that simply had little to do.
+_RE_FOUND_MACRO = re.compile(
+    r"expected function(?:, tuple struct or tuple variant)?, found macro `(?P<name>\w+)`"
+)
+#: E0423 ``expected value, found type alias `X` `` — a C ``sizeof(TYPE)`` that lost its operator.
+_RE_FOUND_TYPE = re.compile(
+    r"expected value, found (?:type alias|struct|builtin type) `(?P<name>\w+)`"
+)
+
+
+def _macro_call_rule(
+    diagnostic: Mapping[str, Any], load: FileReader, ctx: _Ctx
+) -> tuple[list[Edit], list[Skipped], bool]:
+    """``FOO(a, b)`` where the crate declares ``macro_rules! FOO`` -> ``FOO!(a, b)``.
+
+    A C header macro has no Rust function to be, so the prelude spells it ``macro_rules!`` — and
+    the translation writes the CALL exactly as the C did, without the ``!``. rustc names the
+    macro it found, so the fix carries its own authority: there is nothing to infer, only a
+    token to insert. This is the largest single bucket on a freshly translated Win32 module
+    (60 sites on sysdm.cpl, and desk.cpl needed the same pass by hand).
+
+    Nothing about it is width- or arch-dependent, so it needs no cross-target agreement.
+    """
+    if (diagnostic.get("code") or {}).get("code") != "E0423":
+        return [], [], False
+    match = _RE_FOUND_MACRO.search(str(diagnostic.get("message") or ""))
+    if match is None:
+        return [], [], False
+    span = next((item for item in diagnostic.get("spans") or [] if item.get("is_primary")), None)
+    if span is None:
+        return [], [], False
+    file_name = str(span.get("file_name") or "")
+    data = load(file_name)
+    if data is None:
+        return [], [], False
+    start, end = int(span.get("byte_start") or 0), int(span.get("byte_end") or 0)
+    name = match.group("name")
+    if data[start:end].decode("utf-8", "replace") != name:
+        return [], [], False
+    masked = _mask_lexical(data)
+    if _in_macro_definition(masked, start):
+        return [], [], False
+    if _next_code_byte(masked, end) != b"(":
+        # Not a call at all — rustc found the macro in some other value position, and appending
+        # `!` there would not even parse.
+        return (
+            [],
+            [
+                Skipped(
+                    RULE_MACRO_CALL,
+                    "not_a_call",
+                    file_name,
+                    int(span.get("line_start") or 0),
+                    f"`{name}` is a macro used in value position but not followed by `(`",
+                )
+            ],
+            False,
+        )
+    return (
+        [
+            Edit(
+                file_name=file_name,
+                byte_start=start,
+                byte_end=end,
+                replacement=f"{name}!",
+                rule=RULE_MACRO_CALL,
+                authority=(
+                    f"rustc E0423 names `{name}` as a MACRO in call position; the crate declares "
+                    "it with `macro_rules!`, so the `!` is the whole of the fix"
+                ),
+                original=name,
+                line=int(span.get("line_start") or 0),
+                column=int(span.get("column_start") or 0),
+                targets=(ctx.target,),
+            )
+        ],
+        [],
+        True,
+    )
+
+
+def _sizeof_type_rule(
+    diagnostic: Mapping[str, Any], load: FileReader, ctx: _Ctx
+) -> tuple[list[Edit], list[Skipped], bool]:
+    """A C ``sizeof(TYPE)`` that came across as the bare TYPE NAME -> ``size_of::<TYPE>()``.
+
+    C spells the size of a type and the size of a value the same way, and Rust does not:
+    ``size_of::<T>()`` vs ``size_of_val(&v)``. A translation that keeps the C's single spelling
+    lands the type name where a value belongs, in exactly two shapes — bare
+    (``x.cbSize = BITMAPINFO``) and wrapped (``size_of_val(&NONCLIENTMETRICS)``). rustc names the
+    type it found, so both are answerable without inference.
+
+    The wrapped shape MUST swallow the whole call: rewriting only the operand leaves
+    ``size_of_val(&size_of::<T>())``, which is the size of a `usize` — a plausible-looking number
+    that is wrong on every arch, and compiles.
+    """
+    if (diagnostic.get("code") or {}).get("code") != "E0423":
+        return [], [], False
+    match = _RE_FOUND_TYPE.search(str(diagnostic.get("message") or ""))
+    if match is None:
+        return [], [], False
+    span = next((item for item in diagnostic.get("spans") or [] if item.get("is_primary")), None)
+    if span is None:
+        return [], [], False
+    file_name = str(span.get("file_name") or "")
+    data = load(file_name)
+    if data is None:
+        return [], [], False
+    start, end = int(span.get("byte_start") or 0), int(span.get("byte_end") or 0)
+    name = match.group("name")
+    if data[start:end].decode("utf-8", "replace") != name:
+        return [], [], False
+    masked = _mask_lexical(data)
+    if _in_macro_definition(masked, start):
+        return [], [], False
+
+    replacement = f"core::mem::size_of::<{name}>()"
+    lo, hi = start, end
+    # `size_of_val(&NAME)` / `core::mem::size_of_val(&NAME)` — take the whole call.
+    prefix = data[max(0, start - 64) : start].decode("utf-8", "replace")
+    wrapper = re.search(r"(?:core::mem::)?size_of_val\s*\(\s*&\s*$", prefix)
+    if wrapper is not None and _next_code_byte(masked, end) == b")":
+        lo = start - (len(prefix) - wrapper.start())
+        hi = masked.index(b")", end) + 1
+    return (
+        [
+            Edit(
+                file_name=file_name,
+                byte_start=lo,
+                byte_end=hi,
+                replacement=replacement,
+                rule=RULE_SIZEOF_TYPE,
+                authority=(
+                    f"rustc E0423 names `{name}` as a TYPE in value position; C's `sizeof(T)` is "
+                    "Rust's `size_of::<T>()`, and the operand is the type rustc just named"
+                ),
+                original=data[lo:hi].decode("utf-8", "replace"),
+                line=int(span.get("line_start") or 0),
+                column=int(span.get("column_start") or 0),
+                targets=(ctx.target,),
+            )
+        ],
+        [],
+        True,
+    )
+
+
 _RULE_TABLE: dict[
     str, Callable[[Mapping[str, Any], FileReader, _Ctx], tuple[list[Edit], list[Skipped], bool]]
 ] = {
+    RULE_WIDTH_ALIAS: _width_alias_rule,
     RULE_NUMERIC_CAST: _numeric_cast_rule,
+    RULE_MATCH_SCRUTINEE: _match_scrutinee_rule,
     RULE_NO_STD_PATH: _no_std_path_rule,
+    RULE_ARRAY_DECAY: _array_decay_rule,
     RULE_POINTER_CAST: _pointer_cast_rule,
+    RULE_ANON_UNION: _anon_union_rule,
+    RULE_PACKED_FIELD_PTR: _packed_field_ptr_rule,
+    RULE_INDEX_USIZE: _index_usize_rule,
+    RULE_MACRO_CALL: _macro_call_rule,
+    RULE_SIZEOF_TYPE: _sizeof_type_rule,
 }
 
 
@@ -964,13 +2070,27 @@ def propose_edits(
     *,
     target: str,
     rules: Collection[str] = DIAGNOSTIC_RULES,
+    signatures: Mapping[str, Sequence[str]] | None = None,
+    local_aliases: Collection[str] = (),
+    anon_unions: Mapping[tuple[str, str], str] | None = None,
 ) -> RepairPlan:
     """PURE: parsed rustc diagnostics -> proposed edits, declined sites, and residual RED.
 
     ``read_file`` maps a diagnostic's ``file_name`` to its bytes (or ``None``); no cargo run and
     no filesystem knowledge is baked in, so tests drive this with fixtures.
+
+    ``signatures``/``local_aliases`` are the authority for ``RULE_WIDTH_ALIAS`` and
+    ``anon_unions`` is the authority for ``RULE_ANON_UNION``; all three must be harvested from
+    the crate's OWN sources — see those rules for why provenance is the guard. Omitting one
+    disables its rule instead of loosening it.
     """
-    ctx = _Ctx(target=target, width=pointer_width(target))
+    ctx = _Ctx(
+        target=target,
+        width=pointer_width(target),
+        signatures=signatures or {},
+        local_aliases=frozenset(local_aliases),
+        anon_unions=anon_unions or {},
+    )
     cache: dict[str, bytes | None] = {}
 
     def load(name: str) -> bytes | None:
@@ -1005,6 +2125,23 @@ def propose_edits(
                 file_name=str(primary.get("file_name") or "") if primary else "",
                 line=int(primary.get("line_start") or 0) if primary else 0,
                 message=str(diagnostic.get("message") or ""),
+            )
+        )
+    # One `match` emits one diagnostic per offending arm, so arm-vs-arm disagreement is only
+    # visible now that every diagnostic has been seen. A scrutinee cast that satisfies one arm
+    # and breaks another is not a repair; drop the whole match and say which types collided.
+    for key, wants in ctx.match_wants.items():
+        if len(wants) < 2:
+            continue
+        edit = edits.pop((*key, RULE_MATCH_SCRUTINEE), None)
+        skipped.append(
+            Skipped(
+                RULE_MATCH_SCRUTINEE,
+                "arms_disagree",
+                key[0],
+                edit.line if edit is not None else 0,
+                f"arms want {', '.join(sorted(wants))} — not one constant family, so the "
+                "scrutinee has no single correct type. Fix where the constants are DECLARED.",
             )
         )
     ordered = sorted(edits.values(), key=lambda item: (item.file_name, item.byte_start))
@@ -1156,8 +2293,17 @@ def merge_plans(
 
     THE correctness property of this module: a concrete ``as u32`` inferred from an i386 run is
     wrong on amd64/arm64 wherever the real parameter is a width-varying alias.  Such an edit is
-    applied only when >= 2 targets propose the IDENTICAL replacement; a disagreement is reported
-    as ``target_divergent`` so a human can write the semantic alias instead.
+    applied only when EVERY analysed target proposes the IDENTICAL replacement; a disagreement is
+    reported as ``target_divergent`` so a human can write the semantic alias instead.
+
+    "Every analysed target", not ">= 2 of them".  A target that proposes NOTHING at a site is not
+    abstaining -- it is saying the site already compiles there, which is the strongest possible
+    evidence against baking some other target's width into it.  desk.cpl found this the hard way:
+    ``SendDlgItemMessage(.., CB_INSERTSTRING, PLACEMENT_CENTER, ..)`` is clean on i386 (WPARAM is
+    u32, and so is the constant) and mismatched on the 64-bit pair, so amd64 and arm64 agreed on
+    ``as u64``, the old >= 2 rule applied it, and 54 call sites that had been CORRECT on i386
+    stopped compiling there.  The right answer at such a site is always the callee's declared type
+    NAME (``as WPARAM``), which RULE_WIDTH_ALIAS writes and this rule must not pre-empt.
     """
     grouped: dict[tuple[str, int, int, str], list[Edit]] = {}
     for plan in plans.values():
@@ -1191,7 +2337,7 @@ def merge_plans(
         # Sensitivity is a property of the SITE, not of whichever plan happened to be first:
         # `as u32` is pointer-width on i386 and fixed on amd64, so one flag is enough to gate.
         sensitive = any(edit.requires_target_agreement for edit in group)
-        if sensitive and len(targets) < 2:
+        if sensitive and (len(targets) < 2 or set(targets) != set(analysed)):
             if not allow_single_target_width:
                 withheld.append(
                     Withheld(
@@ -1201,7 +2347,13 @@ def merge_plans(
                         proto.line,
                         f"`{proto.replacement}` bakes a pointer-width type proven only on "
                         f"{','.join(targets) or 'no target'} (analysed: {','.join(analysed)}). "
-                        "Re-run with the other targets, or hand-write the semantic alias.",
+                        + (
+                            f"{','.join(sorted(set(analysed) - set(targets)))} reported nothing "
+                            "here, which means the site already compiles there — applying this "
+                            "would BREAK it. Hand-write the callee's declared type name."
+                            if set(targets) < set(analysed)
+                            else "Re-run with the other targets, or hand-write the semantic alias."
+                        ),
                     )
                 )
                 continue
@@ -1438,7 +2590,11 @@ def harvest_signatures(sources: Mapping[str, bytes]) -> dict[str, list[str]]:
             close = _match_forward(masked, open_paren)
             if close is None:
                 continue
-            raw = data[open_paren + 1 : close].decode("utf-8", "replace")
+            # `close` is the index PAST the `)`, so slice to `close - 1`. Including it left the
+            # LAST parameter of every one-line declaration spelled `SIZE_T)`, which failed the
+            # plain-identifier check in every consumer — so the final parameter of a wrapped-form
+            # declaration was silently unresolvable, and nothing said so.
+            raw = data[open_paren + 1 : close - 1].decode("utf-8", "replace")
             defined[match.group(1).decode("utf-8", "replace")] = [
                 part.split(":", 1)[1].strip() if ":" in part else "" for part in _split_params(raw)
             ]
@@ -1452,7 +2608,11 @@ def harvest_signatures(sources: Mapping[str, bytes]) -> dict[str, list[str]]:
             if close is None:
                 continue
             name = match.group(1).decode("utf-8", "replace")
-            raw = data[open_paren + 1 : close].decode("utf-8", "replace")
+            # `close` is the index PAST the `)`, so slice to `close - 1`. Including it left the
+            # LAST parameter of every one-line declaration spelled `SIZE_T)`, which failed the
+            # plain-identifier check in every consumer — so the final parameter of a wrapped-form
+            # declaration was silently unresolvable, and nothing said so.
+            raw = data[open_paren + 1 : close - 1].decode("utf-8", "replace")
             params = []
             for part in _split_params(raw):
                 # `name: Type` -> Type; `&self`/`mut self` and `...` carry no type.
@@ -1466,6 +2626,89 @@ def harvest_signatures(sources: Mapping[str, bytes]) -> dict[str, list[str]]:
                 found[name] = params
     resolved = {k: v for k, v in found.items() if v is not None}
     resolved.update(defined)  # the definition settles any decl-vs-decl disagreement
+    return resolved
+
+
+#: ``pub struct S {`` / ``pub union S {`` and its body, up to the matching column-0 ``}``.
+#: bindgen and rustfmt both emit that shape; a nested brace inside a field type (``[T; N]``,
+#: ``Option<unsafe extern "C" fn()>``) never starts at column 0, so the terminator is unambiguous.
+_RE_TYPE_BLOCK = re.compile(r"^pub (?:struct|union) (\w+)\s*\{(.*?)^\}", re.S | re.M)
+_RE_TYPE_FIELD = re.compile(r"^\s*pub (\w+)\s*:\s*(.+?),\s*$", re.M)
+#: How deep a chain of nested anonymous unions to follow. prsht.h and objidl.h both nest twice;
+#: the bound exists so a malformed island cannot make the walk unbounded.
+_ANON_DEPTH = 3
+
+
+def harvest_anon_unions(sources: Mapping[str, bytes]) -> dict[tuple[str, str], str]:
+    """``(struct, flattened field) -> dotted path`` through bindgen's ``__bindgen_anon_N``.
+
+    The authority for ``RULE_ANON_UNION``. Reads every ``pub struct``/``pub union`` the crate
+    declares — which on a translated module means all three ``types_<arch>.rs`` islands plus any
+    hand-written types — and walks each ``__bindgen_anon_N`` member to the fields C would have
+    injected into the enclosing scope.
+
+    Two guards, both of which are the difference between a repair and a corruption:
+
+    * A field the outer struct declares ITSELF is never mapped. C's anonymous-member injection
+      loses to an outer member of the same name, and so must this.
+    * A ``(struct, field)`` that two islands resolve to DIFFERENT paths is dropped. The three
+      arches are separate bindgen runs and their union numbering need not agree; two disagreeing
+      authorities are no authority (same rule as ``harvest_signatures``).
+    """
+    per_source: list[dict[tuple[str, str], str]] = []
+    #: ``(struct, field)`` pairs some island declares DIRECTLY. A field that is direct on one
+    #: arch and unionised on another must not be routed: the edit would fix the arch that
+    #: reported the error and break the one that did not. (The pass loop's regression guard
+    #: would revert it, but a whole pass is a real cost and the answer is knowable here.)
+    direct_anywhere: set[tuple[str, str]] = set()
+    for data in sources.values():
+        text = data.decode("utf-8", "replace")
+        items: dict[str, list[tuple[str, str]]] = {}
+        for match in _RE_TYPE_BLOCK.finditer(text):
+            items[match.group(1)] = [
+                (f.group(1), f.group(2).strip()) for f in _RE_TYPE_FIELD.finditer(match.group(2))
+            ]
+        if not items:
+            continue
+        direct = {name: {f for f, _ in fields} for name, fields in items.items()}
+        for name, fields in direct.items():
+            direct_anywhere.update((name, f) for f in fields)
+        local: dict[tuple[str, str], str] = {}
+
+        def walk(
+            owner: str,
+            container: str,
+            prefix: str,
+            depth: int,
+            _items: dict[str, list[tuple[str, str]]] = items,
+            _direct: dict[str, set[str]] = direct,
+            _local: dict[tuple[str, str], str] = local,
+        ) -> None:
+            if depth > _ANON_DEPTH:
+                return
+            for field_name, field_type in _items.get(container, []):
+                if field_name.startswith("__bindgen_anon"):
+                    walk(owner, field_type, f"{prefix}{field_name}.", depth + 1)
+                    continue
+                if field_name in _direct[owner]:
+                    continue  # the outer struct has its own; C would shadow it the same way
+                _local.setdefault((owner, field_name), f"{prefix}{field_name}")
+
+        for name, fields in items.items():
+            for field_name, field_type in fields:
+                if field_name.startswith("__bindgen_anon"):
+                    walk(name, field_type, f"{field_name}.", 1)
+        per_source.append(local)
+
+    resolved: dict[tuple[str, str], str] = {}
+    dropped: set[tuple[str, str]] = set()
+    for local in per_source:
+        for key, path in local.items():
+            if resolved.get(key, path) != path:
+                dropped.add(key)
+            resolved[key] = path
+    for key in dropped | direct_anywhere:
+        resolved.pop(key, None)
     return resolved
 
 
@@ -1646,6 +2889,56 @@ def _panicking_cast_edits_for_crate(
     return edits, skipped
 
 
+#: ``pub type NAME = ...;`` — an alias the crate declares outright.
+_RE_TYPE_ALIAS = re.compile(rb"^\s*pub\s+type\s+(\w+)\s*=", re.M)
+#: ``name: Type`` in a declaration — a type name the crate already uses somewhere.
+_RE_USED_TYPE = re.compile(rb"\b\w+\s*:\s*([A-Z]\w*)\s*[,)]")
+
+
+def _local_anon_unions(crate_dir: Path) -> dict[tuple[str, str], str]:
+    """``RULE_ANON_UNION``'s authority: type declarations from THIS crate ONLY.
+
+    Same provenance rule as ``_local_authorities`` — the edit writes a field path that has to
+    resolve in the caller's scope, and a sibling crate's ``_PROPSHEETHEADERW`` need not be this
+    crate's. All three ``types_<arch>.rs`` islands are read together; ``harvest_anon_unions``
+    drops any field the arches route differently.
+    """
+    sources = {
+        path.as_posix(): path.read_bytes() for path in sorted((crate_dir / "src").rglob("*.rs"))
+    }
+    return harvest_anon_unions(sources)
+
+
+def _local_authorities(crate_dir: Path) -> tuple[dict[str, list[str]], frozenset[str]]:
+    """``RULE_WIDTH_ALIAS``'s authority: signatures and type names from THIS crate ONLY.
+
+    Deliberately narrower than ``_panicking_cast_edits_for_crate``'s harvest, which widens with
+    ``path =`` dependencies. A dependency's declaration is fine to READ a width off, but this
+    rule copies a NAME into the caller's scope, and a sibling crate's ``SIZE_T`` need not be
+    this crate's — that is the bug that rule ate. Same crate, same island, one meaning.
+
+    WHAT THE NAME SET PROVES, AND WHAT IT DOES NOT. Most of these aliases are not DECLARED by
+    the crate at all: the island opens with ``pub use ntdll_sys::nt::*;``, so ``SIZE_T`` is
+    glob-reachable rather than written down, and a declarations-only sweep finds none of them
+    and disables the rule completely. What is actually true is narrower and sufficient: the
+    caller can already name the CALLEE, and the callee arrives through the same glob chain
+    (``prelude::*`` -> ``types::*`` -> island -> ``ntdll_sys::nt::*``) that carries its
+    parameter types, so a name that resolves in the island resolves identically in the caller.
+    This set is therefore a sanity filter — "a type name this crate already uses" — not a proof
+    of scope. The proof is the pass loop: a repair pass that raises the error count on ANY
+    target is reverted whole, so a name that does not resolve costs a pass, never a silent
+    mis-cast.
+    """
+    sources: dict[str, bytes] = {}
+    names: set[str] = set()
+    for path in sorted((crate_dir / "src").rglob("*.rs")):
+        data = path.read_bytes()
+        sources[path.as_posix()] = data
+        names.update(m.group(1).decode("utf-8", "replace") for m in _RE_TYPE_ALIAS.finditer(data))
+        names.update(m.group(1).decode("utf-8", "replace") for m in _RE_USED_TYPE.finditer(data))
+    return harvest_signatures(sources), frozenset(names)
+
+
 def _flex_edits_for_crate(
     crate_dir: Path, root: Path, decls: FlexArrayDecls
 ) -> tuple[list[Edit], list[Skipped]]:
@@ -1779,8 +3072,22 @@ def repair_crate(
         # A FRESH reader every pass: the previous pass rewrote these files, and every guard
         # (callee_span/already_cast/balance) must judge the bytes rustc just parsed.
         reader = _file_reader(root)
+        # Re-harvested each pass alongside the reader, for the same reason: the previous pass
+        # rewrote these files.
+        local_sigs, local_aliases = (
+            _local_authorities(resolved_dir) if RULE_WIDTH_ALIAS in rules else ({}, frozenset())
+        )
+        anon_unions = _local_anon_unions(resolved_dir) if RULE_ANON_UNION in rules else {}
         plans = {
-            target: propose_edits(run.diagnostics, reader, target=target, rules=diagnostic_rules)
+            target: propose_edits(
+                run.diagnostics,
+                reader,
+                target=target,
+                rules=diagnostic_rules,
+                signatures=local_sigs,
+                local_aliases=local_aliases,
+                anon_unions=anon_unions,
+            )
             for target, run in runs.items()
         }
         merged = merge_plans(plans, allow_single_target_width=allow_single_target_width)

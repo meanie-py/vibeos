@@ -3331,25 +3331,25 @@ unsafe extern "C" {
         Type: TYPE_OF_ACQUIRE,
     ) -> BOOLEAN;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn CdNoopAcquire(Fcb: PVOID, Wait: BOOLEAN) -> BOOLEAN;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn CdNoopRelease(Fcb: PVOID);
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn CdAcquireForCache(Fcb: PFCB, Wait: BOOLEAN) -> BOOLEAN;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn CdReleaseFromCache(Fcb: PFCB);
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn CdFilterCallbackAcquireForCreateSection(
         CallbackData: PFS_FILTER_CALLBACK_DATA,
         CompletionContext: *mut PVOID,
     ) -> NTSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn CdReleaseForCreateSection(FileObject: PFILE_OBJECT);
 }
 unsafe extern "C" {
@@ -3460,10 +3460,10 @@ unsafe extern "C" {
 unsafe extern "C" {
     pub fn CdFsdPostRequest(IrpContext: PIRP_CONTEXT, Irp: PIRP) -> NTSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn CdPrePostIrp(IrpContext: PIRP_CONTEXT, Irp: PIRP);
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn CdOplockComplete(IrpContext: PIRP_CONTEXT, Irp: PIRP);
 }
 #[repr(C)]
@@ -3501,7 +3501,7 @@ pub type PUSHORT2 = *mut _USHORT2;
 unsafe extern "C" {
     pub fn CdLbnToMmSsFf(Blocks: ULONG, Msf: PUCHAR);
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn CdFsdDispatch(DeviceObject: PDEVICE_OBJECT, Irp: PIRP) -> NTSTATUS;
 }
 unsafe extern "C" {
@@ -3520,7 +3520,7 @@ unsafe extern "C" {
 unsafe extern "C" {
     pub fn CdCompleteRequest(IrpContext: PIRP_CONTEXT, Irp: PIRP, Status: NTSTATUS);
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn CdFastQueryBasicInfo(
         arg1: *mut _FILE_OBJECT,
         arg2: BOOLEAN,
@@ -3529,7 +3529,7 @@ unsafe extern "stdcall" {
         arg5: *mut _DEVICE_OBJECT,
     ) -> BOOLEAN;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn CdFastQueryStdInfo(
         arg1: *mut _FILE_OBJECT,
         arg2: BOOLEAN,
@@ -3538,7 +3538,7 @@ unsafe extern "stdcall" {
         arg5: *mut _DEVICE_OBJECT,
     ) -> BOOLEAN;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn CdFastLock(
         arg1: *mut _FILE_OBJECT,
         arg2: PLARGE_INTEGER,
@@ -3551,7 +3551,7 @@ unsafe extern "stdcall" {
         arg9: *mut _DEVICE_OBJECT,
     ) -> BOOLEAN;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn CdFastUnlockSingle(
         arg1: *mut _FILE_OBJECT,
         arg2: PLARGE_INTEGER,
@@ -3562,7 +3562,7 @@ unsafe extern "stdcall" {
         arg7: *mut _DEVICE_OBJECT,
     ) -> BOOLEAN;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn CdFastUnlockAll(
         arg1: *mut _FILE_OBJECT,
         arg2: PEPROCESS,
@@ -3570,7 +3570,7 @@ unsafe extern "stdcall" {
         arg4: *mut _DEVICE_OBJECT,
     ) -> BOOLEAN;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn CdFastUnlockAllByKey(
         arg1: *mut _FILE_OBJECT,
         arg2: PVOID,
@@ -3579,7 +3579,7 @@ unsafe extern "stdcall" {
         arg5: *mut _DEVICE_OBJECT,
     ) -> BOOLEAN;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn CdFastIoCheckIfPossible(
         arg1: *mut _FILE_OBJECT,
         arg2: PLARGE_INTEGER,
@@ -3591,7 +3591,7 @@ unsafe extern "stdcall" {
         arg8: *mut _DEVICE_OBJECT,
     ) -> BOOLEAN;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn CdFastQueryNetworkInfo(
         arg1: *mut _FILE_OBJECT,
         arg2: BOOLEAN,
@@ -3606,7 +3606,7 @@ unsafe extern "C" {
 unsafe extern "C" {
     pub fn CdSerial32(Buffer: PCHAR, ByteCount: ULONG) -> ULONG;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn CdFspDispatch(arg1: PVOID);
 }
 unsafe extern "C" {

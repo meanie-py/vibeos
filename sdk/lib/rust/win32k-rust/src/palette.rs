@@ -217,9 +217,8 @@ pub unsafe extern "C" fn PALETTE_ValidateFlags(lpPalE: *mut PALETTEENTRY, size: 
         i += 1;
     }
 }
-#[cfg(target_arch = "x86")]
 #[no_mangle]
-pub unsafe extern "stdcall" fn PALETTE_AllocPalette(
+pub unsafe extern "system" fn PALETTE_AllocPalette(
     iMode: ULONG,
     cColors: ULONG,
     pEntries: *const PALETTEENTRY,
@@ -282,75 +281,8 @@ pub unsafe extern "stdcall" fn PALETTE_AllocPalette(
 
     ppal
 }
-
-#[cfg(not(target_arch = "x86"))]
 #[no_mangle]
-pub unsafe extern "C" fn PALETTE_AllocPalette(
-    iMode: ULONG,
-    cColors: ULONG,
-    pEntries: *const PALETTEENTRY,
-    flRed: FLONG,
-    flGreen: FLONG,
-    flBlue: FLONG,
-) -> PPALETTE {
-    let mut iMode = iMode;
-    let mut cColors = cColors;
-    let mut fl: ULONG = 0;
-    let mut cjSize: ULONG = core::mem::size_of::<PALETTE>() as ULONG;
-
-    if (iMode & PAL_INDEXED) != 0 {
-        if cColors == 0 || cColors > 1024 {
-            return core::ptr::null_mut();
-        }
-
-        if cColors == 2 {
-            iMode |= PAL_MONOCHROME;
-        }
-
-        cjSize += cColors * core::mem::size_of::<PALETTEENTRY>() as ULONG;
-    } else {
-        cColors = 0;
-        fl |= BASEFLAG_LOOKASIDE;
-    }
-
-    let ppal = GDIOBJ_AllocateObject(GDIObjType_PAL_TYPE as u8, cjSize, fl) as PPALETTE;
-    if ppal.is_null() {
-        return core::ptr::null_mut();
-    }
-
-    (*ppal).flFlags = iMode;
-    (*ppal).NumColors = cColors;
-    (*ppal).IndexedColors = core::ptr::addr_of_mut!((*ppal).apalColors) as *mut PALETTEENTRY;
-
-    if (iMode & PAL_INDEXED) != 0 {
-        if !pEntries.is_null() {
-            RtlCopyMemory(
-                (*ppal).IndexedColors as *mut core::ffi::c_void,
-                pEntries as *const core::ffi::c_void,
-                (cColors as usize) * core::mem::size_of::<PALETTEENTRY>(),
-            );
-        }
-    } else if (iMode & PAL_BITFIELDS) != 0 {
-        (*ppal).RedMask = flRed;
-        (*ppal).GreenMask = flGreen;
-        (*ppal).BlueMask = flBlue;
-
-        if flRed == 0x7c00 && flGreen == 0x3E0 && flBlue == 0x1F {
-            (*ppal).flFlags |= PAL_RGB16_555;
-        } else if flRed == 0xF800 && flGreen == 0x7E0 && flBlue == 0x1F {
-            (*ppal).flFlags |= PAL_RGB16_565;
-        } else if flRed == 0xFF0000 && flGreen == 0xFF00 && flBlue == 0xFF {
-            (*ppal).flFlags |= PAL_BGR;
-        } else if flRed == 0xFF && flGreen == 0xFF00 && flBlue == 0xFF0000 {
-            (*ppal).flFlags |= PAL_RGB;
-        }
-    }
-
-    ppal
-}
-#[cfg(target_arch = "x86")]
-#[no_mangle]
-pub unsafe extern "stdcall" fn PALETTE_AllocPalWithHandle(
+pub unsafe extern "system" fn PALETTE_AllocPalWithHandle(
     iMode: ULONG,
     cColors: ULONG,
     pEntries: *const PALETTEENTRY,
@@ -370,41 +302,8 @@ pub unsafe extern "stdcall" fn PALETTE_AllocPalWithHandle(
 
     ppal
 }
-
-#[cfg(not(target_arch = "x86"))]
 #[no_mangle]
-pub unsafe extern "C" fn PALETTE_AllocPalWithHandle(
-    iMode: ULONG,
-    cColors: ULONG,
-    pEntries: *const PALETTEENTRY,
-    flRed: FLONG,
-    flGreen: FLONG,
-    flBlue: FLONG,
-) -> PPALETTE {
-    let ppal = PALETTE_AllocPalette(iMode, cColors, pEntries, flRed, flGreen, flBlue);
-    if ppal.is_null() {
-        return core::ptr::null_mut();
-    }
-
-    if GDIOBJ_hInsertObject(core::ptr::addr_of_mut!((*ppal).BaseObject), GDI_OBJ_HMGR_POWNED).is_null() {
-        GDIOBJ_vFreeObject(core::ptr::addr_of_mut!((*ppal).BaseObject));
-        return core::ptr::null_mut();
-    }
-
-    ppal
-}
-#[cfg(target_arch = "x86")]
-#[no_mangle]
-pub unsafe extern "stdcall" fn PALETTE_vCleanup(ObjectBody: PVOID) {
-    let pPal: PPALETTE = ObjectBody as PPALETTE;
-    if !(*pPal).IndexedColors.is_null() && (*pPal).IndexedColors != (*pPal).apalColors.as_mut_ptr() {
-        ExFreePoolWithTag((*pPal).IndexedColors as PVOID, TAG_PALETTE);
-    }
-}
-
-#[cfg(not(target_arch = "x86"))]
-#[no_mangle]
-pub unsafe extern "C" fn PALETTE_vCleanup(ObjectBody: PVOID) {
+pub unsafe extern "system" fn PALETTE_vCleanup(ObjectBody: PVOID) {
     let pPal: PPALETTE = ObjectBody as PPALETTE;
     if !(*pPal).IndexedColors.is_null() && (*pPal).IndexedColors != (*pPal).apalColors.as_mut_ptr() {
         ExFreePoolWithTag((*pPal).IndexedColors as PVOID, TAG_PALETTE);
@@ -436,9 +335,8 @@ unsafe fn PALETTE_GetObject_impl(ppal: PPALETTE, cbCount: INT, lpBuffer: LPLOGBR
     *(lpBuffer as *mut WORD) = (*ppal).NumColors as WORD;
     core::mem::size_of::<WORD>() as INT
 }
-#[cfg(target_arch = "x86")]
 #[no_mangle]
-pub unsafe extern "stdcall" fn PALETTE_ulGetNearestPaletteIndex(ppal: *mut PALETTE, iColor: ULONG) -> ULONG {
+pub unsafe extern "system" fn PALETTE_ulGetNearestPaletteIndex(ppal: *mut PALETTE, iColor: ULONG) -> ULONG {
     let mut ulDiff: ULONG;
     let mut ulColorDiff: ULONG;
     let mut ulMinimalDiff: ULONG = 0xFFFFFF;
@@ -469,43 +367,8 @@ pub unsafe extern "stdcall" fn PALETTE_ulGetNearestPaletteIndex(ppal: *mut PALET
 
     ulBestIndex
 }
-
-#[cfg(not(target_arch = "x86"))]
 #[no_mangle]
-pub unsafe extern "C" fn PALETTE_ulGetNearestPaletteIndex(ppal: *mut PALETTE, iColor: ULONG) -> ULONG {
-    let mut ulDiff: ULONG;
-    let mut ulColorDiff: ULONG;
-    let mut ulMinimalDiff: ULONG = 0xFFFFFF;
-    let mut ulBestIndex: ULONG = 0;
-    let peColor: PALETTEENTRY = *(&iColor as *const ULONG as *const PALETTEENTRY);
-
-    let mut i: ULONG = 0;
-    while i < (*ppal).NumColors {
-        let entry = (*ppal).IndexedColors.offset(i as isize);
-        ulDiff = peColor.peRed as ULONG - (*entry).peRed as ULONG;
-        ulColorDiff = ulDiff * ulDiff;
-        ulDiff = peColor.peGreen as ULONG - (*entry).peGreen as ULONG;
-        ulColorDiff += ulDiff * ulDiff;
-        ulDiff = peColor.peBlue as ULONG - (*entry).peBlue as ULONG;
-        ulColorDiff += ulDiff * ulDiff;
-
-        if ulColorDiff < ulMinimalDiff {
-            ulBestIndex = i;
-            ulMinimalDiff = ulColorDiff;
-
-            if ulMinimalDiff == 0 {
-                break;
-            }
-        }
-
-        i += 1;
-    }
-
-    ulBestIndex
-}
-#[cfg(target_arch = "x86")]
-#[no_mangle]
-pub unsafe extern "stdcall" fn PALETTE_ulGetNearestBitFieldsIndex(ppal: *mut PALETTE, ulColor: ULONG) -> ULONG {
+pub unsafe extern "system" fn PALETTE_ulGetNearestBitFieldsIndex(ppal: *mut PALETTE, ulColor: ULONG) -> ULONG {
     let ulNewColor: ULONG;
 
     (*ppal).ulRedShift = CalculateShift(RGB(0xff, 0, 0), (*ppal).RedMask);
@@ -519,26 +382,8 @@ pub unsafe extern "stdcall" fn PALETTE_ulGetNearestBitFieldsIndex(ppal: *mut PAL
 
     ulNewColor
 }
-
-#[cfg(not(target_arch = "x86"))]
 #[no_mangle]
-pub unsafe extern "C" fn PALETTE_ulGetNearestBitFieldsIndex(ppal: *mut PALETTE, ulColor: ULONG) -> ULONG {
-    let ulNewColor: ULONG;
-
-    (*ppal).ulRedShift = CalculateShift(RGB(0xff, 0, 0), (*ppal).RedMask);
-    (*ppal).ulGreenShift = CalculateShift(RGB(0, 0xff, 0), (*ppal).GreenMask);
-    (*ppal).ulBlueShift = CalculateShift(RGB(0, 0, 0xff), (*ppal).BlueMask);
-
-    let mut color = _rotl(ulColor, (*ppal).ulRedShift) & (*ppal).RedMask;
-    color |= _rotl(ulColor, (*ppal).ulGreenShift) & (*ppal).GreenMask;
-    color |= _rotl(ulColor, (*ppal).ulBlueShift) & (*ppal).BlueMask;
-    ulNewColor = color;
-
-    ulNewColor
-}
-#[cfg(target_arch = "x86")]
-#[no_mangle]
-pub unsafe extern "stdcall" fn PALETTE_ulGetNearestIndex(ppal: *mut PALETTE, ulColor: ULONG) -> ULONG {
+pub unsafe extern "system" fn PALETTE_ulGetNearestIndex(ppal: *mut PALETTE, ulColor: ULONG) -> ULONG {
     if ((*ppal).flFlags & PAL_RGB) != 0 {
         return ulColor;
     }
@@ -551,43 +396,8 @@ pub unsafe extern "stdcall" fn PALETTE_ulGetNearestIndex(ppal: *mut PALETTE, ulC
         return PALETTE_ulGetNearestBitFieldsIndex(ppal, ulColor);
     }
 }
-
-#[cfg(not(target_arch = "x86"))]
 #[no_mangle]
-pub unsafe extern "C" fn PALETTE_ulGetNearestIndex(ppal: *mut PALETTE, ulColor: ULONG) -> ULONG {
-    if ((*ppal).flFlags & PAL_RGB) != 0 {
-        return ulColor;
-    }
-    if ((*ppal).flFlags & PAL_BGR) != 0 {
-        return RGB(GetBValue(ulColor), GetGValue(ulColor), GetRValue(ulColor));
-    }
-    if ((*ppal).flFlags & PAL_INDEXED) != 0 {
-        return PALETTE_ulGetNearestPaletteIndex(ppal, ulColor);
-    } else {
-        return PALETTE_ulGetNearestBitFieldsIndex(ppal, ulColor);
-    }
-}
-#[cfg(target_arch = "x86")]
-#[no_mangle]
-pub unsafe extern "stdcall" fn PALETTE_vGetBitMasks(ppal: PPALETTE, pulColors: PULONG) {
-    if ((*ppal).flFlags & PAL_INDEXED as u32) != 0 || ((*ppal).flFlags & PAL_RGB as u32) != 0 {
-        *pulColors.offset(0) = RGB(0xFF, 0x00, 0x00);
-        *pulColors.offset(1) = RGB(0x00, 0xFF, 0x00);
-        *pulColors.offset(2) = RGB(0x00, 0x00, 0xFF);
-    } else if ((*ppal).flFlags & PAL_BGR as u32) != 0 {
-        *pulColors.offset(0) = RGB(0x00, 0x00, 0xFF);
-        *pulColors.offset(1) = RGB(0x00, 0xFF, 0x00);
-        *pulColors.offset(2) = RGB(0xFF, 0x00, 0x00);
-    } else if ((*ppal).flFlags & PAL_BITFIELDS as u32) != 0 {
-        *pulColors.offset(0) = (*ppal).RedMask;
-        *pulColors.offset(1) = (*ppal).GreenMask;
-        *pulColors.offset(2) = (*ppal).BlueMask;
-    }
-}
-
-#[cfg(not(target_arch = "x86"))]
-#[no_mangle]
-pub unsafe extern "C" fn PALETTE_vGetBitMasks(ppal: PPALETTE, pulColors: PULONG) {
+pub unsafe extern "system" fn PALETTE_vGetBitMasks(ppal: PPALETTE, pulColors: PULONG) {
     if ((*ppal).flFlags & PAL_INDEXED as u32) != 0 || ((*ppal).flFlags & PAL_RGB as u32) != 0 {
         *pulColors.offset(0) = RGB(0xFF, 0x00, 0x00);
         *pulColors.offset(1) = RGB(0x00, 0xFF, 0x00);
@@ -623,9 +433,8 @@ pub unsafe fn ColorCorrection(PalGDI: PPALETTE, PaletteEntry: PPALETTEENTRY, Col
     }
 }
 }
-#[cfg(target_arch = "x86")]
 #[no_mangle]
-pub unsafe extern "stdcall" fn EngCreatePalette(
+pub unsafe extern "system" fn EngCreatePalette(
     iMode: ULONG,
     cColors: ULONG,
     pulColors: *mut ULONG,
@@ -657,44 +466,8 @@ pub unsafe extern "stdcall" fn EngCreatePalette(
     PALETTE_UnlockPalette(ppal);
     hpal
 }
-
-#[cfg(not(target_arch = "x86"))]
 #[no_mangle]
-pub unsafe extern "C" fn EngCreatePalette(
-    iMode: ULONG,
-    cColors: ULONG,
-    pulColors: *mut ULONG,
-    flRed: FLONG,
-    flGreen: FLONG,
-    flBlue: FLONG,
-) -> HPALETTE {
-    let ppal: PPALETTE = PALETTE_AllocPalette(
-        iMode,
-        cColors,
-        pulColors as PPALETTEENTRY,
-        flRed,
-        flGreen,
-        flBlue,
-    );
-    if ppal.is_null() {
-        return core::ptr::null_mut();
-    }
-
-    let hpal: HPALETTE = GDIOBJ_hInsertObject(
-        core::ptr::addr_of_mut!((*ppal).BaseObject),
-        GDI_OBJ_HMGR_PUBLIC,
-    ) as HPALETTE;
-    if hpal.is_null() {
-        GDIOBJ_vFreeObject(core::ptr::addr_of_mut!((*ppal).BaseObject));
-        return core::ptr::null_mut();
-    }
-
-    PALETTE_UnlockPalette(ppal);
-    hpal
-}
-#[cfg(target_arch = "x86")]
-#[no_mangle]
-pub unsafe extern "stdcall" fn EngDeletePalette(hpal: HPALETTE) -> u32 {
+pub unsafe extern "system" fn EngDeletePalette(hpal: HPALETTE) -> u32 {
 
     let ppal = PALETTE_ShareLockPalette(hpal);
     if ppal.is_null() {
@@ -705,23 +478,8 @@ pub unsafe extern "stdcall" fn EngDeletePalette(hpal: HPALETTE) -> u32 {
 
     1
 }
-
-#[cfg(not(target_arch = "x86"))]
 #[no_mangle]
-pub unsafe extern "C" fn EngDeletePalette(hpal: HPALETTE) -> u32 {
-
-    let ppal = PALETTE_ShareLockPalette(hpal);
-    if ppal.is_null() {
-        return 0;
-    }
-
-    GDIOBJ_vDeleteObject(core::ptr::addr_of_mut!((*ppal).BaseObject));
-
-    1
-}
-#[cfg(target_arch = "x86")]
-#[no_mangle]
-pub unsafe extern "stdcall" fn PALOBJ_cGetColors(PalObj: *mut PALOBJ, Start: u32, mut Colors: u32, PaletteEntry: *mut u32) -> u32 {
+pub unsafe extern "system" fn PALOBJ_cGetColors(PalObj: *mut PALOBJ, Start: u32, mut Colors: u32, PaletteEntry: *mut u32) -> u32 {
     let PalGDI: *mut PALETTE = PalObj as *mut PALETTE;
 
     if Start >= (*PalGDI).NumColors {
@@ -745,36 +503,8 @@ pub unsafe extern "stdcall" fn PALOBJ_cGetColors(PalObj: *mut PALOBJ, Start: u32
 
     Colors
 }
-
-#[cfg(not(target_arch = "x86"))]
 #[no_mangle]
-pub unsafe extern "C" fn PALOBJ_cGetColors(PalObj: *mut PALOBJ, Start: u32, mut Colors: u32, PaletteEntry: *mut u32) -> u32 {
-    let PalGDI: *mut PALETTE = PalObj as *mut PALETTE;
-
-    if Start >= (*PalGDI).NumColors {
-        return 0;
-    }
-
-    let available = (*PalGDI).NumColors - Start;
-    if available < Colors {
-        Colors = available;
-    }
-
-    RtlCopyMemory(
-        PaletteEntry as *mut core::ffi::c_void,
-        (*PalGDI).IndexedColors.offset(Start as isize) as *const core::ffi::c_void,
-        (core::mem::size_of::<u32>() as u32 * Colors) as usize,
-    );
-
-    if (*PalGDI).flFlags & PAL_GAMMACORRECTION != 0 {
-        ColorCorrection(PalGDI, PaletteEntry as PPALETTEENTRY, Colors);
-    }
-
-    Colors
-}
-#[cfg(target_arch = "x86")]
-#[no_mangle]
-pub unsafe extern "stdcall" fn GreCreatePaletteInternal(
+pub unsafe extern "system" fn GreCreatePaletteInternal(
     pLogPal: LPLOGPALETTE,
     cEntries: UINT,
 ) -> HPALETTE {
@@ -800,38 +530,8 @@ pub unsafe extern "stdcall" fn GreCreatePaletteInternal(
 
     hpal
 }
-
-#[cfg(not(target_arch = "x86"))]
 #[no_mangle]
-pub unsafe extern "C" fn GreCreatePaletteInternal(
-    pLogPal: LPLOGPALETTE,
-    cEntries: UINT,
-) -> HPALETTE {
-    let mut hpal: HPALETTE = core::ptr::null_mut();
-    let ppal: PPALETTE;
-
-    (*pLogPal).palNumEntries = cEntries as u16;
-    ppal = PALETTE_AllocPalWithHandle(
-        PAL_INDEXED,
-        cEntries,
-        core::ptr::addr_of_mut!((*pLogPal).palPalEntry) as *const PALETTEENTRY,
-        0,
-        0,
-        0,
-    );
-
-    if !ppal.is_null() {
-        PALETTE_ValidateFlags((*ppal).IndexedColors, (*ppal).NumColors as INT);
-
-        hpal = (*ppal).BaseObject.hHmgr as HPALETTE;
-        PALETTE_UnlockPalette(ppal);
-    }
-
-    hpal
-}
-#[cfg(target_arch = "x86")]
-#[no_mangle]
-pub unsafe extern "stdcall" fn NtGdiCreatePaletteInternal(
+pub unsafe extern "system" fn NtGdiCreatePaletteInternal(
     plogpalUser: LPLOGPALETTE,
     cEntries: UINT,
 ) -> HPALETTE {
@@ -869,50 +569,8 @@ pub unsafe extern "stdcall" fn NtGdiCreatePaletteInternal(
 
     hpal
 }
-
-#[cfg(not(target_arch = "x86"))]
 #[no_mangle]
-pub unsafe extern "C" fn NtGdiCreatePaletteInternal(
-    plogpalUser: LPLOGPALETTE,
-    cEntries: UINT,
-) -> HPALETTE {
-    let mut hpal: HPALETTE;
-    let ppal: PPALETTE;
-    let mut i: ULONG;
-    let cjSize: ULONG;
-
-    ppal = PALETTE_AllocPalWithHandle(PAL_INDEXED as ULONG, cEntries as ULONG, core::ptr::null_mut(), 0, 0, 0);
-    if ppal.is_null() {
-        return core::ptr::null_mut();
-    }
-
-    cjSize = (core::mem::size_of::<LOGPALETTE>() as ULONG)
-        - (core::mem::size_of::<PALETTEENTRY>() as ULONG)
-        + (cEntries * core::mem::size_of::<PALETTEENTRY>() as ULONG);
-
-    {
-        let __SehStatus: NTSTATUS = SafeProbeForRead(plogpalUser as *mut core::ffi::c_void, cjSize as SIZE_T, 1);
-        if !NT_SUCCESS(__SehStatus) {
-            GDIOBJ_vDeleteObject(core::ptr::addr_of_mut!((*ppal).BaseObject));
-            return core::ptr::null_mut();
-        }
-    }
-
-    i = 0;
-    while i < cEntries as ULONG {
-        *(*ppal).IndexedColors.offset(i as isize) = *(*plogpalUser).palPalEntry.as_ptr().offset(i as isize);
-        i += 1;
-    }
-
-    PALETTE_ValidateFlags((*ppal).IndexedColors, cEntries as INT);
-    hpal = (*ppal).BaseObject.hHmgr as HPALETTE;
-    PALETTE_UnlockPalette(ppal);
-
-    hpal
-}
-#[cfg(target_arch = "x86")]
-#[no_mangle]
-pub unsafe extern "stdcall" fn NtGdiCreateHalftonePalette(hDC: HDC) -> HPALETTE {
+pub unsafe extern "system" fn NtGdiCreateHalftonePalette(hDC: HDC) -> HPALETTE {
     let mut PalEntries: [PALETTEENTRY; 256] = [core::mem::zeroed(); 256];
     let mut hpal: HPALETTE = core::ptr::null_mut();
 
@@ -994,139 +652,26 @@ pub unsafe extern "stdcall" fn NtGdiCreateHalftonePalette(hDC: HDC) -> HPALETTE 
 
     hpal
 }
-
-#[cfg(not(target_arch = "x86"))]
 #[no_mangle]
-pub unsafe extern "C" fn NtGdiCreateHalftonePalette(hDC: HDC) -> HPALETTE {
-    let mut PalEntries: [PALETTEENTRY; 256] = [core::mem::zeroed(); 256];
-    let mut hpal: HPALETTE = core::ptr::null_mut();
-
-    let pdc: PDC = DC_LockDc(hDC);
-    if pdc.is_null() {
-        EngSetLastError(ERROR_INVALID_HANDLE);
-        return core::ptr::null_mut();
-    }
-
-    RtlZeroMemory(
-        PalEntries.as_mut_ptr() as *mut _,
-        core::mem::size_of::<[PALETTEENTRY; 256]>(),
-    );
-
-    let mut i: i32;
-
-    i = 0;
-    while i < 10 {
-        PalEntries[i as usize].peRed = g_sysPalTemplate[i as usize].peRed;
-        PalEntries[i as usize].peGreen = g_sysPalTemplate[i as usize].peGreen;
-        PalEntries[i as usize].peBlue = g_sysPalTemplate[i as usize].peBlue;
-
-        PalEntries[(246 + i) as usize].peRed = g_sysPalTemplate[(10 + i) as usize].peRed;
-        PalEntries[(246 + i) as usize].peGreen = g_sysPalTemplate[(10 + i) as usize].peGreen;
-        PalEntries[(246 + i) as usize].peBlue = g_sysPalTemplate[(10 + i) as usize].peBlue;
-        i += 1;
-    }
-
-    let ppal: PPALETTE = PALETTE_ShareLockPalette((*pdc).dclevel.hpal);
-    if !ppal.is_null() && ((*ppal).flFlags & PAL_INDEXED) != 0 {
-        // FIXME: optimize the palette for the current palette
-        // UNIMPLEMENTED
-    } else {
-        let mut r: i32 = 0;
-        while r < 6 {
-            let mut g: i32 = 0;
-            while g < 6 {
-                let mut b: i32 = 0;
-                while b < 6 {
-                    i = r + g * 6 + b * 36 + 10;
-                    PalEntries[i as usize].peRed = (r * 51) as u8;
-                    PalEntries[i as usize].peGreen = (g * 51) as u8;
-                    PalEntries[i as usize].peBlue = (b * 51) as u8;
-                    b += 1;
-                }
-                g += 1;
-            }
-            r += 1;
-        }
-
-        i = 216;
-        while i < 246 {
-            let v: i32 = (i - 216) << 3;
-            PalEntries[i as usize].peRed = v as u8;
-            PalEntries[i as usize].peGreen = v as u8;
-            PalEntries[i as usize].peBlue = v as u8;
-            i += 1;
-        }
-    }
-
-    if !ppal.is_null() {
-        PALETTE_ShareUnlockPalette(ppal);
-    }
-
-    DC_UnlockDc(pdc);
-
-    let ppal2: PPALETTE = PALETTE_AllocPalWithHandle(
-        PAL_INDEXED,
-        256,
-        PalEntries.as_ptr(),
-        0,
-        0,
-        0,
-    );
-    if !ppal2.is_null() {
-        hpal = (*ppal2).BaseObject.hHmgr as HPALETTE;
-        PALETTE_UnlockPalette(ppal2);
-    }
-
-    hpal
-}
-#[cfg(target_arch = "x86")]
-#[no_mangle]
-pub unsafe extern "stdcall" fn NtGdiResizePalette(hpal: HPALETTE, Entries: UINT) -> BOOL {
+pub unsafe extern "system" fn NtGdiResizePalette(hpal: HPALETTE, Entries: UINT) -> BOOL {
     0
 }
-
-#[cfg(not(target_arch = "x86"))]
 #[no_mangle]
-pub unsafe extern "C" fn NtGdiResizePalette(hpal: HPALETTE, Entries: UINT) -> BOOL {
-    0
-}
-#[cfg(target_arch = "x86")]
-#[no_mangle]
-pub unsafe extern "stdcall" fn NtGdiGetColorAdjustment(
+pub unsafe extern "system" fn NtGdiGetColorAdjustment(
     hdc: HDC,
     pca: LPCOLORADJUSTMENT,
 ) -> u8 {
     0u8
 }
-
-#[cfg(not(target_arch = "x86"))]
 #[no_mangle]
-pub unsafe extern "C" fn NtGdiGetColorAdjustment(
+pub unsafe extern "system" fn NtGdiSetColorAdjustment(
     hdc: HDC,
     pca: LPCOLORADJUSTMENT,
 ) -> u8 {
     0u8
 }
-#[cfg(target_arch = "x86")]
 #[no_mangle]
-pub unsafe extern "stdcall" fn NtGdiSetColorAdjustment(
-    hdc: HDC,
-    pca: LPCOLORADJUSTMENT,
-) -> u8 {
-    0u8
-}
-
-#[cfg(not(target_arch = "x86"))]
-#[no_mangle]
-pub unsafe extern "C" fn NtGdiSetColorAdjustment(
-    hdc: HDC,
-    pca: LPCOLORADJUSTMENT,
-) -> u8 {
-    0u8
-}
-#[cfg(target_arch = "x86")]
-#[no_mangle]
-pub unsafe extern "stdcall" fn NtGdiGetNearestColor(hDC: HDC, mut Color: COLORREF) -> COLORREF {
+pub unsafe extern "system" fn NtGdiGetNearestColor(hDC: HDC, mut Color: COLORREF) -> COLORREF {
 
     let mut nearest: COLORREF = CLR_INVALID;
     let dc: PDC;
@@ -1165,67 +710,8 @@ pub unsafe extern "stdcall" fn NtGdiGetNearestColor(hDC: HDC, mut Color: COLORRE
 
     nearest
 }
-
-#[cfg(not(target_arch = "x86"))]
 #[no_mangle]
-pub unsafe extern "C" fn NtGdiGetNearestColor(hDC: HDC, mut Color: COLORREF) -> COLORREF {
-
-    let mut nearest: COLORREF = CLR_INVALID;
-    let dc: PDC;
-    let mut exlo: EXLATEOBJ = core::mem::zeroed();
-    let ppal: PPALETTE;
-
-    dc = DC_LockDc(hDC);
-
-    if dc.is_null() {
-        EngSetLastError(ERROR_INVALID_HANDLE);
-        return CLR_INVALID;
-    }
-
-    if (*dc).dclevel.pSurface.is_null() {
-        ppal = gppalMono;
-    } else {
-        ppal = (*(*dc).dclevel.pSurface).ppal;
-    }
-
-    Color = TranslateCOLORREF(dc, Color);
-
-    EXLATEOBJ_vInitialize(
-        core::ptr::addr_of_mut!(exlo),
-        ppal,
-        core::ptr::addr_of_mut!(gpalRGB),
-        0,
-        (0xffu32) | (0xffu32 << 8) | (0xffu32 << 16),
-        0,
-    );
-
-    nearest = XLATEOBJ_iXlate(core::ptr::addr_of_mut!(exlo.xlo), Color);
-
-    EXLATEOBJ_vCleanup(core::ptr::addr_of_mut!(exlo));
-
-    DC_UnlockDc(dc);
-
-    nearest
-}
-#[cfg(target_arch = "x86")]
-#[no_mangle]
-pub unsafe extern "stdcall" fn NtGdiGetNearestPaletteIndex(hpal: HPALETTE, crColor: COLORREF) -> UINT {
-    let ppal: PPALETTE = PALETTE_ShareLockPalette(hpal);
-    let mut index: UINT = 0;
-
-    if !ppal.is_null() {
-        if (*ppal).flFlags & PAL_INDEXED != 0 {
-            index = PALETTE_ulGetNearestPaletteIndex(ppal, crColor);
-        }
-        PALETTE_ShareUnlockPalette(ppal);
-    }
-
-    index
-}
-
-#[cfg(not(target_arch = "x86"))]
-#[no_mangle]
-pub unsafe extern "C" fn NtGdiGetNearestPaletteIndex(hpal: HPALETTE, crColor: COLORREF) -> UINT {
+pub unsafe extern "system" fn NtGdiGetNearestPaletteIndex(hpal: HPALETTE, crColor: COLORREF) -> UINT {
     let ppal: PPALETTE = PALETTE_ShareLockPalette(hpal);
     let mut index: UINT = 0;
 
@@ -1332,9 +818,8 @@ pub unsafe extern "system" fn IntAnimatePalette(
     }
     ret
 }
-#[cfg(target_arch = "x86")]
 #[no_mangle]
-pub unsafe extern "stdcall" fn IntGetPaletteEntries(
+pub unsafe extern "system" fn IntGetPaletteEntries(
     hpal: HPALETTE,
     StartIndex: u32,
     mut Entries: u32,
@@ -1367,110 +852,8 @@ pub unsafe extern "stdcall" fn IntGetPaletteEntries(
     PALETTE_ShareUnlockPalette(palGDI);
     Entries
 }
-
-#[cfg(not(target_arch = "x86"))]
 #[no_mangle]
-pub unsafe extern "C" fn IntGetPaletteEntries(
-    hpal: HPALETTE,
-    StartIndex: u32,
-    mut Entries: u32,
-    pe: LPPALETTEENTRY,
-) -> u32 {
-
-    let palGDI: PPALETTE = PALETTE_ShareLockPalette(hpal);
-    if palGDI.is_null() {
-        return 0;
-    }
-
-    let numEntries: u32 = (*palGDI).NumColors;
-    if !pe.is_null() {
-        if numEntries < StartIndex + Entries {
-            Entries = numEntries - StartIndex;
-        }
-        if numEntries <= StartIndex {
-            PALETTE_ShareUnlockPalette(palGDI);
-            return 0;
-        }
-        memcpy(
-            pe as *mut core::ffi::c_void,
-            (*palGDI).IndexedColors.offset(StartIndex as isize) as *const core::ffi::c_void,
-            (Entries as usize) * core::mem::size_of::<PALETTEENTRY>(),
-        );
-    } else {
-        Entries = numEntries;
-    }
-
-    PALETTE_ShareUnlockPalette(palGDI);
-    Entries
-}
-#[cfg(target_arch = "x86")]
-#[no_mangle]
-pub unsafe extern "stdcall" fn IntGetSystemPaletteEntries(
-    hDC: HDC,
-    StartIndex: UINT,
-    mut Entries: UINT,
-    pe: LPPALETTEENTRY,
-) -> UINT {
-
-    let mut palGDI: PPALETTE = core::ptr::null_mut();
-    let mut dc: PDC = core::ptr::null_mut();
-    let mut EntriesSize: UINT = 0;
-    let mut Ret: UINT = 0;
-
-    if Entries == 0 {
-        EngSetLastError(ERROR_INVALID_PARAMETER);
-        return 0;
-    }
-
-    if !pe.is_null() {
-        EntriesSize = Entries * core::mem::size_of::<PALETTEENTRY>() as UINT;
-        if Entries != EntriesSize / core::mem::size_of::<PALETTEENTRY>() as UINT {
-            EngSetLastError(ERROR_INVALID_PARAMETER);
-            return 0;
-        }
-    }
-
-    dc = DC_LockDc(hDC);
-    if dc.is_null() {
-        EngSetLastError(ERROR_INVALID_HANDLE);
-        return 0;
-    }
-
-    palGDI = PALETTE_ShareLockPalette((*dc).dclevel.hpal);
-    if !palGDI.is_null() {
-        if !pe.is_null() {
-            if StartIndex >= (*palGDI).NumColors {
-                Entries = 0;
-            } else if Entries > (*palGDI).NumColors - StartIndex {
-                Entries = (*palGDI).NumColors - StartIndex;
-            }
-
-            memcpy(
-                pe as *mut core::ffi::c_void,
-                (*palGDI).IndexedColors.add(StartIndex as usize) as *const core::ffi::c_void,
-                (Entries as usize) * core::mem::size_of::<PALETTEENTRY>(),
-            );
-
-            Ret = Entries;
-        } else {
-            Ret = (*(*dc).ppdev).gdiinfo.ulNumPalReg;
-        }
-    }
-
-    if !palGDI.is_null() {
-        PALETTE_ShareUnlockPalette(palGDI);
-    }
-
-    if !dc.is_null() {
-        DC_UnlockDc(dc);
-    }
-
-    Ret
-}
-
-#[cfg(not(target_arch = "x86"))]
-#[no_mangle]
-pub unsafe extern "C" fn IntGetSystemPaletteEntries(
+pub unsafe extern "system" fn IntGetSystemPaletteEntries(
     hDC: HDC,
     StartIndex: UINT,
     mut Entries: UINT,
@@ -1636,9 +1019,8 @@ pub unsafe extern "system" fn GreGetSetColorTable(
 
     iResult
 }
-#[cfg(target_arch = "x86")]
 #[no_mangle]
-pub unsafe extern "stdcall" fn NtGdiDoPalette(
+pub unsafe extern "system" fn NtGdiDoPalette(
     hObj: HGDIOBJ,
     iStart: WORD,
     cEntries: WORD,
@@ -1722,96 +1104,8 @@ pub unsafe extern "stdcall" fn NtGdiDoPalette(
 
     ret
 }
-
-#[cfg(not(target_arch = "x86"))]
 #[no_mangle]
-pub unsafe extern "C" fn NtGdiDoPalette(
-    hObj: HGDIOBJ,
-    iStart: WORD,
-    cEntries: WORD,
-    pUnsafeEntries: LPVOID,
-    iFunc: DWORD,
-    bInbound: BOOL,
-) -> LONG {
-
-    let mut ret: LONG;
-    let mut pEntries: LPVOID = core::ptr::null_mut();
-    let mut cjSize: SIZE_T;
-    let Status: NTSTATUS;
-
-    if !pUnsafeEntries.is_null() {
-        if cEntries == 0 {
-            return 0;
-        }
-
-        cjSize = (cEntries as SIZE_T) * (core::mem::size_of::<PALETTEENTRY>() as SIZE_T);
-        pEntries = ExAllocatePoolWithTag(PagedPool, cjSize, TAG_PALETTE);
-        if pEntries.is_null() {
-            return 0;
-        }
-
-        if bInbound != 0 {
-            let __SehStatus: NTSTATUS = SafeProbeForRead(pUnsafeEntries, cjSize as SIZE_T, 1);
-            if !NT_SUCCESS(__SehStatus) {
-                ExFreePoolWithTag(pEntries, TAG_PALETTE);
-                return 0;
-            }
-            memcpy(pEntries, pUnsafeEntries, cjSize as usize);
-        } else {
-            RtlZeroMemory(pEntries, cjSize as usize);
-        }
-    }
-
-    ret = 0;
-    match iFunc {
-        GdiPalAnimate => {
-            if !pEntries.is_null() {
-                ret = IntAnimatePalette(hObj as HPALETTE, iStart as UINT, cEntries as UINT, pEntries as PPALETTEENTRY) as LONG;
-            }
-        }
-        GdiPalSetEntries => {
-            if !pEntries.is_null() {
-                ret = IntSetPaletteEntries(hObj as HPALETTE, iStart as UINT, cEntries as UINT, pEntries as LPPALETTEENTRY) as LONG;
-            }
-        }
-        GdiPalGetEntries => {
-            ret = IntGetPaletteEntries(hObj as HPALETTE, iStart as u32, cEntries as u32, pEntries as LPPALETTEENTRY) as LONG;
-        }
-        GdiPalGetSystemEntries => {
-            ret = IntGetSystemPaletteEntries(hObj as HDC, iStart as UINT, cEntries as UINT, pEntries as LPPALETTEENTRY) as LONG;
-        }
-        GdiPalSetColorTable => {
-            if !pEntries.is_null() {
-                ret = GreGetSetColorTable(hObj as HDC, iStart as ULONG, cEntries as ULONG, pEntries as *mut RGBQUAD, 1) as LONG;
-            }
-        }
-        GdiPalGetColorTable => {
-            if !pEntries.is_null() {
-                ret = GreGetSetColorTable(hObj as HDC, iStart as ULONG, cEntries as ULONG, pEntries as *mut RGBQUAD, 0) as LONG;
-            }
-        }
-        _ => {}
-    }
-
-    if !pEntries.is_null() {
-        if bInbound == 0 && ret > 0 {
-            let m = if (cEntries as LONG) < ret { cEntries as LONG } else { ret };
-            cjSize = (m as SIZE_T) * (core::mem::size_of::<PALETTEENTRY>() as SIZE_T);
-            Status = SafeProbeForWrite(pUnsafeEntries, cjSize as SIZE_T, 1);
-            if !NT_SUCCESS(Status) {
-                ret = 0;
-            } else {
-                memcpy(pUnsafeEntries, pEntries, cjSize as usize);
-            }
-        }
-        ExFreePoolWithTag(pEntries, TAG_PALETTE);
-    }
-
-    ret
-}
-#[cfg(target_arch = "x86")]
-#[no_mangle]
-pub unsafe extern "stdcall" fn NtGdiSetSystemPaletteUse(hDC: HDC, Usage: UINT) -> UINT {
+pub unsafe extern "system" fn NtGdiSetSystemPaletteUse(hDC: HDC, Usage: UINT) -> UINT {
     let mut old: UINT = SystemPaletteUse;
 
     if (NtGdiGetDeviceCaps(hDC, RASTERCAPS as INT) & RC_PALETTE as INT) == 0 {
@@ -1829,41 +1123,12 @@ pub unsafe extern "stdcall" fn NtGdiSetSystemPaletteUse(hDC: HDC, Usage: UINT) -
 
     old
 }
-
-#[cfg(not(target_arch = "x86"))]
 #[no_mangle]
-pub unsafe extern "C" fn NtGdiSetSystemPaletteUse(hDC: HDC, Usage: UINT) -> UINT {
-    let mut old: UINT = SystemPaletteUse;
-
-    if (NtGdiGetDeviceCaps(hDC, RASTERCAPS as INT) & RC_PALETTE as INT) == 0 {
-        return SYSPAL_ERROR;
-    }
-
-    match Usage {
-        SYSPAL_NOSTATIC | SYSPAL_NOSTATIC256 | SYSPAL_STATIC => {
-            SystemPaletteUse = Usage;
-        }
-        _ => {
-            old = SYSPAL_ERROR;
-        }
-    }
-
-    old
-}
-#[cfg(target_arch = "x86")]
-#[no_mangle]
-pub unsafe extern "stdcall" fn NtGdiGetSystemPaletteUse(hDC: HDC) -> UINT {
+pub unsafe extern "system" fn NtGdiGetSystemPaletteUse(hDC: HDC) -> UINT {
     SystemPaletteUse
 }
-
-#[cfg(not(target_arch = "x86"))]
 #[no_mangle]
-pub unsafe extern "C" fn NtGdiGetSystemPaletteUse(hDC: HDC) -> UINT {
-    SystemPaletteUse
-}
-#[cfg(target_arch = "x86")]
-#[no_mangle]
-pub unsafe extern "stdcall" fn NtGdiUpdateColors(hDC: HDC) -> BOOL {
+pub unsafe extern "system" fn NtGdiUpdateColors(hDC: HDC) -> BOOL {
     let Wnd: PWND;
     let calledFromUser: BOOL;
     let ret: BOOL;
@@ -1896,45 +1161,8 @@ pub unsafe extern "stdcall" fn NtGdiUpdateColors(hDC: HDC) -> BOOL {
 
     ret
 }
-
-#[cfg(not(target_arch = "x86"))]
 #[no_mangle]
-pub unsafe extern "C" fn NtGdiUpdateColors(hDC: HDC) -> BOOL {
-    let Wnd: PWND;
-    let calledFromUser: BOOL;
-    let ret: BOOL;
-    let mut Ref: USER_REFERENCE_ENTRY = core::mem::zeroed();
-
-    calledFromUser = UserIsEntered();
-
-    if calledFromUser == 0 {
-        UserEnterExclusive();
-    }
-
-    Wnd = UserGetWindowObject(IntWindowFromDC(hDC));
-    if Wnd.is_null() {
-        EngSetLastError(ERROR_INVALID_WINDOW_HANDLE);
-
-        if calledFromUser == 0 {
-            UserLeave();
-        }
-
-        return 0;
-    }
-
-    UserRefObjectCo(Wnd, &mut Ref);
-    ret = co_UserRedrawWindow(Wnd, core::ptr::null_mut(), core::ptr::null_mut(), RDW_INVALIDATE);
-    UserDerefObjectCo(Wnd);
-
-    if calledFromUser == 0 {
-        UserLeave();
-    }
-
-    ret
-}
-#[cfg(target_arch = "x86")]
-#[no_mangle]
-pub unsafe extern "stdcall" fn NtGdiUnrealizeObject(hgdiobj: HGDIOBJ) -> BOOL {
+pub unsafe extern "system" fn NtGdiUnrealizeObject(hgdiobj: HGDIOBJ) -> BOOL {
     let mut Ret: BOOL = 0;
     let palGDI: PPALETTE;
 
@@ -1954,32 +1182,8 @@ pub unsafe extern "stdcall" fn NtGdiUnrealizeObject(hgdiobj: HGDIOBJ) -> BOOL {
     PALETTE_ShareUnlockPalette(palGDI);
     Ret
 }
-
-#[cfg(not(target_arch = "x86"))]
 #[no_mangle]
-pub unsafe extern "C" fn NtGdiUnrealizeObject(hgdiobj: HGDIOBJ) -> BOOL {
-    let mut Ret: BOOL = 0;
-    let palGDI: PPALETTE;
-
-    if hgdiobj.is_null()
-        || GDI_HANDLE_IS_STOCKOBJ(hgdiobj) != 0
-        || GDI_HANDLE_IS_TYPE(hgdiobj, GDI_OBJECT_TYPE_PALETTE as _) == 0
-    {
-        return Ret;
-    }
-
-    palGDI = PALETTE_ShareLockPalette(hgdiobj as HPALETTE);
-    if palGDI.is_null() {
-        return 0;
-    }
-
-    Ret = 1;
-    PALETTE_ShareUnlockPalette(palGDI);
-    Ret
-}
-#[cfg(target_arch = "x86")]
-#[no_mangle]
-pub unsafe extern "stdcall" fn NtGdiEngCreatePalette(
+pub unsafe extern "system" fn NtGdiEngCreatePalette(
     iMode: ULONG,
     cColors: ULONG,
     pulColors: *mut ULONG,
@@ -2038,77 +1242,8 @@ pub unsafe extern "stdcall" fn NtGdiEngCreatePalette(
 
     hPal
 }
-
-#[cfg(not(target_arch = "x86"))]
 #[no_mangle]
-pub unsafe extern "C" fn NtGdiEngCreatePalette(
-    iMode: ULONG,
-    cColors: ULONG,
-    pulColors: *mut ULONG,
-    flRed: FLONG,
-    flGreen: FLONG,
-    flBlue: FLONG,
-) -> HPALETTE {
-    let mut hPal: HPALETTE = core::ptr::null_mut();
-    let mut ulColors: [ULONG; WINDDI_MAXSETPALETTECOLORS as usize] =
-        [0; WINDDI_MAXSETPALETTECOLORS as usize];
-    let pulcSafe: *mut ULONG;
-
-    const MAX_PALCOLORS: ULONG = 65536;
-    const GDITAG_UMPD: ULONG = 0x44504d55;
-
-    if cColors > MAX_PALCOLORS {
-        return core::ptr::null_mut();
-    }
-
-    if cColors <= WINDDI_MAXSETPALETTECOLORS {
-        pulcSafe = ulColors.as_mut_ptr();
-    } else {
-        pulcSafe = ExAllocatePoolWithTag(
-            PagedPool,
-            ((cColors as usize) * core::mem::size_of::<ULONG>()) as SIZE_T,
-            GDITAG_UMPD,
-        ) as *mut ULONG;
-    }
-
-    {
-        let __SehStatus: NTSTATUS = SafeProbeForRead(
-            pulColors as *mut core::ffi::c_void,
-            ((cColors as usize) * core::mem::size_of::<ULONG>()) as SIZE_T,
-            1,
-        );
-        if !NT_SUCCESS(__SehStatus) {
-            SetLastNtError(__SehStatus);
-            if cColors > WINDDI_MAXSETPALETTECOLORS {
-                ExFreePoolWithTag(pulcSafe as *mut core::ffi::c_void, GDITAG_UMPD);
-            }
-            return hPal;
-        }
-    }
-
-    RtlCopyMemory(
-        pulcSafe as *mut core::ffi::c_void,
-        pulColors as *const core::ffi::c_void,
-        (cColors as usize) * core::mem::size_of::<ULONG>(),
-    );
-
-    hPal = EngCreatePalette(iMode, cColors, pulcSafe, flRed, flGreen, flBlue);
-
-    if cColors > WINDDI_MAXSETPALETTECOLORS {
-        ExFreePoolWithTag(pulcSafe as *mut core::ffi::c_void, GDITAG_UMPD);
-    }
-
-    hPal
-}
-#[cfg(target_arch = "x86")]
-#[no_mangle]
-pub unsafe extern "stdcall" fn NtGdiEngDeletePalette(hPal: HPALETTE) -> u32 {
-    EngDeletePalette(hPal)
-}
-
-#[cfg(not(target_arch = "x86"))]
-#[no_mangle]
-pub unsafe extern "C" fn NtGdiEngDeletePalette(hPal: HPALETTE) -> u32 {
+pub unsafe extern "system" fn NtGdiEngDeletePalette(hPal: HPALETTE) -> u32 {
     EngDeletePalette(hPal)
 }
 

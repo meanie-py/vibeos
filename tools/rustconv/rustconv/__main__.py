@@ -9,7 +9,7 @@ import sys
 import tempfile
 import threading
 import time
-from collections.abc import Callable
+from collections.abc import Callable, Iterable
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from dataclasses import replace
 from pathlib import Path
@@ -24,6 +24,7 @@ from . import (
     dup_census,
     file_splitter,
     gdi_lock_inventory,
+    hybrid_closure,
     seh_belt,
     seh_inventory,
     seh_llm_lower,
@@ -37,7 +38,9 @@ from . import (
     typedefs,
     user_lock_inventory,
 )
-from .assembler import assemble_file, generate_lib_rs, generate_mod_rs
+from .assembler import AssemblyClobberError, assemble_file, generate_lib_rs, generate_mod_rs
+from .bank_audit import audit as bank_audit
+from .bank_audit import format_report as format_bank_report
 from .batch_runner import TranslationResult, submit_batch, submit_single
 from .c2rust_anchor import C2RustError, build_anchor_map, build_preamble
 from .call_seal import (
@@ -52,6 +55,7 @@ from .catalog import build_catalog, print_catalog_stats
 from .checker import check_all_targets, print_check_report
 from .config import (
     BATCH_DISCOUNT,
+    DEEPSEEK_MODEL_V4_PRO,
     DEFAULT_MODELS,
     HAL_DIR,
     MODEL_PRICING,
@@ -59,6 +63,8 @@ from .config import (
     OUTPUT_CRATE,
     REACTOS_ROOT,
     RUST_DIR,
+    RUSTCONV_RESPONSES_DIR,
+    SHELL32_ISLAND_FILES,
     TARGETS,
     cost_usd,
     detect_target,
@@ -72,6 +78,7 @@ from .cpp_com import (
     audit_worker_body,
     discover_widl_header,
     find_class_header,
+    island_lpvtbl_interfaces,
     lower_trivial_worker,
     normalize_cpp_idioms,
     normalize_worker_body,
@@ -79,6 +86,7 @@ from .cpp_com import (
     parse_widl_interface,
     prepare_helper_closure,
     provided_raii_contract,
+    raii_container_contract,
     render_class_scaffold,
     render_cpp_support,
     render_interface,
@@ -89,6 +97,8 @@ from .cpp_com import (
     strip_debug_statements,
     worker_signature,
 )
+from .crate_integrate import resolve_in_crate_imports, strip_top_level_items
+from .dead_regions import never_compiled_lines, pinned_int_macros
 from .extern_audit import run_extern_audit, run_extern_fix
 from .fact_seal import (
     FactSealError,
@@ -115,6 +125,7 @@ from .probe_migrate import (
     run_probe_migration,
     scan_rust_file,
 )
+from .profile_derive import ProfileDeriveError, _target_names, parse_cmakelists
 from .prompt_builder import (
     build_file_prompt,
     build_full_prompt,
@@ -139,6 +150,13 @@ from .stitcher import stitch_file
 from .table_audit import audit_tables
 from .trace_catalog import generate_catalog, print_catalog
 from .vtbl_gen import find_vtbl_tables
+from .wide_seal import (
+    WideSealError,
+    render_wide_statics,
+    seal_wide_literals,
+    unseal_wide_literals,
+    wide_contract,
+)
 
 _VTBL_STATIC_RE = re.compile(
     r"^\s*(?:pub\s+)?static(?:\s+mut)?\s+[A-Za-z_]\w*\s*:\s*[A-Za-z_]\w*Vtbl\b",
@@ -188,7 +206,11 @@ def resolve_target(args, path):
             output_crate=getattr(args, "output_crate", None),
             sys_crate=getattr(args, "sys_crate", None),
         )
-    return detect_target(path)
+    return detect_target(
+        path,
+        output_crate=getattr(args, "output_crate", None),
+        sys_crate=getattr(args, "sys_crate", None),
+    )
 
 
 # Model shortcuts for CLI convenience
@@ -375,6 +397,19 @@ def cmd_dup_census(args):
         paths.append(path.resolve())
     report = dup_census.run_census(paths, REACTOS_ROOT, top=args.top)
     dup_census.print_census(report, as_json=args.json)
+
+
+def cmd_hybrid_closure(args):
+    """Measure which symbols of a still-compiled TU the rest of the link actually needs."""
+    build_dir, link_root, archive = hybrid_closure.resolve_paths(REACTOS_ROOT, args)
+    try:
+        report = hybrid_closure.measure(
+            REACTOS_ROOT, args.tu, build_dir, link_root, archive, args.arch, args.target_dir
+        )
+    except (FileNotFoundError, RuntimeError) as exc:
+        print(f"error: {exc}", file=sys.stderr)
+        sys.exit(2)
+    hybrid_closure.print_report(report, as_json=args.json)
 
 
 def cmd_shell32_tail_inventory(args):
@@ -591,50 +626,78 @@ def _extend_cpp_class_scan(scan, source: Path, class_name: str, local_bases: tup
                     )
                 for item in trivial if survivors else trivial[1:]:
                     scan.functions.remove(item)
-        # Collision guard: a derived method body hiding a base body of the same
-        # (name, arity, kind) cannot be flattened into one class.
+        # A derived method body hiding a base body of the same (name, arity, kind)
+        # cannot keep that name once both are flattened into one class — but it is
+        # an ordinary C++ override, not a shape we have to refuse. Give the BASE
+        # body its own qualified worker, exactly as the dtor branch above does with
+        # `_base_dtor`, so the shared implementation is translated ONCE and the
+        # override can call it instead of the model re-deriving the base by hand.
+        # (Silently duplicating a shared concrete base into the derived translation
+        # is a known way to fork behaviour — CObjectWithSiteBase::SetSite is six
+        # lines of refcount swap that every site-aware class in the tail inherits.)
         derived_keys = {
             (item.name, len(item.params), item.is_ctor, item.is_dtor)
             for item in scan.functions
             if item.cpp_class == class_name
         }
-        clash = sorted(
-            item.name
-            for item in scan.functions
-            if item.cpp_class in local_bases
-            and not (item.is_ctor or item.is_dtor)
-            and (item.name, len(item.params), item.is_ctor, item.is_dtor) in derived_keys
-        )
-        if clash:
-            raise CppComError(
-                f"{class_name}: derived method body hides same-arity base body: " + ", ".join(clash)
-            )
+        for item in scan.functions:
+            if (
+                item.cpp_class in local_bases
+                and not (item.is_ctor or item.is_dtor)
+                and (item.name, len(item.params), item.is_ctor, item.is_dtor) in derived_keys
+            ):
+                item.name = f"{item.cpp_class}_base_{item.name}"
         for item in scan.functions:
             if item.cpp_class in local_bases:
                 item.cpp_class = class_name
     return scan
 
 
-def _cache_suffix(args, fact_seal_enabled: bool, call_seal_enabled: bool) -> str:
-    """Namespace the resume cache by the seals that were active when it was filled."""
+def _cache_suffix(
+    args, fact_seal_enabled: bool, call_seal_enabled: bool, wide_seal_enabled: bool = False
+) -> str:
+    """Namespace the resume cache by the seals that were active when it was filled.
+
+    One INDEPENDENT token per seal, appended — never folded into an existing one. That is
+    what lets a new protection ship for free: a `--seal-wide` run misses the cache and
+    pays, while every `__factseal_v1__callseal_v1` body already banked stays addressable
+    under its own name and is never re-billed.
+    """
     cache_tag = getattr(args, "cache_tag", None)
     suffix = f"__{cache_tag}" if cache_tag else ""
     if fact_seal_enabled:
         suffix += "__factseal_v1"
     if call_seal_enabled:
         suffix += "__callseal_v1"
+    if wide_seal_enabled:
+        suffix += "__wideseal_v1"
     return suffix
 
 
-def _open_response_cache(args, subsystem, c_file, fact_seal_enabled, call_seal_enabled):
+def _open_response_cache(
+    args, subsystem, c_file, fact_seal_enabled, call_seal_enabled, wide_seal_enabled=False
+):
     """Durable per-function resume cache → re-run to resume a killed/capped run for $0.
 
     Skips every function whose C body is unchanged. Coexists with the sink archive
     (per-run, kill-safe streaming); this one is the stable cross-run skip layer.
     `--no-resume` forces fresh.
     """
-    suffix = _cache_suffix(args, fact_seal_enabled, call_seal_enabled)
+    suffix = _cache_suffix(args, fact_seal_enabled, call_seal_enabled, wide_seal_enabled)
     return ResponseCache(f"{subsystem}__{c_file.stem}{suffix}")
+
+
+# Bodies accepted on a LAST attempt despite ignoring the fact envelope. Drained into
+# the run's AUDIT report, so "unverified constants" is a finding a human sees rather
+# than a silent relaxation. Never a reason to skip review: `_tzset` is what one of
+# these looks like when it is wrong (fact_seal.unseal_facts).
+UNVERIFIED_CONSTANT_BODIES: list[str] = []
+
+# Bodies whose UTF-16 tokens all survived but in a different ORDER than the C used them.
+# The one damage a closed-set check cannot see (the permutation that got `_tzset` past the
+# constant seal), so it is a review queue rather than a rejection — legitimate reordering
+# exists, and a human decides. See wide_seal.unseal_wide_literals.
+REORDERED_WIDE_LITERAL_BODIES: list[str] = []
 
 
 def _audit_paid_body(
@@ -645,7 +708,9 @@ def _audit_paid_body(
     is_cpp_source: bool,
     fact_seals,
     call_seals,
+    wide_seals,
     target_name: str,
+    strict: bool = True,
 ) -> str:
     """Unseal and audit one paid reply; raise `CppComError` if it fails.
 
@@ -657,11 +722,20 @@ def _audit_paid_body(
     caller banks: the cache must hold what was ACCEPTED, not the raw reply.
     """
     if not cpp_com_mode:
-        # Sealing is language-neutral; unsealing must be too.
-        result.rust_code = _unseal_worker(dep, result.rust_code, fact_seals, call_seals)
+        # Sealing is language-neutral; unsealing must be too. EXACTLY ONCE: this used to
+        # unseal, then unseal the unsealed text again. The second pass sees no tokens, so
+        # every one reads as missing, and it only ever passed because the by-name recovery
+        # inside `unseal_calls` re-sealed them from the names the FIRST pass had just
+        # restored. That accident rejected four netcfgx bodies the first pass accepted and
+        # cost two re-samplings of five TUs. See `_arity_disagreements` for the real check
+        # that replaced what the second pass was catching by luck.
+        result.rust_code = _unseal_worker(
+            dep, result.rust_code, fact_seals, call_seals, wide_seals, strict=strict
+        )
         if is_cpp_source:
             result.rust_code = normalize_cpp_idioms(dep.body_text, result.rust_code)
-        return _unseal_plain_c(dep, result.rust_code, fact_seals, call_seals)
+            result.rust_code = _cpp_free_half_semantics(dep, result.rust_code)
+        return result.rust_code
     result.rust_code = _normalize_unseal_cpp_worker(dep, result.rust_code, fact_seals, call_seals)
     signature = worker_signature(dep.name, dep.cpp_class, dep.params, dep.return_type)
     findings = audit_worker_body(dep.body_text, result.rust_code, f"{dep.name}_body", signature)
@@ -672,7 +746,70 @@ def _audit_paid_body(
     return result.rust_code
 
 
-def _unseal_worker(dep, rust: str, fact_seals, call_seals) -> str:
+def _adopt_rejected(
+    dep, cache, fact_seals, call_seals, wide_seals, cpp_com_mode: bool, func_idx, contract, sealed
+) -> str | None:
+    """A stored REJECTED reply for ``dep``, IF it passes today's audit. Else None.
+
+    A reject cost an API call, so it is paid artifact under the same rule as an accepted
+    one, and the reasons it stops being a reject are ordinary: a seal defect gets fixed
+    (this file's double-unseal alone rejected four netcfgx bodies that were never wrong),
+    or a human repairs by hand the one line the model would not — netcfgx's
+    `ScanForInfFile` refused three samplings to reproduce the C's `continue` past its own
+    `FindNextFileW`, and the rest of that body is correct. Paying twice for a body already
+    on disk is waste, not caution.
+
+    The audit is the whole gate and it is the SAME audit, so nothing is laundered: a reply
+    that still damages the envelope is still refused, silently, and the caller pays.
+    Skipped for cpp_com, whose acceptance also runs the worker-boundary normalizations.
+    """
+    if cpp_com_mode:
+        return None
+    rejected = cache.get_rejected(dep.name)
+    if rejected is None:
+        return None
+    try:
+        body = _unseal_worker(dep, rejected, fact_seals, call_seals, wide_seals)
+    except CppComError:
+        return None
+    # Banked under this run's contract and seal set, exactly as a paid acceptance is —
+    # otherwise the next run misses and buys the same body a third time.
+    cache.put(dep.name, dep.body_text, body, contract, sealed)
+    print(f"  [{func_idx}] {dep.name} ADOPTED a stored reject — passes the audit now ($0)")
+    return body
+
+
+def _reject_correction(error: "CppComError | None") -> str:
+    """What to append to a worker prompt when its previous attempt was REJECTED.
+
+    Re-rolling the IDENTICAL prompt only fixes a reject that was sampling noise, and the
+    ones that survive to a second attempt mostly are not. netcfgx's `ScanForInfFile`
+    duplicated the same call token in two independent samplings because the C `continue`s
+    straight past its own `FindNextFileW` — an infinite loop the model will not write —
+    and `CreateInstanceKey` dropped the `if (ret == FALSE)` guard both times by inlining
+    the `goto done` tail per path. Nothing about a blind re-roll moves either. The audit
+    already knows exactly what broke, so tell the model instead of hoping.
+
+    The faithfulness clause is the load-bearing half: every one of these rejects is the
+    model IMPROVING on the C, and without it a correction just invites a different
+    improvement.
+    """
+    if error is None:
+        return ""
+    return (
+        "\n\n## Your previous attempt was REJECTED\n"
+        f"{error}\n\n"
+        "Translate the function again and fix exactly that. The envelope is not advice: a "
+        "token stands for one C occurrence. The C is authoritative even where it looks "
+        "wrong — if it loops forever, leaks, or tests a value that cannot change, "
+        "reproduce that. Do not repair the C, and do not restructure the body to make the "
+        "finding go away."
+    )
+
+
+def _unseal_worker(
+    dep, rust: str, fact_seals, call_seals, wide_seals, *, strict: bool = True
+) -> str:
     """Undo fact/call sealing on a model response, verifying the closed envelope.
 
     Target- and language-neutral: sealing is a lexical transform, so ANY translation
@@ -683,12 +820,26 @@ def _unseal_worker(dep, rust: str, fact_seals, call_seals) -> str:
     2026-07-24 and no paid plain-C run had used it yet (all 5,170 ledger entries
     with seal_facts=True are shell32), while AGENTS.md tells every plain-C
     translation to "always pass both".
+
+    THE one unseal for both dialects. A separate plain-C copy existed alongside this
+    and every plain-C caller ran both, in sequence, over the same text — see
+    `_audit_paid_body`. It is not the shell32 boundary that is shared here
+    (`normalize_worker_body` / `normalize_worker_semantics` reshape a COM worker onto a
+    fixed signature and mean nothing for a free function); only the unseal itself is,
+    and it always was.
     """
     rust = scrub_comment_token_echoes(rust)
     # Sealed tokens the model omitted that live only in code the build never executes
     # (`#if`-disabled arms, DUMMY_PSEH except-blocks). Accepted, but printed: relaxing a
     # guarantee silently is the failure mode sealing exists to prevent (dead_regions.py).
     dead_omissions: list[str] = []
+    # A body that ignored the fact envelope wholesale, accepted only because this was
+    # the LAST attempt. Reported the same way `dead_omissions` is, and for the same
+    # reason. See fact_seal.unseal_facts.
+    ignored_envelope: list[str] = []
+    # UTF-16 tokens that survived but moved. Reported, never rejected — see
+    # REORDERED_WIDE_LITERAL_BODIES.
+    order_findings: list[str] = []
     try:
         calls = call_seals.get(dep.name)
         if calls is not None:
@@ -696,11 +847,78 @@ def _unseal_worker(dep, rust: str, fact_seals, call_seals) -> str:
         facts = fact_seals.get(dep.name)
         if facts is not None:
             rust = canonicalize_hresult_predicates(rust)
-            rust = unseal_facts(rust, facts, dead_omissions=dead_omissions)
-    except (CallSealError, FactSealError) as error:
+            rust = unseal_facts(
+                rust,
+                facts,
+                dead_omissions=dead_omissions,
+                ignored_envelope=ignored_envelope,
+                strict=strict,
+            )
+        # LAST, which is the exact reverse of the sealing order. It is also the only one
+        # that substitutes RUST rather than restoring C: running it earlier would hand the
+        # fact seal's by-name recovery a body full of generated `0x0041u16` elements to
+        # rummage through.
+        wides = wide_seals.get(dep.name)
+        if wides is not None:
+            rust = unseal_wide_literals(
+                rust,
+                wides,
+                dead_omissions=dead_omissions,
+                order_findings=order_findings,
+            )
+    except (CallSealError, FactSealError, WideSealError) as error:
         raise CppComError(f"{dep.name}: {error}") from error
     if dead_omissions:
         print(f"    [{dep.name}] omitted in non-executed code: {', '.join(dead_omissions)}")
+    for note in ignored_envelope:
+        UNVERIFIED_CONSTANT_BODIES.append(f"{dep.name}: {note}")
+        print(f"    [{dep.name}] ACCEPTED UNVERIFIED: {note}", file=sys.stderr)
+    for note in order_findings:
+        REORDERED_WIDE_LITERAL_BODIES.append(f"{dep.name}: {note}")
+        print(f"    [{dep.name}] WIDE LITERALS REORDERED: {note}", file=sys.stderr)
+    return rust
+
+
+# Findings from the `--free-functions` half, which until now was never audited at all:
+# `_audit_paid_body` returns for every non-cpp_com body BEFORE it reaches
+# `audit_worker_body`. So the half that owns the `*_Constructor` family — the functions that
+# ALLOCATE — had no check that the model hadn't invented a deallocator, reversed a call
+# nesting, or dropped a constant.
+#
+# REPORT-ONLY, and it stays that way until these have been read. The class-half audit does
+# not transfer wholesale: a free function legitimately carries `#[no_mangle]` and an
+# `extern "C"` definition, both of which the class half forbids because there the scaffold
+# owns the export. So a finding here is evidence about the CHECK as much as about the body.
+FREE_HALF_AUDIT_FINDINGS: list[str] = []
+
+
+def _report_free_half_audit(dep, rust: str) -> None:
+    """Run the language-neutral worker audit over one free function, report-only."""
+    for finding in audit_worker_body(dep.body_text, rust, dep.name, None, scaffold_owned=False):
+        FREE_HALF_AUDIT_FINDINGS.append(f"{dep.name}: {finding}")
+        print(f"    [{dep.name}] FREE-HALF AUDIT: {finding}", file=sys.stderr)
+
+
+def _cpp_free_half_semantics(dep, rust: str) -> str:
+    """Apply the C++ semantic lowerings to the FREE half of a C++ TU.
+
+    Everything the class path does after a body comes back -- the `delete this` lowering, the
+    `new X()`/`delete v` scaffold pairing, the SENDTO_ITEM guard -- was gated on
+    `cpp_com_mode`, so the `--free-functions` half of the same `.cpp` got only the lighter
+    `normalize_cpp_idioms` and none of it. That is precisely backwards: the free half is where
+    the `*_Constructor` family lives, which is to say the functions that ALLOCATE and FREE the
+    objects. `RecycleBin5File_Constructor` shipped `RecycleBin5File()` (a call to the struct,
+    skipping the vptr store) and a CRT `free` over `HeapAlloc(GetProcessHeap())` memory.
+
+    Scoped to `is_cpp_source` at the call sites, so a plain-C module's cached bodies keep
+    replaying byte-identically; these rewrites are all keyed on C++ syntax anyway.
+
+    The report-only audit rides along here rather than at each of the five call sites: a
+    check you must remember to invoke in five places is a check that will be missed in one,
+    which is how the free half went unaudited to begin with.
+    """
+    rust = normalize_worker_semantics(dep.body_text, rust)
+    _report_free_half_audit(dep, rust)
     return rust
 
 
@@ -708,41 +926,12 @@ def _normalize_unseal_cpp_worker(dep, rust: str, fact_seals, call_seals) -> str:
     """Apply the deterministic shell32 worker boundary to a model response."""
     signature = worker_signature(dep.name, dep.cpp_class, dep.params, dep.return_type)
     rust = normalize_worker_body(rust, signature)
-    rust = _unseal_worker(dep, rust, fact_seals, call_seals)
+    # The COM path has its own frozen UTF-16 lowering (cpp_com.rewrite_wide_literals), so
+    # there is never a wide envelope to undo here — passing one would be a lie about which
+    # mechanism owns those bytes.
+    rust = _unseal_worker(dep, rust, fact_seals, call_seals, {})
     rust = normalize_worker_body(rust, signature)
     return normalize_worker_semantics(dep.body_text, rust)
-
-
-def _unseal_plain_c(dep, rust: str, fact_seals, call_seals) -> str:
-    """Restore sealed constants and callees in a PLAIN-C model response.
-
-    Sealing is only half a mechanism. It hides every constant and callee behind an opaque
-    `__RUSTCONV_FACT_nnnn__` / `__RUSTCONV_CALL_nnnn__` token during the paid call so a
-    dropped or invented one fails loudly instead of silently; unsealing is what puts the
-    real names back. Until this existed, both `unseal_facts` and `unseal_calls` had exactly
-    one caller and it was gated on shell32 — so `--seal-facts --seal-calls` on plain C
-    assembled a file full of tokens that cannot compile. mbcs.c came out 902 tokens deep,
-    while AGENTS.md tells every agent to always pass both flags on a plain-C module.
-
-    Deliberately NOT the shell32 boundary: `normalize_worker_body` /
-    `normalize_worker_semantics` reshape a C++ COM worker onto a fixed signature and mean
-    nothing for a free function. Only the unseal itself is shared.
-
-    Raising is correct on an unresolvable token. That is precisely the event sealing exists
-    to surface, and a token shipped into the tree is a compile error at best and a silently
-    wrong constant at worst.
-    """
-    rust = scrub_comment_token_echoes(rust)
-    try:
-        calls = call_seals.get(dep.name)
-        if calls is not None:
-            rust = unseal_calls(rust, calls)
-        facts = fact_seals.get(dep.name)
-        if facts is not None:
-            rust = unseal_facts(rust, facts)
-    except (CallSealError, FactSealError) as error:
-        raise CppComError(f"{dep.name}: {error}") from error
-    return rust
 
 
 def cmd_candidate_check(args):
@@ -881,8 +1070,9 @@ def cmd_cpp_com(args):
         args.class_name,
         object_map_source=object_map,
         method_names=[f.name for f in class_methods],
+        island_files=[SHELL32_ISLAND_FILES[a] for a in ("i386", "amd64", "arm64")],
     )
-    cls.require_supported(allow_internal=args.internal)
+    cls.require_supported(allow_internal=args.internal, allow_plain=getattr(args, "plain", False))
 
     if args.sdk_header:
         sdk_header = Path(args.sdk_header).resolve()
@@ -920,8 +1110,21 @@ def cmd_cpp_com(args):
         print(json.dumps(payload, indent=2, sort_keys=True))
         return
 
-    chunks = [render_interface(interface) for interface in interfaces]
-    chunks.append(render_class_scaffold(cls, interfaces, allow_internal=args.internal))
+    island_slots = island_lpvtbl_interfaces(
+        [SHELL32_ISLAND_FILES[a] for a in ("i386", "amd64", "arm64")]
+    )
+    chunks = [
+        render_interface(interface, island_slots.get(interface.name)) for interface in interfaces
+    ]
+    chunks.append(
+        render_class_scaffold(
+            cls,
+            interfaces,
+            allow_internal=args.internal,
+            allow_plain=getattr(args, "plain", False),
+            island_slots=island_slots,
+        )
+    )
     output = "\n\n".join(chunks) + "\n"
     if args.output:
         out = Path(args.output)
@@ -1680,6 +1883,78 @@ def cmd_probe_migrate(args):
         print("\nRun `python -m rustconv check` to verify compilation.", file=sys.stderr)
 
 
+def _module_pinned_macros(c_file: Path, args) -> dict[str, int]:
+    """`-DNAME=<int>` the build puts on EVERY compile of `c_file`, from its CMakeLists.
+
+    Feeds `never_compiled_lines`, so it decides what is on the bill: msvcrt pins
+    `_MSVCR_VER=0` and ~200 `#if _MSVCR_VER >= 80/100/110/120/140` bodies across the module
+    are dead at that value. Getting it WRONG in the permissive direction costs a paid call;
+    wrong in the other direction silently drops a live body. So the rule is agreement:
+    a name survives only if every target that compiles this TU, on every arch, pins it to
+    the same value. A macro pinned only under `if(ARCH STREQUAL ...)`, or only in one of the
+    three targets an msvcrt TU belongs to, decides nothing and the bodies stay live.
+
+    Best-effort by design — an unparseable or absent CMakeLists yields `{}`, which is
+    exactly the pre-existing behaviour (more paid calls, never a dropped body).
+    """
+    cmake = c_file.resolve().parent / "CMakeLists.txt"
+    # A TU can live one directory down from the CMakeLists that lists it
+    # (msvcrt's `reactos/misc.c`), so walk up until one turns up.
+    for _ in range(3):
+        if cmake.is_file():
+            break
+        cmake = cmake.parent.parent / "CMakeLists.txt"
+    if not cmake.is_file():
+        return {}
+
+    repo_root = REACTOS_ROOT
+    wanted = c_file.resolve()
+    agreed: dict[str, int] | None = None
+    for arch in ("i386", "amd64", "arm64"):
+        try:
+            names = sorted(_target_names(cmake))
+        except ProfileDeriveError:
+            return {}
+        for name in names:
+            if getattr(args, "target", None) and name != args.target:
+                continue
+            try:
+                module = parse_cmakelists(cmake, repo_root, arch=arch, target=name)
+            except ProfileDeriveError:
+                continue
+            if wanted not in {p.resolve() for p in module.compiled_tus}:
+                continue
+            here = pinned_int_macros(module.definitions)
+            if agreed is None:
+                agreed = here
+            else:
+                agreed = {k: v for k, v in agreed.items() if here.get(k) == v}
+    return agreed or {}
+
+
+def skip_fn_for_file(requested: Iterable[str], present: Iterable[str]) -> list[str]:
+    """Which ``--skip-fn`` names apply to ONE file: the ones that file actually declares.
+
+    A function name belongs to exactly one translation unit, so on a directory run every OTHER
+    file legitimately lacks the name. Treating that as a per-file error — and skipping the file —
+    is how asking to drop one BODY silently dropped eleven FILES: unbought, unassembled, and
+    reported only as one stderr line among eleven identical ones. The name that matched NOTHING
+    across the whole worklist is the real error, and only the caller of the loop can know it;
+    see ``unmatched_skip_fn``.
+    """
+    return sorted(set(requested) & set(present))
+
+
+def unmatched_skip_fn(requested: Iterable[str], matched: Iterable[str]) -> list[str]:
+    """``--skip-fn`` names no file in the worklist carried — i.e. misspelled.
+
+    Loud on purpose and in the AUDIT report rather than a log line: the caller believes a body
+    was left to them to hand-write, and the truth is the opposite — it was translated and
+    SHIPPED. That inverts the whole guarantee of the flag.
+    """
+    return sorted(set(requested) - set(matched))
+
+
 def cmd_translate(args):
     """Function-by-function translation pipeline."""
 
@@ -1726,11 +2001,29 @@ def cmd_translate(args):
     # and the abi_enforce opt-out all exist to serve a translated COM class. A
     # --free-functions run has no class, so it takes the ordinary per-function path
     # that every other user-mode DLL uses.
-    cpp_com_mode = rustconv_target.name == "shell32" and not free_functions
+    # Does this run translate a C++ CLASS? shell32 always does — its whole remaining tail is
+    # C++ — and any other module does when the caller asks for one. This used to read
+    # `rustconv_target.name == "shell32"`, which made the class path unreachable everywhere
+    # else: `cpp_com_mode` was False for e.g. shellrecyclebin, and with it went the class
+    # scaffold, the interface rendering and EVERY audit_worker_body call. Nothing said so.
+    # The module still produced bodies, so it looked like it had worked.
+    cpp_class_target = rustconv_target.name == "shell32" or bool(
+        getattr(args, "cpp_com", False) or free_functions
+    )
+    # `--plain` is a MODIFIER of the class path (it drops the three COM preflight requirements
+    # for a file-local helper), not a mode of its own. Alone it silently fell through to the
+    # whole-TU path, which is how four hand-rolled COM classes got translated with no vtable
+    # instance, no _new/_delete and no lpVtbl wiring — a wild jump on the first method call.
+    if getattr(args, "plain", False) and not getattr(args, "cpp_com", False):
+        raise CppComError(
+            "--plain modifies the C++ class path; it is not a mode. Pass --cpp-com --class "
+            "<Name> with it for a file-local helper class, or drop it."
+        )
+    cpp_com_mode = cpp_class_target and not free_functions
 
     cpp_com_cls = None
     cpp_com_interfaces = []
-    if rustconv_target.name == "shell32" and free_functions:
+    if cpp_class_target and free_functions:
         if getattr(args, "cpp_com", False):
             raise CppComError(
                 "--free-functions and --cpp-com are mutually exclusive: one translates the "
@@ -1740,10 +2033,10 @@ def cmd_translate(args):
             raise CppComError(
                 "--free-functions accepts one C++ implementation file, not a directory"
             )
-    elif rustconv_target.name == "shell32":
+    elif cpp_class_target:
         if not getattr(args, "cpp_com", False) or not getattr(args, "class_name", None):
             raise CppComError(
-                "shell32 C++ translation is class-atomic: pass --cpp-com --class <Name> "
+                "C++ translation is class-atomic: pass --cpp-com --class <Name> "
                 "for a COM class, or --free-functions for the TU's classless functions. "
                 "The paid class path is disabled until deterministic COM preflight succeeds."
             )
@@ -1759,7 +2052,8 @@ def cmd_translate(args):
         cpp_com_cls = analyze_class(
             target_path,
             args.class_name,
-            object_map_source=rustconv_target.source_dir / "shell32.cpp",
+            object_map_source=rustconv_target.com_object_map,
+            island_files=list(rustconv_target.com_island_files.values()),
         )
         scan = _extend_cpp_class_scan(
             scan_file(target_path),
@@ -1780,7 +2074,10 @@ def cmd_translate(args):
         cpp_com_cls.method_names.extend(
             f.name for f in scan.functions if f.cpp_class == args.class_name
         )
-        cpp_com_cls.require_supported(allow_internal=getattr(args, "internal", False))
+        cpp_com_cls.require_supported(
+            allow_internal=getattr(args, "internal", False),
+            allow_plain=getattr(args, "plain", False),
+        )
         if getattr(args, "sdk_header", None):
             sdk_header = Path(args.sdk_header).resolve()
             cpp_com_interfaces = [
@@ -1789,7 +2086,12 @@ def cmd_translate(args):
         else:
             cpp_com_interfaces = [
                 parse_widl_interface(
-                    discover_widl_header(REACTOS_ROOT, args.arch, interface=name),
+                    discover_widl_header(
+                        REACTOS_ROOT,
+                        args.arch,
+                        interface=name,
+                        extra_roots=[target_path.parent],
+                    ),
                     name,
                 )
                 for name in cpp_com_cls.interface_names()
@@ -1811,7 +2113,9 @@ def cmd_translate(args):
             }
             for name in sorted(referenced - known_interfaces):
                 try:
-                    header = discover_widl_header(REACTOS_ROOT, args.arch, interface=name)
+                    header = discover_widl_header(
+                        REACTOS_ROOT, args.arch, interface=name, extra_roots=[target_path.parent]
+                    )
                     dependency = parse_widl_interface(header, name)
                 except CppComError:
                     # Not every I-prefixed pointer is a COM interface
@@ -1920,6 +2224,8 @@ def cmd_translate(args):
     # --local-raii NAME=PATH: hand-verified Rust lowerings for file-local C++ RAII
     # structs. Parsed and read up front so a bad path fails before any paid call.
     local_raii_impls: dict[str, str] = {}
+    # NAME -> module path, for lowerings that live inside the output crate already.
+    local_raii_uses: dict[str, str] = {}
     for spec_arg in getattr(args, "local_raii", []) or []:
         if "=" not in spec_arg:
             raise CppComError(f"--local-raii expects NAME=PATH, got: {spec_arg}")
@@ -1931,14 +2237,39 @@ def cmd_translate(args):
         # path a dead end: `provided` was always empty there, so the refusal message
         # named a flag that the same invocation would then reject (shlfolder.cpp /
         # shldataobject.cpp / item_prop.cpp all stalled on CDataObjectHIDA this way).
-        if not (
-            rustconv_target.name == "shell32"
-            and (getattr(args, "cpp_com", False) or getattr(args, "free_functions", False))
-        ):
-            raise CppComError("--local-raii currently requires shell32 --cpp-com/--free-functions")
+        # ...and --plain is the third such path, so it belongs here too. The gate is now on the
+        # MODE alone: body-local RAII is a C++ language feature, not a shell32 feature, and the
+        # old `target.name == "shell32"` clause hard-coded the only module that happened to have
+        # C++ TUs when this was written. shellrecyclebin (its own CMake target, so target.name
+        # == "recyclebin") hit exactly the dead end the comment above describes — refused for
+        # naming a flag it was already passing — on CZZWStr, a file-local RAII guard owning an
+        # SHAlloc'd double-NUL string for SHFILEOPSTRUCTW.
+        cpp_mode = (
+            getattr(args, "cpp_com", False)
+            or getattr(args, "free_functions", False)
+            or getattr(args, "plain", False)
+        )
+        if not cpp_mode:
+            raise CppComError(
+                "--local-raii requires a C++ mode: --cpp-com, --plain or --free-functions"
+            )
         if not raii_file.is_file():
             raise CppComError(f"--local-raii {raii_name}: no such file: {raii_file}")
         local_raii_impls[raii_name] = raii_file.read_text()
+        # SEAL from the file, but SPLICE only when the lowering is genuinely file-local.
+        # The splice is verbatim, so pointing several runs at one SHARED support module
+        # copies it into each output: N incompatible `CStringW` types, and N copies of a
+        # `//!` module doc that is only legal at the top of a file. (Five recyclebin
+        # classes did exactly that -- 863 errors, ~600 of them this one root.) When the
+        # lowering already lives inside the output crate it is a real module, so import
+        # it instead; the worker contract is unaffected either way.
+        crate_src = (rustconv_target.output_crate / "src").resolve()
+        try:
+            relative = raii_file.resolve().relative_to(crate_src)
+        except ValueError:
+            continue
+        module = "::".join(("crate", *relative.with_suffix("").parts))
+        local_raii_uses[raii_name] = module
     if not args.dry_run:
         warn_if_tmp_output(getattr(args, "output", None))
         archive = RunArchive(label=target_path.name, model=model, target=rustconv_target.name)
@@ -1952,12 +2283,33 @@ def cmd_translate(args):
                 "mode": mode,
                 "seal_facts": bool(getattr(args, "seal_facts", False)),
                 "seal_calls": bool(getattr(args, "seal_calls", False)),
+                "seal_wide": bool(getattr(args, "seal_wide", False)),
                 "cache_tag": getattr(args, "cache_tag", None),
             },
         )
 
     total_files = len(c_files)
     audit_findings: dict[str, list[str]] = {}
+    #: `--skip-fn` names, and the ones some file actually carried. A name belongs to exactly one
+    #: TU, so on a DIRECTORY run every OTHER file legitimately does not have it — see the
+    #: per-file handling for why that must not be an error there, and the post-loop check for
+    #: where a typo is still caught.
+    skip_fn_requested = {
+        name.strip() for name in (getattr(args, "skip_fn", None) or []) if name.strip()
+    }
+    skip_fn_matched: set[str] = set()
+    # Decided ONCE, not per file, so the refusal below is stated once and not twenty times.
+    # Never on the COM path: shell32's C++ literals are already lowered deterministically by
+    # `rewrite_wide_literals`, and its prompts are banked under exactly that behaviour.
+    wide_seal_enabled = bool(getattr(args, "seal_wide", False))
+    if wide_seal_enabled and (cpp_com_mode or free_functions):
+        print(
+            '  --seal-wide IGNORED: the shell32 C++ path lowers L"..." deterministically '
+            "before the model sees the body (cpp_com.rewrite_wide_literals), and its prompts "
+            "are banked under that. Nothing is unprotected by this.",
+            file=sys.stderr,
+        )
+        wide_seal_enabled = False
     for file_idx, c_file in enumerate(c_files, 1):
         print(f"\n{'=' * 60}", file=sys.stderr)
         print(f"[{file_idx}/{total_files}] {c_file.name}", file=sys.stderr)
@@ -2035,7 +2387,7 @@ def cmd_translate(args):
         sorted_deps = topological_sort(deps)
         cpp_com_wide_statics = ""
 
-        if rustconv_target.name == "shell32" and free_functions:
+        if cpp_class_target and free_functions:
             # Free functions only: a class method needs the deterministic COM scaffold
             # (vtable slot, `this` recovery, state layout) that only --cpp-com builds.
             # Name every skipped method rather than dropping it silently — an
@@ -2069,12 +2421,45 @@ def cmd_translate(args):
             sorted_deps = prepare_helper_closure(
                 deps, args.class_name, cpp_com_cls.plain_state_fields()
             )
+            # The mirror of the --free-functions report above, and it was missing for years.
+            # prepare_helper_closure keeps the class closure, so the TU's file-scope functions
+            # fall out with no diagnostic — shellrecyclebin lost all six of its `extern "C"`
+            # entry points (the *_Constructor family) that way. Silence is what makes it
+            # dangerous: cargo check only catches the ones another Rust module happens to call,
+            # and once the TU is cohab-flipped the rest link-resolve to the still-compiled C,
+            # leaving a half-Rust module that reports nothing. shell32 gets this right purely by
+            # convention (cidldataobj_free.rs, CDefaultContextMenu_tu.rs) — a convention
+            # documented only in a CMakeLists comment, which is a missing mechanism.
+            kept = {dep.name for dep in sorted_deps}
+            dropped = sorted(
+                dep.name for dep in deps if dep.cpp_class is None and dep.name not in kept
+            )
+            if dropped:
+                print(
+                    f"  [cpp-com] {args.class_name}: skipping {len(dropped)} file-scope "
+                    f"function(s) — these need a separate --free-functions run on the same "
+                    f"file: {', '.join(dropped)}",
+                    file=sys.stderr,
+                )
             require_supported_worker_raii(sorted_deps, provided=set(local_raii_impls))
             cpp_com_wide_statics = render_wide_literal_statics(deps, sorted_deps)
 
         fact_seal_enabled = bool(getattr(args, "seal_facts", False))
         call_seal_enabled = bool(getattr(args, "seal_calls", False))
         model_bodies = {dep.name: strip_debug_statements(dep.body_text) for dep in sorted_deps}
+        # FIRST of the three, so the fact seal sees an identifier where a literal was and
+        # never has to reason about string contents, and so a wide literal's own array
+        # BOUND (`WCHAR k[200] = L"..."`) is still a plain integer when this reads it.
+        wide_seals = (
+            {dep.name: seal_wide_literals(model_bodies[dep.name]) for dep in sorted_deps}
+            if wide_seal_enabled
+            else {}
+        )
+        if wide_seals:
+            model_bodies = {
+                name: wide_seals[name].text if name in wide_seals else body
+                for name, body in model_bodies.items()
+            }
         fact_seals = (
             {
                 dep.name: prepare_sealed_source(model_bodies[dep.name], dialect=seal_dialect)
@@ -2099,12 +2484,62 @@ def cmd_translate(args):
             if call_seal_enabled
             else frozenset()
         )
+        # Sibling-method callees of the class under --cpp-com. Their `_body` lowerings take an
+        # explicit leading `this`, so the sealed arity has to expect one more argument than the
+        # C call site shows (see seal_calls). A class STATIC would not take a receiver and would
+        # now be rejected rather than accepted -- deliberately the safe direction, since a
+        # rejection is loud and re-runs from cache for $0 while a wrong accept ships silently.
+        # `dep.callees` already carries the `_body` suffix for a method lowering, so these are
+        # taken as-is; appending another one yields `_body_body` and matches nothing.
+        receiver_callees = (
+            frozenset(
+                callee
+                for dep in sorted_deps
+                for callee in dep.callees
+                if callee.startswith(f"{args.class_name}_") and callee.endswith("_body")
+            )
+            if cpp_com_mode and getattr(args, "class_name", None)
+            else frozenset()
+        )
+        # ...and the same thing for every OTHER C++ path, which the clause above cannot reach:
+        # it needs a single `--class-name`, and `cpp_com_mode` is `target.name == "shell32"`.
+        # --plain discovers its classes instead of being told one, and a non-shell32 C++ module
+        # (shellrecyclebin) fails both halves — so `receiver_callees` came out EMPTY and every
+        # implicit-receiver sibling call kept the C site's arity. That is not the safe direction
+        # the note above assumes: `AddRef();` inside a member function is `this->AddRef()`, argc
+        # 0, while the only correct --plain lowering is `RecycleBinGeneric_AddRef(this)`, argc 1.
+        # The envelope then rejected CORRECT output — RecycleBinGeneric's QueryInterface and
+        # EmptyRecycleBin both, i.e. the COM boilerplate every such class has, so --plain COM
+        # classes rejected by construction and a retry could only re-bill the same verdict.
+        #
+        # Derived per-dep from the TU's own class membership, so a TU with several classes
+        # (recyclebin_v5.cpp: CZZWStr + RecycleBin5) marks each call against the class that
+        # actually owns the CALLER. A free function in the same TU keeps argc as-is.
+        methods_by_class: dict[str, set[str]] = {}
+        for fn in scan.functions:
+            owner = getattr(fn, "cpp_class", None)
+            if owner:
+                methods_by_class.setdefault(owner, set()).add(fn.name)
+        receivers_by_dep = {}
+        for dep in sorted_deps:
+            if receiver_callees:
+                receivers_by_dep[dep.name] = receiver_callees
+                continue
+            own = methods_by_class.get(getattr(dep, "cpp_class", None) or "", ())
+            receivers_by_dep[dep.name] = frozenset(
+                callee
+                for callee in dep.callees
+                if callee in own or (callee.endswith("_body") and callee[: -len("_body")] in own)
+            )
+
         call_seals = (
             {
                 dep.name: seal_calls(
                     model_sources[dep.name],
                     set(dep.callees) | {f"{callee}_body" for callee in dep.callees},
                     seal_macros,
+                    tu_source=scan.raw_source,
+                    receiver_callees=receivers_by_dep[dep.name],
                 )
                 for dep in sorted_deps
             }
@@ -2127,6 +2562,7 @@ def cmd_translate(args):
         deterministic_contracts = {
             dep.name: (fact_contract(fact_seals[dep.name]) if dep.name in fact_seals else "")
             + (call_contract(call_seals[dep.name]) if dep.name in call_seals else "")
+            + (wide_contract(wide_seals[dep.name]) if dep.name in wide_seals else "")
             for dep in sorted_deps
         }
         for raii_name, raii_rust in local_raii_impls.items():
@@ -2134,6 +2570,20 @@ def cmd_translate(args):
             for dep in sorted_deps:
                 if re.search(rf"\b{raii_name}\b", dep.body_text):
                     deterministic_contracts[dep.name] += raii_block
+        if cpp_com_cls is not None:
+            container_fields = [
+                state
+                for state in cpp_com_cls.plain_state_fields()
+                if state.raii_container is not None
+            ]
+            for dep in sorted_deps:
+                touched = [
+                    state
+                    for state in container_fields
+                    if re.search(rf"\b{re.escape(state.name)}\b", dep.body_text)
+                ]
+                if touched:
+                    deterministic_contracts[dep.name] += raii_container_contract(touched)
 
         # WHAT each worker had hidden from it, as names rather than token indices.
         # The response cache compares this directionally: an entry sealed at least as
@@ -2174,6 +2624,57 @@ def cmd_translate(args):
                 func_names = [d.name for d in deps]
                 print(f"  Available: {', '.join(func_names)}", file=sys.stderr)
                 continue
+
+        # `--skip-fn`: drop a named body from the worklist so the REST of the TU can
+        # assemble. Without it, one function the model cannot get past the call/fact
+        # envelope throws away every other function in the file — `--exclude` filters
+        # FILE stems, not function names, so it is no help here (process.c's
+        # `msvcrt_spawn` and `_wpopen` blocked 48 accepted bodies across nine runs).
+        # The skip is never silent: each name becomes an audit finding, so the assembled
+        # file always says out loud which bodies a human still owes.
+        # Bodies the BUILD never compiles are dropped before anything is bought. A function
+        # inside `#ifndef __REACTOS__` is in no object file we produce, so a translation of
+        # it can never be called — and `translate` bills one paid call PER FUNCTION, so
+        # leaving them in the worklist is a bill for code that does not exist.
+        # except_i386.c is 7 of 23 that way: `_global_unwind2`, `_except_handler2`,
+        # `_except_handler3`, `_local_unwind2`, `longjmp` and the two `__regs__setjmp*`,
+        # every one confirmed absent from the object with `nm`. The rule is the narrow one
+        # `dead_regions.cond_truth` can prove; anything it cannot settle stays live and gets
+        # translated, because paying for a live body is a cost and dropping one is a bug.
+        # TWO classes of gate, and the second is the bigger one in msvcrt: `#ifndef
+        # __REACTOS__` is tree-wide, but the module's own `-D_MSVCR_VER=0` decides ~200
+        # `#if _MSVCR_VER >= 80/100/110/120/140` directives — concurrency.c is 3,839 lines
+        # wholly inside one. `_module_pinned_macros` reads those off the CMakeLists, and
+        # only where every target and every arch agrees on the value.
+        dead_lines = never_compiled_lines(
+            c_file.read_text(errors="replace"), _module_pinned_macros(c_file, args)
+        )
+        skipped_dead = sorted(d.name for d in sorted_deps if d.line_start in dead_lines)
+        if skipped_dead:
+            sorted_deps = [d for d in sorted_deps if d.name not in set(skipped_dead)]
+            print(
+                f"  dead branch: {len(skipped_dead)} body/bodies the build never compiles, "
+                f"not translated and not billed: {', '.join(skipped_dead)}",
+                file=sys.stderr,
+            )
+
+        # A `--skip-fn` name belongs to exactly ONE translation unit, so on a directory run
+        # every other file legitimately does not carry it. Treating that as a per-file error and
+        # `continue`ing skipped those files ENTIRELY — unbought, unassembled, and reported only
+        # as a stderr line among eleven others. Asking to drop one BODY silently dropped eleven
+        # FILES; the run looked like it worked and cost a whole cycle to notice. So a name that
+        # this file does not have is simply not applicable here. A name NO file has is still a
+        # typo, and the post-loop check below is loud about it — that is the case the original
+        # error was really for, and it belongs where the whole worklist is known.
+        skipped_by_request = skip_fn_for_file(skip_fn_requested, (d.name for d in sorted_deps))
+        if skipped_by_request:
+            skip_fn_matched |= set(skipped_by_request)
+            sorted_deps = [d for d in sorted_deps if d.name not in set(skipped_by_request)]
+            print(
+                f"  --skip-fn: {len(skipped_by_request)} body/bodies left to hand-writing: "
+                f"{', '.join(skipped_by_request)}",
+                file=sys.stderr,
+            )
 
         print(f"  Functions: {len(sorted_deps)} (topo-sorted)", file=sys.stderr)
 
@@ -2248,7 +2749,7 @@ def cmd_translate(args):
             # invalidation visible BEFORE it re-bills: a seal or contract change
             # that voids banked work shows up here as a collapsed hit count.
             dry_cache = _open_response_cache(
-                args, subsystem, c_file, fact_seal_enabled, call_seal_enabled
+                args, subsystem, c_file, fact_seal_enabled, call_seal_enabled, wide_seal_enabled
             )
             banked = [
                 dep.name
@@ -2363,8 +2864,10 @@ def cmd_translate(args):
             file_res, scan, subsystem, target=rustconv_target, cpp_com=cpp_com_mode
         )
 
-        cache_suffix = _cache_suffix(args, fact_seal_enabled, call_seal_enabled)
-        cache = _open_response_cache(args, subsystem, c_file, fact_seal_enabled, call_seal_enabled)
+        cache_suffix = _cache_suffix(args, fact_seal_enabled, call_seal_enabled, wide_seal_enabled)
+        cache = _open_response_cache(
+            args, subsystem, c_file, fact_seal_enabled, call_seal_enabled, wide_seal_enabled
+        )
 
         # A completed model stream can fail a deterministic audit and remain as
         # ``.partial``. When the harness improves, replay those already-paid bytes
@@ -2561,6 +3064,7 @@ def cmd_translate(args):
                 # normalization is idempotent, so applying it here is free insurance
                 # against a stale entry replaying a raw IID_PPV_ARG forever.
                 hit = normalize_cpp_idioms(dep.body_text, hit)
+                hit = _cpp_free_half_semantics(dep, hit)
             if hit is None:
                 pending_paid_deps.append(dep)
         if deterministic_workers:
@@ -2640,15 +3144,12 @@ def cmd_translate(args):
                             hit = None
                     elif hit is not None and is_cpp_source:
                         hit = normalize_cpp_idioms(dep.body_text, hit)
-                    if hit is not None and rustconv_target.name != "shell32":
-                        try:
-                            hit = _unseal_plain_c(dep, hit, fact_seals, call_seals)
-                        except CppComError as error:
-                            print(
-                                f"  [{func_idx}] {dep.name} CACHE REJECTED: {error}",
-                                file=sys.stderr,
-                            )
-                            hit = None
+                        hit = _cpp_free_half_semantics(dep, hit)
+                    # No unseal on a cache hit. What is banked is the ACCEPTED text, already
+                    # unsealed (`_audit_paid_body` mutates `rust_code` before `cache.put`),
+                    # and `ResponseCache.get` refuses any entry that still holds a token —
+                    # so re-running the closed-envelope check here judged token-free Rust
+                    # and could only false-reject, sending banked work back to be re-paid.
                     if hit is not None:
                         translated[dep.name] = hit
                         resumed += 1
@@ -2730,13 +3231,6 @@ def cmd_translate(args):
                         continue  # skipped after cost cap
                     if r.success:
                         try:
-                            if not cpp_com_mode:
-                                # Sealing is language-neutral; unsealing must be too.
-                                r.rust_code = _unseal_worker(
-                                    dp, r.rust_code, fact_seals, call_seals
-                                )
-                                if is_cpp_source:
-                                    r.rust_code = normalize_cpp_idioms(dp.body_text, r.rust_code)
                             if cpp_com_mode:
                                 r.rust_code = _normalize_unseal_cpp_worker(
                                     dp, r.rust_code, fact_seals, call_seals
@@ -2757,9 +3251,16 @@ def cmd_translate(args):
                                         f"{dp.name}: paid body failed deterministic audit:\n  - "
                                         + "\n  - ".join(findings)
                                     )
-                                body = r.rust_code
                             else:
-                                body = _unseal_plain_c(dp, r.rust_code, fact_seals, call_seals)
+                                # Sealing is language-neutral; unsealing must be too — and
+                                # exactly once, for the reason in `_audit_paid_body`.
+                                r.rust_code = _unseal_worker(
+                                    dp, r.rust_code, fact_seals, call_seals, wide_seals
+                                )
+                                if is_cpp_source:
+                                    r.rust_code = normalize_cpp_idioms(dp.body_text, r.rust_code)
+                                    r.rust_code = _cpp_free_half_semantics(dp, r.rust_code)
+                            body = r.rust_code
                         except CppComError as error:
                             _record_outcome(
                                 dp,
@@ -2895,15 +3396,20 @@ def cmd_translate(args):
                         hit = None
                 elif hit is not None and is_cpp_source:
                     hit = normalize_cpp_idioms(dep.body_text, hit)
-                if hit is not None and rustconv_target.name != "shell32":
-                    try:
-                        hit = _unseal_plain_c(dep, hit, fact_seals, call_seals)
-                    except CppComError as error:
-                        # The CACHED reply damaged the seal envelope. Reject the entry and
-                        # fall through to paying for it again -- shipping a body with a
-                        # dropped constant is the outcome sealing exists to prevent.
-                        print(f"CACHE REJECTED: {error}", file=sys.stderr)
-                        hit = None
+                    hit = _cpp_free_half_semantics(dep, hit)
+                # No unseal on a cache hit — see the same site on the parallel path.
+                if hit is None:
+                    hit = _adopt_rejected(
+                        dep,
+                        cache,
+                        fact_seals,
+                        call_seals,
+                        wide_seals,
+                        cpp_com_mode,
+                        func_idx,
+                        deterministic_contracts.get(dep.name, ""),
+                        sealed_names.get(dep.name),
+                    )
                 if hit is not None:
                     translated[dep.name] = hit
                     resumed += 1
@@ -2953,10 +3459,11 @@ def cmd_translate(args):
                 if archive is not None:
                     sink = ResponseSink(archive.stream_path(func_idx, dep.name))
                 started = time.monotonic()
+                attempt_prompt = user_prompt + _reject_correction(reject_error)
                 try:
                     if use_claude:
                         result = submit_single(
-                            user_prompt,
+                            attempt_prompt,
                             model=model,
                             system_prompt=system_prompt,
                             file_context=file_context,
@@ -2964,7 +3471,9 @@ def cmd_translate(args):
                         )
                     else:
                         prefix = "\n\n---\n\n".join(p for p in (system_prompt, file_context) if p)
-                        full = (prefix + "\n\n---\n\n" + user_prompt) if prefix else user_prompt
+                        full = (
+                            (prefix + "\n\n---\n\n" + attempt_prompt) if prefix else attempt_prompt
+                        )
                         result = submit_single(full, model=model, sink=sink)
                 finally:
                     if sink is not None:
@@ -2980,7 +3489,9 @@ def cmd_translate(args):
                         is_cpp_source=is_cpp_source,
                         fact_seals=fact_seals,
                         call_seals=call_seals,
+                        wide_seals=wide_seals,
                         target_name=rustconv_target.name,
+                        strict=attempt < attempts_allowed,
                     )
                     reject_error = None
                     break
@@ -3080,10 +3591,23 @@ def cmd_translate(args):
                 break
 
         if sequential_errors:
+            # Name the file that is now STALE. This raise aborts the TU before assembly, so
+            # the output on disk is whatever the last successful run left there — and nothing
+            # said so. RecycleBin5.rs sat two full regenerations behind its four siblings that
+            # way, which made a new deterministic lowering look like it had a hole in exactly
+            # one module when in fact nothing had rewritten that module at all.
+            stale = ""
+            if getattr(args, "output", None) and Path(args.output).exists():
+                stale = (
+                    f"\n  ⚠ {args.output} was NOT rewritten and is now STALE — it still holds "
+                    "the last successful run's output, so any deterministic fix made since "
+                    "then is absent from it."
+                )
             raise CppComError(
                 "sequential translation completed with rejected/failed worker(s); "
                 "all other accepted paid artifacts were preserved in the resume cache:\n  - "
                 + "\n  - ".join(sequential_errors)
+                + stale
             )
 
         if not translated:
@@ -3119,6 +3643,14 @@ def cmd_translate(args):
             _record_preamble(preamble_src, "vacuous", stage="skipped")
             preamble_src = ""
 
+        # The preamble is a SEPARATE paid call with its own prompt, so the seals set up for
+        # the function bodies do not reach it — and it is where the wide seal matters most:
+        # every one of the 18 arrays that shipped without the terminator its readers scan
+        # for was a file-scope `static const WCHAR X[] = L"...";`, which only this pass sees.
+        preamble_wide_seal = (
+            seal_wide_literals(preamble_src) if (wide_seal_enabled and preamble_src) else None
+        )
+
         pre_hit = None if (no_resume or not preamble_src) else cache.get(PREAMBLE_KEY, preamble_src)
         if pre_hit is not None:
             preamble_rust = pre_hit
@@ -3131,7 +3663,15 @@ def cmd_translate(args):
             print(
                 f"  [preamble] {len(preamble_src)} C chars...", file=sys.stderr, end=" ", flush=True
             )
-            pre_prompt = build_preamble_prompt(scan, file_res, target=rustconv_target)
+            pre_prompt = build_preamble_prompt(
+                scan,
+                file_res,
+                target=rustconv_target,
+                sealed_c=None if preamble_wide_seal is None else preamble_wide_seal.text,
+                extra_contract=(
+                    "" if preamble_wide_seal is None else wide_contract(preamble_wide_seal)
+                ),
+            )
             pre_sink = None
             if archive is not None:
                 pre_sink = ResponseSink(archive.stream_path(0, "preamble"))
@@ -3153,6 +3693,14 @@ def cmd_translate(args):
                     pre_sink.close()
             pre_elapsed_ms = int((time.monotonic() - pre_started) * 1000)
             if pre_res.success:
+                if preamble_wide_seal is not None:
+                    # Unseal BEFORE banking, exactly as a paid body does: the cache must
+                    # hold what was accepted, not the raw reply. A damaged envelope raises
+                    # here and the run stops rather than assembling a module whose tables
+                    # hold `__RUSTCONV_WIDE_nnnn__`.
+                    pre_res.rust_code = unseal_wide_literals(
+                        scrub_comment_token_echoes(pre_res.rust_code), preamble_wide_seal
+                    )
                 preamble_rust = pre_res.rust_code
                 cache.put(PREAMBLE_KEY, preamble_src, pre_res.rust_code)
                 total_in += pre_res.input_tokens
@@ -3238,6 +3786,22 @@ def cmd_translate(args):
                 file=sys.stderr,
             )
 
+        # A `--local-raii` type is OWNED by one module and imported everywhere else, but the
+        # file-scope preamble the free-functions half translates re-declares it from the C++
+        # header — so the module ended up with both `use …::CStringW;` and its own
+        # `pub struct CStringW`. That is E0255, and had it compiled it would be worse: two
+        # distinct Rust types for one C++ class, silently incompatible across the two halves.
+        # cpp_com mode sidesteps this by skipping the preamble outright; the free half needs
+        # the rest of it, so drop just the duplicated items.
+        if preamble_rust.strip() and local_raii_uses:
+            preamble_rust, deduped = strip_top_level_items(preamble_rust, set(local_raii_uses))
+            if deduped:
+                print(
+                    f"  [preamble] dropped {len(deduped)} re-declaration(s) of "
+                    f"--local-raii type(s): {', '.join(sorted(set(deduped)))}",
+                    file=sys.stderr,
+                )
+
         print(f"\n  Stitching {len(translated)} functions...", file=sys.stderr)
         if resumed:
             print(
@@ -3253,12 +3817,20 @@ def cmd_translate(args):
         if cpp_com_mode:
             if cpp_com_cls is None:
                 raise CppComError("internal error: shell32 COM preflight state was lost")
-            deterministic = [render_interface(item) for item in cpp_com_interfaces]
+            # Interfaces the bindgen island already provides in the C `lpVtbl` idiom are NOT
+            # re-rendered -- a second same-named struct is a distinct Rust type, and the
+            # worker bodies see the island's through the prelude glob.
+            island_slots = island_lpvtbl_interfaces(list(rustconv_target.com_island_files.values()))
+            deterministic = [
+                render_interface(item, island_slots.get(item.name)) for item in cpp_com_interfaces
+            ]
             deterministic.append(
                 render_class_scaffold(
                     cpp_com_cls,
                     cpp_com_interfaces,
                     allow_internal=getattr(args, "internal", False),
+                    allow_plain=getattr(args, "plain", False),
+                    island_slots=island_slots,
                 )
             )
             support_selection = "\n".join(
@@ -3275,11 +3847,21 @@ def cmd_translate(args):
                     | {f"IID_{interface.name}" for interface in cpp_com_interfaces},
                     support_selection,
                     {pod.name for pod in cpp_com_cls.pod_state_types},
+                    provided_types=set(local_raii_impls),
+                    island_types=set(island_slots),
                 )
             )
             if cpp_com_wide_statics:
                 deterministic.append(cpp_com_wide_statics)
             for raii_name, raii_rust in local_raii_impls.items():
+                if raii_name in local_raii_uses:
+                    deterministic.append(
+                        f"// --local-raii {raii_name}: owned by {local_raii_uses[raii_name]} "
+                        "in this crate; imported, not copied (workers received this API as a "
+                        "sealed contract either way)\n"
+                        f"use {local_raii_uses[raii_name]}::{raii_name};"
+                    )
+                    continue
                 deterministic.append(
                     f"// --local-raii {raii_name}: hand-verified lowering (spliced verbatim; "
                     "workers received this API as a sealed contract)\n" + raii_rust.rstrip()
@@ -3293,12 +3875,33 @@ def cmd_translate(args):
             if cpp_com_wide_statics:
                 prelude.append(cpp_com_wide_statics)
             for raii_name, raii_rust in local_raii_impls.items():
+                if raii_name in local_raii_uses:
+                    prelude.append(
+                        f"// --local-raii {raii_name}: owned by {local_raii_uses[raii_name]} "
+                        "in this crate; imported, not copied (workers received this API as a "
+                        "sealed contract either way)\n"
+                        f"use {local_raii_uses[raii_name]}::{raii_name};"
+                    )
+                    continue
                 prelude.append(
                     f"// --local-raii {raii_name}: hand-verified lowering (spliced verbatim; "
                     "workers received this API as a sealed contract)\n" + raii_rust.rstrip()
                 )
             if prelude:
                 stitched = "\n\n".join(prelude) + "\n\n" + stitched
+
+        if wide_seals or preamble_wide_seal is not None:
+            # The unsealed bodies now reference `RUSTCONV_WSTR_*` by name, so the data has
+            # to be in the module or every reference dangles. Filtered by what the module
+            # actually cites, and a citation with no source raises rather than reaching the
+            # linker. The preamble's own seal is in the pool because a file-scope table of
+            # `LPCWSTR` cites the same statics the bodies do.
+            wide_sources = list(wide_seals.values())
+            if preamble_wide_seal is not None:
+                wide_sources.append(preamble_wide_seal)
+            wide_statics = render_wide_statics(wide_sources, stitched)
+            if wide_statics:
+                stitched = wide_statics + "\n\n" + stitched
 
         # COM vtbl tables, GENERATED — never asked of the model. `translate` is
         # function-granular, so file-scope `static const IXVtbl` tables fall to the
@@ -3351,11 +3954,88 @@ def cmd_translate(args):
             ),
         )
 
+        # A local DEFINITION shadows a glob import, but a second GLOB does not — it
+        # COLLIDES. The COM scaffold opens island-first modules with `use crate::prelude::*;`
+        # while the stitcher adds shellcom/types/win32, and every name the two share
+        # (REFIID, HRESULT, ULONG, ...) is then an E0659 ambiguity. Three assembled shell32
+        # TUs opened with 339, 339 and 399 errors that were nothing else, and each was
+        # collapsed by hand before anyone read the next one. Done here rather than in the
+        # stitcher because the prelude line lives in the scaffold, which the stitcher never
+        # sees; only the composed text knows both are present. The prelude is the wider and
+        # newer authority, so it wins — the narrow globs go.
+        #
+        # The prelude line itself comes from crate_integrate, which only runs on the
+        # crate-assembly path — so a `-o` slice never got one. That matters because a TU
+        # holding more than one class MUST use `-o` for every slice after the first (the
+        # assembler refuses to let two classes overwrite one file), which handed the slices
+        # of a single TU two different substrates. CIDLDataObj.cpp is three slices and hit
+        # exactly that. shell32's COM path is island-first by decision, so put every slice
+        # on the prelude regardless of how it was written out.
+        if cpp_class_target and (cpp_com_mode or args.free_functions):
+            narrow = r"^use crate::(?:shellcom|types|win32)::\*;\n"
+            # ...and the SYS-crate glob is just as narrow when the crate keeps its own island.
+            # shell32 has no sys glob to collapse, so this only bites a target whose substrate
+            # is `crate::types` reached through a prelude -- there the class path was importing
+            # `<sys>::<umbrella>::*` while every other module in the same crate imported
+            # `crate::prelude::*`, so the module's OWN generated types (recyclebin's
+            # DELETED_FILE_RECORD, INFO2_HEADER, IRecycleBin5) were simply not in scope. A
+            # `src/prelude.rs` is what makes a crate that shape, so key on it rather than on a
+            # crate name.
+            if (rustconv_target.output_crate / "src" / "prelude.rs").is_file():
+                umbrella = rustconv_target.sys_umbrella
+                if umbrella:
+                    sys_glob = re.escape(f"{rustconv_target.sys_crate}::{umbrella}")
+                    narrow = rf"(?:{narrow}|^use {sys_glob}::\*;\n)"
+            if re.search(narrow, code, re.M):
+                code = re.sub(narrow, "", code, flags=re.M)
+                if not re.search(r"^use crate::prelude::\*;$", code, re.M):
+                    code = "use crate::prelude::*;\n" + code
+        elif re.search(r"^use crate::prelude::\*;$", code, re.M):
+            code = re.sub(r"^use crate::(?:shellcom|types|win32)::\*;\n", "", code, flags=re.M)
+
+        # Cross-module names, resolved from the crate on disk rather than left to the model.
+        # Runs here, on the ASSEMBLED file, so it also repairs bodies replayed from the resume
+        # cache -- the prompt hint that used to be the only source of these `use` lines cannot,
+        # because prompt prose is out of the cache key.
+        if rustconv_target.output_crate.is_dir():
+            code, import_notes = resolve_in_crate_imports(code, rustconv_target.output_crate)
+            for note in import_notes:
+                print(f"  [imports] {note}", file=sys.stderr)
+
+        # Per-line trailing whitespace, stripped once here so BOTH writers below get it --
+        # the `-o` path writes `code` directly and the crate path hands it to the assembler.
+        # A model that wraps a call argument list leaves a space after the comma, which
+        # `git diff --check` flags on every commit of generated output; stripping it by hand
+        # does not stick, because the next regeneration (a $0 cache replay, so it happens
+        # often) puts it straight back. Indentation and blank lines are untouched.
+        code = "\n".join(line.rstrip() for line in code.split("\n"))
+
         # --- Post-translation audits -------------------------------------
         # These catch the SILENT class: output that compiles, links and boots but
         # is wrong. A dropped struct is a compile error and finds itself; a table
         # with one wrong byte does not.
         file_findings: list[str] = []
+        for name in skipped_dead:
+            file_findings.append(
+                f"dead branch: '{name}' is inside a preprocessor arm this tree never "
+                f"compiles, so it is absent from the output ON PURPOSE — nothing is owed"
+            )
+        for name in skipped_by_request:
+            file_findings.append(
+                f"--skip-fn: '{name}' was NOT translated and is absent from the output — "
+                f"hand-write it before this file is flipped"
+            )
+        # Wide literals the seal deliberately left to the model. Reported per occurrence
+        # because "the seal was on" must never be read as "every literal was protected":
+        # these are exactly the ones a reviewer still has to diff against the C.
+        wide_skip_sources = sorted(wide_seals.items())
+        if preamble_wide_seal is not None:
+            wide_skip_sources.append(("the file-scope preamble", preamble_wide_seal))
+        for name, sealed_wide in wide_skip_sources:
+            for skip in sealed_wide.skipped:
+                file_findings.append(
+                    f"UNSEALED WIDE LITERAL in {name}: {skip.source[:60]} — {skip.reason}"
+                )
         if rustconv_target.name != "shell32":
             for name in audit_preamble(c_file, preamble_rust, rust_full=code):
                 file_findings.append(f"preamble: {name}")
@@ -3385,15 +4065,30 @@ def cmd_translate(args):
                 output_tokens=total_out,
                 success=True,
             )
-            out_path = assemble_file(
-                fake_result,
-                subsystem,
-                scan.raw_source,
-                exports=file_res.exports,
-                scan=scan,
-                target=rustconv_target,
-                c_source_path=c_file,
-            )
+            # Name the SLICE of the TU this run covers, so a second run over the same TU
+            # (another class, or the free functions) cannot silently overwrite this file.
+            if getattr(args, "cpp_com", False) and getattr(args, "class_name", None):
+                selector = f"class:{args.class_name}"
+            elif getattr(args, "free_functions", False):
+                selector = "free-functions"
+            else:
+                selector = "whole-tu"
+            try:
+                out_path = assemble_file(
+                    fake_result,
+                    subsystem,
+                    scan.raw_source,
+                    exports=file_res.exports,
+                    scan=scan,
+                    target=rustconv_target,
+                    c_source_path=c_file,
+                    selector=selector,
+                    assembled_fns={dep.name for dep in sorted_deps},
+                    reassemble=getattr(args, "reassemble", False),
+                )
+            except AssemblyClobberError as exc:
+                print(f"\n\u26d4 {exc}", file=sys.stderr)
+                sys.exit(1)
             print(f"  Assembled to {out_path}", file=sys.stderr)
 
         # Respect the cost cap across files too, not just within one file.
@@ -3410,6 +4105,42 @@ def cmd_translate(args):
     # NOT announce themselves later: a dropped struct is a compile error, but a
     # lookup table with one wrong byte compiles, links, boots, and formats a date
     # wrong forever.
+    # A body accepted on its last attempt despite ignoring the fact envelope is an
+    # audit finding, not a log line: its constants are unverified, and unverified
+    # constants are precisely what scrolls away and ships. Folded in here so they
+    # reach AUDIT.md alongside the table-count and struct findings.
+    if UNVERIFIED_CONSTANT_BODIES:
+        audit_findings.setdefault("UNVERIFIED CONSTANTS (fact envelope ignored)", []).extend(
+            UNVERIFIED_CONSTANT_BODIES
+        )
+
+    # Same bargain, one envelope over: every UTF-16 token came back, but not in the order
+    # the C used them. The closed-set check cannot tell a reorder from a mix-up, so it says
+    # so here instead of guessing (wide_seal, "THE BLIND SPOT WE DO NOT INHERIT").
+    if REORDERED_WIDE_LITERAL_BODIES:
+        audit_findings.setdefault("WIDE LITERALS REORDERED (check each slot)", []).extend(
+            REORDERED_WIDE_LITERAL_BODIES
+        )
+
+    # The `--free-functions` half, audited for the first time. Report-only: these have never
+    # been graded, so the first runs are calibrating the CHECK as much as the bodies.
+    if FREE_HALF_AUDIT_FINDINGS:
+        audit_findings.setdefault("FREE-HALF AUDIT (report-only, first pass)", []).extend(
+            FREE_HALF_AUDIT_FINDINGS
+        )
+
+    # A `--skip-fn` name no file in the worklist carried. Per-file this is normal (the name
+    # belongs to one TU); across the WHOLE worklist it means the name is misspelled, and the
+    # caller believes a body was left to them that was in fact translated and shipped. That is
+    # the inverse of the skip's own guarantee, so it is an audit finding, not a log line.
+    unmatched_skip = unmatched_skip_fn(skip_fn_requested, skip_fn_matched)
+    if unmatched_skip:
+        audit_findings.setdefault("--skip-fn NAMES THAT MATCHED NOTHING", []).extend(
+            f"'{name}' is in no file of this worklist — misspelled? Nothing was skipped for it, "
+            "so any body you expected to hand-write was translated and SHIPPED."
+            for name in unmatched_skip
+        )
+
     if audit_findings:
         total = sum(len(v) for v in audit_findings.values())
         print(f"\n{'=' * 60}", file=sys.stderr)
@@ -3501,7 +4232,14 @@ def cmd_estimate(args):
     print("     each RE-SENDING the system prompt + growing context — real input")
     print("     is commonly 2–5× the figure above. These estimates are a FLOOR.")
 
+    # DeepSeek FIRST, and flagged, because it is what an unflagged run actually bills. The
+    # table used to list only Claude and Gemini, so the one number a spend decision is made
+    # from was never the price of the default lane — a re-translate got priced at Sonnet's
+    # $1.22 and declined as too expensive when the real bill was ~$0.10. Every other row is
+    # an escalation from the first one.
     rows = [
+        ("DeepSeek v4-pro  (DEFAULT)", DEEPSEEK_MODEL_V4_PRO),
+        ("DeepSeek v4-flash", "deepseek-v4-flash"),
         ("Opus   (claude-opus-4-8)", "claude-opus-4-8"),
         ("Sonnet (claude-sonnet-4-5)", "claude-sonnet-4-5-20250929"),
         ("Haiku  (claude-haiku-4-5)", "claude-haiku-4-5-20251001"),
@@ -3540,6 +4278,23 @@ def cmd_extern_audit(args):
         run_extern_fix(dry_run=args.dry_run)
     else:
         run_extern_audit(json_output=args.json)
+
+
+def cmd_bank_audit(args):
+    """Report paid translation output that never made it into the tree."""
+    responses = Path(args.responses) if args.responses else RUSTCONV_RESPONSES_DIR
+    rust_root = Path(args.tree) if args.tree else RUST_DIR
+    if not responses.is_dir():
+        raise ValueError(f"no response bank at {responses}")
+    if not rust_root.is_dir():
+        raise ValueError(f"no Rust tree at {rust_root}")
+
+    reports = bank_audit(responses, rust_root)
+    print(format_bank_report(reports, verbose=args.verbose))
+    # Unintegrated paid work is a finding, not a status line — exit nonzero so a
+    # caller that wired this into a gate actually notices.
+    if any(r.absent for r in reports):
+        sys.exit(1)
 
 
 def cmd_trace_catalog(args):
@@ -3653,6 +4408,13 @@ def main():
     p.add_argument("--ledger", help="Override the shell32 tail TOML ledger")
     p.add_argument("--json", action="store_true", help="Machine-readable report")
 
+    hybrid_closure.build_arg_parser(
+        sub.add_parser(
+            "hybrid-closure",
+            help="Which symbols of a hybrid TU are still needed elsewhere, measured from the link",
+        )
+    )
+
     # candidate-check — N isolated worker replacements, one cargo check per arch.
     p = sub.add_parser(
         "candidate-check",
@@ -3763,6 +4525,13 @@ def main():
         help="Allow exact internal ShellObjectCreator<T> activation; never emits an adapter",
     )
     p.add_argument("--json", action="store_true", help="Print the proven class/interface IR")
+    p.add_argument(
+        "--plain",
+        action="store_true",
+        help="The class is a file-local C++ helper, NOT COM: no vtable, no QI, no activation. "
+        "Skips the three COM preflight requirements (which are vacuous for it) and keeps every "
+        "state-layout/RAII check. Refuses if the class actually has a BEGIN_COM_MAP.",
+    )
 
     p = sub.add_parser(
         "cpp-tu",
@@ -3847,6 +4616,24 @@ def main():
     # estimate
     p = sub.add_parser("estimate", help="Estimate token count and cost")
     p.add_argument("path", help="File or directory to estimate")
+    # Same three knobs as `translate`. estimate resolves the target exactly as
+    # translate does, so a module whose crate cannot be guessed (msvcrt ->
+    # msvcrt-crt-rust) raised TargetResolveError here with no flag to answer it —
+    # the one command whose entire job is to price a run refused to price the
+    # modules most in need of pricing.
+    p.add_argument(
+        "--target", help="Override target: a known target name or a dll/win32/<name> crate name"
+    )
+    p.add_argument(
+        "--output-crate",
+        help="Rust crate the translation is assembled into, when it is not the "
+        "conventional <target>-rust (e.g. msvcrt -> msvcrt-crt-rust).",
+    )
+    p.add_argument(
+        "--sys-crate",
+        help="FFI substrate crate to translate against (e.g. ntdll-sys, msvcrt-sys), "
+        "when the output crate declares none or several.",
+    )
 
     # seh-classify
     p = sub.add_parser("seh-classify", help="Classify SEH blocks in C files by pattern")
@@ -4099,6 +4886,13 @@ def main():
         help="shell32 cpp-com: allow exact internal ShellObjectCreator<T> activation",
     )
     p.add_argument(
+        "--plain",
+        action="store_true",
+        help="shell32 cpp-com: the class is a file-local C++ HELPER, not COM — no vtable, no "
+        "QI, no activation. Use with --cpp-com --class for a class --free-functions skips but "
+        "the COM preflight refuses. Refuses if the class actually has a BEGIN_COM_MAP.",
+    )
+    p.add_argument(
         "--seal-facts",
         dest="seal_facts",
         action="store_true",
@@ -4115,6 +4909,18 @@ def main():
         help="Replace each known runtime callee occurrence with an audited opaque token "
         "during the paid call, so a dropped, duplicated, or invented call fails loudly "
         "instead of silently. Works for plain C and for shell32 --cpp-com.",
+    )
+    p.add_argument(
+        "--seal-wide",
+        dest="seal_wide",
+        action="store_true",
+        help="Replace each `L\"...\"` / `L'x'` occurrence with an audited opaque token during "
+        "the paid call, and substitute deterministic UTF-16 afterward. Rust has no wide "
+        "literal, so a model asked for one INVENTS an encoding — a byte string behind a wide "
+        "pointer, an alignment-1 interleave, or a hand-counted [u16; N] missing its "
+        "terminator; five modules shipped one of those. Plain C only: shell32 --cpp-com has "
+        "its own frozen lowering. 98%% of the tree's literals seal; the rest are reported as "
+        "UNSEALED WIDE LITERAL audit findings rather than passed off as protected.",
     )
     p.add_argument(
         "--retry-rejects",
@@ -4147,6 +4953,32 @@ def main():
         "--fn",
         dest="fn",
         help="Translate only this function, or a comma-separated bounded worker set",
+    )
+    p.add_argument(
+        "--skip-fn",
+        dest="skip_fn",
+        # `extend`, not the bare `nargs="*"` this used to be: with plain nargs a REPEATED
+        # `--skip-fn a --skip-fn b` silently keeps only `b`, so ten of eleven names asked
+        # for were dropped with no message. That is the one failure this flag is not
+        # allowed to have -- its whole contract below is "never silent".
+        action="extend",
+        nargs="*",
+        default=[],
+        metavar="NAME",
+        help=(
+            "FUNCTION names to leave out of the worklist so the rest of the TU still "
+            "assembles (--exclude filters FILE stems and cannot do this). For a body the "
+            "model cannot get past the call/fact envelope: skip it, ship the other "
+            "functions, hand-write this one. Never silent — each name becomes an audit "
+            "finding, and an unknown name is an error rather than a no-op. Repeatable, "
+            "and accepts several names per flag."
+        ),
+    )
+    p.add_argument(
+        "--reassemble",
+        action="store_true",
+        help="Allow overwriting a COMMITTED, unmodified .rs. Off by default: a re-translation "
+        "sees only the C, so it reverts every repair made after integration.",
     )
     p.add_argument("--dry-run", action="store_true", help="Show translation plan without API calls")
     p.add_argument(
@@ -4255,6 +5087,17 @@ def main():
         "--dry-run", action="store_true", help="Show what --fix would change without writing"
     )
 
+    # bank-audit
+    p = sub.add_parser(
+        "bank-audit",
+        help="Report paid translation output (.responses) that is not in the tree",
+    )
+    p.add_argument("--responses", help="Response bank root (default: tools/rustconv/.responses)")
+    p.add_argument("--tree", help="Rust crate root to check against (default: sdk/lib/rust)")
+    p.add_argument(
+        "--verbose", action="store_true", help="Also list functions resolved via an alias rule"
+    )
+
     # pp (postprocess existing .rs files)
     p = sub.add_parser("pp", help="Run postprocessor on existing .rs files")
     p.add_argument("path", help="Rust file or directory (subsystem under ntoskrnl-rust/src/)")
@@ -4270,6 +5113,7 @@ def main():
         "scan": cmd_scan,
         "dup-census": cmd_dup_census,
         "shell32-tail-inventory": cmd_shell32_tail_inventory,
+        "hybrid-closure": cmd_hybrid_closure,
         "candidate-check": cmd_candidate_check,
         "crate-repair": cmd_crate_repair,
         "difftest-gen": cmd_difftest_gen,
@@ -4300,6 +5144,7 @@ def main():
         "probe-migrate": cmd_probe_migrate,
         "objdiff": cmd_objdiff,
         "extern-audit": cmd_extern_audit,
+        "bank-audit": cmd_bank_audit,
         "pp": cmd_postprocess,
         "trace-catalog": cmd_trace_catalog,
     }

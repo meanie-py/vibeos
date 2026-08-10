@@ -22,9 +22,8 @@ extern "C" {
 // hardcode the canonical value. NTSTATUS is `LONG` (signed), so the bit
 // pattern 0xC0000002 (STATUS_NOT_IMPLEMENTED, severity=ERROR) is cast.
 const STATUS_NOT_IMPLEMENTED: NTSTATUS = 0xC0000002u32 as NTSTATUS;
-#[cfg(target_arch = "x86")]
 #[no_mangle]
-pub unsafe extern "stdcall" fn EngTextOut(
+pub unsafe extern "system" fn EngTextOut(
     pso: *mut SURFOBJ,
     pstro: *mut STROBJ,
     pfo: *mut FONTOBJ,
@@ -44,43 +43,12 @@ pub unsafe extern "stdcall" fn EngTextOut(
     );
     0
 }
-
-#[cfg(not(target_arch = "x86"))]
 #[no_mangle]
-pub unsafe extern "C" fn EngTextOut(
-    pso: *mut SURFOBJ,
-    pstro: *mut STROBJ,
-    pfo: *mut FONTOBJ,
-    pco: *mut CLIPOBJ,
-    prclExtra: *mut RECTL,
-    prclOpaque: *mut RECTL,
-    pboFore: *mut BRUSHOBJ,
-    pboOpaque: *mut BRUSHOBJ,
-    pptlOrg: *mut POINTL,
-    mix: MIX,
-) -> BOOL {
-    DbgPrint(
-        b"(%s:%i) WIN32K: %s UNIMPLEMENTED\n\0".as_ptr() as PCHAR,
-        b"stubs.c\0".as_ptr() as PCHAR,
-        line!() as i32,
-        b"EngTextOut\0".as_ptr() as PCHAR,
-    );
+pub unsafe extern "system" fn EngCheckAbort(pso: *mut SURFOBJ) -> i32 {
     0
 }
-#[cfg(target_arch = "x86")]
 #[no_mangle]
-pub unsafe extern "stdcall" fn EngCheckAbort(pso: *mut SURFOBJ) -> i32 {
-    0
-}
-
-#[cfg(not(target_arch = "x86"))]
-#[no_mangle]
-pub unsafe extern "C" fn EngCheckAbort(pso: *mut SURFOBJ) -> i32 {
-    0
-}
-#[cfg(target_arch = "x86")]
-#[no_mangle]
-pub unsafe extern "stdcall" fn EngEnumForms(
+pub unsafe extern "system" fn EngEnumForms(
     hPrinter: HANDLE,
     Level: DWORD,
     pForm: LPBYTE,
@@ -91,23 +59,8 @@ pub unsafe extern "stdcall" fn EngEnumForms(
     EngSetLastError(ERROR_NOT_SUPPORTED);
     return 0;
 }
-
-#[cfg(not(target_arch = "x86"))]
 #[no_mangle]
-pub unsafe extern "C" fn EngEnumForms(
-    hPrinter: HANDLE,
-    Level: DWORD,
-    pForm: LPBYTE,
-    cbBuf: DWORD,
-    pcbNeeded: LPDWORD,
-    pcReturned: LPDWORD,
-) -> BOOL {
-    EngSetLastError(ERROR_NOT_SUPPORTED);
-    return 0;
-}
-#[cfg(target_arch = "x86")]
-#[no_mangle]
-pub unsafe extern "stdcall" fn EngFillPath(
+pub unsafe extern "system" fn EngFillPath(
     pso: *mut SURFOBJ,
     ppo: *mut PATHOBJ,
     pco: *mut CLIPOBJ,
@@ -124,29 +77,8 @@ pub unsafe extern "stdcall" fn EngFillPath(
     );
     0i32
 }
-
-#[cfg(not(target_arch = "x86"))]
 #[no_mangle]
-pub unsafe extern "C" fn EngFillPath(
-    pso: *mut SURFOBJ,
-    ppo: *mut PATHOBJ,
-    pco: *mut CLIPOBJ,
-    pbo: *mut BRUSHOBJ,
-    pptlBrushOrg: *mut POINTL,
-    mix: MIX,
-    flOptions: FLONG,
-) -> i32 {
-    DbgPrint(
-        b"(%s:%i) WIN32K: %s UNIMPLEMENTED\n\0".as_ptr() as PCHAR,
-        b"stubs.c\0".as_ptr() as PCHAR,
-        0i32,
-        b"EngFillPath\0".as_ptr() as PCHAR,
-    );
-    0i32
-}
-#[cfg(target_arch = "x86")]
-#[no_mangle]
-pub unsafe extern "stdcall" fn EngFindResource(
+pub unsafe extern "system" fn EngFindResource(
     h: HANDLE,
     iName: i32,
     iType: i32,
@@ -160,26 +92,8 @@ pub unsafe extern "stdcall" fn EngFindResource(
     );
     core::ptr::null_mut()
 }
-
-#[cfg(not(target_arch = "x86"))]
 #[no_mangle]
-pub unsafe extern "C" fn EngFindResource(
-    h: HANDLE,
-    iName: i32,
-    iType: i32,
-    pulSize: PULONG,
-) -> PVOID {
-    DbgPrint(
-        b"(%s:%i) WIN32K: %s UNIMPLEMENTED\n\0".as_ptr() as PCHAR,
-        b"stubs.c\0".as_ptr() as PCHAR,
-        line!() as i32,
-        b"EngFindResource\0".as_ptr() as PCHAR,
-    );
-    core::ptr::null_mut()
-}
-#[cfg(target_arch = "x86")]
-#[no_mangle]
-pub unsafe extern "stdcall" fn EngGetFileChangeTime(
+pub unsafe extern "system" fn EngGetFileChangeTime(
     h: HANDLE,
     pChangeTime: *mut LARGE_INTEGER,
 ) -> BOOL {
@@ -191,24 +105,8 @@ pub unsafe extern "stdcall" fn EngGetFileChangeTime(
     );
     0
 }
-
-#[cfg(not(target_arch = "x86"))]
 #[no_mangle]
-pub unsafe extern "C" fn EngGetFileChangeTime(
-    h: HANDLE,
-    pChangeTime: *mut LARGE_INTEGER,
-) -> BOOL {
-    DbgPrint(
-        b"(%s:%i) WIN32K: %s UNIMPLEMENTED\n\0".as_ptr() as PCHAR,
-        file!().as_ptr() as PCHAR,
-        line!() as i32,
-        b"EngGetFileChangeTime\0".as_ptr() as PCHAR,
-    );
-    0
-}
-#[cfg(target_arch = "x86")]
-#[no_mangle]
-pub unsafe extern "stdcall" fn EngGetFilePath(
+pub unsafe extern "system" fn EngGetFilePath(
     h: HANDLE,
     pDest: *mut [WCHAR; MAX_PATH as usize + 1],
 ) -> BOOL {
@@ -220,24 +118,8 @@ pub unsafe extern "stdcall" fn EngGetFilePath(
     );
     0
 }
-
-#[cfg(not(target_arch = "x86"))]
 #[no_mangle]
-pub unsafe extern "C" fn EngGetFilePath(
-    h: HANDLE,
-    pDest: *mut [WCHAR; MAX_PATH as usize + 1],
-) -> BOOL {
-    DbgPrint(
-        b"(%s:%i) WIN32K: %s UNIMPLEMENTED\n\0".as_ptr() as PCHAR,
-        file!().as_ptr() as PCHAR,
-        line!() as i32,
-        b"EngGetFilePath\0".as_ptr() as PCHAR,
-    );
-    0
-}
-#[cfg(target_arch = "x86")]
-#[no_mangle]
-pub unsafe extern "stdcall" fn EngGetForm(
+pub unsafe extern "system" fn EngGetForm(
     hPrinter: HANDLE,
     pFormName: LPWSTR,
     Level: DWORD,
@@ -248,23 +130,8 @@ pub unsafe extern "stdcall" fn EngGetForm(
     EngSetLastError(ERROR_NOT_SUPPORTED);
     return FALSE as BOOL;
 }
-
-#[cfg(not(target_arch = "x86"))]
 #[no_mangle]
-pub unsafe extern "C" fn EngGetForm(
-    hPrinter: HANDLE,
-    pFormName: LPWSTR,
-    Level: DWORD,
-    pForm: LPBYTE,
-    cbBuf: DWORD,
-    pcbNeeded: LPDWORD,
-) -> BOOL {
-    EngSetLastError(ERROR_NOT_SUPPORTED);
-    return FALSE as BOOL;
-}
-#[cfg(target_arch = "x86")]
-#[no_mangle]
-pub unsafe extern "stdcall" fn EngGetPrinter(
+pub unsafe extern "system" fn EngGetPrinter(
     hPrinter: HANDLE,
     dwLevel: DWORD,
     pPrinter: LPBYTE,
@@ -274,22 +141,8 @@ pub unsafe extern "stdcall" fn EngGetPrinter(
     EngSetLastError(ERROR_NOT_SUPPORTED);
     0
 }
-
-#[cfg(not(target_arch = "x86"))]
 #[no_mangle]
-pub unsafe extern "C" fn EngGetPrinter(
-    hPrinter: HANDLE,
-    dwLevel: DWORD,
-    pPrinter: LPBYTE,
-    cbBuf: DWORD,
-    pcbNeeded: LPDWORD,
-) -> BOOL {
-    EngSetLastError(ERROR_NOT_SUPPORTED);
-    0
-}
-#[cfg(target_arch = "x86")]
-#[no_mangle]
-pub unsafe extern "stdcall" fn EngGetPrinterData(
+pub unsafe extern "system" fn EngGetPrinterData(
     hPrinter: HANDLE,
     pValueName: LPWSTR,
     pType: LPDWORD,
@@ -300,23 +153,8 @@ pub unsafe extern "stdcall" fn EngGetPrinterData(
     EngSetLastError(ERROR_NOT_SUPPORTED);
     0
 }
-
-#[cfg(not(target_arch = "x86"))]
 #[no_mangle]
-pub unsafe extern "C" fn EngGetPrinterData(
-    hPrinter: HANDLE,
-    pValueName: LPWSTR,
-    pType: LPDWORD,
-    pData: LPBYTE,
-    nSize: DWORD,
-    pcbNeeded: LPDWORD,
-) -> DWORD {
-    EngSetLastError(ERROR_NOT_SUPPORTED);
-    0
-}
-#[cfg(target_arch = "x86")]
-#[no_mangle]
-pub unsafe extern "stdcall" fn EngGetPrinterDataFileName(hdev: HDEV) -> LPWSTR {
+pub unsafe extern "system" fn EngGetPrinterDataFileName(hdev: HDEV) -> LPWSTR {
     DbgPrint(
         b"(%s:%i) WIN32K: %s UNIMPLEMENTED\n\0".as_ptr() as PCHAR,
         file!().as_ptr() as PCHAR,
@@ -325,21 +163,8 @@ pub unsafe extern "stdcall" fn EngGetPrinterDataFileName(hdev: HDEV) -> LPWSTR {
     );
     core::ptr::null_mut()
 }
-
-#[cfg(not(target_arch = "x86"))]
 #[no_mangle]
-pub unsafe extern "C" fn EngGetPrinterDataFileName(hdev: HDEV) -> LPWSTR {
-    DbgPrint(
-        b"(%s:%i) WIN32K: %s UNIMPLEMENTED\n\0".as_ptr() as PCHAR,
-        file!().as_ptr() as PCHAR,
-        line!() as i32,
-        b"EngGetPrinterDataFileName\0".as_ptr() as PCHAR,
-    );
-    core::ptr::null_mut()
-}
-#[cfg(target_arch = "x86")]
-#[no_mangle]
-pub unsafe extern "stdcall" fn EngGetType1FontList(
+pub unsafe extern "system" fn EngGetType1FontList(
     hdev: HDEV,
     pType1Buffer: *mut TYPE1_FONT,
     cjType1Buffer: u32,
@@ -350,23 +175,8 @@ pub unsafe extern "stdcall" fn EngGetType1FontList(
     EngSetLastError(ERROR_NOT_SUPPORTED);
     return 0;
 }
-
-#[cfg(not(target_arch = "x86"))]
 #[no_mangle]
-pub unsafe extern "C" fn EngGetType1FontList(
-    hdev: HDEV,
-    pType1Buffer: *mut TYPE1_FONT,
-    cjType1Buffer: u32,
-    pulLocalFonts: *mut u32,
-    pulRemoteFonts: *mut u32,
-    pLastModified: *mut LARGE_INTEGER,
-) -> i32 {
-    EngSetLastError(ERROR_NOT_SUPPORTED);
-    return 0;
-}
-#[cfg(target_arch = "x86")]
-#[no_mangle]
-pub unsafe extern "stdcall" fn EngMarkBandingSurface(hsurf: HSURF) -> i32 {
+pub unsafe extern "system" fn EngMarkBandingSurface(hsurf: HSURF) -> i32 {
     DbgPrint(
         b"(%s:%i) WIN32K: %s UNIMPLEMENTED\n\0".as_ptr() as *const i8,
         b"stubs.c\0".as_ptr() as *const i8,
@@ -375,39 +185,8 @@ pub unsafe extern "stdcall" fn EngMarkBandingSurface(hsurf: HSURF) -> i32 {
     );
     0
 }
-
-#[cfg(not(target_arch = "x86"))]
 #[no_mangle]
-pub unsafe extern "C" fn EngMarkBandingSurface(hsurf: HSURF) -> i32 {
-    DbgPrint(
-        b"(%s:%i) WIN32K: %s UNIMPLEMENTED\n\0".as_ptr() as *const i8,
-        b"stubs.c\0".as_ptr() as *const i8,
-        line!() as i32,
-        b"EngMarkBandingSurface\0".as_ptr() as *const i8,
-    );
-    0
-}
-#[cfg(target_arch = "x86")]
-#[no_mangle]
-pub unsafe extern "stdcall" fn EngMultiByteToWideChar(
-    CodePage: UINT,
-    WideCharString: LPWSTR,
-    BytesInWideCharString: INT,
-    MultiByteString: LPSTR,
-    BytesInMultiByteString: INT,
-) -> INT {
-    DbgPrint(
-        b"(%s:%i) WIN32K: %s UNIMPLEMENTED\n\0".as_ptr() as PCCH,
-        file!().as_ptr() as PCCH,
-        line!() as i32,
-        b"EngMultiByteToWideChar\0".as_ptr() as PCCH,
-    );
-    0
-}
-
-#[cfg(not(target_arch = "x86"))]
-#[no_mangle]
-pub unsafe extern "C" fn EngMultiByteToWideChar(
+pub unsafe extern "system" fn EngMultiByteToWideChar(
     CodePage: UINT,
     WideCharString: LPWSTR,
     BytesInWideCharString: INT,
@@ -424,7 +203,7 @@ pub unsafe extern "C" fn EngMultiByteToWideChar(
 }
 #[cfg(target_arch = "x86")]
 #[no_mangle]
-pub unsafe extern "stdcall" fn EngQueryLocalTime(ptf: PENG_TIME_FIELDS) {
+pub unsafe extern "system" fn EngQueryLocalTime(ptf: PENG_TIME_FIELDS) {
     // §5: kernel APIs require the ntkrnl_sys version of LARGE_INTEGER —
     // win32k_sys re-bindgens a distinct (but layout-identical) type.
     let mut liSystemTime: ntkrnl_sys::ddk::_LARGE_INTEGER = core::mem::zeroed();
@@ -462,7 +241,7 @@ pub unsafe extern "stdcall" fn EngQueryLocalTime(ptf: PENG_TIME_FIELDS) {
 
 #[cfg(not(target_arch = "x86"))]
 #[no_mangle]
-pub unsafe extern "C" fn EngQueryLocalTime(ptf: PENG_TIME_FIELDS) {
+pub unsafe extern "system" fn EngQueryLocalTime(ptf: PENG_TIME_FIELDS) {
     let mut liSystemTime: ntkrnl_sys::ddk::_LARGE_INTEGER = core::mem::zeroed();
     let mut liLocalTime: ntkrnl_sys::ddk::_LARGE_INTEGER = core::mem::zeroed();
 
@@ -485,9 +264,8 @@ pub unsafe extern "C" fn EngQueryLocalTime(ptf: PENG_TIME_FIELDS) {
         ptf as *mut _ as *mut ntkrnl_sys::ddk::_TIME_FIELDS,
     );
 }
-#[cfg(target_arch = "x86")]
 #[no_mangle]
-pub unsafe extern "stdcall" fn EngQueryPalette(
+pub unsafe extern "system" fn EngQueryPalette(
     hPal: HPALETTE,
     piMode: *mut ULONG,
     cColors: ULONG,
@@ -501,26 +279,8 @@ pub unsafe extern "stdcall" fn EngQueryPalette(
     );
     0
 }
-
-#[cfg(not(target_arch = "x86"))]
 #[no_mangle]
-pub unsafe extern "C" fn EngQueryPalette(
-    hPal: HPALETTE,
-    piMode: *mut ULONG,
-    cColors: ULONG,
-    pulColors: *mut ULONG,
-) -> ULONG {
-    DbgPrint(
-        b"(%s:%i) WIN32K: %s UNIMPLEMENTED\n\0".as_ptr() as PCHAR,
-        b"stubs.c\0".as_ptr() as PCHAR,
-        line!() as i32,
-        b"EngQueryPalette\0".as_ptr() as PCHAR,
-    );
-    0
-}
-#[cfg(target_arch = "x86")]
-#[no_mangle]
-pub unsafe extern "stdcall" fn EngSetPrinterData(
+pub unsafe extern "system" fn EngSetPrinterData(
     hPrinter: *mut core::ffi::c_void,
     pType: LPWSTR,
     dwType: u32,
@@ -530,22 +290,8 @@ pub unsafe extern "stdcall" fn EngSetPrinterData(
     EngSetLastError(ERROR_NOT_SUPPORTED);
     0
 }
-
-#[cfg(not(target_arch = "x86"))]
 #[no_mangle]
-pub unsafe extern "C" fn EngSetPrinterData(
-    hPrinter: *mut core::ffi::c_void,
-    pType: LPWSTR,
-    dwType: u32,
-    lpbPrinterData: LPBYTE,
-    cjPrinterData: u32,
-) -> u32 {
-    EngSetLastError(ERROR_NOT_SUPPORTED);
-    0
-}
-#[cfg(target_arch = "x86")]
-#[no_mangle]
-pub unsafe extern "stdcall" fn EngStrokeAndFillPath(
+pub unsafe extern "system" fn EngStrokeAndFillPath(
     pso: *mut SURFOBJ,
     ppo: *mut PATHOBJ,
     pco: *mut CLIPOBJ,
@@ -565,32 +311,8 @@ pub unsafe extern "stdcall" fn EngStrokeAndFillPath(
     );
     0
 }
-
-#[cfg(not(target_arch = "x86"))]
 #[no_mangle]
-pub unsafe extern "C" fn EngStrokeAndFillPath(
-    pso: *mut SURFOBJ,
-    ppo: *mut PATHOBJ,
-    pco: *mut CLIPOBJ,
-    pxo: *mut XFORMOBJ,
-    pboStroke: *mut BRUSHOBJ,
-    plineattrs: *mut LINEATTRS,
-    pboFill: *mut BRUSHOBJ,
-    pptlBrushOrg: *mut POINTL,
-    mixFill: MIX,
-    flOptions: FLONG,
-) -> i32 {
-    DbgPrint(
-        b"(%s:%i) WIN32K: %s UNIMPLEMENTED\n\0".as_ptr() as PCHAR,
-        b"stubs.c\0".as_ptr() as PCHAR,
-        line!() as i32,
-        b"EngStrokeAndFillPath\0".as_ptr() as PCHAR,
-    );
-    0
-}
-#[cfg(target_arch = "x86")]
-#[no_mangle]
-pub unsafe extern "stdcall" fn EngStrokePath(
+pub unsafe extern "system" fn EngStrokePath(
     pso: *mut SURFOBJ,
     ppo: *mut PATHOBJ,
     pco: *mut CLIPOBJ,
@@ -608,30 +330,8 @@ pub unsafe extern "stdcall" fn EngStrokePath(
     );
     0
 }
-
-#[cfg(not(target_arch = "x86"))]
 #[no_mangle]
-pub unsafe extern "C" fn EngStrokePath(
-    pso: *mut SURFOBJ,
-    ppo: *mut PATHOBJ,
-    pco: *mut CLIPOBJ,
-    pxo: *mut XFORMOBJ,
-    pbo: *mut BRUSHOBJ,
-    pptlBrushOrg: *mut POINTL,
-    plineattrs: *mut LINEATTRS,
-    mix: MIX,
-) -> i32 {
-    DbgPrint(
-        b"(%s:%i) WIN32K: %s UNIMPLEMENTED\n\0".as_ptr() as *const i8,
-        b"stubs.c\0".as_ptr() as *const i8,
-        line!() as i32,
-        b"EngStrokePath\0".as_ptr() as *const i8,
-    );
-    0
-}
-#[cfg(target_arch = "x86")]
-#[no_mangle]
-pub unsafe extern "stdcall" fn EngWideCharToMultiByte(
+pub unsafe extern "system" fn EngWideCharToMultiByte(
     CodePage: UINT,
     WideCharString: LPWSTR,
     BytesInWideCharString: INT,
@@ -646,27 +346,8 @@ pub unsafe extern "stdcall" fn EngWideCharToMultiByte(
     );
     0
 }
-
-#[cfg(not(target_arch = "x86"))]
 #[no_mangle]
-pub unsafe extern "C" fn EngWideCharToMultiByte(
-    CodePage: UINT,
-    WideCharString: LPWSTR,
-    BytesInWideCharString: INT,
-    MultiByteString: LPSTR,
-    BytesInMultiByteString: INT,
-) -> INT {
-    DbgPrint(
-        b"(%s:%i) WIN32K: %s UNIMPLEMENTED\n\0".as_ptr() as PCHAR,
-        b"stubs.c\0".as_ptr() as PCHAR,
-        0 as INT,
-        b"EngWideCharToMultiByte\0".as_ptr() as PCHAR,
-    );
-    0
-}
-#[cfg(target_arch = "x86")]
-#[no_mangle]
-pub unsafe extern "stdcall" fn EngWritePrinter(
+pub unsafe extern "system" fn EngWritePrinter(
     hPrinter: HANDLE,
     pBuf: LPVOID,
     cbBuf: DWORD,
@@ -675,21 +356,8 @@ pub unsafe extern "stdcall" fn EngWritePrinter(
     EngSetLastError(ERROR_NOT_SUPPORTED);
     return 0;
 }
-
-#[cfg(not(target_arch = "x86"))]
 #[no_mangle]
-pub unsafe extern "C" fn EngWritePrinter(
-    hPrinter: HANDLE,
-    pBuf: LPVOID,
-    cbBuf: DWORD,
-    pcWritten: LPDWORD,
-) -> BOOL {
-    EngSetLastError(ERROR_NOT_SUPPORTED);
-    return 0;
-}
-#[cfg(target_arch = "x86")]
-#[no_mangle]
-pub unsafe extern "stdcall" fn FONTOBJ_cGetAllGlyphHandles(
+pub unsafe extern "system" fn FONTOBJ_cGetAllGlyphHandles(
     FontObj: *mut FONTOBJ,
     Glyphs: *mut HGLYPH,
 ) -> ULONG {
@@ -701,24 +369,8 @@ pub unsafe extern "stdcall" fn FONTOBJ_cGetAllGlyphHandles(
     );
     0
 }
-
-#[cfg(not(target_arch = "x86"))]
 #[no_mangle]
-pub unsafe extern "C" fn FONTOBJ_cGetAllGlyphHandles(
-    FontObj: *mut FONTOBJ,
-    Glyphs: *mut HGLYPH,
-) -> ULONG {
-    DbgPrint(
-        b"(%s:%i) WIN32K: %s UNIMPLEMENTED\n\0".as_ptr() as PCHAR,
-        file!().as_ptr() as PCHAR,
-        line!() as i32,
-        b"FONTOBJ_cGetAllGlyphHandles\0".as_ptr() as PCHAR,
-    );
-    0
-}
-#[cfg(target_arch = "x86")]
-#[no_mangle]
-pub unsafe extern "stdcall" fn FONTOBJ_cGetGlyphs(
+pub unsafe extern "system" fn FONTOBJ_cGetGlyphs(
     FontObj: *mut FONTOBJ,
     Mode: u32,
     NumGlyphs: u32,
@@ -733,27 +385,8 @@ pub unsafe extern "stdcall" fn FONTOBJ_cGetGlyphs(
     );
     0
 }
-
-#[cfg(not(target_arch = "x86"))]
 #[no_mangle]
-pub unsafe extern "C" fn FONTOBJ_cGetGlyphs(
-    FontObj: *mut FONTOBJ,
-    Mode: u32,
-    NumGlyphs: u32,
-    GlyphHandles: *mut HGLYPH,
-    OutGlyphs: *mut *mut core::ffi::c_void,
-) -> u32 {
-    DbgPrint(
-        b"(%s:%i) WIN32K: %s UNIMPLEMENTED\n\0".as_ptr() as PCHAR,
-        b"stubs.c\0".as_ptr() as PCHAR,
-        line!() as i32,
-        b"FONTOBJ_cGetGlyphs\0".as_ptr() as PCHAR,
-    );
-    0
-}
-#[cfg(target_arch = "x86")]
-#[no_mangle]
-pub unsafe extern "stdcall" fn FONTOBJ_pvTrueTypeFontFile(
+pub unsafe extern "system" fn FONTOBJ_pvTrueTypeFontFile(
     pfo: *mut FONTOBJ,
     pcjFile: *mut ULONG,
 ) -> PVOID {
@@ -765,24 +398,8 @@ pub unsafe extern "stdcall" fn FONTOBJ_pvTrueTypeFontFile(
     );
     core::ptr::null_mut()
 }
-
-#[cfg(not(target_arch = "x86"))]
 #[no_mangle]
-pub unsafe extern "C" fn FONTOBJ_pvTrueTypeFontFile(
-    pfo: *mut FONTOBJ,
-    pcjFile: *mut ULONG,
-) -> PVOID {
-    DbgPrint(
-        b"(%s:%i) WIN32K: %s UNIMPLEMENTED\n\0".as_ptr() as PCHAR,
-        file!().as_ptr() as PCHAR,
-        line!() as i32,
-        b"FONTOBJ_pvTrueTypeFontFile\0".as_ptr() as PCHAR,
-    );
-    core::ptr::null_mut()
-}
-#[cfg(target_arch = "x86")]
-#[no_mangle]
-pub unsafe extern "stdcall" fn FONTOBJ_vGetInfo(
+pub unsafe extern "system" fn FONTOBJ_vGetInfo(
     FontObj: *mut FONTOBJ,
     InfoSize: u32,
     FontInfo: PFONTINFO,
@@ -794,24 +411,8 @@ pub unsafe extern "stdcall" fn FONTOBJ_vGetInfo(
         b"FONTOBJ_vGetInfo\0".as_ptr() as *const i8,
     );
 }
-
-#[cfg(not(target_arch = "x86"))]
 #[no_mangle]
-pub unsafe extern "C" fn FONTOBJ_vGetInfo(
-    FontObj: *mut FONTOBJ,
-    InfoSize: u32,
-    FontInfo: PFONTINFO,
-) {
-    DbgPrint(
-        b"(%s:%i) WIN32K: %s UNIMPLEMENTED\n\0".as_ptr() as *const i8,
-        b"stubs.c\0".as_ptr() as *const i8,
-        line!() as i32,
-        b"FONTOBJ_vGetInfo\0".as_ptr() as *const i8,
-    );
-}
-#[cfg(target_arch = "x86")]
-#[no_mangle]
-pub unsafe extern "stdcall" fn HT_ComputeRGBGammaTable(
+pub unsafe extern "system" fn HT_ComputeRGBGammaTable(
     GammaTableEntries: USHORT,
     GammaTableType: USHORT,
     RedGamma: USHORT,
@@ -827,28 +428,8 @@ pub unsafe extern "stdcall" fn HT_ComputeRGBGammaTable(
     );
     0
 }
-
-#[cfg(not(target_arch = "x86"))]
 #[no_mangle]
-pub unsafe extern "C" fn HT_ComputeRGBGammaTable(
-    GammaTableEntries: USHORT,
-    GammaTableType: USHORT,
-    RedGamma: USHORT,
-    GreenGamma: USHORT,
-    BlueGamma: USHORT,
-    pGammaTable: LPBYTE,
-) -> LONG {
-    DbgPrint(
-        b"(%s:%i) WIN32K: %s UNIMPLEMENTED\n\0".as_ptr() as PCHAR,
-        b"stubs.c\0".as_ptr() as PCHAR,
-        0 as INT,
-        b"HT_ComputeRGBGammaTable\0".as_ptr() as PCHAR,
-    );
-    0
-}
-#[cfg(target_arch = "x86")]
-#[no_mangle]
-pub unsafe extern "stdcall" fn HT_Get8BPPFormatPalette(
+pub unsafe extern "system" fn HT_Get8BPPFormatPalette(
     pPaletteEntry: LPPALETTEENTRY,
     RedGamma: u16,
     GreenGamma: u16,
@@ -862,26 +443,8 @@ pub unsafe extern "stdcall" fn HT_Get8BPPFormatPalette(
     );
     0
 }
-
-#[cfg(not(target_arch = "x86"))]
 #[no_mangle]
-pub unsafe extern "C" fn HT_Get8BPPFormatPalette(
-    pPaletteEntry: LPPALETTEENTRY,
-    RedGamma: u16,
-    GreenGamma: u16,
-    BlueGamma: u16,
-) -> i32 {
-    DbgPrint(
-        b"(%s:%i) WIN32K: %s UNIMPLEMENTED\n\0".as_ptr() as *const i8,
-        b"stubs.c\0".as_ptr() as *const i8,
-        line!() as i32,
-        b"HT_Get8BPPFormatPalette\0".as_ptr() as *const i8,
-    );
-    0
-}
-#[cfg(target_arch = "x86")]
-#[no_mangle]
-pub unsafe extern "stdcall" fn EngDitherColor(
+pub unsafe extern "system" fn EngDitherColor(
     hdev: HDEV,
     iMode: ULONG,
     rgb: ULONG,
@@ -890,21 +453,8 @@ pub unsafe extern "stdcall" fn EngDitherColor(
     *pul = 0;
     return DCR_SOLID;
 }
-
-#[cfg(not(target_arch = "x86"))]
 #[no_mangle]
-pub unsafe extern "C" fn EngDitherColor(
-    hdev: HDEV,
-    iMode: ULONG,
-    rgb: ULONG,
-    pul: *mut ULONG,
-) -> ULONG {
-    *pul = 0;
-    return DCR_SOLID;
-}
-#[cfg(target_arch = "x86")]
-#[no_mangle]
-pub unsafe extern "stdcall" fn BRUSHOBJ_hGetColorTransform(
+pub unsafe extern "system" fn BRUSHOBJ_hGetColorTransform(
     Brush: *mut BRUSHOBJ
 ) -> HANDLE {
     DbgPrint(
@@ -915,40 +465,15 @@ pub unsafe extern "stdcall" fn BRUSHOBJ_hGetColorTransform(
     );
     core::ptr::null_mut()
 }
-
-#[cfg(not(target_arch = "x86"))]
 #[no_mangle]
-pub unsafe extern "C" fn BRUSHOBJ_hGetColorTransform(
-    Brush: *mut BRUSHOBJ
-) -> HANDLE {
-    DbgPrint(
-        b"(%s:%i) WIN32K: %s UNIMPLEMENTED\n\0".as_ptr() as PCHAR,
-        file!().as_ptr() as PCHAR,
-        line!() as i32,
-        b"BRUSHOBJ_hGetColorTransform\0".as_ptr() as PCHAR
-    );
-    core::ptr::null_mut()
-}
-#[cfg(target_arch = "x86")]
-#[no_mangle]
-pub unsafe extern "stdcall" fn EngDeleteFile(
+pub unsafe extern "system" fn EngDeleteFile(
     FileName: LPWSTR
 ) -> i32 {
     DbgPrint(b"(%s:%i) WIN32K: %s UNIMPLEMENTED\n\0".as_ptr() as *const i8, file!().as_ptr(), line!(), b"EngDeleteFile\0".as_ptr());
     0
 }
-
-#[cfg(not(target_arch = "x86"))]
 #[no_mangle]
-pub unsafe extern "C" fn EngDeleteFile(
-    FileName: LPWSTR
-) -> i32 {
-    DbgPrint(b"(%s:%i) WIN32K: %s UNIMPLEMENTED\n\0".as_ptr() as *const i8, file!().as_ptr(), line!(), b"EngDeleteFile\0".as_ptr());
-    0
-}
-#[cfg(target_arch = "x86")]
-#[no_mangle]
-pub unsafe extern "stdcall" fn EngGetPrinterDriver(
+pub unsafe extern "system" fn EngGetPrinterDriver(
     Printer: HANDLE,
     Environment: LPWSTR,
     Level: DWORD,
@@ -959,23 +484,8 @@ pub unsafe extern "stdcall" fn EngGetPrinterDriver(
     EngSetLastError(ERROR_NOT_SUPPORTED);
     0
 }
-
-#[cfg(not(target_arch = "x86"))]
 #[no_mangle]
-pub unsafe extern "C" fn EngGetPrinterDriver(
-    Printer: HANDLE,
-    Environment: LPWSTR,
-    Level: DWORD,
-    DrvInfo: *mut BYTE,
-    Buf: DWORD,
-    Needed: *mut DWORD,
-) -> BOOL {
-    EngSetLastError(ERROR_NOT_SUPPORTED);
-    0
-}
-#[cfg(target_arch = "x86")]
-#[no_mangle]
-pub unsafe extern "stdcall" fn EngHangNotification(
+pub unsafe extern "system" fn EngHangNotification(
     Dev: HDEV,
     Reserved: PVOID,
 ) -> ULONG {
@@ -987,43 +497,16 @@ pub unsafe extern "stdcall" fn EngHangNotification(
     );
     EHN_ERROR
 }
-
-#[cfg(not(target_arch = "x86"))]
 #[no_mangle]
-pub unsafe extern "C" fn EngHangNotification(
-    Dev: HDEV,
-    Reserved: PVOID,
-) -> ULONG {
-    DbgPrint(
-        b"(%s:%i) WIN32K: %s UNIMPLEMENTED\n\0".as_ptr() as PCHAR,
-        b"stubs.c\0".as_ptr() as PCHAR,
-        line!() as i32,
-        b"EngHangNotification\0".as_ptr() as PCHAR,
-    );
-    EHN_ERROR
-}
-#[cfg(target_arch = "x86")]
-#[no_mangle]
-pub unsafe extern "stdcall" fn EngLpkInstalled() -> BOOL {
+pub unsafe extern "system" fn EngLpkInstalled() -> BOOL {
     DbgPrint(b"(%s:%i) WIN32K: %s UNIMPLEMENTED\n\0".as_ptr() as PCHAR, 
              file!().as_ptr() as PCHAR, 
              line!() as i32, 
              b"EngLpkInstalled\0".as_ptr() as PCHAR);
     0
 }
-
-#[cfg(not(target_arch = "x86"))]
 #[no_mangle]
-pub unsafe extern "C" fn EngLpkInstalled() -> BOOL {
-    DbgPrint(b"(%s:%i) WIN32K: %s UNIMPLEMENTED\n\0".as_ptr() as PCHAR, 
-             file!().as_ptr() as PCHAR, 
-             line!() as i32, 
-             b"EngLpkInstalled\0".as_ptr() as PCHAR);
-    0
-}
-#[cfg(target_arch = "x86")]
-#[no_mangle]
-pub unsafe extern "stdcall" fn EngPlgBlt(
+pub unsafe extern "system" fn EngPlgBlt(
     Dest: *mut SURFOBJ,
     Source: *mut SURFOBJ,
     Mask: *mut SURFOBJ,
@@ -1044,48 +527,14 @@ pub unsafe extern "stdcall" fn EngPlgBlt(
     );
     0
 }
-
-#[cfg(not(target_arch = "x86"))]
 #[no_mangle]
-pub unsafe extern "C" fn EngPlgBlt(
-    Dest: *mut SURFOBJ,
-    Source: *mut SURFOBJ,
-    Mask: *mut SURFOBJ,
-    Clip: *mut CLIPOBJ,
-    Xlate: *mut XLATEOBJ,
-    ColorAdjustment: *mut COLORADJUSTMENT,
-    BrusOrigin: *mut POINTL,
-    DestPoints: *mut POINTFIX,
-    SourceRect: *mut RECTL,
-    MaskPoint: *mut POINTL,
-    Mode: u32,
-) -> i32 {
-    DbgPrint(
-        b"(%s:%i) WIN32K: %s UNIMPLEMENTED\n\0".as_ptr() as *const i8,
-        b"stubs.c\0".as_ptr() as *const i8,
-        line!() as i32,
-        b"EngPlgBlt\0".as_ptr() as *const i8,
-    );
-    0
-}
-#[cfg(target_arch = "x86")]
-#[no_mangle]
-pub unsafe extern "stdcall" fn EngQueryFileTimeStamp(FileName: LPWSTR) -> LARGE_INTEGER {
+pub unsafe extern "system" fn EngQueryFileTimeStamp(FileName: LPWSTR) -> LARGE_INTEGER {
     let mut FileTime: LARGE_INTEGER = core::mem::zeroed();
     FileTime.QuadPart = 0;
     return FileTime;
 }
-
-#[cfg(not(target_arch = "x86"))]
 #[no_mangle]
-pub unsafe extern "C" fn EngQueryFileTimeStamp(FileName: LPWSTR) -> LARGE_INTEGER {
-    let mut FileTime: LARGE_INTEGER = core::mem::zeroed();
-    FileTime.QuadPart = 0;
-    return FileTime;
-}
-#[cfg(target_arch = "x86")]
-#[no_mangle]
-pub unsafe extern "stdcall" fn FONTOBJ_pjOpenTypeTablePointer(
+pub unsafe extern "system" fn FONTOBJ_pjOpenTypeTablePointer(
     pfo: *mut FONTOBJ,
     ulTag: u32,
     pcjTable: *mut u32,
@@ -1098,25 +547,8 @@ pub unsafe extern "stdcall" fn FONTOBJ_pjOpenTypeTablePointer(
     );
     core::ptr::null_mut()
 }
-
-#[cfg(not(target_arch = "x86"))]
 #[no_mangle]
-pub unsafe extern "C" fn FONTOBJ_pjOpenTypeTablePointer(
-    pfo: *mut FONTOBJ,
-    ulTag: u32,
-    pcjTable: *mut u32,
-) -> *mut u8 {
-    DbgPrint(
-        b"(%s:%i) WIN32K: %s UNIMPLEMENTED\n\0".as_ptr() as PCHAR,
-        b"stubs.c\0".as_ptr() as PCHAR,
-        line!() as i32,
-        b"FONTOBJ_pjOpenTypeTablePointer\0".as_ptr() as PCHAR,
-    );
-    core::ptr::null_mut()
-}
-#[cfg(target_arch = "x86")]
-#[no_mangle]
-pub unsafe extern "stdcall" fn FONTOBJ_pQueryGlyphAttrs(
+pub unsafe extern "system" fn FONTOBJ_pQueryGlyphAttrs(
     FontObj: *mut FONTOBJ,
     Mode: u32,
 ) -> PFD_GLYPHATTR {
@@ -1128,24 +560,8 @@ pub unsafe extern "stdcall" fn FONTOBJ_pQueryGlyphAttrs(
     );
     core::ptr::null_mut()
 }
-
-#[cfg(not(target_arch = "x86"))]
 #[no_mangle]
-pub unsafe extern "C" fn FONTOBJ_pQueryGlyphAttrs(
-    FontObj: *mut FONTOBJ,
-    Mode: u32,
-) -> PFD_GLYPHATTR {
-    DbgPrint(
-        b"(%s:%i) WIN32K: %s UNIMPLEMENTED\n\0".as_ptr() as PCHAR,
-        file!().as_ptr() as PCHAR,
-        line!() as i32,
-        b"FONTOBJ_pQueryGlyphAttrs\0".as_ptr() as PCHAR,
-    );
-    core::ptr::null_mut()
-}
-#[cfg(target_arch = "x86")]
-#[no_mangle]
-pub unsafe extern "stdcall" fn FONTOBJ_pwszFontFilePaths(
+pub unsafe extern "system" fn FONTOBJ_pwszFontFilePaths(
     FontObj: *mut FONTOBJ,
     PathLength: *mut u32,
 ) -> LPWSTR {
@@ -1157,24 +573,8 @@ pub unsafe extern "stdcall" fn FONTOBJ_pwszFontFilePaths(
     );
     core::ptr::null_mut()
 }
-
-#[cfg(not(target_arch = "x86"))]
 #[no_mangle]
-pub unsafe extern "C" fn FONTOBJ_pwszFontFilePaths(
-    FontObj: *mut FONTOBJ,
-    PathLength: *mut u32,
-) -> LPWSTR {
-    DbgPrint(
-        b"(%s:%i) WIN32K: %s UNIMPLEMENTED\n\0".as_ptr() as *const i8,
-        b"stubs.c\0".as_ptr() as *const i8,
-        line!() as i32,
-        b"FONTOBJ_pwszFontFilePaths\0".as_ptr() as *const i8,
-    );
-    core::ptr::null_mut()
-}
-#[cfg(target_arch = "x86")]
-#[no_mangle]
-pub unsafe extern "stdcall" fn HT_Get8BPPMaskPalette(
+pub unsafe extern "system" fn HT_Get8BPPMaskPalette(
     PaletteEntry: LPPALETTEENTRY,
     Use8BPPMaskPal: i32,
     CMYMask: u8,
@@ -1190,28 +590,8 @@ pub unsafe extern "stdcall" fn HT_Get8BPPMaskPalette(
     );
     0
 }
-
-#[cfg(not(target_arch = "x86"))]
 #[no_mangle]
-pub unsafe extern "C" fn HT_Get8BPPMaskPalette(
-    PaletteEntry: LPPALETTEENTRY,
-    Use8BPPMaskPal: i32,
-    CMYMask: u8,
-    RedGamma: u16,
-    GreenGamma: u16,
-    BlueGamma: u16,
-) -> i32 {
-    DbgPrint(
-        b"(%s:%i) WIN32K: %s UNIMPLEMENTED\n\0".as_ptr() as *const i8,
-        b"stubs.c\0".as_ptr() as *const i8,
-        line!() as i32,
-        b"HT_Get8BPPMaskPalette\0".as_ptr() as *const i8,
-    );
-    0
-}
-#[cfg(target_arch = "x86")]
-#[no_mangle]
-pub unsafe extern "stdcall" fn NtGdiAnyLinkedFonts() -> BOOL {
+pub unsafe extern "system" fn NtGdiAnyLinkedFonts() -> BOOL {
     DbgPrint(
         b"(%s:%i) WIN32K: %s UNIMPLEMENTED\n\0".as_ptr() as PCHAR,
         file!().as_ptr() as PCHAR,
@@ -1220,40 +600,16 @@ pub unsafe extern "stdcall" fn NtGdiAnyLinkedFonts() -> BOOL {
     );
     0
 }
-
-#[cfg(not(target_arch = "x86"))]
 #[no_mangle]
-pub unsafe extern "C" fn NtGdiAnyLinkedFonts() -> BOOL {
-    DbgPrint(
-        b"(%s:%i) WIN32K: %s UNIMPLEMENTED\n\0".as_ptr() as PCHAR,
-        file!().as_ptr() as PCHAR,
-        line!() as i32,
-        b"NtGdiAnyLinkedFonts\0".as_ptr() as PCHAR,
-    );
-    0
-}
-#[cfg(target_arch = "x86")]
-#[no_mangle]
-pub unsafe extern "stdcall" fn NtGdiEnableEudc(enable: BOOL) -> BOOL {
+pub unsafe extern "system" fn NtGdiEnableEudc(enable: BOOL) -> BOOL {
     DbgPrint(b"(%s:%i) WIN32K: %s UNIMPLEMENTED\n\0".as_ptr() as PCHAR, 
              file!().as_ptr() as PCHAR, 
              line!() as i32, 
              b"NtGdiEnableEudc\0".as_ptr() as PCHAR);
     0
 }
-
-#[cfg(not(target_arch = "x86"))]
 #[no_mangle]
-pub unsafe extern "C" fn NtGdiEnableEudc(enable: BOOL) -> BOOL {
-    DbgPrint(b"(%s:%i) WIN32K: %s UNIMPLEMENTED\n\0".as_ptr() as PCHAR, 
-             file!().as_ptr() as PCHAR, 
-             line!() as i32, 
-             b"NtGdiEnableEudc\0".as_ptr() as PCHAR);
-    0
-}
-#[cfg(target_arch = "x86")]
-#[no_mangle]
-pub unsafe extern "stdcall" fn NtGdiAddRemoteFontToDC(
+pub unsafe extern "system" fn NtGdiAddRemoteFontToDC(
     hdc: HDC,
     pvBuffer: PVOID,
     cjBuffer: ULONG,
@@ -1267,26 +623,8 @@ pub unsafe extern "stdcall" fn NtGdiAddRemoteFontToDC(
     );
     0
 }
-
-#[cfg(not(target_arch = "x86"))]
 #[no_mangle]
-pub unsafe extern "C" fn NtGdiAddRemoteFontToDC(
-    hdc: HDC,
-    pvBuffer: PVOID,
-    cjBuffer: ULONG,
-    pufi: PUNIVERSAL_FONT_ID,
-) -> BOOL {
-    DbgPrint(
-        b"(%s:%i) WIN32K: %s UNIMPLEMENTED\n\0".as_ptr() as PCHAR,
-        b"stubs.c\0".as_ptr() as PCHAR,
-        line!() as i32,
-        b"NtGdiAddRemoteFontToDC\0".as_ptr() as PCHAR,
-    );
-    0
-}
-#[cfg(target_arch = "x86")]
-#[no_mangle]
-pub unsafe extern "stdcall" fn NtGdiRemoveMergeFont(
+pub unsafe extern "system" fn NtGdiRemoveMergeFont(
     hdc: HDC,
     pufi: *mut UNIVERSAL_FONT_ID,
 ) -> i32 {
@@ -1298,24 +636,8 @@ pub unsafe extern "stdcall" fn NtGdiRemoveMergeFont(
     );
     0
 }
-
-#[cfg(not(target_arch = "x86"))]
 #[no_mangle]
-pub unsafe extern "C" fn NtGdiRemoveMergeFont(
-    hdc: HDC,
-    pufi: *mut UNIVERSAL_FONT_ID,
-) -> i32 {
-    DbgPrint(
-        b"(%s:%i) WIN32K: %s UNIMPLEMENTED\n\0".as_ptr() as PCHAR,
-        file!().as_ptr() as PCHAR,
-        line!() as i32,
-        b"NtGdiRemoveMergeFont\0".as_ptr() as PCHAR,
-    );
-    0
-}
-#[cfg(target_arch = "x86")]
-#[no_mangle]
-pub unsafe extern "stdcall" fn NtGdiAddRemoteMMInstanceToDC(
+pub unsafe extern "system" fn NtGdiAddRemoteMMInstanceToDC(
     hdc: HDC,
     pddv: *mut DOWNLOADDESIGNVECTOR,
     cjDDV: u32,
@@ -1328,25 +650,8 @@ pub unsafe extern "stdcall" fn NtGdiAddRemoteMMInstanceToDC(
     );
     0
 }
-
-#[cfg(not(target_arch = "x86"))]
 #[no_mangle]
-pub unsafe extern "C" fn NtGdiAddRemoteMMInstanceToDC(
-    hdc: HDC,
-    pddv: *mut DOWNLOADDESIGNVECTOR,
-    cjDDV: u32,
-) -> i32 {
-    DbgPrint(
-        b"(%s:%i) WIN32K: %s UNIMPLEMENTED\n\0".as_ptr() as *const i8,
-        b"stubs.c\0".as_ptr() as *const i8,
-        line!() as i32,
-        b"NtGdiAddRemoteMMInstanceToDC\0".as_ptr() as *const i8,
-    );
-    0
-}
-#[cfg(target_arch = "x86")]
-#[no_mangle]
-pub unsafe extern "stdcall" fn NtGdiFontIsLinked(hdc: HDC) -> BOOL {
+pub unsafe extern "system" fn NtGdiFontIsLinked(hdc: HDC) -> BOOL {
     DbgPrint(
         b"(%s:%i) WIN32K: %s UNIMPLEMENTED\n\0".as_ptr() as PCHAR,
         file!().as_ptr() as PCHAR,
@@ -1355,21 +660,8 @@ pub unsafe extern "stdcall" fn NtGdiFontIsLinked(hdc: HDC) -> BOOL {
     );
     0
 }
-
-#[cfg(not(target_arch = "x86"))]
 #[no_mangle]
-pub unsafe extern "C" fn NtGdiFontIsLinked(hdc: HDC) -> BOOL {
-    DbgPrint(
-        b"(%s:%i) WIN32K: %s UNIMPLEMENTED\n\0".as_ptr() as PCHAR,
-        file!().as_ptr() as PCHAR,
-        line!() as i32,
-        b"NtGdiFontIsLinked\0".as_ptr() as PCHAR,
-    );
-    0
-}
-#[cfg(target_arch = "x86")]
-#[no_mangle]
-pub unsafe extern "stdcall" fn NtGdiCheckBitmapBits(
+pub unsafe extern "system" fn NtGdiCheckBitmapBits(
     hdc: HDC,
     hColorTransform: HANDLE,
     pvBits: PVOID,
@@ -1387,30 +679,8 @@ pub unsafe extern "stdcall" fn NtGdiCheckBitmapBits(
     );
     0
 }
-
-#[cfg(not(target_arch = "x86"))]
 #[no_mangle]
-pub unsafe extern "C" fn NtGdiCheckBitmapBits(
-    hdc: HDC,
-    hColorTransform: HANDLE,
-    pvBits: PVOID,
-    bmFormat: ULONG,
-    dwWidth: DWORD,
-    dwHeight: DWORD,
-    dwStride: DWORD,
-    paResults: PBYTE,
-) -> BOOL {
-    DbgPrint(
-        b"(%s:%i) WIN32K: %s UNIMPLEMENTED\n\0".as_ptr() as PCHAR,
-        b"stubs.c\0".as_ptr() as PCHAR,
-        line!() as i32,
-        b"NtGdiCheckBitmapBits\0".as_ptr() as PCHAR,
-    );
-    0
-}
-#[cfg(target_arch = "x86")]
-#[no_mangle]
-pub unsafe extern "stdcall" fn NtGdiClearBitmapAttributes(
+pub unsafe extern "system" fn NtGdiClearBitmapAttributes(
     hbm: HBITMAP,
     dwFlags: u32,
 ) -> HBITMAP {
@@ -1422,24 +692,8 @@ pub unsafe extern "stdcall" fn NtGdiClearBitmapAttributes(
     }
     core::ptr::null_mut()
 }
-
-#[cfg(not(target_arch = "x86"))]
 #[no_mangle]
-pub unsafe extern "C" fn NtGdiClearBitmapAttributes(
-    hbm: HBITMAP,
-    dwFlags: u32,
-) -> HBITMAP {
-    let mut hbm_mut = hbm;
-    if dwFlags & SC_BB_STOCKOBJ != 0 {
-        if GDIOBJ_ConvertFromStockObj(&mut hbm_mut as *mut HBITMAP as *mut HGDIOBJ) != 0 {
-            return hbm_mut;
-        }
-    }
-    core::ptr::null_mut()
-}
-#[cfg(target_arch = "x86")]
-#[no_mangle]
-pub unsafe extern "stdcall" fn NtGdiGetUFI(
+pub unsafe extern "system" fn NtGdiGetUFI(
     hdc: HDC,
     pufi: PUNIVERSAL_FONT_ID,
     pdv: *mut DESIGNVECTOR,
@@ -1455,28 +709,8 @@ pub unsafe extern "stdcall" fn NtGdiGetUFI(
     );
     0u8
 }
-
-#[cfg(not(target_arch = "x86"))]
 #[no_mangle]
-pub unsafe extern "C" fn NtGdiGetUFI(
-    hdc: HDC,
-    pufi: PUNIVERSAL_FONT_ID,
-    pdv: *mut DESIGNVECTOR,
-    pcjDV: *mut ULONG,
-    pulBaseCheckSum: *mut ULONG,
-    pfl: *mut FLONG,
-) -> BOOLEAN {
-    DbgPrint(
-        b"(%s:%i) WIN32K: %s UNIMPLEMENTED\n\0".as_ptr() as PCHAR,
-        b"stubs.c\0".as_ptr() as PCHAR,
-        line!() as i32,
-        b"NtGdiGetUFI\0".as_ptr() as PCHAR,
-    );
-    0u8
-}
-#[cfg(target_arch = "x86")]
-#[no_mangle]
-pub unsafe extern "stdcall" fn NtGdiColorCorrectPalette(
+pub unsafe extern "system" fn NtGdiColorCorrectPalette(
     hdc: HDC,
     hpal: HPALETTE,
     FirstEntry: u32,
@@ -1492,28 +726,8 @@ pub unsafe extern "stdcall" fn NtGdiColorCorrectPalette(
     );
     0
 }
-
-#[cfg(not(target_arch = "x86"))]
 #[no_mangle]
-pub unsafe extern "C" fn NtGdiColorCorrectPalette(
-    hdc: HDC,
-    hpal: HPALETTE,
-    FirstEntry: u32,
-    NumberOfEntries: u32,
-    ppalEntry: *mut PALETTEENTRY,
-    Command: u32,
-) -> u32 {
-    DbgPrint(
-        b"(%s:%i) WIN32K: %s UNIMPLEMENTED\n\0".as_ptr() as *const i8,
-        file!().as_ptr() as *const i8,
-        line!() as i32,
-        b"NtGdiColorCorrectPalette\0".as_ptr() as *const i8,
-    );
-    0
-}
-#[cfg(target_arch = "x86")]
-#[no_mangle]
-pub unsafe extern "stdcall" fn NtGdiCreateColorTransform(
+pub unsafe extern "system" fn NtGdiCreateColorTransform(
     hdc: HDC,
     pLogColorSpaceW: LPLOGCOLORSPACEW,
     pvSrcProfile: PVOID,
@@ -1531,43 +745,13 @@ pub unsafe extern "stdcall" fn NtGdiCreateColorTransform(
     );
     core::ptr::null_mut()
 }
-
-#[cfg(not(target_arch = "x86"))]
 #[no_mangle]
-pub unsafe extern "C" fn NtGdiCreateColorTransform(
-    hdc: HDC,
-    pLogColorSpaceW: LPLOGCOLORSPACEW,
-    pvSrcProfile: PVOID,
-    cjSrcProfile: ULONG,
-    pvDestProfile: PVOID,
-    cjDestProfile: ULONG,
-    pvTargetProfile: PVOID,
-    cjTargetProfile: ULONG,
-) -> HANDLE {
-    DbgPrint(
-        b"(%s:%i) WIN32K: %s UNIMPLEMENTED\n\0".as_ptr() as PCHAR,
-        b"stubs.c\0".as_ptr() as PCHAR,
-        line!() as i32,
-        b"NtGdiCreateColorTransform\0".as_ptr() as PCHAR,
-    );
-    core::ptr::null_mut()
-}
-#[cfg(target_arch = "x86")]
-#[no_mangle]
-pub unsafe extern "stdcall" fn NtGdiComputeXformCoefficients(hdc: HDC) -> BOOL {
+pub unsafe extern "system" fn NtGdiComputeXformCoefficients(hdc: HDC) -> BOOL {
     DbgPrint(b"(%s:%i) WIN32K: %s UNIMPLEMENTED\n\0".as_ptr() as PCHAR, file!().as_ptr() as PCHAR, line!() as i32, b"NtGdiComputeXformCoefficients\0".as_ptr() as PCHAR);
     0
 }
-
-#[cfg(not(target_arch = "x86"))]
 #[no_mangle]
-pub unsafe extern "C" fn NtGdiComputeXformCoefficients(hdc: HDC) -> BOOL {
-    DbgPrint(b"(%s:%i) WIN32K: %s UNIMPLEMENTED\n\0".as_ptr() as PCHAR, file!().as_ptr() as PCHAR, line!() as i32, b"NtGdiComputeXformCoefficients\0".as_ptr() as PCHAR);
-    0
-}
-#[cfg(target_arch = "x86")]
-#[no_mangle]
-pub unsafe extern "stdcall" fn NtGdiConsoleTextOut(
+pub unsafe extern "system" fn NtGdiConsoleTextOut(
     hdc: HDC,
     lpto: *mut POLYTEXTW,
     nStrings: UINT,
@@ -1581,26 +765,8 @@ pub unsafe extern "stdcall" fn NtGdiConsoleTextOut(
     );
     0i32
 }
-
-#[cfg(not(target_arch = "x86"))]
 #[no_mangle]
-pub unsafe extern "C" fn NtGdiConsoleTextOut(
-    hdc: HDC,
-    lpto: *mut POLYTEXTW,
-    nStrings: UINT,
-    prclBounds: *mut RECTL,
-) -> BOOL {
-    DbgPrint(
-        b"(%s:%i) WIN32K: %s UNIMPLEMENTED\n\0".as_ptr() as PCHAR,
-        file!().as_ptr() as PCHAR,
-        line!() as i32,
-        b"NtGdiConsoleTextOut\0".as_ptr() as PCHAR,
-    );
-    0i32
-}
-#[cfg(target_arch = "x86")]
-#[no_mangle]
-pub unsafe extern "stdcall" fn NtGdiDeleteColorTransform(
+pub unsafe extern "system" fn NtGdiDeleteColorTransform(
     hdc: HDC,
     hColorTransform: HANDLE,
 ) -> BOOL {
@@ -1612,24 +778,8 @@ pub unsafe extern "stdcall" fn NtGdiDeleteColorTransform(
     );
     0
 }
-
-#[cfg(not(target_arch = "x86"))]
 #[no_mangle]
-pub unsafe extern "C" fn NtGdiDeleteColorTransform(
-    hdc: HDC,
-    hColorTransform: HANDLE,
-) -> BOOL {
-    DbgPrint(
-        b"(%s:%i) WIN32K: %s UNIMPLEMENTED\n\0".as_ptr() as PCHAR,
-        file!().as_ptr() as PCHAR,
-        line!() as i32,
-        b"NtGdiDeleteColorTransform\0".as_ptr() as PCHAR,
-    );
-    0
-}
-#[cfg(target_arch = "x86")]
-#[no_mangle]
-pub unsafe extern "stdcall" fn NtGdiGetPerBandInfo(
+pub unsafe extern "system" fn NtGdiGetPerBandInfo(
     hdc: HDC,
     ppbi: *mut PERBANDINFO,
 ) -> ULONG {
@@ -1641,24 +791,8 @@ pub unsafe extern "stdcall" fn NtGdiGetPerBandInfo(
     );
     0
 }
-
-#[cfg(not(target_arch = "x86"))]
 #[no_mangle]
-pub unsafe extern "C" fn NtGdiGetPerBandInfo(
-    hdc: HDC,
-    ppbi: *mut PERBANDINFO,
-) -> ULONG {
-    DbgPrint(
-        b"(%s:%i) WIN32K: %s UNIMPLEMENTED\n\0".as_ptr() as PCHAR,
-        file!().as_ptr() as PCHAR,
-        line!() as i32,
-        b"NtGdiGetPerBandInfo\0".as_ptr() as PCHAR,
-    );
-    0
-}
-#[cfg(target_arch = "x86")]
-#[no_mangle]
-pub unsafe extern "stdcall" fn NtGdiDoBanding(
+pub unsafe extern "system" fn NtGdiDoBanding(
     hdc: HDC,
     bStart: BOOL,
     pptl: *mut POINTL,
@@ -1672,26 +806,8 @@ pub unsafe extern "stdcall" fn NtGdiDoBanding(
     );
     0
 }
-
-#[cfg(not(target_arch = "x86"))]
 #[no_mangle]
-pub unsafe extern "C" fn NtGdiDoBanding(
-    hdc: HDC,
-    bStart: BOOL,
-    pptl: *mut POINTL,
-    pSize: PSIZE,
-) -> BOOL {
-    DbgPrint(
-        b"(%s:%i) WIN32K: %s UNIMPLEMENTED\n\0".as_ptr() as PCHAR,
-        b"stubs.c\0".as_ptr() as PCHAR,
-        line!() as i32,
-        b"NtGdiDoBanding\0".as_ptr() as PCHAR,
-    );
-    0
-}
-#[cfg(target_arch = "x86")]
-#[no_mangle]
-pub unsafe extern "stdcall" fn NtGdiEnumFontChunk(
+pub unsafe extern "system" fn NtGdiEnumFontChunk(
     hdc: HDC,
     idEnum: ULONG_PTR,
     cjEfdw: ULONG,
@@ -1706,27 +822,8 @@ pub unsafe extern "stdcall" fn NtGdiEnumFontChunk(
     );
     0
 }
-
-#[cfg(not(target_arch = "x86"))]
 #[no_mangle]
-pub unsafe extern "C" fn NtGdiEnumFontChunk(
-    hdc: HDC,
-    idEnum: ULONG_PTR,
-    cjEfdw: ULONG,
-    pcjEfdw: *mut ULONG,
-    pefdw: PENUMFONTDATAW,
-) -> BOOL {
-    DbgPrint(
-        b"(%s:%i) WIN32K: %s UNIMPLEMENTED\n\0".as_ptr() as PCHAR,
-        b"stubs.c\0".as_ptr() as PCHAR,
-        line!() as i32,
-        b"NtGdiEnumFontChunk\0".as_ptr() as PCHAR,
-    );
-    0
-}
-#[cfg(target_arch = "x86")]
-#[no_mangle]
-pub unsafe extern "stdcall" fn NtGdiEnumFontClose(
+pub unsafe extern "system" fn NtGdiEnumFontClose(
     idEnum: ULONG_PTR,
 ) -> BOOL {
     DbgPrint(
@@ -1737,23 +834,8 @@ pub unsafe extern "stdcall" fn NtGdiEnumFontClose(
     );
     0
 }
-
-#[cfg(not(target_arch = "x86"))]
 #[no_mangle]
-pub unsafe extern "C" fn NtGdiEnumFontClose(
-    idEnum: ULONG_PTR,
-) -> BOOL {
-    DbgPrint(
-        b"(%s:%i) WIN32K: %s UNIMPLEMENTED\n\0".as_ptr() as PCHAR,
-        file!().as_ptr() as PCHAR,
-        line!() as i32,
-        b"NtGdiEnumFontClose\0".as_ptr() as PCHAR,
-    );
-    0
-}
-#[cfg(target_arch = "x86")]
-#[no_mangle]
-pub unsafe extern "stdcall" fn NtGdiEnumFontOpen(
+pub unsafe extern "system" fn NtGdiEnumFontOpen(
     hdc: HDC,
     iEnumType: u32,
     flWin31Compat: FLONG,
@@ -1770,29 +852,8 @@ pub unsafe extern "stdcall" fn NtGdiEnumFontOpen(
     );
     0
 }
-
-#[cfg(not(target_arch = "x86"))]
 #[no_mangle]
-pub unsafe extern "C" fn NtGdiEnumFontOpen(
-    hdc: HDC,
-    iEnumType: u32,
-    flWin31Compat: FLONG,
-    cwchMax: u32,
-    pwszFaceName: LPWSTR,
-    lfCharSet: u32,
-    pulCount: *mut u32,
-) -> usize {
-    DbgPrint(
-        b"(%s:%i) WIN32K: %s UNIMPLEMENTED\n\0".as_ptr() as PCHAR,
-        b"stubs.c\0".as_ptr() as PCHAR,
-        line!() as i32,
-        b"NtGdiEnumFontOpen\0".as_ptr() as PCHAR,
-    );
-    0
-}
-#[cfg(target_arch = "x86")]
-#[no_mangle]
-pub unsafe extern "stdcall" fn NtGdiEudcLoadUnloadLink(
+pub unsafe extern "system" fn NtGdiEudcLoadUnloadLink(
     pBaseFaceName: LPCWSTR,
     cwcBaseFaceName: u32,
     pEudcFontPath: LPCWSTR,
@@ -1809,29 +870,8 @@ pub unsafe extern "stdcall" fn NtGdiEudcLoadUnloadLink(
     );
     0
 }
-
-#[cfg(not(target_arch = "x86"))]
 #[no_mangle]
-pub unsafe extern "C" fn NtGdiEudcLoadUnloadLink(
-    pBaseFaceName: LPCWSTR,
-    cwcBaseFaceName: u32,
-    pEudcFontPath: LPCWSTR,
-    cwcEudcFontPath: u32,
-    iPriority: i32,
-    iFontLinkType: i32,
-    bLoadLin: i32,
-) -> i32 {
-    DbgPrint(
-        b"(%s:%i) WIN32K: %s UNIMPLEMENTED\n\0".as_ptr() as *const i8,
-        b"stubs.c\0".as_ptr() as *const i8,
-        line!() as i32,
-        b"NtGdiEudcLoadUnloadLink\0".as_ptr() as *const i8,
-    );
-    0
-}
-#[cfg(target_arch = "x86")]
-#[no_mangle]
-pub unsafe extern "stdcall" fn NtGdiForceUFIMapping(
+pub unsafe extern "system" fn NtGdiForceUFIMapping(
     hdc: HDC,
     pufi: PUNIVERSAL_FONT_ID,
 ) -> BOOL {
@@ -1843,24 +883,8 @@ pub unsafe extern "stdcall" fn NtGdiForceUFIMapping(
     );
     0
 }
-
-#[cfg(not(target_arch = "x86"))]
 #[no_mangle]
-pub unsafe extern "C" fn NtGdiForceUFIMapping(
-    hdc: HDC,
-    pufi: PUNIVERSAL_FONT_ID,
-) -> BOOL {
-    DbgPrint(
-        b"(%s:%i) WIN32K: %s UNIMPLEMENTED\n\0".as_ptr() as PCHAR,
-        file!().as_ptr() as PCHAR,
-        line!() as i32,
-        b"NtGdiForceUFIMapping\0".as_ptr() as PCHAR,
-    );
-    0
-}
-#[cfg(target_arch = "x86")]
-#[no_mangle]
-pub unsafe extern "stdcall" fn NtGdiFullscreenControl(
+pub unsafe extern "system" fn NtGdiFullscreenControl(
     FullscreenCommand: FULLSCREENCONTROL,
     FullscreenInput: PVOID,
     FullscreenInputLength: DWORD,
@@ -1875,27 +899,8 @@ pub unsafe extern "stdcall" fn NtGdiFullscreenControl(
     );
     0u8 as NTSTATUS
 }
-
-#[cfg(not(target_arch = "x86"))]
 #[no_mangle]
-pub unsafe extern "C" fn NtGdiFullscreenControl(
-    FullscreenCommand: FULLSCREENCONTROL,
-    FullscreenInput: PVOID,
-    FullscreenInputLength: DWORD,
-    FullscreenOutput: PVOID,
-    FullscreenOutputLength: PULONG,
-) -> NTSTATUS {
-    DbgPrint(
-        b"(%s:%i) WIN32K: %s UNIMPLEMENTED\n\0".as_ptr() as PCHAR,
-        b"stubs.c\0".as_ptr() as PCHAR,
-        0i32,
-        b"NtGdiFullscreenControl\0".as_ptr() as PCHAR,
-    );
-    0u8 as NTSTATUS
-}
-#[cfg(target_arch = "x86")]
-#[no_mangle]
-pub unsafe extern "stdcall" fn NtGdiGetCharWidthInfo(
+pub unsafe extern "system" fn NtGdiGetCharWidthInfo(
     hdc: HDC,
     pChWidthInfo: PCHWIDTHINFO,
 ) -> BOOL {
@@ -1907,60 +912,23 @@ pub unsafe extern "stdcall" fn NtGdiGetCharWidthInfo(
     );
     0
 }
-
-#[cfg(not(target_arch = "x86"))]
 #[no_mangle]
-pub unsafe extern "C" fn NtGdiGetCharWidthInfo(
-    hdc: HDC,
-    pChWidthInfo: PCHWIDTHINFO,
-) -> BOOL {
-    DbgPrint(
-        b"(%s:%i) WIN32K: %s UNIMPLEMENTED\n\0".as_ptr() as PCHAR,
-        b"stubs.c\0".as_ptr() as PCHAR,
-        line!() as i32,
-        b"NtGdiGetCharWidthInfo\0".as_ptr() as PCHAR,
-    );
-    0
-}
-#[cfg(target_arch = "x86")]
-#[no_mangle]
-pub unsafe extern "stdcall" fn NtGdiGetColorSpaceforBitmap(
+pub unsafe extern "system" fn NtGdiGetColorSpaceforBitmap(
     hsurf: HBITMAP
 ) -> ULONG_PTR {
     DbgPrint(b"(%s:%i) WIN32K: %s UNIMPLEMENTED\n\0".as_ptr() as PCHAR, file!().as_ptr() as PCHAR, line!() as i32, b"NtGdiGetColorSpaceforBitmap\0".as_ptr() as PCHAR);
     0
 }
-
-#[cfg(not(target_arch = "x86"))]
 #[no_mangle]
-pub unsafe extern "C" fn NtGdiGetColorSpaceforBitmap(
-    hsurf: HBITMAP
-) -> ULONG_PTR {
-    DbgPrint(b"(%s:%i) WIN32K: %s UNIMPLEMENTED\n\0".as_ptr() as PCHAR, file!().as_ptr() as PCHAR, line!() as i32, b"NtGdiGetColorSpaceforBitmap\0".as_ptr() as PCHAR);
-    0
-}
-#[cfg(target_arch = "x86")]
-#[no_mangle]
-pub unsafe extern "stdcall" fn NtGdiGetETM(
+pub unsafe extern "system" fn NtGdiGetETM(
     hdc: HDC,
     petm: *mut EXTTEXTMETRIC,
 ) -> i32 {
     UNIMPLEMENTED;
     0
 }
-
-#[cfg(not(target_arch = "x86"))]
 #[no_mangle]
-pub unsafe extern "C" fn NtGdiGetETM(
-    hdc: HDC,
-    petm: *mut EXTTEXTMETRIC,
-) -> i32 {
-    UNIMPLEMENTED;
-    0
-}
-#[cfg(target_arch = "x86")]
-#[no_mangle]
-pub unsafe extern "stdcall" fn NtGdiGetEudcTimeStampEx(
+pub unsafe extern "system" fn NtGdiGetEudcTimeStampEx(
     lpBaseFaceName: LPWSTR,
     cwcBaseFaceName: u32,
     bSystemTimeStamp: u8,
@@ -1973,38 +941,13 @@ pub unsafe extern "stdcall" fn NtGdiGetEudcTimeStampEx(
     );
     0
 }
-
-#[cfg(not(target_arch = "x86"))]
 #[no_mangle]
-pub unsafe extern "C" fn NtGdiGetEudcTimeStampEx(
-    lpBaseFaceName: LPWSTR,
-    cwcBaseFaceName: u32,
-    bSystemTimeStamp: u8,
-) -> u32 {
-    DbgPrint(
-        b"(%s:%i) WIN32K: %s UNIMPLEMENTED\n\0".as_ptr() as *const i8,
-        file!().as_ptr() as *const i8,
-        line!() as i32,
-        b"NtGdiGetEudcTimeStampEx\0".as_ptr() as *const i8,
-    );
-    0
-}
-#[cfg(target_arch = "x86")]
-#[no_mangle]
-pub unsafe extern "stdcall" fn NtGdiInitSpool() -> BOOL {
+pub unsafe extern "system" fn NtGdiInitSpool() -> BOOL {
     EngSetLastError(ERROR_NOT_SUPPORTED);
     0
 }
-
-#[cfg(not(target_arch = "x86"))]
 #[no_mangle]
-pub unsafe extern "C" fn NtGdiInitSpool() -> BOOL {
-    EngSetLastError(ERROR_NOT_SUPPORTED);
-    0
-}
-#[cfg(target_arch = "x86")]
-#[no_mangle]
-pub unsafe extern "stdcall" fn NtGdiQueryFonts(
+pub unsafe extern "system" fn NtGdiQueryFonts(
     pufiFontList: PUNIVERSAL_FONT_ID,
     nBufferSize: ULONG,
     pTimeStamp: PLARGE_INTEGER,
@@ -2017,25 +960,8 @@ pub unsafe extern "stdcall" fn NtGdiQueryFonts(
     );
     0
 }
-
-#[cfg(not(target_arch = "x86"))]
 #[no_mangle]
-pub unsafe extern "C" fn NtGdiQueryFonts(
-    pufiFontList: PUNIVERSAL_FONT_ID,
-    nBufferSize: ULONG,
-    pTimeStamp: PLARGE_INTEGER,
-) -> INT {
-    DbgPrint(
-        b"(%s:%i) WIN32K: %s UNIMPLEMENTED\n\0".as_ptr() as PCHAR,
-        file!().as_ptr() as PCHAR,
-        line!() as i32,
-        b"NtGdiQueryFonts\0".as_ptr() as PCHAR,
-    );
-    0
-}
-#[cfg(target_arch = "x86")]
-#[no_mangle]
-pub unsafe extern "stdcall" fn NtGdiGetSpoolMessage(
+pub unsafe extern "system" fn NtGdiGetSpoolMessage(
     u1: DWORD,
     u2: DWORD,
     u3: DWORD,
@@ -2044,21 +970,8 @@ pub unsafe extern "stdcall" fn NtGdiGetSpoolMessage(
     EngSetLastError(ERROR_NOT_SUPPORTED);
     0
 }
-
-#[cfg(not(target_arch = "x86"))]
 #[no_mangle]
-pub unsafe extern "C" fn NtGdiGetSpoolMessage(
-    u1: DWORD,
-    u2: DWORD,
-    u3: DWORD,
-    u4: DWORD,
-) -> INT {
-    EngSetLastError(ERROR_NOT_SUPPORTED);
-    0
-}
-#[cfg(target_arch = "x86")]
-#[no_mangle]
-pub unsafe extern "stdcall" fn NtGdiGetGlyphIndicesWInternal(
+pub unsafe extern "system" fn NtGdiGetGlyphIndicesWInternal(
     hdc: HDC,
     pwc: PCWCH,
     cwc: i32,
@@ -2074,28 +987,8 @@ pub unsafe extern "stdcall" fn NtGdiGetGlyphIndicesWInternal(
     );
     0
 }
-
-#[cfg(not(target_arch = "x86"))]
 #[no_mangle]
-pub unsafe extern "C" fn NtGdiGetGlyphIndicesWInternal(
-    hdc: HDC,
-    pwc: PCWCH,
-    cwc: i32,
-    pgi: PWORD,
-    iMode: u32,
-    bSubset: i32,
-) -> u32 {
-    DbgPrint(
-        b"(%s:%i) WIN32K: %s UNIMPLEMENTED\n\0".as_ptr() as *const i8,
-        b"stubs.c\0".as_ptr() as *const i8,
-        line!() as i32,
-        b"NtGdiGetGlyphIndicesWInternal\0".as_ptr() as *const i8,
-    );
-    0
-}
-#[cfg(target_arch = "x86")]
-#[no_mangle]
-pub unsafe extern "stdcall" fn NtGdiGetLinkedUFIs(
+pub unsafe extern "system" fn NtGdiGetLinkedUFIs(
     hdc: HDC,
     pufiLinkedUFIs: PUNIVERSAL_FONT_ID,
     BufferSize: i32,
@@ -2108,25 +1001,8 @@ pub unsafe extern "stdcall" fn NtGdiGetLinkedUFIs(
     );
     0
 }
-
-#[cfg(not(target_arch = "x86"))]
 #[no_mangle]
-pub unsafe extern "C" fn NtGdiGetLinkedUFIs(
-    hdc: HDC,
-    pufiLinkedUFIs: PUNIVERSAL_FONT_ID,
-    BufferSize: i32,
-) -> i32 {
-    DbgPrint(
-        b"(%s:%i) WIN32K: %s UNIMPLEMENTED\n\0".as_ptr() as *const i8,
-        file!().as_ptr() as *const i8,
-        line!() as i32,
-        b"NtGdiGetLinkedUFIs\0".as_ptr() as *const i8,
-    );
-    0
-}
-#[cfg(target_arch = "x86")]
-#[no_mangle]
-pub unsafe extern "stdcall" fn NtGdiGetMonitorID(
+pub unsafe extern "system" fn NtGdiGetMonitorID(
     hdc: HDC,
     dwSize: u32,
     pszMonitorID: LPWSTR,
@@ -2139,25 +1015,8 @@ pub unsafe extern "stdcall" fn NtGdiGetMonitorID(
     );
     0
 }
-
-#[cfg(not(target_arch = "x86"))]
 #[no_mangle]
-pub unsafe extern "C" fn NtGdiGetMonitorID(
-    hdc: HDC,
-    dwSize: u32,
-    pszMonitorID: LPWSTR,
-) -> i32 {
-    DbgPrint(
-        b"(%s:%i) WIN32K: %s UNIMPLEMENTED\n\0".as_ptr() as *const i8,
-        file!().as_ptr() as *const i8,
-        line!() as i32,
-        b"NtGdiGetMonitorID\0".as_ptr() as *const i8,
-    );
-    0
-}
-#[cfg(target_arch = "x86")]
-#[no_mangle]
-pub unsafe extern "stdcall" fn NtGdiDrawStream(
+pub unsafe extern "system" fn NtGdiDrawStream(
     hdcDst: HDC,
     cjIn: u32,
     pvIn: *mut core::ffi::c_void,
@@ -2165,50 +1024,20 @@ pub unsafe extern "stdcall" fn NtGdiDrawStream(
     UNIMPLEMENTED;
     0
 }
-
-#[cfg(not(target_arch = "x86"))]
 #[no_mangle]
-pub unsafe extern "C" fn NtGdiDrawStream(
-    hdcDst: HDC,
-    cjIn: u32,
-    pvIn: *mut core::ffi::c_void,
-) -> i32 {
-    UNIMPLEMENTED;
-    0
-}
-#[cfg(target_arch = "x86")]
-#[no_mangle]
-pub unsafe extern "stdcall" fn NtGdiUpdateTransform(hdc: HDC) -> BOOL {
+pub unsafe extern "system" fn NtGdiUpdateTransform(hdc: HDC) -> BOOL {
     DbgPrint(b"(%s:%i) WIN32K: %s UNIMPLEMENTED\n\0".as_ptr() as PCHAR, file!().as_ptr() as PCHAR, line!() as i32, b"NtGdiUpdateTransform\0".as_ptr() as PCHAR);
     0
 }
-
-#[cfg(not(target_arch = "x86"))]
 #[no_mangle]
-pub unsafe extern "C" fn NtGdiUpdateTransform(hdc: HDC) -> BOOL {
-    DbgPrint(b"(%s:%i) WIN32K: %s UNIMPLEMENTED\n\0".as_ptr() as PCHAR, file!().as_ptr() as PCHAR, line!() as i32, b"NtGdiUpdateTransform\0".as_ptr() as PCHAR);
-    0
-}
-#[cfg(target_arch = "x86")]
-#[no_mangle]
-pub unsafe extern "stdcall" fn NtGdiQueryFontAssocInfo(
+pub unsafe extern "system" fn NtGdiQueryFontAssocInfo(
     hdc: HDC
 ) -> ULONG {
     DbgPrint(b"(%s:%i) WIN32K: %s UNIMPLEMENTED\n\0".as_ptr() as PCHAR, file!().as_ptr() as PCHAR, line!() as i32, b"NtGdiQueryFontAssocInfo\0".as_ptr() as PCHAR);
     0
 }
-
-#[cfg(not(target_arch = "x86"))]
 #[no_mangle]
-pub unsafe extern "C" fn NtGdiQueryFontAssocInfo(
-    hdc: HDC
-) -> ULONG {
-    DbgPrint(b"(%s:%i) WIN32K: %s UNIMPLEMENTED\n\0".as_ptr() as PCHAR, file!().as_ptr() as PCHAR, line!() as i32, b"NtGdiQueryFontAssocInfo\0".as_ptr() as PCHAR);
-    0
-}
-#[cfg(target_arch = "x86")]
-#[no_mangle]
-pub unsafe extern "stdcall" fn NtGdiGetStringBitmapW(
+pub unsafe extern "system" fn NtGdiGetStringBitmapW(
     hdc: HDC,
     pwsz: LPWSTR,
     cwc: u32,
@@ -2223,27 +1052,8 @@ pub unsafe extern "stdcall" fn NtGdiGetStringBitmapW(
     );
     0
 }
-
-#[cfg(not(target_arch = "x86"))]
 #[no_mangle]
-pub unsafe extern "C" fn NtGdiGetStringBitmapW(
-    hdc: HDC,
-    pwsz: LPWSTR,
-    cwc: u32,
-    lpSB: *mut u8,
-    cj: u32,
-) -> u32 {
-    DbgPrint(
-        b"(%s:%i) WIN32K: %s UNIMPLEMENTED\n\0".as_ptr() as PCHAR,
-        file!().as_ptr() as PCHAR,
-        line!() as i32,
-        b"NtGdiGetStringBitmapW\0".as_ptr() as PCHAR,
-    );
-    0
-}
-#[cfg(target_arch = "x86")]
-#[no_mangle]
-pub unsafe extern "stdcall" fn NtGdiPolyTextOutW(
+pub unsafe extern "system" fn NtGdiPolyTextOutW(
     hdc: HDC,
     pptw: *mut POLYTEXTW,
     cStr: UINT,
@@ -2257,26 +1067,8 @@ pub unsafe extern "stdcall" fn NtGdiPolyTextOutW(
     );
     0
 }
-
-#[cfg(not(target_arch = "x86"))]
 #[no_mangle]
-pub unsafe extern "C" fn NtGdiPolyTextOutW(
-    hdc: HDC,
-    pptw: *mut POLYTEXTW,
-    cStr: UINT,
-    dwCodePage: DWORD,
-) -> BOOL {
-    DbgPrint(
-        b"(%s:%i) WIN32K: %s UNIMPLEMENTED\n\0".as_ptr() as PCHAR,
-        file!().as_ptr() as PCHAR,
-        line!() as i32,
-        b"NtGdiPolyTextOutW\0".as_ptr() as PCHAR,
-    );
-    0
-}
-#[cfg(target_arch = "x86")]
-#[no_mangle]
-pub unsafe extern "stdcall" fn NtGdiGetStats(
+pub unsafe extern "system" fn NtGdiGetStats(
     hProcess: HANDLE,
     iIndex: INT,
     iPidType: INT,
@@ -2285,21 +1077,8 @@ pub unsafe extern "stdcall" fn NtGdiGetStats(
 ) -> NTSTATUS {
     STATUS_NOT_IMPLEMENTED
 }
-
-#[cfg(not(target_arch = "x86"))]
 #[no_mangle]
-pub unsafe extern "C" fn NtGdiGetStats(
-    hProcess: HANDLE,
-    iIndex: INT,
-    iPidType: INT,
-    pResults: PVOID,
-    cjResultSize: UINT,
-) -> NTSTATUS {
-    STATUS_NOT_IMPLEMENTED
-}
-#[cfg(target_arch = "x86")]
-#[no_mangle]
-pub unsafe extern "stdcall" fn NtGdiSetupPublicCFONT(
+pub unsafe extern "system" fn NtGdiSetupPublicCFONT(
     hdc: HDC,
     hf: HFONT,
     ulAve: ULONG,
@@ -2312,25 +1091,8 @@ pub unsafe extern "stdcall" fn NtGdiSetupPublicCFONT(
     );
     0
 }
-
-#[cfg(not(target_arch = "x86"))]
 #[no_mangle]
-pub unsafe extern "C" fn NtGdiSetupPublicCFONT(
-    hdc: HDC,
-    hf: HFONT,
-    ulAve: ULONG,
-) -> INT {
-    DbgPrint(
-        b"(%s:%i) WIN32K: %s UNIMPLEMENTED\n\0".as_ptr() as PCHAR,
-        file!().as_ptr() as PCHAR,
-        line!() as i32,
-        b"NtGdiSetupPublicCFONT\0".as_ptr() as PCHAR,
-    );
-    0
-}
-#[cfg(target_arch = "x86")]
-#[no_mangle]
-pub unsafe extern "stdcall" fn NtGdiGetEmbUFI(
+pub unsafe extern "system" fn NtGdiGetEmbUFI(
     hdc: HDC,
     pufi: PUNIVERSAL_FONT_ID,
     pdv: *mut DESIGNVECTOR,
@@ -2347,29 +1109,8 @@ pub unsafe extern "stdcall" fn NtGdiGetEmbUFI(
     );
     0
 }
-
-#[cfg(not(target_arch = "x86"))]
 #[no_mangle]
-pub unsafe extern "C" fn NtGdiGetEmbUFI(
-    hdc: HDC,
-    pufi: PUNIVERSAL_FONT_ID,
-    pdv: *mut DESIGNVECTOR,
-    pcjDV: *mut u32,
-    pulBaseCheckSum: *mut u32,
-    pfl: *mut FLONG,
-    embFontID: *mut KERNEL_PVOID,
-) -> i32 {
-    DbgPrint(
-        b"(%s:%i) WIN32K: %s UNIMPLEMENTED\n\0".as_ptr() as *const i8,
-        b"stubs.c\0".as_ptr() as *const i8,
-        line!() as i32,
-        b"NtGdiGetEmbUFI\0".as_ptr() as *const i8,
-    );
-    0
-}
-#[cfg(target_arch = "x86")]
-#[no_mangle]
-pub unsafe extern "stdcall" fn NtGdiGetUFIPathname(
+pub unsafe extern "system" fn NtGdiGetUFIPathname(
     pufi: PUNIVERSAL_FONT_ID,
     pcwc: *mut u32,
     pwszPathname: LPWSTR,
@@ -2389,32 +1130,8 @@ pub unsafe extern "stdcall" fn NtGdiGetUFIPathname(
     );
     0u8
 }
-
-#[cfg(not(target_arch = "x86"))]
 #[no_mangle]
-pub unsafe extern "C" fn NtGdiGetUFIPathname(
-    pufi: PUNIVERSAL_FONT_ID,
-    pcwc: *mut u32,
-    pwszPathname: LPWSTR,
-    pcNumFiles: *mut u32,
-    fl: FLONG,
-    pbMemFont: *mut u8,
-    pcjView: *mut u32,
-    pvView: *mut core::ffi::c_void,
-    pbTTC: *mut u8,
-    piTTC: *mut u32,
-) -> u8 {
-    DbgPrint(
-        b"(%s:%i) WIN32K: %s UNIMPLEMENTED\n\0".as_ptr() as PCHAR,
-        file!().as_ptr() as PCHAR,
-        line!() as i32,
-        b"NtGdiGetUFIPathname\0".as_ptr() as PCHAR,
-    );
-    0u8
-}
-#[cfg(target_arch = "x86")]
-#[no_mangle]
-pub unsafe extern "stdcall" fn NtGdiGetEmbedFonts() -> ULONG {
+pub unsafe extern "system" fn NtGdiGetEmbedFonts() -> ULONG {
     DbgPrint(
         b"(%s:%i) WIN32K: %s UNIMPLEMENTED\n\0".as_ptr() as PCHAR,
         file!().as_ptr() as PCHAR,
@@ -2423,21 +1140,8 @@ pub unsafe extern "stdcall" fn NtGdiGetEmbedFonts() -> ULONG {
     );
     0
 }
-
-#[cfg(not(target_arch = "x86"))]
 #[no_mangle]
-pub unsafe extern "C" fn NtGdiGetEmbedFonts() -> ULONG {
-    DbgPrint(
-        b"(%s:%i) WIN32K: %s UNIMPLEMENTED\n\0".as_ptr() as PCHAR,
-        file!().as_ptr() as PCHAR,
-        line!() as i32,
-        b"NtGdiGetEmbedFonts\0".as_ptr() as PCHAR,
-    );
-    0
-}
-#[cfg(target_arch = "x86")]
-#[no_mangle]
-pub unsafe extern "stdcall" fn NtGdiChangeGhostFont(
+pub unsafe extern "system" fn NtGdiChangeGhostFont(
     pfontID: *mut KERNEL_PVOID,
     bLoad: BOOL,
 ) -> BOOL {
@@ -2449,24 +1153,8 @@ pub unsafe extern "stdcall" fn NtGdiChangeGhostFont(
     );
     0
 }
-
-#[cfg(not(target_arch = "x86"))]
 #[no_mangle]
-pub unsafe extern "C" fn NtGdiChangeGhostFont(
-    pfontID: *mut KERNEL_PVOID,
-    bLoad: BOOL,
-) -> BOOL {
-    DbgPrint(
-        b"(%s:%i) WIN32K: %s UNIMPLEMENTED\n\0".as_ptr() as PCHAR,
-        file!().as_ptr() as PCHAR,
-        line!() as i32,
-        b"NtGdiChangeGhostFont\0".as_ptr() as PCHAR,
-    );
-    0
-}
-#[cfg(target_arch = "x86")]
-#[no_mangle]
-pub unsafe extern "stdcall" fn NtGdiAddEmbFontToDC(
+pub unsafe extern "system" fn NtGdiAddEmbFontToDC(
     hdc: HDC,
     pFontID: *mut *mut core::ffi::c_void,
 ) -> i32 {
@@ -2478,24 +1166,8 @@ pub unsafe extern "stdcall" fn NtGdiAddEmbFontToDC(
     );
     0
 }
-
-#[cfg(not(target_arch = "x86"))]
 #[no_mangle]
-pub unsafe extern "C" fn NtGdiAddEmbFontToDC(
-    hdc: HDC,
-    pFontID: *mut *mut core::ffi::c_void,
-) -> i32 {
-    DbgPrint(
-        b"(%s:%i) WIN32K: %s UNIMPLEMENTED\n\0".as_ptr() as *const i8,
-        file!().as_ptr() as *const i8,
-        line!() as i32,
-        b"NtGdiAddEmbFontToDC\0".as_ptr() as *const i8,
-    );
-    0
-}
-#[cfg(target_arch = "x86")]
-#[no_mangle]
-pub unsafe extern "stdcall" fn NtGdiGetWidthTable(
+pub unsafe extern "system" fn NtGdiGetWidthTable(
     hdc: HDC,
     cSpecial: ULONG,
     pwc: *mut WCHAR,
@@ -2512,29 +1184,8 @@ pub unsafe extern "stdcall" fn NtGdiGetWidthTable(
     );
     0i32
 }
-
-#[cfg(not(target_arch = "x86"))]
 #[no_mangle]
-pub unsafe extern "C" fn NtGdiGetWidthTable(
-    hdc: HDC,
-    cSpecial: ULONG,
-    pwc: *mut WCHAR,
-    cwc: ULONG,
-    psWidth: *mut USHORT,
-    pwd: *mut WIDTHDATA,
-    pflInfo: *mut FLONG,
-) -> BOOL {
-    DbgPrint(
-        b"(%s:%i) WIN32K: %s UNIMPLEMENTED\n\0".as_ptr() as PCHAR,
-        b"stubs.c\0".as_ptr() as PCHAR,
-        line!() as i32,
-        b"NtGdiGetWidthTable\0".as_ptr() as PCHAR,
-    );
-    0i32
-}
-#[cfg(target_arch = "x86")]
-#[no_mangle]
-pub unsafe extern "stdcall" fn NtGdiIcmBrushInfo(
+pub unsafe extern "system" fn NtGdiIcmBrushInfo(
     hdc: HDC,
     hbrush: HBRUSH,
     pbmiDIB: PBITMAPINFO,
@@ -2552,30 +1203,8 @@ pub unsafe extern "stdcall" fn NtGdiIcmBrushInfo(
     );
     0
 }
-
-#[cfg(not(target_arch = "x86"))]
 #[no_mangle]
-pub unsafe extern "C" fn NtGdiIcmBrushInfo(
-    hdc: HDC,
-    hbrush: HBRUSH,
-    pbmiDIB: PBITMAPINFO,
-    pvBits: PVOID,
-    pulBits: *mut ULONG,
-    piUsage: *mut DWORD,
-    pbAlreadyTran: *mut BOOL,
-    Command: ULONG,
-) -> BOOL {
-    DbgPrint(
-        b"(%s:%i) WIN32K: %s UNIMPLEMENTED\n\0".as_ptr() as PCHAR,
-        b"stubs.c\0".as_ptr() as PCHAR,
-        line!() as i32,
-        b"NtGdiIcmBrushInfo\0".as_ptr() as PCHAR,
-    );
-    0
-}
-#[cfg(target_arch = "x86")]
-#[no_mangle]
-pub unsafe extern "stdcall" fn NtGdiMakeFontDir(
+pub unsafe extern "system" fn NtGdiMakeFontDir(
     flEmbed: FLONG,
     pjFontDir: PBYTE,
     cjFontDir: u32,
@@ -2590,44 +1219,15 @@ pub unsafe extern "stdcall" fn NtGdiMakeFontDir(
     );
     0
 }
-
-#[cfg(not(target_arch = "x86"))]
 #[no_mangle]
-pub unsafe extern "C" fn NtGdiMakeFontDir(
-    flEmbed: FLONG,
-    pjFontDir: PBYTE,
-    cjFontDir: u32,
-    pwszPathname: LPWSTR,
-    cjPathname: u32,
-) -> u32 {
-    DbgPrint(
-        b"(%s:%i) WIN32K: %s UNIMPLEMENTED\n\0".as_ptr() as *const i8,
-        file!().as_ptr() as *const i8,
-        line!() as i32,
-        b"NtGdiMakeFontDir\0".as_ptr() as *const i8,
-    );
-    0
-}
-#[cfg(target_arch = "x86")]
-#[no_mangle]
-pub unsafe extern "stdcall" fn NtGdiMonoBitmap(
+pub unsafe extern "system" fn NtGdiMonoBitmap(
     hbm: HBITMAP,
 ) -> i32 {
     DbgPrint(b"(%s:%i) WIN32K: %s UNIMPLEMENTED\n\0".as_ptr() as PCHAR, file!().as_ptr() as PCHAR, line!() as i32, b"NtGdiMonoBitmap\0".as_ptr() as PCHAR);
     0
 }
-
-#[cfg(not(target_arch = "x86"))]
 #[no_mangle]
-pub unsafe extern "C" fn NtGdiMonoBitmap(
-    hbm: HBITMAP,
-) -> i32 {
-    DbgPrint(b"(%s:%i) WIN32K: %s UNIMPLEMENTED\n\0".as_ptr() as PCHAR, file!().as_ptr() as PCHAR, line!() as i32, b"NtGdiMonoBitmap\0".as_ptr() as PCHAR);
-    0
-}
-#[cfg(target_arch = "x86")]
-#[no_mangle]
-pub unsafe extern "stdcall" fn NtGdiSetBitmapAttributes(
+pub unsafe extern "system" fn NtGdiSetBitmapAttributes(
     mut hbm: HBITMAP,
     dwFlags: DWORD,
 ) -> HBITMAP {
@@ -2638,23 +1238,8 @@ pub unsafe extern "stdcall" fn NtGdiSetBitmapAttributes(
     }
     core::ptr::null_mut()
 }
-
-#[cfg(not(target_arch = "x86"))]
 #[no_mangle]
-pub unsafe extern "C" fn NtGdiSetBitmapAttributes(
-    mut hbm: HBITMAP,
-    dwFlags: DWORD,
-) -> HBITMAP {
-    if dwFlags & SC_BB_STOCKOBJ != 0 {
-        if GDIOBJ_ConvertToStockObj(&mut hbm as *mut HBITMAP as *mut HGDIOBJ) != 0 {
-            return hbm;
-        }
-    }
-    core::ptr::null_mut()
-}
-#[cfg(target_arch = "x86")]
-#[no_mangle]
-pub unsafe extern "stdcall" fn NtGdiSetFontEnumeration(
+pub unsafe extern "system" fn NtGdiSetFontEnumeration(
     ulType: ULONG,
 ) -> ULONG {
     DbgPrint(
@@ -2665,23 +1250,8 @@ pub unsafe extern "stdcall" fn NtGdiSetFontEnumeration(
     );
     0
 }
-
-#[cfg(not(target_arch = "x86"))]
 #[no_mangle]
-pub unsafe extern "C" fn NtGdiSetFontEnumeration(
-    ulType: ULONG,
-) -> ULONG {
-    DbgPrint(
-        b"(%s:%i) WIN32K: %s UNIMPLEMENTED\n\0".as_ptr() as PCHAR,
-        file!().as_ptr() as PCHAR,
-        line!() as i32,
-        b"NtGdiSetFontEnumeration\0".as_ptr() as PCHAR,
-    );
-    0
-}
-#[cfg(target_arch = "x86")]
-#[no_mangle]
-pub unsafe extern "stdcall" fn NtGdiSetFontXform(
+pub unsafe extern "system" fn NtGdiSetFontXform(
     hdc: HDC,
     dwxScale: DWORD,
     dwyScale: DWORD,
@@ -2694,25 +1264,8 @@ pub unsafe extern "stdcall" fn NtGdiSetFontXform(
     );
     0
 }
-
-#[cfg(not(target_arch = "x86"))]
 #[no_mangle]
-pub unsafe extern "C" fn NtGdiSetFontXform(
-    hdc: HDC,
-    dwxScale: DWORD,
-    dwyScale: DWORD,
-) -> BOOL {
-    DbgPrint(
-        b"(%s:%i) WIN32K: %s UNIMPLEMENTED\n\0".as_ptr() as PCHAR,
-        file!().as_ptr() as PCHAR,
-        line!() as i32,
-        b"NtGdiSetFontXform\0".as_ptr() as PCHAR,
-    );
-    0
-}
-#[cfg(target_arch = "x86")]
-#[no_mangle]
-pub unsafe extern "stdcall" fn NtGdiSetLinkedUFIs(
+pub unsafe extern "system" fn NtGdiSetLinkedUFIs(
     hdc: HDC,
     pufiLinks: PUNIVERSAL_FONT_ID,
     uNumUFIs: u32,
@@ -2720,20 +1273,8 @@ pub unsafe extern "stdcall" fn NtGdiSetLinkedUFIs(
     DbgPrint(b"(%s:%i) WIN32K: %s UNIMPLEMENTED\n\0".as_ptr() as *const i8, file!().as_ptr(), line!(), b"NtGdiSetLinkedUFIs\0".as_ptr());
     0
 }
-
-#[cfg(not(target_arch = "x86"))]
 #[no_mangle]
-pub unsafe extern "C" fn NtGdiSetLinkedUFIs(
-    hdc: HDC,
-    pufiLinks: PUNIVERSAL_FONT_ID,
-    uNumUFIs: u32,
-) -> i32 {
-    DbgPrint(b"(%s:%i) WIN32K: %s UNIMPLEMENTED\n\0".as_ptr() as *const i8, file!().as_ptr(), line!(), b"NtGdiSetLinkedUFIs\0".as_ptr());
-    0
-}
-#[cfg(target_arch = "x86")]
-#[no_mangle]
-pub unsafe extern "stdcall" fn NtGdiSetMagicColors(
+pub unsafe extern "system" fn NtGdiSetMagicColors(
     hdc: HDC,
     peMagic: PALETTEENTRY,
     Index: u32,
@@ -2746,57 +1287,21 @@ pub unsafe extern "stdcall" fn NtGdiSetMagicColors(
     );
     0
 }
-
-#[cfg(not(target_arch = "x86"))]
 #[no_mangle]
-pub unsafe extern "C" fn NtGdiSetMagicColors(
-    hdc: HDC,
-    peMagic: PALETTEENTRY,
-    Index: u32,
-) -> i32 {
-    DbgPrint(
-        b"(%s:%i) WIN32K: %s UNIMPLEMENTED\n\0".as_ptr() as *const i8,
-        file!().as_ptr() as *const i8,
-        line!() as i32,
-        b"NtGdiSetMagicColors\0".as_ptr() as *const i8,
-    );
-    0
-}
-#[cfg(target_arch = "x86")]
-#[no_mangle]
-pub unsafe extern "stdcall" fn NtGdiUnloadPrinterDriver(
+pub unsafe extern "system" fn NtGdiUnloadPrinterDriver(
     pDriverName: LPWSTR,
     cbDriverName: u32,
 ) -> i32 {
     EngSetLastError(ERROR_NOT_SUPPORTED);
     0
 }
-
-#[cfg(not(target_arch = "x86"))]
 #[no_mangle]
-pub unsafe extern "C" fn NtGdiUnloadPrinterDriver(
-    pDriverName: LPWSTR,
-    cbDriverName: u32,
-) -> i32 {
-    EngSetLastError(ERROR_NOT_SUPPORTED);
-    0
-}
-#[cfg(target_arch = "x86")]
-#[no_mangle]
-pub unsafe extern "stdcall" fn NtGdiUnmapMemFont(
+pub unsafe extern "system" fn NtGdiUnmapMemFont(
     pvView: PVOID) -> BOOL {
     return 1i32;
 }
-
-#[cfg(not(target_arch = "x86"))]
 #[no_mangle]
-pub unsafe extern "C" fn NtGdiUnmapMemFont(
-    pvView: PVOID) -> BOOL {
-    return 1i32;
-}
-#[cfg(target_arch = "x86")]
-#[no_mangle]
-pub unsafe extern "stdcall" fn EngControlSprites(
+pub unsafe extern "system" fn EngControlSprites(
     pwo: *mut WNDOBJ,
     fl: FLONG,
 ) -> i32 {
@@ -2808,24 +1313,8 @@ pub unsafe extern "stdcall" fn EngControlSprites(
     );
     0
 }
-
-#[cfg(not(target_arch = "x86"))]
 #[no_mangle]
-pub unsafe extern "C" fn EngControlSprites(
-    pwo: *mut WNDOBJ,
-    fl: FLONG,
-) -> i32 {
-    DbgPrint(
-        b"(%s:%i) WIN32K: %s UNIMPLEMENTED\n\0".as_ptr() as *const i8,
-        b"stubs.c\0".as_ptr() as *const i8,
-        line!() as i32,
-        b"EngControlSprites\0".as_ptr() as *const i8,
-    );
-    0
-}
-#[cfg(target_arch = "x86")]
-#[no_mangle]
-pub unsafe extern "stdcall" fn EngFntCacheAlloc(
+pub unsafe extern "system" fn EngFntCacheAlloc(
     ulFastCheckSum: ULONG,
     cjSize: ULONG,
 ) -> PVOID {
@@ -2837,24 +1326,8 @@ pub unsafe extern "stdcall" fn EngFntCacheAlloc(
     );
     core::ptr::null_mut()
 }
-
-#[cfg(not(target_arch = "x86"))]
 #[no_mangle]
-pub unsafe extern "C" fn EngFntCacheAlloc(
-    ulFastCheckSum: ULONG,
-    cjSize: ULONG,
-) -> PVOID {
-    DbgPrint(
-        b"(%s:%i) WIN32K: %s UNIMPLEMENTED\n\0".as_ptr() as PCHAR,
-        file!().as_ptr() as PCHAR,
-        line!() as i32,
-        b"EngFntCacheAlloc\0".as_ptr() as PCHAR,
-    );
-    core::ptr::null_mut()
-}
-#[cfg(target_arch = "x86")]
-#[no_mangle]
-pub unsafe extern "stdcall" fn EngFntCacheFault(
+pub unsafe extern "system" fn EngFntCacheFault(
     ulFastCheckSum: ULONG,
     iFaultMode: ULONG,
 ) {
@@ -2865,23 +1338,8 @@ pub unsafe extern "stdcall" fn EngFntCacheFault(
         b"EngFntCacheFault\0".as_ptr() as PCHAR,
     );
 }
-
-#[cfg(not(target_arch = "x86"))]
 #[no_mangle]
-pub unsafe extern "C" fn EngFntCacheFault(
-    ulFastCheckSum: ULONG,
-    iFaultMode: ULONG,
-) {
-    DbgPrint(
-        b"(%s:%i) WIN32K: %s UNIMPLEMENTED\n\0".as_ptr() as PCHAR,
-        b"stubs.c\0".as_ptr() as PCHAR,
-        line!() as i32,
-        b"EngFntCacheFault\0".as_ptr() as PCHAR,
-    );
-}
-#[cfg(target_arch = "x86")]
-#[no_mangle]
-pub unsafe extern "stdcall" fn EngFntCacheLookUp(
+pub unsafe extern "system" fn EngFntCacheLookUp(
     FastCheckSum: ULONG,
     pulSize: PULONG,
 ) -> PVOID {
@@ -2893,46 +1351,8 @@ pub unsafe extern "stdcall" fn EngFntCacheLookUp(
     );
     core::ptr::null_mut()
 }
-
-#[cfg(not(target_arch = "x86"))]
 #[no_mangle]
-pub unsafe extern "C" fn EngFntCacheLookUp(
-    FastCheckSum: ULONG,
-    pulSize: PULONG,
-) -> PVOID {
-    DbgPrint(
-        b"(%s:%i) WIN32K: %s UNIMPLEMENTED\n\0".as_ptr() as PCHAR,
-        file!().as_ptr() as PCHAR,
-        line!() as i32,
-        b"EngFntCacheLookUp\0".as_ptr() as PCHAR,
-    );
-    core::ptr::null_mut()
-}
-#[cfg(target_arch = "x86")]
-#[no_mangle]
-pub unsafe extern "stdcall" fn EngNineGrid(
-    pDestSurfaceObj: *mut SURFOBJ,
-    pSourceSurfaceObj: *mut SURFOBJ,
-    pClipObj: *mut CLIPOBJ,
-    pXlateObj: *mut XLATEOBJ,
-    prclSource: *mut RECTL,
-    prclDest: *mut RECTL,
-    pvUnknown1: *mut core::ffi::c_void,
-    pvUnknown2: *mut core::ffi::c_void,
-    dwReserved: u32,
-) -> u8 {
-    DbgPrint(
-        b"(%s:%i) WIN32K: %s UNIMPLEMENTED\n\0".as_ptr() as PCHAR,
-        b"stubs.c\0".as_ptr() as PCHAR,
-        line!() as i32,
-        b"EngNineGrid\0".as_ptr() as PCHAR,
-    );
-    0u8
-}
-
-#[cfg(not(target_arch = "x86"))]
-#[no_mangle]
-pub unsafe extern "C" fn EngNineGrid(
+pub unsafe extern "system" fn EngNineGrid(
     pDestSurfaceObj: *mut SURFOBJ,
     pSourceSurfaceObj: *mut SURFOBJ,
     pClipObj: *mut CLIPOBJ,
@@ -2954,19 +1374,8 @@ pub unsafe extern "C" fn EngNineGrid(
 
 // EngComputeGlyphSet — APIENTRY (stdcall on i386, cdecl elsewhere).
 // @unimplemented in stubs.c; NULL-returning stub.
-#[cfg(target_arch = "x86")]
 #[no_mangle]
-pub unsafe extern "stdcall" fn EngComputeGlyphSet(
-    _nCodePage: INT,
-    _nFirstChar: INT,
-    _cChars: INT,
-) -> *mut FD_GLYPHSET {
-    core::ptr::null_mut()
-}
-
-#[cfg(not(target_arch = "x86"))]
-#[no_mangle]
-pub unsafe extern "C" fn EngComputeGlyphSet(
+pub unsafe extern "system" fn EngComputeGlyphSet(
     _nCodePage: INT,
     _nFirstChar: INT,
     _cChars: INT,
@@ -2975,41 +1384,20 @@ pub unsafe extern "C" fn EngComputeGlyphSet(
 }
 
 // FONTOBJ_pifi — APIENTRY (stdcall i386, cdecl elsewhere). @unimplemented.
-#[cfg(target_arch = "x86")]
 #[no_mangle]
-pub unsafe extern "stdcall" fn FONTOBJ_pifi(_FontObj: *mut FONTOBJ) -> *mut IFIMETRICS {
-    core::ptr::null_mut()
-}
-
-#[cfg(not(target_arch = "x86"))]
-#[no_mangle]
-pub unsafe extern "C" fn FONTOBJ_pifi(_FontObj: *mut FONTOBJ) -> *mut IFIMETRICS {
+pub unsafe extern "system" fn FONTOBJ_pifi(_FontObj: *mut FONTOBJ) -> *mut IFIMETRICS {
     core::ptr::null_mut()
 }
 
 // FONTOBJ_pxoGetXform — APIENTRY. @unimplemented.
-#[cfg(target_arch = "x86")]
 #[no_mangle]
-pub unsafe extern "stdcall" fn FONTOBJ_pxoGetXform(_FontObj: *mut FONTOBJ) -> *mut XFORMOBJ {
-    core::ptr::null_mut()
-}
-
-#[cfg(not(target_arch = "x86"))]
-#[no_mangle]
-pub unsafe extern "C" fn FONTOBJ_pxoGetXform(_FontObj: *mut FONTOBJ) -> *mut XFORMOBJ {
+pub unsafe extern "system" fn FONTOBJ_pxoGetXform(_FontObj: *mut FONTOBJ) -> *mut XFORMOBJ {
     core::ptr::null_mut()
 }
 
 // FONTOBJ_pfdg — APIENTRY. @unimplemented. Returns FD_GLYPHSET*.
-#[cfg(target_arch = "x86")]
 #[no_mangle]
-pub unsafe extern "stdcall" fn FONTOBJ_pfdg(_FontObj: *mut FONTOBJ) -> *mut FD_GLYPHSET {
-    core::ptr::null_mut()
-}
-
-#[cfg(not(target_arch = "x86"))]
-#[no_mangle]
-pub unsafe extern "C" fn FONTOBJ_pfdg(_FontObj: *mut FONTOBJ) -> *mut FD_GLYPHSET {
+pub unsafe extern "system" fn FONTOBJ_pfdg(_FontObj: *mut FONTOBJ) -> *mut FD_GLYPHSET {
     core::ptr::null_mut()
 }
 

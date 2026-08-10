@@ -23,7 +23,7 @@ extern "system" {
     fn RtlInitUnicodeString(DestinationString: *mut _UNICODE_STRING, SourceString: PWSTR);
     fn USBPORT_AdjustDeviceCapabilities( FdoDevice: PDEVICE_OBJECT, PdoDevice: PDEVICE_OBJECT, );
     fn USBPORT_DumpingIDs(Buffer: PVOID);
-    fn USBPORT_AllocateCommonBuffer( FdoDevice: PDEVICE_OBJECT, BufferLength: ULONG, ) -> PUSBPORT_COMMON_BUFFER_HEADER;
+    fn USBPORT_AllocateCommonBuffer( FdoDevice: PDEVICE_OBJECT, BufferLength: SIZE_T, ) -> PUSBPORT_COMMON_BUFFER_HEADER;
     fn USBPORT_CreateWorkerThread(FdoDevice: PDEVICE_OBJECT) -> NTSTATUS;
     fn USBPORT_FreeCommonBuffer( FdoDevice: PDEVICE_OBJECT, HeaderBuffer: PUSBPORT_COMMON_BUFFER_HEADER, );
     fn USBPORT_GetRegistryKeyValueFullInfo(FdoDevice: PDEVICE_OBJECT, PdoDevice: PDEVICE_OBJECT, UseHardwareKey: u32, KeyNameString: PWSTR, KeyNameStringLength: ULONG, Data: PVOID, DataLength: ULONG) -> NTSTATUS;

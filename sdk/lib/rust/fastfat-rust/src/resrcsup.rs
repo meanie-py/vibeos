@@ -35,7 +35,6 @@ const IRP_CONTEXT_FLAG_WAIT: u32 = 0x02;
 unsafe extern "system" {
 }
 
-type BOOLEAN = i32;
 type ULONG = u32;
 type PIRP_CONTEXT = *mut core::ffi::c_void; // placeholder
 type PVCB = *mut VCB;

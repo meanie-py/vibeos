@@ -25,7 +25,7 @@ elseif(ARCH STREQUAL "arm64")
     set(HIDCLASS_RUST_RUSTFLAGS "")
 endif()
 
-file(GLOB_RECURSE HIDCLASS_RUST_SRCS ${HIDCLASS_RUST_WORKSPACE_DIR}/hidclass-rust/src/*.rs)
+rust_crate_sources(HIDCLASS_RUST_SRCS "${HIDCLASS_RUST_WORKSPACE_DIR}" hidclass-rust)
 
 add_custom_command(
     OUTPUT ${HIDCLASS_RUST_LIB}

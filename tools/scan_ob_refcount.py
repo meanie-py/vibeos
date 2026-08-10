@@ -103,10 +103,18 @@ def _call_name(node, src: bytes):
     return None
 
 
+# Not arguments: punctuation, and COMMENTS — tree-sitter makes an inline
+# `f(a, 1, /* UserMode */ &mut Obj)` comment a child of the argument list, so
+# counting it shifts every FIXED out-param index by one. That mis-tracked
+# fastfat's ObReferenceObjectByHandle onto the comment's own text and reported
+# a leak of a variable named `UserMode`.
+_NOT_AN_ARG = ("(", ")", ",", "line_comment", "block_comment", "comment")
+
+
 def _real_args(args_node):
     if args_node is None:
         return []
-    return [c for c in args_node.children if c.type not in ("(", ")", ",")]
+    return [c for c in args_node.children if c.type not in _NOT_AN_ARG]
 
 
 def _arg_idents(args_node, src: bytes, idx: int):

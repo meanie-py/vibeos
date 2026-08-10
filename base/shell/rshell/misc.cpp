@@ -269,7 +269,15 @@ DllGetClassObject(
     return ShellObjectCreatorInit<CRShellClassFactory>(rclsid, riid, ppv);
 }
 
-VOID WINAPI ShowFolderOptionsDialog(UINT Page, BOOL Async)
+/* EXTERN_C, in lockstep with the declaration in shell32's CDesktopBrowser.cpp.
+ *
+ * `shelldesktop` is a static library linked into BOTH shell32.dll and rshell.dll, and the two
+ * get `ShowFolderOptionsDialog` from different places: shell32 from Rust
+ * (shell32-rust/src/dialogs/folder_options.rs), rshell from this stub. Because the caller's
+ * declaration decides the mangling, moving shell32's provider to C linkage moves rshell's too —
+ * leave this C++-mangled and rshell.dll fails to link on `_ShowFolderOptionsDialog@8` while
+ * shell32.dll succeeds. A shared static library has as many providers as it has consumers. */
+EXTERN_C VOID WINAPI ShowFolderOptionsDialog(UINT Page, BOOL Async)
 {
     char buf[MAX_PATH];
     wsprintfA(buf, "rundll32.exe shell32.dll,Options_RunDLL %u", Page);

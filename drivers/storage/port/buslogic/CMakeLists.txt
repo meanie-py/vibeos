@@ -22,7 +22,7 @@ elseif(ARCH STREQUAL "arm64")
     set(BUSLOGIC_RUST_TARGET "aarch64-pc-windows-gnullvm")
     set(BUSLOGIC_RUST_RUSTFLAGS "")
 endif()
-file(GLOB_RECURSE BUSLOGIC_RUST_SRCS ${BUSLOGIC_RUST_WORKSPACE_DIR}/buslogic-rust/src/*.rs)
+rust_crate_sources(BUSLOGIC_RUST_SRCS "${BUSLOGIC_RUST_WORKSPACE_DIR}" buslogic-rust)
 add_custom_command(
     OUTPUT ${BUSLOGIC_RUST_LIB}
     COMMAND ${CMAKE_COMMAND} -E env

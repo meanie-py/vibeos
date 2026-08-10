@@ -99,7 +99,7 @@ unsafe fn int_as_hookproc(p: DWORD_PTR) -> HOOKPROC {
 
 // co_IntShellHookNotify — cdecl (`_co_IntShellHookNotify`).
 extern "C" {
-    fn co_IntShellHookNotify(Message: core::ffi::c_int, wParam: WPARAM, lParam: isize);
+    fn co_IntShellHookNotify(Message: WPARAM, wParam: WPARAM, lParam: LPARAM);
 }
 
 // FASTCALL (`@Name@N`) on i386, cdecl elsewhere. (winpos.c/foldesk.c/painting.c/menu/object.h)
@@ -168,7 +168,7 @@ extern "fastcall" {
     fn MsqPostQuitMessage(pti: PTHREADINFO, ExitCode: ULONG_PTR);
     fn MsqSetMessageExtraInfo(lData: LPARAM) -> LPARAM;
     fn MsqSetStateWindow(pti: PTHREADINFO, Type: ULONG, hWnd: HWND) -> HWND;
-    fn MsqPostMessage(pti: PTHREADINFO, Msg: *const MSG, HardwareMessage: BOOLEAN, MessageBits: DWORD, dwQEvent: DWORD, ExtraInfo: u32);
+    fn MsqPostMessage(pti: PTHREADINFO, Msg: *const MSG, HardwareMessage: BOOLEAN, MessageBits: DWORD, dwQEvent: DWORD, ExtraInfo: LONG_PTR);
     fn SetLastNtError(Status: NTSTATUS);
     fn UserDereferenceObject(obj: PVOID) -> BOOL;
 }
@@ -177,7 +177,7 @@ extern "C" {
     fn MsqPostQuitMessage(pti: PTHREADINFO, ExitCode: ULONG_PTR);
     fn MsqSetMessageExtraInfo(lData: LPARAM) -> LPARAM;
     fn MsqSetStateWindow(pti: PTHREADINFO, Type: ULONG, hWnd: HWND) -> HWND;
-    fn MsqPostMessage(pti: PTHREADINFO, Msg: *const MSG, HardwareMessage: BOOLEAN, MessageBits: DWORD, dwQEvent: DWORD, ExtraInfo: u32);
+    fn MsqPostMessage(pti: PTHREADINFO, Msg: *const MSG, HardwareMessage: BOOLEAN, MessageBits: DWORD, dwQEvent: DWORD, ExtraInfo: LONG_PTR);
     fn SetLastNtError(Status: NTSTATUS);
     fn UserDereferenceObject(obj: PVOID) -> BOOL;
 }
@@ -243,9 +243,8 @@ unsafe fn co_IntRegisterLogonProcess_impl(mut ProcessId: HANDLE, Register: BOOL)
 
     1
 }
-#[cfg(target_arch = "x86")]
 #[no_mangle]
-pub unsafe extern "stdcall" fn NtUserCallNoParam(Routine: DWORD) -> DWORD_PTR {
+pub unsafe extern "system" fn NtUserCallNoParam(Routine: DWORD) -> DWORD_PTR {
     let mut Result: DWORD_PTR = 0;
 
     UserEnterExclusive();
@@ -322,89 +321,8 @@ pub unsafe extern "stdcall" fn NtUserCallNoParam(Routine: DWORD) -> DWORD_PTR {
 
     Result
 }
-
-#[cfg(not(target_arch = "x86"))]
 #[no_mangle]
-pub unsafe extern "C" fn NtUserCallNoParam(Routine: DWORD) -> DWORD_PTR {
-    let mut Result: DWORD_PTR = 0;
-
-    UserEnterExclusive();
-
-    match Routine {
-        NOPARAM_ROUTINE_CREATEMENU => {
-            Result = UserCreateMenu((*GetW32ThreadInfo()).rpdesk, 0) as DWORD_PTR;
-        }
-
-        NOPARAM_ROUTINE_CREATEMENUPOPUP => {
-            Result = UserCreateMenu((*GetW32ThreadInfo()).rpdesk, 1) as DWORD_PTR;
-        }
-
-        NOPARAM_ROUTINE_DESTROY_CARET => {
-            Result = co_IntDestroyCaret((*PsGetCurrentThread()).Tcb.Win32Thread as PTHREADINFO) as DWORD_PTR;
-        }
-
-        NOPARAM_ROUTINE_INIT_MESSAGE_PUMP => {
-            Result = IntInitMessagePumpHook() as DWORD_PTR;
-        }
-
-        NOPARAM_ROUTINE_UNINIT_MESSAGE_PUMP => {
-            Result = IntUninitMessagePumpHook() as DWORD_PTR;
-        }
-
-        NOPARAM_ROUTINE_MSQCLEARWAKEMASK => {
-            Result = IntMsqClearWakeMask() as DWORD_PTR;
-        }
-
-        NOPARAM_ROUTINE_GETMSESSAGEPOS => {
-            let pti: PTHREADINFO = PsGetCurrentThreadWin32Thread() as PTHREADINFO;
-            Result = MAKELONG((*pti).ptLast.x as u32, (*pti).ptLast.y as u32) as DWORD_PTR;
-        }
-
-        NOPARAM_ROUTINE_RELEASECAPTURE => {
-            Result = IntReleaseCapture() as DWORD_PTR;
-        }
-
-        NOPARAM_ROUTINE_LOADUSERAPIHOOK => {
-            Result = UserLoadApiHook() as DWORD_PTR;
-        }
-
-        NOPARAM_ROUTINE_ZAPACTIVEANDFOUS => {
-            let pti: PTHREADINFO = PsGetCurrentThreadWin32Thread() as PTHREADINFO;
-            (*(*pti).MessageQueue).spwndFocus = core::ptr::null_mut();
-            (*(*pti).MessageQueue).spwndActive = core::ptr::null_mut();
-            Result = 0;
-        }
-
-        NOPARAM_ROUTINE_GETIMESHOWSTATUS => {
-            Result = (gfIMEShowStatus != 0) as DWORD_PTR;
-        }
-
-        NOPARAM_ROUTINE_ISCONSOLEMODE => {
-            Result = (ScreenDeviceContext == core::ptr::null_mut()) as DWORD_PTR;
-        }
-
-        NOPARAM_ROUTINE_UPDATEPERUSERIMMENABLING => {
-            if UserIsIMMEnabled() != 0 {
-                (*gpsi).dwSRVIFlags |= SRVINFO_IMM32;
-            } else {
-                (*gpsi).dwSRVIFlags &= !SRVINFO_IMM32;
-            }
-
-            Result = 1;
-        }
-
-        _ => {
-            EngSetLastError(ERROR_INVALID_PARAMETER);
-        }
-    }
-
-    UserLeave();
-
-    Result
-}
-#[cfg(target_arch = "x86")]
-#[no_mangle]
-pub unsafe extern "stdcall" fn NtUserCallOneParam(
+pub unsafe extern "system" fn NtUserCallOneParam(
     Param: DWORD_PTR,
     Routine: DWORD,
 ) -> DWORD_PTR {
@@ -661,269 +579,8 @@ pub unsafe extern "stdcall" fn NtUserCallOneParam(
 
     Result
 }
-
-#[cfg(not(target_arch = "x86"))]
 #[no_mangle]
-pub unsafe extern "C" fn NtUserCallOneParam(
-    Param: DWORD_PTR,
-    Routine: DWORD,
-) -> DWORD_PTR {
-    let mut Result: DWORD_PTR;
-    let Status: NTSTATUS;
-
-    UserEnterExclusive();
-
-    match Routine {
-        ONEPARAM_ROUTINE_POSTQUITMESSAGE => {
-            let pti: PTHREADINFO = PsGetCurrentThreadWin32Thread() as PTHREADINFO;
-            MsqPostQuitMessage(pti, Param);
-            Result = 1 as DWORD_PTR;
-        }
-
-        ONEPARAM_ROUTINE_BEGINDEFERWNDPOS => {
-            'block: {
-                let psmwp: PSMWP;
-                let mut hDwp: HDWP = core::ptr::null_mut();
-                let mut count: INT = Param as INT;
-
-                if count < 0 {
-                    EngSetLastError(ERROR_INVALID_PARAMETER);
-                    Result = 0;
-                    break 'block;
-                }
-
-                if count == 0 {
-                    count = 8;
-                }
-
-                psmwp = UserCreateObject(
-                    gHandleTable,
-                    core::ptr::null_mut(),
-                    core::ptr::null_mut(),
-                    core::ptr::addr_of_mut!(hDwp) as PHANDLE,
-                    TYPE_SETWINDOWPOS,
-                    core::mem::size_of::<SMWP>() as u32,
-                ) as PSMWP;
-                if psmwp.is_null() {
-                    Result = 0;
-                    break 'block;
-                }
-
-                (*psmwp).acvr = ExAllocatePoolWithTag(
-                    PagedPool,
-                    ((count as usize) * core::mem::size_of::<CVR>()) as SIZE_T,
-                    USERTAG_SWP,
-                ) as *mut _;
-                if (*psmwp).acvr.is_null() {
-                    UserDeleteObject(hDwp as PVOID, TYPE_SETWINDOWPOS);
-                    Result = 0;
-                    break 'block;
-                }
-
-                RtlZeroMemory(
-                    (*psmwp).acvr as *mut _,
-                    (count as usize) * core::mem::size_of::<CVR>(),
-                );
-                (*psmwp).set_bHandle(1);
-                (*psmwp).ccvr = 0;
-                (*psmwp).ccvrAlloc = count;
-                Result = hDwp as DWORD_PTR;
-            }
-        }
-
-        ONEPARAM_ROUTINE_SHOWCURSOR => {
-            Result = UserShowCursor(Param as BOOL) as DWORD_PTR;
-        }
-
-        ONEPARAM_ROUTINE_GETDESKTOPMAPPING => {
-            let ti: PTHREADINFO = GetW32ThreadInfo();
-            if !ti.is_null() {
-                Result = DesktopHeapAddressToUser(Param as PVOID) as DWORD_PTR;
-            } else {
-                Result = 0;
-            }
-        }
-
-        ONEPARAM_ROUTINE_WINDOWFROMDC => {
-            Result = IntWindowFromDC(Param as HDC) as DWORD_PTR;
-        }
-
-        ONEPARAM_ROUTINE_SWAPMOUSEBUTTON => {
-            Result = gspv.bMouseBtnSwap as DWORD_PTR;
-            gspv.bMouseBtnSwap = if Param != 0 { 1 } else { 0 };
-            (*gpsi_per_user()).aiSysMet[SM_SWAPBUTTON as usize] = gspv.bMouseBtnSwap as _;
-        }
-
-        ONEPARAM_ROUTINE_SETCARETBLINKTIME => {
-            Result = IntSetCaretBlinkTime(Param as UINT) as DWORD_PTR;
-        }
-
-        ONEPARAM_ROUTINE_SETMESSAGEEXTRAINFO => {
-            Result = MsqSetMessageExtraInfo(Param as LPARAM) as DWORD_PTR;
-        }
-
-        ONEPARAM_ROUTINE_CREATEEMPTYCUROBJECT => {
-            Result = IntCreateCurIconHandle(Param as u8) as DWORD_PTR;
-            if Result == 0 {
-                EngSetLastError(ERROR_NOT_ENOUGH_MEMORY);
-                Result = 0;
-            }
-        }
-
-        ONEPARAM_ROUTINE_ENABLEPROCWNDGHSTING => {
-            'block: {
-                let Process: PPROCESSINFO = PsGetCurrentProcessWin32Process() as PPROCESSINFO;
-
-                if !Process.is_null() {
-                    let Enable: BOOL = (Param != 0) as BOOL;
-
-                    if Enable != 0 {
-                        *ppi_w32pf_flags(Process) &= !W32PF_NOWINDOWGHOSTING;
-                    } else {
-                        *ppi_w32pf_flags(Process) |= W32PF_NOWINDOWGHOSTING;
-                    }
-
-                    Result = 1 as DWORD_PTR;
-                    break 'block;
-                }
-
-                Result = 0;
-            }
-        }
-
-        ONEPARAM_ROUTINE_GETINPUTEVENT => {
-            Result = IntMsqSetWakeMask(Param as DWORD) as DWORD_PTR;
-        }
-
-        ONEPARAM_ROUTINE_GETKEYBOARDTYPE => {
-            Result = UserGetKeyboardType(Param as DWORD) as DWORD_PTR;
-        }
-
-        ONEPARAM_ROUTINE_GETKEYBOARDLAYOUT => {
-            Result = UserGetKeyboardLayout(Param as DWORD) as DWORD_PTR;
-        }
-
-        ONEPARAM_ROUTINE_RELEASEDC => {
-            Result = UserReleaseDC(core::ptr::null_mut(), Param as HDC, 0) as DWORD_PTR;
-        }
-
-        ONEPARAM_ROUTINE_REALIZEPALETTE => {
-            Result = UserRealizePalette(Param as HDC) as DWORD_PTR;
-        }
-
-        ONEPARAM_ROUTINE_GETQUEUESTATUS => {
-            Result = IntGetQueueStatus(Param as DWORD) as DWORD_PTR;
-        }
-
-        ONEPARAM_ROUTINE_ENUMCLIPBOARDFORMATS => {
-            Result = UserEnumClipboardFormats(Param as UINT) as DWORD_PTR;
-        }
-
-        ONEPARAM_ROUTINE_GETCURSORPOS => {
-            'block: {
-                let pptl: PPOINTL;
-                let pti: PTHREADINFO = PsGetCurrentThreadWin32Thread() as PTHREADINFO;
-                Result = 1 as DWORD_PTR;
-                if (*pti).rpdesk != IntGetActiveDesktop() {
-                    Result = 0;
-                    break 'block;
-                }
-                Status = SafeProbeForWrite(
-                    Param as *mut core::ffi::c_void,
-                    core::mem::size_of::<POINT>() as SIZE_T,
-                    1,
-                );
-                if !NT_SUCCESS(Status) {
-                    Result = 0;
-                } else {
-                    pptl = Param as PPOINTL;
-                    core::ptr::write_volatile(pptl, (*gpsi_per_user()).ptCursor);
-                }
-            }
-        }
-
-        ONEPARAM_ROUTINE_SETPROCDEFLAYOUT => {
-            'block: {
-                let ppi: PPROCESSINFO;
-                if (Param & LAYOUT_ORIENTATIONMASK as DWORD_PTR) != 0
-                    || Param == LAYOUT_LTR as DWORD_PTR
-                {
-                    ppi = PsGetCurrentProcessWin32Process() as PPROCESSINFO;
-                    (*ppi).dwLayout = Param as _;
-                    Result = 1 as DWORD_PTR;
-                    break 'block;
-                }
-                EngSetLastError(ERROR_INVALID_PARAMETER);
-                Result = 0;
-            }
-        }
-
-        ONEPARAM_ROUTINE_GETPROCDEFLAYOUT => {
-            'block: {
-                let ppi: PPROCESSINFO;
-                let pdwLayout: PDWORD;
-                Result = 1 as DWORD_PTR;
-
-                if PsGetCurrentProcess() as PVOID == gpepCSRSS as PVOID {
-                    EngSetLastError(ERROR_INVALID_ACCESS);
-                    Result = 0;
-                    break 'block;
-                }
-
-                ppi = PsGetCurrentProcessWin32Process() as PPROCESSINFO;
-                Status = SafeProbeForWrite(
-                    Param as *mut core::ffi::c_void,
-                    core::mem::size_of::<DWORD>() as SIZE_T,
-                    core::mem::align_of::<DWORD>() as ULONG,
-                );
-                if !NT_SUCCESS(Status) {
-                    SetLastNtError(Status);
-                    Result = 0;
-                } else {
-                    pdwLayout = Param as PDWORD;
-                    core::ptr::write_volatile(pdwLayout, (*ppi).dwLayout as DWORD);
-                }
-            }
-        }
-
-        ONEPARAM_ROUTINE_REPLYMESSAGE => {
-            Result = co_MsqReplyMessage(Param as LRESULT) as DWORD_PTR;
-        }
-
-        ONEPARAM_ROUTINE_MESSAGEBEEP => {
-            Result = UserPostMessage(
-                hwndSAS,
-                WM_LOGONNOTIFY,
-                LN_MESSAGE_BEEP as _,
-                Param as LPARAM,
-            ) as DWORD_PTR;
-        }
-
-        ONEPARAM_ROUTINE_CREATESYSTEMTHREADS => {
-            Result = UserSystemThreadProc(Param as BOOL) as DWORD_PTR;
-        }
-
-        ONEPARAM_ROUTINE_LOCKFOREGNDWINDOW => {
-            Result = IntLockSetForegroundWindow(Param as UINT) as DWORD_PTR;
-        }
-
-        ONEPARAM_ROUTINE_ALLOWSETFOREGND => {
-            Result = IntAllowSetForegroundWindow(Param as DWORD) as DWORD_PTR;
-        }
-
-        _ => {
-            EngSetLastError(ERROR_INVALID_PARAMETER);
-            Result = 0;
-        }
-    }
-
-    UserLeave();
-
-    Result
-}
-#[cfg(target_arch = "x86")]
-#[no_mangle]
-pub unsafe extern "stdcall" fn NtUserCallTwoParam(
+pub unsafe extern "system" fn NtUserCallTwoParam(
     Param1: DWORD_PTR,
     Param2: DWORD_PTR,
     Routine: DWORD,
@@ -1058,233 +715,8 @@ pub unsafe extern "stdcall" fn NtUserCallTwoParam(
 
     Ret
 }
-
-#[cfg(not(target_arch = "x86"))]
 #[no_mangle]
-pub unsafe extern "C" fn NtUserCallTwoParam(
-    Param1: DWORD_PTR,
-    Param2: DWORD_PTR,
-    Routine: DWORD,
-) -> DWORD_PTR {
-    let Window: PWND;
-    let mut Ret: DWORD_PTR;
-
-    UserEnterExclusive();
-
-    match Routine {
-        TWOPARAM_ROUTINE_REDRAWTITLE => {
-            Window = UserGetWindowObject(Param1 as HWND);
-            Ret = UserPaintCaption(Window, Param2 as INT) as DWORD_PTR;
-        }
-
-        TWOPARAM_ROUTINE_SETMENUBARHEIGHT => {
-            let MenuObject: PMENU = IntGetMenuObject(Param1 as HMENU);
-            if MenuObject.is_null() {
-                Ret = 0;
-            } else {
-                if Param2 > 0 {
-                    Ret = ((*MenuObject).cyMenu == Param2 as i32 as ULONG) as DWORD_PTR;
-                    (*MenuObject).cyMenu = Param2 as i32 as ULONG;
-                } else {
-                    Ret = (*MenuObject).cyMenu as DWORD_PTR;
-                }
-                IntReleaseMenuObject(MenuObject);
-            }
-        }
-
-        TWOPARAM_ROUTINE_SETGUITHRDHANDLE => {
-            let pti: PTHREADINFO = PsGetCurrentThreadWin32Thread() as PTHREADINFO;
-            Ret = MsqSetStateWindow(pti, Param1 as ULONG, Param2 as HWND) as DWORD_PTR;
-        }
-
-        TWOPARAM_ROUTINE_ENABLEWINDOW => {
-            Ret = IntEnableWindow(Param1 as HWND, Param2 as BOOL) as DWORD_PTR;
-        }
-
-        TWOPARAM_ROUTINE_SHOWOWNEDPOPUPS => {
-            Window = UserGetWindowObject(Param1 as HWND);
-            if Window.is_null() {
-                Ret = 0;
-            } else {
-                Ret = IntShowOwnedPopups(Window, Param2 as BOOL) as DWORD_PTR;
-            }
-        }
-
-        TWOPARAM_ROUTINE_ROS_UPDATEUISTATE => {
-            Window = UserGetWindowObject(Param1 as HWND);
-            if Window.is_null() {
-                Ret = 0;
-            } else {
-                let wParam: WPARAM = MAKEWPARAM(
-                    ((Param2 >> 3) & 0x3) as u32,
-                    (Param2 & (UISF_HIDEFOCUS | UISF_HIDEACCEL | UISF_ACTIVE) as DWORD_PTR) as u32,
-                );
-                Ret = UserUpdateUiState(Window, wParam) as DWORD_PTR;
-            }
-        }
-
-        TWOPARAM_ROUTINE_SWITCHTOTHISWINDOW => {
-            let hwnd: HWND = Param1 as HWND;
-            let fAltTab: BOOL = Param2 as BOOL;
-            Ret = 0;
-            Window = UserGetWindowObject(hwnd);
-            if !Window.is_null() {
-                if !gpqForeground.is_null() && fAltTab == 0 {
-                    let pwndActive: PWND = (*gpqForeground).spwndActive;
-                    if !pwndActive.is_null()
-                        && ((*pwndActive).ExStyle & WS_EX_TOPMOST) == 0
-                    {
-                        co_WinPosSetWindowPos(
-                            pwndActive,
-                            HWND_BOTTOM,
-                            0,
-                            0,
-                            0,
-                            0,
-                            (SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE | SWP_ASYNCWINDOWPOS) as UINT,
-                        );
-                    }
-
-                    UserSetActiveWindow(Window);
-                } else {
-                    co_IntSetForegroundWindowMouse(Window);
-
-                    if fAltTab != 0 && ((*Window).style & WS_MINIMIZE as DWORD) != 0 {
-                        let msg: MSG = MSG {
-                            hwnd: UserHMGetHandle(Window) as HWND,
-                            message: WM_SYSCOMMAND,
-                            wParam: SC_RESTORE as WPARAM,
-                            lParam: 0,
-                            ..core::mem::zeroed()
-                        };
-                        MsqPostMessage(
-                            head_pti(&(*Window).head),
-                            &msg,
-                            0u8,
-                            QS_POSTMESSAGE,
-                            0,
-                            0,
-                        );
-                    }
-                }
-            }
-        }
-
-        TWOPARAM_ROUTINE_SETCARETPOS => {
-            Ret = co_IntSetCaretPos(Param1 as i32, Param2 as i32) as DWORD_PTR;
-        }
-
-        TWOPARAM_ROUTINE_REGISTERLOGONPROCESS => {
-            Ret = co_IntRegisterLogonProcess(Param1 as HANDLE, Param2 as BOOL) as DWORD_PTR;
-        }
-
-        TWOPARAM_ROUTINE_SETCURSORPOS => {
-            Ret = UserSetCursorPos(Param1 as i32, Param2 as i32, 0, 0, 0) as DWORD_PTR;
-        }
-
-        TWOPARAM_ROUTINE_UNHOOKWINDOWSHOOK => {
-            Ret = IntUnhookWindowsHook(Param1 as i32, int_as_hookproc(Param2)) as DWORD_PTR;
-        }
-
-        _ => {
-            EngSetLastError(ERROR_INVALID_PARAMETER);
-            Ret = 0;
-        }
-    }
-
-    UserLeave();
-
-    Ret
-}
-#[cfg(target_arch = "x86")]
-#[no_mangle]
-pub unsafe extern "stdcall" fn NtUserCallHwndLock(hWnd: HWND, Routine: DWORD) -> BOOL {
-    let mut Ret: BOOL = 0;
-    let Window: PWND;
-    let mut Ref: USER_REFERENCE_ENTRY = core::mem::zeroed();
-
-    UserEnterExclusive();
-
-    'exit: {
-        Window = UserGetWindowObject(hWnd);
-        if Window.is_null() {
-            Ret = 0;
-            break 'exit;
-        }
-
-        UserRefObjectCo(Window as PVOID, &mut Ref);
-
-        match Routine {
-            HWNDLOCK_ROUTINE_ARRANGEICONICWINDOWS => {
-                co_WinPosArrangeIconicWindows(Window);
-            }
-
-            HWNDLOCK_ROUTINE_DRAWMENUBAR => {
-                Ret = 1;
-                if ((*Window).style & (WS_CHILD | WS_POPUP)) != WS_CHILD {
-                    co_WinPosSetWindowPos(
-                        Window,
-                        HWND_DESKTOP,
-                        0, 0, 0, 0,
-                        SWP_NOSIZE | SWP_NOMOVE | SWP_NOZORDER | SWP_NOACTIVATE | SWP_FRAMECHANGED,
-                    );
-                }
-            }
-
-            HWNDLOCK_ROUTINE_REDRAWFRAME => {
-                co_WinPosSetWindowPos(
-                    Window,
-                    HWND_DESKTOP,
-                    0, 0, 0, 0,
-                    SWP_NOSIZE | SWP_NOMOVE | SWP_NOZORDER | SWP_NOACTIVATE | SWP_FRAMECHANGED,
-                );
-                Ret = 1;
-            }
-
-            HWNDLOCK_ROUTINE_REDRAWFRAMEANDHOOK => {
-                co_WinPosSetWindowPos(
-                    Window,
-                    HWND_DESKTOP,
-                    0, 0, 0, 0,
-                    SWP_NOSIZE | SWP_NOMOVE | SWP_NOZORDER | SWP_NOACTIVATE | SWP_FRAMECHANGED,
-                );
-                if (*Window).spwndOwner.is_null() && IntGetParent(Window).is_null() {
-                    co_IntShellHookNotify(HSHELL_REDRAW as _, hWnd as WPARAM, 0);
-                }
-                Ret = 1;
-            }
-
-            HWNDLOCK_ROUTINE_SETFOREGROUNDWINDOW => {
-                Ret = co_IntSetForegroundWindow(Window);
-            }
-
-            HWNDLOCK_ROUTINE_SETFOREGROUNDWINDOWMOUSE => {
-                Ret = co_IntSetForegroundWindowMouse(Window);
-            }
-
-            HWNDLOCK_ROUTINE_UPDATEWINDOW => {
-                co_IntUpdateWindows(Window, RDW_ALLCHILDREN as _, 0);
-                Ret = 1;
-            }
-
-            HWNDLOCK_ROUTINE_CHECKIMESHOWSTATUSINTHRD => {
-                IntCheckImeShowStatusInThread(Window);
-            }
-
-            _ => {}
-        }
-
-        UserDerefObjectCo(Window as PVOID);
-    }
-
-    UserLeave();
-
-    Ret
-}
-
-#[cfg(not(target_arch = "x86"))]
-#[no_mangle]
-pub unsafe extern "C" fn NtUserCallHwndLock(hWnd: HWND, Routine: DWORD) -> BOOL {
+pub unsafe extern "system" fn NtUserCallHwndLock(hWnd: HWND, Routine: DWORD) -> BOOL {
     let mut Ret: BOOL = 0;
     let Window: PWND;
     let mut Ref: USER_REFERENCE_ENTRY = core::mem::zeroed();
@@ -1369,9 +801,8 @@ pub unsafe extern "C" fn NtUserCallHwndLock(hWnd: HWND, Routine: DWORD) -> BOOL 
 }
 
 const HWND_DESKTOP: HWND = core::ptr::null_mut();
-#[cfg(target_arch = "x86")]
 #[no_mangle]
-pub unsafe extern "stdcall" fn NtUserCallHwndOpt(
+pub unsafe extern "system" fn NtUserCallHwndOpt(
     hWnd: HWND,
     Routine: DWORD,
 ) -> HWND {
@@ -1387,28 +818,8 @@ pub unsafe extern "stdcall" fn NtUserCallHwndOpt(
 
     hWnd
 }
-
-#[cfg(not(target_arch = "x86"))]
 #[no_mangle]
-pub unsafe extern "C" fn NtUserCallHwndOpt(
-    hWnd: HWND,
-    Routine: DWORD,
-) -> HWND {
-    match Routine {
-        HWNDOPT_ROUTINE_SETPROGMANWINDOW => {
-            (*(*GetW32ThreadInfo()).pDeskInfo).hProgmanWindow = hWnd;
-        }
-        HWNDOPT_ROUTINE_SETTASKMANWINDOW => {
-            (*(*GetW32ThreadInfo()).pDeskInfo).hTaskManWindow = hWnd;
-        }
-        _ => {}
-    }
-
-    hWnd
-}
-#[cfg(target_arch = "x86")]
-#[no_mangle]
-pub unsafe extern "stdcall" fn NtUserCallHwnd(
+pub unsafe extern "system" fn NtUserCallHwnd(
     hWnd: HWND,
     Routine: DWORD,
 ) -> DWORD_PTR {
@@ -1470,74 +881,8 @@ pub unsafe extern "stdcall" fn NtUserCallHwnd(
         _ => 0,
     }
 }
-
-#[cfg(not(target_arch = "x86"))]
 #[no_mangle]
-pub unsafe extern "C" fn NtUserCallHwnd(
-    hWnd: HWND,
-    Routine: DWORD,
-) -> DWORD_PTR {
-
-    match Routine {
-        HWND_ROUTINE_GETWNDCONTEXTHLPID => {
-            UserEnterShared();
-
-            let Window: PWND = UserGetWindowObject(hWnd);
-            if Window.is_null() {
-                UserLeave();
-                return 0;
-            }
-
-            let HelpId = HandleToUlong(UserGetProp(
-                Window,
-                (*gpsi).atomContextHelpIdProp,
-                1u8,
-            )) as DWORD_PTR;
-
-            UserLeave();
-            HelpId
-        }
-
-        HWND_ROUTINE_REGISTERSHELLHOOKWINDOW => {
-            if IntIsWindow(hWnd) != 0 {
-                return IntRegisterShellHookWindow(hWnd) as DWORD_PTR;
-            }
-            0
-        }
-
-        HWND_ROUTINE_DEREGISTERSHELLHOOKWINDOW => {
-            if IntIsWindow(hWnd) != 0 {
-                return IntDeRegisterShellHookWindow(hWnd) as DWORD_PTR;
-            }
-            0
-        }
-
-        HWND_ROUTINE_SETMSGBOX => {
-            UserEnterExclusive();
-            let Window: PWND = UserGetWindowObject(hWnd);
-            if !Window.is_null() {
-                (*Window).state |= WNDS_MSGBOX;
-            }
-            UserLeave();
-            0
-        }
-
-        HWND_ROUTINE_DWP_GETENABLEDPOPUP => {
-            UserEnterShared();
-            let mut pWnd: PWND = UserGetWindowObject(hWnd);
-            if !pWnd.is_null() {
-                pWnd = DWP_GetEnabledPopup(pWnd);
-            }
-            UserLeave();
-            pWnd as DWORD_PTR
-        }
-
-        _ => 0,
-    }
-}
-#[cfg(target_arch = "x86")]
-#[no_mangle]
-pub unsafe extern "stdcall" fn NtUserCallHwndParam(
+pub unsafe extern "system" fn NtUserCallHwndParam(
     hWnd: HWND,
     Param: DWORD_PTR,
     Routine: DWORD,
@@ -1651,170 +996,8 @@ pub unsafe extern "stdcall" fn NtUserCallHwndParam(
 
     0
 }
-
-#[cfg(not(target_arch = "x86"))]
 #[no_mangle]
-pub unsafe extern "C" fn NtUserCallHwndParam(
-    hWnd: HWND,
-    Param: DWORD_PTR,
-    Routine: DWORD,
-) -> DWORD {
-
-    match Routine {
-        HWNDPARAM_ROUTINE_KILLSYSTEMTIMER => {
-            UserEnterExclusive();
-            let ret = IntKillTimer(UserGetWindowObject(hWnd), Param as UINT_PTR, 1);
-            UserLeave();
-            return ret as DWORD;
-        }
-
-        HWNDPARAM_ROUTINE_SETWNDCONTEXTHLPID => {
-            UserEnterExclusive();
-            let Window = UserGetWindowObject(hWnd);
-            if Window.is_null() {
-                UserLeave();
-                return 0;
-            }
-
-            if Param != 0 {
-                UserSetProp(
-                    Window,
-                    (*gpsi).atomContextHelpIdProp,
-                    Param as HANDLE,
-                    1u8,
-                );
-            } else {
-                UserRemoveProp(Window, (*gpsi).atomContextHelpIdProp, 1u8);
-            }
-
-            UserLeave();
-            return 1;
-        }
-
-        HWNDPARAM_ROUTINE_SETDIALOGPOINTER => {
-            let mut Ref: USER_REFERENCE_ENTRY = core::mem::zeroed();
-
-            UserEnterExclusive();
-
-            let pWnd = UserGetWindowObject(hWnd);
-            if pWnd.is_null() {
-                UserLeave();
-                return 0;
-            }
-            UserRefObjectCo(pWnd as PVOID, &mut Ref);
-
-            if (*head_pti(&(*pWnd).head)).ppi as PVOID == PsGetCurrentProcessWin32Process()
-                && (*pWnd).cbwndExtra >= DLGWINDOWEXTRA as ULONG
-                && ((*pWnd).state & WNDS_SERVERSIDEWINDOWPROC) == 0
-            {
-                (*pWnd).DialogPointer = Param as PVOID;
-                if Param != 0 {
-                    if (*pWnd).fnid == 0 {
-                        (*pWnd).fnid = FNID_DIALOG as _;
-                    }
-                    (*pWnd).state |= WNDS_DIALOGWINDOW;
-                } else {
-                    (*pWnd).fnid |= FNID_DESTROY as DWORD;
-                    (*pWnd).state &= !WNDS_DIALOGWINDOW;
-                }
-            }
-
-            UserDerefObjectCo(pWnd as PVOID);
-            UserLeave();
-            return 0;
-        }
-
-        HWNDPARAM_ROUTINE_ROS_NOTIFYWINEVENT => {
-            UserEnterExclusive();
-            let pne = Param as PNOTIFYEVENT;
-            let pWnd = if !hWnd.is_null() {
-                UserGetWindowObject(hWnd)
-            } else {
-                core::ptr::null_mut()
-            };
-            IntNotifyWinEvent(
-                (*pne).event,
-                pWnd,
-                (*pne).idObject,
-                (*pne).idChild,
-                (*pne).flags,
-            );
-            UserLeave();
-            return 0;
-        }
-
-        HWNDPARAM_ROUTINE_CLEARWINDOWSTATE => {
-            UserEnterExclusive();
-            let pWnd = UserGetWindowObject(hWnd);
-            if !pWnd.is_null() {
-                IntClearWindowState(pWnd, Param as UINT);
-            }
-            UserLeave();
-            return 0;
-        }
-
-        HWNDPARAM_ROUTINE_SETWINDOWSTATE => {
-            UserEnterExclusive();
-            let pWnd = UserGetWindowObject(hWnd);
-            if !pWnd.is_null() {
-                IntSetWindowState(pWnd, Param as UINT);
-            }
-            UserLeave();
-            return 0;
-        }
-
-        _ => {}
-    }
-
-    0
-}
-#[cfg(target_arch = "x86")]
-#[no_mangle]
-pub unsafe extern "stdcall" fn NtUserCallHwndParamLock(
-    hWnd: HWND,
-    Param: DWORD_PTR,
-    Routine: DWORD,
-) -> DWORD {
-    let mut Ret: DWORD = 0;
-    let Window: PWND;
-    let mut Ref: USER_REFERENCE_ENTRY = core::mem::zeroed();
-
-    UserEnterExclusive();
-
-    'exit: {
-        Window = UserGetWindowObject(hWnd);
-        if Window.is_null() {
-            Ret = 0;
-            break 'exit;
-        }
-
-        UserRefObjectCo(Window as PVOID, core::ptr::addr_of_mut!(Ref));
-
-        match Routine {
-            TWOPARAM_ROUTINE_IMESHOWSTATUSCHANGE => {
-                Ret = IntBroadcastImeShowStatusChange(Window, (Param != 0) as BOOL) as DWORD;
-            }
-            TWOPARAM_ROUTINE_VALIDATERGN => {
-                let Rgn: PREGION = REGION_LockRgn(Param as HRGN);
-                Ret = co_UserRedrawWindow(Window, core::ptr::null_mut(), Rgn, RDW_VALIDATE) as DWORD;
-                if !Rgn.is_null() {
-                    REGION_UnlockRgn(Rgn);
-                }
-            }
-            _ => {}
-        }
-
-        UserDerefObjectCo(Window as PVOID);
-    }
-
-    UserLeave();
-
-    Ret
-}
-
-#[cfg(not(target_arch = "x86"))]
-#[no_mangle]
-pub unsafe extern "C" fn NtUserCallHwndParamLock(
+pub unsafe extern "system" fn NtUserCallHwndParamLock(
     hWnd: HWND,
     Param: DWORD_PTR,
     Routine: DWORD,

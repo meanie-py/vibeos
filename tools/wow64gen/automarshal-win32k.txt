@@ -5,3 +5,14 @@
 # Unlike manual-win32k.txt, names here are still marshalgen codegen TARGETS.
 NtUserChangeDisplaySettings   # PUNICODE_STRING arg (widening struct)
 NtUserEnumDisplayMonitors     # OUT array of HMONITOR (count-aware; no codegen yet)
+
+# E22 — the SELF-DESCRIBING SIZE family. Each of these takes a struct whose
+# first field is its own sizeof, and win32k version-checks that field against
+# the HOST sizeof: a 32-bit guest states the 32-bit size, the check fails, and
+# the API silently returns FALSE/ERROR_INVALID_PARAMETER for every 32-bit
+# process. Widening alone does not fix them — the size field has to be
+# rewritten too, which marshalgen now does (WowAmSizeIn/Out).
+NtUserTrackMouseEvent         # TRACKMOUSEEVENT   16 -> 24 (no WM_MOUSELEAVE/HOVER)
+NtUserGetCursorInfo           # CURSORINFO        20 -> 24
+NtUserGetGUIThreadInfo        # GUITHREADINFO     48 -> 72
+NtUserGetComboBoxInfo         # COMBOBOXINFO      52 -> 64

@@ -8,7 +8,7 @@ use core::ffi::c_void;
 
 // SafeProbeForRead is NTAPI (stdcall i386, `_SafeProbeForRead@12`).
 extern "system" {
-    fn SafeProbeForRead(addr: *mut c_void, len: ULONG, align: ULONG) -> NTSTATUS;
+    fn SafeProbeForRead(addr: *mut c_void, len: SIZE_T, align: ULONG) -> NTSTATUS;
 }
 
 // ValidateHwndNoErr / MsqIsHung / LookupFnIdToiCls are FASTCALL win32k exports
@@ -72,14 +72,8 @@ unsafe fn wnd_pti(w: PWND) -> PTHREADINFO {
 
 pub static mut gptiGhostThread: PTHREADINFO = core::ptr::null_mut();
 
-#[cfg(target_arch = "x86")]
 #[no_mangle]
-pub unsafe extern "stdcall" fn UserGhostThreadEntry() {
-    UserGhostThreadEntry_impl()
-}
-#[cfg(not(target_arch = "x86"))]
-#[no_mangle]
-pub unsafe extern "C" fn UserGhostThreadEntry() {
+pub unsafe extern "system" fn UserGhostThreadEntry() {
     UserGhostThreadEntry_impl()
 }
 unsafe fn UserGhostThreadEntry_impl() {
@@ -195,7 +189,7 @@ unsafe fn IntHungWindowFromGhostWindow_impl(pGhostWnd: PWND) -> HWND {
     if !UserData.is_null() {
         let Status: NTSTATUS = SafeProbeForRead(
             UserData as *mut c_void,
-            core::mem::size_of::<GHOST_DATA>() as ULONG,
+            core::mem::size_of::<GHOST_DATA>() as _,
             1,
         );
         if !NT_SUCCESS(Status) {

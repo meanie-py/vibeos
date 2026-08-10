@@ -1864,9 +1864,8 @@ unsafe fn IntFillWindow_impl(
         0
     }
 }
-#[cfg(target_arch = "x86")]
 #[no_mangle]
-pub unsafe extern "stdcall" fn NtUserBeginPaint(hWnd: HWND, UnsafePs: *mut PAINTSTRUCT) -> HDC {
+pub unsafe extern "system" fn NtUserBeginPaint(hWnd: HWND, UnsafePs: *mut PAINTSTRUCT) -> HDC {
     let mut Window: PWND;
     let mut Ps: PAINTSTRUCT = core::mem::zeroed();
     let Status: NTSTATUS;
@@ -1906,52 +1905,8 @@ pub unsafe extern "stdcall" fn NtUserBeginPaint(hWnd: HWND, UnsafePs: *mut PAINT
     UserLeave();
     Ret
 }
-
-#[cfg(not(target_arch = "x86"))]
 #[no_mangle]
-pub unsafe extern "C" fn NtUserBeginPaint(hWnd: HWND, UnsafePs: *mut PAINTSTRUCT) -> HDC {
-    let mut Window: PWND;
-    let mut Ps: PAINTSTRUCT = core::mem::zeroed();
-    let Status: NTSTATUS;
-    let hDC: HDC;
-    let mut Ref: USER_REFERENCE_ENTRY = core::mem::zeroed();
-    let mut Ret: HDC = core::ptr::null_mut();
-
-    UserEnterExclusive();
-
-    'cleanup: {
-        Window = UserGetWindowObject(hWnd);
-        if Window.is_null() {
-            break 'cleanup;
-        }
-
-        UserRefObjectCo(Window, &mut Ref);
-
-        hDC = IntBeginPaint(Window, &mut Ps);
-
-        Status = MmCopyToCaller(
-            UnsafePs as *mut core::ffi::c_void,
-            &mut Ps as *mut PAINTSTRUCT as *mut core::ffi::c_void,
-            core::mem::size_of::<PAINTSTRUCT>() as usize,
-        );
-        if !NT_SUCCESS(Status) {
-            SetLastNtError(Status);
-            break 'cleanup;
-        }
-
-        Ret = hDC;
-    }
-
-    if !Window.is_null() {
-        UserDerefObjectCo(Window);
-    }
-
-    UserLeave();
-    Ret
-}
-#[cfg(target_arch = "x86")]
-#[no_mangle]
-pub unsafe extern "stdcall" fn NtUserEndPaint(hWnd: HWND, pUnsafePs: *const PAINTSTRUCT) -> BOOL {
+pub unsafe extern "system" fn NtUserEndPaint(hWnd: HWND, pUnsafePs: *const PAINTSTRUCT) -> BOOL {
     let mut Status: NTSTATUS = STATUS_SUCCESS;
     let Window: PWND;
     let mut Ps: PAINTSTRUCT = core::mem::zeroed();
@@ -1994,55 +1949,8 @@ pub unsafe extern "stdcall" fn NtUserEndPaint(hWnd: HWND, pUnsafePs: *const PAIN
     UserLeave();
     Ret
 }
-
-#[cfg(not(target_arch = "x86"))]
 #[no_mangle]
-pub unsafe extern "C" fn NtUserEndPaint(hWnd: HWND, pUnsafePs: *const PAINTSTRUCT) -> BOOL {
-    let mut Status: NTSTATUS = STATUS_SUCCESS;
-    let Window: PWND;
-    let mut Ps: PAINTSTRUCT = core::mem::zeroed();
-    let mut Ref: USER_REFERENCE_ENTRY = core::mem::zeroed();
-    let mut Ret: BOOL = 0;
-
-    UserEnterExclusive();
-
-    'cleanup: {
-        Window = UserGetWindowObject(hWnd);
-        if Window.is_null() {
-            break 'cleanup;
-        }
-
-        UserRefObjectCo(Window, &mut Ref);
-
-        Status = SafeProbeForRead(
-            pUnsafePs as *mut core::ffi::c_void,
-            core::mem::size_of::<PAINTSTRUCT>(),
-            1,
-        );
-        if NT_SUCCESS(Status) {
-            RtlCopyMemory(
-                &mut Ps as *mut PAINTSTRUCT as *mut core::ffi::c_void,
-                pUnsafePs as *mut core::ffi::c_void,
-                core::mem::size_of::<PAINTSTRUCT>(),
-            );
-        }
-        if !NT_SUCCESS(Status) {
-            break 'cleanup;
-        }
-
-        Ret = IntEndPaint(Window, &mut Ps);
-    }
-
-    if !Window.is_null() {
-        UserDerefObjectCo(Window);
-    }
-
-    UserLeave();
-    Ret
-}
-#[cfg(target_arch = "x86")]
-#[no_mangle]
-pub unsafe extern "stdcall" fn NtUserFillWindow(
+pub unsafe extern "system" fn NtUserFillWindow(
     hWndParent: HWND,
     hWnd: HWND,
     hDC: HDC,
@@ -2080,93 +1988,8 @@ pub unsafe extern "stdcall" fn NtUserFillWindow(
     UserLeave();
     ret
 }
-
-#[cfg(not(target_arch = "x86"))]
 #[no_mangle]
-pub unsafe extern "C" fn NtUserFillWindow(
-    hWndParent: HWND,
-    hWnd: HWND,
-    hDC: HDC,
-    hBrush: HBRUSH,
-) -> BOOL {
-    let mut ret: BOOL = 0;
-    let pWnd: PWND;
-    let mut pWndParent: PWND = core::ptr::null_mut();
-    let mut Ref: USER_REFERENCE_ENTRY = core::mem::zeroed();
-
-    UserEnterExclusive();
-
-    'exit: {
-        if hDC.is_null() {
-            break 'exit;
-        }
-
-        pWnd = UserGetWindowObject(hWnd);
-        if pWnd.is_null() {
-            break 'exit;
-        }
-
-        if !hWndParent.is_null() {
-            pWndParent = UserGetWindowObject(hWndParent);
-            if pWndParent.is_null() {
-                break 'exit;
-            }
-        }
-
-        UserRefObjectCo(pWnd, &mut Ref);
-        ret = IntFillWindow(pWndParent, pWnd, hDC, hBrush);
-        UserDerefObjectCo(pWnd);
-    }
-
-    UserLeave();
-    ret
-}
-#[cfg(target_arch = "x86")]
-#[no_mangle]
-pub unsafe extern "stdcall" fn NtUserFlashWindowEx(pfwi: PFLASHWINFO) -> BOOL {
-    let pWnd: PWND;
-    let mut finfo: FLASHWINFO = core::mem::zeroed();
-    let mut Ret: BOOL = 0;
-
-    UserEnterExclusive();
-
-    'exit: {
-        {
-            let __SehStatus = SafeProbeForRead(
-                pfwi as *mut _,
-                core::mem::size_of::<FLASHWINFO>(),
-                1,
-            );
-            if !NT_SUCCESS(__SehStatus) {
-                SetLastNtError(__SehStatus);
-                break 'exit;
-            }
-        }
-        RtlCopyMemory(
-            core::ptr::addr_of_mut!(finfo) as *mut _,
-            pfwi as *mut _,
-            core::mem::size_of::<FLASHWINFO>() as _,
-        );
-
-        pWnd = ValidateHwndNoErr(finfo.hwnd);
-        if pWnd.is_null()
-            || finfo.cbSize != core::mem::size_of::<FLASHWINFO>() as u32
-            || (finfo.dwFlags & !(FLASHW_ALL | FLASHW_TIMER | FLASHW_TIMERNOFG)) != 0
-        {
-            EngSetLastError(ERROR_INVALID_PARAMETER);
-            break 'exit;
-        }
-
-        Ret = IntFlashWindowEx(pWnd, core::ptr::addr_of_mut!(finfo));
-    }
-
-    UserLeave();
-    Ret
-}
-
-#[cfg(not(target_arch = "x86"))]
-#[no_mangle]
-pub unsafe extern "C" fn NtUserFlashWindowEx(pfwi: PFLASHWINFO) -> BOOL {
+pub unsafe extern "system" fn NtUserFlashWindowEx(pfwi: PFLASHWINFO) -> BOOL {
     let pWnd: PWND;
     let mut finfo: FLASHWINFO = core::mem::zeroed();
     let mut Ret: BOOL = 0;
@@ -2328,26 +2151,8 @@ unsafe fn co_UserGetUpdateRect(Window: PWND, pRect: PRECT, bErase: i32) -> i32 {
     Ret
 }
 }
-#[cfg(target_arch = "x86")]
 #[no_mangle]
-pub unsafe extern "stdcall" fn NtUserGetUpdateRgn(hWnd: HWND, hRgn: HRGN, bErase: i32) -> i32 {
-    let Window: PWND;
-    let mut ret: i32 = ERROR as i32;
-
-    UserEnterExclusive();
-
-    Window = UserGetWindowObject(hWnd);
-    if !Window.is_null() {
-        ret = co_UserGetUpdateRgn(Window, hRgn, bErase);
-    }
-
-    UserLeave();
-    ret
-}
-
-#[cfg(not(target_arch = "x86"))]
-#[no_mangle]
-pub unsafe extern "C" fn NtUserGetUpdateRgn(hWnd: HWND, hRgn: HRGN, bErase: i32) -> i32 {
+pub unsafe extern "system" fn NtUserGetUpdateRgn(hWnd: HWND, hRgn: HRGN, bErase: i32) -> i32 {
     let Window: PWND;
     let mut ret: i32 = ERROR as i32;
 
@@ -2396,101 +2201,8 @@ pub unsafe extern "system" fn NtUserGetUpdateRect(hWnd: HWND, UnsafeRect: LPRECT
     UserLeave();
     Ret
 }
-#[cfg(target_arch = "x86")]
 #[no_mangle]
-pub unsafe extern "stdcall" fn NtUserRedrawWindow(
-    hWnd: HWND,
-    lprcUpdate: *const RECT,
-    hrgnUpdate: HRGN,
-    flags: UINT,
-) -> BOOL {
-    let mut SafeUpdateRect: RECTL = core::mem::zeroed();
-    let Wnd: PWND;
-    let mut Ret: BOOL = 0;
-    let mut Ref: USER_REFERENCE_ENTRY = core::mem::zeroed();
-    let mut Status: NTSTATUS = STATUS_SUCCESS as NTSTATUS;
-    let mut RgnUpdate: PREGION = core::ptr::null_mut();
-
-    UserEnterExclusive();
-
-    'exit: {
-        Wnd = UserGetWindowObject(if !hWnd.is_null() { hWnd } else { IntGetDesktopWindow() });
-        if Wnd.is_null() {
-            break 'exit;
-        }
-
-        if !lprcUpdate.is_null() {
-            Status = SafeProbeForRead(
-                lprcUpdate as *mut core::ffi::c_void,
-                core::mem::size_of::<RECTL>(),
-                1,
-            );
-            if NT_SUCCESS(Status) {
-                core::ptr::copy_nonoverlapping(
-                    lprcUpdate as *const RECTL,
-                    &mut SafeUpdateRect,
-                    1,
-                );
-            }
-            if !NT_SUCCESS(Status) {
-                EngSetLastError(RtlNtStatusToDosError(Status));
-                break 'exit;
-            }
-        }
-
-        if flags
-            & !(RDW_ERASE
-                | RDW_FRAME
-                | RDW_INTERNALPAINT
-                | RDW_INVALIDATE
-                | RDW_NOERASE
-                | RDW_NOFRAME
-                | RDW_NOINTERNALPAINT
-                | RDW_VALIDATE
-                | RDW_ERASENOW
-                | RDW_UPDATENOW
-                | RDW_ALLCHILDREN
-                | RDW_NOCHILDREN)
-            != 0
-        {
-            EngSetLastError(ERROR_INVALID_FLAGS);
-            break 'exit;
-        }
-
-        if (hrgnUpdate as usize) > (HRGN_WINDOW as usize) {
-            RgnUpdate = REGION_LockRgn(hrgnUpdate);
-            if RgnUpdate.is_null() {
-                EngSetLastError(ERROR_NOT_ENOUGH_MEMORY);
-                break 'exit;
-            }
-            REGION_UnlockRgn(RgnUpdate);
-        } else if hrgnUpdate == HRGN_WINDOW {
-            ERR!(b"NTRW: Caller is passing Window Region 1\n\0".as_ptr() as *const i8);
-        }
-
-        UserRefObjectCo(Wnd, &mut Ref);
-
-        Ret = co_UserRedrawWindow(
-            Wnd,
-            if !lprcUpdate.is_null() {
-                &SafeUpdateRect
-            } else {
-                core::ptr::null()
-            },
-            RgnUpdate,
-            flags,
-        ) as BOOL;
-
-        UserDerefObjectCo(Wnd);
-    }
-
-    UserLeave();
-    Ret
-}
-
-#[cfg(not(target_arch = "x86"))]
-#[no_mangle]
-pub unsafe extern "C" fn NtUserRedrawWindow(
+pub unsafe extern "system" fn NtUserRedrawWindow(
     hWnd: HWND,
     lprcUpdate: *const RECT,
     hrgnUpdate: HRGN,
@@ -2928,7 +2640,7 @@ unsafe fn UserRealizePaletteImpl(mut hdc: HDC) -> INT {
 }
 #[cfg(target_arch = "x86")]
 #[no_mangle]
-pub unsafe extern "stdcall" fn NtUserDrawCaptionTemp(
+pub unsafe extern "system" fn NtUserDrawCaptionTemp(
     hWnd: HWND,
     hDC: HDC,
     lpRc: LPCRECT,
@@ -3031,7 +2743,7 @@ pub unsafe extern "stdcall" fn NtUserDrawCaptionTemp(
 
 #[cfg(not(target_arch = "x86"))]
 #[no_mangle]
-pub unsafe extern "C" fn NtUserDrawCaptionTemp(
+pub unsafe extern "system" fn NtUserDrawCaptionTemp(
     hWnd: HWND,
     hDC: HDC,
     lpRc: LPCRECT,
@@ -3128,20 +2840,8 @@ pub unsafe extern "C" fn NtUserDrawCaptionTemp(
     UserLeave();
     Ret
 }
-#[cfg(target_arch = "x86")]
 #[no_mangle]
-pub unsafe extern "stdcall" fn NtUserDrawCaption(
-    hWnd: HWND,
-    hDC: HDC,
-    lpRc: LPCRECT,
-    uFlags: UINT,
-) -> BOOL {
-    NtUserDrawCaptionTemp(hWnd, hDC, lpRc, 0 as HFONT, 0 as HICON, core::ptr::null_mut(), uFlags)
-}
-
-#[cfg(not(target_arch = "x86"))]
-#[no_mangle]
-pub unsafe extern "C" fn NtUserDrawCaption(
+pub unsafe extern "system" fn NtUserDrawCaption(
     hWnd: HWND,
     hDC: HDC,
     lpRc: LPCRECT,
@@ -3192,7 +2892,7 @@ unsafe fn co_UserExcludeUpdateRgn(hDC: HDC, Window: PWND) -> INT {
 }
 #[cfg(target_arch = "x86")]
 #[no_mangle]
-pub unsafe extern "stdcall" fn NtUserExcludeUpdateRgn(
+pub unsafe extern "system" fn NtUserExcludeUpdateRgn(
     hDC: HDC,
     hWnd: HWND,
 ) -> INT {
@@ -3213,7 +2913,7 @@ pub unsafe extern "stdcall" fn NtUserExcludeUpdateRgn(
 
 #[cfg(not(target_arch = "x86"))]
 #[no_mangle]
-pub unsafe extern "C" fn NtUserExcludeUpdateRgn(
+pub unsafe extern "system" fn NtUserExcludeUpdateRgn(
     hDC: HDC,
     hWnd: HWND,
 ) -> INT {
@@ -3231,9 +2931,8 @@ pub unsafe extern "C" fn NtUserExcludeUpdateRgn(
     UserLeave();
     ret
 }
-#[cfg(target_arch = "x86")]
 #[no_mangle]
-pub unsafe extern "stdcall" fn NtUserInvalidateRect(
+pub unsafe extern "system" fn NtUserInvalidateRect(
     hWnd: HWND,
     lpUnsafeRect: *const RECT,
     bErase: BOOL,
@@ -3246,25 +2945,8 @@ pub unsafe extern "stdcall" fn NtUserInvalidateRect(
     }
     NtUserRedrawWindow(hWnd, lpUnsafeRect, core::ptr::null_mut(), flags)
 }
-
-#[cfg(not(target_arch = "x86"))]
 #[no_mangle]
-pub unsafe extern "C" fn NtUserInvalidateRect(
-    hWnd: HWND,
-    lpUnsafeRect: *const RECT,
-    bErase: BOOL,
-) -> BOOL {
-    let mut flags = RDW_INVALIDATE | (if bErase != 0 { RDW_ERASE } else { 0 });
-    let mut lpUnsafeRect = lpUnsafeRect;
-    if hWnd.is_null() {
-        flags = RDW_ALLCHILDREN | RDW_INVALIDATE | RDW_FRAME | RDW_ERASE | RDW_ERASENOW;
-        lpUnsafeRect = core::ptr::null_mut();
-    }
-    NtUserRedrawWindow(hWnd, lpUnsafeRect, core::ptr::null_mut(), flags)
-}
-#[cfg(target_arch = "x86")]
-#[no_mangle]
-pub unsafe extern "stdcall" fn NtUserInvalidateRgn(
+pub unsafe extern "system" fn NtUserInvalidateRgn(
     hWnd: HWND,
     hRgn: HRGN,
     bErase: BOOL,
@@ -3280,28 +2962,8 @@ pub unsafe extern "stdcall" fn NtUserInvalidateRgn(
         RDW_INVALIDATE | (if bErase != 0 { RDW_ERASE } else { 0 }),
     )
 }
-
-#[cfg(not(target_arch = "x86"))]
 #[no_mangle]
-pub unsafe extern "C" fn NtUserInvalidateRgn(
-    hWnd: HWND,
-    hRgn: HRGN,
-    bErase: BOOL,
-) -> BOOL {
-    if hWnd.is_null() {
-        EngSetLastError(ERROR_INVALID_WINDOW_HANDLE);
-        return 0;
-    }
-    NtUserRedrawWindow(
-        hWnd,
-        core::ptr::null_mut(),
-        hRgn,
-        RDW_INVALIDATE | (if bErase != 0 { RDW_ERASE } else { 0 }),
-    )
-}
-#[cfg(target_arch = "x86")]
-#[no_mangle]
-pub unsafe extern "stdcall" fn NtUserPrintWindow(
+pub unsafe extern "system" fn NtUserPrintWindow(
     hwnd: HWND,
     hdcBlt: HDC,
     nFlags: UINT,
@@ -3334,60 +2996,8 @@ pub unsafe extern "stdcall" fn NtUserPrintWindow(
     UserLeave();
     Ret
 }
-
-#[cfg(not(target_arch = "x86"))]
 #[no_mangle]
-pub unsafe extern "C" fn NtUserPrintWindow(
-    hwnd: HWND,
-    hdcBlt: HDC,
-    nFlags: UINT,
-) -> BOOL {
-    let mut Window: PWND;
-    let mut Ret: BOOL = 0;
-
-    UserEnterExclusive();
-
-    'exit: {
-        if !hwnd.is_null() {
-            Window = UserGetWindowObject(hwnd);
-            if Window.is_null()
-                || UserIsDesktopWindow(Window) != 0
-                || UserIsMessageWindow(Window) != 0
-            {
-                break 'exit;
-            }
-
-            if !Window.is_null() {
-                if (nFlags & PW_CLIENTONLY) == nFlags {
-                    Ret = IntPrintWindow(Window, hdcBlt, nFlags);
-                } else {
-                    EngSetLastError(ERROR_INVALID_PARAMETER);
-                }
-            }
-        }
-    }
-
-    UserLeave();
-    Ret
-}
-#[cfg(target_arch = "x86")]
-#[no_mangle]
-pub unsafe extern "stdcall" fn NtUserValidateRect(
-    hWnd: HWND,
-    lpRect: *const RECT,
-) -> BOOL {
-    let mut flags: UINT = RDW_VALIDATE;
-    let mut lpRect = lpRect;
-    if hWnd.is_null() {
-        flags = RDW_ALLCHILDREN | RDW_INVALIDATE | RDW_FRAME | RDW_ERASE | RDW_ERASENOW;
-        lpRect = core::ptr::null_mut();
-    }
-    NtUserRedrawWindow(hWnd, lpRect, core::ptr::null_mut(), flags)
-}
-
-#[cfg(not(target_arch = "x86"))]
-#[no_mangle]
-pub unsafe extern "C" fn NtUserValidateRect(
+pub unsafe extern "system" fn NtUserValidateRect(
     hWnd: HWND,
     lpRect: *const RECT,
 ) -> BOOL {

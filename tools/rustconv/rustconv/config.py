@@ -272,6 +272,13 @@ SHELL32_COM_FILES = {
     "amd64": SHELL32_RUST_SRC / "shellcom.rs",
     "i386": SHELL32_RUST_SRC / "shellcom.rs",
 }
+# The per-arch bindgen islands. Distinct from SHELL32_COM_FILES above, which is the
+# hand-written vtable-ABI module and is arch-independent by construction. Only these
+# carry per-arch type widths, so only these can settle whether an SDK typedef is an
+# integer of the same width on every target (cpp_com.island_integer_aliases).
+SHELL32_ISLAND_FILES = {
+    arch: SHELL32_RUST_SRC / f"island_{arch}.rs" for arch in ("i386", "amd64", "arm64")
+}
 
 # winlogon.exe — the logon manager (winlogon → userinit → explorer). GINA-
 # independent LEAF files only (setup/environment/shutdown/screensaver/security);
@@ -377,6 +384,25 @@ class Target:
     # here, abi_enforce emits one `stdmethod! { … }`; without it, the body is
     # duplicated under two cfgs (correct, just verbose). See abi_enforce.py.
     com_method_macro: str | None = None
+    # The C++ CLASS path's two inputs, which used to be hard-coded to shell32 at the call
+    # sites in __main__ — so `--cpp-com` could not run for any other module, `cpp_com_mode`
+    # was False there, and with it went the class scaffold (vtable instance, _new/_delete,
+    # lpVtbl wiring), the interface rendering AND every audit_worker_body call. The failure
+    # was silent: shellrecyclebin's four hand-rolled COM classes translated to bodies with no
+    # vtable ever populated, which is a wild jump on the first method call, and nine raw C
+    # `goto`s shipped past a check that exists and works.
+    #
+    # com_object_map: the DLL's class-object map (shell32.cpp's OBJECT_ENTRY table). None for
+    # a module whose classes are created by plain `*_Constructor` free functions rather than a
+    # COM class factory — which is every non-shell32 case so far.
+    com_object_map: Path | None = None
+    # com_island_files: arch → the crate's OWN bindgen island, which the class analyzer reads
+    # for exact layouts. NOT `crate_bindgen_files`: that names the COM ABI module
+    # (shell32 → shellcom), a different thing that happens to live in the same crate.
+    com_island_files: dict = field(default_factory=dict)
+    # Optional per-module override of the C++ CLASS body prompt. None means the shared
+    # template, whose worker contract is target-independent — see load_function_system_prompt.
+    com_system_prompt: Path | None = None
 
 
 TARGETS = {
@@ -1465,6 +1491,10 @@ TARGETS = {
         arches=("i386", "amd64", "arm64"),
         crate_bindgen_files=SHELL32_COM_FILES,
         crate_module="shellcom",
+        # Exactly what the two analyze_class call sites used to hard-code, so shell32's
+        # behaviour is unchanged by the parameterization.
+        com_object_map=SHELL32_DIR / "shell32.cpp",
+        com_island_files=SHELL32_ISLAND_FILES,
         sys_crate="crate",
         sys_umbrella=None,
     ),
@@ -1492,8 +1522,16 @@ TARGETS = {
 }
 
 
-def detect_target(c_path: Path) -> Target:
-    """Pick a target by sniffing the C path. Falls back to ntoskrnl."""
+def detect_target(
+    c_path: Path, output_crate: str | None = None, sys_crate: str | None = None
+) -> Target:
+    """Pick a target by sniffing the C path. Falls back to ntoskrnl.
+
+    ``output_crate``/``sys_crate`` are the caller's explicit overrides, forwarded to
+    the auto-detected dll/<name> branch below. Without them, a module whose crate
+    cannot be guessed (msvcrt -> msvcrt-crt-rust) raised TargetResolveError on the
+    auto-detect path with no way to answer it — the flag existed but only the
+    explicit --target branch read it."""
     p = c_path.resolve()
     posix = p.as_posix()
     if "/drivers/base/kdrosdbg" in posix:
@@ -1649,7 +1687,7 @@ def detect_target(c_path: Path) -> Target:
     # e.g. dll/win32/mscms from silently landing in ntoskrnl-rust.
     dll = _dll_crate_from_path(posix)
     if dll:
-        return make_user_dll_target(*dll)
+        return make_user_dll_target(*dll, output_crate=output_crate, sys_crate=sys_crate)
     # No more silent ntoskrnl fallback: an unrecognized path is an ERROR — pass
     # --target <known> or place the file under a known root. (Misrouting paid
     # translations into the wrong crate is the bug this prevents.)
@@ -1903,7 +1941,31 @@ def make_user_dll_target(
         sys_umbrella=umbrella,
         system_prompt_addendum=_user_prompt_addendum(name),
         com_method_macro=_detect_com_method_macro(crate),
+        # com_object_map stays None: a module outside shell32 has no OBJECT_ENTRY class-object
+        # map, its COM classes being created by plain `*_Constructor` free functions.
+        com_island_files=_derive_com_islands(crate),
     )
+
+
+def _derive_com_islands(crate: Path) -> dict:
+    """arch → the crate's own bindgen island, for the C++ class analyzer.
+
+    Two stems occur in the tree and both are legitimate: `island_<arch>.rs` when the profile
+    sets TYPES_STEM=island (shell32, to leave a hand-written types.rs alone) and
+    `types_<arch>.rs`, which is gen_driver_types.sh's default. Probed rather than configured
+    because the profile already decided, and a second place to say it is a second place to
+    get it wrong. Empty dict when the crate has no island yet — the caller reports that as a
+    missing prerequisite rather than proceeding against no layouts.
+    """
+    src = crate / "src"
+    islands = {}
+    for arch in ("i386", "amd64", "arm64"):
+        for stem in ("island", "types"):
+            candidate = src / f"{stem}_{arch}.rs"
+            if candidate.is_file():
+                islands[arch] = candidate
+                break
+    return islands
 
 
 def _user_prompt_addendum(name: str) -> Path:
@@ -1952,8 +2014,25 @@ def hal_cmake_for_c(c_path: Path) -> Path | None:
     return None
 
 
-# Backend selection: "claude" (default if ANTHROPIC_API_KEY set), "gemini"
+# Backend selection: "deepseek" (the house translation model), then "claude", then "gemini".
+#
+# DeepSeek is checked FIRST even though ANTHROPIC_API_KEY is also provisioned, because an
+# unflagged `translate` is the common case and it must land on the cheap lane. This used to
+# return "claude" whenever ANTHROPIC_API_KEY was set, and since DEFAULT_MODELS had no
+# "deepseek" key at all, `-m deepseek` was the ONLY way to reach DeepSeek — a flag the docs
+# recommended and nothing enforced. The shell32 tail lane duly drifted: 69 Sonnet runs to 1
+# DeepSeek from 2026-08-02, 382 paid calls billed at $3.81 that DeepSeek would have served
+# for $0.31 (12.2x). The banner printed the model and price on every one of those runs, so
+# visibility was never the missing piece — the DEFAULT was.
+#
+# Escalation is unaffected: `-m sonnet` / `-m opus` still switch the backend by model prefix
+# (see submit_single), which is the documented route for substrate-clean high-band repairs.
+# Switching the default re-bills nothing — the resume-cache key (preparation_namespace) is
+# built from mode + seal flags and does NOT include the model, so every banked unit still
+# replays for $0 regardless of which model bought it.
 def get_backend() -> str:
+    if os.environ.get("DEEPSEEK_API_KEY"):
+        return "deepseek"
     if os.environ.get("ANTHROPIC_API_KEY"):
         return "claude"
     return "gemini"
@@ -1973,6 +2052,9 @@ GEMINI_MAX_TOKENS = 65536
 DEEPSEEK_BASE_URL = "https://api.deepseek.com"
 DEEPSEEK_MODEL_CHAT = "deepseek-chat"
 DEEPSEEK_MODEL_REASONER = "deepseek-reasoner"
+# The provisioned key serves the v4 tier; pro is the translation default (flash is the
+# cheaper sibling, not a quality peer). Kept in sync with MODEL_ALIASES["deepseek"].
+DEEPSEEK_MODEL_V4_PRO = "deepseek-v4-pro"
 # Output-token budget. v4 models are REASONING models: reasoning tokens are
 # drawn from this same budget before any code `content` is emitted. At 8192 a
 # large unit (e.g. a file-scope type preamble with many structs/COM vtables)
@@ -1994,6 +2076,7 @@ DEEPSEEK_MAX_TOKENS = int(os.environ.get("DEEPSEEK_MAX_TOKENS", "65536"))
 
 # Default model per backend
 DEFAULT_MODELS = {
+    "deepseek": DEEPSEEK_MODEL_V4_PRO,
     "claude": CLAUDE_MODEL_SONNET,
     "gemini": GEMINI_MODEL,
 }

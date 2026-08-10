@@ -55,7 +55,7 @@ extern "C" {
     fn ArcRead(FileId: u32, Buffer: *mut core::ffi::c_void, Length: u32, BytesRead: *mut u32) -> ARC_STATUS;
     fn FsGetServiceName(FileId: u32) -> PCSTR;
     fn MM_SIZE_TO_PAGES(Size: u32) -> u32;
-    fn MmAllocateMemoryWithType(Size: u32, Type: u32) -> *mut core::ffi::c_void;
+    fn MmAllocateMemoryWithType(Size: usize, Type: u32) -> *mut core::ffi::c_void;
     fn NtLdrOutputLoadMsg(Path: PCSTR, Name: PCSTR);
     fn PaToVa(Pa: *mut core::ffi::c_void) -> *mut core::ffi::c_void;
     fn RtlStringCbCatA(Dest: *mut u8, DestSize: usize, Src: PCSTR) -> NTSTATUS;
@@ -129,7 +129,7 @@ unsafe fn WinLdrLoadSystemHive(
     HiveFileSize = (*core::ptr::addr_of!(FileInfo.EndingAddress)).__bindgen_anon_1.LowPart;
 
     HiveDataPhysical = MmAllocateMemoryWithType(
-        MM_SIZE_TO_PAGES(HiveFileSize + 4096 - 1) << 12,
+        (MM_SIZE_TO_PAGES(HiveFileSize + 4096 - 1) << 12) as usize,
         LoaderRegistryData,
     );
 
@@ -627,7 +627,7 @@ pub unsafe extern "C" fn WinLdrLoadNLSData(
 
     TotalNLSSize = TotalSize;
 
-    NlsDataBase = MmAllocateMemoryWithType(TotalSize * MM_PAGE_SIZE, LoaderNlsData);
+    NlsDataBase = MmAllocateMemoryWithType((TotalSize * MM_PAGE_SIZE) as usize, LoaderNlsData);
     if NlsDataBase.is_null() {
         'Quit: {
             if LangFileId != u32::MAX {

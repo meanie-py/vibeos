@@ -25,8 +25,8 @@ pub unsafe extern "system" fn INetCfgBindingInterface_fnQueryInterface(
     let This = iface as *mut INetCfgBindingInterfaceImpl;
     *ppvObj = core::ptr::null_mut();
 
-    if IsEqualIID(iid, &IID_IUnknown) != 0 ||
-       IsEqualIID(iid, &IID_INetCfgBindingInterface) != 0
+    if IsEqualIID!(iid, &IID_IUnknown) ||
+       IsEqualIID!(iid, &IID_INetCfgBindingInterface)
     {
         *ppvObj = This as LPVOID;
         return S_OK;
@@ -42,7 +42,7 @@ pub unsafe extern "system" fn INetCfgBindingInterface_fnAddRef(
     let This = iface as *mut INetCfgBindingInterfaceImpl;
     let refCount = InterlockedIncrement(core::ptr::addr_of_mut!((*This).ref_));
 
-    refCount
+    (refCount) as u32
 }
 
 #[no_mangle]
@@ -92,7 +92,7 @@ pub unsafe extern "system" fn INetCfgBindingInterface_Constructor(
         return E_POINTER;
     }
 
-    let This = CoTaskMemAlloc(core::mem::size_of::<INetCfgBindingInterfaceImpl>()) as *mut INetCfgBindingInterfaceImpl;
+    let This = CoTaskMemAlloc((core::mem::size_of::<INetCfgBindingInterfaceImpl>()) as SIZE_T) as *mut INetCfgBindingInterfaceImpl;
     if This.is_null() {
         return E_OUTOFMEMORY;
     }
@@ -117,8 +117,8 @@ pub unsafe extern "system" fn IEnumNetCfgBindingInterface_fnQueryInterface(
     let This = iface as *mut IEnumNetCfgBindingInterfaceImpl;
     *ppvObj = core::ptr::null_mut();
 
-    if IsEqualIID(iid, &IID_IUnknown) != 0 ||
-       IsEqualIID(iid, &IID_IEnumNetCfgBindingInterface) != 0
+    if IsEqualIID!(iid, &IID_IUnknown) ||
+       IsEqualIID!(iid, &IID_IEnumNetCfgBindingInterface)
     {
         *ppvObj = This as LPVOID;
         return S_OK;
@@ -134,7 +134,7 @@ pub unsafe extern "system" fn IEnumNetCfgBindingInterface_fnAddRef(
     let This = iface as *mut IEnumNetCfgBindingInterfaceImpl;
     let refCount = InterlockedIncrement(core::ptr::addr_of_mut!((*This).ref_));
 
-    refCount
+    (refCount) as u32
 }
 
 #[no_mangle]
@@ -144,7 +144,7 @@ pub unsafe extern "system" fn IEnumNetCfgBindingInterface_fnRelease(
     let This = iface as *mut IEnumNetCfgBindingInterfaceImpl;
     let refCount = InterlockedDecrement(core::ptr::addr_of_mut!((*This).ref_));
 
-    refCount
+    (refCount) as u32
 }
 
 #[no_mangle]
@@ -192,7 +192,7 @@ pub unsafe extern "system" fn IEnumNetCfgBindingInterface_Constructor(
         return E_POINTER;
     }
 
-    This = CoTaskMemAlloc(core::mem::size_of::<IEnumNetCfgBindingInterfaceImpl>())
+    This = CoTaskMemAlloc((core::mem::size_of::<IEnumNetCfgBindingInterfaceImpl>()) as SIZE_T)
         as *mut IEnumNetCfgBindingInterfaceImpl;
     if This.is_null() {
         return E_OUTOFMEMORY;

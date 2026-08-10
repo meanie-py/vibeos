@@ -44,6 +44,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 
 import pytest
+import vendored
 
 REPO = Path(__file__).resolve().parent.parent
 
@@ -326,10 +327,16 @@ pub unsafe fn name_ptr() -> *const u16 {
 }
 """
 
+# The inline comments are load-bearing. tree-sitter makes a comment a CHILD of
+# the argument list, so counting it as an argument shifts every positional index
+# — the level check reads the comment (not DISPATCH_LEVEL) and the last-arg
+# OldIrql lookup lands one slot early. Here that makes the scanner BLIND, so the
+# positive control is the only thing that can catch it (an FP fixture cannot).
+# Sibling incident, same root, opposite direction: scan_ob_refcount's fastfat FP.
 _IRQL_BAD = """\
 pub unsafe fn leaky(cond: bool) -> u32 {
     let mut old: u8 = 0;
-    KeRaiseIrql(DISPATCH_LEVEL, &mut old);
+    KeRaiseIrql(/* NewIrql */ DISPATCH_LEVEL, &mut old /* OldIrql */);
     if cond {
         return 1;  // early return LEAKS the raise
     }
@@ -345,6 +352,141 @@ pub unsafe fn balanced(cond: bool) -> u32 {
     KeLowerIrql(old);
     rc
 }
+"""
+
+# scan_extern_decl_drift. BAD carries both halves of what the tool compares:
+# DEPTH (a `*` the def does not have) and WIDTH (the same indirection depth, a
+# wider pointee). The width case IS fastfat's FatGetNextMcbEntry — an 8-byte
+# store through a 4-byte out-param, which the depth-only tool could not see.
+#
+# The GOOD tree pins every shape that made this tool cry wolf. The first four
+# took it from 2,682 findings to 10; adding width resolution added four more,
+# and each of those is a rule whose removal would bury the real findings again:
+# an alias spelled differently per island, a path-qualified alias, a use-rename,
+# a #[link_name] decl naming a different symbol, `Option<Callback>` against the
+# callback, a pointer passed as a pointer-width integer, a by-value parameter
+# the callee reads NARROWER than it is passed, and a `type X = path::X`
+# re-export — which normalises to `X -> X`, a cycle, and silently made
+# `*mut c_void` and therefore PVOID undecidable everywhere.
+_DECL_DRIFT_BAD_A = """\
+pub type PIRP_CONTEXT = *mut IRP_CONTEXT;
+pub type VBO = u32;
+extern "system" {
+    // One `*` too many: volinfo declared cachesup's FatUnpinRepinnedBcbs this way,
+    // so the callee read a pointer-to-pointer as the struct itself.
+    fn FatUnpinRepinnedBcbs(IrpContext: *mut PIRP_CONTEXT);
+    // Same depth, WIDER pointee: the callee stores 8 bytes into the caller's
+    // 4-byte VBO. Nothing about either signature looks wrong.
+    fn FatGetNextMcbEntry(Vcb: *mut VCB, Vbo: *mut u64) -> u8;
+    // By value, the callee reads 64 bits where 32 were passed — the top half is
+    // whatever was in the register.
+    fn MmAllocateMemoryWithType(Size: u32) -> *mut u8;
+}
+pub unsafe fn caller(mut ctx: PIRP_CONTEXT, v: *mut VCB) {
+    let mut vbo: u64 = 0;
+    FatUnpinRepinnedBcbs(&mut ctx);
+    FatGetNextMcbEntry(v, &mut vbo);
+    MmAllocateMemoryWithType(4);
+}
+"""
+_DECL_DRIFT_BAD_B = """\
+pub type VBO = u32;
+#[no_mangle]
+pub unsafe extern "system" fn FatUnpinRepinnedBcbs(_IrpContext: *mut IRP_CONTEXT) {}
+#[no_mangle]
+pub unsafe extern "system" fn FatGetNextMcbEntry(_Vcb: *mut VCB, Vbo: *mut VBO) -> u8 {
+    *Vbo = 0;
+    1
+}
+#[no_mangle]
+pub unsafe extern "system" fn MmAllocateMemoryWithType(_Size: usize) -> *mut u8 {
+    core::ptr::null_mut()
+}
+"""
+_DECL_DRIFT_GOOD_A = """\
+pub type VBO = u32;
+pub type PKSPIN_LOCK = *mut u64;
+pub type c_void = core::ffi::c_void;
+pub type PVOID = *mut c_void;
+pub type HWND = PVOID;
+pub type DLGPROC = Option<unsafe extern "system" fn(a: u32) -> u32>;
+pub type DRAWSTATEPROC = Option<unsafe extern "system" fn(b: u32) -> u32>;
+use ntkrnl_sys::ddk::PKSPIN_LOCK as DdkPKSPIN_LOCK;
+extern "system" {
+    // Agrees with the def: same depth, spelled through an alias.
+    fn FatGetNextMcbEntry(Vcb: *mut VCB, Vbo: *mut VBO) -> u8;
+    // A use-rename is an alias too.
+    fn ExfInsert(Lock: DdkPKSPIN_LOCK) -> u8;
+    // A path-qualified alias is the same alias.
+    fn MmDeleteVirtualMapping(Process: ntkrnl_sys::ddk::PEPROCESS) -> u8;
+    // #[link_name] declares SOMETHING ELSE — never pair it with this def by ident.
+    #[link_name = "Shell32RustCoCreateInitSF"]
+    fn SHELL32_CoCreateInitSF(a: u32, b: u32) -> u32;
+    // `Option<DLGPROC>` and `DLGPROC` are one pointer either way.
+    fn DialogBoxIndirectParamA(Proc: Option<DLGPROC>) -> isize;
+    // A handle passed as a pointer-width integer: same register, same bits.
+    fn co_UserSetCapture(Wnd: isize) -> u8;
+    // A callback parameter declared as a bare pointer: the typedef IS a pointer.
+    fn DrawStateW(Cb: *mut c_void) -> u8;
+    // The callee reads a subset of the bits the caller definitely set.
+    fn FatDeleteDirent(Flag: BOOL) -> u8;
+    // `*mut c_void` against PVOID — only resolvable if the c_void re-export
+    // above is NOT recorded as an alias of itself.
+    fn ExFreePool(P: *mut c_void);
+}
+pub unsafe fn caller(v: *mut VCB, l: DdkPKSPIN_LOCK, p: ntkrnl_sys::ddk::PEPROCESS) {
+    let mut vbo: VBO = 0;
+    FatGetNextMcbEntry(v, &mut vbo);
+    ExfInsert(l);
+    MmDeleteVirtualMapping(p);
+    SHELL32_CoCreateInitSF(1, 2);
+    DialogBoxIndirectParamA(None);
+    co_UserSetCapture(0);
+    DrawStateW(core::ptr::null_mut());
+    FatDeleteDirent(0);
+    ExFreePool(core::ptr::null_mut());
+}
+"""
+_DECL_DRIFT_GOOD_B = """\
+pub type PVOID = *mut core::ffi::c_void;
+pub type HWND = PVOID;
+pub type DLGPROC = Option<unsafe extern "system" fn(a: u32) -> u32>;
+pub type DRAWSTATEPROC = Option<unsafe extern "system" fn(b: u32) -> u32>;
+#[no_mangle]
+pub unsafe extern "system" fn FatGetNextMcbEntry(_Vcb: *mut VCB, Vbo: *mut VBO) -> u8 {
+    *Vbo = 0;
+    1
+}
+#[no_mangle]
+pub unsafe extern "system" fn ExfInsert(_Lock: PKSPIN_LOCK) -> u8 {
+    0
+}
+#[no_mangle]
+pub unsafe extern "system" fn MmDeleteVirtualMapping(_Process: PEPROCESS) -> u8 {
+    0
+}
+#[no_mangle]
+pub unsafe extern "system" fn SHELL32_CoCreateInitSF(_a: u32, _b: u32, _c: u32) -> u32 {
+    0
+}
+#[no_mangle]
+pub unsafe extern "system" fn DialogBoxIndirectParamA(_Proc: DLGPROC) -> isize {
+    0
+}
+#[no_mangle]
+pub unsafe extern "system" fn co_UserSetCapture(_Wnd: HWND) -> u8 {
+    0
+}
+#[no_mangle]
+pub unsafe extern "system" fn DrawStateW(_Cb: DRAWSTATEPROC) -> u8 {
+    0
+}
+#[no_mangle]
+pub unsafe extern "system" fn FatDeleteDirent(_Flag: BOOLEAN) -> u8 {
+    0
+}
+#[no_mangle]
+pub unsafe extern "system" fn ExFreePool(_P: PVOID) {}
 """
 
 _OBREF_BAD = """\
@@ -363,6 +505,32 @@ pub unsafe fn balanced(cond: bool) -> u32 {
     let rc = if cond { 1 } else { 0 };
     ObDereferenceObject(obj);
     rc
+}
+
+// fastfat's FatMarkHandle, 2026-07-29. The out-param of ObReferenceObjectByHandle
+// is at a FIXED index, and tree-sitter puts an inline comment in the argument
+// list — so `/* UserMode */` shifted the index by one and the scanner tracked
+// the comment's own text, reporting a leak of a variable named `UserMode` on
+// two paths that both dereference correctly.
+pub unsafe fn balanced_with_inline_comment(h: HANDLE, cond: bool) -> u32 {
+    let mut fo: *mut FILE_OBJECT = null_mut();
+    let status = ObReferenceObjectByHandle(
+        h,
+        0,
+        IoFileObjectType as *mut _,
+        1, /* UserMode */
+        &mut fo as *mut *mut FILE_OBJECT as *mut PVOID,
+        null_mut(),
+    );
+    if !NT_SUCCESS(status) {
+        return 1;
+    }
+    if cond {
+        ObDereferenceObject(fo as *mut _);
+        return 2;
+    }
+    ObDereferenceObject(fo as *mut _);
+    0
 }
 """
 
@@ -525,7 +693,349 @@ _SHIM_BAD = _SHIM_GOOD.replace("_vsnprintf_s_l(str, len, count,", "_vsnprintf_s_
 # `_vsnprintf`, and that is only an identity while stdio.h says so.
 _SHIM_STDIO = "#define vsnprintf _vsnprintf\n"
 
+# scan_type_alias_contradictions. Modelled on fastfat's VBO (task #46): the
+# generated islands said ULONG32 (4) while dirsup.rs said LARGE_INTEGER (8), so an
+# 8-byte store went through a 4-byte out-param on every file open. Both fixtures
+# also carry the two FALSE-POSITIVE shapes, because those are what decide whether
+# anyone trusts the lint: a `#[cfg]`-gated pointer-width pair (only one is ever
+# compiled) and an associated type in two impls (differing per impl is the POINT).
+# Both must stay silent in the BAD fixture too — a scanner that flags them would
+# bury its one real finding in noise.
+_ALIAS_FP = """\
+#[cfg(target_pointer_width = "64")]
+pub type UINTN = u64;
+#[cfg(target_pointer_width = "32")]
+pub type UINTN = u32;
+
+trait Width { type Ch; }
+impl Width for Narrow { type Ch = i8; }
+impl Width for Wide { type Ch = u16; }
+"""
+
+_ALIAS_BAD_A = "pub type VBO = ULONG32;\n" + _ALIAS_FP
+_ALIAS_BAD_B = "type VBO = LARGE_INTEGER;\n"
+_ALIAS_GOOD_A = "pub type VBO = ULONG32;\n" + _ALIAS_FP
+_ALIAS_GOOD_B = "use crate::types::VBO;\n"
+
+# scan_mask_drift. Seeded from E21 (2026-08-01): NtOpenKey masked a bare 0x0100
+# where the C masks ~KEY_WOW64_RES (0x0300), so KEY_WOW64_32KEY reached the object
+# access check and every RegOpenKeyEx asking for it got ACCESS_DENIED — while the
+# identical RegCreateKeyEx, which masks correctly, succeeded. The BAD fixture also
+# carries the second shape from the same hunt: i386 KeFlushCurrentTb dropped its
+# whole CR4.PGE branch, so there is no live mask of that target at all.
+#
+# The GOOD case pins the false positives an earlier version of this scanner
+# reported, every one of which cost a hand-audit:
+#   * the live spelling is usually `&= !(NAME as ULONG)`, not a bare `!NAME`;
+#   * translation re-cases locals, so the C's `Cr4` is the Rust's `cr4`;
+#   * a literal that MATCHES its named constant is correct, merely unnamed;
+#   * `~` over a bare literal names no constant to check.
+# It also pins the trap that made counting occurrences unusable: a fix's own
+# explanatory comment QUOTES the C, so the C statement appears twice while the
+# live code masks once. That must stay silent.
+# scan_macro_fn_shadow. Seeded from shell32-rust 2026-08-08: the crate had the correct
+# `#[macro_export] macro_rules! UNREFERENCED_PARAMETER` in win32.rs — its own comment citing
+# the ud2/BUGCHECK class — and two modules carried an empty `fn` shadow anyway, because both
+# are declared BEFORE win32 in lib.rs and macro_rules! textual scoping only runs forward.
+# The GOOD case pins the two ways this scanner must NOT fire, because a false positive here
+# is a lint you cannot satisfy by doing the right thing:
+#   * a same-named `fn` with a REAL body is an ordinary inline helper, not a shadow
+#     (shell32-rust's `pub fn LOWORD(l: DWORD) -> WORD { (l & 0xFFFF) as WORD }`);
+#   * importing the macro and calling it with `!` is the FIX, and must come back clean.
+_MACROSHADOW_BAD = """\
+#[macro_export]
+macro_rules! UNREFERENCED_PARAMETER {
+    ($($arg:tt)*) => {{}};
+}
+
+#[inline] fn UNREFERENCED_PARAMETER<T>(_: T) {}
+
+pub unsafe fn CRecycleBin_Parse(pbc: *mut u8) {
+    UNREFERENCED_PARAMETER(pbc);
+}
+"""
+
+_MACROSHADOW_GOOD = """\
+#[macro_export]
+macro_rules! UNREFERENCED_PARAMETER {
+    ($($arg:tt)*) => {{}};
+}
+
+// A real body is a helper, not a barrier — this must stay silent.
+#[inline]
+pub fn LOWORD(l: u32) -> u16 {
+    (l & 0xFFFF) as u16
+}
+
+pub unsafe fn CRecycleBin_Parse(pbc: *mut u8) {
+    UNREFERENCED_PARAMETER!(pbc);
+}
+"""
+
+_MASKDRIFT_BAD = """\
+const KEY_WOW64_RES: ACCESS_MASK = 0x00000300;
+const CR4_PGE: ULONG = 0x00000080;
+
+pub unsafe fn NtOpenKey(DesiredAccess: u32) -> u32 {
+    let mut DesiredAccess = DesiredAccess & !0x0100u32;
+    DesiredAccess
+}
+
+pub unsafe fn KeFlushCurrentTb() {
+    let cr3 = readcr3();
+    writecr3(cr3);
+}
+
+//     DesiredAccess &= ~KEY_WOW64_RES;
+//     Cr4 = __readcr4();
+//     __writecr4(Cr4 & ~CR4_PGE);
+"""
+_MASKDRIFT_GOOD = """\
+const KEY_WOW64_RES: ACCESS_MASK = 0x00000300;
+const CR4_PGE: ULONG = 0x00000080;
+const MEM_EXECUTE_OPTION_VALID_FLAGS: u32 = 0x3F;
+
+pub unsafe fn NtOpenKey(DesiredAccess: u32) -> u32 {
+    // C: `DesiredAccess &= ~KEY_WOW64_RES;` — quoted here on purpose. An
+    // occurrence-counting rule reads this as a second C mask and reports a drop.
+    let mut DesiredAccess = DesiredAccess & !KEY_WOW64_RES;
+    DesiredAccess
+}
+
+pub unsafe fn KeFlushCurrentTb() {
+    let cr4: ULONG = readcr4();
+    writecr4(cr4 & !CR4_PGE);
+}
+
+pub unsafe fn DC_vPrepareDCsForBlit(dc: &mut DC) {
+    dc.flags &= !(DC_DIRTY_RAO as ULONG);
+}
+
+pub unsafe fn MiValidateExecuteOptions(ExecuteOptions: u32) -> bool {
+    (ExecuteOptions & !MEM_EXECUTE_OPTION_VALID_FLAGS) != 0
+}
+
+pub unsafe fn MiAlignDown(Address: usize) -> usize {
+    Address & !0xFFF
+}
+
+//     DesiredAccess &= ~KEY_WOW64_RES;
+//     Cr4 = __readcr4();
+//     __writecr4(Cr4 & ~CR4_PGE);
+//     pdc->flags &= ~DC_DIRTY_RAO;
+//     if (ExecuteOptions & ~MEM_EXECUTE_OPTION_VALID_FLAGS)
+//     Address &= ~0xFFF;
+"""
+
+# scan_dropped_prints. Seeded from CmpLinkKeyToHive (task #76, 2026-08-02): three
+# failure returns, upstream prints on each, all three dropped — so when
+# \\REGISTRY\\USER\\S-1-5-18 did not appear there was no signal anywhere, and the
+# #73 hunt spent two build+boot cycles establishing what one grep would have
+# given free. The BAD fixture also carries the NOOP shape from the same sweep
+# (cmlib's `unsafe fn DPRINT1(_fmt) {}`), which is worse than a missing print
+# because it reads as covered.
+#
+# The GOOD case pins every false positive that cost this scanner precision, each
+# found by shipping it wrong first:
+#   * the wrapper/_impl split — 1490 functions tree-wide keep the prints in the
+#     body, so exact-name pairing calls every wrapper silent (143 false hits);
+#   * `rtl_string_cb_printf_w!` formats into a BUFFER and matched a "contains
+#     print" heuristic, hiding three real drops in CmpCreateControlSet;
+#   * DPRINT/TRACE/WARN are compiled out or off by default upstream, so dropping
+#     them loses nothing and flagging them would triple the harvest with nothing
+#     behind it;
+#   * a bare `FIXME(...)`/`ERR(...)` call IS the wine debug channel, not a stub;
+#   * a C function with no live Rust counterpart is untranslated, not silent.
+_DROPPEDPRINT_BAD = """\
+unsafe fn DPRINT1(_format: *const i8) {}
+
+pub unsafe fn CmpLinkKeyToHive(LinkKeyName: PCWSTR) -> u8 {
+    if !NT_SUCCESS(Status) { return 0u8; }
+    if Disposition != REG_CREATED_NEW_KEY { return 0u8; }
+    1u8
+}
+
+// BOOLEAN
+// CmpLinkKeyToHive(PCWSTR LinkKeyName)
+// {
+//     if (!NT_SUCCESS(Status))
+//     {
+//         DPRINT1("couldn't create %S, Status = 0x%lx\\n", LinkKeyName, Status);
+//         return FALSE;
+//     }
+//     if (Disposition != REG_CREATED_NEW_KEY)
+//     {
+//         DPRINT1("%S already exists!\\n", LinkKeyName);
+//         return FALSE;
+//     }
+//     return TRUE;
+// }
+"""
+_DROPPEDPRINT_GOOD = """\
+unsafe extern "C" { fn FIXME(fmt: *const i8, ...); }
+
+pub unsafe fn CmpLinkKeyToHive(LinkKeyName: PCWSTR) -> u8 {
+    if !NT_SUCCESS(Status) {
+        crate::dbg_print!(b"couldn't create %S, Status = 0x%lx\\n\\0", LinkKeyName, Status);
+        return 0u8;
+    }
+    if Disposition != REG_CREATED_NEW_KEY {
+        crate::dbg_print!(b"%S already exists!\\n\\0", LinkKeyName);
+        return 0u8;
+    }
+    1u8
+}
+
+pub unsafe extern "C" fn GdiSelectVisRgn(a: u32) { GdiSelectVisRgnImpl(a) }
+unsafe fn GdiSelectVisRgnImpl(a: u32) {
+    if a == 0 { crate::dbg_print!(b"no region\\n\\0"); }
+}
+
+pub unsafe fn CmpCreateControlSet(a: u32) -> u8 {
+    if a == 0 {
+        crate::dbg_print!(b"Failed to create ControlSet001\\n\\0");
+        crate::rtl_string_cb_printf_w!(buf, 8, w!("CONTROLSET%03ld"));
+        return 0u8;
+    }
+    1u8
+}
+
+pub unsafe fn RegisterCMMA(id: u32) -> i32 {
+    FIXME(b"stub\\0".as_ptr() as *const i8);
+    0
+}
+
+pub unsafe fn CmpQuiet(a: u32) -> u8 { if a == 0 { return 0u8; } 1u8 }
+
+// BOOLEAN
+// CmpLinkKeyToHive(PCWSTR LinkKeyName)
+// {
+//     if (!NT_SUCCESS(Status))
+//     {
+//         DPRINT1("couldn't create %S, Status = 0x%lx\\n", LinkKeyName, Status);
+//         return FALSE;
+//     }
+//     if (Disposition != REG_CREATED_NEW_KEY)
+//     {
+//         DPRINT1("%S already exists!\\n", LinkKeyName);
+//         return FALSE;
+//     }
+//     return TRUE;
+// }
+//
+// VOID GdiSelectVisRgn(ULONG a)
+// {
+//     if (!a) { DPRINT1("no region\\n"); }
+// }
+//
+// BOOLEAN CmpCreateControlSet(ULONG a)
+// {
+//     if (!a) { DPRINT1("Failed to create ControlSet001\\n"); return FALSE; }
+//     return TRUE;
+// }
+//
+// LONG RegisterCMMA(ULONG id)
+// {
+//     FIXME("stub\\n");
+//     return 0;
+// }
+//
+// BOOLEAN CmpQuiet(ULONG a)
+// {
+//     if (!a) { DPRINT("quiet\\n"); TRACE("quiet\\n"); WARN("quiet\\n"); return FALSE; }
+//     return TRUE;
+// }
+//
+// BOOLEAN CmpNotTranslatedHere(ULONG a)
+// {
+//     if (!a) { DPRINT1("no live counterpart\\n"); return FALSE; }
+//     return TRUE;
+// }
+"""
+
+# vendored_registry (tools/vendored.py). The bug it exists to catch is a vendored library
+# arriving in dll/3rdparty or sdk/lib/3rdparty with no vendor.yaml entry — it then silently
+# joins the "C we owe a translation" denominator, and nothing anywhere says so. BAD is a
+# container holding one registered tree and one that is not; GOOD registers both.
+#
+# The stamp text is FORMATTED FROM THE TOOL'S OWN TEMPLATE rather than pasted, because a
+# hand-copied stamp would make this control fail the day the template gains a line — a
+# false alarm about the fixture rather than about the scanner.
+_VENDOR_STAMP = vendored._STAMP_TEMPLATE.format(
+    name="Known", upstream="http://example.invalid/", license="MIT"
+)
+_VENDOR_STAMP_2 = vendored._STAMP_TEMPLATE.format(
+    name="Surprise", upstream="http://example.invalid/", license="MIT"
+)
+_VENDOR_TREE = """\
+  - path: libs/known
+    name: Known
+    upstream: http://example.invalid/
+    license: MIT
+    reason: a registered vendored tree
+"""
+_VENDOR_BAD_YAML = "containers: [libs]\ntrees:\n" + _VENDOR_TREE
+_VENDOR_GOOD_YAML = (
+    _VENDOR_BAD_YAML
+    + """\
+  - path: libs/surprise
+    name: Surprise
+    upstream: http://example.invalid/
+    license: MIT
+    reason: the library that used to arrive unnoticed
+"""
+)
+
 CONTROLS: list[Control] = [
+    Control(
+        name="vendored_registry",
+        script="tools/vendored.py",
+        argv=["--repo"],
+        bad={
+            "vendor.yaml": _VENDOR_BAD_YAML,
+            "libs/known/VENDORED": _VENDOR_STAMP,
+            "libs/known/a.c": "int a;\n",
+            "libs/surprise/b.c": "int b;\n",
+        },
+        good={
+            "vendor.yaml": _VENDOR_GOOD_YAML,
+            "libs/known/VENDORED": _VENDOR_STAMP,
+            "libs/known/a.c": "int a;\n",
+            "libs/surprise/VENDORED": _VENDOR_STAMP_2,
+            "libs/surprise/b.c": "int b;\n",
+        },
+    ),
+    Control(
+        name="scan_dropped_prints",
+        script="tools/scan_dropped_prints.py",
+        argv=["--lint"],
+        bad={"cmsysini.rs": _DROPPEDPRINT_BAD},
+        good={"cmsysini.rs": _DROPPEDPRINT_GOOD},
+        pass_files=True,
+    ),
+    Control(
+        name="scan_macro_fn_shadow",
+        script="tools/scan_macro_fn_shadow.py",
+        argv=["--lint"],
+        bad={"recycle_bin.rs": _MACROSHADOW_BAD},
+        good={"recycle_bin.rs": _MACROSHADOW_GOOD},
+        pass_files=True,
+    ),
+    Control(
+        name="scan_mask_drift",
+        script="tools/scan_mask_drift.py",
+        argv=["--lint"],
+        bad={"ntapi.rs": _MASKDRIFT_BAD},
+        good={"ntapi.rs": _MASKDRIFT_GOOD},
+        pass_files=True,
+    ),
+    Control(
+        name="scan_type_alias_contradictions",
+        script="tools/scan_type_alias_contradictions.py",
+        argv=["--lint"],
+        bad={"types_i386.rs": _ALIAS_BAD_A, "dirsup.rs": _ALIAS_BAD_B},
+        good={"types_i386.rs": _ALIAS_GOOD_A, "dirsup.rs": _ALIAS_GOOD_B},
+    ),
     Control(
         name="scan_varargs_shim_parity",
         script="tools/scan_varargs_shim_parity.py",
@@ -641,6 +1151,13 @@ CONTROLS: list[Control] = [
         good={"good.rs": _IRQL_GOOD},
     ),
     Control(
+        name="scan_extern_decl_drift",
+        script="tools/scan_extern_decl_drift.py",
+        argv=["--lint"],
+        bad={"src/a.rs": _DECL_DRIFT_BAD_A, "src/b.rs": _DECL_DRIFT_BAD_B},
+        good={"src/a.rs": _DECL_DRIFT_GOOD_A, "src/b.rs": _DECL_DRIFT_GOOD_B},
+    ),
+    Control(
         name="scan_ob_refcount",
         script="tools/scan_ob_refcount.py",
         argv=["--lint"],
@@ -668,10 +1185,32 @@ CONTROLS: list[Control] = [
 # from both this set and CONTROLS fails test_every_lint_is_accounted_for.
 UNCOVERED: dict[str, str] = {
     # Already have dedicated suites (the prototypes this harness generalizes).
-    "scan_wide_literals": "covered by tools/test_scan_wide_literals.py (12 tests)",
+    "scan_wide_literals": "covered by tools/test_scan_wide_literals.py (20 tests)",
     "verify_c_signatures": "covered by tools/test_verify_c_signatures.py (9 tests)",
     "marshalgen_audit": "covered by tools/wow64gen/test_wow64gen.py",
     "verify_svc_numbering": "covered by tools/wow64gen/test_wow64gen.py",
+    # Both compare a translated Rust module against the C it came FROM, so neither walks a
+    # tree the fixture-dir driver above can substitute — they need a .c/.rs PAIR (or, for
+    # the ctype tables, ctype.c plus the compiled object as the oracle). Same shape as the
+    # --cmake/--ramdisk case below. Dedicated suites instead, each with a real positive
+    # control taken from the defect that motivated the tool:
+    "verify_translation_literals": (
+        "covered by tools/test_verify_translation_literals.py (12 tests) — positive control "
+        'is undname.c\'s `case \'C\': "pascal"` shipping as "__stdcall", plus negatives for '
+        "each way a faithful translation legitimately SPELLS a literal differently"
+    ),
+    "gen_ctype_tables": (
+        "covered by tools/test_gen_ctype_tables.py (9 tests) — positive control is prove() "
+        "exiting on ONE wrong byte in 257, which is the claim the whole generator rests on"
+    ),
+    # Audits a PAIR of specific named files (--cmake / --ramdisk), not a tree, so the
+    # fixture-dir driver above cannot express it. Controls are the same shape and live
+    # in tests/qemu/cli/test_cli_units.py::test_boot_media_drift_* (5 tests): positive
+    # = the real #71 bug, a hive on the livecd and absent from the ramdisk; negatives =
+    # both media agreeing, and the BCD hive staged to efi/boot which it must NOT demand.
+    # It also self-checks for the dead-matcher failure this file exists to prevent: an
+    # empty reference set is NO_REFERENCE and a hard failure, never a silent green.
+    "scan_boot_media_drift": "covered by tests/qemu/cli/test_cli_units.py (5 tests)",
     # Need a real build tree / toolchain, not a fixture dir.
     "shellcheck": "third-party binary; upstream-tested",
     "py-syntax": "stdlib compileall; liveness is not in question",
@@ -688,6 +1227,30 @@ UNCOVERED: dict[str, str] = {
         "main() scans a fixed workspace root, so the subprocess harness cannot drive it — "
         "but scan_crate()/fix_crate() take a crate dir, and are covered by direct import at "
         "the bottom of this file. That gap let a WRITE-CAPABLE --fix ship untested."
+    ),
+    "scan_import_cc": (
+        "main() resolves its oracle from the WHOLE repo — every .spec plus every "
+        "add_importlibs() — so a fixture directory has nothing to be judged against. "
+        "scan_crate()/read_spec()/crate_link_set()/c_defines() all take their inputs as "
+        "arguments and are driven with synthetic specs in tools/test_scan_import_cc.py "
+        "(15 tests), which pins each of the six blind spots its first whole-tree run had."
+    ),
+    "scan_octal_literals": (
+        "main() walks the real tree, but the matcher and the comment/literal tokenizer are "
+        "pure functions over a string — scan_text()/strip_noise() — and are driven directly "
+        "in tools/test_scan_octal_literals.py (17 tests). A fixture DIRECTORY would prove "
+        "less than those do: every one of this lint's failure modes is a lexical shape "
+        "(float exponent, lifetime tick, nested block comment, raw string), and each is "
+        "pinned by the shape that actually produced a false positive."
+    ),
+    "scan_arg_side_effects": (
+        "main() walks the real tree and compares against a baseline, but everything that "
+        "decides a finding — the comment/string tokenizer, the logical-line joiner, the "
+        "enclosing-call walk and the for-clause exclusion — is a pure function over a "
+        "string, driven directly in tools/test_scan_arg_side_effects.py (9 tests). Its "
+        "positive control is the REAL msvcrt demangler bug spelled across four lines, and "
+        "each negative control is a shape that made an earlier draft useless (45 findings "
+        "from `for` steps, 53 from prose, 80 from one unbalanced macro)."
     ),
     "scan_duplicate_symbols": "operates on link artifacts, not source",
     "scan_const_contradictions": "needs the whole tree (finds one NAME with two VALUES)",
@@ -1002,3 +1565,102 @@ def test_bugcheck_stubs_skips_a_nested_git_checkout(tmp_path: Path):
     after = subprocess.run(cmd, cwd=REPO, capture_output=True, text=True).stdout
     assert after == before, f"nested checkout leaked findings:\n{after}"
     assert ".claude" not in after
+
+
+# --- scan_extern_decl_drift: a re-export is not an alias of itself -----------
+
+
+def test_decl_drift_sees_through_a_c_void_re_export(tmp_path: Path):
+    """`pub type c_void = core::ffi::c_void;` must not read as the cycle `c_void -> c_void`.
+
+    This one cannot be caught by the negative control, because its failure mode
+    is SILENCE: a cycle resolves to "undecidable", the tool skips the parameter,
+    and the report is clean for the wrong reason. It cost real coverage — every
+    type spelled through PVOID, which in this tree is most of them.
+
+    So assert the finding is actually PRODUCED. The drift below is only visible
+    if `*mut c_void` resolves: decl `*mut PVOID` is two levels, def `PVOID` is
+    one, and PVOID is `*mut c_void`.
+    """
+    root = _materialize(
+        tmp_path,
+        {
+            "src/a.rs": (
+                "pub type c_void = core::ffi::c_void;\n"
+                "pub type PVOID = *mut c_void;\n"
+                'extern "system" {\n'
+                "    fn ExFreePool(P: *mut PVOID);\n"
+                "}\n"
+                "pub unsafe fn caller(p: *mut PVOID) { ExFreePool(p); }\n"
+            ),
+            "src/b.rs": (
+                "pub type PVOID = *mut core::ffi::c_void;\n"
+                "#[no_mangle]\n"
+                'pub unsafe extern "system" fn ExFreePool(_P: PVOID) {}\n'
+            ),
+        },
+    )
+    cmd = [sys.executable, str(REPO / "tools/scan_extern_decl_drift.py"), str(root)]
+    out = subprocess.run(cmd, cwd=REPO, capture_output=True, text=True).stdout
+    assert "ExFreePool" in out, (
+        "the c_void re-export made PVOID undecidable — coverage lost silently\n" + out
+    )
+
+
+# ── scan_orphan_modules: the PHANTOM class (a `mod` with no file behind it) ──
+# Its own control for the same reason ROOTLESS needed one: the table's positive control is
+# satisfied by ANY output line naming the fixture, so folding a phantom into the orphan
+# fixture would be "covered" by the already-passing orphan hit and prove nothing.
+#
+# The class comes from desk (2026-08-05): lib.rs carried `pub mod guid;` against a file that
+# never existed, and separately declared 20 TUs when 17 had been translated. Both survived a
+# full green `check` AND `check-tooling`, because a crate parked out of `workspace.members`
+# is never compiled and no source scanner opens a path that is absent.
+_PHANTOM_CARGO = """\
+[package]
+name = "phantom-fixture"
+version = "0.0.0"
+edition = "2021"
+"""
+_PHANTOM_BAD_LIB = """\
+pub mod real;
+pub mod ghost;
+"""
+_PHANTOM_GOOD_LIB = """\
+pub mod real;
+// A `#[path]` selector names its own file and must NOT read as a phantom — this is the
+// per-arch island shape (`types_i386.rs`) every translated crate carries.
+#[cfg_attr(target_arch = "x86", path = "real.rs")]
+pub mod selected;
+// A directory module resolves through `<name>/mod.rs`, not `<name>.rs`.
+pub mod dir_mod;
+"""
+
+
+def test_phantom_module_is_reported(tmp_path: Path):
+    """`mod ghost;` with no ghost.rs cannot compile — and nothing else can see it."""
+    _root, out = _orphan_out(
+        tmp_path,
+        {
+            "Cargo.toml": _PHANTOM_CARGO,
+            "src/lib.rs": _PHANTOM_BAD_LIB,
+            "src/real.rs": "pub fn ok() -> u32 { 1 }\n",
+        },
+    )
+    hits = [ln for ln in out.splitlines() if "[PHANTOM]" in ln and "ghost" in ln]
+    assert hits, f"phantom `mod ghost;` was not reported.\n--- output ---\n{out}"
+
+
+def test_path_attr_and_dir_modules_are_not_phantoms(tmp_path: Path):
+    """The must-NOT-fire half. A gate that flags every per-arch `#[path]` island would fire
+    on essentially every translated crate in the tree and be turned off within the hour."""
+    _root, out = _orphan_out(
+        tmp_path,
+        {
+            "Cargo.toml": _PHANTOM_CARGO,
+            "src/lib.rs": _PHANTOM_GOOD_LIB,
+            "src/real.rs": "pub fn ok() -> u32 { 1 }\n",
+            "src/dir_mod/mod.rs": "pub fn ok() -> u32 { 2 }\n",
+        },
+    )
+    assert "[PHANTOM]" not in out, f"false positive on a legitimate module shape:\n{out}"

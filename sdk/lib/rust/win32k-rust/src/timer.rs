@@ -118,14 +118,14 @@ unsafe fn pfn_as_lparam(pfn: TIMERPROC) -> LPARAM {
 #[cfg(target_arch = "x86")]
 extern "fastcall" {
     fn ClearMsgBitsMask(pti: PTHREADINFO, MessageBits: UINT);
-    fn MsqPostMessage(pti: PTHREADINFO, Msg: *mut MSG, HardwareMessage: BOOLEAN, MessageBits: DWORD, dwQEvent: DWORD, ExtraInfo: u32);
+    fn MsqPostMessage(pti: PTHREADINFO, Msg: *mut MSG, HardwareMessage: BOOLEAN, MessageBits: DWORD, dwQEvent: DWORD, ExtraInfo: LONG_PTR);
     fn MsqGetDownKeyState(MessageQueue: PUSER_MESSAGE_QUEUE) -> WPARAM;
     fn MsqWakeQueue(pti: PTHREADINFO, MessageBits: DWORD, KeyEvent: BOOL);
 }
 #[cfg(not(target_arch = "x86"))]
 extern "C" {
     fn ClearMsgBitsMask(pti: PTHREADINFO, MessageBits: UINT);
-    fn MsqPostMessage(pti: PTHREADINFO, Msg: *mut MSG, HardwareMessage: BOOLEAN, MessageBits: DWORD, dwQEvent: DWORD, ExtraInfo: u32);
+    fn MsqPostMessage(pti: PTHREADINFO, Msg: *mut MSG, HardwareMessage: BOOLEAN, MessageBits: DWORD, dwQEvent: DWORD, ExtraInfo: LONG_PTR);
     fn MsqGetDownKeyState(MessageQueue: PUSER_MESSAGE_QUEUE) -> WPARAM;
     fn MsqWakeQueue(pti: PTHREADINFO, MessageBits: DWORD, KeyEvent: BOOL);
 }
@@ -175,12 +175,7 @@ unsafe fn ExInitializeFastMutex(FastMutex: PFAST_MUTEX) {
 // HungAppSysTimerProc — VOID CALLBACK (msgqueue.h). Must match the TIMERPROC
 // fn-pointer ABI exactly: bindgen emits TIMERPROC as `extern "stdcall"` on i386
 // (CALLBACK=stdcall, `_HungAppSysTimerProc@16`) and `extern "C"` on amd64/arm64.
-#[cfg(target_arch = "x86")]
-extern "stdcall" {
-    fn HungAppSysTimerProc(hwnd: HWND, uMsg: UINT, idEvent: UINT_PTR, dwTime: DWORD);
-}
-#[cfg(not(target_arch = "x86"))]
-extern "C" {
+extern "system" {
     fn HungAppSysTimerProc(hwnd: HWND, uMsg: UINT, idEvent: UINT_PTR, dwTime: DWORD);
 }
 
@@ -896,9 +891,8 @@ pub unsafe extern "system" fn InitTimerImpl() -> NTSTATUS {
 
     STATUS_SUCCESS
 }
-#[cfg(target_arch = "x86")]
 #[no_mangle]
-pub unsafe extern "stdcall" fn NtUserSetTimer(
+pub unsafe extern "system" fn NtUserSetTimer(
     hWnd: HWND,
     nIDEvent: UINT_PTR,
     uElapse: UINT,
@@ -918,32 +912,8 @@ pub unsafe extern "stdcall" fn NtUserSetTimer(
 
     ret
 }
-
-#[cfg(not(target_arch = "x86"))]
 #[no_mangle]
-pub unsafe extern "C" fn NtUserSetTimer(
-    hWnd: HWND,
-    nIDEvent: UINT_PTR,
-    uElapse: UINT,
-    lpTimerFunc: TIMERPROC,
-) -> UINT_PTR {
-    let mut Window: PWND = core::ptr::null_mut();
-    let ret: UINT_PTR;
-
-    UserEnterExclusive();
-    if !hWnd.is_null() {
-        Window = UserGetWindowObject(hWnd);
-    }
-
-    ret = IntSetTimer(Window, nIDEvent, uElapse, lpTimerFunc, TMRF_TIFROMWND as INT);
-
-    UserLeave();
-
-    ret
-}
-#[cfg(target_arch = "x86")]
-#[no_mangle]
-pub unsafe extern "stdcall" fn NtUserKillTimer(hWnd: HWND, uIDEvent: UINT_PTR) -> BOOL {
+pub unsafe extern "system" fn NtUserKillTimer(hWnd: HWND, uIDEvent: UINT_PTR) -> BOOL {
     let mut Window: PWND = core::ptr::null_mut();
     let ret: BOOL;
 
@@ -958,27 +928,8 @@ pub unsafe extern "stdcall" fn NtUserKillTimer(hWnd: HWND, uIDEvent: UINT_PTR) -
 
     ret
 }
-
-#[cfg(not(target_arch = "x86"))]
 #[no_mangle]
-pub unsafe extern "C" fn NtUserKillTimer(hWnd: HWND, uIDEvent: UINT_PTR) -> BOOL {
-    let mut Window: PWND = core::ptr::null_mut();
-    let ret: BOOL;
-
-    UserEnterExclusive();
-    if !hWnd.is_null() {
-        Window = UserGetWindowObject(hWnd);
-    }
-
-    ret = IntKillTimer(Window, uIDEvent, 0);
-
-    UserLeave();
-
-    ret
-}
-#[cfg(target_arch = "x86")]
-#[no_mangle]
-pub unsafe extern "stdcall" fn NtUserSetSystemTimer(
+pub unsafe extern "system" fn NtUserSetSystemTimer(
     hWnd: HWND,
     nIDEvent: UINT_PTR,
     uElapse: UINT,
@@ -1000,47 +951,8 @@ pub unsafe extern "stdcall" fn NtUserSetSystemTimer(
 
     ret
 }
-
-#[cfg(not(target_arch = "x86"))]
 #[no_mangle]
-pub unsafe extern "C" fn NtUserSetSystemTimer(
-    hWnd: HWND,
-    nIDEvent: UINT_PTR,
-    uElapse: UINT,
-    lpTimerFunc: TIMERPROC,
-) -> UINT_PTR {
-    let ret: UINT_PTR;
-
-    UserEnterExclusive();
-
-    ret = IntSetTimer(
-        UserGetWindowObject(hWnd),
-        nIDEvent,
-        uElapse,
-        None,
-        TMRF_SYSTEM as INT,
-    );
-
-    UserLeave();
-
-    ret
-}
-#[cfg(target_arch = "x86")]
-#[no_mangle]
-pub unsafe extern "stdcall" fn NtUserValidateTimerCallback(lParam: LPARAM) -> BOOL {
-    let mut Ret: BOOL = 0;
-
-    UserEnterShared();
-
-    Ret = ValidateTimerCallback(PsGetCurrentThreadWin32Thread() as PTHREADINFO, lParam);
-
-    UserLeave();
-    Ret
-}
-
-#[cfg(not(target_arch = "x86"))]
-#[no_mangle]
-pub unsafe extern "C" fn NtUserValidateTimerCallback(lParam: LPARAM) -> BOOL {
+pub unsafe extern "system" fn NtUserValidateTimerCallback(lParam: LPARAM) -> BOOL {
     let mut Ret: BOOL = 0;
 
     UserEnterShared();

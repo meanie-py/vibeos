@@ -382,6 +382,14 @@ def _canonical_block(
     x86_abi = None
     if conv == "fastcall":
         x86_abi = "fastcall"
+    elif conv == "thiscall":
+        # Same shape as fastcall, and it has to be HERE rather than only in
+        # postprocess.fix_fastcall_exports: this pass runs after that one and is the last
+        # word on a fn the C defines, so without this arm `thiscall` fell through to the
+        # `extern = "C"` default below and quietly flattened the dual back to one ABI.
+        # msvcrt's cpp.c is the first file to reach it — 40-odd `__thiscall` C++ methods
+        # that read `this` from ECX on i386 and from the first stack slot everywhere else.
+        x86_abi = "thiscall"
     elif conv == "system" and is_static:
         x86_abi = "stdcall"
 

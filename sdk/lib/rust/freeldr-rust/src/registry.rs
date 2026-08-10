@@ -122,7 +122,7 @@ extern "C" {
     fn ArcRead(FileId: u32, Buffer: *mut core::ffi::c_void, Length: u32, Count: *mut u32) -> ARC_STATUS;
     fn ArcSeek(FileId: u32, Position: *mut LARGE_INTEGER, SeekMode: u32) -> ARC_STATUS;
     fn ERR(fmt: *const i8, ...);
-    fn MmAllocateMemoryWithType(MemorySize: u32, MemoryType: u32) -> *mut core::ffi::c_void;
+    fn MmAllocateMemoryWithType(MemorySize: usize, MemoryType: u32) -> *mut core::ffi::c_void;
     fn PaToVa(Pa: *mut core::ffi::c_void) -> *mut core::ffi::c_void;
     fn RtlStringCbCatA(pszDest: *mut u8, cbDest: usize, pszSrc: PCSTR) -> i32;
     fn TRACE(fmt: *const i8, ...);
@@ -180,19 +180,8 @@ unsafe fn RTL_CONSTANT_STRING(s: *const u16) -> _UNICODE_STRING {
 // with `extern "C" fn` even where ABI-identical, so the declared ABI must
 // match the ddk type *literally* per-arch (was hardcoded "stdcall", wrong
 // on amd64 where the ddk callback is cdecl).
-#[cfg(target_arch = "x86")]
 #[no_mangle]
-pub unsafe extern "stdcall" fn CmpAllocate(
-    Size: ntkrnl_sys::ddk::SIZE_T,
-    Paged: ntkrnl_sys::ddk::BOOLEAN,
-    Tag: ntkrnl_sys::ddk::ULONG,
-) -> ntkrnl_sys::ddk::PVOID {
-    let _ = Paged;
-    FrLdrHeapAlloc(Size as usize, Tag)
-}
-#[cfg(not(target_arch = "x86"))]
-#[no_mangle]
-pub unsafe extern "C" fn CmpAllocate(
+pub unsafe extern "system" fn CmpAllocate(
     Size: ntkrnl_sys::ddk::SIZE_T,
     Paged: ntkrnl_sys::ddk::BOOLEAN,
     Tag: ntkrnl_sys::ddk::ULONG,
@@ -201,18 +190,8 @@ pub unsafe extern "C" fn CmpAllocate(
     FrLdrHeapAlloc(Size as usize, Tag)
 }
 
-#[cfg(target_arch = "x86")]
 #[no_mangle]
-pub unsafe extern "stdcall" fn CmpFree(
-    Ptr: ntkrnl_sys::ddk::PVOID,
-    Quota: ntkrnl_sys::ddk::ULONG,
-) {
-    let _ = Quota;
-    FrLdrHeapFree(Ptr, 0);
-}
-#[cfg(not(target_arch = "x86"))]
-#[no_mangle]
-pub unsafe extern "C" fn CmpFree(
+pub unsafe extern "system" fn CmpFree(
     Ptr: ntkrnl_sys::ddk::PVOID,
     Quota: ntkrnl_sys::ddk::ULONG,
 ) {
@@ -297,7 +276,7 @@ unsafe fn RegLoadHiveLog(
     }
 
     LogDataPhysical = MmAllocateMemoryWithType(
-        MM_SIZE_TO_PAGES(LogFileSize + 4096u32 - 1) << 12,
+        (MM_SIZE_TO_PAGES(LogFileSize + 4096u32 - 1) << 12) as usize,
         LoaderRegistryData,
     );
     if LogDataPhysical.is_null() {

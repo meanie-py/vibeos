@@ -27,3 +27,10 @@ const _: () = assert!(offset_of!(threadlocaleinfostruct, lconv) == 296, "msvcrt-
 const _: () = assert!(offset_of!(lconv, decimal_point) == 0, "msvcrt-sys: lconv.decimal_point moved on arm64 -- REGENERATE msvcrt-sys");
 const _: () = assert!(offset_of!(localeinfo_struct, locinfo) == 0, "msvcrt-sys: localeinfo_struct.locinfo moved on arm64 -- REGENERATE msvcrt-sys");
 const _: () = assert!(offset_of!(localeinfo_struct, mbcinfo) == 8, "msvcrt-sys: localeinfo_struct.mbcinfo moved on arm64 -- REGENERATE msvcrt-sys");
+const _: () = assert!(offset_of!(_TEB, Peb) == 96, "msvcrt-sys: _TEB.Peb moved on arm64 -- REGENERATE msvcrt-sys");
+const _: () = assert!(offset_of!(_PEB, ProcessHeap) == 48, "msvcrt-sys: _PEB.ProcessHeap moved on arm64 -- REGENERATE msvcrt-sys");
+const _: () = assert!(offset_of!(__exception, vtable) == 0, "msvcrt-sys: __exception.vtable moved on arm64 -- REGENERATE msvcrt-sys");
+const _: () = assert!(offset_of!(__exception, name) == 8, "msvcrt-sys: __exception.name moved on arm64 -- REGENERATE msvcrt-sys");
+const _: () = assert!(offset_of!(__exception, do_free) == 16, "msvcrt-sys: __exception.do_free moved on arm64 -- REGENERATE msvcrt-sys");
+const _: () = assert!(offset_of!(__type_info, name) == 8, "msvcrt-sys: __type_info.name moved on arm64 -- REGENERATE msvcrt-sys");
+const _: () = assert!(offset_of!(__type_info, mangled) == 16, "msvcrt-sys: __type_info.mangled moved on arm64 -- REGENERATE msvcrt-sys");

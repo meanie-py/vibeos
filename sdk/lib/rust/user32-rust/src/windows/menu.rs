@@ -786,9 +786,8 @@ pub unsafe extern "C" fn MenuInit() -> BOOL {
 #[no_mangle]
 pub unsafe extern "C" fn MenuCleanup() {
 }
-#[cfg(target_arch = "x86")]
 #[no_mangle]
-pub unsafe extern "stdcall" fn User32LoadSysMenuTemplateForKernel(Arguments: PVOID, ArgumentLength: ULONG) -> NTSTATUS {
+pub unsafe extern "system" fn User32LoadSysMenuTemplateForKernel(Arguments: PVOID, ArgumentLength: ULONG) -> NTSTATUS {
     let mut Result: LRESULT = 0;
 
     ZwCallbackReturn(
@@ -797,41 +796,8 @@ pub unsafe extern "stdcall" fn User32LoadSysMenuTemplateForKernel(Arguments: PVO
         STATUS_SUCCESS,
     )
 }
-
-#[cfg(not(target_arch = "x86"))]
 #[no_mangle]
-pub unsafe extern "C" fn User32LoadSysMenuTemplateForKernel(Arguments: PVOID, ArgumentLength: ULONG) -> NTSTATUS {
-    let mut Result: LRESULT = 0;
-
-    ZwCallbackReturn(
-        core::ptr::addr_of_mut!(Result) as PVOID,
-        core::mem::size_of::<LRESULT>() as ULONG,
-        STATUS_SUCCESS,
-    )
-}
-#[cfg(target_arch = "x86")]
-#[no_mangle]
-pub unsafe extern "stdcall" fn User32CallLoadMenuFromKernel(Arguments: *mut core::ffi::c_void, _ArgumentLength: ULONG) -> NTSTATUS {
-    let Common: PLOADMENU_CALLBACK_ARGUMENTS = Arguments as PLOADMENU_CALLBACK_ARGUMENTS;
-
-    let lpMenuName: LPCWSTR = if !(*Common).InterSource.is_null() {
-        (*Common).InterSource
-    } else {
-        core::ptr::addr_of_mut!((*Common).MenuName) as LPCWSTR
-    };
-
-    let mut Result: LRESULT = LoadMenuW((*Common).hModule, lpMenuName) as LRESULT;
-
-    ZwCallbackReturn(
-        core::ptr::addr_of_mut!(Result) as *mut core::ffi::c_void,
-        core::mem::size_of::<LRESULT>() as ULONG,
-        STATUS_SUCCESS,
-    )
-}
-
-#[cfg(not(target_arch = "x86"))]
-#[no_mangle]
-pub unsafe extern "C" fn User32CallLoadMenuFromKernel(Arguments: *mut core::ffi::c_void, _ArgumentLength: ULONG) -> NTSTATUS {
+pub unsafe extern "system" fn User32CallLoadMenuFromKernel(Arguments: *mut core::ffi::c_void, _ArgumentLength: ULONG) -> NTSTATUS {
     let Common: PLOADMENU_CALLBACK_ARGUMENTS = Arguments as PLOADMENU_CALLBACK_ARGUMENTS;
 
     let lpMenuName: LPCWSTR = if !(*Common).InterSource.is_null() {
@@ -1868,14 +1834,14 @@ pub unsafe extern "system" fn SetSystemMenu(hwnd: HWND, hMenu: HMENU) -> BOOL {
 #[no_mangle]
 pub unsafe extern "system" fn TrackPopupMenu(
     Menu: HMENU,
-    Flags: UINT_PTR,
+    Flags: UINT,
     x: ::core::ffi::c_int,
     y: ::core::ffi::c_int,
     Reserved: ::core::ffi::c_int,
     Wnd: HWND,
     Rect: *const RECT,
 ) -> ::core::ffi::c_int {
-    NtUserTrackPopupMenuEx(Menu, Flags as u32, x, y, Wnd, core::ptr::null_mut())
+    NtUserTrackPopupMenuEx(Menu, Flags, x, y, Wnd, core::ptr::null_mut())
 }
 
 #[no_mangle]

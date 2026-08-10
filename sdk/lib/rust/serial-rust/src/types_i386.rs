@@ -336,9 +336,9 @@ pub struct _SERENUM_PORT_DESC {
 pub type SERENUM_PORT_DESC = _SERENUM_PORT_DESC;
 pub type PSERENUM_PORT_DESC = *mut _SERENUM_PORT_DESC;
 pub type PSERENUM_READPORT =
-    ::core::option::Option<unsafe extern "stdcall" fn(SerPortAddress: PVOID) -> UCHAR>;
+    ::core::option::Option<unsafe extern "system" fn(SerPortAddress: PVOID) -> UCHAR>;
 pub type PSERENUM_WRITEPORT =
-    ::core::option::Option<unsafe extern "stdcall" fn(SerPortAddress: PVOID, Value: UCHAR)>;
+    ::core::option::Option<unsafe extern "system" fn(SerPortAddress: PVOID, Value: UCHAR)>;
 pub const _SERENUM_PORTION_SerenumFirstHalf: _SERENUM_PORTION = 0;
 pub const _SERENUM_PORTION_SerenumSecondHalf: _SERENUM_PORTION = 1;
 pub const _SERENUM_PORTION_SerenumWhole: _SERENUM_PORTION = 2;
@@ -458,52 +458,52 @@ unsafe extern "C" {
 unsafe extern "C" {
     pub fn IncreaseCircularBufferSize(pBuffer: PCIRCULAR_BUFFER, NewBufferSize: ULONG) -> NTSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn SerialCleanup(arg1: *mut _DEVICE_OBJECT, arg2: *mut _IRP) -> NTSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn SerialClose(arg1: *mut _DEVICE_OBJECT, arg2: *mut _IRP) -> NTSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn SerialCreate(arg1: *mut _DEVICE_OBJECT, arg2: *mut _IRP) -> NTSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn SerialDeviceControl(arg1: *mut _DEVICE_OBJECT, arg2: *mut _IRP) -> NTSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn SerialSetBaudRate(
         DeviceExtension: PSERIAL_DEVICE_EXTENSION,
         NewBaudRate: ULONG,
     ) -> NTSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn SerialSetLineControl(
         DeviceExtension: PSERIAL_DEVICE_EXTENSION,
         NewSettings: PSERIAL_LINE_CONTROL,
     ) -> NTSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn SerialQueryInformation(arg1: *mut _DEVICE_OBJECT, arg2: *mut _IRP) -> NTSTATUS;
 }
 unsafe extern "C" {
     pub fn SerialDetectUartType(ComPortBase: PUCHAR) -> UART_TYPE;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn ForwardIrpAndForget(arg1: *mut _DEVICE_OBJECT, arg2: *mut _IRP) -> NTSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn SerialReceiveByte(Dpc: PKDPC, pDeviceExtension: PVOID, Unused1: PVOID, Unused2: PVOID);
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn SerialSendByte(Dpc: PKDPC, pDeviceExtension: PVOID, Unused1: PVOID, Unused2: PVOID);
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn SerialCompleteIrp(Dpc: PKDPC, pDeviceExtension: PVOID, pIrp: PVOID, Unused: PVOID);
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn SerialInterruptService(arg1: *mut _KINTERRUPT, arg2: PVOID) -> BOOLEAN;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn SerialAddDeviceInternal(
         DriverObject: PDRIVER_OBJECT,
         Pdo: PDEVICE_OBJECT,
@@ -512,25 +512,25 @@ unsafe extern "stdcall" {
         pFdo: *mut PDEVICE_OBJECT,
     ) -> NTSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn SerialAddDevice(arg1: *mut _DRIVER_OBJECT, arg2: *mut _DEVICE_OBJECT) -> NTSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn SerialPnpStartDevice(
         DeviceObject: PDEVICE_OBJECT,
         ResourceList: PCM_RESOURCE_LIST,
         ResourceListTranslated: PCM_RESOURCE_LIST,
     ) -> NTSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn SerialPnp(arg1: *mut _DEVICE_OBJECT, arg2: *mut _IRP) -> NTSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn SerialPower(arg1: *mut _DEVICE_OBJECT, arg2: *mut _IRP) -> NTSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn SerialRead(arg1: *mut _DEVICE_OBJECT, arg2: *mut _IRP) -> NTSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn SerialWrite(arg1: *mut _DEVICE_OBJECT, arg2: *mut _IRP) -> NTSTATUS;
 }

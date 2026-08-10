@@ -373,7 +373,16 @@ pub unsafe extern "system" fn KeSynchronizeExecution(
     let SynchronizeContext = opaque_ptr(SynchronizeContext);
     let mut OldIrql: KIRQL = 0;
     KeRaiseIrql((*Interrupt).SynchronizeIrql, core::ptr::addr_of_mut!(OldIrql));
+
+    /* The interrupt's own spinlock, exactly as i386 (ke/i386/irqobj.rs:596) and
+     * amd64 (ke/amd64/interrupt.c:249) do. Raising IRQL alone excludes this CPU's
+     * ISR but not another CPU's, so without this KeSynchronizeExecution provides
+     * no mutual exclusion at all once the SMP kernel runs — and IoInterrupt
+     * asserts the lock is held from inside the synchronized routine. */
+    KeAcquireSpinLockAtDpcLevel((*Interrupt).ActualLock as PKSPIN_LOCK);
     let Result = (SynchronizeRoutine.unwrap())(SynchronizeContext);
+    KeReleaseSpinLockFromDpcLevel((*Interrupt).ActualLock as PKSPIN_LOCK);
+
     KeLowerIrql(OldIrql);
     Result
 }
@@ -509,7 +518,7 @@ pub unsafe extern "system" fn CmpInitializeMachineDependentConfiguration(
         );
         RtlFreeUnicodeString(core::ptr::addr_of_mut!(UnicodeString));
 
-        static VENDOR_VAL: [u16; 16] = [86, 101, 110, 100, 111, 114, 73, 100, 101, 110, 116, 105, 102, 105, 101, 114];
+        static VENDOR_VAL: [u16; 17] = [86, 101, 110, 100, 111, 114, 73, 100, 101, 110, 116, 105, 102, 105, 101, 114, 0];
         RtlInitUnicodeString(core::ptr::addr_of_mut!(ValueName), VENDOR_VAL.as_ptr());
         static ARM_STR: [u16; 4] = [65, 82, 77, 0];
         NtSetValueKey(

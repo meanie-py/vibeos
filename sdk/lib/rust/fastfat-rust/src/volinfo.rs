@@ -44,13 +44,16 @@ extern "system" {
     fn SetFlag(attr: *mut u32, flag: u32);
     fn FatIsFat32(Vcb: *mut VCB) -> u8;
     fn DebugUnwind(name: *const i8);
-    fn FatConstructLabelDirent( IrpContext: *mut PIRP_CONTEXT, Dirent: *mut DIRENT, OemLabel: *mut OEM_STRING, );
-    fn FatCreateNewDirent(IrpContext: *mut PIRP_CONTEXT, RootDcb: *mut DCB, /* placeholder */ flag: i32, flag2: u32) -> ULONG;
-    fn FatLocateVolumeLabel( IrpContext: *mut PIRP_CONTEXT, Vcb: *mut PVCB, Dirent: *mut *mut DIRENT, DirentBcb: *mut *mut BCB, ByteOffset: *mut ULONG, );
-    fn FatPrepareWriteDirectoryFile( IrpContext: *mut PIRP_CONTEXT, RootDcb: *mut DCB, ByteOffset: ULONG, size: ULONG, DirentBcb: *mut *mut BCB, Dirent: *mut *mut DIRENT, flag1: BOOLEAN, flag2: BOOLEAN, Status: *mut NTSTATUS, );
-    fn FatSetDirtyBcb( IrpContext: *mut PIRP_CONTEXT, Bcb: *mut BCB, Vcb: *mut PVCB, dirty: BOOLEAN, );
-    fn FatUnpinBcb( IrpContext: *mut PIRP_CONTEXT, Bcb: *mut *mut core::ffi::c_void);
-    fn FatUnpinRepinnedBcbs(IrpContext: *mut PIRP_CONTEXT);
+    fn FatConstructLabelDirent( IrpContext: PIRP_CONTEXT, Dirent: *mut DIRENT, OemLabel: *mut OEM_STRING, );
+    fn FatCreateNewDirent(IrpContext: PIRP_CONTEXT, RootDcb: *mut DCB, /* placeholder */ flag: i32, flag2: u32) -> ULONG;
+    fn FatLocateVolumeLabel( IrpContext: PIRP_CONTEXT, Vcb: PVCB, Dirent: *mut *mut DIRENT, DirentBcb: *mut *mut BCB, ByteOffset: *mut ULONG, );
+    fn FatPrepareWriteDirectoryFile( IrpContext: PIRP_CONTEXT, RootDcb: *mut DCB, ByteOffset: ULONG, size: ULONG, DirentBcb: *mut *mut BCB, Dirent: *mut *mut DIRENT, flag1: BOOLEAN, flag2: BOOLEAN, Status: *mut NTSTATUS, );
+    fn FatSetDirtyBcb( IrpContext: PIRP_CONTEXT, Bcb: *mut BCB, Vcb: PVCB, dirty: BOOLEAN, );
+    fn FatUnpinBcb( IrpContext: PIRP_CONTEXT, Bcb: *mut *mut core::ffi::c_void);
+    // cachesup.rs defines this as `*mut IRP_CONTEXT` (== PIRP_CONTEXT). The extra `*`
+    // here made the caller pass &PIRP_CONTEXT, which the callee then read as the
+    // struct itself. rustc never compares a decl against a def in another module.
+    fn FatUnpinRepinnedBcbs(IrpContext: PIRP_CONTEXT);
     fn FsRtlIsAnsiCharacterLegalFat( ch: UCHAR, second: BOOLEAN, ) -> BOOLEAN;
     fn FsRtlIsLeadDbcsCharacter(ch: UCHAR) -> BOOLEAN;
     fn NT_ASSERT(expr: BOOLEAN);
@@ -63,13 +66,13 @@ extern "system" {
     fn FatReleaseVcb(IrpContext: PIRP_CONTEXT, Vcb: PVCB);
     fn FatVerifyFcb(IrpContext: PIRP_CONTEXT, Fcb: PDCB);
     fn _SEH2_AbnormalTermination() -> u8;
-    fn FatAcquireSharedVcb(IrpContext: *mut PIRP_CONTEXT, Vcb: *mut VCB) -> i32;
+    fn FatAcquireSharedVcb(IrpContext: PIRP_CONTEXT, Vcb: *mut VCB) -> i32;
     fn FatCompleteRequest(IrpContext: PIRP_CONTEXT, Irp: PIRP, Status: NTSTATUS);
     fn CanFsdWait(Irp: PIRP) -> BOOLEAN;
-    fn FatCreateIrpContext(Irp: PIRP, canWait: u32) -> *mut PIRP_CONTEXT;
+    fn FatCreateIrpContext(Irp: PIRP, canWait: u32) -> PIRP_CONTEXT;
     fn FatIsIrpTopLevel(Irp: PIRP) -> BOOLEAN;
-    fn FatProcessException(IrpContext: *mut PIRP_CONTEXT, Irp: PIRP, ExceptionCode: i32) -> NTSTATUS;
-    fn FatExceptionFilter(IrpContext: *mut PIRP_CONTEXT, ExceptionInfo: *mut core::ffi::c_void) -> i32;
+    fn FatProcessException(IrpContext: PIRP_CONTEXT, Irp: PIRP, ExceptionCode: i32) -> NTSTATUS;
+    fn FatExceptionFilter(IrpContext: PIRP_CONTEXT, ExceptionInfo: *mut core::ffi::c_void) -> i32;
     fn _SEH2_GetExceptionInformation() -> *mut core::ffi::c_void;
     fn _SEH2_GetExceptionCode() -> i32;
     static Dbg: i32;
@@ -333,9 +336,9 @@ unsafe extern "system" fn FatQueryFsFullSizeInfo(
 // ---- re-stitched from bank: 20260612-143211-volinfo.c/06_FatSetFsLabelInfo.rs ----
 #[no_mangle]
 pub unsafe extern "system" fn FatSetFsLabelInfo(
-    IrpContext: *mut PIRP_CONTEXT,
-    Vcb: *mut PVCB,
-    Buffer: *mut PFILE_FS_LABEL_INFORMATION,
+    IrpContext: PIRP_CONTEXT,
+    Vcb: PVCB,
+    Buffer: PFILE_FS_LABEL_INFORMATION,
 ) -> NTSTATUS {
     // Unknown externs
     extern "system" {
@@ -407,7 +410,7 @@ pub unsafe extern "system" fn FatSetFsLabelInfo(
     DebugTrace(1, DEBUG_TRACE_VOLINFO, b"FatSetFsLabelInfo...\n\0".as_ptr() as *const i8, 0);
 
     // Setup local variables
-    let buffer = &mut **Buffer;
+    let buffer = &mut *Buffer;
     UnicodeString.Length = buffer.VolumeLabelLength as USHORT;
     UnicodeString.MaximumLength = UnicodeString.Length;
     UnicodeString.Buffer = (&mut buffer.VolumeLabel[0]) as *mut WCHAR;
@@ -498,7 +501,7 @@ pub unsafe extern "system" fn FatSetFsLabelInfo(
 
     // Mark write through
     SetFlag(
-        &mut (**IrpContext).Flags as *mut ULONG as *mut u8,
+        &mut (*IrpContext).Flags as *mut ULONG as *mut u8,
         IRP_CONTEXT_FLAG_WRITE_THROUGH as u8,
     );
 
@@ -514,8 +517,8 @@ pub unsafe extern "system" fn FatSetFsLabelInfo(
 
                 // Locate existing volume label
                 FatLocateVolumeLabel(
-                    *IrpContext,
-                    *Vcb,
+                    IrpContext,
+                    Vcb,
                     &mut Dirent,
                     &mut DirentBcb,
                     &mut ByteOffset as *mut ULONG as *mut u32,
@@ -523,15 +526,15 @@ pub unsafe extern "system" fn FatSetFsLabelInfo(
 
                 if Dirent.is_null() {
                     ByteOffset = FatCreateNewDirent(
-                        *IrpContext,
-                        (**Vcb).RootDcb as *mut DCB,
+                        IrpContext,
+                        (*Vcb).RootDcb as *mut DCB,
                         1,
                         (FALSE as u8) as _,
                     );
 
                     FatPrepareWriteDirectoryFile(
-                        *IrpContext,
-                        (**Vcb).RootDcb as *mut DCB,
+                        IrpContext,
+                        (*Vcb).RootDcb as *mut DCB,
                         ByteOffset,
                         core::mem::size_of::<DIRENT>() as u32,
                         &mut DirentBcb,
@@ -543,32 +546,32 @@ pub unsafe extern "system" fn FatSetFsLabelInfo(
 
                     NT_ASSERT(NT_SUCCESS(Status) as i32);
                 } else {
-                    FatSetDirtyBcb(*IrpContext, DirentBcb, *Vcb, TRUE as u8);
+                    FatSetDirtyBcb(IrpContext, DirentBcb, Vcb, TRUE as u8);
                 }
 
                 // Construct label dirent
                 FatConstructLabelDirent(
-                    *IrpContext,
+                    IrpContext,
                     Dirent,
                     &mut OemLabel,
                 );
 
                 // Unpin to catch IO errors before VPB change
-                FatUnpinBcb(*IrpContext, core::ptr::addr_of_mut!((DirentBcb)) as *mut *mut core::ffi::c_void);
-                FatUnpinRepinnedBcbs(*IrpContext);
+                FatUnpinBcb(IrpContext, core::ptr::addr_of_mut!((DirentBcb)) as *mut *mut core::ffi::c_void);
+                FatUnpinRepinnedBcbs(IrpContext);
 
                 // Set upcased label in VPB
                 core::ptr::copy_nonoverlapping::<WCHAR>(
                     UpcasedLabel.Buffer,
-                    (*(**Vcb).Vpb).VolumeLabel.as_mut_ptr(),
+                    (*(*Vcb).Vpb).VolumeLabel.as_mut_ptr(),
                     UpcasedLabel.Length as usize / core::mem::size_of::<WCHAR>(),
                 );
-                (*(**Vcb).Vpb).VolumeLabelLength = (UpcasedLabel.Length as ULONG) as u16;
+                (*(*Vcb).Vpb).VolumeLabelLength = (UpcasedLabel.Length as ULONG) as u16;
             } else {
                 // Delete label
                 FatLocateVolumeLabel(
-                    *IrpContext,
-                    *Vcb,
+                    IrpContext,
+                    Vcb,
                     &mut Dirent,
                     &mut DirentBcb,
                     &mut ByteOffset as *mut ULONG as *mut u32,
@@ -583,7 +586,7 @@ pub unsafe extern "system" fn FatSetFsLabelInfo(
                 (*Dirent).FileName[0] = FAT_DIRENT_DELETED;
 
                 // Assert free dirent bitmap state
-                let root_dcb = (**Vcb).RootDcb;
+                let root_dcb = (*Vcb).RootDcb;
                 let condition = (*root_dcb).Specific.Dcb.as_ref().UnusedDirentVbo == 0xffffffff_u32
                     || RtlAreBitsSet(
                         &mut (*root_dcb).Specific.Dcb.as_mut().FreeDirentBitmap as *mut _ as *mut RTL_BITMAP,
@@ -600,14 +603,14 @@ pub unsafe extern "system" fn FatSetFsLabelInfo(
                     1u32,
                 );
 
-                FatSetDirtyBcb(*IrpContext, DirentBcb, *Vcb, TRUE as u8);
+                FatSetDirtyBcb(IrpContext, DirentBcb, Vcb, TRUE as u8);
 
                 // Unpin
-                FatUnpinBcb(*IrpContext, core::ptr::addr_of_mut!((DirentBcb)) as *mut *mut core::ffi::c_void);
-                FatUnpinRepinnedBcbs(*IrpContext);
+                FatUnpinBcb(IrpContext, core::ptr::addr_of_mut!((DirentBcb)) as *mut *mut core::ffi::c_void);
+                FatUnpinRepinnedBcbs(IrpContext);
 
                 // Clear label in VPB
-                (*(**Vcb).Vpb).VolumeLabelLength = 0;
+                (*(*Vcb).Vpb).VolumeLabelLength = 0;
             }
 
             Status = STATUS_SUCCESS;
@@ -615,7 +618,7 @@ pub unsafe extern "system" fn FatSetFsLabelInfo(
 
         // _SEH2_FINALLY
         DebugUnwind(b"FatSetFsALabelInfo\0".as_ptr() as usize);
-        FatUnpinBcb(*IrpContext, core::ptr::addr_of_mut!((DirentBcb)) as *mut *mut core::ffi::c_void);
+        FatUnpinBcb(IrpContext, core::ptr::addr_of_mut!((DirentBcb)) as *mut *mut core::ffi::c_void);
         DebugTrace(
             -1,
             DEBUG_TRACE_VOLINFO,
@@ -677,7 +680,14 @@ pub unsafe extern "system" fn FatFsdSetVolumeInformation(
     Irp: PIRP,
 ) -> NTSTATUS {
     let mut Status: NTSTATUS;
-    let mut IrpContext: *mut PIRP_CONTEXT = core::ptr::null_mut();
+    // PIRP_CONTEXT, not `*mut PIRP_CONTEXT`. FatCreateIrpContext returns one
+    // pointer; the local was typed as two, and the call below then wrote
+    // `(*IrpContext)` — reading the first eight bytes of the IRP_CONTEXT struct
+    // and passing THAT as the context, on every IRP_MJ_SET_VOLUME_INFORMATION.
+    // It compiled because volinfo's own extern block declared
+    // FatCreateIrpContext as returning the deeper type too, so the lie was
+    // self-consistent and rustc had nothing to compare it against.
+    let mut IrpContext: PIRP_CONTEXT = core::ptr::null_mut();
     let TopLevel: BOOLEAN;
 
     PAGED_CODE();
@@ -690,7 +700,7 @@ pub unsafe extern "system" fn FatFsdSetVolumeInformation(
     // _SEH2_TRY
     {
         IrpContext = FatCreateIrpContext(Irp, (CanFsdWait(Irp)) as _);
-        Status = FatCommonSetVolumeInfo((IrpContext).cast(), Irp);
+        Status = FatCommonSetVolumeInfo(IrpContext.cast(), Irp);
     }
 
     // Simulated _SEH2_EXCEPT block – unreachable dead code preserving the original logic
@@ -881,18 +891,17 @@ pub unsafe extern "system" fn FatCommonSetVolumeInfo(
         // of the procedures that we're calling performs the action if
         // possible and returns true if it successful and false if it couldn't
         // wait for any I/O to complete.
-        let mut irp_ctx_local: PIRP_CONTEXT = IrpContext;
-        let mut buf_label: PFILE_FS_LABEL_INFORMATION = Buffer as PFILE_FS_LABEL_INFORMATION;
+        let buf_label: PFILE_FS_LABEL_INFORMATION = Buffer as PFILE_FS_LABEL_INFORMATION;
         match FsInformationClass {
             FileFsLabelInformation => {
-                Status = FatSetFsLabelInfo(&mut irp_ctx_local, &mut Vcb, &mut buf_label);
+                Status = FatSetFsLabelInfo(IrpContext, Vcb, buf_label);
             }
             _ => {
                 Status = STATUS_INVALID_PARAMETER;
             }
         }
 
-        FatUnpinRepinnedBcbs(&mut irp_ctx_local);
+        FatUnpinRepinnedBcbs(IrpContext);
     }
 
     // FINALLY block
@@ -2310,7 +2319,10 @@ pub unsafe extern "system" fn FatFsdQueryVolumeInformation(
     Irp: PIRP,
 ) -> NTSTATUS {
     let mut Status: NTSTATUS = 0;
-    let mut IrpContext: *mut PIRP_CONTEXT = core::ptr::null_mut();
+    // PIRP_CONTEXT — one pointer. See FatFsdSetVolumeInformation above; this
+    // path never dereferenced the over-deep local, so it was mistyped rather
+    // than broken, but the type is what the next reader will trust.
+    let mut IrpContext: PIRP_CONTEXT = core::ptr::null_mut();
     let mut Irp = Irp;
     let TopLevel: BOOLEAN;
     FsRtlEnterFileSystem();

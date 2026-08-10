@@ -27,22 +27,52 @@
  * declares.
  */
 
+#include <stdarg.h>
 #include <stddef.h>
 #include <stdint.h>
+#include <stdio.h>
 
 /* ------------------------------------------------------------------ *
  * errno — the SUBJECT's, independent of the reference's.
+ *
+ * The three definitions that used to live here (`_errno`, `__doserrno` and a
+ * hand-written `msvcrt_set_errno`) are GONE: msvcrt-crt-rust's errno.rs is the
+ * translation of errno.c and exports all three, so a copy here is a duplicate
+ * symbol — and, worse, a second store that the code under test would not be using.
+ *
+ * The Rust reads them out of `msvcrt_get_thread_data()`, which this file already
+ * provides (`subj_thread_data`, below), so the subject's errno now lives in the same
+ * per-thread struct msvcrt really keeps it in. These accessors follow it there; they
+ * stay un-namespaced on purpose, because classify.rs and the file/printf suites read
+ * them directly.
  * ------------------------------------------------------------------ */
-static __thread int subj_errno_value;
+extern void *msvcrt_get_thread_data(void);
+static int  *subj_errno_slot(void);
+static unsigned int *subj_doserrno_slot(void);
 
-int *_errno(void)
-{
-    return &subj_errno_value;
-}
+int  subj_errno_get(void)      { return *subj_errno_slot(); }
+void subj_errno_set(int value) { *subj_errno_slot() = value; }
 
-/* Harness API (un-namespaced on purpose — these are read by classify.rs). */
-int  subj_errno_get(void)      { return subj_errno_value; }
-void subj_errno_set(int value) { subj_errno_value = value; }
+/* `unsigned int` rather than msvcrt's `__msvcrt_ulong`, which is a 32-bit spelling this
+ * TU has no header for — and 64-bit here would let a write past bit 31 go unnoticed. */
+unsigned int subj_doserrno_get(void)           { return *subj_doserrno_slot(); }
+void         subj_doserrno_set(unsigned int v) { *subj_doserrno_slot() = v; }
+
+/* ------------------------------------------------------------------ *
+ * _wcsdup — RETIRED (wave 32), exactly as this stub's own note said it would be.
+ *
+ * It stood in because `file.rs`'s `tmpnam_helper` calls `_wcsdup` and
+ * msvcrt-crt-rust did not export it, so the subject side had no Rust copy to
+ * link against while the reference's stayed renamed `ref__wcsdup`.  Wave 32 put
+ * the real one in `wcs_rest.rs`, which is the retirement the note described —
+ * "by making wcs.c's owner a reference TU whose subject half is Rust".  Keeping
+ * the stub now is a duplicate symbol AND a worse test: it graded a hand-written
+ * stand-in where the shipping artifact is available.
+ *
+ * The 16-bit-wchar_t warning it carried is preserved where it now applies: the
+ * Rust body takes `*const wchar_t` from the msvcrt-sys island, which is
+ * `c_ushort`, so the host's 32-bit `wchar_t` never enters the picture.
+ * ------------------------------------------------------------------ */
 
 /* ------------------------------------------------------------------ *
  * The invalid-parameter handler.
@@ -89,6 +119,8 @@ void subj_invalid_pmt_reset(void) { subj_invalid_pmt_calls = 0; }
  *                                              msvcrt's genuine tables, both sides.
  *   cloc_clmap / cloc_cumap                    lifted from locale.c by build.rs ->
  *                                              identical bytes on both sides.
+ *   cloc_time_data                             lifted from locale.c by build.rs -> ONE
+ *                                              object, both `lc_time_curr`s point at it.
  *
  * That split is the point.  Data we supply to BOTH sides can never be caught by a
  * differential test — a mistyped byte makes both sides wrong the same way and
@@ -97,6 +129,10 @@ void subj_invalid_pmt_reset(void) { subj_invalid_pmt_calls = 0; }
  * ------------------------------------------------------------------ */
 #include "locale_layout.h"
 #include "cloc_tables.h"   /* generated: cloc_clmap[256], cloc_cumap[256] */
+
+/* Defined in the generated cloc_time_data TU (build.rs), not here — one object for both
+ * sides, exactly like MSVCRT__ctype above. */
+extern __lc_time_data cloc_time_data;
 
 extern unsigned short MSVCRT__ctype[257];    /* ctype.c — shared, un-namespaced */
 extern unsigned short MSVCRT__wctype[257];   /* ctype.c — shared, un-namespaced */
@@ -186,6 +222,10 @@ struct threadlocaleinfostruct *get_locinfo(void)
         subj_locinfo.pctype      = MSVCRT__ctype + 1;
         subj_locinfo.pclmap      = cloc_clmap;
         subj_locinfo.pcumap      = cloc_cumap;
+        /* The C locale's calendar strings, and the SAME object the reference points at —
+         * third entry in the shared-DATA list above, on the same terms as the ctype and
+         * case tables. What strftime rows grade is time.c's INDEXING into it. */
+        subj_locinfo.lc_time_curr = &cloc_time_data;
     }
     return (struct threadlocaleinfostruct *)&subj_locinfo;
 }
@@ -214,6 +254,22 @@ static __thread subj_thread_data_t subj_thread_data;
 void *msvcrt_get_thread_data(void)
 {
     return &subj_thread_data;
+}
+
+/* The two errno slots the harness accessors at the top of this file read and write.
+ * Defined HERE, beside the struct, rather than up there: errno.rs reaches the same two
+ * fields through msvcrt-sys's bindgen offsets, and ref_integrity cross-checks those
+ * against this declaration — so the harness and the code under test are provably looking
+ * at the same bytes, which is the whole reason the storage moved out of two file-static
+ * `__thread` variables. */
+static int *subj_errno_slot(void)
+{
+    return &subj_thread_data.thread_errno;
+}
+
+static unsigned int *subj_doserrno_slot(void)
+{
+    return &subj_thread_data.thread_doserrno;
 }
 
 /* ── the SUBJECT's copy of the pinned MBCS fixture ─────────────────────────
@@ -336,6 +392,24 @@ size_t subj_off_mbcinfo_mbcasemap(void)    { return offsetof(rl_threadmbcinfo, m
 size_t subj_sizeof_mbcinfo(void)           { return sizeof(rl_threadmbcinfo); }
 size_t subj_off_locale_mbcinfo(void)       { return offsetof(rl_locale_t, mbcinfo); }
 
+/* ── time (wave 35) ────────────────────────────────────────────────────────
+ *
+ * `strftime`/`wcsftime`/`_Strftime` reach every month name, weekday name and picture
+ * string through `locinfo->lc_time_curr`, and the shipping Rust reads that struct through
+ * msvcrt-sys's bindgen of the REAL layout while the reference reads locale_layout.h's
+ * transcription. The two halves of the union are the risk: `str` and `wstr` are 43
+ * pointers each, so dropping the wide arm — which nothing reads at _MSVCR_VER=0 — would
+ * move `data` by 344 bytes and cost nothing until something touched it. Verified rather
+ * than assumed, exactly like threadmbcinfo above. */
+size_t subj_off_locinfo_lctimecurr(void) { return offsetof(rl_threadlocinfo, lc_time_curr); }
+size_t subj_off_lctd_str(void)      { return offsetof(__lc_time_data, str); }
+size_t subj_off_lctd_lcid(void)     { return offsetof(__lc_time_data, lcid); }
+size_t subj_off_lctd_unk(void)      { return offsetof(__lc_time_data, unk); }
+size_t subj_off_lctd_refcount(void) { return offsetof(__lc_time_data, refcount); }
+size_t subj_off_lctd_wstr(void)     { return offsetof(__lc_time_data, wstr); }
+size_t subj_off_lctd_data(void)     { return offsetof(__lc_time_data, data); }
+size_t subj_size_lctd(void)         { return sizeof(__lc_time_data); }
+
 /* ── wave 14b: the Rust printf ENGINE's environment ─────────────────────────
  *
  * msvcrt.dll's printf engine imports these from kernel32 / its own C.  The
@@ -374,12 +448,12 @@ int HeapFree(void *heap, unsigned int flags, void *ptr)
     return 1;
 }
 
-/* printf's %e exponent width: msvcrt default = 3-digit form (see refimpl's
- * msvcrt_ref_ twin — the two must agree or every %e row false-DIVERGEs). */
-unsigned int _get_output_format(void)
-{
-    return 0;
-}
+/* printf's %e exponent width used to be stubbed here, returning 0.  It is now supplied by
+ * the crate under test — `msvcrt/misc.rs`'s real `_get_output_format`, reading the real
+ * `output_format` static that `_set_output_format` writes — so a stub would be a duplicate
+ * symbol at link.  The default is still 0 (3-digit form), so refimpl's `msvcrt_ref_` twin
+ * continues to agree and no %e row moves; the difference is that the agreement is now a
+ * property of the shipping code rather than of two hand-kept-in-sync stubs. */
 
 /* `_mbtowc_l` USED to be a stub here — a C-locale 1:1 twin of the one in refimpl.c,
  * required to stay body-identical to it or every wide-conversion printf row would
@@ -393,3 +467,111 @@ unsigned int _get_output_format(void)
  *
  * Keeping this would have been a duplicate-symbol link error the moment the Rust mbcs
  * objects entered the link, which is how it was found. */
+
+/* ── `_snprintf`, for the SUBJECT ────────────────────────────────────────────
+ *
+ * time.rs's `asctime_buf` calls `_snprintf`. In the shipping DLL that name is a
+ * `va_start` trampoline in dll/win32/msvcrt/rust_varargs_shim.c, compiled into the
+ * msvcrt MODULE and forwarding a `va_list` into the Rust engine. That TU cannot come
+ * into this harness: the Rust `_vsnprintf` walks a `*mut u8` over 8-byte slots — the
+ * Windows va_list — and the host's `va_start` produces a SysV register-save-area
+ * struct. Feeding one to the other is the exact wall printf_probe hit, and it is why
+ * the reference TUs get refstub_printf's flat <stdarg.h>.
+ *
+ * So the harness answers instead, over the host's vsnprintf. Be precise about what
+ * that costs: `asctime`/`_wasctime`/`ctime` rows grade the ASSEMBLY of the string —
+ * the field order, the range checks, the `'1' + (year+900)/1000` century arithmetic —
+ * and NOT msvcrt's formatting of it. That is a real limit, and a narrow one: the only
+ * format asctime uses is `%s %s %02d %02d:%02d:%02d %c%03d`, on which glibc and msvcrt
+ * agree exactly. msvcrt's printf engine itself is graded by printf_port.rs against
+ * `ref_pf_printf_a`, which is the genuine C — the coverage lives there, not here.
+ *
+ * The TRUNCATION semantics are msvcrt's, not C99's, because those genuinely differ:
+ * msvcrt writes no terminator and returns -1 when the result does not fit, where C99
+ * NUL-terminates and returns the length it wanted. Modelling C99 here would make a
+ * short-buffer row pass on the reference and fail in the DLL.
+ *
+ * That contract now lives in ONE place — refimpl.c's `msvcrt_ref_vsnprintf` — and both
+ * sides call it. It used to be written out twice, and the two copies drifted: this one
+ * asked glibc for `count + 1` bytes so the NUL would have a slot, which puts that NUL at
+ * `str[count]`, ONE BYTE PAST the caller's buffer. `_ecvt`/`_fcvt` print into a `char
+ * buf[80]` on the stack, so every full-width conversion smashed the byte after it — and
+ * because the reference had the other copy, truncating a digit early instead, the first
+ * math.c row to reach it reported the two host stand-ins disagreeing and read as a bug in
+ * the Rust. Sharing is correct here for the reason refimpl.c gives at length: this is
+ * environment standing in for an engine neither side owns in this binary.
+ */
+int msvcrt_ref_vsnprintf(char *str, size_t len, const char *format, va_list ap);
+
+int _snprintf(char *str, size_t count, const char *format, ...)
+{
+    va_list ap;
+    int n;
+
+    va_start(ap, format);
+    n = msvcrt_ref_vsnprintf(str, count, format, ap);
+    va_end(ap);
+    return n;
+}
+
+/* ------------------------------------------------------------------------
+ * math.c's classification entry points, for the host harness.
+ *
+ * `math.rs` reaches these through the header's `fpclassify` macro, so they are
+ * external calls in the object even though the C source never spells one. On the
+ * host they must be MAPPED, not forwarded: ReactOS's msvcrt spells the results
+ *
+ *     FP_ZERO 0   FP_INFINITE 1   FP_NAN 2   FP_NORMAL -1   FP_SUBNORMAL -2
+ *
+ * (dll/win32/msvcrt/include/math.h:277-281), and glibc uses a completely
+ * different, all-positive set. Returning the host's numbers would make every
+ * classification comparison in `_fpclass`, `sqrt_validate` and `isnan` silently
+ * wrong in a way that still typechecks — the exact class this harness exists to
+ * catch, so the mapping is spelled out rather than assumed.
+ * ------------------------------------------------------------------------ */
+#include <math.h>
+#include <stdarg.h>
+#include <stdio.h>
+
+#define MSVCRT_FP_INFINITE 1
+#define MSVCRT_FP_NAN 2
+#define MSVCRT_FP_NORMAL (-1)
+#define MSVCRT_FP_SUBNORMAL (-2)
+#define MSVCRT_FP_ZERO 0
+
+static short msvcrt_classify(int host_class)
+{
+    switch (host_class)
+    {
+    case FP_NAN:       return MSVCRT_FP_NAN;
+    case FP_INFINITE:  return MSVCRT_FP_INFINITE;
+    case FP_ZERO:      return MSVCRT_FP_ZERO;
+    case FP_SUBNORMAL: return MSVCRT_FP_SUBNORMAL;
+    default:           return MSVCRT_FP_NORMAL;
+    }
+}
+
+short _dclass(double x)
+{
+    return msvcrt_classify(fpclassify(x));
+}
+
+short _fdclass(float x)
+{
+    return msvcrt_classify(fpclassify(x));
+}
+
+/* `_scprintf` is "how long would this printf be" — one body, shared with the reference
+ * (refimpl.c's `msvcrt_ref_scprintf`) for the reason `_snprintf` above gives. */
+int msvcrt_ref_scprintf(const char *format, ...);
+
+int _scprintf(const char *format, ...)
+{
+    va_list ap;
+    int n;
+
+    va_start(ap, format);
+    n = msvcrt_ref_vsnprintf((char *)0, 0, format, ap);
+    va_end(ap);
+    return n;
+}

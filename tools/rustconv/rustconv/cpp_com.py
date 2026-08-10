@@ -20,10 +20,12 @@ import json
 import re
 import subprocess
 from collections import Counter, defaultdict
+from collections.abc import Mapping, Sequence
 from dataclasses import asdict, dataclass, field, replace
 from pathlib import Path
 from typing import TYPE_CHECKING
 
+from .fact_seal import _named_cast_spans
 from .lex_mask import mask_code
 
 if TYPE_CHECKING:
@@ -63,6 +65,40 @@ _KNOWN_POINTER_TYPEDEFS = frozenset(
 )
 
 
+# ATL CONTAINER members whose Rust lowering already exists in `shell32-rust/src/atl.rs`.
+#
+# `CComPtr` and `CComHeapPtr` are handled a layer down as raw pointers, because the
+# generated Release can express their whole destructor in one line. A container cannot be
+# flattened that way — its destructor walks storage the scaffold does not own — so the
+# field keeps the container TYPE and its `Drop` does the work.
+#
+# Being absent from this table is not neutral, exactly as for `_LOCAL_RAII_TYPES`: an
+# unlisted container is a hard pre-payment refusal naming the type, because the
+# alternative is the model inventing an API for it. `CAtlList` was added with its Rust
+# side; do not list a type before `atl.rs` implements it.
+#
+# `usage` is handed to every worker whose body touches the field. C++ container spellings
+# do not survive translation on their own — `m_Storage[n]` has no Rust meaning, and a
+# model asked to guess produced `.0`-style wrapper artifacts before now.
+_RAII_CONTAINER_LOWERINGS: dict[str, tuple[str, str]] = {
+    "CSimpleArray": (
+        "CSimpleArray::new()",
+        "`Add(t) -> BOOL` (FALSE on allocation failure — check it, the C++ does), "
+        "`GetSize() -> i32`, `GetData() -> *mut T`, `GetAt(i32) -> *mut T`, "
+        "`RemoveAll()`. C++ `arr[n]` is `(*arr.GetAt(n))` and C++ `&arr[n]` is "
+        "`arr.GetAt(n)`.",
+    ),
+    "CAtlList": (
+        "CAtlList::new()",
+        "`AddHead(t)` / `AddTail(t)`, `IsEmpty() -> bool`, `GetCount() -> usize`, "
+        "`RemoveAll()`, `GetHeadPosition() -> POSITION`, "
+        "`GetNext(&mut POSITION) -> *mut T` (returns the CURRENT element and advances "
+        "the position, exactly like ATL), `FindIndex(i32) -> POSITION`, "
+        "`GetAt(POSITION) -> *mut T`. A `POSITION` is null at the end of the list.",
+    ),
+}
+
+
 @dataclass(frozen=True)
 class PlainStateField:
     """One C-layout object field safe to spell directly in the Rust owner."""
@@ -76,13 +112,64 @@ class PlainStateField:
     # generated Release when still non-null (the C++ member dtor's implicit free).
     owned_heap_ptr: bool = False
     array_len: int | None = None
+    # `Tmpl<Elem>` from _RAII_CONTAINER_LOWERINGS: the field keeps the container type and
+    # its `Drop` restores the C++ member destructor the translation dropped.
+    raii_container: str | None = None
 
     @property
     def rust_type(self) -> str:
+        if self.raii_container is not None:
+            return self.raii_container
         if self.com_ptr_interface is not None:
-            return f"*mut {self.com_ptr_interface}"
-        rust = c_type_to_rust(self.c_type)
+            rust = f"*mut {self.com_ptr_interface}"
+        else:
+            rust = c_type_to_rust(self.c_type)
         return f"[{rust}; {self.array_len}]" if self.array_len is not None else rust
+
+    @property
+    def owns_resource(self) -> bool:
+        """True when the C++ member has a non-trivial destructor of its own."""
+        return (
+            self.com_ptr_interface is not None
+            or self.owned_cstring
+            or self.owned_heap_ptr
+            or self.raii_container is not None
+        )
+
+    @property
+    def owned_rust_type(self) -> str:
+        """The field spelling where RUST DROP GLUE owns the lifetime.
+
+        This differs from `rust_type`, which is the COM *owner's* spelling: an owner's
+        ATL members are released by explicitly generated code in `Release`, so a raw
+        `*mut T` there is complete. A POD has no generated code at all — its only
+        destructor is the drop glue Rust derives from its field types — so an ATL member
+        flattened to a raw pointer here is a leak with nothing red anywhere. Keeping the
+        owning type makes Rust's field-drop order reproduce C++'s implicit destructor.
+        Every type used is `repr(transparent)` over the same pointer, so layout is
+        unchanged.
+        """
+        if self.raii_container is not None:
+            return self.raii_container
+        if self.com_ptr_interface is not None:
+            rust = f"CComPtr<{self.com_ptr_interface}>"
+        elif self.owned_heap_ptr:
+            rust = f"CComHeapPtr<{c_type_to_rust(self.c_type).removeprefix('*mut ').strip()}>"
+        else:
+            return self.rust_type
+        return f"[{rust}; {self.array_len}]" if self.array_len is not None else rust
+
+    @property
+    def init_expression(self) -> str:
+        """The struct-literal initialiser. Every other field is `zeroed()`, which is the
+        C++ default ctor for a POD and is documented-valid for atl.rs's pointer types;
+        a container has a real `new()` and must use it."""
+        if self.raii_container is not None:
+            template = self.raii_container.split("<", 1)[0]
+            return _RAII_CONTAINER_LOWERINGS[template][0]
+        if self.owned_cstring:
+            return "CStringW::new()"
+        return "core::mem::zeroed()"
 
     @property
     def assignment_helper(self) -> str | None:
@@ -104,6 +191,37 @@ class PodStateType:
     name: str
     fields: tuple[PlainStateField, ...]
     packed: bool = False
+
+    @property
+    def owns_resources(self) -> bool:
+        """True when this struct's own fields give it a non-trivial C++ destructor."""
+        return any(state.owns_resource for state in self.fields)
+
+
+def pods_with_drop(pods: Sequence[PodStateType]) -> frozenset[str]:
+    """POD names whose Rust struct has real drop glue — directly, or transitively through
+    a by-value field of another such POD.
+
+    C++'s implicit destructor is transitive and so is Rust's, so a guard that looked only
+    one level deep would wave through a wrapper struct and leak everything inside it.
+    """
+    names = {pod.name for pod in pods if pod.owns_resources}
+    changed = True
+    while changed:
+        changed = False
+        for pod in pods:
+            if pod.name in names:
+                continue
+            for state in pod.fields:
+                # A POINTER to a POD owns nothing — C++ destroys neither end. Only a
+                # by-value member (an array of them included) runs the element destructor.
+                if "*" in state.c_type:
+                    continue
+                if state.c_type.strip() in names:
+                    names.add(pod.name)
+                    changed = True
+                    break
+    return frozenset(names)
 
 
 @dataclass(frozen=True)
@@ -154,6 +272,13 @@ class CppComClass:
     # in C++ base-destruction order. Scan extension renames them into ordinary
     # workers and records those worker names here for Release sequencing.
     base_dtor_workers: list[str] = field(default_factory=list)
+    # SDK type names the per-arch bindgen islands agree are plain integer aliases
+    # (see island_integer_aliases). Empty when no islands were supplied, which keeps
+    # an unproven type a loud preflight failure rather than an assumed int.
+    island_scalar_types: frozenset[str] = frozenset()
+    # Struct names the islands agree on (see island_struct_types). Used only to prove an
+    # ATL container's element type is a C struct — i.e. trivially destructible.
+    island_struct_types: frozenset[str] = frozenset()
 
     def interface_names(self) -> list[str]:
         """Ordered, de-duplicated interfaces to materialize: QI'd (com_map) then
@@ -166,24 +291,50 @@ class CppComClass:
         pod_names = {item.name for item in self.pod_state_types}
         return [
             _parse_plain_state_field(
-                item, allowed_pod_types=pod_names, array_constants=self.array_constants
+                item,
+                allowed_pod_types=pod_names,
+                array_constants=self.array_constants,
+                island_scalar_types=self.island_scalar_types,
+                island_struct_types=self.island_struct_types,
             )
             for item in self.state_fields
         ]
 
-    def require_supported(self, *, allow_internal: bool = False) -> None:
+    def require_supported(self, *, allow_internal: bool = False, allow_plain: bool = False) -> None:
+        """Refuse a class whose ABI surface is not fully proven.
+
+        ``allow_plain`` is for a file-local C++ helper class that is not COM at all — no
+        vtable, no QI, no activation, reached only by direct call from its own TU. All three
+        COM requirements below are then vacuous, and demanding them refused a class that is
+        strictly SIMPLER than the supported case. The state layout, RAII, and STGMEDIUM
+        checks still apply: those are about owning memory correctly, which a plain class does
+        just as much as a COM one.
+
+        A plain class is asserted, never inferred: if the caller says ``allow_plain`` and the
+        class turns out to HAVE a com_map, that is a mis-invocation, not a licence to skip the
+        vtable — refuse rather than silently emit a COM class with no interfaces.
+        """
         problems = list(self.unsupported)
-        if not self.com_map:
-            problems.append("no BEGIN_COM_MAP entries found")
-        internal_ok = allow_internal and self.internal_shell_object_creator
-        if not self.not_aggregatable and not internal_ok:
-            problems.append(
-                "aggregation policy is unsupported: DECLARE_NOT_AGGREGATABLE is required"
-            )
-        if not self.object_map_clsid and not internal_ok:
-            problems.append(
-                "no OBJECT_ENTRY activation found; internal COM-object construction is not mapped"
-            )
+        if allow_plain:
+            if self.com_map:
+                problems.append(
+                    f"--plain was passed but {self.name} has BEGIN_COM_MAP entries "
+                    f"({', '.join(entry.interface for entry in self.com_map)}); it is a COM "
+                    "class — drop --plain so its vtable and activation are generated"
+                )
+        else:
+            if not self.com_map:
+                problems.append("no BEGIN_COM_MAP entries found")
+            internal_ok = allow_internal and self.internal_shell_object_creator
+            if not self.not_aggregatable and not internal_ok:
+                problems.append(
+                    "aggregation policy is unsupported: DECLARE_NOT_AGGREGATABLE is required"
+                )
+            if not self.object_map_clsid and not internal_ok:
+                problems.append(
+                    "no OBJECT_ENTRY activation found; internal COM-object construction is "
+                    "not mapped"
+                )
         for declaration in self.state_fields:
             match = re.fullmatch(r"\s*STGMEDIUM\s+([A-Za-z_]\w*)\s*", declaration)
             if match and match.group(1) not in self.stgmedium_lifecycle_fields:
@@ -191,12 +342,24 @@ class CppComClass:
                     "bindgen-backed STGMEDIUM state lacks source-proven constructor/"
                     f"destructor lifecycle: {declaration}"
                 )
+        for pod in self.pod_state_types:
+            if pod.packed and pod.owns_resources:
+                # rustc refuses to drop a field of a packed struct (it cannot take a
+                # reference to a misaligned place), so this would not even compile —
+                # but saying so here names the C++ construct instead of dumping E0793.
+                problems.append(
+                    f"packed struct `{pod.name}` has a member with a destructor "
+                    f"({', '.join(s.declaration for s in pod.fields if s.owns_resource)}); "
+                    "Rust cannot drop a packed field"
+                )
         for declaration in self.state_fields:
             try:
                 _parse_plain_state_field(
                     declaration,
                     allowed_pod_types={item.name for item in self.pod_state_types},
                     array_constants=self.array_constants,
+                    island_scalar_types=self.island_scalar_types,
+                    island_struct_types=self.island_struct_types,
                 )
             except CppComError as exc:
                 problems.append(str(exc))
@@ -220,10 +383,28 @@ _MAP_ENTRY = re.compile(r"\b(COM_INTERFACE_ENTRY(?:2)?(?:_IID)?)\s*\(([^)]*)\)")
 _UNSUPPORTED_MAP = re.compile(
     r"\b(COM_INTERFACE_ENTRY_(?:CHAIN|FUNC|FUNC_BLIND|AGGREGATE|BREAK|NOINTERFACE))\s*\("
 )
+# A method DECLARATION, consumed whole. Two prefixes must be inside the match or their
+# leftovers merge with the next real field into a bogus one: the `static` storage specifier,
+# and a POINTER return type (`SApp *AddInternal(...)` used to match only from `AddInternal`,
+# stranding `SApp *`). COpenWithList's private section has both, and produced the field
+# `SApp * static static static static` — which would have been a silent struct-layout change
+# had it happened to parse.
 _METHOD_DECL = re.compile(
-    r"(?:STDMETHOD(?:IMP)?|virtual\s+[^;()]+|[A-Za-z_]\w*(?:\s+WINAPI)?)\s*"
-    r"(?:\([^;{}]*\)|[A-Za-z_]\w*\s*\([^;{}]*\))\s*(?:override\s*)?;"
+    r"(?:static\s+|inline\s+|explicit\s+)*"
+    r"~?\s*"
+    # The return type may be scope-qualified (`COpenWithList::SApp *GetCurrentApp()`);
+    # matching only from `SApp` stranded `COpenWithList::` onto the next member.
+    r"(?:STDMETHOD(?:IMP)?|virtual\s+[^;()]+"
+    r"|[A-Za-z_]\w*(?:\s*::\s*[A-Za-z_]\w*)*(?:\s+(?:WINAPI|CALLBACK|APIENTRY|PASCAL"
+    r"|STDMETHODCALLTYPE|NTAPI|WINAPIV|FASTCALL|CDECL|__stdcall|__cdecl|__fastcall))?)\s*"
+    r"(?:[*&]\s*)?"
+    r"(?:\([^;{}]*\)|[A-Za-z_]\w*\s*\([^;{}]*\))\s*(?:const\s*)?(?:override\s*)?;"
 )
+
+# Tokens that can only be parser debris once a statement is claimed to be a data member.
+# A field carrying one of these is a mis-parse, and a mis-parsed field silently changes the
+# object layout — so it HARD FAILS instead of being dropped or guessed at.
+_FIELD_DEBRIS = re.compile(r"\b(?:static|typedef|virtual|inline|template|explicit|friend)\b")
 
 
 def _balanced_block(text: str, open_brace: int) -> tuple[str, int]:
@@ -402,7 +583,10 @@ def _state_fields(body: str) -> list[str]:
     # declaration while removing the nested type block before semicolon
     # splitting.  The type block is independently captured by
     # ``_discover_pod_state_types`` from the unmodified class text.
-    nested_type = re.compile(r"\b(?:struct|union|enum)\s+[A-Za-z_]\w*\s*\{")
+    # `typedef` must be part of the match, not left dangling in front of the next
+    # declaration — `typedef struct _LANGANDCODEPAGE {...} LANGANDCODEPAGE, *LP...;`
+    # otherwise leaves a bare `typedef` that glues onto the field below it.
+    nested_type = re.compile(r"\b(?:typedef\s+)?(?:struct|union|enum)\s+[A-Za-z_]\w*\s*\{")
     while match := nested_type.search(stripped):
         open_brace = stripped.find("{", match.start())
         _, close_brace = _balanced_block(stripped, open_brace)
@@ -419,11 +603,31 @@ def _state_fields(body: str) -> list[str]:
         statement = " ".join(statement.split())
         if not statement or "(" in statement or ")" in statement or statement == "override":
             continue
-        # Static declarations do not contribute to an instance layout.  Macro
-        # removal can also leave a destructor's leading `~` or disabled `#if`
-        # method debris joined to the following static declaration.
-        if statement.startswith(("static ", "~", "#")) or " #" in statement:
+        if statement.startswith("#") or " #" in statement:
             continue
+        # A static member is not part of the instance layout, so it is dropped — but drop it
+        # only when it is a CLEAN static declaration. `static INT_PTR CALLBACK DialogProc();`
+        # once stranded `static INT_PTR`, which glued onto the following member and made the
+        # whole thing start with `static ` — so the drop silently swallowed a real field.
+        # Debris after the storage class means the strip is wrong, not that the member is.
+        if statement.startswith("static "):
+            if _FIELD_DEBRIS.search(statement[len("static ") :]):
+                raise CppComError(
+                    f"class layout parse merged debris into a static declaration: "
+                    f"{statement!r}. Dropping it would silently delete the data member "
+                    "trailing it — fix the method-declaration stripping."
+                )
+            continue
+        # A destructor's leading `~` used to make the whole statement be DROPPED. When the
+        # `~` stands alone that is right, but `~COpenWithList();` is followed by the first
+        # data member, and once the declaration was consumed the two joined into
+        # `~ SApp *m_pApp` — so the class SILENTLY LOST its first field, for every class
+        # that declares a destructor. `_METHOD_DECL` now eats the `~` with the declaration;
+        # strip any survivor rather than discarding the member behind it.
+        if statement.startswith("~"):
+            statement = statement.lstrip("~").strip()
+            if not statement:
+                continue
         # Access labels and macro debris contain no plausible declarator.
         if re.search(r"\b[A-Za-z_]\w*\s*(?:\[[^]]+\])?$", statement):
             # C permits ``UINT first, second``. There is one base type and two
@@ -442,12 +646,305 @@ def _state_fields(body: str) -> list[str]:
                 )
             else:
                 fields.append(statement)
+    for statement in fields:
+        debris = _FIELD_DEBRIS.search(statement)
+        if debris is not None:
+            raise CppComError(
+                f"class layout parse produced a field carrying `{debris.group(0)}`: "
+                f"{statement!r}. That is method/typedef debris merged into a data member, "
+                "and a mis-parsed member silently changes the object layout — fix the "
+                "declaration stripping rather than shipping a guessed struct."
+            )
     return fields
 
 
 _POD_LEAF_TYPES = frozenset(
     {"CLSID", "FILETIME", "GUID", "IID", "LARGE_INTEGER", "STGMEDIUM", "ULARGE_INTEGER"}
 )
+
+# Rust spellings bindgen emits for an integer primitive on the right of a type alias.
+_ISLAND_INTEGER_PRIMITIVES = frozenset(
+    {
+        "::core::ffi::c_char",
+        "::core::ffi::c_int",
+        "::core::ffi::c_long",
+        "::core::ffi::c_schar",
+        "::core::ffi::c_short",
+        "::core::ffi::c_uchar",
+        "::core::ffi::c_uint",
+        "::core::ffi::c_ulong",
+        "::core::ffi::c_ushort",
+        "i8",
+        "i16",
+        "i32",
+        "i64",
+        "u8",
+        "u16",
+        "u32",
+        "u64",
+    }
+)
+_ISLAND_TYPE_ALIAS = re.compile(r"^pub type (?P<name>\w+) = (?P<rhs>[^;]+);", re.M)
+_ISLAND_TYPE_REEXPORT = re.compile(r"^pub use self::(?P<target>\w+) as (?P<name>\w+);", re.M)
+# `pub use ntdll_sys::nt::*;` — the substrate crate an island resolves its base types through.
+_ISLAND_SYS_GLOB = re.compile(r"^pub use (?P<crate>\w+)_sys::\w+::\*;", re.M)
+# Alias chains are short in practice (SHCONTF -> DWORD -> c_ulong); the bound is a cycle guard,
+# not a tuning knob. A malformed island that aliases in a loop must terminate, not hang.
+_ISLAND_ALIAS_MAX_HOPS = 8
+
+
+def _sys_companion(island: Path) -> Path | None:
+    """The `-sys` bindgen file an island resolves its base types through, same arch.
+
+    An island stops at the names bindgen emitted for THIS module; everything below that
+    (``DWORD``, ``UINT``, ...) arrives through the ``pub use <x>_sys::<mod>::*`` glob at
+    its head. Reading that file is what lets a chain like ``SHCONTF = DWORD`` reach a
+    primitive. The arch comes from the island's OWN filename, never from a default: pairing
+    ``island_arm64.rs`` with ``bindgen_i386.rs`` would silently answer the width question
+    with the wrong target, which is the one thing this whole module exists to prevent.
+    """
+    arch = re.fullmatch(r"island_(\w+)\.rs", island.name)
+    if arch is None:
+        return None
+    try:
+        head = island.read_text(encoding="utf-8", errors="replace")[:4096]
+    except OSError:
+        return None
+    glob = _ISLAND_SYS_GLOB.search(head)
+    if glob is None:
+        return None
+    # <workspace>/<crate>-rust/src/island_<arch>.rs -> <workspace>/<crate>-sys/src/bindgen_<arch>.rs
+    workspace = island.parent.parent.parent
+    companion = (
+        workspace
+        / f"{glob.group('crate').replace('_', '-')}-sys"
+        / "src"
+        / f"bindgen_{arch.group(1)}.rs"
+    )
+    return companion if companion.is_file() else None
+
+
+def _resolve_alias_chain(name: str, aliases: dict[str, str]) -> str | None:
+    """Follow ``name`` through ``aliases`` to a primitive, or None.
+
+    Transitive because a single hop is not how bindgen spells the interesting cases:
+    ``SHCONTF`` is ``DWORD`` and only ``DWORD`` is ``c_ulong``, so a one-hop resolver
+    proves neither and the caller falls back to rejecting a perfectly ordinary DWORD
+    state field.
+    """
+    seen: set[str] = set()
+    current = name
+    for _ in range(_ISLAND_ALIAS_MAX_HOPS):
+        if current in _ISLAND_INTEGER_PRIMITIVES:
+            return current
+        if current in seen:
+            return None
+        seen.add(current)
+        nxt = aliases.get(current)
+        if nxt is None:
+            return None
+        current = nxt
+    return None
+
+
+_ISLAND_ALIAS_CACHE: dict[tuple[str, ...], frozenset[str]] = {}
+
+
+def island_integer_aliases(islands: Sequence[Path]) -> frozenset[str]:
+    """Type names every per-arch bindgen island proves to be a plain integer alias.
+
+    A C ``typedef enum { ... } NAME;`` has no fixed underlying type, so its width is
+    an ABI fact rather than a source fact and reading the header cannot settle it.
+    bindgen renders each island against the real per-arch target, so the islands DO
+    settle it -- and a name is only accepted when EVERY arch resolves it to the SAME
+    primitive. Trusting one arch would bake that arch's width into the scaffold,
+    which is exactly how a cast inferred from i386 has shipped a wrong width before.
+
+    Names that survive are used as-is in the generated Rust: they resolve through the
+    prelude's ``pub use crate::island::*`` to the island's own alias, so the scaffold
+    never re-declares them and there is no second source of truth for the width.
+    """
+    key = tuple(str(path) for path in islands)
+    cached = _ISLAND_ALIAS_CACHE.get(key)
+    if cached is not None:
+        return cached
+    resolved: list[dict[str, str]] = []
+    for path in islands:
+        try:
+            text = path.read_text(encoding="utf-8", errors="replace")
+        except OSError:
+            return frozenset()
+        aliases = {
+            m.group("name"): " ".join(m.group("rhs").split())
+            for m in _ISLAND_TYPE_ALIAS.finditer(text)
+        }
+        # Base types below the island's own surface live in the `-sys` crate it globs. The
+        # island's aliases WIN on a name collision: it is the module-specific authority, and
+        # the -sys file is only consulted for what the island never mentions.
+        companion = _sys_companion(path)
+        if companion is not None:
+            try:
+                sys_text = companion.read_text(encoding="utf-8", errors="replace")
+            except OSError:
+                sys_text = ""
+            for m in _ISLAND_TYPE_ALIAS.finditer(sys_text):
+                aliases.setdefault(m.group("name"), " ".join(m.group("rhs").split()))
+        names = {m.group("name"): m.group("target") for m in _ISLAND_TYPE_REEXPORT.finditer(text)}
+        # A re-export chains onto an alias (`pub use self::__WIDL_..._00000025 as
+        # FOLDERVIEWMODE;` over `pub type __WIDL_..._00000025 = c_int;`). Direct
+        # aliases count too, so seed with them and let re-exports resolve through.
+        arch: dict[str, str] = {}
+        for name in aliases:
+            primitive = _resolve_alias_chain(name, aliases)
+            if primitive is not None:
+                arch[name] = primitive
+        for name, target in names.items():
+            primitive = _resolve_alias_chain(target, aliases)
+            if primitive is not None:
+                arch[name] = primitive
+        resolved.append(arch)
+    if not resolved:
+        return frozenset()
+    shared = set(resolved[0])
+    for arch in resolved[1:]:
+        # `name in resolved[0]` is load-bearing, not defensive: an arch can prove a name the
+        # FIRST one never mentions at all (arm64's -sys carries _tag_ARM64INTR_BARRIER_TYPE),
+        # and indexing resolved[0] blindly raises KeyError on it. Intersecting is the whole
+        # point — a name absent from any arch is not proven — so filtering here is exact.
+        shared &= {name for name in arch if name in resolved[0] and arch[name] == resolved[0][name]}
+    _ISLAND_ALIAS_CACHE[key] = frozenset(shared)
+    return _ISLAND_ALIAS_CACHE[key]
+
+
+_ISLAND_STRUCT = re.compile(r"^pub struct (?P<name>\w+)\b", re.M)
+# `pub use com_sys::{A,B,C};` and `pub use ntdll_sys::nt::*;` — every -sys crate an island
+# resolves names through, however it spells the import.
+_ISLAND_SYS_REF = re.compile(r"^pub use (?P<crate>\w+)_sys::", re.M)
+_ISLAND_STRUCT_CACHE: dict[tuple[str, ...], frozenset[str]] = {}
+
+_ISLAND_VTBL_BLOCK = re.compile(r"^pub struct (?P<name>\w+)Vtbl \{(?P<body>.*?)^\}", re.M | re.S)
+_ISLAND_VTBL_SLOT = re.compile(r"^    pub (?P<slot>\w+):", re.M)
+_ISLAND_LPVTBL_CACHE: dict[tuple[str, ...], dict[str, tuple[str, ...]]] = {}
+
+
+def island_lpvtbl_interfaces(islands: Sequence[Path]) -> dict[str, tuple[str, ...]]:
+    """Interfaces the island already provides in the C ``lpVtbl`` idiom, slots in order.
+
+    Only that idiom qualifies. A header read in C++ mode makes bindgen emit an opaque
+    ``<I>__bindgen_vtable`` with no named slots -- shell32's island is entirely that shape --
+    and such a type cannot stand in for a rendered vtable struct, so shell32 keeps rendering
+    its own. recyclebin's headers are read in C mode and produce the real thing.
+
+    Returning the slot NAMES, not just the interface names, is the point. The Windows A/W
+    macros expand inside the interface definition, so the island's slot for
+    ``STDMETHOD(DeleteFile)`` is ``DeleteFileW`` -- and a vtable instance must use the
+    island's spelling, not the header's textual one.
+
+    Intersected across arches for the same reason as :func:`island_integer_aliases`: a slot
+    list only one arch proves is not proven.
+    """
+    key = tuple(str(path) for path in islands)
+    if key in _ISLAND_LPVTBL_CACHE:
+        return _ISLAND_LPVTBL_CACHE[key]
+    per_arch: list[dict[str, tuple[str, ...]]] = []
+    for island in islands:
+        if not island.is_file():
+            continue
+        text = island.read_text(encoding="utf-8", errors="replace")
+        # The companion object struct is what proves the C idiom: `pub struct I { pub lpVtbl }`.
+        with_lpvtbl = {
+            match.group("name")
+            for match in re.finditer(r"^pub struct (?P<name>\w+) \{\n    pub lpVtbl:", text, re.M)
+        }
+        found: dict[str, tuple[str, ...]] = {}
+        for block in _ISLAND_VTBL_BLOCK.finditer(text):
+            name = block.group("name")
+            if name not in with_lpvtbl:
+                continue
+            slots = tuple(_ISLAND_VTBL_SLOT.findall(block.group("body")))
+            if slots:
+                found[name] = slots
+        per_arch.append(found)
+    if not per_arch:
+        result: dict[str, tuple[str, ...]] = {}
+    else:
+        shared = set(per_arch[0])
+        for other in per_arch[1:]:
+            shared &= {name for name, slots in other.items() if per_arch[0].get(name) == slots}
+        result = {name: per_arch[0][name] for name in sorted(shared)}
+    _ISLAND_LPVTBL_CACHE[key] = result
+    return result
+
+
+def island_struct_types(islands: Sequence[Path]) -> frozenset[str]:
+    """Struct names every per-arch bindgen island proves, through its whole -sys closure.
+
+    This is a **destructor** proof, not a layout one. bindgen only ever renders C
+    declarations, so a name it emits as a struct came from a C header and is therefore
+    trivially destructible — exactly the property an ATL container element must have for
+    `atl.rs`'s `Drop` (a `drop_in_place` per element) to match the C++.
+
+    A C++ class with a real destructor is never in this set, so `CSimpleArray<CStringW>`
+    stays a loud refusal instead of becoming a silent leak of every element.
+
+    Aliases are followed, because the C spelling is almost never the struct's own name:
+    `FORMATETC` is `pub type FORMATETC = tagFORMATETC;` over `pub struct tagFORMATETC`.
+    Multiple -sys crates are consulted, not just the one `_sys_companion` picks, since
+    an island imports its ordinary base types from one (`ntdll_sys`) and its COM types
+    from another (`com_sys`) — reading only the first would refuse every OLE struct.
+
+    Intersected across arches for the same reason as :func:`island_integer_aliases`: a
+    name only one arch proves is not proven.
+    """
+    key = tuple(str(path) for path in islands)
+    cached = _ISLAND_STRUCT_CACHE.get(key)
+    if cached is not None:
+        return cached
+    per_arch: list[set[str]] = []
+    for path in islands:
+        arch = re.fullmatch(r"island_(\w+)\.rs", path.name)
+        try:
+            text = path.read_text(encoding="utf-8", errors="replace")
+        except OSError:
+            return frozenset()
+        sources = [text]
+        if arch is not None:
+            workspace = path.parent.parent.parent
+            for match in _ISLAND_SYS_REF.finditer(text[:8192]):
+                companion = (
+                    workspace
+                    / f"{match.group('crate').replace('_', '-')}-sys"
+                    / "src"
+                    / f"bindgen_{arch.group(1)}.rs"
+                )
+                if companion.is_file():
+                    sources.append(companion.read_text(encoding="utf-8", errors="replace"))
+        structs: set[str] = set()
+        aliases: dict[str, str] = {}
+        for source in sources:
+            structs |= {m.group("name") for m in _ISLAND_STRUCT.finditer(source)}
+            for m in _ISLAND_TYPE_ALIAS.finditer(source):
+                # `pub type FORMATETC = tagFORMATETC;` — strip any crate qualifier so
+                # `com_sys::_COAUTHIDENTITY` matches the struct name it names.
+                aliases.setdefault(m.group("name"), m.group("rhs").strip().split("::")[-1])
+        proven = set(structs)
+        for name in aliases:
+            current, hops = name, 0
+            while current in aliases and hops < _ISLAND_ALIAS_MAX_HOPS:
+                current = aliases[current]
+                hops += 1
+            if current in structs:
+                proven.add(name)
+        per_arch.append(proven)
+    if not per_arch:
+        return frozenset()
+    shared = set(per_arch[0])
+    for arch_names in per_arch[1:]:
+        shared &= arch_names
+    _ISLAND_STRUCT_CACHE[key] = frozenset(shared)
+    return _ISLAND_STRUCT_CACHE[key]
+
+
 _RUST_KEYWORDS = frozenset(
     {
         "as",
@@ -495,6 +992,8 @@ def _parse_plain_state_field(
     *,
     allowed_pod_types: set[str] | frozenset[str] = frozenset(),
     array_constants: dict[str, int] | None = None,
+    island_scalar_types: set[str] | frozenset[str] = frozenset(),
+    island_struct_types: set[str] | frozenset[str] = frozenset(),
 ) -> PlainStateField:
     """Parse the deliberately small C-layout state subset.
 
@@ -520,14 +1019,33 @@ def _parse_plain_state_field(
             name=name,
             com_ptr_interface=interface,
         )
-    heap_ptr = re.fullmatch(r"CComHeapPtr\s*<\s*([A-Za-z_]\w*)\s*>\s+([A-Za-z_]\w*)", text)
+    heap_ptr = re.fullmatch(
+        r"CComHeapPtr\s*<\s*(?P<pointee>[A-Za-z_]\w*)\s*>\s+(?P<name>[A-Za-z_]\w*)"
+        r"(?:\s*\[\s*(?P<count>[A-Za-z_]\w*|\d+)\s*\])?",
+        text,
+    )
     if heap_ptr is not None:
-        pointee, name = heap_ptr.groups()
+        # A fixed ARRAY of owned heap pointers is still deterministic: C++ destroys each
+        # element, so the generated Release frees each element. CRecycleBinFolderViewCB's
+        # `CComHeapPtr<ITEMIDLIST> m_pidls[2]` is the shape.
+        count_text = heap_ptr.group("count")
+        array_len = None
+        if count_text is not None:
+            if count_text.isdigit():
+                array_len = int(count_text)
+            else:
+                constants = array_constants or {}
+                if count_text not in constants:
+                    raise CppComError(
+                        f"state field array bound is not a proven numeric macro: {declaration}"
+                    )
+                array_len = constants[count_text]
         return PlainStateField(
             declaration=text,
-            c_type=f"{pointee} *",
-            name=name,
+            c_type=f"{heap_ptr.group('pointee')} *",
+            name=heap_ptr.group("name"),
             owned_heap_ptr=True,
+            array_len=array_len,
         )
     cstring = re.fullmatch(r"CStringW\s+([A-Za-z_]\w*)", text)
     if cstring is not None:
@@ -536,6 +1054,41 @@ def _parse_plain_state_field(
             c_type="CStringW",
             name=cstring.group(1),
             owned_cstring=True,
+        )
+    container = re.fullmatch(
+        r"(?P<template>[A-Za-z_]\w*)\s*<\s*(?P<element>[A-Za-z_]\w*)\s*>\s+(?P<name>[A-Za-z_]\w*)",
+        text,
+    )
+    if container is not None and container.group("template") in _RAII_CONTAINER_LOWERINGS:
+        # The element type has to be one the scaffold can already spell, or the container
+        # would be generic over a type the module never defines. Two families qualify, and
+        # they are safe for DIFFERENT reasons:
+        #   - a scalar or an island struct is trivially destructible, so the container's
+        #     per-element `drop_in_place` is a no-op and matches C++ exactly;
+        #   - a source-discovered POD may hold ATL members, and is safe because the POD is
+        #     rendered with `owned_rust_type` — its RAII members keep their owning Rust
+        #     types, so Rust's field-drop order IS the C++ implicit destructor.
+        # Rendering that POD with raw pointers instead would leak every element with
+        # nothing red anywhere; `CAtlList<DynamicShellEntry>` (a `CComPtr<IContextMenu>`
+        # per entry) is the shape that makes the difference visible.
+        element = container.group("element")
+        known = (
+            set(allowed_pod_types)
+            | set(island_scalar_types)
+            | set(island_struct_types)
+            | set(_POD_LEAF_TYPES)
+            | set(_RUST_SCALARS)
+        )
+        if element not in known:
+            raise CppComError(
+                f"container element type is not a proven layout: {declaration} "
+                f"(`{element}` is neither a source-discovered POD nor a proven scalar)"
+            )
+        return PlainStateField(
+            declaration=text,
+            c_type=f"{container.group('template')}<{element}>",
+            name=container.group("name"),
+            raii_container=f"{container.group('template')}<{element}>",
         )
     ptr_array = re.fullmatch(
         r"(?P<type>[A-Za-z_]\w*(?:\s+[A-Za-z_]\w*)*)\s*\*\s*"
@@ -572,34 +1125,16 @@ def _parse_plain_state_field(
     if fixed_array is not None:
         c_type = fixed_array.group("type")
         base = " ".join(re.sub(r"\b(?:const|volatile)\b", "", c_type).split())
-        scalar_types = set(_RUST_SCALARS) | {
-            "BOOL",
-            "BOOLEAN",
-            "bool",  # C++ bool: 1-byte on all targets (Itanium/MSVC), == Rust bool
-            "BYTE",
-            "CHAR",
-            "DWORD",
-            "DWORD64",
-            "HRESULT",
-            "INT",
-            "INT_PTR",
-            "LONG",
-            "LONG_PTR",
-            "LONGLONG",
-            "SIZE_T",
-            "UINT",
-            "UINT_PTR",
-            "ULONG",
-            "ULONG_PTR",
-            "ULONGLONG",
-            "USHORT",
-            "WCHAR",
-            "WORD",
-        }
+        scalar_types = set(_RUST_SCALARS) | _WINDOWS_SCALAR_TYPEDEFS
         pointer_typedef = base in _KNOWN_POINTER_TYPEDEFS or bool(
             re.fullmatch(r"(?:L?P(?:C)?|H)[A-Z][A-Z0-9_]*", base)
         )
-        if base not in scalar_types and not pointer_typedef and base not in allowed_pod_types:
+        if (
+            base not in scalar_types
+            and not pointer_typedef
+            and base not in allowed_pod_types
+            and base not in island_scalar_types
+        ):
             raise CppComError(f"state field array element type is not proven scalar: {declaration}")
         count_text = fixed_array.group("count")
         if count_text.isdigit():
@@ -618,6 +1153,17 @@ def _parse_plain_state_field(
             array_len=count,
         )
     if any(token in text for token in ("<", ">", "&", "[", "]", "{", "}", "=", ",", ":")):
+        template = re.match(r"([A-Za-z_]\w*)\s*<", text)
+        if template is not None:
+            # Name the mechanism. An unlisted C++ container is not a mystery, it is a
+            # missing Rust lowering, and the fix is bounded: implement it in atl.rs and
+            # add it to _RAII_CONTAINER_LOWERINGS. Saying so here is what stops the next
+            # reader from concluding the TU is untranslatable.
+            raise CppComError(
+                f"state field needs an explicit C++ layout/lifetime mapping: {declaration} "
+                f"(no Rust lowering for `{template.group(1)}`; implement it in "
+                f"shell32-rust/src/atl.rs and list it in _RAII_CONTAINER_LOWERINGS)"
+            )
         raise CppComError(
             f"state field needs an explicit C++ layout/lifetime mapping: {declaration}"
         )
@@ -630,31 +1176,7 @@ def _parse_plain_state_field(
         raise CppComError(f"cannot parse object state declaration: {declaration}")
     base = re.sub(r"\b(?:const|volatile)\b", "", c_type).replace("*", "")
     base = " ".join(base.split())
-    scalar_types = _RUST_SCALARS | {
-        "BOOL": "",
-        "BOOLEAN": "",
-        "bool": "",  # C++ bool: 1-byte on all targets (Itanium/MSVC), == Rust bool
-        "BYTE": "",
-        "CHAR": "",
-        "DWORD": "",
-        "DWORD64": "",
-        "HRESULT": "",
-        "INT": "",
-        "INT8": "",
-        "INT_PTR": "",
-        "LONG": "",
-        "LONG_PTR": "",
-        "LONGLONG": "",
-        "SIZE_T": "",
-        "UINT": "",
-        "UINT_PTR": "",
-        "ULONG": "",
-        "ULONG_PTR": "",
-        "ULONGLONG": "",
-        "USHORT": "",
-        "WCHAR": "",
-        "WORD": "",
-    }
+    scalar_types = set(_RUST_SCALARS) | _WINDOWS_SCALAR_TYPEDEFS
     pointer_typedef = base in _KNOWN_POINTER_TYPEDEFS or bool(
         re.fullmatch(r"(?:L?P(?:C)?|H)[A-Z][A-Z0-9_]*", base)
     )
@@ -663,6 +1185,15 @@ def _parse_plain_state_field(
         and base not in scalar_types
         and base not in allowed_pod_types
         and base not in _POD_LEAF_TYPES
+        and base not in island_scalar_types
+        # A struct the ISLANDS agree on, held BY VALUE. Previously admitted only as an ATL
+        # container's element type (see the field note on island_struct_types), which left a
+        # plain embedded POD member rejected — RecycleBin5File's `DELETED_FILE_RECORD
+        # m_deletedFile`, the on-disk INFO2 record. Admitting it is not a loosening: the island
+        # carries that layout generated per-arch from the real header, `#[repr(C, packed)]` and
+        # all, so there is strictly LESS to infer than for a scalar typedef, whose width has to
+        # be agreed across arches first. A type the islands do NOT define still fails loudly.
+        and base not in island_struct_types
         and not pointer_typedef
     ):
         raise CppComError(f"state field type is not proven C scalar/pointer state: {declaration}")
@@ -829,6 +1360,18 @@ def _discover_pod_state_types(
     """
     candidates = []
     for declaration in declarations:
+        # An ATL container's ELEMENT type is state too, and it hides inside the template
+        # argument where the plain `Type name` pattern below cannot see it. Missing it does
+        # not fail loud: the container preflight then rejects the element as "not a proven
+        # layout" and the whole TU reads as untranslatable, when the real answer is that
+        # nobody looked. `CAtlList<DynamicShellEntry>` is the shape.
+        container = re.fullmatch(
+            r"\s*(?P<template>[A-Za-z_]\w*)\s*<\s*(?P<element>[A-Za-z_]\w*)\s*>\s+[A-Za-z_]\w*\s*",
+            declaration,
+        )
+        if container is not None and container.group("template") in _RAII_CONTAINER_LOWERINGS:
+            candidates.append(container.group("element"))
+            continue
         match = re.fullmatch(r"\s*(?P<type>[A-Za-z_]\w*)\s*(?:\*+\s*)?[A-Za-z_]\w*\s*", declaration)
         if match:
             c_type = match.group("type")
@@ -949,10 +1492,43 @@ def _base_is_widl_interface(source: Path, base: str) -> bool:
         return False
     for arch in ("amd64", "i386", "arm64"):
         try:
-            discover_widl_header(repo_root, arch, interface=base)
+            discover_widl_header(repo_root, arch, interface=base, extra_roots=[source.parent])
             return True
         except CppComError:
             continue
+    return _base_is_declared_interface(source, base)
+
+
+def _base_is_declared_interface(source: Path, base: str) -> bool:
+    """True if `base` is a COM interface declared by the DECLARE_INTERFACE_ macro.
+
+    The WIDL probe above only sees interfaces generated from an .idl. A module that
+    declares its own interfaces in a hand-written header — shellrecyclebin's IRecycleBin /
+    IRecycleBin5 / IRecycleBinEnumList / IRecycleBinFile — is the same THING: the macro
+    expands to a pure-virtual class in C++ and to an `lpVtbl` struct in C, and either way it
+    has no data members, so materializing the vtable subobject in the layout is exactly as
+    sound as for a WIDL one. Without this the class path rejected every such base as
+    "custom/inherited ... needs deterministic inherited layout mapping", which pushed the
+    caller toward --plain-without-a-scaffold and shipped objects whose lpVtbl was never set.
+
+    Deliberately strict, because the whole point of the surrounding check is that a genuine
+    stateful C++ base stays a LOUD failure: the declaration has to be found verbatim, and the
+    search is bounded to the module's own directory tree and the SDK headers.
+    """
+    pattern = re.compile(rf"\bDECLARE_INTERFACE_?\s*\(\s*{re.escape(base)}\s*[,)]")
+    roots = [source.parent]
+    repo_root = next(
+        (parent for parent in source.parents if (parent / "sdk" / "include").is_dir()), None
+    )
+    if repo_root is not None:
+        roots.append(repo_root / "sdk" / "include")
+    for root in roots:
+        for header in root.rglob("*.h"):
+            try:
+                if pattern.search(header.read_text(encoding="utf-8", errors="replace")):
+                    return True
+            except OSError:
+                continue
     return False
 
 
@@ -962,6 +1538,7 @@ def analyze_class(
     *,
     object_map_source: Path | None = None,
     method_names: list[str] | None = None,
+    island_files: Sequence[Path] = (),
 ) -> CppComClass:
     source = source.resolve()
     source_text = source.read_text(encoding="utf-8", errors="replace")
@@ -1102,10 +1679,16 @@ def analyze_class(
             )
 
             def effective_creator_arity(args: list[str]) -> int:
-                iid_ppv_tail = bool(
-                    args and re.fullmatch(r"\s*IID_PPV_ARG\s*\([^()]+\)\s*", args[-1], re.DOTALL)
+                # A ppv macro is one C++ argument but several ABI ones, and the
+                # family members differ in HOW many — so the count has to come
+                # from the macro's own expansion, not from a flat +1.
+                tail = (
+                    re.fullmatch(rf"\s*({_PPV_ARG_MACRO})\s*\([^()]+\)\s*", args[-1], re.DOTALL)
+                    if args
+                    else None
                 )
-                return len(args) + int(iid_ppv_tail)
+                extra = 1 + _PPV_ARG_MIDDLES[tail.group(1)].count(",") if tail else 0
+                return len(args) + extra
 
             if any(
                 effective_creator_arity(args) != len(params) + 2 for args in activation_arg_lists
@@ -1181,6 +1764,8 @@ def analyze_class(
         unsupported=unsupported,
         layout_bases=layout_bases,
         local_base_classes=local_base_classes,
+        island_scalar_types=island_integer_aliases(island_files),
+        island_struct_types=island_struct_types(island_files),
     )
 
 
@@ -1197,14 +1782,73 @@ _VTBL_METHOD = re.compile(
 _DECLARE_METHOD = re.compile(
     r"STDMETHOD(?:(?:_\s*\(\s*(?P<ret>[^,]+?)\s*,\s*(?P<name2>\w+)\s*\))"
     r"|(?:\s*\(\s*(?P<name1>\w+)\s*\)))\s*"
-    r"\((?P<params>.*?)\)\s*PURE\s*;",
+    # PURE is OPTIONAL. It expands to nothing in C mode, so a header that omits it is a
+    # typo no compiler can see -- and when this pattern required it, the non-greedy params
+    # ran straight through the unmatched declaration to the next `) PURE;` and swallowed
+    # the following method whole. recyclebin_v5.h's `STDMETHOD(EmptyRecycleBin)(THIS);`
+    # ate EnumObjects that way, leaving a 10-slot vtable for an 11-method interface with
+    # every slot after it shifted up by one. _assert_no_dropped_slots is the backstop.
+    r"\((?P<params>.*?)\)\s*(?:PURE\s*)?;",
     re.S,
 )
 _SAL_ANNOTATION = re.compile(r"\b_[A-Za-z][A-Za-z0-9_]*_(?:\s*\([^)]*\))?\s*")
+# ntdef.h defines these to nothing, so they are annotations exactly like the `_In_` family
+# above -- but they are not underscore-flanked, so _SAL_ANNOTATION cannot see them. Left in
+# place they become part of the parsed type: `IN REFIID` and `*mut *mut OUT void`.
+_CLASSIC_SAL = re.compile(r"\b(?:IN|OUT|INOUT|OPTIONAL)\b\s*")
+_STDMETHOD_TOKEN = re.compile(r"\bSTDMETHOD_?\s*\(")
+
+
+def _assert_no_dropped_slots(interface: str, header: Path, body: str, parsed: int) -> None:
+    """A vtable is positional, so a dropped slot is not a partial result -- it renumbers
+    every slot after it. That can never degrade to a warning."""
+    declared = len(_STDMETHOD_TOKEN.findall(body))
+    if declared != parsed:
+        raise CppComError(
+            f"{interface}: {header.name} declares {declared} vtable method(s) but "
+            f"{parsed} parsed. A vtable is positional -- a missed declaration shifts "
+            f"every slot after it, so calls dispatch to the wrong method. Check for a "
+            f"declaration this parser does not recognize."
+        )
+
+
+def _vtbl_declared_slots(body: str) -> int:
+    """Count vtable SLOT declarations in a WIDL ``InterfaceVtbl`` body.
+
+    Counting every ``STDMETHODCALLTYPE`` token over-counts, because a slot's PARAMETER can be a
+    function pointer carrying the same calling convention. oleidl.h's IViewObject is the case:
+
+        HRESULT (STDMETHODCALLTYPE *Draw)(
+            ...
+            BOOL (STDMETHODCALLTYPE *pfnContinue)(ULONG_PTR dwContinue),   <-- a parameter
+            ULONG_PTR dwContinue);
+
+    That reads as 10 tokens for an interface with 9 slots (QueryInterface, AddRef, Release,
+    Draw, GetColorSet, Freeze, Unfreeze, SetAdvise, GetAdvise — the documented layout), so the
+    cross-check fired on a CORRECT parse and refused the whole translation. A false positive
+    here is not harmless: this guard is the thing standing between us and a silently shifted
+    vtable, so it has to be trustworthy enough that nobody is tempted to loosen it.
+
+    Depth separates the two cleanly. A slot's token sits inside the declarator parens, at depth
+    1 of the struct body; a parameter's sits inside the slot's parameter list and then its own
+    declarator, i.e. deeper. Counting only depth 1 keeps a genuinely missed slot mismatching.
+    """
+    depth = 0
+    slots = 0
+    for match in re.finditer(r"[()]|\bSTDMETHODCALLTYPE\b", body):
+        token = match.group(0)
+        if token == "(":
+            depth += 1
+        elif token == ")":
+            depth -= 1
+        elif depth == 1:
+            slots += 1
+    return slots
 
 
 def _parse_param(text: str, index: int) -> tuple[str, str]:
     text = " ".join(text.replace("CONST", "const").split())
+    text = _CLASSIC_SAL.sub("", text).strip()
     if text in ("", "void"):
         return "", ""
     array = re.match(
@@ -1234,6 +1878,8 @@ def _parse_param(text: str, index: int) -> tuple[str, str]:
 def parse_widl_interface(header: Path, interface: str) -> InterfaceSpec:
     """Read an exact flattened interface vtable from a compiler-facing SDK header.
 
+    See :func:`_vtbl_declared_slots` for why the slot cross-check counts by paren depth.
+
     WIDL's generated ``InterfaceVtbl`` struct is preferred. A small number of
     legacy shell interfaces use ``DECLARE_INTERFACE_`` instead; that C macro
     surface explicitly lists every inherited slot, so it is equally suitable
@@ -1256,6 +1902,13 @@ def parse_widl_interface(header: Path, interface: str) -> InterfaceSpec:
                     return_type=" ".join(match.group("ret").split()),
                     params=tuple(params),
                 )
+            )
+        declared = _vtbl_declared_slots(block.group("body"))
+        if declared != len(methods):
+            raise CppComError(
+                f"{interface}: {header.name}'s {wanted} declares {declared} slot(s) but "
+                f"{len(methods)} parsed. A vtable is positional -- a missed declaration "
+                f"shifts every slot after it."
             )
     else:
         legacy_text = re.sub(r"/\*.*?\*/|//[^\n]*", " ", text, flags=re.S)
@@ -1288,6 +1941,7 @@ def parse_widl_interface(header: Path, interface: str) -> InterfaceSpec:
                     params=tuple(params),
                 )
             )
+        _assert_no_dropped_slots(interface, header, body, len(methods))
     if not methods:
         raise CppComError(f"{interface}: no vtable methods parsed from {header}")
     # The C++ half of WIDL's generated header is also compiler-facing authority
@@ -1308,6 +1962,12 @@ _RUST_SCALARS = {
     "void": "core::ffi::c_void",
     "VOID": "()",
     "char": "i8",
+    # The one entry here that needs no platform commitment: `signed char` is exactly 8 bits and
+    # signed in every C implementation, where plain `char`'s signedness is implementation-defined
+    # and the `i8` above is really a bet on MSVC. Its absence had nothing to do with doubt — the
+    # table simply covered two of the three char spellings, and the third rejected CDefView's
+    # `signed char m_SpecialFolder` as "not proven C scalar/pointer state".
+    "signed char": "i8",
     "unsigned char": "u8",
     "short": "i16",
     "unsigned short": "u16",
@@ -1316,6 +1976,56 @@ _RUST_SCALARS = {
     "long": "i32",
     "unsigned long": "u32",
 }
+
+# Windows SDK integer typedefs admitted as proven scalar state, on top of _RUST_SCALARS.
+#
+# ONE copy on purpose. This lived inline in both arms of _parse_plain_state_field — the fixed
+# array arm and the plain arm — and the two had already drifted: `INT8` was in the plain set and
+# missing from the array set, so `INT8 Direction` was proven state while `INT8 Direction[2]` was
+# not. Nothing reports a divergence between two hand-maintained copies of the same table, so the
+# fix is to stop having two.
+#
+# Two kinds of name are in here and they are trusted for different reasons. A name that STATES
+# its width (INT8/UINT16/...) is self-proving — there is nothing left to establish, which is why
+# completing that family is not the same guess as admitting an unmeasured typedef. The rest
+# (LONG, INT_PTR, SIZE_T, ...) are data-model-dependent and are here because this codebase is
+# Windows; a name that is neither still fails loudly and wants an island proof, not an entry.
+_WINDOWS_SCALAR_TYPEDEFS = frozenset(
+    {
+        "BOOL",
+        "BOOLEAN",
+        "bool",  # C++ bool: 1-byte on all targets (Itanium/MSVC), == Rust bool
+        "BYTE",
+        "CHAR",
+        "DWORD",
+        "DWORD64",
+        "HRESULT",
+        "INT",
+        "INT8",
+        "INT16",
+        "INT32",
+        "INT64",
+        "INT_PTR",
+        "LONG",
+        "LONG_PTR",
+        "LONGLONG",
+        "SHORT",
+        "SIZE_T",
+        "UCHAR",
+        "UINT",
+        "UINT8",
+        "UINT16",
+        "UINT32",
+        "UINT64",
+        "UINT_PTR",
+        "ULONG",
+        "ULONG_PTR",
+        "ULONGLONG",
+        "USHORT",
+        "WCHAR",
+        "WORD",
+    }
+)
 
 
 def c_type_to_rust(c_type: str) -> str:
@@ -1488,6 +2198,20 @@ def rewrite_wide_literals(text: str) -> str:
     return _rewrite_wide_literals(text)
 
 
+# The `ppv` header macros (sdk/include/reactos/shellutils.h). Each expands ONE
+# apparent C++ argument into several ABI arguments, so neither is a symbol and
+# neither is one Rust argument. They differ only by what sits between the IID and
+# the `void**`: `IID_NULL_PPV_ARG` is for `GetUIObjectOf`, whose reserved
+# `prgfInOut` parameter is always passed NULL.
+#
+# `IID_NULL_PPV_ARG` does not CONTAIN the string `IID_PPV_ARG`, so every rule
+# keyed on `\bIID_PPV_ARG` was structurally incapable of matching it — it reached
+# a module as an unexpanded macro call plus a phantom `static IID_NULL_PPV_ARG`.
+# Naming the family once is what keeps a new member from repeating that.
+_PPV_ARG_MIDDLES = {"IID_PPV_ARG": "", "IID_NULL_PPV_ARG": "core::ptr::null_mut(), "}
+_PPV_ARG_MACRO = r"IID_(?:NULL_)?PPV_ARG"
+
+
 def normalize_cpp_idioms(source: str, rust: str, *, residual: bool = True) -> str:
     """C++-generic model-output repairs — no class, no vtable, no `this` required.
 
@@ -1527,14 +2251,27 @@ def normalize_cpp_idioms(source: str, rust: str, *, residual: bool = True) -> st
         rust,
     )
     source_iid_args = re.findall(
-        r"\bIID_PPV_ARG\s*\(\s*([A-Za-z_]\w*)\s*,\s*([A-Za-z_]\w*)\s*\)", source
+        rf"\b({_PPV_ARG_MACRO})\s*\(\s*([A-Za-z_]\w*)\s*,\s*([A-Za-z_]\w*)\s*\)", source
     )
-    for interface, output in source_iid_args:
+    for macro, interface, output in source_iid_args:
         rust = re.sub(
-            rf"\bIID_PPV_ARG\s*\(\s*{re.escape(output)}\s*\)",
-            f"core::ptr::addr_of!(IID_{interface}), {output}.cast()",
+            rf"\b{macro}\s*\(\s*{re.escape(output)}\s*\)",
+            f"core::ptr::addr_of!(IID_{interface}), {_PPV_ARG_MIDDLES[macro]}{output}.cast()",
             rust,
         )
+    # A model that splits the macro into the right NUMBER of arguments can still lose
+    # the interface, putting the MACRO's own name where the IID belongs: measured on
+    # CDefaultContextMenu::DoCreateLink as `&IID_PPV_ARG as *const _ as REFIID` for
+    # `IID_PPV_ARG(IDropTarget, &pDT)`. The ppv slot was right; only the riid was a
+    # name that exists in no library. The source names the interface, so recover it —
+    # but only when the body names exactly one, since two would be a guess.
+    bare_macro = re.compile(rf"\b({_PPV_ARG_MACRO})\b(?!\s*\()")
+    if bare_macro.search(rust):
+        interfaces = {interface for _, interface, _ in source_iid_args} or set(
+            re.findall(rf"\b{_PPV_ARG_MACRO}\s*\(\s*([A-Za-z_]\w*)", source)
+        )
+        if len(interfaces) == 1:
+            rust = bare_macro.sub(f"IID_{interfaces.pop()}", rust)
     # The COM path has LATER rules that still need to see an intact IID_PPV_ARG —
     # notably alias resolution (`let ppv = &mut (*this).inner;` … `(…, ppv)`), which
     # recovers the real destination. So the catch-all must run after those, and
@@ -1543,7 +2280,7 @@ def normalize_cpp_idioms(source: str, rust: str, *, residual: bool = True) -> st
 
 
 def _expand_residual_iid_ppv_arg(rust: str) -> str:
-    """Catch-all for any `IID_PPV_ARG(T, expr)` the shape-specific rules above missed.
+    """Catch-all for any `IID_[NULL_]PPV_ARG(T, expr)` the shape-specific rules missed.
 
     Those rules each pin one spelling of the second argument (`&mut x`, a bare
     identifier, a `let` pair). A model that writes anything else — measured:
@@ -1551,14 +2288,19 @@ def _expand_residual_iid_ppv_arg(rust: str) -> str:
     through all of them and reached the module as a call to a macro, which is not
     a symbol and cannot link. Splitting on the top-level comma handles every
     spelling instead of enumerating them, so the failure mode is bounded.
+
+    Being spelling-agnostic on the second argument is also why this is the one
+    place the NULL variant has to be understood: it makes the whole family work
+    without duplicating each shape-specific rule above.
     """
     out = []
     i = 0
     while True:
-        match = re.search(r"\bIID_PPV_ARG\s*\(", rust[i:])
+        match = re.search(rf"\b({_PPV_ARG_MACRO})\s*\(", rust[i:])
         if match is None:
             out.append(rust[i:])
             return "".join(out)
+        middle = _PPV_ARG_MIDDLES[match.group(1)]
         start = i + match.start()
         cursor = i + match.end()  # just past the '('
         depth, comma = 1, None
@@ -1595,7 +2337,7 @@ def _expand_residual_iid_ppv_arg(rust: str) -> str:
         else:
             value = f"({value})"
         out.append(rust[i:start])
-        out.append(f"core::ptr::addr_of!(IID_{interface}), {value}.cast()")
+        out.append(f"core::ptr::addr_of!(IID_{interface}), {middle}{value}.cast()")
         i = cursor
 
 
@@ -1636,6 +2378,127 @@ def _integer_values(text: str) -> Counter[int]:
             base = 10
         values[int(token[2:] if token.lower().startswith("0o") else token, base)] += 1
     return values
+
+
+# `IsEqualIID(a, b)` in a body is rewritten to `cpp_com_iid_equal(a, b)` on EVERY C++ path,
+# so every path that can carry a body owes the definition. It used to live only in the ATL
+# branch, past the plain-helper early return, which left a hand-rolled COM class calling a
+# function nothing defined.
+_CPP_COM_IID_EQUAL = "\n".join(
+    [
+        "#[inline]",
+        "unsafe fn cpp_com_iid_equal(left: REFIID, right: REFIID) -> bool {",
+        "    !left.is_null() && !right.is_null()",
+        "        && (*left).Data1 == (*right).Data1",
+        "        && (*left).Data2 == (*right).Data2",
+        "        && (*left).Data3 == (*right).Data3",
+        "        && (*left).Data4 == (*right).Data4",
+        "}",
+    ]
+)
+
+
+def _adopt_assembled_shaped_worker(
+    rust: str, expected_name: str, expected_params: list[str]
+) -> str:
+    """Rename an ASSEMBLED-shaped emission back onto the worker contract.
+
+    The model is contracted to write `X_body` with no ABI, but on COM boilerplate
+    (`AddRef`, `QueryInterface`, `ctor`) it routinely writes the deterministic
+    wrapper's own shape instead: `#[no_mangle] pub unsafe extern "C" fn X(...)`.
+    That is RECALL, not reasoning -- the famous body arrives from memory in the
+    shape it is usually written in -- so it is stable across samples and re-paying
+    for the same function just buys the same wrapper again.
+
+    Adopt it only when the emission is PROVABLY the same function under a
+    different name: no `X_body` anywhere, exactly one definition of the base name,
+    a parameter list already naming the generated slots in order, and a body that
+    does not call `X_body`. That last guard is the one that matters -- a model
+    that emitted the wrapper's *forwarder* body would become `X_body` calling
+    `X_body`, i.e. silent infinite self-recursion. Everything a rename cannot
+    prove stays rejected; `audit_worker_body` still grades the body afterwards,
+    so this repairs shape only, never semantics.
+    """
+    suffix = "_body"
+    if not expected_name.endswith(suffix):
+        return rust
+    base = expected_name[: -len(suffix)]
+    if re.search(rf"\bfn\s+{re.escape(expected_name)}\s*\(", rust):
+        return rust
+    definitions = list(re.finditer(rf"\bfn\s+{re.escape(base)}\s*\(", rust))
+    if len(definitions) != 1:
+        return rust
+    match = definitions[0]
+    try:
+        opening = rust.find("(", match.start())
+        closing = _matching_paren(rust, opening)
+        brace = rust.find("{", closing + 1)
+        if brace < 0 or not re.fullmatch(r"\s*(?:->\s*[^{;]+)?\s*", rust[closing + 1 : brace]):
+            return rust
+        actual_params = [
+            item_match.group(1)
+            for item in _split_args(
+                re.sub(r"/\*.*?\*/|//[^\n]*", " ", rust[opening + 1 : closing], flags=re.S)
+            )
+            if (item_match := re.match(r"\s*(?:mut\s+)?([A-Za-z_]\w*)\s*:", item))
+        ]
+        if actual_params != expected_params:
+            return rust
+        _, body_end = _balanced_block(_masked_cpp(rust), brace)
+    except CppComError:
+        # A `.partial` is a truncated stream by construction, so unbalanced input
+        # is expected here rather than exceptional. Leave it unrepaired and let
+        # the audit reject it; raising would kill the whole run over one body.
+        return rust
+    if re.search(rf"\b{re.escape(expected_name)}\s*\(", rust[brace : body_end + 1]):
+        return rust
+    prefix = re.search(
+        r"(?:#\[\s*(?:unsafe\s*\(\s*)?no_mangle\s*\)?\s*\]\s*)?(?:pub\s+)?(?:unsafe\s+)?"
+        r'(?:extern\s+"(?:C|system)"\s+)?$',
+        rust[: match.start()],
+    )
+    assert prefix is not None  # every group is optional, so the empty match always succeeds
+    return rust[: prefix.start()] + f"pub unsafe fn {expected_name}" + rust[opening:]
+
+
+def _conform_worker_param_names(rust: str, expected_name: str, expected_params: list[str]) -> str:
+    """Rename a worker's parameters to the deterministic contract's, in place.
+
+    The splice below already replaces every type/return spelling with the contract's -- but
+    only once the parameter NAMES line up, and a model that snake_cases them never gets
+    there. `IntDeleteRecursive` came back as `(full_name: *const u16) -> i32` against a
+    contract of `(FullName: LPCWSTR) -> BOOL`: the same ABI, renamed and de-aliased. The
+    equality test could not see past the names, so a perfectly good body was rejected -- and
+    a rejected body is never banked, so that one was re-bought on EVERY run, forever.
+
+    ARITY is the line, and it stays hard. A missing or extra parameter is a real defect about
+    what the function receives, not a spelling difference.
+    """
+    match = re.search(rf"\b(?:pub\s+)?(?:unsafe\s+)?fn\s+{re.escape(expected_name)}\s*\(", rust)
+    if match is None:
+        return rust
+    opening = rust.find("(", match.start())
+    closing = _matching_paren(rust, opening)
+    brace = rust.find("{", closing + 1)
+    if brace < 0:
+        return rust
+    items = _split_args(re.sub(r"/\*.*?\*/|//[^\n]*", " ", rust[opening + 1 : closing], flags=re.S))
+    names = [
+        found.group(1)
+        for item in items
+        if (found := re.match(r"\s*(?:mut\s+)?([A-Za-z_]\w*)\s*:", item))
+    ]
+    if len(names) != len(items) or len(names) != len(expected_params) or names == expected_params:
+        return rust
+    renames = [(was, now) for was, now in zip(names, expected_params, strict=True) if was != now]
+    tail = rust[opening:]
+    # If the contract's name already occurs, something else in this body answers to it and a
+    # blind rename would capture that instead. Leave it for the audit to reject.
+    if any(re.search(rf"\b{re.escape(now)}\b", tail) for _, now in renames):
+        return rust
+    for was, now in renames:
+        tail = re.sub(rf"\b{re.escape(was)}\b", now, tail)
+    return rust[:opening] + tail
 
 
 def normalize_worker_body(rust: str, expected_signature: str | None = None) -> str:
@@ -1697,6 +2560,8 @@ def normalize_worker_body(rust: str, expected_signature: str | None = None) -> s
         if expected_name_match is None:
             raise CppComError(f"invalid deterministic worker signature: {expected_signature}")
         expected_name = expected_name_match.group(1)
+        rust = _adopt_assembled_shaped_worker(rust, expected_name, expected_params)
+        rust = _conform_worker_param_names(rust, expected_name, expected_params)
         actual = re.search(
             rf"\b(?:pub\s+)?(?:unsafe\s+)?fn\s+{re.escape(expected_name)}\s*\(",
             rust,
@@ -1744,6 +2609,11 @@ def normalize_worker_body(rust: str, expected_signature: str | None = None) -> s
                 _, body_end = _balanced_block(_masked_cpp(rust), brace)
                 rust = rust[exact.start() : body_end + 1]
     return rust
+
+
+# Optional receiver chain (`(*p).`, `fi.`, `(*this).m_pApp.`) in front of a bare `hIcon`.
+# Group 1 is the chain including its trailing dot, or None when the name stands alone.
+_HICON_TRUTHY = re.compile(r"((?:\(\*\w+\)|\w+)(?:\.\w+)*\.)?\bhIcon\s*!=\s*0\b")
 
 
 def normalize_worker_semantics(source: str, rust: str) -> str:
@@ -1823,7 +2693,14 @@ def normalize_worker_semantics(source: str, rust: str) -> str:
         r"!(*this).\1.is_null()",
         rust,
     )
-    rust = re.sub(r"\bhIcon\s*!=\s*0\b", "!hIcon.is_null()", rust)
+    # `hIcon != 0` is a pointer truthiness test, but the `!` belongs in front of the WHOLE
+    # place expression, not in front of the field. Rewriting only the bare name turned the
+    # model's perfectly good `(*p).hIcon != 0` into `(*p).!hIcon.is_null()` — a parse error,
+    # so it failed loud, but it is the pass corrupting correct input rather than the model
+    # slipping. Capture the receiver chain and re-emit it INSIDE the negation. `\b` still
+    # guards the `m_hIcon` case, whose own rule runs just above (no boundary between `_`
+    # and `h`, so a bare-name pattern cannot match inside it).
+    rust = _HICON_TRUTHY.sub(lambda m: f"!{m.group(1) or ''}hIcon.is_null()", rust)
     if "CUserNotification" in source:
         rust = rust.replace("Some(WorkerWndProc)", "Some(CUserNotification_WorkerWndProc)")
     rust = re.sub(
@@ -2168,12 +3045,15 @@ def normalize_worker_semantics(source: str, rust: str) -> str:
     )
     if iid_alias is not None:
         alias, field = iid_alias.groups()
-        iid_use = re.compile(rf"\bIID_PPV_ARG\s*\(\s*([A-Za-z_]\w*)\s*,\s*{re.escape(alias)}\s*\)")
+        iid_use = re.compile(
+            rf"\b({_PPV_ARG_MACRO})\s*\(\s*([A-Za-z_]\w*)\s*,\s*{re.escape(alias)}\s*\)"
+        )
         matched_use = iid_use.search(rust)
         if matched_use is not None:
-            interface = matched_use.group(1)
+            macro, interface = matched_use.groups()
             replacement = (
                 f"core::ptr::addr_of!(IID_{interface}), "
+                f"{_PPV_ARG_MIDDLES[macro]}"
                 f"core::ptr::addr_of_mut!((*this).{field}).cast()"
             )
             rust = rust[: iid_alias.start()] + rust[iid_alias.end() :]
@@ -2424,6 +3304,99 @@ def normalize_worker_semantics(source: str, rust: str) -> str:
             insert_receiver,
             rust,
         )
+
+    # `delete this` -> the scaffold's own `X_delete`. The model cannot get this right and should
+    # never be asked to: C++ hides `operator new` and the vtable store in the constructor
+    # PROLOGUE, so the allocation strategy appears in no source it reads. Left to itself it
+    # invented five different deallocators for shellrecyclebin's five identical `delete this;` --
+    # CRT `free` and `Box::from_raw` over memory that came from `HeapAlloc(GetProcessHeap(), ...)`,
+    # plus a placeholder symbol. Those failed to compile HERE only because `Box` is undeclared in
+    # a no_std crate without `alloc`; wherever such a name is in scope the file builds clean and
+    # frees across heaps, corrupting at Release time arbitrarily far from the allocation.
+    #
+    # The class comes from the WORKER SIGNATURE, not from `owner` above. `owner` scrapes a
+    # `Class::Method(` token out of the body text, and a body that contains no `::` at all --
+    # `RecycleBin5::Release`, three lines long -- yields nothing, which silently skipped the
+    # lowering for exactly one of the five. `this: *mut <Class>` is in every worker by
+    # construction. (The receiver-insertion rewrite above still depends on `owner` and has the
+    # same blind spot; left alone here deliberately rather than changed unverified.)
+    receiver = re.search(r"\bfn\s+\w+\s*\(\s*this\s*:\s*\*mut\s+([A-Za-z_]\w*)", rust)
+    if receiver is not None and re.search(r"\bdelete\s+this\s*;", source):
+        owning_class = receiver.group(1)
+        deallocators = "|".join(
+            [
+                r"(?:alloc::boxed::)?Box::from_raw\s*\(\s*this\s*\)",
+                r"__rustconv_\w*\s*\(\s*this\s*\)",
+                r"free\s*\(\s*this\b[^;]*?\)",
+                r"SENDTO_ITEM_delete\s*\(\s*this\s*\)",
+            ]
+        )
+        # `X_delete` runs the destructor itself, so an emitted `X_dtor_body(this);` right before
+        # the free has to go with it — keeping both runs every member destructor twice.
+        rust = re.sub(
+            rf"(?:{re.escape(owning_class)}_dtor_body\s*\(\s*this\s*\)\s*;\s*)?"
+            rf"(?:let\s+_\s*=\s*)?(?:drop\s*\(\s*)?(?:{deallocators})\s*\)?\s*;",
+            f"{owning_class}_delete(this);",
+            rust,
+        )
+
+    # The same rule one step out: a FREE function that builds one of these objects.
+    #
+    #     RecycleBin5File *pThis = new RecycleBin5File();
+    #     ...
+    #     delete pThis;
+    #
+    # `--cpp-com --class` never sees this function (it is file-scope, so it belongs to the
+    # `--free-functions` half), and that half has no scaffold in front of it -- so the model
+    # is again inventing an allocator and a deallocator for a strategy written nowhere it can
+    # read. It duly produced `RecycleBin5File()` (calling the STRUCT) and `free(pThis)` for a
+    # `HeapAlloc(GetProcessHeap(), ...)` object.
+    #
+    # The C++ names the static type at the `new` site, which is exactly what `delete v` needs
+    # and the one thing the Rust cannot recover: by the time it is `let pThis = ...`, the
+    # class name has been erased into whatever the model chose to call the constructor.
+    owned_locals = {
+        var: cls
+        for cls, var in re.findall(
+            r"\b([A-Za-z_]\w*)\s*\*\s*([A-Za-z_]\w*)\s*=\s*new\s+\1\b", source
+        )
+    }
+    for var, cls in owned_locals.items():
+        # `new X()` with no scaffold in scope became a call to the STRUCT `X()`. The paired
+        # allocator is the scaffold's `X_new`, which also performs the vptr store -- so
+        # getting this wrong is not merely an unresolved name, it is an object whose lpVtbl
+        # stays the HEAP_ZERO_MEMORY null. Unconditional: a factory with no failure path
+        # (RecycleBinGeneric_Constructor) news without ever deleting, and gating this on the
+        # presence of a `delete` skipped it entirely.
+        rust = re.sub(
+            rf"(?<![\w:]){re.escape(cls)}\s*\(\s*\)(?!\s*\{{)",
+            f"{cls}_new()",
+            rust,
+        )
+        if not re.search(rf"\bdelete\s+{re.escape(var)}\s*;", source):
+            continue
+        deallocators = [
+            rf"(?:alloc::boxed::)?Box::from_raw\s*\(\s*{re.escape(var)}\s*\)",
+            rf"__rustconv_\w*\s*\(\s*{re.escape(var)}\s*\)",
+            rf"free\s*\(\s*{re.escape(var)}\b[^;]*?\)",
+            rf"SENDTO_ITEM_delete\s*\(\s*{re.escape(var)}\s*\)",
+        ]
+        # The nastiest spelling of all, and the only one that COMPILES: `X_Delete` — capital
+        # D — is the class's own COM `Delete` METHOD, which for a recycle-bin file deletes the
+        # FILE FROM DISK. `delete pThis` came back as `RecycleBin5File_Delete(pThis)`, one
+        # letter away from the deallocator and a completely different operation, resolving to
+        # a real symbol with a matching signature. Only claimed when the C++ body never calls
+        # `->Delete()` itself, so a body that legitimately does both is left alone.
+        if "->Delete(" not in source:
+            deallocators.append(rf"{re.escape(cls)}_Delete\s*\(\s*{re.escape(var)}\s*\)")
+        deallocators = "|".join(deallocators)
+        rust = re.sub(
+            rf"(?:{re.escape(cls)}_dtor_body\s*\(\s*{re.escape(var)}\s*\)\s*;\s*)?"
+            rf"(?:let\s+_\s*=\s*)?(?:drop\s*\(\s*)?(?:{deallocators})\s*\)?\s*;",
+            f"{cls}_delete({var});",
+            rust,
+        )
+
     rust = re.sub(
         r"let\s+(?P<name>[A-Za-z_]\w*)\s*=\s*"
         r"(?P<iid>core::ptr::addr_of!\(IID_[A-Za-z_]\w*\))\s*,\s*"
@@ -2433,11 +3406,17 @@ def normalize_worker_semantics(source: str, rust: str) -> str:
     )
     rust = re.sub(r"\(\(([^()]+)\)\s*<\s*0\)\s*(?:!=|<)\s*0", r"((\1) < 0)", rust)
     rust = re.sub(r"\bCComHeapPtr::new\(\s*\)", "CComHeapPtr::empty()", rust)
-    rust = re.sub(
-        r"alloc::boxed::Box::from_raw\(\s*([A-Za-z_]\w*)\s*\)\s*;",
-        r"SENDTO_ITEM_delete(\1);",
-        rust,
-    )
+    # Guarded on the source actually naming SENDTO_ITEM. Unguarded, this rewrote EVERY
+    # `Box::from_raw(x);` in every module into a call to a shell32 helper: recyclebin's
+    # `RecycleBinGeneric::Release` came out calling `SENDTO_ITEM_delete`, a function that does
+    # not exist in that crate and has nothing to do with recycle bins. It read like a model
+    # hallucination and was ours.
+    if "SENDTO_ITEM" in source:
+        rust = re.sub(
+            r"alloc::boxed::Box::from_raw\(\s*([A-Za-z_]\w*)\s*\)\s*;",
+            r"SENDTO_ITEM_delete(\1);",
+            rust,
+        )
     rust = re.sub(r"\bSENDTO_ITEM\s*\(", "SENDTO_ITEM_new(", rust)
     heap_ptr_names = set(re.findall(r"\bCComHeapPtr\s*<[^;=]+>\s+([A-Za-z_]\w*)", source)) & set(
         re.findall(r"\b([A-Za-z_]\w*)\s*:\s*CComHeapPtr\s*<", rust)
@@ -2811,9 +3790,11 @@ _CPP_SUPPORT_EXTERNS = {
     ),
     "ShellExecuteExW": "    fn ShellExecuteExW(info: *mut SHELLEXECUTEINFOW) -> BOOL;",
     "ILGetNext": "    fn ILGetNext(pidl: PCUIDLIST_RELATIVE) -> LPITEMIDLIST;",
-    "SHELL32_CoCreateInitSF": (
+    # Renamed from a SHELL32_CoCreateInitSF overload when shlfolder.cpp flipped to Rust; see
+    # the Shell32RustCoCreateInitSF emitter below for why the trampoline outlived the overload.
+    "SHELL32_CoCreateInitSFWithCsidl": (
         '    #[link_name = "Shell32RustCoCreateInitSF"]\n'
-        "    fn SHELL32_CoCreateInitSF(root: LPCITEMIDLIST, clsid: *const GUID, "
+        "    fn SHELL32_CoCreateInitSFWithCsidl(root: LPCITEMIDLIST, clsid: *const GUID, "
         "csidl: INT, riid: REFIID, out: *mut *mut core::ffi::c_void) -> HRESULT;"
     ),
     "InsertMenuItemW": (
@@ -3122,6 +4103,15 @@ def _sdk_pod_support(source_path: Path, used_words: set[str]) -> str:
     # stable and owned by the explicit support block below, which represents
     # those ABI-equivalent optional pointers as c_void.
     selected.discard("SFV_CREATE")
+    # An ATL container has a Rust lowering in `crate::atl` that the prelude re-exports, so
+    # rendering the header's own definition here emits a SHADOW that wins over it by scope.
+    # Worse than a duplicate: this renderer erases template parameters, so ATL's
+    # `CSimpleArray<T>` came out as a non-generic `CSimpleArray { m_aT: *mut c_void, ... }` —
+    # right layout, wrong type, no `new()`, no `Drop`. The container's whole reason for
+    # keeping its type is that `Drop` restores the C++ member destructor, and a shadow
+    # silently takes that away again.
+    for container in _RAII_CONTAINER_LOWERINGS:
+        selected.discard(container)
     # Embedded SDK records are part of the same deterministic layout closure.
     changed = True
     while changed:
@@ -3169,7 +4159,9 @@ def _sdk_pod_support(source_path: Path, used_words: set[str]) -> str:
             field_name = (
                 f"r#{state_field.name}" if state_field.name in _RUST_KEYWORDS else state_field.name
             )
-            lines.append(f"    pub {field_name}: {state_field.rust_type},")
+            # Identical to `rust_type` for a C SDK record, which cannot hold an ATL member;
+            # spelled this way so every POD renderer states the same ownership invariant.
+            lines.append(f"    pub {field_name}: {state_field.owned_rust_type},")
         lines.append("}")
         for alias, pointer in aliases:
             if alias != base and (alias in used_words or alias in shared):
@@ -3259,6 +4251,8 @@ def render_cpp_support(
     exclude_guids: set[str] | None = None,
     additional_source: str = "",
     exclude_types: set[str] | None = None,
+    provided_types: set[str] | None = None,
+    island_types: set[str] | None = None,
 ) -> str:
     """Render the deterministic non-class support closure selected by one C++ file."""
     source = source_path.read_text(encoding="utf-8", errors="replace")
@@ -3293,11 +4287,17 @@ def render_cpp_support(
         )
     selection_source = source + "\n" + additional_source
     used_words = set(re.findall(r"\b[A-Za-z_]\w*\b", _masked_cpp(selection_source)))
+    # A `--local-raii NAME=PATH` lowering IS the definition of NAME for this run, so the
+    # substrate must not also emit its own. Both spellings compile; they are simply
+    # different types, and the class fields end up holding one while the bodies call the
+    # other's methods (the recyclebin substrate's `CStringW { buffer, len, capacity }`
+    # against the ported ATL one's `m_pszData`/`m_nLength`/`m_nAlloc`).
+    used_words -= provided_types or set()
     if re.search(r"\bshell32_hInstance\b", selection_source):
         used_words.add("shell32_hInstance")
     used_words.update(
         f"IID_{interface}"
-        for interface in re.findall(r"\bIID_PPV_ARG\s*\(\s*([A-Za-z_]\w*)", source)
+        for interface in re.findall(rf"\b{_PPV_ARG_MACRO}\s*\(\s*([A-Za-z_]\w*)", source)
     )
     if "ShellObjectCreatorInit<CPrintersEnum>" in source:
         used_words.add("CPrintersEnum_CreateInstance")
@@ -3307,6 +4307,11 @@ def render_cpp_support(
             additional_source,
         )
     )
+    # Interfaces the bindgen island owns. `additional_source` cannot reveal them: an
+    # island-provided interface is deliberately NOT re-rendered, so it leaves no
+    # `pub struct` for the scan above to find, and this closure would then render its own
+    # second copy of the very type render_interface just declined to duplicate.
+    declared_types.update(island_types or set())
     repo_root = next(
         (parent for parent in source_path.parents if (parent / "sdk/include").is_dir()), None
     )
@@ -3347,7 +4352,11 @@ def render_cpp_support(
             field_name = (
                 f"r#{state_field.name}" if state_field.name in _RUST_KEYWORDS else state_field.name
             )
-            lines.append(f"    pub {field_name}: {state_field.rust_type},")
+            # `owned_rust_type`, not `rust_type`: a free-function module has no generated
+            # Release to run lifetimes for it, so the struct's drop glue is its ONLY
+            # destructor and an ATL member flattened to a raw pointer leaks silently.
+            # For a plain C field the two spellings are identical by construction.
+            lines.append(f"    pub {field_name}: {state_field.owned_rust_type},")
         lines.append("}")
         chunks.append("\n".join(lines))
     for name in sorted((used_words & definitions.keys()) - shared_values):
@@ -3608,10 +4617,21 @@ def render_cpp_support(
         chunks.append(_CPP_COM_HEAP_PTR_SUPPORT)
     if "SENDTO_ITEM" in used_words:
         chunks.append(_CPP_SENDTO_ITEM_SUPPORT)
+    # A GUID constant is REFERENCED, never called. The ppv header macros happen to
+    # match the GUID spelling, and an extern static for one is a phantom: no such
+    # symbol exists to link against. Deciding that positionally retires a denylist
+    # that had to be remembered — it listed `IID_PPV_ARG` alone, so the day
+    # `IID_NULL_PPV_ARG` first appeared it shipped exactly that phantom.
+    # Measured over dll/ base/ sdk/include/ modules/: every `(IID|SID|CLSID)_*` name
+    # followed by `(` outside a literal is a function-like macro (the ppv pair,
+    # IID_PPV_ARGS, IID_GENERIC_CHECK_IID, IID_BS_LOOKUP_*). The only real IIDs that
+    # look called — IID_IShellLinkA, IID_IAutoComplete — sit inside wine-test format
+    # strings, which mask_code blanks before either set is built.
+    called_words = set(re.findall(r"\b([A-Za-z_]\w*)\s*\(", _masked_cpp(selection_source)))
     guid_words = {
         word
         for word in used_words
-        if word != "IID_PPV_ARG" and re.fullmatch(r"(?:IID|SID|CLSID)_[A-Za-z_]\w*", word)
+        if word not in called_words and re.fullmatch(r"(?:IID|SID|CLSID)_[A-Za-z_]\w*", word)
     }
     for alias, target in _CPP_SUPPORT_GUID_ALIASES.items():
         if alias in used_words:
@@ -4134,6 +5154,18 @@ def prepare_helper_closure(
         for start, end, source_name, arity in _named_call_spans(caller.body_text, helper_names):
             candidates = binding.get((source_name, arity), [])
             if not candidates:
+                # A free helper and a member function may share a name; C++ resolves an
+                # unqualified call by scope, and the member wins inside a method body.
+                # CDefaultContextMenu has exactly this: a static MapVerbToCmdId/5 and a
+                # method MapVerbToCmdId/3, the free one called as `::MapVerbToCmdId`.
+                # The method is already in class_deps, so reachability is unaffected —
+                # and the REWRITE pass below already skips these to let the method pass
+                # take them. Only this walk refused, which is the asymmetry, not a gap.
+                if any(
+                    len(candidate.params) == arity
+                    for candidate in method_targets.get(source_name, ())
+                ):
+                    continue
                 available = sorted({n for name, n in binding if name == source_name})
                 raise CppComError(
                     f"{class_name}: cannot bind local helper call {source_name}/{arity}; "
@@ -4202,6 +5234,11 @@ def prepare_helper_closure(
             if receiver is not None and receiver.group(1) != "this":
                 # Calls through another COM object are not implicit sibling
                 # calls merely because their method spelling collides.
+                continue
+            if body[:start].rstrip().endswith("::"):
+                # `::f(...)` names the GLOBAL f explicitly — that is how the source
+                # disambiguates a free function from a member of the same name, so it
+                # is never a sibling call however well the arity happens to line up.
                 continue
             # Keep this worker's C++ definition declarator recognizable; only
             # sibling calls become deterministic Rust worker calls.
@@ -4435,6 +5472,41 @@ def provided_raii_contract(name: str, rust_text: str) -> str:
         "do NOT call `core::mem::drop` unless the C++ scope ends there.\n"
         "- Field reads/writes and method calls map 1:1 with the same spelling.\n"
     )
+
+
+def raii_container_contract(fields: list[PlainStateField]) -> str:
+    """Deterministic-contract block for the class's ATL container STATE fields.
+
+    The counterpart to :func:`provided_raii_contract`, which covers body-LOCALS. A state
+    field's container type survives into the Rust owner struct, so the model needs the
+    same thing it needs for a local: a fixed API to map usage onto, and an explicit
+    instruction not to re-implement the destructor. Without it, `m_Storage[n]` and
+    `m_Entries.GetNext(it)` are exactly the kind of C++ spelling a model resolves by
+    inventing a wrapper type.
+    """
+    containers = [
+        (state, state.raii_container) for state in fields if state.raii_container is not None
+    ]
+    if not containers:
+        return ""
+    lines = [
+        "\n## Object state: ATL containers (deterministic — already lowered)\n",
+        "These fields keep their ATL container type in the Rust owner. The Rust types are "
+        "in `crate::atl` and WILL be in scope. Use them exactly as declared; do NOT "
+        "re-implement, redefine, or inline their logic, and do NOT write a destructor for "
+        "them — `Drop` already runs the C++ member destructor at object teardown.\n",
+    ]
+    for state, container in containers:
+        _init, usage = _RAII_CONTAINER_LOWERINGS[container.split("<", 1)[0]]
+        lines.append(f"- `(*this).{state.name}: {container}` — {usage}")
+    lines.append(
+        "\nEvery method above takes `&mut self` where it mutates, so a field access is "
+        "`(*this).<field>.<Method>(...)`. The accessors return RAW POINTERS where C++ "
+        "returns a reference: `*mut T` is the address of the element in place, so C++ "
+        "`info.field` on such a reference is `(*p).field` in Rust, and writing through it "
+        "mutates the container's storage exactly as the C++ does."
+    )
+    return "\n".join(lines) + "\n"
 
 
 def apply_interface_method_signatures(
@@ -4768,16 +5840,68 @@ def _rust_local_struct_fields(rust: str) -> dict[str, tuple[str, ...]]:
     return result
 
 
+_DEALLOCATOR_CALL = re.compile(r"\b(Box::from_raw|__rustconv_\w*|free|malloc|calloc|realloc)\s*\(")
+
+
+def _stray_deallocators(c_body: str, rust: str) -> list[str]:
+    """Deallocators the RUST calls that the C source never did.
+
+    Keyed on "the source did not call this", not on the bare name. A body translating a
+    genuine C `free(p)` must keep it, and a check that refused the name outright would
+    reject a correct translation — the defect is an INVENTED deallocator, not the concept
+    of freeing. `Box::from_raw`/`__rustconv_*` have no C spelling at all, so they are
+    always invented.
+    """
+    in_source = {
+        match.group(1)
+        for match in _DEALLOCATOR_CALL.finditer(
+            re.sub(r'/\*.*?\*/|//[^\n]*|"(?:\\.|[^"\\])*"', " ", c_body, flags=re.S)
+        )
+    }
+    return sorted(
+        {
+            match.group(1)
+            for match in _DEALLOCATOR_CALL.finditer(rust)
+            if match.group(1) not in in_source
+        }
+    )
+
+
 def audit_worker_body(
-    c_body: str, rust: str, expected_name: str, expected_signature: str | None = None
+    c_body: str,
+    rust: str,
+    expected_name: str,
+    expected_signature: str | None = None,
+    *,
+    scaffold_owned: bool = True,
 ) -> list[str]:
     """Verify the narrow contract for an LLM-translated COM method body.
 
     This is intentionally not a semantic verifier.  It protects the boundary that
     matters for the hybrid pipeline: the response must remain a plain worker, must
     preserve source-level symbolic constants, and must not attempt to own COM ABI.
+
+    ``scaffold_owned=False`` audits the `--free-functions` half of the same TU, where the
+    generated scaffold owns neither the export nor the ABI: a free function IS the exported
+    C symbol, so `#[no_mangle]` and an `extern "C"` DEFINITION are required there and
+    forbidden here. Everything else — invented deallocators, reversed call nesting, dropped
+    constants, an `extern` BLOCK declaring substrate the model could not see — is
+    language-neutral and applies to both halves.
     """
     findings: list[str] = []
+    # A worker never owns deallocation. The scaffold allocates with HeapAlloc(GetProcessHeap())
+    # and `X_delete` is the only matching free, so any OTHER deallocator surviving into a body
+    # is a cross-heap free waiting for a crate where the name happens to resolve — it is silent
+    # everywhere until it corrupts. The deterministic lowering above should have claimed these;
+    # reaching here means it did not recognise the spelling, which must be loud, not quiet.
+    stray_frees = _stray_deallocators(c_body, rust)
+    if stray_frees:
+        findings.append(
+            "worker owns a deallocator it must not: "
+            + ", ".join(stray_frees)
+            + " — the scaffold allocates with HeapAlloc(GetProcessHeap()), so the only correct "
+            "free is the generated <Class>_delete"
+        )
     if not re.search(rf"\bfn\s+{re.escape(expected_name)}\s*\(", rust):
         findings.append(f"missing exact worker function {expected_name}")
     elif expected_signature is not None:
@@ -4851,18 +5975,25 @@ def audit_worker_body(
             + ", ".join(f"{outer}({inner}(...))" for outer, inner in reversed_pairs)
         )
     forbidden = {
-        "#[no_mangle]": "export attribute",
         ".unwrap()": "Option/panic ABI guess",
         "scopeguard::": "model-owned ownership guard",
     }
+    if scaffold_owned:
+        # The scaffold emits the export and the vtable slot; a worker that also exports its
+        # own symbol competes with it. A free function, by contrast, IS the exported symbol.
+        forbidden["#[no_mangle]"] = "export attribute"
     for token, description in forbidden.items():
         if token in executable_rust:
             findings.append(f"worker emitted forbidden {description}: {token}")
     abi_surface = re.sub(r"/\*.*?\*/|//[^\n]*", " ", rust, flags=re.S)
-    if re.search(
-        r'\bextern\s+"(?:C|system)"\s*\{|'
-        r'\b(?:pub\s+)?(?:unsafe\s+)?extern\s+"(?:C|system)"\s+fn\s+[A-Za-z_]\w*',
-        abi_surface,
+    # An extern BLOCK is forbidden in BOTH halves and for the same reason: it declares
+    # substrate the model could not see, and an invented forward declaration compiles,
+    # links, and is silently wrong (AGENTS.md, substrate closure). Only the extern `fn`
+    # DEFINITION is legitimate on the free half, where it carries the C ABI of a real export.
+    if re.search(r'\bextern\s+"(?:C|system)"\s*\{', abi_surface):
+        findings.append('worker emitted forbidden ABI declaration: extern "…" { }')
+    if scaffold_owned and re.search(
+        r'\b(?:pub\s+)?(?:unsafe\s+)?extern\s+"(?:C|system)"\s+fn\s+[A-Za-z_]\w*', abi_surface
     ):
         findings.append('worker emitted forbidden ABI declaration: extern "')
     if re.search(r"(?m)\bgoto\s+[A-Za-z_]\w*\s*;|^\s*[A-Za-z_]\w*\s*:\s*$", executable_rust):
@@ -4911,8 +6042,16 @@ def audit_worker_body(
     source = re.sub(r'/\*.*?\*/|//[^\n]*|"(?:\\.|[^"\\])*"', " ", source_body, flags=re.S)
     symbolic = set()
     ignored_words = _CPP_COM_DEBUG_MACROS | _CPP_COM_LITERAL_WORDS | _CPP_COM_TYPE_WORDS
+    # A C++ named cast's `<...>` is a TYPE, and Rust either spells it differently or drops
+    # it entirely — `const_cast` becomes nothing at all. fact_seal already refuses to seal
+    # these for exactly that reason; this audit demanding the same token back is the two
+    # mechanisms disagreeing, and the audit loses. CDefaultContextMenu::Initialize was
+    # rejected over `const_cast<PCUITEMID_CHILD_ARRAY>(...)` in a body that was correct.
+    cast_type_spans = _named_cast_spans(source)
     for match in re.finditer(r"\b[A-Z][A-Z0-9_]+\b", source):
         word = match.group(0)
+        if any(a <= match.start() < b for a, b in cast_type_spans):
+            continue
         # Callable macro/function names (FAILED(...), SUCCEEDED(...),
         # HRESULT_FROM_WIN32(...)) are behavior, not constants. The body audit
         # separately preserves their arguments, branches, and numeric literals.
@@ -4936,10 +6075,20 @@ def audit_worker_body(
     missing = sorted(word for word in symbolic if not re.search(rf"\b{re.escape(word)}\b", rust))
     if missing:
         findings.append("dropped symbolic C constant(s): " + ", ".join(missing))
+    # A macro the BODY ITSELF defines has no substrate to come from, so defining it in Rust is
+    # the correct translation, not a redefinition. CFSFolder's _AddFindResult opens with
+    # `#define SUPER_HIDDEN (FILE_ATTRIBUTE_HIDDEN | FILE_ATTRIBUTE_SYSTEM)` — demanding that
+    # come from an island is demanding something that cannot exist, and the worker is rejected
+    # however correct it is. The operands stay protected: they are sealed constants in their
+    # own right, and the `missing` check above still requires the name to survive.
+    locally_defined = {
+        match.group(1) for match in re.finditer(r"#[ \t]*define[ \t]+([A-Za-z_]\w*)", source_body)
+    }
     redefined = sorted(
         word
         for word in symbolic
-        if re.search(rf"(?<!\*)\b(?:pub\s+)?const\s+{re.escape(word)}\s*[:=]", rust)
+        if word not in locally_defined
+        and re.search(rf"(?<!\*)\b(?:pub\s+)?const\s+{re.escape(word)}\s*[:=]", rust)
     )
     if redefined:
         findings.append(
@@ -4964,7 +6113,34 @@ def audit_worker_body(
     return findings
 
 
-def render_interface(spec: InterfaceSpec) -> str:
+def render_interface(spec: InterfaceSpec, island_slots: tuple[str, ...] | None = None) -> str:
+    """Render the interface, unless the bindgen island already provides it.
+
+    When it does, rendering a second copy is not a harmless duplicate: it is a DISTINCT Rust
+    type with the same name, so every value that crosses between a worker body (which sees the
+    island's, via the prelude glob) and the scaffold (which saw the local one) is a type error
+    -- and the ones that do not error are the frightening half, because two structurally
+    identical `#[repr(C)]` types will happily transmute past a cast.
+
+    The island is an INDEPENDENT derivation of the same vtable -- bindgen through the real
+    preprocessor, versus this module's read of the header text -- so a disagreement on slot
+    count is two sources contradicting each other about an ABI. Never a warning.
+    """
+    if island_slots is not None:
+        if len(island_slots) != len(spec.methods):
+            raise CppComError(
+                f"{spec.name}: the bindgen island has {len(island_slots)} vtable slot(s) but "
+                f"{spec.source} parses to {len(spec.methods)}. These are two independent "
+                f"derivations of one vtable and they disagree; a positional mismatch "
+                f"dispatches calls to the wrong method. island={list(island_slots)} "
+                f"header={[method.name for method in spec.methods]}"
+            )
+        return (
+            f"// {spec.name}: {len(island_slots)} slot(s) from the bindgen island, which agrees "
+            f"with {spec.source}.\n"
+            f"// Not re-rendered here -- a second `{spec.name}` would be a distinct type with "
+            f"the same name."
+        )
     lines = [
         f"// Deterministic from {spec.source}",
         "#[repr(C)]",
@@ -4994,9 +6170,17 @@ def render_class_scaffold(
     interfaces: list[InterfaceSpec],
     *,
     allow_internal: bool = False,
+    allow_plain: bool = False,
+    island_slots: Mapping[str, tuple[str, ...]] | None = None,
 ) -> str:
-    """Render the ABI-owned portion. Method worker bodies remain separate LLM output."""
-    cls.require_supported(allow_internal=allow_internal)
+    """Render the ABI-owned portion. Method worker bodies remain separate LLM output.
+
+    ``allow_plain`` must be threaded from the caller, not re-derived here: this is the SECOND
+    preflight of a run, and the first one already gated the paid work. Defaulting it to False
+    refused the assembly of an already-bought plain class — every worker replayed from cache,
+    then the scaffold rejected the class that had just been translated.
+    """
+    cls.require_supported(allow_internal=allow_internal, allow_plain=allow_plain)
     by_name = {item.name: item for item in interfaces}
     missing = [entry.interface for entry in cls.com_map if entry.interface not in by_name]
     if missing:
@@ -5054,7 +6238,7 @@ def render_class_scaffold(
         lines.extend([representation, f"pub struct {pod.name} {{"])
         for state in pod.fields:
             field_name = f"r#{state.name}" if state.name in _RUST_KEYWORDS else state.name
-            lines.append(f"    pub {field_name}: {state.rust_type},")
+            lines.append(f"    pub {field_name}: {state.owned_rust_type},")
         lines.extend(["}", ""])
 
     lines.extend(
@@ -5096,7 +6280,10 @@ def render_class_scaffold(
     )
     for entry in layout_entries:
         lines.append(f"    pub {entry.interface}_iface: {entry.interface},")
-    lines.append("    pub ref_count: core::sync::atomic::AtomicI32,")
+    if cls.com_map:
+        # A plain helper has no COM lifetime: its owner `new`s and `delete`s it directly, so
+        # a refcount field would be dead weight the C++ layout never had.
+        lines.append("    pub ref_count: core::sync::atomic::AtomicI32,")
     for state in cls.plain_state_fields():
         lines.append(f"    pub {state.name}: {state.rust_type},")
     lines.extend(["}", ""])
@@ -5160,7 +6347,14 @@ def render_class_scaffold(
                 f"as *mut {cls.name};"
             )
             rest = ", ".join(name for _, name in params[1:])
-            if method.name in ("QueryInterface", "AddRef", "Release"):
+            # The IUnknown trio is ATL's to implement -- but only when the class actually
+            # derives from ATL. A hand-rolled COM class writes its own QueryInterface,
+            # AddRef and Release in the C++, so they translate to `_body` workers like any
+            # other method, and routing the vtable slot at `{cls}_QueryInterface` instead
+            # aims it at a function only the ATL branch below ever defines. That is not
+            # merely an undefined symbol: had anything else supplied that name, the class's
+            # OWN QueryInterface would have been silently bypassed in the shipped vtable.
+            if cls.com_map and method.name in ("QueryInterface", "AddRef", "Release"):
                 target = f"{cls.name}_{method.name}"
             else:
                 target = f"{_interface_method_target(cls.name, method, interfaces)}_body"
@@ -5174,9 +6368,74 @@ def render_class_scaffold(
                 f"{entry.interface}Vtbl {{",
             ]
         )
-        for method in iface.methods:
-            lines.append(f"    {method.name}: {prefix}_{method.name},")
+        # Slot NAMES come from the island when the island owns the type, because the Windows
+        # A/W macros expand inside the interface definition and rename the slot itself:
+        # `STDMETHOD(DeleteFile)` is `DeleteFileW` in the island. Paired POSITIONALLY, which
+        # is the only pairing a vtable has -- and render_interface has already refused the
+        # case where the two derivations disagree on how many slots there are.
+        slots = island_slots.get(entry.interface) if island_slots else None
+        for index, method in enumerate(iface.methods):
+            field = slots[index] if slots else method.name
+            # bindgen wraps every slot in `Option<fn>` (same layout, by the null-pointer
+            # optimization); a locally rendered vtable uses a bare `fn`.
+            value = f"Some({prefix}_{method.name})" if slots else f"{prefix}_{method.name}"
+            lines.append(f"    {field}: {value},")
         lines.extend(["};", ""])
+
+    if not cls.com_map:
+        # Plain helper: everything below this point is COM lifetime machinery (QueryInterface,
+        # AddRef/Release, the object-map factory) that the class does not have. What it DOES
+        # need is a construction path, because its C++ owner reaches it through `new`/`delete`
+        # — `new COpenWithList` at COpenWithMenu.cpp:224/1049/1360, `delete` at 229/1059/1393.
+        # Emit that pair explicitly rather than leaving each caller to invent one: the
+        # free-function bridges for this very class were bought before the class existed, and
+        # duly invented `COpenWithList_new`, `COpenWithList_destructor`, and a free through
+        # `ExFreePoolWithTag` — a KERNEL pool allocator, in a usermode shell DLL, releasing
+        # memory it never allocated.
+        # The vptr store. A C++ constructor sets the vtable pointer in its PROLOGUE, before
+        # the written body runs -- so it appears in no source the model ever sees, and a
+        # translated `_ctor_body` correctly contains only `m_ref = 1`. Nothing else can emit
+        # it: this scaffold is what defines the vtable statics, so this scaffold owes the
+        # store. Without it `_new` hands back an object whose `lpVtbl` is still the
+        # HEAP_ZERO_MEMORY null, and the first call through the interface is a null deref
+        # (a hand-rolled COM class has no ATL base to install it, unlike shell32's
+        # CComObject-derived classes). Emitted BEFORE `_ctor_body` because C++ orders it
+        # that way and a constructor body may call its own virtuals.
+        vptr_stores = [
+            f"    (*this).{entry.interface}_iface.lpVtbl = "
+            f"core::ptr::addr_of!({(cls.name + '_' + entry.interface).upper()}_VTBL);"
+            for entry in layout_entries
+        ]
+        lines.extend(
+            [
+                f"/// `new {cls.name}` — operator new, the vptr store, then the constructor body.",
+                f"pub unsafe fn {cls.name}_new() -> *mut {cls.name} {{",
+                "    let this = HeapAlloc(",
+                "        GetProcessHeap(),",
+                "        HEAP_ZERO_MEMORY,",
+                f"        core::mem::size_of::<{cls.name}>(),",
+                f"    ) as *mut {cls.name};",
+                "    if this.is_null() { return core::ptr::null_mut(); }",
+                *vptr_stores,
+                f"    {cls.name}_ctor_body(this);",
+                "    this",
+                "}",
+                "",
+                "/// `delete` — the destructor body, then the matching free. Pairs with",
+                f"/// `{cls.name}_new`; freeing through any other allocator is a heap bug.",
+                f"pub unsafe fn {cls.name}_delete(this: *mut {cls.name}) {{",
+                "    if this.is_null() { return; }",
+                f"    {cls.name}_dtor_body(this);",
+                "    HeapFree(GetProcessHeap(), 0, this);",
+                "}",
+                "",
+                # Only a class with interfaces has a QueryInterface to compare IIDs in. A true
+                # plain helper (no vtable, e.g. shell32's COpenWithList) does not, so emitting
+                # it there would be dead code and a pointless diff on the next regeneration.
+                *([_CPP_COM_IID_EQUAL, ""] if layout_entries else []),
+            ]
+        )
+        return "\n".join(lines)
 
     first = cls.com_map[0]
     first_physical = physical_by_interface[first.interface]
@@ -5224,19 +6483,32 @@ def render_class_scaffold(
     )
     for worker in cls.base_dtor_workers:
         lines.append(f"        {cls.name}_{worker}_body(this);")
+    drop_pods = pods_with_drop(cls.pod_state_types)
     for state in cls.plain_state_fields():
         if state.assignment_helper is not None:
             lines.append(
                 f"        {cls.name}_{state.assignment_helper}(this, core::ptr::null_mut());"
             )
-        if state.owned_cstring:
+        # A by-value POD member whose own fields are RAII is destroyed by the C++ owner
+        # exactly like a CStringW member is; its Rust drop glue is what reproduces that.
+        by_value_pod = "*" not in state.c_type and state.c_type.strip() in drop_pods
+        if state.owned_cstring or state.raii_container is not None or by_value_pod:
+            # The container's `Drop` in atl.rs IS the C++ member destructor the
+            # translation dropped. It runs AFTER the explicit dtor body, which is C++'s
+            # own order — and every container here has an idempotent RemoveAll, so an
+            # explicit `RemoveAll()` in that body is not a double free.
             lines.append(f"        core::ptr::drop_in_place(&mut (*this).{state.name});")
         if state.owned_heap_ptr:
             # The C++ CComHeapPtr member dtor's implicit CoTaskMemFree.
-            lines.append(
-                f"        if !(*this).{state.name}.is_null() "
-                f"{{ CoTaskMemFree((*this).{state.name}.cast()); }}"
-            )
+            if state.array_len is not None:
+                lines.append(f"        for slot in (*this).{state.name}.iter() {{")
+                lines.append("            if !slot.is_null() { CoTaskMemFree(slot.cast()); }")
+                lines.append("        }")
+            else:
+                lines.append(
+                    f"        if !(*this).{state.name}.is_null() "
+                    f"{{ CoTaskMemFree((*this).{state.name}.cast()); }}"
+                )
     lines.extend(
         [
             "        Shell32RustObjectUnlock();",
@@ -5245,14 +6517,7 @@ def render_class_scaffold(
             "    refs as ULONG",
             "}",
             "",
-            "#[inline]",
-            "unsafe fn cpp_com_iid_equal(left: REFIID, right: REFIID) -> bool {",
-            "    !left.is_null() && !right.is_null()",
-            "        && (*left).Data1 == (*right).Data1",
-            "        && (*left).Data2 == (*right).Data2",
-            "        && (*left).Data3 == (*right).Data3",
-            "        && (*left).Data4 == (*right).Data4",
-            "}",
+            _CPP_COM_IID_EQUAL,
             "",
         ]
     )
@@ -5312,8 +6577,7 @@ def render_class_scaffold(
         ]
     )
     for state in cls.plain_state_fields():
-        value = "CStringW::new()" if state.owned_cstring else "core::mem::zeroed()"
-        lines.append(f"        {state.name}: {value},")
+        lines.append(f"        {state.name}: {state.init_expression},")
     lines.extend(
         [
             "    });",
@@ -5412,7 +6676,12 @@ def render_object_map_adapter(cls: CppComClass) -> str:
                 "}",
             ]
         )
-    if "SHELL32_CoCreateInitSF" in source:
+    if "SHELL32_CoCreateInitSFWithCsidl" in source:
+        # The csidl form used to be a second OVERLOAD of SHELL32_CoCreateInitSF, which Rust
+        # cannot name — hence this trampoline. shlfolder is Rust now, so shfldr.h renamed it
+        # and made both forms EXTERN_C; the trampoline stays only because the five already
+        # translated folder classes declare it `extern "system"` (it is WINAPI, the renamed
+        # function is cdecl), and repointing them is an ABI change for no functional gain.
         lines.extend(
             [
                 "",
@@ -5420,7 +6689,7 @@ def render_object_map_adapter(cls: CppComClass) -> str:
                 "    LPCITEMIDLIST pidlRoot, const GUID *clsid, INT csidl,",
                 "    REFIID riid, LPVOID *ppvOut)",
                 "{",
-                "    return SHELL32_CoCreateInitSF(pidlRoot, clsid, csidl, riid, ppvOut);",
+                "    return SHELL32_CoCreateInitSFWithCsidl(pidlRoot, clsid, csidl, riid, ppvOut);",
                 "}",
             ]
         )
@@ -5433,6 +6702,7 @@ def discover_widl_header(
     filename: str = "shobjidl.h",
     *,
     interface: str | None = None,
+    extra_roots: Sequence[Path] = (),
 ) -> Path:
     if interface is not None:
         needles = (
@@ -5440,13 +6710,26 @@ def discover_widl_header(
             f"DECLARE_INTERFACE_({interface},",
             f"DECLARE_INTERFACE_ ({interface},",
         )
-        roots = [
+        # WIDL-generated roots first, then the checked-in ones. The generated roots exist only
+        # after a build of THIS worktree — never resolve them from a sibling, which would check
+        # this tree's Rust against another lane's headers at another commit (AGENTS.md
+        # "Fleet isolation applies to READS too").
+        generated_roots = [
             repo_root / f"build-{arch}" / "sdk" / "include" / "psdk",
             repo_root / f"build-{arch}-cross" / "sdk" / "include" / "psdk",
             # reactos-private IDLs (e.g. shobjidl_undoc.idl) generate here.
             repo_root / f"build-{arch}" / "sdk" / "include" / "reactos",
+        ]
+        roots = [
+            *generated_roots,
             repo_root / "sdk" / "include" / "psdk",
             repo_root / "sdk" / "include" / "reactos",
+            # ...and the module's own directory LAST, for a module that declares its interfaces
+            # in a hand-written header instead of an .idl (shellrecyclebin's recyclebin.h owns
+            # IRecycleBin / IRecycleBin5 / IRecycleBinEnumList / IRecycleBinFile). The
+            # DECLARE_INTERFACE_ needle below already matches that spelling; it simply was never
+            # looked for outside the SDK. Last so an SDK interface of the same name still wins.
+            *extra_roots,
         ]
         hits = []
         for root in roots:
@@ -5462,6 +6745,16 @@ def discover_widl_header(
             raise CppComError(
                 f"{interface}: flattened vtable is ambiguous across generated headers: "
                 + ", ".join(str(path) for path in hits)
+            )
+        # Most interfaces are declared ONLY in a WIDL-generated header, so an unprovisioned
+        # worktree fails here for a reason that has nothing to do with the caller's change.
+        # Say which of the two it is: a missing build dir names its own fix, and a genuinely
+        # undeclared interface stays a hard error rather than an inferred slot order.
+        if not any(root.is_dir() for root in generated_roots):
+            raise CppComError(
+                f"{interface}: no generated SDK headers for {arch} — this worktree has no "
+                f"build-{arch}, and the checked-in headers do not declare it. "
+                f"fix: ./vibeos-cli build --arch {arch}"
             )
         raise CppComError(
             f"{interface}: no flattened vtable definition found in compiler-facing SDK headers "

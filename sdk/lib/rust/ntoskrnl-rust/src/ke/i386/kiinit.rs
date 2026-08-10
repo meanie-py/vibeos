@@ -210,8 +210,10 @@ extern "C" {
     fn strstr(str1: *const i8, str2: *const i8) -> *const i8;
 }
 
-// KeIpiGenericCall callback functions — stdcall with c_ulong ULONG_PTR on i386
-extern "stdcall" {
+// KeIpiGenericCall callback functions — `system` is stdcall here (this module is i386-only),
+// and it is how patpge.rs actually defines them and how the KeIpiGenericCall slot is spelled,
+// so all three agree nominally instead of only lowering the same.
+extern "system" {
     fn Ki386EnableTargetLargePage(Arg: ::core::ffi::c_ulong) -> ::core::ffi::c_ulong;
     fn Ki386EnableGlobalPage(CpuCount: ::core::ffi::c_ulong) -> ::core::ffi::c_ulong;
     fn Ki386EnableDE(CpuCount: ::core::ffi::c_ulong) -> ::core::ffi::c_ulong;
@@ -649,12 +651,10 @@ pub unsafe extern "system" fn KiInitializeKernel(
 
     KiSaveProcessorControlState(core::ptr::addr_of_mut!((*Prcb).ProcessorState));
 
-    #[cfg(debug_assertions)]
-    {
-        if Number == 0 {
-            KiReportCpuFeatures();
-        }
-    }
+    // NOT TRANSLATED — see the identical note in ke/amd64/kiinit.rs.
+    // ke/i386/cpu.rs:2417 carries only the signature as a comment.
+    // #[cfg(debug_assertions)]
+    // if Number == 0 { KiReportCpuFeatures(); }
 
     KiGetCacheInformation();
 

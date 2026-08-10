@@ -88,6 +88,13 @@ pub type REFCLSID = *const CLSID;
 pub type REFFMTID = *const FMTID;
 
 // ── PIDL on-disk format (shtypes.h + pidl.h, pshpack1 — ALL packed) ──────────────────────
+// These DUPLICATE the island's `_SHITEMID`/`_ITEMIDLIST`, and that is deliberate — do not
+// "collapse" them to `pub use crate::island::{...}`. This file is `#[path]`-included into
+// menuband-rust (lib.rs:38), which has no island module, precisely so that crate gets a
+// layout-identical copy without depending on the shell32-rust staticlib. A `crate::island`
+// reference here compiles in shell32-rust and breaks menuband-rust with E0432, which only
+// the arm64 gate surfaced. The cost is that PIDLs crossing an island extern into one of the
+// vtable signatures below need a `.cast()`; pay it at the call site.
 /// SHITEMID (shtypes.h): { WORD cb; BYTE abID[1]; }
 #[repr(C, packed)]
 pub struct SHITEMID {
@@ -368,6 +375,11 @@ pub struct IUnknownVtbl {
     pub Release: unsafe extern "system" fn(*mut IUnknown) -> ULONG,
 }
 
+// NOT here: `IShellExtInit`. Five already-landed files (new_menu, dialogs/drvdefext,
+// recycle_bin, shell_link, propsheet) carry their own file-local copy — see this module's
+// header on Wave 0-3 keeping theirs — so adding a sixth to this glob-imported module makes
+// the name E0659-ambiguous in every one of them. Retrofitting all five is a deliberate
+// change, not a side effect of translating one more TU; a new TU declares its own copy.
 #[repr(C)]
 pub struct IShellFolder {
     pub lpVtbl: *mut IShellFolderVtbl,
@@ -424,9 +436,47 @@ pub struct IShellFolderVtbl {
     ) -> HRESULT,
     pub GetDisplayNameOf:
         unsafe extern "system" fn(*mut IShellFolder, LPCITEMIDLIST, DWORD, *mut STRRET) -> HRESULT,
-    pub SetNameOf: usize,
+    pub SetNameOf: unsafe extern "system" fn(
+        *mut IShellFolder,
+        HWND,
+        PCUITEMID_CHILD,
+        LPCWSTR,
+        SHGDNF,
+        *mut PITEMID_CHILD,
+    ) -> HRESULT,
 }
 pub type LPSHELLFOLDER = *mut IShellFolder;
+
+/// `IContextMenu` in the crate's `lpVtbl` shape. The island renders it as a bindgen C++ class
+/// with an opaque `vtable_`, which no translated call site can go through; only the slots with
+/// callers here are typed, the rest stay `usize` placeholders at their correct offsets.
+#[repr(C)]
+pub struct IContextMenu {
+    pub lpVtbl: *mut IContextMenuVtbl,
+}
+#[repr(C)]
+pub struct IContextMenuVtbl {
+    pub QueryInterface: usize,
+    pub AddRef: usize,
+    pub Release: unsafe extern "system" fn(*mut IContextMenu) -> ULONG,
+    pub QueryContextMenu: unsafe extern "system" fn(
+        *mut IContextMenu,
+        HMENU,
+        UINT,
+        UINT,
+        UINT,
+        UINT,
+    ) -> HRESULT,
+    pub InvokeCommand: unsafe extern "system" fn(*mut IContextMenu, *mut c_void) -> HRESULT,
+    pub GetCommandString: unsafe extern "system" fn(
+        *mut IContextMenu,
+        UINT_PTR,
+        UINT,
+        *mut UINT,
+        LPSTR,
+        UINT,
+    ) -> HRESULT,
+}
 
 #[repr(C)]
 pub struct IShellFolder2 {
@@ -487,8 +537,8 @@ pub struct IEnumIDListVtbl {
     pub Release: unsafe extern "system" fn(*mut IEnumIDList) -> ULONG,
     pub Next:
         unsafe extern "system" fn(*mut IEnumIDList, ULONG, *mut LPITEMIDLIST, *mut ULONG) -> HRESULT,
-    pub Skip: usize,
-    pub Reset: usize,
+    pub Skip: unsafe extern "system" fn(*mut IEnumIDList, ULONG) -> HRESULT,
+    pub Reset: unsafe extern "system" fn(*mut IEnumIDList) -> HRESULT,
     pub Clone: usize,
 }
 
@@ -520,12 +570,19 @@ pub struct IDataObject {
 }
 #[repr(C)]
 pub struct IDataObjectVtbl {
-    pub QueryInterface: usize,
-    pub AddRef: usize,
+    // A `usize` slot and a fn-pointer slot are the same size, so typing one changes the vtable's
+    // TYPE and not its LAYOUT. These three were typed for CFSDropTarget, which calls all of them;
+    // it is additive because a `usize` slot cannot be called, so no existing caller could have
+    // been reading them (checked: nothing in the crate constructs an IDataObjectVtbl literal, and
+    // every other consumer passes `*mut IDataObject` around opaquely).
+    pub QueryInterface:
+        unsafe extern "system" fn(*mut IDataObject, REFIID, *mut *mut c_void) -> HRESULT,
+    pub AddRef: unsafe extern "system" fn(*mut IDataObject) -> ULONG,
     pub Release: unsafe extern "system" fn(*mut IDataObject) -> ULONG,
     pub GetData: unsafe extern "system" fn(*mut IDataObject, *mut c_void, *mut c_void) -> HRESULT,
     pub GetDataHere: usize,
-    pub QueryGetData: usize,
+    // `c_void` for the FORMATETC, matching GetData/SetData below for the reason given there.
+    pub QueryGetData: unsafe extern "system" fn(*mut IDataObject, *mut c_void) -> HRESULT,
     pub GetCanonicalFormatEtc: usize,
     // Typed for shellutils.h's DataObject_SetData. FORMATETC/STGMEDIUM stay `c_void` to match
     // GetData above, so the one shape of this vtable serves both island and hand-written callers.
@@ -650,13 +707,37 @@ pub struct IFolderView {
 }
 #[repr(C)]
 pub struct IFolderViewVtbl {
-    pub QueryInterface: usize,
-    pub AddRef: usize,
+    pub QueryInterface:
+        unsafe extern "system" fn(*mut IFolderView, REFIID, *mut *mut c_void) -> HRESULT,
+    pub AddRef: unsafe extern "system" fn(*mut IFolderView) -> ULONG,
     pub Release: unsafe extern "system" fn(*mut IFolderView) -> ULONG,
     pub GetCurrentViewMode: usize,
     pub SetCurrentViewMode: usize,
     pub GetFolder:
         unsafe extern "system" fn(*mut IFolderView, REFIID, *mut *mut c_void) -> HRESULT,
+    // This vtable used to STOP at GetFolder. It is truncated, not partial-by-design, so the
+    // eleven slots below (shobjidl.idl:866) are additive: nothing constructs an
+    // IFolderViewVtbl literal — it is only ever read through a `*mut` handed over by C++ —
+    // so growing the tail moves no existing slot. Untyped ones stay `usize`, which is the
+    // same size as a fn pointer and cannot be called by accident.
+    pub Item: usize,
+    pub ItemCount: usize,
+    pub Items: usize,
+    pub GetSelectionMarkedItem: usize,
+    pub GetFocusedItem: usize,
+    pub GetItemPosition:
+        unsafe extern "system" fn(*mut IFolderView, PCUITEMID_CHILD, *mut POINT) -> HRESULT,
+    pub GetSpacing: usize,
+    pub GetDefaultSpacing: usize,
+    pub GetAutoArrange: usize,
+    pub SelectItem: usize,
+    pub SelectAndPositionItems: unsafe extern "system" fn(
+        *mut IFolderView,
+        UINT,
+        PCUITEMID_CHILD_ARRAY,
+        *mut POINT,
+        DWORD,
+    ) -> HRESULT,
 }
 
 #[repr(C)]

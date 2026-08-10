@@ -164,7 +164,7 @@ unsafe fn IntIsSnapAllowedForWindow(Wnd: PWND) -> BOOLEAN {
 }
 extern "system" {
     // SafeProbeForRead — safe_user_io.h NTAPI (stdcall `_SafeProbeForRead@12`).
-    fn SafeProbeForRead(Address: *mut core::ffi::c_void, Length: ULONG, Alignment: ULONG) -> NTSTATUS;
+    fn SafeProbeForRead(Address: *mut core::ffi::c_void, Length: SIZE_T, Alignment: ULONG) -> NTSTATUS;
     // co_HOOK_CallHooks — APIENTRY (stdcall `_co_HOOK_CallHooks@16`).
     fn co_HOOK_CallHooks(HookId: INT, Code: INT, wParam: WPARAM, lParam: LPARAM) -> BOOL;
 }
@@ -1651,7 +1651,7 @@ unsafe fn IntDefWindowProc(
                     if lParam != 0 {
                         Status = SafeProbeForRead(
                             lParam as *mut core::ffi::c_void,
-                            core::mem::size_of::<RECT>() as ULONG,
+                            core::mem::size_of::<RECT>() as _,
                             1,
                         );
                         if !NT_SUCCESS(Status) {

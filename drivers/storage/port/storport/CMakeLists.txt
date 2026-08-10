@@ -19,7 +19,7 @@ elseif(ARCH STREQUAL "arm64")
     set(STORPORT_RUST_TARGET "aarch64-pc-windows-gnullvm")
     set(STORPORT_RUST_RUSTFLAGS "")
 endif()
-file(GLOB_RECURSE STORPORT_RUST_SRCS ${STORPORT_RUST_WORKSPACE_DIR}/storport-rust/src/*.rs)
+rust_crate_sources(STORPORT_RUST_SRCS "${STORPORT_RUST_WORKSPACE_DIR}" storport-rust)
 add_custom_command(
     OUTPUT ${STORPORT_RUST_LIB}
     COMMAND ${CMAKE_COMMAND} -E env

@@ -317,10 +317,16 @@ class the next cannot see. Rationale and measurements: field manual **§9.117**,
    `use ntkrnl_sys::hal_ddk`; allowlisting the header does nothing. If the module's `.c` live in
    a sibling static-lib target (msvcrt → `msvcrt_static`) it names the target to pass to
    `--target`; such a target has no `set_module_type()`, so add `--usermode`/`--kernel`.
-2. **`rustconv translate <file> --seal-facts --seal-calls`** — **always pass both.** Constants
-   and call occurrences then never go through the LLM, and a dropped or invented one fails
+2. **`rustconv translate <file> --seal-facts --seal-calls --seal-wide`** — **always pass all
+   three.** Constants, call occurrences and UTF-16 literals then never go through the LLM, and a
+   dropped or invented one fails
    loudly instead of silently. Running without them shipped 13,503 unprotected constant
-   occurrences, the same class as the 61 invented kernel stop codes (§9.113). Trivial bodies are
+   occurrences, the same class as the 61 invented kernel stop codes (§9.113); running without
+   `--seal-wide` is what put 18 wide arrays in the tree missing the NUL every reader of them
+   scans for. Pass them from the START: each flag adds its own cache token, so turning one on
+   later means the whole file misses the cache and every function is bought again (the old
+   namespace survives untouched, it is just not the one you are now asking for). Trivial bodies
+   are
    lowered deterministically for $0 in the same run (~9% repo-wide; 41% on stub-heavy modules
    but ~0% on real driver code — don't budget on it). Preview free with `--dry-run --prompt`.
    `--target` **proves** the output crate and FFI substrate against the tree instead of assuming
@@ -328,6 +334,22 @@ class the next cannot see. Rationale and measurements: field manual **§9.117**,
    `--sys-crate` it names (msvcrt: `--output-crate msvcrt-crt-rust`). Getting this wrong is not a
    build error: an unresolved substrate name makes the model invent a forward declaration that
    compiles, links, and is silently wrong.
+   **Then read the run's `UNVERIFIED CONSTANTS` audit findings — sealing is defeated by
+   RECALL.** On a famous body the model writes the function from memory instead of the
+   sealed text; msvcrt's `_tzset` came back with all 35 constants PERMUTED into the wrong
+   slots (`_lock(0)` for `_lock(_TIME_LOCK)`, `*tz == 3600` for `*tz == '-'`) and the seal
+   reported success, because its invariant is a closed SET and a permutation satisfies it.
+   Those bodies are now flagged rather than shipped silently — treat the list as a review
+   queue and diff each against the C. Retrying does not help (recall is stable across
+   samples), so pass `--retry-rejects 1` on a well-known module rather than a big number.
+   **The flagged list is not the whole risk**, because the guard only fires when NO token
+   survived: a body that keeps some and permutes the rest passes silently. msvcrt's
+   `MSVCRT_exp` shipped `math_error(0, …)` where the C says `math_error(_DOMAIN, …)` — the
+   "don't set errno" case — and was never flagged. Cheap generic defence: enumerate every
+   call to a shared error/dispatch helper on both sides and diff the argument lists as a
+   table. **A body the model cannot get past the envelope must not block the other 48** —
+   `--skip-fn <name>` drops it from the worklist, assembles the rest, and records the omission
+   as an audit finding so it can't go quiet; hand-write that one.
 3. **`rustconv crate-repair <crate>-rust --arches i386 amd64 arm64`** — bounded deterministic
    repair of the whole-crate `cargo check`, before paying anything to fix compile errors. **Pass
    all three arches**: a numeric cast inferred from one bakes that arch's pointer width, so
@@ -429,6 +451,7 @@ or status into memory, stop and put it in its committed home.
 |---|---|
 | A reusable bug / recipe / gotcha that will recur | `docs/engineering/translation-debugging-field-manual.md`, in the section its **symptom** belongs to (see below) |
 | Per-subsystem / driver / lib status | `docs/engineering/rust-port-status.md` (single source of truth for Rust-vs-C coverage) |
+| That a tree is vendored / NOT a translation target | `vendor.yaml` (repo root) — the only list; `tools/vendored.py --emit` reads it, `vibeos-cli check` gates it |
 | A roadmap / strategy / design | product: `docs/product/vibeos-roadmap.md`; engineering: `docs/engineering/*-roadmap.md` / `*-design.md` / `*-plan.md` / `*-quest.md` |
 | A cohab / cargo-cutover / link recipe | `docs/engineering/rust-in-kernel.md` |
 | A command, path, or platform detail | `docs/engineering/agent-reference.md` |

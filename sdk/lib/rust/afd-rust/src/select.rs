@@ -1,4 +1,5 @@
 use crate::types::*;
+use ntkrnl_sys::ddk::KPROCESSOR_MODE as KPROCESSOR_MODE_;
 use crate::glue::*;
 use ntkrnl_sys::base::*;
 use ntkrnl_sys::constants::*;
@@ -11,7 +12,7 @@ use ntkrnl_sys::ddk::{KeCancelTimer, KeInitializeDpc, KeInitializeTimerEx, KeSet
 use ntkrnl_sys::inline::tier1::{IoGetCurrentIrpStackLocation, IoMarkIrpPending, IoSetCancelRoutine};
 
 extern "C" {
-    fn LockRequest(Irp: PIRP, IrpSp: PIO_STACK_LOCATION, Write: u8, SizeOut: *mut u32) -> *mut core::ffi::c_void;
+    fn LockRequest(Irp: PIRP, IrpSp: PIO_STACK_LOCATION, Output: BOOLEAN, LockMode: *mut KPROCESSOR_MODE_) -> *mut core::ffi::c_void;
     fn LostSocket(Irp: PIRP) -> NTSTATUS;
     fn SocketAcquireStateLock(FCB: PAFD_FCB) -> u8;
 }

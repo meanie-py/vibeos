@@ -211,7 +211,7 @@ unsafe fn ProbeAndCaptureUnicodeString(
 // (`_Name@N` on i386, cdecl elsewhere) — nm confirms @16 / @36.
 extern "system" {
     fn co_IntClientLoadLibrary( pstrLibName: PUNICODE_STRING, pstrInitFunc: PUNICODE_STRING, Unload: BOOL, ApiHook: BOOL, ) -> BOOL;
-    fn co_IntCallHookProc(HookId: INT, Code: INT, wParam: u32, lParam: u32, Proc: HOOKPROC, ihmod: INT, offPfn: ULONG_PTR, Ansi: u8, ModuleName: PUNICODE_STRING) -> u32;
+    fn co_IntCallHookProc(HookId: INT, Code: INT, wParam: WPARAM, lParam: LPARAM, Proc: HOOKPROC, ihmod: INT, offPfn: ULONG_PTR, Ansi: u8, ModuleName: PUNICODE_STRING) -> u32;
 }
 extern "C" {
     // GetW32ThreadInfo + UserDeleteW32Thread + _MmCopyFromCaller: real exported cdecl symbols.
@@ -658,7 +658,7 @@ unsafe fn co_IntCallLowLevelHook_impl(
 }
 #[cfg(target_arch = "x86")]
 #[no_mangle]
-pub unsafe extern "stdcall" fn co_CallHook(
+pub unsafe extern "system" fn co_CallHook(
     HookId: INT,
     Code: INT,
     wParam: WPARAM,
@@ -702,7 +702,7 @@ pub unsafe extern "stdcall" fn co_CallHook(
 
 #[cfg(not(target_arch = "x86"))]
 #[no_mangle]
-pub unsafe extern "C" fn co_CallHook(
+pub unsafe extern "system" fn co_CallHook(
     HookId: INT,
     Code: INT,
     wParam: WPARAM,
@@ -1465,7 +1465,7 @@ pub unsafe extern "C" fn IntRemoveHook(Object: PVOID) -> BOOLEAN {
 }
 #[cfg(target_arch = "x86")]
 #[no_mangle]
-pub unsafe extern "stdcall" fn co_HOOK_CallHooks(
+pub unsafe extern "system" fn co_HOOK_CallHooks(
     HookId: INT,
     Code: INT,
     wParam: WPARAM,
@@ -1677,7 +1677,7 @@ pub unsafe extern "stdcall" fn co_HOOK_CallHooks(
 
 #[cfg(not(target_arch = "x86"))]
 #[no_mangle]
-pub unsafe extern "C" fn co_HOOK_CallHooks(
+pub unsafe extern "system" fn co_HOOK_CallHooks(
     HookId: INT,
     Code: INT,
     wParam: WPARAM,
@@ -1933,9 +1933,8 @@ unsafe fn IntUnhookWindowsHook_impl(HookId: INT, pfnFilterProc: HOOKPROC) -> BOO
     }
     0
 }
-#[cfg(target_arch = "x86")]
 #[no_mangle]
-pub unsafe extern "stdcall" fn NtUserCallNextHookEx(
+pub unsafe extern "system" fn NtUserCallNextHookEx(
     Code: core::ffi::c_int,
     wParam: WPARAM,
     lParam: LPARAM,
@@ -1974,51 +1973,8 @@ pub unsafe extern "stdcall" fn NtUserCallNextHookEx(
     UserLeave();
     lResult
 }
-
-#[cfg(not(target_arch = "x86"))]
 #[no_mangle]
-pub unsafe extern "C" fn NtUserCallNextHookEx(
-    Code: core::ffi::c_int,
-    wParam: WPARAM,
-    lParam: LPARAM,
-    Ansi: BOOL,
-) -> LRESULT {
-    let pti: PTHREADINFO;
-    let HookObj: PHOOK;
-    let NextObj: PHOOK;
-    let mut ClientInfo: PCLIENTINFO;
-    let mut lResult: LRESULT = 0;
-
-    UserEnterExclusive();
-
-    'exit: {
-        pti = GetW32ThreadInfo();
-
-        HookObj = (*pti).sphkCurrent;
-
-        if HookObj.is_null() {
-            break 'exit;
-        }
-
-        NextObj = (*HookObj).phkNext;
-
-        (*pti).sphkCurrent = NextObj;
-        ClientInfo = (*pti).pClientInfo;
-
-        (*ClientInfo).phkCurrent = NextObj;
-
-        if !ClientInfo.is_null() && !NextObj.is_null() {
-            (*NextObj).phkNext = IntGetNextHook(NextObj);
-            lResult = co_UserCallNextHookEx(NextObj, Code, wParam, lParam, (*NextObj).Ansi as INT);
-        }
-    }
-
-    UserLeave();
-    lResult
-}
-#[cfg(target_arch = "x86")]
-#[no_mangle]
-pub unsafe extern "stdcall" fn NtUserSetWindowsHookAW(
+pub unsafe extern "system" fn NtUserSetWindowsHookAW(
     idHook: ::core::ffi::c_int,
     lpfn: HOOKPROC,
     Ansi: BOOL,
@@ -2038,32 +1994,8 @@ pub unsafe extern "stdcall" fn NtUserSetWindowsHookAW(
         Ansi,
     )
 }
-
-#[cfg(not(target_arch = "x86"))]
 #[no_mangle]
-pub unsafe extern "C" fn NtUserSetWindowsHookAW(
-    idHook: ::core::ffi::c_int,
-    lpfn: HOOKPROC,
-    Ansi: BOOL,
-) -> HHOOK {
-    let ThreadId: DWORD;
-    let mut USModuleName: _UNICODE_STRING = core::mem::zeroed();
-
-    RtlInitUnicodeString(core::ptr::addr_of_mut!(USModuleName) as _, core::ptr::null_mut());
-    ThreadId = PtrToUint((*(NtCurrentTeb() as *mut _TEB)).ClientId.UniqueThread) as DWORD;
-
-    NtUserSetWindowsHookEx(
-        core::ptr::null_mut(),
-        &mut USModuleName,
-        ThreadId,
-        idHook,
-        lpfn,
-        Ansi,
-    )
-}
-#[cfg(target_arch = "x86")]
-#[no_mangle]
-pub unsafe extern "stdcall" fn NtUserSetWindowsHookEx(
+pub unsafe extern "system" fn NtUserSetWindowsHookEx(
     Mod: HINSTANCE,
     UnsafeModuleName: PUNICODE_STRING,
     ThreadId: DWORD,
@@ -2295,244 +2227,8 @@ pub unsafe extern "stdcall" fn NtUserSetWindowsHookEx(
     UserLeave();
     Ret
 }
-
-#[cfg(not(target_arch = "x86"))]
 #[no_mangle]
-pub unsafe extern "C" fn NtUserSetWindowsHookEx(
-    Mod: HINSTANCE,
-    UnsafeModuleName: PUNICODE_STRING,
-    ThreadId: DWORD,
-    HookId: ::core::ffi::c_int,
-    HookProc: HOOKPROC,
-    Ansi: BOOL,
-) -> HHOOK {
-    let mut WinStaObj: PWINSTATION_OBJECT = core::ptr::null_mut();
-    let mut Hook: PHOOK = core::ptr::null_mut();
-    let mut ModuleName: _UNICODE_STRING = core::mem::zeroed();
-    let mut Status: NTSTATUS;
-    let mut Handle: HHOOK = core::ptr::null_mut();
-    let pti: PTHREADINFO;
-    let mut ptiHook: PTHREADINFO = core::ptr::null_mut();
-    let mut Ret: HHOOK = core::ptr::null_mut();
-
-    UserEnterExclusive();
-
-    pti = PsGetCurrentThreadWin32Thread() as PTHREADINFO;
-
-    'cleanup: loop {
-        if HookId < WH_MINHOOK as ::core::ffi::c_int || (WH_MAXHOOK as ::core::ffi::c_int) < HookId {
-            EngSetLastError(ERROR_INVALID_HOOK_FILTER);
-            break 'cleanup;
-        }
-
-        if HookProc.is_none() {
-            EngSetLastError(ERROR_INVALID_FILTER_PROC);
-            break 'cleanup;
-        }
-
-        if ThreadId != 0 {
-            if HookId == WH_JOURNALRECORD as ::core::ffi::c_int
-                || HookId == WH_JOURNALPLAYBACK as ::core::ffi::c_int
-                || HookId == WH_KEYBOARD_LL as ::core::ffi::c_int
-                || HookId == WH_MOUSE_LL as ::core::ffi::c_int
-                || HookId == WH_SYSMSGFILTER as ::core::ffi::c_int
-            {
-                EngSetLastError(ERROR_GLOBAL_ONLY_HOOK);
-                break 'cleanup;
-            }
-
-            ptiHook = IntTID2PTI(UlongToHandle(ThreadId));
-            if ptiHook.is_null() {
-                EngSetLastError(ERROR_INVALID_PARAMETER);
-                break 'cleanup;
-            }
-
-            if (*ptiHook).rpdesk != (*pti).rpdesk {
-                EngSetLastError(ERROR_ACCESS_DENIED);
-                break 'cleanup;
-            }
-
-            if (*ptiHook).ppi != (*pti).ppi {
-                if Mod.is_null()
-                    && (HookId == WH_GETMESSAGE as ::core::ffi::c_int
-                        || HookId == WH_CALLWNDPROC as ::core::ffi::c_int
-                        || HookId == WH_CBT as ::core::ffi::c_int
-                        || HookId == WH_HARDWARE as ::core::ffi::c_int
-                        || HookId == WH_DEBUG as ::core::ffi::c_int
-                        || HookId == WH_SHELL as ::core::ffi::c_int
-                        || HookId == WH_FOREGROUNDIDLE as ::core::ffi::c_int
-                        || HookId == WH_CALLWNDPROCRET as ::core::ffi::c_int)
-                {
-                    EngSetLastError(ERROR_HOOK_NEEDS_HMOD);
-                    break 'cleanup;
-                }
-
-                if ((*ptiHook).TIF_flags & (TIF_CSRSSTHREAD | TIF_SYSTEMTHREAD)) != 0
-                    && (HookId == WH_GETMESSAGE as ::core::ffi::c_int
-                        || HookId == WH_CALLWNDPROC as ::core::ffi::c_int
-                        || HookId == WH_CBT as ::core::ffi::c_int
-                        || HookId == WH_HARDWARE as ::core::ffi::c_int
-                        || HookId == WH_DEBUG as ::core::ffi::c_int
-                        || HookId == WH_SHELL as ::core::ffi::c_int
-                        || HookId == WH_FOREGROUNDIDLE as ::core::ffi::c_int
-                        || HookId == WH_CALLWNDPROCRET as ::core::ffi::c_int)
-                {
-                    EngSetLastError(ERROR_HOOK_TYPE_NOT_ALLOWED);
-                    break 'cleanup;
-                }
-            }
-        } else {
-            ptiHook = pti;
-            if Mod.is_null()
-                && (HookId == WH_GETMESSAGE as ::core::ffi::c_int
-                    || HookId == WH_CALLWNDPROC as ::core::ffi::c_int
-                    || HookId == WH_CBT as ::core::ffi::c_int
-                    || HookId == WH_SYSMSGFILTER as ::core::ffi::c_int
-                    || HookId == WH_HARDWARE as ::core::ffi::c_int
-                    || HookId == WH_DEBUG as ::core::ffi::c_int
-                    || HookId == WH_SHELL as ::core::ffi::c_int
-                    || HookId == WH_FOREGROUNDIDLE as ::core::ffi::c_int
-                    || HookId == WH_CALLWNDPROCRET as ::core::ffi::c_int)
-            {
-                EngSetLastError(ERROR_HOOK_NEEDS_HMOD);
-                break 'cleanup;
-            }
-        }
-
-        Status = IntValidateWindowStationHandle(
-            (*(PsGetCurrentProcess() as *mut _EPROCESS)).Win32WindowStation as _,
-            1i32 as i8,
-            0,
-            &mut WinStaObj,
-            core::ptr::null_mut(),
-        );
-
-        if !NT_SUCCESS(Status) {
-            SetLastNtError(Status);
-            break 'cleanup;
-        }
-        ObDereferenceObject(WinStaObj as PVOID);
-
-        Hook = UserCreateObject(
-            gHandleTable,
-            core::ptr::null_mut(),
-            ptiHook as _,
-            &mut Handle as *mut HHOOK as PHANDLE,
-            TYPE_HOOK as _,
-            core::mem::size_of::<HOOK>() as u32,
-        ) as PHOOK;
-
-        if Hook.is_null() {
-            break 'cleanup;
-        }
-
-        (*Hook).ihmod = Mod as INT_PTR;
-        (*Hook).HookId = HookId;
-        (*Hook).rpdesk = (*ptiHook).rpdesk;
-        (*Hook).phkNext = core::ptr::null_mut();
-        (*Hook).Proc = HookProc;
-        (*Hook).Ansi = Ansi as u8;
-
-        if ThreadId != 0 {
-            InsertHeadList(
-                core::ptr::addr_of_mut!((*ptiHook).aphkStart[HOOKID_TO_INDEX(HookId) as usize]),
-                core::ptr::addr_of_mut!((*Hook).Chain),
-            );
-            (*ptiHook).sphkCurrent = core::ptr::null_mut();
-            (*Hook).ptiHooked = ptiHook;
-            (*ptiHook).fsHooks |= HOOKID_TO_FLAG(HookId);
-
-            if !(*ptiHook).pClientInfo.is_null() {
-                if (*ptiHook).ppi == (*pti).ppi {
-                    (*(*ptiHook).pClientInfo).fsHooks = (*ptiHook).fsHooks;
-                    (*(*ptiHook).pClientInfo).phkCurrent = core::ptr::null_mut();
-                } else {
-                    let mut ApcState: _KAPC_STATE = core::mem::zeroed();
-
-                    KeStackAttachProcess(
-                        core::ptr::addr_of_mut!((*ppi_eprocess((*ptiHook).ppi)).Pcb) as _,
-                        &mut ApcState as *mut _ as _,
-                    );
-                    (*(*ptiHook).pClientInfo).fsHooks = (*ptiHook).fsHooks;
-                    (*(*ptiHook).pClientInfo).phkCurrent = core::ptr::null_mut();
-                    KeUnstackDetachProcess(&mut ApcState as *mut _ as _);
-                }
-            }
-        } else {
-            InsertHeadList(
-                core::ptr::addr_of_mut!(
-                    (*(*(*ptiHook).rpdesk).pDeskInfo).aphkStart[HOOKID_TO_INDEX(HookId) as usize]
-                ),
-                core::ptr::addr_of_mut!((*Hook).Chain),
-            );
-            (*Hook).ptiHooked = core::ptr::null_mut();
-            (*(*(*ptiHook).rpdesk).pDeskInfo).fsHooks |= HOOKID_TO_FLAG(HookId);
-            (*ptiHook).sphkCurrent = core::ptr::null_mut();
-            (*(*ptiHook).pClientInfo).phkCurrent = core::ptr::null_mut();
-        }
-
-        RtlInitUnicodeString(
-            core::ptr::addr_of_mut!((*Hook).ModuleName) as _,
-            core::ptr::null_mut(),
-        );
-
-        if !Mod.is_null() {
-            Status = MmCopyFromCaller(
-                &mut ModuleName as *mut _UNICODE_STRING as PVOID,
-                UnsafeModuleName as PVOID,
-                core::mem::size_of::<_UNICODE_STRING>(),
-            );
-            if !NT_SUCCESS(Status) {
-                IntRemoveHook(Hook as PVOID);
-                SetLastNtError(Status);
-                break 'cleanup;
-            }
-
-            (*Hook).ModuleName.Buffer = ExAllocatePoolWithTag(
-                PagedPool,
-                ModuleName.MaximumLength as _,
-                TAG_HOOK,
-            ) as *mut u16;
-            if (*Hook).ModuleName.Buffer.is_null() {
-                IntRemoveHook(Hook as PVOID);
-                EngSetLastError(ERROR_NOT_ENOUGH_MEMORY);
-                break 'cleanup;
-            }
-
-            (*Hook).ModuleName.MaximumLength = ModuleName.MaximumLength;
-            Status = MmCopyFromCaller(
-                (*Hook).ModuleName.Buffer as PVOID,
-                ModuleName.Buffer as PVOID,
-                ModuleName.MaximumLength as usize,
-            );
-            if !NT_SUCCESS(Status) {
-                ExFreePoolWithTag((*Hook).ModuleName.Buffer as PVOID, TAG_HOOK);
-                (*Hook).ModuleName.Buffer = core::ptr::null_mut();
-                IntRemoveHook(Hook as PVOID);
-                SetLastNtError(Status);
-                break 'cleanup;
-            }
-
-            (*Hook).ModuleName.Length = ModuleName.Length;
-            (*Hook).offPfn = (HookProc.map_or(core::ptr::null::<u8>(), |p| p as *const u8) as usize)
-                .wrapping_sub(Mod as usize) as ULONG_PTR;
-        } else {
-            (*Hook).offPfn = 0;
-        }
-
-        Ret = Handle;
-        break 'cleanup;
-    }
-
-    if !Hook.is_null() {
-        UserDereferenceObject(Hook as PVOID);
-    }
-    UserLeave();
-    Ret
-}
-#[cfg(target_arch = "x86")]
-#[no_mangle]
-pub unsafe extern "stdcall" fn NtUserUnhookWindowsHookEx(Hook: HHOOK) -> BOOL {
+pub unsafe extern "system" fn NtUserUnhookWindowsHookEx(Hook: HHOOK) -> BOOL {
     let HookObj: PHOOK;
     let mut Ret: BOOL = 0;
 
@@ -2554,34 +2250,8 @@ pub unsafe extern "stdcall" fn NtUserUnhookWindowsHookEx(Hook: HHOOK) -> BOOL {
     UserLeave();
     Ret
 }
-
-#[cfg(not(target_arch = "x86"))]
 #[no_mangle]
-pub unsafe extern "C" fn NtUserUnhookWindowsHookEx(Hook: HHOOK) -> BOOL {
-    let HookObj: PHOOK;
-    let mut Ret: BOOL = 0;
-
-    UserEnterExclusive();
-
-    'exit: {
-        HookObj = IntGetHookObject(Hook);
-        if HookObj.is_null() {
-            break 'exit;
-        }
-
-        IntRemoveHook(HookObj as PVOID);
-
-        UserDereferenceObject(HookObj as PVOID);
-
-        Ret = 1;
-    }
-
-    UserLeave();
-    Ret
-}
-#[cfg(target_arch = "x86")]
-#[no_mangle]
-pub unsafe extern "stdcall" fn NtUserRegisterUserApiHook(
+pub unsafe extern "system" fn NtUserRegisterUserApiHook(
     m_dllname1: PUNICODE_STRING,
     m_funname1: PUNICODE_STRING,
     dwUnknown3: DWORD,
@@ -2638,81 +2308,8 @@ pub unsafe extern "stdcall" fn NtUserRegisterUserApiHook(
 
     ret
 }
-
-#[cfg(not(target_arch = "x86"))]
 #[no_mangle]
-pub unsafe extern "C" fn NtUserRegisterUserApiHook(
-    m_dllname1: PUNICODE_STRING,
-    m_funname1: PUNICODE_STRING,
-    dwUnknown3: DWORD,
-    dwUnknown4: DWORD,
-) -> BOOL {
-    let ret: BOOL;
-    let mut strDllNameSafe: _UNICODE_STRING = core::mem::zeroed();
-    let mut strFuncNameSafe: _UNICODE_STRING = core::mem::zeroed();
-    let mut Status: NTSTATUS;
-
-    Status = ProbeAndCaptureUnicodeString(
-        core::ptr::addr_of_mut!(strDllNameSafe),
-        1i32 as KPROCESSOR_MODE,
-        m_dllname1,
-    );
-    if !NT_SUCCESS(Status) {
-        EngSetLastError(RtlNtStatusToDosError(Status));
-        return FALSE as BOOL;
-    }
-
-    Status = ProbeAndCaptureUnicodeString(
-        core::ptr::addr_of_mut!(strFuncNameSafe),
-        1i32 as KPROCESSOR_MODE,
-        m_funname1,
-    );
-    if !NT_SUCCESS(Status) {
-        ReleaseCapturedUnicodeString(
-            core::ptr::addr_of_mut!(strDllNameSafe),
-            1i32 as KPROCESSOR_MODE,
-        );
-        EngSetLastError(RtlNtStatusToDosError(Status));
-        return FALSE as BOOL;
-    }
-
-    UserEnterExclusive();
-
-    ret = UserRegisterUserApiHook(
-        core::ptr::addr_of_mut!(strDllNameSafe),
-        core::ptr::addr_of_mut!(strFuncNameSafe),
-    );
-
-    UserLeave();
-
-    if ret == FALSE as BOOL {
-        ReleaseCapturedUnicodeString(
-            core::ptr::addr_of_mut!(strDllNameSafe),
-            1i32 as KPROCESSOR_MODE,
-        );
-        ReleaseCapturedUnicodeString(
-            core::ptr::addr_of_mut!(strFuncNameSafe),
-            1i32 as KPROCESSOR_MODE,
-        );
-    }
-
-    ret
-}
-#[cfg(target_arch = "x86")]
-#[no_mangle]
-pub unsafe extern "stdcall" fn NtUserUnregisterUserApiHook() -> BOOL {
-    let ret: BOOL;
-
-    UserEnterExclusive();
-    ret = UserUnregisterUserApiHook();
-    UserLeave();
-
-    ret
-}
-
-#[cfg(not(target_arch = "x86"))]
-#[no_mangle]
-pub unsafe extern "C" fn NtUserUnregisterUserApiHook() -> BOOL {
+pub unsafe extern "system" fn NtUserUnregisterUserApiHook() -> BOOL {
     let ret: BOOL;
 
     UserEnterExclusive();

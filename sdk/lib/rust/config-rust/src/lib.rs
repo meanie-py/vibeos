@@ -32,6 +32,10 @@ pub use dbgprint_rust::{dbg_print, rtl_string_cb_printf_a, rtl_string_cb_printf_
 
 pub mod global_barrier;
 
+// HHIVE::HiveFlags bits, transcribed once from sdk/lib/cmlib/hivedata.h. See the
+// module header: four of the eight open-coded copies these replace were wrong.
+pub mod hiveflags;
+
 // Module tree transcribed from ntoskrnl-rust/src/config/mod.rs (cmboot was already
 // hoisted to the shared cmboot-rust crate; not included here).
 pub mod cmalloc;
@@ -53,6 +57,7 @@ pub mod cmse;
 pub mod cmsecach;
 pub mod cmsysini;
 pub mod cmvalche;
+pub mod cmwow64;
 pub mod cmwraprs;
 pub mod ntapi;
 

@@ -134,7 +134,7 @@ pub struct _RPC_MESSAGE {
 }
 pub type PRPC_MESSAGE = *mut _RPC_MESSAGE;
 pub type RPC_DISPATCH_FUNCTION =
-    ::core::option::Option<unsafe extern "C" fn(Message: PRPC_MESSAGE)>;
+    ::core::option::Option<unsafe extern "system" fn(Message: PRPC_MESSAGE)>;
 #[repr(C)]
 pub struct RPC_DISPATCH_TABLE {
     pub DispatchTableCount: ::core::ffi::c_uint,
@@ -154,9 +154,9 @@ pub struct _NDR_SCONTEXT {
 }
 pub type NDR_SCONTEXT = *mut _NDR_SCONTEXT;
 pub type NDR_RUNDOWN =
-    ::core::option::Option<unsafe extern "C" fn(context: *mut ::core::ffi::c_void)>;
-pub type NDR_NOTIFY_ROUTINE = ::core::option::Option<unsafe extern "C" fn()>;
-pub type NDR_NOTIFY2_ROUTINE = ::core::option::Option<unsafe extern "C" fn(flag: boolean)>;
+    ::core::option::Option<unsafe extern "system" fn(context: *mut ::core::ffi::c_void)>;
+pub type NDR_NOTIFY_ROUTINE = ::core::option::Option<unsafe extern "system" fn()>;
+pub type NDR_NOTIFY2_ROUTINE = ::core::option::Option<unsafe extern "system" fn(flag: boolean)>;
 #[repr(C)]
 #[derive(Debug, Copy, Clone)]
 pub struct NDR_ALLOC_ALL_NODES_CONTEXT {
@@ -169,7 +169,7 @@ pub struct NDR_POINTER_QUEUE_STATE {
 }
 pub type RPC_BUFPTR = *mut ::core::ffi::c_uchar;
 pub type RPC_LENGTH = ULONG;
-pub type EXPR_EVAL = ::core::option::Option<unsafe extern "C" fn(arg1: *mut _MIDL_STUB_MESSAGE)>;
+pub type EXPR_EVAL = ::core::option::Option<unsafe extern "system" fn(arg1: *mut _MIDL_STUB_MESSAGE)>;
 pub type PFORMAT_STRING = *const ::core::ffi::c_uchar;
 #[repr(C)]
 pub struct ARRAY_INFO {
@@ -236,8 +236,8 @@ pub struct _MIDL_STUB_MESSAGE {
     pub Offset: ULONG,
     pub ActualCount: ULONG,
     pub pfnAllocate:
-        ::core::option::Option<unsafe extern "C" fn(arg1: SIZE_T) -> *mut ::core::ffi::c_void>,
-    pub pfnFree: ::core::option::Option<unsafe extern "C" fn(arg1: *mut ::core::ffi::c_void)>,
+        ::core::option::Option<unsafe extern "system" fn(arg1: SIZE_T) -> *mut ::core::ffi::c_void>,
+    pub pfnFree: ::core::option::Option<unsafe extern "system" fn(arg1: *mut ::core::ffi::c_void)>,
     pub StackTop: *mut ::core::ffi::c_uchar,
     pub pPresentedType: *mut ::core::ffi::c_uchar,
     pub pTransmitType: *mut ::core::ffi::c_uchar,
@@ -857,10 +857,10 @@ impl _MIDL_STUB_MESSAGE {
 pub type MIDL_STUB_MESSAGE = _MIDL_STUB_MESSAGE;
 pub type PMIDL_STUB_MESSAGE = *mut _MIDL_STUB_MESSAGE;
 pub type GENERIC_BINDING_ROUTINE = ::core::option::Option<
-    unsafe extern "C" fn(arg1: *mut ::core::ffi::c_void) -> *mut ::core::ffi::c_void,
+    unsafe extern "system" fn(arg1: *mut ::core::ffi::c_void) -> *mut ::core::ffi::c_void,
 >;
 pub type GENERIC_UNBIND_ROUTINE = ::core::option::Option<
-    unsafe extern "C" fn(arg1: *mut ::core::ffi::c_void, arg2: *mut ::core::ffi::c_uchar),
+    unsafe extern "system" fn(arg1: *mut ::core::ffi::c_void, arg2: *mut ::core::ffi::c_uchar),
 >;
 #[repr(C)]
 #[derive(Debug, Copy, Clone)]
@@ -881,7 +881,7 @@ pub struct __GENERIC_BINDING_INFO {
 pub type GENERIC_BINDING_INFO = __GENERIC_BINDING_INFO;
 pub type PGENERIC_BINDING_INFO = *mut __GENERIC_BINDING_INFO;
 pub type XMIT_HELPER_ROUTINE =
-    ::core::option::Option<unsafe extern "C" fn(arg1: PMIDL_STUB_MESSAGE)>;
+    ::core::option::Option<unsafe extern "system" fn(arg1: PMIDL_STUB_MESSAGE)>;
 #[repr(C)]
 #[derive(Debug, Copy, Clone)]
 pub struct _XMIT_ROUTINE_QUINTUPLE {
@@ -893,24 +893,24 @@ pub struct _XMIT_ROUTINE_QUINTUPLE {
 pub type XMIT_ROUTINE_QUINTUPLE = _XMIT_ROUTINE_QUINTUPLE;
 pub type PXMIT_ROUTINE_QUINTUPLE = *mut _XMIT_ROUTINE_QUINTUPLE;
 pub type USER_MARSHAL_SIZING_ROUTINE = ::core::option::Option<
-    unsafe extern "C" fn(arg1: *mut ULONG, arg2: ULONG, arg3: *mut ::core::ffi::c_void) -> ULONG,
+    unsafe extern "system" fn(arg1: *mut ULONG, arg2: ULONG, arg3: *mut ::core::ffi::c_void) -> ULONG,
 >;
 pub type USER_MARSHAL_MARSHALLING_ROUTINE = ::core::option::Option<
-    unsafe extern "C" fn(
+    unsafe extern "system" fn(
         arg1: *mut ULONG,
         arg2: *mut ::core::ffi::c_uchar,
         arg3: *mut ::core::ffi::c_void,
     ) -> *mut ::core::ffi::c_uchar,
 >;
 pub type USER_MARSHAL_UNMARSHALLING_ROUTINE = ::core::option::Option<
-    unsafe extern "C" fn(
+    unsafe extern "system" fn(
         arg1: *mut ULONG,
         arg2: *mut ::core::ffi::c_uchar,
         arg3: *mut ::core::ffi::c_void,
     ) -> *mut ::core::ffi::c_uchar,
 >;
 pub type USER_MARSHAL_FREEING_ROUTINE =
-    ::core::option::Option<unsafe extern "C" fn(arg1: *mut ULONG, arg2: *mut ::core::ffi::c_void)>;
+    ::core::option::Option<unsafe extern "system" fn(arg1: *mut ULONG, arg2: *mut ::core::ffi::c_void)>;
 #[repr(C)]
 #[derive(Debug, Copy, Clone)]
 pub struct _USER_MARSHAL_ROUTINE_QUADRUPLE {
@@ -940,8 +940,8 @@ pub type USER_MARSHAL_CB = _USER_MARSHAL_CB;
 #[derive(Debug, Copy, Clone)]
 pub struct _MALLOC_FREE_STRUCT {
     pub pfnAllocate:
-        ::core::option::Option<unsafe extern "C" fn(arg1: SIZE_T) -> *mut ::core::ffi::c_void>,
-    pub pfnFree: ::core::option::Option<unsafe extern "C" fn(arg1: *mut ::core::ffi::c_void)>,
+        ::core::option::Option<unsafe extern "system" fn(arg1: SIZE_T) -> *mut ::core::ffi::c_void>,
+    pub pfnFree: ::core::option::Option<unsafe extern "system" fn(arg1: *mut ::core::ffi::c_void)>,
 }
 pub type MALLOC_FREE_STRUCT = _MALLOC_FREE_STRUCT;
 #[repr(C)]
@@ -957,7 +957,7 @@ pub const _IDL_CS_CONVERT_IDL_CS_NEW_BUFFER_CONVERT: _IDL_CS_CONVERT = 2;
 pub type _IDL_CS_CONVERT = ::core::ffi::c_uint;
 pub use self::_IDL_CS_CONVERT as IDL_CS_CONVERT;
 pub type CS_TYPE_NET_SIZE_ROUTINE = ::core::option::Option<
-    unsafe extern "C" fn(
+    unsafe extern "system" fn(
         arg1: RPC_BINDING_HANDLE,
         arg2: ULONG,
         arg3: ULONG,
@@ -967,7 +967,7 @@ pub type CS_TYPE_NET_SIZE_ROUTINE = ::core::option::Option<
     ),
 >;
 pub type CS_TYPE_TO_NETCS_ROUTINE = ::core::option::Option<
-    unsafe extern "C" fn(
+    unsafe extern "system" fn(
         arg1: RPC_BINDING_HANDLE,
         arg2: ULONG,
         arg3: *mut ::core::ffi::c_void,
@@ -978,7 +978,7 @@ pub type CS_TYPE_TO_NETCS_ROUTINE = ::core::option::Option<
     ),
 >;
 pub type CS_TYPE_LOCAL_SIZE_ROUTINE = ::core::option::Option<
-    unsafe extern "C" fn(
+    unsafe extern "system" fn(
         arg1: RPC_BINDING_HANDLE,
         arg2: ULONG,
         arg3: ULONG,
@@ -988,7 +988,7 @@ pub type CS_TYPE_LOCAL_SIZE_ROUTINE = ::core::option::Option<
     ),
 >;
 pub type CS_TYPE_FROM_NETCS_ROUTINE = ::core::option::Option<
-    unsafe extern "C" fn(
+    unsafe extern "system" fn(
         arg1: RPC_BINDING_HANDLE,
         arg2: ULONG,
         arg3: *mut byte,
@@ -1000,7 +1000,7 @@ pub type CS_TYPE_FROM_NETCS_ROUTINE = ::core::option::Option<
     ),
 >;
 pub type CS_TAG_GETTING_ROUTINE = ::core::option::Option<
-    unsafe extern "C" fn(
+    unsafe extern "system" fn(
         arg1: RPC_BINDING_HANDLE,
         arg2: ::core::ffi::c_int,
         arg3: *mut ULONG,
@@ -1036,8 +1036,8 @@ pub type NDR_EXPR_DESC = _NDR_EXPR_DESC;
 pub struct _MIDL_STUB_DESC {
     pub RpcInterfaceInformation: *mut ::core::ffi::c_void,
     pub pfnAllocate:
-        ::core::option::Option<unsafe extern "C" fn(arg1: SIZE_T) -> *mut ::core::ffi::c_void>,
-    pub pfnFree: ::core::option::Option<unsafe extern "C" fn(arg1: *mut ::core::ffi::c_void)>,
+        ::core::option::Option<unsafe extern "system" fn(arg1: SIZE_T) -> *mut ::core::ffi::c_void>,
+    pub pfnFree: ::core::option::Option<unsafe extern "system" fn(arg1: *mut ::core::ffi::c_void)>,
     pub IMPLICIT_HANDLE_INFO: _MIDL_STUB_DESC__bindgen_ty_1,
     pub apfnNdrRundownRoutines: *const NDR_RUNDOWN,
     pub aGenericBindingRoutinePairs: *const GENERIC_BINDING_ROUTINE_PAIR,
@@ -1106,8 +1106,8 @@ pub struct _MIDL_SYNTAX_INFO {
 }
 pub type MIDL_SYNTAX_INFO = _MIDL_SYNTAX_INFO;
 pub type PMIDL_SYNTAX_INFO = *mut _MIDL_SYNTAX_INFO;
-pub type STUB_THUNK = ::core::option::Option<unsafe extern "C" fn(arg1: PMIDL_STUB_MESSAGE)>;
-pub type SERVER_ROUTINE = ::core::option::Option<unsafe extern "C" fn() -> LONG>;
+pub type STUB_THUNK = ::core::option::Option<unsafe extern "system" fn(arg1: PMIDL_STUB_MESSAGE)>;
+pub type SERVER_ROUTINE = ::core::option::Option<unsafe extern "system" fn() -> LONG>;
 #[repr(C)]
 pub struct _MIDL_SERVER_INFO_ {
     pub pStubDesc: PMIDL_STUB_DESC,
@@ -1201,8 +1201,8 @@ pub struct _NDR_USER_MARSHAL_INFO_LEVEL1 {
     pub Buffer: *mut ::core::ffi::c_void,
     pub BufferSize: ULONG,
     pub pfnAllocate:
-        ::core::option::Option<unsafe extern "C" fn(arg1: SIZE_T) -> *mut ::core::ffi::c_void>,
-    pub pfnFree: ::core::option::Option<unsafe extern "C" fn(arg1: *mut ::core::ffi::c_void)>,
+        ::core::option::Option<unsafe extern "system" fn(arg1: SIZE_T) -> *mut ::core::ffi::c_void>,
+    pub pfnFree: ::core::option::Option<unsafe extern "system" fn(arg1: *mut ::core::ffi::c_void)>,
     pub pRpcChannelBuffer: *mut IRpcChannelBuffer,
     pub Reserved: [ULONG_PTR; 5usize],
 }
@@ -1860,7 +1860,7 @@ pub type PWLAN_CONNECTION_PARAMETERS = *mut _WLAN_CONNECTION_PARAMETERS;
 pub type WLAN_NOTIFICATION_DATA = L2_NOTIFICATION_DATA;
 pub type PWLAN_NOTIFICATION_DATA = *mut L2_NOTIFICATION_DATA;
 pub type WLAN_NOTIFICATION_CALLBACK =
-    ::core::option::Option<unsafe extern "C" fn(a: PWLAN_NOTIFICATION_DATA, b: PVOID)>;
+    ::core::option::Option<unsafe extern "system" fn(a: PWLAN_NOTIFICATION_DATA, b: PVOID)>;
 pub type WLANSVC_RPC_HANDLE = PVOID;
 pub type LPWLANSVC_RPC_HANDLE = *mut WLANSVC_RPC_HANDLE;
 pub type WLANSVC_HANDLE = LPWSTR;

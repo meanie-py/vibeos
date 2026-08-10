@@ -579,12 +579,12 @@ unsafe fn build_assembly_id(ai: *const assembly_identity) -> *mut WCHAR {
         b't' as WCHAR, b'e' as WCHAR, b'c' as WCHAR, b't' as WCHAR, b'u' as WCHAR,
         b'r' as WCHAR, b'e' as WCHAR, b'=' as WCHAR, 0,
     ];
-    static public_keyW: [WCHAR; 16] = [
+    static public_keyW: [WCHAR; 17] = [
         b',' as WCHAR, b'p' as WCHAR, b'u' as WCHAR, b'b' as WCHAR, b'l' as WCHAR,
         b'i' as WCHAR, b'c' as WCHAR, b'K' as WCHAR, b'e' as WCHAR, b'y' as WCHAR,
         b'T' as WCHAR, b'o' as WCHAR, b'k' as WCHAR, b'e' as WCHAR, b'n' as WCHAR,
         b'=' as WCHAR,
-    ];
+     0,];
     static typeW2: [WCHAR; 7] = [
         b',' as WCHAR, b't' as WCHAR, b'y' as WCHAR, b'p' as WCHAR, b'e' as WCHAR,
         b'=' as WCHAR, 0,

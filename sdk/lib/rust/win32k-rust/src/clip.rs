@@ -298,9 +298,8 @@ pub unsafe extern "C" fn IntEngUpdateClipRegion(
 }
 
 /// EngCreateClip — @implemented
-#[cfg(target_arch = "x86")]
 #[no_mangle]
-pub unsafe extern "stdcall" fn EngCreateClip() -> *mut CLIPOBJ {
+pub unsafe extern "system" fn EngCreateClip() -> *mut CLIPOBJ {
     let Clip = EngAllocMem(FL_ZERO_MEMORY, core::mem::size_of::<XCLIPOBJ>() as u32, GDITAG_CLIPOBJ) as *mut XCLIPOBJ;
     if !Clip.is_null() {
         IntEngInitClipObj(Clip);
@@ -312,23 +311,8 @@ pub unsafe extern "stdcall" fn EngCreateClip() -> *mut CLIPOBJ {
     core::ptr::null_mut()
 }
 
-#[cfg(not(target_arch = "x86"))]
 #[no_mangle]
-pub unsafe extern "C" fn EngCreateClip() -> *mut CLIPOBJ {
-    let Clip = EngAllocMem(FL_ZERO_MEMORY, core::mem::size_of::<XCLIPOBJ>() as u32, GDITAG_CLIPOBJ) as *mut XCLIPOBJ;
-    if !Clip.is_null() {
-        IntEngInitClipObj(Clip);
-        TRACE!(b"Created Clip Obj %p.\n\0".as_ptr() as *const i8, Clip);
-        return Clip as *mut CLIPOBJ;
-    }
-
-    ERR!(b"Clip object allocation failed!\n\0".as_ptr() as *const i8);
-    core::ptr::null_mut()
-}
-
-#[cfg(target_arch = "x86")]
-#[no_mangle]
-pub unsafe extern "stdcall" fn EngDeleteClip(
+pub unsafe extern "system" fn EngDeleteClip(
     pco: *mut CLIPOBJ
 ) {
     let pxco = pco as *mut XCLIPOBJ;
@@ -337,20 +321,8 @@ pub unsafe extern "stdcall" fn EngDeleteClip(
     EngFreeMem(pxco as *mut c_void);
 }
 
-#[cfg(not(target_arch = "x86"))]
 #[no_mangle]
-pub unsafe extern "C" fn EngDeleteClip(
-    pco: *mut CLIPOBJ
-) {
-    let pxco = pco as *mut XCLIPOBJ;
-    TRACE!(b"Deleting %p.\n\0".as_ptr() as *const i8, pco);
-    IntEngFreeClipResources(pxco);
-    EngFreeMem(pxco as *mut c_void);
-}
-
-#[cfg(target_arch = "x86")]
-#[no_mangle]
-pub unsafe extern "stdcall" fn CLIPOBJ_cEnumStart(
+pub unsafe extern "system" fn CLIPOBJ_cEnumStart(
     pco: *mut CLIPOBJ,
     bAll: i32,
     iType: u32,
@@ -405,107 +377,8 @@ pub unsafe extern "stdcall" fn CLIPOBJ_cEnumStart(
 
     (*Clip).RectCount
 }
-
-#[cfg(not(target_arch = "x86"))]
 #[no_mangle]
-pub unsafe extern "C" fn CLIPOBJ_cEnumStart(
-    pco: *mut CLIPOBJ,
-    bAll: i32,
-    iType: u32,
-    iDirection: u32,
-    cMaxRects: u32,
-) -> u32 {
-    let Clip = pco as *mut XCLIPOBJ;
-    let mut CompareFunc: SORTCOMP;
-
-    (*Clip).bAll = bAll;
-    (*Clip).iType = iType;
-    (*Clip).EnumPos = 0;
-    (*Clip).EnumMax = if cMaxRects > 0 { cMaxRects } else { (*Clip).RectCount };
-
-    if CD_ANY != iDirection && (*Clip).iDirection != iDirection {
-        let mut iDirection = iDirection;
-        match iDirection {
-            CD_RIGHTDOWN => {
-                CompareFunc = Some(CompareRightDown);
-            }
-            CD_RIGHTUP => {
-                CompareFunc = Some(CompareRightUp);
-            }
-            CD_LEFTDOWN => {
-                CompareFunc = Some(CompareLeftDown);
-            }
-            CD_LEFTUP => {
-                CompareFunc = Some(CompareLeftUp);
-            }
-            _ => {
-                ERR!(b"Invalid iDirection %lu\n\0".as_ptr() as _, iDirection);
-                iDirection = (*Clip).iDirection;
-                CompareFunc = None;
-            }
-        }
-
-        if CompareFunc.is_some() {
-            EngSort(
-                (*Clip).Rects as PBYTE,
-                core::mem::size_of::<RECTL>() as u32,
-                (*Clip).RectCount,
-                CompareFunc,
-            );
-        }
-
-        (*Clip).iDirection = iDirection;
-    }
-
-    if (cMaxRects > 0) && ((*Clip).RectCount > cMaxRects) {
-        return 0xFFFFFFFF;
-    }
-
-    (*Clip).RectCount
-}
-#[cfg(target_arch = "x86")]
-#[no_mangle]
-pub unsafe extern "stdcall" fn CLIPOBJ_bEnum(
-    pco: *mut CLIPOBJ,
-    cj: u32,
-    pulEnumRects: *mut u32,
-) -> u8 {
-    let Clip = pco as *mut XCLIPOBJ;
-    let pERects = pulEnumRects as *mut ENUMRECTS;
-
-    let nCopy = core::cmp::min(
-        (*Clip).EnumMax - (*Clip).EnumPos,
-        core::cmp::min(
-            (*Clip).RectCount - (*Clip).EnumPos,
-            (cj - core::mem::size_of::<u32>() as u32) / core::mem::size_of::<RECTL>() as u32,
-        ),
-    );
-
-    if nCopy == 0 {
-        return 0u8;
-    }
-
-    let src = (*Clip).Rects.add((*Clip).EnumPos as usize);
-    RtlCopyMemory(
-        (*pERects).arcl.as_mut_ptr() as *mut c_void,
-        src as *const c_void,
-        (nCopy as usize) * core::mem::size_of::<RECTL>(),
-    );
-
-    (*pERects).c = nCopy;
-
-    (*Clip).EnumPos += nCopy;
-
-    if (*Clip).EnumPos < (*Clip).RectCount {
-        1u8
-    } else {
-        0u8
-    }
-}
-
-#[cfg(not(target_arch = "x86"))]
-#[no_mangle]
-pub unsafe extern "C" fn CLIPOBJ_bEnum(
+pub unsafe extern "system" fn CLIPOBJ_bEnum(
     pco: *mut CLIPOBJ,
     cj: u32,
     pulEnumRects: *mut u32,
@@ -546,15 +419,8 @@ pub unsafe extern "C" fn CLIPOBJ_bEnum(
 // CLIPOBJ_ppoGetPath — APIENTRY (stdcall on i386, cdecl elsewhere).
 // @unimplemented in C stubs.c; provide a NULL-returning stub so the link
 // resolves. Real callers are display drivers (which we don't run yet).
-#[cfg(target_arch = "x86")]
 #[no_mangle]
-pub unsafe extern "stdcall" fn CLIPOBJ_ppoGetPath(_pco: *mut CLIPOBJ) -> *mut PATHOBJ {
-    core::ptr::null_mut()
-}
-
-#[cfg(not(target_arch = "x86"))]
-#[no_mangle]
-pub unsafe extern "C" fn CLIPOBJ_ppoGetPath(_pco: *mut CLIPOBJ) -> *mut PATHOBJ {
+pub unsafe extern "system" fn CLIPOBJ_ppoGetPath(_pco: *mut CLIPOBJ) -> *mut PATHOBJ {
     core::ptr::null_mut()
 }
 

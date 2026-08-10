@@ -1587,19 +1587,12 @@ pub unsafe extern "C" fn ClasspInitializePolling(
     }
 
     if ScreenStateNotificationHandle.is_null() {
-        // ClasspPowerSettingCallback is extern "stdcall" on i386, extern "C" on amd64/arm64.
-        // PoRegisterPowerSettingCallback (declared locally) expects extern "system" (same ABI).
-        // Use cfg to get the correct fn-pointer SRC type for transmute.
-        #[cfg(target_arch = "x86")]
-        let _cb: unsafe extern "system" fn(LPCGUID, PVOID, ULONG, PVOID) -> NTSTATUS = unsafe {
-            core::mem::transmute::<unsafe extern "stdcall" fn(LPCGUID, PVOID, ULONG, PVOID) -> NTSTATUS,
-                                   unsafe extern "system" fn(LPCGUID, PVOID, ULONG, PVOID) -> NTSTATUS>(ClasspPowerSettingCallback)
-        };
-        #[cfg(not(target_arch = "x86"))]
-        let _cb: unsafe extern "system" fn(LPCGUID, PVOID, ULONG, PVOID) -> NTSTATUS = unsafe {
-            core::mem::transmute::<unsafe extern "C" fn(LPCGUID, PVOID, ULONG, PVOID) -> NTSTATUS,
-                                   unsafe extern "system" fn(LPCGUID, PVOID, ULONG, PVOID) -> NTSTATUS>(ClasspPowerSettingCallback)
-        };
+        // This bridged the island's per-arch spelling of ClasspPowerSettingCallback (stdcall on
+        // i386, C elsewhere) to PoRegisterPowerSettingCallback's `system` slot with a transmute
+        // per arch. The island declares it `system` now, so the types match on their own — and
+        // the transmute, which erased the signature along with the convention, is gone.
+        let _cb: unsafe extern "system" fn(LPCGUID, PVOID, ULONG, PVOID) -> NTSTATUS =
+            ClasspPowerSettingCallback;
         PoRegisterPowerSettingCallback(
             fdo,
             &raw const GUID_CONSOLE_DISPLAY_STATE,

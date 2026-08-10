@@ -29,6 +29,7 @@ pub const INVALID_HANDLE_VALUE: HANDLE = usize::MAX as HANDLE;
 pub const HBMMENU_CALLBACK: HBITMAP = -1isize as HBITMAP;
 pub const HKEY_CLASSES_ROOT: HKEY = 0x8000_0000u32 as i32 as isize as HKEY;
 pub const HKEY_CURRENT_USER: HKEY = 0x8000_0001u32 as i32 as isize as HKEY;
+pub const HKEY_LOCAL_MACHINE: HKEY = 0x8000_0002u32 as i32 as isize as HKEY;
 
 pub const S_OK: HRESULT = 0;
 pub const S_FALSE: HRESULT = 1;
@@ -59,13 +60,21 @@ pub fn HRESULT_FROM_WIN32(x: LONG) -> HRESULT {
     }
 }
 
-extern "system" {
-    pub fn lstrcpynW(dst: LPWSTR, src: LPCWSTR, capacity: INT) -> LPWSTR;
-}
+// `lstrcpynW` USED to be declared here. It is not residue any more: all three arch islands now
+// bind it from the real header (`unsafe extern "stdcall"`, identical to the `extern "system"`
+// this block had), and two glob-visible declarations of one name make every unqualified use an
+// E0659 ambiguity — even `crate::island::lstrcpynW`, because both globs land in `island`.
+// Anything hand-written here that bindgen later learns to emit must be deleted, not kept "just
+// in case": the duplicate does not shadow, it collides.
 
 extern "C" {
     pub fn wcscpy(dst: LPWSTR, src: LPCWSTR) -> LPWSTR;
     pub fn wcschr(text: LPCWSTR, character: WCHAR) -> LPWSTR;
     pub fn wcscmp(left: LPCWSTR, right: LPCWSTR) -> INT;
     pub fn wcslen(text: LPCWSTR) -> usize;
+    pub fn wcsstr(haystack: LPCWSTR, needle: LPCWSTR) -> LPWSTR;
+    pub fn wcsrchr(text: LPCWSTR, character: WCHAR) -> LPWSTR;
+    pub fn iswspace(c: INT) -> INT;
+    #[allow(non_snake_case)]
+    pub fn _wcsnicmp(s1: LPCWSTR, s2: LPCWSTR, n: usize) -> INT;
 }

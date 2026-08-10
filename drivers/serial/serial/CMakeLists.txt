@@ -16,7 +16,7 @@ elseif(ARCH STREQUAL "arm64")
     set(SERIAL_RUST_TARGET "aarch64-pc-windows-gnullvm")
     set(SERIAL_RUST_RUSTFLAGS "")
 endif()
-file(GLOB_RECURSE SERIAL_RUST_SRCS ${SERIAL_RUST_WORKSPACE_DIR}/serial-rust/src/*.rs)
+rust_crate_sources(SERIAL_RUST_SRCS "${SERIAL_RUST_WORKSPACE_DIR}" serial-rust)
 add_custom_command(
     OUTPUT ${SERIAL_RUST_LIB}
     COMMAND ${CMAKE_COMMAND} -E env

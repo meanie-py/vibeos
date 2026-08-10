@@ -63,7 +63,7 @@ elseif(ARCH STREQUAL "arm64")
     set(GDI32_RUST_TARGET "aarch64-pc-windows-gnullvm")
 endif()
 # GLOB_RECURSE so .rs under src/<subdir>/ also retrigger the libgdi32_rust.a rebuild.
-file(GLOB_RECURSE GDI32_RUST_SRCS "${GDI32_RUST_WORKSPACE_DIR}/gdi32-rust/src/*.rs")
+rust_crate_sources(GDI32_RUST_SRCS "${GDI32_RUST_WORKSPACE_DIR}" gdi32-rust)
 add_custom_command(
     OUTPUT ${GDI32_RUST_LIB}
     COMMAND ${CMAKE_COMMAND} -E env

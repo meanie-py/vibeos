@@ -39,6 +39,220 @@ edition = "2021"
 # structurally forced (crate-type is not feature-conditional).
 path = "src/lib.rs"
 
+[features]
+default = ["stdio", "invalid-parameter", "dir-environ", "conio-exit", "locale", "data", "ctype-tables", "heap", "cpp", "threading", "dllmain"]
+
+# heap.c (`src/msvcrt/heap.rs`) — the allocator. ON for every build that produces
+# msvcrt.dll, OFF for both host harnesses, and this one is not a convenience gate like the
+# others: it is load-bearing.
+#
+# msvcrt-difftest is a LINUX HOST binary linked against glibc. heap.rs exports `malloc`,
+# `free`, `calloc` and `realloc` under their plain names, so linking it into the harness
+# replaces the host's allocator with one that calls RtlAllocateHeap — a function that does
+# not exist on Linux — for every allocation the test process makes, including the ones the
+# harness itself made before `main`. That is not a duplicate-symbol error at the point of
+# the mistake; it is the test binary allocating through a null heap handle.
+#
+# Unlike `dir-environ` this costs real grading coverage, and it is worth being plain about
+# that: the four entry points every other translated file leans on are the ones the
+# differential harness cannot reach. The reason is the same one file.c and process.c
+# already carry — the substrate is Win32, not the algorithm — but the stakes are higher
+# here, so the honest status is PORTED, NOT GRADED. What would lift it is a heap shim in
+# `refstub/` mapping the Rtl* family onto the host allocator, exactly as `fileimpl.c` does
+# for the fd table; that is a lane, not an errand.
+heap = []
+
+# cpp.c (`src/msvcrt/cpp.rs` + `src/msvcrt/cpp_rtti.rs`) — the C++ RTTI / exception-object
+# subsystem, and except.c's dispatcher with it. ON everywhere, including msvcrt-difftest,
+# which grades it against reference TUs #14/#15.
+#
+# This comment used to say the module "cannot link there at all" — COFF-only `global_asm!`
+# vtables plus a `RtlPcToFileHeader` an ELF binary has no answer for — and both halves were
+# wrong. The x86-64 arm of `cpp_rtti`'s `asm_vtable!` emits `.data` / `.balign 8` / `.quad` /
+# `.globl`, which is valid ELF as written and is the same text cxx.h's `__ASM_VTABLE` emits
+# for the reference TU sitting beside it in the same binary; only the `#[cfg(target_arch =
+# "x86")]` arm's leading `_` is COFF-specific, and x86-64 never takes it. And
+# `RtlPcToFileHeader` was never a platform property, only an undefined symbol —
+# msvcrt-difftest/cppimpl.c supplies it with a real, stable image base and asserts every RVA
+# fits. The gate stayed shut on that reasoning for a whole wave; nothing was measured.
+#
+# msvcrt-scanf-difftest and msvcrt-seh-difftest still leave it off, for their own reasons.
+cpp = []
+
+# lock.c + thread.c (`src/msvcrt/lock.rs`, `src/msvcrt/thread.rs`) — the CRT's mutual
+# exclusion table and its per-thread state block. ON for every build that produces
+# msvcrt.dll, OFF for both host harnesses, and the reason is a DUPLICATE DEFINITION rather
+# than a missing one: `msvcrt-difftest/refimpl.c:310` defines `msvcrt_get_thread_data` and
+# `fileimpl.c:1220` defines `_lock`/`_unlock`, because the harness needs its own
+# single-threaded thread_data it can inspect between cases. Linking these two modules in
+# would collide with all three.
+#
+# The two travel together and cannot be split: `_beginthread`'s trampoline is the only
+# writer of `thread_data_t::handle`, and `_lock` is what every `malloc` in heap.rs takes
+# before touching the free list.
+#
+# Status is PORTED, NOT GRADED for the same reason as `heap` — the substrate is Win32
+# (TLS slots, CRITICAL_SECTIONs, CreateThread), not an algorithm a host harness can
+# reproduce. Unlike heap.c, though, the gate signal here is strong: `_lock`/`_unlock` run
+# on every allocation and `msvcrt_get_thread_data` is called by nearly every other module
+# in this crate, so a defect surfaces as a boot failure rather than as silence.
+threading = []
+
+
+# errno.c's `_invalid_parameter` (`src/msvcrt/errno.rs`). ON for every build that produces
+# msvcrt.dll — all three arches — and OFF for exactly one consumer, the host harness.
+#
+# WHY, and it is the same shape as `stdio` below: `msvcrt-difftest/subjectimpl.c` DEFINES
+# `_invalid_parameter` under its plain name, and that is not a stub to satisfy a link — it
+# is the harness's CALL COUNTER. `subj_invalid_pmt_count()` feeds the `pmt` field of the
+# `Effects` tuple that classify.rs, printf_shells.rs and file.rs all compare, across 42
+# assertion sites; "did the invalid-parameter path fire at all?" is part of the `_s`
+# contract and is otherwise unobservable.
+#
+# It costs no coverage TODAY. At `_MSVCR_VER=0` — this DLL's setting —
+# `_set_invalid_parameter_handler` is inside the `#if _MSVCR_VER >= 80` block and is NOT
+# compiled, so the handler slot can never be written and `_invalid_parameter` is
+# unconditionally a no-op. The Rust body and the harness's body are therefore identical in
+# effect, and excluding it from the host link hides no behaviour.
+#
+# OWED: grading it needs the counter to stop owning the symbol — install it as a HANDLER
+# through the real dispatch instead, which also grades the dispatch. That is the only part
+# of errno.c's 18 exports the harness cannot currently see.
+invalid-parameter = []
+
+# file.c's stdio layer (`src/msvcrt/file.rs`, 189 exports). ON for every build that
+# produces msvcrt.dll — all three arches — and OFF for exactly one consumer, the host
+# harness `msvcrt-difftest`.
+#
+# WHY: `msvcrt-difftest/tests/scanf.rs` DEFINES `fgetc`/`fgetwc`/`ungetc`/`ungetwc`/
+# `_lock_file`/`_unlock_file`/`__iob_func` under their plain names — that is not a stub to
+# satisfy a link, it is the harness's CHARACTER SOURCE (each one calls `model_get`), and it
+# is how the scanf engine gets driven deterministically without real files. The engine
+# reaches it through a plain `extern "C" { fn fgetc(...); }` in scanf.rs, which is the
+# injection seam. Once file.rs also defines those symbols, both land in one test binary and
+# the link fails on seven duplicates. The test's model has to win, so the subject's copy
+# must not be there.
+#
+# This costs no coverage TODAY: nothing on the host grades file.rs yet — there are no
+# file.c rows — so its presence in the difftest link was collision surface with no oracle
+# value. It is not the `pub mod X;`-commented-out anti-pattern: the OS build and all three
+# smokes keep the full stdio layer, and this feature cannot turn it off there.
+#
+# OWED, and it is the blocker for grading file.c: replace scanf.rs's model with real
+# FILE-backed stdio, then turn this back on for the harness. Tracked with the file.c
+# grading work in docs/engineering/rust-port-status.md (wave 17).
+stdio = []
+
+# dir.c (`src/msvcrt/dir.rs`) and environ.c (`src/msvcrt/environ.rs`). ON for every build
+# that produces msvcrt.dll, and OFF for exactly one consumer for the same reason
+# `invalid-parameter` above is: the host harness DEFINES two of their exports itself.
+#
+# `msvcrt-difftest/fileimpl.c` provides `_getdrive` (line 1086) as a constant 3, so that
+# file.c's `_fstat` yields a deterministic `st_dev`, and `_wgetenv` (line 1104) as a
+# host-controlled fake. dir.c exports the real `_getdrive` and environ.c the real
+# `_wgetenv`, so linking these two modules into the harness is two duplicate symbols.
+#
+# This CANNOT ride on `stdio`: msvcrt-difftest deliberately turns `stdio` ON so that it can
+# grade file.c. Both harnesses take this crate with `default-features = false`, which is
+# what makes a new DEFAULT feature the whole mechanism — no harness edit is needed.
+#
+# It costs no coverage today: neither file has grading rows. Note also that neither real
+# body could serve the harness even if the symbols were free — `_getdrive` reads
+# `GetCurrentDirectoryW`, which does not exist on the Linux host.
+#
+# OWED: grading these needs the harness to stop owning the two names — shim
+# GetCurrentDirectoryW alongside the other Win32 stubs and let the real bodies run, the
+# same move `invalid-parameter` owes for its call counter.
+dir-environ = []
+
+# console.c (29 exports) and exit.c (18). Default ON, dropped by the host harness, and this
+# one is not a symbol-ownership problem like the three above — it is that the bodies have
+# nothing to stand on off-Windows and one of them would be actively destructive.
+#
+# exit.c is the destructive half: it defines `exit`, `_exit` and `abort` under their plain
+# names. Link that into a test binary and the Rust test harness's own `exit`/`abort` resolve
+# to bodies that call `ExitProcess` — a symbol that does not exist on the host, and if it did
+# would tear down the process instead of ending a test. The harness's runtime has to win.
+#
+# console.c is the empty half: every export is a passthrough to a console API the host does
+# not have (`WriteConsoleA`, `ReadConsoleInputA`, `CreateFileA` on CONIN$/CONOUT$,
+# Get/SetConsoleMode). There is no behaviour underneath to grade — the file IS the
+# marshalling — so excluding it costs no coverage that could otherwise exist.
+#
+# misc.c deliberately does NOT ride this gate. Its `qsort`/`qsort_s`/`bsearch`/`bsearch_s`/
+# `_lsearch`/`_lfind`/`rand`/`srand` are pure algorithms and among the most gradeable code in
+# msvcrt, so instead of hiding it the harness grew the four Win32 stubs it actually needed
+# (`Beep`, `DebugBreak`, `RtlGenRandom`, `VirtualProtect`) and dropped its now-redundant
+# `_get_output_format` stub in favour of the real body. Rows for those are owed, not blocked.
+conio-exit = []
+
+# locale.c (29 exports + the 8 globals it owns). Default ON, dropped by the host harness,
+# and this is the `invalid-parameter` shape rather than the `conio-exit` one: the harness
+# does not merely fail to host these, it DEFINES eight of them itself as its NLS model, and
+# that model is the oracle every other row depends on.
+#
+# `msvcrt-difftest/nlsimpl.c` supplies `MSVCRT_locale`, `locale_to_sname` and `free_mbcinfo`;
+# `refimpl.c`/`subjectimpl.c` supply `get_locinfo`, `get_mbcinfo`, `MSVCRT__pctype`,
+# `initial_locale` and `__crtLCMapStringA`. Together they are a CODEPAGE-AWARE C-locale
+# model built so that mbcs.c's 160 graded functions have real lead/trail-byte tables to
+# grade against — see nlsimpl.c's own header for why a codepage-blind model silently makes
+# every DBCS branch unreachable. Linking locale.rs beside it is eight duplicate symbols, and
+# even if it were not, the real bodies build their tables from `GetLocaleInfoEx` /
+# `EnumSystemLocalesEx`, which do not exist on the Linux host.
+#
+# So the harness keeping its own locale is correct, not a workaround. The cost is that
+# locale.c's own 29 exports cannot be graded there; that is the same limitation file.c,
+# process.c, dir.c and environ.c already carry, recorded rather than papered over.
+locale = []
+
+# data.c (57 globals — the CRT's process-wide state and the `__p__*` accessor family).
+# Default ON, dropped by the host harness, and it IMPLIES `dir-environ` because
+# `msvcrt_init_args` calls environ.c's `env_init`: enabling data without environ would be an
+# undefined symbol, so the feature graph states the dependency instead of leaving it to a
+# link error nobody sees until the DLL is built.
+#
+# Two of data.c's exports are harness-owned: `fileimpl.c` defines `_get_fmode` and
+# `msvcrt_wstrdupa` (both are in msvcrt-sys's allowlist as "CRT siblings file.c calls that
+# are still C"), so linking data.rs beside them is two duplicate symbols. Same shape as
+# `dir-environ`'s `_getdrive`/`_wgetenv`.
+data = ["dir-environ"]
+
+# ctype.c's three DATA exports (`src/msvcrt/ctype.rs`): `MSVCRT__ctype[257]`,
+# `MSVCRT__wctype[257]` and the `MSVCRT__pwctype` pointer into the second. Default ON,
+# dropped by the host harnesses, and the reason is the `dir-environ` shape once more —
+# the harness DEFINES all three.
+#
+# ctype.c is msvcrt-difftest's reference TU #3, and build.rs deliberately leaves the two
+# tables OUT of its `ref_*` rename list: they are shared ENVIRONMENT, so the reference and
+# the subject agree on what the locale IS rather than grading data against data.
+# subjectimpl.c then defines the subject's own `MSVCRT__pwctype` pointer into the shared
+# `MSVCRT__wctype`. Linking ctype.rs beside that is three duplicate symbols.
+#
+# Unlike the four features above, this one costs NO gradeable coverage even in principle,
+# and the reason is worth stating because it inverts the usual argument. The tables are not
+# hand-copied — `tools/gen_ctype_tables.py` parses ctype.c's initializers, evaluates every
+# entry against the msvcrt-sys island's mask values, and refuses to emit unless all 514
+# match the bytes the C compiler placed in `ctype.c.obj`'s `.data`. That is a STRONGER
+# check than a differential test could run, because it compares the Rust against the
+# compiler's own output instead of against a second copy of the same numbers. Wiring
+# `--check` into the lint gate is what keeps it true as ctype.c moves.
+#
+# ctype.c's 44 FUNCTIONS are NOT behind this gate and never were: they are hand-written in
+# lib.rs and graded MATCH against reference TU #3 today.
+ctype-tables = []
+
+# main.c's `DllMain` (`src/msvcrt/main.rs`) — msvcrt.dll's ENTRY POINT, plus the
+# `msvcrt_tls_index` slot it allocates. Default ON, absent from both host harnesses, and
+# unlike the gates above the reason is not a duplicate symbol: a Linux test binary has no
+# DLL_PROCESS_ATTACH to be called on, so the whole module is meaningless there.
+#
+# It lists every feature it CALLS INTO rather than assuming the default set, because a
+# `--no-default-features --features dllmain` build is otherwise a DllMain that initialises
+# subsystems no longer in the link. That is not a compile error — the C copies satisfy the
+# names — it is msvcrt.dll booting with half its init sequence pointed at the wrong
+# implementations.
+dllmain = ["heap", "stdio", "locale", "data", "cpp", "conio-exit", "threading"]
+
 [dependencies]
 cnt-rust = { path = "../cnt-rust", default-features = false }
 msvcrt-sys = { path = "../msvcrt-sys" }

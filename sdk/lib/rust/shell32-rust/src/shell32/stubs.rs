@@ -1,7 +1,5 @@
-//! ORPHAN-BY-DESIGN: translated Wave-5 TU, parked pending substrate closure.
-//! It still needs a few hundred SDK externs/constants/resource IDs resolved before
-//! it compiles; wiring it in this state would break the build for every lane rather
-//! than expose a regression. This is a PAID artifact — do not delete it to tidy up.
+//! FLIPPED: this TU is wired into the crate and shipping; the C++ original is
+//! commented out of dll/win32/shell32/CMakeLists.txt.
 use core::ffi::c_void;
 use crate::prelude::*;
 use crate::shell32::sdk_consts::*;

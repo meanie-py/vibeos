@@ -36,8 +36,8 @@ macro_rules! FIXME { ($($t:tt)*) => {{}}; }
 // --- NTAPI/stdcall (`_Name@N`) eng exports. extern "system" = stdcall i386. ---
 extern "system" {
     fn EngGetTickCount() -> ULONGLONG;
-    fn SafeProbeForWrite(Address: *mut core::ffi::c_void, Length: ULONG, Alignment: ULONG) -> NTSTATUS;
-    fn SafeProbeForRead(Address: *mut core::ffi::c_void, Length: ULONG, Alignment: ULONG) -> NTSTATUS;
+    fn SafeProbeForWrite(Address: *mut core::ffi::c_void, Length: SIZE_T, Alignment: ULONG) -> NTSTATUS;
+    fn SafeProbeForRead(Address: *mut core::ffi::c_void, Length: SIZE_T, Alignment: ULONG) -> NTSTATUS;
 }
 
 // EngGetTickCount32() = (ULONG)EngGetTickCount() (eng.h FORCEINLINE; no symbol).
@@ -112,12 +112,7 @@ unsafe fn IntPtInWindow(pwnd: PWND, x: INT, y: INT) -> BOOL {
 }
 
 // --- SystemTimerProc is a CALLBACK (stdcall on i386, C elsewhere) TIMERPROC. ---
-#[cfg(target_arch = "x86")]
-extern "stdcall" {
-    fn SystemTimerProc(hwnd: HWND, uMsg: UINT, idEvent: UINT_PTR, dwTime: DWORD);
-}
-#[cfg(not(target_arch = "x86"))]
-extern "C" {
+extern "system" {
     fn SystemTimerProc(hwnd: HWND, uMsg: UINT, idEvent: UINT_PTR, dwTime: DWORD);
 }
 
@@ -2660,142 +2655,8 @@ unsafe fn is_mouse_message(message: UINT) -> BOOL {
         || (message >= WM_MBUTTONDOWN && message <= WM_MBUTTONDBLCLK)
         || (message >= WM_LBUTTONDOWN && message <= WM_RBUTTONDBLCLK)) as BOOL
 }
-#[cfg(target_arch = "x86")]
 #[no_mangle]
-pub unsafe extern "stdcall" fn co_MsqPeekHardwareMessage(
-    pti: PTHREADINFO,
-    mut Remove: BOOL,
-    Window: PWND,
-    MsgFilterLow: UINT,
-    MsgFilterHigh: UINT,
-    QSflags: UINT,
-    pMsg: *mut MSG,
-) -> BOOL {
-    let mut AcceptMessage: BOOL;
-    let mut NotForUs: BOOL;
-    let mut CurrentMessage: PUSER_MESSAGE;
-    let mut ListHead: PLIST_ENTRY;
-    let mut msg: MSG = core::mem::zeroed();
-    let mut idSave: ULONG_PTR;
-    let mut QS_Flags: DWORD;
-    let mut ExtraInfo: LONG_PTR;
-    let mut clk_msg: MSG;
-    let mut Ret: BOOL = 0;
-    let MessageQueue: PUSER_MESSAGE_QUEUE = (*pti).MessageQueue;
-
-    if filter_contains_hw_range(MsgFilterLow, MsgFilterHigh) == 0 {
-        return 0;
-    }
-
-    ListHead = (*MessageQueue).HardwareMessagesListHead.Flink;
-
-    if IsListEmpty(ListHead) != 0 {
-        return 0;
-    }
-
-    if (*MessageQueue).ptiSysLock.is_null() {
-        (*MessageQueue).ptiSysLock = pti;
-        (*(*pti).pcti).CTI_flags |= CTI_THREADSYSLOCK;
-    }
-
-    if (*MessageQueue).ptiSysLock != pti {
-        ERR!(
-            b"Thread Q is locked to ptiSysLock 0x%p pti 0x%p\n\0".as_ptr() as *const i8,
-            (*MessageQueue).ptiSysLock,
-            pti,
-        );
-        return 0;
-    }
-
-    while ListHead != core::ptr::addr_of_mut!((*MessageQueue).HardwareMessagesListHead) {
-        CurrentMessage = (ListHead as *mut u8)
-            .offset(-(core::mem::offset_of!(USER_MESSAGE, ListEntry) as isize))
-            as PUSER_MESSAGE;
-        ListHead = (*ListHead).Flink;
-
-        if (*MessageQueue).idSysPeek == CurrentMessage as ULONG_PTR {
-            TRACE!(b"Skip this message due to it is in play!\n\0".as_ptr() as *const i8);
-            continue;
-        }
-
-        if (Window.is_null()
-            || (Window == PWND_BOTTOM as PWND && (*CurrentMessage).Msg.hwnd.is_null())
-            || (Window != PWND_BOTTOM as PWND
-                && UserHMGetHandle(Window) == (*CurrentMessage).Msg.hwnd)
-            || (is_mouse_message((*CurrentMessage).Msg.message) != 0))
-            && ((*CurrentMessage).QS_Flags & QSflags) != 0
-        {
-            idSave = (*MessageQueue).idSysPeek;
-            (*MessageQueue).idSysPeek = CurrentMessage as ULONG_PTR;
-
-            msg = (*CurrentMessage).Msg;
-            ExtraInfo = (*CurrentMessage).ExtraInfo;
-            QS_Flags = (*CurrentMessage).QS_Flags;
-            clk_msg = (*MessageQueue).msgDblClk;
-
-            NotForUs = 0;
-
-            UpdateKeyStateFromMsg(MessageQueue, core::ptr::addr_of_mut!(msg));
-            AcceptMessage = co_IntProcessHardwareMessage(
-                core::ptr::addr_of_mut!(msg),
-                core::ptr::addr_of_mut!(Remove),
-                core::ptr::addr_of_mut!(NotForUs),
-                ExtraInfo,
-                MsgFilterLow,
-                MsgFilterHigh,
-            );
-
-            if NotForUs == 0 && (MsgFilterLow != 0 || MsgFilterHigh != 0) {
-                if msg.message < MsgFilterLow || msg.message > MsgFilterHigh {
-                    (*MessageQueue).msgDblClk = clk_msg;
-                    (*MessageQueue).idSysPeek = idSave;
-                    continue;
-                }
-            }
-
-            if Remove != 0 {
-                if !(*CurrentMessage).pti.is_null()
-                    && (*MessageQueue).idSysPeek == CurrentMessage as ULONG_PTR
-                {
-                    MsqDestroyMessage(CurrentMessage);
-                }
-                ClearMsgBitsMask(pti, QS_Flags);
-            }
-
-            (*MessageQueue).idSysPeek = idSave;
-
-            if NotForUs != 0 {
-                Ret = 0;
-                break;
-            }
-
-            if AcceptMessage != 0 {
-                core::ptr::write_volatile(pMsg, msg);
-                if RtlEqualMemory(
-                    core::ptr::addr_of!((*pti).ptLast) as *const core::ffi::c_void,
-                    core::ptr::addr_of!(msg.pt) as *const core::ffi::c_void,
-                    core::mem::size_of::<POINT>() as SIZE_T,
-                ) == 0
-                {
-                    (*pti).TIF_flags |= TIF_MSGPOSCHANGED;
-                }
-                (*pti).timeLast = msg.time as LONG;
-                (*pti).ptLast = msg.pt;
-                (*MessageQueue).ExtraInfo = ExtraInfo;
-                Ret = 1;
-                break;
-            }
-        }
-    }
-
-    (*MessageQueue).ptiSysLock = core::ptr::null_mut();
-    (*(*pti).pcti).CTI_flags &= !CTI_THREADSYSLOCK;
-    Ret
-}
-
-#[cfg(not(target_arch = "x86"))]
-#[no_mangle]
-pub unsafe extern "C" fn co_MsqPeekHardwareMessage(
+pub unsafe extern "system" fn co_MsqPeekHardwareMessage(
     pti: PTHREADINFO,
     mut Remove: BOOL,
     Window: PWND,
@@ -3537,23 +3398,8 @@ unsafe fn MsqReleaseModifierKeys_impl(MessageQueue: PUSER_MESSAGE_QUEUE) {
         }
     }
 }
-#[cfg(target_arch = "x86")]
 #[no_mangle]
-pub unsafe extern "stdcall" fn NtUserGetKeyState(key: INT) -> SHORT {
-    let Ret: DWORD;
-
-    UserEnterShared();
-
-    Ret = UserGetKeyState(key as DWORD);
-
-    UserLeave();
-
-    Ret as SHORT
-}
-
-#[cfg(not(target_arch = "x86"))]
-#[no_mangle]
-pub unsafe extern "C" fn NtUserGetKeyState(key: INT) -> SHORT {
+pub unsafe extern "system" fn NtUserGetKeyState(key: INT) -> SHORT {
     let Ret: DWORD;
 
     UserEnterShared();
@@ -3566,7 +3412,7 @@ pub unsafe extern "C" fn NtUserGetKeyState(key: INT) -> SHORT {
 }
 #[cfg(target_arch = "x86")]
 #[no_mangle]
-pub unsafe extern "stdcall" fn NtUserGetKeyboardState(lpKeyState: LPBYTE) -> DWORD {
+pub unsafe extern "system" fn NtUserGetKeyboardState(lpKeyState: LPBYTE) -> DWORD {
     let mut ret: DWORD = 1;
     let pti: PTHREADINFO;
     let MessageQueue: PUSER_MESSAGE_QUEUE;
@@ -3600,7 +3446,7 @@ pub unsafe extern "stdcall" fn NtUserGetKeyboardState(lpKeyState: LPBYTE) -> DWO
 
 #[cfg(not(target_arch = "x86"))]
 #[no_mangle]
-pub unsafe extern "C" fn NtUserGetKeyboardState(lpKeyState: LPBYTE) -> DWORD {
+pub unsafe extern "system" fn NtUserGetKeyboardState(lpKeyState: LPBYTE) -> DWORD {
     let mut ret: DWORD = 1;
     let pti: PTHREADINFO;
     let MessageQueue: PUSER_MESSAGE_QUEUE;
@@ -3611,7 +3457,7 @@ pub unsafe extern "C" fn NtUserGetKeyboardState(lpKeyState: LPBYTE) -> DWORD {
     pti = PsGetCurrentThreadWin32Thread() as PTHREADINFO;
     MessageQueue = (*pti).MessageQueue;
 
-    Status = SafeProbeForWrite(lpKeyState as *mut core::ffi::c_void, (256 * core::mem::size_of::<u8>()) as ULONG, 1);
+    Status = SafeProbeForWrite(lpKeyState as *mut core::ffi::c_void, (256 * core::mem::size_of::<u8>()) as _, 1);
     if !NT_SUCCESS(Status) {
         SetLastNtError(Status);
         ret = 0;
@@ -3633,7 +3479,7 @@ pub unsafe extern "C" fn NtUserGetKeyboardState(lpKeyState: LPBYTE) -> DWORD {
 }
 #[cfg(target_arch = "x86")]
 #[no_mangle]
-pub unsafe extern "stdcall" fn NtUserSetKeyboardState(pKeyState: LPBYTE) -> BOOL {
+pub unsafe extern "system" fn NtUserSetKeyboardState(pKeyState: LPBYTE) -> BOOL {
     let mut bRet: BOOL = 1;
     let pti: PTHREADINFO;
     let MessageQueue: PUSER_MESSAGE_QUEUE;
@@ -3672,7 +3518,7 @@ pub unsafe extern "stdcall" fn NtUserSetKeyboardState(pKeyState: LPBYTE) -> BOOL
 
 #[cfg(not(target_arch = "x86"))]
 #[no_mangle]
-pub unsafe extern "C" fn NtUserSetKeyboardState(pKeyState: LPBYTE) -> BOOL {
+pub unsafe extern "system" fn NtUserSetKeyboardState(pKeyState: LPBYTE) -> BOOL {
     let mut bRet: BOOL = 1;
     let pti: PTHREADINFO;
     let MessageQueue: PUSER_MESSAGE_QUEUE;
@@ -3683,7 +3529,7 @@ pub unsafe extern "C" fn NtUserSetKeyboardState(pKeyState: LPBYTE) -> BOOL {
     pti = PsGetCurrentThreadWin32Thread() as PTHREADINFO;
     MessageQueue = (*pti).MessageQueue;
 
-    Status = SafeProbeForRead(pKeyState as *mut core::ffi::c_void, (256 * core::mem::size_of::<u8>()) as ULONG, 1);
+    Status = SafeProbeForRead(pKeyState as *mut core::ffi::c_void, (256 * core::mem::size_of::<u8>()) as _, 1);
     if !NT_SUCCESS(Status) {
         SetLastNtError(Status);
         bRet = 0;

@@ -49,6 +49,11 @@ pub mod atl;
 
 // The C++ header inlines from shellutils.h / utils.h. They live in HEADERS, so no translated
 // TU carries their bodies, yet several TUs call them.
+/// `ui/layout.h`'s resizable-dialog inlines — see that module's header for why they are here.
+pub mod layout;
+/// `shfldr.h`'s header-inline `CRegKeyHandleArray` — one definition, because two
+/// independently re-derived copies both lost its destructor. See the module header.
+pub mod shfldr;
 pub mod shellutils;
 
 // Wave 4: canonical shared shell/COM types (PIDL on-disk format, STRRET, GUID family, COM
@@ -57,6 +62,11 @@ pub mod shellcom;
 pub mod active_desktop;
 pub mod admin_tools_folder;
 pub mod cfs_folder;
+// The rest of `folders/CFSFolder.cpp`: its free helper closure plus the bridges it published,
+// and its file-local enumerator. With these the whole TU leaves CMake — `cfs_folder` was only
+// ever the activated class half of it.
+pub mod cfs_folder_tu;
+pub mod file_sys_enum;
 pub mod control_panel_folder;
 pub mod copy_as_path_menu;
 pub mod copy_to_menu;
@@ -70,6 +80,11 @@ pub mod file_def_ext;
 #[path = "dialogs/view.rs"]
 pub mod dialogs_view;
 pub mod drop_target_helper;
+// Assembled at the C tree's path (droptargets/) by rustconv; keep that path stable for re-runs.
+#[path = "droptargets/CFSDropTarget.rs"]
+pub mod fs_drop_target;
+#[path = "droptargets/CRecyclerDropTarget.rs"]
+pub mod recycler_drop_target;
 pub mod exe_drop_handler;
 pub mod fonts_folder;
 pub mod folder_options;
@@ -139,6 +154,115 @@ pub mod systray;
 pub mod dialogs_general;
 #[path = "dialogs/recycler_prop.rs"]
 pub mod dialogs_recycler_prop;
+// The format-drive dialog. It is the TU that made the island grow a disk IOCTL surface — see
+// its module header, and `gen_driver_types.sh`'s shell32 cell for the two headers it added.
+#[path = "dialogs/drive.rs"]
+pub mod dialogs_drive;
+// Folder Options. Its one ATL `CWindowImpl<>` stays C++ in `rust_folder_options_stub.cpp`
+// behind a create/destroy bridge — the class NAME is what `FindWindow` keys on, so a second
+// implementation would split the already-open lookup rather than replace it.
+#[path = "dialogs/folder_options.rs"]
+pub mod dialogs_folder_options;
+// The filesystem property-sheet entry points. `ShellPropSheetDialog` is a C++ `struct` used as
+// a namespace — no vtable, no activation — so its four statics are hand-written free functions
+// here; see the module header.
+#[path = "dialogs/item_prop.rs"]
+pub mod dialogs_item_prop;
+
+// The shell's own dialogs: Run, Pick-Icon, Restart/Logoff/Exit-Windows.
+#[path = "dialogs/dialogs.rs"]
+pub mod dialogs_dialogs;
+
+// CDefViewDual — the IShellFolderViewDual automation object. Assembled at the C tree's path
+// (shell32/) so re-runs stay stable, but it is a COM class rather than one of that module's
+// free-function TUs, so it is wired here instead of from shell32/mod.rs.
+#[path = "shell32/CDefViewDual.rs"]
+pub mod def_view_dual;
+
+// CDefViewBckgrndMenu — the folder-background context menu. Same wiring rationale as
+// CDefViewDual above: assembled under shell32/ to keep the re-run path stable, wired here
+// because it is a COM class and not one of that module's free-function TUs.
+#[path = "shell32/CDefViewBckgrndMenu.rs"]
+pub mod def_view_bckgrnd_menu;
+
+// CDefaultContextMenu — the shell's default item context menu. Two rustconv runs, because
+// `--cpp-com --class` translates the class only and the TU also carries 22 free functions
+// (`DCMA_*`, `SHCreateDefaultContextMenu`, the `*_RustBridge` entry points). The support
+// module is HAND-WRITTEN — ports of the utils.h/shellutils.h inlines the TU calls, plus the
+// constants and externs outside the bindgen island's closure. It lives in its own file
+// because a re-run overwrites each generated half wholesale, so hand-written code parked
+// inside either of them is lost the next time the TU is re-assembled.
+// COpenWithMenu.cpp. The COM class itself is `open_with_menu` (landed earlier); these are
+// the retained C++ closure that kept the .cpp compiled — two PLAIN helper classes (no vtable,
+// no QI, no activation: `--cpp-com --class X --plain`) and the free/bridge TU. `SApp` is
+// hand-written because it is a POD nested inside COpenWithList and reached only by pointer.
+#[path = "shell32/copenwithmenu_support.rs"]
+pub mod open_with_menu_support;
+#[path = "shell32/COpenWithList.rs"]
+pub mod open_with_list;
+#[path = "shell32/COpenWithDialog.rs"]
+pub mod open_with_dialog;
+#[path = "shell32/COpenWithMenu_tu.rs"]
+pub mod open_with_menu_tu;
+
+#[path = "shell32/cdefaultcontextmenu_support.rs"]
+pub mod default_context_menu_support;
+#[path = "shell32/CDefaultContextMenu.rs"]
+pub mod default_context_menu;
+#[path = "shell32/CDefaultContextMenu_tu.rs"]
+pub mod default_context_menu_tu;
+
+// The rest of folders/CNetFolder.cpp. `net_folder` already owns the CNetFolder class itself;
+// these two are the retained closure that kept the .cpp compiled — its free helpers and
+// `*_RustBridge` entry points, and the CNetFolderEnum enumerator. Two files because one TU
+// needs two rustconv runs (--free-functions and --cpp-com) and each assembles its own output.
+#[path = "folders/CNetFolder.rs"]
+pub mod net_folder_tu;
+#[path = "folders/CNetFolderEnum.rs"]
+pub mod net_folder_enum;
+
+// The same peel for three more hybrids. In each case the activated class was already Rust and
+// what kept the `.cpp` compiled was its free helpers plus a file-local helper class, so the
+// slices come in pairs: the `--free-functions` assembly and one `--cpp-com --class` assembly
+// per class. The `.cpp` files stay in CMake until each pair compiles and its retained closure
+// is published from Rust.
+#[path = "dialogs/drvdefext_tu.rs"]
+pub mod drv_def_ext_tu;
+// filedefext.cpp needed no paired class slice: CFileDefExt and CFileVersionInfo were already
+// `dialogs/filedefext.rs`, and its whole retained closure is free-function `_RustBridge`
+// entries. SH_FormatByteSize_RustBridge moves here from the .cpp, which is why the two must
+// land together.
+#[path = "dialogs/filedefext_tu.rs"]
+pub mod file_def_ext_tu;
+// CDrivesFolder.cpp: the CDrivesFolder class itself was already `drives_folder.rs`; these are
+// its free helpers and the one file-local COM class (CDrivesFolderEnum, an internal
+// ShellObjectCreator object with no OBJECT_ENTRY — bought with `--cpp-com --internal`).
+#[path = "folders/CDrivesFolder.rs"]
+pub mod drives_folder_tu;
+#[path = "folders/CDrivesFolderEnum.rs"]
+pub mod drives_folder_enum;
+// folders/CRecycleBin.cpp: CRecycleBin itself was already `recycle_bin.rs`. These are its free
+// helpers plus BOTH of its file-local COM classes. The two companions that this TU only *calls*
+// — CRecyclerDropTarget and CRecycleBinFolderViewCB — stay C++; see
+// dll/win32/shell32/rust_recyclebin_bridges_stub.cpp for why neither could come across.
+pub mod def_view_util;
+#[path = "folders/CRecycleBin.rs"]
+pub mod recycle_bin_tu;
+#[path = "folders/CRecycleBinEnum.rs"]
+pub mod recycle_bin_enum;
+#[path = "folders/CRecycleBinItemContextMenu.rs"]
+pub mod recycle_bin_item_context_menu;
+#[path = "folders/CDesktopFolder.rs"]
+pub mod desktop_folder_tu;
+#[path = "folders/CDesktopFolderEnum.rs"]
+pub mod desktop_folder_enum;
+#[path = "folders/CControlPanelFolder.rs"]
+pub mod control_panel_folder_tu;
+#[path = "folders/CControlPanelEnum.rs"]
+pub mod control_panel_enum;
+#[path = "folders/CCPLItemMenu.rs"]
+pub mod cpl_item_menu;
+
 
 // Wave 5, the shell32/ directory — free-function TUs from the root of dll/win32/shell32.
 pub mod shell32;

@@ -1,0 +1,20 @@
+# win32macros-rust — the Win32 header macros bindgen cannot emit. See src/lib.rs for why.
+[package]
+name = "win32macros-rust"
+version = "0.1.0"
+edition = "2021"
+autobins = false
+autoexamples = false
+autotests = false
+autobenches = false
+
+[lib]
+# rlib: consumers are staticlib crates that pull this in as a path dependency, the same shape
+# as strsafe-rust. Nothing here emits a symbol — it is all macros and consts — so the rlib
+# contributes no code to the consumer's `.a` beyond what the call sites inline.
+crate-type = ["rlib"]
+
+# No dependencies ON PURPOSE. The type basis is core primitives (see the module docs): a
+# consumer's WORD/BYTE/COLORREF are transparent aliases for u16/u8/u32 in every island in the
+# tree, which is what lets one crate be shared by consumers with twelve different islands.
+[dependencies]

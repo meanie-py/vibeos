@@ -2,9 +2,6 @@ FLAT-DIVERGENT: ntdll NtAcceptConnectPort(ClientView) WIDENING -> struct _REMOTE
 FLAT-DIVERGENT: ntdll NtAcceptConnectPort(ConnectionRequest) SEMANTIC -> struct _PORT_MESSAGE: union/bitfield with divergent layout
 FLAT-DIVERGENT: ntdll NtAcceptConnectPort(PortHandle) SCALAR_WIDEN -> HANDLE: 4->8 scalar pointee
 FLAT-DIVERGENT: ntdll NtAcceptConnectPort(ServerView) WIDENING -> struct _PORT_VIEW
-FLAT-DIVERGENT: ntdll NtAccessCheckAndAuditAlarm(ObjectName) WIDENING -> struct _UNICODE_STRING
-FLAT-DIVERGENT: ntdll NtAccessCheckAndAuditAlarm(ObjectTypeName) WIDENING -> struct _UNICODE_STRING
-FLAT-DIVERGENT: ntdll NtAccessCheckAndAuditAlarm(SubsystemName) WIDENING -> struct _UNICODE_STRING
 FLAT-DIVERGENT: ntdll NtAccessCheckByType(ObjectTypeList) WIDENING -> struct _OBJECT_TYPE_LIST
 FLAT-DIVERGENT: ntdll NtAccessCheckByTypeResultList(ObjectTypeList) WIDENING -> struct _OBJECT_TYPE_LIST
 FLAT-DIVERGENT: ntdll NtAdjustGroupsToken(NewState) SEMANTIC -> struct _TOKEN_GROUPS: field Groups (8->16): array of divergent SID_AND_ATTRIBUTES
@@ -12,10 +9,8 @@ FLAT-DIVERGENT: ntdll NtAdjustGroupsToken(PreviousState) SEMANTIC -> struct _TOK
 FLAT-DIVERGENT: ntdll NtAllocateUserPhysicalPages(NumberOfPages) SCALAR_WIDEN -> ULONG_PTR: 4->8 scalar pointee
 FLAT-DIVERGENT: ntdll NtAllocateUserPhysicalPages(UserPfnArray) SCALAR_WIDEN -> ULONG_PTR: 4->8 scalar pointee
 FLAT-DIVERGENT: ntdll NtApphelpCacheControl(ServiceData) WIDENING -> struct _APPHELP_CACHE_SERVICE_LOOKUP
-FLAT-DIVERGENT: ntdll NtCloseObjectAuditAlarm(SubsystemName) WIDENING -> struct _UNICODE_STRING
 FLAT-DIVERGENT: ntdll NtCompactKeys(KeyArray) SCALAR_WIDEN -> HANDLE: 4->8 scalar pointee
 FLAT-DIVERGENT: ntdll NtCreateJobSet(UserJobSet) WIDENING -> struct _JOB_SET_ARRAY
-FLAT-DIVERGENT: ntdll NtCreatePagingFile(FileName) WIDENING -> struct _UNICODE_STRING
 FLAT-DIVERGENT: ntdll NtCreateToken(ObjectAttributes) WIDENING -> struct _OBJECT_ATTRIBUTES
 FLAT-DIVERGENT: ntdll NtCreateToken(TokenDefaultDacl) WIDENING -> struct _TOKEN_DEFAULT_DACL
 FLAT-DIVERGENT: ntdll NtCreateToken(TokenGroups) SEMANTIC -> struct _TOKEN_GROUPS: field Groups (8->16): array of divergent SID_AND_ATTRIBUTES
@@ -24,10 +19,6 @@ FLAT-DIVERGENT: ntdll NtCreateToken(TokenOwner) WIDENING -> struct _TOKEN_OWNER
 FLAT-DIVERGENT: ntdll NtCreateToken(TokenPrimaryGroup) WIDENING -> struct _TOKEN_PRIMARY_GROUP
 FLAT-DIVERGENT: ntdll NtCreateToken(TokenUser) WIDENING -> struct _TOKEN_USER
 FLAT-DIVERGENT: ntdll NtDebugContinue(AppClientId) WIDENING -> struct _CLIENT_ID
-FLAT-DIVERGENT: ntdll NtDeleteFile(ObjectAttributes) WIDENING -> struct _OBJECT_ATTRIBUTES
-FLAT-DIVERGENT: ntdll NtDeleteObjectAuditAlarm(SubsystemName) WIDENING -> struct _UNICODE_STRING
-FLAT-DIVERGENT: ntdll NtDeleteValueKey(ValueName) WIDENING -> struct _UNICODE_STRING
-FLAT-DIVERGENT: ntdll NtDisplayString(DisplayString) WIDENING -> struct _UNICODE_STRING
 FLAT-DIVERGENT: ntdll NtFilterToken(NewTokenHandle) SCALAR_WIDEN -> HANDLE: 4->8 scalar pointee
 FLAT-DIVERGENT: ntdll NtFilterToken(RestrictedSids) SEMANTIC -> struct _TOKEN_GROUPS: field Groups (8->16): array of divergent SID_AND_ATTRIBUTES
 FLAT-DIVERGENT: ntdll NtFilterToken(SidsToDisable) SEMANTIC -> struct _TOKEN_GROUPS: field Groups (8->16): array of divergent SID_AND_ATTRIBUTES
@@ -38,32 +29,12 @@ FLAT-DIVERGENT: ntdll NtGetWriteWatch(EntriesInUserAddressArray) SCALAR_WIDEN ->
 FLAT-DIVERGENT: ntdll NtGetWriteWatch(UserAddressArray) SCALAR_WIDEN -> PVOID: 4->8 scalar pointee
 FLAT-DIVERGENT: ntdll NtImpersonateClientOfPort(ClientMessage) SEMANTIC -> struct _PORT_MESSAGE: union/bitfield with divergent layout
 FLAT-DIVERGENT: ntdll NtListenPort(ConnectionRequest) SEMANTIC -> struct _PORT_MESSAGE: union/bitfield with divergent layout
-FLAT-DIVERGENT: ntdll NtLoadDriver(DriverServiceName) WIDENING -> struct _UNICODE_STRING
-FLAT-DIVERGENT: ntdll NtLoadKey(FileObjectAttributes) WIDENING -> struct _OBJECT_ATTRIBUTES
-FLAT-DIVERGENT: ntdll NtLoadKey(KeyObjectAttributes) WIDENING -> struct _OBJECT_ATTRIBUTES
-FLAT-DIVERGENT: ntdll NtLoadKey2(FileObjectAttributes) WIDENING -> struct _OBJECT_ATTRIBUTES
-FLAT-DIVERGENT: ntdll NtLoadKey2(KeyObjectAttributes) WIDENING -> struct _OBJECT_ATTRIBUTES
-FLAT-DIVERGENT: ntdll NtLoadKeyEx(SourceFile) WIDENING -> struct _OBJECT_ATTRIBUTES
-FLAT-DIVERGENT: ntdll NtLoadKeyEx(TargetKey) WIDENING -> struct _OBJECT_ATTRIBUTES
 FLAT-DIVERGENT: ntdll NtMapUserPhysicalPages(UserPfnArray) SCALAR_WIDEN -> ULONG_PTR: 4->8 scalar pointee
 FLAT-DIVERGENT: ntdll NtMapUserPhysicalPagesScatter(UserPfnArray) SCALAR_WIDEN -> ULONG_PTR: 4->8 scalar pointee
 FLAT-DIVERGENT: ntdll NtMapUserPhysicalPagesScatter(VirtualAddresses) SCALAR_WIDEN -> PVOID: 4->8 scalar pointee
-FLAT-DIVERGENT: ntdll NtOpenObjectAuditAlarm(ObjectName) WIDENING -> struct _UNICODE_STRING
-FLAT-DIVERGENT: ntdll NtOpenObjectAuditAlarm(ObjectTypeName) WIDENING -> struct _UNICODE_STRING
-FLAT-DIVERGENT: ntdll NtOpenObjectAuditAlarm(SubsystemName) WIDENING -> struct _UNICODE_STRING
-FLAT-DIVERGENT: ntdll NtPrivilegeObjectAuditAlarm(SubsystemName) WIDENING -> struct _UNICODE_STRING
-FLAT-DIVERGENT: ntdll NtPrivilegedServiceAuditAlarm(ServiceName) WIDENING -> struct _UNICODE_STRING
-FLAT-DIVERGENT: ntdll NtPrivilegedServiceAuditAlarm(SubsystemName) WIDENING -> struct _UNICODE_STRING
 FLAT-DIVERGENT: ntdll NtQueryMultipleValueKey(ValueEntries) WIDENING -> struct _KEY_VALUE_ENTRY
-FLAT-DIVERGENT: ntdll NtQueryOpenSubKeys(TargetKey) WIDENING -> struct _OBJECT_ATTRIBUTES
-FLAT-DIVERGENT: ntdll NtQueryOpenSubKeysEx(TargetKey) WIDENING -> struct _OBJECT_ATTRIBUTES
-FLAT-DIVERGENT: ntdll NtQuerySystemEnvironmentValue(Name) WIDENING -> struct _UNICODE_STRING
-FLAT-DIVERGENT: ntdll NtQuerySystemEnvironmentValueEx(VariableName) WIDENING -> struct _UNICODE_STRING
 FLAT-DIVERGENT: ntdll NtRaiseHardError(Parameters) SCALAR_WIDEN -> ULONG_PTR: 4->8 scalar pointee
 FLAT-DIVERGENT: ntdll NtReadRequestData(Message) SEMANTIC -> struct _PORT_MESSAGE: union/bitfield with divergent layout
-FLAT-DIVERGENT: ntdll NtRenameKey(NewName) WIDENING -> struct _UNICODE_STRING
-FLAT-DIVERGENT: ntdll NtReplaceKey(ObjectAttributes) WIDENING -> struct _OBJECT_ATTRIBUTES
-FLAT-DIVERGENT: ntdll NtReplaceKey(ReplacedObjectAttributes) WIDENING -> struct _OBJECT_ATTRIBUTES
 FLAT-DIVERGENT: ntdll NtReplyPort(LpcReply) SEMANTIC -> struct _PORT_MESSAGE: union/bitfield with divergent layout
 FLAT-DIVERGENT: ntdll NtReplyWaitReceivePort(PortContext) SCALAR_WIDEN -> PVOID: 4->8 scalar pointee
 FLAT-DIVERGENT: ntdll NtReplyWaitReceivePort(ReceiveMessage) SEMANTIC -> struct _PORT_MESSAGE: union/bitfield with divergent layout
@@ -75,14 +46,6 @@ FLAT-DIVERGENT: ntdll NtReplyWaitReplyPort(ReplyMessage) SEMANTIC -> struct _POR
 FLAT-DIVERGENT: ntdll NtRequestPort(LpcMessage) SEMANTIC -> struct _PORT_MESSAGE: union/bitfield with divergent layout
 FLAT-DIVERGENT: ntdll NtRequestWaitReplyPort(LpcReply) SEMANTIC -> struct _PORT_MESSAGE: union/bitfield with divergent layout
 FLAT-DIVERGENT: ntdll NtRequestWaitReplyPort(LpcRequest) SEMANTIC -> struct _PORT_MESSAGE: union/bitfield with divergent layout
-FLAT-DIVERGENT: ntdll NtSetSystemEnvironmentValue(Value) WIDENING -> struct _UNICODE_STRING
-FLAT-DIVERGENT: ntdll NtSetSystemEnvironmentValue(VariableName) WIDENING -> struct _UNICODE_STRING
-FLAT-DIVERGENT: ntdll NtSetSystemEnvironmentValueEx(VariableName) WIDENING -> struct _UNICODE_STRING
-FLAT-DIVERGENT: ntdll NtSetValueKey(ValueName) WIDENING -> struct _UNICODE_STRING
-FLAT-DIVERGENT: ntdll NtUnloadDriver(DriverServiceName) WIDENING -> struct _UNICODE_STRING
-FLAT-DIVERGENT: ntdll NtUnloadKey(KeyObjectAttributes) WIDENING -> struct _OBJECT_ATTRIBUTES
-FLAT-DIVERGENT: ntdll NtUnloadKey2(TargetKey) WIDENING -> struct _OBJECT_ATTRIBUTES
-FLAT-DIVERGENT: ntdll NtUnloadKeyEx(TargetKey) WIDENING -> struct _OBJECT_ATTRIBUTES
 FLAT-DIVERGENT: ntdll NtWaitForDebugEvent(StateChange) SEMANTIC -> struct _DBGUI_WAIT_STATE_CHANGE: union/bitfield with divergent layout
 FLAT-DIVERGENT: ntdll NtWriteRequestData(Message) SEMANTIC -> struct _PORT_MESSAGE: union/bitfield with divergent layout
 FLAT-DIVERGENT: win32k NtGdiBRUSHOBJ_DeleteRbrush(pbo) WIDENING -> struct _BRUSHOBJ
@@ -227,9 +190,6 @@ FLAT-DIVERGENT: win32k NtGdiXLATEOBJ_hGetColorTransform(pxlo) WIDENING -> struct
 FLAT-DIVERGENT: win32k NtGdiXLATEOBJ_iXlate(pxlo) WIDENING -> struct _XLATEOBJ
 FLAT-DIVERGENT: win32k NtUserBuildHimcList(phList) SCALAR_WIDEN -> HIMC: 4->8 scalar pointee
 FLAT-DIVERGENT: win32k NtUserGetClipboardData(pgcd) SEMANTIC -> struct tagGETCLIPBDATA: union/bitfield with divergent layout
-FLAT-DIVERGENT: win32k NtUserGetComboBoxInfo(pcbi) WIDENING -> struct tagCOMBOBOXINFO
-FLAT-DIVERGENT: win32k NtUserGetCursorInfo(pci) WIDENING -> struct tagCURSORINFO
-FLAT-DIVERGENT: win32k NtUserGetGUIThreadInfo(lpgui) WIDENING -> struct tagGUITHREADINFO
 FLAT-DIVERGENT: win32k NtUserGetImeHotKey(lphKL) SCALAR_WIDEN -> HKL: 4->8 scalar pointee
 FLAT-DIVERGENT: win32k NtUserGetImeInfoEx(pImeInfoEx) SEMANTIC -> struct tagIMEINFOEX: union/bitfield with divergent layout
 FLAT-DIVERGENT: win32k NtUserGetKeyboardLayoutList(pHklBuff) SCALAR_WIDEN -> HKL: 4->8 scalar pointee
@@ -240,7 +200,4 @@ FLAT-DIVERGENT: win32k NtUserGetRawInputBuffer(pData) SEMANTIC -> struct tagRAWI
 FLAT-DIVERGENT: win32k NtUserGetRawInputDeviceList(pRawInputDeviceList) WIDENING -> struct tagRAWINPUTDEVICELIST
 FLAT-DIVERGENT: win32k NtUserGetRegisteredRawInputDevices(pRawInputDevices) WIDENING -> struct tagRAWINPUTDEVICE
 FLAT-DIVERGENT: win32k NtUserRegisterRawInputDevices(pRawInputDevices) WIDENING -> struct tagRAWINPUTDEVICE
-FLAT-DIVERGENT: win32k NtUserSendInput(pInput) SEMANTIC -> struct tagINPUT: union/bitfield with divergent layout
 FLAT-DIVERGENT: win32k NtUserSetImeInfoEx(pImeInfoEx) SEMANTIC -> struct tagIMEINFOEX: union/bitfield with divergent layout
-FLAT-DIVERGENT: win32k NtUserThunkedMenuInfo(lpcmi) WIDENING -> struct tagMENUINFO
-FLAT-DIVERGENT: win32k NtUserTrackMouseEvent(lpEventTrack) WIDENING -> struct tagTRACKMOUSEEVENT

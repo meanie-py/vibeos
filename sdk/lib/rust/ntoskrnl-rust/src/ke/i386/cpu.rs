@@ -963,9 +963,26 @@ pub unsafe extern "fastcall" fn Ki386InitializeTss(
 pub unsafe extern "system" fn KeFlushCurrentTb() {
     #[cfg(target_arch = "x86")]
     {
+        // Global (PGE) TLB entries survive a plain CR3 reload, so when global
+        // pages are on the C clears CR4.PGE around the flush and restores it.
+        // The translation kept only the CR3 reload, silently under-flushing on
+        // every CPU with PGE enabled — and patpge.rs does enable it. Same shape
+        // as hal-rust's HalpFlushTLB. (amd64's C really is CR3-only; this
+        // branch is i386's alone, which is why only this copy drifted.)
         let cr3: ULONG;
-        core::arch::asm!("mov {}, cr3", out(reg) cr3, options(nostack, preserves_flags));
-        core::arch::asm!("mov cr3, {}", in(reg) cr3, options(nostack, preserves_flags));
+        if KeFeatureBits & KF_GLOBAL_PAGE != 0 {
+            let cr4: ULONG;
+            core::arch::asm!("mov {}, cr4", out(reg) cr4, options(nostack, preserves_flags));
+            core::arch::asm!("mov cr4, {}", in(reg) cr4 & !CR4_PGE, options(nostack, preserves_flags));
+
+            core::arch::asm!("mov {}, cr3", out(reg) cr3, options(nostack, preserves_flags));
+            core::arch::asm!("mov cr3, {}", in(reg) cr3, options(nostack, preserves_flags));
+
+            core::arch::asm!("mov cr4, {}", in(reg) cr4, options(nostack, preserves_flags));
+        } else {
+            core::arch::asm!("mov {}, cr3", out(reg) cr3, options(nostack, preserves_flags));
+            core::arch::asm!("mov cr3, {}", in(reg) cr3, options(nostack, preserves_flags));
+        }
     }
     #[cfg(target_arch = "x86_64")]
     {
@@ -1794,7 +1811,7 @@ pub unsafe extern "system" fn KeGetRecommendedSharedDataAlignment() -> ULONG {
 // (bindgen spells it "stdcall", which rustc type-distinguishes from "system")
 // when handed to KiIpiSendPacket under smp. i386-only file, so bare stdcall
 // is fine.
-unsafe extern "stdcall" fn KiFlushTargetEntireTb(
+unsafe extern "system" fn KiFlushTargetEntireTb(
     PacketContext: PKIPI_CONTEXT,
     _Ignored1: PVOID,
     _Ignored2: PVOID,
@@ -1811,7 +1828,7 @@ unsafe extern "stdcall" fn KiFlushTargetEntireTb(
 // 0xE1 ISR, and the interrupted code cannot touch the stale mapping again
 // until the ISR returns, by which point the entry is gone.
 #[cfg(feature = "smp")]
-unsafe extern "stdcall" fn KiFlushTargetSingleTb(
+unsafe extern "system" fn KiFlushTargetSingleTb(
     PacketContext: PKIPI_CONTEXT,
     _Ignored1: PVOID,
     Virtual: PVOID,

@@ -106,13 +106,33 @@ pub static mut FatTotalTicks: [u32; 32] = [0; 32];
 #[cfg(feature = "FASTFATDBG")]
 pub static mut FatNull: *mut core::ffi::c_void = core::ptr::null_mut();
 
-#[cfg(debug_assertions)]
+// fatdata.c's `#if DBG` globals. Two things were wrong with the translation and
+// together they made i386 unlinkable (`undefined symbol:
+// _FatBreakOnInterestingIoCompletion`):
+//
+//  1. `#[cfg(debug_assertions)]` — which cargo's release profile never sets, so
+//     these did not exist in ANY shipped configuration, while deviosup.rs
+//     declares and reads `FatBreakOnInterestingIoCompletion` unconditionally
+//     (:76 / :1811). The C has both sides under `#if DBG` and is compiled with
+//     -DDBG=1, so in the C they are both present; gating only the definition
+//     reproduced neither arrangement.
+//  2. No `#[no_mangle]` — so even when the cfg WAS satisfied they exported a
+//     mangled Rust symbol and the C-shaped `extern` reference still could not
+//     find them. That is why enabling debug-assertions workspace-wide did not
+//     make the link error go away.
+//
+// Unconditional + #[no_mangle] matches the C's effective build, and is inert:
+// the check is `!(NT_SUCCESS(FatBreakOnInterestingIoCompletion) || ...)`, and
+// with the default STATUS_SUCCESS the NT_SUCCESS arm is true, so it never
+// breaks. fatdata.c is cohab-dead (CMakeLists.txt:54), so there is no C
+// definition to collide with.
+#[no_mangle]
 pub static mut FatTestRaisedStatus: u8 = 0;
-#[cfg(debug_assertions)]
+#[no_mangle]
 pub static mut FatBreakOnInterestingIoCompletion: NTSTATUS = STATUS_SUCCESS;
-#[cfg(debug_assertions)]
+#[no_mangle]
 pub static mut FatBreakOnInterestingExceptionStatus: NTSTATUS = 0;
-#[cfg(debug_assertions)]
+#[no_mangle]
 pub static mut FatBreakOnInterestingIrpCompletion: NTSTATUS = 0;
 
 // Forward declare unknown functions

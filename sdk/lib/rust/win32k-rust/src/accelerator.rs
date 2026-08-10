@@ -10,8 +10,8 @@ use core::ffi::c_void;
 
 // SafeProbeForRead/Write are NTAPI (stdcall i386, `_Safe...@12`).
 extern "system" {
-    fn SafeProbeForRead(addr: *mut c_void, len: ULONG, align: ULONG) -> NTSTATUS;
-    fn SafeProbeForWrite(addr: *mut c_void, len: ULONG, align: ULONG) -> NTSTATUS;
+    fn SafeProbeForRead(addr: *mut c_void, len: SIZE_T, align: ULONG) -> NTSTATUS;
+    fn SafeProbeForWrite(addr: *mut c_void, len: SIZE_T, align: ULONG) -> NTSTATUS;
 }
 // FASTCALL win32k exports.
 #[cfg(target_arch = "x86")]
@@ -211,9 +211,8 @@ unsafe fn co_IntTranslateAccelerator(
     1
 }
 }
-#[cfg(target_arch = "x86")]
 #[no_mangle]
-pub unsafe extern "stdcall" fn NtUserCopyAcceleratorTable(
+pub unsafe extern "system" fn NtUserCopyAcceleratorTable(
     hAccel: HACCEL,
     Entries: LPACCEL,
     mut EntriesCount: ULONG,
@@ -263,152 +262,8 @@ pub unsafe extern "stdcall" fn NtUserCopyAcceleratorTable(
     UserLeave();
     Ret
 }
-
-#[cfg(not(target_arch = "x86"))]
 #[no_mangle]
-pub unsafe extern "C" fn NtUserCopyAcceleratorTable(
-    hAccel: HACCEL,
-    Entries: LPACCEL,
-    mut EntriesCount: ULONG,
-) -> ULONG {
-    let Accel: PACCELERATOR_TABLE;
-    let mut Ret: ULONG = 0;
-    let Status: NTSTATUS;
-
-    UserEnterShared();
-
-    'exit: {
-        Accel = UserGetAccelObject(hAccel);
-        if Accel.is_null() {
-            break 'exit;
-        }
-
-        /* If Entries is NULL return table size */
-        if Entries.is_null() {
-            Ret = (*Accel).Count as ULONG;
-            break 'exit;
-        }
-
-        /* Don't overrun */
-        if ((*Accel).Count as ULONG) < EntriesCount {
-            EntriesCount = (*Accel).Count as ULONG;
-        }
-
-        Status = SafeProbeForWrite(
-            Entries as *mut _,
-            (EntriesCount as usize * core::mem::size_of::<ACCEL>()) as _,
-            4,
-        );
-        if !NT_SUCCESS(Status) {
-            SetLastNtError(Status);
-            Ret = 0;
-        } else {
-            Ret = 0;
-            while Ret < EntriesCount {
-                (*Entries.add(Ret as usize)).fVirt = (*(*Accel).Table.add(Ret as usize)).fVirt;
-                (*Entries.add(Ret as usize)).key = (*(*Accel).Table.add(Ret as usize)).key;
-                (*Entries.add(Ret as usize)).cmd = (*(*Accel).Table.add(Ret as usize)).cmd;
-                Ret += 1;
-            }
-        }
-    }
-
-    UserLeave();
-    Ret
-}
-#[cfg(target_arch = "x86")]
-#[no_mangle]
-pub unsafe extern "stdcall" fn NtUserCreateAcceleratorTable(
-    Entries: LPACCEL,
-    EntriesCount: ULONG,
-) -> HACCEL {
-    let mut Accel: PACCELERATOR_TABLE;
-    let mut hAccel: HACCEL = core::ptr::null_mut();
-    let mut Index: ULONG;
-    let mut Status: NTSTATUS = STATUS_SUCCESS as NTSTATUS;
-    let mut Ret: HACCEL = core::ptr::null_mut();
-    let pti: PTHREADINFO;
-
-    UserEnterExclusive();
-
-    'exit: {
-        if Entries.is_null() || EntriesCount == 0 {
-            SetLastNtError(STATUS_INVALID_PARAMETER);
-            break 'exit;
-        }
-
-        pti = PsGetCurrentThreadWin32Thread() as PTHREADINFO;
-
-        Accel = UserCreateObject(
-            gHandleTable,
-            (*pti).rpdesk,
-            pti as *mut _,
-            &mut hAccel as *mut HACCEL as PHANDLE,
-            TYPE_ACCELTABLE,
-            core::mem::size_of::<ACCELERATOR_TABLE>() as _,
-        ) as PACCELERATOR_TABLE;
-
-        if Accel.is_null() {
-            SetLastNtError(STATUS_NO_MEMORY);
-            break 'exit;
-        }
-
-        (*Accel).Count = EntriesCount;
-        (*Accel).Table = ExAllocatePoolWithTag(
-            PagedPool,
-            (EntriesCount as usize * core::mem::size_of::<ACCEL>()) as _,
-            USERTAG_ACCEL,
-        ) as *mut ACCEL;
-        if (*Accel).Table.is_null() {
-            UserDereferenceObject(Accel as *mut _);
-            UserDeleteObject(hAccel as HANDLE, TYPE_ACCELTABLE);
-            SetLastNtError(STATUS_NO_MEMORY);
-            break 'exit;
-        }
-
-        Index = 0;
-        while Index < EntriesCount {
-            (*(*Accel).Table.add(Index as usize)).fVirt =
-                (*Entries.add(Index as usize)).fVirt & FVIRT_MASK as u8;
-            if (*(*Accel).Table.add(Index as usize)).fVirt & FVIRTKEY as u8 != 0 {
-                (*(*Accel).Table.add(Index as usize)).key =
-                    (*Entries.add(Index as usize)).key;
-            } else {
-                RtlMultiByteToUnicodeN(
-                    core::ptr::addr_of_mut!((*(*Accel).Table.add(Index as usize)).key),
-                    core::mem::size_of::<u16>() as _,
-                    core::ptr::null_mut(),
-                    core::ptr::addr_of!((*Entries.add(Index as usize)).key) as PCSTR,
-                    core::mem::size_of::<i8>() as _,
-                );
-            }
-
-            (*(*Accel).Table.add(Index as usize)).cmd =
-                (*Entries.add(Index as usize)).cmd;
-
-            Index += 1;
-        }
-
-        if !NT_SUCCESS(Status) {
-            ExFreePoolWithTag((*Accel).Table as *mut _, USERTAG_ACCEL);
-            UserDereferenceObject(Accel as *mut _);
-            UserDeleteObject(hAccel as HANDLE, TYPE_ACCELTABLE);
-            SetLastNtError(Status);
-            break 'exit;
-        }
-
-        UserDereferenceObject(Accel as *mut _);
-
-        Ret = hAccel;
-    }
-
-    UserLeave();
-    Ret
-}
-
-#[cfg(not(target_arch = "x86"))]
-#[no_mangle]
-pub unsafe extern "C" fn NtUserCreateAcceleratorTable(
+pub unsafe extern "system" fn NtUserCreateAcceleratorTable(
     Entries: LPACCEL,
     EntriesCount: ULONG,
 ) -> HACCEL {
@@ -508,26 +363,8 @@ pub unsafe extern "C" fn UserDestroyAccelTable(Object: PVOID) -> BOOLEAN {
     UserDeleteObject(hm_get_handle(Accel), TYPE_ACCELTABLE);
     1u8
 }
-#[cfg(target_arch = "x86")]
 #[no_mangle]
-pub unsafe extern "stdcall" fn NtUserDestroyAcceleratorTable(hAccel: HACCEL) -> BOOLEAN {
-    let Accel: PACCELERATOR_TABLE;
-    let mut Ret: BOOLEAN = 0u8;
-
-    UserEnterExclusive();
-
-    Accel = UserGetAccelObject(hAccel);
-    if !Accel.is_null() {
-        Ret = UserDestroyAccelTable(Accel as PVOID);
-    }
-
-    UserLeave();
-    Ret
-}
-
-#[cfg(not(target_arch = "x86"))]
-#[no_mangle]
-pub unsafe extern "C" fn NtUserDestroyAcceleratorTable(hAccel: HACCEL) -> BOOLEAN {
+pub unsafe extern "system" fn NtUserDestroyAcceleratorTable(hAccel: HACCEL) -> BOOLEAN {
     let Accel: PACCELERATOR_TABLE;
     let mut Ret: BOOLEAN = 0u8;
 
@@ -543,7 +380,7 @@ pub unsafe extern "C" fn NtUserDestroyAcceleratorTable(hAccel: HACCEL) -> BOOLEA
 }
 #[cfg(target_arch = "x86")]
 #[no_mangle]
-pub unsafe extern "stdcall" fn NtUserTranslateAccelerator(
+pub unsafe extern "system" fn NtUserTranslateAccelerator(
     hWnd: HWND,
     hAccel: HACCEL,
     pUnsafeMessage: LPMSG,
@@ -635,7 +472,7 @@ pub unsafe extern "stdcall" fn NtUserTranslateAccelerator(
 
 #[cfg(not(target_arch = "x86"))]
 #[no_mangle]
-pub unsafe extern "C" fn NtUserTranslateAccelerator(
+pub unsafe extern "system" fn NtUserTranslateAccelerator(
     hWnd: HWND,
     hAccel: HACCEL,
     pUnsafeMessage: LPMSG,
@@ -658,7 +495,7 @@ pub unsafe extern "C" fn NtUserTranslateAccelerator(
         {
             let __SehStatus = SafeProbeForRead(
                 pUnsafeMessage as *mut core::ffi::c_void,
-                core::mem::size_of::<MSG>() as ULONG,
+                core::mem::size_of::<MSG>() as _,
                 4,
             );
             if !NT_SUCCESS(__SehStatus) {

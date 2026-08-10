@@ -353,18 +353,7 @@ unsafe fn UlongToPtr(u: ULONG) -> PVOID {
     u as usize as PVOID
 }
 
-#[cfg(not(target_arch = "x86"))]
-unsafe extern "C" fn IopFreeIrpKernelApc(
-    Apc: PKAPC,
-    _NormalRoutine: *mut PKNORMAL_ROUTINE,
-    _NormalContext: *mut PVOID,
-    _SystemArgument1: *mut PVOID,
-    _SystemArgument2: *mut PVOID,
-) {
-    IoFreeIrp(IRP_FROM_APC(Apc));
-}
-#[cfg(target_arch = "x86")]
-unsafe extern "stdcall" fn IopFreeIrpKernelApc(
+unsafe extern "system" fn IopFreeIrpKernelApc(
     Apc: PKAPC,
     _NormalRoutine: *mut PKNORMAL_ROUTINE,
     _NormalContext: *mut PVOID,
@@ -374,12 +363,7 @@ unsafe extern "stdcall" fn IopFreeIrpKernelApc(
     IoFreeIrp(IRP_FROM_APC(Apc));
 }
 
-#[cfg(not(target_arch = "x86"))]
-unsafe extern "C" fn IopAbortIrpKernelApc(Apc: PKAPC) {
-    IoFreeIrp(IRP_FROM_APC(Apc));
-}
-#[cfg(target_arch = "x86")]
-unsafe extern "stdcall" fn IopAbortIrpKernelApc(Apc: PKAPC) {
+unsafe extern "system" fn IopAbortIrpKernelApc(Apc: PKAPC) {
     IoFreeIrp(IRP_FROM_APC(Apc));
 }
 
@@ -531,23 +515,7 @@ pub unsafe extern "system" fn IopCleanupIrp(Irp: PIRP, FileObject: PFILE_OBJECT)
 }
 
 #[no_mangle]
-#[cfg(not(target_arch = "x86"))]
-pub unsafe extern "C" fn IopCompleteRequest(
-    Apc: PKAPC,
-    _NormalRoutine: *mut PKNORMAL_ROUTINE,
-    _NormalContext: *mut PVOID,
-    SystemArgument1: *mut PVOID,
-    SystemArgument2: *mut PVOID,
-) {
-    let _NormalRoutine = opaque_ptr(_NormalRoutine);
-    let _NormalContext = opaque_ptr(_NormalContext);
-    let SystemArgument1 = opaque_ptr(SystemArgument1);
-    let SystemArgument2 = opaque_ptr(SystemArgument2);
-    IopCompleteRequestInner(Apc, _NormalRoutine, _NormalContext, SystemArgument1, SystemArgument2);
-}
-#[no_mangle]
-#[cfg(target_arch = "x86")]
-pub unsafe extern "stdcall" fn IopCompleteRequest(
+pub unsafe extern "system" fn IopCompleteRequest(
     Apc: PKAPC,
     _NormalRoutine: *mut PKNORMAL_ROUTINE,
     _NormalContext: *mut PVOID,
@@ -1468,19 +1436,7 @@ unsafe fn IofCompleteRequestInner(Irp: PIRP, PriorityBoost: CCHAR) {
     }
 }
 
-#[cfg(not(target_arch = "x86"))]
-unsafe extern "C" fn IopSynchronousCompletion(
-    _DeviceObject: PDEVICE_OBJECT,
-    Irp: PIRP,
-    Context: PVOID,
-) -> NTSTATUS {
-    if (*Irp).PendingReturned != 0 {
-        KeSetEvent(Context as PVOID, IO_NO_INCREMENT, 0u8);
-    }
-    STATUS_MORE_PROCESSING_REQUIRED
-}
-#[cfg(target_arch = "x86")]
-unsafe extern "stdcall" fn IopSynchronousCompletion(
+unsafe extern "system" fn IopSynchronousCompletion(
     _DeviceObject: PDEVICE_OBJECT,
     Irp: PIRP,
     Context: PVOID,

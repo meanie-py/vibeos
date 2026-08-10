@@ -12,7 +12,14 @@ crate-type = ["rlib"]
 # avoid rustc emitting raw-dylib import thunks for ntoskrnl.exe symbols
 # (NlsMb*/NlsOem*) that don't exist at freeldr's link time and conflict
 # with blrtl/nlsboot.c (task #33).
-default = ["hal_bindgen", "inline_exports"]
+default = ["hal_bindgen", "inline_exports", "dbg"]
+# Mirror of the C kernel's `-DDBG=1` for the inline lock helpers. CMakeLists.txt
+# sets DBG=1 for every configuration this tree builds, and the C side of the
+# spinlock funnel (ntoskrnl/include/internal/spinlock.h, KI_TRACK_SPINLOCK_OWNER)
+# keys the owner stamp off it. The two halves MUST agree: if one stamps a lock
+# and the other does not clear it, the lock stays dirty. ON by default for that
+# reason — turn it off only together with the C macro.
+dbg = []
 hal_bindgen = []
 # Emit real symbols for translated FORCEINLINE/global-asm kernel helpers.
 # Kernel-owned Rust crates use the default feature set. Cohab leaf libraries

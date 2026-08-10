@@ -591,7 +591,7 @@ pub unsafe extern "system" fn OpenNetworkDatabase(Name: LPCWSTR) -> HANDLE {
 
     ErrorCode = RegOpenKeyExW(
         HKEY_LOCAL_MACHINE,
-        b"S\0y\0s\0t\0e\0m\0\\\0C\0u\0r\0r\0e\0n\0t\0C\0o\0n\0t\0r\0o\0l\0S\0e\0t\0\\\0S\0e\0r\0v\0i\0c\0e\0s\0\\\0T\0c\0p\0i\0p\0\\\0P\0a\0r\0a\0m\0e\0t\0e\0r\0s\0\0\0".as_ptr() as LPCWSTR,
+        w!("System\\CurrentControlSet\\Services\\Tcpip\\Parameters") as LPCWSTR,
         0,
         KEY_READ,
         &mut DatabaseKey,
@@ -600,7 +600,7 @@ pub unsafe extern "system" fn OpenNetworkDatabase(Name: LPCWSTR) -> HANDLE {
     if ErrorCode == NO_ERROR as i32 {
         ErrorCode = RegQueryValueExW(
             DatabaseKey,
-            b"D\0a\0t\0a\0b\0a\0s\0e\0P\0a\0t\0h\0\0\0".as_ptr() as LPCWSTR,
+            w!("DatabasePath") as LPCWSTR,
             core::ptr::null_mut(),
             &mut RegType,
             core::ptr::null_mut(),
@@ -615,7 +615,7 @@ pub unsafe extern "system" fn OpenNetworkDatabase(Name: LPCWSTR) -> HANDLE {
 
         ErrorCode = RegQueryValueExW(
             DatabaseKey,
-            b"D\0a\0t\0a\0b\0a\0s\0e\0P\0a\0t\0h\0\0\0".as_ptr() as LPCWSTR,
+            w!("DatabasePath") as LPCWSTR,
             core::ptr::null_mut(),
             &mut RegType,
             DatabasePath as LPBYTE,
@@ -631,14 +631,14 @@ pub unsafe extern "system" fn OpenNetworkDatabase(Name: LPCWSTR) -> HANDLE {
         GetSystemDirectoryW(ExpandedPath, MAX_PATH);
         StringCchLength(ExpandedPath, MAX_PATH as usize, &mut StringLength);
         if *ExpandedPath.offset((StringLength - 1) as isize) != b'\\' as u16 {
-            StringCchCat(ExpandedPath, MAX_PATH as usize, b"\\\0\0\0".as_ptr() as LPCWSTR);
+            StringCchCat(ExpandedPath, MAX_PATH as usize, w!("\\") as LPCWSTR);
         }
-        StringCchCat(ExpandedPath, MAX_PATH as usize, b"D\0R\0I\0V\0E\0R\0S\0\\\0E\0T\0C\0\\\0\0\0".as_ptr() as LPCWSTR);
+        StringCchCat(ExpandedPath, MAX_PATH as usize, w!("DRIVERS\\ETC\\") as LPCWSTR);
     }
 
     StringCchLength(ExpandedPath, MAX_PATH as usize, &mut StringLength);
     if *ExpandedPath.offset((StringLength - 1) as isize) != b'\\' as u16 {
-        StringCchCat(ExpandedPath, MAX_PATH as usize, b"\\\0\0\0".as_ptr() as LPCWSTR);
+        StringCchCat(ExpandedPath, MAX_PATH as usize, w!("\\") as LPCWSTR);
     }
 
     StringCchCat(ExpandedPath, MAX_PATH as usize, Name);
@@ -722,7 +722,7 @@ pub unsafe extern "C" fn NSP_GetServiceByNameHeapAllocW(
     StringCbCopyA(nameServiceA, (i + 1) as usize, nameA);
     *nameServiceA.offset(i as isize) = 0;
 
-    ServicesFile = OpenNetworkDatabase(b"s\0e\0r\0v\0i\0c\0e\0s\0\0\0".as_ptr() as LPCWSTR);
+    ServicesFile = OpenNetworkDatabase(w!("services") as LPCWSTR);
     if ServicesFile == INVALID_HANDLE_VALUE {
         return WSANO_RECOVERY as INT;
     }

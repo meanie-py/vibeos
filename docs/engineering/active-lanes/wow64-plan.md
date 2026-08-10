@@ -140,7 +140,7 @@ Every service lands in one of four tiers:
 flat thunk over a divergent payload compiles, links, and silently truncates.
 `marshalgen audit` derives from checked-in sources which services provably
 diverge 32↔64 and **hard-fails the build** if a flat thunk covers one that is not
-in `tools/lint-baseline/marshalgen_audit.txt` (246 entries, being burned down).
+in `tools/lint-baseline/marshalgen_audit.txt` (209 entries, being burned down).
 It also hard-fails on a stale built table, so the audit cannot be quietly
 outrun.
 
@@ -253,13 +253,14 @@ cannot reach. Nearly every marshalling bug from E6 onward was found by one.
 - **Registry redirection** (`Wow6432Node`, `KEY_WOW64_32KEY/64KEY`) — task #66.
   Not merely missing: a 32-bit guest currently reads and writes the *native*
   hive, so it is a silent correctness bug, not a stubbed feature.
-- **The 246 remaining audit-baseline entries** — services whose payloads provably
+- **The 209 remaining audit-baseline entries** — services whose payloads provably
   diverge but that still flat-thunk. Each is a latent version of bugs already
-  paid for. E19 closed the pointer-width **out-cell** slice of these (the ones
-  that were actively corrupting guest memory); what is left is dominated by
-  win32k's kernel-graphics-driver surface (`SURFOBJ`/`BRUSHOBJ`/`XLATEOBJ`,
-  ~81 entries, unreachable from a user-mode guest), `PORT_MESSAGE` (the LPC
-  server side, which belongs with the CSR-32 layer), and `TOKEN_GROUPS`.
+  paid for. E19 closed the pointer-width **out-cell** slice (which was corrupting
+  guest memory) and E20 the bare **`PUNICODE_STRING`/`OBJECT_ATTRIBUTES`** slice
+  (which was bugchecking the box). What is left is dominated by win32k's
+  kernel-graphics-driver surface (`SURFOBJ`/`BRUSHOBJ`/`XLATEOBJ`, ~81 entries,
+  unreachable from a user-mode guest), `PORT_MESSAGE` (the LPC server side,
+  which belongs with the CSR-32 layer), and `TOKEN_GROUPS`.
 - **IOCTL embedded-pointer buffers** (task #42) and **guest `int3` dispatch**.
 
 ## Things that turned out to matter more than expected
@@ -2666,3 +2667,416 @@ parser, including the selfmod32 `0xBAD9` case and the one that matters most:
 success is the exact failure mode the check exists to prevent. The extra watch
 is bounded and strictly additive: with the flag off, the boot path is unchanged,
 so no other lane pays for it.
+
+**Phase E20 — every `RegSetValueEx` from a 32-bit guest BUGCHECKed the box
+(2026-07-26).** The second slice of the E10 audit baseline, and it turned out to
+be a **local denial of service**, not a correctness wart.
+
+`UNICODE_STRING` is 8 bytes in the guest — `{USHORT Length; USHORT
+MaximumLength; ULONG Buffer}` — and 16 on the host, because the pointer is
+8-aligned: `{USHORT Length; USHORT MaximumLength; ULONG pad; ULONGLONG Buffer}`.
+`Buffer` therefore lives at offset 4 in the guest and offset 8 on the host, so a
+flat thunk makes the kernel read the string pointer **from past the end of the
+guest's struct**. Not a truncation — a wholly unrelated address, assembled from
+whatever two words happened to follow. `Length` and `MaximumLength` share
+offsets, so they arrive intact and make the whole thing look plausible.
+
+`NtSetValueKey` was flat. `NtQueryValueKey`, one line away in the same table,
+was already marshalled. **Registry reads worked and registry writes killed the
+machine** — the same "fix the variant you happen to be looking at" pattern that
+left plain `NtOpenProcessToken` behind its `Ex` sibling in E19, which is the
+argument for driving this off the tool instead of off inspection.
+
+*The proof, in the order it was obtained.* The guest rung was written and run
+**against unfixed media first**, so the test is known to be able to see the bug:
+
+```
+[WOW64] NtCreateKey(0x2b) [manual] => 00000000
+[PROBE-AV-R] ABOVE-USERPROBE Addr=0040400000580056 Len=38 (0x26) Align=2
+[RAISE] RtlRaiseStatus(0xC0000005)
+*** BUGCHECK: 0x0000001E
+```
+
+Read the operands: `Len=38` is 19 WCHARs, exactly `"Wow64ValueNameProbe"`, so the
+lengths came through correctly and only `Buffer` is wrong —
+`0x0040400000580056` is two adjacent 32-bit guest words glued together. The
+address is above the user probe boundary, so `ProbeForRead` raises, in kernel
+mode, unhandled → `0x1E`. After the fix the same media reports
+`[marshal32] registry value-name round-trip verified (set/query/delete)` and the
+ladder is 9/9 on both arches.
+
+*Scope.* All 27 ntdll services whose only divergence is a bare
+`PUNICODE_STRING` or `OBJECT_ATTRIBUTES`: the registry value/rename calls, the
+hive load/unload/replace family, `NtDeleteFile`, `NtDisplayString`, the driver
+load/unload pair, the system-environment quartet, `NtCreatePagingFile`, and the
+six audit-alarm entry points. `PRIVILEGE_SET` and `GENERIC_MAPPING` pass through
+unmarshalled because they are pointer-free (LUIDs and ACCESS_MASKs) — which is
+what the audit says, and why they are not on the list. Baseline **246 → 209**,
+re-blessed with **+0 added**; the ntdll table is now 172 auto / 124 manual.
+
+*Rung design.* `marshal32` does a full round trip — set a value, read it back
+**by the same name**, delete it, confirm it is gone — because a wrong `Buffer`
+cannot survive that: either the set faults, or it lands under a garbage name and
+the query misses, or the delete removes nothing. Checking only that the set
+returned success would have passed on the broken build right up until the
+machine died.
+
+**Phase E21 — `NtOpenKey` denied every `KEY_WOW64_32KEY` open, native callers
+included (2026-08-01, task #79).** `KEY_WOW64_64KEY` (0x0100) and
+`KEY_WOW64_32KEY` (0x0200) are not access bits — no key's DACL grants them — so
+the kernel must strip them before the object-manager check. The C does that
+with `DesiredAccess &= ~KEY_WOW64_RES` (0x0300) in both `NtCreateKey` and
+`NtOpenKey`. `NtOpenKey`'s Rust port had lost the name for a bare `0x0100`, so
+it stripped only the 64KEY bit and `RegOpenKeyEx(.., KEY_WOW64_32KEY)` returned
+`ACCESS_DENIED` while the identical `RegCreateKeyEx` succeeded.
+
+Two things about this are worth keeping. It is **not WoW64-specific** — a
+native 64-bit `reg query /reg:32` hits it too; the lane only found it because
+it was surveying the WoW64 registry story. And task #66 had recorded the
+premise "the `KEY_WOW64_*` flags are unhandled", which was **wrong**: they were
+handled, and one of the two had been mistranslated. A task description is not
+evidence. The `marshal32` rung opens one key four ways so a failure names the
+offending bit instead of saying "registry broken".
+
+**Phase E22 — the self-describing size: a field-perfect marshaller is still a
+broken one (2026-08-01, task #81).** Third slice of the E10 audit baseline
+after E19 (out-cells) and E20 (`UNICODE_STRING`), and the first one that is not
+about *widths* at all.
+
+A struct that carries its own `sizeof` gets version-checked against the
+**host's** `sizeof`. So for this family the marshalling problem is not that the
+guest's bytes land in the wrong places — it is that the call never gets that
+far:
+
+```
+win32k-rust/src/ntmouse.rs     SafeTME.cbSize != size_of::<TRACKMOUSEEVENT>()  -> ERROR_INVALID_PARAMETER
+win32k-rust/src/cursoricon.rs  (*pci).cbSize  == size_of::<CURSORINFO>()       -> else ERROR_INVALID_PARAMETER
+win32k-rust/src/misc.rs        SafeGui.cbSize != size_of::<GUITHREADINFO>()    -> ERROR_INVALID_PARAMETER
+win32k-rust/src/window.rs      (*pcbi).cbSize <  size_of::<COMBOBOXINFO>()     -> ERROR_INVALID_PARAMETER
+win32k-rust/src/input.rs       cbSize as usize != size_of::<INPUT>()           -> ERROR_INVALID_PARAMETER
+```
+
+| struct | guest | host | the API a 32-bit app loses |
+|---|---|---|---|
+| `TRACKMOUSEEVENT` | 16 | 24 | `TrackMouseEvent` — no `WM_MOUSELEAVE`/`WM_MOUSEHOVER` at all |
+| `CURSORINFO` | 20 | 24 | `GetCursorInfo` |
+| `GUITHREADINFO` | 48 | 72 | `GetGUIThreadInfo` |
+| `COMBOBOXINFO` | 52 | 64 | `GetComboBoxInfo` |
+| `MENUINFO` | 28 | 40 | `GetMenuInfo`/`SetMenuInfo` |
+| `INPUT` | 28 | 40 | `SendInput` — all synthesized input |
+
+None of these crash. They return `FALSE` and set `ERROR_INVALID_PARAMETER`, for
+every 32-bit process, forever — which is exactly why six applets' worth of
+ladder never noticed. The audit found them because the audit does not need a
+guest to call something before it will look at it.
+
+*What the generator learned.* `marshalgen`'s `_gen_struct_marshaller` copied
+every same-width field verbatim, which is correct for every field except this
+one: the guest wrote a number that is only true on the guest. It now emits
+`WowAmSizeIn`/`WowAmSizeOut` for a 4-byte leading field with a size-ish name,
+**guarded on the value**: rewrite it only when it is exactly the 32-bit
+`sizeof`, so a struct with more than one legal size (`MONITORINFO` vs
+`MONITORINFOEXW`) still reaches the kernel with the size the guest chose, and
+garbage still gets rejected as garbage. The copy-out undoes the rewrite — the
+kernel restamps `cbSize` with the host size, and handing that back would leave
+the guest holding a number that does not describe its own struct.
+
+The hand-written `NtUserThunkedMenuItemInfo` thunk had `M64.cbSize =
+sizeof(M64)` in it from the day it was written. The generator did not, and the
+five syscalls that were waiting on the generator got the broken version. That
+is E19's `NtOpenProcessToken`-vs-`Ex` and E20's `NtSetValueKey`-vs-
+`NtQueryValueKey` a third time: **the sibling that a human looked at is right
+and the one the tool produced is wrong**, which is the argument for teaching
+the tool rather than fixing the instance.
+
+*`SendInput` is hand-written*, because its size is a syscall **argument**, not
+a leading field — no struct diff can associate arg 2 with arg 1. It diverges
+twice over anyway: the union is at offset 4 in the guest and 8 on the host, and
+each arm's `dwExtraInfo` widens 4→8, so the array stride is 28 vs 40.
+`dwExtraInfo` is **zero**-extended, unlike every handle in this layer, because
+it is app-defined data the guest reads back through `GetMessageExtraInfo` and
+sign-extension would corrupt any value with bit 31 set.
+
+*`NtUserThunkedMenuInfo` is hand-written too, and it is the more instructive
+one — the generator was about to introduce a bug.* Its prototype says
+`LPCMENUINFO` and the layout diff is a clean 28→40 WIDENING, so `marshalgen`
+generated a marshaller for it happily. But win32k casts the pointer to
+`PROSMENUINFO` and `UserMenuInfo` reads **`cbSize` bytes** out of the caller,
+accepting anything in `[sizeof(MENUINFO), sizeof(ROSMENUINFO)]` — ROSMENUINFO
+being MENUINFO plus a dozen internal fields. The real payload is therefore a
+**caller-declared variable size**, and a generated thunk hands the kernel a
+40-byte stack bounce and then lets it read `cbSize` bytes out of it: a guest
+declaring a ROSMENUINFO reads ~36 bytes past the end of wow64.dll's own buffer.
+The flat thunk it was replacing at least passed a real, correctly-sized guest
+pointer. So: marshal exactly the MENUINFO size class, pass everything else
+through untouched. **A prototype is a claim about the declared type, not about
+what the callee reads** — check what the kernel does with the pointer before
+believing a WIDENING verdict on it. The other four were checked the same way
+and are clean: `TrackMouseEvent`, `GetCursorInfo` and `GetGUIThreadInfo` all
+read and write a fixed `sizeof`, and `GetComboBoxInfo` writes fields
+individually within its 64 bytes.
+
+*Deliberately NOT fixed: `NtUserGetMouseMovePointsEx`.* It is in the same class
+(`cbSize` as an argument, `MOUSEMOVEPOINT` 16→24) but the kernel side is a
+stub — the `GMMP_USE_DISPLAY_POINTS` branch probes the output buffer and
+returns `nBufPoints` without ever filling it. Marshalling it would convert an
+honest `ERROR_INVALID_PARAMETER` into a success handing the app an
+uninitialized buffer. It stays in the audit baseline, and the kernel-side stub
+is filed separately.
+
+*Rung design.* `marshal32`'s new check asserts three things per struct, and
+they fail in different directions. The call must **succeed** (the size reached
+the kernel host-sized) — that is the one that fires on unmarshalled media. The
+size must come back **guest-sized** (the copy-out undid the rewrite). And a
+canary parked immediately after the struct must **survive** — which is what
+separates "fixed the size check" from "fixed the size check and let the kernel
+write 72 bytes onto the guest's 48-byte stack slot". A naive rewrite with no
+bounce buffer passes the first and fails the third.
+
+---
+
+**Phase E23 — the kernel's error codes never reached the guest (2026-08-02,
+task #82).** Found by E22's *control* run, not by the fix: the unfixed-media
+boot printed
+
+```
+[marshal32] cbSize: TrackMouseEvent(TME_QUERY) failed, err = 0x00000000
+```
+
+on a path where win32k had just executed `EngSetLastError(ERROR_INVALID_PARAMETER)`.
+The zero is the whole bug.
+
+`EngSetLastError` writes `NtCurrentTeb()->LastErrorValue`, and in kernel mode
+that is the thread's **64-bit** TEB. A 32-bit guest's `GetLastError()` reads
+`TEB32->LastErrorValue` — a different structure at `WowTebOffset`. So every
+code the entire USER/GDI surface produced landed in a TEB no 32-bit process
+ever reads. Apps got the `FALSE` and never the reason: no
+`ERROR_CLASS_ALREADY_EXISTS`, no `ERROR_ALREADY_EXISTS`, no
+`ERROR_NO_MORE_ITEMS` to end an enumeration loop, no
+`ERROR_INVALID_WINDOW_HANDLE`. The ntdll surface was never affected — those
+syscalls return an NTSTATUS and the guest's own ntdll32 converts it into its
+own TEB32.
+
+*The fix is one rule at four sites.* **Crossing into the kernel copies the
+guest's last-error UP; crossing into the guest copies it DOWN.** That makes
+TEB32 and TEB64 behave as the single variable a native 64-bit process has,
+which is the only definition of "correct" here that does not require deciding
+case-by-case whose value wins.
+
+| site | direction | file |
+|---|---|---|
+| win32k syscall entry | TEB32 → TEB64 | `wow64_win32k.c` `Wow64DispatchWin32kService` |
+| win32k syscall exit | TEB64 → TEB32, *if changed* | ″ |
+| kernel→guest callback entry | TEB64 → TEB32 | `wow64_callback.c` `Wow64pEnterGuestCallback` |
+| callback return (longjmp landing) | TEB32 → TEB64 | ″ `Wow64pUserCallbackCommon` |
+
+*Why the copy-UP, when the bug is only about codes coming down.* win32k's own
+save-and-restore idiom — `Error = EngGetLastError(); …; EngSetLastError(Error);`
+in `window.rs` and `menu.rs` — exists to leave the **caller's** last-error
+untouched. Without the copy-up it faithfully preserves a stale value from some
+earlier syscall instead of the caller's, so the idiom does the opposite of what
+its author intended for every WoW64 caller.
+
+*Why the callback pair exists at all — it is a hole the syscall pair CREATES.*
+Once syscall entry copies up, a guest window proc that makes any win32k
+syscall overwrites `TEB64->LastErrorValue` in the middle of the outer call.
+That is not hypothetical: `co_IntSendMessageTimeout` sets `ERROR_TIMEOUT`
+(`message.rs:2225`) and four `BroadcastSystemMessage` sites read it back with
+`EngGetLastError()` *after* the send — and `co_` is precisely the prefix for
+functions that leave the critical section and call back into user mode. Mirror
+at the callback boundary too and the value the kernel reads back is always the
+one the kernel last wrote, exactly as on a native host.
+
+*Why "if changed" on the way out but unconditional on the way in.* With both
+boundaries in place an unconditional copy-down is provably a no-op when win32k
+did not write — the value going down is the value that came up. The change
+test is kept anyway as cheap insurance against a boundary not enumerated here
+(guest exception dispatch re-enters guest code without passing through the
+callback path), where an unconditional copy-down would clobber a value the
+guest set and the kernel never saw. One compare.
+
+*Rung design: two different codes out of ONE api.* `marshal32`'s check drives
+`TrackMouseEvent` three ways — a rejected `cbSize` must answer
+`ERROR_INVALID_PARAMETER`, a rejected flag bit must answer
+`ERROR_INVALID_FLAGS`, and a call that SUCCEEDS must leave the guest's own
+sentinel alone. One expected code proves much less than it looks: a bridge that
+hardcoded, guessed, or merely zeroed would satisfy it. Two codes out of two
+branches of the same kernel function is what makes the claim "the code
+travelled". `TrackMouseEvent` is the probe because `user32.spec` forwards it
+STRAIGHT to `NtUserTrackMouseEvent` with no client-side validation, so no
+asserted code can have come from user mode; and because E22's size rewrite is
+value-guarded, a `cbSize` of 1 passes through untouched and genuinely reaches
+the kernel's version check. The third assertion is the one that rejects the
+naive bridge: an unconditional copy-down with no copy-up hands the guest
+whatever an earlier syscall left in the 64-bit TEB, turning a fix for failing
+calls into a corruption of succeeding ones.
+
+*The meta-lesson, and it is the reason this was filed separately instead of
+being folded into E22.* E22's `SendInput` check originally excused a failure
+unless `GetLastError()` was `ERROR_INVALID_PARAMETER` — a discriminator that
+**could never fire**, because the code it tested for could not reach the guest.
+An assertion that cannot fail is worse than no assertion. Any guest-side test
+that branches on a code the kernel sets is dead on arrival until this bridge
+exists; prove the code arrives before trusting the branch.
+
+---
+
+**Phase E24 — Wow6432Node registry redirection (2026-08-02, task #66).** The
+last structurally-missing WoW64 feature: a 32-bit process shared the 64-bit
+`HKLM\Software`, so nothing it wrote was isolated and a COM `InprocServer32` it
+read named a 64-bit DLL it could not load.
+
+*Where it went, and why not where the task proposed.* Filesystem redirection
+lives in `wow64.dll` (`wow64_manual.c` rewrites `\system32\` → `\syswow64\`),
+so the obvious symmetry was to rewrite key paths there too. That does not work:
+registry opens are overwhelmingly RELATIVE — advapi32 caches a handle to
+`\REGISTRY\MACHINE` and passes `RootDirectory` + `"Software\Foo"` — so a
+user-mode rewrite would have to resolve the root handle to a path on every
+open, a syscall per open and stateful besides. It went into CM instead, as one
+wrapper around `CmpParseKey` (`sdk/lib/rust/config-rust/src/cmwow64.rs`).
+`NtOpenKey` and `NtCreateKey` both funnel into `ObOpenObjectByName` →
+`CmpParseKey`, and Ob's only parse-procedure bypass (`obname.rs`) is for
+*directory* objects, which a key never is — so that wrapper sees every key open
+in the system, including callers that reach `NtOpenKey` directly and never
+touch advapi32.
+
+*The rule is one line.* When the parse crosses `\REGISTRY\MACHINE\SOFTWARE`
+into a child, splice `WOW6432NODE` in. Everything else falls out:
+
+- **The view is sticky per handle, for free.** Redirect only when the SOFTWARE
+  boundary lands INSIDE the remaining name. If the caller's root handle is
+  already at or below SOFTWARE it was resolved under some view already, so
+  "do nothing" is correct — and a 32-bit app that opened SOFTWARE with
+  `KEY_WOW64_64KEY` keeps the 64-bit view beneath it with no per-handle state.
+- **`\REGISTRY\USER` is untouched**, so HKCU never redirects, which is right.
+- **The native boot path cannot be affected.** The gate is
+  `EPROCESS.Wow64Process != NULL`; smss, csrss, winlogon and explorer are all
+  64-bit. On i386 the whole thing compiles to `false`.
+
+*Two design traps, both hit and both reversed before writing code.* The first:
+shared-key exemptions look like they should be registry SYMLINKS — CM already
+resolves them and Windows really does keep `Software\Wow6432Node\Classes` as
+one. They cannot be. A link target is an absolute path Ob re-parses, and the
+re-parse redirects it AGAIN, so a link from `Software\Wow6432Node\Policies` to
+`Software\Policies` bounces straight back to itself. Exemptions have to be a
+table the redirect consults — which is exactly what Windows' redirection table
+is, and why it is one.
+
+The second is the task's own hard rule, *redirection without population is a
+regression*. Nothing populates `Wow6432Node` here, so redirecting reads into it
+would hide every OS key a 32-bit app needs — `Microsoft\Windows NT\CurrentVersion`
+and the shell's `Explorer` keys among them. Windows' answer is to mirror the
+subtree from the installer; we have no installer and a 1199-key mirror would
+drift. So this takes Wine's answer instead: a redirected open that returns
+`OBJECT_NAME_NOT_FOUND` is retried unredirected. Writes get a private node,
+reads still find the 64-bit keys, and no population is owed. The fallback is
+**reads only** — a create that fell back would have no isolation, which was the
+entire point. `HKLM\Software\Wow6432Node` is still created in `hivesft.inf`,
+because `NtCreateKey` creates only the LAST path component and a create
+redirected into a missing intermediate would fail.
+
+Two deliberate deviations to record, both reversible:
+
+1. **Real Windows HIDES 64-bit-only keys from a 32-bit process; we fall back to
+   them.** The precise consequence is that isolation comes from CREATE, not
+   from the access mask: a 32-bit process that OPENS an existing 64-bit-only
+   key for write falls back and writes the SHARED key, where Windows would have
+   failed the open. That is the safe direction — refusing it instead breaks
+   every 32-bit app that updates an OS key — but it is a real gap. Revisit if
+   we ever ship 32-bit-only components with their own registrations, at which
+   point the fallback starts masking a genuine "this component is 64-bit only"
+   answer.
+2. **`Classes` lands at `Software\Wow6432Node\Classes`, where Windows puts it
+   at `Software\Classes\Wow6432Node`.** Windows reconciles the two by making
+   the former a symlink to the latter; we cannot, per the re-parse trap above.
+   Nothing here reads the Windows location, and with the fallback a 32-bit COM
+   lookup resolves to the shared 64-bit registration exactly as it did before
+   E24 — so this is invisible today. It becomes real if a 32-bit-only COM
+   server is ever registered, and the fix then is a second redirect root for
+   `Software\Classes` plus the `CLSID`/`Interface`/`DirectShow`/`Media Type`
+   subset Windows actually redirects, rather than a symlink.
+
+*E21's strip had to move.* `KEY_WOW64_32KEY`/`64KEY` are view selectors, not
+access bits: no key's ACL grants either, so one left set denies the open, which
+is why E21 stripped them in `NtOpenKey`/`NtCreateKey`. That is correct only
+while the two views are identical. The moment they differ, `KEY_WOW64_64KEY` is
+a WoW64 process's ONLY route back to the 64-bit view — ole32 uses exactly that
+for HKCR. So the strip moved down into `CmpParseKey`, where the bits first pick
+a view and are then cleared before any access check. Same invariant E21
+established, now enforced at the one choke point every key open passes through
+instead of at two callers. marshal32's rung 6 is the regression guard on it.
+
+*Testing it: prove the two views DISAGREE.* "The write succeeded" is not
+evidence — with no redirection at all a create still succeeds and a read still
+finds it. marshal32 rung 9 asserts two independent things: the default-view
+handle's own `NtQueryKey(KeyNameInformation)` must say `Wow6432Node` (where it
+went, from the kernel's mouth), and the identical path opened with
+`KEY_WOW64_64KEY` must NOT see the value just written (the views are genuinely
+distinct objects). Faking either one still fails the other. A third check then
+pins the property the whole design rests on — a 64-bit-only key must still
+resolve from the 32-bit view — which passes before AND after, so it is a guard
+on the fallback rather than a detector of the original bug.
+
+*The control run, done the E20/E22/E23 way — rung first, against media that
+does NOT have the fix.* Redirection was disabled with a one-line early return
+(leaving the flag consume in place, so the media is exactly "before E24"), and
+the ladder reported:
+
+```
+[WINLOGON] marshal32.exe exit = 0xbafb
+[marshal32] redirect: default view is not in Wow6432Node, status = 0x00000000
+```
+
+`status = 0x00000000` is the part that makes this a control rather than a
+coincidence: `NtQueryKey` SUCCEEDED and handed back a real key name that simply
+has no `Wow6432Node` in it. Had the rung failed because the query itself broke,
+that field would carry the error and the assertion would prove nothing. The
+other eight rungs stayed green, so the failure is isolated to rung 9 rather
+than a sick guest.
+
+Fixed media, amd64, ladder **9/9**:
+
+```
+[marshal32] Wow6432Node redirection: private 32-bit view, 64-bit view distinct, miss falls back
+[WINLOGON] marshal32.exe exit = 0x600d
+```
+
+*The first cut of this was INERT, and the story is the most useful part of the
+phase.* It built clean, passed every lint, regressed nothing — and redirected
+nothing. Ob hands the parse procedure a remaining name in TWO shapes: an
+ABSOLUTE-path open arrives with a LEADING separator (parent `\REGISTRY`,
+remaining `\Machine\Software\...`), a RELATIVE open without one (parent
+`\REGISTRY\MACHINE`, remaining `SYSTEM\...`). Both happen constantly. The code
+assumed one separator sat *between* parent and remaining, so every absolute
+open compared `\Machine\Softwar` against `MACHINE\SOFTWARE`, failed, and
+silently declined. Fix: skip leading separators before comparing and carry the
+offset into the splice.
+
+*The offline harness passed 16/16 and was still wrong, which is the lesson.*
+The splice is pure string arithmetic, so it was lifted into a host harness and
+run against parent-at-`\REGISTRY` vs `\REGISTRY\MACHINE` vs at/below SOFTWARE;
+`SOFTWARE` with and without a tail; lowercase; `SOFTWAREX` (must NOT match);
+`SOFTWARE\WOW6432NODE\FOO` and `SOFTWARE\Wow6432Node` (idempotence, both
+cases); `SOFTWARE\WOW6432NODEX` (a prefix of the node name is a DIFFERENT key
+and must still redirect); HKCU; and names stopping short of the boundary. All
+16 passed — because all 16 had been INVENTED in the relative shape, the shape
+the author had in mind. **A hand-built test inherits the implementer's blind
+spot by construction.** What actually found it was a kernel trace printing the
+real arguments, and the harness only became trustworthy once its cases were
+transcribed from that trace (now 22/22, six of them real). Seed a pure-logic
+harness from observed inputs, not imagined ones.
+
+*And the rung did not say what it saw.* It reported "default view is not in
+Wow6432Node" while holding the name the kernel had just given it. Answering
+"then what IS it?" cost a full build plus a boot for a string already in hand.
+marshal32 gained a `ReportWide` helper and now prints it; an assertion should
+name what it found, not only what it wanted.
+
+*One non-obvious kernel requirement.* `CmpConstructName` walks the KCB parent
+chain and reads hive cells, so it needs `CmpLockRegistry()` + the KCB shared +
+a `Delete` check between them — the sequence `CmpQueryKeyName` uses. The
+redirect builder runs BEFORE `CmpParseKey`'s own locking
+(`CmpBuildHashStackAndLookupCache` is what takes the registry lock), so it
+acquires and drops its own. Calling the inner parse twice for the fallback is
+safe for the same reason: each invocation is lock-balanced, acquiring in the
+cache lookup and releasing on every exit.

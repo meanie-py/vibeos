@@ -175,7 +175,10 @@ static TOOLBARCLASSNAMEW: [u16; 16] = [
     b'2' as u16,
     0,
 ];
-static TOOLTIPS_CLASSW: [u16; 16] = [
+// L"tooltips_class32" (16 wide chars + NUL). The trailing 0 is load-bearing: commctrl.h defines
+// this as a C string literal, which carries its terminator for free, and the hand-encoding does
+// not. It is passed as CreateWindowExW's lpClassName, which reads until a NUL.
+static TOOLTIPS_CLASSW: [u16; 17] = [
     b't' as u16,
     b'o' as u16,
     b'o' as u16,
@@ -192,6 +195,7 @@ static TOOLTIPS_CLASSW: [u16; 16] = [
     b's' as u16,
     b'3' as u16,
     b'2' as u16,
+    0,
 ];
 
 // ---- comctl32 toolbar structs (commctrl.h) ----
@@ -2034,17 +2038,7 @@ unsafe fn CNotifyToolbar_process(
 // Internal (not #[no_mangle]) — only referenced via the WNDPROC fn pointer, and
 // taskswnd.cpp has an unrelated C++ class also named CNotifyToolbar, so keep
 // this symbol module-private to avoid any collision.
-#[cfg(not(target_arch = "x86"))]
-unsafe extern "C" fn CNotifyToolbar_WindowProc(
-    hWnd: HWND,
-    uMsg: UINT,
-    wParam: WPARAM,
-    lParam: LPARAM,
-) -> LRESULT {
-    CNotifyToolbar_window_proc_impl(hWnd, uMsg, wParam, lParam)
-}
-#[cfg(target_arch = "x86")]
-unsafe extern "stdcall" fn CNotifyToolbar_WindowProc(
+unsafe extern "system" fn CNotifyToolbar_WindowProc(
     hWnd: HWND,
     uMsg: UINT,
     wParam: WPARAM,
@@ -2512,19 +2506,8 @@ unsafe fn CSysPagerWnd_process(
     }
 }
 
-#[cfg(not(target_arch = "x86"))]
 #[no_mangle]
-pub unsafe extern "C" fn CSysPagerWnd_WindowProc(
-    hWnd: HWND,
-    uMsg: UINT,
-    wParam: WPARAM,
-    lParam: LPARAM,
-) -> LRESULT {
-    CSysPagerWnd_window_proc_impl(hWnd, uMsg, wParam, lParam)
-}
-#[cfg(target_arch = "x86")]
-#[no_mangle]
-pub unsafe extern "stdcall" fn CSysPagerWnd_WindowProc(
+pub unsafe extern "system" fn CSysPagerWnd_WindowProc(
     hWnd: HWND,
     uMsg: UINT,
     wParam: WPARAM,

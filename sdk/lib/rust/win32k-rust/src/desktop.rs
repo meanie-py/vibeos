@@ -43,7 +43,7 @@ extern "C" {
     fn _snwprintf(buffer: *mut u16, count: usize, format: *const u16, ...) -> i32;
 }
 extern "system" {
-    fn co_IntGetPeekMessage( pMsg: *mut MSG, hWnd: u32, MsgFilterMin: u32, MsgFilterMax: u32, RemoveMsg: u32, bGMSG: u8, ) -> i32;
+    fn co_IntGetPeekMessage( pMsg: *mut MSG, hWnd: HWND, MsgFilterMin: UINT, MsgFilterMax: UINT, RemoveMsg: UINT, bGMSG: BOOL, ) -> BOOL;
 }
 
 // Cross-file win32k functions that are NTAPI FASTCALL on i386 (`@name@N`,
@@ -487,9 +487,8 @@ pub static mut gpdeskInputDesktop: PDESKTOP = core::ptr::null_mut();
 pub static mut gptiDesktopThread: PTHREADINFO = core::ptr::null_mut();
 #[no_mangle]
 pub static mut gpDesktopThreadStartedEvent: PKEVENT = core::ptr::null_mut();
-#[cfg(target_arch = "x86")]
 #[no_mangle]
-pub unsafe extern "stdcall" fn IntDesktopObjectParse(
+pub unsafe extern "system" fn IntDesktopObjectParse(
     ParseObject: *mut core::ffi::c_void,
     ObjectType: *mut core::ffi::c_void,
     AccessState: PACCESS_STATE,
@@ -588,111 +587,8 @@ pub unsafe extern "stdcall" fn IntDesktopObjectParse(
     *pContext = 1u8;
     STATUS_SUCCESS
 }
-
-#[cfg(not(target_arch = "x86"))]
 #[no_mangle]
-pub unsafe extern "C" fn IntDesktopObjectParse(
-    ParseObject: *mut core::ffi::c_void,
-    ObjectType: *mut core::ffi::c_void,
-    AccessState: PACCESS_STATE,
-    AccessMode: KPROCESSOR_MODE,
-    Attributes: u32,
-    CompleteName: PUNICODE_STRING,
-    RemainingName: PUNICODE_STRING,
-    Context: *mut core::ffi::c_void,
-    SecurityQos: PSECURITY_QUALITY_OF_SERVICE,
-    Object: *mut *mut core::ffi::c_void,
-) -> NTSTATUS {
-    let mut Status: NTSTATUS;
-    let mut Desktop: PDESKTOP = core::ptr::null_mut();
-    let mut ObjectAttributes: _OBJECT_ATTRIBUTES = core::mem::zeroed();
-    let mut NextEntry: PLIST_ENTRY;
-    let ListHead: PLIST_ENTRY;
-    let WinStaObject: PWINSTATION_OBJECT = ParseObject as PWINSTATION_OBJECT;
-    let mut DesktopName: _UNICODE_STRING = core::mem::zeroed();
-    let pContext: PBOOLEAN = Context as PBOOLEAN;
-
-    if !pContext.is_null() {
-        *pContext = 0u8;
-    }
-
-    ListHead = core::ptr::addr_of_mut!((*WinStaObject).DesktopListHead);
-    NextEntry = (*ListHead).Flink;
-    while NextEntry != ListHead {
-        Desktop = (NextEntry as usize
-            - core::mem::offset_of!(DESKTOP, ListEntry)) as PDESKTOP;
-
-        RtlInitUnicodeString(core::ptr::addr_of_mut!(DesktopName) as _, (*(*Desktop).pDeskInfo).szDesktopName.as_ptr());
-
-        if RtlEqualUnicodeString(
-            RemainingName as _,
-            core::ptr::addr_of_mut!(DesktopName) as _,
-            ((Attributes & OBJ_CASE_INSENSITIVE) != 0) as u8,
-        ) != 0
-        {
-            if !Context.is_null() {
-                if (Attributes & OBJ_OPENIF) == 0 {
-                    return STATUS_OBJECT_NAME_COLLISION;
-                } else {
-                    Status = STATUS_OBJECT_NAME_EXISTS;
-                }
-            } else {
-                Status = STATUS_SUCCESS;
-            }
-
-            ObReferenceObject(Desktop as *mut core::ffi::c_void);
-            *Object = Desktop as *mut core::ffi::c_void;
-            return Status;
-        }
-
-        NextEntry = (*NextEntry).Flink;
-    }
-
-    if Context.is_null() {
-        return STATUS_OBJECT_NAME_NOT_FOUND;
-    }
-
-    ObjectAttributes.Length = core::mem::size_of::<_OBJECT_ATTRIBUTES>() as u32;
-    ObjectAttributes.RootDirectory = core::ptr::null_mut();
-    ObjectAttributes.Attributes = 0;
-    ObjectAttributes.ObjectName = RemainingName;
-    ObjectAttributes.SecurityDescriptor = core::ptr::null_mut();
-    ObjectAttributes.SecurityQualityOfService = core::ptr::null_mut();
-
-    Status = ObCreateObject(
-        0i32 as i8,
-        ex_desktop_object_type() as _,
-        core::ptr::addr_of_mut!(ObjectAttributes) as _,
-        0i32 as i8,
-        core::ptr::null_mut(),
-        core::mem::size_of::<DESKTOP>() as u32,
-        0,
-        0,
-        &mut Desktop as *mut PDESKTOP as *mut *mut core::ffi::c_void,
-    );
-    if !NT_SUCCESS(Status) {
-        return Status;
-    }
-
-    Status = IntAssignDesktopSecurityOnParse(WinStaObject, Desktop, AccessState);
-    if !NT_SUCCESS(Status) {
-        ObDereferenceObject(Desktop as *mut core::ffi::c_void);
-        return Status;
-    }
-
-    Status = UserInitializeDesktop(Desktop, RemainingName, WinStaObject);
-    if !NT_SUCCESS(Status) {
-        ObDereferenceObject(Desktop as *mut core::ffi::c_void);
-        return Status;
-    }
-
-    *Object = Desktop as *mut core::ffi::c_void;
-    *pContext = 1u8;
-    STATUS_SUCCESS
-}
-#[cfg(target_arch = "x86")]
-#[no_mangle]
-pub unsafe extern "stdcall" fn IntDesktopObjectDelete(Parameters: PVOID) -> NTSTATUS {
+pub unsafe extern "system" fn IntDesktopObjectDelete(Parameters: PVOID) -> NTSTATUS {
     let DeleteParameters: PWIN32_DELETEMETHOD_PARAMETERS = Parameters as PWIN32_DELETEMETHOD_PARAMETERS;
     let pdesk: PDESKTOP = (*DeleteParameters).Object as PDESKTOP;
 
@@ -716,36 +612,8 @@ pub unsafe extern "stdcall" fn IntDesktopObjectDelete(Parameters: PVOID) -> NTST
 
     STATUS_SUCCESS
 }
-
-#[cfg(not(target_arch = "x86"))]
 #[no_mangle]
-pub unsafe extern "C" fn IntDesktopObjectDelete(Parameters: PVOID) -> NTSTATUS {
-    let DeleteParameters: PWIN32_DELETEMETHOD_PARAMETERS = Parameters as PWIN32_DELETEMETHOD_PARAMETERS;
-    let pdesk: PDESKTOP = (*DeleteParameters).Object as PDESKTOP;
-
-    TRACE!(b"Deleting desktop object 0x%p\n\0".as_ptr() as PCHAR, pdesk);
-
-    if !(*pdesk).pDeskInfo.is_null() && !(*(*pdesk).pDeskInfo).spwnd.is_null() {
-        co_UserDestroyWindow((*(*pdesk).pDeskInfo).spwnd as _);
-    }
-
-    if !(*pdesk).spwndMessage.is_null() {
-        co_UserDestroyWindow((*pdesk).spwndMessage as _);
-    }
-
-    /* Remove the desktop from the window station's list of associated desktops */
-    RemoveEntryList(core::ptr::addr_of_mut!((*pdesk).ListEntry));
-
-    /* Free the heap */
-    IntFreeDesktopHeap(pdesk);
-
-    ObDereferenceObject((*pdesk).rpwinstaParent as PVOID);
-
-    STATUS_SUCCESS
-}
-#[cfg(target_arch = "x86")]
-#[no_mangle]
-pub unsafe extern "stdcall" fn IntDesktopOkToClose(
+pub unsafe extern "system" fn IntDesktopOkToClose(
     Parameters: PVOID,
 ) -> NTSTATUS {
     let OkToCloseParameters: PWIN32_OKAYTOCLOSEMETHOD_PARAMETERS = Parameters as PWIN32_OKAYTOCLOSEMETHOD_PARAMETERS;
@@ -763,48 +631,8 @@ pub unsafe extern "stdcall" fn IntDesktopOkToClose(
 
     STATUS_SUCCESS
 }
-
-#[cfg(not(target_arch = "x86"))]
 #[no_mangle]
-pub unsafe extern "C" fn IntDesktopOkToClose(
-    Parameters: PVOID,
-) -> NTSTATUS {
-    let OkToCloseParameters: PWIN32_OKAYTOCLOSEMETHOD_PARAMETERS = Parameters as PWIN32_OKAYTOCLOSEMETHOD_PARAMETERS;
-    let pti: PTHREADINFO = PsGetCurrentThreadWin32Thread() as PTHREADINFO;
-
-    if pti.is_null() {
-        return STATUS_SUCCESS;
-    }
-
-    if (*OkToCloseParameters).Handle == (*(*pti).ppi).hdeskStartup as _
-        || (*OkToCloseParameters).Handle == (*pti).hdesk as _
-    {
-        return STATUS_ACCESS_DENIED;
-    }
-
-    STATUS_SUCCESS
-}
-#[cfg(target_arch = "x86")]
-#[no_mangle]
-pub unsafe extern "stdcall" fn IntDesktopObjectOpen(
-    Parameters: *mut core::ffi::c_void,
-) -> NTSTATUS {
-    let Ret: NTSTATUS;
-    let OpenParameters: PWIN32_OPENMETHOD_PARAMETERS = Parameters as PWIN32_OPENMETHOD_PARAMETERS;
-    let ppi: PPROCESSINFO = PsGetProcessWin32Process((*OpenParameters).Process as _) as PPROCESSINFO;
-    if ppi == core::ptr::null_mut() {
-        return STATUS_SUCCESS;
-    }
-
-    UserEnterExclusive();
-    Ret = IntMapDesktopView((*OpenParameters).Object as PDESKTOP);
-    UserLeave();
-    Ret
-}
-
-#[cfg(not(target_arch = "x86"))]
-#[no_mangle]
-pub unsafe extern "C" fn IntDesktopObjectOpen(
+pub unsafe extern "system" fn IntDesktopObjectOpen(
     Parameters: *mut core::ffi::c_void,
 ) -> NTSTATUS {
     let Ret: NTSTATUS;
@@ -821,7 +649,7 @@ pub unsafe extern "C" fn IntDesktopObjectOpen(
 }
 #[cfg(target_arch = "x86")]
 #[no_mangle]
-pub unsafe extern "stdcall" fn IntDesktopObjectClose(Parameters: PVOID) -> NTSTATUS {
+pub unsafe extern "system" fn IntDesktopObjectClose(Parameters: PVOID) -> NTSTATUS {
     let Ret: NTSTATUS;
     let CloseParameters: PWIN32_CLOSEMETHOD_PARAMETERS = Parameters as PWIN32_CLOSEMETHOD_PARAMETERS;
     let ppi: PPROCESSINFO = PsGetProcessWin32Process((*CloseParameters).Process as _) as _;
@@ -837,7 +665,7 @@ pub unsafe extern "stdcall" fn IntDesktopObjectClose(Parameters: PVOID) -> NTSTA
 
 #[cfg(not(target_arch = "x86"))]
 #[no_mangle]
-pub unsafe extern "C" fn IntDesktopObjectClose(Parameters: PVOID) -> NTSTATUS {
+pub unsafe extern "system" fn IntDesktopObjectClose(Parameters: PVOID) -> NTSTATUS {
     let Ret: NTSTATUS;
     let CloseParameters: PWIN32_CLOSEMETHOD_PARAMETERS = Parameters as PWIN32_CLOSEMETHOD_PARAMETERS;
     let ppi: PPROCESSINFO = PsGetProcessWin32Process((*CloseParameters).Process as _) as PPROCESSINFO;
@@ -2176,7 +2004,7 @@ pub unsafe extern "system" fn DesktopThreadMain() {
     DbgPrint(b"[DESKTHREAD] pump entered\n\0".as_ptr() as *const core::ffi::c_char);
     let mut _dbg_seen: u32 = 0;
     loop {
-        let Ret = co_IntGetPeekMessage(&mut Msg, 0, 0, 0, PM_REMOVE, 1u8);
+        let Ret = co_IntGetPeekMessage(&mut Msg, core::ptr::null_mut(), 0, 0, PM_REMOVE, 1);
         if Ret != 0 {
             // Diagnostic (arm64 black-desktop hunt): first messages the
             // desktop thread ever dequeues — silence here means the pump is
@@ -2248,7 +2076,7 @@ pub unsafe extern "C" fn UserGetDesktopDC(
 }
 #[cfg(target_arch = "x86")]
 #[no_mangle]
-pub unsafe extern "stdcall" fn UserRedrawDesktop() {
+pub unsafe extern "system" fn UserRedrawDesktop() {
     let mut Window: PWND = core::ptr::null_mut();
     let Rgn: PREGION;
 
@@ -2275,7 +2103,7 @@ pub unsafe extern "stdcall" fn UserRedrawDesktop() {
 
 #[cfg(not(target_arch = "x86"))]
 #[no_mangle]
-pub unsafe extern "C" fn UserRedrawDesktop() {
+pub unsafe extern "system" fn UserRedrawDesktop() {
     let mut Window: PWND = core::ptr::null_mut();
     let Rgn: PREGION;
 
@@ -3257,9 +3085,8 @@ unsafe fn IntCreateDesktop_impl(
     }
     Status
 }
-#[cfg(target_arch = "x86")]
 #[no_mangle]
-pub unsafe extern "stdcall" fn NtUserCreateDesktop(
+pub unsafe extern "system" fn NtUserCreateDesktop(
     ObjectAttributes: POBJECT_ATTRIBUTES,
     lpszDesktopDevice: PUNICODE_STRING,
     lpdmw: LPDEVMODEW,
@@ -3292,72 +3119,8 @@ pub unsafe extern "stdcall" fn NtUserCreateDesktop(
     UserLeave();
     Ret
 }
-
-#[cfg(not(target_arch = "x86"))]
 #[no_mangle]
-pub unsafe extern "C" fn NtUserCreateDesktop(
-    ObjectAttributes: POBJECT_ATTRIBUTES,
-    lpszDesktopDevice: PUNICODE_STRING,
-    lpdmw: LPDEVMODEW,
-    dwFlags: DWORD,
-    dwDesiredAccess: ACCESS_MASK,
-) -> HDESK {
-    let Status: NTSTATUS;
-    let mut hDesk: HDESK = core::ptr::null_mut();
-    let mut Ret: HDESK = core::ptr::null_mut();
-
-    UserEnterExclusive();
-
-    'exit: {
-        Status = IntCreateDesktop(
-            &mut hDesk,
-            ObjectAttributes,
-            1i32 as KPROCESSOR_MODE,
-            lpszDesktopDevice,
-            lpdmw,
-            dwFlags,
-            dwDesiredAccess,
-        );
-        if !NT_SUCCESS(Status) {
-            break 'exit;
-        }
-
-        Ret = hDesk;
-    }
-
-    UserLeave();
-    Ret
-}
-#[cfg(target_arch = "x86")]
-#[no_mangle]
-pub unsafe extern "stdcall" fn NtUserOpenDesktop(
-    ObjectAttributes: POBJECT_ATTRIBUTES,
-    dwFlags: DWORD,
-    dwDesiredAccess: ACCESS_MASK,
-) -> HDESK {
-    let mut Desktop: HDESK = core::ptr::null_mut();
-
-    let Status = ObOpenObjectByName(
-        ObjectAttributes as _,
-        ex_desktop_object_type() as _,
-        1i32 as i8,
-        core::ptr::null_mut(),
-        dwDesiredAccess,
-        core::ptr::null_mut(),
-        core::ptr::addr_of_mut!(Desktop) as *mut HANDLE,
-    );
-
-    if !NT_SUCCESS(Status) {
-        SetLastNtError(Status);
-        return core::ptr::null_mut();
-    }
-
-    Desktop
-}
-
-#[cfg(not(target_arch = "x86"))]
-#[no_mangle]
-pub unsafe extern "C" fn NtUserOpenDesktop(
+pub unsafe extern "system" fn NtUserOpenDesktop(
     ObjectAttributes: POBJECT_ATTRIBUTES,
     dwFlags: DWORD,
     dwDesiredAccess: ACCESS_MASK,
@@ -3422,9 +3185,8 @@ pub unsafe extern "C" fn UserOpenInputDesktop(
 
     hdesk
 }
-#[cfg(target_arch = "x86")]
 #[no_mangle]
-pub unsafe extern "stdcall" fn NtUserOpenInputDesktop(
+pub unsafe extern "system" fn NtUserOpenInputDesktop(
     dwFlags: u32,
     fInherit: i32,
     dwDesiredAccess: ACCESS_MASK,
@@ -3438,26 +3200,8 @@ pub unsafe extern "stdcall" fn NtUserOpenInputDesktop(
     UserLeave();
     hdesk
 }
-
-#[cfg(not(target_arch = "x86"))]
 #[no_mangle]
-pub unsafe extern "C" fn NtUserOpenInputDesktop(
-    dwFlags: u32,
-    fInherit: i32,
-    dwDesiredAccess: ACCESS_MASK,
-) -> HDESK {
-    let hdesk: HDESK;
-
-    UserEnterExclusive();
-
-    hdesk = UserOpenInputDesktop(dwFlags, fInherit, dwDesiredAccess);
-
-    UserLeave();
-    hdesk
-}
-#[cfg(target_arch = "x86")]
-#[no_mangle]
-pub unsafe extern "stdcall" fn NtUserCloseDesktop(hDesktop: HDESK) -> BOOL {
+pub unsafe extern "system" fn NtUserCloseDesktop(hDesktop: HDESK) -> BOOL {
     let mut pdesk: PDESKTOP = core::ptr::null_mut();
     let mut Status: NTSTATUS;
     let mut Ret: BOOL = 0;
@@ -3489,44 +3233,8 @@ pub unsafe extern "stdcall" fn NtUserCloseDesktop(hDesktop: HDESK) -> BOOL {
     UserLeave();
     Ret
 }
-
-#[cfg(not(target_arch = "x86"))]
 #[no_mangle]
-pub unsafe extern "C" fn NtUserCloseDesktop(hDesktop: HDESK) -> BOOL {
-    let mut pdesk: PDESKTOP = core::ptr::null_mut();
-    let mut Status: NTSTATUS;
-    let mut Ret: BOOL = 0;
-
-    UserEnterExclusive();
-
-    'block: {
-        if hDesktop == (*gptiCurrent).hdesk || hDesktop == (*(*gptiCurrent).ppi).hdeskStartup {
-            EngSetLastError(ERROR_BUSY);
-            break 'block;
-        }
-
-        Status = IntValidateDesktopHandle(hDesktop, 1i32 as KPROCESSOR_MODE, 0, &mut pdesk);
-        if !NT_SUCCESS(Status) {
-            break 'block;
-        }
-
-        ObDereferenceObject(pdesk as *mut _);
-
-        Status = ObCloseHandle(hDesktop as *mut _, 1i32 as KPROCESSOR_MODE);
-        if !NT_SUCCESS(Status) {
-            SetLastNtError(Status);
-            break 'block;
-        }
-
-        Ret = 1;
-    }
-
-    UserLeave();
-    Ret
-}
-#[cfg(target_arch = "x86")]
-#[no_mangle]
-pub unsafe extern "stdcall" fn NtUserPaintDesktop(hDC: HDC) -> i32 {
+pub unsafe extern "system" fn NtUserPaintDesktop(hDC: HDC) -> i32 {
     let Ret: i32;
 
     UserEnterExclusive();
@@ -3536,22 +3244,8 @@ pub unsafe extern "stdcall" fn NtUserPaintDesktop(hDC: HDC) -> i32 {
     UserLeave();
     Ret
 }
-
-#[cfg(not(target_arch = "x86"))]
 #[no_mangle]
-pub unsafe extern "C" fn NtUserPaintDesktop(hDC: HDC) -> i32 {
-    let Ret: i32;
-
-    UserEnterExclusive();
-
-    Ret = IntPaintDesktop(hDC);
-
-    UserLeave();
-    Ret
-}
-#[cfg(target_arch = "x86")]
-#[no_mangle]
-pub unsafe extern "stdcall" fn NtUserResolveDesktop(
+pub unsafe extern "system" fn NtUserResolveDesktop(
     ProcessHandle: HANDLE,
     DesktopPath: PUNICODE_STRING,
     bInherit: BOOL,
@@ -3631,92 +3325,8 @@ pub unsafe extern "stdcall" fn NtUserResolveDesktop(
     /* Return the desktop handle */
     hDesktop
 }
-
-#[cfg(not(target_arch = "x86"))]
 #[no_mangle]
-pub unsafe extern "C" fn NtUserResolveDesktop(
-    ProcessHandle: HANDLE,
-    DesktopPath: PUNICODE_STRING,
-    bInherit: BOOL,
-    phWinSta: *mut HWINSTA,
-) -> HDESK {
-    let mut Status: NTSTATUS;
-    let mut Process: PEPROCESS = core::ptr::null_mut();
-    let mut hWinSta: HWINSTA = core::ptr::null_mut();
-    let mut hDesktop: HDESK = core::ptr::null_mut();
-    let mut CapturedDesktopPath: _UNICODE_STRING = core::mem::zeroed();
-
-    /* Allow only the Console Server to perform this operation (via CSRSS) */
-    if (PsGetCurrentProcess() as PEPROCESS) != gpepCSRSS {
-        return core::ptr::null_mut();
-    }
-
-    /* Get the process object the user handle was referencing */
-    Status = ObReferenceObjectByHandle(
-        ProcessHandle,
-        PROCESS_QUERY_INFORMATION,
-        *PsProcessType as _,
-        1i32 as _,
-        &mut Process as *mut _ as *mut PVOID,
-        core::ptr::null_mut(),
-    );
-    if !NT_SUCCESS(Status) {
-        return core::ptr::null_mut();
-    }
-
-    UserEnterExclusive();
-
-    'quit: {
-        Status = SafeProbeForWrite(
-            phWinSta as PVOID,
-            core::mem::size_of::<HWINSTA>() as _,
-            core::mem::size_of::<HWINSTA>() as _,
-        );
-        if !NT_SUCCESS(Status) {
-            break 'quit;
-        }
-
-        /* Capture the user desktop path string */
-        Status = ProbeAndCaptureUnicodeString(
-            &mut CapturedDesktopPath,
-            1i32 as _,
-            DesktopPath,
-        );
-        if !NT_SUCCESS(Status) {
-            break 'quit;
-        }
-
-        /* Call the internal function */
-        Status = IntResolveDesktop(
-            Process,
-            &mut CapturedDesktopPath,
-            bInherit,
-            &mut hWinSta,
-            &mut hDesktop,
-        );
-        if !NT_SUCCESS(Status) {
-            hWinSta = core::ptr::null_mut();
-            hDesktop = core::ptr::null_mut();
-        }
-
-        /* Return the window station handle */
-        *phWinSta = hWinSta;
-
-        /* Free the captured string */
-        ReleaseCapturedUnicodeString(&mut CapturedDesktopPath, 1i32 as _);
-    }
-
-    UserLeave();
-
-    /* Dereference the process object */
-    ObDereferenceObject(Process as PVOID);
-
-    /* Return the desktop handle */
-    hDesktop
-}
-#[cfg(target_arch = "x86")]
-#[no_mangle]
-pub unsafe extern "stdcall" fn NtUserSwitchDesktop(hdesk: HDESK) -> BOOL {
+pub unsafe extern "system" fn NtUserSwitchDesktop(hdesk: HDESK) -> BOOL {
     let mut pdesk: PDESKTOP = core::ptr::null_mut();
     let Status: NTSTATUS;
     let mut bRedrawDesktop: BOOL;
@@ -3790,153 +3400,8 @@ pub unsafe extern "stdcall" fn NtUserSwitchDesktop(hdesk: HDESK) -> BOOL {
     UserLeave();
     Ret
 }
-
-#[cfg(not(target_arch = "x86"))]
 #[no_mangle]
-pub unsafe extern "C" fn NtUserSwitchDesktop(hdesk: HDESK) -> BOOL {
-    let mut pdesk: PDESKTOP = core::ptr::null_mut();
-    let Status: NTSTATUS;
-    let mut bRedrawDesktop: BOOL;
-    let mut Ret: BOOL = 0;
-
-    #[cfg(target_arch = "x86")]
-    {
-        core::arch::asm!("out dx, al", in("al") b'#', in("dx") 0xE9u16);
-    }
-
-    UserEnterExclusive();
-
-    'Exit: {
-        Status = IntValidateDesktopHandle(hdesk, 1i32 as KPROCESSOR_MODE, 0, &mut pdesk);
-        if !NT_SUCCESS(Status) {
-            break 'Exit;
-        }
-
-        if PsGetCurrentProcessSessionId() != (*(*pdesk).rpwinstaParent).dwSessionId {
-            ObDereferenceObject(pdesk as *mut _);
-            break 'Exit;
-        }
-
-        if pdesk == gpdeskInputDesktop {
-            ObDereferenceObject(pdesk as *mut _);
-            Ret = 1;
-            break 'Exit;
-        }
-
-        if ((*(*pdesk).rpwinstaParent).Flags & WSS_LOCKED) != 0
-            && gpidLogon != PsGetCurrentProcessId()
-        {
-            ObDereferenceObject(pdesk as *mut _);
-            break 'Exit;
-        }
-
-        if (*pdesk).rpwinstaParent != InputWindowStation {
-            ObDereferenceObject(pdesk as *mut _);
-            break 'Exit;
-        }
-
-        bRedrawDesktop = 0;
-
-        if !gpdeskInputDesktop.is_null() {
-            if ((*(*(*gpdeskInputDesktop).pDeskInfo).spwnd).style & (WS_VISIBLE as u32))
-                == (WS_VISIBLE as u32)
-            {
-                bRedrawDesktop = 1;
-            }
-
-            #[cfg(not(target_arch = "aarch64"))]
-            IntHideDesktop(gpdeskInputDesktop);
-        }
-
-        (*InputWindowStation).ActiveDesktop = pdesk;
-
-        gpdeskInputDesktop = pdesk;
-
-        co_IntShowDesktop(
-            pdesk,
-            UserGetSystemMetrics(SM_CXSCREEN as i32 as _) as ULONG,
-            UserGetSystemMetrics(SM_CYSCREEN as i32 as _) as ULONG,
-            bRedrawDesktop,
-        );
-        ObDereferenceObject(pdesk as *mut _);
-
-        DbgPrint(b"[KERNEL] SwitchDesktop OK\n\0".as_ptr() as *const i8);
-        Ret = 1;
-    }
-
-    UserLeave();
-    Ret
-}
-#[cfg(target_arch = "x86")]
-#[no_mangle]
-pub unsafe extern "stdcall" fn NtUserGetThreadDesktop(dwThreadId: DWORD, hConsoleDesktop: HDESK) -> HDESK {
-    let mut hDesk: HDESK;
-    let Status: NTSTATUS;
-    let pti: PTHREADINFO;
-    let Process: PEPROCESS;
-    let mut DesktopObject: PDESKTOP = core::ptr::null_mut();
-    let mut HandleInformation: _OBJECT_HANDLE_INFORMATION = core::mem::zeroed();
-
-    UserEnterExclusive();
-
-    'quit: {
-        if dwThreadId == 0 {
-            EngSetLastError(ERROR_INVALID_PARAMETER);
-            hDesk = core::ptr::null_mut();
-            break 'quit;
-        }
-
-        pti = IntTID2PTI(dwThreadId as HANDLE);
-        if !pti.is_null() {
-            hDesk = (*pti).hdesk;
-            Process = ppi_pe_process((*pti).ppi);
-        } else if !hConsoleDesktop.is_null() {
-            hDesk = hConsoleDesktop;
-            Process = gpepCSRSS;
-        } else {
-            EngSetLastError(ERROR_INVALID_PARAMETER);
-            hDesk = core::ptr::null_mut();
-            break 'quit;
-        }
-
-        if hDesk.is_null() {
-            break 'quit;
-        }
-
-        if Process == (PsGetCurrentProcess() as PEPROCESS) {
-            break 'quit;
-        }
-
-        KeAttachProcess(core::ptr::addr_of_mut!((*Process).Pcb) as _);
-        Status = ObReferenceObjectByHandle(
-            hDesk as _,
-            0,
-            ex_desktop_object_type() as _,
-            1i32 as i8,
-            core::ptr::addr_of_mut!(DesktopObject) as *mut PVOID,
-            core::ptr::addr_of_mut!(HandleInformation) as _,
-        );
-        KeDetachProcess();
-
-        if NT_SUCCESS(Status) {
-            hDesk = IntGetDesktopObjectHandle(DesktopObject);
-            ObDereferenceObject(DesktopObject as PVOID);
-        } else {
-            hDesk = core::ptr::null_mut();
-        }
-
-        if hDesk.is_null() {
-            EngSetLastError(ERROR_ACCESS_DENIED);
-        }
-    }
-
-    UserLeave();
-    hDesk
-}
-
-#[cfg(not(target_arch = "x86"))]
-#[no_mangle]
-pub unsafe extern "C" fn NtUserGetThreadDesktop(dwThreadId: DWORD, hConsoleDesktop: HDESK) -> HDESK {
+pub unsafe extern "system" fn NtUserGetThreadDesktop(dwThreadId: DWORD, hConsoleDesktop: HDESK) -> HDESK {
     let mut hDesk: HDESK;
     let Status: NTSTATUS;
     let pti: PTHREADINFO;
@@ -4264,25 +3729,8 @@ pub unsafe extern "C" fn IntSetThreadDesktop(hDesktop: HDESK, FreeOnFailure: BOO
 
     1
 }
-#[cfg(target_arch = "x86")]
 #[no_mangle]
-pub unsafe extern "stdcall" fn NtUserSetThreadDesktop(hDesktop: HDESK) -> BOOL {
-    let mut ret: BOOL = 0;
-
-    UserEnterExclusive();
-
-    if !hDesktop.is_null() || (hDesktop.is_null() && (PsGetCurrentProcess() as PEPROCESS) == gpepCSRSS) {
-        ret = IntSetThreadDesktop(hDesktop, 0);
-    }
-
-    UserLeave();
-
-    ret
-}
-
-#[cfg(not(target_arch = "x86"))]
-#[no_mangle]
-pub unsafe extern "C" fn NtUserSetThreadDesktop(hDesktop: HDESK) -> BOOL {
+pub unsafe extern "system" fn NtUserSetThreadDesktop(hDesktop: HDESK) -> BOOL {
     let mut ret: BOOL = 0;
 
     UserEnterExclusive();

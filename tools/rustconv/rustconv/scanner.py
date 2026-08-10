@@ -15,7 +15,7 @@ import tree_sitter_c as tsc
 import tree_sitter_cpp as tscpp
 from tree_sitter import Language, Parser
 
-from .conventions import KW_TO_CONV
+from .conventions import KW_EXPANSION, KW_EXPANSION_FN, KW_TO_CONV
 
 C_LANG = Language(tsc.language())
 CPP_LANG = Language(tscpp.language())
@@ -157,7 +157,21 @@ RE_UNPARSEABLE_CC = re.compile(r"\b(?:" + _CC_ALT + r")\b")
 # for every one of these shapes (it is documented lossy on own-line macros), and the
 # authoritative convention is re-derived from the RAW C text by abi_enforce._derive_convention,
 # which never sees this rewrite.
-RE_CC_AFTER_PTR = re.compile(r"(\*\s*)\b(?:" + _CC_ALT + r")\b")
+#
+# The alternation here is EVERY convention keyword, including the _BENIGN_VERBATIM ones
+# that rule 2 deliberately leaves alone. That exemption exists because those aliases
+# recover cleanly ELSEWHERE and existing scans match them as written — but "elsewhere" is
+# the whole of its justification, and this position is the exception the block above
+# documents: unparseable "in any spelling", no function_definition node at all. Nothing
+# can depend on seeing a token in a function the scanner never produced.
+#
+# Leaving CDECL out of this cost msvcrt 15 functions. `FILE * CDECL fopen(...)` is Wine's
+# dominant spelling, so file.c's fopen/freopen/tmpfile/_fdopen/__iob_func and ten more were
+# absent from the translation plan — silently, because a dropped function looks exactly
+# like a function that was never there. That is worse than a partial file: file.c's
+# entry points share one fd table, so a C `fopen` beside a Rust `fclose` is split state.
+_CC_ALT_ANY = "|".join(re.escape(k) for k in sorted(KW_TO_CONV, key=len, reverse=True))
+RE_CC_AFTER_PTR = re.compile(r"(\*\s*)\b(?:" + _CC_ALT_ANY + r")\b")
 
 
 def _normalize_callbacks(text: str) -> str:
@@ -206,6 +220,19 @@ RE_EMPTY_MEMMODEL = re.compile(r"\b(?:FAR|NEAR)\b")
 # ambiguous declaration and yields ZERO function_definition nodes AND an EMPTY `unextracted`
 # list — a silent drop, the failure mode this scanner exists to prevent.
 RE_EXTERN_C = re.compile(r"\bEXTERN_C\b")
+
+# The convention aliases that are really `[linkage] <TYPE> <conv>` — see KW_EXPANSION for
+# why normalizing one to a bare `__stdcall` deletes the function.
+RE_COMPOSITE_CC = re.compile(r"\b(?:" + "|".join(map(re.escape, KW_EXPANSION)) + r")\b")
+
+# The function-like forms take their return type as an argument, so they need a capture
+# rather than a word match. Longest-first, or `STDAPI_` would shadow `STDAPIV_`. The
+# argument is a type, so it cannot itself contain a paren -- a flat `[^()]+` is exact here.
+RE_COMPOSITE_CC_FN = re.compile(
+    r"\b("
+    + "|".join(sorted(map(re.escape, KW_EXPANSION_FN), key=len, reverse=True))
+    + r")\s*\(\s*([^()]+?)\s*\)"
+)
 
 # `CONST` is `#define CONST const` (winnt.h) — same macro, uppercase. tree-sitter-c does not
 # know it, so `CONST struct sockaddr *name` reads as TWO type-identifiers and the enclosing
@@ -269,6 +296,29 @@ def _blank_memmodel(text: str) -> str:
     so tree-sitter can parse the declaration. All are no-op/aliased Win32 macros with no
     ABI meaning, and each one tree-sitter does not know costs a whole declaration."""
     return RE_UPPER_CONST.sub("const", RE_EMPTY_ATTR.sub("", RE_EMPTY_MEMMODEL.sub("", text)))
+
+
+def _expand_composite_conventions(text: str) -> str:
+    """Expand the aliases that carry a RETURN TYPE, not just a convention.
+
+    Must run BEFORE `_expand_extern_c` and `_normalize_callbacks`, because the expansion is
+    the header's verbatim text and hands each of them their own work: `STDAPI` becomes
+    `EXTERN_C HRESULT STDAPICALLTYPE`, whose `EXTERN_C` the former resolves and whose
+    `STDAPICALLTYPE` the latter maps to `__stdcall`. Encoding the finished form here
+    instead would duplicate both, and get the C/C++ linkage split wrong.
+
+    Fixpoint, because the headers chain them (`WINOLEAPI` -> `STDAPI` -> …). Bounded: the
+    chains are two deep and a cycle would be a header bug, so stop rather than spin.
+    """
+    for _ in range(4):
+        expanded = RE_COMPOSITE_CC_FN.sub(
+            lambda m: re.sub(r"\\1", m.group(2), KW_EXPANSION_FN[m.group(1)]), text
+        )
+        expanded = RE_COMPOSITE_CC.sub(lambda m: KW_EXPANSION[m.group(0)], expanded)
+        if expanded == text:
+            return text
+        text = expanded
+    return text
 
 
 def _expand_extern_c(text: str, is_cpp: bool) -> str:
@@ -532,31 +582,40 @@ def _parse_function(node, source: bytes, source_text: str) -> CFunction | None:
                 return_type = f"{kind} {_extract_text(name_node, source)}"
         elif child.type == "function_declarator":
             declarator = child
-        elif child.type == "pointer_declarator":
-            # Return type is a pointer. tree-sitter NESTS one pointer_declarator per
-            # star, so `char **f(...)` is pointer_declarator(pointer_declarator(
+        elif child.type in ("pointer_declarator", "reference_declarator"):
+            # Return type is a pointer and/or a reference. tree-sitter NESTS one declarator
+            # per token, so `char **f(...)` is pointer_declarator(pointer_declarator(
             # function_declarator)) and the function_declarator is a GRANDchild.
             # Looking only at direct children silently dropped every T** function:
             # 10 of wldap32.h's 62 marshalling helpers (strarrayWtoU, controlarrayAtoW,
             # modarrayAtoW, …) were reported as unextractable "C++ methods" in a C
             # header. They are `static inline`, so the .spec export cross-check could
             # not catch it either — the run just translated 52 of 62 and said so in a
-            # warning. Descend instead, counting the stars as we go.
+            # warning. Descend instead, recording each token as we go.
+            #
+            # A REFERENCE return nests identically and had no case here at all, so EVERY
+            # `T& f() {...}` was dropped — not a rare shape, it is how C++ spells a
+            # singleton accessor. CDefView's `static ATL::CWndClassInfo& GetWndClassInfo()`
+            # is the instance that held a 4,869-line TU out of paid translation, and the
+            # return type is irrelevant to the failure: a plain `int&` dropped too.
+            # Keeping the `&` in the spelling is what lets c_type_to_rust lower it, since
+            # that function already reads a trailing `&` and emits `&mut T` / `&T`.
             sub = child
-            stars = 0
-            while sub is not None and sub.type == "pointer_declarator":
-                stars += 1
+            suffix = ""
+            while sub is not None and sub.type in ("pointer_declarator", "reference_declarator"):
+                suffix += "*" if sub.type == "pointer_declarator" else "&"
                 sub = next(
                     (
                         c
                         for c in sub.children
-                        if c.type in ("pointer_declarator", "function_declarator")
+                        if c.type
+                        in ("pointer_declarator", "reference_declarator", "function_declarator")
                     ),
                     None,
                 )
             if sub is not None and sub.type == "function_declarator":
                 declarator = sub
-                return_type = (return_type + " " + "*" * stars).strip()
+                return_type = (return_type + " " + suffix).strip()
 
     cpp_class = None
     is_ctor = False
@@ -679,6 +738,18 @@ def _parse_function(node, source: bytes, source_text: str) -> CFunction | None:
                         # Legacy DECLARE_INTERFACE methods sometimes retain the
                         # C spelling in an out-of-line C++ definition. In C++
                         # this macro expands to void; the receiver is implicit.
+                        continue
+                    if param_text in ("void", "VOID"):
+                        # C's EMPTY parameter list. `f(void)` declares zero parameters, but
+                        # tree-sitter still reports one parameter_declaration, and recording
+                        # it gave the function arity 1. The call binder then saw
+                        # `SelectExtOnRename()` as arity 0 against "available arities: [1]"
+                        # and refused to bind — which stopped the whole 4,869-line CDefView
+                        # TU, on a function whose C says plainly that it takes nothing.
+                        # Only the bare spelling counts: `void *p` keeps its declarator and
+                        # is a real parameter, so matching the exact text is what separates
+                        # them. The uppercase `VOID` was already special-cased on the other
+                        # two parameter paths in this file and simply never on this one.
                         continue
                     spaced_array = re.fullmatch(
                         r"(?P<type>.+?)\s+(?P<name>[A-Za-z_]\w*)\s*\[[^]]*\]",
@@ -1040,6 +1111,129 @@ def _resolve_known_preproc(text: str, defines: dict[str, str] | None = None) -> 
     return "\n".join(out)
 
 
+# `#define NAME(a, b) ...` — name, parameter list, first body line. Function-like only:
+# the `(` must touch the name, which is what the C preprocessor itself requires.
+FN_MACRO_RE = re.compile(r"^[ \t]*#[ \t]*define[ \t]+([A-Za-z_]\w*)\(([^)]*)\)(.*)$", re.M)
+
+
+def macro_body(src_text: str, start: int) -> str:
+    """The full replacement list at *start*, following backslash line-continuations."""
+    body: list[str] = []
+    for line in src_text[start:].splitlines():
+        if line.endswith("\\"):
+            body.append(line[:-1])
+            continue
+        body.append(line)
+        break
+    return "\n".join(body)
+
+
+def split_macro_args(src_text: str, open_paren_end: int) -> list[str] | None:
+    """Split a macro invocation's arguments at top-level commas.
+
+    *open_paren_end* is the index just past the ``(``. Returns None if the parentheses
+    never balance, so a false ``NAME(`` match inside a string or comment drops out rather
+    than being treated as an invocation.
+    """
+    depth = 1
+    arg = ""
+    args: list[str] = []
+    for ch in src_text[open_paren_end:]:
+        if ch == "(":
+            depth += 1
+        elif ch == ")":
+            depth -= 1
+            if depth == 0:
+                args.append(arg)
+                return args
+        if depth == 1 and ch == ",":
+            args.append(arg)
+            arg = ""
+            continue
+        arg += ch
+    return None
+
+
+def _expand_case_macros(text: str) -> str:
+    """Expand TU-local function-like macros that GENERATE a ``case`` label.
+
+    tree-sitter cannot parse ``ERR_CASE(ERROR_ACCESS_DENIED)`` sitting where a case label
+    belongs — a bare ``IDENT(ARG)`` with no semicolon is not a statement — and the damage is
+    not local: on msvcrt's errno.c it produced ONE ``ERROR`` node spanning lines 132-451,
+    swallowing ``msvcrt_set_errno`` and ``_errno`` whole while the walk recovered the
+    survivors. Nothing landed in ``unextracted``, so the catalog came back looking healthy:
+    16 paid functions, the two most important ones missing, and ``ERR_CASE`` — a macro —
+    promoted to a billable function.
+
+    Expanding is also the better prompt. The model sees real ``case`` labels, which is what
+    ``--seal-facts`` needs to protect the constants, and there is no Rust rendering of the
+    C macro worth preserving anyway.
+
+    Deliberately narrow: only macros defined in THIS text whose replacement list contains a
+    ``case`` token. Runs after :func:`_resolve_known_preproc`, so macros in a dead ``#if``
+    arm are already gone and are never expanded.
+    """
+    defs: list[tuple[int, int, str, list[str], str]] = []
+    for m in FN_MACRO_RE.finditer(text):
+        body = macro_body(text, m.start(3))
+        if not re.search(r"\bcase\b", body):
+            continue
+        params = [p.strip() for p in m.group(2).split(",") if p.strip()]
+        if not params:
+            continue
+        end = m.start(3) + len(body)
+        # One logical line: a replacement list's backslash-continuations are formatting, and
+        # collapsing them is what lets an expansion be substituted without moving any line.
+        defs.append((m.start(), end, m.group(1), params, " ".join(body.split())))
+    if not defs:
+        return text  # byte-identical for every TU without one, which is most of them
+
+    names = sorted({d[2] for d in defs}, key=len, reverse=True)
+    call_re = re.compile(rf"\b(?:{'|'.join(re.escape(n) for n in names)})[ \t]*\(")
+    def_at = {d[0]: d for d in defs}
+    # Left to right, tracking which definition is in force. A name can be REDEFINED with a
+    # different body — dinput's effect_linuxinput.c defines `FE(x)` once as `type = #x` and
+    # again as `wave = #x` — so a name->body map would expand the first group with the
+    # second body. Position is what disambiguates, so this walks rather than substitutes.
+    live: dict[str, tuple[list[str], str]] = {}
+    out: list[str] = []
+    i = 0
+    while i < len(text):
+        if i in def_at:
+            _, end, name, params, body = def_at[i]
+            live[name] = (params, body)
+            # Drop the directive (meaningless once expanded) but keep its NEWLINES. Every
+            # normalizer in this pipeline preserves the line count, and preamble_audit
+            # reports the LINE of an unparsed region — a pass that moves lines makes that
+            # number point at innocent code.
+            out.append("\n" * text.count("\n", i, end))
+            i = end
+            continue
+        call = call_re.search(text, i)
+        if call is None:
+            out.append(text[i:])
+            break
+        nxt_def = min((s for s in def_at if s > i), default=len(text))
+        if call.start() >= nxt_def:
+            out.append(text[i:nxt_def])
+            i = nxt_def
+            continue
+        name = text[call.start() : call.end() - 1].strip().rstrip("(").strip()
+        args = split_macro_args(text, call.end())
+        if args is None or name not in live:
+            out.append(text[i : call.end()])
+            i = call.end()
+            continue
+        params, body = live[name]
+        rep = body
+        for k, p in enumerate(params):
+            rep = re.sub(rf"\b{re.escape(p)}\b", (args[k].strip() if k < len(args) else ""), rep)
+        out.append(text[i : call.start()])
+        out.append(rep)
+        i = call.end() + sum(len(a) for a in args) + len(args)  # args + commas + `)`
+    return "".join(out)
+
+
 def extract_preamble(scan: "ScanResult") -> str:
     """File-scope C that `translate` (function-by-function) otherwise drops.
 
@@ -1266,9 +1460,13 @@ def scan_file(path: Path, *, force_cpp: bool = False) -> ScanResult:
     source_text = _normalize_callbacks(
         _blank_memmodel(
             _expand_extern_c(
-                _strip_sal(
-                    _expand_csr_api(
-                        _resolve_known_preproc(_strip_known_off_ifdefs(raw), build_defines)
+                _expand_composite_conventions(
+                    _strip_sal(
+                        _expand_csr_api(
+                            _expand_case_macros(
+                                _resolve_known_preproc(_strip_known_off_ifdefs(raw), build_defines)
+                            )
+                        )
                     )
                 ),
                 is_cpp,
@@ -1309,6 +1507,19 @@ def scan_file(path: Path, *, force_cpp: bool = False) -> ScanResult:
 
     def walk(node):
         if node.type == "function_definition":
+            # `= delete` / `= default` — tree-sitter files both under function_definition, but
+            # neither HAS a body, so neither is a translatable unit and neither may count as
+            # under-translation. Recording them made _gate_unextracted HARD FAIL on a false
+            # positive, and the only escape was --allow-partial, which suppresses the gate for
+            # the WHOLE file — trading a false positive for blindness to the true ones. Found on
+            # recyclebin_v5.cpp's `CZZWStr& operator=(const CZZWStr&) = delete;`.
+            # NB `= default` does carry implicit semantics (a defaulted dtor destroys members);
+            # those belong to the ctor/dtor lowering, which synthesises the bodies, not to the
+            # per-function extractor asking "is there source code here we would miss?"
+            if any(
+                c.type in ("delete_method_clause", "default_method_clause") for c in node.children
+            ):
+                return
             func = _parse_function(node, source, source_text)
             if func:
                 result.functions.append(func)

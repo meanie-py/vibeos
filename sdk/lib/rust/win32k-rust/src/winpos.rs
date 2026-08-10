@@ -49,7 +49,7 @@ unsafe fn head_pti<T>(obj: *const T) -> PTHREADINFO {
 // RECTL_bIntersectRect / SafeProbeForRead / VerifyWnd / UpdateShellHook /
 // VIS_ComputeVisibleRegion — win32k internal exports (cdecl, fastcall on i386).
 extern "system" {
-    fn SafeProbeForRead(Address: *mut core::ffi::c_void, Length: u32, Alignment: u32) -> i32;
+    fn SafeProbeForRead(Address: *mut core::ffi::c_void, Length: SIZE_T, Alignment: u32) -> i32;
 }
 #[cfg(target_arch = "x86")]
 extern "fastcall" {
@@ -160,7 +160,7 @@ extern "C" {
     fn UserDereferenceObject(Object: PVOID) -> BOOL;
 }
 extern "system" {
-    fn SafeProbeForWrite(Address: *mut core::ffi::c_void, Length: u32, Alignment: u32) -> i32;
+    fn SafeProbeForWrite(Address: *mut core::ffi::c_void, Length: SIZE_T, Alignment: u32) -> i32;
 }
 
 // ── header-inline / macro helpers (no exported symbol; reimplemented locally) ──
@@ -3607,9 +3607,8 @@ unsafe fn IntEndDeferWindowPosEx_impl(hdwp: HDWP, bAsync: BOOL) -> BOOL {
     UserDeleteObject(hdwp as _, TYPE_SETWINDOWPOS);
     res
 }
-#[cfg(target_arch = "x86")]
 #[no_mangle]
-pub unsafe extern "stdcall" fn NtUserChildWindowFromPointEx(
+pub unsafe extern "system" fn NtUserChildWindowFromPointEx(
     hwndParent: HWND,
     x: LONG,
     y: LONG,
@@ -3628,31 +3627,8 @@ pub unsafe extern "stdcall" fn NtUserChildWindowFromPointEx(
         core::ptr::null_mut()
     }
 }
-
-#[cfg(not(target_arch = "x86"))]
 #[no_mangle]
-pub unsafe extern "C" fn NtUserChildWindowFromPointEx(
-    hwndParent: HWND,
-    x: LONG,
-    y: LONG,
-    uiFlags: UINT,
-) -> HWND {
-    let mut pwndParent: PWND;
-    UserEnterExclusive();
-    pwndParent = UserGetWindowObject(hwndParent);
-    if !pwndParent.is_null() {
-        pwndParent = IntChildWindowFromPointEx(pwndParent, x, y, uiFlags);
-    }
-    UserLeave();
-    if !pwndParent.is_null() {
-        UserHMGetHandle(pwndParent)
-    } else {
-        core::ptr::null_mut()
-    }
-}
-#[cfg(target_arch = "x86")]
-#[no_mangle]
-pub unsafe extern "stdcall" fn NtUserEndDeferWindowPosEx(
+pub unsafe extern "system" fn NtUserEndDeferWindowPosEx(
     WinPosInfo: HDWP,
     bAsync: BOOL,
 ) -> BOOL {
@@ -3662,82 +3638,8 @@ pub unsafe extern "stdcall" fn NtUserEndDeferWindowPosEx(
     UserLeave();
     Ret
 }
-
-#[cfg(not(target_arch = "x86"))]
 #[no_mangle]
-pub unsafe extern "C" fn NtUserEndDeferWindowPosEx(
-    WinPosInfo: HDWP,
-    bAsync: BOOL,
-) -> BOOL {
-    let Ret: BOOL;
-    UserEnterExclusive();
-    Ret = IntEndDeferWindowPosEx(WinPosInfo, bAsync);
-    UserLeave();
-    Ret
-}
-#[cfg(target_arch = "x86")]
-#[no_mangle]
-pub unsafe extern "stdcall" fn NtUserDeferWindowPos(
-    WinPosInfo: HDWP,
-    Wnd: HWND,
-    WndInsertAfter: HWND,
-    x: INT,
-    y: INT,
-    cx: INT,
-    cy: INT,
-    Flags: UINT,
-) -> HDWP {
-    let pWnd: PWND;
-    let pWndIA: PWND;
-    let mut Ret: HDWP = core::ptr::null_mut();
-    let Tmp: UINT = !(SWP_ASYNCWINDOWPOS
-        | SWP_DEFERERASE
-        | SWP_NOSENDCHANGING
-        | SWP_NOREPOSITION
-        | SWP_NOCOPYBITS
-        | SWP_HIDEWINDOW
-        | SWP_SHOWWINDOW
-        | SWP_FRAMECHANGED
-        | SWP_NOACTIVATE
-        | SWP_NOREDRAW
-        | SWP_NOZORDER
-        | SWP_NOMOVE
-        | SWP_NOSIZE);
-
-    UserEnterExclusive();
-
-    'block: {
-        if Flags & Tmp != 0 {
-            EngSetLastError(ERROR_INVALID_FLAGS);
-            break 'block;
-        }
-
-        pWnd = UserGetWindowObject(Wnd);
-        if pWnd.is_null() || UserIsDesktopWindow(pWnd) != 0 || UserIsMessageWindow(pWnd) != 0 {
-            break 'block;
-        }
-
-        if !WndInsertAfter.is_null()
-            && WndInsertAfter != HWND_BOTTOM
-            && WndInsertAfter != HWND_TOPMOST
-            && WndInsertAfter != HWND_NOTOPMOST
-        {
-            pWndIA = UserGetWindowObject(WndInsertAfter);
-            if pWndIA.is_null() || UserIsDesktopWindow(pWndIA) != 0 || UserIsMessageWindow(pWndIA) != 0 {
-                break 'block;
-            }
-        }
-
-        Ret = IntDeferWindowPos(WinPosInfo, Wnd, WndInsertAfter, x, y, cx, cy, Flags);
-    }
-
-    UserLeave();
-    Ret
-}
-
-#[cfg(not(target_arch = "x86"))]
-#[no_mangle]
-pub unsafe extern "C" fn NtUserDeferWindowPos(
+pub unsafe extern "system" fn NtUserDeferWindowPos(
     WinPosInfo: HDWP,
     Wnd: HWND,
     WndInsertAfter: HWND,
@@ -3796,7 +3698,7 @@ pub unsafe extern "C" fn NtUserDeferWindowPos(
 }
 #[cfg(target_arch = "x86")]
 #[no_mangle]
-pub unsafe extern "stdcall" fn NtUserGetInternalWindowPos(
+pub unsafe extern "system" fn NtUserGetInternalWindowPos(
     hWnd: HWND,
     rectWnd: LPRECT,
     ptIcon: LPPOINT,
@@ -3866,7 +3768,7 @@ pub unsafe extern "stdcall" fn NtUserGetInternalWindowPos(
 
 #[cfg(not(target_arch = "x86"))]
 #[no_mangle]
-pub unsafe extern "C" fn NtUserGetInternalWindowPos(
+pub unsafe extern "system" fn NtUserGetInternalWindowPos(
     hWnd: HWND,
     rectWnd: LPRECT,
     ptIcon: LPPOINT,
@@ -3890,14 +3792,14 @@ pub unsafe extern "C" fn NtUserGetInternalWindowPos(
         if !rectWnd.is_null() {
             Status = SafeProbeForWrite(
                 rectWnd as *mut core::ffi::c_void,
-                core::mem::size_of::<RECT>() as u32,
+                core::mem::size_of::<RECT>() as _,
                 1,
             );
         }
         if NT_SUCCESS(Status) && !ptIcon.is_null() {
             Status = SafeProbeForWrite(
                 ptIcon as *mut core::ffi::c_void,
-                core::mem::size_of::<POINT>() as u32,
+                core::mem::size_of::<POINT>() as _,
                 1,
             );
         }
@@ -3933,9 +3835,8 @@ pub unsafe extern "C" fn NtUserGetInternalWindowPos(
     UserLeave();
     Ret
 }
-#[cfg(target_arch = "x86")]
 #[no_mangle]
-pub unsafe extern "stdcall" fn NtUserGetWindowPlacement(
+pub unsafe extern "system" fn NtUserGetWindowPlacement(
     hWnd: HWND,
     lpwndpl: *mut WINDOWPLACEMENT,
 ) -> i32 {
@@ -3983,60 +3884,8 @@ pub unsafe extern "stdcall" fn NtUserGetWindowPlacement(
     UserLeave();
     Ret
 }
-
-#[cfg(not(target_arch = "x86"))]
 #[no_mangle]
-pub unsafe extern "C" fn NtUserGetWindowPlacement(
-    hWnd: HWND,
-    lpwndpl: *mut WINDOWPLACEMENT,
-) -> i32 {
-
-    let Wnd: PWND;
-    let mut Safepl: WINDOWPLACEMENT = core::mem::zeroed();
-    let mut Status: i32;
-    let mut Ret: i32 = 0;
-
-    UserEnterShared();
-
-    'Exit: {
-        Wnd = UserGetWindowObject(hWnd);
-        if Wnd.is_null() {
-            break 'Exit;
-        }
-
-        Status = MmCopyFromCaller(
-            core::ptr::addr_of_mut!(Safepl) as *mut core::ffi::c_void,
-            lpwndpl as *const core::ffi::c_void,
-            core::mem::size_of::<WINDOWPLACEMENT>(),
-        );
-        if !NT_SUCCESS(Status) {
-            SetLastNtError(Status);
-            break 'Exit;
-        }
-
-        Safepl.length = core::mem::size_of::<WINDOWPLACEMENT>() as u32;
-
-        IntGetWindowPlacement(Wnd, core::ptr::addr_of_mut!(Safepl));
-
-        Status = MmCopyToCaller(
-            lpwndpl as *mut core::ffi::c_void,
-            core::ptr::addr_of!(Safepl) as *const core::ffi::c_void,
-            core::mem::size_of::<WINDOWPLACEMENT>(),
-        );
-        if !NT_SUCCESS(Status) {
-            SetLastNtError(Status);
-            break 'Exit;
-        }
-
-        Ret = 1;
-    }
-
-    UserLeave();
-    Ret
-}
-#[cfg(target_arch = "x86")]
-#[no_mangle]
-pub unsafe extern "stdcall" fn NtUserMinMaximize(
+pub unsafe extern "system" fn NtUserMinMaximize(
     hWnd: HWND,
     mut cmd: UINT,
     Hide: BOOL,
@@ -4064,40 +3913,8 @@ pub unsafe extern "stdcall" fn NtUserMinMaximize(
     UserLeave();
     0
 }
-
-#[cfg(not(target_arch = "x86"))]
 #[no_mangle]
-pub unsafe extern "C" fn NtUserMinMaximize(
-    hWnd: HWND,
-    mut cmd: UINT,
-    Hide: BOOL,
-) -> DWORD {
-    let pWnd: PWND;
-
-    UserEnterExclusive();
-
-    'exit: {
-        pWnd = UserGetWindowObject(hWnd);
-        if pWnd.is_null() || UserIsDesktopWindow(pWnd) != 0 || UserIsMessageWindow(pWnd) != 0 {
-            break 'exit;
-        }
-
-        if cmd > SW_MAX as UINT || ((*pWnd).state2 & WNDS2_INDESTROY) != 0 {
-            EngSetLastError(ERROR_INVALID_PARAMETER);
-            break 'exit;
-        }
-
-        cmd |= if Hide != 0 { SW_HIDE as UINT } else { 0 };
-
-        co_WinPosShowWindow(pWnd, cmd as INT);
-    }
-
-    UserLeave();
-    0
-}
-#[cfg(target_arch = "x86")]
-#[no_mangle]
-pub unsafe extern "stdcall" fn NtUserMoveWindow(
+pub unsafe extern "system" fn NtUserMoveWindow(
     hWnd: HWND,
     X: core::ffi::c_int,
     Y: core::ffi::c_int,
@@ -4119,34 +3936,8 @@ pub unsafe extern "stdcall" fn NtUserMoveWindow(
         },
     )
 }
-
-#[cfg(not(target_arch = "x86"))]
 #[no_mangle]
-pub unsafe extern "C" fn NtUserMoveWindow(
-    hWnd: HWND,
-    X: core::ffi::c_int,
-    Y: core::ffi::c_int,
-    nWidth: core::ffi::c_int,
-    nHeight: core::ffi::c_int,
-    bRepaint: BOOL,
-) -> BOOL {
-    NtUserSetWindowPos(
-        hWnd,
-        core::ptr::null_mut(),
-        X,
-        Y,
-        nWidth,
-        nHeight,
-        if bRepaint != 0 {
-            SWP_NOZORDER | SWP_NOACTIVATE
-        } else {
-            SWP_NOZORDER | SWP_NOACTIVATE | SWP_NOREDRAW
-        },
-    )
-}
-#[cfg(target_arch = "x86")]
-#[no_mangle]
-pub unsafe extern "stdcall" fn NtUserRealChildWindowFromPoint(
+pub unsafe extern "system" fn NtUserRealChildWindowFromPoint(
     Parent: HWND,
     x: LONG,
     y: LONG,
@@ -4164,30 +3955,8 @@ pub unsafe extern "stdcall" fn NtUserRealChildWindowFromPoint(
         core::ptr::null_mut()
     }
 }
-
-#[cfg(not(target_arch = "x86"))]
 #[no_mangle]
-pub unsafe extern "C" fn NtUserRealChildWindowFromPoint(
-    Parent: HWND,
-    x: LONG,
-    y: LONG,
-) -> HWND {
-    let mut pwndParent: PWND;
-    UserEnterShared();
-    pwndParent = UserGetWindowObject(Parent);
-    if !pwndParent.is_null() {
-        pwndParent = IntRealChildWindowFromPoint(pwndParent, x, y);
-    }
-    UserLeave();
-    if !pwndParent.is_null() {
-        UserHMGetHandle(pwndParent)
-    } else {
-        core::ptr::null_mut()
-    }
-}
-#[cfg(target_arch = "x86")]
-#[no_mangle]
-pub unsafe extern "stdcall" fn NtUserSetWindowPos(
+pub unsafe extern "system" fn NtUserSetWindowPos(
     hWnd: HWND,
     hWndInsertAfter: HWND,
     mut X: INT,
@@ -4256,131 +4025,8 @@ pub unsafe extern "stdcall" fn NtUserSetWindowPos(
     UserLeave();
     ret
 }
-
-#[cfg(not(target_arch = "x86"))]
 #[no_mangle]
-pub unsafe extern "C" fn NtUserSetWindowPos(
-    hWnd: HWND,
-    hWndInsertAfter: HWND,
-    mut X: INT,
-    mut Y: INT,
-    mut cx: INT,
-    mut cy: INT,
-    uFlags: UINT,
-) -> BOOL {
-    let mut Window: PWND;
-    let pWndIA: PWND;
-    let mut ret: BOOL = 0;
-    let mut Ref: USER_REFERENCE_ENTRY = core::mem::zeroed();
-
-    UserEnterExclusive();
-
-    'Exit: {
-        Window = UserGetWindowObject(hWnd);
-        if Window.is_null() || UserIsDesktopWindow(Window) != 0 || UserIsMessageWindow(Window) != 0 {
-            break 'Exit;
-        }
-
-        if hWndInsertAfter != HWND_TOP
-            && hWndInsertAfter != HWND_BOTTOM
-            && hWndInsertAfter != HWND_TOPMOST
-            && hWndInsertAfter != HWND_NOTOPMOST
-        {
-            pWndIA = UserGetWindowObject(hWndInsertAfter);
-            if pWndIA.is_null()
-                || UserIsDesktopWindow(pWndIA) != 0
-                || UserIsMessageWindow(pWndIA) != 0
-            {
-                break 'Exit;
-            }
-        }
-
-        if (uFlags & SWP_NOMOVE) == 0 {
-            if X < -32768 {
-                X = -32768;
-            } else if X > 32767 {
-                X = 32767;
-            }
-            if Y < -32768 {
-                Y = -32768;
-            } else if Y > 32767 {
-                Y = 32767;
-            }
-        }
-        if (uFlags & SWP_NOSIZE) == 0 {
-            if cx < 0 {
-                cx = 0;
-            } else if cx > 32767 {
-                cx = 32767;
-            }
-            if cy < 0 {
-                cy = 0;
-            } else if cy > 32767 {
-                cy = 32767;
-            }
-        }
-
-        UserRefObjectCo(Window, &mut Ref);
-        ret = co_WinPosSetWindowPos(Window, hWndInsertAfter, X, Y, cx, cy, uFlags) as BOOL;
-        UserDerefObjectCo(Window);
-    }
-
-    UserLeave();
-    ret
-}
-#[cfg(target_arch = "x86")]
-#[no_mangle]
-pub unsafe extern "stdcall" fn NtUserSetWindowRgn(
-    hWnd: HWND,
-    hRgn: HRGN,
-    bRedraw: BOOL,
-) -> INT {
-    let mut hrgnCopy: HRGN = core::ptr::null_mut();
-    let Window: PWND;
-    let flags: INT = (SWP_NOCLIENTSIZE | SWP_NOCLIENTMOVE | SWP_NOACTIVATE | SWP_FRAMECHANGED | SWP_NOSIZE | SWP_NOMOVE) as INT;
-    let mut Ret: INT = 0;
-
-    UserEnterExclusive();
-
-    'Exit: {
-        Window = UserGetWindowObject(hWnd);
-        if Window.is_null() || UserIsDesktopWindow(Window) != 0 || UserIsMessageWindow(Window) != 0 {
-            break 'Exit;
-        }
-
-        if !hRgn.is_null() {
-            if GreIsHandleValid(hRgn as HGDIOBJ) != 0 {
-                hrgnCopy = NtGdiCreateRectRgn(0, 0, 0, 0);
-                NtGdiCombineRgn(hrgnCopy, hRgn, core::ptr::null_mut(), RGN_COPY as INT);
-            } else {
-                break 'Exit;
-            }
-        }
-
-        if !hrgnCopy.is_null() {
-            (*Window).hrgnNewFrame = hrgnCopy;
-        } else {
-            (*Window).hrgnNewFrame = HRGN_WINDOW;
-        }
-
-        Ret = co_WinPosSetWindowPos(
-            Window,
-            HWND_TOP,
-            0,
-            0,
-            0,
-            0,
-            if bRedraw != 0 { flags as UINT } else { (flags | SWP_NOREDRAW as INT) as UINT },
-        ) as INT;
-    }
-
-    UserLeave();
-    Ret
-}
-
-#[cfg(not(target_arch = "x86"))]
-#[no_mangle]
-pub unsafe extern "C" fn NtUserSetWindowRgn(
+pub unsafe extern "system" fn NtUserSetWindowRgn(
     hWnd: HWND,
     hRgn: HRGN,
     bRedraw: BOOL,
@@ -4429,7 +4075,7 @@ pub unsafe extern "C" fn NtUserSetWindowRgn(
 }
 #[cfg(target_arch = "x86")]
 #[no_mangle]
-pub unsafe extern "stdcall" fn NtUserSetInternalWindowPos(
+pub unsafe extern "system" fn NtUserSetInternalWindowPos(
     hwnd: HWND,
     showCmd: UINT,
     lprect: LPRECT,
@@ -4507,7 +4153,7 @@ pub unsafe extern "stdcall" fn NtUserSetInternalWindowPos(
 
 #[cfg(not(target_arch = "x86"))]
 #[no_mangle]
-pub unsafe extern "C" fn NtUserSetInternalWindowPos(
+pub unsafe extern "system" fn NtUserSetInternalWindowPos(
     hwnd: HWND,
     showCmd: UINT,
     lprect: LPRECT,
@@ -4582,9 +4228,8 @@ pub unsafe extern "C" fn NtUserSetInternalWindowPos(
     UserLeave();
     Ret as DWORD
 }
-#[cfg(target_arch = "x86")]
 #[no_mangle]
-pub unsafe extern "stdcall" fn NtUserSetWindowPlacement(hWnd: HWND, lpwndpl: *mut WINDOWPLACEMENT) -> BOOL {
+pub unsafe extern "system" fn NtUserSetWindowPlacement(hWnd: HWND, lpwndpl: *mut WINDOWPLACEMENT) -> BOOL {
     let mut Wnd: PWND;
     let mut Safepl: WINDOWPLACEMENT = core::mem::zeroed();
     let mut Flags: UINT;
@@ -4631,92 +4276,8 @@ pub unsafe extern "stdcall" fn NtUserSetWindowPlacement(hWnd: HWND, lpwndpl: *mu
     UserLeave();
     Ret
 }
-
-#[cfg(not(target_arch = "x86"))]
 #[no_mangle]
-pub unsafe extern "C" fn NtUserSetWindowPlacement(hWnd: HWND, lpwndpl: *mut WINDOWPLACEMENT) -> BOOL {
-    let mut Wnd: PWND;
-    let mut Safepl: WINDOWPLACEMENT = core::mem::zeroed();
-    let mut Flags: UINT;
-    let mut Ret: BOOL = 0;
-    let mut Ref: USER_REFERENCE_ENTRY = core::mem::zeroed();
-
-    UserEnterExclusive();
-
-    'exit: {
-        let __SehStatus = SafeProbeForRead(lpwndpl as *mut _, core::mem::size_of::<WINDOWPLACEMENT>() as _, 1);
-        if !NT_SUCCESS(__SehStatus) {
-            SetLastNtError(__SehStatus);
-            break 'exit;
-        }
-
-        Safepl = *lpwndpl;
-
-        if LOWORD((*gptiCurrent).dwExpWinVer as u32) < WINVER_WINNT4 as u32 {
-            Safepl.length = core::mem::size_of::<WINDOWPLACEMENT>() as _;
-        }
-
-        if Safepl.length as usize != core::mem::size_of::<WINDOWPLACEMENT>() {
-            EngSetLastError(ERROR_INVALID_PARAMETER);
-            break 'exit;
-        }
-
-        Flags = (PLACE_MAX | PLACE_RECT) as UINT;
-        if Safepl.flags & WPF_SETMINPOSITION as UINT != 0 {
-            Flags |= PLACE_MIN as UINT;
-        }
-
-        Wnd = UserGetWindowObject(hWnd);
-        if Wnd.is_null() {
-            break 'exit;
-        }
-
-        UserRefObjectCo(Wnd, &mut Ref);
-        if UserIsDesktopWindow(Wnd) == 0 && UserIsMessageWindow(Wnd) == 0 {
-            Ret = IntSetWindowPlacement(Wnd, &mut Safepl, Flags);
-        }
-        UserDerefObjectCo(Wnd);
-    }
-
-    UserLeave();
-    Ret
-}
-#[cfg(target_arch = "x86")]
-#[no_mangle]
-pub unsafe extern "stdcall" fn NtUserShowWindowAsync(hWnd: HWND, nCmdShow: LONG) -> BOOL {
-    let Window: PWND;
-    let Result: LRESULT;
-    let mut ret: BOOL = 0;
-    let mut Ref: USER_REFERENCE_ENTRY = core::mem::zeroed();
-
-    UserEnterExclusive();
-
-    'exit: {
-        Window = UserGetWindowObject(hWnd);
-        if Window.is_null() || UserIsDesktopWindow(Window) != 0 || UserIsMessageWindow(Window) != 0 {
-            break 'exit;
-        }
-
-        if nCmdShow > SW_MAX as LONG {
-            EngSetLastError(ERROR_INVALID_PARAMETER);
-            break 'exit;
-        }
-
-        UserRefObjectCo(Window, &mut Ref);
-        Result = co_IntSendMessageNoWait(hWnd, WM_ASYNC_SHOWWINDOW, nCmdShow as WPARAM, 0);
-        UserDerefObjectCo(Window);
-        if Result != -1 && Result != 0 {
-            ret = 1;
-        }
-    }
-
-    UserLeave();
-    ret
-}
-
-#[cfg(not(target_arch = "x86"))]
-#[no_mangle]
-pub unsafe extern "C" fn NtUserShowWindowAsync(hWnd: HWND, nCmdShow: LONG) -> BOOL {
+pub unsafe extern "system" fn NtUserShowWindowAsync(hWnd: HWND, nCmdShow: LONG) -> BOOL {
     let Window: PWND;
     let Result: LRESULT;
     let mut ret: BOOL = 0;
@@ -4749,9 +4310,8 @@ pub unsafe extern "C" fn NtUserShowWindowAsync(hWnd: HWND, nCmdShow: LONG) -> BO
 
 type BOOL = i32;
 type LONG = i32;
-#[cfg(target_arch = "x86")]
 #[no_mangle]
-pub unsafe extern "stdcall" fn NtUserShowWindow(hWnd: HWND, nCmdShow: LONG) -> BOOL {
+pub unsafe extern "system" fn NtUserShowWindow(hWnd: HWND, nCmdShow: LONG) -> BOOL {
     let mut Window: PWND;
     let mut ret: BOOL = 0;
     let mut Ref: USER_REFERENCE_ENTRY = core::mem::zeroed();
@@ -4780,72 +4340,8 @@ pub unsafe extern "stdcall" fn NtUserShowWindow(hWnd: HWND, nCmdShow: LONG) -> B
     UserLeave();
     ret
 }
-
-#[cfg(not(target_arch = "x86"))]
 #[no_mangle]
-pub unsafe extern "C" fn NtUserShowWindow(hWnd: HWND, nCmdShow: LONG) -> BOOL {
-    let mut Window: PWND;
-    let mut ret: BOOL = 0;
-    let mut Ref: USER_REFERENCE_ENTRY = core::mem::zeroed();
-
-    UserEnterExclusive();
-
-    'exit: {
-        Window = UserGetWindowObject(hWnd);
-        if Window.is_null()
-            || UserIsDesktopWindow(Window) != 0
-            || UserIsMessageWindow(Window) != 0
-        {
-            break 'exit;
-        }
-
-        if nCmdShow > SW_MAX as LONG || ((*Window).state2 & WNDS2_INDESTROY) != 0 {
-            EngSetLastError(ERROR_INVALID_PARAMETER);
-            break 'exit;
-        }
-
-        UserRefObjectCo(Window, &mut Ref);
-        ret = co_WinPosShowWindow(Window, nCmdShow) as BOOL;
-        UserDerefObjectCo(Window);
-    }
-
-    UserLeave();
-    ret
-}
-#[cfg(target_arch = "x86")]
-#[no_mangle]
-pub unsafe extern "stdcall" fn NtUserWindowFromPoint(X: LONG, Y: LONG) -> HWND {
-    let mut pt: POINT = core::mem::zeroed();
-    let mut Ret: HWND = core::ptr::null_mut();
-    let DesktopWindow: PWND;
-    let Window: PWND;
-    let mut hittest: USHORT = 0;
-    let mut Ref: USER_REFERENCE_ENTRY = core::mem::zeroed();
-
-    UserEnterExclusive();
-
-    DesktopWindow = UserGetWindowObject(IntGetDesktopWindow());
-    if !DesktopWindow.is_null() {
-        pt.x = X;
-        pt.y = Y;
-
-        UserRefObjectCo(DesktopWindow, &mut Ref);
-
-        Window = co_WinPosWindowFromPoint(DesktopWindow, &mut pt, &mut hittest, 0);
-        if !Window.is_null() {
-            Ret = UserHMGetHandle(Window);
-        }
-
-        UserDerefObjectCo(DesktopWindow);
-    }
-
-    UserLeave();
-    Ret
-}
-
-#[cfg(not(target_arch = "x86"))]
-#[no_mangle]
-pub unsafe extern "C" fn NtUserWindowFromPoint(X: LONG, Y: LONG) -> HWND {
+pub unsafe extern "system" fn NtUserWindowFromPoint(X: LONG, Y: LONG) -> HWND {
     let mut pt: POINT = core::mem::zeroed();
     let mut Ret: HWND = core::ptr::null_mut();
     let DesktopWindow: PWND;

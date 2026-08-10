@@ -15,51 +15,107 @@ pub mod stubs;
 /// first — see the comment there.
 pub mod shldataobject;
 
+/// `shlfolder.cpp`, flipped. 19 of its exports had live C++ callers and needed `EXTERN_C` on
+/// their declarations (shfldr.h, plus two in precomp.h). One of the 19 was an OVERLOAD PAIR of
+/// `SHELL32_CoCreateInitSF`, which `EXTERN_C` cannot express — one name, one symbol — so the
+/// csidl-taking form is now `SHELL32_CoCreateInitSFWithCsidl` on both sides. The C++ `const
+/// GUID&` / `REFIID` reference parameters here are NOT an obstacle to `EXTERN_C`: it changes
+/// linkage, not the type system, and a reference is a pointer at the ABI.
+pub mod shlfolder;
+
+/// `iconcache.cpp`, flipped. No `EXTERN_C` work was needed: its four shell32-internal exports
+/// (`SIC_Initialize`, `SIC_Destroy`, `SIC_GetIconIndex`, `PidlToSicIndex`) are declared in
+/// `wine/shell32_main.h`, which already wraps the whole header in `extern "C"` for C++.
+pub mod iconcache;
+
 // ---------------------------------------------------------------------------------------------
-// STILL PARKED. The C++ SUBSTRATE that blocked them is now largely built: `crate::atl` supplies
-// CComPtr/CHeapPtr/CComHeapPtr/CSimpleArray and `crate::shellutils` the shellutils.h/utils.h
-// header inlines, so what is left per file is ordinary integration work rather than a missing
-// foundation. Counts measured with all six wired, after the substrate landed:
+// ALL SIX ARE FLIPPED (shlexec, the last, on 2026-08-01). Nothing here is parked any more, so
+// the counts and per-file blocker lists that used to live in this header are gone with the
+// blockers; each module's own doc comment records what it needed and what it was hiding.
 //
-//     shlexec.rs   349     shlfileop.rs  227     iconcache.rs   59
-//     brfolder.rs  244     shlfolder.rs    0     shldataobject   0  <- flipped
+// What the batch cost, kept because it is the reusable part: the C++ SUBSTRATE these TUs lean
+// on is `crate::atl` (CComPtr/CHeapPtr/CComHeapPtr/CSimpleArray/CStringW), `crate::shellutils`
+// (the shellutils.h/utils.h header inlines, plus the CCoInit/COleInit RAII pair), `crate::layout`
+// (ui/layout.h) and `crate::shellcom` (the `lpVtbl` shape for interfaces the island renders as
+// opaque C++ classes). A header inline or a C++ template reaches no TU, so rustconv never sees a
+// body for one and the name simply does not resolve — those are ports, not translations.
 //
-// Read those against the pre-substrate numbers (shldataobject 22, iconcache 68, shlfolder 75,
-// shlfileop 227, brfolder 235, shlexec 415) and note that brfolder went UP, 235 -> 244: making
-// the ATL types resolve does not only remove errors, it also un-masks the ones that were hiding
-// behind an unresolved name. A rising count on a file is progress, not regression.
+// Two traps worth keeping, both of which cost real time here:
 //
-// SHLFOLDER COMPILES CLEAN on all three arches and is still parked, which is a DIFFERENT
-// blocker from the rest — read this before trying to flip it. `shlfolder.cpp` exports two
-// OVERLOADS of `SHELL32_CoCreateInitSF` (a 7-parameter and a 5-parameter form; see
-// `llvm-nm --defined-only` on the .obj), and several of its exports take C++ `const GUID&`
-// reference parameters. `EXTERN_C` cannot express an overload SET — one name, one symbol — and
-// the translation produced a single `SHELL32_CoCreateInitSF`, so the other overload's callers
-// would lose their definition. Meanwhile the Rust module's `#[no_mangle]` exports (SHCreateLinks,
-// SHELL32_CompareDetails, every `*_RustBridge`) collide with the .cpp's identical unmangled
-// symbols, so it cannot be left wired while the .cpp compiles either. The resolution is a HYBRID
-// cohab — retain the overload pair (and the reference-taking helpers) in C++, flip the rest —
-// which is a deliberate split, not a mechanical edit, and is owed rather than done.
+// Do NOT add ULARGE_INTEGER or the ERROR_*/FILE_ATTRIBUTE_*/LANG_* constants to this crate:
+// they already arrive through `ntdll_sys::nt::*`, which a scan of the `island_*.rs` files
+// alone does not reveal. A second definition is E0659 at every use, not a shadow.
 //
-// What each still needs, in cheapest-first order:
+// If you bulk-apply casts from rustc spans, GUARD MATCH PATTERNS. A cast is not legal in a
+// pattern; `crate-repair` declines those by design and a hand-rolled pass that forgets to
+// silently writes `(SE_ERR_FNF) as usize => ...`, which does not compile. Cast the SCRUTINEE.
 //
-//   * iconcache (59) — cast and signature integration plus a handful of one-offs: a function-
-//     local `static int s_imgListIdx` the translation dropped, the nested-anon-union
-//     `RTL_CRITICAL_SECTION_DEBUG` initialiser, `IID_NULL_PPV_ARG` (a macro that expands to
-//     THREE arguments, so its call sites have to be rewritten rather than macro-ised), and
-//     `MAKEROP4`/`ImageList_AddIcon` for the prelude.
-//   * brfolder (244) — cast/signature integration at volume, plus TreeView_* macro residue.
-//   * shlfileop / shlexec (227 / 349) — both additionally want `CStringW`, which `atl.rs`
-//     deliberately does NOT yet provide. Its measured surface is new()/Left/GetLength/IsEmpty/
-//     SetString/GetBuffer/ReleaseBuffer/as_ptr/`+=` plus 14 `Format` calls. `Format` is
-//     printf-variadic, and stable Rust cannot DEFINE a variadic fn — it needs a trampoline in
-//     `dll/win32/shell32/rust_varargs_shim.c`, the same mechanism ShellMessageBoxA already uses.
-//     Designing CStringW before that decision is made would be guesswork, so it waits.
+// WARNING for whoever runs `crate-repair` on this crate: **it edits shared MACRO DEFINITIONS
+// to satisfy errors reported at their EXPANSION sites, once per call site.** Seen three times,
+// on two different macros:
+//   * `_countof!` — rewritten `u32` -> `i32` plus compensating casts in three ALREADY-LANDED
+//     files. C's `sizeof(a)/sizeof(*a)` is unsigned.
+//   * `ARRAY_SIZE!` — stacked into
+//     `(((((((($a).len()) as u32) as usize) as u32) as usize) as u32) as usize) as u32`
+//     while repairing shlexec (2026-07-31), and rustc asks for the same edit AGAIN at the three
+//     `strlenW(x) + 1 > ARRAY_SIZE!(y)` sites in that file (it wants `.try_into().unwrap()` in
+//     the macro body). Cast at the call site: `> ARRAY_SIZE!(y) as usize`.
+// Revert the macro every time and cast at the call site instead. The test that it was pure
+// blast radius: re-run `cargo check` after reverting — the error count does not move (it did
+// not, on any of the three occasions).
 //
-// Each carries an `//! ORPHAN-BY-DESIGN:` banner. PAID artifacts — do not delete them to tidy up.
+// One measurement worth remembering: resolving a name does not only REMOVE errors, it also
+// un-masks the ones that were hiding behind it. brfolder went 235 -> 244 when the ATL types
+// started resolving, and shlexec's E0308 count went 56 -> 61 when its externs landed. A rising
+// count on a file mid-grind is progress, not regression.
 //
-// pub mod brfolder;
-// pub mod iconcache;
-// pub mod shlexec;
-// pub mod shlfileop;
-// pub mod shlfolder;
+// These were PAID artifacts — do not delete a translated `.rs` to tidy up.
+//
+/// brfolder.cpp — the SHBrowseForFolder dialog. FLIPPED 2026-07-31: 86 -> 0. The residue was
+/// this file's own casts plus four defects a green C build hides: amd64 widths baked into
+/// `LRESULT`/`UINT_PTR`/`SIZE_T` casts, a C++ `!` turned into Rust's BITWISE not, one of two
+/// `BrFolder_GetName` OVERLOADS dropped, and a `COleInit` RAII local left uninitialised so
+/// neither OleInitialize nor OleUninitialize ran.
+pub mod brfolder;
+/// shlexec.cpp — ShellExecute and the whole verb / association / DDE launch path, and the last
+/// of the six to flip (2026-08-01: 94 -> 0). Six defects a green C build hides, every one of
+/// them somewhere C's type system declines to have an opinion:
+///   * THREE dropped `sizeof`s. `sizeof(STARTUPINFOW)` became `size_of_val(&STARTUPINFOW)`, and
+///     both `cbSize != sizeof(SHELLEXECUTEINFO{A,W})` entry gates lost the `sizeof` outright —
+///     that comparison is what validates a caller's struct before any field of it is read.
+///   * The `SHELL_ExecuteW32` typedef was `extern "system"` where neither the C typedef nor
+///     `SHELL_ExecuteW` carries WINAPI. stdcall vs cdecl: on i386, caller and callee would have
+///     disagreed about who pops the arguments.
+///   * `SUCCEEDED(hr)` translated to `(hr as u32) >= 0`, which is unconditionally true, so a
+///     FAILED `AssocQueryStringW` still selected the "runas" verb.
+///   * `goto done` became a self-referential `'done: { break 'done; }` — a jump to itself, so
+///     the runas-cancelled path fell through and overwrote its `retval = 33` with an error.
+///   * `GetUIObjectOf(.., addr_of_mut!(cm))` took the address of the out-parameter instead of
+///     passing it, so `shellex_get_contextmenu` never filled its caller's pointer.
+///   * `RealShellExecuteA`/`ExA` (SHELL32.265/266) had HWND, PHANDLE and HINSTANCE flattened to
+///     `isize` while their W twins were typed correctly.
+/// `UrlIsFileUrlW` was one more phantom symbol: shlwapi.h:643 `#define`s it to
+/// `UrlIsW(x, URLIS_FILEURL)`, so no export of that name exists to link against.
+pub mod shlexec;
+pub mod shlfileop;
+/// changenotify.cpp — the CLIENT half of shell change notification (the server half is the
+/// separate `shelldesktop/CChangeNotifyServer.cpp`, still C++). Its one ATL `CWindowImpl<>`
+/// stays behind in `rust_changenotify_broker_stub.cpp`; the module header says why.
+///
+/// The first TU in this wave to need NO `EXTERN_C` lockstep at all — every one of its 15
+/// declared names was already inside an `extern "C"` block, and its other 8 exports have no
+/// header declaration to mangle.
+pub mod changenotify;
+/// CIDLDataObj.cpp — the shell's `IDataObject`/`IAsyncOperation` for a PIDL selection, plus
+/// the `IEnumFORMATETC` it hands out and the TU's four constructors. Split across three
+/// modules because one TU holds two COM classes and a set of free functions; the C++ file is
+/// the unit that leaves CMake, not the module.
+///
+/// The TU that unblocked ATL CONTAINER state. `CSimpleArray<FORMATETC>`/`<STGMEDIUM>` cannot
+/// be flattened to a pointer the way `CComPtr` is — a container's destructor walks storage the
+/// scaffold does not own — so the field keeps its type and `atl.rs`'s `Drop` restores the C++
+/// member destructor. The explicit dtor's own `RemoveAll()` is not a double free: it is
+/// idempotent, and C++ runs the body before the member destructors either way.
+pub mod CIDLDataObj;
+pub mod IEnumFORMATETCImpl;
+pub mod cidldataobj_free;

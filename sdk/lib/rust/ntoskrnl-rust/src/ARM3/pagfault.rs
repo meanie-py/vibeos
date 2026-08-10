@@ -2330,7 +2330,9 @@ pub unsafe extern "system" fn MmSetExecuteOptions(ExecuteOptions: ULONG) -> NTST
     let mut Status = STATUS_ACCESS_DENIED;
     ASSERT!(KeGetCurrentIrql() == PASSIVE_LEVEL);
 
-    if (ExecuteOptions & !0x3F) != 0 {
+    // ndk/mmtypes.h: MEM_EXECUTE_OPTION_VALID_FLAGS is 0x3F.
+    const MEM_EXECUTE_OPTION_VALID_FLAGS: u32 = 0x3F;
+    if (ExecuteOptions & !MEM_EXECUTE_OPTION_VALID_FLAGS) != 0 {
         return STATUS_INVALID_PARAMETER;
     }
 

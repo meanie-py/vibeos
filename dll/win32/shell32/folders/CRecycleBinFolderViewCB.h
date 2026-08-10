@@ -12,7 +12,11 @@ class CRecycleBinFolderViewCB
     , public IShellFolderViewCB
 {
     IShellView *m_pShellView; // Not ref-counted!
-    CRecycleBin *m_pRecycleBin;
+    /* The folder is Rust-owned (shell32-rust/src/recycle_bin.rs), so this is the interface
+     * pointer we were handed and NOT a CRecycleBin*: a static_cast back to the C++ class would
+     * apply that class's base-subobject offset to an object Rust laid out. Its one non-virtual
+     * method is reached through CRecycleBin_ParseRecycleBinPath_RustBridge. */
+    IShellFolder2 *m_pRecycleBin;
     ULONG m_nChangeNotif; // Change notification handle
     CComHeapPtr<ITEMIDLIST> m_pidlParent;
     CComHeapPtr<ITEMIDLIST> m_pidls[2];
@@ -24,7 +28,7 @@ class CRecycleBinFolderViewCB
 public:
     CRecycleBinFolderViewCB();
     virtual ~CRecycleBinFolderViewCB();
-    void Initialize(CRecycleBin *pRecycleBin, IShellView *psv, LPCITEMIDLIST pidlParent);
+    void Initialize(IShellFolder2 *pRecycleBin, IShellView *psv, LPCITEMIDLIST pidlParent);
 
     // IShellFolderViewCB
     STDMETHODIMP MessageSFVCB(UINT uMsg, WPARAM wParam, LPARAM lParam) override;

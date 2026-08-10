@@ -175,6 +175,110 @@ static PVOID *Wow64pTlsSlots(VOID)
     return (PVOID *)((PBYTE)NtCurrentTeb() + WOW64_TEB_TLSSLOTS_OFFSET);
 }
 
+/* This thread's TEB32. MmCreateTeb allocates the TEB64 and the TEB32 as one
+ * region and records the delta in TEB64's WowTebOffset slot; zero means the
+ * thread has no 32-bit side at all, which is a bug in every caller here. */
+static PBYTE Wow64pCurrentTeb32(VOID)
+{
+    PBYTE Teb = (PBYTE)NtCurrentTeb();
+    LONG WowTebOffset = *(LONG *)(Teb + WOW64_TEB_WOWTEBOFFSET);
+
+    return WowTebOffset ? Teb + WowTebOffset : NULL;
+}
+
+/*
+ * ---- the win32k last-error channel --------------------------------------
+ *
+ * win32k reports failure by setting last-error and returning FALSE/0/NULL,
+ * and it sets it with EngSetLastError, which writes
+ * NtCurrentTeb()->LastErrorValue — in kernel mode, the thread's *64-bit* TEB.
+ * A 32-bit guest's GetLastError() reads TEB32->LastErrorValue, a different
+ * structure at WowTebOffset. So every error code win32k produced used to land
+ * in a TEB the guest never reads: the app got the FALSE and never the reason,
+ * across the whole USER/GDI surface. (The ntdll surface is unaffected — those
+ * syscalls return an NTSTATUS and the guest's own ntdll32 converts it into its
+ * own TEB32.)
+ *
+ * The fix is a mirror at the layer boundaries rather than WoW64 awareness
+ * inside win32k, which would mean auditing every Eng* caller in the kernel.
+ * One rule, four sites: **crossing into the kernel copies the guest's value
+ * UP; crossing into the guest copies it DOWN.** That makes TEB32 and TEB64
+ * behave as the single variable a native 64-bit process has, which is the only
+ * definition of "correct" here that does not need a case-by-case ruling on
+ * whose value wins.
+ *
+ *   win32k syscall entry   TEB32 -> TEB64        wow64_win32k.c
+ *   win32k syscall exit    TEB64 -> TEB32 (*)    wow64_win32k.c
+ *   callback into guest    TEB64 -> TEB32        wow64_callback.c
+ *   callback return        TEB32 -> TEB64        wow64_callback.c
+ *
+ * Copying UP is not optional even though the bug is about codes coming DOWN.
+ * win32k's own save-and-restore idiom (`Error = EngGetLastError(); ...;
+ * EngSetLastError(Error);` in window.rs, menu.rs) exists to leave the CALLER's
+ * last-error untouched; without the copy-up it faithfully preserves a stale
+ * value from some earlier syscall instead of the guest's.
+ *
+ * The callback pair closes a hole the syscall pair CREATES: once entry copies
+ * up, a guest window proc that makes any win32k syscall overwrites TEB64 in
+ * the middle of the outer call. co_IntSendMessageTimeout sets ERROR_TIMEOUT
+ * and BroadcastSystemMessage reads it back with EngGetLastError() AFTER the
+ * send (message.rs) — and `co_` is exactly the prefix for functions that leave
+ * the critical section and call into user mode.
+ *
+ * (*) The exit copy is conditional on the host value having CHANGED. With both
+ * boundaries in place an unconditional copy-down is provably a no-op when
+ * win32k did not write, so the test is really insurance against a boundary not
+ * listed above — guest exception dispatch re-enters guest code without passing
+ * through the callback path, and an unconditional copy-down would there clobber
+ * a value the guest set and the kernel never saw. It costs one compare.
+ *
+ * Offsets are the ones the generated offset checks assert
+ * (sdk/lib/rust/ntkrnl-sys/src/offset_check_{amd64,arm64}.rs: TEB
+ * .LastErrorValue == 104; offset_check_i386.rs: == 52).
+ */
+#define WOW64_TEB64_LASTERROR 0x68
+#define WOW64_TEB32_LASTERROR 0x34
+
+/* TEB32 -> TEB64. Returns the value now held by both. */
+ULONG Wow64LastErrorToHost(VOID)
+{
+    PBYTE Teb32 = Wow64pCurrentTeb32();
+    ULONG Guest;
+
+    if (!Teb32)
+        return 0;
+
+    Guest = *(ULONG *)(Teb32 + WOW64_TEB32_LASTERROR);
+    *(ULONG *)((PBYTE)NtCurrentTeb() + WOW64_TEB64_LASTERROR) = Guest;
+    return Guest;
+}
+
+/* TEB64 -> TEB32. */
+VOID Wow64LastErrorToGuest(VOID)
+{
+    PBYTE Teb32 = Wow64pCurrentTeb32();
+
+    if (!Teb32)
+        return;
+
+    *(ULONG *)(Teb32 + WOW64_TEB32_LASTERROR) =
+        *(ULONG *)((PBYTE)NtCurrentTeb() + WOW64_TEB64_LASTERROR);
+}
+
+/* TEB64 -> TEB32, but only if the kernel actually wrote something. */
+VOID Wow64LastErrorToGuestIfChanged(ULONG WasOnEntry)
+{
+    PBYTE Teb32 = Wow64pCurrentTeb32();
+    ULONG Host;
+
+    if (!Teb32)
+        return;
+
+    Host = *(ULONG *)((PBYTE)NtCurrentTeb() + WOW64_TEB64_LASTERROR);
+    if (Host != WasOnEntry)
+        *(ULONG *)(Teb32 + WOW64_TEB32_LASTERROR) = Host;
+}
+
 /* The CPU layer's exception entry: services LookupCache overcommit faults /
  * SMC / suspends, NtContinue-ing itself when handled. Every exception routes
  * here first (real wow64 wires this through Wow64PrepareForException). */
@@ -1289,9 +1393,7 @@ static VOID Wow64pThreadInit(const WOW64_CONTEXT *Start,
                              ULONG StackBase, ULONG StackLimit,
                              const char *What)
 {
-    PBYTE Teb = (PBYTE)NtCurrentTeb();
-    LONG WowTebOffset = *(LONG *)(Teb + WOW64_TEB_WOWTEBOFFSET);
-    PBYTE Teb32 = WowTebOffset ? Teb + WowTebOffset : NULL;
+    PBYTE Teb32 = Wow64pCurrentTeb32();
     WOW64_CONTEXT *Ctx;
 
     if (!Teb32)
@@ -1461,9 +1563,7 @@ WINAPI
 Wow64LdrpInitialize(PVOID Context)
 {
     ULONG_PTR Peb32 = 0;
-    PBYTE Teb = (PBYTE)NtCurrentTeb();
-    LONG WowTebOffset = *(LONG *)(Teb + WOW64_TEB_WOWTEBOFFSET);
-    PBYTE Teb32 = WowTebOffset ? Teb + WowTebOffset : NULL;
+    PBYTE Teb32 = Wow64pCurrentTeb32();
     ULONG ImageBase32;
     PBYTE ImageBase;
     PIMAGE_NT_HEADERS32 Nt32;

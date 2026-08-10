@@ -27,6 +27,21 @@ pub struct _NETIDDATA {
 pub type NETIDDATA = _NETIDDATA;
 pub type PNETIDDATA = *mut _NETIDDATA;
 
+// L"SYSTEM\CurrentControlSet\Services\LanmanServer\Parameters"
+static LANMANSERVER_PARAMS_KEY_BUF: [u16; 58] = [
+    b'S' as u16, b'Y' as u16, b'S' as u16, b'T' as u16, b'E' as u16, b'M' as u16, b'\\' as u16, b'C' as u16, b'u' as u16, b'r' as u16,
+    b'r' as u16, b'e' as u16, b'n' as u16, b't' as u16, b'C' as u16, b'o' as u16, b'n' as u16, b't' as u16, b'r' as u16, b'o' as u16,
+    b'l' as u16, b'S' as u16, b'e' as u16, b't' as u16, b'\\' as u16, b'S' as u16, b'e' as u16, b'r' as u16, b'v' as u16, b'i' as u16,
+    b'c' as u16, b'e' as u16, b's' as u16, b'\\' as u16, b'L' as u16, b'a' as u16, b'n' as u16, b'm' as u16, b'a' as u16, b'n' as u16,
+    b'S' as u16, b'e' as u16, b'r' as u16, b'v' as u16, b'e' as u16, b'r' as u16, b'\\' as u16, b'P' as u16, b'a' as u16, b'r' as u16,
+    b'a' as u16, b'm' as u16, b'e' as u16, b't' as u16, b'e' as u16, b'r' as u16, b's' as u16, 0,
+];
+// L"srvcomment"
+static SRVCOMMENT_VALUE_BUF: [u16; 11] = [
+    b's' as u16, b'r' as u16, b'v' as u16, b'c' as u16, b'o' as u16, b'm' as u16, b'm' as u16, b'e' as u16, b'n' as u16, b't' as u16,
+    0,
+];
+
 static mut hDllInstance: HINSTANCE = core::ptr::null_mut();
 /// The body of the C's variadic `FormatMessageBox`, with the `va_list` passed IN.
 ///
@@ -242,7 +257,7 @@ unsafe extern "C" fn IsValidDomainName(
     return (TRUE) as u8;
 }
 #[cfg(target_arch = "x86")]
-unsafe extern "stdcall" fn DNSSuffixPropDlgProc(hDlg: HWND, Msg: u32, wParam: WPARAM, lParam: LPARAM) -> INT_PTR {
+unsafe extern "system" fn DNSSuffixPropDlgProc(hDlg: HWND, Msg: u32, wParam: WPARAM, lParam: LPARAM) -> INT_PTR {
     let mut pNetIdData: *mut NETIDDATA;
 
     pNetIdData = GetWindowLongPtr(hDlg, DWLP_USER) as *mut NETIDDATA;
@@ -326,7 +341,7 @@ unsafe extern "stdcall" fn DNSSuffixPropDlgProc(hDlg: HWND, Msg: u32, wParam: WP
 }
 
 #[cfg(not(target_arch = "x86"))]
-unsafe extern "C" fn DNSSuffixPropDlgProc(hDlg: HWND, Msg: u32, wParam: WPARAM, lParam: LPARAM) -> INT_PTR {
+unsafe extern "system" fn DNSSuffixPropDlgProc(hDlg: HWND, Msg: u32, wParam: WPARAM, lParam: LPARAM) -> INT_PTR {
     let mut pNetIdData: *mut NETIDDATA;
 
     pNetIdData = GetWindowLongPtr(hDlg, DWLP_USER) as *mut NETIDDATA;
@@ -608,7 +623,7 @@ unsafe extern "C" fn NetworkDlg_OnOK(
     return (TRUE) as i32;
 }
 #[cfg(target_arch = "x86")]
-unsafe extern "stdcall" fn NetworkPropDlgProc(hDlg: HWND, Msg: u32, wParam: WPARAM, lParam: LPARAM) -> INT_PTR {
+unsafe extern "system" fn NetworkPropDlgProc(hDlg: HWND, Msg: u32, wParam: WPARAM, lParam: LPARAM) -> INT_PTR {
     let pNetIdData: *mut NETIDDATA;
 
     pNetIdData = GetWindowLongPtr(hDlg, DWLP_USER) as *mut NETIDDATA;
@@ -675,7 +690,7 @@ unsafe extern "stdcall" fn NetworkPropDlgProc(hDlg: HWND, Msg: u32, wParam: WPAR
 }
 
 #[cfg(not(target_arch = "x86"))]
-unsafe extern "C" fn NetworkPropDlgProc(hDlg: HWND, Msg: u32, wParam: WPARAM, lParam: LPARAM) -> INT_PTR {
+unsafe extern "system" fn NetworkPropDlgProc(hDlg: HWND, Msg: u32, wParam: WPARAM, lParam: LPARAM) -> INT_PTR {
     let pNetIdData: *mut NETIDDATA;
 
     pNetIdData = GetWindowLongPtr(hDlg, DWLP_USER) as *mut NETIDDATA;
@@ -754,14 +769,14 @@ unsafe extern "C" fn NetIDPage_OnInitDialog(
     SendDlgItemMessage(hwndDlg, (IDC_COMPDESC) as i32, EM_SETLIMITTEXT, MAX_COMPUTERDESCRIPTION_LENGTH as WPARAM, 0);
 
     lError = RegOpenKeyExW(HKEY_LOCAL_MACHINE,
-                           b"SYSTEM\\CurrentControlSet\\Services\\LanmanServer\\Parameters\0".as_ptr() as *const u16,
+                           LANMANSERVER_PARAMS_KEY_BUF.as_ptr() as *const u16,
                            0,
                            KEY_QUERY_VALUE,
                            &mut KeyHandle);
     if lError == (ERROR_SUCCESS) as i32
     {
         lError = RegQueryValueExW(KeyHandle,
-                                  b"srvcomment\0".as_ptr() as *const u16,
+                                  SRVCOMMENT_VALUE_BUF.as_ptr() as *const u16,
                                   core::ptr::null_mut(),
                                   core::ptr::null_mut(),
                                   ComputerDescription.as_mut_ptr() as LPBYTE,
@@ -797,7 +812,7 @@ unsafe extern "C" fn NetIDPage_OnApply(
     let mut lError: i32;
 
     lError = RegOpenKeyExW(HKEY_LOCAL_MACHINE,
-                           b"SYSTEM\\CurrentControlSet\\Services\\LanmanServer\\Parameters\0".as_ptr() as *const u16,
+                           LANMANSERVER_PARAMS_KEY_BUF.as_ptr() as *const u16,
                            0,
                            KEY_QUERY_VALUE | KEY_SET_VALUE,
                            &mut KeyHandle);
@@ -821,7 +836,7 @@ unsafe extern "C" fn NetIDPage_OnApply(
 
     dwSize = core::mem::size_of_val(&ComputerDescription) as u32;
     lError = RegQueryValueExW(KeyHandle,
-                              b"srvcomment\0".as_ptr() as *const u16,
+                              SRVCOMMENT_VALUE_BUF.as_ptr() as *const u16,
                               core::ptr::null_mut(),
                               core::ptr::null_mut(),
                               ComputerDescription.as_mut_ptr() as PBYTE,
@@ -838,7 +853,7 @@ unsafe extern "C" fn NetIDPage_OnApply(
     lError = (ERROR_SUCCESS) as i32;
     if wcscmp(ComputerDescription.as_ptr(), NewComputerDescription.as_ptr()) != 0 {
         lError = RegSetValueExW(KeyHandle,
-                                b"srvcomment\0".as_ptr() as *const u16,
+                                SRVCOMMENT_VALUE_BUF.as_ptr() as *const u16,
                                 0,
                                 REG_SZ,
                                 NewComputerDescription.as_ptr() as PBYTE,
@@ -852,7 +867,7 @@ unsafe extern "C" fn NetIDPage_OnApply(
     lError
 }
 #[cfg(target_arch = "x86")]
-unsafe extern "stdcall" fn NetIDPageProc(
+unsafe extern "system" fn NetIDPageProc(
     hwndDlg: HWND,
     uMsg: u32,
     wParam: WPARAM,
@@ -932,7 +947,7 @@ unsafe extern "stdcall" fn NetIDPageProc(
 }
 
 #[cfg(not(target_arch = "x86"))]
-unsafe extern "C" fn NetIDPageProc(
+unsafe extern "system" fn NetIDPageProc(
     hwndDlg: HWND,
     uMsg: u32,
     wParam: WPARAM,

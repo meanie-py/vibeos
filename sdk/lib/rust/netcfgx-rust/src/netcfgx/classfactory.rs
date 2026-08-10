@@ -12,8 +12,7 @@ pub struct IClassFactoryImpl {
 }
 
 pub type PIClassFactoryImpl = *mut IClassFactoryImpl;
-#[cfg(target_arch = "x86")]
-unsafe extern "stdcall" fn IClassFactory_fnQueryInterface(
+unsafe extern "system" fn IClassFactory_fnQueryInterface(
     iface: LPCLASSFACTORY,
     riid: REFIID,
     ppvObj: *mut LPVOID,
@@ -21,24 +20,7 @@ unsafe extern "stdcall" fn IClassFactory_fnQueryInterface(
     let This = iface as *mut IClassFactoryImpl;
 
     *ppvObj = core::ptr::null_mut();
-    if IsEqualIID(riid, &IID_IUnknown) != 0 || IsEqualIID(riid, &IID_IClassFactory) != 0 {
-        *ppvObj = This as LPVOID;
-        InterlockedIncrement(core::ptr::addr_of_mut!((*This).ref_));
-        return S_OK;
-    }
-    E_NOINTERFACE
-}
-
-#[cfg(not(target_arch = "x86"))]
-unsafe extern "C" fn IClassFactory_fnQueryInterface(
-    iface: LPCLASSFACTORY,
-    riid: REFIID,
-    ppvObj: *mut LPVOID,
-) -> HRESULT {
-    let This = iface as *mut IClassFactoryImpl;
-
-    *ppvObj = core::ptr::null_mut();
-    if IsEqualIID(riid, &IID_IUnknown) != 0 || IsEqualIID(riid, &IID_IClassFactory) != 0 {
+    if IsEqualIID!(riid, &IID_IUnknown) || IsEqualIID!(riid, &IID_IClassFactory) {
         *ppvObj = This as LPVOID;
         InterlockedIncrement(core::ptr::addr_of_mut!((*This).ref_));
         return S_OK;
@@ -46,26 +28,26 @@ unsafe extern "C" fn IClassFactory_fnQueryInterface(
     E_NOINTERFACE
 }
 #[cfg(target_arch = "x86")]
-unsafe extern "stdcall" fn IClassFactory_fnAddRef(
+unsafe extern "system" fn IClassFactory_fnAddRef(
     iface: LPCLASSFACTORY
 ) -> ULONG {
     let This = iface as *mut IClassFactoryImpl;
     let refCount = InterlockedIncrement(core::ptr::addr_of_mut!((*This).ref_));
 
-    return refCount;
+    return refCount as ULONG;
 }
 
 #[cfg(not(target_arch = "x86"))]
-unsafe extern "C" fn IClassFactory_fnAddRef(
+unsafe extern "system" fn IClassFactory_fnAddRef(
     iface: LPCLASSFACTORY
 ) -> ULONG {
     let This = iface as *mut IClassFactoryImpl;
     let refCount = InterlockedIncrement(core::ptr::addr_of_mut!((*This).ref_));
 
-    return refCount;
+    return (refCount) as u32;
 }
 #[cfg(target_arch = "x86")]
-unsafe extern "stdcall" fn IClassFactory_fnRelease(
+unsafe extern "system" fn IClassFactory_fnRelease(
     iface: LPCLASSFACTORY,
 ) -> ULONG {
     let This = iface as *mut IClassFactoryImpl;
@@ -75,11 +57,11 @@ unsafe extern "stdcall" fn IClassFactory_fnRelease(
         CoTaskMemFree(This as LPVOID);
         return 0;
     }
-    return refCount;
+    return refCount as ULONG;
 }
 
 #[cfg(not(target_arch = "x86"))]
-unsafe extern "C" fn IClassFactory_fnRelease(
+unsafe extern "system" fn IClassFactory_fnRelease(
     iface: LPCLASSFACTORY,
 ) -> ULONG {
     let This = iface as *mut IClassFactoryImpl;
@@ -89,10 +71,9 @@ unsafe extern "C" fn IClassFactory_fnRelease(
         CoTaskMemFree(This as LPVOID);
         return 0;
     }
-    return refCount;
+    return (refCount) as u32;
 }
-#[cfg(target_arch = "x86")]
-unsafe extern "stdcall" fn IClassFactory_fnCreateInstance(
+unsafe extern "system" fn IClassFactory_fnCreateInstance(
     iface: LPCLASSFACTORY,
     pUnkOuter: LPUNKNOWN,
     riid: REFIID,
@@ -102,41 +83,14 @@ unsafe extern "stdcall" fn IClassFactory_fnCreateInstance(
 
     *ppvObject = core::ptr::null_mut();
 
-    if (*This).riidInst.is_null() || IsEqualCLSID(riid, (*This).riidInst) != 0 || IsEqualCLSID(riid, &IID_IUnknown) != 0 {
-        return ((*This).lpfnCI)(pUnkOuter, riid, ppvObject);
+    if (*This).riidInst.is_null() || IsEqualCLSID!(riid, (*This).riidInst) || IsEqualCLSID!(riid, &IID_IUnknown) {
+        return ((*This).lpfnCI.unwrap_unchecked())(pUnkOuter, riid, ppvObject);
     }
 
     return E_NOINTERFACE;
 }
 
-#[cfg(not(target_arch = "x86"))]
-unsafe extern "C" fn IClassFactory_fnCreateInstance(
-    iface: LPCLASSFACTORY,
-    pUnkOuter: LPUNKNOWN,
-    riid: REFIID,
-    ppvObject: *mut LPVOID,
-) -> HRESULT {
-    let This = iface as *mut IClassFactoryImpl;
-
-    *ppvObject = core::ptr::null_mut();
-
-    if (*This).riidInst.is_null() || IsEqualCLSID(riid, (*This).riidInst) != 0 || IsEqualCLSID(riid, &IID_IUnknown) != 0 {
-        return ((*This).lpfnCI)(pUnkOuter, riid, ppvObject);
-    }
-
-    return E_NOINTERFACE;
-}
-
-#[cfg(target_arch = "x86")]
-unsafe extern "stdcall" fn IClassFactory_fnLockServer(
-    iface: LPCLASSFACTORY,
-    fLock: BOOL,
-) -> HRESULT {
-    E_NOTIMPL
-}
-
-#[cfg(not(target_arch = "x86"))]
-unsafe extern "C" fn IClassFactory_fnLockServer(
+unsafe extern "system" fn IClassFactory_fnLockServer(
     iface: LPCLASSFACTORY,
     fLock: BOOL,
 ) -> HRESULT {
@@ -150,7 +104,7 @@ pub unsafe extern "C" fn IClassFactory_fnConstructor(
 ) -> *mut IClassFactory {
     let lpclf: *mut IClassFactoryImpl;
 
-    lpclf = CoTaskMemAlloc(core::mem::size_of::<IClassFactoryImpl>()) as *mut IClassFactoryImpl;
+    lpclf = CoTaskMemAlloc((core::mem::size_of::<IClassFactoryImpl>()) as SIZE_T) as *mut IClassFactoryImpl;
     (*lpclf).ref_ = 1;
     (*lpclf).lpVtbl = core::ptr::addr_of!(dclfvt);
     (*lpclf).lpfnCI = lpfnCI;

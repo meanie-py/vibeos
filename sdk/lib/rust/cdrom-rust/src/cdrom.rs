@@ -232,7 +232,7 @@ unsafe extern "C" {
     fn DeviceRegisterInterface(ext: *mut CDROM_DEVICE_EXTENSION, InterfaceType: i32) -> NTSTATUS;
 }
 unsafe extern "C" {
-    fn UNREFERENCED_PARAMETER(param: i32);
+    fn UNREFERENCED_PARAMETER(param: usize);
 }
 unsafe extern "C" {
     fn FREE_POOL(ptr: *mut core::ffi::c_void);
@@ -1157,7 +1157,7 @@ pub unsafe extern "system" fn DeviceEvtSelfManagedIoCleanup(Device: *mut core::f
     // Release device unless surprise removed
     if (*deviceExtension).SurpriseRemoved == 0 {
         status = DeviceClaimRelease(deviceExtension, 1 /* TRUE */);
-        UNREFERENCED_PARAMETER(status); // defensive coding
+        UNREFERENCED_PARAMETER((status) as usize); // defensive coding
     }
 
     // Flush queued DPCs
@@ -1576,7 +1576,7 @@ pub unsafe extern "system" fn DeviceEvtIoInCallerContext(
         if !(*cdData).ExclusiveOwner.is_null() && (*cdData).ExclusiveOwner != fileObject {
             let mut isBlocked: u8 = 0;
             status = RequestIsIoctlBlockedByExclusiveAccess(Request, &mut isBlocked as *mut u8);
-            UNREFERENCED_PARAMETER(status);
+            UNREFERENCED_PARAMETER((status) as usize);
 
             if isBlocked != 0 {
                 if (*requestParameters_ptr).Parameters.DeviceIoControl.as_ref().IoControlCode == IOCTL_STORAGE_EVENT_NOTIFICATION
@@ -1619,7 +1619,7 @@ pub unsafe extern "system" fn DeviceEvtIoInCallerContext(
         }
 
         NT_ASSERT((processed != 0) as i32);
-        UNREFERENCED_PARAMETER(processed as i32);
+        UNREFERENCED_PARAMETER((processed as i32) as usize);
     } else if (*requestParameters_ptr).Type == WdfRequestTypeDeviceControlInternal {
         RequestProcessInternalDeviceControl(Request as WDFREQUEST, deviceExtension);
     } else {
@@ -2544,7 +2544,7 @@ pub unsafe extern "C" fn RequestDispatchSyncWithSequentialQueue(
             // should bypass verify required then retry the request.
             //
             status = STATUS_IO_DEVICE_ERROR;
-            UNREFERENCED_PARAMETER(status); // disables prefast warning; defensive coding...
+            UNREFERENCED_PARAMETER((status) as usize); // disables prefast warning; defensive coding...
 
             processed = RequestDispatchSyncWithSequentialQueue(Device, Request, RequestParameters);
         } else {
@@ -2749,7 +2749,7 @@ pub unsafe extern "C" fn RequestDispatchSpecialIoctls(
             // If the status is verified required and this request
             // should bypass verify required then retry the request.
             status = STATUS_IO_DEVICE_ERROR;
-            UNREFERENCED_PARAMETER(status); // disables prefast warning; defensive coding...
+            UNREFERENCED_PARAMETER((status) as usize); // disables prefast warning; defensive coding...
 
             processed = RequestDispatchSpecialIoctls(Device, Request, RequestParameters);
         } else {
@@ -2780,7 +2780,7 @@ pub unsafe extern "C" fn RequestDispatchUnknownRequests(
             RequestCompletion(deviceExtension, Request, status, 0);
         }
     }
-    UNREFERENCED_PARAMETER(status);
+    UNREFERENCED_PARAMETER((status) as usize);
     1u8
 }
 #[no_mangle]
@@ -2996,9 +2996,9 @@ pub unsafe extern "system" fn SequentialQueueEvtIoDeviceControl(
 
     CdromDbgPrint1(b"[IOCTL-IN] code=%lx\n\0".as_ptr() as *const i8, IoControlCode as usize);
 
-    UNREFERENCED_PARAMETER(OutputBufferLength as i32);
-    UNREFERENCED_PARAMETER(InputBufferLength as i32);
-    UNREFERENCED_PARAMETER(IoControlCode as i32);
+    UNREFERENCED_PARAMETER((OutputBufferLength as i32) as usize);
+    UNREFERENCED_PARAMETER((InputBufferLength as i32) as usize);
+    UNREFERENCED_PARAMETER((IoControlCode as i32) as usize);
 
     // get the request parameters
     WDF_REQUEST_PARAMETERS_INIT(requestParameters.as_mut_ptr());

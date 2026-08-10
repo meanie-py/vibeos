@@ -22,7 +22,7 @@ elseif(ARCH STREQUAL "arm64")
     set(HIDUSB_RUST_RUSTFLAGS "")
 endif()
 
-file(GLOB_RECURSE HIDUSB_RUST_SRCS ${HIDUSB_RUST_WORKSPACE_DIR}/hidusb-rust/src/*.rs)
+rust_crate_sources(HIDUSB_RUST_SRCS "${HIDUSB_RUST_WORKSPACE_DIR}" hidusb-rust)
 
 add_custom_command(
     OUTPUT ${HIDUSB_RUST_LIB}

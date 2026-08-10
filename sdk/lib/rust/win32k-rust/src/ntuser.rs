@@ -23,9 +23,13 @@ macro_rules! w {
 }
 
 
-// win32k ERR()/TRACE() are debug-channel macros; route to a no-op fn (call sites
-// use ERR(...) call syntax — see cliprgn.rs).
-#[inline(always)] unsafe fn ERR(_msg: *const i8) {}
+// win32k ERR() is a debug-channel macro; route it to a real fn (call sites use
+// ERR(...) call syntax — see cliprgn.rs). Not a no-op: these two report USER
+// subsystem init failing — a handle table that would not create, and a session
+// impl that would not start. A silent one of those is a desktop that never
+// appears with nothing on the wire to say why.
+extern "C" { fn DbgPrint(fmt: *const i8, ...) -> u32; }
+#[inline(always)] unsafe fn ERR(msg: *const i8) { DbgPrint(msg); }
 
 // Bugcheck codes (bugcodes.mc) + the USER subsystem version (ntuser.h:1149).
 const USER_VERSION: u32 = 0x0005_0000;            // MAKELONG(0x0000, 0x0005)
@@ -239,53 +243,8 @@ pub unsafe extern "system" fn UserInitialize() -> NTSTATUS {
 
     STATUS_SUCCESS
 }
-#[cfg(target_arch = "x86")]
 #[no_mangle]
-pub unsafe extern "stdcall" fn NtUserInitialize(
-    dwWinVersion: DWORD,
-    hPowerRequestEvent: HANDLE,
-    hMediaRequestEvent: HANDLE,
-) -> NTSTATUS {
-    let mut Status: NTSTATUS;
-
-    if !gpepCSRSS.is_null() {
-        return STATUS_UNSUCCESSFUL;
-    }
-
-    if dwWinVersion != USER_VERSION {
-        KeBugCheckEx(
-            WIN32K_INIT_OR_RIT_FAILURE,
-            0,
-            0,
-            dwWinVersion as ULONG_PTR,
-            USER_VERSION as ULONG_PTR,
-        );
-    }
-
-    UserEnterExclusive();
-
-    InitCsrProcess();
-
-    Status = IntInitWin32PowerManagement(hPowerRequestEvent);
-    if !NT_SUCCESS(Status) {
-        UserLeave();
-        return Status;
-    }
-
-    if InitializeGreCSRSS() == 0 {
-        UserLeave();
-        return STATUS_UNSUCCESSFUL;
-    }
-
-    Status = UserInitialize();
-
-    UserLeave();
-    Status
-}
-
-#[cfg(not(target_arch = "x86"))]
-#[no_mangle]
-pub unsafe extern "C" fn NtUserInitialize(
+pub unsafe extern "system" fn NtUserInitialize(
     dwWinVersion: DWORD,
     hPowerRequestEvent: HANDLE,
     hMediaRequestEvent: HANDLE,

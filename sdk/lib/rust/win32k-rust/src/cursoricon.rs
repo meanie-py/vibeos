@@ -613,9 +613,8 @@ unsafe fn IntCleanupCurIconCache_impl(Win32Process: PPROCESSINFO) {
         UserDereferenceObject(CurIcon as _);
     }
 }
-#[cfg(target_arch = "x86")]
 #[no_mangle]
-pub unsafe extern "stdcall" fn NtUserGetIconInfo(
+pub unsafe extern "system" fn NtUserGetIconInfo(
     hCurIcon: HANDLE,
     IconInfo: PICONINFO,
     lpModule: PUNICODE_STRING,
@@ -788,185 +787,8 @@ pub unsafe extern "stdcall" fn NtUserGetIconInfo(
 
     Ret
 }
-
-#[cfg(not(target_arch = "x86"))]
 #[no_mangle]
-pub unsafe extern "C" fn NtUserGetIconInfo(
-    hCurIcon: HANDLE,
-    IconInfo: PICONINFO,
-    lpModule: PUNICODE_STRING,
-    lpResName: PUNICODE_STRING,
-    pbpp: LPDWORD,
-    bInternal: BOOL,
-) -> BOOL {
-    let mut ii: ICONINFO = core::mem::zeroed();
-    let CurIcon: PCURICON_OBJECT;
-    let mut Status: NTSTATUS = STATUS_SUCCESS as NTSTATUS;
-    let mut Ret: BOOL = 0;
-    let mut colorBpp: DWORD = 0;
-
-    /* Check if something was actually asked */
-    if IconInfo.is_null() && lpModule.is_null() && lpResName.is_null() {
-        EngSetLastError(ERROR_INVALID_PARAMETER);
-        return 0;
-    }
-
-    UserEnterExclusive();
-
-    CurIcon = UserGetCurIconObject(hCurIcon as HCURSOR);
-    if CurIcon.is_null() {
-        UserLeave();
-        return 0;
-    }
-
-    'leave: loop {
-        /* Give back the icon information */
-        if !IconInfo.is_null() {
-            let mut FrameCurIcon: PCURICON_OBJECT = CurIcon;
-            if (*CurIcon).CURSORF_flags & CURSORF_ACON != 0 {
-                /* Get information from first frame. */
-                FrameCurIcon = *(*(CurIcon as PACON)).aspcur.add(0);
-            }
-
-            /* Fill data */
-            ii.fIcon = is_icon(FrameCurIcon);
-            ii.xHotspot = (*FrameCurIcon).xHotspot as _;
-            ii.yHotspot = (*FrameCurIcon).yHotspot as _;
-
-            /* Copy bitmaps */
-            ii.hbmMask = BITMAP_CopyBitmap((*FrameCurIcon).hbmMask);
-            GreSetObjectOwner(ii.hbmMask as _, GDI_OBJ_HMGR_POWNED);
-            ii.hbmColor = BITMAP_CopyBitmap((*FrameCurIcon).hbmColor);
-            GreSetObjectOwner(ii.hbmColor as _, GDI_OBJ_HMGR_POWNED);
-            colorBpp = (*FrameCurIcon).bpp;
-
-            /* Copy fields */
-            Status = SafeProbeForWrite(
-                IconInfo as *mut core::ffi::c_void,
-                core::mem::size_of::<ICONINFO>() as ULONG_PTR,
-                1,
-            );
-            if NT_SUCCESS(Status) {
-                Status = SafeProbeForWrite(
-                    pbpp as *mut core::ffi::c_void,
-                    core::mem::size_of::<DWORD>() as ULONG_PTR,
-                    1,
-                );
-            }
-            if NT_SUCCESS(Status) {
-                RtlCopyMemory(
-                    IconInfo as *mut core::ffi::c_void,
-                    core::ptr::addr_of!(ii) as *const core::ffi::c_void,
-                    core::mem::size_of::<ICONINFO>(),
-                );
-
-                if !pbpp.is_null() {
-                    *pbpp = colorBpp;
-                }
-            }
-
-            if !NT_SUCCESS(Status) {
-                SetLastNtError(Status);
-                break 'leave;
-            }
-        }
-
-        /* Give back the module name */
-        if !lpModule.is_null() {
-            let mut BufLen: ULONG = 0;
-            if (*CurIcon).atomModName == 0 {
-                break 'leave;
-            }
-
-            RtlQueryAtomInAtomTable(
-                gAtomTable as _,
-                (*CurIcon).atomModName,
-                core::ptr::null_mut(),
-                core::ptr::null_mut(),
-                core::ptr::null_mut(),
-                &mut BufLen,
-            );
-            /* Get the module name from the atom table */
-            {
-                BufLen += core::mem::size_of::<WCHAR>() as ULONG;
-                if BufLen > (*lpModule).MaximumLength as ULONG {
-                    (*lpModule).Length = 0;
-                    (*lpModule).MaximumLength = BufLen as USHORT;
-                } else {
-                    BufLen = (*lpModule).MaximumLength as ULONG;
-                    RtlQueryAtomInAtomTable(
-                        gAtomTable as _,
-                        (*CurIcon).atomModName,
-                        core::ptr::null_mut(),
-                        core::ptr::null_mut(),
-                        (*lpModule).Buffer as _,
-                        &mut BufLen,
-                    );
-                    (*lpModule).Length = BufLen as USHORT;
-                }
-            }
-
-            if !NT_SUCCESS(Status) {
-                SetLastNtError(Status);
-                break 'leave;
-            }
-        }
-
-        if !lpResName.is_null() {
-            if (*CurIcon).strName.Buffer.is_null() {
-                break 'leave;
-            }
-
-            /* Copy it */
-            Status = SafeProbeForWrite(
-                lpResName as *mut core::ffi::c_void,
-                core::mem::size_of::<_UNICODE_STRING>() as ULONG_PTR,
-                1,
-            );
-            if NT_SUCCESS(Status) {
-                Status = SafeProbeForWrite(
-                    (*lpResName).Buffer as *mut core::ffi::c_void,
-                    (*lpResName).MaximumLength as ULONG_PTR,
-                    1,
-                );
-            }
-            if NT_SUCCESS(Status) {
-                if IS_INTRESOURCE((*CurIcon).strName.Buffer) != 0 {
-                    (*lpResName).Buffer = (*CurIcon).strName.Buffer;
-                    (*lpResName).Length = 0;
-                    (*lpResName).MaximumLength = 0;
-                } else if (*lpResName).MaximumLength < (*CurIcon).strName.MaximumLength {
-                    (*lpResName).Length = 0;
-                    (*lpResName).MaximumLength = (*CurIcon).strName.MaximumLength;
-                } else {
-                    RtlCopyMemory(
-                        (*lpResName).Buffer as *mut core::ffi::c_void,
-                        (*CurIcon).strName.Buffer as *const core::ffi::c_void,
-                        (*CurIcon).strName.Length as usize,
-                    );
-                    (*lpResName).Length = (*CurIcon).strName.Length;
-                }
-            }
-        }
-
-        if !NT_SUCCESS(Status) {
-            SetLastNtError(Status);
-            break 'leave;
-        }
-
-        Ret = 1;
-        break 'leave;
-    }
-
-    UserDereferenceObject(CurIcon as *mut core::ffi::c_void);
-
-    UserLeave();
-
-    Ret
-}
-#[cfg(target_arch = "x86")]
-#[no_mangle]
-pub unsafe extern "stdcall" fn NtUserGetIconSize(
+pub unsafe extern "system" fn NtUserGetIconSize(
     hCurIcon: HANDLE,
     istepIfAniCur: UINT,
     plcx: PLONG,
@@ -1012,58 +834,8 @@ pub unsafe extern "stdcall" fn NtUserGetIconSize(
     UserLeave();
     bRet
 }
-
-#[cfg(not(target_arch = "x86"))]
 #[no_mangle]
-pub unsafe extern "C" fn NtUserGetIconSize(
-    hCurIcon: HANDLE,
-    istepIfAniCur: UINT,
-    plcx: PLONG,
-    plcy: PLONG,
-) -> BOOL {
-    let mut CurIcon: PCURICON_OBJECT;
-    let mut Status: NTSTATUS = STATUS_SUCCESS;
-    let mut bRet: BOOL = 0;
-
-    UserEnterShared();
-
-    'cleanup: {
-        CurIcon = UserGetCurIconObject(hCurIcon as _);
-        if CurIcon.is_null() {
-            break 'cleanup;
-        }
-
-        if (*CurIcon).CURSORF_flags & CURSORF_ACON != 0 {
-            let AniCurIcon: PACON = CurIcon as PACON;
-            CurIcon = *(*AniCurIcon).aspcur.add(0);
-            UserDereferenceObject(AniCurIcon as *mut _);
-            UserReferenceObject(CurIcon as *mut _);
-        }
-
-        Status = SafeProbeForWrite(plcx as *mut c_void, core::mem::size_of::<LONG>() as _, 1);
-        if NT_SUCCESS(Status) {
-            Status = SafeProbeForWrite(plcy as *mut c_void, core::mem::size_of::<LONG>() as _, 1);
-        }
-        if NT_SUCCESS(Status) {
-            core::ptr::write_volatile(plcx, (*CurIcon).cx as LONG);
-            core::ptr::write_volatile(plcy, (*CurIcon).cy as LONG);
-        }
-
-        if NT_SUCCESS(Status) {
-            bRet = 1;
-        } else {
-            SetLastNtError(Status);
-        }
-
-        UserDereferenceObject(CurIcon as *mut _);
-    }
-
-    UserLeave();
-    bRet
-}
-#[cfg(target_arch = "x86")]
-#[no_mangle]
-pub unsafe extern "stdcall" fn NtUserGetCursorInfo(pci: PCURSORINFO) -> BOOL {
+pub unsafe extern "system" fn NtUserGetCursorInfo(pci: PCURSORINFO) -> BOOL {
     let mut SafeCi: CURSORINFO = core::mem::zeroed();
     let CurInfo: PSYSTEM_CURSORINFO;
     let Status: NTSTATUS = STATUS_SUCCESS;
@@ -1108,99 +880,8 @@ pub unsafe extern "stdcall" fn NtUserGetCursorInfo(pci: PCURSORINFO) -> BOOL {
 
     Ret
 }
-
-#[cfg(not(target_arch = "x86"))]
 #[no_mangle]
-pub unsafe extern "C" fn NtUserGetCursorInfo(pci: PCURSORINFO) -> BOOL {
-    let mut SafeCi: CURSORINFO = core::mem::zeroed();
-    let CurInfo: PSYSTEM_CURSORINFO;
-    let Status: NTSTATUS = STATUS_SUCCESS;
-    let CurIcon: PCURICON_OBJECT;
-    let mut Ret: BOOL = 0;
-
-    UserEnterShared();
-
-    CurInfo = IntGetSysCursorInfo();
-    CurIcon = (*CurInfo).CurrentCursorObject as PCURICON_OBJECT;
-
-    SafeCi.cbSize = core::mem::size_of::<CURSORINFO>() as u32;
-    SafeCi.flags = if !CurIcon.is_null() && (*CurInfo).ShowingCursor >= 0 {
-        CURSOR_SHOWING
-    } else {
-        0
-    };
-    SafeCi.hCursor = if !CurIcon.is_null() {
-        UserHMGetHandle(CurIcon) as _
-    } else {
-        core::ptr::null_mut()
-    };
-
-    SafeCi.ptScreenPos = (*gpsi_per_user()).ptCursor;
-
-    if (*pci).cbSize == core::mem::size_of::<CURSORINFO>() as u32 {
-        RtlCopyMemory(
-            pci as *mut core::ffi::c_void,
-            core::ptr::addr_of!(SafeCi) as *const core::ffi::c_void,
-            core::mem::size_of::<CURSORINFO>() as usize,
-        );
-        Ret = 1;
-    } else {
-        EngSetLastError(ERROR_INVALID_PARAMETER);
-    }
-
-    if !NT_SUCCESS(Status) {
-        SetLastNtError(Status);
-    }
-
-    UserLeave();
-
-    Ret
-}
-#[cfg(target_arch = "x86")]
-#[no_mangle]
-pub unsafe extern "stdcall" fn UserClipCursor(prcl: *mut RECTL) -> BOOL {
-    let CurInfo: PSYSTEM_CURSORINFO;
-    let DesktopWindow: PWND;
-
-    if CheckWinstaAttributeAccess(WINSTA_WRITEATTRIBUTES as _) == 0 {
-        return 0;
-    }
-
-    CurInfo = IntGetSysCursorInfo();
-
-    DesktopWindow = UserGetDesktopWindow();
-
-    if !prcl.is_null() && !DesktopWindow.is_null() {
-        if (*prcl).right < (*prcl).left || (*prcl).bottom < (*prcl).top {
-            EngSetLastError(ERROR_INVALID_PARAMETER);
-            return 0;
-        }
-
-        (*CurInfo).bClipped = 1;
-
-        (*CurInfo).rcClip.left = max((*prcl).left, (*DesktopWindow).rcWindow.left);
-        (*CurInfo).rcClip.right = min((*prcl).right, (*DesktopWindow).rcWindow.right);
-        if (*CurInfo).rcClip.right < (*CurInfo).rcClip.left {
-            (*CurInfo).rcClip.right = (*CurInfo).rcClip.left;
-        }
-
-        (*CurInfo).rcClip.top = max((*prcl).top, (*DesktopWindow).rcWindow.top);
-        (*CurInfo).rcClip.bottom = min((*prcl).bottom, (*DesktopWindow).rcWindow.bottom);
-        if (*CurInfo).rcClip.bottom < (*CurInfo).rcClip.top {
-            (*CurInfo).rcClip.bottom = (*CurInfo).rcClip.top;
-        }
-
-        UserSetCursorPos((*gpsi_per_user()).ptCursor.x, (*gpsi_per_user()).ptCursor.y, 0, 0, 0);
-    } else {
-        (*CurInfo).bClipped = 0;
-    }
-
-    1
-}
-
-#[cfg(not(target_arch = "x86"))]
-#[no_mangle]
-pub unsafe extern "C" fn UserClipCursor(prcl: *mut RECTL) -> BOOL {
+pub unsafe extern "system" fn UserClipCursor(prcl: *mut RECTL) -> BOOL {
     let CurInfo: PSYSTEM_CURSORINFO;
     let DesktopWindow: PWND;
 
@@ -1241,7 +922,7 @@ pub unsafe extern "C" fn UserClipCursor(prcl: *mut RECTL) -> BOOL {
 }
 #[cfg(target_arch = "x86")]
 #[no_mangle]
-pub unsafe extern "stdcall" fn NtUserClipCursor(mut prcl: *mut RECTL) -> BOOL {
+pub unsafe extern "system" fn NtUserClipCursor(mut prcl: *mut RECTL) -> BOOL {
     let mut rclLocal: RECTL = core::mem::zeroed();
     let bResult: BOOL;
 
@@ -1268,7 +949,7 @@ pub unsafe extern "stdcall" fn NtUserClipCursor(mut prcl: *mut RECTL) -> BOOL {
 
 #[cfg(not(target_arch = "x86"))]
 #[no_mangle]
-pub unsafe extern "C" fn NtUserClipCursor(mut prcl: *mut RECTL) -> BOOL {
+pub unsafe extern "system" fn NtUserClipCursor(mut prcl: *mut RECTL) -> BOOL {
     let mut rclLocal: RECTL = core::mem::zeroed();
     let bResult: BOOL;
 
@@ -1292,9 +973,8 @@ pub unsafe extern "C" fn NtUserClipCursor(mut prcl: *mut RECTL) -> BOOL {
 
     bResult
 }
-#[cfg(target_arch = "x86")]
 #[no_mangle]
-pub unsafe extern "stdcall" fn NtUserDestroyCursor(hCurIcon: HANDLE, bForce: BOOL) -> BOOL {
+pub unsafe extern "system" fn NtUserDestroyCursor(hCurIcon: HANDLE, bForce: BOOL) -> BOOL {
     let mut ret: BOOL = 0;
     let mut CurIcon: PCURICON_OBJECT = core::ptr::null_mut();
 
@@ -1342,60 +1022,8 @@ pub unsafe extern "stdcall" fn NtUserDestroyCursor(hCurIcon: HANDLE, bForce: BOO
     UserLeave();
     ret
 }
-
-#[cfg(not(target_arch = "x86"))]
 #[no_mangle]
-pub unsafe extern "C" fn NtUserDestroyCursor(hCurIcon: HANDLE, bForce: BOOL) -> BOOL {
-    let mut ret: BOOL = 0;
-    let mut CurIcon: PCURICON_OBJECT = core::ptr::null_mut();
-
-    UserEnterExclusive();
-
-    'leave: {
-        CurIcon = UserGetCurIconObject(hCurIcon as HCURSOR);
-        if CurIcon.is_null() {
-            ret = 0;
-            break 'leave;
-        }
-
-        if bForce == 0 {
-            /* Can not destroy global objects */
-            if (*CurIcon).head.ppi.is_null() {
-                ret = 1;
-                break 'leave;
-            }
-
-            /* Maybe we have good reasons not to destroy this object */
-            if (*CurIcon).head.ppi != PsGetCurrentProcessWin32Process() as PPROCESSINFO {
-                ret = 0;
-                break 'leave;
-            }
-
-            if ((*CurIcon).CURSORF_flags & CURSORF_CURRENT) != 0 {
-                ret = 0;
-                break 'leave;
-            }
-
-            if ((*CurIcon).CURSORF_flags & CURSORF_LRSHARED) != 0 {
-                /* This one is not an error */
-                ret = 1;
-                break 'leave;
-            }
-        }
-
-        /* Destroy the handle */
-        ret = IntDestroyCurIconObject(CurIcon as PVOID) as BOOL;
-    }
-
-    if !CurIcon.is_null() {
-        UserDereferenceObject(CurIcon as PVOID);
-    }
-    UserLeave();
-    ret
-}
-#[cfg(target_arch = "x86")]
-#[no_mangle]
-pub unsafe extern "stdcall" fn NtUserFindExistingCursorIcon(
+pub unsafe extern "system" fn NtUserFindExistingCursorIcon(
     pustrModule: PUNICODE_STRING,
     pustrRsrc: PUNICODE_STRING,
     param: *mut FINDEXISTINGCURICONPARAM,
@@ -1524,141 +1152,8 @@ pub unsafe extern "stdcall" fn NtUserFindExistingCursorIcon(
 
     Ret
 }
-
-#[cfg(not(target_arch = "x86"))]
 #[no_mangle]
-pub unsafe extern "C" fn NtUserFindExistingCursorIcon(
-    pustrModule: PUNICODE_STRING,
-    pustrRsrc: PUNICODE_STRING,
-    param: *mut FINDEXISTINGCURICONPARAM,
-) -> HICON {
-    let mut CurIcon: PCURICON_OBJECT;
-    let mut Ret: HICON = core::ptr::null_mut();
-    let mut ustrModuleSafe: _UNICODE_STRING = core::mem::zeroed();
-    let mut ustrRsrcSafe: _UNICODE_STRING = core::mem::zeroed();
-    let mut paramSafe: FINDEXISTINGCURICONPARAM = core::mem::zeroed();
-    let mut Status: NTSTATUS;
-    let pProcInfo: PPROCESSINFO = PsGetCurrentProcessWin32Process() as PPROCESSINFO;
-    let mut atomModName: RTL_ATOM = 0;
-
-    Status = SafeProbeForRead(
-        param as *mut core::ffi::c_void,
-        core::mem::size_of::<FINDEXISTINGCURICONPARAM>() as _,
-        1,
-    );
-    if NT_SUCCESS(Status) {
-        RtlCopyMemory(
-            core::ptr::addr_of_mut!(paramSafe) as *mut core::ffi::c_void,
-            param as *const core::ffi::c_void,
-            core::mem::size_of::<FINDEXISTINGCURICONPARAM>(),
-        );
-    }
-
-    Status = ProbeAndCaptureUnicodeStringOrAtom(core::ptr::addr_of_mut!(ustrRsrcSafe), pustrRsrc);
-    if !NT_SUCCESS(Status) {
-        return core::ptr::null_mut();
-    }
-
-    'done: {
-        Status = ProbeAndCaptureUnicodeString(
-            core::ptr::addr_of_mut!(ustrRsrcSafe).cast::<_UNICODE_STRING>().offset(0),
-            1i32 as i8,
-            pustrModule,
-        );
-        Status = ProbeAndCaptureUnicodeString(
-            core::ptr::addr_of_mut!(ustrModuleSafe),
-            1i32 as i8,
-            pustrModule,
-        );
-        if !NT_SUCCESS(Status) {
-            break 'done;
-        }
-        Status = RtlLookupAtomInAtomTable(
-            gAtomTable as _,
-            ustrModuleSafe.Buffer,
-            core::ptr::addr_of_mut!(atomModName),
-        );
-        ReleaseCapturedUnicodeString(core::ptr::addr_of_mut!(ustrModuleSafe), 1i32 as i8);
-        if !NT_SUCCESS(Status) {
-            break 'done;
-        }
-
-        UserEnterShared();
-        CurIcon = (*pProcInfo).pCursorCache;
-        while !CurIcon.is_null() {
-            if paramSafe.bIcon != is_icon(CurIcon) {
-                CurIcon = (*CurIcon).pcurNext;
-                continue;
-            }
-            if atomModName == (*CurIcon).atomModName {
-                if IS_INTRESOURCE((*CurIcon).strName.Buffer as *mut core::ffi::c_void)
-                    != IS_INTRESOURCE(ustrRsrcSafe.Buffer as *mut core::ffi::c_void)
-                {
-                    CurIcon = (*CurIcon).pcurNext;
-                    continue;
-                }
-
-                if IS_INTRESOURCE((*CurIcon).strName.Buffer as *mut core::ffi::c_void) != 0 {
-                    if (*CurIcon).strName.Buffer == ustrRsrcSafe.Buffer {
-                        break;
-                    }
-                } else if RtlCompareUnicodeString(
-                    core::ptr::addr_of_mut!(ustrRsrcSafe) as _,
-                    core::ptr::addr_of_mut!((*CurIcon).strName) as _,
-                    1u8,
-                ) == 0
-                {
-                    break;
-                }
-            }
-            CurIcon = (*CurIcon).pcurNext;
-        }
-
-        if CurIcon.is_null() {
-            CurIcon = gcurFirst;
-            while !CurIcon.is_null() {
-                if paramSafe.bIcon != is_icon(CurIcon) {
-                    CurIcon = (*CurIcon).pcurNext;
-                    continue;
-                }
-                if atomModName == (*CurIcon).atomModName {
-                    if IS_INTRESOURCE((*CurIcon).strName.Buffer as *mut core::ffi::c_void)
-                        != IS_INTRESOURCE(ustrRsrcSafe.Buffer as *mut core::ffi::c_void)
-                    {
-                        CurIcon = (*CurIcon).pcurNext;
-                        continue;
-                    }
-                    if IS_INTRESOURCE((*CurIcon).strName.Buffer as *mut core::ffi::c_void) != 0 {
-                        if (*CurIcon).strName.Buffer == ustrRsrcSafe.Buffer {
-                            break;
-                        }
-                    } else if RtlCompareUnicodeString(
-                        core::ptr::addr_of_mut!(ustrRsrcSafe) as _,
-                        core::ptr::addr_of_mut!((*CurIcon).strName) as _,
-                        1u8,
-                    ) == 0
-                    {
-                        break;
-                    }
-                }
-                CurIcon = (*CurIcon).pcurNext;
-            }
-        }
-        if !CurIcon.is_null() {
-            Ret = UserHMGetHandle(CurIcon) as _;
-        }
-        UserLeave();
-    }
-
-    if IS_INTRESOURCE(ustrRsrcSafe.Buffer as *mut core::ffi::c_void) == 0 {
-        ExFreePoolWithTag(ustrRsrcSafe.Buffer as *mut core::ffi::c_void, TAG_STRING);
-    }
-
-    Ret
-}
-#[cfg(target_arch = "x86")]
-#[no_mangle]
-pub unsafe extern "stdcall" fn NtUserGetClipCursor(lpRect: *mut RECTL) -> BOOL {
+pub unsafe extern "system" fn NtUserGetClipCursor(lpRect: *mut RECTL) -> BOOL {
     let CurInfo: PSYSTEM_CURSORINFO;
     let mut Rect: RECTL = core::mem::zeroed();
     let Status: NTSTATUS;
@@ -1701,55 +1196,8 @@ pub unsafe extern "stdcall" fn NtUserGetClipCursor(lpRect: *mut RECTL) -> BOOL {
     UserLeave();
     Ret
 }
-
-#[cfg(not(target_arch = "x86"))]
 #[no_mangle]
-pub unsafe extern "C" fn NtUserGetClipCursor(lpRect: *mut RECTL) -> BOOL {
-    let CurInfo: PSYSTEM_CURSORINFO;
-    let mut Rect: RECTL = core::mem::zeroed();
-    let Status: NTSTATUS;
-    let mut Ret: BOOL = 0;
-
-    UserEnterShared();
-
-    'exit: {
-        if CheckWinstaAttributeAccess(WINSTA_READATTRIBUTES) == 0 {
-            break 'exit;
-        }
-
-        if lpRect.is_null() {
-            break 'exit;
-        }
-
-        CurInfo = IntGetSysCursorInfo();
-        if (*CurInfo).bClipped != 0 {
-            Rect = (*CurInfo).rcClip;
-        } else {
-            Rect.left = 0;
-            Rect.top = 0;
-            Rect.right = UserGetSystemMetrics(SM_CXSCREEN as ULONG);
-            Rect.bottom = UserGetSystemMetrics(SM_CYSCREEN as ULONG);
-        }
-
-        Status = MmCopyToCaller(
-            lpRect as *mut core::ffi::c_void,
-            core::ptr::addr_of!(Rect) as *const core::ffi::c_void,
-            core::mem::size_of::<RECT>() as ULONG,
-        );
-        if !NT_SUCCESS(Status) {
-            SetLastNtError(Status);
-            break 'exit;
-        }
-
-        Ret = 1;
-    }
-
-    UserLeave();
-    Ret
-}
-#[cfg(target_arch = "x86")]
-#[no_mangle]
-pub unsafe extern "stdcall" fn NtUserSetCursor(hCursor: HCURSOR) -> HCURSOR {
+pub unsafe extern "system" fn NtUserSetCursor(hCursor: HCURSOR) -> HCURSOR {
     let pcurOld: PCURICON_OBJECT;
     let pcurNew: PCURICON_OBJECT;
     let mut hOldCursor: HCURSOR = core::ptr::null_mut();
@@ -1800,72 +1248,8 @@ pub unsafe extern "stdcall" fn NtUserSetCursor(hCursor: HCURSOR) -> HCURSOR {
     UserLeave();
     hOldCursor
 }
-
-#[cfg(not(target_arch = "x86"))]
 #[no_mangle]
-pub unsafe extern "C" fn NtUserSetCursor(hCursor: HCURSOR) -> HCURSOR {
-    let pcurOld: PCURICON_OBJECT;
-    let pcurNew: PCURICON_OBJECT;
-    let mut hOldCursor: HCURSOR = core::ptr::null_mut();
-
-    UserEnterExclusive();
-
-    'leave: {
-        if !hCursor.is_null() {
-            pcurNew = UserGetCurIconObject(hCursor);
-            if pcurNew.is_null() {
-                EngSetLastError(ERROR_INVALID_CURSOR_HANDLE);
-                break 'leave;
-            }
-            (*pcurNew).CURSORF_flags |= CURSORF_CURRENT;
-        } else {
-            pcurNew = core::ptr::null_mut();
-        }
-
-        let mut pcurOld_var = UserSetCursor(pcurNew, 0);
-
-        if !pcurOld_var.is_null() {
-            pcurOld_var = UserGetObjectNoErr(
-                gHandleTable,
-                UserHMGetHandle(pcurOld_var),
-                TYPE_CURSOR,
-            ) as PCURICON_OBJECT;
-
-            if !pcurOld_var.is_null() {
-                pcurOld = pcurOld_var;
-                hOldCursor = UserHMGetHandle(pcurOld) as _;
-
-                if ((*pcurOld).CURSORF_flags & CURSORF_GLOBAL) != 0 {
-                    TRACE!(
-                        b"Returning Global Cursor hcur %p\n\0".as_ptr() as *const i8,
-                        hOldCursor,
-                    );
-                }
-
-                if UserObjectInDestroy(hOldCursor as _) != 0 {
-                    hOldCursor = core::ptr::null_mut();
-                }
-                (*pcurOld).CURSORF_flags &= !CURSORF_CURRENT;
-                UserDereferenceObject(pcurOld as *mut core::ffi::c_void);
-            }
-        }
-    }
-
-    UserLeave();
-    hOldCursor
-}
-#[cfg(target_arch = "x86")]
-#[no_mangle]
-pub unsafe extern "stdcall" fn NtUserSetCursorContents(
-    hCurIcon: HANDLE,
-    UnsafeIconInfo: PICONINFO,
-) -> BOOL {
-    0
-}
-
-#[cfg(not(target_arch = "x86"))]
-#[no_mangle]
-pub unsafe extern "C" fn NtUserSetCursorContents(
+pub unsafe extern "system" fn NtUserSetCursorContents(
     hCurIcon: HANDLE,
     UnsafeIconInfo: PICONINFO,
 ) -> BOOL {
@@ -2191,153 +1575,8 @@ pub unsafe extern "system" fn UserSetCursorIconData(
 
     bResult
 }
-#[cfg(target_arch = "x86")]
 #[no_mangle]
-pub unsafe extern "stdcall" fn NtUserSetCursorIconData(
-    hcursor: HCURSOR,
-    pustrModule: PUNICODE_STRING,
-    pustrRsrc: PUNICODE_STRING,
-    pCursorData: *const CURSORDATA,
-) -> BOOL {
-    let mut cursordata: CURSORDATA = core::mem::zeroed();
-    let mut ustrModule: _UNICODE_STRING = core::mem::zeroed();
-    let mut ustrRsrc: _UNICODE_STRING = core::mem::zeroed();
-    let mut pvBuffer: *mut core::ffi::c_void;
-    let aspcur: *mut CURSORDATA;
-    let aicur: *mut DWORD;
-    let ajifRate: PINT;
-    let cjSize: UINT;
-    let mut status: NTSTATUS;
-    let mut bResult: BOOL = 0;
-
-    /* Initialize buffer, so we can handle cleanup */
-    ustrRsrc.Buffer = core::ptr::null_mut();
-    ustrModule.Buffer = core::ptr::null_mut();
-    pvBuffer = core::ptr::null_mut();
-
-    'exit: loop {
-        /* Probe and capture the cursor data structure */
-        cursordata = *pCursorData;
-
-        /* Check if this is an animated cursor */
-        if (cursordata.CURSORF_flags & CURSORF_ACON) != 0 {
-            /* Check of the range is ok */
-            if (cursordata.cpcur == 0) || (cursordata.cicur == 0)
-                || (cursordata.cpcur > 1000) || (cursordata.cicur > 1000)
-            {
-                break 'exit;
-            }
-
-            /* Calculate size */
-            cjSize = (cursordata.cpcur as UINT * core::mem::size_of::<CURSORDATA>() as UINT)
-                + (cursordata.cicur as UINT * core::mem::size_of::<DWORD>() as UINT)
-                + (cursordata.cicur as UINT * core::mem::size_of::<INT>() as UINT);
-
-            /* Allocate a buffer */
-            pvBuffer = ExAllocatePoolWithTag(PagedPool, cjSize as _, USERTAG_CURSOR);
-            if pvBuffer == core::ptr::null_mut() {
-                break 'exit;
-            }
-
-            /* Calculate the kernel mode pointers */
-            aspcur = pvBuffer as *mut CURSORDATA;
-            aicur = aspcur.offset(cursordata.cpcur as isize) as *mut DWORD;
-            ajifRate = aicur.offset(cursordata.cicur as isize) as PINT;
-
-            /* Probe and copy aspcur */
-            RtlCopyMemory(
-                aspcur as *mut core::ffi::c_void,
-                cursordata.aspcur as *const core::ffi::c_void,
-                cursordata.cpcur as usize * core::mem::size_of::<CURSORDATA>(),
-            );
-
-            /* Probe and copy aicur */
-            RtlCopyMemory(
-                aicur as *mut core::ffi::c_void,
-                cursordata.aicur as *const core::ffi::c_void,
-                cursordata.cicur as usize * core::mem::size_of::<DWORD>(),
-            );
-
-            /* Probe and copy ajifRate */
-            RtlCopyMemory(
-                ajifRate as *mut core::ffi::c_void,
-                cursordata.ajifRate as *const core::ffi::c_void,
-                cursordata.cicur as usize * core::mem::size_of::<INT>(),
-            );
-
-            /* Set the new pointers */
-            cursordata.aspcur = aspcur;
-            cursordata.aicur = aicur;
-            cursordata.ajifRate = ajifRate;
-        } else {
-            /* This is a standard cursor, we don't use the pointers */
-            cursordata.aspcur = core::ptr::null_mut();
-            cursordata.aicur = core::ptr::null_mut();
-            cursordata.ajifRate = core::ptr::null_mut();
-        }
-
-        /* Check if we got a module name */
-        if pustrModule != core::ptr::null_mut() {
-            status = ProbeAndCaptureUnicodeString(&mut ustrModule, 1i32 as KPROCESSOR_MODE, pustrModule);
-            if !NT_SUCCESS(status) {
-                break 'exit;
-            }
-        }
-
-        /* Check if we got a resource name */
-        if pustrRsrc != core::ptr::null_mut() {
-            status = ProbeAndCaptureUnicodeStringOrAtom(&mut ustrRsrc, pustrRsrc);
-            if !NT_SUCCESS(status) {
-                break 'exit;
-            }
-        }
-
-        /* Make sure the caller doesn't give us invalid flags */
-        if (cursordata.CURSORF_flags & !CURSORF_USER_MASK) != 0 {
-            break 'exit;
-        }
-
-        /* Acquire the global user lock */
-        UserEnterExclusive();
-
-        /* Call the internal function */
-        bResult = UserSetCursorIconData(
-            hcursor,
-            if pustrModule != core::ptr::null_mut() { &mut ustrModule } else { core::ptr::null_mut() },
-            if pustrRsrc != core::ptr::null_mut() { &mut ustrRsrc } else { core::ptr::null_mut() },
-            &mut cursordata,
-        );
-
-        /* Release the global user lock */
-        UserLeave();
-
-        break 'exit;
-    }
-
-    /* Free the captured module name */
-    if (ustrModule.Buffer != core::ptr::null_mut()) && IS_INTRESOURCE(ustrModule.Buffer as *mut core::ffi::c_void) == 0 {
-        ReleaseCapturedUnicodeString(&mut ustrModule, 1i32 as KPROCESSOR_MODE);
-    }
-
-    if pvBuffer != core::ptr::null_mut() {
-        ExFreePoolWithTag(pvBuffer, USERTAG_CURSOR);
-    }
-
-    /* Additional cleanup on failure */
-    if bResult == 0 {
-        if (ustrRsrc.Buffer != core::ptr::null_mut())
-            && IS_INTRESOURCE(ustrRsrc.Buffer as *mut core::ffi::c_void) == 0
-        {
-            ExFreePoolWithTag(ustrRsrc.Buffer as *mut core::ffi::c_void, TAG_STRING);
-        }
-    }
-
-    bResult
-}
-
-#[cfg(not(target_arch = "x86"))]
-#[no_mangle]
-pub unsafe extern "C" fn NtUserSetCursorIconData(
+pub unsafe extern "system" fn NtUserSetCursorIconData(
     hcursor: HCURSOR,
     pustrModule: PUNICODE_STRING,
     pustrRsrc: PUNICODE_STRING,
@@ -2782,9 +2021,8 @@ pub unsafe extern "C" fn UserDrawIconEx(
 
     Ret
 }
-#[cfg(target_arch = "x86")]
 #[no_mangle]
-pub unsafe extern "stdcall" fn NtUserDrawIconEx(
+pub unsafe extern "system" fn NtUserDrawIconEx(
     hdc: HDC,
     xLeft: INT,
     yTop: INT,
@@ -2825,53 +2063,8 @@ pub unsafe extern "stdcall" fn NtUserDrawIconEx(
     UserLeave();
     Ret
 }
-
-#[cfg(not(target_arch = "x86"))]
 #[no_mangle]
-pub unsafe extern "C" fn NtUserDrawIconEx(
-    hdc: HDC,
-    xLeft: INT,
-    yTop: INT,
-    hIcon: HICON,
-    cxWidth: INT,
-    cyHeight: INT,
-    istepIfAniCur: UINT,
-    hbrFlickerFreeDraw: HBRUSH,
-    diFlags: UINT,
-    bMetaHDC: BOOL,
-    pDIXData: PVOID,
-) -> BOOL {
-    let pIcon: PCURICON_OBJECT;
-    let Ret: BOOL;
-
-    UserEnterExclusive();
-
-    pIcon = UserGetCurIconObject(hIcon);
-    if pIcon.is_null() {
-        UserLeave();
-        return 0;
-    }
-
-    Ret = UserDrawIconEx(
-        hdc,
-        xLeft,
-        yTop,
-        pIcon,
-        cxWidth,
-        cyHeight,
-        istepIfAniCur,
-        hbrFlickerFreeDraw,
-        diFlags,
-    );
-
-    UserDereferenceObject(pIcon as PVOID);
-
-    UserLeave();
-    Ret
-}
-#[cfg(target_arch = "x86")]
-#[no_mangle]
-pub unsafe extern "stdcall" fn NtUserGetCursorFrameInfo(
+pub unsafe extern "system" fn NtUserGetCursorFrameInfo(
     hCursor: HCURSOR,
     istep: DWORD,
     rate_jiffies: *mut INT,
@@ -2936,137 +2129,8 @@ pub unsafe extern "stdcall" fn NtUserGetCursorFrameInfo(
 
     ret
 }
-
-#[cfg(not(target_arch = "x86"))]
 #[no_mangle]
-pub unsafe extern "C" fn NtUserGetCursorFrameInfo(
-    hCursor: HCURSOR,
-    istep: DWORD,
-    rate_jiffies: *mut INT,
-    num_steps: *mut DWORD,
-) -> HCURSOR {
-    let CurIcon: PCURICON_OBJECT;
-    let mut ret: HCURSOR;
-    let mut jiffies: INT = 0;
-    let mut steps: DWORD = 1;
-    let mut Status: NTSTATUS = STATUS_SUCCESS;
-
-    UserEnterShared();
-
-    CurIcon = UserGetCurIconObject(hCursor);
-    if CurIcon.is_null() {
-        UserLeave();
-        return core::ptr::null_mut();
-    }
-
-    ret = UserHMGetHandle(CurIcon) as _;
-
-    if (*CurIcon).CURSORF_flags & CURSORF_ACON != 0 {
-        let AniCurIcon: PACON = CurIcon as PACON;
-        if istep >= (*AniCurIcon).cicur {
-            UserDereferenceObject(CurIcon as _);
-            UserLeave();
-            return core::ptr::null_mut();
-        }
-        jiffies = *(*AniCurIcon).ajifRate.offset(istep as isize);
-        steps = (*AniCurIcon).cicur;
-        ret = UserHMGetHandle(
-            *(*AniCurIcon)
-                .aspcur
-                .offset(*(*AniCurIcon).aicur.offset(istep as isize) as isize),
-        ) as _;
-    }
-
-    Status = SafeProbeForWrite(
-        rate_jiffies as *mut _,
-        core::mem::size_of::<INT>() as _,
-        1,
-    );
-    if NT_SUCCESS(Status) {
-        Status = SafeProbeForWrite(
-            num_steps as *mut _,
-            core::mem::size_of::<DWORD>() as _,
-            1,
-        );
-    }
-    if NT_SUCCESS(Status) {
-        core::ptr::write_volatile(rate_jiffies, jiffies);
-        core::ptr::write_volatile(num_steps, steps);
-    }
-
-    if !NT_SUCCESS(Status) {
-        SetLastNtError(Status);
-        ret = core::ptr::null_mut();
-    }
-
-    UserDereferenceObject(CurIcon as _);
-    UserLeave();
-
-    ret
-}
-#[cfg(target_arch = "x86")]
-#[no_mangle]
-pub unsafe extern "stdcall" fn NtUserSetSystemCursor(hcur: HCURSOR, id: DWORD) -> BOOL {
-    let pcur: PCURICON_OBJECT;
-    let mut pcurOrig: PCURICON_OBJECT = core::ptr::null_mut();
-    let mut i: i32;
-    let ppi: PPROCESSINFO;
-    let mut Ret: BOOL = 0;
-
-    UserEnterExclusive();
-
-    'block: {
-        if CheckWinstaAttributeAccess(WINSTA_WRITEATTRIBUTES) == 0 {
-            break 'block;
-        }
-
-        if !hcur.is_null() {
-            pcur = UserGetCurIconObject(hcur);
-            if pcur.is_null() {
-                EngSetLastError(ERROR_INVALID_CURSOR_HANDLE);
-                break 'block;
-            }
-
-            ppi = PsGetCurrentProcessWin32Process() as PPROCESSINFO;
-
-            i = 0;
-            while i < 16 {
-                if gasyscur[i as usize].type_ == id {
-                    pcurOrig = gasyscur[i as usize].handle;
-
-                    if !pcurOrig.is_null() {
-                        break;
-                    }
-
-                    if ((*ppi_w32pf_flags(ppi)) & W32PF_CREATEDWINORDC) != 0 {
-                        gasyscur[i as usize].handle = pcur;
-                        (*pcur).CURSORF_flags |= CURSORF_GLOBAL;
-                        (*pcur).head.ppi = core::ptr::null_mut();
-                        IntInsertCursorIntoList(pcur);
-                        Ret = 1;
-                    }
-                    break;
-                }
-                i += 1;
-            }
-
-            if !pcurOrig.is_null() {
-                FIXME!(
-                    b"Need to copy cursor data or do something! pcurOrig %p new pcur %p\n\0".as_ptr() as PCHAR,
-                    pcurOrig,
-                    pcur,
-                );
-            }
-        }
-    }
-
-    UserLeave();
-    Ret
-}
-
-#[cfg(not(target_arch = "x86"))]
-#[no_mangle]
-pub unsafe extern "C" fn NtUserSetSystemCursor(hcur: HCURSOR, id: DWORD) -> BOOL {
+pub unsafe extern "system" fn NtUserSetSystemCursor(hcur: HCURSOR, id: DWORD) -> BOOL {
     let pcur: PCURICON_OBJECT;
     let mut pcurOrig: PCURICON_OBJECT = core::ptr::null_mut();
     let mut i: i32;

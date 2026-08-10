@@ -1194,60 +1194,8 @@ pub unsafe extern "C" fn UserDestroyObjectsForOwner(
 
     Ret
 }
-#[cfg(target_arch = "x86")]
 #[no_mangle]
-pub unsafe extern "stdcall" fn NtUserValidateHandleSecure(
-    handle: HANDLE
-) -> BOOL {
-    let uType: UINT;
-    let ppi: PPROCESSINFO;
-    let entry: PUSER_HANDLE_ENTRY;
-    let mut Ret: BOOL = 0;
-
-    UserEnterExclusive();
-
-    entry = handle_to_entry(gHandleTable, handle);
-    if entry.is_null() {
-        EngSetLastError(ERROR_INVALID_HANDLE);
-        // goto Exit; // Return FALSE
-        UserLeave();
-        return Ret;
-    }
-    uType = entry_type(entry) as UINT;
-    ppi = match uType {
-        x if x == TYPE_WINDOW as UINT || x == TYPE_INPUTCONTEXT as UINT => {
-            (*(entry_pi(entry) as PTHREADINFO)).ppi
-        }
-        x if x == TYPE_MENU as UINT
-            || x == TYPE_ACCELTABLE as UINT
-            || x == TYPE_CURSOR as UINT
-            || x == TYPE_HOOK as UINT
-            || x == TYPE_CALLPROC as UINT
-            || x == TYPE_SETWINDOWPOS as UINT =>
-        {
-            entry_pi(entry) as PPROCESSINFO
-        }
-        _ => core::ptr::null_mut(),
-    };
-
-    if ppi.is_null() {
-        // goto Exit; // Return FALSE
-        UserLeave();
-        return Ret;
-    }
-
-    // Same process job returns TRUE.
-    if (*(*gptiCurrent).ppi).pW32Job == (*ppi).pW32Job {
-        Ret = 1;
-    }
-
-    UserLeave();
-    Ret
-}
-
-#[cfg(not(target_arch = "x86"))]
-#[no_mangle]
-pub unsafe extern "C" fn NtUserValidateHandleSecure(
+pub unsafe extern "system" fn NtUserValidateHandleSecure(
     handle: HANDLE
 ) -> BOOL {
     let uType: UINT;

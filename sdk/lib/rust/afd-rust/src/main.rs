@@ -718,17 +718,7 @@ unsafe fn AfdCloseSocket(
 
     STATUS_SUCCESS
 }
-#[cfg(target_arch = "x86")]
-unsafe extern "stdcall" fn DisconnectComplete(
-    DeviceObject: PDEVICE_OBJECT,
-    Irp: PIRP,
-    Context: *mut core::ffi::c_void,
-) -> NTSTATUS {
-    disconnect_complete_impl(DeviceObject, Irp, Context)
-}
-
-#[cfg(not(target_arch = "x86"))]
-unsafe extern "C" fn DisconnectComplete(
+unsafe extern "system" fn DisconnectComplete(
     DeviceObject: PDEVICE_OBJECT,
     Irp: PIRP,
     Context: *mut core::ffi::c_void,

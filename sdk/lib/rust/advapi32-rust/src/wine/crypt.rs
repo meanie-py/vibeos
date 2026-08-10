@@ -303,12 +303,20 @@ unsafe fn CRYPT_CreateMachineGuid() {
         if r == ERROR_FILE_NOT_FOUND {
             let mut uuid: UUID = core::mem::zeroed();
             let mut buf: [u16; 37] = [0; 37];
-            static uuidFmt: [u16; 39] = [
+            // L"%08x-%04x-%04x-%02x%02x-%02x%02x%02x%02x%02x%02x" (48 wide chars + NUL).
+            // crypt.c:300 writes 49 elements; this had 39. It was not merely missing the
+            // terminator: it ended mid-conversion at a dangling `%02`, so the format supplied
+            // NINE complete conversions for the ELEVEN arguments sprintfW is called with below,
+            // and then ran off the end of the array looking for a NUL. A UUID needs 8-4-4-4-12
+            // hex digits, which is exactly the eleven `%0Nx` here.
+            static uuidFmt: [u16; 49] = [
                 b'%' as u16, b'0' as u16, b'8' as u16, b'x' as u16, b'-' as u16, b'%' as u16, b'0' as u16, b'4' as u16, b'x' as u16, b'-' as u16,
                 b'%' as u16, b'0' as u16, b'4' as u16, b'x' as u16, b'-' as u16, b'%' as u16, b'0' as u16, b'2' as u16, b'x' as u16,
                 b'%' as u16, b'0' as u16, b'2' as u16, b'x' as u16, b'-' as u16, b'%' as u16, b'0' as u16, b'2' as u16, b'x' as u16,
                 b'%' as u16, b'0' as u16, b'2' as u16, b'x' as u16,
-                b'%' as u16, b'0' as u16, b'2' as u16, b'x' as u16, b'%' as u16, b'0' as u16, b'2' as u16,
+                b'%' as u16, b'0' as u16, b'2' as u16, b'x' as u16, b'%' as u16, b'0' as u16, b'2' as u16, b'x' as u16,
+                b'%' as u16, b'0' as u16, b'2' as u16, b'x' as u16, b'%' as u16, b'0' as u16, b'2' as u16, b'x' as u16,
+                0,
             ];
 
             let rs = UuidCreate(&mut uuid);

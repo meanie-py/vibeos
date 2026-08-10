@@ -8,6 +8,7 @@ use ntkrnl_sys::rtl::*;
 use ntkrnl_sys::ddk::{ACCESS_MASK, CM_PARSE_CONTEXT, CmDeleteKey, CmDeleteValueKey, CmFlushKey, CmSaveKey, CmSaveMergedKeys, CmiCallRegisteredCallbacks, CmpCmdInit, CmpLazyFlush, CmpLockRegistry, CmpLockRegistryExclusive, CmpReleaseKcbLock, CmpSaveBootControlSet, CmpSetVersionData, CmpUnlockRegistry, ExGetPreviousMode, KPROCESSOR_MODE, KeEnterCriticalRegion, KeLeaveCriticalRegion, _OBJECT_ATTRIBUTES, _OBJECT_HANDLE_INFORMATION, ObCloseHandle, ObOpenObjectByName, ObOpenObjectByPointer, ObReferenceObjectByHandle, ObpValidateAttributes, PCM_KEY_BODY, PHANDLE, PIO_APC_ROUTINE, PIO_STATUS_BLOCK, PKEY_VALUE_ENTRY, POBJECT_ATTRIBUTES, POBJECT_TYPE, PSECURITY_DESCRIPTOR, PUNICODE_STRING, REG_DELETE_KEY_INFORMATION, REG_DELETE_VALUE_KEY_INFORMATION, REG_ENUMERATE_KEY_INFORMATION, REG_ENUMERATE_VALUE_KEY_INFORMATION, REG_POST_OPERATION_INFORMATION, REG_QUERY_KEY_INFORMATION, REG_QUERY_VALUE_KEY_INFORMATION, REG_SET_VALUE_KEY_INFORMATION, RtlInitEmptyUnicodeString, SeCaptureSecurityDescriptor, SeReleaseSecurityDescriptor, SeSinglePrivilegeCheck, ZwInitializeRegistry};
 use ntkrnl_sys::ddk::{KEY_INFORMATION_CLASS, KEY_VALUE_INFORMATION_CLASS, KEY_SET_INFORMATION_CLASS, _UNICODE_STRING, LUID, _GENERIC_MAPPING};
 use ntkrnl_sys::opaque_ptr;
+use ntkrnl_sys::probe::{probe_user_buffer, probe_write_user, write_user};
 // `_KPROCESSOR_MODE_KernelMode` and `_MODE_KernelMode` aren't usable from ddk for
 // our comparisons (KPROCESSOR_MODE = i8; the bindgen enum variants are u32). Define
 // local i8 constants — KernelMode == 0.
@@ -73,7 +74,10 @@ const KEY_ENUMERATE_SUB_KEYS: ACCESS_MASK = 0x0008;
 const KEY_NOTIFY: ACCESS_MASK = 0x0010;
 const KEY_READ: ACCESS_MASK = 0x00020019;
 const KEY_WRITE: ACCESS_MASK = 0x00020006;
-const KEY_WOW64_RES: ACCESS_MASK = 0x00000300;
+// KEY_WOW64_RES (0x00000300) now lives in cmwow64.rs, which is where the flags
+// are consumed — see the notes in NtCreateKey/NtOpenKey.
+// ndk/obtypes.h: OBJ_VALID_ATTRIBUTES | OBJ_KERNEL_EXCLUSIVE.
+const OBJ_VALID_KERNEL_ATTRIBUTES: ULONG = 0x000007F2 | 0x00010000;
 const DELETE: ACCESS_MASK = 0x00010000;
 const FILE_TRAVERSE: ACCESS_MASK = 0x00000020;
 
@@ -260,7 +264,11 @@ pub unsafe extern "system" fn ProbeAndCaptureObjectAttributes(
         }
 
         if (*ObjectAttributes).Length != core::mem::size_of::<_OBJECT_ATTRIBUTES>() as u32 ||
-           ((*ObjectAttributes).Attributes & !0x000012F2u32) != 0 {
+           // 0x12F2 was open-coded here for the C's ~OBJ_VALID_KERNEL_ATTRIBUTES
+           // (0x107F2) — it rejected OBJ_OPENLINK/OBJ_FORCE_ACCESS_CHECK and
+           // accepted 0x1000, which is not an attribute at all. Latent only
+           // because every NtLoadKey* caller passes OBJ_CASE_INSENSITIVE alone.
+           ((*ObjectAttributes).Attributes & !OBJ_VALID_KERNEL_ATTRIBUTES) != 0 {
             return STATUS_INVALID_PARAMETER;
         }
 
@@ -370,9 +378,11 @@ pub unsafe extern "system" fn NtCreateKey(
     let PreviousMode: KPROCESSOR_MODE = ExGetPreviousMode();
     let mut ParseContext: CM_PARSE_CONTEXT = core::mem::zeroed();
     let mut Handle: HANDLE = core::ptr::null_mut();
-    let mut DesiredAccess = DesiredAccess;
-
-    DesiredAccess &= !KEY_WOW64_RES;
+    // KEY_WOW64_RES is NOT stripped here any more: the bits are view selectors
+    // and CmpParseKey needs them to decide 32- vs 64-bit (cmwow64.rs). It
+    // consumes and clears them there, before any access check, which is the
+    // same invariant E21/#79 established — just enforced at the one choke point
+    // every key open funnels through instead of at each Nt* entry.
 
     if PreviousMode != 0i8 {
         if !Class.is_null() {
@@ -438,17 +448,33 @@ pub unsafe extern "system" fn NtOpenKey(
     let mut Status: NTSTATUS;
     let PreviousMode: KPROCESSOR_MODE = ExGetPreviousMode();
 
-    let mut DesiredAccess = DesiredAccess & !0x0100u32;
+    // KEY_WOW64_RES used to be masked here. Both flags must be off before
+    // CmpDoOpen's ObCheckObjectAccess — no key's ACL grants either, so one left
+    // set denies the open (E21/#79: this masked a bare 0x0100, letting
+    // KEY_WOW64_32KEY through, and every RegOpenKeyEx(.., KEY_WOW64_32KEY)
+    // failed ACCESS_DENIED). The strip now happens in CmpParseKey, which is
+    // reached by every key open and is late enough that the bits can first
+    // select the WoW64 registry view (cmwow64.rs).
 
     if PreviousMode != 0 {
-        *KeyHandle = core::ptr::null_mut();
-        if ((KeyHandle as usize) & (core::mem::size_of::<HANDLE>() - 1)) != 0 {
-            return 0xC0000005u32 as i32;
+        // C order is ProbeForWriteHandle THEN the NULL store, both inside SEH.
+        // The translation stored FIRST and only checked alignment afterwards,
+        // never the user/kernel boundary — so a caller-supplied kernel pointer
+        // got a NULL written to it from kernel mode. Tier-1 Result idiom
+        // (docs/engineering/dummy-pseh-verdict.md): probe helpers return the
+        // status instead of raising, because a raise here has no SEH to catch
+        // it and BUGCHECKs the box.
+        if let Err(e) = probe_write_user::<HANDLE>(KeyHandle, core::ptr::null_mut(), PreviousMode) {
+            return e;
         }
-        if ((ObjectAttributes as usize) & (core::mem::size_of::<u32>() - 1)) != 0 {
-            return 0xC0000005u32 as i32;
+        if let Err(e) = probe_user_buffer(
+            ObjectAttributes as *const c_void,
+            core::mem::size_of::<_OBJECT_ATTRIBUTES>(),
+            core::mem::align_of::<ULONG>(),
+            PreviousMode,
+        ) {
+            return e;
         }
-        core::ptr::read_volatile(ObjectAttributes as *const _OBJECT_ATTRIBUTES);
     }
 
     Status = ObOpenObjectByName(
@@ -466,10 +492,10 @@ pub unsafe extern "system" fn NtOpenKey(
     // CmpParseKey object-type parser. The hallucinated call has been removed.
 
     if NT_SUCCESS(Status) {
-        if PreviousMode != 0 {
-            *KeyHandle = Handle;
-        } else {
-            *KeyHandle = Handle;
+        // The C guards this store with SEH and yields the exception code; the
+        // translation had two identical if/else arms and no guard at all.
+        if let Err(e) = write_user(KeyHandle, Handle, PreviousMode) {
+            Status = e;
         }
     }
 
@@ -1182,6 +1208,7 @@ pub unsafe extern "system" fn NtLoadKeyEx(
     }
 
     if SeSinglePrivilegeCheck(*core::ptr::addr_of!(SeRestorePrivilege), PreviousMode) == 0 {
+        crate::dbg_print!(b"Restore Privilege missing!\n\0");
         return STATUS_PRIVILEGE_NOT_HELD;
     }
 
@@ -1770,6 +1797,7 @@ pub unsafe extern "system" fn NtUnloadKey2(
     let mut Handle: HANDLE = core::ptr::null_mut();
 
     if SeSinglePrivilegeCheck(SeRestorePrivilege, PreviousMode) == 0 {
+        crate::dbg_print!(b"Restore Privilege missing!\n\0");
         return STATUS_PRIVILEGE_NOT_HELD;
     }
 

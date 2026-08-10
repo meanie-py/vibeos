@@ -33,14 +33,7 @@ pub static mut GlobalUserHeapSection: PVOID = core::ptr::null_mut();
 // on i386 and `extern "C"` elsewhere. The pointer's type must match exactly (an
 // `extern "system" fn` is a *distinct type* even where the ABI coincides), so the
 // exported callback is split per-arch over a shared impl.
-#[cfg(target_arch = "x86")]
-unsafe extern "stdcall" fn IntUserHeapCommitRoutine(
-    Base: PVOID, CommitAddress: *mut PVOID, CommitSize: PSIZE_T,
-) -> NTSTATUS {
-    commit_routine_impl(Base, CommitAddress, CommitSize)
-}
-#[cfg(not(target_arch = "x86"))]
-unsafe extern "C" fn IntUserHeapCommitRoutine(
+unsafe extern "system" fn IntUserHeapCommitRoutine(
     Base: PVOID, CommitAddress: *mut PVOID, CommitSize: PSIZE_T,
 ) -> NTSTATUS {
     commit_routine_impl(Base, CommitAddress, CommitSize)

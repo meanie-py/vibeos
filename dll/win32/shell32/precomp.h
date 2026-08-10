@@ -172,15 +172,20 @@ PropSheetPageLifetimeCallback(HWND hWnd, UINT uMsg, PROPSHEETPAGEW *pPSP)
 
 EXTERN_C HRESULT WINAPI
 SHMultiFileProperties(IDataObject *pDataObject, DWORD dwFlags);
-HRESULT
+EXTERN_C HRESULT
 SHELL32_ShowPropertiesDialog(IDataObject *pdtobj);
-HRESULT
+// EXTERN_C because these three are now defined in Rust (shell32-rust/src/dialogs/item_prop.rs),
+// same as the four below. Declared plain, C++ mangles them and the remaining C++ callers
+// (CDrivesFolder.cpp, CRegFolder.cpp, CFSFolder.cpp, CRecycleBin.cpp) then look for a name no
+// #[no_mangle] symbol can satisfy. This header is the ONLY declaration site for all of them,
+// so it is also the whole lockstep.
+EXTERN_C HRESULT
 SHELL32_ShowFilesystemItemPropertiesDialogAsync(IDataObject *pDO);
 EXTERN_C HRESULT
 SHELL32_ShowFilesystemItemsPropertiesDialogAsync(HWND hOwner, IDataObject *pDO);
-HRESULT
+EXTERN_C HRESULT
 SHELL32_ShowShellExtensionProperties(const CLSID *pClsid, IDataObject *pDO);
-HRESULT
+EXTERN_C HRESULT
 SHELL_ShowItemIDListProperties(LPCITEMIDLIST pidl);
 
 typedef HDSA HDCMA; // DynamicContextMenuArray
@@ -207,11 +212,15 @@ DCMA_InsertMenuItems(
     _In_opt_ UINT fCmf,
     _In_opt_ IUnknown *pUnkSite);
 
-HRESULT
+EXTERN_C HRESULT
 SHELL32_DefaultContextMenuCallBack(IShellFolder *psf, IDataObject *pdo, UINT msg);
-PCSTR
+/* Both are Rust-owned now (shell32-rust/src/shell32/CDefaultContextMenu_tu.rs) and Rust
+ * publishes them unmangled, so these declarations are EXTERN_C — the same treatment
+ * CDefViewUtil's helpers and CDefViewBckgrndMenu_CreateInstance already got. The two live
+ * C++ callers are CDefView.cpp (MapFcidmCmdToVerb) and utils.cpp (MapVerbToDfmCmd). */
+EXTERN_C PCSTR
 MapFcidmCmdToVerb(_In_ UINT_PTR CmdId);
-UINT
+EXTERN_C UINT
 MapVerbToDfmCmd(_In_ LPCSTR verba);
 UINT
 GetDfmCmd(_In_ IContextMenu *pCM, _In_ LPCSTR verba);
@@ -279,7 +288,11 @@ SHELL_GetUIObjectOfAbsoluteItem(
     _In_ PCIDLIST_ABSOLUTE pidl,
     _In_ REFIID riid, _Out_ void **ppvObj);
 
-HRESULT
+// EXTERN_C for the same reason as DataObject_GetHIDACount below: dialogs/filedefext.cpp is now
+// Rust, and the C-linkage forwarder it used to publish for this function went with it. Giving
+// the definition C linkage lets the Rust call it directly instead of needing a new forwarder in
+// utils.cpp, which is where it lives.
+EXTERN_C HRESULT
 SHELL_DisplayNameOf(
     _In_opt_ IShellFolder *psf,
     _In_ LPCITEMIDLIST pidl,
@@ -288,10 +301,15 @@ SHELL_DisplayNameOf(
 
 DWORD
 SHGetAttributes(_In_ IShellFolder *psf, _In_ LPCITEMIDLIST pidl, _In_ DWORD dwAttributes);
-HRESULT SHELL_GetIDListTarget(_In_ LPCITEMIDLIST pidl, _Out_ PIDLIST_ABSOLUTE *ppidl);
-HRESULT SHCoInitializeAnyApartment(VOID);
+/* EXTERN_C: called from Rust (shell32-rust/src/shell32/brfolder.rs). Plain __cdecl — no
+   WINAPI — so the Rust side must declare it `extern "C"`, not `extern "system"`. */
+EXTERN_C HRESULT SHELL_GetIDListTarget(_In_ LPCITEMIDLIST pidl, _Out_ PIDLIST_ABSOLUTE *ppidl);
+/* EXTERN_C: both are called from Rust (shell32-rust/src/shell32/shlexec.rs). Plain __cdecl —
+   no WINAPI — so the Rust side declares them `extern "C"`, not `extern "system"`; i386 is the
+   only arch whose decoration catches that difference. */
+EXTERN_C HRESULT SHCoInitializeAnyApartment(VOID);
 
-HRESULT
+EXTERN_C HRESULT
 SHGetNameAndFlagsW(
     _In_ LPCITEMIDLIST pidl,
     _In_ DWORD dwFlags,
@@ -308,10 +326,10 @@ BindCtx_RegisterObjectParam(
     _In_opt_ IUnknown *punk,
     _Out_ LPBC *ppbc);
 
-BOOL PathIsDotOrDotDotW(_In_ LPCWSTR pszPath);
+EXTERN_C BOOL PathIsDotOrDotDotW(_In_ LPCWSTR pszPath);
 EXTERN_C BOOL PathIsValidElement(_In_ LPCWSTR pszPath);
 BOOL PathIsDosDevice(_In_ LPCWSTR pszName);
-HRESULT SHELL32_GetDllFromRundll32CommandLine(LPCWSTR pszCmd, LPWSTR pszOut, SIZE_T cchMax);
+EXTERN_C HRESULT SHELL32_GetDllFromRundll32CommandLine(LPCWSTR pszCmd, LPWSTR pszOut, SIZE_T cchMax);
 HRESULT SHILAppend(_Inout_ LPITEMIDLIST pidl, _Inout_ LPITEMIDLIST *ppidl);
 
 // EXTERN_C because these four are defined in Rust (shell32-rust/src/shell32/shldataobject.rs).
@@ -361,7 +379,10 @@ typedef enum _FILEOPCALLBACKEVENT {
 } FILEOPCALLBACKEVENT;
 typedef HRESULT (CALLBACK *FILEOPCALLBACK)(FILEOPCALLBACKEVENT Event, LPCWSTR Source, LPCWSTR Destination,
                                            UINT Attributes, HRESULT hr, void *CallerData);
-int SHELL32_FileOperation(LPSHFILEOPSTRUCTW lpFileOp, FILEOPCALLBACK Callback, void *CallerData);
-HRESULT SHELL_SingleFileOperation(HWND hWnd, UINT Op, PCWSTR Src, PCWSTR Dest, UINT Flags, PWSTR *ppNewName);
+/* EXTERN_C: these two now live in Rust (shell32-rust/src/shell32/shlfileop.rs), whose
+ * #[no_mangle] emits the plain name. Without this the C++ callers would still look for the
+ * mangled one. */
+EXTERN_C int SHELL32_FileOperation(LPSHFILEOPSTRUCTW lpFileOp, FILEOPCALLBACK Callback, void *CallerData);
+EXTERN_C HRESULT SHELL_SingleFileOperation(HWND hWnd, UINT Op, PCWSTR Src, PCWSTR Dest, UINT Flags, PWSTR *ppNewName);
 
 #endif /* _PRECOMP_H__ */

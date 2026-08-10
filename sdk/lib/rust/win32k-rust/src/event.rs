@@ -285,39 +285,8 @@ pub unsafe extern "C" fn IntRemoveEvent(Object: PVOID) -> BOOLEAN {
     }
     0u8
 }
-#[cfg(target_arch = "x86")]
 #[no_mangle]
-pub unsafe extern "stdcall" fn co_EVENT_CallEvents(
-    event: DWORD,
-    hwnd: HWND,
-    idObject: UINT_PTR,
-    idChild: LONG_PTR,
-) -> LRESULT {
-    let pEH: PEVENTHOOK;
-    let Result: LRESULT;
-    let pEP: PEVENTPACK = idChild as PEVENTPACK;
-
-    pEH = (*pEP).pEH;
-    Result = co_IntCallEventProc(
-        UserHMGetHandle(pEH) as HWINEVENTHOOK,
-        event,
-        hwnd,
-        (*pEP).idObject,
-        (*pEP).idChild,
-        (*pEP).idThread as DWORD,
-        EngGetTickCount32(),
-        (*pEH).Proc,
-        (*pEH).ihmod as INT,
-        (*pEH).offPfn,
-    );
-
-    ExFreePoolWithTag(pEP as *mut core::ffi::c_void, TAG_HOOK);
-    Result
-}
-
-#[cfg(not(target_arch = "x86"))]
-#[no_mangle]
-pub unsafe extern "C" fn co_EVENT_CallEvents(
+pub unsafe extern "system" fn co_EVENT_CallEvents(
     event: DWORD,
     hwnd: HWND,
     idObject: UINT_PTR,
@@ -458,9 +427,8 @@ unsafe fn IntNotifyWinEvent_impl(
         }
     }
 }
-#[cfg(target_arch = "x86")]
 #[no_mangle]
-pub unsafe extern "stdcall" fn NtUserNotifyWinEvent(
+pub unsafe extern "system" fn NtUserNotifyWinEvent(
     Event: DWORD,
     hWnd: HWND,
     idObject: LONG,
@@ -489,41 +457,8 @@ pub unsafe extern "stdcall" fn NtUserNotifyWinEvent(
     }
     UserLeave();
 }
-
-#[cfg(not(target_arch = "x86"))]
 #[no_mangle]
-pub unsafe extern "C" fn NtUserNotifyWinEvent(
-    Event: DWORD,
-    hWnd: HWND,
-    idObject: LONG,
-    idChild: LONG,
-) {
-    let mut Window: PWND = core::ptr::null_mut();
-    let mut Ref: USER_REFERENCE_ENTRY = core::mem::zeroed();
-    UserEnterExclusive();
-
-    if !hWnd.is_null() && hWnd != INVALID_HANDLE_VALUE as HWND {
-        Window = UserGetWindowObject(hWnd);
-        if Window.is_null() {
-            UserLeave();
-            return;
-        }
-    }
-
-    if (*gpsi).dwInstalledEventHooks & GetMaskFromEvent(Event) != 0 {
-        if !Window.is_null() {
-            UserRefObjectCo(Window, &mut Ref);
-        }
-        IntNotifyWinEvent(Event, Window, idObject, idChild, WEF_SETBYWNDPTI as DWORD);
-        if !Window.is_null() {
-            UserDerefObjectCo(Window);
-        }
-    }
-    UserLeave();
-}
-#[cfg(target_arch = "x86")]
-#[no_mangle]
-pub unsafe extern "stdcall" fn NtUserSetWinEventHook(
+pub unsafe extern "system" fn NtUserSetWinEventHook(
     eventMin: UINT,
     eventMax: UINT,
     mut hmodWinEventProc: HMODULE,
@@ -642,148 +577,8 @@ pub unsafe extern "stdcall" fn NtUserSetWinEventHook(
     UserLeave();
     Ret
 }
-
-#[cfg(not(target_arch = "x86"))]
 #[no_mangle]
-pub unsafe extern "C" fn NtUserSetWinEventHook(
-    eventMin: UINT,
-    eventMax: UINT,
-    mut hmodWinEventProc: HMODULE,
-    puString: PUNICODE_STRING,
-    lpfnWinEventProc: WINEVENTPROC,
-    idProcess: DWORD,
-    idThread: DWORD,
-    dwflags: UINT,
-) -> HWINEVENTHOOK {
-    let pEH: PEVENTHOOK;
-    let mut Ret: HWINEVENTHOOK = core::ptr::null_mut();
-    let Status: NTSTATUS;
-    let mut Handle: HANDLE = core::ptr::null_mut();
-    let pti: PTHREADINFO;
-
-    UserEnterExclusive();
-
-    'block: {
-        if GlobalEvents.is_null() {
-            GlobalEvents = ExAllocatePoolWithTag(
-                PagedPool,
-                core::mem::size_of::<EVENTTABLE>() as SIZE_T,
-                TAG_HOOK,
-            ) as PEVENTTABLE;
-            if GlobalEvents.is_null() {
-                EngSetLastError(ERROR_NOT_ENOUGH_MEMORY);
-                break 'block;
-            }
-            (*GlobalEvents).Counts = 0;
-            InitializeListHead(core::ptr::addr_of_mut!((*GlobalEvents).Events));
-        }
-
-        if eventMin > eventMax {
-            EngSetLastError(ERROR_INVALID_HOOK_FILTER);
-            break 'block;
-        }
-
-        if lpfnWinEventProc.is_none() {
-            EngSetLastError(ERROR_INVALID_FILTER_PROC);
-            break 'block;
-        }
-
-        if (dwflags & WINEVENT_INCONTEXT) != 0 {
-            if hmodWinEventProc.is_null() {
-                EngSetLastError(ERROR_HOOK_NEEDS_HMOD);
-                break 'block;
-            }
-            if puString.is_null() {
-                EngSetLastError(ERROR_DLL_NOT_FOUND);
-                break 'block;
-            }
-        } else {
-            hmodWinEventProc = core::ptr::null_mut();
-        }
-
-        if idThread != 0 {
-            let mut Thread: PETHREAD = core::ptr::null_mut();
-            Status = PsLookupThreadByThreadId(
-                idThread as HANDLE,
-                core::ptr::addr_of_mut!(Thread) as _,
-            );
-            if !NT_SUCCESS(Status) {
-                EngSetLastError(ERROR_INVALID_THREAD_ID);
-                break 'block;
-            }
-            pti = PsGetThreadWin32Thread(Thread as _) as PTHREADINFO;
-            ObDereferenceObject(Thread as *mut _);
-        } else {
-            pti = PsGetCurrentThreadWin32Thread() as PTHREADINFO;
-        }
-
-        pEH = UserCreateObject(
-            gHandleTable,
-            core::ptr::null_mut(),
-            pti as *mut _,
-            core::ptr::addr_of_mut!(Handle),
-            TYPE_WINEVENTHOOK as u32,
-            core::mem::size_of::<EVENTHOOK>() as u32,
-        ) as PEVENTHOOK;
-
-        if !pEH.is_null() {
-            InsertTailList(
-                core::ptr::addr_of_mut!((*GlobalEvents).Events),
-                core::ptr::addr_of_mut!((*pEH).Chain),
-            );
-            (*GlobalEvents).Counts += 1;
-
-            UserHMSetHandle(pEH as *mut _, Handle);
-            (*pEH).eventMin = eventMin;
-            (*pEH).eventMax = eventMax;
-            (*pEH).idProcess = idProcess;
-            (*pEH).idThread = idThread;
-            (*pEH).Flags = dwflags;
-
-            if !hmodWinEventProc.is_null() {
-                (*pEH).offPfn = (lpfnWinEventProc
-                    .map(|f| f as usize)
-                    .unwrap_or(0)
-                    .wrapping_sub(hmodWinEventProc as usize))
-                    as ULONG_PTR;
-                (*pEH).ihmod = hmodWinEventProc as INT_PTR;
-                (*pEH).Proc = lpfnWinEventProc;
-            } else {
-                (*pEH).Proc = lpfnWinEventProc;
-                (*pEH).offPfn = 0;
-                (*pEH).ihmod = hmodWinEventProc as INT_PTR;
-            }
-
-            UserDereferenceObject(pEH as *mut _);
-
-            Ret = Handle as HWINEVENTHOOK;
-            IntSetSrvEventMask(eventMin, eventMax);
-        }
-    }
-
-    UserLeave();
-    Ret
-}
-#[cfg(target_arch = "x86")]
-#[no_mangle]
-pub unsafe extern "stdcall" fn NtUserUnhookWinEvent(hWinEventHook: HWINEVENTHOOK) -> BOOL {
-    let pEH: PEVENTHOOK;
-    let mut Ret: BOOL = 0;
-
-    UserEnterExclusive();
-
-    pEH = UserGetObject(gHandleTable, hWinEventHook as PVOID, TYPE_WINEVENTHOOK) as PEVENTHOOK;
-    if !pEH.is_null() {
-        Ret = IntRemoveEvent(pEH as PVOID) as BOOL;
-    }
-
-    UserLeave();
-    Ret
-}
-
-#[cfg(not(target_arch = "x86"))]
-#[no_mangle]
-pub unsafe extern "C" fn NtUserUnhookWinEvent(hWinEventHook: HWINEVENTHOOK) -> BOOL {
+pub unsafe extern "system" fn NtUserUnhookWinEvent(hWinEventHook: HWINEVENTHOOK) -> BOOL {
     let pEH: PEVENTHOOK;
     let mut Ret: BOOL = 0;
 

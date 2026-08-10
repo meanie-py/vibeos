@@ -318,6 +318,22 @@ pub const GWLP_USERDATA: INT = -21;
 // HKEY_LOCAL_MACHINE — promoted from 1 module-local definition(s).
 pub const HKEY_LOCAL_MACHINE: HKEY = 0x8000_0002u32 as i32 as isize as HKEY;
 
+// SH32_InvokeOpenWith — CDECL, not stdcall.
+//
+// COpenWithMenu.cpp declares it `HRESULT SH32_InvokeOpenWith(...)` with no WINAPI, so it is
+// cdecl, and shlexec.cpp called it as cdecl too. This declaration sat in the `extern "system"`
+// block below and so said stdcall: on i386 the two disagree about who pops the arguments, and
+// shlexec.rs (flipped) has been calling it across that mismatch. It was invisible while the
+// definition was still C++ — `scan_calling_conventions` compares a declaration against an
+// IN-CRATE definition, and there was none to compare with. Flipping COpenWithMenu.cpp to Rust
+// put the definition in the crate and the scanner reported it immediately (CC_MISMATCH).
+//
+// The other caller, open_with_menu.rs, is fine and stays as it is: it declares the name with
+// `#[link_name = "Shell32RustInvokeOpenWith"]`, and that wrapper really is WINAPI/stdcall.
+extern "C" {
+    pub fn SH32_InvokeOpenWith(path: PCWSTR, info: LPCMINVOKECOMMANDINFO, process: *mut HANDLE) -> HRESULT;
+}
+
 // IID_IClassFactory — promoted from 1 module-local definition(s).
 extern "C" {
     pub static IID_IClassFactory: IID;
@@ -1186,6 +1202,10 @@ extern "C" {
     pub fn iswspace(c: INT) -> INT;
     pub fn strcpy(dst: *mut CHAR, src: *const CHAR) -> *mut CHAR;
     pub fn free(block: *mut c_void);
+}
+// lstrlenA is not a CRT function — it is kernel32's, WINAPI, so `_lstrlenA@4` on i386.
+// It sat in the cdecl block above and links only because nothing calls it yet.
+extern "system" {
     pub fn lstrlenA(s: *const CHAR) -> INT;
 }
 
@@ -1396,7 +1416,6 @@ extern "system" {
     pub fn RegOpenKeyW(hKey: HKEY, lpSubKey: LPCWSTR, phkResult: PHKEY) -> LONG;
     pub fn RegQueryValueW(hKey: HKEY, lpSubKey: LPCWSTR, lpData: LPWSTR, lpcbData: *mut LONG) -> LONG;
     pub fn ReleaseDC(window: HWND, dc: HDC) -> INT;
-    pub fn SH32_InvokeOpenWith(path: PCWSTR, info: LPCMINVOKECOMMANDINFO, process: *mut HANDLE) -> HRESULT;
     pub fn SHAlloc(bytes: SIZE_T) -> LPVOID;
     pub fn SHAllocShared(pvData: LPCVOID, dwSize: DWORD, dwProcessId: DWORD) -> HANDLE;
     pub fn SHAnsiToUnicode(pszSrc: LPCSTR, pwszDst: LPWSTR, cwchBuf: INT) -> DWORD;

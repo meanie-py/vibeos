@@ -2331,8 +2331,10 @@ pub const HYPER_SPACE_END: ULONG_PTR = 0xFFFFF77FFFFFFFFF;
 // LockQueueSystemSpaceLock — KSPIN_LOCK_QUEUE_NUMBER enum value
 pub const LockQueueSystemSpaceLock: ULONG = 0x03;
 
-// MM_SEGMENT_INDELETE
-pub const MM_SEGMENT_INDELETE: ULONG_PTR = 0x1;
+// MM_SEGMENT_INDELETE — mm.h:242 says (0x4). This carried 0x1, which is
+// MM_PHYSICALMEMORY_SEGMENT's bit; mm/section.rs shadows it with a correct
+// local 0x4, so nothing consumed the wrong value yet.
+pub const MM_SEGMENT_INDELETE: ULONG_PTR = 0x4;
 
 // Event type
 pub const _EVENT_TYPE_SynchronizationEvent: ULONG = 1;
@@ -2491,14 +2493,25 @@ pub unsafe fn MI_IS_ROSMM_VAD(vad: PVOID) -> bool {
     ((*vad).u.VadFlags.Spare() & 2) != 0
 }
 
-/// RMAP_IS_SEGMENT — check if rmap entry is a segment reference
+/// RMAP_SEGMENT_MASK — `~((ULONG_PTR)0xff)` on every arch
+/// (ntoskrnl/include/internal/mm.h). The low 8 bits of a segment rmap
+/// `Address` hold the page index within the section page table, so the mask
+/// must clear exactly those 8 bits — it is NOT pointer-width dependent, and it
+/// is NOT a low-bit flag.
+pub const RMAP_SEGMENT_MASK: ULONG_PTR = !0xffusize;
+
+/// RMAP_IS_SEGMENT — `(((ULONG_PTR)Address & RMAP_SEGMENT_MASK) == RMAP_SEGMENT_MASK)`.
+///
+/// This used to test `addr & 1`, which is a different predicate entirely: a
+/// segment address is `RMAP_SEGMENT_MASK | page_index`, so `& 1` answers
+/// "is the page index odd?" and misses every even-indexed segment entry.
+/// balance.rs had that test inlined and so walked segment rmap entries as if
+/// they were process mappings — treating the page-table pointer parked in
+/// `Entry->Process` as an EPROCESS. See the field manual.
 #[inline]
 pub fn RMAP_IS_SEGMENT(addr: PVOID) -> bool {
-    (addr as ULONG_PTR & 1) != 0
+    (addr as ULONG_PTR & RMAP_SEGMENT_MASK) == RMAP_SEGMENT_MASK
 }
-
-/// RMAP_SEGMENT_MASK
-pub const RMAP_SEGMENT_MASK: ULONG_PTR = !1usize;
 
 /// PFN_FROM_SSE — extract PFN from section segment entry
 #[inline]

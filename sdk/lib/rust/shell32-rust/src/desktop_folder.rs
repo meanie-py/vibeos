@@ -2249,16 +2249,10 @@ pub const S_GREATERTHAN: HRESULT = S_FALSE;
     if (*ppOut).is_null() { E_OUTOFMEMORY } else { S_OK }
 }
 
-// -- CRegKeyHandleArray (shfldr.h:191) — { HKEY hKeys[16]; UINT cKeys; } --
-#[repr(C)]
-pub struct CRegKeyHandleArray { pub hKeys: [HKEY; 16], pub cKeys: UINT }
-impl CRegKeyHandleArray {
-    #[inline] fn len(&self) -> usize { self.cKeys as usize }
-    #[inline] fn as_ptr(&self) -> *const HKEY { self.hKeys.as_ptr() }
-}
-impl Default for CRegKeyHandleArray {
-    #[inline] fn default() -> Self { unsafe { core::mem::zeroed() } }
-}
+// -- CRegKeyHandleArray (shfldr.h:191) — one definition, in crate::shfldr --
+// Was re-derived here; `cfs_folder.rs` re-derived it too, and both copies had lost the
+// destructor. See `crate::shfldr` for why a Drop gets one home and an extern decl does not.
+use crate::shfldr::CRegKeyHandleArray;
 
 // -- STR_ bind-ctx object names (shobjidl.idl, ASCII → UTF-16) --
 static STR_PARSE_TRANSLATE_ALIASES: [WCHAR; 24] = [

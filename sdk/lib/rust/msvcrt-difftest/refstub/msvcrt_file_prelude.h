@@ -32,6 +32,13 @@
 /* ── 2. the constants, every value computed by the cross-compiler ─────── */
 #include <msvcrt_crt_consts.h>
 
+/* The two conversion entry points the inlines below call.  Nothing declared
+ * them before, so they were implicit `int()` — see msvcrt_shim_decls.h for the
+ * class and why -Werror=implicit-function-declaration never said so.  They live
+ * in winnls.h rather than in that header because winnls.h is where their
+ * siblings already are, and one declaration site per function is the point. */
+#include <winnls.h>
+
 /* ── 3. msvcrt internals the real msvcrt.h supplies at _MSVCR_VER=0 ─────
  * These live in the part of dll/win32/msvcrt/msvcrt.h that refstub/msvcrt.h
  * suppressed, so they are restored here rather than left to C's
@@ -98,12 +105,17 @@ static inline char* astrdupw_utf8(const wchar_t *wstr)
     return str;
 }
 
-/* errno.c's doserrno accessor.  errno.c is not a reference TU, so this is
- * ENVIRONMENT — supplied by refimpl.c — and takes the msvcrt_ref_* import
- * namespace for the same anti-circularity reason as _errno and GetLastError:
- * the reference must never be able to reach the code under test.  Declared
- * rather than left implicit because it returns a POINTER, which the implicit
- * `int()` rule would truncate to 32 bits before the first dereference. */
+/* errno.c's doserrno accessor, in the msvcrt_ref_* import namespace for the same
+ * anti-circularity reason as _errno and GetLastError: the reference must never be
+ * able to reach the code under test.  Declared rather than left implicit because it
+ * returns a POINTER, which the implicit `int()` rule would truncate to 32 bits
+ * before the first dereference.
+ *
+ * The mapping is spelled out HERE, and again in fileimpl.c and in build.rs's errno
+ * prelude, rather than living in refstub/msvcrt.h beside _errno — that header is also
+ * included by TUs which must keep calling the SUBJECT's __doserrno.  It used to be
+ * ENVIRONMENT (a slot fileimpl.c invented); since errno.c became reference TU #7 the
+ * definition it lands on is msvcrt's own, over msvcrt_get_thread_data()->thread_doserrno. */
 #define __doserrno msvcrt_ref___doserrno
 __msvcrt_ulong * CDECL __doserrno(void);
 

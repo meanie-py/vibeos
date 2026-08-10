@@ -104,23 +104,52 @@ unsafe fn ExpValidateNlsLocaleId(LocaleId: LCID) -> NTSTATUS {
     let mut LocaleIdBuffer: [u16; 20] = [0; 20];
     let mut ReturnedLength: ULONG = 0;
     let mut LocaleIdString: _UNICODE_STRING = core::mem::zeroed();
+    // L"\Registry\Machine\SYSTEM\CurrentControlSet\Control\Nls\Locale"
+    static NLS_LOCALE_KEY_PATH_BUF: [u16; 62] = [
+        b'\\' as u16, b'R' as u16, b'e' as u16, b'g' as u16, b'i' as u16, b's' as u16, b't' as u16, b'r' as u16, b'y' as u16, b'\\' as u16,
+        b'M' as u16, b'a' as u16, b'c' as u16, b'h' as u16, b'i' as u16, b'n' as u16, b'e' as u16, b'\\' as u16, b'S' as u16, b'Y' as u16,
+        b'S' as u16, b'T' as u16, b'E' as u16, b'M' as u16, b'\\' as u16, b'C' as u16, b'u' as u16, b'r' as u16, b'r' as u16, b'e' as u16,
+        b'n' as u16, b't' as u16, b'C' as u16, b'o' as u16, b'n' as u16, b't' as u16, b'r' as u16, b'o' as u16, b'l' as u16, b'S' as u16,
+        b'e' as u16, b't' as u16, b'\\' as u16, b'C' as u16, b'o' as u16, b'n' as u16, b't' as u16, b'r' as u16, b'o' as u16, b'l' as u16,
+        b'\\' as u16, b'N' as u16, b'l' as u16, b's' as u16, b'\\' as u16, b'L' as u16, b'o' as u16, b'c' as u16, b'a' as u16, b'l' as u16,
+        b'e' as u16, 0,
+    ];
     static mut NlsLocaleKeyPath: _UNICODE_STRING = _UNICODE_STRING {
-        Length: 124,
-        MaximumLength: 126,
-        Buffer: b"\\Registry\\Machine\\SYSTEM\\CurrentControlSet\\Control\\Nls\\Locale\0"
-            .as_ptr() as *mut u16,
+        Length: 122,
+        MaximumLength: 124,
+        Buffer: NLS_LOCALE_KEY_PATH_BUF.as_ptr() as *mut u16,
     };
+    // L"\Registry\Machine\SYSTEM\CurrentControlSet\Control\Nls\Locale\Alternate Sorts"
+    static ALT_SORT_KEY_PATH_BUF: [u16; 78] = [
+        b'\\' as u16, b'R' as u16, b'e' as u16, b'g' as u16, b'i' as u16, b's' as u16, b't' as u16, b'r' as u16, b'y' as u16, b'\\' as u16,
+        b'M' as u16, b'a' as u16, b'c' as u16, b'h' as u16, b'i' as u16, b'n' as u16, b'e' as u16, b'\\' as u16, b'S' as u16, b'Y' as u16,
+        b'S' as u16, b'T' as u16, b'E' as u16, b'M' as u16, b'\\' as u16, b'C' as u16, b'u' as u16, b'r' as u16, b'r' as u16, b'e' as u16,
+        b'n' as u16, b't' as u16, b'C' as u16, b'o' as u16, b'n' as u16, b't' as u16, b'r' as u16, b'o' as u16, b'l' as u16, b'S' as u16,
+        b'e' as u16, b't' as u16, b'\\' as u16, b'C' as u16, b'o' as u16, b'n' as u16, b't' as u16, b'r' as u16, b'o' as u16, b'l' as u16,
+        b'\\' as u16, b'N' as u16, b'l' as u16, b's' as u16, b'\\' as u16, b'L' as u16, b'o' as u16, b'c' as u16, b'a' as u16, b'l' as u16,
+        b'e' as u16, b'\\' as u16, b'A' as u16, b'l' as u16, b't' as u16, b'e' as u16, b'r' as u16, b'n' as u16, b'a' as u16, b't' as u16,
+        b'e' as u16, b' ' as u16, b'S' as u16, b'o' as u16, b'r' as u16, b't' as u16, b's' as u16, 0,
+    ];
     static mut AltSortKeyPath: _UNICODE_STRING = _UNICODE_STRING {
+        Length: 154,
+        MaximumLength: 156,
+        Buffer: ALT_SORT_KEY_PATH_BUF.as_ptr() as *mut u16,
+    };
+    // L"\Registry\Machine\SYSTEM\CurrentControlSet\Control\Nls\Language Groups"
+    static LANG_GROUP_PATH_BUF: [u16; 71] = [
+        b'\\' as u16, b'R' as u16, b'e' as u16, b'g' as u16, b'i' as u16, b's' as u16, b't' as u16, b'r' as u16, b'y' as u16, b'\\' as u16,
+        b'M' as u16, b'a' as u16, b'c' as u16, b'h' as u16, b'i' as u16, b'n' as u16, b'e' as u16, b'\\' as u16, b'S' as u16, b'Y' as u16,
+        b'S' as u16, b'T' as u16, b'E' as u16, b'M' as u16, b'\\' as u16, b'C' as u16, b'u' as u16, b'r' as u16, b'r' as u16, b'e' as u16,
+        b'n' as u16, b't' as u16, b'C' as u16, b'o' as u16, b'n' as u16, b't' as u16, b'r' as u16, b'o' as u16, b'l' as u16, b'S' as u16,
+        b'e' as u16, b't' as u16, b'\\' as u16, b'C' as u16, b'o' as u16, b'n' as u16, b't' as u16, b'r' as u16, b'o' as u16, b'l' as u16,
+        b'\\' as u16, b'N' as u16, b'l' as u16, b's' as u16, b'\\' as u16, b'L' as u16, b'a' as u16, b'n' as u16, b'g' as u16, b'u' as u16,
+        b'a' as u16, b'g' as u16, b'e' as u16, b' ' as u16, b'G' as u16, b'r' as u16, b'o' as u16, b'u' as u16, b'p' as u16, b's' as u16,
+        0,
+    ];
+    static mut LangGroupPath: _UNICODE_STRING = _UNICODE_STRING {
         Length: 140,
         MaximumLength: 142,
-        Buffer: b"\\Registry\\Machine\\SYSTEM\\CurrentControlSet\\Control\\Nls\\Locale\\Alternate Sorts\0"
-            .as_ptr() as *mut u16,
-    };
-    static mut LangGroupPath: _UNICODE_STRING = _UNICODE_STRING {
-        Length: 132,
-        MaximumLength: 134,
-        Buffer: b"\\Registry\\Machine\\SYSTEM\\CurrentControlSet\\Control\\Nls\\Language Groups\0"
-            .as_ptr() as *mut u16,
+        Buffer: LANG_GROUP_PATH_BUF.as_ptr() as *mut u16,
     };
 
     NlsLocalKeyAttrs = _OBJECT_ATTRIBUTES {

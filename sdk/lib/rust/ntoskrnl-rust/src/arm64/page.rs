@@ -470,14 +470,58 @@ unsafe fn MmCreateVirtualMappingUnsafeEx(
     // way to compose it here is MmProtectToPteMask[mask]==0 — a NOACCESS-family
     // protection that should never reach a hardware-valid mapping.
     if TempPte.Long & 3 == 1 {
-        PagePuts(b"[PAGE] BUG: malformed L3 descriptor (bits[1:0]=0b01) - NOACCESS protection reached MmCreateVirtualMapping\r\n");
+        PagePuts(b"[PAGE] BUG: malformed L3 descriptor (bits[1:0]=0b01) - NOACCESS protection reached MmCreateVirtualMapping va=");
+        PagePutHex64(Address as u64);
+        PagePuts(b" flProtect=");
+        PagePutHex64(flProtect as u64);
+        PagePuts(b" mask=");
+        PagePutHex64(ProtectionMask as u64);
+        PagePuts(b" pfn=");
+        PagePutHex64(Page as u64);
+        PagePuts(b"\r\n");
         KeBugCheck(MEMORY_MANAGEMENT);
     }
 
     Pte = InterlockedExchangePte(PointerPte, TempPte.Long);
 
+    crate::ke::flightrec::flightrec_log(
+        crate::ke::flightrec::OP_PAGE_MAP,
+        Address as usize & !(PAGE_SIZE - 1),
+        PsGetCurrentThread() as usize,
+        Page as u32,
+    );
+
     if Pte != 0 {
-        PagePuts(b"[PAGE] BUG: old PTE was non-zero!\r\n");
+        // A double-map. The bare "old PTE was non-zero!" this used to print names
+        // no VA, no page and no owner, so 20-of-85 arm64 sweep rounds died here
+        // with nothing to chase. The discriminator that costs nothing is the two
+        // PFNs: SAME physical page means an idempotent re-map (someone mapped a VA
+        // twice without unmapping), DIFFERENT means a genuine alias — one VA
+        // pointing at two pages, i.e. a leaked mapping whose page went back to the
+        // free list and got handed out again. Those are different bugs.
+        PagePuts(b"[PAGE] BUG: old PTE was non-zero! va=");
+        PagePutHex64(Address as u64);
+        PagePuts(b" oldpte=");
+        PagePutHex64(Pte as u64);
+        PagePuts(b" newpte=");
+        PagePutHex64(TempPte.Long as u64);
+        PagePuts(b"\r\n[PAGE]   oldpfn=");
+        PagePutHex64((Pte as u64 >> 12) & 0xF_FFFF_FFFF);
+        PagePuts(b" newpfn=");
+        PagePutHex64(Page as u64);
+        PagePuts(b" same=");
+        PagePuts(if ((Pte as u64 >> 12) & 0xF_FFFF_FFFF) == Page as u64 { b"YES" } else { b"NO " });
+        PagePuts(b" proc=");
+        PagePutHex64(Process as u64);
+        PagePuts(b" thr=");
+        PagePutHex64(PsGetCurrentThread() as u64);
+        PagePuts(b"\r\n");
+        // This VA's own map/unmap history, from the flight recorder. A whole-ring
+        // tail dump is useless here — on the crash that motivated this the last 32
+        // events were all working-set lock churn — but filtering by VA reads out
+        // exactly the previous map that was never unmapped, and the thread that
+        // did it.
+        crate::ke::flightrec::flightrec_dump_object(Address as usize & !(PAGE_SIZE - 1), 16);
         KeBugCheck(MEMORY_MANAGEMENT);
     }
 
@@ -543,6 +587,67 @@ pub unsafe extern "system" fn MmCreatePhysicalMapping(
     MmCreateVirtualMappingUnsafeEx(Process, Address, flProtect, Page, 1u8)
 }
 
+/// Zero any leftover VALID descriptors over a user VA range that is being
+/// freshly reserved.
+///
+/// FreeLDR's identity-mapped page-table PAGES get recycled as user-space page
+/// tables while still holding FreeLDR's own entries (VA==PA, global, EL1-only),
+/// so a brand-new memory area can sit on top of live-looking descriptors. Two
+/// consequences, both observed on the arm64 kmtest sweep: the fault that should
+/// demand-page the range never fires, and teardown decodes the stale descriptor
+/// into a PFN that names no frame (VA 0x50000 -> pte 0x50703 -> PFN 0x50, far
+/// below the 0x40000000 DRAM base) — which MmDeleteRmap reports as
+/// mapping-not-in-list, after which MmReleasePageMemoryConsumer hands the
+/// allocator a frame that was never allocated.
+///
+/// amd64 carries the same guard per-path in ARM3/sysldr.rs, which is why this
+/// reproduced on arm64 only. Doing it once at memory-area creation covers
+/// VirtualAlloc and section views together instead of path by path.
+pub(crate) unsafe fn MiPurgeStaleUserPtes(StartVa: ULONG_PTR, EndVa: ULONG_PTR) {
+    // ARM64 descriptor bits[1:0]: 0b11 = table/page entry, 0b01 = 2MB block.
+    // HARDWARE_PTE names bit 1 NotLargePage (sdk/include/ndk/arm64/mmtypes.h);
+    // there is no shared accessor for it because bit 1 is `Write` on x86.
+    const NOT_LARGE_PAGE: ULONG_PTR = 1 << 1;
+    const BLOCK_MASK: ULONG_PTR = 0x1F_FFFF;
+
+    let mut need_flush = false;
+    let mut Va = StartVa;
+
+    while Va < EndVa {
+        let PointerPxe = MiAddressToPxe(Va as PVOID);
+        let PointerPpe = MiAddressToPpe(Va as PVOID);
+        let PointerPde = MiAddressToPde(Va as PVOID);
+
+        // Nothing is mapped this far down — skip the whole 2MB instead of
+        // walking it page by page. This runs on every user reservation,
+        // including multi-megabyte section views, so the common case must not
+        // be O(pages).
+        if !(*PointerPxe).valid() || !(*PointerPpe).valid() || !(*PointerPde).valid() {
+            Va = (Va | BLOCK_MASK) + 1;
+            continue;
+        }
+
+        if ((*PointerPde).Long & NOT_LARGE_PAGE) == 0 {
+            // A 2MB block descriptor: drop it and skip its whole span.
+            (*PointerPde).Long = 0;
+            need_flush = true;
+            Va = (Va | BLOCK_MASK) + 1;
+            continue;
+        }
+
+        let PointerPte = MiAddressToPte(Va as PVOID);
+        if (*PointerPte).valid() {
+            (*PointerPte).Long = 0;
+            need_flush = true;
+        }
+        Va += PAGE_SIZE as ULONG_PTR;
+    }
+
+    if need_flush {
+        crate::ke::arm64::stubs::KeFlushEntireTb(1, 1);
+    }
+}
+
 unsafe fn MmDeleteVirtualMappingEx(
     Process: PEPROCESS,
     Address: PVOID,
@@ -578,6 +683,27 @@ unsafe fn MmDeleteVirtualMappingEx(
     if ValidPde != 0 {
         PointerPte = MiAddressToPte(Address);
         OldPte.Long = InterlockedExchangePte(PointerPte, 0);
+
+        // Paired with OP_PAGE_MAP above: together they make flightrec_dump_object(va)
+        // a per-VA ledger, so a double-map bugcheck can say whether the previous
+        // mapping was ever torn down and by whom.
+        crate::ke::flightrec::flightrec_log(
+            crate::ke::flightrec::OP_PAGE_UNMAP,
+            Address as usize & !(PAGE_SIZE - 1),
+            PsGetCurrentThread() as usize,
+            OldPte.page_frame_number() as u32,
+        );
+        // Beside it, the raw descriptor. A PFN that names no frame is ambiguous
+        // on its own — a hardware descriptor pointing somewhere wrong, or a
+        // software PTE decoded with the hardware layout? `valid()` cannot settle
+        // it (bit 0 only). The low 32 bits carry the type/valid bits and the
+        // whole address field whenever the PFN is small — the failing case.
+        crate::ke::flightrec::flightrec_log(
+            crate::ke::flightrec::OP_PAGE_PTE,
+            Address as usize & !(PAGE_SIZE - 1),
+            PsGetCurrentThread() as usize,
+            OldPte.Long as u32,
+        );
 
         KeInvalidateTlbEntry(Address);
 

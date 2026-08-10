@@ -90,7 +90,7 @@ pub const DnsNameHostnameLabel: _DNS_NAME_FORMAT = _DNS_NAME_FORMAT_DnsNameHostn
 // lmcons.h `#define NET_API_STATUS DWORD` — an object-like macro, so there is no typedef for
 // bindgen to emit and the name simply vanishes from the island.
 pub type NET_API_STATUS = DWORD;
-pub const UNICODE_NULL: u16 = 0;
+pub use win32macros_rust::UNICODE_NULL;
 pub const NERR_Success: NET_API_STATUS = 0;
 // winnt.h `#define SECURITY_NT_AUTHORITY {0,0,0,0,0,5}` — a braced INITIALIZER, not a value,
 // so it is not a constant bindgen can emit. Spelled as the array the C initializes.
@@ -102,40 +102,19 @@ pub const HKEY_LOCAL_MACHINE: HKEY = 0x8000_0002u32 as i32 as isize as HKEY;
 // winuser.h: DWLP_USER = DWLP_MSGRESULT + sizeof(LRESULT) + sizeof(DLGPROC). POINTER-WIDTH
 // DEPENDENT (8 on i386, 16 on amd64/arm64) — computed, never a literal, or the 64-bit builds
 // read the wrong dialog word.
-pub const DWLP_MSGRESULT: c_int = 0;
-pub const DWLP_DLGPROC: c_int = DWLP_MSGRESULT + core::mem::size_of::<LRESULT>() as c_int;
-pub const DWLP_USER: c_int = DWLP_DLGPROC + core::mem::size_of::<*mut c_void>() as c_int;
+pub use win32macros_rust::{DWLP_DLGPROC, DWLP_MSGRESULT, DWLP_USER};
 
 // ================= function-like MACROS =======================================================
 // These are macros in C. Keep them macros in Rust: an out-of-line fn is an optimization
 // barrier that can uncloak a latent ABI mismatch into ud2 (field manual §9.65), and ARRAYSIZE
 // must stay generic over the array type anyway.
-#[macro_export]
-macro_rules! ARRAYSIZE {
-    ($a:expr) => {
-        ($a.len() as u32)
-    };
-}
-#[macro_export]
-macro_rules! LOWORD {
-    ($v:expr) => {
-        (($v as usize as u32) & 0xffff) as u16
-    };
-}
-#[macro_export]
-macro_rules! HIWORD {
-    ($v:expr) => {
-        ((($v as usize as u32) >> 16) & 0xffff) as u16
-    };
-}
-// winuser.h MAKEINTRESOURCE(i) = ((LPWSTR)((ULONG_PTR)((WORD)(i)))) — an integer id smuggled
-// through a string pointer. The WORD truncation is load-bearing.
-#[macro_export]
-macro_rules! MAKEINTRESOURCE {
-    ($i:expr) => {
-        (($i as u16) as usize) as LPWSTR
-    };
-}
+// The word/resource family lives in `win32macros-rust`, ported once from the headers and
+// known-answer tested there. Re-exported here under the same names, so no call site changed.
+pub use win32macros_rust::{ARRAYSIZE, HIWORD, LOWORD, MAKEINTRESOURCEW};
+// MAKEINTRESOURCE (no suffix) is MAKEINTRESOURCEW only because netid compiles -DUNICODE. That is
+// this module's property, not the shared crate's, so the alias stays here. The WORD truncation
+// inside it is load-bearing and the shared port keeps it.
+pub use win32macros_rust::MAKEINTRESOURCEW as MAKEINTRESOURCE;
 // prsht.h PropSheet_Changed(hDlg, hPage) = SendMessage(hDlg, PSM_CHANGED, (WPARAM)hPage, 0)
 #[macro_export]
 macro_rules! PropSheet_Changed {
@@ -143,7 +122,7 @@ macro_rules! PropSheet_Changed {
         $crate::prelude::SendMessageW($hdlg, PSM_CHANGED, $hpage as WPARAM, 0)
     };
 }
-pub use crate::{ARRAYSIZE, HIWORD, LOWORD, MAKEINTRESOURCE, PropSheet_Changed};
+pub use crate::PropSheet_Changed;
 
 // ================= Win32 imports ==============================================================
 // Declared, never defined: these live in the DLLs netid links against (add_importlibs).

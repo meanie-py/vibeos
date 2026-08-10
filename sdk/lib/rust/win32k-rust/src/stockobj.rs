@@ -465,19 +465,8 @@ pub unsafe extern "C" fn CreateStockObjects() {
         Object += 1;
     }
 }
-#[cfg(target_arch = "x86")]
 #[no_mangle]
-pub unsafe extern "stdcall" fn NtGdiGetStockObject(Object: INT) -> HGDIOBJ {
-    if (Object < 0) || (NB_STOCK_OBJECTS as INT <= Object) {
-        core::ptr::null_mut()
-    } else {
-        StockObjects[Object as usize]
-    }
-}
-
-#[cfg(not(target_arch = "x86"))]
-#[no_mangle]
-pub unsafe extern "C" fn NtGdiGetStockObject(Object: INT) -> HGDIOBJ {
+pub unsafe extern "system" fn NtGdiGetStockObject(Object: INT) -> HGDIOBJ {
     if (Object < 0) || (NB_STOCK_OBJECTS as INT <= Object) {
         core::ptr::null_mut()
     } else {

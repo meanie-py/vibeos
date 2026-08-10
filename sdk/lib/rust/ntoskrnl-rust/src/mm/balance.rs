@@ -228,7 +228,14 @@ pub unsafe extern "C" fn MmTrimUserMemory(
                         break;
                     }
 
-                    if ((*entry).Address as usize) & 1 != 0 {
+                    // C: `if (RMAP_IS_SEGMENT(Entry->Address)) { ...; continue; }`.
+                    // This was inlined as `Address & 1`, which skipped only the
+                    // odd-indexed segment entries; the even ones fell through and
+                    // were handled as process mappings, so `Entry->Process` — a
+                    // PCACHE_SECTION_PAGE_TABLE, not an EPROCESS — was passed to
+                    // ObReferenceObject/ExAcquireRundownProtection/KeStackAttachProcess
+                    // and the segment pseudo-address to MiAddressToPte.
+                    if RMAP_IS_SEGMENT((*entry).Address) {
                         entry = (*entry).Next;
                         continue;
                     }
@@ -381,13 +388,7 @@ pub unsafe extern "system" fn MmRequestPageMemoryConsumer(
     STATUS_SUCCESS
 }
 
-#[cfg(target_arch = "x86")]
-unsafe extern "stdcall" fn MiBalancerThread(_Unused: PVOID) {
-    MiBalancerThreadInner();
-}
-
-#[cfg(not(target_arch = "x86"))]
-unsafe extern "C" fn MiBalancerThread(_Unused: PVOID) {
+unsafe extern "system" fn MiBalancerThread(_Unused: PVOID) {
     MiBalancerThreadInner();
 }
 

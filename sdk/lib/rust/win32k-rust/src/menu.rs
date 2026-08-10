@@ -190,7 +190,7 @@ extern "C" {
     fn ValidateHwndNoErr(hWnd: HWND) -> PWND;
 }
 extern "system" {
-    fn SafeProbeForRead( Address: *mut core::ffi::c_void, Length: ULONG, Alignment: ULONG, ) -> NTSTATUS;
+    fn SafeProbeForRead( Address: *mut core::ffi::c_void, Length: SIZE_T, Alignment: ULONG, ) -> NTSTATUS;
     fn SafeProbeForWrite( Address: *mut core::ffi::c_void, Length: usize, Alignment: u32, ) -> NTSTATUS;
     // UserReferenceObject / UserDereferenceObject — fastcall on i386 actually; but
     // UserRefObjectCo (object.h inline) is reimplemented locally below.
@@ -6711,9 +6711,8 @@ unsafe fn IntSetMenu(
     1
 }
 }
-#[cfg(target_arch = "x86")]
 #[no_mangle]
-pub unsafe extern "stdcall" fn NtUserCalcMenuBar(
+pub unsafe extern "system" fn NtUserCalcMenuBar(
     hwnd: HWND,
     leftBorder: DWORD,
     rightBorder: DWORD,
@@ -6752,51 +6751,8 @@ pub unsafe extern "stdcall" fn NtUserCalcMenuBar(
     UserLeave();
     ret
 }
-
-#[cfg(not(target_arch = "x86"))]
 #[no_mangle]
-pub unsafe extern "C" fn NtUserCalcMenuBar(
-    hwnd: HWND,
-    leftBorder: DWORD,
-    rightBorder: DWORD,
-    top: DWORD,
-    prc: LPRECT,
-) -> DWORD {
-    let hdc: HDC;
-    let Window: PWND;
-    let mut Rect: RECT = core::mem::zeroed();
-    let ret: DWORD;
-
-    UserEnterExclusive();
-
-    Window = UserGetWindowObject(hwnd);
-    if Window.is_null() {
-        UserLeave();
-        EngSetLastError(ERROR_INVALID_WINDOW_HANDLE);
-        return 0;
-    }
-
-    hdc = UserGetDCEx(core::ptr::null_mut(), core::ptr::null_mut(), DCX_CACHE);
-    if hdc.is_null() {
-        UserLeave();
-        return 0;
-    }
-
-    Rect.left = leftBorder as _;
-    Rect.right = ((*Window).rcWindow.right - (*Window).rcWindow.left - rightBorder as i32) as _;
-    Rect.top = top as _;
-    Rect.bottom = 0;
-
-    ret = MENU_DrawMenuBar(hdc, &mut Rect, Window, 1) as DWORD;
-
-    UserReleaseDC(core::ptr::null_mut(), hdc, 0);
-
-    UserLeave();
-    ret
-}
-#[cfg(target_arch = "x86")]
-#[no_mangle]
-pub unsafe extern "stdcall" fn NtUserCheckMenuItem(
+pub unsafe extern "system" fn NtUserCheckMenuItem(
     hMenu: HMENU,
     uIDCheckItem: UINT,
     uCheck: UINT,
@@ -6813,50 +6769,8 @@ pub unsafe extern "stdcall" fn NtUserCheckMenuItem(
     UserLeave();
     Ret
 }
-
-#[cfg(not(target_arch = "x86"))]
 #[no_mangle]
-pub unsafe extern "C" fn NtUserCheckMenuItem(
-    hMenu: HMENU,
-    uIDCheckItem: UINT,
-    uCheck: UINT,
-) -> DWORD {
-    let mut Ret: DWORD = (-1i32) as DWORD;
-
-    UserEnterExclusive();
-
-    let Menu: PMENU = UserGetMenuObject(hMenu);
-    if !Menu.is_null() {
-        Ret = IntCheckMenuItem(Menu, uIDCheckItem, uCheck);
-    }
-
-    UserLeave();
-    Ret
-}
-#[cfg(target_arch = "x86")]
-#[no_mangle]
-pub unsafe extern "stdcall" fn NtUserDeleteMenu(
-    hMenu: HMENU,
-    uPosition: UINT,
-    uFlags: UINT,
-) -> BOOL {
-    let Menu: PMENU;
-    let mut Ret: BOOL = 0;
-
-    UserEnterExclusive();
-
-    Menu = UserGetMenuObject(hMenu);
-    if !Menu.is_null() {
-        Ret = IntRemoveMenuItem(Menu, uPosition, uFlags, 1);
-    }
-
-    UserLeave();
-    Ret
-}
-
-#[cfg(not(target_arch = "x86"))]
-#[no_mangle]
-pub unsafe extern "C" fn NtUserDeleteMenu(
+pub unsafe extern "system" fn NtUserDeleteMenu(
     hMenu: HMENU,
     uPosition: UINT,
     uFlags: UINT,
@@ -6876,7 +6790,7 @@ pub unsafe extern "C" fn NtUserDeleteMenu(
 }
 #[cfg(target_arch = "x86")]
 #[no_mangle]
-pub unsafe extern "stdcall" fn NtUserGetSystemMenu(hWnd: HWND, bRevert: BOOL) -> HMENU {
+pub unsafe extern "system" fn NtUserGetSystemMenu(hWnd: HWND, bRevert: BOOL) -> HMENU {
     let Window: PWND;
     let Menu: PMENU;
     let mut Ret: HMENU = core::ptr::null_mut();
@@ -6903,7 +6817,7 @@ pub unsafe extern "stdcall" fn NtUserGetSystemMenu(hWnd: HWND, bRevert: BOOL) ->
 
 #[cfg(not(target_arch = "x86"))]
 #[no_mangle]
-pub unsafe extern "C" fn NtUserGetSystemMenu(hWnd: HWND, bRevert: BOOL) -> HMENU {
+pub unsafe extern "system" fn NtUserGetSystemMenu(hWnd: HWND, bRevert: BOOL) -> HMENU {
     let Window: PWND;
     let Menu: PMENU;
     let mut Ret: HMENU = core::ptr::null_mut();
@@ -6927,9 +6841,8 @@ pub unsafe extern "C" fn NtUserGetSystemMenu(hWnd: HWND, bRevert: BOOL) -> HMENU
     UserLeave();
     Ret
 }
-#[cfg(target_arch = "x86")]
 #[no_mangle]
-pub unsafe extern "stdcall" fn NtUserSetSystemMenu(hWnd: HWND, hMenu: HMENU) -> BOOL {
+pub unsafe extern "system" fn NtUserSetSystemMenu(hWnd: HWND, hMenu: HMENU) -> BOOL {
     let mut Result: BOOL = 0;
     let Window: PWND;
     let Menu: PMENU;
@@ -6957,103 +6870,8 @@ pub unsafe extern "stdcall" fn NtUserSetSystemMenu(hWnd: HWND, hMenu: HMENU) -> 
     UserLeave();
     Result
 }
-
-#[cfg(not(target_arch = "x86"))]
 #[no_mangle]
-pub unsafe extern "C" fn NtUserSetSystemMenu(hWnd: HWND, hMenu: HMENU) -> BOOL {
-    let mut Result: BOOL = 0;
-    let Window: PWND;
-    let Menu: PMENU;
-
-    UserEnterExclusive();
-
-    'exit: {
-        Window = UserGetWindowObject(hWnd);
-        if Window.is_null() {
-            break 'exit;
-        }
-
-        if !hMenu.is_null() {
-            Menu = IntGetMenuObject(hMenu);
-            if Menu.is_null() {
-                break 'exit;
-            }
-
-            Result = IntSetSystemMenu(Window, Menu);
-        } else {
-            EngSetLastError(ERROR_INVALID_MENU_HANDLE);
-        }
-    }
-
-    UserLeave();
-    Result
-}
-#[cfg(target_arch = "x86")]
-#[no_mangle]
-pub unsafe extern "stdcall" fn NtUserGetTitleBarInfo(
-    hwnd: HWND,
-    bti: PTITLEBARINFO,
-) -> BOOLEAN {
-    let WindowObject: PWND;
-    let mut bartitleinfo: TITLEBARINFO = core::mem::zeroed();
-    let mut retValue: BOOLEAN = 0u8;
-    let Status: NTSTATUS;
-
-    UserEnterExclusive();
-
-    'exit: {
-        WindowObject = UserGetWindowObject(hwnd);
-        if WindowObject.is_null() {
-            EngSetLastError(ERROR_INVALID_WINDOW_HANDLE);
-            break 'exit;
-        }
-
-        {
-            let __SehStatus = SafeProbeForRead(
-                bti as *mut core::ffi::c_void,
-                core::mem::size_of::<TITLEBARINFO>() as _,
-                1,
-            );
-            if !NT_SUCCESS(__SehStatus) {
-                EngSetLastError(ERROR_INVALID_PARAMETER);
-                break 'exit;
-            }
-        }
-        core::ptr::copy_nonoverlapping(
-            bti,
-            &mut bartitleinfo as *mut TITLEBARINFO,
-            1,
-        );
-
-        retValue = intGetTitleBarInfo(WindowObject, &mut bartitleinfo as *mut TITLEBARINFO);
-        if retValue == 0 {
-            break 'exit;
-        }
-
-        Status = SafeProbeForWrite(
-            bti as *mut core::ffi::c_void,
-            core::mem::size_of::<TITLEBARINFO>() as _,
-            1,
-        );
-        if !NT_SUCCESS(Status) {
-            EngSetLastError(ERROR_INVALID_PARAMETER);
-            retValue = 0u8;
-        } else {
-            core::ptr::copy_nonoverlapping(
-                &bartitleinfo as *const TITLEBARINFO,
-                bti,
-                1,
-            );
-        }
-    }
-
-    UserLeave();
-    retValue
-}
-
-#[cfg(not(target_arch = "x86"))]
-#[no_mangle]
-pub unsafe extern "C" fn NtUserGetTitleBarInfo(
+pub unsafe extern "system" fn NtUserGetTitleBarInfo(
     hwnd: HWND,
     bti: PTITLEBARINFO,
 ) -> BOOLEAN {
@@ -7138,9 +6956,8 @@ unsafe fn UserDestroyMenu_impl(hMenu: HMENU) -> BOOL {
     }
     IntDestroyMenuObject(Menu, 0)
 }
-#[cfg(target_arch = "x86")]
 #[no_mangle]
-pub unsafe extern "stdcall" fn NtUserDestroyMenu(hMenu: HMENU) -> BOOL {
+pub unsafe extern "system" fn NtUserDestroyMenu(hMenu: HMENU) -> BOOL {
     let Menu: PMENU;
     let mut Ret: BOOL = 0;
 
@@ -7161,33 +6978,8 @@ pub unsafe extern "stdcall" fn NtUserDestroyMenu(hMenu: HMENU) -> BOOL {
     UserLeave();
     Ret
 }
-
-#[cfg(not(target_arch = "x86"))]
 #[no_mangle]
-pub unsafe extern "C" fn NtUserDestroyMenu(hMenu: HMENU) -> BOOL {
-    let Menu: PMENU;
-    let mut Ret: BOOL = 0;
-
-    UserEnterExclusive();
-
-    'Exit: {
-        Menu = UserGetMenuObject(hMenu);
-        if Menu.is_null() {
-            break 'Exit;
-        }
-        if (*Menu).head.rpdesk != (*gptiCurrent).rpdesk {
-            EngSetLastError(ERROR_ACCESS_DENIED);
-            break 'Exit;
-        }
-        Ret = IntDestroyMenuObject(Menu, 1) as BOOL;
-    }
-
-    UserLeave();
-    Ret
-}
-#[cfg(target_arch = "x86")]
-#[no_mangle]
-pub unsafe extern "stdcall" fn NtUserEnableMenuItem(
+pub unsafe extern "system" fn NtUserEnableMenuItem(
     hMenu: HMENU,
     uIDEnableItem: UINT,
     uEnable: UINT,
@@ -7205,42 +6997,8 @@ pub unsafe extern "stdcall" fn NtUserEnableMenuItem(
     UserLeave();
     Ret
 }
-
-#[cfg(not(target_arch = "x86"))]
 #[no_mangle]
-pub unsafe extern "C" fn NtUserEnableMenuItem(
-    hMenu: HMENU,
-    uIDEnableItem: UINT,
-    uEnable: UINT,
-) -> UINT {
-    let Menu: PMENU;
-    let mut Ret: UINT = (-1i32) as UINT;
-
-    UserEnterExclusive();
-
-    Menu = UserGetMenuObject(hMenu);
-    if !Menu.is_null() {
-        Ret = IntEnableMenuItem(Menu, uIDEnableItem, uEnable);
-    }
-
-    UserLeave();
-    Ret
-}
-#[cfg(target_arch = "x86")]
-#[no_mangle]
-pub unsafe extern "stdcall" fn NtUserEndMenu() -> BOOL {
-    UserEnterExclusive();
-    if fInsideMenuLoop != 0 && !top_popup.is_null() {
-        fInsideMenuLoop = 0;
-        UserPostMessage(top_popup, WM_CANCELMODE, 0, 0);
-    }
-    UserLeave();
-    1
-}
-
-#[cfg(not(target_arch = "x86"))]
-#[no_mangle]
-pub unsafe extern "C" fn NtUserEndMenu() -> BOOL {
+pub unsafe extern "system" fn NtUserEndMenu() -> BOOL {
     UserEnterExclusive();
     if fInsideMenuLoop != 0 && !top_popup.is_null() {
         fInsideMenuLoop = 0;
@@ -7251,7 +7009,7 @@ pub unsafe extern "C" fn NtUserEndMenu() -> BOOL {
 }
 #[cfg(target_arch = "x86")]
 #[no_mangle]
-pub unsafe extern "stdcall" fn NtUserGetMenuBarInfo(
+pub unsafe extern "system" fn NtUserGetMenuBarInfo(
     hwnd: HWND,
     idObject: LONG,
     idItem: LONG,
@@ -7411,7 +7169,7 @@ pub unsafe extern "stdcall" fn NtUserGetMenuBarInfo(
 
 #[cfg(not(target_arch = "x86"))]
 #[no_mangle]
-pub unsafe extern "C" fn NtUserGetMenuBarInfo(
+pub unsafe extern "system" fn NtUserGetMenuBarInfo(
     hwnd: HWND,
     idObject: LONG,
     idItem: LONG,
@@ -7488,7 +7246,7 @@ pub unsafe extern "C" fn NtUserGetMenuBarInfo(
 
         Status = SafeProbeForRead(
             pmbi as *mut core::ffi::c_void,
-            core::mem::size_of::<MENUBARINFO>() as ULONG,
+            core::mem::size_of::<MENUBARINFO>() as _,
             1,
         );
         if !NT_SUCCESS(Status) {
@@ -7568,49 +7326,8 @@ pub unsafe extern "C" fn NtUserGetMenuBarInfo(
     UserLeave();
     Ret
 }
-#[cfg(target_arch = "x86")]
 #[no_mangle]
-pub unsafe extern "stdcall" fn NtUserGetMenuIndex(
-    hMenu: HMENU,
-    hSubMenu: HMENU,
-) -> UINT {
-    let Menu: PMENU;
-    let SubMenu: PMENU;
-    let mut MenuItem: PITEM;
-    let mut i: UINT;
-    let mut Ret: UINT = 0xFFFFFFFF;
-
-    UserEnterShared();
-
-    'Exit: {
-        Menu = UserGetMenuObject(hMenu);
-        if Menu.is_null() {
-            break 'Exit;
-        }
-        SubMenu = UserGetMenuObject(hSubMenu);
-        if SubMenu.is_null() {
-            break 'Exit;
-        }
-
-        MenuItem = (*Menu).rgItems;
-        i = 0;
-        while i < (*Menu).cItems {
-            if (*MenuItem).spSubMenu == SubMenu {
-                Ret = (*MenuItem).wID;
-                break;
-            }
-            i += 1;
-            MenuItem = MenuItem.add(1);
-        }
-    }
-
-    UserLeave();
-    Ret
-}
-
-#[cfg(not(target_arch = "x86"))]
-#[no_mangle]
-pub unsafe extern "C" fn NtUserGetMenuIndex(
+pub unsafe extern "system" fn NtUserGetMenuIndex(
     hMenu: HMENU,
     hSubMenu: HMENU,
 ) -> UINT {
@@ -7649,7 +7366,7 @@ pub unsafe extern "C" fn NtUserGetMenuIndex(
 }
 #[cfg(target_arch = "x86")]
 #[no_mangle]
-pub unsafe extern "stdcall" fn NtUserGetMenuItemRect(
+pub unsafe extern "system" fn NtUserGetMenuItemRect(
     mut hWnd: HWND,
     hMenu: HMENU,
     mut uItem: UINT,
@@ -7731,7 +7448,7 @@ pub unsafe extern "stdcall" fn NtUserGetMenuItemRect(
 
 #[cfg(not(target_arch = "x86"))]
 #[no_mangle]
-pub unsafe extern "C" fn NtUserGetMenuItemRect(
+pub unsafe extern "system" fn NtUserGetMenuItemRect(
     mut hWnd: HWND,
     hMenu: HMENU,
     mut uItem: UINT,
@@ -7810,43 +7527,8 @@ pub unsafe extern "C" fn NtUserGetMenuItemRect(
     UserLeave();
     Ret
 }
-#[cfg(target_arch = "x86")]
 #[no_mangle]
-pub unsafe extern "stdcall" fn NtUserHiliteMenuItem(
-    hWnd: HWND,
-    hMenu: HMENU,
-    uItemHilite: UINT,
-    uHilite: UINT,
-) -> BOOL {
-    let Menu: PMENU;
-    let Window: PWND;
-    let mut Ret: BOOL = 0;
-
-    UserEnterExclusive();
-
-    'Exit: {
-        Window = UserGetWindowObject(hWnd);
-        if Window.is_null() {
-            EngSetLastError(ERROR_INVALID_WINDOW_HANDLE);
-            break 'Exit;
-        }
-
-        Menu = UserGetMenuObject(hMenu);
-        if Menu.is_null() {
-            EngSetLastError(ERROR_INVALID_MENU_HANDLE);
-            break 'Exit;
-        }
-
-        Ret = IntHiliteMenuItem(Window, Menu, uItemHilite, uHilite);
-    }
-
-    UserLeave();
-    Ret
-}
-
-#[cfg(not(target_arch = "x86"))]
-#[no_mangle]
-pub unsafe extern "C" fn NtUserHiliteMenuItem(
+pub unsafe extern "system" fn NtUserHiliteMenuItem(
     hWnd: HWND,
     hMenu: HMENU,
     uItemHilite: UINT,
@@ -7879,7 +7561,7 @@ pub unsafe extern "C" fn NtUserHiliteMenuItem(
 }
 #[cfg(target_arch = "x86")]
 #[no_mangle]
-pub unsafe extern "stdcall" fn NtUserDrawMenuBarTemp(
+pub unsafe extern "system" fn NtUserDrawMenuBarTemp(
     hWnd: HWND,
     hDC: HDC,
     pRect: PRECT,
@@ -7934,7 +7616,7 @@ pub unsafe extern "stdcall" fn NtUserDrawMenuBarTemp(
 
 #[cfg(not(target_arch = "x86"))]
 #[no_mangle]
-pub unsafe extern "C" fn NtUserDrawMenuBarTemp(
+pub unsafe extern "system" fn NtUserDrawMenuBarTemp(
     hWnd: HWND,
     hDC: HDC,
     pRect: PRECT,
@@ -7964,7 +7646,7 @@ pub unsafe extern "C" fn NtUserDrawMenuBarTemp(
 
         Status = SafeProbeForRead(
             pRect as *mut core::ffi::c_void,
-            core::mem::size_of::<RECT>() as ULONG,
+            core::mem::size_of::<RECT>() as _,
             core::mem::size_of::<ULONG>() as ULONG,
         );
         if NT_SUCCESS(Status) {
@@ -7988,7 +7670,7 @@ pub unsafe extern "C" fn NtUserDrawMenuBarTemp(
 }
 #[cfg(target_arch = "x86")]
 #[no_mangle]
-pub unsafe extern "stdcall" fn NtUserMenuItemFromPoint(
+pub unsafe extern "system" fn NtUserMenuItemFromPoint(
     hWnd: HWND,
     hMenu: HMENU,
     mut X: DWORD,
@@ -8049,7 +7731,7 @@ pub unsafe extern "stdcall" fn NtUserMenuItemFromPoint(
 
 #[cfg(not(target_arch = "x86"))]
 #[no_mangle]
-pub unsafe extern "C" fn NtUserMenuItemFromPoint(
+pub unsafe extern "system" fn NtUserMenuItemFromPoint(
     hWnd: HWND,
     hMenu: HMENU,
     mut X: DWORD,
@@ -8107,9 +7789,8 @@ pub unsafe extern "C" fn NtUserMenuItemFromPoint(
     UserLeave();
     Ret
 }
-#[cfg(target_arch = "x86")]
 #[no_mangle]
-pub unsafe extern "stdcall" fn NtUserPaintMenuBar(
+pub unsafe extern "system" fn NtUserPaintMenuBar(
     hWnd: HWND,
     hDC: HDC,
     leftBorder: ULONG,
@@ -8140,43 +7821,8 @@ pub unsafe extern "stdcall" fn NtUserPaintMenuBar(
     UserLeave();
     ret
 }
-
-#[cfg(not(target_arch = "x86"))]
 #[no_mangle]
-pub unsafe extern "C" fn NtUserPaintMenuBar(
-    hWnd: HWND,
-    hDC: HDC,
-    leftBorder: ULONG,
-    rightBorder: ULONG,
-    top: ULONG,
-    bActive: BOOL,
-) -> DWORD {
-    let Window: PWND;
-    let mut Rect: RECT = core::mem::zeroed();
-    let ret: DWORD;
-
-    UserEnterExclusive();
-
-    Window = UserGetWindowObject(hWnd);
-    if Window.is_null() {
-        UserLeave();
-        EngSetLastError(ERROR_INVALID_WINDOW_HANDLE);
-        return 0;
-    }
-
-    Rect.left = leftBorder as _;
-    Rect.right = (*Window).rcWindow.right - (*Window).rcWindow.left - rightBorder as i32;
-    Rect.top = top as _;
-    Rect.bottom = 0;
-
-    ret = MENU_DrawMenuBar(hDC, &mut Rect, Window, 0) as DWORD;
-
-    UserLeave();
-    ret
-}
-#[cfg(target_arch = "x86")]
-#[no_mangle]
-pub unsafe extern "stdcall" fn NtUserRemoveMenu(
+pub unsafe extern "system" fn NtUserRemoveMenu(
     hMenu: HMENU,
     uPosition: UINT,
     uFlags: UINT,
@@ -8194,30 +7840,8 @@ pub unsafe extern "stdcall" fn NtUserRemoveMenu(
     UserLeave();
     Ret
 }
-
-#[cfg(not(target_arch = "x86"))]
 #[no_mangle]
-pub unsafe extern "C" fn NtUserRemoveMenu(
-    hMenu: HMENU,
-    uPosition: UINT,
-    uFlags: UINT,
-) -> BOOL {
-    let Menu: PMENU;
-    let mut Ret: BOOL = 0;
-
-    UserEnterExclusive();
-
-    Menu = UserGetMenuObject(hMenu);
-    if !Menu.is_null() {
-        Ret = IntRemoveMenuItem(Menu, uPosition, uFlags, 0);
-    }
-
-    UserLeave();
-    Ret
-}
-#[cfg(target_arch = "x86")]
-#[no_mangle]
-pub unsafe extern "stdcall" fn NtUserSetMenu(
+pub unsafe extern "system" fn NtUserSetMenu(
     hWnd: HWND,
     Menu: HMENU,
     Repaint: BOOL,
@@ -8259,54 +7883,8 @@ pub unsafe extern "stdcall" fn NtUserSetMenu(
     UserLeave();
     Ret
 }
-
-#[cfg(not(target_arch = "x86"))]
 #[no_mangle]
-pub unsafe extern "C" fn NtUserSetMenu(
-    hWnd: HWND,
-    Menu: HMENU,
-    Repaint: BOOL,
-) -> BOOL {
-    let Window: PWND;
-    let mut Changed: BOOL = 0;
-    let mut Ret: BOOL = 0;
-
-    UserEnterExclusive();
-
-    'block: {
-        Window = UserGetWindowObject(hWnd);
-        if Window.is_null() {
-            break 'block;
-        }
-
-        if IntSetMenu(Window, Menu, &mut Changed) == 0 {
-            break 'block;
-        }
-
-        if ((*Window).style & WS_MINIMIZE) == 0 && (Repaint != 0 || Changed != 0) {
-            let mut Ref: USER_REFERENCE_ENTRY = core::mem::zeroed();
-            UserRefObjectCo(Window, &mut Ref);
-            co_WinPosSetWindowPos(
-                Window,
-                0 as HWND,
-                0,
-                0,
-                0,
-                0,
-                SWP_NOSIZE | SWP_NOMOVE | SWP_NOACTIVATE | SWP_NOZORDER | SWP_FRAMECHANGED,
-            );
-            UserDerefObjectCo(Window);
-        }
-
-        Ret = 1;
-    }
-
-    UserLeave();
-    Ret
-}
-#[cfg(target_arch = "x86")]
-#[no_mangle]
-pub unsafe extern "stdcall" fn NtUserSetMenuContextHelpId(
+pub unsafe extern "system" fn NtUserSetMenuContextHelpId(
     hMenu: HMENU,
     dwContextHelpId: u32,
 ) -> i32 {
@@ -8323,29 +7901,8 @@ pub unsafe extern "stdcall" fn NtUserSetMenuContextHelpId(
     UserLeave();
     Ret
 }
-
-#[cfg(not(target_arch = "x86"))]
 #[no_mangle]
-pub unsafe extern "C" fn NtUserSetMenuContextHelpId(
-    hMenu: HMENU,
-    dwContextHelpId: u32,
-) -> i32 {
-    let Menu: PMENU;
-    let mut Ret: i32 = 0;
-
-    UserEnterExclusive();
-
-    Menu = UserGetMenuObject(hMenu);
-    if !Menu.is_null() {
-        Ret = IntSetMenuContextHelpId(Menu, dwContextHelpId);
-    }
-
-    UserLeave();
-    Ret
-}
-#[cfg(target_arch = "x86")]
-#[no_mangle]
-pub unsafe extern "stdcall" fn NtUserSetMenuDefaultItem(
+pub unsafe extern "system" fn NtUserSetMenuDefaultItem(
     hMenu: HMENU,
     uItem: UINT,
     fByPos: UINT,
@@ -8363,30 +7920,8 @@ pub unsafe extern "stdcall" fn NtUserSetMenuDefaultItem(
     UserLeave();
     Ret
 }
-
-#[cfg(not(target_arch = "x86"))]
 #[no_mangle]
-pub unsafe extern "C" fn NtUserSetMenuDefaultItem(
-    hMenu: HMENU,
-    uItem: UINT,
-    fByPos: UINT,
-) -> BOOL {
-    let Menu: PMENU;
-    let mut Ret: BOOL = 0;
-
-    UserEnterExclusive();
-
-    Menu = UserGetMenuObject(hMenu);
-    if !Menu.is_null() {
-        Ret = UserSetMenuDefaultItem(Menu, uItem, fByPos);
-    }
-
-    UserLeave();
-    Ret
-}
-#[cfg(target_arch = "x86")]
-#[no_mangle]
-pub unsafe extern "stdcall" fn NtUserSetMenuFlagRtoL(hMenu: HMENU) -> BOOL {
+pub unsafe extern "system" fn NtUserSetMenuFlagRtoL(hMenu: HMENU) -> BOOL {
     let Menu: PMENU;
     let mut Ret: BOOL = 0;
 
@@ -8400,46 +7935,8 @@ pub unsafe extern "stdcall" fn NtUserSetMenuFlagRtoL(hMenu: HMENU) -> BOOL {
     UserLeave();
     Ret
 }
-
-#[cfg(not(target_arch = "x86"))]
 #[no_mangle]
-pub unsafe extern "C" fn NtUserSetMenuFlagRtoL(hMenu: HMENU) -> BOOL {
-    let Menu: PMENU;
-    let mut Ret: BOOL = 0;
-
-    UserEnterExclusive();
-
-    Menu = UserGetMenuObject(hMenu);
-    if !Menu.is_null() {
-        Ret = IntSetMenuFlagRtoL(Menu);
-    }
-
-    UserLeave();
-    Ret
-}
-#[cfg(target_arch = "x86")]
-#[no_mangle]
-pub unsafe extern "stdcall" fn NtUserThunkedMenuInfo(
-    hMenu: HMENU,
-    lpcmi: LPCMENUINFO,
-) -> i32 {
-    let Menu: PMENU;
-    let mut Ret: i32 = 0;
-
-    UserEnterExclusive();
-
-    Menu = UserGetMenuObject(hMenu);
-    if !Menu.is_null() {
-        Ret = UserMenuInfo(Menu, lpcmi as PROSMENUINFO, 1);
-    }
-
-    UserLeave();
-    Ret
-}
-
-#[cfg(not(target_arch = "x86"))]
-#[no_mangle]
-pub unsafe extern "C" fn NtUserThunkedMenuInfo(
+pub unsafe extern "system" fn NtUserThunkedMenuInfo(
     hMenu: HMENU,
     lpcmi: LPCMENUINFO,
 ) -> i32 {
@@ -8458,7 +7955,7 @@ pub unsafe extern "C" fn NtUserThunkedMenuInfo(
 }
 #[cfg(target_arch = "x86")]
 #[no_mangle]
-pub unsafe extern "stdcall" fn NtUserThunkedMenuItemInfo(
+pub unsafe extern "system" fn NtUserThunkedMenuItemInfo(
     hMenu: HMENU,
     uItem: UINT,
     fByPosition: BOOL,
@@ -8522,7 +8019,7 @@ pub unsafe extern "stdcall" fn NtUserThunkedMenuItemInfo(
 
 #[cfg(not(target_arch = "x86"))]
 #[no_mangle]
-pub unsafe extern "C" fn NtUserThunkedMenuItemInfo(
+pub unsafe extern "system" fn NtUserThunkedMenuItemInfo(
     hMenu: HMENU,
     uItem: UINT,
     fByPosition: BOOL,
@@ -8585,7 +8082,7 @@ pub unsafe extern "C" fn NtUserThunkedMenuItemInfo(
 }
 #[cfg(target_arch = "x86")]
 #[no_mangle]
-pub unsafe extern "stdcall" fn NtUserTrackPopupMenuEx(
+pub unsafe extern "system" fn NtUserTrackPopupMenuEx(
     hMenu: HMENU,
     fuFlags: UINT,
     x: INT,
@@ -8658,7 +8155,7 @@ pub unsafe extern "stdcall" fn NtUserTrackPopupMenuEx(
 
 #[cfg(not(target_arch = "x86"))]
 #[no_mangle]
-pub unsafe extern "C" fn NtUserTrackPopupMenuEx(
+pub unsafe extern "system" fn NtUserTrackPopupMenuEx(
     hMenu: HMENU,
     fuFlags: UINT,
     x: INT,
@@ -8696,7 +8193,7 @@ pub unsafe extern "C" fn NtUserTrackPopupMenuEx(
             if !lptpm.is_null() {
                 let __SehStatus = SafeProbeForRead(
                     lptpm as *mut core::ffi::c_void,
-                    core::mem::size_of::<TPMPARAMS>() as ULONG,
+                    core::mem::size_of::<TPMPARAMS>() as _,
                     core::mem::size_of::<u32>() as ULONG,
                 );
                 if !NT_SUCCESS(__SehStatus) {

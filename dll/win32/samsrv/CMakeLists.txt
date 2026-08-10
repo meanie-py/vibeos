@@ -81,9 +81,7 @@ add_custom_target(rust_sam_stub DEPENDS ${SAM_STUB_LIB})
 # lsasrv-sys + ntdll-sys (built transitively).
 set(SAMSRV_RUST_TARGET_DIR "${CMAKE_CURRENT_BINARY_DIR}/rust-samsrv-target")
 set(SAMSRV_RUST_LIB "${CMAKE_CURRENT_BINARY_DIR}/libsamsrv_rust.a")
-file(GLOB_RECURSE SAMSRV_RUST_SRCS
-    "${SAM_STUB_WORKSPACE_DIR}/samsrv-rust/src/*.rs"
-    "${SAM_STUB_WORKSPACE_DIR}/samsrv-sys/src/*.rs")
+rust_crate_sources(SAMSRV_RUST_SRCS "${SAM_STUB_WORKSPACE_DIR}" samsrv-rust)
 add_custom_command(
     OUTPUT ${SAMSRV_RUST_LIB}
     COMMAND ${CMAKE_COMMAND} -E env

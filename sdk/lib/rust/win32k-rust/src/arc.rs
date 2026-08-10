@@ -705,9 +705,8 @@ unsafe extern "C" fn IntGdiAngleArc(
     }
     result
 }
-#[cfg(target_arch = "x86")]
 #[no_mangle]
-pub unsafe extern "stdcall" fn NtGdiAngleArc(
+pub unsafe extern "system" fn NtGdiAngleArc(
     hDC: HDC,
     x: i32,
     y: i32,
@@ -758,146 +757,8 @@ pub unsafe extern "stdcall" fn NtGdiAngleArc(
 
     Ret
 }
-
-#[cfg(not(target_arch = "x86"))]
 #[no_mangle]
-pub unsafe extern "C" fn NtGdiAngleArc(
-    hDC: HDC,
-    x: i32,
-    y: i32,
-    dwRadius: u32,
-    dwStartAngle: u32,
-    dwSweepAngle: u32,
-) -> i32 {
-    let pDC: *mut DC;
-    let mut Ret: i32 = 0;
-    let mut worker: gxf_long = gxf_long { l: 0 };
-    let mut worker1: gxf_long = gxf_long { l: 0 };
-    let mut FloatSave: KFLOATING_SAVE = core::mem::zeroed();
-    let status: i32;
-
-    pDC = DC_LockDc(hDC);
-    if pDC.is_null() {
-        EngSetLastError(ERROR_INVALID_HANDLE);
-        return 0;
-    }
-
-    status = KeSaveFloatingPointState(core::ptr::addr_of_mut!(FloatSave) as *mut _);
-    if !NT_SUCCESS(status) {
-        DC_UnlockDc(pDC);
-        return 0;
-    }
-
-    worker.l = dwStartAngle;
-    worker1.l = dwSweepAngle;
-    DC_vPrepareDCsForBlit(pDC, core::ptr::null_mut(), core::ptr::null_mut(), core::ptr::null_mut());
-    if ((*(*pDC).pdcattr).ulDirty_ & (DIRTY_FILL | DC_BRUSH_DIRTY)) != 0 {
-        DC_vUpdateFillBrush(pDC);
-    }
-    if ((*(*pDC).pdcattr).ulDirty_ & (DIRTY_LINE | DC_PEN_DIRTY)) != 0 {
-        DC_vUpdateLineBrush(pDC);
-    }
-    #[cfg(target_arch = "x86")]
-    {
-        Ret = IntGdiAngleArc(pDC, x, y, dwRadius, worker.f, worker1.f);
-    }
-    #[cfg(not(target_arch = "x86"))]
-    {
-        Ret = IntGdiAngleArc(pDC, x, y, dwRadius, worker.f, worker1.f);
-    }
-    DC_vFinishBlit(pDC, core::ptr::null_mut());
-    DC_UnlockDc(pDC);
-
-    KeRestoreFloatingPointState(core::ptr::addr_of_mut!(FloatSave) as *mut _);
-
-    Ret
-}
-#[cfg(target_arch = "x86")]
-#[no_mangle]
-pub unsafe extern "stdcall" fn NtGdiArcInternal(
-    arctype: ARCTYPE,
-    hDC: HDC,
-    LeftRect: i32,
-    TopRect: i32,
-    RightRect: i32,
-    BottomRect: i32,
-    XStartArc: i32,
-    YStartArc: i32,
-    XEndArc: i32,
-    YEndArc: i32,
-) -> i32 {
-    let mut dc: *mut DC;
-    let Ret: i32;
-    let mut FloatSave: KFLOATING_SAVE = core::mem::zeroed();
-    let status: i32;
-
-    dc = DC_LockDc(hDC);
-    if dc.is_null() {
-        EngSetLastError(ERROR_INVALID_HANDLE);
-        return 0;
-    }
-    if arctype > GdiTypePie {
-        DC_UnlockDc(dc);
-        EngSetLastError(ERROR_INVALID_PARAMETER);
-        return 0;
-    }
-
-    DC_vPrepareDCsForBlit(dc, core::ptr::null_mut(), core::ptr::null_mut(), core::ptr::null_mut());
-
-    if (*(*dc).pdcattr).ulDirty_ & (DIRTY_FILL | DC_BRUSH_DIRTY) != 0 {
-        DC_vUpdateFillBrush(dc);
-    }
-
-    if (*(*dc).pdcattr).ulDirty_ & (DIRTY_LINE | DC_PEN_DIRTY) != 0 {
-        DC_vUpdateLineBrush(dc);
-    }
-
-    status = KeSaveFloatingPointState(core::ptr::addr_of_mut!(FloatSave) as *mut _);
-    if !NT_SUCCESS(status) {
-        DC_UnlockDc(dc);
-        return 0;
-    }
-
-    #[cfg(target_arch = "x86")]
-    {
-        Ret = IntGdiArcInternal(
-            arctype,
-            dc,
-            LeftRect,
-            TopRect,
-            RightRect,
-            BottomRect,
-            XStartArc,
-            YStartArc,
-            XEndArc,
-            YEndArc,
-        );
-    }
-    #[cfg(not(target_arch = "x86"))]
-    {
-        Ret = IntGdiArcInternal(
-            arctype,
-            dc,
-            LeftRect,
-            TopRect,
-            RightRect,
-            BottomRect,
-            XStartArc,
-            YStartArc,
-            XEndArc,
-            YEndArc,
-        );
-    }
-
-    KeRestoreFloatingPointState(core::ptr::addr_of_mut!(FloatSave) as *mut _);
-    DC_vFinishBlit(dc, core::ptr::null_mut());
-    DC_UnlockDc(dc);
-    Ret
-}
-
-#[cfg(not(target_arch = "x86"))]
-#[no_mangle]
-pub unsafe extern "C" fn NtGdiArcInternal(
+pub unsafe extern "system" fn NtGdiArcInternal(
     arctype: ARCTYPE,
     hDC: HDC,
     LeftRect: i32,

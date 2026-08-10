@@ -105,6 +105,69 @@ NTSTATUS WINAPI NtUnlockVirtualMemory(HANDLE Process, PVOID *BaseAddress,
                                       PSIZE_T NumberOfBytes, ULONG MapType);
 NTSTATUS WINAPI NtFlushVirtualMemory(HANDLE Process, PVOID *BaseAddress,
                                      PSIZE_T RegionSize, PVOID IoStatus);
+
+/* The bare-PUNICODE_STRING family (see "a flat thunk reads the string pointer
+ * from past the end of the guest's struct" below). PUNICODE_STRING and
+ * POBJECT_ATTRIBUTES are PVOID here for the same reason as above. */
+NTSTATUS WINAPI NtSetValueKey(HANDLE Key, PVOID ValueName, ULONG TitleIndex,
+                              ULONG Type, PVOID Data, ULONG DataSize);
+NTSTATUS WINAPI NtDeleteValueKey(HANDLE Key, PVOID ValueName);
+NTSTATUS WINAPI NtRenameKey(HANDLE Key, PVOID NewName);
+NTSTATUS WINAPI NtDeleteFile(PVOID ObjectAttributes);
+NTSTATUS WINAPI NtDisplayString(PVOID String);
+NTSTATUS WINAPI NtLoadDriver(PVOID DriverServiceName);
+NTSTATUS WINAPI NtUnloadDriver(PVOID DriverServiceName);
+NTSTATUS WINAPI NtQuerySystemEnvironmentValue(PVOID Name, PVOID Value,
+                                              ULONG Length, PULONG RetLength);
+NTSTATUS WINAPI NtSetSystemEnvironmentValue(PVOID Name, PVOID Value);
+NTSTATUS WINAPI NtQuerySystemEnvironmentValueEx(PVOID Name, PVOID Guid,
+                                                PVOID Value, PULONG RetLength,
+                                                PULONG Attributes);
+NTSTATUS WINAPI NtSetSystemEnvironmentValueEx(PVOID Name, PVOID Guid,
+                                              PVOID Value, ULONG Length,
+                                              ULONG Attributes);
+NTSTATUS WINAPI NtCreatePagingFile(PVOID FileName, PVOID MinSize,
+                                   PVOID MaxSize, ULONG Reserved);
+NTSTATUS WINAPI NtLoadKey(PVOID KeyOa, PVOID FileOa);
+NTSTATUS WINAPI NtLoadKey2(PVOID KeyOa, PVOID FileOa, ULONG Flags);
+NTSTATUS WINAPI NtLoadKeyEx(PVOID TargetKey, PVOID SourceFile, ULONG Flags,
+                            HANDLE TrustClassKey);
+NTSTATUS WINAPI NtReplaceKey(PVOID NewFileOa, HANDLE Key, PVOID OldFileOa);
+NTSTATUS WINAPI NtUnloadKey(PVOID KeyOa);
+NTSTATUS WINAPI NtUnloadKey2(PVOID TargetKey, ULONG Flags);
+NTSTATUS WINAPI NtUnloadKeyEx(PVOID TargetKey, HANDLE Event);
+NTSTATUS WINAPI NtQueryOpenSubKeys(PVOID TargetKey, PULONG HandleCount);
+NTSTATUS WINAPI NtQueryOpenSubKeysEx(PVOID TargetKey, ULONG BufferLength,
+                                     PVOID Buffer, PULONG RequiredSize);
+NTSTATUS WINAPI NtAccessCheckAndAuditAlarm(PVOID SubsystemName, PVOID HandleId,
+                                           PVOID ObjectTypeName,
+                                           PVOID ObjectName, PVOID Sd,
+                                           ACCESS_MASK Desired, PVOID Mapping,
+                                           BOOLEAN ObjectCreation,
+                                           PVOID GrantedAccess,
+                                           PVOID AccessStatus,
+                                           PVOID GenerateOnClose);
+NTSTATUS WINAPI NtCloseObjectAuditAlarm(PVOID SubsystemName, PVOID HandleId,
+                                        BOOLEAN GenerateOnClose);
+NTSTATUS WINAPI NtDeleteObjectAuditAlarm(PVOID SubsystemName, PVOID HandleId,
+                                         BOOLEAN GenerateOnClose);
+NTSTATUS WINAPI NtOpenObjectAuditAlarm(PVOID SubsystemName, PVOID HandleId,
+                                       PVOID ObjectTypeName, PVOID ObjectName,
+                                       PVOID Sd, HANDLE ClientToken,
+                                       ACCESS_MASK Desired, ACCESS_MASK Granted,
+                                       PVOID Privileges, BOOLEAN ObjectCreation,
+                                       BOOLEAN AccessGranted,
+                                       PVOID GenerateOnClose);
+NTSTATUS WINAPI NtPrivilegeObjectAuditAlarm(PVOID SubsystemName, PVOID HandleId,
+                                            HANDLE ClientToken,
+                                            ACCESS_MASK Desired,
+                                            PVOID Privileges,
+                                            BOOLEAN AccessGranted);
+NTSTATUS WINAPI NtPrivilegedServiceAuditAlarm(PVOID SubsystemName,
+                                              PVOID ServiceName,
+                                              HANDLE ClientToken,
+                                              PVOID Privileges,
+                                              BOOLEAN AccessGranted);
 NTSTATUS WINAPI NtProtectVirtualMemory(HANDLE Process, PVOID *BaseAddress,
                                        PSIZE_T RegionSize, ULONG NewProtect,
                                        PULONG OldProtect);
@@ -787,6 +850,256 @@ static NTSTATUS Wow64pLockUnlockVm(WOW64_VMLOCK_FN Fn, ULONG *a)
 
 /* NtFlushVirtualMemory also takes an IO_STATUS_BLOCK, so it lives just after
  * that helper below rather than here with the rest of its family. */
+
+/* ---- bare PUNICODE_STRING arguments ------------------------------------- *
+ *
+ * UNICODE_STRING is 8 bytes in the guest — {USHORT Length; USHORT MaximumLength;
+ * ULONG Buffer} — and 16 on the host, because the pointer is 8-aligned:
+ * {USHORT Length; USHORT MaximumLength; ULONG pad; ULONGLONG Buffer}. So Buffer
+ * sits at offset 4 in the guest and offset 8 on the host.
+ *
+ * A flat thunk therefore makes the kernel read the string POINTER from offset 8
+ * of an 8-byte object — i.e. from PAST THE END of the guest's struct. This is
+ * not a truncation, it is a wholly unrelated address: whatever the guest
+ * happened to put next to the UNICODE_STRING becomes the buffer pointer, while
+ * Length and MaximumLength (same offsets on both sides) come through intact and
+ * make it look plausible.
+ *
+ * The one that matters most is NtSetValueKey — every `RegSetValueEx` from a
+ * 32-bit guest. NtQueryValueKey was already marshalled, so registry READS
+ * worked and WRITES did not, which is the same "fix the variant you happen to
+ * be looking at" pattern that left plain NtOpenProcessToken behind its Ex
+ * sibling. Sourced from `marshalgen audit`, like the out-cell class above. */
+
+static PVOID Wow64pMarshalUstr(WOW64_UNICODE_STRING64_M *U64, ULONG U32Ptr)
+{
+    WOW64_UNICODE_STRING32_M *U32 = (WOW64_UNICODE_STRING32_M *)(ULONG_PTR)U32Ptr;
+    if (!U32)
+        return NULL;   /* several of these are _In_opt_ */
+    U64->Length = U32->Length;
+    U64->MaximumLength = U32->MaximumLength;
+    U64->__pad = 0;
+    U64->Buffer = (ULONG_PTR)U32->Buffer;
+    return U64;
+}
+
+/* --- registry value names (the hot one) ---------------------------------- */
+
+static NTSTATUS Wow64Manual_NtSetValueKey(ULONG *a)
+{
+    WOW64_UNICODE_STRING64_M Name;
+    return NtSetValueKey((HANDLE)(LONG_PTR)(LONG)a[0],
+                         Wow64pMarshalUstr(&Name, a[1]), a[2], a[3],
+                         (PVOID)(ULONG_PTR)a[4], a[5]);
+}
+
+static NTSTATUS Wow64Manual_NtDeleteValueKey(ULONG *a)
+{
+    WOW64_UNICODE_STRING64_M Name;
+    return NtDeleteValueKey((HANDLE)(LONG_PTR)(LONG)a[0],
+                            Wow64pMarshalUstr(&Name, a[1]));
+}
+
+static NTSTATUS Wow64Manual_NtRenameKey(ULONG *a)
+{
+    WOW64_UNICODE_STRING64_M Name;
+    return NtRenameKey((HANDLE)(LONG_PTR)(LONG)a[0],
+                       Wow64pMarshalUstr(&Name, a[1]));
+}
+
+/* --- single PUNICODE_STRING, nothing else -------------------------------- */
+
+typedef NTSTATUS (WINAPI *WOW64_USTR1_FN)(PVOID);
+
+static NTSTATUS Wow64pCallUstr1(WOW64_USTR1_FN Fn, ULONG *a)
+{
+    WOW64_UNICODE_STRING64_M S;
+    return Fn(Wow64pMarshalUstr(&S, a[0]));
+}
+
+/* --- single POBJECT_ATTRIBUTES, nothing else ----------------------------- */
+
+typedef NTSTATUS (WINAPI *WOW64_OA1_FN)(PVOID);
+
+static NTSTATUS Wow64pCallOa1(WOW64_OA1_FN Fn, ULONG *a)
+{
+    WOW64_OBJECT_ATTRIBUTES64_M Oa;
+    WOW64_UNICODE_STRING64_M Name;
+    return Fn(Wow64pMarshalOaOpt(&Oa, &Name, a[0]));
+}
+
+/* --- environment values -------------------------------------------------- */
+
+static NTSTATUS Wow64Manual_NtQuerySystemEnvironmentValue(ULONG *a)
+{
+    WOW64_UNICODE_STRING64_M Name;
+    return NtQuerySystemEnvironmentValue(Wow64pMarshalUstr(&Name, a[0]),
+                                         (PVOID)(ULONG_PTR)a[1], a[2],
+                                         (PULONG)(ULONG_PTR)a[3]);
+}
+
+static NTSTATUS Wow64Manual_NtSetSystemEnvironmentValue(ULONG *a)
+{
+    WOW64_UNICODE_STRING64_M Name, Value;
+    return NtSetSystemEnvironmentValue(Wow64pMarshalUstr(&Name, a[0]),
+                                       Wow64pMarshalUstr(&Value, a[1]));
+}
+
+static NTSTATUS Wow64Manual_NtQuerySystemEnvironmentValueEx(ULONG *a)
+{
+    WOW64_UNICODE_STRING64_M Name;
+    return NtQuerySystemEnvironmentValueEx(Wow64pMarshalUstr(&Name, a[0]),
+                                           (PVOID)(ULONG_PTR)a[1],
+                                           (PVOID)(ULONG_PTR)a[2],
+                                           (PULONG)(ULONG_PTR)a[3],
+                                           (PULONG)(ULONG_PTR)a[4]);
+}
+
+static NTSTATUS Wow64Manual_NtSetSystemEnvironmentValueEx(ULONG *a)
+{
+    WOW64_UNICODE_STRING64_M Name;
+    return NtSetSystemEnvironmentValueEx(Wow64pMarshalUstr(&Name, a[0]),
+                                         (PVOID)(ULONG_PTR)a[1],
+                                         (PVOID)(ULONG_PTR)a[2], a[3], a[4]);
+}
+
+static NTSTATUS Wow64Manual_NtCreatePagingFile(ULONG *a)
+{
+    WOW64_UNICODE_STRING64_M Name;
+    /* MinimumSize/MaximumSize are PLARGE_INTEGER — 8 bytes on both sides. */
+    return NtCreatePagingFile(Wow64pMarshalUstr(&Name, a[0]),
+                              (PVOID)(ULONG_PTR)a[1], (PVOID)(ULONG_PTR)a[2],
+                              a[3]);
+}
+
+/* --- hive load/unload/replace (OBJECT_ATTRIBUTES pairs) ------------------ */
+
+static NTSTATUS Wow64Manual_NtLoadKey(ULONG *a)
+{
+    WOW64_OBJECT_ATTRIBUTES64_M KeyOa, FileOa;
+    WOW64_UNICODE_STRING64_M KeyName, FileName;
+    return NtLoadKey(Wow64pMarshalOaOpt(&KeyOa, &KeyName, a[0]),
+                     Wow64pMarshalOaOpt(&FileOa, &FileName, a[1]));
+}
+
+static NTSTATUS Wow64Manual_NtLoadKey2(ULONG *a)
+{
+    WOW64_OBJECT_ATTRIBUTES64_M KeyOa, FileOa;
+    WOW64_UNICODE_STRING64_M KeyName, FileName;
+    return NtLoadKey2(Wow64pMarshalOaOpt(&KeyOa, &KeyName, a[0]),
+                      Wow64pMarshalOaOpt(&FileOa, &FileName, a[1]), a[2]);
+}
+
+static NTSTATUS Wow64Manual_NtLoadKeyEx(ULONG *a)
+{
+    WOW64_OBJECT_ATTRIBUTES64_M KeyOa, FileOa;
+    WOW64_UNICODE_STRING64_M KeyName, FileName;
+    return NtLoadKeyEx(Wow64pMarshalOaOpt(&KeyOa, &KeyName, a[0]),
+                       Wow64pMarshalOaOpt(&FileOa, &FileName, a[1]), a[2],
+                       (HANDLE)(LONG_PTR)(LONG)a[3]);
+}
+
+static NTSTATUS Wow64Manual_NtReplaceKey(ULONG *a)
+{
+    WOW64_OBJECT_ATTRIBUTES64_M NewOa, OldOa;
+    WOW64_UNICODE_STRING64_M NewName, OldName;
+    return NtReplaceKey(Wow64pMarshalOaOpt(&NewOa, &NewName, a[0]),
+                        (HANDLE)(LONG_PTR)(LONG)a[1],
+                        Wow64pMarshalOaOpt(&OldOa, &OldName, a[2]));
+}
+
+static NTSTATUS Wow64Manual_NtUnloadKey2(ULONG *a)
+{
+    WOW64_OBJECT_ATTRIBUTES64_M Oa;
+    WOW64_UNICODE_STRING64_M Name;
+    return NtUnloadKey2(Wow64pMarshalOaOpt(&Oa, &Name, a[0]), a[1]);
+}
+
+static NTSTATUS Wow64Manual_NtUnloadKeyEx(ULONG *a)
+{
+    WOW64_OBJECT_ATTRIBUTES64_M Oa;
+    WOW64_UNICODE_STRING64_M Name;
+    return NtUnloadKeyEx(Wow64pMarshalOaOpt(&Oa, &Name, a[0]),
+                         (HANDLE)(LONG_PTR)(LONG)a[1]);
+}
+
+static NTSTATUS Wow64Manual_NtQueryOpenSubKeys(ULONG *a)
+{
+    WOW64_OBJECT_ATTRIBUTES64_M Oa;
+    WOW64_UNICODE_STRING64_M Name;
+    return NtQueryOpenSubKeys(Wow64pMarshalOaOpt(&Oa, &Name, a[0]),
+                              (PULONG)(ULONG_PTR)a[1]);
+}
+
+static NTSTATUS Wow64Manual_NtQueryOpenSubKeysEx(ULONG *a)
+{
+    WOW64_OBJECT_ATTRIBUTES64_M Oa;
+    WOW64_UNICODE_STRING64_M Name;
+    return NtQueryOpenSubKeysEx(Wow64pMarshalOaOpt(&Oa, &Name, a[0]), a[1],
+                                (PVOID)(ULONG_PTR)a[2],
+                                (PULONG)(ULONG_PTR)a[3]);
+}
+
+/* --- the audit-alarm family ---------------------------------------------- *
+ * Rarely called (advapi32's ObjectPrivilege APIs), but they take two or three
+ * UNICODE_STRINGs each and cost one line apiece here. PRIVILEGE_SET and
+ * GENERIC_MAPPING are pointer-free (LUIDs and ACCESS_MASKs), so they pass
+ * through — which is what the audit says, and why they are not in the list. */
+
+static NTSTATUS Wow64Manual_NtAccessCheckAndAuditAlarm(ULONG *a)
+{
+    WOW64_UNICODE_STRING64_M Sub, TypeName, ObjName;
+    return NtAccessCheckAndAuditAlarm(Wow64pMarshalUstr(&Sub, a[0]),
+                                      (PVOID)(ULONG_PTR)a[1],
+                                      Wow64pMarshalUstr(&TypeName, a[2]),
+                                      Wow64pMarshalUstr(&ObjName, a[3]),
+                                      (PVOID)(ULONG_PTR)a[4], a[5],
+                                      (PVOID)(ULONG_PTR)a[6], (BOOLEAN)a[7],
+                                      (PVOID)(ULONG_PTR)a[8],
+                                      (PVOID)(ULONG_PTR)a[9],
+                                      (PVOID)(ULONG_PTR)a[10]);
+}
+
+static NTSTATUS Wow64Manual_NtOpenObjectAuditAlarm(ULONG *a)
+{
+    WOW64_UNICODE_STRING64_M Sub, TypeName, ObjName;
+    return NtOpenObjectAuditAlarm(Wow64pMarshalUstr(&Sub, a[0]),
+                                  (PVOID)(ULONG_PTR)a[1],
+                                  Wow64pMarshalUstr(&TypeName, a[2]),
+                                  Wow64pMarshalUstr(&ObjName, a[3]),
+                                  (PVOID)(ULONG_PTR)a[4],
+                                  (HANDLE)(LONG_PTR)(LONG)a[5], a[6], a[7],
+                                  (PVOID)(ULONG_PTR)a[8], (BOOLEAN)a[9],
+                                  (BOOLEAN)a[10], (PVOID)(ULONG_PTR)a[11]);
+}
+
+typedef NTSTATUS (WINAPI *WOW64_AUDIT_CLOSE_FN)(PVOID, PVOID, BOOLEAN);
+
+static NTSTATUS Wow64pAuditClose(WOW64_AUDIT_CLOSE_FN Fn, ULONG *a)
+{
+    WOW64_UNICODE_STRING64_M Sub;
+    return Fn(Wow64pMarshalUstr(&Sub, a[0]), (PVOID)(ULONG_PTR)a[1],
+              (BOOLEAN)a[2]);
+}
+
+static NTSTATUS Wow64Manual_NtPrivilegeObjectAuditAlarm(ULONG *a)
+{
+    WOW64_UNICODE_STRING64_M Sub;
+    return NtPrivilegeObjectAuditAlarm(Wow64pMarshalUstr(&Sub, a[0]),
+                                       (PVOID)(ULONG_PTR)a[1],
+                                       (HANDLE)(LONG_PTR)(LONG)a[2], a[3],
+                                       (PVOID)(ULONG_PTR)a[4], (BOOLEAN)a[5]);
+}
+
+static NTSTATUS Wow64Manual_NtPrivilegedServiceAuditAlarm(ULONG *a)
+{
+    WOW64_UNICODE_STRING64_M Sub, Svc;
+    return NtPrivilegedServiceAuditAlarm(Wow64pMarshalUstr(&Sub, a[0]),
+                                         Wow64pMarshalUstr(&Svc, a[1]),
+                                         (HANDLE)(LONG_PTR)(LONG)a[2],
+                                         (PVOID)(ULONG_PTR)a[3],
+                                         (BOOLEAN)a[4]);
+}
 
 /* ---- file syscalls (OBJECT_ATTRIBUTES + IO_STATUS_BLOCK) ----------------- *
  * IO_STATUS_BLOCK32 is 8 bytes ({ULONG Status; ULONG Information}); the host
@@ -3849,6 +4162,182 @@ static NTSTATUS Wow64Manual_NtUserEnumDisplayMonitors(ULONG *a)
     return (NTSTATUS)Got;
 }
 
+/* ---- E22: NtUserThunkedMenuInfo — the declared type is NOT the real payload
+ *
+ * The prototype says `LPCMENUINFO`, and `marshalgen` believed it: MENUINFO is
+ * 28 bytes in the guest and 40 on the host, a clean WIDENING diff. But win32k
+ * casts the pointer to `PROSMENUINFO` and `UserMenuInfo` reads **`cbSize`
+ * bytes** out of the caller, accepting anything in the range
+ * `[sizeof(MENUINFO), sizeof(ROSMENUINFO)]` — ROSMENUINFO being MENUINFO plus
+ * a dozen internal fields. The size is therefore CALLER-DECLARED and variable,
+ * which is precisely the shape a layout-diff marshaller cannot see: a
+ * generated thunk sized from the MENUINFO diff hands the kernel a 40-byte
+ * bounce and then lets it read `cbSize` bytes out of it. A guest declaring a
+ * ROSMENUINFO would have the kernel read ~36 bytes past the end of wow64.dll's
+ * own stack buffer — a bug the marshaller would have INTRODUCED, since the
+ * flat thunk it replaced at least handed over a real, correctly-sized guest
+ * pointer.
+ *
+ * So marshal exactly the MENUINFO size class and pass everything else through
+ * untouched. user32's SetMenuInfo (the only in-tree caller) always sends
+ * exactly `sizeof(MENUINFO)`, so the class that matters is covered; a direct
+ * caller declaring more gets today's behaviour, not a fresh overread.
+ *
+ * IN-only: NtUserThunkedMenuInfo always calls UserMenuInfo with SetOrGet=1,
+ * and only the Get branch copies back. GetMenuInfo never reaches the kernel at
+ * all — user32 answers it from the client-side PMENU. */
+
+static NTSTATUS Wow64Manual_NtUserThunkedMenuInfo(ULONG *a)
+{
+    extern ULONG NtUserThunkedMenuInfo(PVOID, PVOID);
+    typedef struct { ULONG cbSize, fMask, dwStyle, cyMax, hbrBack,
+                     dwContextHelpID, dwMenuData; } MI32;         /* 28 */
+    typedef struct { ULONG cbSize, fMask, dwStyle, cyMax;
+                     ULONGLONG hbrBack;
+                     ULONG dwContextHelpID, __pad;
+                     ULONGLONG dwMenuData; } MI64;                /* 40 */
+    const MI32 *M32 = (const MI32 *)(ULONG_PTR)a[1];
+    MI64 M64;
+
+    if (!M32 || M32->cbSize != sizeof(MI32))
+        return (NTSTATUS)NtUserThunkedMenuInfo((PVOID)(ULONG_PTR)a[0],
+                                               (PVOID)(ULONG_PTR)a[1]);
+
+    M64.cbSize = sizeof(M64);      /* the whole point: the host's own sizeof */
+    M64.fMask = M32->fMask;
+    M64.dwStyle = M32->dwStyle;
+    M64.cyMax = M32->cyMax;
+    M64.hbrBack = M32->hbrBack;
+    M64.dwContextHelpID = M32->dwContextHelpID;
+    M64.__pad = 0;
+    M64.dwMenuData = M32->dwMenuData;
+    return (NTSTATUS)NtUserThunkedMenuInfo((PVOID)(ULONG_PTR)a[0], &M64);
+}
+
+/* ---- E22: NtUserSendInput (the size-as-an-ARGUMENT half of the cbSize class)
+ *
+ * SendInput is the one member of the self-describing-size family that states
+ * its size in a SYSCALL ARGUMENT rather than in a leading struct field, so
+ * marshalgen's WowAmSizeIn/Out cannot reach it — it has no idea that arg 2
+ * describes arg 1. win32k's check is
+ *     `cbSize as usize != size_of::<INPUT>()`  (input.rs)
+ * so a 32-bit guest offering its own sizeof (28) is rejected against the host
+ * 40 and EVERY SendInput from EVERY 32-bit process returned 0 with
+ * ERROR_INVALID_PARAMETER. That is not a crash, which is why nothing found it:
+ * apps that synthesize input (installers, automation, accessibility, games
+ * that warp the pointer) just quietly did nothing.
+ *
+ * The payload diverges twice over: the union sits at offset 4 in the guest and
+ * 8 on the host (8-alignment for ULONG_PTR), and each arm's dwExtraInfo widens
+ * 4->8. So the stride is 28 vs 40 and a flat pass would have the kernel walk
+ * the guest array with 40-byte strides — reading 12 bytes past the end of a
+ * single-element array even before the union offsets are considered.
+ *
+ * dwExtraInfo is ZERO-extended, not sign-extended like a handle: it is
+ * app-defined data the guest reads back through GetMessageExtraInfo, and
+ * sign-extending would corrupt any value with bit 31 set. */
+
+#define WOW64_INPUT32_CB   28
+#define WOW64_INPUT64_CB   40
+#define WOW64_SENDINPUT_STACK 64   /* fast path; larger batches go to the heap */
+
+/* winuser.h is not in this TU's include set (windef.h + winbase.h only). */
+#define WOW64_INPUT_MOUSE     0
+#define WOW64_INPUT_KEYBOARD  1
+
+/* Byte-wise throughout: the guest array has a 28-byte stride, so element N is
+ * only 4-aligned if the guest's base pointer was, and this runs on arm64 too. */
+static ULONG Wow64pGet32(const unsigned char *p)
+{
+    ULONG v;
+    unsigned i;
+    for (i = 0; i < 4; i++)
+        ((unsigned char *)&v)[i] = p[i];
+    return v;
+}
+
+static void Wow64pPut64(unsigned char *p, ULONGLONG v)
+{
+    unsigned i;
+    for (i = 0; i < 8; i++)
+        p[i] = ((const unsigned char *)&v)[i];
+}
+
+static void Wow64pInput32To64(const unsigned char *g, unsigned char *h)
+{
+    unsigned i;
+
+    for (i = 0; i < WOW64_INPUT64_CB; i++)
+        h[i] = 0;
+    for (i = 0; i < 4; i++)
+        h[i] = g[i];                       /* type, offset 0 on both sides */
+
+    switch (Wow64pGet32(g))
+    {
+    case WOW64_INPUT_MOUSE:
+        /* dx,dy,mouseData,dwFlags,time identical; dwExtraInfo 20 -> 24 */
+        for (i = 0; i < 20; i++)
+            h[8 + i] = g[4 + i];
+        Wow64pPut64(h + 8 + 24, (ULONGLONG)Wow64pGet32(g + 4 + 20));
+        break;
+    case WOW64_INPUT_KEYBOARD:
+        /* wVk,wScan,dwFlags,time identical; dwExtraInfo 12 -> 16 */
+        for (i = 0; i < 12; i++)
+            h[8 + i] = g[4 + i];
+        Wow64pPut64(h + 8 + 16, (ULONGLONG)Wow64pGet32(g + 4 + 12));
+        break;
+    default:
+        /* INPUT_HARDWARE (8 bytes, identical) and anything the guest made up.
+         * Copy the guest union verbatim and let win32k reject the type — a
+         * marshaller must not turn an invalid type into a valid one. */
+        for (i = 0; i < WOW64_INPUT32_CB - 4; i++)
+            h[8 + i] = g[4 + i];
+        break;
+    }
+}
+
+static NTSTATUS Wow64Manual_NtUserSendInput(ULONG *a)
+{
+    extern ULONG NtUserSendInput(ULONG nInputs, PVOID pInput, INT cbSize);
+    ULONG nInputs = a[0];
+    const unsigned char *In32 = (const unsigned char *)(ULONG_PTR)a[1];
+    ULONG cbGuest = a[2];
+    unsigned char Stack[WOW64_SENDINPUT_STACK * WOW64_INPUT64_CB];
+    unsigned char *In64 = Stack;
+    PVOID Heap = NULL;
+    ULONG Ret, i;
+
+    /* Pass a wrong cbSize straight through so the kernel still rejects it:
+     * only the guest's own sizeof means "I am a 32-bit INPUT". */
+    if (!In32 || !nInputs || cbGuest != WOW64_INPUT32_CB)
+        return (NTSTATUS)NtUserSendInput(nInputs, (PVOID)(ULONG_PTR)a[1], (INT)cbGuest);
+
+    if (nInputs > WOW64_SENDINPUT_STACK)
+    {
+        SIZE_T Size = (SIZE_T)nInputs * WOW64_INPUT64_CB;
+        NTSTATUS St = NtAllocateVirtualMemory((HANDLE)(LONG_PTR)-1, &Heap, 0, &Size,
+                                              MEM_RESERVE | MEM_COMMIT, PAGE_READWRITE);
+        if (St < 0)
+            return St;
+        In64 = (unsigned char *)Heap;
+    }
+
+    for (i = 0; i < nInputs; i++)
+        Wow64pInput32To64(In32 + (SIZE_T)i * WOW64_INPUT32_CB,
+                          In64 + (SIZE_T)i * WOW64_INPUT64_CB);
+
+    /* IN-only: win32k copies each entry into its own SafeInput and never
+     * writes back through pInput, so there is no copy-down. */
+    Ret = NtUserSendInput(nInputs, In64, WOW64_INPUT64_CB);
+
+    if (Heap)
+    {
+        SIZE_T Free = 0;
+        NtFreeVirtualMemory((HANDLE)(LONG_PTR)-1, &Heap, &Free, MEM_RELEASE);
+    }
+    return (NTSTATUS)Ret;
+}
+
 /*
  * NtUserInitializeClientPfnArrays — INTERCEPT. The guest's user32 calls this once
  * at process init with three PFNCLIENT/PFNCLIENTWORKER structs: arrays of
@@ -4370,6 +4859,65 @@ NTSTATUS Wow64ManualDispatch(const char *Name, ULONG *Arguments)
         return Wow64pLockUnlockVm(NtUnlockVirtualMemory, Arguments);
     if (WOW64_IS("NtFlushVirtualMemory"))
         return Wow64Manual_NtFlushVirtualMemory(Arguments);
+
+    /* Bare PUNICODE_STRING / POBJECT_ATTRIBUTES args — flat-thunked, the kernel
+     * read the string pointer from PAST THE END of the guest's 8-byte struct.
+     * NtSetValueKey is the hot one: it BUGCHECKs the box (0x1E) on the garbage
+     * pointer, so every RegSetValueEx from a 32-bit guest was a local DoS. */
+    if (WOW64_IS("NtSetValueKey"))
+        return Wow64Manual_NtSetValueKey(Arguments);
+    if (WOW64_IS("NtDeleteValueKey"))
+        return Wow64Manual_NtDeleteValueKey(Arguments);
+    if (WOW64_IS("NtRenameKey"))
+        return Wow64Manual_NtRenameKey(Arguments);
+    if (WOW64_IS("NtDeleteFile"))
+        return Wow64pCallOa1(NtDeleteFile, Arguments);
+    if (WOW64_IS("NtUnloadKey"))
+        return Wow64pCallOa1(NtUnloadKey, Arguments);
+    if (WOW64_IS("NtDisplayString"))
+        return Wow64pCallUstr1(NtDisplayString, Arguments);
+    if (WOW64_IS("NtLoadDriver"))
+        return Wow64pCallUstr1(NtLoadDriver, Arguments);
+    if (WOW64_IS("NtUnloadDriver"))
+        return Wow64pCallUstr1(NtUnloadDriver, Arguments);
+    if (WOW64_IS("NtQuerySystemEnvironmentValue"))
+        return Wow64Manual_NtQuerySystemEnvironmentValue(Arguments);
+    if (WOW64_IS("NtSetSystemEnvironmentValue"))
+        return Wow64Manual_NtSetSystemEnvironmentValue(Arguments);
+    if (WOW64_IS("NtQuerySystemEnvironmentValueEx"))
+        return Wow64Manual_NtQuerySystemEnvironmentValueEx(Arguments);
+    if (WOW64_IS("NtSetSystemEnvironmentValueEx"))
+        return Wow64Manual_NtSetSystemEnvironmentValueEx(Arguments);
+    if (WOW64_IS("NtCreatePagingFile"))
+        return Wow64Manual_NtCreatePagingFile(Arguments);
+    if (WOW64_IS("NtLoadKey"))
+        return Wow64Manual_NtLoadKey(Arguments);
+    if (WOW64_IS("NtLoadKey2"))
+        return Wow64Manual_NtLoadKey2(Arguments);
+    if (WOW64_IS("NtLoadKeyEx"))
+        return Wow64Manual_NtLoadKeyEx(Arguments);
+    if (WOW64_IS("NtReplaceKey"))
+        return Wow64Manual_NtReplaceKey(Arguments);
+    if (WOW64_IS("NtUnloadKey2"))
+        return Wow64Manual_NtUnloadKey2(Arguments);
+    if (WOW64_IS("NtUnloadKeyEx"))
+        return Wow64Manual_NtUnloadKeyEx(Arguments);
+    if (WOW64_IS("NtQueryOpenSubKeys"))
+        return Wow64Manual_NtQueryOpenSubKeys(Arguments);
+    if (WOW64_IS("NtQueryOpenSubKeysEx"))
+        return Wow64Manual_NtQueryOpenSubKeysEx(Arguments);
+    if (WOW64_IS("NtAccessCheckAndAuditAlarm"))
+        return Wow64Manual_NtAccessCheckAndAuditAlarm(Arguments);
+    if (WOW64_IS("NtOpenObjectAuditAlarm"))
+        return Wow64Manual_NtOpenObjectAuditAlarm(Arguments);
+    if (WOW64_IS("NtCloseObjectAuditAlarm"))
+        return Wow64pAuditClose(NtCloseObjectAuditAlarm, Arguments);
+    if (WOW64_IS("NtDeleteObjectAuditAlarm"))
+        return Wow64pAuditClose(NtDeleteObjectAuditAlarm, Arguments);
+    if (WOW64_IS("NtPrivilegeObjectAuditAlarm"))
+        return Wow64Manual_NtPrivilegeObjectAuditAlarm(Arguments);
+    if (WOW64_IS("NtPrivilegedServiceAuditAlarm"))
+        return Wow64Manual_NtPrivilegedServiceAuditAlarm(Arguments);
     if (WOW64_IS("NtQuerySymbolicLinkObject"))
         return Wow64Manual_NtQuerySymbolicLinkObject(Arguments);
     if (WOW64_IS("NtAllocateVirtualMemory"))
@@ -4593,6 +5141,10 @@ NTSTATUS Wow64ManualDispatch(const char *Name, ULONG *Arguments)
         return Wow64Manual_NtRemoveIoCompletion(Arguments);
     if (WOW64_IS("NtUserEnumDisplayMonitors"))
         return Wow64Manual_NtUserEnumDisplayMonitors(Arguments);
+    if (WOW64_IS("NtUserSendInput"))
+        return Wow64Manual_NtUserSendInput(Arguments);
+    if (WOW64_IS("NtUserThunkedMenuInfo"))
+        return Wow64Manual_NtUserThunkedMenuInfo(Arguments);
 #undef WOW64_IS
     /* M17: fall through to the marshalgen-generated thunks (flat thunks
      * recovered from header prototypes + layout-diff deep marshallers).

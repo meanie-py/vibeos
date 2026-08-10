@@ -194,7 +194,8 @@ const PagedPool: POOL_TYPE = 1; // placeholder
 
 type NTSTATUS = i32;
 type PVOID = *mut c_void;
-type VBO = u32;
+// Right width, but still a shadow of crate::types::VBO — see dirsup.rs.
+use crate::types::VBO;
 type LBO = u64;
 type ULONG = u32;
 type ULONGLONG = u64;
@@ -290,7 +291,7 @@ extern "system" {
     fn FatMapUserBuffer(IrpContext: *mut c_void, Irp: *mut c_void) -> *mut u8;
     fn FatPopUpFileCorrupt(IrpContext: PIRP_CONTEXT, Fcb: PFCB);
     fn FatRaiseStatus(IrpContext: PIRP_CONTEXT, Status: NTSTATUS);
-    fn FatSetFileSizeInDirent(IrpContext: PIRP_CONTEXT, Fcb: PFCB, NewSize: *const LARGE_INTEGER);
+    fn FatSetFileSizeInDirent(IrpContext: PIRP_CONTEXT, Fcb: PFCB, AlternativeFileSize: *const ULONG);
     fn FatNotifyReportChange(IrpContext: PIRP_CONTEXT, Vcb: PVCB, Fcb: PFCB, Filter: u32, Action: u32);
     fn FatUnpinRepinnedBcbs(IrpContext: PIRP_CONTEXT);
     fn FatNonCachedIo(IrpContext: PIRP_CONTEXT, Irp: PIRP, FcbOrDcb: PFCB, StartingVbo: VBO, ByteCount: u32, UserByteCount: u32, StreamFlags: u32) -> NTSTATUS;

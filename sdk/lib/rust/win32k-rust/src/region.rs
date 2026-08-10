@@ -2396,24 +2396,8 @@ pub unsafe extern "C" fn IntSysCreateRectpRgn(
     
     prgn
 }
-#[cfg(target_arch = "x86")]
 #[no_mangle]
-pub unsafe extern "stdcall" fn REGION_vCleanup(ObjectBody: PVOID) {
-    let pRgn = ObjectBody as PREGION;
-    let ppi = PsGetCurrentProcessWin32Process() as PPROCESSINFO;
-
-    if (*pRgn).prgnattr != core::ptr::addr_of_mut!((*pRgn).rgnattr) as *mut _ {
-        GdiPoolFree((*ppi).pPoolRgnAttr, (*pRgn).prgnattr as PVOID);
-    }
-
-    if !(*pRgn).Buffer.is_null() && (*pRgn).Buffer != core::ptr::addr_of_mut!((*pRgn).rdh.rcBound) as PRECTL {
-        ExFreePoolWithTag((*pRgn).Buffer as PVOID, TAG_REGION);
-    }
-}
-
-#[cfg(not(target_arch = "x86"))]
-#[no_mangle]
-pub unsafe extern "C" fn REGION_vCleanup(ObjectBody: PVOID) {
+pub unsafe extern "system" fn REGION_vCleanup(ObjectBody: PVOID) {
     let pRgn = ObjectBody as PREGION;
     let ppi = PsGetCurrentProcessWin32Process() as PPROCESSINFO;
 
@@ -2641,29 +2625,8 @@ pub unsafe extern "C" fn REGION_GetRgnBox(
     }
     return 0;
 }
-#[cfg(target_arch = "x86")]
 #[no_mangle]
-pub unsafe extern "stdcall" fn IntGdiGetRgnBox(
-    hRgn: HRGN,
-    pRect: PRECTL,
-) -> INT {
-    let Rgn: PREGION;
-    let ret: DWORD;
-
-    Rgn = REGION_LockRgn(hRgn);
-    if Rgn.is_null() {
-        return ERROR as _;
-    }
-
-    ret = REGION_GetRgnBox(Rgn, pRect) as DWORD;
-    REGION_UnlockRgn(Rgn);
-
-    return ret as INT;
-}
-
-#[cfg(not(target_arch = "x86"))]
-#[no_mangle]
-pub unsafe extern "C" fn IntGdiGetRgnBox(
+pub unsafe extern "system" fn IntGdiGetRgnBox(
     hRgn: HRGN,
     pRect: PRECTL,
 ) -> INT {
@@ -3912,37 +3875,8 @@ unsafe extern "C" fn REGION_SetPolyPolygonRgn(
 
     bResult
 }
-#[cfg(target_arch = "x86")]
 #[no_mangle]
-pub unsafe extern "stdcall" fn GreCreatePolyPolygonRgn(
-    ppt: *const POINT,
-    pcPoints: *const ULONG,
-    cPolygons: ULONG,
-    iMode: INT,
-) -> HRGN {
-    let prgn: PREGION;
-    let hrgn: HRGN;
-
-    prgn = REGION_AllocUserRgnWithHandle(0);
-    if prgn.is_null() {
-        EngSetLastError(ERROR_NOT_ENOUGH_MEMORY);
-        return core::ptr::null_mut();
-    }
-
-    if REGION_SetPolyPolygonRgn(prgn, ppt, pcPoints, cPolygons, iMode) != 0 {
-        hrgn = (*prgn).BaseObject.hHmgr as HRGN;
-        REGION_UnlockRgn(prgn);
-    } else {
-        REGION_Delete(prgn);
-        hrgn = core::ptr::null_mut();
-    }
-
-    return hrgn;
-}
-
-#[cfg(not(target_arch = "x86"))]
-#[no_mangle]
-pub unsafe extern "C" fn GreCreatePolyPolygonRgn(
+pub unsafe extern "system" fn GreCreatePolyPolygonRgn(
     ppt: *const POINT,
     pcPoints: *const ULONG,
     cPolygons: ULONG,
@@ -4005,9 +3939,8 @@ pub unsafe extern "C" fn IntRectInRegion(
     REGION_UnlockRgn(Rgn);
     return Ret;
 }
-#[cfg(target_arch = "x86")]
 #[no_mangle]
-pub unsafe extern "stdcall" fn NtGdiCombineRgn(
+pub unsafe extern "system" fn NtGdiCombineRgn(
     hrgnDst: HRGN,
     hrgnSrc1: HRGN,
     hrgnSrc2: HRGN,
@@ -4058,63 +3991,8 @@ pub unsafe extern "stdcall" fn NtGdiCombineRgn(
 
     iResult
 }
-
-#[cfg(not(target_arch = "x86"))]
 #[no_mangle]
-pub unsafe extern "C" fn NtGdiCombineRgn(
-    hrgnDst: HRGN,
-    hrgnSrc1: HRGN,
-    hrgnSrc2: HRGN,
-    iMode: INT,
-) -> INT {
-    let mut ahrgn: [HRGN; 3] = [core::ptr::null_mut(); 3];
-    let mut aprgn: [PREGION; 3] = [core::ptr::null_mut(); 3];
-    let iResult: INT;
-
-    if (iMode < RGN_AND as INT) || (iMode > RGN_COPY as INT) {
-        return ERROR as INT;
-    }
-
-    if hrgnDst.is_null() ||
-       hrgnSrc1.is_null() ||
-       ((iMode != RGN_COPY as INT) && hrgnSrc2.is_null()) {
-        EngSetLastError(ERROR_INVALID_HANDLE);
-        return ERROR as INT;
-    }
-
-    ahrgn[0] = hrgnDst;
-    ahrgn[1] = hrgnSrc1;
-    ahrgn[2] = if iMode != RGN_COPY as INT { hrgnSrc2 } else { core::ptr::null_mut() };
-    if GDIOBJ_bLockMultipleObjects(
-        3,
-        ahrgn.as_mut_ptr() as *mut HGDIOBJ,
-        aprgn.as_mut_ptr() as *mut *mut core::ffi::c_void,
-        GDIObjType_RGN_TYPE as u8,
-    ) == 0 {
-        return ERROR as INT;
-    }
-
-    REGION_vSyncRegion(aprgn[0]);
-    if aprgn[1] != aprgn[0] {
-        REGION_vSyncRegion(aprgn[1]);
-    }
-    if !aprgn[2].is_null() && (aprgn[2] != aprgn[0]) && (aprgn[2] != aprgn[1]) {
-        REGION_vSyncRegion(aprgn[2]);
-    }
-
-    iResult = IntGdiCombineRgn(aprgn[0], aprgn[1], aprgn[2], iMode);
-
-    REGION_UnlockRgn(aprgn[0]);
-    REGION_UnlockRgn(aprgn[1]);
-    if !aprgn[2].is_null() {
-        REGION_UnlockRgn(aprgn[2]);
-    }
-
-    iResult
-}
-#[cfg(target_arch = "x86")]
-#[no_mangle]
-pub unsafe extern "stdcall" fn NtGdiCreateEllipticRgn(
+pub unsafe extern "system" fn NtGdiCreateEllipticRgn(
     Left: INT,
     Top: INT,
     Right: INT,
@@ -4129,27 +4007,8 @@ pub unsafe extern "stdcall" fn NtGdiCreateEllipticRgn(
         Bottom - Top,
     )
 }
-
-#[cfg(not(target_arch = "x86"))]
 #[no_mangle]
-pub unsafe extern "C" fn NtGdiCreateEllipticRgn(
-    Left: INT,
-    Top: INT,
-    Right: INT,
-    Bottom: INT,
-) -> HRGN {
-    NtGdiCreateRoundRectRgn(
-        Left,
-        Top,
-        Right,
-        Bottom,
-        Right - Left,
-        Bottom - Top,
-    )
-}
-#[cfg(target_arch = "x86")]
-#[no_mangle]
-pub unsafe extern "stdcall" fn NtGdiCreateRectRgn(
+pub unsafe extern "system" fn NtGdiCreateRectRgn(
     LeftRect: INT,
     TopRect: INT,
     RightRect: INT,
@@ -4171,34 +4030,8 @@ pub unsafe extern "stdcall" fn NtGdiCreateRectRgn(
 
     return hRgn;
 }
-
-#[cfg(not(target_arch = "x86"))]
 #[no_mangle]
-pub unsafe extern "C" fn NtGdiCreateRectRgn(
-    LeftRect: INT,
-    TopRect: INT,
-    RightRect: INT,
-    BottomRect: INT,
-) -> HRGN {
-    let pRgn: PREGION;
-    let hRgn: HRGN;
-
-    pRgn = REGION_AllocUserRgnWithHandle(1);
-    if pRgn.is_null() {
-        EngSetLastError(ERROR_NOT_ENOUGH_MEMORY);
-        return core::ptr::null_mut();
-    }
-
-    hRgn = (*pRgn).BaseObject.hHmgr as HRGN;
-
-    REGION_SetRectRgn(pRgn, LeftRect, TopRect, RightRect, BottomRect);
-    REGION_UnlockRgn(pRgn);
-
-    return hRgn;
-}
-#[cfg(target_arch = "x86")]
-#[no_mangle]
-pub unsafe extern "stdcall" fn NtGdiCreateRoundRectRgn(
+pub unsafe extern "system" fn NtGdiCreateRoundRectRgn(
     left: INT,
     top: INT,
     right: INT,
@@ -4311,215 +4144,8 @@ pub unsafe extern "stdcall" fn NtGdiCreateRoundRectRgn(
     REGION_UnlockRgn(obj);
     hrgn
 }
-
-#[cfg(not(target_arch = "x86"))]
 #[no_mangle]
-pub unsafe extern "C" fn NtGdiCreateRoundRectRgn(
-    left: INT,
-    top: INT,
-    right: INT,
-    bottom: INT,
-    ellipse_width: INT,
-    ellipse_height: INT,
-) -> HRGN {
-    let obj: PREGION;
-    let hrgn: HRGN;
-    let mut a: i32;
-    let mut b: i32;
-    let mut i: i32;
-    let mut x: i32;
-    let mut y: i32;
-    let mut asq: INT64;
-    let mut bsq: INT64;
-    let mut dx: INT64;
-    let mut dy: INT64;
-    let mut err: INT64;
-    let rects: *mut RECT;
-    let mut left = left;
-    let mut top = top;
-    let mut right = right;
-    let mut bottom = bottom;
-    let mut ellipse_width = ellipse_width;
-    let mut ellipse_height = ellipse_height;
-
-    if left > right {
-        let tmp = left;
-        left = right;
-        right = tmp;
-    }
-
-    if top > bottom {
-        let tmp = top;
-        top = bottom;
-        bottom = tmp;
-    }
-
-    right -= 1;
-    bottom -= 1;
-
-    ellipse_width = min(right - left, abs(ellipse_width));
-    ellipse_height = min(bottom - top, abs(ellipse_height));
-
-    if (ellipse_width < 2) || (ellipse_height < 2) {
-        return NtGdiCreateRectRgn(left, top, right, bottom);
-    }
-
-    obj = REGION_AllocUserRgnWithHandle(ellipse_height);
-    if obj.is_null() {
-        return core::ptr::null_mut();
-    }
-
-    hrgn = (*obj).BaseObject.hHmgr as HRGN;
-
-    (*obj).rdh.rcBound.left = left;
-    (*obj).rdh.rcBound.top = top;
-    (*obj).rdh.rcBound.right = right;
-    (*obj).rdh.rcBound.bottom = bottom;
-    rects = (*obj).Buffer as PRECT;
-
-    a = ellipse_width - 1;
-    b = ellipse_height - 1;
-    asq = 8i64 * a as INT64 * a as INT64;
-    bsq = 8i64 * b as INT64 * b as INT64;
-    dx = 4i64 * b as INT64 * b as INT64 * (1 - a) as INT64;
-    dy = 4i64 * a as INT64 * a as INT64 * (1 + (b % 2)) as INT64;
-    err = dx + dy + a as INT64 * a as INT64 * (b % 2) as INT64;
-
-    x = 0;
-    y = ellipse_height / 2;
-
-    (*rects.offset(y as isize)).left = left;
-    (*rects.offset(y as isize)).right = right;
-
-    while x <= ellipse_width / 2 {
-        let e2 = 2 * err;
-        if e2 >= dx {
-            x += 1;
-            dx += bsq;
-            err += dx;
-        }
-        if e2 <= dy {
-            y += 1;
-            dy += asq;
-            err += dy;
-            (*rects.offset(y as isize)).left = left + x;
-            (*rects.offset(y as isize)).right = right - x;
-        }
-    }
-
-    i = 0;
-    while i < ellipse_height / 2 {
-        (*rects.offset(i as isize)).left = (*rects.offset((b - i) as isize)).left;
-        (*rects.offset(i as isize)).right = (*rects.offset((b - i) as isize)).right;
-        (*rects.offset(i as isize)).top = top + i;
-        (*rects.offset(i as isize)).bottom = (*rects.offset(i as isize)).top + 1;
-        i += 1;
-    }
-
-    while i < ellipse_height {
-        (*rects.offset(i as isize)).top = bottom - ellipse_height + i;
-        (*rects.offset(i as isize)).bottom = (*rects.offset(i as isize)).top + 1;
-        i += 1;
-    }
-
-    (*rects.offset((ellipse_height / 2) as isize)).top = top + ellipse_height / 2;
-
-    REGION_UnlockRgn(obj);
-    hrgn
-}
-#[cfg(target_arch = "x86")]
-#[no_mangle]
-pub unsafe extern "stdcall" fn NtGdiEqualRgn(
-    hSrcRgn1: HRGN,
-    hSrcRgn2: HRGN,
-) -> BOOL {
-    let mut ahrgn: [HRGN; 2] = [core::ptr::null_mut(); 2];
-    let mut aprgn: [PREGION; 2] = [core::ptr::null_mut(); 2];
-    let rgn1: PREGION;
-    let rgn2: PREGION;
-    let tRect1: PRECTL;
-    let tRect2: PRECTL;
-    let mut i: ULONG;
-    let mut bRet: BOOL = 0;
-
-    if hSrcRgn1.is_null() || hSrcRgn2.is_null() {
-        return 0;
-    }
-
-    if hSrcRgn1 == hSrcRgn2 {
-        if (GDI_HANDLE_GET_TYPE(hSrcRgn1 as HGDIOBJ) == GDILoObjType_LO_REGION_TYPE) &&
-            GreIsHandleValid(hSrcRgn1 as HGDIOBJ) != 0 {
-            return 1;
-        }
-        return 0;
-    }
-
-    ahrgn[0] = hSrcRgn1;
-    ahrgn[1] = hSrcRgn2;
-    if GDIOBJ_bLockMultipleObjects(2, ahrgn.as_mut_ptr() as *mut HGDIOBJ, aprgn.as_mut_ptr() as *mut PVOID, GDIObjType_RGN_TYPE as u8) == 0 {
-        return 0;
-    }
-
-    REGION_vSyncRegion(aprgn[0]);
-    REGION_vSyncRegion(aprgn[1]);
-
-    rgn1 = aprgn[0];
-    rgn2 = aprgn[1];
-
-    if (*rgn1).rdh.nCount != (*rgn2).rdh.nCount {
-        REGION_UnlockRgn(rgn1);
-        REGION_UnlockRgn(rgn2);
-        return bRet;
-    }
-
-    if (*rgn1).rdh.nCount == 0 {
-        bRet = 1;
-        REGION_UnlockRgn(rgn1);
-        REGION_UnlockRgn(rgn2);
-        return bRet;
-    }
-
-    if ((*rgn1).rdh.rcBound.left   != (*rgn2).rdh.rcBound.left)  ||
-       ((*rgn1).rdh.rcBound.right  != (*rgn2).rdh.rcBound.right) ||
-       ((*rgn1).rdh.rcBound.top    != (*rgn2).rdh.rcBound.top)   ||
-       ((*rgn1).rdh.rcBound.bottom != (*rgn2).rdh.rcBound.bottom) {
-        REGION_UnlockRgn(rgn1);
-        REGION_UnlockRgn(rgn2);
-        return bRet;
-    }
-
-    tRect1 = (*rgn1).Buffer;
-    tRect2 = (*rgn2).Buffer;
-
-    if tRect1.is_null() || tRect2.is_null() {
-        REGION_UnlockRgn(rgn1);
-        REGION_UnlockRgn(rgn2);
-        return bRet;
-    }
-
-    i = 0;
-    while i < (*rgn1).rdh.nCount {
-        if ((*tRect1.offset(i as isize)).left   != (*tRect2.offset(i as isize)).left)  ||
-           ((*tRect1.offset(i as isize)).right  != (*tRect2.offset(i as isize)).right) ||
-           ((*tRect1.offset(i as isize)).top    != (*tRect2.offset(i as isize)).top)   ||
-           ((*tRect1.offset(i as isize)).bottom != (*tRect2.offset(i as isize)).bottom) {
-            REGION_UnlockRgn(rgn1);
-            REGION_UnlockRgn(rgn2);
-            return bRet;
-        }
-        i += 1;
-    }
-
-    bRet = 1;
-
-    REGION_UnlockRgn(rgn1);
-    REGION_UnlockRgn(rgn2);
-    bRet
-}
-
-#[cfg(not(target_arch = "x86"))]
-#[no_mangle]
-pub unsafe extern "C" fn NtGdiEqualRgn(
+pub unsafe extern "system" fn NtGdiEqualRgn(
     hSrcRgn1: HRGN,
     hSrcRgn2: HRGN,
 ) -> BOOL {
@@ -4608,7 +4234,7 @@ pub unsafe extern "C" fn NtGdiEqualRgn(
 }
 #[cfg(target_arch = "x86")]
 #[no_mangle]
-pub unsafe extern "stdcall" fn NtGdiExtCreateRegion(
+pub unsafe extern "system" fn NtGdiExtCreateRegion(
     Xform: LPXFORM,
     Count: u32,
     RgnData: LPRGNDATA,
@@ -4699,7 +4325,7 @@ pub unsafe extern "stdcall" fn NtGdiExtCreateRegion(
 
 #[cfg(not(target_arch = "x86"))]
 #[no_mangle]
-pub unsafe extern "C" fn NtGdiExtCreateRegion(
+pub unsafe extern "system" fn NtGdiExtCreateRegion(
     Xform: LPXFORM,
     Count: u32,
     RgnData: LPRGNDATA,
@@ -4787,9 +4413,8 @@ pub unsafe extern "C" fn NtGdiExtCreateRegion(
 
     hRgn
 }
-#[cfg(target_arch = "x86")]
 #[no_mangle]
-pub unsafe extern "stdcall" fn NtGdiGetRgnBox(
+pub unsafe extern "system" fn NtGdiGetRgnBox(
     hRgn: HRGN,
     pRect: PRECTL,
 ) -> INT {
@@ -4819,42 +4444,8 @@ pub unsafe extern "stdcall" fn NtGdiGetRgnBox(
 
     return ret as INT;
 }
-
-#[cfg(not(target_arch = "x86"))]
 #[no_mangle]
-pub unsafe extern "C" fn NtGdiGetRgnBox(
-    hRgn: HRGN,
-    pRect: PRECTL,
-) -> INT {
-    let Rgn: PREGION;
-    let mut SafeRect: RECTL = core::mem::zeroed();
-    let ret: DWORD;
-    let mut Status: NTSTATUS = STATUS_SUCCESS;
-
-    Rgn = REGION_LockRgn(hRgn);
-    if Rgn.is_null() {
-        return ERROR as _;
-    }
-
-    ret = REGION_GetRgnBox(Rgn, &mut SafeRect) as u32;
-    REGION_UnlockRgn(Rgn);
-    if ret == ERROR {
-        return ret as INT;
-    }
-
-    Status = SafeProbeForWrite(pRect as *mut core::ffi::c_void, core::mem::size_of::<RECT>(), 1);
-    if NT_SUCCESS(Status) {
-        *pRect = SafeRect;
-    }
-    if !NT_SUCCESS(Status) {
-        return ERROR as _;
-    }
-
-    return ret as INT;
-}
-#[cfg(target_arch = "x86")]
-#[no_mangle]
-pub unsafe extern "stdcall" fn NtGdiOffsetRgn(
+pub unsafe extern "system" fn NtGdiOffsetRgn(
     hrgn: HRGN,
     cx: INT,
     cy: INT,
@@ -4876,34 +4467,8 @@ pub unsafe extern "stdcall" fn NtGdiOffsetRgn(
     REGION_UnlockRgn(prgn);
     return iResult;
 }
-
-#[cfg(not(target_arch = "x86"))]
 #[no_mangle]
-pub unsafe extern "C" fn NtGdiOffsetRgn(
-    hrgn: HRGN,
-    cx: INT,
-    cy: INT,
-) -> INT {
-    let prgn: PREGION;
-    let iResult: INT;
-
-    prgn = REGION_LockRgn(hrgn);
-    if prgn.is_null() {
-        return ERROR as _;
-    }
-
-    if REGION_bOffsetRgn(prgn, cx, cy) == 0 {
-        iResult = ERROR as INT;
-    } else {
-        iResult = REGION_Complexity(prgn);
-    }
-
-    REGION_UnlockRgn(prgn);
-    return iResult;
-}
-#[cfg(target_arch = "x86")]
-#[no_mangle]
-pub unsafe extern "stdcall" fn NtGdiPtInRegion(
+pub unsafe extern "system" fn NtGdiPtInRegion(
     hrgn: HRGN,
     x: i32,
     y: i32,
@@ -4921,30 +4486,8 @@ pub unsafe extern "stdcall" fn NtGdiPtInRegion(
     REGION_UnlockRgn(prgn);
     bResult as i32
 }
-
-#[cfg(not(target_arch = "x86"))]
 #[no_mangle]
-pub unsafe extern "C" fn NtGdiPtInRegion(
-    hrgn: HRGN,
-    x: i32,
-    y: i32,
-) -> i32 {
-    let prgn: PREGION;
-    let bResult: u8;
-
-    prgn = REGION_LockRgn(hrgn);
-    if prgn.is_null() {
-        return 0;
-    }
-
-    bResult = REGION_PtInRegion(prgn, x, y);
-
-    REGION_UnlockRgn(prgn);
-    bResult as i32
-}
-#[cfg(target_arch = "x86")]
-#[no_mangle]
-pub unsafe extern "stdcall" fn NtGdiRectInRegion(
+pub unsafe extern "system" fn NtGdiRectInRegion(
     hrgn: HRGN,
     prclUnsafe: LPRECT,
 ) -> BOOL {
@@ -4967,35 +4510,8 @@ pub unsafe extern "stdcall" fn NtGdiRectInRegion(
         IntRectInRegion(hrgn, core::ptr::addr_of_mut!(rcTemp))
     }
 }
-
-#[cfg(not(target_arch = "x86"))]
 #[no_mangle]
-pub unsafe extern "C" fn NtGdiRectInRegion(
-    hrgn: HRGN,
-    prclUnsafe: LPRECT,
-) -> BOOL {
-    let mut rcTemp: RECTL;
-
-    {
-        let __SehStatus = SafeProbeForRead(prclUnsafe as *const core::ffi::c_void, core::mem::size_of::<RECT>(), 1);
-        if !NT_SUCCESS(__SehStatus) {
-            return 0;
-        }
-    }
-    rcTemp = *(prclUnsafe as *const RECTL);
-
-    #[cfg(target_arch = "x86")]
-    {
-        IntRectInRegion(hrgn, core::ptr::addr_of_mut!(rcTemp))
-    }
-    #[cfg(not(target_arch = "x86"))]
-    {
-        IntRectInRegion(hrgn, core::ptr::addr_of_mut!(rcTemp))
-    }
-}
-#[cfg(target_arch = "x86")]
-#[no_mangle]
-pub unsafe extern "stdcall" fn NtGdiSetRectRgn(
+pub unsafe extern "system" fn NtGdiSetRectRgn(
     hrgn: HRGN,
     xLeft: INT,
     yTop: INT,
@@ -5014,86 +4530,8 @@ pub unsafe extern "stdcall" fn NtGdiSetRectRgn(
     REGION_UnlockRgn(prgn);
     1
 }
-
-#[cfg(not(target_arch = "x86"))]
 #[no_mangle]
-pub unsafe extern "C" fn NtGdiSetRectRgn(
-    hrgn: HRGN,
-    xLeft: INT,
-    yTop: INT,
-    xRight: INT,
-    yBottom: INT,
-) -> BOOL {
-    let prgn: PREGION;
-
-    prgn = REGION_LockRgn(hrgn);
-    if prgn.is_null() {
-        return 0;
-    }
-
-    REGION_SetRectRgn(prgn, xLeft, yTop, xRight, yBottom);
-
-    REGION_UnlockRgn(prgn);
-    1
-}
-#[cfg(target_arch = "x86")]
-#[no_mangle]
-pub unsafe extern "stdcall" fn NtGdiGetRegionData(
-    hrgn: HRGN,
-    cjBuffer: u32,
-    lpRgnData: LPRGNDATA,
-) -> u32 {
-    let cjRects: u32;
-    let mut cjSize: u32;
-    let prgn: PREGION;
-    let Status: i32;
-
-    prgn = REGION_LockRgn(hrgn);
-    if prgn.is_null() {
-        EngSetLastError(ERROR_INVALID_HANDLE);
-        return 0;
-    }
-
-    cjRects = (*prgn).rdh.nCount * core::mem::size_of::<RECT>() as u32;
-    cjSize = cjRects + core::mem::size_of::<RGNDATAHEADER>() as u32;
-
-    if !lpRgnData.is_null() {
-        if cjBuffer >= cjSize {
-            Status = SafeProbeForWrite(
-                lpRgnData as *mut core::ffi::c_void,
-                cjSize as usize,
-                core::mem::size_of::<u32>() as u32,
-            );
-            if !NT_SUCCESS(Status) {
-                EngSetLastError(ERROR_INVALID_PARAMETER);
-                cjSize = 0;
-            } else {
-                RtlCopyMemory(
-                    lpRgnData as *mut core::ffi::c_void,
-                    core::ptr::addr_of!((*prgn).rdh) as *const core::ffi::c_void,
-                    core::mem::size_of::<RGNDATAHEADER>(),
-                );
-                RtlCopyMemory(
-                    (*lpRgnData).Buffer.as_mut_ptr() as *mut core::ffi::c_void,
-                    (*prgn).Buffer as *const core::ffi::c_void,
-                    cjRects as usize,
-                );
-                (*lpRgnData).rdh.iType = RDH_RECTANGLES;
-                (*lpRgnData).rdh.nRgnSize = cjRects;
-            }
-        } else {
-            EngSetLastError(ERROR_INVALID_PARAMETER);
-            cjSize = 0;
-        }
-    }
-
-    REGION_UnlockRgn(prgn);
-    cjSize
-}
-
-#[cfg(not(target_arch = "x86"))]
-#[no_mangle]
-pub unsafe extern "C" fn NtGdiGetRegionData(
+pub unsafe extern "system" fn NtGdiGetRegionData(
     hrgn: HRGN,
     cjBuffer: u32,
     lpRgnData: LPRGNDATA,

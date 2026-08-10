@@ -66,7 +66,7 @@ extern "system" {
     fn SET_FLAG(flags: *mut u32, flag: u32);
 }
 unsafe extern "C" {
-    fn RequestCompletion(DeviceExtension: PCDROM_DEVICE_EXTENSION, Request: WDFREQUEST, Status: i32, TransferedBytes: u32);
+    fn RequestCompletion(DeviceExtension: PCDROM_DEVICE_EXTENSION, Request: WDFREQUEST, Status: i32, TransferedBytes: ULONG_PTR);
 }
 // C min() is a macro; extern "system" decl = i386 stdcall/cdecl mismatch vs
 // ddk_shims' extern "C" def → stack corruption. Local wrapper instead.
@@ -602,7 +602,7 @@ pub unsafe extern "system" fn ScratchBuffer_ReadWriteTimerRoutine(
                 deviceExtension,
                 originalRequest as WDFREQUEST,
                 status,
-                (*readWriteContext).TransferedBytes,
+                ((*readWriteContext).TransferedBytes) as usize,
             );
         }
     }
@@ -633,7 +633,7 @@ pub unsafe extern "system" fn ScratchBuffer_ReadWriteEvtRequestCancel(Request: W
 
     // If WdfTimerStop returned TRUE, it means this request was scheduled for a retry
     // and the retry has not happened yet. We just need to cancel it and release the scratch buffer.
-    RequestCompletion(deviceExtension, Request, STATUS_CANCELLED, (*readWriteContext).TransferedBytes);
+    RequestCompletion(deviceExtension, Request, STATUS_CANCELLED, ((*readWriteContext).TransferedBytes) as usize);
 }
 #[no_mangle]
 pub unsafe extern "system" fn ScratchBuffer_ReadWriteCompletionRoutine(

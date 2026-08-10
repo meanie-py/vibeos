@@ -95,6 +95,38 @@ hand-authored allowlist. Key behaviours:
   the CMakeLists — pass `--usermode` / `--kernel`. (Those flags are new: the error had named
   them for a while without the argparser defining them. A fail-loud whose remedy does not
   exist is worse than no message; see `test_usermode_override_exists_for_a_target_with_no_set_module_type`.)
+- **BLOCKLIST_FUNCS is MEASURED and reported, never picked.** `--emit report` now carries the
+  external-prototype survey: how many functions the module calls that the include closure
+  really declares (the surface `BLOCKLIST_FUNCS=1` makes you hand-write), how many it calls
+  that no closure header declares at all, and every name. The emitted profile keeps
+  `BLOCKLIST_FUNCS=1` and puts the measurement in a comment BESIDE it. It does not choose,
+  and the calibration is why. Raw `called - defined` over the twelve hand-set modules nearly
+  separates them (samlib 73 vs tcpsvcs 66 — a 7-unit margin on twelve samples); refined to
+  closure-declared prototypes it tightens to `intl 69 | desk 198 | sysdm 130 | syssetup 205 |
+  aclui 97 | samlib 60` for the modules that chose 0 against `tcpsvcs 47 | wlanapi 16 |
+  snmpapi 7 | wsock32 0` for those that kept 1. A real gap, still not a rule: ten samples, and
+  the boundary pair is exactly the pair whose reasoning was never about a count — samlib chose
+  0 because a hand-written declaration of an RPC-shaped SAM entrypoint wrong by one pointer
+  level *links* and then corrupts at run time. Decide it the MACRO_SIGNED way: island it both
+  ways, one cargo check each. There is also an ordering constraint that makes 1 the only safe
+  unattended answer — `BLOCKLIST_FUNCS_FROM_CRATE=1` greps OUT_CRATE for `#[no_mangle]` names,
+  so on a FIRST derive against an empty scaffold it blocklists nothing.
+- **An already-FLIPPED module refuses rather than reporting empty sections.** The empty-TU case
+  always hard-failed; the one that went quiet is subtler. A cohab flip comments the real `.c`
+  out but leaves the `rust_*.c` scaffolding compiled, so the TU list is *not* empty — it is one
+  shim with no switch statements, no enum members and no dead bodies in it. Every audit then
+  printed an empty section that read as a pass. sysdm reported "(no case labels with
+  identifiers)" that way while carrying the exact defect the case-label audit exists to catch.
+  `is_shim_tu` recognises the scaffolding (the tree spells all 12 of them `rust_*.c`), and a
+  shim-only source list exits 2. **`--flipped-sources` re-enables the list the flip commented
+  out and audits against THAT** — a flip does not delete the source list, so the pre-flip
+  translation surface is still in the CMakeLists and a flipped module can be re-audited without
+  going to git (sysdm: 1 TU / 0 switch constants → 13 TUs / 77). It is deliberately narrow —
+  the commented block must be a `list(APPEND X …)`/`set(X …)` whose every argument looks like a
+  source file, and its parens must balance inside the commented run, so a `# set(WITH_DEBUG
+  TRUE)` somebody disabled on purpose is never resurrected. 37 of the tree's CMakeLists have a
+  restorable list, and every one is a module we flipped. The run says so
+  (`FLIPPED_SOURCES_RESTORED`), because the report then describes C the build does not compile.
 
 **Stage 1 — the paid call, with both envelopes.** See the sealing note below; always
 `--seal-facts --seal-calls`. In the same run, `trivial_c.py` lowers the provable trivial band
@@ -129,15 +161,23 @@ becomes a deliberate decision, not a silent behaviour change.
 
 **Stage 1.5 — `rustconv crate-repair <crate>-rust` (`crate_repair.py`).** Bounded deterministic
 repair over the whole-crate `cargo check --message-format=json`, run before paying anyone to
-fix compile errors. Four rules, each with a closed authority (`truncating_numeric_cast`,
-`flex_array_index`, `no_std_path`, `raw_pointer_cast`); everything else stays RED and bucketed
-by shape for triage. Three properties worth knowing:
+fix compile errors. Eleven rules, each with a closed authority — diagnostic-driven
+(`width_alias_cast`, `truncating_numeric_cast`, `match_scrutinee_cast`, `anon_union_field`,
+`packed_field_ptr`, `index_usize`, `no_std_path`, `raw_pointer_cast`, `array_decay`) and
+source-driven (`flex_array_index`, `panicking_cast`); everything else stays RED and bucketed by
+shape for triage. Three properties worth knowing:
 - It **refuses rustc's own `.try_into().unwrap()` suggestion** — that converts C's silent
   truncation into a panic in a live service and trips `tools/scan_silent_failures.py`.
 - Span repairs are driven off the `expected X, found Y` **labels**, not the primary span: in
   the "arguments to this function are incorrect" shape the primary span is the *callee* and
   the fixable value spans are secondary, so a primary-span implementation silently misses
-  every multi-bad-argument call.
+  every multi-bad-argument call. **But labels alone are not enough either** (found 2026-08-07):
+  once a call has TWO or more bad arguments rustc changes shape again — the top-level spans lose
+  their labels entirely and each mismatch moves into a CHILD note whose *message* carries the
+  types and whose single span is the argument. `_mismatch_sites` therefore reads both, deduped
+  by span. Until it did, every rule in the module was blind to those calls: on intl it was an
+  ordinary two-argument `wcscpy(dst, src)`, 7 sites per target sitting in RED for no other
+  reason. If a whole class of call looks stubbornly unrepairable, check the rendering first.
 - **Pass all three arches.** A cast whose target width equals the analysing target's pointer
   width is applied only on cross-target agreement; otherwise it is withheld with both
   proposals, because an `as u32` inferred from i386 is wrong on amd64/arm64 wherever the real
@@ -148,12 +188,55 @@ by shape for triage. Three properties worth knowing:
   — and rustc reports a mistyped arm exactly like any other integer mismatch, so the rule aimed
   straight at `match`-on-status-code, which is where narrow-vs-wide mismatches actually surface.
   Two lanes hit it in one week: wlanapi's `WlanRpcStatusToWinError` lost all 5 arms, msvcrt's
-  `_setmbcp_l` lost its dispatch (bindgen split a four-macro `#define` family into `u32`/`i32` on
+  `create_mbcinfo` lost its dispatch (bindgen split a four-macro `#define` family into `u32`/`i32` on
   sign). The correct repair is to **widen the scrutinee** (`match Status as u32`) or fix the type
   where the constant is DECLARED — never at the arm — which also keeps the arms auditable as
   names under the catch-all-binding rule (field manual §9.112). Detection is not line-local: a
   wrapped or-pattern puts the `=>` on a later line, and `foo(A, b)` vs `(A, 0) => v` are
   indistinguishable at the comma until you step out of the enclosing bracket group.
+  **`match_scrutinee_cast` now performs that widening** rather than leaving it as the largest
+  decline bucket (293 sites on desk.cpl alone). It walks out to the enclosing `match` and casts
+  the SCRUTINEE, cross-target-agreed like any width bake, and drops the whole match when the
+  arms want different types — two expectations mean the arms are not one constant family.
+- **`anon_union_field` routes a flattened anonymous-union field** through bindgen's
+  `__bindgen_anon_N`. C injects an anonymous union's members into the enclosing struct's scope
+  (`psh.nStartPage`), Rust has no anonymous members, and every property-sheet module hits it.
+  The map is derived from the crate's own islands, never guessed: a field an outer struct
+  declares itself is left alone (C shadows the same way), and a field the three arches route
+  differently — or that one arch declares directly — is dropped rather than guessed. It
+  deliberately declines the E0560 struct-LITERAL spelling: `S { a.b: v }` is not legal Rust, so
+  the repair there is a zeroed value plus field stores, which is a rewrite and not a splice.
+- **`packed_field_ptr`** (E0793) rewrites `packed.array.as_ptr()` to
+  `core::ptr::addr_of!(packed.array).cast()`. `as_ptr()` goes through `&[T; N]`, and forming a
+  reference to a field of a `#[repr(packed)]` struct is UB even if never read — `addr_of!` takes
+  the address without ever forming one, and `.cast()` is C's array-to-pointer decay.
+  `SP_DRVINFO_DETAIL_DATA` and `SHFILEINFO` are both packed in the SDK.
+- **`index_usize`** (E0277) casts a non-`usize` array index. rustc reports this as a missing
+  `Index<u32>` impl, NOT as a type mismatch, so there is no `expected X, found Y` label and
+  `truncating_numeric_cast` never sees the site. `usize` is the width-varying alias itself, so
+  the cast is portable and needs no cross-target agreement.
+- **`array_decay`** answers C's most basic idiom: `WCHAR szBuf[80]` passed where an `LPWSTR` is
+  wanted. C decays an array to a pointer for free and Rust does not, so this arrives as
+  `expected *mut u16, found [u16; 80]` in **argument** position (E0308) and as
+  `non-primitive cast: [u16; 80] as i32` in **cast** position (E0605) — C's `(LPARAM)szBuf`.
+  Measured on intl by removing all 106 decays from the shipped crate and re-running: **105 came
+  back deterministically**, the one miss being an artifact of the removal itself. Both shapes
+  matter — 52 argument sites against 39 cast sites there, so handling only the first mechanises
+  barely half the class.
+  - The **guard is element-type identity**, and only in argument position: `[u16; N]` behind a
+    `*mut u8` is a reinterpret, not a decay, and stays RED because nothing in the source claims
+    it — the mismatch is evidence a *declaration* is wrong.
+  - In **cast** position that guard is deliberately dropped. `(BYTE *)szBuf` is the author
+    stating the reinterpret, and reproducing it is faithfulness; an array cast to a raw pointer
+    can only ever mean its address, since an array is not pointer-sized.
+  - Decay to an **integer** (`as LPARAM`) is accepted only where that integer is pointer-wide on
+    the analysing target, and is cross-target agreed. That agreement is doing real work: a
+    genuine byte-reinterpret like `[u8; 4] as u32` is pointer-wide on i386 *only*, so it fails to
+    earn agreement instead of silently becoming an address. The replacement keeps the target type
+    **exactly as the source spells it** — rustc reports the resolved `i32`, and writing that back
+    would bake i386's width into a site whose source correctly says `LPARAM`.
+  - The pointer-shaped edits need no agreement at all: `as_ptr` names no type and bakes no width.
+    This is the one deliberate exception to the module's cross-target discipline.
 - **It cannot repair a `#[cfg]`-dual'd body — KNOWN GAP.** `abi_enforce` renders an internal
   `system` fn as an x86 `stdcall` copy plus a non-x86 `C` copy (rustc will not unify
   `extern "system"` with `extern "stdcall"` at the *type* level on i686, so a `system` fn
@@ -219,6 +302,36 @@ Both are now derived, and raise `TargetResolveError` rather than guessing:
   `pcumap` is at 208 on i386, 336 elsewhere); read the real `pclmap`/`pcumap` rather than
   hardcoding an ASCII fold; `_invalid_parameter` + `*_errno()` instead of `STATUS_*`; exports
   are `cdecl` on every arch including i386.
+
+## An SDK enum's width is an ABI fact — prove it from all three islands (2026-08-04)
+
+The `--cpp-com` scaffold refuses any state field whose type it cannot prove is scalar,
+pointer, or a source-visible POD. `FOLDERVIEWMODE m_FVM` (CDefViewUtil's
+`CShellFolderViewCBWrapper`) is none of those from the header's point of view: a C
+`typedef enum { … } NAME;` has **no fixed underlying type**, so reading shobjidl.h cannot
+settle whether it is 4 bytes on every target. Reading it and assuming `int` would have been
+the guess the rest of this pipeline exists to refuse.
+
+`cpp_com.island_integer_aliases` settles it from evidence instead. bindgen renders each
+per-arch island against the real target, so `island_<arch>.rs` already *contains* the answer —
+`pub type __WIDL_shobjidl_generated_name_00000025 = ::core::ffi::c_int;` plus
+`pub use self::__WIDL_… as FOLDERVIEWMODE;`. The prover follows that re-export chain in
+**i386, amd64 and arm64** and accepts the name only when all three resolve to the *same*
+primitive. 176 SDK names qualify; `SIZE_T`, `ULONG_PTR` and `LPARAM` deliberately do not,
+because their widths diverge — accepting one arch's answer is exactly how a cast inferred from
+i386 has shipped a wrong width before.
+
+Two consequences worth keeping straight:
+
+- **The scaffold never re-declares a proven name.** It emits `pub m_FVM: FOLDERVIEWMODE`, which
+  resolves through the prelude's `pub use crate::island::*` to the island's own alias. A local
+  `pub type FOLDERVIEWMODE = INT;` would compile (a local item shadows a glob) and would be a
+  second source of truth for a width — the thing `scan_type_alias_contradictions` exists to catch.
+- **No islands means no proof, not a default.** `island_files=()` yields an empty set and the
+  field stays a loud preflight failure. `cpp_tu` resolves the island paths from the caller's
+  `repo`, never from config's install-time root, because `pip install -e` bakes the *main*
+  checkout into site-packages and a sibling worktree's island would prove this tree's layout
+  against another lane's headers.
 
 ## Key Files
 
@@ -452,7 +565,8 @@ constants, or the runtime call set to the model:
 # Preview is guaranteed inspection-only; --prompt forces --dry-run.
 python -m rustconv --arch amd64 translate path/to/Class.cpp \
   --target shell32 --cpp-com --class CClass --fn CClass_Method \
-  --mode mechanical --model deepseek --seal-facts --seal-calls --prompt
+  --mode mechanical --seal-facts --seal-calls --prompt
+# (--model deepseek is the DEFAULT since 2026-08-06; spell it only to escalate, e.g. -m sonnet)
 
 # Batch N candidate/base replacements, one cargo invocation per architecture.
 python -m rustconv candidate-check candidates.json
@@ -472,8 +586,37 @@ python -m rustconv dup-census dll/win32/shell32 --top 20
 ```
 
 `--seal-facts` owns HRESULT predicates and constant occurrences. `--seal-calls` owns each
-known runtime callee occurrence with a unique exactly-once executable token. Either envelope
-fails loud before the normal body audit. Each mode has a separate response-cache suffix.
+known runtime callee occurrence with a unique exactly-once executable token. `--seal-wide`
+owns every UTF-16 literal. Any of the three envelopes fails loud before the normal body
+audit, and each flag contributes its own INDEPENDENT response-cache token (`factseal_v1`,
+`callseal_v1`, `wideseal_v1`, joined by `__`) — which is exactly what makes a new protection
+free to add: turning one on misses the cache and pays for the bodies it covers, while every
+body already banked under the other tokens stays addressable and is never re-billed. Folding
+a new protection into an existing token's meaning would re-charge for work already owned.
+
+**`--seal-wide` (2026-08-07).** Rust has no UTF-16 literal, so a model asked to translate one
+has nothing correct to write: it invents an encoding, and every invention is a hand-count no
+compiler checks — a `b"..."` byte string behind a wide pointer (mswsock), an alignment-1
+interleave, a `[u16; N]` one character short (wkssvc's 39 registry names), `L"0000%s"` banked
+as five zeros (intl), or a terminator simply left off (18 shipped arrays). The seal replaces
+each occurrence with an opaque token, reveals only its Rust TYPE (`*const u16` / `[u16; N]` /
+`u16` — the model needs that to declare around the token, and rustconv computed it), and
+substitutes the real code units afterward. Two C shapes, and **the second is the larger**:
+across the tree's 5,987 `.c` files `L"..."`/`L'x'` is 27,545 tokens, while the Wine-style
+brace list `{'C','o','m','b','o','L','B','o','x',0}` is 4,272 declarations and 55,928
+elements — and every one of the 18 arrays #60 repaired was a brace list. They are not symmetric: `L"..."`
+IMPLIES a terminator so the seal appends one; a brace list STATES its own, 195 of them
+deliberately end without one, so the seal copies exactly what the C wrote. The restore is a
+generated `RUSTCONV_WSTR_<hash>` static behind `.as_ptr()` in pointer position and an inline
+array elsewhere — deliberately NOT the crate's `w!` macro, whose result type is not uniform
+across this tree (secur32's yields `&[u16; N]`, aclui's `*const u16`). Measured coverage over
+those 5,987 files: **31,127 sealed, 76 reported as `UNSEALED WIDE LITERAL` audit findings**
+(0.24% — macro-pasted runs, sized initializers whose lowering is a copy rather than a value,
+non-literal brace elements). Pure zero-fills (`= {0}`, `= L""`) are neither sealed nor
+reported: they carry no bytes, and demanding a token there would reject the `[0u16; N]` /
+`zeroed()` lowerings that are correct for them. The seal also covers the **file-scope
+preamble**, which is a separate paid call the other two seals never reach and is precisely
+where those 18 arrays lived.
 
 **Sealing is NOT shell32-only any more (2026-07-24).** It works for any plain-C module —
 kernel drivers, Win32 DLLs, services — and you should pass `--seal-facts --seal-calls` by

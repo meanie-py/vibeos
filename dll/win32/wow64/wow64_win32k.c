@@ -28,11 +28,20 @@ DbgPrint(_In_z_ _Printf_format_string_ PCSTR Format, ...);
 NTSTATUS Wow64ManualDispatch(const char *Name, ULONG *Arguments);
 extern ULONG Wow64TraceSyscalls;
 
+/* wow64.c — the guest/host last-error mirror. win32k reports failure by
+ * setting last-error in the 64-bit TEB, which a 32-bit guest cannot see; this
+ * is the one place every win32k syscall passes through, so it is the one place
+ * that has to bridge the syscall direction. (wow64_callback.c bridges the
+ * other direction, and has to — see the rationale at the definitions.) */
+ULONG Wow64LastErrorToHost(VOID);
+VOID Wow64LastErrorToGuestIfChanged(ULONG WasOnEntry);
+
 NTSTATUS
 Wow64DispatchWin32kService(ULONG ServiceNumber, PULONG Arguments)
 {
     const WOW64_THUNK_ENTRY *Entry;
     ULONG Index = ServiceNumber - 0x1000;
+    ULONG LastError;
     NTSTATUS Status;
 
     if (Index >= Wow64Win32kThunkCount)
@@ -43,6 +52,8 @@ Wow64DispatchWin32kService(ULONG ServiceNumber, PULONG Arguments)
     }
 
     Entry = &Wow64Win32kThunkTable[Index];
+    LastError = Wow64LastErrorToHost();
+
     if (!Entry->Thunk)
     {
         Status = Wow64ManualDispatch(Entry->Name, Arguments);
@@ -50,21 +61,27 @@ Wow64DispatchWin32kService(ULONG ServiceNumber, PULONG Arguments)
         {
             DbgPrint("[WOW64] %s (0x%lx) NEEDS MANUAL MARSHALLER (win32k) — failing loud\n",
                      Entry->Name, ServiceNumber);
-            return WOW64_STATUS_INVALID_SYSTEM_SERVICE;
+            Status = WOW64_STATUS_INVALID_SYSTEM_SERVICE;
         }
-        if (Wow64TraceSyscalls)
+        else if (Wow64TraceSyscalls)
+        {
             DbgPrint("[WOW64] %s(0x%lx) [manual] => %08lx\n", Entry->Name, ServiceNumber, Status);
-        return Status;
+        }
+    }
+    else
+    {
+        /* M9: on-entry trace so a thunk that FAULTS the kernel (e.g. a
+         * passthrough that hands a 4-aligned WoW64 buffer to an align-8
+         * ProbeForRead) still names itself on serial — the "=>" line below
+         * never prints in that case. */
+        if (Wow64TraceSyscalls)
+            DbgPrint("[WOW64>] %s(0x%lx) enter arg0=%08lx arg1=%08lx arg2=%08lx\n",
+                     Entry->Name, ServiceNumber, Arguments[0], Arguments[1], Arguments[2]);
+        Status = Entry->Thunk(Arguments);
+        if (Wow64TraceSyscalls)
+            DbgPrint("[WOW64] %s(0x%lx) => %08lx\n", Entry->Name, ServiceNumber, Status);
     }
 
-    /* M9: on-entry trace so a thunk that FAULTS the kernel (e.g. a passthrough
-     * that hands a 4-aligned WoW64 buffer to an align-8 ProbeForRead) still
-     * names itself on serial — the "=>" line below never prints in that case. */
-    if (Wow64TraceSyscalls)
-        DbgPrint("[WOW64>] %s(0x%lx) enter arg0=%08lx arg1=%08lx arg2=%08lx\n",
-                 Entry->Name, ServiceNumber, Arguments[0], Arguments[1], Arguments[2]);
-    Status = Entry->Thunk(Arguments);
-    if (Wow64TraceSyscalls)
-        DbgPrint("[WOW64] %s(0x%lx) => %08lx\n", Entry->Name, ServiceNumber, Status);
+    Wow64LastErrorToGuestIfChanged(LastError);
     return Status;
 }

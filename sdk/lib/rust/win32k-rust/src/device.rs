@@ -53,35 +53,19 @@ extern "C" {
 }
 
 // win32ss/user/ntuser/misc/registry.c — NTAPI = stdcall on i386, cdecl elsewhere.
-#[cfg(target_arch = "x86")]
-extern "stdcall" {
-    fn RegOpenKey(KeyName: *const u16, phKey: *mut HKEY) -> i32;
-    fn RegQueryValue(hKey: HKEY, ValueName: *const u16, Type: u32, Data: *mut core::ffi::c_void, DataSize: *mut u32) -> i32;
-}
-#[cfg(not(target_arch = "x86"))]
-extern "C" {
+extern "system" {
     fn RegOpenKey(KeyName: *const u16, phKey: *mut HKEY) -> i32;
     fn RegQueryValue(hKey: HKEY, ValueName: *const u16, Type: u32, Data: *mut core::ffi::c_void, DataSize: *mut u32) -> i32;
 }
 
 // win32ss/user/ntuser/misc/registry.c:147 — NTAPI = stdcall on i386, cdecl elsewhere.
-#[cfg(target_arch = "x86")]
-extern "stdcall" {
-    fn RegReadDWORD(hkey: HKEY, pwszValue: *const u16, pdwData: *mut DWORD) -> BOOL;
-}
-#[cfg(not(target_arch = "x86"))]
-extern "C" {
+extern "system" {
     fn RegReadDWORD(hkey: HKEY, pwszValue: *const u16, pdwData: *mut DWORD) -> BOOL;
 }
 
 // win32ss/user/ntuser/display.c:67 — NTAPI = stdcall on i386, cdecl elsewhere.
 // Called from EngpUpdateGraphicsDeviceList for each \Device\VideoN registry entry.
-#[cfg(target_arch = "x86")]
-extern "stdcall" {
-    fn InitDisplayDriver(pwszDeviceName: *mut u16, pwszRegKey: *mut u16) -> PGRAPHICS_DEVICE;
-}
-#[cfg(not(target_arch = "x86"))]
-extern "C" {
+extern "system" {
     fn InitDisplayDriver(pwszDeviceName: *mut u16, pwszRegKey: *mut u16) -> PGRAPHICS_DEVICE;
 }
 
@@ -161,15 +145,8 @@ unsafe fn InitDeviceImpl_impl() -> NTSTATUS {
     STATUS_SUCCESS
 }
 
-#[cfg(target_arch = "x86")]
 #[no_mangle]
-pub unsafe extern "stdcall" fn InitDeviceImpl() -> NTSTATUS {
-    InitDeviceImpl_impl()
-}
-
-#[cfg(not(target_arch = "x86"))]
-#[no_mangle]
-pub unsafe extern "C" fn InitDeviceImpl() -> NTSTATUS {
+pub unsafe extern "system" fn InitDeviceImpl() -> NTSTATUS {
     InitDeviceImpl_impl()
 }
 
@@ -835,17 +812,8 @@ pub unsafe extern "system" fn EngpRegisterGraphicsDevice(
 }
 
 // NTAPI in C — stdcall on i386, cdecl elsewhere.
-#[cfg(target_arch = "x86")]
 #[no_mangle]
-pub unsafe extern "stdcall" fn EngpFindGraphicsDevice(
-    pustrDevice: PUNICODE_STRING,
-    iDevNum: u32,
-) -> PGRAPHICS_DEVICE {
-    EngpFindGraphicsDevice_impl(pustrDevice, iDevNum)
-}
-#[cfg(not(target_arch = "x86"))]
-#[no_mangle]
-pub unsafe extern "C" fn EngpFindGraphicsDevice(
+pub unsafe extern "system" fn EngpFindGraphicsDevice(
     pustrDevice: PUNICODE_STRING,
     iDevNum: u32,
 ) -> PGRAPHICS_DEVICE {
@@ -907,9 +875,8 @@ unsafe fn EngpFileIoRequest(
     let _ = (pFileObject, ulMajorFunction, lpBuffer, nBufferSize, ullStartOffset, lpInformation);
     STATUS_NOT_IMPLEMENTED
 }
-#[cfg(target_arch = "x86")]
 #[no_mangle]
-pub unsafe extern "stdcall" fn EngFileWrite(
+pub unsafe extern "system" fn EngFileWrite(
     pFileObject: PFILE_OBJECT,
     lpBuffer: PVOID,
     nLength: SIZE_T,
@@ -929,32 +896,8 @@ pub unsafe extern "stdcall" fn EngFileWrite(
         *lpBytesWritten = 0;
     }
 }
-
-#[cfg(not(target_arch = "x86"))]
 #[no_mangle]
-pub unsafe extern "C" fn EngFileWrite(
-    pFileObject: PFILE_OBJECT,
-    lpBuffer: PVOID,
-    nLength: SIZE_T,
-    lpBytesWritten: PSIZE_T,
-) {
-    let status: NTSTATUS;
-
-    status = EngpFileIoRequest(
-        pFileObject,
-        IRP_MJ_WRITE,
-        lpBuffer,
-        nLength,
-        0,
-        lpBytesWritten,
-    );
-    if !NT_SUCCESS(status) {
-        *lpBytesWritten = 0;
-    }
-}
-#[cfg(target_arch = "x86")]
-#[no_mangle]
-pub unsafe extern "stdcall" fn EngFileIoControl(
+pub unsafe extern "system" fn EngFileIoControl(
     pFileObject: PFILE_OBJECT,
     dwIoControlCode: u32,
     lpInBuffer: *mut core::ffi::c_void,
@@ -968,48 +911,8 @@ pub unsafe extern "stdcall" fn EngFileIoControl(
     let _ = (pFileObject, dwIoControlCode, lpInBuffer, nInBufferSize, lpOutBuffer, nOutBufferSize, lpInformation);
     STATUS_NOT_IMPLEMENTED
 }
-
-#[cfg(not(target_arch = "x86"))]
 #[no_mangle]
-pub unsafe extern "C" fn EngFileIoControl(
-    pFileObject: PFILE_OBJECT,
-    dwIoControlCode: u32,
-    lpInBuffer: *mut core::ffi::c_void,
-    nInBufferSize: usize,
-    lpOutBuffer: *mut core::ffi::c_void,
-    nOutBufferSize: usize,
-    lpInformation: PULONG_PTR,
-) -> i32 {
-    // DEFERRED-STUB (win32k-translation): translation has cross-crate type / missing-decl issues.
-    // TODO: resurrect from the original C in the bottom-of-file source block.
-    let _ = (pFileObject, dwIoControlCode, lpInBuffer, nInBufferSize, lpOutBuffer, nOutBufferSize, lpInformation);
-    STATUS_NOT_IMPLEMENTED
-}
-#[cfg(target_arch = "x86")]
-#[no_mangle]
-pub unsafe extern "stdcall" fn EngDeviceIoControl(
-    hDevice: HANDLE,
-    dwIoControlCode: DWORD,
-    lpInBuffer: LPVOID,
-    cjInBufferSize: DWORD,
-    lpOutBuffer: LPVOID,
-    cjOutBufferSize: DWORD,
-    lpBytesReturned: LPDWORD,
-) -> DWORD {
-    EngDeviceIoControl_impl(
-        hDevice,
-        dwIoControlCode,
-        lpInBuffer,
-        cjInBufferSize,
-        lpOutBuffer,
-        cjOutBufferSize,
-        lpBytesReturned,
-    )
-}
-
-#[cfg(not(target_arch = "x86"))]
-#[no_mangle]
-pub unsafe extern "C" fn EngDeviceIoControl(
+pub unsafe extern "system" fn EngDeviceIoControl(
     hDevice: HANDLE,
     dwIoControlCode: DWORD,
     lpInBuffer: LPVOID,

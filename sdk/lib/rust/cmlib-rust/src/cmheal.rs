@@ -27,14 +27,19 @@ unsafe extern "system" {
     fn HvMarkCellDirty(hive: PHHIVE, cell: HCELL_INDEX, dirty: u8) -> u8;
 }
 
-// DPRINT1 is a ReactOS debug-print macro — a no-op in non-DBG builds and NOT a
-// real linkable symbol. Translating it to an `extern fn DPRINT1` leaves an
-// undefined symbol that lld only tolerates on arches where the referencing fn is
-// dead-code-eliminated (i386 GC'd CmpRepairParentKey; amd64 keeps it → LINK_FAIL
-// on `DPRINT1`). Provide a crate-local no-op so every arch resolves it the same
-// way the C NDEBUG build does. All call sites here pass a single format arg.
+// DPRINT1 is a ReactOS debug-print macro, so it is not a linkable symbol and an
+// `extern fn DPRINT1` would leave one undefined (lld tolerates that only where
+// the caller is dead-code-eliminated — i386 GC'd CmpRepairParentKey, amd64 kept
+// it and hit LINK_FAIL). A crate-local wrapper is the right shape; what was
+// wrong is that it had an EMPTY body "the same way the C NDEBUG build does".
+// NDEBUG silences DPRINT, never DPRINT1 — DPRINT1 is the unconditional one, and
+// these three call sites are the hive self-heal telling us why a corrupt key
+// could not be repaired. Forward to DbgPrint, declared just below. All call
+// sites here pass a single format arg.
 #[inline(always)]
-unsafe fn DPRINT1(_format: *const i8) {}
+unsafe fn DPRINT1(format: *const i8) {
+    DbgPrint(format);
+}
 unsafe extern "C" {
     fn DbgPrint(format: *const i8, ...);
     fn ASSERT(_cond: i32);

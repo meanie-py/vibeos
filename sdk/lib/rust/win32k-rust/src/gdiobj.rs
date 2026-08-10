@@ -313,12 +313,7 @@ extern "system" {
 // DRIVEROBJ_vCleanup — exported NTAPI from win32ss/gdi/eng/driverobj.c. The
 // declared ABI must match the bindgen GDICLEANUPPROC fn-pointer type per arch
 // (stdcall on i386, C on amd64/arm64) so it can be stored in apfnCleanup.
-#[cfg(target_arch = "x86")]
-extern "stdcall" {
-    fn DRIVEROBJ_vCleanup(pObject: PVOID);
-}
-#[cfg(not(target_arch = "x86"))]
-extern "C" {
+extern "system" {
     fn DRIVEROBJ_vCleanup(pObject: PVOID);
 }
 
@@ -486,12 +481,7 @@ unsafe fn ASSERT_LOCK_ORDER(_objt: u8) {}
 
 // static VOID NTAPI GDIOBJ_vCleanup(PVOID) — ABI must match the bindgen
 // GDICLEANUPPROC fn-pointer type per arch so it can be stored in apfnCleanup.
-#[cfg(target_arch = "x86")]
-unsafe extern "stdcall" fn GDIOBJ_vCleanup(_ObjectBody: PVOID) {
-    /* Nothing to do */
-}
-#[cfg(not(target_arch = "x86"))]
-unsafe extern "C" fn GDIOBJ_vCleanup(_ObjectBody: PVOID) {
+unsafe extern "system" fn GDIOBJ_vCleanup(_ObjectBody: PVOID) {
     /* Nothing to do */
 }
 
@@ -768,9 +758,8 @@ unsafe fn ENTRY_hInsertObject(pentry: PENTRY, pobj: POBJ, objt: UCHAR, ulOwner: 
 
     (((*pentry).FullUnique as ULONG_PTR) << 16 | ulIndex as ULONG_PTR) as HGDIOBJ
 }
-#[cfg(target_arch = "x86")]
 #[no_mangle]
-pub unsafe extern "stdcall" fn GDIOBJ_AllocateObject(
+pub unsafe extern "system" fn GDIOBJ_AllocateObject(
     objt: u8,
     cjSize: u32,
     fl: FLONG,
@@ -801,43 +790,8 @@ pub unsafe extern "stdcall" fn GDIOBJ_AllocateObject(
 
     pobj
 }
-
-#[cfg(not(target_arch = "x86"))]
 #[no_mangle]
-pub unsafe extern "C" fn GDIOBJ_AllocateObject(
-    objt: u8,
-    cjSize: u32,
-    fl: FLONG,
-) -> POBJ {
-
-    const EVENT_ALLOCATE: u32 = 0;
-
-    let pobj: POBJ;
-
-    if (fl & BASEFLAG_LOOKASIDE) != 0 {
-        pobj = ExAllocateFromPagedLookasideList(
-            gpaLookasideList.add((objt & 0x1f) as usize)
-        ) as POBJ;
-    } else {
-        pobj = ExAllocatePoolWithTag(PagedPool, cjSize as SIZE_T, GDIOBJ_POOL_TAG(objt)) as POBJ;
-    }
-
-    if pobj.is_null() {
-        return core::ptr::null_mut();
-    }
-
-    RtlZeroMemory(pobj as PVOID, cjSize as usize);
-    (*pobj).hHmgr = ((objt as usize) << 16) as HGDIOBJ;
-    (*pobj).cExclusiveLock = 0;
-    (*pobj).__bindgen_anon_1.ulShareCount = 1;
-    (*pobj).BaseFlags = (fl & 0xffff) as u16;
-    let _ = 0;
-
-    pobj
-}
-#[cfg(target_arch = "x86")]
-#[no_mangle]
-pub unsafe extern "stdcall" fn GDIOBJ_vFreeObject(pobj: POBJ) {
+pub unsafe extern "system" fn GDIOBJ_vFreeObject(pobj: POBJ) {
 
     let objt: UCHAR;
 
@@ -859,34 +813,8 @@ pub unsafe extern "stdcall" fn GDIOBJ_vFreeObject(pobj: POBJ) {
         }
     }
 }
-
-#[cfg(not(target_arch = "x86"))]
 #[no_mangle]
-pub unsafe extern "C" fn GDIOBJ_vFreeObject(pobj: POBJ) {
-
-    let objt: UCHAR;
-
-    objt = (((*pobj).hHmgr as ULONG_PTR >> 16) & 0x1f) as UCHAR;
-
-    if apfnDelete[objt as usize].is_some() {
-        apfnDelete[objt as usize].unwrap()(pobj as PVOID);
-    } else {
-        NT_ASSERT!(apfnCleanup[objt as usize].is_some());
-        apfnCleanup[objt as usize].unwrap()(pobj as PVOID);
-
-        if (*pobj).BaseFlags & (BASEFLAG_LOOKASIDE as u16) != 0 {
-            ExFreeToPagedLookasideList(
-                gpaLookasideList.add(objt as usize),
-                pobj as PVOID,
-            );
-        } else {
-            ExFreePoolWithTag(pobj as PVOID, GDIOBJ_POOL_TAG(objt));
-        }
-    }
-}
-#[cfg(target_arch = "x86")]
-#[no_mangle]
-pub unsafe extern "stdcall" fn GDIOBJ_vDereferenceObject(pobj: POBJ) {
+pub unsafe extern "system" fn GDIOBJ_vDereferenceObject(pobj: POBJ) {
 
     const EVENT_DEREFERENCE: u32 = 2;
 
@@ -920,46 +848,8 @@ pub unsafe extern "stdcall" fn GDIOBJ_vDereferenceObject(pobj: POBJ) {
         }
     }
 }
-
-#[cfg(not(target_arch = "x86"))]
 #[no_mangle]
-pub unsafe extern "C" fn GDIOBJ_vDereferenceObject(pobj: POBJ) {
-
-    const EVENT_DEREFERENCE: u32 = 2;
-
-    let cRefs: u32;
-    let ulIndex: u32;
-
-    ulIndex = GDI_HANDLE_GET_INDEX((*pobj).hHmgr);
-
-    if ulIndex != 0 {
-        if (*gpaulRefCount.offset(ulIndex as isize) & REF_MASK_COUNT) == 0 {
-        }
-        cRefs = InterlockedDecrement(gpaulRefCount.offset(ulIndex as isize) as *mut i32) as u32;
-        let _ = cRefs;
-
-        if (cRefs & REF_MASK_INUSE) == 0 {
-            if (*gpentHmgr.offset(ulIndex as isize)).ObjectOwner.ulObj != GDI_OBJ_HMGR_PUBLIC &&
-               (*gpentHmgr.offset(ulIndex as isize)).ObjectOwner.ulObj != GDI_OBJ_HMGR_NONE {
-                DecrementCurrentProcessGdiHandleCount();
-            }
-
-            ENTRY_vPushFreeEntry(gpentHmgr.offset(ulIndex as isize));
-
-            GDIOBJ_vFreeObject(pobj);
-        }
-    } else {
-        cRefs = InterlockedDecrement(core::ptr::addr_of_mut!((*pobj).__bindgen_anon_1.ulShareCount) as *mut i32) as u32;
-        let _ = cRefs;
-
-        if cRefs == 0 {
-            GDIOBJ_vFreeObject(pobj);
-        }
-    }
-}
-#[cfg(target_arch = "x86")]
-#[no_mangle]
-pub unsafe extern "stdcall" fn GDIOBJ_ReferenceObjectByHandle(
+pub unsafe extern "system" fn GDIOBJ_ReferenceObjectByHandle(
     hobj: HGDIOBJ,
     objt: u8,
 ) -> POBJ {
@@ -990,43 +880,8 @@ pub unsafe extern "stdcall" fn GDIOBJ_ReferenceObjectByHandle(
 
     pobj
 }
-
-#[cfg(not(target_arch = "x86"))]
 #[no_mangle]
-pub unsafe extern "C" fn GDIOBJ_ReferenceObjectByHandle(
-    hobj: HGDIOBJ,
-    objt: u8,
-) -> POBJ {
-
-    const EVENT_REFERENCE: u32 = 1;
-
-    let pentry: PENTRY;
-    let pobj: POBJ;
-
-    ASSERT_SHARED_OBJECT_TYPE(objt);
-    if ((((hobj as usize) >> 16) & 0x1f) as u8) != objt {
-        return core::ptr::null_mut();
-    }
-
-    pentry = ENTRY_ReferenceEntryByHandle(hobj, 0);
-    if pentry.is_null() {
-        return core::ptr::null_mut();
-    }
-
-    pobj = (*pentry).einfo.pobj;
-
-    if (*pobj).cExclusiveLock != 0 {
-        GDIOBJ_vDereferenceObject(pobj);
-        return core::ptr::null_mut();
-    }
-
-    let _ = *gpaulRefCount.offset(pentry.offset_from(gpentHmgr));
-
-    pobj
-}
-#[cfg(target_arch = "x86")]
-#[no_mangle]
-pub unsafe extern "stdcall" fn GDIOBJ_vReferenceObjectByPointer(pobj: POBJ) {
+pub unsafe extern "system" fn GDIOBJ_vReferenceObjectByPointer(pobj: POBJ) {
     let cRefs: ULONG;
 
     if GDI_HANDLE_GET_INDEX((*pobj).hHmgr) != 0 {
@@ -1039,24 +894,8 @@ pub unsafe extern "stdcall" fn GDIOBJ_vReferenceObjectByPointer(pobj: POBJ) {
     let _ = cRefs;
 }
 
-#[cfg(not(target_arch = "x86"))]
 #[no_mangle]
-pub unsafe extern "C" fn GDIOBJ_vReferenceObjectByPointer(pobj: POBJ) {
-    let cRefs: ULONG;
-
-    if GDI_HANDLE_GET_INDEX((*pobj).hHmgr) != 0 {
-        let ulIndex = GDI_HANDLE_GET_INDEX((*pobj).hHmgr);
-        cRefs = InterlockedIncrement(gpaulRefCount.add(ulIndex as usize) as *mut LONG) as ULONG;
-    } else {
-        cRefs = InterlockedIncrement(core::ptr::addr_of_mut!((*pobj).__bindgen_anon_1.ulShareCount) as *mut LONG) as ULONG;
-    }
-
-    let _ = cRefs;
-}
-
-#[cfg(target_arch = "x86")]
-#[no_mangle]
-pub unsafe extern "stdcall" fn GDIOBJ_TryLockObject(
+pub unsafe extern "system" fn GDIOBJ_TryLockObject(
     hobj: HGDIOBJ,
     objt: u8,
 ) -> PGDIOBJ {
@@ -1104,60 +943,8 @@ pub unsafe extern "stdcall" fn GDIOBJ_TryLockObject(
 
     pobj as PGDIOBJ
 }
-
-#[cfg(not(target_arch = "x86"))]
 #[no_mangle]
-pub unsafe extern "C" fn GDIOBJ_TryLockObject(
-    hobj: HGDIOBJ,
-    objt: u8,
-) -> PGDIOBJ {
-
-    let pentry: PENTRY;
-    let pobj: POBJ;
-    let dwThreadId: u32;
-
-    ASSERT_TRYLOCK_OBJECT_TYPE(objt);
-    if ((((hobj as usize) >> 16) & 0x1f) as u8) != objt {
-        return core::ptr::null_mut();
-    }
-
-    ASSERT_LOCK_ORDER(objt);
-
-    pentry = ENTRY_ReferenceEntryByHandle(hobj, 0);
-    if pentry.is_null() {
-        return core::ptr::null_mut();
-    }
-
-    pobj = (*pentry).einfo.pobj;
-
-    dwThreadId = PtrToUlong(PsGetCurrentThreadId() as *mut c_void);
-    if (*pobj).__bindgen_anon_1.dwThreadId != dwThreadId {
-        KeEnterCriticalRegion();
-        if ExTryAcquirePushLockExclusive(core::ptr::addr_of_mut!((*pobj).pushlock) as *mut c_void) == 0 {
-            let cRefs: u32;
-            let ulIndex: u32;
-
-            KeLeaveCriticalRegion();
-
-            ulIndex = GDI_HANDLE_GET_INDEX((*pobj).hHmgr);
-
-            cRefs = InterlockedDecrement(gpaulRefCount.offset(ulIndex as isize) as *mut i32) as u32;
-
-            return core::ptr::null_mut();
-        }
-
-        (*pobj).__bindgen_anon_1.dwThreadId = dwThreadId;
-    }
-
-    (*pobj).cExclusiveLock = (*pobj).cExclusiveLock.wrapping_add(1);
-    INCREASE_THREAD_LOCK_COUNT(hobj as HANDLE);
-    let _ = 0;
-
-    pobj as PGDIOBJ
-}
-#[cfg(target_arch = "x86")]
-#[no_mangle]
-pub unsafe extern "stdcall" fn GDIOBJ_LockObject(
+pub unsafe extern "system" fn GDIOBJ_LockObject(
     hobj: HGDIOBJ,
     objt: u8,
 ) -> PGDIOBJ {
@@ -1196,73 +983,8 @@ pub unsafe extern "stdcall" fn GDIOBJ_LockObject(
 
     pobj as PGDIOBJ
 }
-
-#[cfg(not(target_arch = "x86"))]
 #[no_mangle]
-pub unsafe extern "C" fn GDIOBJ_LockObject(
-    hobj: HGDIOBJ,
-    objt: u8,
-) -> PGDIOBJ {
-    
-    const EVENT_LOCK: u32 = 1;
-    
-    let pentry: PENTRY;
-    let pobj: POBJ;
-    let dwThreadId: u32;
-
-    ASSERT_EXCLUSIVE_OBJECT_TYPE(objt);
-    if ((((hobj as usize) >> 16) & 0x1f) as u8) != objt {
-        return core::ptr::null_mut();
-    }
-
-    ASSERT_LOCK_ORDER(objt);
-
-    pentry = ENTRY_ReferenceEntryByHandle(hobj, 0);
-    if pentry.is_null() {
-        return core::ptr::null_mut();
-    }
-
-    pobj = (*pentry).einfo.pobj;
-
-    dwThreadId = PtrToUlong(PsGetCurrentThreadId());
-    if (*pobj).__bindgen_anon_1.dwThreadId != dwThreadId {
-        KeEnterCriticalRegion();
-        ExAcquirePushLockExclusive(core::ptr::addr_of_mut!((*pobj).pushlock));
-
-        (*pobj).__bindgen_anon_1.dwThreadId = dwThreadId;
-    }
-
-    (*pobj).cExclusiveLock = (*pobj).cExclusiveLock.wrapping_add(1);
-    INCREASE_THREAD_LOCK_COUNT(hobj);
-    let _ = 0;
-
-    pobj as PGDIOBJ
-}
-#[cfg(target_arch = "x86")]
-#[no_mangle]
-pub unsafe extern "stdcall" fn GDIOBJ_vUnlockObject(pobj: POBJ) {
-    let mut cRefs: ULONG;
-    let ulIndex: ULONG;
-
-    (*pobj).cExclusiveLock -= 1;
-    DECREASE_THREAD_LOCK_COUNT((*pobj).hHmgr);
-    let _ = 0;
-
-    if (*pobj).cExclusiveLock == 0 {
-        (*pobj).__bindgen_anon_1.dwThreadId = 0;
-
-        ExReleasePushLockExclusive(core::ptr::addr_of_mut!((*pobj).pushlock));
-        KeLeaveCriticalRegion();
-    }
-
-    ulIndex = GDI_HANDLE_GET_INDEX((*pobj).hHmgr);
-
-    cRefs = InterlockedDecrement(gpaulRefCount.add(ulIndex as usize) as *mut LONG) as ULONG;
-}
-
-#[cfg(not(target_arch = "x86"))]
-#[no_mangle]
-pub unsafe extern "C" fn GDIOBJ_vUnlockObject(pobj: POBJ) {
+pub unsafe extern "system" fn GDIOBJ_vUnlockObject(pobj: POBJ) {
     let mut cRefs: ULONG;
     let ulIndex: ULONG;
 
@@ -1296,9 +1018,8 @@ pub unsafe extern "C" fn DC_UnlockDc(pdc: PDC) {
     GDIOBJ_vUnlockObject(core::ptr::addr_of_mut!((*pdc).BaseObject) as POBJ);
 }
 
-#[cfg(target_arch = "x86")]
 #[no_mangle]
-pub unsafe extern "stdcall" fn GDIOBJ_hInsertObject(
+pub unsafe extern "system" fn GDIOBJ_hInsertObject(
     pobj: POBJ,
     ulOwner: ULONG,
 ) -> HGDIOBJ {
@@ -1332,46 +1053,8 @@ pub unsafe extern "stdcall" fn GDIOBJ_hInsertObject(
     let _ = 0;
     (*pobj).hHmgr
 }
-
-#[cfg(not(target_arch = "x86"))]
 #[no_mangle]
-pub unsafe extern "C" fn GDIOBJ_hInsertObject(
-    pobj: POBJ,
-    ulOwner: ULONG,
-) -> HGDIOBJ {
-
-    let pentry: PENTRY;
-    let objt: UCHAR;
-
-    pentry = ENTRY_pentPopFreeEntry();
-    if pentry.is_null() {
-        return core::ptr::null_mut();
-    }
-
-    ExInitializePushLock(core::ptr::addr_of_mut!((*pobj).pushlock));
-    KeEnterCriticalRegion();
-    ExAcquirePushLockExclusive(core::ptr::addr_of_mut!((*pobj).pushlock));
-    (*pobj).cExclusiveLock = 1;
-    (*pobj).__bindgen_anon_1.dwThreadId = PtrToUlong(PsGetCurrentThreadId() as *mut core::ffi::c_void);
-    INCREASE_THREAD_LOCK_COUNT((*pobj).hHmgr);
-
-    objt = (((*pobj).hHmgr as ULONG_PTR >> 16) & 0xff) as UCHAR;
-
-    let ulOwner = if ulOwner == GDI_OBJ_HMGR_POWNED {
-        IncrementCurrentProcessGdiHandleCount();
-        HandleToUlong(PsGetCurrentProcessId())
-    } else {
-        ulOwner
-    };
-
-    (*pobj).hHmgr = ENTRY_hInsertObject(pentry, pobj, objt, ulOwner);
-
-    let _ = 0;
-    (*pobj).hHmgr
-}
-#[cfg(target_arch = "x86")]
-#[no_mangle]
-pub unsafe extern "stdcall" fn GDIOBJ_vSetObjectOwner(
+pub unsafe extern "system" fn GDIOBJ_vSetObjectOwner(
     pobj: POBJ,
     ulNewOwner: u32,
 ) {
@@ -1414,55 +1097,8 @@ pub unsafe extern "stdcall" fn GDIOBJ_vSetObjectOwner(
     (*pentry).ObjectOwner.ulObj = ulNewOwner;
     let _ = 0;
 }
-
-#[cfg(not(target_arch = "x86"))]
 #[no_mangle]
-pub unsafe extern "C" fn GDIOBJ_vSetObjectOwner(
-    pobj: POBJ,
-    ulNewOwner: u32,
-) {
-    let pentry: PENTRY;
-    let ulOldOwner: u32;
-
-    if GDI_HANDLE_IS_STOCKOBJ((*pobj).hHmgr) != 0 {
-        return;
-    }
-
-    NT_ASSERT!(GDI_HANDLE_GET_INDEX((*pobj).hHmgr) != 0);
-    pentry = &mut (*gpentHmgr.offset(GDI_HANDLE_GET_INDEX((*pobj).hHmgr) as isize));
-
-    ulOldOwner = (*pentry).ObjectOwner.ulObj;
-    if ulOldOwner == ulNewOwner {
-        return;
-    }
-
-    let mut ulNewOwner = ulNewOwner;
-    if ulNewOwner == GDI_OBJ_HMGR_POWNED {
-        ulNewOwner = HandleToUlong(PsGetCurrentProcessId());
-    }
-
-    if ulNewOwner == GDI_OBJ_HMGR_NONE {
-        ulNewOwner = GDI_OBJ_HMGR_PUBLIC;
-    }
-
-    if (ulOldOwner != GDI_OBJ_HMGR_PUBLIC) &&
-       (ulOldOwner != GDI_OBJ_HMGR_NONE) {
-        DecrementGdiHandleCount(ulOldOwner);
-    }
-
-    if (ulNewOwner != GDI_OBJ_HMGR_PUBLIC) &&
-       (ulNewOwner != GDI_OBJ_HMGR_NONE) {
-        IncrementGdiHandleCount(ulNewOwner);
-    } else {
-        NT_ASSERT!((*pentry).pUser.is_null());
-    }
-
-    (*pentry).ObjectOwner.ulObj = ulNewOwner;
-    let _ = 0;
-}
-#[cfg(target_arch = "x86")]
-#[no_mangle]
-pub unsafe extern "stdcall" fn GDIOBJ_bLockMultipleObjects(
+pub unsafe extern "system" fn GDIOBJ_bLockMultipleObjects(
     ulCount: ULONG,
     ahObj: *mut HGDIOBJ,
     apObj: *mut PGDIOBJ,
@@ -1514,92 +1150,19 @@ pub unsafe extern "stdcall" fn GDIOBJ_bLockMultipleObjects(
 
     return 1;
 }
-
-#[cfg(not(target_arch = "x86"))]
 #[no_mangle]
-pub unsafe extern "C" fn GDIOBJ_bLockMultipleObjects(
-    ulCount: ULONG,
-    ahObj: *mut HGDIOBJ,
-    apObj: *mut PGDIOBJ,
-    objt: UCHAR,
-) -> BOOL {
-    let mut auiIndices: [UINT; 3] = [0, 1, 2];
-    let mut i: UINT;
-    let mut j: UINT;
-    let mut tmp: UINT;
-
-    i = 0;
-    while i < ulCount - 1 {
-        j = i + 1;
-        while j < ulCount {
-            if (*ahObj.add(auiIndices[i as usize] as usize) as ULONG_PTR) <
-               (*ahObj.add(auiIndices[j as usize] as usize) as ULONG_PTR)
-            {
-                tmp = auiIndices[i as usize];
-                auiIndices[i as usize] = auiIndices[j as usize];
-                auiIndices[j as usize] = tmp;
-            }
-            j += 1;
-        }
-        i += 1;
-    }
-
-    i = 0;
-    while i < ulCount {
-        if *ahObj.add(auiIndices[i as usize] as usize) == core::ptr::null_mut() {
-            *apObj.add(auiIndices[i as usize] as usize) = core::ptr::null_mut();
-            i += 1;
-            continue;
-        }
-
-        *apObj.add(auiIndices[i as usize] as usize) = 
-            GDIOBJ_LockObject(*ahObj.add(auiIndices[i as usize] as usize), objt);
-
-        if *apObj.add(auiIndices[i as usize] as usize) == core::ptr::null_mut() {
-            while i > 0 {
-                i -= 1;
-                if !(*apObj.add(auiIndices[i as usize] as usize)).is_null() {
-                    GDIOBJ_vUnlockObject(*apObj.add(auiIndices[i as usize] as usize) as POBJ);
-                }
-            }
-            return 0;
-        }
-        i += 1;
-    }
-
-    return 1;
-}
-#[cfg(target_arch = "x86")]
-#[no_mangle]
-pub unsafe extern "stdcall" fn GDIOBJ_pvGetObjectAttr(pobj: POBJ) -> PVOID {
+pub unsafe extern "system" fn GDIOBJ_pvGetObjectAttr(pobj: POBJ) -> PVOID {
     let ulIndex: ULONG = GDI_HANDLE_GET_INDEX((*pobj).hHmgr);
     (*gpentHmgr.offset(ulIndex as isize)).pUser
 }
-
-#[cfg(not(target_arch = "x86"))]
 #[no_mangle]
-pub unsafe extern "C" fn GDIOBJ_pvGetObjectAttr(pobj: POBJ) -> PVOID {
-    let ulIndex: ULONG = GDI_HANDLE_GET_INDEX((*pobj).hHmgr);
-    (*gpentHmgr.offset(ulIndex as isize)).pUser
-}
-#[cfg(target_arch = "x86")]
-#[no_mangle]
-pub unsafe extern "stdcall" fn GDIOBJ_vSetObjectAttr(pobj: POBJ, pvObjAttr: PVOID) {
+pub unsafe extern "system" fn GDIOBJ_vSetObjectAttr(pobj: POBJ, pvObjAttr: PVOID) {
 
     let ulIndex: ULONG = GDI_HANDLE_GET_INDEX((*pobj).hHmgr);
     (*gpentHmgr.offset(ulIndex as isize)).pUser = pvObjAttr;
 }
-
-#[cfg(not(target_arch = "x86"))]
 #[no_mangle]
-pub unsafe extern "C" fn GDIOBJ_vSetObjectAttr(pobj: POBJ, pvObjAttr: PVOID) {
-
-    let ulIndex: ULONG = GDI_HANDLE_GET_INDEX((*pobj).hHmgr);
-    (*gpentHmgr.offset(ulIndex as isize)).pUser = pvObjAttr;
-}
-#[cfg(target_arch = "x86")]
-#[no_mangle]
-pub unsafe extern "stdcall" fn GDIOBJ_vDeleteObject(pobj: POBJ) {
+pub unsafe extern "system" fn GDIOBJ_vDeleteObject(pobj: POBJ) {
 
     const EVENT_DELETE: u32 = 1;
 
@@ -1630,43 +1193,8 @@ pub unsafe extern "stdcall" fn GDIOBJ_vDeleteObject(pobj: POBJ) {
 
     GDIOBJ_vDereferenceObject(pobj);
 }
-
-#[cfg(not(target_arch = "x86"))]
 #[no_mangle]
-pub unsafe extern "C" fn GDIOBJ_vDeleteObject(pobj: POBJ) {
-
-    const EVENT_DELETE: u32 = 1;
-
-    let ulIndex: u32;
-
-    InterlockedOr16(
-        core::ptr::addr_of_mut!((*pobj).BaseFlags) as *mut i16,
-        BASEFLAG_READY_TO_DIE as i16,
-    );
-    let _ = 0;
-
-    ulIndex = GDI_HANDLE_GET_INDEX((*pobj).hHmgr);
-    if ulIndex != 0 {
-        InterlockedAnd(
-            gpaulRefCount.add(ulIndex as usize) as *mut i32,
-            (!REF_MASK_VALID) as i32,
-        );
-
-        if (*pobj).cExclusiveLock != 0 {
-            (*pobj).__bindgen_anon_1.dwThreadId = 0;
-            (*pobj).cExclusiveLock = 0;
-
-            ExReleasePushLockExclusive(core::ptr::addr_of_mut!((*pobj).pushlock));
-            KeLeaveCriticalRegion();
-            DECREASE_THREAD_LOCK_COUNT((*pobj).hHmgr);
-        }
-    }
-
-    GDIOBJ_vDereferenceObject(pobj);
-}
-#[cfg(target_arch = "x86")]
-#[no_mangle]
-pub unsafe extern "stdcall" fn GreIsHandleValid(hobj: HGDIOBJ) -> BOOL {
+pub unsafe extern "system" fn GreIsHandleValid(hobj: HGDIOBJ) -> BOOL {
     let pentry: PENTRY;
 
     pentry = ENTRY_ReferenceEntryByHandle(hobj, 0);
@@ -1676,22 +1204,8 @@ pub unsafe extern "stdcall" fn GreIsHandleValid(hobj: HGDIOBJ) -> BOOL {
     GDIOBJ_vDereferenceObject((*pentry).einfo.pobj);
     return 1;
 }
-
-#[cfg(not(target_arch = "x86"))]
 #[no_mangle]
-pub unsafe extern "C" fn GreIsHandleValid(hobj: HGDIOBJ) -> BOOL {
-    let pentry: PENTRY;
-
-    pentry = ENTRY_ReferenceEntryByHandle(hobj, 0);
-    if pentry.is_null() {
-        return 0;
-    }
-    GDIOBJ_vDereferenceObject((*pentry).einfo.pobj);
-    return 1;
-}
-#[cfg(target_arch = "x86")]
-#[no_mangle]
-pub unsafe extern "stdcall" fn GreDeleteObject(hobj: HGDIOBJ) -> BOOL {
+pub unsafe extern "system" fn GreDeleteObject(hobj: HGDIOBJ) -> BOOL {
 
     let pentry: PENTRY;
 
@@ -1712,33 +1226,8 @@ pub unsafe extern "stdcall" fn GreDeleteObject(hobj: HGDIOBJ) -> BOOL {
     GDIOBJ_vDeleteObject((*pentry).einfo.pobj);
     return 1;
 }
-
-#[cfg(not(target_arch = "x86"))]
 #[no_mangle]
-pub unsafe extern "C" fn GreDeleteObject(hobj: HGDIOBJ) -> BOOL {
-
-    let pentry: PENTRY;
-
-    if GDI_HANDLE_IS_STOCKOBJ(hobj) != 0 {
-        return 0;
-    }
-
-    pentry = ENTRY_ReferenceEntryByHandle(hobj, 0);
-    if pentry.is_null() {
-        return 0;
-    }
-
-    if (*pentry).ObjectOwner.ulObj == GDI_OBJ_HMGR_PUBLIC {
-        GDIOBJ_vDereferenceObject((*pentry).einfo.pobj);
-        return 0;
-    }
-
-    GDIOBJ_vDeleteObject((*pentry).einfo.pobj);
-    return 1;
-}
-#[cfg(target_arch = "x86")]
-#[no_mangle]
-pub unsafe extern "stdcall" fn GreGetObjectOwner(hobj: HGDIOBJ) -> ULONG {
+pub unsafe extern "system" fn GreGetObjectOwner(hobj: HGDIOBJ) -> ULONG {
     let ulIndex: ULONG;
     let ulOwner: ULONG;
 
@@ -1767,41 +1256,8 @@ pub unsafe extern "stdcall" fn GreGetObjectOwner(hobj: HGDIOBJ) -> ULONG {
 
     return GDI_OBJ_HMGR_RESTRICTED;
 }
-
-#[cfg(not(target_arch = "x86"))]
 #[no_mangle]
-pub unsafe extern "C" fn GreGetObjectOwner(hobj: HGDIOBJ) -> ULONG {
-    let ulIndex: ULONG;
-    let ulOwner: ULONG;
-
-    if hobj.is_null() {
-        return GDI_OBJ_HMGR_RESTRICTED;
-    }
-
-    ulIndex = GDI_HANDLE_GET_INDEX(hobj);
-
-    if ulIndex >= GDI_HANDLE_COUNT ||
-        (*gpentHmgr.offset(ulIndex as isize)).Objt == GDIObjType_DEF_TYPE as u8 ||
-        ((hobj as ULONG_PTR) >> 16) != (*gpentHmgr.offset(ulIndex as isize)).FullUnique as ULONG_PTR
-    {
-        return GDI_OBJ_HMGR_RESTRICTED;
-    }
-
-    ulOwner = (*gpentHmgr.offset(ulIndex as isize)).ObjectOwner.ulObj;
-
-    if ulOwner == HandleToUlong(PsGetCurrentProcessId()) {
-        return GDI_OBJ_HMGR_POWNED;
-    }
-
-    if ulOwner == GDI_OBJ_HMGR_PUBLIC {
-        return GDI_OBJ_HMGR_PUBLIC;
-    }
-
-    return GDI_OBJ_HMGR_RESTRICTED;
-}
-#[cfg(target_arch = "x86")]
-#[no_mangle]
-pub unsafe extern "stdcall" fn GreSetObjectOwnerEx(
+pub unsafe extern "system" fn GreSetObjectOwnerEx(
     hobj: HGDIOBJ,
     ulOwner: u32,
     Flags: u32,
@@ -1824,52 +1280,15 @@ pub unsafe extern "stdcall" fn GreSetObjectOwnerEx(
 
     return 1;
 }
-
-#[cfg(not(target_arch = "x86"))]
 #[no_mangle]
-pub unsafe extern "C" fn GreSetObjectOwnerEx(
-    hobj: HGDIOBJ,
-    ulOwner: u32,
-    Flags: u32,
-) -> i32 {
-
-    let pentry: PENTRY;
-
-    if GDI_HANDLE_IS_STOCKOBJ(hobj) != 0 {
-        return 0;
-    }
-
-    pentry = ENTRY_ReferenceEntryByHandle(hobj, Flags);
-    if pentry.is_null() {
-        return 0;
-    }
-
-    GDIOBJ_vSetObjectOwner((*pentry).einfo.pobj, ulOwner);
-
-    GDIOBJ_vDereferenceObject((*pentry).einfo.pobj);
-
-    return 1;
-}
-#[cfg(target_arch = "x86")]
-#[no_mangle]
-pub unsafe extern "stdcall" fn GreSetObjectOwner(
+pub unsafe extern "system" fn GreSetObjectOwner(
     hobj: HGDIOBJ,
     ulOwner: u32,
 ) -> i32 {
     GreSetObjectOwnerEx(hobj, ulOwner, 0)
 }
-
-#[cfg(not(target_arch = "x86"))]
 #[no_mangle]
-pub unsafe extern "C" fn GreSetObjectOwner(
-    hobj: HGDIOBJ,
-    ulOwner: u32,
-) -> i32 {
-    GreSetObjectOwnerEx(hobj, ulOwner, 0)
-}
-#[cfg(target_arch = "x86")]
-#[no_mangle]
-pub unsafe extern "stdcall" fn GreGetObject(
+pub unsafe extern "system" fn GreGetObject(
     hobj: HGDIOBJ,
     cbCount: i32,
     pvBuffer: *mut core::ffi::c_void,
@@ -1919,62 +1338,8 @@ pub unsafe extern "stdcall" fn GreGetObject(
     GDIOBJ_vDereferenceObject(pvObj);
     iResult
 }
-
-#[cfg(not(target_arch = "x86"))]
 #[no_mangle]
-pub unsafe extern "C" fn GreGetObject(
-    hobj: HGDIOBJ,
-    cbCount: i32,
-    pvBuffer: *mut core::ffi::c_void,
-) -> i32 {
-
-    let mut iResult: i32 = 0;
-
-    let objt: u8 = (((hobj as usize) >> 16) & 0x1f) as u8;
-    if objt != GDIObjType_BRUSH_TYPE as u8 &&
-       objt != GDIObjType_SURF_TYPE as u8 &&
-       objt != GDIObjType_LFONT_TYPE as u8 &&
-       objt != GDIObjType_PAL_TYPE as u8
-    {
-        return 0;
-    }
-
-    let pvObj = GDIOBJ_ReferenceObjectByHandle(hobj, objt);
-    if pvObj.is_null()
-    {
-        return 0;
-    }
-
-    match GDI_HANDLE_GET_TYPE(hobj) {
-        GDILoObjType_LO_PEN_TYPE | GDILoObjType_LO_EXTPEN_TYPE => {
-            iResult = PEN_GetObject(pvObj as *mut c_void, cbCount, pvBuffer);
-        }
-
-        GDILoObjType_LO_BRUSH_TYPE => {
-            iResult = BRUSH_GetObject(pvObj as PBRUSH, cbCount, pvBuffer as LPLOGBRUSH);
-        }
-
-        GDILoObjType_LO_BITMAP_TYPE => {
-            iResult = BITMAP_GetObject(pvObj as *mut SURFACE, cbCount, pvBuffer as LPVOID);
-        }
-
-        GDILoObjType_LO_FONT_TYPE => {
-            iResult = FontGetObject(pvObj as *mut c_void, cbCount, pvBuffer);
-        }
-
-        GDILoObjType_LO_PALETTE_TYPE => {
-            iResult = PALETTE_GetObject(pvObj as PPALETTE, cbCount, pvBuffer as LPLOGBRUSH);
-        }
-
-        _ => {}
-    }
-
-    GDIOBJ_vDereferenceObject(pvObj);
-    iResult
-}
-#[cfg(target_arch = "x86")]
-#[no_mangle]
-pub unsafe extern "stdcall" fn NtGdiExtGetObjectW(
+pub unsafe extern "system" fn NtGdiExtGetObjectW(
     hobj: HANDLE,
     cjBufferSize: i32,
     lpBuffer: LPVOID,
@@ -2020,58 +1385,8 @@ pub unsafe extern "stdcall" fn NtGdiExtGetObjectW(
 
     iResult as i32
 }
-
-#[cfg(not(target_arch = "x86"))]
 #[no_mangle]
-pub unsafe extern "C" fn NtGdiExtGetObjectW(
-    hobj: HANDLE,
-    cjBufferSize: i32,
-    lpBuffer: LPVOID,
-) -> i32 {
-
-    let mut iResult: u32;
-    let mut cjMaxSize: u32;
-    
-    #[repr(C)]
-    union ObjectUnion {
-        bitmap: BITMAP,
-        dibsection: DIBSECTION,
-        logpen: LOGPEN,
-        logbrush: LOGBRUSH,
-        logfontw: LOGFONTW,
-        extlogfontw: EXTLOGFONTW,
-        enumlogfontexdvw: ENUMLOGFONTEXDVW,
-    }
-    
-    let mut object: ObjectUnion = core::mem::zeroed();
-
-    cjMaxSize = min(cjBufferSize as u32, core::mem::size_of::<ObjectUnion>() as u32);
-
-    iResult = GreGetObject(
-        hobj,
-        cjMaxSize as i32,
-        if !lpBuffer.is_null() {
-            core::ptr::addr_of_mut!(object) as *mut core::ffi::c_void
-        } else {
-            core::ptr::null_mut()
-        },
-    ) as u32;
-
-    if !lpBuffer.is_null() && iResult != 0 {
-        cjMaxSize = min(cjMaxSize, iResult);
-        
-        core::ptr::copy_nonoverlapping(
-            core::ptr::addr_of!(object) as *const u8,
-            lpBuffer as *mut u8,
-            cjMaxSize as usize,
-        );
-    }
-
-    iResult as i32
-}
-#[cfg(target_arch = "x86")]
-#[no_mangle]
-pub unsafe extern "stdcall" fn NtGdiCreateClientObj(
+pub unsafe extern "system" fn NtGdiCreateClientObj(
     ulType: ULONG,
 ) -> HANDLE {
 
@@ -2106,47 +1421,8 @@ pub unsafe extern "stdcall" fn NtGdiCreateClientObj(
 
     return handle;
 }
-
-#[cfg(not(target_arch = "x86"))]
 #[no_mangle]
-pub unsafe extern "C" fn NtGdiCreateClientObj(
-    ulType: ULONG,
-) -> HANDLE {
-
-    let pObject: POBJ;
-    let handle: HANDLE;
-
-    if (ulType != GDILoObjType_LO_METAFILE16_TYPE) &&
-        (ulType != GDILoObjType_LO_METAFILE_TYPE) &&
-        (ulType != GDILoObjType_LO_METADC16_TYPE)
-    {
-        return core::ptr::null_mut();
-    }
-
-    pObject = GDIOBJ_AllocateObject(GDIObjType_CLIENTOBJ_TYPE as u8,
-                                    core::mem::size_of::<CLIENTOBJ>() as u32,
-                                    BASEFLAG_LOOKASIDE);
-    if pObject.is_null()
-    {
-        return core::ptr::null_mut();
-    }
-
-    (*pObject).hHmgr = UlongToHandle(ulType | GDILoObjType_LO_CLIENTOBJ_TYPE);
-
-    handle = GDIOBJ_hInsertObject(pObject, GDI_OBJ_HMGR_POWNED);
-    if handle.is_null()
-    {
-        GDIOBJ_vFreeObject(pObject);
-        return core::ptr::null_mut();
-    }
-
-    GDIOBJ_vUnlockObject(pObject);
-
-    return handle;
-}
-#[cfg(target_arch = "x86")]
-#[no_mangle]
-pub unsafe extern "stdcall" fn NtGdiDeleteClientObj(hobj: HANDLE) -> BOOL {
+pub unsafe extern "system" fn NtGdiDeleteClientObj(hobj: HANDLE) -> BOOL {
 
     let ulType: ULONG = GDI_HANDLE_GET_TYPE(hobj);
 
@@ -2156,22 +1432,8 @@ pub unsafe extern "stdcall" fn NtGdiDeleteClientObj(hobj: HANDLE) -> BOOL {
 
     return GreDeleteObject(hobj);
 }
-
-#[cfg(not(target_arch = "x86"))]
 #[no_mangle]
-pub unsafe extern "C" fn NtGdiDeleteClientObj(hobj: HANDLE) -> BOOL {
-
-    let ulType: ULONG = GDI_HANDLE_GET_TYPE(hobj);
-
-    if (ulType & GDI_HANDLE_BASETYPE_MASK) != GDILoObjType_LO_CLIENTOBJ_TYPE {
-        return 0;
-    }
-
-    return GreDeleteObject(hobj);
-}
-#[cfg(target_arch = "x86")]
-#[no_mangle]
-pub unsafe extern "stdcall" fn GDIOBJ_ShareLockObj(
+pub unsafe extern "system" fn GDIOBJ_ShareLockObj(
     hObj: HGDIOBJ,
     ExpectedType: u32,
 ) -> PGDIOBJ {
@@ -2182,23 +1444,8 @@ pub unsafe extern "stdcall" fn GDIOBJ_ShareLockObj(
     }
     GDIOBJ_ReferenceObjectByHandle(hObj, ((ExpectedType >> 16) & 0x1f) as u8) as PGDIOBJ
 }
-
-#[cfg(not(target_arch = "x86"))]
 #[no_mangle]
-pub unsafe extern "C" fn GDIOBJ_ShareLockObj(
-    hObj: HGDIOBJ,
-    ExpectedType: u32,
-) -> PGDIOBJ {
-
-    let mut ExpectedType = ExpectedType;
-    if ExpectedType == GDI_OBJECT_TYPE_DONTCARE {
-        ExpectedType = GDI_HANDLE_GET_TYPE(hObj);
-    }
-    GDIOBJ_ReferenceObjectByHandle(hObj, ((ExpectedType >> 16) & 0x1f) as u8) as PGDIOBJ
-}
-#[cfg(target_arch = "x86")]
-#[no_mangle]
-pub unsafe extern "stdcall" fn GDIOBJ_ConvertToStockObj(phObj: *mut HGDIOBJ) -> BOOL {
+pub unsafe extern "system" fn GDIOBJ_ConvertToStockObj(phObj: *mut HGDIOBJ) -> BOOL {
     let pentry: PENTRY;
     let pobj: POBJ;
 
@@ -2220,34 +1467,8 @@ pub unsafe extern "stdcall" fn GDIOBJ_ConvertToStockObj(phObj: *mut HGDIOBJ) -> 
 
     return 1;
 }
-
-#[cfg(not(target_arch = "x86"))]
 #[no_mangle]
-pub unsafe extern "C" fn GDIOBJ_ConvertToStockObj(phObj: *mut HGDIOBJ) -> BOOL {
-    let pentry: PENTRY;
-    let pobj: POBJ;
-
-    pentry = ENTRY_ReferenceEntryByHandle(*phObj, 0);
-    if pentry.is_null() {
-        return 0;
-    }
-
-    (*pentry).FullUnique |= GDI_ENTRY_STOCK_MASK as u16;
-    (*pentry).ObjectOwner.ulObj = 0;
-
-    pobj = (*pentry).einfo.pobj;
-
-    (*pobj).hHmgr = ((*pobj).hHmgr as usize | GDI_HANDLE_STOCK_MASK as usize) as HGDIOBJ;
-
-    *phObj = (*pobj).hHmgr;
-
-    GDIOBJ_vDereferenceObject(pobj);
-
-    return 1;
-}
-#[cfg(target_arch = "x86")]
-#[no_mangle]
-pub unsafe extern "stdcall" fn GDIOBJ_ConvertFromStockObj(phObj: *mut HGDIOBJ) -> BOOL {
+pub unsafe extern "system" fn GDIOBJ_ConvertFromStockObj(phObj: *mut HGDIOBJ) -> BOOL {
     let pentry: PENTRY;
     let pobj: POBJ;
 
@@ -2269,65 +1490,8 @@ pub unsafe extern "stdcall" fn GDIOBJ_ConvertFromStockObj(phObj: *mut HGDIOBJ) -
 
     return 1;
 }
-
-#[cfg(not(target_arch = "x86"))]
 #[no_mangle]
-pub unsafe extern "C" fn GDIOBJ_ConvertFromStockObj(phObj: *mut HGDIOBJ) -> BOOL {
-    let pentry: PENTRY;
-    let pobj: POBJ;
-
-    pentry = ENTRY_ReferenceEntryByHandle(*phObj, 0);
-    if pentry.is_null() {
-        return 0;
-    }
-
-    (*pentry).FullUnique &= !(GDI_ENTRY_STOCK_MASK as u16);
-    (*pentry).ObjectOwner.ulObj = PtrToUlong(PsGetCurrentProcessId() as *mut core::ffi::c_void);
-
-    pobj = (*pentry).einfo.pobj;
-
-    (*pobj).hHmgr = ((*pobj).hHmgr as usize & !(GDI_HANDLE_STOCK_MASK as usize)) as HGDIOBJ;
-
-    *phObj = (*pobj).hHmgr;
-
-    GDIOBJ_vDereferenceObject(pobj);
-
-    return 1;
-}
-#[cfg(target_arch = "x86")]
-#[no_mangle]
-pub unsafe extern "stdcall" fn GDIOBJ_AllocObjWithHandle(
-    ObjectType: ULONG,
-    cjSize: ULONG,
-) -> POBJ {
-    let pobj: POBJ;
-    let mut fl: FLONG = 0;
-    let objt: UCHAR = ((ObjectType >> 16) & 0xFF) as UCHAR;
-
-    if (objt == GDIObjType_DC_TYPE as u8 && cjSize == core::mem::size_of::<DC>() as u32) ||
-       (objt == GDIObjType_PAL_TYPE as u8 && cjSize == core::mem::size_of::<PALETTE>() as u32) ||
-       (objt == GDIObjType_RGN_TYPE as u8 && cjSize == core::mem::size_of::<REGION>() as u32) ||
-       (objt == GDIObjType_SURF_TYPE as u8 && cjSize == core::mem::size_of::<SURFACE>() as u32) ||
-       (objt == GDIObjType_PATH_TYPE as u8 && cjSize == core::mem::size_of::<PATH>() as u32)
-    {
-        fl |= BASEFLAG_LOOKASIDE;
-    }
-
-    pobj = GDIOBJ_AllocateObject(objt, cjSize, fl);
-    if pobj.is_null() {
-        return core::ptr::null_mut();
-    }
-
-    if GDIOBJ_hInsertObject(pobj, GDI_OBJ_HMGR_POWNED).is_null() {
-        GDIOBJ_vFreeObject(pobj);
-        return core::ptr::null_mut();
-    }
-    return pobj;
-}
-
-#[cfg(not(target_arch = "x86"))]
-#[no_mangle]
-pub unsafe extern "C" fn GDIOBJ_AllocObjWithHandle(
+pub unsafe extern "system" fn GDIOBJ_AllocObjWithHandle(
     ObjectType: ULONG,
     cjSize: ULONG,
 ) -> POBJ {

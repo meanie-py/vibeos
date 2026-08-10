@@ -67,6 +67,19 @@ enum {
 #include <time.h>
 #include <unistd.h>
 
+/* The declarations the reference TUs see for the shims defined below.
+ *
+ * Included HERE, in the file that DEFINES them, so the two can never drift: a
+ * shim whose definition stops matching what file.c calls is now a compile error
+ * instead of an ABI mismatch surfacing as a wrong answer in an unrelated row.
+ * That drift was not hypothetical — until this header existed the reference TU
+ * had no declaration for ANY of these and typed all 53 `int(...)`, truncating
+ * every returned pointer to 32 bits. See the header for the full story. */
+#include <msvcrt_shim_decls.h>
+/* The two NLS entry points this file CALLS (path_from_wide, GetTempFileNameW).
+ * They were implicit here too — the same tripwire was off for every TU. */
+#include <winnls.h>
+
 /* refimpl.c owns the single last-error slot both sides read (see the long note
  * beside its GetLastError).  One writer, one reader — as in the real DLL, where
  * last-error is one TEB slot. */
@@ -82,11 +95,31 @@ void msvcrt_ref_set_last_error(DWORD err);
 #define __doserrno msvcrt_ref___doserrno
 __msvcrt_ulong * CDECL __doserrno(void);
 
-/* Hand-rolled, for the reason refimpl.c's header states: the crate under test
- * ships `#[no_mangle] strlen`, and a static definition beats libc at link time,
- * so a casual `strlen()` here would route the reference's ENVIRONMENT through
- * the code under test.  `strlen` is the only name in this file's import set
- * that collides with the subject's exports — checked, not assumed. */
+/* ── THE COLLISION RULE FOR THIS FILE ────────────────────────────────────
+ *
+ * This is the reference's ENVIRONMENT — the layer below the stream layer — and it must
+ * never call into the code under test.  But the crate under test ships `#[no_mangle]`
+ * definitions of ordinary libc names, and a strong definition beats libc at link time, so
+ * any libc call from here whose name msvcrt also exports silently becomes a call INTO the
+ * subject.
+ *
+ * "`strlen` is the only one" was true while file.rs was not in the link.  It stopped being
+ * true the moment it was: `MoveFileExW`'s `rename()` became msvcrt's `rename`, which calls
+ * `_wrename`, which calls `MoveFileExW` — unbounded recursion, and a stack overflow before
+ * the first row ran.  So the rule is now CHECKED BY THE BUILD: build.rs intersects this
+ * object's undefined symbols with file.c's export list and refuses the build on a hit.
+ * The two escapes below exist because that check has no fix to offer, only a name:
+ *
+ *   rename  -> renameat(AT_FDCWD, ...)   same operation, name msvcrt does not have
+ *   fprintf -> dprintf(2, ...)                          "
+ *
+ * Declared here rather than by including <stdio.h>, which this file deliberately does not
+ * pull (it is the layer below FILE, and claiming glibc's stdio guards is file.c's TU's
+ * job). */
+extern int renameat(int fromfd, const char *from, int tofd, const char *to);
+extern int dprintf(int fd, const char *fmt, ...);
+
+/* Hand-rolled for the reason above — the subject ships `#[no_mangle] strlen`. */
 static size_t ref_strlen_local(const char *s)
 {
     const char *p = s;
@@ -233,7 +266,7 @@ void ref_set_startup_handles(BYTE *blob, WORD len)
  * ------------------------------------------------------------------ */
 static char *path_from_wide(const wchar_t *w)
 {
-    int n;
+    int n, i;
     char *s;
 
     if (!w) { SET_ERR(ERROR_INVALID_PARAMETER); return NULL; }
@@ -241,6 +274,21 @@ static char *path_from_wide(const wchar_t *w)
     if (n <= 0) { SET_ERR(ERROR_INVALID_PARAMETER); return NULL; }
     if (!(s = malloc(n))) { SET_ERR(ERROR_NOT_ENOUGH_MEMORY); return NULL; }
     WideCharToMultiByte(CP_ACP, 0, w, -1, s, n, NULL, NULL);
+    /* `\` IS a path separator on the API being modelled, and POSIX does not agree.
+     *
+     * This is the shim rule at the top of the file in its sharpest form. Nothing in
+     * file.c BUILDS a path — it passes through what its caller handed it, so the
+     * untranslated version worked for four waves. process.c does build one:
+     * `msvcrt_search_executable` joins a PATH entry to a program name with a literal
+     * `'\\'`, and every candidate it produced then failed to stat. The failure is the
+     * dangerous kind — the search simply finds nothing, on BOTH sides, and every row
+     * over the whole use_path half of the function reports MATCH while proving that two
+     * implementations can equally fail to open a file whose name has a backslash in it.
+     *
+     * Translating here rather than in process.c's TU because it is the OS layer's job:
+     * a real GetFileAttributesW accepts both separators. */
+    for (i = 0; s[i]; i++)
+        if (s[i] == '\\') s[i] = '/';
     return s;
 }
 
@@ -357,11 +405,90 @@ void * WINAPI InterlockedCompareExchangePointer(void * volatile *dst, void *xchg
 HANDLE WINAPI GetCurrentProcess(void)   { return CURRENT_PROCESS_HANDLE; }
 DWORD  WINAPI GetCurrentProcessId(void) { return (DWORD)getpid(); }
 
+/* Also RECORDS its argument, which stopped being incidental when misc.c became reference
+ * TU #9: `_sleep`'s entire body is `Sleep(timeout ? timeout : 1)`, so the zero-to-one
+ * adjustment is its only observable behaviour and is invisible without this. ONE recorder
+ * serving both sides, read immediately after each side's call — the same discipline the
+ * `_lock` recorder below documents, and the reason it works is that the rows are
+ * single-threaded and interleave deliberately. */
+static DWORD ref_last_sleep_ms;
+static DWORD ref_last_beep_freq, ref_last_beep_dur;
+static int   ref_misc_calls;
+
+unsigned int ref_last_sleep(void) { return ref_last_sleep_ms; }
+unsigned int ref_last_beep_f(void) { return ref_last_beep_freq; }
+unsigned int ref_last_beep_d(void) { return ref_last_beep_dur; }
+int  ref_misc_call_count(void) { return ref_misc_calls; }
+void ref_misc_reset(void)
+{
+    ref_last_sleep_ms = ref_last_beep_freq = ref_last_beep_dur = 0;
+    ref_misc_calls = 0;
+}
+
 void WINAPI Sleep(DWORD ms)
 {
-    struct timespec ts = { (time_t)(ms / 1000), (long)(ms % 1000) * 1000000L };
+    ref_last_sleep_ms = ms;
+    ref_misc_calls++;
+    /* Deliberately NOT nanosleep()ing any more. `_sleep(0)` becomes `Sleep(1)`, and the
+     * rows sweep it across every dataset; a real sleep would buy nothing a recorder does
+     * not already prove and would cost a millisecond a row. */
+}
 
-    nanosleep(&ts, NULL);
+/* The four misc.c needs.  misc.c is worth linking into this harness rather than gating out
+ * (unlike console.c/exit.c, see msvcrt-crt-rust/Cargo.toml `conio-exit`) because qsort,
+ * bsearch, _lsearch and rand are pure algorithms with real oracles.  These four stubs are
+ * the whole price.
+ *
+ * They used to be deliberately INERT, on the reasoning that nothing in misc.c's gradeable
+ * surface observed them. That was true while misc.c was only the SUBJECT's; as reference TU
+ * #9 it is graded, and `_beep` and `_sleep` are then functions whose entire body is the call
+ * — a passthrough and a zero-to-one adjustment. An inert stub makes both ungradeable, so
+ * they record instead. */
+void WINAPI Beep(DWORD freq, DWORD duration)
+{
+    /* `_beep` is a passthrough, so its whole contract is that the two arguments arrive
+     * unchanged — which needs a recorder to see, exactly like Sleep above. */
+    ref_last_beep_freq = freq;
+    ref_last_beep_dur  = duration;
+    ref_misc_calls++;
+}
+
+void WINAPI DebugBreak(void)
+{
+    /* chkesp_fail's only statement.  Must NOT raise(SIGTRAP): under the test runner that
+     * kills the process, and chkesp_fail is reachable from a row that merely checks it
+     * links. */
+}
+
+/* rand_s's entropy source. Named `SystemFunction036`, which is what advapi32 actually
+ * EXPORTS — `RtlGenRandom` is ntsecapi.h's `#define` for it, and misc.c reaches it through
+ * that macro while the Rust binds the real name through msvcrt-sys.
+ *
+ * It was `RtlGenRandom` here until misc.c became reference TU #9, and the mismatch had never
+ * mattered because no test binary referenced `rand_s`: the subject's call sat in an rlib
+ * nothing pulled, so the undefined symbol never reached a link. `cargo check` cannot see
+ * that class at all — the first row to call `rand_s` is what found it.
+ *
+ * Deterministic on purpose: a difftest row wants a reproducible byte pattern, and rand_s's
+ * contract under test is its errno/return behaviour, not the quality of the bytes. */
+BOOLEAN WINAPI SystemFunction036(void *buf, ULONG len)
+{
+    memset(buf, 0x5A, len);
+    return TRUE;
+}
+
+BOOL WINAPI VirtualProtect(void *addr, ULONG_PTR size, DWORD prot, DWORD *old)
+{
+    /* _resetstkoflw returns this verbatim.  There is no guard page to re-arm on the host,
+     * and reporting failure would make the one observable thing about it wrong.
+     *
+     * `ULONG_PTR`, not `SIZE_T`: this shim's type vocabulary (refstub/msvcrt_file_types.h)
+     * has the former and not the latter, and they are the same width.  `*old` gets the
+     * numeric PAGE_READWRITE rather than the name for the same reason — and nothing reads
+     * it: `_resetstkoflw` passes a scratch local and returns only the BOOL. */
+    (void)addr; (void)size; (void)prot;
+    if (old) *old = 0x04;   /* PAGE_READWRITE */
+    return TRUE;
 }
 
 void WINAPI GetStartupInfoA(STARTUPINFOA *si)
@@ -403,6 +530,24 @@ BOOL WINAPI SetStdHandle(DWORD id, HANDLE h)
     ref_std_handles[slot] = h;
     ref_std_set[slot]     = 1;
     return TRUE;
+}
+
+/* Point the three standard handles at the caller's host fds.
+ *
+ * The default above is `fd_to_handle(slot)` — CRT fd 1 maps to HOST fd 1, the process's
+ * real stdout.  That is the honest default for a program, and it makes eleven of file.c's
+ * exports ungradeable: `putchar`, `puts`, `_putws` and their kin write to `stdout` with no
+ * FILE parameter, so the only way to compare what the two implementations produced is for
+ * each side to OWN its stdout.  Called once per side, immediately before that side's
+ * `msvcrt_init_io()`, which is the only reader of GetStdHandle — so the two sides come out
+ * of init bound to different files while the harness's own fd 1 is never touched.  A
+ * `freopen(path, "w", stdout)` would reach the same place by CLOSING host fd 1, and the
+ * next `open` would then hand fd 1 to a temp file and silently swallow every `println!`. */
+void ref_set_std_fds(int in_fd, int out_fd, int err_fd)
+{
+    SetStdHandle(STD_INPUT_HANDLE,  fd_to_handle(in_fd));
+    SetStdHandle(STD_OUTPUT_HANDLE, fd_to_handle(out_fd));
+    SetStdHandle(STD_ERROR_HANDLE,  fd_to_handle(err_fd));
 }
 
 /* ------------------------------------------------------------------ *
@@ -470,6 +615,24 @@ BOOL WINAPI CloseHandle(HANDLE h)
     return TRUE;
 }
 
+/* The last dwShareMode CreateFileW was asked for.
+ *
+ * Windows share modes have no POSIX equivalent, so this shim cannot ACT on the
+ * argument — and that would normally make it invisible.  But mapping _SH_DENYRW
+ * / _SH_DENYWR / _SH_DENYRD / _SH_DENYNO onto dwShareMode is the ENTIRE reason
+ * _fsopen, _wfsopen, _sopen_s and _wsopen_s exist as separate exports: strip the
+ * mapping out and every one of them still opens the file, still returns the same
+ * descriptor, and still leaves the same bytes on disk.  Recording the argument
+ * makes the mapping itself the observation, which is the most this substrate can
+ * honestly say about it — the row grades that both sides ASK for the same thing,
+ * not that anything enforces it. */
+static DWORD ref_last_share_mode;
+
+DWORD ref_get_last_share_mode(void)
+{
+    return ref_last_share_mode;
+}
+
 HANDLE WINAPI CreateFileW(const wchar_t *name, DWORD access, DWORD share,
                           SECURITY_ATTRIBUTES *sa, DWORD disposition,
                           DWORD flags, HANDLE template_file)
@@ -479,7 +642,8 @@ HANDLE WINAPI CreateFileW(const wchar_t *name, DWORD access, DWORD share,
     struct stat st;
     int existed;
 
-    (void)share; (void)template_file;
+    ref_last_share_mode = share;
+    (void)template_file;
     if (!path) return INVALID_HANDLE_VALUE;
 
     if ((access & GENERIC_READ) && (access & GENERIC_WRITE)) oflags = O_RDWR;
@@ -522,6 +686,25 @@ HANDLE WINAPI CreateFileW(const wchar_t *name, DWORD access, DWORD share,
         free(path);
         SET_ERR(ERROR_TOO_MANY_OPEN_FILES);
         return INVALID_HANDLE_VALUE;
+    }
+
+    /* Win32 applies dwFlagsAndAttributes ONLY when the call actually creates the
+     * file, and FILE_ATTRIBUTE_READONLY is the one bit POSIX can express — the
+     * same bit, and the same treatment, as SetFileAttributesW below.
+     *
+     * This is not decoration.  _wsopen_dispatch computes it as
+     * `!(pmode & ~MSVCRT_umask & _S_IWRITE)`, so it is the ONLY observable
+     * consequence of `_umask`: without it the umask is a variable that is
+     * written, read back, and never acted on, and a difftest row over it would
+     * report MATCH having proved nothing (the §9.66 shape this file's header
+     * rule exists to prevent). */
+    if (!existed && (flags & FILE_ATTRIBUTE_READONLY) &&
+        (disposition == CREATE_NEW || disposition == CREATE_ALWAYS ||
+         disposition == OPEN_ALWAYS))
+    {
+        struct stat cst;
+        if (fstat(fd, &cst) == 0)
+            (void)fchmod(fd, cst.st_mode & ~(mode_t)(S_IWUSR | S_IWGRP | S_IWOTH));
     }
 
     if (flags & FILE_FLAG_DELETE_ON_CLOSE)
@@ -799,7 +982,13 @@ BOOL WINAPI MoveFileExW(const wchar_t *from, const wchar_t *to, DWORD flags)
      * file.c's _wrename relies on the failure. */
     if (access(b, F_OK) == 0) { free(a); free(b); SET_ERR(ERROR_ALREADY_EXISTS); return FALSE; }
 
-    ok = rename(a, b) == 0;
+    /* renameat, NOT rename — see the collision note at the top of this file.  msvcrt
+     * exports a `rename`, file.rs defines it, and a strong definition beats libc, so a
+     * plain `rename()` here becomes MoveFileExW -> msvcrt rename -> _wrename ->
+     * MoveFileExW: unbounded recursion, and it is the reference's environment calling
+     * into the code under test.  `renameat` is the same POSIX operation under a name
+     * msvcrt does not have. */
+    ok = renameat(AT_FDCWD, a, AT_FDCWD, b) == 0;
     free(a); free(b);
     if (!ok) return fail_errno();
     SET_ERR(ERROR_SUCCESS);
@@ -990,13 +1179,16 @@ int CDECL _get_fmode(int *mode)
  * which is what msvcrt reports for a file on C:. */
 int CDECL _getdrive(void) { return 3; }
 
-__time64_t CDECL _time64(__time64_t *t)
-{
-    __time64_t now = (__time64_t)time(NULL);
-
-    if (t) *t = now;
-    return now;
-}
+/* `ref__time64` USED to be here — three lines over the host's `time(NULL)`, standing in
+ * for the one call file.c's `_wutime`/`_futime` path makes. It is gone as of wave 35:
+ * time.c is reference TU #11 and DEFINES `_time64`, which the rename wall spells
+ * `ref__time64` — exactly the socket this stub occupied, so the genuine body drops
+ * straight in. (Same move errno.c's arrival made on `msvcrt_set_errno`.)
+ *
+ * It is a real upgrade rather than tidying. The stub read the host clock, so every file
+ * row that stamped a modification time was graded against the HARNESS's idea of "now"
+ * instead of msvcrt's; the genuine `_time64` reads timeimpl.c's FROZEN instant, which the
+ * test sets. `_wutime`'s "pass NULL and take the current time" arm is now reproducible. */
 
 /* The real _wgetenv returns a pointer into msvcrt's wide environ block, which
  * this harness has no reason to maintain; a thread-local buffer has the same
@@ -1049,15 +1241,47 @@ static pthread_mutex_t *ref_lock_slot(int locknum)
     {
         /* Loud on purpose.  Skipping the lock would leave the reference running
          * unsynchronised and look like it worked. */
-        fprintf(stderr, "fileimpl: _lock(%d) out of range [0,%d) — mtdll.h moved\n",
+        /* dprintf, not fprintf: msvcrt exports `fprintf` too (the varargs shim), and a
+         * diagnostic that routes through the code under test is the one call that must
+         * not.  See the collision note at the top of this file. */
+        dprintf(2, "fileimpl: _lock(%d) out of range [0,%d) — mtdll.h moved\n",
                 locknum, REF_TOTAL_LOCKS);
         abort();
     }
     return &ref_locks[locknum];
 }
 
-void CDECL _lock(int locknum)   { pthread_mutex_lock(ref_lock_slot(locknum)); }
-void CDECL _unlock(int locknum) { pthread_mutex_unlock(ref_lock_slot(locknum)); }
+/* Which slot the last _lock / _unlock took.
+ *
+ * `_lock_file` has two arms and NOTHING ELSE distinguishes them: for a FILE inside the
+ * _iob array it takes global lock `_STREAM_LOCKS + (file - _iob)`, and for any other FILE
+ * it enters that FILE's own CRITICAL_SECTION.  The critical-section arm leaves a mark a
+ * row can read (RecursionCount, in the FILE's own memory, per side).  The _lock arm
+ * leaves NONE — a recursive pthread mutex taken and released is invisible — so without
+ * this recorder a row could not tell "took the right global lock" from "took the wrong
+ * one" from "took none at all", and the arm that guards the whole std-stream ring would
+ * be ungradeable.
+ *
+ * ONE definition serving both sides, like ref_get_last_share_mode: read it immediately
+ * after each side's call, never once at the end. */
+static int ref_last_lock_num   = -1;
+static int ref_last_unlock_num = -1;
+
+int ref_get_last_lock(void)   { return ref_last_lock_num; }
+int ref_get_last_unlock(void) { return ref_last_unlock_num; }
+void ref_reset_last_locks(void) { ref_last_lock_num = ref_last_unlock_num = -1; }
+
+void CDECL _lock(int locknum)
+{
+    ref_last_lock_num = locknum;
+    pthread_mutex_lock(ref_lock_slot(locknum));
+}
+
+void CDECL _unlock(int locknum)
+{
+    ref_last_unlock_num = locknum;
+    pthread_mutex_unlock(ref_lock_slot(locknum));
+}
 
 /* VERBATIM from dll/win32/msvcrt/data.c, which is not a reference TU. */
 wchar_t *msvcrt_wstrdupa(const char *str)
@@ -1088,65 +1312,19 @@ wchar_t *msvcrt_wstrdupa(const char *str)
  * ENVIRONMENT with a test-visible call counter — swapping those is a change to
  * every existing test's plumbing, not a change to file.c.
  */
-void msvcrt_set_errno(int err)
-{
-    int *errno_ptr = _errno();
-    __msvcrt_ulong *doserrno = __doserrno();
-
-    *doserrno = err;
-
-    switch (err)
-    {
-#define ERR_CASE(oserr) case oserr:
-#define ERR_MAPS(oserr, crterr) case oserr: *errno_ptr = crterr; break
-    ERR_CASE(ERROR_ACCESS_DENIED)
-    ERR_CASE(ERROR_NETWORK_ACCESS_DENIED)
-    ERR_CASE(ERROR_CANNOT_MAKE)
-    ERR_CASE(ERROR_SEEK_ON_DEVICE)
-    ERR_CASE(ERROR_LOCK_FAILED)
-    ERR_CASE(ERROR_FAIL_I24)
-    ERR_CASE(ERROR_CURRENT_DIRECTORY)
-    ERR_CASE(ERROR_DRIVE_LOCKED)
-    ERR_CASE(ERROR_NOT_LOCKED)
-    ERR_CASE(ERROR_INVALID_ACCESS)
-    ERR_CASE(ERROR_SHARING_VIOLATION)
-    ERR_MAPS(ERROR_LOCK_VIOLATION,       EACCES);
-    ERR_CASE(ERROR_FILE_NOT_FOUND)
-    ERR_CASE(ERROR_NO_MORE_FILES)
-    ERR_CASE(ERROR_BAD_PATHNAME)
-    ERR_CASE(ERROR_BAD_NETPATH)
-    ERR_CASE(ERROR_INVALID_DRIVE)
-    ERR_CASE(ERROR_BAD_NET_NAME)
-    ERR_CASE(ERROR_FILENAME_EXCED_RANGE)
-    ERR_MAPS(ERROR_PATH_NOT_FOUND,       ENOENT);
-    ERR_MAPS(ERROR_IO_DEVICE,            EIO);
-    ERR_MAPS(ERROR_BAD_FORMAT,           ENOEXEC);
-    ERR_MAPS(ERROR_INVALID_HANDLE,       EBADF);
-    ERR_CASE(ERROR_OUTOFMEMORY)
-    ERR_CASE(ERROR_INVALID_BLOCK)
-    ERR_CASE(ERROR_NOT_ENOUGH_QUOTA)
-    ERR_MAPS(ERROR_ARENA_TRASHED,        ENOMEM);
-    ERR_MAPS(ERROR_BUSY,                 EBUSY);
-    ERR_CASE(ERROR_ALREADY_EXISTS)
-    ERR_MAPS(ERROR_FILE_EXISTS,          EEXIST);
-    ERR_MAPS(ERROR_BAD_DEVICE,           ENODEV);
-    ERR_MAPS(ERROR_TOO_MANY_OPEN_FILES,  EMFILE);
-    ERR_MAPS(ERROR_DISK_FULL,            ENOSPC);
-    ERR_MAPS(ERROR_BROKEN_PIPE,          EPIPE);
-    ERR_MAPS(ERROR_POSSIBLE_DEADLOCK,    EDEADLK);
-    ERR_MAPS(ERROR_DIR_NOT_EMPTY,        ENOTEMPTY);
-    ERR_MAPS(ERROR_BAD_ENVIRONMENT,      E2BIG);
-    ERR_CASE(ERROR_WAIT_NO_CHILDREN)
-    ERR_MAPS(ERROR_CHILD_NOT_COMPLETE,   ECHILD);
-    ERR_CASE(ERROR_NO_PROC_SLOTS)
-    ERR_CASE(ERROR_MAX_THRDS_REACHED)
-    ERR_MAPS(ERROR_NESTING_NOT_ALLOWED,  EAGAIN);
-#undef ERR_CASE
-#undef ERR_MAPS
-    default:
-        *errno_ptr = EINVAL;
-    }
-}
+/* The Win32 -> errno MAPPING and the reference's errno store USED to live here — a
+ * hand-written transcription of msvcrt's 42-case switch, called by BOTH sides because
+ * neither had anything better.  That made the single most exercised mapping in the file
+ * suite the one thing no row could grade: shared substrate is invisible to a differential
+ * test, both sides are wrong identically, and every row reports MATCH (§9.73).  file.c
+ * stores through it 54 times, and so does file.rs.
+ *
+ * Gone now.  errno.c is reference TU #7, so `msvcrt_set_errno` and `_errno` are msvcrt's
+ * GENUINE ones (renamed into the msvcrt_ref_* import namespace by refstub/msvcrt.h, which
+ * is exactly the socket the hand-written pair used to fill), while the subject keeps
+ * Rust's.  The mapping is finally a difference the harness can see.  `__doserrno` went
+ * with them: errno.c returns `&msvcrt_get_thread_data()->thread_doserrno`, so the slot
+ * this file used to invent is now where msvcrt actually keeps it. */
 
 /* ── the errno values the substrate test asserts ─────────────────────────
  * Exported from here, where the DERIVED msvcrt_crt_consts.h is in scope,
@@ -1157,9 +1335,57 @@ void msvcrt_set_errno(int err)
 const int ref_msvcrt_ENOENT = ENOENT;
 const int ref_msvcrt_EBADF = EBADF;
 
-/* errno.c's doserrno slot.  Its own storage, in the reference namespace, for
- * the same anti-circularity reason as _errno: the two sides must be able to
- * disagree, or a row that grades doserrno proves nothing. */
-static __thread __msvcrt_ulong ref_doserrno;
+/* ── the reference's doserrno window ─────────────────────────────────────
+ * The twin of refimpl.c's ref_errno_get/ref_errno_set, and it did not exist before
+ * errno.c became a reference TU: the slot was a file-static here, so nothing outside
+ * this file could read it and `msvcrt_set_errno`'s doserrno half was ungradeable even
+ * in principle.  It reads through the accessor rather than a stored pointer so it lands
+ * on whatever __doserrno() returns — which is now msvcrt's own
+ * `&msvcrt_get_thread_data()->thread_doserrno`.  subj_doserrno_get/set are the
+ * subject-side pair (subjectimpl.c); the two together are what lets a row assert that
+ * both sides mapped one ERROR_* code to the same errno AND kept the same doserrno. */
+unsigned int ref_doserrno_get(void)           { return *__doserrno(); }
+void         ref_doserrno_set(unsigned int v) { *__doserrno() = v; }
 
-__msvcrt_ulong * CDECL __doserrno(void) { return &ref_doserrno; }
+
+
+/* ── the three Win32 entry points errno.c needs ──────────────────────────
+ * errno.c's real external surface is 15 symbols (llvm-nm on the shipped object).
+ * Twelve already resolve: MultiByteToWideChar from nlsimpl.c, msvcrt_get_thread_data
+ * from refimpl.c, _write from file.c, strcpy/strlen/wcslen/wcstombs from the union
+ * TUs, malloc/free/_vsnprintf from the host, and ros_dbg_log/wine_dbgstr_wn drop out
+ * because refstub/wine/debug.h no-ops every channel macro.  These three are what is
+ * left.  They live here rather than in refimpl.c for the reason at the top of this
+ * file: this is the reference's OS layer, and these are OS calls.
+ *
+ * SetErrorMode is the only one with state, and modelling it as a plain read-modify-write
+ * is not a shortcut — it IS the contract `_seterrormode` exposes.  Process-wide rather
+ * than __thread, matching Win32: SEM_* is a process attribute.  The row that grades
+ * _seterrormode compares the value each side hands back, so the store has to be real. */
+static UINT ref_error_mode;
+
+UINT WINAPI SetErrorMode(UINT mode)
+{
+    UINT previous = ref_error_mode;
+    ref_error_mode = mode;
+    return previous;
+}
+
+/* lstrcpyW / lstrcatW — kernel32's UNCHECKED wide copies, which is why they are two
+ * lines rather than a call to wcscpy/wcscat.  Routing them through the CRT would send
+ * the reference through cnt-rust's #[no_mangle] wcscpy, i.e. through the code under
+ * test (the collision rule at the top of this file).  __wcserror is the only caller. */
+LPWSTR WINAPI lstrcpyW(LPWSTR dst, LPCWSTR src)
+{
+    LPWSTR out = dst;
+    while ((*out++ = *src++) != 0) {}
+    return dst;
+}
+
+LPWSTR WINAPI lstrcatW(LPWSTR dst, LPCWSTR src)
+{
+    LPWSTR end = dst;
+    while (*end) end++;
+    while ((*end++ = *src++) != 0) {}
+    return dst;
+}

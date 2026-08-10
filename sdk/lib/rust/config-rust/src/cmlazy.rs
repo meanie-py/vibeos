@@ -9,8 +9,7 @@ use ntkrnl_sys::ddk::{CMHIVE, CmpInitHiveFromFile, CmpInitializeHiveList, CmpLoc
 use ntkrnl_sys::opaque_ptr;
 // Constants not in ntkrnl_sys::constants
 const TAG_CM: u32 = u32::from_le_bytes(*b"CM  ");
-const HIVE_VOLATILE: u32 = 1;
-const HIVE_NOLAZYFLUSH: u32 = 2;
+use crate::hiveflags::{HIVE_NOLAZYFLUSH, HIVE_VOLATILE};
 const STATUS_NO_SUCH_USER: NTSTATUS = 0xC0000064_u32 as i32;
 const STATUS_WRONG_PASSWORD: NTSTATUS = 0xC000006A_u32 as i32;
 const STATUS_ACCOUNT_RESTRICTION: NTSTATUS = 0xC000006E_u32 as i32;
@@ -113,6 +112,13 @@ pub unsafe extern "system" fn CmpDoFlushNextHive(
             } else {
                 // HvSyncHive returns BOOLEAN (TRUE on success), not NTSTATUS
                 if HvSyncHive(core::ptr::addr_of_mut!((*CmHive).Hive)) == 0 {
+                    // Upstream prints the NTSTATUS here; our HvSyncHive answers
+                    // BOOLEAN (see the line above), so there is none to report.
+                    crate::dbg_print!(
+                        b"Failed to flush %wZ on handle %p\n\0",
+                        core::ptr::addr_of!((*CmHive).FileFullPath),
+                        (*CmHive).FileHandles[0]
+                    );
                     *Error = 1u8;
                     Result = 0u8;
                     break;
@@ -196,6 +202,7 @@ pub unsafe extern "system" fn CmpLazyFlushWorker(Parameter: PVOID) {
     let mut DirtyCount: ULONG = 0;
 
     if CmpHoldLazyFlush != 0 {
+        crate::dbg_print!(b"Lazy flush held. Bye bye.\n\0");
         CmpLazyFlushPending = 0u8;
         return;
     }
@@ -298,6 +305,10 @@ pub unsafe extern "system" fn CmpCmdHiveOpen(
             &mut Length,
         );
         if Status != STATUS_BUFFER_OVERFLOW {
+            crate::dbg_print!(
+                b"CmpCmdHiveOpen(): Root directory handle object name size query failed, Status = 0x%08lx\n\0",
+                Status
+            );
             return Status;
         }
 
@@ -307,6 +318,7 @@ pub unsafe extern "system" fn CmpCmdHiveOpen(
             TAG_CM,
         ) as POBJECT_NAME_INFORMATION;
         if FileNameInfo.is_null() {
+            crate::dbg_print!(b"CmpCmdHiveOpen(): Unable to allocate memory\n\0");
             return STATUS_INSUFFICIENT_RESOURCES;
         }
 
@@ -318,6 +330,10 @@ pub unsafe extern "system" fn CmpCmdHiveOpen(
             &mut Length,
         );
         if !NT_SUCCESS(Status) {
+            crate::dbg_print!(
+                b"CmpCmdHiveOpen(): Root directory handle object name query failed, Status = 0x%08lx\n\0",
+                Status
+            );
             ExFreePoolWithTag(FileNameInfo as *mut core::ffi::c_void, TAG_CM);
             return Status;
         }
@@ -340,6 +356,7 @@ pub unsafe extern "system" fn CmpCmdHiveOpen(
             TAG_CM,
         ) as *mut u16;
         if FileName.Buffer.is_null() {
+            crate::dbg_print!(b"CmpCmdHiveOpen(): Unable to allocate memory\n\0");
             ExFreePoolWithTag(FileNameInfo as *mut core::ffi::c_void, TAG_CM);
             return STATUS_INSUFFICIENT_RESOURCES;
         }
@@ -355,6 +372,10 @@ pub unsafe extern "system" fn CmpCmdHiveOpen(
 
         Status = RtlAppendUnicodeStringToString(&mut FileName, (*FileAttributes).ObjectName);
         if !NT_SUCCESS(Status) {
+            crate::dbg_print!(
+                b"CmpCmdHiveOpen(): RtlAppendUnicodeStringToString() failed, Status = 0x%08lx\n\0",
+                Status
+            );
             ExFreePoolWithTag(FileName.Buffer as *mut core::ffi::c_void, TAG_CM);
             return Status;
         }

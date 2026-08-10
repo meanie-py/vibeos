@@ -197,6 +197,60 @@ pub unsafe extern "C" fn ldap_ufn2dnW(ufn: PWCHAR, dn: *mut PWCHAR) -> ULONG {
 }
 
 
+#[no_mangle]
+#[cfg(not(feature = "have_ldap"))]
+pub unsafe extern "C" fn ldap_explode_dnW(dn: PWCHAR, notypes: ULONG) -> *mut PWCHAR {
+    core::ptr::null_mut()
+}
+
+#[cfg(feature = "have_ldap")]
+#[no_mangle]
+pub unsafe extern "C" fn ldap_explode_dnW(dn: PWCHAR, notypes: ULONG) -> *mut PWCHAR {
+    let mut ret: *mut PWCHAR = core::ptr::null_mut();
+    #[cfg(feature = "have_ldap")]
+    {
+        let dnU: *mut i8;
+        let retU: *mut *mut i8;
+
+        dnU = strWtoU(dn);
+        if dnU.is_null() {
+            return core::ptr::null_mut();
+        }
+
+        retU = ldap_explode_dn(dnU, notypes);
+        ret = strarrayUtoW(retU);
+
+        strfreeU(dnU);
+        ldap_memvfree(retU as *mut *mut core::ffi::c_void);
+    }
+    ret
+}
+
+#[no_mangle]
+#[cfg(not(feature = "have_ldap"))]
+pub unsafe extern "C" fn ldap_explode_dnA(dn: PCHAR, notypes: ULONG) -> *mut PCHAR {
+    core::ptr::null_mut()
+}
+
+#[cfg(feature = "have_ldap")]
+#[no_mangle]
+pub unsafe extern "C" fn ldap_explode_dnA(dn: PCHAR, notypes: ULONG) -> *mut PCHAR {
+    let mut ret: *mut PCHAR = core::ptr::null_mut();
+
+    let dnW: PWCHAR = strAtoW(dn);
+    if dnW.is_null() {
+        return core::ptr::null_mut();
+    }
+
+    let retW: *mut PWCHAR = ldap_explode_dnW(dnW, notypes);
+    ret = strarrayWtoA(retW);
+
+    strfreeW(dnW);
+    ldap_value_freeW(retW);
+
+    ret
+}
+
 // ============================================================================
 // ORIGINAL C SOURCE
 // ============================================================================

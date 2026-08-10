@@ -139,8 +139,9 @@ const CM_SYMBOLIC_LINK_VALUE_NAME_BUF: &[u16] = w!("SymbolicLinkValue");
 //                          CmHive2, ThreadFinished, ThreadStarted, Allocate }
 // ============================================================================
 
-const HIVE_VOLATILE: ULONG = 1;
-const HIVE_NOLAZYFLUSH: ULONG = 8;
+// hivedata.h: HIVE_NOLAZYFLUSH is 2. This copy said 8 (HIVE_HAS_BEEN_FREED), which
+// tagged the SAM entry of CmpMachineHiveList with the wrong bit.
+use crate::hiveflags::{HIVE_NOLAZYFLUSH, HIVE_VOLATILE};
 
 const HL_HARDWARE_NAME: &[u16] = w!("HARDWARE");
 const HL_SECURITY_NAME: &[u16] = w!("SECURITY");

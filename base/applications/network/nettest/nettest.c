@@ -10,7 +10,7 @@
  * markers land in the same serial stream tests/qemu/test_net.py reads.
  *
  * Targets the test harness's slirp services (tests/qemu/vm.py):
- *   TCP: 10.0.2.100:9999  (guestfwd cmd:cat line echo)
+ *   TCP: 10.0.2.100:9997  (guestfwd cmd:cat line echo — OUR port, see below)
  *   UDP: 10.0.2.3:53      (slirp's DNS forwarder)
  */
 
@@ -20,8 +20,12 @@
 #include <stdio.h>
 #include <string.h>
 
+/* This test owns guestfwd port 9997 exclusively — see tests/qemu/vm.py
+ * GUESTFWD_ECHO_PORTS. Two consumers on one guestfwd is not a sharing win: slirp
+ * delivers the echo to the FIRST socket matching (addr, port), so the other one
+ * waits forever on a reply that was handed to somebody else. */
 #define TCP_ECHO_IP   "10.0.2.100"
-#define TCP_ECHO_PORT 9999
+#define TCP_ECHO_PORT 9997
 #define DNS_IP        "10.0.2.3"
 #define DNS_PORT      53
 

@@ -499,6 +499,9 @@ pub unsafe extern "system" fn CmpCleanUpKcbCacheWithLock(
 
     CmpCleanUpKcbValueCache(Kcb);
 
+    /* The KCB owns the last reference to its cached security descriptor. */
+    crate::cmse::CmpFreeKcbCachedSecurity(Kcb);
+
     CmpDereferenceNameControlBlockWithLock((*Kcb).NameBlock);
 
     if ((*Kcb).__bindgen_anon_1.ExtFlags() & CM_KCB_SUBKEY_HINT) != 0 {
@@ -672,7 +675,9 @@ pub unsafe extern "system" fn CmpCreateKeyControlBlock(
     let mut HashLock: u8;
     let mut p: *mut u16;
 
-    if (((*Hive).HiveFlags & 0x00000200) != 0) &&
+    // C: HiveFlags & HIVE_IS_UNLOADING (0x20). 0x200 is not a HiveFlags bit at all,
+    // so this guard never fired for any hive in any state.
+    if (((*Hive).HiveFlags & crate::hiveflags::HIVE_IS_UNLOADING) != 0) &&
         ((*(Hive as PCMHIVE)).CreatorOwner as *mut core::ffi::c_void != KeGetCurrentThread() as *mut core::ffi::c_void)
     {
         return core::ptr::null_mut();
@@ -711,6 +716,10 @@ pub unsafe extern "system" fn CmpCreateKeyControlBlock(
     (*Kcb).Signature = 0x6B636D2bu32;
     (*Kcb).__bindgen_anon_1.set_Delete(0);
     (*Kcb).RefCount = 1;
+    /* CmpAllocateKeyControlBlock hands back RECYCLED KCBs off a free list, and fresh
+     * pages it never zeroes, so every field this function does not set holds garbage.
+     * CachedSecurity must start NULL or the security method dereferences it. */
+    (*Kcb).CachedSecurity = core::ptr::null_mut();
     (*Kcb).__bindgen_anon_2.__bindgen_anon_1.KeyHive = Hive;
     (*Kcb).__bindgen_anon_2.__bindgen_anon_1.KeyCell = Index;
     (*Kcb).__bindgen_anon_2.__bindgen_anon_1.ConvKey = ConvKey;

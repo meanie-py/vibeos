@@ -174,7 +174,7 @@ HRESULT WINAPI CAdminToolsFolder::Initialize(PCIDLIST_ABSOLUTE pidl)
     if (!m_pidlInner)
         return E_OUTOFMEMORY;
 
-    return SHELL32_CoCreateInitSF(m_pidlInner,
+    return SHELL32_CoCreateInitSFWithCsidl(m_pidlInner,
                                   &CLSID_ShellFSFolder,
                                   CSIDL_COMMON_ADMINTOOLS,
                                   IID_PPV_ARG(IShellFolder2, &m_pisfInner));

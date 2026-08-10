@@ -188,35 +188,8 @@ unsafe fn UserGetCPD_impl(
         core::ptr::null_mut::<core::ffi::c_void>() as ULONG_PTR
     }
 }
-#[cfg(target_arch = "x86")]
 #[no_mangle]
-pub unsafe extern "stdcall" fn NtUserGetCPD(
-    hWnd: HWND,
-    Flags: GETCPD,
-    ProcIn: ULONG_PTR,
-) -> ULONG_PTR {
-    let Wnd: PWND;
-    let mut Result: ULONG_PTR = 0;
-
-    UserEnterExclusive();
-    'cleanup: {
-        Wnd = UserGetWindowObject(hWnd);
-        if Wnd.is_null() {
-            break 'cleanup;
-        }
-
-        if (Flags & !(UserGetCPDU2A | UserGetCPDA2U)) != UserGetCPDClass {
-            Result = UserGetCPD(Wnd as PVOID, Flags, ProcIn);
-        }
-    }
-
-    UserLeave();
-    Result
-}
-
-#[cfg(not(target_arch = "x86"))]
-#[no_mangle]
-pub unsafe extern "C" fn NtUserGetCPD(
+pub unsafe extern "system" fn NtUserGetCPD(
     hWnd: HWND,
     Flags: GETCPD,
     ProcIn: ULONG_PTR,

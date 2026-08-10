@@ -97,6 +97,51 @@ def baseline_lowering_note(results, base_map) -> str | None:
     )
 
 
+def merge_baseline_rows(existing_text: str, results, only, fmt):
+    """Re-seed ONLY the named rows, leaving every other row's banked sample alone.
+
+    A wholesale `--write-baseline` re-rolls EVERY row from the single sweep in
+    front of it, including the rows we know are bistable (IoDeviceObject on all
+    three arches, ExPools on arm64). One lucky boot then becomes the permanent
+    floor and the next honest run reads as a regression. Until this existed the
+    only safe way to re-seed a deterministic row was to hand-edit the file, which
+    is how the CmSecurity row was done — fine for one row, not for six.
+
+    Returns `(new_text, refusal)`; `refusal` is None on success.
+    """
+    by_name = {r["name"]: r for r in results}
+    missing = sorted(n for n in only if n not in by_name)
+    if missing:
+        return None, (
+            "[conformance] --write-baseline --only REFUSED: this sweep has no "
+            f"result for {len(missing)} named test(s):\n"
+            + "".join(f"    {n}\n" for n in missing)
+            + "  A named test that never launched cannot be re-seeded from this run."
+        )
+
+    wanted = list(dict.fromkeys(only))
+    seen: set[str] = set()
+    out = []
+    for line in existing_text.splitlines():
+        name = line.split()[0] if line.strip() and not line.startswith("#") else None
+        if name is not None and name in by_name and name in wanted:
+            out.append(fmt(by_name[name]))
+            seen.add(name)
+        else:
+            out.append(line)
+    # A named test the baseline does not carry yet is an ADDITION, not a re-seed.
+    # Appending is right — it raises the floor — but say so rather than silently
+    # growing the file.
+    added = [n for n in wanted if n not in seen]
+    out.extend(fmt(by_name[n]) for n in added)
+    if added:
+        print(
+            "[conformance] --only added "
+            f"{len(added)} test(s) the baseline did not carry: {', '.join(added)}"
+        )
+    return "\n".join(out) + "\n", None
+
+
 def _run_dir(arch: str) -> Path:
     ts = time.strftime("%Y%m%d-%H%M%S")
     d = Path("/tmp/vibeos-cli") / f"{ts}-conformance-{arch}"
@@ -104,25 +149,161 @@ def _run_dir(arch: str) -> Path:
     return d
 
 
-def _rostests_enabled(repo: Path, base_arch: str) -> bool | None:
-    """True if the build dir will compile kmtests. modules/CMakeLists.txt gates
-    them on `ENABLE_ROSTESTS OR ENABLE_ROSTESTS_KMTESTS`, and the fleet default
-    is the KMTESTS-only path (ROSTESTS=OFF, KMTESTS=ON — kmtests without the full
-    suite), so both keys must be OR'd, not first-match. None if no cache yet."""
-    cache = repo / f"build-{base_arch}" / "CMakeCache.txt"
-    if not cache.is_file():
-        return None
-    on, saw = False, False
-    for line in cache.read_text(errors="replace").splitlines():
-        for key in ("ENABLE_ROSTESTS:", "ENABLE_ROSTESTS_KMTESTS:"):
-            if line.startswith(key):
-                saw = True
-                if line.strip().endswith("=ON"):
-                    on = True
-    return on if saw else False
+# Durable soak ledger, alongside the flake farm's corpus so one triage pass can
+# read both. /tmp/vibeos-cli run dirs rotate and a sweep truncates the previous
+# same-arch serial log, so a multi-hour soak that keeps its findings only there
+# loses them. The 2026-07-26 arm64 soak had to be partly RETRACTED because
+# nobody could reconstruct, after the fact, which media each round ran on —
+# hence `sha`/`dirty`/`smp`/`tripwire` in every record, not just the verdict.
+FARM_DIR = Path.home() / "vibeos-flake-farm"
+LEDGER = FARM_DIR / "conformance.jsonl"
+_ROUNDS: list[dict] = []
+
+
+def _head_sha(repo: Path) -> str:
+    try:
+        r = subprocess.run(
+            ["git", "-C", str(repo), "rev-parse", "--short", "HEAD"],
+            capture_output=True,
+            text=True,
+            timeout=30,
+        )
+        return r.stdout.strip() if r.returncode == 0 else "?"
+    except Exception:
+        return "?"
+
+
+def _append_round(rec: dict) -> None:
+    _ROUNDS.append(rec)
+    try:
+        FARM_DIR.mkdir(parents=True, exist_ok=True)
+        with LEDGER.open("a") as f:
+            f.write(json.dumps(rec) + "\n")
+    except Exception as e:  # a soak must never die on its own bookkeeping
+        print(f"[conformance] ledger append failed: {e}", file=sys.stderr)
+
+
+def _worktree_provisioning_gaps(repo: Path, base_arch: str) -> list[str]:
+    """The gitignored things a fresh worktree lacks, each with its fix command.
+
+    `git worktree add` brings tracked files only, so a new tree is missing the
+    pinned toolchain symlink and the prebuilt payload binaries — and both fail
+    several layers down from their cause, naming neither the file nor the remedy.
+    Returns a list of human-readable gaps; empty means provisioned.
+    """
+    gaps: list[str] = []
+
+    # 1. Toolchain. Sharing this one ACROSS worktrees is explicitly sanctioned —
+    #    it is content-addressed and commit-independent, unlike generated
+    #    headers — and build.sh below needs it, so report it first.
+    tc = repo / ".build-tools" / "llvm-mingw"
+    if not tc.exists() and not list(repo.parent.glob("llvm-mingw-*")):
+        gaps.append(
+            f"missing {tc} (pinned clang) -> CMAKE_CONFIGURE_FAIL "
+            f"'no llvm-mingw toolchain found'\n"
+            f"    fix: mkdir -p {tc.parent} && "
+            f"ln -s <path-to>/llvm-mingw-*-ubuntu-*-x86_64 {tc}"
+        )
+
+    # 2. Payload binaries — .gitignore'd beside their own source
+    #    (tools/payloads/kmtest/.gitignore: kmtest-sweep-*.exe), so a fresh tree
+    #    has sweep.c and the test lists but not the exes. BUILD them; do NOT
+    #    copy from a sibling worktree. They are generated per-commit artifacts,
+    #    and resolving those across trees is the fleet-isolation trap that had
+    #    verify_signatures grading one tree's Rust against another's headers.
+    sweep = repo / "tools" / "payloads" / SUITE / f"{SUITE}-sweep-{base_arch}.exe"
+    if not sweep.exists():
+        gaps.append(
+            f"missing {sweep} -> mkramdisk fails with \"payload '{SUITE}': src missing\"\n"
+            f"    fix: bash tools/payloads/{SUITE}/build.sh {base_arch}"
+        )
+
+    # 3. arm64 boot assets. These are opaque firmware blobs, not built from our
+    #    source, so copying IS the fix here (AGENTS.md says so explicitly).
+    if base_arch == "arm64":
+        for asset in ("QEMU_EFI.fd", "efivars.fd"):
+            p = repo / "qemu" / asset
+            if not p.exists():
+                gaps.append(
+                    f"missing {p} (gitignored firmware blob)\n"
+                    f"    fix: cp <main-checkout>/qemu/{asset} {p}"
+                )
+    return gaps
 
 
 def conformance(args, repo: Path) -> int:
+    """`--repeat N` soak wrapper around one sweep.
+
+    The arm64 flip blocker's five faces are all SWEEP faces — a bugcheck partway
+    through, a sweep that launches nothing, a sweep that stalls — so `farm`,
+    which only boots to desktop, cannot see any of them, and the soak that found
+    them was hand-looped. Rounds after the first force `--no-build`: the media is
+    fixed for the run, which is what makes rounds comparable.
+    """
+    repeat = int(getattr(args, "repeat", 0) or 0)
+    if repeat <= 1:
+        return _conformance_once(args, repo)
+
+    worst = 0
+    # A soak whose media cannot launch anything produces no information, only
+    # noise — and it appends that noise to the SHARED ledger every other lane
+    # computes its statistics from. An unprovisioned worktree (no build-<arch>,
+    # or a build that failed) banked 38 `launched=0` rounds in about a minute
+    # before anyone noticed, and they are indistinguishable in the ledger from
+    # the genuine no-launch face the smp corpus records 13 of.
+    #
+    # So: bail after CONSECUTIVE no-launch rounds, not the first. One is a real
+    # observed face and must still be recorded; three in a row is broken media.
+    NOLAUNCH_ABORT = 3
+    consecutive_nolaunch = 0
+    for i in range(repeat):
+        if i:
+            args.no_build = True
+        print(f"\n=== conformance round {i + 1}/{repeat} ({args.arch}) ===", flush=True)
+        try:
+            rc = _conformance_once(args, repo)
+        except KeyboardInterrupt:
+            print(f"[conformance] interrupted after {i} round(s)", file=sys.stderr)
+            break
+        except Exception as e:  # one bad round must not end the soak
+            print(f"[conformance] round {i + 1} raised {e!r} — continuing", file=sys.stderr)
+            continue
+        worst = max(worst, rc)
+
+        if _ROUNDS and _ROUNDS[-1].get("launched") == 0:
+            consecutive_nolaunch += 1
+            if consecutive_nolaunch >= NOLAUNCH_ABORT:
+                print(
+                    f"\n[conformance] ABORTING the soak: {consecutive_nolaunch} consecutive "
+                    f"rounds launched ZERO tests.\n"
+                    f"  The media is not runnable, so every further round would append noise "
+                    f"to {LEDGER}\n"
+                    f"  rather than measure anything. This is nearly always an unprovisioned "
+                    f"tree:\n"
+                    f"    fix: ./vibeos-cli build --arch {args.arch}   (and check it SUCCEEDS)\n"
+                    f"  A worktree also needs .build-tools/llvm-mingw and, on arm64, the "
+                    f"gitignored\n"
+                    f"  qemu/QEMU_EFI.fd + qemu/efivars.fd copied from the main checkout.",
+                    file=sys.stderr,
+                )
+                worst = max(worst, 1)
+                break
+        else:
+            consecutive_nolaunch = 0
+
+    # Roll-up. Deliberately counts the SHAPES that distinguish the faces
+    # (bugcheck / launched=0 / stalled / clean) rather than just pass-fail: a
+    # bare failure count is what made nine rounds read as one bug.
+    print(f"\n=== soak roll-up: {len(_ROUNDS)} round(s) -> {LEDGER} ===")
+    shapes: dict[str, int] = {}
+    for r in _ROUNDS:
+        shapes[r["shape"]] = shapes.get(r["shape"], 0) + 1
+    for k, v in sorted(shapes.items(), key=lambda kv: -kv[1]):
+        print(f"  {v:>3}  {k}")
+    return worst
+
+
+def _conformance_once(args, repo: Path) -> int:
     raw = args.arch
     base = raw.split("-")[0]  # i386 / amd64 / arm64 (baseline dir + build --arch)
     pytest_arch = _PYTEST_ARCH.get(raw, raw)  # amd64 -> amd64-uefi; passthrough if suffixed
@@ -156,44 +337,52 @@ def conformance(args, repo: Path) -> int:
 
     # --- 1. build (default on) with the kmtest payload -----------------------
     if not args.no_build:
-        rost = _rostests_enabled(repo, base)
-        if rost is False:
-            # Fail loud, no silent degradation: a payload build without the test
-            # binaries would boot and then [KMTEST-SWEEP] launch FAILED. Point at
-            # the one-time (cached) configure instead.
+        unprovisioned = _worktree_provisioning_gaps(repo, base)
+        if unprovisioned:
+            # Fail loud on the two gitignored things a FRESH WORKTREE silently
+            # lacks — the toolchain and the payload exes. (The kmtest corpus used
+            # to need a refusal here too; --kmtests below just fixes it.) Both cost
+            # a full
+            # build cycle each on 2026-07-29 because they surface far from their
+            # cause: the toolchain as CMAKE_CONFIGURE_FAIL, and the payload as
+            # `mkramdisk(ramdisk re-stage) -> payload 'kmtest': src missing`.
+            # Neither names the fix; a preflight can.
             print(
-                f"[conformance] build-{base} has neither ENABLE_ROSTESTS nor "
-                f"ENABLE_ROSTESTS_KMTESTS — the kmtest binaries won't be staged.\n"
-                f"  fix (one-time, cmake-cached; KMTESTS-only is the fleet norm — full "
-                f"ENABLE_ROSTESTS drags every apitest/winetest into the livecd graph):\n"
-                f"    cd build-{base} && bash ../tools/canon-run.sh cmake "
-                f"-DENABLE_ROSTESTS_KMTESTS=ON .\n"
-                f"  then re-run this verb (or pass --no-build if media is already staged).",
+                "[conformance] this worktree is not provisioned to build a payload:\n"
+                + "".join(f"  - {g}\n" for g in unprovisioned)
+                + "  (all are gitignored, so `git worktree add` cannot bring them.)",
                 file=sys.stderr,
             )
             return 2
+        # No kmtest corpus means a media that boots fine and then reports
+        # `[KMTEST-SWEEP] launch FAILED`, minutes later and a layer away from the
+        # cause — so ASK for the corpus rather than hoping the dir already has it.
+        # --kmtests is sticky and cmake-cached, so this is a no-op on every run
+        # after the first.
+        #
+        # This used to be a refuse-with-a-recipe on `_rostests_enabled() is False`,
+        # which covered a dir configured WITHOUT the tests but not the case that
+        # actually bites a fresh worktree: no build dir at all returns None, sailed
+        # straight through, and then the fresh configure defaulted BOTH options OFF
+        # (archcfg.py) — the silent degradation the check existed to prevent,
+        # entering through the one door it did not cover. Nothing to refuse now:
+        # both states want the same one-time reconfigure and `build` can do it.
         env = dict(os.environ, VIBEOS_PAYLOAD=SUITE)
-        build_cmd = [str(repo / "vibeos-cli"), "build", "--arch", base]
+        build_cmd = [str(repo / "vibeos-cli"), "build", "--arch", base, "--kmtests"]
         # ANY --smp N (including 1) must sweep the ntkrnlmp media: at N=1 that is
         # the whole experiment — "the MP kernel on one CPU" — and sweeping the UP
         # kernel instead would report a meaningless all-green.
         #
-        # On x86 that costs NOTHING now: the ISO already carries both kernels and
-        # both HALs plus a [LiveCD_SMP] entry, and vm.smp_selected_iso patches
-        # `DefaultOS=` inside a COPY of the media at boot time. --smp-kernel would
-        # only rewrite that same line via a cmake cache var — i.e. a reconfigure
-        # and an ISO re-roll to change 22 bytes we can change for free.
-        #
-        # arm64 still needs it: its boot.img is a hand-curated ramdisk that does
-        # not carry halmp.dll/ntkrnlmp.exe at all unless mkramdisk.sh --smp stages
-        # them, so there is nothing in the media to boot-select.
-        needs_smp_media_build = smp and base == "arm64"
-        if needs_smp_media_build:
-            build_cmd.append("--smp-kernel")
-        print(
-            f"[conformance] building {base} with VIBEOS_PAYLOAD={SUITE}"
-            f"{' --smp-kernel' if needs_smp_media_build else ''} ..."
-        )
+        # No arch needs a special build for that any more. Every media carries
+        # both kernels and both HALs plus an MP freeldr entry, and
+        # vm.smp_selected_iso repoints `DefaultOS=` inside a COPY of it at boot
+        # time. --smp-kernel would only rewrite that same line at build time —
+        # i.e. a whole media re-roll to change one byte we change for free.
+        # arm64 was the last holdout (its curated ramdisk genuinely lacked the MP
+        # pair until mkramdisk.sh started staging it unconditionally); forcing
+        # --smp-kernel there now just costs a re-roll and, worse, makes the
+        # --smp 1 and --smp 2 sweeps need two different builds of one commit.
+        print(f"[conformance] building {base} with VIBEOS_PAYLOAD={SUITE} ...")
         bp = subprocess.run(build_cmd, cwd=str(repo), env=env)
         if bp.returncode != 0:
             print("[conformance] BUILD FAILED — aborting.", file=sys.stderr)
@@ -206,6 +395,12 @@ def conformance(args, repo: Path) -> int:
     env = dict(os.environ)
     if smp:
         env["VIBEOS_QEMU_SMP"] = str(smp)
+    # Give the shelled-out VM a durable place to drop hang diagnostics. Its own
+    # work_dir is a pytest tmp_path that pytest prunes to the last 3 runs, so
+    # without this a wedge's vCPU-PC capture is written and then deleted by
+    # unrelated later runs — which is exactly what happened to the arm64 MP
+    # wedge, leaving a run dir with serial and nothing else.
+    env["VIBEOS_ARTIFACT_DIR"] = str(run_dir)
     sweep_cmd = [
         sys.executable,
         "-m",
@@ -269,6 +464,38 @@ def conformance(args, repo: Path) -> int:
     saved_serial = run_dir / f"{pytest_arch}_serial.log"
     saved_serial.write_text(serial_text)
 
+    # --- 3b. a wedged sweep: symbolicate the vCPU PCs ------------------------
+    # The raw capture is written by the VM (VIBEOS_ARTIFACT_DIR above); resolving
+    # the PCs to symbols has to happen HERE because it needs the build tree and
+    # the MP/UP kernel choice, neither of which the in-guest sweep knows. Without
+    # the symbols the file is a wall of hex and the operator still cannot tell
+    # "spinning at DISPATCH_LEVEL" from "idle, waiting" — which is the whole fork
+    # a stall hunt turns on.
+    hang_state_path = run_dir / "hang-cpustate.txt"
+    hang_pcs: list[str] = []
+    if hang_state_path.is_file():
+        try:
+            from . import triage as _triage
+
+            hang_pcs = _triage.symbolicate_cpu_state(
+                repo,
+                # BASE arch, not pytest_arch: the symbol index is
+                # qemu/symbols-<base>.tsv and addr2sym.sh's arch_validate accepts
+                # only i386/amd64/arm64, so "i386-uefi" resolves NOTHING — and it
+                # fails by returning no symbols, not by complaining.
+                base,
+                hang_state_path.read_text(errors="replace"),
+                mp="ntkrnlmp.exe" in serial_text,
+            )
+            if hang_pcs:
+                with hang_state_path.open("a") as f:
+                    f.write("\n=== symbolicated ===\n" + "\n".join(hang_pcs) + "\n")
+        except Exception as exc:  # never let triage sink the run it is triaging
+            print(f"[conformance] cpu-state symbolication failed: {exc!r}", file=sys.stderr)
+        print(f"[conformance] guest was WEDGED — vCPU state: {hang_state_path}")
+        for line in hang_pcs:
+            print(f"    {line}")
+
     # An `--smp N` sweep that quietly swept the UP kernel is the false green this
     # whole experiment exists to avoid, and it is INVISIBLE in the results — a UP
     # sweep looks like a very good MP sweep. `smoke --smp N` asserts this
@@ -310,7 +537,35 @@ def conformance(args, repo: Path) -> int:
                 new_passes.append(r["name"])
 
     # --- 5. write baseline if asked ------------------------------------------
-    if args.write_baseline:
+    only = getattr(args, "only", None)
+    if only and not args.write_baseline:
+        print("[conformance] --only has no meaning without --write-baseline", file=sys.stderr)
+        return 2
+    if only and not have_baseline:
+        print(
+            f"[conformance] --only needs an existing baseline at {baseline_path};"
+            " seed the file first with a plain --write-baseline",
+            file=sys.stderr,
+        )
+        return 2
+
+    if args.write_baseline and only:
+        # Targeted re-seed: the coverage refusal below does not apply (nothing is
+        # dropped) and the lowering note is scoped to the rows actually touched.
+        selected = [r for r in results if r["name"] in set(only)]
+        note = baseline_lowering_note(selected, base_map)
+        if note:
+            print(note)
+        merged, refusal = merge_baseline_rows(baseline_path.read_text(), results, only, parser.fmt)
+        if refusal:
+            print(refusal, file=sys.stderr)
+            return 2
+        baseline_path.write_text(merged)
+        print(
+            f"[conformance] baseline re-seeded for {len(only)} row(s): {baseline_path}\n"
+            f"  {', '.join(only)}"
+        )
+    elif args.write_baseline:
         # A baseline is a RATCHET FLOOR, and --write-baseline replaces it wholesale
         # with this run's rows. So a sweep that launched fewer tests than the floor
         # — a boot flake, an early BUGCHECK, a drained-out timeout — silently
@@ -349,7 +604,18 @@ def conformance(args, repo: Path) -> int:
         "suite": SUITE,
         "arch": base,
         "pytest_arch": pytest_arch,
-        "smp": smp or 1,
+        # `smp or 1` used to live here, and it made the ledger LIE about which
+        # kernel ran: no --smp boots the UP kernel (ntoskrnl) while `--smp 1`
+        # boots the MP kernel on one CPU (ntkrnlmp, PSCI AP bring-up on arm64) —
+        # two different binaries doing different work — and both were recorded as
+        # smp=1. That collapse cost a whole A/B: 44 UP-kernel rounds at 100% clean
+        # were compared against 85 banked MP-at-1-CPU rounds at 49%, and the
+        # difference read as a fix when it was a kernel swap. Record 0 for "not
+        # specified" and carry the kernel explicitly, so the distinction survives
+        # into the shared corpus instead of having to be recovered by grepping
+        # serial logs for an `ntkrnlmp.exe` load line.
+        "smp": smp,
+        "mp_kernel": bool(smp),
         "launched": len(results),
         "ok": ok,
         "bad": bad,
@@ -363,8 +629,60 @@ def conformance(args, repo: Path) -> int:
         "results_file": str(results_path),
         "serial_log": str(saved_serial),
         "serial_log_live": str(log_path),  # truncated by the next same-arch sweep
+        # Present only when the guest wedged. `hang_pcs` is the payload: on a
+        # stall that prints nothing, this is the ONLY statement of where the box
+        # actually was, and summary.json is what gets read.
+        "hang_cpustate": str(hang_state_path) if hang_state_path.is_file() else None,
+        "hang_pcs": hang_pcs,
     }
     (run_dir / "summary.json").write_text(json.dumps(summary, indent=2))
+
+    # --- 6b. durable soak ledger ---------------------------------------------
+    # `shape` is the face discriminator, computed from the fields that actually
+    # separate them. Note launched==0 vs a stall vs a bugcheck all render the
+    # same in a pass/fail view, which is precisely how five distinct bugs spent
+    # months filed under one heading.
+    serial_text = ""
+    try:
+        serial_text = Path(summary["serial_log"]).read_text(errors="replace")
+    except Exception:
+        pass
+    if bugcheck:
+        shape = f"A:bugcheck {bugcheck}"
+    elif not results:
+        shape = "B:no-launch"
+    elif not done_line:
+        shape = "stalled/DID-NOT-FINISH"
+    elif regressions:
+        shape = "clean-but-ratchet-regression"
+    else:
+        shape = "clean"
+    try:
+        from . import triage as _triage
+
+        ev = _triage.wedge_evidence(serial_text)
+    except Exception:
+        ev = {"census_stuck": 0, "lockdep": 0, "cswitch": 0, "lines": []}
+    rec = dict(summary)
+    rec.update(
+        {
+            "ts": time.strftime("%Y%m%d-%H%M%S"),
+            "shape": shape,
+            "sha": _head_sha(repo),
+            "tripwire": os.environ.get("VIBEOS_TRIPWIRE", ""),
+            "run_dir": str(run_dir),
+            "census_stuck": ev["census_stuck"],
+            "lockdep_hits": ev["lockdep"],
+            "cswitch_hits": ev["cswitch"],
+            "census_lines": ev["lines"],
+            # The widened census prints a wait-reason histogram when the parked
+            # profile shifts; its presence is what turns face D from invisible
+            # into named, so record whether it fired at all.
+            "wait_profile": "[CENSUS] wait profile:" in serial_text,
+            "rust_panics": serial_text.count("*** RUST PANIC"),
+        }
+    )
+    _append_round(rec)
 
     # --- 7. report + exit code -----------------------------------------------
     verdict = "done" if done_line else "DID NOT FINISH"

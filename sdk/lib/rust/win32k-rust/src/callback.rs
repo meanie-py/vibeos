@@ -11,7 +11,7 @@ extern "C" {
     fn IntLoadSystenIcons(hcur: HICON, id: DWORD);
 }
 extern "system" {
-    fn SafeProbeForRead(Address: PVOID, Length: ULONG, Alignment: ULONG) -> NTSTATUS;
+    fn SafeProbeForRead(Address: PVOID, Length: SIZE_T, Alignment: ULONG) -> NTSTATUS;
 }
 
 // UserEnterCo()/UserLeaveCo() are ntuser.h macros for UserEnterExclusive()/
@@ -246,7 +246,7 @@ unsafe fn IntRestoreTebWndCallback(hWnd: HWND, pWnd: PWND, pActCtx: *mut core::f
 }
 #[cfg(target_arch = "x86")]
 #[no_mangle]
-pub unsafe extern "stdcall" fn co_IntClientLoadLibrary(
+pub unsafe extern "system" fn co_IntClientLoadLibrary(
     pstrLibName: PUNICODE_STRING,
     pstrInitFunc: PUNICODE_STRING,
     Unload: BOOL,
@@ -346,7 +346,7 @@ pub unsafe extern "stdcall" fn co_IntClientLoadLibrary(
 
 #[cfg(not(target_arch = "x86"))]
 #[no_mangle]
-pub unsafe extern "C" fn co_IntClientLoadLibrary(
+pub unsafe extern "system" fn co_IntClientLoadLibrary(
     pstrLibName: PUNICODE_STRING,
     pstrInitFunc: PUNICODE_STRING,
     Unload: BOOL,
@@ -433,7 +433,7 @@ pub unsafe extern "C" fn co_IntClientLoadLibrary(
         return 0;
     }
 
-    Status = SafeProbeForRead(ResultPointer, core::mem::size_of::<HMODULE>() as ULONG, 1);
+    Status = SafeProbeForRead(ResultPointer, core::mem::size_of::<HMODULE>() as _, 1);
     if !NT_SUCCESS(Status) {
         bResult = 0;
     } else {
@@ -443,9 +443,8 @@ pub unsafe extern "C" fn co_IntClientLoadLibrary(
 
     bResult
 }
-#[cfg(target_arch = "x86")]
 #[no_mangle]
-pub unsafe extern "stdcall" fn co_IntCallSentMessageCallback(
+pub unsafe extern "system" fn co_IntCallSentMessageCallback(
     CompletionCallback: SENDASYNCPROC,
     mut hWnd: HWND,
     Msg: UINT,
@@ -485,168 +484,8 @@ pub unsafe extern "stdcall" fn co_IntCallSentMessageCallback(
         return;
     }
 }
-
-#[cfg(not(target_arch = "x86"))]
 #[no_mangle]
-pub unsafe extern "C" fn co_IntCallSentMessageCallback(
-    CompletionCallback: SENDASYNCPROC,
-    mut hWnd: HWND,
-    Msg: UINT,
-    CompletionCallbackContext: ULONG_PTR,
-    Result: LRESULT,
-) {
-    let mut Arguments: SENDASYNCPROC_CALLBACK_ARGUMENTS = core::mem::zeroed();
-    let mut ResultPointer: PVOID = core::ptr::null_mut();
-    let mut pActCtx: PVOID = core::ptr::null_mut();
-    let mut pWnd: PWND = core::ptr::null_mut();
-    let mut ResultLength: ULONG = 0;
-    let Status: NTSTATUS;
-
-    Arguments.Callback = CompletionCallback;
-    Arguments.Wnd = hWnd;
-    Arguments.Msg = Msg;
-    Arguments.Context = CompletionCallbackContext;
-    Arguments.Result = Result;
-
-    IntSetTebWndCallback(&mut hWnd, &mut pWnd, &mut pActCtx);
-
-    UserLeaveCo();
-
-    Status = KeUserModeCallback(
-        USER32_CALLBACK_SENDASYNCPROC,
-        core::ptr::addr_of_mut!(Arguments) as PVOID,
-        core::mem::size_of::<SENDASYNCPROC_CALLBACK_ARGUMENTS>() as ULONG,
-        &mut ResultPointer,
-        &mut ResultLength,
-    );
-
-    UserEnterCo();
-
-    IntRestoreTebWndCallback(hWnd, pWnd, pActCtx);
-
-    if !NT_SUCCESS(Status) {
-        return;
-    }
-}
-#[cfg(target_arch = "x86")]
-#[no_mangle]
-pub unsafe extern "stdcall" fn co_IntCallWindowProc(
-    Proc: WNDPROC,
-    IsAnsiProc: BOOLEAN,
-    mut Wnd: HWND,
-    Message: UINT,
-    wParam: WPARAM,
-    lParam: LPARAM,
-    lParamBufferSize: INT,
-) -> LRESULT {
-    let mut StackArguments: WINDOWPROC_CALLBACK_ARGUMENTS = core::mem::zeroed();
-    let Arguments: PWINDOWPROC_CALLBACK_ARGUMENTS;
-    let Status: NTSTATUS;
-    let mut ResultPointer: PVOID;
-    let mut pActCtx: PVOID = core::ptr::null_mut();
-    let mut pWnd: PWND = core::ptr::null_mut();
-    let mut ResultLength: ULONG;
-    let ArgumentLength: ULONG;
-    let Result: LRESULT;
-
-    if lParamBufferSize != -1 {
-        ArgumentLength = core::mem::size_of::<WINDOWPROC_CALLBACK_ARGUMENTS>() as ULONG
-            + lParamBufferSize as ULONG;
-        Arguments = IntCbAllocateMemory(ArgumentLength) as PWINDOWPROC_CALLBACK_ARGUMENTS;
-        if Arguments.is_null() {
-            return -1;
-        }
-        core::ptr::copy(
-            lParam as PVOID,
-            (Arguments as *mut core::ffi::c_char)
-                .add(core::mem::size_of::<WINDOWPROC_CALLBACK_ARGUMENTS>()) as PVOID,
-            lParamBufferSize as usize,
-        );
-    } else {
-        Arguments = core::ptr::addr_of_mut!(StackArguments);
-        ArgumentLength = core::mem::size_of::<WINDOWPROC_CALLBACK_ARGUMENTS>() as ULONG;
-    }
-    (*Arguments).Proc = Proc;
-    (*Arguments).IsAnsiProc = IsAnsiProc as _;
-    (*Arguments).Wnd = Wnd;
-    (*Arguments).Msg = Message;
-    (*Arguments).wParam = wParam;
-    (*Arguments).lParam = lParam;
-    (*Arguments).lParamBufferSize = lParamBufferSize;
-    ResultPointer = core::ptr::null_mut();
-    ResultLength = ArgumentLength;
-
-    IntSetTebWndCallback(&mut Wnd, &mut pWnd, &mut pActCtx);
-
-    UserLeaveCo();
-
-    Status = KeUserModeCallback(
-        USER32_CALLBACK_WINDOWPROC,
-        Arguments as PVOID,
-        ArgumentLength,
-        &mut ResultPointer,
-        &mut ResultLength,
-    );
-    if !NT_SUCCESS(Status) {
-        UserEnterCo();
-        return 0;
-    }
-
-    core::ptr::copy(
-        ResultPointer,
-        Arguments as PVOID,
-        ArgumentLength as usize,
-    );
-
-    UserEnterCo();
-
-    IntRestoreTebWndCallback(Wnd, pWnd, pActCtx);
-
-    if !NT_SUCCESS(Status) {
-        if lParamBufferSize != -1 {
-            IntCbFreeMemory(Arguments as PVOID);
-        }
-        return -1;
-    }
-
-    Result = (*Arguments).Result;
-
-    if lParamBufferSize != -1 {
-        let pti: PTHREADINFO = PsGetCurrentThreadWin32Thread() as PTHREADINFO;
-        let InSendMessage: BOOL = (((*(*pti).pcti).CTI_flags & CTI_INSENDMESSAGE) != 0) as BOOL;
-
-        match Message {
-            WM_CREATE | WM_GETMINMAXINFO | WM_GETTEXT | WM_NCCALCSIZE | WM_NCCREATE
-            | WM_STYLECHANGING | WM_WINDOWPOSCHANGING | WM_SIZING | WM_MOVING
-            | WM_MEASUREITEM | WM_NEXTMENU => {
-                if InSendMessage != 0 {
-                    core::ptr::copy(
-                        (Arguments as *mut core::ffi::c_char)
-                            .add(core::mem::size_of::<WINDOWPROC_CALLBACK_ARGUMENTS>())
-                            as PVOID,
-                        lParam as PVOID,
-                        lParamBufferSize as usize,
-                    );
-                } else {
-                    core::ptr::copy(
-                        (Arguments as *mut core::ffi::c_char)
-                            .add(core::mem::size_of::<WINDOWPROC_CALLBACK_ARGUMENTS>())
-                            as PVOID,
-                        lParam as PVOID,
-                        lParamBufferSize as usize,
-                    );
-                }
-            }
-            _ => {}
-        }
-        IntCbFreeMemory(Arguments as PVOID);
-    }
-    Result
-}
-
-#[cfg(not(target_arch = "x86"))]
-#[no_mangle]
-pub unsafe extern "C" fn co_IntCallWindowProc(
+pub unsafe extern "system" fn co_IntCallWindowProc(
     Proc: WNDPROC,
     IsAnsiProc: BOOLEAN,
     mut Wnd: HWND,
@@ -761,7 +600,7 @@ pub unsafe extern "C" fn co_IntCallWindowProc(
 }
 #[cfg(target_arch = "x86")]
 #[no_mangle]
-pub unsafe extern "stdcall" fn co_IntLoadSysMenuTemplate() -> HMENU {
+pub unsafe extern "system" fn co_IntLoadSysMenuTemplate() -> HMENU {
     let mut Result: LRESULT = 0;
     let mut Status: NTSTATUS;
     let mut ResultPointer: PVOID;
@@ -796,7 +635,7 @@ pub unsafe extern "stdcall" fn co_IntLoadSysMenuTemplate() -> HMENU {
 
 #[cfg(not(target_arch = "x86"))]
 #[no_mangle]
-pub unsafe extern "C" fn co_IntLoadSysMenuTemplate() -> HMENU {
+pub unsafe extern "system" fn co_IntLoadSysMenuTemplate() -> HMENU {
     let mut Result: LRESULT = 0;
     let mut Status: NTSTATUS;
     let mut ResultPointer: PVOID;
@@ -816,7 +655,7 @@ pub unsafe extern "C" fn co_IntLoadSysMenuTemplate() -> HMENU {
     );
 
     if NT_SUCCESS(Status) {
-        Status = SafeProbeForRead(ResultPointer, core::mem::size_of::<LRESULT>() as ULONG, 1);
+        Status = SafeProbeForRead(ResultPointer, core::mem::size_of::<LRESULT>() as _, 1);
         if !NT_SUCCESS(Status) {
             Result = 0;
         } else {
@@ -828,9 +667,8 @@ pub unsafe extern "C" fn co_IntLoadSysMenuTemplate() -> HMENU {
 
     Result as HMENU
 }
-#[cfg(target_arch = "x86")]
 #[no_mangle]
-pub unsafe extern "stdcall" fn co_IntLoadDefaultCursors() -> BOOL {
+pub unsafe extern "system" fn co_IntLoadDefaultCursors() -> BOOL {
     let Status: NTSTATUS;
     let mut ResultPointer: PVOID;
     let mut ResultLength: ULONG;
@@ -859,41 +697,8 @@ pub unsafe extern "stdcall" fn co_IntLoadDefaultCursors() -> BOOL {
 
     1
 }
-
-#[cfg(not(target_arch = "x86"))]
 #[no_mangle]
-pub unsafe extern "C" fn co_IntLoadDefaultCursors() -> BOOL {
-    let Status: NTSTATUS;
-    let mut ResultPointer: PVOID;
-    let mut ResultLength: ULONG;
-    let mut DefaultCursor: BOOL = 1;
-
-    ResultPointer = core::ptr::null_mut();
-    ResultLength = core::mem::size_of::<HCURSOR>() as ULONG;
-
-    UserLeaveCo();
-
-    Status = KeUserModeCallback(
-        USER32_CALLBACK_LOADDEFAULTCURSORS,
-        core::ptr::addr_of_mut!(DefaultCursor) as PVOID,
-        core::mem::size_of::<BOOL>() as ULONG,
-        core::ptr::addr_of_mut!(ResultPointer),
-        core::ptr::addr_of_mut!(ResultLength),
-    );
-
-    UserEnterCo();
-
-    if !NT_SUCCESS(Status) {
-        return 0;
-    }
-
-    crate::desktop::gDesktopCursor = *(ResultPointer as *mut HCURSOR);
-
-    1
-}
-#[cfg(target_arch = "x86")]
-#[no_mangle]
-pub unsafe extern "stdcall" fn co_IntCallHookProc(
+pub unsafe extern "system" fn co_IntCallHookProc(
     HookId: INT,
     Code: INT,
     wParam: WPARAM,
@@ -1223,342 +1028,8 @@ pub unsafe extern "stdcall" fn co_IntCallHookProc(
 
     Result
 }
-
-#[cfg(not(target_arch = "x86"))]
 #[no_mangle]
-pub unsafe extern "C" fn co_IntCallHookProc(
-    HookId: INT,
-    Code: INT,
-    wParam: WPARAM,
-    lParam: LPARAM,
-    Proc: HOOKPROC,
-    Mod: INT,
-    offPfn: ULONG_PTR,
-    Ansi: BOOLEAN,
-    ModuleName: PUNICODE_STRING,
-) -> LRESULT {
-    let mut ArgumentLength: ULONG;
-    let mut Argument: PVOID = core::ptr::null_mut();
-    let mut Result: LRESULT = 0;
-    let Status: NTSTATUS;
-    let mut ResultPointer: PVOID;
-    let mut ResultLength: ULONG;
-    let Common: PHOOKPROC_CALLBACK_ARGUMENTS;
-    let mut CbtCreateWnd: *mut CBT_CREATEWNDW = core::ptr::null_mut();
-    let mut Extra: PCHAR = core::ptr::null_mut();
-    let mut CbtCreatewndExtra: PHOOKPROC_CBT_CREATEWND_EXTRA_ARGUMENTS = core::ptr::null_mut();
-    let pti: PTHREADINFO;
-    let pWnd: PWND;
-    let mut pMsg: PMSG = core::ptr::null_mut();
-    let mut Hit: BOOL = 0;
-    let mut lParamSize: UINT = 0;
-    let mut pCWP: *mut CWPSTRUCT = core::ptr::null_mut();
-    let mut pCWPR: *mut CWPRETSTRUCT = core::ptr::null_mut();
-
-    pti = PsGetCurrentThreadWin32Thread() as PTHREADINFO;
-    if (*pti).TIF_flags & TIF_INCLEANUP != 0 {
-        return 0;
-    }
-
-    ArgumentLength = core::mem::size_of::<HOOKPROC_CALLBACK_ARGUMENTS>() as ULONG;
-
-    'fault: {
-        match HookId {
-            x if x == WH_CBT as INT => {
-                match Code {
-                    c if c == HCBT_CREATEWND as INT => {
-                        pWnd = UserGetWindowObject(wParam as HWND);
-                        if pWnd.is_null() {
-                            break 'fault;
-                        }
-                        CbtCreateWnd = lParam as *mut CBT_CREATEWNDW;
-                        ArgumentLength +=
-                            core::mem::size_of::<HOOKPROC_CBT_CREATEWND_EXTRA_ARGUMENTS>() as ULONG;
-                    }
-                    c if c == HCBT_MOVESIZE as INT => {
-                        ArgumentLength += core::mem::size_of::<RECTL>() as ULONG;
-                    }
-                    c if c == HCBT_ACTIVATE as INT => {
-                        ArgumentLength += core::mem::size_of::<CBTACTIVATESTRUCT>() as ULONG;
-                    }
-                    c if c == HCBT_CLICKSKIPPED as INT => {
-                        ArgumentLength += core::mem::size_of::<MOUSEHOOKSTRUCT>() as ULONG;
-                    }
-                    c if c == HCBT_KEYSKIPPED as INT
-                        || c == HCBT_MINMAX as INT
-                        || c == HCBT_SETFOCUS as INT
-                        || c == HCBT_SYSCOMMAND as INT
-                        || c == HCBT_DESTROYWND as INT
-                        || c == HCBT_QS as INT =>
-                    {
-                    }
-                    _ => {
-                        break 'fault;
-                    }
-                }
-            }
-            x if x == WH_KEYBOARD_LL as INT => {
-                ArgumentLength += core::mem::size_of::<KBDLLHOOKSTRUCT>() as ULONG;
-            }
-            x if x == WH_MOUSE_LL as INT => {
-                ArgumentLength += core::mem::size_of::<MSLLHOOKSTRUCT>() as ULONG;
-            }
-            x if x == WH_MOUSE as INT => {
-                ArgumentLength += core::mem::size_of::<MOUSEHOOKSTRUCT>() as ULONG;
-            }
-            x if x == WH_CALLWNDPROC as INT => {
-                pCWP = lParam as *mut CWPSTRUCT;
-                ArgumentLength = core::mem::size_of::<CWP_Struct>() as ULONG;
-                if (*pCWP).message == WM_CREATE || (*pCWP).message == WM_NCCREATE {
-                    lParamSize = core::mem::size_of::<CREATESTRUCTW>() as UINT;
-                } else {
-                    lParamSize = lParamMemorySize((*pCWP).message, (*pCWP).wParam, (*pCWP).lParam);
-                }
-                ArgumentLength += lParamSize;
-            }
-            x if x == WH_CALLWNDPROCRET as INT => {
-                pCWPR = lParam as *mut CWPRETSTRUCT;
-                ArgumentLength = core::mem::size_of::<CWPR_Struct>() as ULONG;
-                if (*pCWPR).message == WM_CREATE || (*pCWPR).message == WM_NCCREATE {
-                    lParamSize = core::mem::size_of::<CREATESTRUCTW>() as UINT;
-                } else {
-                    lParamSize =
-                        lParamMemorySize((*pCWPR).message, (*pCWPR).wParam, (*pCWPR).lParam);
-                }
-                ArgumentLength += lParamSize;
-            }
-            x if x == WH_MSGFILTER as INT
-                || x == WH_SYSMSGFILTER as INT
-                || x == WH_GETMESSAGE as INT =>
-            {
-                ArgumentLength += core::mem::size_of::<MSG>() as ULONG;
-            }
-            x if x == WH_FOREGROUNDIDLE as INT
-                || x == WH_KEYBOARD as INT
-                || x == WH_SHELL as INT => {}
-            _ => {
-                break 'fault;
-            }
-        }
-
-        Argument = IntCbAllocateMemory(ArgumentLength);
-        if Argument.is_null() {
-            break 'fault;
-        }
-        Common = Argument as PHOOKPROC_CALLBACK_ARGUMENTS;
-        (*Common).HookId = HookId;
-        (*Common).Code = Code;
-        (*Common).wParam = wParam;
-        (*Common).lParam = lParam;
-        (*Common).Proc = Proc;
-        (*Common).Mod = Mod as _;
-        (*Common).offPfn = offPfn;
-        (*Common).Ansi = Ansi;
-        (*Common).lParamSize = lParamSize;
-        if !(*ModuleName).Buffer.is_null() && (*ModuleName).Length != 0 {
-            RtlCopyMemory(
-                core::ptr::addr_of_mut!((*Common).ModuleName) as PVOID,
-                (*ModuleName).Buffer as PVOID,
-                (*ModuleName).Length as SIZE_T,
-            );
-        }
-        Extra = (Common as PCHAR)
-            .add(core::mem::size_of::<HOOKPROC_CALLBACK_ARGUMENTS>());
-
-        match HookId {
-            x if x == WH_CBT as INT => match Code {
-                c if c == HCBT_CREATEWND as INT => {
-                    CbtCreatewndExtra = Extra as PHOOKPROC_CBT_CREATEWND_EXTRA_ARGUMENTS;
-                    RtlCopyMemory(
-                        core::ptr::addr_of_mut!((*CbtCreatewndExtra).Cs) as PVOID,
-                        (*CbtCreateWnd).lpcs as PVOID,
-                        core::mem::size_of::<CREATESTRUCTW>() as SIZE_T,
-                    );
-                    (*CbtCreatewndExtra).WndInsertAfter = (*CbtCreateWnd).hwndInsertAfter;
-                    (*CbtCreatewndExtra).Cs.lpszClass = (*(*CbtCreateWnd).lpcs).lpszClass;
-                    (*CbtCreatewndExtra).Cs.lpszName = (*(*CbtCreateWnd).lpcs).lpszName;
-                    (*Common).lParam =
-                        (Extra as isize - Common as PCHAR as isize) as LPARAM;
-                }
-                c if c == HCBT_CLICKSKIPPED as INT => {
-                    RtlCopyMemory(
-                        Extra as PVOID,
-                        lParam as PVOID,
-                        core::mem::size_of::<MOUSEHOOKSTRUCT>() as SIZE_T,
-                    );
-                    (*Common).lParam =
-                        (Extra as isize - Common as PCHAR as isize) as LPARAM;
-                }
-                c if c == HCBT_MOVESIZE as INT => {
-                    RtlCopyMemory(
-                        Extra as PVOID,
-                        lParam as PVOID,
-                        core::mem::size_of::<RECTL>() as SIZE_T,
-                    );
-                    (*Common).lParam =
-                        (Extra as isize - Common as PCHAR as isize) as LPARAM;
-                }
-                c if c == HCBT_ACTIVATE as INT => {
-                    RtlCopyMemory(
-                        Extra as PVOID,
-                        lParam as PVOID,
-                        core::mem::size_of::<CBTACTIVATESTRUCT>() as SIZE_T,
-                    );
-                    (*Common).lParam =
-                        (Extra as isize - Common as PCHAR as isize) as LPARAM;
-                }
-                _ => {}
-            },
-            x if x == WH_KEYBOARD_LL as INT => {
-                RtlCopyMemory(
-                    Extra as PVOID,
-                    lParam as PVOID,
-                    core::mem::size_of::<KBDLLHOOKSTRUCT>() as SIZE_T,
-                );
-                (*Common).lParam = (Extra as isize - Common as PCHAR as isize) as LPARAM;
-            }
-            x if x == WH_MOUSE_LL as INT => {
-                RtlCopyMemory(
-                    Extra as PVOID,
-                    lParam as PVOID,
-                    core::mem::size_of::<MSLLHOOKSTRUCT>() as SIZE_T,
-                );
-                (*Common).lParam = (Extra as isize - Common as PCHAR as isize) as LPARAM;
-            }
-            x if x == WH_MOUSE as INT => {
-                RtlCopyMemory(
-                    Extra as PVOID,
-                    lParam as PVOID,
-                    core::mem::size_of::<MOUSEHOOKSTRUCT>() as SIZE_T,
-                );
-                (*Common).lParam = (Extra as isize - Common as PCHAR as isize) as LPARAM;
-            }
-            x if x == WH_CALLWNDPROC as INT => {
-                let pcwps: PCWP_Struct = Common as PCWP_Struct;
-                RtlCopyMemory(
-                    core::ptr::addr_of_mut!((*pcwps).cwps) as PVOID,
-                    pCWP as PVOID,
-                    core::mem::size_of::<CWPSTRUCT>() as SIZE_T,
-                );
-                if lParamSize != 0 {
-                    RtlCopyMemory(
-                        core::ptr::addr_of_mut!((*pcwps).Extra) as PVOID,
-                        (*pCWP).lParam as PVOID,
-                        lParamSize as SIZE_T,
-                    );
-                }
-            }
-            x if x == WH_CALLWNDPROCRET as INT => {
-                let pcwprs: PCWPR_Struct = Common as PCWPR_Struct;
-                RtlCopyMemory(
-                    core::ptr::addr_of_mut!((*pcwprs).cwprs) as PVOID,
-                    pCWPR as PVOID,
-                    core::mem::size_of::<CWPRETSTRUCT>() as SIZE_T,
-                );
-                if lParamSize != 0 {
-                    RtlCopyMemory(
-                        core::ptr::addr_of_mut!((*pcwprs).Extra) as PVOID,
-                        (*pCWPR).lParam as PVOID,
-                        lParamSize as SIZE_T,
-                    );
-                }
-            }
-            x if x == WH_MSGFILTER as INT
-                || x == WH_SYSMSGFILTER as INT
-                || x == WH_GETMESSAGE as INT =>
-            {
-                pMsg = lParam as PMSG;
-                RtlCopyMemory(
-                    Extra as PVOID,
-                    pMsg as PVOID,
-                    core::mem::size_of::<MSG>() as SIZE_T,
-                );
-                (*Common).lParam = (Extra as isize - Common as PCHAR as isize) as LPARAM;
-            }
-            _ => {}
-        }
-
-        ResultPointer = core::ptr::null_mut();
-        ResultLength = ArgumentLength;
-
-        UserLeaveCo();
-
-        Status = KeUserModeCallback(
-            USER32_CALLBACK_HOOKPROC,
-            Argument,
-            ArgumentLength,
-            &mut ResultPointer,
-            &mut ResultLength,
-        );
-
-        UserEnterCo();
-
-        if !NT_SUCCESS(Status) {
-            if iTheId != HookId {
-                iTheId = HookId;
-            }
-            break 'fault;
-        }
-
-        if !ResultPointer.is_null() {
-            core::ptr::copy(ResultPointer, Argument, ArgumentLength as usize);
-            Result = (*Common).Result;
-        }
-
-        match HookId {
-            x if x == WH_CBT as INT => {
-                match Code {
-                    c if c == HCBT_CREATEWND as INT => {
-                        if !CbtCreatewndExtra.is_null() {
-                            (*CbtCreateWnd).hwndInsertAfter = (*CbtCreatewndExtra).WndInsertAfter;
-                            (*(*CbtCreateWnd).lpcs).x = (*CbtCreatewndExtra).Cs.x;
-                            (*(*CbtCreateWnd).lpcs).y = (*CbtCreatewndExtra).Cs.y;
-                            (*(*CbtCreateWnd).lpcs).cx = (*CbtCreatewndExtra).Cs.cx;
-                            (*(*CbtCreateWnd).lpcs).cy = (*CbtCreatewndExtra).Cs.cy;
-                        }
-                    }
-                    c if c == HCBT_MOVESIZE as INT => {
-                        if !Extra.is_null() && lParam != 0 {
-                            RtlCopyMemory(
-                                lParam as PVOID,
-                                Extra as PVOID,
-                                core::mem::size_of::<RECTL>() as SIZE_T,
-                            );
-                        }
-                    }
-                    _ => {}
-                }
-                if !pMsg.is_null() {
-                    RtlCopyMemory(
-                        pMsg as PVOID,
-                        Extra as PVOID,
-                        core::mem::size_of::<MSG>() as SIZE_T,
-                    );
-                }
-            }
-            x if x == WH_GETMESSAGE as INT => {
-                if !pMsg.is_null() {
-                    RtlCopyMemory(
-                        pMsg as PVOID,
-                        Extra as PVOID,
-                        core::mem::size_of::<MSG>() as SIZE_T,
-                    );
-                }
-            }
-            _ => {}
-        }
-    }
-
-    if Hit != 0 {}
-    if !Argument.is_null() {
-        IntCbFreeMemory(Argument);
-    }
-
-    Result
-}
-#[cfg(target_arch = "x86")]
-#[no_mangle]
-pub unsafe extern "stdcall" fn co_IntCallEventProc(
+pub unsafe extern "system" fn co_IntCallEventProc(
     hook: HWINEVENTHOOK,
     event: DWORD,
     hWnd: HWND,
@@ -1620,74 +1091,8 @@ pub unsafe extern "stdcall" fn co_IntCallEventProc(
 
     Result
 }
-
-#[cfg(not(target_arch = "x86"))]
 #[no_mangle]
-pub unsafe extern "C" fn co_IntCallEventProc(
-    hook: HWINEVENTHOOK,
-    event: DWORD,
-    hWnd: HWND,
-    idObject: LONG,
-    idChild: LONG,
-    dwEventThread: DWORD,
-    dwmsEventTime: DWORD,
-    Proc: WINEVENTPROC,
-    Mod: INT,
-    offPfn: ULONG_PTR,
-) -> LRESULT {
-    let Result: LRESULT = 0;
-    let Status: NTSTATUS;
-    let Common: PEVENTPROC_CALLBACK_ARGUMENTS;
-    let ArgumentLength: ULONG;
-    let mut ResultLength: ULONG;
-    let Argument: PVOID;
-    let mut ResultPointer: PVOID;
-
-    ArgumentLength = core::mem::size_of::<EVENTPROC_CALLBACK_ARGUMENTS>() as ULONG;
-
-    Argument = IntCbAllocateMemory(ArgumentLength);
-    if Argument.is_null() {
-        ERR!(b"EventProc callback failed: out of memory\n\0".as_ptr() as *const u8);
-        return 0;
-    }
-    Common = Argument as PEVENTPROC_CALLBACK_ARGUMENTS;
-    (*Common).hook = hook;
-    (*Common).event = event;
-    (*Common).hwnd = hWnd;
-    (*Common).idObject = idObject;
-    (*Common).idChild = idChild;
-    (*Common).dwEventThread = dwEventThread;
-    (*Common).dwmsEventTime = dwmsEventTime;
-    (*Common).Proc = Proc;
-    (*Common).Mod = Mod as _;
-    (*Common).offPfn = offPfn;
-
-    ResultPointer = core::ptr::null_mut();
-    ResultLength = core::mem::size_of::<LRESULT>() as ULONG;
-
-    UserLeaveCo();
-
-    Status = KeUserModeCallback(
-        USER32_CALLBACK_EVENTPROC,
-        Argument,
-        ArgumentLength,
-        &mut ResultPointer,
-        &mut ResultLength,
-    );
-
-    UserEnterCo();
-
-    IntCbFreeMemory(Argument);
-
-    if !NT_SUCCESS(Status) {
-        return 0;
-    }
-
-    Result
-}
-#[cfg(target_arch = "x86")]
-#[no_mangle]
-pub unsafe extern "stdcall" fn co_IntCallLoadMenu(
+pub unsafe extern "system" fn co_IntCallLoadMenu(
     hModule: HINSTANCE,
     pMenuName: PUNICODE_STRING,
 ) -> HMENU {
@@ -1746,100 +1151,8 @@ pub unsafe extern "stdcall" fn co_IntCallLoadMenu(
 
     Result as HMENU
 }
-
-#[cfg(not(target_arch = "x86"))]
 #[no_mangle]
-pub unsafe extern "C" fn co_IntCallLoadMenu(
-    hModule: HINSTANCE,
-    pMenuName: PUNICODE_STRING,
-) -> HMENU {
-    let mut Result: LRESULT = 0;
-    let Status: NTSTATUS;
-    let Common: PLOADMENU_CALLBACK_ARGUMENTS;
-    let mut ArgumentLength: ULONG;
-    let mut ResultLength: ULONG;
-    let Argument: PVOID;
-    let mut ResultPointer: PVOID;
-
-    ArgumentLength = core::mem::size_of::<LOADMENU_CALLBACK_ARGUMENTS>() as ULONG;
-
-    ArgumentLength += (*pMenuName).Length as ULONG + core::mem::size_of::<u16>() as ULONG;
-
-    Argument = IntCbAllocateMemory(ArgumentLength);
-    if Argument.is_null() {
-        ERR!(b"LoadMenu callback failed: out of memory\n\0".as_ptr() as *const u8);
-        return 0 as HMENU;
-    }
-    Common = Argument as PLOADMENU_CALLBACK_ARGUMENTS;
-
-    (*Common).hModule = hModule;
-    if (*pMenuName).Length != 0 {
-        RtlCopyMemory(
-            core::ptr::addr_of_mut!((*Common).MenuName) as PVOID,
-            (*pMenuName).Buffer as PVOID,
-            (*pMenuName).Length as SIZE_T,
-        );
-    } else {
-        (*Common).InterSource = (*pMenuName).Buffer;
-    }
-
-    ResultPointer = core::ptr::null_mut();
-    ResultLength = core::mem::size_of::<LRESULT>() as ULONG;
-
-    UserLeaveCo();
-
-    Status = KeUserModeCallback(
-        USER32_CALLBACK_LOADMENU,
-        Argument,
-        ArgumentLength,
-        &mut ResultPointer,
-        &mut ResultLength,
-    );
-
-    UserEnterCo();
-
-    if NT_SUCCESS(Status) {
-        Result = *(ResultPointer as *mut LRESULT);
-    } else {
-        Result = 0;
-    }
-
-    IntCbFreeMemory(Argument);
-
-    Result as HMENU
-}
-#[cfg(target_arch = "x86")]
-#[no_mangle]
-pub unsafe extern "stdcall" fn co_IntClientThreadSetup() -> NTSTATUS {
-    let Status: NTSTATUS;
-    let ArgumentLength: ULONG;
-    let mut ResultLength: ULONG;
-    let Argument: PVOID;
-    let mut ResultPointer: PVOID;
-
-    ArgumentLength = 0;
-    ResultLength = 0;
-    Argument = core::ptr::null_mut();
-    ResultPointer = core::ptr::null_mut();
-
-    UserLeaveCo();
-
-    Status = KeUserModeCallback(
-        USER32_CALLBACK_CLIENTTHREADSTARTUP as ULONG,
-        Argument,
-        ArgumentLength,
-        core::ptr::addr_of_mut!(ResultPointer),
-        core::ptr::addr_of_mut!(ResultLength),
-    );
-
-    UserEnterCo();
-
-    Status
-}
-
-#[cfg(not(target_arch = "x86"))]
-#[no_mangle]
-pub unsafe extern "C" fn co_IntClientThreadSetup() -> NTSTATUS {
+pub unsafe extern "system" fn co_IntClientThreadSetup() -> NTSTATUS {
     let Status: NTSTATUS;
     let ArgumentLength: ULONG;
     let mut ResultLength: ULONG;
@@ -1945,63 +1258,8 @@ unsafe fn co_IntCopyImage_impl(
 
     Handle
 }
-#[cfg(target_arch = "x86")]
 #[no_mangle]
-pub unsafe extern "stdcall" fn co_IntGetCharsetInfo(Locale: LCID, pCs: PCHARSETINFO) -> BOOL {
-    let mut Status: NTSTATUS;
-    let ArgumentLength: ULONG;
-    let mut ResultLength: ULONG;
-    let Argument: PVOID;
-    let mut ResultPointer: PVOID;
-    let Common: PGET_CHARSET_INFO;
-
-    ArgumentLength = core::mem::size_of::<GET_CHARSET_INFO>() as ULONG;
-
-    Argument = IntCbAllocateMemory(ArgumentLength);
-    if Argument.is_null() {
-        return 0;
-    }
-    Common = Argument as PGET_CHARSET_INFO;
-
-    (*Common).Locale = Locale;
-
-    ResultPointer = core::ptr::null_mut();
-    ResultLength = ArgumentLength;
-
-    UserLeaveCo();
-
-    Status = KeUserModeCallback(
-        USER32_CALLBACK_GETCHARSETINFO,
-        Argument,
-        ArgumentLength,
-        &mut ResultPointer,
-        &mut ResultLength,
-    );
-
-    if NT_SUCCESS(Status) {
-        core::ptr::copy(ResultPointer, Argument, ArgumentLength as usize);
-    }
-
-    UserEnterCo();
-
-    RtlCopyMemory(
-        pCs as PVOID,
-        core::ptr::addr_of_mut!((*Common).Cs) as PVOID,
-        core::mem::size_of::<CHARSETINFO>() as SIZE_T,
-    );
-
-    IntCbFreeMemory(Argument);
-
-    if !NT_SUCCESS(Status) {
-        return 0;
-    }
-
-    1
-}
-
-#[cfg(not(target_arch = "x86"))]
-#[no_mangle]
-pub unsafe extern "C" fn co_IntGetCharsetInfo(Locale: LCID, pCs: PCHARSETINFO) -> BOOL {
+pub unsafe extern "system" fn co_IntGetCharsetInfo(Locale: LCID, pCs: PCHARSETINFO) -> BOOL {
     let mut Status: NTSTATUS;
     let ArgumentLength: ULONG;
     let mut ResultLength: ULONG;
@@ -2236,47 +1494,8 @@ pub unsafe extern "system" fn co_UserCBClientPrinterThunk(
 
     0
 }
-#[cfg(target_arch = "x86")]
 #[no_mangle]
-pub unsafe extern "stdcall" fn co_IntImmProcessKey(
-    hWnd: HWND,
-    hKL: HKL,
-    vKey: UINT,
-    lParam: LPARAM,
-    dwHotKeyID: DWORD,
-) -> DWORD {
-    let mut ret: DWORD = 0;
-    let Status: NTSTATUS;
-    let mut ResultLength: ULONG = core::mem::size_of::<DWORD>() as ULONG;
-    let mut ResultPointer: PVOID = core::ptr::null_mut();
-    let mut Common: IMMPROCESSKEY_CALLBACK_ARGUMENTS = IMMPROCESSKEY_CALLBACK_ARGUMENTS {
-        hWnd,
-        hKL,
-        vKey,
-        lParam,
-        dwHotKeyID,
-    };
-
-    UserLeaveCo();
-    Status = KeUserModeCallback(
-        USER32_CALLBACK_IMMPROCESSKEY,
-        core::ptr::addr_of_mut!(Common) as PVOID,
-        core::mem::size_of::<IMMPROCESSKEY_CALLBACK_ARGUMENTS>() as ULONG,
-        &mut ResultPointer,
-        &mut ResultLength,
-    );
-    UserEnterCo();
-
-    if NT_SUCCESS(Status) {
-        ret = *(ResultPointer as LPDWORD);
-    }
-
-    ret
-}
-
-#[cfg(not(target_arch = "x86"))]
-#[no_mangle]
-pub unsafe extern "C" fn co_IntImmProcessKey(
+pub unsafe extern "system" fn co_IntImmProcessKey(
     hWnd: HWND,
     hKL: HKL,
     vKey: UINT,
@@ -2349,7 +1568,7 @@ pub unsafe extern "system" fn co_ClientImmLoadLayout(
         return 0;
     }
 
-    Status = SafeProbeForRead(ResultPointer as *mut _, ResultLength as ULONG, 1);
+    Status = SafeProbeForRead(ResultPointer as *mut _, ResultLength as _, 1);
     if !NT_SUCCESS(Status) {
         ret = 0;
     } else {

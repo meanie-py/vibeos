@@ -302,7 +302,7 @@ extern "C" {
     fn sprintf(s: *mut i8, format: *const i8, ...) -> i32;
     fn KdbpEnableBreakPoint(BreakPointNr: ULONG, CanBeChanged: *mut BOOLEAN) -> BOOLEAN;
     fn KdbpDisableBreakPoint(BreakPointNr: ULONG, CanBeChanged: *mut BOOLEAN) -> BOOLEAN;
-    fn KdbpDeleteBreakPoint(BreakPointNr: ULONG, BreakPoint: *mut *mut core::ffi::c_void) -> BOOLEAN;
+    fn KdbpDeleteBreakPoint(BreakPointNr: ULONG, BreakPoint: PKDB_BREAKPOINT) -> BOOLEAN;
     fn KdbpAttachToThread(ThreadId: PVOID) -> BOOLEAN;
     fn KeGetTrapFrameFrameRegister(TrapFrame: PVOID) -> ULONG_PTR;
     fn KeGetTrapFrameStackRegister(TrapFrame: PVOID) -> ULONG_PTR;

@@ -150,7 +150,9 @@ fn UlongToHandle(ul: ULONG) -> HANDLE {
     ul as ULONG_PTR as usize as HANDLE
 }
 
-// L"\\.\DISPLAY" (11 wide chars + NUL) and L"DISPLAY" (7 wide chars + NUL).
+// L"\\\\.\\DISPLAY" (11 wide chars + NUL) and L"DISPLAY" (7 wide chars + NUL).
+// Backslashes are doubled so this reads as the STRING `\\.\DISPLAY`, not as C source: a bare
+// `\D` is an escape nothing models, which silently voids this alternative as a specification.
 static WSZ_DISPLAY_DEVICE: [WCHAR; 12] = [
     b'\\' as WCHAR,
     b'\\' as WCHAR,

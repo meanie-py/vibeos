@@ -55,7 +55,7 @@ extern "system" {
     fn WDF_OBJECT_ATTRIBUTES_INIT_CONTEXT_TYPE( attr: *mut WDF_OBJECT_ATTRIBUTES, context_type: *const core::ffi::c_void, );
 }
 unsafe extern "C" {
-    fn UNREFERENCED_PARAMETER(param: NTSTATUS);
+    fn UNREFERENCED_PARAMETER(param: usize);
 }
 
 // These two are cdecl, NOT stdcall — they were mis-declared in the `extern "system"` block
@@ -2054,7 +2054,7 @@ pub unsafe extern "C" fn DeviceIsMediaChangeDisabledDueToHardwareLimitation(
                 &raw const device_unicode_string as *mut core::ffi::c_void,
                 core::ptr::null_mut(),
             );
-            UNREFERENCED_PARAMETER(status);
+            UNREFERENCED_PARAMETER((status) as usize);
         }
     }
 

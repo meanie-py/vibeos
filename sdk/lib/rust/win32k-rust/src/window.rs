@@ -272,8 +272,8 @@ unsafe fn DesktopHeapAddressToUser(lpMem: PVOID) -> PVOID {
 }
 // NTAPI (`_Name@N` stdcall on i386) real exports.
 extern "system" {
-    fn SafeProbeForRead(addr: *mut c_void, len: ULONG, align: ULONG) -> NTSTATUS;
-    fn SafeProbeForWrite(addr: *mut c_void, len: ULONG, align: ULONG) -> NTSTATUS;
+    fn SafeProbeForRead(addr: *mut c_void, len: SIZE_T, align: ULONG) -> NTSTATUS;
+    fn SafeProbeForWrite(addr: *mut c_void, len: SIZE_T, align: ULONG) -> NTSTATUS;
 }
 // FASTCALL (`@Name@N` on i386 / cdecl elsewhere) real exports.
 #[cfg(target_arch = "x86")]
@@ -2288,155 +2288,8 @@ unsafe fn IntFreeHwndList_impl(pwlTarget: PWINDOWLIST) {
         break;
     }
 }
-#[cfg(target_arch = "x86")]
 #[no_mangle]
-pub unsafe extern "stdcall" fn NtUserBuildHwndList(
-    hDesktop: HDESK,
-    mut hwndParent: HWND,
-    bChildren: BOOLEAN,
-    dwThreadId: ULONG,
-    cHwnd: ULONG,
-    mut phwndList: *mut HWND,
-    pcHwndNeeded: *mut ULONG,
-) -> NTSTATUS {
-    let mut Status: NTSTATUS;
-    let mut dwCount: ULONG = 0;
-
-    if pcHwndNeeded.is_null() {
-        return STATUS_INVALID_PARAMETER;
-    }
-
-    UserEnterExclusive();
-
-    let mut hDesktop = hDesktop;
-
-    'quit: {
-        if !hwndParent.is_null() || dwThreadId == 0 {
-            let mut Desktop: PDESKTOP = core::ptr::null_mut();
-
-            if hwndParent.is_null() {
-                if hDesktop.is_null() {
-                    Desktop = IntGetActiveDesktop();
-                    if Desktop.is_null() {
-                        Status = STATUS_INVALID_HANDLE;
-                        break 'quit;
-                    }
-                }
-
-                if !hDesktop.is_null() {
-                    Status = IntValidateDesktopHandle(
-                        hDesktop,
-                        1i32 as i8,
-                        0,
-                        &mut Desktop,
-                    );
-                    if !NT_SUCCESS(Status) {
-                        Status = STATUS_INVALID_HANDLE;
-                        break 'quit;
-                    }
-                }
-                hwndParent = (*Desktop).DesktopWindow;
-            } else {
-                hDesktop = core::ptr::null_mut();
-            }
-
-            let Parent = UserGetWindowObject(hwndParent);
-            if !Parent.is_null() {
-                let mut Window = (*Parent).spwndChild;
-                if !Window.is_null() {
-                    let mut bGoDown = true;
-
-                    Status = STATUS_SUCCESS;
-                    loop {
-                        if bGoDown {
-                            if {
-                                let c = dwCount;
-                                dwCount += 1;
-                                c
-                            } < cHwnd
-                                && !phwndList.is_null()
-                            {
-                                *phwndList = UserHMGetHandle(Window as PVOID);
-                                phwndList = phwndList.add(1);
-                                if !NT_SUCCESS(Status) {
-                                    break;
-                                }
-                            }
-                            if !(*Window).spwndChild.is_null() && bChildren != 0 {
-                                Window = (*Window).spwndChild;
-                                continue;
-                            }
-                            bGoDown = false;
-                        }
-                        if !(*Window).spwndNext.is_null() {
-                            Window = (*Window).spwndNext;
-                            bGoDown = true;
-                            continue;
-                        }
-                        Window = (*Window).spwndParent;
-                        if Window == Parent {
-                            break;
-                        }
-                    }
-                }
-            }
-
-            if !hDesktop.is_null() {
-                ObDereferenceObject(Desktop as *mut _);
-            }
-        } else {
-            let mut Thread: PETHREAD = core::ptr::null_mut();
-
-            Status = PsLookupThreadByThreadId(UlongToHandle(dwThreadId), &mut Thread);
-            if !NT_SUCCESS(Status) {
-                ERR!(b"Thread Id is not valid!\n\0".as_ptr());
-                Status = STATUS_INVALID_PARAMETER;
-                break 'quit;
-            }
-            let W32Thread = (*Thread).Tcb.Win32Thread as PTHREADINFO;
-            if W32Thread.is_null() {
-                ObDereferenceObject(Thread as *mut _);
-                TRACE!(b"Tried to enumerate windows of a non gui thread\n\0".as_ptr());
-                Status = STATUS_INVALID_PARAMETER;
-                break 'quit;
-            }
-
-            let List = IntWinListChildren(UserGetDesktopWindow());
-            if !List.is_null() {
-                let mut i: isize = 0;
-                while !(*List.offset(i)).is_null() {
-                    let Window = ValidateHwndNoErr(*List.offset(i));
-                    if !Window.is_null() && HEAD_pti(core::ptr::addr_of!((*Window).head)) == W32Thread {
-                        if dwCount < cHwnd && !phwndList.is_null() {
-                            *phwndList = UserHMGetHandle(Window as PVOID);
-                            phwndList = phwndList.add(1);
-                            if !NT_SUCCESS(Status) {
-                                ERR!(b"Failure to build window list!\n\0".as_ptr());
-                                break;
-                            }
-                        }
-                        dwCount += 1;
-                    }
-                    i += 1;
-                }
-                ExFreePoolWithTag(List as *mut _, USERTAG_WINDOWLIST);
-            }
-
-            ObDereferenceObject(Thread as *mut _);
-        }
-
-        *pcHwndNeeded = dwCount;
-        Status = STATUS_SUCCESS;
-    }
-
-    SetLastNtError(Status);
-    UserLeave();
-    Status
-}
-
-#[cfg(not(target_arch = "x86"))]
-#[no_mangle]
-pub unsafe extern "C" fn NtUserBuildHwndList(
+pub unsafe extern "system" fn NtUserBuildHwndList(
     hDesktop: HDESK,
     mut hwndParent: HWND,
     bChildren: BOOLEAN,
@@ -3814,7 +3667,7 @@ unsafe extern "system" fn ProbeAndCaptureLargeString(
     {
         let __SehStatus = SafeProbeForRead(
             plstrUnsafe as PVOID,
-            core::mem::size_of::<LARGE_STRING>() as ULONG,
+            core::mem::size_of::<LARGE_STRING>() as _,
             core::mem::size_of::<ULONG>() as ULONG,
         );
         if !NT_SUCCESS(__SehStatus) {
@@ -3833,7 +3686,7 @@ unsafe extern "system" fn ProbeAndCaptureLargeString(
         {
             let __SehStatus = SafeProbeForRead(
                 lstrTemp.Buffer as PVOID,
-                lstrTemp.Length,
+                lstrTemp.Length as _,
                 core::mem::size_of::<WCHAR>() as ULONG,
             );
             if !NT_SUCCESS(__SehStatus) {
@@ -3855,155 +3708,8 @@ unsafe extern "system" fn ProbeAndCaptureLargeString(
 
     STATUS_SUCCESS
 }
-#[cfg(target_arch = "x86")]
 #[no_mangle]
-pub unsafe extern "stdcall" fn NtUserCreateWindowEx(
-    dwExStyle: DWORD,
-    plstrClassName: PLARGE_STRING,
-    plstrClsVersion: PLARGE_STRING,
-    mut plstrWindowName: PLARGE_STRING,
-    dwStyle: DWORD,
-    x: core::ffi::c_int,
-    y: core::ffi::c_int,
-    nWidth: core::ffi::c_int,
-    nHeight: core::ffi::c_int,
-    hWndParent: HWND,
-    hMenu: HMENU,
-    hInstance: HINSTANCE,
-    lpParam: LPVOID,
-    dwFlags: DWORD,
-    acbiBuffer: PVOID,
-) -> HWND {
-    let mut Status: NTSTATUS;
-    let mut lstrWindowName: LARGE_STRING = core::mem::zeroed();
-    let mut lstrClassName: LARGE_STRING = core::mem::zeroed();
-    let mut lstrClsVersion: LARGE_STRING = core::mem::zeroed();
-    let mut ustrClassName: _UNICODE_STRING = core::mem::zeroed();
-    let mut ustrClsVersion: _UNICODE_STRING = core::mem::zeroed();
-    let mut Cs: CREATESTRUCTW = core::mem::zeroed();
-    let mut hwnd: HWND = core::ptr::null_mut();
-    let pwnd: PWND;
-
-    lstrWindowName.Buffer = core::ptr::null_mut();
-    lstrClassName.Buffer = core::ptr::null_mut();
-    lstrClsVersion.Buffer = core::ptr::null_mut();
-
-    'cleanup: loop {
-        if (dwStyle & (WS_POPUP | WS_CHILD)) != WS_CHILD {
-            if !hMenu.is_null() && UserGetMenuObject(hMenu).is_null() {
-                ERR!(b"NtUserCreateWindowEx: Got an invalid menu handle!\n\0".as_ptr() as *const i8);
-                EngSetLastError(ERROR_INVALID_MENU_HANDLE);
-                return core::ptr::null_mut();
-            }
-        }
-
-        Status = ProbeAndCaptureLargeString(
-            core::ptr::addr_of_mut!(lstrWindowName),
-            plstrWindowName,
-        );
-        if !NT_SUCCESS(Status) {
-            ERR!(b"NtUserCreateWindowEx: failed to capture plstrWindowName\n\0".as_ptr() as *const i8);
-            SetLastNtError(Status);
-            return core::ptr::null_mut();
-        }
-
-        plstrWindowName = core::ptr::addr_of_mut!(lstrWindowName);
-
-        if IS_ATOM!(plstrClassName) != 0 {
-            ustrClassName.Buffer = plstrClassName as PVOID as *mut _;
-            ustrClassName.Length = 0;
-            ustrClassName.MaximumLength = 0;
-        } else {
-            Status = ProbeAndCaptureLargeString(
-                core::ptr::addr_of_mut!(lstrClassName),
-                plstrClassName,
-            );
-            if !NT_SUCCESS(Status) {
-                ERR!(b"NtUserCreateWindowEx: failed to capture plstrClassName\n\0".as_ptr() as *const i8);
-                SetLastNtError(Status);
-                break 'cleanup;
-            }
-
-            ustrClassName.Buffer = lstrClassName.Buffer as *mut _;
-            ustrClassName.Length = min(lstrClassName.Length as DWORD, MAXUSHORT as DWORD) as USHORT;
-            ustrClassName.MaximumLength =
-                min(lstrClassName.MaximumLength() as DWORD, MAXUSHORT as DWORD) as USHORT;
-        }
-
-        if IS_ATOM!(plstrClsVersion) != 0 {
-            ustrClsVersion.Buffer = plstrClsVersion as PVOID as *mut _;
-            ustrClsVersion.Length = 0;
-            ustrClsVersion.MaximumLength = 0;
-        } else {
-            Status = ProbeAndCaptureLargeString(
-                core::ptr::addr_of_mut!(lstrClsVersion),
-                plstrClsVersion,
-            );
-            if !NT_SUCCESS(Status) {
-                ERR!(b"NtUserCreateWindowEx: failed to capture plstrClsVersion\n\0".as_ptr() as *const i8);
-                SetLastNtError(Status);
-                break 'cleanup;
-            }
-
-            ustrClsVersion.Buffer = lstrClsVersion.Buffer as *mut _;
-            ustrClsVersion.Length = min(lstrClsVersion.Length as DWORD, MAXUSHORT as DWORD) as USHORT;
-            ustrClsVersion.MaximumLength =
-                min(lstrClsVersion.MaximumLength() as DWORD, MAXUSHORT as DWORD) as USHORT;
-        }
-
-        Cs.style = dwStyle as LONG;
-        Cs.lpCreateParams = lpParam;
-        Cs.hInstance = hInstance;
-        Cs.hMenu = hMenu;
-        Cs.hwndParent = hWndParent;
-        Cs.cx = nWidth;
-        Cs.cy = nHeight;
-        Cs.x = x;
-        Cs.y = y;
-        Cs.lpszName = (*plstrWindowName).Buffer as LPCWSTR;
-        Cs.lpszClass = ustrClassName.Buffer as LPCWSTR;
-        Cs.dwExStyle = dwExStyle;
-
-        UserEnterExclusive();
-
-        pwnd = co_UserCreateWindowEx(
-            core::ptr::addr_of_mut!(Cs),
-            core::ptr::addr_of_mut!(ustrClsVersion),
-            plstrWindowName,
-            acbiBuffer,
-            dwFlags,
-        );
-
-        if pwnd.is_null() {
-            ERR!(b"co_UserCreateWindowEx failed!\n\0".as_ptr() as *const i8);
-        }
-        hwnd = if !pwnd.is_null() {
-            UserHMGetHandle(pwnd as PVOID)
-        } else {
-            core::ptr::null_mut()
-        };
-
-        UserLeave();
-
-        break 'cleanup;
-    }
-
-    if !lstrWindowName.Buffer.is_null() {
-        ExFreePoolWithTag(lstrWindowName.Buffer as PVOID, TAG_STRING);
-    }
-    if !lstrClassName.Buffer.is_null() {
-        ExFreePoolWithTag(lstrClassName.Buffer as PVOID, TAG_STRING);
-    }
-    if !lstrClsVersion.Buffer.is_null() {
-        ExFreePoolWithTag(lstrClsVersion.Buffer as PVOID, TAG_STRING);
-    }
-
-    hwnd
-}
-
-#[cfg(not(target_arch = "x86"))]
-#[no_mangle]
-pub unsafe extern "C" fn NtUserCreateWindowEx(
+pub unsafe extern "system" fn NtUserCreateWindowEx(
     dwExStyle: DWORD,
     plstrClassName: PLARGE_STRING,
     plstrClsVersion: PLARGE_STRING,
@@ -4347,29 +4053,8 @@ unsafe extern "C" fn co_UserDestroyWindow(Object: PVOID) -> BOOLEAN {
 
     1u8
 }
-#[cfg(target_arch = "x86")]
 #[no_mangle]
-pub unsafe extern "stdcall" fn NtUserDestroyWindow(Wnd: HWND) -> BOOLEAN {
-    let Window: PWND;
-    let mut ret: BOOLEAN = 0u8;
-    let mut Ref: USER_REFERENCE_ENTRY = core::mem::zeroed();
-
-    UserEnterExclusive();
-
-    Window = UserGetWindowObject(Wnd);
-    if !Window.is_null() {
-        UserRefObjectCo(Window as PVOID, &mut Ref);
-        ret = co_UserDestroyWindow(Window as PVOID);
-        UserDerefObjectCo(Window as PVOID);
-    }
-
-    UserLeave();
-    ret
-}
-
-#[cfg(not(target_arch = "x86"))]
-#[no_mangle]
-pub unsafe extern "C" fn NtUserDestroyWindow(Wnd: HWND) -> BOOLEAN {
+pub unsafe extern "system" fn NtUserDestroyWindow(Wnd: HWND) -> BOOLEAN {
     let Window: PWND;
     let mut ret: BOOLEAN = 0u8;
     let mut Ref: USER_REFERENCE_ENTRY = core::mem::zeroed();
@@ -4511,184 +4196,8 @@ pub unsafe extern "C" fn IntFindWindow(
 
     Ret
 }
-#[cfg(target_arch = "x86")]
 #[no_mangle]
-pub unsafe extern "stdcall" fn NtUserFindWindowEx(
-    mut hwndParent: HWND,
-    hwndChildAfter: HWND,
-    ucClassName: PUNICODE_STRING,
-    ucWindowName: PUNICODE_STRING,
-    _dwUnknown: DWORD,
-) -> HWND {
-    let Parent: PWND;
-    let ChildAfter: PWND;
-    let mut ClassName: _UNICODE_STRING = core::mem::zeroed();
-    let mut WindowName: _UNICODE_STRING = core::mem::zeroed();
-    let Desktop: HWND;
-    let mut Ret: HWND = core::ptr::null_mut();
-    let mut DoMessageWnd: u8 = 0u8;
-    let mut ClassAtom: RTL_ATOM = 0 as RTL_ATOM;
-
-    UserEnterShared();
-
-    'exit: {
-        if !ucClassName.is_null() || !ucWindowName.is_null() {
-            'try_block: {
-                if !ucClassName.is_null() {
-                    ClassName = ProbeForReadUnicodeString(ucClassName);
-                    if ClassName.Length != 0 {
-                        // ProbeForRead is a no-op in this translation
-                    } else if IS_ATOM!(ClassName.Buffer) == 0 {
-                        EngSetLastError(ERROR_INVALID_PARAMETER);
-                        break 'try_block;
-                    }
-
-                    if IntGetAtomFromStringOrAtom(
-                        core::ptr::addr_of_mut!(ClassName),
-                        core::ptr::addr_of_mut!(ClassAtom),
-                    ) == 0
-                    {
-                        EngSetLastError(ERROR_CANNOT_FIND_WND_CLASS);
-                        break 'try_block;
-                    }
-                }
-
-                if !ucWindowName.is_null() {
-                    WindowName = ProbeForReadUnicodeString(ucWindowName);
-                    if WindowName.Length != 0 {
-                        // ProbeForRead is a no-op in this translation
-                    }
-                }
-            }
-
-            if !ucClassName.is_null() {
-                if ClassName.Length == 0
-                    && !ClassName.Buffer.is_null()
-                    && IS_ATOM!(ClassName.Buffer) == 0
-                {
-                    EngSetLastError(ERROR_INVALID_PARAMETER);
-                    break 'exit;
-                } else if ClassAtom == 0 as RTL_ATOM {
-                    break 'exit;
-                }
-            }
-        }
-
-        Desktop = IntGetCurrentThreadDesktopWindow();
-
-        if hwndParent.is_null() {
-            hwndParent = Desktop;
-            DoMessageWnd = 1u8;
-        } else if hwndParent == HWND_MESSAGE {
-            hwndParent = IntGetMessageWindow();
-        }
-
-        Parent = UserGetWindowObject(hwndParent);
-        if Parent.is_null() {
-            break 'exit;
-        }
-
-        ChildAfter = if !hwndChildAfter.is_null() {
-            let ca = UserGetWindowObject(hwndChildAfter);
-            if ca.is_null() {
-                break 'exit;
-            }
-            ca
-        } else {
-            core::ptr::null_mut()
-        };
-
-        // _SEH2_TRY body
-        if UserHMGetHandle(Parent as PVOID) == Desktop {
-            let List = IntWinListChildren(Parent);
-            if !List.is_null() {
-                let mut phWnd = List;
-
-                if !ChildAfter.is_null() {
-                    while !(*phWnd).is_null() {
-                        let cur = *phWnd;
-                        phWnd = phWnd.add(1);
-                        if cur == UserHMGetHandle(ChildAfter as PVOID) {
-                            break;
-                        }
-                    }
-                }
-
-                let CheckWindowName: u8 = (!WindowName.Buffer.is_null()) as u8;
-
-                while !(*phWnd).is_null() {
-                    let cur = *phWnd;
-                    phWnd = phWnd.add(1);
-
-                    let TopLevelWindow = UserGetWindowObject(cur);
-                    if TopLevelWindow.is_null() {
-                        continue;
-                    }
-
-                    let mut ustr: _UNICODE_STRING = core::mem::zeroed();
-                    ustr.Buffer = (*TopLevelWindow).strName.Buffer;
-                    ustr.Length = min((*TopLevelWindow).strName.Length, MAXUSHORT as _) as USHORT;
-                    ustr.MaximumLength =
-                        min((*TopLevelWindow).strName.MaximumLength(), MAXUSHORT as _) as USHORT;
-
-                    let WindowMatches = CheckWindowName == 0
-                        || ((*TopLevelWindow).strName.Length < 0xFFFF
-                            && RtlCompareUnicodeString(
-                                core::ptr::addr_of_mut!(WindowName),
-                                core::ptr::addr_of_mut!(ustr),
-                                1u8,
-                            ) == 0);
-                    let ClassMatches = ClassAtom == 0 as RTL_ATOM
-                        || ClassAtom == (*(*TopLevelWindow).pcls).atomNVClassName;
-
-                    if WindowMatches && ClassMatches {
-                        Ret = UserHMGetHandle(TopLevelWindow as PVOID);
-                        break;
-                    }
-
-                    if !IntFindWindow(
-                        TopLevelWindow,
-                        core::ptr::null_mut(),
-                        ClassAtom,
-                        core::ptr::addr_of_mut!(WindowName),
-                    )
-                    .is_null()
-                    {
-                        Ret = UserHMGetHandle(TopLevelWindow as PVOID);
-                        break;
-                    }
-                }
-                ExFreePoolWithTag(List as *mut _, USERTAG_WINDOWLIST);
-            }
-        } else {
-            Ret = IntFindWindow(
-                Parent,
-                ChildAfter,
-                ClassAtom,
-                core::ptr::addr_of_mut!(WindowName),
-            );
-        }
-
-        if Ret.is_null() && DoMessageWnd != 0 {
-            let MsgWindows = UserGetWindowObject(IntGetMessageWindow());
-            if !MsgWindows.is_null() {
-                Ret = IntFindWindow(
-                    MsgWindows,
-                    ChildAfter,
-                    ClassAtom,
-                    core::ptr::addr_of_mut!(WindowName),
-                );
-            }
-        }
-    }
-
-    UserLeave();
-    Ret
-}
-
-#[cfg(not(target_arch = "x86"))]
-#[no_mangle]
-pub unsafe extern "C" fn NtUserFindWindowEx(
+pub unsafe extern "system" fn NtUserFindWindowEx(
     mut hwndParent: HWND,
     hwndChildAfter: HWND,
     ucClassName: PUNICODE_STRING,
@@ -4927,9 +4436,8 @@ unsafe fn UserGetAncestor(pWnd: PWND, uType: UINT) -> PWND {
     WndAncestor
 }
 }
-#[cfg(target_arch = "x86")]
 #[no_mangle]
-pub unsafe extern "stdcall" fn NtUserGetAncestor(hWnd: HWND, uType: UINT) -> HWND {
+pub unsafe extern "system" fn NtUserGetAncestor(hWnd: HWND, uType: UINT) -> HWND {
     let Window: PWND;
     let pwndAncestor: PWND;
     let mut hwndAncestor: HWND = core::ptr::null_mut();
@@ -4956,39 +4464,8 @@ pub unsafe extern "stdcall" fn NtUserGetAncestor(hWnd: HWND, uType: UINT) -> HWN
     UserLeave();
     hwndAncestor
 }
-
-#[cfg(not(target_arch = "x86"))]
 #[no_mangle]
-pub unsafe extern "C" fn NtUserGetAncestor(hWnd: HWND, uType: UINT) -> HWND {
-    let Window: PWND;
-    let pwndAncestor: PWND;
-    let mut hwndAncestor: HWND = core::ptr::null_mut();
-
-    UserEnterShared();
-
-    'Quit: {
-        Window = UserGetWindowObject(hWnd);
-        if Window.is_null() {
-            break 'Quit;
-        }
-
-        if uType == 0 || uType > GA_ROOTOWNER {
-            EngSetLastError(ERROR_INVALID_PARAMETER);
-            break 'Quit;
-        }
-
-        pwndAncestor = UserGetAncestor(Window, uType);
-        if !pwndAncestor.is_null() {
-            hwndAncestor = UserHMGetHandle(pwndAncestor as PVOID);
-        }
-    }
-
-    UserLeave();
-    hwndAncestor
-}
-#[cfg(target_arch = "x86")]
-#[no_mangle]
-pub unsafe extern "stdcall" fn NtUserGetComboBoxInfo(
+pub unsafe extern "system" fn NtUserGetComboBoxInfo(
     hWnd: HWND,
     pcbi: PCOMBOBOXINFO,
 ) -> BOOL {
@@ -5068,92 +4545,8 @@ pub unsafe extern "stdcall" fn NtUserGetComboBoxInfo(
     UserLeave();
     Ret
 }
-
-#[cfg(not(target_arch = "x86"))]
 #[no_mangle]
-pub unsafe extern "C" fn NtUserGetComboBoxInfo(
-    hWnd: HWND,
-    pcbi: PCOMBOBOXINFO,
-) -> BOOL {
-    let Wnd: PWND;
-    let ppi: PPROCESSINFO;
-    let mut NotSameppi: BOOL = 0;
-    let mut Ret: BOOL = 1;
-
-    UserEnterShared();
-
-    'exit: {
-        Wnd = UserGetWindowObject(hWnd);
-        if Wnd.is_null() {
-            Ret = 0;
-            break 'exit;
-        }
-
-        {
-            let __SehStatus = SafeProbeForWrite(
-                pcbi as LPVOID,
-                core::mem::size_of::<COMBOBOXINFO>() as _,
-                1,
-            );
-            if !NT_SUCCESS(__SehStatus) {
-                SetLastNtError(__SehStatus);
-                Ret = 0;
-                break 'exit;
-            }
-        }
-
-        if ((*pcbi).cbSize as usize) < core::mem::size_of::<COMBOBOXINFO>() {
-            EngSetLastError(ERROR_INVALID_PARAMETER);
-            Ret = 0;
-            break 'exit;
-        }
-
-        if (*(*Wnd).pcls).atomClassName != (*gpsi).atomSysClass[ICLS_COMBOBOX as usize]
-            && (*Wnd).fnid != FNID_COMBOBOX as u32
-        {
-            Ret = co_IntSendMessage(
-                UserHMGetHandle(Wnd as PVOID),
-                CB_GETCOMBOBOXINFO,
-                0,
-                pcbi as LPARAM,
-            ) as BOOL;
-            break 'exit;
-        }
-
-        ppi = PsGetCurrentProcessWin32Process();
-        NotSameppi = (ppi != (*HEAD_pti(core::ptr::addr_of!((*Wnd).head))).ppi) as BOOL;
-        if NotSameppi != 0 {
-            KeAttachProcess(core::ptr::addr_of_mut!(
-                (*PROCESSINFO_peProcess((*HEAD_pti(core::ptr::addr_of!((*Wnd).head))).ppi)).Pcb
-            ) as *mut _);
-        }
-
-        {
-            let lphc: LPHEADCOMBO = (*(Wnd as PWND2CBOX)).pCBox;
-            (*pcbi).rcItem = (*lphc).textRect;
-            (*pcbi).rcButton = (*lphc).buttonRect;
-            (*pcbi).stateButton = 0;
-            if (*lphc).wState & CBF_BUTTONDOWN != 0 {
-                (*pcbi).stateButton |= STATE_SYSTEM_PRESSED;
-            }
-            if RECTL_bIsEmptyRect(core::ptr::addr_of_mut!((*lphc).buttonRect)) != 0 {
-                (*pcbi).stateButton |= STATE_SYSTEM_INVISIBLE;
-            }
-            (*pcbi).hwndCombo = (*lphc).self_;
-            (*pcbi).hwndItem = (*lphc).hWndEdit;
-            (*pcbi).hwndList = (*lphc).hWndLBox;
-        }
-    }
-
-    if NotSameppi != 0 {
-        KeDetachProcess();
-    }
-    UserLeave();
-    Ret
-}
-#[cfg(target_arch = "x86")]
-#[no_mangle]
-pub unsafe extern "stdcall" fn NtUserGetListBoxInfo(hWnd: HWND) -> DWORD {
+pub unsafe extern "system" fn NtUserGetListBoxInfo(hWnd: HWND) -> DWORD {
     let Wnd: PWND;
     let ppi: PPROCESSINFO;
     let mut NotSameppi: BOOL = 0;
@@ -5190,68 +4583,8 @@ pub unsafe extern "stdcall" fn NtUserGetListBoxInfo(hWnd: HWND) -> DWORD {
     UserLeave();
     Ret
 }
-
-#[cfg(not(target_arch = "x86"))]
 #[no_mangle]
-pub unsafe extern "C" fn NtUserGetListBoxInfo(hWnd: HWND) -> DWORD {
-    let Wnd: PWND;
-    let ppi: PPROCESSINFO;
-    let mut NotSameppi: BOOL = 0;
-    let mut Ret: DWORD = 0;
-
-    UserEnterShared();
-
-    'exit: {
-        Wnd = UserGetWindowObject(hWnd);
-        if Wnd.is_null() {
-            break 'exit;
-        }
-
-        if (*(*Wnd).pcls).atomClassName != (*gpsi).atomSysClass[ICLS_LISTBOX as usize]
-            && (*Wnd).fnid != FNID_LISTBOX
-        {
-            Ret = co_IntSendMessage(UserHMGetHandle(Wnd as PVOID), LB_GETLISTBOXINFO, 0, 0) as DWORD;
-            break 'exit;
-        }
-
-        ppi = PsGetCurrentProcessWin32Process() as PPROCESSINFO;
-        NotSameppi = (ppi != (*HEAD_pti(core::ptr::addr_of!((*Wnd).head))).ppi) as BOOL;
-        if NotSameppi != 0 {
-            KeAttachProcess(core::ptr::addr_of_mut!((*PROCESSINFO_peProcess((*HEAD_pti(core::ptr::addr_of!((*Wnd).head))).ppi)).Pcb) as *mut _);
-        }
-
-        let descr = (*(Wnd as PWND2LB)).pLBiv;
-        Ret = (*descr).page_size as DWORD;
-    }
-
-    if NotSameppi != 0 {
-        KeDetachProcess();
-    }
-    UserLeave();
-    Ret
-}
-#[cfg(target_arch = "x86")]
-#[no_mangle]
-pub unsafe extern "stdcall" fn NtUserSetParent(hWndChild: HWND, mut hWndNewParent: HWND) -> HWND {
-    let Ret: HWND;
-
-    UserEnterExclusive();
-
-    if hWndNewParent.is_null() {
-        hWndNewParent = IntGetDesktopWindow();
-    } else if hWndNewParent == HWND_MESSAGE {
-        hWndNewParent = IntGetMessageWindow();
-    }
-
-    Ret = co_UserSetParent(hWndChild, hWndNewParent);
-
-    UserLeave();
-    Ret
-}
-
-#[cfg(not(target_arch = "x86"))]
-#[no_mangle]
-pub unsafe extern "C" fn NtUserSetParent(hWndChild: HWND, mut hWndNewParent: HWND) -> HWND {
+pub unsafe extern "system" fn NtUserSetParent(hWndChild: HWND, mut hWndNewParent: HWND) -> HWND {
     let Ret: HWND;
 
     UserEnterExclusive();
@@ -5302,100 +4635,8 @@ unsafe fn UserGetShellWindow_impl() -> HWND {
     ObDereferenceObject(WinStaObject as *mut _);
     Ret
 }
-#[cfg(target_arch = "x86")]
 #[no_mangle]
-pub unsafe extern "stdcall" fn NtUserSetShellWindowEx(hwndShell: HWND, hwndListView: HWND) -> BOOL {
-    let mut WinStaObject: PWINSTATION_OBJECT = core::ptr::null_mut();
-    let WndShell: PWND;
-    let WndListView: PWND;
-    let mut Ret: BOOL = 0;
-    let mut Ref: USER_REFERENCE_ENTRY = core::mem::zeroed();
-    let Status: NTSTATUS;
-    let ti: PTHREADINFO;
-
-    TRACE!(b"Enter NtUserSetShellWindowEx\n\0".as_ptr() as *const i8);
-    UserEnterExclusive();
-
-    'Exit: {
-        WndShell = UserGetWindowObject(hwndShell);
-        if WndShell.is_null() {
-            break 'Exit;
-        }
-
-        WndListView = UserGetWindowObject(hwndListView);
-        if WndListView.is_null() {
-            break 'Exit;
-        }
-
-        Status = IntValidateWindowStationHandle(
-            (*PsGetCurrentProcess()).Win32WindowStation as HWINSTA,
-            1i32 as i8,
-            0,
-            &mut WinStaObject,
-            core::ptr::null_mut(),
-        );
-
-        if !NT_SUCCESS(Status) {
-            SetLastNtError(Status);
-            break 'Exit;
-        }
-
-        if !(*WinStaObject).ShellWindow.is_null() {
-            ObDereferenceObject(WinStaObject as *mut _);
-            break 'Exit;
-        }
-
-        if !hwndListView.is_null() && hwndListView != hwndShell {
-            if (*WndListView).ExStyle & WS_EX_TOPMOST != 0 {
-                ObDereferenceObject(WinStaObject as *mut _);
-                break 'Exit;
-            }
-        }
-
-        if (*WndShell).ExStyle & WS_EX_TOPMOST != 0 {
-            ObDereferenceObject(WinStaObject as *mut _);
-            break 'Exit;
-        }
-
-        UserRefObjectCo(WndShell as PVOID, &mut Ref);
-        (*WndShell).state2 |= WNDS2_BOTTOMMOST;
-        co_WinPosSetWindowPos(
-            WndShell,
-            HWND_BOTTOM,
-            0,
-            0,
-            0,
-            0,
-            (SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE) as u32,
-        );
-
-        (*WinStaObject).ShellWindow = hwndShell as HANDLE;
-        (*WinStaObject).ShellListView = hwndListView as HANDLE;
-
-        ti = GetW32ThreadInfo();
-        if !(*ti).pDeskInfo.is_null() {
-            (*(*ti).pDeskInfo).hShellWindow = hwndShell;
-            (*(*ti).pDeskInfo).spwndShell = WndShell;
-            (*(*ti).pDeskInfo).spwndBkGnd = WndListView;
-            (*(*ti).pDeskInfo).ppiShellProcess = (*ti).ppi;
-        }
-
-        UserRegisterHotKey(WndShell, SC_TASKLIST as INT, MOD_CONTROL as u32, VK_ESCAPE as u32);
-
-        UserDerefObjectCo(WndShell as PVOID);
-
-        ObDereferenceObject(WinStaObject as *mut _);
-        Ret = 1;
-    }
-
-    TRACE!(b"Leave NtUserSetShellWindowEx, ret=%i\n\0".as_ptr() as *const i8, Ret);
-    UserLeave();
-    Ret
-}
-
-#[cfg(not(target_arch = "x86"))]
-#[no_mangle]
-pub unsafe extern "C" fn NtUserSetShellWindowEx(hwndShell: HWND, hwndListView: HWND) -> BOOL {
+pub unsafe extern "system" fn NtUserSetShellWindowEx(hwndShell: HWND, hwndListView: HWND) -> BOOL {
     let mut WinStaObject: PWINSTATION_OBJECT = core::ptr::null_mut();
     let WndShell: PWND;
     let WndListView: PWND;
@@ -5730,29 +4971,8 @@ unsafe extern "C" fn co_UserSetWindowLongPtr(hWnd: HWND, Index: DWORD, NewValue:
 unsafe extern "fastcall" fn co_UserSetWindowLongPtr(hWnd: HWND, Index: DWORD, NewValue: LONG_PTR, Ansi: BOOL) -> LONG_PTR {
     co_IntSetWindowLongPtr(hWnd, Index, NewValue, Ansi, UserCallerPtrSize(), 0)
 }
-#[cfg(target_arch = "x86")]
 #[no_mangle]
-pub unsafe extern "stdcall" fn NtUserSetWindowLong(hWnd: HWND, Index: DWORD, NewValue: LONG, Ansi: BOOL) -> LONG {
-    let ret: LONG;
-
-    UserEnterExclusive();
-
-    if hWnd == IntGetDesktopWindow() {
-        EngSetLastError(STATUS_ACCESS_DENIED as DWORD);
-        UserLeave();
-        return 0;
-    }
-
-    ret = co_IntSetWindowLongPtr(hWnd, Index, NewValue as LONG_PTR, Ansi, core::mem::size_of::<LONG>() as ULONG, 0) as LONG;
-
-    UserLeave();
-
-    ret
-}
-
-#[cfg(not(target_arch = "x86"))]
-#[no_mangle]
-pub unsafe extern "C" fn NtUserSetWindowLong(hWnd: HWND, Index: DWORD, NewValue: LONG, Ansi: BOOL) -> LONG {
+pub unsafe extern "system" fn NtUserSetWindowLong(hWnd: HWND, Index: DWORD, NewValue: LONG, Ansi: BOOL) -> LONG {
     let ret: LONG;
 
     UserEnterExclusive();
@@ -5789,9 +5009,8 @@ pub unsafe extern "system" fn NtUserSetWindowLongPtr(hWnd: HWND, Index: DWORD, N
 
     ret
 }
-#[cfg(target_arch = "x86")]
 #[no_mangle]
-pub unsafe extern "stdcall" fn NtUserAlterWindowStyle(hWnd: HWND, Index: DWORD, NewValue: LONG) -> DWORD {
+pub unsafe extern "system" fn NtUserAlterWindowStyle(hWnd: HWND, Index: DWORD, NewValue: LONG) -> DWORD {
     let ret: LONG;
 
     UserEnterExclusive();
@@ -5808,29 +5027,8 @@ pub unsafe extern "stdcall" fn NtUserAlterWindowStyle(hWnd: HWND, Index: DWORD, 
 
     ret as DWORD
 }
-
-#[cfg(not(target_arch = "x86"))]
 #[no_mangle]
-pub unsafe extern "C" fn NtUserAlterWindowStyle(hWnd: HWND, Index: DWORD, NewValue: LONG) -> DWORD {
-    let ret: LONG;
-
-    UserEnterExclusive();
-
-    if hWnd == IntGetDesktopWindow() {
-        EngSetLastError(STATUS_ACCESS_DENIED as DWORD);
-        UserLeave();
-        return 0;
-    }
-
-    ret = co_IntSetWindowLongPtr(hWnd, Index, NewValue as LONG_PTR, 0, core::mem::size_of::<LONG>() as ULONG, 1) as LONG;
-
-    UserLeave();
-
-    ret as DWORD
-}
-#[cfg(target_arch = "x86")]
-#[no_mangle]
-pub unsafe extern "stdcall" fn NtUserSetWindowWord(hWnd: HWND, Index: INT, NewValue: WORD) -> WORD {
+pub unsafe extern "system" fn NtUserSetWindowWord(hWnd: HWND, Index: INT, NewValue: WORD) -> WORD {
     let Window: PWND;
     let OldValue: WORD;
     let mut Ret: WORD = 0;
@@ -5881,63 +5079,8 @@ pub unsafe extern "stdcall" fn NtUserSetWindowWord(hWnd: HWND, Index: INT, NewVa
     UserLeave();
     Ret
 }
-
-#[cfg(not(target_arch = "x86"))]
 #[no_mangle]
-pub unsafe extern "C" fn NtUserSetWindowWord(hWnd: HWND, Index: INT, NewValue: WORD) -> WORD {
-    let Window: PWND;
-    let OldValue: WORD;
-    let mut Ret: WORD = 0;
-
-    UserEnterExclusive();
-
-    'exit: {
-        if hWnd == IntGetDesktopWindow() {
-            EngSetLastError(STATUS_ACCESS_DENIED as u32);
-            break 'exit;
-        }
-
-        Window = UserGetWindowObject(hWnd);
-        if Window.is_null() {
-            break 'exit;
-        }
-
-        match Index {
-            x if x == GWL_ID || x == GWL_HINSTANCE || x == GWL_HWNDPARENT => {
-                Ret = co_UserSetWindowLong(
-                    UserHMGetHandle(Window as PVOID),
-                    Index as DWORD,
-                    NewValue as UINT as LONG,
-                    1,
-                ) as WORD;
-                break 'exit;
-            }
-            _ => {
-                if Index < 0 {
-                    EngSetLastError(ERROR_INVALID_INDEX);
-                    break 'exit;
-                }
-            }
-        }
-
-        if (Index as ULONG) > ((*Window).cbwndExtra as ULONG).wrapping_sub(core::mem::size_of::<WORD>() as ULONG) {
-            EngSetLastError(ERROR_INVALID_INDEX);
-            break 'exit;
-        }
-
-        let ptr = (Window.add(1) as PCHAR).add(Index as usize) as *mut WORD;
-        OldValue = *ptr;
-        *ptr = NewValue;
-
-        Ret = OldValue;
-    }
-
-    UserLeave();
-    Ret
-}
-#[cfg(target_arch = "x86")]
-#[no_mangle]
-pub unsafe extern "stdcall" fn NtUserQueryWindow(hWnd: HWND, Index: DWORD) -> DWORD_PTR {
+pub unsafe extern "system" fn NtUserQueryWindow(hWnd: HWND, Index: DWORD) -> DWORD_PTR {
     const GWLP_CONSOLE_LEADER_PID: isize = 0;
     const GWLP_CONSOLE_LEADER_TID: isize = 4;
 
@@ -6040,115 +5183,8 @@ pub unsafe extern "stdcall" fn NtUserQueryWindow(hWnd: HWND, Index: DWORD) -> DW
     UserLeave();
     Result
 }
-
-#[cfg(not(target_arch = "x86"))]
 #[no_mangle]
-pub unsafe extern "C" fn NtUserQueryWindow(hWnd: HWND, Index: DWORD) -> DWORD_PTR {
-    const GWLP_CONSOLE_LEADER_PID: isize = 0;
-    const GWLP_CONSOLE_LEADER_TID: isize = 4;
-
-    let mut Result: DWORD_PTR = 0;
-    let pWnd: PWND;
-    let pwndActive: PWND;
-    let pti: PTHREADINFO;
-    let ptiActive: PTHREADINFO;
-
-    UserEnterShared();
-
-    pWnd = UserGetWindowObject(hWnd);
-    if pWnd.is_null() {
-        UserLeave();
-        return Result;
-    }
-
-    match Index {
-        QUERY_WINDOW_UNIQUE_PROCESS_ID => {
-            if ((*HEAD_pti(core::ptr::addr_of!((*pWnd).head))).TIF_flags & TIF_CSRSSTHREAD) != 0
-                && (*(*pWnd).pcls).atomClassName == gaGuiConsoleWndClass
-            {
-                let ptr = (pWnd.add(1) as PCHAR).offset(GWLP_CONSOLE_LEADER_PID) as *const LONG_PTR;
-                Result = *ptr as DWORD_PTR;
-            } else {
-                Result = IntGetWndProcessId(pWnd) as DWORD_PTR;
-            }
-        }
-
-        QUERY_WINDOW_UNIQUE_THREAD_ID => {
-            if ((*HEAD_pti(core::ptr::addr_of!((*pWnd).head))).TIF_flags & TIF_CSRSSTHREAD) != 0
-                && (*(*pWnd).pcls).atomClassName == gaGuiConsoleWndClass
-            {
-                let ptr = (pWnd.add(1) as PCHAR).offset(GWLP_CONSOLE_LEADER_TID) as *const LONG_PTR;
-                Result = *ptr as DWORD_PTR;
-            } else {
-                Result = IntGetWndThreadId(pWnd) as DWORD_PTR;
-            }
-        }
-
-        QUERY_WINDOW_ACTIVE => {
-            let spwndActive = (*(*HEAD_pti(core::ptr::addr_of!((*pWnd).head))).MessageQueue).spwndActive;
-            Result = if !spwndActive.is_null() {
-                UserHMGetHandle(spwndActive as PVOID) as DWORD_PTR
-            } else {
-                0
-            };
-        }
-
-        QUERY_WINDOW_FOCUS => {
-            let spwndFocus = (*(*HEAD_pti(core::ptr::addr_of!((*pWnd).head))).MessageQueue).spwndFocus;
-            Result = if !spwndFocus.is_null() {
-                UserHMGetHandle(spwndFocus as PVOID) as DWORD_PTR
-            } else {
-                0
-            };
-        }
-
-        QUERY_WINDOW_ISHUNG => {
-            Result = (((*pWnd).fnid == FNID_GHOST)
-                || MsqIsHung(HEAD_pti(core::ptr::addr_of!((*pWnd).head)), MSQ_HUNG) != 0) as DWORD_PTR;
-        }
-
-        QUERY_WINDOW_REAL_ID => {
-            Result = (*THREADINFO_pEThread(HEAD_pti(core::ptr::addr_of!((*pWnd).head)))).Cid.UniqueProcess as DWORD_PTR;
-        }
-
-        QUERY_WINDOW_FOREGROUND => {
-            Result = ((*HEAD_pti(core::ptr::addr_of!((*pWnd).head))).MessageQueue == gpqForeground) as DWORD_PTR;
-        }
-
-        QUERY_WINDOW_DEFAULT_IME => {
-            if !(*HEAD_pti(core::ptr::addr_of!((*pWnd).head))).spwndDefaultIme.is_null() {
-                Result = UserHMGetHandle((*HEAD_pti(core::ptr::addr_of!((*pWnd).head))).spwndDefaultIme as PVOID) as DWORD_PTR;
-            }
-        }
-
-        QUERY_WINDOW_DEFAULT_ICONTEXT => {
-            if !(*HEAD_pti(core::ptr::addr_of!((*pWnd).head))).spDefaultImc.is_null() {
-                Result = UserHMGetHandle((*HEAD_pti(core::ptr::addr_of!((*pWnd).head))).spDefaultImc as PVOID) as DWORD_PTR;
-            }
-        }
-
-        QUERY_WINDOW_ACTIVE_IME => {
-            if !gpqForeground.is_null() && !(*gpqForeground).spwndActive.is_null() {
-                pwndActive = (*gpqForeground).spwndActive;
-                pti = PsGetCurrentThreadWin32Thread() as PTHREADINFO;
-                if (*pti).rpdesk == (*pwndActive).head.rpdesk {
-                    ptiActive = HEAD_pti(core::ptr::addr_of!((*pwndActive).head));
-                    if !(*ptiActive).spwndDefaultIme.is_null() {
-                        Result = UserHMGetHandle((*ptiActive).spwndDefaultIme as PVOID) as DWORD_PTR;
-                    }
-                }
-            }
-        }
-
-        _ => {}
-    }
-
-    UserLeave();
-    Result
-}
-#[cfg(target_arch = "x86")]
-#[no_mangle]
-pub unsafe extern "stdcall" fn NtUserRegisterWindowMessage(MessageNameUnsafe: PUNICODE_STRING) -> UINT {
+pub unsafe extern "system" fn NtUserRegisterWindowMessage(MessageNameUnsafe: PUNICODE_STRING) -> UINT {
     let mut SafeMessageName: _UNICODE_STRING = core::mem::zeroed();
     let Status: NTSTATUS;
     let mut Ret: UINT = 0;
@@ -6176,74 +5212,8 @@ pub unsafe extern "stdcall" fn NtUserRegisterWindowMessage(MessageNameUnsafe: PU
     UserLeave();
     Ret
 }
-
-#[cfg(not(target_arch = "x86"))]
 #[no_mangle]
-pub unsafe extern "C" fn NtUserRegisterWindowMessage(MessageNameUnsafe: PUNICODE_STRING) -> UINT {
-    let mut SafeMessageName: _UNICODE_STRING = core::mem::zeroed();
-    let Status: NTSTATUS;
-    let mut Ret: UINT = 0;
-
-    UserEnterExclusive();
-
-    'Exit: {
-        if MessageNameUnsafe.is_null() {
-            EngSetLastError(ERROR_INVALID_PARAMETER);
-            break 'Exit;
-        }
-
-        Status = IntSafeCopyUnicodeStringTerminateNULL(&mut SafeMessageName, MessageNameUnsafe);
-        if !NT_SUCCESS(Status) {
-            SetLastNtError(Status);
-            break 'Exit;
-        }
-
-        Ret = IntAddAtom(SafeMessageName.Buffer) as UINT;
-        if !SafeMessageName.Buffer.is_null() {
-            ExFreePoolWithTag(SafeMessageName.Buffer as *mut _, TAG_STRING);
-        }
-    }
-
-    UserLeave();
-    Ret
-}
-#[cfg(target_arch = "x86")]
-#[no_mangle]
-pub unsafe extern "stdcall" fn NtUserSetWindowFNID(hWnd: HWND, fnID: WORD) -> BOOL {
-    let mut Wnd: PWND;
-    let mut Ret: BOOL = 0;
-
-    UserEnterExclusive();
-
-    'exit: {
-        Wnd = UserGetWindowObject(hWnd);
-        if Wnd.is_null() {
-            break 'exit;
-        }
-
-        if (*HEAD_pti(core::ptr::addr_of!((*Wnd).head))).ppi != PsGetCurrentProcessWin32Process() {
-            EngSetLastError(ERROR_ACCESS_DENIED);
-            break 'exit;
-        }
-
-        if fnID as u32 != FNID_DESTROY {
-            if (fnID as u32) < FNID_FIRST || (fnID as u32) > FNID_GHOST || (*Wnd).fnid != 0 {
-                EngSetLastError(ERROR_INVALID_PARAMETER);
-                break 'exit;
-            }
-        }
-
-        (*Wnd).fnid |= fnID as DWORD;
-        Ret = 1;
-    }
-
-    UserLeave();
-    Ret
-}
-
-#[cfg(not(target_arch = "x86"))]
-#[no_mangle]
-pub unsafe extern "C" fn NtUserSetWindowFNID(hWnd: HWND, fnID: WORD) -> BOOL {
+pub unsafe extern "system" fn NtUserSetWindowFNID(hWnd: HWND, fnID: WORD) -> BOOL {
     let mut Wnd: PWND;
     let mut Ret: BOOL = 0;
 
@@ -6352,7 +5322,7 @@ unsafe extern "system" fn DefSetText(Wnd: PWND, WindowText: PCWSTR) -> BOOL {
 }
 #[cfg(target_arch = "x86")]
 #[no_mangle]
-pub unsafe extern "stdcall" fn NtUserDefSetText(hWnd: HWND, WindowText: PLARGE_STRING) -> BOOL {
+pub unsafe extern "system" fn NtUserDefSetText(hWnd: HWND, WindowText: PLARGE_STRING) -> BOOL {
     let Wnd: PWND;
     let mut SafeText: LARGE_STRING = core::mem::zeroed();
     let mut UnicodeString: _UNICODE_STRING = core::mem::zeroed();
@@ -6456,7 +5426,7 @@ pub unsafe extern "stdcall" fn NtUserDefSetText(hWnd: HWND, WindowText: PLARGE_S
 
 #[cfg(not(target_arch = "x86"))]
 #[no_mangle]
-pub unsafe extern "C" fn NtUserDefSetText(hWnd: HWND, WindowText: PLARGE_STRING) -> BOOL {
+pub unsafe extern "system" fn NtUserDefSetText(hWnd: HWND, WindowText: PLARGE_STRING) -> BOOL {
     let Wnd: PWND;
     let mut SafeText: LARGE_STRING = core::mem::zeroed();
     let mut UnicodeString: _UNICODE_STRING = core::mem::zeroed();
@@ -6557,73 +5527,8 @@ pub unsafe extern "C" fn NtUserDefSetText(hWnd: HWND, WindowText: PLARGE_STRING)
     UserLeave();
     Ret
 }
-#[cfg(target_arch = "x86")]
 #[no_mangle]
-pub unsafe extern "stdcall" fn NtUserInternalGetWindowText(
-    hWnd: HWND,
-    lpString: LPWSTR,
-    nMaxCount: INT,
-) -> INT {
-    let Wnd: PWND;
-    let mut Status: NTSTATUS;
-    let mut Result: INT = 0;
-
-    UserEnterShared();
-
-    'exit: {
-        if !lpString.is_null() && nMaxCount <= 1 {
-            EngSetLastError(ERROR_INVALID_PARAMETER);
-            break 'exit;
-        }
-
-        Wnd = UserGetWindowObject(hWnd);
-        if Wnd.is_null() {
-            break 'exit;
-        }
-
-        Result = ((*Wnd).strName.Length as usize / core::mem::size_of::<u16>()) as INT;
-        if !lpString.is_null() {
-            let Terminator: u16 = 0;
-            let Copy: INT;
-            let mut Buffer: *mut u16 = lpString as *mut u16;
-
-            Copy = if (nMaxCount - 1) < Result { nMaxCount - 1 } else { Result };
-            if Copy > 0 {
-                Status = MmCopyToCaller(
-                    Buffer as *mut _,
-                    (*Wnd).strName.Buffer as *mut _,
-                    (Copy as usize) * core::mem::size_of::<u16>(),
-                );
-                if !NT_SUCCESS(Status) {
-                    SetLastNtError(Status);
-                    Result = 0;
-                    break 'exit;
-                }
-                Buffer = Buffer.add(Copy as usize);
-            }
-
-            Status = MmCopyToCaller(
-                Buffer as *mut _,
-                &Terminator as *const u16 as *mut _,
-                core::mem::size_of::<u16>(),
-            );
-            if !NT_SUCCESS(Status) {
-                SetLastNtError(Status);
-                Result = 0;
-                break 'exit;
-            }
-
-            Result = Copy;
-        }
-    }
-
-    UserLeave();
-    Result
-}
-
-#[cfg(not(target_arch = "x86"))]
-#[no_mangle]
-pub unsafe extern "C" fn NtUserInternalGetWindowText(
+pub unsafe extern "system" fn NtUserInternalGetWindowText(
     hWnd: HWND,
     lpString: LPWSTR,
     nMaxCount: INT,

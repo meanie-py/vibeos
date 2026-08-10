@@ -656,3 +656,223 @@ def integrate_path(path: Path, crate: Path) -> Report:
     if new != path.read_text():
         path.write_text(new)
     return report
+
+
+# --------------------------------------------------------------------------------------
+# In-crate import resolution.
+# --------------------------------------------------------------------------------------
+
+#: Never indexed as an import source: the prelude and the bindgen islands are already
+#: glob-imported by every translated module, and they are enormous — a single island
+#: re-export line runs to tens of kilobytes — so scanning them is pure cost.
+_UNINDEXED_STEMS = frozenset({"prelude", "types", "lib"})
+_UNINDEXED_PREFIXES = ("island_", "bindgen_", "hal_bindgen_", "types_")
+
+
+def _is_island(rs: Path) -> bool:
+    """True for a generated per-arch bindgen island, which is glob-imported, not imported."""
+    return rs.stem.startswith(_UNINDEXED_PREFIXES)
+
+
+#: Items at column 0 — i.e. genuinely importable module-level items. `defined_names` anchors
+#: at `^\s*`, which also matches an INHERENT METHOD inside an `impl` block, and those are not
+#: importable at all: indexing recyclebin_support.rs that way proposed
+#: `use …::recyclebin_support::len;` for `CStringW::len`. rustfmt puts every top-level item at
+#: column 0, so the column is an exact test and needs no brace matching.
+_TOP_LEVEL_PUB_RE = re.compile(
+    r"^pub\s+(?:unsafe\s+)?(?:extern\s+\"[A-Za-z0-9_-]+\"\s+)?"
+    r"(fn|struct|enum|union|trait|type|const|static)\s+(?:mut\s+)?([A-Za-z_][A-Za-z0-9_]*)",
+    re.M,
+)
+
+#: Never imported ACROSS modules, only ever provided by the island or the prelude. A constant
+#: reaching a sibling module is a substrate gap — `GENERIC_WRITE` living in a class module
+#: because the island lacks it — and cross-importing it would entrench the duplicate instead of
+#: reporting it. Excluding them also kills a self-import: a wide-literal static
+#: (`pub static CPP_COM_WSTR_…: [WCHAR; 4] = …`) is invisible to `defined_names`, whose
+#: static/const pattern is `:[^;]*=` and so cannot span the `;` inside an array type, and the
+#: file was importing its own definition from itself.
+_NEVER_IMPORTED_KINDS = frozenset({"const", "static"})
+
+
+def _top_level_pub_items(text: str) -> set[tuple[str, str]]:
+    """(kind, name) for `pub` items at column 0, outside any `extern` block."""
+    return set(_TOP_LEVEL_PUB_RE.findall(_outside_extern(text)))
+
+
+def _top_level_pub_names(text: str) -> set[str]:
+    """`pub` items declared at column 0, outside any `extern` block."""
+    return {name for _, name in _top_level_pub_items(text)}
+
+
+def island_names(crate_src: Path) -> set[str]:
+    """Every name the crate's bindgen islands export.
+
+    These have to be treated as PROVIDED, not as import candidates, and `provided_names`
+    cannot see them: a crate's `types.rs` selects its island with
+    `#[cfg(...)] #[path = "types_i386.rs"] mod types_arch;` + `pub use types_arch::*;`, and
+    that `#[path]` indirection defeats `_resolve_path`, which resolves module paths on
+    disk by name. recyclebin-rust reports 61 provided names as a result, missing every
+    island type. Harvesting the island files directly is exact and needs no path guessing.
+    """
+    names: set[str] = set()
+    for rs in sorted(Path(crate_src).rglob("*.rs")):
+        if not _is_island(rs):
+            continue
+        try:
+            text = rs.read_text()
+        except OSError:
+            continue
+        # `extern_declared` too: an island states most of its FUNCTIONS inside
+        # `unsafe extern "C" { pub fn X(); }`, which `defined_names` deliberately skips.
+        # Without them a sibling's same-named `pub fn` would look like the only owner.
+        names |= _top_level_pub_names(text) | extern_declared(text)
+    return names
+
+
+def _module_path(rs: Path, crate_src: Path) -> str | None:
+    """`crate::a::b` for a file under the crate's `src/`; None if it lies outside."""
+    try:
+        rel = rs.resolve().relative_to(crate_src.resolve())
+    except ValueError:
+        return None
+    parts = rel.with_suffix("").parts
+    if parts and parts[-1] == "mod":
+        parts = parts[:-1]
+    return "::".join(("crate", *parts)) if parts else None
+
+
+def index_crate_exports(crate_src: Path) -> dict[str, set[str]]:
+    """name → the set of `crate::…` modules that define it `pub`."""
+    owners: dict[str, set[str]] = {}
+    for rs in sorted(Path(crate_src).rglob("*.rs")):
+        if rs.stem in _UNINDEXED_STEMS or rs.stem.startswith(_UNINDEXED_PREFIXES):
+            continue
+        module = _module_path(rs, Path(crate_src))
+        if module is None:
+            continue
+        try:
+            text = rs.read_text()
+        except OSError:
+            continue
+        # A file no `mod` chain reaches is not importable, and indexing one is worse than
+        # useless: recyclebin's superseded whole-TU files still define RecycleBin5_Constructor,
+        # so they made the live definition look AMBIGUOUS and suppressed the import, while
+        # RecycleBin5Enum_Init resolved to the orphan alone and would have produced a `use`
+        # of a module that is not declared. `scan_orphan_modules` guarantees every other file
+        # is reachable, which makes this banner an exact test for reachability.
+        if "ORPHAN-BY-DESIGN" in text[:2000]:
+            continue
+        for kind, name in _top_level_pub_items(text):
+            if kind in _NEVER_IMPORTED_KINDS:
+                continue
+            owners.setdefault(name, set()).add(module)
+    return owners
+
+
+def resolve_in_crate_imports(code: str, crate: Path) -> tuple[str, list[str]]:
+    """Emit `use crate::…::<name>;` for each name `code` references but does not define.
+
+    Splitting a C++ TU into one module per class turns intra-TU references into
+    cross-module ones, and nothing deterministic puts the `use` there: today the only
+    thing producing these lines is a PROMPT HINT, i.e. the model writes them. That
+    violates the substrate-closure rule that imports are derived, never paid for — and,
+    worse, it cannot repair a body that is already banked, because prompt prose is out of
+    the resume-cache key, so a prompt fix leaves cached output exactly as broken.
+
+    Names the prelude already provides are SKIPPED. That is the safety property, not an
+    optimization: an explicit `use` shadows a glob import, so importing a sibling's
+    `pub fn Foo` when the island also exports `Foo` would silently rebind every call in
+    the file. Restricting to names the prelude does not supply makes this strictly
+    additive — it can only resolve a name that resolves to nothing today.
+
+    Ambiguous names (two sibling modules define the same one) are REPORTED and skipped
+    rather than guessed at.
+
+    Order caveat: the index reflects the files that exist right now, so generating a
+    whole crate from scratch is order-sensitive — a module written before its sibling
+    cannot import from it. It is additive and converges on a second pass, and the failure
+    mode is an unresolved-name compile error, never a wrong-symbol bind.
+    """
+    crate = Path(crate)
+    crate_src = crate / "src"
+    if not crate_src.is_dir():
+        return code, []
+
+    owners = index_crate_exports(crate_src)
+    if not owners:
+        return code, []
+
+    local = defined_names(code)
+    already = set(re.findall(r"^\s*use\s+[A-Za-z0-9_:]+::([A-Za-z_][A-Za-z0-9_]*)\s*;", code, re.M))
+    provided = provided_names(crate) | island_names(crate_src)
+    words = set(re.findall(r"\b[A-Za-z_][A-Za-z0-9_]*\b", code))
+
+    notes: list[str] = []
+    imports: list[str] = []
+    for name in sorted(words & owners.keys()):
+        if name in local or name in already or name in provided:
+            continue
+        mods = owners[name]
+        if len(mods) > 1:
+            notes.append(f"{name}: defined in {', '.join(sorted(mods))} — ambiguous, not imported")
+            continue
+        imports.append(f"use {next(iter(mods))}::{name};")
+
+    if not imports:
+        return code, notes
+
+    block = "\n".join(imports)
+    anchor = re.search(r"^use crate::prelude::\*;\n", code, re.M)
+    if anchor:
+        code = code[: anchor.end()] + block + "\n" + code[anchor.end() :]
+    else:
+        code = block + "\n" + code
+    return code, notes
+
+
+#: A top-level item that RE-DECLARES a type the crate already owns. `impl` is included
+#: because the duplicate carries its methods with it.
+_TOP_LEVEL_ITEM_RE = re.compile(
+    r"^(?:pub\s+)?(?:struct|enum|union|type)\s+([A-Za-z_][A-Za-z0-9_]*)"
+    r"|^impl(?:\s*<[^>]*>)?\s+(?:[A-Za-z0-9_:<>, ]+\s+for\s+)?([A-Za-z_][A-Za-z0-9_]*)"
+)
+
+
+def strip_top_level_items(rust: str, names: set[str]) -> tuple[str, list[str]]:
+    """Drop top-level definitions (and `impl` blocks) of `names`, keeping everything else.
+
+    The free-functions path translates the TU's file-scope preamble, and for a C++ class
+    target that preamble carries declarations of types the crate ALREADY owns — the
+    `--local-raii` lowering above all. You then get both `use …::CStringW;` and a second
+    `pub struct CStringW` in one module, which is E0255, and if it compiled it would be
+    worse: two distinct Rust types for one C++ class. `cpp_com` mode dodges this by
+    skipping the preamble entirely; the free half cannot, because it needs the rest of it.
+
+    Anchored at column 0 so a nested item is never touched.
+    """
+    if not names:
+        return rust, []
+    kept: list[str] = []
+    dropped: list[str] = []
+    lines = rust.splitlines()
+    i = 0
+    while i < len(lines):
+        match = _TOP_LEVEL_ITEM_RE.match(lines[i])
+        name = (match.group(1) or match.group(2)) if match else None
+        if name not in names:
+            kept.append(lines[i])
+            i += 1
+            continue
+        # Carry any attribute/doc lines that were emitted immediately above it.
+        while kept and re.match(r"^\s*(?:#\[|///|//!)", kept[-1]):
+            kept.pop()
+        dropped.append(name)
+        depth = 0
+        while i < len(lines):
+            depth += lines[i].count("{") - lines[i].count("}")
+            ends = depth <= 0 and (lines[i].rstrip().endswith((";", "}")) or "{" not in lines[i])
+            i += 1
+            if ends:
+                break
+    return "\n".join(kept), dropped

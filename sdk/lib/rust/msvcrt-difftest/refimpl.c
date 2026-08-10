@@ -74,19 +74,28 @@ static int ref_ascii_space(int c)
 
 /* ------------------------------------------------------------------ *
  * errno
- * ------------------------------------------------------------------ */
-static __thread int ref_errno_value;
-
-int * __cdecl _errno(void)
-{
-    return &ref_errno_value;
-}
-
-/* Read/clear window for the tests: EINVAL / ERANGE / EILSEQ / STRUNCATE are
+ *
+ * `_errno` USED to be defined here, over a `static __thread int` this file
+ * invented.  It isn't any more: errno.c is a reference TU (#7), so the
+ * reference now gets msvcrt's GENUINE accessor, which returns
+ * `&msvcrt_get_thread_data()->thread_errno` — the thread_data this very file
+ * supplies below.  That is the point of making it a reference TU: a harness
+ * that models the errno slot cannot grade code whose contract IS the errno
+ * slot (§9.73), and file.c alone stores through it 54 times.
+ *
+ * The two accessors below keep their names and signatures precisely so this
+ * swap costs nothing elsewhere — they have ~62 call sites across 8 files in
+ * two crates, and every one of them still works because only the STORAGE
+ * moved.  fileimpl.c's deferral banner expected this to be "a change to every
+ * existing test's plumbing"; it is not, as long as the harness API is held
+ * fixed and only the implementation moves underneath it.
+ *
+ * Read/clear window for the tests: EINVAL / ERANGE / EILSEQ / STRUNCATE are
  * part of several msvcrt contracts, so a parity check should assert on them.
- * These two are exported un-namespaced (they are harness API, not msvcrt). */
-int  ref_errno_get(void)      { return ref_errno_value; }
-void ref_errno_set(int value) { ref_errno_value = value; }
+ * These two are exported un-namespaced (they are harness API, not msvcrt).
+ * ------------------------------------------------------------------ */
+int  ref_errno_get(void)      { return *_errno(); }
+void ref_errno_set(int value) { *_errno() = value; }
 
 /* ------------------------------------------------------------------ *
  * invalid-parameter handler
@@ -103,15 +112,39 @@ void ref_errno_set(int value) { ref_errno_value = value; }
  * counter existed on the subject side from wave 5 but nothing ever read it, so
  * `_ultoa_s`-class contracts (which set errno WITHOUT firing the handler) could
  * not be distinguished from `_ltoa_s`-class ones (which fire it).  See §9.66.
+ *
+ * Since errno.c became reference TU #7 this is a COUNTING WRAPPER rather than a
+ * replacement: it tallies, then calls errno.c's genuine body (which the errno
+ * prelude renames `ref__invalid_parameter`, out of the msvcrt_ref_* import
+ * namespace this definition occupies).  Two reasons to compose rather than
+ * choose.  The counter is harness API with call sites in 8 files, so it has to
+ * survive; and the real body is what a future _MSVCR_VER bump would change, so
+ * keeping it on the live path means the reference follows msvcrt instead of
+ * following this file.
+ *
+ * Composing is free HERE and would not be everywhere: at _MSVCR_VER = 0 that
+ * body is inert.  The `>= 140` thread-data handler is compiled out; the
+ * file-static `invalid_parameter_handler` it falls back on is writable only by
+ * `_set_invalid_parameter_handler`, which is itself `>= 80` and so does not
+ * exist — the slot is permanently NULL; and the `RaiseException` arm is `>= 80`
+ * too.  What remains is one `ERR(...)`, which refstub/wine/debug.h no-ops.  So
+ * the delegation adds no side effect, no output, and no undefined symbol.  (An
+ * earlier plan here was to install the counter AS a handler through the real
+ * dispatch.  There is no reachable slot to install it in.)
  * ------------------------------------------------------------------ */
 static __thread int ref_invalid_pmt_calls;
+
+/* errno.c's own body, under the name the errno reference prelude gives it. */
+void __cdecl ref__invalid_parameter(const wchar_t *expr, const wchar_t *func,
+                                    const wchar_t *file, unsigned int line,
+                                    uintptr_t arg);
 
 void __cdecl _invalid_parameter(const wchar_t *expr, const wchar_t *func,
                                 const wchar_t *file, unsigned int line,
                                 uintptr_t arg)
 {
-    (void)expr; (void)func; (void)file; (void)line; (void)arg;
     ref_invalid_pmt_calls++;
+    ref__invalid_parameter(expr, func, file, line, arg);
 }
 
 int  ref_invalid_pmt_count(void) { return ref_invalid_pmt_calls; }
@@ -148,6 +181,11 @@ static threadlocinfo ref_locinfo;
  * reference and the subject share ONE locinfo, so a mistyped byte would make them
  * both wrong the same way and classify would still say MATCH.  See build.rs. */
 #include "cloc_tables.h"
+
+/* locale.c's C-locale calendar strings, lifted by build.rs into a TU of their own
+ * (`-fshort-wchar`, for the wide arm nothing reads at this version). ONE object, shared
+ * with the subject — see the assignment in get_locinfo below. */
+extern __lc_time_data cloc_time_data;
 
 /* ctype.c (reference TU #3) owns the narrow ctype table.  It is shared ENVIRONMENT,
  * not code under test — exactly like get_locinfo() itself: the reference and the
@@ -186,6 +224,12 @@ pthreadlocinfo CDECL get_locinfo(void)
         ref_locinfo.pctype      = MSVCRT__ctype + 1;
         ref_locinfo.pclmap      = cloc_clmap;
         ref_locinfo.pcumap      = cloc_cumap;
+        /* locale.c:657 makes this assignment too. Until time.c became a reference TU the
+         * slot stayed NULL, which was honest — nothing read it — and became a null deref
+         * the moment a strftime row existed. Shared with the subject, like the ctype and
+         * case tables above and NOT like the MBCS fixture: this is what the C locale IS,
+         * and neither side's code writes it at _MSVCR_VER=0. */
+        ref_locinfo.lc_time_curr = &cloc_time_data;
         MSVCRT__pctype          = ref_locinfo.pctype;
     }
     return &ref_locinfo;
@@ -278,6 +322,16 @@ thread_data_t * CDECL msvcrt_get_thread_data(void)
 {
     return &ref_thread_data;
 }
+
+/* The two thread-data fields `_setmbcp` steers on, reached through accessors rather than
+ * from the test directly.  The subject's copy of this struct (subjectimpl.c) is the one
+ * that has to match msvcrt-sys byte for byte, and ref_integrity asserts that; the
+ * reference's carries only the fields its TUs touch and is in a different order. One
+ * `extern` struct declaration in the test would therefore have to be right about TWO
+ * incompatible layouts, so each side hands out its own fields instead. */
+void ref_set_locale_flags(int flags)         { ref_thread_data.locale_flags = flags; }
+void ref_set_thread_mbcinfo(void *mbcinfo)   { ref_thread_data.mbcinfo = mbcinfo; }
+void *ref_get_thread_mbcinfo(void)           { return ref_thread_data.mbcinfo; }
 
 /* ------------------------------------------------------------------ *
  * _l ctype — GONE as of wave 10, and that is the upgrade.
@@ -530,12 +584,12 @@ void CDECL free_locale_noalloc(_locale_t locale)
     (void)locale;
 }
 
-/* printf's %e exponent width.  msvcrt's default is the 3-digit form; the
- * 2-digit form is opt-in via _set_output_format.  Return the default. */
-unsigned int __cdecl _get_output_format(void)
-{
-    return 0;
-}
+/* `_get_output_format` USED to live here, as a constant 0 — printf's %e exponent width,
+ * with a comment explaining that the 3-digit form is msvcrt's default.  That made OUR
+ * choice the oracle for every `%e` row.  misc.c DEFINES it, so as of reference TU #9 it is
+ * a reference EXPORT reading the genuine `output_format` static, and the prelude renames it
+ * to `ref__get_output_format` like every other one. Same move `_mbtowc_l` made for mbcs.c
+ * and `_isspace_l` for ctype.c. */
 
 /* `_mbtowc_l` USED to live here — a C-locale ASCII stub, because wcs.c called it and
  * nothing defined it.  mbcs.c DEFINES it, so as of the mbcs TU it is a reference
@@ -745,7 +799,41 @@ BOOL WINAPI GetStringTypeW(DWORD type, const wchar_t *src, int count, WORD *char
 int WINAPI WideCharToMultiByte(UINT page, DWORD flags, const wchar_t *src, int srclen,
                                char *dst, int dstlen, const char *defchar, BOOL *used)
 {
-    int i, n = ref_nls_wlen(src, srclen);
+    int i, n;
+
+    /* Real kernel32 REJECTS a NULL source with ERROR_INVALID_PARAMETER and returns 0.
+     * This shim used to dereference it, which turned a graceful failure into a SIGSEGV —
+     * and not hypothetically: `_tempnam` hands `astrdupw_utf8` whatever `_wtempnam`
+     * returned, with no guard between them (msvcrt's own C does the same), so a failed
+     * `GetTempFileNameW` arrives here as NULL. On Windows that path returns NULL to the
+     * caller; here it killed the process, which reads as a translation crash and is not
+     * one. Same rule as fileimpl.c's header states: model the API's ERROR behaviour, not
+     * just its success path. */
+    if (!src)
+    {
+        msvcrt_ref_set_last_error(ERROR_INVALID_PARAMETER);
+        return 0;
+    }
+
+    n = ref_nls_wlen(src, srclen);
+
+    /* srclen == -1 means "NUL-terminated", and real kernel32 then CONVERTS AND COUNTS
+     * the terminator.  ref_nls_wlen excludes it — correct for CompareStringW and
+     * LCMapStringW, which take a length and not a buffer size — so add it back here.
+     *
+     * Leaving it off made every measure-then-malloc-then-convert caller allocate one
+     * byte short and emit an UNTERMINATED string, which is the shape of the whole
+     * pattern: msvcrt.h's astrdupw_utf8, fileimpl.c's path_from_wide, locale.c's
+     * lconv fields, process.c's argv flattening.  path_from_wide is where it showed:
+     * `_open` created its file under the requested name plus whatever byte followed
+     * the block, and then round-tripped through the SAME garbled name perfectly, so
+     * only file_substrate.rs's read-back-through-the-host could see it.
+     *
+     * Nothing differential could have caught this either — WideCharToMultiByte is
+     * SHARED environment, so both sides truncated identically and every row still
+     * reported MATCH (§9.73).  Note MultiByteToWideChar in nlsimpl.c has always had
+     * the matching `strlen(src) + 1`; this was the asymmetry. */
+    if (srclen < 0) n++;
 
     (void)flags;
     if (used) *used = FALSE;
@@ -791,18 +879,70 @@ int WINAPI WideCharToMultiByte(UINT page, DWORD flags, const wchar_t *src, int s
         return r;
     }
 
-    if (!dstlen) return n;
-    if (dstlen < n) { ref_last_error = ERROR_INSUFFICIENT_BUFFER; return 0; }
+    /* CP_UTF8 has no default character to fall back on, so kernel32 does not substitute
+     * one — it REFUSES an unpaired surrogate, returning 0 with ERROR_NO_UNICODE_TRANSLATION.
+     * (Every other codepage here maps the unrepresentable to defchar and reports *used.)
+     *
+     * That distinction is the whole EILSEQ signal for a UTF-8 caller, because wcs.c:641
+     * hands `WideCharToMultiByte` a NULL lpUsedDefaultChar for exactly this codepage:
+     *
+     *     pused_default = (locinfo->lc_codepage != CP_UTF8 ? &used_default : NULL);
+     *
+     * so `wcsrtombs_l` under UTF-8 can only learn of a bad character from a ZERO return.
+     * With the model substituting '?' and returning n, that arm was unreachable and
+     * wave16's `wcsrtombs [CP_UTF8]` row was entering it only through the empty-string
+     * miscount fixed above — which is what its reachability guard caught.
+     *
+     * NOTE what this does NOT fix: the 1:1 loop below still renders U+0100..U+FFFF as a
+     * single '?' byte rather than a real UTF-8 sequence. Both sides share it, so no row
+     * can diverge on it; it costs realism, not correctness, and the surrogate arm is what
+     * the graded branches actually need. */
+    if (page == CP_UTF8)
+    {
+        for (i = 0; i < n; i++)
+        {
+            /* UNPAIRED only — a well-formed high/low pair is a legal code point and
+             * converts.  Rejecting every surrogate would make the row fail on valid
+             * astral input, which is a different bug wearing the same green tick. */
+            if (src[i] >= 0xD800 && src[i] <= 0xDBFF)
+            {
+                if (i + 1 < n && src[i + 1] >= 0xDC00 && src[i + 1] <= 0xDFFF) { i++; continue; }
+            }
+            else if (src[i] < 0xDC00 || src[i] > 0xDFFF)
+                continue;
+            ref_last_error = ERROR_NO_UNICODE_TRANSLATION;
+            return 0;
+        }
+    }
+
+    if (dstlen && dstlen < n) { ref_last_error = ERROR_INSUFFICIENT_BUFFER; return 0; }
     for (i = 0; i < n; i++)
     {
         /* C locale: U+0000..U+00FF map 1:1; anything else is unrepresentable. */
+        char c;
         if (src[i] < 256)
-            dst[i] = (char)src[i];
+            c = (char)src[i];
         else
         {
-            dst[i] = defchar ? *defchar : '?';
+            c = defchar ? *defchar : '?';
             if (used) *used = TRUE;
         }
+        /* The loop RUNS on a measure-only call (dstlen == 0) and only the STORE is
+         * skipped.  Returning early instead — which is what this did — reports the
+         * size without ever setting *used, and `used` is the entire EILSEQ signal for
+         * the size-query callers: wcs.c:646 asks
+         *
+         *     tmp = WideCharToMultiByte(cp, WC_NO_BEST_FIT_CHARS, *wcstr, -1,
+         *                               NULL, 0, NULL, pused_default);
+         *     if (!tmp || (pused_default && *pused_default)) { errno = EILSEQ; ... }
+         *
+         * so with *used never written the arm could only be entered by `!tmp` — which,
+         * before the `srclen < 0` fix above, an EMPTY string produced.  wave16's
+         * `wcsrtombs [CP_UTF8]` row was reaching EILSEQ that way and its reachability
+         * guard rightly went UNEXERCISED the moment the count was corrected: it had been
+         * grading a spurious failure on `L""` rather than a real unconvertible character.
+         * Real kernel32 converts internally on a size query and reports the flag. */
+        if (dstlen) dst[i] = c;
     }
     return n;
 }
@@ -880,4 +1020,101 @@ BOOL msvcrt_ref_RtlAreBitsClear(PRTL_BITMAP bm, ULONG start, ULONG length)
     for (i = 0; i < length; i++)
         if (bm->Buffer[(start + i) >> 5] & (1u << ((start + i) & 31))) return FALSE;
     return TRUE;
+}
+
+/* ------------------------------------------------------------------ *
+ * `vsnprintf` — the host's FORMATTER under msvcrt's BUFFER CONTRACT.
+ * ------------------------------------------------------------------ *
+ *
+ * Neither side of this binary can reach msvcrt's own printf engine through a
+ * `va_list`: the Rust `_vsnprintf` walks a `*mut u8` over 8-byte slots (the
+ * Windows va_list) and the host's `va_start` builds a SysV register-save-area
+ * struct, so the two cannot be handed to one another.  That is why the shipping
+ * DLL's `va_start` trampolines (rust_varargs_shim.c) stay out of the harness and
+ * why the pfflat instantiation exists.  Both sides therefore format through the
+ * host libc here — and that is fine, because printf_port.rs grades the engine
+ * itself against `ref_pf_printf_a`, the genuine C.
+ *
+ * What is NOT fine is taking the host's BUFFER contract with its formatter.  The
+ * two disagree exactly where `_ecvt`/`_fcvt` live:
+ *
+ *     wcs.c:881-891 + printf.h:36-54, for a buffer of `len`:
+ *       text shorter than len -> write it, write a NUL, return the count
+ *       text exactly len      -> write it, write NO NUL (out->len is 0, so the
+ *                                trailing puts_clbk_str copies zero bytes),
+ *                                return the count
+ *       text longer than len  -> write len bytes, no NUL, return -1
+ *       str == NULL           -> count only, write nothing
+ *     glibc: always NUL-terminates within len, always returns the would-be length.
+ *
+ * `_ecvt`/`_fcvt` print into `char buf[80]` and then READ THE RESULT BACK to
+ * assemble their answer, so one byte of terminator becomes one missing digit:
+ * `_fcvt(0.0, 80)` came back 77 zeros where msvcrt gives 78.  A harness that gets
+ * this wrong reports a digit-perfect port as broken.
+ *
+ * SHARED WITH THE SUBJECT SIDE ON PURPOSE.  subjectimpl.c's `_snprintf` calls
+ * this too.  Normally that would be the §9.73 trap — one side's stand-in
+ * satisfying the other's expectations — but this is ENVIRONMENT, not code under
+ * test: it stands in for an engine NEITHER side owns in this binary, exactly as
+ * `_errno`, `malloc` and the thread data already do.  Two separately-written
+ * copies of this contract is the real hazard; they drifted once already, one
+ * side writing a NUL at str[len] (a one-byte overflow of the caller's buffer)
+ * while the other truncated a digit early, and the resulting row blamed the Rust
+ * for both.
+ */
+#define REF_VSNPRINTF_SCRATCH 8192
+
+/* Declared rather than `#include <unistd.h>`d: the refstub deliberately controls which
+ * host headers reach this TU, and one prototype is cheaper than opening another. */
+long write(int fd, const void *buf, unsigned long count);
+
+int msvcrt_ref_vsnprintf(char *str, size_t len, const char *format, va_list ap)
+{
+    char scratch[REF_VSNPRINTF_SCRATCH];
+    va_list copy;
+    int need;
+    size_t i;
+
+    va_copy(copy, ap);
+    need = vsnprintf(scratch, sizeof(scratch), format, copy);
+    va_end(copy);
+
+    if (need < 0) return -1;
+    if ((size_t)need >= sizeof(scratch)) {
+        /* Fail loud rather than silently truncate: a quietly short reference is
+         * the one failure mode this whole function exists to prevent. `write` and
+         * `abort` are glibc's — no msvcrt export shadows either, so this cannot
+         * re-enter the code under test on its way out. */
+        static const char msg[] =
+            "msvcrt_ref_vsnprintf: REF_VSNPRINTF_SCRATCH too small for this format\n";
+        write(2, msg, sizeof(msg) - 1);
+        abort();
+    }
+
+    if (!str) return need;                        /* printf.h:40 — count-only */
+
+    if ((size_t)need > len) {                     /* did not fit */
+        for (i = 0; i < len; i++) str[i] = scratch[i];
+        return -1;
+    }
+    for (i = 0; i < (size_t)need; i++) str[i] = scratch[i];
+    if ((size_t)need < len) str[need] = '\0';     /* NUL only if there is room */
+    return need;
+}
+
+/* `_scprintf` — "how long would this printf be". Same sharing rationale as
+ * `msvcrt_ref_vsnprintf` above, and the same one body for both sides: subjectimpl.c's
+ * `_scprintf` calls this, and math.c's reference TU is redirected onto it by
+ * ref_math_extra.h. The reference's own `ref__scprintf` (wcs.c's) cannot be used — it
+ * reaches `arg_clbk_valist`, whose `va_arg(*valist, int)` is the flat-va_list idiom, and
+ * segfaults under the host's SysV va_list. */
+int msvcrt_ref_scprintf(const char *format, ...)
+{
+    va_list ap;
+    int n;
+
+    va_start(ap, format);
+    n = msvcrt_ref_vsnprintf((char *)0, 0, format, ap);
+    va_end(ap);
+    return n;
 }

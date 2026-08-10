@@ -7536,7 +7536,7 @@ pub unsafe fn IViewObject_Release(This: *mut IViewObject) -> ULONG {
     ((*(*This).lpVtbl).Release.unwrap_unchecked())(This)
 }
 #[inline]
-pub unsafe fn IViewObject_Draw(This: *mut IViewObject, dwDrawAspect: DWORD, lindex: LONG, pvAspect: *mut ::core::ffi::c_void, ptd: *mut DVTARGETDEVICE, hdcTargetDev: HDC, hdcDraw: HDC, lprcBounds: LPCRECTL, lprcWBounds: LPCRECTL, pfnContinue: ::core::option::Option<unsafe extern "C" fn(dwContinue: ULONG_PTR) -> BOOL>, dwContinue: ULONG_PTR) -> HRESULT {
+pub unsafe fn IViewObject_Draw(This: *mut IViewObject, dwDrawAspect: DWORD, lindex: LONG, pvAspect: *mut ::core::ffi::c_void, ptd: *mut DVTARGETDEVICE, hdcTargetDev: HDC, hdcDraw: HDC, lprcBounds: LPCRECTL, lprcWBounds: LPCRECTL, pfnContinue: ::core::option::Option<unsafe extern "system" fn(dwContinue: ULONG_PTR) -> BOOL>, dwContinue: ULONG_PTR) -> HRESULT {
     ((*(*This).lpVtbl).Draw.unwrap_unchecked())(This, dwDrawAspect, lindex, pvAspect, ptd, hdcTargetDev, hdcDraw, lprcBounds, lprcWBounds, pfnContinue, dwContinue)
 }
 #[inline]
@@ -7574,7 +7574,7 @@ pub unsafe fn IViewObject2_Release(This: *mut IViewObject2) -> ULONG {
     ((*(*This).lpVtbl).Release.unwrap_unchecked())(This)
 }
 #[inline]
-pub unsafe fn IViewObject2_Draw(This: *mut IViewObject2, dwDrawAspect: DWORD, lindex: LONG, pvAspect: *mut ::core::ffi::c_void, ptd: *mut DVTARGETDEVICE, hdcTargetDev: HDC, hdcDraw: HDC, lprcBounds: LPCRECTL, lprcWBounds: LPCRECTL, pfnContinue: ::core::option::Option<unsafe extern "C" fn(dwContinue: ULONG_PTR) -> BOOL>, dwContinue: ULONG_PTR) -> HRESULT {
+pub unsafe fn IViewObject2_Draw(This: *mut IViewObject2, dwDrawAspect: DWORD, lindex: LONG, pvAspect: *mut ::core::ffi::c_void, ptd: *mut DVTARGETDEVICE, hdcTargetDev: HDC, hdcDraw: HDC, lprcBounds: LPCRECTL, lprcWBounds: LPCRECTL, pfnContinue: ::core::option::Option<unsafe extern "system" fn(dwContinue: ULONG_PTR) -> BOOL>, dwContinue: ULONG_PTR) -> HRESULT {
     ((*(*This).lpVtbl).Draw.unwrap_unchecked())(This, dwDrawAspect, lindex, pvAspect, ptd, hdcTargetDev, hdcDraw, lprcBounds, lprcWBounds, pfnContinue, dwContinue)
 }
 #[inline]
@@ -7616,7 +7616,7 @@ pub unsafe fn IViewObjectEx_Release(This: *mut IViewObjectEx) -> ULONG {
     ((*(*This).lpVtbl).Release.unwrap_unchecked())(This)
 }
 #[inline]
-pub unsafe fn IViewObjectEx_Draw(This: *mut IViewObjectEx, dwDrawAspect: DWORD, lindex: LONG, pvAspect: *mut ::core::ffi::c_void, ptd: *mut DVTARGETDEVICE, hdcTargetDev: HDC, hdcDraw: HDC, lprcBounds: LPCRECTL, lprcWBounds: LPCRECTL, pfnContinue: ::core::option::Option<unsafe extern "C" fn(dwContinue: ULONG_PTR) -> BOOL>, dwContinue: ULONG_PTR) -> HRESULT {
+pub unsafe fn IViewObjectEx_Draw(This: *mut IViewObjectEx, dwDrawAspect: DWORD, lindex: LONG, pvAspect: *mut ::core::ffi::c_void, ptd: *mut DVTARGETDEVICE, hdcTargetDev: HDC, hdcDraw: HDC, lprcBounds: LPCRECTL, lprcWBounds: LPCRECTL, pfnContinue: ::core::option::Option<unsafe extern "system" fn(dwContinue: ULONG_PTR) -> BOOL>, dwContinue: ULONG_PTR) -> HRESULT {
     ((*(*This).lpVtbl).Draw.unwrap_unchecked())(This, dwDrawAspect, lindex, pvAspect, ptd, hdcTargetDev, hdcDraw, lprcBounds, lprcWBounds, pfnContinue, dwContinue)
 }
 #[inline]

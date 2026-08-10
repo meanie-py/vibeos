@@ -13,13 +13,21 @@
 
 use core::ffi::c_void;
 
+use core::ffi::c_char;
+
 use crate::island::{
-    GlobalAlloc, GlobalFree, GlobalLock, GlobalSize, GlobalUnlock, RegisterClipboardFormatW, BOOL,
-    CIDA, CLIPFORMAT, FORMATETC, GHND, HRESULT, LPCITEMIDLIST, LPITEMIDLIST, PCUIDLIST_ABSOLUTE,
-    PCUIDLIST_RELATIVE, POINT, SIZE_T, STGMEDIUM, UINT,
+    lstrcpyW, lstrlenW, WideCharToMultiByte, CP_ACP, SEE_CMIC_COMMON_FLAGS, SEE_MASK_CLASSKEY,
+    SEE_MASK_CLASSNAME, SEE_MASK_HASLINKNAME, SEE_MASK_HASTITLE,
+    GetVersion, GlobalAlloc, GlobalFree, GlobalLock, GlobalSize, GlobalUnlock,
+    RegisterClipboardFormatW, BOOL,
+    CIDA, CLIPFORMAT, DWORD, FORMATETC, GHND, GUID, HRESULT, LONG, LPCITEMIDLIST, LPITEMIDLIST,
+    PCUIDLIST_ABSOLUTE, PCUIDLIST_RELATIVE, POINT, SAFEARRAY, SHDESCRIPTIONID, SIZE_T, STGMEDIUM,
+    UINT, ULONG, VARIANT, VARTYPE, WM_DRAWITEM, WM_INITMENUPOPUP, WM_MEASUREITEM,
+    WM_MENUCHAR, WM_MENUSELECT,
 };
+use crate::V_VT;
 use crate::prelude::{
-    CopyMemory, ILFindLastID, SHFree, DVASPECT_CONTENT, E_OUTOFMEMORY, E_UNEXPECTED, S_OK,
+    CopyMemory, ILClone, ILFindLastID, SHFree, DVASPECT_CONTENT, E_OUTOFMEMORY, E_UNEXPECTED, S_OK,
     TRUE, TYMED_HGLOBAL, TYMED_NULL,
 };
 use crate::shellcom::IDataObject;
@@ -35,7 +43,7 @@ extern "system" {
 }
 
 /// `CFSTR_SHELLIDLISTW` = "Shell IDList Array" (shlobj.h CF_IDLIST).
-const CFSTR_SHELLIDLISTW: [u16; 19] = [
+pub const CFSTR_SHELLIDLISTW: [u16; 19] = [
     b'S' as u16, b'h' as u16, b'e' as u16, b'l' as u16, b'l' as u16, b' ' as u16, b'I' as u16,
     b'D' as u16, b'L' as u16, b'i' as u16, b's' as u16, b't' as u16, b' ' as u16, b'A' as u16,
     b'r' as u16, b'r' as u16, b'a' as u16, b'y' as u16, 0,
@@ -255,5 +263,280 @@ impl Drop for CCidaChildArrayHelper {
     fn drop(&mut self) {
         unsafe { SHFree(self.m_array as *mut _) };
         self.m_array = core::ptr::null_mut();
+    }
+}
+
+// -------------------------------------------------------------------------------------------
+// `dll/win32/shell32/wine/shell32_main.h` — the property-system inlines.
+//
+// Same class as everything above (a `static inline` in a header reaches no translation unit),
+// but these had been getting away with it: shlfolder.cpp inlined them into ITSELF and exported
+// `SHELL_Create*_RustBridge` wrappers, so translated Rust reached them through a C++ hop.
+// Flipping shlfolder.cpp took that only definition with it, and the i386 link failed on
+// `_SHELL_CreateVariantBuffer@8` / `_SHELL_CreateSHDESCRIPTIONID@12`. Ported here instead of
+// re-homing the wrappers in another `.cpp`, so the next flip cannot repeat it.
+//
+// `#[no_mangle] extern "system"` to match the WINAPI symbols the existing declarations in
+// `win32.rs` and the translated folder classes already reference. There is no collision with
+// the C++: `static inline` at namespace scope has INTERNAL linkage, so each C++ TU's copy is
+// file-local.
+
+/// wtypes.h `VARENUM` — the two the property-system helpers use.
+pub const VT_UI1: VARTYPE = 17;
+pub const VT_ARRAY: VARTYPE = 0x2000;
+
+extern "system" {
+    fn SafeArrayCreateVector(vt: VARTYPE, lLbound: LONG, cElements: ULONG) -> *mut SAFEARRAY;
+}
+
+/// `V_ARRAY(pVar)`, over com-sys's anonymous-union chain (`V_VT` is `.n1.n2.vt`, one level up).
+#[inline]
+unsafe fn v_array(pVar: *mut VARIANT) -> *mut *mut SAFEARRAY {
+    core::ptr::addr_of_mut!((*pVar).n1.n2.n3.parray)
+}
+
+#[no_mangle]
+pub unsafe extern "system" fn SHELL_CreateVariantBufferEx(
+    pVar: *mut VARIANT,
+    cb: UINT,
+    vt: VARTYPE,
+) -> HRESULT {
+    let pSA = SafeArrayCreateVector(vt, 0, cb);
+    if !pSA.is_null() {
+        V_VT!(pVar) = VT_ARRAY | vt;
+        *v_array(pVar) = pSA;
+        return S_OK;
+    }
+    E_OUTOFMEMORY
+}
+
+#[no_mangle]
+pub unsafe extern "system" fn SHELL_CreateVariantBuffer(pVar: *mut VARIANT, cb: UINT) -> HRESULT {
+    SHELL_CreateVariantBufferEx(pVar, cb, VT_UI1)
+}
+
+#[no_mangle]
+pub unsafe extern "system" fn SHELL_CreateSHDESCRIPTIONID(
+    pVar: *mut VARIANT,
+    Id: DWORD,
+    pCLSID: *const GUID,
+) -> HRESULT {
+    let hr = SHELL_CreateVariantBuffer(pVar, core::mem::size_of::<SHDESCRIPTIONID>() as UINT);
+    if hr >= 0 {
+        let pDID = (**v_array(pVar)).pvData as *mut SHDESCRIPTIONID;
+        (*pDID).dwDescriptionId = Id;
+        (*pDID).clsid = *pCLSID.cast();
+    }
+    hr
+}
+
+/// `wine/shell32_main.h:193` — `static __inline BOOL SHELL_OsIsUnicode(void)`. A header inline
+/// has INTERNAL linkage, so every C TU that uses it holds its own copy and there is no symbol
+/// to import: a Rust caller needs the body ported, and must NOT `#[no_mangle]` it (nothing
+/// links to this name, and exporting it would invent a symbol the C side never had).
+#[inline]
+pub unsafe fn SHELL_OsIsUnicode() -> BOOL {
+    // if high-bit of version is 0, we are emulating NT
+    (GetVersion() & 0x80000000 == 0) as BOOL
+}
+
+/// `shellutils.h:697` — `static inline BOOL SHELL_IsContextMenuMsg(UINT uMsg)`. Header inline,
+/// so not `#[no_mangle]`; see `SHELL_OsIsUnicode` above.
+#[inline]
+pub fn SHELL_IsContextMenuMsg(uMsg: UINT) -> BOOL {
+    (uMsg == WM_MEASUREITEM
+        || uMsg == WM_DRAWITEM
+        || uMsg == WM_INITMENUPOPUP
+        || uMsg == WM_MENUSELECT
+        || uMsg == WM_MENUCHAR) as BOOL
+}
+
+/// `shellutils.h:462` — `template<class P, class R> static HRESULT SHILClone(P, R*)`. A C++
+/// TEMPLATE is in no translation unit for the same reason an inline is not, and its two type
+/// parameters exist only to launder PIDL type-safety: every instantiation erases to the same
+/// pointer, so one monomorphic port covers them all.
+#[inline]
+pub unsafe fn SHILClone(pidl: LPCITEMIDLIST, ppOut: *mut LPITEMIDLIST) -> HRESULT {
+    let r = ILClone(pidl);
+    *ppOut = r;
+    if r.is_null() { E_OUTOFMEMORY } else { S_OK }
+}
+
+/// `compat_undoc.h:5` — the shim block the loader hangs off the PEB.
+#[repr(C)]
+struct ReactOS_ShimData {
+    dwReserved1: [DWORD; 130],
+    dwSize: DWORD,
+    dwMagic: DWORD,
+    dwReserved2: [DWORD; 242],
+    dwRosProcessCompatVersion: DWORD,
+}
+
+const REACTOS_SHIMDATA_MAGIC: DWORD = 0xAC0D_EDAB;
+const REACTOS_COMPATVERSION_UNINITIALIZED: DWORD = 0xffff_fffe;
+
+/// `compat_undoc.h:22` — `static inline DWORD RosGetProcessCompatVersion(VOID)`. Its cache is a
+/// FUNCTION-LOCAL static with a constant initialiser, i.e. a hidden global with no guard
+/// variable, so a module `static mut` is exactly equivalent.
+static mut g_CompatVersion: DWORD = REACTOS_COMPATVERSION_UNINITIALIZED;
+
+#[inline]
+pub unsafe fn RosGetProcessCompatVersion() -> DWORD {
+    if g_CompatVersion == REACTOS_COMPATVERSION_UNINITIALIZED {
+        let pShimData = (*ntdll_sys::nt::NtCurrentPeb()).pShimData as *const ReactOS_ShimData;
+        if !pShimData.is_null()
+            && (*pShimData).dwMagic == REACTOS_SHIMDATA_MAGIC
+            && (*pShimData).dwSize as usize == core::mem::size_of::<ReactOS_ShimData>()
+        {
+            g_CompatVersion = (*pShimData).dwRosProcessCompatVersion;
+        }
+    }
+    if g_CompatVersion < REACTOS_COMPATVERSION_UNINITIALIZED { g_CompatVersion } else { 0 }
+}
+
+/// `compat_undoc.h:39` — the shimmed version if one is set, else the PEB's OS version.
+#[inline]
+pub unsafe fn RosGetProcessEffectiveVersion() -> UINT {
+    let shimVer = RosGetProcessCompatVersion();
+    if shimVer != 0 {
+        return shimVer;
+    }
+    let peb = ntdll_sys::nt::NtCurrentPeb();
+    (((*peb).OSMajorVersion << 8) | (*peb).OSMinorVersion) as UINT
+}
+
+// ── CCoInitBase (shellutils.h:611) ───────────────────────────────────────────────────────
+// A C++ RAII *template*, so like the inlines above it exists in no TU and rustconv never sees
+// a body — but unlike them it has no name to leave unresolved either: bindgen renders it as
+// the opaque `pub type COleInit = u8;`, against which the natural translation of
+// `COleInit OleInit;` is `let _ole_init: COleInit;`. That compiles, and runs NEITHER half of
+// the RAII pair — no OleInitialize on the way in, no OleUninitialize on the way out. An
+// uninitialised Rust binding is never dropped. Port the guard for real and let Drop do it.
+//
+// `prelude` re-exports this name explicitly so it shadows the island's `u8` alias, the same
+// way `CCidaChildArrayHelper` is handled.
+unsafe extern "system" {
+    fn OleInitialize(pvReserved: *mut c_void) -> HRESULT;
+    fn OleUninitialize();
+    fn CoInitialize(pvReserved: *mut c_void) -> HRESULT;
+    fn CoUninitialize();
+}
+
+/// `CCoInitBase<OleInitialize, OleUninitialize>` — ctor initialises OLE, dtor uninitialises it
+/// iff the init succeeded. Construct it with `COleInit::new()`; binding it to `_` would drop it
+/// immediately, so keep a named binding for the scope you want COM alive in.
+pub struct COleInit {
+    pub hr: HRESULT,
+}
+
+impl COleInit {
+    #[inline]
+    pub unsafe fn new() -> Self {
+        Self { hr: OleInitialize(core::ptr::null_mut()) }
+    }
+}
+
+impl Drop for COleInit {
+    fn drop(&mut self) {
+        if self.hr >= 0 {
+            unsafe { OleUninitialize() };
+        }
+    }
+}
+
+/// `CCoInitBase<CoInitialize, CoUninitialize>` (shellutils.h:622) — the other instantiation of
+/// the same template, and it carries the identical trap: the island's opaque `pub type CCoInit
+/// = u8` swallows `CCoInit init;` into a binding that initialises nothing and drops nothing.
+pub struct CCoInit {
+    pub hr: HRESULT,
+}
+
+impl CCoInit {
+    #[inline]
+    pub unsafe fn new() -> Self {
+        Self { hr: CoInitialize(core::ptr::null_mut()) }
+    }
+}
+
+impl Drop for CCoInit {
+    fn drop(&mut self) {
+        if self.hr >= 0 {
+            unsafe { CoUninitialize() };
+        }
+    }
+}
+
+/// `shellutils.h:689` — narrows a `SEE_MASK_*` set to the `CMIC_MASK_*` bits an
+/// `IContextMenu::InvokeCommand` accepts. A header inline, so it reaches no TU.
+#[inline]
+pub fn SeeFlagsToCmicFlags(mut flags: UINT) -> UINT {
+    if (flags & (SEE_MASK_CLASSNAME | SEE_MASK_CLASSKEY)) == SEE_MASK_CLASSNAME {
+        flags &= !(SEE_MASK_HASLINKNAME | SEE_MASK_HASTITLE);
+    }
+    flags & SEE_CMIC_COMMON_FLAGS
+}
+
+// ── wine/shell32_main.h inlines ──────────────────────────────────────────────────────────
+// `static __inline` in a Wine header: in no TU, so rustconv never sees a body. Both allocate
+// with SHAlloc (the COM task allocator), and the caller frees with SHFree.
+
+/// `wine/shell32_main.h:210` — SHAlloc a CP_ACP copy of a wide string into `*target`.
+#[inline]
+pub unsafe fn __SHCloneStrWtoA(target: *mut *mut c_char, source: *const u16) {
+    let len = WideCharToMultiByte(CP_ACP, 0, source, -1, core::ptr::null_mut(), 0,
+                                  core::ptr::null(), core::ptr::null_mut());
+    *target = SHAlloc(len as SIZE_T) as *mut c_char;
+    WideCharToMultiByte(CP_ACP, 0, source, -1, *target, len,
+                        core::ptr::null(), core::ptr::null_mut());
+}
+
+/// `wine/shell32_main.h:217` — SHAlloc a copy of a wide string into `*target`.
+#[inline]
+pub unsafe fn __SHCloneStrW(target: *mut *mut u16, source: *const u16) {
+    let cch = lstrlenW(source) + 1;
+    *target = SHAlloc(cch as SIZE_T * core::mem::size_of::<u16>() as SIZE_T) as *mut u16;
+    lstrcpyW(*target, source);
+}
+
+extern "system" {
+    /// shlwapi ordinal 175. Declared here rather than pulled from the island because
+    /// shellutils.h reaches it through shlwapi.h, which is outside the island's closure.
+    fn IUnknown_SetSite(object: *mut crate::shellcom::IUnknown, site: *mut crate::shellcom::IUnknown) -> HRESULT;
+}
+
+/// `CScopedSetObjectWithSite` — shellutils.h:657.
+///
+/// Sets a site on an object for a scope and clears it on the way out. The C++ is a
+/// three-line RAII struct, and the one detail that matters is what it does with a NULL
+/// site: it does NOT call `IUnknown_SetSite` and it stores NULL in `m_pObj`, so the
+/// destructor's unconditional `IUnknown_SetSite(m_pObj, NULL)` is a no-op rather than
+/// clearing a site the scope never set. Storing `pObj` regardless would clear a site
+/// somebody else installed.
+///
+/// `drop_target_helper::simulate_drop_with_site` inlines these same semantics for the one
+/// call it needed; this is the reusable form, for translated bodies that construct the
+/// C++ object by name.
+pub struct CScopedSetObjectWithSite {
+    m_pObj: *mut crate::shellcom::IUnknown,
+}
+
+impl CScopedSetObjectWithSite {
+    pub unsafe fn new(
+        pObj: *mut crate::shellcom::IUnknown,
+        pSite: *mut crate::shellcom::IUnknown,
+    ) -> Self {
+        if pSite.is_null() {
+            return Self { m_pObj: core::ptr::null_mut() };
+        }
+        IUnknown_SetSite(pObj, pSite);
+        Self { m_pObj: pObj }
+    }
+}
+
+impl Drop for CScopedSetObjectWithSite {
+    fn drop(&mut self) {
+        unsafe {
+            IUnknown_SetSite(self.m_pObj, core::ptr::null_mut());
+        }
     }
 }

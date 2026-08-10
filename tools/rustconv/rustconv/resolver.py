@@ -338,7 +338,8 @@ def print_resolve_result(result: ResolveResult) -> None:
     if result.exports:
         print(f"\nExports ({len(result.exports)}):")
         for name, entry in sorted(result.exports.items()):
-            fwd = f" → {entry.forward_target}" if entry.forward_target else ""
+            target = entry.forward_target or entry.impl_symbol
+            fwd = f" → {target}" if target else ""
             arch = f" [{','.join(entry.arch_filter)}]" if entry.arch_filter else ""
             print(f"  {entry.convention} {name}({' '.join(entry.params)}){fwd}{arch}")
 

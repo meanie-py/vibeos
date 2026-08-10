@@ -639,6 +639,7 @@ pub const QUOTA_LIMITS_HARDWS_MAX_DISABLE: ULONG = 0x00000008;
 // ============================================================================
 
 pub const PSF_BREAK_ON_TERMINATION_BIT: ULONG = 0x2000;
+pub const PSF_SESSION_CREATION_UNDERWAY_BIT: ULONG = 0x4000;
 pub const PSF_NO_DEBUG_INHERIT_BIT: ULONG = 0x2;
 pub const PSF_VDM_ALLOWED_BIT: ULONG = 0x1000000;
 pub const CT_BREAK_ON_TERMINATION_BIT: ULONG = 0x40;

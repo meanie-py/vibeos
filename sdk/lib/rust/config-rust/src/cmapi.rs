@@ -24,6 +24,7 @@ pub type VALUE_SEARCH_RETURN_TYPE = u32;
 // Registry constants
 pub const KEY_HIVE_ENTRY: u32 = 0x00000004;
 pub const KEY_NO_DELETE: u32 = 0x00000008;
+pub const KEY_SYM_LINK: u32 = 0x00000010;
 pub const KEY_COMP_NAME: u16 = 0x0020;
 pub const REG_NOTIFY_CHANGE_NAME: u32 = 0x00000001;
 pub const REG_NOTIFY_CHANGE_LAST_SET: u32 = 0x00000004;
@@ -42,8 +43,10 @@ pub const CM_CHECK_REGISTRY_VALIDATE_HIVE: u32 = 0x00000008;
 
 // Hive init types
 pub const HINIT_CREATE: u32 = 0;
-pub const HIVE_VOLATILE: u32 = 1;
 pub const HFILE_TYPE_PRIMARY: u32 = 0;
+
+// HiveFlags bits come from ONE place; see crate::hiveflags.
+pub use crate::hiveflags::{HIVE_IS_UNLOADING, HIVE_NOLAZYFLUSH, HIVE_VOLATILE};
 
 // Storage types
 pub const Stable: u32 = 0;
@@ -208,7 +211,11 @@ pub unsafe extern "system" fn CmpDoFlushAll(ForceFlush: u8) -> u8 {
     NextEntry = CmpHiveListHead.Flink;
     while NextEntry != core::ptr::addr_of_mut!(CmpHiveListHead) {
         Hive = (NextEntry as *mut u8).offset(-(core::mem::offset_of!(CMHIVE, HiveList) as isize)) as PCMHIVE;
-        if ((*Hive).Hive.HiveFlags & 0x00000001) == 0 {
+        // C: `!(Hive->Hive.HiveFlags & HIVE_NOLAZYFLUSH)`, which is 0x2. The
+        // literal here was 0x1 — HIVE_VOLATILE — so the lazy flusher skipped
+        // every VOLATILE hive (which has nothing to flush anyway) and happily
+        // flushed the hives that asked it not to.
+        if ((*Hive).Hive.HiveFlags & crate::hiveflags::HIVE_NOLAZYFLUSH) == 0 {
             CmpLockHiveFlusherExclusive(Hive);
 
             if ForceFlush != 0 && (*Hive).UseCount != 0 {
@@ -691,7 +698,13 @@ pub unsafe extern "system" fn CmSetValueKey(
                 break 'Quickie;
             }
 
-            if ((*Kcb).__bindgen_anon_5.Flags() & 0x00000004) != 0 &&
+            // C: `Kcb->Flags & KEY_SYM_LINK`. KEY_SYM_LINK is 0x0010
+            // (sdk/lib/cmlib/cmdata.h); the literal here was 0x0004, which is
+            // KEY_HIVE_ENTRY — so "don't let anyone mess with symlinks" guarded
+            // HIVE ROOTS (\Registry\Machine\System, ...\Software, ...\Sam,
+            // ...\Security, \Registry\User\.Default) and left symlink keys
+            // unguarded. Setting any value on a hive root returned ACCESS_DENIED.
+            if ((*Kcb).__bindgen_anon_5.Flags() & KEY_SYM_LINK) != 0 &&
                 ((Type != 6) ||
                  ValueName.is_null() ||
                  RtlEqualUnicodeString(
@@ -1115,6 +1128,7 @@ pub unsafe extern "system" fn CmEnumerateValueKey(
         Parent = HvGetCell(Hive, (*Kcb).__bindgen_anon_2.__bindgen_anon_1.KeyCell) as PCM_KEY_NODE;
 
         if (*Kcb).ValueCache.Count != (*Parent).__bindgen_anon_1.__bindgen_anon_1.ValueList.Count {
+            crate::dbg_print!(b"HACK: Overriding value cache count\n\0");
             (*Kcb).ValueCache.Count = (*Parent).__bindgen_anon_1.__bindgen_anon_1.ValueList.Count;
         }
 
@@ -1247,6 +1261,7 @@ unsafe fn CmpQueryKeyDataFromCache(
     (*KeyCachedInfo).MaxValueDataLen = (*Kcb).KcbMaxValueDataLen;
 
     if ((*Kcb).__bindgen_anon_1.ExtFlags() & CM_KCB_INVALID_CACHED_INFO) != 0 {
+        crate::dbg_print!(b"Kcb cache incoherency detected, kcb = %p\n\0", Kcb);
         let Node: PCM_KEY_NODE = HvGetCell(KeyHive, KeyCell) as PCM_KEY_NODE;
         if Node == core::ptr::null_mut() {
             return STATUS_INSUFFICIENT_RESOURCES;
@@ -1438,6 +1453,7 @@ pub unsafe extern "system" fn CmQueryKey(
             ResultLength,
         )
     } else {
+        crate::dbg_print!(b"Unsupported class: %d!\n\0", KeyInformationClass);
         STATUS_INVALID_INFO_CLASS
     };
 
@@ -1670,7 +1686,7 @@ pub unsafe extern "system" fn CmLoadKey(
         &mut ClientSecurityContext,
     );
     if !NT_SUCCESS(Status) {
-        // DPRINT removed
+        crate::dbg_print!(b"Security context failed\n\0");
         return Status;
     }
 
@@ -1721,11 +1737,15 @@ pub unsafe extern "system" fn CmLoadKey(
 
     ExAcquirePushLockExclusive(core::ptr::addr_of_mut!(CmpLoadHiveLock) as *mut _);
 
-    (*CmHive).Hive.HiveFlags |= 0x00000004u32;
+    // C: HiveFlags |= HIVE_IS_UNLOADING (0x20) — the grind wrote 0x4, which is
+    // HIVE_HAS_BEEN_REPLACED, and CmUnloadKey then wrote a third value again.
+    (*CmHive).Hive.HiveFlags |= HIVE_IS_UNLOADING;
     (*CmHive).CreatorOwner = KeGetCurrentThread() as *mut _;
 
+    // REG_NO_LAZY_FLUSH (0x4) is the caller's flag; the hive bit it sets is
+    // HIVE_NOLAZYFLUSH (0x2), not 0x8 (HIVE_HAS_BEEN_FREED).
     if (Flags & 0x00000004u32) != 0 {
-        (*CmHive).Hive.HiveFlags |= 0x00000008u32;
+        (*CmHive).Hive.HiveFlags |= HIVE_NOLAZYFLUSH;
     }
 
     Status = CmpLinkHiveToMaster(
@@ -1744,10 +1764,10 @@ pub unsafe extern "system" fn CmLoadKey(
             CmpUnlockHiveFlusher(CmHive);
         }
 
-        (*CmHive).Hive.HiveFlags &= !0x00000004u32;
+        (*CmHive).Hive.HiveFlags &= !HIVE_IS_UNLOADING;
         (*CmHive).CreatorOwner = core::ptr::null_mut();
     } else {
-        // DPRINT removed
+        crate::dbg_print!(b"CmpLinkHiveToMaster failed, Status %lx\n\0", Status);
 
         (*CmHive).HiveIsLoading = 1u8;
 
@@ -1795,6 +1815,7 @@ unsafe fn CmpUnlinkHiveFromMaster(
     );
     CmpUnlockHiveFlusher(CmiVolatileHive);
     if !NT_SUCCESS(Status) {
+        crate::dbg_print!(b"CmpFreeKeyByCell() failed (Status 0x%08lx)\n\0", Status);
         return 0u8;
     }
 
@@ -1820,7 +1841,6 @@ pub unsafe extern "system" fn CmUnloadKey(
     const REG_FORCE_UNLOAD: u32 = 1;
     const TAG_CMHIVE: u32 = 0x4D48434D;
     const TAG_CM: u32 = 0x20204D43;
-    const HIVE_IS_UNLOADING: u32 = 0x00000040;
 
     CMP_ASSERT_EXCLUSIVE_REGISTRY_LOCK();
 
@@ -1829,10 +1849,12 @@ pub unsafe extern "system" fn CmUnloadKey(
     CmHive = Hive as PCMHIVE;
 
     if Cell != (*(*Hive).BaseBlock).RootCell {
+        crate::dbg_print!(b"Key is not a hive root key!\n\0");
         return STATUS_INVALID_PARAMETER;
     }
 
     if CmHive == CmiVolatileHive {
+        crate::dbg_print!(b"Do not try to unload the master hive!\n\0");
         return STATUS_INVALID_PARAMETER;
     }
 
@@ -1970,6 +1992,10 @@ pub unsafe extern "system" fn CmpEnumerateOpenSubKeys(
         }
 
         i += 1;
+    }
+
+    if SubKeys > 0 {
+        crate::dbg_print!(b"Open sub keys: %u\n\0", SubKeys);
     }
 
     SubKeys

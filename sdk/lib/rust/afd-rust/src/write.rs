@@ -24,17 +24,7 @@ extern "C" {
 }
 
 // ---- file-scope preamble (translated) ----
-#[cfg(target_arch = "x86")]
-unsafe extern "stdcall" fn SendComplete(
-    DeviceObject: PDEVICE_OBJECT,
-    Irp: PIRP,
-    Context: PVOID,
-) -> NTSTATUS {
-    send_complete_impl(DeviceObject, Irp, Context)
-}
-
-#[cfg(not(target_arch = "x86"))]
-unsafe extern "C" fn SendComplete(
+unsafe extern "system" fn SendComplete(
     DeviceObject: PDEVICE_OBJECT,
     Irp: PIRP,
     Context: PVOID,
@@ -280,17 +270,7 @@ unsafe fn send_complete_impl(
 
     STATUS_SUCCESS
 }
-#[cfg(target_arch = "x86")]
-unsafe extern "stdcall" fn PacketSocketSendComplete(
-    DeviceObject: PDEVICE_OBJECT,
-    Irp: PIRP,
-    Context: PVOID,
-) -> NTSTATUS {
-    packet_socket_send_complete_impl(DeviceObject, Irp, Context)
-}
-
-#[cfg(not(target_arch = "x86"))]
-unsafe extern "C" fn PacketSocketSendComplete(
+unsafe extern "system" fn PacketSocketSendComplete(
     DeviceObject: PDEVICE_OBJECT,
     Irp: PIRP,
     Context: PVOID,

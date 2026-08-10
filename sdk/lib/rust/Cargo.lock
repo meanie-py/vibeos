@@ -7,6 +7,15 @@ name = "access"
 version = "0.1.0"
 
 [[package]]
+name = "aclui-rust"
+version = "0.1.0"
+dependencies = [
+ "ntdll-sys",
+ "panic-common",
+ "win32macros-rust",
+]
+
+[[package]]
 name = "acpi-rust"
 version = "0.1.0"
 dependencies = [
@@ -95,6 +104,15 @@ version = "0.1.0"
 dependencies = [
  "ntkrnl-sys",
  "panic-common",
+]
+
+[[package]]
+name = "authz-rust"
+version = "0.1.0"
+dependencies = [
+ "ntdll-sys",
+ "panic-common",
+ "win32macros-rust",
 ]
 
 [[package]]
@@ -464,6 +482,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "desk-rust"
+version = "0.1.0"
+dependencies = [
+ "ntdll-sys",
+ "panic-common",
+ "strsafe-rust",
+ "win32macros-rust",
+]
+
+[[package]]
 name = "dhcpcsvc-rust"
 version = "0.1.0"
 dependencies = [
@@ -815,6 +843,15 @@ dependencies = [
 [[package]]
 name = "interlck"
 version = "0.1.0"
+
+[[package]]
+name = "intl-rust"
+version = "0.1.0"
+dependencies = [
+ "ntdll-sys",
+ "panic-common",
+ "win32macros-rust",
+]
 
 [[package]]
 name = "iomgr-rust"
@@ -1268,7 +1305,17 @@ version = "0.1.0"
 dependencies = [
  "ntdll-sys",
  "panic-common",
+ "strsafe-rust",
  "winlogon-sys",
+]
+
+[[package]]
+name = "msv1_0-rust"
+version = "0.1.0"
+dependencies = [
+ "ntdll-sys",
+ "panic-common",
+ "win32macros-rust",
 ]
 
 [[package]]
@@ -1294,6 +1341,25 @@ version = "0.1.0"
 dependencies = [
  "cc",
  "libc",
+ "msvcrt-crt-rust",
+ "msvcrt-sys",
+]
+
+[[package]]
+name = "msvcrt-scanf-difftest"
+version = "0.1.0"
+dependencies = [
+ "cc",
+ "libc",
+ "msvcrt-crt-rust",
+ "msvcrt-sys",
+]
+
+[[package]]
+name = "msvcrt-seh-difftest"
+version = "0.1.0"
+dependencies = [
+ "cc",
  "msvcrt-crt-rust",
  "msvcrt-sys",
 ]
@@ -1327,11 +1393,21 @@ dependencies = [
 ]
 
 [[package]]
+name = "netcfgx-rust"
+version = "0.1.0"
+dependencies = [
+ "ntdll-sys",
+ "panic-common",
+ "win32macros-rust",
+]
+
+[[package]]
 name = "netid-rust"
 version = "0.1.0"
 dependencies = [
  "ntdll-sys",
  "panic-common",
+ "win32macros-rust",
 ]
 
 [[package]]
@@ -1418,6 +1494,15 @@ version = "0.1.0"
 dependencies = [
  "panic-common",
  "reactos-link",
+]
+
+[[package]]
+name = "ntmarta-rust"
+version = "0.1.0"
+dependencies = [
+ "ntdll-sys",
+ "panic-common",
+ "win32macros-rust",
 ]
 
 [[package]]
@@ -1983,6 +2068,7 @@ version = "0.1.0"
 dependencies = [
  "ntdll-sys",
  "panic-common",
+ "win32macros-rust",
 ]
 
 [[package]]
@@ -2183,6 +2269,10 @@ dependencies = [
 ]
 
 [[package]]
+name = "strsafe-rust"
+version = "0.1.0"
+
+[[package]]
 name = "svcctl-stub"
 version = "0.1.0"
 dependencies = [
@@ -2216,6 +2306,26 @@ dependencies = [
  "proc-macro2",
  "quote",
  "unicode-ident",
+]
+
+[[package]]
+name = "sysdm-rust"
+version = "0.1.0"
+dependencies = [
+ "ntdll-sys",
+ "panic-common",
+ "strsafe-rust",
+ "win32macros-rust",
+]
+
+[[package]]
+name = "syssetup-rust"
+version = "0.1.0"
+dependencies = [
+ "ntdll-sys",
+ "panic-common",
+ "strsafe-rust",
+ "win32macros-rust",
 ]
 
 [[package]]
@@ -2321,6 +2431,15 @@ name = "uefildr-cargo"
 version = "0.1.0"
 dependencies = [
  "reactos-link",
+]
+
+[[package]]
+name = "umpnpmgr-rust"
+version = "0.1.0"
+dependencies = [
+ "ntdll-sys",
+ "panic-common",
+ "win32macros-rust",
 ]
 
 [[package]]
@@ -2559,6 +2678,10 @@ dependencies = [
 
 [[package]]
 name = "win32k-sys"
+version = "0.1.0"
+
+[[package]]
+name = "win32macros-rust"
 version = "0.1.0"
 
 [[package]]

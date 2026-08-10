@@ -7,6 +7,11 @@
 byte-identical snapshot of the upstream tag. If a local change ever becomes
 unavoidable, record it here as a diff and mark the touched files.
 
+The one addition is `external/fex/VENDORED`, a generated marker written by
+`tools/vendored.py --write-stamps` (see `vendor.yaml`). It adds a file rather than
+touching one, so every upstream byte is still upstream's; a re-vendor drops it and
+`--write-stamps` puts it back.
+
 **Pruned** (build-irrelevant for the vibeos wow64/arm64ec targets — huge test
 corpora and gated-off externals; see `tools/fex/build-fex.sh` for the exact
 configure that this subset was proven against):

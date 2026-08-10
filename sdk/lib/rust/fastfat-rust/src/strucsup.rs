@@ -1,4 +1,5 @@
 use ntkrnl_sys::globals::*;
+use ntkrnl_sys::ddk::PRTL_SPLAY_LINKS;
 use ntkrnl_sys::base::*;
 use ntkrnl_sys::constants::*;
 use ntkrnl_sys::driver_ddk::*;
@@ -76,8 +77,8 @@ extern "system" {
     static mut FatLargeZero: LARGE_INTEGER;
     fn Fat8dot3ToString( IrpContext: *mut IRP_CONTEXT, Dirent: *mut DIRENT, flag: u8, ShortName: *mut OEM_STRING, );
     fn FatAreNamesEqual( IrpContext: *mut IRP_CONTEXT, name1: OEM_STRING, name2: OEM_STRING, ) -> u8;
-    fn FatFindFcb( IrpContext: *mut IRP_CONTEXT, root: *mut core::ffi::c_void, name: *const OEM_STRING, param: *mut core::ffi::c_void, ) -> *mut core::ffi::c_void;
-    fn FatInsertName( IrpContext: *mut IRP_CONTEXT, root: *mut core::ffi::c_void, name: *mut core::ffi::c_void, );
+    fn FatFindFcb( IrpContext: *mut IRP_CONTEXT, RootNode: *mut PRTL_SPLAY_LINKS, Name: *const OEM_STRING, FileNameDos: PBOOLEAN, ) -> *mut core::ffi::c_void;
+    fn FatInsertName( IrpContext: *mut IRP_CONTEXT, RootNode: *mut PRTL_SPLAY_LINKS, Name: *mut FILE_NAME_NODE, );
     fn RtlOemStringToCountedUnicodeSize(OemString: *const OEM_STRING) -> u32;
     fn ExInterlockedPopEntrySList( ListHead: *mut core::ffi::c_void, Lock: *mut core::ffi::c_void, ) -> *mut core::ffi::c_void;
     fn ExInterlockedPushEntrySList( ListHead: *mut core::ffi::c_void, ListEntry: *mut core::ffi::c_void, Lock: *mut u32, ) -> *mut core::ffi::c_void;
@@ -93,7 +94,9 @@ extern "system" {
     static mut FatFsdEntryCount: u32;
     fn ExLocalTimeToSystemTime(LocalTime: *const LARGE_INTEGER, SystemTime: *mut LARGE_INTEGER);
     fn FsRtlUninitializeOplock(Oplock: *mut OPLOCK);
-    fn FatAddMcbEntry( Vcb: *mut VCB, Mcb: *mut ntkrnl_sys::ddk::LARGE_MCB, Index: u32, Lbo: u32, Size: u32, );
+    // See the note in fileinfo.rs: `Lbo` is LBO = LONGLONG, widened in the
+    // fsctrl.rs definition; this decl was left at u32.
+    fn FatAddMcbEntry( Vcb: *mut VCB, Mcb: *mut ntkrnl_sys::ddk::LARGE_MCB, Vbo: u32, Lbo: i64, SectorCount: u32, ) -> i32;
     fn FatRootDirectorySize(Bpb: *const BIOS_PARAMETER_BLOCK) -> u32;
     fn FatRootDirectoryLbo(Bpb: *const BIOS_PARAMETER_BLOCK) -> u32;
     fn FatLookupFileAllocationSize( IrpContext: *mut IRP_CONTEXT, Dcb: *mut DCB, );
@@ -815,7 +818,7 @@ pub unsafe extern "system" fn FatCreateRootDcb(
                 Vcb,
                 core::ptr::addr_of_mut!((*Dcb).Mcb),
                 0,
-                FatRootDirectoryLbo(core::ptr::addr_of!((*Vcb).Bpb)),
+                FatRootDirectoryLbo(core::ptr::addr_of!((*Vcb).Bpb)) as i64,
                 FatRootDirectorySize(core::ptr::addr_of!((*Vcb).Bpb)),
             );
         }
@@ -892,8 +895,8 @@ pub unsafe extern "system" fn FatCreateFcb(
     Dirent: *mut DIRENT,
     Lfn: *mut _UNICODE_STRING,
     OrigLfn: *mut _UNICODE_STRING,
-    IsPagingFile: i32, // BOOLEAN
-    SingleResource: i32, // BOOLEAN
+    IsPagingFile: BOOLEAN,
+    SingleResource: BOOLEAN,
 ) -> *mut FCB {
     // Forward declarations for unknown symbols
 
@@ -2049,7 +2052,7 @@ pub unsafe extern "system" fn FatConstructNamesInFcb(
             let parent_dcb_inner = (*(*Fcb).ParentDcb).Specific.Dcb.as_mut() as *mut _FCB__bindgen_ty_1__bindgen_ty_1;
             let found = !FatFindFcb(
                 IrpContext,
-                core::ptr::addr_of_mut!((*parent_dcb_inner).RootOemNode) as *mut core::ffi::c_void,
+                core::ptr::addr_of_mut!((*parent_dcb_inner).RootOemNode).cast(),
                 LongOemName as *const OEM_STRING,
                 null_mut(),
             )
@@ -2108,8 +2111,8 @@ pub unsafe extern "system" fn FatConstructNamesInFcb(
         let parent_dcb_inner = (*(*Fcb).ParentDcb).Specific.Dcb.as_mut() as *mut _FCB__bindgen_ty_1__bindgen_ty_1;
         FatInsertName(
             IrpContext,
-            core::ptr::addr_of_mut!((*parent_dcb_inner).RootOemNode) as *mut core::ffi::c_void,
-            core::ptr::addr_of_mut!((*Fcb).ShortName) as *mut core::ffi::c_void,
+            core::ptr::addr_of_mut!((*parent_dcb_inner).RootOemNode).cast(),
+            core::ptr::addr_of_mut!((*Fcb).ShortName),
         );
         (*Fcb).ShortName.Fcb = Fcb;
 
@@ -2117,8 +2120,8 @@ pub unsafe extern "system" fn FatConstructNamesInFcb(
             let long_oem_node = (*Fcb).LongName.Oem.as_mut() as *mut FILE_NAME_NODE;
             FatInsertName(
                 IrpContext,
-                core::ptr::addr_of_mut!((*parent_dcb_inner).RootOemNode) as *mut core::ffi::c_void,
-                long_oem_node as *mut core::ffi::c_void,
+                core::ptr::addr_of_mut!((*parent_dcb_inner).RootOemNode).cast(),
+                long_oem_node,
             );
             (*long_oem_node).Fcb = Fcb;
         }
@@ -2127,8 +2130,8 @@ pub unsafe extern "system" fn FatConstructNamesInFcb(
             let long_uni_node = (*Fcb).LongName.Unicode.as_mut() as *mut FILE_NAME_NODE;
             FatInsertName(
                 IrpContext,
-                core::ptr::addr_of_mut!((*parent_dcb_inner).RootUnicodeNode) as *mut core::ffi::c_void,
-                long_uni_node as *mut core::ffi::c_void,
+                core::ptr::addr_of_mut!((*parent_dcb_inner).RootUnicodeNode).cast(),
+                long_uni_node,
             );
             (*long_uni_node).Fcb = Fcb;
         }

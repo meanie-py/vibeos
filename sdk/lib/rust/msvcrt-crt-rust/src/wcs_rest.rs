@@ -1180,3 +1180,63 @@ pub unsafe extern "C" fn wcsrtombs_s(
 
     wcsrtombs_s_l(ret, mbstr, size, wcstr, count, null_mut())
 }
+
+// ── the last three of wcs.c ──────────────────────────────────────────────────
+// Wave 16 left these behind because each delegates to something that was still C at the
+// time. All three delegates are Rust now, so the wrappers are $0 hand-written rather
+// than a paid re-translation of a file that already has output.
+
+/// `_wcsdup (MSVCRT.@)`
+///
+/// Not `_strdup`'s shape despite reading like it: the C sizes the copy itself
+/// (`(wcslen+1) * sizeof(wchar_t)`) and `memcpy`s, where `_strdup` calls `strcpy`. Kept
+/// as written — a `wcscpy` here would be the same bytes today and a different function.
+///
+/// A NULL `str` is a quiet NULL return and a failed `malloc` returns NULL with whatever
+/// errno malloc left; no `_errno` write and no invalid-parameter handler, exactly as the C.
+#[no_mangle]
+pub unsafe extern "C" fn _wcsdup(str_: *const wchar_t) -> *mut wchar_t {
+    let mut ret: *mut wchar_t = null_mut();
+    if !str_.is_null() {
+        let size = (crate::wcslen(str_) + 1) * core::mem::size_of::<wchar_t>();
+        ret = malloc(size) as *mut wchar_t;
+        if !ret.is_null() {
+            memcpy(ret as *mut c_void, str_ as *const c_void, size);
+        }
+    }
+    ret
+}
+
+/// `dll/win32/msvcrt/include/wctype.h:71` — `typedef wchar_t wctrans_t;`. A typedef has no
+/// symbol, so the island cannot snapshot it and it is spelled here against the header.
+#[allow(non_camel_case_types)]
+type wctrans_t = wchar_t;
+
+/// `towctrans`
+///
+/// The C tests `category == 1` and nothing else: `wctrans("toupper")` returns 1 and
+/// `wctrans("tolower")` returns 2, so every value that is not 1 — including a category
+/// this msvcrt never issued — folds to LOWER. That is the C's contract, not a default
+/// worth improving.
+#[no_mangle]
+pub unsafe extern "C" fn towctrans(c: wint_t, category: wctrans_t) -> wint_t {
+    if category == 1 {
+        return crate::_towupper_l(c, null_mut());
+    }
+    crate::_towlower_l(c, null_mut())
+}
+
+/// `wcstombs (MSVCRT.@)`
+///
+/// Takes `wcstr` by value and hands `wcsrtombs_l` a pointer to the local copy, so the
+/// caller's pointer is never advanced — which is the whole difference between `wcstombs`
+/// and `wcsrtombs`.
+#[no_mangle]
+pub unsafe extern "C" fn wcstombs(
+    mbstr: *mut c_char,
+    wcstr: *const wchar_t,
+    count: size_t,
+) -> size_t {
+    let mut wcstr = wcstr;
+    wcsrtombs_l(mbstr, &mut wcstr, count, null_mut())
+}

@@ -87,6 +87,9 @@ typedef int                 BOOL;
 #define FALSE 0
 #endif
 typedef unsigned char       UCHAR;
+typedef unsigned char       BOOLEAN;   /* NT's one-byte bool; RtlGenRandom returns it */
+typedef unsigned int        UINT32;    /* math.c's float/bits unions */
+typedef unsigned long long  UINT64;    /*   …and its double ones */
 typedef unsigned char       BYTE;
 typedef unsigned short      WORD;
 typedef unsigned int        DWORD;   /* Windows DWORD is 32-bit */
@@ -122,6 +125,47 @@ typedef unsigned int        __msvcrt_ulong;
 #define LONG_MIN  (-0x7FFFFFFFL - 1)
 #undef  ULONG_MAX
 #define ULONG_MAX 0xFFFFFFFFLL
+
+/* msvcrt's is 0x7FFF (dll/win32/msvcrt/include/stdlib.h:34, sdk/include/crt/stdlib.h:87);
+ * glibc's is 0x7FFFFFFF, and <stdlib.h> above already defined it. `rand()` ends in
+ * `(seed >> 16) & RAND_MAX`, so under the host's value the reference returns 16-bit numbers
+ * where msvcrt returns 15-bit ones — and the first `rand` row caught exactly that, with the
+ * REFERENCE wrong. A host constant leaking into the oracle is the same class as a hand-typed
+ * one, and harder to see: nothing here typed it. */
+#undef  RAND_MAX
+#define RAND_MAX 0x7FFF
+
+/* The floating-point CLASS codes, and this is the RAND_MAX trap at its worst: msvcrt and
+ * glibc disagree on four of the five, and one of the two they share is the disagreement's
+ * best camouflage.
+ *
+ *                 msvcrt (sdk/include/crt/math.h:76-85)   glibc <math.h>
+ *   FP_NAN                2 (_NANCODE)                          0
+ *   FP_INFINITE           1 (_INFCODE)                          1   <-- the only match
+ *   FP_ZERO               0                                     2
+ *   FP_SUBNORMAL         -2 (_DENORM)                           3
+ *   FP_NORMAL            -1 (_FINITE)                           4
+ *
+ * math.c branches on these in six places and `_dclass`/`_fdclass` RETURN them, so under the
+ * host's values the reference would take a different arm from msvcrt for every input that is
+ * not an infinity — and report it as a Rust bug. Pre-empted rather than discovered, because
+ * `rand()`'s RAND_MAX taught this exact lesson one file earlier: any macro the host header
+ * and the Windows header both define, and define differently, is an oracle bug waiting for
+ * its first row. */
+#undef  FP_NAN
+#undef  FP_INFINITE
+#undef  FP_ZERO
+#undef  FP_SUBNORMAL
+#undef  FP_NORMAL
+#define _DENORM      (-2)
+#define _FINITE      (-1)
+#define _INFCODE     1
+#define _NANCODE     2
+#define FP_INFINITE  _INFCODE
+#define FP_NAN       _NANCODE
+#define FP_NORMAL    _FINITE
+#define FP_SUBNORMAL _DENORM
+#define FP_ZERO      0
 
 /* ------------------------------------------------------------------ *
  * glibc's WIDE headers — pulled here, and *deliberately* UNDER the 16-bit
@@ -185,6 +229,14 @@ typedef long            LONG_PTR;
 #define memmove                 msvcrt_ref_memmove
 #define _errno                  msvcrt_ref__errno
 #define _invalid_parameter      msvcrt_ref__invalid_parameter
+/* errno.c's Win32 -> errno store.  file.c calls it 54 times and so does file.rs, and it
+ * writes through `_errno()` — so a SINGLE definition would resolve that call to whichever
+ * side got the plain name and hand both sides one errno.  It did: the subject's failures
+ * set the reference's slot.  Namespaced here so the reference's TUs and fileimpl.c's
+ * definition meet at msvcrt_ref_msvcrt_set_errno, leaving the plain name for
+ * subjectimpl.c.  The MAPPING TABLE stays shared and un-namespaced
+ * (msvcrt_difftest_win32_to_errno) — one transcription, two stores. */
+#define msvcrt_set_errno        msvcrt_ref_msvcrt_set_errno
 /* _isspace_l / _tolower_l / _toupper_l USED to be here — they were things the reference
  * IMPORTED, satisfied by refimpl.c's hand-written ASCII stubs.  As of wave 10 ctype.c is
  * a reference TU and DEFINES them, so they are reference EXPORTS: the generated prelude
@@ -204,6 +256,12 @@ typedef long            LONG_PTR;
  * translation bug, and only separate storage can catch that. */
 #define get_mbcinfo             msvcrt_ref_get_mbcinfo
 #define msvcrt_get_thread_data  msvcrt_ref_get_thread_data
+/* Same reasoning as get_mbcinfo, one level up: `_setmbcp`'s non-thread arm installs into
+ * `MSVCRT_locale->mbcinfo` and then copies the result into the exported `MSVCRT_mbctype`.
+ * Shared, the two sides would install into the same slot and each read back what the
+ * other wrote — a row comparing a table against itself, which is what renaming
+ * `MSVCRT_mbctype` for the reference was already done to prevent. */
+#define MSVCRT_locale           msvcrt_ref_locale
 /* CompareStringA / LCMapStringA / …W / GetStringTypeW / WideCharToMultiByte USED to be
  * namespaced here.  As of wave 11 they are SHARED — one definition (refimpl.c), called by
  * both sides.
@@ -228,7 +286,14 @@ typedef long            LONG_PTR;
 /* _mbtowc_l left this namespace when mbcs.c became a reference TU: mbcs.c DEFINES
  * it, so it is a reference EXPORT and the prelude renames it to ref__mbtowc_l.
  * Same move _isspace_l/_tolower_l/_toupper_l made for ctype.c above. */
-#define _get_output_format         msvcrt_ref__get_output_format
+/* `_get_output_format` left this namespace when misc.c became reference TU #9, and the
+ * upgrade is the same one ctype.c and mbcs.c made: refimpl.c used to hand-stub it as a
+ * constant 0, so wcs.c's `%e` exponent width was graded against a value THIS HARNESS chose.
+ * misc.c defines the real one over the real `output_format` static that `_set_output_format`
+ * writes, so it is now a reference EXPORT and the prelude renames it to
+ * `ref__get_output_format`. Leaving the #define here would silently win — the refstub is
+ * included AFTER the prelude — and misc.c would emit `msvcrt_ref__get_output_format` while
+ * every `ref__get_output_format` reference failed to link. */
 #define get_current_locale_noalloc msvcrt_ref_get_current_locale_noalloc
 #define free_locale_noalloc        msvcrt_ref_free_locale_noalloc
 #define MSVCRT__pwctype            msvcrt_ref__pwctype
@@ -383,16 +448,99 @@ pthreadlocinfo CDECL get_locinfo(void);
  * layout — so it carries only the fields the reference TUs actually touch. (The
  * SUBJECT's copy in subjectimpl.c is the one that has to match msvcrt-sys, and
  * ref_integrity asserts that.) */
+/* The user-installable invalid-parameter handler.  errno.c declares a file-static of
+ * this type; at _MSVCR_VER = 0 nothing can ever write it (its only setter,
+ * _set_invalid_parameter_handler, is `#if _MSVCR_VER >= 80`), so the slot is
+ * permanently NULL and the dispatch always takes the else arm.  The TYPE is still
+ * needed to compile the declaration. */
+typedef void (__cdecl *_invalid_parameter_handler)(const wchar_t *, const wchar_t *,
+                                                   const wchar_t *, unsigned int,
+                                                   uintptr_t);
+
+/* The three handler slots cpp.c hands out and except.c calls through
+ * (dll/win32/msvcrt/msvcrt.h:75-77).  `set_terminate`/`set_unexpected`/
+ * `_set_se_translator` write them and return the previous value, so the TYPE is
+ * part of the contract every one of those rows grades. */
+struct _EXCEPTION_POINTERS;  /* completed by msvcrt_cpp_types.h, included after */
+typedef void (__cdecl *terminate_function)(void);
+typedef void (__cdecl *unexpected_function)(void);
+typedef void (__cdecl *_se_translator_function)(unsigned int code,
+                                                struct _EXCEPTION_POINTERS *info);
+
 typedef struct __thread_data {
     char           *strtok_next;
     wchar_t        *wcstok_next;
     unsigned char  *mbstok_next;
+    /* misc.c's `rand`/`srand` LCG state, added when misc.c became reference TU #9. The
+     * subject's copy is msvcrt-sys's real `thread_data_t`; this one carries only what the
+     * reference TUs touch, which is why the field arrives per-TU rather than up front. */
+    unsigned int    random_seed;
+    /* math.c's `__fpecode` slot (dll/win32/msvcrt/msvcrt.h:198). Arrives with math.c for
+     * the same reason `random_seed` arrived with misc.c: this struct carries only what the
+     * reference TUs actually touch. */
+    int             fpecode;
+    /* `_ecvt`/`_fcvt` hand out pointers INTO this buffer and it is lazily malloc'd, so it is
+     * per-thread state the rows observe directly — the same aliasing contract errno.c's
+     * strerror buffers carry (dll/win32/msvcrt/msvcrt.h:204). */
+    char           *efcvt_buffer;
     int             locale_flags;
     pthreadmbcinfo  mbcinfo;
     /* file.c's tmpnam/_wtmpnam scratch — same slots as the real
      * dll/win32/msvcrt/msvcrt.h, kept in field order. */
     char                           *tmpnam_buffer;
     wchar_t                        *wtmpnam_buffer;
+    /* errno.c's four slots, added when it became reference TU #7.  This is where
+     * msvcrt actually keeps errno: `_errno()` is `&msvcrt_get_thread_data()->thread_errno`
+     * and `__doserrno()` the doserrno one, so the reference no longer stores errno in
+     * something the harness invented.  strerror/_wcserror hand out pointers INTO the two
+     * buffers, which is why they are per-thread slots and not statics — that aliasing is
+     * part of the contract those rows grade. */
+    int                             thread_errno;
+    __msvcrt_ulong                  thread_doserrno;
+    char                           *strerror_buffer;
+    wchar_t                        *wcserror_buffer;
+    /* time.c's three lazily-malloc'd result buffers (dll/win32/msvcrt/msvcrt.h:191-193),
+     * added when it became reference TU #11 — same per-TU arrival rule as everything
+     * above.  They are exactly the aliasing contract the errno buffers carry, and time.c
+     * leans on it harder: `_localtime64`, `_gmtime64` and `asctime` all hand out a pointer
+     * INTO the caller's thread data and the next call overwrites it, which is why the
+     * classic "print localtime and gmtime in one printf" bug prints one twice.  A row
+     * that copied the result out before comparing would grade the value and lose the
+     * aliasing; the rows keep the pointer.
+     *
+     * `struct tm` here is the HOST's, from <time.h>: glibc's is msvcrt's nine ints plus
+     * `tm_gmtoff`/`tm_zone` at the END, so every field time.c touches sits at the same
+     * offset and the reference simply allocates a larger box than the DLL would.  Tests
+     * that hand a `struct tm` IN (mktime, asctime, strftime) must therefore allocate the
+     * larger one — see tests/time.rs's CTm. */
+    char                           *asctime_buffer;
+    wchar_t                        *wasctime_buffer;
+    struct tm                      *time_buffer;
+    /* The C++ EH slots, arriving with cpp.c (reference TU #14) and except.c (#15)
+     * under the same per-TU rule as everything above: this struct carries only
+     * what the reference TUs actually touch.
+     *
+     * These are per-THREAD and that is the whole point of several rows.  The
+     * terminate/unexpected/se_translator handlers are what `set_terminate` and
+     * friends install and `terminate()` calls, and `processing_throw` is the
+     * re-entrancy counter that decides whether a throw during a throw becomes a
+     * `terminate`.  `frame_info_head` is the head of the linked list
+     * `_CreateFrameInfo` pushes onto and `_FindAndUnlinkFrame` pops — a global
+     * whose corruption stays invisible until a later unwind reads it, which is
+     * exactly why it is graded rather than assumed.
+     *
+     * The pointer members are spelled `struct _X *` rather than by typedef
+     * because msvcrt_cpp_types.h — where those structs are defined and proved —
+     * is included AFTER this header, and an incomplete pointee is all a pointer
+     * slot needs. */
+    struct _EXCEPTION_POINTERS     *xcptinfo;
+    terminate_function              terminate_handler;
+    unexpected_function             unexpected_handler;
+    _se_translator_function         se_translator;
+    struct _EXCEPTION_RECORD       *exc_record;
+    struct _CONTEXT                *ctx_record;
+    int                             processing_throw;
+    struct _frame_info             *frame_info_head;
 } thread_data_t;
 
 #define LOCALE_FREE    0x1
@@ -411,6 +559,159 @@ void  __cdecl _invalid_parameter(const wchar_t *expr, const wchar_t *func,
 int __cdecl _isspace_l(int c, _locale_t locale);
 int __cdecl _tolower_l(int c, _locale_t locale);
 int __cdecl _toupper_l(int c, _locale_t locale);
+/* undname.c's one ctype call. Declared HERE, i.e. after the prelude's stage-1 rename, so
+ * this line becomes the prototype for `ref_isdigit` — ctype.c's own body. glibc's
+ * declaration cannot serve: stage -1 pulls <ctype.h> and strips its macros BEFORE the
+ * rename (it has to, or ctype.c's definitions would be macro-mangled), so glibc only ever
+ * declares the PLAIN name. Without this the call degrades to an implicit `int ref_isdigit()`
+ * — which -Werror=implicit-function-declaration is on to catch, and did. */
+/* Parenthesised so glibc's FUNCTION-LIKE `#define isdigit(c) ...` cannot expand here:
+ * refimpl.c includes this header WITHOUT the prelude, so that macro is live in it. The
+ * prelude's own `#define isdigit ref_isdigit` is object-like and still applies. */
+int __cdecl (isdigit)(int c);
+
+/* ── what the math.c reference TU needs ────────────────────────────────
+ *
+ * `struct _exception` is the matherr record, VERBATIM from sdk/include/crt/math.h:20-26 —
+ * the host's <math.h> has SVID's `struct exception`, which is a different type with a
+ * different name, so nothing here can be borrowed. `_matherr` takes a pointer to this and
+ * `math_error` builds one on the stack, so the field ORDER is part of the contract: a
+ * harness copy with the members transposed would grade a struct msvcrt never builds. */
+/* sdk/include/crt/math.h:31-33 — `_cabs`'s BY-VALUE parameter, so its layout is an ABI
+ * contract and not merely a type: two doubles, x then y. */
+struct _complex {
+    double x, y;
+};
+
+struct _exception {
+    int    type;
+    char  *name;
+    double arg1;
+    double arg2;
+    double retval;
+};
+int __cdecl _matherr(struct _exception *e);
+
+/* wcs.c's `_scprintf`/`_snprintf`, which math.c's `_ecvt`/`_gcvt` family calls. Declared
+ * HERE, i.e. AFTER the prelude's stage-1 rename, so these become the prototypes for
+ * `ref__scprintf`/`ref__snprintf` — wcs.c's own bodies. Same move `isdigit` made for
+ * undname.c, and for the same reason: the host header that would otherwise declare them
+ * runs BEFORE the rename and so only ever declares the plain names, leaving the call to
+ * degrade into an implicit `int f()` that returns garbage for a `size_t`. */
+int WINAPIV _scprintf(const char *format, ...);
+int WINAPIV _snprintf(char *str, size_t len, const char *format, ...);
+
+/* xdk/ketypes.h:186. `msvcrt_init_math` indexes KUSER_SHARED_DATA's processor-feature array
+ * with it — at the hard-coded address 0x7FFE0274, which is why that one function is
+ * COMPILE-ONLY here and no row may call it. The constant still has to be right: a wrong
+ * index would read a different feature bit, and on a host with no page there at all the
+ * failure is a fault rather than a wrong answer. */
+#define PF_XMMI64_INSTRUCTIONS_AVAILABLE 10
+
+/* `_fpclass`'s return codes, LIFTED VERBATIM from sdk/include/ucrt/float.h:197-206. The
+ * third constant family math.c needs and the third that the host cannot supply — glibc has
+ * no `_FPCLASS_*` at all, so this one fails to compile rather than compiling wrong, which
+ * makes it the friendly member of the set. Kept in the header's own order and spelling so a
+ * diff against it is a diff, not a reading exercise. */
+#define _FPCLASS_SNAN  0x0001
+#define _FPCLASS_QNAN  0x0002
+#define _FPCLASS_NINF  0x0004
+#define _FPCLASS_NN    0x0008
+#define _FPCLASS_ND    0x0010
+#define _FPCLASS_NZ    0x0020
+#define _FPCLASS_PZ    0x0040
+#define _FPCLASS_PD    0x0080
+#define _FPCLASS_PN    0x0100
+#define _FPCLASS_PINF  0x0200
+
+/* The x87/SSE CONTROL-WORD masks that `_control87`/`_controlfp`/`_controlfp_s` translate
+ * between, lifted verbatim from sdk/include/ucrt/float.h:131-164. These are the whole
+ * contract of those three functions -- each is a bit-shuffle between the hardware word and
+ * msvcrt's abstract one -- so a wrong mask here would grade the shuffle against the wrong
+ * layout and agree with nothing. Lifted rather than typed for the reason the FP_* table
+ * above gives, and kept in the header's order so a diff against it stays a diff. */
+#define _EM_AMBIGUIOUS  0x80000000
+#define _EM_AMBIGUOUS   0x80000000
+#define _MCW_EM         0x0008001f
+#define _EM_INEXACT     0x00000001
+#define _EM_UNDERFLOW   0x00000002
+#define _EM_OVERFLOW    0x00000004
+#define _EM_ZERODIVIDE  0x00000008
+#define _EM_INVALID     0x00000010
+#define _EM_DENORMAL    0x00080000
+#define _MCW_RC         0x00000300
+#define _RC_NEAR        0x00000000
+#define _RC_DOWN        0x00000100
+#define _RC_UP          0x00000200
+#define _RC_CHOP        0x00000300
+#define _MCW_PC         0x00030000
+#define _PC_64          0x00000000
+#define _PC_53          0x00010000
+#define _PC_24          0x00020000
+#define _MCW_IC         0x00040000
+#define _IC_AFFINE      0x00040000
+#define _IC_PROJECTIVE  0x00000000
+#define _MCW_DN         0x03000000
+#define _DN_SAVE        0x00000000
+#define _DN_FLUSH       0x01000000
+#define _DN_FLUSH_OPERANDS_SAVE_RESULTS 0x02000000
+#define _DN_SAVE_OPERANDS_FLUSH_RESULTS 0x03000000
+
+/* `_statusfp`/`_clearfp`'s status-word bits, same header, same reason
+ * (sdk/include/ucrt/float.h). The host has FE_* for the same concepts at different values,
+ * which is why gcc suggests `FE_INVALID` here -- taking that suggestion would compile and
+ * grade the wrong bit. */
+#define _SW_INEXACT     0x00000001
+#define _SW_UNDERFLOW   0x00000002
+#define _SW_OVERFLOW    0x00000004
+#define _SW_ZERODIVIDE  0x00000008
+#define _SW_INVALID     0x00000010
+#define _SW_DENORMAL    0x00080000
+#define _SW_UNEMULATED          0x0040
+#define _SW_SQRTNEG             0x0080
+#define _SW_STACKOVERFLOW       0x0200
+#define _SW_STACKUNDERFLOW      0x0400
+
+/* xmmintrin.h:54 -- the SSE function attribute, empty in the configuration msvcrt builds
+ * under. math.c puts it on `_set_SSE2_enable`'s helpers; on the host it only has to parse. */
+#define __ATTRIBUTE_SSE__
+
+/* ── what the misc.c reference TU needs ────────────────────────────────
+ *
+ * Three kernel32 entry points and the two page-protection bits `_resetstkoflw` passes.
+ * They were ALREADY THERE — fileimpl.c wrote them for the SUBJECT's misc.rs, under a
+ * comment that names this exact wave ("The four misc.c needs … qsort, bsearch, _lsearch
+ * and rand are pure algorithms with real oracles"). So the reference only needs the
+ * prototypes; the definitions stay where they are, one each, SHARED, for the reason the
+ * CompareStringA note above gives: they are the ENVIRONMENT and this crate does not flip kernel32, so modelling them
+ * twice could only make both sides wrong the same way. What the rows grade is the contract
+ * AROUND the call — `_beep`'s argument forwarding, `_sleep`'s zero-to-one adjustment,
+ * `_resetstkoflw`'s return — not our model of kernel32. */
+void  WINAPI Beep(DWORD dwFreq, DWORD dwDuration);
+void  WINAPI Sleep(DWORD dwMilliseconds);
+BOOL  WINAPI VirtualProtect(void *addr, ULONG_PTR size, DWORD prot, DWORD *old);
+#define PAGE_READWRITE 0x04
+#define PAGE_GUARD     0x100
+
+/* ── what the undname.c reference TU needs ─────────────────────────────
+ *
+ * `lstrcpynA` is kernel32 — the ENVIRONMENT, never code under test — so it is SHARED, one
+ * definition in timeimpl.c, like CompareStringA and for the same reason. It is also not
+ * `strncpy`: it copies at most n-1 bytes and ALWAYS terminates, which is the whole of
+ * `__unDNameEx`'s truncation behaviour when the caller supplies a buffer.
+ *
+ * Declared here rather than left implicit: `-Werror=implicit-function-declaration` is on
+ * for exactly this, and an implicit `int lstrcpynA()` would truncate the returned pointer
+ * to 32 bits.
+ *
+ * The demangler's ALLOCATOR, passed in by the caller. Copied from
+ * dll/win32/msvcrt/msvcrt.h:263-264 verbatim -- these two are the reason undname.c is the
+ * cheapest file in msvcrt to grade: the harness supplies memget/memfree per side at the
+ * call, so there is no heap model to build and no allocation the test cannot see. */
+typedef void* (__cdecl *malloc_func_t)(size_t);
+typedef void  (__cdecl *free_func_t)(void*);
+/* Spelled `char *` rather than LPSTR: those typedefs land further down this header. */
+char * WINAPI lstrcpynA(char *dst, const char *src, int n);
 
 /* ── what the mbcs.c reference TU imports ──────────────────────────────
  *
@@ -464,6 +765,15 @@ int __cdecl isleadbyte(int);
 #ifndef HIBYTE
 #define LOBYTE(w) ((BYTE)((uintptr_t)(w) & 0xFF))
 #define HIBYTE(w) ((BYTE)(((uintptr_t)(w) >> 8) & 0xFF))
+#endif
+
+/* minwindef.h's word accessors, as process.c spells them.  `_getdllprocaddr`'s whole
+ * body is `if (HIWORD(ordinal)) return NULL;` followed by a cast of the low word to a
+ * name pointer — so this macro IS the function's logic, not a convenience.  Same
+ * uintptr_t stand-in for DWORD_PTR as the byte pair above. */
+#ifndef HIWORD
+#define LOWORD(l) ((WORD)((uintptr_t)(l) & 0xFFFF))
+#define HIWORD(l) ((WORD)(((uintptr_t)(l) >> 16) & 0xFFFF))
 #endif
 
 /* msvcrt.h's own; the host has no such macro. */

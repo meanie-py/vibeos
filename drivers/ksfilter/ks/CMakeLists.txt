@@ -33,7 +33,7 @@ elseif(ARCH STREQUAL "arm64")
     set(KS_RUST_TARGET "aarch64-pc-windows-gnullvm")
     set(KS_RUST_RUSTFLAGS "")
 endif()
-file(GLOB_RECURSE KS_RUST_SRCS ${KS_RUST_WORKSPACE_DIR}/ks-rust/src/*.rs)
+rust_crate_sources(KS_RUST_SRCS "${KS_RUST_WORKSPACE_DIR}" ks-rust)
 add_custom_command(
     OUTPUT ${KS_RUST_LIB}
     COMMAND ${CMAKE_COMMAND} -E env

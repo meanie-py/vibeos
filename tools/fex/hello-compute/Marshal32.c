@@ -26,6 +26,34 @@
  *      the cell must survive — flat-thunked, the host's 8-byte store ate it.
  *      Requires the calls to SUCCEED: a failing syscall writes nothing and
  *      would pass this check while completely unmarshalled.
+ *   5. Registry value names (E20): set a value, read it back BY THE SAME NAME,
+ *      delete it, confirm it is gone. A `PUNICODE_STRING` read from past the
+ *      end of the guest struct cannot survive that round trip.
+ *   6. The KEY_WOW64_* access-mask flags (E21): open one key four ways so a
+ *      failure names the offending bit instead of "registry broken".
+ *   7. The SELF-DESCRIBING SIZE family (E22): TrackMouseEvent / GetCursorInfo
+ *      / GetGUIThreadInfo / SendInput each state their own sizeof, which
+ *      win32k version-checks against the HOST sizeof. Every one of them
+ *      returned FALSE for every 32-bit process. Each check asserts three
+ *      things at once: the call SUCCEEDS (the size reached the kernel as the
+ *      host size), the size field comes BACK as the guest size (the copy-out
+ *      undid the rewrite, so the guest is not left holding a size that does
+ *      not describe its own struct), and a canary parked immediately after
+ *      the struct SURVIVES (the kernel's larger write landed in the bounce
+ *      buffer, not on the guest's stack).
+ *   8. The win32k LAST-ERROR channel: win32k's EngSetLastError writes the
+ *      *64-bit* TEB and a 32-bit guest reads TEB32, so every error code the
+ *      whole USER/GDI surface produced used to be invisible here. Drives one
+ *      call (TrackMouseEvent) three ways so a code has to travel rather than
+ *      merely appear: bad size -> ERROR_INVALID_PARAMETER, bad flag -> a
+ *      DIFFERENT code, and a SUCCEEDING call must leave the guest's own
+ *      last-error alone.
+ *   9. Wow6432Node registry redirection (E24): a 32-bit process gets its own
+ *      view of HKLM\Software. Asserts the two views DISAGREE — the default
+ *      view's own KeyNameInformation must say Wow6432Node, and the identical
+ *      path opened with KEY_WOW64_64KEY must not see the value just written —
+ *      plus that a 64-bit-only key still resolves from the 32-bit view, which
+ *      is the miss-fallback the whole design rests on.
  *
  * Verdict contract: exit 0x600D on PASS; distinct 0xBADx names the failing
  * rung so serial alone triages ([WINLOGON] marshal32.exe exit = 0x...).
@@ -50,11 +78,84 @@
 #define M32_FAIL_CELL_DUPCALL 0xBADE /* NtDuplicateObject failed outright */
 #define M32_FAIL_CELL_DUPOVR  0xBADF /* ...and overran its 4-byte handle cell */
 #define M32_FAIL_CELL_TMROVR  0xBAE0 /* NtCreateTimer overran (NULL-OA path) */
+#define M32_FAIL_REG_NTDLL    0xBAE1 /* couldn't resolve the registry syscalls */
+#define M32_FAIL_REG_CREATE   0xBAE2 /* NtCreateKey on the scratch key failed */
+#define M32_FAIL_REG_SET      0xBAE3 /* NtSetValueKey failed outright */
+#define M32_FAIL_REG_QUERY    0xBAE4 /* the value we just set cannot be found */
+#define M32_FAIL_REG_VALUE    0xBAE5 /* found, but wrong type/length/data */
+#define M32_FAIL_REG_DELETE   0xBAE6 /* NtDeleteValueKey did not remove it */
+#define M32_FAIL_WOW_OPEN     0xBAE7 /* plain NtOpenKey failed — rung is invalid */
+#define M32_FAIL_WOW_64KEY    0xBAE8 /* NtOpenKey refused KEY_WOW64_64KEY */
+#define M32_FAIL_WOW_32KEY    0xBAE9 /* NtOpenKey refused KEY_WOW64_32KEY */
+#define M32_FAIL_WOW_CREATE   0xBAEA /* NtCreateKey refused a KEY_WOW64_* flag */
+#define M32_FAIL_TME_CALL     0xBAEB /* TrackMouseEvent(TME_QUERY) returned FALSE */
+#define M32_FAIL_TME_SIZE     0xBAEC /* ...succeeded but cbSize came back host-sized */
+#define M32_FAIL_TME_CANARY   0xBAED /* ...and the kernel's 24-byte write overran us */
+#define M32_FAIL_CI_CALL      0xBAEE /* GetCursorInfo returned FALSE */
+#define M32_FAIL_CI_SIZE      0xBAEF /* ...cbSize came back host-sized */
+#define M32_FAIL_CI_CANARY    0xBAF0 /* ...24-byte write overran the 20-byte struct */
+#define M32_FAIL_GTI_CALL     0xBAF1 /* GetGUIThreadInfo returned FALSE */
+#define M32_FAIL_GTI_SIZE     0xBAF2 /* ...cbSize came back host-sized */
+#define M32_FAIL_GTI_CANARY   0xBAF3 /* ...72-byte write overran the 48-byte struct */
+#define M32_FAIL_SENDINPUT    0xBAF4 /* SendInput rejected the guest's cbSize */
+#define M32_FAIL_LERR_CALL    0xBAF5 /* a call that must be REJECTED succeeded */
+#define M32_FAIL_LERR_PARAM   0xBAF6 /* bad cbSize: not ERROR_INVALID_PARAMETER */
+#define M32_FAIL_LERR_FLAGS   0xBAF7 /* bad flag bit: not ERROR_INVALID_FLAGS */
+#define M32_FAIL_LERR_QUERY   0xBAF8 /* the succeeding control call failed */
+#define M32_FAIL_LERR_CLOBBER 0xBAF9 /* ...and ate the guest's own last-error */
+#define M32_FAIL_RDIR_CREATE  0xBAFA /* couldn't create the scratch key at all */
+#define M32_FAIL_RDIR_NAME    0xBAFB /* default view did NOT land in Wow6432Node */
+#define M32_FAIL_RDIR_LEAK    0xBAFC /* the 64-bit view can see the 32-bit value */
+#define M32_FAIL_RDIR_64VIEW  0xBAFD /* KEY_WOW64_64KEY did not reach the 64-bit view */
+#define M32_FAIL_RDIR_SHARED  0xBAFE /* a 64-bit-only key stopped resolving */
 #define M32_PASS              0x600D
 
 static void Report(const char *msg)
 {
     OutputDebugStringA(msg);
+}
+
+/* No CRT here, so hex formatting is hand-rolled (same shape as Selfmod32's). */
+static void ReportHex(const char *label, DWORD v)
+{
+    static const char Digits[] = "0123456789abcdef";
+    char buf[96];
+    int i = 0, n;
+    while (label[i] && i < 72)
+    {
+        buf[i] = label[i];
+        i++;
+    }
+    buf[i++] = ' ';
+    buf[i++] = '0';
+    buf[i++] = 'x';
+    for (n = 28; n >= 0; n -= 4)
+        buf[i++] = Digits[(v >> n) & 0xf];
+    buf[i++] = '\n';
+    buf[i] = 0;
+    OutputDebugStringA(buf);
+}
+
+/* Report a COUNTED wide string (registry paths are not NUL-terminated when
+ * they come back in a KEY_NAME_INFORMATION). Non-ASCII is not expected on
+ * these paths and is shown as '?' rather than silently dropped.
+ *
+ * This exists because rung 9 once failed with "default view is not in
+ * Wow6432Node" and did not say what the name WAS — which cost a full
+ * build-and-boot cycle to answer. An assertion should name what it found,
+ * not only what it wanted. */
+static void ReportWide(const char *label, const WCHAR *s, ULONG chars)
+{
+    char buf[256];
+    ULONG i = 0, j = 0;
+
+    while (label[i] && j < sizeof(buf) - 4)
+        buf[j++] = label[i++];
+    for (i = 0; i < chars && j < sizeof(buf) - 3; i++)
+        buf[j++] = (s[i] > 0 && s[i] < 0x80) ? (char)s[i] : '?';
+    buf[j++] = '\n';
+    buf[j] = 0;
+    OutputDebugStringA(buf);
 }
 
 /* --- check 1: NtQueryInformationThread(ThreadBasicInformation) ----------- */
@@ -275,6 +376,655 @@ static int CheckOutCellCanaries(void)
     return 0;
 }
 
+/* --- check 5: PUNICODE_STRING args on the registry write path (E20) ------ *
+ * UNICODE_STRING is 8 bytes in the guest {Length, MaximumLength, ULONG Buffer}
+ * and 16 on the host {Length, MaximumLength, pad, ULONGLONG Buffer}. Buffer
+ * therefore lives at offset 4 in the guest and offset 8 on the host, so a flat
+ * thunk makes the kernel read the value-name POINTER from past the end of the
+ * guest's struct — not a truncation, a wholly unrelated address.
+ *
+ * NtQueryValueKey was already marshalled while NtSetValueKey and
+ * NtDeleteValueKey next to it were not, so reads worked and writes did not.
+ * This drives all three through one round-trip: set a value, read it back BY
+ * THE SAME NAME, then delete it and confirm it is gone. A wrong Buffer cannot
+ * survive that -- either the set faults/errors, or it lands under a garbage
+ * name and the query misses. */
+
+typedef LONG(WINAPI *M32_CREATEKEY_FN)(PHANDLE, ULONG, VOID *, ULONG, PVOID, ULONG, PULONG);
+typedef LONG(WINAPI *M32_SETVAL_FN)(HANDLE, VOID *, ULONG, ULONG, PVOID, ULONG);
+typedef LONG(WINAPI *M32_QUERYVAL_FN)(HANDLE, VOID *, ULONG, PVOID, ULONG, PULONG);
+typedef LONG(WINAPI *M32_DELVAL_FN)(HANDLE, VOID *);
+
+typedef struct _M32_USTR {
+    USHORT Length;
+    USHORT MaximumLength;
+    WCHAR *Buffer;
+} M32_USTR;
+
+typedef struct _M32_OA {
+    ULONG Length;
+    HANDLE RootDirectory;
+    M32_USTR *ObjectName;
+    ULONG Attributes;
+    PVOID SecurityDescriptor;
+    PVOID SecurityQualityOfService;
+} M32_OA;
+
+typedef struct _M32_KVPI {
+    ULONG TitleIndex;
+    ULONG Type;
+    ULONG DataLength;
+    UCHAR Data[8];
+} M32_KVPI;
+
+static void M32InitUstr(M32_USTR *u, WCHAR *s)
+{
+    USHORT n = 0;
+    while (s[n])
+        n++;
+    u->Length = (USHORT)(n * sizeof(WCHAR));
+    u->MaximumLength = (USHORT)(u->Length + sizeof(WCHAR));
+    u->Buffer = s;
+}
+
+static int CheckRegistryValueNames(void)
+{
+    static WCHAR KeyPath[] = L"\\Registry\\Machine\\Software\\vibeos_marshal32";
+    static WCHAR ValName[] = L"Wow64ValueNameProbe";
+    HMODULE nt = GetModuleHandleA("ntdll.dll");
+    M32_CREATEKEY_FN CreateKey;
+    M32_SETVAL_FN SetValue;
+    M32_QUERYVAL_FN QueryValue;
+    M32_DELVAL_FN DeleteValue;
+    M32_USTR uKey, uVal;
+    M32_OA oa;
+    M32_KVPI info;
+    HANDLE key = NULL;
+    ULONG disp = 0, got = 0;
+    DWORD data = 0x5CA11ED;
+    LONG st;
+
+    if (!nt)
+        return M32_FAIL_REG_NTDLL;
+    CreateKey = (M32_CREATEKEY_FN)GetProcAddress(nt, "NtCreateKey");
+    SetValue = (M32_SETVAL_FN)GetProcAddress(nt, "NtSetValueKey");
+    QueryValue = (M32_QUERYVAL_FN)GetProcAddress(nt, "NtQueryValueKey");
+    DeleteValue = (M32_DELVAL_FN)GetProcAddress(nt, "NtDeleteValueKey");
+    if (!CreateKey || !SetValue || !QueryValue || !DeleteValue)
+        return M32_FAIL_REG_NTDLL;
+
+    M32InitUstr(&uKey, KeyPath);
+    M32InitUstr(&uVal, ValName);
+    oa.Length = sizeof(oa);
+    oa.RootDirectory = NULL;
+    oa.ObjectName = &uKey;
+    oa.Attributes = 0x40; /* OBJ_CASE_INSENSITIVE */
+    oa.SecurityDescriptor = NULL;
+    oa.SecurityQualityOfService = NULL;
+
+    /* Volatile: this is a probe, it must not survive the boot. */
+    st = CreateKey(&key, 0xF003F /* KEY_ALL_ACCESS */, &oa, 0, NULL,
+                   1 /* REG_OPTION_VOLATILE */, &disp);
+    if (st < 0)
+        return M32_FAIL_REG_CREATE;
+
+    st = SetValue(key, &uVal, 0, 4 /* REG_DWORD */, &data, sizeof(data));
+    if (st < 0)
+    {
+        ReportHex("[marshal32] reg: NtSetValueKey failed, status =", (DWORD)st);
+        CloseHandle(key);
+        return M32_FAIL_REG_SET;
+    }
+
+    info.Type = 0;
+    info.DataLength = 0;
+    st = QueryValue(key, &uVal, 2 /* KeyValuePartialInformation */, &info,
+                    sizeof(info), &got);
+    if (st < 0)
+    {
+        /* The classic signature of the bug: the set "succeeded" but the value
+         * is not there under the name we asked for. */
+        ReportHex("[marshal32] reg: value set but NOT FOUND, status =", (DWORD)st);
+        CloseHandle(key);
+        return M32_FAIL_REG_QUERY;
+    }
+    if (info.Type != 4 || info.DataLength != sizeof(data) ||
+        *(DWORD *)info.Data != data)
+    {
+        ReportHex("[marshal32] reg: wrong value came back, type =", info.Type);
+        CloseHandle(key);
+        return M32_FAIL_REG_VALUE;
+    }
+
+    st = DeleteValue(key, &uVal);
+    if (st < 0)
+    {
+        ReportHex("[marshal32] reg: NtDeleteValueKey failed, status =", (DWORD)st);
+        CloseHandle(key);
+        return M32_FAIL_REG_DELETE;
+    }
+    /* ...and it must actually be gone, which proves the delete used OUR name
+     * and not a garbage one that happened to hit nothing. */
+    st = QueryValue(key, &uVal, 2, &info, sizeof(info), &got);
+    if (st >= 0)
+    {
+        Report("[marshal32] reg: value survived NtDeleteValueKey\n");
+        CloseHandle(key);
+        return M32_FAIL_REG_DELETE;
+    }
+    CloseHandle(key);
+
+    Report("[marshal32] registry value-name round-trip verified "
+           "(set/query/delete)\n");
+    return 0;
+}
+
+/* --- check 6: the KEY_WOW64_* access-mask flags ---------------------------- *
+ * KEY_WOW64_64KEY (0x0100) and KEY_WOW64_32KEY (0x0200) are not real access
+ * bits: no key's DACL grants them, so the kernel MUST strip them before the
+ * object-manager access check or the open is denied. NtCreateKey and NtOpenKey
+ * each do that in the C with `DesiredAccess &= ~KEY_WOW64_RES` (0x0300).
+ *
+ * NtOpenKey's Rust port dropped the named constant for a bare 0x0100 literal,
+ * so it stripped only the 64KEY bit and KEY_WOW64_32KEY reached
+ * ObCheckObjectAccess: RegOpenKeyEx(.., KEY_WOW64_32KEY) returned
+ * ACCESS_DENIED while the identical RegCreateKeyEx succeeded. Nothing about
+ * that is visible to the compiler, and it is not WoW64-specific — a native
+ * 64-bit `reg query /reg:32` hits it too.
+ *
+ * The rung opens one key four ways and reports each status, so a failure names
+ * the offending bit instead of just saying "registry broken". */
+
+typedef LONG(WINAPI *M32_OPENKEY_FN)(PHANDLE, ULONG, VOID *);
+
+#define M32_KEY_WOW64_64KEY 0x0100
+#define M32_KEY_WOW64_32KEY 0x0200
+
+static int CheckRegistryWow64Flags(void)
+{
+    static WCHAR KeyPath[] = L"\\Registry\\Machine\\Software";
+    static WCHAR ScratchPath[] = L"\\Registry\\Machine\\Software\\vibeos_m32wow";
+    HMODULE nt = GetModuleHandleA("ntdll.dll");
+    M32_OPENKEY_FN OpenKey;
+    M32_CREATEKEY_FN CreateKey;
+    M32_USTR uKey;
+    M32_OA oa;
+    HANDLE key = NULL;
+    ULONG disp = 0;
+    LONG st;
+
+    if (!nt)
+        return M32_FAIL_REG_NTDLL;
+    OpenKey = (M32_OPENKEY_FN)GetProcAddress(nt, "NtOpenKey");
+    CreateKey = (M32_CREATEKEY_FN)GetProcAddress(nt, "NtCreateKey");
+    if (!OpenKey || !CreateKey)
+        return M32_FAIL_REG_NTDLL;
+
+    M32InitUstr(&uKey, KeyPath);
+    oa.Length = sizeof(oa);
+    oa.RootDirectory = NULL;
+    oa.ObjectName = &uKey;
+    oa.Attributes = 0x40; /* OBJ_CASE_INSENSITIVE */
+    oa.SecurityDescriptor = NULL;
+    oa.SecurityQualityOfService = NULL;
+
+    /* Control: no wow64 bit at all. If this fails the rung proves nothing —
+     * say so distinctly rather than blaming a flag. */
+    st = OpenKey(&key, KEY_READ, &oa);
+    if (st < 0)
+    {
+        ReportHex("[marshal32] wow64flags: plain NtOpenKey failed, status =",
+                  (DWORD)st);
+        return M32_FAIL_WOW_OPEN;
+    }
+    CloseHandle(key);
+
+    key = NULL;
+    st = OpenKey(&key, KEY_READ | M32_KEY_WOW64_64KEY, &oa);
+    if (st < 0)
+    {
+        ReportHex("[marshal32] wow64flags: KEY_WOW64_64KEY refused, status =",
+                  (DWORD)st);
+        return M32_FAIL_WOW_64KEY;
+    }
+    CloseHandle(key);
+
+    key = NULL;
+    st = OpenKey(&key, KEY_READ | M32_KEY_WOW64_32KEY, &oa);
+    if (st < 0)
+    {
+        ReportHex("[marshal32] wow64flags: KEY_WOW64_32KEY refused, status =",
+                  (DWORD)st);
+        return M32_FAIL_WOW_32KEY;
+    }
+    CloseHandle(key);
+
+    /* NtCreateKey is the sibling that masked correctly all along; assert the
+     * pair agrees so a future edit cannot silently break just one of them. */
+    M32InitUstr(&uKey, ScratchPath);
+    key = NULL;
+    st = CreateKey(&key, 0xF003F /* KEY_ALL_ACCESS */ | M32_KEY_WOW64_32KEY,
+                   &oa, 0, NULL, 1 /* REG_OPTION_VOLATILE */, &disp);
+    if (st < 0)
+    {
+        ReportHex("[marshal32] wow64flags: NtCreateKey refused 32KEY, status =",
+                  (DWORD)st);
+        return M32_FAIL_WOW_CREATE;
+    }
+    CloseHandle(key);
+
+    Report("[marshal32] KEY_WOW64_32KEY/64KEY accepted by open+create\n");
+    return 0;
+}
+
+/* --- check 7: the SELF-DESCRIBING SIZE family (E22) ------------------------ *
+ * A struct that carries its own sizeof is the one shape a field-perfect
+ * marshaller still gets wrong: the guest writes ITS sizeof and win32k compares
+ * against the HOST's, so the call is rejected before a single field is read.
+ * TRACKMOUSEEVENT is 16 vs 24, CURSORINFO 20 vs 24, GUITHREADINFO 48 vs 72,
+ * and INPUT 28 vs 40 (SendInput states its size in an ARGUMENT instead of a
+ * field, which is why that one is hand-marshalled).
+ *
+ * Each check is three assertions, and they fail in different directions:
+ *   - the call must SUCCEED         -> the size reached the kernel host-sized
+ *   - the size must come back GUEST-sized -> the copy-out undid the rewrite
+ *   - the canary after the struct must survive -> the kernel's larger write
+ *     landed in the bounce buffer and not on our stack
+ * Only the first fires on unmarshalled media (the kernel rejects the call and
+ * writes nothing at all, so the canary survives by doing nothing). The other
+ * two are the guards against "fixed the size check, corrupted the caller",
+ * which is what a naive size rewrite with no bounce buffer would do. */
+
+#define M32_TME_QUERY 0x40000000
+#define M32_CANARY    0xC0DEFACEu
+
+static int CheckSelfDescribingSizes(void)
+{
+    struct { TRACKMOUSEEVENT s; DWORD canary[2]; } tme;
+    struct { CURSORINFO s;      DWORD canary[2]; } ci;
+    struct { GUITHREADINFO s;   DWORD canary[2]; } gti;
+    INPUT in;
+    UINT sent;
+
+    /* --- TRACKMOUSEEVENT: 16 -> 24 ------------------------------------- */
+    tme.s.cbSize = sizeof(TRACKMOUSEEVENT);
+    tme.s.dwFlags = M32_TME_QUERY;
+    tme.s.hwndTrack = NULL;
+    tme.s.dwHoverTime = 0;
+    tme.canary[0] = M32_CANARY;
+    tme.canary[1] = M32_CANARY;
+
+    if (!TrackMouseEvent(&tme.s))
+    {
+        ReportHex("[marshal32] cbSize: TrackMouseEvent(TME_QUERY) failed, err =",
+                  GetLastError());
+        return M32_FAIL_TME_CALL;
+    }
+    /* The kernel restamps cbSize with ITS sizeof (24) on the query path, so
+     * this is a direct read-out of whether the copy-back narrowed it again. */
+    if (tme.s.cbSize != sizeof(TRACKMOUSEEVENT))
+    {
+        ReportHex("[marshal32] cbSize: TRACKMOUSEEVENT.cbSize came back as",
+                  tme.s.cbSize);
+        return M32_FAIL_TME_SIZE;
+    }
+    if (tme.canary[0] != M32_CANARY || tme.canary[1] != M32_CANARY)
+    {
+        Report("[marshal32] cbSize: TRACKMOUSEEVENT canary overwritten\n");
+        return M32_FAIL_TME_CANARY;
+    }
+
+    /* --- CURSORINFO: 20 -> 24 ------------------------------------------ */
+    ci.s.cbSize = sizeof(CURSORINFO);
+    ci.canary[0] = M32_CANARY;
+    ci.canary[1] = M32_CANARY;
+
+    if (!GetCursorInfo(&ci.s))
+    {
+        ReportHex("[marshal32] cbSize: GetCursorInfo failed, err =", GetLastError());
+        return M32_FAIL_CI_CALL;
+    }
+    if (ci.s.cbSize != sizeof(CURSORINFO))
+    {
+        ReportHex("[marshal32] cbSize: CURSORINFO.cbSize came back as", ci.s.cbSize);
+        return M32_FAIL_CI_SIZE;
+    }
+    if (ci.canary[0] != M32_CANARY || ci.canary[1] != M32_CANARY)
+    {
+        Report("[marshal32] cbSize: CURSORINFO canary overwritten\n");
+        return M32_FAIL_CI_CANARY;
+    }
+
+    /* --- GUITHREADINFO: 48 -> 72 (the widest overrun of the family) ----- */
+    gti.s.cbSize = sizeof(GUITHREADINFO);
+    gti.canary[0] = M32_CANARY;
+    gti.canary[1] = M32_CANARY;
+
+    if (!GetGUIThreadInfo(0, &gti.s))
+    {
+        ReportHex("[marshal32] cbSize: GetGUIThreadInfo failed, err =", GetLastError());
+        return M32_FAIL_GTI_CALL;
+    }
+    if (gti.s.cbSize != sizeof(GUITHREADINFO))
+    {
+        ReportHex("[marshal32] cbSize: GUITHREADINFO.cbSize came back as", gti.s.cbSize);
+        return M32_FAIL_GTI_SIZE;
+    }
+    if (gti.canary[0] != M32_CANARY || gti.canary[1] != M32_CANARY)
+    {
+        Report("[marshal32] cbSize: GUITHREADINFO canary overwritten\n");
+        return M32_FAIL_GTI_CANARY;
+    }
+
+    /* --- INPUT: 28 -> 40, with the size in an ARGUMENT ------------------ *
+     * A relative mouse move of (0,0): reaches UserSendMouseInput, moves
+     * nothing, clicks nothing.
+     *
+     * This check used to excuse a failure unless GetLastError() was
+     * ERROR_INVALID_PARAMETER, on the theory that SendInput can also fail for
+     * environmental reasons (no input access, no active desktop). The control
+     * run killed that idea: win32k's EngSetLastError writes
+     * NtCurrentTeb()->LastErrorValue — the *64-bit* TEB — while a 32-bit guest
+     * reads TEB32, so NO error code win32k sets is visible here and the
+     * discriminator could never fire. (Separately tracked; it is a gap across
+     * the whole win32k surface, not just this call.) An assertion that cannot
+     * fail is worse than no assertion, so this is a hard failure now:
+     * winlogon runs the ladder on the active desktop, the same one every other
+     * guest creates windows on, and a genuine loss of input access there is
+     * itself worth a red. */
+    in.type = INPUT_MOUSE;
+    in.mi.dx = 0;
+    in.mi.dy = 0;
+    in.mi.mouseData = 0;
+    in.mi.dwFlags = MOUSEEVENTF_MOVE;
+    in.mi.time = 0;
+    in.mi.dwExtraInfo = 0;
+
+    sent = SendInput(1, &in, sizeof(INPUT));
+    if (sent != 1)
+    {
+        ReportHex("[marshal32] cbSize: SendInput accepted events =", sent);
+        return M32_FAIL_SENDINPUT;
+    }
+
+    Report("[marshal32] self-describing sizes verified "
+           "(TrackMouseEvent/GetCursorInfo/GetGUIThreadInfo/SendInput)\n");
+    return 0;
+}
+
+/* --- check 8: the win32k LAST-ERROR channel ------------------------------- *
+ * win32k reports failure by setting last-error and returning FALSE, and it
+ * sets it with EngSetLastError -> NtCurrentTeb()->LastErrorValue, which in
+ * kernel mode is the thread's 64-BIT TEB. GetLastError() here reads TEB32.
+ * Every error code the USER/GDI surface produced therefore landed in a TEB no
+ * 32-bit process ever reads: the app got the FALSE and never the reason.
+ *
+ * TrackMouseEvent is the probe because user32.spec forwards it STRAIGHT to
+ * NtUserTrackMouseEvent with no client-side validation at all, so every code
+ * asserted below can only have come from the kernel. It is driven three ways:
+ *
+ *   (a) a cbSize the kernel rejects -> ERROR_INVALID_PARAMETER. The E22 size
+ *       rewrite is value-guarded (it rewrites only the exact 32-bit sizeof),
+ *       so a cbSize of 1 passes through untouched and really does reach the
+ *       kernel's version check.
+ *   (b) a legal cbSize with an illegal FLAG bit -> ERROR_INVALID_FLAGS, from
+ *       a different branch of the same function. Two distinct codes out of
+ *       one call is what makes this "the code travelled" rather than "an
+ *       error appeared" — a bridge that hardcoded, guessed, or merely zeroed
+ *       would satisfy one of these and not both.
+ *   (c) a call that SUCCEEDS must leave the guest's own last-error alone.
+ *       win32k does not touch last-error on the TME_QUERY success path, so a
+ *       sentinel set here must survive the syscall. This is the assertion
+ *       that rejects the naive bridge — an unconditional copy-down of the
+ *       64-bit TEB would hand the guest whatever some earlier syscall left
+ *       there, turning a fix for failures into a corruption of successes.
+ *
+ * Only (a) and (b) can see the original bug; on unfixed media both report the
+ * sentinel, which is the bug printing its own name. (c) passes before and
+ * after — it is a guard on the fix, not a detector of the bug. */
+
+#define M32_LERR_SENTINEL 0x5A5A0082u
+#define M32_TME_BOGUS_FLAG 0x00000004u /* not TME_{CANCEL,QUERY,NONCLIENT,LEAVE,HOVER} */
+
+static int CheckWin32kLastError(void)
+{
+    TRACKMOUSEEVENT tme;
+    DWORD err;
+
+    /* (a) a size the kernel's version check rejects. */
+    tme.cbSize = 1;
+    tme.dwFlags = M32_TME_QUERY;
+    tme.hwndTrack = NULL;
+    tme.dwHoverTime = 0;
+    SetLastError(M32_LERR_SENTINEL);
+    if (TrackMouseEvent(&tme))
+    {
+        Report("[marshal32] lasterr: TrackMouseEvent ACCEPTED cbSize 1 — rung is invalid\n");
+        return M32_FAIL_LERR_CALL;
+    }
+    err = GetLastError();
+    if (err != ERROR_INVALID_PARAMETER)
+    {
+        ReportHex("[marshal32] lasterr: bad cbSize should be 0x57, guest sees", err);
+        return M32_FAIL_LERR_PARAM;
+    }
+
+    /* (b) the same call, a different kernel branch, a different code. */
+    tme.cbSize = sizeof(TRACKMOUSEEVENT);
+    tme.dwFlags = M32_TME_QUERY | M32_TME_BOGUS_FLAG;
+    SetLastError(M32_LERR_SENTINEL);
+    if (TrackMouseEvent(&tme))
+    {
+        Report("[marshal32] lasterr: TrackMouseEvent ACCEPTED a bogus flag — rung is invalid\n");
+        return M32_FAIL_LERR_CALL;
+    }
+    err = GetLastError();
+    if (err != ERROR_INVALID_FLAGS)
+    {
+        ReportHex("[marshal32] lasterr: bad flag should be 0x3EC, guest sees", err);
+        return M32_FAIL_LERR_FLAGS;
+    }
+
+    /* (c) a success must not disturb what the guest itself last set. */
+    tme.cbSize = sizeof(TRACKMOUSEEVENT);
+    tme.dwFlags = M32_TME_QUERY;
+    tme.hwndTrack = NULL;
+    tme.dwHoverTime = 0;
+    SetLastError(M32_LERR_SENTINEL);
+    if (!TrackMouseEvent(&tme))
+    {
+        ReportHex("[marshal32] lasterr: the control TME_QUERY failed, err =", GetLastError());
+        return M32_FAIL_LERR_QUERY;
+    }
+    err = GetLastError();
+    if (err != M32_LERR_SENTINEL)
+    {
+        ReportHex("[marshal32] lasterr: a SUCCEEDING win32k call overwrote last-error with",
+                  err);
+        return M32_FAIL_LERR_CLOBBER;
+    }
+
+    Report("[marshal32] win32k last-error reaches the guest "
+           "(invalid-param, invalid-flags, preserved across success)\n");
+    return 0;
+}
+
+/* --- check 9: Wow6432Node registry redirection (E24) ----------------------- *
+ * A 32-bit process must get its own view of HKLM\Software. The kernel splices
+ * WOW6432NODE in at the SOFTWARE boundary (CmpParseKey -> cmwow64.rs), so the
+ * SAME path names two different keys depending on who is asking.
+ *
+ * "The write went somewhere" is not evidence — with no redirection at all a
+ * create still succeeds and a read still finds it. So this rung asserts the
+ * two views DISAGREE, by two independent routes:
+ *   (a) the default-view handle's OWN NAME (NtQueryKey/KeyNameInformation)
+ *       must contain Wow6432Node. That says WHERE it went, from the kernel's
+ *       mouth, not from ours.
+ *   (b) the identical path opened with KEY_WOW64_64KEY must NOT see the value
+ *       we just wrote. That says the two views are genuinely distinct
+ *       objects. Unredirected, (a) and (b) both fail; a bridge that faked
+ *       either one would still have to satisfy the other.
+ *
+ * (c) then pins the property the whole design rests on: a key that exists ONLY
+ * in the 64-bit hive must still resolve from the 32-bit view, via the
+ * miss-fallback. Nothing populates Wow6432Node on this system, so without that
+ * fallback every OS key a 32-bit app reads would vanish — redirection without
+ * population is a regression, and this is the assertion that would catch it.
+ * It passes before AND after the feature: it is a guard, not a detector. */
+
+typedef LONG(WINAPI *M32_QUERYKEY_FN)(HANDLE, ULONG, VOID *, ULONG, PULONG);
+
+#define M32_KEY_NAME_INFORMATION 3
+#define M32_RDIR_SENTINEL 0x5EDC0024u
+
+/* Case-insensitive search for a wide needle in a counted wide haystack. */
+static int M32WideContains(const WCHAR *hay, ULONG hayChars, const WCHAR *needle)
+{
+    ULONG n = 0, i, j;
+
+    while (needle[n])
+        n++;
+    if (hayChars < n)
+        return 0;
+
+    for (i = 0; i + n <= hayChars; i++)
+    {
+        for (j = 0; j < n; j++)
+        {
+            WCHAR a = hay[i + j], b = needle[j];
+            if (a >= L'a' && a <= L'z') a = (WCHAR)(a - 32);
+            if (b >= L'a' && b <= L'z') b = (WCHAR)(b - 32);
+            if (a != b)
+                break;
+        }
+        if (j == n)
+            return 1;
+    }
+    return 0;
+}
+
+static int CheckRegistryRedirection(void)
+{
+    static WCHAR ScratchPath[] = L"\\Registry\\Machine\\Software\\vibeos_m32redir";
+    static WCHAR SharedPath[] = L"\\Registry\\Machine\\Software\\Microsoft";
+    static WCHAR ValName[] = L"Wow64RedirectProbe";
+    static WCHAR NodeName[] = L"Wow6432Node";
+    HMODULE nt = GetModuleHandleA("ntdll.dll");
+    M32_CREATEKEY_FN CreateKey;
+    M32_OPENKEY_FN OpenKey;
+    M32_SETVAL_FN SetValue;
+    M32_QUERYVAL_FN QueryValue;
+    M32_QUERYKEY_FN QueryKey;
+    M32_USTR uKey, uVal;
+    M32_OA oa;
+    M32_KVPI info;
+    /* KEY_NAME_INFORMATION: ULONG NameLength; WCHAR Name[]. */
+    struct { ULONG NameLength; WCHAR Name[256]; } nameInfo;
+    HANDLE key = NULL, key64 = NULL;
+    ULONG disp = 0, got = 0;
+    DWORD data = M32_RDIR_SENTINEL;
+    LONG st;
+
+    if (!nt)
+        return M32_FAIL_REG_NTDLL;
+    CreateKey = (M32_CREATEKEY_FN)GetProcAddress(nt, "NtCreateKey");
+    OpenKey = (M32_OPENKEY_FN)GetProcAddress(nt, "NtOpenKey");
+    SetValue = (M32_SETVAL_FN)GetProcAddress(nt, "NtSetValueKey");
+    QueryValue = (M32_QUERYVAL_FN)GetProcAddress(nt, "NtQueryValueKey");
+    QueryKey = (M32_QUERYKEY_FN)GetProcAddress(nt, "NtQueryKey");
+    if (!CreateKey || !OpenKey || !SetValue || !QueryValue || !QueryKey)
+        return M32_FAIL_REG_NTDLL;
+
+    M32InitUstr(&uKey, ScratchPath);
+    M32InitUstr(&uVal, ValName);
+    oa.Length = sizeof(oa);
+    oa.RootDirectory = NULL;
+    oa.ObjectName = &uKey;
+    oa.Attributes = 0x40; /* OBJ_CASE_INSENSITIVE */
+    oa.SecurityDescriptor = NULL;
+    oa.SecurityQualityOfService = NULL;
+
+    /* Default view. For a 32-bit process this must resolve into Wow6432Node.
+     * Volatile: a probe must not survive the boot. */
+    st = CreateKey(&key, 0xF003F /* KEY_ALL_ACCESS */, &oa, 0, NULL,
+                   1 /* REG_OPTION_VOLATILE */, &disp);
+    if (st < 0)
+    {
+        ReportHex("[marshal32] redirect: scratch create failed, status =", (DWORD)st);
+        return M32_FAIL_RDIR_CREATE;
+    }
+    st = SetValue(key, &uVal, 0, 4 /* REG_DWORD */, &data, sizeof(data));
+    if (st < 0)
+    {
+        CloseHandle(key);
+        ReportHex("[marshal32] redirect: scratch set failed, status =", (DWORD)st);
+        return M32_FAIL_RDIR_CREATE;
+    }
+
+    /* (a) ask the KERNEL where that handle actually points. */
+    nameInfo.NameLength = 0;
+    st = QueryKey(key, M32_KEY_NAME_INFORMATION, &nameInfo, sizeof(nameInfo), &got);
+    if (st < 0 ||
+        !M32WideContains(nameInfo.Name, nameInfo.NameLength / sizeof(WCHAR), NodeName))
+    {
+        CloseHandle(key);
+        ReportHex("[marshal32] redirect: default view is not in Wow6432Node, status =",
+                  (DWORD)st);
+        if (st >= 0)
+            ReportWide("[marshal32] redirect: the kernel calls that handle ",
+                       nameInfo.Name, nameInfo.NameLength / sizeof(WCHAR));
+        return M32_FAIL_RDIR_NAME;
+    }
+    CloseHandle(key);
+
+    /* (b) the SAME path in the 64-bit view must be a different key, so the
+     * value we just wrote must not be visible through it. */
+    key64 = NULL;
+    st = OpenKey(&key64, KEY_READ | M32_KEY_WOW64_64KEY, &oa);
+    if (st >= 0)
+    {
+        got = 0;
+        st = QueryValue(key64, &uVal, 2 /* KeyValuePartialInformation */,
+                        &info, sizeof(info), &got);
+        CloseHandle(key64);
+        if (st >= 0)
+        {
+            Report("[marshal32] redirect: 64-bit view can see the 32-bit value\n");
+            return M32_FAIL_RDIR_LEAK;
+        }
+    }
+    /* NOT finding the key at all is the expected outcome here: nothing created
+     * it in the 64-bit hive. Only a successful VALUE read is a failure. */
+
+    /* (c) a key that exists only 64-bit must still resolve from the 32-bit
+     * view, or every OS key a 32-bit app reads would disappear. */
+    M32InitUstr(&uKey, SharedPath);
+    key = NULL;
+    st = OpenKey(&key, KEY_READ, &oa);
+    if (st < 0)
+    {
+        ReportHex("[marshal32] redirect: 64-bit-only key stopped resolving, status =",
+                  (DWORD)st);
+        return M32_FAIL_RDIR_SHARED;
+    }
+    CloseHandle(key);
+
+    /* And the explicit 64-bit selector must still work on it. */
+    key = NULL;
+    st = OpenKey(&key, KEY_READ | M32_KEY_WOW64_64KEY, &oa);
+    if (st < 0)
+    {
+        ReportHex("[marshal32] redirect: KEY_WOW64_64KEY failed on a shared key, status =",
+                  (DWORD)st);
+        return M32_FAIL_RDIR_64VIEW;
+    }
+    CloseHandle(key);
+
+    Report("[marshal32] Wow6432Node redirection: private 32-bit view, "
+           "64-bit view distinct, miss falls back\n");
+    return 0;
+}
+
 int start(void) /* cdecl: i386 symbol is _start, matching -Wl,-e,_start */
 {
     int rc;
@@ -293,7 +1043,23 @@ int start(void) /* cdecl: i386 symbol is _start, matching -Wl,-e,_start */
     rc = CheckOutCellCanaries();
     if (rc) ExitProcess(rc);
 
-    Report("[marshal32] PASS: TBI + IOCP + monitors + out-cells all verified\n");
+    rc = CheckRegistryValueNames();
+    if (rc) ExitProcess(rc);
+
+    rc = CheckRegistryWow64Flags();
+    if (rc) ExitProcess(rc);
+
+    rc = CheckSelfDescribingSizes();
+    if (rc) ExitProcess(rc);
+
+    rc = CheckWin32kLastError();
+    if (rc) ExitProcess(rc);
+
+    rc = CheckRegistryRedirection();
+    if (rc) ExitProcess(rc);
+
+    Report("[marshal32] PASS: TBI + IOCP + monitors + out-cells + reg-names "
+           "+ wow64-flags + cbSize + last-error + reg-redirect all verified\n");
     ExitProcess(M32_PASS);
     return 0;
 }

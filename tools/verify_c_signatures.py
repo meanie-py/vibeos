@@ -506,9 +506,17 @@ def c_functions(path: Path) -> dict[str, tuple[str, list[str]]]:
         "__RPC_USER",
         "__RPC_STUB",
         "RPC_ENTRY",
+        "SEC_ENTRY",  # sspi.h: __stdcall. ksecdd spells it on its own line, so the
+        # last token before the name was read as the return type.
         "CDECL",
         "WINAPIV",
         "DECLSPEC_NORETURN",
+        # A module-private ALIAS for a convention is still a convention. deskcplx.h:4 has
+        # `#define DESK_EXT_CALLBACK CALLBACK`, and without it the return type of
+        # `PDEVMODEW DESK_EXT_CALLBACK CDevSettings_GetCurrentMode(..)` reads as the two tokens
+        # `PDEVMODEW DESK_EXT_CALLBACK`, which no Rust return type can ever match — a permanent
+        # false positive on a correctly-translated function. Same class as netcfgx's STDAPI.
+        "DESK_EXT_CALLBACK",
     )
 
     def _clean_ret(s: str) -> str:
@@ -590,7 +598,16 @@ def main() -> int:
         rc = 0
         for cdir_rs in sorted((ROOT / "sdk" / "lib" / "rust").glob("*-rust")):
             name = cdir_rs.name[:-5]
-            ddir = next((d for d in (ROOT / "dll").rglob(name) if d.is_dir()), None)
+            # dll/ AND drivers/. Pairing only against dll/ silently excluded every
+            # translated driver — fastfat, cdfs, classpnp, usbport, the whole storage
+            # and USB stack — ~50 crates and 3,000 signature pairs that read as
+            # covered because the sweep is spelled `--all`. A kernel-mode extra `*`
+            # is worse than a usermode one, not better.
+            ddir = None
+            for croot in ("dll", "drivers"):
+                ddir = next((d for d in (ROOT / croot).rglob(name) if d.is_dir()), None)
+                if ddir is not None:
+                    break
             if ddir is None:
                 continue
             rc |= _run(cdir_rs / "src", ddir, name, args.check)

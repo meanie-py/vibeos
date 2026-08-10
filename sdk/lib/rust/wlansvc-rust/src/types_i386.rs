@@ -694,7 +694,7 @@ pub type PWLAN_CONNECTION_PARAMETERS = *mut _WLAN_CONNECTION_PARAMETERS;
 pub type WLAN_NOTIFICATION_DATA = L2_NOTIFICATION_DATA;
 pub type PWLAN_NOTIFICATION_DATA = *mut L2_NOTIFICATION_DATA;
 pub type WLAN_NOTIFICATION_CALLBACK =
-    ::core::option::Option<unsafe extern "stdcall" fn(a: PWLAN_NOTIFICATION_DATA, b: PVOID)>;
+    ::core::option::Option<unsafe extern "system" fn(a: PWLAN_NOTIFICATION_DATA, b: PVOID)>;
 pub type WLANSVC_RPC_HANDLE = PVOID;
 pub type LPWLANSVC_RPC_HANDLE = *mut WLANSVC_RPC_HANDLE;
 pub type WLANSVC_HANDLE = LPWSTR;

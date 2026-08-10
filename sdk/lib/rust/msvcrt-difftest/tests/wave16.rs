@@ -806,7 +806,15 @@ fn ld80_from_f64(d: f64) -> Ld80 {
             )
         }
     } else {
-        ((exp11 - 1023 + 16383) & 0x7FFF, (1u64 << 63) | (frac << 11))
+        // Modular, like the subnormal branch above and like the `& 0x7FFF` that follows:
+        // rebiasing 11-bit -> 15-bit goes negative for every exponent below 1023 (i.e. every
+        // double under 1.0) before the +16383 brings it back. Plain `-` was fine in release
+        // and panicked under debug, which is half of why this suite could only be run with
+        // --release.
+        (
+            exp11.wrapping_sub(1023).wrapping_add(16383) & 0x7FFF,
+            (1u64 << 63) | (frac << 11),
+        )
     };
     let mut ld = [0u8; 10];
     ld[..8].copy_from_slice(&mant.to_le_bytes());

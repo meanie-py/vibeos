@@ -553,7 +553,7 @@ unsafe fn InjectByte(DevExt: PINPUT_DEVICE_EXT, Byte: UCHAR) {
     TryCompleteIrp(DevExt);
 }
 
-unsafe extern "C" fn InputCancelIrp(
+unsafe extern "system" fn InputCancelIrp(
     DeviceObject: PDEVICE_OBJECT,
     Irp: PIRP)
 {
@@ -571,7 +571,7 @@ unsafe extern "C" fn InputCancelIrp(
     IoCompleteRequest(Irp, IO_NO_INCREMENT as i8);
 }
 
-unsafe extern "C" fn InputCreate(
+unsafe extern "system" fn InputCreate(
     DeviceObject: PDEVICE_OBJECT,
     Irp: PIRP
 ) -> NTSTATUS {
@@ -582,7 +582,7 @@ unsafe extern "C" fn InputCreate(
     return STATUS_SUCCESS;
 }
 
-unsafe extern "C" fn InputClose(
+unsafe extern "system" fn InputClose(
     DeviceObject: PDEVICE_OBJECT,
     Irp: PIRP
 ) -> NTSTATUS {
@@ -592,7 +592,7 @@ unsafe extern "C" fn InputClose(
     STATUS_SUCCESS
 }
 
-unsafe extern "C" fn InputCleanup(
+unsafe extern "system" fn InputCleanup(
     DeviceObject: PDEVICE_OBJECT,
     Irp: PIRP
 ) -> NTSTATUS {
@@ -633,7 +633,7 @@ unsafe extern "C" fn InputCleanup(
     STATUS_SUCCESS
 }
 
-unsafe extern "C" fn InputRead(
+unsafe extern "system" fn InputRead(
     DeviceObject: PDEVICE_OBJECT,
     Irp: PIRP
 ) -> NTSTATUS {
@@ -685,7 +685,7 @@ unsafe extern "C" fn InputRead(
     STATUS_PENDING
 }
 
-unsafe extern "C" fn InputDeviceControl(
+unsafe extern "system" fn InputDeviceControl(
     DeviceObject: PDEVICE_OBJECT,
     Irp: PIRP
 ) -> NTSTATUS {
@@ -1490,7 +1490,7 @@ unsafe fn VirtioConnectInterrupts() -> u8 {
     1
 }
 
-unsafe extern "C" fn VirtioPollThread(Context: PVOID) {
+unsafe extern "system" fn VirtioPollThread(Context: PVOID) {
     let mut Delay: LARGE_INTEGER = core::mem::zeroed();
 
     Delay.QuadPart = -10000;
@@ -1579,7 +1579,7 @@ pub unsafe extern "system" fn DriverEntry(
     // read back zeros: keys dropped at "no VK for sc=0x0", mouse packets were
     // no-ops). Same invented-constant class as the acpi CmResourceType bug.
     (*KbdDevice).Flags |= 0x00000004; // DO_BUFFERED_IO
-    (*KbdDevice).Flags &= !0x00000080; // ~DO_DEVICE_INITIALIZING
+    (*KbdDevice).Flags &= !ntkrnl_sys::driver_ddk::DO_DEVICE_INITIALIZING;
     g_KbdDevice = KbdDevice;
 
     DbgPrint(b"[ARM64INPUT] \\Device\\KeyboardClass0 created\n\0".as_ptr() as _);
@@ -1613,7 +1613,7 @@ pub unsafe extern "system" fn DriverEntry(
     (*DevExt).MouRingTail = 0;
     (*DevExt).SelfDevice = MouDevice;
     (*MouDevice).Flags |= 0x00000004; // DO_BUFFERED_IO (see kbd note above)
-    (*MouDevice).Flags &= !0x00000080; // ~DO_DEVICE_INITIALIZING
+    (*MouDevice).Flags &= !ntkrnl_sys::driver_ddk::DO_DEVICE_INITIALIZING;
 
     let n_ptr_sym = wsz!(b"\\DosDevices\\PointerClass0");
     RtlInitUnicodeString(&mut SymlinkName, n_ptr_sym.as_ptr());

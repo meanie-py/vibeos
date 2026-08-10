@@ -63,12 +63,13 @@ extern "system" {
     fn FatGetIndexFromLbo(Vcb: PVCB, Lbo: i64) -> u32;
     fn UInt32x32To64(a: u32, b: u32) -> u64;
     fn FatIsFat32(Vcb: *mut VCB) -> u8;
-    fn FatGetNextMcbEntry(Vcb: *mut VCB, Mcb: *mut LARGE_MCB, McbIndex: u32, Vbo: *mut u64, Lbo: *mut u64, ByteCount: *mut u32) -> u8;
+    // Vbo is `OUT PVBO` — ULONG32, four bytes. This decl said *mut u64 and its
+    // locals were widened to match it, which is how a decl that contradicts the
+    // header survives: rustc only ever compares a caller against the DECL.
+    fn FatGetNextMcbEntry(Vcb: *mut VCB, Mcb: *mut LARGE_MCB, McbIndex: u32, Vbo: *mut u32, Lbo: *mut u64, ByteCount: *mut u32) -> u8;
     fn FatBuildZeroMdl(IrpContext: *mut IRP_CONTEXT, ByteCount: u32) -> *mut MDL;
     fn KeClearEvent(Event: *mut KEVENT);
     fn RtlCheckBit(BitMap: *const RTL_BITMAP, Bit: u32) -> u8;
-    fn ExAcquireFastMutexUnsafe(FastMutex: *mut core::ffi::c_void);
-    fn ExReleaseFastMutexUnsafe(FastMutex: *mut core::ffi::c_void);
     fn FatFreeClusters(IrpContext: *mut IRP_CONTEXT, Vcb: *mut VCB, FatIndex: u32, ClusterCount: u32);
     fn FatExceptionFilter(_: *const core::ffi::c_void, ExceptionInfo: *const core::ffi::c_void) -> i32;
     fn _SEH2_GetExceptionCode() -> i32;
@@ -84,6 +85,22 @@ extern "system" {
 fn FatGetDirentFromFcbOrDcb(irpctx: *mut IRP_CONTEXT, fcb: *mut FCB, arg2: u32, dirent: *mut *mut DIRENT, direntBcb: *mut *mut BCB);
     fn CcIsFileCached(FileObject: *mut FILE_OBJECT) -> u8;
     fn CcSetFileSizes(FileObject: *mut FILE_OBJECT, Sizes: *mut CC_FILE_SIZES);
+}
+
+// Ex{Acquire,Release}FastMutexUnsafe are FASTCALL exports on i386 (`@Name@4`, per
+// ntoskrnl.spec and the bindgen island); everywhere else FASTCALL is the ordinary
+// convention. Declared "system" they asked the linker for `_Name@4`, and
+// rust_cohab_fat.c papered over the undefined symbol with stdcall trampolines
+// aliased in asm. The declaration was the thing that was wrong.
+#[cfg(target_arch = "x86")]
+extern "fastcall" {
+    fn ExAcquireFastMutexUnsafe(FastMutex: *mut core::ffi::c_void);
+    fn ExReleaseFastMutexUnsafe(FastMutex: *mut core::ffi::c_void);
+}
+#[cfg(not(target_arch = "x86"))]
+extern "C" {
+    fn ExAcquireFastMutexUnsafe(FastMutex: *mut core::ffi::c_void);
+    fn ExReleaseFastMutexUnsafe(FastMutex: *mut core::ffi::c_void);
 }
 
 
@@ -1749,7 +1766,7 @@ pub unsafe extern "system" fn FatDeallocateDiskSpace(
     ZeroOnDeallocate: u8,
 ) {
     let mut Lbo: u64 = 0;
-    let mut Vbo: u64 = 0;
+    let mut Vbo: u32 = 0; // VBO (ULONG32) — only ever an out-param of FatGetNextMcbEntry
     let mut RunsInMcb: u32 = 0;
     let mut ByteCount: u32 = 0;
     let mut ClusterCount: u32 = 0;
@@ -2078,7 +2095,7 @@ pub unsafe extern "system" fn FatDeallocateDiskSpace(
         // (variable declarations would go here, followed by the rollback logic)
         // We include a minimal representation:
         let mut LocalLbo: u64 = 0;
-        let mut LocalVbo: u64 = 0;
+        let mut LocalVbo: u32 = 0; // VBO (ULONG32)
         let mut Index: u32 = 0;
         let mut Clusters: u32 = 0;
         let mut FatIndex: u32 = 0;
@@ -3002,7 +3019,6 @@ pub unsafe extern "system" fn FatExamineFatEntries(
     // Known extern functions from ntkrnl_sys
 
     // Types and constants
-    type BOOLEAN = i32;
     type FAT_ENTRY = u32;
     const FAT_CLUSTER_AVAILABLE: u32 = 0;
     const FAT32_ENTRY_MASK: u32 = 0x0FFFFFFF;

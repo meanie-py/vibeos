@@ -141,7 +141,13 @@ const MAX_LFN_DIRENTS: u8 = 20;
 const CCB_FLAG_OPENED_BY_SHORTNAME: u32 = 0x0800;
 const STATUS_END_OF_FILE: NTSTATUS = (0xC0000011_u32 as i32) as u32; // likely value
 
-type VBO = LARGE_INTEGER;
+// fat.h:38 is `typedef ULONG32 VBO` — FOUR bytes. This file used to alias it to
+// LARGE_INTEGER, so FatLocateDirent stored `(*ByteOffset).QuadPart`, an EIGHT-byte
+// write through a pointer the interface says points at four. create.rs:841,
+// namesup.rs:272 and fileinfo.rs:1705 each pass a `u32` stack local, so every
+// call smashed 4 bytes of the caller's frame — and create.rs is the file-OPEN
+// path, which on arm64 runs against a FAT system volume on every open.
+use crate::types::VBO;
 type BOOLEAN = u8;
 type NTSTATUS = u32;
 type ULONG = u32;
@@ -418,7 +424,7 @@ pub unsafe extern "system" fn FatDeleteDirent(
     IrpContext: PIRP_CONTEXT,
     FcbOrDcb: *mut FCB,
     DeleteContext: *mut DELETE_CONTEXT,
-    DeleteEa: i32,
+    DeleteEa: BOOLEAN,
 ) {
     let mut Bcb: *mut BCB = core::ptr::null_mut();
     let mut Dirent: *mut DIRENT = core::ptr::null_mut();
@@ -554,7 +560,7 @@ pub unsafe extern "system" fn FatLfnDirentExists(
     ccb.Flags = CCB_FLAG_SKIP_SHORT_NAME_COMPARE | CCB_FLAG_QUERY_TEMPLATE_MIXED;
 
     {
-        let mut dirent_byte_offset_li: VBO = VBO { QuadPart: 0 };
+        let mut dirent_byte_offset_li: VBO = 0;
         FatLocateDirent(
             IrpContext,
             Dcb,
@@ -568,7 +574,7 @@ pub unsafe extern "system" fn FatLfnDirentExists(
             LfnTmp,
             core::ptr::null_mut(),
         );
-        dirent_byte_offset = dirent_byte_offset_li.QuadPart as u32;
+        dirent_byte_offset = dirent_byte_offset_li;
     }
 
     if !dirent_bcb.is_null() {
@@ -615,7 +621,7 @@ pub unsafe extern "system" fn FatLocateDirent(
     let mut LfnSize: u32 = 0;
     let mut LfnIndex: u32 = 0;
     let mut Ordinal: u8 = 0;
-    let mut LfnByteOffset: VBO = LARGE_INTEGER { QuadPart: 0 };
+    let mut LfnByteOffset: VBO = 0;
 
     TimerStart(0u32);
     // PAGED_CODE() ignored
@@ -625,7 +631,7 @@ pub unsafe extern "system" fn FatLocateDirent(
     DebugTrace(0i32, 0u32, b"  OffsetToStartSearchFrom = %08lx\n\0".as_ptr() as *const i8, (OffsetToStartSearchFrom as i64) as u32 as usize);
     DebugTrace(0i32, 0u32, b"  Dirent                  = %p\n\0".as_ptr() as *const i8, Dirent as usize);
     DebugTrace(0i32, 0u32, b"  Bcb                     = %p\n\0".as_ptr() as *const i8, Bcb as usize);
-    DebugTrace(0i32, 0u32, b"  ByteOffset              = %08lx\n\0".as_ptr() as *const i8, (*ByteOffset).QuadPart as u32 as usize);
+    DebugTrace(0i32, 0u32, b"  ByteOffset              = %08lx\n\0".as_ptr() as *const i8, *ByteOffset as usize);
 
     // C source is NT_ASSERT (dirsup.c:1175) — a DEBUG-only assertion that is a no-op in
     // the shipping (free) build; the cohab shim `NT_ASSERT` (rust_cohab_stub.c) is a no-op.
@@ -655,8 +661,8 @@ pub unsafe extern "system" fn FatLocateDirent(
     UpcasedLfn.Buffer = LocalLfnBuffer.as_mut_ptr();
 
     if !(*Bcb).is_null() {
-        if ((OffsetToStartSearchFrom as i64) / PAGE_SIZE as i64) == ((*ByteOffset).QuadPart / PAGE_SIZE as i64) {
-            *Dirent = (*Dirent).add((((OffsetToStartSearchFrom as i64) - (*ByteOffset).QuadPart) / core::mem::size_of::<DIRENT>() as i64) as usize);
+        if (OffsetToStartSearchFrom / PAGE_SIZE as u32) == (*ByteOffset / PAGE_SIZE as u32) {
+            *Dirent = (*Dirent).add(((OffsetToStartSearchFrom - *ByteOffset) / core::mem::size_of::<DIRENT>() as u32) as usize);
         } else {
             FatUnpinBcb(IrpContext, core::ptr::addr_of_mut!(*Bcb) as *mut *mut core::ffi::c_void);
         }
@@ -673,7 +679,7 @@ pub unsafe extern "system" fn FatLocateDirent(
         *FileNameDos = 0;
     }
 
-    (*ByteOffset).QuadPart = ((OffsetToStartSearchFrom as i64) + (core::mem::size_of::<DIRENT>() as i64 - 1)) & !(core::mem::size_of::<DIRENT>() as i64 - 1);
+    *ByteOffset = (OffsetToStartSearchFrom + (core::mem::size_of::<DIRENT>() as u32 - 1)) & !(core::mem::size_of::<DIRENT>() as u32 - 1);
 
     // _SEH2_TRY block (simulated)
     'seh2_try: {
@@ -684,22 +690,22 @@ pub unsafe extern "system" fn FatLocateDirent(
 
             // FatReadDirent macro expansion
             {
-                if ((*ByteOffset).QuadPart as u32) >= (*ParentDirectory).Header.AllocationSize.__bindgen_anon_1.LowPart {
+                if *ByteOffset >= (*ParentDirectory).Header.AllocationSize.__bindgen_anon_1.LowPart {
                     Status = STATUS_END_OF_FILE;
                     FatUnpinBcb(IrpContext, core::ptr::addr_of_mut!(*Bcb) as *mut *mut core::ffi::c_void);
-                } else if (((*ByteOffset).QuadPart as u32) % PAGE_SIZE == 0) || (*Bcb).is_null()  {
+                } else if (*ByteOffset % PAGE_SIZE as u32 == 0) || (*Bcb).is_null()  {
                     FatUnpinBcb(IrpContext, core::ptr::addr_of_mut!(*Bcb) as *mut *mut core::ffi::c_void);
                     FatReadDirectoryFile(
                         IrpContext,
                         ParentDirectory,
-                        ((*ByteOffset).QuadPart & !(PAGE_SIZE as i64 - 1)) as u32,
+                        *ByteOffset & !(PAGE_SIZE as u32 - 1),
                         PAGE_SIZE,
                         0i32,
                         Bcb,
                         Dirent,
                         &mut Status as *mut NTSTATUS as *mut i32,
                     );
-                    *Dirent = ((*Dirent as *mut u8).add(((*ByteOffset).QuadPart as u32 % PAGE_SIZE) as usize)) as *mut DIRENT;
+                    *Dirent = ((*Dirent as *mut u8).add((*ByteOffset % PAGE_SIZE as u32) as usize)) as *mut DIRENT;
                 }
             }
 
@@ -707,7 +713,7 @@ pub unsafe extern "system" fn FatLocateDirent(
                 DebugTrace(0i32, 0u32, b"End of directory: entry not found.\n\0".as_ptr() as *const i8, 0usize);
                 FatUnpinBcb(IrpContext, core::ptr::addr_of_mut!(*Bcb) as *mut *mut core::ffi::c_void);
                 *Dirent = core::ptr::null_mut();
-                (*ByteOffset).QuadPart = 0;
+                *ByteOffset = 0;
                 break;
             }
 
@@ -716,7 +722,7 @@ pub unsafe extern "system" fn FatLocateDirent(
                 // goto GetNextDirent: advance offset+pointer THEN loop. A bare
                 // `continue` jumps to the loop header and skips the increment at
                 // the bottom (lines below), pinning ByteOffset on one dirent forever.
-                (*ByteOffset).QuadPart += core::mem::size_of::<DIRENT>() as i64;
+                *ByteOffset += core::mem::size_of::<DIRENT>() as u32;
                 *Dirent = (*Dirent).add(1);
                 continue;
             }
@@ -818,7 +824,7 @@ pub unsafe extern "system" fn FatLocateDirent(
                 // goto GetNextDirent: advance offset+pointer THEN loop. A bare
                 // `continue` jumps to the loop header and skips the increment at
                 // the bottom (lines below), pinning ByteOffset on one dirent forever.
-                (*ByteOffset).QuadPart += core::mem::size_of::<DIRENT>() as i64;
+                *ByteOffset += core::mem::size_of::<DIRENT>() as u32;
                 *Dirent = (*Dirent).add(1);
                 continue;
             }
@@ -830,14 +836,14 @@ pub unsafe extern "system" fn FatLocateDirent(
                 // goto GetNextDirent: advance offset+pointer THEN loop. A bare
                 // `continue` jumps to the loop header and skips the increment at
                 // the bottom (lines below), pinning ByteOffset on one dirent forever.
-                (*ByteOffset).QuadPart += core::mem::size_of::<DIRENT>() as i64;
+                *ByteOffset += core::mem::size_of::<DIRENT>() as u32;
                 *Dirent = (*Dirent).add(1);
                 continue;
             }
 
             // Check for valid LFN run
             if LfnInProgress != 0
-                && (*ByteOffset).QuadPart == LfnByteOffset.QuadPart + core::mem::size_of::<DIRENT>() as i64
+                && *ByteOffset == LfnByteOffset + core::mem::size_of::<DIRENT>() as u32
                 && LfnIndex == 0
                 && FatComputeLfnChecksum(*Dirent) == LfnChecksum
             {
@@ -874,7 +880,7 @@ pub unsafe extern "system" fn FatLocateDirent(
                         Name,
                     ) != 0 {
                         DebugTrace(0i32, 0u32, b"Entry found: Name = \"%Z\"\n\0".as_ptr() as *const i8, &Name as *const _ as usize);
-                        DebugTrace(0i32, 0u32, b"             VBO  = %08lx\n\0".as_ptr() as *const i8, (*ByteOffset).QuadPart as u32 as usize);
+                        DebugTrace(0i32, 0u32, b"             VBO  = %08lx\n\0".as_ptr() as *const i8, *ByteOffset as usize);
 
                         if !FileNameDos.is_null() {
                             *FileNameDos = 1;
@@ -915,7 +921,7 @@ pub unsafe extern "system" fn FatLocateDirent(
                     }
                     // goto GetNextDirent: advance offset+pointer THEN loop (a bare
                     // `continue` would skip the bottom-of-loop increment).
-                    (*ByteOffset).QuadPart += core::mem::size_of::<DIRENT>() as i64;
+                    *ByteOffset += core::mem::size_of::<DIRENT>() as u32;
                     *Dirent = (*Dirent).add(1);
                     continue;
                 }
@@ -961,7 +967,7 @@ pub unsafe extern "system" fn FatLocateDirent(
             }
 
             // GetNextDirent: (we fall through here via continue above)
-            (*ByteOffset).QuadPart += core::mem::size_of::<DIRENT>() as i64;
+            *ByteOffset += core::mem::size_of::<DIRENT>() as u32;
             *Dirent = (*Dirent).add(1);
         }
     } // end SEH2_TRY
@@ -994,7 +1000,7 @@ pub unsafe extern "system" fn FatLocateSimpleOemDirent(
     LocalCcb.ContainsWildCards = 0;
     LocalCcb.Flags = 0;
     
-    let mut ByteOffsetLi: VBO = VBO { QuadPart: 0 };
+    let mut ByteOffsetLi: VBO = 0;
     FatLocateDirent(
         IrpContext,
         ParentDirectory,
@@ -1008,7 +1014,7 @@ pub unsafe extern "system" fn FatLocateSimpleOemDirent(
         core::ptr::null_mut(),
         core::ptr::null_mut(),
     );
-    *ByteOffset = ByteOffsetLi.QuadPart as u32;
+    *ByteOffset = ByteOffsetLi;
 }
 
 #[no_mangle]
@@ -1080,7 +1086,7 @@ pub unsafe extern "system" fn FatLocateVolumeLabel(
 pub unsafe extern "system" fn FatGetDirentFromFcbOrDcb(
     IrpContext: *mut IRP_CONTEXT,
     FcbOrDcb: *mut FCB,
-    ReturnOnFailure: i32,
+    ReturnOnFailure: BOOLEAN,
     Dirent: *mut *mut DIRENT,
     Bcb: *mut *mut BCB,
 ) -> () {
@@ -1468,7 +1474,7 @@ pub unsafe extern "system" fn FatSetFileSizeInDirent(
     FatGetDirentFromFcbOrDcb(
         IrpContext,
         Fcb,
-        (0u8) as i32,
+        0u8,
         &mut Dirent as *mut *mut DIRENT,
         &mut DirentBcb as *mut *mut BCB,
     );
@@ -1947,7 +1953,7 @@ pub unsafe extern "system" fn FatDefragDirectory(
                 //                  &Dirent, &Bcb, (PVBO)&FoundOffset, NULL,
                 //                  &Lfn, NULL );
                 {
-                    let mut FoundOffsetLi: VBO = VBO { QuadPart: 0 };
+                    let mut FoundOffsetLi: VBO = 0;
                     FatLocateDirent(
                         IrpContext,
                         Dcb,
@@ -1961,7 +1967,7 @@ pub unsafe extern "system" fn FatDefragDirectory(
                         core::ptr::addr_of_mut!(Lfn),
                         core::ptr::null_mut(),
                     );
-                    FoundOffset = FoundOffsetLi.QuadPart as u32;
+                    FoundOffset = FoundOffsetLi;
                 }
 
                 if Dirent != core::ptr::null_mut() {

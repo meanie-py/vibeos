@@ -429,17 +429,14 @@ VOID RtlCopyMemory(PVOID Dest, const void *Src, SIZE_T Length) { __builtin_memcp
 __asm__(".globl _KeGetCurrentProcessorNumber\n .set _KeGetCurrentProcessorNumber, _KeGetCurrentProcessorNumber@0");
 __asm__(".globl _IoGetRemainingStackSize\n      .set _IoGetRemainingStackSize, _IoGetRemainingStackSize@0");
 
-/* ExReleaseResourceLite / Ex{Acquire,Release}FastMutexUnsafe are real i386 exports
- * but FASTCALL (@Name@4); the Rust translation references them stdcall (_Name@4).
- * Provide stdcall trampolines that tail into the real fastcall exports (the bodies
- * call the FASTCALL-declared header prototypes). */
-__attribute__((used)) VOID ff_relres(PERESOURCE r)  { ExReleaseResourceLite(r); }
-__attribute__((used)) VOID ff_acqfmu(PFAST_MUTEX m) { ExAcquireFastMutexUnsafe(m); }
-__attribute__((used)) VOID ff_relfmu(PFAST_MUTEX m) { ExReleaseFastMutexUnsafe(m); }
-__asm__(
-    ".globl _ExReleaseResourceLite@4\n     .set _ExReleaseResourceLite@4, _ff_relres@4\n"
-    ".globl _ExAcquireFastMutexUnsafe@4\n  .set _ExAcquireFastMutexUnsafe@4, _ff_acqfmu@4\n"
-    ".globl _ExReleaseFastMutexUnsafe@4\n  .set _ExReleaseFastMutexUnsafe@4, _ff_relfmu@4\n");
+/* ExReleaseResourceLite / Ex{Acquire,Release}FastMutexUnsafe used to need stdcall
+ * trampolines here, aliased in asm, because the Rust declared these FASTCALL exports
+ * `extern "system"` and so asked the linker for _Name@4 instead of @Name@4. That was a
+ * workaround for a one-word source bug, and it hid the bug from every gate: `cargo check`
+ * never links, so nothing but the final PE link could see it. The declarations are fixed
+ * at the source now (fastfat-rust close.rs/allocsup.rs, and ntkrnl_sys::ddk for
+ * ExReleaseResourceLite), and tools/scan_import_cc.py checks every cross-module extern
+ * against the owning .spec so a new one is a lint failure rather than another trampoline. */
 #endif
 
 #pragma clang diagnostic pop

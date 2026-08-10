@@ -190,6 +190,24 @@ add_library(msvcrt MODULE
     # replace them by first-match at all; the only way in is to define the
     # trampolines somewhere the linker prefers, which is exactly this target.
     rust_scanf_shim.c
+    # file.c's 20 `...` entry points — the 16 fprintf/printf/fwprintf/wprintf
+    # shells plus the four _open/_sopen ones, whose `...` carries an optional
+    # pmode rather than a format. Same reason and same placement as the two
+    # above: no va_start on stable, and left in file.c they would keep calling
+    # file.c's own C bodies. Their delegates are all external (the `v*` twins
+    # and `_sopen_dispatch`/`_wsopen_dispatch` are Rust in file.rs, and unlike
+    # scanf.c's engines they are not `static`), so first-match reaches Rust.
+    rust_file_varargs_shim.c
+    # process.c's 16 `_exec*`/`_spawn*` WINAPIV `...` entry points. Same reason and same
+    # placement as the three above: no va_start on stable, and left in process.c they
+    # would keep calling process.c's own C bodies. Their `_v*`-prefixed twins are Rust in
+    # process.rs and are not `static`, so first-match reaches Rust.
+    rust_process_varargs_shim.c
+    # console.c's 4 `_cprintf`/`_cwprintf` WINAPIV `...` entry points. Same reason and same
+    # placement as the four above. Their va_list twins needed no invention — `_vcprintf`,
+    # `_vcprintf_l`, `_vcwprintf` and `_vcwprintf_l` are console.c's own exports, and are
+    # Rust in console.rs.
+    rust_console_varargs_shim.c
 )
 
 target_compile_definitions(msvcrt PRIVATE _MSVCR_VER=0)

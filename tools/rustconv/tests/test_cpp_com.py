@@ -7,21 +7,29 @@ import pytest
 from rustconv.__main__ import _cost_cap_reached, _extend_cpp_class_scan, _trivial_cpp_body
 from rustconv.call_seal import seal_calls, unseal_calls
 from rustconv.callgraph import FunctionDep, extract_call_graph
-from rustconv.config import REACTOS_ROOT, TARGETS, detect_target
+from rustconv.config import REACTOS_ROOT, SHELL32_ISLAND_FILES, TARGETS, detect_target
 from rustconv.cpp_com import (
+    _WINDOWS_SCALAR_TYPEDEFS,
     CppComError,
     InterfaceMethod,
     InterfaceSpec,
+    _parse_plain_state_field,
     _state_field_name,
+    _vtbl_declared_slots,
     analyze_class,
     apply_interface_method_signatures,
     audit_worker_body,
     c_type_to_rust,
     discover_widl_header,
+    island_integer_aliases,
+    island_lpvtbl_interfaces,
+    island_struct_types,
     lower_trivial_worker,
+    normalize_cpp_idioms,
     normalize_worker_body,
     normalize_worker_semantics,
     parse_widl_interface,
+    pods_with_drop,
     prepare_helper_closure,
     render_class_scaffold,
     render_cpp_support,
@@ -223,6 +231,101 @@ def test_legacy_declare_interface_is_flattened_deterministically(tmp_path: Path)
     )
 
 
+def test_a_method_without_pure_does_not_eat_the_next_slot(tmp_path: Path):
+    """PURE expands to nothing in C mode, so a header that omits it is a typo no compiler
+    sees. recyclebin_v5.h has one, and it silently cost IRecycleBin5 a vtable slot."""
+    header = tmp_path / "nopure.h"
+    header.write_text(
+        """DECLARE_INTERFACE_(IGappy, IUnknown)
+{
+    STDMETHOD(QueryInterface) (THIS_ REFIID riid, void **ppv) PURE;
+    STDMETHOD_(ULONG,AddRef) (THIS) PURE;
+    STDMETHOD_(ULONG,Release) (THIS) PURE;
+    STDMETHOD(EmptyIt)(THIS);
+    STDMETHOD(EnumObjects)(THIS_ IEnumThing **ppEnum) PURE;
+    STDMETHOD(GetDirectory)(THIS_ LPWSTR szPath) PURE;
+};"""
+    )
+    spec = parse_widl_interface(header, "IGappy")
+    assert [method.name for method in spec.methods] == [
+        "QueryInterface",
+        "AddRef",
+        "Release",
+        "EmptyIt",
+        "EnumObjects",
+        "GetDirectory",
+    ]
+    # The swallow used to fold EnumObjects into EmptyIt's parameter list.
+    assert spec.methods[3].params == (("IGappy *", "This"),)
+    assert spec.methods[4].params == (("IGappy *", "This"), ("IEnumThing **", "ppEnum"))
+
+
+def test_classic_uppercase_sal_is_stripped_like_the_underscore_family(tmp_path: Path):
+    """ntdef.h defines IN/OUT/OPTIONAL to nothing. Left in, they become part of the type."""
+    header = tmp_path / "classic.h"
+    header.write_text(
+        """DECLARE_INTERFACE_(IClassic, IUnknown)
+{
+    STDMETHOD(QueryInterface)(THIS_ IN REFIID riid, OUT void **ppvObject) PURE;
+    STDMETHOD(Delete)(THIS_ IN LPCWSTR pName, IN OPTIONAL RECORD *pRec) PURE;
+};"""
+    )
+    spec = parse_widl_interface(header, "IClassic")
+    assert spec.methods[0].params == (
+        ("IClassic *", "This"),
+        ("REFIID", "riid"),
+        ("void **", "ppvObject"),
+    )
+    assert spec.methods[1].params == (
+        ("IClassic *", "This"),
+        ("LPCWSTR", "pName"),
+        ("RECORD *", "pRec"),
+    )
+
+
+def test_a_declaration_the_parser_cannot_read_is_a_hard_failure(tmp_path: Path):
+    """A vtable is positional: a dropped slot renumbers every slot after it, so calls
+    dispatch to the wrong method. That can never be a warning."""
+    header = tmp_path / "unparseable.h"
+    header.write_text(
+        """DECLARE_INTERFACE_(IWeird, IUnknown)
+{
+    STDMETHOD(Fine)(THIS) PURE;
+    STDMETHOD(Broken)(THIS_ int a  /* no closing paren before the semicolon */ ;
+    STDMETHOD(AlsoFine)(THIS) PURE;
+};"""
+    )
+    with pytest.raises(CppComError, match=r"declares 3 vtable method\(s\) but 2 parsed"):
+        parse_widl_interface(header, "IWeird")
+
+
+def test_the_real_recyclebin_v5_header_keeps_all_eleven_slots():
+    """The header that found this. IRecycleBin5 emitted 10 slots for 11 methods, so
+    GetDirectory dispatched to Delete, Delete to Restore, and OnClosing off the end."""
+    spec = parse_widl_interface(
+        REACTOS_ROOT / "dll/win32/shell32/shellrecyclebin/recyclebin_v5.h",
+        "IRecycleBin5",
+    )
+    assert [method.name for method in spec.methods] == [
+        "QueryInterface",
+        "AddRef",
+        "Release",
+        "DeleteFile",
+        "EmptyRecycleBin",
+        "EnumObjects",
+        "GetDirectory",
+        "Delete",
+        "Restore",
+        "RemoveFromDatabase",
+        "OnClosing",
+    ]
+    rust = render_interface(spec)
+    assert "ppvObject: *mut *mut core::ffi::c_void" in rust
+    assert "riid: REFIID" in rust
+    for leaked in (" IN ", " OUT ", "OPTIONAL"):
+        assert leaked not in rust
+
+
 def test_interface_renderer_owns_system_abi(tmp_path: Path):
     rust = render_interface(parse_widl_interface(_widl(tmp_path), "IDropTargetHelper"))
     assert 'pub DragEnter: unsafe extern "system" fn(' in rust
@@ -251,6 +354,29 @@ def test_class_scaffold_owns_offsets_and_vtable_order(tmp_path: Path):
     assert "Shell32RustObjectLock();" in rust
     assert "Shell32RustObjectUnlock();" in rust
     assert "HEAP_ZERO_MEMORY" in rust
+
+
+def test_class_scaffold_stores_the_vptr_for_a_hand_rolled_com_class():
+    """A hand-rolled COM class has no ATL base, so the SCAFFOLD owes the vptr store.
+
+    C++ sets the vtable pointer in the constructor PROLOGUE, so it appears in no
+    source the model sees and a faithful `_ctor_body` cannot contain it. The ATL
+    path already writes `lpVtbl` in its `core::ptr::write` initializer; the plain
+    path used to skip it because a plain helper has no interfaces -- until a class
+    with interfaces and no BEGIN_COM_MAP arrived, and shipped a NULL `lpVtbl`.
+    """
+    recyclebin = SHELL32 / "shellrecyclebin"
+    cls = analyze_class(recyclebin / "recyclebin_generic.cpp", "RecycleBinGeneric")
+    assert cls.com_map == [], "fixture must stay the no-ATL-map case this guards"
+    interface = parse_widl_interface(recyclebin / "recyclebin.h", "IRecycleBin")
+    rust = render_class_scaffold(cls, [interface], allow_plain=True)
+    store = (
+        "    (*this).IRecycleBin_iface.lpVtbl = "
+        "core::ptr::addr_of!(RECYCLEBINGENERIC_IRECYCLEBIN_VTBL);"
+    )
+    assert store in rust
+    # C++ order: the vptr is live before the written body runs, which may call a virtual.
+    assert rust.index(store) < rust.index("RecycleBinGeneric_ctor_body(this);")
 
 
 @needs_generated_psdk_i386
@@ -378,9 +504,7 @@ def test_internal_init_accepts_repeated_call_sites_and_winapi_initializer():
     inherited = {"Next", "Skip", "Reset", "Clone"}
     assert inherited <= {item.name for item in scan.functions}
     assert all(
-        item.cpp_class == "CPrintersEnum"
-        for item in scan.functions
-        if item.name in inherited
+        item.cpp_class == "CPrintersEnum" for item in scan.functions if item.name in inherited
     )
 
 
@@ -630,6 +754,37 @@ def test_helper_closure_binds_overloads_and_excludes_unrelated_functions():
     assert "[WCHAR;" in statics
 
 
+def test_helper_closure_resolves_a_free_helper_against_a_method_of_the_same_name():
+    """CDefaultContextMenu has BOTH a static `MapVerbToCmdId/5` and a method
+    `MapVerbToCmdId/3`, and C++ tells them apart by scope: the method body calls the
+    member unqualified, and reaches the free one as `::MapVerbToCmdId`.
+
+    The reachability walk only knew the free helper, so the 3-argument member call read
+    as an unbindable arity and hard-failed the whole 2,024-line TU before payment — even
+    though the rewrite pass right below it already skipped these to let the method pass
+    take them. The asymmetry was the bug; both spellings must survive.
+    """
+    source = SHELL32 / "CDefaultContextMenu.cpp"
+    cls = analyze_class(source, "CDefaultContextMenu")
+    plan = prepare_helper_closure(
+        extract_call_graph(scan_file(source)),
+        "CDefaultContextMenu",
+        cls.plain_state_fields(),
+    )
+    by_name = {dep.name: dep for dep in plan}
+    assert "MapVerbToCmdId" in by_name, "the free static helper"
+    assert "CDefaultContextMenu_MapVerbToCmdId" in by_name, "the member of the same name"
+    assert len(by_name["MapVerbToCmdId"].params) == 5
+    assert len(by_name["CDefaultContextMenu_MapVerbToCmdId"].params) == 3
+    # The `::`-qualified call keeps the free helper; the unqualified one takes the member.
+    dynamic = by_name["CDefaultContextMenu_GetDynamicEntry"]
+    invoke = by_name["CDefaultContextMenu_InvokeCommand"]
+    assert "MapVerbToCmdId_body" in " ".join(dep.body_text for dep in (dynamic, invoke)), (
+        "at least one call site is bound"
+    )
+    assert "CDefaultContextMenu_MapVerbToCmdId_body" in invoke.body_text
+
+
 def test_helper_closure_makes_ccomptr_assignment_and_access_explicit():
     source = SHELL32 / "CCopyAsPathMenu.cpp"
     cls = analyze_class(source, "CCopyAsPathMenu", object_map_source=SHELL32 / "shell32.cpp")
@@ -697,7 +852,7 @@ def test_wide_literals_inside_comments_and_narrow_strings_are_left_alone():
         "/* PIDL's and 'My Computer' */"
     )
     assert rewrite_wide_literals('// a L"x" in a comment\n') == '// a L"x" in a comment\n'
-    assert rewrite_wide_literals("s = \"has L' inside\";") == "s = \"has L' inside\";"
+    assert rewrite_wide_literals('s = "has L\' inside";') == 's = "has L\' inside";'
 
 
 def test_escaped_quotes_inside_wide_char_literals():
@@ -1256,6 +1411,71 @@ def test_worker_audit_preserves_constants_and_rejects_abi_surface():
     assert any("ABI declaration" in finding for finding in findings)
     assert any("E_NOTIMPL" in finding for finding in findings)
     assert any("numeric C literal" in finding for finding in findings)
+
+
+class TestFreeHalfAudit:
+    """`scaffold_owned=False` — the `--free-functions` half of a C++ TU.
+
+    The free half was never audited at all (`_audit_paid_body` returned before reaching
+    `audit_worker_body` for every non-cpp_com body), and the class-half audit cannot be
+    wired onto it wholesale: a free function IS the exported C symbol, so the two checks
+    that encode "the scaffold owns the export" invert.
+    """
+
+    C_BODY = "{ return DoThing(x); }"
+
+    def _free(self, rust: str, name: str = "Mod_f") -> list[str]:
+        return audit_worker_body(self.C_BODY, rust, name, None, scaffold_owned=False)
+
+    def test_a_free_function_may_carry_the_export_the_class_half_forbids(self):
+        rust = '#[no_mangle]\npub unsafe extern "C" fn Mod_f(x: DWORD) -> HRESULT { DoThing(x) }'
+        assert self._free(rust) == []
+        # Same body, judged as a class worker: both halves of the export are refused.
+        findings = audit_worker_body(self.C_BODY, rust, "Mod_f")
+        assert any("export attribute" in finding for finding in findings)
+        assert any("ABI declaration" in finding for finding in findings)
+
+    def test_an_extern_BLOCK_is_refused_on_the_free_half_too(self):
+        # The `fn` DEFINITION is the free half's job; a BLOCK declares substrate the model
+        # could not see, and an invented forward declaration compiles, links, and is wrong.
+        rust = (
+            'extern "C" { pub fn DoThing(x: DWORD) -> HRESULT; }\n'
+            '#[no_mangle]\npub unsafe extern "C" fn Mod_f(x: DWORD) -> HRESULT { DoThing(x) }'
+        )
+        findings = self._free(rust)
+        assert any("extern" in finding and "{ }" in finding for finding in findings)
+
+    def test_the_language_neutral_checks_still_apply(self):
+        rust = (
+            '#[no_mangle]\npub unsafe extern "C" fn Mod_f(x: DWORD) -> HRESULT '
+            "{ let _leak = Box::from_raw(x); DoThing(x) }"
+        )
+        assert any("deallocator" in finding for finding in self._free(rust))
+
+
+class TestStrayDeallocatorsComparedToSource:
+    """A deallocator is stray because the C never called it, not because of its name."""
+
+    def test_a_free_the_C_also_called_is_kept(self):
+        c_body = "{ void *p = malloc(n); free(p); return S_OK; }"
+        rust = "pub unsafe fn C_f_body() -> HRESULT { let p = malloc(n); free(p); S_OK }"
+        assert [f for f in audit_worker_body(c_body, rust, "C_f_body") if "deallocator" in f] == []
+
+    def test_a_free_the_C_never_called_is_still_refused(self):
+        c_body = "{ delete this; return S_OK; }"
+        rust = "pub unsafe fn C_f_body() -> HRESULT { free(this); S_OK }"
+        assert any("deallocator" in f for f in audit_worker_body(c_body, rust, "C_f_body"))
+
+    def test_a_free_mentioned_only_in_a_C_COMMENT_does_not_launder_it(self):
+        c_body = "{ /* we used to free(p) here */ delete this; return S_OK; }"
+        rust = "pub unsafe fn C_f_body() -> HRESULT { free(this); S_OK }"
+        assert any("deallocator" in f for f in audit_worker_body(c_body, rust, "C_f_body"))
+
+    def test_Box_from_raw_has_no_C_spelling_so_it_is_always_invented(self):
+        c_body = "{ free(p); return S_OK; }"
+        rust = "pub unsafe fn C_f_body() -> HRESULT { drop(Box::from_raw(p)); S_OK }"
+        findings = [f for f in audit_worker_body(c_body, rust, "C_f_body") if "deallocator" in f]
+        assert any("Box::from_raw" in f for f in findings)
 
 
 def test_worker_audit_allows_vtable_calls_but_rejects_option_guessing():
@@ -2273,3 +2493,921 @@ def test_worker_normalizer_discards_model_comments_inside_generated_signature():
     normalized = normalize_worker_body(model, expected)
     assert normalized.startswith(expected + " {")
     assert "retained for ABI" not in normalized
+
+
+def test_worker_normalizer_adopts_an_assembled_shaped_emission():
+    """On famous COM boilerplate the model writes the WRAPPER's shape from recall."""
+    expected = "pub unsafe fn C_AddRef_body(this: *mut C) -> ULONG"
+    model = (
+        '#[no_mangle]\npub unsafe extern "C" fn C_AddRef(this: *mut C) -> u32 '
+        "{ InterlockedIncrement(core::ptr::addr_of_mut!((*this).m_ref)) as u32 }"
+    )
+    normalized = normalize_worker_body(model, expected)
+    assert normalized.startswith(expected + " {")
+    assert "no_mangle" not in normalized
+    assert 'extern "C"' not in normalized
+    assert (
+        audit_worker_body("{ return InterlockedIncrement(&m_ref); }", normalized, "C_AddRef_body")
+        == []
+    )
+
+
+def test_worker_normalizer_refuses_to_adopt_a_forwarder_into_self_recursion():
+    """Renaming the wrapper's FORWARDER body would make `X_body` call `X_body`."""
+    expected = "pub unsafe fn C_AddRef_body(this: *mut C) -> ULONG"
+    model = (
+        '#[no_mangle]\npub unsafe extern "C" fn C_AddRef(this: *mut C) -> u32 '
+        "{ C_AddRef_body(this) }"
+    )
+    normalized = normalize_worker_body(model, expected)
+    assert "C_AddRef_body(this: *mut C)" not in normalized
+    assert audit_worker_body(
+        "{ return InterlockedIncrement(&m_ref); }", normalized, "C_AddRef_body"
+    )
+
+
+def test_worker_normalizer_refuses_to_adopt_when_the_slots_disagree():
+    """A rename cannot prove a body whose parameter list is not the generated one."""
+    expected = "pub unsafe fn C_f_body(this: *mut C, value: DWORD) -> HRESULT"
+    model = '#[no_mangle]\npub unsafe extern "C" fn C_f(this: *mut C, other: DWORD) -> i32 { S_OK }'
+    assert "C_f_body" not in normalize_worker_body(model, expected)
+
+
+def test_worker_normalizer_leaves_a_correct_worker_alone():
+    """The adoption must never fire when the contracted name is already present."""
+    expected = "pub unsafe fn C_AddRef_body(this: *mut C) -> ULONG"
+    model = "pub unsafe fn C_AddRef_body(this: *mut C) -> ULONG { 1 }"
+    assert normalize_worker_body(model, expected) == model
+
+
+def test_island_integer_aliases_requires_every_arch_to_agree(tmp_path):
+    """An SDK enum is int-sized only if EVERY arch island says so, identically."""
+
+    def island(text: str, name: str) -> Path:
+        path = tmp_path / name
+        path.write_text(text, encoding="utf-8")
+        return path
+
+    agree = [
+        island(
+            "pub type __WIDL_generated_00000001 = ::core::ffi::c_int;\n"
+            "pub use self::__WIDL_generated_00000001 as FOLDERVIEWMODE;\n"
+            "pub type SIZE_T = u32;\n",
+            f"island_{arch}.rs",
+        )
+        for arch in ("i386", "amd64")
+    ]
+    # Second arch widens SIZE_T, exactly as a real 64-bit island does.
+    agree[1].write_text(
+        "pub type __WIDL_generated_00000001 = ::core::ffi::c_int;\n"
+        "pub use self::__WIDL_generated_00000001 as FOLDERVIEWMODE;\n"
+        "pub type SIZE_T = u64;\n",
+        encoding="utf-8",
+    )
+    proven = island_integer_aliases(agree)
+    assert "FOLDERVIEWMODE" in proven, "re-export chained onto an int alias is int-sized"
+    assert "SIZE_T" not in proven, "a width that changes per arch must never be assumed"
+
+
+def test_island_integer_aliases_is_empty_when_an_island_is_missing(tmp_path):
+    """No islands, no proof -- the caller must stay a loud preflight failure."""
+    assert island_integer_aliases([tmp_path / "island_nope.rs"]) == frozenset()
+    assert island_integer_aliases([]) == frozenset()
+
+
+def test_sdk_enum_state_field_is_accepted_only_with_island_proof():
+    """FOLDERVIEWMODE m_FVM: unprovable from the header alone, provable from the islands."""
+    source = SHELL32 / "CDefViewUtil.cpp"
+    if not source.is_file():
+        pytest.skip("CDefViewUtil.cpp has been retired from the tree")
+    with pytest.raises(CppComError, match="not proven C scalar/pointer state"):
+        analyze_class(
+            source, "CShellFolderViewCBWrapper", object_map_source=SHELL32 / "shell32.cpp"
+        ).require_supported(allow_internal=True)
+    proved = analyze_class(
+        source,
+        "CShellFolderViewCBWrapper",
+        object_map_source=SHELL32 / "shell32.cpp",
+        island_files=[SHELL32_ISLAND_FILES[a] for a in ("i386", "amd64", "arm64")],
+    )
+    proved.require_supported(allow_internal=True)
+    fvm = next(f for f in proved.plain_state_fields() if f.name == "m_FVM")
+    assert fvm.rust_type == "FOLDERVIEWMODE", "must reference the island alias, not a local copy"
+
+
+def test_island_integer_aliases_follows_a_chain_into_the_sys_crate(tmp_path):
+    """`SHCONTF = DWORD` is only provable if the chain can leave the island.
+
+    bindgen emits a module's OWN aliases into the island and leaves the base types
+    (`DWORD`, `UINT`, ...) to the `-sys` glob at its head. A resolver that stops at the
+    island edge proves neither, so an ordinary DWORD state field is rejected and a class
+    that is perfectly translatable stays UNSUPPORTED.
+    """
+
+    def workspace(arch: str, dword_rhs: str, size_t_rhs: str) -> Path:
+        island_dir = tmp_path / "shell32-rust" / "src"
+        island_dir.mkdir(parents=True, exist_ok=True)
+        sys_dir = tmp_path / "ntdll-sys" / "src"
+        sys_dir.mkdir(parents=True, exist_ok=True)
+        (sys_dir / f"bindgen_{arch}.rs").write_text(
+            f"pub type DWORD = {dword_rhs};\npub type SIZE_T = {size_t_rhs};\n",
+            encoding="utf-8",
+        )
+        island = island_dir / f"island_{arch}.rs"
+        island.write_text(
+            "pub use ntdll_sys::nt::*;\npub type SHCONTF = DWORD;\npub type PSIZE_T = SIZE_T;\n",
+            encoding="utf-8",
+        )
+        return island
+
+    islands = [
+        workspace("i386", "::core::ffi::c_ulong", "u32"),
+        workspace("amd64", "::core::ffi::c_ulong", "u64"),
+    ]
+    proven = island_integer_aliases(islands)
+    assert "SHCONTF" in proven, "a two-hop chain through the -sys crate must resolve"
+    assert "DWORD" in proven, "the -sys base type itself is proven too"
+    # The agreement check still does the safety work ACROSS the crate boundary: a chain that
+    # ends in a different primitive per arch is rejected however many hops it took to get there.
+    assert "PSIZE_T" not in proven
+    assert "SIZE_T" not in proven
+
+
+def test_island_integer_aliases_terminates_on_a_cyclic_alias(tmp_path):
+    """A malformed island that aliases in a loop must return, not hang."""
+    islands = []
+    for arch in ("i386", "amd64"):
+        path = tmp_path / f"island_{arch}.rs"
+        path.write_text("pub type A = B;\npub type B = A;\npub type OK = u32;\n", encoding="utf-8")
+        islands.append(path)
+    proven = island_integer_aliases(islands)
+    assert proven == frozenset({"OK"})
+
+
+def test_island_struct_types_follows_an_alias_and_needs_every_arch(tmp_path):
+    """`FORMATETC` is `pub type FORMATETC = tagFORMATETC;` over `pub struct tagFORMATETC`.
+
+    Matching only `pub struct` therefore proves almost nothing: the C spelling a state
+    field uses is nearly always the alias, not the tag. And the proof must hold on every
+    arch for the same reason widths must — a name one island happens to carry is not a
+    fact about the type.
+    """
+    islands = []
+    for arch, extra in (("i386", ""), ("amd64", "pub struct OnlyHere {}\n")):
+        path = tmp_path / f"island_{arch}.rs"
+        path.write_text(
+            "pub struct tagFORMATETC {}\npub type FORMATETC = tagFORMATETC;\n"
+            "pub type NotAStruct = u32;\n" + extra,
+            encoding="utf-8",
+        )
+        islands.append(path)
+    proven = island_struct_types(islands)
+    assert "tagFORMATETC" in proven
+    assert "FORMATETC" in proven, "the alias must resolve onto the struct it names"
+    assert "NotAStruct" not in proven
+    assert "OnlyHere" not in proven, "one arch is not a proof"
+
+
+def test_atl_container_state_field_keeps_its_type_and_its_drop():
+    """`CSimpleArray<FORMATETC> m_Formats` — the field that had CIDLDataObj UNSUPPORTED.
+
+    A container cannot be flattened to a pointer the way `CComPtr` is, because its
+    destructor walks storage the scaffold does not own. So the field keeps the container
+    type and `atl.rs`'s `Drop` restores the C++ member destructor.
+    """
+    field = _parse_plain_state_field(
+        "CSimpleArray<FORMATETC> m_Formats",
+        island_struct_types={"FORMATETC"},
+    )
+    assert field.raii_container == "CSimpleArray<FORMATETC>"
+    assert field.rust_type == "CSimpleArray<FORMATETC>"
+    assert field.init_expression == "CSimpleArray::new()", "zeroed() is not a valid container"
+
+
+def test_atl_container_over_an_unproven_element_is_still_refused():
+    """An element nobody proved a layout for stays a refusal.
+
+    The container's `Drop` runs one `drop_in_place` per element, so the element's own
+    destructor semantics have to be known before a single byte is generated. An element
+    that is neither an island struct nor a source-discovered POD is exactly the case where
+    they are not, and guessing would ship either a leak or a wrong layout.
+    """
+    with pytest.raises(CppComError, match="container element type is not a proven layout"):
+        _parse_plain_state_field(
+            "CAtlList<StaticShellEntry> m_StaticEntries",
+            island_struct_types={"FORMATETC"},
+        )
+
+
+def test_container_element_pod_keeps_its_raii_members_owning(tmp_path: Path):
+    """`CAtlList<DynamicShellEntry>` — CDefaultContextMenu's shape, and the leak it hides.
+
+    Discovering the element is only half of it. The element POD holds a
+    `CComPtr<IContextMenu>`, and the COM *owner's* field spelling for that is a raw
+    `*mut IContextMenu` — correct there, because the owner's generated `Release` does the
+    releasing explicitly. A POD has no generated code at all, so the same spelling inside
+    it means the container's per-element `drop_in_place` drops a raw pointer: one leaked
+    interface reference per entry, with nothing red anywhere. The POD therefore has to
+    keep the owning types, and Rust's field-drop order is then the C++ implicit dtor.
+    """
+    source = tmp_path / "menu.cpp"
+    source.write_text(
+        """
+typedef struct _DynamicShellEntry_
+{
+    UINT iIdCmdFirst;
+    CComPtr<IContextMenu> pCM;
+} DynamicShellEntry, *PDynamicShellEntry;
+
+typedef struct _StaticShellEntry_
+{
+    CStringW Verb;
+    HKEY hkClass;
+} StaticShellEntry, *PStaticShellEntry;
+
+class CMenu : public CComCoClass<CMenu>,
+              public CComObjectRootEx<CComMultiThreadModelNoCS>, public IFoo {
+  CAtlList<DynamicShellEntry> m_DynamicEntries;
+  CAtlList<StaticShellEntry> m_StaticEntries;
+  DECLARE_NOT_AGGREGATABLE(CMenu)
+  BEGIN_COM_MAP(CMenu) COM_INTERFACE_ENTRY_IID(IID_IFoo, IFoo) END_COM_MAP()
+};
+"""
+    )
+    object_map = tmp_path / "shell32.cpp"
+    object_map.write_text("OBJECT_ENTRY(CLSID_Menu, CMenu)\n")
+    cls = analyze_class(source, "CMenu", object_map_source=object_map)
+    cls.require_supported()
+
+    # The element hides in the template argument; the plain `Type name` scan cannot see it.
+    assert sorted(pod.name for pod in cls.pod_state_types) == [
+        "DynamicShellEntry",
+        "StaticShellEntry",
+    ]
+    assert pods_with_drop(cls.pod_state_types) == {"DynamicShellEntry", "StaticShellEntry"}
+
+    rendered = render_class_scaffold(cls, [InterfaceSpec("IFoo", (), "test.h")])
+    assert "pub pCM: CComPtr<IContextMenu>," in rendered
+    assert "pub pCM: *mut IContextMenu," not in rendered, "a raw pointer here leaks per entry"
+    assert "pub Verb: CStringW," in rendered
+    # The containers themselves still drop in Release, after the explicit dtor body.
+    assert "core::ptr::drop_in_place(&mut (*this).m_DynamicEntries);" in rendered
+
+
+def test_by_value_pod_with_raii_members_is_dropped_by_release(tmp_path: Path):
+    """The same leak one level up: a POD held BY VALUE by the COM owner.
+
+    Release only ever dropped fields it could see were RAII from their own declaration.
+    A `DynamicShellEntry m_entry;` declaration looks like any other POD, so the member's
+    destructor went missing exactly as it did inside the container.
+    """
+    source = tmp_path / "owner.cpp"
+    source.write_text(
+        """
+typedef struct _Entry_ { UINT id; CComPtr<IContextMenu> pCM; } Entry, *PEntry;
+typedef struct _Wrapper_ { Entry inner; DWORD flags; } Wrapper, *PWrapper;
+
+class COwner : public CComCoClass<COwner>,
+               public CComObjectRootEx<CComMultiThreadModelNoCS>, public IFoo {
+  Wrapper m_wrapper;
+  Entry *m_borrowed;
+  DECLARE_NOT_AGGREGATABLE(COwner)
+  BEGIN_COM_MAP(COwner) COM_INTERFACE_ENTRY_IID(IID_IFoo, IFoo) END_COM_MAP()
+};
+"""
+    )
+    object_map = tmp_path / "shell32.cpp"
+    object_map.write_text("OBJECT_ENTRY(CLSID_Owner, COwner)\n")
+    cls = analyze_class(source, "COwner", object_map_source=object_map)
+    cls.require_supported()
+
+    # Transitive: Wrapper has no RAII field of its own, it just contains one that does.
+    assert pods_with_drop(cls.pod_state_types) == {"Entry", "Wrapper"}
+
+    rendered = render_class_scaffold(cls, [InterfaceSpec("IFoo", (), "test.h")])
+    assert "core::ptr::drop_in_place(&mut (*this).m_wrapper);" in rendered
+    assert "drop_in_place(&mut (*this).m_borrowed)" not in rendered, "a POINTER owns nothing"
+
+
+def test_free_function_support_pod_keeps_its_raii_members_owning(tmp_path: Path):
+    """The same leak on the free-function path, which is most of shell32.
+
+    `BrItemData` (brfolder.cpp) is the precedent, and it is how the bug was found: the
+    SHIPPED brfolder.rs spells these fields `CComPtr` / `CComHeapPtr`, while the generator
+    emitted raw pointers — right next to the `CComHeapPtr` support block it was not using.
+    A regeneration would have silently downgraded a correct file into a leaking one.
+    """
+    source = tmp_path / "brlike.cpp"
+    source.write_text(
+        """
+struct BrItemData
+{
+    CComPtr<IShellFolder> lpsfParent;
+    PCIDLIST_RELATIVE pidlChild;
+    CComHeapPtr<ITEMIDLIST_ABSOLUTE> pidlFull;
+};
+static void use(BrItemData *p) { (void)p; }
+"""
+    )
+    rendered = render_cpp_support(source, {"BrItemData", "lpsfParent", "pidlChild", "pidlFull"})
+    assert "pub lpsfParent: CComPtr<IShellFolder>," in rendered
+    assert "pub pidlFull: CComHeapPtr<ITEMIDLIST_ABSOLUTE>," in rendered
+    assert "pub lpsfParent: *mut IShellFolder," not in rendered
+    assert "pub pidlChild: PCIDLIST_RELATIVE," in rendered, "a plain C field is unchanged"
+
+
+def test_packed_pod_with_a_destructor_member_fails_before_payment(tmp_path: Path):
+    """`#[repr(C, packed)]` plus drop glue is not expressible: rustc cannot reference a
+    misaligned place to drop it. Catch it in preflight, naming the C++ construct, rather
+    than paying for a translation and then reading E0793."""
+    source = tmp_path / "packed.cpp"
+    source.write_text(
+        """
+#include <pshpack1.h>
+typedef struct _Tight_ { BYTE tag; CStringW name; } Tight, *PTight;
+#include <poppack.h>
+
+class CPacked : public CComCoClass<CPacked>,
+                public CComObjectRootEx<CComMultiThreadModelNoCS>, public IFoo {
+  Tight m_tight;
+  DECLARE_NOT_AGGREGATABLE(CPacked)
+  BEGIN_COM_MAP(CPacked) COM_INTERFACE_ENTRY_IID(IID_IFoo, IFoo) END_COM_MAP()
+};
+"""
+    )
+    object_map = tmp_path / "shell32.cpp"
+    object_map.write_text("OBJECT_ENTRY(CLSID_Packed, CPacked)\n")
+    cls = analyze_class(source, "CPacked", object_map_source=object_map)
+    with pytest.raises(CppComError, match="Rust cannot drop a packed field"):
+        cls.require_supported()
+
+
+def test_unlisted_cxx_container_names_the_missing_lowering():
+    """A refusal that names the mechanism, not just the declaration.
+
+    `CAtlMap<K, V> m_x` is not a mystery — it is a container `atl.rs` has not lowered
+    yet, and saying so is what stops the next reader concluding the whole TU is
+    untranslatable.
+    """
+    with pytest.raises(CppComError, match="no Rust lowering for `CAtlArray`"):
+        _parse_plain_state_field("CAtlArray<UINT> m_ids")
+
+
+def test_array_of_owned_heap_pointers_frees_every_element():
+    """`CComHeapPtr<ITEMIDLIST> m_pidls[2]` — CRecycleBinFolderViewCB's shape.
+
+    C++ destroys each element, so the extent has to survive into the Rust type for the
+    generated Release to have something to iterate.
+    """
+    field = _parse_plain_state_field("CComHeapPtr<ITEMIDLIST> m_pidls[2]")
+    assert field.owned_heap_ptr
+    assert field.array_len == 2
+    assert field.rust_type == "[*mut ITEMIDLIST; 2]"
+
+
+def test_iid_null_ppv_arg_expands_to_three_arguments():
+    """`IID_NULL_PPV_ARG` is a *different* macro, not a spelling of `IID_PPV_ARG`.
+
+    It does not contain the substring `IID_PPV_ARG`, so every rule keyed on
+    `\\bIID_PPV_ARG` was structurally incapable of matching it: the macro reached
+    CDefaultContextMenu as an unexpanded call. The middle `NULL` is
+    `GetUIObjectOf`'s reserved `prgfInOut`, and dropping it does not fail to
+    compile — it shifts `ppv` into the `prgfInOut` slot, which is far worse.
+    """
+    source = (
+        "m_psf->GetUIObjectOf(pdcm->hwnd, m_cidl, m_apidl, "
+        "IID_NULL_PPV_ARG(IDataObject, &m_pDataObj));"
+    )
+    for shape in (
+        "IID_NULL_PPV_ARG(IDataObject, core::ptr::addr_of_mut!((*this).m_pDataObj))",
+        "IID_NULL_PPV_ARG(IDataObject, &mut pdo)",
+        "IID_NULL_PPV_ARG(IDataObject, pdo as *mut *mut IDataObject)",
+    ):
+        expanded = normalize_cpp_idioms(source, shape)
+        assert "IID_NULL_PPV_ARG(" not in expanded, "a macro is not a symbol; it cannot link"
+        assert "core::ptr::addr_of!(IID_IDataObject), core::ptr::null_mut(), " in expanded
+        assert expanded.rstrip().endswith(".cast()")
+
+
+def test_the_plain_ppv_macro_gains_no_null_argument():
+    """The negative control: generalizing the family must not give `IID_PPV_ARG` a
+    third argument, which would shift every argument after it in ~200 call sites."""
+    expanded = normalize_cpp_idioms("", "IID_PPV_ARG(IShellFolder, &mut sp)")
+    assert expanded == "core::ptr::addr_of!(IID_IShellFolder), core::ptr::addr_of_mut!(sp).cast()"
+    assert "null_mut" not in expanded
+
+
+def test_a_ppv_macro_never_becomes_a_phantom_guid_extern(tmp_path: Path):
+    """A GUID constant is referenced, never CALLED.
+
+    The ppv macros match the `IID_*` spelling, so the extern harvest declared
+    `static IID_NULL_PPV_ARG: GUID;` — a symbol that exists in no library. It was
+    excluded by a hand-maintained denylist listing `IID_PPV_ARG` alone, so the
+    first new family member shipped the phantom. Deciding it positionally is what
+    retires the denylist.
+    """
+    source = tmp_path / "phantom.cpp"
+    source.write_text(
+        """
+static HRESULT get(IShellFolder *psf, HWND hwnd, PCUITEMID_CHILD pidl)
+{
+    CComPtr<IDataObject> pdo;
+    return psf->GetUIObjectOf(hwnd, 1, &pidl, IID_NULL_PPV_ARG(IDataObject, &pdo));
+}
+"""
+    )
+    rendered = render_cpp_support(source)
+    assert "IID_NULL_PPV_ARG: GUID" not in rendered
+    assert "IID_PPV_ARG: GUID" not in rendered
+    assert "static IID_IDataObject: GUID;" in rendered, (
+        "the interface IID the expansion references still needs its declaration"
+    )
+
+
+def test_a_ppv_macro_name_in_the_riid_slot_is_recovered_from_the_source():
+    """The fourth shape: right arity, wrong name.
+
+    CDefaultContextMenu::DoCreateLink came back with `&IID_PPV_ARG as *const _ as
+    REFIID` — the model split `IID_PPV_ARG(IDropTarget, &pDT)` into the correct two
+    arguments but put the MACRO's name in the riid slot. The ppv slot was already
+    right, so no expansion rule fired; the name simply exists in no library.
+    """
+    source = "hr = m_psf->CreateViewObject(NULL, IID_PPV_ARG(IDropTarget, &pDT));"
+    rust = (
+        "&IID_PPV_ARG as *const _ as REFIID, "
+        "&mut pDT as *mut *mut IDropTarget as *mut *mut core::ffi::c_void"
+    )
+    assert normalize_cpp_idioms(source, rust).startswith("&IID_IDropTarget as *const _ as REFIID")
+
+
+def test_two_candidate_interfaces_leave_the_riid_slot_alone():
+    """Recovery is only sound when the body names ONE interface. Two is a guess, and a
+    guessed IID is a QueryInterface for the wrong thing — so leave it uncompilable."""
+    source = "a(IID_PPV_ARG(IDropTarget, &x)); b(IID_PPV_ARG(IShellFolder, &y));"
+    assert normalize_cpp_idioms(source, "&IID_PPV_ARG as REFIID") == "&IID_PPV_ARG as REFIID"
+
+
+def test_plain_helper_class_passes_preflight_without_com_surface():
+    """A file-local C++ helper is SIMPLER than the supported case, not less proven.
+
+    `--free-functions` skips every class method and names `--cpp-com --class` as the route,
+    but the COM preflight then refuses a class with no BEGIN_COM_MAP / aggregation policy /
+    OBJECT_ENTRY — so COpenWithList and COpenWithDialog had no path through the pipeline at
+    all, and COpenWithMenu.cpp could not be flipped. The three requirements are vacuous for a
+    class with no vtable, no QI and no activation.
+    """
+    source = SHELL32 / "COpenWithMenu.cpp"
+    cls = analyze_class(source, "COpenWithList", object_map_source=SHELL32 / "shell32.cpp")
+    assert cls.com_map == []
+    assert cls.object_map_clsid is None
+    assert cls.interface_names() == []
+    cls.require_supported(allow_plain=True)
+    with pytest.raises(CppComError, match="no BEGIN_COM_MAP"):
+        cls.require_supported()
+
+
+def test_plain_refuses_a_class_that_is_actually_com():
+    """Plainness is asserted by the caller, so a wrong assertion must be loud.
+
+    Silently honouring --plain on a COM class would emit it with no vtable and no activation
+    — an object that compiles, links, and fails the moment anything QIs it.
+    """
+    source = SHELL32 / "COpenWithMenu.cpp"
+    cls = analyze_class(source, "COpenWithMenu", object_map_source=SHELL32 / "shell32.cpp")
+    assert cls.com_map
+    with pytest.raises(CppComError, match="it is a COM class"):
+        cls.require_supported(allow_plain=True)
+
+
+def test_hicon_truthiness_negation_wraps_the_whole_place_expression():
+    """The `!` goes in front of the receiver chain, not the field.
+
+    `hIcon != 0` is pointer truthiness, but the rewrite matched the bare NAME, so a correct
+    `(*p).hIcon != 0` from the model came back as `(*p).!hIcon.is_null()` — a parse error.
+    It failed loud rather than shipping, but it is a deterministic pass corrupting good
+    input: any model that lowers the test this way hits it.
+    """
+    from rustconv.cpp_com import normalize_worker_semantics
+
+    for rust, expected in (
+        ("if hIcon != 0 { }", "if !hIcon.is_null() { }"),
+        ("if (*p).hIcon != 0 { }", "if !(*p).hIcon.is_null() { }"),
+        ("if fi.hIcon != 0 { }", "if !fi.hIcon.is_null() { }"),
+        ("if (*this).m_pApp.hIcon != 0 { }", "if !(*this).m_pApp.hIcon.is_null() { }"),
+    ):
+        assert normalize_worker_semantics("", rust) == expected
+
+    # `m_hIcon` has no word boundary before `hIcon`, so the bare-name rule must not reach
+    # inside it — its own receiver-qualified rule runs first.
+    assert "m_!hIcon" not in normalize_worker_semantics("", "if (*this).m_hIcon != 0 { }")
+
+
+def test_declaration_only_destructor_does_not_eat_the_first_data_member():
+    """`~COpenWithList();` used to strand its `~` onto the member below it.
+
+    The statement became `~ SApp *m_pApp`, and the "starts with ~" filter dropped the whole
+    thing — so every class with an OUT-OF-LINE destructor silently lost its first field. ATL
+    classes write `~CFoo() {}` inline, where the block remover leaves a clean `;`, which is
+    why this survived until the first plain helper class.
+    """
+    source = SHELL32 / "COpenWithMenu.cpp"
+    cls = analyze_class(source, "COpenWithList", object_map_source=SHELL32 / "shell32.cpp")
+    # Exact C++ declaration order, first member included.
+    assert cls.state_fields == [
+        "SApp *m_pApp",
+        "UINT m_cApp",
+        "UINT m_cRecommended",
+        "BOOL m_bNoOpen",
+    ]
+
+
+def test_calling_convention_and_qualified_return_types_leave_no_debris():
+    """Two more strandings that each swallowed the member behind them.
+
+    `static INT_PTR CALLBACK DialogProc(...)` matched only from `CALLBACK`, leaving
+    `static INT_PTR`; `COpenWithList::SApp *GetCurrentApp()` matched only from `SApp`,
+    leaving `COpenWithList::`. Both glued onto `const OPENASINFO *m_pInfo`.
+    """
+    source = SHELL32 / "COpenWithMenu.cpp"
+    cls = analyze_class(source, "COpenWithDialog", object_map_source=SHELL32 / "shell32.cpp")
+    assert cls.state_fields[0] == "const OPENASINFO *m_pInfo"
+    assert len(cls.state_fields) == 10
+    assert not any("static" in f or "::" in f for f in cls.state_fields)
+
+
+def test_debris_in_a_field_is_a_hard_failure_not_a_guess():
+    """A mis-parsed member silently changes the object layout, so it must never ship."""
+    from rustconv.cpp_com import _state_fields
+
+    with pytest.raises(CppComError, match="static"):
+        _state_fields("class X { static INT_PTR static INT_PTR const FOO *m_pInfo; };")
+
+
+class TestVtableSlotCount:
+    """The cross-check behind `declares N slot(s) but M parsed`."""
+
+    def test_a_callback_parameter_is_not_a_slot(self):
+        # oleidl.h's IViewObject: `Draw` takes `BOOL (STDMETHODCALLTYPE *pfnContinue)(...)`,
+        # a function-pointer PARAMETER carrying the same calling convention as a slot. Counting
+        # every STDMETHODCALLTYPE token read that as a 10th slot for a 9-slot interface, so the
+        # guard fired on a CORRECT parse and refused the translation outright.
+        body = """
+            HRESULT (STDMETHODCALLTYPE *A)(I *This);
+            HRESULT (STDMETHODCALLTYPE *B)(I *This,
+                BOOL (STDMETHODCALLTYPE *cb)(ULONG_PTR d), ULONG_PTR d);
+            HRESULT (STDMETHODCALLTYPE *C)(I *This);
+        """
+        assert _vtbl_declared_slots(body) == 3
+
+    def test_a_genuinely_missed_slot_still_mismatches(self):
+        # The negative control that matters: this guard is what stands between us and a
+        # silently shifted vtable, so narrowing the count must not blunt it.
+        body = """
+            HRESULT (STDMETHODCALLTYPE *A)(I *This);
+            HRESULT (STDMETHODCALLTYPE *B)(I *This);
+        """
+        assert _vtbl_declared_slots(body) == 2, "a real second slot must still be counted"
+
+    def test_iviewobject_parses_to_its_documented_nine_slots(self):
+        header = REACTOS_ROOT / "build-amd64" / "sdk" / "include" / "psdk" / "oleidl.h"
+        if not header.is_file():
+            pytest.skip(f"generated header absent; build it in THIS worktree: {header}")
+        spec = parse_widl_interface(header, "IViewObject")
+        assert [method.name for method in spec.methods] == [
+            "QueryInterface",
+            "AddRef",
+            "Release",
+            "Draw",
+            "GetColorSet",
+            "Freeze",
+            "Unfreeze",
+            "SetAdvise",
+            "GetAdvise",
+        ]
+
+
+class TestProvenScalarStateTypes:
+    """The scalar allowlist behind `state field type is not proven C scalar/pointer state`."""
+
+    def test_the_array_arm_and_the_plain_arm_prove_the_same_types(self):
+        # THE regression guard for this class. The allowlist was written out inline in both
+        # arms of _parse_plain_state_field, and the copies drifted: `INT8` reached the plain
+        # set and never the array one, so `INT8 Direction` was proven state while
+        # `INT8 Direction[2]` was rejected. Nothing anywhere compares two hand-maintained
+        # copies of a table, so the divergence was invisible until a TU happened to hold the
+        # array spelling. Asserting the two arms agree is what makes re-splitting them fail.
+        for name in sorted(_WINDOWS_SCALAR_TYPEDEFS):
+            assert _parse_plain_state_field(f"{name} field").c_type == name
+            assert _parse_plain_state_field(f"{name} field[4]").array_len == 4
+
+    def test_signed_char_is_proven(self):
+        # CDefView's `signed char m_SpecialFolder`. The table carried `char` and
+        # `unsigned char` and simply missed the third spelling — and this is the one that
+        # needs no platform commitment at all, since `signed char` is 8-bit and signed in
+        # every C implementation while plain `char`'s signedness is implementation-defined.
+        assert _parse_plain_state_field("signed char m_SpecialFolder").c_type == "signed char"
+
+    def test_uint8_is_proven(self):
+        # LISTVIEW_SORT_INFO's `UINT8 Reserved`, the last thing holding CDefView UNSUPPORTED.
+        # `INT8` was admitted and `UINT8` was not; both state their width in the name, so
+        # there is nothing left to prove about either.
+        assert _parse_plain_state_field("UINT8 Reserved").c_type == "UINT8"
+
+    def test_an_unproven_type_still_fails_loudly(self):
+        # The negative control: widening the allowlist must not turn into admitting anything
+        # that looks vaguely scalar. A type nobody has proven is a loud failure that wants an
+        # island proof, not a new table entry.
+        with pytest.raises(CppComError, match="not proven C scalar/pointer state"):
+            _parse_plain_state_field("SOME_UNKNOWN_TYPE m_thing")
+
+
+class TestWorkerParamNameConformance:
+    """A body whose only defect is the SPELLING of its parameters is a good body. Rejecting
+    it means it is never banked, so it is re-bought on every single run, forever."""
+
+    CONTRACT = "pub unsafe fn IntDeleteRecursive_body(FullName: LPCWSTR) -> BOOL"
+
+    def test_snake_cased_de_aliased_params_are_conformed_to_the_contract(self):
+        rust = (
+            "pub unsafe fn IntDeleteRecursive_body(full_name: *const u16) -> i32 {\n"
+            "    let attrs = GetFileAttributesW(full_name);\n    attrs as i32\n}"
+        )
+        out = normalize_worker_body(rust, self.CONTRACT)
+        assert self.CONTRACT in out
+        assert "GetFileAttributesW(FullName)" in out
+        assert "full_name" not in out
+
+    def test_a_mut_qualifier_survives_the_conformance(self):
+        contract = "pub unsafe fn f_body(Count: DWORD) -> BOOL"
+        rust = "pub unsafe fn f_body(mut count: u32) -> i32 {\n    count += 1;\n    1\n}"
+        out = normalize_worker_body(rust, contract)
+        assert "mut Count: DWORD" in out
+        assert "Count += 1;" in out
+
+    def test_a_DIFFERENT_ARITY_is_still_rejected(self):
+        """Spelling is a spelling difference; a missing or extra parameter is a real
+        disagreement about what the function receives, and must stay a hard reject."""
+        rust = "pub unsafe fn IntDeleteRecursive_body() -> i32 {\n    0\n}"
+        out = normalize_worker_body(rust, self.CONTRACT)
+        assert self.CONTRACT not in out
+        assert audit_worker_body(
+            "BOOL IntDeleteRecursive(LPCWSTR FullName) { return 0; }",
+            out,
+            "IntDeleteRecursive_body",
+            self.CONTRACT,
+        )
+
+    def test_a_collision_with_the_contract_name_is_left_for_the_audit(self):
+        """If the contract's name already occurs in the body, something else answers to it
+        and a blind rename would capture that instead."""
+        rust = (
+            "pub unsafe fn IntDeleteRecursive_body(full_name: *const u16) -> i32 {\n"
+            "    let FullName = 1;\n    full_name as i32\n}"
+        )
+        out = normalize_worker_body(rust, self.CONTRACT)
+        assert "full_name: *const u16" in out
+
+
+class TestFreeFunctionNewAndDelete:
+    """A file-scope factory builds the class too, and its half of the TU has no scaffold in
+    front of it — so it invents the allocator AND the deallocator the same way `delete this`
+    did. The C++ names the static type at the `new` site; nothing in the Rust still does."""
+
+    SOURCE = (
+        "HRESULT RecycleBin5File_Constructor(IRecycleBin5 *prb, IRecycleBinFile **ppFile) {\n"
+        "    RecycleBin5File *pThis = new RecycleBin5File();\n"
+        "    if (!pThis) return E_OUTOFMEMORY;\n"
+        "    HRESULT hr = pThis->Init(prb);\n"
+        "    if (FAILED(hr)) { delete pThis; return hr; }\n"
+        "    return S_OK;\n}"
+    )
+
+    def test_new_becomes_the_scaffold_allocator(self):
+        rust = (
+            "pub unsafe fn RecycleBin5File_Constructor_body() -> HRESULT {\n"
+            "    let pThis: *mut RecycleBin5File = RecycleBin5File();\n    S_OK\n}"
+        )
+        out = normalize_worker_semantics(self.SOURCE, rust)
+        assert "RecycleBin5File_new()" in out
+        # `RecycleBin5File()` alone is a call to the STRUCT, and it also skips the vptr store.
+        assert "= RecycleBin5File();" not in out
+
+    @pytest.mark.parametrize(
+        "emitted",
+        [
+            "free(pThis);",
+            "alloc::boxed::Box::from_raw(pThis);",
+            "let _ = Box::from_raw(pThis);",
+            "drop(alloc::boxed::Box::from_raw(pThis));",
+            "__rustconv_delete(pThis);",
+            "RecycleBin5File_dtor_body(pThis); free(pThis);",
+        ],
+    )
+    def test_every_invented_deallocator_becomes_the_scaffold_one(self, emitted: str):
+        rust = f"pub unsafe fn RecycleBin5File_Constructor_body() {{\n    {emitted}\n}}"
+        out = normalize_worker_semantics(self.SOURCE, rust)
+        assert "RecycleBin5File_delete(pThis);" in out
+        for banned in ("free(pThis)", "Box::from_raw", "__rustconv_delete"):
+            assert banned not in out
+        # X_delete runs the destructor itself; keeping both would run it twice.
+        assert out.count("_dtor_body") == 0
+
+    def test_the_COM_Delete_METHOD_is_not_mistaken_for_the_deallocator(self):
+        """`X_Delete` (capital D) is the class's COM Delete method — for a recycle-bin file
+        that DELETES THE FILE FROM DISK. It is one letter from `X_delete`, it resolves, and
+        it compiles, so nothing downstream catches it."""
+        rust = (
+            "pub unsafe fn RecycleBin5File_Constructor_body() -> HRESULT {\n"
+            "    RecycleBin5File_Delete(pThis);\n    S_OK\n}"
+        )
+        out = normalize_worker_semantics(self.SOURCE, rust)
+        assert "RecycleBin5File_delete(pThis);" in out
+        assert "RecycleBin5File_Delete(pThis)" not in out
+
+    def test_a_body_that_legitimately_calls_Delete_keeps_it(self):
+        source = (
+            "HRESULT f() {\n"
+            "    RecycleBin5File *pThis = new RecycleBin5File();\n"
+            "    pThis->Delete();\n"
+            "    delete pThis;\n}"
+        )
+        rust = "pub unsafe fn f_body() {\n    RecycleBin5File_Delete(pThis);\n    free(pThis);\n}"
+        out = normalize_worker_semantics(source, rust)
+        assert "RecycleBin5File_Delete(pThis);" in out  # the real method call survives
+        assert "RecycleBin5File_delete(pThis);" in out  # and the free is still lowered
+
+    def test_a_factory_with_no_failure_path_still_gets_its_allocator(self):
+        """RecycleBinGeneric_Constructor news and never deletes. Gating the `new` lowering on
+        the presence of a `delete` skipped the whole function."""
+        source = (
+            "HRESULT RecycleBinGeneric_Constructor(IUnknown **ppUnknown) {\n"
+            "    RecycleBinGeneric *pThis = new RecycleBinGeneric();\n"
+            "    if (!pThis) return E_OUTOFMEMORY;\n    return S_OK;\n}"
+        )
+        rust = (
+            "pub unsafe fn RecycleBinGeneric_Constructor_body() -> HRESULT {\n"
+            "    let pThis: *mut c_void = RecycleBinGeneric();\n    S_OK\n}"
+        )
+        assert "RecycleBinGeneric_new()" in normalize_worker_semantics(source, rust)
+
+    def test_a_struct_the_source_never_news_is_left_alone(self):
+        """The lowering is keyed on the C++ `Class *v = new Class`, not on name shape."""
+        source = "void f() { SomeOther x; }"
+        rust = "pub unsafe fn f_body() {\n    let a = SomeOther();\n    free(p);\n}"
+        assert normalize_worker_semantics(source, rust) == rust
+
+
+class TestIslandOwnedInterfaces:
+    """An interface the bindgen island already provides must not be rendered a second time:
+    two same-named `#[repr(C)]` structs are DISTINCT Rust types that transmute past a cast."""
+
+    RECYCLEBIN = REACTOS_ROOT / "sdk/lib/rust/recyclebin-rust/src"
+    SHELL32_RUST = REACTOS_ROOT / "sdk/lib/rust/shell32-rust/src"
+
+    def _islands(self, root: Path, stem: str) -> list[Path]:
+        return [root / f"{stem}_{arch}.rs" for arch in ("i386", "amd64", "arm64")]
+
+    def test_the_c_lpvtbl_idiom_is_recognized_with_its_slot_order(self):
+        found = island_lpvtbl_interfaces(self._islands(self.RECYCLEBIN, "types"))
+        assert found["IRecycleBinEnumList"] == (
+            "QueryInterface",
+            "AddRef",
+            "Release",
+            "Next",
+            "Skip",
+            "Reset",
+        )
+
+    def test_the_slot_names_are_the_island_s_after_A_W_expansion(self):
+        """The Windows A/W macros expand INSIDE the interface definition, so the island's
+        slot for `STDMETHOD(DeleteFile)` is `DeleteFileW`. A vtable instance must use that
+        spelling, not the header's textual one."""
+        found = island_lpvtbl_interfaces(self._islands(self.RECYCLEBIN, "types"))
+        assert "DeleteFileW" in found["IRecycleBin5"]
+        assert "DeleteFile" not in found["IRecycleBin5"]
+
+    def test_a_cpp_mode_island_offers_nothing(self):
+        """bindgen renders a C++ abstract class as an opaque `__bindgen_vtable` with no
+        named slots. shell32's island is entirely that shape, so shell32 keeps rendering its
+        own interfaces and this whole mechanism is inert there."""
+        assert island_lpvtbl_interfaces(self._islands(self.SHELL32_RUST, "island")) == {}
+
+    def test_an_island_owned_interface_is_not_re_rendered(self, tmp_path: Path):
+        header = tmp_path / "owned.h"
+        header.write_text(
+            """DECLARE_INTERFACE_(IOwned, IUnknown)
+{
+    STDMETHOD(QueryInterface)(THIS_ REFIID riid, void **ppv) PURE;
+    STDMETHOD_(ULONG,AddRef)(THIS) PURE;
+    STDMETHOD_(ULONG,Release)(THIS) PURE;
+};"""
+        )
+        spec = parse_widl_interface(header, "IOwned")
+        rendered = render_interface(spec, ("QueryInterface", "AddRef", "Release"))
+        assert "pub struct IOwned" not in rendered
+        assert "pub static IID_IOwned" not in rendered
+        # Without island slots it renders as before.
+        assert "pub struct IOwnedVtbl {" in render_interface(spec)
+
+    def test_two_derivations_disagreeing_on_slot_count_is_a_hard_failure(self, tmp_path: Path):
+        header = tmp_path / "drift.h"
+        header.write_text(
+            """DECLARE_INTERFACE_(IDrift, IUnknown)
+{
+    STDMETHOD(QueryInterface)(THIS_ REFIID riid, void **ppv) PURE;
+    STDMETHOD_(ULONG,AddRef)(THIS) PURE;
+    STDMETHOD_(ULONG,Release)(THIS) PURE;
+};"""
+        )
+        spec = parse_widl_interface(header, "IDrift")
+        with pytest.raises(CppComError, match="4 vtable slot"):
+            render_interface(spec, ("QueryInterface", "AddRef", "Release", "Extra"))
+
+
+class TestDeleteThisLowering:
+    """`delete this` is the scaffold's business, never the model's.
+
+    C++ hides `operator new` and the vtable store in the constructor prologue, so the
+    allocation strategy appears in no source the model reads. Asked to free memory it
+    cannot see the origin of, it produced five different answers for shellrecyclebin's five
+    identical `delete this;` -- CRT `free` and `Box::from_raw` over `HeapAlloc`'d memory,
+    plus a placeholder symbol.
+    """
+
+    SOURCE = (
+        "ULONG RecycleBin5Enum::Release() { ULONG r = InterlockedDecrement(&m_ref); "
+        "if (r == 0) delete this; return r; }"
+    )
+
+    @pytest.mark.parametrize(
+        "emitted",
+        [
+            "drop(Box::from_raw(this));",
+            "let _ = Box::from_raw(this);",
+            "alloc::boxed::Box::from_raw(this);",
+            "__rustconv_delete(this);",
+            "free(this as *mut core::ffi::c_void);",
+            "let _ = SENDTO_ITEM_delete(this);",
+        ],
+    )
+    def test_every_emitted_spelling_becomes_the_scaffold_delete(self, emitted):
+        out = normalize_worker_semantics(
+            self.SOURCE,
+            "pub unsafe fn RecycleBin5Enum_Release_body(this: *mut RecycleBin5Enum) {\n    "
+            + emitted
+            + "\n}",
+        )
+        assert "RecycleBin5Enum_delete(this);" in out
+        for banned in ("Box::from_raw", "__rustconv_", "free(", "SENDTO_ITEM_delete"):
+            assert banned not in out
+
+    def test_the_redundant_dtor_call_goes_with_it(self):
+        # X_delete runs the destructor itself; keeping the model's explicit dtor call too
+        # would run every member destructor twice.
+        out = normalize_worker_semantics(
+            self.SOURCE,
+            "pub unsafe fn RecycleBin5Enum_Release_body(this: *mut RecycleBin5Enum) {\n"
+            "    RecycleBin5Enum_dtor_body(this);\n"
+            "    free(this as *mut core::ffi::c_void);\n}",
+        )
+        assert out.count("RecycleBin5Enum_dtor_body") == 0
+        assert out.count("RecycleBin5Enum_delete(this);") == 1
+
+    def test_a_body_with_no_delete_this_is_untouched(self):
+        source = "ULONG X::AddRef() { return InterlockedIncrement(&m_ref); }"
+        rust = "pub unsafe fn X_AddRef_body(this: *mut X) {\n    let _ = Box::from_raw(other);\n}"
+        assert normalize_worker_semantics(source, rust) == rust
+
+    def test_the_sendto_item_rewrite_is_scoped_to_sendto_item(self):
+        # Unguarded, this rewrote EVERY `Box::from_raw(x);` in every module into a call to a
+        # shell32 helper. recyclebin's RecycleBinGeneric::Release came out calling
+        # SENDTO_ITEM_delete -- a function absent from that crate, which read as a model
+        # hallucination and was ours.
+        source = "void CFoo::Drop() { free_item(p); }"
+        rust = (
+            "pub unsafe fn CFoo_Drop_body(this: *mut CFoo) {\n"
+            "    alloc::boxed::Box::from_raw(p);\n}"
+        )
+        assert "SENDTO_ITEM_delete" not in normalize_worker_semantics(source, rust)
+
+    def test_a_worker_that_still_owns_a_deallocator_is_a_finding(self):
+        findings = audit_worker_body(
+            "void X::F() {}",
+            "pub unsafe fn X_F_body(this: *mut X) { free(this as *mut c_void); }",
+            "X_F_body",
+        )
+        assert any("deallocator" in f for f in findings)
+
+    def test_a_body_with_no_double_colon_still_lowers(self):
+        # `owner` scrapes a `Class::Method(` token out of the BODY text, and RecycleBin5::Release
+        # is three lines with no `::` in them at all — so the class came back empty and exactly
+        # one of the five sites silently kept its invented deallocator. The worker signature
+        # always carries `this: *mut <Class>`.
+        source = "{ ULONG r = InterlockedDecrement(&m_ref); if (r == 0) delete this; return r; }"
+        rust = (
+            "pub unsafe fn RecycleBin5_Release_body(this: *mut RecycleBin5) -> ULONG {\n"
+            "    __rustconv_delete(this);\n}"
+        )
+        out = normalize_worker_semantics(source, rust)
+        assert "RecycleBin5_delete(this);" in out
+        assert "__rustconv_delete" not in out

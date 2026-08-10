@@ -469,11 +469,52 @@ pub(crate) unsafe fn cswdep_spin_release(_lock: *mut ULONG_PTR) {}
 /// KxAcquireSpinLock — UP kernel: compiler barrier only. SMP kernel
 /// (feature = "smp"): the spinlock.h CONFIG_SMP body — try-acquire via
 /// InterlockedBitTestAndSet(bit 0), on contention spin-read until free.
-/// DBG owner tracking disabled: inconsistent paths between C shims and Rust inline
-/// cause false SPIN_LOCK_NOT_OWNED on i386. To be investigated separately.
+///
+/// Under `feature = "dbg"` it also stamps the owner, mirroring
+/// `KI_TRACK_SPINLOCK_OWNER` in ntoskrnl/include/internal/spinlock.h. That
+/// stamp is OBSERVABLE BEHAVIOUR, not a diagnostic: `KeTestSpinLock` reads it,
+/// and so does every DDK caller that inspects a held lock. The C and Rust
+/// halves of this funnel MUST agree — a lock stamped by one and not cleared by
+/// the other stays dirty forever. Of the two `KeBugCheckEx` validations that
+/// upstream pairs with the stamp (`KI_VALIDATE_...`, compiled out here), the
+/// release-side SPIN_LOCK_NOT_OWNED one stays OFF on both sides — it is what
+/// broke i386 boot when this was first enabled, and finding the mismatched
+/// acquire/release pairs is still separate work. The acquire-side
+/// SPIN_LOCK_ALREADY_OWNED one is now ON for `smp + dbg`; see the body for why
+/// that subset cannot false-positive. It reads the stamp without writing one,
+/// so it creates no C-vs-Rust asymmetry and needs no mirror in spinlock.h.
 #[inline]
 pub unsafe fn KxAcquireSpinLock(spin_lock: *mut ULONG_PTR) {
     cswdep_spin_acquire(spin_lock);
+    // Upstream's SPIN_LOCK_ALREADY_OWNED pre-check, which this tree compiles out:
+    // `_USE_DUMMY_PSEH=1` is defined globally (sdk/cmake/gcc.cmake), so
+    // KI_VALIDATE_SPINLOCK_OWNER is 0 — the stamp below is written and NOTHING
+    // ever reads it back. Restored here for the one case where it cannot be a
+    // false positive: on an MP kernel, finding our OWN thread stamped in a lock
+    // we are about to spin on is a guaranteed deadlock, because the only thread
+    // that can clear it is the one that is about to start spinning. The
+    // alternative is not a surviving boot, it is an unbounded silent spin at
+    // IRQL >= DISPATCH_LEVEL that takes the clock, every timer, and the whole
+    // machine down with it — which is precisely the arm64 `--smp 1` stall where
+    // a 30s SCM pipe wait sat for 185s and every subsystem went quiet at once.
+    //
+    // Deliberately paired with `smp`: on the UP kernel the spin below is
+    // compiled away entirely, so the same recursive acquire is harmless there
+    // and bugchecking on it would invent a failure the UP boot does not have.
+    // Deliberately NOT accompanied by upstream's release-side SPIN_LOCK_NOT_OWNED
+    // check — that one fires on every benign mismatched acquire/release pair and
+    // is what broke i386 boot when validation was first switched on. This takes
+    // only the subset that is provably already a hang.
+    //
+    // This once cited KeTryToAcquireSpinLockAtDpcLevel (ntoskrnl-rust
+    // ke/spinlock.rs) as precedent for "carried this check without incident".
+    // It was not one: that copy was gated on cargo's `debug_assertions`, which
+    // the release profile leaves off, so it had never executed. Both are now on
+    // `feature = "dbg"` and genuinely share the rationale above.
+    #[cfg(all(feature = "smp", feature = "dbg"))]
+    if core::ptr::read_volatile(spin_lock) == (current_thread() as ULONG_PTR | 1) {
+        ddk::KeBugCheckEx(SPIN_LOCK_ALREADY_OWNED, spin_lock as ULONG_PTR as _, 0, 0, 0);
+    }
     #[cfg(feature = "smp")]
     while InterlockedBitTestAndSet(spin_lock as *mut i32, 0) != 0 {
         // Locked — spin read-only (cache-friendly) until it's released.
@@ -484,15 +525,20 @@ pub unsafe fn KxAcquireSpinLock(spin_lock: *mut ULONG_PTR) {
     // Compiler barrier (KeMemoryBarrierWithoutFence); under smp the
     // interlocked op above is the hardware fence.
     core::sync::atomic::compiler_fence(core::sync::atomic::Ordering::SeqCst);
+    #[cfg(feature = "dbg")]
+    {
+        *spin_lock = current_thread() as ULONG_PTR | 1;
+    }
 }
 
 /// KxReleaseSpinLock — UP kernel: compiler barrier only. SMP kernel:
 /// spinlock.h's `InterlockedAnd(64)(SpinLock, 0)` — full-barrier atomic clear.
-/// DBG owner tracking disabled (see KxAcquireSpinLock comment).
+/// Under `feature = "dbg"` the clear also happens on UP, because that is where
+/// the owner stamp is undone (see KxAcquireSpinLock).
 #[inline]
 pub unsafe fn KxReleaseSpinLock(spin_lock: *mut ULONG_PTR) {
     cswdep_spin_release(spin_lock);
-    #[cfg(feature = "smp")]
+    #[cfg(any(feature = "smp", feature = "dbg"))]
     {
         core::sync::atomic::AtomicUsize::from_ptr(spin_lock as *mut usize)
             .swap(0, core::sync::atomic::Ordering::SeqCst);
@@ -546,11 +592,6 @@ pub unsafe fn KeGetExceptionFrame(thread: ddk::PKTHREAD) -> ddk::PKEXCEPTION_FRA
 // ============================================================================
 
 // KiCheckForKernelApcDelivery is stdcall on i386, cdecl on others
-#[cfg(target_arch = "x86")]
-extern "system" {
-    fn KiCheckForKernelApcDelivery();
-}
-#[cfg(not(target_arch = "x86"))]
 extern "system" {
     fn KiCheckForKernelApcDelivery();
 }
@@ -788,11 +829,6 @@ extern "C" {
 // ============================================================================
 
 // PsGetCurrentThread is stdcall on i386, cdecl on others
-#[cfg(target_arch = "x86")]
-extern "system" {
-    fn PsGetCurrentThread() -> ddk::PETHREAD;
-}
-#[cfg(not(target_arch = "x86"))]
 extern "system" {
     fn PsGetCurrentThread() -> ddk::PETHREAD;
 }
@@ -2453,11 +2489,14 @@ pub unsafe fn _KeAcquireGuardedMutexSited(guarded_mutex: ddk::PKGUARDED_MUTEX, s
         KiAcquireGuardedMutex(guarded_mutex);
     }
     (*guarded_mutex).Owner = current_thread();
-    let thread = current_thread();
-    (*guarded_mutex).__bindgen_anon_1.__bindgen_anon_1.KernelApcDisable =
-        *kthread_kernel_apc_disable(thread);
+    /* SpecialApcDisable ONLY (ke_x.h:1626). KernelApcDisable belongs to
+     * KFAST_MUTEX, not KGUARDED_MUTEX: a guarded region disables special APCs,
+     * and the field is where KeReleaseGuardedMutex's ASSERT reads the depth
+     * back from. Writing it here made KeGuardedMutex report 87 assertion
+     * failures per arch — the test pre-fills the mutex with 0x55 and checks
+     * that this field is never touched. */
     (*guarded_mutex).__bindgen_anon_1.__bindgen_anon_1.SpecialApcDisable =
-        *kthread_special_apc_disable_ptr(thread);
+        *kthread_special_apc_disable_ptr(current_thread());
     super::ex::lockdep_acquire(guarded_mutex as _, 3, site); // held now — gmutex
 }
 
@@ -2507,16 +2546,15 @@ pub unsafe fn _KeTryToAcquireGuardedMutexSited(
     ) != 0
     {
         (*guarded_mutex).Owner = current_thread();
-        let thread = current_thread();
-        (*guarded_mutex).__bindgen_anon_1.__bindgen_anon_1.KernelApcDisable =
-            *kthread_kernel_apc_disable(thread);
+        /* SpecialApcDisable ONLY — see _KeAcquireGuardedMutexSited (ke_x.h:1694). */
         (*guarded_mutex).__bindgen_anon_1.__bindgen_anon_1.SpecialApcDisable =
-            *kthread_special_apc_disable_ptr(thread);
+            *kthread_special_apc_disable_ptr(current_thread());
         // held now — but via TRY: held-set only, no order edges (can't park).
         super::ex::lockdep_acquire_try(guarded_mutex as _, 3, site);
         1 // TRUE
     } else {
         KeLeaveGuardedRegion();
+        core::hint::spin_loop(); // C: YieldProcessor() (ke_x.h:1686)
         0 // FALSE
     }
 }

@@ -424,9 +424,8 @@ pub const HINIT_MEMORY_INPLACE: u32 = 3;
 pub const HINIT_FLAT: u32 = 4;
 pub const HINIT_MAPFILE: u32 = 5;
 
-// HIVE_* (cmlib/hivedata.h)
-pub const HIVE_VOLATILE: u32 = 1;
-pub const HIVE_NOLAZYFLUSH: u32 = 2;
+// HIVE_* (cmlib/hivedata.h) — one definition, in crate::hiveflags.
+pub use crate::hiveflags::{HIVE_NOLAZYFLUSH, HIVE_VOLATILE};
 
 // HBOOT_TYPE_*
 pub const HBOOT_TYPE_REGULAR: u32 = 0;
@@ -621,11 +620,20 @@ pub unsafe extern "system" fn CmpLinkKeyToHive(
         &mut Disposition,
     );
     
+    // The three diagnostics below are upstream's DPRINT1s. They were dropped in
+    // translation, which left every one of these failures completely silent —
+    // the link key simply never appears and nothing says why.
     if !NT_SUCCESS(Status) {
+        crate::dbg_print!(
+            b"CM: CmpLinkKeyToHive: couldn't create %S, Status = 0x%lx\r\n\0",
+            LinkKeyName,
+            Status
+        );
         return 0u8;
     }
 
     if Disposition != REG_CREATED_NEW_KEY {
+        crate::dbg_print!(b"CM: CmpLinkKeyToHive: %S already exists!\r\n\0", LinkKeyName);
         ZwClose(LinkKeyHandle);
         return 0u8;
     }
@@ -643,6 +651,11 @@ pub unsafe extern "system" fn CmpLinkKeyToHive(
     ObCloseHandle(LinkKeyHandle, 0i8);
 
     if !NT_SUCCESS(Status) {
+        crate::dbg_print!(
+            b"CM: CmpLinkKeyToHive: couldn't create symbolic link for %S, Status = 0x%lx\r\n\0",
+            TargetKeyName,
+            Status
+        );
         return 0u8;
     }
 
@@ -792,18 +805,11 @@ pub unsafe extern "system" fn CmpQueryKeyName(
     Status
 }
 
-#[cfg(target_arch = "x86")]
-unsafe extern "stdcall" fn CmpDeleteKeyObjectCallback(Object: PVOID) {
+unsafe extern "system" fn CmpDeleteKeyObjectCallback(Object: PVOID) {
     CmpDeleteKeyObject(Object);
 }
 
-#[cfg(not(target_arch = "x86"))]
-unsafe extern "C" fn CmpDeleteKeyObjectCallback(Object: PVOID) {
-    CmpDeleteKeyObject(Object);
-}
-
-#[cfg(target_arch = "x86")]
-unsafe extern "stdcall" fn CmpCloseKeyObjectCallback(
+unsafe extern "system" fn CmpCloseKeyObjectCallback(
     Process: ntkrnl_sys::ddk::PEPROCESS,
     Object: PVOID,
     GrantedAccess: ACCESS_MASK,
@@ -813,31 +819,7 @@ unsafe extern "stdcall" fn CmpCloseKeyObjectCallback(
     CmpCloseKeyObject(Process as _, Object, GrantedAccess, ProcessHandleCount, SystemHandleCount);
 }
 
-#[cfg(not(target_arch = "x86"))]
-unsafe extern "C" fn CmpCloseKeyObjectCallback(
-    Process: ntkrnl_sys::ddk::PEPROCESS,
-    Object: PVOID,
-    GrantedAccess: ACCESS_MASK,
-    ProcessHandleCount: ULONG,
-    SystemHandleCount: ULONG,
-) {
-    CmpCloseKeyObject(Process as _, Object, GrantedAccess, ProcessHandleCount, SystemHandleCount);
-}
-
-#[cfg(target_arch = "x86")]
-unsafe extern "stdcall" fn CmpQueryKeyNameCallback(
-    Object: PVOID,
-    HasObjectName: BOOLEAN,
-    ObjectNameInfo: POBJECT_NAME_INFORMATION,
-    Length: ULONG,
-    ReturnLength: PULONG,
-    AccessMode: KPROCESSOR_MODE,
-) -> NTSTATUS {
-    CmpQueryKeyName(Object, HasObjectName, ObjectNameInfo, Length, ReturnLength, AccessMode)
-}
-
-#[cfg(not(target_arch = "x86"))]
-unsafe extern "C" fn CmpQueryKeyNameCallback(
+unsafe extern "system" fn CmpQueryKeyNameCallback(
     Object: PVOID,
     HasObjectName: BOOLEAN,
     ObjectNameInfo: POBJECT_NAME_INFORMATION,
@@ -1042,6 +1024,7 @@ unsafe fn CmpCreateHardwareProfile(ControlSetHandle: HANDLE) -> NTSTATUS {
         &mut Disposition,
     );
     if !NT_SUCCESS(Status) {
+        crate::dbg_print!(b"Creating the Hardware Profile key failed\n\0");
         ProfilesHandle = core::ptr::null_mut();
         ProfileHandle = core::ptr::null_mut();
         if !ProfilesHandle.is_null() {
@@ -1071,6 +1054,7 @@ unsafe fn CmpCreateHardwareProfile(ControlSetHandle: HANDLE) -> NTSTATUS {
         &mut Disposition,
     );
     if !NT_SUCCESS(Status) {
+        crate::dbg_print!(b"Creating the Hardware Profile\\0000 key failed\n\0");
         if !ProfilesHandle.is_null() {
             NtClose(ProfilesHandle);
         }
@@ -1123,6 +1107,7 @@ unsafe fn CmpCreateControlSet(LoaderBlock: PLOADER_PARAMETER_BLOCK) -> NTSTATUS 
         ObjectAttributes.SecurityQualityOfService = core::ptr::null_mut();
         Status = NtCreateKey(&mut KeyHandle, KEY_ALL_ACCESS, &mut ObjectAttributes, 0, core::ptr::null_mut(), 0, &mut Disposition);
         if !NT_SUCCESS(Status) {
+            crate::dbg_print!(b"Failed to create ControlSet001 key: 0x%lx\n\0", Status);
             Status = Status;
             KeyHandle = core::ptr::null_mut();
             'Cleanup: loop {
@@ -1137,6 +1122,7 @@ unsafe fn CmpCreateControlSet(LoaderBlock: PLOADER_PARAMETER_BLOCK) -> NTSTATUS 
 
         Status = CmpCreateHardwareProfile(KeyHandle);
         if !NT_SUCCESS(Status) {
+            crate::dbg_print!(b"Failed to create Hardware profile keys: 0x%lx\n\0", Status);
             'Cleanup: loop {
                 if !SelectHandle.is_null() { NtClose(SelectHandle); }
                 if !KeyHandle.is_null() { NtClose(KeyHandle); }
@@ -1157,6 +1143,7 @@ unsafe fn CmpCreateControlSet(LoaderBlock: PLOADER_PARAMETER_BLOCK) -> NTSTATUS 
         ObjectAttributes.SecurityQualityOfService = core::ptr::null_mut();
         Status = NtOpenKey(&mut SelectHandle, KEY_READ, &mut ObjectAttributes);
         if !NT_SUCCESS(Status) {
+            crate::dbg_print!(b"Failed to open select key: 0x%lx\n\0", Status);
             SelectHandle = core::ptr::null_mut();
             'Cleanup: loop {
                 if !SelectHandle.is_null() { NtClose(SelectHandle); }
@@ -1171,6 +1158,7 @@ unsafe fn CmpCreateControlSet(LoaderBlock: PLOADER_PARAMETER_BLOCK) -> NTSTATUS 
         RtlInitUnicodeString(&mut KeyName, w!("Current").as_ptr());
         Status = NtQueryValueKey(SelectHandle, &mut KeyName, KeyValueFullInformation, ValueInfoBuffer.as_mut_ptr() as *mut core::ffi::c_void, core::mem::size_of_val(&ValueInfoBuffer) as ULONG, &mut ResultLength);
         if !NT_SUCCESS(Status) {
+            crate::dbg_print!(b"Failed to open the Current value: 0x%lx\n\0", Status);
             'Cleanup: loop {
                 if !SelectHandle.is_null() { NtClose(SelectHandle); }
                 if !KeyHandle.is_null() { NtClose(KeyHandle); }
@@ -1205,7 +1193,18 @@ unsafe fn CmpCreateControlSet(LoaderBlock: PLOADER_PARAMETER_BLOCK) -> NTSTATUS 
         }
     }
 
-    Status = crate::rtl_string_cb_printf_w!(UnicodeBuffer.as_mut_ptr(), core::mem::size_of_val(&UnicodeBuffer), crate::wstr!("\\Registry\\Machine\\System\\ControlSet%03ld"), ControlSet);
+    // `\REGISTRY`, not `\Registry`, and the reason is that this string is a symlink
+    // TARGET. It gets handed straight back to ObpLookupObjectName as a REPARSE, which
+    // matches the leading component in the ROOT OBJECT DIRECTORY against the entry
+    // CmpCreateRegistryRoot made — spelled `REGISTRY`. That compare is case-SENSITIVE
+    // unless the caller passed OBJ_CASE_INSENSITIVE, because the Key object type is not
+    // case-insensitive (ObTypes.c:217 asserts exactly that against WS03). A target is
+    // stored verbatim and replayed for whoever opens the link, so it has to be spelled
+    // for the worst caller, not the one we happen to have. Only the first component is
+    // matched this way; everything after it is CM's own subkey matching, which is
+    // case-insensitive regardless — the rest is upper-cased purely to match the other
+    // registry paths NT builds.
+    Status = crate::rtl_string_cb_printf_w!(UnicodeBuffer.as_mut_ptr(), core::mem::size_of_val(&UnicodeBuffer), crate::wstr!("\\REGISTRY\\MACHINE\\SYSTEM\\CONTROLSET%03ld"), ControlSet);
     if !NT_SUCCESS(Status) {
         'Cleanup: loop {
             if !SelectHandle.is_null() { NtClose(SelectHandle); }
@@ -1335,7 +1334,9 @@ unsafe fn CmpCreateControlSet(LoaderBlock: PLOADER_PARAMETER_BLOCK) -> NTSTATUS 
         crate::rtl_string_cb_printf_w!(
             UnicodeBuffer.as_mut_ptr(),
             core::mem::size_of_val(&UnicodeBuffer),
-            crate::wstr!("\\Registry\\Machine\\System\\CurrentControlSet\\Hardware Profiles\\%04ld"),
+            // A symlink target again — see the CONTROLSET%03ld comment above for why the
+            // leading component must be `\REGISTRY`.
+            crate::wstr!("\\REGISTRY\\MACHINE\\SYSTEM\\CURRENTCONTROLSET\\HARDWARE PROFILES\\%04ld"),
             HwProfile,
         );
         RtlInitUnicodeString(&mut KeyName, UnicodeBuffer.as_ptr());
@@ -1591,6 +1592,11 @@ pub unsafe extern "system" fn CmpCreateObjectTypes() -> NTSTATUS {
     ObjectTypeInitializer.CloseProcedure = Some(CmpCloseKeyObjectCallback);
     ObjectTypeInitializer.SecurityRequired = 1u8;
     ObjectTypeInitializer.InvalidAttributes = OBJ_EXCLUSIVE | OBJ_PERMANENT;
+    // Deliberately NO `CaseInsensitive = TRUE` here. Setting it looks like the fix
+    // for mixed-case registry paths and is not: ObTypes.c:217 checks this exact
+    // field against WS03 and expects FALSE, so a Key open really is case-sensitive
+    // at the object-directory layer. That is why every registry path NT builds is
+    // spelled `\REGISTRY\...` — see CmpInitializeHiveList.
 
     ObCreateObjectType(&mut Name, &mut ObjectTypeInitializer, core::ptr::null_mut(), &raw mut CmpKeyObjectType)
 }
@@ -1766,6 +1772,7 @@ unsafe fn CmpGetRegistryPath() -> PCWSTR {
         ConfigPath = w!("\\SystemRoot\\").as_ptr();
     }
 
+    crate::dbg_print!(b"CmpGetRegistryPath: ConfigPath = '%S'\n\0", ConfigPath);
     ConfigPath
 }
 
@@ -1795,6 +1802,10 @@ unsafe fn CmpHasAlternateHiveDiverged(
         FileName,
         CM_CHECK_REGISTRY_DONT_PURGE_VOLATILES);
     if !NT_SUCCESS(Status) {
+        crate::dbg_print!(
+            b"Failed to initialize the alternate hive to check for diversion (Status 0x%lx)\n\0",
+            Status
+        );
         *Diverged = 1u8;
         return;
     }
@@ -1920,14 +1931,25 @@ pub unsafe extern "system" fn CmpLoadHiveThread(StartContext: *mut core::ffi::c_
             (*CmHive).FileHandles[HFILE_TYPE_ALTERNATE as usize] = AlternateHandle;
             (*CmHive).FileHandles[HFILE_TYPE_PRIMARY as usize] = PrimaryHandle;
 
-            (*CmHive).Hive.HiveFlags &= !0x00000080;
+            // C cmsysini.c: `CmHive->Hive.HiveFlags &= ~HIVE_NOLAZYFLUSH;` (0x2).
+            // Clearing 0x80 — not a HiveFlags bit — left NOLAZYFLUSH set, so
+            // cmlazy (which reads the right bit) skipped this hive forever.
+            (*CmHive).Hive.HiveFlags &= !HIVE_NOLAZYFLUSH;
 
             Length = (*CmHive).Hive.Storage[0].Length + 0x1000;
 
             if (*CmHive).Hive.Cluster != ClusterSize {
+                // The whole body of this branch upstream is the diagnostic, so
+                // dropping it left an `if` with nothing in it.
+                crate::dbg_print!(
+                    b"FIXME: Support for CmHive->Hive.Cluster (%lu) != ClusterSize (%lu) is unimplemented!\n\0",
+                    (*CmHive).Hive.Cluster,
+                    ClusterSize
+                );
             }
 
             if (*CmHive).Hive.BaseBlock.as_ref().unwrap().BootRecover == 2 {
+                crate::dbg_print!(b"FreeLdr recovered the hive (hive 0x%p)\n\0", CmHive);
                 RtlSetAllBits(core::ptr::addr_of_mut!((*CmHive).Hive.DirtyVector) as *mut _);
                 (*CmHive).Hive.DirtyCount = (*CmHive).Hive.DirtyVector.SizeOfBitMap;
                 HvSyncHive(&mut (*CmHive).Hive as PHHIVE);
@@ -1943,6 +1965,7 @@ pub unsafe extern "system" fn CmpLoadHiveThread(StartContext: *mut core::ffi::c_
                     PrimaryDisposition == 0x00000002 ||
                     SecondaryDisposition == 0x00000002 {
                     if HvWriteAlternateHive(&mut (*CmHive).Hive as PHHIVE) == 0 {
+                        crate::dbg_print!(b"Failed to write to alternate hive\n\0");
                         'Exit: {
                             break 'Exit;
                         }
@@ -1964,13 +1987,7 @@ pub unsafe extern "system" fn CmpLoadHiveThread(StartContext: *mut core::ffi::c_
     PsTerminateSystemThread(Status);
 }
 
-#[cfg(target_arch = "x86")]
-unsafe extern "stdcall" fn CmpLoadHiveThreadStart(StartContext: PVOID) {
-    CmpLoadHiveThread(StartContext);
-}
-
-#[cfg(not(target_arch = "x86"))]
-unsafe extern "C" fn CmpLoadHiveThreadStart(StartContext: PVOID) {
+unsafe extern "system" fn CmpLoadHiveThreadStart(StartContext: PVOID) {
     CmpLoadHiveThread(StartContext);
 }
 
@@ -2095,15 +2112,28 @@ pub unsafe extern "system" fn CmpInitializeHiveList() {
 
     ExFreePoolWithTag(SecurityDescriptor as PVOID, 0x53646D43);
 
+    // `\REGISTRY`, upper case, and it is not cosmetic. A symbolic-link key stores
+    // its target verbatim and CmpGetSymbolicLink hands that string straight back to
+    // ObpLookupObjectName as a REPARSE, which resolves the leading `REGISTRY`
+    // component in the ROOT OBJECT DIRECTORY — where the registry root was inserted
+    // as `\REGISTRY` (CmpCreateRegistryRoot). That compare is case-SENSITIVE unless
+    // the caller passed OBJ_CASE_INSENSITIVE, because the Key object type does not
+    // declare itself case-insensitive (ObTypes.c:217 asserts exactly that against
+    // WS03, so making the type case-insensitive is not the fix — it fails a test).
+    // Upstream spells these `\Registry\...`, so opening one of these links from a
+    // caller that omits the attribute returned STATUS_OBJECT_PATH_NOT_FOUND: it hit
+    // the symlink, reparsed to `\Registry\User\.Default`, and then failed to find
+    // `Registry` next to `REGISTRY`. Everything past the first component is CM's own
+    // lookup, which is case-insensitive regardless.
     CmpLinkKeyToHive(
-        w!("\\Registry\\Machine\\Security\\SAM").as_ptr(),
-        w!("\\Registry\\Machine\\SAM\\SAM").as_ptr(),
+        w!("\\REGISTRY\\MACHINE\\SECURITY\\SAM").as_ptr(),
+        w!("\\REGISTRY\\MACHINE\\SAM\\SAM").as_ptr(),
     );
 
     CmpNoVolatileCreates = 0u8;
     CmpLinkKeyToHive(
-        w!("\\Registry\\User\\S-1-5-18").as_ptr(),
-        w!("\\Registry\\User\\.Default").as_ptr(),
+        w!("\\REGISTRY\\USER\\S-1-5-18").as_ptr(),
+        w!("\\REGISTRY\\USER\\.DEFAULT").as_ptr(),
     );
     CmpNoVolatileCreates = 1u8;
 }
@@ -2517,6 +2547,11 @@ pub unsafe extern "system" fn CmpSetVersionData() {
         core::ptr::null_mut()
     );
     if !NT_SUCCESS(Status) {
+        crate::dbg_print!(
+            b"Failed to create key %wZ (Status: %08lx)\n\0",
+            core::ptr::addr_of!(KeyName),
+            Status
+        );
         return;
     }
 
@@ -2538,6 +2573,11 @@ pub unsafe extern "system" fn CmpSetVersionData() {
         core::ptr::null_mut()
     );
     if !NT_SUCCESS(Status) {
+        crate::dbg_print!(
+            b"Failed to create key %wZ (Status: %08lx)\n\0",
+            core::ptr::addr_of!(KeyName),
+            Status
+        );
         NtClose(SoftwareKeyHandle);
         return;
     }
@@ -2560,6 +2600,11 @@ pub unsafe extern "system" fn CmpSetVersionData() {
         core::ptr::null_mut()
     );
     if !NT_SUCCESS(Status) {
+        crate::dbg_print!(
+            b"Failed to create key %wZ (Status: %08lx)\n\0",
+            core::ptr::addr_of!(KeyName),
+            Status
+        );
         NtClose(MicrosoftKeyHandle);
         NtClose(SoftwareKeyHandle);
         return;
@@ -2583,6 +2628,11 @@ pub unsafe extern "system" fn CmpSetVersionData() {
         core::ptr::null_mut()
     );
     if !NT_SUCCESS(Status) {
+        crate::dbg_print!(
+            b"Failed to create key %wZ (Status: %08lx)\n\0",
+            core::ptr::addr_of!(KeyName),
+            Status
+        );
         NtClose(WindowsNtKeyHandle);
         NtClose(MicrosoftKeyHandle);
         NtClose(SoftwareKeyHandle);

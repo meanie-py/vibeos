@@ -28,9 +28,17 @@ A missing export is NOT automatically a bug:
     never compiled it either; the real one lives in another module. Reporting it as "lost" is
     also crying wolf — and this checker DID, until it learned to read #if 0.
 
-So a finding requires ALL THREE: in the .spec, defined in a .c that is COMMENTED OUT in the
-cmake, and NOT inside a dead preprocessor branch. Anything less is reported as context, not as
-a defect.
+  * A C TU THE FLIP DELIBERATELY KEPT: a module's `rust_varargs_shim.c` owns the ENTRY point of
+    every C-variadic export, because stable Rust can declare but not define one (`va_start`,
+    rust-lang/rust#44930) — the body lives in a fixed-arity `*_v` twin in Rust. syssetup's
+    `pSetupDebugPrint` is `@ varargs` in the .spec and is implemented exactly there, so reading
+    only Rust fns and .S files reported it LOST while the export was in fact served. Any live
+    .c counts, not just the shim: if it still compiles, it still defines the symbol.
+
+So a finding requires ALL FOUR: in the .spec, defined in a .c that is COMMENTED OUT in the
+cmake, NOT inside a dead preprocessor branch, and not defined by anything that still links
+(Rust, assembly, or a .c the cmake still compiles). Anything less is reported as context, not
+as a defect.
 """
 
 from __future__ import annotations
@@ -53,8 +61,23 @@ _SPEC_ENTRY = re.compile(
 # Plenty of exports are implemented in ASSEMBLY, not C or Rust (ntdll's KiUserExceptionDispatcher
 # lives in dispatch/{i386,amd64,arm64}/dispatch.S). Absent-from-Rust does not mean absent.
 _ASM_LABEL = re.compile(r"^\s*(?:\.globl|\.global|PUBLIC|FUNC_BEGIN|_?([A-Za-z_]\w*):)", re.M)
-_CMAKE_COMMENTED_C = re.compile(r"^\s*#\s*(?:\$\{\w+\}/)?([\w./-]+\.c)\b", re.M)
-_RUST_FN = re.compile(r"#\[no_mangle\]\s*\npub unsafe extern \"[^\"]+\" fn (\w+)")
+_CMAKE_COMMENTED_C = re.compile(r"^\s*#\s*(?:\$\{\w+\}/)?([\w./-]+\.c(?:pp)?)\b", re.M)
+# ...and the same names on a line that is NOT a comment. A flip's comment block EXPLAINS which
+# .c stayed — "rust_varargs_shim.c is NOT a translation reverted to C" — so the commented-out
+# rule alone reads the explanation as the fact and declares a live file flipped. Listed live
+# wins: that is the line cmake actually compiles.
+_CMAKE_LIVE_C = re.compile(r"^(?![ \t]*#)[^#\n]*?(?:\$\{\w+\}/)?([\w./-]+\.c(?:pp)?)\b", re.M)
+# Every `#[no_mangle]` fn DEFINITION. The previous spelling demanded `#[no_mangle]` immediately
+# followed by `pub unsafe extern "..."` on the very next line, which three real shapes break:
+# a comment between the attribute and the fn (snmpapi's SnmpUtilDbgPrint carries a six-line
+# note), a second attribute, and an indented item. Each miss reads as a LOST export — the
+# opposite of the truth — so this is the same tolerance `fn_coverage._RS_FN` already carries.
+# `[\s\S]*?` spans the gap but the `#[no_mangle]` must still be the nearest attribute block.
+_RUST_FN = re.compile(
+    r"#\[no_mangle\][^\n]*\n(?:[ \t]*(?://[^\n]*|#\[[^\n]*\])?\n)*"
+    r"[ \t]*(?:pub(?:\([^)]*\))?[ \t]+)?(?:unsafe[ \t]+)?"
+    r"(?:extern[ \t]+(?:\"\w+\"|\$\w+)[ \t]+)?fn[ \t]+(\w+)"
+)
 
 
 def dead_regions(text: str) -> list[tuple[int, int]]:
@@ -81,12 +104,19 @@ def defined_live(cfile: Path, sym: str) -> bool:
     `^sym(` alone cannot tell them apart. kernel32's four Get/SetFirmwareEnvironmentVariableEx*
     are declared in client/sysinfo.c and defined NOWHERE — matching the declaration reported
     them as "lost exports on master", which they are not. Require the `{`.
+
+    The name is at column 0 only in the house style where the return type sits on its own line.
+    Hand-written companions do not follow it — `rust_varargs_shim.c` writes
+    `void CDECL pSetupDebugPrint(...)` on one line — so the specifiers are allowed to precede
+    the name as long as the LINE starts at column 0 and no `(` intervenes. That last part is
+    what keeps a call inside an expression out; the `{` requirement does the rest.
     """
     try:
         text = cfile.read_text(errors="replace")
     except OSError:
         return False
-    for m in re.finditer(rf"^{re.escape(sym)}\s*\(", text, re.M):
+    pattern = rf"^(?:[A-Za-z_][^;()\n]*?[\s*])?{re.escape(sym)}\s*\("
+    for m in re.finditer(pattern, text, re.M):
         # walk to the matching close paren, then demand a body
         i, depth = m.end() - 1, 0
         while i < len(text):
@@ -125,13 +155,22 @@ def audit(name: str, ddir: Path, crate: Path) -> tuple[list[tuple[str, str]], in
     rust |= asm
 
     cml = ddir / "CMakeLists.txt"
-    commented = (
-        set(_CMAKE_COMMENTED_C.findall(cml.read_text(errors="replace"))) if cml.is_file() else set()
-    )
-    flipped = {c for c in ddir.rglob("*.c") if any(Path(f).name == c.name for f in commented)}
+    cml_text = cml.read_text(errors="replace") if cml.is_file() else ""
+    commented = set(_CMAKE_COMMENTED_C.findall(cml_text)) - set(_CMAKE_LIVE_C.findall(cml_text))
+    # `.cpp` too: shell32 and devmgr are C++ modules, and reading only `.c` made every export
+    # they define in a .cpp look undefined — three of shell32's reported LOST were really
+    # "the file this tool cannot see".
+    all_c = set(ddir.rglob("*.c")) | set(ddir.rglob("*.cpp"))
+    flipped = {c for c in all_c if any(Path(f).name == c.name for f in commented)}
+    # Every .c the cmake still compiles still DEFINES its symbols, so it serves the export just
+    # as Rust or assembly would. This is what `rust_varargs_shim.c` is: the entry point of a
+    # C-variadic export, which stable Rust cannot define at all.
+    live = all_c - flipped
 
     lost = []
     for sym in sorted(exports - rust):
+        if any(defined_live(cf, sym) for cf in live):
+            continue
         for cf in flipped:
             if defined_live(cf, sym):
                 lost.append((sym, str(cf.relative_to(ddir))))

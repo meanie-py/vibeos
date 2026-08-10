@@ -230,9 +230,17 @@ pub unsafe extern "C" fn FrLdrHeapRelease(HeapHandle: PVOID) {
 
 #[no_mangle]
 pub unsafe extern "C" fn FrLdrHeapCleanupAll() {
+    // `as PHEAP`: FrLdr*Heap are PVOID handles, and the C original's `#if DBG`
+    // block had a PHEAP local. Both of these blocks are `cfg(debug_assertions)`,
+    // which the release profile never set — so from the day this file was
+    // translated until 2026-07-28 the code below was never once type-checked,
+    // and the missing cast (14 x E0609 "no field on type c_void") sat here
+    // invisible. Turning debug-assertions on is what compiled it for the first
+    // time. A cfg'd-out branch is not "code that works"; it is code with no
+    // evidence either way.
     #[cfg(debug_assertions)]
     {
-        let Heap = FrLdrDefaultHeap;
+        let Heap = FrLdrDefaultHeap as PHEAP;
         TRACE(
             b"Heap statistics for default heap:\nCurrentAlloc=0x%lx, MaxAlloc=0x%lx, LargestAllocation=0x%lx\nNumAllocs=%ld, NumFrees=%ld\n\0".as_ptr() as PCHAR,
             (*Heap).CurrentAllocBytes,
@@ -253,7 +261,7 @@ pub unsafe extern "C" fn FrLdrHeapCleanupAll() {
 
     #[cfg(debug_assertions)]
     {
-        let Heap = FrLdrTempHeap;
+        let Heap = FrLdrTempHeap as PHEAP;
         TRACE(
             b"Heap statistics for temp heap:\nCurrentAlloc=0x%lx, MaxAlloc=0x%lx, LargestAllocation=0x%lx\nNumAllocs=%ld, NumFrees=%ld\n\0".as_ptr() as PCHAR,
             (*Heap).CurrentAllocBytes,

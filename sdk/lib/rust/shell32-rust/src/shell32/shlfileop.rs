@@ -1,9 +1,5 @@
-//! ORPHAN-BY-DESIGN: translated shell32 TU, parked pending substrate closure.
-//! Unblocked by the 2026-07-25 seal fixes (macro authority, Rust-label masking,
-//! goto replication, prototype/named-cast types); still needs SDK externs, Win32
-//! constants and resource IDs resolved before it compiles. Wiring it in this state
-//! would break the build for every lane rather than expose a regression.
-//! This is a PAID artifact — do not delete it to tidy up.
+//! FLIPPED: this TU is wired into the crate and shipping; the C++ original is
+//! commented out of dll/win32/shell32/CMakeLists.txt.
 // Deterministic UTF-16 literals from the selected C++ helper closure.
 pub static CPP_COM_WSTR_2CBECA8C1D10: [WCHAR; 3] = [0x002A, 0x003F, 0x0000];
 pub static CPP_COM_WSTR_77ECA80E282A: [WCHAR; 3] = [0x002E, 0x002E, 0x0000];
@@ -51,6 +47,128 @@ pub struct FILE_ENTRY {
     pub bFromWildcard: i32,
     pub bFromRelative: i32,
     pub bExists: i32,
+}
+
+/// `IProgressDialog` — shlobj.h:983. The bindgen islands render it OPAQUE
+/// (`IProgressDialog__bindgen_vtable(c_void)`), because it is a C++ pure-virtual class, so
+/// there are no method bindings to call and the translation's `p.SetTitle(..)` method syntax
+/// resolves to nothing. Spell the vtable out and dispatch through it, as the landed COM call
+/// sites do. A file-local item SHADOWS the prelude's glob, which is how `recycle_bin` and
+/// friends carry their own interface structs without colliding.
+///
+/// **The field ORDER is the ABI.** It follows shlobj.h exactly — IUnknown's three first, then
+/// the eleven IProgressDialog methods. Reordering silently calls the wrong slot.
+#[repr(C)]
+pub struct IProgressDialogVtbl {
+    pub QueryInterface:
+        unsafe extern "system" fn(*mut IProgressDialog, *const GUID, *mut *mut c_void) -> HRESULT,
+    pub AddRef: unsafe extern "system" fn(*mut IProgressDialog) -> ULONG,
+    pub Release: unsafe extern "system" fn(*mut IProgressDialog) -> ULONG,
+    pub StartProgressDialog: unsafe extern "system" fn(
+        *mut IProgressDialog,
+        HWND,
+        *mut c_void,
+        DWORD,
+        *const c_void,
+    ) -> HRESULT,
+    pub StopProgressDialog: unsafe extern "system" fn(*mut IProgressDialog) -> HRESULT,
+    pub SetTitle: unsafe extern "system" fn(*mut IProgressDialog, LPCWSTR) -> HRESULT,
+    pub SetAnimation:
+        unsafe extern "system" fn(*mut IProgressDialog, HINSTANCE, UINT) -> HRESULT,
+    pub HasUserCancelled: unsafe extern "system" fn(*mut IProgressDialog) -> BOOL,
+    pub SetProgress: unsafe extern "system" fn(*mut IProgressDialog, DWORD, DWORD) -> HRESULT,
+    pub SetProgress64:
+        unsafe extern "system" fn(*mut IProgressDialog, ULONGLONG, ULONGLONG) -> HRESULT,
+    pub SetLine: unsafe extern "system" fn(
+        *mut IProgressDialog,
+        DWORD,
+        LPCWSTR,
+        BOOL,
+        *const c_void,
+    ) -> HRESULT,
+    pub SetCancelMsg:
+        unsafe extern "system" fn(*mut IProgressDialog, LPCWSTR, *const c_void) -> HRESULT,
+    pub Timer: unsafe extern "system" fn(*mut IProgressDialog, DWORD, *const c_void) -> HRESULT,
+}
+
+#[repr(C)]
+pub struct IProgressDialog {
+    pub lpVtbl: *const IProgressDialogVtbl,
+}
+
+/// `#define IsDotDir(x) ((x[0]=='.') && ((x[1]==0) || ((x[1]=='.') && (x[2]==0))))`
+/// — shlfileop.cpp:32, file-local. Every call site already passes a `*const u16` and compares
+/// the result against 0, so this stays an inline fn returning BOOL rather than a macro.
+#[inline]
+unsafe fn IsDotDir(x: *const u16) -> BOOL {
+    (*x == b'.' as u16 && (*x.add(1) == 0 || (*x.add(1) == b'.' as u16 && *x.add(2) == 0))) as BOOL
+}
+
+/// `SHELL_ErrorBox` is already bound crate-wide against its `_RustBridge` WINAPI shim; import
+/// it rather than re-declaring, so there is one spelling of the shim's signature.
+use crate::win32::SHELL_ErrorBox;
+
+/// `CLSCTX_INPROC_SERVER` — com-sys spells enum constants `tag<ENUM>_<NAME>`, and the island
+/// re-exports the enum TYPES only, not their constants. Alias the bare name, as the prelude
+/// does for `REST_CLASSICSHELL`.
+use com_sys::tagCLSCTX_CLSCTX_INPROC_SERVER as CLSCTX_INPROC_SERVER;
+
+extern "system" {
+    /// shlwapi, `WINAPI` — hence `extern "system"`, matching how `recycle_bin` binds it.
+    fn PathFindFileNameW(path: LPCWSTR) -> LPWSTR;
+}
+
+extern "C" {
+    /// The genuine NARROW CRT `strcpy`: `SheGetDirA` and `IsNetDrive` operate on `char`
+    /// buffers, so this is not the `strcpyW` A/W alias the rest of the file uses.
+    fn strcpy(dst: *mut core::ffi::c_char, src: *const core::ffi::c_char)
+        -> *mut core::ffi::c_char;
+}
+
+extern "C" {
+    /// `folders/CRecycleBin.h` — plain C++ free functions with no `WINAPI`, so they are
+    /// __cdecl and belong in an `extern "C"` block, NOT `extern "system"`. The header now
+    /// declares them `EXTERN_C` so the C++ definition agrees on the unmangled name.
+    /// (`extern "C"` is LINKAGE, `WINAPI` is CALLING CONVENTION; i386 is the only arch that
+    /// catches getting the second one wrong.)
+    fn TRASH_CanTrashFile(wszPath: LPCWSTR) -> BOOL;
+    fn TRASH_TrashFile(wszPath: LPCWSTR) -> BOOL;
+}
+
+/// `ntbasedef.h:939 #define MAKELANGID(p, s) ((((USHORT)(s)) << 10) | (USHORT)(p))`.
+/// Each half is narrowed to USHORT BEFORE the shift, as the macro does.
+#[inline]
+fn MAKELANGID(p: USHORT, s: USHORT) -> DWORD {
+    (((s as DWORD) << 10) | (p as DWORD)) as DWORD
+}
+
+/// `commctrl.h:4831 #define DSA_GetItemCount(hdsa) (*(int *) (hdsa))` — a MACRO reading the
+/// count out of the DSA header, NOT a comctl32 export. Declaring it `extern` would compile
+/// and then fail to link against a symbol that does not exist.
+#[inline]
+unsafe fn DSA_GetItemCount(hdsa: HDSA) -> INT {
+    *(hdsa as *const INT)
+}
+
+/// `strsafe.h` — the byte-counted `StringCchCopyW`. An inline in the header, so there is no
+/// import to bind; `dialogs/filedefext.rs` carries the same shim.
+#[inline]
+unsafe fn StringCbCopyW(dst: LPWSTR, bytes: usize, src: LPCWSTR) -> HRESULT {
+    StringCchCopyW(dst, bytes / core::mem::size_of::<WCHAR>(), src)
+}
+
+/// `#define GET_FILENAME(fe) ((fe)->szFilename[0] ? (fe)->szFilename : (fe)->szFullPath)`
+/// — shlfileop.cpp:1995, file-local. A `macro_rules!`, not a fn: an out-of-line no-op or
+/// wrapper for a C macro is the optimization barrier that uncloaks latent ABI mismatches.
+macro_rules! GET_FILENAME {
+    ($fe:expr) => {{
+        let fe = $fe;
+        if *(*fe).szFilename != 0 {
+            (*fe).szFilename
+        } else {
+            (*fe).szFullPath
+        }
+    }};
 }
 
 #[repr(C)]
@@ -102,7 +220,7 @@ unsafe extern "C" fn SHELL32_FileOpErrorToHResult(err: i32, any_operations_abort
     return if is_de_err { E_FAIL } else { HRESULT_FROM_WIN32(err) };
 }
 unsafe extern "C" fn CanShowFileOpErrorUI(fos: *const SHFILEOPSTRUCTW) -> BOOL {
-    if ((*fos).fFlags & (FOF_SILENT) as u16) != 0 && (*fos).hwnd == 0 {
+    if ((*fos).fFlags & (FOF_SILENT) as u16) != 0 && (*fos).hwnd.is_null() {
         return FALSE;
     }
     if ((*fos).fFlags & (FOF_NOERRORUI) as u16) == 0 { 1 } else { 0 }
@@ -110,11 +228,11 @@ unsafe extern "C" fn CanShowFileOpErrorUI(fos: *const SHFILEOPSTRUCTW) -> BOOL {
 unsafe extern "C" fn HandleDesktopIniOp(Path: PCWSTR) {
     let Name = PathFindFileNameW(Path);
     let idx = 0 as usize;
-    if ((*Name.add(idx) | 32) != 0x0064u16 || _wcsicmp(Name, CPP_COM_WSTR_A5DBFDEBD401.as_ptr())) {
+    if ((*Name.add(idx) | 32) != 0x0064u16 || _wcsicmp(Name, CPP_COM_WSTR_A5DBFDEBD401.as_ptr()) != 0) {
         return;
     }
     let mut Dir: [u16; MAX_PATH as usize] = [0u16; MAX_PATH as usize];
-    if FAILED_UNEXPECTEDLY!(StringCchCopyW(Dir.as_mut_ptr(), _countof!(&Dir), Path)) {
+    if FAILED_UNEXPECTEDLY!(StringCchCopyW(Dir.as_mut_ptr(), _countof!(&Dir) as usize, Path)) {
         return;
     }
     PathRemoveFileSpecW(Dir.as_mut_ptr());
@@ -146,7 +264,7 @@ unsafe extern "C" fn confirm_msg_move_button(hDlg: HWND, iId: INT, xPos: *mut IN
         ShowWindow(hButton, (SW_HIDE) as i32);
     }
 }
-unsafe extern "C" fn ConfirmMsgBox_Paint(hDlg: HWND) -> isize {
+unsafe extern "C" fn ConfirmMsgBox_Paint(hDlg: HWND) -> INT_PTR {
     let mut ps: PAINTSTRUCT = core::mem::zeroed();
     let mut r: RECT = core::mem::zeroed();
     let hdc: HDC;
@@ -154,7 +272,7 @@ unsafe extern "C" fn ConfirmMsgBox_Paint(hDlg: HWND) -> isize {
 
     BeginPaint(hDlg, &mut ps);
     hdc = (ps.hdc).cast();
-    SetBkMode(hdc, TRANSPARENT);
+    SetBkMode(hdc, TRANSPARENT as i32);
     SetTextColor(hdc, GetSysColor((COLOR_BTNTEXT) as i32));
 
     GetClientRect(GetDlgItem(hDlg, (IDC_YESTOALL_MESSAGE) as i32), &mut r);
@@ -187,7 +305,7 @@ unsafe extern "C" fn ConfirmMsgBox_Paint(hDlg: HWND) -> isize {
     SelectObject(hdc, (hOldFont).cast());
     EndPaint(hDlg, &mut ps);
 
-    (TRUE) as isize
+    (TRUE) as INT_PTR
 }
 unsafe extern "C" fn ConfirmMsgBox_Init(hDlg: HWND, lParam: LPARAM) -> INT_PTR {
     let info = lParam as *mut confirm_msg_info;
@@ -201,8 +319,10 @@ unsafe extern "C" fn ConfirmMsgBox_Init(hDlg: HWND, lParam: LPARAM) -> INT_PTR {
 
     SetWindowTextW(hDlg, (*info).lpszCaption);
     ShowWindow(GetDlgItem(hDlg, (IDC_YESTOALL_MESSAGE) as i32), (SW_HIDE) as i32);
-    SetWindowLongPtrW(hDlg, DWLP_USER, (*info).lpszText as isize);
-    SendDlgItemMessageW(hDlg, (IDC_YESTOALL_ICON) as i32, STM_SETICON, ((*info).hIcon as usize) as u64, 0);
+    SetWindowLongPtrW(hDlg, DWLP_USER as i32, (*info).lpszText as LONG_PTR);
+    // `as WPARAM`, not `as u64`: WPARAM is UINT_PTR, so a literal 64 bakes amd64's width and
+    // does not even compile on i386. Name the semantic alias for every pointer-width cast.
+    SendDlgItemMessageW(hDlg, (IDC_YESTOALL_ICON) as i32, STM_SETICON, ((*info).hIcon as usize) as WPARAM, 0);
 
     GetClientRect(GetDlgItem(hDlg, (IDC_YESTOALL_MESSAGE) as i32), core::ptr::addr_of_mut!(r));
     hdc = GetDC(hDlg);
@@ -227,10 +347,9 @@ unsafe extern "C" fn ConfirmMsgBox_Init(hDlg: HWND, lParam: LPARAM) -> INT_PTR {
     confirm_msg_move_button(hDlg, (IDC_YESTOALL) as i32, core::ptr::addr_of_mut!(xPos), yOffset, (*info).bYesToAll);
     confirm_msg_move_button(hDlg, (IDYES) as i32, core::ptr::addr_of_mut!(xPos), yOffset, TRUE);
 
-    (TRUE) as isize
+    (TRUE) as INT_PTR
 }
-#[cfg(target_arch = "x86")]
-unsafe extern "stdcall" fn ConfirmMsgBoxProc(
+unsafe extern "system" fn ConfirmMsgBoxProc(
     hDlg: HWND,
     uMsg: UINT,
     wParam: WPARAM,
@@ -244,39 +363,14 @@ unsafe extern "stdcall" fn ConfirmMsgBoxProc(
             return ConfirmMsgBox_Paint(hDlg);
         }
         WM_COMMAND => {
-            EndDialog(hDlg, (wParam) as isize);
+            EndDialog(hDlg, (wParam) as INT_PTR);
         }
         WM_CLOSE => {
-            EndDialog(hDlg, (IDCANCEL) as isize);
+            EndDialog(hDlg, (IDCANCEL) as INT_PTR);
         }
         _ => {}
     }
-    (FALSE) as isize
-}
-
-#[cfg(not(target_arch = "x86"))]
-unsafe extern "C" fn ConfirmMsgBoxProc(
-    hDlg: HWND,
-    uMsg: UINT,
-    wParam: WPARAM,
-    lParam: LPARAM,
-) -> INT_PTR {
-    match uMsg {
-        WM_INITDIALOG => {
-            return ConfirmMsgBox_Init(hDlg, lParam);
-        }
-        WM_PAINT => {
-            return ConfirmMsgBox_Paint(hDlg);
-        }
-        WM_COMMAND => {
-            EndDialog(hDlg, (wParam) as isize);
-        }
-        WM_CLOSE => {
-            EndDialog(hDlg, (IDCANCEL) as isize);
-        }
-        _ => {}
-    }
-    (FALSE) as isize
+    (FALSE) as INT_PTR
 }
 #[no_mangle]
 pub unsafe extern "C" fn SHELL_ConfirmMsgBox(
@@ -302,7 +396,10 @@ pub unsafe extern "C" fn SHELL_ConfirmMsgBox(
 }
 unsafe extern "C" fn SHELL_ConfirmIDs(nKindOfDialog: i32, ids: *mut SHELL_ConfirmIDstruc) -> BOOL {
     (*ids).hIconInstance = shell32_hInstance;
-    match nKindOfDialog {
+    // Cast the SCRUTINEE, never the patterns: a cast is not legal in a pattern, and the
+    // `ASK_*` are island `u32` #defines against C's `int nKindOfDialog`. Arch-independent
+    // (all three islands agree), so widening here is not a width decision.
+    match nKindOfDialog as u32 {
         ASK_DELETE_FILE => {
             (*ids).icon_resource_id = IDI_SHELL_CONFIRM_DELETE;
             (*ids).caption_resource_id = IDS_DELETEITEM_CAPTION;
@@ -383,7 +480,7 @@ unsafe extern "C" fn SHELL_ConfirmDialogW(
     let hIcon: HICON;
     let mut ret: i32;
 
-    assert!((nKindOfDialog >= 0 && nKindOfDialog < 32) as BOOL);
+    assert!(nKindOfDialog >= 0 && nKindOfDialog < 32);
 
     if !op.is_null() && ((*op).dwYesToAllMask & (1 << nKindOfDialog)) != 0 {
         return TRUE;
@@ -409,12 +506,12 @@ unsafe extern "C" fn SHELL_ConfirmDialogW(
     args[0 as usize] = szDir as DWORD_PTR;
     FormatMessageW(
         FORMAT_MESSAGE_FROM_STRING | FORMAT_MESSAGE_ARGUMENT_ARRAY,
-        szText.as_ptr() as LPCWSTR,
+        szText.as_ptr() as *const c_void,
         0,
         0,
         szBuffer.as_mut_ptr() as PWSTR,
         core::mem::size_of_val(&szBuffer) as u32,
-        args.as_ptr() as *const core::ffi::VaList,
+        args.as_mut_ptr() as *mut va_list,
     );
 
     hIcon = LoadIconW(
@@ -469,7 +566,10 @@ unsafe extern "C" fn SHELL32_AnsiToUnicodeBuf(aPath: *const u8, wPath: *mut PWST
     *wPath = HeapAlloc(
         GetProcessHeap(),
         0,
-        (len * 0) as usize,
+        // C: `len * sizeof(WCHAR)`. The translation dropped the sizeof to a literal `0`, so
+        // this asked the heap for ZERO bytes and the MultiByteToWideChar below then wrote
+        // `len` wide chars into it. Compiles clean, overflows the heap on first ANSI call.
+        (len as usize * core::mem::size_of::<WCHAR>()) as SIZE_T,
     ) as PWSTR;
     if !(*wPath).is_null() {
         MultiByteToWideChar(
@@ -511,8 +611,8 @@ unsafe extern "C" fn FileOpCallback(op: *mut FILE_OPERATION, Event: FILEOPCALLBA
         }
     }
     let mut hr: HRESULT = S_OK;
-    if ((*op).Callback as usize) != 0 {
-        hr = ((*op).Callback)(Event, Source, Destination, Attributes, hrOp, (*op).CallerCallbackData);
+    if let Some(callback) = (*op).Callback {
+        hr = callback(Event, Source, Destination, Attributes, hrOp, (*op).CallerCallbackData);
         if hr == HRESULT_FROM_WIN32((ERROR_CANCELLED) as i32) {
             (*op).bCancelled = TRUE;
         }
@@ -527,7 +627,7 @@ pub unsafe extern "C" fn SHELL_DeleteDirectoryW(
 ) -> BOOL {
     let mut ret: BOOL = TRUE;
     let mut wfd: WIN32_FIND_DATAW = core::mem::zeroed();
-    let mut szTemp: [u16; MAX_PATH] = [0; MAX_PATH];
+    let mut szTemp: [u16; MAX_PATH as usize] = [0; MAX_PATH as usize];
 
     PathCombineW(szTemp.as_mut_ptr(), pszDir, CPP_COM_WSTR_E8A4B2EE7EDE.as_ptr());
     let hFind = FindFirstFileW(szTemp.as_ptr(), &mut wfd);
@@ -541,19 +641,21 @@ pub unsafe extern "C" fn SHELL_DeleteDirectoryW(
         pszDir,
         core::ptr::null(),
         wfd.dwFileAttributes,
+        S_OK,
     ) < 0
     {
         return FALSE;
     }
 
-    if bShowUI == 0
-        || (ret = SHELL_ConfirmDialogW(
+    if bShowUI == 0 || {
+        ret = SHELL_ConfirmDialogW(
             (*op).hWndOwner,
             (ASK_DELETE_FOLDER) as i32,
             pszDir,
-            core::ptr::null(),
-        )) != 0
-    {
+            core::ptr::null_mut(),
+        );
+        ret != 0
+    } {
         loop {
             if IsDotDir(wfd.cFileName.as_ptr()) != 0 {
                 // skip file/dir processing – check condition directly
@@ -566,7 +668,7 @@ pub unsafe extern "C" fn SHELL_DeleteDirectoryW(
                 }
 
                 if !(*op).progress.is_null() {
-                    (*op).bCancelled |= (*(*op).progress).HasUserCancelled();
+                    (*op).bCancelled |= ((*(*(*op).progress).lpVtbl).HasUserCancelled)((*op).progress);
                 }
             }
 
@@ -623,7 +725,7 @@ unsafe extern "C" fn SHNotifyRemoveDirectoryW(path: PCWSTR) -> u32 {
     let mut ret: i32 = RemoveDirectoryW(path);
     if ret == 0 {
         let dwAttr = GetFileAttributesW(path);
-        if IsAttrib!(dwAttr, FILE_ATTRIBUTE_READONLY) != 0 {
+        if IsAttrib!(dwAttr, FILE_ATTRIBUTE_READONLY) {
             if SetFileAttributesW(path, dwAttr & !FILE_ATTRIBUTE_READONLY) != 0 {
                 ret = RemoveDirectoryW(path);
             }
@@ -670,9 +772,9 @@ unsafe extern "C" fn _SetOperationTitle(op: *mut FILE_OPERATION) {
 
     LoadStringW(shell32_hInstance, IDS_FILEOOP_PREFLIGHT, szPreflight.as_mut_ptr(), (core::mem::size_of_val(&szPreflight) / 2) as i32);
 
-    (*progress).SetTitle(szTitle.as_ptr());
-    (*progress).SetLine(1, szPreflight.as_ptr(), 0i32, core::ptr::null_mut());
-    (*progress).SetAnimation(shell32_hInstance, animation_id);
+    ((*(*progress).lpVtbl).SetTitle)(progress, szTitle.as_ptr());
+    ((*(*progress).lpVtbl).SetLine)(progress, 1, szPreflight.as_ptr(), 0, core::ptr::null());
+    ((*(*progress).lpVtbl).SetAnimation)(progress, shell32_hInstance, animation_id);
 }
 unsafe extern "C" fn _SetOperationTexts(op: *mut FILE_OPERATION, src: PCWSTR, dest: PCWSTR) {
     if (*op).progress.is_null() || src.is_null() {
@@ -700,7 +802,7 @@ unsafe extern "C" fn _SetOperationTexts(op: *mut FILE_OPERATION, src: PCWSTR, de
     lstrcpynW(szFolderS.as_mut_ptr(), pathSpecS, length);
     args[0] = szFolderS.as_ptr() as DWORD_PTR;
 
-    match (*op).req.wFunc {
+    match (*(*op).req).wFunc {
         FO_COPY | FO_MOVE => {
             if dest.is_null() {
                 return;
@@ -726,7 +828,7 @@ unsafe extern "C" fn _SetOperationTexts(op: *mut FILE_OPERATION, src: PCWSTR, de
 
     FormatMessageW(
         FORMAT_MESSAGE_FROM_STRING | FORMAT_MESSAGE_ARGUMENT_ARRAY,
-        (*op).szBuilderString.as_ptr(),
+        (*op).szBuilderString.as_ptr() as *const c_void,
         0,
         0,
         szFinalString.as_mut_ptr(),
@@ -735,33 +837,49 @@ unsafe extern "C" fn _SetOperationTexts(op: *mut FILE_OPERATION, src: PCWSTR, de
     );
 
     let progress = (*op).progress;
-    (*(progress)).SetLine(1, fileSpecS, 0u8, core::ptr::null_mut());
-    (*(progress)).SetLine(2, szFinalString.as_mut_ptr(), 0u8, core::ptr::null_mut());
+    ((*(*progress).lpVtbl).SetLine)(progress, 1, fileSpecS, 0, core::ptr::null());
+    ((*(*progress).lpVtbl).SetLine)(progress, 2, szFinalString.as_mut_ptr(), 0, core::ptr::null());
 }
-#[no_mangle]
-pub unsafe extern "system" fn SHCopyProgressRoutine(
+/// The body. Kept separate from the exported entry point below so there is exactly one copy.
+unsafe fn SHCopyProgress(
     TotalFileSize: i64,
     TotalBytesTransferred: i64,
-    StreamSize: i64,
-    StreamBytesTransferred: i64,
-    dwStreamNumber: u32,
     dwCallbackReason: u32,
-    hSourceFile: isize,
-    hDestinationFile: isize,
     lpData: *mut core::ffi::c_void,
-) -> u32 {
+) -> DWORD {
     let op = lpData as *mut FILE_OPERATION;
     if !((*op).progress).is_null() {
         if dwCallbackReason & CALLBACK_STREAM_SWITCH != 0 {
             (*op).completedSize.QuadPart += (TotalFileSize) as u64;
         }
-        (*((*op).progress)).SetProgress64(
+        ((*(*(*op).progress).lpVtbl).SetProgress64)(
+            (*op).progress,
             ((*op).completedSize.QuadPart - (TotalFileSize) as u64 + (TotalBytesTransferred) as u64) as u64,
             ((*op).totalSize.QuadPart) as u64,
         );
-        (*op).bCancelled = (*((*op).progress)).HasUserCancelled() as i32;
+        (*op).bCancelled = ((*(*(*op).progress).lpVtbl).HasUserCancelled)((*op).progress);
     }
     0
+}
+
+// LPPROGRESS_ROUTINE is `extern "stdcall"` on i386 and `extern "C"` on amd64/arm64 — which is
+// precisely what `extern "system"` means, but rustc keeps the two spellings as DISTINCT
+// fn-pointer types, so `Some(routine)` is rejected unless the callback is written with the
+// island's own per-arch spelling. Hence the cfg twins, the same idiom the dialog procs use.
+// The params are also the island's real types (LARGE_INTEGER, not i64) for the same reason.
+#[no_mangle]
+pub unsafe extern "system" fn SHCopyProgressRoutine(
+    TotalFileSize: LARGE_INTEGER,
+    TotalBytesTransferred: LARGE_INTEGER,
+    _StreamSize: LARGE_INTEGER,
+    _StreamBytesTransferred: LARGE_INTEGER,
+    _dwStreamNumber: DWORD,
+    dwCallbackReason: DWORD,
+    _hSourceFile: HANDLE,
+    _hDestinationFile: HANDLE,
+    lpData: LPVOID,
+) -> DWORD {
+    SHCopyProgress(TotalFileSize.QuadPart, TotalBytesTransferred.QuadPart, dwCallbackReason, lpData)
 }
 unsafe extern "C" fn SHNotifyDeleteFileW(op: *mut FILE_OPERATION, path: PCWSTR) -> u32 {
     let mut ret: BOOL;
@@ -771,11 +889,11 @@ unsafe extern "C" fn SHNotifyDeleteFileW(op: *mut FILE_OPERATION, path: PCWSTR) 
 
     let mut wfd: WIN32_FIND_DATAW = core::mem::zeroed();
     let hfile: HANDLE = unsafe { FindFirstFileW(path, &mut wfd) };
-    if hfile != INVALID_HANDLE_VALUE && unsafe { IsAttribFile!(wfd.dwFileAttributes) } != 0 {
+    if hfile != INVALID_HANDLE_VALUE && IsAttribFile!(wfd.dwFileAttributes) {
         filesize = ((wfd.nFileSizeHigh as i64) << 32) | (wfd.nFileSizeLow as i64);
     }
     let attrib: u32 = if hfile != INVALID_HANDLE_VALUE { wfd.dwFileAttributes } else { 0 };
-    let aborted: BOOL = (unsafe { FileOpCallback(op, FOCE_PREDELETEITEM, path, core::ptr::null(), attrib) } < 0);
+    let aborted: BOOL = (unsafe { FileOpCallback(op, FOCE_PREDELETEITEM, path, core::ptr::null(), attrib, S_OK) } < 0) as BOOL;
     unsafe { FindClose(hfile); }
     if aborted != 0 {
         return ERROR_CANCELLED;
@@ -784,7 +902,7 @@ unsafe extern "C" fn SHNotifyDeleteFileW(op: *mut FILE_OPERATION, path: PCWSTR) 
     ret = unsafe { DeleteFileW(path) };
     if ret == 0 {
         let dwattr = unsafe { GetFileAttributesW(path) };
-        if unsafe { IsAttrib!(dwattr, FILE_ATTRIBUTE_READONLY | FILE_ATTRIBUTE_SYSTEM) } != 0 {
+        if IsAttrib!(dwattr, FILE_ATTRIBUTE_READONLY | FILE_ATTRIBUTE_SYSTEM) {
             if unsafe { SetFileAttributesW(path, dwattr & !(FILE_ATTRIBUTE_READONLY | FILE_ATTRIBUTE_SYSTEM)) } != 0 {
                 ret = unsafe { DeleteFileW(path) };
             }
@@ -802,17 +920,7 @@ unsafe extern "C" fn SHNotifyDeleteFileW(op: *mut FILE_OPERATION, path: PCWSTR) 
     }
     if ret != 0 {
         unsafe {
-            SHCopyProgressRoutine(
-                filesize,
-                filesize,
-                filesize,
-                filesize,
-                0,
-                CALLBACK_STREAM_SWITCH,
-                core::ptr::null_mut(),
-                core::ptr::null_mut(),
-                op as *mut core::ffi::c_void,
-            );
+            SHCopyProgress(filesize, filesize, CALLBACK_STREAM_SWITCH, op as *mut core::ffi::c_void);
             SHChangeNotify((SHCNE_DELETE) as i32, SHCNF_PATHW, (path).cast(), core::ptr::null());
         }
         return (ERROR_SUCCESS) as u32;
@@ -825,10 +933,13 @@ pub unsafe extern "system" fn Win32DeleteFileW(path: PCWSTR) -> u32 {
     (SHNotifyDeleteFileW(core::ptr::null_mut(), path) == (ERROR_SUCCESS) as u32) as u32
 }
 unsafe extern "C" fn CheckForError(op: *mut FILE_OPERATION, error: u32, src: PCWSTR) -> u32 {
-    let strTitle: CStringW;
-    let strMask: CStringW;
-    let strText: CStringW;
-    let lpMsgBuffer: PWSTR;
+    // `CStringW strTitle;` etc. — a C++ RAII local. The translation lowers it to an
+    // UNINITIALISED binding, which runs neither the constructor nor the destructor; spell
+    // the default ctor out so the Drop impl also runs. (`strMask` is declared and never
+    // used in the C++ too, so it is dropped here rather than carried as a dead binding.)
+    let mut strTitle = CStringW::new();
+    let mut strText = CStringW::new();
+    let mut lpMsgBuffer: PWSTR = core::ptr::null_mut();
 
     if error == (ERROR_SUCCESS) as u32 || CanShowFileOpErrorUI((*op).req) == 0 {
         return error;
@@ -840,26 +951,26 @@ unsafe extern "C" fn CheckForError(op: *mut FILE_OPERATION, error: u32, src: PCW
         FORMAT_MESSAGE_ALLOCATE_BUFFER | FORMAT_MESSAGE_FROM_SYSTEM,
         core::ptr::null_mut(),
         error,
-        MAKELANGID(LANG_NEUTRAL, SUBLANG_DEFAULT),
+        MAKELANGID(LANG_NEUTRAL as u16, SUBLANG_DEFAULT as u16) as u32,
         core::ptr::addr_of_mut!(lpMsgBuffer) as PWSTR,
         0,
         core::ptr::null_mut(),
     );
 
-    strText.Format(
+    strText.FormatResStr2(
         if (*(*op).req).wFunc == FO_COPY { IDS_COPYERROR } else { IDS_MOVEERROR },
         PathFindFileNameW(src),
         lpMsgBuffer,
     );
 
-    MessageBoxW((*op).hWndOwner, strText, strTitle, MB_ICONERROR);
+    MessageBoxW((*op).hWndOwner, strText.as_ptr(), strTitle.as_ptr(), MB_ICONERROR);
     LocalFree((lpMsgBuffer).cast());
 
     (*op).bHasDisplayedError += 1;
 
     error
 }
-unsafe extern "C" fn SHNotifyMoveFileW(op: *mut FILE_OPERATION, src: PCWSTR, dest: PCWSTR, isdir: u8) -> u32 {
+unsafe extern "C" fn SHNotifyMoveFileW(op: *mut FILE_OPERATION, src: PCWSTR, dest: PCWSTR, isdir: BOOL) -> u32 {
     _SetOperationTexts(op, src, dest);
     let is_ren: bool = (*(*op).req).wFunc == FO_RENAME;
     let mut attrib: u32 = GetFileAttributesW(src);
@@ -867,19 +978,19 @@ unsafe extern "C" fn SHNotifyMoveFileW(op: *mut FILE_OPERATION, src: PCWSTR, des
         attrib = if isdir != 0 { FILE_ATTRIBUTE_DIRECTORY } else { FILE_ATTRIBUTE_NORMAL };
     }
     let event = if is_ren { FOCE_PRERENAMEITEM } else { FOCE_PREMOVEITEM };
-    if FileOpCallback(op, event, src, dest, attrib) < 0 {
+    if FileOpCallback(op, event, src, dest, attrib, S_OK) < 0 {
         return ERROR_CANCELLED;
     }
-    let mut ret: i32 = MoveFileWithProgressW(src, dest, SHCopyProgressRoutine, op, MOVEFILE_REPLACE_EXISTING);
+    let mut ret: i32 = MoveFileWithProgressW(src, dest, Some(SHCopyProgressRoutine), op as *mut c_void, MOVEFILE_REPLACE_EXISTING);
     if ret == 0 {
         ret = MoveFileW(src, dest);
     }
     let mut last_error: u32 = GetLastError();
     if ret == 0 {
-        let mut dw_attr: u32 = SHFindAttrW(dest, (FALSE) as u8);
+        let mut dw_attr: u32 = SHFindAttrW(dest, FALSE);
         if dw_attr == INVALID_FILE_ATTRIBUTES {
             dw_attr = GetFileAttributesW(src);
-            if IsAttrib!(dw_attr, FILE_ATTRIBUTE_READONLY | FILE_ATTRIBUTE_SYSTEM) != 0 {
+            if IsAttrib!(dw_attr, FILE_ATTRIBUTE_READONLY | FILE_ATTRIBUTE_SYSTEM) {
                 if SetFileAttributesW(src, dw_attr & !(FILE_ATTRIBUTE_READONLY | FILE_ATTRIBUTE_SYSTEM)) != 0 {
                     ret = MoveFileW(src, dest);
                     last_error = GetLastError();
@@ -901,8 +1012,8 @@ unsafe extern "C" fn SHNotifyMoveFileW(op: *mut FILE_OPERATION, src: PCWSTR, des
             SHChangeNotify(
                 if isdir != 0 { (SHCNE_RENAMEFOLDER) as i32 } else { (SHCNE_RENAMEITEM) as i32 },
                 SHCNF_PATHW,
-                src,
-                dest
+                src as *const c_void,
+                dest as *const c_void
             );
         } else {
             SHChangeNotify(
@@ -944,11 +1055,11 @@ unsafe extern "C" fn SHNotifyCopyFileW(op: *mut FILE_OPERATION, src: PCWSTR, des
     _SetOperationTexts(op, src, dest);
 
     attribs = GetFileAttributesW(dest);
-    if FileOpCallback(op, FOCE_PRECOPYITEM, src, dest, attribs) < 0 {
+    if FileOpCallback(op, FOCE_PRECOPYITEM, src, dest, attribs, S_OK) < 0 {
         return ERROR_CANCELLED;
     }
 
-    if IsAttrib!(attribs, FILE_ATTRIBUTE_READONLY) != 0 {
+    if IsAttrib!(attribs, FILE_ATTRIBUTE_READONLY) {
         SetFileAttributesW(dest, attribs & !FILE_ATTRIBUTE_READONLY);
     }
 
@@ -959,7 +1070,7 @@ unsafe extern "C" fn SHNotifyCopyFileW(op: *mut FILE_OPERATION, src: PCWSTR, des
         }
     }
 
-    ret = CopyFileExW(src, dest, SHCopyProgressRoutine, op, core::ptr::addr_of_mut!((*op).bCancelled), bFailIfExists);
+    ret = CopyFileExW(src, dest, Some(SHCopyProgressRoutine), op as *mut c_void, core::ptr::addr_of_mut!((*op).bCancelled), bFailIfExists as u32);
     let error: u32 = if ret != 0 { 0 } else { GetLastError() };
     FileOpCallback(op, FOCE_POSTCOPYITEM, src, dest, attribs, HRESULT_FROM_WIN32((error) as i32));
     if error == 0 {
@@ -1005,11 +1116,11 @@ pub unsafe extern "system" fn SHCreateDirectoryExW(
     sec: *mut SECURITY_ATTRIBUTES,
 ) -> i32 {
     let mut ret: i32 = (ERROR_BAD_PATHNAME) as i32;
-    if PathIsRelativeW(path) {
+    if PathIsRelativeW(path) != 0 {
         SetLastError((ret) as u32);
     } else {
         ret = (SHNotifyCreateDirectoryW(path, sec)) as i32;
-        if ret != ERROR_SUCCESS
+        if ret != ERROR_SUCCESS as i32
             && ret != (ERROR_FILE_EXISTS) as i32
             && ret != (ERROR_ALREADY_EXISTS) as i32
             && ret != (ERROR_FILENAME_EXCED_RANGE) as i32
@@ -1021,7 +1132,7 @@ pub unsafe extern "system" fn SHCreateDirectoryExW(
                 path,
                 (MAX_PATH) as i32,
             );
-            let pEnd: PCWSTR = PathAddBackslashW(szTemp.as_ptr());
+            let pEnd: PCWSTR = PathAddBackslashW(szTemp.as_mut_ptr());
             let mut pSlash: PWSTR = szTemp.as_mut_ptr().add(3 as usize);
             while *pSlash != 0 {
                 while *pSlash != 0 && *pSlash != 0x5Cu16 {
@@ -1046,7 +1157,11 @@ pub unsafe extern "system" fn SHCreateDirectoryExW(
             && !hWnd.is_null()
             && (ERROR_CANCELLED != (ret) as u32 && ERROR_ALREADY_EXISTS != (ret) as u32)
         {
-            ShellMessageBoxW(
+            // precomp.h:63 is `#define ShellMessageBoxW ShellMessageBoxWrapW`, so the C call
+            // here never reached shlwapi's ShellMessageBoxW at all. Calling the island's
+            // ShellMessageBoxW instead links against a symbol shell32 does not import
+            // (i386 reports it as `_ShellMessageBoxW`, cdecl-decorated and absent).
+            ShellMessageBoxWrapW(
                 shell32_hInstance,
                 hWnd,
                 MAKEINTRESOURCEW(IDS_CREATEFOLDER_DENIED),
@@ -1059,7 +1174,7 @@ pub unsafe extern "system" fn SHCreateDirectoryExW(
     }
     ret
 }
-unsafe extern "C" fn SHFindAttrW(pName: PCWSTR, fileOnly: u8) -> u32 {
+unsafe extern "C" fn SHFindAttrW(pName: PCWSTR, fileOnly: BOOL) -> u32 {
     let mut wfd: WIN32_FIND_DATAW = core::mem::zeroed();
     let b_FileMask = fileOnly != 0 && !StrPBrkW(pName, CPP_COM_WSTR_2CBECA8C1D10.as_ptr()).is_null();
     let mut dwAttr: u32 = INVALID_FILE_ATTRIBUTES;
@@ -1082,7 +1197,7 @@ unsafe extern "C" fn SHFindAttrW(pName: PCWSTR, fileOnly: u8) -> u32 {
     dwAttr
 }
 unsafe extern "C" fn _ConvertAtoW(
-    strSrc: *const u8,
+    strSrc: LPCSTR,
     pStrDest: *mut PCWSTR,
     isList: i32,
 ) -> u32 {
@@ -1094,10 +1209,10 @@ unsafe extern "C" fn _ConvertAtoW(
 
     let mut sizeA: i32 = 0;
     if isList != 0 {
-        let mut tmpSrc: *const u8 = strSrc;
+        let mut tmpSrc: LPCSTR = strSrc;
         loop {
             let size: i32 =
-                lstrlenA(tmpSrc as *const i8) + 1;
+                lstrlenA(tmpSrc) + 1;
             sizeA += size;
             tmpSrc = tmpSrc.offset(size as isize);
             if size == 1 {
@@ -1105,13 +1220,13 @@ unsafe extern "C" fn _ConvertAtoW(
             }
         }
     } else {
-        sizeA = lstrlenA(strSrc as *const i8) + 1;
+        sizeA = lstrlenA(strSrc) + 1;
     }
 
     let sizeW: i32 = MultiByteToWideChar(
         CP_ACP,
         0,
-        strSrc as *const i8,
+        strSrc,
         sizeA,
         core::ptr::null_mut(),
         0,
@@ -1123,7 +1238,7 @@ unsafe extern "C" fn _ConvertAtoW(
     let strDest: *mut u16 = HeapAlloc(
         GetProcessHeap(),
         0,
-        (sizeW as usize) * core::mem::size_of::<u16>(),
+        ((sizeW as usize) * core::mem::size_of::<u16>()) as SIZE_T,
     ) as *mut u16;
     if strDest.is_null() {
         return ERROR_OUTOFMEMORY;
@@ -1132,7 +1247,7 @@ unsafe extern "C" fn _ConvertAtoW(
     let err: i32 = MultiByteToWideChar(
         CP_ACP,
         0,
-        strSrc as *const i8,
+        strSrc,
         sizeA,
         strDest,
         sizeW,
@@ -1153,16 +1268,16 @@ unsafe extern "C" fn _ConvertAtoW(
 #[no_mangle]
 pub unsafe extern "system" fn SHFileOperationA(lpFileOp: LPSHFILEOPSTRUCTA) -> i32 {
     let mut errCode: i32;
-    let retCode: i32;
-    let mut nFileOp: SHFILEOPSTRUCTW = 0;
+    let mut retCode: i32 = 0;
+    let mut nFileOp: SHFILEOPSTRUCTW = core::mem::zeroed();
 
     nFileOp.hwnd = (*lpFileOp).hwnd;
     nFileOp.wFunc = (*lpFileOp).wFunc;
     nFileOp.fFlags = (*lpFileOp).fFlags;
 
-    errCode = (_ConvertAtoW((*lpFileOp).pFrom, &mut nFileOp.pFrom, TRUE)) as i32;
+    errCode = (_ConvertAtoW((*lpFileOp).pFrom, core::ptr::addr_of_mut!(nFileOp.pFrom), TRUE)) as i32;
     if errCode != 0 {
-        'cleanup: loop {
+        loop {
             if !nFileOp.pFrom.is_null() {
                 HeapFree(GetProcessHeap(), 0, nFileOp.pFrom as PVOID);
             }
@@ -1186,9 +1301,9 @@ pub unsafe extern "system" fn SHFileOperationA(lpFileOp: LPSHFILEOPSTRUCTA) -> i
     }
 
     if FO_DELETE != (nFileOp.wFunc & FO_MASK) {
-        errCode = (_ConvertAtoW((*lpFileOp).pTo, &mut nFileOp.pTo, TRUE)) as i32;
+        errCode = (_ConvertAtoW((*lpFileOp).pTo, core::ptr::addr_of_mut!(nFileOp.pTo), TRUE)) as i32;
         if errCode != 0 {
-            'cleanup: loop {
+            loop {
                 if !nFileOp.pFrom.is_null() {
                     HeapFree(GetProcessHeap(), 0, nFileOp.pFrom as PVOID);
                 }
@@ -1213,9 +1328,9 @@ pub unsafe extern "system" fn SHFileOperationA(lpFileOp: LPSHFILEOPSTRUCTA) -> i
     }
 
     if nFileOp.fFlags & (FOF_SIMPLEPROGRESS) as u16 != 0 {
-        errCode = (_ConvertAtoW((*lpFileOp).lpszProgressTitle, &mut nFileOp.lpszProgressTitle, FALSE)) as i32;
+        errCode = (_ConvertAtoW((*lpFileOp).lpszProgressTitle, core::ptr::addr_of_mut!(nFileOp.lpszProgressTitle), FALSE)) as i32;
         if errCode != 0 {
-            'cleanup: loop {
+            loop {
                 if !nFileOp.pFrom.is_null() {
                     HeapFree(GetProcessHeap(), 0, nFileOp.pFrom as PVOID);
                 }
@@ -1241,7 +1356,7 @@ pub unsafe extern "system" fn SHFileOperationA(lpFileOp: LPSHFILEOPSTRUCTA) -> i
 
     retCode = SHFileOperationW(&mut nFileOp);
 
-    'cleanup: loop {
+    loop {
         if !nFileOp.pFrom.is_null() {
             HeapFree(GetProcessHeap(), 0, nFileOp.pFrom as PVOID);
         }
@@ -1268,20 +1383,20 @@ unsafe extern "C" fn grow_list(list: *mut FILE_LIST) {
         GetProcessHeap(),
         HEAP_ZERO_MEMORY,
         (*list).feFiles as *mut core::ffi::c_void,
-        ((*list).num_alloc * 2) as usize * core::mem::size_of::<FILE_ENTRY>(),
+        (((*list).num_alloc * 2) as usize * core::mem::size_of::<FILE_ENTRY>()) as SIZE_T,
     ) as *mut FILE_ENTRY;
     (*list).feFiles = newx;
     (*list).num_alloc *= 2;
 }
 unsafe extern "C" fn add_file_to_entry(feFile: *mut FILE_ENTRY, szFile: PCWSTR) {
     let mut dwLen = lstrlenW(szFile) + 1;
-    let ptr: PCWSTR;
+    let mut ptr: PCWSTR;
     let ptr2: PCWSTR;
 
     (*feFile).szFullPath = HeapAlloc(
         GetProcessHeap(),
         0,
-        (dwLen as usize) * core::mem::size_of::<u16>(),
+        ((dwLen as usize) * core::mem::size_of::<u16>()) as SIZE_T,
     ) as PWSTR;
     lstrcpyW((*feFile).szFullPath, szFile);
 
@@ -1296,7 +1411,7 @@ unsafe extern "C" fn add_file_to_entry(feFile: *mut FILE_ENTRY, szFile: PCWSTR) 
         (*feFile).szDirectory = HeapAlloc(
             GetProcessHeap(),
             0,
-            (dwLen as usize) * core::mem::size_of::<u16>(),
+            ((dwLen as usize) * core::mem::size_of::<u16>()) as SIZE_T,
         ) as PWSTR;
         lstrcpynW((*feFile).szDirectory, szFile, dwLen);
 
@@ -1305,7 +1420,7 @@ unsafe extern "C" fn add_file_to_entry(feFile: *mut FILE_ENTRY, szFile: PCWSTR) 
         (*feFile).szFilename = HeapAlloc(
             GetProcessHeap(),
             0,
-            filename_char_len * core::mem::size_of::<u16>(),
+            (filename_char_len * core::mem::size_of::<u16>()) as SIZE_T,
         ) as PWSTR;
         lstrcpyW(
             (*feFile).szFilename,
@@ -1323,11 +1438,11 @@ unsafe extern "C" fn wildcard_to_file(szWildCard: PCWSTR, szFileName: PCWSTR) ->
     }
     let dwDirLen: u32 = ((ptr as usize) - (szWildCard as usize) + 1 as usize) as u32;
 
-    let dwFullLen: u32 = dwDirLen + lstrlenW(szFileName) + 1 as u32;
+    let dwFullLen: u32 = dwDirLen + lstrlenW(szFileName) as u32 + 1;
     let szFullPath: PWSTR = HeapAlloc(
         GetProcessHeap(),
         0,
-        (dwFullLen as usize) * core::mem::size_of::<u16>(),
+        ((dwFullLen as usize) * core::mem::size_of::<u16>()) as SIZE_T,
     ) as PWSTR;
 
     lstrcpynW(szFullPath, szWildCard, (dwDirLen + 1 as u32) as i32);
@@ -1354,13 +1469,13 @@ unsafe extern "C" fn parse_wildcard_files(flList: *mut FILE_LIST, szFile: PCWSTR
             }
 
             szFullPath = wildcard_to_file(szFile, wfd.cFileName.as_ptr());
-            file = &mut (*flList).feFiles.offset(*pdwListIndex as isize);
+            file = (*flList).feFiles.offset(*pdwListIndex as isize);
             *pdwListIndex = (*pdwListIndex).wrapping_add(1);
             add_file_to_entry(file, szFullPath);
             (*file).bFromWildcard = TRUE;
             (*file).attributes = wfd.dwFileAttributes;
 
-            if IsAttribDir!((*file).attributes) != 0 {
+            if IsAttribDir!((*file).attributes) {
                 (*flList).bAnyDirectories = TRUE;
             }
 
@@ -1374,7 +1489,7 @@ unsafe extern "C" fn parse_wildcard_files(flList: *mut FILE_LIST, szFile: PCWSTR
 }
 unsafe extern "C" fn parse_file_list(flList: *mut FILE_LIST, szFiles: PCWSTR) -> i32 {
     let mut ptr = szFiles;
-    let mut szCurFile: [u16; MAX_PATH] = [0; MAX_PATH];
+    let mut szCurFile: [u16; MAX_PATH as usize] = [0; MAX_PATH as usize];
     let mut i: u32 = 0;
 
     if szFiles.is_null() {
@@ -1392,7 +1507,7 @@ unsafe extern "C" fn parse_file_list(flList: *mut FILE_LIST, szFiles: PCWSTR) ->
     }
 
     (*flList).feFiles = HeapAlloc(GetProcessHeap(), HEAP_ZERO_MEMORY,
-                                ((*flList).num_alloc * core::mem::size_of::<FILE_ENTRY>() as u32) as usize) as *mut FILE_ENTRY;
+                                ((*flList).num_alloc * core::mem::size_of::<FILE_ENTRY>() as u32) as SIZE_T) as *mut FILE_ENTRY;
 
     while *ptr != 0 {
         if i >= (*flList).num_alloc {
@@ -1415,7 +1530,7 @@ unsafe extern "C" fn parse_file_list(flList: *mut FILE_LIST, szFiles: PCWSTR) ->
             (*flList).bAnyFromWildcard = TRUE;
             i = i.wrapping_sub(1);
         } else {
-            let file = &mut (*flList).feFiles.offset(i as isize);
+            let file = (*flList).feFiles.offset(i as isize);
             add_file_to_entry(file, szCurFile.as_ptr());
             (*file).attributes = GetFileAttributesW((*file).szFullPath);
             (*file).bExists = ((*file).attributes != INVALID_FILE_ATTRIBUTES) as i32;
@@ -1424,7 +1539,7 @@ unsafe extern "C" fn parse_file_list(flList: *mut FILE_LIST, szFiles: PCWSTR) ->
                 (*flList).bAnyDontExist = TRUE;
             }
 
-            if IsAttribDir!((*file).attributes) != 0 {
+            if IsAttribDir!((*file).attributes) {
                 (*flList).bAnyDirectories = TRUE;
             }
         }
@@ -1466,25 +1581,32 @@ unsafe extern "C" fn destroy_file_list(flList: *mut FILE_LIST) {
         ((*flList).feFiles).cast()
     );
 }
-unsafe extern "C" fn try_find_new_name(szDestPath: *const u16) -> CStringW {
-    let mut mask = CStringW::new(szDestPath);
-    let ext = CStringW::new(PathFindExtensionW(szDestPath));
+/// `static` in the C++ and returns a `CStringW` by value, so it stays a plain `unsafe fn`:
+/// giving it `extern "C"` would put a non-FFI-safe return type on a C ABI for no caller.
+unsafe fn try_find_new_name(szDestPath: *const u16) -> CStringW {
+    let mut mask = CStringW::from_ptr(szDestPath);
+    let ext = CStringW::from_ptr(PathFindExtensionW(szDestPath));
     if !ext.IsEmpty() {
         mask = mask.Left(mask.GetLength() - ext.GetLength());
     }
-    mask += CPP_COM_WSTR_926483D22C70.as_ptr() + ext;
+    // `mask += L" (%d)" + ext` — ATL's `operator+(PCXSTR, const CStringT&)` builds the
+    // concatenation first; appending the two pieces in order gives the same string.
+    mask.Append(CPP_COM_WSTR_926483D22C70.as_ptr());
+    mask.Append(ext.as_ptr());
     let mut newName = CStringW::new();
     for i in 1 .. NEW_FILENAME_ON_COPY_TRIES {
-        newName.Format(mask, i);
-        if !PathFileExistsW(newName) {
+        newName.FormatInt(mask.as_ptr(), i);
+        // `!PathFileExistsW(...)` — the C++ negates a BOOL. Rust `!` on an i32 is bitwise
+        // NOT, so this MUST be an explicit `== 0` or every path reads as "does not exist".
+        if PathFileExistsW(newName.as_ptr()) == 0 {
             return newName;
         }
     }
-    return CStringW();
+    return CStringW::new();
 }
 unsafe extern "C" fn copy_dir_to_dir(op: *mut FILE_OPERATION, feFrom: *const FILE_ENTRY, szDestPath: PCWSTR) {
-    let mut szFrom: [u16; MAX_PATH] = [0u16; MAX_PATH];
-    let mut szTo: [u16; MAX_PATH] = [0u16; MAX_PATH];
+    let mut szFrom: [u16; MAX_PATH as usize] = [0u16; MAX_PATH as usize];
+    let mut szTo: [u16; MAX_PATH as usize] = [0u16; MAX_PATH as usize];
     let mut flFromNew: FILE_LIST = core::mem::zeroed();
     let mut flToNew: FILE_LIST = core::mem::zeroed();
 
@@ -1543,7 +1665,7 @@ unsafe extern "C" fn copy_file_to_file(op: *mut FILE_OPERATION, szFrom: PCWSTR, 
         if ((*(*op).req).fFlags & (FOF_RENAMEONCOLLISION) as u16) != 0 {
             let newPath = try_find_new_name(szTo);
             if !newPath.IsEmpty() {
-                return if SHNotifyCopyFileW(op, szFrom, newPath, FALSE) == 0 { 1 } else { 0 };
+                return if SHNotifyCopyFileW(op, szFrom, newPath.as_ptr(), FALSE) == 0 { 1 } else { 0 };
             }
         } else if ((*(*op).req).fFlags & (FOF_NOCONFIRMATION) as u16) == 0 {
             if SHELL_ConfirmDialogW((*op).hWndOwner, (ASK_OVERWRITE_FILE) as i32, PathFindFileNameW(szTo), op) == 0 {
@@ -1558,8 +1680,8 @@ unsafe extern "C" fn copy_to_dir(op: *mut FILE_OPERATION, feFrom: *const FILE_EN
         SHNotifyCreateDirectoryW((*feTo).szFullPath, core::ptr::null_mut());
     }
 
-    if IsAttribFile!((*feFrom).attributes) != 0 {
-        let mut szDestPath = [0u16; MAX_PATH];
+    if IsAttribFile!((*feFrom).attributes) {
+        let mut szDestPath = [0u16; MAX_PATH as usize];
         PathCombineW(szDestPath.as_mut_ptr(), (*feTo).szFullPath, (*feFrom).szFilename);
         copy_file_to_file(op, (*feFrom).szFullPath, szDestPath.as_ptr());
     } else if !((*(*op).req).fFlags & (FOF_FILESONLY) as u16 != 0 && (*feFrom).bFromWildcard != 0) {
@@ -1567,7 +1689,7 @@ unsafe extern "C" fn copy_to_dir(op: *mut FILE_OPERATION, feFrom: *const FILE_EN
     }
 }
 unsafe extern "C" fn create_dest_dirs(szDestDir: PCWSTR) {
-    let mut dir = [0u16; MAX_PATH];
+    let mut dir = [0u16; MAX_PATH as usize];
     let mut ptr = StrChrW(szDestDir, '\\' as u16);
     while ptr.is_null() == false && {
         let new_ptr = StrChrW(ptr.add(1), '\\' as u16);
@@ -1634,7 +1756,7 @@ unsafe extern "C" fn copy_files(op: *mut FILE_OPERATION, multiDest: BOOL, flFrom
             unsafe {
                 (*flTo).dwNumFiles = 1;
             }
-        } else if unsafe { IsAttribDir!((*fileDest).attributes) != 0 } {
+        } else if unsafe { IsAttribDir!((*fileDest).attributes) } {
             i = 1;
             while i < unsafe { (*flTo).dwNumFiles } {
                 if unsafe { !IsAttribDir!((*(*flTo).feFiles.add(i as usize)).attributes) ||
@@ -1650,13 +1772,13 @@ unsafe extern "C" fn copy_files(op: *mut FILE_OPERATION, multiDest: BOOL, flFrom
         }
 
         if unsafe { PathFileExistsW((*fileDest).szFullPath) != 0 &&
-              IsAttribFile!((*fileDest).attributes) != 0 } {
+              IsAttribFile!((*fileDest).attributes) } {
             return (ERROR_CANCELLED) as i32;
         }
 
         if unsafe { (*flTo).dwNumFiles == 1 && (*fileDest).bFromRelative != 0 &&
-              !PathFileExistsW((*fileDest).szFullPath) } {
-            return ERROR_CANCELLED;
+              PathFileExistsW((*fileDest).szFullPath) == 0 } {
+            return ERROR_CANCELLED as HRESULT;
         }
     }
 
@@ -1668,55 +1790,55 @@ unsafe extern "C" fn copy_files(op: *mut FILE_OPERATION, multiDest: BOOL, flFrom
             fileDest = unsafe { (*flTo).feFiles.add(i as usize) as *const FILE_ENTRY };
         }
 
-        if unsafe { IsAttribDir!((*entryToCopy).attributes) != 0 &&
-              !lstrcmpiW((*entryToCopy).szFullPath, (*fileDest).szDirectory) } {
-            return ERROR_SUCCESS;
+        if unsafe { IsAttribDir!((*entryToCopy).attributes) &&
+              lstrcmpiW((*entryToCopy).szFullPath, (*fileDest).szDirectory) == 0 } {
+            return ERROR_SUCCESS as HRESULT;
         }
 
         unsafe {
             create_dest_dirs((*fileDest).szDirectory);
         }
 
-        if unsafe { !lstrcmpiW((*entryToCopy).szFullPath, (*fileDest).szFullPath) } {
-            if unsafe { IsAttribFile!((*entryToCopy).attributes) != 0 } {
-                return ERROR_NO_MORE_SEARCH_HANDLES;
+        if unsafe { lstrcmpiW((*entryToCopy).szFullPath, (*fileDest).szFullPath) == 0 } {
+            if unsafe { IsAttribFile!((*entryToCopy).attributes) } {
+                return ERROR_NO_MORE_SEARCH_HANDLES as HRESULT;
             } else {
-                return ERROR_SUCCESS;
+                return ERROR_SUCCESS as HRESULT;
             }
         }
 
         if (unsafe { (*flFrom).dwNumFiles > 1 && (*flTo).dwNumFiles == 1 }) ||
-            unsafe { IsAttribDir!((*fileDest).attributes) != 0 } {
+            unsafe { IsAttribDir!((*fileDest).attributes) } {
             unsafe {
                 copy_to_dir(op, entryToCopy, fileDest);
             }
-        } else if unsafe { IsAttribDir!((*entryToCopy).attributes) != 0 } {
+        } else if unsafe { IsAttribDir!((*entryToCopy).attributes) } {
             unsafe {
                 copy_dir_to_dir(op, entryToCopy, (*fileDest).szFullPath);
             }
         } else {
-            if unsafe { !copy_file_to_file(op, (*entryToCopy).szFullPath, (*fileDest).szFullPath) } {
+            if unsafe { copy_file_to_file(op, (*entryToCopy).szFullPath, (*fileDest).szFullPath) == 0 } {
                 unsafe {
                     (*(*op).req).fAnyOperationsAborted = TRUE;
                 }
-                return ERROR_CANCELLED;
+                return ERROR_CANCELLED as HRESULT;
             }
         }
 
         unsafe {
             if !(*op).progress.is_null() {
-                (*op).bCancelled |= (*(*op).progress).HasUserCancelled();
+                (*op).bCancelled |= ((*(*(*op).progress).lpVtbl).HasUserCancelled)((*op).progress);
             }
         }
 
         if unsafe { (*op).bCancelled != 0 } {
-            return ERROR_CANCELLED;
+            return ERROR_CANCELLED as HRESULT;
         }
 
         i += 1;
     }
 
-    ERROR_SUCCESS
+    ERROR_SUCCESS as HRESULT
 }
 unsafe extern "C" fn confirm_delete_list(
     hWnd: HWND,
@@ -1728,7 +1850,7 @@ unsafe extern "C" fn confirm_delete_list(
         let mut tmp: [u16; 8] = [0u16; 8];
         wnsprintfW(
             tmp.as_mut_ptr(),
-            tmp.len(),
+            tmp.len() as i32,
             CPP_COM_WSTR_A9EDBA2FC474.as_ptr(),
             (*flFrom).dwNumFiles,
         );
@@ -1740,7 +1862,7 @@ unsafe extern "C" fn confirm_delete_list(
         );
     } else {
         let fileEntry: *const FILE_ENTRY = (*flFrom).feFiles;
-        if IsAttribFile!((*fileEntry).attributes) != 0 {
+        if IsAttribFile!((*fileEntry).attributes) {
             return SHELL_ConfirmDialogW(
                 hWnd,
                 if fTrash != 0 { (ASK_TRASH_FILE) as i32 } else { (ASK_DELETE_FILE) as i32 },
@@ -1763,18 +1885,20 @@ unsafe extern "C" fn delete_files(op: *mut FILE_OPERATION, flFrom: *const FILE_L
     let bTrash: BOOL;
 
     if (*flFrom).dwNumFiles == 0 {
-        return ERROR_SUCCESS;
+        return ERROR_SUCCESS as HRESULT;
     }
 
     let first_fe = (*flFrom).feFiles.offset(0 as isize);
-    bTrash = ((*(*op).req).fFlags & (FOF_ALLOWUNDO) as u16) != 0
-        && TRASH_CanTrashFile((*first_fe).szFullPath) != 0;
+    bTrash = (((*(*op).req).fFlags & (FOF_ALLOWUNDO) as u16) != 0
+        && TRASH_CanTrashFile((*first_fe).szFullPath) != 0) as BOOL;
 
+    // C has this as `BOOL confirm`; a Rust `bool` is the faithful shape here because every
+    // use is a condition, and it keeps the assignment below from being a silent int.
     let mut confirm = ((*(*op).req).fFlags & (FOF_NOCONFIRMATION) as u16) == 0;
     if bTrash != 0 && SHELL_GetSetting!(SSF_NOCONFIRMRECYCLE, fNoConfirmRecycle) != 0 {
-        confirm = FALSE;
+        confirm = false;
     }
-    if confirm != 0 || (bTrash == 0 && ((*(*op).req).fFlags & (FOF_WANTNUKEWARNING) as u16) != 0) {
+    if confirm || (bTrash == 0 && ((*(*op).req).fFlags & (FOF_WANTNUKEWARNING) as u16) != 0) {
         if confirm_delete_list((*op).hWndOwner, ((*(*op).req).fFlags) as u32, bTrash, flFrom) == 0 {
             (*(*op).req).fAnyOperationsAborted = TRUE;
             return 0;
@@ -1783,7 +1907,7 @@ unsafe extern "C" fn delete_files(op: *mut FILE_OPERATION, flFrom: *const FILE_L
 
     for i in 0..(*flFrom).dwNumFiles {
         let file_entry = (*flFrom).feFiles.offset(i as isize);
-        if (*file_entry).attributes == 1.wrapping_neg() {
+        if (*file_entry).attributes == INVALID_FILE_ATTRIBUTES {
             return (ERROR_SHELL_INTERNAL_FILE_NOT_FOUND) as i32;
         }
     }
@@ -1791,7 +1915,7 @@ unsafe extern "C" fn delete_files(op: *mut FILE_OPERATION, flFrom: *const FILE_L
     for i in 0..(*flFrom).dwNumFiles {
         bPathExists = TRUE;
         let file_entry = (*flFrom).feFiles.offset(i as isize);
-        if IsAttribFile!((*file_entry).attributes) == 0
+        if !IsAttribFile!((*file_entry).attributes)
             && ((*(*op).req).fFlags & (FOF_FILESONLY) as u16) != 0
             && (*file_entry).bFromWildcard != 0
         {
@@ -1800,7 +1924,7 @@ unsafe extern "C" fn delete_files(op: *mut FILE_OPERATION, flFrom: *const FILE_L
 
         if bTrash != 0 {
             if TRASH_TrashFile((*file_entry).szFullPath) != 0 {
-                let event = if IsAttribFile!((*file_entry).attributes) != 0 {
+                let event = if IsAttribFile!((*file_entry).attributes) {
                     SHCNE_DELETE
                 } else {
                     SHCNE_RMDIR
@@ -1808,7 +1932,7 @@ unsafe extern "C" fn delete_files(op: *mut FILE_OPERATION, flFrom: *const FILE_L
                 SHChangeNotify(
                     (event) as i32,
                     SHCNF_PATHW,
-                    (*file_entry).szFullPath,
+                    (*file_entry).szFullPath as *const c_void,
                     core::ptr::null_mut(),
                 );
                 continue;
@@ -1833,9 +1957,9 @@ unsafe extern "C" fn delete_files(op: *mut FILE_OPERATION, flFrom: *const FILE_L
             }
         }
 
-        if IsAttribFile!((*file_entry).attributes) != 0 {
+        if IsAttribFile!((*file_entry).attributes) {
             let res = SHNotifyDeleteFileW(op, (*file_entry).szFullPath);
-            bPathExists = (ERROR_SUCCESS == (res) as i32);
+            bPathExists = (ERROR_SUCCESS == res) as BOOL;
         } else {
             bPathExists = SHELL_DeleteDirectoryW(op, (*file_entry).szFullPath, FALSE);
         }
@@ -1850,25 +1974,25 @@ unsafe extern "C" fn delete_files(op: *mut FILE_OPERATION, flFrom: *const FILE_L
         }
 
         if !(*op).progress.is_null() {
-            (*op).bCancelled |= ((*op).progress).HasUserCancelled() as BOOL;
+            (*op).bCancelled |= ((*(*(*op).progress).lpVtbl).HasUserCancelled)((*op).progress);
         }
         if (*op).bCancelled != 0 {
             return (ERROR_CANCELLED) as i32;
         }
     }
 
-    ERROR_SUCCESS
+    ERROR_SUCCESS as HRESULT
 }
 unsafe extern "C" fn move_dir_to_dir(op: *mut FILE_OPERATION, feFrom: *const FILE_ENTRY, szDestPath: PCWSTR) {
-    let mut szFrom: [u16; MAX_PATH] = [0u16; MAX_PATH];
-    let mut szTo: [u16; MAX_PATH] = [0u16; MAX_PATH];
+    let mut szFrom: [u16; MAX_PATH as usize] = [0u16; MAX_PATH as usize];
+    let mut szTo: [u16; MAX_PATH as usize] = [0u16; MAX_PATH as usize];
 
     if !(*feFrom).szFilename.is_null() && IsDotDir((*feFrom).szFilename) != 0 {
         return;
     }
 
     let attrib: u32 = FILE_ATTRIBUTE_DIRECTORY;
-    if FileOpCallback(op, FOCE_PREMOVEITEM, (*feFrom).szFullPath, szDestPath, attrib) < 0 {
+    if FileOpCallback(op, FOCE_PREMOVEITEM, (*feFrom).szFullPath, szDestPath, attrib, S_OK) < 0 {
         return;
     }
 
@@ -1882,8 +2006,10 @@ unsafe extern "C" fn move_dir_to_dir(op: *mut FILE_OPERATION, feFrom: *const FIL
 
     let mut flFromNew: FILE_LIST = core::mem::MaybeUninit::zeroed().assume_init();
     let mut flToNew: FILE_LIST = core::mem::MaybeUninit::zeroed().assume_init();
-    ZeroMemory(core::ptr::addr_of_mut!(flFromNew) as *mut core::ffi::c_void, FILE_LIST);
-    ZeroMemory(core::ptr::addr_of_mut!(flToNew) as *mut core::ffi::c_void, FILE_LIST);
+    ZeroMemory(core::ptr::addr_of_mut!(flFromNew) as *mut core::ffi::c_void,
+        core::mem::size_of::<FILE_LIST>());
+    ZeroMemory(core::ptr::addr_of_mut!(flToNew) as *mut core::ffi::c_void,
+        core::mem::size_of::<FILE_LIST>());
 
     parse_file_list(core::ptr::addr_of_mut!(flFromNew), szFrom.as_ptr());
     parse_file_list(core::ptr::addr_of_mut!(flToNew), szTo.as_ptr());
@@ -1903,8 +2029,8 @@ unsafe extern "C" fn move_file_to_file(op: *mut FILE_OPERATION, szFrom: PCWSTR, 
     if PathFileExistsW(szTo) != 0 {
         if (*(*op).req).fFlags & (FOF_RENAMEONCOLLISION) as u16 != 0 {
             let newPath = try_find_new_name(szTo);
-            if !newPath.is_empty() {
-                return (SHNotifyMoveFileW(op, szFrom, newPath.as_ptr(), (FALSE) as u8) == 0) as i32;
+            if !newPath.IsEmpty() {
+                return (SHNotifyMoveFileW(op, szFrom, newPath.as_ptr(), FALSE) == 0) as i32;
             }
         } else if (*(*op).req).fFlags & (FOF_NOCONFIRMATION) as u16 == 0 {
             if SHELL_ConfirmDialogW((*op).hWndOwner, (ASK_OVERWRITE_FILE) as i32, PathFindFileNameW(szTo), op) == 0 {
@@ -1913,7 +2039,7 @@ unsafe extern "C" fn move_file_to_file(op: *mut FILE_OPERATION, szFrom: PCWSTR, 
         }
     }
 
-    (SHNotifyMoveFileW(op, szFrom, szTo, (FALSE) as u8) == 0) as i32
+    (SHNotifyMoveFileW(op, szFrom, szTo, FALSE) == 0) as i32
 }
 unsafe extern "C" fn move_to_dir(op: *mut FILE_OPERATION, feFrom: *const FILE_ENTRY, feTo: *const FILE_ENTRY) {
     if (*feFrom).attributes == INVALID_FILE_ATTRIBUTES {
@@ -1924,10 +2050,10 @@ unsafe extern "C" fn move_to_dir(op: *mut FILE_OPERATION, feFrom: *const FILE_EN
         SHNotifyCreateDirectoryW((*feTo).szFullPath, core::ptr::null_mut());
     }
 
-    let mut szDestPath: [u16; MAX_PATH] = [0u16; MAX_PATH];
+    let mut szDestPath: [u16; MAX_PATH as usize] = [0u16; MAX_PATH as usize];
     PathCombineW(szDestPath.as_mut_ptr(), (*feTo).szFullPath, (*feFrom).szFilename);
 
-    if IsAttribFile!((*feFrom).attributes) != 0 {
+    if IsAttribFile!((*feFrom).attributes) {
         move_file_to_file(op, (*feFrom).szFullPath, szDestPath.as_ptr());
     } else if !((((*(*op).req).fFlags & (FOF_FILESONLY) as u16) != 0) && ((*feFrom).bFromWildcard != 0)) {
         move_dir_to_dir(op, feFrom, szDestPath.as_ptr());
@@ -1968,7 +2094,7 @@ unsafe extern "C" fn move_files(
         return ERROR_CANCELLED;
     }
 
-    if PathFileExistsW((*flTo).feFiles.offset(0 as isize).as_ref().unwrap().szDirectory)
+    if PathFileExistsW((*(*flTo).feFiles.offset(0 as isize)).szDirectory)
         == 0
     {
         return ERROR_CANCELLED;
@@ -1993,17 +2119,17 @@ unsafe extern "C" fn move_files(
             }
             fileDest = (*flTo).feFiles.offset(i as isize);
             if mismatched != 0 && (*fileDest).bExists == 0 {
-                create_dest_dirs((*flTo).feFiles.offset(i as isize).as_ref().unwrap().szFullPath);
+                create_dest_dirs((*(*flTo).feFiles.offset(i as isize)).szFullPath);
                 (*fileDest).bExists = TRUE;
                 (*fileDest).attributes = FILE_ATTRIBUTE_DIRECTORY;
             }
         }
 
         if ((*flFrom).dwNumFiles > 1 && (*flTo).dwNumFiles == 1)
-            || IsAttribDir!((*fileDest).attributes) != 0
+            || IsAttribDir!((*fileDest).attributes)
         {
             move_to_dir(op, entryToMove, fileDest);
-        } else if IsAttribDir!((*entryToMove).attributes) != 0 {
+        } else if IsAttribDir!((*entryToMove).attributes) {
             move_dir_to_dir(op, entryToMove, (*fileDest).szFullPath);
         } else {
             if move_file_to_file(
@@ -2018,8 +2144,8 @@ unsafe extern "C" fn move_files(
         }
 
         if !(*op).progress.is_null() {
-            let progress = &*(*op).progress;
-            (*op).bCancelled |= progress.HasUserCancelled();
+            let progress = (*op).progress;
+            (*op).bCancelled |= ((*(*progress).lpVtbl).HasUserCancelled)(progress);
         }
         if (*op).bCancelled != 0 {
             return ERROR_CANCELLED;
@@ -2054,11 +2180,11 @@ unsafe extern "C" fn rename_files(
     let feFrom = (*flFrom).feFiles.add(0);
     let feTo = (*flTo).feFiles.add(0);
 
-    if !(*feFrom).bExists {
+    if (*feFrom).bExists == 0 {
         return (ERROR_SHELL_INTERNAL_FILE_NOT_FOUND) as i32;
     }
 
-    if (*feTo).bExists {
+    if (*feTo).bExists != 0 {
         return (ERROR_ALREADY_EXISTS) as i32;
     }
 
@@ -2066,7 +2192,7 @@ unsafe extern "C" fn rename_files(
         op,
         (*feFrom).szFullPath,
         (*feTo).szFullPath,
-        IsAttribDir!((*feFrom).attributes),
+        IsAttribDir!((*feFrom).attributes) as BOOL,
     ) as HRESULT
 }
 unsafe extern "C" fn check_flags(fFlags: FILEOP_FLAGS) {
@@ -2085,12 +2211,13 @@ unsafe extern "C" fn validate_operation(op: &mut FILE_OPERATION, flFrom: *const 
     let mut i: DWORD;
     let mut k: DWORD;
     let dwNumDest: DWORD;
-    let mut szFrom: [WCHAR; MAX_PATH] = [0; MAX_PATH];
-    let mut szTo: [WCHAR; MAX_PATH] = [0; MAX_PATH];
-    let mut strTitle: CStringW;
-    let mut strText: CStringW;
-    let feFrom: *const FILE_ENTRY;
-    let feTo: *const FILE_ENTRY;
+    let mut szFrom: [WCHAR; MAX_PATH as usize] = [0; MAX_PATH as usize];
+    let mut szTo: [WCHAR; MAX_PATH as usize] = [0; MAX_PATH as usize];
+    // C++ RAII locals — see CheckForError: an uninitialised binding runs no ctor and no dtor.
+    let mut strTitle = CStringW::new();
+    let mut strText = CStringW::new();
+    let mut feFrom: *const FILE_ENTRY;
+    let mut feTo: *const FILE_ENTRY;
     let lpFileOp = (&*op.req);
     let wFunc = (*lpFileOp).wFunc;
 
@@ -2102,10 +2229,10 @@ unsafe extern "C" fn validate_operation(op: &mut FILE_OPERATION, flFrom: *const 
 
     k = 0;
     while k < dwNumDest {
-        feTo = &(*flTo).feFiles[k as usize];
+        feTo = (*flTo).feFiles.add(k as usize);
         i = 0;
         while i < (*flFrom).dwNumFiles {
-            feFrom = &(*flFrom).feFiles[i as usize];
+            feFrom = (*flFrom).feFiles.add(i as usize);
             StringCbCopyW(szFrom.as_mut_ptr(), core::mem::size_of_val(&szFrom), (*feFrom).szFullPath);
             StringCbCopyW(szTo.as_mut_ptr(), core::mem::size_of_val(&szTo), (*feTo).szFullPath);
             if IsAttribDir!((*feTo).attributes) {
@@ -2113,18 +2240,18 @@ unsafe extern "C" fn validate_operation(op: &mut FILE_OPERATION, flFrom: *const 
             }
 
             if lstrcmpiW(szFrom.as_ptr(), szTo.as_ptr()) == 0 &&
-                (wFunc == FO_MOVE || !((*lpFileOp).fFlags & (FOF_RENAMEONCOLLISION) as u16)) {
-                if CanShowFileOpErrorUI(*lpFileOp) {
+                (wFunc == FO_MOVE || ((*lpFileOp).fFlags & (FOF_RENAMEONCOLLISION) as u16) == 0) {
+                if CanShowFileOpErrorUI(lpFileOp) != 0 {
                     if wFunc == FO_MOVE {
                         strTitle.LoadStringW(IDS_MOVEERRORTITLE);
                         if IsAttribDir!((*feFrom).attributes) {
-                            strText.Format(IDS_MOVEERRORSAMEFOLDER, GET_FILENAME(feFrom));
+                            strText.FormatResStr(IDS_MOVEERRORSAMEFOLDER, GET_FILENAME!(feFrom));
                         } else {
-                            strText.Format(IDS_MOVEERRORSAME, GET_FILENAME(feFrom));
+                            strText.FormatResStr(IDS_MOVEERRORSAME, GET_FILENAME!(feFrom));
                         }
                     } else {
                         strTitle.LoadStringW(IDS_COPYERRORTITLE);
-                        strText.Format(IDS_COPYERRORSAME, GET_FILENAME(feFrom));
+                        strText.FormatResStr(IDS_COPYERRORSAME, GET_FILENAME!(feFrom));
                         return (ERROR_SUCCESS) as u32;
                     }
                     MessageBoxW((*op).hWndOwner, strText.as_ptr(), strTitle.as_ptr(), MB_ICONERROR);
@@ -2144,13 +2271,13 @@ unsafe extern "C" fn validate_operation(op: &mut FILE_OPERATION, flFrom: *const 
                     szTo[cchFrom] = ch;
 
                     if compare == 0 {
-                        if CanShowFileOpErrorUI(*lpFileOp) {
+                        if CanShowFileOpErrorUI(lpFileOp) != 0 {
                             if wFunc == FO_MOVE {
                                 strTitle.LoadStringW(IDS_MOVEERRORTITLE);
-                                strText.Format(IDS_MOVEERRORSUBFOLDER, GET_FILENAME(feFrom));
+                                strText.FormatResStr(IDS_MOVEERRORSUBFOLDER, GET_FILENAME!(feFrom));
                             } else {
                                 strTitle.LoadStringW(IDS_COPYERRORTITLE);
-                                strText.Format(IDS_COPYERRORSUBFOLDER, GET_FILENAME(feFrom));
+                                strText.FormatResStr(IDS_COPYERRORSUBFOLDER, GET_FILENAME!(feFrom));
                             }
                             MessageBoxW((*op).hWndOwner, strText.as_ptr(), strTitle.as_ptr(), MB_ICONERROR);
                             (*op).bHasDisplayedError += 1;
@@ -2213,8 +2340,8 @@ pub unsafe extern "C" fn SHELL32_FileOperation(
         core::mem::size_of::<FILE_OPERATION>(),
     );
     op.req = lpFileOp;
-    op.totalSize.QuadPart = 0ull;
-    op.completedSize.QuadPart = 0ull;
+    op.totalSize.QuadPart = 0u64;
+    op.completedSize.QuadPart = 0u64;
     op.bManyItems = if flFrom.dwNumFiles > 1 { 1 } else { 0 };
     op.Callback = Callback;
     op.CallerCallbackData = CallerData;
@@ -2237,7 +2364,7 @@ pub unsafe extern "C" fn SHELL32_FileOperation(
         let hr = SHELL32_FileOpErrorToHResult(ret, ((*lpFileOp).fAnyOperationsAborted) as u8);
         FileOpCallback(&mut op, FOCE_FINISHOPERATIONS, core::ptr::null(), core::ptr::null(), 0, hr);
         if hr < 0 && CanShowFileOpErrorUI(op.req as *const SHFILEOPSTRUCTW) != 0 && op.bHasDisplayedError == 0 {
-            SHELL_ErrorBox(op.hWndOwner, (hr) as u32);
+            SHELL_ErrorBox(op.hWndOwner as *mut c_void, (hr) as u32);
         }
         CoUninitialize();
         return ret;
@@ -2245,7 +2372,7 @@ pub unsafe extern "C" fn SHELL32_FileOperation(
 
     if (*lpFileOp).wFunc != FO_RENAME && ((*lpFileOp).fFlags & (FOF_SILENT) as u16) == 0 {
         ret = CoCreateInstance(
-            CLSID_ProgressDialog,
+            &CLSID_ProgressDialog,
             core::ptr::null_mut(),
             CLSCTX_INPROC_SERVER,
             core::ptr::addr_of!(IID_IProgressDialog), core::ptr::addr_of_mut!(op.progress).cast(),
@@ -2266,13 +2393,13 @@ pub unsafe extern "C" fn SHELL32_FileOperation(
             let hr = SHELL32_FileOpErrorToHResult(ret, ((*lpFileOp).fAnyOperationsAborted) as u8);
             FileOpCallback(&mut op, FOCE_FINISHOPERATIONS, core::ptr::null(), core::ptr::null(), 0, hr);
             if hr < 0 && CanShowFileOpErrorUI(op.req as *const SHFILEOPSTRUCTW) != 0 && op.bHasDisplayedError == 0 {
-                SHELL_ErrorBox(op.hWndOwner, (hr) as u32);
+                SHELL_ErrorBox(op.hWndOwner as *mut c_void, (hr) as u32);
             }
             CoUninitialize();
             return ret;
         }
 
-        (*op.progress).StartProgressDialog(op.hWndOwner, core::ptr::null_mut(), PROGDLG_NORMAL & PROGDLG_AUTOTIME, core::ptr::null_mut());
+        ((*(*op.progress).lpVtbl).StartProgressDialog)(op.progress, op.hWndOwner, core::ptr::null_mut(), PROGDLG_NORMAL & PROGDLG_AUTOTIME, core::ptr::null());
         _SetOperationTitle(&mut op);
         _FileOpCountManager(&mut op, &flFrom);
     }
@@ -2298,8 +2425,8 @@ pub unsafe extern "C" fn SHELL32_FileOperation(
     }
 
     if !op.progress.is_null() {
-        (*op.progress).StopProgressDialog();
-        (*op.progress).Release();
+        ((*(*op.progress).lpVtbl).StopProgressDialog)(op.progress);
+        ((*(*op.progress).lpVtbl).Release)(op.progress);
     }
 
     destroy_file_list(&mut flFrom);
@@ -2322,7 +2449,7 @@ pub unsafe extern "C" fn SHELL32_FileOperation(
     FileOpCallback(&mut op, FOCE_FINISHOPERATIONS, core::ptr::null(), core::ptr::null(), 0, hr);
 
     if hr < 0 && CanShowFileOpErrorUI(op.req as *const SHFILEOPSTRUCTW) != 0 && op.bHasDisplayedError == 0 {
-        SHELL_ErrorBox(op.hWndOwner, (hr) as u32);
+        SHELL_ErrorBox(op.hWndOwner as *mut c_void, (hr) as u32);
     }
 
     CoUninitialize();
@@ -2332,30 +2459,26 @@ pub unsafe extern "C" fn SHELL32_FileOperation(
 
 #[no_mangle]
 pub unsafe extern "system" fn SHFileOperationW(lpFileOp: *mut SHFILEOPSTRUCTW) -> i32 {
-    SHELL32_FileOperation(lpFileOp, core::ptr::null_mut(), core::ptr::null_mut())
+    SHELL32_FileOperation(lpFileOp, None, core::ptr::null_mut())
 }
-#[cfg(target_arch = "x86")]
-unsafe extern "stdcall" fn _DestroyCallback(p: *mut core::ffi::c_void, pData: *mut core::ffi::c_void) -> i32 {
+// One definition, spelled `extern "system"`: that IS stdcall on i386 and the C
+// convention on 64-bit, and the island now spells the slot it goes into the same way
+// (normalize_island_abi.py). The `#[cfg]`-duplicated stdcall/C twins this replaces were
+// two bodies that had to be edited in lockstep forever.
+unsafe extern "system" fn _DestroyCallback(p: *mut core::ffi::c_void, pData: *mut core::ffi::c_void) -> i32 {
     let lp = p as *mut _SHNAMEMAPPINGW;
-    SHFree((*lp).pszOldPath);
-    SHFree((*lp).pszNewPath);
+    SHFree((*lp).pszOldPath as *mut c_void);
+    SHFree((*lp).pszNewPath as *mut c_void);
     TRUE
 }
 
-#[cfg(not(target_arch = "x86"))]
-unsafe extern "C" fn _DestroyCallback(p: *mut core::ffi::c_void, pData: *mut core::ffi::c_void) -> i32 {
-    let lp = p as *mut _SHNAMEMAPPINGW;
-    SHFree((*lp).pszOldPath);
-    SHFree((*lp).pszNewPath);
-    TRUE
-}
 
 #[no_mangle]
 pub unsafe extern "system" fn SHFreeNameMappings(hNameMapping: HANDLE) {
     if !hNameMapping.is_null() {
         DSA_DestroyCallback(
-            hNameMapping as *mut core::ffi::c_void,
-            _DestroyCallback,
+            hNameMapping as *mut _DSA,
+            Some(_DestroyCallback),
             core::ptr::null_mut(),
         );
     }
@@ -2363,7 +2486,7 @@ pub unsafe extern "system" fn SHFreeNameMappings(hNameMapping: HANDLE) {
 
 #[no_mangle]
 pub unsafe extern "system" fn SheGetDirA(drive: u32, buffer: *mut i8) -> u32 {
-    let mut org_path: [u16; MAX_PATH] = [0; MAX_PATH];
+    let mut org_path: [u16; MAX_PATH as usize] = [0; MAX_PATH as usize];
     let mut drv_path: [i8; 3] = [0; 3];
 
     if drive != 0 {
@@ -2397,7 +2520,7 @@ pub unsafe extern "system" fn SheGetDirA(drive: u32, buffer: *mut i8) -> u32 {
 
 #[no_mangle]
 pub unsafe extern "system" fn SheGetDirW(drive: u32, buffer: *mut u16) -> u32 {
-    let mut org_path: [u16; MAX_PATH] = [0u16; MAX_PATH];
+    let mut org_path: [u16; MAX_PATH as usize] = [0u16; MAX_PATH as usize];
     let mut drv_path: [u8; 3] = [0u8; 3];
     let mut ret: u32;
 
@@ -2438,7 +2561,7 @@ pub unsafe extern "system" fn SheChangeDirA(path: *mut i8) -> u32 {
 
 #[no_mangle]
 pub unsafe extern "system" fn SheChangeDirW(path: PWSTR) -> DWORD {
-    if SetCurrentDirectoryW(path) {
+    if SetCurrentDirectoryW(path) != 0 {
         0
     } else {
         GetLastError()
@@ -2458,7 +2581,7 @@ pub unsafe extern "system" fn IsNetDrive(drive: core::ffi::c_int) -> core::ffi::
 pub unsafe extern "system" fn RealDriveType(drive: i32, bQueryNet: i32) -> i32 {
     let mut root: [u8; 4] = [b'A', b':', b'\\', 0];
     root[0] += drive as u8;
-    GetDriveTypeA(root.as_ptr() as *const i8)
+    GetDriveTypeA(root.as_ptr() as *const i8) as i32
 }
 
 #[no_mangle]
@@ -2492,7 +2615,7 @@ pub unsafe extern "system" fn SHPathPrepareForWriteW(
         temppath = HeapAlloc(
             GetProcessHeap(),
             0,
-            len as usize * core::mem::size_of::<u16>(),
+            (len as usize * core::mem::size_of::<u16>()) as SIZE_T,
         ) as *mut u16;
         if temppath.is_null() {
             return E_OUTOFMEMORY;
@@ -2541,7 +2664,7 @@ pub unsafe extern "system" fn SHPathPrepareForWriteA(
     path: *const i8,
     flags: u32,
 ) -> i32 {
-    let mut wpath: [u16; MAX_PATH] = [0u16; MAX_PATH];
+    let mut wpath: [u16; MAX_PATH as usize] = [0u16; MAX_PATH as usize];
     MultiByteToWideChar(
         CP_ACP,
         0,
@@ -2555,7 +2678,7 @@ pub unsafe extern "system" fn SHPathPrepareForWriteA(
 unsafe extern "C" fn SHELL_DupSZZ(Input: PCWSTR) -> PWSTR {
     let len = wcslen(Input);
     let cb = (len + 2) * core::mem::size_of::<u16>() as usize;
-    let Output = SHAlloc(cb) as PWSTR;
+    let Output = SHAlloc(cb as SIZE_T) as PWSTR;
     if !Output.is_null() {
         CopyMemory(
             Output as *mut core::ffi::c_void,
@@ -2603,7 +2726,7 @@ pub unsafe extern "C" fn SHELL_SingleFileOperation(
         let err = SHFileOperationW(&mut fos);
         hr = SHELL32_FileOpErrorToHResult(err, (fos.fAnyOperationsAborted) as u8);
     } else if CanShowFileOpErrorUI(&fos) != 0 {
-        SHELL_ErrorBox(hWnd, (hr) as u32);
+        SHELL_ErrorBox(hWnd as *mut c_void, (hr) as u32);
     }
 
     SHFree((Src as PWSTR).cast());
@@ -2646,17 +2769,17 @@ pub unsafe extern "system" fn _FileOpCountManager(op: *mut FILE_OPERATION, from:
     while i < (*from).dwNumFiles {
         let entry_to_count: *mut FILE_ENTRY = (*from).feFiles.add(i as usize);
 
-        let mut the_file_name: [u16; MAX_PATH] = [0u16; MAX_PATH];
+        let mut the_file_name: [u16; MAX_PATH as usize] = [0u16; MAX_PATH as usize];
         StringCchCopyW(
             the_file_name.as_mut_ptr(),
-            MAX_PATH,
+            MAX_PATH as usize,
             (*entry_to_count).szFullPath,
         );
 
         _FileOpCount(
             op,
             the_file_name.as_mut_ptr(),
-            IsAttribDir!((*entry_to_count).attributes),
+            IsAttribDir!((*entry_to_count).attributes) as BOOL,
             core::ptr::addr_of_mut!(ticks),
         );
 
@@ -2677,7 +2800,7 @@ unsafe extern "C" fn _FileOpCount(op: *mut FILE_OPERATION, pwszBuf: *mut u16, bF
         *pwszFilename = '\\' as u16;
         pwszFilename = pwszFilename.offset(1);
         cchFilenameMax = cchFilenameMax.wrapping_sub(1);
-        StringCchCopyW(pwszFilename, cchFilenameMax, CPP_COM_WSTR_E8A4B2EE7EDE.as_ptr());
+        StringCchCopyW(pwszFilename, cchFilenameMax as usize, CPP_COM_WSTR_E8A4B2EE7EDE.as_ptr());
     }
 
     let mut wfd: WIN32_FIND_DATAW = core::mem::zeroed();
@@ -2691,7 +2814,7 @@ unsafe extern "C" fn _FileOpCount(op: *mut FILE_OPERATION, pwszBuf: *mut u16, bF
             if wcscmp(wfd.cFileName.as_ptr(), CPP_COM_WSTR_C245AFF91259.as_ptr()) == 0 ||
                wcscmp(wfd.cFileName.as_ptr(), CPP_COM_WSTR_77ECA80E282A.as_ptr()) == 0 {
             } else {
-                StringCchCopyW(pwszFilename, cchFilenameMax, wfd.cFileName.as_ptr());
+                StringCchCopyW(pwszFilename, cchFilenameMax as usize, wfd.cFileName.as_ptr());
                 _FileOpCount(op, pwszBuf, TRUE, ticks);
             }
         } else {
@@ -2701,7 +2824,7 @@ unsafe extern "C" fn _FileOpCount(op: *mut FILE_OPERATION, pwszBuf: *mut u16, bF
 
         if GetTickCount().wrapping_sub(*ticks) > (500 as u32) {
             if !(*op).progress.is_null() {
-                (*op).bCancelled = (*(*op).progress).HasUserCancelled();
+                (*op).bCancelled = ((*(*(*op).progress).lpVtbl).HasUserCancelled)((*op).progress);
             }
             if (*op).bCancelled != 0 {
                 break;

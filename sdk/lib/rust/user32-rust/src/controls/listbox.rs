@@ -402,11 +402,11 @@ pub static LISTBOX_builtin_class: builtin_class_descr = builtin_class_descr {
     brush: 0 as HBRUSH,
 };
 
-pub static combolboxW: [WCHAR; 9] = [
+pub static combolboxW: [WCHAR; 10] = [
     'C' as WCHAR, 'o' as WCHAR, 'm' as WCHAR, 'b' as WCHAR,
     'o' as WCHAR, 'L' as WCHAR, 'B' as WCHAR, 'o' as WCHAR,
     'x' as WCHAR,
-];
+ 0,];
 
 #[no_mangle]
 pub static COMBOLBOX_builtin_class: builtin_class_descr = builtin_class_descr {

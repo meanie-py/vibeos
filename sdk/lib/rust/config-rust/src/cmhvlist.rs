@@ -29,6 +29,12 @@ macro_rules! w {
 }
 
 const TAG_CM: u32 = u32::from_le_bytes(*b"CM  ");
+// sdk/lib/cmlib/cmdata.h. Every use below decides whether a key's name is
+// stored COMPRESSED (one byte per char) or as UTF-16, and each was written as
+// the bare literal 0x0001 — which is KEY_IS_VOLATILE, not KEY_COMP_NAME. So
+// this file read every compressed name as UTF-16 and every UTF-16 name as
+// compressed, sizing and copying the hive path wrongly either way.
+const KEY_COMP_NAME: u16 = 0x0020;
 const KEY_READ: u32 = 0x00020019;
 const KEY_WRITE: u32 = 0x00020006;
 
@@ -100,7 +106,7 @@ pub unsafe extern "system" fn CmpGetHiveName(
         return 0u8;
     }
 
-    if (*ParentData).u.KeyNode.Flags & 0x0001 != 0 {
+    if (*ParentData).u.KeyNode.Flags & KEY_COMP_NAME != 0 {
         ParentNameSize = CmpCompressedNameSize(
             core::ptr::addr_of!((*ParentData).u.KeyNode.Name) as *mut u16,
             (*ParentData).u.KeyNode.NameLength as u32,
@@ -109,7 +115,7 @@ pub unsafe extern "system" fn CmpGetHiveName(
         ParentNameSize = (*ParentData).u.KeyNode.NameLength as u32;
     }
 
-    if (*LinkData).u.KeyNode.Flags & 0x0001 != 0 {
+    if (*LinkData).u.KeyNode.Flags & KEY_COMP_NAME != 0 {
         LinkNameSize = CmpCompressedNameSize(
             core::ptr::addr_of!((*LinkData).u.KeyNode.Name) as *mut u16,
             (*LinkData).u.KeyNode.NameLength as u32,
@@ -122,6 +128,7 @@ pub unsafe extern "system" fn CmpGetHiveName(
 
     (*HiveName).Buffer = ExAllocatePoolWithTag(PagedPool, NameSize, 0x20436d43u32) as *mut u16;
     if (*HiveName).Buffer.is_null() {
+        crate::dbg_print!(b"CmpGetHiveName: Unable to allocate memory\n\0");
         return 0u8;
     }
 
@@ -135,7 +142,7 @@ pub unsafe extern "system" fn CmpGetHiveName(
         RegistryName.Length as usize / 2,
     );
     p = p.add(RegistryName.Length as usize / 2);
-    if (*ParentData).u.KeyNode.Flags & 0x0001 != 0 {
+    if (*ParentData).u.KeyNode.Flags & KEY_COMP_NAME != 0 {
         CmpCopyCompressedName(
             p,
             ParentNameSize,
@@ -154,7 +161,7 @@ pub unsafe extern "system" fn CmpGetHiveName(
     *p = b'\\' as u16;
     p = p.add(1);
 
-    if (*LinkData).u.KeyNode.Flags & 0x0001 != 0 {
+    if (*LinkData).u.KeyNode.Flags & KEY_COMP_NAME != 0 {
         CmpCopyCompressedName(
             p,
             LinkNameSize,
@@ -203,10 +210,15 @@ pub unsafe extern "system" fn CmpAddToHiveFileList(Hive: PCMHIVE) -> i32 {
         core::ptr::null_mut(),
     );
     if !NT_SUCCESS(Status) {
+        crate::dbg_print!(
+            b"CmpAddToHiveFileList: Creation or opening of the hive list failed, status = 0x%08lx\n\0",
+            Status
+        );
         return Status;
     }
 
     if CmpGetHiveName(Hive, core::ptr::addr_of_mut!(HivePath)) == 0 {
+        crate::dbg_print!(b"CmpAddToHiveFileList: Unable to retrieve the hive name\n\0");
         Status = STATUS_NO_MEMORY;
         'Quickie: loop {
             if !HivePath.Buffer.is_null() {
@@ -229,6 +241,10 @@ pub unsafe extern "system" fn CmpAddToHiveFileList(Hive: PCMHIVE) -> i32 {
             core::ptr::addr_of_mut!(Length),
         );
         if Status != 0x80000005u32 as i32 {
+            crate::dbg_print!(
+                b"CmpAddToHiveFileList: Hive file name size query failed, status = 0x%08lx\n\0",
+                Status
+            );
             'Quickie: loop {
                 if !HivePath.Buffer.is_null() {
                     ExFreePoolWithTag(HivePath.Buffer as *mut core::ffi::c_void, TAG_CM);
@@ -273,6 +289,10 @@ pub unsafe extern "system" fn CmpAddToHiveFileList(Hive: PCMHIVE) -> i32 {
             *FilePath.offset((Length / core::mem::size_of::<u16>() as u32) as isize) = 0u16;
             Length += core::mem::size_of::<u16>() as u32;
         } else {
+            crate::dbg_print!(
+                b"CmpAddToHiveFileList: Hive file name query failed, status = 0x%08lx\n\0",
+                Status
+            );
             'Quickie: loop {
                 if !HivePath.Buffer.is_null() {
                     ExFreePoolWithTag(HivePath.Buffer as *mut core::ffi::c_void, TAG_CM);
@@ -297,6 +317,12 @@ pub unsafe extern "system" fn CmpAddToHiveFileList(Hive: PCMHIVE) -> i32 {
         FilePath as *mut core::ffi::c_void,
         Length,
     );
+    if !NT_SUCCESS(Status) {
+        crate::dbg_print!(
+            b"CmpAddToHiveFileList: Setting of entry in the hive list failed, status = 0x%08lx\n\0",
+            Status
+        );
+    }
 
     if !HivePath.Buffer.is_null() {
         ExFreePoolWithTag(HivePath.Buffer as *mut core::ffi::c_void, TAG_CM);
@@ -329,6 +355,10 @@ pub unsafe extern "system" fn CmpRemoveFromHiveFileList(Hive: PCMHIVE) {
         core::ptr::addr_of_mut!(ObjectAttributes),
     );
     if !NT_SUCCESS(Status) {
+        crate::dbg_print!(
+            b"CmpRemoveFromHiveFileList: Opening of the hive list failed, status = 0x%08lx\n\0",
+            Status
+        );
         return;
     }
 

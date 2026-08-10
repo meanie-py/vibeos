@@ -10,7 +10,7 @@ const USERTAG_REDIRECT: u32 = u32::from_le_bytes(*b"Urdr");
 
 // SafeProbeForRead/Write — NTAPI stdcall (`_Name@N`).
 extern "system" {
-    fn SafeProbeForWrite(Address: *mut core::ffi::c_void, Length: u32, Alignment: u32) -> i32;
+    fn SafeProbeForWrite(Address: *mut core::ffi::c_void, Length: SIZE_T, Alignment: u32) -> i32;
     fn SafeProbeForRead(Address: *mut core::ffi::c_void, Length: usize, Alignment: u32) -> i32;
 }
 
@@ -364,7 +364,7 @@ unsafe fn IntUpdateLayeredWindowI_impl(pWnd: PWND, info: *mut UPDATELAYEREDWINDO
 }
 #[cfg(target_arch = "x86")]
 #[no_mangle]
-pub unsafe extern "stdcall" fn NtUserGetLayeredWindowAttributes(
+pub unsafe extern "system" fn NtUserGetLayeredWindowAttributes(
     hwnd: HWND,
     pcrKey: *mut COLORREF,
     pbAlpha: *mut u8,
@@ -443,7 +443,7 @@ pub unsafe extern "stdcall" fn NtUserGetLayeredWindowAttributes(
 
 #[cfg(not(target_arch = "x86"))]
 #[no_mangle]
-pub unsafe extern "C" fn NtUserGetLayeredWindowAttributes(
+pub unsafe extern "system" fn NtUserGetLayeredWindowAttributes(
     hwnd: HWND,
     pcrKey: *mut COLORREF,
     pbAlpha: *mut u8,
@@ -475,7 +475,7 @@ pub unsafe extern "C" fn NtUserGetLayeredWindowAttributes(
         if !pcrKey.is_null() {
             Status = SafeProbeForWrite(
                 pcrKey as *mut core::ffi::c_void,
-                core::mem::size_of::<COLORREF>() as u32,
+                core::mem::size_of::<COLORREF>() as _,
                 1,
             );
             if NT_SUCCESS(Status) {
@@ -487,14 +487,14 @@ pub unsafe extern "C" fn NtUserGetLayeredWindowAttributes(
         if !pbAlpha.is_null() && NT_SUCCESS(Status) {
             Status = SafeProbeForWrite(
                 pbAlpha as *mut core::ffi::c_void,
-                core::mem::size_of::<u8>() as u32,
+                core::mem::size_of::<u8>() as _,
                 1,
             );
         }
         if !pdwFlags.is_null() && NT_SUCCESS(Status) {
             Status = SafeProbeForWrite(
                 pdwFlags as *mut core::ffi::c_void,
-                core::mem::size_of::<u32>() as u32,
+                core::mem::size_of::<u32>() as _,
                 1,
             );
         }
@@ -519,35 +519,8 @@ pub unsafe extern "C" fn NtUserGetLayeredWindowAttributes(
     UserLeave();
     Ret
 }
-#[cfg(target_arch = "x86")]
 #[no_mangle]
-pub unsafe extern "stdcall" fn NtUserSetLayeredWindowAttributes(
-    hwnd: HWND,
-    crKey: COLORREF,
-    bAlpha: u8,
-    dwFlags: u32,
-) -> i32 {
-    let pWnd: PWND;
-    let mut Ret: i32 = 0;
-
-    UserEnterExclusive();
-
-    'exit: {
-        pWnd = UserGetWindowObject(hwnd);
-        if pWnd.is_null() || ((*pWnd).ExStyle & WS_EX_LAYERED) == 0 {
-            break 'exit;
-        }
-
-        Ret = IntSetLayeredWindowAttributes(pWnd, crKey, bAlpha, dwFlags);
-    }
-
-    UserLeave();
-    Ret
-}
-
-#[cfg(not(target_arch = "x86"))]
-#[no_mangle]
-pub unsafe extern "C" fn NtUserSetLayeredWindowAttributes(
+pub unsafe extern "system" fn NtUserSetLayeredWindowAttributes(
     hwnd: HWND,
     crKey: COLORREF,
     bAlpha: u8,

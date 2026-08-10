@@ -19,7 +19,7 @@ extern "system" {
     fn DrawEdge(hdc: HDC, qrc: *mut RECT, edge: UINT, grfFlags: UINT) -> BOOL;
     fn DrawFrameControl(hdc: HDC, rc: *mut RECT, type_: UINT, state: UINT) -> BOOL;
     fn FillRect(hdc: HDC, rc: *const RECT, hbr: HBRUSH) -> INT;
-    fn co_IntGetPeekMessage(msg: *mut MSG, hwnd: isize, min: u32, max: u32, flag: u32, flag2: u8) -> u8;
+    fn co_IntGetPeekMessage(msg: *mut MSG, hwnd: HWND, min: UINT, max: UINT, flag: UINT, flag2: BOOL) -> BOOL;
 }
 
 // --- FASTCALL (`@Name@N`) on i386, cdecl elsewhere. ---
@@ -511,7 +511,7 @@ unsafe fn DefWndStartSizeMove_impl(Wnd: PWND, wParam: WPARAM, capturePoint: *mut
         pt.x = 0;
         pt.y = 0;
         while hittest == 0 {
-            if co_IntGetPeekMessage(&mut msg, 0, 0, 0, PM_REMOVE, 1u8) == 0 {
+            if co_IntGetPeekMessage(&mut msg, core::ptr::null_mut(), 0, 0, PM_REMOVE, 1) == 0 {
                 return 0;
             }
             if IntCallMsgFilter(&mut msg, MSGF_SIZE as INT) != 0 {
@@ -1921,7 +1921,7 @@ unsafe fn NC_DoButton(pWnd: PWND, wParam: WPARAM, lParam: LPARAM) {
     loop {
         if co_IntGetPeekMessage(
             &mut Msg,
-            0,
+            core::ptr::null_mut(),
             WM_MOUSEFIRST,
             WM_MOUSELAST,
             PM_REMOVE,
@@ -2141,7 +2141,7 @@ pub unsafe extern "C" fn NC_HandleNCRButtonDown(pwnd: PWND, wParam: WPARAM, lPar
 
                 co_UserSetCapture(UserHMGetHandle(pwnd) as _);
                 loop {
-                    if co_IntGetPeekMessage(&mut msg, 0 as _, WM_MOUSEFIRST, WM_MOUSELAST, PM_REMOVE, 1u8) == 0 {
+                    if co_IntGetPeekMessage(&mut msg, core::ptr::null_mut(), WM_MOUSEFIRST, WM_MOUSELAST, PM_REMOVE, 1) == 0 {
                         break;
                     }
                     if IntCallMsgFilter(&mut msg, MSGF_MAX as INT) != 0 {

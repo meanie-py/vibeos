@@ -45,9 +45,12 @@ from tree_sitter import Language, Parser
 # #defined to nothing, tree-sitter does not know that, and a parameter spelled
 # `CONST CHAR FAR *p` fails the whole enclosing function. Reused rather than
 # reimplemented so both parsers agree on what the C says.
-from .scanner import _blank_memmodel
+from .scanner import CPP_LANG, _blank_memmodel, _expand_case_macros, _normalize_callbacks
 
 C_LANG = Language(tsc.language())
+
+#: Suffixes the function catalog parses with the C++ grammar (scanner.py picks the same way).
+_CPP_SUFFIXES = (".cpp", ".cxx", ".cc", ".hpp", ".hxx")
 
 #: Kinds whose absence BREAKS things (silently, in the vtbl case). Always reported.
 CRITICAL_KINDS = ("table", "variable", "struct", "union", "enum")
@@ -118,9 +121,27 @@ def _scan(c_path: Path) -> tuple[list[CDecl], dict[str, str], list[int]]:
     which do not hoist anything. A top-level ERROR node is the precise signal.
     """
     raw = Path(c_path).read_text(encoding="utf-8", errors="replace")
-    text = _blank_memmodel(raw)
+    # Both normalizers, for the same reason and with the same guarantee: they make
+    # shapes tree-sitter cannot parse parse, and neither changes the line count.
+    # Blanking only the memory-model macros left `FILE * CDECL fopen(...)` — a
+    # convention keyword after a pointer return type — as a top-level ERROR, so this
+    # audit returned INCOMPLETE for every msvcrt file and the file-scope checks it
+    # exists for never ran. The function catalog normalizes both; so must this, or
+    # the two disagree about what the file even contains.
+    # Three normalizers now, same reason and same guarantee (none changes the line count).
+    # `_expand_case_macros` is the one this comment's warning was written for: it went into
+    # the function catalog first, and until it landed here too the two disagreed about
+    # errno.c — the catalog saw 18 functions while this audit still called line 132 a
+    # top-level ERROR and skipped every file-scope check it exists to perform.
+    text = _normalize_callbacks(_blank_memmodel(_expand_case_macros(raw)))
     src = text.encode()
-    tree = Parser(C_LANG).parse(src)
+    # Parse a .cpp with the C++ grammar, as the function catalog already does. Using the C
+    # grammar on C++ makes `class X : public Y {` a top-level ERROR by construction, which
+    # this function reads as "cannot trust the parse" and returns INCOMPLETE -- so every
+    # file-scope check was skipped for exactly the files most likely to hold a hand-rolled
+    # vtable. recyclebin_v5_enumerator.cpp (two COM classes) never got audited at all.
+    language = CPP_LANG if Path(c_path).suffix.lower() in _CPP_SUFFIXES else C_LANG
+    tree = Parser(language).parse(src)
     root = tree.root_node
 
     unparsed = [n.start_point[0] + 1 for n in root.named_children if n.type == "ERROR"]
