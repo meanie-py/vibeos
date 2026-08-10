@@ -215,97 +215,31 @@ def build_catalog(arch: str = "arm64", target: Target | None = None) -> Catalog:
         for s in constants:
             catalog.constants[s.name] = s
 
-    # Scan the kernel bindgen file → module "ddk"
-    bindgen_path = target.bindgen_files.get(arch)
-    if bindgen_path and bindgen_path.exists():
-        types, functions, constants = _scan_bindgen(bindgen_path, "ddk")
-        for s in types:
-            if s.name not in catalog.types:  # hand-written takes priority
-                catalog.types[s.name] = s
-        for s in functions:
-            if s.name not in catalog.functions:
-                catalog.functions[s.name] = s
-        for s in constants:
-            if s.name not in catalog.constants:
-                catalog.constants[s.name] = s
-
-    # For HAL target, also scan hal_bindgen file → module "hal_ddk"
-    # Symbols in hal_bindgen override ddk for HAL-internal types (ADAPTER_OBJECT,
-    # DEVICE_DESCRIPTION, DMA_PAGE, etc.) — those are HAL-private and must come
-    # from hal_ddk to keep the type-identity correct in struct fields.
-    if target.name == "hal":
-        hal_bindgen_path = target.hal_bindgen_files.get(arch)
-        if hal_bindgen_path and hal_bindgen_path.exists():
-            types, functions, constants = _scan_bindgen(hal_bindgen_path, "hal_ddk")
-            # hal_ddk wins for types/constants — HAL-internal definitions are
-            # what the C code actually uses for these symbols.
-            for s in types:
-                catalog.types[s.name] = s
-            for s in constants:
-                catalog.constants[s.name] = s
-            # Functions: ddk wins (kernel API is the linkable surface);
-            # hal_ddk fn decls are usually duplicates of ddk for re-exports.
-            for s in functions:
-                if s.name not in catalog.functions:
-                    catalog.functions[s.name] = s
-
-    # For the win32k target, also scan win32k-sys bindgen → module "win32k".
-    # win32k calls both the ntoskrnl API (ddk, scanned above) and its own
-    # internal surface. win32k-internal types/constants are authoritative
-    # for win32k code (the C uses _WND/_DESKTOP/NOPARAM_ROUTINE_* layouts
-    # from win32k headers); functions add-if-absent so the shared kernel
-    # API (ddk) stays the linkable surface and win32k adds Int*/Gre*/co_*.
-    win32k_files = getattr(target, "win32k_bindgen_files", {}) or {}
-    win32k_bindgen_path = win32k_files.get(arch)
-    if win32k_bindgen_path and win32k_bindgen_path.exists():
-        types, functions, constants = _scan_bindgen(win32k_bindgen_path, "win32k")
-        for s in types:
-            catalog.types[s.name] = s
-        for s in constants:
-            catalog.constants[s.name] = s
-        for s in functions:
-            if s.name not in catalog.functions:
-                catalog.functions[s.name] = s
-
-    # For the winsrv target, also scan winsrv-sys bindgen → module "winsrv".
-    # winsrv calls both ntdll-sys (NT/CSR/SM/BASE — scanned above as "ddk")
-    # AND its own internal surface (CONSOLE_PROCESS_DATA, TERMINAL_VTBL,
-    # FRONTEND_VTBL, SHUTDOWN_SETTINGS, CONSOLE_*, COORD, INPUT_RECORD,
-    # HWND/HDC/LOGFONTW/MSG/WNDPROC, …). winsrv-internal types/constants
-    # are authoritative for winsrv code; functions add-if-absent so the
-    # NT surface stays the linkable surface and winsrv adds Con*/Term*/
-    # Concfg* helpers. Mirrors the win32k branch.
-    winsrv_files = getattr(target, "winsrv_bindgen_files", {}) or {}
-    winsrv_bindgen_path = winsrv_files.get(arch)
-    if winsrv_bindgen_path and winsrv_bindgen_path.exists():
-        types, functions, constants = _scan_bindgen(winsrv_bindgen_path, "winsrv")
-        for s in types:
-            catalog.types[s.name] = s
-        for s in constants:
-            catalog.constants[s.name] = s
-        for s in functions:
-            if s.name not in catalog.functions:
-                catalog.functions[s.name] = s
-
-    # Generic CRATE-LOCAL bindgen island (gen_driver_types.sh → <crate>/src/types_<arch>.rs).
-    # The generalization of the win32k_/winsrv_ branches above, for any DLL/driver whose
-    # private object model is generated rather than shared — ws2_32 (TCATALOG/TPROVIDER/
-    # NSCATALOG/NSQUERY/WSPROCESS/WSTHREAD/WSSOCKET/WSASYNCBLOCK from inc/ws2_32p.h, plus
-    # the winsock/ws2spi surface: INVALID_SOCKET, LPWSABUF, LPQOS, AF_*, …).
+    # Scan every bindgen ISLAND this target declares, in significance order.
     #
-    # Island types/constants are AUTHORITATIVE (same as win32k/winsrv): the C in this module
-    # is compiled against exactly these headers, so its field accesses and constant values
-    # are the island's, not some other module's same-named symbol. Functions add-if-absent so
-    # the shared NT/kernel surface stays the linkable one.
-    crate_files = getattr(target, "crate_bindgen_files", {}) or {}
-    crate_bindgen_path = crate_files.get(arch)
-    if crate_bindgen_path and crate_bindgen_path.exists():
-        module = getattr(target, "crate_module", "types") or "types"
-        types, functions, constants = _scan_bindgen(crate_bindgen_path, module)
+    # This one loop replaces five hard-coded branches — the shared kernel bindings plus a
+    # per-subsystem branch each for hal / win32k / winsrv / crate-local. Their merge policies
+    # turned out to be character-for-character identical, so the only real differences were
+    # the field name and the catalog module. Target.islands carries both, which is why the
+    # engine no longer contains the words "hal", "win32k" or "winsrv".
+    #
+    # The policy, unchanged: a module's OWN island is authoritative for types and constants,
+    # because that module's C is compiled against exactly those headers — its field offsets
+    # and constant values are the island's, not another module's same-named symbol. The
+    # shared base bindings are not authoritative (hand-written substrate outranks them).
+    # Functions are always add-if-absent, so the shared kernel/NT API stays the linkable
+    # surface and an island only ADDS its private entry points (Int*/Gre*/co_*, Con*/Term*).
+    for island in target.islands:
+        island_path = island.files.get(arch)
+        if not island_path or not island_path.exists():
+            continue
+        types, functions, constants = _scan_bindgen(island_path, island.module)
         for s in types:
-            catalog.types[s.name] = s
+            if island.authoritative or s.name not in catalog.types:
+                catalog.types[s.name] = s
         for s in constants:
-            catalog.constants[s.name] = s
+            if island.authoritative or s.name not in catalog.constants:
+                catalog.constants[s.name] = s
         for s in functions:
             if s.name not in catalog.functions:
                 catalog.functions[s.name] = s

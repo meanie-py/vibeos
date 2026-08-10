@@ -1,0 +1,19 @@
+# The rustconv project anchor for vibeos.
+#
+# Its LOCATION is the load-bearing part: everything project-scoped (sources, output
+# crates, and the durable bank of paid API responses) resolves relative to this file,
+# never to wherever the rustconv package happens to be installed. Discovery walks up
+# from the current directory, so each worktree anchors to ITSELF.
+#
+# See tools/rustconv/rustconv/project.py.
+
+[project]
+name = "vibeos"
+
+# The durable archive of paid API responses — one call per function, real money.
+# Pinned explicitly so extracting rustconv as a standalone dependency cannot relocate
+# it: a bank that silently moves is a bank that silently gets re-bought.
+responses = "tools/rustconv/.responses"
+
+# Dotted module supplying this tree's translation targets and path policy.
+plugin = "rustconv.projects.reactos"

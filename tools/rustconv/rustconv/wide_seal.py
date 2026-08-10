@@ -69,7 +69,7 @@ import hashlib
 import re
 from dataclasses import dataclass
 
-from .cpp_com import _cpp_literal_spans
+from .cpp_core import _cpp_literal_spans
 from .dead_regions import dead_region_spans, in_dead_region
 from .lex_mask import comment_spans, directive_spans, mask_code
 
