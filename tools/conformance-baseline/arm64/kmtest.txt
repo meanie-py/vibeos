@@ -36,7 +36,7 @@ KeFloatPointState OK pass=6 fail=0 skip=0 exit=0
 KeGuardedMutex OK pass=1653 fail=0 skip=0 exit=0
 KeIrql OK pass=128 fail=0 skip=0 exit=0
 KeMutex OK pass=1122 fail=0 skip=0 exit=0
-KeSpinLock OK pass=321 fail=2 skip=0 exit=0
+KeSpinLock OK pass=323 fail=0 skip=0 exit=0
 KeTimer OK pass=54 fail=0 skip=0 exit=0
 MmMdl OK pass=575 fail=0 skip=0 exit=0
 MmSection OK pass=292 fail=39 skip=12 exit=0
