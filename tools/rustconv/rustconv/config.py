@@ -326,6 +326,32 @@ OUTPUT_CRATE = RUST_DIR / "ntoskrnl-rust"
 # ---------------------------------------------------------------------------
 
 
+@dataclass(frozen=True)
+class Island:
+    """One generated FFI binding set, scanned into the catalog under ``module``.
+
+    An "island" is a bindgen-generated Rust file carrying the EXACT layouts and constant
+    values of some C header set, per arch. The engine only needs three things about one:
+    where its files are, what module path its symbols live under, and whether it outranks
+    what is already in the catalog.
+
+    ``authoritative`` decides type/constant collisions. A module's own island wins, because
+    that module's C is compiled against exactly those headers — its field offsets and
+    constant values are the island's, not some other module's same-named symbol. The shared
+    base bindings (ntkrnl-sys "ddk") are NOT authoritative: hand-written substrate outranks
+    them. Functions are always add-if-absent regardless, so the shared kernel/NT API stays
+    the linkable surface and an island only ADDS its private entry points.
+
+    This replaces four hard-coded, near-identical branches (hal_/win32k_/winsrv_/crate_
+    bindgen_files) whose merge policies turned out to be character-for-character the same.
+    The engine no longer knows the words "hal", "win32k" or "winsrv".
+    """
+
+    module: str  # catalog module path: "ddk", "hal_ddk", "win32k", "winsrv", "types", …
+    files: dict  # arch → generated .rs
+    authoritative: bool = True  # types/constants override; False = add-if-absent
+
+
 @dataclass
 class Target:
     """Describes one C source root + corresponding Rust output crate.
@@ -402,6 +428,25 @@ class Target:
     # Optional per-module override of the C++ CLASS body prompt. None means the shared
     # template, whose worker contract is target-independent — see load_function_system_prompt.
     com_system_prompt: Path | None = None
+    # The generic form of every bindgen hook above. A project may set this directly (and a
+    # non-ReactOS one should); when left empty it is DERIVED in __post_init__ from the legacy
+    # per-subsystem fields, so the 60-entry registry did not have to be rewritten to get the
+    # engine off them. Order is significance order — later islands outrank earlier ones.
+    islands: tuple = ()
+
+    def __post_init__(self):
+        if self.islands:
+            return
+        derived = [Island("ddk", self.bindgen_files, authoritative=False)]
+        for module, files in (
+            ("hal_ddk", self.hal_bindgen_files),
+            ("win32k", self.win32k_bindgen_files),
+            ("winsrv", self.winsrv_bindgen_files),
+            (self.crate_module or "types", self.crate_bindgen_files),
+        ):
+            if files:
+                derived.append(Island(module, files))
+        self.islands = tuple(derived)
 
 
 # ---------------------------------------------------------------------------
