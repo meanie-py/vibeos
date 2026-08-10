@@ -73,10 +73,9 @@ pub const NO_MULTIPLE_TRUSTEE: _MULTIPLE_TRUSTEE_OPERATION =
 macro_rules! FIELD_OFFSET { ($t:ty, $f:ident $(,)?) => { (core::mem::offset_of!($t, $f) as LONG) }; }
 // winbase.h ZeroMemory→RtlZeroMemory, CopyMemory→RtlCopyMemory. Routed to the CRT entry points
 // rather than a Rust byte loop: LLVM folds any such loop back into a call to memset/memcpy.
-#[macro_export]
-macro_rules! ZeroMemory {
-    ($d:expr, $l:expr $(,)?) => { $crate::prelude::memset($d as *mut c_void, 0, $l as usize) };
-}
+// The zeroing macros live in `win32macros-rust`, ported once from the header and
+// known-answer tested there. Re-exported under the same names, so no call site changed.
+pub use win32macros_rust::ZeroMemory;
 #[macro_export]
 macro_rules! CopyMemory {
     ($d:expr, $s:expr, $l:expr $(,)?) => {
@@ -87,7 +86,7 @@ macro_rules! CopyMemory {
 // no-op is an optimization barrier that can uncloak a latent ABI mismatch into `ud2`).
 #[macro_export] macro_rules! UNIMPLEMENTED { () => {{}}; }
 #[macro_export] macro_rules! UNREFERENCED_PARAMETER { ($($arg:tt)*) => {{}}; }
-pub use crate::{CopyMemory, FIELD_OFFSET, UNIMPLEMENTED, UNREFERENCED_PARAMETER, ZeroMemory};
+pub use crate::{CopyMemory, FIELD_OFFSET, UNIMPLEMENTED, UNREFERENCED_PARAMETER};
 
 // ================= constants bindgen cannot emit ==============================================
 // winreg.h spells each of these as a cast chain, `((HKEY)(LONG_PTR)(LONG)0x8000000N)`, not an

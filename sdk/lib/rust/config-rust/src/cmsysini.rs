@@ -805,18 +805,11 @@ pub unsafe extern "system" fn CmpQueryKeyName(
     Status
 }
 
-#[cfg(target_arch = "x86")]
-unsafe extern "stdcall" fn CmpDeleteKeyObjectCallback(Object: PVOID) {
+unsafe extern "system" fn CmpDeleteKeyObjectCallback(Object: PVOID) {
     CmpDeleteKeyObject(Object);
 }
 
-#[cfg(not(target_arch = "x86"))]
-unsafe extern "C" fn CmpDeleteKeyObjectCallback(Object: PVOID) {
-    CmpDeleteKeyObject(Object);
-}
-
-#[cfg(target_arch = "x86")]
-unsafe extern "stdcall" fn CmpCloseKeyObjectCallback(
+unsafe extern "system" fn CmpCloseKeyObjectCallback(
     Process: ntkrnl_sys::ddk::PEPROCESS,
     Object: PVOID,
     GrantedAccess: ACCESS_MASK,
@@ -826,31 +819,7 @@ unsafe extern "stdcall" fn CmpCloseKeyObjectCallback(
     CmpCloseKeyObject(Process as _, Object, GrantedAccess, ProcessHandleCount, SystemHandleCount);
 }
 
-#[cfg(not(target_arch = "x86"))]
-unsafe extern "C" fn CmpCloseKeyObjectCallback(
-    Process: ntkrnl_sys::ddk::PEPROCESS,
-    Object: PVOID,
-    GrantedAccess: ACCESS_MASK,
-    ProcessHandleCount: ULONG,
-    SystemHandleCount: ULONG,
-) {
-    CmpCloseKeyObject(Process as _, Object, GrantedAccess, ProcessHandleCount, SystemHandleCount);
-}
-
-#[cfg(target_arch = "x86")]
-unsafe extern "stdcall" fn CmpQueryKeyNameCallback(
-    Object: PVOID,
-    HasObjectName: BOOLEAN,
-    ObjectNameInfo: POBJECT_NAME_INFORMATION,
-    Length: ULONG,
-    ReturnLength: PULONG,
-    AccessMode: KPROCESSOR_MODE,
-) -> NTSTATUS {
-    CmpQueryKeyName(Object, HasObjectName, ObjectNameInfo, Length, ReturnLength, AccessMode)
-}
-
-#[cfg(not(target_arch = "x86"))]
-unsafe extern "C" fn CmpQueryKeyNameCallback(
+unsafe extern "system" fn CmpQueryKeyNameCallback(
     Object: PVOID,
     HasObjectName: BOOLEAN,
     ObjectNameInfo: POBJECT_NAME_INFORMATION,
@@ -2018,13 +1987,7 @@ pub unsafe extern "system" fn CmpLoadHiveThread(StartContext: *mut core::ffi::c_
     PsTerminateSystemThread(Status);
 }
 
-#[cfg(target_arch = "x86")]
-unsafe extern "stdcall" fn CmpLoadHiveThreadStart(StartContext: PVOID) {
-    CmpLoadHiveThread(StartContext);
-}
-
-#[cfg(not(target_arch = "x86"))]
-unsafe extern "C" fn CmpLoadHiveThreadStart(StartContext: PVOID) {
+unsafe extern "system" fn CmpLoadHiveThreadStart(StartContext: PVOID) {
     CmpLoadHiveThread(StartContext);
 }
 

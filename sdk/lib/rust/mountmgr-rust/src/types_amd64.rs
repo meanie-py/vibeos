@@ -396,7 +396,7 @@ unsafe extern "C" {
 unsafe extern "C" {
     pub static mut Unloading: LONG;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn DriverEntry(
         DriverObject: *mut _DRIVER_OBJECT,
         RegistryPath: PUNICODE_STRING,

@@ -226,7 +226,9 @@ def windows_free_tcp_port() -> int:
     return int(digits)
 
 
-def rewrite_netdev_for_windows(args: list[str], chardev_id: str) -> tuple[list[str], bool]:
+def rewrite_netdev_for_windows(
+    args: list[str], chardev_prefix: str = "gf"
+) -> tuple[list[str], list[str]]:
     """Adapt the slirp `-netdev user,...` for the windows-host boundary. Two rewrites,
     mirror images of each other:
 
@@ -235,22 +237,30 @@ def rewrite_netdev_for_windows(args: list[str], chardev_id: str) -> tuple[list[s
       the wildcard it's reachable via `gateway_ip()` (what `QemuVM.net_host` returns).
     - **guestfwd** (guest->host echo): `-cmd:cat` runs a *Unix* program on the QEMU host
       — which here is Windows (no `cat`). Redirect it to `-chardev:<id>`; the caller wires
-      that chardev to a harness-run echo server. Returns (new_args, needs_echo) where
-      needs_echo signals the caller to start the echo server + add the chardev arg.
+      each chardev to its own harness-run echo server.
+
+    Returns (new_args, chardev_ids) — ONE id per guestfwd, in the order they appear.
+    Every guestfwd must get its OWN id: a chardev is a single byte stream, so pointing
+    two forwards at one chardev merges two guests' echo traffic (see vm.GUESTFWD_ECHO_PORTS
+    for what that cost). `-cmd:cat` does not have that problem — slirp forks a fresh `cat`
+    per CONNECTION — so the rewrite has to add back the separation the fork gave us.
 
     No-op on a netdev without hostfwd/guestfwd; native never calls this (native keeps
     `127.0.0.1` + `cmd:cat` unchanged)."""
     out: list[str] = []
-    needs_echo = False
+    ids: list[str] = []
     for a in args:
         if a.startswith("user,") and ("hostfwd=" in a or "guestfwd=" in a):
             a = a.replace("hostfwd=tcp:127.0.0.1:", "hostfwd=tcp:0.0.0.0:")
-            new_a = re.sub(r"(guestfwd=tcp:[\d.]+:\d+)-cmd:cat", rf"\1-chardev:{chardev_id}", a)
-            if new_a != a:
-                needs_echo = True
-            a = new_a
+
+            def _own_chardev(m: re.Match[str]) -> str:
+                cid = f"{chardev_prefix}{len(ids)}"
+                ids.append(cid)
+                return f"{m.group(1)}-chardev:{cid}"
+
+            a = re.sub(r"(guestfwd=tcp:[\d.]+:\d+)-cmd:cat", _own_chardev, a)
         out.append(a)
-    return out, needs_echo
+    return out, ids
 
 
 def kill_by_uid(uid: str) -> None:

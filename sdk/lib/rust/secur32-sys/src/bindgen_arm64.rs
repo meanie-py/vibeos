@@ -1252,7 +1252,7 @@ pub struct _SecBufferDesc {
 pub type SecBufferDesc = _SecBufferDesc;
 pub type PSecBufferDesc = *mut _SecBufferDesc;
 pub type SEC_GET_KEY_FN = ::core::option::Option<
-    unsafe extern "C" fn(
+    unsafe extern "system" fn(
         Arg: *mut ::core::ffi::c_void,
         Principal: *mut ::core::ffi::c_void,
         KeyVer: ULONG,
@@ -1261,16 +1261,16 @@ pub type SEC_GET_KEY_FN = ::core::option::Option<
     ),
 >;
 pub type ENUMERATE_SECURITY_PACKAGES_FN_A = ::core::option::Option<
-    unsafe extern "C" fn(arg1: PULONG, arg2: *mut PSecPkgInfoA) -> SECURITY_STATUS,
+    unsafe extern "system" fn(arg1: PULONG, arg2: *mut PSecPkgInfoA) -> SECURITY_STATUS,
 >;
 pub type ENUMERATE_SECURITY_PACKAGES_FN_W = ::core::option::Option<
-    unsafe extern "C" fn(arg1: PULONG, arg2: *mut PSecPkgInfoW) -> SECURITY_STATUS,
+    unsafe extern "system" fn(arg1: PULONG, arg2: *mut PSecPkgInfoW) -> SECURITY_STATUS,
 >;
 pub type QUERY_CREDENTIALS_ATTRIBUTES_FN_A = ::core::option::Option<
-    unsafe extern "C" fn(arg1: PCredHandle, arg2: ULONG, arg3: PVOID) -> SECURITY_STATUS,
+    unsafe extern "system" fn(arg1: PCredHandle, arg2: ULONG, arg3: PVOID) -> SECURITY_STATUS,
 >;
 pub type QUERY_CREDENTIALS_ATTRIBUTES_FN_W = ::core::option::Option<
-    unsafe extern "C" fn(arg1: PCredHandle, arg2: ULONG, arg3: PVOID) -> SECURITY_STATUS,
+    unsafe extern "system" fn(arg1: PCredHandle, arg2: ULONG, arg3: PVOID) -> SECURITY_STATUS,
 >;
 #[repr(C)]
 #[derive(Debug, Copy, Clone)]
@@ -1301,7 +1301,7 @@ pub struct _SecPkgCredentials_NamesW {
 pub type SecPkgCredentials_NamesW = _SecPkgCredentials_NamesW;
 pub type PSecPkgCredentials_NamesW = *mut _SecPkgCredentials_NamesW;
 pub type ACQUIRE_CREDENTIALS_HANDLE_FN_A = ::core::option::Option<
-    unsafe extern "C" fn(
+    unsafe extern "system" fn(
         arg1: *mut SEC_CHAR,
         arg2: *mut SEC_CHAR,
         arg3: ULONG,
@@ -1314,7 +1314,7 @@ pub type ACQUIRE_CREDENTIALS_HANDLE_FN_A = ::core::option::Option<
     ) -> SECURITY_STATUS,
 >;
 pub type ACQUIRE_CREDENTIALS_HANDLE_FN_W = ::core::option::Option<
-    unsafe extern "C" fn(
+    unsafe extern "system" fn(
         arg1: *mut SEC_WCHAR,
         arg2: *mut SEC_WCHAR,
         arg3: ULONG,
@@ -1327,11 +1327,11 @@ pub type ACQUIRE_CREDENTIALS_HANDLE_FN_W = ::core::option::Option<
     ) -> SECURITY_STATUS,
 >;
 pub type FREE_CONTEXT_BUFFER_FN =
-    ::core::option::Option<unsafe extern "C" fn(arg1: PVOID) -> SECURITY_STATUS>;
+    ::core::option::Option<unsafe extern "system" fn(arg1: PVOID) -> SECURITY_STATUS>;
 pub type FREE_CREDENTIALS_HANDLE_FN =
-    ::core::option::Option<unsafe extern "C" fn(arg1: PCredHandle) -> SECURITY_STATUS>;
+    ::core::option::Option<unsafe extern "system" fn(arg1: PCredHandle) -> SECURITY_STATUS>;
 pub type INITIALIZE_SECURITY_CONTEXT_FN_A = ::core::option::Option<
-    unsafe extern "C" fn(
+    unsafe extern "system" fn(
         arg1: PCredHandle,
         arg2: PCtxtHandle,
         arg3: *mut SEC_CHAR,
@@ -1347,7 +1347,7 @@ pub type INITIALIZE_SECURITY_CONTEXT_FN_A = ::core::option::Option<
     ) -> SECURITY_STATUS,
 >;
 pub type INITIALIZE_SECURITY_CONTEXT_FN_W = ::core::option::Option<
-    unsafe extern "C" fn(
+    unsafe extern "system" fn(
         arg1: PCredHandle,
         arg2: PCtxtHandle,
         arg3: *mut SEC_WCHAR,
@@ -1363,7 +1363,7 @@ pub type INITIALIZE_SECURITY_CONTEXT_FN_W = ::core::option::Option<
     ) -> SECURITY_STATUS,
 >;
 pub type ACCEPT_SECURITY_CONTEXT_FN = ::core::option::Option<
-    unsafe extern "C" fn(
+    unsafe extern "system" fn(
         arg1: PCredHandle,
         arg2: PCtxtHandle,
         arg3: PSecBufferDesc,
@@ -1376,22 +1376,22 @@ pub type ACCEPT_SECURITY_CONTEXT_FN = ::core::option::Option<
     ) -> SECURITY_STATUS,
 >;
 pub type COMPLETE_AUTH_TOKEN_FN = ::core::option::Option<
-    unsafe extern "C" fn(arg1: PCtxtHandle, arg2: PSecBufferDesc) -> SECURITY_STATUS,
+    unsafe extern "system" fn(arg1: PCtxtHandle, arg2: PSecBufferDesc) -> SECURITY_STATUS,
 >;
 pub type DELETE_SECURITY_CONTEXT_FN =
-    ::core::option::Option<unsafe extern "C" fn(arg1: PCtxtHandle) -> SECURITY_STATUS>;
+    ::core::option::Option<unsafe extern "system" fn(arg1: PCtxtHandle) -> SECURITY_STATUS>;
 pub type APPLY_CONTROL_TOKEN_FN = ::core::option::Option<
-    unsafe extern "C" fn(arg1: PCtxtHandle, arg2: PSecBufferDesc) -> SECURITY_STATUS,
+    unsafe extern "system" fn(arg1: PCtxtHandle, arg2: PSecBufferDesc) -> SECURITY_STATUS,
 >;
 pub type QUERY_CONTEXT_ATTRIBUTES_FN_A = ::core::option::Option<
-    unsafe extern "C" fn(
+    unsafe extern "system" fn(
         arg1: PCtxtHandle,
         arg2: ULONG,
         arg3: *mut ::core::ffi::c_void,
     ) -> SECURITY_STATUS,
 >;
 pub type QUERY_CONTEXT_ATTRIBUTES_FN_W = ::core::option::Option<
-    unsafe extern "C" fn(
+    unsafe extern "system" fn(
         arg1: PCtxtHandle,
         arg2: ULONG,
         arg3: *mut ::core::ffi::c_void,
@@ -1633,11 +1633,11 @@ pub struct _SecPkgContext_Bindings {
 pub type SecPkgContext_Bindings = _SecPkgContext_Bindings;
 pub type PSecPkgContext_Bindings = *mut _SecPkgContext_Bindings;
 pub type IMPERSONATE_SECURITY_CONTEXT_FN =
-    ::core::option::Option<unsafe extern "C" fn(arg1: PCtxtHandle) -> SECURITY_STATUS>;
+    ::core::option::Option<unsafe extern "system" fn(arg1: PCtxtHandle) -> SECURITY_STATUS>;
 pub type REVERT_SECURITY_CONTEXT_FN =
-    ::core::option::Option<unsafe extern "C" fn(arg1: PCtxtHandle) -> SECURITY_STATUS>;
+    ::core::option::Option<unsafe extern "system" fn(arg1: PCtxtHandle) -> SECURITY_STATUS>;
 pub type MAKE_SIGNATURE_FN = ::core::option::Option<
-    unsafe extern "C" fn(
+    unsafe extern "system" fn(
         arg1: PCtxtHandle,
         arg2: ULONG,
         arg3: PSecBufferDesc,
@@ -1645,7 +1645,7 @@ pub type MAKE_SIGNATURE_FN = ::core::option::Option<
     ) -> SECURITY_STATUS,
 >;
 pub type VERIFY_SIGNATURE_FN = ::core::option::Option<
-    unsafe extern "C" fn(
+    unsafe extern "system" fn(
         arg1: PCtxtHandle,
         arg2: PSecBufferDesc,
         arg3: ULONG,
@@ -1653,13 +1653,13 @@ pub type VERIFY_SIGNATURE_FN = ::core::option::Option<
     ) -> SECURITY_STATUS,
 >;
 pub type QUERY_SECURITY_PACKAGE_INFO_FN_A = ::core::option::Option<
-    unsafe extern "C" fn(arg1: *mut SEC_CHAR, arg2: *mut PSecPkgInfoA) -> SECURITY_STATUS,
+    unsafe extern "system" fn(arg1: *mut SEC_CHAR, arg2: *mut PSecPkgInfoA) -> SECURITY_STATUS,
 >;
 pub type QUERY_SECURITY_PACKAGE_INFO_FN_W = ::core::option::Option<
-    unsafe extern "C" fn(arg1: *mut SEC_WCHAR, arg2: *mut PSecPkgInfoW) -> SECURITY_STATUS,
+    unsafe extern "system" fn(arg1: *mut SEC_WCHAR, arg2: *mut PSecPkgInfoW) -> SECURITY_STATUS,
 >;
 pub type EXPORT_SECURITY_CONTEXT_FN = ::core::option::Option<
-    unsafe extern "C" fn(
+    unsafe extern "system" fn(
         arg1: PCtxtHandle,
         arg2: ULONG,
         arg3: PSecBuffer,
@@ -1667,7 +1667,7 @@ pub type EXPORT_SECURITY_CONTEXT_FN = ::core::option::Option<
     ) -> SECURITY_STATUS,
 >;
 pub type IMPORT_SECURITY_CONTEXT_FN_A = ::core::option::Option<
-    unsafe extern "C" fn(
+    unsafe extern "system" fn(
         arg1: *mut SEC_CHAR,
         arg2: PSecBuffer,
         arg3: *mut ::core::ffi::c_void,
@@ -1675,7 +1675,7 @@ pub type IMPORT_SECURITY_CONTEXT_FN_A = ::core::option::Option<
     ) -> SECURITY_STATUS,
 >;
 pub type IMPORT_SECURITY_CONTEXT_FN_W = ::core::option::Option<
-    unsafe extern "C" fn(
+    unsafe extern "system" fn(
         arg1: *mut SEC_WCHAR,
         arg2: PSecBuffer,
         arg3: *mut ::core::ffi::c_void,
@@ -1683,7 +1683,7 @@ pub type IMPORT_SECURITY_CONTEXT_FN_W = ::core::option::Option<
     ) -> SECURITY_STATUS,
 >;
 pub type ADD_CREDENTIALS_FN_A = ::core::option::Option<
-    unsafe extern "C" fn(
+    unsafe extern "system" fn(
         arg1: PCredHandle,
         arg2: *mut SEC_CHAR,
         arg3: *mut SEC_CHAR,
@@ -1695,7 +1695,7 @@ pub type ADD_CREDENTIALS_FN_A = ::core::option::Option<
     ) -> SECURITY_STATUS,
 >;
 pub type ADD_CREDENTIALS_FN_W = ::core::option::Option<
-    unsafe extern "C" fn(
+    unsafe extern "system" fn(
         arg1: PCredHandle,
         arg2: *mut SEC_WCHAR,
         arg3: *mut SEC_WCHAR,
@@ -1707,10 +1707,10 @@ pub type ADD_CREDENTIALS_FN_W = ::core::option::Option<
     ) -> SECURITY_STATUS,
 >;
 pub type QUERY_SECURITY_CONTEXT_TOKEN_FN = ::core::option::Option<
-    unsafe extern "C" fn(arg1: PCtxtHandle, arg2: *mut HANDLE) -> SECURITY_STATUS,
+    unsafe extern "system" fn(arg1: PCtxtHandle, arg2: *mut HANDLE) -> SECURITY_STATUS,
 >;
 pub type ENCRYPT_MESSAGE_FN = ::core::option::Option<
-    unsafe extern "C" fn(
+    unsafe extern "system" fn(
         arg1: PCtxtHandle,
         arg2: ULONG,
         arg3: PSecBufferDesc,
@@ -1718,7 +1718,7 @@ pub type ENCRYPT_MESSAGE_FN = ::core::option::Option<
     ) -> SECURITY_STATUS,
 >;
 pub type DECRYPT_MESSAGE_FN = ::core::option::Option<
-    unsafe extern "C" fn(
+    unsafe extern "system" fn(
         arg1: PCtxtHandle,
         arg2: PSecBufferDesc,
         arg3: ULONG,
@@ -1726,7 +1726,7 @@ pub type DECRYPT_MESSAGE_FN = ::core::option::Option<
     ) -> SECURITY_STATUS,
 >;
 pub type SET_CONTEXT_ATTRIBUTES_FN_A = ::core::option::Option<
-    unsafe extern "C" fn(
+    unsafe extern "system" fn(
         arg1: PCtxtHandle,
         arg2: ULONG,
         arg3: *mut ::core::ffi::c_void,
@@ -1734,7 +1734,7 @@ pub type SET_CONTEXT_ATTRIBUTES_FN_A = ::core::option::Option<
     ) -> SECURITY_STATUS,
 >;
 pub type SET_CONTEXT_ATTRIBUTES_FN_W = ::core::option::Option<
-    unsafe extern "C" fn(
+    unsafe extern "system" fn(
         arg1: PCtxtHandle,
         arg2: ULONG,
         arg3: *mut ::core::ffi::c_void,
@@ -2714,16 +2714,16 @@ pub struct _TRUSTED_DOMAIN_FULL_INFORMATION {
 }
 pub type TRUSTED_DOMAIN_FULL_INFORMATION = _TRUSTED_DOMAIN_FULL_INFORMATION;
 pub type PTRUSTED_DOMAIN_FULL_INFORMATION = *mut _TRUSTED_DOMAIN_FULL_INFORMATION;
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn SystemFunction036(arg1: PVOID, arg2: ULONG) -> BOOLEAN;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn SystemFunction040(Memory: PVOID, MemorySize: ULONG, OptionFlags: ULONG) -> NTSTATUS;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn SystemFunction041(Memory: PVOID, MemorySize: ULONG, OptionFlags: ULONG) -> NTSTATUS;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn LsaAddAccountRights(
         arg1: LSA_HANDLE,
         arg2: PSID,
@@ -2731,10 +2731,10 @@ unsafe extern "C" {
         arg4: ULONG,
     ) -> NTSTATUS;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn LsaAddPrivilegesToAccount(arg1: LSA_HANDLE, arg2: PPRIVILEGE_SET) -> NTSTATUS;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn LsaCallAuthenticationPackage(
         arg1: HANDLE,
         arg2: ULONG,
@@ -2745,16 +2745,16 @@ unsafe extern "C" {
         arg7: PNTSTATUS,
     ) -> NTSTATUS;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn LsaClearAuditLog(arg1: LSA_HANDLE) -> NTSTATUS;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn LsaClose(arg1: LSA_HANDLE) -> NTSTATUS;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn LsaConnectUntrusted(arg1: PHANDLE) -> NTSTATUS;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn LsaCreateAccount(
         arg1: LSA_HANDLE,
         arg2: PSID,
@@ -2762,7 +2762,7 @@ unsafe extern "C" {
         arg4: PLSA_HANDLE,
     ) -> NTSTATUS;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn LsaCreateSecret(
         arg1: LSA_HANDLE,
         arg2: PLSA_UNICODE_STRING,
@@ -2770,7 +2770,7 @@ unsafe extern "C" {
         arg4: PLSA_HANDLE,
     ) -> NTSTATUS;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn LsaCreateTrustedDomain(
         arg1: LSA_HANDLE,
         arg2: PLSA_TRUST_INFORMATION,
@@ -2778,7 +2778,7 @@ unsafe extern "C" {
         arg4: PLSA_HANDLE,
     ) -> NTSTATUS;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn LsaCreateTrustedDomainEx(
         arg1: LSA_HANDLE,
         arg2: PTRUSTED_DOMAIN_INFORMATION_EX,
@@ -2787,16 +2787,16 @@ unsafe extern "C" {
         arg5: PLSA_HANDLE,
     ) -> NTSTATUS;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn LsaDelete(arg1: LSA_HANDLE) -> NTSTATUS;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn LsaDeleteTrustedDomain(arg1: LSA_HANDLE, arg2: PSID) -> NTSTATUS;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn LsaDeregisterLogonProcess(arg1: HANDLE) -> NTSTATUS;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn LsaEnumerateAccountRights(
         arg1: LSA_HANDLE,
         arg2: PSID,
@@ -2804,7 +2804,7 @@ unsafe extern "C" {
         arg4: PULONG,
     ) -> NTSTATUS;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn LsaEnumerateAccounts(
         arg1: LSA_HANDLE,
         arg2: PLSA_ENUMERATION_HANDLE,
@@ -2813,7 +2813,7 @@ unsafe extern "C" {
         arg5: PULONG,
     ) -> NTSTATUS;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn LsaEnumerateAccountsWithUserRight(
         arg1: LSA_HANDLE,
         arg2: PLSA_UNICODE_STRING,
@@ -2821,10 +2821,10 @@ unsafe extern "C" {
         arg4: PULONG,
     ) -> NTSTATUS;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn LsaEnumerateLogonSessions(arg1: PULONG, arg2: *mut PLUID) -> NTSTATUS;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn LsaEnumeratePrivileges(
         arg1: LSA_HANDLE,
         arg2: PLSA_ENUMERATION_HANDLE,
@@ -2833,11 +2833,11 @@ unsafe extern "C" {
         arg5: PULONG,
     ) -> NTSTATUS;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn LsaEnumeratePrivilegesOfAccount(arg1: LSA_HANDLE, arg2: *mut PPRIVILEGE_SET)
         -> NTSTATUS;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn LsaEnumerateTrustedDomains(
         arg1: LSA_HANDLE,
         arg2: PLSA_ENUMERATION_HANDLE,
@@ -2846,7 +2846,7 @@ unsafe extern "C" {
         arg5: PULONG,
     ) -> NTSTATUS;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn LsaEnumerateTrustedDomainsEx(
         arg1: LSA_HANDLE,
         arg2: PLSA_ENUMERATION_HANDLE,
@@ -2855,33 +2855,33 @@ unsafe extern "C" {
         arg5: PULONG,
     ) -> NTSTATUS;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn LsaFreeMemory(arg1: PVOID) -> NTSTATUS;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn LsaFreeReturnBuffer(arg1: PVOID) -> NTSTATUS;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn LsaGetLogonSessionData(arg1: PLUID, arg2: *mut PSECURITY_LOGON_SESSION_DATA)
         -> NTSTATUS;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn LsaGetQuotasForAccount(arg1: LSA_HANDLE, arg2: PQUOTA_LIMITS) -> NTSTATUS;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn LsaGetRemoteUserName(
         arg1: PLSA_UNICODE_STRING,
         arg2: *mut PLSA_UNICODE_STRING,
         arg3: *mut PLSA_UNICODE_STRING,
     ) -> NTSTATUS;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn LsaGetSystemAccessAccount(arg1: LSA_HANDLE, arg2: PULONG) -> NTSTATUS;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn LsaGetUserName(arg1: *mut PUNICODE_STRING, arg2: *mut PUNICODE_STRING) -> NTSTATUS;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn LsaLogonUser(
         arg1: HANDLE,
         arg2: PLSA_STRING,
@@ -2899,14 +2899,14 @@ unsafe extern "C" {
         arg14: PNTSTATUS,
     ) -> NTSTATUS;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn LsaLookupAuthenticationPackage(
         arg1: HANDLE,
         arg2: PLSA_STRING,
         arg3: PULONG,
     ) -> NTSTATUS;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn LsaLookupNames(
         arg1: LSA_HANDLE,
         arg2: ULONG,
@@ -2915,7 +2915,7 @@ unsafe extern "C" {
         arg5: *mut PLSA_TRANSLATED_SID,
     ) -> NTSTATUS;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn LsaLookupNames2(
         arg1: LSA_HANDLE,
         arg2: ULONG,
@@ -2925,7 +2925,7 @@ unsafe extern "C" {
         arg6: *mut PLSA_TRANSLATED_SID2,
     ) -> NTSTATUS;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn LsaLookupPrivilegeDisplayName(
         arg1: LSA_HANDLE,
         arg2: PLSA_UNICODE_STRING,
@@ -2933,21 +2933,21 @@ unsafe extern "C" {
         arg4: PUSHORT,
     ) -> NTSTATUS;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn LsaLookupPrivilegeName(
         arg1: LSA_HANDLE,
         arg2: PLUID,
         arg3: *mut PLSA_UNICODE_STRING,
     ) -> NTSTATUS;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn LsaLookupPrivilegeValue(
         arg1: LSA_HANDLE,
         arg2: PLSA_UNICODE_STRING,
         arg3: PLUID,
     ) -> NTSTATUS;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn LsaLookupSids(
         arg1: LSA_HANDLE,
         arg2: ULONG,
@@ -2956,10 +2956,10 @@ unsafe extern "C" {
         arg5: *mut PLSA_TRANSLATED_NAME,
     ) -> NTSTATUS;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn LsaNtStatusToWinError(arg1: NTSTATUS) -> ULONG;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn LsaOpenAccount(
         arg1: LSA_HANDLE,
         arg2: PSID,
@@ -2967,7 +2967,7 @@ unsafe extern "C" {
         arg4: PLSA_HANDLE,
     ) -> NTSTATUS;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn LsaOpenPolicy(
         arg1: PLSA_UNICODE_STRING,
         arg2: PLSA_OBJECT_ATTRIBUTES,
@@ -2975,7 +2975,7 @@ unsafe extern "C" {
         arg4: PLSA_HANDLE,
     ) -> NTSTATUS;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn LsaOpenPolicySce(
         arg1: PLSA_UNICODE_STRING,
         arg2: PLSA_OBJECT_ATTRIBUTES,
@@ -2983,7 +2983,7 @@ unsafe extern "C" {
         arg4: PLSA_HANDLE,
     ) -> NTSTATUS;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn LsaOpenSecret(
         arg1: LSA_HANDLE,
         arg2: PLSA_UNICODE_STRING,
@@ -2991,14 +2991,14 @@ unsafe extern "C" {
         arg4: PLSA_HANDLE,
     ) -> NTSTATUS;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn LsaQuerySecurityObject(
         arg1: LSA_HANDLE,
         arg2: SECURITY_INFORMATION,
         arg3: *mut PSECURITY_DESCRIPTOR,
     ) -> NTSTATUS;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn LsaOpenTrustedDomain(
         arg1: LSA_HANDLE,
         arg2: PSID,
@@ -3006,7 +3006,7 @@ unsafe extern "C" {
         arg4: PLSA_HANDLE,
     ) -> NTSTATUS;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn LsaOpenTrustedDomainByName(
         arg1: LSA_HANDLE,
         arg2: PLSA_UNICODE_STRING,
@@ -3014,21 +3014,21 @@ unsafe extern "C" {
         arg4: PLSA_HANDLE,
     ) -> NTSTATUS;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn LsaQueryDomainInformationPolicy(
         arg1: LSA_HANDLE,
         arg2: POLICY_DOMAIN_INFORMATION_CLASS,
         arg3: *mut PVOID,
     ) -> NTSTATUS;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn LsaQueryInformationPolicy(
         arg1: LSA_HANDLE,
         arg2: POLICY_INFORMATION_CLASS,
         arg3: *mut PVOID,
     ) -> NTSTATUS;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn LsaQuerySecret(
         arg1: LSA_HANDLE,
         arg2: *mut PLSA_UNICODE_STRING,
@@ -3037,7 +3037,7 @@ unsafe extern "C" {
         arg5: PLARGE_INTEGER,
     ) -> NTSTATUS;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn LsaQueryTrustedDomainInfo(
         arg1: LSA_HANDLE,
         arg2: PSID,
@@ -3045,7 +3045,7 @@ unsafe extern "C" {
         arg4: *mut PVOID,
     ) -> NTSTATUS;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn LsaQueryTrustedDomainInfoByName(
         arg1: LSA_HANDLE,
         arg2: PLSA_UNICODE_STRING,
@@ -3053,20 +3053,20 @@ unsafe extern "C" {
         arg4: *mut PVOID,
     ) -> NTSTATUS;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn LsaRegisterLogonProcess(
         arg1: PLSA_STRING,
         arg2: PHANDLE,
         arg3: PLSA_OPERATIONAL_MODE,
     ) -> NTSTATUS;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn LsaRegisterPolicyChangeNotification(
         arg1: POLICY_NOTIFICATION_INFORMATION_CLASS,
         arg2: HANDLE,
     ) -> NTSTATUS;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn LsaRemoveAccountRights(
         arg1: LSA_HANDLE,
         arg2: PSID,
@@ -3075,62 +3075,62 @@ unsafe extern "C" {
         arg5: ULONG,
     ) -> NTSTATUS;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn LsaRemovePrivilegesFromAccount(
         arg1: LSA_HANDLE,
         arg2: BOOLEAN,
         arg3: PPRIVILEGE_SET,
     ) -> NTSTATUS;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn LsaRetrievePrivateData(
         arg1: LSA_HANDLE,
         arg2: PLSA_UNICODE_STRING,
         arg3: *mut PLSA_UNICODE_STRING,
     ) -> NTSTATUS;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn LsaSetDomainInformationPolicy(
         arg1: LSA_HANDLE,
         arg2: POLICY_DOMAIN_INFORMATION_CLASS,
         arg3: PVOID,
     ) -> NTSTATUS;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn LsaSetInformationPolicy(
         arg1: LSA_HANDLE,
         arg2: POLICY_INFORMATION_CLASS,
         arg3: PVOID,
     ) -> NTSTATUS;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn LsaSetInformationTrustedDomain(
         arg1: LSA_HANDLE,
         arg2: TRUSTED_INFORMATION_CLASS,
         arg3: PVOID,
     ) -> NTSTATUS;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn LsaSetQuotasForAccount(arg1: LSA_HANDLE, arg2: PQUOTA_LIMITS) -> NTSTATUS;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn LsaSetSecret(
         arg1: LSA_HANDLE,
         arg2: PLSA_UNICODE_STRING,
         arg3: PLSA_UNICODE_STRING,
     ) -> NTSTATUS;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn LsaSetSecurityObject(
         arg1: LSA_HANDLE,
         arg2: SECURITY_INFORMATION,
         arg3: PSECURITY_DESCRIPTOR,
     ) -> NTSTATUS;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn LsaSetSystemAccessAccount(arg1: LSA_HANDLE, arg2: ULONG) -> NTSTATUS;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn LsaSetTrustedDomainInformation(
         arg1: LSA_HANDLE,
         arg2: PSID,
@@ -3138,7 +3138,7 @@ unsafe extern "C" {
         arg4: PVOID,
     ) -> NTSTATUS;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn LsaSetTrustedDomainInfoByName(
         arg1: LSA_HANDLE,
         arg2: PLSA_UNICODE_STRING,
@@ -3146,14 +3146,14 @@ unsafe extern "C" {
         arg4: PVOID,
     ) -> NTSTATUS;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn LsaStorePrivateData(
         arg1: LSA_HANDLE,
         arg2: PLSA_UNICODE_STRING,
         arg3: PLSA_UNICODE_STRING,
     ) -> NTSTATUS;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn LsaUnregisterPolicyChangeNotification(
         arg1: POLICY_NOTIFICATION_INFORMATION_CLASS,
         arg2: HANDLE,
@@ -3279,13 +3279,13 @@ pub const _CRED_MARSHAL_TYPE_BinaryBlobCredential: _CRED_MARSHAL_TYPE = 3;
 pub type _CRED_MARSHAL_TYPE = ::core::ffi::c_uint;
 pub use self::_CRED_MARSHAL_TYPE as CRED_MARSHAL_TYPE;
 pub type PCRED_MARSHAL_TYPE = *mut _CRED_MARSHAL_TYPE;
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn CredDeleteA(arg1: LPCSTR, arg2: DWORD, arg3: DWORD) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn CredDeleteW(arg1: LPCWSTR, arg2: DWORD, arg3: DWORD) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn CredEnumerateA(
         arg1: LPCSTR,
         arg2: DWORD,
@@ -3293,7 +3293,7 @@ unsafe extern "C" {
         arg3: *mut *mut PCREDENTIALA,
     ) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn CredEnumerateW(
         arg1: LPCWSTR,
         arg2: DWORD,
@@ -3301,31 +3301,31 @@ unsafe extern "C" {
         arg3: *mut *mut PCREDENTIALW,
     ) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn CredFree(arg1: PVOID);
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn CredGetSessionTypes(MaximumPersistCount: DWORD, arg1: LPDWORD) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn CredIsMarshaledCredentialA(arg1: LPCSTR) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn CredIsMarshaledCredentialW(arg1: LPCWSTR) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn CredMarshalCredentialA(arg1: CRED_MARSHAL_TYPE, arg2: PVOID, arg3: *mut LPSTR) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn CredMarshalCredentialW(arg1: CRED_MARSHAL_TYPE, arg2: PVOID, arg3: *mut LPWSTR) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn CredReadA(arg1: LPCSTR, arg2: DWORD, arg3: DWORD, arg4: *mut PCREDENTIALA) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn CredReadW(arg1: LPCWSTR, arg2: DWORD, arg3: DWORD, arg4: *mut PCREDENTIALW) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn CredReadDomainCredentialsA(
         arg1: PCREDENTIAL_TARGET_INFORMATIONA,
         arg2: DWORD,
@@ -3333,7 +3333,7 @@ unsafe extern "C" {
         arg3: *mut *mut PCREDENTIALA,
     ) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn CredReadDomainCredentialsW(
         arg1: PCREDENTIAL_TARGET_INFORMATIONW,
         arg2: DWORD,
@@ -3341,33 +3341,33 @@ unsafe extern "C" {
         arg3: *mut *mut PCREDENTIALW,
     ) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn CredRenameA(arg1: LPCSTR, arg2: LPCSTR, arg3: DWORD, arg4: DWORD) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn CredRenameW(arg1: LPCWSTR, arg2: LPCWSTR, arg3: DWORD, arg4: DWORD) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn CredUnmarshalCredentialA(
         arg1: LPCSTR,
         arg2: PCRED_MARSHAL_TYPE,
         arg3: *mut PVOID,
     ) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn CredUnmarshalCredentialW(
         arg1: LPCWSTR,
         arg2: PCRED_MARSHAL_TYPE,
         arg3: *mut PVOID,
     ) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn CredWriteA(arg1: PCREDENTIALA, arg2: DWORD) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn CredWriteW(arg1: PCREDENTIALW, arg2: DWORD) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn CredUICmdLinePromptForCredentialsW(
         arg1: PCWSTR,
         arg2: PCtxtHandle,
@@ -3380,7 +3380,7 @@ unsafe extern "C" {
         arg7: DWORD,
     ) -> DWORD;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn CredUICmdLinePromptForCredentialsA(
         arg1: PCSTR,
         arg2: PCtxtHandle,
@@ -3393,13 +3393,13 @@ unsafe extern "C" {
         arg7: DWORD,
     ) -> DWORD;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn CredUIConfirmCredentialsW(arg1: PCWSTR, arg2: BOOL) -> DWORD;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn CredUIConfirmCredentialsA(arg1: PCSTR, arg2: BOOL) -> DWORD;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn CredUIParseUserNameW(
         arg1: PCWSTR,
         arg2: PWSTR,
@@ -3408,7 +3408,7 @@ unsafe extern "C" {
         domainBufferSize: ULONG,
     ) -> DWORD;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn CredUIParseUserNameA(
         arg1: PCSTR,
         arg2: PSTR,
@@ -3417,7 +3417,7 @@ unsafe extern "C" {
         domainBufferSize: ULONG,
     ) -> DWORD;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn CredUIPromptForCredentialsW(
         arg1: PCREDUI_INFOW,
         arg2: PCWSTR,
@@ -3431,7 +3431,7 @@ unsafe extern "C" {
         arg8: DWORD,
     ) -> DWORD;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn CredUIPromptForCredentialsA(
         arg1: PCREDUI_INFOA,
         arg2: PCSTR,
@@ -3445,10 +3445,10 @@ unsafe extern "C" {
         arg8: DWORD,
     ) -> DWORD;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn CredUIStoreSSOCredW(arg1: PCWSTR, arg2: PCWSTR, arg3: PCWSTR, arg4: BOOL) -> DWORD;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn CredUIReadSSOCredW(arg1: PCWSTR, arg2: *mut PWSTR) -> DWORD;
 }
 #[repr(C)]
@@ -3808,10 +3808,10 @@ pub struct _USER_INFO_1053 {
 }
 pub type USER_INFO_1053 = _USER_INFO_1053;
 pub type PUSER_INFO_1053 = *mut _USER_INFO_1053;
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn NetUserAdd(arg1: LPCWSTR, arg2: DWORD, arg3: PBYTE, arg4: PDWORD) -> DWORD;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn NetUserEnum(
         arg1: LPCWSTR,
         arg2: DWORD,
@@ -3823,10 +3823,10 @@ unsafe extern "C" {
         arg8: PDWORD,
     ) -> DWORD;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn NetUserGetInfo(arg1: LPCWSTR, arg2: LPCWSTR, arg3: DWORD, arg4: *mut PBYTE) -> DWORD;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn NetUserSetInfo(
         arg1: LPCWSTR,
         arg2: LPCWSTR,
@@ -3835,10 +3835,10 @@ unsafe extern "C" {
         arg5: PDWORD,
     ) -> DWORD;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn NetUserDel(arg1: LPCWSTR, arg2: LPCWSTR) -> DWORD;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn NetUserGetGroups(
         arg1: LPCWSTR,
         arg2: LPCWSTR,
@@ -3849,7 +3849,7 @@ unsafe extern "C" {
         arg7: PDWORD,
     ) -> DWORD;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn NetUserSetGroups(
         arg1: LPCWSTR,
         arg2: LPCWSTR,
@@ -3858,7 +3858,7 @@ unsafe extern "C" {
         arg5: DWORD,
     ) -> DWORD;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn NetUserGetLocalGroups(
         arg1: LPCWSTR,
         arg2: LPCWSTR,
@@ -3870,13 +3870,13 @@ unsafe extern "C" {
         arg8: PDWORD,
     ) -> DWORD;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn NetUserModalsGet(arg1: LPCWSTR, arg2: DWORD, arg3: *mut PBYTE) -> DWORD;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn NetUserModalsSet(arg1: LPCWSTR, arg2: DWORD, arg3: PBYTE, arg4: PDWORD) -> DWORD;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn NetUserChangePassword(
         arg1: LPCWSTR,
         arg2: LPCWSTR,
@@ -3884,13 +3884,13 @@ unsafe extern "C" {
         arg4: LPCWSTR,
     ) -> DWORD;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn NetGroupAdd(arg1: LPCWSTR, arg2: DWORD, arg3: PBYTE, arg4: PDWORD) -> DWORD;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn NetGroupAddUser(arg1: LPCWSTR, arg2: LPCWSTR, arg3: LPCWSTR) -> DWORD;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn NetGroupEnum(
         arg1: LPCWSTR,
         arg2: DWORD,
@@ -3901,10 +3901,10 @@ unsafe extern "C" {
         arg7: PDWORD_PTR,
     ) -> DWORD;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn NetGroupGetInfo(arg1: LPCWSTR, arg2: LPCWSTR, arg3: DWORD, arg4: *mut PBYTE) -> DWORD;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn NetGroupSetInfo(
         arg1: LPCWSTR,
         arg2: LPCWSTR,
@@ -3913,13 +3913,13 @@ unsafe extern "C" {
         arg5: PDWORD,
     ) -> DWORD;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn NetGroupDel(arg1: LPCWSTR, arg2: LPCWSTR) -> DWORD;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn NetGroupDelUser(arg1: LPCWSTR, arg2: LPCWSTR, arg3: LPCWSTR) -> DWORD;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn NetGroupGetUsers(
         arg1: LPCWSTR,
         arg2: LPCWSTR,
@@ -3931,7 +3931,7 @@ unsafe extern "C" {
         arg8: PDWORD_PTR,
     ) -> DWORD;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn NetGroupSetUsers(
         arg1: LPCWSTR,
         arg2: LPCWSTR,
@@ -3940,13 +3940,13 @@ unsafe extern "C" {
         arg5: DWORD,
     ) -> DWORD;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn NetLocalGroupAdd(arg1: LPCWSTR, arg2: DWORD, arg3: PBYTE, arg4: PDWORD) -> DWORD;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn NetLocalGroupAddMember(arg1: LPCWSTR, arg2: LPCWSTR, arg3: PSID) -> DWORD;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn NetLocalGroupEnum(
         arg1: LPCWSTR,
         arg2: DWORD,
@@ -3957,7 +3957,7 @@ unsafe extern "C" {
         arg7: PDWORD_PTR,
     ) -> DWORD;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn NetLocalGroupGetInfo(
         arg1: LPCWSTR,
         arg2: LPCWSTR,
@@ -3965,7 +3965,7 @@ unsafe extern "C" {
         arg4: *mut PBYTE,
     ) -> DWORD;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn NetLocalGroupSetInfo(
         arg1: LPCWSTR,
         arg2: LPCWSTR,
@@ -3974,13 +3974,13 @@ unsafe extern "C" {
         arg5: PDWORD,
     ) -> DWORD;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn NetLocalGroupDel(arg1: LPCWSTR, arg2: LPCWSTR) -> DWORD;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn NetLocalGroupDelMember(arg1: LPCWSTR, arg2: LPCWSTR, arg3: PSID) -> DWORD;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn NetLocalGroupGetMembers(
         arg1: LPCWSTR,
         arg2: LPCWSTR,
@@ -3992,7 +3992,7 @@ unsafe extern "C" {
         arg8: PDWORD_PTR,
     ) -> DWORD;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn NetLocalGroupSetMembers(
         arg1: LPCWSTR,
         arg2: LPCWSTR,
@@ -4001,7 +4001,7 @@ unsafe extern "C" {
         arg5: DWORD,
     ) -> DWORD;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn NetLocalGroupAddMembers(
         arg1: LPCWSTR,
         arg2: LPCWSTR,
@@ -4010,7 +4010,7 @@ unsafe extern "C" {
         arg5: DWORD,
     ) -> DWORD;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn NetLocalGroupDelMembers(
         arg1: LPCWSTR,
         arg2: LPCWSTR,
@@ -4019,7 +4019,7 @@ unsafe extern "C" {
         arg5: DWORD,
     ) -> DWORD;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn NetQueryDisplayInformation(
         arg1: LPCWSTR,
         arg2: DWORD,
@@ -4030,7 +4030,7 @@ unsafe extern "C" {
         arg7: *mut PVOID,
     ) -> DWORD;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn NetGetDisplayInformationIndex(
         arg1: LPCWSTR,
         arg2: DWORD,
@@ -4038,28 +4038,28 @@ unsafe extern "C" {
         arg4: PDWORD,
     ) -> DWORD;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn NetGetDCName(arg1: LPCWSTR, arg2: LPCWSTR, arg3: *mut PBYTE) -> DWORD;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn NetGetAnyDCName(arg1: LPCWSTR, arg2: LPCWSTR, arg3: *mut PBYTE) -> DWORD;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn NetEnumerateTrustedDomains(arg1: LPWSTR, arg2: *mut LPWSTR) -> NTSTATUS;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn NetAlertRaise(arg1: LPCWSTR, arg2: PVOID, arg3: DWORD) -> DWORD;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn NetAlertRaiseEx(arg1: LPCWSTR, arg2: PVOID, arg3: DWORD, arg4: LPCWSTR) -> DWORD;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn NetScheduleJobAdd(arg1: LPWSTR, arg2: PBYTE, arg3: LPDWORD) -> DWORD;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn NetScheduleJobDel(arg1: LPWSTR, arg2: DWORD, arg3: DWORD) -> DWORD;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn NetScheduleJobEnum(
         arg1: LPWSTR,
         arg2: *mut PBYTE,
@@ -4069,7 +4069,7 @@ unsafe extern "C" {
         arg6: PDWORD,
     ) -> DWORD;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn NetScheduleJobGetInfo(arg1: LPWSTR, arg2: DWORD, arg3: *mut PBYTE) -> DWORD;
 }
 #[repr(C)]
@@ -4081,10 +4081,10 @@ pub struct _HLOG {
     pub rec_offset: DWORD,
 }
 pub type LPHLOG = *mut _HLOG;
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn NetAuditClear(arg1: LPCWSTR, arg2: LPCWSTR, arg3: LPCWSTR) -> DWORD;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn NetAuditRead(
         arg1: LPCWSTR,
         arg2: LPCWSTR,
@@ -4099,7 +4099,7 @@ unsafe extern "C" {
         arg11: PDWORD,
     ) -> DWORD;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn NetAuditWrite(
         arg1: DWORD,
         arg2: PBYTE,
@@ -4108,7 +4108,7 @@ unsafe extern "C" {
         arg5: PBYTE,
     ) -> DWORD;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn NetCharDevEnum(
         arg1: LPCWSTR,
         arg2: DWORD,
@@ -4119,13 +4119,13 @@ unsafe extern "C" {
         arg7: PDWORD,
     ) -> DWORD;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn NetCharDevGetInfo(arg1: LPCWSTR, arg2: LPCWSTR, arg3: DWORD, arg4: *mut PBYTE) -> DWORD;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn NetCharDevControl(arg1: LPCWSTR, arg2: LPCWSTR, arg3: DWORD) -> DWORD;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn NetCharDevQEnum(
         arg1: LPCWSTR,
         arg2: LPCWSTR,
@@ -4137,7 +4137,7 @@ unsafe extern "C" {
         arg8: PDWORD,
     ) -> DWORD;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn NetCharDevQGetInfo(
         arg1: LPCWSTR,
         arg2: LPCWSTR,
@@ -4146,7 +4146,7 @@ unsafe extern "C" {
         arg5: *mut PBYTE,
     ) -> DWORD;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn NetCharDevQSetInfo(
         arg1: LPCWSTR,
         arg2: LPCWSTR,
@@ -4155,16 +4155,16 @@ unsafe extern "C" {
         arg5: PDWORD,
     ) -> DWORD;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn NetCharDevQPurge(arg1: LPCWSTR, arg2: LPCWSTR) -> DWORD;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn NetCharDevQPurgeSelf(arg1: LPCWSTR, arg2: LPCWSTR, arg3: LPCWSTR) -> DWORD;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn NetHandleGetInfo(arg1: HANDLE, arg2: DWORD, arg3: *mut PBYTE) -> DWORD;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn NetHandleSetInfo(
         arg1: HANDLE,
         arg2: DWORD,
@@ -4173,13 +4173,13 @@ unsafe extern "C" {
         arg5: PDWORD,
     ) -> DWORD;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn NetConfigGet(arg1: LPCWSTR, arg2: LPCWSTR, arg3: LPCWSTR, arg4: *mut PBYTE) -> DWORD;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn NetConfigGetAll(arg1: LPCWSTR, arg2: LPCWSTR, arg3: *mut PBYTE) -> DWORD;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn NetConfigSet(
         arg1: LPCWSTR,
         arg2: LPCWSTR,
@@ -4190,13 +4190,13 @@ unsafe extern "C" {
         arg7: DWORD,
     ) -> DWORD;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn NetRegisterDomainNameChangeNotification(NotificationEventHandle: PHANDLE) -> DWORD;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn NetUnregisterDomainNameChangeNotification(NotificationEventHandle: HANDLE) -> DWORD;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn NetMessageBufferSend(
         arg1: LPCWSTR,
         arg2: LPCWSTR,
@@ -4205,13 +4205,13 @@ unsafe extern "C" {
         arg5: DWORD,
     ) -> DWORD;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn NetMessageNameAdd(arg1: LPCWSTR, arg2: LPCWSTR) -> DWORD;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn NetMessageNameDel(arg1: LPCWSTR, arg2: LPCWSTR) -> DWORD;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn NetMessageNameEnum(
         arg1: LPCWSTR,
         arg2: DWORD,
@@ -4222,7 +4222,7 @@ unsafe extern "C" {
         arg7: PDWORD,
     ) -> DWORD;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn NetMessageNameGetInfo(
         arg1: LPCWSTR,
         arg2: LPCWSTR,
@@ -4230,22 +4230,22 @@ unsafe extern "C" {
         arg4: *mut PBYTE,
     ) -> DWORD;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn NetShareAdd(arg1: LPWSTR, arg2: DWORD, arg3: LPBYTE, arg4: LPDWORD) -> DWORD;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn NetShareCheck(arg1: LPWSTR, arg2: LPWSTR, arg3: LPDWORD) -> DWORD;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn NetShareDel(arg1: LPWSTR, arg2: LPWSTR, arg3: DWORD) -> DWORD;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn NetShareDelEx(arg1: LPWSTR, arg2: DWORD, arg3: LPBYTE) -> DWORD;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn NetShareDelSticky(arg1: LPWSTR, arg2: LPWSTR, arg3: DWORD) -> DWORD;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn NetShareEnum(
         arg1: LPWSTR,
         arg2: DWORD,
@@ -4256,7 +4256,7 @@ unsafe extern "C" {
         arg7: LPDWORD,
     ) -> DWORD;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn NetShareEnumSticky(
         arg1: LPWSTR,
         arg2: DWORD,
@@ -4267,10 +4267,10 @@ unsafe extern "C" {
         arg7: LPDWORD,
     ) -> DWORD;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn NetShareGetInfo(arg1: LPWSTR, arg2: LPWSTR, arg3: DWORD, arg4: *mut LPBYTE) -> DWORD;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn NetShareSetInfo(
         arg1: LPWSTR,
         arg2: LPWSTR,
@@ -4279,10 +4279,10 @@ unsafe extern "C" {
         arg5: LPDWORD,
     ) -> DWORD;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn NetSessionDel(arg1: LPWSTR, arg2: LPWSTR, arg3: LPWSTR) -> DWORD;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn NetSessionEnum(
         arg1: LPWSTR,
         arg2: LPWSTR,
@@ -4295,7 +4295,7 @@ unsafe extern "C" {
         arg9: LPDWORD,
     ) -> DWORD;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn NetSessionGetInfo(
         arg1: LPWSTR,
         arg2: LPWSTR,
@@ -4304,7 +4304,7 @@ unsafe extern "C" {
         arg5: *mut LPBYTE,
     ) -> DWORD;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn NetConnectionEnum(
         arg1: LPWSTR,
         arg2: LPWSTR,
@@ -4316,10 +4316,10 @@ unsafe extern "C" {
         arg8: PDWORD,
     ) -> DWORD;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn NetFileClose(arg1: LPWSTR, arg2: DWORD) -> DWORD;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn NetFileEnum(
         arg1: LPWSTR,
         arg2: LPWSTR,
@@ -4332,34 +4332,34 @@ unsafe extern "C" {
         arg9: PDWORD_PTR,
     ) -> DWORD;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn NetFileGetInfo(arg1: LPWSTR, arg2: DWORD, arg3: DWORD, arg4: *mut PBYTE) -> DWORD;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn NetApiBufferAllocate(arg1: DWORD, arg2: *mut PVOID) -> DWORD;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn NetApiBufferFree(arg1: PVOID) -> DWORD;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn NetApiBufferReallocate(arg1: PVOID, arg2: DWORD, arg3: *mut PVOID) -> DWORD;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn NetApiBufferSize(arg1: PVOID, arg2: PDWORD) -> DWORD;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn NetapipBufferAllocate(arg1: DWORD, arg2: *mut PVOID) -> DWORD;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn NetRemoteTOD(arg1: LPCWSTR, arg2: *mut PBYTE) -> DWORD;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn NetRemoteComputerSupports(arg1: LPCWSTR, arg2: DWORD, arg3: PDWORD) -> DWORD;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn NetReplGetInfo(servername: LPCWSTR, level: DWORD, bufptr: *mut LPBYTE) -> DWORD;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn NetReplSetInfo(
         servername: LPCWSTR,
         level: DWORD,
@@ -4367,7 +4367,7 @@ unsafe extern "C" {
         parm_err: LPDWORD,
     ) -> DWORD;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn NetReplExportDirAdd(
         servername: LPCWSTR,
         level: DWORD,
@@ -4375,10 +4375,10 @@ unsafe extern "C" {
         parm_err: LPDWORD,
     ) -> DWORD;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn NetReplExportDirDel(servername: LPCWSTR, dirname: LPCWSTR) -> DWORD;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn NetReplExportDirEnum(
         servername: LPCWSTR,
         level: DWORD,
@@ -4389,7 +4389,7 @@ unsafe extern "C" {
         resumehandle: LPDWORD,
     ) -> DWORD;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn NetReplExportDirGetInfo(
         servername: LPCWSTR,
         dirname: LPCWSTR,
@@ -4397,7 +4397,7 @@ unsafe extern "C" {
         bufptr: *mut LPBYTE,
     ) -> DWORD;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn NetReplExportDirSetInfo(
         servername: LPCWSTR,
         dirname: LPCWSTR,
@@ -4406,17 +4406,17 @@ unsafe extern "C" {
         parm_err: LPDWORD,
     ) -> DWORD;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn NetReplExportDirLock(servername: LPCWSTR, dirname: LPCWSTR) -> DWORD;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn NetReplExportDirUnlock(
         servername: LPCWSTR,
         dirname: LPCWSTR,
         unlockforce: DWORD,
     ) -> DWORD;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn NetReplImportDirAdd(
         servername: LPCWSTR,
         level: DWORD,
@@ -4424,10 +4424,10 @@ unsafe extern "C" {
         parm_err: LPDWORD,
     ) -> DWORD;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn NetReplImportDirDel(servername: LPCWSTR, dirname: LPCWSTR) -> DWORD;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn NetReplImportDirEnum(
         servername: LPCWSTR,
         level: DWORD,
@@ -4438,7 +4438,7 @@ unsafe extern "C" {
         resumehandle: LPDWORD,
     ) -> DWORD;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn NetReplImportDirGetInfo(
         servername: LPCWSTR,
         dirname: LPCWSTR,
@@ -4446,23 +4446,23 @@ unsafe extern "C" {
         bufptr: *mut LPBYTE,
     ) -> DWORD;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn NetReplImportDirLock(servername: LPCWSTR, dirname: LPCWSTR) -> DWORD;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn NetReplImportDirUnlock(
         servername: LPCWSTR,
         dirname: LPCWSTR,
         unlockforce: DWORD,
     ) -> DWORD;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn NetUseAdd(arg1: LPWSTR, arg2: DWORD, arg3: PBYTE, arg4: PDWORD) -> DWORD;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn NetUseDel(arg1: LPWSTR, arg2: LPWSTR, arg3: DWORD) -> DWORD;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn NetUseEnum(
         arg1: LPWSTR,
         arg2: DWORD,
@@ -4473,13 +4473,13 @@ unsafe extern "C" {
         arg7: PDWORD,
     ) -> DWORD;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn NetUseGetInfo(arg1: LPWSTR, arg2: LPWSTR, arg3: DWORD, arg4: *mut PBYTE) -> DWORD;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn NetErrorLogClear(arg1: LPCWSTR, arg2: LPCWSTR, arg3: LPBYTE) -> DWORD;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn NetErrorLogRead(
         arg1: LPCWSTR,
         arg2: LPWSTR,
@@ -4494,7 +4494,7 @@ unsafe extern "C" {
         arg11: LPDWORD,
     ) -> DWORD;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn NetErrorLogWrite(
         arg1: LPBYTE,
         arg2: DWORD,
@@ -4506,7 +4506,7 @@ unsafe extern "C" {
         arg8: LPBYTE,
     ) -> DWORD;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn NetServiceControl(
         arg1: LPCWSTR,
         arg2: LPCWSTR,
@@ -4515,7 +4515,7 @@ unsafe extern "C" {
         arg5: *mut PBYTE,
     ) -> DWORD;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn NetServiceEnum(
         arg1: LPCWSTR,
         arg2: DWORD,
@@ -4526,10 +4526,10 @@ unsafe extern "C" {
         arg7: PDWORD,
     ) -> DWORD;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn NetServiceGetInfo(arg1: LPCWSTR, arg2: LPCWSTR, arg3: DWORD, arg4: *mut PBYTE) -> DWORD;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn NetServiceInstall(
         arg1: LPCWSTR,
         arg2: LPCWSTR,
@@ -4892,19 +4892,19 @@ pub struct _WKSTA_INFO_1062 {
 }
 pub type WKSTA_INFO_1062 = _WKSTA_INFO_1062;
 pub type PWKSTA_INFO_1062 = *mut _WKSTA_INFO_1062;
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn NetWkstaGetInfo(arg1: LPWSTR, arg2: DWORD, arg3: *mut PBYTE) -> DWORD;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn NetWkstaSetInfo(arg1: LPWSTR, arg2: DWORD, arg3: PBYTE, arg4: PDWORD) -> DWORD;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn NetWkstaUserGetInfo(arg1: LPWSTR, arg2: DWORD, arg3: *mut PBYTE) -> DWORD;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn NetWkstaUserSetInfo(arg1: LPWSTR, arg2: DWORD, arg3: PBYTE, arg4: PDWORD) -> DWORD;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn NetWkstaUserEnum(
         arg1: LPWSTR,
         arg2: DWORD,
@@ -4915,13 +4915,13 @@ unsafe extern "C" {
         arg7: PDWORD,
     ) -> DWORD;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn NetWkstaTransportAdd(arg1: LPWSTR, arg2: DWORD, arg3: PBYTE, arg4: PDWORD) -> DWORD;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn NetWkstaTransportDel(arg1: LPWSTR, arg2: LPWSTR, arg3: DWORD) -> DWORD;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn NetWkstaTransportEnum(
         arg1: LPWSTR,
         arg2: DWORD,
@@ -4932,7 +4932,7 @@ unsafe extern "C" {
         arg7: PDWORD,
     ) -> DWORD;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn NetServerEnum(
         arg1: LPCWSTR,
         arg2: DWORD,
@@ -4945,7 +4945,7 @@ unsafe extern "C" {
         arg9: PDWORD,
     ) -> DWORD;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn NetServerEnumEx(
         arg1: LPCWSTR,
         arg2: DWORD,
@@ -4958,16 +4958,16 @@ unsafe extern "C" {
         arg9: LPCWSTR,
     ) -> DWORD;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn NetServerGetInfo(arg1: LPWSTR, arg2: DWORD, arg3: *mut PBYTE) -> DWORD;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn NetServerSetInfo(arg1: LPWSTR, arg2: DWORD, arg3: PBYTE, arg4: PDWORD) -> DWORD;
 }
 unsafe extern "C" {
     pub fn NetServerSetInfoCommandLine(arg1: WORD, arg2: *mut LPWSTR) -> DWORD;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn NetServerDiskEnum(
         arg1: LPWSTR,
         arg2: DWORD,
@@ -4978,22 +4978,22 @@ unsafe extern "C" {
         arg7: PDWORD,
     ) -> DWORD;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn NetServerComputerNameAdd(arg1: LPWSTR, arg2: LPWSTR, arg3: LPWSTR) -> DWORD;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn NetServerComputerNameDel(arg1: LPWSTR, arg2: LPWSTR) -> DWORD;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn NetServerTransportAdd(arg1: LPWSTR, arg2: DWORD, arg3: PBYTE) -> DWORD;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn NetServerTransportAddEx(arg1: LPWSTR, arg2: DWORD, arg3: PBYTE) -> DWORD;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn NetServerTransportDel(arg1: LPWSTR, arg2: DWORD, arg3: PBYTE) -> DWORD;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn NetServerTransportEnum(
         arg1: LPWSTR,
         arg2: DWORD,
@@ -5004,7 +5004,7 @@ unsafe extern "C" {
         arg7: PDWORD,
     ) -> DWORD;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn NetStatisticsGet(
         arg1: LPWSTR,
         arg2: LPWSTR,
@@ -5019,7 +5019,7 @@ pub const _NETSETUP_JOIN_STATUS_NetSetupWorkgroupName: _NETSETUP_JOIN_STATUS = 2
 pub const _NETSETUP_JOIN_STATUS_NetSetupDomainName: _NETSETUP_JOIN_STATUS = 3;
 pub type _NETSETUP_JOIN_STATUS = ::core::ffi::c_uint;
 pub type PNETSETUP_JOIN_STATUS = *mut _NETSETUP_JOIN_STATUS;
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn NetJoinDomain(
         lpServer: LPCWSTR,
         lpDomain: LPCWSTR,
@@ -5029,7 +5029,7 @@ unsafe extern "C" {
         fJoinOptions: DWORD,
     ) -> DWORD;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn NetUnjoinDomain(
         lpServer: LPCWSTR,
         lpAccount: LPCWSTR,
@@ -5037,7 +5037,7 @@ unsafe extern "C" {
         fUnjoinOptions: DWORD,
     ) -> DWORD;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn NetGetJoinInformation(
         lpServer: LPCWSTR,
         lpNameBuffer: *mut LPWSTR,

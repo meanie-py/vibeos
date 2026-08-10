@@ -1976,43 +1976,33 @@ Field-manual § pointers hold the full writeups. **Update on state change.**
   NOT be silenced — `pfnlist.rs` is arch-generic and amd64 never trips it, so it is detecting the
   real arm64 divergence (§9.136). Blocked on offline symbolication of the `0x50` PC: the kernel
   runtime base is not printed on serial, so `addr2sym --reloc` cannot be used (task #33).
-- **net suite `test_tdi_selftest_roundtrip` — flake rate measured 2026-07-24, and it is BAD
-  under host load.** 1 pass / 6 attempts in one evening while a sibling lane ran a full arm64
-  ninja (host load 4–6). The gate's `NET_FLAKE` auto-retry is 3 attempts, so at this rate a
-  green gate is roughly a coin flip. **Timing signature is the useful discriminator: a passing
-  run finishes in ~36s, a failing one burns ~122s and dies on the marker wait** — i.e. it is a
-  timeout, not a wrong result. TDI CONNECT reaches `ESTABLISHED` and the *engine-level* echo to
-  the very same guestfwd endpoint (`10.0.2.100:9999`) succeeds in the same boot, so the host
-  echo is alive and only the TDI pended-IRP completion misses its window. Ruled out as a code
-  regression: the merge of 2026-07-24 touched **no** netstack source (only `afd-rust`, which
-  this self-test bypasses by being the TDI client itself), and the self-test is kernel-mode on
-  its own system thread with no dependency on the usermode components. Owed: either give the
-  marker wait a load-proportional budget or make the poll worker's completion deterministic —
-  and stop treating 3 retries as sufficient cover.
-  **UPDATE 2026-08-09: it has degraded to a total landing block, and the retry cover is now
-  provably gone.** Per-day failure share across every gate `smoke-net` run on this host —
-  08-05 1/33, 08-07 20/43, 08-08 41/57, 08-09 37/45 (82%). At that rate all 3 attempts fail
-  ~55% of the time on paper and 100% of the time in practice: the 2026-08-09 07:00 drain
-  rejected **all four** queued lanes (shell32-com, smp-bringup, research, msvcrt-homebrew) on
-  `NET_FLAKE`, each after 3 attempts, each gated against the same master — and one lane has
-  since sat in the queue 6.5h. When a batch splits to singletons and *every* singleton is
-  still red, the fault is in master or the harness, never in the lanes. Two things follow.
-  (1) The classification is actively misleading at this point: `_net_once` labels the FIRST
-  failure `NET_FLAKE` by construction, so a permanent red still gets reported to the lane
-  owner as a flake, which is why nobody has picked it up. (2) The serial evidence is
-  unchanged in kind — `TDI self-test: CONNECT OK` then `set-event(receive) 0x00000000` then
-  `send 0x00000000`, and `RECEIVE OK` never arrives.
-  A host VPN was raised as the suspect for the 08-07 step-change — the echo peer
-  `10.0.2.100:9999` is a **guestfwd** endpoint, and slirp completes the handshake itself, so
-  captured host routing would break the round-trip while leaving CONNECT green. Plausible, and
-  **wrong**: see the RULED OUT note below, where the failing boot's own log shows the outbound
-  echo to that same endpoint succeeding. Recorded because it is the hypothesis everyone reaches
-  for; the refutation is one grep, so run that before touching the host.
-  **The transferable lesson is narrower than "suspect the host".** When a batch splits to
-  singletons and every singleton is red, that localises the fault to master-or-harness and no
-  further — it does not say which, and the harness cannot see the host's routing table, so it
-  will report either one as a guest-side flake. Pick between them with evidence from inside the
-  failing boot, not by toggling the environment.
+- **net suite one-test timeout (`test_tdi_selftest_roundtrip` et al) — FIXED 2026-08-09, root
+  cause was the HARNESS.** Three independent guest consumers (netstack `engine.rs`'s outbound
+  client, `tditest.rs`'s TDI roundtrip, `nettest.exe`) all dialled the same slirp guestfwd
+  endpoint `10.0.2.100:9999`, and slirp hands an echo to the FIRST socket matching (addr, port)
+  — so one consumer got the reply and the others timed out. `-cmd:cat` masks this on the native
+  backend by forking a fresh `cat` per CONNECTION; the windows-host rewrite bound the whole
+  forward to ONE `-chardev` byte stream, making it a coin flip. Fixed by giving each consumer
+  its own port + chardev + echo server (`vm.GUESTFWD_ECHO_PORTS`). **Every earlier diagnosis
+  here was wrong** — host contention, a VPN, the host resolver, a red base — and two of the
+  discriminators this registry recommended were backwards: the ~4× wall clock is just the loser
+  waiting out its marker timeout, and "the engine-level echo to the very same endpoint succeeds
+  in the same boot" identified the thief, not an alibi. Field manual, "`NET_FLAKE` that is not
+  a flake". Cost: ~90% gate failure and a day of wedged merge queue.
+- **A lane-independent flaky STAGE costs one gate per lane, and the conductor cannot tell it
+  from a bad lane** (observed 2026-08-09 on the net flake above; kept because it is a property
+  of the queue, not of that bug). A red batch splits recursively to find the culprit, so a
+  single flaky shared stage rejects each lane SEPARATELY and burns a full gate on each — in one
+  drain all four queued lanes (`shell32-com` ×2, `smp-bringup`, `msvcrt-homebrew`, `research`)
+  were rejected in succession and the queue emptied with nothing landed for ~100 minutes. Both
+  cases look identical from the outside: a red gate against the same base. A lane whose diff
+  cannot possibly affect the stage — docs, `tools/rustconv` Python, tests — still pays full
+  freight. If this bites again: retry the flaky stage against a quiet host rather than
+  mid-batch, raise the retry count for a stage already classified a known flake, or let a lane
+  touching no build input skip it. One reason it stayed unowned for a day: `_net_once` labels
+  the FIRST failure `NET_FLAKE` by construction, so the retries are the only thing separating a
+  one-off from a permanent red — and the lane owner is told "flake" either way, before that
+  distinction reaches them.
 - **amd64 CLIENTINFO-on-Ctrl+Esc** (§9.41) — NOT reproducing since the §9.40 DesktopHeapReAlloc
   fix (4/4 start-menu opens; `test_start_menu_opens` gates it). Watch item only.
 - **i386 "session-pool gate" `BAD gate Type=0x80`** (§9.24) — REFRAMED to pushlock-class (stack

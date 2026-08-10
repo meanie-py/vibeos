@@ -23,21 +23,7 @@ use win32k_sys::win32k::*;
 //
 // gpalRGB, gexloTrivial, gppalMono, gpsi, gajBitsPerFormat are pulled from win32k_sys::win32k::*.
 
-#[cfg(target_arch = "x86")]
-unsafe extern "stdcall" {
-    fn EXLATEOBJ_vInitialize(
-        pexlo: *mut EXLATEOBJ,
-        ppalSrc: PPALETTE,
-        ppalDst: PPALETTE,
-        crSrcBack: COLORREF,
-        crDstBack: COLORREF,
-        crDstFore: COLORREF,
-    );
-    fn EXLATEOBJ_vCleanup(pexlo: *mut EXLATEOBJ);
-}
-
-#[cfg(not(target_arch = "x86"))]
-unsafe extern "C" {
+unsafe extern "system" {
     fn EXLATEOBJ_vInitialize(
         pexlo: *mut EXLATEOBJ,
         ppalSrc: PPALETTE,
@@ -89,7 +75,7 @@ unsafe fn gpsi_per_user() -> *mut _PERUSERSERVERINFO {
 
 #[cfg(target_arch = "x86")]
 #[no_mangle]
-pub unsafe extern "stdcall" fn EngSetPointerTag(
+pub unsafe extern "system" fn EngSetPointerTag(
     _hdev: HDEV,
     _psoMask: *mut SURFOBJ,
     _psoColor: *mut SURFOBJ,
@@ -102,7 +88,7 @@ pub unsafe extern "stdcall" fn EngSetPointerTag(
 
 #[cfg(not(target_arch = "x86"))]
 #[no_mangle]
-pub unsafe extern "C" fn EngSetPointerTag(
+pub unsafe extern "system" fn EngSetPointerTag(
     _hdev: HDEV,
     _psoMask: *mut SURFOBJ,
     _psoColor: *mut SURFOBJ,
@@ -112,21 +98,8 @@ pub unsafe extern "C" fn EngSetPointerTag(
     0
 }
 
-#[cfg(target_arch = "x86")]
 #[no_mangle]
-pub unsafe extern "stdcall" fn MouseSafetyOnDrawStart(
-    ppdev: PPDEVOBJ,
-    HazardX1: LONG,
-    HazardY1: LONG,
-    HazardX2: LONG,
-    HazardY2: LONG,
-) -> BOOL {
-    mouse_safety_on_draw_start_impl(ppdev, HazardX1, HazardY1, HazardX2, HazardY2)
-}
-
-#[cfg(not(target_arch = "x86"))]
-#[no_mangle]
-pub unsafe extern "C" fn MouseSafetyOnDrawStart(
+pub unsafe extern "system" fn MouseSafetyOnDrawStart(
     ppdev: PPDEVOBJ,
     HazardX1: LONG,
     HazardY1: LONG,
@@ -199,15 +172,8 @@ unsafe fn mouse_safety_on_draw_start_impl(
     1
 }
 
-#[cfg(target_arch = "x86")]
 #[no_mangle]
-pub unsafe extern "stdcall" fn MouseSafetyOnDrawEnd(ppdev: PPDEVOBJ) -> BOOL {
-    mouse_safety_on_draw_end_impl(ppdev)
-}
-
-#[cfg(not(target_arch = "x86"))]
-#[no_mangle]
-pub unsafe extern "C" fn MouseSafetyOnDrawEnd(ppdev: PPDEVOBJ) -> BOOL {
+pub unsafe extern "system" fn MouseSafetyOnDrawEnd(ppdev: PPDEVOBJ) -> BOOL {
     mouse_safety_on_draw_end_impl(ppdev)
 }
 
@@ -424,26 +390,8 @@ unsafe fn IntShowMousePointer(ppdev: *mut PDEVOBJ, psoDest: *mut SURFOBJ) {
     }
 }
 
-#[cfg(target_arch = "x86")]
 #[no_mangle]
-pub unsafe extern "stdcall" fn EngSetPointerShape(
-    pso: *mut SURFOBJ,
-    psoMask: *mut SURFOBJ,
-    psoColor: *mut SURFOBJ,
-    pxlo: *mut XLATEOBJ,
-    xHot: LONG,
-    yHot: LONG,
-    x: LONG,
-    y: LONG,
-    prcl: *mut RECTL,
-    fl: FLONG,
-) -> ULONG {
-    eng_set_pointer_shape_impl(pso, psoMask, psoColor, pxlo, xHot, yHot, x, y, prcl, fl)
-}
-
-#[cfg(not(target_arch = "x86"))]
-#[no_mangle]
-pub unsafe extern "C" fn EngSetPointerShape(
+pub unsafe extern "system" fn EngSetPointerShape(
     pso: *mut SURFOBJ,
     psoMask: *mut SURFOBJ,
     psoColor: *mut SURFOBJ,
@@ -702,20 +650,8 @@ unsafe fn eng_set_pointer_shape_impl(
     SPS_ACCEPT_NOEXCLUDE
 }
 
-#[cfg(target_arch = "x86")]
 #[no_mangle]
-pub unsafe extern "stdcall" fn EngMovePointer(
-    pso: *mut SURFOBJ,
-    x: LONG,
-    y: LONG,
-    prcl: *mut RECTL,
-) {
-    eng_move_pointer_impl(pso, x, y, prcl)
-}
-
-#[cfg(not(target_arch = "x86"))]
-#[no_mangle]
-pub unsafe extern "C" fn EngMovePointer(
+pub unsafe extern "system" fn EngMovePointer(
     pso: *mut SURFOBJ,
     x: LONG,
     y: LONG,
@@ -749,26 +685,8 @@ unsafe fn eng_move_pointer_impl(pso: *mut SURFOBJ, x: LONG, y: LONG, prcl: *mut 
     }
 }
 
-#[cfg(target_arch = "x86")]
 #[no_mangle]
-pub unsafe extern "stdcall" fn IntEngSetPointerShape(
-    pso: *mut SURFOBJ,
-    psoMask: *mut SURFOBJ,
-    psoColor: *mut SURFOBJ,
-    pxlo: *mut XLATEOBJ,
-    xHot: LONG,
-    yHot: LONG,
-    x: LONG,
-    y: LONG,
-    prcl: *mut RECTL,
-    fl: FLONG,
-) -> ULONG {
-    int_eng_set_pointer_shape_impl(pso, psoMask, psoColor, pxlo, xHot, yHot, x, y, prcl, fl)
-}
-
-#[cfg(not(target_arch = "x86"))]
-#[no_mangle]
-pub unsafe extern "C" fn IntEngSetPointerShape(
+pub unsafe extern "system" fn IntEngSetPointerShape(
     pso: *mut SURFOBJ,
     psoMask: *mut SURFOBJ,
     psoColor: *mut SURFOBJ,
@@ -849,24 +767,8 @@ unsafe fn int_eng_set_pointer_shape_impl(
     ulResult
 }
 
-#[cfg(target_arch = "x86")]
 #[no_mangle]
-pub unsafe extern "stdcall" fn GreSetPointerShape(
-    hdc: HDC,
-    hbmMask: HBITMAP,
-    hbmColor: HBITMAP,
-    xHot: LONG,
-    yHot: LONG,
-    x: LONG,
-    y: LONG,
-    fl: FLONG,
-) -> ULONG {
-    gre_set_pointer_shape_impl(hdc, hbmMask, hbmColor, xHot, yHot, x, y, fl)
-}
-
-#[cfg(not(target_arch = "x86"))]
-#[no_mangle]
-pub unsafe extern "C" fn GreSetPointerShape(
+pub unsafe extern "system" fn GreSetPointerShape(
     hdc: HDC,
     hbmMask: HBITMAP,
     hbmColor: HBITMAP,
@@ -970,15 +872,8 @@ unsafe fn gre_set_pointer_shape_impl(
     ulResult
 }
 
-#[cfg(target_arch = "x86")]
 #[no_mangle]
-pub unsafe extern "stdcall" fn GreMovePointer(hdc: HDC, x: LONG, y: LONG) {
-    gre_move_pointer_impl(hdc, x, y)
-}
-
-#[cfg(not(target_arch = "x86"))]
-#[no_mangle]
-pub unsafe extern "C" fn GreMovePointer(hdc: HDC, x: LONG, y: LONG) {
+pub unsafe extern "system" fn GreMovePointer(hdc: HDC, x: LONG, y: LONG) {
     gre_move_pointer_impl(hdc, x, y)
 }
 

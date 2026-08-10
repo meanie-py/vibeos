@@ -358,8 +358,7 @@ pub unsafe extern "C" fn GetPolicyValue(
     }
     return ret;
 }
-#[cfg(target_arch = "x86")]
-unsafe extern "stdcall" fn TimerDlgProc(
+unsafe extern "system" fn TimerDlgProc(
     Info: PTIMERDLG_INFO,
     hDlg: HWND,
     uMsg: UINT,
@@ -454,122 +453,6 @@ unsafe extern "stdcall" fn TimerDlgProc(
     }
     0 as INT_PTR
 }
-
-#[cfg(not(target_arch = "x86"))]
-unsafe extern "C" fn TimerDlgProc(
-    Info: PTIMERDLG_INFO,
-    hDlg: HWND,
-    uMsg: UINT,
-    wParam: WPARAM,
-    lParam: LPARAM,
-) -> INT_PTR {
-    match uMsg {
-        WM_INITDIALOG => {
-            if (*Info).ulTimeout != 0 {
-                let mut szTimeout: [WCHAR; 10] = [0; 10];
-                StringCchPrintfW(
-                    szTimeout.as_mut_ptr(),
-                    10,
-                    FMT_PERCENT_D.as_ptr() as PCWSTR,
-                    (*Info).ulTimeout,
-                );
-                SetDlgItemTextW(hDlg, IDC_TIMEOUT, szTimeout.as_ptr());
-                SetTimer(hDlg, IDT_DLGTIMER as usize, 1000, core::ptr::null_mut());
-            }
-        }
-        WM_COMMAND => {
-            let ButtonMap = (*Info).ButtonMap.as_mut_ptr();
-            let wDefBtnOnTimeout = if (*Info).wDefBtnOnTimeout as usize >= 1 {
-                1
-            } else {
-                (*Info).wDefBtnOnTimeout as usize
-            } as WORD;
-            let mut i: WORD = 0;
-
-            if LOWORD(wParam) == IDCANCEL as WORD {
-                let wDefBtnOnCancel = if (*Info).wDefBtnOnCancel as usize >= 1 {
-                    1
-                } else {
-                    (*Info).wDefBtnOnCancel as usize
-                } as WORD;
-                KillTimer(hDlg, IDT_DLGTIMER as usize);
-                EndDialog(hDlg, (*ButtonMap.offset(wDefBtnOnCancel as isize)).nResult as INT_PTR);
-            } else {
-                loop {
-                    if i as usize >= 2 {
-                        break;
-                    }
-
-                    if LOWORD(wParam) == (*ButtonMap.offset(i as isize)).uID as WORD {
-                        if HIWORD(wParam) == BN_CLICKED as WORD {
-                            KillTimer(hDlg, IDT_DLGTIMER as usize);
-                            EndDialog(hDlg, (*ButtonMap.offset(i as isize)).nResult as INT_PTR);
-                        } else if HIWORD(wParam) == BN_KILLFOCUS as WORD {
-                            if i as usize != wDefBtnOnTimeout as usize {
-                                break;
-                            }
-                            KillTimer(hDlg, IDT_DLGTIMER as usize);
-                            ShowWindow(GetDlgItem(hDlg, IDC_TIMEOUT), (SW_HIDE as INT));
-                            ShowWindow(GetDlgItem(hDlg, IDC_TIMEOUTSTATIC), (SW_HIDE as INT));
-                        }
-                        break;
-                    }
-
-                    i = i.wrapping_add(1);
-                }
-            }
-        }
-        WM_TIMER => {
-            if (*Info).ulTimeout < 1 {
-                let wDefBtnOnTimeout = if (*Info).wDefBtnOnTimeout as usize >= 1 {
-                    1
-                } else {
-                    (*Info).wDefBtnOnTimeout as usize
-                } as WORD;
-                PostMessageW(
-                    hDlg,
-                    WM_COMMAND,
-                    MAKEWPARAM(
-                        (*(*Info).ButtonMap.as_ptr().offset(wDefBtnOnTimeout as isize)).uID,
-                        BN_CLICKED as u16,
-                    ) as WPARAM,
-                    0 as LPARAM,
-                );
-            } else {
-                let mut szTimeout: [WCHAR; 10] = [0; 10];
-                (*Info).ulTimeout = (*Info).ulTimeout.wrapping_sub(1);
-                StringCchPrintfW(
-                    szTimeout.as_mut_ptr(),
-                    10,
-                    FMT_PERCENT_D.as_ptr() as PCWSTR,
-                    (*Info).ulTimeout,
-                );
-                SetDlgItemTextW(hDlg, IDC_TIMEOUT, szTimeout.as_ptr());
-            }
-        }
-        _ => {}
-    }
-    0 as INT_PTR
-}
-#[cfg(target_arch = "x86")]
-unsafe extern "system" fn ErrorDlgProc(
-    hDlg: HWND,
-    uMsg: UINT,
-    wParam: WPARAM,
-    lParam: LPARAM,
-) -> INT_PTR {
-    if uMsg == WM_INITDIALOG {
-        let Params = lParam as PERRORDLG_PARAMS;
-        SetForegroundWindow(hDlg);
-        SetDlgItemTextW(hDlg, IDC_ERRORDESC, (*Params).pszString as LPCWSTR);
-        ErrorDlg.ulTimeout = (*Params).ulTimeout;
-        TimerDlgProc(&raw mut ErrorDlg, hDlg, WM_INITDIALOG, wParam, lParam);
-        return 1 as INT_PTR;
-    }
-    return TimerDlgProc(&raw mut ErrorDlg, hDlg, uMsg, wParam, lParam);
-}
-
-#[cfg(not(target_arch = "x86"))]
 unsafe extern "system" fn ErrorDlgProc(
     hDlg: HWND,
     uMsg: UINT,

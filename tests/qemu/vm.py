@@ -52,6 +52,12 @@ _CLK = os.sysconf("SC_CLK_TCK")
 #   3. (qemu/start.sh) a detached watchdog subshell for toolkit-launched VMs.
 MAX_VM_LIFETIME_SECONDS = 30 * 60
 
+# Gap between the two vCPU-state samples save_hang_state() takes. Long enough
+# that a live box is guaranteed several clock ticks and context switches (arm64
+# TCG runs the scheduler at 100 Hz), short enough to add nothing meaningful to a
+# run that has already drained its whole timeout.
+HANG_RESAMPLE_SECONDS = 5.0
+
 # Predictable, per-arch live serial log. Agents `tail -f` this to watch boot
 # progress in real time (a cold arm64 TCG boot is silent for long stretches —
 # the live log is the difference between "making progress" and "wedged").
@@ -669,20 +675,44 @@ class Amd64UefiConfig(Amd64Config):
         ]
 
 
-def _start_echo_server() -> socketserver.BaseServer:
-    """A tiny threaded TCP echo server bound to 0.0.0.0:<ephemeral>. Backs the slirp
+def _start_echo_server(label: str = "gf") -> socketserver.BaseServer:
+    """A tiny threaded TCP echo server bound to 0.0.0.0:<ephemeral>. Backs ONE slirp
     guestfwd on the windows-host backend: the guest's outbound connection (guest ->
     virtio TX -> slirp guestfwd -> chardev -> here) gets its bytes echoed straight back,
     replacing the `-cmd:cat` line echo that can't run on the Windows QEMU host. Bound to
     the wildcard so the Windows QEMU's chardev reaches it via WSL2 localhost forwarding.
-    Daemon threads — never blocks interpreter exit; caller shuts it down in stop()."""
+    Daemon threads — never blocks interpreter exit; caller shuts it down in stop().
+
+    `VIBEOS_ECHO_PROBE=<path>` logs every connection and payload. That log is how the
+    shared-chardev mix-up in GUESTFWD_ECHO_PORTS was finally pinned: three different
+    guest probes arriving on ONE numbered connection is the whole diagnosis in three
+    lines, and nothing else in the harness can see it — from the guest's side a stolen
+    echo is indistinguishable from a transport that silently dropped the reply."""
+
+    probe_path = os.environ.get("VIBEOS_ECHO_PROBE")
+    seq = iter(range(1, 1 << 30))
+
+    def log(msg: str) -> None:
+        if not probe_path:
+            return
+        try:
+            with open(probe_path, "a") as handle:
+                handle.write(f"{time.time():.3f} [{label}] {msg}\n")
+        except OSError:
+            pass
 
     class _Echo(socketserver.BaseRequestHandler):
         def handle(self) -> None:
+            conn = next(seq)
+            log(f"conn#{conn} OPEN from {self.client_address}")
+            total = 0
             while True:
                 data = self.request.recv(4096)
                 if not data:
+                    log(f"conn#{conn} CLOSE after {total} bytes")
                     return
+                total += len(data)
+                log(f"conn#{conn} echo {len(data)}B {data[:48]!r}")
                 self.request.sendall(data)
 
     srv = socketserver.ThreadingTCPServer(("0.0.0.0", 0), _Echo)
@@ -716,6 +746,31 @@ def _free_tcp_port() -> int:
     port = s.getsockname()[1]
     s.close()
     return port
+
+
+# Every INDEPENDENT guest-side consumer of the outbound slirp echo gets its OWN
+# virtual port. Sharing one endpoint looks harmless and is not: slirp delivers an
+# echo reply to the FIRST socket matching (addr, port), so when two consumers are
+# connected at once one of them silently receives the other's bytes and the loser
+# just times out. `-cmd:cat` hides this on the native backend by forking a fresh
+# `cat` per CONNECTION; the windows-host rewrite binds a whole forward to ONE
+# chardev byte stream, where three consumers sharing :9999 decayed into a coin
+# flip that reached ~90% gate failure and wedged the merge queue for a day. The
+# losing test moves run to run, which is what made it read as a flake.
+#
+# Adding a consumer means adding a port HERE and in the guest — never reuse one.
+GUESTFWD_ECHO_PORTS: dict[str, int] = {
+    "netstack-outbound": 9999,  # netstack-rust engine.rs — direct-smoltcp client
+    "tdi-selftest": 9998,  # netstack-rust tditest.rs — TDI roundtrip
+    "usermode-winsock": 9997,  # base/applications/network/nettest/nettest.c
+}
+
+
+def _guestfwd_echo_opts(addr: str) -> str:
+    """The `,guestfwd=...` netdev options — one per GUESTFWD_ECHO_PORTS entry."""
+    return "".join(
+        f",guestfwd=tcp:{addr}:{port}-cmd:cat" for port in sorted(GUESTFWD_ECHO_PORTS.values())
+    )
 
 
 @dataclass
@@ -758,13 +813,12 @@ class Amd64UefiNetConfig(Amd64UefiConfig):
     # forwarded so test_payload's tcp_hammer can reach it from the host.
     PAYLOAD_GUEST_PORT: int = 8080
     payload_hostfwd_port: int = 0
-    # slirp guestfwd: the guest reaches an OUTBOUND echo at this virtual
-    # address:port, which slirp pipes through `cat` on the host (a built-in
-    # line echo — no host-listener startup race). This is the path an outbound
-    # TCP client (and later winsock-via-AFD) uses; the guest's serial markers
-    # prove connect/send/recv.
+    # slirp guestfwd: the guest reaches an OUTBOUND echo at this virtual address,
+    # one port per consumer (GUESTFWD_ECHO_PORTS), which slirp pipes through `cat`
+    # on the host (a built-in line echo — no host-listener startup race). This is
+    # the path an outbound TCP client (and winsock-via-AFD) uses; the guest's
+    # serial markers prove connect/send/recv.
     GUESTFWD_ADDR: str = "10.0.2.100"
-    GUESTFWD_PORT: int = 9999
 
     def qemu_args(self, work_dir: Path) -> list[str]:
         self.echo_hostfwd_port = _free_tcp_port()
@@ -785,7 +839,7 @@ class Amd64UefiNetConfig(Amd64UefiConfig):
             f"-:{self.TDI_SRV_GUEST_PORT}"
             f",hostfwd=tcp:127.0.0.1:{self.payload_hostfwd_port}"
             f"-:{self.PAYLOAD_GUEST_PORT}"
-            f",guestfwd=tcp:{self.GUESTFWD_ADDR}:{self.GUESTFWD_PORT}-cmd:cat",
+            + _guestfwd_echo_opts(self.GUESTFWD_ADDR),
         ]
 
 
@@ -809,7 +863,6 @@ class I386UefiNetConfig(I386UefiConfig):
     PAYLOAD_GUEST_PORT: int = 8080
     payload_hostfwd_port: int = 0
     GUESTFWD_ADDR: str = "10.0.2.100"
-    GUESTFWD_PORT: int = 9999
 
     def qemu_args(self, work_dir: Path) -> list[str]:
         self.echo_hostfwd_port = _free_tcp_port()
@@ -826,7 +879,7 @@ class I386UefiNetConfig(I386UefiConfig):
             f"-:{self.TDI_SRV_GUEST_PORT}"
             f",hostfwd=tcp:127.0.0.1:{self.payload_hostfwd_port}"
             f"-:{self.PAYLOAD_GUEST_PORT}"
-            f",guestfwd=tcp:{self.GUESTFWD_ADDR}:{self.GUESTFWD_PORT}-cmd:cat",
+            + _guestfwd_echo_opts(self.GUESTFWD_ADDR),
         ]
 
 
@@ -917,7 +970,6 @@ class Arm64NetConfig(Arm64Config):
     PAYLOAD_GUEST_PORT: int = 8080
     payload_hostfwd_port: int = 0
     GUESTFWD_ADDR: str = "10.0.2.100"
-    GUESTFWD_PORT: int = 9999
     # Modest extra settle so the netstack engine markers that DO complete on
     # arm64 (dhcp/ping) reliably land in the captured output. NOTE: the deeper
     # self-tests (dns, outbound TCP) currently do NOT complete on arm64 — the
@@ -943,7 +995,7 @@ class Arm64NetConfig(Arm64Config):
             f"-:{self.TDI_SRV_GUEST_PORT}"
             f",hostfwd=tcp:127.0.0.1:{self.payload_hostfwd_port}"
             f"-:{self.PAYLOAD_GUEST_PORT}"
-            f",guestfwd=tcp:{self.GUESTFWD_ADDR}:{self.GUESTFWD_PORT}-cmd:cat",
+            + _guestfwd_echo_opts(self.GUESTFWD_ADDR),
         ]
 
 
@@ -996,6 +1048,23 @@ class QemuVM:
         self.work_dir = work_dir
         self.work_dir.mkdir(parents=True, exist_ok=True)
 
+        # A SECOND, durable home for hang diagnostics. Under the pytest `vm`
+        # fixture work_dir is a tmp_path_factory dir, and pytest keeps only the
+        # last 3 runs — so a capture written only there is deleted by unrelated
+        # later runs, long before anyone reads the run dir it belonged to. That
+        # is not hypothetical: the arm64 MP wedge was captured and pruned, and
+        # the hunt then spent a round re-deriving "we have no PCs" from a run
+        # dir holding only serial. Callers that shell out to pytest and own a
+        # durable dir (vibeos-cli conformance, farm) point this at it.
+        self.artifact_dir: Path | None = None
+        _art = os.environ.get("VIBEOS_ARTIFACT_DIR", "").strip()
+        if _art:
+            try:
+                self.artifact_dir = Path(_art)
+                self.artifact_dir.mkdir(parents=True, exist_ok=True)
+            except OSError:
+                self.artifact_dir = None
+
         # Optional gdbstub. On windows-host QEMU.exe is the SERVER (gdb is the client),
         # so — unlike QMP/serial, where the harness listens and QEMU dials back — the
         # stub binds 0.0.0.0:<port> on the WINDOWS TCP stack and a WSL gdb connects to
@@ -1041,9 +1110,10 @@ class QemuVM:
         # _build_windows_cmd). "tcg" until then; gates whether _acquire_arch_slot serializes
         # same-arch boots (whpx contends like KVM, tcg doesn't).
         self._win_accel: str = "tcg"
-        # windows-host only: harness echo server backing the slirp guestfwd when
-        # `-cmd:cat` can't run (Windows host has no `cat`). None on native / non-net.
-        self._echo_server: socketserver.BaseServer | None = None
+        # windows-host only: harness echo servers backing the slirp guestfwds when
+        # `-cmd:cat` can't run (Windows host has no `cat`) — ONE PER GUESTFWD, never
+        # shared (see GUESTFWD_ECHO_PORTS). Empty on native / non-net.
+        self._echo_servers: list[socketserver.BaseServer] = []
         # stderr captured if QEMU exited early during launch (consumed once from the
         # PIPE), so the diagnostic path can still report it — see _launch_qemu.
         self._early_stderr: str = ""
@@ -1295,15 +1365,17 @@ class QemuVM:
         )
         # Net config (amd64-uefi-net): adapt the slirp fwds across the WSL<->Windows
         # boundary — hostfwd binds 0.0.0.0 (dialed via the gateway IP, see net_host) and
-        # the `-cmd:cat` guestfwd echo is redirected to a chardev backed by a harness echo
-        # server (Windows has no `cat`). No-op for non-net configs.
-        chardev_id = "gf0"
-        arch_args, needs_echo = be.rewrite_netdev_for_windows(arch_args, chardev_id)
+        # each `-cmd:cat` guestfwd echo is redirected to its OWN chardev backed by its OWN
+        # harness echo server (Windows has no `cat`). One per guestfwd is the whole point:
+        # a chardev is one byte stream, so a shared one merges every consumer's echo
+        # traffic — GUESTFWD_ECHO_PORTS has the full story. No-op for non-net configs.
+        arch_args, chardev_ids = be.rewrite_netdev_for_windows(arch_args)
         echo_chardev: list[str] = []
-        if needs_echo:
-            self._echo_server = _start_echo_server()
-            echo_port = self._echo_server.server_address[1]
-            echo_chardev = [
+        for chardev_id in chardev_ids:
+            server = _start_echo_server(chardev_id)
+            self._echo_servers.append(server)
+            echo_port = server.server_address[1]
+            echo_chardev += [
                 "-chardev",
                 f"socket,id={chardev_id},host={host},port={echo_port},server=off,reconnect-ms=1000",
             ]
@@ -1414,13 +1486,13 @@ class QemuVM:
             proc.wait(timeout=5)
         except subprocess.TimeoutExpired:
             proc.kill()
-        if self._echo_server is not None:
+        for server in self._echo_servers:
             try:
-                self._echo_server.shutdown()
-                self._echo_server.server_close()
+                server.shutdown()
+                server.server_close()
             except Exception:
                 pass
-            self._echo_server = None
+        self._echo_servers = []
         self.serial.close()
         self.qmp.close()
         self.qmp = QmpClient()
@@ -1527,11 +1599,12 @@ class QemuVM:
             # pytest `vm` fixture that conformance shells out to, and farm. Wiring
             # them individually would have left the conformance sweep — the very
             # place the arm64 --smp 1 stall shows up — with no capture at all.
-            self.hang_cpu_state = self.capture_cpu_state()
-            try:
-                (self.work_dir / "hang-cpustate.txt").write_text(self.hang_cpu_state)
-            except OSError:
-                pass
+            #
+            # This covers a boot that never reaches its marker. It does NOT cover
+            # a guest that boots fine and then wedges while a test drains serial
+            # (the kmtest sweep) — that path never enters this except, so it must
+            # call save_hang_state() itself.
+            self.save_hang_state("boot-wait timeout")
             raise
 
         # Wait for desktop to come up (user-mode processes need time after
@@ -1623,6 +1696,84 @@ class QemuVM:
                 body = f"<unavailable: {exc!r}>"
             chunks.append(f"=== {cmd} ===\n{body}")
         return "\n\n".join(chunks) + "\n"
+
+    def save_hang_state(self, phase: str) -> str:
+        """Capture where every vCPU is parked and persist it where it survives.
+
+        Call this from ANY path that has decided the guest is wedged, while the
+        guest is still alive — the capture is only possible before teardown, and
+        a wedge that prints nothing leaves no other evidence at all. `phase`
+        names what gave up (boot wait, sweep drain, ...) so a bare file in a run
+        dir still says which stall it belongs to.
+
+        Writes to work_dir AND artifact_dir: see the artifact_dir comment in
+        __init__ for why work_dir alone loses the file. Never raises — a
+        diagnostic that can fail its own already-failing run is worse than none.
+        """
+        ok = True
+        try:
+            self.hang_cpu_state = self.capture_cpu_state()
+        except Exception as exc:
+            self.hang_cpu_state = f"<capture failed: {exc!r}>\n"
+            ok = False
+        # A SECOND sample, seconds later. One sample cannot tell a box that is
+        # frozen (nothing runs at all — dead clock, no scheduling) from one that
+        # is merely blocked (CPUs cycling through the idle loop, work waiting on
+        # something that never arrives). Both park every vCPU in KiIdleLoop and
+        # read identically in a single dump — and they are completely different
+        # bugs, so the fork has to be settled here, while the guest is alive.
+        # A drained-out sweep has already spent its budget; a few more seconds to
+        # make the artifact self-answering is free by comparison.
+        second = ""
+        try:
+            time.sleep(HANG_RESAMPLE_SECONDS)
+            second = self.capture_cpu_state()
+        except Exception as exc:
+            second = f"<resample failed: {exc!r}>\n"
+            ok = False
+        if not ok:
+            # Two failed samples parse to the same (empty) PC list, and calling
+            # that "FROZEN" would be the instrument inventing its own evidence.
+            verdict = "UNKNOWN — the monitor did not answer; there is no sample to compare"
+        else:
+            # triage owns the `info registers -a` parse; import it here rather
+            # than at module scope because vm.py is imported by the cli package.
+            try:
+                from .cli.triage import cpu_pcs
+
+                moved = cpu_pcs(second) != cpu_pcs(self.hang_cpu_state)
+            except Exception:
+                moved = second.strip() != self.hang_cpu_state.strip()
+            verdict = (
+                "EXECUTING — vCPU PCs moved between samples, so the box is running "
+                "and blocked on something specific, not frozen"
+                if moved
+                else "FROZEN — every vCPU PC is identical across both samples; "
+                "nothing was scheduled in between"
+            )
+        smp = smp_count()
+        body = (
+            f"=== hang capture: {phase} ===\n"
+            f"arch={self.config.arch} smp={smp or 1} "
+            f"boot_timeout={self.config.boot_timeout:.0f}s\n"
+            f"verdict: {verdict}\n"
+            f"(samples {HANG_RESAMPLE_SECONDS}s apart)\n\n"
+            + self.hang_cpu_state
+            + f"\n=== resample (+{HANG_RESAMPLE_SECONDS}s) ===\n"
+            + second
+        )
+        for d in (self.work_dir, self.artifact_dir):
+            if d is None:
+                continue
+            try:
+                # mkdir here rather than trusting __init__: this runs minutes or
+                # hours after launch, and a swallowed OSError from a dir that
+                # went missing looks exactly like "the guest never wedged".
+                d.mkdir(parents=True, exist_ok=True)
+                (d / "hang-cpustate.txt").write_text(body)
+            except OSError:
+                pass
+        return self.hang_cpu_state
 
     def read_debugcon(self) -> bytes:
         """Read raw debugcon (bochs debug port 0xE9) output."""
@@ -1824,11 +1975,11 @@ class QemuVM:
         self.serial.close()
         self.qmp.close()
 
-        # Tear down the guestfwd echo server (windows-host net config only).
-        if self._echo_server is not None:
-            self._echo_server.shutdown()
-            self._echo_server.server_close()
-            self._echo_server = None
+        # Tear down the guestfwd echo servers (windows-host net config only).
+        for server in self._echo_servers:
+            server.shutdown()
+            server.server_close()
+        self._echo_servers = []
 
         # windows-host: the Windows QEMU.exe runs behind WSL interop, so the Linux
         # pgroup kill below won't reach it — kill it precisely by our unique -name tag.

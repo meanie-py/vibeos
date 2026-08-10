@@ -165,3 +165,14 @@ run_bindgen arm64 aarch64-pc-windows-gnullvm -D_WIN64 -D_M_ARM64 -D__aarch64__ -
 
 echo "=== Done ==="
 ls -la "${OUT_DIR}"/win_sys_*.rs
+
+# Spell ABI-identical callback slots `extern "system"` across the three islands this run just
+# wrote, projecting per symbol from the i386 witness (the only arch that still records which
+# callbacks are stdcall). Without this the slots keep the arch's literal convention, a
+# translated `extern "system"` callback will not unify with them, and the standing workaround
+# is a transmute that erases the whole fn type. Idempotent — safe to re-run.
+#
+# This lives in EVERY generator on purpose: normalization that only some of them apply is
+# normalization that the next regeneration of any other crate silently undoes.
+_isl_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+python3 "${_isl_dir}/../../../../tools/rustconv/normalize_island_abi.py" --apply "${_isl_dir}"

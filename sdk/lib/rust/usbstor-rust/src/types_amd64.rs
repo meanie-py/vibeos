@@ -2318,14 +2318,14 @@ pub struct _URB__bindgen_ty_1 {
 pub type URB = _URB;
 pub type PURB = *mut _URB;
 pub type PUSB_BUSIFFN_SUBMIT_ISO_OUT_URB =
-    ::core::option::Option<unsafe extern "C" fn(arg1: PVOID, arg2: PURB) -> NTSTATUS>;
+    ::core::option::Option<unsafe extern "system" fn(arg1: PVOID, arg2: PURB) -> NTSTATUS>;
 pub type PUSB_BUSIFFN_GETUSBDI_VERSION = ::core::option::Option<
-    unsafe extern "C" fn(arg1: PVOID, arg2: PUSBD_VERSION_INFORMATION, arg3: PULONG),
+    unsafe extern "system" fn(arg1: PVOID, arg2: PUSBD_VERSION_INFORMATION, arg3: PULONG),
 >;
 pub type PUSB_BUSIFFN_QUERY_BUS_TIME =
-    ::core::option::Option<unsafe extern "C" fn(arg1: PVOID, arg2: PULONG) -> NTSTATUS>;
+    ::core::option::Option<unsafe extern "system" fn(arg1: PVOID, arg2: PULONG) -> NTSTATUS>;
 pub type PUSB_BUSIFFN_ENUM_LOG_ENTRY = ::core::option::Option<
-    unsafe extern "C" fn(
+    unsafe extern "system" fn(
         arg1: PVOID,
         arg2: ULONG,
         arg3: ULONG,
@@ -2334,7 +2334,7 @@ pub type PUSB_BUSIFFN_ENUM_LOG_ENTRY = ::core::option::Option<
     ) -> NTSTATUS,
 >;
 pub type PUSB_BUSIFFN_QUERY_BUS_INFORMATION = ::core::option::Option<
-    unsafe extern "C" fn(
+    unsafe extern "system" fn(
         arg1: PVOID,
         arg2: ULONG,
         arg3: PVOID,
@@ -2343,7 +2343,7 @@ pub type PUSB_BUSIFFN_QUERY_BUS_INFORMATION = ::core::option::Option<
     ) -> NTSTATUS,
 >;
 pub type PUSB_BUSIFFN_IS_DEVICE_HIGH_SPEED =
-    ::core::option::Option<unsafe extern "C" fn(arg1: PVOID) -> BOOLEAN>;
+    ::core::option::Option<unsafe extern "system" fn(arg1: PVOID) -> BOOLEAN>;
 #[repr(C)]
 pub struct _USB_BUS_INTERFACE_USBDI_V2 {
     pub Size: USHORT,
@@ -2374,23 +2374,23 @@ pub struct USBD_HANDLE__ {
     pub unused: ::core::ffi::c_int,
 }
 pub type USBD_HANDLE = *mut USBD_HANDLE__;
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn USBD_GetUSBDIVersion(VersionInformation: PUSBD_VERSION_INFORMATION);
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn USBD_ParseConfigurationDescriptor(
         ConfigurationDescriptor: PUSB_CONFIGURATION_DESCRIPTOR,
         InterfaceNumber: UCHAR,
         AlternateSetting: UCHAR,
     ) -> PUSB_INTERFACE_DESCRIPTOR;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn USBD_CreateConfigurationRequest(
         ConfigurationDescriptor: PUSB_CONFIGURATION_DESCRIPTOR,
         Siz: PUSHORT,
     ) -> PURB;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn USBD_ParseDescriptors(
         DescriptorBuffer: PVOID,
         TotalLength: ULONG,
@@ -2398,7 +2398,7 @@ unsafe extern "C" {
         DescriptorType: LONG,
     ) -> PUSB_COMMON_DESCRIPTOR;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn USBD_ParseConfigurationDescriptorEx(
         ConfigurationDescriptor: PUSB_CONFIGURATION_DESCRIPTOR,
         StartPosition: PVOID,
@@ -2409,22 +2409,22 @@ unsafe extern "C" {
         InterfaceProtocol: LONG,
     ) -> PUSB_INTERFACE_DESCRIPTOR;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn USBD_CreateConfigurationRequestEx(
         ConfigurationDescriptor: PUSB_CONFIGURATION_DESCRIPTOR,
         InterfaceList: PUSBD_INTERFACE_LIST_ENTRY,
     ) -> PURB;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn USBD_GetInterfaceLength(
         InterfaceDescriptor: PUSB_INTERFACE_DESCRIPTOR,
         BufferEnd: PUCHAR,
     ) -> ULONG;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn USBD_RegisterHcFilter(DeviceObject: PDEVICE_OBJECT, FilterDeviceObject: PDEVICE_OBJECT);
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn USBD_GetPdoRegistryParameter(
         PhysicalDeviceObject: PDEVICE_OBJECT,
         Parameter: PVOID,
@@ -2433,17 +2433,17 @@ unsafe extern "C" {
         KeyNameLength: ULONG,
     ) -> NTSTATUS;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn USBD_QueryBusTime(RootHubPdo: PDEVICE_OBJECT, CurrentFrame: PULONG) -> NTSTATUS;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn USBD_CalculateUsbBandwidth(
         MaxPacketSize: ULONG,
         EndpointType: UCHAR,
         LowSpeed: BOOLEAN,
     ) -> ULONG;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn USBD_ValidateConfigurationDescriptor(
         ConfigDesc: PUSB_CONFIGURATION_DESCRIPTOR,
         BufferLength: ULONG,
@@ -38929,7 +38929,7 @@ unsafe extern "C" {
 unsafe extern "C" {
     pub fn USBSTOR_CreatePDO(DeviceObject: PDEVICE_OBJECT, LUN: UCHAR) -> NTSTATUS;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn USBSTOR_GetBusInterface(
         DeviceObject: PDEVICE_OBJECT,
         BusInterface: PUSB_BUS_INTERFACE_USBDI_V2,
@@ -38982,7 +38982,7 @@ unsafe extern "C" {
 unsafe extern "system" {
     pub fn USBSTOR_HandleDeviceControl(DeviceObject: PDEVICE_OBJECT, Irp: PIRP) -> NTSTATUS;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn USBSTOR_StartIo(DeviceObject: PDEVICE_OBJECT, Irp: PIRP);
 }
 unsafe extern "C" {
@@ -39019,7 +39019,7 @@ unsafe extern "C" {
         PipeHandle: USBD_PIPE_HANDLE,
     ) -> NTSTATUS;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn USBSTOR_TimerRoutine(DeviceObject: PDEVICE_OBJECT, Context: PVOID);
 }
 unsafe extern "system" {

@@ -168,7 +168,7 @@ pub struct tagENHMETAHEADER {
 }
 pub type ENHMETAHEADER = tagENHMETAHEADER;
 pub type DLGPROC = ::core::option::Option<
-    unsafe extern "C" fn(arg1: HWND, arg2: UINT, arg3: WPARAM, arg4: LPARAM) -> INT_PTR,
+    unsafe extern "system" fn(arg1: HWND, arg2: UINT, arg3: WPARAM, arg4: LPARAM) -> INT_PTR,
 >;
 #[repr(C, packed(2))]
 pub struct DLGTEMPLATE {
@@ -407,7 +407,7 @@ pub struct _PROPSHEETPAGEW {
     pub pfnDlgProc: DLGPROC,
     pub lParam: LPARAM,
     pub pfnCallback: ::core::option::Option<
-        unsafe extern "C" fn(arg1: HWND, arg2: UINT, arg3: *mut _PROPSHEETPAGEW) -> UINT,
+        unsafe extern "system" fn(arg1: HWND, arg2: UINT, arg3: *mut _PROPSHEETPAGEW) -> UINT,
     >,
     pub pcRefParent: *mut UINT,
     pub pszHeaderTitle: LPCWSTR,
@@ -436,7 +436,7 @@ pub struct _PROPSHEETPAGEW__bindgen_ty_3 {
 pub type PROPSHEETPAGEW = _PROPSHEETPAGEW;
 pub type LPCPROPSHEETPAGEW = *const PROPSHEETPAGEW;
 pub type PFNPROPSHEETCALLBACK = ::core::option::Option<
-    unsafe extern "C" fn(arg1: HWND, arg2: UINT, arg3: LPARAM) -> ::core::ffi::c_int,
+    unsafe extern "system" fn(arg1: HWND, arg2: UINT, arg3: LPARAM) -> ::core::ffi::c_int,
 >;
 #[repr(C)]
 #[derive(Debug, Copy, Clone)]
@@ -658,35 +658,35 @@ pub type WICColor = UINT32;
 #[derive(Debug, Copy, Clone)]
 pub struct IWICColorContextVtbl {
     pub QueryInterface: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IWICColorContext,
             riid: *const IID,
             ppvObject: *mut *mut ::core::ffi::c_void,
         ) -> HRESULT,
     >,
-    pub AddRef: ::core::option::Option<unsafe extern "C" fn(This: *mut IWICColorContext) -> ULONG>,
-    pub Release: ::core::option::Option<unsafe extern "C" fn(This: *mut IWICColorContext) -> ULONG>,
+    pub AddRef: ::core::option::Option<unsafe extern "system" fn(This: *mut IWICColorContext) -> ULONG>,
+    pub Release: ::core::option::Option<unsafe extern "system" fn(This: *mut IWICColorContext) -> ULONG>,
     pub InitializeFromFilename: ::core::option::Option<
-        unsafe extern "C" fn(This: *mut IWICColorContext, wzFilename: LPCWSTR) -> HRESULT,
+        unsafe extern "system" fn(This: *mut IWICColorContext, wzFilename: LPCWSTR) -> HRESULT,
     >,
     pub InitializeFromMemory: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IWICColorContext,
             pbBuffer: *const BYTE,
             cbBufferSize: UINT,
         ) -> HRESULT,
     >,
     pub InitializeFromExifColorSpace: ::core::option::Option<
-        unsafe extern "C" fn(This: *mut IWICColorContext, value: UINT) -> HRESULT,
+        unsafe extern "system" fn(This: *mut IWICColorContext, value: UINT) -> HRESULT,
     >,
     pub GetType: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IWICColorContext,
             pType: *mut WICColorContextType,
         ) -> HRESULT,
     >,
     pub GetProfileBytes: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IWICColorContext,
             cbBuffer: UINT,
             pbBuffer: *mut BYTE,
@@ -694,7 +694,7 @@ pub struct IWICColorContextVtbl {
         ) -> HRESULT,
     >,
     pub GetExifColorSpace: ::core::option::Option<
-        unsafe extern "C" fn(This: *mut IWICColorContext, pValue: *mut UINT) -> HRESULT,
+        unsafe extern "system" fn(This: *mut IWICColorContext, pValue: *mut UINT) -> HRESULT,
     >,
 }
 #[repr(C)]
@@ -706,39 +706,39 @@ pub struct IWICColorContext {
 #[derive(Debug, Copy, Clone)]
 pub struct IWICBitmapSourceVtbl {
     pub QueryInterface: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IWICBitmapSource,
             riid: *const IID,
             ppvObject: *mut *mut ::core::ffi::c_void,
         ) -> HRESULT,
     >,
-    pub AddRef: ::core::option::Option<unsafe extern "C" fn(This: *mut IWICBitmapSource) -> ULONG>,
-    pub Release: ::core::option::Option<unsafe extern "C" fn(This: *mut IWICBitmapSource) -> ULONG>,
+    pub AddRef: ::core::option::Option<unsafe extern "system" fn(This: *mut IWICBitmapSource) -> ULONG>,
+    pub Release: ::core::option::Option<unsafe extern "system" fn(This: *mut IWICBitmapSource) -> ULONG>,
     pub GetSize: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IWICBitmapSource,
             puiWidth: *mut UINT,
             puiHeight: *mut UINT,
         ) -> HRESULT,
     >,
     pub GetPixelFormat: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IWICBitmapSource,
             pPixelFormat: *mut WICPixelFormatGUID,
         ) -> HRESULT,
     >,
     pub GetResolution: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IWICBitmapSource,
             pDpiX: *mut f64,
             pDpiY: *mut f64,
         ) -> HRESULT,
     >,
     pub CopyPalette: ::core::option::Option<
-        unsafe extern "C" fn(This: *mut IWICBitmapSource, pIPalette: *mut IWICPalette) -> HRESULT,
+        unsafe extern "system" fn(This: *mut IWICBitmapSource, pIPalette: *mut IWICPalette) -> HRESULT,
     >,
     pub CopyPixels: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IWICBitmapSource,
             prc: *const WICRect,
             cbStride: UINT,
@@ -756,33 +756,33 @@ pub struct IWICBitmapSource {
 #[derive(Debug, Copy, Clone)]
 pub struct IWICBitmapLockVtbl {
     pub QueryInterface: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IWICBitmapLock,
             riid: *const IID,
             ppvObject: *mut *mut ::core::ffi::c_void,
         ) -> HRESULT,
     >,
-    pub AddRef: ::core::option::Option<unsafe extern "C" fn(This: *mut IWICBitmapLock) -> ULONG>,
-    pub Release: ::core::option::Option<unsafe extern "C" fn(This: *mut IWICBitmapLock) -> ULONG>,
+    pub AddRef: ::core::option::Option<unsafe extern "system" fn(This: *mut IWICBitmapLock) -> ULONG>,
+    pub Release: ::core::option::Option<unsafe extern "system" fn(This: *mut IWICBitmapLock) -> ULONG>,
     pub GetSize: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IWICBitmapLock,
             pWidth: *mut UINT,
             pHeight: *mut UINT,
         ) -> HRESULT,
     >,
     pub GetStride: ::core::option::Option<
-        unsafe extern "C" fn(This: *mut IWICBitmapLock, pcbStride: *mut UINT) -> HRESULT,
+        unsafe extern "system" fn(This: *mut IWICBitmapLock, pcbStride: *mut UINT) -> HRESULT,
     >,
     pub GetDataPointer: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IWICBitmapLock,
             pcbBufferSize: *mut UINT,
             ppbData: *mut *mut BYTE,
         ) -> HRESULT,
     >,
     pub GetPixelFormat: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IWICBitmapLock,
             pPixelFormat: *mut WICPixelFormatGUID,
         ) -> HRESULT,
@@ -797,44 +797,44 @@ pub struct IWICBitmapLock {
 #[derive(Debug, Copy, Clone)]
 pub struct IWICBitmapFlipRotatorVtbl {
     pub QueryInterface: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IWICBitmapFlipRotator,
             riid: *const IID,
             ppvObject: *mut *mut ::core::ffi::c_void,
         ) -> HRESULT,
     >,
     pub AddRef:
-        ::core::option::Option<unsafe extern "C" fn(This: *mut IWICBitmapFlipRotator) -> ULONG>,
+        ::core::option::Option<unsafe extern "system" fn(This: *mut IWICBitmapFlipRotator) -> ULONG>,
     pub Release:
-        ::core::option::Option<unsafe extern "C" fn(This: *mut IWICBitmapFlipRotator) -> ULONG>,
+        ::core::option::Option<unsafe extern "system" fn(This: *mut IWICBitmapFlipRotator) -> ULONG>,
     pub GetSize: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IWICBitmapFlipRotator,
             puiWidth: *mut UINT,
             puiHeight: *mut UINT,
         ) -> HRESULT,
     >,
     pub GetPixelFormat: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IWICBitmapFlipRotator,
             pPixelFormat: *mut WICPixelFormatGUID,
         ) -> HRESULT,
     >,
     pub GetResolution: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IWICBitmapFlipRotator,
             pDpiX: *mut f64,
             pDpiY: *mut f64,
         ) -> HRESULT,
     >,
     pub CopyPalette: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IWICBitmapFlipRotator,
             pIPalette: *mut IWICPalette,
         ) -> HRESULT,
     >,
     pub CopyPixels: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IWICBitmapFlipRotator,
             prc: *const WICRect,
             cbStride: UINT,
@@ -843,7 +843,7 @@ pub struct IWICBitmapFlipRotatorVtbl {
         ) -> HRESULT,
     >,
     pub Initialize: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IWICBitmapFlipRotator,
             pISource: *mut IWICBitmapSource,
             options: WICBitmapTransformOptions,
@@ -859,35 +859,35 @@ pub struct IWICBitmapFlipRotator {
 #[derive(Debug, Copy, Clone)]
 pub struct IWICBitmapVtbl {
     pub QueryInterface: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IWICBitmap,
             riid: *const IID,
             ppvObject: *mut *mut ::core::ffi::c_void,
         ) -> HRESULT,
     >,
-    pub AddRef: ::core::option::Option<unsafe extern "C" fn(This: *mut IWICBitmap) -> ULONG>,
-    pub Release: ::core::option::Option<unsafe extern "C" fn(This: *mut IWICBitmap) -> ULONG>,
+    pub AddRef: ::core::option::Option<unsafe extern "system" fn(This: *mut IWICBitmap) -> ULONG>,
+    pub Release: ::core::option::Option<unsafe extern "system" fn(This: *mut IWICBitmap) -> ULONG>,
     pub GetSize: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IWICBitmap,
             puiWidth: *mut UINT,
             puiHeight: *mut UINT,
         ) -> HRESULT,
     >,
     pub GetPixelFormat: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IWICBitmap,
             pPixelFormat: *mut WICPixelFormatGUID,
         ) -> HRESULT,
     >,
     pub GetResolution: ::core::option::Option<
-        unsafe extern "C" fn(This: *mut IWICBitmap, pDpiX: *mut f64, pDpiY: *mut f64) -> HRESULT,
+        unsafe extern "system" fn(This: *mut IWICBitmap, pDpiX: *mut f64, pDpiY: *mut f64) -> HRESULT,
     >,
     pub CopyPalette: ::core::option::Option<
-        unsafe extern "C" fn(This: *mut IWICBitmap, pIPalette: *mut IWICPalette) -> HRESULT,
+        unsafe extern "system" fn(This: *mut IWICBitmap, pIPalette: *mut IWICPalette) -> HRESULT,
     >,
     pub CopyPixels: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IWICBitmap,
             prc: *const WICRect,
             cbStride: UINT,
@@ -896,7 +896,7 @@ pub struct IWICBitmapVtbl {
         ) -> HRESULT,
     >,
     pub Lock: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IWICBitmap,
             prcLock: *const WICRect,
             flags: DWORD,
@@ -904,10 +904,10 @@ pub struct IWICBitmapVtbl {
         ) -> HRESULT,
     >,
     pub SetPalette: ::core::option::Option<
-        unsafe extern "C" fn(This: *mut IWICBitmap, pIPalette: *mut IWICPalette) -> HRESULT,
+        unsafe extern "system" fn(This: *mut IWICBitmap, pIPalette: *mut IWICPalette) -> HRESULT,
     >,
     pub SetResolution: ::core::option::Option<
-        unsafe extern "C" fn(This: *mut IWICBitmap, dpiX: f64, dpiY: f64) -> HRESULT,
+        unsafe extern "system" fn(This: *mut IWICBitmap, dpiX: f64, dpiY: f64) -> HRESULT,
     >,
 }
 #[repr(C)]
@@ -919,30 +919,30 @@ pub struct IWICBitmap {
 #[derive(Debug, Copy, Clone)]
 pub struct IWICPaletteVtbl {
     pub QueryInterface: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IWICPalette,
             riid: *const IID,
             ppvObject: *mut *mut ::core::ffi::c_void,
         ) -> HRESULT,
     >,
-    pub AddRef: ::core::option::Option<unsafe extern "C" fn(This: *mut IWICPalette) -> ULONG>,
-    pub Release: ::core::option::Option<unsafe extern "C" fn(This: *mut IWICPalette) -> ULONG>,
+    pub AddRef: ::core::option::Option<unsafe extern "system" fn(This: *mut IWICPalette) -> ULONG>,
+    pub Release: ::core::option::Option<unsafe extern "system" fn(This: *mut IWICPalette) -> ULONG>,
     pub InitializePredefined: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IWICPalette,
             ePaletteType: WICBitmapPaletteType,
             fAddTransparentColor: BOOL,
         ) -> HRESULT,
     >,
     pub InitializeCustom: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IWICPalette,
             pColors: *mut WICColor,
             colorCount: UINT,
         ) -> HRESULT,
     >,
     pub InitializeFromBitmap: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IWICPalette,
             pISurface: *mut IWICBitmapSource,
             colorCount: UINT,
@@ -950,19 +950,19 @@ pub struct IWICPaletteVtbl {
         ) -> HRESULT,
     >,
     pub InitializeFromPalette: ::core::option::Option<
-        unsafe extern "C" fn(This: *mut IWICPalette, pIPalette: *mut IWICPalette) -> HRESULT,
+        unsafe extern "system" fn(This: *mut IWICPalette, pIPalette: *mut IWICPalette) -> HRESULT,
     >,
     pub GetType: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IWICPalette,
             pePaletteType: *mut WICBitmapPaletteType,
         ) -> HRESULT,
     >,
     pub GetColorCount: ::core::option::Option<
-        unsafe extern "C" fn(This: *mut IWICPalette, pcCount: *mut UINT) -> HRESULT,
+        unsafe extern "system" fn(This: *mut IWICPalette, pcCount: *mut UINT) -> HRESULT,
     >,
     pub GetColors: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IWICPalette,
             colorCount: UINT,
             pColors: *mut WICColor,
@@ -970,13 +970,13 @@ pub struct IWICPaletteVtbl {
         ) -> HRESULT,
     >,
     pub IsBlackWhite: ::core::option::Option<
-        unsafe extern "C" fn(This: *mut IWICPalette, pfIsBlackWhite: *mut BOOL) -> HRESULT,
+        unsafe extern "system" fn(This: *mut IWICPalette, pfIsBlackWhite: *mut BOOL) -> HRESULT,
     >,
     pub IsGrayscale: ::core::option::Option<
-        unsafe extern "C" fn(This: *mut IWICPalette, pfIsGrayscale: *mut BOOL) -> HRESULT,
+        unsafe extern "system" fn(This: *mut IWICPalette, pfIsGrayscale: *mut BOOL) -> HRESULT,
     >,
     pub HasAlpha: ::core::option::Option<
-        unsafe extern "C" fn(This: *mut IWICPalette, pfHasAlpha: *mut BOOL) -> HRESULT,
+        unsafe extern "system" fn(This: *mut IWICPalette, pfHasAlpha: *mut BOOL) -> HRESULT,
     >,
 }
 #[repr(C)]
@@ -988,26 +988,26 @@ pub struct IWICPalette {
 #[derive(Debug, Copy, Clone)]
 pub struct IWICComponentInfoVtbl {
     pub QueryInterface: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IWICComponentInfo,
             riid: *const IID,
             ppvObject: *mut *mut ::core::ffi::c_void,
         ) -> HRESULT,
     >,
-    pub AddRef: ::core::option::Option<unsafe extern "C" fn(This: *mut IWICComponentInfo) -> ULONG>,
+    pub AddRef: ::core::option::Option<unsafe extern "system" fn(This: *mut IWICComponentInfo) -> ULONG>,
     pub Release:
-        ::core::option::Option<unsafe extern "C" fn(This: *mut IWICComponentInfo) -> ULONG>,
+        ::core::option::Option<unsafe extern "system" fn(This: *mut IWICComponentInfo) -> ULONG>,
     pub GetComponentType: ::core::option::Option<
-        unsafe extern "C" fn(This: *mut IWICComponentInfo, pType: *mut WICComponentType) -> HRESULT,
+        unsafe extern "system" fn(This: *mut IWICComponentInfo, pType: *mut WICComponentType) -> HRESULT,
     >,
     pub GetCLSID: ::core::option::Option<
-        unsafe extern "C" fn(This: *mut IWICComponentInfo, pclsid: *mut CLSID) -> HRESULT,
+        unsafe extern "system" fn(This: *mut IWICComponentInfo, pclsid: *mut CLSID) -> HRESULT,
     >,
     pub GetSigningStatus: ::core::option::Option<
-        unsafe extern "C" fn(This: *mut IWICComponentInfo, pStatus: *mut DWORD) -> HRESULT,
+        unsafe extern "system" fn(This: *mut IWICComponentInfo, pStatus: *mut DWORD) -> HRESULT,
     >,
     pub GetAuthor: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IWICComponentInfo,
             cchAuthor: UINT,
             wzAuthor: *mut WCHAR,
@@ -1015,10 +1015,10 @@ pub struct IWICComponentInfoVtbl {
         ) -> HRESULT,
     >,
     pub GetVendorGUID: ::core::option::Option<
-        unsafe extern "C" fn(This: *mut IWICComponentInfo, pguidVendor: *mut GUID) -> HRESULT,
+        unsafe extern "system" fn(This: *mut IWICComponentInfo, pguidVendor: *mut GUID) -> HRESULT,
     >,
     pub GetVersion: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IWICComponentInfo,
             cchVersion: UINT,
             wzVersion: *mut WCHAR,
@@ -1026,7 +1026,7 @@ pub struct IWICComponentInfoVtbl {
         ) -> HRESULT,
     >,
     pub GetSpecVersion: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IWICComponentInfo,
             cchSpecVersion: UINT,
             wzSpecVersion: *mut WCHAR,
@@ -1034,7 +1034,7 @@ pub struct IWICComponentInfoVtbl {
         ) -> HRESULT,
     >,
     pub GetFriendlyName: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IWICComponentInfo,
             cchFriendlyName: UINT,
             wzFriendlyName: *mut WCHAR,
@@ -1051,24 +1051,24 @@ pub struct IWICComponentInfo {
 #[derive(Debug, Copy, Clone)]
 pub struct IWICMetadataQueryReaderVtbl {
     pub QueryInterface: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IWICMetadataQueryReader,
             riid: *const IID,
             ppvObject: *mut *mut ::core::ffi::c_void,
         ) -> HRESULT,
     >,
     pub AddRef:
-        ::core::option::Option<unsafe extern "C" fn(This: *mut IWICMetadataQueryReader) -> ULONG>,
+        ::core::option::Option<unsafe extern "system" fn(This: *mut IWICMetadataQueryReader) -> ULONG>,
     pub Release:
-        ::core::option::Option<unsafe extern "C" fn(This: *mut IWICMetadataQueryReader) -> ULONG>,
+        ::core::option::Option<unsafe extern "system" fn(This: *mut IWICMetadataQueryReader) -> ULONG>,
     pub GetContainerFormat: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IWICMetadataQueryReader,
             pguidContainerFormat: *mut GUID,
         ) -> HRESULT,
     >,
     pub GetLocation: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IWICMetadataQueryReader,
             cchMaxLength: UINT,
             wzNamespace: *mut WCHAR,
@@ -1076,14 +1076,14 @@ pub struct IWICMetadataQueryReaderVtbl {
         ) -> HRESULT,
     >,
     pub GetMetadataByName: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IWICMetadataQueryReader,
             wzName: LPCWSTR,
             pvarValue: *mut PROPVARIANT,
         ) -> HRESULT,
     >,
     pub GetEnumerator: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IWICMetadataQueryReader,
             ppIEnumString: *mut *mut IEnumString,
         ) -> HRESULT,
@@ -1098,24 +1098,24 @@ pub struct IWICMetadataQueryReader {
 #[derive(Debug, Copy, Clone)]
 pub struct IWICMetadataQueryWriterVtbl {
     pub QueryInterface: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IWICMetadataQueryWriter,
             riid: *const IID,
             ppvObject: *mut *mut ::core::ffi::c_void,
         ) -> HRESULT,
     >,
     pub AddRef:
-        ::core::option::Option<unsafe extern "C" fn(This: *mut IWICMetadataQueryWriter) -> ULONG>,
+        ::core::option::Option<unsafe extern "system" fn(This: *mut IWICMetadataQueryWriter) -> ULONG>,
     pub Release:
-        ::core::option::Option<unsafe extern "C" fn(This: *mut IWICMetadataQueryWriter) -> ULONG>,
+        ::core::option::Option<unsafe extern "system" fn(This: *mut IWICMetadataQueryWriter) -> ULONG>,
     pub GetContainerFormat: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IWICMetadataQueryWriter,
             pguidContainerFormat: *mut GUID,
         ) -> HRESULT,
     >,
     pub GetLocation: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IWICMetadataQueryWriter,
             cchMaxLength: UINT,
             wzNamespace: *mut WCHAR,
@@ -1123,27 +1123,27 @@ pub struct IWICMetadataQueryWriterVtbl {
         ) -> HRESULT,
     >,
     pub GetMetadataByName: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IWICMetadataQueryWriter,
             wzName: LPCWSTR,
             pvarValue: *mut PROPVARIANT,
         ) -> HRESULT,
     >,
     pub GetEnumerator: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IWICMetadataQueryWriter,
             ppIEnumString: *mut *mut IEnumString,
         ) -> HRESULT,
     >,
     pub SetMetadataByName: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IWICMetadataQueryWriter,
             wzName: LPCWSTR,
             pvarValue: *const PROPVARIANT,
         ) -> HRESULT,
     >,
     pub RemoveMetadataByName: ::core::option::Option<
-        unsafe extern "C" fn(This: *mut IWICMetadataQueryWriter, wzName: LPCWSTR) -> HRESULT,
+        unsafe extern "system" fn(This: *mut IWICMetadataQueryWriter, wzName: LPCWSTR) -> HRESULT,
     >,
 }
 #[repr(C)]
@@ -1155,44 +1155,44 @@ pub struct IWICMetadataQueryWriter {
 #[derive(Debug, Copy, Clone)]
 pub struct IWICBitmapFrameDecodeVtbl {
     pub QueryInterface: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IWICBitmapFrameDecode,
             riid: *const IID,
             ppvObject: *mut *mut ::core::ffi::c_void,
         ) -> HRESULT,
     >,
     pub AddRef:
-        ::core::option::Option<unsafe extern "C" fn(This: *mut IWICBitmapFrameDecode) -> ULONG>,
+        ::core::option::Option<unsafe extern "system" fn(This: *mut IWICBitmapFrameDecode) -> ULONG>,
     pub Release:
-        ::core::option::Option<unsafe extern "C" fn(This: *mut IWICBitmapFrameDecode) -> ULONG>,
+        ::core::option::Option<unsafe extern "system" fn(This: *mut IWICBitmapFrameDecode) -> ULONG>,
     pub GetSize: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IWICBitmapFrameDecode,
             puiWidth: *mut UINT,
             puiHeight: *mut UINT,
         ) -> HRESULT,
     >,
     pub GetPixelFormat: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IWICBitmapFrameDecode,
             pPixelFormat: *mut WICPixelFormatGUID,
         ) -> HRESULT,
     >,
     pub GetResolution: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IWICBitmapFrameDecode,
             pDpiX: *mut f64,
             pDpiY: *mut f64,
         ) -> HRESULT,
     >,
     pub CopyPalette: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IWICBitmapFrameDecode,
             pIPalette: *mut IWICPalette,
         ) -> HRESULT,
     >,
     pub CopyPixels: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IWICBitmapFrameDecode,
             prc: *const WICRect,
             cbStride: UINT,
@@ -1201,13 +1201,13 @@ pub struct IWICBitmapFrameDecodeVtbl {
         ) -> HRESULT,
     >,
     pub GetMetadataQueryReader: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IWICBitmapFrameDecode,
             ppIMetadataQueryReader: *mut *mut IWICMetadataQueryReader,
         ) -> HRESULT,
     >,
     pub GetColorContexts: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IWICBitmapFrameDecode,
             cCount: UINT,
             ppIColorContexts: *mut *mut IWICColorContext,
@@ -1215,7 +1215,7 @@ pub struct IWICBitmapFrameDecodeVtbl {
         ) -> HRESULT,
     >,
     pub GetThumbnail: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IWICBitmapFrameDecode,
             ppIThumbnail: *mut *mut IWICBitmapSource,
         ) -> HRESULT,
@@ -1230,30 +1230,30 @@ pub struct IWICBitmapFrameDecode {
 #[derive(Debug, Copy, Clone)]
 pub struct IWICBitmapDecoderInfoVtbl {
     pub QueryInterface: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IWICBitmapDecoderInfo,
             riid: *const IID,
             ppvObject: *mut *mut ::core::ffi::c_void,
         ) -> HRESULT,
     >,
     pub AddRef:
-        ::core::option::Option<unsafe extern "C" fn(This: *mut IWICBitmapDecoderInfo) -> ULONG>,
+        ::core::option::Option<unsafe extern "system" fn(This: *mut IWICBitmapDecoderInfo) -> ULONG>,
     pub Release:
-        ::core::option::Option<unsafe extern "C" fn(This: *mut IWICBitmapDecoderInfo) -> ULONG>,
+        ::core::option::Option<unsafe extern "system" fn(This: *mut IWICBitmapDecoderInfo) -> ULONG>,
     pub GetComponentType: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IWICBitmapDecoderInfo,
             pType: *mut WICComponentType,
         ) -> HRESULT,
     >,
     pub GetCLSID: ::core::option::Option<
-        unsafe extern "C" fn(This: *mut IWICBitmapDecoderInfo, pclsid: *mut CLSID) -> HRESULT,
+        unsafe extern "system" fn(This: *mut IWICBitmapDecoderInfo, pclsid: *mut CLSID) -> HRESULT,
     >,
     pub GetSigningStatus: ::core::option::Option<
-        unsafe extern "C" fn(This: *mut IWICBitmapDecoderInfo, pStatus: *mut DWORD) -> HRESULT,
+        unsafe extern "system" fn(This: *mut IWICBitmapDecoderInfo, pStatus: *mut DWORD) -> HRESULT,
     >,
     pub GetAuthor: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IWICBitmapDecoderInfo,
             cchAuthor: UINT,
             wzAuthor: *mut WCHAR,
@@ -1261,10 +1261,10 @@ pub struct IWICBitmapDecoderInfoVtbl {
         ) -> HRESULT,
     >,
     pub GetVendorGUID: ::core::option::Option<
-        unsafe extern "C" fn(This: *mut IWICBitmapDecoderInfo, pguidVendor: *mut GUID) -> HRESULT,
+        unsafe extern "system" fn(This: *mut IWICBitmapDecoderInfo, pguidVendor: *mut GUID) -> HRESULT,
     >,
     pub GetVersion: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IWICBitmapDecoderInfo,
             cchVersion: UINT,
             wzVersion: *mut WCHAR,
@@ -1272,7 +1272,7 @@ pub struct IWICBitmapDecoderInfoVtbl {
         ) -> HRESULT,
     >,
     pub GetSpecVersion: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IWICBitmapDecoderInfo,
             cchSpecVersion: UINT,
             wzSpecVersion: *mut WCHAR,
@@ -1280,7 +1280,7 @@ pub struct IWICBitmapDecoderInfoVtbl {
         ) -> HRESULT,
     >,
     pub GetFriendlyName: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IWICBitmapDecoderInfo,
             cchFriendlyName: UINT,
             wzFriendlyName: *mut WCHAR,
@@ -1288,13 +1288,13 @@ pub struct IWICBitmapDecoderInfoVtbl {
         ) -> HRESULT,
     >,
     pub GetContainerFormat: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IWICBitmapDecoderInfo,
             pguidContainerFormat: *mut GUID,
         ) -> HRESULT,
     >,
     pub GetPixelFormats: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IWICBitmapDecoderInfo,
             cFormats: UINT,
             pguidPixelFormats: *mut GUID,
@@ -1302,7 +1302,7 @@ pub struct IWICBitmapDecoderInfoVtbl {
         ) -> HRESULT,
     >,
     pub GetColorManagementVersion: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IWICBitmapDecoderInfo,
             cchColorManagementVersion: UINT,
             wzColorManagementVersion: *mut WCHAR,
@@ -1310,7 +1310,7 @@ pub struct IWICBitmapDecoderInfoVtbl {
         ) -> HRESULT,
     >,
     pub GetDeviceManufacturer: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IWICBitmapDecoderInfo,
             cchDeviceManufacturer: UINT,
             wzDeviceManufacturer: *mut WCHAR,
@@ -1318,7 +1318,7 @@ pub struct IWICBitmapDecoderInfoVtbl {
         ) -> HRESULT,
     >,
     pub GetDeviceModels: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IWICBitmapDecoderInfo,
             cchDeviceModels: UINT,
             wzDeviceModels: *mut WCHAR,
@@ -1326,7 +1326,7 @@ pub struct IWICBitmapDecoderInfoVtbl {
         ) -> HRESULT,
     >,
     pub GetMimeTypes: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IWICBitmapDecoderInfo,
             cchMimeTypes: UINT,
             wzMimeTypes: *mut WCHAR,
@@ -1334,7 +1334,7 @@ pub struct IWICBitmapDecoderInfoVtbl {
         ) -> HRESULT,
     >,
     pub GetFileExtensions: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IWICBitmapDecoderInfo,
             cchFileExtensions: UINT,
             wzFileExtensions: *mut WCHAR,
@@ -1342,38 +1342,38 @@ pub struct IWICBitmapDecoderInfoVtbl {
         ) -> HRESULT,
     >,
     pub DoesSupportAnimation: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IWICBitmapDecoderInfo,
             pfSupportAnimation: *mut BOOL,
         ) -> HRESULT,
     >,
     pub DoesSupportChromaKey: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IWICBitmapDecoderInfo,
             pfSupportChromaKey: *mut BOOL,
         ) -> HRESULT,
     >,
     pub DoesSupportLossless: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IWICBitmapDecoderInfo,
             pfSupportLossless: *mut BOOL,
         ) -> HRESULT,
     >,
     pub DoesSupportMultiframe: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IWICBitmapDecoderInfo,
             pfSupportMultiframe: *mut BOOL,
         ) -> HRESULT,
     >,
     pub MatchesMimeType: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IWICBitmapDecoderInfo,
             wzMimeType: LPCWSTR,
             pfMatches: *mut BOOL,
         ) -> HRESULT,
     >,
     pub GetPatterns: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IWICBitmapDecoderInfo,
             cbSizePatterns: UINT,
             pPatterns: *mut WICBitmapPattern,
@@ -1382,14 +1382,14 @@ pub struct IWICBitmapDecoderInfoVtbl {
         ) -> HRESULT,
     >,
     pub MatchesPattern: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IWICBitmapDecoderInfo,
             pIStream: *mut IStream,
             pfMatches: *mut BOOL,
         ) -> HRESULT,
     >,
     pub CreateInstance: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IWICBitmapDecoderInfo,
             ppIBitmapDecoder: *mut *mut IWICBitmapDecoder,
         ) -> HRESULT,
@@ -1404,58 +1404,58 @@ pub struct IWICBitmapDecoderInfo {
 #[derive(Debug, Copy, Clone)]
 pub struct IWICBitmapDecoderVtbl {
     pub QueryInterface: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IWICBitmapDecoder,
             riid: *const IID,
             ppvObject: *mut *mut ::core::ffi::c_void,
         ) -> HRESULT,
     >,
-    pub AddRef: ::core::option::Option<unsafe extern "C" fn(This: *mut IWICBitmapDecoder) -> ULONG>,
+    pub AddRef: ::core::option::Option<unsafe extern "system" fn(This: *mut IWICBitmapDecoder) -> ULONG>,
     pub Release:
-        ::core::option::Option<unsafe extern "C" fn(This: *mut IWICBitmapDecoder) -> ULONG>,
+        ::core::option::Option<unsafe extern "system" fn(This: *mut IWICBitmapDecoder) -> ULONG>,
     pub QueryCapability: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IWICBitmapDecoder,
             pIStream: *mut IStream,
             pdwCapability: *mut DWORD,
         ) -> HRESULT,
     >,
     pub Initialize: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IWICBitmapDecoder,
             pIStream: *mut IStream,
             cacheOptions: WICDecodeOptions,
         ) -> HRESULT,
     >,
     pub GetContainerFormat: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IWICBitmapDecoder,
             pguidContainerFormat: *mut GUID,
         ) -> HRESULT,
     >,
     pub GetDecoderInfo: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IWICBitmapDecoder,
             ppIDecoderInfo: *mut *mut IWICBitmapDecoderInfo,
         ) -> HRESULT,
     >,
     pub CopyPalette: ::core::option::Option<
-        unsafe extern "C" fn(This: *mut IWICBitmapDecoder, pIPalette: *mut IWICPalette) -> HRESULT,
+        unsafe extern "system" fn(This: *mut IWICBitmapDecoder, pIPalette: *mut IWICPalette) -> HRESULT,
     >,
     pub GetMetadataQueryReader: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IWICBitmapDecoder,
             ppIMetadataQueryReader: *mut *mut IWICMetadataQueryReader,
         ) -> HRESULT,
     >,
     pub GetPreview: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IWICBitmapDecoder,
             ppIBitmapSource: *mut *mut IWICBitmapSource,
         ) -> HRESULT,
     >,
     pub GetColorContexts: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IWICBitmapDecoder,
             cCount: UINT,
             ppIColorContexts: *mut *mut IWICColorContext,
@@ -1463,16 +1463,16 @@ pub struct IWICBitmapDecoderVtbl {
         ) -> HRESULT,
     >,
     pub GetThumbnail: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IWICBitmapDecoder,
             ppIThumbnail: *mut *mut IWICBitmapSource,
         ) -> HRESULT,
     >,
     pub GetFrameCount: ::core::option::Option<
-        unsafe extern "C" fn(This: *mut IWICBitmapDecoder, pCount: *mut UINT) -> HRESULT,
+        unsafe extern "system" fn(This: *mut IWICBitmapDecoder, pCount: *mut UINT) -> HRESULT,
     >,
     pub GetFrame: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IWICBitmapDecoder,
             index: UINT,
             ppIBitmapFrame: *mut *mut IWICBitmapFrameDecode,
@@ -1488,59 +1488,59 @@ pub struct IWICBitmapDecoder {
 #[derive(Debug, Copy, Clone)]
 pub struct IWICBitmapFrameEncodeVtbl {
     pub QueryInterface: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IWICBitmapFrameEncode,
             riid: *const IID,
             ppvObject: *mut *mut ::core::ffi::c_void,
         ) -> HRESULT,
     >,
     pub AddRef:
-        ::core::option::Option<unsafe extern "C" fn(This: *mut IWICBitmapFrameEncode) -> ULONG>,
+        ::core::option::Option<unsafe extern "system" fn(This: *mut IWICBitmapFrameEncode) -> ULONG>,
     pub Release:
-        ::core::option::Option<unsafe extern "C" fn(This: *mut IWICBitmapFrameEncode) -> ULONG>,
+        ::core::option::Option<unsafe extern "system" fn(This: *mut IWICBitmapFrameEncode) -> ULONG>,
     pub Initialize: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IWICBitmapFrameEncode,
             pIEncoderOptions: *mut IPropertyBag2,
         ) -> HRESULT,
     >,
     pub SetSize: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IWICBitmapFrameEncode,
             uiWidth: UINT,
             uiHeight: UINT,
         ) -> HRESULT,
     >,
     pub SetResolution: ::core::option::Option<
-        unsafe extern "C" fn(This: *mut IWICBitmapFrameEncode, dpiX: f64, dpiY: f64) -> HRESULT,
+        unsafe extern "system" fn(This: *mut IWICBitmapFrameEncode, dpiX: f64, dpiY: f64) -> HRESULT,
     >,
     pub SetPixelFormat: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IWICBitmapFrameEncode,
             pPixelFormat: *mut WICPixelFormatGUID,
         ) -> HRESULT,
     >,
     pub SetColorContexts: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IWICBitmapFrameEncode,
             cCount: UINT,
             ppIColorContext: *mut *mut IWICColorContext,
         ) -> HRESULT,
     >,
     pub SetPalette: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IWICBitmapFrameEncode,
             pIPalette: *mut IWICPalette,
         ) -> HRESULT,
     >,
     pub SetThumbnail: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IWICBitmapFrameEncode,
             pIThumbnail: *mut IWICBitmapSource,
         ) -> HRESULT,
     >,
     pub WritePixels: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IWICBitmapFrameEncode,
             lineCount: UINT,
             cbStride: UINT,
@@ -1549,16 +1549,16 @@ pub struct IWICBitmapFrameEncodeVtbl {
         ) -> HRESULT,
     >,
     pub WriteSource: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IWICBitmapFrameEncode,
             pIBitmapSource: *mut IWICBitmapSource,
             prc: *mut WICRect,
         ) -> HRESULT,
     >,
     pub Commit:
-        ::core::option::Option<unsafe extern "C" fn(This: *mut IWICBitmapFrameEncode) -> HRESULT>,
+        ::core::option::Option<unsafe extern "system" fn(This: *mut IWICBitmapFrameEncode) -> HRESULT>,
     pub GetMetadataQueryWriter: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IWICBitmapFrameEncode,
             ppIMetadataQueryWriter: *mut *mut IWICMetadataQueryWriter,
         ) -> HRESULT,
@@ -1573,30 +1573,30 @@ pub struct IWICBitmapFrameEncode {
 #[derive(Debug, Copy, Clone)]
 pub struct IWICBitmapEncoderInfoVtbl {
     pub QueryInterface: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IWICBitmapEncoderInfo,
             riid: *const IID,
             ppvObject: *mut *mut ::core::ffi::c_void,
         ) -> HRESULT,
     >,
     pub AddRef:
-        ::core::option::Option<unsafe extern "C" fn(This: *mut IWICBitmapEncoderInfo) -> ULONG>,
+        ::core::option::Option<unsafe extern "system" fn(This: *mut IWICBitmapEncoderInfo) -> ULONG>,
     pub Release:
-        ::core::option::Option<unsafe extern "C" fn(This: *mut IWICBitmapEncoderInfo) -> ULONG>,
+        ::core::option::Option<unsafe extern "system" fn(This: *mut IWICBitmapEncoderInfo) -> ULONG>,
     pub GetComponentType: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IWICBitmapEncoderInfo,
             pType: *mut WICComponentType,
         ) -> HRESULT,
     >,
     pub GetCLSID: ::core::option::Option<
-        unsafe extern "C" fn(This: *mut IWICBitmapEncoderInfo, pclsid: *mut CLSID) -> HRESULT,
+        unsafe extern "system" fn(This: *mut IWICBitmapEncoderInfo, pclsid: *mut CLSID) -> HRESULT,
     >,
     pub GetSigningStatus: ::core::option::Option<
-        unsafe extern "C" fn(This: *mut IWICBitmapEncoderInfo, pStatus: *mut DWORD) -> HRESULT,
+        unsafe extern "system" fn(This: *mut IWICBitmapEncoderInfo, pStatus: *mut DWORD) -> HRESULT,
     >,
     pub GetAuthor: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IWICBitmapEncoderInfo,
             cchAuthor: UINT,
             wzAuthor: *mut WCHAR,
@@ -1604,10 +1604,10 @@ pub struct IWICBitmapEncoderInfoVtbl {
         ) -> HRESULT,
     >,
     pub GetVendorGUID: ::core::option::Option<
-        unsafe extern "C" fn(This: *mut IWICBitmapEncoderInfo, pguidVendor: *mut GUID) -> HRESULT,
+        unsafe extern "system" fn(This: *mut IWICBitmapEncoderInfo, pguidVendor: *mut GUID) -> HRESULT,
     >,
     pub GetVersion: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IWICBitmapEncoderInfo,
             cchVersion: UINT,
             wzVersion: *mut WCHAR,
@@ -1615,7 +1615,7 @@ pub struct IWICBitmapEncoderInfoVtbl {
         ) -> HRESULT,
     >,
     pub GetSpecVersion: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IWICBitmapEncoderInfo,
             cchSpecVersion: UINT,
             wzSpecVersion: *mut WCHAR,
@@ -1623,7 +1623,7 @@ pub struct IWICBitmapEncoderInfoVtbl {
         ) -> HRESULT,
     >,
     pub GetFriendlyName: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IWICBitmapEncoderInfo,
             cchFriendlyName: UINT,
             wzFriendlyName: *mut WCHAR,
@@ -1631,13 +1631,13 @@ pub struct IWICBitmapEncoderInfoVtbl {
         ) -> HRESULT,
     >,
     pub GetContainerFormat: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IWICBitmapEncoderInfo,
             pguidContainerFormat: *mut GUID,
         ) -> HRESULT,
     >,
     pub GetPixelFormats: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IWICBitmapEncoderInfo,
             cFormats: UINT,
             pguidPixelFormats: *mut GUID,
@@ -1645,7 +1645,7 @@ pub struct IWICBitmapEncoderInfoVtbl {
         ) -> HRESULT,
     >,
     pub GetColorManagementVersion: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IWICBitmapEncoderInfo,
             cchColorManagementVersion: UINT,
             wzColorManagementVersion: *mut WCHAR,
@@ -1653,7 +1653,7 @@ pub struct IWICBitmapEncoderInfoVtbl {
         ) -> HRESULT,
     >,
     pub GetDeviceManufacturer: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IWICBitmapEncoderInfo,
             cchDeviceManufacturer: UINT,
             wzDeviceManufacturer: *mut WCHAR,
@@ -1661,7 +1661,7 @@ pub struct IWICBitmapEncoderInfoVtbl {
         ) -> HRESULT,
     >,
     pub GetDeviceModels: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IWICBitmapEncoderInfo,
             cchDeviceModels: UINT,
             wzDeviceModels: *mut WCHAR,
@@ -1669,7 +1669,7 @@ pub struct IWICBitmapEncoderInfoVtbl {
         ) -> HRESULT,
     >,
     pub GetMimeTypes: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IWICBitmapEncoderInfo,
             cchMimeTypes: UINT,
             wzMimeTypes: *mut WCHAR,
@@ -1677,7 +1677,7 @@ pub struct IWICBitmapEncoderInfoVtbl {
         ) -> HRESULT,
     >,
     pub GetFileExtensions: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IWICBitmapEncoderInfo,
             cchFileExtensions: UINT,
             wzFileExtensions: *mut WCHAR,
@@ -1685,38 +1685,38 @@ pub struct IWICBitmapEncoderInfoVtbl {
         ) -> HRESULT,
     >,
     pub DoesSupportAnimation: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IWICBitmapEncoderInfo,
             pfSupportAnimation: *mut BOOL,
         ) -> HRESULT,
     >,
     pub DoesSupportChromaKey: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IWICBitmapEncoderInfo,
             pfSupportChromaKey: *mut BOOL,
         ) -> HRESULT,
     >,
     pub DoesSupportLossless: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IWICBitmapEncoderInfo,
             pfSupportLossless: *mut BOOL,
         ) -> HRESULT,
     >,
     pub DoesSupportMultiframe: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IWICBitmapEncoderInfo,
             pfSupportMultiframe: *mut BOOL,
         ) -> HRESULT,
     >,
     pub MatchesMimeType: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IWICBitmapEncoderInfo,
             wzMimeType: LPCWSTR,
             pfMatches: *mut BOOL,
         ) -> HRESULT,
     >,
     pub CreateInstance: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IWICBitmapEncoderInfo,
             ppIBitmapEncoder: *mut *mut IWICBitmapEncoder,
         ) -> HRESULT,
@@ -1731,67 +1731,67 @@ pub struct IWICBitmapEncoderInfo {
 #[derive(Debug, Copy, Clone)]
 pub struct IWICBitmapEncoderVtbl {
     pub QueryInterface: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IWICBitmapEncoder,
             riid: *const IID,
             ppvObject: *mut *mut ::core::ffi::c_void,
         ) -> HRESULT,
     >,
-    pub AddRef: ::core::option::Option<unsafe extern "C" fn(This: *mut IWICBitmapEncoder) -> ULONG>,
+    pub AddRef: ::core::option::Option<unsafe extern "system" fn(This: *mut IWICBitmapEncoder) -> ULONG>,
     pub Release:
-        ::core::option::Option<unsafe extern "C" fn(This: *mut IWICBitmapEncoder) -> ULONG>,
+        ::core::option::Option<unsafe extern "system" fn(This: *mut IWICBitmapEncoder) -> ULONG>,
     pub Initialize: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IWICBitmapEncoder,
             pIStream: *mut IStream,
             cacheOption: WICBitmapEncoderCacheOption,
         ) -> HRESULT,
     >,
     pub GetContainerFormat: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IWICBitmapEncoder,
             pguidContainerFormat: *mut GUID,
         ) -> HRESULT,
     >,
     pub GetEncoderInfo: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IWICBitmapEncoder,
             ppIEncoderInfo: *mut *mut IWICBitmapEncoderInfo,
         ) -> HRESULT,
     >,
     pub SetColorContexts: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IWICBitmapEncoder,
             cCount: UINT,
             ppIColorContext: *mut *mut IWICColorContext,
         ) -> HRESULT,
     >,
     pub SetPalette: ::core::option::Option<
-        unsafe extern "C" fn(This: *mut IWICBitmapEncoder, pIPalette: *mut IWICPalette) -> HRESULT,
+        unsafe extern "system" fn(This: *mut IWICBitmapEncoder, pIPalette: *mut IWICPalette) -> HRESULT,
     >,
     pub SetThumbnail: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IWICBitmapEncoder,
             pIThumbnail: *mut IWICBitmapSource,
         ) -> HRESULT,
     >,
     pub SetPreview: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IWICBitmapEncoder,
             pIPreview: *mut IWICBitmapSource,
         ) -> HRESULT,
     >,
     pub CreateNewFrame: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IWICBitmapEncoder,
             ppIFrameEncode: *mut *mut IWICBitmapFrameEncode,
             ppIEncoderOptions: *mut *mut IPropertyBag2,
         ) -> HRESULT,
     >,
     pub Commit:
-        ::core::option::Option<unsafe extern "C" fn(This: *mut IWICBitmapEncoder) -> HRESULT>,
+        ::core::option::Option<unsafe extern "system" fn(This: *mut IWICBitmapEncoder) -> HRESULT>,
     pub GetMetadataQueryWriter: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IWICBitmapEncoder,
             ppIMetadataQueryWriter: *mut *mut IWICMetadataQueryWriter,
         ) -> HRESULT,
@@ -1806,44 +1806,44 @@ pub struct IWICBitmapEncoder {
 #[derive(Debug, Copy, Clone)]
 pub struct IWICFormatConverterVtbl {
     pub QueryInterface: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IWICFormatConverter,
             riid: *const IID,
             ppvObject: *mut *mut ::core::ffi::c_void,
         ) -> HRESULT,
     >,
     pub AddRef:
-        ::core::option::Option<unsafe extern "C" fn(This: *mut IWICFormatConverter) -> ULONG>,
+        ::core::option::Option<unsafe extern "system" fn(This: *mut IWICFormatConverter) -> ULONG>,
     pub Release:
-        ::core::option::Option<unsafe extern "C" fn(This: *mut IWICFormatConverter) -> ULONG>,
+        ::core::option::Option<unsafe extern "system" fn(This: *mut IWICFormatConverter) -> ULONG>,
     pub GetSize: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IWICFormatConverter,
             puiWidth: *mut UINT,
             puiHeight: *mut UINT,
         ) -> HRESULT,
     >,
     pub GetPixelFormat: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IWICFormatConverter,
             pPixelFormat: *mut WICPixelFormatGUID,
         ) -> HRESULT,
     >,
     pub GetResolution: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IWICFormatConverter,
             pDpiX: *mut f64,
             pDpiY: *mut f64,
         ) -> HRESULT,
     >,
     pub CopyPalette: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IWICFormatConverter,
             pIPalette: *mut IWICPalette,
         ) -> HRESULT,
     >,
     pub CopyPixels: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IWICFormatConverter,
             prc: *const WICRect,
             cbStride: UINT,
@@ -1852,7 +1852,7 @@ pub struct IWICFormatConverterVtbl {
         ) -> HRESULT,
     >,
     pub Initialize: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IWICFormatConverter,
             pISource: *mut IWICBitmapSource,
             dstFormat: REFWICPixelFormatGUID,
@@ -1863,7 +1863,7 @@ pub struct IWICFormatConverterVtbl {
         ) -> HRESULT,
     >,
     pub CanConvert: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IWICFormatConverter,
             srcPixelFormat: REFWICPixelFormatGUID,
             dstPixelFormat: REFWICPixelFormatGUID,
@@ -1880,16 +1880,16 @@ pub struct IWICFormatConverter {
 #[derive(Debug, Copy, Clone)]
 pub struct IWICStreamVtbl {
     pub QueryInterface: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IWICStream,
             riid: *const IID,
             ppvObject: *mut *mut ::core::ffi::c_void,
         ) -> HRESULT,
     >,
-    pub AddRef: ::core::option::Option<unsafe extern "C" fn(This: *mut IWICStream) -> ULONG>,
-    pub Release: ::core::option::Option<unsafe extern "C" fn(This: *mut IWICStream) -> ULONG>,
+    pub AddRef: ::core::option::Option<unsafe extern "system" fn(This: *mut IWICStream) -> ULONG>,
+    pub Release: ::core::option::Option<unsafe extern "system" fn(This: *mut IWICStream) -> ULONG>,
     pub Read: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IWICStream,
             pv: *mut ::core::ffi::c_void,
             cb: ULONG,
@@ -1897,7 +1897,7 @@ pub struct IWICStreamVtbl {
         ) -> HRESULT,
     >,
     pub Write: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IWICStream,
             pv: *const ::core::ffi::c_void,
             cb: ULONG,
@@ -1905,7 +1905,7 @@ pub struct IWICStreamVtbl {
         ) -> HRESULT,
     >,
     pub Seek: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IWICStream,
             dlibMove: LARGE_INTEGER,
             dwOrigin: DWORD,
@@ -1913,10 +1913,10 @@ pub struct IWICStreamVtbl {
         ) -> HRESULT,
     >,
     pub SetSize: ::core::option::Option<
-        unsafe extern "C" fn(This: *mut IWICStream, libNewSize: ULARGE_INTEGER) -> HRESULT,
+        unsafe extern "system" fn(This: *mut IWICStream, libNewSize: ULARGE_INTEGER) -> HRESULT,
     >,
     pub CopyTo: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IWICStream,
             pstm: *mut IStream,
             cb: ULARGE_INTEGER,
@@ -1925,11 +1925,11 @@ pub struct IWICStreamVtbl {
         ) -> HRESULT,
     >,
     pub Commit: ::core::option::Option<
-        unsafe extern "C" fn(This: *mut IWICStream, grfCommitFlags: DWORD) -> HRESULT,
+        unsafe extern "system" fn(This: *mut IWICStream, grfCommitFlags: DWORD) -> HRESULT,
     >,
-    pub Revert: ::core::option::Option<unsafe extern "C" fn(This: *mut IWICStream) -> HRESULT>,
+    pub Revert: ::core::option::Option<unsafe extern "system" fn(This: *mut IWICStream) -> HRESULT>,
     pub LockRegion: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IWICStream,
             libOffset: ULARGE_INTEGER,
             cb: ULARGE_INTEGER,
@@ -1937,7 +1937,7 @@ pub struct IWICStreamVtbl {
         ) -> HRESULT,
     >,
     pub UnlockRegion: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IWICStream,
             libOffset: ULARGE_INTEGER,
             cb: ULARGE_INTEGER,
@@ -1945,34 +1945,34 @@ pub struct IWICStreamVtbl {
         ) -> HRESULT,
     >,
     pub Stat: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IWICStream,
             pstatstg: *mut STATSTG,
             grfStatFlag: DWORD,
         ) -> HRESULT,
     >,
     pub Clone: ::core::option::Option<
-        unsafe extern "C" fn(This: *mut IWICStream, ppstm: *mut *mut IStream) -> HRESULT,
+        unsafe extern "system" fn(This: *mut IWICStream, ppstm: *mut *mut IStream) -> HRESULT,
     >,
     pub InitializeFromIStream: ::core::option::Option<
-        unsafe extern "C" fn(This: *mut IWICStream, pIStream: *mut IStream) -> HRESULT,
+        unsafe extern "system" fn(This: *mut IWICStream, pIStream: *mut IStream) -> HRESULT,
     >,
     pub InitializeFromFilename: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IWICStream,
             wzFileName: LPCWSTR,
             dwAccessMode: DWORD,
         ) -> HRESULT,
     >,
     pub InitializeFromMemory: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IWICStream,
             pbBuffer: *mut BYTE,
             cbBufferSize: DWORD,
         ) -> HRESULT,
     >,
     pub InitializeFromIStreamRegion: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IWICStream,
             pIStream: *mut IStream,
             ulOffset: ULARGE_INTEGER,
@@ -1989,39 +1989,39 @@ pub struct IWICStream {
 #[derive(Debug, Copy, Clone)]
 pub struct IWICBitmapScalerVtbl {
     pub QueryInterface: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IWICBitmapScaler,
             riid: *const IID,
             ppvObject: *mut *mut ::core::ffi::c_void,
         ) -> HRESULT,
     >,
-    pub AddRef: ::core::option::Option<unsafe extern "C" fn(This: *mut IWICBitmapScaler) -> ULONG>,
-    pub Release: ::core::option::Option<unsafe extern "C" fn(This: *mut IWICBitmapScaler) -> ULONG>,
+    pub AddRef: ::core::option::Option<unsafe extern "system" fn(This: *mut IWICBitmapScaler) -> ULONG>,
+    pub Release: ::core::option::Option<unsafe extern "system" fn(This: *mut IWICBitmapScaler) -> ULONG>,
     pub GetSize: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IWICBitmapScaler,
             puiWidth: *mut UINT,
             puiHeight: *mut UINT,
         ) -> HRESULT,
     >,
     pub GetPixelFormat: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IWICBitmapScaler,
             pPixelFormat: *mut WICPixelFormatGUID,
         ) -> HRESULT,
     >,
     pub GetResolution: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IWICBitmapScaler,
             pDpiX: *mut f64,
             pDpiY: *mut f64,
         ) -> HRESULT,
     >,
     pub CopyPalette: ::core::option::Option<
-        unsafe extern "C" fn(This: *mut IWICBitmapScaler, pIPalette: *mut IWICPalette) -> HRESULT,
+        unsafe extern "system" fn(This: *mut IWICBitmapScaler, pIPalette: *mut IWICPalette) -> HRESULT,
     >,
     pub CopyPixels: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IWICBitmapScaler,
             prc: *const WICRect,
             cbStride: UINT,
@@ -2030,7 +2030,7 @@ pub struct IWICBitmapScalerVtbl {
         ) -> HRESULT,
     >,
     pub Initialize: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IWICBitmapScaler,
             pISource: *mut IWICBitmapSource,
             uiWidth: UINT,
@@ -2048,40 +2048,40 @@ pub struct IWICBitmapScaler {
 #[derive(Debug, Copy, Clone)]
 pub struct IWICBitmapClipperVtbl {
     pub QueryInterface: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IWICBitmapClipper,
             riid: *const IID,
             ppvObject: *mut *mut ::core::ffi::c_void,
         ) -> HRESULT,
     >,
-    pub AddRef: ::core::option::Option<unsafe extern "C" fn(This: *mut IWICBitmapClipper) -> ULONG>,
+    pub AddRef: ::core::option::Option<unsafe extern "system" fn(This: *mut IWICBitmapClipper) -> ULONG>,
     pub Release:
-        ::core::option::Option<unsafe extern "C" fn(This: *mut IWICBitmapClipper) -> ULONG>,
+        ::core::option::Option<unsafe extern "system" fn(This: *mut IWICBitmapClipper) -> ULONG>,
     pub GetSize: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IWICBitmapClipper,
             puiWidth: *mut UINT,
             puiHeight: *mut UINT,
         ) -> HRESULT,
     >,
     pub GetPixelFormat: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IWICBitmapClipper,
             pPixelFormat: *mut WICPixelFormatGUID,
         ) -> HRESULT,
     >,
     pub GetResolution: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IWICBitmapClipper,
             pDpiX: *mut f64,
             pDpiY: *mut f64,
         ) -> HRESULT,
     >,
     pub CopyPalette: ::core::option::Option<
-        unsafe extern "C" fn(This: *mut IWICBitmapClipper, pIPalette: *mut IWICPalette) -> HRESULT,
+        unsafe extern "system" fn(This: *mut IWICBitmapClipper, pIPalette: *mut IWICPalette) -> HRESULT,
     >,
     pub CopyPixels: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IWICBitmapClipper,
             prc: *const WICRect,
             cbStride: UINT,
@@ -2090,7 +2090,7 @@ pub struct IWICBitmapClipperVtbl {
         ) -> HRESULT,
     >,
     pub Initialize: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IWICBitmapClipper,
             pISource: *mut IWICBitmapSource,
             prc: *const WICRect,
@@ -2106,41 +2106,41 @@ pub struct IWICBitmapClipper {
 #[derive(Debug, Copy, Clone)]
 pub struct IWICColorTransformVtbl {
     pub QueryInterface: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IWICColorTransform,
             riid: *const IID,
             ppvObject: *mut *mut ::core::ffi::c_void,
         ) -> HRESULT,
     >,
     pub AddRef:
-        ::core::option::Option<unsafe extern "C" fn(This: *mut IWICColorTransform) -> ULONG>,
+        ::core::option::Option<unsafe extern "system" fn(This: *mut IWICColorTransform) -> ULONG>,
     pub Release:
-        ::core::option::Option<unsafe extern "C" fn(This: *mut IWICColorTransform) -> ULONG>,
+        ::core::option::Option<unsafe extern "system" fn(This: *mut IWICColorTransform) -> ULONG>,
     pub GetSize: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IWICColorTransform,
             puiWidth: *mut UINT,
             puiHeight: *mut UINT,
         ) -> HRESULT,
     >,
     pub GetPixelFormat: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IWICColorTransform,
             pPixelFormat: *mut WICPixelFormatGUID,
         ) -> HRESULT,
     >,
     pub GetResolution: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IWICColorTransform,
             pDpiX: *mut f64,
             pDpiY: *mut f64,
         ) -> HRESULT,
     >,
     pub CopyPalette: ::core::option::Option<
-        unsafe extern "C" fn(This: *mut IWICColorTransform, pIPalette: *mut IWICPalette) -> HRESULT,
+        unsafe extern "system" fn(This: *mut IWICColorTransform, pIPalette: *mut IWICPalette) -> HRESULT,
     >,
     pub CopyPixels: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IWICColorTransform,
             prc: *const WICRect,
             cbStride: UINT,
@@ -2149,7 +2149,7 @@ pub struct IWICColorTransformVtbl {
         ) -> HRESULT,
     >,
     pub Initialize: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IWICColorTransform,
             pIBitmapSource: *mut IWICBitmapSource,
             pIContextSource: *mut IWICColorContext,
@@ -2167,20 +2167,20 @@ pub struct IWICColorTransform {
 #[derive(Debug, Copy, Clone)]
 pub struct IWICFastMetadataEncoderVtbl {
     pub QueryInterface: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IWICFastMetadataEncoder,
             riid: *const IID,
             ppvObject: *mut *mut ::core::ffi::c_void,
         ) -> HRESULT,
     >,
     pub AddRef:
-        ::core::option::Option<unsafe extern "C" fn(This: *mut IWICFastMetadataEncoder) -> ULONG>,
+        ::core::option::Option<unsafe extern "system" fn(This: *mut IWICFastMetadataEncoder) -> ULONG>,
     pub Release:
-        ::core::option::Option<unsafe extern "C" fn(This: *mut IWICFastMetadataEncoder) -> ULONG>,
+        ::core::option::Option<unsafe extern "system" fn(This: *mut IWICFastMetadataEncoder) -> ULONG>,
     pub Commit:
-        ::core::option::Option<unsafe extern "C" fn(This: *mut IWICFastMetadataEncoder) -> HRESULT>,
+        ::core::option::Option<unsafe extern "system" fn(This: *mut IWICFastMetadataEncoder) -> HRESULT>,
     pub GetMetadataQueryWriter: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IWICFastMetadataEncoder,
             ppIMetadataQueryWriter: *mut *mut IWICMetadataQueryWriter,
         ) -> HRESULT,
@@ -2195,18 +2195,18 @@ pub struct IWICFastMetadataEncoder {
 #[derive(Debug, Copy, Clone)]
 pub struct IWICImagingFactoryVtbl {
     pub QueryInterface: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IWICImagingFactory,
             riid: *const IID,
             ppvObject: *mut *mut ::core::ffi::c_void,
         ) -> HRESULT,
     >,
     pub AddRef:
-        ::core::option::Option<unsafe extern "C" fn(This: *mut IWICImagingFactory) -> ULONG>,
+        ::core::option::Option<unsafe extern "system" fn(This: *mut IWICImagingFactory) -> ULONG>,
     pub Release:
-        ::core::option::Option<unsafe extern "C" fn(This: *mut IWICImagingFactory) -> ULONG>,
+        ::core::option::Option<unsafe extern "system" fn(This: *mut IWICImagingFactory) -> ULONG>,
     pub CreateDecoderFromFilename: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IWICImagingFactory,
             wzFilename: LPCWSTR,
             pguidVendor: *const GUID,
@@ -2216,7 +2216,7 @@ pub struct IWICImagingFactoryVtbl {
         ) -> HRESULT,
     >,
     pub CreateDecoderFromStream: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IWICImagingFactory,
             pIStream: *mut IStream,
             pguidVendor: *const GUID,
@@ -2225,7 +2225,7 @@ pub struct IWICImagingFactoryVtbl {
         ) -> HRESULT,
     >,
     pub CreateDecoderFromFileHandle: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IWICImagingFactory,
             hFile: ULONG_PTR,
             pguidVendor: *const GUID,
@@ -2234,14 +2234,14 @@ pub struct IWICImagingFactoryVtbl {
         ) -> HRESULT,
     >,
     pub CreateComponentInfo: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IWICImagingFactory,
             clsidComponent: *const CLSID,
             ppIInfo: *mut *mut IWICComponentInfo,
         ) -> HRESULT,
     >,
     pub CreateDecoder: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IWICImagingFactory,
             guidContainerFormat: *const GUID,
             pguidVendor: *const GUID,
@@ -2249,7 +2249,7 @@ pub struct IWICImagingFactoryVtbl {
         ) -> HRESULT,
     >,
     pub CreateEncoder: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IWICImagingFactory,
             guidContainerFormat: *const GUID,
             pguidVendor: *const GUID,
@@ -2257,55 +2257,55 @@ pub struct IWICImagingFactoryVtbl {
         ) -> HRESULT,
     >,
     pub CreatePalette: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IWICImagingFactory,
             ppIPalette: *mut *mut IWICPalette,
         ) -> HRESULT,
     >,
     pub CreateFormatConverter: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IWICImagingFactory,
             ppIFormatConverter: *mut *mut IWICFormatConverter,
         ) -> HRESULT,
     >,
     pub CreateBitmapScaler: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IWICImagingFactory,
             ppIBitmapScaler: *mut *mut IWICBitmapScaler,
         ) -> HRESULT,
     >,
     pub CreateBitmapClipper: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IWICImagingFactory,
             ppIBitmapClipper: *mut *mut IWICBitmapClipper,
         ) -> HRESULT,
     >,
     pub CreateBitmapFlipRotator: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IWICImagingFactory,
             ppIBitmapFlipRotator: *mut *mut IWICBitmapFlipRotator,
         ) -> HRESULT,
     >,
     pub CreateStream: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IWICImagingFactory,
             ppIWICStream: *mut *mut IWICStream,
         ) -> HRESULT,
     >,
     pub CreateColorContext: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IWICImagingFactory,
             ppIWICColorContext: *mut *mut IWICColorContext,
         ) -> HRESULT,
     >,
     pub CreateColorTransformer: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IWICImagingFactory,
             ppIWICColorTransform: *mut *mut IWICColorTransform,
         ) -> HRESULT,
     >,
     pub CreateBitmap: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IWICImagingFactory,
             uiWidth: UINT,
             uiHeight: UINT,
@@ -2315,7 +2315,7 @@ pub struct IWICImagingFactoryVtbl {
         ) -> HRESULT,
     >,
     pub CreateBitmapFromSource: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IWICImagingFactory,
             piBitmapSource: *mut IWICBitmapSource,
             option: WICBitmapCreateCacheOption,
@@ -2323,7 +2323,7 @@ pub struct IWICImagingFactoryVtbl {
         ) -> HRESULT,
     >,
     pub CreateBitmapFromSourceRect: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IWICImagingFactory,
             piBitmapSource: *mut IWICBitmapSource,
             x: UINT,
@@ -2334,7 +2334,7 @@ pub struct IWICImagingFactoryVtbl {
         ) -> HRESULT,
     >,
     pub CreateBitmapFromMemory: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IWICImagingFactory,
             uiWidth: UINT,
             uiHeight: UINT,
@@ -2346,7 +2346,7 @@ pub struct IWICImagingFactoryVtbl {
         ) -> HRESULT,
     >,
     pub CreateBitmapFromHBITMAP: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IWICImagingFactory,
             hBitmap: HBITMAP,
             hPalette: HPALETTE,
@@ -2355,14 +2355,14 @@ pub struct IWICImagingFactoryVtbl {
         ) -> HRESULT,
     >,
     pub CreateBitmapFromHICON: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IWICImagingFactory,
             hIcon: HICON,
             ppIBitmap: *mut *mut IWICBitmap,
         ) -> HRESULT,
     >,
     pub CreateComponentEnumerator: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IWICImagingFactory,
             componentTypes: DWORD,
             options: DWORD,
@@ -2370,21 +2370,21 @@ pub struct IWICImagingFactoryVtbl {
         ) -> HRESULT,
     >,
     pub CreateFastMetadataEncoderFromDecoder: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IWICImagingFactory,
             pIDecoder: *mut IWICBitmapDecoder,
             ppIFastEncoder: *mut *mut IWICFastMetadataEncoder,
         ) -> HRESULT,
     >,
     pub CreateFastMetadataEncoderFromFrameDecode: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IWICImagingFactory,
             pIFrameDecoder: *mut IWICBitmapFrameDecode,
             ppIFastEncoder: *mut *mut IWICFastMetadataEncoder,
         ) -> HRESULT,
     >,
     pub CreateQueryWriter: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IWICImagingFactory,
             guidMetadataFormat: *const GUID,
             pguidVendor: *const GUID,
@@ -2392,7 +2392,7 @@ pub struct IWICImagingFactoryVtbl {
         ) -> HRESULT,
     >,
     pub CreateQueryWriterFromReader: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             This: *mut IWICImagingFactory,
             pIQueryReader: *mut IWICMetadataQueryReader,
             pguidVendor: *const GUID,

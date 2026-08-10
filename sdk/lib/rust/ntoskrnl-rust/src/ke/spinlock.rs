@@ -237,21 +237,34 @@ pub unsafe extern "C" fn KiReleaseSpinLock(SpinLock: PKSPIN_LOCK) {
 pub unsafe extern "fastcall" fn KeTryToAcquireSpinLockAtDpcLevel(
     SpinLock: PKSPIN_LOCK,
 ) -> BOOLEAN {
-    #[cfg(debug_assertions)]
-    {
-        if KeGetCurrentIrql() < DISPATCH_LEVEL {
-            KeBugCheckEx(
-                IRQL_NOT_GREATER_OR_EQUAL,
-                SpinLock as ULONG_PTR,
-                KeGetCurrentIrql() as ULONG_PTR,
-                0,
-                0,
-            );
-        }
+    // Upstream gates all three of these on plain `#if DBG`. They were translated
+    // to cargo's `debug_assertions`, which is a DIFFERENT switch and one this
+    // workspace's release profile leaves OFF (sdk/lib/rust/Cargo.toml) — so on
+    // every kernel we have ever shipped, this function acquired the lock and
+    // never stamped it, while KxAcquireSpinLock (gated on `feature = "dbg"`)
+    // did. spinlock.h says in as many words that the two halves of this funnel
+    // must agree; a lock taken here read as FREE to KeTestSpinLock and to every
+    // DDK caller that inspects it, and on the UP kernel — where the interlocked
+    // body below compiles away entirely — the whole function was a no-op that
+    // returned TRUE. `feature = "dbg"` is the mirror of DBG=1; use it.
+    #[cfg(feature = "dbg")]
+    if KeGetCurrentIrql() < DISPATCH_LEVEL {
+        KeBugCheckEx(
+            IRQL_NOT_GREATER_OR_EQUAL,
+            SpinLock as ULONG_PTR,
+            KeGetCurrentIrql() as ULONG_PTR,
+            0,
+            0,
+        );
+    }
 
-        if ((PsGetCurrentThread() as KSPIN_LOCK) | 1) == *SpinLock {
-            KeBugCheckEx(SPIN_LOCK_ALREADY_OWNED, SpinLock as ULONG_PTR, 0, 0, 0);
-        }
+    // Paired with `smp` for the same reason KxAcquireSpinLock's copy is: only on
+    // an MP kernel is finding our own thread already stamped a guaranteed
+    // deadlock. On UP the acquire below is compiled out, so a recursive try is
+    // harmless and bugchecking on it would invent a failure the UP boot lacks.
+    #[cfg(all(feature = "smp", feature = "dbg"))]
+    if ((PsGetCurrentThread() as KSPIN_LOCK) | 1) == *SpinLock {
+        KeBugCheckEx(SPIN_LOCK_ALREADY_OWNED, SpinLock as ULONG_PTR, 0, 0, 0);
     }
 
     #[cfg(feature = "smp")]
@@ -265,7 +278,8 @@ pub unsafe extern "fastcall" fn KeTryToAcquireSpinLockAtDpcLevel(
         }
     }
 
-    #[cfg(debug_assertions)]
+    // KI_TRACK_SPINLOCK_OWNER. Observable behaviour, not a diagnostic.
+    #[cfg(feature = "dbg")]
     {
         *SpinLock = (PsGetCurrentThread() as ULONG_PTR) | 1;
     }
@@ -282,21 +296,23 @@ pub unsafe extern "fastcall" fn KeTryToAcquireSpinLockAtDpcLevel(
 #[cfg(not(target_arch = "x86"))]
 #[no_mangle]
 pub unsafe extern "C" fn KeTryToAcquireSpinLockAtDpcLevel(SpinLock: PKSPIN_LOCK) -> BOOLEAN {
-    #[cfg(debug_assertions)]
-    {
-        if KeGetCurrentIrql() < DISPATCH_LEVEL {
-            KeBugCheckEx(
-                IRQL_NOT_GREATER_OR_EQUAL,
-                SpinLock as ULONG_PTR,
-                KeGetCurrentIrql() as ULONG_PTR,
-                0,
-                0,
-            );
-        }
+    // See the x86 copy above for why these are `feature = "dbg"` and not
+    // `debug_assertions`: they are DBG=1 behaviour, and the profile flag they
+    // were translated to is off in every kernel this tree ships.
+    #[cfg(feature = "dbg")]
+    if KeGetCurrentIrql() < DISPATCH_LEVEL {
+        KeBugCheckEx(
+            IRQL_NOT_GREATER_OR_EQUAL,
+            SpinLock as ULONG_PTR,
+            KeGetCurrentIrql() as ULONG_PTR,
+            0,
+            0,
+        );
+    }
 
-        if ((PsGetCurrentThread() as KSPIN_LOCK) | 1) == *SpinLock {
-            KeBugCheckEx(SPIN_LOCK_ALREADY_OWNED, SpinLock as ULONG_PTR, 0, 0, 0);
-        }
+    #[cfg(all(feature = "smp", feature = "dbg"))]
+    if ((PsGetCurrentThread() as KSPIN_LOCK) | 1) == *SpinLock {
+        KeBugCheckEx(SPIN_LOCK_ALREADY_OWNED, SpinLock as ULONG_PTR, 0, 0, 0);
     }
 
     #[cfg(feature = "smp")]
@@ -310,7 +326,8 @@ pub unsafe extern "C" fn KeTryToAcquireSpinLockAtDpcLevel(SpinLock: PKSPIN_LOCK)
         }
     }
 
-    #[cfg(debug_assertions)]
+    // KI_TRACK_SPINLOCK_OWNER. Observable behaviour, not a diagnostic.
+    #[cfg(feature = "dbg")]
     {
         *SpinLock = (PsGetCurrentThread() as ULONG_PTR) | 1;
     }

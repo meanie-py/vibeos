@@ -21,7 +21,7 @@ elseif(ARCH STREQUAL "arm64")
     set(FLTMGR_RUST_TARGET "aarch64-pc-windows-gnullvm")
     set(FLTMGR_RUST_RUSTFLAGS "")
 endif()
-file(GLOB_RECURSE FLTMGR_RUST_SRCS ${FLTMGR_RUST_WORKSPACE_DIR}/fltmgr-rust/src/*.rs)
+rust_crate_sources(FLTMGR_RUST_SRCS "${FLTMGR_RUST_WORKSPACE_DIR}" fltmgr-rust)
 add_custom_command(
     OUTPUT ${FLTMGR_RUST_LIB}
     COMMAND ${CMAKE_COMMAND} -E env

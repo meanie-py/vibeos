@@ -158,17 +158,7 @@ pub static mut IopErrorLogWorkItem: WORK_QUEUE_ITEM = unsafe { core::mem::zeroed
 #[no_mangle]
 pub static mut IopErrorLogObject: PDEVICE_OBJECT = core::ptr::null_mut();
 
-#[cfg(not(target_arch = "x86"))]
-unsafe extern "C" fn IopLogDpcRoutine(
-    Dpc: PKDPC,
-    _DeferredContext: PVOID,
-    _SystemArgument1: PVOID,
-    _SystemArgument2: PVOID,
-) {
-    IopLogDpcRoutineInner(Dpc, _DeferredContext, _SystemArgument1, _SystemArgument2);
-}
-#[cfg(target_arch = "x86")]
-unsafe extern "stdcall" fn IopLogDpcRoutine(
+unsafe extern "system" fn IopLogDpcRoutine(
     Dpc: PKDPC,
     _DeferredContext: PVOID,
     _SystemArgument1: PVOID,
@@ -517,18 +507,7 @@ unsafe extern "system" fn IopLogWorker(_Parameter: PVOID) {
     ExFreePoolWithTag(Message as PVOID, TAG_IO);
 }
 
-#[cfg(not(target_arch = "x86"))]
-unsafe extern "C" fn IopFreeApc(
-    Apc: PKAPC,
-    _NormalRoutine: *mut PKNORMAL_ROUTINE,
-    _NormalContext: *mut PVOID,
-    _SystemArgument1: *mut PVOID,
-    _SystemArgument2: *mut PVOID,
-) {
-    ExFreePoolWithTag(Apc as PVOID, TAG_APC);
-}
-#[cfg(target_arch = "x86")]
-unsafe extern "stdcall" fn IopFreeApc(
+unsafe extern "system" fn IopFreeApc(
     Apc: PKAPC,
     _NormalRoutine: *mut PKNORMAL_ROUTINE,
     _NormalContext: *mut PVOID,
@@ -538,16 +517,7 @@ unsafe extern "stdcall" fn IopFreeApc(
     ExFreePoolWithTag(Apc as PVOID, TAG_APC);
 }
 
-#[cfg(not(target_arch = "x86"))]
-unsafe extern "C" fn IopRaiseHardError(
-    NormalContext: PVOID,
-    _SystemArgument1: PVOID,
-    _SystemArgument2: PVOID,
-) {
-    IopRaiseHardErrorInner(NormalContext, _SystemArgument1, _SystemArgument2);
-}
-#[cfg(target_arch = "x86")]
-unsafe extern "stdcall" fn IopRaiseHardError(
+unsafe extern "system" fn IopRaiseHardError(
     NormalContext: PVOID,
     _SystemArgument1: PVOID,
     _SystemArgument2: PVOID,

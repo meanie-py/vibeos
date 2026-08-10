@@ -1312,6 +1312,11 @@ pub static CPP_COM_WSTR_F51AA22D711D: [WCHAR; 5] = [0x0043, 0x003A, 0x005C, 0x00
 use core::ffi::c_void;
 use crate::shellcom::*;
 use crate::types::*;
+// A no-op debug macro must stay a macro: an out-of-line no-op `fn` is an optimization barrier
+// that can uncloak a latent ABI mismatch. `#[macro_export]` puts this at the crate root, so an
+// explicit import reaches it from anywhere — `macro_rules!` TEXTUAL scoping does not, because
+// this module is declared before `win32` in lib.rs, which is why a `fn` shadow grew here.
+use crate::UNREFERENCED_PARAMETER;
 
 // ── Non-bridge substrate (constants / types / helpers sourced from CRecycleBin.cpp + siblings) ──
 
@@ -1409,7 +1414,6 @@ pub struct IShellFolderViewCBVtbl {
 // ── Small header macros / inlines reimplemented locally ──────────────────────────────────
 #[inline] fn max<T: PartialOrd>(a: T, b: T) -> T { if a >= b { a } else { b } }
 #[inline] fn assert(_cond: bool) {}
-#[inline] fn UNREFERENCED_PARAMETER<T>(_: T) {}
 #[inline] fn MAKEINTRESOURCEW(id: UINT) -> LPCWSTR { (id & 0xffff) as usize as LPCWSTR }
 #[inline] fn MAKE_HRESULT(sev: u32, fac: u32, code: u32) -> HRESULT { ((sev << 31) | (fac << 16) | code) as HRESULT }
 // shellutils.h:678  ((x)>0 ? S_GREATERTHAN(=S_FALSE) : (x)<0 ? S_LESSTHAN(=0xffff) : S_EQUAL(=S_OK))
@@ -2294,8 +2298,8 @@ pub unsafe fn CRecycleBin_Initialize_v2_body(this: *mut CRecycleBin, pidlFolder:
 }
 
 pub unsafe fn CRecycleBin_ParseRecycleBinPath_body(this: *mut CRecycleBin, lpszPath: LPCWSTR, pbc: LPBC, ppidl: *mut PIDLIST_RELATIVE, pdwAttributes: *mut DWORD) -> HRESULT {
-    UNREFERENCED_PARAMETER(pbc);
-    UNREFERENCED_PARAMETER(pdwAttributes);
+    UNREFERENCED_PARAMETER!(pbc);
+    UNREFERENCED_PARAMETER!(pdwAttributes);
     if ppidl.is_null() || lpszPath.is_null() {
         return E_INVALIDARG;
     }

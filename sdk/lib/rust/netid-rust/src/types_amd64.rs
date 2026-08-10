@@ -1592,7 +1592,7 @@ pub struct _PROPSHEETPAGEA {
     pub pszTitle: LPCSTR,
     pub pfnDlgProc: DLGPROC,
     pub lParam: LPARAM,
-    pub pfnCallback: ::core::option::Option< unsafe extern "C" fn(arg1: HWND, arg2: UINT, arg3: *mut _PROPSHEETPAGEA) -> UINT,
+    pub pfnCallback: ::core::option::Option< unsafe extern "system" fn(arg1: HWND, arg2: UINT, arg3: *mut _PROPSHEETPAGEA) -> UINT,
     >,
     pub pcRefParent: *mut UINT,
     pub pszHeaderTitle: LPCSTR,
@@ -1635,7 +1635,7 @@ pub struct _PROPSHEETPAGEW {
     pub pszTitle: LPCWSTR,
     pub pfnDlgProc: DLGPROC,
     pub lParam: LPARAM,
-    pub pfnCallback: ::core::option::Option< unsafe extern "C" fn(arg1: HWND, arg2: UINT, arg3: *mut _PROPSHEETPAGEW) -> UINT,
+    pub pfnCallback: ::core::option::Option< unsafe extern "system" fn(arg1: HWND, arg2: UINT, arg3: *mut _PROPSHEETPAGEW) -> UINT,
     >,
     pub pcRefParent: *mut UINT,
     pub pszHeaderTitle: LPCWSTR,
@@ -1668,13 +1668,13 @@ pub type LPPROPSHEETPAGEW_LATEST = *mut _PROPSHEETPAGEW;
 pub type LPCPROPSHEETPAGEW = *const PROPSHEETPAGEW;
 pub type LPCPROPSHEETPAGEW_LATEST = *const PROPSHEETPAGEW;
 pub type LPFNPSPCALLBACKA = ::core::option::Option<
-    unsafe extern "C" fn(arg1: HWND, arg2: UINT, arg3: LPPROPSHEETPAGEA) -> UINT,
+    unsafe extern "system" fn(arg1: HWND, arg2: UINT, arg3: LPPROPSHEETPAGEA) -> UINT,
 >;
 pub type LPFNPSPCALLBACKW = ::core::option::Option<
-    unsafe extern "C" fn(arg1: HWND, arg2: UINT, arg3: LPPROPSHEETPAGEW) -> UINT,
+    unsafe extern "system" fn(arg1: HWND, arg2: UINT, arg3: LPPROPSHEETPAGEW) -> UINT,
 >;
 pub type PFNPROPSHEETCALLBACK = ::core::option::Option<
-    unsafe extern "C" fn(arg1: HWND, arg2: UINT, arg3: LPARAM) -> ::core::ffi::c_int,
+    unsafe extern "system" fn(arg1: HWND, arg2: UINT, arg3: LPARAM) -> ::core::ffi::c_int,
 >;
 #[repr(C)]
 #[derive(Debug, Copy, Clone)]
@@ -1783,9 +1783,9 @@ pub type PROPSHEETHEADERW = _PROPSHEETHEADERW;
 pub type LPPROPSHEETHEADERW = *mut _PROPSHEETHEADERW;
 pub type LPCPROPSHEETHEADERW = *const PROPSHEETHEADERW;
 pub type LPFNADDPROPSHEETPAGE =
-    ::core::option::Option<unsafe extern "C" fn(arg1: HPROPSHEETPAGE, arg2: LPARAM) -> BOOL>;
+    ::core::option::Option<unsafe extern "system" fn(arg1: HPROPSHEETPAGE, arg2: LPARAM) -> BOOL>;
 pub type LPFNADDPROPSHEETPAGES = ::core::option::Option<
-    unsafe extern "C" fn(arg1: LPVOID, arg2: LPFNADDPROPSHEETPAGE, arg3: LPARAM) -> BOOL,
+    unsafe extern "system" fn(arg1: LPVOID, arg2: LPFNADDPROPSHEETPAGE, arg3: LPARAM) -> BOOL,
 >;
 #[derive(Copy, Clone)]
 #[repr(C)]

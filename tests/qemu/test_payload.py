@@ -201,6 +201,14 @@ def test_payload_launched(
                 break
             if fail_marker and fail_marker in output:
                 break  # guest crashed — no point draining further
+    if marker not in output and not (fail_marker and fail_marker in output):
+        # Drained the whole budget with no marker and no crash: the guest is
+        # wedged with the VM still alive, which is the ONE moment its vCPU PCs
+        # can be read. wait_for_boot's capture does not cover this — the boot
+        # marker was already seen, so nothing timed out there. Without this a
+        # stalled sweep yields only "everything stopped at <last serial line>",
+        # and every recurrence produces the same no-information capture.
+        vm.save_hang_state(f"payload {payload}: launch_marker never appeared")
     assert marker in output, (
         f"--payload {payload} was passed but {marker!r} never appeared. Either "
         f"the media was not built with VIBEOS_PAYLOAD={payload} (fix: "

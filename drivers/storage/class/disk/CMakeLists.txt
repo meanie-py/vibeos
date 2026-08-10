@@ -23,7 +23,7 @@ elseif(ARCH STREQUAL "arm64")
     set(DISK_RUST_TARGET "aarch64-pc-windows-gnullvm")
     set(DISK_RUST_RUSTFLAGS "")
 endif()
-file(GLOB_RECURSE DISK_RUST_SRCS ${DISK_RUST_WORKSPACE_DIR}/disk-rust/src/*.rs)
+rust_crate_sources(DISK_RUST_SRCS "${DISK_RUST_WORKSPACE_DIR}" disk-rust)
 add_custom_command(
     OUTPUT ${DISK_RUST_LIB}
     COMMAND ${CMAKE_COMMAND} -E env

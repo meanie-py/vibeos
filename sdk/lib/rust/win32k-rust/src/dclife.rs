@@ -183,41 +183,9 @@ pub unsafe extern "system" fn InitDcImpl() -> NTSTATUS {
 
     return STATUS_SUCCESS;
 }
-#[cfg(target_arch = "x86")]
 #[no_mangle]
 #[inline(never)]
-pub unsafe extern "stdcall" fn DC_AllocDcWithHandle(eDcObjType: GDILOOBJTYPE) -> PDC {
-    let pdc: PDC;
-
-    pdc = GDIOBJ_AllocateObject(
-        GDIObjType_DC_TYPE as u8,
-        core::mem::size_of::<DC>() as u32,
-        BASEFLAG_LOOKASIDE,
-    ) as PDC;
-    if pdc.is_null() {
-        return core::ptr::null_mut();
-    }
-
-    (*pdc).BaseObject.hHmgr = UlongToHandle(eDcObjType);
-
-    (*pdc).pdcattr = core::ptr::addr_of_mut!((*pdc).dcattr);
-
-    if GDIOBJ_hInsertObject(
-        core::ptr::addr_of_mut!((*pdc).BaseObject),
-        GDI_OBJ_HMGR_POWNED,
-    ).is_null()
-    {
-        GDIOBJ_vFreeObject(core::ptr::addr_of_mut!((*pdc).BaseObject));
-        return core::ptr::null_mut();
-    }
-
-    pdc
-}
-
-#[cfg(not(target_arch = "x86"))]
-#[no_mangle]
-#[inline(never)]
-pub unsafe extern "C" fn DC_AllocDcWithHandle(eDcObjType: GDILOOBJTYPE) -> PDC {
+pub unsafe extern "system" fn DC_AllocDcWithHandle(eDcObjType: GDILOOBJTYPE) -> PDC {
     let pdc: PDC;
 
     pdc = GDIOBJ_AllocateObject(
@@ -275,7 +243,7 @@ unsafe fn DC_InitHack(pdc: PDC) {
 #[cfg(target_arch = "x86")]
 #[no_mangle]
 #[inline(never)]
-pub unsafe extern "stdcall" fn DC_vInitDc(
+pub unsafe extern "system" fn DC_vInitDc(
     pdc: PDC,
     dctype: DCTYPE,
     ppdev: PPDEVOBJ,
@@ -476,7 +444,7 @@ pub unsafe extern "stdcall" fn DC_vInitDc(
 #[cfg(not(target_arch = "x86"))]
 #[no_mangle]
 #[inline(never)]
-pub unsafe extern "C" fn DC_vInitDc(
+pub unsafe extern "system" fn DC_vInitDc(
     pdc: PDC,
     dctype: DCTYPE,
     ppdev: PPDEVOBJ,
@@ -673,66 +641,9 @@ pub unsafe extern "C" fn DC_vInitDc(
     (*pdc).dcattr.iCS_CP = 0;
     (*pdc).pSurfInfo = core::ptr::null_mut();
 }
-#[cfg(target_arch = "x86")]
 #[no_mangle]
 #[inline(never)]
-pub unsafe extern "stdcall" fn DC_vCleanup(ObjectBody: PVOID) {
-    let pdc = ObjectBody as PDC;
-
-    DC_vFreeDcAttr(pdc);
-
-    DC_vRestoreDC(pdc, 1);
-
-    DC_vSelectSurface(pdc, core::ptr::null_mut());
-    DC_vSelectFillBrush(pdc, core::ptr::null_mut());
-    DC_vSelectLineBrush(pdc, core::ptr::null_mut());
-    DC_vSelectPalette(pdc, core::ptr::null_mut());
-
-    EBRUSHOBJ_vCleanup(core::ptr::addr_of_mut!((*pdc).eboFill));
-    EBRUSHOBJ_vCleanup(core::ptr::addr_of_mut!((*pdc).eboLine));
-    EBRUSHOBJ_vCleanup(core::ptr::addr_of_mut!((*pdc).eboText));
-    EBRUSHOBJ_vCleanup(core::ptr::addr_of_mut!((*pdc).eboBackground));
-
-    if !(*pdc).dclevel.plfnt.is_null() {
-        LFONT_ShareUnlockFont((*pdc).dclevel.plfnt);
-    }
-
-    if !(*pdc).dclevel.prgnClip.is_null() {
-        REGION_Delete((*pdc).dclevel.prgnClip);
-    }
-    if !(*pdc).dclevel.prgnMeta.is_null() {
-        REGION_Delete((*pdc).dclevel.prgnMeta);
-    }
-    if !(*pdc).prgnVis.is_null() {
-        REGION_Delete((*pdc).prgnVis);
-    }
-    if !(*pdc).prgnRao.is_null() {
-        REGION_Delete((*pdc).prgnRao);
-    }
-    if !(*pdc).prgnAPI.is_null() {
-        REGION_Delete((*pdc).prgnAPI);
-    }
-
-    IntEngFreeClipResources(core::ptr::addr_of_mut!((*pdc).co));
-
-    if !(*pdc).dclevel.hPath.is_null() {
-        PATH_Delete((*pdc).dclevel.hPath);
-        (*pdc).dclevel.hPath = core::ptr::null_mut();
-        (*pdc).dclevel.flPath = 0;
-    }
-    if !(*pdc).dclevel.pSurface.is_null() {
-        SURFACE_ShareUnlockSurface((*pdc).dclevel.pSurface);
-    }
-
-    if !(*pdc).ppdev.is_null() {
-        PDEVOBJ_vRelease((*pdc).ppdev);
-    }
-}
-
-#[cfg(not(target_arch = "x86"))]
-#[no_mangle]
-#[inline(never)]
-pub unsafe extern "C" fn DC_vCleanup(ObjectBody: PVOID) {
+pub unsafe extern "system" fn DC_vCleanup(ObjectBody: PVOID) {
     let pdc = ObjectBody as PDC;
 
     DC_vFreeDcAttr(pdc);
@@ -814,25 +725,8 @@ unsafe fn DC_vSetOwner(pdc: PDC, ulOwner: ULONG) {
 
     GDIOBJ_vSetObjectOwner(core::ptr::addr_of_mut!((*pdc).BaseObject), ulOwner);
 }
-#[cfg(target_arch = "x86")]
 #[no_mangle]
-pub unsafe extern "stdcall" fn GreSetDCOwner(hdc: HDC, ulOwner: ULONG) -> BOOL {
-    let pdc: PDC;
-
-    pdc = DC_LockDc(hdc);
-    if pdc.is_null() {
-        return 0;
-    }
-
-    DC_vSetOwner(pdc, ulOwner);
-
-    DC_UnlockDc(pdc);
-    return 1;
-}
-
-#[cfg(not(target_arch = "x86"))]
-#[no_mangle]
-pub unsafe extern "C" fn GreSetDCOwner(hdc: HDC, ulOwner: ULONG) -> BOOL {
+pub unsafe extern "system" fn GreSetDCOwner(hdc: HDC, ulOwner: ULONG) -> BOOL {
     let pdc: PDC;
 
     pdc = DC_LockDc(hdc);
@@ -1157,10 +1051,9 @@ pub unsafe extern "system" fn GreOpenDCW(
 
     hdc
 }
-#[cfg(target_arch = "x86")]
 #[no_mangle]
 #[inline(never)]
-pub unsafe extern "stdcall" fn NtGdiOpenDCW(
+pub unsafe extern "system" fn NtGdiOpenDCW(
     mut pustrDevice: PUNICODE_STRING,
     mut pdmInit: *mut DEVMODEW,
     pustrLogAddr: PUNICODE_STRING,
@@ -1238,91 +1131,8 @@ pub unsafe extern "stdcall" fn NtGdiOpenDCW(
 
     hdc
 }
-
-#[cfg(not(target_arch = "x86"))]
 #[no_mangle]
-#[inline(never)]
-pub unsafe extern "C" fn NtGdiOpenDCW(
-    mut pustrDevice: PUNICODE_STRING,
-    mut pdmInit: *mut DEVMODEW,
-    pustrLogAddr: PUNICODE_STRING,
-    iType: ULONG,
-    bDisplay: BOOL,
-    hspool: HANDLE,
-    pUMdhpdev: PVOID,
-) -> HDC {
-
-    let mut ustrDevice: _UNICODE_STRING = core::mem::zeroed();
-    let mut awcDevice: [WCHAR; CCHDEVICENAME as usize] = [0; CCHDEVICENAME as usize];
-    let mut dhpdev: PVOID = core::ptr::null_mut();
-    let mut hdc: HDC;
-    let mut dmSize: WORD;
-    let mut dmDriverExtra: WORD;
-    let mut Size: DWORD;
-    let mut pdmAllocated: *mut DEVMODEW = core::ptr::null_mut();
-
-    if !pustrDevice.is_null() {
-        RtlInitEmptyUnicodeString(
-            core::ptr::addr_of_mut!(ustrDevice) as *mut _,
-            awcDevice.as_mut_ptr(),
-            core::mem::size_of_val(&awcDevice) as USHORT,
-        );
-
-        RtlCopyUnicodeString(core::ptr::addr_of_mut!(ustrDevice) as *mut _, pustrDevice as *mut _);
-
-        if !pdmInit.is_null() {
-            dmSize = (*pdmInit).dmSize;
-            dmDriverExtra = (*pdmInit).dmDriverExtra;
-            Size = dmSize as DWORD + dmDriverExtra as DWORD;
-
-            pdmAllocated = ExAllocatePoolWithTag(
-                PagedPool | POOL_RAISE_IF_ALLOCATION_FAILURE,
-                Size as SIZE_T,
-                TAG_DC,
-            ) as *mut DEVMODEW;
-            RtlCopyMemory(
-                pdmAllocated as *mut VOID,
-                pdmInit as *const VOID,
-                Size as usize,
-            );
-            (*pdmAllocated).dmSize = dmSize;
-            (*pdmAllocated).dmDriverExtra = dmDriverExtra;
-        }
-    } else {
-        pdmInit = core::ptr::null_mut();
-    }
-
-    if !pustrDevice.is_null() {
-        let ustrDISPLAY = RTL_CONSTANT_STRING(w!("DISPLAY").as_ptr() as *const u16);
-        if RtlEqualUnicodeString(core::ptr::addr_of!(ustrDevice) as *const _, core::ptr::addr_of!(ustrDISPLAY) as *const _, 1) != 0 {
-            pustrDevice = core::ptr::null_mut();
-        }
-    }
-
-    hdc = GreOpenDCW(
-        if !pustrDevice.is_null() { core::ptr::addr_of_mut!(ustrDevice) } else { core::ptr::null_mut() },
-        pdmAllocated,
-        core::ptr::null_mut(),
-        iType,
-        bDisplay,
-        hspool,
-        core::ptr::null_mut(),
-        if !pUMdhpdev.is_null() { core::ptr::addr_of_mut!(dhpdev) } else { core::ptr::null_mut() },
-    );
-
-    if !hdc.is_null() && !pUMdhpdev.is_null() {
-        *(pUMdhpdev as *mut HANDLE) = dhpdev as HANDLE;
-    }
-
-    if !pdmAllocated.is_null() {
-        ExFreePoolWithTag(pdmAllocated as PVOID, TAG_DC);
-    }
-
-    hdc
-}
-#[cfg(target_arch = "x86")]
-#[no_mangle]
-pub unsafe extern "stdcall" fn GreCreateCompatibleDC(hdc: HDC, bAltDc: i32) -> HDC {
+pub unsafe extern "system" fn GreCreateCompatibleDC(hdc: HDC, bAltDc: i32) -> HDC {
 
     let eDcObjType: u32;
     let hdcNew: HDC;
@@ -1365,61 +1175,8 @@ pub unsafe extern "stdcall" fn GreCreateCompatibleDC(hdc: HDC, bAltDc: i32) -> H
 
     hdcNew
 }
-
-#[cfg(not(target_arch = "x86"))]
 #[no_mangle]
-pub unsafe extern "C" fn GreCreateCompatibleDC(hdc: HDC, bAltDc: i32) -> HDC {
-
-    let eDcObjType: u32;
-    let hdcNew: HDC;
-    let ppdev: PPDEVOBJ;
-    let pdc: PDC;
-    let pdcNew: PDC;
-
-    if !hdc.is_null() {
-        pdc = DC_LockDc(hdc);
-        if pdc.is_null() {
-            return core::ptr::null_mut();
-        }
-
-        ppdev = (*pdc).ppdev;
-        PDEVOBJ_vReference(ppdev);
-
-        DC_UnlockDc(pdc);
-    } else {
-        ppdev = EngpGetPDEV(core::ptr::null_mut());
-    }
-
-    if ppdev.is_null() {
-        return core::ptr::null_mut();
-    }
-
-    eDcObjType = if bAltDc != 0 { GDILoObjType_LO_ALTDC_TYPE } else { GDILoObjType_LO_DC_TYPE };
-    pdcNew = DC_AllocDcWithHandle(eDcObjType);
-    if pdcNew.is_null() {
-        PDEVOBJ_vRelease(ppdev);
-        return core::ptr::null_mut();
-    }
-    hdcNew = (*pdcNew).BaseObject.hHmgr as _;
-
-    DC_vInitDc(pdcNew, if bAltDc != 0 { DCTYPE_INFO } else { DCTYPE_MEMORY }, ppdev);
-    DC_InitHack(pdcNew);
-
-    DC_bAllocDcAttr(pdcNew);
-
-    DC_UnlockDc(pdcNew);
-
-    hdcNew
-}
-#[cfg(target_arch = "x86")]
-#[no_mangle]
-pub unsafe extern "stdcall" fn NtGdiCreateCompatibleDC(hdc: HDC) -> HDC {
-    GreCreateCompatibleDC(hdc, 0)
-}
-
-#[cfg(not(target_arch = "x86"))]
-#[no_mangle]
-pub unsafe extern "C" fn NtGdiCreateCompatibleDC(hdc: HDC) -> HDC {
+pub unsafe extern "system" fn NtGdiCreateCompatibleDC(hdc: HDC) -> HDC {
     GreCreateCompatibleDC(hdc, 0)
 }
 
@@ -1490,36 +1247,8 @@ unsafe extern "C" fn IntGdiDeleteDC(hDC: HDC, Force: BOOL) -> BOOL {
 
     1
 }
-#[cfg(target_arch = "x86")]
 #[no_mangle]
-pub unsafe extern "stdcall" fn NtGdiDeleteObjectApp(hobj: HANDLE) -> BOOL {
-
-    if GDI_HANDLE_IS_STOCKOBJ(hobj) != 0 {
-        return 1;
-    }
-
-    if GreGetObjectOwner(hobj) != GDI_OBJ_HMGR_POWNED {
-        EngSetLastError(ERROR_INVALID_HANDLE);
-        return 0;
-    }
-
-    if GDI_HANDLE_GET_TYPE(hobj) != GDI_OBJECT_TYPE_DC {
-        return GreDeleteObject(hobj);
-    }
-
-    #[cfg(target_arch = "x86")]
-    {
-        IntGdiDeleteDC(hobj as _, 0)
-    }
-    #[cfg(not(target_arch = "x86"))]
-    {
-        IntGdiDeleteDC(hobj as _, 0)
-    }
-}
-
-#[cfg(not(target_arch = "x86"))]
-#[no_mangle]
-pub unsafe extern "C" fn NtGdiDeleteObjectApp(hobj: HANDLE) -> BOOL {
+pub unsafe extern "system" fn NtGdiDeleteObjectApp(hobj: HANDLE) -> BOOL {
 
     if GDI_HANDLE_IS_STOCKOBJ(hobj) != 0 {
         return 1;
@@ -1647,24 +1376,8 @@ pub unsafe extern "C" fn MakeInfoDC(pdc: PDC, bSet: BOOL) -> BOOL {
     
     IntSetDefaultRegion(pdc)
 }
-#[cfg(target_arch = "x86")]
 #[no_mangle]
-pub unsafe extern "stdcall" fn NtGdiMakeInfoDC(
-    hdc: HDC,
-    bSet: BOOL,
-) -> BOOL {
-    let pdc: PDC = DC_LockDc(hdc);
-    if !pdc.is_null() {
-        let Ret = MakeInfoDC(pdc, bSet);
-        DC_UnlockDc(pdc);
-        return Ret;
-    }
-    0
-}
-
-#[cfg(not(target_arch = "x86"))]
-#[no_mangle]
-pub unsafe extern "C" fn NtGdiMakeInfoDC(
+pub unsafe extern "system" fn NtGdiMakeInfoDC(
     hdc: HDC,
     bSet: BOOL,
 ) -> BOOL {

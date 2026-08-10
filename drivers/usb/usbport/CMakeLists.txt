@@ -22,7 +22,7 @@ elseif(ARCH STREQUAL "arm64")
     set(USBPORT_RUST_TARGET "aarch64-pc-windows-gnullvm")
     set(USBPORT_RUST_RUSTFLAGS "")
 endif()
-file(GLOB_RECURSE USBPORT_RUST_SRCS ${USBPORT_RUST_WORKSPACE_DIR}/usbport-rust/src/*.rs)
+rust_crate_sources(USBPORT_RUST_SRCS "${USBPORT_RUST_WORKSPACE_DIR}" usbport-rust)
 add_custom_command(
     OUTPUT ${USBPORT_RUST_LIB}
     COMMAND ${CMAKE_COMMAND} -E env

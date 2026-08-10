@@ -35,7 +35,7 @@ elseif(ARCH STREQUAL "arm64")
 endif()
 set(IPHLPAPI_RUST_TARGET_DIR "${CMAKE_CURRENT_BINARY_DIR}/rust-iphlpapi-target")
 set(IPHLPAPI_RUST_LIB "${CMAKE_CURRENT_BINARY_DIR}/libiphlpapi_rust.a")
-file(GLOB_RECURSE IPHLPAPI_RUST_SRCS "${IPHLPAPI_RUST_WORKSPACE_DIR}/iphlpapi-rust/src/*.rs")
+rust_crate_sources(IPHLPAPI_RUST_SRCS "${IPHLPAPI_RUST_WORKSPACE_DIR}" iphlpapi-rust)
 add_custom_command(
     OUTPUT ${IPHLPAPI_RUST_LIB}
     COMMAND ${CMAKE_COMMAND} -E env

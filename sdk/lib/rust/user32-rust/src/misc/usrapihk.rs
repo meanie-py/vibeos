@@ -44,23 +44,7 @@ unsafe fn InterlockedDecrement(addend: *mut LONG) -> LONG {
 //   field typedefs exactly (win32k-sys bindgen `extern "stdcall"`) — fn items only
 //   coerce into the matching ABI fn-pointer in const-init, so declare them stdcall.
 //   PreWndProc/PostWndProc et al use the in-file DefaultOWP stub instead.
-#[cfg(target_arch = "x86")]
-extern "stdcall" {
-    fn RealAdjustWindowRectEx(lpRect: LPRECTL, dwStyle: DWORD, bMenu: BOOL, dwExStyle: DWORD) -> BOOL;
-    fn RealDefWindowProcA(hWnd: HWND, Msg: UINT, wParam: WPARAM, lParam: LPARAM) -> LRESULT;
-    fn RealDefWindowProcW(hWnd: HWND, Msg: UINT, wParam: WPARAM, lParam: LPARAM) -> LRESULT;
-    fn RealDrawFrameControl(hdc: HDC, lprc: LPRECTL, uType: UINT, uState: UINT) -> BOOL;
-    fn RealGetScrollInfo(hwnd: HWND, fnBar: INT, lpsi: LPSCROLLINFO) -> BOOL;
-    fn RealGetSystemMetrics(nIndex: core::ffi::c_int) -> core::ffi::c_int;
-    fn RealSetScrollInfo(hwnd: HWND, fnBar: core::ffi::c_int, lpsi: LPCSCROLLINFO, fRedraw: BOOL) -> INT;
-    fn RealSystemParametersInfoA(uiAction: UINT, uiParam: UINT, pvParam: PVOID, fWinIni: UINT) -> BOOL;
-    fn RealSystemParametersInfoW(uiAction: UINT, uiParam: UINT, pvParam: PVOID, fWinIni: UINT) -> BOOL;
-    fn GetRealWindowOwner(hWnd: HWND) -> DWORD;
-    fn RealUserDrawCaption(hWnd: HWND, hDC: HDC, lpRc: LPCRECTL, uFlags: UINT) -> BOOL;
-}
-
-#[cfg(not(target_arch = "x86"))]
-extern "C" {
+extern "system" {
     fn RealAdjustWindowRectEx(lpRect: LPRECTL, dwStyle: DWORD, bMenu: BOOL, dwExStyle: DWORD) -> BOOL;
     fn RealDefWindowProcA(hWnd: HWND, Msg: UINT, wParam: WPARAM, lParam: LPARAM) -> LRESULT;
     fn RealDefWindowProcW(hWnd: HWND, Msg: UINT, wParam: WPARAM, lParam: LPARAM) -> LRESULT;
@@ -116,13 +100,7 @@ pub static mut guah: USERAPIHOOK = USERAPIHOOK {
     GetRealWindowOwner: Some(GetRealWindowOwner),
 };
 
-#[cfg(target_arch = "x86")]
-unsafe extern "stdcall" fn DefaultOWP(hWnd: HWND, Msg: UINT, wParam: WPARAM, lParam: LPARAM, lResult: ULONG_PTR, pData: PDWORD) -> LRESULT {
-    DefaultOWP_impl(hWnd, Msg, wParam, lParam, lResult, pData)
-}
-
-#[cfg(not(target_arch = "x86"))]
-unsafe extern "C" fn DefaultOWP(hWnd: HWND, Msg: UINT, wParam: WPARAM, lParam: LPARAM, lResult: ULONG_PTR, pData: PDWORD) -> LRESULT {
+unsafe extern "system" fn DefaultOWP(hWnd: HWND, Msg: UINT, wParam: WPARAM, lParam: LPARAM, lResult: ULONG_PTR, pData: PDWORD) -> LRESULT {
     DefaultOWP_impl(hWnd, Msg, wParam, lParam, lResult, pData)
 }
 
@@ -224,13 +202,7 @@ pub unsafe extern "C" fn BeginIfHookedUserApiHook() -> BOOL {
     0
 }
 
-#[cfg(target_arch = "x86")]
-unsafe extern "stdcall" fn ForceResetUserApiHook(hInstance: HINSTANCE) -> BOOL {
-    ForceResetUserApiHook_impl(hInstance)
-}
-
-#[cfg(not(target_arch = "x86"))]
-unsafe extern "C" fn ForceResetUserApiHook(hInstance: HINSTANCE) -> BOOL {
+unsafe extern "system" fn ForceResetUserApiHook(hInstance: HINSTANCE) -> BOOL {
     ForceResetUserApiHook_impl(hInstance)
 }
 
@@ -442,13 +414,7 @@ pub unsafe extern "system" fn InitUserApiHook(hInstance: HINSTANCE, pfn: USERAPI
     1
 }
 
-#[cfg(target_arch = "x86")]
-unsafe extern "stdcall" fn RealMDIRedrawFrame(hWnd: HWND, flags: DWORD) -> BOOL {
-    RealMDIRedrawFrame_impl(hWnd, flags)
-}
-
-#[cfg(not(target_arch = "x86"))]
-unsafe extern "C" fn RealMDIRedrawFrame(hWnd: HWND, flags: DWORD) -> BOOL {
+unsafe extern "system" fn RealMDIRedrawFrame(hWnd: HWND, flags: DWORD) -> BOOL {
     RealMDIRedrawFrame_impl(hWnd, flags)
 }
 

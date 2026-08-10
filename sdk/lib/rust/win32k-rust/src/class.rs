@@ -1402,73 +1402,8 @@ unsafe fn IntFindClass(
 
     Class
 }
-#[cfg(target_arch = "x86")]
 #[no_mangle]
-pub unsafe extern "stdcall" fn IntGetAtomFromStringOrAtom(
-    ClassName: PUNICODE_STRING,
-    Atom: *mut RTL_ATOM,
-) -> i32 {
-    let mut Ret: i32 = 0;
-
-    if (*ClassName).Length != 0 {
-        let mut szBuf: [u16; 65] = [0; 65];
-        let mut AtomName: PWSTR = szBuf.as_mut_ptr();
-        let mut Status = STATUS_INVALID_PARAMETER;
-
-        *Atom = 0;
-
-        if ((*ClassName).Length as usize + core::mem::size_of::<u16>())
-            > core::mem::size_of::<[u16; 65]>()
-        {
-            AtomName = ExAllocatePoolWithTag(
-                PagedPool,
-                ((*ClassName).Length as usize + core::mem::size_of::<u16>()) as SIZE_T,
-                0x52545355,
-            ) as PWSTR;
-            if AtomName.is_null() {
-                EngSetLastError(ERROR_OUTOFMEMORY);
-                return 0;
-            }
-        }
-
-        RtlCopyMemory(
-            AtomName as *mut core::ffi::c_void,
-            (*ClassName).Buffer as *const core::ffi::c_void,
-            (*ClassName).Length as usize,
-        );
-
-        *AtomName.add((*ClassName).Length as usize / core::mem::size_of::<u16>()) = 0;
-
-        Status = RtlLookupAtomInAtomTable(gAtomTable as _, AtomName, Atom);
-
-        if AtomName != szBuf.as_mut_ptr() {
-            ExFreePoolWithTag(AtomName as *mut core::ffi::c_void, 0x52545355);
-        }
-
-        if NT_SUCCESS(Status) {
-            Ret = 1;
-        } else {
-            if Status != STATUS_OBJECT_NAME_NOT_FOUND {
-                SetLastNtError(Status);
-            }
-        }
-    } else {
-        if !(*ClassName).Buffer.is_null() {
-            *Atom = (*ClassName).Buffer as usize as RTL_ATOM;
-            Ret = 1;
-        } else {
-            *Atom = 0;
-            EngSetLastError(ERROR_CLASS_DOES_NOT_EXIST);
-            Ret = 0;
-        }
-    }
-
-    Ret
-}
-
-#[cfg(not(target_arch = "x86"))]
-#[no_mangle]
-pub unsafe extern "C" fn IntGetAtomFromStringOrAtom(
+pub unsafe extern "system" fn IntGetAtomFromStringOrAtom(
     ClassName: PUNICODE_STRING,
     Atom: *mut RTL_ATOM,
 ) -> i32 {
@@ -2543,124 +2478,8 @@ pub unsafe extern "C" fn UserRegisterSystemClasses() -> BOOL {
     }
     Ret
 }
-#[cfg(target_arch = "x86")]
 #[no_mangle]
-pub unsafe extern "stdcall" fn NtUserRegisterClassExWOW(
-    lpwcx: *mut WNDCLASSEXW,
-    ClassName: PUNICODE_STRING,
-    ClsVersion: PUNICODE_STRING,
-    pClassMenuName: PCLSMENUNAME,
-    fnID: u32,
-    Flags: u32,
-    _pWow: LPDWORD,
-) -> RTL_ATOM {
-    let mut CapturedClassInfo: WNDCLASSEXW = core::mem::zeroed();
-    let mut CapturedName: _UNICODE_STRING = core::mem::zeroed();
-    let mut CapturedMenuName: _UNICODE_STRING = core::mem::zeroed();
-    let mut CapturedVersion: _UNICODE_STRING = core::mem::zeroed();
-    let mut Ret: RTL_ATOM = 0;
-    let ppi: PPROCESSINFO = GetW32ProcessInfo();
-    let mut Exception: u8 = 0;
-
-    if (Flags & !(CSF_ANSIPROC)) != 0 {
-        EngSetLastError(ERROR_INVALID_FLAGS);
-        return Ret;
-    }
-
-    UserEnterExclusive();
-
-    if ((*ppi_w32pf_flags(ppi)) & W32PF_CLASSESREGISTERED) == 0 {
-        UserRegisterSystemClasses();
-    }
-
-    'seh: {
-        /* Probe the parameters and basic parameter checks */
-        if ProbeForReadUint(core::ptr::addr_of_mut!((*lpwcx).cbSize))
-            != core::mem::size_of::<WNDCLASSEXW>() as u32
-        {
-            EngSetLastError(ERROR_INVALID_PARAMETER);
-            break 'seh;
-        }
-
-        RtlCopyMemory(
-            core::ptr::addr_of_mut!(CapturedClassInfo) as *mut _,
-            lpwcx as *const _,
-            core::mem::size_of::<WNDCLASSEXW>() as _,
-        );
-
-        CapturedName = ProbeForReadUnicodeString(ClassName);
-        CapturedVersion = ProbeForReadUnicodeString(ClsVersion);
-
-        CapturedMenuName = ProbeForReadUnicodeString((*pClassMenuName).pusMenuName);
-
-        if (CapturedName.Length & 1) != 0
-            || (CapturedMenuName.Length & 1) != 0
-            || CapturedClassInfo.cbClsExtra < 0
-            || ((CapturedClassInfo.cbClsExtra as u32
-                + CapturedName.Length as u32
-                + CapturedMenuName.Length as u32
-                + core::mem::size_of::<CLS>() as u32)
-                < CapturedClassInfo.cbClsExtra as u32)
-            || CapturedClassInfo.cbWndExtra < 0
-            || CapturedClassInfo.hInstance.is_null()
-        {
-            EngSetLastError(ERROR_INVALID_PARAMETER);
-            break 'seh;
-        }
-
-        if CapturedName.Length != 0 {
-            // ProbeForRead(CapturedName.Buffer, ...)
-        } else {
-            if IS_ATOM!(CapturedName.Buffer) == 0 {
-                EngSetLastError(ERROR_INVALID_PARAMETER);
-                break 'seh;
-            }
-        }
-
-        if CapturedVersion.Length != 0 {
-            // ProbeForRead(CapturedVersion.Buffer, ...)
-        } else {
-            if IS_ATOM!(CapturedVersion.Buffer) == 0 {
-                EngSetLastError(ERROR_INVALID_PARAMETER);
-                break 'seh;
-            }
-        }
-
-        if CapturedMenuName.Length != 0 {
-            // ProbeForRead(CapturedMenuName.Buffer, ...)
-        } else if !CapturedMenuName.Buffer.is_null()
-            && IS_INTRESOURCE!(CapturedMenuName.Buffer) == 0
-        {
-            EngSetLastError(ERROR_INVALID_PARAMETER);
-            break 'seh;
-        }
-
-        if IsCallProcHandle((*lpwcx).lpfnWndProc) != 0 {
-            // Never seen this yet
-        }
-    }
-
-    let _ = &mut Exception;
-
-    if Exception == 0 {
-        Ret = UserRegisterClass(
-            core::ptr::addr_of_mut!(CapturedClassInfo),
-            core::ptr::addr_of_mut!(CapturedName),
-            core::ptr::addr_of_mut!(CapturedVersion),
-            core::ptr::addr_of_mut!(CapturedMenuName),
-            fnID,
-            Flags,
-        );
-    }
-
-    UserLeave();
-
-    Ret
-}
-
-#[cfg(not(target_arch = "x86"))]
-#[no_mangle]
-pub unsafe extern "C" fn NtUserRegisterClassExWOW(
+pub unsafe extern "system" fn NtUserRegisterClassExWOW(
     lpwcx: *mut WNDCLASSEXW,
     ClassName: PUNICODE_STRING,
     ClsVersion: PUNICODE_STRING,
@@ -2853,26 +2672,8 @@ pub unsafe extern "system" fn IntNtUserSetClassLongPtr(
 
     Ret
 }
-#[cfg(target_arch = "x86")]
 #[no_mangle]
-pub unsafe extern "stdcall" fn NtUserSetClassLong(
-    hWnd: HWND,
-    Offset: INT,
-    dwNewLong: ULONG,
-    Ansi: BOOL,
-) -> ULONG_PTR {
-    IntNtUserSetClassLongPtr(
-        hWnd,
-        Offset,
-        dwNewLong as ULONG_PTR,
-        Ansi,
-        core::mem::size_of::<LONG>() as ULONG,
-    )
-}
-
-#[cfg(not(target_arch = "x86"))]
-#[no_mangle]
-pub unsafe extern "C" fn NtUserSetClassLong(
+pub unsafe extern "system" fn NtUserSetClassLong(
     hWnd: HWND,
     Offset: INT,
     dwNewLong: ULONG,
@@ -2896,28 +2697,16 @@ pub unsafe extern "system" fn NtUserSetClassLongPtr(
 ) -> ULONG_PTR {
     IntNtUserSetClassLongPtr(hWnd, Offset, dwNewLong, Ansi, core::mem::size_of::<LONG_PTR>() as ULONG)
 }
-#[cfg(target_arch = "x86")]
 #[no_mangle]
-pub unsafe extern "stdcall" fn NtUserSetClassWord(
+pub unsafe extern "system" fn NtUserSetClassWord(
     hWnd: HWND,
     nIndex: INT,
     wNewWord: WORD,
 ) -> WORD {
     0
 }
-
-#[cfg(not(target_arch = "x86"))]
 #[no_mangle]
-pub unsafe extern "C" fn NtUserSetClassWord(
-    hWnd: HWND,
-    nIndex: INT,
-    wNewWord: WORD,
-) -> WORD {
-    0
-}
-#[cfg(target_arch = "x86")]
-#[no_mangle]
-pub unsafe extern "stdcall" fn NtUserUnregisterClass(
+pub unsafe extern "system" fn NtUserUnregisterClass(
     ClassNameOrAtom: PUNICODE_STRING,
     hInstance: HINSTANCE,
     pClassMenuName: PCLSMENUNAME,
@@ -2952,47 +2741,8 @@ pub unsafe extern "stdcall" fn NtUserUnregisterClass(
 
     Ret
 }
-
-#[cfg(not(target_arch = "x86"))]
 #[no_mangle]
-pub unsafe extern "C" fn NtUserUnregisterClass(
-    ClassNameOrAtom: PUNICODE_STRING,
-    hInstance: HINSTANCE,
-    pClassMenuName: PCLSMENUNAME,
-) -> BOOL {
-    let mut SafeClassName: _UNICODE_STRING = core::mem::zeroed();
-    let Status: NTSTATUS;
-    let Ret: BOOL;
-
-    Status = ProbeAndCaptureUnicodeStringOrAtom(
-        core::ptr::addr_of_mut!(SafeClassName),
-        ClassNameOrAtom,
-    );
-    if !NT_SUCCESS(Status) {
-        ERR!(b"Error capturing the class name\n\0".as_ptr() as *const i8);
-        SetLastNtError(Status);
-        return 0;
-    }
-
-    UserEnterExclusive();
-
-    Ret = UserUnregisterClass(
-        core::ptr::addr_of_mut!(SafeClassName),
-        hInstance,
-        core::ptr::null_mut(),
-    );
-
-    UserLeave();
-
-    if !SafeClassName.Buffer.is_null() && IS_ATOM!(SafeClassName.Buffer) == 0 {
-        ExFreePoolWithTag(SafeClassName.Buffer as *mut core::ffi::c_void, TAG_STRING);
-    }
-
-    Ret
-}
-#[cfg(target_arch = "x86")]
-#[no_mangle]
-pub unsafe extern "stdcall" fn NtUserGetClassInfo(
+pub unsafe extern "system" fn NtUserGetClassInfo(
     mut hInstance: HINSTANCE,
     ClassName: PUNICODE_STRING,
     lpWndClassEx: LPWNDCLASSEXW,
@@ -3089,109 +2839,8 @@ pub unsafe extern "stdcall" fn NtUserGetClassInfo(
 
     Ret
 }
-
-#[cfg(not(target_arch = "x86"))]
 #[no_mangle]
-pub unsafe extern "C" fn NtUserGetClassInfo(
-    mut hInstance: HINSTANCE,
-    ClassName: PUNICODE_STRING,
-    lpWndClassEx: LPWNDCLASSEXW,
-    ppszMenuName: *mut LPWSTR,
-    bAnsi: BOOL,
-) -> BOOL {
-    let mut SafeClassName: _UNICODE_STRING = core::mem::zeroed();
-    let mut Safewcexw: WNDCLASSEXW = core::mem::zeroed();
-    let mut Class: PCLS = core::ptr::null_mut();
-    let mut ClassAtom: RTL_ATOM = 0;
-    let ppi: PPROCESSINFO;
-    let mut Ret: BOOL = 1;
-    let mut Status: NTSTATUS;
-
-    Status = SafeProbeForWrite(
-        lpWndClassEx as *mut _,
-        core::mem::size_of::<WNDCLASSEXW>() as _,
-        core::mem::size_of::<u32>() as _,
-    );
-    if NT_SUCCESS(Status) {
-        Status = SafeProbeForWrite(
-            ppszMenuName as *mut _,
-            core::mem::size_of::<LPWSTR>() as _,
-            core::mem::size_of::<*mut core::ffi::c_void>() as _,
-        );
-    }
-    if !NT_SUCCESS(Status) {
-        SetLastNtError(Status);
-        return 0;
-    }
-    if NT_SUCCESS(Status) {
-        RtlCopyMemory(
-            &mut Safewcexw as *mut _ as *mut _,
-            lpWndClassEx as *const _,
-            core::mem::size_of::<WNDCLASSEXW>() as _,
-        );
-        if !ppszMenuName.is_null() {}
-    }
-
-    Status = ProbeAndCaptureUnicodeStringOrAtom(&mut SafeClassName, ClassName);
-    if !NT_SUCCESS(Status) {
-        ERR!(b"Error capturing the class name\n\0".as_ptr() as *const _);
-        SetLastNtError(Status);
-        return 0;
-    }
-
-    if hInstance.is_null() {
-        hInstance = hModClient;
-    }
-
-    TRACE!(b"GetClassInfo(%wZ, %p)\n\0".as_ptr() as *const _, &SafeClassName, hInstance);
-
-    UserEnterExclusive();
-
-    ppi = GetW32ProcessInfo();
-    if ((*ppi_w32pf_flags(ppi)) & W32PF_CLASSESREGISTERED) == 0 {
-        UserRegisterSystemClasses();
-    }
-
-    ClassAtom = IntGetClassAtom(
-        &mut SafeClassName,
-        hInstance,
-        ppi,
-        &mut Class,
-        core::ptr::null_mut(),
-    );
-    if ClassAtom != 0 {
-        ClassAtom = (*Class).atomNVClassName;
-        Ret = UserGetClassInfo(Class, &mut Safewcexw, bAnsi, hInstance);
-    } else {
-        EngSetLastError(ERROR_CLASS_DOES_NOT_EXIST);
-        Ret = 0;
-    }
-
-    UserLeave();
-
-    if Ret != 0 {
-        if !ppszMenuName.is_null() {
-            *ppszMenuName = Safewcexw.lpszMenuName as LPWSTR;
-        }
-
-        RtlCopyMemory(
-            lpWndClassEx as *mut _,
-            &Safewcexw as *const _ as *const _,
-            core::mem::size_of::<WNDCLASSEXW>() as _,
-        );
-
-        Ret = ClassAtom as BOOL;
-    }
-
-    if IS_ATOM!(SafeClassName.Buffer) == 0 {
-        ExFreePoolWithTag(SafeClassName.Buffer as *mut _, TAG_STRING);
-    }
-
-    Ret
-}
-#[cfg(target_arch = "x86")]
-#[no_mangle]
-pub unsafe extern "stdcall" fn NtUserGetClassName(
+pub unsafe extern "system" fn NtUserGetClassName(
     hWnd: HWND,
     Real: BOOL,
     ClassName: PUNICODE_STRING,
@@ -3234,97 +2883,8 @@ pub unsafe extern "stdcall" fn NtUserGetClassName(
 
     Ret
 }
-
-#[cfg(not(target_arch = "x86"))]
 #[no_mangle]
-pub unsafe extern "C" fn NtUserGetClassName(
-    hWnd: HWND,
-    Real: BOOL,
-    ClassName: PUNICODE_STRING,
-) -> INT {
-    let Window: PWND;
-    let mut CapturedClassName: _UNICODE_STRING = core::mem::zeroed();
-    let mut iCls: INT = 0;
-    let mut Ret: INT = 0;
-    let mut Atom: RTL_ATOM = 0;
-
-    UserEnterShared();
-
-    Window = UserGetWindowObject(hWnd);
-    if !Window.is_null() {
-        if Real != 0 && (*Window).fnid != 0 && ((*Window).fnid & FNID_DESTROY as u32) == 0 {
-            if LookupFnIdToiCls((*Window).fnid as i32, core::ptr::addr_of_mut!(iCls)) != 0 {
-                Atom = (*gpsi).atomSysClass[iCls as usize];
-            }
-        }
-
-        ProbeForWriteUnicodeString(ClassName);
-        CapturedClassName = *ClassName;
-        if CapturedClassName.Length != 0 {
-            // ProbeForRead expanded inline (no-op for valid kernel addresses)
-        }
-
-        Ret = UserGetClassName(
-            (*Window).pcls,
-            core::ptr::addr_of_mut!(CapturedClassName),
-            Atom,
-            0,
-        );
-
-        if Ret != 0 {
-            (*ClassName).Length = CapturedClassName.Length;
-        }
-    }
-
-    UserLeave();
-
-    Ret
-}
-#[cfg(target_arch = "x86")]
-#[no_mangle]
-pub unsafe extern "stdcall" fn NtUserGetWOWClass(
-    hInstance: HINSTANCE,
-    ClassName: PUNICODE_STRING,
-) -> PCLS {
-    let mut SafeClassName: _UNICODE_STRING = core::mem::zeroed();
-    let pi: PPROCESSINFO;
-    let mut Class: PCLS = core::ptr::null_mut();
-    let mut ClassAtom: RTL_ATOM;
-    let Status: NTSTATUS;
-
-    Status = ProbeAndCaptureUnicodeStringOrAtom(&mut SafeClassName, ClassName);
-    if !NT_SUCCESS(Status) {
-        SetLastNtError(Status);
-        return core::ptr::null_mut();
-    }
-
-    UserEnterExclusive();
-
-    pi = GetW32ProcessInfo();
-
-    ClassAtom = IntGetClassAtom(
-        &mut SafeClassName,
-        hInstance,
-        pi,
-        &mut Class,
-        core::ptr::null_mut(),
-    );
-    if ClassAtom == 0 {
-        EngSetLastError(ERROR_CLASS_DOES_NOT_EXIST);
-    }
-
-    if !SafeClassName.Buffer.is_null() && IS_ATOM!(SafeClassName.Buffer) == 0 {
-        ExFreePoolWithTag(SafeClassName.Buffer as *mut core::ffi::c_void, TAG_STRING);
-    }
-
-    UserLeave();
-
-    Class
-}
-
-#[cfg(not(target_arch = "x86"))]
-#[no_mangle]
-pub unsafe extern "C" fn NtUserGetWOWClass(
+pub unsafe extern "system" fn NtUserGetWOWClass(
     hInstance: HINSTANCE,
     ClassName: PUNICODE_STRING,
 ) -> PCLS {

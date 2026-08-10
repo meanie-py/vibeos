@@ -27,21 +27,23 @@ use core::mem::{offset_of, size_of, transmute};
 use core::ptr::{addr_of, addr_of_mut, null_mut};
 use winlogon_sys::nt::*;
 
-// Define a WINAPI fn with the per-arch ABI the bindgen WLX/Win32 callback
-// typedefs use (stdcall on i386, C on amd64/arm64). One body, two cfg-gated
-// definitions — so `Some(name)` slots into a typed dispatch field directly.
+// Define a WINAPI fn with the ABI the bindgen WLX/Win32 callback typedefs use, so
+// `Some(name)` slots into a typed dispatch field directly.
+//
+// This used to emit the body TWICE under complementary cfgs — `stdcall` on i386, `C` on
+// amd64/arm64 — because the island spelled each slot with the arch's literal convention and
+// Rust compares fn-pointer ABIs nominally. normalize_island_abi.py now spells those slots
+// `system`, which IS that per-arch convention under one portable name, so one definition
+// unifies everywhere. The fork also meant only half of these 29 routines was ever compiled:
+// a fix to one arch's copy was invisible until someone built another.
 macro_rules! winapi_fns {
     ($(
         $(#[$attr:meta])*
         fn $name:ident ( $($a:ident: $t:ty),* $(,)? ) $(-> $r:ty)? $body:block
     )*) => {
         $(
-            #[cfg(target_arch = "x86")]
             $(#[$attr])*
-            unsafe extern "stdcall" fn $name($($a: $t),*) $(-> $r)? $body
-            #[cfg(not(target_arch = "x86"))]
-            $(#[$attr])*
-            unsafe extern "C" fn $name($($a: $t),*) $(-> $r)? $body
+            unsafe extern "system" fn $name($($a: $t),*) $(-> $r)? $body
         )*
     };
 }

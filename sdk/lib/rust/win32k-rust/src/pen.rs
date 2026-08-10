@@ -330,9 +330,8 @@ pub unsafe extern "system" fn PEN_GetObject(pbrushPen: PBRUSH, cbCount: i32, pBu
 
     cbRetCount
 }
-#[cfg(target_arch = "x86")]
 #[no_mangle]
-pub unsafe extern "stdcall" fn NtGdiCreatePen(
+pub unsafe extern "system" fn NtGdiCreatePen(
     PenStyle: INT,
     Width: INT,
     Color: COLORREF,
@@ -357,154 +356,8 @@ pub unsafe extern "stdcall" fn NtGdiCreatePen(
         hbr,
     )
 }
-
-#[cfg(not(target_arch = "x86"))]
 #[no_mangle]
-pub unsafe extern "C" fn NtGdiCreatePen(
-    PenStyle: INT,
-    Width: INT,
-    Color: COLORREF,
-    hbr: HBRUSH,
-) -> HPEN {
-    if (PenStyle < PS_SOLID as INT) || (PenStyle > PS_INSIDEFRAME as INT) {
-        EngSetLastError(ERROR_INVALID_PARAMETER);
-        return core::ptr::null_mut();
-    }
-
-    IntGdiExtCreatePen(
-        PenStyle as DWORD,
-        Width as DWORD,
-        BS_SOLID as ULONG,
-        Color as ULONG,
-        0,
-        0,
-        0,
-        core::ptr::null_mut(),
-        0,
-        1 as BOOL,
-        hbr,
-    )
-}
-#[cfg(target_arch = "x86")]
-#[no_mangle]
-pub unsafe extern "stdcall" fn NtGdiExtCreatePen(
-    dwPenStyle: DWORD,
-    ulWidth: DWORD,
-    ulBrushStyle: ULONG,
-    mut ulColor: ULONG,
-    ulClientHatch: ULONG_PTR,
-    ulHatch: ULONG_PTR,
-    mut dwStyleCount: DWORD,
-    mut pUnsafeStyle: PULONG,
-    cjDIB: ULONG,
-    bOldStylePen: BOOL,
-    hBrush: HBRUSH,
-) -> HPEN {
-    let mut Status: NTSTATUS = STATUS_SUCCESS;
-    let mut pSafeStyle: *mut DWORD = core::ptr::null_mut();
-    let hPen: HPEN;
-
-    if (dwStyleCount as i32) < 0 {
-        return 0 as HPEN;
-    }
-    if dwStyleCount > 16 {
-        EngSetLastError(ERROR_INVALID_PARAMETER);
-        return 0 as HPEN;
-    }
-
-    if ((dwPenStyle & PS_TYPE_MASK) == PS_COSMETIC) && (ulBrushStyle != BS_SOLID) {
-        EngSetLastError(ERROR_INVALID_PARAMETER);
-        return 0 as HPEN;
-    }
-
-    if ((dwPenStyle & PS_STYLE_MASK) == PS_NULL) || (ulBrushStyle == BS_NULL) {
-        return (*(*(&raw const StockObjects)).as_ptr().add(NULL_PEN as usize)) as HPEN;
-    }
-
-    if (ulBrushStyle == BS_PATTERN)
-        || (ulBrushStyle == BS_DIBPATTERN)
-        || (ulBrushStyle == BS_DIBPATTERNPT)
-    {
-        ulColor = 0;
-    } else if (ulBrushStyle != BS_SOLID) && (ulBrushStyle != BS_HATCHED) {
-        EngSetLastError(ERROR_INVALID_PARAMETER);
-        return 0 as HPEN;
-    }
-
-    if (dwPenStyle & PS_STYLE_MASK) != PS_USERSTYLE {
-        dwStyleCount = 0;
-        pUnsafeStyle = core::ptr::null_mut();
-    }
-
-    if dwStyleCount > 0 {
-        if pUnsafeStyle.is_null() {
-            EngSetLastError(ERROR_INVALID_PARAMETER);
-            return 0 as HPEN;
-        }
-
-        pSafeStyle = ExAllocatePoolWithTag(
-            NonPagedPool,
-            ((dwStyleCount as usize) * core::mem::size_of::<DWORD>()) as SIZE_T,
-            GDITAG_PENSTYLE,
-        ) as *mut DWORD;
-        if pSafeStyle.is_null() {
-            SetLastNtError(ERROR_NOT_ENOUGH_MEMORY as NTSTATUS);
-            return 0 as HPEN;
-        }
-        Status = SafeProbeForRead(
-            pUnsafeStyle as PVOID,
-            (dwStyleCount as usize) * core::mem::size_of::<DWORD>(),
-            1,
-        );
-        if NT_SUCCESS(Status) {
-            core::ptr::copy_nonoverlapping(
-                pUnsafeStyle as *const u8,
-                pSafeStyle as *mut u8,
-                (dwStyleCount as usize) * core::mem::size_of::<DWORD>(),
-            );
-        }
-        if !NT_SUCCESS(Status) {
-            SetLastNtError(Status);
-            ExFreePoolWithTag(pSafeStyle as PVOID, GDITAG_PENSTYLE);
-            return 0 as HPEN;
-        }
-    }
-
-    if ulBrushStyle == BS_PATTERN {
-        Status = SafeProbeForRead(ulHatch as PVOID, cjDIB as usize, 1);
-        if !NT_SUCCESS(Status) {
-            SetLastNtError(Status);
-            if !pSafeStyle.is_null() {
-                ExFreePoolWithTag(pSafeStyle as PVOID, GDITAG_PENSTYLE);
-            }
-            return 0 as HPEN;
-        }
-    }
-
-    hPen = IntGdiExtCreatePen(
-        dwPenStyle,
-        ulWidth,
-        ulBrushStyle,
-        ulColor,
-        ulClientHatch,
-        ulHatch,
-        dwStyleCount,
-        pSafeStyle,
-        cjDIB,
-        bOldStylePen,
-        hBrush,
-    );
-
-    if hPen.is_null() && !pSafeStyle.is_null() {
-        ExFreePoolWithTag(pSafeStyle as PVOID, GDITAG_PENSTYLE);
-    }
-
-    hPen
-}
-
-#[cfg(not(target_arch = "x86"))]
-#[no_mangle]
-pub unsafe extern "C" fn NtGdiExtCreatePen(
+pub unsafe extern "system" fn NtGdiExtCreatePen(
     dwPenStyle: DWORD,
     ulWidth: DWORD,
     ulBrushStyle: ULONG,

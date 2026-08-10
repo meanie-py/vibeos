@@ -44,7 +44,7 @@ elseif(ARCH STREQUAL "arm64")
     set(UNIATA_RUST_TARGET "aarch64-pc-windows-gnullvm")
     set(UNIATA_RUST_RUSTFLAGS "")
 endif()
-file(GLOB UNIATA_RUST_SRCS "${UNIATA_RUST_WORKSPACE_DIR}/uniata-rust/src/*.rs")
+rust_crate_sources(UNIATA_RUST_SRCS "${UNIATA_RUST_WORKSPACE_DIR}" uniata-rust)
 add_custom_command(
     OUTPUT ${UNIATA_RUST_LIB}
     COMMAND ${CMAKE_COMMAND} -E env

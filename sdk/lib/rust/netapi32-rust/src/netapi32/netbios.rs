@@ -1256,29 +1256,6 @@ unsafe extern "C" fn nbDispatch(adapter: *mut NetBIOSAdapter, ncb: PNCB) -> UCHA
     }
     return ret;
 }
-#[cfg(target_arch = "x86")]
-unsafe extern "system" fn nbCmdThread(lpVoid: LPVOID) -> DWORD {
-    let ncb: PNCB = lpVoid as PNCB;
-    if !ncb.is_null() {
-        let mut ret: UCHAR = 0;
-        let adapter: *mut NetBIOSAdapter = nbGetAdapter((*ncb).ncb_lana_num);
-        if !adapter.is_null() {
-            ret = nbDispatch(adapter, ncb);
-        } else {
-            ret = NRC_BRIDGE as UCHAR;
-        }
-        (*ncb).ncb_cmd_cplt = ret;
-        (*ncb).ncb_retcode = (*ncb).ncb_cmd_cplt;
-        if let Some(post_fn) = (*ncb).ncb_post {
-            post_fn(ncb);
-        } else if !(*ncb).ncb_event.is_null() {
-            SetEvent((*ncb).ncb_event);
-        }
-    }
-    0u32
-}
-
-#[cfg(not(target_arch = "x86"))]
 unsafe extern "system" fn nbCmdThread(lpVoid: LPVOID) -> DWORD {
     let ncb: PNCB = lpVoid as PNCB;
     if !ncb.is_null() {

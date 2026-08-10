@@ -31,7 +31,7 @@ elseif(ARCH STREQUAL "arm64")
     set(DXG_RUST_TARGET "aarch64-pc-windows-gnullvm")
     set(DXG_RUST_RUSTFLAGS "")
 endif()
-file(GLOB DXG_RUST_SRCS "${DXG_RUST_WORKSPACE_DIR}/dxg-rust/src/*.rs")
+rust_crate_sources(DXG_RUST_SRCS "${DXG_RUST_WORKSPACE_DIR}" dxg-rust)
 add_custom_command(
     OUTPUT ${DXG_RUST_LIB}
     COMMAND ${CMAKE_COMMAND} -E env

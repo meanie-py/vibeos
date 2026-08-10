@@ -710,13 +710,13 @@ pub struct _FLT_RELATED_CONTEXTS {
 pub type FLT_RELATED_CONTEXTS = _FLT_RELATED_CONTEXTS;
 pub type PFLT_RELATED_CONTEXTS = *mut _FLT_RELATED_CONTEXTS;
 pub type PFLT_CONTEXT_CLEANUP_CALLBACK = ::core::option::Option<
-    unsafe extern "C" fn(Context: PFLT_CONTEXT, ContextType: FLT_CONTEXT_TYPE),
+    unsafe extern "system" fn(Context: PFLT_CONTEXT, ContextType: FLT_CONTEXT_TYPE),
 >;
 pub type PFLT_CONTEXT_ALLOCATE_CALLBACK = ::core::option::Option<
-    unsafe extern "C" fn(PoolType: POOL_TYPE, Size: SIZE_T, ContextType: FLT_CONTEXT_TYPE) -> PVOID,
+    unsafe extern "system" fn(PoolType: POOL_TYPE, Size: SIZE_T, ContextType: FLT_CONTEXT_TYPE) -> PVOID,
 >;
 pub type PFLT_CONTEXT_FREE_CALLBACK =
-    ::core::option::Option<unsafe extern "C" fn(Pool: PVOID, ContextType: FLT_CONTEXT_TYPE)>;
+    ::core::option::Option<unsafe extern "system" fn(Pool: PVOID, ContextType: FLT_CONTEXT_TYPE)>;
 pub type FLT_CONTEXT_REGISTRATION_FLAGS = USHORT;
 #[repr(C)]
 pub struct _FLT_CONTEXT_REGISTRATION {
@@ -734,7 +734,7 @@ pub type PFLT_CONTEXT_REGISTRATION = *mut _FLT_CONTEXT_REGISTRATION;
 pub type PCFLT_CONTEXT_REGISTRATION = *const _FLT_CONTEXT_REGISTRATION;
 pub type FLT_INSTANCE_SETUP_FLAGS = ULONG;
 pub type PFLT_INSTANCE_SETUP_CALLBACK = ::core::option::Option<
-    unsafe extern "C" fn(
+    unsafe extern "system" fn(
         FltObjects: PCFLT_RELATED_OBJECTS,
         Flags: FLT_INSTANCE_SETUP_FLAGS,
         VolumeDeviceType: ULONG,
@@ -743,14 +743,14 @@ pub type PFLT_INSTANCE_SETUP_CALLBACK = ::core::option::Option<
 >;
 pub type FLT_INSTANCE_QUERY_TEARDOWN_FLAGS = ULONG;
 pub type PFLT_INSTANCE_QUERY_TEARDOWN_CALLBACK = ::core::option::Option<
-    unsafe extern "C" fn(
+    unsafe extern "system" fn(
         FltObjects: PCFLT_RELATED_OBJECTS,
         Flags: FLT_INSTANCE_QUERY_TEARDOWN_FLAGS,
     ) -> NTSTATUS,
 >;
 pub type FLT_INSTANCE_TEARDOWN_FLAGS = ULONG;
 pub type PFLT_INSTANCE_TEARDOWN_CALLBACK = ::core::option::Option<
-    unsafe extern "C" fn(FltObjects: PCFLT_RELATED_OBJECTS, Reason: FLT_INSTANCE_TEARDOWN_FLAGS),
+    unsafe extern "system" fn(FltObjects: PCFLT_RELATED_OBJECTS, Reason: FLT_INSTANCE_TEARDOWN_FLAGS),
 >;
 pub const _FLT_PREOP_CALLBACK_STATUS_FLT_PREOP_SUCCESS_WITH_CALLBACK: _FLT_PREOP_CALLBACK_STATUS =
     0;
@@ -763,7 +763,7 @@ pub type _FLT_PREOP_CALLBACK_STATUS = ::core::ffi::c_uint;
 pub use self::_FLT_PREOP_CALLBACK_STATUS as FLT_PREOP_CALLBACK_STATUS;
 pub type PFLT_PREOP_CALLBACK_STATUS = *mut _FLT_PREOP_CALLBACK_STATUS;
 pub type PFLT_PRE_OPERATION_CALLBACK = ::core::option::Option<
-    unsafe extern "C" fn(
+    unsafe extern "system" fn(
         Data: PFLT_CALLBACK_DATA,
         FltObjects: PCFLT_RELATED_OBJECTS,
         CompletionContext: *mut PVOID,
@@ -778,7 +778,7 @@ pub use self::_FLT_POSTOP_CALLBACK_STATUS as FLT_POSTOP_CALLBACK_STATUS;
 pub type PFLT_POSTOP_CALLBACK_STATUS = *mut _FLT_POSTOP_CALLBACK_STATUS;
 pub type FLT_POST_OPERATION_FLAGS = ULONG;
 pub type PFLT_POST_OPERATION_CALLBACK = ::core::option::Option<
-    unsafe extern "C" fn(
+    unsafe extern "system" fn(
         Data: PFLT_CALLBACK_DATA,
         FltObjects: PCFLT_RELATED_OBJECTS,
         CompletionContext: PVOID,
@@ -844,7 +844,7 @@ pub type FLT_TAG_DATA_BUFFER = _FLT_TAG_DATA_BUFFER;
 pub type PFLT_TAG_DATA_BUFFER = *mut _FLT_TAG_DATA_BUFFER;
 pub type FLT_FILTER_UNLOAD_FLAGS = ULONG;
 pub type PFLT_FILTER_UNLOAD_CALLBACK =
-    ::core::option::Option<unsafe extern "C" fn(Flags: FLT_FILTER_UNLOAD_FLAGS) -> NTSTATUS>;
+    ::core::option::Option<unsafe extern "system" fn(Flags: FLT_FILTER_UNLOAD_FLAGS) -> NTSTATUS>;
 #[repr(C)]
 pub struct _FLT_NAME_CONTROL {
     pub Name: UNICODE_STRING,
@@ -853,7 +853,7 @@ pub type FLT_NAME_CONTROL = _FLT_NAME_CONTROL;
 pub type PFLT_NAME_CONTROL = *mut _FLT_NAME_CONTROL;
 pub type FLT_FILE_NAME_OPTIONS = ULONG;
 pub type PFLT_GENERATE_FILE_NAME = ::core::option::Option<
-    unsafe extern "C" fn(
+    unsafe extern "system" fn(
         Instance: PFLT_INSTANCE,
         FileObject: PFILE_OBJECT,
         CallbackData: PFLT_CALLBACK_DATA,
@@ -864,7 +864,7 @@ pub type PFLT_GENERATE_FILE_NAME = ::core::option::Option<
 >;
 pub type FLT_NORMALIZE_NAME_FLAGS = ULONG;
 pub type PFLT_NORMALIZE_NAME_COMPONENT = ::core::option::Option<
-    unsafe extern "C" fn(
+    unsafe extern "system" fn(
         Instance: PFLT_INSTANCE,
         ParentDirectory: PCUNICODE_STRING,
         VolumeNameLength: USHORT,
@@ -876,7 +876,7 @@ pub type PFLT_NORMALIZE_NAME_COMPONENT = ::core::option::Option<
     ) -> NTSTATUS,
 >;
 pub type PFLT_NORMALIZE_NAME_COMPONENT_EX = ::core::option::Option<
-    unsafe extern "C" fn(
+    unsafe extern "system" fn(
         Instance: PFLT_INSTANCE,
         FileObject: PFILE_OBJECT,
         ParentDirectory: PCUNICODE_STRING,
@@ -889,7 +889,7 @@ pub type PFLT_NORMALIZE_NAME_COMPONENT_EX = ::core::option::Option<
     ) -> NTSTATUS,
 >;
 pub type PFLT_NORMALIZE_CONTEXT_CLEANUP =
-    ::core::option::Option<unsafe extern "C" fn(NormalizationContext: *mut PVOID)>;
+    ::core::option::Option<unsafe extern "system" fn(NormalizationContext: *mut PVOID)>;
 pub type FLT_REGISTRATION_FLAGS = ULONG;
 #[repr(C)]
 pub struct _FLT_REGISTRATION {
@@ -910,11 +910,11 @@ pub struct _FLT_REGISTRATION {
 pub type FLT_REGISTRATION = _FLT_REGISTRATION;
 pub type PFLT_REGISTRATION = *mut _FLT_REGISTRATION;
 pub type PFLT_COMPLETED_ASYNC_IO_CALLBACK = ::core::option::Option<
-    unsafe extern "C" fn(CallbackData: PFLT_CALLBACK_DATA, Context: PFLT_CONTEXT),
+    unsafe extern "system" fn(CallbackData: PFLT_CALLBACK_DATA, Context: PFLT_CONTEXT),
 >;
 pub type FLT_IO_OPERATION_FLAGS = ULONG;
 pub type PFLT_GET_OPERATION_STATUS_CALLBACK = ::core::option::Option<
-    unsafe extern "C" fn(
+    unsafe extern "system" fn(
         FltObjects: PCFLT_RELATED_OBJECTS,
         IopbSnapshot: PFLT_IO_PARAMETER_BLOCK,
         OperationStatus: NTSTATUS,
@@ -958,7 +958,7 @@ pub struct _FLT_VOLUME_PROPERTIES {
 pub type FLT_VOLUME_PROPERTIES = _FLT_VOLUME_PROPERTIES;
 pub type PFLT_VOLUME_PROPERTIES = *mut _FLT_VOLUME_PROPERTIES;
 pub type PFLT_MESSAGE_NOTIFY = ::core::option::Option<
-    unsafe extern "C" fn(
+    unsafe extern "system" fn(
         PortCookie: PVOID,
         InputBuffer: PVOID,
         InputBufferLength: ULONG,
@@ -968,7 +968,7 @@ pub type PFLT_MESSAGE_NOTIFY = ::core::option::Option<
     ) -> NTSTATUS,
 >;
 pub type PFLT_CONNECT_NOTIFY = ::core::option::Option<
-    unsafe extern "C" fn(
+    unsafe extern "system" fn(
         ClientPort: PFLT_PORT,
         ServerPortCookie: PVOID,
         ConnectionContext: PVOID,
@@ -977,9 +977,9 @@ pub type PFLT_CONNECT_NOTIFY = ::core::option::Option<
     ) -> NTSTATUS,
 >;
 pub type PFLT_DISCONNECT_NOTIFY =
-    ::core::option::Option<unsafe extern "C" fn(ConnectionCookie: PVOID)>;
+    ::core::option::Option<unsafe extern "system" fn(ConnectionCookie: PVOID)>;
 pub type PFLT_COMPLETE_CANCELED_CALLBACK =
-    ::core::option::Option<unsafe extern "C" fn(CallbackData: PFLT_CALLBACK_DATA)>;
+    ::core::option::Option<unsafe extern "system" fn(CallbackData: PFLT_CALLBACK_DATA)>;
 #[repr(C)]
 #[derive(Debug, Copy, Clone)]
 pub struct _FLT_DEFERRED_IO_WORKITEM {
@@ -993,42 +993,42 @@ pub struct _FLT_GENERIC_WORKITEM {
 }
 pub type PFLT_GENERIC_WORKITEM = *mut _FLT_GENERIC_WORKITEM;
 pub type PFLT_DEFERRED_IO_WORKITEM_ROUTINE = ::core::option::Option<
-    unsafe extern "C" fn(
+    unsafe extern "system" fn(
         FltWorkItem: PFLT_DEFERRED_IO_WORKITEM,
         CallbackData: PFLT_CALLBACK_DATA,
         Context: PVOID,
     ),
 >;
 pub type PFLT_GENERIC_WORKITEM_ROUTINE = ::core::option::Option<
-    unsafe extern "C" fn(FltWorkItem: PFLT_GENERIC_WORKITEM, FltObject: PVOID, Context: PVOID),
+    unsafe extern "system" fn(FltWorkItem: PFLT_GENERIC_WORKITEM, FltObject: PVOID, Context: PVOID),
 >;
 pub type FLT_CALLBACK_DATA_QUEUE_IO_CONTEXT = IO_CSQ_IRP_CONTEXT;
 pub type PFLT_CALLBACK_DATA_QUEUE_IO_CONTEXT = *mut IO_CSQ_IRP_CONTEXT;
 pub type FLT_CALLBACK_DATA_QUEUE = _FLT_CALLBACK_DATA_QUEUE;
 pub type PFLT_CALLBACK_DATA_QUEUE = *mut _FLT_CALLBACK_DATA_QUEUE;
 pub type PFLT_CALLBACK_DATA_QUEUE_INSERT_IO = ::core::option::Option<
-    unsafe extern "C" fn(
+    unsafe extern "system" fn(
         Cbdq: PFLT_CALLBACK_DATA_QUEUE,
         Cbd: PFLT_CALLBACK_DATA,
         InsertContext: PVOID,
     ) -> NTSTATUS,
 >;
 pub type PFLT_CALLBACK_DATA_QUEUE_REMOVE_IO = ::core::option::Option<
-    unsafe extern "C" fn(Cbdq: PFLT_CALLBACK_DATA_QUEUE, Cbd: PFLT_CALLBACK_DATA),
+    unsafe extern "system" fn(Cbdq: PFLT_CALLBACK_DATA_QUEUE, Cbd: PFLT_CALLBACK_DATA),
 >;
 pub type PFLT_CALLBACK_DATA_QUEUE_PEEK_NEXT_IO = ::core::option::Option<
-    unsafe extern "C" fn(
+    unsafe extern "system" fn(
         Cbdq: PFLT_CALLBACK_DATA_QUEUE,
         Cbd: PFLT_CALLBACK_DATA,
         PeekContext: PVOID,
     ) -> PFLT_CALLBACK_DATA,
 >;
 pub type PFLT_CALLBACK_DATA_QUEUE_ACQUIRE =
-    ::core::option::Option<unsafe extern "C" fn(Cbdq: PFLT_CALLBACK_DATA_QUEUE, Irql: PKIRQL)>;
+    ::core::option::Option<unsafe extern "system" fn(Cbdq: PFLT_CALLBACK_DATA_QUEUE, Irql: PKIRQL)>;
 pub type PFLT_CALLBACK_DATA_QUEUE_RELEASE =
-    ::core::option::Option<unsafe extern "C" fn(Cbdq: PFLT_CALLBACK_DATA_QUEUE, Irql: KIRQL)>;
+    ::core::option::Option<unsafe extern "system" fn(Cbdq: PFLT_CALLBACK_DATA_QUEUE, Irql: KIRQL)>;
 pub type PFLT_CALLBACK_DATA_QUEUE_COMPLETE_CANCELED_IO = ::core::option::Option<
-    unsafe extern "C" fn(Cbdq: PFLT_CALLBACK_DATA_QUEUE, Cbd: PFLT_CALLBACK_DATA),
+    unsafe extern "system" fn(Cbdq: PFLT_CALLBACK_DATA_QUEUE, Cbd: PFLT_CALLBACK_DATA),
 >;
 pub type FLT_CALLBACK_DATA_QUEUE_FLAGS = ULONG;
 #[repr(C)]
@@ -1047,19 +1047,19 @@ pub type PFLT_COMPLETE_LOCK_CALLBACK_DATA_ROUTINE = ::core::option::Option<
     unsafe extern "C" fn(Context: PVOID, CallbackData: PFLT_CALLBACK_DATA) -> NTSTATUS,
 >;
 pub type PFLTOPLOCK_WAIT_COMPLETE_ROUTINE =
-    ::core::option::Option<unsafe extern "C" fn(CallbackData: PFLT_CALLBACK_DATA, Context: PVOID)>;
+    ::core::option::Option<unsafe extern "system" fn(CallbackData: PFLT_CALLBACK_DATA, Context: PVOID)>;
 pub type PFLTOPLOCK_PREPOST_CALLBACKDATA_ROUTINE =
-    ::core::option::Option<unsafe extern "C" fn(CallbackData: PFLT_CALLBACK_DATA, Context: PVOID)>;
-unsafe extern "C" {
+    ::core::option::Option<unsafe extern "system" fn(CallbackData: PFLT_CALLBACK_DATA, Context: PVOID)>;
+unsafe extern "system" {
     pub fn FltSetCallbackDataDirty(Data: PFLT_CALLBACK_DATA);
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn FltClearCallbackDataDirty(Data: PFLT_CALLBACK_DATA);
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn FltIsCallbackDataDirty(Data: PFLT_CALLBACK_DATA) -> BOOLEAN;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn FltDoCompletionProcessingWhenSafe(
         Data: PFLT_CALLBACK_DATA,
         FltObjects: PCFLT_RELATED_OBJECTS,
@@ -1069,49 +1069,49 @@ unsafe extern "C" {
         RetPostOperationStatus: PFLT_POSTOP_CALLBACK_STATUS,
     ) -> BOOLEAN;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn FltCheckAndGrowNameControl(NameCtrl: PFLT_NAME_CONTROL, NewSize: USHORT) -> NTSTATUS;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn FltPurgeFileNameInformationCache(
         Instance: PFLT_INSTANCE,
         FileObject: PFILE_OBJECT,
     ) -> NTSTATUS;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn FltRegisterFilter(
         Driver: PDRIVER_OBJECT,
         Registration: *const FLT_REGISTRATION,
         RetFilter: *mut PFLT_FILTER,
     ) -> NTSTATUS;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn FltUnregisterFilter(Filter: PFLT_FILTER);
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn FltStartFiltering(Filter: PFLT_FILTER) -> NTSTATUS;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn FltGetRoutineAddress(FltMgrRoutineName: PCSTR) -> PVOID;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn FltCompletePendedPreOperation(
         CallbackData: PFLT_CALLBACK_DATA,
         CallbackStatus: FLT_PREOP_CALLBACK_STATUS,
         Context: PVOID,
     );
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn FltCompletePendedPostOperation(CallbackData: PFLT_CALLBACK_DATA);
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn FltRequestOperationStatusCallback(
         Data: PFLT_CALLBACK_DATA,
         CallbackRoutine: PFLT_GET_OPERATION_STATUS_CALLBACK,
         RequesterContext: PVOID,
     ) -> NTSTATUS;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn FltAllocatePoolAlignedWithTag(
         Instance: PFLT_INSTANCE,
         PoolType: POOL_TYPE,
@@ -1119,17 +1119,17 @@ unsafe extern "C" {
         Tag: ULONG,
     ) -> PVOID;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn FltFreePoolAlignedWithTag(Instance: PFLT_INSTANCE, Buffer: PVOID, Tag: ULONG);
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn FltGetFileNameInformation(
         CallbackData: PFLT_CALLBACK_DATA,
         NameOptions: FLT_FILE_NAME_OPTIONS,
         FileNameInformation: *mut PFLT_FILE_NAME_INFORMATION,
     ) -> NTSTATUS;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn FltGetFileNameInformationUnsafe(
         FileObject: PFILE_OBJECT,
         Instance: PFLT_INSTANCE,
@@ -1137,13 +1137,13 @@ unsafe extern "C" {
         FileNameInformation: *mut PFLT_FILE_NAME_INFORMATION,
     ) -> NTSTATUS;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn FltReleaseFileNameInformation(FileNameInformation: PFLT_FILE_NAME_INFORMATION);
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn FltReferenceFileNameInformation(FileNameInformation: PFLT_FILE_NAME_INFORMATION);
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn FltParseFileName(
         FileName: PCUNICODE_STRING,
         Extension: PUNICODE_STRING,
@@ -1151,25 +1151,25 @@ unsafe extern "C" {
         FinalComponent: PUNICODE_STRING,
     ) -> NTSTATUS;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn FltParseFileNameInformation(FileNameInformation: PFLT_FILE_NAME_INFORMATION)
         -> NTSTATUS;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn FltGetTunneledName(
         CallbackData: PFLT_CALLBACK_DATA,
         FileNameInformation: PFLT_FILE_NAME_INFORMATION,
         RetTunneledFileNameInformation: *mut PFLT_FILE_NAME_INFORMATION,
     ) -> NTSTATUS;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn FltGetVolumeName(
         Volume: PFLT_VOLUME,
         VolumeName: PUNICODE_STRING,
         BufferSizeNeeded: PULONG,
     ) -> NTSTATUS;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn FltGetDestinationFileNameInformation(
         Instance: PFLT_INSTANCE,
         FileObject: PFILE_OBJECT,
@@ -1180,20 +1180,20 @@ unsafe extern "C" {
         RetFileNameInformation: *mut PFLT_FILE_NAME_INFORMATION,
     ) -> NTSTATUS;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn FltIsDirectory(
         FileObject: PFILE_OBJECT,
         Instance: PFLT_INSTANCE,
         IsDirectory: PBOOLEAN,
     ) -> NTSTATUS;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn FltLoadFilter(FilterName: PCUNICODE_STRING) -> NTSTATUS;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn FltUnloadFilter(FilterName: PCUNICODE_STRING) -> NTSTATUS;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn FltAttachVolume(
         Filter: PFLT_FILTER,
         Volume: PFLT_VOLUME,
@@ -1201,7 +1201,7 @@ unsafe extern "C" {
         RetInstance: *mut PFLT_INSTANCE,
     ) -> NTSTATUS;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn FltAttachVolumeAtAltitude(
         Filter: PFLT_FILTER,
         Volume: PFLT_VOLUME,
@@ -1210,37 +1210,37 @@ unsafe extern "C" {
         RetInstance: *mut PFLT_INSTANCE,
     ) -> NTSTATUS;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn FltDetachVolume(
         Filter: PFLT_FILTER,
         Volume: PFLT_VOLUME,
         InstanceName: PCUNICODE_STRING,
     ) -> NTSTATUS;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn FltAllocateCallbackData(
         Instance: PFLT_INSTANCE,
         FileObject: PFILE_OBJECT,
         RetNewCallbackData: *mut PFLT_CALLBACK_DATA,
     ) -> NTSTATUS;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn FltFreeCallbackData(CallbackData: PFLT_CALLBACK_DATA);
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn FltReuseCallbackData(CallbackData: PFLT_CALLBACK_DATA);
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn FltPerformSynchronousIo(CallbackData: PFLT_CALLBACK_DATA);
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn FltPerformAsynchronousIo(
         CallbackData: PFLT_CALLBACK_DATA,
         CallbackRoutine: PFLT_COMPLETED_ASYNC_IO_CALLBACK,
         CallbackContext: PVOID,
     ) -> NTSTATUS;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn FltCreateFile(
         Filter: PFLT_FILTER,
         Instance: PFLT_INSTANCE,
@@ -1258,7 +1258,7 @@ unsafe extern "C" {
         Flags: ULONG,
     ) -> NTSTATUS;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn FltReadFile(
         InitiatingInstance: PFLT_INSTANCE,
         FileObject: PFILE_OBJECT,
@@ -1271,7 +1271,7 @@ unsafe extern "C" {
         CallbackContext: PVOID,
     ) -> NTSTATUS;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn FltTagFile(
         InitiatingInstance: PFLT_INSTANCE,
         FileObject: PFILE_OBJECT,
@@ -1281,7 +1281,7 @@ unsafe extern "C" {
         DataBufferLength: USHORT,
     ) -> NTSTATUS;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn FltUntagFile(
         InitiatingInstance: PFLT_INSTANCE,
         FileObject: PFILE_OBJECT,
@@ -1289,7 +1289,7 @@ unsafe extern "C" {
         Guid: *mut GUID,
     ) -> NTSTATUS;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn FltWriteFile(
         InitiatingInstance: PFLT_INSTANCE,
         FileObject: PFILE_OBJECT,
@@ -1302,7 +1302,7 @@ unsafe extern "C" {
         CallbackContext: PVOID,
     ) -> NTSTATUS;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn FltQueryInformationFile(
         Instance: PFLT_INSTANCE,
         FileObject: PFILE_OBJECT,
@@ -1312,7 +1312,7 @@ unsafe extern "C" {
         LengthReturned: PULONG,
     ) -> NTSTATUS;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn FltSetInformationFile(
         Instance: PFLT_INSTANCE,
         FileObject: PFILE_OBJECT,
@@ -1321,7 +1321,7 @@ unsafe extern "C" {
         FileInformationClass: FILE_INFORMATION_CLASS,
     ) -> NTSTATUS;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn FltQueryVolumeInformationFile(
         Instance: PFLT_INSTANCE,
         FileObject: PFILE_OBJECT,
@@ -1331,7 +1331,7 @@ unsafe extern "C" {
         LengthReturned: PULONG,
     ) -> NTSTATUS;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn FltQuerySecurityObject(
         Instance: PFLT_INSTANCE,
         FileObject: PFILE_OBJECT,
@@ -1341,7 +1341,7 @@ unsafe extern "C" {
         LengthNeeded: PULONG,
     ) -> NTSTATUS;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn FltSetSecurityObject(
         Instance: PFLT_INSTANCE,
         FileObject: PFILE_OBJECT,
@@ -1349,10 +1349,10 @@ unsafe extern "C" {
         SecurityDescriptor: PSECURITY_DESCRIPTOR,
     ) -> NTSTATUS;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn FltFlushBuffers(Instance: PFLT_INSTANCE, FileObject: PFILE_OBJECT) -> NTSTATUS;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn FltFsControlFile(
         Instance: PFLT_INSTANCE,
         FileObject: PFILE_OBJECT,
@@ -1364,7 +1364,7 @@ unsafe extern "C" {
         LengthReturned: PULONG,
     ) -> NTSTATUS;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn FltDeviceIoControlFile(
         Instance: PFLT_INSTANCE,
         FileObject: PFILE_OBJECT,
@@ -1376,31 +1376,31 @@ unsafe extern "C" {
         LengthReturned: PULONG,
     ) -> NTSTATUS;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn FltReissueSynchronousIo(
         InitiatingInstance: PFLT_INSTANCE,
         CallbackData: PFLT_CALLBACK_DATA,
     );
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn FltClose(FileHandle: HANDLE) -> NTSTATUS;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn FltCancelFileOpen(Instance: PFLT_INSTANCE, FileObject: PFILE_OBJECT);
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn FltCreateSystemVolumeInformationFolder(Instance: PFLT_INSTANCE) -> NTSTATUS;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn FltSupportsFileContexts(FileObject: PFILE_OBJECT) -> BOOLEAN;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn FltSupportsStreamContexts(FileObject: PFILE_OBJECT) -> BOOLEAN;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn FltSupportsStreamHandleContexts(FileObject: PFILE_OBJECT) -> BOOLEAN;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn FltAllocateContext(
         Filter: PFLT_FILTER,
         ContextType: FLT_CONTEXT_TYPE,
@@ -1409,17 +1409,17 @@ unsafe extern "C" {
         ReturnedContext: *mut PFLT_CONTEXT,
     ) -> NTSTATUS;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn FltGetContexts(
         FltObjects: PCFLT_RELATED_OBJECTS,
         DesiredContexts: FLT_CONTEXT_TYPE,
         Contexts: PFLT_RELATED_CONTEXTS,
     );
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn FltReleaseContexts(Contexts: PFLT_RELATED_CONTEXTS);
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn FltSetVolumeContext(
         Volume: PFLT_VOLUME,
         Operation: FLT_SET_CONTEXT_OPERATION,
@@ -1427,7 +1427,7 @@ unsafe extern "C" {
         OldContext: *mut PFLT_CONTEXT,
     ) -> NTSTATUS;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn FltSetInstanceContext(
         Instance: PFLT_INSTANCE,
         Operation: FLT_SET_CONTEXT_OPERATION,
@@ -1435,7 +1435,7 @@ unsafe extern "C" {
         OldContext: *mut PFLT_CONTEXT,
     ) -> NTSTATUS;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn FltSetFileContext(
         Instance: PFLT_INSTANCE,
         FileObject: PFILE_OBJECT,
@@ -1444,7 +1444,7 @@ unsafe extern "C" {
         OldContext: *mut PFLT_CONTEXT,
     ) -> NTSTATUS;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn FltSetStreamContext(
         Instance: PFLT_INSTANCE,
         FileObject: PFILE_OBJECT,
@@ -1453,7 +1453,7 @@ unsafe extern "C" {
         OldContext: *mut PFLT_CONTEXT,
     ) -> NTSTATUS;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn FltSetStreamHandleContext(
         Instance: PFLT_INSTANCE,
         FileObject: PFILE_OBJECT,
@@ -1462,94 +1462,94 @@ unsafe extern "C" {
         OldContext: *mut PFLT_CONTEXT,
     ) -> NTSTATUS;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn FltDeleteContext(Context: PFLT_CONTEXT);
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn FltDeleteVolumeContext(
         Filter: PFLT_FILTER,
         Volume: PFLT_VOLUME,
         OldContext: *mut PFLT_CONTEXT,
     ) -> NTSTATUS;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn FltDeleteInstanceContext(
         Instance: PFLT_INSTANCE,
         OldContext: *mut PFLT_CONTEXT,
     ) -> NTSTATUS;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn FltDeleteFileContext(
         Instance: PFLT_INSTANCE,
         FileObject: PFILE_OBJECT,
         OldContext: *mut PFLT_CONTEXT,
     ) -> NTSTATUS;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn FltDeleteStreamContext(
         Instance: PFLT_INSTANCE,
         FileObject: PFILE_OBJECT,
         OldContext: *mut PFLT_CONTEXT,
     ) -> NTSTATUS;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn FltDeleteStreamHandleContext(
         Instance: PFLT_INSTANCE,
         FileObject: PFILE_OBJECT,
         OldContext: *mut PFLT_CONTEXT,
     ) -> NTSTATUS;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn FltGetVolumeContext(
         Filter: PFLT_FILTER,
         Volume: PFLT_VOLUME,
         Context: *mut PFLT_CONTEXT,
     ) -> NTSTATUS;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn FltGetInstanceContext(Instance: PFLT_INSTANCE, Context: *mut PFLT_CONTEXT) -> NTSTATUS;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn FltGetFileContext(
         Instance: PFLT_INSTANCE,
         FileObject: PFILE_OBJECT,
         Context: *mut PFLT_CONTEXT,
     ) -> NTSTATUS;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn FltGetStreamContext(
         Instance: PFLT_INSTANCE,
         FileObject: PFILE_OBJECT,
         Context: *mut PFLT_CONTEXT,
     ) -> NTSTATUS;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn FltGetStreamHandleContext(
         Instance: PFLT_INSTANCE,
         FileObject: PFILE_OBJECT,
         Context: *mut PFLT_CONTEXT,
     ) -> NTSTATUS;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn FltReferenceContext(Context: PFLT_CONTEXT);
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn FltReleaseContext(Context: PFLT_CONTEXT);
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn FltGetFilterFromName(
         FilterName: PCUNICODE_STRING,
         RetFilter: *mut PFLT_FILTER,
     ) -> NTSTATUS;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn FltGetVolumeFromName(
         Filter: PFLT_FILTER,
         VolumeName: PCUNICODE_STRING,
         RetVolume: *mut PFLT_VOLUME,
     ) -> NTSTATUS;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn FltGetVolumeInstanceFromName(
         Filter: PFLT_FILTER,
         Volume: PFLT_VOLUME,
@@ -1557,63 +1557,63 @@ unsafe extern "C" {
         RetInstance: *mut PFLT_INSTANCE,
     ) -> NTSTATUS;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn FltGetVolumeFromInstance(
         Instance: PFLT_INSTANCE,
         RetVolume: *mut PFLT_VOLUME,
     ) -> NTSTATUS;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn FltGetFilterFromInstance(
         Instance: PFLT_INSTANCE,
         RetFilter: *mut PFLT_FILTER,
     ) -> NTSTATUS;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn FltGetVolumeFromFileObject(
         Filter: PFLT_FILTER,
         FileObject: PFILE_OBJECT,
         RetVolume: *mut PFLT_VOLUME,
     ) -> NTSTATUS;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn FltGetVolumeFromDeviceObject(
         Filter: PFLT_FILTER,
         DeviceObject: PDEVICE_OBJECT,
         RetVolume: *mut PFLT_VOLUME,
     ) -> NTSTATUS;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn FltGetDeviceObject(Volume: PFLT_VOLUME, DeviceObject: *mut PDEVICE_OBJECT) -> NTSTATUS;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn FltGetDiskDeviceObject(
         Volume: PFLT_VOLUME,
         DiskDeviceObject: *mut PDEVICE_OBJECT,
     ) -> NTSTATUS;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn FltGetLowerInstance(
         CurrentInstance: PFLT_INSTANCE,
         LowerInstance: *mut PFLT_INSTANCE,
     ) -> NTSTATUS;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn FltGetUpperInstance(
         CurrentInstance: PFLT_INSTANCE,
         UpperInstance: *mut PFLT_INSTANCE,
     ) -> NTSTATUS;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn FltGetTopInstance(Volume: PFLT_VOLUME, Instance: *mut PFLT_INSTANCE) -> NTSTATUS;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn FltGetBottomInstance(Volume: PFLT_VOLUME, Instance: *mut PFLT_INSTANCE) -> NTSTATUS;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn FltCompareInstanceAltitudes(Instance1: PFLT_INSTANCE, Instance2: PFLT_INSTANCE) -> LONG;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn FltGetFilterInformation(
         Filter: PFLT_FILTER,
         InformationClass: FILTER_INFORMATION_CLASS,
@@ -1622,7 +1622,7 @@ unsafe extern "C" {
         BytesReturned: PULONG,
     ) -> NTSTATUS;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn FltGetInstanceInformation(
         Instance: PFLT_INSTANCE,
         InformationClass: INSTANCE_INFORMATION_CLASS,
@@ -1631,7 +1631,7 @@ unsafe extern "C" {
         BytesReturned: PULONG,
     ) -> NTSTATUS;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn FltGetVolumeProperties(
         Volume: PFLT_VOLUME,
         VolumeProperties: PFLT_VOLUME_PROPERTIES,
@@ -1639,17 +1639,17 @@ unsafe extern "C" {
         LengthReturned: PULONG,
     ) -> NTSTATUS;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn FltIsVolumeWritable(FltObject: PVOID, IsWritable: PBOOLEAN) -> NTSTATUS;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn FltGetVolumeGuidName(
         Volume: PFLT_VOLUME,
         VolumeGuidName: PUNICODE_STRING,
         BufferSizeNeeded: PULONG,
     ) -> NTSTATUS;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn FltQueryVolumeInformation(
         Instance: PFLT_INSTANCE,
         Iosb: PIO_STATUS_BLOCK,
@@ -1658,7 +1658,7 @@ unsafe extern "C" {
         FsInformationClass: FS_INFORMATION_CLASS,
     ) -> NTSTATUS;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn FltSetVolumeInformation(
         Instance: PFLT_INSTANCE,
         Iosb: PIO_STATUS_BLOCK,
@@ -1667,14 +1667,14 @@ unsafe extern "C" {
         FsInformationClass: FS_INFORMATION_CLASS,
     ) -> NTSTATUS;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn FltEnumerateFilters(
         FilterList: *mut PFLT_FILTER,
         FilterListSize: ULONG,
         NumberFiltersReturned: PULONG,
     ) -> NTSTATUS;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn FltEnumerateVolumes(
         Filter: PFLT_FILTER,
         VolumeList: *mut PFLT_VOLUME,
@@ -1682,7 +1682,7 @@ unsafe extern "C" {
         NumberVolumesReturned: PULONG,
     ) -> NTSTATUS;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn FltEnumerateInstances(
         Volume: PFLT_VOLUME,
         Filter: PFLT_FILTER,
@@ -1691,7 +1691,7 @@ unsafe extern "C" {
         NumberInstancesReturned: PULONG,
     ) -> NTSTATUS;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn FltEnumerateFilterInformation(
         Index: ULONG,
         InformationClass: FILTER_INFORMATION_CLASS,
@@ -1700,7 +1700,7 @@ unsafe extern "C" {
         BytesReturned: PULONG,
     ) -> NTSTATUS;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn FltEnumerateInstanceInformationByFilter(
         Filter: PFLT_FILTER,
         Index: ULONG,
@@ -1710,7 +1710,7 @@ unsafe extern "C" {
         BytesReturned: PULONG,
     ) -> NTSTATUS;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn FltEnumerateInstanceInformationByVolume(
         Volume: PFLT_VOLUME,
         Index: ULONG,
@@ -1720,7 +1720,7 @@ unsafe extern "C" {
         BytesReturned: PULONG,
     ) -> NTSTATUS;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn FltEnumerateVolumeInformation(
         Filter: PFLT_FILTER,
         Index: ULONG,
@@ -1730,13 +1730,13 @@ unsafe extern "C" {
         BytesReturned: PULONG,
     ) -> NTSTATUS;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn FltObjectReference(FltObject: PVOID) -> NTSTATUS;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn FltObjectDereference(FltObject: PVOID);
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn FltCreateCommunicationPort(
         Filter: PFLT_FILTER,
         ServerPort: *mut PFLT_PORT,
@@ -1748,13 +1748,13 @@ unsafe extern "C" {
         MaxConnections: LONG,
     ) -> NTSTATUS;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn FltCloseCommunicationPort(ServerPort: PFLT_PORT);
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn FltCloseClientPort(Filter: PFLT_FILTER, ClientPort: *mut PFLT_PORT);
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn FltSendMessage(
         Filter: PFLT_FILTER,
         ClientPort: *mut PFLT_PORT,
@@ -1765,43 +1765,43 @@ unsafe extern "C" {
         Timeout: PLARGE_INTEGER,
     ) -> NTSTATUS;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn FltBuildDefaultSecurityDescriptor(
         SecurityDescriptor: *mut PSECURITY_DESCRIPTOR,
         DesiredAccess: ACCESS_MASK,
     ) -> NTSTATUS;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn FltFreeSecurityDescriptor(SecurityDescriptor: PSECURITY_DESCRIPTOR);
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn FltCancelIo(CallbackData: PFLT_CALLBACK_DATA) -> BOOLEAN;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn FltSetCancelCompletion(
         CallbackData: PFLT_CALLBACK_DATA,
         CanceledCallback: PFLT_COMPLETE_CANCELED_CALLBACK,
     ) -> NTSTATUS;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn FltClearCancelCompletion(CallbackData: PFLT_CALLBACK_DATA) -> NTSTATUS;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn FltIsIoCanceled(CallbackData: PFLT_CALLBACK_DATA) -> BOOLEAN;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn FltAllocateDeferredIoWorkItem() -> PFLT_DEFERRED_IO_WORKITEM;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn FltFreeDeferredIoWorkItem(FltWorkItem: PFLT_DEFERRED_IO_WORKITEM);
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn FltAllocateGenericWorkItem() -> PFLT_GENERIC_WORKITEM;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn FltFreeGenericWorkItem(FltWorkItem: PFLT_GENERIC_WORKITEM);
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn FltQueueDeferredIoWorkItem(
         FltWorkItem: PFLT_DEFERRED_IO_WORKITEM,
         Data: PFLT_CALLBACK_DATA,
@@ -1810,7 +1810,7 @@ unsafe extern "C" {
         Context: PVOID,
     ) -> NTSTATUS;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn FltQueueGenericWorkItem(
         FltWorkItem: PFLT_GENERIC_WORKITEM,
         FltObject: PVOID,
@@ -1819,10 +1819,10 @@ unsafe extern "C" {
         Context: PVOID,
     ) -> NTSTATUS;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn FltLockUserBuffer(CallbackData: PFLT_CALLBACK_DATA) -> NTSTATUS;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn FltDecodeParameters(
         CallbackData: PFLT_CALLBACK_DATA,
         MdlAddressPointer: *mut *mut PMDL,
@@ -1837,7 +1837,7 @@ unsafe extern "C" {
 unsafe extern "C" {
     pub fn FltRetainSwappedBufferMdlAddress(CallbackData: PFLT_CALLBACK_DATA);
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn FltCbdqInitialize(
         Instance: PFLT_INSTANCE,
         Cbdq: PFLT_CALLBACK_DATA_QUEUE,
@@ -1849,13 +1849,13 @@ unsafe extern "C" {
         CbdqCompleteCanceledIo: PFLT_CALLBACK_DATA_QUEUE_COMPLETE_CANCELED_IO,
     ) -> NTSTATUS;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn FltCbdqEnable(Cbdq: PFLT_CALLBACK_DATA_QUEUE);
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn FltCbdqDisable(Cbdq: PFLT_CALLBACK_DATA_QUEUE);
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn FltCbdqInsertIo(
         Cbdq: PFLT_CALLBACK_DATA_QUEUE,
         Cbd: PFLT_CALLBACK_DATA,
@@ -1863,32 +1863,32 @@ unsafe extern "C" {
         InsertContext: PVOID,
     ) -> NTSTATUS;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn FltCbdqRemoveIo(
         Cbdq: PFLT_CALLBACK_DATA_QUEUE,
         Context: PFLT_CALLBACK_DATA_QUEUE_IO_CONTEXT,
     ) -> PFLT_CALLBACK_DATA;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn FltCbdqRemoveNextIo(
         Cbdq: PFLT_CALLBACK_DATA_QUEUE,
         PeekContext: PVOID,
     ) -> PFLT_CALLBACK_DATA;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn FltInitializeOplock(Oplock: POPLOCK);
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn FltUninitializeOplock(Oplock: POPLOCK);
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn FltOplockFsctrl(
         Oplock: POPLOCK,
         CallbackData: PFLT_CALLBACK_DATA,
         OpenCount: ULONG,
     ) -> FLT_PREOP_CALLBACK_STATUS;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn FltCheckOplock(
         Oplock: POPLOCK,
         CallbackData: PFLT_CALLBACK_DATA,
@@ -1897,83 +1897,83 @@ unsafe extern "C" {
         PrePostCallbackDataRoutine: PFLTOPLOCK_PREPOST_CALLBACKDATA_ROUTINE,
     ) -> FLT_PREOP_CALLBACK_STATUS;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn FltOplockIsFastIoPossible(Oplock: POPLOCK) -> BOOLEAN;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn FltCurrentBatchOplock(Oplock: POPLOCK) -> BOOLEAN;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn FltInitializeFileLock(FileLock: PFILE_LOCK);
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn FltUninitializeFileLock(FileLock: PFILE_LOCK);
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn FltAllocateFileLock(
         CompleteLockCallbackDataRoutine: PFLT_COMPLETE_LOCK_CALLBACK_DATA_ROUTINE,
         UnlockRoutine: PUNLOCK_ROUTINE,
     ) -> PFILE_LOCK;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn FltFreeFileLock(FileLock: PFILE_LOCK);
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn FltProcessFileLock(
         FileLock: PFILE_LOCK,
         CallbackData: PFLT_CALLBACK_DATA,
         Context: PVOID,
     ) -> FLT_PREOP_CALLBACK_STATUS;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn FltCheckLockForReadAccess(
         FileLock: PFILE_LOCK,
         CallbackData: PFLT_CALLBACK_DATA,
     ) -> BOOLEAN;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn FltCheckLockForWriteAccess(
         FileLock: PFILE_LOCK,
         CallbackData: PFLT_CALLBACK_DATA,
     ) -> BOOLEAN;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn FltAcquireResourceExclusive(Resource: PERESOURCE);
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn FltAcquireResourceShared(Resource: PERESOURCE);
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn FltReleaseResource(Resource: PERESOURCE);
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn FltInitializePushLock(PushLock: PEX_PUSH_LOCK);
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn FltDeletePushLock(PushLock: PEX_PUSH_LOCK);
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn FltAcquirePushLockExclusive(PushLock: PEX_PUSH_LOCK);
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn FltAcquirePushLockShared(PushLock: PEX_PUSH_LOCK);
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn FltReleasePushLock(PushLock: PEX_PUSH_LOCK);
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn FltIsOperationSynchronous(CallbackData: PFLT_CALLBACK_DATA) -> BOOLEAN;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn FltIs32bitProcess(CallbackData: PFLT_CALLBACK_DATA) -> BOOLEAN;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn FltGetRequestorProcess(CallbackData: PFLT_CALLBACK_DATA) -> PEPROCESS;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn FltGetRequestorProcessId(CallbackData: PFLT_CALLBACK_DATA) -> ULONG;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn FltNotifyFilterChangeDirectory(
         NotifySync: PNOTIFY_SYNC,
         NotifyList: PLIST_ENTRY,
@@ -1988,10 +1988,10 @@ unsafe extern "C" {
         FilterCallback: PFILTER_REPORT_CHANGE,
     );
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn FltGetIrpName(IrpMajorCode: UCHAR) -> PCHAR;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn FltCreateFileEx(
         Filter: PFLT_FILTER,
         Instance: PFLT_INSTANCE,
@@ -2010,14 +2010,14 @@ unsafe extern "C" {
         Flags: ULONG,
     ) -> NTSTATUS;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn FltOpenVolume(
         Instance: PFLT_INSTANCE,
         VolumeHandle: PHANDLE,
         VolumeFileObject: *mut PFILE_OBJECT,
     ) -> NTSTATUS;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn FltQueryEaFile(
         Instance: PFLT_INSTANCE,
         FileObject: PFILE_OBJECT,
@@ -2031,7 +2031,7 @@ unsafe extern "C" {
         LengthReturned: PULONG,
     ) -> NTSTATUS;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn FltSetEaFile(
         Instance: PFLT_INSTANCE,
         FileObject: PFILE_OBJECT,

@@ -212,17 +212,7 @@ unsafe fn OnTimer(hwndDlg: HWND, pShutdownParams: PSYS_SHUTDOWN_PARAMS) {
 // DLGPROC ABI: stdcall on i386, C on amd64/arm64. winlogon-sys emits the
 // callback type accordingly; `extern "system"` is a *distinct* fn-ptr type
 // from both even at the same ABI, so match per-arch via thin wrappers.
-#[cfg(target_arch = "x86")]
-unsafe extern "stdcall" fn ShutdownDialogProc(
-    hwndDlg: HWND,
-    uMsg: UINT,
-    wParam: WPARAM,
-    lParam: LPARAM,
-) -> INT_PTR {
-    ShutdownDialogProcImpl(hwndDlg, uMsg, wParam, lParam)
-}
-#[cfg(not(target_arch = "x86"))]
-unsafe extern "C" fn ShutdownDialogProc(
+unsafe extern "system" fn ShutdownDialogProc(
     hwndDlg: HWND,
     uMsg: UINT,
     wParam: WPARAM,
@@ -289,12 +279,7 @@ unsafe fn ShutdownDialogProcImpl(
     1
 }
 
-#[cfg(target_arch = "x86")]
-unsafe extern "stdcall" fn InitiateSystemShutdownThread(lpParameter: LPVOID) -> u32 {
-    InitiateSystemShutdownThreadImpl(lpParameter)
-}
-#[cfg(not(target_arch = "x86"))]
-unsafe extern "C" fn InitiateSystemShutdownThread(lpParameter: LPVOID) -> u32 {
+unsafe extern "system" fn InitiateSystemShutdownThread(lpParameter: LPVOID) -> u32 {
     InitiateSystemShutdownThreadImpl(lpParameter)
 }
 

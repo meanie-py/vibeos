@@ -46,7 +46,7 @@ unsafe fn gdidev_alphablend(pso: *mut SURFOBJ) -> PFN_DrvAlphaBlend {
 }
 #[cfg(target_arch = "x86")]
 #[no_mangle]
-pub unsafe extern "stdcall" fn EngAlphaBlend(
+pub unsafe extern "system" fn EngAlphaBlend(
     psoDest: *mut SURFOBJ,
     psoSource: *mut SURFOBJ,
     ClipRegion: *mut CLIPOBJ,
@@ -252,7 +252,7 @@ pub unsafe extern "stdcall" fn EngAlphaBlend(
 
 #[cfg(not(target_arch = "x86"))]
 #[no_mangle]
-pub unsafe extern "C" fn EngAlphaBlend(
+pub unsafe extern "system" fn EngAlphaBlend(
     psoDest: *mut SURFOBJ,
     psoSource: *mut SURFOBJ,
     ClipRegion: *mut CLIPOBJ,
@@ -453,9 +453,8 @@ pub unsafe extern "C" fn EngAlphaBlend(
 
     Ret as u32
 }
-#[cfg(target_arch = "x86")]
 #[no_mangle]
-pub unsafe extern "stdcall" fn IntEngAlphaBlend(
+pub unsafe extern "system" fn IntEngAlphaBlend(
     psoDest: *mut SURFOBJ,
     psoSource: *mut SURFOBJ,
     pco: *mut CLIPOBJ,
@@ -495,81 +494,8 @@ pub unsafe extern "stdcall" fn IntEngAlphaBlend(
 
     ret
 }
-
-#[cfg(not(target_arch = "x86"))]
 #[no_mangle]
-pub unsafe extern "C" fn IntEngAlphaBlend(
-    psoDest: *mut SURFOBJ,
-    psoSource: *mut SURFOBJ,
-    pco: *mut CLIPOBJ,
-    pxlo: *mut XLATEOBJ,
-    prclDest: *mut RECTL,
-    prclSrc: *mut RECTL,
-    pBlendObj: *mut BLENDOBJ,
-) -> u32 {
-    let mut ret: u32 = 0;
-    let mut pco = pco;
-
-    if pco.is_null() {
-        pco = core::ptr::addr_of!(gxcoTrivial) as *mut CLIPOBJ;
-    }
-
-    if (*pco).rclBounds.left >= (*pco).rclBounds.right ||
-       (*pco).rclBounds.top >= (*pco).rclBounds.bottom
-    {
-        return 1;
-    }
-
-    let psurfDest = (psoDest as *mut u8).sub(core::mem::offset_of!(SURFACE, SurfObj)) as *mut SURFACE;
-
-    if ((*psurfDest).flags & HOOK_ALPHABLEND as FLONG) != 0 {
-        if let Some(drv_alpha_blend) = gdidev_alphablend(psoDest) {
-            ret = drv_alpha_blend(
-                psoDest, psoSource, pco, pxlo,
-                prclDest, prclSrc, pBlendObj
-            ) as u32;
-        }
-    }
-
-    if ret == 0 {
-        ret = EngAlphaBlend(psoDest, psoSource, pco, pxlo,
-                            prclDest, prclSrc, pBlendObj);
-    }
-
-    ret
-}
-#[cfg(target_arch = "x86")]
-#[no_mangle]
-pub unsafe extern "stdcall" fn NtGdiEngAlphaBlend(
-    psoDest: *mut SURFOBJ,
-    psoSource: *mut SURFOBJ,
-    ClipRegion: *mut CLIPOBJ,
-    ColorTranslation: *mut XLATEOBJ,
-    upDestRect: PRECTL,
-    upSourceRect: PRECTL,
-    BlendObj: *mut BLENDOBJ,
-) -> u32 {
-
-    let mut DestRect: RECTL = core::mem::zeroed();
-    let mut SourceRect: RECTL = core::mem::zeroed();
-
-    let mut Status = SafeProbeForRead(upDestRect as *const core::ffi::c_void, core::mem::size_of::<RECTL>(), 1);
-    if NT_SUCCESS(Status) {
-        Status = SafeProbeForRead(upSourceRect as *const core::ffi::c_void, core::mem::size_of::<RECTL>(), 1);
-    }
-    if !NT_SUCCESS(Status) {
-        return 0;
-    } else {
-        RtlCopyMemory(core::ptr::addr_of_mut!(DestRect) as *mut core::ffi::c_void, upDestRect as *const core::ffi::c_void, core::mem::size_of::<RECTL>());
-        RtlCopyMemory(core::ptr::addr_of_mut!(SourceRect) as *mut core::ffi::c_void, upSourceRect as *const core::ffi::c_void, core::mem::size_of::<RECTL>());
-    }
-
-    return EngAlphaBlend(psoDest, psoSource, ClipRegion, ColorTranslation, core::ptr::addr_of_mut!(DestRect), core::ptr::addr_of_mut!(SourceRect), BlendObj);
-}
-
-#[cfg(not(target_arch = "x86"))]
-#[no_mangle]
-pub unsafe extern "C" fn NtGdiEngAlphaBlend(
+pub unsafe extern "system" fn NtGdiEngAlphaBlend(
     psoDest: *mut SURFOBJ,
     psoSource: *mut SURFOBJ,
     ClipRegion: *mut CLIPOBJ,

@@ -21,9 +21,8 @@ pub struct _GDI_DC_ATTR_ENTRY {
 
 pub type GDI_DC_ATTR_ENTRY = _GDI_DC_ATTR_ENTRY;
 pub type PGDI_DC_ATTR_ENTRY = *mut _GDI_DC_ATTR_ENTRY;
-#[cfg(target_arch = "x86")]
 #[no_mangle]
-pub unsafe extern "stdcall" fn DC_bAllocDcAttr(pdc: PDC) -> u8 {
+pub unsafe extern "system" fn DC_bAllocDcAttr(pdc: PDC) -> u8 {
     let ppi: PPROCESSINFO;
     let pdcattr: PDC_ATTR;
 
@@ -41,48 +40,8 @@ pub unsafe extern "stdcall" fn DC_bAllocDcAttr(pdc: PDC) -> u8 {
 
     return 1u8;
 }
-
-#[cfg(not(target_arch = "x86"))]
 #[no_mangle]
-pub unsafe extern "C" fn DC_bAllocDcAttr(pdc: PDC) -> u8 {
-    let ppi: PPROCESSINFO;
-    let pdcattr: PDC_ATTR;
-
-    ppi = PsGetCurrentProcessWin32Process() as PPROCESSINFO;
-
-    pdcattr = GdiPoolAllocate((*ppi).pPoolDcAttr) as PDC_ATTR;
-    if pdcattr.is_null() {
-        return 0u8;
-    }
-
-    (*pdc).pdcattr = pdcattr;
-    *(*pdc).pdcattr = (*pdc).dcattr;
-
-    GDIOBJ_vSetObjectAttr(core::ptr::addr_of_mut!((*pdc).BaseObject), pdcattr as *mut core::ffi::c_void);
-
-    return 1u8;
-}
-#[cfg(target_arch = "x86")]
-#[no_mangle]
-pub unsafe extern "stdcall" fn DC_vFreeDcAttr(pdc: PDC) {
-    let ppi: PPROCESSINFO;
-
-    if (*pdc).pdcattr == core::ptr::addr_of_mut!((*pdc).dcattr) {
-        return;
-    }
-
-    GDIOBJ_vSetObjectAttr(core::ptr::addr_of_mut!((*pdc).BaseObject), core::ptr::null_mut());
-
-    ppi = PsGetCurrentProcessWin32Process() as PPROCESSINFO;
-
-    GdiPoolFree((*ppi).pPoolDcAttr, (*pdc).pdcattr as *mut core::ffi::c_void);
-
-    (*pdc).pdcattr = core::ptr::addr_of_mut!((*pdc).dcattr);
-}
-
-#[cfg(not(target_arch = "x86"))]
-#[no_mangle]
-pub unsafe extern "C" fn DC_vFreeDcAttr(pdc: PDC) {
+pub unsafe extern "system" fn DC_vFreeDcAttr(pdc: PDC) {
     let ppi: PPROCESSINFO;
 
     if (*pdc).pdcattr == core::ptr::addr_of_mut!((*pdc).dcattr) {

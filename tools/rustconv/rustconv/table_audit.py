@@ -243,7 +243,15 @@ _CHAR_ESCAPES = {
 
 def normalize_element(e: str) -> int | None:
     """A literal's integer value, or None if it is symbolic (→ 'unchecked')."""
-    e = e.strip().rstrip("uUlL")
+    e = e.strip()
+    # A RUST width suffix, before the C one. `rstrip("uUlL")` cannot take `u16` — it ends in a
+    # digit — so `0x0043u16` fell through to `int(e, 0)`, failed, and reported as SYMBOLIC: an
+    # element silently exempted from the very check this function exists to perform. Third
+    # sighting of this class (crate_repair's `1usize`, scan_wide_literals' `u16`), and the one
+    # that matters most now that `--seal-wide` types its restored arrays by suffixing the first
+    # element. The lookbehind keeps `0x16` and plain `16` intact.
+    e = re.sub(r"(?<=[0-9a-fA-F])(?:[ui](?:8|16|32|64|128|size))$", "", e)
+    e = e.rstrip("uUlL")
     if not e:
         return None
     # Char literal, C or Rust: 'x' 'b'x'' '\0' '\n' '\005' (C octal) '\x41' (Rust hex).

@@ -175,19 +175,8 @@ unsafe fn NtUserConsoleControl_impl(
     Status
 }
 
-#[cfg(target_arch = "x86")]
 #[no_mangle]
-pub unsafe extern "stdcall" fn NtUserConsoleControl(
-    ConsoleCtrl: CONSOLECONTROL,
-    ConsoleCtrlInfo: PVOID,
-    ConsoleCtrlInfoLength: ULONG,
-) -> NTSTATUS {
-    NtUserConsoleControl_impl(ConsoleCtrl, ConsoleCtrlInfo, ConsoleCtrlInfoLength)
-}
-
-#[cfg(not(target_arch = "x86"))]
-#[no_mangle]
-pub unsafe extern "C" fn NtUserConsoleControl(
+pub unsafe extern "system" fn NtUserConsoleControl(
     ConsoleCtrl: CONSOLECONTROL,
     ConsoleCtrlInfo: PVOID,
     ConsoleCtrlInfoLength: ULONG,

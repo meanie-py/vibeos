@@ -26,12 +26,25 @@ extern "C" {
 macro_rules! DPRINT {
     ($($arg:tt)*) => {{}};
 }
-// DPRINT1 / DPRINT2 / DH_DbgPrint are the other ROS debug channels. They are debug MACROS (a no-op
-// `#[cfg]`-gated macro is the sanctioned form — field-manual §9.65; an out-of-line no-op fn would be
-// an ABI barrier). Callers use fn-call syntax `DPRINT1(...)`, rewritten to `DPRINT1!(...)` in the grind.
+// DPRINT1 / DPRINT2 / DH_DbgPrint are the other ROS debug channels. All are MACROS, never
+// out-of-line fns (field-manual §9.65: an out-of-line no-op is an ABI barrier). Callers use
+// fn-call syntax `DPRINT1(...)`, rewritten to `DPRINT1!(...)` in the grind.
+//
+// DPRINT1 is the one that is NOT a no-op. debug.h puts it under `#if DBG` beneath the comment
+// "These are always printed"; only DPRINT is further gated on `#ifndef NDEBUG`. Our builds set
+// DBG=TRUE, so every DPRINT1 in the C this replaced prints, and a no-op deletes a diagnostic
+// from exactly the failure path that needed one.
 #[macro_export]
 macro_rules! DPRINT1 {
-    ($($arg:tt)*) => {{}};
+    ($fmt:literal $(, $arg:expr)* $(,)?) => {{
+        unsafe { $crate::prelude::DbgPrint(concat!($fmt, "\0").as_ptr() as *const _ $(, $arg)*) };
+    }};
+    // Some grind output already lowered the format to a NUL-terminated `*const c_char`
+    // (dhcpcsvc's util.rs writes `"ERROR: %s\n\0".as_ptr() as *const i8`). Tried second, so a
+    // plain literal still takes the arm above and gets its NUL appended exactly once.
+    ($fmt:expr $(, $arg:expr)* $(,)?) => {{
+        unsafe { $crate::prelude::DbgPrint($fmt $(, $arg)*) };
+    }};
 }
 #[macro_export]
 macro_rules! DPRINT2 {

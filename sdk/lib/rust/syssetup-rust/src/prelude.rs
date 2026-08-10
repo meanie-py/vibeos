@@ -218,9 +218,8 @@ pub use crate::types::{
 // each of which would have had to be checked for being the RIGHT cast.
 pub const TRUE: BOOL = 1;
 pub const FALSE: BOOL = 0;
-pub const INVALID_HANDLE_VALUE: HANDLE = -1isize as HANDLE; // handleapi.h: ((HANDLE)(LONG_PTR)-1)
 pub const INVALID_FILE_ATTRIBUTES: DWORD = 0xFFFFFFFF; // fileapi.h: ((DWORD)-1)
-pub const UNICODE_NULL: WCHAR = 0; // ntdef.h: ((WCHAR)0)
+pub use win32macros_rust::{INVALID_HANDLE_VALUE, UNICODE_NULL};
 pub const HWND_TOP: HWND = 0 as HWND; // winuser.h: ((HWND)0)
 pub const RPC_S_OK: RPC_STATUS = 0; // winerror.h: ERROR_SUCCESS
 pub const CLSCTX_INPROC_SERVER: DWORD = 0x1; // wtypesbase.h, an enum member bindgen prefixes
@@ -231,9 +230,10 @@ pub const GEO_FRIENDLYNAME: SYSGEOTYPE = 8; // winnls.h SYSGEOTYPE enum
 pub const SC_STATUS_PROCESS_INFO: SC_STATUS_TYPE = 0; // winsvc.h SC_STATUS_TYPE enum
 pub const SPINST_REGISTERCALLBACKAWARE: DWORD = 0x00000400; // setupapi.h
 pub const IDI_WINLOGO: LPCWSTR = 32517 as LPCWSTR; // winuser.h: MAKEINTRESOURCE(32517)
-// winuser.h `#define DWLP_USER (DWLP_MSGRESULT + sizeof(LRESULT))`, itself built on
-// `DWLP_MSGRESULT 0` — computed, so bindgen emits neither.
-pub const DWLP_USER: c_int = (core::mem::size_of::<LRESULT>() * 2) as c_int;
+// winuser.h:881-883, a three-macro chain ending in
+// `DWLP_USER (DWLP_DLGPROC + sizeof(DLGPROC))` — computed, so bindgen emits none of it. Shared,
+// and the shared copy records why it must stay computed rather than pasted per target.
+pub use win32macros_rust::{DWLP_DLGPROC, DWLP_MSGRESULT, DWLP_USER};
 // winreg.h predefined keys: `#define HKEY_LOCAL_MACHINE ((HKEY)(ULONG_PTR)((LONG)0x80000002))`.
 pub const HKEY_CLASSES_ROOT: HKEY = 0x80000000u32 as usize as HKEY;
 pub const HKEY_CURRENT_USER: HKEY = 0x80000001u32 as usize as HKEY;
@@ -254,48 +254,23 @@ pub use crate::types::IID_IShellLinkW as IID_IShellLink;
 // ================= header macros ==============================================================
 // C macros never reach the island. All stay `macro_rules!` and never become out-of-line fns: an
 // out-of-line forwarder is an optimization barrier that uncloaks latent ABI mismatches (§9.65).
+// The word/colour/locale/resource family lives in `win32macros-rust`, ported once from the
+// headers and known-answer tested there. Re-exported here under the same names, so no call site
+// changed.
+pub use win32macros_rust::{
+    ARRAYSIZE, HIWORD, LOWORD, MAKEINTRESOURCEW, MAKELCID, MAKELONG, PRIMARYLANGID, RGB, _countof,
+};
+// MAKEINTRESOURCE (no suffix) is MAKEINTRESOURCEW only because syssetup compiles -DUNICODE. That
+// is this module's property, not the shared crate's, so the alias stays here.
 #[macro_export]
-macro_rules! ARRAYSIZE { ($a:expr $(,)?) => { ($a).len() as u32 }; }
-pub use crate::ARRAYSIZE;
-#[macro_export]
-macro_rules! _countof { ($a:expr $(,)?) => { ($a).len() as u32 }; }
-pub use crate::_countof;
-#[macro_export]
-macro_rules! LOWORD { ($l:expr $(,)?) => { (($l as DWORD_PTR) & 0xffff) as WORD }; }
-pub use crate::LOWORD;
-#[macro_export]
-macro_rules! HIWORD { ($l:expr $(,)?) => { ((($l as DWORD_PTR) >> 16) & 0xffff) as WORD }; }
-pub use crate::HIWORD;
-#[macro_export]
-macro_rules! MAKELPARAM {
-    ($lo:expr, $hi:expr $(,)?) => { ((($lo as WORD) as DWORD) | ((($hi as WORD) as DWORD) << 16)) as LPARAM };
-}
-pub use crate::MAKELPARAM;
-#[macro_export]
-macro_rules! RGB {
-    ($r:expr, $g:expr, $b:expr $(,)?) => {
-        (($r as COLORREF) | (($g as COLORREF) << 8) | (($b as COLORREF) << 16)) as COLORREF
-    };
-}
-pub use crate::RGB;
-// winuser.h `#define MAKEINTRESOURCEW(i) ((LPWSTR)((ULONG_PTR)((WORD)(i))))`
-#[macro_export]
-macro_rules! MAKEINTRESOURCE { ($i:expr $(,)?) => { (($i as WORD) as usize) as LPWSTR }; }
+macro_rules! MAKEINTRESOURCE { ($i:expr $(,)?) => { $crate::prelude::MAKEINTRESOURCEW!($i) }; }
 pub use crate::MAKEINTRESOURCE;
+// winuser.h:4110. Stays module-local because LPARAM is a pointer-width island alias (c_long on
+// i386, c_longlong on the 64-bit pair) — NOT isize, which is a distinct primitive and would not
+// unify. Only the MAKELONG inside it is shared.
 #[macro_export]
-macro_rules! MAKEINTRESOURCEW { ($i:expr $(,)?) => { (($i as WORD) as usize) as LPWSTR }; }
-pub use crate::MAKEINTRESOURCEW;
-// winnt.h `#define MAKELCID(lgid, srtid) ((DWORD)((((DWORD)((WORD)(srtid))) << 16) | \
-//                                                 ((DWORD)((WORD)(lgid)))))`
-#[macro_export]
-macro_rules! MAKELCID {
-    ($lgid:expr, $srtid:expr $(,)?) => { (((($srtid as WORD) as DWORD) << 16) | (($lgid as WORD) as DWORD)) as LCID };
-}
-pub use crate::MAKELCID;
-// winnt.h `#define PRIMARYLANGID(lgid) ((WORD)(lgid) & 0x3ff)`
-#[macro_export]
-macro_rules! PRIMARYLANGID { ($lgid:expr $(,)?) => { (($lgid as WORD) & 0x3ff) as WORD }; }
-pub use crate::PRIMARYLANGID;
+macro_rules! MAKELPARAM { ($lo:expr, $hi:expr $(,)?) => { $crate::prelude::MAKELONG!($lo, $hi) as LPARAM }; }
+pub use crate::MAKELPARAM;
 // winerror.h `#define FAILED(hr) (((HRESULT)(hr)) < 0)`. The comparison is on the SIGNED
 // HRESULT: an intervening `as u32` makes it unconditionally false and deletes the failure branch.
 #[macro_export]
@@ -307,11 +282,7 @@ pub use crate::SUCCEEDED;
 // winbase.h `#define ZeroMemory RtlZeroMemory` / `#define RtlCopyMemory memcpy`. NEVER a
 // hand-rolled byte loop: LLVM folds one back into a call to memset/memcpy itself → infinite
 // self-recursion → silent hang (AGENTS.md).
-#[macro_export]
-macro_rules! ZeroMemory {
-    ($d:expr, $l:expr $(,)?) => { { $crate::prelude::memset($d as *mut core::ffi::c_void, 0, $l as usize); } };
-}
-pub use crate::ZeroMemory;
+pub use win32macros_rust::ZeroMemory;
 #[macro_export]
 macro_rules! RtlCopyMemory {
     ($d:expr, $s:expr, $l:expr $(,)?) => { { $crate::prelude::memcpy($d as *mut core::ffi::c_void, $s as *const core::ffi::c_void, $l as usize); } };

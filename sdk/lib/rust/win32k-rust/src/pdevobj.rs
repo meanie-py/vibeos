@@ -243,63 +243,8 @@ unsafe fn PDEVOBJ_vDeletePDEV(ppdev: PPDEVOBJ) {
     }
     ExFreePoolWithTag(ppdev as *mut core::ffi::c_void, GDITAG_PDEV);
 }
-#[cfg(target_arch = "x86")]
 #[no_mangle]
-pub unsafe extern "stdcall" fn PDEVOBJ_vRelease(
-    ppdev: PPDEVOBJ) {
-
-    EngAcquireSemaphore(ghsemPDEV);
-
-    InterlockedDecrement(&mut (*ppdev).cPdevRefs);
-
-    if (*ppdev).cPdevRefs == 0 {
-        if !(*ppdev).pSurface.is_null() {
-            // SURFACE_ShareUnlockSurface(pBMObj) macro from gdi/eng/surface.h:102
-            //   => GDIOBJ_vDereferenceObject((POBJ)pBMObj)
-            GDIOBJ_vDereferenceObject((*ppdev).pSurface as POBJ);
-            TRACE!(b"DrvDisableSurface(dhpdev %p)\n\0".as_ptr() as *const i8, (*ppdev).dhpdev);
-            ((*ppdev).__bindgen_anon_1.pfn.DisableSurface.unwrap())((*ppdev).dhpdev);
-        }
-
-        if !(*ppdev).ppalSurf.is_null() {
-            // PALETTE_ShareUnlockPalette(ppal) macro from gdi/ntgdi/palette.h:59
-            //   => GDIOBJ_vDereferenceObject(&ppal->BaseObject)
-            GDIOBJ_vDereferenceObject(core::ptr::addr_of_mut!((*(*ppdev).ppalSurf).BaseObject));
-        }
-
-        if !(*ppdev).dhpdev.is_null() {
-            TRACE!(b"DrvDisablePDEV(dhpdev %p)\n\0".as_ptr() as *const i8, (*ppdev).dhpdev);
-            ((*ppdev).__bindgen_anon_1.pfn.DisablePDEV.unwrap())((*ppdev).dhpdev);
-        }
-
-        if ppdev == gppdevList {
-            gppdevList = (*ppdev).ppdevNext;
-        } else if !gppdevList.is_null() {
-            let mut ppdevCurrent = gppdevList;
-            let mut found = 0u8;
-            while found == 0 && !(*ppdevCurrent).ppdevNext.is_null() {
-                if (*ppdevCurrent).ppdevNext == ppdev {
-                    found = 1u8;
-                } else {
-                    ppdevCurrent = (*ppdevCurrent).ppdevNext;
-                }
-            }
-            if found != 0 {
-                (*ppdevCurrent).ppdevNext = (*ppdev).ppdevNext;
-            }
-        }
-
-        EngUnloadImage((*ppdev).pldev as HANDLE);
-
-        PDEVOBJ_vDeletePDEV(ppdev);
-    }
-
-    EngReleaseSemaphore(ghsemPDEV);
-}
-
-#[cfg(not(target_arch = "x86"))]
-#[no_mangle]
-pub unsafe extern "C" fn PDEVOBJ_vRelease(
+pub unsafe extern "system" fn PDEVOBJ_vRelease(
     ppdev: PPDEVOBJ) {
 
     EngAcquireSemaphore(ghsemPDEV);
@@ -489,37 +434,8 @@ unsafe fn PDEVOBJ_vFilterDriverHooks(
     if dwAccelerationLevel >= 5 {
     }
 }
-#[cfg(target_arch = "x86")]
 #[no_mangle]
-pub unsafe extern "stdcall" fn PDEVOBJ_pSurface(
-    ppdev: PPDEVOBJ,
-) -> PSURFACE {
-
-    let mut hsurf: HSURF;
-
-    if (*ppdev).pSurface == core::ptr::null_mut() {
-        hsurf = ((*ppdev).__bindgen_anon_1.pfn.EnableSurface.unwrap())((*ppdev).dhpdev);
-        if hsurf == core::ptr::null_mut() {
-            return core::ptr::null_mut();
-        }
-
-        // SURFACE_ShareLockSurface(hBMObj) macro from gdi/eng/surface.h:91
-        //   => (PSURFACE)GDIOBJ_ShareLockObj((HGDIOBJ)hBMObj, GDI_OBJECT_TYPE_BITMAP)
-        (*ppdev).pSurface = GDIOBJ_ShareLockObj(
-            hsurf as HGDIOBJ,
-            GDI_OBJECT_TYPE_BITMAP,
-        ) as PSURFACE;
-        NT_ASSERT!(((*ppdev).pSurface != core::ptr::null_mut()) as u8);
-    }
-
-    GDIOBJ_vReferenceObjectByPointer(core::ptr::addr_of_mut!((*(*ppdev).pSurface).BaseObject));
-
-    (*ppdev).pSurface
-}
-
-#[cfg(not(target_arch = "x86"))]
-#[no_mangle]
-pub unsafe extern "C" fn PDEVOBJ_pSurface(
+pub unsafe extern "system" fn PDEVOBJ_pSurface(
     ppdev: PPDEVOBJ,
 ) -> PSURFACE {
 
@@ -647,14 +563,8 @@ pub unsafe extern "C" fn PDEVOBJ_bDisableDisplay(
 }
 
 // NTAPI in C (device.h:6) — stdcall on i386, cdecl elsewhere.
-#[cfg(target_arch = "x86")]
 #[no_mangle]
-pub unsafe extern "stdcall" fn PDEVOBJ_vRefreshModeList(ppdev: PPDEVOBJ) {
-    PDEVOBJ_vRefreshModeList_impl(ppdev)
-}
-#[cfg(not(target_arch = "x86"))]
-#[no_mangle]
-pub unsafe extern "C" fn PDEVOBJ_vRefreshModeList(ppdev: PPDEVOBJ) {
+pub unsafe extern "system" fn PDEVOBJ_vRefreshModeList(ppdev: PPDEVOBJ) {
     PDEVOBJ_vRefreshModeList_impl(ppdev)
 }
 
@@ -831,9 +741,8 @@ unsafe fn SwitchPointer(
     *ppvPointer1 = *ppvPointer2;
     *ppvPointer2 = pvTemp;
 }
-#[cfg(target_arch = "x86")]
 #[no_mangle]
-pub unsafe extern "stdcall" fn PDEVOBJ_bDynamicModeChange(
+pub unsafe extern "system" fn PDEVOBJ_bDynamicModeChange(
     ppdev: PPDEVOBJ,
     ppdev2: PPDEVOBJ,
 ) -> BOOL {
@@ -887,150 +796,8 @@ pub unsafe extern "stdcall" fn PDEVOBJ_bDynamicModeChange(
 
     1
 }
-
-#[cfg(not(target_arch = "x86"))]
 #[no_mangle]
-pub unsafe extern "C" fn PDEVOBJ_bDynamicModeChange(
-    ppdev: PPDEVOBJ,
-    ppdev2: PPDEVOBJ,
-) -> BOOL {
-    let mut temp_pfn: DRIVER_FUNCTIONS;
-    let mut temp_gdiinfo: GDIINFO;
-    let mut temp_devinfo: DEVINFO;
-    let mut temp_StateFlags: DWORD;
-
-    temp_pfn = (*ppdev).__bindgen_anon_1.pfn;
-    (*ppdev).__bindgen_anon_1.pfn = (*ppdev2).__bindgen_anon_1.pfn;
-    (*ppdev2).__bindgen_anon_1.pfn = temp_pfn;
-
-    SwitchPointer(
-        core::ptr::addr_of_mut!((*ppdev).pldev) as PVOID,
-        core::ptr::addr_of_mut!((*ppdev2).pldev) as PVOID,
-    );
-
-    SwitchPointer(
-        core::ptr::addr_of_mut!((*ppdev).dhpdev) as PVOID,
-        core::ptr::addr_of_mut!((*ppdev2).dhpdev) as PVOID,
-    );
-
-    SwitchPointer(
-        core::ptr::addr_of_mut!((*ppdev).pSurface) as PVOID,
-        core::ptr::addr_of_mut!((*ppdev2).pSurface) as PVOID,
-    );
-    (*(*ppdev).pSurface).SurfObj.hdev = ppdev as HDEV;
-    (*(*ppdev2).pSurface).SurfObj.hdev = ppdev2 as HDEV;
-
-    temp_devinfo = (*ppdev).devinfo;
-    (*ppdev).devinfo = (*ppdev2).devinfo;
-    (*ppdev2).devinfo = temp_devinfo;
-
-    temp_gdiinfo = (*ppdev).gdiinfo;
-    (*ppdev).gdiinfo = (*ppdev2).gdiinfo;
-    (*ppdev2).gdiinfo = temp_gdiinfo;
-
-    SwitchPointer(
-        core::ptr::addr_of_mut!((*ppdev).pdmwDev) as PVOID,
-        core::ptr::addr_of_mut!((*ppdev2).pdmwDev) as PVOID,
-    );
-
-    temp_StateFlags = (*(*ppdev).pGraphicsDevice).StateFlags;
-    (*(*ppdev).pGraphicsDevice).StateFlags = (*(*ppdev2).pGraphicsDevice).StateFlags;
-    (*(*ppdev2).pGraphicsDevice).StateFlags = temp_StateFlags;
-
-    ((*ppdev).__bindgen_anon_1.pfn.CompletePDEV.unwrap())((*ppdev).dhpdev, ppdev as HDEV);
-    ((*ppdev2).__bindgen_anon_1.pfn.CompletePDEV.unwrap())((*ppdev2).dhpdev, ppdev2 as HDEV);
-
-    PDEVOBJ_vSwitchDirectDraw(ppdev, ppdev2);
-
-    1
-}
-#[cfg(target_arch = "x86")]
-#[no_mangle]
-pub unsafe extern "stdcall" fn PDEVOBJ_bSwitchMode(
-    ppdev: PPDEVOBJ,
-    pdm: PDEVMODEW,
-) -> BOOL {
-
-    let mut ppdevTmp: PPDEVOBJ;
-    let mut pSurface: PSURFACE;
-    let mut retval: BOOL = 0;
-
-    EngAcquireSemaphore((*ppdev).hsemDevLock);
-
-    EngAcquireSemaphore(ghsemPDEV);
-
-    // DPRINT removed
-
-    if PDEVOBJ_bDisableDisplay(ppdev) == 0 {
-        // DPRINT removed
-        PDEVOBJ_vResumeDirectDraw(ppdev);
-        EngReleaseSemaphore(ghsemPDEV);
-        EngReleaseSemaphore((*ppdev).hsemDevLock);
-        // DPRINT removed
-        return retval;
-    }
-
-    ppdevTmp = PDEVOBJ_Create((*ppdev).pGraphicsDevice, pdm, 0, LDEV_DEVICE_DISPLAY);
-    if ppdevTmp == core::ptr::null_mut() {
-        // DPRINT removed
-        PDEVOBJ_vEnableDisplay(ppdev);
-        EngReleaseSemaphore(ghsemPDEV);
-        EngReleaseSemaphore((*ppdev).hsemDevLock);
-        // DPRINT removed
-        return retval;
-    }
-
-    pSurface = PDEVOBJ_pSurface(ppdevTmp);
-    if pSurface == core::ptr::null_mut() {
-        // DPRINT removed
-        PDEVOBJ_vRelease(ppdevTmp);
-        PDEVOBJ_vEnableDisplay(ppdev);
-        EngReleaseSemaphore(ghsemPDEV);
-        EngReleaseSemaphore((*ppdev).hsemDevLock);
-        // DPRINT removed
-        return retval;
-    }
-
-    PDEVOBJ_vSuspendDirectDraw(ppdev);
-    PDEVOBJ_vSuspendDirectDraw(ppdevTmp);
-
-    if PDEVOBJ_bDynamicModeChange(ppdev, ppdevTmp) == 0 {
-        // DPRINT removed
-        PDEVOBJ_vRelease(ppdevTmp);
-        PDEVOBJ_vEnableDisplay(ppdev);
-        EngReleaseSemaphore(ghsemPDEV);
-        EngReleaseSemaphore((*ppdev).hsemDevLock);
-        // DPRINT removed
-        return retval;
-    }
-
-    PDEVOBJ_vResumeDirectDraw(ppdev);
-    PDEVOBJ_vResumeDirectDraw(ppdevTmp);
-
-    PDEVOBJ_vRelease(ppdevTmp);
-
-    (*(*ppdev).pEDDgpl).hDev = ppdev as HDEV;
-    (*(*ppdev).pEDDgpl).dhpdev = (*ppdev).dhpdev as PVOID;
-
-    if ppdev == (*gpmdev).ppdevGlobal {
-        PDEVOBJ_vGetDeviceCaps(ppdev, core::ptr::addr_of_mut!((*GdiHandleTable).DevCaps));
-    }
-
-    retval = 1;
-
-    PDEVOBJ_vEnableDisplay(ppdev);
-
-    EngReleaseSemaphore(ghsemPDEV);
-    EngReleaseSemaphore((*ppdev).hsemDevLock);
-
-    // DPRINT removed
-
-    return retval;
-}
-
-#[cfg(not(target_arch = "x86"))]
-#[no_mangle]
-pub unsafe extern "C" fn PDEVOBJ_bSwitchMode(
+pub unsafe extern "system" fn PDEVOBJ_bSwitchMode(
     ppdev: PPDEVOBJ,
     pdm: PDEVMODEW,
 ) -> BOOL {
@@ -1327,14 +1094,8 @@ unsafe fn PDEVOBJ_iGetColorManagementCaps(ppdev: PPDEVOBJ) -> INT {
 }
 
 // NTAPI in C (pdevobj.h:186) — stdcall on i386, cdecl elsewhere.
-#[cfg(target_arch = "x86")]
 #[no_mangle]
-pub unsafe extern "stdcall" fn PDEVOBJ_vGetDeviceCaps(ppdev: PPDEVOBJ, pDevCaps: PDEVCAPS) {
-    PDEVOBJ_vGetDeviceCaps_impl(ppdev, pDevCaps)
-}
-#[cfg(not(target_arch = "x86"))]
-#[no_mangle]
-pub unsafe extern "C" fn PDEVOBJ_vGetDeviceCaps(ppdev: PPDEVOBJ, pDevCaps: PDEVCAPS) {
+pub unsafe extern "system" fn PDEVOBJ_vGetDeviceCaps(ppdev: PPDEVOBJ, pDevCaps: PDEVCAPS) {
     PDEVOBJ_vGetDeviceCaps_impl(ppdev, pDevCaps)
 }
 
@@ -1389,9 +1150,8 @@ unsafe fn PDEVOBJ_vGetDeviceCaps_impl(
     (*pDevCaps).ulShadeBlend = (*pGdiInfo).flShadeBlend;
     (*pDevCaps).ulColorMgmtCaps = PDEVOBJ_iGetColorManagementCaps(ppdev) as u32;
 }
-#[cfg(target_arch = "x86")]
 #[no_mangle]
-pub unsafe extern "stdcall" fn EngQueryDeviceAttribute(
+pub unsafe extern "system" fn EngQueryDeviceAttribute(
     hdev: HDEV,
     devAttr: ENG_DEVICE_ATTRIBUTE,
     pvIn: PVOID,
@@ -1412,48 +1172,14 @@ pub unsafe extern "stdcall" fn EngQueryDeviceAttribute(
 
     0
 }
-
-#[cfg(not(target_arch = "x86"))]
 #[no_mangle]
-pub unsafe extern "C" fn EngQueryDeviceAttribute(
-    hdev: HDEV,
-    devAttr: ENG_DEVICE_ATTRIBUTE,
-    pvIn: PVOID,
-    cjInSize: ULONG,
-    pvOut: PVOID,
-    cjOutSize: ULONG,
-) -> BOOL {
-    let ppdev = hdev as PPDEVOBJ;
-
-    if devAttr != QDA_ACCELERATION_LEVEL {
-        return 0;
-    }
-
-    if cjOutSize >= core::mem::size_of::<DWORD>() as ULONG {
-        *(pvOut as *mut DWORD) = (*ppdev).dwAccelerationLevel;
-        return 1;
-    }
-
-    0
-}
-#[cfg(target_arch = "x86")]
-#[no_mangle]
-pub unsafe extern "stdcall" fn EngGetDriverName(hdev: HDEV) -> LPWSTR {
+pub unsafe extern "system" fn EngGetDriverName(hdev: HDEV) -> LPWSTR {
     let ppdev = hdev as PPDEVOBJ;
     
     (*(*(*ppdev).pldev).pGdiDriverInfo).DriverName.Buffer
 }
-
-#[cfg(not(target_arch = "x86"))]
 #[no_mangle]
-pub unsafe extern "C" fn EngGetDriverName(hdev: HDEV) -> LPWSTR {
-    let ppdev = hdev as PPDEVOBJ;
-    
-    (*(*(*ppdev).pldev).pGdiDriverInfo).DriverName.Buffer
-}
-#[cfg(target_arch = "x86")]
-#[no_mangle]
-pub unsafe extern "stdcall" fn NtGdiGetDeviceCaps(
+pub unsafe extern "system" fn NtGdiGetDeviceCaps(
     hdc: HDC,
     Index: i32) -> i32 {
     let pdc: PDC;
@@ -1587,146 +1313,8 @@ pub unsafe extern "stdcall" fn NtGdiGetDeviceCaps(
             return 0,
     }
 }
-
-#[cfg(not(target_arch = "x86"))]
 #[no_mangle]
-pub unsafe extern "C" fn NtGdiGetDeviceCaps(
-    hdc: HDC,
-    Index: i32) -> i32 {
-    let pdc: PDC;
-    let mut devcaps: DEVCAPS = core::mem::zeroed();
-
-    pdc = DC_LockDc(hdc);
-    if pdc.is_null()
-    {
-        EngSetLastError(ERROR_INVALID_HANDLE);
-        return 0;
-    }
-
-    PDEVOBJ_vGetDeviceCaps((*pdc).ppdev, core::ptr::addr_of_mut!(devcaps));
-
-    DC_UnlockDc(pdc);
-
-    match Index as u32
-    {
-        DRIVERVERSION =>
-            return devcaps.ulVersion as i32,
-
-        TECHNOLOGY =>
-            return devcaps.ulTechnology as i32,
-
-        HORZSIZE =>
-            return devcaps.ulHorzSize as i32,
-
-        VERTSIZE =>
-            return devcaps.ulVertSize as i32,
-
-        HORZRES =>
-            return devcaps.ulHorzRes as i32,
-
-        VERTRES =>
-            return devcaps.ulVertRes as i32,
-
-        LOGPIXELSX =>
-            return devcaps.ulLogPixelsX as i32,
-
-        LOGPIXELSY =>
-            return devcaps.ulLogPixelsY as i32,
-
-        BITSPIXEL =>
-            return devcaps.ulBitsPixel as i32,
-
-        PLANES =>
-            return devcaps.ulPlanes as i32,
-
-        NUMBRUSHES =>
-            return -1,
-
-        NUMPENS =>
-            return devcaps.ulNumPens as i32,
-
-        NUMFONTS =>
-            return devcaps.ulNumFonts as i32,
-
-        NUMCOLORS =>
-            return devcaps.ulNumColors as i32,
-
-        ASPECTX =>
-            return devcaps.ulAspectX as i32,
-
-        ASPECTY =>
-            return devcaps.ulAspectY as i32,
-
-        ASPECTXY =>
-            return devcaps.ulAspectXY as i32,
-
-        CLIPCAPS =>
-            return CP_RECTANGLE as i32,
-
-        SIZEPALETTE =>
-            return devcaps.ulSizePalette as i32,
-
-        NUMRESERVED =>
-            return 20,
-
-        COLORRES =>
-            return devcaps.ulColorRes as i32,
-
-        DESKTOPVERTRES =>
-            return devcaps.ulVertRes as i32,
-
-        DESKTOPHORZRES =>
-            return devcaps.ulHorzRes as i32,
-
-        BLTALIGNMENT =>
-            return devcaps.ulBltAlignment as i32,
-
-        SHADEBLENDCAPS =>
-            return devcaps.ulShadeBlend as i32,
-
-        COLORMGMTCAPS =>
-            return devcaps.ulColorMgmtCaps as i32,
-
-        PHYSICALWIDTH =>
-            return devcaps.ulPhysicalWidth as i32,
-
-        PHYSICALHEIGHT =>
-            return devcaps.ulPhysicalHeight as i32,
-
-        PHYSICALOFFSETX =>
-            return devcaps.ulPhysicalOffsetX as i32,
-
-        PHYSICALOFFSETY =>
-            return devcaps.ulPhysicalOffsetY as i32,
-
-        VREFRESH =>
-            return devcaps.ulVRefresh as i32,
-
-        RASTERCAPS =>
-            return devcaps.ulRasterCaps as i32,
-
-        CURVECAPS =>
-            return (CC_CIRCLES | CC_PIE | CC_CHORD | CC_ELLIPSES | CC_WIDE |
-                    CC_STYLED | CC_WIDESTYLED | CC_INTERIORS | CC_ROUNDRECT) as i32,
-
-        LINECAPS =>
-            return (LC_POLYLINE | LC_MARKER | LC_POLYMARKER | LC_WIDE |
-                    LC_STYLED | LC_WIDESTYLED | LC_INTERIORS) as i32,
-
-        POLYGONALCAPS =>
-            return (PC_POLYGON | PC_RECTANGLE | PC_WINDPOLYGON | PC_SCANLINE |
-                    PC_WIDE | PC_STYLED | PC_WIDESTYLED | PC_INTERIORS) as i32,
-
-        TEXTCAPS =>
-            return devcaps.ulTextCaps as i32,
-
-        CAPS1 | PDEVICESIZE | SCALINGFACTORX | SCALINGFACTORY | _ =>
-            return 0,
-    }
-}
-#[cfg(target_arch = "x86")]
-#[no_mangle]
-pub unsafe extern "stdcall" fn NtGdiGetDeviceCapsAll(
+pub unsafe extern "system" fn NtGdiGetDeviceCapsAll(
     hDC: HDC,
     pDevCaps: PDEVCAPS) -> BOOL {
     let mut pdc: PDC;
@@ -1758,72 +1346,8 @@ pub unsafe extern "stdcall" fn NtGdiGetDeviceCapsAll(
 
     return bResult;
 }
-
-#[cfg(not(target_arch = "x86"))]
 #[no_mangle]
-pub unsafe extern "C" fn NtGdiGetDeviceCapsAll(
-    hDC: HDC,
-    pDevCaps: PDEVCAPS) -> BOOL {
-    let mut pdc: PDC;
-    let mut devcaps: DEVCAPS = core::mem::zeroed();
-    let mut bResult: BOOL = 1;
-    let mut Status: NTSTATUS;
-
-    pdc = DC_LockDc(hDC);
-    if pdc.is_null()
-    {
-        EngSetLastError(ERROR_INVALID_HANDLE);
-        return 0;
-    }
-
-    PDEVOBJ_vGetDeviceCaps((*pdc).ppdev, core::ptr::addr_of_mut!(devcaps));
-
-    DC_UnlockDc(pdc);
-
-    Status = SafeProbeForWrite(pDevCaps as *mut core::ffi::c_void, core::mem::size_of::<DEVCAPS>() as SIZE_T, 1);
-    if !NT_SUCCESS(Status)
-    {
-        SetLastNtError(Status);
-        bResult = 0;
-    }
-    else
-    {
-        RtlCopyMemory(pDevCaps as *mut core::ffi::c_void, core::ptr::addr_of!(devcaps) as *const core::ffi::c_void, core::mem::size_of::<DEVCAPS>());
-    }
-
-    return bResult;
-}
-#[cfg(target_arch = "x86")]
-#[no_mangle]
-pub unsafe extern "stdcall" fn NtGdiGetDhpdev(
-    hdev: HDEV,
-) -> DHPDEV {
-    let mut ppdev: PPDEVOBJ;
-    let mut dhpdev: DHPDEV = core::ptr::null_mut();
-
-    if hdev.is_null() || (hdev as *mut u8) < MmSystemRangeStart as *mut u8 {
-        return core::ptr::null_mut();
-    }
-
-    EngAcquireSemaphoreShared(ghsemPDEV);
-
-    ppdev = gppdevList;
-    while !ppdev.is_null() {
-        if ppdev == hdev as PPDEVOBJ {
-            dhpdev = (*ppdev).dhpdev;
-            break;
-        }
-        ppdev = (*ppdev).ppdevNext;
-    }
-
-    EngReleaseSemaphore(ghsemPDEV);
-
-    dhpdev
-}
-
-#[cfg(not(target_arch = "x86"))]
-#[no_mangle]
-pub unsafe extern "C" fn NtGdiGetDhpdev(
+pub unsafe extern "system" fn NtGdiGetDhpdev(
     hdev: HDEV,
 ) -> DHPDEV {
     let mut ppdev: PPDEVOBJ;

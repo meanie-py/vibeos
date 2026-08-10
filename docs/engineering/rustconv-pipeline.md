@@ -95,6 +95,38 @@ hand-authored allowlist. Key behaviours:
   the CMakeLists — pass `--usermode` / `--kernel`. (Those flags are new: the error had named
   them for a while without the argparser defining them. A fail-loud whose remedy does not
   exist is worse than no message; see `test_usermode_override_exists_for_a_target_with_no_set_module_type`.)
+- **BLOCKLIST_FUNCS is MEASURED and reported, never picked.** `--emit report` now carries the
+  external-prototype survey: how many functions the module calls that the include closure
+  really declares (the surface `BLOCKLIST_FUNCS=1` makes you hand-write), how many it calls
+  that no closure header declares at all, and every name. The emitted profile keeps
+  `BLOCKLIST_FUNCS=1` and puts the measurement in a comment BESIDE it. It does not choose,
+  and the calibration is why. Raw `called - defined` over the twelve hand-set modules nearly
+  separates them (samlib 73 vs tcpsvcs 66 — a 7-unit margin on twelve samples); refined to
+  closure-declared prototypes it tightens to `intl 69 | desk 198 | sysdm 130 | syssetup 205 |
+  aclui 97 | samlib 60` for the modules that chose 0 against `tcpsvcs 47 | wlanapi 16 |
+  snmpapi 7 | wsock32 0` for those that kept 1. A real gap, still not a rule: ten samples, and
+  the boundary pair is exactly the pair whose reasoning was never about a count — samlib chose
+  0 because a hand-written declaration of an RPC-shaped SAM entrypoint wrong by one pointer
+  level *links* and then corrupts at run time. Decide it the MACRO_SIGNED way: island it both
+  ways, one cargo check each. There is also an ordering constraint that makes 1 the only safe
+  unattended answer — `BLOCKLIST_FUNCS_FROM_CRATE=1` greps OUT_CRATE for `#[no_mangle]` names,
+  so on a FIRST derive against an empty scaffold it blocklists nothing.
+- **An already-FLIPPED module refuses rather than reporting empty sections.** The empty-TU case
+  always hard-failed; the one that went quiet is subtler. A cohab flip comments the real `.c`
+  out but leaves the `rust_*.c` scaffolding compiled, so the TU list is *not* empty — it is one
+  shim with no switch statements, no enum members and no dead bodies in it. Every audit then
+  printed an empty section that read as a pass. sysdm reported "(no case labels with
+  identifiers)" that way while carrying the exact defect the case-label audit exists to catch.
+  `is_shim_tu` recognises the scaffolding (the tree spells all 12 of them `rust_*.c`), and a
+  shim-only source list exits 2. **`--flipped-sources` re-enables the list the flip commented
+  out and audits against THAT** — a flip does not delete the source list, so the pre-flip
+  translation surface is still in the CMakeLists and a flipped module can be re-audited without
+  going to git (sysdm: 1 TU / 0 switch constants → 13 TUs / 77). It is deliberately narrow —
+  the commented block must be a `list(APPEND X …)`/`set(X …)` whose every argument looks like a
+  source file, and its parens must balance inside the commented run, so a `# set(WITH_DEBUG
+  TRUE)` somebody disabled on purpose is never resurrected. 37 of the tree's CMakeLists have a
+  restorable list, and every one is a module we flipped. The run says so
+  (`FLIPPED_SOURCES_RESTORED`), because the report then describes C the build does not compile.
 
 **Stage 1 — the paid call, with both envelopes.** See the sealing note below; always
 `--seal-facts --seal-calls`. In the same run, `trivial_c.py` lowers the provable trivial band
@@ -554,8 +586,37 @@ python -m rustconv dup-census dll/win32/shell32 --top 20
 ```
 
 `--seal-facts` owns HRESULT predicates and constant occurrences. `--seal-calls` owns each
-known runtime callee occurrence with a unique exactly-once executable token. Either envelope
-fails loud before the normal body audit. Each mode has a separate response-cache suffix.
+known runtime callee occurrence with a unique exactly-once executable token. `--seal-wide`
+owns every UTF-16 literal. Any of the three envelopes fails loud before the normal body
+audit, and each flag contributes its own INDEPENDENT response-cache token (`factseal_v1`,
+`callseal_v1`, `wideseal_v1`, joined by `__`) — which is exactly what makes a new protection
+free to add: turning one on misses the cache and pays for the bodies it covers, while every
+body already banked under the other tokens stays addressable and is never re-billed. Folding
+a new protection into an existing token's meaning would re-charge for work already owned.
+
+**`--seal-wide` (2026-08-07).** Rust has no UTF-16 literal, so a model asked to translate one
+has nothing correct to write: it invents an encoding, and every invention is a hand-count no
+compiler checks — a `b"..."` byte string behind a wide pointer (mswsock), an alignment-1
+interleave, a `[u16; N]` one character short (wkssvc's 39 registry names), `L"0000%s"` banked
+as five zeros (intl), or a terminator simply left off (18 shipped arrays). The seal replaces
+each occurrence with an opaque token, reveals only its Rust TYPE (`*const u16` / `[u16; N]` /
+`u16` — the model needs that to declare around the token, and rustconv computed it), and
+substitutes the real code units afterward. Two C shapes, and **the second is the larger**:
+across the tree's 5,987 `.c` files `L"..."`/`L'x'` is 27,545 tokens, while the Wine-style
+brace list `{'C','o','m','b','o','L','B','o','x',0}` is 4,272 declarations and 55,928
+elements — and every one of the 18 arrays #60 repaired was a brace list. They are not symmetric: `L"..."`
+IMPLIES a terminator so the seal appends one; a brace list STATES its own, 195 of them
+deliberately end without one, so the seal copies exactly what the C wrote. The restore is a
+generated `RUSTCONV_WSTR_<hash>` static behind `.as_ptr()` in pointer position and an inline
+array elsewhere — deliberately NOT the crate's `w!` macro, whose result type is not uniform
+across this tree (secur32's yields `&[u16; N]`, aclui's `*const u16`). Measured coverage over
+those 5,987 files: **31,127 sealed, 76 reported as `UNSEALED WIDE LITERAL` audit findings**
+(0.24% — macro-pasted runs, sized initializers whose lowering is a copy rather than a value,
+non-literal brace elements). Pure zero-fills (`= {0}`, `= L""`) are neither sealed nor
+reported: they carry no bytes, and demanding a token there would reject the `[0u16; N]` /
+`zeroed()` lowerings that are correct for them. The seal also covers the **file-scope
+preamble**, which is a separate paid call the other two seals never reach and is precisely
+where those 18 arrays lived.
 
 **Sealing is NOT shell32-only any more (2026-07-24).** It works for any plain-C module —
 kernel drivers, Win32 DLLs, services — and you should pass `--seal-facts --seal-calls` by

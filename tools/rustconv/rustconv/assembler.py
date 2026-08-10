@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import re
+import subprocess
 import sys
 from pathlib import Path
 from typing import TYPE_CHECKING
@@ -31,14 +32,66 @@ class AssemblyClobberError(RuntimeError):
     """Raised when a run would overwrite an assembly produced by a DIFFERENT slice of the TU."""
 
 
-def _guard_assembly_target(out_path: Path, selector: str) -> None:
+def _is_committed_and_clean(out_path: Path) -> bool:
+    """Is this file tracked by git with no uncommitted changes?
+
+    The discriminator between INTEGRATED code and an in-flight grind. During initial
+    translation a TU gets re-assembled repeatedly and the destination is untracked or already
+    dirty; once it is committed and clean it is shipping code that the tree has since
+    repaired. Anything git cannot answer (no repo, no git) returns False, which keeps the
+    permissive path — this guard exists to stop a specific known loss, not to gate on tooling.
+    """
+    try:
+        tracked = subprocess.run(
+            ["git", "ls-files", "--error-unmatch", "--", str(out_path)],
+            cwd=out_path.parent,
+            capture_output=True,
+            check=False,
+        )
+        if tracked.returncode != 0:
+            return False
+        dirty = subprocess.run(
+            ["git", "status", "--porcelain", "--", str(out_path)],
+            cwd=out_path.parent,
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+        return dirty.returncode == 0 and not dirty.stdout.strip()
+    except (OSError, subprocess.SubprocessError):
+        return False
+
+
+def _guard_assembly_target(out_path: Path, selector: str, reassemble: bool = False) -> None:
     """Refuse to overwrite an assembly that a DIFFERENT slice of the TU produced.
 
     A partial slice (`free-functions`, `class:X`) covers only part of the TU, so writing it
-    over someone else's output drops symbols. `whole-tu` covers everything and may overwrite.
+    over someone else's output drops symbols. `whole-tu` covers everything, so it cannot drop
+    a symbol — but that is not the same as being safe to overwrite, which is what this guard
+    used to assume.
+
+    A whole-TU re-run over COMMITTED code discards every repair made after integration, and
+    those repairs are exactly the ones the C cannot express, so the model re-emits the
+    original bug every time. Measured on browser-rust: one re-roll re-forked `extern "system"`
+    back into `#[cfg(target_arch = "x86")] extern "stdcall"` ABI twins, put `&ServiceStatus`
+    back on a `static mut` where the fix was `addr_of_mut!`, and renamed `MIDL_user_allocate`
+    to the C's lowercase source spelling — `rpcndr.h` #defines it to the capitalised symbol
+    the generated marshaller actually binds to, and the comment recording that was deleted
+    along with it. Nothing about that output looks wrong in isolation.
     """
     if not selector or not out_path.exists():
         return
+    if selector == "whole-tu" and not reassemble and _is_committed_and_clean(out_path):
+        raise AssemblyClobberError(
+            f"{out_path} is committed, unmodified, INTEGRATED code — refusing to re-assemble "
+            f"over it.\nA re-translation sees only the C, so it silently reverts every repair "
+            f"made after integration (ABI-twin collapse, symbol capitalisation, "
+            f"`addr_of_mut!` on statics, diagnostics kept as macros).\n"
+            f"The new output is durable in the run's .responses/ directory either way — diff "
+            f"it in rather than overwriting.\n"
+            f"fix: pass `-o <path>` to write elsewhere, or `--reassemble` if you really do "
+            f"want the file replaced wholesale."
+        )
     first = out_path.read_text(errors="replace").split("\n", 1)[0]
 
     if not first.startswith(ASSEMBLY_MARKER):
@@ -120,6 +173,7 @@ def assemble_file(
     c_source_path: Path | None = None,
     selector: str = "",
     assembled_fns: set[str] | None = None,
+    reassemble: bool = False,
 ) -> Path:
     """Write a single translation result into the crate structure.
 
@@ -161,7 +215,7 @@ def assemble_file(
     sub_dir.mkdir(parents=True, exist_ok=True)
 
     out_path = sub_dir / f"{stem}.rs"
-    _guard_assembly_target(out_path, selector)
+    _guard_assembly_target(out_path, selector, reassemble=reassemble)
 
     # Post-process the Rust code
     rust_code = postprocess(
@@ -242,7 +296,13 @@ def assemble_file(
     content_parts.append("// " + "=" * 76)
     content_parts.append("")
 
-    out_path.write_text("\n".join(content_parts))
+    # Strip per-line trailing whitespace. A model that wraps a call argument list leaves a
+    # space after the comma, which `git diff --check` flags on every commit of generated
+    # output — and stripping it by hand does not stick, because the next regeneration (now
+    # a $0 cache replay, so it happens often) puts it straight back. The generator owns its
+    # own whitespace. Only trailing blanks go; indentation and blank lines are untouched.
+    text = "\n".join(line.rstrip() for line in "\n".join(content_parts).split("\n"))
+    out_path.write_text(text)
 
     # HAL-specific output routing: append to mod.rs, CMakeLists.txt DEPENDS,
     # and comment out the C file in the matching *.cmake.

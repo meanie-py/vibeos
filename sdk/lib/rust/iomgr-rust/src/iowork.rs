@@ -29,7 +29,7 @@ pub static IOP_LAST_WORKITEM_ROUTINE: core::sync::atomic::AtomicUsize =
     core::sync::atomic::AtomicUsize::new(0);
 
 #[cfg(not(target_arch = "x86"))]
-unsafe extern "C" fn IopWorkItemCallback(Parameter: PVOID) {
+unsafe extern "system" fn IopWorkItemCallback(Parameter: PVOID) {
     let IoWorkItem = Parameter as PIO_WORKITEM;
     let DeviceObject = (*IoWorkItem).DeviceObject;
 
@@ -41,7 +41,7 @@ unsafe extern "C" fn IopWorkItemCallback(Parameter: PVOID) {
 }
 
 #[cfg(target_arch = "x86")]
-unsafe extern "stdcall" fn IopWorkItemCallback(Parameter: PVOID) {
+unsafe extern "system" fn IopWorkItemCallback(Parameter: PVOID) {
     let IoWorkItem = Parameter as PIO_WORKITEM;
     let DeviceObject = (*IoWorkItem).DeviceObject;
 

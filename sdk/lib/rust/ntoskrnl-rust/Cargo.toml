@@ -18,7 +18,14 @@ dbgprint-rust = { path = "../dbgprint-rust" }
 # it was used only by that file's #[cfg(test)] disassembler roundtrip.
 
 [features]
-default = []
+# `dbg` on by default, mirroring ntkrnl-sys, because it is not a diagnostic
+# switch: it carries the DBG=1 owner stamp that KI_TRACK_SPINLOCK_OWNER writes
+# in ntoskrnl/include/internal/spinlock.h, and the C and Rust halves of the
+# spinlock funnel MUST agree on it. The stamp used to be gated on cargo's
+# `debug_assertions`, which this workspace's release profile leaves OFF — so
+# KxAcquireSpinLock stamped and KeTryToAcquireSpinLockAtDpcLevel did not.
+default = ["dbg"]
+dbg = ["ntkrnl-sys/dbg"]
 # sync-instrumentation §4 Tier-2: self-deadlock / recursive-pushlock detector.
 # Non-default (has an always-on push/pop cost on every pushlock op) — enabled
 # for a debug/repro build via cmake -DVIBEOS_LOCKDEP=ON. Forwards to the

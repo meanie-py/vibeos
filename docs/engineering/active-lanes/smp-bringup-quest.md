@@ -1950,3 +1950,39 @@ folded into the i386 fix.
 
 **Collapse status: the criterion is met on all three arches** — zero unexplained deltas, with
 both survivors now mechanically accounted for rather than taken on trust.
+
+## The wedge hunt was blind, in three separate ways (2026-08-08)
+
+`--smp 2` reproduced the SamSs wedge (#39) on 2026-08-03 and the run dir held serial, results
+and `summary.json` — nothing else. Chasing that produced three findings about the *instruments*
+rather than the bug, and all three are the same shape: an observation that could never have been
+made, mistaken for an observation that came back empty.
+
+1. **The capture existed and was thrown away.** `wait_for_boot` wrote `hang-cpustate.txt` into
+   the VM's `work_dir`, which under the pytest `vm` fixture is a `tmp_path_factory` dir. pytest
+   keeps the last three runs. By the time anyone read the 08-03 run dir the file was gone, and a
+   whole-disk search found no `hang-cpustate.txt` anywhere. Fixed: `save_hang_state()` writes to
+   `work_dir` **and** `$VIBEOS_ARTIFACT_DIR`, which `conformance` points at its run dir.
+
+2. **The wedge does not enter the path that captures.** A drained-out sweep boots fine — 2002
+   serial lines — so it never raises the boot-wait `TimeoutError` the capture hangs off. The
+   comment there claimed the placement covered "the conformance sweep — the very place the arm64
+   `--smp 1` stall shows up". It did not. `test_payload_launched` now captures when its
+   launch-marker drain exhausts without a crash, which is the path this bug actually takes.
+
+3. **One dump cannot answer the question the dump exists for.** A dead clock and a thread
+   blocked forever both park every vCPU in `KiIdleLoop`. The capture now samples twice, 5s apart,
+   and writes **FROZEN** or **EXECUTING** into the artifact — the fork the whole hunt turns on,
+   and one that cannot be recovered after the guest is torn down.
+
+And a fourth, which is not fixed: **the `[CENSUS]` watchdog cannot witness this class at all.**
+`CensusThread` loops on `KeDelayExecutionThread(10s)` — a timed wait. The wedge's own signature
+is a 30s timed wait (`PipeTimeout`, services-rust `database.rs:166`) that had not expired after
+300s. If timed waits stop expiring, the watchdog stops first, so its silence during the wedge is
+not evidence of "nothing stuck". A detector must not depend on the mechanism it is watching.
+
+What the serial does now say, which it did not before: good runs print
+`[SCTRL] pid=184 connecting pipe=\\.\pipe\net\NtControlPipe0` about 100 lines after SCM starts
+waiting, and the wedge never prints it. So SCM created lsass, resumed it, and blocked; lsass's
+dispatcher never reached the pipe. The `NtControlPipe0 (disposition=0)` line that looks alarming
+is byte-identical in the good runs — not a lead.

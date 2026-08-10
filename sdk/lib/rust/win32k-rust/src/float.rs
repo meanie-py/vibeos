@@ -41,9 +41,8 @@ pub struct _WIN32K_FLOATING_SAVE {
 pub type WIN32K_FLOATING_SAVE = _WIN32K_FLOATING_SAVE;
 pub type PWIN32K_FLOATING_SAVE = *mut _WIN32K_FLOATING_SAVE;
 
-#[cfg(target_arch = "x86")]
 #[no_mangle]
-pub unsafe extern "stdcall" fn EngRestoreFloatingPointState(
+pub unsafe extern "system" fn EngRestoreFloatingPointState(
     pBuffer: PVOID
 ) -> BOOL {
     let State: PWIN32K_FLOATING_SAVE = pBuffer as PWIN32K_FLOATING_SAVE;
@@ -60,64 +59,8 @@ pub unsafe extern "stdcall" fn EngRestoreFloatingPointState(
     return 1;
 }
 
-#[cfg(not(target_arch = "x86"))]
 #[no_mangle]
-pub unsafe extern "C" fn EngRestoreFloatingPointState(
-    pBuffer: PVOID
-) -> BOOL {
-    let State: PWIN32K_FLOATING_SAVE = pBuffer as PWIN32K_FLOATING_SAVE;
-
-    if (*State).IsFloatingPointSaved == 0 {
-        return 0;
-    }
-
-    (*State).IsFloatingPointSaved = 0;
-    let Status = KeRestoreFloatingPointState(core::ptr::addr_of_mut!((*State).FloatState));
-    if !NT_SUCCESS(Status) {
-        return 0;
-    }
-    return 1;
-}
-
-#[cfg(target_arch = "x86")]
-#[no_mangle]
-pub unsafe extern "stdcall" fn EngSaveFloatingPointState(
-    pBuffer: PVOID,
-    cjBufferSize: ULONG,
-) -> ULONG {
-    if pBuffer.is_null() || cjBufferSize == 0 {
-        let mut TempBuffer: ntkrnl_sys::ddk::KFLOATING_SAVE = core::mem::zeroed();
-
-        // Check for floating point support.
-        let Status = KeSaveFloatingPointState(core::ptr::addr_of_mut!(TempBuffer));
-        if Status != ntkrnl_sys::STATUS_SUCCESS {
-            return 0;
-        }
-        KeRestoreFloatingPointState(core::ptr::addr_of_mut!(TempBuffer));
-        return core::mem::size_of::<WIN32K_FLOATING_SAVE>() as ULONG;
-    }
-
-    if (cjBufferSize as usize) < core::mem::size_of::<WIN32K_FLOATING_SAVE>() {
-        return 0;
-    }
-
-    // Per MSDN, "This buffer must be zero-initialized, and must be in nonpaged memory."
-    let State: PWIN32K_FLOATING_SAVE = pBuffer as PWIN32K_FLOATING_SAVE;
-
-    // (Driver may have already saved — C just DPRINT1s and continues.)
-
-    let Status = KeSaveFloatingPointState(core::ptr::addr_of_mut!((*State).FloatState));
-    if !NT_SUCCESS(Status) {
-        return 0;
-    }
-
-    (*State).IsFloatingPointSaved = 1;
-    return 1;
-}
-
-#[cfg(not(target_arch = "x86"))]
-#[no_mangle]
-pub unsafe extern "C" fn EngSaveFloatingPointState(
+pub unsafe extern "system" fn EngSaveFloatingPointState(
     pBuffer: PVOID,
     cjBufferSize: ULONG,
 ) -> ULONG {

@@ -447,28 +447,21 @@ unsafe fn wcscmp_local(a: *const u16, b: *const u16) -> i32 {
     }
 }
 
-// arch-split callback ABI (WNDENUMPROC / MONITORENUMPROC are stdcall on i386,
-// C on LLP64, exactly like WNDPROC).
+// WNDENUMPROC / MONITORENUMPROC are stdcall on i386 and C on LLP64, exactly like WNDPROC —
+// which is what `extern "system"` MEANS, so one definition covers all three arches. These
+// forked the body under complementary cfgs only because the island spelled the slot with the
+// arch's literal convention and Rust unifies fn-pointer ABIs nominally; the slots are spelled
+// `system` now (normalize_island_abi.py).
 macro_rules! wndenum_cb {
     ($name:ident, $inner:path) => {
-        #[cfg(target_arch = "x86")]
-        unsafe extern "stdcall" fn $name(h: HWND, l: LPARAM) -> BOOL {
-            $inner(h, l)
-        }
-        #[cfg(not(target_arch = "x86"))]
-        unsafe extern "C" fn $name(h: HWND, l: LPARAM) -> BOOL {
+        unsafe extern "system" fn $name(h: HWND, l: LPARAM) -> BOOL {
             $inner(h, l)
         }
     };
 }
 macro_rules! monitorenum_cb {
     ($name:ident, $inner:path) => {
-        #[cfg(target_arch = "x86")]
-        unsafe extern "stdcall" fn $name(h: HMONITOR, dc: HDC, r: *mut RECT, l: LPARAM) -> BOOL {
-            $inner(h, dc, r, l)
-        }
-        #[cfg(not(target_arch = "x86"))]
-        unsafe extern "C" fn $name(h: HMONITOR, dc: HDC, r: *mut RECT, l: LPARAM) -> BOOL {
+        unsafe extern "system" fn $name(h: HMONITOR, dc: HDC, r: *mut RECT, l: LPARAM) -> BOOL {
             $inner(h, dc, r, l)
         }
     };
@@ -961,17 +954,7 @@ unsafe fn sb_process(
     CallWindowProcW((*sb).m_pfnSuperWindowProc, hWnd, uMsg, wParam, lParam)
 }
 
-#[cfg(not(target_arch = "x86"))]
-unsafe extern "C" fn CStartButton_WindowProc(
-    hWnd: HWND,
-    uMsg: UINT,
-    wParam: WPARAM,
-    lParam: LPARAM,
-) -> LRESULT {
-    CStartButton_window_proc_impl(hWnd, uMsg, wParam, lParam)
-}
-#[cfg(target_arch = "x86")]
-unsafe extern "stdcall" fn CStartButton_WindowProc(
+unsafe extern "system" fn CStartButton_WindowProc(
     hWnd: HWND,
     uMsg: UINT,
     wParam: WPARAM,
@@ -1860,12 +1843,7 @@ unsafe fn tw_run_file_dlg_thread(this: *mut CTrayWindow) -> u32 {
     0
 }
 
-#[cfg(not(target_arch = "x86"))]
-unsafe extern "C" fn s_RunFileDlgThread(p: LPVOID) -> u32 {
-    tw_run_file_dlg_thread(p as *mut CTrayWindow)
-}
-#[cfg(target_arch = "x86")]
-unsafe extern "stdcall" fn s_RunFileDlgThread(p: LPVOID) -> u32 {
+unsafe extern "system" fn s_RunFileDlgThread(p: LPVOID) -> u32 {
     tw_run_file_dlg_thread(p as *mut CTrayWindow)
 }
 
@@ -1909,12 +1887,7 @@ unsafe fn tw_tray_properties_thread(this: *mut CTrayWindow) -> u32 {
     0
 }
 
-#[cfg(not(target_arch = "x86"))]
-unsafe extern "C" fn s_TrayPropertiesThread(p: LPVOID) -> u32 {
-    tw_tray_properties_thread(p as *mut CTrayWindow)
-}
-#[cfg(target_arch = "x86")]
-unsafe extern "stdcall" fn s_TrayPropertiesThread(p: LPVOID) -> u32 {
+unsafe extern "system" fn s_TrayPropertiesThread(p: LPVOID) -> u32 {
     tw_tray_properties_thread(p as *mut CTrayWindow)
 }
 
@@ -4629,19 +4602,8 @@ unsafe fn tw_process(
     }
 }
 
-#[cfg(not(target_arch = "x86"))]
 #[no_mangle]
-pub unsafe extern "C" fn CTrayWindow_WindowProc(
-    hWnd: HWND,
-    uMsg: UINT,
-    wParam: WPARAM,
-    lParam: LPARAM,
-) -> LRESULT {
-    CTrayWindow_window_proc_impl(hWnd, uMsg, wParam, lParam)
-}
-#[cfg(target_arch = "x86")]
-#[no_mangle]
-pub unsafe extern "stdcall" fn CTrayWindow_WindowProc(
+pub unsafe extern "system" fn CTrayWindow_WindowProc(
     hWnd: HWND,
     uMsg: UINT,
     wParam: WPARAM,

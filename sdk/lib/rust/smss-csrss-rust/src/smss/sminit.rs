@@ -143,20 +143,19 @@ macro_rules! wstr {
     }};
 }
 
-// RTL_QUERY_REGISTRY_ROUTINE: bindgen types the table field as stdcall on i386 /
-// C on 64-bit; the translated routines are "system" (same ABI, different nominal
-// fn type). Coerce via transmute in const context (`fn as usize` is not
-// const-eval — see csrsrv/server.rs).
+// RTL_QUERY_REGISTRY_ROUTINE. This used to bridge a nominal-type gap by TRANSMUTE: bindgen
+// typed the table field with the arch's literal convention (stdcall on i386, C on 64-bit)
+// while the translated routines are `system`, so a per-arch `CfgRoutineApi` alias existed
+// purely to be transmuted into. Same ABI, but the transmute erased the whole fn type — a
+// genuine signature mismatch here would have been silently accepted.
+//
+// normalize_island_abi.py spells that slot `system`, so the assignment type-checks directly
+// and the alias and the transmute are both gone.
 type CfgRoutineSys =
     unsafe extern "system" fn(PWSTR, ULONG, PVOID, ULONG, PVOID, PVOID) -> NTSTATUS;
-#[cfg(target_arch = "x86")]
-type CfgRoutineApi =
-    unsafe extern "stdcall" fn(PWSTR, ULONG, PVOID, ULONG, PVOID, PVOID) -> NTSTATUS;
-#[cfg(not(target_arch = "x86"))]
-type CfgRoutineApi = unsafe extern "C" fn(PWSTR, ULONG, PVOID, ULONG, PVOID, PVOID) -> NTSTATUS;
 
 const fn qr(f: CfgRoutineSys) -> PRTL_QUERY_REGISTRY_ROUTINE {
-    Some(unsafe { core::mem::transmute::<CfgRoutineSys, CfgRoutineApi>(f) })
+    Some(f)
 }
 
 // ---- file-scope preamble (translated) ----

@@ -87,7 +87,7 @@ elseif(ARCH STREQUAL "amd64")
 elseif(ARCH STREQUAL "arm64")
     set(ADVAPI32_RUST_TARGET "aarch64-pc-windows-gnullvm")
 endif()
-file(GLOB_RECURSE ADVAPI32_RUST_SRCS "${ADVAPI32_RUST_WORKSPACE_DIR}/advapi32-rust/src/*.rs")
+rust_crate_sources(ADVAPI32_RUST_SRCS "${ADVAPI32_RUST_WORKSPACE_DIR}" advapi32-rust)
 add_custom_command(
     OUTPUT ${ADVAPI32_RUST_LIB}
     COMMAND ${CMAKE_COMMAND} -E env

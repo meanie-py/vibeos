@@ -54,12 +54,7 @@ pub unsafe extern "C" fn GetSetupType() -> DWORD {
 // amd64/arm64 — and Rust treats `extern "system"` as a DISTINCT fn-ptr
 // type from both even when the ABI is identical. So match bindgen exactly
 // per arch with thin wrappers over a single internal-ABI body.
-#[cfg(target_arch = "x86")]
-unsafe extern "stdcall" fn RunSetupThreadProc(lpParameter: LPVOID) -> u32 {
-    RunSetupThreadProcImpl(lpParameter)
-}
-#[cfg(not(target_arch = "x86"))]
-unsafe extern "C" fn RunSetupThreadProc(lpParameter: LPVOID) -> u32 {
+unsafe extern "system" fn RunSetupThreadProc(lpParameter: LPVOID) -> u32 {
     RunSetupThreadProcImpl(lpParameter)
 }
 

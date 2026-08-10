@@ -418,7 +418,7 @@ def fact_contract(sealed: SealedSource) -> str:
 
 
 _USE_OF_TOKEN_RE = re.compile(
-    r"^[ \t]*use\s+__RUSTCONV_(?:CALL|FACT)_[0-9]{4}__\s*;[ \t]*\n?", re.M
+    r"^[ \t]*use\s+__RUSTCONV_(?:CALL|FACT|WIDE)_[0-9]{4}__\s*;[ \t]*\n?", re.M
 )
 
 

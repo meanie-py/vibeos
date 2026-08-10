@@ -585,13 +585,7 @@ pub unsafe extern "C" fn DefWndControlColor(hDC: HDC, ctlType: UINT) -> HBRUSH {
 // UserSendUiUpdateMsg (CALLBACK) — ABI must match WNDENUMPROC: stdcall on i386,
 // cdecl on amd64/arm64.
 // ===========================================================================
-#[cfg(target_arch = "x86")]
-unsafe extern "stdcall" fn UserSendUiUpdateMsg(hwnd: HWND, lParam: LPARAM) -> BOOL {
-    SendMessageW(hwnd, WM_UPDATEUISTATE, lParam as WPARAM, 0);
-    TRUE
-}
-#[cfg(not(target_arch = "x86"))]
-unsafe extern "C" fn UserSendUiUpdateMsg(hwnd: HWND, lParam: LPARAM) -> BOOL {
+unsafe extern "system" fn UserSendUiUpdateMsg(hwnd: HWND, lParam: LPARAM) -> BOOL {
     SendMessageW(hwnd, WM_UPDATEUISTATE, lParam as WPARAM, 0);
     TRUE
 }
