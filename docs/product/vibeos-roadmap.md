@@ -55,6 +55,8 @@ Genuine remnants only — the boot path is already Rust. Measured 2026-07-07 fro
 
 **Wine-derived userland — ~154 DLLs, ~1.05M LOC (lower priority than Tier 2).** kernelbase (41K, `kernelbase/wine/`), comctl32, comdlg32, ole32, oleaut32, gdiplus, riched20, urlmon, wininet, mshtml, jscript/vbscript, msxml*, windowscodecs, crypt32, wldap32, rpcrt4, the whole `dll/directx/wine/` stack. Re-implementing these from *current* Wine via an LLM pipeline (§7b) beats translating the frozen fork — that's why they sit below the native queue.
 
+**Microsoft DDK storage class drivers — 3 drivers, ~90.5K LOC (added to the queue 2026-08-08).** `classpnp` (43.7K), `cdrom` (34.1K), `disk` (12.7K). Foreign-copyright but **ours**, and recorded as such in `vendor.yaml`'s `ours:` half — MS-PL grants derivative works, ReactOS has already diverged them (13 of classpnp's 24 files carry local edits), and unlike WDF next door they expose no ABI that third-party binaries bind to, so there is no compatibility contract that would make owning them a liability. They were in no count before the classification sweep found them (task #62). Pointer-heavy IRP dispatch on the boot path for every disk, so they rank with the native queue rather than below it.
+
 **Already translated (frontier boundary):** kernel/win32k, kernel32, ntdll, user32, gdi32, advapi32, secur32, shell32's complete activatable COM surface (its procedural C++ tail remains), msafd, mlang, mscms, version, cabinet + the boot/server spine (winsrv, smss-csrss, lsasrv, samsrv, msgina, services, winlogon, userinit, explorer) + the driver fleet.
 
 ### Tier 4 — Debt burndown (gated at the door; burn opportunistically)
@@ -1997,7 +1999,10 @@ Field-manual § pointers hold the full writeups. **Update on state change.**
   cannot possibly affect the stage — docs, `tools/rustconv` Python, tests — still pays full
   freight. If this bites again: retry the flaky stage against a quiet host rather than
   mid-batch, raise the retry count for a stage already classified a known flake, or let a lane
-  touching no build input skip it.
+  touching no build input skip it. One reason it stayed unowned for a day: `_net_once` labels
+  the FIRST failure `NET_FLAKE` by construction, so the retries are the only thing separating a
+  one-off from a permanent red — and the lane owner is told "flake" either way, before that
+  distinction reaches them.
 - **amd64 CLIENTINFO-on-Ctrl+Esc** (§9.41) — NOT reproducing since the §9.40 DesktopHeapReAlloc
   fix (4/4 start-menu opens; `test_start_menu_opens` gates it). Watch item only.
 - **i386 "session-pool gate" `BAD gate Type=0x80`** (§9.24) — REFRAMED to pushlock-class (stack

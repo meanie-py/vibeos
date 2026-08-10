@@ -31,7 +31,10 @@ Rust (videoprt, old NDIS/tcpip), and (4) **irreducible glue** (variadic trampoli
 `.S`, generated RPC/syscall stubs). *(The desktop shell `explorer.exe` is NO LONGER a
 remnant — it's ~99% Rust as of the crate-split era; see the ledger below.)* The broad
 still-C userland frontier is the **~140 ROS-native DLLs (~240K LOC)** + the **Wine-derived
-bucket (~154 DLLs, ~1.05M LOC)** catalogued in the roadmap's Phase 0 Tier 3.
+bucket (~154 DLLs, ~1.05M LOC)** catalogued in the roadmap's Phase 0 Tier 3, plus — added
+by the 2026-08-08 classification sweep, and not covered by either of those counts — the
+**Microsoft DDK storage class drivers** (`classpnp`/`cdrom`/`disk`, ~90.5K lines of
+bodies), now explicit in `vendor.yaml`'s `ours:` half rather than uncounted.
 
 Tree inventory (2026-07-25): **2,908 `.rs` files · 280 crates** under `sdk/lib/rust/`. Re-derive
 rather than trusting this line: `find sdk/lib/rust -name '*.rs' | wc -l` and
@@ -2044,7 +2047,7 @@ flight is marked; in-flight lanes live in [`active-lanes/`](active-lanes/).*
   reporting a macro the TU `#undef`s). Field manual: "A DIRECTIVE is not code, and an array
   PARAMETER's bound is not a value".
 - **Vendored, by policy (NOT targets):** enumerated in **`vendor.yaml`** at the repo root —
-  **23 trees, ~1.77M lines**, gated by `tools/vendored.py` (a stage of `vibeos-cli check`).
+  **25 trees, ~2.07M lines**, gated by `tools/vendored.py` (a stage of `vibeos-cli check`).
   Run `python3 tools/vendored.py --emit` for the table; do not restate it here, and do not
   hand-maintain a second list anywhere. This entry used to read "ACPICA (~155 `.c`),
   FreeType (~208K LOC)" and was one of three disagreeing lists — the others being
@@ -2073,6 +2076,30 @@ flight is marked; in-flight lanes live in [`active-lanes/`](active-lanes/).*
   provenance; `libwine` and `strmbase`, which are Wine-derived and therefore arguably
   translation TARGETS under the roadmap's Tier 3 — they sit in the registry only because
   upstream files them under `3rdparty`). `--emit` prints those under NEEDS REVIEW.
+
+  **The registry has a second half: `ours:`** (2026-08-08, task #62). `--suspects` found
+  ~400K lines of foreign-copyright code in no list at all, and half of it turned out to be
+  ours — but a verdict of "ours" had nowhere to live, so it would have stayed a commit
+  message and been re-derived by the next reader. Both verdicts are now recorded, which is
+  what makes the scan a **ratchet**: `--check` fails on a foreign-copyright directory that
+  is in NEITHER half, so newly-imported foreign code must be classified before it lands.
+  The six calls that cleared all 30 hits:
+
+  - **WDF → vendored** (290K lines / 488 files, the second-largest foreign tree here after
+    FEX). Vendored for the ACPICA reason, not the "it is Microsoft's" reason: third-party
+    KMDF/UMDF driver binaries bind to this framework's DDI table by version, so the tree
+    has to *be* the framework Windows ships, and upstream is public. ReactOS carries it
+    near-unmodified (9 of 488 files mention ReactOS). Two facts that do NOT decide it, so
+    nobody re-litigates on them: it is 81% C++, which is a scheduling obstacle rather than
+    an ownership argument, and it is built, which is equally true of FreeType.
+  - **Microsoft compiler-tests (EH/SEH) → vendored**, for a reason no other entry has:
+    they are an **oracle**, and an oracle's worth is entirely that someone else wrote it.
+  - **classpnp / cdrom / disk → OURS**, +90.5K lines of bodies to the denominator. The
+    contrast with WDF is what the call turns on: these are drivers this OS runs, with no
+    external ABI contract, shipped under MS-PL (which grants derivative works), and
+    already diverged — 13 of classpnp's 24 files carry ReactOS edits.
+  - **`sdk/include/psdk` → ours**, and not a target either way: 5 of its ~700 headers are
+    verbatim SDK headers, and the directory contains no C bodies at all.
 
 ## Open items / flagged regressions
 

@@ -205,17 +205,107 @@ def test_suspects_never_reports_an_already_registered_tree():
         assert not reg.is_vendored(d), f"{d} is registered yet reported as a suspect"
 
 
-def test_suspects_finds_the_wdf_tree_the_registry_does_not_cover():
-    """The scan's reason for existing: ~400K lines of Microsoft code, uncatalogued.
+def test_every_foreign_copyright_directory_is_classified():
+    """The ratchet. `--suspects` is now empty because each hit has a recorded verdict.
 
-    The container ratchet only watches sdk/lib/3rdparty, dll/3rdparty and external/, so
-    a vendored tree living anywhere else is invisible to it. WDF is the largest example
-    and is deliberately NOT registered — whether a driver framework this OS ships is a
-    translation target is a judgement call, not a copyright grep.
+    It found ~400K lines of Microsoft code nobody had catalogued — WDF the largest, at
+    290K. Each is now answered ONE way (task #62), which is what lets `check` treat a
+    remaining hit as a finding: the list is undecided trees, not foreign ones.
     """
     reg = vendored.load(REPO)
-    found = {d for d, _ in vendored.suspects(reg)}
-    assert any(d.startswith("sdk/lib/drivers/wdf") for d in found)
+    assert vendored.suspects(reg) == []
+
+
+def test_the_two_halves_disagree_about_nothing():
+    """Both verdicts are recorded, and no path carries both."""
+    reg = vendored.load(REPO)
+    # WDF is vendored: a stable ABI third-party binaries bind to, tracked upstream.
+    assert reg.is_vendored("sdk/lib/drivers/wdf/shared/core/fxdevice.cpp")
+    assert reg.is_vendored("sdk/include/wdf/kmdf/1.17/wdf.h")
+    # The storage class drivers are ours: MS-PL, already diverged, no ABI contract.
+    assert reg.is_declared_ours("drivers/storage/class/classpnp/class.c")
+    assert not reg.is_vendored("drivers/storage/class/classpnp/class.c")
+    # Neither list is a claim about the rest of the repo.
+    assert not reg.is_classified("dll/win32/msvcrt/cpp.c")
+
+
+def test_an_undecided_foreign_tree_fails_the_check(tmp_path):
+    """The whole point of `ours:` — an unanswered question must hold the gate red."""
+    _write(
+        tmp_path,
+        """
+        containers: []
+        trees:
+          - {path: vend, name: V, reason: r}
+    """,
+    )
+    (tmp_path / "vend").mkdir()
+    (tmp_path / "newly_imported").mkdir()
+    for i in range(6):
+        (tmp_path / "newly_imported" / f"f{i}.c").write_text(
+            "/* Copyright (c) Microsoft Corporation */\n"
+        )
+    reg = vendored.load(tmp_path)
+    vendored.write_stamps(reg)
+    assert any("UNCLASSIFIED" in p and "newly_imported" in p for p in vendored.check(reg))
+
+
+def test_declaring_it_ours_settles_it_without_pretending_it_is_vendored(tmp_path):
+    _write(
+        tmp_path,
+        """
+        containers: []
+        trees:
+          - {path: vend, name: V, reason: r}
+        ours:
+          - {path: newly_imported, name: NI, reason: we own this one}
+    """,
+    )
+    (tmp_path / "vend").mkdir()
+    (tmp_path / "newly_imported").mkdir()
+    for i in range(6):
+        (tmp_path / "newly_imported" / f"f{i}.c").write_text(
+            "/* Copyright (c) Microsoft Corporation */\n"
+        )
+    reg = vendored.load(tmp_path)
+    vendored.write_stamps(reg)
+    assert vendored.check(reg) == []
+    # An `ours:` tree is IN the denominator, so it must not be marked as excluded from it.
+    assert not (tmp_path / "newly_imported" / "VENDORED").exists()
+    assert not reg.is_vendored("newly_imported/f0.c")
+
+
+def test_a_path_cannot_be_both_vendored_and_ours(tmp_path):
+    """Otherwise the answer depends on which list the caller happens to consult."""
+    _write(
+        tmp_path,
+        """
+        containers: []
+        trees:
+          - {path: libs/x, name: X, reason: r}
+        ours:
+          - {path: libs/x, name: X again, reason: r}
+    """,
+    )
+    with pytest.raises(vendored.RegistryError, match="cannot be both"):
+        vendored.load(tmp_path)
+
+
+def test_a_missing_ours_path_fails(tmp_path):
+    _write(
+        tmp_path,
+        """
+        containers: []
+        trees:
+          - {path: vend, name: V, reason: r}
+        ours:
+          - {path: gone, name: Gone, reason: r}
+    """,
+    )
+    (tmp_path / "vend").mkdir()
+    reg = vendored.load(tmp_path)
+    vendored.write_stamps(reg)
+    assert any("`ours:` path does not exist" in p for p in vendored.check(reg))
 
 
 def test_suspects_ignores_a_registered_tree_in_a_temp_repo(tmp_path):
