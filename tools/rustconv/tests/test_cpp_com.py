@@ -9,11 +9,13 @@ from rustconv.call_seal import seal_calls, unseal_calls
 from rustconv.callgraph import FunctionDep, extract_call_graph
 from rustconv.config import REACTOS_ROOT, SHELL32_ISLAND_FILES, TARGETS, detect_target
 from rustconv.cpp_com import (
+    _WINDOWS_SCALAR_TYPEDEFS,
     CppComError,
     InterfaceMethod,
     InterfaceSpec,
     _parse_plain_state_field,
     _state_field_name,
+    _vtbl_declared_slots,
     analyze_class,
     apply_interface_method_signatures,
     audit_worker_body,
@@ -3039,6 +3041,84 @@ def test_debris_in_a_field_is_a_hard_failure_not_a_guess():
 
     with pytest.raises(CppComError, match="static"):
         _state_fields("class X { static INT_PTR static INT_PTR const FOO *m_pInfo; };")
+
+
+class TestVtableSlotCount:
+    """The cross-check behind `declares N slot(s) but M parsed`."""
+
+    def test_a_callback_parameter_is_not_a_slot(self):
+        # oleidl.h's IViewObject: `Draw` takes `BOOL (STDMETHODCALLTYPE *pfnContinue)(...)`,
+        # a function-pointer PARAMETER carrying the same calling convention as a slot. Counting
+        # every STDMETHODCALLTYPE token read that as a 10th slot for a 9-slot interface, so the
+        # guard fired on a CORRECT parse and refused the translation outright.
+        body = """
+            HRESULT (STDMETHODCALLTYPE *A)(I *This);
+            HRESULT (STDMETHODCALLTYPE *B)(I *This,
+                BOOL (STDMETHODCALLTYPE *cb)(ULONG_PTR d), ULONG_PTR d);
+            HRESULT (STDMETHODCALLTYPE *C)(I *This);
+        """
+        assert _vtbl_declared_slots(body) == 3
+
+    def test_a_genuinely_missed_slot_still_mismatches(self):
+        # The negative control that matters: this guard is what stands between us and a
+        # silently shifted vtable, so narrowing the count must not blunt it.
+        body = """
+            HRESULT (STDMETHODCALLTYPE *A)(I *This);
+            HRESULT (STDMETHODCALLTYPE *B)(I *This);
+        """
+        assert _vtbl_declared_slots(body) == 2, "a real second slot must still be counted"
+
+    def test_iviewobject_parses_to_its_documented_nine_slots(self):
+        header = REACTOS_ROOT / "build-amd64" / "sdk" / "include" / "psdk" / "oleidl.h"
+        if not header.is_file():
+            pytest.skip(f"generated header absent; build it in THIS worktree: {header}")
+        spec = parse_widl_interface(header, "IViewObject")
+        assert [method.name for method in spec.methods] == [
+            "QueryInterface",
+            "AddRef",
+            "Release",
+            "Draw",
+            "GetColorSet",
+            "Freeze",
+            "Unfreeze",
+            "SetAdvise",
+            "GetAdvise",
+        ]
+
+
+class TestProvenScalarStateTypes:
+    """The scalar allowlist behind `state field type is not proven C scalar/pointer state`."""
+
+    def test_the_array_arm_and_the_plain_arm_prove_the_same_types(self):
+        # THE regression guard for this class. The allowlist was written out inline in both
+        # arms of _parse_plain_state_field, and the copies drifted: `INT8` reached the plain
+        # set and never the array one, so `INT8 Direction` was proven state while
+        # `INT8 Direction[2]` was rejected. Nothing anywhere compares two hand-maintained
+        # copies of a table, so the divergence was invisible until a TU happened to hold the
+        # array spelling. Asserting the two arms agree is what makes re-splitting them fail.
+        for name in sorted(_WINDOWS_SCALAR_TYPEDEFS):
+            assert _parse_plain_state_field(f"{name} field").c_type == name
+            assert _parse_plain_state_field(f"{name} field[4]").array_len == 4
+
+    def test_signed_char_is_proven(self):
+        # CDefView's `signed char m_SpecialFolder`. The table carried `char` and
+        # `unsigned char` and simply missed the third spelling — and this is the one that
+        # needs no platform commitment at all, since `signed char` is 8-bit and signed in
+        # every C implementation while plain `char`'s signedness is implementation-defined.
+        assert _parse_plain_state_field("signed char m_SpecialFolder").c_type == "signed char"
+
+    def test_uint8_is_proven(self):
+        # LISTVIEW_SORT_INFO's `UINT8 Reserved`, the last thing holding CDefView UNSUPPORTED.
+        # `INT8` was admitted and `UINT8` was not; both state their width in the name, so
+        # there is nothing left to prove about either.
+        assert _parse_plain_state_field("UINT8 Reserved").c_type == "UINT8"
+
+    def test_an_unproven_type_still_fails_loudly(self):
+        # The negative control: widening the allowlist must not turn into admitting anything
+        # that looks vaguely scalar. A type nobody has proven is a loud failure that wants an
+        # island proof, not a new table entry.
+        with pytest.raises(CppComError, match="not proven C scalar/pointer state"):
+            _parse_plain_state_field("SOME_UNKNOWN_TYPE m_thing")
 
 
 class TestWorkerParamNameConformance:

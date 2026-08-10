@@ -12,6 +12,21 @@ matching nothing at all. Three lists, three contents, no source of truth.
 
 The registry itself is `vendor.yaml`; this module is how code asks it questions.
 
+THE REGISTRY HAS TWO HALVES
+---------------------------
+`trees:` is the foreign code we do NOT translate. `ours:` is foreign-COPYRIGHT code that
+we DO — Microsoft-derived storage class drivers, say, which ReactOS has owned and diverged
+for years. Without the second half a "this one is ours" decision has nowhere to live: it
+stays prose in a commit message, `--suspects` asks the same question again next month, and
+the answer gets re-derived from scratch by whoever looks next. Recording both verdicts is
+what turns `--suspects` from a standing question into a RATCHET — `--check` now fails on a
+foreign-copyright directory that is in NEITHER list, so a newly-imported tree has to be
+classified before it can pass, exactly as a new tree in a container does.
+
+Being in `ours:` is not a claim that the code is ReactOS-authored. It is a claim about
+SCOPE: this is code the project intends to own and translate, so it belongs in the
+denominator. That is why the entries carry a reason and not just a path.
+
 TWO THINGS THIS DELIBERATELY DOES NOT DO
 ----------------------------------------
 **It does not glob.** `sdk/include/reactos/libs/` holds `zlib` and `mbedtls` next to
@@ -31,8 +46,9 @@ version is worse than reporting nothing.
 USAGE
 -----
     vendored.py                  # --check: registry agrees with the tree (exit 1 if not)
-    vendored.py --emit           # the table: path, version, licence, LOC
+    vendored.py --emit           # the table: path, version, licence, LOC — both halves
     vendored.py --write-stamps   # (re)generate the VENDORED marker in each tree
+    vendored.py --suspects       # foreign-copyright dirs in NEITHER half (i.e. undecided)
 
 Wired into `vibeos-cli check`. Consumed by `verify_conv_macros.py` via `is_vendored`.
 """
@@ -51,6 +67,12 @@ REGISTRY = REPO / "vendor.yaml"
 
 #: What counts as source when reporting a tree's size.
 _SRC_SUFFIXES = (".c", ".cpp", ".cxx", ".cc", ".h", ".hpp", ".hxx")
+
+#: Translatable BODIES only. The distinction matters for the `ours:` table, whose whole
+#: claim is "this much is in the translation denominator": sdk/include/psdk is 247K lines
+#: of headers and exactly zero of them are a translation target, so counting it the same
+#: way as a driver would report a quarter-million lines of debt that does not exist.
+_BODY_SUFFIXES = (".c", ".cpp", ".cxx", ".cc")
 
 #: Written into every registered tree by --write-stamps. The point is that an agent or
 #: a human who walks into the directory trips over it without having to know the
@@ -106,6 +128,32 @@ class Tree:
         return [self.path, *self.headers]
 
 
+class OurTree:
+    """One tree of foreign-COPYRIGHT code that IS ours to translate.
+
+    Carries no version probe and gets no VENDORED stamp: both would be lies. The whole
+    payload is the `reason` — a classification with no recorded argument is one the next
+    reader has to make again.
+    """
+
+    def __init__(self, raw: dict, index: int):
+        if not isinstance(raw, dict):
+            raise RegistryError(f"ours[{index}] is not a mapping")
+        for field in ("path", "name", "reason"):
+            if not raw.get(field):
+                raise RegistryError(f"ours[{index}] is missing required field `{field}`")
+        self.path: str = raw["path"]
+        self.name: str = raw["name"]
+        self.reason: str = raw["reason"]
+        self.origin: str = raw.get("origin", "unknown")
+        #: Where this sits in the roadmap's translation plan, when it has a home there.
+        self.tier: str | None = raw.get("tier")
+
+    @property
+    def prefixes(self) -> list[str]:
+        return [self.path]
+
+
 class Registry:
     def __init__(self, repo: Path, raw: dict):
         self.repo = repo
@@ -113,6 +161,7 @@ class Registry:
             raise RegistryError("vendor.yaml is not a mapping")
         self.containers: list[str] = list(raw.get("containers", []))
         self.trees = [Tree(t, i) for i, t in enumerate(raw.get("trees", []))]
+        self.ours = [OurTree(o, i) for i, o in enumerate(raw.get("ours", []))]
         if not self.trees:
             raise RegistryError("vendor.yaml registers no trees")
         seen: dict[str, int] = {}
@@ -120,6 +169,21 @@ class Registry:
             if t.path in seen:
                 raise RegistryError(f"duplicate path `{t.path}` (trees[{seen[t.path]}] and [{i}])")
             seen[t.path] = i
+        # A path in BOTH halves is not a duplicate to shrug at — it is the registry
+        # asserting a thing is and is not a translation target, so every consumer's
+        # answer would depend on which list it happens to consult.
+        ours_seen: dict[str, int] = {}
+        for i, o in enumerate(self.ours):
+            if o.path in ours_seen:
+                raise RegistryError(
+                    f"duplicate path `{o.path}` (ours[{ours_seen[o.path]}] and [{i}])"
+                )
+            ours_seen[o.path] = i
+            if self.is_vendored(o.path):
+                raise RegistryError(
+                    f"ours[{i}] `{o.path}` is also covered by a `trees:` entry — "
+                    f"it cannot be both vendored and a translation target"
+                )
 
     def is_vendored(self, rel: str) -> bool:
         """Is this repo-relative path inside a registered tree?
@@ -134,14 +198,33 @@ class Registry:
                     return True
         return False
 
-    def loc(self, tree: Tree) -> int:
+    def is_declared_ours(self, rel: str) -> bool:
+        """Is this path inside a tree explicitly classified as OURS to translate?
+
+        Not the negation of `is_vendored`: the overwhelming majority of the repo is ours
+        and appears in neither list. This answers the narrower question "was this foreign
+        code deliberately kept in the denominator", which is what stops `--suspects` from
+        re-asking a settled question.
+        """
+        rel = rel.replace("\\", "/")
+        for o in self.ours:
+            for p in o.prefixes:
+                if rel == p or rel.startswith(p + "/"):
+                    return True
+        return False
+
+    def is_classified(self, rel: str) -> bool:
+        """Has SOMEBODY decided about this path, either way?"""
+        return self.is_vendored(rel) or self.is_declared_ours(rel)
+
+    def loc(self, tree: Tree | OurTree, suffixes: tuple[str, ...] = _SRC_SUFFIXES) -> int:
         """Source lines carried by a tree, for the --emit table only."""
         root = self.repo / tree.path
         if not root.is_dir():
             return 0
         total = 0
         for f in root.rglob("*"):
-            if f.suffix.lower() in _SRC_SUFFIXES and f.is_file():
+            if f.suffix.lower() in suffixes and f.is_file():
                 try:
                     total += f.read_text(errors="replace").count("\n")
                 except OSError:
@@ -215,18 +298,22 @@ def suspects(reg: Registry, min_files: int = 5) -> list[tuple[str, int]]:
     nobody had catalogued, WDF at 290K lines the largest; a hand-scan that finds that
     much is a scan worth keeping rather than repeating from memory.
 
-    Deliberately NOT wired into --check. A hit is a QUESTION ("is this ours to
-    translate?"), and the answer is a judgement call — WDF is Microsoft-authored but it
-    is also a driver framework this OS ships, so it is not obviously out of scope the
-    way FreeType is. Auto-excluding on a copyright grep would silently shrink the
-    denominator, which is the exact failure this whole registry exists to prevent.
+    A hit is a QUESTION ("is this ours to translate?") and the answer is a judgement call
+    — WDF is Microsoft-authored but it is also a driver framework this OS ships, so it is
+    not obviously out of scope the way FreeType is. Auto-excluding on a copyright grep
+    would silently shrink the denominator, which is the exact failure this whole registry
+    exists to prevent, so the scan still refuses to classify anything itself.
+
+    What it now does is subtract the ANSWERS: a directory drops off this list when it
+    lands in `trees:` or in `ours:`, whichever the answer was. That is what lets `check`
+    treat a remaining hit as a finding — the list is undecided trees, not foreign ones.
     """
     hits: dict[str, int] = {}
     for p in reg.repo.rglob("*"):
         if p.suffix.lower() not in _SUSPECT_SUFFIXES or not p.is_file():
             continue
         rel = p.relative_to(reg.repo).as_posix()
-        if rel.split("/", 1)[0] in _SUSPECT_SKIP or reg.is_vendored(rel):
+        if rel.split("/", 1)[0] in _SUSPECT_SKIP or reg.is_classified(rel):
             continue
         try:
             head = p.read_text(errors="replace")[:4000]
@@ -279,6 +366,24 @@ def check(reg: Registry) -> list[str]:
                     f"    Add an entry to vendor.yaml (or, if this is OUR code, move it "
                     f"out of {c}/)."
                 )
+
+    for o in reg.ours:
+        if not (reg.repo / o.path).is_dir():
+            problems.append(f"{o.name}: `ours:` path does not exist: {o.path}")
+
+    # The second ratchet, and the reason `ours:` exists. The container ratchet above only
+    # watches three directories; foreign code imported anywhere else (WDF under sdk/lib,
+    # the storage class drivers under drivers/) could only ever be found by looking, and
+    # a scan nobody is required to run is a scan that goes stale. Now every hit has to be
+    # answered ONE way or the other before the gate passes — and neither answer is one
+    # this tool picks.
+    for d, n in suspects(reg):
+        problems.append(
+            f"UNCLASSIFIED foreign-copyright code: {d} ({n} files)\n"
+            f"    Decide, and record it in vendor.yaml: a `trees:` entry if it is\n"
+            f"    vendored and upstream-tracked, an `ours:` entry if it is a translation\n"
+            f"    target. Do not answer this by copyright grep — see tools/vendored.py."
+        )
     return problems
 
 
@@ -309,6 +414,20 @@ def emit(reg: Registry) -> int:
         total += loc
         print(f"  {path.ljust(w)}  {version[:22]:<22} {lic[:22]:<22} {loc:>9,}")
     print(f"  {' ' * w}  {'':<22} {'TOTAL':<22} {total:>9,}")
+
+    if reg.ours:
+        orows = [(o.path, o.tier or "-", reg.loc(o, _BODY_SUFFIXES), reg.loc(o)) for o in reg.ours]
+        ow = max(len(r[0]) for r in orows)
+        print(f"\n{len(orows)} foreign-copyright trees classified as OURS to translate")
+        print("  (the complement of the table above; `bodies` is what enters the denominator)\n")
+        print(f"  {'path'.ljust(ow)}  {'roadmap':<22} {'bodies':>9} {'w/ headers':>11}")
+        print(f"  {'-' * ow}  {'-' * 22} {'-' * 9} {'-' * 11}")
+        for path, tier, bodies, loc in orows:
+            print(f"  {path.ljust(ow)}  {tier[:22]:<22} {bodies:>9,} {loc:>11,}")
+        print(
+            f"  {' ' * ow}  {'TOTAL':<22} {sum(r[2] for r in orows):>9,} "
+            f"{sum(r[3] for r in orows):>11,}"
+        )
 
     unknown = [t.name for t in reg.trees if not t.version]
     if unknown:
@@ -350,18 +469,19 @@ def main(argv: list[str] | None = None) -> int:
     if args.suspects:
         found = suspects(reg)
         if not found:
-            print("no unregistered foreign-copyright directories found")
+            print("no unclassified foreign-copyright directories — every one is decided")
             return 0
-        print(f"{len(found)} unregistered dir(s) with >=5 foreign-copyright files:\n")
+        print(f"{len(found)} UNCLASSIFIED dir(s) with >=5 foreign-copyright files:\n")
         w = max(len(d) for d, _ in found)
         for d, n in found:
             print(f"  {d.ljust(w)}  {n:>4} files")
         print(
-            "\nThese are QUESTIONS, not findings. Each is either (a) a vendored tree owed\n"
-            "an entry in vendor.yaml, or (b) foreign-derived code that IS a translation\n"
-            "target and must stay in the denominator. Decide per tree; do not bulk-add."
+            "\nThese are QUESTIONS, and `--check` now fails until each is answered. Each\n"
+            "is either (a) a vendored tree owed a `trees:` entry, or (b) foreign-derived\n"
+            "code that IS a translation target and belongs in `ours:`, staying in the\n"
+            "denominator. Decide per tree; do not bulk-add, and do not decide by grep."
         )
-        return 0
+        return 1
 
     problems = check(reg)
     if problems:
@@ -380,7 +500,8 @@ def main(argv: list[str] | None = None) -> int:
     # chatty success line here would read as a permanent new finding and hold the stage
     # red. The status belongs on stderr; silence on stdout is the pass.
     print(
-        f"[vendored] OK — {len(reg.trees)} vendored trees, registry agrees with the tree",
+        f"[vendored] OK — {len(reg.trees)} vendored trees + {len(reg.ours)} classified ours, "
+        f"registry agrees with the tree",
         file=sys.stderr,
     )
     return 0

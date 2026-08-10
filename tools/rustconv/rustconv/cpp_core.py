@@ -173,6 +173,12 @@ _RUST_SCALARS = {
     "void": "core::ffi::c_void",
     "VOID": "()",
     "char": "i8",
+    # The one entry here that needs no platform commitment: `signed char` is exactly 8 bits and
+    # signed in every C implementation, where plain `char`'s signedness is implementation-defined
+    # and the `i8` above is really a bet on MSVC. Its absence had nothing to do with doubt — the
+    # table simply covered two of the three char spellings, and the third rejected CDefView's
+    # `signed char m_SpecialFolder` as "not proven C scalar/pointer state".
+    "signed char": "i8",
     "unsigned char": "u8",
     "short": "i16",
     "unsigned short": "u16",

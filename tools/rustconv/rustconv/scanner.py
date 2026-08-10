@@ -582,31 +582,40 @@ def _parse_function(node, source: bytes, source_text: str) -> CFunction | None:
                 return_type = f"{kind} {_extract_text(name_node, source)}"
         elif child.type == "function_declarator":
             declarator = child
-        elif child.type == "pointer_declarator":
-            # Return type is a pointer. tree-sitter NESTS one pointer_declarator per
-            # star, so `char **f(...)` is pointer_declarator(pointer_declarator(
+        elif child.type in ("pointer_declarator", "reference_declarator"):
+            # Return type is a pointer and/or a reference. tree-sitter NESTS one declarator
+            # per token, so `char **f(...)` is pointer_declarator(pointer_declarator(
             # function_declarator)) and the function_declarator is a GRANDchild.
             # Looking only at direct children silently dropped every T** function:
             # 10 of wldap32.h's 62 marshalling helpers (strarrayWtoU, controlarrayAtoW,
             # modarrayAtoW, …) were reported as unextractable "C++ methods" in a C
             # header. They are `static inline`, so the .spec export cross-check could
             # not catch it either — the run just translated 52 of 62 and said so in a
-            # warning. Descend instead, counting the stars as we go.
+            # warning. Descend instead, recording each token as we go.
+            #
+            # A REFERENCE return nests identically and had no case here at all, so EVERY
+            # `T& f() {...}` was dropped — not a rare shape, it is how C++ spells a
+            # singleton accessor. CDefView's `static ATL::CWndClassInfo& GetWndClassInfo()`
+            # is the instance that held a 4,869-line TU out of paid translation, and the
+            # return type is irrelevant to the failure: a plain `int&` dropped too.
+            # Keeping the `&` in the spelling is what lets c_type_to_rust lower it, since
+            # that function already reads a trailing `&` and emits `&mut T` / `&T`.
             sub = child
-            stars = 0
-            while sub is not None and sub.type == "pointer_declarator":
-                stars += 1
+            suffix = ""
+            while sub is not None and sub.type in ("pointer_declarator", "reference_declarator"):
+                suffix += "*" if sub.type == "pointer_declarator" else "&"
                 sub = next(
                     (
                         c
                         for c in sub.children
-                        if c.type in ("pointer_declarator", "function_declarator")
+                        if c.type
+                        in ("pointer_declarator", "reference_declarator", "function_declarator")
                     ),
                     None,
                 )
             if sub is not None and sub.type == "function_declarator":
                 declarator = sub
-                return_type = (return_type + " " + "*" * stars).strip()
+                return_type = (return_type + " " + suffix).strip()
 
     cpp_class = None
     is_ctor = False
@@ -729,6 +738,18 @@ def _parse_function(node, source: bytes, source_text: str) -> CFunction | None:
                         # Legacy DECLARE_INTERFACE methods sometimes retain the
                         # C spelling in an out-of-line C++ definition. In C++
                         # this macro expands to void; the receiver is implicit.
+                        continue
+                    if param_text in ("void", "VOID"):
+                        # C's EMPTY parameter list. `f(void)` declares zero parameters, but
+                        # tree-sitter still reports one parameter_declaration, and recording
+                        # it gave the function arity 1. The call binder then saw
+                        # `SelectExtOnRename()` as arity 0 against "available arities: [1]"
+                        # and refused to bind — which stopped the whole 4,869-line CDefView
+                        # TU, on a function whose C says plainly that it takes nothing.
+                        # Only the bare spelling counts: `void *p` keeps its declarator and
+                        # is a real parameter, so matching the exact text is what separates
+                        # them. The uppercase `VOID` was already special-cased on the other
+                        # two parameter paths in this file and simply never on this one.
                         continue
                     spaced_array = re.fullmatch(
                         r"(?P<type>.+?)\s+(?P<name>[A-Za-z_]\w*)\s*\[[^]]*\]",

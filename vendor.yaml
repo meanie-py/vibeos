@@ -1,4 +1,7 @@
-# vendor.yaml — the registry of C/C++ we do NOT translate.
+# vendor.yaml — the registry of which C/C++ in this tree is ours to translate.
+#
+# Two halves. `trees:` is what we do NOT translate. `ours:` is foreign-COPYRIGHT code we
+# DO — the verdicts that used to have nowhere to live. See the header above `ours:`.
 #
 # WHY THIS EXISTS
 # ---------------
@@ -54,6 +57,59 @@ trees:
       the code, and a Rust fork would have to be re-merged on every ACPICA release.
       The Rust-facing boundary is sdk/lib/rust/acpica-sys.
 
+  # ── the kernel/user driver framework ────────────────────────────────────
+  - path: sdk/lib/drivers/wdf
+    name: Windows Driver Frameworks (KMDF/UMDF)
+    upstream: https://github.com/microsoft/Windows-Driver-Frameworks
+    license: MIT  # upstream relicensed the WDF sources to MIT in 2017
+    modified: "lightly"  # 9 of 488 files mention ReactOS; see reason
+    headers:
+      - sdk/include/wdf
+    version:
+      file: sdk/lib/drivers/wdf/CMakeLists.txt
+      patterns:
+        - '__WDF_MAJOR_VERSION=(\d+)'
+        - '__WDF_MINOR_VERSION=(\d+)'
+        - '__WDF_BUILD_NUMBER=(\d+)'
+      join: "."
+    reason: >
+      290K lines / 488 files, the second-largest foreign tree in the repo after FEX and
+      bigger than FreeType — and the single biggest classification call this registry has
+      had to make, so the argument is written out rather than asserted.
+
+      It is vendored for the ACPICA reason, not the "it is Microsoft's" reason. WDF's
+      entire value is ABI compatibility: third-party KMDF/UMDF driver binaries bind to
+      this framework's DDI table by version, so what the tree has to be is *the same
+      framework Windows ships*, and upstream is public and tracked. ReactOS carries it as
+      a near-unmodified drop — 9 of 488 files mention ReactOS at all, and the local
+      additions are confined to reactos_special.{h,cpp} plus the cmake glue. Owning a
+      Rust fork would mean re-merging every WDF release forever to preserve exactly the
+      compatibility that is the point of having it.
+
+      Two facts that do NOT decide it, recorded so nobody re-litigates on them: the tree
+      is 81% C++ (396 of 488 files), which is a SCHEDULING obstacle given the pipeline is
+      C-only, not an ownership argument — "we cannot translate it yet" would be the wrong
+      reason to move 290K lines out of the denominator. And it is BUILT
+      (sdk/lib/drivers/CMakeLists.txt), which is likewise irrelevant: FreeType is built
+      too. The version probe reads the compile definitions rather than a header, because
+      that is where this tree's version actually lives (headers: WDF 1.17; the triage
+      structs in reactos_special.h are V1_15).
+
+  # ── Microsoft's compiler conformance tests ──────────────────────────────
+  - path: modules/rostests/apitests/compiler/ms
+    name: Microsoft compiler-tests (EH/SEH)
+    upstream: https://github.com/microsoft/compiler-tests
+    license: MIT
+    license_file: modules/rostests/apitests/compiler/ms/LICENSE.TXT
+    modified: "no"  # zero files mention ReactOS
+    reason: >
+      A snapshot of Microsoft's C++EH and SEH conformance tests, carried to check WinEH
+      implementations against the platform (their README says so). Vendored for a reason
+      the other entries do not have: these are an ORACLE, and an oracle's worth comes
+      entirely from being written by someone other than us. Translating them to Rust
+      would destroy the property that makes them useful — they exist to test what our
+      compiler and our SEH do, and a test we rewrote cannot tell us that.
+
   # ── the Microsoft CRT under ucrtbase.dll ────────────────────────────────
   - path: sdk/lib/ucrt
     name: Microsoft UCRT
@@ -71,7 +127,9 @@ trees:
 
       This is the entry that motivated the registry. ucrtbase.dll is vendored ucrt
       plus OUR msvcrt_shared (dll/win32/msvcrt: cpp.c, except.c, undname.c,
-      except_<arch>.c, reactos/ucrt_tls_sup.c). Counting ucrt as translation debt
+      except_<arch>.c, reactos/ucrt_tls_sup.c) plus 132 lines of ucrtbase's own C
+      (dll/win32/ucrtbase/printf.c + stubs.c; ucrtbase_stubs.c is GENERATED, and the
+      2,676-line .spec is a definition file, not a body). Counting ucrt as translation debt
       makes ucrtbase read as permanently ~8% reachable; excluding it makes the goal
       sayable — everything in ucrtbase that is ours is Rust. See task #55.
     review: >
@@ -333,3 +391,73 @@ trees:
     reason: >
       Headers only — no FullFAT source in this tree. 19 headers, none of them
       excluded from the convention-alias scan before this registry existed.
+
+# ─────────────────────────────────────────────────────────────────────────────
+# THE OTHER HALF: foreign-COPYRIGHT code that IS ours to translate.
+#
+# `trees:` above answers "what do we not translate". This answers "what did we look at
+# and decide we DO", and it exists because that verdict had nowhere to live. Without it
+# every such tree stayed permanently on `--suspects`, the decision survived only in a
+# commit message, and the next agent re-derived it from scratch — which is how the tree
+# ended up with three disagreeing vendored-lists in the first place.
+#
+# An entry here is a claim about SCOPE, not authorship: this code is foreign-derived and
+# we intend to own it, so it stays in the translation denominator. Entries carry no
+# version probe and get no VENDORED stamp — both would be false.
+#
+# Recording both verdicts is what makes `--suspects` a ratchet: `--check` fails on any
+# foreign-copyright directory that is in NEITHER list, so newly-imported foreign code has
+# to be classified before it can land.
+# ─────────────────────────────────────────────────────────────────────────────
+ours:
+  # ── Microsoft DDK storage class drivers ─────────────────────────────────
+  # All three share one argument, written out here and cross-referenced below.
+  - path: drivers/storage/class/classpnp
+    name: classpnp (storage class port driver)
+    origin: Microsoft DDK sample, MS-PL (drivers/storage/class/classpnp/license.txt)
+    tier: "Tier 3 (native userland/driver queue)"
+    reason: >
+      46.5K lines, and the decision that separates this from WDF. Both are
+      Microsoft-copyright; the difference is what the code is FOR. WDF is a stable ABI
+      third-party binaries bind to, so it has to stay the framework Windows ships. The
+      storage class drivers are just drivers this OS runs — nothing outside the tree
+      depends on their internals, there is no compatibility contract to preserve, and
+      ReactOS has already diverged them (13 of 24 files carry ReactOS edits). They are
+      shipped under MS-PL, which grants derivative works outright, so a Rust rewrite is
+      as licensed as the C edits already made.
+
+      They are also exactly the kind of code the project wants in Rust: pointer-heavy
+      IRP dispatch in a driver that runs on the boot path for every disk. Excluding 97K
+      lines of storage stack from the denominator because a copyright line says
+      Microsoft would be the failure the registry was built to prevent.
+
+  - path: drivers/storage/class/cdrom
+    name: cdrom (storage class driver)
+    origin: Microsoft DDK sample, MS-PL (drivers/storage/class/cdrom/license.txt)
+    tier: "Tier 3 (native userland/driver queue)"
+    reason: >
+      37.3K lines, 6 of 19 files ReactOS-edited. Same argument as classpnp: MS-PL
+      derivative-work grant, no external ABI contract, already diverged, and a driver
+      this OS owns rather than tracks.
+
+  - path: drivers/storage/class/disk
+    name: disk (storage class driver)
+    origin: Microsoft DDK sample, MS-PL (drivers/storage/class/disk/license.txt)
+    tier: "Tier 3 (native userland/driver queue)"
+    reason: >
+      14K lines, 4 of 7 files ReactOS-edited. Same argument as classpnp.
+
+  # ── our PSDK, with a few SDK headers inside it ──────────────────────────
+  - path: sdk/include/psdk
+    name: PSDK (ReactOS's Win32 SDK headers)
+    origin: ReactOS-authored, with five verbatim SDK headers inside it
+    reason: >
+      Not a foreign tree at all — this is ReactOS's own PSDK. It appears on the scan
+      because five of its ~700 headers carry a Microsoft copyright and are carried
+      verbatim (d3dkmdt.h, d3dukmdt.h, no_sal2.h, specstrings.h, specstrings_strict.h).
+
+      Registered as ours rather than split into a five-file vendored entry, because the
+      unit of vendoring in this registry is a TREE with an upstream you can re-vendor
+      from, and these are individual headers living inside our own. Nothing here is a
+      translation target in the first place — the project translates C bodies, and this
+      directory has none.

@@ -1216,30 +1216,7 @@ def _parse_plain_state_field(
     if fixed_array is not None:
         c_type = fixed_array.group("type")
         base = " ".join(re.sub(r"\b(?:const|volatile)\b", "", c_type).split())
-        scalar_types = set(_RUST_SCALARS) | {
-            "BOOL",
-            "BOOLEAN",
-            "bool",  # C++ bool: 1-byte on all targets (Itanium/MSVC), == Rust bool
-            "BYTE",
-            "CHAR",
-            "DWORD",
-            "DWORD64",
-            "HRESULT",
-            "INT",
-            "INT_PTR",
-            "LONG",
-            "LONG_PTR",
-            "LONGLONG",
-            "SIZE_T",
-            "UINT",
-            "UINT_PTR",
-            "ULONG",
-            "ULONG_PTR",
-            "ULONGLONG",
-            "USHORT",
-            "WCHAR",
-            "WORD",
-        }
+        scalar_types = set(_RUST_SCALARS) | _WINDOWS_SCALAR_TYPEDEFS
         pointer_typedef = base in _KNOWN_POINTER_TYPEDEFS or bool(
             re.fullmatch(r"(?:L?P(?:C)?|H)[A-Z][A-Z0-9_]*", base)
         )
@@ -1290,31 +1267,7 @@ def _parse_plain_state_field(
         raise CppComError(f"cannot parse object state declaration: {declaration}")
     base = re.sub(r"\b(?:const|volatile)\b", "", c_type).replace("*", "")
     base = " ".join(base.split())
-    scalar_types = _RUST_SCALARS | {
-        "BOOL": "",
-        "BOOLEAN": "",
-        "bool": "",  # C++ bool: 1-byte on all targets (Itanium/MSVC), == Rust bool
-        "BYTE": "",
-        "CHAR": "",
-        "DWORD": "",
-        "DWORD64": "",
-        "HRESULT": "",
-        "INT": "",
-        "INT8": "",
-        "INT_PTR": "",
-        "LONG": "",
-        "LONG_PTR": "",
-        "LONGLONG": "",
-        "SIZE_T": "",
-        "UINT": "",
-        "UINT_PTR": "",
-        "ULONG": "",
-        "ULONG_PTR": "",
-        "ULONGLONG": "",
-        "USHORT": "",
-        "WCHAR": "",
-        "WORD": "",
-    }
+    scalar_types = set(_RUST_SCALARS) | _WINDOWS_SCALAR_TYPEDEFS
     pointer_typedef = base in _KNOWN_POINTER_TYPEDEFS or bool(
         re.fullmatch(r"(?:L?P(?:C)?|H)[A-Z][A-Z0-9_]*", base)
     )
@@ -1841,6 +1794,40 @@ def _assert_no_dropped_slots(interface: str, header: Path, body: str, parsed: in
         )
 
 
+def _vtbl_declared_slots(body: str) -> int:
+    """Count vtable SLOT declarations in a WIDL ``InterfaceVtbl`` body.
+
+    Counting every ``STDMETHODCALLTYPE`` token over-counts, because a slot's PARAMETER can be a
+    function pointer carrying the same calling convention. oleidl.h's IViewObject is the case:
+
+        HRESULT (STDMETHODCALLTYPE *Draw)(
+            ...
+            BOOL (STDMETHODCALLTYPE *pfnContinue)(ULONG_PTR dwContinue),   <-- a parameter
+            ULONG_PTR dwContinue);
+
+    That reads as 10 tokens for an interface with 9 slots (QueryInterface, AddRef, Release,
+    Draw, GetColorSet, Freeze, Unfreeze, SetAdvise, GetAdvise — the documented layout), so the
+    cross-check fired on a CORRECT parse and refused the whole translation. A false positive
+    here is not harmless: this guard is the thing standing between us and a silently shifted
+    vtable, so it has to be trustworthy enough that nobody is tempted to loosen it.
+
+    Depth separates the two cleanly. A slot's token sits inside the declarator parens, at depth
+    1 of the struct body; a parameter's sits inside the slot's parameter list and then its own
+    declarator, i.e. deeper. Counting only depth 1 keeps a genuinely missed slot mismatching.
+    """
+    depth = 0
+    slots = 0
+    for match in re.finditer(r"[()]|\bSTDMETHODCALLTYPE\b", body):
+        token = match.group(0)
+        if token == "(":
+            depth += 1
+        elif token == ")":
+            depth -= 1
+        elif depth == 1:
+            slots += 1
+    return slots
+
+
 def _parse_param(text: str, index: int) -> tuple[str, str]:
     text = " ".join(text.replace("CONST", "const").split())
     text = _CLASSIC_SAL.sub("", text).strip()
@@ -1873,6 +1860,8 @@ def _parse_param(text: str, index: int) -> tuple[str, str]:
 def parse_widl_interface(header: Path, interface: str) -> InterfaceSpec:
     """Read an exact flattened interface vtable from a compiler-facing SDK header.
 
+    See :func:`_vtbl_declared_slots` for why the slot cross-check counts by paren depth.
+
     WIDL's generated ``InterfaceVtbl`` struct is preferred. A small number of
     legacy shell interfaces use ``DECLARE_INTERFACE_`` instead; that C macro
     surface explicitly lists every inherited slot, so it is equally suitable
@@ -1896,7 +1885,7 @@ def parse_widl_interface(header: Path, interface: str) -> InterfaceSpec:
                     params=tuple(params),
                 )
             )
-        declared = len(re.findall(r"\bSTDMETHODCALLTYPE\b", block.group("body")))
+        declared = _vtbl_declared_slots(block.group("body"))
         if declared != len(methods):
             raise CppComError(
                 f"{interface}: {header.name}'s {wanted} declares {declared} slot(s) but "
@@ -1949,6 +1938,57 @@ def parse_widl_interface(header: Path, interface: str) -> InterfaceSpec:
     base = inheritance.group(1) if inheritance is not None else None
     # Keep generated output byte-identical across worktrees/build roots.
     return InterfaceSpec(interface, tuple(methods), header.name, base)
+
+
+# Windows SDK integer typedefs admitted as proven scalar state, on top of _RUST_SCALARS.
+#
+# ONE copy on purpose. This lived inline in both arms of _parse_plain_state_field — the fixed
+# array arm and the plain arm — and the two had already drifted: `INT8` was in the plain set and
+# missing from the array set, so `INT8 Direction` was proven state while `INT8 Direction[2]` was
+# not. Nothing reports a divergence between two hand-maintained copies of the same table, so the
+# fix is to stop having two.
+#
+# Two kinds of name are in here and they are trusted for different reasons. A name that STATES
+# its width (INT8/UINT16/...) is self-proving — there is nothing left to establish, which is why
+# completing that family is not the same guess as admitting an unmeasured typedef. The rest
+# (LONG, INT_PTR, SIZE_T, ...) are data-model-dependent and are here because this codebase is
+# Windows; a name that is neither still fails loudly and wants an island proof, not an entry.
+_WINDOWS_SCALAR_TYPEDEFS = frozenset(
+    {
+        "BOOL",
+        "BOOLEAN",
+        "bool",  # C++ bool: 1-byte on all targets (Itanium/MSVC), == Rust bool
+        "BYTE",
+        "CHAR",
+        "DWORD",
+        "DWORD64",
+        "HRESULT",
+        "INT",
+        "INT8",
+        "INT16",
+        "INT32",
+        "INT64",
+        "INT_PTR",
+        "LONG",
+        "LONG_PTR",
+        "LONGLONG",
+        "SHORT",
+        "SIZE_T",
+        "UCHAR",
+        "UINT",
+        "UINT8",
+        "UINT16",
+        "UINT32",
+        "UINT64",
+        "UINT_PTR",
+        "ULONG",
+        "ULONG_PTR",
+        "ULONGLONG",
+        "USHORT",
+        "WCHAR",
+        "WORD",
+    }
+)
 
 
 _CPP_COM_DEBUG_MACROS = {"ASSERT", "ERR", "FIXME", "MESSAGE", "TRACE", "WARN", "pdump"}
