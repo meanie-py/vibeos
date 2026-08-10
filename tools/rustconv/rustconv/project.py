@@ -36,7 +36,7 @@ from dataclasses import dataclass
 from pathlib import Path
 
 try:  # 3.11+
-    import tomllib
+    import tomllib  # type: ignore[import-not-found]  # absent on 3.10, hence the fallback
 except ModuleNotFoundError:  # 3.10
     import tomli as tomllib
 

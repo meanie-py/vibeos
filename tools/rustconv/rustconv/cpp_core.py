@@ -44,8 +44,6 @@ class CppTranslationError(RuntimeError):
 CppComError = CppTranslationError
 
 
-
-
 def _split_args(text: str) -> list[str]:
     out, start, depth = [], 0, 0
     for i, char in enumerate(text):
@@ -417,8 +415,6 @@ def _expand_default_helper_arguments(
             body = body[:closing] + insertion + body[closing:]
         rewritten.append(replace(dep, body_text=body))
     return rewritten
-
-
 
 
 def _argument_c_type(

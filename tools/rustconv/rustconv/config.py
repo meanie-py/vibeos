@@ -3,6 +3,7 @@
 import os
 from dataclasses import dataclass, field
 from pathlib import Path
+from typing import TYPE_CHECKING
 
 from dotenv import load_dotenv
 
@@ -504,6 +505,29 @@ _PROJECT_EXPORTS = frozenset(
         "_user_prompt_addendum",
     }
 )
+
+
+if TYPE_CHECKING:
+    # Runtime resolution goes through __getattr__ below, which a type checker cannot see
+    # through — it erased the type of every re-exported name, so `TARGETS["ntoskrnl"]`
+    # inferred as None and each use became a spurious optional-access error downstream.
+    # Re-exported explicitly here (the `X as X` form marks it a deliberate re-export) so
+    # checkers get the real types while imports still resolve lazily at runtime.
+    from .projects.reactos.targets import (
+        TARGETS as TARGETS,
+    )
+    from .projects.reactos.targets import (
+        TargetResolveError as TargetResolveError,
+    )
+    from .projects.reactos.targets import (
+        detect_target as detect_target,
+    )
+    from .projects.reactos.targets import (
+        hal_cmake_for_c as hal_cmake_for_c,
+    )
+    from .projects.reactos.targets import (
+        make_user_dll_target as make_user_dll_target,
+    )
 
 
 def _project():

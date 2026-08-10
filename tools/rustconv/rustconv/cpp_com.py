@@ -115,7 +115,6 @@ _RAII_CONTAINER_LOWERINGS: dict[str, tuple[str, str]] = {
 }
 
 
-
 def _bind_sibling_overload(
     body: str,
     start: int,
@@ -208,7 +207,6 @@ def _bind_sibling_overload(
 
 
 @dataclass(frozen=True)
-
 class PlainStateField:
     """One C-layout object field safe to spell directly in the Rust owner."""
 
@@ -291,8 +289,6 @@ class PlainStateField:
         if not self.owned_cstring:
             return None
         return f"cpp_com_assign_{self.name}"
-
-
 
 
 @dataclass(frozen=True)
@@ -620,8 +616,6 @@ def find_class_header(source: Path, class_name: str) -> Path:
             f"{class_name}: ambiguous defining header: " + ", ".join(str(p) for p in hits)
         )
     return hits[0]
-
-
 
 
 def _parse_com_map(body: str, class_name: str) -> tuple[list[ComMapEntry], list[str]]:
@@ -1344,10 +1338,6 @@ def _parse_plain_state_field(
     return PlainStateField(declaration=text, c_type=c_type, name=name)
 
 
-
-
-
-
 def _pod_definition(text: str, name: str) -> tuple[str, bool] | None:
     patterns = (
         re.compile(
@@ -1961,10 +1951,6 @@ def parse_widl_interface(header: Path, interface: str) -> InterfaceSpec:
     return InterfaceSpec(interface, tuple(methods), header.name, base)
 
 
-
-
-
-
 _CPP_COM_DEBUG_MACROS = {"ASSERT", "ERR", "FIXME", "MESSAGE", "TRACE", "WARN", "pdump"}
 _CPP_COM_LITERAL_WORDS = {"FALSE", "NULL", "TRUE"}
 _CPP_COM_TYPE_WORDS = {
@@ -1986,8 +1972,6 @@ _INTEGER_LITERAL = re.compile(
     r"(?<![\w.])(?P<number>0[xX][0-9A-Fa-f]+|0[oO][0-7]+|\d+)"
     r"(?:[uUlL]+|[iu](?:8|16|32|64|128|size))?(?![\w.])"
 )
-
-
 
 
 def _wide_literal_units(token: str) -> tuple[int, ...]:
@@ -3826,8 +3810,6 @@ _CPP_SUPPORT_CONSTANTS = {
 }
 
 
-
-
 def _shared_substrate_type_names(repo_root: Path) -> set[str]:
     names = set()
     for path in (
@@ -4704,8 +4686,6 @@ def worker_signature(
 # label or a `&'a` lifetime blanked everything to the next apostrophe. See lex_mask.
 
 
-
-
 def strip_debug_statements(text: str, names: set[str] | None = None) -> str:
     """Remove complete shell32 debug-macro statements from a model-only view."""
     masked = _masked_cpp(text)
@@ -4728,12 +4708,6 @@ def strip_debug_statements(text: str, names: set[str] | None = None) -> str:
     for start, end in reversed(spans):
         text = text[:start] + " " * (end - start) + text[end:]
     return text
-
-
-
-
-
-
 
 
 def _rewrite_com_ptr_state(
@@ -4999,12 +4973,6 @@ def prepare_helper_closure(
     return topological_sort(rewritten)
 
 
-
-
-
-
-
-
 # File-local C++ RAII structs known to appear as body locals in shell32 sources.
 # Each is a hard pre-payment reject unless the invocation supplies a hand-verified
 # Rust lowering via --local-raii NAME=path.rs (see provided_raii_contract).
@@ -5205,8 +5173,6 @@ def _interface_method_shape(method: InterfaceMethod) -> tuple[str, tuple[str, ..
         _abi_c_type_key(method.return_type),
         tuple(_abi_c_type_key(c_type) for c_type, _ in method.params[1:]),
     )
-
-
 
 
 def _interface_method_target(
