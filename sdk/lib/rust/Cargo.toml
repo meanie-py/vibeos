@@ -78,6 +78,46 @@ members = [
     # LDAP client. Two bindgen islands (`types` for the 19 winldap_private.h TUs,
     # `types_1` for ber.c's <winldap.h>) — see the CMakeLists for why they cannot merge.
     "wldap32-rust",
+    # Tier-3 batch D, the security/auth cluster. All plain C, no COM substrate.
+    "ntmarta-rust",
+    "authz-rust",
+    # aclui-rust joins as a COMPILING crate; it is not cohab-flipped yet, so it is linked into
+    # nothing and cannot affect a boot. msv1_0-rust stays OUT until it compiles too — membership
+    # is what puts a crate in everyone's `cargo check`, so a red member breaks every other lane.
+    "aclui-rust",
+    # Network-configuration COM server (the "Network Connections" installer/property sheets).
+    # C-style COM: every vtable method is a plain `extern "C"` fn, so the whole 11-TU module
+    # translates as plain C — no C++ substrate.
+    "netcfgx-rust",
+    # The MSV1_0 authentication package. ntlm/global.c never went through `translate`
+    # (globals only); its six definitions are hand-carried in src/ntlm/global.rs.
+    "msv1_0-rust",
+    # The ACL editor UI (the Security tab's property page). Win32 + a small COM surface.
+    "aclui-rust",
+    # The user-mode PnP manager service — the SERVER half of pnp.idl, which cfgmgr32/setupapi
+    # speak as clients.
+    "umpnpmgr-rust",
+    # The system setup DLL: the second-stage GUI wizard, the account/security policy writer, and
+    # the PS/2 mouse property page. Was parked RED at 176/177/177 for want of a portable spelling
+    # for width-varying parameters; crate-repair's `width_alias_cast` rule now supplies it.
+    "syssetup-rust",
+    "desk-rust",
+    # strsafe.h's `static __inline` bounded string ops, ported ONCE. No object file in the tree
+    # defines them, so every flipped module used to port the header again — four divergent
+    # copies, one of which had dropped its bound (roadmap: msgina's stack overrun).
+    "strsafe-rust",
+    # The Win32 header MACROS (LOWORD, MAKELONG, RGB, ZeroMemory, _countof, ...) plus the
+    # constants bindgen folds away (DWLP_*, HWND_BROADCAST, INVALID_HANDLE_VALUE). bindgen emits
+    # neither, so every translated module re-ported them by hand: LOWORD alone existed 32 times
+    # in 8 spellings, and the RGB copies all dropped the header's per-component BYTE mask.
+    "win32macros-rust",
+    # The System control panel: the General/Hardware/Advanced property sheets, the
+    # environment/user-profile/hardware-profile/virtual-memory/startup-recovery dialogs, and the
+    # SMBIOS/DMI reader that names the machine.
+    "sysdm-rust",
+    # The International control panel: the number/currency/time/date/sort/language property
+    # sheets, the locale+keyboard-layout installer, and the .inf-driven locale setup path.
+    "intl-rust",
     "access",
     "avltable",
     "bitmap",
@@ -94,6 +134,7 @@ members = [
     "msvcrt-crt-cargo",
     "msvcrt-difftest",
     "msvcrt-scanf-difftest",
+    "msvcrt-seh-difftest",
     "compress",
     "crc32",
     "encode",
@@ -307,6 +348,17 @@ members = [
     "cabinet-rust",
     "cabinet-cargo",
     "mlang-cargo",
+    # shell32's private recycle-bin static library (dll/win32/shell32/shellrecyclebin) — its own
+    # CMake target, so its own crate and island rather than 44K more lines in shell32's. The four
+    # interfaces are DECLARE_INTERFACE_, and the island is generated in C mode so they arrive as
+    # implementable `lpVtbl` vtables instead of bindgen's opaque C++ ones.
+    #
+    # PARKED at 25 errors/arch (from 256) while the two v5 TUs are ground out — 11 `goto cleanup;`
+    # sites the model left as C control flow, plus L"" literals and a leaked C `static` qualifier.
+    # Membership is what puts a crate in EVERY lane's `cargo check`, so it joins on the commit
+    # that makes it green, exactly as msv1_0-rust did above. Nothing links it yet either: the
+    # subtree is not cohab-flipped, so the C still builds and no boot can regress.
+    #   "recyclebin-rust",
 ]
 resolver = "2"
 

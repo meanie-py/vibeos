@@ -86,9 +86,8 @@ pub unsafe extern "system" fn FillSolid(
     1
 }
 
-#[cfg(target_arch = "x86")]
 #[no_mangle]
-pub unsafe extern "stdcall" fn EngPaint(
+pub unsafe extern "system" fn EngPaint(
     pso: *mut SURFOBJ,
     pco: *mut CLIPOBJ,
     pbo: *mut BRUSHOBJ,
@@ -113,57 +112,8 @@ pub unsafe extern "stdcall" fn EngPaint(
     )
 }
 
-#[cfg(not(target_arch = "x86"))]
 #[no_mangle]
-pub unsafe extern "C" fn EngPaint(
-    pso: *mut SURFOBJ,
-    pco: *mut CLIPOBJ,
-    pbo: *mut BRUSHOBJ,
-    pptlBrushOrg: *mut POINTL,
-    mix: MIX,
-) -> BOOL {
-    let rop4: ROP4 = mix_to_rop4(mix);
-    debug_assert!(!rop4_uses_source(rop4));
-
-    IntEngBitBlt(
-        pso,
-        core::ptr::null_mut(),
-        core::ptr::null_mut(),
-        pco,
-        core::ptr::null_mut(),
-        core::ptr::addr_of_mut!((*pco).rclBounds),
-        core::ptr::null_mut(),
-        core::ptr::null_mut(),
-        pbo,
-        pptlBrushOrg,
-        rop4,
-    )
-}
-
-#[cfg(target_arch = "x86")]
-#[no_mangle]
-pub unsafe extern "stdcall" fn IntEngPaint(
-    pso: *mut SURFOBJ,
-    pco: *mut CLIPOBJ,
-    pbo: *mut BRUSHOBJ,
-    pptlBrushOrg: *mut POINTL,
-    mix: MIX,
-) -> BOOL {
-    let psurf: *mut SURFACE =
-        (pso as *mut u8).offset(-(core::mem::offset_of!(SURFACE, SurfObj) as isize)) as *mut SURFACE;
-
-    if ((*pso).iType as u32 != STYPE_BITMAP) && ((*psurf).flags & HOOK_PAINT as FLONG != 0) {
-        if let Some(paint) = gdidev_paint(pso) {
-            return paint(pso, pco, pbo, pptlBrushOrg, mix);
-        }
-    }
-
-    EngPaint(pso, pco, pbo, pptlBrushOrg, mix)
-}
-
-#[cfg(not(target_arch = "x86"))]
-#[no_mangle]
-pub unsafe extern "C" fn IntEngPaint(
+pub unsafe extern "system" fn IntEngPaint(
     pso: *mut SURFOBJ,
     pco: *mut CLIPOBJ,
     pbo: *mut BRUSHOBJ,

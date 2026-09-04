@@ -74,6 +74,10 @@
 #define STDOUT_FILENO 1
 #define STDERR_FILENO 2
 
+/* time (msvcrt's own time.h) */
+#undef  CLOCKS_PER_SEC
+#define CLOCKS_PER_SEC 0x000003E8
+
 /* Win32 file API (psdk) */
 #define CREATE_ALWAYS                              2
 #define CREATE_NEW                                 1
@@ -110,18 +114,37 @@
 #define STD_OUTPUT_HANDLE                          0xFFFFFFF5u
 #define RTL_CRITICAL_SECTION_FLAG_FORCE_DEBUG_INFO 0x10000000
 
+/* spawn modes (msvcrt's own process.h) */
+#define _P_WAIT    0
+#define _P_NOWAIT  1
+#define _P_OVERLAY 2
+#define _P_NOWAITO 3
+#define _P_DETACH  4
+
+/* Win32 process API (psdk) */
+#define CREATE_UNICODE_ENVIRONMENT 0x00000400
+#define DETACHED_PROCESS           8
+#define STARTF_USESTDHANDLES       0x00000100
+#define INFINITE                   0xFFFFFFFFu
+#define WAIT_OBJECT_0              0
+#define WAIT_TIMEOUT               0x00000102
+#define WAIT_FAILED                0xFFFFFFFFu
+
 /* codepage conversion — msvcrt.h's get_aw_cp / convert_*_utf8 inlines */
 #define CP_ACP         0
 #define MB_PRECOMPOSED 1
 
 /* Win32 error codes */
-#define ERROR_SUCCESS           0
-#define NO_ERROR                0
-#define ERROR_ACCESS_DENIED     5
-#define ERROR_BROKEN_PIPE       0x0000006D
-#define ERROR_FILE_NOT_FOUND    2
-#define ERROR_INVALID_HANDLE    6
-#define ERROR_INVALID_PARAMETER 0x00000057
+#define ERROR_SUCCESS             0
+#define NO_ERROR                  0
+#define ERROR_ACCESS_DENIED       5
+#define ERROR_BROKEN_PIPE         0x0000006D
+#define ERROR_FILE_NOT_FOUND      2
+#define ERROR_INVALID_HANDLE      6
+#define ERROR_INVALID_PARAMETER   0x00000057
+#define ERROR_INSUFFICIENT_BUFFER 0x0000007A
+#define ERROR_ENVVAR_NOT_FOUND    0x000000CB
+#define ERROR_PROC_NOT_FOUND      0x0000007F
 
 /* Win32 error codes — errno.c's msvcrt_set_errno case labels */
 #define ERROR_ALREADY_EXISTS        0x000000B7
@@ -210,9 +233,89 @@
 #define EPIPE     0x00000020
 
 /* NT enum constants — invisible to a -dM macro dump, hence the object probe */
-#define FileBasicInformation    4
-#define FileStandardInformation 5
-#define GetFileExInfoStandard   0
+#define FileBasicInformation       4
+#define FileStandardInformation    5
+#define GetFileExInfoStandard      0
+#define ExceptionContinueSearch    1
+#define ExceptionContinueExecution 0
+#define ExceptionNestedException   2
+#define ExceptionCollidedUnwind    3
+
+/* signal numbers (msvcrt's OWN signal.h — these DISPLACE the host's) */
+#undef  SIGABRT
+#define SIGABRT  0x00000016
+#define SIGBREAK 0x00000015
+#undef  SIGFPE
+#define SIGFPE   8
+#undef  SIGILL
+#define SIGILL   4
+#undef  SIGINT
+#define SIGINT   2
+#undef  SIGSEGV
+#define SIGSEGV  0x0000000B
+#undef  SIGTERM
+#define SIGTERM  0x0000000F
+#undef  NSIG
+#define NSIG     0x00000017
+
+/* _FPE_* subcodes (msvcrt's float.h) — the second argument to a SIGFPE handler */
+#define _FPE_DENORMAL      0x00000082
+#define _FPE_EXPLICITGEN   0x0000008C
+#define _FPE_INEXACT       0x00000086
+#define _FPE_INVALID       0x00000081
+#define _FPE_OVERFLOW      0x00000084
+#define _FPE_STACKOVERFLOW 0x0000008A
+#define _FPE_UNDERFLOW     0x00000085
+#define _FPE_ZERODIVIDE    0x00000083
+
+/* SEH filter dispositions and exception-record flags (winnt.h / excpt.h) */
+#define EXCEPTION_CONTINUE_EXECUTION ((int)0xFFFFFFFF)
+#define EXCEPTION_CONTINUE_SEARCH    0
+#define EXCEPTION_EXECUTE_HANDLER    1
+#define EXCEPTION_NONCONTINUABLE     1
+#define EXCEPTION_UNWINDING          2
+#define EXCEPTION_EXIT_UNWIND        4
+#define EXCEPTION_TARGET_UNWIND      0x00000020
+#define EXCEPTION_MAXIMUM_PARAMETERS 0x0000000F
+
+/* exception CODES — except.c's SIGFPE/SIGSEGV/SIGILL mapping switches on these */
+#define EXCEPTION_ACCESS_VIOLATION      ((int)0xC0000005)
+#define EXCEPTION_ILLEGAL_INSTRUCTION   ((int)0xC000001D)
+#define EXCEPTION_PRIV_INSTRUCTION      ((int)0xC0000096)
+#define EXCEPTION_FLT_DENORMAL_OPERAND  ((int)0xC000008D)
+#define EXCEPTION_FLT_DIVIDE_BY_ZERO    ((int)0xC000008E)
+#define EXCEPTION_FLT_INEXACT_RESULT    ((int)0xC000008F)
+#define EXCEPTION_FLT_INVALID_OPERATION ((int)0xC0000090)
+#define EXCEPTION_FLT_OVERFLOW          ((int)0xC0000091)
+#define EXCEPTION_FLT_STACK_CHECK       ((int)0xC0000092)
+#define EXCEPTION_FLT_UNDERFLOW         ((int)0xC0000093)
+
+/* NTSTATUS values (ntstatus.h) — the same codes on the other side of the map */
+#define STATUS_ACCESS_VIOLATION        ((int)0xC0000005)
+#define STATUS_FLOAT_DIVIDE_BY_ZERO    ((int)0xC000008E)
+#define STATUS_FLOAT_INEXACT_RESULT    ((int)0xC000008F)
+#define STATUS_FLOAT_INVALID_OPERATION ((int)0xC0000090)
+#define STATUS_FLOAT_OVERFLOW          ((int)0xC0000091)
+#define STATUS_FLOAT_UNDERFLOW         ((int)0xC0000093)
+#define STATUS_LONGJUMP                ((int)0x80000026)
+#define STATUS_UNWIND_CONSOLIDATE      ((int)0x80000029)
+
+/* console control events (wincon.h) — except.c's Ctrl-C handler */
+#define CTRL_C_EVENT     0
+#define CTRL_BREAK_EVENT 1
+
+/* undecoration flags (imagehlp.h) — cpp.c's type_info::name() calls __unDName */
+#define UNDNAME_NO_ARGUMENTS  0x00002000
+#define UNDNAME_32_BIT_DECODE 0x00000800
+
+/* MEASURED, not transcribed: cxx.h's two object layouts, for the Rust mirror in
+ * tests/cpp.rs to assert itself against.  See DERIVED in the generator. */
+#define MSVCRT_SIZEOF_EXCEPTION      24
+#define MSVCRT_OFF_EXCEPTION_NAME    8
+#define MSVCRT_OFF_EXCEPTION_DO_FREE 16
+#define MSVCRT_SIZEOF_TYPE_INFO      144
+#define MSVCRT_OFF_TYPE_INFO_NAME    8
+#define MSVCRT_OFF_TYPE_INFO_MANGLED 16
 
 /* Pointer-valued; not an integer initializer, so emitted verbatim. */
 #define INVALID_HANDLE_VALUE ((HANDLE)(LONG_PTR)-1)

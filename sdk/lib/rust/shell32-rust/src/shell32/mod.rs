@@ -98,3 +98,24 @@ pub mod brfolder;
 /// `UrlIsW(x, URLIS_FILEURL)`, so no export of that name exists to link against.
 pub mod shlexec;
 pub mod shlfileop;
+/// changenotify.cpp — the CLIENT half of shell change notification (the server half is the
+/// separate `shelldesktop/CChangeNotifyServer.cpp`, still C++). Its one ATL `CWindowImpl<>`
+/// stays behind in `rust_changenotify_broker_stub.cpp`; the module header says why.
+///
+/// The first TU in this wave to need NO `EXTERN_C` lockstep at all — every one of its 15
+/// declared names was already inside an `extern "C"` block, and its other 8 exports have no
+/// header declaration to mangle.
+pub mod changenotify;
+/// CIDLDataObj.cpp — the shell's `IDataObject`/`IAsyncOperation` for a PIDL selection, plus
+/// the `IEnumFORMATETC` it hands out and the TU's four constructors. Split across three
+/// modules because one TU holds two COM classes and a set of free functions; the C++ file is
+/// the unit that leaves CMake, not the module.
+///
+/// The TU that unblocked ATL CONTAINER state. `CSimpleArray<FORMATETC>`/`<STGMEDIUM>` cannot
+/// be flattened to a pointer the way `CComPtr` is — a container's destructor walks storage the
+/// scaffold does not own — so the field keeps its type and `atl.rs`'s `Drop` restores the C++
+/// member destructor. The explicit dtor's own `RemoveAll()` is not a double free: it is
+/// idempotent, and C++ runs the body before the member destructors either way.
+pub mod CIDLDataObj;
+pub mod IEnumFORMATETCImpl;
+pub mod cidldataobj_free;

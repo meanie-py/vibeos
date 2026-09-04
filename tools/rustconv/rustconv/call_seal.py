@@ -2,11 +2,12 @@
 
 from __future__ import annotations
 
+import itertools
 import re
 from dataclasses import dataclass
 
 from .dead_regions import dead_region_spans, in_dead_region
-from .lex_mask import comment_spans, mask_code
+from .lex_mask import comment_spans, directive_spans, mask_code
 
 
 class CallSealError(RuntimeError):
@@ -21,12 +22,27 @@ class SealedCall:
     # DUMMY_PSEH `RpcExcept` handler. Defaults False so anything not proven dead stays
     # required. See dead_regions.py.
     dead: bool = False
+    # Top-level arguments at the C call site, or None where counting them cannot be
+    # trusted. The Rust site must agree -- see `_argument_count` for why that is the
+    # oracle that catches a SHIFTED envelope, which token accounting alone cannot.
+    argc: int | None = None
+    # Upper bound when the callee has C++ DEFAULT ARGUMENTS: the C site may omit them, a
+    # faithful Rust lowering cannot. None means "no defaults, exact match required".
+    argc_max: int | None = None
+    # This callee is a C++ METHOD, so `argc` above already counts the leading `this` that
+    # the C site spells implicitly. Recorded because the Rust site can then be REPAIRED
+    # rather than rejected -- see `repair_dropped_receivers`.
+    receiver: bool = False
 
 
 @dataclass(frozen=True)
 class SealedCalls:
     text: str
     calls: tuple[SealedCall, ...]
+    # Function-like macros this body calls. They get no token (see `seal_calls`), and
+    # the envelope has to SAY so by name: a model that assumes every call it emits
+    # needs a token numbers the macro too and shifts every real call by one.
+    macros: tuple[str, ...] = ()
 
 
 _PLACEHOLDER_RE = re.compile(r"\b__RUSTCONV_CALL_[0-9]{4}__\b")
@@ -48,8 +64,12 @@ _EXCLUDED = {
     "sizeof",
     "_countof",
 }
+# Never worth naming in the envelope's "these have no token" list: `sizeof` is a C
+# KEYWORD, and the debug macros are stripped from the body before sealing, so the model
+# never sees either as a call it might try to tokenize.
+_NEVER_DISCLOSED = {"sizeof", "TRACE", "WARN", "ERR", "FIXME", "MESSAGE"}
 _PURE_REUSABLE_CALLS = {"strlen", "wcslen"}
-_ANY_SEAL_TOKEN_RE = re.compile(r"\b__RUSTCONV_(?:CALL|FACT)_[0-9]{4}__\b")
+_ANY_SEAL_TOKEN_RE = re.compile(r"\b__RUSTCONV_(?:CALL|FACT|WIDE)_[0-9]{4}__\b")
 
 
 # Shared with fact_seal and cpp_com. It masks Rust as well as C++, which the three
@@ -106,10 +126,55 @@ def extern_declaration_spans(text: str) -> list[tuple[int, int]]:
     return spans
 
 
+_IDENT_RE = re.compile(r"\b[A-Za-z_]\w*\b")
+
+
+def _argument_count(masked: str, name_end: int) -> tuple[int, str] | None:
+    """Top-level argument count and argument text of the call starting at ``name_end``.
+
+    None when the parens do not balance inside ``masked`` -- an unparseable site is
+    never a finding, only a skip.
+
+    This is the oracle for a SHIFTED envelope, which nothing else can see. When a model
+    consumes a token for an untokenized macro call, every later token slides onto the
+    PREVIOUS call's site: the count of tokens is still right, each appears exactly once,
+    and the last one runs out -- whereupon the by-name recovery below rescues it and the
+    audit passes. `ApplyOrCancelChanges` shipped that way, restoring `swprintf`'s name
+    onto `StringFromCLSID`'s site and `CoTaskMemFree`'s onto `swprintf`'s. Arity catches
+    it on the first slid site, because a shift only lines up by coincidence.
+    """
+    opening = masked.find("(", name_end)
+    if opening < 0 or masked[name_end:opening].strip():
+        return None
+    depth = 0
+    segments: list[str] = []
+    segment_start = opening + 1
+    for pos in range(opening, len(masked)):
+        ch = masked[pos]
+        if ch in "([{":
+            depth += 1
+        elif ch in ")]}":
+            depth -= 1
+            if depth == 0:
+                segments.append(masked[segment_start:pos])
+                # rustfmt puts a trailing comma on every multi-line call, and a
+                # six-argument `RegQueryValueExW` written across seven lines counted as
+                # seven arguments. That is not an argument; it is a line ending.
+                while segments and not segments[-1].strip():
+                    segments.pop()
+                return len(segments), masked[opening + 1 : pos]
+        elif depth == 1 and ch == ",":
+            segments.append(masked[segment_start:pos])
+            segment_start = pos + 1
+    return None
+
+
 def seal_calls(
     text: str,
     required_calls: set[str],
     function_like_macros: frozenset[str] = frozenset(),
+    tu_source: str = "",
+    receiver_callees: frozenset[str] = frozenset(),
 ) -> SealedCalls:
     """Replace each known runtime-callee occurrence with a unique token.
 
@@ -118,15 +183,36 @@ def seal_calls(
     to carry the token, so sealing one makes the envelope unsatisfiable while
     protecting nothing — the macro's name is not in the output to begin with.
     """
-    required = required_calls - _EXCLUDED - function_like_macros
+    untokenized = _EXCLUDED | function_like_macros
+    required = required_calls - untokenized
     if not required:
         return SealedCalls(text, ())
     masked = _code_mask(text)
+    # C++ default arguments are declared at FILE scope, not inside the body being sealed,
+    # so the arity range has to be read from the whole TU when we have it.
+    decl_scope = _code_mask(tu_source) if tu_source else masked
     body_start = masked.find("{")
+    # `sizeof` is a KEYWORD and the debug macros are stripped from the body before
+    # sealing, so neither is a name the model can be confused by. Everything else that
+    # occurs here is one the envelope must disclaim by name.
+    named_macros = sorted(
+        {
+            match.group(1)
+            for match in re.finditer(r"\b([A-Za-z_]\w*)\s*\(", masked)
+            if match.group(1) in untokenized
+            and match.start(1) > body_start
+            and match.group(1) not in _NEVER_DISCLOSED
+        }
+    )
+    # A `#define NAME(x)` in the body is a DEFINITION, not a call occurrence, and its name is
+    # not a runtime callee at all. See lex_mask.directive_spans.
+    directive = directive_spans(text)
     spans = []
     for match in re.finditer(r"\b([A-Za-z_]\w*)\s*\(", masked):
         name = match.group(1)
         if match.start(1) <= body_start or name not in required:
+            continue
+        if directive[match.start(1)]:
             continue
         # C++ direct initialization looks call-like to a lexical scanner:
         # ``CComHeapPtr<ITEMIDLIST> pidl(factory())``. The declarator name is
@@ -151,10 +237,41 @@ def seal_calls(
     calls = []
     for index, (start, end, original) in reversed(list(enumerate(spans))):
         placeholder = f"__RUSTCONV_CALL_{index:04d}__"
-        calls.append(SealedCall(placeholder, original, in_dead_region(dead_spans, start, end)))
+        counted = _argument_count(masked, end)
+        # A macro in ARGUMENT position is the one case where C and Rust legitimately
+        # disagree on the count: shell32's `IID_PPV_ARG(IProgressDialog, &ppv)` is one C
+        # argument and two Rust ones. Don't count those sites at all.
+        argc = (
+            None
+            if counted is None or any(i in untokenized for i in _IDENT_RE.findall(counted[1]))
+            else counted[0]
+        )
+        argc_max = _defaulted_param_count(decl_scope, original)
+        # A C++ METHOD call carries an implicit receiver that the Rust lowering spells as an
+        # explicit leading `this`, so a faithful Rust call site has exactly one MORE argument
+        # than the C one. Counting the C site alone both rejects correct output and -- the
+        # reason this matters -- ACCEPTS a body that dropped `this`: `CDrivesFolderEnum_dtor`
+        # shipped `DeleteList_body()` against a fn whose first parameter is `this`, and the
+        # envelope called it good because 0 matched the C site's 0.
+        is_receiver = original in receiver_callees
+        if is_receiver:
+            if argc is not None:
+                argc += 1
+            if argc_max is not None:
+                argc_max += 1
+        calls.append(
+            SealedCall(
+                placeholder,
+                original,
+                in_dead_region(dead_spans, start, end),
+                argc,
+                argc_max,
+                is_receiver,
+            )
+        )
         result = result[:start] + placeholder + result[end:]
     calls.reverse()
-    return SealedCalls(result, tuple(calls))
+    return SealedCalls(result, tuple(calls), tuple(named_macros))
 
 
 _GOTO_RE = re.compile(r"\bgoto\s+([A-Za-z_]\w*)\s*;")
@@ -183,6 +300,42 @@ def _name_satisfies(token: str, sealed: SealedCalls, replicable: set[str], exec_
     if not original:
         return False
     return re.search(rf"(?<!fn )\b{re.escape(original)}\s*\(", exec_text) is not None
+
+
+_CASE_RE = re.compile(r"(?m)^[ \t]*(?:case\b[^:;]*|default)[ \t]*:(?!:)")
+# A C arm that ends in one of these does NOT fall through to the next label.
+_TERMINATED_RE = re.compile(r"(?:\bbreak\b|\breturn\b[^;]*|\bgoto\b[^;]*|\bcontinue\b)\s*;\s*$")
+
+
+def _first_fallthrough_case(masked: str) -> int | None:
+    """Offset of the first `case`/`default` label whose arm FALLS THROUGH, or None.
+
+    Rust `match` has no fall-through, so the only faithful lowering of a C arm that
+    runs on into the next one is to DUPLICATE the next arm's body into it — which
+    writes every call token in that body twice. Same phenomenon as `goto`
+    (see `_replicable_after_goto`), reached by a different route, and it needs the
+    same positional concession: `ntmarta.c`'s `AccpGetTrusteeSid` falls
+    TRUSTEE_IS_OBJECTS_AND_NAME through into TRUSTEE_IS_NAME and duplicated all five
+    of its tokens, so the whole paid body was rejected.
+
+    Conservative on purpose. An arm is treated as falling through unless it visibly
+    ends in `break`/`return`/`goto`/`continue`; an arm ending in `}` is AMBIGUOUS (the
+    jump may sit inside the block, which is exactly the ntmarta shape) and counts as a
+    fall-through. Over-tolerating here weakens only the DUPLICATE half of the envelope
+    — `missing` still catches a dropped call and `invented` still catches a
+    hallucinated token — which is the same trade `_replicable_after_goto` documents.
+    An EMPTY region between two labels is a shared arm (`case A: case B:`), not a
+    fall-through: nothing is duplicated, so it does not concede anything.
+    """
+    labels = list(_CASE_RE.finditer(masked))
+    for prev, nxt in itertools.pairwise(labels):
+        region = masked[prev.end() : nxt.start()].strip()
+        if not region:
+            continue  # `case A:` immediately followed by `case B:` — a shared arm.
+        if _TERMINATED_RE.search(region):
+            continue
+        return prev.start()
+    return None
 
 
 def _replicable_after_goto(sealed: SealedCalls) -> set[str]:
@@ -214,11 +367,20 @@ def _replicable_after_goto(sealed: SealedCalls) -> set[str]:
     """
     masked = _code_mask(sealed.text)
     gotos = _GOTO_RE.findall(masked)
+    fallthrough = _first_fallthrough_case(masked)
     if not gotos:
-        return set()
+        if fallthrough is None:
+            return set()
+        return {
+            call.placeholder
+            for call in sealed.calls
+            if sealed.text.find(call.placeholder) >= fallthrough
+        }
     first = _GOTO_RE.search(masked)
     assert first is not None
     start = first.start()
+    if fallthrough is not None:
+        start = min(start, fallthrough)
     targets = set(gotos)
     for match in _LABEL_RE.finditer(masked):
         # `case X:` / `default:` / a ternary are not jump targets.
@@ -240,10 +402,20 @@ def call_contract(sealed: SealedCalls) -> str:
     # to repeat a token, they MINTED NEW NUMBERS past the end of the list
     # (`dde_connect` invented three, `SIC_IconAppend` two). Saying what is actually
     # true costs nothing and removes the incentive.
-    if _GOTO_RE.search(_code_mask(sealed.text)):
+    # A `switch` arm that FALLS THROUGH is the same lie by another route: Rust `match`
+    # has no fall-through, so the next arm's body has to be written into this one as
+    # well. ntmarta's `AccpGetTrusteeSid` did exactly that and repeated all five of its
+    # tokens; the audit rejected the whole body, which assembles no file for the TU.
+    _masked = _code_mask(sealed.text)
+    _dup_reason = (
+        "`goto`, which Rust has no equivalent for"
+        if _GOTO_RE.search(_masked)
+        else "a `switch` arm that falls through, which Rust `match` has no equivalent for"
+    )
+    if _GOTO_RE.search(_masked) or _first_fallthrough_case(_masked) is not None:
         rule = (
             "Preserve EACH token as the called function/method identifier in executable "
-            "Rust. This body uses `goto`, which Rust has no equivalent for, so a faithful "
+            f"Rust. This body uses {_dup_reason}, so a faithful "
             "lowering may need the same call on more than one path: where that happens, "
             "REPEAT the identical token — repetition is expected here. Never invent a token "
             "number that is not listed below; the list is complete."
@@ -269,8 +441,224 @@ def call_contract(sealed: SealedCalls) -> str:
         # than let the model deduce it.
         "A call that appears only inside a function-like macro has NO token: translate it "
         "as an ordinary named call and do not consume or invent a token for it.\n"
-        f"Call tokens ({len(sealed.calls)}): {tokens}\n"
+        # The generic sentence above was not enough on its own: netcfgx's
+        # `ReadParameterValue` invented three tokens and `ApplyOrCancelChanges` shifted
+        # its whole envelope by one, both because the untokenized names sat INTERLEAVED
+        # with tokenized ones and the model could not tell which was which. Naming them
+        # is free and leaves nothing to infer.
+        + (
+            "The following identifiers in this body are function-like macros, not sealed "
+            f"callees: {', '.join(sealed.macros)}. They deliberately have no token — write "
+            "each as an ordinary named call and do not shift the numbering to cover one.\n"
+            if sealed.macros
+            else ""
+        )
+        + f"Call tokens ({len(sealed.calls)}): {tokens}\n"
     )
+
+
+def _doubled_after_unseal(rust: str, sealed: SealedCalls) -> list[str]:
+    """Callees the model wrote by NAME *around* the sealed token, doubling the call.
+
+    The "exactly once" rule counts TOKENS, and this shape uses the token exactly once -- the
+    duplicate is the callee's NAME, hand-written by the model as a wrapper. Substitution then
+    turns `NAME(<token>(args))` into `NAME(NAME(args))`, which is a second call to the same
+    function with the first call's result as its only argument.
+
+    Seen once, in CCPLItemMenu::InvokeCommand: eight callees doubled in one accepted body,
+    including a zero-argument one (`_ILCreateControlPanel(_ILCreateControlPanel())`). It does
+    not compile, so it fails loudly rather than shipping -- but it is a PAID artifact that the
+    envelope passed, and the whole point of the envelope is that accepted output is trustworthy.
+
+    Only flagged when the inner call is the outer's ENTIRE argument list, which is the
+    corruption's signature; a genuine `f(f(x), y)` is left alone.
+    """
+    found: list[str] = []
+    for name in sorted({call.original for call in sealed.calls}):
+        for m in re.finditer(rf"\b{re.escape(name)}\s*\(", rust):
+            open_paren = m.end() - 1
+            try:
+                close = _match_paren(rust, open_paren)
+            except ValueError:
+                continue
+            inner = rust[open_paren + 1 : close].strip()
+            if re.fullmatch(rf"{re.escape(name)}\s*\(.*\)", inner, re.S):
+                found.append(name)
+                break
+    return found
+
+
+def _match_paren(text: str, open_idx: int) -> int:
+    depth = 0
+    for i in range(open_idx, len(text)):
+        if text[i] == "(":
+            depth += 1
+        elif text[i] == ")":
+            depth -= 1
+            if depth == 0:
+                return i
+    raise ValueError("unbalanced")
+
+
+def _defaulted_param_count(masked: str, callee: str) -> int | None:
+    """Total parameter count of `callee`, if its declaration gives any parameter a DEFAULT.
+
+    C++ default arguments are one more construct Rust cannot spell. `SHELL_GetAutoRunInfPath(
+    PCWSTR, PWSTR, BOOL ForInvoke = FALSE)` is called with two arguments in the C and MUST be
+    called with three in Rust, so the exact-arity check rejects a correct lowering -- it did,
+    on two different CDrivesFolder functions at once, which is the tell that the fault is in
+    the checker rather than the model.
+
+    Returns the full parameter count so the audit can accept anything from the C site's count
+    up to it; None when the callee has no defaults, which keeps exact matching everywhere else.
+    """
+    for m in re.finditer(rf"\b{re.escape(callee)}\s*\(", masked):
+        depth, i, n = 0, m.end() - 1, len(masked)
+        while i < n:
+            if masked[i] == "(":
+                depth += 1
+            elif masked[i] == ")":
+                depth -= 1
+                if depth == 0:
+                    break
+            i += 1
+        else:
+            continue
+        params = masked[m.end() : i]
+        # A `=` at the top level of a parameter list is a default; `==` is not, and nested
+        # parens/templates are skipped by the depth test.
+        top, d, has_default = [], 0, False
+        for j, ch in enumerate(params):
+            if ch in "(<":
+                d += 1
+            elif ch in ")>":
+                d -= 1
+            elif d == 0 and ch == "=" and params[j - 1 : j] != "=" and params[j + 1 : j + 2] != "=":
+                has_default = True
+            elif d == 0 and ch == ",":
+                top.append(j)
+        if has_default and params.strip():
+            return len(top) + 1
+    return None
+
+
+def _mask_turbofish_commas(text: str) -> str:
+    """Blank the commas inside `::<...>` spans, leaving every other byte and the LENGTH alone.
+
+    `_argument_count` tracks `()[]{}` depth but not `<>`, so `transmute::<A, B>(x)` reads as
+    two arguments where the C had one. The old defence was to skip any site whose argument
+    text mentioned `::<` at all -- which also skipped every site containing a harmless
+    `size_of::<T>()`, and that is not a corner: it is how nearly every `memcpy` lowering
+    spells its length. thread.c's `_beginthread_trampoline` shipped through that hole with
+    `msvcrt_get_thread_data` -- a ZERO-argument function -- wearing the memcpy's three
+    arguments, and no finding was raised.
+
+    A callee-side turbofish needs no handling here: `_argument_count` already returns None
+    when anything sits between the name and the `(`.
+
+    Length is preserved so callers can keep indexing the unmasked string.
+    """
+    out = list(text)
+    i = 0
+    while (start := text.find("::<", i)) >= 0:
+        depth, pos = 0, start + 2
+        while pos < len(text):
+            ch = text[pos]
+            if ch == "<":
+                depth += 1
+            # `->` inside a `fn(A) -> B` type argument is not a closing angle bracket.
+            elif ch == ">" and text[pos - 1] != "-":
+                depth -= 1
+                if depth == 0:
+                    break
+            pos += 1
+        else:
+            break
+        for p in range(start, pos):
+            if out[p] == ",":
+                out[p] = " "
+        i = pos + 1
+    return "".join(out)
+
+
+def _arity_disagreements(exec_mask: str, sealed: SealedCalls) -> list[str]:
+    """Tokens whose Rust call site takes a different number of arguments than the C one.
+
+    A shifted envelope passes every other check in this file — right token count, each
+    used once, none invented — because the shift is a permutation, not a loss. What it
+    cannot preserve is the ARGUMENTS: slide `swprintf`'s token onto `StringFromCLSID`'s
+    site and it now wraps two arguments where the C had three.
+
+    Skipped rather than judged wherever the count is not a fair comparison: a C site
+    whose arguments mention a function-like macro (`argc is None`, see `seal_calls`) and
+    an unbalanced Rust site. A turbofish used to skip the site too; it now only has its
+    own commas blanked, because discarding the whole site is what let a three-argument
+    call to a zero-argument callee ship — see `_mask_turbofish_commas`. A token that
+    appears more than once — the `goto` replication region — needs only ONE occurrence to
+    agree, since the copies are the same call.
+    """
+    exec_mask = _mask_turbofish_commas(exec_mask)
+    findings = []
+    for call in sealed.calls:
+        if call.argc is None:
+            continue
+        counts = [
+            counted
+            for match in re.finditer(rf"\b{re.escape(call.placeholder)}\b", exec_mask)
+            if (counted := _argument_count(exec_mask, match.end())) is not None
+        ]
+        hi = call.argc_max if call.argc_max is not None else call.argc
+        if not counts or any(call.argc <= count <= hi for count, _ in counts):
+            continue
+        got = "/".join(str(count) for count, _ in counts)
+        findings.append(f"{call.placeholder}={call.original} wants {call.argc}, got {got}")
+    return findings
+
+
+def repair_dropped_receivers(rust: str, sealed: SealedCalls) -> tuple[str, list[str]]:
+    """Insert the explicit `this` a sibling METHOD call site is missing.
+
+    The C++ receiver is implicit, so the prepared C reads `_DoCallback_body(a, b, c)`
+    while the Rust worker's first parameter is `this`. Making that explicit is a
+    mechanical lowering the tool owns -- `normalize_worker_semantics` has always done it
+    on the unsealed path -- but it is keyed to the callee NAME, and under `--seal-calls`
+    the name is an opaque token, so it could never fire. The envelope's arity check then
+    rejected a body whose ONLY defect was the receiver the tool was supposed to add: five
+    of seven rejects on CDefaultContextMenu, each re-billed on retry, for a repair that
+    costs nothing.
+
+    Deliberately narrow. A site is repaired only when it is short by EXACTLY the receiver
+    and does not already lead with `this`; anything else is a real disagreement and stays
+    a hard failure. The receiver can only ever be `this` here, because the helper binder
+    refused any sibling call with a different receiver long before this point.
+    """
+    if not any(call.receiver for call in sealed.calls):
+        return rust, []
+    insertions: list[tuple[int, str, str]] = []
+    masked = _code_mask(rust)
+    for call in sealed.calls:
+        if not call.receiver or call.argc is None:
+            continue
+        for match in re.finditer(rf"\b{re.escape(call.placeholder)}\b", masked):
+            counted = _argument_count(masked, match.end())
+            if counted is None or "::<" in counted[1]:
+                continue
+            count, text = counted
+            if count != call.argc - 1:
+                continue
+            if re.match(r"\s*this\b", text):
+                continue
+            opening = masked.find("(", match.end())
+            insertions.append(
+                (
+                    opening + 1,
+                    "this" + (", " if count else ""),
+                    f"{call.placeholder}={call.original}",
+                )
+            )
+    for position, insertion, _ in sorted(insertions, reverse=True):
+        rust = rust[:position] + insertion + rust[position:]
+    return rust, sorted({repaired for _, _, repaired in insertions})
 
 
 def unseal_calls(rust: str, sealed: SealedCalls, *, dead_omissions: list[str] | None = None) -> str:
@@ -280,6 +668,7 @@ def unseal_calls(rust: str, sealed: SealedCalls, *, dead_omissions: list[str] | 
     omitted that lives only in non-executed code -- accepted, but reported.
     """
     rust = scrub_comment_token_echoes(rust)
+    rust, _repaired = repair_dropped_receivers(rust, sealed)
     expected = {call.placeholder for call in sealed.calls}
     masked = _code_mask(rust)
     executable = _PLACEHOLDER_RE.findall(masked)
@@ -453,10 +842,19 @@ def unseal_calls(rust: str, sealed: SealedCalls, *, dead_omissions: list[str] | 
         findings.append("not exactly once: " + ", ".join(duplicates))
     if unknown:
         findings.append("invented: " + ", ".join(unknown))
+    shifted = _arity_disagreements(exec_text, sealed)
+    if shifted:
+        findings.append("wrong call site (argument count): " + ", ".join(shifted))
     if findings:
         raise CallSealError(
             "model damaged deterministic call envelope (" + "; ".join(findings) + ")"
         )
     for call in sealed.calls:
         rust = rust.replace(call.placeholder, call.original)
+    doubled = _doubled_after_unseal(rust, sealed)
+    if doubled:
+        raise CallSealError(
+            "model damaged deterministic call envelope (callee written BOTH by name and by "
+            "token, so unsealing produced NAME(NAME(..)): " + ", ".join(doubled) + ")"
+        )
     return rust

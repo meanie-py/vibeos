@@ -119,25 +119,60 @@ class TableDiff:
     detail: str
 
 
+def _skip_literal(text: str, i: int) -> int | None:
+    """Index just past the literal starting at ``text[i]``, or None if none starts there.
+
+    THE BUG THIS EXISTS FOR. Both scanners below used to track only CHAR literals, toggling on
+    every ``'``. sysdm's SMBIOS vendor table contains ``L"INT'L"`` — an apostrophe inside a
+    STRING — so the toggle flipped mid-table, every ``[``/``]`` after it stopped counting, and
+    the whole initializer came back "unbalanced". On the Rust side that is a hard
+    ``TableParseError`` that aborts assembly of an already-paid file; on the C side it is worse,
+    because a mis-split element list is compared rather than refused.
+
+    A string is scanned to its closing quote (``b"..."``/``L"..."`` need nothing special — the
+    prefix is an identifier character before the quote). A ``'`` opens a char literal ONLY when
+    a closing ``'`` follows within one escape-or-character; otherwise it is data, or a Rust
+    lifetime (``&'a str``), and must be treated as an ordinary character.
+    """
+    c = text[i]
+    if c == '"':
+        j = i + 1
+        while j < len(text):
+            if text[j] == "\\":
+                j += 2
+                continue
+            if text[j] == '"':
+                return j + 1
+            j += 1
+        return None  # unterminated — let the caller's balance check report it
+    if c == "'":
+        j = i + 1
+        if j < len(text) and text[j] == "\\":
+            j += 2
+        elif j < len(text):
+            j += 1
+        if j < len(text) and text[j] == "'":
+            return j + 1
+        return None  # a lifetime, or an apostrophe in prose/data
+    return None
+
+
 def _match_balanced(text: str, open_idx: int, opc: str, clc: str) -> int:
     """Index just past the closer matching text[open_idx]; -1 if unbalanced."""
     depth = 0
     i = open_idx
-    in_char = False
     while i < len(text):
-        c = text[i]
-        if c == "\\" and in_char:
-            i += 2
+        after = _skip_literal(text, i)
+        if after is not None:
+            i = after
             continue
-        if c == "'":
-            in_char = not in_char
-        elif not in_char:
-            if c == opc:
-                depth += 1
-            elif c == clc:
-                depth -= 1
-                if depth == 0:
-                    return i + 1
+        c = text[i]
+        if c == opc:
+            depth += 1
+        elif c == clc:
+            depth -= 1
+            if depth == 0:
+                return i + 1
         i += 1
     return -1
 
@@ -162,24 +197,24 @@ def _split_elements(body: str) -> list[str]:
 
     Nested initializers (2-D tables) are flattened — we compare the leaf
     sequence, which is what actually lands in .rodata.
+
+    Literals are consumed WHOLE (see ``_skip_literal``), so a bracket or comma inside a string
+    is data and not structure — ``L"INT'L"`` used to flip a char-literal toggle and desynchronise
+    every element after it, and a string containing a comma would have split one element into
+    two long before that.
     """
     out: list[str] = []
     depth = 0
     cur: list[str] = []
-    in_char = False
     i = 0
     while i < len(body):
-        c = body[i]
-        if c == "\\" and in_char:
-            cur.append(body[i : i + 2])
-            i += 2
+        after = _skip_literal(body, i)
+        if after is not None:
+            cur.append(body[i:after])
+            i = after
             continue
-        if c == "'":
-            in_char = not in_char
-            cur.append(c)
-        elif in_char:
-            cur.append(c)
-        elif c in "{[":
+        c = body[i]
+        if c in "{[":
             depth += 1  # flatten: drop the nesting punctuation itself
         elif c in "}]":
             depth -= 1
@@ -208,7 +243,15 @@ _CHAR_ESCAPES = {
 
 def normalize_element(e: str) -> int | None:
     """A literal's integer value, or None if it is symbolic (→ 'unchecked')."""
-    e = e.strip().rstrip("uUlL")
+    e = e.strip()
+    # A RUST width suffix, before the C one. `rstrip("uUlL")` cannot take `u16` — it ends in a
+    # digit — so `0x0043u16` fell through to `int(e, 0)`, failed, and reported as SYMBOLIC: an
+    # element silently exempted from the very check this function exists to perform. Third
+    # sighting of this class (crate_repair's `1usize`, scan_wide_literals' `u16`), and the one
+    # that matters most now that `--seal-wide` types its restored arrays by suffixing the first
+    # element. The lookbehind keeps `0x16` and plain `16` intact.
+    e = re.sub(r"(?<=[0-9a-fA-F])(?:[ui](?:8|16|32|64|128|size))$", "", e)
+    e = e.rstrip("uUlL")
     if not e:
         return None
     # Char literal, C or Rust: 'x' 'b'x'' '\0' '\n' '\005' (C octal) '\x41' (Rust hex).

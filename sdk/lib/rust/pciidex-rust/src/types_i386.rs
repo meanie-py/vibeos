@@ -1682,21 +1682,21 @@ pub const IDE_CHANNEL_STATE_ChannelEnabled: IDE_CHANNEL_STATE = 1;
 pub const IDE_CHANNEL_STATE_ChannelStateUnknown: IDE_CHANNEL_STATE = 2;
 pub type IDE_CHANNEL_STATE = ::core::ffi::c_uint;
 pub type PCIIDE_CHANNEL_ENABLED = ::core::option::Option<
-    unsafe extern "stdcall" fn(DeviceExtension: PVOID, Channel: ULONG) -> IDE_CHANNEL_STATE,
+    unsafe extern "system" fn(DeviceExtension: PVOID, Channel: ULONG) -> IDE_CHANNEL_STATE,
 >;
 pub type PCIIDE_SYNC_ACCESS_REQUIRED =
-    ::core::option::Option<unsafe extern "stdcall" fn(DeviceExtension: PVOID) -> BOOLEAN>;
+    ::core::option::Option<unsafe extern "system" fn(DeviceExtension: PVOID) -> BOOLEAN>;
 pub type PCIIDE_TRANSFER_MODE_SELECT_FUNC = ::core::option::Option<
-    unsafe extern "stdcall" fn(
+    unsafe extern "system" fn(
         DeviceExtension: PVOID,
         XferMode: PPCIIDE_TRANSFER_MODE_SELECT,
     ) -> NTSTATUS,
 >;
 pub type PCIIDE_USEDMA_FUNC = ::core::option::Option<
-    unsafe extern "stdcall" fn(DeviceExtension: PVOID, CdbCommand: PUCHAR, Slave: PUCHAR) -> ULONG,
+    unsafe extern "system" fn(DeviceExtension: PVOID, CdbCommand: PUCHAR, Slave: PUCHAR) -> ULONG,
 >;
 pub type PCIIDE_UDMA_MODES_SUPPORTED = ::core::option::Option<
-    unsafe extern "stdcall" fn(
+    unsafe extern "system" fn(
         IdentifyData: IDENTIFY_DATA,
         BestXferMode: PULONG,
         CurrentXferMode: PULONG,
@@ -1720,12 +1720,12 @@ pub struct _IDE_CONTROLLER_PROPERTIES {
 pub type IDE_CONTROLLER_PROPERTIES = _IDE_CONTROLLER_PROPERTIES;
 pub type PIDE_CONTROLLER_PROPERTIES = *mut _IDE_CONTROLLER_PROPERTIES;
 pub type PCONTROLLER_PROPERTIES = ::core::option::Option<
-    unsafe extern "stdcall" fn(
+    unsafe extern "system" fn(
         DeviceExtension: PVOID,
         ControllerProperties: PIDE_CONTROLLER_PROPERTIES,
     ) -> NTSTATUS,
 >;
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn PciIdeXInitialize(
         DriverObject: PDRIVER_OBJECT,
         RegistryPath: PUNICODE_STRING,
@@ -1733,7 +1733,7 @@ unsafe extern "stdcall" {
         ExtensionSize: ULONG,
     ) -> NTSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn PciIdeXGetBusData(
         DeviceExtension: PVOID,
         Buffer: PVOID,
@@ -1741,7 +1741,7 @@ unsafe extern "stdcall" {
         BufferLength: ULONG,
     ) -> NTSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn PciIdeXSetBusData(
         DeviceExtension: PVOID,
         Buffer: PVOID,
@@ -1798,22 +1798,22 @@ pub struct _PDO_DEVICE_EXTENSION {
     pub ReportedMissing: BOOLEAN,
     pub IoBase: PUCHAR,
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn DriverEntry(arg1: *mut _DRIVER_OBJECT, arg2: PUNICODE_STRING) -> NTSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn PciIdeXUnload(arg1: *mut _DRIVER_OBJECT);
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn PciIdeXAddDevice(arg1: *mut _DRIVER_OBJECT, arg2: *mut _DEVICE_OBJECT) -> NTSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn PciIdeXDispatchPnp(arg1: *mut _DEVICE_OBJECT, arg2: *mut _IRP) -> NTSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn PciIdeXDispatchWmi(arg1: *mut _DEVICE_OBJECT, arg2: *mut _IRP) -> NTSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn PciIdeXDispatchPower(arg1: *mut _DEVICE_OBJECT, arg2: *mut _IRP) -> NTSTATUS;
 }
 unsafe extern "C" {

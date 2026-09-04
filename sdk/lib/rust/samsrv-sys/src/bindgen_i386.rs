@@ -987,41 +987,41 @@ pub union _SAM_VALIDATE_OUTPUT_ARG {
     pub ValidatePasswordResetOutput: SAM_VALIDATE_STANDARD_OUTPUT_ARG,
 }
 pub type PSAM_VALIDATE_OUTPUT_ARG = *mut _SAM_VALIDATE_OUTPUT_ARG;
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn SamrConnect(
         ServerName: PSAMPR_SERVER_NAME,
         ServerHandle: *mut SAMPR_HANDLE,
         DesiredAccess: ACCESS_MASK,
     ) -> NTSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn SamrCloseHandle(SamHandle: *mut SAMPR_HANDLE) -> NTSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn SamrSetSecurityObject(
         ObjectHandle: SAMPR_HANDLE,
         SecurityInformation: SECURITY_INFORMATION,
         SecurityDescriptor: PSAMPR_SR_SECURITY_DESCRIPTOR,
     ) -> NTSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn SamrQuerySecurityObject(
         ObjectHandle: SAMPR_HANDLE,
         SecurityInformation: SECURITY_INFORMATION,
         SecurityDescriptor: *mut PSAMPR_SR_SECURITY_DESCRIPTOR,
     ) -> NTSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn SamrShutdownSamServer(ServerHandle: SAMPR_HANDLE) -> NTSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn SamrLookupDomainInSamServer(
         ServerHandle: SAMPR_HANDLE,
         Name: PRPC_UNICODE_STRING,
         DomainId: *mut PRPC_SID,
     ) -> NTSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn SamrEnumerateDomainsInSamServer(
         ServerHandle: SAMPR_HANDLE,
         EnumerationContext: *mut ULONG,
@@ -1030,7 +1030,7 @@ unsafe extern "stdcall" {
         CountReturned: *mut ULONG,
     ) -> NTSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn SamrOpenDomain(
         ServerHandle: SAMPR_HANDLE,
         DesiredAccess: ACCESS_MASK,
@@ -1038,21 +1038,21 @@ unsafe extern "stdcall" {
         DomainHandle: *mut SAMPR_HANDLE,
     ) -> NTSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn SamrQueryInformationDomain(
         DomainHandle: SAMPR_HANDLE,
         DomainInformationClass: DOMAIN_INFORMATION_CLASS,
         Buffer: *mut PSAMPR_DOMAIN_INFO_BUFFER,
     ) -> NTSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn SamrSetInformationDomain(
         DomainHandle: SAMPR_HANDLE,
         DomainInformationClass: DOMAIN_INFORMATION_CLASS,
         DomainInformation: PSAMPR_DOMAIN_INFO_BUFFER,
     ) -> NTSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn SamrCreateGroupInDomain(
         DomainHandle: SAMPR_HANDLE,
         Name: PRPC_UNICODE_STRING,
@@ -1061,7 +1061,7 @@ unsafe extern "stdcall" {
         RelativeId: *mut ULONG,
     ) -> NTSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn SamrEnumerateGroupsInDomain(
         DomainHandle: SAMPR_HANDLE,
         EnumerationContext: *mut ULONG,
@@ -1070,7 +1070,7 @@ unsafe extern "stdcall" {
         CountReturned: *mut ULONG,
     ) -> NTSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn SamrCreateUserInDomain(
         DomainHandle: SAMPR_HANDLE,
         Name: PRPC_UNICODE_STRING,
@@ -1079,7 +1079,7 @@ unsafe extern "stdcall" {
         RelativeId: *mut ULONG,
     ) -> NTSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn SamrEnumerateUsersInDomain(
         DomainHandle: SAMPR_HANDLE,
         EnumerationContext: *mut ULONG,
@@ -1089,7 +1089,7 @@ unsafe extern "stdcall" {
         CountReturned: *mut ULONG,
     ) -> NTSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn SamrCreateAliasInDomain(
         DomainHandle: SAMPR_HANDLE,
         AccountName: PRPC_UNICODE_STRING,
@@ -1098,7 +1098,7 @@ unsafe extern "stdcall" {
         RelativeId: *mut ULONG,
     ) -> NTSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn SamrEnumerateAliasesInDomain(
         DomainHandle: SAMPR_HANDLE,
         EnumerationContext: *mut ULONG,
@@ -1107,14 +1107,14 @@ unsafe extern "stdcall" {
         CountReturned: *mut ULONG,
     ) -> NTSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn SamrGetAliasMembership(
         DomainHandle: SAMPR_HANDLE,
         SidArray: PSAMPR_PSID_ARRAY,
         Membership: PSAMPR_ULONG_ARRAY,
     ) -> NTSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn SamrLookupNamesInDomain(
         DomainHandle: SAMPR_HANDLE,
         Count: ULONG,
@@ -1123,7 +1123,7 @@ unsafe extern "stdcall" {
         Use: PSAMPR_ULONG_ARRAY,
     ) -> NTSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn SamrLookupIdsInDomain(
         DomainHandle: SAMPR_HANDLE,
         Count: ULONG,
@@ -1132,7 +1132,7 @@ unsafe extern "stdcall" {
         Use: PSAMPR_ULONG_ARRAY,
     ) -> NTSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn SamrOpenGroup(
         DomainHandle: SAMPR_HANDLE,
         DesiredAccess: ACCESS_MASK,
@@ -1140,47 +1140,47 @@ unsafe extern "stdcall" {
         GroupHandle: *mut SAMPR_HANDLE,
     ) -> NTSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn SamrQueryInformationGroup(
         GroupHandle: SAMPR_HANDLE,
         GroupInformationClass: GROUP_INFORMATION_CLASS,
         Buffer: *mut PSAMPR_GROUP_INFO_BUFFER,
     ) -> NTSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn SamrSetInformationGroup(
         GroupHandle: SAMPR_HANDLE,
         GroupInformationClass: GROUP_INFORMATION_CLASS,
         Buffer: PSAMPR_GROUP_INFO_BUFFER,
     ) -> NTSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn SamrAddMemberToGroup(
         GroupHandle: SAMPR_HANDLE,
         MemberId: ULONG,
         Attributes: ULONG,
     ) -> NTSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn SamrDeleteGroup(GroupHandle: *mut SAMPR_HANDLE) -> NTSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn SamrRemoveMemberFromGroup(GroupHandle: SAMPR_HANDLE, MemberId: ULONG) -> NTSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn SamrGetMembersInGroup(
         GroupHandle: SAMPR_HANDLE,
         Members: *mut PSAMPR_GET_MEMBERS_BUFFER,
     ) -> NTSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn SamrSetMemberAttributesOfGroup(
         GroupHandle: SAMPR_HANDLE,
         MemberId: ULONG,
         Attributes: ULONG,
     ) -> NTSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn SamrOpenAlias(
         DomainHandle: SAMPR_HANDLE,
         DesiredAccess: ACCESS_MASK,
@@ -1188,36 +1188,36 @@ unsafe extern "stdcall" {
         AliasHandle: *mut SAMPR_HANDLE,
     ) -> NTSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn SamrQueryInformationAlias(
         AliasHandle: SAMPR_HANDLE,
         AliasInformationClass: ALIAS_INFORMATION_CLASS,
         Buffer: *mut PSAMPR_ALIAS_INFO_BUFFER,
     ) -> NTSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn SamrSetInformationAlias(
         AliasHandle: SAMPR_HANDLE,
         AliasInformationClass: ALIAS_INFORMATION_CLASS,
         Buffer: PSAMPR_ALIAS_INFO_BUFFER,
     ) -> NTSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn SamrDeleteAlias(AliasHandle: *mut SAMPR_HANDLE) -> NTSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn SamrAddMemberToAlias(AliasHandle: SAMPR_HANDLE, MemberId: PRPC_SID) -> NTSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn SamrRemoveMemberFromAlias(AliasHandle: SAMPR_HANDLE, MemberId: PRPC_SID) -> NTSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn SamrGetMembersInAlias(
         AliasHandle: SAMPR_HANDLE,
         Members: PSAMPR_PSID_ARRAY_OUT,
     ) -> NTSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn SamrOpenUser(
         DomainHandle: SAMPR_HANDLE,
         DesiredAccess: ACCESS_MASK,
@@ -1225,24 +1225,24 @@ unsafe extern "stdcall" {
         UserHandle: *mut SAMPR_HANDLE,
     ) -> NTSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn SamrDeleteUser(UserHandle: *mut SAMPR_HANDLE) -> NTSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn SamrQueryInformationUser(
         UserHandle: SAMPR_HANDLE,
         UserInformationClass: USER_INFORMATION_CLASS,
         Buffer: *mut PSAMPR_USER_INFO_BUFFER,
     ) -> NTSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn SamrSetInformationUser(
         UserHandle: SAMPR_HANDLE,
         UserInformationClass: USER_INFORMATION_CLASS,
         Buffer: PSAMPR_USER_INFO_BUFFER,
     ) -> NTSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn SamrChangePasswordUser(
         UserHandle: SAMPR_HANDLE,
         LmPresent: ::core::ffi::c_uchar,
@@ -1257,13 +1257,13 @@ unsafe extern "stdcall" {
         NewLmEncryptedWithNewNt: PENCRYPTED_LM_OWF_PASSWORD,
     ) -> NTSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn SamrGetGroupsForUser(
         UserHandle: SAMPR_HANDLE,
         Groups: *mut PSAMPR_GET_GROUPS_BUFFER,
     ) -> NTSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn SamrQueryDisplayInformation(
         DomainHandle: SAMPR_HANDLE,
         DisplayInformationClass: DOMAIN_DISPLAY_INFORMATION,
@@ -1275,7 +1275,7 @@ unsafe extern "stdcall" {
         Buffer: PSAMPR_DISPLAY_INFO_BUFFER,
     ) -> NTSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn SamrGetDisplayEnumerationIndex(
         DomainHandle: SAMPR_HANDLE,
         DisplayInformationClass: DOMAIN_DISPLAY_INFORMATION,
@@ -1283,39 +1283,39 @@ unsafe extern "stdcall" {
         Index: *mut ULONG,
     ) -> NTSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn SamrTestPrivateFunctionsDomain(DomainHandle: SAMPR_HANDLE) -> NTSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn SamrTestPrivateFunctionsUser(UserHandle: SAMPR_HANDLE) -> NTSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn SamrGetUserDomainPasswordInformation(
         UserHandle: SAMPR_HANDLE,
         PasswordInformation: PUSER_DOMAIN_PASSWORD_INFORMATION,
     ) -> NTSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn SamrRemoveMemberFromForeignDomain(
         DomainHandle: SAMPR_HANDLE,
         MemberSid: PRPC_SID,
     ) -> NTSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn SamrQueryInformationDomain2(
         DomainHandle: SAMPR_HANDLE,
         DomainInformationClass: DOMAIN_INFORMATION_CLASS,
         Buffer: *mut PSAMPR_DOMAIN_INFO_BUFFER,
     ) -> NTSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn SamrQueryInformationUser2(
         UserHandle: SAMPR_HANDLE,
         UserInformationClass: USER_INFORMATION_CLASS,
         Buffer: *mut PSAMPR_USER_INFO_BUFFER,
     ) -> NTSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn SamrQueryDisplayInformation2(
         DomainHandle: SAMPR_HANDLE,
         DisplayInformationClass: DOMAIN_DISPLAY_INFORMATION,
@@ -1327,7 +1327,7 @@ unsafe extern "stdcall" {
         Buffer: PSAMPR_DISPLAY_INFO_BUFFER,
     ) -> NTSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn SamrGetDisplayEnumerationIndex2(
         DomainHandle: SAMPR_HANDLE,
         DisplayInformationClass: DOMAIN_DISPLAY_INFORMATION,
@@ -1335,7 +1335,7 @@ unsafe extern "stdcall" {
         Index: *mut ULONG,
     ) -> NTSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn SamrCreateUser2InDomain(
         DomainHandle: SAMPR_HANDLE,
         Name: PRPC_UNICODE_STRING,
@@ -1346,7 +1346,7 @@ unsafe extern "stdcall" {
         RelativeId: *mut ULONG,
     ) -> NTSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn SamrQueryDisplayInformation3(
         DomainHandle: SAMPR_HANDLE,
         DisplayInformationClass: DOMAIN_DISPLAY_INFORMATION,
@@ -1358,19 +1358,19 @@ unsafe extern "stdcall" {
         Buffer: PSAMPR_DISPLAY_INFO_BUFFER,
     ) -> NTSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn SamrAddMultipleMembersToAlias(
         AliasHandle: SAMPR_HANDLE,
         MembersBuffer: PSAMPR_PSID_ARRAY,
     ) -> NTSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn SamrRemoveMultipleMembersFromAlias(
         AliasHandle: SAMPR_HANDLE,
         MembersBuffer: PSAMPR_PSID_ARRAY,
     ) -> NTSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn SamrOemChangePasswordUser2(
         BindingHandle: handle_t,
         ServerName: PRPC_STRING,
@@ -1379,7 +1379,7 @@ unsafe extern "stdcall" {
         OldLmOwfPasswordEncryptedWithNewLm: PENCRYPTED_LM_OWF_PASSWORD,
     ) -> NTSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn SamrUnicodeChangePasswordUser2(
         BindingHandle: handle_t,
         ServerName: PRPC_UNICODE_STRING,
@@ -1391,37 +1391,37 @@ unsafe extern "stdcall" {
         OldLmOwfPasswordEncryptedWithNewNt: PENCRYPTED_LM_OWF_PASSWORD,
     ) -> NTSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn SamrGetDomainPasswordInformation(
         BindingHandle: handle_t,
         Unused: PRPC_UNICODE_STRING,
         PasswordInformation: PUSER_DOMAIN_PASSWORD_INFORMATION,
     ) -> NTSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn SamrConnect2(
         ServerName: PSAMPR_SERVER_NAME,
         ServerHandle: *mut SAMPR_HANDLE,
         DesiredAccess: ACCESS_MASK,
     ) -> NTSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn SamrSetInformationUser2(
         UserHandle: SAMPR_HANDLE,
         UserInformationClass: USER_INFORMATION_CLASS,
         Buffer: PSAMPR_USER_INFO_BUFFER,
     ) -> NTSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn SamrSetBootKeyInformation(BindingHandle: handle_t) -> NTSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn SamrGetBootKeyInformation(BindingHandle: handle_t) -> NTSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn SamrConnect3(BindingHandle: handle_t) -> NTSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn SamrConnect4(
         ServerName: PSAMPR_SERVER_NAME,
         ServerHandle: *mut SAMPR_HANDLE,
@@ -1429,10 +1429,10 @@ unsafe extern "stdcall" {
         DesiredAccess: ACCESS_MASK,
     ) -> NTSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn SamrUnicodeChangePasswordUser3(BindingHandle: handle_t) -> NTSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn SamrConnect5(
         ServerName: PSAMPR_SERVER_NAME,
         DesiredAccess: ACCESS_MASK,
@@ -1443,10 +1443,10 @@ unsafe extern "stdcall" {
         ServerHandle: *mut SAMPR_HANDLE,
     ) -> NTSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn SamrRidToSid(ObjectHandle: SAMPR_HANDLE, Rid: ULONG, Sid: *mut PRPC_SID) -> NTSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn SamrSetDSRMPassword(
         BindingHandle: handle_t,
         Unused: PRPC_UNICODE_STRING,
@@ -1454,7 +1454,7 @@ unsafe extern "stdcall" {
         EncryptedNtOwfPassword: PENCRYPTED_NT_OWF_PASSWORD,
     ) -> NTSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn SamrValidatePassword(
         Handle: handle_t,
         ValidationType: PASSWORD_POLICY_VALIDATION_TYPE,

@@ -174,9 +174,8 @@ unsafe fn IntEnlistPowerCallout(pPowerCallout: PWIN32POWERCALLOUT) {
 
     IntDeployPowerCallout();
 }
-#[cfg(target_arch = "x86")]
 #[no_mangle]
-pub unsafe extern "stdcall" fn IntInitWin32PowerManagement(
+pub unsafe extern "system" fn IntInitWin32PowerManagement(
     hPowerRequestEvent: HANDLE,
 ) -> NTSTATUS {
     let Status: NTSTATUS;
@@ -210,46 +209,8 @@ pub unsafe extern "stdcall" fn IntInitWin32PowerManagement(
 
     STATUS_SUCCESS
 }
-
-#[cfg(not(target_arch = "x86"))]
 #[no_mangle]
-pub unsafe extern "C" fn IntInitWin32PowerManagement(
-    hPowerRequestEvent: HANDLE,
-) -> NTSTATUS {
-    let Status: NTSTATUS;
-
-
-    gpPowerCalloutMutexLock = ExAllocatePoolZero(
-        NonPagedPool,
-        core::mem::size_of::<FAST_MUTEX>() as SIZE_T,
-        USERTAG_POWER,
-    ) as PFAST_MUTEX;
-    if gpPowerCalloutMutexLock.is_null() {
-        return STATUS_INSUFFICIENT_RESOURCES;
-    }
-
-    ex_initialize_fast_mutex(gpPowerCalloutMutexLock);
-    gpPowerCalloutMutexOwnerThread = core::ptr::null_mut();
-
-    InitializeListHead(core::ptr::addr_of_mut!(gPowerCalloutsQueueList) as _);
-    Status = ObReferenceObjectByHandle(
-        hPowerRequestEvent,
-        EVENT_ALL_ACCESS,
-        ex_event_object_type() as _,
-        0i32 as i8,
-        core::ptr::addr_of_mut!(gpPowerRequestCalloutEvent) as _,
-        core::ptr::null_mut(),
-    );
-    if !NT_SUCCESS(Status) {
-        ExFreePoolWithTag(gpPowerCalloutMutexLock as PVOID, USERTAG_POWER);
-        return Status;
-    }
-
-    STATUS_SUCCESS
-}
-#[cfg(target_arch = "x86")]
-#[no_mangle]
-pub unsafe extern "stdcall" fn IntWin32PowerManagementCleanup() -> NTSTATUS {
+pub unsafe extern "system" fn IntWin32PowerManagementCleanup() -> NTSTATUS {
     let mut pWin32PwrCallout: PWIN32POWERCALLOUT;
 
     ObfDereferenceObject(gpPowerRequestCalloutEvent as _);
@@ -265,28 +226,8 @@ pub unsafe extern "stdcall" fn IntWin32PowerManagementCleanup() -> NTSTATUS {
     gpPowerCalloutMutexLock = core::ptr::null_mut();
     STATUS_SUCCESS
 }
-
-#[cfg(not(target_arch = "x86"))]
 #[no_mangle]
-pub unsafe extern "C" fn IntWin32PowerManagementCleanup() -> NTSTATUS {
-    let mut pWin32PwrCallout: PWIN32POWERCALLOUT;
-
-    ObfDereferenceObject(gpPowerRequestCalloutEvent as _);
-    gpPowerRequestCalloutEvent = core::ptr::null_mut();
-
-    pWin32PwrCallout = IntGetNextPowerCallout(core::ptr::null_mut());
-    while !pWin32PwrCallout.is_null() {
-        ExFreePoolWithTag(pWin32PwrCallout as _, USERTAG_POWER);
-        pWin32PwrCallout = IntGetNextPowerCallout(pWin32PwrCallout);
-    }
-
-    ExFreePoolWithTag(gpPowerCalloutMutexLock as _, USERTAG_POWER);
-    gpPowerCalloutMutexLock = core::ptr::null_mut();
-    STATUS_SUCCESS
-}
-#[cfg(target_arch = "x86")]
-#[no_mangle]
-pub unsafe extern "stdcall" fn IntHandlePowerEvent(
+pub unsafe extern "system" fn IntHandlePowerEvent(
     pWin32PwrEventParams: PWIN32_POWEREVENT_PARAMETERS,
 ) -> NTSTATUS {
     let pWin32PwrCallout: PWIN32POWERCALLOUT;
@@ -317,51 +258,8 @@ pub unsafe extern "stdcall" fn IntHandlePowerEvent(
     IntEnlistPowerCallout(pWin32PwrCallout);
     STATUS_SUCCESS
 }
-
-#[cfg(not(target_arch = "x86"))]
 #[no_mangle]
-pub unsafe extern "C" fn IntHandlePowerEvent(
-    pWin32PwrEventParams: PWIN32_POWEREVENT_PARAMETERS,
-) -> NTSTATUS {
-    let pWin32PwrCallout: PWIN32POWERCALLOUT;
-    let Status: NTSTATUS;
-
-    if gpepCSRSS.is_null() {
-        return STATUS_UNSUCCESSFUL;
-    }
-
-    Status = IntValidateWin32PowerParams(pWin32PwrEventParams);
-    if !NT_SUCCESS(Status) {
-        return Status;
-    }
-
-    pWin32PwrCallout = ExAllocatePoolZero(
-        NonPagedPool,
-        core::mem::size_of::<WIN32POWERCALLOUT>() as SIZE_T,
-        USERTAG_POWER,
-    ) as PWIN32POWERCALLOUT;
-    if pWin32PwrCallout.is_null() {
-        return STATUS_INSUFFICIENT_RESOURCES;
-    }
-
-    (*pWin32PwrCallout).Type = POWER_CALLOUT_EVENT;
-    (*pWin32PwrCallout).Params.EventNumber = (*pWin32PwrEventParams).EventNumber;
-    (*pWin32PwrCallout).Params.Code = (*pWin32PwrEventParams).Code;
-
-    IntEnlistPowerCallout(pWin32PwrCallout);
-    STATUS_SUCCESS
-}
-#[cfg(target_arch = "x86")]
-#[no_mangle]
-pub unsafe extern "stdcall" fn IntHandlePowerState(
-    pWin32PwrStateParams: PWIN32_POWERSTATE_PARAMETERS,
-) -> NTSTATUS {
-    STATUS_NOT_IMPLEMENTED
-}
-
-#[cfg(not(target_arch = "x86"))]
-#[no_mangle]
-pub unsafe extern "C" fn IntHandlePowerState(
+pub unsafe extern "system" fn IntHandlePowerState(
     pWin32PwrStateParams: PWIN32_POWERSTATE_PARAMETERS,
 ) -> NTSTATUS {
     STATUS_NOT_IMPLEMENTED

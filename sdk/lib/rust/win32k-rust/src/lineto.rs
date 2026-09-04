@@ -812,25 +812,8 @@ unsafe fn eng_lineto_body(
     IntEngLeave(&mut EnterLeave)
 }
 
-#[cfg(target_arch = "x86")]
 #[no_mangle]
-pub unsafe extern "stdcall" fn EngLineTo(
-    DestObj: *mut SURFOBJ,
-    Clip: *mut CLIPOBJ,
-    pbo: *mut BRUSHOBJ,
-    x1: LONG,
-    y1: LONG,
-    x2: LONG,
-    y2: LONG,
-    RectBounds: *mut RECTL,
-    mix: MIX,
-) -> BOOL {
-    eng_lineto_body(DestObj, Clip, pbo, x1, y1, x2, y2, RectBounds, mix)
-}
-
-#[cfg(not(target_arch = "x86"))]
-#[no_mangle]
-pub unsafe extern "C" fn EngLineTo(
+pub unsafe extern "system" fn EngLineTo(
     DestObj: *mut SURFOBJ,
     Clip: *mut CLIPOBJ,
     pbo: *mut BRUSHOBJ,
@@ -918,25 +901,8 @@ unsafe fn int_eng_lineto_body(
     ret
 }
 
-#[cfg(target_arch = "x86")]
 #[no_mangle]
-pub unsafe extern "stdcall" fn IntEngLineTo(
-    psoDest: *mut SURFOBJ,
-    ClipObj: *mut CLIPOBJ,
-    pbo: *mut BRUSHOBJ,
-    x1: LONG,
-    y1: LONG,
-    x2: LONG,
-    y2: LONG,
-    RectBounds: *mut RECTL,
-    Mix: MIX,
-) -> BOOL {
-    int_eng_lineto_body(psoDest, ClipObj, pbo, x1, y1, x2, y2, RectBounds, Mix)
-}
-
-#[cfg(not(target_arch = "x86"))]
-#[no_mangle]
-pub unsafe extern "C" fn IntEngLineTo(
+pub unsafe extern "system" fn IntEngLineTo(
     psoDest: *mut SURFOBJ,
     ClipObj: *mut CLIPOBJ,
     pbo: *mut BRUSHOBJ,
@@ -991,22 +957,8 @@ unsafe fn int_eng_polyline_body(
     ret
 }
 
-#[cfg(target_arch = "x86")]
 #[no_mangle]
-pub unsafe extern "stdcall" fn IntEngPolyline(
-    psoDest: *mut SURFOBJ,
-    Clip: *mut CLIPOBJ,
-    pbo: *mut BRUSHOBJ,
-    pt: LPPOINT,
-    dCount: LONG,
-    Mix: MIX,
-) -> BOOL {
-    int_eng_polyline_body(psoDest, Clip, pbo, pt, dCount, Mix)
-}
-
-#[cfg(not(target_arch = "x86"))]
-#[no_mangle]
-pub unsafe extern "C" fn IntEngPolyline(
+pub unsafe extern "system" fn IntEngPolyline(
     psoDest: *mut SURFOBJ,
     Clip: *mut CLIPOBJ,
     pbo: *mut BRUSHOBJ,

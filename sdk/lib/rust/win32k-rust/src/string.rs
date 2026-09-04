@@ -4,75 +4,35 @@ use win32k_sys::win32k::*;
 // No file-scope declarations to translate.
 // The #define NDEBUG is a preprocessor directive that only affects conditional compilation
 // and does not produce any runtime Rust declarations.
-#[cfg(target_arch = "x86")]
 #[no_mangle]
-pub unsafe extern "stdcall" fn STROBJ_bEnum(
+pub unsafe extern "system" fn STROBJ_bEnum(
     _pstro: *mut STROBJ,
     _pc: *mut ULONG,
     _ppgpos: *mut PGLYPHPOS,
 ) -> BOOL {
     0
 }
-
-#[cfg(not(target_arch = "x86"))]
 #[no_mangle]
-pub unsafe extern "C" fn STROBJ_bEnum(
-    _pstro: *mut STROBJ,
-    _pc: *mut ULONG,
-    _ppgpos: *mut PGLYPHPOS,
-) -> BOOL {
-    0
-}
-#[cfg(target_arch = "x86")]
-#[no_mangle]
-pub unsafe extern "stdcall" fn STROBJ_dwGetCodePage(
+pub unsafe extern "system" fn STROBJ_dwGetCodePage(
     pstro: *mut STROBJ
 ) -> u32 {
     let pStrGdi = pstro as PSTRGDI;
     (*pStrGdi).dwCodePage
 }
-
-#[cfg(not(target_arch = "x86"))]
 #[no_mangle]
-pub unsafe extern "C" fn STROBJ_dwGetCodePage(
-    pstro: *mut STROBJ
-) -> u32 {
-    let pStrGdi = pstro as PSTRGDI;
-    (*pStrGdi).dwCodePage
-}
-#[cfg(target_arch = "x86")]
-#[no_mangle]
-pub unsafe extern "stdcall" fn STROBJ_vEnumStart(
+pub unsafe extern "system" fn STROBJ_vEnumStart(
     _pstro: *mut STROBJ) {
 }
-
-#[cfg(not(target_arch = "x86"))]
 #[no_mangle]
-pub unsafe extern "C" fn STROBJ_vEnumStart(
-    _pstro: *mut STROBJ) {
-}
-#[cfg(target_arch = "x86")]
-#[no_mangle]
-pub unsafe extern "stdcall" fn STROBJ_bEnumPositionsOnly(
+pub unsafe extern "system" fn STROBJ_bEnumPositionsOnly(
     _StringObj: *mut STROBJ,
     _Count: *mut ULONG,
     _Pos: *mut PGLYPHPOS,
 ) -> BOOL {
     DDI_ERROR as BOOL
 }
-
-#[cfg(not(target_arch = "x86"))]
 #[no_mangle]
-pub unsafe extern "C" fn STROBJ_bEnumPositionsOnly(
-    _StringObj: *mut STROBJ,
-    _Count: *mut ULONG,
-    _Pos: *mut PGLYPHPOS,
-) -> BOOL {
-    DDI_ERROR as BOOL
-}
-#[cfg(target_arch = "x86")]
-#[no_mangle]
-pub unsafe extern "stdcall" fn STROBJ_bGetAdvanceWidths(
+pub unsafe extern "system" fn STROBJ_bGetAdvanceWidths(
     _StringObj: *mut STROBJ,
     _First: ULONG,
     _Count: ULONG,
@@ -80,20 +40,8 @@ pub unsafe extern "stdcall" fn STROBJ_bGetAdvanceWidths(
 ) -> BOOL {
     0
 }
-
-#[cfg(not(target_arch = "x86"))]
 #[no_mangle]
-pub unsafe extern "C" fn STROBJ_bGetAdvanceWidths(
-    _StringObj: *mut STROBJ,
-    _First: ULONG,
-    _Count: ULONG,
-    _Widths: *mut POINTQF,
-) -> BOOL {
-    0
-}
-#[cfg(target_arch = "x86")]
-#[no_mangle]
-pub unsafe extern "stdcall" fn STROBJ_fxBreakExtra(
+pub unsafe extern "system" fn STROBJ_fxBreakExtra(
     StringObj: *mut STROBJ,
 ) -> FIX {
     let pStrGdi = StringObj as PSTRGDI;
@@ -102,33 +50,8 @@ pub unsafe extern "stdcall" fn STROBJ_fxBreakExtra(
     }
     return 0 as FIX;
 }
-
-#[cfg(not(target_arch = "x86"))]
 #[no_mangle]
-pub unsafe extern "C" fn STROBJ_fxBreakExtra(
-    StringObj: *mut STROBJ,
-) -> FIX {
-    let pStrGdi = StringObj as PSTRGDI;
-    if (*pStrGdi).StrObj.flAccel & SO_BREAK_EXTRA != 0 {
-        return (*pStrGdi).fxBreakExtra;
-    }
-    return 0 as FIX;
-}
-#[cfg(target_arch = "x86")]
-#[no_mangle]
-pub unsafe extern "stdcall" fn STROBJ_fxCharacterExtra(
-    StringObj: *mut STROBJ,
-) -> FIX {
-    let pStrGdi = StringObj as PSTRGDI;
-    if (*pStrGdi).StrObj.flAccel & SO_CHARACTER_EXTRA != 0 {
-        return (*pStrGdi).fxExtra;
-    }
-    return 0 as FIX;
-}
-
-#[cfg(not(target_arch = "x86"))]
-#[no_mangle]
-pub unsafe extern "C" fn STROBJ_fxCharacterExtra(
+pub unsafe extern "system" fn STROBJ_fxCharacterExtra(
     StringObj: *mut STROBJ,
 ) -> FIX {
     let pStrGdi = StringObj as PSTRGDI;

@@ -1,0 +1,363 @@
+"""bank_audit — is every function we PAID for actually in the tree?
+
+`.responses/` is the canonical copy of paid translation output, and the money rule says
+a dir holding unintegrated work must never be deleted. That rule needs an oracle, and
+until now there wasn't one: the only way to answer "what have we paid for and not
+shipped?" was to hand-roll a script, re-derive the two on-disk layouts, and re-discover
+the same false positives every time.
+
+The audit runs BACKWARD, which is what makes it different from its neighbours.
+`export_audit` goes spec-exports → Rust ("does the DLL still export what it promised?").
+`fn_coverage` goes C-source → Rust. This one goes **paid output → tree**: for every
+function we bought, is it actually shipping? A gap here is money spent and abandoned,
+and unlike a missing export nothing downstream complains — the build is perfectly happy
+to link a DLL whose translated helper was silently dropped on the way into the crate.
+
+Two on-disk layouts, both live:
+
+    <dir>/manifest.json          {"FnName": {"file": "FnName.rs", "hash": "..."}}
+    <dir>/NN_FnName.rs           legacy, no manifest (the ole32/oleaut32 era)
+
+RESOLUTION IS NOT A NAME COMPARE. A first cut that just asked "is the manifest key in
+the tree?" flagged 8 dirs, and *every one* was a naming artifact rather than lost work.
+The manifest key is a LABEL — the name of the C construct that was sent for translation
+— and four separate things routinely make it differ from the symbol that ships:
+
+  declared_in_body  The key is a MACRO, and the body it expands to holds the real
+                    functions. oleaut32's `RETTYP` banks 72 `VarI1FromUI1`-style
+                    conversions under one key. The body is ground truth; the key is not.
+  varargs_twin      Stable Rust cannot DEFINE a C-variadic (rust-lang/rust#44930), so a
+                    variadic C entry point ships as a fixed-arity twin behind a C
+                    trampoline. `WLDAP32_ber_printf` is real, shipping, and will never
+                    appear under that spelling. Our own decoration is NOT uniform —
+                    `FatalError_v` in most modules, `netid_FormatMessageBox_body` in
+                    netid — so `_TWIN_SUFFIXES` is the list to extend, not a rule to
+                    loosen.
+  tchar_macro       `_tmain` is a TCHAR macro; the tree ships `wmain`. Same for
+                    `_tWinMain` → `wWinMain`.
+  allowlist         A reviewed exception with a written reason (see ALLOW_PATH). The one
+                    standing entry is oleaut32's `interface_variant_size`: the C declares
+                    it under `#else` and `interface_user_size` under `#ifdef __REACTOS__`,
+                    so the ReactOS build never had a function by the banked name.
+
+Each rule is recorded on the Resolution, so a green report still shows its work — an
+audit that resolves silently is one you stop believing the first time it's wrong.
+
+Comments and string literals are masked before any name is read, in the banked bodies and
+in the tree alike. Every translated file carries the ORIGINAL C SOURCE as a trailing
+comment block, so an unmasked scan indexes names that do not exist as Rust items — and a
+false name in the TREE index is the dangerous direction, because it reports paid work as
+shipped when it is not.
+
+    from rustconv.bank_audit import audit
+    for report in audit(responses_root, rust_root):
+        if report.absent:
+            ...
+"""
+
+from __future__ import annotations
+
+import json
+import re
+from dataclasses import dataclass, field
+from pathlib import Path
+
+from rustconv.lex_mask import mask_code
+
+try:
+    import tomllib  # type: ignore[import-not-found]  # stdlib on 3.11+; tomli backport on 3.10
+except ModuleNotFoundError:  # pragma: no cover - depends on interpreter version
+    import tomli as tomllib  # type: ignore[no-redef]
+
+# `fn NAME` — the sole shape a Rust function item can take. Masked input only.
+_RE_FN = re.compile(r"\bfn\s+(?P<name>[A-Za-z_]\w*)")
+# legacy layout orders bodies with a numeric prefix: 07_VarI4FromStr.rs
+_RE_SEQ_PREFIX = re.compile(r"^\d+_")
+# A banked body that is a C-variadic: `...)` in the signature, or a va_start in the body.
+_RE_VARIADIC = re.compile(r"\.\.\.\s*\)|\bva_start\b")
+# How the tree decorates a variadic's fixed-arity twin. See `varargs_twins`.
+_TWIN_SUFFIXES = ("_v", "_body", "_impl")
+
+# Manifest keys that are pipeline bookkeeping, never a translated function.
+_NON_FN_KEYS = frozenset({"preamble"})
+
+ALLOW_PATH = Path(__file__).resolve().parent.parent / "bank_audit_allow.toml"
+
+
+@dataclass(frozen=True)
+class BankedFn:
+    """One function we paid for, and the file its body landed in."""
+
+    name: str
+    path: Path
+    truncated: bool = False
+
+
+@dataclass(frozen=True)
+class Resolution:
+    """How a banked function was matched against the tree (or that it wasn't)."""
+
+    fn: BankedFn
+    found_as: str | None
+    via: str
+
+    @property
+    def integrated(self) -> bool:
+        return self.found_as is not None
+
+
+@dataclass(frozen=True)
+class DirReport:
+    """One `.responses/<dir>`: what it holds and what of it is missing."""
+
+    name: str
+    total: int
+    resolutions: list[Resolution] = field(default_factory=list)
+
+    @property
+    def absent(self) -> list[Resolution]:
+        return [r for r in self.resolutions if not r.integrated]
+
+    @property
+    def aliased(self) -> list[Resolution]:
+        return [r for r in self.resolutions if r.integrated and r.via != "direct"]
+
+    @property
+    def status(self) -> str:
+        if not self.absent:
+            return "INTEGRATED"
+        return "ABSENT" if len(self.absent) == self.total else "PARTIAL"
+
+
+def _is_bookkeeping(key: str) -> bool:
+    """Manifest/legacy names that never denote a translated function."""
+    return key.startswith("__") or key in _NON_FN_KEYS
+
+
+def _has_body(masked: str, after_name: int) -> bool:
+    """Does the `fn` starting here DEFINE a function, or merely declare one?
+
+    The distinction is the whole audit. `extern "C" { pub fn Foo(); }` in a crate prelude
+    is a promise that Foo exists elsewhere — counting it as a definition would report a
+    function as shipped on the strength of the declaration that it is missing.
+
+    Walks from the end of the name to the first `{` (definition) or `;` (declaration) at
+    bracket depth zero, so a `;` inside a `-> [u8; 4]` return type doesn't read as one.
+    """
+    depth = 0
+    for i in range(after_name, len(masked)):
+        c = masked[i]
+        if c in "([":
+            depth += 1
+        elif c in ")]":
+            depth -= 1
+        elif depth == 0:
+            if c == "{":
+                return True
+            if c == ";":
+                return False
+    return False
+
+
+def declared_names(path: Path) -> set[str]:
+    """Every Rust function DEFINED in one file, comments and literals masked.
+
+    Declarations (`extern` blocks, trait signatures) are deliberately excluded — see
+    `_has_body`.
+    """
+    try:
+        text = path.read_text(encoding="utf-8", errors="replace")
+    except OSError:
+        return set()
+    masked = mask_code(text)
+    return {m.group("name") for m in _RE_FN.finditer(masked) if _has_body(masked, m.end("name"))}
+
+
+def tree_fn_names(rust_root: Path) -> set[str]:
+    """Index every Rust function item under a crate root."""
+    names: set[str] = set()
+    for path in rust_root.rglob("*.rs"):
+        names |= declared_names(path)
+    return names
+
+
+def truncated_fns(resp_dir: Path) -> list[BankedFn]:
+    """`NN_Name.partial` — a call that was billed but cut off mid-stream.
+
+    Scanned separately because the remedy differs: a truncated body cannot be integrated
+    as it stands, so one whose function is absent from the tree means "this was paid for
+    and never landed — re-translate it", not "go wire it up". Every `.partial` in the bank
+    today belongs to a call that was retried successfully, which is exactly why the rule
+    needs to exist: without it the audit is structurally blind to the one shape of paid
+    output that has no complete body to look for.
+    """
+    out = []
+    for path in sorted(resp_dir.glob("*.partial")):
+        stem = _RE_SEQ_PREFIX.sub("", path.stem)
+        if _is_bookkeeping(stem):
+            continue
+        out.append(BankedFn(stem, path, truncated=True))
+    return out
+
+
+def banked_fns(resp_dir: Path) -> list[BankedFn]:
+    """Read one response dir in whichever of the two layouts it uses."""
+    manifest = resp_dir / "manifest.json"
+    if manifest.exists():
+        try:
+            entries = json.loads(manifest.read_text(encoding="utf-8"))
+        except (OSError, json.JSONDecodeError):
+            return []
+        out = []
+        for key, meta in entries.items():
+            if _is_bookkeeping(key):
+                continue
+            fname = meta.get("file") if isinstance(meta, dict) else None
+            out.append(BankedFn(key, resp_dir / (fname or f"{key}.rs")))
+        return out
+
+    out = []
+    for path in sorted(resp_dir.glob("*.rs")):
+        stem = _RE_SEQ_PREFIX.sub("", path.stem)
+        if _is_bookkeeping(stem):
+            continue
+        out.append(BankedFn(stem, path))
+    return out
+
+
+def is_variadic_body(path: Path) -> bool:
+    """Was the banked body a C-variadic? `...` in the signature, or a `va_start` in it."""
+    try:
+        text = path.read_text(encoding="utf-8", errors="replace")
+    except OSError:
+        return False
+    return _RE_VARIADIC.search(mask_code(text)) is not None
+
+
+def varargs_twins(name: str, tree: set[str]) -> list[str]:
+    """Tree definitions that could be `name`'s fixed-arity twin, tightest first.
+
+    Stable Rust cannot DEFINE a C-variadic, so a variadic entry point ships as a C
+    trampoline that tail-calls a fixed-arity Rust twin — and the tree spells that twin
+    two ways: `FatalError_v` (most modules) and `netid_FormatMessageBox_body` (netid).
+
+    A twin must therefore be the name plus a KNOWN decoration, optionally under a module
+    prefix. A looser "contains the name" test is not usable here: dhcp banks variadics
+    called `debug` and `error`, and mere containment matched them to `debug_block_stamp`
+    and `WDML_Initialize_error` — unrelated functions in other crates. Short generic
+    names are exactly where a sloppy rule reports missing work as shipped.
+    """
+    exact = [f"{name}{suffix}" for suffix in _TWIN_SUFFIXES if f"{name}{suffix}" in tree]
+    prefixed = sorted(
+        n
+        for n in tree
+        if n not in exact and any(n.endswith(f"_{name}{suffix}") for suffix in _TWIN_SUFFIXES)
+    )
+    return exact + prefixed
+
+
+def tchar_variants(name: str) -> list[str]:
+    """`_tmain` → `wmain`, `main`. The TCHAR macro pair, both build flavours."""
+    if not name.startswith("_t") or len(name) <= 2:
+        return []
+    bare = name[2:]
+    return [f"w{bare}", bare]
+
+
+def load_allowlist(path: Path = ALLOW_PATH) -> dict[str, str]:
+    """Reviewed exceptions: {function name: written reason}."""
+    if not path.exists():
+        return {}
+    try:
+        data = tomllib.loads(path.read_text(encoding="utf-8"))
+    except (OSError, tomllib.TOMLDecodeError):
+        return {}
+    allowed = data.get("allow", {})
+    return {k: str(v) for k, v in allowed.items()} if isinstance(allowed, dict) else {}
+
+
+def resolve(fn: BankedFn, tree: set[str], allow: dict[str, str]) -> Resolution:
+    """Match one banked function against the tree, cheapest rule first."""
+    if fn.name in tree:
+        return Resolution(fn, fn.name, "direct")
+
+    # The key may be a macro or a stale label; the body holds what actually shipped.
+    # Require EVERY function in the body to be in the tree: a body whose 5 definitions
+    # became 1 is partially-lost paid work, and accepting the first hit would call it
+    # integrated. Report the count rather than a representative name — picking one from
+    # a multi-function body names an arbitrary symbol and reads as if that were the match.
+    body = declared_names(fn.path)
+    if body and not body - tree:
+        return Resolution(fn, f"{len(body)} body fn(s)", "declared_in_body")
+
+    if is_variadic_body(fn.path):
+        twins = varargs_twins(fn.name, tree)
+        if twins:
+            return Resolution(fn, twins[0], "varargs_twin")
+
+    for cand in tchar_variants(fn.name):
+        if cand in tree:
+            return Resolution(fn, cand, "tchar_macro")
+
+    if fn.name in allow:
+        return Resolution(fn, fn.name, "allowlist")
+
+    return Resolution(fn, None, "unresolved")
+
+
+def audit(
+    responses_root: Path,
+    rust_root: Path,
+    allow: dict[str, str] | None = None,
+) -> list[DirReport]:
+    """Audit every response dir under `responses_root` against the shipped tree."""
+    if allow is None:
+        allow = load_allowlist()
+    tree = tree_fn_names(rust_root)
+
+    reports = []
+    for resp_dir in sorted(p for p in responses_root.iterdir() if p.is_dir()):
+        # A retried call can leave its `.partial` beside the completed body. Both would
+        # resolve, so this is cosmetic — but reporting one function twice reads as two.
+        complete = banked_fns(resp_dir)
+        done = {fn.name for fn in complete}
+        fns = complete + [fn for fn in truncated_fns(resp_dir) if fn.name not in done]
+        if not fns:
+            continue
+        resolutions = [resolve(fn, tree, allow) for fn in fns]
+        reports.append(DirReport(resp_dir.name, len(fns), resolutions))
+    return reports
+
+
+def format_report(reports: list[DirReport], verbose: bool = False) -> str:
+    """Human-readable summary. Absences first — they are the reason to run this."""
+    lines = []
+    absent = [r for r in reports if r.absent]
+    total_fns = sum(r.total for r in reports)
+    total_absent = sum(len(r.absent) for r in reports)
+
+    if absent:
+        lines.append(f"UNINTEGRATED PAID WORK — {total_absent} function(s):")
+        for rep in absent:
+            lines.append(f"  {rep.status:<10} {rep.name}")
+            for res in rep.absent:
+                # A truncated body has no complete text to wire up: the remedy is to
+                # re-translate, not to integrate. Say which, or the reader guesses.
+                verb = "RE-TRANSLATE (truncated)" if res.fn.truncated else "INTEGRATE"
+                lines.append(f"      {verb:<24} {res.fn.name}  ({res.fn.path})")
+        lines.append("")
+
+    if verbose:
+        aliased = [r for r in reports if r.aliased]
+        if aliased:
+            lines.append("RESOLVED VIA ALIAS:")
+            for rep in aliased:
+                for res in rep.aliased:
+                    lines.append(f"  {rep.name}: {res.fn.name} -> {res.found_as} ({res.via})")
+            lines.append("")
+
+    lines.append(
+        f"{len(reports)} response dir(s), {total_fns} banked function(s), "
+        f"{total_absent} unintegrated"
+    )
+    return "\n".join(lines)

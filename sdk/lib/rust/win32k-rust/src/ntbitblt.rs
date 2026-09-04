@@ -72,8 +72,12 @@ extern "system" {
 #[inline(always)] unsafe fn BRUSH_ShareLockBrush(h: HGDIOBJ) -> PBRUSH { GDIOBJ_ShareLockObj(h, GDI_OBJECT_TYPE_BRUSH as DWORD) as PBRUSH }
 #[inline(always)] unsafe fn BRUSH_ShareUnlockBrush(p: PBRUSH) { GDIOBJ_vDereferenceObject(p as POBJ); }
 
-// FIXME debug print = no-op under NDEBUG; FIXUP_ROP2 macro; PlgBlt pool tag.
-#[inline(always)] unsafe fn FIXME(_msg: *const i8) {}
+// FIXME debug print — NOT a no-op under NDEBUG; that is DPRINT/TRACE. Both call
+// sites are NtGdiPlgBlt announcing it is unimplemented, which is precisely the
+// kind of thing a caller staring at a blank blit needs to see. FIXUP_ROP2
+// macro; PlgBlt pool tag.
+extern "C" { fn DbgPrint(fmt: *const i8, ...) -> u32; }
+#[inline(always)] unsafe fn FIXME(msg: *const i8) { DbgPrint(msg); }
 #[inline(always)] unsafe fn FIXUP_ROP2(rop2: DWORD) -> DWORD { (rop2.wrapping_sub(1) & 0xF) + 1 }
 const GDITAG_PLGBLT_DATA: u32 = u32::from_be_bytes(*b"bgpG");
 // drop_gdiobj_macro_externs: dropped 2 bogus extern decl(s) for GDI-object macro(s): SURFACE_ShareLockSurface, SURFACE_ShareUnlockSurface — these are macros in gdi/eng/<type>.h or gdi/ntgdi/<type>.h, not real fns. Inline-expand via GDIOBJ_* primitives per win32k_translation_prompt.md §6.
@@ -82,7 +86,7 @@ const GDITAG_PLGBLT_DATA: u32 = u32::from_be_bytes(*b"bgpG");
 // DBG_DEFAULT_CHANNEL(GdiBlt) - no translatable declarations
 #[cfg(target_arch = "x86")]
 #[no_mangle]
-pub unsafe extern "stdcall" fn NtGdiAlphaBlend(
+pub unsafe extern "system" fn NtGdiAlphaBlend(
     hDCDest: HDC,
     XOriginDest: LONG,
     YOriginDest: LONG,
@@ -220,7 +224,7 @@ pub unsafe extern "stdcall" fn NtGdiAlphaBlend(
 
 #[cfg(not(target_arch = "x86"))]
 #[no_mangle]
-pub unsafe extern "C" fn NtGdiAlphaBlend(
+pub unsafe extern "system" fn NtGdiAlphaBlend(
     hDCDest: HDC,
     XOriginDest: LONG,
     YOriginDest: LONG,
@@ -355,60 +359,8 @@ pub unsafe extern "C" fn NtGdiAlphaBlend(
 
     bResult
 }
-#[cfg(target_arch = "x86")]
 #[no_mangle]
-pub unsafe extern "stdcall" fn NtGdiBitBlt(
-    hDCDest: HDC,
-    XDest: INT,
-    YDest: INT,
-    Width: INT,
-    Height: INT,
-    hDCSrc: HDC,
-    XSrc: INT,
-    YSrc: INT,
-    mut dwRop: DWORD,
-    crBackColor: DWORD,
-    fl: FLONG,
-) -> BOOL {
-    if dwRop & CAPTUREBLT != 0 {
-        return NtGdiStretchBlt(
-            hDCDest,
-            XDest,
-            YDest,
-            Width,
-            Height,
-            hDCSrc,
-            XSrc,
-            YSrc,
-            Width,
-            Height,
-            dwRop,
-            crBackColor,
-        );
-    }
-
-    dwRop = dwRop & !(NOMIRRORBITMAP | CAPTUREBLT);
-
-    NtGdiMaskBlt(
-        hDCDest,
-        XDest,
-        YDest,
-        Width,
-        Height,
-        hDCSrc,
-        XSrc,
-        YSrc,
-        core::ptr::null_mut(),
-        0,
-        0,
-        MAKEROP4(dwRop, dwRop),
-        crBackColor,
-    )
-}
-
-#[cfg(not(target_arch = "x86"))]
-#[no_mangle]
-pub unsafe extern "C" fn NtGdiBitBlt(
+pub unsafe extern "system" fn NtGdiBitBlt(
     hDCDest: HDC,
     XDest: INT,
     YDest: INT,
@@ -458,7 +410,7 @@ pub unsafe extern "C" fn NtGdiBitBlt(
 }
 #[cfg(target_arch = "x86")]
 #[no_mangle]
-pub unsafe extern "stdcall" fn NtGdiTransparentBlt(
+pub unsafe extern "system" fn NtGdiTransparentBlt(
     hdcDst: HDC,
     xDst: INT,
     yDst: INT,
@@ -578,7 +530,7 @@ pub unsafe extern "stdcall" fn NtGdiTransparentBlt(
 
 #[cfg(not(target_arch = "x86"))]
 #[no_mangle]
-pub unsafe extern "C" fn NtGdiTransparentBlt(
+pub unsafe extern "system" fn NtGdiTransparentBlt(
     hdcDst: HDC,
     xDst: INT,
     yDst: INT,
@@ -697,7 +649,7 @@ pub unsafe extern "C" fn NtGdiTransparentBlt(
 }
 #[cfg(target_arch = "x86")]
 #[no_mangle]
-pub unsafe extern "stdcall" fn NtGdiMaskBlt(
+pub unsafe extern "system" fn NtGdiMaskBlt(
     hdcDest: HDC,
     nXDest: INT,
     nYDest: INT,
@@ -918,7 +870,7 @@ pub unsafe extern "stdcall" fn NtGdiMaskBlt(
 
 #[cfg(not(target_arch = "x86"))]
 #[no_mangle]
-pub unsafe extern "C" fn NtGdiMaskBlt(
+pub unsafe extern "system" fn NtGdiMaskBlt(
     hdcDest: HDC,
     nXDest: INT,
     nYDest: INT,
@@ -1136,28 +1088,8 @@ pub unsafe extern "C" fn NtGdiMaskBlt(
 
     Status
 }
-#[cfg(target_arch = "x86")]
 #[no_mangle]
-pub unsafe extern "stdcall" fn NtGdiPlgBlt(
-    hdcTrg: HDC,
-    pptlTrg: LPPOINT,
-    hdcSrc: HDC,
-    xSrc: INT,
-    ySrc: INT,
-    cxSrc: INT,
-    cySrc: INT,
-    hbmMask: HBITMAP,
-    xMask: INT,
-    yMask: INT,
-    crBackColor: DWORD,
-) -> BOOL {
-    FIXME(b"NtGdiPlgBlt: unimplemented.\n\0".as_ptr() as *const i8);
-    0
-}
-
-#[cfg(not(target_arch = "x86"))]
-#[no_mangle]
-pub unsafe extern "C" fn NtGdiPlgBlt(
+pub unsafe extern "system" fn NtGdiPlgBlt(
     hdcTrg: HDC,
     pptlTrg: LPPOINT,
     hdcSrc: HDC,
@@ -1405,47 +1337,8 @@ pub unsafe extern "system" fn GreStretchBltMask(
 
     Status
 }
-#[cfg(target_arch = "x86")]
 #[no_mangle]
-pub unsafe extern "stdcall" fn NtGdiStretchBlt(
-    hDCDest: HDC,
-    XOriginDest: INT,
-    YOriginDest: INT,
-    WidthDest: INT,
-    HeightDest: INT,
-    hDCSrc: HDC,
-    XOriginSrc: INT,
-    YOriginSrc: INT,
-    WidthSrc: INT,
-    HeightSrc: INT,
-    mut dwRop3: DWORD,
-    dwBackColor: DWORD,
-) -> BOOL {
-
-    dwRop3 = dwRop3 & !(NOMIRRORBITMAP | CAPTUREBLT);
-
-    GreStretchBltMask(
-        hDCDest,
-        XOriginDest,
-        YOriginDest,
-        WidthDest,
-        HeightDest,
-        hDCSrc,
-        XOriginSrc,
-        YOriginSrc,
-        WidthSrc,
-        HeightSrc,
-        MAKEROP4(dwRop3 & 0xFF0000, dwRop3),
-        dwBackColor,
-        core::ptr::null_mut(),
-        0,
-        0,
-    )
-}
-
-#[cfg(not(target_arch = "x86"))]
-#[no_mangle]
-pub unsafe extern "C" fn NtGdiStretchBlt(
+pub unsafe extern "system" fn NtGdiStretchBlt(
     hDCDest: HDC,
     XOriginDest: INT,
     YOriginDest: INT,
@@ -1664,9 +1557,8 @@ unsafe fn IntGdiPolyPatBlt_impl(
 
     1
 }
-#[cfg(target_arch = "x86")]
 #[no_mangle]
-pub unsafe extern "stdcall" fn NtGdiPatBlt(
+pub unsafe extern "system" fn NtGdiPatBlt(
     hdcDest: HDC,
     x: INT,
     y: INT,
@@ -1703,101 +1595,8 @@ pub unsafe extern "stdcall" fn NtGdiPatBlt(
     DC_UnlockDc(pdc);
     bResult
 }
-
-#[cfg(not(target_arch = "x86"))]
 #[no_mangle]
-pub unsafe extern "C" fn NtGdiPatBlt(
-    hdcDest: HDC,
-    x: INT,
-    y: INT,
-    cx: INT,
-    cy: INT,
-    mut dwRop: DWORD,
-) -> BOOL {
-    let bResult: BOOL;
-    let pdc: PDC;
-
-    dwRop = MAKEROP4(dwRop & 0xFF0000, dwRop);
-
-    if WIN32_ROP4_USES_SOURCE(dwRop) {
-        return 0;
-    }
-
-    pdc = DC_LockDc(hdcDest);
-    if pdc.is_null() {
-        EngSetLastError(ERROR_INVALID_HANDLE);
-        return 0;
-    }
-
-    if (*pdc).dclevel.pSurface.is_null() {
-        DC_UnlockDc(pdc);
-        return 1;
-    }
-
-    if (*(*pdc).pdcattr).ulDirty_ & (DIRTY_FILL | DC_BRUSH_DIRTY) != 0 {
-        DC_vUpdateFillBrush(pdc);
-    }
-
-    bResult = IntPatBlt(pdc, x, y, cx, cy, dwRop, core::ptr::addr_of_mut!((*pdc).eboFill));
-
-    DC_UnlockDc(pdc);
-    bResult
-}
-#[cfg(target_arch = "x86")]
-#[no_mangle]
-pub unsafe extern "stdcall" fn NtGdiPolyPatBlt(
-    hDC: HDC,
-    dwRop: DWORD,
-    pRects: PPOLYPATBLT,
-    cRects: DWORD,
-    Mode: DWORD,
-) -> BOOL {
-    let mut rb: PPATRECT = core::ptr::null_mut();
-    let mut Status: NTSTATUS = STATUS_SUCCESS;
-    let Ret: BOOL;
-
-    if cRects > 0 {
-        rb = ExAllocatePoolWithTag(
-            PagedPool,
-            core::mem::size_of::<PATRECT>() * cRects as usize,
-            GDITAG_PLGBLT_DATA,
-        ) as PPATRECT;
-        if rb.is_null() {
-            EngSetLastError(ERROR_NOT_ENOUGH_MEMORY);
-            return 0;
-        }
-        Status = SafeProbeForRead(
-            pRects as *mut core::ffi::c_void,
-            cRects as usize * core::mem::size_of::<PATRECT>(),
-            1,
-        );
-        if NT_SUCCESS(Status) {
-            RtlCopyMemory(
-                rb as *mut core::ffi::c_void,
-                pRects as *mut core::ffi::c_void,
-                cRects as usize * core::mem::size_of::<PATRECT>(),
-            );
-        }
-
-        if !NT_SUCCESS(Status) {
-            ExFreePoolWithTag(rb as *mut core::ffi::c_void, GDITAG_PLGBLT_DATA);
-            SetLastNtError(Status);
-            return 0;
-        }
-    }
-
-    Ret = IntGdiPolyPatBlt(hDC, dwRop, rb, cRects as INT, Mode);
-
-    if cRects > 0 {
-        ExFreePoolWithTag(rb as *mut core::ffi::c_void, GDITAG_PLGBLT_DATA);
-    }
-
-    Ret
-}
-
-#[cfg(not(target_arch = "x86"))]
-#[no_mangle]
-pub unsafe extern "C" fn NtGdiPolyPatBlt(
+pub unsafe extern "system" fn NtGdiPolyPatBlt(
     hDC: HDC,
     dwRop: DWORD,
     pRects: PPOLYPATBLT,
@@ -2075,7 +1874,7 @@ pub unsafe extern "C" fn IntGdiPaintRgn(pdc: PDC, prgn: PREGION) -> BOOL {
 }
 #[cfg(target_arch = "x86")]
 #[no_mangle]
-pub unsafe extern "stdcall" fn NtGdiFillRgn(
+pub unsafe extern "system" fn NtGdiFillRgn(
     hdc: HDC,
     hrgn: HRGN,
     hbrush: HBRUSH,
@@ -2119,7 +1918,7 @@ pub unsafe extern "stdcall" fn NtGdiFillRgn(
 
 #[cfg(not(target_arch = "x86"))]
 #[no_mangle]
-pub unsafe extern "C" fn NtGdiFillRgn(
+pub unsafe extern "system" fn NtGdiFillRgn(
     hdc: HDC,
     hrgn: HRGN,
     hbrush: HBRUSH,
@@ -2160,9 +1959,8 @@ pub unsafe extern "C" fn NtGdiFillRgn(
 
     bResult
 }
-#[cfg(target_arch = "x86")]
 #[no_mangle]
-pub unsafe extern "stdcall" fn NtGdiFrameRgn(
+pub unsafe extern "system" fn NtGdiFrameRgn(
     hdc: HDC,
     hrgn: HRGN,
     hbrush: HBRUSH,
@@ -2182,32 +1980,8 @@ pub unsafe extern "stdcall" fn NtGdiFrameRgn(
     GreDeleteObject(hrgnFrame as _);
     bResult
 }
-
-#[cfg(not(target_arch = "x86"))]
 #[no_mangle]
-pub unsafe extern "C" fn NtGdiFrameRgn(
-    hdc: HDC,
-    hrgn: HRGN,
-    hbrush: HBRUSH,
-    xWidth: INT,
-    yHeight: INT,
-) -> BOOL {
-    let hrgnFrame: HRGN;
-    let bResult: BOOL;
-
-    hrgnFrame = GreCreateFrameRgn(hrgn, xWidth, yHeight);
-    if hrgnFrame.is_null() {
-        return 0;
-    }
-
-    bResult = NtGdiFillRgn(hdc, hrgnFrame, hbrush);
-
-    GreDeleteObject(hrgnFrame as _);
-    bResult
-}
-#[cfg(target_arch = "x86")]
-#[no_mangle]
-pub unsafe extern "stdcall" fn NtGdiInvertRgn(hdc: HDC, hrgn: HRGN) -> BOOL {
+pub unsafe extern "system" fn NtGdiInvertRgn(hdc: HDC, hrgn: HRGN) -> BOOL {
     let bResult: BOOL;
     let pdc: PDC;
     let prgn: PREGION;
@@ -2247,143 +2021,8 @@ pub unsafe extern "stdcall" fn NtGdiInvertRgn(hdc: HDC, hrgn: HRGN) -> BOOL {
     DC_UnlockDc(pdc);
     bResult
 }
-
-#[cfg(not(target_arch = "x86"))]
 #[no_mangle]
-pub unsafe extern "C" fn NtGdiInvertRgn(hdc: HDC, hrgn: HRGN) -> BOOL {
-    let bResult: BOOL;
-    let pdc: PDC;
-    let prgn: PREGION;
-
-    /* Lock the DC */
-    pdc = DC_LockDc(hdc);
-    if pdc.is_null() {
-        EngSetLastError(ERROR_INVALID_HANDLE);
-        return 0;
-    }
-
-    /* Check if the DC has no surface (empty mem or info DC) */
-    if (*pdc).dclevel.pSurface.is_null() {
-        /* Nothing to do, Windows returns TRUE! */
-        DC_UnlockDc(pdc);
-        return 1;
-    }
-
-    /* Lock the region */
-    prgn = REGION_LockRgn(hrgn);
-    if prgn.is_null() {
-        DC_UnlockDc(pdc);
-        return 0;
-    }
-
-    /* Call the internal function */
-    bResult = IntGdiBitBltRgn(
-        pdc,
-        prgn,
-        core::ptr::null_mut(), // pbo
-        core::ptr::null_mut(), // pptlBrush,
-        ROP4_DSTINVERT,
-    );
-
-    /* Unlock the region and DC and return the result */
-    REGION_UnlockRgn(prgn);
-    DC_UnlockDc(pdc);
-    bResult
-}
-#[cfg(target_arch = "x86")]
-#[no_mangle]
-pub unsafe extern "stdcall" fn NtGdiSetPixel(
-    hdc: HDC,
-    x: INT,
-    y: INT,
-    mut crColor: COLORREF,
-) -> COLORREF {
-    let pdc: PDC;
-    let iOldColor: ULONG;
-    let iSolidColor: ULONG;
-    let bResult: BOOL;
-    let pebo: PEBRUSHOBJ;
-    let ulDirty: ULONG;
-    let mut exlo: EXLATEOBJ = core::mem::zeroed();
-
-    /* Lock the DC */
-    pdc = DC_LockDc(hdc);
-    if pdc.is_null() {
-        return CLR_INVALID;
-    }
-
-    /* Check if the DC has no surface (empty mem or info DC) */
-    if (*pdc).dclevel.pSurface.is_null() {
-        /* Fail! */
-        DC_UnlockDc(pdc);
-        return CLR_INVALID;
-    }
-
-    if (*pdc).fs as u32 & (DC_ACCUM_APP | DC_ACCUM_WMGR) != 0 {
-        let mut rcDst: RECTL = core::mem::zeroed();
-
-        w32r_RECTL_vSetRect(&mut rcDst, x, y, x + 1, y + 1);
-
-        w32r_IntLPtoDP(pdc, &mut rcDst as *mut RECTL as LPPOINT, 2);
-
-        rcDst.left += (*pdc).ptlDCOrig.x;
-        rcDst.top += (*pdc).ptlDCOrig.y;
-        rcDst.right += (*pdc).ptlDCOrig.x;
-        rcDst.bottom += (*pdc).ptlDCOrig.y;
-
-        IntUpdateBoundsRect(pdc, &mut rcDst);
-    }
-
-    /* Translate the color to the target format */
-    iSolidColor = TranslateCOLORREF(pdc, crColor);
-
-    /* Use the DC's text brush, which is always a solid brush */
-    pebo = core::ptr::addr_of_mut!((*pdc).eboText);
-
-    /* Save the old solid color and set the one for the pixel */
-    iOldColor = EBRUSHOBJ_iSetSolidColor(pebo, iSolidColor);
-
-    /* Save dirty flags and reset dirty text brush flag */
-    ulDirty = (*(*pdc).pdcattr).ulDirty_;
-    (*(*pdc).pdcattr).ulDirty_ &= !DIRTY_TEXT;
-
-    /* Call the internal function */
-    bResult = IntPatBlt(pdc, x, y, 1, 1, PATCOPY, pebo);
-
-    /* Restore old text brush color and dirty flags */
-    EBRUSHOBJ_iSetSolidColor(pebo, iOldColor);
-    (*(*pdc).pdcattr).ulDirty_ = ulDirty;
-
-    /* Initialize an XLATEOBJ from the target surface to RGB without using BkColor */
-    EXLATEOBJ_vInitialize(
-        &mut exlo,
-        (*(*pdc).dclevel.pSurface).ppal,
-        core::ptr::addr_of_mut!(gpalRGB),
-        CLR_INVALID,
-        CLR_INVALID,
-        CLR_INVALID,
-    );
-
-    /* Translate the color back to RGB */
-    crColor = XLATEOBJ_iXlate(&mut exlo.xlo, iSolidColor);
-
-    /* Cleanup and return the target format color */
-    EXLATEOBJ_vCleanup(&mut exlo);
-
-    /* Unlock the DC */
-    DC_UnlockDc(pdc);
-
-    /* Return the new RGB color or CLR_INVALID (-1) on failure */
-    if bResult != 0 {
-        crColor
-    } else {
-        CLR_INVALID
-    }
-}
-
-#[cfg(not(target_arch = "x86"))]
-#[no_mangle]
-pub unsafe extern "C" fn NtGdiSetPixel(
+pub unsafe extern "system" fn NtGdiSetPixel(
     hdc: HDC,
     x: INT,
     y: INT,
@@ -2473,7 +2112,7 @@ pub unsafe extern "C" fn NtGdiSetPixel(
 }
 #[cfg(target_arch = "x86")]
 #[no_mangle]
-pub unsafe extern "stdcall" fn NtGdiGetPixel(hdc: HDC, x: INT, y: INT) -> COLORREF {
+pub unsafe extern "system" fn NtGdiGetPixel(hdc: HDC, x: INT, y: INT) -> COLORREF {
     let pdc: PDC;
     let mut ulRGBColor: ULONG = CLR_INVALID;
     let mut ptlSrc: POINTL = core::mem::zeroed();
@@ -2577,7 +2216,7 @@ pub unsafe extern "stdcall" fn NtGdiGetPixel(hdc: HDC, x: INT, y: INT) -> COLORR
 
 #[cfg(not(target_arch = "x86"))]
 #[no_mangle]
-pub unsafe extern "C" fn NtGdiGetPixel(hdc: HDC, x: INT, y: INT) -> COLORREF {
+pub unsafe extern "system" fn NtGdiGetPixel(hdc: HDC, x: INT, y: INT) -> COLORREF {
     let pdc: PDC;
     let mut ulRGBColor: ULONG = CLR_INVALID;
     let mut ptlSrc: POINTL = core::mem::zeroed();

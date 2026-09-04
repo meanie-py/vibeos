@@ -15,11 +15,22 @@ extern "system" {
     static SeTcbPrivilege: LUID;
 }
 
+// L"\Registry\MACHINE\System\CurrentControlSet\Control\Session Manager\AppCompatCache"
+static APP_COMPAT_CACHE_KEY_BUF: [u16; 82] = [
+    b'\\' as u16, b'R' as u16, b'e' as u16, b'g' as u16, b'i' as u16, b's' as u16, b't' as u16, b'r' as u16, b'y' as u16, b'\\' as u16,
+    b'M' as u16, b'A' as u16, b'C' as u16, b'H' as u16, b'I' as u16, b'N' as u16, b'E' as u16, b'\\' as u16, b'S' as u16, b'y' as u16,
+    b's' as u16, b't' as u16, b'e' as u16, b'm' as u16, b'\\' as u16, b'C' as u16, b'u' as u16, b'r' as u16, b'r' as u16, b'e' as u16,
+    b'n' as u16, b't' as u16, b'C' as u16, b'o' as u16, b'n' as u16, b't' as u16, b'r' as u16, b'o' as u16, b'l' as u16, b'S' as u16,
+    b'e' as u16, b't' as u16, b'\\' as u16, b'C' as u16, b'o' as u16, b'n' as u16, b't' as u16, b'r' as u16, b'o' as u16, b'l' as u16,
+    b'\\' as u16, b'S' as u16, b'e' as u16, b's' as u16, b's' as u16, b'i' as u16, b'o' as u16, b'n' as u16, b' ' as u16, b'M' as u16,
+    b'a' as u16, b'n' as u16, b'a' as u16, b'g' as u16, b'e' as u16, b'r' as u16, b'\\' as u16, b'A' as u16, b'p' as u16, b'p' as u16,
+    b'C' as u16, b'o' as u16, b'm' as u16, b'p' as u16, b'a' as u16, b't' as u16, b'C' as u16, b'a' as u16, b'c' as u16, b'h' as u16,
+    b'e' as u16, 0,
+];
 static mut AppCompatCacheKey: _UNICODE_STRING = _UNICODE_STRING {
-    Length: 150,
-    MaximumLength: 152,
-    Buffer: b"\\Registry\\MACHINE\\System\\CurrentControlSet\\Control\\Session Manager\\AppCompatCache\0"
-        .as_ptr() as *mut u16,
+    Length: 162,
+    MaximumLength: 164,
+    Buffer: APP_COMPAT_CACHE_KEY_BUF.as_ptr() as *mut u16,
 };
 
 static mut AppCompatKeyAttributes: _OBJECT_ATTRIBUTES = _OBJECT_ATTRIBUTES {

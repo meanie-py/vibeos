@@ -242,6 +242,33 @@ pub unsafe extern "system" fn BasepGetComputerNameFromNtPath(
     let UncString: _UNICODE_STRING = RTL_CONSTANT_STRING(b"\\??\\UNC\0".as_ptr() as *const i8);
     let GlobalString: _UNICODE_STRING = RTL_CONSTANT_STRING(b"\\??\\\0".as_ptr() as *const i8);
 
+    // L"\Device\LanmanRedirector\;"
+    static LANMAN_REDIRECTOR_PREFIX: [u16; 27] = [
+        b'\\' as u16, b'D' as u16, b'e' as u16, b'v' as u16, b'i' as u16, b'c' as u16, b'e' as u16, b'\\' as u16, b'L' as u16, b'a' as u16,
+        b'n' as u16, b'm' as u16, b'a' as u16, b'n' as u16, b'R' as u16, b'e' as u16, b'd' as u16, b'i' as u16, b'r' as u16, b'e' as u16,
+        b'c' as u16, b't' as u16, b'o' as u16, b'r' as u16, b'\\' as u16, b';' as u16, 0,
+    ];
+    // L"\Device\Harddisk"
+    static HARDDISK_PREFIX: [u16; 17] = [
+        b'\\' as u16, b'D' as u16, b'e' as u16, b'v' as u16, b'i' as u16, b'c' as u16, b'e' as u16, b'\\' as u16, b'H' as u16, b'a' as u16,
+        b'r' as u16, b'd' as u16, b'd' as u16, b'i' as u16, b's' as u16, b'k' as u16, 0,
+    ];
+    // L"\Device\CdRom"
+    static CDROM_PREFIX: [u16; 14] = [
+        b'\\' as u16, b'D' as u16, b'e' as u16, b'v' as u16, b'i' as u16, b'c' as u16, b'e' as u16, b'\\' as u16, b'C' as u16, b'd' as u16,
+        b'R' as u16, b'o' as u16, b'm' as u16, 0,
+    ];
+    // L"\Device\Floppy"
+    static FLOPPY_PREFIX: [u16; 15] = [
+        b'\\' as u16, b'D' as u16, b'e' as u16, b'v' as u16, b'i' as u16, b'c' as u16, b'e' as u16, b'\\' as u16, b'F' as u16, b'l' as u16,
+        b'o' as u16, b'p' as u16, b'p' as u16, b'y' as u16, 0,
+    ];
+    // L"\Device\WinDfs\"
+    static WINDFS_PREFIX: [u16; 16] = [
+        b'\\' as u16, b'D' as u16, b'e' as u16, b'v' as u16, b'i' as u16, b'c' as u16, b'e' as u16, b'\\' as u16, b'W' as u16, b'i' as u16,
+        b'n' as u16, b'D' as u16, b'f' as u16, b's' as u16, b'\\' as u16, 0,
+    ];
+
     // DPRINT removed
 
     if RtlPrefixUnicodeString(&UncString as *const _UNICODE_STRING, NewPath, 1) != 0 {
@@ -273,7 +300,7 @@ pub unsafe extern "system" fn BasepGetComputerNameFromNtPath(
 
         if TargetDevice.as_ptr() == wcsstr(
             TargetDevice.as_ptr(),
-            b"\\Device\\LanmanRedirector\\;\0".as_ptr() as *const WCHAR,
+            LANMAN_REDIRECTOR_PREFIX.as_ptr() as *const WCHAR,
         ) {
             if TargetDevice[26] == DeviceName[0] && TargetDevice[27] == ':' as WCHAR {
                 let Path: PWSTR = wcschr(
@@ -294,13 +321,13 @@ pub unsafe extern "system" fn BasepGetComputerNameFromNtPath(
             }
         } else if TargetDevice.as_ptr() == wcsstr(
             TargetDevice.as_ptr(),
-            b"\\Device\\Harddisk\0".as_ptr() as *const WCHAR,
+            HARDDISK_PREFIX.as_ptr() as *const WCHAR,
         ) || TargetDevice.as_ptr() == wcsstr(
             TargetDevice.as_ptr(),
-            b"\\Device\\CdRom\0".as_ptr() as *const WCHAR,
+            CDROM_PREFIX.as_ptr() as *const WCHAR,
         ) || TargetDevice.as_ptr() == wcsstr(
             TargetDevice.as_ptr(),
-            b"\\Device\\Floppy\0".as_ptr() as *const WCHAR,
+            FLOPPY_PREFIX.as_ptr() as *const WCHAR,
         ) {
             if GetComputerNameW(ComputerName, ComputerNameLength) == 0 {
                 return GetLastError();
@@ -309,7 +336,7 @@ pub unsafe extern "system" fn BasepGetComputerNameFromNtPath(
             return ERROR_SUCCESS;
         } else if TargetDevice.as_ptr() == wcsstr(
             TargetDevice.as_ptr(),
-            b"\\Device\\WinDfs\\\0".as_ptr() as *const WCHAR,
+            WINDFS_PREFIX.as_ptr() as *const WCHAR,
         ) {
             Query = 1;
         } else {

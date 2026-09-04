@@ -285,3 +285,54 @@ class TestUnparseableTopLevel:
         assert len(findings) == 1
         assert findings[0].startswith("PREAMBLE AUDIT INCOMPLETE")
         assert "SKIPPED, not passed" in findings[0]
+
+
+class TestACppTranslationUnitIsParsedAsCpp:
+    """A `.cpp` parsed with the C grammar is INCOMPLETE by construction, not by defect.
+
+    `class X : public Y {` is not C, so the C grammar makes it a top-level ERROR and the
+    audit — correctly refusing to mine parse debris — skipped every file-scope check.
+    That hit 53 of shell32's 84 `.cpp`, including the two hand-rolled COM classes in
+    shellrecyclebin, i.e. exactly the files most likely to carry a vtable to drop.
+    """
+
+    CPP = """\
+struct IThing { virtual long Query(void**) = 0; };
+static const unsigned int g_Table[3] = { 1, 2, 3 };
+enum Mode { ModeA = 1, ModeB = 2 };
+class CFoo : public IThing {
+public:
+    CFoo();
+    long Query(void**);
+private:
+    int m_member;
+};
+"""
+
+    def test_a_cpp_class_no_longer_defeats_the_audit(self, tmp_path: Path):
+        source = tmp_path / "thing.cpp"
+        source.write_text(self.CPP)
+        findings = audit_preamble(source, "")
+        assert not any(f.startswith("PREAMBLE AUDIT INCOMPLETE") for f in findings)
+
+    def test_file_scope_state_beside_a_cpp_class_is_still_caught(self, tmp_path: Path):
+        """Parsing further must widen coverage, not quietly find nothing."""
+        source = tmp_path / "thing.cpp"
+        source.write_text(self.CPP)
+        names = {decl.name for decl in preamble_decls(source)}
+        assert {"g_Table", "Mode", "IThing"} <= names
+        # An instance member is not file-scope state; reporting it would be the
+        # parse-debris false positive this audit refuses to produce.
+        assert "m_member" not in names
+
+    def test_the_shellrecyclebin_tu_that_motivated_this_now_audits(self):
+        source = (
+            REACTOS_ROOT
+            / "dll"
+            / "win32"
+            / "shell32"
+            / "shellrecyclebin"
+            / "recyclebin_v5_enumerator.cpp"
+        )
+        findings = audit_preamble(source, "")
+        assert not any(f.startswith("PREAMBLE AUDIT INCOMPLETE") for f in findings)

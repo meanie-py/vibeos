@@ -39,7 +39,7 @@ from dataclasses import dataclass
 
 from .ddk_enum_constants import DDK_ENUM_CONSTANTS
 from .dead_regions import dead_region_spans, in_dead_region
-from .lex_mask import opens_a_literal
+from .lex_mask import directive_spans, opens_a_literal
 
 
 class FactSealError(RuntimeError):
@@ -247,6 +247,66 @@ def _aggregate_zero_init_spans(masked: str) -> set[tuple[int, int]]:
     return {match.span(1) for match in _ZERO_INIT_RE.finditer(masked)}
 
 
+def _signature_array_bound_spans(masked: str) -> list[tuple[int, int]]:
+    """The function's OWN parameter list — nothing in it can be sealed.
+
+    One rule, and by now three constructs that proved it: the thing sealing would protect
+    exists only in C/C++ declarator syntax, so there is nowhere in the TRANSLATED signature
+    to put a token standing for it. rustconv generates that signature deterministically and
+    the model never writes it, so the audit rejects every attempt no matter how correct the
+    body is — the envelope is unsatisfiable, not merely hard.
+
+    * An ARRAY PARAMETER's bound. A C array parameter decays to a pointer, so the `2` in
+      `LPITEMIDLIST apidls[2]` has no counterpart in the Rust signature. shell32's
+      `DoGetAliasPIDLs` burned four paid retries on this before the prompt was read.
+    * A DEFAULT ARGUMENT's value. Rust has no default arguments at all, so the `FALSE` in
+      `BOOL AllowFolder = FALSE` cannot appear either — `ExtensionFromPidl` burned three.
+    * A PARAMETER TYPE that is a typedef. `IEnumFORMATETCImpl::Clone(LPENUMFORMATETC* ppenum)`
+      sealed `LPENUMFORMATETC`, and for a COM method the signature comes from the flattened
+      vtable authority rather than the C declaration, so the token had nowhere to land at
+      all. Rejected on every sample, including the sanctioned retry.
+
+    That last one generalises the whole helper: a parameter list holds types, parameter
+    names, bounds and defaults, and NONE of those is a value. So the exclusion is now the
+    entire list rather than two special cases. This only ever seals LESS, and the resume
+    cache compares seals directionally — a banked entry sealed more tightly than a run wants
+    is still sound — so widening it re-bills nothing.
+
+    Scoped to the PARAMETER LIST specifically — the first balanced `(...)` of the signature —
+    and not merely "before the first brace". `int a[2] = {0, 1};` has its first brace at the
+    INITIALIZER, so the looser rule silently stopped sealing a real local array's bound.
+    A bound, an `=`, or a type name in the BODY is a genuine value and must stay sealed.
+    """
+    body = masked.find("{")
+    opening = masked.find("(")
+    if opening < 0 or (body >= 0 and body < opening):
+        return []  # no signature here (a bare statement, or a body with no parameter list)
+    depth = 0
+    closing = -1
+    for index in range(opening, len(masked)):
+        if masked[index] == "(":
+            depth += 1
+        elif masked[index] == ")":
+            depth -= 1
+            if depth == 0:
+                closing = index
+                break
+    if closing < 0:
+        return []
+    # PROVE it is a definition header before excluding the whole span. The old
+    # bounds-and-defaults rule was safe on a fragment that merely happens to start with a
+    # call — `Call(TRUE); Call(FALSE);` has no `[` and no top-level `=`, so it excluded
+    # nothing. Excluding the whole parenthesised range is not safe that way: it would
+    # unseal TRUE, and `n = Len - sizeof(UNICODE_NULL)` likewise. A real definition's
+    # parameter list is followed by the body `{`, a ctor initialiser list `:`, or a C++
+    # trailing qualifier and then one of those.
+    tail = masked[closing + 1 :]
+    tail = re.sub(r"^(?:\s|\bconst\b|\bvolatile\b|\bnoexcept\b|\boverride\b|\bfinal\b)*", "", tail)
+    if not tail.startswith(("{", ":")):
+        return []
+    return [(opening, closing + 1)]
+
+
 def seal_facts(text: str, *, dialect: str = "cpp") -> SealedSource:
     """Replace each value occurrence with a unique opaque identifier.
 
@@ -261,11 +321,18 @@ def seal_facts(text: str, *, dialect: str = "cpp") -> SealedSource:
     declared = _declared_names(masked) if dialect == "c" else frozenset()
     # Positions where a symbol is a TYPE, not a value. Both are the same judgement
     # the scanner already makes for `(TYPE *)value`; neither can hold a constant.
-    type_spans = _block_scope_prototype_spans(masked) + _named_cast_spans(masked)
+    # Applied to the INTEGER scanner as well as the symbol one — an array bound is very nearly
+    # always a literal, so filtering only symbols would have missed every real case.
+    signature_bounds = _signature_array_bound_spans(masked)
+    type_spans = _block_scope_prototype_spans(masked) + _named_cast_spans(masked) + signature_bounds
+    # Nothing inside a `#define`/`#undef`/`#if` can be sealed — see lex_mask.directive_spans.
+    directive = directive_spans(text)
 
     zero_init = _aggregate_zero_init_spans(masked)
     for match in _INTEGER_RE.finditer(masked):
         if (match.start(), match.end()) in zero_init:
+            continue
+        if any(a <= match.start() < b for a, b in signature_bounds):
             continue
         spans.append((match.start(), match.end(), "integer"))
 
@@ -314,6 +381,7 @@ def seal_facts(text: str, *, dialect: str = "cpp") -> SealedSource:
 
     # No token can match both patterns (the generated set excludes ALL_CAPS names),
     # but sorting also makes numbering stable.
+    spans = [s for s in spans if not any(directive[i] for i in range(s[0], s[1]))]
     spans.sort()
     dead_spans = dead_region_spans(text, masked)
     facts: list[SealedFact] = []
@@ -350,7 +418,7 @@ def fact_contract(sealed: SealedSource) -> str:
 
 
 _USE_OF_TOKEN_RE = re.compile(
-    r"^[ \t]*use\s+__RUSTCONV_(?:CALL|FACT)_[0-9]{4}__\s*;[ \t]*\n?", re.M
+    r"^[ \t]*use\s+__RUSTCONV_(?:CALL|FACT|WIDE)_[0-9]{4}__\s*;[ \t]*\n?", re.M
 )
 
 
@@ -376,19 +444,72 @@ def drop_token_use_items(rust: str) -> str:
 
 
 def unseal_facts(
-    rust: str, sealed: SealedSource, *, dead_omissions: list[str] | None = None
+    rust: str,
+    sealed: SealedSource,
+    *,
+    dead_omissions: list[str] | None = None,
+    ignored_envelope: list[str] | None = None,
+    strict: bool = True,
 ) -> str:
     """Verify the closed token set and restore exact original spellings.
 
     `dead_omissions`, when given, collects `TOKEN=SPELLING` for each sealed value the
     model omitted that lives only in non-executed code -- accepted, but reported, so a
     relaxed guarantee is never silent.
+
+    `strict` False is the LAST-ATTEMPT mode: a body that ignored the envelope wholesale
+    is accepted rather than rejected, and the fact is appended to `ignored_envelope` so
+    the run reports it. Same bargain as `dead_omissions` -- the guarantee relaxes, and
+    it never relaxes quietly. See the RESCUE_FLOOR block for what is being given up.
     """
     rust = drop_token_use_items(rust)
     expected = {fact.placeholder for fact in sealed.facts}
     present = _PLACEHOLDER_RE.findall(rust)
     unknown = sorted(set(present) - expected)
     missing_names = expected - set(present)
+
+    # ── the recovery path has a floor, and it is load-bearing ────────────────────
+    #
+    # Recovery exists for a model that replaced ONE opaque token with a correctly
+    # guessed spelling (usually zero). It re-tokenizes matching spellings in SOURCE
+    # ORDER, which is sound for equal-valued occurrences of one spelling.
+    #
+    # What it must never do is rescue a body that ignored the envelope WHOLESALE.
+    # msvcrt's `_tzset` is the worked example: 35 tokens, none preserved, the model
+    # wrote real spellings from memory instead — and it put them in the wrong slots.
+    # `_lock(0)` for `_lock(_TIME_LOCK)`, `memset(&tzi, 0, 3)` for `sizeof(tzi)`,
+    # `*tz == 3600` for `*tz == '-'`, `tzi.Bias * CP_ACP` for `tzi.Bias * 60`. Every
+    # value the C owns was PRESENT, so the closed-set check passed; the multiset was
+    # right and the PERMUTATION was wrong. Recovery then re-tokenized the guesses and
+    # restoration became an identity: the seal reported success while shipping the
+    # model's memory of the function verbatim.
+    #
+    # There is no way to verify placement from the response alone — that is exactly
+    # what preserving the tokens is FOR. So the honest answer is to refuse: a body
+    # that preserved nothing has an unverified constant set, whatever its multiset
+    # says, and a paid retry is cheaper than a silent wrong answer.
+    #
+    # The floor counts DISTINCT SPELLINGS, not occurrences, because that is the size of
+    # the permutation space: `return 0 + 0 + S_OK` has three tokens and two spellings,
+    # and there is no way to get it wrong that recovery would not catch. `_tzset` has
+    # thirty-five tokens and TEN spellings — {0, 1, 3, 10, 60, 3600, TRUE, FALSE,
+    # CP_ACP, TIME_ZONE_ID_INVALID} — and got nearly all of them into the wrong slots.
+    # Four is where "the model happened to write the same values" stops being a
+    # plausible account of a body that preserved no tokens at all.
+    RESCUE_FLOOR = 4
+    distinct_missing = {f.original for f in sealed.facts if f.placeholder in missing_names}
+    if missing_names and not unknown and not set(present) and len(distinct_missing) >= RESCUE_FLOOR:
+        note = (
+            f"model ignored deterministic fact envelope entirely "
+            f"({len(missing_names)} tokens over {len(distinct_missing)} distinct "
+            f"spellings, none preserved) — its constants are "
+            f"unverified even if every value appears, because the seal cannot check "
+            f"PLACEMENT without the tokens"
+        )
+        if strict:
+            raise FactSealError(note)
+        if ignored_envelope is not None:
+            ignored_envelope.append(note)
 
     # Cheap models sometimes replace an opaque token with a correctly guessed
     # spelling, especially zero. Recover only exact executable occurrences of

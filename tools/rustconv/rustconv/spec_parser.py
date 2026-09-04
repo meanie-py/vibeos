@@ -18,6 +18,20 @@ Grammar accepted (matches sdk/tools/spec2def/spec2def.c):
     @ stub CoQueryReleaseObject                         # ditto
     @ stdcall CoFileTimeNow(ptr) kernel32.FileTimeNow   # FORWARDED to another dll
     @ stdcall -private DllRegisterServer()
+
+A trailing target is TWO different things and only the DOT tells them apart, exactly as
+spec2def decides it (`fIsExternal = !!ScanToken(strTarget, '.')`, spec2def.c:691):
+
+    kernel32.FileTimeNow    dotted   -> a real forward; the .def points at another DLL and
+                                        THIS module needs no symbol at all
+    WLDAP32_ber_alloc_t     bare     -> a LOCAL redirection; the .def maps the export onto
+                                        that symbol, which must exist in THIS module
+
+Treating the bare form as a forward is a silent hole: wldap32 shipped a translation missing
+`WLDAP32_ber_alloc_t`, `WLDAP32_ldap_first_entry` and five more, and the export audit called
+them "forwarded, no implementation needed". ntoskrnl's `@ fastcall Ex...(ptr) Exf...` rows
+are the same shape. Hence `impl_symbol` and `symbol` below — an auditor wants the symbol
+the LINKER will look for, which is not always the export name.
 """
 
 from __future__ import annotations
@@ -40,6 +54,31 @@ RE_SPEC_LINE = re.compile(
 )
 
 RE_ARCH_FLAG = re.compile(r"^-arch=(?P<arches>[\w,]+)$")
+RE_VERSION_FLAG = re.compile(r"^-version=(?P<ranges>\S+)$")
+
+# sdk/cmake/config.cmake:87 — every module is spec2def'd at this version unless it says
+# otherwise, and spec2def emits an entry only when the version falls inside its range
+# (spec2def.c:1155). So `-version=0x600+` rows are NOT in our .def at all: auditing them
+# reports 23 phantom MISSING exports on ws2_32 alone (the whole `Wah*` helper family).
+DEFAULT_EXPORT_VERSION = 0x502
+
+
+def _version_included(ranges: str, version: int) -> bool:
+    """spec2def.c:1115-1164 — comma-separated `V`, `V+`, or `V-W`, all hex, `0x` optional."""
+    for part in ranges.split(","):
+        part = part.strip()
+        if not part:
+            continue
+        if part.endswith("+"):
+            start, end = int(part[:-1], 16), 0xFFF
+        elif "-" in part:
+            lo, hi = part.split("-", 1)
+            start, end = int(lo, 16), int(hi, 16)
+        else:
+            start = end = int(part, 16)
+        if start <= version <= end:
+            return True
+    return False
 
 
 @dataclass
@@ -48,26 +87,39 @@ class SpecEntry:
     convention: str  # "stdcall", "fastcall", "cdecl", "varargs", "extern", "stub"
     params: list[str]  # ["ptr", "long", "str", ...]
     arch_filter: list[str] | None  # None = all arches, or ["i386"], ["x86_64", "arm64"], etc.
-    forward_target: str | None  # forwarded to another symbol name
+    forward_target: str | None  # DOTTED target only: forwarded to another DLL's symbol
     is_variable: bool  # True for "@ extern" entries (data exports)
     # --- generalisation for the win32 DLL specs (defaulted: old callers unaffected) ---
     ordinal: int | None = None  # explicit ordinal, or None for "@"
     flags: list[str] = field(default_factory=list)  # raw flags, e.g. ["-stub", "-private"]
     is_stub: bool = False  # "@ stub X" or "-stub": spec2def SYNTHESISES the impl
     is_private: bool = False  # "-private": no importlib entry, but still needs an impl
+    impl_symbol: str | None = None  # BARE target: the local symbol this export maps onto
+    in_version: bool = True  # False when `-version=` excludes it at DEFAULT_EXPORT_VERSION
 
     @property
     def is_forwarded(self) -> bool:
         return self.forward_target is not None
 
     @property
+    def symbol(self) -> str:
+        """The symbol the linker must find in THIS module.
+
+        Usually the export name, but a bare trailing target renames it — that is what
+        an auditor has to look for, not `name`.
+        """
+        return self.impl_symbol or self.name
+
+    @property
     def needs_implementation(self) -> bool:
         """True iff a real symbol must exist in THIS module's object code.
 
-        False for data exports (`extern`), stubs (spec2def emits the body), and
-        forwarded entries (the .def maps them straight at another DLL).
+        False for data exports (`extern`), stubs (spec2def emits the body), entries this
+        build's `-version=` excludes, and DLL-forwarded entries (the .def maps them
+        straight at another DLL).  A bare local target is NOT a forward — see the module
+        docstring.
         """
-        if self.is_variable or self.is_stub or self.is_forwarded:
+        if self.is_variable or self.is_stub or self.is_forwarded or not self.in_version:
             return False
         return self.name != "@"  # bare "@" = autoname/noname placeholder
 
@@ -97,15 +149,23 @@ def parse_spec(path: Path = SPEC_FILE) -> dict[str, SpecEntry]:
         convention = m.group("convention")
         name = m.group("name")
         params_str = m.group("params")
-        forward = m.group("forward")
+        # spec2def.c:691 — only a DOT makes it an inter-DLL forward. A bare target is a
+        # local rename, and the symbol still has to exist here.
+        target = m.group("forward")
+        forward = target if target and "." in target else None
+        impl_symbol = target if target and "." not in target else None
 
         flags = m.group("flags").split() if m.group("flags") else []
 
         arch_filter: list[str] | None = None
+        in_version = True
         for f in flags:
             am = RE_ARCH_FLAG.match(f)
             if am:
                 arch_filter = am.group("arches").split(",")
+            vm = RE_VERSION_FLAG.match(f)
+            if vm:
+                in_version = _version_included(vm.group("ranges"), DEFAULT_EXPORT_VERSION)
 
         params = []
         if params_str:
@@ -125,6 +185,8 @@ def parse_spec(path: Path = SPEC_FILE) -> dict[str, SpecEntry]:
             flags=flags,
             is_stub=convention == "stub" or "-stub" in flags,
             is_private="-private" in flags,
+            impl_symbol=impl_symbol,
+            in_version=in_version,
         )
 
     return entries

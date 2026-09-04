@@ -583,6 +583,10 @@ pub unsafe extern "system" fn CmpQueryKeyValueData(
         }
 
         _ => {
+            crate::dbg_print!(
+                b"Caller requested unknown class: %lx\n\0",
+                KeyValueInformationClass
+            );
             *Status = STATUS_INVALID_PARAMETER;
         }
     }

@@ -266,7 +266,7 @@ void ref_set_startup_handles(BYTE *blob, WORD len)
  * ------------------------------------------------------------------ */
 static char *path_from_wide(const wchar_t *w)
 {
-    int n;
+    int n, i;
     char *s;
 
     if (!w) { SET_ERR(ERROR_INVALID_PARAMETER); return NULL; }
@@ -274,6 +274,21 @@ static char *path_from_wide(const wchar_t *w)
     if (n <= 0) { SET_ERR(ERROR_INVALID_PARAMETER); return NULL; }
     if (!(s = malloc(n))) { SET_ERR(ERROR_NOT_ENOUGH_MEMORY); return NULL; }
     WideCharToMultiByte(CP_ACP, 0, w, -1, s, n, NULL, NULL);
+    /* `\` IS a path separator on the API being modelled, and POSIX does not agree.
+     *
+     * This is the shim rule at the top of the file in its sharpest form. Nothing in
+     * file.c BUILDS a path — it passes through what its caller handed it, so the
+     * untranslated version worked for four waves. process.c does build one:
+     * `msvcrt_search_executable` joins a PATH entry to a program name with a literal
+     * `'\\'`, and every candidate it produced then failed to stat. The failure is the
+     * dangerous kind — the search simply finds nothing, on BOTH sides, and every row
+     * over the whole use_path half of the function reports MATCH while proving that two
+     * implementations can equally fail to open a file whose name has a backslash in it.
+     *
+     * Translating here rather than in process.c's TU because it is the OS layer's job:
+     * a real GetFileAttributesW accepts both separators. */
+    for (i = 0; s[i]; i++)
+        if (s[i] == '\\') s[i] = '/';
     return s;
 }
 
@@ -390,11 +405,90 @@ void * WINAPI InterlockedCompareExchangePointer(void * volatile *dst, void *xchg
 HANDLE WINAPI GetCurrentProcess(void)   { return CURRENT_PROCESS_HANDLE; }
 DWORD  WINAPI GetCurrentProcessId(void) { return (DWORD)getpid(); }
 
+/* Also RECORDS its argument, which stopped being incidental when misc.c became reference
+ * TU #9: `_sleep`'s entire body is `Sleep(timeout ? timeout : 1)`, so the zero-to-one
+ * adjustment is its only observable behaviour and is invisible without this. ONE recorder
+ * serving both sides, read immediately after each side's call — the same discipline the
+ * `_lock` recorder below documents, and the reason it works is that the rows are
+ * single-threaded and interleave deliberately. */
+static DWORD ref_last_sleep_ms;
+static DWORD ref_last_beep_freq, ref_last_beep_dur;
+static int   ref_misc_calls;
+
+unsigned int ref_last_sleep(void) { return ref_last_sleep_ms; }
+unsigned int ref_last_beep_f(void) { return ref_last_beep_freq; }
+unsigned int ref_last_beep_d(void) { return ref_last_beep_dur; }
+int  ref_misc_call_count(void) { return ref_misc_calls; }
+void ref_misc_reset(void)
+{
+    ref_last_sleep_ms = ref_last_beep_freq = ref_last_beep_dur = 0;
+    ref_misc_calls = 0;
+}
+
 void WINAPI Sleep(DWORD ms)
 {
-    struct timespec ts = { (time_t)(ms / 1000), (long)(ms % 1000) * 1000000L };
+    ref_last_sleep_ms = ms;
+    ref_misc_calls++;
+    /* Deliberately NOT nanosleep()ing any more. `_sleep(0)` becomes `Sleep(1)`, and the
+     * rows sweep it across every dataset; a real sleep would buy nothing a recorder does
+     * not already prove and would cost a millisecond a row. */
+}
 
-    nanosleep(&ts, NULL);
+/* The four misc.c needs.  misc.c is worth linking into this harness rather than gating out
+ * (unlike console.c/exit.c, see msvcrt-crt-rust/Cargo.toml `conio-exit`) because qsort,
+ * bsearch, _lsearch and rand are pure algorithms with real oracles.  These four stubs are
+ * the whole price.
+ *
+ * They used to be deliberately INERT, on the reasoning that nothing in misc.c's gradeable
+ * surface observed them. That was true while misc.c was only the SUBJECT's; as reference TU
+ * #9 it is graded, and `_beep` and `_sleep` are then functions whose entire body is the call
+ * — a passthrough and a zero-to-one adjustment. An inert stub makes both ungradeable, so
+ * they record instead. */
+void WINAPI Beep(DWORD freq, DWORD duration)
+{
+    /* `_beep` is a passthrough, so its whole contract is that the two arguments arrive
+     * unchanged — which needs a recorder to see, exactly like Sleep above. */
+    ref_last_beep_freq = freq;
+    ref_last_beep_dur  = duration;
+    ref_misc_calls++;
+}
+
+void WINAPI DebugBreak(void)
+{
+    /* chkesp_fail's only statement.  Must NOT raise(SIGTRAP): under the test runner that
+     * kills the process, and chkesp_fail is reachable from a row that merely checks it
+     * links. */
+}
+
+/* rand_s's entropy source. Named `SystemFunction036`, which is what advapi32 actually
+ * EXPORTS — `RtlGenRandom` is ntsecapi.h's `#define` for it, and misc.c reaches it through
+ * that macro while the Rust binds the real name through msvcrt-sys.
+ *
+ * It was `RtlGenRandom` here until misc.c became reference TU #9, and the mismatch had never
+ * mattered because no test binary referenced `rand_s`: the subject's call sat in an rlib
+ * nothing pulled, so the undefined symbol never reached a link. `cargo check` cannot see
+ * that class at all — the first row to call `rand_s` is what found it.
+ *
+ * Deterministic on purpose: a difftest row wants a reproducible byte pattern, and rand_s's
+ * contract under test is its errno/return behaviour, not the quality of the bytes. */
+BOOLEAN WINAPI SystemFunction036(void *buf, ULONG len)
+{
+    memset(buf, 0x5A, len);
+    return TRUE;
+}
+
+BOOL WINAPI VirtualProtect(void *addr, ULONG_PTR size, DWORD prot, DWORD *old)
+{
+    /* _resetstkoflw returns this verbatim.  There is no guard page to re-arm on the host,
+     * and reporting failure would make the one observable thing about it wrong.
+     *
+     * `ULONG_PTR`, not `SIZE_T`: this shim's type vocabulary (refstub/msvcrt_file_types.h)
+     * has the former and not the latter, and they are the same width.  `*old` gets the
+     * numeric PAGE_READWRITE rather than the name for the same reason — and nothing reads
+     * it: `_resetstkoflw` passes a scratch local and returns only the BOOL. */
+    (void)addr; (void)size; (void)prot;
+    if (old) *old = 0x04;   /* PAGE_READWRITE */
+    return TRUE;
 }
 
 void WINAPI GetStartupInfoA(STARTUPINFOA *si)
@@ -1085,13 +1179,16 @@ int CDECL _get_fmode(int *mode)
  * which is what msvcrt reports for a file on C:. */
 int CDECL _getdrive(void) { return 3; }
 
-__time64_t CDECL _time64(__time64_t *t)
-{
-    __time64_t now = (__time64_t)time(NULL);
-
-    if (t) *t = now;
-    return now;
-}
+/* `ref__time64` USED to be here — three lines over the host's `time(NULL)`, standing in
+ * for the one call file.c's `_wutime`/`_futime` path makes. It is gone as of wave 35:
+ * time.c is reference TU #11 and DEFINES `_time64`, which the rename wall spells
+ * `ref__time64` — exactly the socket this stub occupied, so the genuine body drops
+ * straight in. (Same move errno.c's arrival made on `msvcrt_set_errno`.)
+ *
+ * It is a real upgrade rather than tidying. The stub read the host clock, so every file
+ * row that stamped a modification time was graded against the HARNESS's idea of "now"
+ * instead of msvcrt's; the genuine `_time64` reads timeimpl.c's FROZEN instant, which the
+ * test sets. `_wutime`'s "pass NULL and take the current time" arm is now reproducible. */
 
 /* The real _wgetenv returns a pointer into msvcrt's wide environ block, which
  * this harness has no reason to maintain; a thread-local buffer has the same

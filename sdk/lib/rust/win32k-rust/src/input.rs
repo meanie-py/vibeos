@@ -597,23 +597,8 @@ unsafe fn IntBlockInputImpl(pti: PTHREADINFO, BlockIt: BOOL) -> BOOL {
     (*(*pti).rpdesk).BlockInputThread = if BlockIt != 0 { pti as *mut c_void } else { core::ptr::null_mut() };
     (OldBlock.is_null()) as BOOL
 }
-#[cfg(target_arch = "x86")]
 #[no_mangle]
-pub unsafe extern "stdcall" fn NtUserBlockInput(BlockIt: BOOL) -> BOOL {
-    let ret: BOOL;
-
-    UserEnterExclusive();
-
-    ret = IntBlockInput(PsGetCurrentThreadWin32Thread() as PTHREADINFO, BlockIt);
-
-    UserLeave();
-
-    ret
-}
-
-#[cfg(not(target_arch = "x86"))]
-#[no_mangle]
-pub unsafe extern "C" fn NtUserBlockInput(BlockIt: BOOL) -> BOOL {
+pub unsafe extern "system" fn NtUserBlockInput(BlockIt: BOOL) -> BOOL {
     let ret: BOOL;
 
     UserEnterExclusive();
@@ -857,9 +842,8 @@ unsafe fn UserAttachThreadInput_impl(
 
     STATUS_SUCCESS
 }
-#[cfg(target_arch = "x86")]
 #[no_mangle]
-pub unsafe extern "stdcall" fn NtUserAttachThreadInput(
+pub unsafe extern "system" fn NtUserAttachThreadInput(
     idAttach: DWORD,
     idAttachTo: DWORD,
     fAttach: BOOL,
@@ -888,124 +872,8 @@ pub unsafe extern "stdcall" fn NtUserAttachThreadInput(
     UserLeave();
     Ret
 }
-
-#[cfg(not(target_arch = "x86"))]
 #[no_mangle]
-pub unsafe extern "C" fn NtUserAttachThreadInput(
-    idAttach: DWORD,
-    idAttachTo: DWORD,
-    fAttach: BOOL,
-) -> BOOL {
-    let mut Ret: BOOL = 0;
-
-    UserEnterExclusive();
-
-    'block: {
-        let pti = IntTID2PTI(UlongToHandle(idAttach));
-        let ptiTo = IntTID2PTI(UlongToHandle(idAttachTo));
-
-        if pti.is_null() || ptiTo.is_null() {
-            EngSetLastError(ERROR_INVALID_PARAMETER);
-            break 'block;
-        }
-
-        let Status = UserAttachThreadInput(pti, ptiTo, fAttach);
-        if !NT_SUCCESS(Status) {
-            EngSetLastError(RtlNtStatusToDosError(Status));
-        } else {
-            Ret = 1;
-        }
-    }
-
-    UserLeave();
-    Ret
-}
-#[cfg(target_arch = "x86")]
-#[no_mangle]
-pub unsafe extern "stdcall" fn NtUserSendInput(
-    mut nInputs: UINT,
-    mut pInput: LPINPUT,
-    cbSize: INT,
-) -> UINT {
-    let pti: PTHREADINFO;
-    let mut uRet: UINT = 0;
-
-    UserEnterExclusive();
-
-    pti = PsGetCurrentThreadWin32Thread() as PTHREADINFO;
-
-    'cleanup: {
-        if (*pti).rpdesk.is_null() {
-            break 'cleanup;
-        }
-
-        if nInputs == 0
-            || pInput.is_null()
-            || cbSize as usize != core::mem::size_of::<INPUT>()
-        {
-            EngSetLastError(ERROR_INVALID_PARAMETER);
-            break 'cleanup;
-        }
-
-        if ThreadHasInputAccess(pti) == 0 || IntIsActiveDesktop((*pti).rpdesk) == 0 {
-            EngSetLastError(ERROR_ACCESS_DENIED);
-            break 'cleanup;
-        }
-
-        while nInputs != 0 {
-            nInputs -= 1;
-
-            let mut SafeInput: INPUT = core::mem::zeroed();
-            let Status: NTSTATUS;
-
-            Status = MmCopyFromCaller(
-                core::ptr::addr_of_mut!(SafeInput) as *mut _,
-                pInput as *mut _,
-                core::mem::size_of::<INPUT>(),
-            );
-            pInput = pInput.add(1);
-
-            if !NT_SUCCESS(Status) {
-                SetLastNtError(Status);
-                break 'cleanup;
-            }
-
-            match SafeInput.type_ {
-                INPUT_MOUSE => {
-                    if UserSendMouseInput(
-                        core::ptr::addr_of_mut!(SafeInput.__bindgen_anon_1.mi),
-                        1,
-                    ) != 0
-                    {
-                        uRet += 1;
-                    }
-                }
-                INPUT_KEYBOARD => {
-                    if UserSendKeyboardInput(
-                        core::ptr::addr_of_mut!(SafeInput.__bindgen_anon_1.ki),
-                        1,
-                    ) != 0
-                    {
-                        uRet += 1;
-                    }
-                }
-                INPUT_HARDWARE => {
-                    FIXME!("INPUT_HARDWARE not supported!\n");
-                }
-                _ => {
-                    ERR!("SendInput(): Invalid input type: 0x{:x}\n", SafeInput.type_);
-                }
-            }
-        }
-    }
-
-    UserLeave();
-    uRet
-}
-
-#[cfg(not(target_arch = "x86"))]
-#[no_mangle]
-pub unsafe extern "C" fn NtUserSendInput(
+pub unsafe extern "system" fn NtUserSendInput(
     mut nInputs: UINT,
     mut pInput: LPINPUT,
     cbSize: INT,

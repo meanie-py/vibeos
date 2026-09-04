@@ -19,7 +19,7 @@ elseif(ARCH STREQUAL "amd64")
 elseif(ARCH STREQUAL "arm64")
     set(CPORT_RUST_TARGET "aarch64-pc-windows-gnullvm")
 endif()
-file(GLOB_RECURSE CPORT_RUST_SRCS ${CPORT_RUST_WORKSPACE_DIR}/cport-rust/src/*.rs)
+rust_crate_sources(CPORT_RUST_SRCS "${CPORT_RUST_WORKSPACE_DIR}" cport-rust)
 add_custom_command(
     OUTPUT ${CPORT_RUST_LIB}
     COMMAND ${CMAKE_COMMAND} -E env

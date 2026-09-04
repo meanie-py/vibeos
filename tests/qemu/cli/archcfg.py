@@ -180,10 +180,14 @@ _CFGS = {
             "nettest",
         ),
         # ntkrnlmp + halmp = the arm64 SMP PAIR (smp-bringup-quest.md M5): the MP
-        # kernel and its matching HAL (hal-rust `smp` feature). Built best-effort
-        # so `--smp-kernel` media has both to stage; mkramdisk only copies +
-        # boot-selects them when VIBEOS_SMP_DEFAULT_BOOT is set, so a normal
-        # arm64 build just builds them and ignores them (default stays UP).
+        # kernel and its matching HAL (hal-rust `smp` feature). mkramdisk stages
+        # BOTH on every build and the shipped freeldr.ini offers both a
+        # [ReactOS_Arm64_UP] and a [ReactOS_Arm64_MP] entry, so the default stays
+        # UP but an --smp run can boot-select the MP pair by repointing DefaultOS=
+        # in a copy of boot.img — no rebuild, exactly like x86. They are listed as
+        # best-effort ninja targets but mkramdisk REQUIRES the outputs, so a build
+        # that cannot produce them fails there rather than shipping media whose MP
+        # entry names files that are not on it.
         # BOTH or neither: arm64 has no MISMATCHED_HAL handshake, so an MP kernel
         # on the UP hal.dll boots to a desktop and silently runs on one cpu.
         # kmtest_all (kmtest_ .exe + the standalone *_drv.sys corpus) is the

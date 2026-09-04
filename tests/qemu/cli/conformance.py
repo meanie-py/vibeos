@@ -231,24 +231,6 @@ def _worktree_provisioning_gaps(repo: Path, base_arch: str) -> list[str]:
     return gaps
 
 
-def _rostests_enabled(repo: Path, base_arch: str) -> bool | None:
-    """True if the build dir will compile kmtests. modules/CMakeLists.txt gates
-    them on `ENABLE_ROSTESTS OR ENABLE_ROSTESTS_KMTESTS`, and the fleet default
-    is the KMTESTS-only path (ROSTESTS=OFF, KMTESTS=ON — kmtests without the full
-    suite), so both keys must be OR'd, not first-match. None if no cache yet."""
-    cache = repo / f"build-{base_arch}" / "CMakeCache.txt"
-    if not cache.is_file():
-        return None
-    on, saw = False, False
-    for line in cache.read_text(errors="replace").splitlines():
-        for key in ("ENABLE_ROSTESTS:", "ENABLE_ROSTESTS_KMTESTS:"):
-            if line.startswith(key):
-                saw = True
-                if line.strip().endswith("=ON"):
-                    on = True
-    return on if saw else False
-
-
 def conformance(args, repo: Path) -> int:
     """`--repeat N` soak wrapper around one sweep.
 
@@ -357,8 +339,10 @@ def _conformance_once(args, repo: Path) -> int:
     if not args.no_build:
         unprovisioned = _worktree_provisioning_gaps(repo, base)
         if unprovisioned:
-            # Same rule as the ENABLE_ROSTESTS check below, extended to the two
-            # gitignored things a FRESH WORKTREE silently lacks. Both cost a full
+            # Fail loud on the two gitignored things a FRESH WORKTREE silently
+            # lacks — the toolchain and the payload exes. (The kmtest corpus used
+            # to need a refusal here too; --kmtests below just fixes it.) Both cost
+            # a full
             # build cycle each on 2026-07-29 because they surface far from their
             # cause: the toolchain as CMAKE_CONFIGURE_FAIL, and the payload as
             # `mkramdisk(ramdisk re-stage) -> payload 'kmtest': src missing`.
@@ -370,44 +354,35 @@ def _conformance_once(args, repo: Path) -> int:
                 file=sys.stderr,
             )
             return 2
-        rost = _rostests_enabled(repo, base)
-        if rost is False:
-            # Fail loud, no silent degradation: a payload build without the test
-            # binaries would boot and then [KMTEST-SWEEP] launch FAILED. Point at
-            # the one-time (cached) configure instead.
-            print(
-                f"[conformance] build-{base} has neither ENABLE_ROSTESTS nor "
-                f"ENABLE_ROSTESTS_KMTESTS — the kmtest binaries won't be staged.\n"
-                f"  fix (one-time, cmake-cached; KMTESTS-only is the fleet norm — full "
-                f"ENABLE_ROSTESTS drags every apitest/winetest into the livecd graph):\n"
-                f"    cd build-{base} && bash ../tools/canon-run.sh cmake "
-                f"-DENABLE_ROSTESTS_KMTESTS=ON .\n"
-                f"  then re-run this verb (or pass --no-build if media is already staged).",
-                file=sys.stderr,
-            )
-            return 2
+        # No kmtest corpus means a media that boots fine and then reports
+        # `[KMTEST-SWEEP] launch FAILED`, minutes later and a layer away from the
+        # cause — so ASK for the corpus rather than hoping the dir already has it.
+        # --kmtests is sticky and cmake-cached, so this is a no-op on every run
+        # after the first.
+        #
+        # This used to be a refuse-with-a-recipe on `_rostests_enabled() is False`,
+        # which covered a dir configured WITHOUT the tests but not the case that
+        # actually bites a fresh worktree: no build dir at all returns None, sailed
+        # straight through, and then the fresh configure defaulted BOTH options OFF
+        # (archcfg.py) — the silent degradation the check existed to prevent,
+        # entering through the one door it did not cover. Nothing to refuse now:
+        # both states want the same one-time reconfigure and `build` can do it.
         env = dict(os.environ, VIBEOS_PAYLOAD=SUITE)
-        build_cmd = [str(repo / "vibeos-cli"), "build", "--arch", base]
+        build_cmd = [str(repo / "vibeos-cli"), "build", "--arch", base, "--kmtests"]
         # ANY --smp N (including 1) must sweep the ntkrnlmp media: at N=1 that is
         # the whole experiment — "the MP kernel on one CPU" — and sweeping the UP
         # kernel instead would report a meaningless all-green.
         #
-        # On x86 that costs NOTHING now: the ISO already carries both kernels and
-        # both HALs plus a [LiveCD_SMP] entry, and vm.smp_selected_iso patches
-        # `DefaultOS=` inside a COPY of the media at boot time. --smp-kernel would
-        # only rewrite that same line via a cmake cache var — i.e. a reconfigure
-        # and an ISO re-roll to change 22 bytes we can change for free.
-        #
-        # arm64 still needs it: its boot.img is a hand-curated ramdisk that does
-        # not carry halmp.dll/ntkrnlmp.exe at all unless mkramdisk.sh --smp stages
-        # them, so there is nothing in the media to boot-select.
-        needs_smp_media_build = smp and base == "arm64"
-        if needs_smp_media_build:
-            build_cmd.append("--smp-kernel")
-        print(
-            f"[conformance] building {base} with VIBEOS_PAYLOAD={SUITE}"
-            f"{' --smp-kernel' if needs_smp_media_build else ''} ..."
-        )
+        # No arch needs a special build for that any more. Every media carries
+        # both kernels and both HALs plus an MP freeldr entry, and
+        # vm.smp_selected_iso repoints `DefaultOS=` inside a COPY of it at boot
+        # time. --smp-kernel would only rewrite that same line at build time —
+        # i.e. a whole media re-roll to change one byte we change for free.
+        # arm64 was the last holdout (its curated ramdisk genuinely lacked the MP
+        # pair until mkramdisk.sh started staging it unconditionally); forcing
+        # --smp-kernel there now just costs a re-roll and, worse, makes the
+        # --smp 1 and --smp 2 sweeps need two different builds of one commit.
+        print(f"[conformance] building {base} with VIBEOS_PAYLOAD={SUITE} ...")
         bp = subprocess.run(build_cmd, cwd=str(repo), env=env)
         if bp.returncode != 0:
             print("[conformance] BUILD FAILED — aborting.", file=sys.stderr)
@@ -420,6 +395,12 @@ def _conformance_once(args, repo: Path) -> int:
     env = dict(os.environ)
     if smp:
         env["VIBEOS_QEMU_SMP"] = str(smp)
+    # Give the shelled-out VM a durable place to drop hang diagnostics. Its own
+    # work_dir is a pytest tmp_path that pytest prunes to the last 3 runs, so
+    # without this a wedge's vCPU-PC capture is written and then deleted by
+    # unrelated later runs — which is exactly what happened to the arm64 MP
+    # wedge, leaving a run dir with serial and nothing else.
+    env["VIBEOS_ARTIFACT_DIR"] = str(run_dir)
     sweep_cmd = [
         sys.executable,
         "-m",
@@ -482,6 +463,38 @@ def _conformance_once(args, repo: Path) -> int:
     # paying for the same lost evidence is what makes this worth a comment.
     saved_serial = run_dir / f"{pytest_arch}_serial.log"
     saved_serial.write_text(serial_text)
+
+    # --- 3b. a wedged sweep: symbolicate the vCPU PCs ------------------------
+    # The raw capture is written by the VM (VIBEOS_ARTIFACT_DIR above); resolving
+    # the PCs to symbols has to happen HERE because it needs the build tree and
+    # the MP/UP kernel choice, neither of which the in-guest sweep knows. Without
+    # the symbols the file is a wall of hex and the operator still cannot tell
+    # "spinning at DISPATCH_LEVEL" from "idle, waiting" — which is the whole fork
+    # a stall hunt turns on.
+    hang_state_path = run_dir / "hang-cpustate.txt"
+    hang_pcs: list[str] = []
+    if hang_state_path.is_file():
+        try:
+            from . import triage as _triage
+
+            hang_pcs = _triage.symbolicate_cpu_state(
+                repo,
+                # BASE arch, not pytest_arch: the symbol index is
+                # qemu/symbols-<base>.tsv and addr2sym.sh's arch_validate accepts
+                # only i386/amd64/arm64, so "i386-uefi" resolves NOTHING — and it
+                # fails by returning no symbols, not by complaining.
+                base,
+                hang_state_path.read_text(errors="replace"),
+                mp="ntkrnlmp.exe" in serial_text,
+            )
+            if hang_pcs:
+                with hang_state_path.open("a") as f:
+                    f.write("\n=== symbolicated ===\n" + "\n".join(hang_pcs) + "\n")
+        except Exception as exc:  # never let triage sink the run it is triaging
+            print(f"[conformance] cpu-state symbolication failed: {exc!r}", file=sys.stderr)
+        print(f"[conformance] guest was WEDGED — vCPU state: {hang_state_path}")
+        for line in hang_pcs:
+            print(f"    {line}")
 
     # An `--smp N` sweep that quietly swept the UP kernel is the false green this
     # whole experiment exists to avoid, and it is INVISIBLE in the results — a UP
@@ -616,6 +629,11 @@ def _conformance_once(args, repo: Path) -> int:
         "results_file": str(results_path),
         "serial_log": str(saved_serial),
         "serial_log_live": str(log_path),  # truncated by the next same-arch sweep
+        # Present only when the guest wedged. `hang_pcs` is the payload: on a
+        # stall that prints nothing, this is the ONLY statement of where the box
+        # actually was, and summary.json is what gets read.
+        "hang_cpustate": str(hang_state_path) if hang_state_path.is_file() else None,
+        "hang_pcs": hang_pcs,
     }
     (run_dir / "summary.json").write_text(json.dumps(summary, indent=2))
 

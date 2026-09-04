@@ -2,7 +2,7 @@
 
 rustc reports a `match` arm whose constant type disagrees with the scrutinee exactly like any
 other integer mismatch, so the cast rule fired on it and wrote ungrammatical Rust. Real case:
-msvcrt's `_setmbcp_l`, where bindgen typed one member of a four-macro `#define` block `u32`
+msvcrt's `create_mbcinfo`, where bindgen typed one member of a four-macro `#define` block `u32`
 (its value is 0) and the other three `i32` (theirs are negative), splitting a family that is
 all `int` in C.
 """

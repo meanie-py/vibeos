@@ -98,7 +98,7 @@ elseif(ARCH STREQUAL "arm64")
 endif()
 # GLOB_RECURSE so .rs under src/<subdir>/ also retrigger the libuser32_rust.a rebuild
 # (a non-recursive src/*.rs glob silently used a stale archive in kernel32 — same fix here).
-file(GLOB_RECURSE USER32_RUST_SRCS "${USER32_RUST_WORKSPACE_DIR}/user32-rust/src/*.rs")
+rust_crate_sources(USER32_RUST_SRCS "${USER32_RUST_WORKSPACE_DIR}" user32-rust)
 add_custom_command(
     OUTPUT ${USER32_RUST_LIB}
     COMMAND ${CMAKE_COMMAND} -E env

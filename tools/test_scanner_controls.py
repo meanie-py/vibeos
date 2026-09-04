@@ -44,6 +44,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 
 import pytest
+import vendored
 
 REPO = Path(__file__).resolve().parent.parent
 
@@ -675,6 +676,45 @@ _ALIAS_GOOD_B = "use crate::types::VBO;\n"
 # It also pins the trap that made counting occurrences unusable: a fix's own
 # explanatory comment QUOTES the C, so the C statement appears twice while the
 # live code masks once. That must stay silent.
+# scan_macro_fn_shadow. Seeded from shell32-rust 2026-08-08: the crate had the correct
+# `#[macro_export] macro_rules! UNREFERENCED_PARAMETER` in win32.rs — its own comment citing
+# the ud2/BUGCHECK class — and two modules carried an empty `fn` shadow anyway, because both
+# are declared BEFORE win32 in lib.rs and macro_rules! textual scoping only runs forward.
+# The GOOD case pins the two ways this scanner must NOT fire, because a false positive here
+# is a lint you cannot satisfy by doing the right thing:
+#   * a same-named `fn` with a REAL body is an ordinary inline helper, not a shadow
+#     (shell32-rust's `pub fn LOWORD(l: DWORD) -> WORD { (l & 0xFFFF) as WORD }`);
+#   * importing the macro and calling it with `!` is the FIX, and must come back clean.
+_MACROSHADOW_BAD = """\
+#[macro_export]
+macro_rules! UNREFERENCED_PARAMETER {
+    ($($arg:tt)*) => {{}};
+}
+
+#[inline] fn UNREFERENCED_PARAMETER<T>(_: T) {}
+
+pub unsafe fn CRecycleBin_Parse(pbc: *mut u8) {
+    UNREFERENCED_PARAMETER(pbc);
+}
+"""
+
+_MACROSHADOW_GOOD = """\
+#[macro_export]
+macro_rules! UNREFERENCED_PARAMETER {
+    ($($arg:tt)*) => {{}};
+}
+
+// A real body is a helper, not a barrier — this must stay silent.
+#[inline]
+pub fn LOWORD(l: u32) -> u16 {
+    (l & 0xFFFF) as u16
+}
+
+pub unsafe fn CRecycleBin_Parse(pbc: *mut u8) {
+    UNREFERENCED_PARAMETER!(pbc);
+}
+"""
+
 _MASKDRIFT_BAD = """\
 const KEY_WOW64_RES: ACCESS_MASK = 0x00000300;
 const CR4_PGE: ULONG = 0x00000080;
@@ -730,7 +770,200 @@ pub unsafe fn MiAlignDown(Address: usize) -> usize {
 //     Address &= ~0xFFF;
 """
 
+# scan_dropped_prints. Seeded from CmpLinkKeyToHive (task #76, 2026-08-02): three
+# failure returns, upstream prints on each, all three dropped — so when
+# \\REGISTRY\\USER\\S-1-5-18 did not appear there was no signal anywhere, and the
+# #73 hunt spent two build+boot cycles establishing what one grep would have
+# given free. The BAD fixture also carries the NOOP shape from the same sweep
+# (cmlib's `unsafe fn DPRINT1(_fmt) {}`), which is worse than a missing print
+# because it reads as covered.
+#
+# The GOOD case pins every false positive that cost this scanner precision, each
+# found by shipping it wrong first:
+#   * the wrapper/_impl split — 1490 functions tree-wide keep the prints in the
+#     body, so exact-name pairing calls every wrapper silent (143 false hits);
+#   * `rtl_string_cb_printf_w!` formats into a BUFFER and matched a "contains
+#     print" heuristic, hiding three real drops in CmpCreateControlSet;
+#   * DPRINT/TRACE/WARN are compiled out or off by default upstream, so dropping
+#     them loses nothing and flagging them would triple the harvest with nothing
+#     behind it;
+#   * a bare `FIXME(...)`/`ERR(...)` call IS the wine debug channel, not a stub;
+#   * a C function with no live Rust counterpart is untranslated, not silent.
+_DROPPEDPRINT_BAD = """\
+unsafe fn DPRINT1(_format: *const i8) {}
+
+pub unsafe fn CmpLinkKeyToHive(LinkKeyName: PCWSTR) -> u8 {
+    if !NT_SUCCESS(Status) { return 0u8; }
+    if Disposition != REG_CREATED_NEW_KEY { return 0u8; }
+    1u8
+}
+
+// BOOLEAN
+// CmpLinkKeyToHive(PCWSTR LinkKeyName)
+// {
+//     if (!NT_SUCCESS(Status))
+//     {
+//         DPRINT1("couldn't create %S, Status = 0x%lx\\n", LinkKeyName, Status);
+//         return FALSE;
+//     }
+//     if (Disposition != REG_CREATED_NEW_KEY)
+//     {
+//         DPRINT1("%S already exists!\\n", LinkKeyName);
+//         return FALSE;
+//     }
+//     return TRUE;
+// }
+"""
+_DROPPEDPRINT_GOOD = """\
+unsafe extern "C" { fn FIXME(fmt: *const i8, ...); }
+
+pub unsafe fn CmpLinkKeyToHive(LinkKeyName: PCWSTR) -> u8 {
+    if !NT_SUCCESS(Status) {
+        crate::dbg_print!(b"couldn't create %S, Status = 0x%lx\\n\\0", LinkKeyName, Status);
+        return 0u8;
+    }
+    if Disposition != REG_CREATED_NEW_KEY {
+        crate::dbg_print!(b"%S already exists!\\n\\0", LinkKeyName);
+        return 0u8;
+    }
+    1u8
+}
+
+pub unsafe extern "C" fn GdiSelectVisRgn(a: u32) { GdiSelectVisRgnImpl(a) }
+unsafe fn GdiSelectVisRgnImpl(a: u32) {
+    if a == 0 { crate::dbg_print!(b"no region\\n\\0"); }
+}
+
+pub unsafe fn CmpCreateControlSet(a: u32) -> u8 {
+    if a == 0 {
+        crate::dbg_print!(b"Failed to create ControlSet001\\n\\0");
+        crate::rtl_string_cb_printf_w!(buf, 8, w!("CONTROLSET%03ld"));
+        return 0u8;
+    }
+    1u8
+}
+
+pub unsafe fn RegisterCMMA(id: u32) -> i32 {
+    FIXME(b"stub\\0".as_ptr() as *const i8);
+    0
+}
+
+pub unsafe fn CmpQuiet(a: u32) -> u8 { if a == 0 { return 0u8; } 1u8 }
+
+// BOOLEAN
+// CmpLinkKeyToHive(PCWSTR LinkKeyName)
+// {
+//     if (!NT_SUCCESS(Status))
+//     {
+//         DPRINT1("couldn't create %S, Status = 0x%lx\\n", LinkKeyName, Status);
+//         return FALSE;
+//     }
+//     if (Disposition != REG_CREATED_NEW_KEY)
+//     {
+//         DPRINT1("%S already exists!\\n", LinkKeyName);
+//         return FALSE;
+//     }
+//     return TRUE;
+// }
+//
+// VOID GdiSelectVisRgn(ULONG a)
+// {
+//     if (!a) { DPRINT1("no region\\n"); }
+// }
+//
+// BOOLEAN CmpCreateControlSet(ULONG a)
+// {
+//     if (!a) { DPRINT1("Failed to create ControlSet001\\n"); return FALSE; }
+//     return TRUE;
+// }
+//
+// LONG RegisterCMMA(ULONG id)
+// {
+//     FIXME("stub\\n");
+//     return 0;
+// }
+//
+// BOOLEAN CmpQuiet(ULONG a)
+// {
+//     if (!a) { DPRINT("quiet\\n"); TRACE("quiet\\n"); WARN("quiet\\n"); return FALSE; }
+//     return TRUE;
+// }
+//
+// BOOLEAN CmpNotTranslatedHere(ULONG a)
+// {
+//     if (!a) { DPRINT1("no live counterpart\\n"); return FALSE; }
+//     return TRUE;
+// }
+"""
+
+# vendored_registry (tools/vendored.py). The bug it exists to catch is a vendored library
+# arriving in dll/3rdparty or sdk/lib/3rdparty with no vendor.yaml entry — it then silently
+# joins the "C we owe a translation" denominator, and nothing anywhere says so. BAD is a
+# container holding one registered tree and one that is not; GOOD registers both.
+#
+# The stamp text is FORMATTED FROM THE TOOL'S OWN TEMPLATE rather than pasted, because a
+# hand-copied stamp would make this control fail the day the template gains a line — a
+# false alarm about the fixture rather than about the scanner.
+_VENDOR_STAMP = vendored._STAMP_TEMPLATE.format(
+    name="Known", upstream="http://example.invalid/", license="MIT"
+)
+_VENDOR_STAMP_2 = vendored._STAMP_TEMPLATE.format(
+    name="Surprise", upstream="http://example.invalid/", license="MIT"
+)
+_VENDOR_TREE = """\
+  - path: libs/known
+    name: Known
+    upstream: http://example.invalid/
+    license: MIT
+    reason: a registered vendored tree
+"""
+_VENDOR_BAD_YAML = "containers: [libs]\ntrees:\n" + _VENDOR_TREE
+_VENDOR_GOOD_YAML = (
+    _VENDOR_BAD_YAML
+    + """\
+  - path: libs/surprise
+    name: Surprise
+    upstream: http://example.invalid/
+    license: MIT
+    reason: the library that used to arrive unnoticed
+"""
+)
+
 CONTROLS: list[Control] = [
+    Control(
+        name="vendored_registry",
+        script="tools/vendored.py",
+        argv=["--repo"],
+        bad={
+            "vendor.yaml": _VENDOR_BAD_YAML,
+            "libs/known/VENDORED": _VENDOR_STAMP,
+            "libs/known/a.c": "int a;\n",
+            "libs/surprise/b.c": "int b;\n",
+        },
+        good={
+            "vendor.yaml": _VENDOR_GOOD_YAML,
+            "libs/known/VENDORED": _VENDOR_STAMP,
+            "libs/known/a.c": "int a;\n",
+            "libs/surprise/VENDORED": _VENDOR_STAMP_2,
+            "libs/surprise/b.c": "int b;\n",
+        },
+    ),
+    Control(
+        name="scan_dropped_prints",
+        script="tools/scan_dropped_prints.py",
+        argv=["--lint"],
+        bad={"cmsysini.rs": _DROPPEDPRINT_BAD},
+        good={"cmsysini.rs": _DROPPEDPRINT_GOOD},
+        pass_files=True,
+    ),
+    Control(
+        name="scan_macro_fn_shadow",
+        script="tools/scan_macro_fn_shadow.py",
+        argv=["--lint"],
+        bad={"recycle_bin.rs": _MACROSHADOW_BAD},
+        good={"recycle_bin.rs": _MACROSHADOW_GOOD},
+        pass_files=True,
+    ),
     Control(
         name="scan_mask_drift",
         script="tools/scan_mask_drift.py",
@@ -888,10 +1121,24 @@ CONTROLS: list[Control] = [
 # from both this set and CONTROLS fails test_every_lint_is_accounted_for.
 UNCOVERED: dict[str, str] = {
     # Already have dedicated suites (the prototypes this harness generalizes).
-    "scan_wide_literals": "covered by tools/test_scan_wide_literals.py (12 tests)",
+    "scan_wide_literals": "covered by tools/test_scan_wide_literals.py (20 tests)",
     "verify_c_signatures": "covered by tools/test_verify_c_signatures.py (9 tests)",
     "marshalgen_audit": "covered by tools/wow64gen/test_wow64gen.py",
     "verify_svc_numbering": "covered by tools/wow64gen/test_wow64gen.py",
+    # Both compare a translated Rust module against the C it came FROM, so neither walks a
+    # tree the fixture-dir driver above can substitute — they need a .c/.rs PAIR (or, for
+    # the ctype tables, ctype.c plus the compiled object as the oracle). Same shape as the
+    # --cmake/--ramdisk case below. Dedicated suites instead, each with a real positive
+    # control taken from the defect that motivated the tool:
+    "verify_translation_literals": (
+        "covered by tools/test_verify_translation_literals.py (12 tests) — positive control "
+        'is undname.c\'s `case \'C\': "pascal"` shipping as "__stdcall", plus negatives for '
+        "each way a faithful translation legitimately SPELLS a literal differently"
+    ),
+    "gen_ctype_tables": (
+        "covered by tools/test_gen_ctype_tables.py (9 tests) — positive control is prove() "
+        "exiting on ONE wrong byte in 257, which is the claim the whole generator rests on"
+    ),
     # Audits a PAIR of specific named files (--cmake / --ramdisk), not a tree, so the
     # fixture-dir driver above cannot express it. Controls are the same shape and live
     # in tests/qemu/cli/test_cli_units.py::test_boot_media_drift_* (5 tests): positive
@@ -931,6 +1178,15 @@ UNCOVERED: dict[str, str] = {
         "less than those do: every one of this lint's failure modes is a lexical shape "
         "(float exponent, lifetime tick, nested block comment, raw string), and each is "
         "pinned by the shape that actually produced a false positive."
+    ),
+    "scan_arg_side_effects": (
+        "main() walks the real tree and compares against a baseline, but everything that "
+        "decides a finding — the comment/string tokenizer, the logical-line joiner, the "
+        "enclosing-call walk and the for-clause exclusion — is a pure function over a "
+        "string, driven directly in tools/test_scan_arg_side_effects.py (9 tests). Its "
+        "positive control is the REAL msvcrt demangler bug spelled across four lines, and "
+        "each negative control is a shape that made an earlier draft useless (45 findings "
+        "from `for` steps, 53 from prose, 80 from one unbalanced macro)."
     ),
     "scan_duplicate_symbols": "operates on link artifacts, not source",
     "scan_const_contradictions": "needs the whole tree (finds one NAME with two VALUES)",
@@ -1285,3 +1541,62 @@ def test_decl_drift_sees_through_a_c_void_re_export(tmp_path: Path):
     assert "ExFreePool" in out, (
         "the c_void re-export made PVOID undecidable — coverage lost silently\n" + out
     )
+
+
+# ── scan_orphan_modules: the PHANTOM class (a `mod` with no file behind it) ──
+# Its own control for the same reason ROOTLESS needed one: the table's positive control is
+# satisfied by ANY output line naming the fixture, so folding a phantom into the orphan
+# fixture would be "covered" by the already-passing orphan hit and prove nothing.
+#
+# The class comes from desk (2026-08-05): lib.rs carried `pub mod guid;` against a file that
+# never existed, and separately declared 20 TUs when 17 had been translated. Both survived a
+# full green `check` AND `check-tooling`, because a crate parked out of `workspace.members`
+# is never compiled and no source scanner opens a path that is absent.
+_PHANTOM_CARGO = """\
+[package]
+name = "phantom-fixture"
+version = "0.0.0"
+edition = "2021"
+"""
+_PHANTOM_BAD_LIB = """\
+pub mod real;
+pub mod ghost;
+"""
+_PHANTOM_GOOD_LIB = """\
+pub mod real;
+// A `#[path]` selector names its own file and must NOT read as a phantom — this is the
+// per-arch island shape (`types_i386.rs`) every translated crate carries.
+#[cfg_attr(target_arch = "x86", path = "real.rs")]
+pub mod selected;
+// A directory module resolves through `<name>/mod.rs`, not `<name>.rs`.
+pub mod dir_mod;
+"""
+
+
+def test_phantom_module_is_reported(tmp_path: Path):
+    """`mod ghost;` with no ghost.rs cannot compile — and nothing else can see it."""
+    _root, out = _orphan_out(
+        tmp_path,
+        {
+            "Cargo.toml": _PHANTOM_CARGO,
+            "src/lib.rs": _PHANTOM_BAD_LIB,
+            "src/real.rs": "pub fn ok() -> u32 { 1 }\n",
+        },
+    )
+    hits = [ln for ln in out.splitlines() if "[PHANTOM]" in ln and "ghost" in ln]
+    assert hits, f"phantom `mod ghost;` was not reported.\n--- output ---\n{out}"
+
+
+def test_path_attr_and_dir_modules_are_not_phantoms(tmp_path: Path):
+    """The must-NOT-fire half. A gate that flags every per-arch `#[path]` island would fire
+    on essentially every translated crate in the tree and be turned off within the hour."""
+    _root, out = _orphan_out(
+        tmp_path,
+        {
+            "Cargo.toml": _PHANTOM_CARGO,
+            "src/lib.rs": _PHANTOM_GOOD_LIB,
+            "src/real.rs": "pub fn ok() -> u32 { 1 }\n",
+            "src/dir_mod/mod.rs": "pub fn ok() -> u32 { 2 }\n",
+        },
+    )
+    assert "[PHANTOM]" not in out, f"false positive on a legitimate module shape:\n{out}"

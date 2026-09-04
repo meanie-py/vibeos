@@ -21,7 +21,7 @@ elseif(ARCH STREQUAL "arm64")
 endif()
 set(RASADHLP_RUST_TARGET_DIR "${CMAKE_CURRENT_BINARY_DIR}/rust-rasadhlp-target")
 set(RASADHLP_RUST_LIB "${CMAKE_CURRENT_BINARY_DIR}/librasadhlp_rust.a")
-file(GLOB_RECURSE RASADHLP_RUST_SRCS "${RASADHLP_RUST_WORKSPACE_DIR}/rasadhlp-rust/src/*.rs")
+rust_crate_sources(RASADHLP_RUST_SRCS "${RASADHLP_RUST_WORKSPACE_DIR}" rasadhlp-rust)
 add_custom_command(
     OUTPUT ${RASADHLP_RUST_LIB}
     COMMAND ${CMAKE_COMMAND} -E env

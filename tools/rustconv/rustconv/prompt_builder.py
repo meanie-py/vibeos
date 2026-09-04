@@ -186,7 +186,14 @@ def build_file_prompt(
             f"These functions are exported from {dll} and MUST be `#[no_mangle] pub unsafe`:\n"
         )
         for name, entry in sorted(resolve.exports.items()):
-            fwd = f" (forwards to {entry.forward_target})" if entry.forward_target else ""
+            # Dotted target = forwarded at another DLL; bare target = the symbol WE define.
+            fwd = (
+                f" (forwards to {entry.forward_target})"
+                if entry.forward_target
+                else f" (define as `{entry.impl_symbol}`)"
+                if entry.impl_symbol
+                else ""
+            )
             arch = f" [arch: {','.join(entry.arch_filter)}]" if entry.arch_filter else ""
             conv = rust_calling_convention(entry)
             if entry.convention == "fastcall":

@@ -143,7 +143,16 @@ unsafe extern "C" fn escape_filter_element(src: PCHAR, srclen: ULONG, dst: PCHAR
             *d = *src.offset(i as isize);
             d = d.offset(1);
         } else {
-            d = d.offset(sprintf(d, fmt.as_ptr() as LPCSTR, *src.offset(i as isize) as c_int) as isize);
+            // `as u8 as c_int`, NOT `as c_int`: the C is `(unsigned char)src[i]`, which
+            // zero-extends BEFORE the default int promotion. CHAR is i8 on all three Windows
+            // targets, so a bare `as c_int` sign-extends and "%02X" prints 0xE9 as FFFFFFE9 --
+            // 9 bytes where get_escape_size budgeted 3. rustc's E0617 fix-it suggests exactly
+            // that bare cast; it is only value-preserving when the source is already unsigned.
+            d = d.offset(sprintf(
+                d,
+                fmt.as_ptr() as LPCSTR,
+                *src.offset(i as isize) as u8 as c_int,
+            ) as isize);
         }
         i += 1;
     }
@@ -399,6 +408,91 @@ pub unsafe extern "C" fn LdapUTF8ToUnicode(
     MultiByteToWideChar(CP_UTF8, 0, src, srclen, dst, dstlen)
 }
 
+
+#[no_mangle]
+pub unsafe extern "C" fn ldap_conn_from_msg(
+    ld: *mut WLDAP32_LDAP,
+    res: *mut WLDAP32_LDAPMessage,
+) -> *mut WLDAP32_LDAP {
+    if ld.is_null() || res.is_null() {
+        return core::ptr::null_mut();
+    }
+    ld
+}
+
+#[no_mangle]
+pub unsafe extern "C" fn WLDAP32_ldap_first_entry(
+    ld: *mut WLDAP32_LDAP,
+    res: *mut WLDAP32_LDAPMessage,
+) -> *mut WLDAP32_LDAPMessage {
+    #[cfg(feature = "have_ldap")]
+    {
+        if ld.is_null() || res.is_null() {
+            return core::ptr::null_mut();
+        }
+        return ldap_first_entry(ld, res);
+    }
+    #[cfg(not(feature = "have_ldap"))]
+    {
+        return core::ptr::null_mut();
+    }
+}
+
+#[no_mangle]
+pub unsafe extern "C" fn WLDAP32_ldap_first_reference(
+    ld: *mut WLDAP32_LDAP,
+    res: *mut WLDAP32_LDAPMessage,
+) -> *mut WLDAP32_LDAPMessage {
+    #[cfg(feature = "have_ldap_first_reference")]
+    {
+        if ld.is_null() {
+            return core::ptr::null_mut();
+        }
+        return ldap_first_reference(ld, res);
+    }
+    #[cfg(not(feature = "have_ldap_first_reference"))]
+    {
+        return core::ptr::null_mut();
+    }
+}
+
+#[no_mangle]
+pub unsafe extern "C" fn WLDAP32_ldap_next_entry(
+    ld: *mut WLDAP32_LDAP,
+    entry: *mut WLDAP32_LDAPMessage,
+) -> *mut WLDAP32_LDAPMessage {
+    // misc.c: `#ifdef HAVE_LDAP ... #else return NULL; #endif`. The translation dropped the
+    // guard here while getting it right on the two `_reference` siblings beside it.
+    #[cfg(feature = "have_ldap")]
+    {
+        if ld.is_null() || entry.is_null() {
+            return core::ptr::null_mut();
+        }
+        return ldap_next_entry(ld, entry);
+    }
+    #[cfg(not(feature = "have_ldap"))]
+    {
+        core::ptr::null_mut()
+    }
+}
+
+#[no_mangle]
+pub unsafe extern "C" fn WLDAP32_ldap_next_reference(
+    ld: *mut WLDAP32_LDAP,
+    entry: *mut WLDAP32_LDAPMessage,
+) -> *mut WLDAP32_LDAPMessage {
+    #[cfg(feature = "have_ldap_next_reference")]
+    {
+        if ld.is_null() || entry.is_null() {
+            return core::ptr::null_mut();
+        }
+        return ldap_next_reference(ld, entry);
+    }
+    #[cfg(not(feature = "have_ldap_next_reference"))]
+    {
+        return core::ptr::null_mut();
+    }
+}
 
 // ============================================================================
 // ORIGINAL C SOURCE

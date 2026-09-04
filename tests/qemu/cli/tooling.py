@@ -37,8 +37,16 @@ _PYTEST_SUITES = [
     # resolved when it is blind — neither shows up in review or in its own output.
     (".", ".", "tools/test_verify_c_signatures.py"),
     (".", ".", "tools/test_scan_wide_literals.py"),
+    # Same reason, one layer out: verify_cohab_coverage gates the merge train but reads
+    # OBJECT FILES, so it cannot join test_scanner_controls (which drives source-only
+    # `check` lints from fixture dirs) and would otherwise have no oracle at all.
+    (".", ".", "tools/test_verify_cohab_coverage.py"),
     (".", ".", "tools/test_scan_import_cc.py"),
     (".", ".", "tools/test_scan_octal_literals.py"),
+    # Same shape as the two above: the matcher is pure functions over a string, and its
+    # positive control is the real demangler bug — a sequencing error that shipped because
+    # no value-based check can see it.
+    (".", ".", "tools/test_scan_arg_side_effects.py"),
     # Generalizes the two above from "this oracle has an oracle" to "every gate
     # lint has one, or a written reason it doesn't". A scanner reporting 0 means
     # nothing until something proves the matcher still fires: scan_bugcheck_codes

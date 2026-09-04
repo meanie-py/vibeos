@@ -55,6 +55,8 @@ Genuine remnants only — the boot path is already Rust. Measured 2026-07-07 fro
 
 **Wine-derived userland — ~154 DLLs, ~1.05M LOC (lower priority than Tier 2).** kernelbase (41K, `kernelbase/wine/`), comctl32, comdlg32, ole32, oleaut32, gdiplus, riched20, urlmon, wininet, mshtml, jscript/vbscript, msxml*, windowscodecs, crypt32, wldap32, rpcrt4, the whole `dll/directx/wine/` stack. Re-implementing these from *current* Wine via an LLM pipeline (§7b) beats translating the frozen fork — that's why they sit below the native queue.
 
+**Microsoft DDK storage class drivers — 3 drivers, ~90.5K LOC (added to the queue 2026-08-08).** `classpnp` (43.7K), `cdrom` (34.1K), `disk` (12.7K). Foreign-copyright but **ours**, and recorded as such in `vendor.yaml`'s `ours:` half — MS-PL grants derivative works, ReactOS has already diverged them (13 of classpnp's 24 files carry local edits), and unlike WDF next door they expose no ABI that third-party binaries bind to, so there is no compatibility contract that would make owning them a liability. They were in no count before the classification sweep found them (task #62). Pointer-heavy IRP dispatch on the boot path for every disk, so they rank with the native queue rather than below it.
+
 **Already translated (frontier boundary):** kernel/win32k, kernel32, ntdll, user32, gdi32, advapi32, secur32, shell32's complete activatable COM surface (its procedural C++ tail remains), msafd, mlang, mscms, version, cabinet + the boot/server spine (winsrv, smss-csrss, lsasrv, samsrv, msgina, services, winlogon, userinit, explorer) + the driver fleet.
 
 ### Tier 4 — Debt burndown (gated at the door; burn opportunistically)
@@ -514,6 +516,22 @@ Field-manual § pointers hold the full writeups. **Update on state change.**
   deliberately left the call unmarshalled rather than convert an honest failure into a
   success with garbage. It stays on the marshalgen-audit baseline until the kernel side is
   real (2 entries).
+- **FIXED (2026-08-05, task #48): msgina's `StringCchPrintfW`/`StringCbPrintfW` dropped their
+  bound — a stack overrun.**
+  `msgina-rust/src/lib.rs` renders both as macros that DISCARD the count argument and forward to
+  user32's variadic `wsprintfW`, which bounds to 1024 wchars internally. `shutdown.rs:1091`
+  formats a resource-loaded format string plus `gContext.UserName` into `szBuffer2: [u16; 256]`,
+  so a long user name writes up to 768 wchars past the end of a stack array; the C
+  (`StringCchPrintfW(szBuffer2, ARRAYSIZE(szBuffer2), ...)`) truncates safely and returns
+  `STRSAFE_E_INSUFFICIENT_BUFFER`. Introduced by the msgina translation, not present upstream.
+  Two other msgina strsafe entry points are hand-approximations of the same header
+  (`StringCbCopyNExW` drops the fill paths, the `IGNORE_NULLS` handling, and computes
+  `pcbRemaining` differently from the worker). The same call site had a second bug the macro
+  hid: `UserName` is a `[WCHAR; 256]` and was passed to the variadic BY VALUE, so `%ws` read the
+  first pointer-width bytes of the name text as an address — C decays an array to a pointer at a
+  call and Rust does not. Fixed by `sdk/lib/rust/strsafe-rust`, one faithful header port that
+  msgina/syssetup/desk (and sysdm next) all consume; the four divergent copies are what made
+  this possible, so the crate is the fix for the class and not just the instance.
 - **FIXED (2026-08-01): the registry's `HIVE_*` flag family was open-coded and half wrong.**
   `scan_mask_drift`'s first sweep found eight bare literals across five config-rust files, four
   of them with the wrong value. `CmLoadKey` set `0x4` and `CmUnloadKey` set `0x40` for
@@ -1958,19 +1976,33 @@ Field-manual § pointers hold the full writeups. **Update on state change.**
   NOT be silenced — `pfnlist.rs` is arch-generic and amd64 never trips it, so it is detecting the
   real arm64 divergence (§9.136). Blocked on offline symbolication of the `0x50` PC: the kernel
   runtime base is not printed on serial, so `addr2sym --reloc` cannot be used (task #33).
-- **net suite `test_tdi_selftest_roundtrip` — flake rate measured 2026-07-24, and it is BAD
-  under host load.** 1 pass / 6 attempts in one evening while a sibling lane ran a full arm64
-  ninja (host load 4–6). The gate's `NET_FLAKE` auto-retry is 3 attempts, so at this rate a
-  green gate is roughly a coin flip. **Timing signature is the useful discriminator: a passing
-  run finishes in ~36s, a failing one burns ~122s and dies on the marker wait** — i.e. it is a
-  timeout, not a wrong result. TDI CONNECT reaches `ESTABLISHED` and the *engine-level* echo to
-  the very same guestfwd endpoint (`10.0.2.100:9999`) succeeds in the same boot, so the host
-  echo is alive and only the TDI pended-IRP completion misses its window. Ruled out as a code
-  regression: the merge of 2026-07-24 touched **no** netstack source (only `afd-rust`, which
-  this self-test bypasses by being the TDI client itself), and the self-test is kernel-mode on
-  its own system thread with no dependency on the usermode components. Owed: either give the
-  marker wait a load-proportional budget or make the poll worker's completion deterministic —
-  and stop treating 3 retries as sufficient cover.
+- **net suite one-test timeout (`test_tdi_selftest_roundtrip` et al) — FIXED 2026-08-09, root
+  cause was the HARNESS.** Three independent guest consumers (netstack `engine.rs`'s outbound
+  client, `tditest.rs`'s TDI roundtrip, `nettest.exe`) all dialled the same slirp guestfwd
+  endpoint `10.0.2.100:9999`, and slirp hands an echo to the FIRST socket matching (addr, port)
+  — so one consumer got the reply and the others timed out. `-cmd:cat` masks this on the native
+  backend by forking a fresh `cat` per CONNECTION; the windows-host rewrite bound the whole
+  forward to ONE `-chardev` byte stream, making it a coin flip. Fixed by giving each consumer
+  its own port + chardev + echo server (`vm.GUESTFWD_ECHO_PORTS`). **Every earlier diagnosis
+  here was wrong** — host contention, a VPN, the host resolver, a red base — and two of the
+  discriminators this registry recommended were backwards: the ~4× wall clock is just the loser
+  waiting out its marker timeout, and "the engine-level echo to the very same endpoint succeeds
+  in the same boot" identified the thief, not an alibi. Field manual, "`NET_FLAKE` that is not
+  a flake". Cost: ~90% gate failure and a day of wedged merge queue.
+- **A lane-independent flaky STAGE costs one gate per lane, and the conductor cannot tell it
+  from a bad lane** (observed 2026-08-09 on the net flake above; kept because it is a property
+  of the queue, not of that bug). A red batch splits recursively to find the culprit, so a
+  single flaky shared stage rejects each lane SEPARATELY and burns a full gate on each — in one
+  drain all four queued lanes (`shell32-com` ×2, `smp-bringup`, `msvcrt-homebrew`, `research`)
+  were rejected in succession and the queue emptied with nothing landed for ~100 minutes. Both
+  cases look identical from the outside: a red gate against the same base. A lane whose diff
+  cannot possibly affect the stage — docs, `tools/rustconv` Python, tests — still pays full
+  freight. If this bites again: retry the flaky stage against a quiet host rather than
+  mid-batch, raise the retry count for a stage already classified a known flake, or let a lane
+  touching no build input skip it. One reason it stayed unowned for a day: `_net_once` labels
+  the FIRST failure `NET_FLAKE` by construction, so the retries are the only thing separating a
+  one-off from a permanent red — and the lane owner is told "flake" either way, before that
+  distinction reaches them.
 - **amd64 CLIENTINFO-on-Ctrl+Esc** (§9.41) — NOT reproducing since the §9.40 DesktopHeapReAlloc
   fix (4/4 start-menu opens; `test_start_menu_opens` gates it). Watch item only.
 - **i386 "session-pool gate" `BAD gate Type=0x80`** (§9.24) — REFRAMED to pushlock-class (stack

@@ -868,20 +868,13 @@ unsafe extern "C" fn IntSetDefaultRegion(pdc: PDC) -> u8 {
     (*pdc).prgnVis = prgnDefault;
     0
 }
-#[cfg(target_arch = "x86")]
 #[no_mangle]
-pub unsafe extern "stdcall" fn NtGdiCancelDC(hDC: HDC) -> i32 {
-    0
-}
-
-#[cfg(not(target_arch = "x86"))]
-#[no_mangle]
-pub unsafe extern "C" fn NtGdiCancelDC(hDC: HDC) -> i32 {
+pub unsafe extern "system" fn NtGdiCancelDC(hDC: HDC) -> i32 {
     0
 }
 #[cfg(target_arch = "x86")]
 #[no_mangle]
-pub unsafe extern "stdcall" fn IntGdiSetHookFlags(hDC: HDC, Flags: u16) -> u16 {
+pub unsafe extern "system" fn IntGdiSetHookFlags(hDC: HDC, Flags: u16) -> u16 {
     let wRet: u16;
     let dc: *mut DC = DC_LockDc(hDC);
 
@@ -905,7 +898,7 @@ pub unsafe extern "stdcall" fn IntGdiSetHookFlags(hDC: HDC, Flags: u16) -> u16 {
 
 #[cfg(not(target_arch = "x86"))]
 #[no_mangle]
-pub unsafe extern "C" fn IntGdiSetHookFlags(hDC: HDC, Flags: u16) -> u16 {
+pub unsafe extern "system" fn IntGdiSetHookFlags(hDC: HDC, Flags: u16) -> u16 {
     let wRet: u16;
     let dc: *mut DC = DC_LockDc(hDC);
 
@@ -926,9 +919,8 @@ pub unsafe extern "C" fn IntGdiSetHookFlags(hDC: HDC, Flags: u16) -> u16 {
 
     wRet
 }
-#[cfg(target_arch = "x86")]
 #[no_mangle]
-pub unsafe extern "stdcall" fn NtGdiGetDCDword(
+pub unsafe extern "system" fn NtGdiGetDCDword(
     hDC: HDC,
     u: UINT,
     Result: *mut DWORD,
@@ -1017,216 +1009,8 @@ pub unsafe extern "stdcall" fn NtGdiGetDCDword(
     DC_UnlockDc(pdc);
     Ret
 }
-
-#[cfg(not(target_arch = "x86"))]
 #[no_mangle]
-pub unsafe extern "C" fn NtGdiGetDCDword(
-    hDC: HDC,
-    u: UINT,
-    Result: *mut DWORD,
-) -> BOOL {
-    let mut Ret: BOOL = 1;
-    let pdc: PDC;
-    let pdcattr: PDC_ATTR;
-
-    let mut SafeResult: DWORD = 0;
-    let mut Status: NTSTATUS = STATUS_SUCCESS;
-
-    if Result.is_null() {
-        EngSetLastError(ERROR_INVALID_PARAMETER);
-        return 0;
-    }
-
-    pdc = DC_LockDc(hDC);
-    if pdc.is_null() {
-        EngSetLastError(ERROR_INVALID_HANDLE);
-        return 0;
-    }
-    pdcattr = (*pdc).pdcattr;
-
-    match u {
-        GdiGetJournal => {}
-
-        GdiGetRelAbs => {
-            SafeResult = (*pdcattr).lRelAbs as u32;
-        }
-
-        GdiGetBreakExtra => {
-            SafeResult = (*pdcattr).lBreakExtra as u32;
-        }
-
-        GdiGetCharBreak => {
-            SafeResult = (*pdcattr).cBreak as u32;
-        }
-
-        GdiGetArcDirection => {
-            if ((*pdcattr).dwLayout & LAYOUT_RTL) != 0 {
-                SafeResult = AD_CLOCKWISE - ((((*pdc).dclevel.flPath & DCPATH_CLOCKWISE) != 0) as DWORD);
-            } else {
-                SafeResult = ((((*pdc).dclevel.flPath & DCPATH_CLOCKWISE) != 0) as DWORD) + AD_COUNTERCLOCKWISE;
-            }
-        }
-
-        GdiGetEMFRestorDc => {
-            SafeResult = (*pdc).dclevel.lSaveDepth as DWORD;
-        }
-
-        GdiGetFontLanguageInfo => {
-            SafeResult = IntGetFontLanguageInfo(pdc);
-        }
-
-        GdiGetIsMemDc => {
-            SafeResult = (*pdc).dctype;
-        }
-
-        GdiGetMapMode => {
-            SafeResult = (*pdcattr).iMapMode as DWORD;
-        }
-
-        GdiGetTextCharExtra => {
-            SafeResult = (*pdcattr).lTextExtra as u32;
-        }
-
-        _ => {
-            EngSetLastError(ERROR_INVALID_PARAMETER);
-            Ret = 0;
-        }
-    }
-
-    if Ret != 0 {
-
-        Status = SafeProbeForWrite(Result as *mut core::ffi::c_void, core::mem::size_of::<DWORD>(), 1);
-        if NT_SUCCESS(Status) {
-            *Result = SafeResult;
-        }
-
-        if !NT_SUCCESS(Status) {
-            SetLastNtError(Status);
-            Ret = 0;
-        }
-    }
-
-    DC_UnlockDc(pdc);
-    Ret
-}
-#[cfg(target_arch = "x86")]
-#[no_mangle]
-pub unsafe extern "stdcall" fn NtGdiGetAndSetDCDword(
-    hdc: HDC,
-    u: UINT,
-    dwIn: DWORD,
-    pdwResult: *mut DWORD,
-) -> BOOL {
-    let mut Ret: BOOL = 1;
-    let pdc: PDC;
-    let pdcattr: PDC_ATTR;
-
-    let mut SafeResult: DWORD = 0;
-    let mut Status: NTSTATUS = STATUS_SUCCESS;
-
-    if pdwResult.is_null() {
-        EngSetLastError(ERROR_INVALID_PARAMETER);
-        return 0;
-    }
-
-    pdc = DC_LockDc(hdc);
-    if pdc.is_null() {
-        EngSetLastError(ERROR_INVALID_HANDLE);
-        return 0;
-    }
-    pdcattr = (*pdc).pdcattr;
-
-    match u {
-        GdiGetSetEPSPrintingEscape => {
-            SafeResult = ((*pdc).fs & (DC_EPSPRINTINGESCAPE as i32)) as u32;
-            (*pdc).fs &= !(DC_EPSPRINTINGESCAPE as i32);
-        }
-
-        GdiGetSetCopyCount => {
-            SafeResult = (*pdc).ulCopyCount;
-            (*pdc).ulCopyCount = dwIn;
-        }
-
-        GdiGetSetTextAlign => {
-            SafeResult = (*pdcattr).lTextAlign as u32;
-            (*pdcattr).lTextAlign = dwIn as i32;
-        }
-
-        GdiGetSetRelAbs => {
-            SafeResult = (*pdcattr).lRelAbs as u32;
-            (*pdcattr).lRelAbs = dwIn as i32;
-        }
-
-        GdiGetSetTextCharExtra => {
-            SafeResult = (*pdcattr).lTextExtra as u32;
-            (*pdcattr).lTextExtra = dwIn as i32;
-        }
-
-        GdiGetSetSelectFont => {}
-
-        GdiGetSetMapperFlagsInternal => {
-            if dwIn & !1 != 0 {
-                EngSetLastError(ERROR_INVALID_PARAMETER);
-                Ret = 0;
-            } else {
-                SafeResult = (*pdcattr).flFontMapper;
-                (*pdcattr).flFontMapper = dwIn;
-            }
-        }
-
-        GdiGetSetMapMode => {
-            SafeResult = IntGdiSetMapMode(pdc, dwIn as i32) as u32;
-        }
-
-        GdiGetSetArcDirection => {
-            if dwIn != AD_COUNTERCLOCKWISE && dwIn != AD_CLOCKWISE {
-                EngSetLastError(ERROR_INVALID_PARAMETER);
-                Ret = 0;
-            } else {
-                if (*pdcattr).dwLayout & LAYOUT_RTL != 0 {
-                    SafeResult = AD_CLOCKWISE - (((*pdc).dclevel.flPath & DCPATH_CLOCKWISE) != 0) as DWORD;
-                    if dwIn == AD_CLOCKWISE {
-                        (*pdc).dclevel.flPath &= !DCPATH_CLOCKWISE;
-                    } else {
-                        (*pdc).dclevel.flPath |= DCPATH_CLOCKWISE;
-                    }
-                } else {
-                    SafeResult = (((*pdc).dclevel.flPath & DCPATH_CLOCKWISE) != 0) as DWORD +
-                                 AD_COUNTERCLOCKWISE;
-                    if dwIn == AD_COUNTERCLOCKWISE {
-                        (*pdc).dclevel.flPath &= !DCPATH_CLOCKWISE;
-                    } else {
-                        (*pdc).dclevel.flPath |= DCPATH_CLOCKWISE;
-                    }
-                }
-            }
-        }
-
-        _ => {
-            EngSetLastError(ERROR_INVALID_PARAMETER);
-            Ret = 0;
-        }
-    }
-
-    if Ret != 0 {
-        Status = SafeProbeForWrite(pdwResult as PVOID, core::mem::size_of::<DWORD>() as usize, 1);
-        if NT_SUCCESS(Status) {
-            *pdwResult = SafeResult;
-        }
-
-        if !NT_SUCCESS(Status) {
-            SetLastNtError(Status);
-            Ret = 0;
-        }
-    }
-
-    DC_UnlockDc(pdc);
-    Ret
-}
-
-#[cfg(not(target_arch = "x86"))]
-#[no_mangle]
-pub unsafe extern "C" fn NtGdiGetAndSetDCDword(
+pub unsafe extern "system" fn NtGdiGetAndSetDCDword(
     hdc: HDC,
     u: UINT,
     dwIn: DWORD,
@@ -1378,80 +1162,8 @@ unsafe extern "C" fn IntUpdateBoundsRect(pdc: PDC, pRect: PRECTL) {
         );
     }
 }
-#[cfg(target_arch = "x86")]
 #[no_mangle]
-pub unsafe extern "stdcall" fn NtGdiGetBoundsRect(
-    hdc: HDC,
-    prc: LPRECT,
-    flags: u32,
-) -> u32 {
-    let mut ret: u32;
-    let pdc: PDC;
-    let mut rc: RECT = core::mem::zeroed();
-    let Status: i32;
-
-    pdc = DC_LockDc(hdc);
-    if pdc.is_null() {
-        return 0;
-    }
-
-    if (flags & DCB_WINDOWMGR) == 0 {
-        rc = *(core::ptr::addr_of!((*pdc).erclBoundsApp) as *const tagRECT);
-
-        if RECTL_bIsEmptyRect(&rc as *const RECT as *const RECTL) != 0 {
-            rc.left = 0;
-            rc.top = 0;
-            rc.right = 0;
-            rc.bottom = 0;
-            ret = DCB_RESET;
-        } else {
-            let mut rcRgn: RECTL = core::mem::zeroed();
-            if ((*pdc).fs & (DC_DIRTY_RAO as i32)) != 0 {
-                CLIPPING_UpdateGCRegion(pdc);
-            }
-            if REGION_GetRgnBox((*pdc).prgnRao, &mut rcRgn) == 0 {
-                REGION_GetRgnBox((*pdc).prgnVis, &mut rcRgn);
-            }
-            rc.left = max(rc.left, 0);
-            rc.top = max(rc.top, 0);
-            rc.right = min(rc.right, rcRgn.right - rcRgn.left);
-            rc.bottom = min(rc.bottom, rcRgn.bottom - rcRgn.top);
-            ret = DCB_SET;
-        }
-        IntDPtoLP(pdc, &mut rc as *mut RECT as LPPOINT, 2);
-    } else {
-        rc = *(core::ptr::addr_of!((*pdc).erclBounds) as *const tagRECT);
-        ret = DCB_SET;
-    }
-
-    Status = SafeProbeForWrite(prc as *mut core::ffi::c_void, core::mem::size_of::<RECT>(), 1);
-    if !NT_SUCCESS(Status) {
-        ret = 0;
-    } else {
-        *prc = rc;
-    }
-
-    if (flags & DCB_RESET) != 0 {
-        if (flags & DCB_WINDOWMGR) == 0 {
-            (*pdc).erclBoundsApp.left = INT_MAX;
-            (*pdc).erclBoundsApp.top = INT_MAX;
-            (*pdc).erclBoundsApp.right = INT_MIN;
-            (*pdc).erclBoundsApp.bottom = INT_MIN;
-        } else {
-            (*pdc).erclBounds.left = INT_MAX;
-            (*pdc).erclBounds.top = INT_MAX;
-            (*pdc).erclBounds.right = INT_MIN;
-            (*pdc).erclBounds.bottom = INT_MIN;
-        }
-    }
-
-    DC_UnlockDc(pdc);
-    ret
-}
-
-#[cfg(not(target_arch = "x86"))]
-#[no_mangle]
-pub unsafe extern "C" fn NtGdiGetBoundsRect(
+pub unsafe extern "system" fn NtGdiGetBoundsRect(
     hdc: HDC,
     prc: LPRECT,
     flags: u32,
@@ -1521,7 +1233,7 @@ pub unsafe extern "C" fn NtGdiGetBoundsRect(
 }
 #[cfg(target_arch = "x86")]
 #[no_mangle]
-pub unsafe extern "stdcall" fn NtGdiSetBoundsRect(
+pub unsafe extern "system" fn NtGdiSetBoundsRect(
     hdc: HDC,
     prc: LPRECT,
     flags: u32,
@@ -1606,7 +1318,7 @@ pub unsafe extern "stdcall" fn NtGdiSetBoundsRect(
 
 #[cfg(not(target_arch = "x86"))]
 #[no_mangle]
-pub unsafe extern "C" fn NtGdiSetBoundsRect(
+pub unsafe extern "system" fn NtGdiSetBoundsRect(
     hdc: HDC,
     prc: LPRECT,
     flags: u32,

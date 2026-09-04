@@ -27,7 +27,15 @@ publish = false
 # which is what lets this crate grade it. The one suite needing file.rs ABSENT, the scanf
 # engine's, lives in the sibling ../msvcrt-scanf-difftest; its Cargo.toml carries the
 # reason and the alternative that was weighed and rejected.
-msvcrt-crt-rust = { path = "../msvcrt-crt-rust", default-features = false, features = ["stdio"] }
+#
+# `cpp` is on too, which the feature's own comment in msvcrt-crt-rust/Cargo.toml said was
+# impossible. It was wrong on both counts, and the correction lives there now: the x86-64 arm
+# of cpp_rtti's vtable asm is plain `.data`/`.balign 8`/`.quad`/`.globl` — valid ELF, and the
+# same text cxx.h's `__ASM_VTABLE` emits for the reference TU beside it — and
+# `RtlPcToFileHeader` is just an undefined symbol, which cppimpl.c now supplies with a real
+# image base. Turning it on is what gives tests/cpp.rs a SUBJECT to grade cpp.c and except.c
+# against; without it the reference TUs would be compiled and compared to nothing.
+msvcrt-crt-rust = { path = "../msvcrt-crt-rust", default-features = false, features = ["stdio", "cpp"] }
 msvcrt-sys = { path = "../msvcrt-sys" }
 # guard-page probe (tests/oob_guard.rs): mmap/mprotect/fork.
 libc = "0.2"
@@ -127,6 +135,46 @@ name = "mbcs_state"
 path = "tests/mbcs_state.rs"
 harness = false
 
+# `_setmbcp`, the other function the 173 generated cases structurally cannot grade, and for
+# the opposite reason to create_mbcinfo's: it INSTALLS an mbcinfo rather than building one,
+# so a generated case would move the fixture every other case is pinned against. Its own
+# binary, hence its own process, so what it installs can never reach that fixture — and so
+# that it can point each side's `MSVCRT_locale` at its own storage, which is what makes the
+# non-thread arm (the one that writes the exported `_mbctype`) gradeable at all.
+[[test]]
+name = "mbcs_setmbcp"
+path = "tests/mbcs_setmbcp.rs"
+harness = false
+
+# undname.c — reference TU #8, and 1,788 lines of Rust that had no differential coverage at
+# all. Its own binary for the ordinary reason (a `fn main()` sweeping a generated corpus),
+# not because it needs isolation: the demangler touches no global state, and takes its
+# allocator as parameters, which is what makes the allocation ledger possible.
+[[test]]
+name = "undname"
+path = "tests/undname.rs"
+harness = false
+
+# misc.c — reference TU #9. Its own binary because `qsort`'s contract includes the
+# COMPARISON SEQUENCE — misc.c says so itself, above qsort_s: "trying to sort data doing
+# identical comparisons as native does" — and watching that needs a recording comparator,
+# which needs a `fn main()` rather than a generated case.
+[[test]]
+name = "misc"
+path = "tests/misc.rs"
+harness = false
+
+# math.c — reference TU #10. Its own binary because it INSTALLS A HANDLER through
+# `__setusermatherr` and drives the process MXCSR: both are global state that would follow
+# another suite's rows into a wrong verdict, and the handler in particular has to be the only
+# one registered for the recorded `struct _exception` stream to mean anything. `harness = false`
+# gives it one thread, without which the MXCSR snapshot/restore around each `_control87` row
+# would race — plus the same getenv reason as the rest.
+[[test]]
+name = "math"
+path = "tests/math.rs"
+harness = false
+
 # Wave 18a — file.c's stream layer. Its own binary because it is the only suite that
 # drives the CRT's fd table and FILE ring through hundreds of open/close cycles, and both
 # sides' tables have to start empty and stay in lockstep for the fd numbers to be
@@ -145,4 +193,42 @@ harness = false
 [[test]]
 name = "wave16"
 path = "tests/wave16.rs"
+harness = false
+
+# time.c — reference TU #11. Its own binary because the whole file is driven from GLOBAL
+# state that a row must set and then re-derive on both sides: timeimpl.c's frozen instant,
+# its zone preset, and the `TZ` environment variable. `_tzset` caches the zone in a file
+# static per side, so a row that changed the knob without re-running `_tzset` on BOTH would
+# grade the previous preset — identically on both sides, and green. Sequencing that needs a
+# `fn main()`, not a set of independently-ordered `#[test]`s.
+[[test]]
+name = "time"
+path = "tests/time.rs"
+harness = false
+
+# process.c — reference TU #12. Its own binary for two reasons that are both about state.
+# `_wpopen` drives BOTH sides' fd tables and FILE rings, which only stay comparable if they
+# start empty and every row moves them in lockstep — the same property tests/file.rs needs,
+# and it does not survive sharing a process with a suite that opens files for other reasons.
+# And processimpl.c's spawn ledger is ONE recorder read back between the two calls of a row,
+# so a second suite calling CreateProcessW concurrently would be reading someone else's
+# marshalling. `harness = false` gives it one thread, which is what makes both hold; the
+# same getenv reason as the rest applies too.
+[[test]]
+name = "process"
+path = "tests/process.rs"
+harness = false
+
+# cpp.c (#14) + except.c (#15) — the C++ EH subsystem. Its own binary for three reasons, all
+# of them state. It installs per-thread terminate/unexpected/se_translator handlers and drives
+# except.c's file-static `sighandlers` table, none of which any other suite expects to find
+# moved. It calls `msvcrt_init_exception`, which rewrites BOTH sides' static RTTI tables from
+# absolute pointers into RVAs — a one-way conversion that must happen exactly once per process.
+# And it FORKS, for the arms that terminate; a child inherits whatever the rest of a shared
+# binary had already set up. `harness = false` gives it one thread, without which the shared
+# `RaiseException` sink would be read by one row while another wrote it — plus the same getenv
+# reason as the rest.
+[[test]]
+name = "cpp"
+path = "tests/cpp.rs"
 harness = false

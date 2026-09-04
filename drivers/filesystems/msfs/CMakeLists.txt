@@ -24,7 +24,7 @@ elseif(ARCH STREQUAL "arm64")
     set(MSFS_RUST_TARGET "aarch64-pc-windows-gnullvm")
     set(MSFS_RUST_RUSTFLAGS "")
 endif()
-file(GLOB_RECURSE MSFS_RUST_SRCS ${MSFS_RUST_WORKSPACE_DIR}/msfs-rust/src/*.rs)
+rust_crate_sources(MSFS_RUST_SRCS "${MSFS_RUST_WORKSPACE_DIR}" msfs-rust)
 add_custom_command(
     OUTPUT ${MSFS_RUST_LIB}
     COMMAND ${CMAKE_COMMAND} -E env

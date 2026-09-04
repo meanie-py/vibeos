@@ -16,7 +16,7 @@ elseif(ARCH STREQUAL "arm64")
     set(RAMDISK_RUST_TARGET "aarch64-pc-windows-gnullvm")
     set(RAMDISK_RUST_RUSTFLAGS "")
 endif()
-file(GLOB_RECURSE RAMDISK_RUST_SRCS ${RAMDISK_RUST_WORKSPACE_DIR}/ramdisk-rust/src/*.rs)
+rust_crate_sources(RAMDISK_RUST_SRCS "${RAMDISK_RUST_WORKSPACE_DIR}" ramdisk-rust)
 add_custom_command(
     OUTPUT ${RAMDISK_RUST_LIB}
     COMMAND ${CMAKE_COMMAND} -E env

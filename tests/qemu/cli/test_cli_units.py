@@ -92,6 +92,68 @@ def test_smp_iso_patch_is_equal_length_and_selects_the_mp_entry(tmp_path: Path):
     assert b"LiveCD_Debug" not in patched
 
 
+def _fake_boot_img(default_os: bytes = b"ReactOS_Arm64_UP") -> bytes:
+    """arm64 qemu/boot.img: FAT, not ISO9660, but the ini's bytes sit in it just as
+    literally.
+
+    Two decoys, both taken from the real image rather than invented:
+      - the uefildr blob carries a bare `DefaultOS` token, which is why the needle
+        keeps the `=`;
+      - the shipped ini's own comment about keeping the entry names equal-length
+        says `DefaultOS=` mid-line, which is why the search is anchored to a line
+        start. That one is not hypothetical: it took the patcher down on the first
+        real boot.img built with the two-entry ini, and the guard raised instead of
+        poking the comment.
+    """
+    return (
+        b"\x00" * 32
+        + b"uefildr: DefaultOS\x00"
+        + b"[FREELOADER]\r\nDefaultOS="
+        + default_os
+        + b"\r\nTimeOut=0\r\n"
+        + b"; flipping DefaultOS= between them is an equal-length poke\r\n"
+        + b"[ReactOS_Arm64_UP]\r\nOptions=/SOS /RDPATH=\\ramdisk.img\r\n"
+        + b"[ReactOS_Arm64_MP]\r\nOptions=/KERNEL=ntkrnlmp.exe /HAL=halmp.dll\r\n"
+        + b"\x00" * 32
+    )
+
+
+def test_smp_patch_selects_the_arm64_mp_entry_with_no_padding(tmp_path: Path):
+    """arm64 was the last arch getting its MP pair from a different BUILD. Its two
+    entry names are equal length on purpose, so the poke needs no `\\r\\n;` filler."""
+    src = tmp_path / "boot.img"
+    src.write_bytes(_fake_boot_img())
+    out = vm_mod.smp_selected_iso(src, tmp_path / "work")
+    assert out != src, "must not patch the build tree's media in place"
+    patched = out.read_bytes()
+    assert len(patched) == len(src.read_bytes())
+    assert b"DefaultOS=ReactOS_Arm64_MP\r\n" in patched
+    assert b"DefaultOS=ReactOS_Arm64_UP" not in patched
+    # the [ReactOS_Arm64_UP] SECTION must survive; only the selector moves
+    assert b"[ReactOS_Arm64_UP]" in patched
+    # equal-length swap => the ONLY difference is the one byte U -> M.
+    # strict= is the assertion, not lint appeasement: a length change would make
+    # zip truncate and still report "1 differing byte", passing a test whose whole
+    # point is that the poke did not resize the image.
+    assert sum(x != y for x, y in zip(src.read_bytes(), patched, strict=True)) == 1
+
+
+def test_smp_patch_is_idempotent_on_arm64_media(tmp_path: Path):
+    src = tmp_path / "boot.img"
+    src.write_bytes(_fake_boot_img(default_os=b"ReactOS_Arm64_MP"))
+    assert vm_mod.smp_selected_iso(src, tmp_path / "work") == src
+
+
+def test_mp_entry_names_are_equal_length_to_the_defaults_they_replace():
+    """The in-place poke can pad a shorter replacement but never a longer one, and
+    arm64 relies on an exact-length swap. Guard the table itself so renaming one
+    half of a pair fails here instead of at boot."""
+    for shipped, mp in vm_mod._MP_ENTRY_FOR.items():
+        assert len(mp) <= len(shipped), f"{mp!r} longer than {shipped!r}: cannot patch in place"
+        if len(mp) != len(shipped):
+            assert len(shipped) - len(mp) != 1, "1-byte remainder cannot terminate the line"
+
+
 def test_smp_iso_patch_is_idempotent(tmp_path: Path):
     """Media built with --smp-kernel already defaults to the MP entry; patching it
     again must be a no-op that returns the original path, not a needless copy."""
@@ -110,9 +172,11 @@ def test_smp_iso_patch_raises_rather_than_booting_up_media(tmp_path: Path):
     a.write_bytes(_fake_iso(smp_section=False))
     with pytest.raises(RuntimeError, match="LiveCD_SMP"):
         vm_mod.smp_selected_iso(a, work)
-    # two DefaultOS= lines: cannot tell which one freeldr reads
+    # two DefaultOS= LINES: cannot tell which one freeldr reads. (Line-initial on
+    # purpose — a mid-line mention is a comment and must NOT count; see
+    # _fake_boot_img, where exactly that distinction was a real bug.)
     b = tmp_path / "b.iso"
-    b.write_bytes(_fake_iso() + b"DefaultOS=LiveCD\r\n")
+    b.write_bytes(_fake_iso() + b"\r\nDefaultOS=LiveCD\r\n")
     with pytest.raises(RuntimeError, match="exactly one"):
         vm_mod.smp_selected_iso(b, work)
     # value too short to overwrite in place
@@ -493,6 +557,11 @@ def arm64_cohab_repo(tmp_path: Path) -> Path:
     (crate / "src").mkdir(parents=True)
     (crate / "Cargo.toml").write_text("[package]\nname = 'foo-rust'\n")
     (crate / "src" / "lib.rs").write_text("// rust cohab\n")
+    # A cohab crate is one the workspace actually BUILDS; `parked-rust` is the
+    # translated-but-not-yet-flipped shape and is deliberately absent from members.
+    (r / "sdk" / "lib" / "rust" / "Cargo.toml").write_text(
+        '[workspace]\nmembers = [\n    "foo-rust",\n    "k32-vista-rust",\n]\n'
+    )
     (r / "build-arm64" / "drivers" / "x" / "foo").mkdir(parents=True)
     (r / "build-arm64" / "drivers" / "x" / "foo" / "foo.sys").write_bytes(b"SYS")
     (r / "qemu").mkdir()
@@ -523,6 +592,24 @@ def test_crate_for_stem_separator_normalization(arm64_cohab_repo: Path):
     (arm64_cohab_repo / "sdk" / "lib" / "rust" / "k32-vista-rust" / "Cargo.toml").write_text("x")
     assert provenance._crate_for_stem(arm64_cohab_repo, "k32_vista") is not None
     assert provenance._crate_for_stem(arm64_cohab_repo, "nonexistent") is None
+
+
+def test_crate_for_stem_ignores_a_parked_non_member_crate(arm64_cohab_repo: Path):
+    """A translated-but-NOT-YET-FLIPPED crate is not cohab, and treating it as one
+    halted the merge train on 2026-08-04: msv1_0-rust was committed and parked out
+    of `members` pending its grind, dll/win32/msv1_0 still built from C, and the
+    staleness net compared the fresh .rs against the C-built msv1_0.dll and reported
+    `cohab flip not rebuilt` for a flip that had not happened. No rebuild clears
+    that, so the gate could render no verdict at all."""
+    rust = arm64_cohab_repo / "sdk" / "lib" / "rust"
+    (rust / "parked-rust").mkdir()
+    (rust / "parked-rust" / "Cargo.toml").write_text("[package]\nname = 'parked-rust'\n")
+    provenance._workspace_members.cache_clear()
+    assert provenance._crate_for_stem(arm64_cohab_repo, "parked") is None
+    # …and it stays out of the boot-set mapping the staleness net walks.
+    assert not any(
+        "parked" in rel for rel in provenance.boot_set_cohab_rels(arm64_cohab_repo, "arm64")
+    )
 
 
 def test_cohab_rels_maps_only_rust_binaries(arm64_cohab_repo: Path):
@@ -1007,6 +1094,127 @@ def test_cpu_state_falls_back_to_a_live_sample(tmp_path):
         "",
     )
     assert lines == ["CPU#0 0xffff8000040567ac -> (unresolved)"]
+
+
+def _hang_vm(work: Path, artifact: Path | None, capture):
+    """A QemuVM with only what save_hang_state touches — no QEMU, no __init__."""
+    v = vm_mod.QemuVM.__new__(vm_mod.QemuVM)
+    v.work_dir = work
+    v.artifact_dir = artifact
+    v.hang_cpu_state = ""
+    v.config = vm_mod.ArchConfig(
+        arch="arm64", qemu_bin="x", machine_args=[], memory="1G", boot_marker="m"
+    )
+    v.capture_cpu_state = capture  # type: ignore[method-assign]
+    return v
+
+
+@pytest.fixture
+def _no_resample_wait(monkeypatch):
+    monkeypatch.setattr(vm_mod, "HANG_RESAMPLE_SECONDS", 0.0)
+
+
+def test_save_hang_state_also_lands_in_the_durable_artifact_dir(tmp_path, _no_resample_wait):
+    # The bug this closes: work_dir under the pytest `vm` fixture is a tmp_path
+    # that pytest prunes to the last 3 runs, so a capture written only there is
+    # deleted by unrelated later runs. Callers owning a durable run dir set
+    # VIBEOS_ARTIFACT_DIR and must get their own copy.
+    work, art = tmp_path / "w", tmp_path / "run"
+    work.mkdir()
+    v = _hang_vm(work, art, lambda: "CPU#0\nPC=ffff800004001234\n")
+    v.save_hang_state("sweep drain")
+
+    for d in (work, art):
+        body = (d / "hang-cpustate.txt").read_text()
+        assert "PC=ffff800004001234" in body
+        # The phase is what tells a bare file in a run dir WHICH stall it is.
+        assert "sweep drain" in body
+        assert "arch=arm64" in body
+
+
+def test_save_hang_state_separates_a_frozen_box_from_a_blocked_one(tmp_path, _no_resample_wait):
+    # The whole point of two samples: a dead clock and a thread blocked forever
+    # both park every vCPU in the idle loop and are indistinguishable in ONE
+    # dump. Only "did the PC move" tells them apart, and it has to be decided
+    # while the guest is alive, so the artifact must carry the verdict.
+    frozen = _hang_vm(tmp_path / "a", None, lambda: "CPU#0\nPC=ffff800004001234\n")
+    frozen.save_hang_state("sweep drain")
+    assert "FROZEN" in (tmp_path / "a" / "hang-cpustate.txt").read_text()
+
+    pcs = iter(["CPU#0\nPC=ffff800004001234\n", "CPU#0\nPC=ffff8000040099f0\n"])
+    moving = _hang_vm(tmp_path / "b", None, lambda: next(pcs))
+    moving.save_hang_state("sweep drain")
+    assert "EXECUTING" in (tmp_path / "b" / "hang-cpustate.txt").read_text()
+
+
+def test_save_hang_state_survives_a_dead_monitor(tmp_path, _no_resample_wait):
+    # A diagnostic that raises on an already-failing run destroys the failure it
+    # was there to explain, so a dead QMP must degrade to a note in the file —
+    # and must NOT report FROZEN, which two empty samples would otherwise imply.
+    def _boom():
+        raise RuntimeError("qmp gone")
+
+    v = _hang_vm(tmp_path, None, _boom)
+    v.save_hang_state("boot-wait timeout")
+    body = (tmp_path / "hang-cpustate.txt").read_text()
+    assert "capture failed" in body
+    assert "UNKNOWN" in body and "FROZEN" not in body
+
+
+def test_a_drained_out_payload_captures_the_hang_before_it_fails():
+    # The gap this closes: a sweep that BOOTS and then wedges never enters
+    # wait_for_boot's TimeoutError, so it had no capture at all — and by the time
+    # the assert has failed and the fixture torn the VM down, the vCPU PCs are
+    # unrecoverable. The capture has to happen here, before the assert.
+    from tests.qemu import test_payload as payload_mod
+
+    calls = []
+
+    class _StubVm:
+        _boot_output = "booted fine, then nothing\n"
+
+        def serial_output(self, timeout=1.0):
+            return ""
+
+        def save_hang_state(self, phase):
+            calls.append(phase)
+            return ""
+
+    spec = {"test": {"launch_marker": "[KMTEST-SWEEP] done", "launch_drain_secs": 2}}
+    with pytest.raises(AssertionError):
+        payload_mod.test_payload_launched(_StubVm(), "arm64", "kmtest", spec)  # type: ignore[arg-type]
+    assert calls and "kmtest" in calls[0]
+
+
+def test_a_crashed_payload_does_not_capture_a_hang():
+    # A BUGCHECK already carries its own faulting PC on serial. Capturing here
+    # would resample a dead guest and file it as if it were a silent wedge.
+    from tests.qemu import test_payload as payload_mod
+
+    calls = []
+
+    class _StubVm:
+        _boot_output = "*** BUGCHECK 0x1E\n"
+
+        def serial_output(self, timeout=1.0):
+            return ""
+
+        def save_hang_state(self, phase):
+            calls.append(phase)
+            return ""
+
+    spec = {"test": {"launch_marker": "[KMTEST-SWEEP] done", "launch_drain_secs": 2}}
+    with pytest.raises(AssertionError):
+        payload_mod.test_payload_launched(_StubVm(), "arm64", "kmtest", spec)  # type: ignore[arg-type]
+    assert calls == []
+
+
+def test_conformance_points_the_sweep_at_its_run_dir():
+    # conformance shells out to pytest, so the run dir can only reach the VM
+    # through the environment. If this wiring is dropped, hang captures silently
+    # go back to the prunable pytest tmp_path and the run dir holds serial only.
+    src = Path(conformance_mod.__file__).read_text()
+    assert 'env["VIBEOS_ARTIFACT_DIR"] = str(run_dir)' in src
 
 
 def test_triage_kernel_panic_via_debugcon():
@@ -2019,14 +2227,42 @@ def test_backend_rewrite_netdev_for_windows():
         "-netdev",
         "user,id=net0,hostfwd=tcp:127.0.0.1:54321-:7777,guestfwd=tcp:10.0.2.100:9999-cmd:cat",
     ]
-    out, needs_echo = be_mod.rewrite_netdev_for_windows(args, "gf0")
-    assert needs_echo is True
+    out, ids = be_mod.rewrite_netdev_for_windows(args)
+    assert ids == ["gf0"]
     assert "hostfwd=tcp:0.0.0.0:54321-:7777" in out[-1]
     assert "guestfwd=tcp:10.0.2.100:9999-chardev:gf0" in out[-1]
     assert "cmd:cat" not in out[-1]
     # no netdev with fwds -> no-op, no echo server needed (the native-config shape)
     plain = ["-M", "pc", "-accel", "tcg"]
-    assert be_mod.rewrite_netdev_for_windows(plain, "gf0") == (plain, False)
+    assert be_mod.rewrite_netdev_for_windows(plain) == (plain, [])
+
+
+def test_every_guestfwd_gets_its_OWN_chardev():
+    """One chardev is one byte stream, so two guestfwds sharing an id merge their
+    traffic — three consumers on a shared :9999 is what wedged the merge queue for a
+    day (vm.GUESTFWD_ECHO_PORTS). The rewrite must hand out one id per forward."""
+    netdev = "user,id=net0,hostfwd=tcp:127.0.0.1:54321-:7777" + "".join(
+        f",guestfwd=tcp:10.0.2.100:{port}-cmd:cat" for port in (9997, 9998, 9999)
+    )
+    out, ids = be_mod.rewrite_netdev_for_windows(["-netdev", netdev])
+    assert ids == ["gf0", "gf1", "gf2"]
+    assert len(set(ids)) == len(ids)
+    for port, cid in zip((9997, 9998, 9999), ids, strict=True):
+        assert f"guestfwd=tcp:10.0.2.100:{port}-chardev:{cid}" in out[-1]
+    assert "cmd:cat" not in out[-1]
+
+
+def test_the_three_echo_consumers_never_share_a_port():
+    """The guest hardcodes these; a duplicate here is a silently stolen echo, not a
+    build error. Kept as a set-size check so adding a consumer forces a new port."""
+    from tests.qemu import vm as vm_mod
+
+    ports = vm_mod.GUESTFWD_ECHO_PORTS
+    assert len(set(ports.values())) == len(ports), f"duplicate guestfwd echo port: {ports}"
+    # Each port must appear exactly once in the emitted netdev options.
+    opts = vm_mod._guestfwd_echo_opts("10.0.2.100")
+    for port in ports.values():
+        assert opts.count(f":{port}-cmd:cat") == 1
 
 
 def test_free_tcp_port_windows_picker_hook():
@@ -2623,6 +2859,50 @@ def test_gate_flake_stays_red_if_all_retries_fail(tmp_path, monkeypatch):
     assert len(retry_calls) == 2, fake.calls
 
 
+def test_gate_retries_stop_at_the_first_green(tmp_path, monkeypatch):
+    # Attempts run serially, so a lane that recovers on r1 must never launch r2.
+    # Firing all attempts up front spends a whole extra boot on every recovery.
+    monkeypatch.setattr("tests.qemu.cli.artifacts.ARTIFACT_ROOT", tmp_path)
+    fake = _fake_smoke({"i386": ["OK"], "amd64": ["KNOWN_FLAKE", "OK", "OK"], "arm64": ["OK"]})
+    monkeypatch.setattr(gate_mod, "_smoke_once", fake)
+    rc = gate_mod.gate(_gate_args(retries=2), tmp_path)
+    assert rc == 0
+    retry_calls = [k for k in fake.calls if k.startswith("amd64:") and "-r" in k]
+    assert retry_calls == ["amd64:smoke-amd64-r1"], retry_calls
+
+
+def test_gate_a_lanes_retries_never_run_concurrently(tmp_path, monkeypatch):
+    # THE point of serial retries. NET_FLAKE is *defined* as "failed under
+    # concurrent-smoke load" and HOST_STARVED as "never got a slot", so running a
+    # lane's attempts against each other recreates the cause and falsifies
+    # nothing — two amd64-uefi-net VMs in contention with only each other. This
+    # cost a gate and then a land rejection on 2026-08-08.
+    import threading
+
+    live = {"now": 0, "max": 0}
+    lock = threading.Lock()
+    inner = _fake_smoke({"i386": ["OK"], "amd64": ["KNOWN_FLAKE"], "arm64": ["OK"]})
+
+    def counting(repo, arch, root, extra):
+        if arch == "amd64":
+            with lock:
+                live["now"] += 1
+                live["max"] = max(live["max"], live["now"])
+            time.sleep(0.05)
+            with lock:
+                live["now"] -= 1
+        return inner(repo, arch, root, extra)
+
+    monkeypatch.setattr("tests.qemu.cli.artifacts.ARTIFACT_ROOT", tmp_path)
+    monkeypatch.setattr(gate_mod, "_smoke_once", counting)
+    gate_mod.gate(_gate_args(retries=3), tmp_path)
+    # Assert the retries HAPPENED first: the first pass alone also yields max==1,
+    # so without this the concurrency assertion below passes vacuously.
+    amd64_calls = [k for k in inner.calls if k.startswith("amd64:")]
+    assert len(amd64_calls) == 4, amd64_calls  # 1 first pass + 3 serial retries
+    assert live["max"] == 1, f"a lane ran {live['max']} attempts at once"
+
+
 def test_gate_retries_zero_disables_retry(tmp_path, monkeypatch):
     monkeypatch.setattr("tests.qemu.cli.artifacts.ARTIFACT_ROOT", tmp_path)
     fake = _fake_smoke({"i386": ["KNOWN_FLAKE", "OK"]})
@@ -2830,6 +3110,78 @@ def test_gate_difftest_failure_blocks_stamp(tmp_path, monkeypatch):
     assert rc == 1, "a rust-vs-C divergence must fail the gate"
     assert not stamped, "no push stamp when a difftest is red"
     assert fake.calls, "smokes still run so the matrix stays informative"
+
+
+def _cohab_once_stub(ok: bool):
+    """Stand-in for gate._cohab_once (which shells tools/verify_cohab_coverage.py)."""
+
+    def stub(repo, arch, root):
+        return {
+            "arch": arch,
+            "ok": ok,
+            "seconds": 0.01,
+            "salient": "" if ok else "math.rs: [i386] nothing defines `__adj_fdiv_m16i@4`",
+            "exit": 0 if ok else 1,
+        }
+
+    return stub
+
+
+def test_gate_cohab_gap_blocks_stamp(tmp_path, monkeypatch):
+    """A cohab coverage gap fails the gate and blocks the push stamp.
+
+    This is the stage that exists because every OTHER stage is structurally blind to it:
+    `cargo check` never codegens, so `global_asm!` is never assembled and `#[export_name]`
+    never becomes a symbol; the build links; the smoke boots a green desktop. Eight msvcrt
+    stdcall stubs shipped as `___adj_fdiv_m16i@4@4` and the flip was a no-op that nothing
+    in the pipeline could see. A green boot is not evidence that the Rust is the thing
+    running.
+    """
+    monkeypatch.setattr("tests.qemu.cli.artifacts.ARTIFACT_ROOT", tmp_path)
+    fake = _fake_smoke({"i386": ["OK"], "amd64": ["OK"], "arm64": ["OK"]})
+    monkeypatch.setattr(gate_mod, "_smoke_once", fake)
+    monkeypatch.setattr(
+        gate_mod,
+        "_build_once",
+        lambda repo, run, arch, args: {"arch": arch, "ok": True, "exit": 0, "seconds": 0.01},
+    )
+    monkeypatch.setattr(gate_mod, "_lint_once", _lint_once_stub(ok=True))
+    monkeypatch.setattr(gate_mod, "_tooling_once", _tooling_once_stub(ok=True))
+    monkeypatch.setattr(gate_mod, "_difftest_once", _difftest_once_stub(ok=True))
+    monkeypatch.setattr(gate_mod, "_cohab_once", _cohab_once_stub(ok=False))
+    stamped: list = []
+    monkeypatch.setattr(gate_mod, "_write_gate_stamp", lambda *a, **k: stamped.append(1))
+    rc = gate_mod.gate(_gate_args(no_lint=False, no_build=False), tmp_path)
+    assert rc == 1, "a cohab coverage gap must fail the gate"
+    assert not stamped, "no push stamp when a flipped module is not actually flipped"
+    assert fake.calls, "smokes still run so the matrix stays informative"
+
+
+def test_gate_cohab_needs_both_a_build_and_the_lint_opt_in(tmp_path, monkeypatch):
+    """The stage judges artifacts THIS run produced, so it runs only when both opt-ins hold.
+
+    Under --no-build it would read a stale carry-over archive as a red (the verifier refuses
+    anything older than the tree) — a false rejection on the merge train is more expensive
+    than the check is worth, and `gate --no-build` exists precisely to re-smoke without
+    rebuilding.
+    """
+    monkeypatch.setattr("tests.qemu.cli.artifacts.ARTIFACT_ROOT", tmp_path)
+    monkeypatch.setattr(
+        gate_mod, "_smoke_once", _fake_smoke({a: ["OK"] for a in ("i386", "amd64", "arm64")})
+    )
+    monkeypatch.setattr(gate_mod, "_lint_once", _lint_once_stub(ok=True))
+    monkeypatch.setattr(gate_mod, "_tooling_once", _tooling_once_stub(ok=True))
+    monkeypatch.setattr(gate_mod, "_difftest_once", _difftest_once_stub(ok=True))
+    monkeypatch.setattr(
+        gate_mod,
+        "_build_once",
+        lambda repo, run, arch, args: {"arch": arch, "ok": True, "exit": 0, "seconds": 0.01},
+    )
+    ran: list = []
+    monkeypatch.setattr(gate_mod, "_cohab_once", lambda *a, **k: ran.append(1))
+    for kw in ({"no_lint": False, "no_build": True}, {"no_lint": True, "no_build": False}):
+        assert gate_mod.gate(_gate_args(**kw), tmp_path) == 0
+        assert not ran, f"cohab must not run with {kw}"
 
 
 def test_gate_no_lint_skips_lint_phase(tmp_path, monkeypatch):
@@ -3111,6 +3463,66 @@ def test_isolation_preflight_blocks_cross_worktree_links(tmp_path):
     assert run.classification == "ISOLATION_FAIL"
 
 
+def _canonize_probe(monkeypatch, tmp_path, *, cache: str | None, canonical: bool):
+    """Drive _maybe_canonize with cmake stubbed out, returning (cmds, build_dir).
+
+    `cache=None` models the case that actually bites: a build dir this worktree
+    has never configured. Both cmake options gating the kmtest corpus default
+    OFF, so nothing but an explicit -D on the fresh configure can turn them on.
+    """
+    repo = tmp_path / "wt"
+    build_dir = repo / "build-i386"
+    build_dir.mkdir(parents=True, exist_ok=True)  # one test probes twice
+    if cache is not None:
+        (build_dir / "CMakeCache.txt").write_text(cache)
+
+    cmds: list[list[str]] = []
+
+    class _Cp:
+        returncode, stdout, stderr = 0, "", ""
+
+    run = build_mod.Run("build", "i386", ts=1700000000)
+    monkeypatch.setattr(run, "run", lambda cmd, **kw: (cmds.append(cmd), _Cp())[1])
+    monkeypatch.setattr(build_mod.canon, "is_canonical", lambda _bd: canonical)
+    monkeypatch.setattr(build_mod.canon, "available", lambda: True)
+    monkeypatch.setattr(build_mod.canon, "ensure_toolchain", lambda _r: True)
+    monkeypatch.setattr(build_mod.canon, "wrap", lambda _r, cmd: cmd)
+    monkeypatch.setattr(build_mod.canon, "carried_options", lambda _bd: [])
+    return cmds, run, repo, build_dir
+
+
+def test_sticky_kmtests_rides_the_fresh_configure(monkeypatch, tmp_path):
+    # The fresh-worktree hole: no cache => carried_options carries nothing, so the
+    # opt-in has to be named on the configure itself or it is dropped on exactly
+    # the one run that cannot detect it (2026-08-02 — a full media built with no
+    # kmtest corpus, surfacing as `[KMTEST-SWEEP] launch FAILED` minutes later).
+    cmds, run, repo, bd = _canonize_probe(monkeypatch, tmp_path, cache=None, canonical=False)
+    build_mod._maybe_canonize(run, repo, bd, "i386", {}, sticky_on=("ENABLE_ROSTESTS_KMTESTS",))
+    assert any("-DENABLE_ROSTESTS_KMTESTS=ON" in c for c in cmds), cmds
+
+
+def test_sticky_kmtests_reconfigures_a_dir_that_lacks_it(monkeypatch, tmp_path):
+    cmds, run, repo, bd = _canonize_probe(
+        monkeypatch, tmp_path, cache="ENABLE_ROSTESTS_KMTESTS:BOOL=OFF\n", canonical=True
+    )
+    build_mod._maybe_canonize(run, repo, bd, "i386", {}, sticky_on=("ENABLE_ROSTESTS_KMTESTS",))
+    assert cmds == [["cmake", "-DENABLE_ROSTESTS_KMTESTS=ON", "."]], cmds
+
+
+def test_sticky_kmtests_is_one_directional_unlike_instr_flags(monkeypatch, tmp_path):
+    # Sticky means a later PLAIN build must not flip it back OFF — the opposite of
+    # --lockdep, which is reconciled every build so a gate can't inherit it. An ON
+    # cache with nothing requested must produce no reconfigure at all.
+    on = "ENABLE_ROSTESTS_KMTESTS:BOOL=ON\n"
+    cmds, run, repo, bd = _canonize_probe(monkeypatch, tmp_path, cache=on, canonical=True)
+    build_mod._maybe_canonize(run, repo, bd, "i386", {}, sticky_on=())
+    assert cmds == [], "a plain build reconfigured a sticky flag it was not asked about"
+
+    cmds, run, repo, bd = _canonize_probe(monkeypatch, tmp_path, cache=on, canonical=True)
+    build_mod._maybe_canonize(run, repo, bd, "i386", {}, sticky_on=("ENABLE_ROSTESTS_KMTESTS",))
+    assert cmds == [], "already ON should be a no-op, not a redundant reconfigure"
+
+
 # --- conformance verb (quest M4) -------------------------------------------
 def _conf_repo_root() -> Path:
     # tests/qemu/cli/test_cli_units.py -> repo root is parents[3]
@@ -3123,6 +3535,42 @@ def test_conformance_arch_normalization():
     assert m.get("i386", "i386") == "i386-uefi"
     assert m.get("arm64", "arm64") == "arm64"  # arm64 is itself
     assert m.get("amd64-uefi", "amd64-uefi") == "amd64-uefi"  # suffixed passes through
+
+
+def test_conformance_asks_the_build_for_the_kmtest_corpus(monkeypatch, tmp_path):
+    """conformance must pass --kmtests, and must NOT force an arm64 --smp-kernel.
+
+    Both cmake options gating the corpus default OFF, so a build dir this worktree
+    just created has no tests in it; the old preflight only refused when a cache
+    existed and said OFF, and returned None — sailing through — when there was no
+    cache at all. The arm64 half is the tail of the MP-media work: every media now
+    carries both kernel/HAL pairs and vm.smp_selected_iso repoints DefaultOS= in a
+    copy at boot, so forcing --smp-kernel would cost a media re-roll AND make the
+    --smp 1 and --smp 2 sweeps need two builds of one commit.
+
+    Nothing here may depend on the ambient checkout being provisioned: the merge
+    queue gates in a fresh worktree that legitimately lacks the gitignored payload
+    exes (see the note in test_worktree_provisioning_preflight).
+    """
+    from types import SimpleNamespace
+
+    seen: list[list[str]] = []
+    monkeypatch.setattr(conformance_mod, "_worktree_provisioning_gaps", lambda *_a: [])
+    monkeypatch.setattr(conformance_mod, "_load_parser", lambda _r: object())
+    monkeypatch.setattr(conformance_mod, "_run_dir", lambda _a: tmp_path)
+    monkeypatch.setattr(
+        conformance_mod.subprocess,
+        "run",
+        lambda cmd, **kw: (seen.append(cmd), SimpleNamespace(returncode=1))[1],
+    )
+    for arch in ("i386", "arm64"):
+        seen.clear()
+        args = SimpleNamespace(
+            arch=arch, smp=2, no_build=False, write_baseline=False, only=None, timeout=None
+        )
+        assert conformance_mod._conformance_once(args, tmp_path) == 1  # bailed on our stub
+        assert seen and "--kmtests" in seen[0], seen
+        assert "--smp-kernel" not in seen[0], f"{arch}: media re-roll is no longer needed"
 
 
 def test_worktree_provisioning_preflight(tmp_path):
@@ -3217,27 +3665,6 @@ def test_conformance_parser_detects_crash_regression(tmp_path):
     bp.write_text("KeEvent OK pass=42733 fail=0 skip=0\nNpfsFileInfo OK pass=1 fail=0 skip=0\n")
     regs = parser.compare(results, parser.load_baseline(bp))
     assert any("NpfsFileInfo" in r and "CRASH" in r for r in regs)
-
-
-def test_conformance_rostests_preflight(tmp_path):
-    # no build dir -> None (unknown); either option ON -> True; both off/absent -> False.
-    assert conformance_mod._rostests_enabled(tmp_path, "amd64") is None
-    bd = tmp_path / "build-amd64"
-    bd.mkdir()
-    (bd / "CMakeCache.txt").write_text("FOO:BOOL=ON\nENABLE_ROSTESTS:BOOL=ON\n")
-    assert conformance_mod._rostests_enabled(tmp_path, "amd64") is True
-    # the fleet-default config: parent OFF but KMTESTS ON, parent listed FIRST
-    # (the first-match bug this guards against).
-    (bd / "CMakeCache.txt").write_text(
-        "ENABLE_ROSTESTS:BOOL=OFF\nENABLE_ROSTESTS_KMTESTS:BOOL=ON\n"
-    )
-    assert conformance_mod._rostests_enabled(tmp_path, "amd64") is True
-    (bd / "CMakeCache.txt").write_text(
-        "ENABLE_ROSTESTS:BOOL=OFF\nENABLE_ROSTESTS_KMTESTS:BOOL=OFF\n"
-    )
-    assert conformance_mod._rostests_enabled(tmp_path, "amd64") is False
-    (bd / "CMakeCache.txt").write_text("FOO:BOOL=ON\n")
-    assert conformance_mod._rostests_enabled(tmp_path, "amd64") is False
 
 
 # --- cohab staleness: the mtime chain (.rs -> cargo .a -> copied .a -> binary) -----------
@@ -4179,6 +4606,204 @@ def test_queue_red_batch_splits_and_spares_the_innocent(queue_repo, monkeypatch)
     assert q_mod.pending(repo) == [], "every submission must leave the queue with a verdict"
 
 
+def _stamp_scenario(repo, monkeypatch, *, lanes=("a", "b"), dirt="", stages=None, locks=()):
+    """One submitted batch, with the integration tree's dirt and the gate's stamp verdict
+    dialled in. Returns (submissions, gates, pushes) — `gates`/`pushes` record what the drain
+    actually spent, which is the point of every assertion below."""
+    subs = []
+    for lane in lanes:
+        subprocess.run(
+            ["git", "checkout", "-q", "-b", f"s{lane}", "master"],
+            cwd=repo,
+            check=True,
+            capture_output=True,
+        )
+        _commit(repo, f"s{lane}.txt")
+        subs.append(q_mod.submit(repo, lane=f"lane-{lane}"))
+    gates: list[int] = []
+    pushes: list[tuple] = []
+
+    # Delegate anything not explicitly faked: `pending()`/`results()` locate the queue through
+    # `rev-parse --git-common-dir`, so a blanket `lambda: ""` would make every "who is still
+    # queued?" assertion below pass vacuously against an empty directory.
+    real_git = q_mod.git
+
+    def fake_git(_repo, *args, **kw):
+        if args[:1] == ("status",):
+            return dirt
+        if args[:1] == ("push",):
+            pushes.append(args)
+            return ""
+        if args[0] in ("commit", "add", "fetch", "reset", "clean", "merge"):
+            return ""
+        if args[:2] == ("rev-parse", "HEAD"):
+            return "n" * 40
+        return real_git(_repo, *args, **kw)
+
+    monkeypatch.setattr(q_mod, "git", fake_git)
+    monkeypatch.setattr(q_mod, "git_ok", lambda *a, **k: True)
+    monkeypatch.setattr(q_mod, "settle_cargo_locks", lambda wt, log: list(locks))
+    monkeypatch.setattr(
+        q_mod,
+        "build_batch",
+        lambda r, w, b, log: q_mod.BatchResult(ok=False, tip="f" * 40, merged=list(b)),
+    )
+    monkeypatch.setattr(
+        q_mod,
+        "gate_batch",
+        lambda w, log, retries=2: (
+            gates.append(1),
+            q_mod.GateVerdict(True, "", "/tmp/art", "", stages or {}),
+        )[1],
+    )
+    return subs, gates, pushes
+
+
+def test_queue_dirty_integration_tree_halts_before_paying_for_a_gate(queue_repo, monkeypatch):
+    """The wedge this replaces: three conductors each burned a full COLD gate (3 builds +
+    4 boots) and then failed identically at the push, because a dirty tree mints no stamp and
+    re-gating can never fix it. The dirt is knowable in ~0.2s, BEFORE the gate."""
+    repo, _ = queue_repo
+    subs, gates, pushes = _stamp_scenario(repo, monkeypatch, dirt=" M sdk/lib/rust/Cargo.lock\n")
+    with pytest.raises(q_mod.Inconclusive) as e:
+        q_mod.land_subset(repo, repo, subs, lambda m: None)
+    assert "Cargo.lock" in str(e.value), "the error must NAME the path, not just say 'dirty'"
+    assert gates == [], "a 30-minute gate must not be spent on a tree that cannot be stamped"
+    assert pushes == []
+    assert len(q_mod.pending(repo)) == len(subs), "nobody is at fault — all stay QUEUED"
+    assert q_mod.results(repo, limit=50) == [], "and nobody is rejected"
+
+
+def test_queue_clean_tree_still_gates_and_lands(queue_repo, monkeypatch):
+    """The must-NOT-fire half: the preflight is a guard, not a new way to refuse work."""
+    repo, _ = queue_repo
+    subs, gates, pushes = _stamp_scenario(repo, monkeypatch, stages={"stamp": "ok"})
+    q_mod.land_subset(repo, repo, subs, lambda m: None)
+    assert len(gates) == 1 and len(pushes) == 1
+    assert all(r["outcome"] == "landed" for r in q_mod.results(repo, limit=50))
+
+
+def test_queue_settles_a_build_rewritten_lock_into_the_tip_it_gates(queue_repo, monkeypatch):
+    """Settling BEFORE the gate is what makes it safe: the tree that is gated is then the tree
+    that is pushed, so the stamp never certifies something other than what booted."""
+    repo, _ = queue_repo
+    subs, gates, pushes = _stamp_scenario(
+        repo, monkeypatch, stages={"stamp": "ok"}, locks=["sdk/lib/rust/Cargo.lock"]
+    )
+    q_mod.land_subset(repo, repo, subs, lambda m: None)
+    assert len(gates) == 1, "settling is a preflight, not a reason to re-gate"
+    assert pushes and pushes[0][2].startswith("n" * 40), (
+        "the push must carry the SETTLED tip, not the pre-settle one — otherwise the "
+        "regenerated lock is gated and then thrown away"
+    )
+    assert all(r["outcome"] == "landed" for r in q_mod.results(repo, limit=50))
+
+
+def test_queue_green_gate_that_minted_no_stamp_halts_instead_of_pushing(queue_repo, monkeypatch):
+    """The backstop, for a cause the preflight did not anticipate. Without it the only signal
+    is one `warn` on the last line of an all-green summary, and the failure resurfaces 30
+    minutes later as a bare pre-push rejection the conductor dies on."""
+    repo, _ = queue_repo
+    subs, _gates, pushes = _stamp_scenario(repo, monkeypatch, stages={"stamp": "warn"})
+    with pytest.raises(q_mod.Inconclusive) as e:
+        q_mod.land_subset(repo, repo, subs, lambda m: None)
+    assert "stamp" in str(e.value)
+    assert pushes == [], "a push that the hook will refuse must not be attempted"
+    assert len(q_mod.pending(repo)) == len(subs)
+    assert q_mod.results(repo, limit=50) == [], "a missing stamp is nobody's fault to be judged"
+
+
+def test_queue_unparsed_gate_summary_does_not_block_the_push(queue_repo, monkeypatch):
+    """REJECT ONLY ON EVIDENCE, applied to the backstop itself: an empty `stages` map means
+    the summary could not be read, which is not proof that no stamp was minted."""
+    repo, _ = queue_repo
+    subs, _gates, pushes = _stamp_scenario(repo, monkeypatch, stages={})
+    q_mod.land_subset(repo, repo, subs, lambda m: None)
+    assert len(pushes) == 1
+    assert all(r["outcome"] == "landed" for r in q_mod.results(repo, limit=50))
+
+
+def test_queue_refused_push_halts_the_train_instead_of_escaping(queue_repo, monkeypatch):
+    """A push that cannot happen must leave the submissions QUEUED and halt like every other
+    no-verdict, not escape as an unhandled error that resolves nobody."""
+    repo, _ = queue_repo
+    subs, _gates, _pushes = _stamp_scenario(repo, monkeypatch, stages={"stamp": "ok"})
+    real_git = q_mod.git
+
+    def refusing_git(_repo, *args, **kw):
+        if args[:1] == ("push",):
+            raise q_mod.QueueError("git push failed (1): pre-push: no fresh gate stamp")
+        return real_git(_repo, *args, **kw)
+
+    monkeypatch.setattr(q_mod, "git", refusing_git)
+    with pytest.raises(q_mod.Inconclusive) as e:
+        q_mod.land_subset(repo, repo, subs, lambda m: None)
+    assert "no fresh gate stamp" in str(e.value), "the git error must survive into the message"
+    assert len(q_mod.pending(repo)) == len(subs)
+
+
+def test_dirty_paths_keeps_the_first_path_intact(monkeypatch):
+    """`git()` strips its whole stdout, so the first porcelain line arrives WITHOUT the leading
+    space the rest keep. Slicing a fixed `[3:]` therefore eats a character of exactly one
+    path — and a guard that names `ests/qemu/...` is a guard nobody can act on."""
+    monkeypatch.setattr(
+        q_mod,
+        "git",
+        lambda r, *a, **k: (
+            "M  tests/qemu/cli/queue.py\n M sdk/lib/rust/Cargo.lock\nR  old/name.rs -> new/name.rs"
+        ),
+    )
+    assert q_mod.dirty_paths(Path("/nowhere")) == [
+        "tests/qemu/cli/queue.py",
+        "sdk/lib/rust/Cargo.lock",
+        "old/name.rs -> new/name.rs",
+    ]
+
+
+def test_settle_cargo_locks_reports_a_cargo_failure_rather_than_reading_as_clean(monkeypatch):
+    """A preflight that silently skips is worse than none: it reads as 'checked, and clean'."""
+    monkeypatch.setattr(q_mod, "git", lambda r, *a, **k: "sdk/lib/rust/Cargo.lock\n")
+    monkeypatch.setattr(
+        q_mod.subprocess,
+        "run",
+        lambda *a, **k: subprocess.CompletedProcess(a, 101, "", "error: no such subcommand"),
+    )
+    logs: list[str] = []
+    assert q_mod.settle_cargo_locks(Path("/nowhere"), logs.append) == []
+    assert any("could not resolve" in m for m in logs), logs
+
+
+@pytest.mark.parametrize(
+    ("exc", "want_class", "want_detail"),
+    [
+        (q_mod.BaseRed("fltmgr-rust fails to compile for i386"), "BASE_RED", "mainline itself"),
+        (q_mod.Inconclusive("dirty: sdk/lib/rust/Cargo.lock"), "NO_VERDICT", "NO VERDICT"),
+    ],
+)
+def test_conduct_does_not_report_every_no_verdict_as_a_red_mainline(
+    queue_repo, tmp_path, monkeypatch, exc, want_class, want_detail
+):
+    """BaseRed is one of several ways a train renders no verdict. Reporting them all as
+    "mainline itself is red" sends the lane hunting a mainline break that does not exist —
+    the misattribution BaseCheck exists to prevent, committed by the reporter instead."""
+    repo, _ = queue_repo
+    monkeypatch.setattr("tests.qemu.cli.artifacts.ARTIFACT_ROOT", tmp_path / "art")
+    monkeypatch.setattr(hl_mod, "HOSTLOCK_DIR", tmp_path / "locks")
+
+    def boom(*a, **k):
+        raise exc
+
+    monkeypatch.setattr(q_mod, "try_become_conductor", boom)
+    run = Run("land", "queue")
+    conducted, note = land_mod._conduct(repo, run, _Args(foreground=True, drain=True))
+    assert conducted
+    assert note == ("base-red" if want_class == "BASE_RED" else "no-verdict")
+    assert run.classification == want_class
+    stage = next(s for s in run.stages if s.name == "conduct")
+    assert want_detail in stage.detail, stage.detail
+    assert str(exc) in " ".join(stage.salient), "the reason must survive into the report"
+
+
 def test_queue_green_batch_lands_everything_in_one_gate(queue_repo, monkeypatch):
     repo, _ = queue_repo
     subs = []
@@ -4814,6 +5439,104 @@ def test_difftest_discovers_a_newly_added_harness(tmp_path: Path):
     assert difftest_mod.discover(tmp_path) == ["shell32-difftest"]
 
 
+def test_difftest_discovers_every_generated_refstub_artifact(tmp_path: Path):
+    """The set has grown from three artifacts to seven in two months, once per
+    reference TU. `refstub/msvcrt_<stem>_protos.h` IS the registration, so a new
+    reference TU is covered the moment its header lands — a hardcoded list is how
+    the eighth arrives uncovered."""
+    from . import difftest as difftest_mod
+
+    refstub = tmp_path / "sdk" / "lib" / "rust" / "msvcrt-difftest" / "refstub"
+    refstub.mkdir(parents=True)
+    for name in ("msvcrt_file_protos.h", "msvcrt_time_protos.h", "msvcrt_shim_decls.h"):
+        (refstub / name).write_text("")
+
+    labels = [label for label, _ in difftest_mod.generated_checks(tmp_path)]
+    assert labels == ["consts", "protos:file", "protos:time"], labels
+
+    # …and the newcomer, without touching this module.
+    (refstub / "msvcrt_process_protos.h").write_text("")
+    labels = [label for label, _ in difftest_mod.generated_checks(tmp_path)]
+    assert "protos:process" in labels
+    # The argv must name the SOURCE the header was derived from, not the header.
+    argv = dict(difftest_mod.generated_checks(tmp_path))["protos:process"]
+    assert argv[-2:] == ["process.c", "--check"], argv
+
+
+def test_difftest_reads_a_crates_target_triple_from_its_manifest(tmp_path: Path):
+    """A harness that only exists in a 32-bit binary declares its triple, and the driver
+    reads it. Building msvcrt-seh-difftest for the host is not a failure — every `#[cfg]`
+    in it compiles to nothing and it grades zero rows, which the run would then have to
+    catch downstream instead of never happening."""
+    from . import difftest as difftest_mod
+
+    ws = tmp_path / "sdk" / "lib" / "rust"
+    (ws / "plain-difftest").mkdir(parents=True)
+    (ws / "plain-difftest" / "Cargo.toml").write_text(
+        '[package]\nname = "plain-difftest"\n\n[dependencies]\n'
+    )
+    (ws / "msvcrt-seh-difftest").mkdir(parents=True)
+    (ws / "msvcrt-seh-difftest" / "Cargo.toml").write_text(
+        '[package]\nname = "msvcrt-seh-difftest"\n\n'
+        '[package.metadata.difftest]\ntarget = "i686-unknown-linux-gnu"\n\n'
+        '[dependencies]\ntarget = "not this one"\n'
+    )
+
+    assert difftest_mod.crate_target(tmp_path, "plain-difftest") is None
+    assert difftest_mod.crate_target(tmp_path, "absent-difftest") is None
+    # …and the key must come from the metadata table, not from whatever `target =` line
+    # happens to appear first in the manifest.
+    assert difftest_mod.crate_target(tmp_path, "msvcrt-seh-difftest") == "i686-unknown-linux-gnu"
+
+
+def test_difftest_covers_the_seh_layout_guardian(tmp_path: Path):
+    """The i386 SEH layout header is generated from the tree's own PSDK headers, so it goes
+    stale without anyone editing it — and a stale offset there regrades a structure walk
+    rather than failing."""
+    from . import difftest as difftest_mod
+
+    refstub = tmp_path / "sdk" / "lib" / "rust" / "msvcrt-difftest" / "refstub"
+    refstub.mkdir(parents=True)
+    assert "layout:seh-i386" not in dict(difftest_mod.generated_checks(tmp_path))
+
+    seh = tmp_path / "sdk" / "lib" / "rust" / "msvcrt-seh-difftest" / "refstub"
+    seh.mkdir(parents=True)
+    (seh / "seh_layout.h").write_text("")
+    argv = dict(difftest_mod.generated_checks(tmp_path))["layout:seh-i386"]
+    assert argv[-1] == "--check"
+    assert argv[-2].endswith("gen_msvcrt_seh_layout.py")
+
+
+def test_difftest_a_stale_generated_header_fails_the_run(tmp_path, monkeypatch):
+    """A stale refstub header does not make one row wrong — it makes every row over
+    that TU suspect, and the row that finally reaches it reports a DIVERGENCE in the
+    Rust rather than "your oracle is stale". So the drift check is its own stage and
+    its own classification."""
+    from types import SimpleNamespace
+
+    from . import artifacts
+    from . import difftest as difftest_mod
+
+    monkeypatch.setattr(artifacts, "ARTIFACT_ROOT", tmp_path)
+    refstub = tmp_path / "sdk" / "lib" / "rust" / "msvcrt-difftest" / "refstub"
+    refstub.mkdir(parents=True)
+    (refstub / "msvcrt_time_protos.h").write_text("")
+
+    run = artifacts.Run("difftest", "host")
+    monkeypatch.setattr(
+        run,
+        "run",
+        lambda *a, **k: SimpleNamespace(
+            returncode=1,
+            stdout="DRIFT: refstub/msvcrt_time_protos.h is stale or missing\n",
+            stderr="",
+        ),
+    )
+    assert difftest_mod.check_generated(tmp_path, run) is False
+    assert all(s.status == "fail" for s in run.stages)
+    assert any("DRIFT" in line for s in run.stages for line in s.salient)
+
+
 def test_difftest_counts_cases_across_harness_dialects():
     """Each crate reports its count differently; the gate needs one number."""
     from . import difftest as difftest_mod
@@ -5009,6 +5732,41 @@ def test_tooling_and_difftest_keep_their_console_and_never_report_a_bare_exit(
         assert "ruff: 3 errors" in kept and "AssertionError: boom" in kept
         # no marker in stdout -> the salient falls back to the child's last words
         assert "exit 1" in r["salient"] and "AssertionError: boom" in r["salient"]
+
+
+def test_cohab_stage_reports_a_finding_and_a_refusal_differently(tmp_path, monkeypatch):
+    """The cohab stage has TWO distinct reds and they need different first lines.
+
+    A FINDING is on stdout and names the .rs whose flip is a no-op — that is the one worth
+    quoting verbatim. A REFUSAL (stale archive, build layout moved) is on stderr and means
+    the tool declined to judge at all; scraping stdout for it yields nothing, and a stage
+    that can turn the merge train red must never report a bare 'exit 1'.
+    """
+    finding = (
+        "sdk/lib/rust/msvcrt-crt-rust/src/msvcrt/math.rs: [i386] nothing that links ahead "
+        "of msvcrt_static.dir defines `__adj_fdiv_m16i@4`"
+    )
+
+    class _Finding:
+        returncode = 1
+        stdout = finding + "\n"
+        stderr = "verify_cohab_coverage: 1 finding(s); 1 family/arch pair(s)\n"
+
+    class _Refusal:
+        returncode = 1
+        stdout = ""
+        stderr = "verify_cohab_coverage: libmsvcrt_crt_cargo.a for i386 is OLDER than math.rs\n"
+
+    monkeypatch.setattr(gate_mod.subprocess, "run", lambda *a, **k: _Finding())
+    r = gate_mod._cohab_once(tmp_path, "i386", tmp_path / "cohab-i386")
+    assert r["ok"] is False and r["arch"] == "i386"
+    assert r["salient"] == finding
+    assert finding in (tmp_path / "cohab-i386" / "cohab-console.log").read_text()
+
+    monkeypatch.setattr(gate_mod.subprocess, "run", lambda *a, **k: _Refusal())
+    r = gate_mod._cohab_once(tmp_path, "i386", tmp_path / "cohab-refuse")
+    assert r["ok"] is False
+    assert "exit 1" in r["salient"] and "is OLDER than" in r["salient"]
 
 
 def test_summary_records_which_worktree_the_run_belongs_to(tmp_path):
@@ -5400,3 +6158,40 @@ def test_boot_media_drift_fails_loudly_if_it_can_no_longer_find_the_reference_se
     )
     assert r.returncode == 1
     assert "[NO_REFERENCE]" in r.stdout
+
+
+def test_check_registers_the_vendored_registry_stage():
+    """`vibeos-cli check` must run tools/vendored.py.
+
+    The registry answers "which C is NOT ours to translate" — the denominator under
+    every progress number in this project. Its container ratchet only ratchets if
+    something runs it, and a tool nobody runs decays into a liability (see the
+    difftest driver's docstring for the version of this lesson that cost us two red
+    harnesses on master).
+    """
+    from . import lints as lints_mod
+
+    repo = Path(__file__).resolve().parents[3]
+    specs = lints_mod.source_lint_specs(repo)
+    names = [s[0] for s in specs]
+    assert "vendored_registry" in names
+    argv = next(s[1] for s in specs if s[0] == "vendored_registry")
+    assert argv != ["MISSING"], "tools/vendored.py is not where the stage expects it"
+
+
+def test_vendored_registry_stage_is_silent_on_stdout_when_green():
+    """stdout IS the findings channel for a `stdout`-mode lint stage.
+
+    Any non-tally line there counts as a finding, so a chatty success message would
+    park this stage permanently red. The pass condition is an empty stdout.
+    """
+    repo = Path(__file__).resolve().parents[3]
+    r = subprocess.run(
+        ["python3", str(repo / "tools" / "vendored.py")],
+        capture_output=True,
+        text=True,
+        cwd=str(repo),
+    )
+    assert r.returncode == 0, r.stdout + r.stderr
+    assert r.stdout == "", f"stdout must be empty when green, got: {r.stdout!r}"
+    assert "OK" in r.stderr

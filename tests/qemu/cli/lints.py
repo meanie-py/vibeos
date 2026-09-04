@@ -338,6 +338,45 @@ def source_lint_specs(repo: Path) -> list[tuple]:
     # exports). Baseline EMPTY = strict: a header that grows a new alias fails here.
     vcm = repo / "tools" / "verify_conv_macros.py"
     specs.append(("verify_conv_macros", [py, str(vcm)] if vcm.is_file() else ["MISSING"], "stdout"))
+    # vendor.yaml — which C is NOT ours to translate. Every progress number in this project
+    # is a fraction whose denominator is "C that is ours", and before the registry that set
+    # was prose in rust-port-status.md, a one-tree manifest under external/, and a hardcoded
+    # tuple in verify_conv_macros — three lists, three contents. This checks the registry
+    # against the tree: registered paths exist, every version PROBE still resolves (a probe
+    # is stored instead of a copied version so it cannot rot silently), the VENDORED stamps
+    # are fresh, and — the ratchet — no unregistered directory has appeared inside a vendor
+    # container. That last one is why this is a gate and not a doc: a library dropped into
+    # dll/3rdparty/ otherwise joins the translation denominator with nobody noticing.
+    vnd = repo / "tools" / "vendored.py"
+    specs.append(("vendored_registry", [py, str(vnd)] if vnd.is_file() else ["MISSING"], "stdout"))
+    # msvcrt's two 257-entry ctype tables are GENERATED from dll/win32/msvcrt/ctype.c, not
+    # copied — 514 numbers with no compiler check is the one shape where a single wrong
+    # entry misclassifies exactly one character and nothing anywhere says so. This is the
+    # drift half: if ctype.c or the msvcrt-sys island moves, the committed Rust block is
+    # stale and that is a NEW finding here. The stronger half — every value proven equal to
+    # the bytes in ctype.c.obj's `.data` — needs an i386 build, so it runs whenever this
+    # worktree has one and announces on stderr when it cannot. Baseline EMPTY = strict.
+    # Every whole-file msvcrt translation, string literals compared with its C as a
+    # MULTISET. The only oracle that sees a literal which is real, correctly spelled and in
+    # the WRONG SLOT -- `undname.c`'s `case 'C': "pascal"` shipped as `"__stdcall"`, a
+    # genuine member of that same switch, and `time.c`'s `L"HH':'mm':'ss"` shipped with the
+    # quotes transposed. Neither fails to compile, fails a sealed-constant check, or fails a
+    # boot. Baselined because a few differences are representation, not content (asm text
+    # spelled `global_asm!`, a `static char[64]` built rather than written): those are
+    # recorded and visible, and anything NEW is a finding.
+    vtl = repo / "tools" / "verify_translation_literals.py"
+    specs.append(
+        ("verify_translation_literals", [py, str(vtl)] if vtl.is_file() else ["MISSING"], "stdout")
+    )
+    gct = repo / "tools" / "gen_ctype_tables.py"
+    ctype_rs = "sdk/lib/rust/msvcrt-crt-rust/src/msvcrt/ctype.rs"
+    specs.append(
+        (
+            "gen_ctype_tables",
+            [py, str(gct), "--check", str(repo / ctype_rs)] if gct.is_file() else ["MISSING"],
+            "stdout",
+        )
+    )
     # A cohab flip that DROPS a function removes the DLL's export silently: rustc is happy
     # (nothing calls it), the link is happy (a .spec export with no impl is not an error —
     # the DLL just ships a smaller export table), and the boot is happy unless the boot path
@@ -544,6 +583,41 @@ def source_lint_specs(repo: Path) -> list[tuple]:
             "stdout",
         )
     )
+    # Same oracle, opposite question: not "did the Rust contradict its C" but
+    # "did it stay silent where its C spoke". Upstream prints on nearly every
+    # kernel failure path and ~90% of those were dropped in translation, so a
+    # failure reports NOTHING on serial — `CmpLinkKeyToHive` losing all three of
+    # its DPRINT1s cost the \\REGISTRY casing hunt two build+boot cycles. Only
+    # the macros upstream ACTUALLY emits on a default build count (DPRINT1,
+    # DbgPrint*, wine ERR/FIXME); DPRINT/TRACE/WARN are excluded on purpose. The
+    # baseline holds the backlog and is burned down subsystem by subsystem; a NEW
+    # row means a translation landed a failure path the OS cannot report. NOOP is
+    # the sharp one — a debug macro lowered to an out-of-line empty `fn`, which
+    # AGENTS.md forbids outright because it is also an ABI-mismatch uncloaker.
+    sdp = repo / "tools" / "scan_dropped_prints.py"
+    specs.append(
+        (
+            "scan_dropped_prints",
+            [py, str(sdp), "--lint"] if sdp.is_file() else ["MISSING"],
+            "stdout",
+        )
+    )
+    # The same NOOP shape scan_dropped_prints finds, but keyed on a property of the CRATE
+    # ("you already define this as a macro_rules!") instead of a hardcoded print list — so it
+    # covers the names that emit nothing and were therefore outside every scanner here.
+    # UNREFERENCED_PARAMETER was one: shell32-rust had the correct #[macro_export] macro in
+    # win32.rs and two modules carried an empty `fn` shadow anyway, because both are declared
+    # BEFORE win32 in lib.rs and macro_rules! textual scoping only runs forward. The baseline
+    # holds 20 inherited rows, most of them kernel-side (win32k NT_ASSERT/ASSERT_REFS_CO),
+    # where the out-of-line barrier is the ud2 uncloaker AGENTS.md forbids outright.
+    smfs = repo / "tools" / "scan_macro_fn_shadow.py"
+    specs.append(
+        (
+            "scan_macro_fn_shadow",
+            [py, str(smfs), "--lint"] if smfs.is_file() else ["MISSING"],
+            "stdout",
+        )
+    )
     stac = repo / "tools" / "scan_type_alias_contradictions.py"
     specs.append(
         (
@@ -685,6 +759,22 @@ def source_lint_specs(repo: Path) -> list[tuple]:
         (
             "scan_octal_literals",
             [py, str(sol)] if sol.is_file() else ["MISSING"],
+            "stdout",
+        )
+    )
+    # A `++`/`--` inside a CALL ARGUMENT whose effect a later operand of the same expression
+    # observes. Rust has no `++`, so the translation must split it, and where the second
+    # statement lands is the whole meaning — msvcrt's demangler hoisted one out of an `if`
+    # condition and every function signature then parsed its return type from the
+    # calling-convention letter. Both forms advance the cursor exactly once, so no value-based
+    # check can see it; a differential row found it after it had shipped and booted.
+    # Baseline holds the 5 known sites (2 in msvcrt's undname.c, both since verified; 3 in the
+    # un-flipped sdk/lib/crt copy of the same file); a NEW one is the thing to look at.
+    ase = repo / "tools" / "scan_arg_side_effects.py"
+    specs.append(
+        (
+            "scan_arg_side_effects",
+            [py, str(ase)] if ase.is_file() else ["MISSING"],
             "stdout",
         )
     )

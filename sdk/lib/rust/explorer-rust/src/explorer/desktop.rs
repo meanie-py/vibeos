@@ -202,14 +202,8 @@ pub unsafe extern "C" fn CDesktopThread_DesktopThreadProc(this: *mut CDesktopThr
 // where the ABI is identical, so no single spelling satisfies CreateThread on
 // all three — cfg per arch. (Reusable pattern for every tier-C thread/window/
 // timer proc; see the plan doc.)
-#[cfg(not(target_arch = "x86"))]
 #[no_mangle]
-pub unsafe extern "C" fn CDesktopThread_s_DesktopThreadProc(lpParameter: LPVOID) -> u32 {
-    CDesktopThread_DesktopThreadProc(lpParameter as *mut CDesktopThread)
-}
-#[cfg(target_arch = "x86")]
-#[no_mangle]
-pub unsafe extern "stdcall" fn CDesktopThread_s_DesktopThreadProc(lpParameter: LPVOID) -> u32 {
+pub unsafe extern "system" fn CDesktopThread_s_DesktopThreadProc(lpParameter: LPVOID) -> u32 {
     CDesktopThread_DesktopThreadProc(lpParameter as *mut CDesktopThread)
 }
 #[no_mangle]

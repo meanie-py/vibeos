@@ -1143,9 +1143,9 @@ pub struct _QUERY_SERVICE_LOCK_STATUSW {
 pub type QUERY_SERVICE_LOCK_STATUSW = _QUERY_SERVICE_LOCK_STATUSW;
 pub type LPQUERY_SERVICE_LOCK_STATUSW = *mut _QUERY_SERVICE_LOCK_STATUSW;
 pub type LPSERVICE_MAIN_FUNCTIONA =
-    ::core::option::Option<unsafe extern "stdcall" fn(arg1: DWORD, arg2: *mut LPSTR)>;
+    ::core::option::Option<unsafe extern "system" fn(arg1: DWORD, arg2: *mut LPSTR)>;
 pub type LPSERVICE_MAIN_FUNCTIONW =
-    ::core::option::Option<unsafe extern "stdcall" fn(arg1: DWORD, arg2: *mut LPWSTR)>;
+    ::core::option::Option<unsafe extern "system" fn(arg1: DWORD, arg2: *mut LPWSTR)>;
 #[repr(C)]
 #[derive(Copy, Clone)]
 pub struct _SERVICE_TABLE_ENTRYA {
@@ -1176,9 +1176,9 @@ pub struct SERVICE_STATUS_HANDLE__ {
     pub unused: ::core::ffi::c_int,
 }
 pub type SERVICE_STATUS_HANDLE = *mut SERVICE_STATUS_HANDLE__;
-pub type LPHANDLER_FUNCTION = ::core::option::Option<unsafe extern "stdcall" fn(arg1: DWORD)>;
+pub type LPHANDLER_FUNCTION = ::core::option::Option<unsafe extern "system" fn(arg1: DWORD)>;
 pub type LPHANDLER_FUNCTION_EX = ::core::option::Option<
-    unsafe extern "stdcall" fn(arg1: DWORD, arg2: DWORD, arg3: LPVOID, arg4: LPVOID) -> DWORD,
+    unsafe extern "system" fn(arg1: DWORD, arg2: DWORD, arg3: LPVOID, arg4: LPVOID) -> DWORD,
 >;
 #[repr(C)]
 #[derive(Debug, Copy, Clone)]
@@ -1244,7 +1244,7 @@ pub struct _SERVICE_REQUIRED_PRIVILEGES_INFOW {
 }
 pub type SERVICE_REQUIRED_PRIVILEGES_INFOW = _SERVICE_REQUIRED_PRIVILEGES_INFOW;
 pub type LPSERVICE_REQUIRED_PRIVILEGES_INFOW = *mut _SERVICE_REQUIRED_PRIVILEGES_INFOW;
-pub type PFN_SC_NOTIFY_CALLBACK = ::core::option::Option<unsafe extern "stdcall" fn(arg1: PVOID)>;
+pub type PFN_SC_NOTIFY_CALLBACK = ::core::option::Option<unsafe extern "system" fn(arg1: PVOID)>;
 #[repr(C)]
 #[derive(Copy, Clone)]
 pub struct _SERVICE_NOTIFY_1 {
@@ -1612,7 +1612,7 @@ pub type _PROG_INVOKE_SETTING = ::core::ffi::c_uint;
 pub use self::_PROG_INVOKE_SETTING as PROG_INVOKE_SETTING;
 pub type PPROG_INVOKE_SETTING = *mut _PROG_INVOKE_SETTING;
 pub type FN_PROGRESSW = ::core::option::Option<
-    unsafe extern "stdcall" fn(
+    unsafe extern "system" fn(
         pObjectName: LPWSTR,
         Status: DWORD,
         pInvokeSetting: PPROG_INVOKE_SETTING,
@@ -1621,7 +1621,7 @@ pub type FN_PROGRESSW = ::core::option::Option<
     ),
 >;
 pub type FN_PROGRESSA = ::core::option::Option<
-    unsafe extern "stdcall" fn(
+    unsafe extern "system" fn(
         pObjectName: LPSTR,
         Status: DWORD,
         pInvokeSetting: PPROG_INVOKE_SETTING,
@@ -1908,8 +1908,8 @@ pub type PCRYPT_SMIME_CAPABILITIES = *mut _CRYPT_SMIME_CAPABILITIES;
 pub struct _VTableProvStruc {
     pub Version: DWORD,
     pub FuncVerifyImage:
-        ::core::option::Option<unsafe extern "stdcall" fn(arg1: LPCSTR, arg2: *mut BYTE) -> BOOL>,
-    pub FuncReturnhWnd: ::core::option::Option<unsafe extern "stdcall" fn(arg1: *mut HWND)>,
+        ::core::option::Option<unsafe extern "system" fn(arg1: LPCSTR, arg2: *mut BYTE) -> BOOL>,
+    pub FuncReturnhWnd: ::core::option::Option<unsafe extern "system" fn(arg1: *mut HWND)>,
     pub dwProvType: DWORD,
     pub pbContextInfo: *mut BYTE,
     pub cbContextInfo: DWORD,
@@ -1936,8 +1936,8 @@ pub struct _CRYPT_ENROLLMENT_NAME_VALUE_PAIR {
 pub type CRYPT_ENROLLMENT_NAME_VALUE_PAIR = _CRYPT_ENROLLMENT_NAME_VALUE_PAIR;
 pub type PCRYPT_ENROLLMENT_NAME_VALUE_PAIR = *mut _CRYPT_ENROLLMENT_NAME_VALUE_PAIR;
 pub type PFN_CRYPT_ALLOC =
-    ::core::option::Option<unsafe extern "stdcall" fn(cbsize: usize) -> LPVOID>;
-pub type PFN_CRYPT_FREE = ::core::option::Option<unsafe extern "stdcall" fn(pv: LPVOID)>;
+    ::core::option::Option<unsafe extern "system" fn(cbsize: usize) -> LPVOID>;
+pub type PFN_CRYPT_FREE = ::core::option::Option<unsafe extern "system" fn(pv: LPVOID)>;
 #[repr(C)]
 #[derive(Copy, Clone)]
 pub struct _CRYPT_ENCODE_PARA {
@@ -2005,7 +2005,7 @@ pub struct _CRYPT_SIGN_MESSAGE_PARA {
 pub type CRYPT_SIGN_MESSAGE_PARA = _CRYPT_SIGN_MESSAGE_PARA;
 pub type PCRYPT_SIGN_MESSAGE_PARA = *mut _CRYPT_SIGN_MESSAGE_PARA;
 pub type PFN_CRYPT_GET_SIGNER_CERTIFICATE = ::core::option::Option<
-    unsafe extern "stdcall" fn(
+    unsafe extern "system" fn(
         pvGetArg: *mut ::core::ffi::c_void,
         dwCertEncodingType: DWORD,
         pSignerId: PCERT_INFO,
@@ -2099,7 +2099,7 @@ pub type PCRYPT_URL_INFO = *mut _CRYPT_URL_INFO;
 pub type HCRYPTASYNC = HANDLE;
 pub type PHCRYPTASYNC = *mut HANDLE;
 pub type PFN_CRYPT_ASYNC_RETRIEVAL_COMPLETION_FUNC = ::core::option::Option<
-    unsafe extern "stdcall" fn(
+    unsafe extern "system" fn(
         pvCompletion: *mut ::core::ffi::c_void,
         dwCompletionCode: DWORD,
         pszURL: LPCSTR,
@@ -2923,7 +2923,7 @@ pub struct _SECL_RESPONSE {
 }
 pub type SECL_RESPONSE = _SECL_RESPONSE;
 pub type PSECL_RESPONSE = *mut _SECL_RESPONSE;
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn SeclCreateProcessWithLogonW(
         hBinding: handle_t,
         pRequest: *mut SECL_REQUEST,
@@ -3108,23 +3108,23 @@ pub struct _TAG_INFO_NAME_FROM_TAG {
 }
 pub type TAG_INFO_NAME_FROM_TAG = _TAG_INFO_NAME_FROM_TAG;
 pub type PTAG_INFO_NAME_FROM_TAG = *mut _TAG_INFO_NAME_FROM_TAG;
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn RCloseServiceHandle(hSCObject: LPSC_RPC_HANDLE) -> DWORD;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn RControlService(
         hService: SC_RPC_HANDLE,
         dwControl: DWORD,
         lpServiceStatus: LPSERVICE_STATUS,
     ) -> DWORD;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn RDeleteService(hService: SC_RPC_HANDLE) -> DWORD;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn RLockServiceDatabase(hSCManager: SC_RPC_HANDLE, lpLock: LPSC_RPC_LOCK) -> DWORD;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn RQueryServiceObjectSecurity(
         hService: SC_RPC_HANDLE,
         dwSecurityInformation: SECURITY_INFORMATION,
@@ -3133,7 +3133,7 @@ unsafe extern "stdcall" {
         pcbBytesNeeded: LPBOUNDED_DWORD_256K,
     ) -> DWORD;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn RSetServiceObjectSecurity(
         hService: SC_RPC_HANDLE,
         dwSecurityInformation: DWORD,
@@ -3141,23 +3141,23 @@ unsafe extern "stdcall" {
         dwSecuityDescriptorSize: DWORD,
     ) -> DWORD;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn RQueryServiceStatus(hService: SC_RPC_HANDLE, lpServiceStatus: LPSERVICE_STATUS)
         -> DWORD;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn RSetServiceStatus(
         hServiceStatus: RPC_SERVICE_STATUS_HANDLE,
         lpServiceStatus: LPSERVICE_STATUS,
     ) -> DWORD;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn RUnlockServiceDatabase(Lock: LPSC_RPC_LOCK) -> DWORD;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn RNotifyBootConfigStatus(lpMachineName: SVCCTL_HANDLEW, BootAcceptable: DWORD) -> DWORD;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn RI_ScSetServiceBitsW(
         hServiceStatus: RPC_SERVICE_STATUS_HANDLE,
         dwServiceBits: DWORD,
@@ -3166,7 +3166,7 @@ unsafe extern "stdcall" {
         lpString: LPWSTR,
     ) -> DWORD;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn RChangeServiceConfigW(
         hService: SC_RPC_HANDLE,
         dwServiceType: DWORD,
@@ -3183,7 +3183,7 @@ unsafe extern "stdcall" {
         lpDisplayName: LPWSTR,
     ) -> DWORD;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn RCreateServiceW(
         hSCManager: SC_RPC_HANDLE,
         lpServiceName: LPCWSTR,
@@ -3203,7 +3203,7 @@ unsafe extern "stdcall" {
         lpServiceHandle: LPSC_RPC_HANDLE,
     ) -> DWORD;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn REnumDependentServicesW(
         hService: SC_RPC_HANDLE,
         dwServiceState: DWORD,
@@ -3213,7 +3213,7 @@ unsafe extern "stdcall" {
         lpServicesReturned: LPBOUNDED_DWORD_256K,
     ) -> DWORD;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn REnumServicesStatusW(
         hSCManager: SC_RPC_HANDLE,
         dwServiceType: DWORD,
@@ -3225,7 +3225,7 @@ unsafe extern "stdcall" {
         lpResumeHandle: LPBOUNDED_DWORD_256K,
     ) -> DWORD;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn ROpenSCManagerW(
         lpMachineName: SVCCTL_HANDLEW,
         lpDatabaseName: LPWSTR,
@@ -3233,7 +3233,7 @@ unsafe extern "stdcall" {
         lpScHandle: LPSC_RPC_HANDLE,
     ) -> DWORD;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn ROpenServiceW(
         hSCManager: SC_RPC_HANDLE,
         lpServiceName: LPWSTR,
@@ -3241,7 +3241,7 @@ unsafe extern "stdcall" {
         lpServiceHandle: LPSC_RPC_HANDLE,
     ) -> DWORD;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn RQueryServiceConfigW(
         hService: SC_RPC_HANDLE,
         lpServiceConfig: LPBYTE,
@@ -3249,7 +3249,7 @@ unsafe extern "stdcall" {
         pcbBytesNeeded: LPBOUNDED_DWORD_8K,
     ) -> DWORD;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn RQueryServiceLockStatusW(
         hSCManager: SC_RPC_HANDLE,
         lpLockStatus: LPBYTE,
@@ -3257,10 +3257,10 @@ unsafe extern "stdcall" {
         pcbBytesNeeded: LPBOUNDED_DWORD_4K,
     ) -> DWORD;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn RStartServiceW(hService: SC_RPC_HANDLE, argc: DWORD, argv: LPSTRING_PTRSW) -> DWORD;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn RGetServiceDisplayNameW(
         hSCManager: SC_RPC_HANDLE,
         lpServiceName: LPCWSTR,
@@ -3268,7 +3268,7 @@ unsafe extern "stdcall" {
         lpcchBuffer: *mut DWORD,
     ) -> DWORD;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn RGetServiceKeyNameW(
         hSCManager: SC_RPC_HANDLE,
         lpDisplayName: LPCWSTR,
@@ -3276,7 +3276,7 @@ unsafe extern "stdcall" {
         lpcchBuffer: *mut DWORD,
     ) -> DWORD;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn RI_ScSetServiceBitsA(
         hServiceStatus: RPC_SERVICE_STATUS_HANDLE,
         dwServiceBits: DWORD,
@@ -3285,7 +3285,7 @@ unsafe extern "stdcall" {
         lpString: LPSTR,
     ) -> DWORD;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn RChangeServiceConfigA(
         hService: SC_RPC_HANDLE,
         dwServiceType: DWORD,
@@ -3302,7 +3302,7 @@ unsafe extern "stdcall" {
         lpDisplayName: LPSTR,
     ) -> DWORD;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn RCreateServiceA(
         hSCManager: SC_RPC_HANDLE,
         lpServiceName: LPSTR,
@@ -3322,7 +3322,7 @@ unsafe extern "stdcall" {
         lpServiceHandle: LPSC_RPC_HANDLE,
     ) -> DWORD;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn REnumDependentServicesA(
         hService: SC_RPC_HANDLE,
         dwServiceState: DWORD,
@@ -3332,7 +3332,7 @@ unsafe extern "stdcall" {
         lpServicesReturned: LPBOUNDED_DWORD_256K,
     ) -> DWORD;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn REnumServicesStatusA(
         hSCManager: SC_RPC_HANDLE,
         dwServiceType: DWORD,
@@ -3344,7 +3344,7 @@ unsafe extern "stdcall" {
         lpResumeHandle: LPBOUNDED_DWORD_256K,
     ) -> DWORD;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn ROpenSCManagerA(
         lpMachineName: SVCCTL_HANDLEA,
         lpDatabaseName: LPSTR,
@@ -3352,7 +3352,7 @@ unsafe extern "stdcall" {
         lpScHandle: LPSC_RPC_HANDLE,
     ) -> DWORD;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn ROpenServiceA(
         hSCManager: SC_RPC_HANDLE,
         lpServiceName: LPSTR,
@@ -3360,7 +3360,7 @@ unsafe extern "stdcall" {
         lpServiceHandle: LPSC_RPC_HANDLE,
     ) -> DWORD;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn RQueryServiceConfigA(
         hService: SC_RPC_HANDLE,
         lpServiceConfig: LPBYTE,
@@ -3368,7 +3368,7 @@ unsafe extern "stdcall" {
         pcbBytesNeeded: LPBOUNDED_DWORD_8K,
     ) -> DWORD;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn RQueryServiceLockStatusA(
         hSCManager: SC_RPC_HANDLE,
         lpLockStatus: LPBYTE,
@@ -3376,10 +3376,10 @@ unsafe extern "stdcall" {
         pcbBytesNeeded: LPBOUNDED_DWORD_4K,
     ) -> DWORD;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn RStartServiceA(hService: SC_RPC_HANDLE, argc: DWORD, argv: LPSTRING_PTRSA) -> DWORD;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn RGetServiceDisplayNameA(
         hSCManager: SC_RPC_HANDLE,
         lpServiceName: LPCSTR,
@@ -3387,7 +3387,7 @@ unsafe extern "stdcall" {
         lpcchBuffer: LPBOUNDED_DWORD_4K,
     ) -> DWORD;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn RGetServiceKeyNameA(
         hSCManager: SC_RPC_HANDLE,
         lpDisplayName: LPCSTR,
@@ -3395,14 +3395,14 @@ unsafe extern "stdcall" {
         lpcchBuffer: LPBOUNDED_DWORD_4K,
     ) -> DWORD;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn RI_ScGetCurrentGroupStateW(
         hSCManager: SC_RPC_HANDLE,
         lpLoadOrderGroup: LPWSTR,
         lpState: LPDWORD,
     ) -> DWORD;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn REnumServiceGroupW(
         hSCManager: SC_RPC_HANDLE,
         dwServiceType: DWORD,
@@ -3415,13 +3415,13 @@ unsafe extern "stdcall" {
         pszGroupName: LPCWSTR,
     ) -> DWORD;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn RChangeServiceConfig2A(hService: SC_RPC_HANDLE, Info: SC_RPC_CONFIG_INFOA) -> DWORD;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn RChangeServiceConfig2W(hService: SC_RPC_HANDLE, Info: SC_RPC_CONFIG_INFOW) -> DWORD;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn RQueryServiceConfig2A(
         hService: SC_RPC_HANDLE,
         dwInfoLevel: DWORD,
@@ -3430,7 +3430,7 @@ unsafe extern "stdcall" {
         pcbBytesNeeded: LPBOUNDED_DWORD_8K,
     ) -> DWORD;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn RQueryServiceConfig2W(
         hService: SC_RPC_HANDLE,
         dwInfoLevel: DWORD,
@@ -3439,7 +3439,7 @@ unsafe extern "stdcall" {
         pcbBytesNeeded: LPBOUNDED_DWORD_8K,
     ) -> DWORD;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn RQueryServiceStatusEx(
         hService: SC_RPC_HANDLE,
         InfoLevel: SC_STATUS_TYPE,
@@ -3448,7 +3448,7 @@ unsafe extern "stdcall" {
         pcbBytesNeeded: LPBOUNDED_DWORD_8K,
     ) -> DWORD;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn REnumServicesStatusExA(
         hSCManager: SC_RPC_HANDLE,
         InfoLevel: SC_ENUM_TYPE,
@@ -3462,7 +3462,7 @@ unsafe extern "stdcall" {
         pszGroupName: LPCSTR,
     ) -> DWORD;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn REnumServicesStatusExW(
         hSCManager: SC_RPC_HANDLE,
         InfoLevel: SC_ENUM_TYPE,
@@ -3476,10 +3476,10 @@ unsafe extern "stdcall" {
         pszGroupName: LPCWSTR,
     ) -> DWORD;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn RSendTSMessage(BindingHandle: handle_t) -> DWORD;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn RCreateServiceWOW64A(
         BindingHandle: handle_t,
         lpServiceName: LPSTR,
@@ -3499,7 +3499,7 @@ unsafe extern "stdcall" {
         lpServiceHandle: LPSC_RPC_HANDLE,
     ) -> DWORD;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn RCreateServiceWOW64W(
         BindingHandle: handle_t,
         lpServiceName: LPWSTR,
@@ -3519,7 +3519,7 @@ unsafe extern "stdcall" {
         lpServiceHandle: LPSC_RPC_HANDLE,
     ) -> DWORD;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn RI_ScQueryServiceTagInfo(
         hSCManager: SC_RPC_HANDLE,
         dwInfoLevel: TAG_INFO_LEVEL,
@@ -3527,7 +3527,7 @@ unsafe extern "stdcall" {
         lpOutParams: *mut PTAG_INFO_NAME_FROM_TAG_OUT_PARAMS,
     ) -> DWORD;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn RNotifyServiceStatusChange(
         hService: SC_RPC_HANDLE,
         NotifyParams: SC_RPC_NOTIFY_PARAMS,
@@ -3537,30 +3537,30 @@ unsafe extern "stdcall" {
         phNotify: LPSC_NOTIFY_RPC_HANDLE,
     ) -> DWORD;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn RGetNotifyResults(
         hNotify: SC_NOTIFY_RPC_HANDLE,
         ppNotifyParams: *mut PSC_RPC_NOTIFY_PARAMS_LIST,
     ) -> DWORD;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn RCloseNotifyHandle(phNotify: LPSC_NOTIFY_RPC_HANDLE, pfApcFired: PBOOL) -> DWORD;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn RControlServiceExA(
         hService: SC_RPC_HANDLE,
         dwControl: DWORD,
         dwInfoLevel: DWORD,
     ) -> DWORD;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn RControlServiceExW(
         hService: SC_RPC_HANDLE,
         dwControl: DWORD,
         dwInfoLevel: DWORD,
     ) -> DWORD;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn RI_ScSendPnPMessage(
         hServiceStatus: RPC_SERVICE_STATUS_HANDLE,
         dwControl: DWORD,
@@ -3569,35 +3569,35 @@ unsafe extern "stdcall" {
         pEventData: LPBYTE,
     ) -> DWORD;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn RI_ScValidatePnPService(
         hService: SC_RPC_HANDLE,
         pszServiceName: LPWSTR,
         phServiceStatus: *mut RPC_SERVICE_STATUS_HANDLE,
     ) -> DWORD;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn ROpenServiceStatusHandle(BindingHandle: handle_t) -> DWORD;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn RFunction55(BindingHandle: handle_t) -> DWORD;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn RPC_SERVICE_STATUS_HANDLE_bind(arg1: RPC_SERVICE_STATUS_HANDLE) -> handle_t;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn RPC_SERVICE_STATUS_HANDLE_unbind(arg1: RPC_SERVICE_STATUS_HANDLE, arg2: handle_t);
 }
 pub type RPC_HKEY = HANDLE;
 pub type PREGISTRY_SERVER_NAME = PWCHAR;
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn RPC_HKEY_rundown(arg1: RPC_HKEY);
 }
 #[repr(C)]
 #[derive(Copy, Clone)]
 pub struct tagPROVFUNCS {
     pub pCPAcquireContext: ::core::option::Option<
-        unsafe extern "stdcall" fn(
+        unsafe extern "system" fn(
             phProv: *mut HCRYPTPROV,
             pszContainer: LPSTR,
             dwFlags: DWORD,
@@ -3605,7 +3605,7 @@ pub struct tagPROVFUNCS {
         ) -> BOOL,
     >,
     pub pCPCreateHash: ::core::option::Option<
-        unsafe extern "stdcall" fn(
+        unsafe extern "system" fn(
             hProv: HCRYPTPROV,
             Algid: ALG_ID,
             hKey: HCRYPTKEY,
@@ -3614,7 +3614,7 @@ pub struct tagPROVFUNCS {
         ) -> BOOL,
     >,
     pub pCPDecrypt: ::core::option::Option<
-        unsafe extern "stdcall" fn(
+        unsafe extern "system" fn(
             hProv: HCRYPTPROV,
             hKey: HCRYPTKEY,
             hHash: HCRYPTHASH,
@@ -3625,7 +3625,7 @@ pub struct tagPROVFUNCS {
         ) -> BOOL,
     >,
     pub pCPDeriveKey: ::core::option::Option<
-        unsafe extern "stdcall" fn(
+        unsafe extern "system" fn(
             hProv: HCRYPTPROV,
             Algid: ALG_ID,
             hBaseData: HCRYPTHASH,
@@ -3634,13 +3634,13 @@ pub struct tagPROVFUNCS {
         ) -> BOOL,
     >,
     pub pCPDestroyHash: ::core::option::Option<
-        unsafe extern "stdcall" fn(hProv: HCRYPTPROV, hHash: HCRYPTHASH) -> BOOL,
+        unsafe extern "system" fn(hProv: HCRYPTPROV, hHash: HCRYPTHASH) -> BOOL,
     >,
     pub pCPDestroyKey: ::core::option::Option<
-        unsafe extern "stdcall" fn(hProv: HCRYPTPROV, hKey: HCRYPTKEY) -> BOOL,
+        unsafe extern "system" fn(hProv: HCRYPTPROV, hKey: HCRYPTKEY) -> BOOL,
     >,
     pub pCPDuplicateHash: ::core::option::Option<
-        unsafe extern "stdcall" fn(
+        unsafe extern "system" fn(
             hUID: HCRYPTPROV,
             hHash: HCRYPTHASH,
             pdwReserved: *mut DWORD,
@@ -3649,7 +3649,7 @@ pub struct tagPROVFUNCS {
         ) -> BOOL,
     >,
     pub pCPDuplicateKey: ::core::option::Option<
-        unsafe extern "stdcall" fn(
+        unsafe extern "system" fn(
             hUID: HCRYPTPROV,
             hKey: HCRYPTKEY,
             pdwReserved: *mut DWORD,
@@ -3658,7 +3658,7 @@ pub struct tagPROVFUNCS {
         ) -> BOOL,
     >,
     pub pCPEncrypt: ::core::option::Option<
-        unsafe extern "stdcall" fn(
+        unsafe extern "system" fn(
             hProv: HCRYPTPROV,
             hKey: HCRYPTKEY,
             hHash: HCRYPTHASH,
@@ -3670,7 +3670,7 @@ pub struct tagPROVFUNCS {
         ) -> BOOL,
     >,
     pub pCPExportKey: ::core::option::Option<
-        unsafe extern "stdcall" fn(
+        unsafe extern "system" fn(
             hProv: HCRYPTPROV,
             hKey: HCRYPTKEY,
             hPubKey: HCRYPTKEY,
@@ -3681,7 +3681,7 @@ pub struct tagPROVFUNCS {
         ) -> BOOL,
     >,
     pub pCPGenKey: ::core::option::Option<
-        unsafe extern "stdcall" fn(
+        unsafe extern "system" fn(
             hProv: HCRYPTPROV,
             Algid: ALG_ID,
             dwFlags: DWORD,
@@ -3689,10 +3689,10 @@ pub struct tagPROVFUNCS {
         ) -> BOOL,
     >,
     pub pCPGenRandom: ::core::option::Option<
-        unsafe extern "stdcall" fn(hProv: HCRYPTPROV, dwLen: DWORD, pbBuffer: *mut BYTE) -> BOOL,
+        unsafe extern "system" fn(hProv: HCRYPTPROV, dwLen: DWORD, pbBuffer: *mut BYTE) -> BOOL,
     >,
     pub pCPGetHashParam: ::core::option::Option<
-        unsafe extern "stdcall" fn(
+        unsafe extern "system" fn(
             hProv: HCRYPTPROV,
             hHash: HCRYPTHASH,
             dwParam: DWORD,
@@ -3702,7 +3702,7 @@ pub struct tagPROVFUNCS {
         ) -> BOOL,
     >,
     pub pCPGetKeyParam: ::core::option::Option<
-        unsafe extern "stdcall" fn(
+        unsafe extern "system" fn(
             hProv: HCRYPTPROV,
             hKey: HCRYPTKEY,
             dwParam: DWORD,
@@ -3712,7 +3712,7 @@ pub struct tagPROVFUNCS {
         ) -> BOOL,
     >,
     pub pCPGetProvParam: ::core::option::Option<
-        unsafe extern "stdcall" fn(
+        unsafe extern "system" fn(
             hProv: HCRYPTPROV,
             dwParam: DWORD,
             pbData: *mut BYTE,
@@ -3721,14 +3721,14 @@ pub struct tagPROVFUNCS {
         ) -> BOOL,
     >,
     pub pCPGetUserKey: ::core::option::Option<
-        unsafe extern "stdcall" fn(
+        unsafe extern "system" fn(
             hProv: HCRYPTPROV,
             dwKeySpec: DWORD,
             phUserKey: *mut HCRYPTKEY,
         ) -> BOOL,
     >,
     pub pCPHashData: ::core::option::Option<
-        unsafe extern "stdcall" fn(
+        unsafe extern "system" fn(
             hProv: HCRYPTPROV,
             hHash: HCRYPTHASH,
             pbData: *const BYTE,
@@ -3737,7 +3737,7 @@ pub struct tagPROVFUNCS {
         ) -> BOOL,
     >,
     pub pCPHashSessionKey: ::core::option::Option<
-        unsafe extern "stdcall" fn(
+        unsafe extern "system" fn(
             hProv: HCRYPTPROV,
             hHash: HCRYPTHASH,
             hKey: HCRYPTKEY,
@@ -3745,7 +3745,7 @@ pub struct tagPROVFUNCS {
         ) -> BOOL,
     >,
     pub pCPImportKey: ::core::option::Option<
-        unsafe extern "stdcall" fn(
+        unsafe extern "system" fn(
             hProv: HCRYPTPROV,
             pbData: *const BYTE,
             dwDataLen: DWORD,
@@ -3755,10 +3755,10 @@ pub struct tagPROVFUNCS {
         ) -> BOOL,
     >,
     pub pCPReleaseContext: ::core::option::Option<
-        unsafe extern "stdcall" fn(hProv: HCRYPTPROV, dwFlags: DWORD) -> BOOL,
+        unsafe extern "system" fn(hProv: HCRYPTPROV, dwFlags: DWORD) -> BOOL,
     >,
     pub pCPSetHashParam: ::core::option::Option<
-        unsafe extern "stdcall" fn(
+        unsafe extern "system" fn(
             hProv: HCRYPTPROV,
             hHash: HCRYPTHASH,
             dwParam: DWORD,
@@ -3767,7 +3767,7 @@ pub struct tagPROVFUNCS {
         ) -> BOOL,
     >,
     pub pCPSetKeyParam: ::core::option::Option<
-        unsafe extern "stdcall" fn(
+        unsafe extern "system" fn(
             hProv: HCRYPTPROV,
             hKey: HCRYPTKEY,
             dwParam: DWORD,
@@ -3776,7 +3776,7 @@ pub struct tagPROVFUNCS {
         ) -> BOOL,
     >,
     pub pCPSetProvParam: ::core::option::Option<
-        unsafe extern "stdcall" fn(
+        unsafe extern "system" fn(
             hProv: HCRYPTPROV,
             dwParam: DWORD,
             pbData: *const BYTE,
@@ -3784,7 +3784,7 @@ pub struct tagPROVFUNCS {
         ) -> BOOL,
     >,
     pub pCPSignHash: ::core::option::Option<
-        unsafe extern "stdcall" fn(
+        unsafe extern "system" fn(
             hProv: HCRYPTPROV,
             hHash: HCRYPTHASH,
             dwKeySpec: DWORD,
@@ -3795,7 +3795,7 @@ pub struct tagPROVFUNCS {
         ) -> BOOL,
     >,
     pub pCPVerifySignature: ::core::option::Option<
-        unsafe extern "stdcall" fn(
+        unsafe extern "system" fn(
             hProv: HCRYPTPROV,
             hHash: HCRYPTHASH,
             pbSignature: *const BYTE,
@@ -3858,7 +3858,7 @@ pub struct _NTMARTA {
     pub GetAccessForTrustee: PVOID,
     pub GetExplicitEntries: PVOID,
     pub RewriteGetNamedRights: ::core::option::Option<
-        unsafe extern "stdcall" fn(
+        unsafe extern "system" fn(
             pObjectName: LPWSTR,
             ObjectType: SE_OBJECT_TYPE,
             SecurityInfo: SECURITY_INFORMATION,
@@ -3870,7 +3870,7 @@ pub struct _NTMARTA {
         ) -> DWORD,
     >,
     pub RewriteSetNamedRights: ::core::option::Option<
-        unsafe extern "stdcall" fn(
+        unsafe extern "system" fn(
             pObjectName: LPWSTR,
             ObjectType: SE_OBJECT_TYPE,
             SecurityInfo: SECURITY_INFORMATION,
@@ -3878,7 +3878,7 @@ pub struct _NTMARTA {
         ) -> DWORD,
     >,
     pub RewriteGetHandleRights: ::core::option::Option<
-        unsafe extern "stdcall" fn(
+        unsafe extern "system" fn(
             handle: HANDLE,
             ObjectType: SE_OBJECT_TYPE,
             SecurityInfo: SECURITY_INFORMATION,
@@ -3890,7 +3890,7 @@ pub struct _NTMARTA {
         ) -> DWORD,
     >,
     pub RewriteSetHandleRights: ::core::option::Option<
-        unsafe extern "stdcall" fn(
+        unsafe extern "system" fn(
             handle: HANDLE,
             ObjectType: SE_OBJECT_TYPE,
             SecurityInfo: SECURITY_INFORMATION,
@@ -3898,7 +3898,7 @@ pub struct _NTMARTA {
         ) -> DWORD,
     >,
     pub RewriteSetEntriesInAcl: ::core::option::Option<
-        unsafe extern "stdcall" fn(
+        unsafe extern "system" fn(
             cCountOfExplicitEntries: ULONG,
             pListOfExplicitEntries: PEXPLICIT_ACCESS_W,
             OldAcl: PACL,
@@ -3906,14 +3906,14 @@ pub struct _NTMARTA {
         ) -> DWORD,
     >,
     pub RewriteGetExplicitEntriesFromAcl: ::core::option::Option<
-        unsafe extern "stdcall" fn(
+        unsafe extern "system" fn(
             pacl: PACL,
             pcCountOfExplicitEntries: PULONG,
             pListOfExplicitEntries: *mut PEXPLICIT_ACCESS_W,
         ) -> DWORD,
     >,
     pub TreeResetNamedSecurityInfo: ::core::option::Option<
-        unsafe extern "stdcall" fn(
+        unsafe extern "system" fn(
             pObjectName: LPWSTR,
             ObjectType: SE_OBJECT_TYPE,
             SecurityInfo: SECURITY_INFORMATION,
@@ -3928,7 +3928,7 @@ pub struct _NTMARTA {
         ) -> DWORD,
     >,
     pub GetInheritanceSourceW: ::core::option::Option<
-        unsafe extern "stdcall" fn(
+        unsafe extern "system" fn(
             pObjectName: LPWSTR,
             ObjectType: SE_OBJECT_TYPE,
             SecurityInfo: SECURITY_INFORMATION,
@@ -3942,7 +3942,7 @@ pub struct _NTMARTA {
         ) -> DWORD,
     >,
     pub FreeIndexArray: ::core::option::Option<
-        unsafe extern "stdcall" fn(
+        unsafe extern "system" fn(
             pInheritArray: PINHERITED_FROMW,
             AceCnt: USHORT,
             pfnArray: PFN_OBJECT_MGR_FUNCTS,
@@ -4431,13 +4431,13 @@ pub struct _LSAPR_PRIVILEGE_SET {
 }
 pub type LSAPR_PRIVILEGE_SET = _LSAPR_PRIVILEGE_SET;
 pub type PLSAPR_PRIVILEGE_SET = *mut _LSAPR_PRIVILEGE_SET;
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn LsarClose(ObjectHandle: *mut LSAPR_HANDLE) -> NTSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn LsarDelete(ObjectHandle: LSAPR_HANDLE) -> NTSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn LsarEnumeratePrivileges(
         PolicyHandle: LSAPR_HANDLE,
         EnumerationContext: *mut DWORD,
@@ -4445,21 +4445,21 @@ unsafe extern "stdcall" {
         PreferedMaximumLength: DWORD,
     ) -> NTSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn LsarQuerySecurityObject(
         ObjectHandle: LSAPR_HANDLE,
         SecurityInformation: SECURITY_INFORMATION,
         SecurityDescriptor: *mut PLSAPR_SR_SECURITY_DESCRIPTOR,
     ) -> NTSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn LsarSetSecurityObject(
         ObjectHandle: LSAPR_HANDLE,
         SecurityInformation: SECURITY_INFORMATION,
         SecurityDescriptor: PLSAPR_SR_SECURITY_DESCRIPTOR,
     ) -> NTSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn LsarChangePassword(
         IDL_handle: handle_t,
         String1: PRPC_UNICODE_STRING,
@@ -4469,7 +4469,7 @@ unsafe extern "stdcall" {
         String5: PRPC_UNICODE_STRING,
     ) -> NTSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn LsarOpenPolicy(
         SystemName: PLSAPR_SERVER_NAME,
         ObjectAttributes: PLSAPR_OBJECT_ATTRIBUTES,
@@ -4477,24 +4477,24 @@ unsafe extern "stdcall" {
         PolicyHandle: *mut LSAPR_HANDLE,
     ) -> NTSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn LsarQueryInformationPolicy(
         PolicyHandle: LSAPR_HANDLE,
         InformationClass: POLICY_INFORMATION_CLASS,
         PolicyInformation: *mut PLSAPR_POLICY_INFORMATION,
     ) -> NTSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn LsarSetInformationPolicy(
         PolicyHandle: LSAPR_HANDLE,
         InformationClass: POLICY_INFORMATION_CLASS,
         PolicyInformation: PLSAPR_POLICY_INFORMATION,
     ) -> NTSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn LsarClearAuditLog(ObjectHandle: LSAPR_HANDLE) -> NTSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn LsarCreateAccount(
         PolicyHandle: LSAPR_HANDLE,
         AccountSid: PRPC_SID,
@@ -4502,7 +4502,7 @@ unsafe extern "stdcall" {
         AccountHandle: *mut LSAPR_HANDLE,
     ) -> NTSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn LsarEnumerateAccounts(
         PolicyHandle: LSAPR_HANDLE,
         EnumerationContext: *mut DWORD,
@@ -4510,7 +4510,7 @@ unsafe extern "stdcall" {
         PreferedMaximumLength: DWORD,
     ) -> NTSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn LsarCreateTrustedDomain(
         PolicyHandle: LSAPR_HANDLE,
         TrustedDomainInformation: PLSAPR_TRUST_INFORMATION,
@@ -4518,7 +4518,7 @@ unsafe extern "stdcall" {
         TrustedDomainHandle: *mut LSAPR_HANDLE,
     ) -> NTSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn LsarEnumerateTrustedDomains(
         PolicyHandle: LSAPR_HANDLE,
         EnumerationContext: *mut DWORD,
@@ -4526,7 +4526,7 @@ unsafe extern "stdcall" {
         PreferedMaximumLength: DWORD,
     ) -> NTSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn LsarLookupNames(
         PolicyHandle: LSAPR_HANDLE,
         Count: DWORD,
@@ -4537,7 +4537,7 @@ unsafe extern "stdcall" {
         MappedCount: *mut DWORD,
     ) -> NTSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn LsarLookupSids(
         PolicyHandle: LSAPR_HANDLE,
         SidEnumBuffer: PLSAPR_SID_ENUM_BUFFER,
@@ -4547,7 +4547,7 @@ unsafe extern "stdcall" {
         MappedCount: *mut DWORD,
     ) -> NTSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn LsarCreateSecret(
         PolicyHandle: LSAPR_HANDLE,
         SecretName: PRPC_UNICODE_STRING,
@@ -4555,7 +4555,7 @@ unsafe extern "stdcall" {
         SecretHandle: *mut LSAPR_HANDLE,
     ) -> NTSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn LsarOpenAccount(
         PolicyHandle: LSAPR_HANDLE,
         AccountSid: PRPC_SID,
@@ -4563,50 +4563,50 @@ unsafe extern "stdcall" {
         AccountHandle: *mut LSAPR_HANDLE,
     ) -> NTSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn LsarEnumeratePrivilegesAccount(
         AccountHandle: LSAPR_HANDLE,
         Privileges: *mut PLSAPR_PRIVILEGE_SET,
     ) -> NTSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn LsarAddPrivilegesToAccount(
         AccountHandle: LSAPR_HANDLE,
         Privileges: PLSAPR_PRIVILEGE_SET,
     ) -> NTSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn LsarRemovePrivilegesFromAccount(
         AccountHandle: LSAPR_HANDLE,
         AllPrivileges: BOOLEAN,
         Privileges: PLSAPR_PRIVILEGE_SET,
     ) -> NTSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn LsarGetQuotasForAccount(
         AccountHandle: LSAPR_HANDLE,
         QuotaLimits: PQUOTA_LIMITS,
     ) -> NTSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn LsarSetQuotasForAccount(
         AccountHandle: LSAPR_HANDLE,
         QuotaLimits: PQUOTA_LIMITS,
     ) -> NTSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn LsarGetSystemAccessAccount(
         AccountHandle: LSAPR_HANDLE,
         SystemAccess: *mut ACCESS_MASK,
     ) -> NTSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn LsarSetSystemAccessAccount(
         AccountHandle: LSAPR_HANDLE,
         SystemAccess: ACCESS_MASK,
     ) -> NTSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn LsarOpenTrustedDomain(
         PolicyHandle: LSAPR_HANDLE,
         TrustedDomainSid: PRPC_SID,
@@ -4614,21 +4614,21 @@ unsafe extern "stdcall" {
         TrustedDomainHandle: *mut LSAPR_HANDLE,
     ) -> NTSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn LsarQueryInfoTrustedDomain(
         TrustedDomainHandle: LSAPR_HANDLE,
         InformationClass: TRUSTED_INFORMATION_CLASS,
         TrustedDomainInformation: *mut PLSAPR_TRUSTED_DOMAIN_INFO,
     ) -> NTSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn LsarSetInformationTrustedDomain(
         TrustedDomainHandle: LSAPR_HANDLE,
         InformationClass: TRUSTED_INFORMATION_CLASS,
         TrustedDomainInformation: PLSAPR_TRUSTED_DOMAIN_INFO,
     ) -> NTSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn LsarOpenSecret(
         PolicyHandle: LSAPR_HANDLE,
         SecretName: PRPC_UNICODE_STRING,
@@ -4636,14 +4636,14 @@ unsafe extern "stdcall" {
         SecretHandle: *mut LSAPR_HANDLE,
     ) -> NTSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn LsarSetSecret(
         SecretHandle: LSAPR_HANDLE,
         EncryptedCurrentValue: PLSAPR_CR_CIPHER_VALUE,
         EncryptedOldValue: PLSAPR_CR_CIPHER_VALUE,
     ) -> NTSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn LsarQuerySecret(
         SecretHandle: LSAPR_HANDLE,
         EncryptedCurrentValue: *mut PLSAPR_CR_CIPHER_VALUE,
@@ -4652,21 +4652,21 @@ unsafe extern "stdcall" {
         OldValueSetTime: PLARGE_INTEGER,
     ) -> NTSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn LsarLookupPrivilegeValue(
         PolicyHandle: LSAPR_HANDLE,
         Name: PRPC_UNICODE_STRING,
         Value: PLUID,
     ) -> NTSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn LsarLookupPrivilegeName(
         PolicyHandle: LSAPR_HANDLE,
         Value: PLUID,
         Name: *mut PRPC_UNICODE_STRING,
     ) -> NTSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn LsarLookupPrivilegeDisplayName(
         PolicyHandle: LSAPR_HANDLE,
         Name: PRPC_UNICODE_STRING,
@@ -4676,31 +4676,31 @@ unsafe extern "stdcall" {
         LanguageReturned: *mut USHORT,
     ) -> NTSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn LsarDeleteObject(ObjectHandle: *mut LSAPR_HANDLE) -> NTSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn LsarEnumerateAccountsWithUserRight(
         PolicyHandle: LSAPR_HANDLE,
         UserRight: PRPC_UNICODE_STRING,
         EnumerationBuffer: PLSAPR_ACCOUNT_ENUM_BUFFER,
     ) -> NTSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn LsarEnumerateAccountRights(
         PolicyHandle: LSAPR_HANDLE,
         AccountSid: PRPC_SID,
         UserRights: PLSAPR_USER_RIGHT_SET,
     ) -> NTSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn LsarAddAccountRights(
         PolicyHandle: LSAPR_HANDLE,
         AccountSid: PRPC_SID,
         UserRights: PLSAPR_USER_RIGHT_SET,
     ) -> NTSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn LsarRemoveAccountRights(
         PolicyHandle: LSAPR_HANDLE,
         AccountSid: PRPC_SID,
@@ -4708,7 +4708,7 @@ unsafe extern "stdcall" {
         UserRights: PLSAPR_USER_RIGHT_SET,
     ) -> NTSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn LsarQueryTrustedDomainInfo(
         PolicyHandle: LSAPR_HANDLE,
         TrustedDomainSid: PRPC_SID,
@@ -4716,7 +4716,7 @@ unsafe extern "stdcall" {
         TrustedDomainInformation: *mut PLSAPR_TRUSTED_DOMAIN_INFO,
     ) -> NTSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn LsarSetTrustedDomainInfo(
         PolicyHandle: LSAPR_HANDLE,
         TrustedDomainSid: PRPC_SID,
@@ -4724,27 +4724,27 @@ unsafe extern "stdcall" {
         TrustedDomainInformation: PLSAPR_TRUSTED_DOMAIN_INFO,
     ) -> NTSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn LsarDeleteTrustedDomain(
         PolicyHandle: LSAPR_HANDLE,
         TrustedDomainSid: PRPC_SID,
     ) -> NTSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn LsarStorePrivateData(
         PolicyHandle: LSAPR_HANDLE,
         KeyName: PRPC_UNICODE_STRING,
         EncryptedData: PLSAPR_CR_CIPHER_VALUE,
     ) -> NTSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn LsarRetrievePrivateData(
         PolicyHandle: LSAPR_HANDLE,
         KeyName: PRPC_UNICODE_STRING,
         EncryptedData: *mut PLSAPR_CR_CIPHER_VALUE,
     ) -> NTSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn LsarOpenPolicy2(
         SystemName: PLSAPR_SERVER_NAME,
         ObjectAttributes: PLSAPR_OBJECT_ATTRIBUTES,
@@ -4752,28 +4752,28 @@ unsafe extern "stdcall" {
         PolicyHandle: *mut LSAPR_HANDLE,
     ) -> NTSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn LsarGetUserName(
         SystemName: PLSAPR_SERVER_NAME,
         UserName: *mut PRPC_UNICODE_STRING,
         DomainName: *mut PRPC_UNICODE_STRING,
     ) -> NTSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn LsarQueryInformationPolicy2(
         PolicyHandle: LSAPR_HANDLE,
         InformationClass: POLICY_INFORMATION_CLASS,
         PolicyInformation: *mut PLSAPR_POLICY_INFORMATION,
     ) -> NTSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn LsarSetInformationPolicy2(
         PolicyHandle: LSAPR_HANDLE,
         InformationClass: POLICY_INFORMATION_CLASS,
         PolicyInformation: PLSAPR_POLICY_INFORMATION,
     ) -> NTSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn LsarQueryTrustedDomainInfoByName(
         PolicyHandle: LSAPR_HANDLE,
         TrustedDomainName: PRPC_UNICODE_STRING,
@@ -4781,7 +4781,7 @@ unsafe extern "stdcall" {
         PolicyInformation: *mut PLSAPR_TRUSTED_DOMAIN_INFO,
     ) -> NTSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn LsarSetTrustedDomainInfoByName(
         PolicyHandle: LSAPR_HANDLE,
         TrustedDomainName: PRPC_UNICODE_STRING,
@@ -4789,7 +4789,7 @@ unsafe extern "stdcall" {
         PolicyInformation: PLSAPR_TRUSTED_DOMAIN_INFO,
     ) -> NTSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn LsarEnumerateTrustedDomainsEx(
         PolicyHandle: LSAPR_HANDLE,
         EnumerationContext: *mut DWORD,
@@ -4797,7 +4797,7 @@ unsafe extern "stdcall" {
         PreferedMaximumLength: DWORD,
     ) -> NTSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn LsarCreateTrustedDomainEx(
         PolicyHandle: LSAPR_HANDLE,
         TrustedDomainInformation: PLSAPR_TRUSTED_DOMAIN_INFORMATION_EX,
@@ -4806,24 +4806,24 @@ unsafe extern "stdcall" {
         TrustedDomainHandle: *mut LSAPR_HANDLE,
     ) -> NTSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn LsarSetPolicyReplicationHandle(PolicyHandle: PLSAPR_HANDLE) -> NTSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn LsarQueryDomainInformationPolicy(
         PolicyHandle: LSAPR_HANDLE,
         InformationClass: POLICY_INFORMATION_CLASS,
         PolicyInformation: *mut PLSAPR_POLICY_DOMAIN_INFORMATION,
     ) -> NTSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn LsarSetDomainInformationPolicy(
         PolicyHandle: LSAPR_HANDLE,
         InformationClass: POLICY_INFORMATION_CLASS,
         PolicyInformation: PLSAPR_POLICY_DOMAIN_INFORMATION,
     ) -> NTSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn LsarOpenTrustedDomainByName(
         PolicyHandle: LSAPR_HANDLE,
         TrustedDomainName: PRPC_UNICODE_STRING,
@@ -4831,10 +4831,10 @@ unsafe extern "stdcall" {
         TrustedDomainHandle: *mut LSAPR_HANDLE,
     ) -> NTSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn LsarTestCall(hBinding: handle_t) -> NTSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn LsarLookupSids2(
         PolicyHandle: LSAPR_HANDLE,
         SidEnumBuffer: PLSAPR_SID_ENUM_BUFFER,
@@ -4846,7 +4846,7 @@ unsafe extern "stdcall" {
         ClientRevision: DWORD,
     ) -> NTSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn LsarLookupNames2(
         PolicyHandle: LSAPR_HANDLE,
         Count: DWORD,
@@ -4859,7 +4859,7 @@ unsafe extern "stdcall" {
         ClientRevision: DWORD,
     ) -> NTSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn LsarCreateTrustedDomainEx2(
         PolicyHandle: LSAPR_HANDLE,
         TrustedDomainInformation: PLSAPR_TRUSTED_DOMAIN_INFORMATION_EX,
@@ -4868,7 +4868,7 @@ unsafe extern "stdcall" {
         TrustedDomainHandle: *mut LSAPR_HANDLE,
     ) -> NTSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn LsarLookupNames3(
         PolicyHandle: LSAPR_HANDLE,
         Count: DWORD,
@@ -4881,16 +4881,16 @@ unsafe extern "stdcall" {
         ClientRevision: DWORD,
     ) -> NTSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn LsarRegisterAuditEvent(hBinding: handle_t) -> NTSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn LsarGenAuditEvent(hBinding: handle_t) -> NTSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn LsarUnregisterAuditEvent(hBinding: handle_t) -> NTSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn LsarQueryForestTrustInformation(
         PolicyHandle: LSAPR_HANDLE,
         TrustedDomainName: PLSA_UNICODE_STRING,
@@ -4898,7 +4898,7 @@ unsafe extern "stdcall" {
         ForestTrustInfo: *mut PLSA_FOREST_TRUST_INFORMATION,
     ) -> NTSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn LsarSetForestTrustInformation(
         PolicyHandle: LSAPR_HANDLE,
         TrustedDomainName: PLSA_UNICODE_STRING,
@@ -4908,7 +4908,7 @@ unsafe extern "stdcall" {
         CollisionInfo: *mut PLSA_FOREST_TRUST_COLLISION_INFORMATION,
     ) -> NTSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn LsarLookupSids3(
         PolicyHandle: LSAPR_HANDLE,
         SidEnumBuffer: PLSAPR_SID_ENUM_BUFFER,
@@ -4920,7 +4920,7 @@ unsafe extern "stdcall" {
         ClientRevision: DWORD,
     ) -> NTSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn LsarLookupNames4(
         PolicyHandle: LSAPR_HANDLE,
         Count: DWORD,
@@ -4933,7 +4933,7 @@ unsafe extern "stdcall" {
         ClientRevision: DWORD,
     ) -> NTSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn LsarOpenPolicySce(
         SystemName: PLSAPR_SERVER_NAME,
         ObjectAttributes: PLSAPR_OBJECT_ATTRIBUTES,
@@ -4941,13 +4941,13 @@ unsafe extern "stdcall" {
         PolicyHandle: *mut LSAPR_HANDLE,
     ) -> NTSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn LsarAdtRegisterSecurityEventSource(hBinding: handle_t) -> NTSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn LsarAdtUnregisterSecurityEventSource(hBinding: handle_t) -> NTSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn LsarAdtReportSecurityEvent(hBinding: handle_t) -> NTSTATUS;
 }
 pub type RULONG = ULONG;
@@ -4972,32 +4972,32 @@ pub struct _RPC_CLIENT_ID {
 }
 pub type RPC_CLIENT_ID = _RPC_CLIENT_ID;
 pub type PRPC_CLIENT_ID = *mut _RPC_CLIENT_ID;
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn ElfrClearELFW(LogHandle: IELF_HANDLE, BackupFileName: PRPC_UNICODE_STRING) -> NTSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn ElfrBackupELFW(LogHandle: IELF_HANDLE, BackupFileName: PRPC_UNICODE_STRING) -> NTSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn ElfrCloseEL(LogHandle: PIELF_HANDLE) -> NTSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn ElfrDeregisterEventSource(LogHandle: PIELF_HANDLE) -> NTSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn ElfrNumberOfRecords(LogHandle: IELF_HANDLE, NumberOfRecords: PULONG) -> NTSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn ElfrOldestRecord(LogHandle: IELF_HANDLE, OldestRecordNumber: PULONG) -> NTSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn ElfrChangeNotify(
         LogHandle: IELF_HANDLE,
         ClientId: RPC_CLIENT_ID,
         Event: ULONG,
     ) -> NTSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn ElfrOpenELW(
         UNCServerName: EVENTLOG_HANDLE_W,
         ModuleName: PRPC_UNICODE_STRING,
@@ -5007,7 +5007,7 @@ unsafe extern "stdcall" {
         LogHandle: PIELF_HANDLE,
     ) -> NTSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn ElfrRegisterEventSourceW(
         UNCServerName: EVENTLOG_HANDLE_W,
         ModuleName: PRPC_UNICODE_STRING,
@@ -5017,7 +5017,7 @@ unsafe extern "stdcall" {
         LogHandle: PIELF_HANDLE,
     ) -> NTSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn ElfrOpenBELW(
         UNCServerName: EVENTLOG_HANDLE_W,
         BackupFileName: PRPC_UNICODE_STRING,
@@ -5026,7 +5026,7 @@ unsafe extern "stdcall" {
         LogHandle: PIELF_HANDLE,
     ) -> NTSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn ElfrReadELW(
         LogHandle: IELF_HANDLE,
         ReadFlags: ULONG,
@@ -5037,7 +5037,7 @@ unsafe extern "stdcall" {
         MinNumberOfBytesNeeded: PULONG,
     ) -> NTSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn ElfrReportEventW(
         LogHandle: IELF_HANDLE,
         Time: ULONG,
@@ -5055,13 +5055,13 @@ unsafe extern "stdcall" {
         TimeWritten: PULONG,
     ) -> NTSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn ElfrClearELFA(LogHandle: IELF_HANDLE, BackupFileName: PRPC_STRING) -> NTSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn ElfrBackupELFA(LogHandle: IELF_HANDLE, BackupFileName: PRPC_STRING) -> NTSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn ElfrOpenELA(
         UNCServerName: EVENTLOG_HANDLE_A,
         ModuleName: PRPC_STRING,
@@ -5071,7 +5071,7 @@ unsafe extern "stdcall" {
         LogHandle: PIELF_HANDLE,
     ) -> NTSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn ElfrRegisterEventSourceA(
         UNCServerName: EVENTLOG_HANDLE_A,
         ModuleName: PRPC_STRING,
@@ -5081,7 +5081,7 @@ unsafe extern "stdcall" {
         LogHandle: PIELF_HANDLE,
     ) -> NTSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn ElfrOpenBELA(
         UNCServerName: EVENTLOG_HANDLE_A,
         BackupFileName: PRPC_STRING,
@@ -5090,7 +5090,7 @@ unsafe extern "stdcall" {
         LogHandle: PIELF_HANDLE,
     ) -> NTSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn ElfrReadELA(
         LogHandle: IELF_HANDLE,
         ReadFlags: ULONG,
@@ -5101,7 +5101,7 @@ unsafe extern "stdcall" {
         MinNumberOfBytesNeeded: PULONG,
     ) -> NTSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn ElfrReportEventA(
         LogHandle: IELF_HANDLE,
         Time: ULONG,
@@ -5119,16 +5119,16 @@ unsafe extern "stdcall" {
         TimeWritten: PULONG,
     ) -> NTSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn ElfrRegisterClusterSvc(BindingHandle: handle_t) -> NTSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn ElfrDeregisterClusterSvc(BindingHandle: handle_t) -> NTSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn ElfrWriteClusterEvents(BindingHandle: handle_t) -> NTSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn ElfrGetLogInformation(
         LogHandle: IELF_HANDLE,
         InfoLevel: ULONG,
@@ -5137,10 +5137,10 @@ unsafe extern "stdcall" {
         pcbBytesNeeded: PULONG,
     ) -> NTSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn ElfrFlushEL(LogHandle: IELF_HANDLE) -> NTSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn ElfrReportEventAndSourceW(
         LogHandle: IELF_HANDLE,
         Time: ULONG,

@@ -202,9 +202,8 @@ pub unsafe extern "C" fn IntGdiCleanDC(hDC: HDC) -> BOOL {
     DC_UnlockDc(dc);
 
     1}
-#[cfg(target_arch = "x86")]
 #[no_mangle]
-pub unsafe extern "stdcall" fn NtGdiResetDC(
+pub unsafe extern "system" fn NtGdiResetDC(
     hdc: HDC,
     pdm: LPDEVMODEW,
     pbBanding: PBOOL,
@@ -213,21 +212,8 @@ pub unsafe extern "stdcall" fn NtGdiResetDC(
 ) -> BOOL {
     0
 }
-
-#[cfg(not(target_arch = "x86"))]
 #[no_mangle]
-pub unsafe extern "C" fn NtGdiResetDC(
-    hdc: HDC,
-    pdm: LPDEVMODEW,
-    pbBanding: PBOOL,
-    pDriverInfo2: *mut DRIVER_INFO_2W,
-    ppUMdhpdev: *mut core::ffi::c_void,
-) -> BOOL {
-    0
-}
-#[cfg(target_arch = "x86")]
-#[no_mangle]
-pub unsafe extern "stdcall" fn DC_vRestoreDC(
+pub unsafe extern "system" fn DC_vRestoreDC(
     pdc: PDC,
     iSaveLevel: INT) {
     let mut hdcSave: HDC;
@@ -277,62 +263,8 @@ pub unsafe extern "stdcall" fn DC_vRestoreDC(
         GreDeleteObject(hdcSave as HGDIOBJ);
     }
 }
-
-#[cfg(not(target_arch = "x86"))]
 #[no_mangle]
-pub unsafe extern "C" fn DC_vRestoreDC(
-    pdc: PDC,
-    iSaveLevel: INT) {
-    let mut hdcSave: HDC;
-    let mut pdcSave: PDC;
-
-    while (*pdc).dclevel.lSaveDepth > iSaveLevel
-    {
-        hdcSave = (*pdc).dclevel.hdcSave as HDC;
-
-        if GreSetObjectOwner(hdcSave as HGDIOBJ, GDI_OBJ_HMGR_POWNED) == 0
-        {
-            return;
-        }
-
-        pdcSave = DC_LockDc(hdcSave);
-        if pdcSave.is_null()
-        {
-            return;
-        }
-
-        (*pdc).dclevel.hdcSave = (*pdcSave).dclevel.hdcSave;
-
-        (*pdc).dclevel.lSaveDepth -= 1;
-
-        if (*pdc).dclevel.lSaveDepth == iSaveLevel
-        {
-            #[cfg(target_arch = "x86")]
-            DC_vCopyState(pdcSave, pdc, 0);
-            
-            #[cfg(not(target_arch = "x86"))]
-            DC_vCopyState(pdcSave, pdc, 0);
-
-            if (*pdc).dctype == DCTYPE_MEMORY
-            {
-                DC_vSelectSurface(pdc, (*pdcSave).dclevel.pSurface);
-            }
-
-            if !(*pdcSave).dclevel.hPath.is_null()
-            {
-                PATH_RestorePath(pdc, pdcSave);
-            }
-        }
-
-        (*pdcSave).dclevel.lSaveDepth = 1;
-
-        DC_UnlockDc(pdcSave);
-        GreDeleteObject(hdcSave as HGDIOBJ);
-    }
-}
-#[cfg(target_arch = "x86")]
-#[no_mangle]
-pub unsafe extern "stdcall" fn NtGdiRestoreDC(
+pub unsafe extern "system" fn NtGdiRestoreDC(
     hdc: HDC,
     iSaveLevel: INT) -> BOOL {
     let pdc: PDC;
@@ -363,95 +295,8 @@ pub unsafe extern "stdcall" fn NtGdiRestoreDC(
 
     return 1;
 }
-
-#[cfg(not(target_arch = "x86"))]
 #[no_mangle]
-pub unsafe extern "C" fn NtGdiRestoreDC(
-    hdc: HDC,
-    iSaveLevel: INT) -> BOOL {
-    let pdc: PDC;
-
-    pdc = DC_LockDc(hdc);
-    if pdc.is_null()
-    {
-        EngSetLastError(ERROR_INVALID_HANDLE);
-        return 0;
-    }
-
-    let mut iSaveLevel = iSaveLevel;
-    if iSaveLevel < 0
-    {
-        iSaveLevel = (*pdc).dclevel.lSaveDepth + iSaveLevel;
-    }
-
-    if iSaveLevel <= 0 || iSaveLevel >= (*pdc).dclevel.lSaveDepth
-    {
-        DC_UnlockDc(pdc);
-        EngSetLastError(ERROR_INVALID_PARAMETER);
-        return 0;
-    }
-
-    DC_vRestoreDC(pdc, iSaveLevel);
-
-    DC_UnlockDc(pdc);
-
-    return 1;
-}
-#[cfg(target_arch = "x86")]
-#[no_mangle]
-pub unsafe extern "stdcall" fn NtGdiSaveDC(hDC: HDC) -> INT {
-    let mut hdcSave: HDC;
-    let mut pdc: PDC;
-    let mut pdcSave: PDC;
-    let mut lSaveDepth: INT;
-
-    pdc = DC_LockDc(hDC);
-    if pdc.is_null() {
-        EngSetLastError(ERROR_INVALID_HANDLE);
-        return 0;
-    }
-
-    pdcSave = DC_AllocDcWithHandle(GDILoObjType_LO_DC_TYPE);
-    if pdcSave.is_null() {
-        DC_UnlockDc(pdc);
-        return 0;
-    }
-    hdcSave = (*pdcSave).BaseObject.hHmgr as HDC;
-
-    PDEVOBJ_vReference((*pdc).ppdev);
-    DC_vInitDc(pdcSave, DCTYPE_MEMORY, (*pdc).ppdev);
-
-    GDIOBJ_vSetObjectOwner(core::ptr::addr_of_mut!((*pdcSave).BaseObject), GDI_OBJ_HMGR_PUBLIC);
-
-    #[cfg(target_arch = "x86")]
-    DC_vCopyState(pdc, pdcSave, 0);
-    #[cfg(not(target_arch = "x86"))]
-    DC_vCopyState(pdc, pdcSave, 0);
-
-    if (*pdc).dctype == DCTYPE_MEMORY {
-        DC_vSelectSurface(pdcSave, (*pdc).dclevel.pSurface);
-    }
-
-    if (*pdc).dclevel.hPath != core::ptr::null_mut() {
-        PATH_SavePath(pdcSave, pdc);
-    }
-    (*pdcSave).dclevel.flPath = (*pdc).dclevel.flPath | DCPATH_SAVESTATE;
-
-    (*pdcSave).dclevel.hdcSave = (*pdc).dclevel.hdcSave;
-    (*pdc).dclevel.hdcSave = hdcSave as HGDIOBJ;
-
-    lSaveDepth = (*pdc).dclevel.lSaveDepth;
-    (*pdc).dclevel.lSaveDepth += 1;
-
-    DC_UnlockDc(pdcSave);
-    DC_UnlockDc(pdc);
-
-    lSaveDepth
-}
-
-#[cfg(not(target_arch = "x86"))]
-#[no_mangle]
-pub unsafe extern "C" fn NtGdiSaveDC(hDC: HDC) -> INT {
+pub unsafe extern "system" fn NtGdiSaveDC(hDC: HDC) -> INT {
     let mut hdcSave: HDC;
     let mut pdc: PDC;
     let mut pdcSave: PDC;

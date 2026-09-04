@@ -318,14 +318,7 @@ pub unsafe extern "system" fn BootAnimTickProgressBar(sub_percent_times100: ULON
 }
 
 #[no_mangle]
-#[cfg(target_arch = "x86")]
-pub unsafe extern "stdcall" fn InbvRotationThread(_context: PVOID) {
-    let _context = opaque_ptr(_context);
-    InbvRotationThread_impl(_context);
-}
-#[no_mangle]
-#[cfg(not(target_arch = "x86"))]
-pub unsafe extern "C" fn InbvRotationThread(_context: PVOID) {
+pub unsafe extern "system" fn InbvRotationThread(_context: PVOID) {
     let _context = opaque_ptr(_context);
     InbvRotationThread_impl(_context);
 }
@@ -437,14 +430,7 @@ pub unsafe extern "system" fn InbvRotBarInit() {
 pub static mut DotHack: BOOLEAN = 1u8;
 
 #[no_mangle]
-#[cfg(target_arch = "x86")]
-pub unsafe extern "stdcall" fn DisplayFilter(string: *mut PCSTR) {
-    let string = opaque_ptr(string);
-    DisplayFilter_impl(string);
-}
-#[no_mangle]
-#[cfg(not(target_arch = "x86"))]
-pub unsafe extern "C" fn DisplayFilter(string: *mut PCSTR) {
+pub unsafe extern "system" fn DisplayFilter(string: *mut PCSTR) {
     let string = opaque_ptr(string);
     DisplayFilter_impl(string);
 }

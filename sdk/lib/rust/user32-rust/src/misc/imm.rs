@@ -649,38 +649,8 @@ pub unsafe extern "system" fn InitializeImmEntryTable() -> BOOL {
     gbImmInitializing = 1;
     IntInitializeImmEntryTable()
 }
-#[cfg(target_arch = "x86")]
 #[no_mangle]
-pub unsafe extern "stdcall" fn User32InitializeImmEntryTable(magic: DWORD) -> BOOL {
-    if magic != IMM_INIT_MAGIC {
-        return 0;
-    }
-
-    if IMM_FN!(ImmWINNLSEnableIME) as usize != IMMSTUB_ImmWINNLSEnableIME as usize {
-        return 1;
-    }
-
-    IntInitializeImmEntryTable();
-
-    if ghImm32.is_null() && gbImmInitializing == 0 {
-        let mut ImmFile: [u16; MAX_PATH as usize] = [0; MAX_PATH as usize];
-        User32GetSystemFilePath(
-            ImmFile.as_mut_ptr(),
-            ImmFile.len() as SIZE_T,
-            w!("imm32.dll").as_ptr() as PCWSTR,
-        );
-        ghImm32 = LoadLibraryW(ImmFile.as_ptr());
-        if ghImm32.is_null() {
-            return 0;
-        }
-    }
-
-    IMM_FN!(ImmRegisterClient)(core::ptr::addr_of_mut!(gSharedInfo) as LPVOID, ghImm32)
-}
-
-#[cfg(not(target_arch = "x86"))]
-#[no_mangle]
-pub unsafe extern "C" fn User32InitializeImmEntryTable(magic: DWORD) -> BOOL {
+pub unsafe extern "system" fn User32InitializeImmEntryTable(magic: DWORD) -> BOOL {
     if magic != IMM_INIT_MAGIC {
         return 0;
     }
@@ -1273,13 +1243,7 @@ unsafe fn widestr_hlp() -> [u16; 5] {
     [0x002E, 0x0048, 0x004C, 0x0050, 0x0000]
 }
 
-#[cfg(target_arch = "x86")]
-unsafe extern "stdcall" fn ImeWnd_SwitchSoftKbdProc(hIMC: HIMC, lParam: LPARAM) -> BOOL {
-    ImeWnd_SwitchSoftKbdProc_impl(hIMC, lParam)
-}
-
-#[cfg(not(target_arch = "x86"))]
-unsafe extern "C" fn ImeWnd_SwitchSoftKbdProc(hIMC: HIMC, lParam: LPARAM) -> BOOL {
+unsafe extern "system" fn ImeWnd_SwitchSoftKbdProc(hIMC: HIMC, lParam: LPARAM) -> BOOL {
     ImeWnd_SwitchSoftKbdProc_impl(hIMC, lParam)
 }
 

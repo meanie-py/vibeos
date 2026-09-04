@@ -27,3 +27,10 @@ const _: () = assert!(offset_of!(threadlocaleinfostruct, lconv) == 188, "msvcrt-
 const _: () = assert!(offset_of!(lconv, decimal_point) == 0, "msvcrt-sys: lconv.decimal_point moved on i386 -- REGENERATE msvcrt-sys");
 const _: () = assert!(offset_of!(localeinfo_struct, locinfo) == 0, "msvcrt-sys: localeinfo_struct.locinfo moved on i386 -- REGENERATE msvcrt-sys");
 const _: () = assert!(offset_of!(localeinfo_struct, mbcinfo) == 4, "msvcrt-sys: localeinfo_struct.mbcinfo moved on i386 -- REGENERATE msvcrt-sys");
+const _: () = assert!(offset_of!(_TEB, Peb) == 48, "msvcrt-sys: _TEB.Peb moved on i386 -- REGENERATE msvcrt-sys");
+const _: () = assert!(offset_of!(_PEB, ProcessHeap) == 24, "msvcrt-sys: _PEB.ProcessHeap moved on i386 -- REGENERATE msvcrt-sys");
+const _: () = assert!(offset_of!(__exception, vtable) == 0, "msvcrt-sys: __exception.vtable moved on i386 -- REGENERATE msvcrt-sys");
+const _: () = assert!(offset_of!(__exception, name) == 4, "msvcrt-sys: __exception.name moved on i386 -- REGENERATE msvcrt-sys");
+const _: () = assert!(offset_of!(__exception, do_free) == 8, "msvcrt-sys: __exception.do_free moved on i386 -- REGENERATE msvcrt-sys");
+const _: () = assert!(offset_of!(__type_info, name) == 4, "msvcrt-sys: __type_info.name moved on i386 -- REGENERATE msvcrt-sys");
+const _: () = assert!(offset_of!(__type_info, mangled) == 8, "msvcrt-sys: __type_info.mangled moved on i386 -- REGENERATE msvcrt-sys");

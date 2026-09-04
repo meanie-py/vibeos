@@ -10,7 +10,11 @@ and just been silently missing at runtime.
 
 Two failure shapes, both caught here:
 
-  MISSING          the spec exports it; no Rust source defines it at all
+  MISSING          the spec exports it; nothing defines it — not the Rust, and not any
+                   .c the build still compiles (needs `c_dir=`; without it every
+                   still-C export lands here and a real drop hides among thousands)
+  STILL_C          no Rust definition, but a still-compiled .c has one — cohabitation
+                   working as intended, and the reason MISSING is trustworthy
   NOT_EXPORTED     a Rust fn by that name exists but has no #[no_mangle]
                    (→ name-mangled, invisible to the linker) — the StgCreateDocfile shape
   ABI_MISMATCH     it IS exported, but with the wrong calling convention.  A
@@ -37,6 +41,8 @@ import sys
 from dataclasses import dataclass
 from pathlib import Path
 
+from .c_defs import c_provided_names, compiled_tus
+from .profile_derive import ProfileDeriveError
 from .spec_parser import SpecEntry, parse_spec
 
 # ---------------------------------------------------------------------------
@@ -50,17 +56,70 @@ from .spec_parser import SpecEntry, parse_spec
 # reporting a perfectly good export as MISSING).
 _RE_FN_TOKEN = re.compile(r"\bfn\s+(?P<name>[A-Za-z_]\w*)\s*[(<]")
 
-# Anchored at the END of the text preceding `fn`: the contiguous attribute +
-# modifier run that belongs to this signature.
-_RE_FN_PREFIX = re.compile(
-    r"(?P<attrs>(?:#\[[\s\S]*?\]\s*)*)"
+# The modifier run on the signature line itself; `abi` is the one thing read from it.
+_RE_SIG_MODS = re.compile(
     r"(?:pub(?:\s*\([^)]*\))?\s+)?"
     r"(?:default\s+)?(?:const\s+)?(?:async\s+)?(?:unsafe\s+)?"
-    r'(?:extern\s+(?:"(?P<abi>[^"]*)"\s+)?)?'
-    r"$"
+    r'(?:extern\s+(?:"(?P<abi>[^"]*)"\s+)?)?$'
 )
 
+
+def _prefix_of(text: str, fn_at: int) -> tuple[str, str | None]:
+    """The attributes attached to the `fn` at `fn_at`, and its declared ABI.
+
+    Read by walking BACK over whole lines rather than with one regex anchored at the end of
+    the preceding text. That regex could satisfy its anchor by letting `#\[[\s\S]*?\]` swallow
+    the code between an EARLIER function's attributes and this signature, so a definition
+    inherited its neighbour's attribute set: ex-rust's rundown twins both reported the
+    attributes of the `_impl` helper above them, which loses both the `#[no_mangle]` (an
+    export reads as private) and the `#[cfg]` (the two arch twins become indistinguishable).
+    """
+    line_start = text.rfind("\n", 0, fn_at) + 1
+    head = text[line_start:fn_at]
+    m = _RE_SIG_MODS.search(head)
+    abi = m.group("abi") if m else None
+
+    # Attributes may share the signature's line (`#[no_mangle] pub unsafe extern "C" fn X(`).
+    attrs = [head[: m.start()] if m else head]
+    lines = text[:line_start].splitlines()
+    i = len(lines)
+    depth = 0
+    while i > 0:
+        prev = lines[i - 1]
+        stripped = prev.strip()
+        if depth:
+            # Inside a multi-line attribute, walking upward toward its `#[`.
+            attrs.append(prev)
+            depth += stripped.count("]") - stripped.count("[")
+            i -= 1
+            if stripped.startswith("#["):
+                depth = 0
+            continue
+        if not stripped or stripped.startswith("//"):
+            # Blank lines and comments sit inside an attribute run without ending it.
+            i -= 1
+            continue
+        if stripped.startswith("#["):
+            attrs.append(prev)
+            i -= 1
+            continue
+        if stripped.endswith("]") and "[" not in stripped:
+            attrs.append(prev)
+            depth = 1
+            i -= 1
+            continue
+        break
+    return "\n".join(reversed(attrs)), abi
+
+
 _RE_NO_MANGLE = re.compile(r"#\[\s*(?:unsafe\s*\(\s*)?no_mangle\s*\)?\s*\]")
+# Which arch's twin this definition is. A per-arch fork is NOT a defect — `fastcall` is a real
+# convention on i386 and is spelled `C` on amd64/arm64, so ex-rust's 40 rundown exports are
+# correct on both sides. Indexing by name alone made the scan keep whichever twin it met first
+# and report the other arch's spelling as an ABI_MISMATCH: 33 false findings, all of them the
+# shape the audit exists to distinguish from a real one.
+_RE_CFG_X86 = re.compile(r'#\[\s*cfg\s*\(\s*target_arch\s*=\s*"x86"\s*\)\s*\]')
+_RE_CFG_NOT_X86 = re.compile(r'#\[\s*cfg\s*\(\s*not\s*\(\s*target_arch\s*=\s*"x86"\s*\)\s*\)\s*\]')
 _RE_EXPORT_NAME = re.compile(r'#\[\s*export_name\s*=\s*"(?P<sym>[^"]+)"\s*\]')
 
 # `extern "system"` and `extern "stdcall"` are the same thing on i386 (and
@@ -83,11 +142,12 @@ class RustFn:
     export_name: str | None
     path: Path
     line: int
+    cfg_arch: str | None = None  # "x86" | "not-x86" | None (unconditional)
 
 
 @dataclass
 class Finding:
-    kind: str  # MISSING | NOT_EXPORTED | ABI_MISMATCH
+    kind: str  # MISSING | STILL_C | NOT_EXPORTED | ABI_MISMATCH
     name: str
     expected: str  # expected Rust ABI, e.g. 'extern "system"'
     found: str  # what we actually found (or "nothing")
@@ -137,18 +197,29 @@ def _is_declaration(text: str, sig_start: int) -> bool:
     return False
 
 
-def scan_rust_fns(paths: list[Path]) -> dict[str, RustFn]:
+def scan_rust_fns(paths: list[Path], arch: str = "i386") -> dict[str, RustFn]:
     """Index every `fn` DEFINITION in the given Rust sources by name.
 
     A `#[no_mangle]` definition always wins over a non-exported one of the same
     name (the same name can legitimately appear as a private helper in another
     module).  Bodiless declarations (extern blocks) are skipped entirely.
+
+    Where a name has per-arch twins, the one THIS arch compiles wins — the other is not in the
+    binary being audited, and judging its convention is judging code that is not there.
     """
+    want_cfg = "x86" if arch == "i386" else "not-x86"
     fns: dict[str, RustFn] = {}
+
+    def better(fn: RustFn, prev: RustFn) -> bool:
+        if fn.no_mangle != prev.no_mangle:
+            return fn.no_mangle
+        # This arch's twin beats the other arch's; either beats nothing in particular.
+        rank = lambda f: 2 if f.cfg_arch == want_cfg else (0 if f.cfg_arch else 1)  # noqa: E731
+        return rank(fn) > rank(prev)
 
     def record(key: str, fn: RustFn) -> None:
         prev = fns.get(key)
-        if prev is None or (fn.no_mangle and not prev.no_mangle):
+        if prev is None or better(fn, prev):
             fns[key] = fn
 
     for p in paths:
@@ -158,9 +229,7 @@ def scan_rust_fns(paths: list[Path]) -> dict[str, RustFn]:
         for m in _RE_FN_TOKEN.finditer(text):
             if _is_declaration(text, m.end() - 1):
                 continue
-            pm = _RE_FN_PREFIX.search(text[max(0, m.start() - 2000) : m.start()])
-            attrs = (pm.group("attrs") or "") if pm else ""
-            abi = pm.group("abi") if pm else None
+            attrs, abi = _prefix_of(text, m.start())
             en = _RE_EXPORT_NAME.search(attrs)
             fn = RustFn(
                 name=m.group("name"),
@@ -169,6 +238,11 @@ def scan_rust_fns(paths: list[Path]) -> dict[str, RustFn]:
                 export_name=en.group("sym") if en else None,
                 path=p,
                 line=text.count("\n", 0, m.start("name")) + 1,
+                cfg_arch=(
+                    "not-x86"
+                    if _RE_CFG_NOT_X86.search(attrs)
+                    else ("x86" if _RE_CFG_X86.search(attrs) else None)
+                ),
             )
             record(fn.export_name or fn.name, fn)
     return fns
@@ -297,10 +371,117 @@ def collect_rust_sources(paths: list[Path]) -> list[Path]:
     return out
 
 
-def audit_exports_detailed(spec_path: Path, rust_srcs: list[Path]) -> list[Finding]:
-    """Structured form of :func:`audit_exports`."""
+_CARGO_PATH_DEP = re.compile(r'path[ \t]*=[ \t]*"([^"]+)"')
+# How a CMakeLists names the Rust that goes into the module. Three spellings, all explicit:
+#   rust_crate_sources(X_RUST_SRCS "${WS}" <crate>)   — a cohab module linking one .a
+#   add_cargo_module(<mod> <cargo-crate> <out> ... BODY_CRATES a b c ...)
+#   .rust_lib("<crate>", ..)                          — in the cargo crate's build.rs
+_CMAKE_RUST_CRATE = re.compile(r"rust_crate_sources\([^)]*?\s([\w.-]+)\s*\)")
+_ADD_CARGO_MODULE = re.compile(r"add_cargo_module\(\s*([\w.-]+)\s+([\w.-]+)(?P<rest>[^)]*)\)", re.S)
+# Both spellings are in the tree: `BODY_CRATE kernel-rust` (ntoskrnl) and
+# `BODY_CRATES win32k-kernel-rust win32k-rust` (win32k).
+_BODY_CRATES = re.compile(r"BODY_CRATES?(?P<names>(?:[ \t]+[\w.-]+)+)")
+_RUST_LIB_CALL = re.compile(r'\.rust_lib\(\s*"([\w.-]+)"')
+
+
+def module_rust_crates(cmake_dir: Path, workspace: Path) -> list[Path]:
+    """Every crate directory whose symbols end up in this module's binary.
+
+    A module's Rust is NOT one directory. ntoskrnl.exe is assembled by `add_cargo_module` from
+    a driver crate whose build.rs names ~20 more with `.rust_lib(..)`, and auditing against any
+    one of them reports the other nineteen's exports as dropped. Each of these three spellings
+    is the build's own declaration of what it links, so they are read rather than guessed at.
+    """
+    cml = cmake_dir / "CMakeLists.txt"
+    if not cml.is_file():
+        return []
+    text = cml.read_text(encoding="utf-8", errors="replace")
+    text = "\n".join(ln.split("#", 1)[0] for ln in text.splitlines())
+
+    names: set[str] = set(_CMAKE_RUST_CRATE.findall(text))
+    for m in _ADD_CARGO_MODULE.finditer(text):
+        names.add(m.group(2))
+        body = _BODY_CRATES.search(m.group("rest"))
+        if body:
+            names.update(body.group("names").split())
+
+    # A cargo crate's build.rs is where the rest of the composition lives.
+    for name in list(names):
+        build_rs = workspace / name / "build.rs"
+        if build_rs.is_file():
+            names.update(
+                _RUST_LIB_CALL.findall(build_rs.read_text(encoding="utf-8", errors="replace"))
+            )
+
+    return [workspace / n for n in sorted(names) if (workspace / n / "Cargo.toml").is_file()]
+
+
+def crate_closure(crate_dir: Path) -> list[Path]:
+    """Every .rs in `crate_dir` AND in its transitive `path = "…"` dependencies.
+
+    ONE CRATE IS NOT THE BINARY. ntoskrnl.exe is assembled from ~20 crates — cc-rust, ke-rust,
+    mm-rust, ob-rust, … — so auditing ntoskrnl.spec against `ntoskrnl-rust/src` alone called
+    1,298 exports MISSING that are defined, exported and linked, just from a sibling crate:
+    CcCopyRead is cc-rust's, KeInitializeDpc is ke-rust's. ntdll was the same story with 1,326.
+    A dependency's `#[no_mangle]` symbols land in the final image exactly like the root
+    crate's, so the closure — not the directory — is the set that can satisfy an export.
+    """
+    seen: set[Path] = set()
+    pending = [Path(crate_dir).resolve()]
+    srcs: list[Path] = []
+    while pending:
+        d = pending.pop()
+        if d in seen:
+            continue
+        seen.add(d)
+        toml = d / "Cargo.toml"
+        if not toml.is_file():
+            continue
+        srcs.extend(sorted((d / "src").rglob("*.rs")) if (d / "src").is_dir() else [])
+        for m in _CARGO_PATH_DEP.finditer(toml.read_text(encoding="utf-8", errors="replace")):
+            dep = (d / m.group(1)).resolve()
+            if dep not in seen:
+                pending.append(dep)
+    return srcs
+
+
+def _repo_root_of(start: Path) -> Path:
+    """Nearest ancestor holding a top-level CMakeLists.txt + sdk/, i.e. the checkout root.
+
+    Resolved from the module's own path rather than the cwd: `parse_cmakelists` substitutes it
+    for CMAKE_SOURCE_DIR, and a wrong root silently resolves every `${REACTOS_SOURCE_DIR}/…`
+    source to a path that does not exist — which reads as "the build compiles nothing" and
+    turns every export into MISSING.
+    """
+    for d in [start.resolve(), *start.resolve().parents]:
+        if (d / "CMakeLists.txt").is_file() and (d / "sdk").is_dir():
+            return d
+    raise ProfileDeriveError(f"no repo root above {start} (looked for CMakeLists.txt + sdk/)")
+
+
+def audit_exports_detailed(
+    spec_path: Path,
+    rust_srcs: list[Path],
+    c_dir: Path | None = None,
+    repo_root: Path | None = None,
+    arch: str = "i386",
+    target: str | None = None,
+) -> list[Finding]:
+    """Structured form of :func:`audit_exports`.
+
+    Pass `c_dir` (the module's C directory) to separate the two reasons an export has no Rust
+    definition. Without it every export still living in C reads as MISSING, which on a
+    partially-flipped module is thousands of rows — ntdll alone contributed 1,326 — and a
+    genuinely dropped export hides among them. With it, a name that a STILL-COMPILED .c
+    defines is reported STILL_C, and MISSING means what it says.
+    """
     spec = parse_spec(Path(spec_path))
-    fns = scan_rust_fns(collect_rust_sources(list(rust_srcs)))
+    fns = scan_rust_fns(collect_rust_sources(list(rust_srcs)), arch=arch)
+
+    still_c: set[str] = set()
+    if c_dir is not None:
+        root = Path(repo_root) if repo_root is not None else _repo_root_of(Path(c_dir))
+        still_c = c_provided_names(compiled_tus(Path(c_dir), root, arch=arch, target=target))
 
     findings: list[Finding] = []
     for entry in spec.values():
@@ -312,10 +493,24 @@ def audit_exports_detailed(spec_path: Path, rust_srcs: list[Path]) -> list[Findi
             continue
 
         expected = _expected_abi(entry)
-        fn = fns.get(entry.name)
+        # `entry.symbol`, NOT `entry.name`: a bare trailing target renames the symbol the
+        # linker looks for (`ldap_first_entry` is implemented as `WLDAP32_ldap_first_entry`),
+        # and it is the RENAMED one that has to exist.
+        want = entry.symbol
+        label = want if want == entry.name else f"{want} (export {entry.name})"
+        fn = fns.get(want)
         if fn is None:
+            # A name the module's still-compiled C defines is COVERED — by C, which is the
+            # expected state mid-flip. Checked against `entry.name` too: a spec line that
+            # renames the symbol (`ldap_first_entry` -> `WLDAP32_ldap_first_entry`) is
+            # implemented in the C under one spelling and exported under the other.
+            if want in still_c or entry.name in still_c:
+                findings.append(
+                    Finding("STILL_C", label, expected, "a still-compiled .c defines it", "")
+                )
+                continue
             findings.append(
-                Finding("MISSING", entry.name, expected, "nothing (no Rust fn by that name)", "")
+                Finding("MISSING", label, expected, "nothing (no Rust fn by that name)", "")
             )
             continue
 
@@ -327,7 +522,7 @@ def audit_exports_detailed(spec_path: Path, rust_srcs: list[Path]) -> list[Findi
             findings.append(
                 Finding(
                     "NOT_EXPORTED",
-                    entry.name,
+                    label,
                     expected,
                     f"a private {shape} fn with NO #[no_mangle]",
                     where,
@@ -338,7 +533,7 @@ def audit_exports_detailed(spec_path: Path, rust_srcs: list[Path]) -> list[Findi
         ok = _OK_FOR.get(entry.convention, frozenset({"C"}))
         if (fn.abi or "Rust") not in ok:
             found = f'extern "{fn.abi}"' if fn.abi else "the Rust ABI (no extern)"
-            findings.append(Finding("ABI_MISMATCH", entry.name, expected, found, where))
+            findings.append(Finding("ABI_MISMATCH", label, expected, found, where))
 
     findings.sort(key=lambda f: (f.kind, f.name))
     return findings
@@ -355,13 +550,42 @@ def audit_exports(spec_path: Path, rust_srcs: list[Path]) -> list[str]:
 
 def main(argv: list[str] | None = None) -> int:
     argv = list(sys.argv[1:] if argv is None else argv)
-    if len(argv) < 2:
-        print("usage: python -m rustconv.export_audit <file.spec> <rust-src-dir|file.rs>...")
+    c_dir: Path | None = None
+    arch, target = "i386", None
+    crates: list[Path] = []
+    module_dir: Path | None = None
+    rest: list[str] = []
+    it = iter(argv)
+    for a in it:
+        if a == "--c-dir":
+            c_dir = Path(next(it))
+        elif a == "--arch":
+            arch = next(it)
+        elif a == "--target":
+            target = next(it)
+        elif a == "--crate":
+            crates.append(Path(next(it)))
+        elif a == "--module":
+            module_dir = Path(next(it))
+        else:
+            rest.append(a)
+    argv = rest
+    if module_dir is not None:
+        # `--module` is the one-flag form: the module's C dir AND every crate it links.
+        c_dir = c_dir or module_dir
+        crates += module_rust_crates(module_dir, _repo_root_of(module_dir) / "sdk/lib/rust")
+    if len(argv) < 1 or (len(argv) < 2 and not crates):
+        print(
+            "usage: python -m rustconv.export_audit [--module CMAKE_DIR] [--c-dir DIR] "
+            "[--crate CRATE_DIR] [--arch A] [--target T] <file.spec> [rust-src-dir|file.rs]..."
+        )
         return 2
 
     spec_path = Path(argv[0])
     srcs = [Path(a) for a in argv[1:]]
-    findings = audit_exports_detailed(spec_path, srcs)
+    for c in crates:
+        srcs.extend(crate_closure(c))
+    findings = audit_exports_detailed(spec_path, srcs, c_dir=c_dir, arch=arch, target=target)
 
     spec = parse_spec(spec_path)
     need = sum(1 for e in spec.values() if e.needs_implementation)

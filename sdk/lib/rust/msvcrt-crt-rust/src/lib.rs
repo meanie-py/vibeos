@@ -3246,12 +3246,18 @@ pub unsafe extern "C" fn _wcsupr(str_: *mut u16) -> *mut u16 {
 // `locinfo->lc_handle[LC_CTYPE]` and calls LCMapStringW, and that field IS a
 // struct offset we don't own. They stay C until Phase D.
 
+/// msvcrt's wide ctype table — a POINTER to 256 WORDs of mask bits.
+///
+/// In msvcrt.dll this is now `crate::msvcrt::ctype`'s own definition (`MSVCRT__wctype + 1`,
+/// generated and proven against ctype.c.obj). In the host harness the `ctype-tables`
+/// feature is off and subjectimpl.c owns the symbol, so it stays an `extern` there.
+/// (Data, so no calling convention — `extern "C"` is right for the `extern` arm.)
+#[cfg(not(feature = "ctype-tables"))]
 extern "C" {
-    /// msvcrt's wide ctype table — a POINTER to 256 WORDs of mask bits.
-    /// In msvcrt.dll this is the real table; in the harness, subjectimpl.c's.
-    /// (Data, so no calling convention — `extern "C"` is right here.)
     static MSVCRT__pwctype: *const u16;
 }
+#[cfg(feature = "ctype-tables")]
+use crate::msvcrt::ctype::MSVCRT__pwctype;
 
 // GetStringTypeW is `WINAPI` — i.e. **stdcall on i386** (`_GetStringTypeW@16`) and
 // cdecl on amd64/arm64. `extern "system"` is the one that resolves per-arch;
@@ -3537,11 +3543,23 @@ isc!(_isupper_l, isupper, sys::_UPPER as i32);
 isc!(_isxdigit_l, isxdigit, sys::_HEX as i32);
 isc!(_isleadbyte_l, isleadbyte, sys::_LEADBYTE as i32);
 
-/// `ispunct (MSVCRT.@)` — msvcrt exports NO `_ispunct_l`, only the plain form.
-/// (Checked against ctype.c's banner list; do not "complete the set".)
+/// `ispunct (MSVCRT.@)` and `_ispunct_l (MSVCR80.@)`.
+///
+/// The `isc!` macro above is not used here because the pair is asymmetric in the DLL:
+/// only `ispunct` is in `msvcrt.spec`, so only it is an EXPORT of msvcrt.dll. But
+/// `_ispunct_l` is still compiled — `llvm-nm --defined-only ctype.c.obj` lists
+/// `T __ispunct_l` — and an earlier note here read "msvcrt exports NO `_ispunct_l`, only
+/// the plain form. (Checked against ctype.c's banner list; do not 'complete the set'.)"
+/// The banner list is the DLL export list; it is not the object's symbol table, and it is
+/// the object that decides whether the C body stays live. This one symbol was the whole
+/// reason ctype.c.obj was still being pulled into the link.
 #[no_mangle]
 pub unsafe extern "C" fn ispunct(c: i32) -> i32 {
     _isctype_l(c, sys::_PUNCT as i32, core::ptr::null_mut())
+}
+#[no_mangle]
+pub unsafe extern "C" fn _ispunct_l(c: i32, locale: *mut core::ffi::c_void) -> i32 {
+    _isctype_l(c, sys::_PUNCT as i32, locale)
 }
 
 /// `_isblank_l` / `isblank` — the odd ones out, and they are odd in DIFFERENT ways.

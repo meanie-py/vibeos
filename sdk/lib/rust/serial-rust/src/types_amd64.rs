@@ -336,9 +336,9 @@ pub struct _SERENUM_PORT_DESC {
 pub type SERENUM_PORT_DESC = _SERENUM_PORT_DESC;
 pub type PSERENUM_PORT_DESC = *mut _SERENUM_PORT_DESC;
 pub type PSERENUM_READPORT =
-    ::core::option::Option<unsafe extern "C" fn(SerPortAddress: PVOID) -> UCHAR>;
+    ::core::option::Option<unsafe extern "system" fn(SerPortAddress: PVOID) -> UCHAR>;
 pub type PSERENUM_WRITEPORT =
-    ::core::option::Option<unsafe extern "C" fn(SerPortAddress: PVOID, Value: UCHAR)>;
+    ::core::option::Option<unsafe extern "system" fn(SerPortAddress: PVOID, Value: UCHAR)>;
 pub const _SERENUM_PORTION_SerenumFirstHalf: _SERENUM_PORTION = 0;
 pub const _SERENUM_PORTION_SerenumSecondHalf: _SERENUM_PORTION = 1;
 pub const _SERENUM_PORTION_SerenumWhole: _SERENUM_PORTION = 2;
@@ -458,52 +458,52 @@ unsafe extern "C" {
 unsafe extern "C" {
     pub fn IncreaseCircularBufferSize(pBuffer: PCIRCULAR_BUFFER, NewBufferSize: ULONG) -> NTSTATUS;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn SerialCleanup(DeviceObject: *mut _DEVICE_OBJECT, Irp: *mut _IRP) -> NTSTATUS;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn SerialClose(DeviceObject: *mut _DEVICE_OBJECT, Irp: *mut _IRP) -> NTSTATUS;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn SerialCreate(DeviceObject: *mut _DEVICE_OBJECT, Irp: *mut _IRP) -> NTSTATUS;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn SerialDeviceControl(DeviceObject: *mut _DEVICE_OBJECT, Irp: *mut _IRP) -> NTSTATUS;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn SerialSetBaudRate(
         DeviceExtension: PSERIAL_DEVICE_EXTENSION,
         NewBaudRate: ULONG,
     ) -> NTSTATUS;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn SerialSetLineControl(
         DeviceExtension: PSERIAL_DEVICE_EXTENSION,
         NewSettings: PSERIAL_LINE_CONTROL,
     ) -> NTSTATUS;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn SerialQueryInformation(DeviceObject: *mut _DEVICE_OBJECT, Irp: *mut _IRP) -> NTSTATUS;
 }
 unsafe extern "C" {
     pub fn SerialDetectUartType(ComPortBase: PUCHAR) -> UART_TYPE;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn ForwardIrpAndForget(DeviceObject: *mut _DEVICE_OBJECT, Irp: *mut _IRP) -> NTSTATUS;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn SerialReceiveByte(Dpc: PKDPC, pDeviceExtension: PVOID, Unused1: PVOID, Unused2: PVOID);
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn SerialSendByte(Dpc: PKDPC, pDeviceExtension: PVOID, Unused1: PVOID, Unused2: PVOID);
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn SerialCompleteIrp(Dpc: PKDPC, pDeviceExtension: PVOID, pIrp: PVOID, Unused: PVOID);
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn SerialInterruptService(Interrupt: *mut _KINTERRUPT, ServiceContext: PVOID) -> BOOLEAN;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn SerialAddDeviceInternal(
         DriverObject: PDRIVER_OBJECT,
         Pdo: PDEVICE_OBJECT,
@@ -512,28 +512,28 @@ unsafe extern "C" {
         pFdo: *mut PDEVICE_OBJECT,
     ) -> NTSTATUS;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn SerialAddDevice(
         DriverObject: *mut _DRIVER_OBJECT,
         PhysicalDeviceObject: *mut _DEVICE_OBJECT,
     ) -> NTSTATUS;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn SerialPnpStartDevice(
         DeviceObject: PDEVICE_OBJECT,
         ResourceList: PCM_RESOURCE_LIST,
         ResourceListTranslated: PCM_RESOURCE_LIST,
     ) -> NTSTATUS;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn SerialPnp(DeviceObject: *mut _DEVICE_OBJECT, Irp: *mut _IRP) -> NTSTATUS;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn SerialPower(DeviceObject: *mut _DEVICE_OBJECT, Irp: *mut _IRP) -> NTSTATUS;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn SerialRead(DeviceObject: *mut _DEVICE_OBJECT, Irp: *mut _IRP) -> NTSTATUS;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn SerialWrite(DeviceObject: *mut _DEVICE_OBJECT, Irp: *mut _IRP) -> NTSTATUS;
 }

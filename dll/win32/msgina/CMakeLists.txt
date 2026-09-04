@@ -16,6 +16,10 @@ list(APPEND SOURCE
     # stubs.c    — replaced by Rust (sdk/lib/rust/msgina-rust/src/stubs.rs)
     # tui.c      — replaced by Rust (sdk/lib/rust/msgina-rust/src/tui.rs)
     # utils.c    — replaced by Rust (sdk/lib/rust/msgina-rust/src/utils.rs)
+    #
+    # NOT a translation reverted to C: rust_varargs_shim.c holds the `va_start` for strsafe.h's
+    # two variadic entry points, which stable Rust can declare but not define. See its header.
+    rust_varargs_shim.c
     )
 
 list(APPEND PCH_SKIP_SOURCE
@@ -36,7 +40,7 @@ elseif(ARCH STREQUAL "amd64")
 elseif(ARCH STREQUAL "arm64")
     set(MSGINA_RUST_TARGET "aarch64-pc-windows-gnullvm")
 endif()
-file(GLOB_RECURSE MSGINA_RUST_SRCS "${MSGINA_RUST_WORKSPACE_DIR}/msgina-rust/src/*.rs")
+rust_crate_sources(MSGINA_RUST_SRCS "${MSGINA_RUST_WORKSPACE_DIR}" msgina-rust)
 add_custom_command(
     OUTPUT ${MSGINA_RUST_LIB}
     COMMAND ${CMAKE_COMMAND} -E env

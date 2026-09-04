@@ -12868,16 +12868,16 @@ pub struct _STORAGE_REQUEST_BLOCK {
 pub type STORAGE_REQUEST_BLOCK = _STORAGE_REQUEST_BLOCK;
 pub type PSTORAGE_REQUEST_BLOCK = *mut _STORAGE_REQUEST_BLOCK;
 pub type PHW_INITIALIZE =
-    ::core::option::Option<unsafe extern "C" fn(DeviceExtension: PVOID) -> BOOLEAN>;
+    ::core::option::Option<unsafe extern "system" fn(DeviceExtension: PVOID) -> BOOLEAN>;
 pub type PHW_STARTIO = ::core::option::Option<
-    unsafe extern "C" fn(DeviceExtension: PVOID, Srb: PSCSI_REQUEST_BLOCK) -> BOOLEAN,
+    unsafe extern "system" fn(DeviceExtension: PVOID, Srb: PSCSI_REQUEST_BLOCK) -> BOOLEAN,
 >;
 pub type PHW_INTERRUPT =
-    ::core::option::Option<unsafe extern "C" fn(DeviceExtension: PVOID) -> BOOLEAN>;
-pub type PHW_TIMER = ::core::option::Option<unsafe extern "C" fn(DeviceExtension: PVOID)>;
-pub type PHW_DMA_STARTED = ::core::option::Option<unsafe extern "C" fn(DeviceExtension: PVOID)>;
+    ::core::option::Option<unsafe extern "system" fn(DeviceExtension: PVOID) -> BOOLEAN>;
+pub type PHW_TIMER = ::core::option::Option<unsafe extern "system" fn(DeviceExtension: PVOID)>;
+pub type PHW_DMA_STARTED = ::core::option::Option<unsafe extern "system" fn(DeviceExtension: PVOID)>;
 pub type PHW_FIND_ADAPTER = ::core::option::Option<
-    unsafe extern "C" fn(
+    unsafe extern "system" fn(
         DeviceExtension: PVOID,
         HwContext: PVOID,
         BusInformation: PVOID,
@@ -12887,12 +12887,12 @@ pub type PHW_FIND_ADAPTER = ::core::option::Option<
     ) -> ULONG,
 >;
 pub type PHW_RESET_BUS =
-    ::core::option::Option<unsafe extern "C" fn(DeviceExtension: PVOID, PathId: ULONG) -> BOOLEAN>;
+    ::core::option::Option<unsafe extern "system" fn(DeviceExtension: PVOID, PathId: ULONG) -> BOOLEAN>;
 pub type PHW_ADAPTER_STATE = ::core::option::Option<
-    unsafe extern "C" fn(DeviceExtension: PVOID, Context: PVOID, SaveState: BOOLEAN) -> BOOLEAN,
+    unsafe extern "system" fn(DeviceExtension: PVOID, Context: PVOID, SaveState: BOOLEAN) -> BOOLEAN,
 >;
 pub type PHW_ADAPTER_CONTROL = ::core::option::Option<
-    unsafe extern "C" fn(
+    unsafe extern "system" fn(
         DeviceExtension: PVOID,
         ControlType: SCSI_ADAPTER_CONTROL_TYPE,
         Parameters: PVOID,
@@ -12953,7 +12953,7 @@ pub struct _HW_INITIALIZATION_DATA__bindgen_ty_1 {
 }
 pub type HW_INITIALIZATION_DATA = _HW_INITIALIZATION_DATA;
 pub type PHW_INITIALIZATION_DATA = *mut _HW_INITIALIZATION_DATA;
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn ScsiPortCompleteRequest(
         HwDeviceExtension: PVOID,
         PathId: UCHAR,
@@ -12962,19 +12962,19 @@ unsafe extern "C" {
         SrbStatus: UCHAR,
     );
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn ScsiPortConvertPhysicalAddressToUlong(Address: SCSI_PHYSICAL_ADDRESS) -> ULONG;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn ScsiPortConvertUlongToPhysicalAddress(UlongAddress: ULONG_PTR) -> SCSI_PHYSICAL_ADDRESS;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn ScsiPortFlushDma(DeviceExtension: PVOID);
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn ScsiPortFreeDeviceBase(HwDeviceExtension: PVOID, MappedAddress: PVOID);
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn ScsiPortGetBusData(
         DeviceExtension: PVOID,
         BusDataType: ULONG,
@@ -12984,7 +12984,7 @@ unsafe extern "C" {
         Length: ULONG,
     ) -> ULONG;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn ScsiPortGetDeviceBase(
         HwDeviceExtension: PVOID,
         BusType: INTERFACE_TYPE,
@@ -12994,7 +12994,7 @@ unsafe extern "C" {
         InIoSpace: BOOLEAN,
     ) -> PVOID;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn ScsiPortGetLogicalUnit(
         HwDeviceExtension: PVOID,
         PathId: UCHAR,
@@ -13002,7 +13002,7 @@ unsafe extern "C" {
         Lun: UCHAR,
     ) -> PVOID;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn ScsiPortGetPhysicalAddress(
         HwDeviceExtension: PVOID,
         Srb: PSCSI_REQUEST_BLOCK,
@@ -13010,7 +13010,7 @@ unsafe extern "C" {
         Length: *mut ULONG,
     ) -> SCSI_PHYSICAL_ADDRESS;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn ScsiPortGetSrb(
         DeviceExtension: PVOID,
         PathId: UCHAR,
@@ -13019,20 +13019,20 @@ unsafe extern "C" {
         QueueTag: LONG,
     ) -> PSCSI_REQUEST_BLOCK;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn ScsiPortGetUncachedExtension(
         HwDeviceExtension: PVOID,
         ConfigInfo: PPORT_CONFIGURATION_INFORMATION,
         NumberOfBytes: ULONG,
     ) -> PVOID;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn ScsiPortGetVirtualAddress(
         HwDeviceExtension: PVOID,
         PhysicalAddress: SCSI_PHYSICAL_ADDRESS,
     ) -> PVOID;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn ScsiPortInitialize(
         Argument1: PVOID,
         Argument2: PVOID,
@@ -13040,7 +13040,7 @@ unsafe extern "C" {
         HwContext: PVOID,
     ) -> ULONG;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn ScsiPortIoMapTransfer(
         HwDeviceExtension: PVOID,
         Srb: PSCSI_REQUEST_BLOCK,
@@ -13048,7 +13048,7 @@ unsafe extern "C" {
         Length: ULONG,
     );
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn ScsiPortLogError(
         HwDeviceExtension: PVOID,
         Srb: PSCSI_REQUEST_BLOCK,
@@ -13066,10 +13066,10 @@ unsafe extern "C" {
         ...
     );
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn ScsiPortQuerySystemTime(CurrentTime: PLARGE_INTEGER);
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn ScsiPortSetBusDataByOffset(
         DeviceExtension: PVOID,
         BusDataType: ULONG,
@@ -13080,10 +13080,10 @@ unsafe extern "C" {
         Length: ULONG,
     ) -> ULONG;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn ScsiPortStallExecution(Delay: ULONG);
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn ScsiPortValidateRange(
         HwDeviceExtension: PVOID,
         BusType: INTERFACE_TYPE,
@@ -13096,79 +13096,79 @@ unsafe extern "C" {
 unsafe extern "C" {
     pub fn ScsiDebugPrint(DebugPrintLevel: ULONG, DebugMessage: PCCHAR, ...);
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn ScsiPortReadPortUchar(Port: PUCHAR) -> UCHAR;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn ScsiPortReadPortUlong(Port: PULONG) -> ULONG;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn ScsiPortReadPortUshort(Port: PUSHORT) -> USHORT;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn ScsiPortReadPortBufferUchar(Port: PUCHAR, Buffer: PUCHAR, Count: ULONG);
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn ScsiPortReadPortBufferUlong(Port: PULONG, Buffer: PULONG, Count: ULONG);
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn ScsiPortReadPortBufferUshort(Port: PUSHORT, Buffer: PUSHORT, Count: ULONG);
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn ScsiPortReadRegisterUchar(Register: PUCHAR) -> UCHAR;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn ScsiPortReadRegisterUlong(Register: PULONG) -> ULONG;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn ScsiPortReadRegisterUshort(Register: PUSHORT) -> USHORT;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn ScsiPortReadRegisterBufferUchar(Register: PUCHAR, Buffer: PUCHAR, Count: ULONG);
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn ScsiPortReadRegisterBufferUlong(Register: PULONG, Buffer: PULONG, Count: ULONG);
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn ScsiPortReadRegisterBufferUshort(Register: PUSHORT, Buffer: PUSHORT, Count: ULONG);
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn ScsiPortWritePortUchar(Port: PUCHAR, Value: UCHAR);
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn ScsiPortWritePortUlong(Port: PULONG, Value: ULONG);
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn ScsiPortWritePortUshort(Port: PUSHORT, Value: USHORT);
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn ScsiPortWritePortBufferUchar(Port: PUCHAR, Buffer: PUCHAR, Count: ULONG);
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn ScsiPortWritePortBufferUlong(Port: PULONG, Buffer: PULONG, Count: ULONG);
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn ScsiPortWritePortBufferUshort(Port: PUSHORT, Buffer: PUSHORT, Count: ULONG);
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn ScsiPortWriteRegisterUchar(Register: PUCHAR, Value: UCHAR);
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn ScsiPortWriteRegisterUlong(Register: PULONG, Value: ULONG);
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn ScsiPortWriteRegisterUshort(Register: PUSHORT, Value: USHORT);
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn ScsiPortWriteRegisterBufferUchar(Register: PUCHAR, Buffer: PUCHAR, Count: ULONG);
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn ScsiPortWriteRegisterBufferUlong(Register: PULONG, Buffer: PULONG, Count: ULONG);
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn ScsiPortWriteRegisterBufferUshort(Register: PUSHORT, Buffer: PUSHORT, Count: ULONG);
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn ScsiPortMoveMemory(WriteBuffer: PVOID, ReadBuffer: PVOID, Length: ULONG);
 }
 #[repr(C)]
@@ -49636,7 +49636,7 @@ pub type WDF_POINTER_TYPE_FILE_OBJECT_CONTEXT = *mut FILE_OBJECT_CONTEXT;
 unsafe extern "C" {
     pub static _WDF_FILE_OBJECT_CONTEXT_TYPE_INFO: WDF_OBJECT_CONTEXT_TYPE_INFO;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn PsIsThreadTerminating(Thread: PETHREAD) -> BOOLEAN;
 }
 unsafe extern "C" {
@@ -50108,49 +50108,49 @@ pub type PCDROM_DEVICE_INTERFACES = *mut CDROM_DEVICE_INTERFACES;
 pub type PCDROM_SCAN_FOR_SPECIAL_HANDLER = ::core::option::Option<
     unsafe extern "C" fn(DeviceExtension: PCDROM_DEVICE_EXTENSION, Data: ULONG_PTR),
 >;
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn DriverEntry(
         DriverObject: *mut _DRIVER_OBJECT,
         RegistryPath: PUNICODE_STRING,
     ) -> NTSTATUS;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn DriverEvtDeviceAdd(Driver: WDFDRIVER, DeviceInit: PWDFDEVICE_INIT) -> NTSTATUS;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn DriverEvtCleanup(Object: WDFOBJECT);
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn DeviceEvtCleanup(Object: WDFOBJECT);
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn DeviceEvtFileClose(FileObject: WDFFILEOBJECT);
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn DeviceEvtIoInCallerContext(Device: WDFDEVICE, Request: WDFREQUEST);
 }
 unsafe extern "system" {
     pub fn DeviceEvtSelfManagedIoInit(Device: WDFDEVICE) -> NTSTATUS;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn DeviceEvtSelfManagedIoCleanup(Device: WDFDEVICE);
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn DeviceEvtD0Entry(Device: WDFDEVICE, PreviousState: WDF_POWER_DEVICE_STATE) -> NTSTATUS;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn DeviceEvtD0Exit(Device: WDFDEVICE, TargetState: WDF_POWER_DEVICE_STATE) -> NTSTATUS;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn DeviceEvtSurpriseRemoval(Device: WDFDEVICE);
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn CreateQueueEvtIoDefault(Queue: WDFQUEUE, Request: WDFREQUEST);
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn SequentialQueueEvtIoReadWrite(Queue: WDFQUEUE, Request: WDFREQUEST, Length: usize);
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn SequentialQueueEvtIoDeviceControl(
         Queue: WDFQUEUE,
         Request: WDFREQUEST,
@@ -50159,10 +50159,10 @@ unsafe extern "C" {
         IoControlCode: ULONG,
     );
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn SequentialQueueEvtCanceledOnQueue(Queue: WDFQUEUE, Request: WDFREQUEST);
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn RequestEvtCleanup(Object: WDFOBJECT);
 }
 unsafe extern "system" {
@@ -50259,7 +50259,7 @@ unsafe extern "C" {
 unsafe extern "C" {
     pub fn DeviceSendStartUnit(Device: WDFDEVICE);
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn DeviceAsynchronousCompletion(
         Request: WDFREQUEST,
         Target: WDFIOTARGET,
@@ -50432,7 +50432,7 @@ unsafe extern "C" {
         TargetDeviceObject: PDEVICE_OBJECT,
     );
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn RequestAsynchronousIrpCompletion(
         DeviceObject: *mut _DEVICE_OBJECT,
         Irp: *mut _IRP,
@@ -50494,7 +50494,7 @@ unsafe extern "C" {
 unsafe extern "C" {
     pub fn DeviceEnableMainTimer(DeviceExtension: PCDROM_DEVICE_EXTENSION) -> NTSTATUS;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn DeviceMainTimerTickHandler(Timer: WDFTIMER);
 }
 unsafe extern "C" {
@@ -50625,9 +50625,9 @@ unsafe extern "C" {
         DeviceExtension: PCDROM_DEVICE_EXTENSION,
     );
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn IoctlWorkItemRoutine(WorkItem: WDFWORKITEM);
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn ReadWriteWorkItemRoutine(WorkItem: WDFWORKITEM);
 }

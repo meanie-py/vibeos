@@ -230,6 +230,43 @@ def crate_live_files(crate_dir, _cache={}):  # noqa: B006 — deliberate memo ca
     return live
 
 
+def crate_phantom_mods(crate_dir):
+    """Every `mod X;` that resolves to NO file, as (declaring_file, name, [searched paths]).
+
+    The dual of `crate_live_files`, and deliberately the same walk: that function drops an
+    unresolvable `mod` on the floor (the `break`-less fall-through below its candidate loop),
+    so a module declared against a file that does not exist is invisible to every gate built
+    on it. It is invisible to the rest of the tree too — a crate parked out of
+    `workspace.members` is never compiled, and no scanner opens a path that is absent. desk
+    carried `pub mod guid;` with no guid.rs, and separately shipped 17 of 20 TUs while its
+    lib.rs still claimed all 20; both survived a full green `check` and a green `check-tooling`.
+
+    Reuses `crate_live_files` for traversal so the resolution rules cannot drift between the
+    two directions: any file the walk actually reached is re-read here with the same
+    `decl_sites`/`base` logic that reached it."""
+    phantom = []
+    for f in sorted(crate_live_files(crate_dir)):
+        try:
+            raw = Path(f).read_text(encoding="utf-8", errors="replace")
+        except OSError:
+            continue
+        fdir = os.path.dirname(f)
+        stem = os.path.splitext(os.path.basename(f))[0]
+        base = fdir if stem in ("lib", "main", "mod") else os.path.join(fdir, stem)
+        # A `#[path = "..."]` module names its own file and is resolved by path_mod_targets,
+        # not by the name-based search below — excluding it here keeps those from reading as
+        # phantoms (the per-arch `types_i386.rs` selector is exactly this shape).
+        by_path = {name for name, _ in path_mod_targets(strip_comments(raw))}
+        for name, encl in decl_sites(raw):
+            if name in by_path:
+                continue
+            d = os.path.join(base, *encl)
+            cands = [os.path.join(d, name + ".rs"), os.path.join(d, name, "mod.rs")]
+            if not any(os.path.exists(c) for c in cands):
+                phantom.append((f, name, cands))
+    return phantom
+
+
 def crate_is_opaque(crate_dir, _cache={}):  # noqa: B006 — intentional memo cache
     """True when a crate root resolves a module path we cannot follow from source.
 

@@ -40,7 +40,7 @@ elseif(ARCH STREQUAL "arm64")
 endif()
 set(NETAPI32_RUST_TARGET_DIR "${CMAKE_CURRENT_BINARY_DIR}/rust-netapi32-target")
 set(NETAPI32_RUST_LIB "${CMAKE_CURRENT_BINARY_DIR}/libnetapi32_rust.a")
-file(GLOB_RECURSE NETAPI32_RUST_SRCS "${NETAPI32_RUST_WORKSPACE_DIR}/netapi32-rust/src/*.rs")
+rust_crate_sources(NETAPI32_RUST_SRCS "${NETAPI32_RUST_WORKSPACE_DIR}" netapi32-rust)
 add_custom_command(
     OUTPUT ${NETAPI32_RUST_LIB}
     COMMAND ${CMAKE_COMMAND} -E env

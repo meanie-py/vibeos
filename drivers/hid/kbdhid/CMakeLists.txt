@@ -21,7 +21,7 @@ elseif(ARCH STREQUAL "arm64")
     set(KBDHID_RUST_RUSTFLAGS "")
 endif()
 
-file(GLOB_RECURSE KBDHID_RUST_SRCS ${KBDHID_RUST_WORKSPACE_DIR}/kbdhid-rust/src/*.rs)
+rust_crate_sources(KBDHID_RUST_SRCS "${KBDHID_RUST_WORKSPACE_DIR}" kbdhid-rust)
 
 add_custom_command(
     OUTPUT ${KBDHID_RUST_LIB}

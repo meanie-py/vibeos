@@ -119,3 +119,231 @@ def test_unseal_allows_identical_switch_fallthrough_tail_in_else_if_arms():
         sealed,
     )
     assert restored.count("Tail(7)") == 2
+
+
+# ------------------------------------------------------- the shifted envelope (netcfgx)
+
+
+NETCFGX_SHIFT_C = """
+void ApplyOrCancelChanges(Item *pHead, const CLSID *lpClassGUID) {
+    if (IsEqualGUID(lpClassGUID, &GUID_DEVCLASS_NET)) {
+        if (StringFromCLSID(&pHead->InstanceId, &pszGuid) == NOERROR) {
+            swprintf(szName, L"Control\\\\Network\\\\%s", pszGuid);
+            CoTaskMemFree(pszGuid);
+        }
+    }
+}
+"""
+
+
+def _netcfgx_shift_sealed():
+    return seal_calls(
+        NETCFGX_SHIFT_C,
+        {"IsEqualGUID", "StringFromCLSID", "swprintf", "CoTaskMemFree"},
+        frozenset({"IsEqualGUID"}),
+    )
+
+
+def test_a_function_like_macro_is_named_in_the_envelope_not_just_disclaimed():
+    """SHIPPED BUG: the envelope said "a call inside a function-like macro has NO token"
+    and left the model to work out WHICH. With three windowsx.h macros interleaved among
+    the sealed calls, `ReadParameterValue` tokenized them too and invented three numbers;
+    `ApplyOrCancelChanges` renumbered from the macro and shifted the whole body by one."""
+    from rustconv.call_seal import call_contract
+
+    sealed = _netcfgx_shift_sealed()
+    assert sealed.macros == ("IsEqualGUID",)
+    contract = call_contract(sealed)
+    assert "function-like macros, not sealed callees: IsEqualGUID" in contract
+    # `sizeof` is a keyword and the debug macros are stripped, so neither is worth naming.
+    quiet = seal_calls("int f(void) { Log(1); return sizeof(int) + Call(x); }", {"Call", "sizeof"})
+    assert quiet.macros == ()
+
+
+def test_a_shifted_envelope_is_caught_by_the_argument_count():
+    """The shift passes every count-based check — right number of tokens, each exactly
+    once, none invented — because it is a permutation. Only the ARGUMENTS disagree: the
+    model consumed CALL_0000 for the macro, so `StringFromCLSID`'s two arguments landed
+    under `swprintf`'s three-argument token and `swprintf`'s three under `CoTaskMemFree`."""
+    sealed = _netcfgx_shift_sealed()
+    shifted = """unsafe fn f() {
+        if __RUSTCONV_CALL_0000__(lpClassGUID, &GUID_DEVCLASS_NET) != 0 {
+            if __RUSTCONV_CALL_0001__(&(*pHead).InstanceId, &mut pszGuid) == 0 {
+                __RUSTCONV_CALL_0002__(szName, w!("Control\\\\Network\\\\%s"), pszGuid);
+                __RUSTCONV_CALL_0003__(pszGuid);
+            }
+        }
+    }"""
+    with pytest.raises(CallSealError) as excinfo:
+        unseal_calls(shifted, sealed)
+    assert "argument count" in str(excinfo.value)
+    assert "__RUSTCONV_CALL_0000__=StringFromCLSID wants 2, got 2" not in str(excinfo.value)
+    assert "__RUSTCONV_CALL_0001__=swprintf wants 3, got 2" in str(excinfo.value)
+
+
+def test_the_faithful_translation_of_the_same_body_still_passes():
+    """The other half of the guard: the macro written as an ordinary named call, every
+    token on its own site. Nothing here may be a finding."""
+    sealed = _netcfgx_shift_sealed()
+    faithful = """unsafe fn f() {
+        if IsEqualGUID(lpClassGUID, &GUID_DEVCLASS_NET) != 0 {
+            if __RUSTCONV_CALL_0000__(&(*pHead).InstanceId, &mut pszGuid) == 0 {
+                __RUSTCONV_CALL_0001__(szName, w!("Control\\\\Network\\\\%s"), pszGuid);
+                __RUSTCONV_CALL_0002__(pszGuid);
+            }
+        }
+    }"""
+    restored = unseal_calls(faithful, sealed)
+    assert "StringFromCLSID(&(*pHead).InstanceId" in restored
+    assert "CoTaskMemFree(pszGuid)" in restored
+
+
+def test_a_macro_in_argument_position_is_never_counted():
+    """shell32's `IID_PPV_ARG(IProgressDialog, &ppv)` is ONE C argument and TWO Rust
+    ones, so counting that site would reject a correct translation."""
+    sealed = seal_calls(
+        "void f(void) { CoCreateInstance(clsid, NULL, ctx, IID_PPV_ARG(IFoo, &p)); }",
+        {"CoCreateInstance", "IID_PPV_ARG"},
+        frozenset({"IID_PPV_ARG"}),
+    )
+    assert [call.argc for call in sealed.calls] == [None]
+    restored = unseal_calls(
+        "unsafe fn f() { __RUSTCONV_CALL_0000__(clsid, null_mut(), ctx, &IID_IFoo, &mut p); }",
+        sealed,
+    )
+    assert "CoCreateInstance(clsid" in restored
+
+
+def test_a_turbofish_argument_is_not_a_second_argument():
+    sealed = seal_calls("void f(void) { Take(x); }", {"Take"})
+    restored = unseal_calls(
+        "unsafe fn f() { __RUSTCONV_CALL_0000__(core::mem::transmute::<A, B>(x)); }", sealed
+    )
+    assert "Take(core::mem::transmute::<A, B>(x))" in restored
+
+
+def test_one_agreeing_occurrence_is_enough_inside_the_goto_region():
+    """A `goto` lowering replicates the cleanup tail, and the copies are the same call."""
+    sealed = seal_calls(
+        "int f(void) { if (a) goto done; Work(1, 2); done: Close(h); return 0; }",
+        {"Work", "Close"},
+    )
+    restored = unseal_calls(
+        "unsafe fn f() -> i32 { if a { __RUSTCONV_CALL_0001__(h); return 0; } "
+        "__RUSTCONV_CALL_0000__(1, 2); __RUSTCONV_CALL_0001__(h); 0 }",
+        sealed,
+    )
+    assert restored.count("Close(h)") == 2
+
+
+def test_a_rustfmt_trailing_comma_is_not_an_argument():
+    """rustfmt puts a trailing comma on every multi-line call, and the first cut of the
+    arity check read a six-argument `RegQueryValueExW` spread over seven lines as seven
+    arguments — which would have flagged 68 already-accepted bodies."""
+    sealed = seal_calls("void f(void) { Reg(a, b, c); }", {"Reg"})
+    restored = unseal_calls(
+        "unsafe fn f() {\n    __RUSTCONV_CALL_0000__(\n        a,\n        b,\n        c,\n    );\n}",
+        sealed,
+    )
+    assert "Reg(" in restored
+
+
+def test_an_empty_argument_list_counts_as_zero_not_one():
+    sealed = seal_calls("void f(void) { Now(); }", {"Now"})
+    with pytest.raises(CallSealError, match="argument count"):
+        unseal_calls("unsafe fn f() { __RUSTCONV_CALL_0000__(x); }", sealed)
+    assert "Now()" in unseal_calls("unsafe fn f() { __RUSTCONV_CALL_0000__(); }", sealed)
+
+
+def test_a_switch_arm_that_falls_through_may_repeat_its_tokens():
+    """Rust `match` has no fall-through, so the only faithful lowering of a C arm that
+    runs on into the next one is to DUPLICATE the next arm's body — which writes every
+    token in it twice. ntmarta's `AccpGetTrusteeSid` did exactly that and had all five
+    of its tokens rejected, throwing away a whole paid TU."""
+    c = """
+    int f(int k) {
+        switch (k) {
+            case A:
+                if (bad) { break; }
+                /* fall through */
+            case B:
+                return Lookup(k);
+        }
+        return 0;
+    }
+    """
+    sealed = seal_calls(c, {"Lookup"})
+    # The duplication the C forces: `Lookup` written once per arm.
+    rust = (
+        "unsafe fn f(k: i32) -> i32 {\n"
+        "    match k {\n"
+        "        A => { if bad { } else { return __RUSTCONV_CALL_0000__(k); } }\n"
+        "        B => { return __RUSTCONV_CALL_0000__(k); }\n"
+        "        _ => {}\n"
+        "    }\n"
+        "    0\n}"
+    )
+    assert unseal_calls(rust, sealed).count("Lookup(k)") == 2
+
+
+def test_a_shared_case_label_is_not_a_fallthrough():
+    """`case A: case B:` duplicates nothing — the arms are already one block — so it must
+    not buy the body a licence to repeat tokens."""
+    c = """
+    int f(int k) {
+        switch (k) {
+            case A:
+            case B:
+                return Lookup(k);
+            default:
+                return 0;
+        }
+    }
+    """
+    sealed = seal_calls(c, {"Lookup"})
+    with pytest.raises(CallSealError):
+        unseal_calls(
+            "unsafe fn f(k: i32) -> i32 {\n"
+            "    match k {\n"
+            "        A => __RUSTCONV_CALL_0000__(k),\n"
+            "        B => __RUSTCONV_CALL_0000__(k),\n"
+            "        _ => 0,\n"
+            "    }\n}",
+            sealed,
+        )
+
+
+def test_a_turbofish_in_an_argument_does_not_disable_the_arity_check():
+    """thread.c's `_beginthread_trampoline` shipped through exactly this hole.
+
+    `msvcrt_get_thread_data` takes ZERO arguments. The model slid its token onto the
+    `memcpy` site, where it wore three -- one of them `core::mem::size_of::<T>()`. The
+    old rule skipped any site whose arguments mentioned `::<`, so the disagreement was
+    never compared, and a thread that leaks its argument block and never calls the user's
+    entry point passed the envelope.
+    """
+    sealed = seal_calls("void f(void) { get(); }", {"get"})
+    with pytest.raises(CallSealError, match="argument count"):
+        unseal_calls(
+            "unsafe fn f() { __RUSTCONV_CALL_0000__(&mut local as *mut _, arg, "
+            "core::mem::size_of::<T>()); }",
+            sealed,
+        )
+
+
+def test_a_turbofish_with_its_own_comma_still_counts_as_one_argument():
+    """The commas that belong to `::<A, B>` are blanked, not the site."""
+    sealed = seal_calls("void f(void) { Take(x); }", {"Take"})
+    restored = unseal_calls(
+        "unsafe fn f() { __RUSTCONV_CALL_0000__(core::mem::transmute::<A, B>(x)); }", sealed
+    )
+    assert "Take(core::mem::transmute::<A, B>(x))" in restored
+
+
+def test_a_nested_turbofish_does_not_close_early():
+    sealed = seal_calls("void f(void) { Take(x); }", {"Take"})
+    restored = unseal_calls(
+        "unsafe fn f() { __RUSTCONV_CALL_0000__(transmute::<Option<A>, fn(B) -> C>(x)); }",
+        sealed,
+    )
+    assert "Take(transmute::<Option<A>, fn(B) -> C>(x))" in restored

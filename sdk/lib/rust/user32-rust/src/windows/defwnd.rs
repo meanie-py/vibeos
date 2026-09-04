@@ -298,9 +298,18 @@ fn NT_SUCCESS(s: NTSTATUS) -> bool { s >= 0 }
 #[inline]
 fn min_sz(a: SIZE_T, b: SIZE_T) -> SIZE_T { if a < b { a } else { b } }
 
-// --- Debug-channel stubs (WINE_DEFAULT_DEBUG_CHANNEL) — no-ops in this build ---
+// --- Debug-channel stubs (WINE_DEFAULT_DEBUG_CHANNEL) ---
+// TRACE/WARN really are off by default upstream, so a no-op matches what wine
+// emits. ERR is NOT: the err channel is on by default, and the four call sites
+// here ("IDCWTO Nothing found", "hwndIME was NULL" x2, "WM_NCRBUTTONUP") are
+// upstream reporting broken window/IME state. Route it to ntdll's DbgPrint.
+extern "C" {
+    fn DbgPrint(fmt: *const u8, ...) -> u32;
+}
 #[inline]
-unsafe fn ERR(_fmt: *const u8) {}
+unsafe fn ERR(fmt: *const u8) {
+    DbgPrint(fmt);
+}
 #[inline]
 unsafe fn TRACE(_fmt: *const u8) {}
 #[inline]
@@ -576,13 +585,7 @@ pub unsafe extern "C" fn DefWndControlColor(hDC: HDC, ctlType: UINT) -> HBRUSH {
 // UserSendUiUpdateMsg (CALLBACK) — ABI must match WNDENUMPROC: stdcall on i386,
 // cdecl on amd64/arm64.
 // ===========================================================================
-#[cfg(target_arch = "x86")]
-unsafe extern "stdcall" fn UserSendUiUpdateMsg(hwnd: HWND, lParam: LPARAM) -> BOOL {
-    SendMessageW(hwnd, WM_UPDATEUISTATE, lParam as WPARAM, 0);
-    TRUE
-}
-#[cfg(not(target_arch = "x86"))]
-unsafe extern "C" fn UserSendUiUpdateMsg(hwnd: HWND, lParam: LPARAM) -> BOOL {
+unsafe extern "system" fn UserSendUiUpdateMsg(hwnd: HWND, lParam: LPARAM) -> BOOL {
     SendMessageW(hwnd, WM_UPDATEUISTATE, lParam as WPARAM, 0);
     TRUE
 }

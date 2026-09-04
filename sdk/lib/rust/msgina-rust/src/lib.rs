@@ -91,23 +91,38 @@ macro_rules! RtlCopyMemory {
 macro_rules! IS_PWR_HIBERNATE_ALLOWED { ($caps:expr) => {{ let _ = &$caps; 0i32 }} }
 macro_rules! IS_PWR_SUSPEND_ALLOWED { ($caps:expr) => {{ let _ = &$caps; 0i32 }} }
 
-// strsafe.h printf-family (StringCchPrintfW/StringCbPrintfW): variadic, so forwarded
-// to user32's variadic wsprintfW (the size/cch arg is dropped — wsprintfW bounds to
-// 1024 wchars internally, matching the small fixed buffers these are called with).
-// Returns S_OK (0) like the strsafe inline on success.
-macro_rules! StringCchPrintfW {
-    ($buf:expr, $cch:expr, $fmt:expr $(, $arg:expr)* $(,)?) => {{
-        let _ = $cch;
-        $crate::msgina_externs::wsprintfW($buf as $crate::prelude::PWSTR, $fmt as $crate::prelude::PCWSTR $(, $arg)*);
-        0 as $crate::prelude::HRESULT
-    }};
-}
-macro_rules! StringCbPrintfW {
-    ($buf:expr, $cb:expr, $fmt:expr $(, $arg:expr)* $(,)?) => {{
-        let _ = $cb;
-        $crate::msgina_externs::wsprintfW($buf as $crate::prelude::PWSTR, $fmt as $crate::prelude::PCWSTR $(, $arg)*);
-        0 as $crate::prelude::HRESULT
-    }};
+// strsafe.h's VARIADIC printf entry points.
+//
+// These were macros that DISCARDED the count argument and forwarded to user32's `wsprintfW`,
+// which bounds to 1024 wchars internally regardless of what the caller's buffer is. That is not
+// an approximation of strsafe, it is the opposite of it: `shutdown.rs`'s log-off string formats
+// a resource-loaded format plus the user name into a `WCHAR[256]` on the stack, so a long user
+// name wrote up to 768 wchars past the end of a stack array where the C truncated and returned
+// STRSAFE_E_INSUFFICIENT_BUFFER. (The same site had a second bug the macro hid: `UserName` is a
+// `[WCHAR; 256]` and was passed to the variadic BY VALUE, so `%ws` read the first pointer-width
+// bytes of the name text as an address. C's array-to-pointer decay does not exist in Rust.)
+//
+// Now the real thing: the bodies live in the shared `strsafe-rust` crate, and the `...` entry
+// points are trampolines in dll/win32/msgina/rust_varargs_shim.c that do the `va_start` stable
+// Rust cannot and call the fixed-arity `*_v` twins. Sanctioned trampoline pattern, NOT a
+// translation reverted to C.
+//
+// `extern "C"` and not `extern "system"` even though strsafe.h spells them WINAPI: no ABI on any
+// of our three targets has a VARIADIC stdcall, so a variadic WINAPI function IS cdecl, and Rust
+// rejects the mismatch outright.
+extern "C" {
+    pub fn StringCchPrintfW(
+        pszDest: *mut u16,
+        cchDest: usize,
+        pszFormat: *const u16,
+        ...
+    ) -> prelude::HRESULT;
+    pub fn StringCbPrintfW(
+        pszDest: *mut u16,
+        cbDest: usize,
+        pszFormat: *const u16,
+        ...
+    ) -> prelude::HRESULT;
 }
 
 // Foundation: cross-DLL Win32/LSA out-call decls, GINA-specific types, and the

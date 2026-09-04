@@ -15,7 +15,7 @@ elseif(ARCH STREQUAL "amd64")
 elseif(ARCH STREQUAL "arm64")
     set(SKIPLIST_RUST_TARGET "aarch64-pc-windows-gnullvm")
 endif()
-file(GLOB_RECURSE SKIPLIST_RUST_SRCS ${SKIPLIST_RUST_WORKSPACE_DIR}/skiplist-rust/src/*.rs)
+rust_crate_sources(SKIPLIST_RUST_SRCS "${SKIPLIST_RUST_WORKSPACE_DIR}" skiplist-rust)
 add_custom_command(
     OUTPUT ${SKIPLIST_RUST_LIB}
     COMMAND ${CMAKE_COMMAND} -E env

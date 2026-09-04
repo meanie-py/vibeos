@@ -600,7 +600,7 @@ pub unsafe extern "C" fn _main(
 
     Status = SmpInit(&mut InitialCommand, Handles.as_mut_ptr());
     if Status < 0 {
-        static INIT_MSG: [u16; 30] = [
+        static INIT_MSG: [u16; 31] = [
             b'S' as u16,
             b'e' as u16,
             b's' as u16,
@@ -631,7 +631,7 @@ pub unsafe extern "C" fn _main(
             b'i' as u16,
             b'o' as u16,
             b'n' as u16,
-        ];
+         0,];
         RtlInitUnicodeString(&mut DbgString, INIT_MSG.as_ptr());
         crate::dbg_print!(b"[SMSS] SmpInit FAILED st=%x\n\0", Status as u32); // perf phase marker
         Parameters[1] = Status as ULONG_PTR;
@@ -717,7 +717,7 @@ pub unsafe extern "C" fn _main(
     Status = NtWaitForMultipleObjects(2, Handles.as_mut_ptr(), WaitAny, 0u8, core::ptr::null_mut());
 
     if Status == STATUS_WAIT_0 {
-        static WIN_SUBSYS: [u16; 17] = [
+        static WIN_SUBSYS: [u16; 18] = [
             b'W' as u16,
             b'i' as u16,
             b'n' as u16,
@@ -735,7 +735,7 @@ pub unsafe extern "C" fn _main(
             b't' as u16,
             b'e' as u16,
             b'm' as u16,
-        ];
+         0,];
         RtlInitUnicodeString(&mut DbgString, WIN_SUBSYS.as_ptr());
         Status = NtQueryInformationProcess(
             Handles[0],
@@ -745,7 +745,7 @@ pub unsafe extern "C" fn _main(
             core::ptr::null_mut(),
         );
     } else {
-        static WIN_LOGON: [u16; 21] = [
+        static WIN_LOGON: [u16; 22] = [
             b'W' as u16,
             b'i' as u16,
             b'n' as u16,
@@ -767,7 +767,7 @@ pub unsafe extern "C" fn _main(
             b'e' as u16,
             b's' as u16,
             b's' as u16,
-        ];
+         0,];
         RtlInitUnicodeString(&mut DbgString, WIN_LOGON.as_ptr());
         if Status == STATUS_WAIT_1 {
             Status = NtQueryInformationProcess(

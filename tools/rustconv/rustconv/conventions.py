@@ -71,6 +71,17 @@ KW_TO_CONV: dict[str, str] = {
     "_cdecl": "cdecl",
     "__fastcall": "fastcall",
     "_fastcall": "fastcall",
+    # `this` in ECX on i386, and the DEFAULT C convention everywhere else — the compiler
+    # accepts and ignores the keyword off x86. Absent from this table, msvcrt's cpp.c lost
+    # 25 of its 62 bodies from the translation plan, SILENTLY: the drop is the documented
+    # `TYPE * <conv> name(...)` shape that tree-sitter-c cannot parse in any spelling, and
+    # scanner.RE_CC_AFTER_PTR (which repairs it) is built from the keys of THIS dict. The
+    # split was invisible because it fell along the return type — `void __thiscall
+    # bad_typeid_dtor(...)` parsed while `bad_typeid * __thiscall bad_typeid_ctor(...)`
+    # next to it did not, so the file looked partially translatable rather than broken.
+    # Same class as the `FILE * CDECL fopen(...)` drop that cost file.c 15 functions.
+    "__thiscall": "thiscall",
+    "_thiscall": "thiscall",
     # --- __stdcall ("system") ---
     "NTAPI": "system",
     "WINAPI": "system",  # psdk/minwindef.h
@@ -135,3 +146,48 @@ KW_TO_CONV: dict[str, str] = {
 # stdcall stem (`\b` already prevents WINAPI from matching WINAPIV, but the ordering is
 # the belt to that suspenders — a future non-\b caller of this tuple stays correct).
 CONV_KEYWORDS: tuple[str, ...] = tuple(sorted(KW_TO_CONV, key=len, reverse=True))
+
+# The aliases above that are NOT only a convention: each expands to a RETURN TYPE, and
+# some to a linkage specifier as well. `STDAPI` is `EXTERN_C HRESULT STDAPICALLTYPE`, so
+# the whole return type of the function lives inside the macro.
+#
+# That distinction is not cosmetic. The scanner normalizes an unparseable alias to the raw
+# `__stdcall` keyword, which for these DELETES the return type: `STDAPI DllRegisterServer
+# (void)` becomes `__stdcall DllRegisterServer(void)`, a definition with no type at all,
+# which tree-sitter does not recognize as a function_definition — so the function silently
+# leaves the translation plan. netcfgx.c lost `DllGetClassObject`, `DllRegisterServer` and
+# `DllUnregisterServer` that way, all three .spec-exported, and the whole TU refused to
+# translate for a year. It is the same class as the `TYPE * CDECL fn()` drop (0b2d3521e0a)
+# that cost msvcrt 15 exports: a convention keyword taken for the whole decoration.
+#
+# The value is the header's own expansion, VERBATIM, resolved by fixpoint — `WINOLEAPI` is
+# `STDAPI` is `EXTERN_C HRESULT STDAPICALLTYPE` — so the existing `EXTERN_C` and alias
+# normalizations finish the job and no judgement is encoded here. Every entry is proven by
+# a test that extracts a function defined with it (tests/test_composite_conventions.py):
+# an expansion nobody parsed is a guess, and a guess here drops functions silently.
+KW_EXPANSION: dict[str, str] = {
+    "STDAPI": "EXTERN_C HRESULT STDAPICALLTYPE",  # psdk/basetyps.h:41
+    "STDAPIV": "EXTERN_C HRESULT STDAPIVCALLTYPE",  # psdk/basetyps.h:45
+    "STDMETHODIMP": "HRESULT STDMETHODCALLTYPE",  # psdk/basetyps.h:43
+    "STDMETHODIMPV": "HRESULT STDMETHODVCALLTYPE",  # psdk/basetyps.h:47
+    "WINOLEAPI": "STDAPI",  # psdk/objbase.h:1054
+    "PSSTDAPI": "STDAPI",  # psdk/propvarutil.h:27 (DECLSPEC_IMPORT arm is declaration-only)
+    "BOOLAPI": "BOOL WINAPI",  # psdk/winhttp.h:29, psdk/wininet.h:27
+    "NETIOAPI_API": "NETIO_STATUS NETIOAPI_API_",  # psdk/netioapi.h:16
+    "NCB_POST": "void CALLBACK",  # psdk/nb30.h:91
+    "STRSAFEAPI": "HRESULT WINAPI",  # psdk/strsafe.h:80 (`static __inline` dropped: see test)
+    "STRSAFE_INLINE_API": "HRESULT WINAPI",  # psdk/strsafe.h:81 (ditto `__CRT_INLINE`)
+}
+
+# The FUNCTION-LIKE half of the same family: these take the return type as an argument, so
+# the keyword table above cannot reach them and `STDMETHODIMP_(ULONG) AddRef()` survived
+# into the translated signature as a literal return type `STDMETHODIMP_(ULONG)`. Values are
+# the header's own expansions, verbatim, with `\1` for the argument — the existing
+# EXTERN_C/alias normalizations then finish the job exactly as they do for the keyword
+# forms. Every hand-rolled COM class declares AddRef and Release this way.
+KW_EXPANSION_FN: dict[str, str] = {
+    "STDAPI_": r"EXTERN_C \1 STDAPICALLTYPE",  # psdk/basetyps.h:42
+    "STDMETHODIMP_": r"\1 STDMETHODCALLTYPE",  # psdk/basetyps.h:44
+    "STDAPIV_": r"EXTERN_C \1 STDAPIVCALLTYPE",  # psdk/basetyps.h:46
+    "STDMETHODIMPV_": r"\1 STDMETHODVCALLTYPE",  # psdk/basetyps.h:48
+}

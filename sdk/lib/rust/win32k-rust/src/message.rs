@@ -1609,7 +1609,7 @@ unsafe fn co_IntWaitMessage(
 }
 #[cfg(target_arch = "x86")]
 #[no_mangle]
-pub unsafe extern "stdcall" fn co_IntGetPeekMessage(
+pub unsafe extern "system" fn co_IntGetPeekMessage(
     pMsg: PMSG,
     mut hWnd: HWND,
     mut MsgFilterMin: UINT,
@@ -1724,7 +1724,7 @@ pub unsafe extern "stdcall" fn co_IntGetPeekMessage(
 
 #[cfg(not(target_arch = "x86"))]
 #[no_mangle]
-pub unsafe extern "C" fn co_IntGetPeekMessage(
+pub unsafe extern "system" fn co_IntGetPeekMessage(
     pMsg: PMSG,
     mut hWnd: HWND,
     mut MsgFilterMin: UINT,
@@ -2661,21 +2661,8 @@ unsafe extern "system" fn IntGetQueueStatus(mut Changes: DWORD) -> DWORD {
 
     Result
 }
-#[cfg(target_arch = "x86")]
 #[no_mangle]
-pub unsafe extern "stdcall" fn IntInitMessagePumpHook() -> BOOL {
-    let pti: PTHREADINFO = PsGetCurrentThreadWin32Thread() as PTHREADINFO;
-
-    if !(*pti).pcti.is_null() {
-        (*(*pti).pcti).dwcPumpHook += 1;
-        return 1;
-    }
-    0
-}
-
-#[cfg(not(target_arch = "x86"))]
-#[no_mangle]
-pub unsafe extern "C" fn IntInitMessagePumpHook() -> BOOL {
+pub unsafe extern "system" fn IntInitMessagePumpHook() -> BOOL {
     let pti: PTHREADINFO = PsGetCurrentThreadWin32Thread() as PTHREADINFO;
 
     if !(*pti).pcti.is_null() {
@@ -2726,7 +2713,7 @@ unsafe extern "C" fn IntCallMsgFilter(lpmsg: LPMSG, code: INT) -> BOOL {
 }
 #[cfg(target_arch = "x86")]
 #[no_mangle]
-pub unsafe extern "stdcall" fn NtUserDragDetect(hWnd: HWND, pt: POINT) -> BOOL {
+pub unsafe extern "system" fn NtUserDragDetect(hWnd: HWND, pt: POINT) -> BOOL {
     let mut msg: MSG = core::mem::zeroed();
     let mut rect: RECT = core::mem::zeroed();
     let wDragWidth: ULONG;
@@ -2807,7 +2794,7 @@ pub unsafe extern "stdcall" fn NtUserDragDetect(hWnd: HWND, pt: POINT) -> BOOL {
 
 #[cfg(not(target_arch = "x86"))]
 #[no_mangle]
-pub unsafe extern "C" fn NtUserDragDetect(hWnd: HWND, pt: POINT) -> BOOL {
+pub unsafe extern "system" fn NtUserDragDetect(hWnd: HWND, pt: POINT) -> BOOL {
     let mut msg: MSG = core::mem::zeroed();
     let mut rect: RECT = core::mem::zeroed();
     let wDragWidth: ULONG;
@@ -2885,9 +2872,8 @@ pub unsafe extern "C" fn NtUserDragDetect(hWnd: HWND, pt: POINT) -> BOOL {
     UserLeave();
     Ret
 }
-#[cfg(target_arch = "x86")]
 #[no_mangle]
-pub unsafe extern "stdcall" fn NtUserPostMessage(
+pub unsafe extern "system" fn NtUserPostMessage(
     hWnd: HWND,
     Msg: UINT,
     wParam: WPARAM,
@@ -2903,28 +2889,8 @@ pub unsafe extern "stdcall" fn NtUserPostMessage(
 
     ret
 }
-
-#[cfg(not(target_arch = "x86"))]
 #[no_mangle]
-pub unsafe extern "C" fn NtUserPostMessage(
-    hWnd: HWND,
-    Msg: UINT,
-    wParam: WPARAM,
-    lParam: LPARAM,
-) -> BOOL {
-    let ret: BOOL;
-
-    UserEnterExclusive();
-
-    ret = UserPostMessage(hWnd, Msg, wParam, lParam);
-
-    UserLeave();
-
-    ret
-}
-#[cfg(target_arch = "x86")]
-#[no_mangle]
-pub unsafe extern "stdcall" fn NtUserPostThreadMessage(
+pub unsafe extern "system" fn NtUserPostThreadMessage(
     idThread: DWORD,
     Msg: UINT,
     wParam: WPARAM,
@@ -2959,59 +2925,8 @@ pub unsafe extern "stdcall" fn NtUserPostThreadMessage(
     UserLeave();
     ret
 }
-
-#[cfg(not(target_arch = "x86"))]
 #[no_mangle]
-pub unsafe extern "C" fn NtUserPostThreadMessage(
-    idThread: DWORD,
-    Msg: UINT,
-    wParam: WPARAM,
-    lParam: LPARAM,
-) -> BOOL {
-    let mut ret: BOOL = 0;
-    let mut peThread: PETHREAD = core::ptr::null_mut();
-    let pThread: PTHREADINFO;
-    let Status: NTSTATUS;
-
-    UserEnterExclusive();
-
-    Status = PsLookupThreadByThreadId(UlongToHandle(idThread), &mut peThread as *mut _ as _);
-
-    'exit: {
-        if Status == STATUS_SUCCESS {
-            pThread = (*peThread).Tcb.Win32Thread as PTHREADINFO;
-            if pThread.is_null()
-                || (*pThread).MessageQueue.is_null()
-                || ((*pThread).TIF_flags & TIF_INCLEANUP) != 0
-            {
-                ObDereferenceObject(peThread as *mut _);
-                break 'exit;
-            }
-            ret = UserPostThreadMessage(pThread, Msg, wParam, lParam);
-            ObDereferenceObject(peThread as *mut _);
-        } else {
-            SetLastNtError(Status);
-        }
-    }
-
-    UserLeave();
-    ret
-}
-#[cfg(target_arch = "x86")]
-#[no_mangle]
-pub unsafe extern "stdcall" fn NtUserWaitMessage() -> BOOL {
-    let ret: BOOL;
-
-    UserEnterExclusive();
-    ret = co_IntWaitMessage(core::ptr::null_mut(), 0, 0);
-    UserLeave();
-
-    ret
-}
-
-#[cfg(not(target_arch = "x86"))]
-#[no_mangle]
-pub unsafe extern "C" fn NtUserWaitMessage() -> BOOL {
+pub unsafe extern "system" fn NtUserWaitMessage() -> BOOL {
     let ret: BOOL;
 
     UserEnterExclusive();
@@ -3022,7 +2937,7 @@ pub unsafe extern "C" fn NtUserWaitMessage() -> BOOL {
 }
 #[cfg(target_arch = "x86")]
 #[no_mangle]
-pub unsafe extern "stdcall" fn NtUserGetMessage(
+pub unsafe extern "system" fn NtUserGetMessage(
     pMsg: PMSG,
     hWnd: HWND,
     MsgFilterMin: UINT,
@@ -3079,7 +2994,7 @@ pub unsafe extern "stdcall" fn NtUserGetMessage(
 
 #[cfg(not(target_arch = "x86"))]
 #[no_mangle]
-pub unsafe extern "C" fn NtUserGetMessage(
+pub unsafe extern "system" fn NtUserGetMessage(
     pMsg: PMSG,
     hWnd: HWND,
     MsgFilterMin: UINT,
@@ -3135,7 +3050,7 @@ pub unsafe extern "C" fn NtUserGetMessage(
 }
 #[cfg(target_arch = "x86")]
 #[no_mangle]
-pub unsafe extern "stdcall" fn NtUserPeekMessage(
+pub unsafe extern "system" fn NtUserPeekMessage(
     pMsg: PMSG,
     hWnd: HWND,
     MsgFilterMin: UINT,
@@ -3188,7 +3103,7 @@ pub unsafe extern "stdcall" fn NtUserPeekMessage(
 
 #[cfg(not(target_arch = "x86"))]
 #[no_mangle]
-pub unsafe extern "C" fn NtUserPeekMessage(
+pub unsafe extern "system" fn NtUserPeekMessage(
     pMsg: PMSG,
     hWnd: HWND,
     MsgFilterMin: UINT,
@@ -3240,7 +3155,7 @@ pub unsafe extern "C" fn NtUserPeekMessage(
 }
 #[cfg(target_arch = "x86")]
 #[no_mangle]
-pub unsafe extern "stdcall" fn NtUserCallMsgFilter(lpmsg: LPMSG, code: INT) -> BOOL {
+pub unsafe extern "system" fn NtUserCallMsgFilter(lpmsg: LPMSG, code: INT) -> BOOL {
     let mut Ret: BOOL = 0;
     let mut Msg: MSG = core::mem::zeroed();
     let Status: NTSTATUS;
@@ -3269,7 +3184,7 @@ pub unsafe extern "stdcall" fn NtUserCallMsgFilter(lpmsg: LPMSG, code: INT) -> B
 
 #[cfg(not(target_arch = "x86"))]
 #[no_mangle]
-pub unsafe extern "C" fn NtUserCallMsgFilter(lpmsg: LPMSG, code: INT) -> BOOL {
+pub unsafe extern "system" fn NtUserCallMsgFilter(lpmsg: LPMSG, code: INT) -> BOOL {
     let mut Ret: BOOL = 0;
     let mut Msg: MSG = core::mem::zeroed();
     let Status: NTSTATUS;
@@ -3297,7 +3212,7 @@ pub unsafe extern "C" fn NtUserCallMsgFilter(lpmsg: LPMSG, code: INT) -> BOOL {
 }
 #[cfg(target_arch = "x86")]
 #[no_mangle]
-pub unsafe extern "stdcall" fn NtUserDispatchMessage(UnsafeMsgInfo: PMSG) -> LRESULT {
+pub unsafe extern "system" fn NtUserDispatchMessage(UnsafeMsgInfo: PMSG) -> LRESULT {
     let mut Res: LRESULT = 0;
     let mut SafeMsg: MSG = core::mem::zeroed();
 
@@ -3319,7 +3234,7 @@ pub unsafe extern "stdcall" fn NtUserDispatchMessage(UnsafeMsgInfo: PMSG) -> LRE
 
 #[cfg(not(target_arch = "x86"))]
 #[no_mangle]
-pub unsafe extern "C" fn NtUserDispatchMessage(UnsafeMsgInfo: PMSG) -> LRESULT {
+pub unsafe extern "system" fn NtUserDispatchMessage(UnsafeMsgInfo: PMSG) -> LRESULT {
     let mut Res: LRESULT = 0;
     let mut SafeMsg: MSG = core::mem::zeroed();
 
@@ -3340,7 +3255,7 @@ pub unsafe extern "C" fn NtUserDispatchMessage(UnsafeMsgInfo: PMSG) -> LRESULT {
 }
 #[cfg(target_arch = "x86")]
 #[no_mangle]
-pub unsafe extern "stdcall" fn NtUserTranslateMessage(lpMsg: LPMSG, flags: UINT) -> BOOL {
+pub unsafe extern "system" fn NtUserTranslateMessage(lpMsg: LPMSG, flags: UINT) -> BOOL {
     let mut SafeMsg: MSG = core::mem::zeroed();
     let Ret: BOOL;
     let pWnd: PWND;
@@ -3369,7 +3284,7 @@ pub unsafe extern "stdcall" fn NtUserTranslateMessage(lpMsg: LPMSG, flags: UINT)
 
 #[cfg(not(target_arch = "x86"))]
 #[no_mangle]
-pub unsafe extern "C" fn NtUserTranslateMessage(lpMsg: LPMSG, flags: UINT) -> BOOL {
+pub unsafe extern "system" fn NtUserTranslateMessage(lpMsg: LPMSG, flags: UINT) -> BOOL {
     let mut SafeMsg: MSG = core::mem::zeroed();
     let Ret: BOOL;
     let pWnd: PWND;
@@ -3397,7 +3312,7 @@ pub unsafe extern "C" fn NtUserTranslateMessage(lpMsg: LPMSG, flags: UINT) -> BO
 }
 #[cfg(target_arch = "x86")]
 #[no_mangle]
-pub unsafe extern "stdcall" fn NtUserMessageCall(
+pub unsafe extern "system" fn NtUserMessageCall(
     hWnd: HWND,
     Msg: UINT,
     wParam: WPARAM,
@@ -4025,7 +3940,7 @@ pub unsafe extern "stdcall" fn NtUserMessageCall(
 
 #[cfg(not(target_arch = "x86"))]
 #[no_mangle]
-pub unsafe extern "C" fn NtUserMessageCall(
+pub unsafe extern "system" fn NtUserMessageCall(
     hWnd: HWND,
     Msg: UINT,
     wParam: WPARAM,
@@ -4650,152 +4565,8 @@ pub unsafe extern "C" fn NtUserMessageCall(
 
     Ret
 }
-#[cfg(target_arch = "x86")]
 #[no_mangle]
-pub unsafe extern "stdcall" fn NtUserWaitForInputIdle(
-    hProcess: HANDLE,
-    dwMilliseconds: DWORD,
-    bSharedWow: BOOL,
-) -> DWORD {
-    let mut Process: PEPROCESS = core::ptr::null_mut();
-    let W32Process: PPROCESSINFO;
-    let mut pti: PTHREADINFO;
-    let mut Status: NTSTATUS;
-    let mut Handles: [HANDLE; 3] = [core::ptr::null_mut(); 3];
-    let mut Timeout: LARGE_INTEGER = core::mem::zeroed();
-    let mut ApcState: _KAPC_STATE = core::mem::zeroed();
-
-    UserEnterExclusive();
-
-    Status = ObReferenceObjectByHandle(
-        hProcess,
-        PROCESS_QUERY_INFORMATION,
-        *PsProcessType as _,
-        1i32 as i8,
-        core::ptr::addr_of_mut!(Process) as *mut *mut core::ffi::c_void,
-        core::ptr::null_mut(),
-    );
-
-    if !NT_SUCCESS(Status) {
-        UserLeave();
-        SetLastNtError(Status);
-        return WAIT_FAILED;
-    }
-
-    pti = PsGetCurrentThreadWin32Thread() as PTHREADINFO;
-
-    W32Process = (*Process).Win32Process as PPROCESSINFO;
-
-    if PsGetProcessExitProcessCalled(Process as _) != 0
-        || W32Process.is_null()
-        || (*pti).ppi == W32Process
-    {
-        ObDereferenceObject(Process as *mut core::ffi::c_void);
-        UserLeave();
-        EngSetLastError(ERROR_INVALID_PARAMETER);
-        return WAIT_FAILED;
-    }
-
-    Handles[0] = Process as HANDLE;
-    Handles[1] = ppi_input_idle_event(W32Process) as HANDLE;
-    Handles[2] = (*pti).pEventQueueServer as HANDLE;
-
-    if Handles[1].is_null() {
-        ObDereferenceObject(Process as *mut core::ffi::c_void);
-        UserLeave();
-        return STATUS_SUCCESS as DWORD;
-    }
-
-    if dwMilliseconds != INFINITE {
-        Timeout.QuadPart = (dwMilliseconds as i64) * (-10000i64);
-    }
-
-    KeStackAttachProcess(core::ptr::addr_of_mut!((*Process).Pcb) as _, &mut ApcState as *mut _ as _);
-    (*ppi_w32pf_flags(W32Process)) |= W32PF_WAITFORINPUTIDLE;
-    pti = (*W32Process).ptiList;
-    while !pti.is_null() {
-        (*pti).TIF_flags |= TIF_WAITFORINPUTIDLE;
-        (*(*pti).pClientInfo).dwTIFlags = (*pti).TIF_flags;
-        pti = (*pti).ptiSibling;
-    }
-    KeUnstackDetachProcess(&mut ApcState as *mut _ as _);
-
-    IntReferenceProcessInfo(W32Process);
-
-    loop {
-        UserLeave();
-        Status = KeWaitForMultipleObjects(
-            3,
-            Handles.as_mut_ptr() as *mut *mut core::ffi::c_void,
-            WaitAny,
-            (_KWAIT_REASON_UserRequest as i8).try_into().unwrap(),
-            1i32 as i8,
-            0u8,
-            if dwMilliseconds == INFINITE {
-                core::ptr::null_mut()
-            } else {
-                &mut Timeout as *mut _ as _
-            },
-            core::ptr::null_mut(),
-        );
-        UserEnterExclusive();
-
-        if !NT_SUCCESS(Status) {
-            SetLastNtError(Status);
-            Status = WAIT_FAILED as NTSTATUS;
-            break;
-        }
-
-        match Status {
-            x if x == STATUS_WAIT_0 => {
-                break;
-            }
-            2 => {
-                let mut Msg: MSG = core::mem::zeroed();
-                co_IntGetPeekMessage(
-                    &mut Msg,
-                    core::ptr::null_mut(),
-                    0,
-                    0,
-                    PM_REMOVE | PM_QS_SENDMESSAGE,
-                    0,
-                );
-                ERR!(b"WFII: WAIT 2\n\0".as_ptr() as *const i8);
-            }
-            x if x == STATUS_TIMEOUT => {
-                ERR!(b"WFII: timeout\n\0".as_ptr() as *const i8);
-                break;
-            }
-            x if x == WAIT_FAILED as NTSTATUS => {
-                break;
-            }
-            _ => {
-                ERR!(b"WFII: finished\n\0".as_ptr() as *const i8);
-                Status = STATUS_SUCCESS;
-                break;
-            }
-        }
-    }
-
-    KeStackAttachProcess(core::ptr::addr_of_mut!((*Process).Pcb) as _, &mut ApcState as *mut _ as _);
-    pti = (*W32Process).ptiList;
-    while !pti.is_null() {
-        (*pti).TIF_flags &= !TIF_WAITFORINPUTIDLE;
-        (*(*pti).pClientInfo).dwTIFlags = (*pti).TIF_flags;
-        pti = (*pti).ptiSibling;
-    }
-    (*ppi_w32pf_flags(W32Process)) &= !W32PF_WAITFORINPUTIDLE;
-    KeUnstackDetachProcess(&mut ApcState as *mut _ as _);
-
-    IntDereferenceProcessInfo(W32Process);
-    ObDereferenceObject(Process as *mut core::ffi::c_void);
-    UserLeave();
-    Status as DWORD
-}
-
-#[cfg(not(target_arch = "x86"))]
-#[no_mangle]
-pub unsafe extern "C" fn NtUserWaitForInputIdle(
+pub unsafe extern "system" fn NtUserWaitForInputIdle(
     hProcess: HANDLE,
     dwMilliseconds: DWORD,
     bSharedWow: BOOL,

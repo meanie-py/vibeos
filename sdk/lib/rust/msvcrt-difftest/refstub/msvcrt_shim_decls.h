@@ -53,6 +53,33 @@ HANDLE   WINAPI CreateFileW(const wchar_t *name, DWORD access, DWORD share,
                             DWORD flags, HANDLE template_file);
 BOOL     WINAPI CreatePipe(HANDLE *read_h, HANDLE *write_h,
                            SECURITY_ATTRIBUTES *sa, DWORD size);
+/* ── the process layer (processimpl.c) ───────────────────────────────────
+ *
+ * `CreateProcessW` is a RECORDER, not a spawner: it copies its arguments into a
+ * ledger the test reads back and returns a preset outcome.  That is the only
+ * shape a difftest can use here — process.c's whole job is to MARSHAL these
+ * arguments, and a shim that actually forked would grade the child's behaviour
+ * instead of the marshalling, non-deterministically, twice per row.
+ *
+ * `WaitForSingleObject` / `GetExitCodeProcess` are presets for the same reason
+ * fileimpl.c's console knob is one: msvcrt_spawn's `_P_WAIT` arm and `_cwait`'s
+ * ECHILD arm are only reachable if BOTH answers can be produced on demand. */
+BOOL     WINAPI CreateProcessW(const wchar_t *app, wchar_t *cmdline,
+                               SECURITY_ATTRIBUTES *proc_attr,
+                               SECURITY_ATTRIBUTES *thread_attr, BOOL inherit,
+                               DWORD flags, void *env, const wchar_t *cwd,
+                               STARTUPINFOW *si, PROCESS_INFORMATION *pi);
+BOOL     WINAPI FreeLibrary(HMODULE mod);
+DWORD    WINAPI GetEnvironmentVariableW(const wchar_t *name, wchar_t *buf,
+                                        DWORD size);
+BOOL     WINAPI GetExitCodeProcess(HANDLE proc, DWORD *code);
+/* Declared `void *`-returning, which is how `_getdllprocaddr` uses it — the PSDK's
+ * FARPROC would make that `return GetProcAddress(...)` a function-to-object
+ * pointer conversion the host compiler complains about, for no gain here. */
+void *   WINAPI GetProcAddress(HMODULE mod, const char *name);
+HMODULE  WINAPI LoadLibraryW(const wchar_t *name);
+DWORD    WINAPI WaitForSingleObject(HANDLE h, DWORD ms);
+
 void     WINAPI DeleteCriticalSection(CRITICAL_SECTION *cs);
 BOOL     WINAPI DeleteFileW(const wchar_t *name);
 BOOL     WINAPI DuplicateHandle(HANDLE src_proc, HANDLE src, HANDLE dst_proc,
@@ -114,7 +141,11 @@ LPWSTR   WINAPI lstrcpyW(LPWSTR dst, LPCWSTR src);
  * difference between the reference and the thing it grades. */
 int          CDECL _get_fmode(int *mode);
 int          CDECL _getdrive(void);
-__time64_t   CDECL _time64(__time64_t *t);
+/* `ref_`-prefixed, unlike its neighbours, and the reason is the code under test:
+ * msvcrt EXPORTS `_time64`, so once time.rs is in the link the plain name belongs to
+ * the SUBJECT and a second strong definition here is a duplicate-symbol failure. The
+ * file.c preludes map `_time64` onto this name (stage 4.5); fileimpl.c defines it. */
+__time64_t   CDECL ref__time64(__time64_t *t);
 wchar_t *    CDECL _wgetenv(const wchar_t *name);
 wchar_t *          msvcrt_wstrdupa(const char *str);
 

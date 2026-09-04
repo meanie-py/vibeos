@@ -392,7 +392,15 @@ python -m rustconv candidate-check candidates.json --repair  # Batched x3 candid
 python -m rustconv substrate-plan path/to/report.json   # Cluster compiler roots by authority
 python -m rustconv crate-repair foo-rust --arches i386 amd64 arm64  # $0 deterministic repair
 python -m rustconv.profile_derive dll/win32/foo --emit report       # Derive bindgen island
+python -m rustconv bank-audit [--verbose]               # Paid .responses output NOT in the tree
 ```
+
+`bank-audit` is the oracle behind the "never delete a `.responses/` dir holding unintegrated
+work" rule — it runs `.responses` → tree, the opposite direction to `fn_coverage`/`export_audit`,
+so it sees paid bodies that never reached a crate (nothing references them, so nothing else
+complains). Exits nonzero on a finding. A banked NAME is a label, not a symbol: `--verbose` shows
+how each alias resolved (macro-expansion body, varargs twin, TCHAR macro, allowlist). Reviewed
+exceptions live in `tools/rustconv/bank_audit_allow.toml` and each needs a written reason.
 
 ### Deterministic substrate closure
 
@@ -408,6 +416,34 @@ harness or leave the class red; never ask the model to guess C++ compiler semant
 Sonnet is considered only after substrate closure leaves a genuine semantic/structural
 residual. The complete protocol and stop rules are in
 `docs/engineering/rustconv-substrate-closure-protocol.md`.
+
+### Which C is NOT ours — `vendor.yaml`
+
+```bash
+python3 tools/vendored.py --emit           # the table: 23 trees, ~1.77M lines
+python3 tools/vendored.py                  # --check (a `vibeos-cli check` stage)
+python3 tools/vendored.py --write-stamps   # regenerate the VENDORED markers
+python3 tools/vendored.py --suspects       # uncatalogued foreign-copyright dirs
+```
+
+`vendor.yaml` (repo root) is the **only** list of vendored third-party trees — ACPICA,
+FreeType, FEX, Microsoft's ucrt, and the `sdk/lib/3rdparty` + `dll/3rdparty` sets. It is
+what makes "how much of *our* C is translated" a computable question, and it is the
+answer to "should I translate this?" for anything under those paths.
+
+Adding a vendored library: add an entry, then `--write-stamps`. `--check` refuses an
+unregistered directory inside a vendor container, a version probe that no longer matches,
+and a stale stamp. Versions are stored as a probe (file + regex), never as a copied
+literal — that is how 78K lines of Microsoft ucrt ended up here with no version stamp at
+all. Do not add a second list of vendored paths anywhere; import `tools/vendored.py`.
+
+`--suspects` is the discovery half: the container ratchet only watches the three vendor
+containers, so a foreign tree living anywhere else (ACPICA under `drivers/`, ucrt under
+`sdk/lib/`) is invisible to it. It reports directories of foreign-copyright source the
+registry does not cover — **~400K lines today, WDF's 290K the bulk of it**. Those are
+QUESTIONS, deliberately not gate findings: whether a driver framework this OS ships is a
+translation target is a judgement call, and auto-excluding on a copyright grep would
+shrink the denominator silently, which is the failure the registry exists to prevent.
 
 ### Static Analysis Tools
 
@@ -522,6 +558,17 @@ All development and CI happens in **QEMU**: `virt` machine (ARM64), `q35` (amd64
 ## rustconv — model shortcuts, HAL mode, and pipeline stages
 
 Model shortcuts: `sonnet`, `haiku`, `opus`, `gemini-pro`, `gemini-flash`, `deepseek`, or full model ID.
+
+**The default is `deepseek-v4-pro` ($0.28/$1.10 per 1M) — you do not pass `-m` to get the cheap
+lane, you pass it to LEAVE.** `get_backend()` prefers `DEEPSEEK_API_KEY` over
+`ANTHROPIC_API_KEY`, so an unflagged `translate`/`submit`/`batch` bills DeepSeek. Sonnet is
+**12.2× the list price** and is an escalation, not a floor: route substrate-clean high-band
+compile failures to `-m sonnet` when agent repair time matters, and keep low/medium and
+deterministic shapes on the default. Retrying a rejected worker with a stronger model measured
+0/3 accepted for $0.13 — a reject is substrate work, not a model-capacity problem.
+
+Switching models never re-bills: the resume-cache key (`preparation_namespace`) is mode + seal
+flags, with no model component, so a unit banked by any model replays for $0 under any other.
 
 `rustconv translate` accepts HAL paths and is HAL-aware (separate `system_prompt_hal.md`, hal_ddk imports, auto-CMake edit). Output quality is ~70% useful for HAL — review before integrating.
 

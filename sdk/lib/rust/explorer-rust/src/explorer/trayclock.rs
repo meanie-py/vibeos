@@ -938,19 +938,8 @@ unsafe fn CTrayClockWnd_process(
 /// WM_NCCREATE) and dispatches; the ATL CWindowImpl thunk equivalent. ABI is
 /// arch-split (bindgen WNDPROC is `extern "stdcall"` on i386, `extern "C"` on
 /// LLP64) exactly like desktop.rs's thread proc.
-#[cfg(not(target_arch = "x86"))]
 #[no_mangle]
-pub unsafe extern "C" fn CTrayClockWnd_WindowProc(
-    hWnd: HWND,
-    uMsg: UINT,
-    wParam: WPARAM,
-    lParam: LPARAM,
-) -> LRESULT {
-    CTrayClockWnd_window_proc_impl(hWnd, uMsg, wParam, lParam)
-}
-#[cfg(target_arch = "x86")]
-#[no_mangle]
-pub unsafe extern "stdcall" fn CTrayClockWnd_WindowProc(
+pub unsafe extern "system" fn CTrayClockWnd_WindowProc(
     hWnd: HWND,
     uMsg: UINT,
     wParam: WPARAM,

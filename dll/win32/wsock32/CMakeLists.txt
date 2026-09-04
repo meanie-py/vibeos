@@ -16,7 +16,7 @@ elseif(ARCH STREQUAL "arm64")
 endif()
 set(WSOCK32_RUST_TARGET_DIR "${CMAKE_CURRENT_BINARY_DIR}/rust-wsock32-target")
 set(WSOCK32_RUST_LIB "${CMAKE_CURRENT_BINARY_DIR}/libwsock32_rust.a")
-file(GLOB_RECURSE WSOCK32_RUST_SRCS "${WSOCK32_RUST_WORKSPACE_DIR}/wsock32-rust/src/*.rs")
+rust_crate_sources(WSOCK32_RUST_SRCS "${WSOCK32_RUST_WORKSPACE_DIR}" wsock32-rust)
 add_custom_command(
     OUTPUT ${WSOCK32_RUST_LIB}
     COMMAND ${CMAKE_COMMAND} -E env

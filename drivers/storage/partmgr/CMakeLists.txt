@@ -23,7 +23,7 @@ elseif(ARCH STREQUAL "arm64")
     set(PARTMGR_RUST_TARGET "aarch64-pc-windows-gnullvm")
     set(PARTMGR_RUST_RUSTFLAGS "")
 endif()
-file(GLOB_RECURSE PARTMGR_RUST_SRCS ${PARTMGR_RUST_WORKSPACE_DIR}/partmgr-rust/src/*.rs)
+rust_crate_sources(PARTMGR_RUST_SRCS "${PARTMGR_RUST_WORKSPACE_DIR}" partmgr-rust)
 add_custom_command(
     OUTPUT ${PARTMGR_RUST_LIB}
     COMMAND ${CMAKE_COMMAND} -E env

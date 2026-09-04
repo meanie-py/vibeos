@@ -71,7 +71,11 @@ typedef struct _REGFOLDERINITDATA
     const REGFOLDERINFO *pInfo;
 } REGFOLDERINITDATA, *PREGFOLDERINITDATA;
 
-HRESULT CRegFolder_CreateInstance(PREGFOLDERINITDATA pInit, LPCITEMIDLIST pidlRoot, REFIID riid, void **ppv);
+/* EXTERN_C because folders/CDesktopFolder.cpp's Rust replacement calls this directly. Without
+   it the symbol is C++-mangled (__Z25CRegFolder_CreateInstance...) and no Rust declaration can
+   name it; the header is seen by both CRegFolder.cpp's definition and every caller, so the
+   linkage flips consistently. Same route the CFSFolder flip took for its two free helpers. */
+EXTERN_C HRESULT CRegFolder_CreateInstance(PREGFOLDERINITDATA pInit, LPCITEMIDLIST pidlRoot, REFIID riid, void **ppv);
 
 #define GET_SHGDN_FOR(dwFlags)         ((DWORD)dwFlags & (DWORD)0x0000FF00)
 #define GET_SHGDN_RELATION(dwFlags)    ((DWORD)dwFlags & (DWORD)0x000000FF)
@@ -148,7 +152,10 @@ EXTERN_C HRESULT SHELL32_BindToSF (LPCITEMIDLIST pidlRoot, PERSIST_FOLDER_TARGET
 extern "C"
 BOOL HCR_RegOpenClassIDKey(REFIID riid, HKEY *hkey);
 
-HRESULT CDefViewBckgrndMenu_CreateInstance(IShellFolder* psf, REFIID riid, void **ppv);
+/* EXTERN_C: the class is Rust-owned (shell32-rust/src/shell32/CDefViewBckgrndMenu.rs) and
+ * publishes this factory as an unmangled cdecl symbol, so the still-C++ CDefView.cpp needs the
+ * declaration to name it rather than a C++-mangled one. Arity and order match the C exactly. */
+EXTERN_C HRESULT CDefViewBckgrndMenu_CreateInstance(IShellFolder* psf, REFIID riid, void **ppv);
 
 EXTERN_C HRESULT SH_GetApidlFromDataObject(IDataObject *pDataObject, PIDLIST_ABSOLUTE* ppidlfolder, PUITEMID_CHILD **apidlItems, UINT *pcidl);
 
@@ -173,8 +180,11 @@ static __inline int SHELL32_GUIDToStringW (REFGUID guid, LPWSTR str)
             guid.Data4[4], guid.Data4[5], guid.Data4[6], guid.Data4[7]);
 }
 
-void SHELL_FS_ProcessDisplayFilename(LPWSTR szPath, DWORD dwFlags);
-BOOL SHELL_FS_HideExtension(LPCWSTR pwszPath);
+/* EXTERN_C: both are now defined in Rust (shell32-rust/src/cfs_folder_tu.rs), which is where the
+ * rest of folders/CFSFolder.cpp went. Plain __cdecl — no WINAPI on either declaration. Without
+ * this the C++ callers (CDefView.cpp, CRecycleBin.cpp) emit a mangled name nothing defines. */
+EXTERN_C void SHELL_FS_ProcessDisplayFilename(LPWSTR szPath, DWORD dwFlags);
+EXTERN_C BOOL SHELL_FS_HideExtension(LPCWSTR pwszPath);
 
 static inline BOOL IsIllegalFsFileName(PCWSTR Name)
 {

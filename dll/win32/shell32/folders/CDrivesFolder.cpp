@@ -116,9 +116,13 @@ static inline UINT GetCachedDriveType(PCWSTR DrivePath)
     return GetCachedDriveType(GetDriveNumber(DrivePath));
 }
 
+/* dialogs/drvdefext.cpp is now Rust, which publishes this with C linkage; without the
+   spelling change the caller below keeps looking for __Z14IsDriveFloppyWPKw. At file scope
+   because a linkage specification is not allowed inside a function body. */
+extern "C" BOOL IsDriveFloppyW(LPCWSTR pszDriveRoot);
+
 static bool IsFloppyDrive(PCWSTR DrivePath)
 {
-    extern BOOL IsDriveFloppyW(LPCWSTR pszDriveRoot);
     INT8 DrvNum = GetDriveNumber(DrivePath);
     if (DrvNum < 0)
         return false;

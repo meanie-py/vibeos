@@ -10439,7 +10439,7 @@ pub struct _PROCESSOR_NUMBER {
 pub type PROCESSOR_NUMBER = _PROCESSOR_NUMBER;
 pub type PPROCESSOR_NUMBER = *mut _PROCESSOR_NUMBER;
 pub type PEXCEPTION_ROUTINE = ::core::option::Option<
-    unsafe extern "stdcall" fn(
+    unsafe extern "system" fn(
         arg1: *mut _EXCEPTION_RECORD,
         arg2: PVOID,
         arg3: *mut _CONTEXT,
@@ -11173,10 +11173,10 @@ pub union _RTL_RUN_ONCE {
 pub type RTL_RUN_ONCE = _RTL_RUN_ONCE;
 pub type PRTL_RUN_ONCE = *mut _RTL_RUN_ONCE;
 pub type PRTL_RUN_ONCE_INIT_FN = ::core::option::Option<
-    unsafe extern "stdcall" fn(arg1: PRTL_RUN_ONCE, arg2: PVOID, arg3: *mut PVOID) -> ULONG,
+    unsafe extern "system" fn(arg1: PRTL_RUN_ONCE, arg2: PVOID, arg3: *mut PVOID) -> ULONG,
 >;
-pub type WORKERCALLBACKFUNC = ::core::option::Option<unsafe extern "stdcall" fn(arg1: PVOID)>;
-pub type PFLS_CALLBACK_FUNCTION = ::core::option::Option<unsafe extern "stdcall" fn(arg1: PVOID)>;
+pub type WORKERCALLBACKFUNC = ::core::option::Option<unsafe extern "system" fn(arg1: PVOID)>;
+pub type PFLS_CALLBACK_FUNCTION = ::core::option::Option<unsafe extern "system" fn(arg1: PVOID)>;
 pub const _ACL_INFORMATION_CLASS_AclRevisionInformation: _ACL_INFORMATION_CLASS = 1;
 pub const _ACL_INFORMATION_CLASS_AclSizeInformation: _ACL_INFORMATION_CLASS = 2;
 pub type _ACL_INFORMATION_CLASS = ::core::ffi::c_uint;
@@ -13372,25 +13372,25 @@ pub type SLIST_HEADER = _SLIST_HEADER;
 pub type PSLIST_HEADER = *mut _SLIST_HEADER;
 pub type SLIST_HEADER32 = SLIST_HEADER;
 pub type PSLIST_HEADER32 = *mut SLIST_HEADER;
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn RtlInitializeSListHead(ListHead: PSLIST_HEADER);
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn RtlFirstEntrySList(ListHead: *const SLIST_HEADER) -> PSINGLE_LIST_ENTRY;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn RtlInterlockedPopEntrySList(ListHead: PSLIST_HEADER) -> PSINGLE_LIST_ENTRY;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn RtlInterlockedPushEntrySList(
         ListHead: PSLIST_HEADER,
         ListEntry: PSINGLE_LIST_ENTRY,
     ) -> PSINGLE_LIST_ENTRY;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn RtlInterlockedFlushSList(ListHead: PSLIST_HEADER) -> PSINGLE_LIST_ENTRY;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn RtlQueryDepthSList(ListHead: PSLIST_HEADER) -> WORD;
 }
 #[repr(C)]
@@ -13441,7 +13441,7 @@ pub struct _RTL_CRITICAL_SECTION {
 }
 pub type RTL_CRITICAL_SECTION = _RTL_CRITICAL_SECTION;
 pub type PRTL_CRITICAL_SECTION = *mut _RTL_CRITICAL_SECTION;
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn RtlCaptureStackBackTrace(
         FramesToSkip: DWORD,
         FramesToCapture: DWORD,
@@ -13449,13 +13449,13 @@ unsafe extern "stdcall" {
         BackTraceHash: PDWORD,
     ) -> WORD;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn RtlCaptureContext(ContextRecord: PCONTEXT);
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn RtlPcToFileHeader(PcValue: PVOID, BaseOfImage: *mut PVOID) -> PVOID;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn RtlUnwind(
         TargetFrame: PVOID,
         TargetIp: PVOID,
@@ -13471,7 +13471,7 @@ pub struct _RTL_SRWLOCK {
 pub type RTL_SRWLOCK = _RTL_SRWLOCK;
 pub type PRTL_SRWLOCK = *mut _RTL_SRWLOCK;
 pub type PVECTORED_EXCEPTION_HANDLER = ::core::option::Option<
-    unsafe extern "stdcall" fn(ExceptionInfo: *mut _EXCEPTION_POINTERS) -> LONG,
+    unsafe extern "system" fn(ExceptionInfo: *mut _EXCEPTION_POINTERS) -> LONG,
 >;
 #[repr(C)]
 #[derive(Debug, Copy, Clone)]
@@ -14126,7 +14126,7 @@ pub union _IMAGE_THUNK_DATA32__bindgen_ty_1 {
 pub type IMAGE_THUNK_DATA32 = _IMAGE_THUNK_DATA32;
 pub type PIMAGE_THUNK_DATA32 = *mut _IMAGE_THUNK_DATA32;
 pub type PIMAGE_TLS_CALLBACK = ::core::option::Option<
-    unsafe extern "stdcall" fn(DllHandle: PVOID, Reason: DWORD, Reserved: PVOID),
+    unsafe extern "system" fn(DllHandle: PVOID, Reason: DWORD, Reserved: PVOID),
 >;
 #[repr(C)]
 #[derive(Debug, Copy, Clone)]
@@ -16019,7 +16019,7 @@ pub struct _ADMINISTRATOR_POWER_POLICY {
 pub type ADMINISTRATOR_POWER_POLICY = _ADMINISTRATOR_POWER_POLICY;
 pub type PADMINISTRATOR_POWER_POLICY = *mut _ADMINISTRATOR_POWER_POLICY;
 pub type WAITORTIMERCALLBACKFUNC =
-    ::core::option::Option<unsafe extern "stdcall" fn(arg1: PVOID, arg2: BOOLEAN)>;
+    ::core::option::Option<unsafe extern "system" fn(arg1: PVOID, arg2: BOOLEAN)>;
 pub type OSVERSIONINFO = OSVERSIONINFOA;
 pub type POSVERSIONINFO = *mut OSVERSIONINFOA;
 pub type LPOSVERSIONINFO = *mut OSVERSIONINFOA;
@@ -16030,7 +16030,7 @@ pub const _HEAP_INFORMATION_CLASS_HeapCompatibilityInformation: _HEAP_INFORMATIO
 pub const _HEAP_INFORMATION_CLASS_HeapEnableTerminationOnCorruption: _HEAP_INFORMATION_CLASS = 1;
 pub type _HEAP_INFORMATION_CLASS = ::core::ffi::c_uint;
 pub use self::_HEAP_INFORMATION_CLASS as HEAP_INFORMATION_CLASS;
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn RtlCompareMemory(
         Source1: *const ::core::ffi::c_void,
         Source2: *const ::core::ffi::c_void,
@@ -16107,7 +16107,7 @@ pub struct _TP_POOL_STACK_INFORMATION {
 pub type TP_POOL_STACK_INFORMATION = _TP_POOL_STACK_INFORMATION;
 pub type PTP_POOL_STACK_INFORMATION = *mut _TP_POOL_STACK_INFORMATION;
 pub type PTP_WORK_CALLBACK = ::core::option::Option<
-    unsafe extern "stdcall" fn(Instance: PTP_CALLBACK_INSTANCE, Context: PVOID, Work: PTP_WORK),
+    unsafe extern "system" fn(Instance: PTP_CALLBACK_INSTANCE, Context: PVOID, Work: PTP_WORK),
 >;
 #[repr(C)]
 #[derive(Debug, Copy, Clone)]
@@ -16117,15 +16117,15 @@ pub struct _TP_CLEANUP_GROUP {
 pub type TP_CLEANUP_GROUP = _TP_CLEANUP_GROUP;
 pub type PTP_CLEANUP_GROUP = *mut _TP_CLEANUP_GROUP;
 pub type PTP_SIMPLE_CALLBACK = ::core::option::Option<
-    unsafe extern "stdcall" fn(Instance: PTP_CALLBACK_INSTANCE, Context: PVOID),
+    unsafe extern "system" fn(Instance: PTP_CALLBACK_INSTANCE, Context: PVOID),
 >;
 pub type PTP_CLEANUP_GROUP_CANCEL_CALLBACK =
-    ::core::option::Option<unsafe extern "stdcall" fn(ObjectContext: PVOID, CleanupContext: PVOID)>;
+    ::core::option::Option<unsafe extern "system" fn(ObjectContext: PVOID, CleanupContext: PVOID)>;
 pub type PTP_TIMER_CALLBACK = ::core::option::Option<
-    unsafe extern "stdcall" fn(arg1: PTP_CALLBACK_INSTANCE, arg2: PVOID, arg3: PTP_TIMER),
+    unsafe extern "system" fn(arg1: PTP_CALLBACK_INSTANCE, arg2: PVOID, arg3: PTP_TIMER),
 >;
 pub type PTP_WAIT_CALLBACK = ::core::option::Option<
-    unsafe extern "stdcall" fn(
+    unsafe extern "system" fn(
         arg1: PTP_CALLBACK_INSTANCE,
         arg2: PVOID,
         arg3: PTP_WAIT,
@@ -16291,9 +16291,9 @@ pub type HGLOBAL = HANDLE;
 pub type HLOCAL = HANDLE;
 pub type GLOBALHANDLE = HANDLE;
 pub type LOCALHANDLE = HANDLE;
-pub type FARPROC = ::core::option::Option<unsafe extern "stdcall" fn() -> INT_PTR>;
-pub type NEARPROC = ::core::option::Option<unsafe extern "stdcall" fn() -> INT_PTR>;
-pub type PROC = ::core::option::Option<unsafe extern "stdcall" fn() -> INT_PTR>;
+pub type FARPROC = ::core::option::Option<unsafe extern "system" fn() -> INT_PTR>;
+pub type NEARPROC = ::core::option::Option<unsafe extern "system" fn() -> INT_PTR>;
+pub type PROC = ::core::option::Option<unsafe extern "system" fn() -> INT_PTR>;
 #[repr(C)]
 #[derive(Debug, Copy, Clone)]
 pub struct HKEY__ {
@@ -16560,10 +16560,10 @@ pub type POINTS = tagPOINTS;
 pub type PPOINTS = *mut tagPOINTS;
 pub type LPPOINTS = *mut tagPOINTS;
 pub type PTHREAD_START_ROUTINE =
-    ::core::option::Option<unsafe extern "stdcall" fn(lpThreadParameter: LPVOID) -> DWORD>;
+    ::core::option::Option<unsafe extern "system" fn(lpThreadParameter: LPVOID) -> DWORD>;
 pub type LPTHREAD_START_ROUTINE = PTHREAD_START_ROUTINE;
 pub type PENCLAVE_ROUTINE =
-    ::core::option::Option<unsafe extern "stdcall" fn(lpThreadParameter: LPVOID) -> LPVOID>;
+    ::core::option::Option<unsafe extern "system" fn(lpThreadParameter: LPVOID) -> LPVOID>;
 pub type LPENCLAVE_ROUTINE = PENCLAVE_ROUTINE;
 #[repr(C)]
 #[derive(Copy, Clone)]
@@ -16843,7 +16843,7 @@ pub type PROCESS_HEAP_ENTRY = _PROCESS_HEAP_ENTRY;
 pub type PPROCESS_HEAP_ENTRY = *mut _PROCESS_HEAP_ENTRY;
 pub type LPPROCESS_HEAP_ENTRY = *mut _PROCESS_HEAP_ENTRY;
 pub type LPOVERLAPPED_COMPLETION_ROUTINE = ::core::option::Option<
-    unsafe extern "stdcall" fn(
+    unsafe extern "system" fn(
         dwErrorCode: DWORD,
         dwNumberOfBytesTransfered: DWORD,
         lpOverlapped: LPOVERLAPPED,
@@ -16958,7 +16958,7 @@ pub const _PROCESS_INFORMATION_CLASS_ProcessInformationClassMax: _PROCESS_INFORM
 pub type _PROCESS_INFORMATION_CLASS = ::core::ffi::c_uint;
 pub use self::_PROCESS_INFORMATION_CLASS as PROCESS_INFORMATION_CLASS;
 pub type PTP_WIN32_IO_CALLBACK = ::core::option::Option<
-    unsafe extern "stdcall" fn(
+    unsafe extern "system" fn(
         Instance: PTP_CALLBACK_INSTANCE,
         Context: PVOID,
         Overlapped: PVOID,
@@ -18201,7 +18201,7 @@ pub type ACTIVATION_CONTEXT_BASIC_INFORMATION = _ACTIVATION_CONTEXT_BASIC_INFORM
 pub type PACTIVATION_CONTEXT_BASIC_INFORMATION = *mut _ACTIVATION_CONTEXT_BASIC_INFORMATION;
 pub type PCACTIVATION_CONTEXT_BASIC_INFORMATION = *const _ACTIVATION_CONTEXT_BASIC_INFORMATION;
 pub type PQUERYACTCTXW_FUNC = ::core::option::Option<
-    unsafe extern "stdcall" fn(
+    unsafe extern "system" fn(
         dwFlags: DWORD,
         hActCtx: HANDLE,
         pvSubInstance: PVOID,
@@ -18277,10 +18277,10 @@ pub const _PROC_THREAD_ATTRIBUTE_NUM_ProcThreadAttributeSveVectorLength:
 pub type _PROC_THREAD_ATTRIBUTE_NUM = ::core::ffi::c_uint;
 pub use self::_PROC_THREAD_ATTRIBUTE_NUM as PROC_THREAD_ATTRIBUTE_NUM;
 pub type PFE_EXPORT_FUNC = ::core::option::Option<
-    unsafe extern "stdcall" fn(pbData: PBYTE, pvCallbackContext: PVOID, ulLength: ULONG) -> DWORD,
+    unsafe extern "system" fn(pbData: PBYTE, pvCallbackContext: PVOID, ulLength: ULONG) -> DWORD,
 >;
 pub type LPPROGRESS_ROUTINE = ::core::option::Option<
-    unsafe extern "stdcall" fn(
+    unsafe extern "system" fn(
         arg1: LARGE_INTEGER,
         arg2: LARGE_INTEGER,
         arg3: LARGE_INTEGER,
@@ -18293,10 +18293,10 @@ pub type LPPROGRESS_ROUTINE = ::core::option::Option<
     ) -> DWORD,
 >;
 pub type PFIBER_START_ROUTINE =
-    ::core::option::Option<unsafe extern "stdcall" fn(lpFiberParameter: LPVOID)>;
+    ::core::option::Option<unsafe extern "system" fn(lpFiberParameter: LPVOID)>;
 pub type LPFIBER_START_ROUTINE = PFIBER_START_ROUTINE;
 pub type ENUMRESLANGPROCA = ::core::option::Option<
-    unsafe extern "stdcall" fn(
+    unsafe extern "system" fn(
         arg1: HMODULE,
         arg2: LPCSTR,
         arg3: LPCSTR,
@@ -18305,7 +18305,7 @@ pub type ENUMRESLANGPROCA = ::core::option::Option<
     ) -> BOOL,
 >;
 pub type ENUMRESLANGPROCW = ::core::option::Option<
-    unsafe extern "stdcall" fn(
+    unsafe extern "system" fn(
         arg1: HMODULE,
         arg2: LPCWSTR,
         arg3: LPCWSTR,
@@ -18314,25 +18314,25 @@ pub type ENUMRESLANGPROCW = ::core::option::Option<
     ) -> BOOL,
 >;
 pub type ENUMRESNAMEPROCA = ::core::option::Option<
-    unsafe extern "stdcall" fn(arg1: HMODULE, arg2: LPCSTR, arg3: LPSTR, arg4: LONG_PTR) -> BOOL,
+    unsafe extern "system" fn(arg1: HMODULE, arg2: LPCSTR, arg3: LPSTR, arg4: LONG_PTR) -> BOOL,
 >;
 pub type ENUMRESNAMEPROCW = ::core::option::Option<
-    unsafe extern "stdcall" fn(arg1: HMODULE, arg2: LPCWSTR, arg3: LPWSTR, arg4: LONG_PTR) -> BOOL,
+    unsafe extern "system" fn(arg1: HMODULE, arg2: LPCWSTR, arg3: LPWSTR, arg4: LONG_PTR) -> BOOL,
 >;
 pub type ENUMRESTYPEPROCA = ::core::option::Option<
-    unsafe extern "stdcall" fn(arg1: HMODULE, arg2: LPSTR, arg3: LONG_PTR) -> BOOL,
+    unsafe extern "system" fn(arg1: HMODULE, arg2: LPSTR, arg3: LONG_PTR) -> BOOL,
 >;
 pub type ENUMRESTYPEPROCW = ::core::option::Option<
-    unsafe extern "stdcall" fn(arg1: HMODULE, arg2: LPWSTR, arg3: LONG_PTR) -> BOOL,
+    unsafe extern "system" fn(arg1: HMODULE, arg2: LPWSTR, arg3: LONG_PTR) -> BOOL,
 >;
 pub type PTOP_LEVEL_EXCEPTION_FILTER =
-    ::core::option::Option<unsafe extern "stdcall" fn(arg1: LPEXCEPTION_POINTERS) -> LONG>;
+    ::core::option::Option<unsafe extern "system" fn(arg1: LPEXCEPTION_POINTERS) -> LONG>;
 pub type LPTOP_LEVEL_EXCEPTION_FILTER = PTOP_LEVEL_EXCEPTION_FILTER;
-pub type PAPCFUNC = ::core::option::Option<unsafe extern "stdcall" fn(arg1: ULONG_PTR)>;
+pub type PAPCFUNC = ::core::option::Option<unsafe extern "system" fn(arg1: ULONG_PTR)>;
 pub type PTIMERAPCROUTINE =
-    ::core::option::Option<unsafe extern "stdcall" fn(arg1: PVOID, arg2: DWORD, arg3: DWORD)>;
+    ::core::option::Option<unsafe extern "system" fn(arg1: PVOID, arg2: DWORD, arg3: DWORD)>;
 pub type PFE_IMPORT_FUNC = ::core::option::Option<
-    unsafe extern "stdcall" fn(pbData: PBYTE, pvCallbackContext: PVOID, ulLength: PULONG) -> DWORD,
+    unsafe extern "system" fn(pbData: PBYTE, pvCallbackContext: PVOID, ulLength: PULONG) -> DWORD,
 >;
 pub type HW_PROFILE_INFO = HW_PROFILE_INFOA;
 pub type LPHW_PROFILE_INFO = *mut HW_PROFILE_INFOA;
@@ -18346,7 +18346,7 @@ pub type INIT_ONCE = RTL_RUN_ONCE;
 pub type PINIT_ONCE = PRTL_RUN_ONCE;
 pub type LPINIT_ONCE = PRTL_RUN_ONCE;
 pub type PINIT_ONCE_FN = ::core::option::Option<
-    unsafe extern "stdcall" fn(InitOnce: PINIT_ONCE, Parameter: PVOID, Context: *mut PVOID) -> BOOL,
+    unsafe extern "system" fn(InitOnce: PINIT_ONCE, Parameter: PVOID, Context: *mut PVOID) -> BOOL,
 >;
 pub type REGSAM = ACCESS_MASK;
 pub type LSTATUS = LONG;
@@ -18373,31 +18373,31 @@ pub type PVALENTW = *mut value_entW;
 pub type VALENT = VALENTA;
 pub type PVALENT = *mut VALENTA;
 pub type DLGPROC = ::core::option::Option<
-    unsafe extern "stdcall" fn(arg1: HWND, arg2: UINT, arg3: WPARAM, arg4: LPARAM) -> INT_PTR,
+    unsafe extern "system" fn(arg1: HWND, arg2: UINT, arg3: WPARAM, arg4: LPARAM) -> INT_PTR,
 >;
 pub type TIMERPROC = ::core::option::Option<
-    unsafe extern "stdcall" fn(arg1: HWND, arg2: UINT, arg3: UINT_PTR, arg4: DWORD),
+    unsafe extern "system" fn(arg1: HWND, arg2: UINT, arg3: UINT_PTR, arg4: DWORD),
 >;
 pub type GRAYSTRINGPROC = ::core::option::Option<
-    unsafe extern "stdcall" fn(arg1: HDC, arg2: LPARAM, arg3: ::core::ffi::c_int) -> BOOL,
+    unsafe extern "system" fn(arg1: HDC, arg2: LPARAM, arg3: ::core::ffi::c_int) -> BOOL,
 >;
 pub type HOOKPROC = ::core::option::Option<
-    unsafe extern "stdcall" fn(arg1: ::core::ffi::c_int, arg2: WPARAM, arg3: LPARAM) -> LRESULT,
+    unsafe extern "system" fn(arg1: ::core::ffi::c_int, arg2: WPARAM, arg3: LPARAM) -> LRESULT,
 >;
 pub type PROPENUMPROCA = ::core::option::Option<
-    unsafe extern "stdcall" fn(arg1: HWND, arg2: LPCSTR, arg3: HANDLE) -> BOOL,
+    unsafe extern "system" fn(arg1: HWND, arg2: LPCSTR, arg3: HANDLE) -> BOOL,
 >;
 pub type PROPENUMPROCW = ::core::option::Option<
-    unsafe extern "stdcall" fn(arg1: HWND, arg2: LPCWSTR, arg3: HANDLE) -> BOOL,
+    unsafe extern "system" fn(arg1: HWND, arg2: LPCWSTR, arg3: HANDLE) -> BOOL,
 >;
 pub type PROPENUMPROCEXA = ::core::option::Option<
-    unsafe extern "stdcall" fn(arg1: HWND, arg2: LPSTR, arg3: HANDLE, arg4: ULONG_PTR) -> BOOL,
+    unsafe extern "system" fn(arg1: HWND, arg2: LPSTR, arg3: HANDLE, arg4: ULONG_PTR) -> BOOL,
 >;
 pub type PROPENUMPROCEXW = ::core::option::Option<
-    unsafe extern "stdcall" fn(arg1: HWND, arg2: LPWSTR, arg3: HANDLE, arg4: ULONG_PTR) -> BOOL,
+    unsafe extern "system" fn(arg1: HWND, arg2: LPWSTR, arg3: HANDLE, arg4: ULONG_PTR) -> BOOL,
 >;
 pub type EDITWORDBREAKPROCA = ::core::option::Option<
-    unsafe extern "stdcall" fn(
+    unsafe extern "system" fn(
         arg1: LPSTR,
         arg2: ::core::ffi::c_int,
         arg3: ::core::ffi::c_int,
@@ -18405,7 +18405,7 @@ pub type EDITWORDBREAKPROCA = ::core::option::Option<
     ) -> ::core::ffi::c_int,
 >;
 pub type EDITWORDBREAKPROCW = ::core::option::Option<
-    unsafe extern "stdcall" fn(
+    unsafe extern "system" fn(
         arg1: LPWSTR,
         arg2: ::core::ffi::c_int,
         arg3: ::core::ffi::c_int,
@@ -18413,10 +18413,10 @@ pub type EDITWORDBREAKPROCW = ::core::option::Option<
     ) -> ::core::ffi::c_int,
 >;
 pub type WNDPROC = ::core::option::Option<
-    unsafe extern "stdcall" fn(arg1: HWND, arg2: UINT, arg3: WPARAM, arg4: LPARAM) -> LRESULT,
+    unsafe extern "system" fn(arg1: HWND, arg2: UINT, arg3: WPARAM, arg4: LPARAM) -> LRESULT,
 >;
 pub type DRAWSTATEPROC = ::core::option::Option<
-    unsafe extern "stdcall" fn(
+    unsafe extern "system" fn(
         arg1: HDC,
         arg2: LPARAM,
         arg3: WPARAM,
@@ -18425,20 +18425,20 @@ pub type DRAWSTATEPROC = ::core::option::Option<
     ) -> BOOL,
 >;
 pub type WNDENUMPROC =
-    ::core::option::Option<unsafe extern "stdcall" fn(arg1: HWND, arg2: LPARAM) -> BOOL>;
+    ::core::option::Option<unsafe extern "system" fn(arg1: HWND, arg2: LPARAM) -> BOOL>;
 pub type MONITORENUMPROC = ::core::option::Option<
-    unsafe extern "stdcall" fn(arg1: HMONITOR, arg2: HDC, arg3: LPRECT, arg4: LPARAM) -> BOOL,
+    unsafe extern "system" fn(arg1: HMONITOR, arg2: HDC, arg3: LPRECT, arg4: LPARAM) -> BOOL,
 >;
 pub type NAMEENUMPROCA =
-    ::core::option::Option<unsafe extern "stdcall" fn(arg1: LPSTR, arg2: LPARAM) -> BOOL>;
+    ::core::option::Option<unsafe extern "system" fn(arg1: LPSTR, arg2: LPARAM) -> BOOL>;
 pub type NAMEENUMPROCW =
-    ::core::option::Option<unsafe extern "stdcall" fn(arg1: LPWSTR, arg2: LPARAM) -> BOOL>;
+    ::core::option::Option<unsafe extern "system" fn(arg1: LPWSTR, arg2: LPARAM) -> BOOL>;
 pub type DESKTOPENUMPROCA = NAMEENUMPROCA;
 pub type DESKTOPENUMPROCW = NAMEENUMPROCW;
 pub type WINSTAENUMPROCA = NAMEENUMPROCA;
 pub type WINSTAENUMPROCW = NAMEENUMPROCW;
 pub type SENDASYNCPROC = ::core::option::Option<
-    unsafe extern "stdcall" fn(arg1: HWND, arg2: UINT, arg3: ULONG_PTR, arg4: LRESULT),
+    unsafe extern "system" fn(arg1: HWND, arg2: UINT, arg3: ULONG_PTR, arg4: LRESULT),
 >;
 #[repr(C)]
 #[derive(Debug, Copy, Clone)]
@@ -18966,7 +18966,7 @@ pub struct tagHELPINFO {
 }
 pub type HELPINFO = tagHELPINFO;
 pub type LPHELPINFO = *mut tagHELPINFO;
-pub type MSGBOXCALLBACK = ::core::option::Option<unsafe extern "stdcall" fn(arg1: LPHELPINFO)>;
+pub type MSGBOXCALLBACK = ::core::option::Option<unsafe extern "system" fn(arg1: LPHELPINFO)>;
 #[repr(C)]
 #[derive(Copy, Clone)]
 pub struct MSGBOXPARAMSA {
@@ -19707,7 +19707,7 @@ pub type GUITHREADINFO = tagGUITHREADINFO;
 pub type PGUITHREADINFO = *mut tagGUITHREADINFO;
 pub type LPGUITHREADINFO = *mut tagGUITHREADINFO;
 pub type WINEVENTPROC = ::core::option::Option<
-    unsafe extern "stdcall" fn(
+    unsafe extern "system" fn(
         arg1: HWINEVENTHOOK,
         arg2: DWORD,
         arg3: HWND,
@@ -19884,7 +19884,7 @@ pub struct NEWHEADER {
     pub ResCount: WORD,
 }
 pub type PREGISTERCLASSNAMEW =
-    ::core::option::Option<unsafe extern "stdcall" fn(arg1: LPCWSTR) -> BOOLEAN>;
+    ::core::option::Option<unsafe extern "system" fn(arg1: LPCWSTR) -> BOOLEAN>;
 pub type WNDCLASS = WNDCLASSA;
 pub type LPWNDCLASS = *mut WNDCLASSA;
 pub type PWNDCLASS = *mut WNDCLASSA;
@@ -21736,7 +21736,7 @@ pub struct _EFI_DRIVER_ENTRY {
 pub type EFI_DRIVER_ENTRY = _EFI_DRIVER_ENTRY;
 pub type PEFI_DRIVER_ENTRY = *mut _EFI_DRIVER_ENTRY;
 pub type PIO_APC_ROUTINE = ::core::option::Option<
-    unsafe extern "stdcall" fn(ApcContext: PVOID, IoStatusBlock: PIO_STATUS_BLOCK, Reserved: ULONG),
+    unsafe extern "system" fn(ApcContext: PVOID, IoStatusBlock: PIO_STATUS_BLOCK, Reserved: ULONG),
 >;
 #[repr(C)]
 #[derive(Copy, Clone)]
@@ -23207,14 +23207,14 @@ pub const _VDMSERVICECLASS_VdmQueryVdmProcess: _VDMSERVICECLASS = 14;
 pub type _VDMSERVICECLASS = ::core::ffi::c_uint;
 pub use self::_VDMSERVICECLASS as VDMSERVICECLASS;
 pub type PKNORMAL_ROUTINE = ::core::option::Option<
-    unsafe extern "stdcall" fn(
+    unsafe extern "system" fn(
         NormalContext: PVOID,
         SystemArgument1: PVOID,
         SystemArgument2: PVOID,
     ),
 >;
 pub type PTIMER_APC_ROUTINE = ::core::option::Option<
-    unsafe extern "stdcall" fn(TimerContext: PVOID, TimerLowValue: ULONG, TimerHighValue: LONG),
+    unsafe extern "system" fn(TimerContext: PVOID, TimerLowValue: ULONG, TimerHighValue: LONG),
 >;
 #[repr(C)]
 #[derive(Debug, Copy, Clone)]
@@ -24904,7 +24904,7 @@ pub type LDR_DLL_NOTIFICATION_DATA = _LDR_DLL_NOTIFICATION_DATA;
 pub type PLDR_DLL_NOTIFICATION_DATA = *mut _LDR_DLL_NOTIFICATION_DATA;
 pub type PCLDR_DLL_NOTIFICATION_DATA = *const LDR_DLL_NOTIFICATION_DATA;
 pub type PLDR_DLL_NOTIFICATION_FUNCTION = ::core::option::Option<
-    unsafe extern "stdcall" fn(
+    unsafe extern "system" fn(
         NotificationReason: ULONG,
         NotificationData: PCLDR_DLL_NOTIFICATION_DATA,
         Context: PVOID,
@@ -24920,13 +24920,13 @@ pub struct _ALT_RESOURCE_MODULE {
 pub type ALT_RESOURCE_MODULE = _ALT_RESOURCE_MODULE;
 pub type PALT_RESOURCE_MODULE = *mut _ALT_RESOURCE_MODULE;
 pub type PLDR_ENUM_CALLBACK = ::core::option::Option<
-    unsafe extern "stdcall" fn(arg1: PLDR_DATA_TABLE_ENTRY, arg2: PVOID, arg3: *mut BOOLEAN),
+    unsafe extern "system" fn(arg1: PLDR_DATA_TABLE_ENTRY, arg2: PVOID, arg3: *mut BOOLEAN),
 >;
 pub type PLDR_MANIFEST_PROBER_ROUTINE = ::core::option::Option<
-    unsafe extern "stdcall" fn(arg1: PVOID, arg2: PCWSTR, arg3: *mut PVOID) -> NTSTATUS,
+    unsafe extern "system" fn(arg1: PVOID, arg2: PCWSTR, arg3: *mut PVOID) -> NTSTATUS,
 >;
 pub type PDLL_INIT_ROUTINE = ::core::option::Option<
-    unsafe extern "stdcall" fn(DllHandle: PVOID, Reason: ULONG, Context: PCONTEXT) -> BOOLEAN,
+    unsafe extern "system" fn(DllHandle: PVOID, Reason: ULONG, Context: PCONTEXT) -> BOOLEAN,
 >;
 #[repr(C)]
 #[derive(Debug, Copy, Clone)]
@@ -28292,12 +28292,12 @@ pub const _RTL_PATH_TYPE_RtlPathTypeRootLocalDevice: _RTL_PATH_TYPE = 7;
 pub type _RTL_PATH_TYPE = ::core::ffi::c_uint;
 pub use self::_RTL_PATH_TYPE as RTL_PATH_TYPE;
 pub type PRTL_ALLOCATE_STRING_ROUTINE =
-    ::core::option::Option<unsafe extern "stdcall" fn(NumberOfBytes: SIZE_T) -> PVOID>;
+    ::core::option::Option<unsafe extern "system" fn(NumberOfBytes: SIZE_T) -> PVOID>;
 pub type PRTL_REALLOCATE_STRING_ROUTINE = ::core::option::Option<
-    unsafe extern "stdcall" fn(NumberOfBytes: SIZE_T, Buffer: PVOID) -> PVOID,
+    unsafe extern "system" fn(NumberOfBytes: SIZE_T, Buffer: PVOID) -> PVOID,
 >;
 pub type PRTL_FREE_STRING_ROUTINE =
-    ::core::option::Option<unsafe extern "stdcall" fn(Buffer: PVOID)>;
+    ::core::option::Option<unsafe extern "system" fn(Buffer: PVOID)>;
 unsafe extern "C" {
     pub static RtlAllocateStringRoutine: PRTL_ALLOCATE_STRING_ROUTINE;
 }
@@ -28308,51 +28308,51 @@ unsafe extern "C" {
     pub static RtlReallocateStringRoutine: PRTL_REALLOCATE_STRING_ROUTINE;
 }
 pub type PRTLP_UNHANDLED_EXCEPTION_FILTER =
-    ::core::option::Option<unsafe extern "stdcall" fn(arg1: *mut _EXCEPTION_POINTERS) -> ULONG>;
+    ::core::option::Option<unsafe extern "system" fn(arg1: *mut _EXCEPTION_POINTERS) -> ULONG>;
 pub type PHEAP_ENUMERATION_ROUTINE = ::core::option::Option<
-    unsafe extern "stdcall" fn(HeapHandle: PVOID, UserParam: PVOID) -> NTSTATUS,
+    unsafe extern "system" fn(HeapHandle: PVOID, UserParam: PVOID) -> NTSTATUS,
 >;
 pub type PRTL_BASE_PROCESS_START_ROUTINE = ::core::option::Option<
-    unsafe extern "stdcall" fn(StartAddress: PTHREAD_START_ROUTINE, Parameter: PVOID),
+    unsafe extern "system" fn(StartAddress: PTHREAD_START_ROUTINE, Parameter: PVOID),
 >;
 pub type PRTL_START_POOL_THREAD = ::core::option::Option<
-    unsafe extern "stdcall" fn(
+    unsafe extern "system" fn(
         Function: PTHREAD_START_ROUTINE,
         Parameter: PVOID,
         ThreadHandle: PHANDLE,
     ) -> NTSTATUS,
 >;
 pub type PRTL_EXIT_POOL_THREAD =
-    ::core::option::Option<unsafe extern "stdcall" fn(ExitStatus: NTSTATUS) -> NTSTATUS>;
+    ::core::option::Option<unsafe extern "system" fn(ExitStatus: NTSTATUS) -> NTSTATUS>;
 pub type PRTL_AVL_MATCH_FUNCTION = ::core::option::Option<
-    unsafe extern "stdcall" fn(arg1: *mut _RTL_AVL_TABLE, arg2: PVOID, arg3: PVOID) -> NTSTATUS,
+    unsafe extern "system" fn(arg1: *mut _RTL_AVL_TABLE, arg2: PVOID, arg3: PVOID) -> NTSTATUS,
 >;
 pub type PRTL_AVL_COMPARE_ROUTINE = ::core::option::Option<
-    unsafe extern "stdcall" fn(
+    unsafe extern "system" fn(
         arg1: *mut _RTL_AVL_TABLE,
         arg2: PVOID,
         arg3: PVOID,
     ) -> RTL_GENERIC_COMPARE_RESULTS,
 >;
 pub type PRTL_GENERIC_COMPARE_ROUTINE = ::core::option::Option<
-    unsafe extern "stdcall" fn(
+    unsafe extern "system" fn(
         arg1: *mut _RTL_GENERIC_TABLE,
         arg2: PVOID,
         arg3: PVOID,
     ) -> RTL_GENERIC_COMPARE_RESULTS,
 >;
 pub type PRTL_GENERIC_ALLOCATE_ROUTINE = ::core::option::Option<
-    unsafe extern "stdcall" fn(arg1: *mut _RTL_GENERIC_TABLE, arg2: CLONG) -> PVOID,
+    unsafe extern "system" fn(arg1: *mut _RTL_GENERIC_TABLE, arg2: CLONG) -> PVOID,
 >;
 pub type PRTL_AVL_ALLOCATE_ROUTINE = ::core::option::Option<
-    unsafe extern "stdcall" fn(arg1: *mut _RTL_AVL_TABLE, arg2: CLONG) -> PVOID,
+    unsafe extern "system" fn(arg1: *mut _RTL_AVL_TABLE, arg2: CLONG) -> PVOID,
 >;
 pub type PRTL_GENERIC_FREE_ROUTINE =
-    ::core::option::Option<unsafe extern "stdcall" fn(arg1: *mut _RTL_GENERIC_TABLE, arg2: PVOID)>;
+    ::core::option::Option<unsafe extern "system" fn(arg1: *mut _RTL_GENERIC_TABLE, arg2: PVOID)>;
 pub type PRTL_AVL_FREE_ROUTINE =
-    ::core::option::Option<unsafe extern "stdcall" fn(arg1: *mut _RTL_AVL_TABLE, arg2: PVOID)>;
+    ::core::option::Option<unsafe extern "system" fn(arg1: *mut _RTL_AVL_TABLE, arg2: PVOID)>;
 pub type PRTL_QUERY_REGISTRY_ROUTINE = ::core::option::Option<
-    unsafe extern "stdcall" fn(
+    unsafe extern "system" fn(
         ValueName: PWSTR,
         ValueType: ULONG,
         ValueData: PVOID,
@@ -28362,12 +28362,12 @@ pub type PRTL_QUERY_REGISTRY_ROUTINE = ::core::option::Option<
     ) -> NTSTATUS,
 >;
 pub type PRTL_SECURE_MEMORY_CACHE_CALLBACK =
-    ::core::option::Option<unsafe extern "stdcall" fn(Address: PVOID, Length: SIZE_T) -> NTSTATUS>;
+    ::core::option::Option<unsafe extern "system" fn(Address: PVOID, Length: SIZE_T) -> NTSTATUS>;
 pub type PRTL_CONFLICT_RANGE_CALLBACK = ::core::option::Option<
-    unsafe extern "stdcall" fn(Context: PVOID, Range: *mut _RTL_RANGE) -> BOOLEAN,
+    unsafe extern "system" fn(Context: PVOID, Range: *mut _RTL_RANGE) -> BOOLEAN,
 >;
 pub type PRTL_HEAP_COMMIT_ROUTINE = ::core::option::Option<
-    unsafe extern "stdcall" fn(
+    unsafe extern "system" fn(
         Base: PVOID,
         CommitAddress: *mut PVOID,
         CommitSize: PSIZE_T,
@@ -29652,7 +29652,7 @@ pub union _STACK_TRACE_DATABASE__bindgen_ty_1 {
 pub type STACK_TRACE_DATABASE = _STACK_TRACE_DATABASE;
 pub type PSTACK_TRACE_DATABASE = *mut _STACK_TRACE_DATABASE;
 pub type RTL_TRACE_HASH_FUNCTION =
-    ::core::option::Option<unsafe extern "stdcall" fn(Count: ULONG, Trace: *mut PVOID) -> ULONG>;
+    ::core::option::Option<unsafe extern "system" fn(Count: ULONG, Trace: *mut PVOID) -> ULONG>;
 #[repr(C)]
 #[derive(Debug, Copy, Clone)]
 pub struct _RTL_TRACE_BLOCK {
@@ -29748,7 +29748,7 @@ pub struct tagSTATSTG {
 pub type RTL_MEMORY_STREAM = _RTL_MEMORY_STREAM;
 pub type PRTL_MEMORY_STREAM = *mut _RTL_MEMORY_STREAM;
 pub type PRTL_MEMORY_STREAM_FINAL_RELEASE_ROUTINE =
-    ::core::option::Option<unsafe extern "stdcall" fn(Stream: PRTL_MEMORY_STREAM)>;
+    ::core::option::Option<unsafe extern "system" fn(Stream: PRTL_MEMORY_STREAM)>;
 #[repr(C)]
 #[derive(Copy, Clone)]
 pub struct _RTL_MEMORY_STREAM {
@@ -29871,7 +29871,7 @@ pub const _THREADINFOCLASS_MaxThreadInfoClass: _THREADINFOCLASS = 56;
 pub type _THREADINFOCLASS = ::core::ffi::c_uint;
 pub use self::_THREADINFOCLASS as THREADINFOCLASS;
 pub type PPOST_PROCESS_INIT_ROUTINE =
-    ::core::option::Option<unsafe extern "stdcall" fn() -> NTSTATUS>;
+    ::core::option::Option<unsafe extern "system" fn() -> NTSTATUS>;
 #[repr(C)]
 #[derive(Copy, Clone)]
 pub struct _DESCRIPTOR_TABLE_ENTRY {
@@ -29880,7 +29880,7 @@ pub struct _DESCRIPTOR_TABLE_ENTRY {
 }
 pub type DESCRIPTOR_TABLE_ENTRY = _DESCRIPTOR_TABLE_ENTRY;
 pub type PDESCRIPTOR_TABLE_ENTRY = *mut _DESCRIPTOR_TABLE_ENTRY;
-pub type PPEBLOCKROUTINE = ::core::option::Option<unsafe extern "stdcall" fn(PebLock: PVOID)>;
+pub type PPEBLOCKROUTINE = ::core::option::Option<unsafe extern "system" fn(PebLock: PVOID)>;
 #[repr(C)]
 #[derive(Debug, Copy, Clone)]
 pub struct _PEB_FREE_BLOCK {
@@ -30635,13 +30635,13 @@ pub const _VF_OBJECT_TYPE_VFOBJTYPE_SYSTEM_BIOS: _VF_OBJECT_TYPE = 2;
 pub type _VF_OBJECT_TYPE = ::core::ffi::c_uint;
 pub use self::_VF_OBJECT_TYPE as VF_OBJECT_TYPE;
 pub use self::_VF_OBJECT_TYPE as PVF_OBJECT_TYPE;
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn NtCompactKeys(Count: ULONG, KeyArray: PHANDLE) -> NTSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn NtCompressKey(Key: HANDLE) -> NTSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn NtCreateKey(
         KeyHandle: PHANDLE,
         DesiredAccess: ACCESS_MASK,
@@ -30652,13 +30652,13 @@ unsafe extern "stdcall" {
         Disposition: PULONG,
     ) -> NTSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn NtDeleteKey(KeyHandle: HANDLE) -> NTSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn NtDeleteValueKey(KeyHandle: HANDLE, ValueName: PUNICODE_STRING) -> NTSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn NtEnumerateKey(
         KeyHandle: HANDLE,
         Index: ULONG,
@@ -30668,7 +30668,7 @@ unsafe extern "stdcall" {
         ResultLength: PULONG,
     ) -> NTSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn NtEnumerateValueKey(
         KeyHandle: HANDLE,
         Index: ULONG,
@@ -30678,10 +30678,10 @@ unsafe extern "stdcall" {
         ResultLength: PULONG,
     ) -> NTSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn NtFlushKey(KeyHandle: HANDLE) -> NTSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn NtGetPlugPlayEvent(
         Reserved1: ULONG,
         Reserved2: ULONG,
@@ -30689,23 +30689,23 @@ unsafe extern "stdcall" {
         BufferSize: ULONG,
     ) -> NTSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn NtInitializeRegistry(Flag: USHORT) -> NTSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn NtLoadKey(
         KeyObjectAttributes: POBJECT_ATTRIBUTES,
         FileObjectAttributes: POBJECT_ATTRIBUTES,
     ) -> NTSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn NtLoadKey2(
         KeyObjectAttributes: POBJECT_ATTRIBUTES,
         FileObjectAttributes: POBJECT_ATTRIBUTES,
         Flags: ULONG,
     ) -> NTSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn NtLoadKeyEx(
         TargetKey: POBJECT_ATTRIBUTES,
         SourceFile: POBJECT_ATTRIBUTES,
@@ -30713,13 +30713,13 @@ unsafe extern "stdcall" {
         TrustClassKey: HANDLE,
     ) -> NTSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn NtLockProductActivationKeys(pPrivateVer: PULONG, pSafeMode: PULONG) -> NTSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn NtLockRegistryKey(KeyHandle: HANDLE) -> NTSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn NtNotifyChangeKey(
         KeyHandle: HANDLE,
         Event: HANDLE,
@@ -30733,7 +30733,7 @@ unsafe extern "stdcall" {
         WatchSubtree: BOOLEAN,
     ) -> NTSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn NtNotifyChangeMultipleKeys(
         MasterKeyHandle: HANDLE,
         Count: ULONG,
@@ -30749,21 +30749,21 @@ unsafe extern "stdcall" {
         Asynchronous: BOOLEAN,
     ) -> NTSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn NtOpenKey(
         KeyHandle: PHANDLE,
         DesiredAccess: ACCESS_MASK,
         ObjectAttributes: POBJECT_ATTRIBUTES,
     ) -> NTSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn NtPlugPlayControl(
         PlugPlayControlClass: PLUGPLAY_CONTROL_CLASS,
         Buffer: PVOID,
         BufferSize: ULONG,
     ) -> NTSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn NtQueryKey(
         KeyHandle: HANDLE,
         KeyInformationClass: KEY_INFORMATION_CLASS,
@@ -30772,7 +30772,7 @@ unsafe extern "stdcall" {
         ResultLength: PULONG,
     ) -> NTSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn NtQueryMultipleValueKey(
         KeyHandle: HANDLE,
         ValueEntries: PKEY_VALUE_ENTRY,
@@ -30782,10 +30782,10 @@ unsafe extern "stdcall" {
         RequiredBufferLength: PULONG,
     ) -> NTSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn NtQueryOpenSubKeys(TargetKey: POBJECT_ATTRIBUTES, HandleCount: PULONG) -> NTSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn NtQueryOpenSubKeysEx(
         TargetKey: POBJECT_ATTRIBUTES,
         BufferLength: ULONG,
@@ -30793,7 +30793,7 @@ unsafe extern "stdcall" {
         RequiredSize: PULONG,
     ) -> NTSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn NtQueryValueKey(
         KeyHandle: HANDLE,
         ValueName: PUNICODE_STRING,
@@ -30803,33 +30803,33 @@ unsafe extern "stdcall" {
         ResultLength: PULONG,
     ) -> NTSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn NtRenameKey(KeyHandle: HANDLE, NewName: PUNICODE_STRING) -> NTSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn NtReplaceKey(
         ObjectAttributes: POBJECT_ATTRIBUTES,
         Key: HANDLE,
         ReplacedObjectAttributes: POBJECT_ATTRIBUTES,
     ) -> NTSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn NtRestoreKey(KeyHandle: HANDLE, FileHandle: HANDLE, RestoreFlags: ULONG) -> NTSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn NtSaveKey(KeyHandle: HANDLE, FileHandle: HANDLE) -> NTSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn NtSaveKeyEx(KeyHandle: HANDLE, FileHandle: HANDLE, Flags: ULONG) -> NTSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn NtSaveMergedKeys(
         HighPrecedenceKeyHandle: HANDLE,
         LowPrecedenceKeyHandle: HANDLE,
         FileHandle: HANDLE,
     ) -> NTSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn NtSetInformationKey(
         KeyHandle: HANDLE,
         KeySetInformationClass: KEY_SET_INFORMATION_CLASS,
@@ -30837,7 +30837,7 @@ unsafe extern "stdcall" {
         KeySetInformationLength: ULONG,
     ) -> NTSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn NtSetValueKey(
         KeyHandle: HANDLE,
         ValueName: PUNICODE_STRING,
@@ -30847,16 +30847,16 @@ unsafe extern "stdcall" {
         DataSize: ULONG,
     ) -> NTSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn NtUnloadKey(KeyObjectAttributes: POBJECT_ATTRIBUTES) -> NTSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn NtUnloadKey2(TargetKey: POBJECT_ATTRIBUTES, Flags: ULONG) -> NTSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn NtUnloadKeyEx(TargetKey: POBJECT_ATTRIBUTES, Event: HANDLE) -> NTSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn ZwCreateKey(
         KeyHandle: PHANDLE,
         DesiredAccess: ACCESS_MASK,
@@ -30867,13 +30867,13 @@ unsafe extern "stdcall" {
         Disposition: PULONG,
     ) -> NTSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn ZwDeleteKey(KeyHandle: HANDLE) -> NTSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn ZwDeleteValueKey(KeyHandle: HANDLE, ValueName: PUNICODE_STRING) -> NTSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn ZwEnumerateKey(
         KeyHandle: HANDLE,
         Index: ULONG,
@@ -30883,7 +30883,7 @@ unsafe extern "stdcall" {
         ResultLength: PULONG,
     ) -> NTSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn ZwEnumerateValueKey(
         KeyHandle: HANDLE,
         Index: ULONG,
@@ -30893,10 +30893,10 @@ unsafe extern "stdcall" {
         ResultLength: PULONG,
     ) -> NTSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn ZwFlushKey(KeyHandle: HANDLE) -> NTSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn ZwGetPlugPlayEvent(
         Reserved1: ULONG,
         Reserved2: ULONG,
@@ -30904,20 +30904,20 @@ unsafe extern "stdcall" {
         BufferSize: ULONG,
     ) -> NTSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn ZwLoadKey(
         KeyObjectAttributes: POBJECT_ATTRIBUTES,
         FileObjectAttributes: POBJECT_ATTRIBUTES,
     ) -> NTSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn ZwLoadKey2(
         KeyObjectAttributes: POBJECT_ATTRIBUTES,
         FileObjectAttributes: POBJECT_ATTRIBUTES,
         Flags: ULONG,
     ) -> NTSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn ZwNotifyChangeKey(
         KeyHandle: HANDLE,
         Event: HANDLE,
@@ -30931,21 +30931,21 @@ unsafe extern "stdcall" {
         WatchSubtree: BOOLEAN,
     ) -> NTSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn ZwOpenKey(
         KeyHandle: PHANDLE,
         DesiredAccess: ACCESS_MASK,
         ObjectAttributes: POBJECT_ATTRIBUTES,
     ) -> NTSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn ZwPlugPlayControl(
         PlugPlayControlClass: PLUGPLAY_CONTROL_CLASS,
         Buffer: PVOID,
         BufferSize: ULONG,
     ) -> NTSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn ZwQueryKey(
         KeyHandle: HANDLE,
         KeyInformationClass: KEY_INFORMATION_CLASS,
@@ -30954,7 +30954,7 @@ unsafe extern "stdcall" {
         ResultLength: PULONG,
     ) -> NTSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn ZwQueryMultipleValueKey(
         KeyHandle: HANDLE,
         ValueList: PKEY_VALUE_ENTRY,
@@ -30964,7 +30964,7 @@ unsafe extern "stdcall" {
         ReturnLength: PULONG,
     ) -> NTSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn ZwQueryValueKey(
         KeyHandle: HANDLE,
         ValueName: PUNICODE_STRING,
@@ -30974,23 +30974,23 @@ unsafe extern "stdcall" {
         ResultLength: PULONG,
     ) -> NTSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn ZwReplaceKey(
         ObjectAttributes: POBJECT_ATTRIBUTES,
         Key: HANDLE,
         ReplacedObjectAttributes: POBJECT_ATTRIBUTES,
     ) -> NTSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn ZwRestoreKey(KeyHandle: HANDLE, FileHandle: HANDLE, RestoreFlags: ULONG) -> NTSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn ZwSaveKey(KeyHandle: HANDLE, FileHandle: HANDLE) -> NTSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn ZwSaveKeyEx(KeyHandle: HANDLE, FileHandle: HANDLE, Flags: ULONG) -> NTSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn ZwSetInformationKey(
         KeyHandle: HANDLE,
         KeyInformationClass: KEY_SET_INFORMATION_CLASS,
@@ -30998,7 +30998,7 @@ unsafe extern "stdcall" {
         KeyInformationLength: ULONG,
     ) -> NTSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn ZwSetValueKey(
         KeyHandle: HANDLE,
         ValueName: PUNICODE_STRING,
@@ -31008,16 +31008,16 @@ unsafe extern "stdcall" {
         DataSize: ULONG,
     ) -> NTSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn ZwInitializeRegistry(Flag: USHORT) -> NTSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn ZwUnloadKey(KeyObjectAttributes: POBJECT_ATTRIBUTES) -> NTSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn NtDebugActiveProcess(Process: HANDLE, DebugObject: HANDLE) -> NTSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn NtCreateDebugObject(
         DebugHandle: PHANDLE,
         DesiredAccess: ACCESS_MASK,
@@ -31025,14 +31025,14 @@ unsafe extern "stdcall" {
         Flags: ULONG,
     ) -> NTSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn NtDebugContinue(
         DebugObject: HANDLE,
         AppClientId: PCLIENT_ID,
         ContinueStatus: NTSTATUS,
     ) -> NTSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn NtWaitForDebugEvent(
         DebugObject: HANDLE,
         Alertable: BOOLEAN,
@@ -31040,10 +31040,10 @@ unsafe extern "stdcall" {
         StateChange: PDBGUI_WAIT_STATE_CHANGE,
     ) -> NTSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn NtRemoveProcessDebug(Process: HANDLE, DebugObject: HANDLE) -> NTSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn NtSetInformationDebugObject(
         DebugObject: HANDLE,
         InformationClass: DEBUGOBJECTINFOCLASS,
@@ -31052,10 +31052,10 @@ unsafe extern "stdcall" {
         ReturnLength: PULONG,
     ) -> NTSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn ZwDebugActiveProcess(Process: HANDLE, DebugObject: HANDLE) -> NTSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn ZwCreateDebugObject(
         DebugHandle: PHANDLE,
         DesiredAccess: ACCESS_MASK,
@@ -31063,17 +31063,17 @@ unsafe extern "stdcall" {
         Flags: ULONG,
     ) -> NTSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn ZwDebugContinue(
         DebugObject: HANDLE,
         AppClientId: PCLIENT_ID,
         ContinueStatus: NTSTATUS,
     ) -> NTSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn ZwRemoveProcessDebug(Process: HANDLE, DebugObject: HANDLE) -> NTSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn ZwWaitForDebugEvent(
         DebugObject: HANDLE,
         Alertable: BOOLEAN,
@@ -31081,7 +31081,7 @@ unsafe extern "stdcall" {
         StateChange: PDBGUI_WAIT_STATE_CHANGE,
     ) -> NTSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn ZwSetInformationDebugObject(
         DebugObject: HANDLE,
         InformationClass: DEBUGOBJECTINFOCLASS,
@@ -31090,13 +31090,13 @@ unsafe extern "stdcall" {
         ReturnLength: PULONG,
     ) -> NTSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn NtQueryDebugFilterState(ComponentId: ULONG, Level: ULONG) -> NTSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn NtSetDebugFilterState(ComponentId: ULONG, Level: ULONG, State: BOOLEAN) -> NTSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn NtSystemDebugControl(
         Command: SYSDBG_COMMAND,
         InputBuffer: PVOID,
@@ -31106,13 +31106,13 @@ unsafe extern "stdcall" {
         ReturnLength: PULONG,
     ) -> NTSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn ZwQueryDebugFilterState(ComponentId: ULONG, Level: ULONG) -> NTSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn ZwSetDebugFilterState(ComponentId: ULONG, Level: ULONG, State: BOOLEAN) -> NTSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn ZwSystemDebugControl(
         Command: SYSDBG_COMMAND,
         InputBuffer: PVOID,
@@ -31122,13 +31122,13 @@ unsafe extern "stdcall" {
         ReturnLength: PULONG,
     ) -> NTSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn NtContinue(Context: PCONTEXT, TestAlert: BOOLEAN) -> NTSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn NtCallbackReturn(Result: PVOID, ResultLength: ULONG, Status: NTSTATUS) -> NTSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn NtCreateProfile(
         ProfileHandle: PHANDLE,
         ProcessHandle: HANDLE,
@@ -31141,7 +31141,7 @@ unsafe extern "stdcall" {
         ProcessorMask: KAFFINITY,
     ) -> NTSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn NtCreateProfileEx(
         ProfileHandle: PHANDLE,
         ProcessHandle: HANDLE,
@@ -31155,38 +31155,38 @@ unsafe extern "stdcall" {
         Affinity: PGROUP_AFFINITY,
     ) -> NTSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn NtDelayExecution(Alertable: BOOLEAN, Interval: *mut LARGE_INTEGER) -> NTSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn NtGetCurrentProcessorNumber() -> ULONG;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn NtGetContextThread(ThreadHandle: HANDLE, Context: PCONTEXT) -> NTSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn NtGetTickCount() -> ULONG;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn NtQueryIntervalProfile(ProfileSource: KPROFILE_SOURCE, Interval: PULONG) -> NTSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn NtQueryPerformanceCounter(
         Counter: PLARGE_INTEGER,
         Frequency: PLARGE_INTEGER,
     ) -> NTSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn NtQuerySystemTime(CurrentTime: PLARGE_INTEGER) -> NTSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn NtQueryTimerResolution(
         MinimumResolution: PULONG,
         MaximumResolution: PULONG,
         ActualResolution: PULONG,
     ) -> NTSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn NtQueueApcThread(
         ThreadHandle: HANDLE,
         ApcRoutine: PKNORMAL_ROUTINE,
@@ -31195,7 +31195,7 @@ unsafe extern "stdcall" {
         SystemArgument2: PVOID,
     ) -> NTSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn NtQueueApcThreadEx(
         ThreadHandle: HANDLE,
         UserApcReserveHandle: HANDLE,
@@ -31205,20 +31205,20 @@ unsafe extern "stdcall" {
         SystemArgument2: PVOID,
     ) -> NTSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn NtRaiseException(
         ExceptionRecord: PEXCEPTION_RECORD,
         Context: PCONTEXT,
         SearchFrames: BOOLEAN,
     ) -> NTSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn NtSetContextThread(ThreadHandle: HANDLE, Context: PCONTEXT) -> NTSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn NtSetIntervalProfile(Interval: ULONG, ClockSource: KPROFILE_SOURCE) -> NTSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn NtSetLdtEntries(
         Selector1: ULONG,
         LdtEntry1: LDT_ENTRY,
@@ -31226,29 +31226,29 @@ unsafe extern "stdcall" {
         LdtEntry2: LDT_ENTRY,
     ) -> NTSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn NtSetSystemTime(SystemTime: PLARGE_INTEGER, NewSystemTime: PLARGE_INTEGER) -> NTSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn NtSetTimerResolution(
         RequestedResolution: ULONG,
         SetOrUnset: BOOLEAN,
         ActualResolution: PULONG,
     ) -> NTSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn NtStartProfile(ProfileHandle: HANDLE) -> NTSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn NtStopProfile(ProfileHandle: HANDLE) -> NTSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn NtTestAlert() -> NTSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn NtVdmControl(ControlCode: ULONG, ControlData: PVOID) -> NTSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn NtW32Call(
         RoutineIndex: ULONG,
         Argument: PVOID,
@@ -31257,16 +31257,16 @@ unsafe extern "stdcall" {
         ResultLength: PULONG,
     ) -> NTSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn NtYieldExecution() -> NTSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn ZwContinue(Context: PCONTEXT, TestAlert: BOOLEAN) -> NTSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn ZwCallbackReturn(Result: PVOID, ResultLength: ULONG, Status: NTSTATUS) -> NTSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn ZwCreateProfile(
         ProfileHandle: PHANDLE,
         ProcessHandle: HANDLE,
@@ -31279,42 +31279,42 @@ unsafe extern "stdcall" {
         ProcessorMask: KAFFINITY,
     ) -> NTSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn ZwDelayExecution(Alertable: BOOLEAN, Interval: *mut LARGE_INTEGER) -> NTSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn ZwFlushInstructionCache(
         ProcessHandle: HANDLE,
         BaseAddress: PVOID,
         NumberOfBytesToFlush: ULONG,
     ) -> NTSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn ZwGetContextThread(ThreadHandle: HANDLE, Context: PCONTEXT) -> NTSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn ZwGetTickCount() -> ULONG;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn ZwQueryIntervalProfile(ProfileSource: KPROFILE_SOURCE, Interval: PULONG) -> NTSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn ZwQueryPerformanceCounter(
         Counter: PLARGE_INTEGER,
         Frequency: PLARGE_INTEGER,
     ) -> NTSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn ZwQuerySystemTime(CurrentTime: PLARGE_INTEGER) -> NTSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn ZwQueryTimerResolution(
         MinimumResolution: PULONG,
         MaximumResolution: PULONG,
         ActualResolution: PULONG,
     ) -> NTSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn ZwQueueApcThread(
         ThreadHandle: HANDLE,
         ApcRoutine: PKNORMAL_ROUTINE,
@@ -31323,20 +31323,20 @@ unsafe extern "stdcall" {
         SystemArgument2: PVOID,
     ) -> NTSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn ZwRaiseException(
         ExceptionRecord: PEXCEPTION_RECORD,
         Context: PCONTEXT,
         SearchFrames: BOOLEAN,
     ) -> NTSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn ZwSetContextThread(ThreadHandle: HANDLE, Context: PCONTEXT) -> NTSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn ZwSetIntervalProfile(Interval: ULONG, ClockSource: KPROFILE_SOURCE) -> NTSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn ZwSetLdtEntries(
         Selector1: ULONG,
         LdtEntry1: LDT_ENTRY,
@@ -31344,29 +31344,29 @@ unsafe extern "stdcall" {
         LdtEntry2: LDT_ENTRY,
     ) -> NTSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn ZwSetSystemTime(SystemTime: PLARGE_INTEGER, NewSystemTime: PLARGE_INTEGER) -> NTSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn ZwSetTimerResolution(
         RequestedResolution: ULONG,
         SetOrUnset: BOOLEAN,
         ActualResolution: PULONG,
     ) -> NTSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn ZwStartProfile(ProfileHandle: HANDLE) -> NTSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn ZwStopProfile(ProfileHandle: HANDLE) -> NTSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn ZwTestAlert() -> NTSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn ZwVdmControl(ControlCode: ULONG, ControlData: PVOID) -> NTSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn ZwW32Call(
         RoutineIndex: ULONG,
         Argument: PVOID,
@@ -31375,7 +31375,7 @@ unsafe extern "stdcall" {
         ResultLength: PULONG,
     ) -> NTSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn ZwYieldExecution() -> NTSTATUS;
 }
 #[repr(C)]
@@ -31384,16 +31384,16 @@ pub struct _EVENT_TRACE_HEADER {
     _unused: [u8; 0],
 }
 pub type PEVENT_TRACE_HEADER = *mut _EVENT_TRACE_HEADER;
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn NtAddAtom(AtomName: PWSTR, AtomNameLength: ULONG, Atom: PRTL_ATOM) -> NTSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn NtCancelTimer(TimerHandle: HANDLE, CurrentState: PBOOLEAN) -> NTSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn NtClearEvent(EventHandle: HANDLE) -> NTSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn NtCreateEvent(
         EventHandle: PHANDLE,
         DesiredAccess: ACCESS_MASK,
@@ -31402,14 +31402,14 @@ unsafe extern "stdcall" {
         InitialState: BOOLEAN,
     ) -> NTSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn NtCreateEventPair(
         EventPairHandle: PHANDLE,
         DesiredAccess: ACCESS_MASK,
         ObjectAttributes: POBJECT_ATTRIBUTES,
     ) -> NTSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn NtCreateKeyedEvent(
         OutHandle: PHANDLE,
         AccessMask: ACCESS_MASK,
@@ -31417,7 +31417,7 @@ unsafe extern "stdcall" {
         Flags: ULONG,
     ) -> NTSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn NtCreateMutant(
         MutantHandle: PHANDLE,
         DesiredAccess: ACCESS_MASK,
@@ -31425,7 +31425,7 @@ unsafe extern "stdcall" {
         InitialOwner: BOOLEAN,
     ) -> NTSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn NtCreateSemaphore(
         SemaphoreHandle: PHANDLE,
         DesiredAccess: ACCESS_MASK,
@@ -31434,7 +31434,7 @@ unsafe extern "stdcall" {
         MaximumCount: LONG,
     ) -> NTSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn NtCreateTimer(
         TimerHandle: PHANDLE,
         DesiredAccess: ACCESS_MASK,
@@ -31442,74 +31442,74 @@ unsafe extern "stdcall" {
         TimerType: TIMER_TYPE,
     ) -> NTSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn NtDeleteAtom(Atom: RTL_ATOM) -> NTSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn NtDisplayString(DisplayString: PUNICODE_STRING) -> NTSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn NtEnumerateSystemEnvironmentValuesEx(
         InformationClass: ULONG,
         Buffer: PVOID,
         BufferLength: ULONG,
     ) -> NTSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn NtFindAtom(AtomName: PWSTR, AtomNameLength: ULONG, Atom: PRTL_ATOM) -> NTSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn NtOpenEvent(
         EventHandle: PHANDLE,
         DesiredAccess: ACCESS_MASK,
         ObjectAttributes: POBJECT_ATTRIBUTES,
     ) -> NTSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn NtOpenKeyedEvent(
         OutHandle: PHANDLE,
         AccessMask: ACCESS_MASK,
         ObjectAttributes: POBJECT_ATTRIBUTES,
     ) -> NTSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn NtOpenEventPair(
         EventPairHandle: PHANDLE,
         DesiredAccess: ACCESS_MASK,
         ObjectAttributes: POBJECT_ATTRIBUTES,
     ) -> NTSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn NtOpenMutant(
         MutantHandle: PHANDLE,
         DesiredAccess: ACCESS_MASK,
         ObjectAttributes: POBJECT_ATTRIBUTES,
     ) -> NTSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn NtOpenSemaphore(
         SemaphoreHandle: PHANDLE,
         DesiredAcces: ACCESS_MASK,
         ObjectAttributes: POBJECT_ATTRIBUTES,
     ) -> NTSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn NtOpenTimer(
         TimerHandle: PHANDLE,
         DesiredAccess: ACCESS_MASK,
         ObjectAttributes: POBJECT_ATTRIBUTES,
     ) -> NTSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn NtPulseEvent(EventHandle: HANDLE, PulseCount: PLONG) -> NTSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn NtQueryDefaultLocale(UserProfile: BOOLEAN, DefaultLocaleId: PLCID) -> NTSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn NtQueryDefaultUILanguage(LanguageId: *mut LANGID) -> NTSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn NtQueryEvent(
         EventHandle: HANDLE,
         EventInformationClass: EVENT_INFORMATION_CLASS,
@@ -31518,7 +31518,7 @@ unsafe extern "stdcall" {
         ReturnLength: PULONG,
     ) -> NTSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn NtQueryInformationAtom(
         Atom: RTL_ATOM,
         AtomInformationClass: ATOM_INFORMATION_CLASS,
@@ -31527,10 +31527,10 @@ unsafe extern "stdcall" {
         ReturnLength: PULONG,
     ) -> NTSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn NtQueryInstallUILanguage(LanguageId: *mut LANGID) -> NTSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn NtQueryMutant(
         MutantHandle: HANDLE,
         MutantInformationClass: MUTANT_INFORMATION_CLASS,
@@ -31539,7 +31539,7 @@ unsafe extern "stdcall" {
         ResultLength: PULONG,
     ) -> NTSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn NtQuerySemaphore(
         SemaphoreHandle: HANDLE,
         SemaphoreInformationClass: SEMAPHORE_INFORMATION_CLASS,
@@ -31548,7 +31548,7 @@ unsafe extern "stdcall" {
         ReturnLength: PULONG,
     ) -> NTSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn NtQuerySystemEnvironmentValue(
         Name: PUNICODE_STRING,
         Value: PWSTR,
@@ -31556,7 +31556,7 @@ unsafe extern "stdcall" {
         ReturnLength: PULONG,
     ) -> NTSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn NtQuerySystemEnvironmentValueEx(
         VariableName: PUNICODE_STRING,
         VendorGuid: LPGUID,
@@ -31565,7 +31565,7 @@ unsafe extern "stdcall" {
         Attributes: PULONG,
     ) -> NTSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn NtQuerySystemInformation(
         SystemInformationClass: SYSTEM_INFORMATION_CLASS,
         SystemInformation: PVOID,
@@ -31573,7 +31573,7 @@ unsafe extern "stdcall" {
         ReturnLength: PULONG,
     ) -> NTSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn NtQueryTimer(
         TimerHandle: HANDLE,
         TimerInformationClass: TIMER_INFORMATION_CLASS,
@@ -31582,7 +31582,7 @@ unsafe extern "stdcall" {
         ResultLength: PULONG,
     ) -> NTSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn NtRaiseHardError(
         ErrorStatus: NTSTATUS,
         NumberOfParameters: ULONG,
@@ -31592,10 +31592,10 @@ unsafe extern "stdcall" {
         Response: PULONG,
     ) -> NTSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn NtReleaseMutant(MutantHandle: HANDLE, ReleaseCount: PLONG) -> NTSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn NtReleaseKeyedEvent(
         EventHandle: HANDLE,
         Key: PVOID,
@@ -31603,50 +31603,50 @@ unsafe extern "stdcall" {
         Timeout: PLARGE_INTEGER,
     ) -> NTSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn NtReleaseSemaphore(
         SemaphoreHandle: HANDLE,
         ReleaseCount: LONG,
         PreviousCount: PLONG,
     ) -> NTSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn NtResetEvent(EventHandle: HANDLE, NumberOfWaitingThreads: PLONG) -> NTSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn NtSetDefaultLocale(UserProfile: BOOLEAN, DefaultLocaleId: LCID) -> NTSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn NtSetDefaultUILanguage(LanguageId: LANGID) -> NTSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn NtSetDefaultHardErrorPort(PortHandle: HANDLE) -> NTSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn NtSetEvent(EventHandle: HANDLE, PreviousState: PLONG) -> NTSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn NtSetEventBoostPriority(EventHandle: HANDLE) -> NTSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn NtSetHighEventPair(EventPairHandle: HANDLE) -> NTSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn NtSetHighWaitLowEventPair(EventPairHandle: HANDLE) -> NTSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn NtSetLowEventPair(EventPair: HANDLE) -> NTSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn NtSetLowWaitHighEventPair(EventPair: HANDLE) -> NTSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn NtSetSystemEnvironmentValue(
         VariableName: PUNICODE_STRING,
         Value: PUNICODE_STRING,
     ) -> NTSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn NtSetSystemEnvironmentValueEx(
         VariableName: PUNICODE_STRING,
         VendorGuid: LPGUID,
@@ -31655,14 +31655,14 @@ unsafe extern "stdcall" {
         Attributes: ULONG,
     ) -> NTSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn NtSetSystemInformation(
         SystemInformationClass: SYSTEM_INFORMATION_CLASS,
         SystemInformation: PVOID,
         SystemInformationLength: ULONG,
     ) -> NTSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn NtSetTimer(
         TimerHandle: HANDLE,
         DueTime: PLARGE_INTEGER,
@@ -31673,13 +31673,13 @@ unsafe extern "stdcall" {
         PreviousState: PBOOLEAN,
     ) -> NTSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn NtSetUuidSeed(UuidSeed: PUCHAR) -> NTSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn NtShutdownSystem(Action: SHUTDOWN_ACTION) -> NTSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn NtWaitForKeyedEvent(
         EventHandle: HANDLE,
         Key: PVOID,
@@ -31687,13 +31687,13 @@ unsafe extern "stdcall" {
         Timeout: PLARGE_INTEGER,
     ) -> NTSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn NtWaitHighEventPair(EventPairHandle: HANDLE) -> NTSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn NtWaitLowEventPair(EventPairHandle: HANDLE) -> NTSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn NtTraceEvent(
         TraceHandle: ULONG,
         Flags: ULONG,
@@ -31701,16 +31701,16 @@ unsafe extern "stdcall" {
         TraceHeader: PEVENT_TRACE_HEADER,
     ) -> NTSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn ZwAddAtom(AtomName: PWSTR, AtomNameLength: ULONG, Atom: PRTL_ATOM) -> NTSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn ZwCancelTimer(TimerHandle: HANDLE, CurrentState: PBOOLEAN) -> NTSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn ZwClearEvent(EventHandle: HANDLE) -> NTSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn ZwCreateEvent(
         EventHandle: PHANDLE,
         DesiredAccess: ACCESS_MASK,
@@ -31719,14 +31719,14 @@ unsafe extern "stdcall" {
         InitialState: BOOLEAN,
     ) -> NTSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn ZwCreateEventPair(
         EventPairHandle: PHANDLE,
         DesiredAccess: ACCESS_MASK,
         ObjectAttributes: POBJECT_ATTRIBUTES,
     ) -> NTSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn ZwCreateKeyedEvent(
         OutHandle: PHANDLE,
         AccessMask: ACCESS_MASK,
@@ -31734,7 +31734,7 @@ unsafe extern "stdcall" {
         Flags: ULONG,
     ) -> NTSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn ZwCreateMutant(
         MutantHandle: PHANDLE,
         DesiredAccess: ACCESS_MASK,
@@ -31742,7 +31742,7 @@ unsafe extern "stdcall" {
         InitialOwner: BOOLEAN,
     ) -> NTSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn ZwCreateSemaphore(
         SemaphoreHandle: PHANDLE,
         DesiredAccess: ACCESS_MASK,
@@ -31751,7 +31751,7 @@ unsafe extern "stdcall" {
         MaximumCount: LONG,
     ) -> NTSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn ZwCreateTimer(
         TimerHandle: PHANDLE,
         DesiredAccess: ACCESS_MASK,
@@ -31759,60 +31759,60 @@ unsafe extern "stdcall" {
         TimerType: TIMER_TYPE,
     ) -> NTSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn ZwDeleteAtom(Atom: RTL_ATOM) -> NTSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn ZwDisplayString(DisplayString: PUNICODE_STRING) -> NTSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn ZwFindAtom(AtomName: PWSTR, AtomNameLength: ULONG, Atom: PRTL_ATOM) -> NTSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn ZwOpenEvent(
         EventHandle: PHANDLE,
         DesiredAccess: ACCESS_MASK,
         ObjectAttributes: POBJECT_ATTRIBUTES,
     ) -> NTSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn ZwOpenEventPair(
         EventPairHandle: PHANDLE,
         DesiredAccess: ACCESS_MASK,
         ObjectAttributes: POBJECT_ATTRIBUTES,
     ) -> NTSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn ZwOpenMutant(
         MutantHandle: PHANDLE,
         DesiredAccess: ACCESS_MASK,
         ObjectAttributes: POBJECT_ATTRIBUTES,
     ) -> NTSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn ZwOpenSemaphore(
         SemaphoreHandle: PHANDLE,
         DesiredAcces: ACCESS_MASK,
         ObjectAttributes: POBJECT_ATTRIBUTES,
     ) -> NTSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn ZwOpenTimer(
         TimerHandle: PHANDLE,
         DesiredAccess: ACCESS_MASK,
         ObjectAttributes: POBJECT_ATTRIBUTES,
     ) -> NTSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn ZwPulseEvent(EventHandle: HANDLE, PulseCount: PLONG) -> NTSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn ZwQueryDefaultLocale(UserProfile: BOOLEAN, DefaultLocaleId: PLCID) -> NTSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn ZwQueryDefaultUILanguage(LanguageId: *mut LANGID) -> NTSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn ZwQueryEvent(
         EventHandle: HANDLE,
         EventInformationClass: EVENT_INFORMATION_CLASS,
@@ -31821,7 +31821,7 @@ unsafe extern "stdcall" {
         ReturnLength: PULONG,
     ) -> NTSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn ZwQueryInformationAtom(
         Atom: RTL_ATOM,
         AtomInformationClass: ATOM_INFORMATION_CLASS,
@@ -31830,10 +31830,10 @@ unsafe extern "stdcall" {
         ReturnLength: PULONG,
     ) -> NTSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn ZwQueryInstallUILanguage(LanguageId: *mut LANGID) -> NTSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn ZwQueryMutant(
         MutantHandle: HANDLE,
         MutantInformationClass: MUTANT_INFORMATION_CLASS,
@@ -31842,7 +31842,7 @@ unsafe extern "stdcall" {
         ResultLength: PULONG,
     ) -> NTSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn ZwQuerySemaphore(
         SemaphoreHandle: HANDLE,
         SemaphoreInformationClass: SEMAPHORE_INFORMATION_CLASS,
@@ -31851,7 +31851,7 @@ unsafe extern "stdcall" {
         ReturnLength: PULONG,
     ) -> NTSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn ZwQuerySystemEnvironmentValue(
         Name: PUNICODE_STRING,
         Value: PWSTR,
@@ -31859,7 +31859,7 @@ unsafe extern "stdcall" {
         ReturnLength: PULONG,
     ) -> NTSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn ZwQuerySystemInformation(
         SystemInformationClass: SYSTEM_INFORMATION_CLASS,
         SystemInformation: PVOID,
@@ -31867,7 +31867,7 @@ unsafe extern "stdcall" {
         ReturnLength: PULONG,
     ) -> NTSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn ZwQueryTimer(
         TimerHandle: HANDLE,
         TimerInformationClass: TIMER_INFORMATION_CLASS,
@@ -31876,7 +31876,7 @@ unsafe extern "stdcall" {
         ResultLength: PULONG,
     ) -> NTSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn ZwRaiseHardError(
         ErrorStatus: NTSTATUS,
         NumberOfParameters: ULONG,
@@ -31886,57 +31886,57 @@ unsafe extern "stdcall" {
         Response: PULONG,
     ) -> NTSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn ZwReleaseMutant(MutantHandle: HANDLE, ReleaseCount: PLONG) -> NTSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn ZwReleaseSemaphore(
         SemaphoreHandle: HANDLE,
         ReleaseCount: LONG,
         PreviousCount: PLONG,
     ) -> NTSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn ZwResetEvent(EventHandle: HANDLE, NumberOfWaitingThreads: PLONG) -> NTSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn ZwSetDefaultLocale(UserProfile: BOOLEAN, DefaultLocaleId: LCID) -> NTSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn ZwSetDefaultUILanguage(LanguageId: LANGID) -> NTSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn ZwSetDefaultHardErrorPort(PortHandle: HANDLE) -> NTSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn ZwSetEvent(EventHandle: HANDLE, PreviousState: PLONG) -> NTSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn ZwSetHighEventPair(EventPairHandle: HANDLE) -> NTSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn ZwSetHighWaitLowEventPair(EventPairHandle: HANDLE) -> NTSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn ZwSetLowEventPair(EventPair: HANDLE) -> NTSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn ZwSetLowWaitHighEventPair(EventPair: HANDLE) -> NTSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn ZwSetSystemEnvironmentValue(
         VariableName: PUNICODE_STRING,
         Value: PUNICODE_STRING,
     ) -> NTSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn ZwSetSystemInformation(
         SystemInformationClass: SYSTEM_INFORMATION_CLASS,
         SystemInformation: PVOID,
         SystemInformationLength: ULONG,
     ) -> NTSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn ZwSetTimer(
         TimerHandle: HANDLE,
         DueTime: PLARGE_INTEGER,
@@ -31947,19 +31947,19 @@ unsafe extern "stdcall" {
         PreviousState: PBOOLEAN,
     ) -> NTSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn ZwSetUuidSeed(UuidSeed: PUCHAR) -> NTSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn ZwShutdownSystem(Action: SHUTDOWN_ACTION) -> NTSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn ZwWaitHighEventPair(EventPairHandle: HANDLE) -> NTSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn ZwWaitLowEventPair(EventPairHandle: HANDLE) -> NTSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn ZwTraceEvent(
         TraceHandle: ULONG,
         Flags: ULONG,
@@ -31967,16 +31967,16 @@ unsafe extern "stdcall" {
         TraceHeader: PEVENT_TRACE_HEADER,
     ) -> NTSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn NtAddBootEntry(BootEntry: PBOOT_ENTRY, Id: ULONG) -> NTSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn NtAddDriverEntry(BootEntry: PEFI_DRIVER_ENTRY, Id: ULONG) -> NTSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn NtCancelIoFile(FileHandle: HANDLE, IoStatusBlock: PIO_STATUS_BLOCK) -> NTSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn NtCreateFile(
         FileHandle: PHANDLE,
         DesiredAccess: ACCESS_MASK,
@@ -31991,7 +31991,7 @@ unsafe extern "stdcall" {
         EaLength: ULONG,
     ) -> NTSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn NtCreateIoCompletion(
         IoCompletionHandle: PHANDLE,
         DesiredAccess: ACCESS_MASK,
@@ -31999,7 +31999,7 @@ unsafe extern "stdcall" {
         NumberOfConcurrentThreads: ULONG,
     ) -> NTSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn NtCreateMailslotFile(
         MailSlotFileHandle: PHANDLE,
         DesiredAccess: ACCESS_MASK,
@@ -32011,7 +32011,7 @@ unsafe extern "stdcall" {
         TimeOut: PLARGE_INTEGER,
     ) -> NTSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn NtCreateNamedPipeFile(
         NamedPipeFileHandle: PHANDLE,
         DesiredAccess: ACCESS_MASK,
@@ -32029,16 +32029,16 @@ unsafe extern "stdcall" {
         DefaultTimeOut: PLARGE_INTEGER,
     ) -> NTSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn NtDeleteDriverEntry(Id: ULONG) -> NTSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn NtDeleteBootEntry(Id: ULONG) -> NTSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn NtDeleteFile(ObjectAttributes: POBJECT_ATTRIBUTES) -> NTSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn NtDeviceIoControlFile(
         FileHandle: HANDLE,
         Event: HANDLE,
@@ -32052,19 +32052,19 @@ unsafe extern "stdcall" {
         OutputBufferLength: ULONG,
     ) -> NTSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn NtEnumerateBootEntries(Buffer: PVOID, BufferLength: PULONG) -> NTSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn NtEnumerateDriverEntries(Buffer: PVOID, BufferLength: PULONG) -> NTSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn NtFlushBuffersFile(FileHandle: HANDLE, IoStatusBlock: PIO_STATUS_BLOCK) -> NTSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn NtFlushWriteBuffer() -> NTSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn NtFsControlFile(
         FileHandle: HANDLE,
         Event: HANDLE,
@@ -32078,10 +32078,10 @@ unsafe extern "stdcall" {
         OutputBufferLength: ULONG,
     ) -> NTSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn NtLoadDriver(DriverServiceName: PUNICODE_STRING) -> NTSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn NtLockFile(
         FileHandle: HANDLE,
         Event: HANDLE,
@@ -32095,13 +32095,13 @@ unsafe extern "stdcall" {
         ExclusiveLock: BOOLEAN,
     ) -> NTSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn NtModifyBootEntry(BootEntry: PBOOT_ENTRY) -> NTSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn NtModifyDriverEntry(DriverEntry: PEFI_DRIVER_ENTRY) -> NTSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn NtNotifyChangeDirectoryFile(
         FileHandle: HANDLE,
         Event: HANDLE,
@@ -32114,7 +32114,7 @@ unsafe extern "stdcall" {
         WatchTree: BOOLEAN,
     ) -> NTSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn NtOpenFile(
         FileHandle: PHANDLE,
         DesiredAccess: ACCESS_MASK,
@@ -32124,29 +32124,29 @@ unsafe extern "stdcall" {
         OpenOptions: ULONG,
     ) -> NTSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn NtOpenIoCompletion(
         CompetionPort: PHANDLE,
         DesiredAccess: ACCESS_MASK,
         ObjectAttributes: POBJECT_ATTRIBUTES,
     ) -> NTSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn NtQueryAttributesFile(
         ObjectAttributes: POBJECT_ATTRIBUTES,
         FileInformation: PFILE_BASIC_INFORMATION,
     ) -> NTSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn NtQueryDriverEntryOrder(Ids: PULONG, Count: PULONG) -> NTSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn NtQueryBootEntryOrder(Ids: PULONG, Count: PULONG) -> NTSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn NtQueryBootOptions(BootOptions: PBOOT_OPTIONS, BootOptionsLength: PULONG) -> NTSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn NtQueryDirectoryFile(
         FileHandle: HANDLE,
         Event: HANDLE,
@@ -32161,7 +32161,7 @@ unsafe extern "stdcall" {
         RestartScan: BOOLEAN,
     ) -> NTSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn NtQueryEaFile(
         FileHandle: HANDLE,
         IoStatusBlock: PIO_STATUS_BLOCK,
@@ -32174,13 +32174,13 @@ unsafe extern "stdcall" {
         RestartScan: BOOLEAN,
     ) -> NTSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn NtQueryFullAttributesFile(
         ObjectAttributes: POBJECT_ATTRIBUTES,
         FileInformation: PFILE_NETWORK_OPEN_INFORMATION,
     ) -> NTSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn NtQueryInformationFile(
         FileHandle: HANDLE,
         IoStatusBlock: PIO_STATUS_BLOCK,
@@ -32189,7 +32189,7 @@ unsafe extern "stdcall" {
         FileInformationClass: FILE_INFORMATION_CLASS,
     ) -> NTSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn NtQueryIoCompletion(
         IoCompletionHandle: HANDLE,
         IoCompletionInformationClass: IO_COMPLETION_INFORMATION_CLASS,
@@ -32198,7 +32198,7 @@ unsafe extern "stdcall" {
         ResultLength: PULONG,
     ) -> NTSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn NtQueryQuotaInformationFile(
         FileHandle: HANDLE,
         IoStatusBlock: PIO_STATUS_BLOCK,
@@ -32211,7 +32211,7 @@ unsafe extern "stdcall" {
         RestartScan: BOOLEAN,
     ) -> NTSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn NtQueryVolumeInformationFile(
         FileHandle: HANDLE,
         IoStatusBlock: PIO_STATUS_BLOCK,
@@ -32220,7 +32220,7 @@ unsafe extern "stdcall" {
         FsInformationClass: FS_INFORMATION_CLASS,
     ) -> NTSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn NtReadFile(
         FileHandle: HANDLE,
         Event: HANDLE,
@@ -32233,7 +32233,7 @@ unsafe extern "stdcall" {
         Key: PULONG,
     ) -> NTSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn NtReadFileScatter(
         FileHandle: HANDLE,
         Event: HANDLE,
@@ -32246,7 +32246,7 @@ unsafe extern "stdcall" {
         Key: PULONG,
     ) -> NTSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn NtRemoveIoCompletion(
         IoCompletionHandle: HANDLE,
         CompletionKey: *mut PVOID,
@@ -32255,16 +32255,16 @@ unsafe extern "stdcall" {
         Timeout: PLARGE_INTEGER,
     ) -> NTSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn NtSetBootEntryOrder(Ids: PULONG, Count: PULONG) -> NTSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn NtSetBootOptions(BootOptions: PBOOT_OPTIONS, FieldsToChange: ULONG) -> NTSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn NtSetDriverEntryOrder(Ids: PULONG, Count: PULONG) -> NTSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn NtSetEaFile(
         FileHandle: HANDLE,
         IoStatusBlock: PIO_STATUS_BLOCK,
@@ -32272,7 +32272,7 @@ unsafe extern "stdcall" {
         EaBufferSize: ULONG,
     ) -> NTSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn NtSetInformationFile(
         FileHandle: HANDLE,
         IoStatusBlock: PIO_STATUS_BLOCK,
@@ -32281,7 +32281,7 @@ unsafe extern "stdcall" {
         FileInformationClass: FILE_INFORMATION_CLASS,
     ) -> NTSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn NtSetIoCompletion(
         IoCompletionPortHandle: HANDLE,
         CompletionKey: PVOID,
@@ -32290,7 +32290,7 @@ unsafe extern "stdcall" {
         CompletionInformation: ULONG,
     ) -> NTSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn NtSetQuotaInformationFile(
         FileHandle: HANDLE,
         IoStatusBlock: PIO_STATUS_BLOCK,
@@ -32298,7 +32298,7 @@ unsafe extern "stdcall" {
         BufferLength: ULONG,
     ) -> NTSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn NtSetVolumeInformationFile(
         FileHandle: HANDLE,
         IoStatusBlock: PIO_STATUS_BLOCK,
@@ -32307,7 +32307,7 @@ unsafe extern "stdcall" {
         FsInformationClass: FS_INFORMATION_CLASS,
     ) -> NTSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn NtTranslateFilePath(
         InputFilePath: PFILE_PATH,
         OutputType: ULONG,
@@ -32315,10 +32315,10 @@ unsafe extern "stdcall" {
         OutputFilePathLength: ULONG,
     ) -> NTSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn NtUnloadDriver(DriverServiceName: PUNICODE_STRING) -> NTSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn NtUnlockFile(
         FileHandle: HANDLE,
         IoStatusBlock: PIO_STATUS_BLOCK,
@@ -32327,7 +32327,7 @@ unsafe extern "stdcall" {
         Key: ULONG,
     ) -> NTSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn NtWriteFile(
         FileHandle: HANDLE,
         Event: HANDLE,
@@ -32340,7 +32340,7 @@ unsafe extern "stdcall" {
         Key: PULONG,
     ) -> NTSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn NtWriteFileGather(
         FileHandle: HANDLE,
         Event: HANDLE,
@@ -32353,13 +32353,13 @@ unsafe extern "stdcall" {
         Key: PULONG,
     ) -> NTSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn ZwAddBootEntry(EntryName: PUNICODE_STRING, EntryValue: PUNICODE_STRING) -> NTSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn ZwCancelIoFile(FileHandle: HANDLE, IoStatusBlock: PIO_STATUS_BLOCK) -> NTSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn ZwCreateFile(
         FileHandle: PHANDLE,
         DesiredAccess: ACCESS_MASK,
@@ -32374,7 +32374,7 @@ unsafe extern "stdcall" {
         EaLength: ULONG,
     ) -> NTSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn ZwCreateIoCompletion(
         IoCompletionHandle: PHANDLE,
         DesiredAccess: ACCESS_MASK,
@@ -32382,7 +32382,7 @@ unsafe extern "stdcall" {
         NumberOfConcurrentThreads: ULONG,
     ) -> NTSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn ZwCreateMailslotFile(
         MailSlotFileHandle: PHANDLE,
         DesiredAccess: ACCESS_MASK,
@@ -32394,7 +32394,7 @@ unsafe extern "stdcall" {
         TimeOut: PLARGE_INTEGER,
     ) -> NTSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn ZwCreateNamedPipeFile(
         NamedPipeFileHandle: PHANDLE,
         DesiredAccess: ACCESS_MASK,
@@ -32412,13 +32412,13 @@ unsafe extern "stdcall" {
         DefaultTimeOut: PLARGE_INTEGER,
     ) -> NTSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn ZwDeleteBootEntry(EntryName: PUNICODE_STRING, EntryValue: PUNICODE_STRING) -> NTSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn ZwDeleteFile(ObjectAttributes: POBJECT_ATTRIBUTES) -> NTSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn ZwDeviceIoControlFile(
         FileHandle: HANDLE,
         Event: HANDLE,
@@ -32432,13 +32432,13 @@ unsafe extern "stdcall" {
         OutputBufferLength: ULONG,
     ) -> NTSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn ZwFlushBuffersFile(FileHandle: HANDLE, IoStatusBlock: PIO_STATUS_BLOCK) -> NTSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn ZwFlushWriteBuffer() -> NTSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn ZwFsControlFile(
         FileHandle: HANDLE,
         Event: HANDLE,
@@ -32452,10 +32452,10 @@ unsafe extern "stdcall" {
         OutputBufferLength: ULONG,
     ) -> NTSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn ZwLoadDriver(DriverServiceName: PUNICODE_STRING) -> NTSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn ZwLockFile(
         FileHandle: HANDLE,
         Event: HANDLE,
@@ -32469,7 +32469,7 @@ unsafe extern "stdcall" {
         ExclusiveLock: BOOLEAN,
     ) -> NTSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn ZwNotifyChangeDirectoryFile(
         FileHandle: HANDLE,
         Event: HANDLE,
@@ -32482,7 +32482,7 @@ unsafe extern "stdcall" {
         WatchTree: BOOLEAN,
     ) -> NTSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn ZwOpenFile(
         FileHandle: PHANDLE,
         DesiredAccess: ACCESS_MASK,
@@ -32492,20 +32492,20 @@ unsafe extern "stdcall" {
         OpenOptions: ULONG,
     ) -> NTSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn ZwOpenIoCompletion(
         CompetionPort: PHANDLE,
         DesiredAccess: ACCESS_MASK,
         ObjectAttributes: POBJECT_ATTRIBUTES,
     ) -> NTSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn ZwQueryAttributesFile(
         ObjectAttributes: POBJECT_ATTRIBUTES,
         FileInformation: PFILE_BASIC_INFORMATION,
     ) -> NTSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn ZwQueryDirectoryFile(
         FileHandle: HANDLE,
         Event: HANDLE,
@@ -32520,7 +32520,7 @@ unsafe extern "stdcall" {
         RestartScan: BOOLEAN,
     ) -> NTSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn ZwQueryEaFile(
         FileHandle: HANDLE,
         IoStatusBlock: PIO_STATUS_BLOCK,
@@ -32533,13 +32533,13 @@ unsafe extern "stdcall" {
         RestartScan: BOOLEAN,
     ) -> NTSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn ZwQueryFullAttributesFile(
         ObjectAttributes: POBJECT_ATTRIBUTES,
         FileInformation: PFILE_NETWORK_OPEN_INFORMATION,
     ) -> NTSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn ZwQueryInformationFile(
         FileHandle: HANDLE,
         IoStatusBlock: PIO_STATUS_BLOCK,
@@ -32548,7 +32548,7 @@ unsafe extern "stdcall" {
         FileInformationClass: FILE_INFORMATION_CLASS,
     ) -> NTSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn ZwQueryIoCompletion(
         IoCompletionHandle: HANDLE,
         IoCompletionInformationClass: IO_COMPLETION_INFORMATION_CLASS,
@@ -32557,7 +32557,7 @@ unsafe extern "stdcall" {
         ResultLength: PULONG,
     ) -> NTSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn ZwQueryQuotaInformationFile(
         FileHandle: HANDLE,
         IoStatusBlock: PIO_STATUS_BLOCK,
@@ -32570,7 +32570,7 @@ unsafe extern "stdcall" {
         RestartScan: BOOLEAN,
     ) -> NTSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn ZwQueryVolumeInformationFile(
         FileHandle: HANDLE,
         IoStatusBlock: PIO_STATUS_BLOCK,
@@ -32579,7 +32579,7 @@ unsafe extern "stdcall" {
         FsInformationClass: FS_INFORMATION_CLASS,
     ) -> NTSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn ZwReadFile(
         FileHandle: HANDLE,
         Event: HANDLE,
@@ -32592,7 +32592,7 @@ unsafe extern "stdcall" {
         Key: PULONG,
     ) -> NTSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn ZwReadFileScatter(
         FileHandle: HANDLE,
         Event: HANDLE,
@@ -32605,7 +32605,7 @@ unsafe extern "stdcall" {
         Key: PULONG,
     ) -> NTSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn ZwRemoveIoCompletion(
         IoCompletionHandle: HANDLE,
         CompletionKey: *mut PVOID,
@@ -32614,7 +32614,7 @@ unsafe extern "stdcall" {
         Timeout: PLARGE_INTEGER,
     ) -> NTSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn ZwSetEaFile(
         FileHandle: HANDLE,
         IoStatusBlock: PIO_STATUS_BLOCK,
@@ -32622,7 +32622,7 @@ unsafe extern "stdcall" {
         EaBufferSize: ULONG,
     ) -> NTSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn ZwSetInformationFile(
         FileHandle: HANDLE,
         IoStatusBlock: PIO_STATUS_BLOCK,
@@ -32631,7 +32631,7 @@ unsafe extern "stdcall" {
         FileInformationClass: FILE_INFORMATION_CLASS,
     ) -> NTSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn ZwSetIoCompletion(
         IoCompletionPortHandle: HANDLE,
         CompletionKey: PVOID,
@@ -32640,7 +32640,7 @@ unsafe extern "stdcall" {
         CompletionInformation: ULONG,
     ) -> NTSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn ZwSetQuotaInformationFile(
         FileHandle: HANDLE,
         IoStatusBlock: PIO_STATUS_BLOCK,
@@ -32648,7 +32648,7 @@ unsafe extern "stdcall" {
         BufferLength: ULONG,
     ) -> NTSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn ZwSetVolumeInformationFile(
         FileHandle: HANDLE,
         IoStatusBlock: PIO_STATUS_BLOCK,
@@ -32657,10 +32657,10 @@ unsafe extern "stdcall" {
         FsInformationClass: FS_INFORMATION_CLASS,
     ) -> NTSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn ZwUnloadDriver(DriverServiceName: PUNICODE_STRING) -> NTSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn ZwUnlockFile(
         FileHandle: HANDLE,
         IoStatusBlock: PIO_STATUS_BLOCK,
@@ -32669,7 +32669,7 @@ unsafe extern "stdcall" {
         Key: ULONG,
     ) -> NTSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn ZwWriteFile(
         FileHandle: HANDLE,
         Event: HANDLE,
@@ -32682,7 +32682,7 @@ unsafe extern "stdcall" {
         Key: PULONG,
     ) -> NTSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn ZwWriteFileGather(
         FileHandle: HANDLE,
         Event: HANDLE,
@@ -32695,7 +32695,7 @@ unsafe extern "stdcall" {
         Key: PULONG,
     ) -> NTSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn LdrAccessResource(
         BaseAddress: PVOID,
         ResourceDataEntry: PIMAGE_RESOURCE_DATA_ENTRY,
@@ -32703,7 +32703,7 @@ unsafe extern "stdcall" {
         Size: PULONG,
     ) -> NTSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn LdrFindResource_U(
         BaseAddress: PVOID,
         ResourceInfo: PLDR_RESOURCE_INFO,
@@ -32711,7 +32711,7 @@ unsafe extern "stdcall" {
         ResourceDataEntry: *mut PIMAGE_RESOURCE_DATA_ENTRY,
     ) -> NTSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn LdrEnumResources(
         BaseAddress: PVOID,
         ResourceInfo: PLDR_RESOURCE_INFO,
@@ -32720,7 +32720,7 @@ unsafe extern "stdcall" {
         Resources: *mut LDR_ENUM_RESOURCE_INFO,
     ) -> NTSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn LdrFindResourceDirectory_U(
         BaseAddress: PVOID,
         ResourceInfo: PLDR_RESOURCE_INFO,
@@ -32728,13 +32728,13 @@ unsafe extern "stdcall" {
         ResourceDirectory: *mut PIMAGE_RESOURCE_DIRECTORY,
     ) -> NTSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn LdrLoadAlternateResourceModule(Module: PVOID, Buffer: PWSTR) -> NTSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn LdrUnloadAlternateResourceModule(BaseAddress: PVOID) -> BOOLEAN;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn LdrGetProcedureAddress(
         BaseAddress: PVOID,
         Name: PANSI_STRING,
@@ -32742,7 +32742,7 @@ unsafe extern "stdcall" {
         ProcedureAddress: *mut PVOID,
     ) -> NTSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn LdrRelocateImage(
         BaseAddress: PVOID,
         LoaderName: PCSTR,
@@ -32751,20 +32751,20 @@ unsafe extern "stdcall" {
         Invalid: ULONG,
     ) -> ULONG;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn LdrLockLoaderLock(Flags: ULONG, Disposition: PULONG, Cookie: PULONG_PTR) -> NTSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn LdrUnlockLoaderLock(Flags: ULONG, Cookie: ULONG_PTR) -> NTSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn LdrVerifyMappedImageMatchesChecksum(
         BaseAddress: PVOID,
         NumberOfBytes: SIZE_T,
         FileLength: ULONG,
     ) -> BOOLEAN;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn LdrProcessRelocationBlockLongLong(
         Address: ULONG_PTR,
         Count: ULONG,
@@ -32772,17 +32772,17 @@ unsafe extern "stdcall" {
         Delta: LONGLONG,
     ) -> PIMAGE_BASE_RELOCATION;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn LdrEnumerateLoadedModules(
         ReservedFlag: ULONG,
         EnumProc: PLDR_ENUM_CALLBACK,
         Context: PVOID,
     ) -> NTSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn RtlDllShutdownInProgress() -> BOOLEAN;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn NtAcceptConnectPort(
         PortHandle: PHANDLE,
         PortContext: PVOID,
@@ -32792,10 +32792,10 @@ unsafe extern "stdcall" {
         ClientView: PREMOTE_PORT_VIEW,
     ) -> NTSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn NtCompleteConnectPort(PortHandle: HANDLE) -> NTSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn NtConnectPort(
         PortHandle: PHANDLE,
         PortName: PUNICODE_STRING,
@@ -32807,7 +32807,7 @@ unsafe extern "stdcall" {
         ConnectionInformationLength: PULONG,
     ) -> NTSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn NtCreatePort(
         PortHandle: PHANDLE,
         ObjectAttributes: POBJECT_ATTRIBUTES,
@@ -32816,7 +32816,7 @@ unsafe extern "stdcall" {
         MaxPoolUsage: ULONG,
     ) -> NTSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn NtCreateWaitablePort(
         PortHandle: PHANDLE,
         ObjectAttributes: POBJECT_ATTRIBUTES,
@@ -32825,13 +32825,13 @@ unsafe extern "stdcall" {
         NPMessageQueueSize: ULONG,
     ) -> NTSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn NtImpersonateClientOfPort(PortHandle: HANDLE, ClientMessage: PPORT_MESSAGE) -> NTSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn NtListenPort(PortHandle: HANDLE, ConnectionRequest: PPORT_MESSAGE) -> NTSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn NtQueryInformationPort(
         PortHandle: HANDLE,
         PortInformationClass: PORT_INFORMATION_CLASS,
@@ -32840,10 +32840,10 @@ unsafe extern "stdcall" {
         ReturnLength: PULONG,
     ) -> NTSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn NtQueryPortInformationProcess() -> NTSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn NtReadRequestData(
         PortHandle: HANDLE,
         Message: PPORT_MESSAGE,
@@ -32853,10 +32853,10 @@ unsafe extern "stdcall" {
         ReturnLength: PULONG,
     ) -> NTSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn NtReplyPort(PortHandle: HANDLE, LpcReply: PPORT_MESSAGE) -> NTSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn NtReplyWaitReceivePort(
         PortHandle: HANDLE,
         PortContext: *mut PVOID,
@@ -32864,7 +32864,7 @@ unsafe extern "stdcall" {
         ReceiveMessage: PPORT_MESSAGE,
     ) -> NTSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn NtReplyWaitReceivePortEx(
         PortHandle: HANDLE,
         PortContext: *mut PVOID,
@@ -32873,20 +32873,20 @@ unsafe extern "stdcall" {
         Timeout: PLARGE_INTEGER,
     ) -> NTSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn NtReplyWaitReplyPort(PortHandle: HANDLE, ReplyMessage: PPORT_MESSAGE) -> NTSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn NtRequestPort(PortHandle: HANDLE, LpcMessage: PPORT_MESSAGE) -> NTSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn NtRequestWaitReplyPort(
         PortHandle: HANDLE,
         LpcReply: PPORT_MESSAGE,
         LpcRequest: PPORT_MESSAGE,
     ) -> NTSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn NtSecureConnectPort(
         PortHandle: PHANDLE,
         PortName: PUNICODE_STRING,
@@ -32899,7 +32899,7 @@ unsafe extern "stdcall" {
         ConnectionInformationLength: PULONG,
     ) -> NTSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn NtWriteRequestData(
         PortHandle: HANDLE,
         Message: PPORT_MESSAGE,
@@ -32909,7 +32909,7 @@ unsafe extern "stdcall" {
         ReturnLength: PULONG,
     ) -> NTSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn ZwAcceptConnectPort(
         PortHandle: PHANDLE,
         PortContext: PVOID,
@@ -32919,10 +32919,10 @@ unsafe extern "stdcall" {
         ClientView: PREMOTE_PORT_VIEW,
     ) -> NTSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn ZwCompleteConnectPort(PortHandle: HANDLE) -> NTSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn ZwConnectPort(
         PortHandle: PHANDLE,
         PortName: PUNICODE_STRING,
@@ -32934,7 +32934,7 @@ unsafe extern "stdcall" {
         ConnectionInformationLength: PULONG,
     ) -> NTSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn ZwCreatePort(
         PortHandle: PHANDLE,
         ObjectAttributes: POBJECT_ATTRIBUTES,
@@ -32943,7 +32943,7 @@ unsafe extern "stdcall" {
         MaxPoolUsage: ULONG,
     ) -> NTSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn ZwCreateWaitablePort(
         PortHandle: PHANDLE,
         ObjectAttributes: POBJECT_ATTRIBUTES,
@@ -32952,13 +32952,13 @@ unsafe extern "stdcall" {
         NPMessageQueueSize: ULONG,
     ) -> NTSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn ZwImpersonateClientOfPort(PortHandle: HANDLE, ClientMessage: PPORT_MESSAGE) -> NTSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn ZwListenPort(PortHandle: HANDLE, ConnectionRequest: PPORT_MESSAGE) -> NTSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn ZwQueryInformationPort(
         PortHandle: HANDLE,
         PortInformationClass: PORT_INFORMATION_CLASS,
@@ -32967,7 +32967,7 @@ unsafe extern "stdcall" {
         ReturnLength: PULONG,
     ) -> NTSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn ZwReadRequestData(
         PortHandle: HANDLE,
         Message: PPORT_MESSAGE,
@@ -32977,10 +32977,10 @@ unsafe extern "stdcall" {
         ReturnLength: PULONG,
     ) -> NTSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn ZwReplyPort(PortHandle: HANDLE, LpcReply: PPORT_MESSAGE) -> NTSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn ZwReplyWaitReceivePort(
         PortHandle: HANDLE,
         PortContext: *mut PVOID,
@@ -32988,7 +32988,7 @@ unsafe extern "stdcall" {
         ReceiveMessage: PPORT_MESSAGE,
     ) -> NTSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn ZwReplyWaitReceivePortEx(
         PortHandle: HANDLE,
         PortContext: *mut PVOID,
@@ -32997,20 +32997,20 @@ unsafe extern "stdcall" {
         Timeout: PLARGE_INTEGER,
     ) -> NTSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn ZwReplyWaitReplyPort(PortHandle: HANDLE, ReplyMessage: PPORT_MESSAGE) -> NTSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn ZwRequestPort(PortHandle: HANDLE, LpcMessage: PPORT_MESSAGE) -> NTSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn ZwRequestWaitReplyPort(
         PortHandle: HANDLE,
         LpcReply: PPORT_MESSAGE,
         LpcRequest: PPORT_MESSAGE,
     ) -> NTSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn ZwSecureConnectPort(
         PortHandle: PHANDLE,
         PortName: PUNICODE_STRING,
@@ -33023,7 +33023,7 @@ unsafe extern "stdcall" {
         ConnectionInformationLength: PULONG,
     ) -> NTSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn ZwWriteRequestData(
         PortHandle: HANDLE,
         Message: PPORT_MESSAGE,
@@ -33033,20 +33033,20 @@ unsafe extern "stdcall" {
         ReturnLength: PULONG,
     ) -> NTSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn NtAreMappedFilesTheSame(
         File1MappedAsAnImage: PVOID,
         File2MappedAsFile: PVOID,
     ) -> NTSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn NtAllocateUserPhysicalPages(
         ProcessHandle: HANDLE,
         NumberOfPages: PULONG_PTR,
         UserPfnArray: PULONG_PTR,
     ) -> NTSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn NtAllocateVirtualMemory(
         ProcessHandle: HANDLE,
         BaseAddress: *mut PVOID,
@@ -33056,7 +33056,7 @@ unsafe extern "stdcall" {
         Protect: ULONG,
     ) -> NTSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn NtCreatePagingFile(
         FileName: PUNICODE_STRING,
         MinimumSize: PLARGE_INTEGER,
@@ -33064,7 +33064,7 @@ unsafe extern "stdcall" {
         Reserved: ULONG,
     ) -> NTSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn NtCreateSection(
         SectionHandle: PHANDLE,
         DesiredAccess: ACCESS_MASK,
@@ -33075,17 +33075,17 @@ unsafe extern "stdcall" {
         FileHandle: HANDLE,
     ) -> NTSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn NtExtendSection(SectionHandle: HANDLE, NewMaximumSize: PLARGE_INTEGER) -> NTSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn NtFlushInstructionCache(
         ProcessHandle: HANDLE,
         BaseAddress: PVOID,
         NumberOfBytesToFlush: SIZE_T,
     ) -> NTSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn NtFlushVirtualMemory(
         ProcessHandle: HANDLE,
         BaseAddress: *mut PVOID,
@@ -33093,14 +33093,14 @@ unsafe extern "stdcall" {
         IoStatus: PIO_STATUS_BLOCK,
     ) -> NTSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn NtFreeUserPhysicalPages(
         ProcessHandle: HANDLE,
         NumberOfPages: PULONG_PTR,
         UserPfnArray: PULONG_PTR,
     ) -> NTSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn NtFreeVirtualMemory(
         ProcessHandle: HANDLE,
         BaseAddress: *mut PVOID,
@@ -33108,7 +33108,7 @@ unsafe extern "stdcall" {
         FreeType: ULONG,
     ) -> NTSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn NtGetWriteWatch(
         ProcessHandle: HANDLE,
         Flags: ULONG,
@@ -33119,7 +33119,7 @@ unsafe extern "stdcall" {
         Granularity: PULONG,
     ) -> NTSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn NtLockVirtualMemory(
         ProcessHandle: HANDLE,
         BaseAddress: *mut PVOID,
@@ -33127,21 +33127,21 @@ unsafe extern "stdcall" {
         MapType: ULONG,
     ) -> NTSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn NtMapUserPhysicalPages(
         VirtualAddresses: PVOID,
         NumberOfPages: ULONG_PTR,
         UserPfnArray: PULONG_PTR,
     ) -> NTSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn NtMapUserPhysicalPagesScatter(
         VirtualAddresses: *mut PVOID,
         NumberOfPages: ULONG_PTR,
         UserPfnArray: PULONG_PTR,
     ) -> NTSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn NtMapViewOfSection(
         SectionHandle: HANDLE,
         ProcessHandle: HANDLE,
@@ -33155,14 +33155,14 @@ unsafe extern "stdcall" {
         AccessProtection: ULONG,
     ) -> NTSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn NtOpenSection(
         SectionHandle: PHANDLE,
         DesiredAccess: ACCESS_MASK,
         ObjectAttributes: POBJECT_ATTRIBUTES,
     ) -> NTSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn NtProtectVirtualMemory(
         ProcessHandle: HANDLE,
         BaseAddress: *mut PVOID,
@@ -33171,7 +33171,7 @@ unsafe extern "stdcall" {
         OldAccessProtection: PULONG,
     ) -> NTSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn NtQuerySection(
         SectionHandle: HANDLE,
         SectionInformationClass: SECTION_INFORMATION_CLASS,
@@ -33180,7 +33180,7 @@ unsafe extern "stdcall" {
         ResultLength: PSIZE_T,
     ) -> NTSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn NtQueryVirtualMemory(
         ProcessHandle: HANDLE,
         Address: PVOID,
@@ -33190,7 +33190,7 @@ unsafe extern "stdcall" {
         ResultLength: PSIZE_T,
     ) -> NTSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn NtReadVirtualMemory(
         ProcessHandle: HANDLE,
         BaseAddress: PVOID,
@@ -33199,14 +33199,14 @@ unsafe extern "stdcall" {
         NumberOfBytesRead: PSIZE_T,
     ) -> NTSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn NtResetWriteWatch(
         ProcessHandle: HANDLE,
         BaseAddress: PVOID,
         RegionSize: SIZE_T,
     ) -> NTSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn NtUnlockVirtualMemory(
         ProcessHandle: HANDLE,
         BaseAddress: *mut PVOID,
@@ -33214,10 +33214,10 @@ unsafe extern "stdcall" {
         MapType: ULONG,
     ) -> NTSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn NtUnmapViewOfSection(ProcessHandle: HANDLE, BaseAddress: PVOID) -> NTSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn NtWriteVirtualMemory(
         ProcessHandle: HANDLE,
         BaseAddress: PVOID,
@@ -33226,13 +33226,13 @@ unsafe extern "stdcall" {
         NumberOfBytesWritten: PSIZE_T,
     ) -> NTSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn ZwAreMappedFilesTheSame(
         File1MappedAsAnImage: PVOID,
         File2MappedAsFile: PVOID,
     ) -> NTSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn ZwAllocateVirtualMemory(
         ProcessHandle: HANDLE,
         BaseAddress: *mut PVOID,
@@ -33242,7 +33242,7 @@ unsafe extern "stdcall" {
         Protect: ULONG,
     ) -> NTSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn ZwCreatePagingFile(
         FileName: PUNICODE_STRING,
         MinimumSize: PLARGE_INTEGER,
@@ -33250,7 +33250,7 @@ unsafe extern "stdcall" {
         Reserved: ULONG,
     ) -> NTSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn ZwCreateSection(
         SectionHandle: PHANDLE,
         DesiredAccess: ACCESS_MASK,
@@ -33261,10 +33261,10 @@ unsafe extern "stdcall" {
         FileHandle: HANDLE,
     ) -> NTSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn ZwExtendSection(SectionHandle: HANDLE, NewMaximumSize: PLARGE_INTEGER) -> NTSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn ZwFreeVirtualMemory(
         ProcessHandle: HANDLE,
         BaseAddress: *mut PVOID,
@@ -33272,7 +33272,7 @@ unsafe extern "stdcall" {
         FreeType: ULONG,
     ) -> NTSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn ZwLockVirtualMemory(
         ProcessHandle: HANDLE,
         BaseAddress: *mut PVOID,
@@ -33280,7 +33280,7 @@ unsafe extern "stdcall" {
         MapType: ULONG,
     ) -> NTSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn ZwMapViewOfSection(
         SectionHandle: HANDLE,
         ProcessHandle: HANDLE,
@@ -33294,14 +33294,14 @@ unsafe extern "stdcall" {
         Win32Protect: ULONG,
     ) -> NTSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn ZwOpenSection(
         SectionHandle: PHANDLE,
         DesiredAccess: ACCESS_MASK,
         ObjectAttributes: POBJECT_ATTRIBUTES,
     ) -> NTSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn ZwProtectVirtualMemory(
         ProcessHandle: HANDLE,
         BaseAddress: *mut PVOID,
@@ -33310,7 +33310,7 @@ unsafe extern "stdcall" {
         OldAccessProtection: PULONG,
     ) -> NTSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn ZwQuerySection(
         SectionHandle: HANDLE,
         SectionInformationClass: SECTION_INFORMATION_CLASS,
@@ -33319,7 +33319,7 @@ unsafe extern "stdcall" {
         ResultLength: PSIZE_T,
     ) -> NTSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn ZwQueryVirtualMemory(
         ProcessHandle: HANDLE,
         Address: PVOID,
@@ -33329,7 +33329,7 @@ unsafe extern "stdcall" {
         ResultLength: PSIZE_T,
     ) -> NTSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn ZwReadVirtualMemory(
         ProcessHandle: HANDLE,
         BaseAddress: PVOID,
@@ -33338,7 +33338,7 @@ unsafe extern "stdcall" {
         NumberOfBytesRead: PSIZE_T,
     ) -> NTSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn ZwUnlockVirtualMemory(
         ProcessHandle: HANDLE,
         BaseAddress: *mut PVOID,
@@ -33346,10 +33346,10 @@ unsafe extern "stdcall" {
         MapType: ULONG,
     ) -> NTSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn ZwUnmapViewOfSection(ProcessHandle: HANDLE, BaseAddress: PVOID) -> NTSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn ZwWriteVirtualMemory(
         ProcessHandle: HANDLE,
         BaseAddress: PVOID,
@@ -33358,24 +33358,24 @@ unsafe extern "stdcall" {
         NumberOfBytesWritten: PSIZE_T,
     ) -> NTSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn NtClose(Handle: HANDLE) -> NTSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn NtCloseObjectAuditAlarm(
         SubsystemName: PUNICODE_STRING,
         HandleId: PVOID,
         GenerateOnClose: BOOLEAN,
     ) -> NTSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn NtCreateDirectoryObject(
         DirectoryHandle: PHANDLE,
         DesiredAccess: ACCESS_MASK,
         ObjectAttributes: POBJECT_ATTRIBUTES,
     ) -> NTSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn NtCreateSymbolicLinkObject(
         SymbolicLinkHandle: PHANDLE,
         DesiredAccess: ACCESS_MASK,
@@ -33383,14 +33383,14 @@ unsafe extern "stdcall" {
         Name: PUNICODE_STRING,
     ) -> NTSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn NtDeleteObjectAuditAlarm(
         SubsystemName: PUNICODE_STRING,
         HandleId: PVOID,
         GenerateOnClose: BOOLEAN,
     ) -> NTSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn NtDuplicateObject(
         SourceProcessHandle: HANDLE,
         SourceHandle: HANDLE,
@@ -33401,34 +33401,34 @@ unsafe extern "stdcall" {
         Options: ULONG,
     ) -> NTSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn NtMakePermanentObject(Object: HANDLE) -> NTSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn NtMakeTemporaryObject(Handle: HANDLE) -> NTSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn NtOpenDirectoryObject(
         FileHandle: PHANDLE,
         DesiredAccess: ACCESS_MASK,
         ObjectAttributes: POBJECT_ATTRIBUTES,
     ) -> NTSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn NtOpenJobObject(
         JobHandle: PHANDLE,
         DesiredAccess: ACCESS_MASK,
         ObjectAttributes: POBJECT_ATTRIBUTES,
     ) -> NTSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn NtOpenSymbolicLinkObject(
         SymbolicLinkHandle: PHANDLE,
         DesiredAccess: ACCESS_MASK,
         ObjectAttributes: POBJECT_ATTRIBUTES,
     ) -> NTSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn NtQueryDirectoryObject(
         DirectoryHandle: HANDLE,
         Buffer: PVOID,
@@ -33439,7 +33439,7 @@ unsafe extern "stdcall" {
         ReturnLength: PULONG,
     ) -> NTSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn NtQueryObject(
         Handle: HANDLE,
         ObjectInformationClass: OBJECT_INFORMATION_CLASS,
@@ -33448,7 +33448,7 @@ unsafe extern "stdcall" {
         ReturnLength: PULONG,
     ) -> NTSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn NtQuerySecurityObject(
         Handle: HANDLE,
         SecurityInformation: SECURITY_INFORMATION,
@@ -33457,14 +33457,14 @@ unsafe extern "stdcall" {
         LengthNeeded: PULONG,
     ) -> NTSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn NtQuerySymbolicLinkObject(
         SymLinkObjHandle: HANDLE,
         LinkTarget: PUNICODE_STRING,
         DataWritten: PULONG,
     ) -> NTSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn NtSetInformationObject(
         ObjectHandle: HANDLE,
         ObjectInformationClass: OBJECT_INFORMATION_CLASS,
@@ -33472,14 +33472,14 @@ unsafe extern "stdcall" {
         Length: ULONG,
     ) -> NTSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn NtSetSecurityObject(
         Handle: HANDLE,
         SecurityInformation: SECURITY_INFORMATION,
         SecurityDescriptor: PSECURITY_DESCRIPTOR,
     ) -> NTSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn NtSignalAndWaitForSingleObject(
         SignalObject: HANDLE,
         WaitObject: HANDLE,
@@ -33487,7 +33487,7 @@ unsafe extern "stdcall" {
         Time: PLARGE_INTEGER,
     ) -> NTSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn NtWaitForMultipleObjects(
         Count: ULONG,
         Object: *mut HANDLE,
@@ -33496,7 +33496,7 @@ unsafe extern "stdcall" {
         Time: PLARGE_INTEGER,
     ) -> NTSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn NtWaitForMultipleObjects32(
         ObjectCount: ULONG,
         Handles: PLONG,
@@ -33505,31 +33505,31 @@ unsafe extern "stdcall" {
         TimeOut: PLARGE_INTEGER,
     ) -> NTSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn NtWaitForSingleObject(
         Object: HANDLE,
         Alertable: BOOLEAN,
         Timeout: PLARGE_INTEGER,
     ) -> NTSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn ZwClose(Handle: HANDLE) -> NTSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn ZwCloseObjectAuditAlarm(
         SubsystemName: PUNICODE_STRING,
         HandleId: PVOID,
         GenerateOnClose: BOOLEAN,
     ) -> NTSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn ZwCreateDirectoryObject(
         DirectoryHandle: PHANDLE,
         DesiredAccess: ACCESS_MASK,
         ObjectAttributes: POBJECT_ATTRIBUTES,
     ) -> NTSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn ZwCreateSymbolicLinkObject(
         SymbolicLinkHandle: PHANDLE,
         DesiredAccess: ACCESS_MASK,
@@ -33537,14 +33537,14 @@ unsafe extern "stdcall" {
         Name: PUNICODE_STRING,
     ) -> NTSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn ZwDeleteObjectAuditAlarm(
         SubsystemName: PUNICODE_STRING,
         HandleId: PVOID,
         GenerateOnClose: BOOLEAN,
     ) -> NTSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn ZwDuplicateObject(
         SourceProcessHandle: HANDLE,
         SourceHandle: HANDLE,
@@ -33555,34 +33555,34 @@ unsafe extern "stdcall" {
         Options: ULONG,
     ) -> NTSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn ZwMakePermanentObject(Object: HANDLE) -> NTSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn ZwMakeTemporaryObject(Handle: HANDLE) -> NTSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn ZwOpenDirectoryObject(
         FileHandle: PHANDLE,
         DesiredAccess: ACCESS_MASK,
         ObjectAttributes: POBJECT_ATTRIBUTES,
     ) -> NTSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn ZwOpenJobObject(
         JobHandle: PHANDLE,
         DesiredAccess: ACCESS_MASK,
         ObjectAttributes: POBJECT_ATTRIBUTES,
     ) -> NTSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn ZwOpenSymbolicLinkObject(
         SymbolicLinkHandle: PHANDLE,
         DesiredAccess: ACCESS_MASK,
         ObjectAttributes: POBJECT_ATTRIBUTES,
     ) -> NTSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn ZwQueryDirectoryObject(
         DirectoryHandle: HANDLE,
         Buffer: PVOID,
@@ -33593,7 +33593,7 @@ unsafe extern "stdcall" {
         ReturnLength: PULONG,
     ) -> NTSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn ZwSetInformationObject(
         ObjectHandle: HANDLE,
         ObjectInformationClass: OBJECT_INFORMATION_CLASS,
@@ -33601,7 +33601,7 @@ unsafe extern "stdcall" {
         Length: ULONG,
     ) -> NTSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn ZwSignalAndWaitForSingleObject(
         SignalObject: HANDLE,
         WaitObject: HANDLE,
@@ -33609,7 +33609,7 @@ unsafe extern "stdcall" {
         Time: PLARGE_INTEGER,
     ) -> NTSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn ZwWaitForMultipleObjects(
         Count: ULONG,
         Object: *mut HANDLE,
@@ -33618,7 +33618,7 @@ unsafe extern "stdcall" {
         Time: PLARGE_INTEGER,
     ) -> NTSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn ZwQueryObject(
         Handle: HANDLE,
         ObjectInformationClass: OBJECT_INFORMATION_CLASS,
@@ -33627,7 +33627,7 @@ unsafe extern "stdcall" {
         ReturnLength: PULONG,
     ) -> NTSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn ZwQuerySecurityObject(
         Handle: HANDLE,
         SecurityInformation: SECURITY_INFORMATION,
@@ -33636,28 +33636,28 @@ unsafe extern "stdcall" {
         LengthNeeded: PULONG,
     ) -> NTSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn ZwQuerySymbolicLinkObject(
         LinkHandle: HANDLE,
         LinkTarget: PUNICODE_STRING,
         ReturnedLength: PULONG,
     ) -> NTSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn ZwSetSecurityObject(
         Handle: HANDLE,
         SecurityInformation: SECURITY_INFORMATION,
         SecurityDescriptor: PSECURITY_DESCRIPTOR,
     ) -> NTSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn ZwWaitForSingleObject(
         Handle: HANDLE,
         Alertable: BOOLEAN,
         Timeout: PLARGE_INTEGER,
     ) -> NTSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn NtInitiatePowerAction(
         SystemAction: POWER_ACTION,
         MinSystemState: SYSTEM_POWER_STATE,
@@ -33665,7 +33665,7 @@ unsafe extern "stdcall" {
         Asynchronous: BOOLEAN,
     ) -> NTSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn NtPowerInformation(
         PowerInformationLevel: POWER_INFORMATION_LEVEL,
         InputBuffer: PVOID,
@@ -33674,35 +33674,35 @@ unsafe extern "stdcall" {
         OutputBufferLength: ULONG,
     ) -> NTSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn NtSetSystemPowerState(
         SystemAction: POWER_ACTION,
         MinSystemState: SYSTEM_POWER_STATE,
         Flags: ULONG,
     ) -> NTSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn NtGetDevicePowerState(Device: HANDLE, PowerState: PDEVICE_POWER_STATE) -> NTSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn NtRequestWakeupLatency(latency: LATENCY_TIME) -> NTSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn NtIsSystemResumeAutomatic() -> BOOLEAN;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn NtSetThreadExecutionState(
         esFlags: EXECUTION_STATE,
         PreviousFlags: *mut EXECUTION_STATE,
     ) -> NTSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn NtRequestDeviceWakeup(Device: HANDLE) -> NTSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn NtCancelDeviceWakeupRequest(Device: HANDLE) -> NTSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn ZwInitiatePowerAction(
         SystemAction: POWER_ACTION,
         MinSystemState: SYSTEM_POWER_STATE,
@@ -33710,7 +33710,7 @@ unsafe extern "stdcall" {
         Asynchronous: BOOLEAN,
     ) -> NTSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn ZwPowerInformation(
         InformationLevel: POWER_INFORMATION_LEVEL,
         InputBuffer: PVOID,
@@ -33719,39 +33719,39 @@ unsafe extern "stdcall" {
         OutputBufferLength: ULONG,
     ) -> NTSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn ZwSetSystemPowerState(
         SystemAction: POWER_ACTION,
         MinSystemState: SYSTEM_POWER_STATE,
         Flags: ULONG,
     ) -> NTSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn NtAlertResumeThread(ThreadHandle: HANDLE, SuspendCount: PULONG) -> NTSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn NtApphelpCacheControl(
         Service: APPHELPCACHESERVICECLASS,
         ServiceData: PAPPHELP_CACHE_SERVICE_LOOKUP,
     ) -> NTSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn NtAlertThread(ThreadHandle: HANDLE) -> NTSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn NtAssignProcessToJobObject(JobHandle: HANDLE, ProcessHandle: HANDLE) -> NTSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn NtCreateJobObject(
         JobHandle: PHANDLE,
         DesiredAccess: ACCESS_MASK,
         ObjectAttributes: POBJECT_ATTRIBUTES,
     ) -> NTSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn NtCreateJobSet(NumJob: ULONG, UserJobSet: PJOB_SET_ARRAY, Flags: ULONG) -> NTSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn NtCreateProcess(
         ProcessHandle: PHANDLE,
         DesiredAccess: ACCESS_MASK,
@@ -33763,7 +33763,7 @@ unsafe extern "stdcall" {
         ExceptionPort: HANDLE,
     ) -> NTSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn NtCreateProcessEx(
         ProcessHandle: PHANDLE,
         DesiredAccess: ACCESS_MASK,
@@ -33776,7 +33776,7 @@ unsafe extern "stdcall" {
         InJob: BOOLEAN,
     ) -> NTSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn NtCreateThread(
         ThreadHandle: PHANDLE,
         DesiredAccess: ACCESS_MASK,
@@ -33788,17 +33788,17 @@ unsafe extern "stdcall" {
         CreateSuspended: BOOLEAN,
     ) -> NTSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn NtImpersonateThread(
         ThreadHandle: HANDLE,
         ThreadToImpersonate: HANDLE,
         SecurityQualityOfService: PSECURITY_QUALITY_OF_SERVICE,
     ) -> NTSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn NtIsProcessInJob(ProcessHandle: HANDLE, JobHandle: HANDLE) -> NTSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn NtOpenProcess(
         ProcessHandle: PHANDLE,
         DesiredAccess: ACCESS_MASK,
@@ -33806,14 +33806,14 @@ unsafe extern "stdcall" {
         ClientId: PCLIENT_ID,
     ) -> NTSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn NtOpenProcessToken(
         ProcessHandle: HANDLE,
         DesiredAccess: ACCESS_MASK,
         TokenHandle: PHANDLE,
     ) -> NTSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn NtOpenThread(
         ThreadHandle: PHANDLE,
         DesiredAccess: ACCESS_MASK,
@@ -33821,7 +33821,7 @@ unsafe extern "stdcall" {
         ClientId: PCLIENT_ID,
     ) -> NTSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn NtOpenThreadToken(
         ThreadHandle: HANDLE,
         DesiredAccess: ACCESS_MASK,
@@ -33829,7 +33829,7 @@ unsafe extern "stdcall" {
         TokenHandle: PHANDLE,
     ) -> NTSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn NtOpenThreadTokenEx(
         ThreadHandle: HANDLE,
         DesiredAccess: ACCESS_MASK,
@@ -33838,7 +33838,7 @@ unsafe extern "stdcall" {
         TokenHandle: PHANDLE,
     ) -> NTSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn NtQueryInformationJobObject(
         JobHandle: HANDLE,
         JobInformationClass: JOBOBJECTINFOCLASS,
@@ -33847,7 +33847,7 @@ unsafe extern "stdcall" {
         ReturnLength: PULONG,
     ) -> NTSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn NtQueryInformationProcess(
         ProcessHandle: HANDLE,
         ProcessInformationClass: PROCESSINFOCLASS,
@@ -33856,7 +33856,7 @@ unsafe extern "stdcall" {
         ReturnLength: PULONG,
     ) -> NTSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn NtQueryInformationThread(
         ThreadHandle: HANDLE,
         ThreadInformationClass: THREADINFOCLASS,
@@ -33865,16 +33865,16 @@ unsafe extern "stdcall" {
         ReturnLength: PULONG,
     ) -> NTSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn NtRegisterThreadTerminatePort(TerminationPort: HANDLE) -> NTSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn NtResumeThread(ThreadHandle: HANDLE, SuspendCount: PULONG) -> NTSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn NtResumeProcess(ProcessHandle: HANDLE) -> NTSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn NtSetInformationJobObject(
         JobHandle: HANDLE,
         JobInformationClass: JOBOBJECTINFOCLASS,
@@ -33882,7 +33882,7 @@ unsafe extern "stdcall" {
         JobInformationLength: ULONG,
     ) -> NTSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn NtSetInformationProcess(
         ProcessHandle: HANDLE,
         ProcessInformationClass: PROCESSINFOCLASS,
@@ -33890,7 +33890,7 @@ unsafe extern "stdcall" {
         ProcessInformationLength: ULONG,
     ) -> NTSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn NtSetInformationThread(
         ThreadHandle: HANDLE,
         ThreadInformationClass: THREADINFOCLASS,
@@ -33898,38 +33898,38 @@ unsafe extern "stdcall" {
         ThreadInformationLength: ULONG,
     ) -> NTSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn NtSuspendProcess(ProcessHandle: HANDLE) -> NTSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn NtSuspendThread(ThreadHandle: HANDLE, PreviousSuspendCount: PULONG) -> NTSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn NtTerminateProcess(ProcessHandle: HANDLE, ExitStatus: NTSTATUS) -> NTSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn NtTerminateThread(ThreadHandle: HANDLE, ExitStatus: NTSTATUS) -> NTSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn NtTerminateJobObject(JobHandle: HANDLE, ExitStatus: NTSTATUS) -> NTSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn ZwAlertResumeThread(ThreadHandle: HANDLE, SuspendCount: PULONG) -> NTSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn ZwAlertThread(ThreadHandle: HANDLE) -> NTSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn ZwAssignProcessToJobObject(JobHandle: HANDLE, ProcessHandle: HANDLE) -> NTSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn ZwCreateJobObject(
         JobHandle: PHANDLE,
         DesiredAccess: ACCESS_MASK,
         ObjectAttributes: POBJECT_ATTRIBUTES,
     ) -> NTSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn ZwCreateProcess(
         ProcessHandle: PHANDLE,
         DesiredAccess: ACCESS_MASK,
@@ -33941,7 +33941,7 @@ unsafe extern "stdcall" {
         ExceptionPort: HANDLE,
     ) -> NTSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn ZwCreateThread(
         ThreadHandle: PHANDLE,
         DesiredAccess: ACCESS_MASK,
@@ -33953,17 +33953,17 @@ unsafe extern "stdcall" {
         CreateSuspended: BOOLEAN,
     ) -> NTSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn ZwImpersonateThread(
         ThreadHandle: HANDLE,
         ThreadToImpersonate: HANDLE,
         SecurityQualityOfService: PSECURITY_QUALITY_OF_SERVICE,
     ) -> NTSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn ZwIsProcessInJob(ProcessHandle: HANDLE, JobHandle: HANDLE) -> NTSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn ZwOpenProcessTokenEx(
         ProcessHandle: HANDLE,
         DesiredAccess: ACCESS_MASK,
@@ -33971,7 +33971,7 @@ unsafe extern "stdcall" {
         TokenHandle: PHANDLE,
     ) -> NTSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn ZwOpenThread(
         ThreadHandle: PHANDLE,
         DesiredAccess: ACCESS_MASK,
@@ -33979,7 +33979,7 @@ unsafe extern "stdcall" {
         ClientId: PCLIENT_ID,
     ) -> NTSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn ZwOpenThreadToken(
         ThreadHandle: HANDLE,
         DesiredAccess: ACCESS_MASK,
@@ -33987,7 +33987,7 @@ unsafe extern "stdcall" {
         TokenHandle: PHANDLE,
     ) -> NTSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn ZwOpenThreadTokenEx(
         ThreadHandle: HANDLE,
         DesiredAccess: ACCESS_MASK,
@@ -33996,7 +33996,7 @@ unsafe extern "stdcall" {
         TokenHandle: PHANDLE,
     ) -> NTSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn ZwQueryInformationJobObject(
         JobHandle: HANDLE,
         JobInformationClass: JOBOBJECTINFOCLASS,
@@ -34005,7 +34005,7 @@ unsafe extern "stdcall" {
         ReturnLength: PULONG,
     ) -> NTSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn ZwQueryInformationProcess(
         ProcessHandle: HANDLE,
         ProcessInformationClass: PROCESSINFOCLASS,
@@ -34014,7 +34014,7 @@ unsafe extern "stdcall" {
         ReturnLength: PULONG,
     ) -> NTSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn ZwQueryInformationThread(
         ThreadHandle: HANDLE,
         ThreadInformationClass: THREADINFOCLASS,
@@ -34023,16 +34023,16 @@ unsafe extern "stdcall" {
         ReturnLength: PULONG,
     ) -> NTSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn ZwRegisterThreadTerminatePort(TerminationPort: HANDLE) -> NTSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn ZwResumeThread(ThreadHandle: HANDLE, SuspendCount: PULONG) -> NTSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn ZwResumeProcess(ProcessHandle: HANDLE) -> NTSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn ZwSetInformationJobObject(
         JobHandle: HANDLE,
         JobInformationClass: JOBOBJECTINFOCLASS,
@@ -34040,7 +34040,7 @@ unsafe extern "stdcall" {
         JobInformationLength: ULONG,
     ) -> NTSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn ZwSetInformationProcess(
         ProcessHandle: HANDLE,
         ProcessInformationClass: PROCESSINFOCLASS,
@@ -34048,7 +34048,7 @@ unsafe extern "stdcall" {
         ProcessInformationLength: ULONG,
     ) -> NTSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn ZwSetInformationThread(
         ThreadHandle: HANDLE,
         ThreadInformationClass: THREADINFOCLASS,
@@ -34056,19 +34056,19 @@ unsafe extern "stdcall" {
         ThreadInformationLength: ULONG,
     ) -> NTSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn ZwSuspendProcess(ProcessHandle: HANDLE) -> NTSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn ZwSuspendThread(ThreadHandle: HANDLE, PreviousSuspendCount: PULONG) -> NTSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn ZwTerminateProcess(ProcessHandle: HANDLE, ExitStatus: NTSTATUS) -> NTSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn ZwTerminateThread(ThreadHandle: HANDLE, ExitStatus: NTSTATUS) -> NTSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn ZwTerminateJobObject(JobHandle: HANDLE, ExitStatus: NTSTATUS) -> NTSTATUS;
 }
 #[repr(C)]
@@ -34127,10 +34127,10 @@ unsafe extern "C" {
 unsafe extern "C" {
     pub fn RtlInitEmptyAnsiString(AnsiString: PANSI_STRING, Buffer: PCHAR, BufferSize: USHORT);
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn RtlConvertUlongToLuid(Ulong: ULONG) -> LUID;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn RtlUTF8ToUnicodeN(
         UnicodeStringDestination: PWSTR,
         UnicodeStringMaxByteCount: ULONG,
@@ -34139,7 +34139,7 @@ unsafe extern "stdcall" {
         UTF8StringByteCount: ULONG,
     ) -> NTSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn RtlInitializeGenericTable(
         Table: PRTL_GENERIC_TABLE,
         CompareRoutine: PRTL_GENERIC_COMPARE_ROUTINE,
@@ -34148,7 +34148,7 @@ unsafe extern "stdcall" {
         TableContext: PVOID,
     );
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn RtlInsertElementGenericTable(
         Table: PRTL_GENERIC_TABLE,
         Buffer: PVOID,
@@ -34156,7 +34156,7 @@ unsafe extern "stdcall" {
         NewElement: PBOOLEAN,
     ) -> PVOID;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn RtlInsertElementGenericTableFull(
         Table: PRTL_GENERIC_TABLE,
         Buffer: PVOID,
@@ -34166,13 +34166,13 @@ unsafe extern "stdcall" {
         SearchResult: TABLE_SEARCH_RESULT,
     ) -> PVOID;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn RtlDeleteElementGenericTable(Table: PRTL_GENERIC_TABLE, Buffer: PVOID) -> BOOLEAN;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn RtlLookupElementGenericTable(Table: PRTL_GENERIC_TABLE, Buffer: PVOID) -> PVOID;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn RtlLookupElementGenericTableFull(
         Table: PRTL_GENERIC_TABLE,
         Buffer: PVOID,
@@ -34180,46 +34180,46 @@ unsafe extern "stdcall" {
         SearchResult: *mut TABLE_SEARCH_RESULT,
     ) -> PVOID;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn RtlEnumerateGenericTable(Table: PRTL_GENERIC_TABLE, Restart: BOOLEAN) -> PVOID;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn RtlEnumerateGenericTableWithoutSplaying(
         Table: PRTL_GENERIC_TABLE,
         RestartKey: *mut PVOID,
     ) -> PVOID;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn RtlGetElementGenericTable(Table: PRTL_GENERIC_TABLE, I: ULONG) -> PVOID;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn RtlNumberGenericTableElements(Table: PRTL_GENERIC_TABLE) -> ULONG;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn RtlIsGenericTableEmpty(Table: PRTL_GENERIC_TABLE) -> BOOLEAN;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn RtlSplay(Links: PRTL_SPLAY_LINKS) -> PRTL_SPLAY_LINKS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn RtlDelete(Links: PRTL_SPLAY_LINKS) -> PRTL_SPLAY_LINKS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn RtlDeleteNoSplay(Links: PRTL_SPLAY_LINKS, Root: *mut PRTL_SPLAY_LINKS);
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn RtlSubtreeSuccessor(Links: PRTL_SPLAY_LINKS) -> PRTL_SPLAY_LINKS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn RtlSubtreePredecessor(Links: PRTL_SPLAY_LINKS) -> PRTL_SPLAY_LINKS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn RtlRealSuccessor(Links: PRTL_SPLAY_LINKS) -> PRTL_SPLAY_LINKS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn RtlRealPredecessor(Links: PRTL_SPLAY_LINKS) -> PRTL_SPLAY_LINKS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn RtlInitializeGenericTableAvl(
         Table: PRTL_AVL_TABLE,
         CompareRoutine: PRTL_AVL_COMPARE_ROUTINE,
@@ -34228,7 +34228,7 @@ unsafe extern "stdcall" {
         TableContext: PVOID,
     );
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn RtlInsertElementGenericTableAvl(
         Table: PRTL_AVL_TABLE,
         Buffer: PVOID,
@@ -34236,7 +34236,7 @@ unsafe extern "stdcall" {
         NewElement: PBOOLEAN,
     ) -> PVOID;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn RtlInsertElementGenericTableFullAvl(
         Table: PRTL_AVL_TABLE,
         Buffer: PVOID,
@@ -34246,13 +34246,13 @@ unsafe extern "stdcall" {
         SearchResult: TABLE_SEARCH_RESULT,
     ) -> PVOID;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn RtlDeleteElementGenericTableAvl(Table: PRTL_AVL_TABLE, Buffer: PVOID) -> BOOLEAN;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn RtlLookupElementGenericTableAvl(Table: PRTL_AVL_TABLE, Buffer: PVOID) -> PVOID;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn RtlLookupElementGenericTableFullAvl(
         Table: PRTL_AVL_TABLE,
         Buffer: PVOID,
@@ -34260,23 +34260,23 @@ unsafe extern "stdcall" {
         SearchResult: *mut TABLE_SEARCH_RESULT,
     ) -> PVOID;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn RtlEnumerateGenericTableAvl(Table: PRTL_AVL_TABLE, Restart: BOOLEAN) -> PVOID;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn RtlEnumerateGenericTableWithoutSplayingAvl(
         Table: PRTL_AVL_TABLE,
         RestartKey: *mut PVOID,
     ) -> PVOID;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn RtlLookupFirstMatchingElementGenericTableAvl(
         Table: PRTL_AVL_TABLE,
         Buffer: PVOID,
         RestartKey: *mut PVOID,
     ) -> PVOID;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn RtlEnumerateGenericTableLikeADirectory(
         Table: PRTL_AVL_TABLE,
         MatchFunction: PRTL_AVL_MATCH_FUNCTION,
@@ -34287,108 +34287,108 @@ unsafe extern "stdcall" {
         Buffer: PVOID,
     ) -> PVOID;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn RtlGetElementGenericTableAvl(Table: PRTL_AVL_TABLE, I: ULONG) -> PVOID;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn RtlNumberGenericTableElementsAvl(Table: PRTL_AVL_TABLE) -> ULONG;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn RtlIsGenericTableEmptyAvl(Table: PRTL_AVL_TABLE) -> BOOLEAN;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn RtlAddVectoredExceptionHandler(
         FirstHandler: ULONG,
         VectoredHandler: PVECTORED_EXCEPTION_HANDLER,
     ) -> PVOID;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn RtlRemoveVectoredExceptionHandler(VectoredHandlerHandle: PVOID) -> ULONG;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn RtlAddVectoredContinueHandler(
         FirstHandler: ULONG,
         VectoredHandler: PVECTORED_EXCEPTION_HANDLER,
     ) -> PVOID;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn RtlRemoveVectoredContinueHandler(VectoredHandlerHandle: PVOID) -> ULONG;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn RtlSetUnhandledExceptionFilter(
         TopLevelExceptionFilter: PRTLP_UNHANDLED_EXCEPTION_FILTER,
     );
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn RtlUnhandledExceptionFilter(ExceptionInfo: PEXCEPTION_POINTERS) -> LONG;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn RtlUnhandledExceptionFilter2(
         ExceptionInfo: PEXCEPTION_POINTERS,
         Function: PCSTR,
     ) -> LONG;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn RtlAssert(FailedAssertion: PVOID, FileName: PVOID, LineNumber: ULONG, Message: PCHAR);
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn RtlEncodePointer(Pointer: PVOID) -> PVOID;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn RtlDecodePointer(Pointer: PVOID) -> PVOID;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn RtlEncodeSystemPointer(Pointer: PVOID) -> PVOID;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn RtlDecodeSystemPointer(Pointer: PVOID) -> PVOID;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn RtlGetLastNtStatus() -> NTSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn RtlGetLastWin32Error() -> ULONG;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn RtlSetLastWin32Error(LastError: ULONG);
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn RtlSetLastWin32ErrorAndNtStatusFromNtStatus(Status: NTSTATUS);
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn RtlSetThreadErrorMode(NewMode: ULONG, OldMode: PULONG) -> NTSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn RtlGetThreadErrorMode() -> ULONG;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn RtlDispatchException(ExceptionRecord: PEXCEPTION_RECORD, Context: PCONTEXT) -> BOOLEAN;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn RtlNtStatusToDosError(Status: NTSTATUS) -> ULONG;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn RtlNtStatusToDosErrorNoTeb(Status: NTSTATUS) -> ULONG;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn RtlMapSecurityErrorToNtStatus(SecurityError: ULONG) -> NTSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn RtlRaiseException(ExceptionRecord: PEXCEPTION_RECORD);
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn RtlRaiseStatus(Status: NTSTATUS) -> !;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn RtlWalkFrameChain(Callers: *mut PVOID, Count: ULONG, Flags: ULONG) -> ULONG;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn RtlLogStackBackTrace() -> USHORT;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn RtlAllocateHeap(HeapHandle: PVOID, Flags: ULONG, Size: SIZE_T) -> PVOID;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn RtlCreateHeap(
         Flags: ULONG,
         BaseAddress: PVOID,
@@ -34398,7 +34398,7 @@ unsafe extern "stdcall" {
         Parameters: PRTL_HEAP_PARAMETERS,
     ) -> PVOID;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn RtlCreateTagHeap(
         HeapHandle: HANDLE,
         Flags: ULONG,
@@ -34406,10 +34406,10 @@ unsafe extern "stdcall" {
         TagSubName: PWSTR,
     ) -> ULONG;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn RtlCompactHeap(Heap: HANDLE, Flags: ULONG) -> ULONG;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn RtlDebugCreateHeap(
         Flags: ULONG,
         BaseAddress: PVOID,
@@ -34419,19 +34419,19 @@ unsafe extern "stdcall" {
         Parameters: PRTL_HEAP_PARAMETERS,
     ) -> PVOID;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn RtlDestroyHeap(Heap: HANDLE) -> HANDLE;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn RtlExtendHeap(Heap: HANDLE, Flags: ULONG, P: PVOID, Size: SIZE_T) -> ULONG;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn RtlFreeHeap(HeapHandle: HANDLE, Flags: ULONG, P: PVOID) -> BOOLEAN;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn RtlGetProcessHeaps(HeapCount: ULONG, HeapArray: *mut HANDLE) -> ULONG;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn RtlGetUserInfoHeap(
         HeapHandle: PVOID,
         Flags: ULONG,
@@ -34440,10 +34440,10 @@ unsafe extern "stdcall" {
         UserFlags: PULONG,
     ) -> BOOLEAN;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn RtlProtectHeap(HeapHandle: PVOID, Protect: BOOLEAN) -> PVOID;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn RtlQueryHeapInformation(
         HeapHandle: PVOID,
         HeapInformationClass: HEAP_INFORMATION_CLASS,
@@ -34452,7 +34452,7 @@ unsafe extern "stdcall" {
         ReturnLength: PSIZE_T,
     ) -> NTSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn RtlQueryTagHeap(
         HeapHandle: PVOID,
         Flags: ULONG,
@@ -34461,10 +34461,10 @@ unsafe extern "stdcall" {
         HeapTagInfo: PRTL_HEAP_TAG_INFO,
     ) -> PWSTR;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn RtlReAllocateHeap(Heap: HANDLE, Flags: ULONG, Ptr: PVOID, Size: SIZE_T) -> PVOID;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn RtlSetHeapInformation(
         HeapHandle: PVOID,
         HeapInformationClass: HEAP_INFORMATION_CLASS,
@@ -34472,10 +34472,10 @@ unsafe extern "stdcall" {
         HeapInformationLength: SIZE_T,
     ) -> NTSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn RtlLockHeap(Heap: HANDLE) -> BOOLEAN;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn RtlMultipleAllocateHeap(
         HeapHandle: HANDLE,
         Flags: ULONG,
@@ -34484,7 +34484,7 @@ unsafe extern "stdcall" {
         Array: *mut PVOID,
     ) -> ULONG;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn RtlMultipleFreeHeap(
         HeapHandle: HANDLE,
         Flags: ULONG,
@@ -34492,13 +34492,13 @@ unsafe extern "stdcall" {
         Array: *mut PVOID,
     ) -> ULONG;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn RtlUsageHeap(Heap: HANDLE, Flags: ULONG, Usage: PRTL_HEAP_USAGE) -> NTSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn RtlUnlockHeap(Heap: HANDLE) -> BOOLEAN;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn RtlSetUserValueHeap(
         HeapHandle: PVOID,
         Flags: ULONG,
@@ -34506,7 +34506,7 @@ unsafe extern "stdcall" {
         UserValue: PVOID,
     ) -> BOOLEAN;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn RtlSetUserFlagsHeap(
         HeapHandle: PVOID,
         Flags: ULONG,
@@ -34515,23 +34515,23 @@ unsafe extern "stdcall" {
         UserFlagsSet: ULONG,
     ) -> BOOLEAN;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn RtlValidateHeap(Heap: HANDLE, Flags: ULONG, P: PVOID) -> BOOLEAN;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn RtlWalkHeap(HeapHandle: HANDLE, HeapEntry: PVOID) -> NTSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn RtlSizeHeap(HeapHandle: PVOID, Flags: ULONG, MemoryPointer: PVOID) -> SIZE_T;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn RtlAbsoluteToSelfRelativeSD(
         AbsoluteSecurityDescriptor: PSECURITY_DESCRIPTOR,
         SelfRelativeSecurityDescriptor: PSECURITY_DESCRIPTOR,
         BufferLength: PULONG,
     ) -> NTSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn RtlAddAccessAllowedAce(
         Acl: PACL,
         Revision: ULONG,
@@ -34539,7 +34539,7 @@ unsafe extern "stdcall" {
         Sid: PSID,
     ) -> NTSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn RtlAddAccessAllowedAceEx(
         pAcl: PACL,
         dwAceRevision: ULONG,
@@ -34548,7 +34548,7 @@ unsafe extern "stdcall" {
         pSid: PSID,
     ) -> NTSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn RtlAddAccessAllowedObjectAce(
         pAcl: PACL,
         dwAceRevision: ULONG,
@@ -34559,7 +34559,7 @@ unsafe extern "stdcall" {
         pSid: PSID,
     ) -> NTSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn RtlAddAccessDeniedAce(
         Acl: PACL,
         Revision: ULONG,
@@ -34567,7 +34567,7 @@ unsafe extern "stdcall" {
         Sid: PSID,
     ) -> NTSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn RtlAddAccessDeniedAceEx(
         Acl: PACL,
         Revision: ULONG,
@@ -34576,7 +34576,7 @@ unsafe extern "stdcall" {
         Sid: PSID,
     ) -> NTSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn RtlAddAccessDeniedObjectAce(
         pAcl: PACL,
         dwAceRevision: ULONG,
@@ -34587,7 +34587,7 @@ unsafe extern "stdcall" {
         pSid: PSID,
     ) -> NTSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn RtlAddAce(
         Acl: PACL,
         AceRevision: ULONG,
@@ -34596,7 +34596,7 @@ unsafe extern "stdcall" {
         AceListLength: ULONG,
     ) -> NTSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn RtlAddAuditAccessAce(
         Acl: PACL,
         Revision: ULONG,
@@ -34606,7 +34606,7 @@ unsafe extern "stdcall" {
         Failure: BOOLEAN,
     ) -> NTSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn RtlAcquirePrivilege(
         Privilege: PULONG,
         NumPriv: ULONG,
@@ -34614,7 +34614,7 @@ unsafe extern "stdcall" {
         ReturnedState: *mut PVOID,
     ) -> NTSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn RtlAddAuditAccessAceEx(
         Acl: PACL,
         Revision: ULONG,
@@ -34625,7 +34625,7 @@ unsafe extern "stdcall" {
         Failure: BOOLEAN,
     ) -> NTSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn RtlAddAuditAccessObjectAce(
         Acl: PACL,
         Revision: ULONG,
@@ -34638,7 +34638,7 @@ unsafe extern "stdcall" {
         Failure: BOOLEAN,
     ) -> NTSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn RtlAddMandatoryAce(
         Acl: PACL,
         Revision: ULONG,
@@ -34648,7 +34648,7 @@ unsafe extern "stdcall" {
         LabelSid: PSID,
     ) -> NTSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn RtlAdjustPrivilege(
         Privilege: ULONG,
         NewValue: BOOLEAN,
@@ -34656,7 +34656,7 @@ unsafe extern "stdcall" {
         OldValue: PBOOLEAN,
     ) -> NTSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn RtlAllocateAndInitializeSid(
         IdentifierAuthority: PSID_IDENTIFIER_AUTHORITY,
         SubAuthorityCount: UCHAR,
@@ -34671,29 +34671,29 @@ unsafe extern "stdcall" {
         Sid: *mut PSID,
     ) -> NTSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn RtlAreAllAccessesGranted(
         GrantedAccess: ACCESS_MASK,
         DesiredAccess: ACCESS_MASK,
     ) -> BOOLEAN;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn RtlAreAnyAccessesGranted(
         GrantedAccess: ACCESS_MASK,
         DesiredAccess: ACCESS_MASK,
     ) -> BOOLEAN;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn RtlCopyLuid(DestinationLuid: PLUID, SourceLuid: PLUID);
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn RtlCopyLuidAndAttributesArray(
         Count: ULONG,
         Src: PLUID_AND_ATTRIBUTES,
         Dest: PLUID_AND_ATTRIBUTES,
     );
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn RtlCopySidAndAttributesArray(
         Count: ULONG,
         Src: PSID_AND_ATTRIBUTES,
@@ -34704,67 +34704,67 @@ unsafe extern "stdcall" {
         RemainingSidAreaSize: PULONG,
     ) -> NTSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn RtlConvertSidToUnicodeString(
         UnicodeString: PUNICODE_STRING,
         Sid: PSID,
         AllocateDestinationString: BOOLEAN,
     ) -> NTSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn RtlCopySid(
         DestinationSidLength: ULONG,
         DestinationSid: PSID,
         SourceSid: PSID,
     ) -> NTSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn RtlCreateAcl(Acl: PACL, AclSize: ULONG, AclRevision: ULONG) -> NTSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn RtlCreateSecurityDescriptor(
         SecurityDescriptor: PSECURITY_DESCRIPTOR,
         Revision: ULONG,
     ) -> NTSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn RtlCreateSecurityDescriptorRelative(
         SecurityDescriptor: PISECURITY_DESCRIPTOR_RELATIVE,
         Revision: ULONG,
     ) -> NTSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn RtlCopySecurityDescriptor(
         pSourceSecurityDescriptor: PSECURITY_DESCRIPTOR,
         pDestinationSecurityDescriptor: *mut PSECURITY_DESCRIPTOR,
     ) -> NTSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn RtlDeleteAce(Acl: PACL, AceIndex: ULONG) -> NTSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn RtlEqualPrefixSid(Sid1: PSID, Sid2: PSID) -> BOOLEAN;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn RtlEqualSid(Sid1: PSID, Sid2: PSID) -> BOOLEAN;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn RtlFirstFreeAce(Acl: PACL, Ace: *mut PACE) -> BOOLEAN;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn RtlFreeSid(Sid: PSID) -> PVOID;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn RtlGetAce(Acl: PACL, AceIndex: ULONG, Ace: *mut PVOID) -> NTSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn RtlGetControlSecurityDescriptor(
         SecurityDescriptor: PSECURITY_DESCRIPTOR,
         Control: PSECURITY_DESCRIPTOR_CONTROL,
         Revision: PULONG,
     ) -> NTSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn RtlGetDaclSecurityDescriptor(
         SecurityDescriptor: PSECURITY_DESCRIPTOR,
         DaclPresent: PBOOLEAN,
@@ -34772,7 +34772,7 @@ unsafe extern "stdcall" {
         DaclDefaulted: PBOOLEAN,
     ) -> NTSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn RtlGetSaclSecurityDescriptor(
         SecurityDescriptor: PSECURITY_DESCRIPTOR,
         SaclPresent: PBOOLEAN,
@@ -34780,59 +34780,59 @@ unsafe extern "stdcall" {
         SaclDefaulted: PBOOLEAN,
     ) -> NTSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn RtlGetGroupSecurityDescriptor(
         SecurityDescriptor: PSECURITY_DESCRIPTOR,
         Group: *mut PSID,
         GroupDefaulted: PBOOLEAN,
     ) -> NTSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn RtlGetOwnerSecurityDescriptor(
         SecurityDescriptor: PSECURITY_DESCRIPTOR,
         Owner: *mut PSID,
         OwnerDefaulted: PBOOLEAN,
     ) -> NTSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn RtlGetSecurityDescriptorRMControl(
         SecurityDescriptor: PSECURITY_DESCRIPTOR,
         RMControl: PUCHAR,
     ) -> BOOLEAN;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn RtlIdentifierAuthoritySid(Sid: PSID) -> PSID_IDENTIFIER_AUTHORITY;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn RtlImpersonateSelf(ImpersonationLevel: SECURITY_IMPERSONATION_LEVEL) -> NTSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn RtlInitializeSid(
         Sid: PSID,
         IdentifierAuthority: PSID_IDENTIFIER_AUTHORITY,
         SubAuthorityCount: UCHAR,
     ) -> NTSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn RtlLengthRequiredSid(SubAuthorityCount: ULONG) -> ULONG;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn RtlLengthSecurityDescriptor(SecurityDescriptor: PSECURITY_DESCRIPTOR) -> ULONG;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn RtlLengthSid(Sid: PSID) -> ULONG;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn RtlMakeSelfRelativeSD(
         AbsoluteSD: PSECURITY_DESCRIPTOR,
         SelfRelativeSD: PSECURITY_DESCRIPTOR,
         BufferLength: PULONG,
     ) -> NTSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn RtlMapGenericMask(AccessMask: PACCESS_MASK, GenericMapping: PGENERIC_MAPPING);
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn RtlQueryInformationAcl(
         Acl: PACL,
         Information: PVOID,
@@ -34840,10 +34840,10 @@ unsafe extern "stdcall" {
         InformationClass: ACL_INFORMATION_CLASS,
     ) -> NTSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn RtlReleasePrivilege(ReturnedState: PVOID);
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn RtlSelfRelativeToAbsoluteSD(
         SelfRelativeSecurityDescriptor: PSECURITY_DESCRIPTOR,
         AbsoluteSecurityDescriptor: PSECURITY_DESCRIPTOR,
@@ -34858,27 +34858,27 @@ unsafe extern "stdcall" {
         PrimaryGroupSize: PULONG,
     ) -> NTSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn RtlSelfRelativeToAbsoluteSD2(
         SelfRelativeSD: PSECURITY_DESCRIPTOR,
         BufferSize: PULONG,
     ) -> NTSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn RtlSetAttributesSecurityDescriptor(
         SecurityDescriptor: PSECURITY_DESCRIPTOR,
         Control: SECURITY_DESCRIPTOR_CONTROL,
         Revision: PULONG,
     ) -> NTSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn RtlSetControlSecurityDescriptor(
         SecurityDescriptor: PSECURITY_DESCRIPTOR,
         ControlBitsOfInterest: SECURITY_DESCRIPTOR_CONTROL,
         ControlBitsToSet: SECURITY_DESCRIPTOR_CONTROL,
     ) -> NTSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn RtlSetDaclSecurityDescriptor(
         SecurityDescriptor: PSECURITY_DESCRIPTOR,
         DaclPresent: BOOLEAN,
@@ -34886,14 +34886,14 @@ unsafe extern "stdcall" {
         DaclDefaulted: BOOLEAN,
     ) -> NTSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn RtlSetGroupSecurityDescriptor(
         SecurityDescriptor: PSECURITY_DESCRIPTOR,
         Group: PSID,
         GroupDefaulted: BOOLEAN,
     ) -> NTSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn RtlSetInformationAcl(
         Acl: PACL,
         Information: PVOID,
@@ -34901,14 +34901,14 @@ unsafe extern "stdcall" {
         InformationClass: ACL_INFORMATION_CLASS,
     ) -> NTSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn RtlSetOwnerSecurityDescriptor(
         SecurityDescriptor: PSECURITY_DESCRIPTOR,
         Owner: PSID,
         OwnerDefaulted: BOOLEAN,
     ) -> NTSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn RtlSetSaclSecurityDescriptor(
         SecurityDescriptor: PSECURITY_DESCRIPTOR,
         SaclPresent: BOOLEAN,
@@ -34916,38 +34916,38 @@ unsafe extern "stdcall" {
         SaclDefaulted: BOOLEAN,
     ) -> NTSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn RtlSetSecurityDescriptorRMControl(
         SecurityDescriptor: PSECURITY_DESCRIPTOR,
         RMControl: PUCHAR,
     );
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn RtlSubAuthorityCountSid(Sid: PSID) -> PUCHAR;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn RtlSubAuthoritySid(Sid: PSID, SubAuthority: ULONG) -> PULONG;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn RtlValidRelativeSecurityDescriptor(
         SecurityDescriptorInput: PSECURITY_DESCRIPTOR,
         SecurityDescriptorLength: ULONG,
         RequiredInformation: SECURITY_INFORMATION,
     ) -> BOOLEAN;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn RtlValidSecurityDescriptor(SecurityDescriptor: PSECURITY_DESCRIPTOR) -> BOOLEAN;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn RtlValidSid(Sid: PSID) -> BOOLEAN;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn RtlValidAcl(Acl: PACL) -> BOOLEAN;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn RtlDeleteSecurityObject(ObjectDescriptor: *mut PSECURITY_DESCRIPTOR) -> NTSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn RtlNewSecurityObject(
         ParentDescriptor: PSECURITY_DESCRIPTOR,
         CreatorDescriptor: PSECURITY_DESCRIPTOR,
@@ -34957,7 +34957,7 @@ unsafe extern "stdcall" {
         GenericMapping: PGENERIC_MAPPING,
     ) -> NTSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn RtlQuerySecurityObject(
         ObjectDescriptor: PSECURITY_DESCRIPTOR,
         SecurityInformation: SECURITY_INFORMATION,
@@ -34966,7 +34966,7 @@ unsafe extern "stdcall" {
         ReturnLength: PULONG,
     ) -> NTSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn RtlSetSecurityObject(
         SecurityInformation: SECURITY_INFORMATION,
         ModificationDescriptor: PSECURITY_DESCRIPTOR,
@@ -34975,7 +34975,7 @@ unsafe extern "stdcall" {
         Token: HANDLE,
     ) -> NTSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn RtlLargeIntegerToChar(
         Value: PLARGE_INTEGER,
         Base: ULONG,
@@ -34983,19 +34983,19 @@ unsafe extern "stdcall" {
         String: PCHAR,
     ) -> NTSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn RtlUpperChar(Source: CHAR) -> CHAR;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn RtlUpcaseUnicodeChar(Source: WCHAR) -> WCHAR;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn RtlDowncaseUnicodeChar(Source: WCHAR) -> WCHAR;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn RtlIntegerToChar(Value: ULONG, Base: ULONG, Length: ULONG, String: PCHAR) -> NTSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn RtlIntegerToUnicode(
         Value: ULONG,
         Base: ULONG,
@@ -35003,52 +35003,52 @@ unsafe extern "stdcall" {
         String: LPWSTR,
     ) -> NTSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn RtlIntegerToUnicodeString(
         Value: ULONG,
         Base: ULONG,
         String: PUNICODE_STRING,
     ) -> NTSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn RtlCharToInteger(String: PCSZ, Base: ULONG, Value: PULONG) -> NTSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn RtlUnicodeStringToAnsiString(
         DestinationString: PANSI_STRING,
         SourceString: PCUNICODE_STRING,
         AllocateDestinationString: BOOLEAN,
     ) -> NTSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn RtlUpcaseUnicodeStringToOemString(
         DestinationString: POEM_STRING,
         SourceString: PCUNICODE_STRING,
         AllocateDestinationString: BOOLEAN,
     ) -> NTSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn RtlUpcaseUnicodeStringToCountedOemString(
         DestinationString: POEM_STRING,
         SourceString: PCUNICODE_STRING,
         AllocateDestinationString: BOOLEAN,
     ) -> NTSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn RtlUnicodeStringToOemString(
         DestinationString: POEM_STRING,
         SourceString: PCUNICODE_STRING,
         AllocateDestinationString: BOOLEAN,
     ) -> NTSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn RtlUnicodeStringToCountedOemString(
         DestinationString: POEM_STRING,
         SourceString: PCUNICODE_STRING,
         AllocateDestinationString: BOOLEAN,
     ) -> NTSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn RtlUpcaseUnicodeToOemN(
         OemString: PCHAR,
         OemSize: ULONG,
@@ -35057,7 +35057,7 @@ unsafe extern "stdcall" {
         UnicodeSize: ULONG,
     ) -> NTSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn RtlUnicodeToOemN(
         OemString: PCHAR,
         OemSize: ULONG,
@@ -35066,7 +35066,7 @@ unsafe extern "stdcall" {
         UnicodeSize: ULONG,
     ) -> NTSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn RtlUnicodeToMultiByteN(
         MbString: PCHAR,
         MbSize: ULONG,
@@ -35075,7 +35075,7 @@ unsafe extern "stdcall" {
         UnicodeSize: ULONG,
     ) -> NTSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn RtlUpcaseUnicodeToMultiByteN(
         MbString: PCHAR,
         MbSize: ULONG,
@@ -35084,21 +35084,21 @@ unsafe extern "stdcall" {
         UnicodeSize: ULONG,
     ) -> NTSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn RtlUnicodeToMultiByteSize(
         MbSize: PULONG,
         UnicodeString: PCWCH,
         UnicodeSize: ULONG,
     ) -> NTSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn RtlOemStringToUnicodeString(
         DestinationString: PUNICODE_STRING,
         SourceString: PCOEM_STRING,
         AllocateDestinationString: BOOLEAN,
     ) -> NTSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn RtlOemToUnicodeN(
         UnicodeString: PWCH,
         MaxBytesInUnicodeString: ULONG,
@@ -35107,36 +35107,36 @@ unsafe extern "stdcall" {
         BytesInOemString: ULONG,
     ) -> NTSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn RtlAnsiCharToUnicodeChar(SourceCharacter: *mut PUCHAR) -> WCHAR;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn RtlAnsiStringToUnicodeString(
         DestinationString: PUNICODE_STRING,
         SourceString: PCANSI_STRING,
         AllocateDestinationString: BOOLEAN,
     ) -> NTSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn RtlCreateUnicodeStringFromAsciiz(Destination: PUNICODE_STRING, Source: PCSZ) -> BOOLEAN;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn RtlAppendUnicodeToString(Destination: PUNICODE_STRING, Source: PCWSTR) -> NTSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn RtlAppendUnicodeStringToString(
         Destination: PUNICODE_STRING,
         Source: PCUNICODE_STRING,
     ) -> NTSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn RtlCompareUnicodeString(
         String1: PCUNICODE_STRING,
         String2: PCUNICODE_STRING,
         CaseInsensitive: BOOLEAN,
     ) -> LONG;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn RtlCompareUnicodeStrings(
         String1: PCWCH,
         String1Length: SIZE_T,
@@ -35145,30 +35145,30 @@ unsafe extern "stdcall" {
         CaseInSensitive: BOOLEAN,
     ) -> LONG;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn RtlCopyUnicodeString(DestinationString: PUNICODE_STRING, SourceString: PCUNICODE_STRING);
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn RtlCreateUnicodeString(
         DestinationString: PUNICODE_STRING,
         SourceString: PCWSTR,
     ) -> BOOLEAN;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn RtlDowncaseUnicodeString(
         UniDest: PUNICODE_STRING,
         UniSource: PCUNICODE_STRING,
         AllocateDestinationString: BOOLEAN,
     ) -> NTSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn RtlDuplicateUnicodeString(
         Flags: ULONG,
         SourceString: PCUNICODE_STRING,
         DestinationString: PUNICODE_STRING,
     ) -> NTSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn RtlFindCharInUnicodeString(
         Flags: ULONG,
         SearchString: PCUNICODE_STRING,
@@ -35176,36 +35176,36 @@ unsafe extern "stdcall" {
         Position: PUSHORT,
     ) -> NTSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn RtlFillMemoryUlong(Destination: PVOID, Length: SIZE_T, Pattern: ULONG);
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn RtlFillMemoryUlonglong(Destination: PVOID, Length: SIZE_T, Pattern: ULONGLONG);
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn RtlCopyMappedMemory(
         Destination: PVOID,
         Source: *const ::core::ffi::c_void,
         Size: SIZE_T,
     ) -> NTSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn RtlCompareMemoryUlong(Source: PVOID, Length: SIZE_T, Pattern: ULONG) -> SIZE_T;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn RtlEqualUnicodeString(
         String1: PCUNICODE_STRING,
         String2: PCUNICODE_STRING,
         CaseInsensitive: BOOLEAN,
     ) -> BOOLEAN;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn RtlFreeUnicodeString(UnicodeString: PUNICODE_STRING);
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn RtlEraseUnicodeString(String: PUNICODE_STRING);
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn RtlHashUnicodeString(
         String: *const UNICODE_STRING,
         CaseInSensitive: BOOLEAN,
@@ -35213,77 +35213,77 @@ unsafe extern "stdcall" {
         HashValue: PULONG,
     ) -> NTSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn RtlInitString(DestinationString: PSTRING, SourceString: PCSTR);
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn RtlInitUnicodeString(DestinationString: PUNICODE_STRING, SourceString: PCWSTR);
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn RtlInitUnicodeStringEx(
         DestinationString: PUNICODE_STRING,
         SourceString: PCWSTR,
     ) -> NTSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn RtlIsTextUnicode(
         Buffer: *const ::core::ffi::c_void,
         Size: INT,
         Flags: *mut INT,
     ) -> BOOLEAN;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn RtlPrefixString(
         String1: *const STRING,
         String2: *const STRING,
         CaseInsensitive: BOOLEAN,
     ) -> BOOLEAN;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn RtlPrefixUnicodeString(
         String1: PCUNICODE_STRING,
         String2: PCUNICODE_STRING,
         CaseInsensitive: BOOLEAN,
     ) -> BOOLEAN;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn RtlUpperString(DestinationString: PSTRING, SourceString: *const STRING);
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn RtlCompareString(
         String1: *const STRING,
         String2: *const STRING,
         CaseInSensitive: BOOLEAN,
     ) -> LONG;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn RtlCopyString(DestinationString: PSTRING, SourceString: *const STRING);
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn RtlEqualString(
         String1: *const STRING,
         String2: *const STRING,
         CaseInSensitive: BOOLEAN,
     ) -> BOOLEAN;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn RtlAppendStringToString(Destination: PSTRING, Source: *const STRING) -> NTSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn RtlUpcaseUnicodeString(
         DestinationString: PUNICODE_STRING,
         SourceString: PCUNICODE_STRING,
         AllocateDestinationString: BOOLEAN,
     ) -> NTSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn RtlUnicodeStringToInteger(
         String: PCUNICODE_STRING,
         Base: ULONG,
         Value: PULONG,
     ) -> NTSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn RtlValidateUnicodeString(Flags: ULONG, String: PCUNICODE_STRING) -> NTSTATUS;
 }
 unsafe extern "C" {
@@ -35295,25 +35295,25 @@ unsafe extern "C" {
 unsafe extern "C" {
     pub fn RtlFreeBuffer(Buffer: PRTL_BUFFER);
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn RtlRunEncodeUnicodeString(Hash: PUCHAR, String: PUNICODE_STRING);
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn RtlRunDecodeUnicodeString(Hash: UCHAR, String: PUNICODE_STRING);
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn RtlFreeAnsiString(AnsiString: PANSI_STRING);
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn RtlInitAnsiString(DestinationString: PANSI_STRING, SourceString: PCSZ);
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn RtlInitAnsiStringEx(DestinationString: PANSI_STRING, SourceString: PCSZ) -> NTSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn RtlFreeOemString(OemString: POEM_STRING);
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn RtlMultiByteToUnicodeN(
         UnicodeString: PWCH,
         MaxBytesInUnicodeString: ULONG,
@@ -35322,30 +35322,30 @@ unsafe extern "stdcall" {
         BytesInMultiByteString: ULONG,
     ) -> NTSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn RtlMultiByteToUnicodeSize(
         BytesInUnicodeString: PULONG,
         MultiByteString: *const CHAR,
         BytesInMultiByteString: ULONG,
     ) -> NTSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn RtlAddAtomToAtomTable(
         AtomTable: PRTL_ATOM_TABLE,
         AtomName: PWSTR,
         Atom: PRTL_ATOM,
     ) -> NTSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn RtlCreateAtomTable(TableSize: ULONG, AtomTable: *mut PRTL_ATOM_TABLE) -> NTSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn RtlDeleteAtomFromAtomTable(AtomTable: PRTL_ATOM_TABLE, Atom: RTL_ATOM) -> NTSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn RtlDestroyAtomTable(AtomTable: PRTL_ATOM_TABLE) -> NTSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn RtlQueryAtomInAtomTable(
         AtomTable: PRTL_ATOM_TABLE,
         Atom: RTL_ATOM,
@@ -35355,23 +35355,23 @@ unsafe extern "stdcall" {
         NameLength: PULONG,
     ) -> NTSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn RtlPinAtomInAtomTable(AtomTable: PRTL_ATOM_TABLE, Atom: RTL_ATOM) -> NTSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn RtlLookupAtomInAtomTable(
         AtomTable: PRTL_ATOM_TABLE,
         AtomName: PWSTR,
         Atom: PRTL_ATOM,
     ) -> NTSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn RtlGetCurrentPeb() -> PPEB;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn RtlAcquirePebLock();
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn RtlCreateProcessParameters(
         ProcessParameters: *mut PRTL_USER_PROCESS_PARAMETERS,
         ImagePathName: PUNICODE_STRING,
@@ -35385,7 +35385,7 @@ unsafe extern "stdcall" {
         RuntimeInfo: PUNICODE_STRING,
     ) -> NTSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn RtlCreateUserProcess(
         ImageFileName: PUNICODE_STRING,
         Attributes: ULONG,
@@ -35399,7 +35399,7 @@ unsafe extern "stdcall" {
         ProcessInfo: PRTL_USER_PROCESS_INFORMATION,
     ) -> NTSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn RtlCreateUserThread(
         ProcessHandle: HANDLE,
         SecurityDescriptor: PSECURITY_DESCRIPTOR,
@@ -35413,19 +35413,19 @@ unsafe extern "stdcall" {
         ClientId: PCLIENT_ID,
     ) -> NTSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn RtlDeNormalizeProcessParams(
         ProcessParameters: PRTL_USER_PROCESS_PARAMETERS,
     ) -> PRTL_USER_PROCESS_PARAMETERS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn RtlDestroyProcessParameters(ProcessParameters: PRTL_USER_PROCESS_PARAMETERS)
         -> NTSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn RtlExitUserThread(Status: NTSTATUS);
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn RtlInitializeContext(
         ProcessHandle: HANDLE,
         ThreadContext: PCONTEXT,
@@ -35434,18 +35434,18 @@ unsafe extern "stdcall" {
         InitialTeb: PINITIAL_TEB,
     );
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn RtlIsThreadWithinLoaderCallout() -> BOOLEAN;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn RtlNormalizeProcessParams(
         ProcessParameters: PRTL_USER_PROCESS_PARAMETERS,
     ) -> PRTL_USER_PROCESS_PARAMETERS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn RtlReleasePebLock();
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn RtlRemoteCall(
         Process: HANDLE,
         Thread: HANDLE,
@@ -35470,33 +35470,33 @@ unsafe extern "C" {
         NeedBreaks: BOOLEAN,
     ) -> NTSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn RtlGetCurrentProcessorNumber() -> ULONG;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn RtlSetThreadPoolStartFunc(
         StartPoolThread: PRTL_START_POOL_THREAD,
         ExitPoolThread: PRTL_EXIT_POOL_THREAD,
     ) -> NTSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn RtlDeregisterWaitEx(hWaitHandle: HANDLE, hCompletionEvent: HANDLE) -> NTSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn RtlDeregisterWait(hWaitHandle: HANDLE) -> NTSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn RtlQueueWorkItem(Function: WORKERCALLBACKFUNC, Context: PVOID, Flags: ULONG)
         -> NTSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn RtlSetIoCompletionCallback(
         FileHandle: HANDLE,
         Callback: PIO_APC_ROUTINE,
         Flags: ULONG,
     ) -> NTSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn RtlRegisterWait(
         phNewWaitObject: PHANDLE,
         hObject: HANDLE,
@@ -35506,26 +35506,26 @@ unsafe extern "stdcall" {
         ulFlags: ULONG,
     ) -> NTSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn RtlCreateEnvironment(Inherit: BOOLEAN, Environment: *mut PWSTR) -> NTSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn RtlComputePrivatizedDllName_U(
         DllName: PUNICODE_STRING,
         RealName: PUNICODE_STRING,
         LocalName: PUNICODE_STRING,
     ) -> NTSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn RtlDestroyEnvironment(Environment: PWSTR);
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn RtlDoesFileExists_U(FileName: PCWSTR) -> BOOLEAN;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn RtlDetermineDosPathNameType_U(Path: PCWSTR) -> RTL_PATH_TYPE;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn RtlDosSearchPath_U(
         Path: PCWSTR,
         FileName: PCWSTR,
@@ -35535,7 +35535,7 @@ unsafe extern "stdcall" {
         PartName: *mut PWSTR,
     ) -> ULONG;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn RtlDosSearchPath_Ustr(
         Flags: ULONG,
         PathString: PUNICODE_STRING,
@@ -35548,7 +35548,7 @@ unsafe extern "stdcall" {
         LengthNeeded: PSIZE_T,
     ) -> NTSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn RtlDosPathNameToNtPathName_U(
         DosPathName: PCWSTR,
         NtPathName: PUNICODE_STRING,
@@ -35556,7 +35556,7 @@ unsafe extern "stdcall" {
         DirectoryInfo: PRTL_RELATIVE_NAME_U,
     ) -> BOOLEAN;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn RtlNtPathNameToDosPathName(
         Flags: ULONG,
         Path: PRTL_UNICODE_STRING_BUFFER,
@@ -35564,7 +35564,7 @@ unsafe extern "stdcall" {
         Unknown: PULONG,
     ) -> NTSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn RtlDosPathNameToRelativeNtPathName_U(
         DosName: PCWSTR,
         NtName: PUNICODE_STRING,
@@ -35572,7 +35572,7 @@ unsafe extern "stdcall" {
         RelativeName: PRTL_RELATIVE_NAME_U,
     ) -> BOOLEAN;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn RtlExpandEnvironmentStrings_U(
         Environment: PWSTR,
         Source: PUNICODE_STRING,
@@ -35580,10 +35580,10 @@ unsafe extern "stdcall" {
         Length: PULONG,
     ) -> NTSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn RtlGetCurrentDirectory_U(MaximumLength: ULONG, Buffer: PWSTR) -> ULONG;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn RtlGetFullPathName_U(
         FileName: PCWSTR,
         Size: ULONG,
@@ -35591,7 +35591,7 @@ unsafe extern "stdcall" {
         ShortName: *mut PWSTR,
     ) -> ULONG;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn RtlGetFullPathName_UstrEx(
         FileName: PUNICODE_STRING,
         StaticString: PUNICODE_STRING,
@@ -35603,101 +35603,101 @@ unsafe extern "stdcall" {
         LengthNeeded: PSIZE_T,
     ) -> NTSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn RtlGetLengthWithoutTrailingPathSeperators(
         Flags: ULONG,
         PathString: PCUNICODE_STRING,
         Length: PULONG,
     ) -> NTSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn RtlGetLongestNtPathLength() -> ULONG;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn RtlIsDosDeviceName_U(Name: PCWSTR) -> ULONG;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn RtlIsDosDeviceName_Ustr(Name: PCUNICODE_STRING) -> ULONG;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn RtlIsNameLegalDOS8Dot3(
         Name: PCUNICODE_STRING,
         OemName: POEM_STRING,
         NameContainsSpaces: PBOOLEAN,
     ) -> BOOLEAN;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn RtlQueryEnvironmentVariable_U(
         Environment: PWSTR,
         Name: PCUNICODE_STRING,
         Value: PUNICODE_STRING,
     ) -> NTSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn RtlReleaseRelativeName(RelativeName: PRTL_RELATIVE_NAME_U);
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn RtlSetCurrentDirectory_U(name: PUNICODE_STRING) -> NTSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn RtlSetEnvironmentVariable(
         Environment: *mut PWSTR,
         Name: PUNICODE_STRING,
         Value: PUNICODE_STRING,
     ) -> NTSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn RtlDeleteCriticalSection(CriticalSection: PRTL_CRITICAL_SECTION) -> NTSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn RtlEnterCriticalSection(CriticalSection: PRTL_CRITICAL_SECTION) -> NTSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn RtlInitializeCriticalSection(CriticalSection: PRTL_CRITICAL_SECTION) -> NTSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn RtlInitializeCriticalSectionAndSpinCount(
         CriticalSection: PRTL_CRITICAL_SECTION,
         SpinCount: ULONG,
     ) -> NTSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn RtlIsCriticalSectionLocked(CriticalSection: PRTL_CRITICAL_SECTION) -> LOGICAL;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn RtlIsCriticalSectionLockedByThread(CriticalSection: PRTL_CRITICAL_SECTION) -> LOGICAL;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn RtlLeaveCriticalSection(CriticalSection: PRTL_CRITICAL_SECTION) -> NTSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn RtlTryEnterCriticalSection(CriticalSection: PRTL_CRITICAL_SECTION) -> LOGICAL;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn RtlAcquireResourceExclusive(Resource: PRTL_RESOURCE, Wait: BOOLEAN) -> BOOLEAN;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn RtlAcquireResourceShared(Resource: PRTL_RESOURCE, Wait: BOOLEAN) -> BOOLEAN;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn RtlConvertExclusiveToShared(Resource: PRTL_RESOURCE);
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn RtlConvertSharedToExclusive(Resource: PRTL_RESOURCE);
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn RtlDeleteResource(Resource: PRTL_RESOURCE);
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn RtlDumpResource(Resource: PRTL_RESOURCE);
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn RtlInitializeResource(Resource: PRTL_RESOURCE);
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn RtlReleaseResource(Resource: PRTL_RESOURCE);
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn RtlCompressBuffer(
         CompressionFormatAndEngine: USHORT,
         UncompressedBuffer: PUCHAR,
@@ -35709,7 +35709,7 @@ unsafe extern "stdcall" {
         WorkSpace: PVOID,
     ) -> NTSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn RtlDecompressBuffer(
         CompressionFormat: USHORT,
         UncompressedBuffer: PUCHAR,
@@ -35719,73 +35719,73 @@ unsafe extern "stdcall" {
         FinalUncompressedSize: PULONG,
     ) -> NTSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn RtlGetCompressionWorkSpaceSize(
         CompressionFormatAndEngine: USHORT,
         CompressBufferWorkSpaceSize: PULONG,
         CompressFragmentWorkSpaceSize: PULONG,
     ) -> NTSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn RtlPopFrame(Frame: PTEB_ACTIVE_FRAME);
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn RtlPushFrame(Frame: PTEB_ACTIVE_FRAME);
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn RtlGetFrame() -> PTEB_ACTIVE_FRAME;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn RtlCreateQueryDebugBuffer(Size: ULONG, EventPair: BOOLEAN) -> PRTL_DEBUG_INFORMATION;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn RtlDestroyQueryDebugBuffer(DebugBuffer: PRTL_DEBUG_INFORMATION) -> NTSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn RtlQueryProcessDebugInformation(
         ProcessId: ULONG,
         DebugInfoClassMask: ULONG,
         DebugBuffer: PRTL_DEBUG_INFORMATION,
     ) -> NTSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn RtlAreBitsClear(
         BitMapHeader: PRTL_BITMAP,
         StartingIndex: ULONG,
         Length: ULONG,
     ) -> BOOLEAN;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn RtlAreBitsSet(BitMapHeader: PRTL_BITMAP, StartingIndex: ULONG, Length: ULONG)
         -> BOOLEAN;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn RtlClearAllBits(BitMapHeader: PRTL_BITMAP);
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn RtlClearBit(BitMapHeader: PRTL_BITMAP, BitNumber: ULONG);
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn RtlClearBits(BitMapHeader: PRTL_BITMAP, StartingIndex: ULONG, NumberToClear: ULONG);
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn RtlFindClearBits(
         BitMapHeader: PRTL_BITMAP,
         NumberToFind: ULONG,
         HintIndex: ULONG,
     ) -> ULONG;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn RtlFindClearBitsAndSet(
         BitMapHeader: PRTL_BITMAP,
         NumberToFind: ULONG,
         HintIndex: ULONG,
     ) -> ULONG;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn RtlFindFirstRunClear(BitMapHeader: PRTL_BITMAP, StartingIndex: PULONG) -> ULONG;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn RtlFindClearRuns(
         BitMapHeader: PRTL_BITMAP,
         RunArray: PRTL_BITMAP_RUN,
@@ -35793,76 +35793,76 @@ unsafe extern "stdcall" {
         LocateLongestRuns: BOOLEAN,
     ) -> ULONG;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn RtlFindLastBackwardRunClear(
         BitMapHeader: PRTL_BITMAP,
         FromIndex: ULONG,
         StartingRunIndex: PULONG,
     ) -> ULONG;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn RtlFindLeastSignificantBit(Value: ULONGLONG) -> CCHAR;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn RtlFindLongestRunClear(BitMapHeader: PRTL_BITMAP, StartingIndex: PULONG) -> ULONG;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn RtlFindMostSignificantBit(Value: ULONGLONG) -> CCHAR;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn RtlFindNextForwardRunClear(
         BitMapHeader: PRTL_BITMAP,
         FromIndex: ULONG,
         StartingRunIndex: PULONG,
     ) -> ULONG;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn RtlFindNextForwardRunSet(
         BitMapHeader: PRTL_BITMAP,
         FromIndex: ULONG,
         StartingRunIndex: PULONG,
     ) -> ULONG;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn RtlFindSetBits(
         BitMapHeader: PRTL_BITMAP,
         NumberToFind: ULONG,
         HintIndex: ULONG,
     ) -> ULONG;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn RtlFindSetBitsAndClear(
         BitMapHeader: PRTL_BITMAP,
         NumberToFind: ULONG,
         HintIndex: ULONG,
     ) -> ULONG;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn RtlInitializeBitMap(
         BitMapHeader: PRTL_BITMAP,
         BitMapBuffer: PULONG,
         SizeOfBitMap: ULONG,
     );
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn RtlNumberOfClearBits(BitMapHeader: PRTL_BITMAP) -> ULONG;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn RtlNumberOfSetBits(BitMapHeader: PRTL_BITMAP) -> ULONG;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn RtlSetBit(BitMapHeader: PRTL_BITMAP, BitNumber: ULONG);
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn RtlSetBits(BitMapHeader: PRTL_BITMAP, StartingIndex: ULONG, NumberToSet: ULONG);
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn RtlSetAllBits(BitMapHeader: PRTL_BITMAP);
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn RtlTestBit(BitMapHeader: PRTL_BITMAP, BitNumber: ULONG) -> BOOLEAN;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn RtlCreateTimer(
         TimerQueue: HANDLE,
         phNewTimer: PHANDLE,
@@ -35873,13 +35873,13 @@ unsafe extern "stdcall" {
         Flags: ULONG,
     ) -> NTSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn RtlCreateTimerQueue(TimerQueue: PHANDLE) -> NTSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn RtlDeleteTimer(TimerQueue: HANDLE, Timer: HANDLE, CompletionEvent: HANDLE) -> NTSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn RtlUpdateTimer(
         TimerQueue: HANDLE,
         Timer: HANDLE,
@@ -35887,23 +35887,23 @@ unsafe extern "stdcall" {
         Period: ULONG,
     ) -> NTSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn RtlDeleteTimerQueueEx(TimerQueue: HANDLE, CompletionEvent: HANDLE) -> NTSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn RtlDeleteTimerQueue(TimerQueue: HANDLE) -> NTSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn RtlInitializeRangeList(RangeList: PRTL_RANGE_LIST);
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn RtlFreeRangeList(RangeList: PRTL_RANGE_LIST);
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn RtlCopyRangeList(CopyRangeList: PRTL_RANGE_LIST, RangeList: PRTL_RANGE_LIST)
         -> NTSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn RtlMergeRangeLists(
         MergedRangeList: PRTL_RANGE_LIST,
         RangeList1: PRTL_RANGE_LIST,
@@ -35911,13 +35911,13 @@ unsafe extern "stdcall" {
         Flags: ULONG,
     ) -> NTSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn RtlInvertRangeList(
         InvertedRangeList: PRTL_RANGE_LIST,
         RangeList: PRTL_RANGE_LIST,
     ) -> NTSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn RtlAddRange(
         RangeList: PRTL_RANGE_LIST,
         Start: ULONGLONG,
@@ -35928,7 +35928,7 @@ unsafe extern "stdcall" {
         Owner: PVOID,
     ) -> NTSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn RtlDeleteRange(
         RangeList: PRTL_RANGE_LIST,
         Start: ULONGLONG,
@@ -35936,10 +35936,10 @@ unsafe extern "stdcall" {
         Owner: PVOID,
     ) -> NTSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn RtlDeleteOwnersRanges(RangeList: PRTL_RANGE_LIST, Owner: PVOID) -> NTSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn RtlFindRange(
         RangeList: PRTL_RANGE_LIST,
         Minimum: ULONGLONG,
@@ -35953,7 +35953,7 @@ unsafe extern "stdcall" {
         Start: PULONGLONG,
     ) -> NTSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn RtlIsRangeAvailable(
         RangeList: PRTL_RANGE_LIST,
         Start: ULONGLONG,
@@ -35965,14 +35965,14 @@ unsafe extern "stdcall" {
         Available: PBOOLEAN,
     ) -> NTSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn RtlGetFirstRange(
         RangeList: PRTL_RANGE_LIST,
         Iterator: PRTL_RANGE_LIST_ITERATOR,
         Range: *mut PRTL_RANGE,
     ) -> NTSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn RtlGetNextRange(
         Iterator: PRTL_RANGE_LIST_ITERATOR,
         Range: *mut PRTL_RANGE,
@@ -35985,57 +35985,57 @@ unsafe extern "C" {
 unsafe extern "C" {
     pub fn DbgPrintEx(ComponentId: ULONG, Level: ULONG, Format: PCSTR, ...) -> ULONG;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn DbgPrompt(Prompt: PCCH, Response: PCH, MaximumResponseLength: ULONG) -> ULONG;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn DbgBreakPoint();
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn DbgLoadImageSymbols(Name: PSTRING, Base: PVOID, ProcessId: ULONG_PTR);
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn DbgUnLoadImageSymbols(Name: PSTRING, Base: PVOID, ProcessId: ULONG_PTR);
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn DbgCommandString(Name: PCCH, Command: PCCH);
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn RtlAllocateHandle(
         HandleTable: PRTL_HANDLE_TABLE,
         Index: PULONG,
     ) -> PRTL_HANDLE_TABLE_ENTRY;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn RtlDestroyHandleTable(HandleTable: PRTL_HANDLE_TABLE);
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn RtlFreeHandle(
         HandleTable: PRTL_HANDLE_TABLE,
         Handle: PRTL_HANDLE_TABLE_ENTRY,
     ) -> BOOLEAN;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn RtlInitializeHandleTable(
         TableSize: ULONG,
         HandleSize: ULONG,
         HandleTable: PRTL_HANDLE_TABLE,
     );
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn RtlIsValidHandle(
         HandleTable: PRTL_HANDLE_TABLE,
         Handle: PRTL_HANDLE_TABLE_ENTRY,
     ) -> BOOLEAN;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn RtlIsValidIndexHandle(
         HandleTable: PRTL_HANDLE_TABLE,
         Index: ULONG,
         Handle: *mut PRTL_HANDLE_TABLE_ENTRY,
     ) -> BOOLEAN;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn RtlFindMessage(
         BaseAddress: PVOID,
         Type: ULONG,
@@ -36044,10 +36044,10 @@ unsafe extern "stdcall" {
         MessageResourceEntry: *mut PMESSAGE_RESOURCE_ENTRY,
     ) -> NTSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn RtlGetNtGlobalFlags() -> ULONG;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn RtlImageDirectoryEntryToData(
         BaseAddress: PVOID,
         MappedAsImage: BOOLEAN,
@@ -36055,7 +36055,7 @@ unsafe extern "stdcall" {
         Size: PULONG,
     ) -> PVOID;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn RtlImageRvaToVa(
         NtHeader: PIMAGE_NT_HEADERS,
         BaseAddress: PVOID,
@@ -36063,10 +36063,10 @@ unsafe extern "stdcall" {
         SectionHeader: *mut PIMAGE_SECTION_HEADER,
     ) -> PVOID;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn RtlImageNtHeader(BaseAddress: PVOID) -> PIMAGE_NT_HEADERS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn RtlImageNtHeaderEx(
         Flags: ULONG,
         BaseAddress: PVOID,
@@ -36074,14 +36074,14 @@ unsafe extern "stdcall" {
         NtHeader: *mut PIMAGE_NT_HEADERS,
     ) -> NTSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn RtlImageRvaToSection(
         NtHeader: PIMAGE_NT_HEADERS,
         BaseAddress: PVOID,
         Rva: ULONG,
     ) -> PIMAGE_SECTION_HEADER;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn LdrRelocateImageWithBias(
         BaseAddress: PVOID,
         AdditionalBias: LONGLONG,
@@ -36091,7 +36091,7 @@ unsafe extern "stdcall" {
         Invalid: ULONG,
     ) -> ULONG;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn RtlActivateActivationContextEx(
         Flags: ULONG,
         Teb: PTEB,
@@ -36099,14 +36099,14 @@ unsafe extern "stdcall" {
         Cookie: PULONG_PTR,
     ) -> NTSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn RtlActivateActivationContext(
         Flags: ULONG,
         Handle: HANDLE,
         Cookie: PULONG_PTR,
     ) -> NTSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn RtlAddRefActivationContext(Context: PVOID);
 }
 unsafe extern "fastcall" {
@@ -36115,10 +36115,10 @@ unsafe extern "fastcall" {
         Context: PVOID,
     ) -> PRTL_ACTIVATION_CONTEXT_STACK_FRAME;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn RtlAllocateActivationContextStack(Stack: *mut PACTIVATION_CONTEXT_STACK) -> NTSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn RtlCreateActivationContext(
         Flags: ULONG,
         ActivationContextData: PACTIVATION_CONTEXT_DATA,
@@ -36128,19 +36128,19 @@ unsafe extern "stdcall" {
         ActCtx: *mut PACTIVATION_CONTEXT,
     ) -> NTSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn RtlGetActiveActivationContext(Context: *mut PVOID) -> NTSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn RtlReleaseActivationContext(handle: HANDLE);
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn RtlDeactivateActivationContext(dwFlags: ULONG, ulCookie: ULONG_PTR) -> NTSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn RtlFreeActivationContextStack(Stack: PACTIVATION_CONTEXT_STACK);
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn RtlFreeThreadActivationContextStack();
 }
 unsafe extern "fastcall" {
@@ -36148,7 +36148,7 @@ unsafe extern "fastcall" {
         Frame: PRTL_CALLER_ALLOCATED_ACTIVATION_CONTEXT_STACK_FRAME_EXTENDED,
     ) -> PRTL_ACTIVATION_CONTEXT_STACK_FRAME;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn RtlDosApplyFileIsolationRedirection_Ustr(
         Flags: ULONG,
         OriginalName: PUNICODE_STRING,
@@ -36161,7 +36161,7 @@ unsafe extern "stdcall" {
         RequiredLength: PSIZE_T,
     ) -> NTSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn RtlFindActivationContextSectionString(
         dwFlags: ULONG,
         ExtensionGuid: *const GUID,
@@ -36170,7 +36170,7 @@ unsafe extern "stdcall" {
         ReturnedData: PVOID,
     ) -> NTSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn RtlQueryInformationActivationContext(
         dwFlags: DWORD,
         Context: PVOID,
@@ -36181,7 +36181,7 @@ unsafe extern "stdcall" {
         pcbWrittenOrRequired: *mut SIZE_T,
     ) -> NTSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn RtlQueryInformationActiveActivationContext(
         ulInfoClass: ULONG,
         pvBuffer: PVOID,
@@ -36189,31 +36189,31 @@ unsafe extern "stdcall" {
         pcbWrittenOrRequired: *mut SIZE_T,
     ) -> NTSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn RtlZombifyActivationContext(Context: PVOID) -> NTSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn RtlWow64EnableFsRedirection(Wow64FsEnableRedirection: BOOLEAN) -> NTSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn RtlWow64EnableFsRedirectionEx(
         Wow64FsEnableRedirection: PVOID,
         OldFsRedirectionLevel: *mut PVOID,
     ) -> NTSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn RtlCheckRegistryKey(RelativeTo: ULONG, Path: PWSTR) -> NTSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn RtlCreateRegistryKey(RelativeTo: ULONG, Path: PWSTR) -> NTSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn RtlFormatCurrentUserKeyPath(KeyPath: PUNICODE_STRING) -> NTSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn RtlOpenCurrentUser(DesiredAccess: ACCESS_MASK, KeyHandle: PHANDLE) -> NTSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn RtlQueryRegistryValues(
         RelativeTo: ULONG,
         Path: PCWSTR,
@@ -36222,7 +36222,7 @@ unsafe extern "stdcall" {
         Environment: PVOID,
     ) -> NTSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn RtlWriteRegistryValue(
         RelativeTo: ULONG,
         Path: PCWSTR,
@@ -36232,10 +36232,10 @@ unsafe extern "stdcall" {
         ValueLength: ULONG,
     ) -> NTSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn RtlGetDefaultCodePage(AnsiCodePage: PUSHORT, OemCodePage: PUSHORT);
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn RtlInitNlsTables(
         AnsiTableBase: PUSHORT,
         OemTableBase: PUSHORT,
@@ -36243,35 +36243,35 @@ unsafe extern "stdcall" {
         NlsTable: PNLSTABLEINFO,
     );
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn RtlInitCodePageTable(TableBase: PUSHORT, CodePageTable: PCPTABLEINFO);
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn RtlResetRtlTranslations(NlsTable: PNLSTABLEINFO);
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn RtlExtendedLargeIntegerDivide(
         Dividend: LARGE_INTEGER,
         Divisor: ULONG,
         Remainder: PULONG,
     ) -> LARGE_INTEGER;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn RtlUniform(Seed: PULONG) -> ULONG;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn RtlRandom(Seed: PULONG) -> ULONG;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn RtlComputeCrc32(InitialCrc: ULONG, Buffer: *const UCHAR, Length: ULONG) -> ULONG;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn RtlIpv4AddressToStringA(Addr: *const in_addr, S: PCHAR) -> PSTR;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn RtlIpv4AddressToStringW(Addr: *const in_addr, S: PWCHAR) -> PWSTR;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn RtlIpv4AddressToStringExA(
         Address: *const in_addr,
         Port: USHORT,
@@ -36279,7 +36279,7 @@ unsafe extern "stdcall" {
         AddressStringLength: PULONG,
     ) -> NTSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn RtlIpv4AddressToStringExW(
         Address: *const in_addr,
         Port: USHORT,
@@ -36287,7 +36287,7 @@ unsafe extern "stdcall" {
         AddressStringLength: PULONG,
     ) -> NTSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn RtlIpv4StringToAddressA(
         String: PCSTR,
         Strict: BOOLEAN,
@@ -36295,7 +36295,7 @@ unsafe extern "stdcall" {
         Addr: *mut in_addr,
     ) -> NTSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn RtlIpv4StringToAddressW(
         String: PCWSTR,
         Strict: BOOLEAN,
@@ -36303,7 +36303,7 @@ unsafe extern "stdcall" {
         Addr: *mut in_addr,
     ) -> NTSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn RtlIpv4StringToAddressExA(
         AddressString: PCSTR,
         Strict: BOOLEAN,
@@ -36311,7 +36311,7 @@ unsafe extern "stdcall" {
         Port: PUSHORT,
     ) -> NTSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn RtlIpv4StringToAddressExW(
         AddressString: PCWSTR,
         Strict: BOOLEAN,
@@ -36319,13 +36319,13 @@ unsafe extern "stdcall" {
         Port: PUSHORT,
     ) -> NTSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn RtlIpv6AddressToStringA(Addr: *const in6_addr, S: PSTR) -> PSTR;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn RtlIpv6AddressToStringW(Addr: *const in6_addr, S: PWSTR) -> PWSTR;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn RtlIpv6AddressToStringExA(
         Address: *const in6_addr,
         ScopeId: ULONG,
@@ -36334,7 +36334,7 @@ unsafe extern "stdcall" {
         AddressStringLength: PULONG,
     ) -> NTSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn RtlIpv6AddressToStringExW(
         Address: *const in6_addr,
         ScopeId: ULONG,
@@ -36343,21 +36343,21 @@ unsafe extern "stdcall" {
         AddressStringLength: PULONG,
     ) -> NTSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn RtlIpv6StringToAddressA(
         String: PCSTR,
         Terminator: *mut PCSTR,
         Addr: *mut in6_addr,
     ) -> NTSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn RtlIpv6StringToAddressW(
         String: PCWSTR,
         Terminator: *mut PCWSTR,
         Addr: *mut in6_addr,
     ) -> NTSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn RtlIpv6StringToAddressExA(
         AddressString: PCSTR,
         Address: *mut in6_addr,
@@ -36365,7 +36365,7 @@ unsafe extern "stdcall" {
         Port: PUSHORT,
     ) -> NTSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn RtlIpv6StringToAddressExW(
         AddressString: PCWSTR,
         Address: *mut in6_addr,
@@ -36373,7 +36373,7 @@ unsafe extern "stdcall" {
         Port: PUSHORT,
     ) -> NTSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn RtlCutoverTimeToSystemTime(
         CutoverTimeFields: PTIME_FIELDS,
         SystemTime: PLARGE_INTEGER,
@@ -36381,61 +36381,61 @@ unsafe extern "stdcall" {
         ThisYearsCutoverOnly: BOOLEAN,
     ) -> BOOLEAN;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn RtlQueryTimeZoneInformation(TimeZoneInformation: PRTL_TIME_ZONE_INFORMATION)
         -> NTSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn RtlSecondsSince1970ToTime(SecondsSince1970: ULONG, Time: PLARGE_INTEGER);
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn RtlSetTimeZoneInformation(TimeZoneInformation: PRTL_TIME_ZONE_INFORMATION) -> NTSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn RtlTimeFieldsToTime(TimeFields: PTIME_FIELDS, Time: PLARGE_INTEGER) -> BOOLEAN;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn RtlTimeToSecondsSince1970(Time: PLARGE_INTEGER, ElapsedSeconds: PULONG) -> BOOLEAN;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn RtlTimeToTimeFields(Time: PLARGE_INTEGER, TimeFields: PTIME_FIELDS);
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn RtlSystemTimeToLocalTime(
         SystemTime: PLARGE_INTEGER,
         LocalTime: PLARGE_INTEGER,
     ) -> NTSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn RtlVerifyVersionInfo(
         VersionInfo: PRTL_OSVERSIONINFOEXW,
         TypeMask: ULONG,
         ConditionMask: ULONGLONG,
     ) -> NTSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn RtlGetVersion(lpVersionInformation: PRTL_OSVERSIONINFOW) -> NTSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn RtlGetNtProductType(ProductType: PNT_PRODUCT_TYPE) -> BOOLEAN;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn RtlInitializeConditionVariable(ConditionVariable: PRTL_CONDITION_VARIABLE);
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn RtlWakeConditionVariable(ConditionVariable: PRTL_CONDITION_VARIABLE);
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn RtlWakeAllConditionVariable(ConditionVariable: PRTL_CONDITION_VARIABLE);
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn RtlSleepConditionVariableCS(
         ConditionVariable: PRTL_CONDITION_VARIABLE,
         CriticalSection: PRTL_CRITICAL_SECTION,
         TimeOut: PLARGE_INTEGER,
     ) -> NTSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn RtlSleepConditionVariableSRW(
         ConditionVariable: PRTL_CONDITION_VARIABLE,
         SRWLock: PRTL_SRWLOCK,
@@ -36443,33 +36443,33 @@ unsafe extern "stdcall" {
         Flags: ULONG,
     ) -> NTSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn RtlInitializeSRWLock(SRWLock: PRTL_SRWLOCK);
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn RtlAcquireSRWLockShared(SRWLock: PRTL_SRWLOCK);
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn RtlReleaseSRWLockShared(SRWLock: PRTL_SRWLOCK);
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn RtlAcquireSRWLockExclusive(SRWLock: PRTL_SRWLOCK);
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn RtlReleaseSRWLockExclusive(SRWLock: PRTL_SRWLOCK);
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn RtlRegisterSecureMemoryCacheCallback(
         Callback: PRTL_SECURE_MEMORY_CACHE_CALLBACK,
     ) -> NTSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn RtlFlushSecureMemoryCache(MemoryCache: PVOID, MemoryLength: SIZE_T) -> BOOLEAN;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn RtlCreateBootStatusDataFile() -> NTSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn RtlGetSetBootStatusData(
         FileHandle: HANDLE,
         WriteMode: BOOLEAN,
@@ -36479,48 +36479,48 @@ unsafe extern "stdcall" {
         ReturnLength: PULONG,
     ) -> NTSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn RtlLockBootStatusData(FileHandle: PHANDLE) -> NTSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn RtlUnlockBootStatusData(FileHandle: HANDLE) -> NTSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn RtlGUIDFromString(GuidString: PUNICODE_STRING, Guid: *mut GUID) -> NTSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn RtlStringFromGUID(Guid: *const GUID, GuidString: PUNICODE_STRING) -> NTSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn RtlComputeImportTableHash(
         hFile: HANDLE,
         Hash: PCHAR,
         ImportTableHashRevision: ULONG,
     ) -> NTSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn RtlInitMemoryStream(Stream: PRTL_MEMORY_STREAM);
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn RtlInitOutOfProcessMemoryStream(Stream: PRTL_MEMORY_STREAM);
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn RtlFinalReleaseOutOfProcessMemoryStream(Stream: PRTL_MEMORY_STREAM);
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn RtlQueryInterfaceMemoryStream(
         This: *mut IStream,
         RequestedIid: *const IID,
         ResultObject: *mut PVOID,
     ) -> HRESULT;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn RtlAddRefMemoryStream(This: *mut IStream) -> ULONG;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn RtlReleaseMemoryStream(This: *mut IStream) -> ULONG;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn RtlReadMemoryStream(
         This: *mut IStream,
         Buffer: PVOID,
@@ -36528,7 +36528,7 @@ unsafe extern "stdcall" {
         BytesRead: PULONG,
     ) -> HRESULT;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn RtlReadOutOfProcessMemoryStream(
         This: *mut IStream,
         Buffer: PVOID,
@@ -36536,7 +36536,7 @@ unsafe extern "stdcall" {
         BytesRead: PULONG,
     ) -> HRESULT;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn RtlSeekMemoryStream(
         This: *mut IStream,
         RelativeOffset: LARGE_INTEGER,
@@ -36544,7 +36544,7 @@ unsafe extern "stdcall" {
         ResultOffset: PULARGE_INTEGER,
     ) -> HRESULT;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn RtlCopyMemoryStreamTo(
         This: *mut IStream,
         Target: *mut IStream,
@@ -36553,7 +36553,7 @@ unsafe extern "stdcall" {
         BytesWritten: PULARGE_INTEGER,
     ) -> HRESULT;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn RtlCopyOutOfProcessMemoryStreamTo(
         This: *mut IStream,
         Target: *mut IStream,
@@ -36562,11 +36562,11 @@ unsafe extern "stdcall" {
         BytesWritten: PULARGE_INTEGER,
     ) -> HRESULT;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn RtlStatMemoryStream(This: *mut IStream, Stats: *mut tagSTATSTG, Flags: ULONG)
         -> HRESULT;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn RtlWriteMemoryStream(
         This: *mut IStream,
         Buffer: *const ::core::ffi::c_void,
@@ -36574,16 +36574,16 @@ unsafe extern "stdcall" {
         BytesWritten: PULONG,
     ) -> HRESULT;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn RtlSetMemoryStreamSize(This: *mut IStream, NewSize: ULARGE_INTEGER) -> HRESULT;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn RtlCommitMemoryStream(This: *mut IStream, CommitFlags: ULONG) -> HRESULT;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn RtlRevertMemoryStream(This: *mut IStream) -> HRESULT;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn RtlLockMemoryStreamRegion(
         This: *mut IStream,
         Offset: ULARGE_INTEGER,
@@ -36591,7 +36591,7 @@ unsafe extern "stdcall" {
         LockType: ULONG,
     ) -> HRESULT;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn RtlUnlockMemoryStreamRegion(
         This: *mut IStream,
         Offset: ULARGE_INTEGER,
@@ -36599,10 +36599,10 @@ unsafe extern "stdcall" {
         LockType: ULONG,
     ) -> HRESULT;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn RtlCloneMemoryStream(This: *mut IStream, ResultStream: *mut *mut IStream) -> HRESULT;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn RtlGetNativeSystemInformation(
         SystemInformationClass: SYSTEM_INFORMATION_CLASS,
         SystemInformation: PVOID,
@@ -36610,7 +36610,7 @@ unsafe extern "stdcall" {
         ReturnLength: PULONG,
     ) -> NTSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn RtlFindActivationContextSectionGuid(
         flags: ULONG,
         extguid: *const GUID,
@@ -36619,7 +36619,7 @@ unsafe extern "stdcall" {
         ptr: *mut ::core::ffi::c_void,
     ) -> NTSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn NtAccessCheck(
         SecurityDescriptor: PSECURITY_DESCRIPTOR,
         ClientToken: HANDLE,
@@ -36631,7 +36631,7 @@ unsafe extern "stdcall" {
         AccessStatus: PNTSTATUS,
     ) -> NTSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn NtAccessCheckByType(
         SecurityDescriptor: PSECURITY_DESCRIPTOR,
         PrincipalSelfSid: PSID,
@@ -36646,7 +36646,7 @@ unsafe extern "stdcall" {
         AccessStatus: PNTSTATUS,
     ) -> NTSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn NtAccessCheckByTypeResultList(
         SecurityDescriptor: PSECURITY_DESCRIPTOR,
         PrincipalSelfSid: PSID,
@@ -36661,7 +36661,7 @@ unsafe extern "stdcall" {
         AccessStatus: PNTSTATUS,
     ) -> NTSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn NtAccessCheckAndAuditAlarm(
         SubsystemName: PUNICODE_STRING,
         HandleId: PVOID,
@@ -36676,7 +36676,7 @@ unsafe extern "stdcall" {
         GenerateOnClose: PBOOLEAN,
     ) -> NTSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn NtAdjustGroupsToken(
         TokenHandle: HANDLE,
         ResetToDefault: BOOLEAN,
@@ -36686,7 +36686,7 @@ unsafe extern "stdcall" {
         ReturnLength: PULONG,
     ) -> NTSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn NtAdjustPrivilegesToken(
         TokenHandle: HANDLE,
         DisableAllPrivileges: BOOLEAN,
@@ -36696,10 +36696,10 @@ unsafe extern "stdcall" {
         ReturnLength: PULONG,
     ) -> NTSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn NtAllocateLocallyUniqueId(LocallyUniqueId: *mut LUID) -> NTSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn NtAllocateUuids(
         Time: PULARGE_INTEGER,
         Range: PULONG,
@@ -36707,14 +36707,14 @@ unsafe extern "stdcall" {
         Seed: PUCHAR,
     ) -> NTSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn NtCompareTokens(
         FirstTokenHandle: HANDLE,
         SecondTokenHandle: HANDLE,
         Equal: PBOOLEAN,
     ) -> NTSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn NtCreateToken(
         TokenHandle: PHANDLE,
         DesiredAccess: ACCESS_MASK,
@@ -36731,7 +36731,7 @@ unsafe extern "stdcall" {
         TokenSource: PTOKEN_SOURCE,
     ) -> NTSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn NtDuplicateToken(
         ExistingTokenHandle: HANDLE,
         DesiredAccess: ACCESS_MASK,
@@ -36741,7 +36741,7 @@ unsafe extern "stdcall" {
         NewTokenHandle: PHANDLE,
     ) -> NTSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn NtFilterToken(
         ExistingTokenHandle: HANDLE,
         Flags: ULONG,
@@ -36751,10 +36751,10 @@ unsafe extern "stdcall" {
         NewTokenHandle: PHANDLE,
     ) -> NTSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn NtImpersonateAnonymousToken(ThreadHandle: HANDLE) -> NTSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn NtOpenObjectAuditAlarm(
         SubsystemName: PUNICODE_STRING,
         HandleId: PVOID,
@@ -36770,7 +36770,7 @@ unsafe extern "stdcall" {
         GenerateOnClose: PBOOLEAN,
     ) -> NTSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn NtOpenProcessTokenEx(
         ProcessHandle: HANDLE,
         DesiredAccess: ACCESS_MASK,
@@ -36778,14 +36778,14 @@ unsafe extern "stdcall" {
         TokenHandle: PHANDLE,
     ) -> NTSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn NtPrivilegeCheck(
         ClientToken: HANDLE,
         RequiredPrivileges: PPRIVILEGE_SET,
         Result: PBOOLEAN,
     ) -> NTSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn NtPrivilegedServiceAuditAlarm(
         SubsystemName: PUNICODE_STRING,
         ServiceName: PUNICODE_STRING,
@@ -36794,7 +36794,7 @@ unsafe extern "stdcall" {
         AccessGranted: BOOLEAN,
     ) -> NTSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn NtPrivilegeObjectAuditAlarm(
         SubsystemName: PUNICODE_STRING,
         HandleId: PVOID,
@@ -36804,7 +36804,7 @@ unsafe extern "stdcall" {
         AccessGranted: BOOLEAN,
     ) -> NTSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn NtQueryInformationToken(
         TokenHandle: HANDLE,
         TokenInformationClass: TOKEN_INFORMATION_CLASS,
@@ -36813,7 +36813,7 @@ unsafe extern "stdcall" {
         ReturnLength: PULONG,
     ) -> NTSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn NtSetInformationToken(
         TokenHandle: HANDLE,
         TokenInformationClass: TOKEN_INFORMATION_CLASS,
@@ -36821,7 +36821,7 @@ unsafe extern "stdcall" {
         TokenInformationLength: ULONG,
     ) -> NTSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn ZwAccessCheck(
         SecurityDescriptor: PSECURITY_DESCRIPTOR,
         ClientToken: HANDLE,
@@ -36833,7 +36833,7 @@ unsafe extern "stdcall" {
         AccessStatus: PNTSTATUS,
     ) -> NTSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn ZwAdjustGroupsToken(
         TokenHandle: HANDLE,
         ResetToDefault: BOOLEAN,
@@ -36843,7 +36843,7 @@ unsafe extern "stdcall" {
         ReturnLength: PULONG,
     ) -> NTSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn ZwAdjustPrivilegesToken(
         TokenHandle: HANDLE,
         DisableAllPrivileges: BOOLEAN,
@@ -36853,10 +36853,10 @@ unsafe extern "stdcall" {
         ReturnLength: PULONG,
     ) -> NTSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn ZwAllocateLocallyUniqueId(LocallyUniqueId: *mut LUID) -> NTSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn ZwAllocateUuids(
         Time: PULARGE_INTEGER,
         Range: PULONG,
@@ -36864,7 +36864,7 @@ unsafe extern "stdcall" {
         Seed: PUCHAR,
     ) -> NTSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn ZwCreateToken(
         TokenHandle: PHANDLE,
         DesiredAccess: ACCESS_MASK,
@@ -36881,7 +36881,7 @@ unsafe extern "stdcall" {
         TokenSource: PTOKEN_SOURCE,
     ) -> NTSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn ZwDuplicateToken(
         ExistingTokenHandle: HANDLE,
         DesiredAccess: ACCESS_MASK,
@@ -36891,10 +36891,10 @@ unsafe extern "stdcall" {
         NewTokenHandle: PHANDLE,
     ) -> NTSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn ZwImpersonateAnonymousToken(Thread: HANDLE) -> NTSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn ZwOpenObjectAuditAlarm(
         SubsystemName: PUNICODE_STRING,
         HandleId: PVOID,
@@ -36910,21 +36910,21 @@ unsafe extern "stdcall" {
         GenerateOnClose: PBOOLEAN,
     ) -> NTSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn ZwOpenProcessToken(
         ProcessHandle: HANDLE,
         DesiredAccess: ACCESS_MASK,
         TokenHandle: PHANDLE,
     ) -> NTSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn ZwPrivilegeCheck(
         ClientToken: HANDLE,
         RequiredPrivileges: PPRIVILEGE_SET,
         Result: PBOOLEAN,
     ) -> NTSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn ZwPrivilegedServiceAuditAlarm(
         SubsystemName: PUNICODE_STRING,
         ServiceName: PUNICODE_STRING,
@@ -36933,7 +36933,7 @@ unsafe extern "stdcall" {
         AccessGranted: BOOLEAN,
     ) -> NTSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn ZwPrivilegeObjectAuditAlarm(
         SubsystemName: PUNICODE_STRING,
         HandleId: PVOID,
@@ -36943,7 +36943,7 @@ unsafe extern "stdcall" {
         AccessGranted: BOOLEAN,
     ) -> NTSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn ZwQueryInformationToken(
         TokenHandle: HANDLE,
         TokenInformationClass: TOKEN_INFORMATION_CLASS,
@@ -36952,7 +36952,7 @@ unsafe extern "stdcall" {
         ResultLength: PULONG,
     ) -> NTSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn ZwSetInformationToken(
         TokenHandle: HANDLE,
         TokenInformationClass: TOKEN_INFORMATION_CLASS,
@@ -36960,49 +36960,49 @@ unsafe extern "stdcall" {
         TokenInformationLength: ULONG,
     ) -> NTSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn DbgBreakPointWithStatus(Status: ULONG);
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn DbgUiConnectToDbg() -> NTSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn DbgUiContinue(ClientId: PCLIENT_ID, ContinueStatus: NTSTATUS) -> NTSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn DbgUiDebugActiveProcess(Process: HANDLE) -> NTSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn DbgUiStopDebugging(Process: HANDLE) -> NTSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn DbgUiWaitStateChange(
         DbgUiWaitStateCange: PDBGUI_WAIT_STATE_CHANGE,
         TimeOut: PLARGE_INTEGER,
     ) -> NTSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn DbgUiConvertStateChangeStructure(
         WaitStateChange: PDBGUI_WAIT_STATE_CHANGE,
         DebugEvent: PVOID,
     ) -> NTSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn DbgUiRemoteBreakin();
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn DbgUiIssueRemoteBreakin(Process: HANDLE) -> NTSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn DbgUiGetThreadDebugObject() -> HANDLE;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn LdrAddRefDll(Flags: ULONG, BaseAddress: PVOID) -> NTSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn LdrDisableThreadCalloutsForDll(BaseAddress: PVOID) -> NTSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn LdrGetDllHandle(
         DllPath: PWSTR,
         DllCharacteristics: PULONG,
@@ -37010,7 +37010,7 @@ unsafe extern "stdcall" {
         DllHandle: *mut PVOID,
     ) -> NTSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn LdrGetDllHandleEx(
         Flags: ULONG,
         DllPath: PWSTR,
@@ -37019,13 +37019,13 @@ unsafe extern "stdcall" {
         DllHandle: *mut PVOID,
     ) -> NTSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn LdrFindEntryForAddress(Address: PVOID, Module: *mut PLDR_DATA_TABLE_ENTRY) -> NTSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn LdrInitializeThunk(Unknown1: ULONG, Unknown2: ULONG, Unknown3: ULONG, Unknown4: ULONG);
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn LdrLoadDll(
         SearchPathA: PWSTR,
         DllCharacteristics: PULONG,
@@ -37033,7 +37033,7 @@ unsafe extern "stdcall" {
         BaseAddress: *mut PVOID,
     ) -> NTSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn LdrProcessRelocationBlock(
         Address: ULONG_PTR,
         Count: ULONG,
@@ -37041,7 +37041,7 @@ unsafe extern "stdcall" {
         Delta: LONG_PTR,
     ) -> PIMAGE_BASE_RELOCATION;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn LdrQueryImageFileExecutionOptions(
         SubKey: PUNICODE_STRING,
         ValueName: PCWSTR,
@@ -37051,28 +37051,28 @@ unsafe extern "stdcall" {
         ReturnedLength: PULONG,
     ) -> NTSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn LdrQueryProcessModuleInformation(
         ModuleInformation: PRTL_PROCESS_MODULES,
         Size: ULONG,
         ReturnedSize: PULONG,
     ) -> NTSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn LdrSetDllManifestProber(Routine: PLDR_MANIFEST_PROBER_ROUTINE);
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn LdrShutdownProcess() -> NTSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn LdrShutdownThread() -> NTSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn LdrUnloadDll(BaseAddress: PVOID) -> NTSTATUS;
 }
 pub type PLDR_CALLBACK =
-    ::core::option::Option<unsafe extern "stdcall" fn(CallbackContext: PVOID, Name: PCHAR)>;
-unsafe extern "stdcall" {
+    ::core::option::Option<unsafe extern "system" fn(CallbackContext: PVOID, Name: PCHAR)>;
+unsafe extern "system" {
     pub fn LdrVerifyImageMatchesChecksum(
         FileHandle: HANDLE,
         Callback: PLDR_CALLBACK,
@@ -37080,14 +37080,14 @@ unsafe extern "stdcall" {
         ImageCharacteristics: PUSHORT,
     ) -> NTSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn LdrOpenImageFileOptionsKey(
         SubKey: PUNICODE_STRING,
         Wow64: BOOLEAN,
         NewKeyHandle: PHANDLE,
     ) -> NTSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn LdrQueryImageFileKeyOption(
         KeyHandle: HANDLE,
         ValueName: PCWSTR,
@@ -37330,8 +37330,8 @@ pub union _SB_API_MSG__bindgen_ty_1__bindgen_ty_1__bindgen_ty_1 {
 pub type SB_API_MSG = _SB_API_MSG;
 pub type PSB_API_MSG = *mut _SB_API_MSG;
 pub type PSB_API_ROUTINE =
-    ::core::option::Option<unsafe extern "stdcall" fn(SbApiMsg: PSB_API_MSG) -> BOOLEAN>;
-unsafe extern "stdcall" {
+    ::core::option::Option<unsafe extern "system" fn(SbApiMsg: PSB_API_MSG) -> BOOLEAN>;
+unsafe extern "system" {
     pub fn SmConnectToSm(
         SbApiPortName: PUNICODE_STRING,
         SbApiPort: HANDLE,
@@ -37339,28 +37339,28 @@ unsafe extern "stdcall" {
         SmApiPort: PHANDLE,
     ) -> NTSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn SmSendMsgToSm(SmApiPort: HANDLE, SmApiMsg: PSM_API_MSG) -> NTSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn SmSessionComplete(
         SmApiPort: HANDLE,
         SessionId: ULONG,
         SessionStatus: NTSTATUS,
     ) -> NTSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn SmExecPgm(
         SmApiPort: HANDLE,
         ProcessInformation: PRTL_USER_PROCESS_INFORMATION,
         DebugFlag: BOOLEAN,
     ) -> NTSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn SmLoadDeferedSubsystem(SmApiPort: HANDLE, DeferedSubsystem: PUNICODE_STRING)
         -> NTSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn SmStartCsr(
         SmApiPort: HANDLE,
         pMuSessionId: PULONG,
@@ -37369,7 +37369,7 @@ unsafe extern "stdcall" {
         pInitialCommandProcessId: PHANDLE,
     ) -> NTSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn SmStopCsr(SmApiPort: HANDLE, MuSessionId: ULONG) -> NTSTATUS;
 }
 pub const _CSRSRV_API_NUMBER_CsrpClientConnect: _CSRSRV_API_NUMBER = 0;
@@ -37446,7 +37446,7 @@ pub union _CSR_API_MESSAGE__bindgen_ty_1__bindgen_ty_1__bindgen_ty_1 {
 }
 pub type CSR_API_MESSAGE = _CSR_API_MESSAGE;
 pub type PCSR_API_MESSAGE = *mut _CSR_API_MESSAGE;
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn CsrClientConnectToServer(
         ObjectDirectory: PCWSTR,
         ServerId: ULONG,
@@ -37455,7 +37455,7 @@ unsafe extern "stdcall" {
         ServerToServerCall: PBOOLEAN,
     ) -> NTSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn CsrClientCallServer(
         ApiMessage: PCSR_API_MESSAGE,
         CaptureBuffer: PCSR_CAPTURE_BUFFER,
@@ -37463,18 +37463,18 @@ unsafe extern "stdcall" {
         DataLength: ULONG,
     ) -> NTSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn CsrAllocateCaptureBuffer(ArgumentCount: ULONG, BufferSize: ULONG)
         -> PCSR_CAPTURE_BUFFER;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn CsrAllocateMessagePointer(
         CaptureBuffer: PCSR_CAPTURE_BUFFER,
         MessageLength: ULONG,
         CapturedData: *mut PVOID,
     ) -> ULONG;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn CsrCaptureMessageBuffer(
         CaptureBuffer: PCSR_CAPTURE_BUFFER,
         MessageBuffer: PVOID,
@@ -37482,10 +37482,10 @@ unsafe extern "stdcall" {
         CapturedData: *mut PVOID,
     );
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn CsrFreeCaptureBuffer(CaptureBuffer: PCSR_CAPTURE_BUFFER);
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn CsrCaptureMessageString(
         CaptureBuffer: PCSR_CAPTURE_BUFFER,
         String: PCSTR,
@@ -37494,38 +37494,38 @@ unsafe extern "stdcall" {
         CapturedString: PSTRING,
     );
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn CsrCaptureMessageUnicodeStringInPlace(
         CaptureBuffer: PCSR_CAPTURE_BUFFER,
         String: PUNICODE_STRING,
     );
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn CsrCaptureMessageMultiUnicodeStringsInPlace(
         CaptureBuffer: *mut PCSR_CAPTURE_BUFFER,
         StringsCount: ULONG,
         MessageStrings: *mut PUNICODE_STRING,
     ) -> NTSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn CsrCaptureTimeout(Milliseconds: ULONG, Timeout: PLARGE_INTEGER) -> PLARGE_INTEGER;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn CsrProbeForRead(Address: PVOID, Length: ULONG, Alignment: ULONG);
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn CsrProbeForWrite(Address: PVOID, Length: ULONG, Alignment: ULONG);
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn CsrGetProcessId() -> HANDLE;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn CsrNewThread() -> NTSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn CsrIdentifyAlertableThread() -> NTSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn CsrSetPriorityClass(Process: HANDLE, PriorityClass: PULONG) -> NTSTATUS;
 }
 #[repr(C)]
@@ -37626,7 +37626,7 @@ pub type _CSR_REPLY_CODE = ::core::ffi::c_uint;
 pub use self::_CSR_REPLY_CODE as CSR_REPLY_CODE;
 pub type PCSR_REPLY_CODE = *mut _CSR_REPLY_CODE;
 pub type CSR_WAIT_FUNCTION = ::core::option::Option<
-    unsafe extern "stdcall" fn(
+    unsafe extern "system" fn(
         WaitList: PLIST_ENTRY,
         WaitThread: PCSR_THREAD,
         WaitApiMessage: PCSR_API_MESSAGE,
@@ -37649,28 +37649,28 @@ pub struct _CSR_WAIT_BLOCK {
 pub type CSR_WAIT_BLOCK = _CSR_WAIT_BLOCK;
 pub type PCSR_WAIT_BLOCK = *mut _CSR_WAIT_BLOCK;
 pub type PCSR_API_ROUTINE = ::core::option::Option<
-    unsafe extern "stdcall" fn(
+    unsafe extern "system" fn(
         ApiMessage: PCSR_API_MESSAGE,
         ReplyCode: PCSR_REPLY_CODE,
     ) -> NTSTATUS,
 >;
 pub type PCSR_CONNECT_CALLBACK = ::core::option::Option<
-    unsafe extern "stdcall" fn(
+    unsafe extern "system" fn(
         CsrProcess: PCSR_PROCESS,
         ConnectionInfo: PVOID,
         ConnectionInfoLength: PULONG,
     ) -> NTSTATUS,
 >;
 pub type PCSR_DISCONNECT_CALLBACK =
-    ::core::option::Option<unsafe extern "stdcall" fn(CsrProcess: PCSR_PROCESS)>;
+    ::core::option::Option<unsafe extern "system" fn(CsrProcess: PCSR_PROCESS)>;
 pub type PCSR_NEWPROCESS_CALLBACK = ::core::option::Option<
-    unsafe extern "stdcall" fn(Parent: PCSR_PROCESS, CsrProcess: PCSR_PROCESS) -> NTSTATUS,
+    unsafe extern "system" fn(Parent: PCSR_PROCESS, CsrProcess: PCSR_PROCESS) -> NTSTATUS,
 >;
 pub type PCSR_HARDERROR_CALLBACK = ::core::option::Option<
-    unsafe extern "stdcall" fn(CsrThread: PCSR_THREAD, HardErrorMessage: PHARDERROR_MSG),
+    unsafe extern "system" fn(CsrThread: PCSR_THREAD, HardErrorMessage: PHARDERROR_MSG),
 >;
 pub type PCSR_SHUTDOWNPROCESS_CALLBACK = ::core::option::Option<
-    unsafe extern "stdcall" fn(
+    unsafe extern "system" fn(
         CsrProcess: PCSR_PROCESS,
         Flags: ULONG,
         FirstPhase: BOOLEAN,
@@ -37701,28 +37701,28 @@ pub struct _CSR_SERVER_DLL {
 pub type CSR_SERVER_DLL = _CSR_SERVER_DLL;
 pub type PCSR_SERVER_DLL = *mut _CSR_SERVER_DLL;
 pub type PCSR_SERVER_DLL_INIT_CALLBACK = ::core::option::Option<
-    unsafe extern "stdcall" fn(LoadedServerDll: PCSR_SERVER_DLL) -> NTSTATUS,
+    unsafe extern "system" fn(LoadedServerDll: PCSR_SERVER_DLL) -> NTSTATUS,
 >;
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn CsrServerInitialization(ArgumentCount: ULONG, Arguments: *mut PCHAR) -> NTSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn CsrAddStaticServerThread(
         hThread: HANDLE,
         ClientId: PCLIENT_ID,
         ThreadFlags: ULONG,
     ) -> PCSR_THREAD;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn CsrCallServerFromServer(
         ReceiveMsg: PCSR_API_MESSAGE,
         ReplyMsg: PCSR_API_MESSAGE,
     ) -> NTSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn CsrConnectToUser() -> PCSR_THREAD;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn CsrCreateProcess(
         hProcess: HANDLE,
         hThread: HANDLE,
@@ -37732,10 +37732,10 @@ unsafe extern "stdcall" {
         DebugCid: PCLIENT_ID,
     ) -> NTSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn CsrCreateRemoteThread(hThread: HANDLE, ClientId: PCLIENT_ID) -> NTSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn CsrCreateThread(
         CsrProcess: PCSR_PROCESS,
         hThread: HANDLE,
@@ -37743,7 +37743,7 @@ unsafe extern "stdcall" {
         HaveClient: BOOLEAN,
     ) -> NTSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn CsrCreateWait(
         WaitList: PLIST_ENTRY,
         WaitFunction: CSR_WAIT_FUNCTION,
@@ -37752,46 +37752,46 @@ unsafe extern "stdcall" {
         WaitContext: PVOID,
     ) -> BOOLEAN;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn CsrDebugProcess(CsrProcess: PCSR_PROCESS) -> NTSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn CsrDebugProcessStop(CsrProcess: PCSR_PROCESS) -> NTSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn CsrDereferenceProcess(CsrProcess: PCSR_PROCESS);
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn CsrDereferenceThread(CsrThread: PCSR_THREAD);
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn CsrDereferenceWait(WaitList: PLIST_ENTRY);
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn CsrDestroyProcess(Cid: PCLIENT_ID, ExitStatus: NTSTATUS) -> NTSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn CsrDestroyThread(Cid: PCLIENT_ID) -> NTSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn CsrExecServerThread(ThreadHandler: PVOID, Flags: ULONG) -> NTSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn CsrGetProcessLuid(hProcess: HANDLE, Luid: PLUID) -> NTSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn CsrImpersonateClient(CsrThread: PCSR_THREAD) -> BOOLEAN;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn CsrLockProcessByClientId(Pid: HANDLE, CsrProcess: *mut PCSR_PROCESS) -> NTSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn CsrLockThreadByClientId(Tid: HANDLE, CsrThread: *mut PCSR_THREAD) -> NTSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn CsrMoveSatisfiedWait(DestinationList: PLIST_ENTRY, WaitList: PLIST_ENTRY);
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn CsrNotifyWait(
         WaitList: PLIST_ENTRY,
         NotifyAll: BOOLEAN,
@@ -37799,41 +37799,41 @@ unsafe extern "stdcall" {
         WaitArgument2: PVOID,
     ) -> BOOLEAN;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn CsrPopulateDosDevices();
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn CsrQueryApiPort() -> HANDLE;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn CsrReferenceThread(CsrThread: PCSR_THREAD);
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn CsrRevertToSelf() -> BOOLEAN;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn CsrSetBackgroundPriority(CsrProcess: PCSR_PROCESS);
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn CsrSetCallingSpooler(Reserved: ULONG);
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn CsrSetForegroundPriority(CsrProcess: PCSR_PROCESS);
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn CsrShutdownProcesses(CallerLuid: PLUID, Flags: ULONG) -> NTSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn CsrUnhandledExceptionFilter(ExceptionInfo: PEXCEPTION_POINTERS)
         -> EXCEPTION_DISPOSITION;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn CsrUnlockProcess(CsrProcess: PCSR_PROCESS) -> NTSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn CsrUnlockThread(CsrThread: PCSR_THREAD) -> NTSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn CsrValidateMessageBuffer(
         ApiMessage: PCSR_API_MESSAGE,
         Buffer: *mut PVOID,
@@ -37841,7 +37841,7 @@ unsafe extern "stdcall" {
         ElementSize: ULONG,
     ) -> BOOLEAN;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn CsrValidateMessageString(
         ApiMessage: PCSR_API_MESSAGE,
         MessageString: *mut PWSTR,
@@ -38172,14 +38172,14 @@ pub union _BASE_API_MESSAGE__bindgen_ty_1 {
 pub type BASE_API_MESSAGE = _BASE_API_MESSAGE;
 pub type PBASE_API_MESSAGE = *mut _BASE_API_MESSAGE;
 pub type BASE_PROCESS_CREATE_NOTIFY_ROUTINE = ::core::option::Option<
-    unsafe extern "stdcall" fn(
+    unsafe extern "system" fn(
         NewProcessId: HANDLE,
         ParentThreadId: HANDLE,
         dwUnknown: ULONG,
         CreateFlags: ULONG,
     ) -> BOOL,
 >;
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn BaseSetProcessCreateNotify(ProcessCreateNotifyProc: BASE_PROCESS_CREATE_NOTIFY_ROUTINE);
 }
 #[repr(C)]
@@ -38369,97 +38369,97 @@ unsafe extern "C" {
 unsafe extern "C" {
     pub static mut CsrObjectDirectory: HANDLE;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn CsrSrvClientConnect(
         ApiMessage: PCSR_API_MESSAGE,
         ReplyCode: PCSR_REPLY_CODE,
     ) -> NTSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn CsrSrvUnusedFunction(
         ApiMessage: PCSR_API_MESSAGE,
         ReplyCode: PCSR_REPLY_CODE,
     ) -> NTSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn CsrServerDllInitialization(LoadedServerDll: PCSR_SERVER_DLL) -> NTSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn CsrCaptureArguments(CsrThread: PCSR_THREAD, ApiMessage: PCSR_API_MESSAGE) -> BOOLEAN;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn CsrReleaseCapturedArguments(ApiMessage: PCSR_API_MESSAGE);
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn CsrLoadServerDll(DllString: PCHAR, EntryPoint: PCHAR, ServerId: ULONG) -> NTSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn CsrAllocateThread(CsrProcess: PCSR_PROCESS) -> PCSR_THREAD;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn CsrAllocateProcess() -> PCSR_PROCESS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn CsrDeallocateProcess(CsrProcess: PCSR_PROCESS);
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn CsrInsertProcess(ParentProcess: PCSR_PROCESS, CsrProcess: PCSR_PROCESS);
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn CsrRemoveProcess(CsrProcess: PCSR_PROCESS);
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn CsrApiRequestThread(Parameter: PVOID) -> NTSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn CsrSbApiRequestThread(Parameter: PVOID);
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn CsrApiPortInitialize() -> NTSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn CsrInsertThread(Process: PCSR_PROCESS, Thread: PCSR_THREAD) -> NTSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn CsrDeallocateThread(CsrThread: PCSR_THREAD);
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn CsrLockedReferenceProcess(CsrProcess: PCSR_PROCESS);
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn CsrLockedReferenceThread(CsrThread: PCSR_THREAD);
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn CsrInitializeProcessStructure() -> NTSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn CsrLocateThreadInProcess(CsrProcess: PCSR_PROCESS, Cid: PCLIENT_ID) -> PCSR_THREAD;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn CsrLocateThreadByClientId(
         Process: *mut PCSR_PROCESS,
         ClientId: PCLIENT_ID,
     ) -> PCSR_THREAD;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn CsrInitializeNtSessionList() -> NTSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn CsrSrvAttachSharedSection(
         CsrProcess: PCSR_PROCESS,
         ConnectInfo: PCSR_API_CONNECTINFO,
     ) -> NTSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn CsrSrvCreateSharedSection(ParameterValue: PCHAR) -> NTSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn CsrLockedDereferenceProcess(CsrProcess: PCSR_PROCESS);
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn CsrLockedDereferenceThread(CsrThread: PCSR_THREAD);
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn CsrNotifyWaitBlock(
         WaitBlock: PCSR_WAIT_BLOCK,
         WaitList: PLIST_ENTRY,
@@ -38469,43 +38469,43 @@ unsafe extern "stdcall" {
         DereferenceThread: BOOLEAN,
     ) -> BOOLEAN;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn CsrReferenceNtSession(Session: PCSR_NT_SESSION);
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn CsrDereferenceNtSession(Session: PCSR_NT_SESSION, ExitStatus: NTSTATUS);
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn CsrCreateSessionObjectDirectory(SessionId: ULONG) -> NTSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn CsrCreateObjectDirectory(ObjectDirectory: PCHAR) -> NTSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn CsrSbApiPortInitialize() -> NTSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn CsrSbCreateSession(ApiMessage: PSB_API_MSG) -> BOOLEAN;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn CsrSbTerminateSession(ApiMessage: PSB_API_MSG) -> BOOLEAN;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn CsrSbForeignSessionComplete(ApiMessage: PSB_API_MSG) -> BOOLEAN;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn CsrSbCreateProcess(ApiMessage: PSB_API_MSG) -> BOOLEAN;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn CsrSbApiHandleConnectionRequest(Message: PSB_API_MSG) -> NTSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn CsrApiHandleConnectionRequest(ApiMessage: PCSR_API_MESSAGE) -> NTSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn CsrCreateLocalSystemSD(LocalSystemSd: *mut PSECURITY_DESCRIPTOR) -> NTSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn CsrSetDirectorySecurity(ObjectDirectory: HANDLE) -> NTSTATUS;
 }
 #[repr(C)]
@@ -38517,12 +38517,12 @@ pub struct _BASESRV_KERNEL_IMPORTS {
 pub type BASESRV_KERNEL_IMPORTS = _BASESRV_KERNEL_IMPORTS;
 pub type PBASESRV_KERNEL_IMPORTS = *mut _BASESRV_KERNEL_IMPORTS;
 pub type POPEN_DATA_FILE =
-    ::core::option::Option<unsafe extern "stdcall" fn(hFile: HANDLE, FileName: PWCHAR) -> NTSTATUS>;
+    ::core::option::Option<unsafe extern "system" fn(hFile: HANDLE, FileName: PWCHAR) -> NTSTATUS>;
 pub type PGET_CP_FILE_NAME_FROM_REGISTRY = ::core::option::Option<
-    unsafe extern "stdcall" fn(CodePage: UINT, FileName: LPWSTR, FileNameSize: ULONG) -> BOOL,
+    unsafe extern "system" fn(CodePage: UINT, FileName: LPWSTR, FileNameSize: ULONG) -> BOOL,
 >;
 pub type PGET_NLS_SECTION_NAME = ::core::option::Option<
-    unsafe extern "stdcall" fn(
+    unsafe extern "system" fn(
         CodePage: UINT,
         Base: UINT,
         Unknown: ULONG,
@@ -38532,7 +38532,7 @@ pub type PGET_NLS_SECTION_NAME = ::core::option::Option<
     ) -> BOOL,
 >;
 pub type PVALIDATE_LOCALE =
-    ::core::option::Option<unsafe extern "stdcall" fn(LocaleId: ULONG) -> BOOL>;
+    ::core::option::Option<unsafe extern "system" fn(LocaleId: ULONG) -> BOOL>;
 unsafe extern "C" {
     pub static mut BaseSrvHeap: HANDLE;
 }
@@ -38664,31 +38664,31 @@ unsafe extern "C" {
 unsafe extern "C" {
     pub static mut SmpDebug: BOOLEAN;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn SmpCheckForCrashDump(FileName: PUNICODE_STRING) -> BOOLEAN;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn SmpPagingFileInitialize();
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn SmpCreatePagingFileDescriptor(PageFileToken: PUNICODE_STRING) -> NTSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn SmpCreatePagingFiles() -> NTSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn SmpTranslateSystemPartitionInformation();
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn SmpCreateSecurityDescriptors(InitialCall: BOOLEAN) -> NTSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn SmpInit(InitialCommand: PUNICODE_STRING, ProcessHandle: PHANDLE) -> NTSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn SmpApiLoop(Parameter: PVOID) -> ULONG;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn SmpSbCreateSession(
         Reserved: PVOID,
         OtherSubsystem: PSMP_SUBSYSTEM,
@@ -38697,23 +38697,23 @@ unsafe extern "stdcall" {
         DbgUiClientId: PCLIENT_ID,
     ) -> NTSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn SmpCheckDuplicateMuSessionId(MuSessionId: ULONG) -> BOOLEAN;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn SmpDeleteSession(SessionId: ULONG);
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn SmpAllocateSessionId(Subsystem: PSMP_SUBSYSTEM, OtherSubsystem: PSMP_SUBSYSTEM)
         -> ULONG;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn SmpGetProcessMuSessionId(ProcessHandle: HANDLE, SessionId: PULONG) -> NTSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn SmpSetProcessMuSessionId(ProcessHandle: HANDLE, SessionId: ULONG) -> NTSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn SmpExecuteImage(
         FileName: PUNICODE_STRING,
         Directory: PUNICODE_STRING,
@@ -38723,7 +38723,7 @@ unsafe extern "stdcall" {
         ProcessInformation: PRTL_USER_PROCESS_INFORMATION,
     ) -> NTSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn SmpExecuteCommand(
         CommandLine: PUNICODE_STRING,
         MuSessionId: ULONG,
@@ -38731,7 +38731,7 @@ unsafe extern "stdcall" {
         Flags: ULONG,
     ) -> NTSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn SmpExecuteInitialCommand(
         MuSessionId: ULONG,
         InitialCommand: PUNICODE_STRING,
@@ -38739,23 +38739,23 @@ unsafe extern "stdcall" {
         ReturnPid: PHANDLE,
     ) -> NTSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn SmpTerminate(
         Parameters: PULONG_PTR,
         ParameterMask: ULONG,
         ParameterCount: ULONG,
     ) -> NTSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn SmpDereferenceSubsystem(SubSystem: PSMP_SUBSYSTEM);
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn SmpLocateKnownSubSysByCid(ClientId: PCLIENT_ID) -> PSMP_SUBSYSTEM;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn SmpLocateKnownSubSysByType(MuSessionId: ULONG, ImageType: ULONG) -> PSMP_SUBSYSTEM;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn SmpLoadSubSystem(
         FileName: PUNICODE_STRING,
         Directory: PUNICODE_STRING,
@@ -38765,20 +38765,20 @@ unsafe extern "stdcall" {
         Flags: ULONG,
     ) -> NTSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn SmpLoadSubSystemsForMuSession(
         MuSessionId: PULONG,
         ProcessId: PHANDLE,
         InitialCommand: PUNICODE_STRING,
     ) -> NTSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn SmpAcquirePrivilege(Privilege: ULONG, PrivilegeStat: *mut PVOID) -> NTSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn SmpReleasePrivilege(State: PVOID);
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn SmpParseCommandLine(
         CommandLine: PUNICODE_STRING,
         Flags: PULONG,
@@ -38787,13 +38787,13 @@ unsafe extern "stdcall" {
         Arguments: PUNICODE_STRING,
     ) -> NTSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn SmpQueryRegistrySosOption() -> BOOLEAN;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn SmpSaveAndClearBootStatusData(BootOkay: PBOOLEAN, ShutdownOkay: PBOOLEAN) -> BOOLEAN;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn SmpRestoreBootStatusData(BootOkay: BOOLEAN, ShutdownOkay: BOOLEAN);
 }
 pub type __builtin_va_list = *mut ::core::ffi::c_char;

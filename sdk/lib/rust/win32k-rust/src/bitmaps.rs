@@ -45,28 +45,8 @@ extern "system" {
 //
 // (NDEBUG is a debug-print suppression flag; no Rust equivalent needed at file scope.)
 //
-#[cfg(target_arch = "x86")]
 #[no_mangle]
-pub unsafe extern "stdcall" fn GreSetBitmapOwner(
-    hbmp: HBITMAP,
-    ulOwner: ULONG,
-) -> BOOL {
-    if GDI_HANDLE_GET_TYPE(hbmp as HGDIOBJ) != GDILoObjType_LO_BITMAP_TYPE as ULONG {
-        return 0;
-    }
-
-    if (ulOwner == GDI_OBJ_HMGR_PUBLIC) || (ulOwner == GDI_OBJ_HMGR_NONE) {
-        if GreGetObjectOwner(hbmp as HGDIOBJ) != GDI_OBJ_HMGR_POWNED {
-            return 0;
-        }
-    }
-
-    GreSetObjectOwner(hbmp as HGDIOBJ, ulOwner)
-}
-
-#[cfg(not(target_arch = "x86"))]
-#[no_mangle]
-pub unsafe extern "C" fn GreSetBitmapOwner(
+pub unsafe extern "system" fn GreSetBitmapOwner(
     hbmp: HBITMAP,
     ulOwner: ULONG,
 ) -> BOOL {
@@ -138,9 +118,8 @@ pub unsafe extern "system" fn UnsafeSetBitmapBits(
 
     iSrc as LONG
 }
-#[cfg(target_arch = "x86")]
 #[no_mangle]
-pub unsafe extern "stdcall" fn GreCreateBitmapEx(
+pub unsafe extern "system" fn GreCreateBitmapEx(
     nWidth: ULONG,
     nHeight: ULONG,
     cjWidthBytes: ULONG,
@@ -197,69 +176,8 @@ pub unsafe extern "stdcall" fn GreCreateBitmapEx(
     SURFACE_UnlockSurface(psurf);
     hbmp
 }
-
-#[cfg(not(target_arch = "x86"))]
 #[no_mangle]
-pub unsafe extern "C" fn GreCreateBitmapEx(
-    nWidth: ULONG,
-    nHeight: ULONG,
-    cjWidthBytes: ULONG,
-    mut iFormat: ULONG,
-    fjBitmap: USHORT,
-    cjSizeImage: ULONG,
-    mut pvBits: PVOID,
-    flags: FLONG,
-) -> HBITMAP {
-    let psurf: PSURFACE;
-    let hbmp: HBITMAP;
-    let mut pvCompressedBits: PVOID = core::ptr::null_mut();
-
-    if iFormat < BMF_1BPP || iFormat > BMF_PNG {
-        return core::ptr::null_mut();
-    }
-
-    if (iFormat == BMF_4RLE) || (iFormat == BMF_8RLE) {
-        pvCompressedBits = pvBits;
-        pvBits = core::ptr::null_mut();
-        iFormat = if iFormat == BMF_4RLE { BMF_4BPP } else { BMF_8BPP };
-    }
-
-    psurf = SURFACE_AllocSurface(
-        STYPE_BITMAP as USHORT,
-        nWidth,
-        nHeight,
-        iFormat,
-        fjBitmap as FLONG,
-        cjWidthBytes,
-        if !pvCompressedBits.is_null() { 0 } else { cjSizeImage },
-        pvBits,
-    );
-    if psurf.is_null() {
-        return core::ptr::null_mut();
-    }
-
-    if !pvCompressedBits.is_null() {
-        let mut sizl: SIZEL = core::mem::zeroed();
-        let lDelta: LONG;
-
-        sizl.cx = nWidth as LONG;
-        sizl.cy = nHeight as LONG;
-        lDelta = WIDTH_BYTES_ALIGN32(nWidth, gajBitsPerFormat[iFormat as usize] as ULONG) as LONG;
-
-        pvBits = (*psurf).SurfObj.pvBits;
-        DecompressBitmap(sizl, pvCompressedBits, pvBits, lDelta, iFormat, cjSizeImage);
-    }
-
-    hbmp = (*psurf).SurfObj.hsurf as HBITMAP;
-
-    (*psurf).flags |= flags | API_BITMAP as FLONG;
-
-    SURFACE_UnlockSurface(psurf);
-    hbmp
-}
-#[cfg(target_arch = "x86")]
-#[no_mangle]
-pub unsafe extern "stdcall" fn GreCreateBitmap(
+pub unsafe extern "system" fn GreCreateBitmap(
     nWidth: ULONG,
     nHeight: ULONG,
     cPlanes: ULONG,
@@ -277,90 +195,8 @@ pub unsafe extern "stdcall" fn GreCreateBitmap(
         DDB_SURFACE as FLONG,
     )
 }
-
-#[cfg(not(target_arch = "x86"))]
 #[no_mangle]
-pub unsafe extern "C" fn GreCreateBitmap(
-    nWidth: ULONG,
-    nHeight: ULONG,
-    cPlanes: ULONG,
-    cBitsPixel: ULONG,
-    pvBits: PVOID,
-) -> HBITMAP {
-    GreCreateBitmapEx(
-        nWidth,
-        nHeight,
-        0,
-        BitmapFormat((cBitsPixel * cPlanes) as _, BI_RGB as _) as ULONG,
-        0,
-        0,
-        pvBits,
-        DDB_SURFACE as FLONG,
-    )
-}
-#[cfg(target_arch = "x86")]
-#[no_mangle]
-pub unsafe extern "stdcall" fn NtGdiCreateBitmap(
-    nWidth: INT,
-    nHeight: INT,
-    cPlanes: UINT,
-    cBitsPixel: UINT,
-    pUnsafeBits: LPBYTE,
-) -> HBITMAP {
-
-    let iFormat: ULONG = BitmapFormat(cBitsPixel * cPlanes, BI_RGB);
-    let cRealBpp: ULONG = gajBitsPerFormat[iFormat as usize] as ULONG;
-
-    let cjWidthBytes: ULONG = WIDTH_BYTES_ALIGN16(nWidth, cRealBpp);
-    let cjSize: ULONGLONG = cjWidthBytes as ULONGLONG * nHeight as ULONGLONG;
-
-    if (iFormat == 0)
-        || (nWidth <= 0)
-        || (nWidth >= 0x8000000)
-        || (nHeight <= 0)
-        || (cBitsPixel > 32)
-        || (cPlanes > 32)
-        || (cjSize >= 0x100000000u64)
-    {
-        EngSetLastError(ERROR_INVALID_PARAMETER);
-        return core::ptr::null_mut();
-    }
-
-    let psurf: PSURFACE = SURFACE_AllocSurface(
-        STYPE_BITMAP as USHORT,
-        nWidth as ULONG,
-        nHeight as ULONG,
-        iFormat,
-        0,
-        0,
-        0,
-        core::ptr::null_mut(),
-    );
-    if psurf.is_null() {
-        return core::ptr::null_mut();
-    }
-
-    (*psurf).flags |= (API_BITMAP | DDB_SURFACE) as ULONG;
-
-    if !pUnsafeBits.is_null() {
-        UnsafeSetBitmapBits(psurf, cjSize as ULONG, pUnsafeBits as *const core::ffi::c_void);
-    } else {
-        RtlZeroMemory(
-            (*psurf).SurfObj.pvBits,
-            (*psurf).SurfObj.cjBits as usize,
-        );
-    }
-
-    let hbmp: HBITMAP = (*psurf).SurfObj.hsurf as HBITMAP;
-
-    SURFACE_UnlockSurface(psurf);
-
-    hbmp
-}
-
-#[cfg(not(target_arch = "x86"))]
-#[no_mangle]
-pub unsafe extern "C" fn NtGdiCreateBitmap(
+pub unsafe extern "system" fn NtGdiCreateBitmap(
     nWidth: INT,
     nHeight: INT,
     cPlanes: UINT,
@@ -678,9 +514,8 @@ pub unsafe extern "C" fn IntCreateCompatibleBitmap(
     }
     Bmp
 }
-#[cfg(target_arch = "x86")]
 #[no_mangle]
-pub unsafe extern "stdcall" fn NtGdiCreateCompatibleBitmap(
+pub unsafe extern "system" fn NtGdiCreateCompatibleBitmap(
     hDC: HDC,
     Width: INT,
     Height: INT,
@@ -709,41 +544,8 @@ pub unsafe extern "stdcall" fn NtGdiCreateCompatibleBitmap(
     DC_UnlockDc(Dc);
     Bmp
 }
-
-#[cfg(not(target_arch = "x86"))]
 #[no_mangle]
-pub unsafe extern "C" fn NtGdiCreateCompatibleBitmap(
-    hDC: HDC,
-    Width: INT,
-    Height: INT,
-) -> HBITMAP {
-    let Bmp: HBITMAP;
-    let Dc: PDC;
-
-    if (Width <= 0) || (Height <= 0) || ((Width * Height) > 0x3FFFFFFF) {
-        EngSetLastError(ERROR_INVALID_PARAMETER);
-        return core::ptr::null_mut();
-    }
-
-    if hDC.is_null() {
-        return GreCreateBitmap(Width as ULONG, Height as ULONG, 1, 1, core::ptr::null_mut());
-    }
-
-    Dc = DC_LockDc(hDC);
-
-    if Dc.is_null() {
-        EngSetLastError(ERROR_INVALID_HANDLE);
-        return core::ptr::null_mut();
-    }
-
-    Bmp = IntCreateCompatibleBitmap(Dc, Width, Height, 0, 0);
-
-    DC_UnlockDc(Dc);
-    Bmp
-}
-#[cfg(target_arch = "x86")]
-#[no_mangle]
-pub unsafe extern "stdcall" fn GreGetBitmapDimension(
+pub unsafe extern "system" fn GreGetBitmapDimension(
     hBitmap: HBITMAP,
     psizDim: LPSIZE,
 ) -> BOOL {
@@ -764,60 +566,8 @@ pub unsafe extern "stdcall" fn GreGetBitmapDimension(
 
     1
 }
-
-#[cfg(not(target_arch = "x86"))]
 #[no_mangle]
-pub unsafe extern "C" fn GreGetBitmapDimension(
-    hBitmap: HBITMAP,
-    psizDim: LPSIZE,
-) -> BOOL {
-
-    if hBitmap == core::ptr::null_mut() {
-        return 0;
-    }
-
-    let psurfBmp = SURFACE_ShareLockSurface(hBitmap);
-    if psurfBmp == core::ptr::null_mut() {
-        EngSetLastError(ERROR_INVALID_HANDLE);
-        return 0;
-    }
-
-    *psizDim = (*psurfBmp).sizlDim;
-
-    SURFACE_ShareUnlockSurface(psurfBmp);
-
-    1
-}
-#[cfg(target_arch = "x86")]
-#[no_mangle]
-pub unsafe extern "stdcall" fn NtGdiGetBitmapDimension(
-    hBitmap: HBITMAP,
-    psizDim: LPSIZE,
-) -> BOOL {
-
-    let mut dim: SIZE = core::mem::zeroed();
-
-    if GreGetBitmapDimension(hBitmap, &mut dim) == 0 {
-        return 0;
-    }
-
-    let __SehStatus = SafeProbeForWrite(
-        psizDim as *mut core::ffi::c_void,
-        core::mem::size_of::<SIZE>(),
-        1,
-    );
-    if !NT_SUCCESS(__SehStatus) {
-        return 0;
-    }
-
-    *psizDim = dim;
-
-    1
-}
-
-#[cfg(not(target_arch = "x86"))]
-#[no_mangle]
-pub unsafe extern "C" fn NtGdiGetBitmapDimension(
+pub unsafe extern "system" fn NtGdiGetBitmapDimension(
     hBitmap: HBITMAP,
     psizDim: LPSIZE,
 ) -> BOOL {
@@ -891,9 +641,8 @@ unsafe fn UnsafeGetBitmapBits_impl(psurf: PSURFACE, mut Bytes: u32, pvBits: PBYT
 
     iDst as i32
 }
-#[cfg(target_arch = "x86")]
 #[no_mangle]
-pub unsafe extern "stdcall" fn NtGdiGetBitmapBits(
+pub unsafe extern "system" fn NtGdiGetBitmapBits(
     hBitmap: HBITMAP,
     mut cjBuffer: u32,
     pUnsafeBits: PBYTE,
@@ -934,53 +683,8 @@ pub unsafe extern "stdcall" fn NtGdiGetBitmapBits(
 
     ret
 }
-
-#[cfg(not(target_arch = "x86"))]
 #[no_mangle]
-pub unsafe extern "C" fn NtGdiGetBitmapBits(
-    hBitmap: HBITMAP,
-    mut cjBuffer: u32,
-    pUnsafeBits: PBYTE,
-) -> i32 {
-
-    let psurf: PSURFACE;
-    let cjSize: u32;
-    let ret: i32;
-
-    if !pUnsafeBits.is_null() && cjBuffer == 0 {
-        return 0;
-    }
-
-    psurf = SURFACE_ShareLockSurface(hBitmap);
-    if psurf.is_null() {
-        EngSetLastError(ERROR_INVALID_HANDLE);
-        return 0;
-    }
-
-    cjSize = WIDTH_BYTES_ALIGN16(
-        (*psurf).SurfObj.sizlBitmap.cx,
-        BitsPerFormat((*psurf).SurfObj.iBitmapFormat),
-    ) * (*psurf).SurfObj.sizlBitmap.cy as u32;
-
-    if pUnsafeBits.is_null() {
-        SURFACE_ShareUnlockSurface(psurf);
-        return cjSize as i32;
-    }
-
-    if cjSize < cjBuffer {
-        cjBuffer = cjSize;
-    }
-
-    ProbeForWrite(pUnsafeBits as *mut core::ffi::c_void, cjBuffer as usize, 1);
-    ret = UnsafeGetBitmapBits(psurf, cjBuffer, pUnsafeBits);
-
-    SURFACE_ShareUnlockSurface(psurf);
-
-    ret
-}
-#[cfg(target_arch = "x86")]
-#[no_mangle]
-pub unsafe extern "stdcall" fn NtGdiSetBitmapBits(
+pub unsafe extern "system" fn NtGdiSetBitmapBits(
     hBitmap: HBITMAP,
     Bytes: DWORD,
     pUnsafeBits: PBYTE,
@@ -1017,89 +721,8 @@ pub unsafe extern "stdcall" fn NtGdiSetBitmapBits(
 
     ret
 }
-
-#[cfg(not(target_arch = "x86"))]
 #[no_mangle]
-pub unsafe extern "C" fn NtGdiSetBitmapBits(
-    hBitmap: HBITMAP,
-    Bytes: DWORD,
-    pUnsafeBits: PBYTE,
-) -> LONG {
-
-    let ret: LONG;
-    let psurf: PSURFACE;
-
-    if pUnsafeBits.is_null() || Bytes == 0 {
-        return 0;
-    }
-
-    if GDI_HANDLE_IS_STOCKOBJ(hBitmap as HGDIOBJ) != 0 {
-        return 0;
-    }
-
-    psurf = SURFACE_ShareLockSurface(hBitmap);
-    if psurf.is_null() {
-        EngSetLastError(ERROR_INVALID_HANDLE);
-        return 0;
-    }
-
-    if ((*psurf).flags & API_BITMAP) == 0
-        || (*psurf).SurfObj.iBitmapFormat > BMF_32BPP
-    {
-        EngSetLastError(ERROR_INVALID_HANDLE);
-        SURFACE_ShareUnlockSurface(psurf);
-        return 0;
-    }
-
-    ret = UnsafeSetBitmapBits(psurf, Bytes, pUnsafeBits as *const core::ffi::c_void);
-
-    SURFACE_ShareUnlockSurface(psurf);
-
-    ret
-}
-#[cfg(target_arch = "x86")]
-#[no_mangle]
-pub unsafe extern "stdcall" fn NtGdiSetBitmapDimension(
-    hBitmap: HBITMAP,
-    Width: i32,
-    Height: i32,
-    Size: LPSIZE,
-) -> u32 {
-
-    let psurf: PSURFACE;
-    let mut Ret: u32 = 1;
-    let Status: i32;
-
-    if hBitmap.is_null() {
-        return 0;
-    }
-
-    psurf = SURFACE_ShareLockSurface(hBitmap);
-    if psurf.is_null() {
-        EngSetLastError(ERROR_INVALID_HANDLE);
-        return 0;
-    }
-
-    if !Size.is_null() {
-        Status = SafeProbeForWrite(Size as *mut core::ffi::c_void, core::mem::size_of::<SIZE>(), 1);
-        if !NT_SUCCESS(Status) {
-            Ret = 0;
-        } else {
-            *Size = (*psurf).sizlDim;
-        }
-    }
-
-    (*psurf).sizlDim.cx = Width;
-    (*psurf).sizlDim.cy = Height;
-
-    SURFACE_ShareUnlockSurface(psurf);
-
-    Ret
-}
-
-#[cfg(not(target_arch = "x86"))]
-#[no_mangle]
-pub unsafe extern "C" fn NtGdiSetBitmapDimension(
+pub unsafe extern "system" fn NtGdiSetBitmapDimension(
     hBitmap: HBITMAP,
     Width: i32,
     Height: i32,
@@ -1196,9 +819,8 @@ unsafe fn BITMAP_CopyBitmap_impl(hBitmap: HBITMAP) -> HBITMAP {
     SURFACE_ShareUnlockSurface(psurfSrc);
     hbmNew
 }
-#[cfg(target_arch = "x86")]
 #[no_mangle]
-pub unsafe extern "stdcall" fn BITMAP_GetObject(
+pub unsafe extern "system" fn BITMAP_GetObject(
     psurf: *mut SURFACE,
     Count: i32,
     buffer: LPVOID,
@@ -1285,111 +907,8 @@ pub unsafe extern "stdcall" fn BITMAP_GetObject(
 
     core::mem::size_of::<BITMAP>() as i32
 }
-
-#[cfg(not(target_arch = "x86"))]
 #[no_mangle]
-pub unsafe extern "C" fn BITMAP_GetObject(
-    psurf: *mut SURFACE,
-    Count: i32,
-    buffer: LPVOID,
-) -> i32 {
-    let pBitmap: PBITMAP;
-
-    if buffer.is_null() {
-        return core::mem::size_of::<BITMAP>() as i32;
-    }
-    if (Count as u32) < core::mem::size_of::<BITMAP>() as u32 {
-        return 0;
-    }
-
-    pBitmap = buffer as PBITMAP;
-    (*pBitmap).bmType = 0;
-    (*pBitmap).bmWidth = (*psurf).SurfObj.sizlBitmap.cx;
-    (*pBitmap).bmHeight = (*psurf).SurfObj.sizlBitmap.cy;
-    (*pBitmap).bmPlanes = 1;
-    (*pBitmap).bmBitsPixel = BitsPerFormat((*psurf).SurfObj.iBitmapFormat) as u16;
-    (*pBitmap).bmWidthBytes = WIDTH_BYTES_ALIGN16((*pBitmap).bmWidth, (*pBitmap).bmBitsPixel as i32) as i32;
-
-    if !(*psurf).hSecure.is_null() {
-        (*pBitmap).bmBits = (*psurf).SurfObj.pvBits;
-        (*pBitmap).bmWidthBytes = WIDTH_BYTES_ALIGN32((*pBitmap).bmWidth, (*pBitmap).bmBitsPixel as i32) as i32;
-
-        if Count >= core::mem::size_of::<DIBSECTION>() as i32 {
-            let pds: PDIBSECTION = buffer as PDIBSECTION;
-
-            (*pds).dsBmih.biSize = core::mem::size_of::<BITMAPINFOHEADER>() as u32;
-            (*pds).dsBmih.biWidth = (*pds).dsBm.bmWidth;
-            (*pds).dsBmih.biHeight = (*pds).dsBm.bmHeight;
-            (*pds).dsBmih.biPlanes = (*pds).dsBm.bmPlanes;
-            (*pds).dsBmih.biBitCount = (*pds).dsBm.bmBitsPixel;
-
-            match (*psurf).SurfObj.iBitmapFormat {
-                x if x == BMF_1BPP as _ || x == BMF_4BPP as _ || x == BMF_8BPP as _ => {
-                    (*pds).dsBmih.biCompression = BI_RGB;
-                }
-                x if x == BMF_16BPP as _ => {
-                    if ((*(*psurf).ppal).flFlags & PAL_RGB16_555) != 0 {
-                        (*pds).dsBmih.biCompression = BI_RGB;
-                    } else {
-                        (*pds).dsBmih.biCompression = BI_BITFIELDS;
-                    }
-                }
-                x if x == BMF_24BPP as _ || x == BMF_32BPP as _ => {
-                    if ((*(*psurf).ppal).flFlags & PAL_BGR) != 0 {
-                        (*pds).dsBmih.biCompression = BI_RGB;
-                    } else {
-                        (*pds).dsBmih.biCompression = BI_BITFIELDS;
-                    }
-                }
-                x if x == BMF_4RLE as _ => {
-                    (*pds).dsBmih.biCompression = BI_RLE4;
-                }
-                x if x == BMF_8RLE as _ => {
-                    (*pds).dsBmih.biCompression = BI_RLE8;
-                }
-                x if x == BMF_JPEG as _ => {
-                    (*pds).dsBmih.biCompression = BI_JPEG;
-                }
-                x if x == BMF_PNG as _ => {
-                    (*pds).dsBmih.biCompression = BI_PNG;
-                }
-                _ => {}
-            }
-
-            (*pds).dsBmih.biSizeImage = (*psurf).SurfObj.cjBits;
-            (*pds).dsBmih.biXPelsPerMeter = 0;
-            (*pds).dsBmih.biYPelsPerMeter = 0;
-            (*pds).dsBmih.biClrUsed = (*(*psurf).ppal).NumColors;
-            (*pds).dsBmih.biClrImportant = (*psurf).biClrImportant;
-            (*pds).dsBitfields[0] = (*(*psurf).ppal).RedMask;
-            (*pds).dsBitfields[1] = (*(*psurf).ppal).GreenMask;
-            (*pds).dsBitfields[2] = (*(*psurf).ppal).BlueMask;
-            (*pds).dshSection = (*psurf).hDIBSection;
-            (*pds).dsOffset = (*psurf).dwOffset;
-
-            return core::mem::size_of::<DIBSECTION>() as i32;
-        }
-    } else {
-        (*pBitmap).bmBits = core::ptr::null_mut();
-    }
-
-    core::mem::size_of::<BITMAP>() as i32
-}
-#[cfg(target_arch = "x86")]
-#[no_mangle]
-pub unsafe extern "stdcall" fn NtGdiGetDCforBitmap(hsurf: HBITMAP) -> HDC {
-    let mut hdc: HDC = core::ptr::null_mut();
-    let psurf: PSURFACE = SURFACE_ShareLockSurface(hsurf);
-    if !psurf.is_null() {
-        hdc = (*psurf).hdc;
-        SURFACE_ShareUnlockSurface(psurf);
-    }
-    hdc
-}
-
-#[cfg(not(target_arch = "x86"))]
-#[no_mangle]
-pub unsafe extern "C" fn NtGdiGetDCforBitmap(hsurf: HBITMAP) -> HDC {
+pub unsafe extern "system" fn NtGdiGetDCforBitmap(hsurf: HBITMAP) -> HDC {
     let mut hdc: HDC = core::ptr::null_mut();
     let psurf: PSURFACE = SURFACE_ShareLockSurface(hsurf);
     if !psurf.is_null() {

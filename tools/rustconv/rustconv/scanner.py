@@ -15,7 +15,7 @@ import tree_sitter_c as tsc
 import tree_sitter_cpp as tscpp
 from tree_sitter import Language, Parser
 
-from .conventions import KW_TO_CONV
+from .conventions import KW_EXPANSION, KW_EXPANSION_FN, KW_TO_CONV
 
 C_LANG = Language(tsc.language())
 CPP_LANG = Language(tscpp.language())
@@ -221,6 +221,19 @@ RE_EMPTY_MEMMODEL = re.compile(r"\b(?:FAR|NEAR)\b")
 # list — a silent drop, the failure mode this scanner exists to prevent.
 RE_EXTERN_C = re.compile(r"\bEXTERN_C\b")
 
+# The convention aliases that are really `[linkage] <TYPE> <conv>` — see KW_EXPANSION for
+# why normalizing one to a bare `__stdcall` deletes the function.
+RE_COMPOSITE_CC = re.compile(r"\b(?:" + "|".join(map(re.escape, KW_EXPANSION)) + r")\b")
+
+# The function-like forms take their return type as an argument, so they need a capture
+# rather than a word match. Longest-first, or `STDAPI_` would shadow `STDAPIV_`. The
+# argument is a type, so it cannot itself contain a paren -- a flat `[^()]+` is exact here.
+RE_COMPOSITE_CC_FN = re.compile(
+    r"\b("
+    + "|".join(sorted(map(re.escape, KW_EXPANSION_FN), key=len, reverse=True))
+    + r")\s*\(\s*([^()]+?)\s*\)"
+)
+
 # `CONST` is `#define CONST const` (winnt.h) — same macro, uppercase. tree-sitter-c does not
 # know it, so `CONST struct sockaddr *name` reads as TWO type-identifiers and the enclosing
 # function produces ZERO function_definition nodes: it is silently dropped from the plan.
@@ -283,6 +296,29 @@ def _blank_memmodel(text: str) -> str:
     so tree-sitter can parse the declaration. All are no-op/aliased Win32 macros with no
     ABI meaning, and each one tree-sitter does not know costs a whole declaration."""
     return RE_UPPER_CONST.sub("const", RE_EMPTY_ATTR.sub("", RE_EMPTY_MEMMODEL.sub("", text)))
+
+
+def _expand_composite_conventions(text: str) -> str:
+    """Expand the aliases that carry a RETURN TYPE, not just a convention.
+
+    Must run BEFORE `_expand_extern_c` and `_normalize_callbacks`, because the expansion is
+    the header's verbatim text and hands each of them their own work: `STDAPI` becomes
+    `EXTERN_C HRESULT STDAPICALLTYPE`, whose `EXTERN_C` the former resolves and whose
+    `STDAPICALLTYPE` the latter maps to `__stdcall`. Encoding the finished form here
+    instead would duplicate both, and get the C/C++ linkage split wrong.
+
+    Fixpoint, because the headers chain them (`WINOLEAPI` -> `STDAPI` -> …). Bounded: the
+    chains are two deep and a cycle would be a header bug, so stop rather than spin.
+    """
+    for _ in range(4):
+        expanded = RE_COMPOSITE_CC_FN.sub(
+            lambda m: re.sub(r"\\1", m.group(2), KW_EXPANSION_FN[m.group(1)]), text
+        )
+        expanded = RE_COMPOSITE_CC.sub(lambda m: KW_EXPANSION[m.group(0)], expanded)
+        if expanded == text:
+            return text
+        text = expanded
+    return text
 
 
 def _expand_extern_c(text: str, is_cpp: bool) -> str:
@@ -546,31 +582,40 @@ def _parse_function(node, source: bytes, source_text: str) -> CFunction | None:
                 return_type = f"{kind} {_extract_text(name_node, source)}"
         elif child.type == "function_declarator":
             declarator = child
-        elif child.type == "pointer_declarator":
-            # Return type is a pointer. tree-sitter NESTS one pointer_declarator per
-            # star, so `char **f(...)` is pointer_declarator(pointer_declarator(
+        elif child.type in ("pointer_declarator", "reference_declarator"):
+            # Return type is a pointer and/or a reference. tree-sitter NESTS one declarator
+            # per token, so `char **f(...)` is pointer_declarator(pointer_declarator(
             # function_declarator)) and the function_declarator is a GRANDchild.
             # Looking only at direct children silently dropped every T** function:
             # 10 of wldap32.h's 62 marshalling helpers (strarrayWtoU, controlarrayAtoW,
             # modarrayAtoW, …) were reported as unextractable "C++ methods" in a C
             # header. They are `static inline`, so the .spec export cross-check could
             # not catch it either — the run just translated 52 of 62 and said so in a
-            # warning. Descend instead, counting the stars as we go.
+            # warning. Descend instead, recording each token as we go.
+            #
+            # A REFERENCE return nests identically and had no case here at all, so EVERY
+            # `T& f() {...}` was dropped — not a rare shape, it is how C++ spells a
+            # singleton accessor. CDefView's `static ATL::CWndClassInfo& GetWndClassInfo()`
+            # is the instance that held a 4,869-line TU out of paid translation, and the
+            # return type is irrelevant to the failure: a plain `int&` dropped too.
+            # Keeping the `&` in the spelling is what lets c_type_to_rust lower it, since
+            # that function already reads a trailing `&` and emits `&mut T` / `&T`.
             sub = child
-            stars = 0
-            while sub is not None and sub.type == "pointer_declarator":
-                stars += 1
+            suffix = ""
+            while sub is not None and sub.type in ("pointer_declarator", "reference_declarator"):
+                suffix += "*" if sub.type == "pointer_declarator" else "&"
                 sub = next(
                     (
                         c
                         for c in sub.children
-                        if c.type in ("pointer_declarator", "function_declarator")
+                        if c.type
+                        in ("pointer_declarator", "reference_declarator", "function_declarator")
                     ),
                     None,
                 )
             if sub is not None and sub.type == "function_declarator":
                 declarator = sub
-                return_type = (return_type + " " + "*" * stars).strip()
+                return_type = (return_type + " " + suffix).strip()
 
     cpp_class = None
     is_ctor = False
@@ -693,6 +738,18 @@ def _parse_function(node, source: bytes, source_text: str) -> CFunction | None:
                         # Legacy DECLARE_INTERFACE methods sometimes retain the
                         # C spelling in an out-of-line C++ definition. In C++
                         # this macro expands to void; the receiver is implicit.
+                        continue
+                    if param_text in ("void", "VOID"):
+                        # C's EMPTY parameter list. `f(void)` declares zero parameters, but
+                        # tree-sitter still reports one parameter_declaration, and recording
+                        # it gave the function arity 1. The call binder then saw
+                        # `SelectExtOnRename()` as arity 0 against "available arities: [1]"
+                        # and refused to bind — which stopped the whole 4,869-line CDefView
+                        # TU, on a function whose C says plainly that it takes nothing.
+                        # Only the bare spelling counts: `void *p` keeps its declarator and
+                        # is a real parameter, so matching the exact text is what separates
+                        # them. The uppercase `VOID` was already special-cased on the other
+                        # two parameter paths in this file and simply never on this one.
                         continue
                     spaced_array = re.fullmatch(
                         r"(?P<type>.+?)\s+(?P<name>[A-Za-z_]\w*)\s*\[[^]]*\]",
@@ -1403,10 +1460,12 @@ def scan_file(path: Path, *, force_cpp: bool = False) -> ScanResult:
     source_text = _normalize_callbacks(
         _blank_memmodel(
             _expand_extern_c(
-                _strip_sal(
-                    _expand_csr_api(
-                        _expand_case_macros(
-                            _resolve_known_preproc(_strip_known_off_ifdefs(raw), build_defines)
+                _expand_composite_conventions(
+                    _strip_sal(
+                        _expand_csr_api(
+                            _expand_case_macros(
+                                _resolve_known_preproc(_strip_known_off_ifdefs(raw), build_defines)
+                            )
                         )
                     )
                 ),
@@ -1448,6 +1507,19 @@ def scan_file(path: Path, *, force_cpp: bool = False) -> ScanResult:
 
     def walk(node):
         if node.type == "function_definition":
+            # `= delete` / `= default` — tree-sitter files both under function_definition, but
+            # neither HAS a body, so neither is a translatable unit and neither may count as
+            # under-translation. Recording them made _gate_unextracted HARD FAIL on a false
+            # positive, and the only escape was --allow-partial, which suppresses the gate for
+            # the WHOLE file — trading a false positive for blindness to the true ones. Found on
+            # recyclebin_v5.cpp's `CZZWStr& operator=(const CZZWStr&) = delete;`.
+            # NB `= default` does carry implicit semantics (a defaulted dtor destroys members);
+            # those belong to the ctor/dtor lowering, which synthesises the bodies, not to the
+            # per-function extractor asking "is there source code here we would miss?"
+            if any(
+                c.type in ("delete_method_clause", "default_method_clause") for c in node.children
+            ):
+                return
             func = _parse_function(node, source, source_text)
             if func:
                 result.functions.append(func)

@@ -182,6 +182,11 @@ static threadlocinfo ref_locinfo;
  * both wrong the same way and classify would still say MATCH.  See build.rs. */
 #include "cloc_tables.h"
 
+/* locale.c's C-locale calendar strings, lifted by build.rs into a TU of their own
+ * (`-fshort-wchar`, for the wide arm nothing reads at this version). ONE object, shared
+ * with the subject — see the assignment in get_locinfo below. */
+extern __lc_time_data cloc_time_data;
+
 /* ctype.c (reference TU #3) owns the narrow ctype table.  It is shared ENVIRONMENT,
  * not code under test — exactly like get_locinfo() itself: the reference and the
  * subject must agree on what the locale IS, or the comparison means nothing.  Hence
@@ -219,6 +224,12 @@ pthreadlocinfo CDECL get_locinfo(void)
         ref_locinfo.pctype      = MSVCRT__ctype + 1;
         ref_locinfo.pclmap      = cloc_clmap;
         ref_locinfo.pcumap      = cloc_cumap;
+        /* locale.c:657 makes this assignment too. Until time.c became a reference TU the
+         * slot stayed NULL, which was honest — nothing read it — and became a null deref
+         * the moment a strftime row existed. Shared with the subject, like the ctype and
+         * case tables above and NOT like the MBCS fixture: this is what the C locale IS,
+         * and neither side's code writes it at _MSVCR_VER=0. */
+        ref_locinfo.lc_time_curr = &cloc_time_data;
         MSVCRT__pctype          = ref_locinfo.pctype;
     }
     return &ref_locinfo;
@@ -311,6 +322,16 @@ thread_data_t * CDECL msvcrt_get_thread_data(void)
 {
     return &ref_thread_data;
 }
+
+/* The two thread-data fields `_setmbcp` steers on, reached through accessors rather than
+ * from the test directly.  The subject's copy of this struct (subjectimpl.c) is the one
+ * that has to match msvcrt-sys byte for byte, and ref_integrity asserts that; the
+ * reference's carries only the fields its TUs touch and is in a different order. One
+ * `extern` struct declaration in the test would therefore have to be right about TWO
+ * incompatible layouts, so each side hands out its own fields instead. */
+void ref_set_locale_flags(int flags)         { ref_thread_data.locale_flags = flags; }
+void ref_set_thread_mbcinfo(void *mbcinfo)   { ref_thread_data.mbcinfo = mbcinfo; }
+void *ref_get_thread_mbcinfo(void)           { return ref_thread_data.mbcinfo; }
 
 /* ------------------------------------------------------------------ *
  * _l ctype — GONE as of wave 10, and that is the upgrade.
@@ -563,12 +584,12 @@ void CDECL free_locale_noalloc(_locale_t locale)
     (void)locale;
 }
 
-/* printf's %e exponent width.  msvcrt's default is the 3-digit form; the
- * 2-digit form is opt-in via _set_output_format.  Return the default. */
-unsigned int __cdecl _get_output_format(void)
-{
-    return 0;
-}
+/* `_get_output_format` USED to live here, as a constant 0 — printf's %e exponent width,
+ * with a comment explaining that the 3-digit form is msvcrt's default.  That made OUR
+ * choice the oracle for every `%e` row.  misc.c DEFINES it, so as of reference TU #9 it is
+ * a reference EXPORT reading the genuine `output_format` static, and the prelude renames it
+ * to `ref__get_output_format` like every other one. Same move `_mbtowc_l` made for mbcs.c
+ * and `_isspace_l` for ctype.c. */
 
 /* `_mbtowc_l` USED to live here — a C-locale ASCII stub, because wcs.c called it and
  * nothing defined it.  mbcs.c DEFINES it, so as of the mbcs TU it is a reference
@@ -999,4 +1020,101 @@ BOOL msvcrt_ref_RtlAreBitsClear(PRTL_BITMAP bm, ULONG start, ULONG length)
     for (i = 0; i < length; i++)
         if (bm->Buffer[(start + i) >> 5] & (1u << ((start + i) & 31))) return FALSE;
     return TRUE;
+}
+
+/* ------------------------------------------------------------------ *
+ * `vsnprintf` — the host's FORMATTER under msvcrt's BUFFER CONTRACT.
+ * ------------------------------------------------------------------ *
+ *
+ * Neither side of this binary can reach msvcrt's own printf engine through a
+ * `va_list`: the Rust `_vsnprintf` walks a `*mut u8` over 8-byte slots (the
+ * Windows va_list) and the host's `va_start` builds a SysV register-save-area
+ * struct, so the two cannot be handed to one another.  That is why the shipping
+ * DLL's `va_start` trampolines (rust_varargs_shim.c) stay out of the harness and
+ * why the pfflat instantiation exists.  Both sides therefore format through the
+ * host libc here — and that is fine, because printf_port.rs grades the engine
+ * itself against `ref_pf_printf_a`, the genuine C.
+ *
+ * What is NOT fine is taking the host's BUFFER contract with its formatter.  The
+ * two disagree exactly where `_ecvt`/`_fcvt` live:
+ *
+ *     wcs.c:881-891 + printf.h:36-54, for a buffer of `len`:
+ *       text shorter than len -> write it, write a NUL, return the count
+ *       text exactly len      -> write it, write NO NUL (out->len is 0, so the
+ *                                trailing puts_clbk_str copies zero bytes),
+ *                                return the count
+ *       text longer than len  -> write len bytes, no NUL, return -1
+ *       str == NULL           -> count only, write nothing
+ *     glibc: always NUL-terminates within len, always returns the would-be length.
+ *
+ * `_ecvt`/`_fcvt` print into `char buf[80]` and then READ THE RESULT BACK to
+ * assemble their answer, so one byte of terminator becomes one missing digit:
+ * `_fcvt(0.0, 80)` came back 77 zeros where msvcrt gives 78.  A harness that gets
+ * this wrong reports a digit-perfect port as broken.
+ *
+ * SHARED WITH THE SUBJECT SIDE ON PURPOSE.  subjectimpl.c's `_snprintf` calls
+ * this too.  Normally that would be the §9.73 trap — one side's stand-in
+ * satisfying the other's expectations — but this is ENVIRONMENT, not code under
+ * test: it stands in for an engine NEITHER side owns in this binary, exactly as
+ * `_errno`, `malloc` and the thread data already do.  Two separately-written
+ * copies of this contract is the real hazard; they drifted once already, one
+ * side writing a NUL at str[len] (a one-byte overflow of the caller's buffer)
+ * while the other truncated a digit early, and the resulting row blamed the Rust
+ * for both.
+ */
+#define REF_VSNPRINTF_SCRATCH 8192
+
+/* Declared rather than `#include <unistd.h>`d: the refstub deliberately controls which
+ * host headers reach this TU, and one prototype is cheaper than opening another. */
+long write(int fd, const void *buf, unsigned long count);
+
+int msvcrt_ref_vsnprintf(char *str, size_t len, const char *format, va_list ap)
+{
+    char scratch[REF_VSNPRINTF_SCRATCH];
+    va_list copy;
+    int need;
+    size_t i;
+
+    va_copy(copy, ap);
+    need = vsnprintf(scratch, sizeof(scratch), format, copy);
+    va_end(copy);
+
+    if (need < 0) return -1;
+    if ((size_t)need >= sizeof(scratch)) {
+        /* Fail loud rather than silently truncate: a quietly short reference is
+         * the one failure mode this whole function exists to prevent. `write` and
+         * `abort` are glibc's — no msvcrt export shadows either, so this cannot
+         * re-enter the code under test on its way out. */
+        static const char msg[] =
+            "msvcrt_ref_vsnprintf: REF_VSNPRINTF_SCRATCH too small for this format\n";
+        write(2, msg, sizeof(msg) - 1);
+        abort();
+    }
+
+    if (!str) return need;                        /* printf.h:40 — count-only */
+
+    if ((size_t)need > len) {                     /* did not fit */
+        for (i = 0; i < len; i++) str[i] = scratch[i];
+        return -1;
+    }
+    for (i = 0; i < (size_t)need; i++) str[i] = scratch[i];
+    if ((size_t)need < len) str[need] = '\0';     /* NUL only if there is room */
+    return need;
+}
+
+/* `_scprintf` — "how long would this printf be". Same sharing rationale as
+ * `msvcrt_ref_vsnprintf` above, and the same one body for both sides: subjectimpl.c's
+ * `_scprintf` calls this, and math.c's reference TU is redirected onto it by
+ * ref_math_extra.h. The reference's own `ref__scprintf` (wcs.c's) cannot be used — it
+ * reaches `arg_clbk_valist`, whose `va_arg(*valist, int)` is the flat-va_list idiom, and
+ * segfaults under the host's SysV va_list. */
+int msvcrt_ref_scprintf(const char *format, ...)
+{
+    va_list ap;
+    int n;
+
+    va_start(ap, format);
+    n = msvcrt_ref_vsnprintf((char *)0, 0, format, ap);
+    va_end(ap);
+    return n;
 }

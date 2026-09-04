@@ -205,6 +205,18 @@ flowing at the deadline) with **no** kernel census/lockdep wedge self-report.
   capacity-derived — 8 on a 24-vCPU box, was a flat 4) and the global QEMU cap
   (16); the per-arch serialize cap is bypassed on the default windows-host TCG
   backend, so same-arch retries run in parallel too.
+- **`cohab:<arch>` — the one stage that must read binaries.** `tools/verify_cohab_
+  coverage.py` asks each flipped C object what it *exports* (`llvm-nm`, after every
+  `-D`, `#ifdef` and ABI decoration) and checks that something linking ahead of the
+  static library defines it. Not a `check` lint, because `check` is source-only by
+  contract and the source cannot answer: `cargo check` never codegens, so
+  `global_asm!` is never assembled and `#[export_name]` never becomes a symbol.
+  Eight msvcrt `__stdcall` stubs shipped as `___adj_fdiv_m16i@4@4` — `#[export_name]`
+  STACKS with i386 PE decoration rather than replacing it — and built, linked and
+  booted green while the C bodies stayed live and the flip did nothing. Needs both
+  `--no-lint` and `--no-build` unset: it can only judge artifacts this run produced,
+  and it refuses an archive older than the tree rather than report staleness as
+  findings. Failure classifies `COHAB_FAIL` and blocks the stamp.
 - Exit 0 only if **every** arch is ultimately green. The summary carries a
   per-arch `matrix` (verdict / classification / attempts / recovered / run_dir);
   each arch's own `summary.json` lives under the gate's artifact dir.
@@ -497,6 +509,50 @@ Two invariants it enforces, both from real breakage:
 Crates are discovered from the `[workspace] members` list, never hardcoded — add
 `foo-difftest` to the workspace and it is covered. `--only` restricts the set and
 **refuses an unknown name** rather than silently grading a subset.
+
+**A harness may declare its own `--target`.** `msvcrt-seh-difftest` grades
+`except_i386.c`, which lives inside `#ifdef __i386__` and whose Rust counterpart
+is `#![cfg(target_arch = "x86")]`, so it only exists in a 32-bit binary; cargo
+builds one crate for one target per invocation, so that crate says so in its own
+manifest:
+
+```toml
+[package.metadata.difftest]
+target = "i686-unknown-linux-gnu"
+```
+
+Read from the manifest for the same reason the crate set is: a driver carrying
+the list would silently build the next such harness for the host, where every
+`#[cfg]` in it compiles to nothing and it grades zero rows. It needs
+`rustup target add i686-unknown-linux-gnu` and a 32-bit libc, and it fails loudly
+without them rather than skipping.
+
+**The `drift:*` stages run first, and they check the ORACLE'S OWN INPUTS.**
+msvcrt-difftest force-includes seven generated headers — the derived CRT/Win32
+constants, the two-compiler layout guardian, and a prototype set per reference TU
+— and each has had a `--check` mode since the day it was written that nothing
+ran. So a PSDK header that moved a constant, or a reference `.c` whose signature
+changed, stayed silent until some row happened to reach it; and a row that
+reaches a stale constant does not report "stale", it reports a **divergence in
+the Rust**. Wrong file, hours later. These stages re-derive each artifact and
+refuse a stale one with `DIFFTEST_STALE_ORACLE`, before the harnesses run, so the
+failure names the header and the command that fixes it.
+
+They live here rather than in `check` because re-derivation needs the pinned
+cross-compiler *and* `build-amd64` — the prototypes come from the built object,
+not the source text, since `_MSVCR_VER` opens and closes whole families. `check`
+runs on a fresh worktree with no build dir; `difftest` already hard-requires one.
+The artifact set is discovered from `refstub/msvcrt_*_protos.h`: **the header's
+existence is the registration**, so a new reference TU is covered the moment it
+lands. That set went three → five → seven in two months, once per TU.
+
+`drift:layout:seh-i386` is the eighth and the only one keyed to `build-i386` —
+so `difftest` now wants **both** build dirs, and says which is missing rather
+than skipping. It
+re-derives msvcrt-seh-difftest's transcription of the i386 exception structures
+from the real headers. Everything that harness grades is a walk **by offset** —
+32-bit SEH is a linked list plus a scope table indexed by trylevel — so a field
+that moves does not fail there, it regrades correct Rust as wrong.
 
 ---
 

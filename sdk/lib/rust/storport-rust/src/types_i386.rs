@@ -18191,20 +18191,20 @@ pub struct _MESSAGE_INTERRUPT_INFORMATION {
 pub type MESSAGE_INTERRUPT_INFORMATION = _MESSAGE_INTERRUPT_INFORMATION;
 pub type PMESSAGE_INTERRUPT_INFORMATION = *mut _MESSAGE_INTERRUPT_INFORMATION;
 pub type PHW_INITIALIZE =
-    ::core::option::Option<unsafe extern "stdcall" fn(DeviceExtension: PVOID) -> BOOLEAN>;
+    ::core::option::Option<unsafe extern "system" fn(DeviceExtension: PVOID) -> BOOLEAN>;
 pub type PHW_BUILDIO = ::core::option::Option<
-    unsafe extern "stdcall" fn(DeviceExtension: PVOID, Srb: PSCSI_REQUEST_BLOCK) -> BOOLEAN,
+    unsafe extern "system" fn(DeviceExtension: PVOID, Srb: PSCSI_REQUEST_BLOCK) -> BOOLEAN,
 >;
 pub type PHW_STARTIO = ::core::option::Option<
-    unsafe extern "stdcall" fn(DeviceExtension: PVOID, Srb: PSCSI_REQUEST_BLOCK) -> BOOLEAN,
+    unsafe extern "system" fn(DeviceExtension: PVOID, Srb: PSCSI_REQUEST_BLOCK) -> BOOLEAN,
 >;
 pub type PHW_INTERRUPT =
-    ::core::option::Option<unsafe extern "stdcall" fn(DeviceExtension: PVOID) -> BOOLEAN>;
-pub type PHW_TIMER = ::core::option::Option<unsafe extern "stdcall" fn(DeviceExtension: PVOID)>;
+    ::core::option::Option<unsafe extern "system" fn(DeviceExtension: PVOID) -> BOOLEAN>;
+pub type PHW_TIMER = ::core::option::Option<unsafe extern "system" fn(DeviceExtension: PVOID)>;
 pub type PHW_DMA_STARTED =
-    ::core::option::Option<unsafe extern "stdcall" fn(DeviceExtension: PVOID)>;
+    ::core::option::Option<unsafe extern "system" fn(DeviceExtension: PVOID)>;
 pub type PHW_FIND_ADAPTER = ::core::option::Option<
-    unsafe extern "stdcall" fn(
+    unsafe extern "system" fn(
         DeviceExtension: PVOID,
         HwContext: PVOID,
         BusInformation: PVOID,
@@ -18214,17 +18214,17 @@ pub type PHW_FIND_ADAPTER = ::core::option::Option<
     ) -> ULONG,
 >;
 pub type PHW_RESET_BUS = ::core::option::Option<
-    unsafe extern "stdcall" fn(DeviceExtension: PVOID, PathId: ULONG) -> BOOLEAN,
+    unsafe extern "system" fn(DeviceExtension: PVOID, PathId: ULONG) -> BOOLEAN,
 >;
 pub type PHW_ADAPTER_STATE = ::core::option::Option<
-    unsafe extern "stdcall" fn(
+    unsafe extern "system" fn(
         DeviceExtension: PVOID,
         Context: PVOID,
         SaveState: BOOLEAN,
     ) -> BOOLEAN,
 >;
 pub type PHW_ADAPTER_CONTROL = ::core::option::Option<
-    unsafe extern "stdcall" fn(
+    unsafe extern "system" fn(
         DeviceExtension: PVOID,
         ControlType: SCSI_ADAPTER_CONTROL_TYPE,
         Parameters: PVOID,
@@ -18241,9 +18241,9 @@ pub type PHW_DPC_ROUTINE = ::core::option::Option<
     ),
 >;
 pub type PSTOR_SYNCHRONIZED_ACCESS =
-    ::core::option::Option<unsafe extern "stdcall" fn(arg1: PVOID, arg2: PVOID) -> BOOLEAN>;
+    ::core::option::Option<unsafe extern "system" fn(arg1: PVOID, arg2: PVOID) -> BOOLEAN>;
 pub type PpostScaterGatherExecute = ::core::option::Option<
-    unsafe extern "stdcall" fn(
+    unsafe extern "system" fn(
         DeviceObject: *mut PVOID,
         Irp: *mut PVOID,
         ScatterGather: PSTOR_SCATTER_GATHER_LIST,
@@ -18251,21 +18251,21 @@ pub type PpostScaterGatherExecute = ::core::option::Option<
     ),
 >;
 pub type PStorPortGetMessageInterruptInformation = ::core::option::Option<
-    unsafe extern "stdcall" fn(
+    unsafe extern "system" fn(
         HwDeviceExtension: PVOID,
         MessageId: ULONG,
         InterruptInfo: PMESSAGE_INTERRUPT_INFORMATION,
     ) -> BOOLEAN,
 >;
 pub type PStorPortPutScatterGatherList = ::core::option::Option<
-    unsafe extern "stdcall" fn(
+    unsafe extern "system" fn(
         HwDeviceExtension: PVOID,
         ScatterGatherList: PSTOR_SCATTER_GATHER_LIST,
         WriteToDevice: BOOLEAN,
     ),
 >;
 pub type PStorPortBuildScatterGatherList = ::core::option::Option<
-    unsafe extern "stdcall" fn(
+    unsafe extern "system" fn(
         HwDeviceExtension: PVOID,
         Mdl: PVOID,
         CurrentVa: PVOID,
@@ -18278,10 +18278,10 @@ pub type PStorPortBuildScatterGatherList = ::core::option::Option<
     ) -> GETSGSTATUS,
 >;
 pub type PStorPortFreePool = ::core::option::Option<
-    unsafe extern "stdcall" fn(PMemory: PVOID, HwDeviceExtension: PVOID, PMdl: PVOID),
+    unsafe extern "system" fn(PMemory: PVOID, HwDeviceExtension: PVOID, PMdl: PVOID),
 >;
 pub type PStorPortAllocatePool = ::core::option::Option<
-    unsafe extern "stdcall" fn(
+    unsafe extern "system" fn(
         NumberOfBytes: ULONG,
         Tag: ULONG,
         HwDeviceExtension: PVOID,
@@ -18289,7 +18289,7 @@ pub type PStorPortAllocatePool = ::core::option::Option<
     ) -> PVOID,
 >;
 pub type PStorPortGetSystemAddress =
-    ::core::option::Option<unsafe extern "stdcall" fn(Srb: PSCSI_REQUEST_BLOCK) -> PVOID>;
+    ::core::option::Option<unsafe extern "system" fn(Srb: PSCSI_REQUEST_BLOCK) -> PVOID>;
 #[repr(C)]
 pub struct _STORPORT_EXTENDED_FUNCTIONS {
     pub Version: ULONG,
@@ -18334,13 +18334,13 @@ pub struct _HW_INITIALIZATION_DATA {
 }
 pub type HW_INITIALIZATION_DATA = _HW_INITIALIZATION_DATA;
 pub type PHW_INITIALIZATION_DATA = *mut _HW_INITIALIZATION_DATA;
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn StorPortAllocateRegistryBuffer(HwDeviceExtension: PVOID, Length: PULONG) -> PUCHAR;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn StorPortBusy(HwDeviceExtension: PVOID, RequestsToComplete: ULONG) -> BOOLEAN;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn StorPortCompleteRequest(
         HwDeviceExtension: PVOID,
         PathId: UCHAR,
@@ -18349,16 +18349,16 @@ unsafe extern "stdcall" {
         SrbStatus: UCHAR,
     );
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn StorPortConvertPhysicalAddressToUlong64(Address: STOR_PHYSICAL_ADDRESS) -> ULONG64;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn StorPortConvertUlong64ToPhysicalAddress(UlongAddress: ULONG64) -> STOR_PHYSICAL_ADDRESS;
 }
 unsafe extern "C" {
     pub fn StorPortDebugPrint(DebugPrintLevel: ULONG, DebugMessage: PCCHAR, ...);
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn StorPortDeviceBusy(
         HwDeviceExtension: PVOID,
         PathId: UCHAR,
@@ -18367,7 +18367,7 @@ unsafe extern "stdcall" {
         RequestsToComplete: ULONG,
     ) -> BOOLEAN;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn StorPortDeviceReady(
         HwDeviceExtension: PVOID,
         PathId: UCHAR,
@@ -18375,13 +18375,13 @@ unsafe extern "stdcall" {
         Lun: UCHAR,
     ) -> BOOLEAN;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn StorPortFreeDeviceBase(HwDeviceExtension: PVOID, MappedAddress: PVOID);
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn StorPortFreeRegistryBuffer(HwDeviceExtension: PVOID, Buffer: PUCHAR);
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn StorPortGetBusData(
         DeviceExtension: PVOID,
         BusDataType: ULONG,
@@ -18391,7 +18391,7 @@ unsafe extern "stdcall" {
         Length: ULONG,
     ) -> ULONG;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn StorPortGetDeviceBase(
         HwDeviceExtension: PVOID,
         BusType: INTERFACE_TYPE,
@@ -18401,7 +18401,7 @@ unsafe extern "stdcall" {
         InIoSpace: BOOLEAN,
     ) -> PVOID;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn StorPortGetLogicalUnit(
         HwDeviceExtension: PVOID,
         PathId: UCHAR,
@@ -18409,7 +18409,7 @@ unsafe extern "stdcall" {
         Lun: UCHAR,
     ) -> PVOID;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn StorPortGetPhysicalAddress(
         HwDeviceExtension: PVOID,
         Srb: PSCSI_REQUEST_BLOCK,
@@ -18417,13 +18417,13 @@ unsafe extern "stdcall" {
         Length: *mut ULONG,
     ) -> STOR_PHYSICAL_ADDRESS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn StorPortGetScatterGatherList(
         DeviceExtension: PVOID,
         Srb: PSCSI_REQUEST_BLOCK,
     ) -> PSTOR_SCATTER_GATHER_LIST;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn StorPortGetSrb(
         DeviceExtension: PVOID,
         PathId: UCHAR,
@@ -18432,20 +18432,20 @@ unsafe extern "stdcall" {
         QueueTag: LONG,
     ) -> PSCSI_REQUEST_BLOCK;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn StorPortGetUncachedExtension(
         HwDeviceExtension: PVOID,
         ConfigInfo: PPORT_CONFIGURATION_INFORMATION,
         NumberOfBytes: ULONG,
     ) -> PVOID;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn StorPortGetVirtualAddress(
         HwDeviceExtension: PVOID,
         PhysicalAddress: STOR_PHYSICAL_ADDRESS,
     ) -> PVOID;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn StorPortInitialize(
         Argument1: PVOID,
         Argument2: PVOID,
@@ -18453,7 +18453,7 @@ unsafe extern "stdcall" {
         Unused: PVOID,
     ) -> ULONG;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn StorPortLogError(
         HwDeviceExtension: PVOID,
         Srb: PSCSI_REQUEST_BLOCK,
@@ -18464,7 +18464,7 @@ unsafe extern "stdcall" {
         UniqueId: ULONG,
     );
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn StorPortMoveMemory(WriteBuffer: PVOID, ReadBuffer: PVOID, Length: ULONG);
 }
 unsafe extern "C" {
@@ -18474,13 +18474,13 @@ unsafe extern "C" {
         ...
     );
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn StorPortQuerySystemTime(CurrentTime: PLARGE_INTEGER);
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn StorPortPause(HwDeviceExtension: PVOID, TimeOut: ULONG) -> BOOLEAN;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn StorPortPauseDevice(
         HwDeviceExtension: PVOID,
         PathId: UCHAR,
@@ -18489,7 +18489,7 @@ unsafe extern "stdcall" {
         TimeOut: ULONG,
     ) -> BOOLEAN;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn StorPortReadPortBufferUchar(
         HwDeviceExtension: PVOID,
         Port: PUCHAR,
@@ -18497,7 +18497,7 @@ unsafe extern "stdcall" {
         Count: ULONG,
     );
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn StorPortReadPortBufferUlong(
         HwDeviceExtension: PVOID,
         Port: PULONG,
@@ -18505,7 +18505,7 @@ unsafe extern "stdcall" {
         Count: ULONG,
     );
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn StorPortReadPortBufferUshort(
         HwDeviceExtension: PVOID,
         Port: PUSHORT,
@@ -18513,16 +18513,16 @@ unsafe extern "stdcall" {
         Count: ULONG,
     );
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn StorPortReadPortUchar(HwDeviceExtension: PVOID, Port: PUCHAR) -> UCHAR;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn StorPortReadPortUlong(HwDeviceExtension: PVOID, Port: PULONG) -> ULONG;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn StorPortReadPortUshort(HwDeviceExtension: PVOID, Port: PUSHORT) -> USHORT;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn StorPortReadRegisterBufferUchar(
         HwDeviceExtension: PVOID,
         Register: PUCHAR,
@@ -18530,7 +18530,7 @@ unsafe extern "stdcall" {
         Count: ULONG,
     );
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn StorPortReadRegisterBufferUlong(
         HwDeviceExtension: PVOID,
         Register: PULONG,
@@ -18538,7 +18538,7 @@ unsafe extern "stdcall" {
         Count: ULONG,
     );
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn StorPortReadRegisterBufferUshort(
         HwDeviceExtension: PVOID,
         Register: PUSHORT,
@@ -18546,19 +18546,19 @@ unsafe extern "stdcall" {
         Count: ULONG,
     );
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn StorPortReadRegisterUchar(HwDeviceExtension: PVOID, Register: PUCHAR) -> UCHAR;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn StorPortReadRegisterUlong(HwDeviceExtension: PVOID, Register: PULONG) -> ULONG;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn StorPortReadRegisterUshort(HwDeviceExtension: PVOID, Register: PUSHORT) -> USHORT;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn StorPortReady(HwDeviceExtension: PVOID) -> BOOLEAN;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn StorPortRegistryRead(
         HwDeviceExtension: PVOID,
         ValueName: PUCHAR,
@@ -18568,7 +18568,7 @@ unsafe extern "stdcall" {
         BufferLength: PULONG,
     ) -> BOOLEAN;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn StorPortRegistryWrite(
         HwDeviceExtension: PVOID,
         ValueName: PUCHAR,
@@ -18578,10 +18578,10 @@ unsafe extern "stdcall" {
         BufferLength: ULONG,
     ) -> BOOLEAN;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn StorPortResume(HwDeviceExtension: PVOID) -> BOOLEAN;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn StorPortResumeDevice(
         HwDeviceExtension: PVOID,
         PathId: UCHAR,
@@ -18589,7 +18589,7 @@ unsafe extern "stdcall" {
         Lun: UCHAR,
     ) -> BOOLEAN;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn StorPortSetBusDataByOffset(
         DeviceExtension: PVOID,
         BusDataType: ULONG,
@@ -18600,7 +18600,7 @@ unsafe extern "stdcall" {
         Length: ULONG,
     ) -> ULONG;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn StorPortSetDeviceQueueDepth(
         HwDeviceExtension: PVOID,
         PathId: UCHAR,
@@ -18609,17 +18609,17 @@ unsafe extern "stdcall" {
         Depth: ULONG,
     ) -> BOOLEAN;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn StorPortStallExecution(Delay: ULONG);
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn StorPortSynchronizeAccess(
         HwDeviceExtension: PVOID,
         SynchronizedAccessRoutine: PSTOR_SYNCHRONIZED_ACCESS,
         Context: PVOID,
     );
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn StorPortValidateRange(
         HwDeviceExtension: PVOID,
         BusType: INTERFACE_TYPE,
@@ -18629,7 +18629,7 @@ unsafe extern "stdcall" {
         InIoSpace: BOOLEAN,
     ) -> BOOLEAN;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn StorPortWritePortBufferUchar(
         HwDeviceExtension: PVOID,
         Port: PUCHAR,
@@ -18637,7 +18637,7 @@ unsafe extern "stdcall" {
         Count: ULONG,
     );
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn StorPortWritePortBufferUlong(
         HwDeviceExtension: PVOID,
         Port: PULONG,
@@ -18645,7 +18645,7 @@ unsafe extern "stdcall" {
         Count: ULONG,
     );
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn StorPortWritePortBufferUshort(
         HwDeviceExtension: PVOID,
         Port: PUSHORT,
@@ -18653,16 +18653,16 @@ unsafe extern "stdcall" {
         Count: ULONG,
     );
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn StorPortWritePortUchar(HwDeviceExtension: PVOID, Port: PUCHAR, Value: UCHAR);
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn StorPortWritePortUlong(HwDeviceExtension: PVOID, Port: PULONG, Value: ULONG);
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn StorPortWritePortUshort(HwDeviceExtension: PVOID, Port: PUSHORT, Value: USHORT);
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn StorPortWriteRegisterBufferUchar(
         HwDeviceExtension: PVOID,
         Register: PUCHAR,
@@ -18670,7 +18670,7 @@ unsafe extern "stdcall" {
         Count: ULONG,
     );
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn StorPortWriteRegisterBufferUlong(
         HwDeviceExtension: PVOID,
         Register: PULONG,
@@ -18678,7 +18678,7 @@ unsafe extern "stdcall" {
         Count: ULONG,
     );
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn StorPortWriteRegisterBufferUshort(
         HwDeviceExtension: PVOID,
         Register: PUSHORT,
@@ -18686,13 +18686,13 @@ unsafe extern "stdcall" {
         Count: ULONG,
     );
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn StorPortWriteRegisterUchar(HwDeviceExtension: PVOID, Register: PUCHAR, Value: UCHAR);
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn StorPortWriteRegisterUlong(HwDeviceExtension: PVOID, Register: PULONG, Value: ULONG);
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn StorPortWriteRegisterUshort(HwDeviceExtension: PVOID, Register: PUSHORT, Value: USHORT);
 }
 unsafe extern "C" {
@@ -18797,10 +18797,10 @@ pub struct _PDO_DEVICE_EXTENSION {
 }
 pub type PDO_DEVICE_EXTENSION = _PDO_DEVICE_EXTENSION;
 pub type PPDO_DEVICE_EXTENSION = *mut _PDO_DEVICE_EXTENSION;
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn PortFdoScsi(DeviceObject: PDEVICE_OBJECT, Irp: PIRP) -> NTSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn PortFdoPnp(DeviceObject: PDEVICE_OBJECT, Irp: PIRP) -> NTSTATUS;
 }
 unsafe extern "C" {
@@ -18822,7 +18822,7 @@ unsafe extern "C" {
 unsafe extern "C" {
     pub fn MiniportStartIo(Miniport: PMINIPORT, Srb: PSCSI_REQUEST_BLOCK) -> BOOLEAN;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn ForwardIrpAndForget(LowerDevice: PDEVICE_OBJECT, Irp: PIRP) -> NTSTATUS;
 }
 unsafe extern "C" {
@@ -18883,10 +18883,10 @@ unsafe extern "C" {
 unsafe extern "C" {
     pub fn PortDeletePdo(PdoExtension: PPDO_DEVICE_EXTENSION) -> NTSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn PortPdoScsi(DeviceObject: PDEVICE_OBJECT, Irp: PIRP) -> NTSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn PortPdoPnp(DeviceObject: PDEVICE_OBJECT, Irp: PIRP) -> NTSTATUS;
 }
 unsafe extern "C" {
@@ -18895,6 +18895,6 @@ unsafe extern "C" {
         InterfaceType: INTERFACE_TYPE,
     ) -> PHW_INITIALIZATION_DATA;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn DriverEntry(DriverObject: PDRIVER_OBJECT, RegistryPath: PUNICODE_STRING) -> NTSTATUS;
 }

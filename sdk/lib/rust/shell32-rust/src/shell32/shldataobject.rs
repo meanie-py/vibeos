@@ -1,7 +1,5 @@
-//! ORPHAN-BY-DESIGN: translated Wave-5 TU, parked pending substrate closure.
-//! It still needs a few hundred SDK externs/constants/resource IDs resolved before
-//! it compiles; wiring it in this state would break the build for every lane rather
-//! than expose a regression. This is a PAID artifact — do not delete it to tidy up.
+//! FLIPPED: this TU is wired into the crate and shipping; the C++ original is
+//! commented out of dll/win32/shell32/CMakeLists.txt.
 // Deterministic UTF-16 literals from the selected C++ helper closure.
 pub static CPP_COM_WSTR_1F8E5DD3F506: [WCHAR; 21] = [0x0044, 0x0061, 0x0074, 0x0061, 0x004F, 0x0062, 0x006A, 0x0065, 0x0063, 0x0074, 0x0041, 0x0074, 0x0074, 0x0072, 0x0069, 0x0062, 0x0075, 0x0074, 0x0065, 0x0073, 0x0000];
 

@@ -503,10 +503,10 @@ unsafe fn COMBO_Create(
     style: LONG,
     unicode: BOOL,
 ) -> LRESULT {
-    static clbName: [WCHAR; 9] = [
+    static clbName: [WCHAR; 10] = [
         'C' as WCHAR, 'o' as WCHAR, 'm' as WCHAR, 'b' as WCHAR, 'o' as WCHAR,
         'L' as WCHAR, 'B' as WCHAR, 'o' as WCHAR, 'x' as WCHAR,
-    ];
+     0,];
     static editName: [WCHAR; 5] = [
         'E' as WCHAR, 'd' as WCHAR, 'i' as WCHAR, 't' as WCHAR, 0,
     ];

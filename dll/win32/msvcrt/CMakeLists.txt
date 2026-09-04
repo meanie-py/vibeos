@@ -198,6 +198,16 @@ add_library(msvcrt MODULE
     # and `_sopen_dispatch`/`_wsopen_dispatch` are Rust in file.rs, and unlike
     # scanf.c's engines they are not `static`), so first-match reaches Rust.
     rust_file_varargs_shim.c
+    # process.c's 16 `_exec*`/`_spawn*` WINAPIV `...` entry points. Same reason and same
+    # placement as the three above: no va_start on stable, and left in process.c they
+    # would keep calling process.c's own C bodies. Their `_v*`-prefixed twins are Rust in
+    # process.rs and are not `static`, so first-match reaches Rust.
+    rust_process_varargs_shim.c
+    # console.c's 4 `_cprintf`/`_cwprintf` WINAPIV `...` entry points. Same reason and same
+    # placement as the four above. Their va_list twins needed no invention — `_vcprintf`,
+    # `_vcprintf_l`, `_vcwprintf` and `_vcwprintf_l` are console.c's own exports, and are
+    # Rust in console.rs.
+    rust_console_varargs_shim.c
 )
 
 target_compile_definitions(msvcrt PRIVATE _MSVCR_VER=0)

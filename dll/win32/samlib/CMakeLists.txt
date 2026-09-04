@@ -28,7 +28,7 @@ elseif(ARCH STREQUAL "arm64")
 endif()
 set(SAMLIB_RUST_TARGET_DIR "${CMAKE_CURRENT_BINARY_DIR}/rust-samlib-target")
 set(SAMLIB_RUST_LIB "${CMAKE_CURRENT_BINARY_DIR}/libsamlib_rust.a")
-file(GLOB_RECURSE SAMLIB_RUST_SRCS "${SAMLIB_RUST_WORKSPACE_DIR}/samlib-rust/src/*.rs")
+rust_crate_sources(SAMLIB_RUST_SRCS "${SAMLIB_RUST_WORKSPACE_DIR}" samlib-rust)
 add_custom_command(
     OUTPUT ${SAMLIB_RUST_LIB}
     COMMAND ${CMAKE_COMMAND} -E env

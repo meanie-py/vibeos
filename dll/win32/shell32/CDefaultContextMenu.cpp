@@ -1144,7 +1144,7 @@ HRESULT CDefaultContextMenu::DoDelete(LPCMINVOKECOMMANDINFOEX lpcmi)
         return E_FAIL;
 
     CComPtr<IDropTarget> pDT;
-    hr = CRecyclerDropTarget_CreateInstance(IID_PPV_ARG(IDropTarget, &pDT));
+    hr = CRecyclerDropTarget_CreateInstance_RustBridge(IID_PPV_ARG(IDropTarget, &pDT));
     if (FAILED_UNEXPECTEDLY(hr))
         return hr;
 
@@ -1992,4 +1992,33 @@ CDefFolderMenu_Create2(
         return hr;
 
     return S_OK;
+}
+
+/* Rust bridges — the three DCMA entry points have C++ linkage (no EXTERN_C, no WINAPI), so
+ * they are name-mangled and the Rust-owned CFSDropTarget cannot import them directly. */
+extern "C" UINT WINAPI
+DCMA_InsertMenuItems_RustBridge(
+    HDCMA hDCMA,
+    HDCIA hDCIA,
+    LPCITEMIDLIST pidlFolder,
+    IDataObject *pDO,
+    HKEY *pKeys,
+    UINT nKeys,
+    QCMINFO *pQCMI,
+    UINT fCmf,
+    IUnknown *pUnkSite)
+{
+    return DCMA_InsertMenuItems(hDCMA, hDCIA, pidlFolder, pDO, pKeys, nKeys, pQCMI, fCmf, pUnkSite);
+}
+
+extern "C" HRESULT WINAPI
+DCMA_InvokeCommand_RustBridge(HDCMA hDCMA, CMINVOKECOMMANDINFO *pICI)
+{
+    return DCMA_InvokeCommand(hDCMA, pICI);
+}
+
+extern "C" void WINAPI
+DCMA_Destroy_RustBridge(HDCMA hDCMA)
+{
+    DCMA_Destroy(hDCMA);
 }

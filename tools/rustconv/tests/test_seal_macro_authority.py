@@ -149,3 +149,87 @@ def test_a_header_nobody_includes_still_fails_loud(tmp_path):
     _db(tmp_path, [])
     with pytest.raises(MacroAuthorityError, match="no compiled TU in its own directory"):
         function_like_macros(tmp_path, mod / "orphan.h")
+
+
+# ---------------------------------------------------------------------------
+# A FLIPPED .c has no compile command of its own either
+# ---------------------------------------------------------------------------
+
+
+def test_a_flipped_tu_borrows_its_own_targets_flags(tmp_path):
+    """A cohab flip comments the .c out of the source list, so it leaves the compile db.
+
+    That is exactly the module you want to re-translate or audit against its C, and the
+    surviving TUs of the same target carry the identical -I/-D environment. wkssvc is fully
+    flipped: all four .c are commented out and only the GENERATED MIDL `wkssvc_s.c` remains,
+    under `build-<arch>/<same relative dir>` — so the build-dir spelling of the module
+    directory has to count too, or a fully-flipped module resolves nothing.
+    """
+    from rustconv.macro_authority import _sibling_target_entry
+
+    mod = tmp_path / "base" / "services" / "widget"
+    mod.mkdir(parents=True)
+    (mod / "flipped.c").write_text("int go(void) { return 0; }\n")
+    gen = tmp_path / "build-i386" / "base" / "services" / "widget"
+    gen.mkdir(parents=True)
+    (gen / "widget_s.c").write_text("int stub(void) { return 0; }\n")
+    _db(
+        tmp_path,
+        [
+            {
+                "directory": "/tmp/vibeos/build-i386",
+                "file": "/tmp/vibeos/build-i386/base/services/widget/widget_s.c",
+                "command": (
+                    "clang -DWIDGET_BUILD -o "
+                    "/tmp/vibeos/build-i386/base/services/widget/widget_s.c.obj "
+                    "-c /tmp/vibeos/build-i386/base/services/widget/widget_s.c"
+                ),
+            }
+        ],
+    )
+    argv = _sibling_target_entry(tmp_path, "i386", mod / "flipped.c")
+    assert argv is not None
+    assert "-DWIDGET_BUILD" in argv
+    # The borrowed command must preprocess OUR file, not the sibling it was lent from.
+    assert str(mod / "flipped.c") in argv
+    assert not any(a.endswith("widget_s.c") for a in argv)
+    # `-o …/widget_s.c.obj` also ends in the sibling's basename; rewriting the OUTPUT
+    # instead of the input would silently derive the macro set of the wrong file.
+    assert argv[argv.index("-o") + 1].endswith("widget_s.c.obj")
+
+
+def test_a_tu_whose_module_compiles_nothing_still_fails_loud(tmp_path):
+    """No sibling to borrow from is still a hard failure, not an empty macro set.
+
+    An empty set is the worst possible answer: every macro occurrence then seals as a
+    runtime callee and no translation can satisfy the envelope, so the TU assembles nothing.
+    """
+    mod = tmp_path / "base" / "services" / "widget"
+    mod.mkdir(parents=True)
+    (mod / "flipped.c").write_text("int go(void) { return 0; }\n")
+    _db(tmp_path, [])
+    with pytest.raises(MacroAuthorityError, match=r"vibeos-cli build"):
+        function_like_macros(tmp_path, mod / "flipped.c")
+
+
+def test_a_sibling_from_ANOTHER_module_is_not_borrowed(tmp_path):
+    """Same reasoning as the header case: another module's flags are the wrong flags."""
+    from rustconv.macro_authority import _sibling_target_entry
+
+    a = tmp_path / "base" / "services" / "a"
+    b = tmp_path / "base" / "services" / "b"
+    a.mkdir(parents=True)
+    b.mkdir(parents=True)
+    (a / "flipped.c").write_text("int go(void) { return 0; }\n")
+    (b / "live.c").write_text("int other(void) { return 0; }\n")
+    _db(
+        tmp_path,
+        [
+            {
+                "directory": "/tmp/vibeos/build-i386",
+                "file": "/tmp/vibeos/base/services/b/live.c",
+                "command": "clang -DB_MODULE -c /tmp/vibeos/base/services/b/live.c",
+            }
+        ],
+    )
+    assert _sibling_target_entry(tmp_path, "i386", a / "flipped.c") is None

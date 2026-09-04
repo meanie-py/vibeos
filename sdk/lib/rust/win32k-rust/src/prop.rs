@@ -157,14 +157,8 @@ unsafe fn user_remove_window_props(window: PWND) {
 }
 
 // NtUserRemoveProp / NtUserSetProp — NTAPI syscalls (stdcall i386).
-#[cfg(target_arch = "x86")]
 #[no_mangle]
-pub unsafe extern "stdcall" fn NtUserRemoveProp(h_wnd: HWND, atom: ATOM) -> HANDLE {
-    nt_user_remove_prop(h_wnd, atom)
-}
-#[cfg(not(target_arch = "x86"))]
-#[no_mangle]
-pub unsafe extern "C" fn NtUserRemoveProp(h_wnd: HWND, atom: ATOM) -> HANDLE {
+pub unsafe extern "system" fn NtUserRemoveProp(h_wnd: HWND, atom: ATOM) -> HANDLE {
     nt_user_remove_prop(h_wnd, atom)
 }
 
@@ -181,14 +175,8 @@ unsafe fn nt_user_remove_prop(h_wnd: HWND, atom: ATOM) -> HANDLE {
     data
 }
 
-#[cfg(target_arch = "x86")]
 #[no_mangle]
-pub unsafe extern "stdcall" fn NtUserSetProp(h_wnd: HWND, atom: ATOM, data: HANDLE) -> BOOL {
-    nt_user_set_prop(h_wnd, atom, data)
-}
-#[cfg(not(target_arch = "x86"))]
-#[no_mangle]
-pub unsafe extern "C" fn NtUserSetProp(h_wnd: HWND, atom: ATOM, data: HANDLE) -> BOOL {
+pub unsafe extern "system" fn NtUserSetProp(h_wnd: HWND, atom: ATOM, data: HANDLE) -> BOOL {
     nt_user_set_prop(h_wnd, atom, data)
 }
 
@@ -204,14 +192,8 @@ unsafe fn nt_user_set_prop(h_wnd: HWND, atom: ATOM, data: HANDLE) -> BOOL {
 // NtUserBuildPropList was SAL-annotated (_Out_writes_bytes_to_opt_) → skipped
 // by rustconv's scanner (the SAL/scanner-miss class); hand-translated.
 // APIENTRY (stdcall i386).
-#[cfg(target_arch = "x86")]
 #[no_mangle]
-pub unsafe extern "stdcall" fn NtUserBuildPropList(h_wnd: HWND, buffer: LPVOID, buffer_size: DWORD, count: *mut DWORD) -> NTSTATUS {
-    nt_user_build_prop_list(h_wnd, buffer, buffer_size, count)
-}
-#[cfg(not(target_arch = "x86"))]
-#[no_mangle]
-pub unsafe extern "C" fn NtUserBuildPropList(h_wnd: HWND, buffer: LPVOID, buffer_size: DWORD, count: *mut DWORD) -> NTSTATUS {
+pub unsafe extern "system" fn NtUserBuildPropList(h_wnd: HWND, buffer: LPVOID, buffer_size: DWORD, count: *mut DWORD) -> NTSTATUS {
     nt_user_build_prop_list(h_wnd, buffer, buffer_size, count)
 }
 

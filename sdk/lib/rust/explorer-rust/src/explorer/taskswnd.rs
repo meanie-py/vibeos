@@ -623,12 +623,7 @@ unsafe fn CHardErrorThread_ThreadProc(this: *mut CHardErrorThread) -> HRESULT {
 }
 
 // LPTHREAD_START_ROUTINE is arch-split (stdcall on i386, C otherwise).
-#[cfg(target_arch = "x86")]
-unsafe extern "stdcall" fn s_HardErrorThreadProc(lpParameter: *mut c_void) -> DWORD {
-    s_HardErrorThreadProc_impl(lpParameter)
-}
-#[cfg(not(target_arch = "x86"))]
-unsafe extern "C" fn s_HardErrorThreadProc(lpParameter: *mut c_void) -> DWORD {
+unsafe extern "system" fn s_HardErrorThreadProc(lpParameter: *mut c_void) -> DWORD {
     s_HardErrorThreadProc_impl(lpParameter)
 }
 #[inline]
@@ -798,17 +793,7 @@ unsafe fn tt_on_nc_hit_test(this: *mut CTaskToolbar, l_param: LPARAM) -> (LRESUL
 
 // --- the subclass WndProc (ATL SubclassWindow thunk replacement) ---
 
-#[cfg(not(target_arch = "x86"))]
-unsafe extern "C" fn CTaskToolbar_SubclassProc(
-    hWnd: HWND,
-    uMsg: UINT,
-    wParam: WPARAM,
-    lParam: LPARAM,
-) -> LRESULT {
-    CTaskToolbar_subclass_impl(hWnd, uMsg, wParam, lParam)
-}
-#[cfg(target_arch = "x86")]
-unsafe extern "stdcall" fn CTaskToolbar_SubclassProc(
+unsafe extern "system" fn CTaskToolbar_SubclassProc(
     hWnd: HWND,
     uMsg: UINT,
     wParam: WPARAM,
@@ -1831,12 +1816,7 @@ unsafe fn EnumWindowsProc(this: *mut CTaskSwitchWnd, hWnd: HWND) -> BOOL {
     1
 }
 
-#[cfg(not(target_arch = "x86"))]
-unsafe extern "C" fn s_EnumWindowsProc(hWnd: HWND, lParam: LPARAM) -> BOOL {
-    EnumWindowsProc(lParam as *mut CTaskSwitchWnd, hWnd)
-}
-#[cfg(target_arch = "x86")]
-unsafe extern "stdcall" fn s_EnumWindowsProc(hWnd: HWND, lParam: LPARAM) -> BOOL {
+unsafe extern "system" fn s_EnumWindowsProc(hWnd: HWND, lParam: LPARAM) -> BOOL {
     EnumWindowsProc(lParam as *mut CTaskSwitchWnd, hWnd)
 }
 
@@ -2102,12 +2082,7 @@ unsafe fn HandleButtonClick(this: *mut CTaskSwitchWnd, wIndex: WORD) -> BOOL {
 }
 
 // SendAsyncProc (arch-split SENDASYNCPROC).
-#[cfg(not(target_arch = "x86"))]
-unsafe extern "C" fn SendAsyncProc(hwnd: HWND, _uMsg: UINT, _dwData: ULONG_PTR, _lResult: LRESULT) {
-    PostMessageW(hwnd, WM_NULL, 0, 0);
-}
-#[cfg(target_arch = "x86")]
-unsafe extern "stdcall" fn SendAsyncProc(hwnd: HWND, _uMsg: UINT, _dwData: ULONG_PTR, _lResult: LRESULT) {
+unsafe extern "system" fn SendAsyncProc(hwnd: HWND, _uMsg: UINT, _dwData: ULONG_PTR, _lResult: LRESULT) {
     PostMessageW(hwnd, WM_NULL, 0, 0);
 }
 
@@ -2220,12 +2195,7 @@ struct RUDEAPPDATA {
     hwndFirstCheck: HWND,
 }
 
-#[cfg(not(target_arch = "x86"))]
-unsafe extern "C" fn IsRudeEnumProc(hwnd: HWND, lParam: LPARAM) -> BOOL {
-    IsRudeEnumProc_impl(hwnd, lParam)
-}
-#[cfg(target_arch = "x86")]
-unsafe extern "stdcall" fn IsRudeEnumProc(hwnd: HWND, lParam: LPARAM) -> BOOL {
+unsafe extern "system" fn IsRudeEnumProc(hwnd: HWND, lParam: LPARAM) -> BOOL {
     IsRudeEnumProc_impl(hwnd, lParam)
 }
 #[inline]
@@ -2251,12 +2221,7 @@ struct FULLSCREENDATA {
     pTray: *mut ITrayWindow,
 }
 
-#[cfg(not(target_arch = "x86"))]
-unsafe extern "C" fn FullScreenEnumProc(hMonitor: HMONITOR, hDC: HDC, prc: *mut RECT, lParam: LPARAM) -> BOOL {
-    FullScreenEnumProc_impl(hMonitor, hDC, prc, lParam)
-}
-#[cfg(target_arch = "x86")]
-unsafe extern "stdcall" fn FullScreenEnumProc(hMonitor: HMONITOR, hDC: HDC, prc: *mut RECT, lParam: LPARAM) -> BOOL {
+unsafe extern "system" fn FullScreenEnumProc(hMonitor: HMONITOR, hDC: HDC, prc: *mut RECT, lParam: LPARAM) -> BOOL {
     FullScreenEnumProc_impl(hMonitor, hDC, prc, lParam)
 }
 #[inline]
@@ -2675,14 +2640,8 @@ unsafe fn CTaskSwitchWnd_process(
     }
 }
 
-#[cfg(not(target_arch = "x86"))]
 #[no_mangle]
-pub unsafe extern "C" fn CTaskSwitchWnd_WindowProc(hWnd: HWND, uMsg: UINT, wParam: WPARAM, lParam: LPARAM) -> LRESULT {
-    CTaskSwitchWnd_window_proc_impl(hWnd, uMsg, wParam, lParam)
-}
-#[cfg(target_arch = "x86")]
-#[no_mangle]
-pub unsafe extern "stdcall" fn CTaskSwitchWnd_WindowProc(hWnd: HWND, uMsg: UINT, wParam: WPARAM, lParam: LPARAM) -> LRESULT {
+pub unsafe extern "system" fn CTaskSwitchWnd_WindowProc(hWnd: HWND, uMsg: UINT, wParam: WPARAM, lParam: LPARAM) -> LRESULT {
     CTaskSwitchWnd_window_proc_impl(hWnd, uMsg, wParam, lParam)
 }
 

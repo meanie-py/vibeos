@@ -34,12 +34,7 @@ unsafe fn interlocked_compare_exchange(dst: *mut LONG, exch: LONG, comp: LONG) -
 }
 
 // HOOKPROC ABI: stdcall on i386, C on amd64/arm64. Match per-arch.
-#[cfg(target_arch = "x86")]
-unsafe extern "stdcall" fn KeyboardActivityProc(nCode: i32, wParam: WPARAM, lParam: LPARAM) -> LRESULT {
-    KeyboardActivityProcImpl(nCode, wParam, lParam)
-}
-#[cfg(not(target_arch = "x86"))]
-unsafe extern "C" fn KeyboardActivityProc(nCode: i32, wParam: WPARAM, lParam: LPARAM) -> LRESULT {
+unsafe extern "system" fn KeyboardActivityProc(nCode: i32, wParam: WPARAM, lParam: LPARAM) -> LRESULT {
     KeyboardActivityProcImpl(nCode, wParam, lParam)
 }
 unsafe fn KeyboardActivityProcImpl(nCode: i32, wParam: WPARAM, lParam: LPARAM) -> LRESULT {
@@ -50,12 +45,7 @@ unsafe fn KeyboardActivityProcImpl(nCode: i32, wParam: WPARAM, lParam: LPARAM) -
     CallNextHookEx(core::ptr::null_mut(), nCode, wParam, lParam)
 }
 
-#[cfg(target_arch = "x86")]
-unsafe extern "stdcall" fn MouseActivityProc(nCode: i32, wParam: WPARAM, lParam: LPARAM) -> LRESULT {
-    MouseActivityProcImpl(nCode, wParam, lParam)
-}
-#[cfg(not(target_arch = "x86"))]
-unsafe extern "C" fn MouseActivityProc(nCode: i32, wParam: WPARAM, lParam: LPARAM) -> LRESULT {
+unsafe extern "system" fn MouseActivityProc(nCode: i32, wParam: WPARAM, lParam: LPARAM) -> LRESULT {
     MouseActivityProcImpl(nCode, wParam, lParam)
 }
 unsafe fn MouseActivityProcImpl(nCode: i32, wParam: WPARAM, lParam: LPARAM) -> LRESULT {
@@ -87,12 +77,7 @@ unsafe fn LoadScreenSaverParameters(Timeout: LPDWORD) {
 }
 
 // Thread-proc ABI: stdcall on i386, C on amd64/arm64.
-#[cfg(target_arch = "x86")]
-unsafe extern "stdcall" fn ScreenSaverThreadMain(lpParameter: LPVOID) -> DWORD {
-    ScreenSaverThreadMainImpl(lpParameter)
-}
-#[cfg(not(target_arch = "x86"))]
-unsafe extern "C" fn ScreenSaverThreadMain(lpParameter: LPVOID) -> DWORD {
+unsafe extern "system" fn ScreenSaverThreadMain(lpParameter: LPVOID) -> DWORD {
     ScreenSaverThreadMainImpl(lpParameter)
 }
 unsafe fn ScreenSaverThreadMainImpl(lpParameter: LPVOID) -> DWORD {

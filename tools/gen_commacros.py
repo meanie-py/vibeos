@@ -213,6 +213,10 @@ def main() -> int:
                     emit(iface, base, method, margs, ret)
         lines.append("")
 
+    # A per-interface separator after the LAST interface is a blank line at EOF, which
+    # `git diff --check` flags on every regeneration.
+    while lines and not lines[-1]:
+        lines.pop()
     Path(args.output).write_text("\n".join(lines) + "\n")
     print(f"wrote {args.output}: {n_fn} helpers (+{n_alias} A/W aliases) across {n_if} interfaces")
     return 0

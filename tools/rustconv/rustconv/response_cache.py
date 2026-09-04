@@ -23,13 +23,60 @@ from __future__ import annotations
 
 import hashlib
 import json
+import os
 import re
 from pathlib import Path
 
+from .config import RUSTCONV_RESPONSES_DIR
 from .outcome_ledger import lexical_fingerprint
 
-# tools/rustconv/.responses/  (parent.parent = the rustconv package's parent dir)
-RESPONSES_DIR = Path(__file__).resolve().parent.parent / ".responses"
+
+def _resolve_responses_dir() -> Path:
+    """The ONE durable home for paid responses — project-anchored, never module-anchored.
+
+    This used to be `Path(__file__).parent.parent / ".responses"`, which agreed with
+    config's project-anchored `RUSTCONV_RESPONSES_DIR` only by path COINCIDENCE: the
+    package sits at `tools/rustconv/rustconv/`, so `parent.parent` happened to equal
+    `TOOLS_DIR`. Install or import rustconv from anywhere else (site-packages, a
+    standalone checkout) and the two silently diverge: ResponseCache reads and writes
+    the TOOL's directory while outcome_ledger / sink / candidate_oracle keep using the
+    PROJECT's. Every translation then misses the cache and is re-billed, with no error
+    anywhere — the exact silent-degradation class that costs real money.
+
+    So: always follow config. The legacy module-relative location is checked only to
+    HARD FAIL when work is genuinely STRANDED there — the legacy bank holds paid work AND
+    the active one holds none, so following config would look like a fresh start and
+    silently re-buy everything. An explicit RUSTCONV_RESPONSES_DIR is a deliberate choice
+    (tests, a relocated bank) and is always honoured without complaint.
+
+    A NON-empty active bank is not a strand, and this distinction matters in practice: the
+    vibeos fleet runs many worktrees, each with its own bank, all importing one
+    pip-install-e'd package. Every one of those has a populated legacy path that is not
+    its own, and failing there would break the whole fleet to warn about the normal case.
+    Divergence is only a problem when it would cost money.
+    """
+    active = RUSTCONV_RESPONSES_DIR
+    if os.environ.get("RUSTCONV_RESPONSES_DIR"):
+        return active  # explicitly chosen — the caller means it
+
+    def _has_work(path: Path) -> bool:
+        return path.is_dir() and any(path.iterdir())
+
+    legacy = Path(__file__).resolve().parent.parent / ".responses"
+    if legacy != active and _has_work(legacy) and not _has_work(active):
+        raise RuntimeError(
+            f"rustconv: paid-response bank is stranded.\n"
+            f"  active (project-anchored): {active}  <-- empty\n"
+            f"  legacy (module-anchored):  {legacy}  <-- holds work you already paid for\n"
+            f"This happens when rustconv is imported from outside the project tree.\n"
+            f"fix: point at the bank explicitly, e.g.\n"
+            f"  RUSTCONV_RESPONSES_DIR={legacy} <your command>\n"
+            f"or move the bank to the active path. Refusing to re-bill silently."
+        )
+    return active
+
+
+RESPONSES_DIR = _resolve_responses_dir()
 
 PREAMBLE_KEY = "__preamble__"
 
@@ -266,6 +313,12 @@ class ResponseCache:
         `get` can never return one: a reply that failed the envelope must not become
         a $0 cache hit later. Overwritten each run; the newest reject is the useful
         one. Best-effort — a forensic write must never fail a translation run.
+
+        `get_rejected` reads it back, and that is not a hole in the rule above: what it
+        offers is re-AUDITED before use, through the same envelope the reply failed. A
+        reject is paid artifact — an API call bought it — and once a seal defect is fixed
+        (or a human repairs the one line the model would not), paying again for a body
+        already on disk is waste, not caution.
         """
         try:
             out = self.dir / "__rejected__"
@@ -276,6 +329,20 @@ class ResponseCache:
             )
         except OSError:
             pass
+
+    def get_rejected(self, name: str) -> str | None:
+        """The stored rejected reply for ``name``, forensic header stripped.
+
+        Never trusted on its own — see `put_rejected`. The caller must put it through the
+        full audit and bank it only if it passes.
+        """
+        path = self.dir / "__rejected__" / (_safe_filename(name) + ".rs")
+        try:
+            text = path.read_text()
+        except OSError:
+            return None
+        body = "\n".join(line for line in text.splitlines() if not line.startswith("// "))
+        return body if body.strip() else None
 
     def count(self) -> int:
         return len(self._manifest)

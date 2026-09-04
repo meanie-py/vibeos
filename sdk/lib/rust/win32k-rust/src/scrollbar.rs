@@ -1410,9 +1410,8 @@ pub unsafe extern "system" fn ScrollBarWndProc(
     }
     lResult
 }
-#[cfg(target_arch = "x86")]
 #[no_mangle]
-pub unsafe extern "stdcall" fn NtUserGetScrollBarInfo(
+pub unsafe extern "system" fn NtUserGetScrollBarInfo(
     hWnd: HWND,
     idObject: LONG,
     psbi: PSCROLLBARINFO,
@@ -1461,61 +1460,8 @@ pub unsafe extern "stdcall" fn NtUserGetScrollBarInfo(
     UserLeave();
     Ret
 }
-
-#[cfg(not(target_arch = "x86"))]
 #[no_mangle]
-pub unsafe extern "C" fn NtUserGetScrollBarInfo(
-    hWnd: HWND,
-    idObject: LONG,
-    psbi: PSCROLLBARINFO,
-) -> BOOL {
-    let mut Status: NTSTATUS;
-    let mut sbi: SCROLLBARINFO = core::mem::zeroed();
-    let Window: PWND;
-    let mut Ret: BOOL = 0;
-    let mut Ref: USER_REFERENCE_ENTRY = core::mem::zeroed();
-
-    TRACE!(b"Enter NtUserGetScrollBarInfo\n\0".as_ptr() as *const i8);
-    UserEnterExclusive();
-
-    'Exit: {
-        Status = MmCopyFromCaller(
-            core::ptr::addr_of_mut!(sbi) as *mut _,
-            psbi as *mut _,
-            core::mem::size_of::<SCROLLBARINFO>() as _,
-        );
-        if !NT_SUCCESS(Status) || (sbi.cbSize as usize != core::mem::size_of::<SCROLLBARINFO>()) {
-            SetLastNtError(Status as u32);
-            break 'Exit;
-        }
-
-        Window = UserGetWindowObject(hWnd);
-        if Window.is_null() {
-            break 'Exit;
-        }
-
-        UserRefObjectCo(Window, core::ptr::addr_of_mut!(Ref));
-        Ret = co_IntGetScrollBarInfo(Window, idObject, core::ptr::addr_of_mut!(sbi));
-        UserDerefObjectCo(Window);
-
-        Status = MmCopyToCaller(
-            psbi as *mut _,
-            core::ptr::addr_of_mut!(sbi) as *mut _,
-            core::mem::size_of::<SCROLLBARINFO>() as _,
-        );
-        if !NT_SUCCESS(Status) {
-            SetLastNtError(Status as u32);
-            Ret = 0;
-        }
-    }
-
-    TRACE!(b"Leave NtUserGetScrollBarInfo, ret=%i\n\0".as_ptr() as *const i8, Ret);
-    UserLeave();
-    Ret
-}
-#[cfg(target_arch = "x86")]
-#[no_mangle]
-pub unsafe extern "stdcall" fn NtUserSBGetParms(
+pub unsafe extern "system" fn NtUserSBGetParms(
     hWnd: HWND,
     fnBar: ::core::ffi::c_int,
     pSBData: PSBDATA,
@@ -1567,64 +1513,8 @@ pub unsafe extern "stdcall" fn NtUserSBGetParms(
     UserLeave();
     Ret
 }
-
-#[cfg(not(target_arch = "x86"))]
 #[no_mangle]
-pub unsafe extern "C" fn NtUserSBGetParms(
-    hWnd: HWND,
-    fnBar: ::core::ffi::c_int,
-    pSBData: PSBDATA,
-    lpsi: LPSCROLLINFO,
-) -> BOOL {
-    let Window: PWND;
-    let mut psi: SCROLLINFO = core::mem::zeroed();
-    let mut Ret: BOOL = 0;
-    let mut SBDataSafe: SBDATA = core::mem::zeroed();
-    let mut Ref: USER_REFERENCE_ENTRY = core::mem::zeroed();
-
-    UserEnterShared();
-
-    'exit: {
-        RtlCopyMemory(
-            core::ptr::addr_of_mut!(psi) as *mut _,
-            lpsi as *const _,
-            core::mem::size_of::<SCROLLINFO>() as _,
-        );
-        if !pSBData.is_null() {
-            RtlCopyMemory(
-                core::ptr::addr_of_mut!(SBDataSafe) as *mut _,
-                pSBData as *const _,
-                core::mem::size_of::<SBDATA>() as _,
-            );
-        }
-
-        Window = UserGetWindowObject(hWnd);
-        if Window.is_null() {
-            break 'exit;
-        }
-
-        UserRefObjectCo(Window, core::ptr::addr_of_mut!(Ref));
-        Ret = co_IntGetScrollInfo(
-            Window,
-            fnBar,
-            core::ptr::addr_of_mut!(SBDataSafe),
-            core::ptr::addr_of_mut!(psi),
-        );
-        UserDerefObjectCo(Window);
-
-        RtlCopyMemory(
-            lpsi as *mut _,
-            core::ptr::addr_of!(psi) as *const _,
-            core::mem::size_of::<SCROLLINFO>() as _,
-        );
-    }
-
-    UserLeave();
-    Ret
-}
-#[cfg(target_arch = "x86")]
-#[no_mangle]
-pub unsafe extern "stdcall" fn NtUserEnableScrollBar(
+pub unsafe extern "system" fn NtUserEnableScrollBar(
     hWnd: HWND,
     wSBflags: UINT,
     wArrows: UINT,
@@ -1704,92 +1594,8 @@ pub unsafe extern "stdcall" fn NtUserEnableScrollBar(
     UserLeave();
     Ret
 }
-
-#[cfg(not(target_arch = "x86"))]
 #[no_mangle]
-pub unsafe extern "C" fn NtUserEnableScrollBar(
-    hWnd: HWND,
-    wSBflags: UINT,
-    wArrows: UINT,
-) -> BOOL {
-    let OrigArrows: UINT;
-    let mut Window: PWND = core::ptr::null_mut();
-    let mut InfoV: PSCROLLBARINFO = core::ptr::null_mut();
-    let mut InfoH: PSCROLLBARINFO = core::ptr::null_mut();
-    let mut Chg: BOOL = 0;
-    let mut Ret: BOOL = 0;
-    let mut Ref: USER_REFERENCE_ENTRY = core::mem::zeroed();
-
-    UserEnterExclusive();
-
-    'cleanup: {
-        Window = UserGetWindowObject(hWnd);
-        if Window.is_null() || UserIsDesktopWindow(Window) != 0 || UserIsMessageWindow(Window) != 0 {
-            Window = core::ptr::null_mut();
-            break 'cleanup;
-        }
-
-        UserRefObjectCo(Window, &mut Ref);
-
-        if co_IntCreateScrollBars(Window) == 0 {
-            break 'cleanup;
-        }
-
-        OrigArrows = (*(*Window).pSBInfo).WSBflags as _;
-        (*(*Window).pSBInfo).WSBflags = wArrows as INT;
-
-        if wSBflags == SB_CTL {
-            if wArrows == ESB_DISABLE_BOTH || wArrows == ESB_ENABLE_BOTH {
-                IntEnableWindow(hWnd, (wArrows == ESB_ENABLE_BOTH) as BOOL);
-            }
-
-            Ret = 1;
-            break 'cleanup;
-        }
-
-        if wSBflags != SB_BOTH && SBID_IS_VALID(wSBflags as LONG) == 0 {
-            EngSetLastError(ERROR_INVALID_PARAMETER);
-            break 'cleanup;
-        }
-
-        match wSBflags {
-            SB_BOTH => {
-                InfoV = IntGetScrollbarInfoFromWindow(Window, SB_VERT as INT);
-                InfoH = IntGetScrollbarInfoFromWindow(Window, SB_HORZ as INT);
-            }
-            SB_HORZ => {
-                InfoH = IntGetScrollbarInfoFromWindow(Window, SB_HORZ as INT);
-            }
-            SB_VERT => {
-                InfoV = IntGetScrollbarInfoFromWindow(Window, SB_VERT as INT);
-            }
-            _ => {
-                break 'cleanup;
-            }
-        }
-
-        if !InfoV.is_null() {
-            Chg = IntEnableScrollBar(0, InfoV, wArrows);
-        }
-
-        if !InfoH.is_null() {
-            Chg = (IntEnableScrollBar(1, InfoH, wArrows) != 0 || Chg != 0) as BOOL;
-        }
-
-        Ret = Chg;
-        break 'cleanup;
-    }
-
-    if !Window.is_null() {
-        UserDerefObjectCo(Window);
-    }
-
-    UserLeave();
-    Ret
-}
-#[cfg(target_arch = "x86")]
-#[no_mangle]
-pub unsafe extern "stdcall" fn NtUserSetScrollInfo(
+pub unsafe extern "system" fn NtUserSetScrollInfo(
     hWnd: HWND,
     fnBar: ::core::ffi::c_int,
     lpsi: LPCSCROLLINFO,
@@ -1836,59 +1642,8 @@ pub unsafe extern "stdcall" fn NtUserSetScrollInfo(
     UserLeave();
     Ret
 }
-
-#[cfg(not(target_arch = "x86"))]
 #[no_mangle]
-pub unsafe extern "C" fn NtUserSetScrollInfo(
-    hWnd: HWND,
-    fnBar: ::core::ffi::c_int,
-    lpsi: LPCSCROLLINFO,
-    bRedraw: BOOL,
-) -> DWORD {
-    let mut Window: PWND = core::ptr::null_mut();
-    let Status: NTSTATUS;
-    let mut ScrollInfo: SCROLLINFO = core::mem::zeroed();
-    let mut Ret: DWORD = 0;
-    let mut Ref: USER_REFERENCE_ENTRY = core::mem::zeroed();
-
-    TRACE!(b"Enter NtUserSetScrollInfo\n\0".as_ptr() as *const _);
-    UserEnterExclusive();
-
-    'cleanup: {
-        Window = UserGetWindowObject(hWnd);
-        if Window.is_null()
-            || UserIsDesktopWindow(Window) != 0
-            || UserIsMessageWindow(Window) != 0
-        {
-            break 'cleanup;
-        }
-
-        UserRefObjectCo(Window, core::ptr::addr_of_mut!(Ref));
-
-        Status = MmCopyFromCaller(
-            core::ptr::addr_of_mut!(ScrollInfo) as *mut _,
-            lpsi as *mut _,
-            (core::mem::size_of::<SCROLLINFO>() - core::mem::size_of_val(&ScrollInfo.nTrackPos)) as _,
-        );
-        if !NT_SUCCESS(Status) {
-            SetLastNtError(Status as u32);
-            break 'cleanup;
-        }
-
-        Ret = co_IntSetScrollInfo(Window, fnBar, core::ptr::addr_of_mut!(ScrollInfo), bRedraw);
-    }
-
-    if !Window.is_null() {
-        UserDerefObjectCo(Window);
-    }
-
-    TRACE!(b"Leave NtUserSetScrollInfo, ret=%lu\n\0".as_ptr() as *const _, Ret);
-    UserLeave();
-    Ret
-}
-#[cfg(target_arch = "x86")]
-#[no_mangle]
-pub unsafe extern "stdcall" fn NtUserShowScrollBar(
+pub unsafe extern "system" fn NtUserShowScrollBar(
     hWnd: HWND,
     nBar: core::ffi::c_int,
     bShow: u32,
@@ -1916,108 +1671,8 @@ pub unsafe extern "stdcall" fn NtUserShowScrollBar(
     UserLeave();
     ret
 }
-
-#[cfg(not(target_arch = "x86"))]
 #[no_mangle]
-pub unsafe extern "C" fn NtUserShowScrollBar(
-    hWnd: HWND,
-    nBar: core::ffi::c_int,
-    bShow: u32,
-) -> u32 {
-    let Window: PWND;
-    let mut ret: u32 = 0;
-    let mut Ref: USER_REFERENCE_ENTRY = core::mem::zeroed();
-
-    TRACE!(b"Enter NtUserShowScrollBar\n\0".as_ptr());
-    UserEnterExclusive();
-
-    Window = UserGetWindowObject(hWnd);
-    if !Window.is_null() {
-        UserRefObjectCo(Window, &mut Ref);
-        ret = co_UserShowScrollBar(
-            Window,
-            nBar,
-            if nBar == SB_VERT as core::ffi::c_int { 0 } else { bShow as i32 },
-            if nBar == SB_HORZ as core::ffi::c_int { 0 } else { bShow as i32 },
-        );
-        UserDerefObjectCo(Window);
-    }
-
-    TRACE!(b"Leave NtUserShowScrollBar, ret=%lu\n\0".as_ptr(), ret);
-    UserLeave();
-    ret
-}
-#[cfg(target_arch = "x86")]
-#[no_mangle]
-pub unsafe extern "stdcall" fn NtUserSetScrollBarInfo(
-    hWnd: HWND,
-    idObject: LONG,
-    info: *mut SETSCROLLBARINFO,
-) -> BOOL {
-    let mut Window: PWND = core::ptr::null_mut();
-    let mut Safeinfo: SETSCROLLBARINFO = core::mem::zeroed();
-    let sbi: PSCROLLBARINFO;
-    let psi: LPSCROLLINFO;
-    let Status: NTSTATUS;
-    let Obj: LONG;
-    let mut Ret: BOOL = 0;
-    let mut Ref: USER_REFERENCE_ENTRY = core::mem::zeroed();
-
-    UserEnterExclusive();
-
-    'cleanup: {
-        Window = UserGetWindowObject(hWnd);
-        if Window.is_null() {
-            break 'cleanup;
-        }
-
-        UserRefObjectCo(Window, core::ptr::addr_of_mut!(Ref));
-
-        Obj = SBOBJ_TO_SBID(idObject);
-        if SBID_IS_VALID(Obj) == 0 {
-            EngSetLastError(ERROR_INVALID_PARAMETER);
-            break 'cleanup;
-        }
-
-        if co_IntCreateScrollBars(Window) == 0 {
-            break 'cleanup;
-        }
-
-        Status = MmCopyFromCaller(
-            core::ptr::addr_of_mut!(Safeinfo) as *mut _,
-            info as *mut _,
-            core::mem::size_of::<SETSCROLLBARINFO>() as ULONG,
-        );
-        if !NT_SUCCESS(Status) {
-            SetLastNtError(Status as u32);
-            break 'cleanup;
-        }
-
-        sbi = IntGetScrollbarInfoFromWindow(Window, Obj);
-        psi = IntGetScrollInfoFromWindow(Window, Obj);
-
-        (*psi).nTrackPos = Safeinfo.nTrackPos;
-        (*sbi).reserved = Safeinfo.reserved;
-        RtlCopyMemory(
-            core::ptr::addr_of_mut!((*sbi).rgstate) as *mut _,
-            core::ptr::addr_of!(Safeinfo.rgstate) as *const _,
-            core::mem::size_of_val(&Safeinfo.rgstate),
-        );
-
-        Ret = 1;
-    }
-
-    if !Window.is_null() {
-        UserDerefObjectCo(Window);
-    }
-
-    UserLeave();
-    Ret
-}
-
-#[cfg(not(target_arch = "x86"))]
-#[no_mangle]
-pub unsafe extern "C" fn NtUserSetScrollBarInfo(
+pub unsafe extern "system" fn NtUserSetScrollBarInfo(
     hWnd: HWND,
     idObject: LONG,
     info: *mut SETSCROLLBARINFO,

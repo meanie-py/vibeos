@@ -310,37 +310,8 @@ pub unsafe extern "C" fn IntEngWindowChanged(
         IntEngWndCallChangeProc(Clip, WOC_CHANGED);
     }
 }
-#[cfg(target_arch = "x86")]
 #[no_mangle]
-pub unsafe extern "stdcall" fn EngDeleteWnd(
-    pwo: *mut WNDOBJ) {
-    let Clip = pwo as *mut EWNDOBJ;
-    let mut Window: PWND;
-
-    TRACE!(b"EngDeleteWnd: pwo = 0x%p\n\0".as_ptr() as *const i8, pwo);
-
-    UserEnterExclusive();
-
-    Window = UserGetWindowObject((*Clip).Hwnd);
-    if Window == core::ptr::null_mut()
-    {
-        ERR!(b"Couldnt get window object for WndObjInt->Hwnd!!!\n\0".as_ptr() as *const i8);
-    }
-    else
-    {
-        UserRemoveProp(Window, AtomWndObj, 1u8);
-    }
-    gcountPWO -= 1;
-
-    UserLeave();
-
-    IntEngFreeClipResources(Clip as *mut XCLIPOBJ);
-    EngFreeMem(Clip as *mut core::ffi::c_void);
-}
-
-#[cfg(not(target_arch = "x86"))]
-#[no_mangle]
-pub unsafe extern "C" fn EngDeleteWnd(
+pub unsafe extern "system" fn EngDeleteWnd(
     pwo: *mut WNDOBJ) {
     let Clip = pwo as *mut EWNDOBJ;
     let mut Window: PWND;
@@ -367,7 +338,7 @@ pub unsafe extern "C" fn EngDeleteWnd(
 }
 #[cfg(target_arch = "x86")]
 #[no_mangle]
-pub unsafe extern "stdcall" fn WNDOBJ_bEnum(
+pub unsafe extern "system" fn WNDOBJ_bEnum(
     pwo: *mut WNDOBJ,
     cj: ULONG,
     pul: *mut ULONG,
@@ -382,7 +353,7 @@ pub unsafe extern "stdcall" fn WNDOBJ_bEnum(
 
 #[cfg(not(target_arch = "x86"))]
 #[no_mangle]
-pub unsafe extern "C" fn WNDOBJ_bEnum(
+pub unsafe extern "system" fn WNDOBJ_bEnum(
     pwo: *mut WNDOBJ,
     cj: ULONG,
     pul: *mut ULONG,
@@ -394,9 +365,8 @@ pub unsafe extern "C" fn WNDOBJ_bEnum(
         pul,
     ) as BOOL
 }
-#[cfg(target_arch = "x86")]
 #[no_mangle]
-pub unsafe extern "stdcall" fn WNDOBJ_cEnumStart(
+pub unsafe extern "system" fn WNDOBJ_cEnumStart(
     pwo: *mut WNDOBJ,
     iType: ULONG,
     iDirection: ULONG,
@@ -411,58 +381,8 @@ pub unsafe extern "stdcall" fn WNDOBJ_cEnumStart(
         cLimit,
     )
 }
-
-#[cfg(not(target_arch = "x86"))]
 #[no_mangle]
-pub unsafe extern "C" fn WNDOBJ_cEnumStart(
-    pwo: *mut WNDOBJ,
-    iType: ULONG,
-    iDirection: ULONG,
-    cLimit: ULONG,
-) -> ULONG {
-    
-    CLIPOBJ_cEnumStart(
-        core::ptr::addr_of_mut!((*pwo).coClient),
-        0,
-        iType,
-        iDirection,
-        cLimit,
-    )
-}
-#[cfg(target_arch = "x86")]
-#[no_mangle]
-pub unsafe extern "stdcall" fn WNDOBJ_vSetConsumer(
-    pwo: *mut WNDOBJ,
-    pvConsumer: *mut core::ffi::c_void,
-) {
-    let Clip: *mut EWNDOBJ = pwo as *mut EWNDOBJ;
-    let Hack: u8;
-
-    TRACE!(b"WNDOBJ_vSetConsumer: pwo = 0x%p, pvConsumer = 0x%p\n\0".as_ptr() as PCHAR, pwo, pvConsumer);
-
-    Hack = if (*pwo).pvConsumer.is_null() { 1u8 } else { 0u8 };
-    (*pwo).pvConsumer = pvConsumer;
-
-    if Hack != 0 {
-        FIXME!(b"Is this hack really needed?\n\0".as_ptr() as PCHAR);
-        #[cfg(target_arch = "x86")]
-        IntEngWndCallChangeProc(Clip, WOC_RGN_CLIENT);
-        #[cfg(not(target_arch = "x86"))]
-        IntEngWndCallChangeProc(Clip, WOC_RGN_CLIENT);
-        #[cfg(target_arch = "x86")]
-        IntEngWndCallChangeProc(Clip, WOC_CHANGED);
-        #[cfg(not(target_arch = "x86"))]
-        IntEngWndCallChangeProc(Clip, WOC_CHANGED);
-        #[cfg(target_arch = "x86")]
-        IntEngWndCallChangeProc(Clip, WOC_DRAWN);
-        #[cfg(not(target_arch = "x86"))]
-        IntEngWndCallChangeProc(Clip, WOC_DRAWN);
-    }
-}
-
-#[cfg(not(target_arch = "x86"))]
-#[no_mangle]
-pub unsafe extern "C" fn WNDOBJ_vSetConsumer(
+pub unsafe extern "system" fn WNDOBJ_vSetConsumer(
     pwo: *mut WNDOBJ,
     pvConsumer: *mut core::ffi::c_void,
 ) {
@@ -495,21 +415,8 @@ pub unsafe extern "C" fn WNDOBJ_vSetConsumer(
 // translation deferred; provide a no-op stub so the link resolves. The function
 // is GDI DDK API for display drivers, exercised only when a real driver calls
 // it; returning NULL is safe for now and matches the @unimplemented mark.
-#[cfg(target_arch = "x86")]
 #[no_mangle]
-pub unsafe extern "stdcall" fn EngCreateWnd(
-    _pso: *mut SURFOBJ,
-    _hWnd: HWND,
-    _pfn: WNDOBJCHANGEPROC,
-    _fl: FLONG,
-    _iPixelFormat: i32,
-) -> *mut WNDOBJ {
-    core::ptr::null_mut()
-}
-
-#[cfg(not(target_arch = "x86"))]
-#[no_mangle]
-pub unsafe extern "C" fn EngCreateWnd(
+pub unsafe extern "system" fn EngCreateWnd(
     _pso: *mut SURFOBJ,
     _hWnd: HWND,
     _pfn: WNDOBJCHANGEPROC,

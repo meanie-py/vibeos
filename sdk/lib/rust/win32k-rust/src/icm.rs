@@ -94,9 +94,8 @@ unsafe fn IntGdiDeleteColorSpaceImpl(hColorSpace: HCOLORSPACE) -> BOOL {
 
     Ret
 }
-#[cfg(target_arch = "x86")]
 #[no_mangle]
-pub unsafe extern "stdcall" fn NtGdiCreateColorSpace(
+pub unsafe extern "system" fn NtGdiCreateColorSpace(
     pLogColorSpace: PLOGCOLORSPACEEXW,
 ) -> HANDLE {
     let mut Safelcs: LOGCOLORSPACEEXW = core::mem::zeroed();
@@ -122,44 +121,8 @@ pub unsafe extern "stdcall" fn NtGdiCreateColorSpace(
 
     IntGdiCreateColorSpace(core::ptr::addr_of_mut!(Safelcs)) as _
 }
-
-#[cfg(not(target_arch = "x86"))]
 #[no_mangle]
-pub unsafe extern "C" fn NtGdiCreateColorSpace(
-    pLogColorSpace: PLOGCOLORSPACEEXW,
-) -> HANDLE {
-    let mut Safelcs: LOGCOLORSPACEEXW = core::mem::zeroed();
-    let mut Status: NTSTATUS = STATUS_SUCCESS;
-
-    Status = SafeProbeForRead(
-        pLogColorSpace as *mut core::ffi::c_void,
-        core::mem::size_of::<LOGCOLORSPACEEXW>() as _,
-        1,
-    );
-    if NT_SUCCESS(Status) {
-        RtlCopyMemory(
-            core::ptr::addr_of_mut!(Safelcs) as *mut core::ffi::c_void,
-            pLogColorSpace as *const core::ffi::c_void,
-            core::mem::size_of::<LOGCOLORSPACEEXW>() as _,
-        );
-    }
-
-    if !NT_SUCCESS(Status) {
-        SetLastNtError(Status);
-        return core::ptr::null_mut();
-    }
-
-    IntGdiCreateColorSpace(core::ptr::addr_of_mut!(Safelcs)) as _
-}
-#[cfg(target_arch = "x86")]
-#[no_mangle]
-pub unsafe extern "stdcall" fn NtGdiDeleteColorSpace(hColorSpace: HANDLE) -> BOOL {
-    IntGdiDeleteColorSpace(hColorSpace as HCOLORSPACE)
-}
-
-#[cfg(not(target_arch = "x86"))]
-#[no_mangle]
-pub unsafe extern "C" fn NtGdiDeleteColorSpace(hColorSpace: HANDLE) -> BOOL {
+pub unsafe extern "system" fn NtGdiDeleteColorSpace(hColorSpace: HANDLE) -> BOOL {
     IntGdiDeleteColorSpace(hColorSpace as HCOLORSPACE)
 }
 
@@ -206,60 +169,8 @@ unsafe fn IntGetDeviceGammaRamp_impl(hPDev: HDEV, Ramp: PGAMMARAMP) -> BOOL {
 
     0
 }
-#[cfg(target_arch = "x86")]
 #[no_mangle]
-pub unsafe extern "stdcall" fn NtGdiGetDeviceGammaRamp(hDC: HDC, Ramp: LPVOID) -> BOOL {
-    let Ret: BOOL;
-    let dc: PDC;
-    let mut Status: NTSTATUS = STATUS_SUCCESS as NTSTATUS;
-    let SafeRamp: PGAMMARAMP;
-
-    if Ramp.is_null() {
-        return 0;
-    }
-
-    dc = DC_LockDc(hDC);
-    if dc.is_null() {
-        EngSetLastError(ERROR_INVALID_HANDLE);
-        return 0;
-    }
-
-    SafeRamp = ExAllocatePoolWithTag(
-        PagedPool,
-        core::mem::size_of::<GAMMARAMP>() as _,
-        GDITAG_ICM,
-    ) as PGAMMARAMP;
-    if SafeRamp.is_null() {
-        DC_UnlockDc(dc);
-        EngSetLastError(STATUS_NO_MEMORY as u32);
-        return 0;
-    }
-
-    Ret = IntGetDeviceGammaRamp((*dc).ppdev as HDEV, SafeRamp);
-    if Ret == 0 {
-        DC_UnlockDc(dc);
-        ExFreePoolWithTag(SafeRamp as LPVOID, GDITAG_ICM);
-        return Ret;
-    }
-
-    Status = SafeProbeForWrite(Ramp, core::mem::size_of::<GAMMARAMP>() as _, 1);
-    if NT_SUCCESS(Status) {
-        RtlCopyMemory(Ramp, SafeRamp as LPVOID, core::mem::size_of::<GAMMARAMP>());
-    }
-
-    DC_UnlockDc(dc);
-    ExFreePoolWithTag(SafeRamp as LPVOID, GDITAG_ICM);
-
-    if !NT_SUCCESS(Status) {
-        SetLastNtError(Status);
-        return 0;
-    }
-    Ret
-}
-
-#[cfg(not(target_arch = "x86"))]
-#[no_mangle]
-pub unsafe extern "C" fn NtGdiGetDeviceGammaRamp(hDC: HDC, Ramp: LPVOID) -> BOOL {
+pub unsafe extern "system" fn NtGdiGetDeviceGammaRamp(hDC: HDC, Ramp: LPVOID) -> BOOL {
     let Ret: BOOL;
     let dc: PDC;
     let mut Status: NTSTATUS = STATUS_SUCCESS as NTSTATUS;
@@ -309,43 +220,8 @@ pub unsafe extern "C" fn NtGdiGetDeviceGammaRamp(hDC: HDC, Ramp: LPVOID) -> BOOL
 }
 
 const GDITAG_ICM: u32 = u32::from_le_bytes(*b"mciG");
-#[cfg(target_arch = "x86")]
 #[no_mangle]
-pub unsafe extern "stdcall" fn NtGdiSetColorSpace(hdc: HDC, hColorSpace: HCOLORSPACE) -> BOOL {
-
-    let pDC: PDC = DC_LockDc(hdc);
-    if pDC.is_null() {
-        EngSetLastError(ERROR_INVALID_HANDLE);
-        return 0;
-    }
-    let pdcattr: PDC_ATTR = (*pDC).pdcattr;
-
-    if (*pdcattr).hColorSpace == hColorSpace {
-        DC_UnlockDc(pDC);
-        return 1;
-    }
-
-    let pCS: PCOLORSPACE = COLORSPACEOBJ_LockCS(hColorSpace);
-    if pCS.is_null() {
-        EngSetLastError(ERROR_INVALID_HANDLE);
-        return 0;
-    }
-
-    if !(*pDC).dclevel.pColorSpace.is_null() {
-        GDIOBJ_vDereferenceObject((*pDC).dclevel.pColorSpace as POBJ);
-    }
-
-    (*pDC).dclevel.pColorSpace = pCS as _;
-    (*pdcattr).hColorSpace = hColorSpace;
-
-    COLORSPACEOBJ_UnlockCS(pCS);
-    DC_UnlockDc(pDC);
-    1
-}
-
-#[cfg(not(target_arch = "x86"))]
-#[no_mangle]
-pub unsafe extern "C" fn NtGdiSetColorSpace(hdc: HDC, hColorSpace: HCOLORSPACE) -> BOOL {
+pub unsafe extern "system" fn NtGdiSetColorSpace(hdc: HDC, hColorSpace: HCOLORSPACE) -> BOOL {
 
     let pDC: PDC = DC_LockDc(hdc);
     if pDC.is_null() {
@@ -566,9 +442,8 @@ unsafe fn IntSetDeviceGammaRamp_impl(hPDev: HDEV, Ramp: PGAMMARAMP, Test: BOOL) 
 
     Ret
 }
-#[cfg(target_arch = "x86")]
 #[no_mangle]
-pub unsafe extern "stdcall" fn NtGdiSetDeviceGammaRamp(hDC: HDC, Ramp: LPVOID) -> BOOL {
+pub unsafe extern "system" fn NtGdiSetDeviceGammaRamp(hDC: HDC, Ramp: LPVOID) -> BOOL {
     let Ret: BOOL;
     let dc: PDC;
     let mut Status: NTSTATUS = STATUS_SUCCESS;
@@ -616,80 +491,8 @@ pub unsafe extern "stdcall" fn NtGdiSetDeviceGammaRamp(hDC: HDC, Ramp: LPVOID) -
     ExFreePoolWithTag(SafeRamp as PVOID, GDITAG_ICM);
     Ret
 }
-
-#[cfg(not(target_arch = "x86"))]
 #[no_mangle]
-pub unsafe extern "C" fn NtGdiSetDeviceGammaRamp(hDC: HDC, Ramp: LPVOID) -> BOOL {
-    let Ret: BOOL;
-    let dc: PDC;
-    let mut Status: NTSTATUS = STATUS_SUCCESS;
-    let SafeRamp: PGAMMARAMP;
-
-    if Ramp.is_null() {
-        return 0;
-    }
-
-    dc = DC_LockDc(hDC);
-    if dc.is_null() {
-        EngSetLastError(ERROR_INVALID_HANDLE);
-        return 0;
-    }
-
-    SafeRamp = ExAllocatePoolWithTag(
-        PagedPool,
-        core::mem::size_of::<GAMMARAMP>() as _,
-        GDITAG_ICM,
-    ) as PGAMMARAMP;
-    if SafeRamp.is_null() {
-        DC_UnlockDc(dc);
-        EngSetLastError(STATUS_NO_MEMORY as ULONG);
-        return 0;
-    }
-
-    Status = SafeProbeForRead(Ramp, core::mem::size_of::<GAMMARAMP>() as _, 1);
-    if NT_SUCCESS(Status) {
-        RtlCopyMemory(
-            SafeRamp as PVOID,
-            Ramp,
-            core::mem::size_of::<GAMMARAMP>() as _,
-        );
-    }
-
-    if !NT_SUCCESS(Status) {
-        DC_UnlockDc(dc);
-        ExFreePoolWithTag(SafeRamp as PVOID, GDITAG_ICM);
-        SetLastNtError(Status);
-        return 0;
-    }
-
-    Ret = IntSetDeviceGammaRamp((*dc).ppdev as HDEV, SafeRamp, 1);
-    DC_UnlockDc(dc);
-    ExFreePoolWithTag(SafeRamp as PVOID, GDITAG_ICM);
-    Ret
-}
-#[cfg(target_arch = "x86")]
-#[no_mangle]
-pub unsafe extern "stdcall" fn NtGdiSetIcmMode(
-    hDC: HDC,
-    nCommand: ULONG,
-    EnableICM: ULONG,
-) -> INT {
-    if EnableICM == ICM_OFF {
-        return ICM_OFF as INT;
-    }
-    if EnableICM == ICM_ON {
-        return 0;
-    }
-    if EnableICM == ICM_QUERY {
-        return ICM_OFF as INT;
-    }
-
-    0
-}
-
-#[cfg(not(target_arch = "x86"))]
-#[no_mangle]
-pub unsafe extern "C" fn NtGdiSetIcmMode(
+pub unsafe extern "system" fn NtGdiSetIcmMode(
     hDC: HDC,
     nCommand: ULONG,
     EnableICM: ULONG,

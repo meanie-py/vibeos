@@ -231,6 +231,119 @@ pub unsafe extern "C" fn LsapRegDeleteValue(
     NtDeleteValueKey(KeyHandle, &mut Name)
 }
 
+/// registry.c:225. Hand-carried: the translation pass dropped it (it has no callers in the
+/// module, so nothing went unresolved at link and nothing downstream noticed), and
+/// `fn_coverage` — which audits the crate against the C TEXT rather than the plan — is what
+/// found it. `MAX_PATH` is minwindef.h:60; every other name here comes from ntdll-sys's island.
+#[no_mangle]
+pub unsafe extern "C" fn LsapRegEnumerateValue(
+    KeyHandle: HANDLE,
+    Index: ULONG,
+    Name: LPWSTR,
+    NameLength: PULONG,
+    Type: PULONG,
+    Data: PVOID,
+    DataLength: PULONG,
+) -> NTSTATUS {
+    const MAX_PATH: ULONG = 260; // minwindef.h:60
+    let mut Status: NTSTATUS;
+    let mut ReturnedLength: ULONG = 0;
+
+    TRACE!(b"Index: %lu\n\0".as_ptr(), Index);
+
+    /* Calculate the required buffer length */
+    let mut BufferLength = core::mem::offset_of!(_KEY_VALUE_FULL_INFORMATION, Name) as ULONG;
+    BufferLength += (MAX_PATH + 1) * core::mem::size_of::<u16>() as ULONG;
+    if !Data.is_null() {
+        BufferLength += *DataLength;
+    }
+
+    /* Allocate the value buffer */
+    let ValueInfo =
+        RtlAllocateHeap(RtlGetProcessHeap(), 0, BufferLength as SIZE_T) as PKEY_VALUE_FULL_INFORMATION;
+    if ValueInfo.is_null() {
+        return STATUS_NO_MEMORY;
+    }
+
+    /* Enumerate the value */
+    Status = ZwEnumerateValueKey(
+        KeyHandle,
+        Index,
+        KeyValueFullInformation,
+        ValueInfo as PVOID,
+        BufferLength,
+        &mut ReturnedLength,
+    );
+    // The C reaches its shared epilogue with `goto done` on either overflow; Rust expresses the
+    // same single exit as a labelled block, so the two writebacks below still run exactly once.
+    'done: {
+        if NT_SUCCESS(Status) {
+            if !Name.is_null() {
+                /* Check if the name fits */
+                if (*ValueInfo).NameLength < *NameLength * core::mem::size_of::<u16>() as ULONG {
+                    /* Copy it */
+                    core::ptr::copy(
+                        core::ptr::addr_of!((*ValueInfo).Name) as *const u8,
+                        Name as *mut u8,
+                        (*ValueInfo).NameLength as usize,
+                    );
+                    /* Terminate the string */
+                    *Name.add((*ValueInfo).NameLength as usize / core::mem::size_of::<u16>()) = 0u16;
+                } else {
+                    /* Otherwise, we ran out of buffer space */
+                    Status = STATUS_BUFFER_OVERFLOW;
+                    break 'done;
+                }
+            }
+
+            if !Data.is_null() {
+                /* Check if the data fits */
+                if (*ValueInfo).DataLength <= *DataLength {
+                    /* Copy it */
+                    core::ptr::copy(
+                        (ValueInfo as *const u8).add((*ValueInfo).DataOffset as usize),
+                        Data as *mut u8,
+                        (*ValueInfo).DataLength as usize,
+                    );
+
+                    /* if the type is REG_SZ and data is not 0-terminated
+                     * and there is enough space in the buffer NT appends a \0 */
+                    if IsStringType((*ValueInfo).Type) != 0
+                        && (*ValueInfo).DataLength <= *DataLength - core::mem::size_of::<u16>() as ULONG
+                    {
+                        let ptr = (Data as *mut u8).add((*ValueInfo).DataLength as usize) as *mut u16;
+                        if ptr > Data as *mut u16 && *ptr.sub(1) != 0 {
+                            *ptr = 0u16;
+                        }
+                    }
+                } else {
+                    Status = STATUS_BUFFER_OVERFLOW;
+                    break 'done;
+                }
+            }
+        }
+    }
+
+    if NT_SUCCESS(Status) || Status == STATUS_BUFFER_OVERFLOW {
+        if !Type.is_null() {
+            *Type = (*ValueInfo).Type;
+        }
+        if !NameLength.is_null() {
+            *NameLength = (*ValueInfo).NameLength;
+        }
+        if !DataLength.is_null() {
+            *DataLength = (*ValueInfo).DataLength;
+        }
+    }
+
+    /* Free the buffer and return status */
+    if !ValueInfo.is_null() {
+        RtlFreeHeap(RtlGetProcessHeap(), 0, ValueInfo as PVOID);
+    }
+
+    Status
+}
+
 #[no_mangle]
 pub unsafe extern "C" fn LsapRegQueryValue(
     KeyHandle: HANDLE,

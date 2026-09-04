@@ -1,9 +1,5 @@
-//! ORPHAN-BY-DESIGN: translated shell32 TU, parked pending substrate closure.
-//! Unblocked by the 2026-07-25 seal fixes (macro authority, Rust-label masking,
-//! goto replication, prototype/named-cast types); still needs SDK externs, Win32
-//! constants and resource IDs resolved before it compiles. Wiring it in this state
-//! would break the build for every lane rather than expose a regression.
-//! This is a PAID artifact — do not delete it to tidy up.
+//! FLIPPED: this TU is wired into the crate and shipping; the C++ original is
+//! commented out of dll/win32/shell32/CMakeLists.txt.
 // Deterministic UTF-16 literals from the selected C++ helper closure.
 pub static CPP_COM_WSTR_2CBECA8C1D10: [WCHAR; 3] = [0x002A, 0x003F, 0x0000];
 pub static CPP_COM_WSTR_77ECA80E282A: [WCHAR; 3] = [0x002E, 0x002E, 0x0000];
@@ -353,33 +349,7 @@ unsafe extern "C" fn ConfirmMsgBox_Init(hDlg: HWND, lParam: LPARAM) -> INT_PTR {
 
     (TRUE) as INT_PTR
 }
-#[cfg(target_arch = "x86")]
-unsafe extern "stdcall" fn ConfirmMsgBoxProc(
-    hDlg: HWND,
-    uMsg: UINT,
-    wParam: WPARAM,
-    lParam: LPARAM,
-) -> INT_PTR {
-    match uMsg {
-        WM_INITDIALOG => {
-            return ConfirmMsgBox_Init(hDlg, lParam);
-        }
-        WM_PAINT => {
-            return ConfirmMsgBox_Paint(hDlg);
-        }
-        WM_COMMAND => {
-            EndDialog(hDlg, (wParam) as INT_PTR);
-        }
-        WM_CLOSE => {
-            EndDialog(hDlg, (IDCANCEL) as INT_PTR);
-        }
-        _ => {}
-    }
-    (FALSE) as INT_PTR
-}
-
-#[cfg(not(target_arch = "x86"))]
-unsafe extern "C" fn ConfirmMsgBoxProc(
+unsafe extern "system" fn ConfirmMsgBoxProc(
     hDlg: HWND,
     uMsg: UINT,
     wParam: WPARAM,
@@ -897,25 +867,8 @@ unsafe fn SHCopyProgress(
 // fn-pointer types, so `Some(routine)` is rejected unless the callback is written with the
 // island's own per-arch spelling. Hence the cfg twins, the same idiom the dialog procs use.
 // The params are also the island's real types (LARGE_INTEGER, not i64) for the same reason.
-#[cfg(target_arch = "x86")]
 #[no_mangle]
-pub unsafe extern "stdcall" fn SHCopyProgressRoutine(
-    TotalFileSize: LARGE_INTEGER,
-    TotalBytesTransferred: LARGE_INTEGER,
-    _StreamSize: LARGE_INTEGER,
-    _StreamBytesTransferred: LARGE_INTEGER,
-    _dwStreamNumber: DWORD,
-    dwCallbackReason: DWORD,
-    _hSourceFile: HANDLE,
-    _hDestinationFile: HANDLE,
-    lpData: LPVOID,
-) -> DWORD {
-    SHCopyProgress(TotalFileSize.QuadPart, TotalBytesTransferred.QuadPart, dwCallbackReason, lpData)
-}
-
-#[cfg(not(target_arch = "x86"))]
-#[no_mangle]
-pub unsafe extern "C" fn SHCopyProgressRoutine(
+pub unsafe extern "system" fn SHCopyProgressRoutine(
     TotalFileSize: LARGE_INTEGER,
     TotalBytesTransferred: LARGE_INTEGER,
     _StreamSize: LARGE_INTEGER,
@@ -2141,7 +2094,7 @@ unsafe extern "C" fn move_files(
         return ERROR_CANCELLED;
     }
 
-    if PathFileExistsW((*flTo).feFiles.offset(0 as isize).as_ref().unwrap().szDirectory)
+    if PathFileExistsW((*(*flTo).feFiles.offset(0 as isize)).szDirectory)
         == 0
     {
         return ERROR_CANCELLED;
@@ -2166,7 +2119,7 @@ unsafe extern "C" fn move_files(
             }
             fileDest = (*flTo).feFiles.offset(i as isize);
             if mismatched != 0 && (*fileDest).bExists == 0 {
-                create_dest_dirs((*flTo).feFiles.offset(i as isize).as_ref().unwrap().szFullPath);
+                create_dest_dirs((*(*flTo).feFiles.offset(i as isize)).szFullPath);
                 (*fileDest).bExists = TRUE;
                 (*fileDest).attributes = FILE_ATTRIBUTE_DIRECTORY;
             }

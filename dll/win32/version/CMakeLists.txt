@@ -26,7 +26,7 @@ elseif(ARCH STREQUAL "amd64")
 elseif(ARCH STREQUAL "arm64")
     set(VERSION_RUST_TARGET "aarch64-pc-windows-gnullvm")
 endif()
-file(GLOB_RECURSE VERSION_RUST_SRCS "${VERSION_RUST_WORKSPACE_DIR}/version-rust/src/*.rs")
+rust_crate_sources(VERSION_RUST_SRCS "${VERSION_RUST_WORKSPACE_DIR}" version-rust)
 add_custom_command(
     OUTPUT ${VERSION_RUST_LIB}
     COMMAND ${CMAKE_COMMAND} -E env

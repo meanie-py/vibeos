@@ -996,18 +996,8 @@ pub unsafe extern "system" fn EXLATEOBJ_vInitialize(
 }
 
 // NTAPI in C (xlateobj.h) — stdcall on i386, cdecl elsewhere.
-#[cfg(target_arch = "x86")]
 #[no_mangle]
-pub unsafe extern "stdcall" fn EXLATEOBJ_vInitXlateFromDCs(
-    pexlo: PEXLATEOBJ,
-    pdcSrc: PDC,
-    pdcDst: PDC,
-) {
-    EXLATEOBJ_vInitXlateFromDCs_impl(pexlo, pdcSrc, pdcDst)
-}
-#[cfg(not(target_arch = "x86"))]
-#[no_mangle]
-pub unsafe extern "C" fn EXLATEOBJ_vInitXlateFromDCs(
+pub unsafe extern "system" fn EXLATEOBJ_vInitXlateFromDCs(
     pexlo: PEXLATEOBJ,
     pdcSrc: PDC,
     pdcDst: PDC,
@@ -1039,19 +1029,8 @@ unsafe fn EXLATEOBJ_vInitXlateFromDCs_impl(
 }
 
 // NTAPI in C (xlateobj.h) — stdcall on i386, cdecl elsewhere.
-#[cfg(target_arch = "x86")]
 #[no_mangle]
-pub unsafe extern "stdcall" fn EXLATEOBJ_vInitXlateFromDCsEx(
-    pexlo: *mut EXLATEOBJ,
-    pdcSrc: PDC,
-    pdcDst: PDC,
-    crBackColor: COLORREF,
-) {
-    EXLATEOBJ_vInitXlateFromDCsEx_impl(pexlo, pdcSrc, pdcDst, crBackColor)
-}
-#[cfg(not(target_arch = "x86"))]
-#[no_mangle]
-pub unsafe extern "C" fn EXLATEOBJ_vInitXlateFromDCsEx(
+pub unsafe extern "system" fn EXLATEOBJ_vInitXlateFromDCsEx(
     pexlo: *mut EXLATEOBJ,
     pdcSrc: PDC,
     pdcDst: PDC,
@@ -1114,20 +1093,12 @@ unsafe fn EXLATEOBJ_vCleanup_impl(pexlo: PEXLATEOBJ) {
     (*pexlo).xlo.pulXlate = (*pexlo).__bindgen_anon_1.aulXlate.as_mut_ptr();
 }
 
-#[cfg(target_arch = "x86")]
 #[no_mangle]
-pub unsafe extern "stdcall" fn EXLATEOBJ_vCleanup(pexlo: PEXLATEOBJ) {
+pub unsafe extern "system" fn EXLATEOBJ_vCleanup(pexlo: PEXLATEOBJ) {
     EXLATEOBJ_vCleanup_impl(pexlo)
 }
-
-#[cfg(not(target_arch = "x86"))]
 #[no_mangle]
-pub unsafe extern "C" fn EXLATEOBJ_vCleanup(pexlo: PEXLATEOBJ) {
-    EXLATEOBJ_vCleanup_impl(pexlo)
-}
-#[cfg(target_arch = "x86")]
-#[no_mangle]
-pub unsafe extern "stdcall" fn XLATEOBJ_iXlate(
+pub unsafe extern "system" fn XLATEOBJ_iXlate(
     pxlo: *mut XLATEOBJ,
     iColor: u32,
 ) -> u32 {
@@ -1139,24 +1110,8 @@ pub unsafe extern "stdcall" fn XLATEOBJ_iXlate(
 
     ((*pexlo).pfnXlate.unwrap())(pexlo, iColor)
 }
-
-#[cfg(not(target_arch = "x86"))]
 #[no_mangle]
-pub unsafe extern "C" fn XLATEOBJ_iXlate(
-    pxlo: *mut XLATEOBJ,
-    iColor: u32,
-) -> u32 {
-    let pexlo = pxlo as PEXLATEOBJ;
-
-    if pxlo.is_null() {
-        return iColor;
-    }
-
-    ((*pexlo).pfnXlate.unwrap())(pexlo, iColor)
-}
-#[cfg(target_arch = "x86")]
-#[no_mangle]
-pub unsafe extern "stdcall" fn XLATEOBJ_cGetPalette(
+pub unsafe extern "system" fn XLATEOBJ_cGetPalette(
     pxlo: *mut XLATEOBJ,
     iPal: u32,
     cPal: u32,
@@ -1218,103 +1173,15 @@ pub unsafe extern "stdcall" fn XLATEOBJ_cGetPalette(
 
     cPal
 }
-
-#[cfg(not(target_arch = "x86"))]
 #[no_mangle]
-pub unsafe extern "C" fn XLATEOBJ_cGetPalette(
-    pxlo: *mut XLATEOBJ,
-    iPal: u32,
-    cPal: u32,
-    pPalOut: *mut u32,
-) -> u32 {
-
-    let pexlo = pxlo as PEXLATEOBJ;
-    let ppal: PPALETTE;
-    let mut i: u32;
-
-    if pxlo.is_null() {
-        return 0;
-    }
-
-    if iPal > 5 {
-        return 0;
-    }
-
-    if iPal == XO_DESTDCPALETTE {
-        ppal = (*pexlo).ppalDstDc;
-    } else if iPal == XO_SRCPALETTE || iPal == XO_SRCBITFIELDS {
-        ppal = (*pexlo).ppalSrc;
-    } else {
-        ppal = (*pexlo).ppalDst;
-    }
-
-    if ppal.is_null()
-        || ((iPal == XO_SRCPALETTE || iPal == XO_DESTPALETTE)
-            && ((*ppal).flFlags & PAL_INDEXED) == 0)
-        || ((iPal == XO_SRCBITFIELDS || iPal == XO_DESTBITFIELDS)
-            && ((*ppal).flFlags & PAL_BITFIELDS) == 0)
-    {
-        return 0;
-    }
-
-    if pPalOut.is_null() {
-        return (*ppal).NumColors;
-    }
-
-    let mut cPal = cPal;
-
-    if ((*ppal).flFlags & PAL_INDEXED) != 0 {
-        cPal = min(cPal, (*ppal).NumColors);
-        i = 0;
-        while i < cPal {
-            let entry = (*ppal).IndexedColors.add(i as usize);
-            *pPalOut.add(i as usize) = RGB(
-                (*entry).peRed as ULONG,
-                (*entry).peGreen as ULONG,
-                (*entry).peBlue as ULONG,
-            );
-            i += 1;
-        }
-    } else {
-        *pPalOut.add(0) = (*ppal).RedMask;
-        *pPalOut.add(1) = (*ppal).GreenMask;
-        *pPalOut.add(2) = (*ppal).BlueMask;
-    }
-
-    cPal
-}
-#[cfg(target_arch = "x86")]
-#[no_mangle]
-pub unsafe extern "stdcall" fn XLATEOBJ_hGetColorTransform(
+pub unsafe extern "system" fn XLATEOBJ_hGetColorTransform(
     pxlo: *mut XLATEOBJ,
 ) -> HANDLE {
     let pexlo = pxlo as PEXLATEOBJ;
     (*pexlo).hColorTransform
 }
-
-#[cfg(not(target_arch = "x86"))]
 #[no_mangle]
-pub unsafe extern "C" fn XLATEOBJ_hGetColorTransform(
-    pxlo: *mut XLATEOBJ,
-) -> HANDLE {
-    let pexlo = pxlo as PEXLATEOBJ;
-    (*pexlo).hColorTransform
-}
-#[cfg(target_arch = "x86")]
-#[no_mangle]
-pub unsafe extern "stdcall" fn XLATEOBJ_piVector(
-    pxlo: *mut XLATEOBJ
-) -> *mut u32 {
-    if (*pxlo).iSrcType as u32 == PAL_INDEXED {
-        return (*pxlo).pulXlate;
-    }
-
-    core::ptr::null_mut()
-}
-
-#[cfg(not(target_arch = "x86"))]
-#[no_mangle]
-pub unsafe extern "C" fn XLATEOBJ_piVector(
+pub unsafe extern "system" fn XLATEOBJ_piVector(
     pxlo: *mut XLATEOBJ
 ) -> *mut u32 {
     if (*pxlo).iSrcType as u32 == PAL_INDEXED {

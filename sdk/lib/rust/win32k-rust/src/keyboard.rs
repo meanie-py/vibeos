@@ -294,70 +294,8 @@ unsafe extern "system" fn IntKeyboardUpdateLeds(
 
     STATUS_SUCCESS
 }
-#[cfg(target_arch = "x86")]
 #[no_mangle]
-pub unsafe extern "stdcall" fn UserInitKeyboard(hKeyboardDevice: HANDLE) {
-    let mut Status: NTSTATUS;
-    let mut Block: _IO_STATUS_BLOCK = core::mem::zeroed();
-
-    IntKeyboardGetIndicatorTrans(
-        hKeyboardDevice,
-        core::ptr::addr_of_mut!(gpKeyboardIndicatorTrans),
-    );
-
-    Status = ZwDeviceIoControlFile(
-        hKeyboardDevice,
-        core::ptr::null_mut(),
-        None,
-        core::ptr::null_mut(),
-        core::ptr::addr_of_mut!(Block) as _,
-        IOCTL_KEYBOARD_QUERY_INDICATORS,
-        core::ptr::null_mut(),
-        0,
-        core::ptr::addr_of_mut!(gIndicators) as *mut _,
-        core::mem::size_of_val(&*(&raw const gIndicators)) as u32,
-    );
-
-    if !NT_SUCCESS(Status) {
-        gIndicators.LedFlags = 0;
-        gIndicators.UnitId = 0;
-    }
-
-    SET_KEY_LOCKED!(
-        (*(&raw mut gafAsyncKeyState)).as_mut_ptr(),
-        VK_CAPITAL as i32,
-        (gIndicators.LedFlags & KEYBOARD_CAPS_LOCK_ON as u16) as i32,
-    );
-    SET_KEY_LOCKED!(
-        (*(&raw mut gafAsyncKeyState)).as_mut_ptr(),
-        VK_NUMLOCK as i32,
-        (gIndicators.LedFlags & KEYBOARD_NUM_LOCK_ON as u16) as i32,
-    );
-    SET_KEY_LOCKED!(
-        (*(&raw mut gafAsyncKeyState)).as_mut_ptr(),
-        VK_SCROLL as i32,
-        (gIndicators.LedFlags & KEYBOARD_SCROLL_LOCK_ON as u16) as i32,
-    );
-
-    Status = ZwDeviceIoControlFile(
-        hKeyboardDevice,
-        core::ptr::null_mut(),
-        None,
-        core::ptr::null_mut(),
-        core::ptr::addr_of_mut!(Block) as _,
-        IOCTL_KEYBOARD_QUERY_ATTRIBUTES,
-        core::ptr::null_mut(),
-        0,
-        core::ptr::addr_of_mut!(gKeyboardInfo) as *mut _,
-        core::mem::size_of_val(&*(&raw const gKeyboardInfo)) as u32,
-    );
-
-    if !NT_SUCCESS(Status) {}
-}
-
-#[cfg(not(target_arch = "x86"))]
-#[no_mangle]
-pub unsafe extern "C" fn UserInitKeyboard(hKeyboardDevice: HANDLE) {
+pub unsafe extern "system" fn UserInitKeyboard(hKeyboardDevice: HANDLE) {
     let mut Status: NTSTATUS;
     let mut Block: _IO_STATUS_BLOCK = core::mem::zeroed();
 
@@ -787,34 +725,8 @@ unsafe extern "C" fn IntVkToChar(wVk: WORD, pKbdTbl: PKBDTABLES) -> WCHAR {
 
     0
 }
-#[cfg(target_arch = "x86")]
 #[no_mangle]
-pub unsafe extern "stdcall" fn NtUserGetAsyncKeyState(Key: INT) -> SHORT {
-    let mut wRet: WORD = 0;
-
-    if Key >= 0x100 || Key < 0 {
-        EngSetLastError(ERROR_INVALID_PARAMETER);
-        return 0;
-    }
-
-    UserEnterExclusive();
-
-    if (gafAsyncKeyState[(Key / 8) as usize] & (1 << (Key % 8))) != 0 {
-        wRet |= 0x8000;
-    }
-    if (gafAsyncKeyStateRecentDown[(Key / 8) as usize] & (1 << (Key % 8))) != 0 {
-        wRet |= 0x1;
-    }
-    gafAsyncKeyStateRecentDown[(Key / 8) as usize] &= !(1 << (Key % 8));
-
-    UserLeave();
-
-    wRet as SHORT
-}
-
-#[cfg(not(target_arch = "x86"))]
-#[no_mangle]
-pub unsafe extern "C" fn NtUserGetAsyncKeyState(Key: INT) -> SHORT {
+pub unsafe extern "system" fn NtUserGetAsyncKeyState(Key: INT) -> SHORT {
     let mut wRet: WORD = 0;
 
     if Key >= 0x100 || Key < 0 {
@@ -1210,69 +1122,8 @@ pub unsafe extern "C" fn UserGetKeyboardType(dwTypeFlag: DWORD) -> DWORD {
         _ => 0,
     }
 }
-#[cfg(target_arch = "x86")]
 #[no_mangle]
-pub unsafe extern "stdcall" fn NtUserVkKeyScanEx(
-    wch: WCHAR,
-    dwhkl: HKL,
-    bUsehKL: BOOL,
-) -> DWORD {
-    let pKbdTbl: PKBDTABLES;
-    let mut pVkToWchTbl: PVK_TO_WCHAR_TABLE;
-    let mut pVkToWch: PVK_TO_WCHARS10;
-    let mut pKl: PKL = core::ptr::null_mut();
-    let mut i: DWORD;
-    let mut dwModBits: DWORD;
-    let mut dwModNumber: DWORD;
-    let mut Ret: DWORD = (-1i32) as DWORD;
-
-    UserEnterShared();
-
-    if bUsehKL != 0 {
-        if !dwhkl.is_null() {
-            pKl = UserHklToKbl(dwhkl);
-        }
-    } else {
-        pKl = (*(PsGetCurrentThreadWin32Thread() as PTHREADINFO)).KeyboardLayout;
-    }
-
-    'exit: loop {
-        if pKl.is_null() {
-            break 'exit;
-        }
-
-        pKbdTbl = (*(*pKl).spkf).pKbdTbl;
-
-        i = 0;
-        while !(*(*pKbdTbl).pVkToWcharTable.offset(i as isize)).pVkToWchars.is_null() {
-            pVkToWchTbl = &mut *(*pKbdTbl).pVkToWcharTable.offset(i as isize);
-            pVkToWch = (*pVkToWchTbl).pVkToWchars as PVK_TO_WCHARS10;
-
-            while (*pVkToWch).VirtualKey != 0 {
-                dwModNumber = 0;
-                while dwModNumber < (*pVkToWchTbl).nModifications as DWORD {
-                    if (*pVkToWch).wch[dwModNumber as usize] == wch {
-                        dwModBits = (*(*pKbdTbl).pCharModifiers).ModNumber.as_ptr().add(dwModNumber as usize).read() as DWORD;
-                        Ret = (dwModBits << 8) | ((*pVkToWch).VirtualKey as DWORD & 0xFF);
-                        break 'exit;
-                    }
-                    dwModNumber += 1;
-                }
-                pVkToWch = ((pVkToWch as *mut BYTE).offset((*pVkToWchTbl).cbSize as isize)) as PVK_TO_WCHARS10;
-            }
-            i += 1;
-        }
-
-        break 'exit;
-    }
-
-    UserLeave();
-    Ret
-}
-
-#[cfg(not(target_arch = "x86"))]
-#[no_mangle]
-pub unsafe extern "C" fn NtUserVkKeyScanEx(
+pub unsafe extern "system" fn NtUserVkKeyScanEx(
     wch: WCHAR,
     dwhkl: HKL,
     bUsehKL: BOOL,
@@ -1350,14 +1201,8 @@ unsafe fn RtlCopyMemory(dst: *mut c_void, src: *const c_void, len: usize) {
 // ====================================================================
 
 // ProcessKeyEvent — `_ProcessKeyEvent@24` (NTAPI stdcall).
-#[cfg(target_arch = "x86")]
 #[no_mangle]
-pub unsafe extern "stdcall" fn ProcessKeyEvent(wVk: WORD, wScanCode: WORD, dwFlags: DWORD, bInjected: BOOL, dwTime: DWORD, dwExtraInfo: DWORD) -> BOOL {
-    ProcessKeyEvent_impl(wVk, wScanCode, dwFlags, bInjected, dwTime, dwExtraInfo)
-}
-#[cfg(not(target_arch = "x86"))]
-#[no_mangle]
-pub unsafe extern "C" fn ProcessKeyEvent(wVk: WORD, wScanCode: WORD, dwFlags: DWORD, bInjected: BOOL, dwTime: DWORD, dwExtraInfo: DWORD) -> BOOL {
+pub unsafe extern "system" fn ProcessKeyEvent(wVk: WORD, wScanCode: WORD, dwFlags: DWORD, bInjected: BOOL, dwTime: DWORD, dwExtraInfo: DWORD) -> BOOL {
     ProcessKeyEvent_impl(wVk, wScanCode, dwFlags, bInjected, dwTime, dwExtraInfo)
 }
 
@@ -1575,14 +1420,8 @@ unsafe fn ProcessKeyEvent_impl(wVk: WORD, wScanCode: WORD, dwFlags: DWORD, bInje
 }
 
 // UserSendKeyboardInput — `_UserSendKeyboardInput@8` (NTAPI stdcall).
-#[cfg(target_arch = "x86")]
 #[no_mangle]
-pub unsafe extern "stdcall" fn UserSendKeyboardInput(pKbdInput: *mut KEYBDINPUT, bInjected: BOOL) -> BOOL {
-    UserSendKeyboardInput_impl(pKbdInput, bInjected)
-}
-#[cfg(not(target_arch = "x86"))]
-#[no_mangle]
-pub unsafe extern "C" fn UserSendKeyboardInput(pKbdInput: *mut KEYBDINPUT, bInjected: BOOL) -> BOOL {
+pub unsafe extern "system" fn UserSendKeyboardInput(pKbdInput: *mut KEYBDINPUT, bInjected: BOOL) -> BOOL {
     UserSendKeyboardInput_impl(pKbdInput, bInjected)
 }
 
@@ -1647,14 +1486,8 @@ unsafe fn UserSendKeyboardInput_impl(pKbdInput: *mut KEYBDINPUT, bInjected: BOOL
 }
 
 // UserProcessKeyboardInput — `_UserProcessKeyboardInput@4` (NTAPI stdcall).
-#[cfg(target_arch = "x86")]
 #[no_mangle]
-pub unsafe extern "stdcall" fn UserProcessKeyboardInput(pKbdInputData: *mut KEYBOARD_INPUT_DATA) {
-    UserProcessKeyboardInput_impl(pKbdInputData)
-}
-#[cfg(not(target_arch = "x86"))]
-#[no_mangle]
-pub unsafe extern "C" fn UserProcessKeyboardInput(pKbdInputData: *mut KEYBOARD_INPUT_DATA) {
+pub unsafe extern "system" fn UserProcessKeyboardInput(pKbdInputData: *mut KEYBOARD_INPUT_DATA) {
     UserProcessKeyboardInput_impl(pKbdInputData)
 }
 
@@ -1783,14 +1616,8 @@ unsafe fn IntMapVirtualKeyEx(uCode: UINT, Type: UINT, pKbdTbl: PKBDTABLES) -> UI
 }
 
 // NtUserMapVirtualKeyEx — `_NtUserMapVirtualKeyEx@16` (NTAPI stdcall).
-#[cfg(target_arch = "x86")]
 #[no_mangle]
-pub unsafe extern "stdcall" fn NtUserMapVirtualKeyEx(uCode: UINT, uType: UINT, keyboardId: DWORD, dwhkl: HKL) -> UINT {
-    NtUserMapVirtualKeyEx_impl(uCode, uType, keyboardId, dwhkl)
-}
-#[cfg(not(target_arch = "x86"))]
-#[no_mangle]
-pub unsafe extern "C" fn NtUserMapVirtualKeyEx(uCode: UINT, uType: UINT, keyboardId: DWORD, dwhkl: HKL) -> UINT {
+pub unsafe extern "system" fn NtUserMapVirtualKeyEx(uCode: UINT, uType: UINT, keyboardId: DWORD, dwhkl: HKL) -> UINT {
     NtUserMapVirtualKeyEx_impl(uCode, uType, keyboardId, dwhkl)
 }
 
@@ -1821,17 +1648,8 @@ unsafe fn NtUserMapVirtualKeyEx_impl(uCode: UINT, uType: UINT, _keyboardId: DWOR
 }
 
 // NtUserToUnicodeEx — `_NtUserToUnicodeEx@28` (NTAPI stdcall).
-#[cfg(target_arch = "x86")]
 #[no_mangle]
-pub unsafe extern "stdcall" fn NtUserToUnicodeEx(
-    wVirtKey: UINT, wScanCode: UINT, pKeyStateUnsafe: PBYTE,
-    pwszBuffUnsafe: LPWSTR, cchBuff: INT, wFlags: UINT, dwhkl: HKL,
-) -> INT {
-    NtUserToUnicodeEx_impl(wVirtKey, wScanCode, pKeyStateUnsafe, pwszBuffUnsafe, cchBuff, wFlags, dwhkl)
-}
-#[cfg(not(target_arch = "x86"))]
-#[no_mangle]
-pub unsafe extern "C" fn NtUserToUnicodeEx(
+pub unsafe extern "system" fn NtUserToUnicodeEx(
     wVirtKey: UINT, wScanCode: UINT, pKeyStateUnsafe: PBYTE,
     pwszBuffUnsafe: LPWSTR, cchBuff: INT, wFlags: UINT, dwhkl: HKL,
 ) -> INT {
@@ -1918,14 +1736,8 @@ unsafe fn NtUserToUnicodeEx_impl(
 }
 
 // NtUserGetKeyNameText — `_NtUserGetKeyNameText@12` (NTAPI stdcall).
-#[cfg(target_arch = "x86")]
 #[no_mangle]
-pub unsafe extern "stdcall" fn NtUserGetKeyNameText(lParam: LONG, lpString: LPWSTR, cchSize: INT) -> DWORD {
-    NtUserGetKeyNameText_impl(lParam, lpString, cchSize)
-}
-#[cfg(not(target_arch = "x86"))]
-#[no_mangle]
-pub unsafe extern "C" fn NtUserGetKeyNameText(lParam: LONG, lpString: LPWSTR, cchSize: INT) -> DWORD {
+pub unsafe extern "system" fn NtUserGetKeyNameText(lParam: LONG, lpString: LPWSTR, cchSize: INT) -> DWORD {
     NtUserGetKeyNameText_impl(lParam, lpString, cchSize)
 }
 

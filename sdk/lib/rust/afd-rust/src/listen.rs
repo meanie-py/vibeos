@@ -98,17 +98,7 @@ unsafe fn SatisfyPreAccept(Irp: PIRP, Qelt: PAFD_TDI_OBJECT_QELT) -> NTSTATUS {
     IoCompleteRequest(Irp, IO_NETWORK_INCREMENT);
     STATUS_SUCCESS
 }
-#[cfg(target_arch = "x86")]
-unsafe extern "stdcall" fn ListenComplete(
-    DeviceObject: PDEVICE_OBJECT,
-    Irp: PIRP,
-    Context: PVOID,
-) -> NTSTATUS {
-    listen_complete_impl(DeviceObject, Irp, Context)
-}
-
-#[cfg(not(target_arch = "x86"))]
-unsafe extern "C" fn ListenComplete(
+unsafe extern "system" fn ListenComplete(
     DeviceObject: PDEVICE_OBJECT,
     Irp: PIRP,
     Context: PVOID,

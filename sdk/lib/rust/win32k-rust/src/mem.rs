@@ -32,9 +32,8 @@ pub const TAG_ALLOCUSERMEM: u32 = 0x6d55676e;
 /// EngAllocMem — GDI driver pool allocator.
 /// `ExAllocatePoolWithTag((fl & FL_NONPAGED_MEMORY) ? NonPagedPool : PagedPool, ...);`
 /// optionally zeroed when `FL_ZERO_MEMORY`.
-#[cfg(target_arch = "x86")]
 #[no_mangle]
-pub unsafe extern "stdcall" fn EngAllocMem(
+pub unsafe extern "system" fn EngAllocMem(
     fl: ULONG,
     cjMemSize: ULONG,
     ulTag: ULONG,
@@ -58,51 +57,15 @@ pub unsafe extern "stdcall" fn EngAllocMem(
     pvBaseAddress
 }
 
-#[cfg(not(target_arch = "x86"))]
 #[no_mangle]
-pub unsafe extern "C" fn EngAllocMem(
-    fl: ULONG,
-    cjMemSize: ULONG,
-    ulTag: ULONG,
-) -> PVOID {
-    let pool_type: POOL_TYPE = if (fl & FL_NONPAGED_MEMORY) != 0 {
-        NonPagedPool
-    } else {
-        PagedPool
-    };
-
-    let pvBaseAddress = ExAllocatePoolWithTag(pool_type, cjMemSize as SIZE_T, ulTag);
-
-    if pvBaseAddress.is_null() {
-        return core::ptr::null_mut();
-    }
-
-    if (fl & FL_ZERO_MEMORY) != 0 {
-        core::ptr::write_bytes(pvBaseAddress as *mut u8, 0, cjMemSize as usize);
-    }
-
-    pvBaseAddress
-}
-
-#[cfg(target_arch = "x86")]
-#[no_mangle]
-pub unsafe extern "stdcall" fn EngFreeMem(pvBaseAddress: PVOID) {
+pub unsafe extern "system" fn EngFreeMem(pvBaseAddress: PVOID) {
     if !pvBaseAddress.is_null() {
         ExFreePoolWithTag(pvBaseAddress, 0);
     }
 }
 
-#[cfg(not(target_arch = "x86"))]
 #[no_mangle]
-pub unsafe extern "C" fn EngFreeMem(pvBaseAddress: PVOID) {
-    if !pvBaseAddress.is_null() {
-        ExFreePoolWithTag(pvBaseAddress, 0);
-    }
-}
-
-#[cfg(target_arch = "x86")]
-#[no_mangle]
-pub unsafe extern "stdcall" fn EngAllocUserMem(
+pub unsafe extern "system" fn EngAllocUserMem(
     cjMemSize: SIZE_T,
     ulTag: ULONG,
 ) -> PVOID {
@@ -125,48 +88,8 @@ pub unsafe extern "stdcall" fn EngAllocUserMem(
     pvBaseAddress
 }
 
-#[cfg(not(target_arch = "x86"))]
 #[no_mangle]
-pub unsafe extern "C" fn EngAllocUserMem(
-    cjMemSize: SIZE_T,
-    ulTag: ULONG,
-) -> PVOID {
-    let mut pvBaseAddress: PVOID = core::ptr::null_mut();
-    let mut cjMemSize = cjMemSize;
-
-    let Status: NTSTATUS = ntkrnl_sys::ddk::ZwAllocateVirtualMemory(
-        ntkrnl_sys::macros::NtCurrentProcess(),
-        &mut pvBaseAddress as *mut PVOID as *mut ntkrnl_sys::ddk::PVOID,
-        0,
-        &mut cjMemSize as *mut SIZE_T as *mut ntkrnl_sys::ddk::SIZE_T,
-        MEM_COMMIT | MEM_RESERVE,
-        PAGE_READWRITE,
-    );
-
-    if !NT_SUCCESS(Status) {
-        return core::ptr::null_mut();
-    }
-
-    pvBaseAddress
-}
-
-#[cfg(target_arch = "x86")]
-#[no_mangle]
-pub unsafe extern "stdcall" fn EngFreeUserMem(pvBaseAddress: PVOID) {
-    let mut pvBaseAddress = pvBaseAddress;
-    let mut cjSize: SIZE_T = 0;
-
-    ntkrnl_sys::ddk::ZwFreeVirtualMemory(
-        ntkrnl_sys::macros::NtCurrentProcess(),
-        &mut pvBaseAddress as *mut PVOID as *mut ntkrnl_sys::ddk::PVOID,
-        &mut cjSize as *mut SIZE_T as *mut ntkrnl_sys::ddk::SIZE_T,
-        MEM_RELEASE,
-    );
-}
-
-#[cfg(not(target_arch = "x86"))]
-#[no_mangle]
-pub unsafe extern "C" fn EngFreeUserMem(pvBaseAddress: PVOID) {
+pub unsafe extern "system" fn EngFreeUserMem(pvBaseAddress: PVOID) {
     let mut pvBaseAddress = pvBaseAddress;
     let mut cjSize: SIZE_T = 0;
 
@@ -247,19 +170,8 @@ pub unsafe extern "C" fn HackUnsecureVirtualMemory(SecureHandle: PVOID) {
 // (HANDLE)-1 BEFORE calling MmSecureVirtualMemory (the "// HACK!!!" comment),
 // so the Mm* call is dead code. Mirror that exactly: faithful translation of
 // the normalized C wins over cleaning up the HACK.
-#[cfg(target_arch = "x86")]
 #[no_mangle]
-pub unsafe extern "stdcall" fn EngSecureMem(Address: PVOID, Length: ULONG) -> HANDLE {
-    let __SehStatus = SafeProbeForWrite(Address, Length as SIZE_T, 1);
-    if !NT_SUCCESS(__SehStatus) {
-        return core::ptr::null_mut();
-    }
-    -1isize as HANDLE
-}
-
-#[cfg(not(target_arch = "x86"))]
-#[no_mangle]
-pub unsafe extern "C" fn EngSecureMem(Address: PVOID, Length: ULONG) -> HANDLE {
+pub unsafe extern "system" fn EngSecureMem(Address: PVOID, Length: ULONG) -> HANDLE {
     let __SehStatus = SafeProbeForWrite(Address, Length as SIZE_T, 1);
     if !NT_SUCCESS(__SehStatus) {
         return core::ptr::null_mut();
@@ -269,7 +181,7 @@ pub unsafe extern "C" fn EngSecureMem(Address: PVOID, Length: ULONG) -> HANDLE {
 
 #[cfg(target_arch = "x86")]
 #[no_mangle]
-pub unsafe extern "stdcall" fn EngSecureMemForRead(Address: PVOID, Length: ULONG) -> HANDLE {
+pub unsafe extern "system" fn EngSecureMemForRead(Address: PVOID, Length: ULONG) -> HANDLE {
     let __SehStatus = SafeProbeForRead(Address, Length as SIZE_T, 1);
     if !NT_SUCCESS(__SehStatus) {
         return core::ptr::null_mut();
@@ -293,7 +205,7 @@ pub unsafe extern "stdcall" fn EngSecureMemForRead(Address: PVOID, Length: ULONG
 
 #[cfg(not(target_arch = "x86"))]
 #[no_mangle]
-pub unsafe extern "C" fn EngSecureMemForRead(Address: PVOID, Length: ULONG) -> HANDLE {
+pub unsafe extern "system" fn EngSecureMemForRead(Address: PVOID, Length: ULONG) -> HANDLE {
     let __SehStatus = SafeProbeForRead(Address, Length as SIZE_T, 1);
     if !NT_SUCCESS(__SehStatus) {
         return core::ptr::null_mut();
@@ -311,18 +223,8 @@ pub unsafe extern "C" fn EngSecureMemForRead(Address: PVOID, Length: ULONG) -> H
     -1isize as HANDLE
 }
 
-#[cfg(target_arch = "x86")]
 #[no_mangle]
-pub unsafe extern "stdcall" fn EngUnsecureMem(Mem: HANDLE) {
-    if Mem == (-1isize) as HANDLE {
-        return;
-    }
-    ntkrnl_sys::ddk::MmUnsecureVirtualMemory(Mem as ntkrnl_sys::ddk::HANDLE);
-}
-
-#[cfg(not(target_arch = "x86"))]
-#[no_mangle]
-pub unsafe extern "C" fn EngUnsecureMem(Mem: HANDLE) {
+pub unsafe extern "system" fn EngUnsecureMem(Mem: HANDLE) {
     if Mem == (-1isize) as HANDLE {
         return;
     }

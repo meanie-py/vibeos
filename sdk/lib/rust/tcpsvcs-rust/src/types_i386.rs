@@ -847,7 +847,7 @@ pub type LPWSAPROTOCOL_INFOW = *mut _WSAPROTOCOL_INFOW;
 pub type WSAPROTOCOL_INFO = WSAPROTOCOL_INFOW;
 pub type LPWSAPROTOCOL_INFO = LPWSAPROTOCOL_INFOW;
 pub type LPCONDITIONPROC = ::core::option::Option<
-    unsafe extern "stdcall" fn(
+    unsafe extern "system" fn(
         lpCallerId: LPWSABUF,
         lpCallerData: LPWSABUF,
         lpSQOS: LPQOS,
@@ -859,7 +859,7 @@ pub type LPCONDITIONPROC = ::core::option::Option<
     ) -> ::core::ffi::c_int,
 >;
 pub type LPWSAOVERLAPPED_COMPLETION_ROUTINE = ::core::option::Option<
-    unsafe extern "stdcall" fn(
+    unsafe extern "system" fn(
         dwError: DWORD,
         cbTransferred: DWORD,
         lpOverlapped: LPWSAOVERLAPPED,

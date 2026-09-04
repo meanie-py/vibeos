@@ -508,32 +508,8 @@ unsafe extern "C" fn InitSysParams() -> BOOL {
     gbSpiInitialized = 1;
     1
 }
-#[cfg(target_arch = "x86")]
 #[no_mangle]
-pub unsafe extern "stdcall" fn NtUserUpdatePerUserSystemParameters(
-    dwReserved: DWORD,
-    bEnable: BOOL,
-) -> BOOL {
-    let bResult: BOOL;
-
-    UserEnterExclusive();
-
-    SpiUpdatePerUserSystemParameters();
-    if bEnable != 0 {
-        g_PaintDesktopVersion = SpiLoadDWord(KEY_DESKTOP.as_ptr(), VAL_PAINTDESKVER.as_ptr(), 0);
-    } else {
-        g_PaintDesktopVersion = 0;
-    }
-    bResult = 1;
-
-    UserLeave();
-
-    bResult
-}
-
-#[cfg(not(target_arch = "x86"))]
-#[no_mangle]
-pub unsafe extern "C" fn NtUserUpdatePerUserSystemParameters(
+pub unsafe extern "system" fn NtUserUpdatePerUserSystemParameters(
     dwReserved: DWORD,
     bEnable: BOOL,
 ) -> BOOL {
@@ -2632,30 +2608,8 @@ unsafe fn UserSystemParametersInfo_impl(
 
     ulResult as BOOL
 }
-#[cfg(target_arch = "x86")]
 #[no_mangle]
-pub unsafe extern "stdcall" fn NtUserSystemParametersInfo(
-    uiAction: UINT,
-    uiParam: UINT,
-    pvParam: PVOID,
-    mut fWinIni: UINT,
-) -> BOOL {
-    let bResult: BOOL;
-
-    UserEnterExclusive();
-
-    fWinIni |= SPIF_PROTECT;
-
-    bResult = UserSystemParametersInfo(uiAction, uiParam, pvParam, fWinIni);
-
-    UserLeave();
-
-    bResult
-}
-
-#[cfg(not(target_arch = "x86"))]
-#[no_mangle]
-pub unsafe extern "C" fn NtUserSystemParametersInfo(
+pub unsafe extern "system" fn NtUserSystemParametersInfo(
     uiAction: UINT,
     uiParam: UINT,
     pvParam: PVOID,

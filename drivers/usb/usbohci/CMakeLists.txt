@@ -17,7 +17,7 @@ elseif(ARCH STREQUAL "arm64")
     set(USBOHCI_RUST_TARGET "aarch64-pc-windows-gnullvm")
     set(USBOHCI_RUST_RUSTFLAGS "")
 endif()
-file(GLOB_RECURSE USBOHCI_RUST_SRCS ${USBOHCI_RUST_WORKSPACE_DIR}/usbohci-rust/src/*.rs)
+rust_crate_sources(USBOHCI_RUST_SRCS "${USBOHCI_RUST_WORKSPACE_DIR}" usbohci-rust)
 add_custom_command(
     OUTPUT ${USBOHCI_RUST_LIB}
     COMMAND ${CMAKE_COMMAND} -E env

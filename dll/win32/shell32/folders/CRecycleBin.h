@@ -27,7 +27,19 @@
  * same declaration, so both sides agree on the linkage. */
 EXTERN_C BOOL TRASH_CanTrashFile(LPCWSTR wszPath);
 EXTERN_C BOOL TRASH_TrashFile(LPCWSTR wszPath);
-HRESULT CRecyclerDropTarget_CreateInstance(REFIID riid, LPVOID * ppvOut);
+/* CRecyclerDropTarget is Rust-owned (shell32-rust/src/droptargets/CRecyclerDropTarget.rs).
+ * Its Rust factory is the `--internal` non-aggregating form and so takes the aggregation
+ * outer as a THIRD argument; C++ callers therefore go through this 2-argument bridge rather
+ * than naming CRecyclerDropTarget_CreateInstance, which is a same-named symbol with a
+ * different arity — the kind of mismatch that links quietly and then reads garbage for ppvOut. */
+EXTERN_C HRESULT WINAPI CRecyclerDropTarget_CreateInstance_RustBridge(REFIID riid, LPVOID *ppvOut);
+
+/* CRecycleBin's one non-virtual method, over the C ABI. The class is Rust-owned
+ * (shell32-rust/src/recycle_bin.rs), so a C++ caller has no mangled symbol to link against and
+ * no business casting an interface pointer back to the C++ class layout. Takes the
+ * IShellFolder2 the caller already holds; the Rust side does the offset arithmetic. */
+EXTERN_C HRESULT WINAPI CRecycleBin_ParseRecycleBinPath_RustBridge(
+    IShellFolder2 *psf, LPCWSTR lpszPath, LPBC pbc, PIDLIST_RELATIVE *ppidl, DWORD *pdwAttributes);
 
 class CRecycleBin :
     public CComCoClass<CRecycleBin, &CLSID_RecycleBin>,

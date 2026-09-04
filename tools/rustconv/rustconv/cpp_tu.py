@@ -120,6 +120,14 @@ def analyze_translation_unit(source: Path, repo: Path) -> CppTuReport:
         unextracted=tuple(scan.unextracted),
     )
     object_map = repo / "dll/win32/shell32/shell32.cpp"
+    # Resolved from the caller's `repo`, never from config's install-time root: a
+    # `pip install -e` checkout bakes the MAIN repo path into site-packages, and an
+    # island read out of a sibling worktree would prove this tree's state fields
+    # against another lane's headers (fleet isolation applies to reads).
+    islands = [
+        repo / f"sdk/lib/rust/shell32-rust/src/island_{arch}.rs"
+        for arch in ("i386", "amd64", "arm64")
+    ]
     factory_owners = {
         class_name: owner
         for class_name in classes
@@ -155,6 +163,7 @@ def analyze_translation_unit(source: Path, repo: Path) -> CppTuReport:
                 class_name,
                 object_map_source=object_map,
                 method_names=methods,
+                island_files=islands,
             )
             cls.require_supported(allow_internal=True)
         except CppComError as exc:

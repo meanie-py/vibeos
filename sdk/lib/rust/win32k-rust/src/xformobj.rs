@@ -604,9 +604,8 @@ unsafe fn XFORMOBJ_bXformFixPoints(
 
     1
 }
-#[cfg(target_arch = "x86")]
 #[no_mangle]
-pub unsafe extern "stdcall" fn EXFORMOBJ_iGetXform(
+pub unsafe extern "system" fn EXFORMOBJ_iGetXform(
     pxo: *mut XFORMOBJ,
     pxform: *mut XFORML,
 ) -> u32 {
@@ -626,54 +625,8 @@ pub unsafe extern "stdcall" fn EXFORMOBJ_iGetXform(
 
     HintFromAccel((*pmx).flAccel)
 }
-
-#[cfg(not(target_arch = "x86"))]
 #[no_mangle]
-pub unsafe extern "C" fn EXFORMOBJ_iGetXform(
-    pxo: *mut XFORMOBJ,
-    pxform: *mut XFORML,
-) -> u32 {
-
-    let pmx = XFORMOBJ_pmx(pxo);
-
-    if pxo.is_null() || pxform.is_null() {
-        return DDI_ERROR;
-    }
-
-    (*pxform).eM11 = FLOATOBJ_GetFloat(core::ptr::addr_of!((*pmx).efM11) as *const _);
-    (*pxform).eM12 = FLOATOBJ_GetFloat(core::ptr::addr_of!((*pmx).efM12) as *const _);
-    (*pxform).eM21 = FLOATOBJ_GetFloat(core::ptr::addr_of!((*pmx).efM21) as *const _);
-    (*pxform).eM22 = FLOATOBJ_GetFloat(core::ptr::addr_of!((*pmx).efM22) as *const _);
-    (*pxform).eDx = FLOATOBJ_GetFloat(core::ptr::addr_of!((*pmx).efDx) as *const _);
-    (*pxform).eDy = FLOATOBJ_GetFloat(core::ptr::addr_of!((*pmx).efDy) as *const _);
-
-    HintFromAccel((*pmx).flAccel)
-}
-#[cfg(target_arch = "x86")]
-#[no_mangle]
-pub unsafe extern "stdcall" fn EXFORMOBJ_iGetFloatObjXform(
-    pxo: *mut XFORMOBJ,
-    pxfo: *mut FLOATOBJ_XFORM,
-) -> u32 {
-    let pmx: PMATRIX = XFORMOBJ_pmx(pxo);
-
-    if pxo.is_null() || pxfo.is_null() {
-        return DDI_ERROR;
-    }
-
-    (*pxfo).eM11 = (*pmx).efM11;
-    (*pxfo).eM12 = (*pmx).efM12;
-    (*pxfo).eM21 = (*pmx).efM21;
-    (*pxfo).eM22 = (*pmx).efM22;
-    (*pxfo).eDx = (*pmx).efDx;
-    (*pxfo).eDy = (*pmx).efDy;
-
-    HintFromAccel((*pmx).flAccel)
-}
-
-#[cfg(not(target_arch = "x86"))]
-#[no_mangle]
-pub unsafe extern "C" fn EXFORMOBJ_iGetFloatObjXform(
+pub unsafe extern "system" fn EXFORMOBJ_iGetFloatObjXform(
     pxo: *mut XFORMOBJ,
     pxfo: *mut FLOATOBJ_XFORM,
 ) -> u32 {
@@ -694,7 +647,7 @@ pub unsafe extern "C" fn EXFORMOBJ_iGetFloatObjXform(
 }
 #[cfg(target_arch = "x86")]
 #[no_mangle]
-pub unsafe extern "stdcall" fn EXFORMOBJ_bApplyXform(
+pub unsafe extern "system" fn EXFORMOBJ_bApplyXform(
     pxo: *mut XFORMOBJ,
     iMode: u32,
     cPoints: u32,
@@ -754,7 +707,7 @@ pub unsafe extern "stdcall" fn EXFORMOBJ_bApplyXform(
 
 #[cfg(not(target_arch = "x86"))]
 #[no_mangle]
-pub unsafe extern "C" fn EXFORMOBJ_bApplyXform(
+pub unsafe extern "system" fn EXFORMOBJ_bApplyXform(
     pxo: *mut XFORMOBJ,
     iMode: u32,
     cPoints: u32,

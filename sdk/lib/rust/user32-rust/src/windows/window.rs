@@ -271,32 +271,8 @@ unsafe extern "system" fn RtlFreeLargeString(LargeString: PLARGE_STRING) {
 // NTSTATUS WINAPI User32CallSendAsyncProcForKernel(PVOID, ULONG)
 // On i386 WINAPI == stdcall; elsewhere cdecl. Kept as cfg pair (cross-TU,
 // callback dispatch from kernel).
-#[cfg(target_arch = "x86")]
 #[no_mangle]
-pub unsafe extern "stdcall" fn User32CallSendAsyncProcForKernel(
-    Arguments: PVOID,
-    ArgumentLength: ULONG,
-) -> NTSTATUS {
-    let CallbackArgs: PSENDASYNCPROC_CALLBACK_ARGUMENTS =
-        Arguments as PSENDASYNCPROC_CALLBACK_ARGUMENTS;
-    TRACE!("User32CallSendAsyncProcKernel()\n");
-    if ArgumentLength as usize != core::mem::size_of::<SENDASYNCPROC_CALLBACK_ARGUMENTS>() {
-        return STATUS_INFO_LENGTH_MISMATCH;
-    }
-    if let Some(Callback) = (*CallbackArgs).Callback {
-        Callback(
-            (*CallbackArgs).Wnd,
-            (*CallbackArgs).Msg,
-            (*CallbackArgs).Context,
-            (*CallbackArgs).Result,
-        );
-    }
-    STATUS_SUCCESS
-}
-
-#[cfg(not(target_arch = "x86"))]
-#[no_mangle]
-pub unsafe extern "C" fn User32CallSendAsyncProcForKernel(
+pub unsafe extern "system" fn User32CallSendAsyncProcForKernel(
     Arguments: PVOID,
     ArgumentLength: ULONG,
 ) -> NTSTATUS {

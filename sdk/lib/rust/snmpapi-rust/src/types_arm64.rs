@@ -211,19 +211,19 @@ pub struct SnmpVarBindList {
     pub len: UINT,
 }
 pub type PFNSNMPEXTENSIONINIT = ::core::option::Option<
-    unsafe extern "C" fn(
+    unsafe extern "system" fn(
         dwUptimeReference: DWORD,
         phSubagentTrapEvent: *mut HANDLE,
         pFirstSupportedRegion: *mut AsnObjectIdentifier,
     ) -> BOOL,
 >;
 pub type PFNSNMPEXTENSIONINITEX = ::core::option::Option<
-    unsafe extern "C" fn(pNextSupportedRegion: *mut AsnObjectIdentifier) -> BOOL,
+    unsafe extern "system" fn(pNextSupportedRegion: *mut AsnObjectIdentifier) -> BOOL,
 >;
 pub type PFNSNMPEXTENSIONMONITOR =
-    ::core::option::Option<unsafe extern "C" fn(pAgentMgmtData: LPVOID) -> BOOL>;
+    ::core::option::Option<unsafe extern "system" fn(pAgentMgmtData: LPVOID) -> BOOL>;
 pub type PFNSNMPEXTENSIONQUERY = ::core::option::Option<
-    unsafe extern "C" fn(
+    unsafe extern "system" fn(
         bPduType: BYTE,
         pVarBindList: *mut SnmpVarBindList,
         pErrorStatus: *mut AsnInteger32,
@@ -231,7 +231,7 @@ pub type PFNSNMPEXTENSIONQUERY = ::core::option::Option<
     ) -> BOOL,
 >;
 pub type PFNSNMPEXTENSIONQUERYEX = ::core::option::Option<
-    unsafe extern "C" fn(
+    unsafe extern "system" fn(
         nRequestType: UINT,
         nTransactionId: UINT,
         pVarBindList: *mut SnmpVarBindList,
@@ -241,7 +241,7 @@ pub type PFNSNMPEXTENSIONQUERYEX = ::core::option::Option<
     ) -> BOOL,
 >;
 pub type PFNSNMPEXTENSIONTRAP = ::core::option::Option<
-    unsafe extern "C" fn(
+    unsafe extern "system" fn(
         pEnterpriseOid: *mut AsnObjectIdentifier,
         pGenericTrapId: *mut AsnInteger32,
         pSpecificTrapId: *mut AsnInteger32,
@@ -249,4 +249,4 @@ pub type PFNSNMPEXTENSIONTRAP = ::core::option::Option<
         pVarBindList: *mut SnmpVarBindList,
     ) -> BOOL,
 >;
-pub type PFNSNMPEXTENSIONCLOSE = ::core::option::Option<unsafe extern "C" fn()>;
+pub type PFNSNMPEXTENSIONCLOSE = ::core::option::Option<unsafe extern "system" fn()>;
