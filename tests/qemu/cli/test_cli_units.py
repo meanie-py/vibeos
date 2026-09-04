@@ -2859,6 +2859,50 @@ def test_gate_flake_stays_red_if_all_retries_fail(tmp_path, monkeypatch):
     assert len(retry_calls) == 2, fake.calls
 
 
+def test_gate_retries_stop_at_the_first_green(tmp_path, monkeypatch):
+    # Attempts run serially, so a lane that recovers on r1 must never launch r2.
+    # Firing all attempts up front spends a whole extra boot on every recovery.
+    monkeypatch.setattr("tests.qemu.cli.artifacts.ARTIFACT_ROOT", tmp_path)
+    fake = _fake_smoke({"i386": ["OK"], "amd64": ["KNOWN_FLAKE", "OK", "OK"], "arm64": ["OK"]})
+    monkeypatch.setattr(gate_mod, "_smoke_once", fake)
+    rc = gate_mod.gate(_gate_args(retries=2), tmp_path)
+    assert rc == 0
+    retry_calls = [k for k in fake.calls if k.startswith("amd64:") and "-r" in k]
+    assert retry_calls == ["amd64:smoke-amd64-r1"], retry_calls
+
+
+def test_gate_a_lanes_retries_never_run_concurrently(tmp_path, monkeypatch):
+    # THE point of serial retries. NET_FLAKE is *defined* as "failed under
+    # concurrent-smoke load" and HOST_STARVED as "never got a slot", so running a
+    # lane's attempts against each other recreates the cause and falsifies
+    # nothing — two amd64-uefi-net VMs in contention with only each other. This
+    # cost a gate and then a land rejection on 2026-08-08.
+    import threading
+
+    live = {"now": 0, "max": 0}
+    lock = threading.Lock()
+    inner = _fake_smoke({"i386": ["OK"], "amd64": ["KNOWN_FLAKE"], "arm64": ["OK"]})
+
+    def counting(repo, arch, root, extra):
+        if arch == "amd64":
+            with lock:
+                live["now"] += 1
+                live["max"] = max(live["max"], live["now"])
+            time.sleep(0.05)
+            with lock:
+                live["now"] -= 1
+        return inner(repo, arch, root, extra)
+
+    monkeypatch.setattr("tests.qemu.cli.artifacts.ARTIFACT_ROOT", tmp_path)
+    monkeypatch.setattr(gate_mod, "_smoke_once", counting)
+    gate_mod.gate(_gate_args(retries=3), tmp_path)
+    # Assert the retries HAPPENED first: the first pass alone also yields max==1,
+    # so without this the concurrency assertion below passes vacuously.
+    amd64_calls = [k for k in inner.calls if k.startswith("amd64:")]
+    assert len(amd64_calls) == 4, amd64_calls  # 1 first pass + 3 serial retries
+    assert live["max"] == 1, f"a lane ran {live['max']} attempts at once"
+
+
 def test_gate_retries_zero_disables_retry(tmp_path, monkeypatch):
     monkeypatch.setattr("tests.qemu.cli.artifacts.ARTIFACT_ROOT", tmp_path)
     fake = _fake_smoke({"i386": ["KNOWN_FLAKE", "OK"]})

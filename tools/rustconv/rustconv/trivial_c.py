@@ -121,7 +121,7 @@ from tree_sitter import Node, Parser
 from .abi_enforce import _canonical_block
 from .callgraph import FunctionDep
 from .conventions import CONV_KEYWORDS, KW_TO_CONV
-from .cpp_com import c_type_to_rust
+from .cpp_core import c_type_to_rust
 from .scanner import CPP_LANG
 from .semantic_skeleton import RUST_LANG, extract_skeleton
 from .typedefs import NULL_CONST, NULL_MUT
