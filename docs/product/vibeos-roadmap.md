@@ -481,19 +481,26 @@ land; date every addition.** Source docs live in `docs/engineering/archive/`.
 The committed home for open bugs (was: agent MEMORY.md, which other agents never see).
 Field-manual § pointers hold the full writeups. **Update on state change.**
 
-- **A 32-bit `socket()` AVs in the Winsock provider-load path — OPEN** (2026-09-05). With
-  `msafd.dll` finally staged into SysWOW64 (the closure tool could not see it: ws2_32
-  LoadLibraryA's the provider named in the registry catalog, which no import-table walk
-  reveals), marshal32's new `select()` rung gets as far as WSAStartup enumerating the catalog
-  — a long run of `NtOpenKey`/`NtQueryValueKey`, then `NtCreateSection` +
-  `NtMapViewOfSection base=0x01AA0000` — and then takes `0xc0000005` with
-  **`rip == addr == 0x181764`**, an address inside no mapped image (marshal32 is based at
-  0x400000; every loaded module sits at 0x1AA0000 or above). rip equal to the faulting address
-  at a low unmapped value is the jump-through-an-unbound-slot signature. `exit = 0x80`.
-  **Zero `NtDeviceIoControlFile` calls precede it**, so this is strictly UPSTREAM of the E25
-  AFD marshallers — they are still unexercised, and E25 must not land on this run's strength.
-  The other 8 ladder guests pass unchanged, so the three newly staged DLLs (msafd, mswsock,
-  dnsapi) broke nothing. Note the 3 `NtCreateFile => c0000034` in the same window as a lead.
+- **A 32-bit `socket()` AVs right after msafd.dll maps — OPEN** (2026-09-05). marshal32's
+  `select()` rung reaches `socket()` and dies there. Narrowed with per-call breadcrumbs and
+  per-open path logging over four boots. **Established:** `WSAStartup` returns fine (the
+  catalog is read); inside `socket()` the provider load does
+  `NtOpenFile [redir] '\??\X:\reactos\syswow64\msafd.dll' => 00000000`, then
+  `NtCreateSection` and `NtMapViewOfSection base=0x01AA0000`, all succeeding — then
+  `0xc0000005` with **`rip == addr == 0x181764`**, an address inside no mapped image, and
+  `exit = 0x80`. No loader syscalls occur between the map and the fault.
+  **Ruled out:** wrong-bitness DLL (the opened file is PE32 from syswow64, and the `[redir]`
+  tag proves system32->syswow64 redirection fired); msafd not staged (it is, and the CD list
+  confirms it); E24's Wow6432Node redirection (its `REDIRECT_ROOT` is
+  `\REGISTRY\MACHINE\SOFTWARE`, while the Winsock catalog lives under `SYSTEM`); a jump to
+  an unbound IAT slot landing on a known export (no export at that RVA in any staged module);
+  and identification by mapped size — `NtMapViewOfSection`'s ViewSize is a caller-supplied
+  in/out cell, so it is NOT reliable evidence of which image mapped. **Zero
+  `NtDeviceIoControlFile` calls precede the fault**, so this is UPSTREAM of the E25 AFD
+  marshallers — they remain unexercised and E25 must not land on it. The other 8 ladder guests
+  pass unchanged. Next step needs guest-loader instrumentation (ntdll-rust `ldrpe.rs`: log the
+  module base recorded for each load and the entry point actually called) or GDB on the guest;
+  static inference from the serial log is spent.
 - **freeldr's `FREELDR_HEAP_VERIFIER` is DEAD in Rust — OPEN** (2026-09-04). `heap.c:25` defines
   it **unconditionally**, so the C always compiles the redzone allocation, the redzone writes
   and the three `FrLdrHeapVerify` checks. The translation turned it into
