@@ -107,6 +107,15 @@ endforeach()
 ''',
         )
         self.run("cmake", "-S", str(root), "-B", str(self.build), "-G", "Ninja")
+        # Configure itself can straddle a host-clock adjustment: CMakeSystem.cmake
+        # then appears newer than each newly regenerated build.ninja, causing
+        # Ninja's 100-regeneration failure before any dependency edge is tested.
+        # Establish the same initial epoch for generated configure state as for
+        # fixture sources. Leave regeneration enabled and all dependency edges
+        # intact; later mutations still use the strict ordering in write().
+        for path in self.build.rglob("*"):
+            if path.is_file():
+                os.utime(path, ns=(self.initial_mtime_ns, self.initial_mtime_ns))
         self.configured = True
 
     def write(self, path, text):
@@ -160,6 +169,29 @@ endforeach()
         self.run("cargo", "clean", "--target-dir", str(self.build / "cargo"))
         self.run("ninja", "-C", str(self.build), "-t", "clean")
         return self.compile()
+
+
+def test_initial_configure_metadata_cannot_be_in_the_future(tmp_path, monkeypatch):
+    original_run = BuildFixture.run
+    injected = []
+
+    def configure_with_clock_step(self, *cmd):
+        result = original_run(self, *cmd)
+        if cmd[0] == "cmake":
+            system = next(self.build.glob("CMakeFiles/*/CMakeSystem.cmake"))
+            future = time.time_ns() + 86_400_000_000_000
+            os.utime(system, ns=(future, future))
+            injected.append(system)
+        return result
+
+    monkeypatch.setattr(BuildFixture, "run", configure_with_clock_step)
+    fixture = BuildFixture(tmp_path)
+    assert injected
+    assert injected[0].stat().st_mtime_ns == fixture.initial_mtime_ns
+    initial = fixture.compile()
+    before = fixture.invocations()
+    assert fixture.compile() == initial
+    assert fixture.invocations() == before, fixture.build_explanation
 
 
 @pytest.mark.parametrize(

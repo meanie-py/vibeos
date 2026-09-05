@@ -2501,17 +2501,36 @@ def test_hostlock_fifo_head_is_never_blocked_by_itself(tmp_path, monkeypatch):
     assert hl_mod.queue_status("cpuheavy") == []
 
 
-def test_hostlock_fifo_backfill_when_head_not_delayed(tmp_path, monkeypatch):
-    """A latecomer MAY use permits nobody ahead of it is owed (throughput preserved)."""
+def test_hostlock_fifo_respects_existing_permit_holders(tmp_path, monkeypatch):
+    """Capacity is not availability: an active build owns half the pool."""
     monkeypatch.setattr(hl_mod, "HOSTLOCK_DIR", tmp_path)
-    ahead = _fake_ticket(tmp_path, "cpuheavy", ns=1, pid=999999, need=1)
+    held = hl_mod.acquire_cpu_share("running", n=2, leases=4, timeout=1.0)
+    assert held is not None
+    ahead = _fake_ticket(tmp_path, "cpuheavy", ns=1, pid=999999, need=2)
+    late = None
     try:
-        # 4 permits, one earlier waiter owed 1 → 3 spare, so our 2 fit without delaying it.
-        fds = hl_mod.acquire_cpu_share("late", n=2, leases=4, timeout=1.0)
-        assert fds is not None
-        hl_mod.release_all(fds)
+        # The only free pair is owed to the older waiter, even though both
+        # waiters' requests fit within the pool's TOTAL capacity.
+        late = hl_mod.acquire_cpu_share("late", n=2, leases=4, timeout=0.1)
+        assert late is None
     finally:
+        hl_mod.release_all(late)
         os.close(ahead)
+        hl_mod.release_all(held)
+
+
+def test_hostlock_fifo_admission_does_not_serialize_running_work(tmp_path, monkeypatch):
+    """Once admitted, a holder's remaining capacity is available to the next build."""
+    monkeypatch.setattr(hl_mod, "HOSTLOCK_DIR", tmp_path)
+    first = hl_mod.acquire_cpu_share("first", n=1, leases=4, timeout=1.0)
+    assert first is not None
+    second = None
+    try:
+        second = hl_mod.acquire_cpu_share("second", n=2, leases=4, timeout=1.0)
+        assert second is not None  # first still owns its permit
+    finally:
+        hl_mod.release_all(second)
+        hl_mod.release_all(first)
 
 
 def test_hostlock_fifo_orphan_ticket_is_reaped(tmp_path, monkeypatch):
@@ -3398,6 +3417,112 @@ def test_source_lint_api_rejects_unknown_selection(tmp_path, monkeypatch):
     monkeypatch.setattr(lints, "_lint_stage", lambda *a, **k: pytest.fail("must not execute"))
     with pytest.raises(ValueError):
         lints.run_source_lints(Run("check", "amd64"), tmp_path, strict=True, only={"typo"})
+
+
+@pytest.mark.parametrize("scope", ["source", "arch", None])
+@pytest.mark.parametrize("fail", [False, True])
+def test_check_partitions_preserve_full_coverage(tmp_path, monkeypatch, scope, fail):
+    seen = []
+
+    def source(run, repo, *, strict):
+        assert strict
+        seen.append("source")
+        run.add(Stage("source", status="fail" if fail else "ok"))
+
+    def guard(name):
+        def execute(run, repo, arch, **kwargs):
+            assert arch == "amd64"
+            if name == "binary":
+                assert kwargs["strict"]
+            seen.append(name)
+            run.add(Stage(name, status="fail" if fail else "ok"))
+
+        return execute
+
+    monkeypatch.setattr(lints, "run_source_lints", source)
+    monkeypatch.setattr(lints, "run_cargo_link_guard", guard("cargo"))
+    monkeypatch.setattr(lints, "run_committed_drift_guard", guard("drift"))
+    monkeypatch.setattr(lints, "run_binary_lints", guard("binary"))
+    assert debugcmd_mod.check(Namespace(scope=scope, strict=True, arch="amd64"), tmp_path) == int(
+        fail
+    )
+    assert (
+        seen
+        == {
+            "source": ["source"],
+            "arch": ["cargo", "drift", "binary"],
+            None: ["source", "cargo", "drift", "binary"],
+        }[scope]
+    )
+    command = f"check-{scope}" if scope else "check"
+    summary = json.loads(
+        next((tmp_path / "artifacts").glob(f"*-{command}-amd64/summary.json")).read_text()
+    )
+    assert summary["verdict"] == ("FAIL" if fail else "WARN" if scope else "OK")
+    assert summary.get("coverage") == ("partial" if scope else None)
+
+
+@pytest.mark.parametrize(
+    "options",
+    [
+        {"scope": "bogus", "strict": True},
+        {"scope": "source"},
+        {"scope": "arch", "strict": True},
+        {"scope": "source", "strict": True, "only": "a"},
+        {"scope": "arch", "strict": True, "arch": "amd64", "update_baseline": "__ALL__"},
+    ],
+)
+def test_check_partition_rejects_ambiguous_or_incomplete_request(tmp_path, monkeypatch, options):
+    monkeypatch.setattr(lints, "run_source_lints", lambda *a, **k: pytest.fail("must not scan"))
+    monkeypatch.setattr(lints, "write_baselines", lambda *a, **k: pytest.fail("must not write"))
+    assert debugcmd_mod.check(Namespace(**options), tmp_path) == 2
+
+
+@pytest.mark.parametrize("failed", [None, "source", "i386"])
+def test_gate_runs_source_once_after_build_matrix_and_requires_every_partition(
+    tmp_path, monkeypatch, failed
+):
+    built = set()
+    seen = []
+    stamped = []
+
+    def build(repo, run, arch, args):
+        built.add(arch)
+        return {"arch": arch, "ok": True, "exit": 0, "seconds": 0.01}
+
+    def lint(repo, arch, root):
+        if arch == "source":
+            assert built == {"i386", "amd64", "arm64"}
+        else:
+            assert arch in built
+        seen.append(arch)
+        return _lint_once_stub(arch != failed)(repo, arch, root)
+
+    monkeypatch.setattr(gate_mod, "_build_once", build)
+    monkeypatch.setattr(gate_mod, "_lint_once", lint)
+    monkeypatch.setattr(gate_mod, "_cohab_once", _cohab_once_stub(True))
+    monkeypatch.setattr(gate_mod, "_tooling_once", _tooling_once_stub(True))
+    monkeypatch.setattr(gate_mod, "_difftest_once", _difftest_once_stub(True))
+    monkeypatch.setattr(gate_mod, "_smoke_once", _spy_smoke_ok([]))
+    monkeypatch.setattr(gate_mod, "_write_gate_stamp", lambda *a, **k: stamped.append(1))
+    rc = gate_mod.gate(_gate_args(no_lint=False, no_build=False, no_net=True), tmp_path)
+    assert sorted(seen) == ["amd64", "arm64", "i386", "source"]
+    assert bool(stamped) == (failed is None)
+    assert rc == int(failed is not None)
+
+
+@pytest.mark.parametrize("arch", ["source", "amd64"])
+def test_gate_child_requests_explicit_strict_partition(tmp_path, monkeypatch, arch):
+    calls = []
+
+    def execute(cmd, **kwargs):
+        calls.append(cmd)
+        return subprocess.CompletedProcess(cmd, 0, "", "")
+
+    monkeypatch.setattr(gate_mod.subprocess, "run", execute)
+    assert gate_mod._lint_once(tmp_path, arch, tmp_path / "logs")["ok"]
+    suffix = ["source"] if arch == "source" else ["arch", "--arch", arch]
+    assert calls == [[str(tmp_path / "vibeos-cli"), "check", "--strict", "--scope", *suffix]]
 
 
 def test_write_baselines_only_filter(tmp_path, monkeypatch):

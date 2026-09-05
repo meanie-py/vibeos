@@ -187,11 +187,41 @@ were 1.52s (amd64), 0.81s (arm64), and 9.67s (i386); strict checks still took
 15–16 minutes per architecture. Do not compare this whole-gate duration with the
 earlier cold gate as a controlled speedup benchmark.
 
-The next gate optimization is explicit shared/per-architecture check partitioning:
+Implemented next: explicit shared/per-architecture check partitioning:
 `source_lint_specs(repo)` currently produces identical commands for each of the
 three `check --strict --arch` children (45 scanners, 135 invocations in this
-snapshot). Run that complete source suite once after
+snapshot before partitioning). The gate now runs that complete source suite once after
 this worktree's generated inputs are ready, while retaining Cargo-link,
-committed-drift, binary and cohab guards for every requested architecture. Require
-both shared and per-architecture results before stamping; partial diagnostics
-must never satisfy that condition. This partitioning is not implemented yet.
+committed-drift, binary and cohab guards for every requested architecture. Both
+shared and per-architecture results must pass before stamping. `check --scope
+source|arch --strict` exposes these explicitly partial partitions; the arch
+partition requires `--arch`, and neither can rewrite baselines or combine with
+`--only`. Ordinary unpartitioned `check` still runs its complete previous suite.
+Tests cover partition coverage, invalid combinations, failure propagation,
+once-only scheduling after all builds, and stamp refusal on either partition's
+failure. Full gate `20260905-113218-gate-i386+amd64+arm64` passed every stage;
+the sole warning was the dirty tree/no push stamp. The source child recorded
+exactly 45 commands in 874s, with per-arch guards taking 80s (amd64), 32s (arm64),
+and 86s (i386). All desktop screenshots were checked. Overall time was 26m00s
+under integration-build contention: the build matrix finished at 687s. This
+proves 90 duplicate source-scanner invocations removed, not an end-to-end latency
+speedup against the earlier differently loaded runs.
+
+The continuation also reproduced a CPU-broker fairness bug with real isolated
+flocks: total pool capacity was mistaken for availability, allowing a newer
+two-permit build to overtake an older waiter while another build held the other
+two permits. Admission now follows ticket order; acquiring permits drops the
+ticket immediately, preserving concurrent execution. All 30 host-lock/landing-lock
+tests passed, including the formerly failing active-holder control. This does
+not hot-patch already running processes or sibling worktrees.
+
+An invalidation-fixture run exposed configure metadata dated ahead of Ninja's
+generated manifest, causing 100 futile regeneration attempts. Initial generated
+CMake metadata now shares the fixture's initial source epoch. Regeneration stays
+enabled; no retry or dependency assertion was removed. A test deliberately dates
+`CMakeSystem.cmake` one day ahead and verifies normalization and no-op behavior.
+The suite now contains 18 invalidation tests. This is fixture clock ordering, not
+a change to production build timestamps or proof of the host's clock-step cause.
+The final tooling rerun passed all 26 checks with both the timestamp and admission
+fixes included. The admission change was exercised by isolated real-flock tests;
+already running fleet processes were not changed underneath the gate.

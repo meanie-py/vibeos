@@ -83,9 +83,35 @@ def debug(args, repo: Path) -> int:
     return subprocess.run(cmd, cwd=repo).returncode
 
 
+def _strict_arch_checks(run: Run, repo: Path, arch: str | None) -> None:
+    """One guard list shared by full checks and the gate's arch partition."""
+    lints.run_cargo_link_guard(run, repo, arch)
+    lints.run_committed_drift_guard(run, repo, arch)
+    if arch:
+        lints.run_binary_lints(run, repo, arch, strict=True)
+
+
 def check(args, repo: Path) -> int:
     ub = getattr(args, "update_baseline", None)
     selection = getattr(args, "only", None)
+    scope = getattr(args, "scope", None)
+    if scope is not None:
+        if scope not in ("source", "arch") or ub is not None or selection is not None:
+            print("--scope must be source or arch and cannot combine with --only/--update-baseline")
+            return 2
+        if not getattr(args, "strict", False) or (
+            scope == "arch" and not getattr(args, "arch", None)
+        ):
+            print("--scope requires --strict; --scope arch also requires --arch")
+            return 2
+        run = Run(f"check-{scope}", getattr(args, "arch", None) or "all")
+        run.extra.update(coverage="partial", scope=scope)
+        run.add(Stage("partial", status="warn", detail=f"{scope} partition only; not a full gate"))
+        if scope == "source":
+            lints.run_source_lints(run, repo, strict=True)
+        else:
+            _strict_arch_checks(run, repo, args.arch)
+        return run.finalize(repo)
     if selection is not None:
         if ub is not None:
             print("--only cannot be combined with --update-baseline")
@@ -134,15 +160,5 @@ def check(args, repo: Path) -> int:
     strict = bool(getattr(args, "strict", False))
     lints.run_source_lints(run, repo, strict=strict)
     if strict:
-        # Guard the cargo-driven link PoCs (ntoskrnl/ntdll/ntdll_vista) against
-        # silent bit-rot — the pre-commit/merge gate is where to catch the
-        # off-default-path replacement links drifting. Self-skips when their
-        # prerequisites (target json / build-<arch> / nightly) are absent.
-        lints.run_cargo_link_guard(run, repo, getattr(args, "arch", None))
-        # Guard the cmake-off committed fallbacks (ks*.inc/cflags/.res/widl .rs)
-        # against silent staleness vs cmake regeneration. Self-skips without a
-        # configured build-<arch>/.
-        lints.run_committed_drift_guard(run, repo, getattr(args, "arch", None))
-        if getattr(args, "arch", None):
-            lints.run_binary_lints(run, repo, args.arch, strict=True)
+        _strict_arch_checks(run, repo, getattr(args, "arch", None))
     return run.finalize(repo)

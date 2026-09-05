@@ -7321,6 +7321,19 @@ touching the loader** — the El Torito entry folds in `uefildr`.
 `./vibeos-cli host-status`). A lone red while another arch is mid-gate is a prime contention
 suspect; re-run host-quiet to decide.
 
+### New builds pass an older CPU-lease waiter
+
+**Symptom:** `host-status` shows an older waiter still queued while newer builds
+acquire permits. **Cause:** admitting queued requests against total pool capacity
+ignores running holders. With four permits, two held, and two waiters requesting
+two each, only the earlier waiter is entitled to the free pair. A free-count
+snapshot also races concurrent acquirers. **Fix:** admit only the ticket head;
+drop its ticket immediately on acquiring permits, not when work finishes. Builds
+still run concurrently within the pool. The isolated live-flock regression is
+`test_hostlock_fifo_respects_existing_permit_holders`. Old processes/worktrees
+retain their prior admission code until restarted/updated; do not rewrite another
+worktree or kill a running build to propagate this fix.
+
 ### Contention wears three costumes, not one
 1. **`HANG_TIMEOUT` at `[freeldr] Switching stack...`** with zero kernel serial (the CGU lottery,
    above).
