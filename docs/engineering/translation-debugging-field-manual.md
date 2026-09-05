@@ -4389,6 +4389,24 @@ nothing. It has false-greened arm64 six times in a row (fastfat → ramdisk → 
 user32 → advapi32). Rule: **`vibeos-cli smoke` hard-fails on stale media — never bypass it, and
 judge a build by artifact existence, not a reported exit code.**
 
+### Cargo depfiles leave directory contents or lockfile changes stale
+
+**Symptom:** Ninja reports no work after an input-file edit or a lockfile-only
+dependency update, but a cold build produces a different executable.
+
+**Cause:** Cargo's recursive `rerun-if-changed=directory` watch becomes only a
+directory path in the emitted depfile. Ninja does not recursively inspect that
+directory; editing an existing child does not change its parent directory's
+mtime. Cargo depfiles also do not replace the workspace `Cargo.lock` edge.
+
+**Fix:** Retain explicit lockfile dependencies and conservative source edges.
+Before narrowing, represent both watched directories (membership changes) and
+their input files (content changes). The real warm/cold controls in
+`tools/test_build_invalidation.py` demonstrate stale output for directory-only
+and missing-lockfile edges, and passing output for explicit file watches and
+lockfile dependencies. These fixture controls do not establish completeness of
+the production build-script input graph.
+
 ### A flipped TU's leftover `.obj` keeps voting on the NEXT flip's closure
 ninja never deletes the object of a source you remove from a CMake list, so every TU we flip
 leaves a stale `.obj` under the link root forever. `rustconv hybrid-closure` globs `*.obj` for
