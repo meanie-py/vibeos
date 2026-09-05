@@ -2,7 +2,8 @@
 //! builders, translated to Rust (pci-rust cohab crate).
 //!
 //! Faithful transliteration of `drivers/bus/pci/pci.c`. One C file → one module.
-//! No SEH in this driver. `DPRINT`/`DPRINT1` are NDEBUG no-ops → dropped.
+//! No SEH in this driver. `DPRINT` is an NDEBUG no-op; `DPRINT1` is live (see
+//! `crate::dprint`).
 //!
 //! Cross-file symbol contract (pci.h): DriverEntry + the Pci*String builders +
 //! PciDuplicateUnicodeString are `#[no_mangle] extern "system"` (NTAPI). The
@@ -327,6 +328,13 @@ unsafe fn PciLocateKdDevices() {
         crate::shared::PciDebuggingDevice[i].set_FunctionNumber(function_number);
         crate::shared::PciDebuggingDevice[i].set_BusNumber(BusNumber);
         crate::shared::PciDebuggingDevice[i].set_InUse(1); // TRUE
+
+        DPRINT1!(
+            "PCI debugging device %02x:%02x.%x\n",
+            BusNumber,
+            device_number,
+            function_number
+        );
 
         i += 1;
     }

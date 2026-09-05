@@ -124,13 +124,33 @@ class SpecEntry:
         return self.name != "@"  # bare "@" = autoname/noname placeholder
 
 
-def parse_spec(path: Path = SPEC_FILE) -> dict[str, SpecEntry]:
+# spec2def.c:1611-1627 — an `-arch=` list matches when it names the target arch OR its
+# WIDTH alias, and `win32`/`win64` appear in specs as often as the arch names do.
+ARCH_SPEC_TOKENS: dict[str, frozenset[str]] = {
+    "i386": frozenset({"i386", "win32"}),
+    "amd64": frozenset({"x86_64", "win64"}),
+    "x86_64": frozenset({"x86_64", "win64"}),
+    "arm": frozenset({"arm", "win32"}),
+    "arm64": frozenset({"arm64", "win64"}),
+}
+
+
+def parse_spec(path: Path = SPEC_FILE, arch: str | None = None) -> dict[str, SpecEntry]:
     """Parse a .spec file and return dict of name → SpecEntry.
 
     Defaults to ntoskrnl.spec (the historical behaviour).  Pass any other
     `.spec` path to parse an arbitrary DLL's export list.
+
+    `arch` drops the rows that arch does not build, which is two fixes in one. The
+    obvious half: `@ fastcall -arch=arm HalSweepIcache()` is not an i386 export and
+    demanding a symbol for it is a false MISSING (hal had three). The subtler half:
+    the return is keyed by NAME, so a per-arch pair — hal.spec declares
+    `ExAcquireFastMutex` twice, once for arm/arm64 and once for i386 — silently
+    collapses to whichever row is written last. Filtering first means the surviving
+    entry is the one this arch actually compiles, instead of the one lower in the file.
     """
     entries: dict[str, SpecEntry] = {}
+    want = ARCH_SPEC_TOKENS.get(arch) if arch else None
 
     for raw in path.read_text(errors="replace").splitlines():
         line = raw.strip()
@@ -166,6 +186,9 @@ def parse_spec(path: Path = SPEC_FILE) -> dict[str, SpecEntry]:
             vm = RE_VERSION_FLAG.match(f)
             if vm:
                 in_version = _version_included(vm.group("ranges"), DEFAULT_EXPORT_VERSION)
+
+        if want is not None and arch_filter and not (want & set(arch_filter)):
+            continue
 
         params = []
         if params_str:
