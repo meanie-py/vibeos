@@ -481,6 +481,19 @@ land; date every addition.** Source docs live in `docs/engineering/archive/`.
 The committed home for open bugs (was: agent MEMORY.md, which other agents never see).
 Field-manual § pointers hold the full writeups. **Update on state change.**
 
+- **A 32-bit `socket()` AVs in the Winsock provider-load path — OPEN** (2026-09-05). With
+  `msafd.dll` finally staged into SysWOW64 (the closure tool could not see it: ws2_32
+  LoadLibraryA's the provider named in the registry catalog, which no import-table walk
+  reveals), marshal32's new `select()` rung gets as far as WSAStartup enumerating the catalog
+  — a long run of `NtOpenKey`/`NtQueryValueKey`, then `NtCreateSection` +
+  `NtMapViewOfSection base=0x01AA0000` — and then takes `0xc0000005` with
+  **`rip == addr == 0x181764`**, an address inside no mapped image (marshal32 is based at
+  0x400000; every loaded module sits at 0x1AA0000 or above). rip equal to the faulting address
+  at a low unmapped value is the jump-through-an-unbound-slot signature. `exit = 0x80`.
+  **Zero `NtDeviceIoControlFile` calls precede it**, so this is strictly UPSTREAM of the E25
+  AFD marshallers — they are still unexercised, and E25 must not land on this run's strength.
+  The other 8 ladder guests pass unchanged, so the three newly staged DLLs (msafd, mswsock,
+  dnsapi) broke nothing. Note the 3 `NtCreateFile => c0000034` in the same window as a lead.
 - **freeldr's `FREELDR_HEAP_VERIFIER` is DEAD in Rust — OPEN** (2026-09-04). `heap.c:25` defines
   it **unconditionally**, so the C always compiles the redzone allocation, the redzone writes
   and the three `FrLdrHeapVerify` checks. The translation turned it into
