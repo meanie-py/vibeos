@@ -4338,6 +4338,13 @@ different question, racily).
   instruction**, so the table has exactly one entry; the check runs *after* `MmAccessFault`
   declines; and it cannot swallow a fault it doesn't own (one exact PC, kernel-mode only).
   This cleared three stuck kmtest quarantines that were one missing primitive, not three bugs.
+- **A `Result` return does not protect a volatile dereference.** The scalar probe helpers
+  checked alignment/range, then accessed unmapped or read-only user pages without recovery.
+  Use the protected-copy primitive for the access itself, including touch-test reads and
+  UNICODE_STRING headers. After taking an object reference, install `ObjRefGuard` before
+  any fallible capture: a translated `return Err` otherwise skips C's cleanup label.
+  Flexible-array captures must snapshot the count, check the byte extent against the supplied
+  length with checked arithmetic, and copy each entry before inspecting it (`TokenAuditPolicy`).
 - **`_SEH2_EXCEPT(...)` emitted as an UNCONDITIONAL bare block** runs the handler on success.
   **Eager filter evaluation** additionally feeds the provable-null-deref ud2 fold.
 - **Do NOT delete `_SEH2_TRY` "dead-code" wrappers** — they are an LLVM optimisation barrier.
