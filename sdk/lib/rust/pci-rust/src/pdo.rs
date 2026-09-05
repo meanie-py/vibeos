@@ -50,9 +50,8 @@ use ntkrnl_sys::constants::{
     STATUS_BUFFER_TOO_SMALL, STATUS_PENDING,
 };
 
-// DPRINT / DPRINT1 / DBGPRINT are no-ops under NDEBUG.
-macro_rules! DPRINT  { ($($t:tt)*) => {} }
-macro_rules! DPRINT1 { ($($t:tt)*) => {} }
+// pdo.c's own DBGPRINT, not debug.h's: it is `#define DBGPRINT(...)` behind an
+// `#if 0`, so it is off in the C too. DPRINT/DPRINT1 come from `crate::dprint`.
 macro_rules! DBGPRINT { ($($t:tt)*) => {} }
 
 // ---------------------------------------------------------------------------
@@ -650,7 +649,7 @@ unsafe fn PdoQueryResourceRequirements(
     } else {
         DPRINT1!(
             "Unsupported header type %d\n",
-            PCI_CONFIGURATION_TYPE(PciConfigPtr)
+            PCI_CONFIGURATION_TYPE(PciConfigPtr) as core::ffi::c_uint
         );
     }
 
@@ -1012,7 +1011,7 @@ unsafe fn PdoQueryResources(
     } else {
         DPRINT1!(
             "Unsupported header type %d\n",
-            PCI_CONFIGURATION_TYPE(PciConfigPtr)
+            PCI_CONFIGURATION_TYPE(PciConfigPtr) as core::ffi::c_uint
         );
     }
 
@@ -1856,7 +1855,7 @@ pub unsafe extern "system" fn PdoPnpControl(
             (*Irp).IoStatus.__bindgen_anon_1.Status = Status;
         }
         _ => {
-            DPRINT1!("Unknown IOCTL 0x%lx\n", (*IrpSp).MinorFunction);
+            DPRINT1!("Unknown IOCTL 0x%lx\n", (*IrpSp).MinorFunction as core::ffi::c_uint);
         }
     }
 

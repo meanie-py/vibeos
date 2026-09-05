@@ -16,14 +16,6 @@ use ntkrnl_sys::ex::{ExAllocatePoolWithTag, ExFreePoolWithTag};
 use ntkrnl_sys::mm::NonPagedPool;
 use ntkrnl_sys::base::{STATUS_SUCCESS, STATUS_INSUFFICIENT_RESOURCES};
 
-// DPRINT/DPRINT1/PAGED_CODE are no-ops under the driver's NDEBUG build.
-macro_rules! DPRINT {
-    ($($t:tt)*) => {};
-}
-macro_rules! DPRINT1 {
-    ($($t:tt)*) => {};
-}
-
 // ---- DDK constants the C glue uses (wdm.h). FILE_DEVICE_CONTROLLER is not in
 //      the ddk glob (only hal_bindgen); define the well-known wdm.h value. ----
 const FILE_DEVICE_CONTROLLER: u32 = 0x00000004; // wdm.h
@@ -125,11 +117,15 @@ pub unsafe extern "C" fn Bus_PlugInDevice(
                 ) == 0
             {
                 /* We have a UID on both but they're the same so we have to ignore it */
-                DPRINT1!();
+                DPRINT1!(
+                    "Detected duplicate device: %hs %hs\n",
+                    (*Device).pnp.hardware_id,
+                    (*Device).pnp.unique_id.as_ptr()
+                );
                 return STATUS_SUCCESS;
             } else if (*Device).flags.unique_id() == 0 && (*CurrentDevice).flags.unique_id() == 0 {
                 /* No UID so we can only legally have 1 of these devices */
-                DPRINT1!();
+                DPRINT1!("Detected duplicate device: %hs\n", (*Device).pnp.hardware_id);
                 return STATUS_SUCCESS;
             }
         }

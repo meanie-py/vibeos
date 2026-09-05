@@ -23,11 +23,6 @@ extern "C" {
     static AcpiGbl_FADT: acpica_sys::ACPI_TABLE_FADT;
 }
 
-// DPRINT is a no-op under the driver's NDEBUG build.
-macro_rules! DPRINT {
-    ($($t:tt)*) => {};
-}
-
 // ---- ACPICA tracing macros — no-ops under NDEBUG. return_VOID/return_VALUE/
 //      return_ACPI_STATUS reduce to plain returns (NDEBUG build). ----
 macro_rules! ACPI_FUNCTION_TRACE {
