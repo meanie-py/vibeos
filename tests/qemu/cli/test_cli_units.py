@@ -241,8 +241,13 @@ def test_write_baseline_announces_a_lowered_floor_but_allows_it():
     assert conformance_mod.baseline_lowering_note([_res("ExHardError", 31, 0)], base) is None
 
 
-def _fmt(r: dict) -> str:
-    return f"{r['name']} {r['status']} pass={r['pass']} fail={r['fail']} skip={r['skip']}"
+def _fmt(r: dict, flaky=()) -> str:
+    # Mirrors parser.fmt's signature: merge_baseline_rows hands it the `assert?`
+    # marks the row already carries, so a re-seed cannot delete them.
+    line = f"{r['name']} {r['status']} pass={r['pass']} fail={r['fail']} skip={r['skip']}"
+    for a in sorted(set(r.get("asserts") or ()) | set(flaky)):
+        line += f"\n    assert{'?' if a in set(flaky) else ''} {a}"
+    return line
 
 
 _BASELINE_FIXTURE = (
@@ -6477,3 +6482,159 @@ def test_vendored_registry_stage_is_silent_on_stdout_when_green():
     assert r.returncode == 0, r.stdout + r.stderr
     assert r.stdout == "", f"stdout must be empty when green, got: {r.stdout!r}"
     assert "OK" in r.stderr
+
+
+# --- the ratchet gates on assertion IDENTITIES, not counts (#78) --------------
+
+_SWEEP = """\
+[KMTEST-SWEEP] launch IoDeviceObject
+IoDeviceObject_drv.c:198: Test failed: Status = 0xc0000034, expected 0x00000000
+IoDeviceObject_drv.c:206: Test failed: Ptr = FFFF800004952878, expected 0
+[KMTEST:END IoDeviceObject pass=185 fail=2 skip=0]
+[KMTEST-SWEEP] exit IoDeviceObject code=0
+[KMTEST-SWEEP] done 1 tests
+"""
+
+
+def _parser():
+    import importlib.util
+
+    spec = importlib.util.spec_from_file_location(
+        "parse_kmtest_serial",
+        Path(__file__).resolve().parents[3] / "tools" / "conformance" / "parse_kmtest_serial.py",
+    )
+    assert spec is not None and spec.loader is not None
+    mod = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(mod)
+    return mod
+
+
+def test_failing_assertions_are_parsed_and_round_trip_through_the_baseline():
+    """file:line is the identity. The message is deliberately NOT part of it —
+    it carries addresses and NTSTATUS values that differ every boot."""
+    P = _parser()
+    results, _done, _bug = P.parse(_SWEEP)
+    assert [r["name"] for r in results] == ["IoDeviceObject"]
+    assert results[0]["asserts"] == {"IoDeviceObject_drv.c:198", "IoDeviceObject_drv.c:206"}
+    text = P.fmt(results[0])
+    assert "    assert IoDeviceObject_drv.c:198" in text
+    base = _round_trip(P, text)
+    assert base["IoDeviceObject"]["asserts"] == results[0]["asserts"]
+    assert P.compare(results, base) == []
+
+
+def _round_trip(P, text):
+    import tempfile
+
+    fn = tempfile.mktemp()
+    Path(fn).write_text("# hdr\n" + text + "\n")
+    return P.load_baseline(fn)
+
+
+def test_offsetting_changes_are_caught_though_the_counts_never_move():
+    """THE point of #78. One assertion starts failing and another stops, so
+    pass/fail/skip are byte-identical and the count ratchet reports nothing.
+    Measured on 595 archived arm64 sweeps: 33 of the 37 count-signatures shared
+    by more than one run cover runs whose failing assertions differ."""
+    P = _parser()
+    banked, _, _ = P.parse(_SWEEP)
+    base = _round_trip(P, P.fmt(banked[0]))
+    swapped = _SWEEP.replace("IoDeviceObject_drv.c:206", "IoDeviceObject_drv.c:301")
+    now, _, _ = P.parse(swapped)
+    assert now[0]["pass"] == banked[0]["pass"] and now[0]["fail"] == banked[0]["fail"]
+    # count-only floor (a row not yet seeded with identities) sees nothing
+    countonly = {
+        "IoDeviceObject": {k: v for k, v in base["IoDeviceObject"].items() if k != "asserts"}
+    }
+    assert P.compare(now, countonly) == []
+    # identity floor names it
+    assert P.compare(now, base) == [
+        "IoDeviceObject: NEW failing assertion IoDeviceObject_drv.c:301"
+    ]
+
+
+def test_a_bistable_assertion_marked_with_a_question_mark_is_not_a_regression():
+    """IoDeviceObject really is bistable on all three arches. Without the mark
+    every soak round reports a regression or an improvement, forever."""
+    P = _parser()
+    results, _, _ = P.parse(_SWEEP)
+    base = _round_trip(P, P.fmt(results[0], flaky={"IoDeviceObject_drv.c:206"}))
+    assert base["IoDeviceObject"]["flaky"] == {"IoDeviceObject_drv.c:206"}
+    # it fired this time: known, so silent
+    assert P.compare(results, base) == []
+    # and it did not fire this time: still silent, and still on the floor
+    quiet = _SWEEP.replace(
+        "IoDeviceObject_drv.c:206: Test failed: Ptr = FFFF800004952878, expected 0\n", ""
+    ).replace("fail=2", "fail=1")
+    now, _, _ = P.parse(quiet)
+    assert P.compare(now, base) == []
+
+
+def test_reseeding_a_row_keeps_its_bistable_marks():
+    """A wholesale re-seed from one boot must not delete an `assert?` — that
+    banks whichever face this boot showed and hands the next run a false
+    regression. Same failure --only exists to prevent, one level down."""
+    prev = (
+        "# hdr\n"
+        "IoDeviceObject OK pass=185 fail=2 skip=0\n"
+        "    assert IoDeviceObject_drv.c:198\n"
+        "    assert? IoDeviceObject_drv.c:206\n"
+    )
+    assert conformance_mod._flaky_of(prev, "IoDeviceObject") == {"IoDeviceObject_drv.c:206"}
+    # this boot did NOT show the bistable one
+    res = [
+        {
+            "name": "IoDeviceObject",
+            "status": "OK",
+            "pass": 185,
+            "fail": 1,
+            "skip": 0,
+            "asserts": {"IoDeviceObject_drv.c:198"},
+        }
+    ]
+    text, refusal = conformance_mod.merge_baseline_rows(prev, res, ["IoDeviceObject"], _fmt)
+    assert refusal is None and text is not None
+    assert "    assert? IoDeviceObject_drv.c:206" in text, "the flake mark was dropped"
+
+
+def test_an_unseeded_row_still_gates_on_the_fail_count():
+    """Identity seeding is per-arch and incremental. A row with no `assert`
+    lines must keep its old count gate rather than silently gating nothing."""
+    P = _parser()
+    base = _round_trip(P, "IoDeviceObject OK pass=185 fail=2 skip=0")
+    assert base["IoDeviceObject"].get("asserts") is None
+    worse = _SWEEP.replace("fail=2", "fail=3")
+    now, _, _ = P.parse(worse)
+    assert P.compare(now, base) == ["IoDeviceObject: fail 2 -> 3 (grew)"]
+
+
+def test_reseeding_one_row_leaves_every_other_rows_identities_alone():
+    """--only replaces the named row's whole assert block and nothing else. An
+    indented `assert` line belongs to the row above it, not to a test named
+    "assert" — getting that wrong would rewrite the file into nonsense."""
+    prev = (
+        "# hdr\n"
+        "FsRtlLegal OK pass=100 fail=1 skip=0\n"
+        "    assert FsRtlLegal.c:11\n"
+        "IoDeviceObject OK pass=185 fail=2 skip=0\n"
+        "    assert IoDeviceObject_drv.c:198\n"
+        "    assert? IoDeviceObject_drv.c:206\n"
+    )
+    res = [
+        {"name": "FsRtlLegal", "status": "OK", "pass": 132, "fail": 0, "skip": 0, "asserts": set()},
+        {
+            "name": "IoDeviceObject",
+            "status": "OK",
+            "pass": 185,
+            "fail": 1,
+            "skip": 0,
+            "asserts": {"IoDeviceObject_drv.c:198"},
+        },
+    ]
+    text, refusal = conformance_mod.merge_baseline_rows(prev, res, ["FsRtlLegal"], _fmt)
+    assert refusal is None and text is not None
+    # the re-seeded row drops the assertion that no longer fails
+    assert "FsRtlLegal.c:11" not in text
+    # the untouched row keeps BOTH of its identities, mark included
+    assert "    assert IoDeviceObject_drv.c:198" in text
+    assert "    assert? IoDeviceObject_drv.c:206" in text
