@@ -197,6 +197,20 @@ def build_rows() -> list[Row]:
     dispatch = parse_dispatch(AFD_RUST / "main.rs")
     bodies = function_bodies(AFD_RUST)
 
+    # Both build dirs must be THIS worktree's. REPO comes from __file__, so there
+    # is no sibling fallback to drift into — the verify_signatures incident
+    # (a sibling's headers moved a mismatch count 987 -> 9 with no source change)
+    # is only avoidable if a missing build dir stops the tool instead of
+    # widening the search. Say what to run rather than raising from json.load.
+    for arch in ("i386", "amd64"):
+        if not (REPO / f"build-{arch}" / "compile_commands.json").is_file():
+            sys.exit(
+                f"ioctlaudit: no compile_commands.json in {REPO}/build-{arch} — the "
+                f"32/64 record layouts come from clang using that build's real include "
+                f"flags, and a layout is not guessable from source alone.\n"
+                f"fix: ./vibeos-cli build --arch {arch}"
+            )
+
     flags32 = extract_flags(REPO / "build-i386", "tdihelpers/tdi.c")
     flags64 = extract_flags(REPO / "build-amd64", "tdihelpers/tdi.c")
     db32 = dump_layouts(flags32, LAYOUT_TU)
