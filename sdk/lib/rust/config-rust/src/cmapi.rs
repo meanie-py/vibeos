@@ -243,6 +243,22 @@ pub unsafe extern "system" fn CmpDoFlushAll(ForceFlush: u8) -> u8 {
     return Result;
 }
 
+// The C wraps the CmpCopyName below in _SEH2_TRY/_SEH2_EXCEPT, whose handler reports
+// DPRINT1("Invalid user data!"), frees the cell and returns the exception code — the C
+// comment on it says "this can crash since the name is coming from user-mode."
+//
+// That handler is NOT reachable here, and adding a print for it would be a lie about
+// where this function's input comes from. ValueName is kernel-pool memory by the time
+// it arrives: the one live caller is CmSetValueKey <- NtSetValueKey, which captures the
+// string with ProbeAndCaptureUnicodeString (ntkrnl-sys/src/inline/common.rs) — for a
+// user-mode caller that probes the header AND the buffer and copies both into pool, so
+// no user page is touched from here. A KernelMode caller hands us its own kernel
+// buffer, and a driver passing a bad one bugchecks with or without this handler,
+// because DUMMY_PSEH means there is nothing to catch it (dummy-pseh-verdict.md).
+//
+// So the honest translation of the SEH region is its guarded statement alone. The place
+// that DID need the check is NtSetValueKey's Data path, where the probe really had been
+// dropped — see the comment there. nolint: dropped-print
 unsafe fn CmpSetValueKeyNew(
     Hive: PHHIVE,
     Parent: PCM_KEY_NODE,

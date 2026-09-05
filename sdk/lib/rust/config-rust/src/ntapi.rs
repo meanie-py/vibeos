@@ -963,30 +963,39 @@ pub unsafe extern "system" fn NtSetValueKey(
     }
 
     if PreviousMode != 0i8 && DataSize != 0 {
-        let mut DataCopy: PVOID = core::ptr::null_mut();
-
-        Status = STATUS_SUCCESS;
-
-        if NT_SUCCESS(Status) {
-            DataCopy = ExAllocatePoolWithTag(PagedPool, DataSize as _, TAG_CM);
-            if DataCopy.is_null() {
-                ObDereferenceObject(KeyObject as PVOID);
-                return STATUS_INSUFFICIENT_RESOURCES;
-            }
-
-            core::ptr::copy_nonoverlapping(Data as *const u8, DataCopy as *mut u8, DataSize as usize);
-
-            if !NT_SUCCESS(Status) {
-                ExFreePoolWithTag(DataCopy, TAG_CM);
-                ObDereferenceObject(KeyObject as PVOID);
-                return Status;
-            }
-
-            Data = DataCopy;
-        } else {
+        // The C probes Data (ProbeForRead, alignment 1) inside one SEH region and
+        // copies it inside a second. BOTH regions were dropped in translation:
+        // what stood here was a bare `Status = STATUS_SUCCESS;` where the probe
+        // belongs, followed by an unguarded copy straight off the caller's raw
+        // pointer — which left both `if (!NT_SUCCESS(Status))` arms below it
+        // unreachable, checking a status nothing could ever set.
+        //
+        // This is not a missing diagnostic, it is a missing bounds check on a
+        // user-mode pointer we then dereference in kernel mode. Unprivileged
+        // callers reach it directly: a bad Data faults with no SEH to catch it
+        // (DUMMY_PSEH) and takes the box down, and a Data pointing INTO KERNEL
+        // SPACE gets copied into a registry value the same caller can read back
+        // with NtQueryValueKey.
+        //
+        // Validate-first per docs/engineering/dummy-pseh-verdict.md. Alignment 1
+        // matches the C. Note what this does NOT restore: the C's second SEH also
+        // covered the window between probe and copy, and validate-first cannot —
+        // a range check proves where the buffer is, never that it stays mapped.
+        if let Err(e) =
+            probe_user_buffer(Data as *const c_void, DataSize as usize, 1, PreviousMode)
+        {
             ObDereferenceObject(KeyObject as PVOID);
-            return Status;
+            return e;
         }
+
+        let DataCopy = ExAllocatePoolWithTag(PagedPool, DataSize as _, TAG_CM);
+        if DataCopy.is_null() {
+            ObDereferenceObject(KeyObject as PVOID);
+            return STATUS_INSUFFICIENT_RESOURCES;
+        }
+
+        core::ptr::copy_nonoverlapping(Data as *const u8, DataCopy as *mut u8, DataSize as usize);
+        Data = DataCopy;
     }
 
     Status = ProbeAndCaptureUnicodeString(&mut ValueNameCopy, PreviousMode, ValueName);
