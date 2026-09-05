@@ -199,6 +199,37 @@ def convert(text: str) -> tuple[str, int, list[str]]:
     return "".join(out), done, skipped
 
 
+# `RtlAssert` IS NOT ONE FUNCTION, and which one you get is a property of the
+# LINK, not of the crate. The kernel's (rtl-diag/src/assert.rs) prints, caps at 20
+# and RETURNS -- that behaviour is the entire safety argument for this migration.
+# The BOOT LOADER links its own (freeldr-rust/src/debug.rs), which prints and then
+# calls DbgBreakPoint(); on arm64 that is a real `brk #0xF000` and it WEDGES THE
+# BOOT. i386/amd64 have an empty DbgBreakPoint stub, so the same assertion prints
+# and sails on there -- which is why this failed on exactly one arch and sat
+# rejected for three weeks.
+#
+# Filtering by crate name cannot express this: hal-rust is in BOTH links. So
+# discover the loader link set instead of hardcoding it -- the loader is whichever
+# `*-cargo` binary links freeldr-rust, and its `.rust_lib()`/.rust_staticlib()`
+# calls name everything that lands in that binary. The producer has the list; the
+# consumer must not carry a literal copy of it.
+LOADER_LIB_RE = re.compile(r'\.rust_(?:static)?lib\(\s*"([A-Za-z0-9_-]+)"')
+
+
+def loader_crates() -> set[str]:
+    """Crates linked into a boot loader, where ASSERT! is FATAL on arm64."""
+    out: set[str] = set()
+    for br in RUST_ROOT.glob("*-cargo/build.rs"):
+        try:
+            text = br.read_text()
+        except OSError:
+            continue
+        if '.rust_staticlib("freeldr-rust")' not in text:
+            continue
+        out |= set(LOADER_LIB_RE.findall(text))
+    return out
+
+
 def kernel_crates() -> set[str]:
     """Crates that can reach ntkrnl_sys::ASSERT!. Usermode crates link ntdll's
     RtlAssert instead and need their own macro — a separate change."""
@@ -219,6 +250,7 @@ def main() -> int:
     args = ap.parse_args()
 
     kern = kernel_crates()
+    loaders = kernel_crates() & loader_crates()
     total_done = total_skipped = 0
     touched = 0
     skip_report: list[str] = []
@@ -253,6 +285,15 @@ def main() -> int:
         print(f"\nSKIPPED {total_skipped} (left as debug_assert!, nothing dropped silently):")
         for s in skip_report:
             print(s)
+    if loaders:
+        print(
+            "\nWARNING — these crates also link into a BOOT LOADER, where RtlAssert ends in\n"
+            "DbgBreakPoint() (a real `brk #0xF000` on arm64, an empty stub on i386/amd64).\n"
+            "A live assertion that FIRES there wedges the arm64 boot instead of printing:\n"
+            "    " + ", ".join(sorted(loaders)) + "\n"
+            "  Converting them is allowed and currently green, but SMOKE ARM64 before landing —\n"
+            "  amd64 and i386 cannot reproduce the failure."
+        )
     if not args.apply:
         print("\n(report only — pass --apply to write)")
     return 0

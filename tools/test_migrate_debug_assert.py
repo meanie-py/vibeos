@@ -12,7 +12,13 @@ import sys
 
 sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent))
 
-from migrate_debug_assert import convert, is_generated, split_args
+from migrate_debug_assert import (
+    LOADER_LIB_RE,
+    convert,
+    is_generated,
+    loader_crates,
+    split_args,
+)
 
 
 def one(src):
@@ -127,3 +133,31 @@ def test_split_args_honours_nesting():
     assert split_args("a, b") == ["a", "b"]
     assert split_args("foo(a, b), c") == ["foo(a, b)", "c"]
     assert split_args('x, "a, b"') == ["x", '"a, b"']
+
+
+# --- the loader link set ----------------------------------------------------
+
+
+def test_loader_link_set_is_DISCOVERED_not_hardcoded():
+    """`RtlAssert` is two different functions: the kernel's prints and returns, the
+    loader's ends in DbgBreakPoint() -- a real `brk #0xF000` on arm64. Which one a
+    crate gets is a property of the LINK, and hal-rust is in BOTH, so no crate-name
+    filter can express it. The set must come from the loader's own build.rs."""
+    found = loader_crates()
+    # freeldr-rust is the staticlib that identifies a loader binary at all.
+    assert "freeldr-rust" in found
+    # cmlib-rust is the trap: a registry crate that reads as kernel code and is
+    # linked into the boot loader, where its assertions are fatal on arm64.
+    assert "cmlib-rust" in found
+    # A kernel-only crate must NOT be swept in.
+    assert "ntoskrnl-rust" not in found
+
+
+def test_loader_lib_regex_reads_both_link_spellings():
+    text = """
+        .rust_staticlib("freeldr-rust")
+        .rust_lib("cmlib-rust", &["bldr"], true)
+        .rust_lib("hal-rust", &["minihal"], true)
+        .import_lib("freeldr")
+    """
+    assert LOADER_LIB_RE.findall(text) == ["freeldr-rust", "cmlib-rust", "hal-rust"]
