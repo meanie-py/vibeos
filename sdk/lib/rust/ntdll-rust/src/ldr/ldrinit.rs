@@ -994,11 +994,37 @@ pub unsafe extern "system" fn LdrpRunInitializeRoutines(Context: PCONTEXT) -> NT
                     LdrpCallTlsInitializers(LdrEntry, DLL_PROCESS_ATTACH);
                 }
 
+                // What the loader believes about this module, immediately before
+                // it transfers control into it. A 32-bit socket() faults at an
+                // address inside no mapped image right after msafd.dll maps, and
+                // the serial log cannot currently distinguish "wrong entry point
+                // computed" from "right entry point, faults inside" — this is the
+                // one line that separates them. Base and SizeOfImage are printed
+                // alongside so the entry can be checked to lie INSIDE the image.
+                DbgPrint(
+                    b"[LDR] init '%.*S' DllBase=%p SizeOfImage=%08lx EntryPoint=%p\n\0".as_ptr()
+                        as *const i8,
+                    ((*LdrEntry).BaseDllName.Length / 2) as u32,
+                    (*LdrEntry).BaseDllName.Buffer,
+                    (*LdrEntry).DllBase,
+                    (*LdrEntry).SizeOfImage,
+                    EntryPoint,
+                );
+
                 DllStatus = LdrpCallInitRoutine(
                     EntryPoint,
                     (*LdrEntry).DllBase,
                     DLL_PROCESS_ATTACH,
                     Context as PVOID,
+                );
+
+                // DllStatus is a BOOLEAN here, not an NTSTATUS — DllMain returns
+                // TRUE/FALSE — so it prints as an integer rather than a status code.
+                DbgPrint(
+                    b"[LDR] init '%.*S' RETURNED ret=%lu\n\0".as_ptr() as *const i8,
+                    ((*LdrEntry).BaseDllName.Length / 2) as u32,
+                    (*LdrEntry).BaseDllName.Buffer,
+                    DllStatus as u32,
                 );
 
                 RtlDeactivateActivationContextUnsafeFast(core::ptr::addr_of_mut!(ActCtx));
