@@ -230,7 +230,7 @@ unsafe fn DetectBiosFloppyPeripheral(ControllerKey: PCONFIGURATION_COMPONENT_DAT
         Size = core::mem::offset_of!(_CM_PARTIAL_RESOURCE_LIST, PartialDescriptors) as ULONG
             + core::mem::size_of::<_CM_PARTIAL_RESOURCE_DESCRIPTOR>() as ULONG
             + core::mem::size_of::<_CM_FLOPPY_DEVICE_DATA>() as ULONG;
-        PartialResourceList = FrLdrHeapAlloc(Size as usize, 0x52736c48) as PCM_PARTIAL_RESOURCE_LIST;
+        PartialResourceList = FrLdrHeapAlloc(Size as usize, TAG_HW_RESOURCE_LIST) as PCM_PARTIAL_RESOURCE_LIST;
         if PartialResourceList == core::ptr::null_mut() {
             ERR(
                 b"Failed to allocate resource descriptor! Ignoring remaining floppy peripherals. (FloppyNumber = %u)\n\0".as_ptr() as PCHAR, (FloppyNumber) as usize,
@@ -300,7 +300,7 @@ unsafe fn DetectBiosFloppyController(BusKey: PCONFIGURATION_COMPONENT_DATA) -> P
     // descriptor writes overflowed into the next free block's header,
     // corrupting the default-heap free list right after rosload UiInit.
     Size = crate::FIELD_OFFSET!(CM_PARTIAL_RESOURCE_LIST, PartialDescriptors[3]);
-    PartialResourceList = FrLdrHeapAlloc(Size as usize, 0x52736c50) as PCM_PARTIAL_RESOURCE_LIST;
+    PartialResourceList = FrLdrHeapAlloc(Size as usize, TAG_HW_RESOURCE_LIST) as PCM_PARTIAL_RESOURCE_LIST;
     if PartialResourceList == core::ptr::null_mut() {
         ERR(b"Failed to allocate resource descriptor\n\0".as_ptr() as PCHAR);
         return core::ptr::null_mut();

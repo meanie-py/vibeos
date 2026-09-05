@@ -320,15 +320,38 @@ pub unsafe extern "system" fn KeBugCheckEx(
 
 #[no_mangle]
 pub unsafe extern "system" fn RtlAssert(
-    _FailedAssertion: PVOID,
-    _FileName: PVOID,
-    _LineNumber: ULONG,
+    FailedAssertion: PVOID,
+    FileName: PVOID,
+    LineNumber: ULONG,
     Message: PCHAR,
 ) {
+    // Format BEFORE printing. freeldr's DbgPrint is deliberately non-variadic
+    // (stable channel, no c_variadic), so handing it this format string prints
+    // it RAW -- which is what shipped: every assertion freeldr has ever raised
+    // reported `Assertion '%s' failed at %s line %lu`, with no expression, no
+    // file and no line, i.e. the one diagnostic freeldr has said nothing at the
+    // moment it fired. sprintf IS variadic here, so format into a buffer and
+    // print that -- the same shape DbgPrint2 already uses for its header.
+    let mut buf: [i8; 512] = [0; 512];
     if !Message.is_null() {
-        DbgPrint(b"Assertion \'%s\' failed at %s line %lu: %s\n\0".as_ptr() as PCCH);
+        sprintf(
+            buf.as_mut_ptr(),
+            b"Assertion \'%s\' failed at %s line %lu: %s\n\0".as_ptr() as *const i8,
+            FailedAssertion,
+            FileName,
+            LineNumber,
+            Message,
+        );
+        DbgPrintSz(buf.as_ptr() as PCSTR);
     } else {
-        DbgPrint(b"Assertion \'%s\' failed at %s line %lu\n\0".as_ptr() as PCCH);
+        sprintf(
+            buf.as_mut_ptr(),
+            b"Assertion \'%s\' failed at %s line %lu\n\0".as_ptr() as *const i8,
+            FailedAssertion,
+            FileName,
+            LineNumber,
+        );
+        DbgPrintSz(buf.as_ptr() as PCSTR);
     }
 
     DbgBreakPoint();

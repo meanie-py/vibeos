@@ -2039,6 +2039,49 @@ the commented ones. **Prefer bindgen enums over local consts in new translations
 Cross-driver value bleed: cdfs and fastfat both define a WAIT flag, with different values. A
 "known" constant is only known *within its module*.
 
+**Within ONE crate the same divergence cannot be legitimate, and a pool tag is where it hides.**
+Symptom: arm64 wedged in freeldr right after `Switching stack...`, EL1 sync exception, `ESR
+EC 0x3C ISS 0xF000` — a `brk #0xF000` from `arm64_debug.rs`'s `DbgBreakPoint`, reached through
+freeldr's `RtlAssert` from `FrLdrHeapFreeEx`'s tag-check. Cause, two of them: `uefidisk.rs`
+freed a `DISKCONTEXT` with the magic literal `0x4B534944` (ASCII `"DISK"`, not any tag) where
+the preserved C comment in the same file says `TAG_HW_DISK_CONTEXT`; and `hwdisk.rs` spelled
+that tag `u32::from_le_bytes(*b"cDwH")` = `0x48774463` while `uefidisk.rs` spelled it
+`from_be_bytes(*b"cDwH")` = `0x63447748`. A C multi-character literal is big-endian by
+definition — `'cDwH'` is `('c'<<24)|('D'<<16)|('w'<<8)|'H'` — so the `le` spelling had the
+bytes reversed. Fix: free with the named constant, never a re-derived literal; and note that
+`from_le_bytes(*b"HwDc")` and `from_be_bytes(*b"cDwH")` are the SAME number, so the function
+and the byte string must be chosen as a pair. Compare tags by VALUE, never by spelling.
+
+**ONE defect, THREE presentations, one per arch — and only one of them is visible to a gate.**
+The identical bad-tag free showed up as: a fatal wedge on arm64 (`DbgBreakPoint` is a real
+`brk #0xF000`, `arm64_debug.rs:48`); a silent scroll of 38 printed assertions *under a GREEN
+smoke verdict* on amd64 (`DbgBreakPoint` is an empty stub, `frldr.rs:719`, so the boot survives
+and reaches the desktop marker); and nothing at all on i386, which boots the same media but
+never takes the CD file-close path. Reading amd64's exit code would have said PASS. The bug was
+found only by grepping its serial log for `Assertion` after arm64's crash gave a reason to look.
+So: **when a diagnostic's severity is arch-split, a green verdict on the lenient arch is not
+evidence** — grep the serial log for the diagnostic itself. And the three tags behind it were
+trivial to fix once visible; the expensive thing was the arch-split no-op stub that hid one
+presentation and the missing scanner coverage that hid the rest.
+
+The full set, all with the C as oracle: `uefidisk.rs` froze a magic `0x4B534944` (`"DISK"`)
+where the C says `TAG_HW_DISK_CONTEXT`; `iso.rs` froze `0x49736F46` (`"IsoF"`) for
+`TAG_ISO_FILE` (`"FosI"`) — byte-reversed, one assertion per file loaded; `RtlAllocateHeap`
+allocated with `0x20746C52` while `RtlFreeHeap` freed with `0x206C7452`, the C passing `' ltR'`
+to BOTH; and `TAG_HW_RESOURCE_LIST` existed in **seven** spellings, two of them
+function-local `const`s inside `machpc.rs` shadowing the correct glob-imported one (see "A local
+`const` silently SHADOWS a glob import" above — same class, and `machpc.c:172` frees with that
+tag, so a shadowed alloc could never match an unshadowed free).
+
+`scan_const_contradictions` exists precisely for "one name, two values, both ours" and reported
+neither, because its `CONST_RE` matched only integer literals: every `u32::from_*_bytes(*b"..")`
+constant in the tree was invisible to it — pool tags, the largest duplicated-constant family we
+have. Teaching it to evaluate them surfaced **75** further divergences at once, including
+`TAG_CM` at four distinct values inside `config-rust` and `TAG_HW_RESOURCE_LIST` at five inside
+`freeldr-rust`. The lesson is not "we lacked a gate" but **a gate can have a hole shaped exactly
+like the family it most needed to cover** — when a scanner reports zero for a population you
+know is duplicated, check that it can PARSE that population before believing the zero.
+
 ### A local `const` silently SHADOWS a glob import — no warning at either site
 `ARM3/special.rs` declared `const POOL_FLAG_SPECIAL_POOL: ULONG = 0x10` while
 `use ntkrnl_sys::mm::*` was already supplying the real `0x20` (`miarm.h:328`). `0x10` is

@@ -696,13 +696,20 @@ pub unsafe extern "system" fn ExFreePoolWithTag(
     FrLdrHeapFreeEx(FrLdrDefaultHeap, P, Tag);
 }
 
+// heap.c:623 and :639 both pass ' ltR' -- ONE tag for the pair. Translation
+// emitted two different literals: the free got 0x206C7452 (correct) and the
+// alloc got 0x20746C52, 't' and 'l' transposed. Every RtlFreeHeap in freeldr
+// therefore hit the tag-mismatch branch. Named once so the pair cannot drift
+// again: a constant declared once cannot disagree with itself.
+const TAG_RTL_HEAP: ULONG = u32::from_be_bytes(*b" ltR");
+
 #[no_mangle]
 pub unsafe extern "system" fn RtlAllocateHeap(
     _HeapHandle: PVOID,
     Flags: ULONG,
     Size: SIZE_T) -> PVOID
 {
-    let ptr = FrLdrHeapAllocateEx(FrLdrDefaultHeap, Size, 0x20746C52);
+    let ptr = FrLdrHeapAllocateEx(FrLdrDefaultHeap, Size, TAG_RTL_HEAP);
     if !ptr.is_null() && (Flags & HEAP_ZERO_MEMORY) != 0
     {
         RtlZeroMemory(ptr, Size);
@@ -717,7 +724,7 @@ pub unsafe extern "system" fn RtlFreeHeap(
     _Flags: ULONG,
     HeapBase: PVOID) -> BOOLEAN
 {
-    FrLdrHeapFreeEx(FrLdrDefaultHeap, HeapBase, 0x206C7452u32);
+    FrLdrHeapFreeEx(FrLdrDefaultHeap, HeapBase, TAG_RTL_HEAP);
     1u8
 }
 

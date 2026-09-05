@@ -481,6 +481,39 @@ land; date every addition.** Source docs live in `docs/engineering/archive/`.
 The committed home for open bugs (was: agent MEMORY.md, which other agents never see).
 Field-manual § pointers hold the full writeups. **Update on state change.**
 
+- **freeldr's `FREELDR_HEAP_VERIFIER` is DEAD in Rust — OPEN** (2026-09-04). `heap.c:25` defines
+  it **unconditionally**, so the C always compiles the redzone allocation, the redzone writes
+  and the three `FrLdrHeapVerify` checks. The translation turned it into
+  `#[cfg(feature = "FREELDR_HEAP_VERIFIER")]` at five sites in `freeldr-rust/src/heap.rs`, and
+  the feature is not declared in that crate's `Cargo.toml` (`default = []`, only `uefi` and
+  `rosload` exist) — so all five are permanently off. It is self-consistent (alloc and free
+  both skip the redzone), which is why nothing has failed, but freeldr has shipped with its
+  heap verifier silently disabled. Fix is to declare the feature and enable it by default,
+  which needs a boot behind it since it changes every freeldr allocation's layout.
+- **A green smoke on amd64 can HIDE a freeldr assertion storm** (2026-09-05). `DbgBreakPoint`
+  is a real `brk #0xF000` on arm64 and an EMPTY STUB on i386/amd64, so the same failing
+  assertion wedges one arch and merely prints on another while the boot reaches the desktop
+  marker and the verdict says PASS. amd64 printed the bad-tag assertion 38 times — once per
+  file loaded — under a green smoke. When touching freeldr assertions, grep the serial log for
+  `Assertion`, do not read the verdict. Field manual, "The same-named constant with a DIFFERENT
+  value per driver".
+- **`ASSERT!` is FATAL in the boot loader, print-and-continue in the kernel** (2026-09-04).
+  `ntkrnl_sys::ASSERT!` calls `RtlAssert`, and there are two of them: the kernel's
+  (`rtl-diag/src/assert.rs` — prints, capped at 20, returns) and freeldr's
+  (`freeldr-rust/src/debug.rs` — prints, then `DbgBreakPoint()`). On arm64 that breakpoint is a
+  real `brk #0xF000` (`arm64_debug.rs:48`) and wedges the boot; on i386/amd64 it is an empty
+  stub (`frldr.rs:719`) so the same assert prints and sails on. So an assertion's severity
+  depends on the LINK, not the crate — and `uefildr-cargo/build.rs` shows the loader link pulls
+  in `freeldr-rust`, `cmlib-rust`, `cnt-rust-lib`, `cport-rust` and `hal-rust`, of which
+  `hal-rust` is ALSO in the kernel link. Any future tool that makes assertions live must read
+  that link set rather than filter by crate name.
+- **75 newly-visible same-name/different-value constants — baselined work queue** (2026-09-04).
+  `scan_const_contradictions` could only parse integer literals, so every
+  `u32::from_*_bytes(*b"..")` pool tag was invisible to it. Now evaluated; the backlog includes
+  `TAG_CM` at four values inside `config-rust`, `TAG_HW_RESOURCE_LIST` at five inside
+  `freeldr-rust`, `TAG_HAL` at three, and byte-reversed pairs in `pcix-rust`, `win32k-rust`,
+  `fltmgr-rust` and `classpnp-rust`. One of this family wedged the arm64 boot (field manual,
+  "The same-named constant with a DIFFERENT value per driver"). Burn down per crate.
 - **classpnp's `KeRaiseIrql`/`KeLowerIrql` shims call THEMSELVES — OPEN** (2026-07-26). In
   `classpnp-rust/src/ddk_shims.rs`, the `#[no_mangle] extern "system" fn KeRaiseIrql` body
   declares `extern "system" { fn KeRaiseIrql(..); }` and calls it. That extern binds to the
