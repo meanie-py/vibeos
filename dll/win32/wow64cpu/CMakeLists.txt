@@ -81,6 +81,15 @@ if(_wow64_guest_ok)
         COMMAND python3 ${REACTOS_SOURCE_DIR}/tools/fex/wow64-closure.py
                 --build-dir ${REACTOS_SOURCE_DIR}/build-i386
                 --include-prestaged --no-strip
+                # Every guest we STAGE is also a closure root. It was not always so:
+                # the roots were the stock applets, and a ladder guest's imports were
+                # covered only because some applet happened to import the same DLLs.
+                # marshal32 linking ws2_32 was covered by that coincidence; the next
+                # guest to link something new would have half-bound instead, which is
+                # the crash-at-first-call this closure exists to prevent. Adding them
+                # is currently a no-op (measured: same 64 modules), which is the point
+                # — it costs nothing and stops depending on luck.
+                ${_wow64_guests}
                 ${REACTOS_SOURCE_DIR}/build-i386/base/applications/testgui/testgui.exe
                 ${REACTOS_SOURCE_DIR}/tools/doom/doom-i386.exe
                 ${REACTOS_SOURCE_DIR}/build-fex-hello/gui32.exe

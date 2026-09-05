@@ -1065,6 +1065,11 @@ static int CheckSocketSelect(void)
     struct timeval tv;
     int rc;
 
+    /* Breadcrumbs, one per Winsock call. The first boot of this rung faulted
+     * with rip == the faulting address and no output at all, which narrows to
+     * "somewhere in here" and no further. Each line below costs one serial
+     * write and turns that into an exact call. */
+    Report("[marshal32] select: calling WSAStartup\n");
     if (WSAStartup(0x0202, &wsa) != 0)
     {
         Report("[marshal32] FAIL: WSAStartup\n");
@@ -1074,6 +1079,7 @@ static int CheckSocketSelect(void)
     /* SOCK_DGRAM needs no peer, so this cannot block or touch the wire. If the
      * Winsock provider (msafd.dll) is not staged into SysWOW64 this is where it
      * shows up, and it shows up as a plain failure rather than a hang. */
+    Report("[marshal32] select: WSAStartup returned, calling socket()\n");
     s = socket(AF_INET, SOCK_DGRAM, IPPROTO_UDP);
     if (s == INVALID_SOCKET)
     {
@@ -1089,7 +1095,9 @@ static int CheckSocketSelect(void)
     tv.tv_sec = 0;
     tv.tv_usec = 0;
 
+    Report("[marshal32] select: socket created, calling select()\n");
     rc = select(0, &fds.set, NULL, NULL, &tv);
+    Report("[marshal32] select: select() returned\n");
 
     if (rc == SOCKET_ERROR)
     {

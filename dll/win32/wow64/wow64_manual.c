@@ -1122,7 +1122,7 @@ typedef struct _WOW64_IO_STATUS_BLOCK64_M {
  * scratch — guest memory is never modified. */
 #define WOW64_REDIR_MAX 260
 
-static void Wow64pRedirectPath(WOW64_UNICODE_STRING64_M *Name64, WCHAR *Scratch)
+static BOOLEAN Wow64pRedirectPath(WOW64_UNICODE_STRING64_M *Name64, WCHAR *Scratch)
 {
     static const WCHAR Sys32[] = {'\\','s','y','s','t','e','m','3','2','\\',0};
     static const WCHAR Wow64[] = {'\\','s','y','s','w','o','w','6','4','\\',0};
@@ -1131,8 +1131,19 @@ static void Wow64pRedirectPath(WOW64_UNICODE_STRING64_M *Name64, WCHAR *Scratch)
     ULONG i, j;
     LONG Hit = -1;
 
-    if (!Src || Chars == 0 || Chars > WOW64_REDIR_MAX)
-        return;
+    if (!Src || Chars == 0)
+        return FALSE;
+    if (Chars > WOW64_REDIR_MAX)
+    {
+        /* A path too long for the scratch buffer used to return quietly, which
+         * means a \system32\ path silently stayed \system32\ and the 32-bit
+         * process opened the 64-BIT file. That is a wrong-file open reported as
+         * success — exactly the failure this function exists to prevent — so it
+         * says so rather than degrading in silence. */
+        DbgPrint("[WOW64]   REDIRECT SKIPPED (path %lu chars > %u): '%.*S'\n",
+                 Chars, (unsigned)WOW64_REDIR_MAX, (int)Chars, Src);
+        return FALSE;
+    }
 
     for (i = 0; i + 10 <= Chars; i++)
     {
@@ -1145,13 +1156,14 @@ static void Wow64pRedirectPath(WOW64_UNICODE_STRING64_M *Name64, WCHAR *Scratch)
         if (j == 10) { Hit = (LONG)i; break; }
     }
     if (Hit < 0)
-        return;
+        return FALSE;
 
     for (i = 0; i < Chars; i++)
         Scratch[i] = Src[i];
     for (j = 0; j < 10; j++)
         Scratch[Hit + j] = Wow64[j];
     Name64->Buffer = (ULONG_PTR)Scratch;
+    return TRUE;
 }
 
 static void Wow64pCopyIosbDown(WOW64_IO_STATUS_BLOCK64_M *I64, ULONG Iosb32Ptr)
@@ -1425,12 +1437,19 @@ static NTSTATUS Wow64Manual_NtOpenFile(ULONG *a)
     WOW64_IO_STATUS_BLOCK64_M Iosb64 = {0};
     HANDLE Handle = NULL;
     NTSTATUS St;
+    BOOLEAN Redirected;
 
     Wow64pMarshalOa(&Oa64, &Uname64, a[2]);
-    Wow64pRedirectPath(&Uname64, RedirScratch);
+    Redirected = Wow64pRedirectPath(&Uname64, RedirScratch);
     St = NtOpenFile(&Handle, Access, &Oa64, &Iosb64, a[4], a[5]);
-    if (St < 0 && Oa64.ObjectName)
-        DbgPrint("[WOW64]   NtOpenFile '%.*S' => %08lx\n",
+    /* Logged on SUCCESS too. Printing only failures means you can see every
+     * path the process could not open and none of the ones it did — so a
+     * successful open of the WRONG file (the 64-bit copy, because redirection
+     * did not fire) is invisible, which is precisely the case this had to be
+     * used to diagnose. */
+    if (Oa64.ObjectName)
+        DbgPrint("[WOW64]   NtOpenFile%s '%.*S' => %08lx\n",
+                 Redirected ? " [redir]" : "",
                  (int)(Uname64.Length / sizeof(WCHAR)),
                  (PCWSTR)(ULONG_PTR)Uname64.Buffer, St);
     Wow64pCopyIosbDown(&Iosb64, a[3]);
