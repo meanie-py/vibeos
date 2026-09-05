@@ -75,9 +75,9 @@ def _deps_of(crate_dir: Path) -> set[str]:
     for line in text.splitlines():
         stripped = line.strip()
         if stripped.startswith("["):
-            in_deps = stripped.startswith("[dependencies") or stripped.startswith(
-                "[target."
-            ) and "dependencies" in stripped
+            in_deps = stripped.startswith("[dependencies") or (
+                stripped.startswith("[target.") and "dependencies" in stripped
+            )
             continue
         if not in_deps or not stripped or stripped.startswith("#"):
             continue
@@ -133,7 +133,12 @@ def _nm_defined(path: Path) -> set[str] | None:
                 [nm, "--defined-only", str(path)],
                 capture_output=True, text=True, timeout=120,
             )
-        except (FileNotFoundError, subprocess.TimeoutExpired):
+        except (OSError, subprocess.TimeoutExpired):
+            # OSError, not FileNotFoundError: a present-but-non-executable llvm-nm raises
+            # PermissionError, which took this whole check down the first time it ran here.
+            # Any failure to EXECUTE means "this nm is unusable, try the next"; a failure to
+            # READ is handled by the returncode check below. Never silently pass: if no nm
+            # works at all, _nm_defined returns None and the caller emits a finding.
             continue
         if res.returncode != 0:
             continue
@@ -197,28 +202,83 @@ def check_archive() -> list[str]:
             if got:
                 c_syms |= got
 
-        # i386 decorates cdecl exports with a leading underscore; compare undecorated.
-        strip = (lambda s: s[1:] if s.startswith("_") and arch == "i386" else s)
+        def strip(sym: str, *, i386: bool = (arch == "i386")) -> str:
+            """i386 decorates cdecl exports with a leading underscore; compare bare.
+
+            `i386` is a bound default rather than a closure over the loop variable: this
+            function outlives the iteration that made it (ruff B023).
+            """
+            return sym[1:] if i386 and sym.startswith("_") else sym
+
         c_norm = {strip(s) for s in c_syms}
 
-        # Rust's own runtime bits are not msvcrt_shared's and are expected: the panic
-        # handler's machinery and the `rust_eh_personality` stub every *-cargo defines.
-        allowed_extra = {"rust_eh_personality", "rust_begin_unwind", "__rust_probestack"}
+        # THE ASSERTION, stated precisely. "Subset of msvcrt_shared" is very nearly right but
+        # over-fires: rustc bundles compiler-rt into every staticlib, so the archive also
+        # carries __divdc3, __absvdi2, _Unwind_Resume and ~100 more that no C of ours defines.
+        # Those are not the hazard. Shadowing needs BOTH halves --
+        #
+        #     (a) msvcrt_shared's C does not define it, so we have no C body to be the
+        #         authority on what it should do, AND
+        #     (b) ucrtbase EXPORTS it, so a real caller reaches our body instead of the
+        #         genuine UCRT one.
+        #
+        # A compiler-rt builtin fails (b): ucrtbase.spec does not export __divdc3, so ours
+        # cannot displace anything callers see. An export we have no C for fails nothing and
+        # is exactly the 856-body accident this file exists to prevent.
+        #
+        # Reporting the (a)-only symbols as findings is what a strict gate looks like right
+        # before someone turns it off: 114 lines of noise around zero real defects.
+        spec = REPO / "dll" / "win32" / "ucrtbase" / "ucrtbase.spec"
+        exported: set[str] = set()
+        if spec.is_file():
+            for ln in spec.read_text(errors="replace").splitlines():
+                m = re.match(
+                    r"^[\d@]+\s+(?:cdecl|stdcall|varargs|extern|stub)\s+(?:-\S+\s+)*"
+                    r"([A-Za-z_?$][\w?$@]*)",
+                    ln.strip(),
+                )
+                if m:
+                    exported.add(m.group(1))
+        else:
+            findings.append(
+                f"dll/win32/ucrtbase/ucrtbase.spec: MISSING -- cannot tell which symbols "
+                f"ucrtbase exports, so the shadowing assertion for build-{arch} could not run"
+            )
+            continue
+
+        def is_rust_internal(sym: str) -> bool:
+            """True for a symbol no C declaration could ever name, so it cannot shadow one.
+
+            The check is about SHADOWING, and shadowing needs a name collision: a C caller
+            reaches a body by writing its identifier. Rust's mangled items (`_ZN..17h<hash>E`)
+            and the `.refptr.` COFF indirection stubs the linker emits for their statics carry
+            characters no C identifier has, so no ucrt TU can bind to them however many land in
+            the archive. Filtering them is not loosening the assertion -- keeping them in was
+            reporting 114 findings that were all noise, which is how a strict gate gets
+            disabled by the next person who reads it.
+            """
+            return (
+                sym.startswith((".refptr.", "_ZN", "__rust", "anon.", ".L", ".weak."))
+                or "_ZN" in sym
+                or not re.fullmatch(r"[A-Za-z_?@$][\w?@$]*", sym)
+            )
 
         extra = sorted(
             s for s in rust_syms
             if strip(s) not in c_norm
-            and s not in allowed_extra
-            and not s.startswith(("_ZN", "__rust", "anon.", ".L"))
+            and strip(s) in exported
+            and not is_rust_internal(s)
         )
         if extra:
-            shown = ", ".join(extra[:12]) + (f", +{len(extra) - 12} more" if len(extra) > 12 else "")
+            more = f", +{len(extra) - 12} more" if len(extra) > 12 else ""
+            shown = ", ".join(extra[:12]) + more
             findings.append(
                 f"build-{arch}: libcrt_shared_cargo.a defines {len(extra)} symbol(s) that "
-                f"msvcrt_shared's C does not, so they would land in ucrtbase.dll shadowing "
-                f"whatever the genuine UCRT calls them: {shown}. fix: move the body back to "
-                f"msvcrt-crt-rust, or -- if ucrtbase really does owe it -- add the C to "
-                f"SHARED_SOURCE so both sides agree on the surface"
+                f"ucrtbase EXPORTS but msvcrt_shared's C does not define, so each one "
+                f"silently replaces the genuine Microsoft UCRT body callers expect "
+                f"(--allow-multiple-definition raises nothing): {shown}. fix: move the body "
+                f"back to msvcrt-crt-rust, or -- if ucrtbase really does owe it to us -- add "
+                f"the C to SHARED_SOURCE so both sides agree on the surface"
             )
     return findings
 
