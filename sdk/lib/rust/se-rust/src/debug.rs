@@ -76,7 +76,7 @@ unsafe fn SepDumpAces(acl: PACL) {
         crate::dbg_print!(b"Ace->AccessMask -> 0x%08lx\n\0", (*ace).AccessMask);
 
         let sid = SepGetSidFromAce(ace);
-        debug_assert!(!sid.is_null());
+        ntkrnl_sys::ASSERT!(!sid.is_null());
         let mut sid_string: _UNICODE_STRING = core::mem::zeroed();
         RtlConvertSidToUnicodeString(&mut sid_string as *mut _UNICODE_STRING, sid, 1u8);
         crate::dbg_print!(b"Ace SID -> %wZ\n\0", &sid_string as *const _UNICODE_STRING);

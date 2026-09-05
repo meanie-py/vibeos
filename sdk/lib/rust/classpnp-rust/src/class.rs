@@ -2193,7 +2193,7 @@ pub unsafe extern "system" fn ClassAsynchronousCompletion(
                 FREE_PORT_ALLOCATED_SENSE_BUFFER(fdoExtension, srb);
             }
         } else {
-            debug_assert_eq!(TEST_FLAG(srbFlags, SRB_FLAGS_FREE_SENSE_BUFFER), 0);
+            ntkrnl_sys::ASSERT!(TEST_FLAG(srbFlags, SRB_FLAGS_FREE_SENSE_BUFFER) == 0);
         }
     }
 
@@ -2478,7 +2478,7 @@ pub unsafe extern "system" fn ClassIoComplete(
     let srbFlags: ULONG;
     let srbFunction: ULONG;
 
-    debug_assert!((*fdoExtension).__bindgen_anon_1.CommonExtension.as_ref().__bindgen_anon_1.IsFdo() != 0);
+    ntkrnl_sys::ASSERT!((*fdoExtension).__bindgen_anon_1.CommonExtension.as_ref().__bindgen_anon_1.IsFdo() != 0);
 
     if (*srb).Function == SRB_FUNCTION_STORAGE_REQUEST_BLOCK {
         srbFlags = (*(srb as *mut STORAGE_REQUEST_BLOCK)).SrbFlags;
@@ -2568,8 +2568,8 @@ pub unsafe extern "system" fn ClassIoComplete(
 
     // Paging I/O sanity checks
     if NT_SUCCESS(status) && TEST_FLAG((*Irp).Flags, IRP_PAGING_IO) != 0 {
-        debug_assert!((*Irp).IoStatus.Information != 0);
-        debug_assert!((*irpStack).Parameters.Read.Length == ((*Irp).IoStatus.Information) as u32);
+        ntkrnl_sys::ASSERT!((*Irp).IoStatus.Information != 0);
+        ntkrnl_sys::ASSERT!((*irpStack).Parameters.Read.Length == ((*Irp).IoStatus.Information) as u32);
     }
 
     // Determine whether to call IoStartNextPacket

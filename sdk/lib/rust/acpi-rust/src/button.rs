@@ -18,11 +18,6 @@ use acpica_sys::{
     AcpiRemoveNotifyHandler, ACPI_DEVICE_NOTIFY, ACPI_EVENT_POWER_BUTTON, ACPI_EVENT_SLEEP_BUTTON,
 };
 
-// DPRINT is a no-op under the driver's NDEBUG build.
-macro_rules! DPRINT {
-    ($($t:tt)*) => {};
-}
-
 // ---- ACPICA tracing macros — no-ops under NDEBUG. return_VOID/return_VALUE/
 //      return_ACPI_STATUS reduce to plain returns (NDEBUG build). ----
 macro_rules! ACPI_FUNCTION_TRACE {

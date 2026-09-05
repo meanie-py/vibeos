@@ -393,7 +393,27 @@ python -m rustconv substrate-plan path/to/report.json   # Cluster compiler roots
 python -m rustconv crate-repair foo-rust --arches i386 amd64 arm64  # $0 deterministic repair
 python -m rustconv.profile_derive dll/win32/foo --emit report       # Derive bindgen island
 python -m rustconv bank-audit [--verbose]               # Paid .responses output NOT in the tree
+python -m rustconv.export_audit --module dll/ntdll dll/ntdll/def/ntdll.spec  # Does the DLL still export what it promised?
 ```
+
+`export_audit` asks whether every implementable `.spec` entry is a `#[no_mangle]` fn with the
+spec's calling convention. **Use `--module <cmake dir>`** — it resolves the module's C dir, every
+crate the build declares it links (`add_cargo_module`/`add_cargo_kernel_dll`, `BODY_CRATES`, the
+cargo crate's `build.rs` `.rust_lib(..)`, and any `include()`d `.cmake`), and the assembly it
+assembles. Passing one crate directory by hand reports the other crates' exports as dropped —
+hidparse reads as 30 MISSING against `hidparse-rust` alone and CLEAN once `hidparser-rust` is in.
+
+Five verdicts, and four of them are "not a defect, here is who covers it": `STILL_C` (a
+still-compiled `.c` defines it — cohabitation working), `GENERATED` (the module's assembly does:
+a syscall stub expanded from a `SVC_` table, or a literal asm label), `NOT_EXPORTED` (a Rust fn
+exists but is name-mangled — the StgCreateDocfile shape), `ABI_MISMATCH`, and `MISSING`. The
+point of each split is that `MISSING` stays readable: ntdll reported **649 MISSING** before
+`GENERATED` existed, of which **593** were the Nt*/Zw* stubs `ntoskrnl/ntdll.S` generates and
+another ~20 were hand-written asm. It is 35 now, and those 35 are the CRT variadics and integer
+intrinsics that come from reused Tier-C `.a` archives — a fifth supplier nothing models yet.
+`--arch` also drops the `.spec` rows that arch does not build (`-arch=arm`, and the `win32`/
+`win64` width aliases), which both removes false MISSINGs and keeps a per-arch pair like
+hal.spec's two `ExAcquireFastMutex` rows from collapsing onto whichever is written last.
 
 `bank-audit` is the oracle behind the "never delete a `.responses/` dir holding unintegrated
 work" rule — it runs `.responses` → tree, the opposite direction to `fn_coverage`/`export_audit`,

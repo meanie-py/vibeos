@@ -56,6 +56,7 @@ use crate::glue::{_CLASS_FUNCTION_SUPPORT_STATE_NotSupported, _CLASS_FUNCTION_SU
 // resolve_imports.py: explicit kernel/private-type imports
 use crate::types::{STORAGE_DEVICE_LAYOUT_SIGNATURE, STORAGE_DEVICE_UNIQUE_IDENTIFIER, _DUID_MATCH_STATUS_DuidExactMatch as DuidExactMatch, _STORAGE_DEVICE_UNIQUE_IDENTIFIER, _DUID_MATCH_STATUS_DuidSubIdMatch as DuidSubIdMatch, _DUID_MATCH_STATUS_DuidNoMatch as DuidNoMatch, _DUID_MATCH_STATUS_DuidErrorGeneral as DuidErrorGeneral, _DUID_MATCH_STATUS_DuidErrorMissingDuid as DuidErrorMissingDuid, _DUID_MATCH_STATUS_DuidErrorVersionMismatch as DuidErrorVersionMismatch, _DUID_MATCH_STATUS_DuidErrorInvalidDuid as DuidErrorInvalidDuid, _DUID_MATCH_STATUS_DuidErrorInvalidDeviceIdDescSize as DuidErrorInvalidDeviceIdDescSize, _DUID_MATCH_STATUS_DuidErrorInvalidDeviceDescSize as DuidErrorInvalidDeviceDescSize, _DUID_MATCH_STATUS_DuidErrorInvalidLayoutSigSize as DuidErrorInvalidLayoutSigSize, _DUID_MATCH_STATUS_DuidErrorInvalidLayoutSigVersion as DuidErrorInvalidLayoutSigVersion, DUID_MATCH_STATUS, PFIXED_SENSE_DATA, PDESCRIPTOR_SENSE_DATA, _CDB__GET_LBA_STATUS};
 use ntkrnl_sys::ddk::{_STORAGE_IDENTIFIER_CODE_SET_StorageIdCodeSetBinary as StorageIdCodeSetBinary, _STORAGE_IDENTIFIER_CODE_SET_StorageIdCodeSetAscii as StorageIdCodeSetAscii, _STORAGE_IDENTIFIER_CODE_SET_StorageIdCodeSetUtf8 as StorageIdCodeSetUtf8, _STORAGE_IDENTIFIER_TYPE_StorageIdTypeScsiNameString as StorageIdTypeScsiNameString, _STORAGE_IDENTIFIER_TYPE_StorageIdTypeFCPHName as StorageIdTypeFCPHName, _STORAGE_IDENTIFIER_TYPE_StorageIdTypeEUI64 as StorageIdTypeEUI64, _STORAGE_IDENTIFIER_TYPE_StorageIdTypeVendorId as StorageIdTypeVendorId, _STORAGE_ASSOCIATION_TYPE_StorageIdAssocPort as StorageIdAssocPort};
+use ntkrnl_sys::ddk::RtlAssert;
 
 extern "C" {
     
@@ -1237,7 +1238,12 @@ pub unsafe extern "C" fn ClasspWriteCacheProperty(
     'write_cache_exit: loop {
         if KeGetCurrentIrql() >= DISPATCH_LEVEL {
             if !(KeGetCurrentIrql() < DISPATCH_LEVEL) {
-                panic!("NT_ASSERT failed");
+                RtlAssert(
+                    b"KeGetCurrentIrql() < DISPATCH_LEVEL\0".as_ptr() as *mut core::ffi::c_void,
+                    b"utils.rs\0".as_ptr() as *mut core::ffi::c_void,
+                    line!(),
+                    core::ptr::null_mut::<i8>(),
+                );
             }
             status = STATUS_INVALID_LEVEL;
             break 'write_cache_exit;
@@ -1555,7 +1561,7 @@ pub unsafe extern "C" fn ClassReadCapacity16(
         if NT_SUCCESS(status) {
             (*(Srb as *mut _STORAGE_REQUEST_BLOCK)).SrbFunction = SRB_FUNCTION_EXECUTE_SCSI;
         } else {
-            debug_assert!(false, "Should not occur");
+            ntkrnl_sys::ASSERT!(false, "Should not occur");
         }
     } else {
         core::ptr::write_bytes(Srb as *mut u8, 0, core::mem::size_of::<_SCSI_REQUEST_BLOCK>());
@@ -1992,7 +1998,7 @@ pub unsafe extern "C" fn ClasspDeviceSeekPenaltyProperty(
         }
 
         if KeGetCurrentIrql() >= DISPATCH_LEVEL {
-            assert!(KeGetCurrentIrql() < DISPATCH_LEVEL);
+            ntkrnl_sys::ASSERT!(KeGetCurrentIrql() < DISPATCH_LEVEL);
             break 'block (STATUS_INVALID_LEVEL, 0usize);
         }
 
@@ -2011,7 +2017,7 @@ pub unsafe extern "C" fn ClasspDeviceSeekPenaltyProperty(
 
         match (*(*fdoExtension).FunctionSupportInfo).LowerLayerSupport.SeekPenaltyProperty {
             Supported => {
-                assert!(false, "Supported case should be handled earlier");
+                ntkrnl_sys::ASSERT!(false, "Supported case should be handled earlier");
                 break 'block (STATUS_UNSUCCESSFUL, 0usize);
             }
             SupportUnknown => {
@@ -2494,7 +2500,7 @@ pub unsafe extern "C" fn ClasspDeviceTrimProperty(
 
         // IRQL check.
         if KeGetCurrentIrql() >= DISPATCH_LEVEL {
-            core::debug_assert!(KeGetCurrentIrql() < DISPATCH_LEVEL);
+            ntkrnl_sys::ASSERT!(KeGetCurrentIrql() < DISPATCH_LEVEL);
             status = STATUS_INVALID_LEVEL;
             break 'trim_exit;
         }
@@ -2526,7 +2532,7 @@ pub unsafe extern "C" fn ClasspDeviceTrimProperty(
                     || status == STATUS_INVALID_PARAMETER_1
                 {
                     status = (*support_info).LBProvisioningData.CommandStatus;
-                    core::debug_assert!(status != (-1i32 as NTSTATUS));
+                    ntkrnl_sys::ASSERT!(status != (-1i32 as NTSTATUS));
                     (*support_info).LowerLayerSupport.TrimProperty = NotSupported;
                     if NT_SUCCESS(status) {
                         RtlZeroMemory(trimDescr as *mut core::ffi::c_void, length as usize);
@@ -2544,7 +2550,7 @@ pub unsafe extern "C" fn ClasspDeviceTrimProperty(
             }
             NotSupported => {
                 status = (*support_info).LBProvisioningData.CommandStatus;
-                core::debug_assert!(status != (-1i32 as NTSTATUS));
+                ntkrnl_sys::ASSERT!(status != (-1i32 as NTSTATUS));
                 if NT_SUCCESS(status) {
                     RtlZeroMemory(trimDescr as *mut core::ffi::c_void, length as usize);
                     (*trimDescr).Version = core::mem::size_of::<DEVICE_TRIM_DESCRIPTOR>() as ULONG;
@@ -5744,8 +5750,8 @@ pub unsafe extern "C" fn ClasspPowerIdleDevice(DeviceObject: PDEVICE_OBJECT) -> 
 
     let fdo_extension = (*DeviceObject).DeviceExtension as PFUNCTIONAL_DEVICE_EXTENSION;
 
-    assert!((*fdo_extension).__bindgen_anon_1.CommonExtension.as_ref().__bindgen_anon_1.IsFdo() != 0);
-    assert!((*(*fdo_extension).FunctionSupportInfo).IdlePower.IdlePowerEnabled() != 0);
+    ntkrnl_sys::ASSERT!((*fdo_extension).__bindgen_anon_1.CommonExtension.as_ref().__bindgen_anon_1.IsFdo() != 0);
+    ntkrnl_sys::ASSERT!((*(*fdo_extension).FunctionSupportInfo).IdlePower.IdlePowerEnabled() != 0);
 
     KeInitializeEvent(core::ptr::addr_of_mut!(event), 1, 0u8);
 

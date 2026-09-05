@@ -338,6 +338,17 @@ def source_lint_specs(repo: Path) -> list[tuple]:
     # exports). Baseline EMPTY = strict: a header that grows a new alias fails here.
     vcm = repo / "tools" / "verify_conv_macros.py"
     specs.append(("verify_conv_macros", [py, str(vcm)] if vcm.is_file() else ["MISSING"], "stdout"))
+    # ucrtbase.dll is vendored Microsoft UCRT plus OUR msvcrt_shared, so the Rust archive it
+    # links must cover msvcrt_shared's surface and nothing else. The failure this catches has
+    # no diagnostic of its own: ucrtbase.spec and msvcrt's cohab archive collide on 891 names
+    # of which only 35 are msvcrt_shared's, and the module links with
+    # --allow-multiple-definition, so linking the wrong archive silently replaces 856 genuine
+    # UCRT bodies with msvcrt-contract ones and still builds, boots and looks fine. Baseline
+    # EMPTY = strict.
+    vuc = repo / "tools" / "verify_ucrtbase_cohab.py"
+    specs.append(
+        ("verify_ucrtbase_cohab", [py, str(vuc)] if vuc.is_file() else ["MISSING"], "stdout")
+    )
     # vendor.yaml — which C is NOT ours to translate. Every progress number in this project
     # is a fraction whose denominator is "C that is ours", and before the registry that set
     # was prose in rust-port-status.md, a one-tree manifest under external/, and a hardcoded
@@ -530,6 +541,22 @@ def source_lint_specs(repo: Path) -> list[tuple]:
         (
             "scan_assert_to_ub",
             [py, str(sau), "--lint"] if sau.is_file() else ["MISSING"],
+            "stdout",
+        )
+    )
+    # C's `!x` is LOGICAL not; Rust's `!x` on an integer is BITWISE. So a translated
+    # `!(flags & FLAG)` becomes `!(flags & FLAG) != 0`, which is true for every value a
+    # flag test can produce — a CONSTANT condition that types fine, compiles clean and
+    # trips no rustc lint. Eight sites on 2026-07-26, and only three were assertions:
+    # the rest were live branches, including classpnp's ADJUST_FUA_FLAG collapsing to
+    # its first term (forcing FUA onto devices that had reported it unsupported) and an
+    # always-true arm that disabled win32k's CJK line-break rule. Nothing but reading
+    # the C finds these, which is exactly why it is a gate. Baseline is EMPTY.
+    sbn = repo / "tools" / "scan_bitwise_not_bool.py"
+    specs.append(
+        (
+            "scan_bitwise_not_bool",
+            [py, str(sbn), "--lint"] if sbn.is_file() else ["MISSING"],
             "stdout",
         )
     )
@@ -858,8 +885,15 @@ def source_lint_specs(repo: Path) -> list[tuple]:
     return specs
 
 
-def run_source_lints(run: Run, repo: Path, *, strict: bool) -> None:
-    for name, cmd, src in source_lint_specs(repo):
+def run_source_lints(run: Run, repo: Path, *, strict: bool, only: set[str] | None = None) -> None:
+    specs = source_lint_specs(repo)
+    if only is not None:
+        unknown = only - {name for name, _, _ in specs}
+        if not only or unknown:
+            raise ValueError(f"empty or unknown scanner selection: {sorted(unknown)}")
+    for name, cmd, src in specs:
+        if only is not None and name not in only:
+            continue
         _lint_stage(run, repo, name, cmd, strict=strict, findings_from=src)
 
 

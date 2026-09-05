@@ -389,7 +389,11 @@ unsafe fn IsoLookupFile(mut FileName: PCSTR, DeviceId: ULONG, IsoFileInfo: PISO_
 unsafe extern "C" fn IsoClose(FileId: u32) -> ARC_STATUS {
     
     let FileHandle = FsGetDeviceSpecific(FileId);
-    FrLdrTempFree(FileHandle as *mut core::ffi::c_void, 0x49736F46u32);
+    // iso.c:323 frees with TAG_ISO_FILE, and iso.c:364 allocates with it. The
+    // literal here was 0x49736F46 -- 'IsoF', TAG_ISO_FILE ('FosI', 0x466F7349)
+    // with its bytes reversed -- so EVERY file close on the CD tripped
+    // FrLdrHeapFreeEx's tag check. One assertion per file loaded.
+    FrLdrTempFree(FileHandle as *mut core::ffi::c_void, TAG_ISO_FILE);
     0
 }
 

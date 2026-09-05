@@ -1045,7 +1045,7 @@ pub unsafe extern "system" fn HalpScatterGatherAdapterControl(
             if elements[element_count].Length == 0 {
                 break;
             }
-            debug_assert!(elements[element_count].Length <= remaining);
+            ntkrnl_sys::ASSERT!(elements[element_count].Length <= remaining);
             remaining -= elements[element_count].Length;
             element_count += 1;
         }
@@ -1058,7 +1058,7 @@ pub unsafe extern "system" fn HalpScatterGatherAdapterControl(
             + core::mem::size_of::<SCATTER_GATHER_ELEMENT>() * element_count;
         let sg = ExAllocatePoolWithTag(_POOL_TYPE_NonPagedPool as _, sg_size as SIZE_T, TAG_DMA)
             as PSCATTER_GATHER_LIST;
-        debug_assert!(!sg.is_null());
+        ntkrnl_sys::ASSERT!(!sg.is_null());
 
         (*sg).NumberOfElements = element_count as ULONG;
         (*sg).Reserved = ctx as ULONG_PTR;
@@ -1296,7 +1296,7 @@ pub unsafe extern "system" fn HalpDmaGetDmaAlignment(_AdapterObject: PDMA_ADAPTE
 #[unsafe(no_mangle)]
 pub unsafe extern "system" fn HalReadDmaCounter(AdapterObject: PADAPTER_OBJECT) -> ULONG {
     unsafe {
-        debug_assert!((*AdapterObject).MasterDevice == 0);
+        ntkrnl_sys::ASSERT!((*AdapterObject).MasterDevice == 0);
 
         let master = (*AdapterObject).MasterAdapter;
         let mut old_irql: KIRQL = 0;

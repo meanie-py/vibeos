@@ -70,12 +70,25 @@ NOLINT_RE = re.compile(r"//\s*nolint(?::\s*const-contradiction\b|\s*$|:?\s*\()")
 # structurally unscannable. RMAP_SEGMENT_MASK had five private copies spelled
 # `!0xff` / `!0xFFF` / `!1usize` / `0xFFFFFF00`; only the plain literal parsed,
 # and one surviving value cannot contradict itself.
+# The value is an integer literal OR a FourCC byte-string. The byte-string form
+# was invisible here until 2026-09-04, and it is the LARGEST duplicated-constant
+# family in the tree: pool tags. freeldr spelled ONE constant two ways --
+# hwdisk.rs `from_le_bytes(*b"cDwH")` (0x48774463) against uefidisk.rs
+# `from_be_bytes(*b"cDwH")` (0x63447748, the value C's 'cDwH' actually has) --
+# and this scanner, whose entire job is "one name, two values, both ours", could
+# not see either. The mismatch wedged the arm64 boot in FrLdrHeapFreeEx's
+# tag-check. Both spellings stay legal: `from_le_bytes(*b"HwDc")` and
+# `from_be_bytes(*b"cDwH")` are the same number, so compare the VALUE, never the
+# spelling.
 CONST_RE = re.compile(
     r"^\s*(?:pub\s*(?:\([^)]*\)\s*)?)?(?:const|static)\s+([A-Z_][A-Z0-9_]*)\s*:\s*[^=]+=\s*"
-    r"(!?\s*(?:0[xX][0-9A-Fa-f_]+|\d[\d_]*))\s*"
+    r"(!?\s*(?:0[xX][0-9A-Fa-f_]+|\d[\d_]*)"
+    r"|u32::from_(?:le|be)_bytes\(\*b\"[^\"]{4}\"\))\s*"
     r"(?:u8|u16|u32|u64|usize|i8|i16|i32|i64|isize)?"
     r"\s*(?:as\s+[\w:]+\s*)?;"
 )
+
+FOURCC_RE = re.compile(r'u32::from_(le|be)_bytes\(\*b"([^"]{4})"\)')
 
 
 def parse_value(raw: str) -> int | None:
@@ -86,6 +99,8 @@ def parse_value(raw: str) -> int | None:
     compare our copies against each other, and picking a width here would make
     `!0xff` and a spelled-out `0xFFFFFF00` collide on 32-bit and not on 64-bit.
     """
+    if (fc := FOURCC_RE.search(raw)) is not None:
+        return int.from_bytes(fc.group(2).encode(), "little" if fc.group(1) == "le" else "big")
     raw = raw.replace("_", "").replace(" ", "")
     invert = raw.startswith("!")
     if invert:

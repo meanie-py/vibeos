@@ -75,7 +75,7 @@ pub unsafe fn HidClassFDO_QueryCapabilities(
 
     // get device extension
     let FDODeviceExtension = (*DeviceObject).DeviceExtension as PHIDCLASS_FDO_EXTENSION;
-    debug_assert!((*FDODeviceExtension).Common.IsFDO != 0);
+    ntkrnl_sys::ASSERT!((*FDODeviceExtension).Common.IsFDO != 0);
 
     // init event
     KeInitializeEvent(&mut Event, NotificationEvent, FALSE);
@@ -184,7 +184,7 @@ pub unsafe fn HidClassFDO_DispatchRequestSynchronous(
         TRUE,
     );
 
-    debug_assert!((*Irp).CurrentLocation as i32 > 0);
+    ntkrnl_sys::ASSERT!((*Irp).CurrentLocation as i32 > 0);
     // create stack location
     IoSetNextIrpStackLocation(Irp);
 
@@ -230,7 +230,7 @@ pub unsafe fn HidClassFDO_DispatchRequest(
     let CommonDeviceExtension =
         (*DeviceObject).DeviceExtension as PHIDCLASS_COMMON_DEVICE_EXTENSION;
 
-    debug_assert!((*Irp).CurrentLocation as i32 > 0);
+    ntkrnl_sys::ASSERT!((*Irp).CurrentLocation as i32 > 0);
 
     // create stack location
     IoSetNextIrpStackLocation(Irp);
@@ -256,7 +256,7 @@ pub unsafe fn HidClassFDO_DispatchRequest(
 pub unsafe fn HidClassFDO_GetDescriptors(DeviceObject: PDEVICE_OBJECT) -> NTSTATUS {
     // get device extension
     let FDODeviceExtension = (*DeviceObject).DeviceExtension as PHIDCLASS_FDO_EXTENSION;
-    debug_assert!((*FDODeviceExtension).Common.IsFDO != 0);
+    ntkrnl_sys::ASSERT!((*FDODeviceExtension).Common.IsFDO != 0);
 
     // let's allocate irp
     let Irp = IoAllocateIrp((*DeviceObject).StackSize as i8, FALSE);
@@ -339,7 +339,7 @@ pub unsafe fn HidClassFDO_GetDescriptors(DeviceObject: PDEVICE_OBJECT) -> NTSTAT
 pub unsafe fn HidClassFDO_StartDevice(DeviceObject: PDEVICE_OBJECT, Irp: PIRP) -> NTSTATUS {
     // get device extension
     let FDODeviceExtension = (*DeviceObject).DeviceExtension as PHIDCLASS_FDO_EXTENSION;
-    debug_assert!((*FDODeviceExtension).Common.IsFDO != 0);
+    ntkrnl_sys::ASSERT!((*FDODeviceExtension).Common.IsFDO != 0);
 
     // query capabilities
     let mut Status =
@@ -398,7 +398,7 @@ pub unsafe fn HidClassFDO_StartDevice(DeviceObject: PDEVICE_OBJECT, Irp: PIRP) -
 pub unsafe fn HidClassFDO_RemoveDevice(DeviceObject: PDEVICE_OBJECT, Irp: PIRP) -> NTSTATUS {
     // get device extension
     let FDODeviceExtension = (*DeviceObject).DeviceExtension as PHIDCLASS_FDO_EXTENSION;
-    debug_assert!((*FDODeviceExtension).Common.IsFDO != 0);
+    ntkrnl_sys::ASSERT!((*FDODeviceExtension).Common.IsFDO != 0);
 
     /* FIXME cleanup */
 
@@ -426,7 +426,7 @@ pub unsafe fn HidClassFDO_CopyDeviceRelations(
 ) -> NTSTATUS {
     // get device extension
     let FDODeviceExtension = (*DeviceObject).DeviceExtension as PHIDCLASS_FDO_EXTENSION;
-    debug_assert!((*FDODeviceExtension).Common.IsFDO != 0);
+    ntkrnl_sys::ASSERT!((*FDODeviceExtension).Common.IsFDO != 0);
 
     // allocate result
     let count = (*(*FDODeviceExtension).DeviceRelations).Count;
@@ -472,7 +472,7 @@ pub unsafe fn HidClassFDO_CopyDeviceRelations(
 pub unsafe fn HidClassFDO_DeviceRelations(DeviceObject: PDEVICE_OBJECT, Irp: PIRP) -> NTSTATUS {
     // get device extension
     let FDODeviceExtension = (*DeviceObject).DeviceExtension as PHIDCLASS_FDO_EXTENSION;
-    debug_assert!((*FDODeviceExtension).Common.IsFDO != 0);
+    ntkrnl_sys::ASSERT!((*FDODeviceExtension).Common.IsFDO != 0);
 
     // get current irp stack location
     let IoStack = IoGetCurrentIrpStackLocation(Irp);
@@ -520,7 +520,7 @@ pub unsafe fn HidClassFDO_DeviceRelations(DeviceObject: PDEVICE_OBJECT, Irp: PIR
 pub unsafe extern "system" fn HidClassFDO_PnP(DeviceObject: PDEVICE_OBJECT, Irp: PIRP) -> NTSTATUS {
     // get device extension
     let FDODeviceExtension = (*DeviceObject).DeviceExtension as PHIDCLASS_FDO_EXTENSION;
-    debug_assert!((*FDODeviceExtension).Common.IsFDO != 0);
+    ntkrnl_sys::ASSERT!((*FDODeviceExtension).Common.IsFDO != 0);
 
     // get current irp stack location
     let IoStack = IoGetCurrentIrpStackLocation(Irp);

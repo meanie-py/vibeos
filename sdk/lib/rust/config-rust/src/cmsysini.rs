@@ -731,7 +731,7 @@ pub unsafe extern "system" fn CmpCloseKeyObject(
         // marker. The translation turned it into an unconditional KeBugCheck(0),
         // which would kill a release machine on a case NT just walks past, with
         // the meaningless stop code 0 (UNDEFINED_BUG_CODE). Field manual §9.113.
-        debug_assert!(false, "CmpCloseKeyObject: key body still has a NotifyBlock");
+        ntkrnl_sys::ASSERT!(false, "CmpCloseKeyObject: key body still has a NotifyBlock");
     }
 }
 

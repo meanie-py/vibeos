@@ -513,7 +513,7 @@ pub unsafe extern "C" fn KspCacheAddData(
     }
 
     /* sanity check */
-    debug_assert!((*Descriptor).DataOffset.wrapping_add(Length) < (*Descriptor).DataLength);
+    ntkrnl_sys::ASSERT!((*Descriptor).DataOffset.wrapping_add(Length) < (*Descriptor).DataLength);
 
     /* copy to data blob */
     core::ptr::copy_nonoverlapping(

@@ -9,6 +9,7 @@ use ntkrnl_sys::rtl::*;
 use ntkrnl_sys::ddk::{IRP, KPROCESSOR_MODE, MmMapLockedPages, MmUnmapLockedPages, PDEVICE_OBJECT, PFILE_OBJECT, PIO_STACK_LOCATION, PIRP};
 use ntkrnl_sys::inline::tier1::{IoGetCurrentIrpStackLocation, IoMarkIrpPending, IoSetCancelRoutine};
 use core::ffi::c_void;
+use ntkrnl_sys::ddk::RtlAssert;
 
 extern "C" {
     fn CheckUnlockExtraBuffers(FCB: PAFD_FCB, IrpSp: PIO_STACK_LOCATION) -> BOOLEAN;
@@ -64,7 +65,7 @@ unsafe fn HandleReceiveComplete(FCB: PAFD_FCB, Status: NTSTATUS, Information: UL
     if (*FCB).TdiReceiveClosed != 0 {
     } else if Status == STATUS_SUCCESS {
         (*FCB).Recv.Content += Information as UINT;
-        debug_assert!((*FCB).Recv.Content <= (*FCB).Recv.Size);
+        ntkrnl_sys::ASSERT!((*FCB).Recv.Content <= (*FCB).Recv.Size);
 
         if Information == 0 {
             (*FCB).TdiReceiveClosed = 1u8;
@@ -655,7 +656,12 @@ unsafe fn packet_socket_recv_complete_impl(
     }
 
     if (*FCB).ReceiveIrp.InFlightRequest != Irp {
-        panic!("ASSERT failed");
+        RtlAssert(
+            b"FCB->ReceiveIrp.InFlightRequest == Irp\0".as_ptr() as *mut core::ffi::c_void,
+            b"read.rs\0".as_ptr() as *mut core::ffi::c_void,
+            line!(),
+            core::ptr::null_mut::<i8>(),
+        );
     }
     (*FCB).ReceiveIrp.InFlightRequest = core::ptr::null_mut();
 

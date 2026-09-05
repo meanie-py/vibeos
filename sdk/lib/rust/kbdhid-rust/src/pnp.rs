@@ -154,13 +154,13 @@ pub unsafe fn KbdHid_StartDevice(DeviceObject: PDEVICE_OBJECT) -> NTSTATUS {
 
     /* init input report */
     (*DeviceExtension).ReportLength = Capabilities.InputReportByteLength as u32;
-    debug_assert!((*DeviceExtension).ReportLength != 0);
+    ntkrnl_sys::ASSERT!((*DeviceExtension).ReportLength != 0);
     (*DeviceExtension).Report = ExAllocatePoolWithTag(
         NonPagedPool,
         (*DeviceExtension).ReportLength as _,
         KBDHID_TAG,
     ) as *mut i8;
-    debug_assert!(!(*DeviceExtension).Report.is_null());
+    ntkrnl_sys::ASSERT!(!(*DeviceExtension).Report.is_null());
     RtlZeroMemory(
         (*DeviceExtension).Report as PVOID,
         (*DeviceExtension).ReportLength as _,
@@ -174,7 +174,7 @@ pub unsafe fn KbdHid_StartDevice(DeviceObject: PDEVICE_OBJECT) -> NTSTATUS {
         FALSE,
         core::ptr::null_mut(),
     );
-    debug_assert!(!(*DeviceExtension).ReportMDL.is_null());
+    ntkrnl_sys::ASSERT!(!(*DeviceExtension).ReportMDL.is_null());
 
     /* init mdl */
     MmBuildMdlForNonPagedPool((*DeviceExtension).ReportMDL);
@@ -185,7 +185,7 @@ pub unsafe fn KbdHid_StartDevice(DeviceObject: PDEVICE_OBJECT) -> NTSTATUS {
         HID_USAGE_PAGE_KEYBOARD,
         PreparsedData,
     );
-    debug_assert!(Buttons > 0);
+    ntkrnl_sys::ASSERT!(Buttons > 0);
 
     /* now allocate an array for those buttons (4 usage lists packed in one alloc) */
     let Buffer = ExAllocatePoolWithTag(

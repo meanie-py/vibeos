@@ -36,10 +36,10 @@ unsafe fn MmInitializeMdl(mdl: PMDL, va: PVOID, length: ULONG) {
 #[inline]
 unsafe fn MmPrepareMdlForReuse(mdl: PMDL) {
     if ((*mdl).MdlFlags & MDL_PARTIAL_HAS_BEEN_MAPPED) != 0 {
-        debug_assert!(((*mdl).MdlFlags & MDL_PARTIAL) != 0);
+        ntkrnl_sys::ASSERT!(((*mdl).MdlFlags & MDL_PARTIAL) != 0);
         MmUnmapLockedPages((*mdl).MappedSystemVa, mdl);
     } else if ((*mdl).MdlFlags & MDL_PARTIAL) == 0 {
-        debug_assert!(((*mdl).MdlFlags & MDL_MAPPED_TO_SYSTEM_VA) == 0);
+        ntkrnl_sys::ASSERT!(((*mdl).MdlFlags & MDL_MAPPED_TO_SYSTEM_VA) == 0);
     }
 }
 

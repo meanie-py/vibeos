@@ -895,6 +895,20 @@ function(add_cargo_module _target _crate _output)
         set(_toolchain_env "RUSTFLAGS=${_rustflags}")
     endif()
 
+    # Supplement the conservative source globs with Cargo's actual emitted
+    # prerequisites (embedded assets and build-script data included). Keep the
+    # broad edges until nested Cargo bodies have a proven complete closure.
+    set(_cargo_depfile "${_ws}/target/${_stem}/release/${_bin}.d")
+    set(_retarget_depfile "${REACTOS_SOURCE_DIR}/tools/retarget_cargo_depfile.py")
+    set(_dep_target "${_out}")
+    if(POLICY CMP0116)
+        cmake_policy(PUSH)
+        cmake_policy(SET CMP0116 NEW)
+    else()
+        # CMake 3.17 passes DEPFILE through unchanged: Ninja expects its own
+        # build-root-relative output spelling, not Cargo's absolute output.
+        file(RELATIVE_PATH _dep_target "${CMAKE_BINARY_DIR}" "${_out}")
+    endif()
     add_custom_command(
         OUTPUT ${_out}
         # cargo drive of the reactos-link manifest: build.rs links the cmake-built
@@ -908,11 +922,18 @@ function(add_cargo_module _target _crate _output)
                 -p ${_crate} --bin ${_bin}
                 --manifest-path ${_ws}/Cargo.toml
         COMMAND ${CMAKE_COMMAND} -E copy ${_cargo_exe} ${_out}
+        COMMAND ${CMAKE_COMMAND} -E env python3 "${_retarget_depfile}"
+            --source "${_cargo_depfile}" --cargo-output "${_cargo_exe}"
+            --target "${_dep_target}" --output "${_out}.d"
         ${_postlink}
-        DEPENDS ${_srcs} ${_postdep} ${_acm_EXTRA_DEPENDS}
+        DEPENDS ${_srcs} ${_postdep} ${_acm_EXTRA_DEPENDS} "${_retarget_depfile}"
+        DEPFILE "${_out}.d"
         WORKING_DIRECTORY ${_ws}
         COMMENT "Cargo-linking ${_output} (${_stem}) [reactos-link]"
         VERBATIM)
+    if(POLICY CMP0116)
+        cmake_policy(POP)
+    endif()
     add_custom_target(${_target} ALL DEPENDS ${_out})
 
     if(NOT _acm_NO_CD)

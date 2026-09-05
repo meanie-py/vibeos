@@ -641,7 +641,7 @@ pub unsafe extern "system" fn MiInitMachineDependent(
     ARM64_UART_TRACE(b"[MM] MiInitMachineDependent ARM64\r\n\0".as_ptr() as PCHAR);
 
     // Assert MxPfnAllocation != 0
-    debug_assert!(MxPfnAllocation != 0);
+    ntkrnl_sys::ASSERT!(MxPfnAllocation != 0);
 
     // Set some hardcoded addresses
     MmHyperSpaceEnd = HYPER_SPACE_END as PVOID;
@@ -710,14 +710,14 @@ pub unsafe extern "system" fn MiInitMachineDependent(
     ARM64_UART_TRACE(b"[MM] MiInitMachineDependent done\r\n\0".as_ptr() as PCHAR);
 
     // Sanity checks
-    debug_assert!(!MmPfnDatabase.is_null());
-    debug_assert!(!MmNonPagedSystemStart.is_null());
-    debug_assert!(!MmNonPagedPoolStart.is_null());
-    debug_assert!(MmSizeOfNonPagedPoolInBytes != 0);
-    debug_assert!(MmMaximumNonPagedPoolInBytes != 0);
-    debug_assert!(!MmNonPagedPoolExpansionStart.is_null());
-    debug_assert!(!MmHyperSpaceEnd.is_null());
-    debug_assert!(MmNumberOfSystemPtes != 0);
+    ntkrnl_sys::ASSERT!(!MmPfnDatabase.is_null());
+    ntkrnl_sys::ASSERT!(!MmNonPagedSystemStart.is_null());
+    ntkrnl_sys::ASSERT!(!MmNonPagedPoolStart.is_null());
+    ntkrnl_sys::ASSERT!(MmSizeOfNonPagedPoolInBytes != 0);
+    ntkrnl_sys::ASSERT!(MmMaximumNonPagedPoolInBytes != 0);
+    ntkrnl_sys::ASSERT!(!MmNonPagedPoolExpansionStart.is_null());
+    ntkrnl_sys::ASSERT!(!MmHyperSpaceEnd.is_null());
+    ntkrnl_sys::ASSERT!(MmNumberOfSystemPtes != 0);
 
     STATUS_SUCCESS
 }

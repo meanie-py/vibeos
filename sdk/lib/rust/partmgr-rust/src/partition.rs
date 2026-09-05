@@ -828,7 +828,7 @@ pub unsafe extern "C" fn PartitionHandleDeviceControl(DeviceObject: PDEVICE_OBJE
     let mut status: NTSTATUS = 0;
 
     // Assert that this is a partition, not the FDO (debug only)
-    debug_assert!((*partExt).IsFDO == 0);
+    ntkrnl_sys::ASSERT!((*partExt).IsFDO == 0);
 
     if (*partExt).IsEnumerated == 0 {
         (*Irp).IoStatus.__bindgen_anon_1.Status = STATUS_DEVICE_DOES_NOT_EXIST;

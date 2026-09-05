@@ -1,0 +1,95 @@
+# crt-shared-rust — the Rust twin of cmake's `msvcrt_shared` static library.
+#
+# `msvcrt_shared` (dll/win32/msvcrt/CMakeLists.txt) is the set of TUs compiled
+# TWICE from one source: once into msvcrt.dll's own body, and once — with
+# `-D__UCRTSUPPORT__` — into ucrtbase.dll, which is otherwise vendored Microsoft
+# UCRT. This crate is the same set on the Rust side: cpp.c, except.c,
+# except_<arch>.c, undname.c and their hand-written asm companions.
+#
+# ── WHY IT IS ITS OWN CRATE, and not a feature of msvcrt-crt-rust ───────────────
+#
+# Because the alternative is measurably a landmine. ucrtbase.dll exports 2,584
+# names; the msvcrt cohab archive exports 1,229. They collide on 891 — and only
+# 35 of those are msvcrt_shared's, the surface ucrtbase actually wants from us.
+# The other 856 are ours colliding with GENUINE Microsoft UCRT bodies: our
+# `malloc`, our `_errno`, our mbcs tables, our printf engine, all written and
+# graded against MSVCRT's C and its `_MSVCR_VER=0` contract, not ucrt's.
+#
+# Linking the msvcrt archive into ucrtbase under `--whole-archive` would replace
+# all 856 of them, and — this is the part that makes it a landmine rather than a
+# bug — `--allow-multiple-definition` is on, so not one would raise a diagnostic.
+# It would link clean, boot, and behave subtly like msvcrt forever.
+#
+# A cargo feature could scope the build down instead, and that was considered.
+# It fails for a specific reason: the msvcrt floor is NOT feature-gated. lib.rs
+# alone carries 156 `#[no_mangle]`s, plus wcs_rest, printf_shells, string_l and
+# fpnum, so a scoped build still ships hundreds of colliding symbols; closing
+# that means gating the crate root, in the file every host harness links. And
+# even done perfectly the guarantee would live in a BUILD FLAG — get the flag
+# wrong later and you are silently back to shadowing 856 bodies, with no error
+# anywhere. A crate boundary cannot be got wrong that way: this crate can only
+# export what is in it, so a new `#[no_mangle]` on msvcrt's floor cannot reach
+# ucrtbase without someone deliberately moving the file here.
+#
+# The build enforces it anyway rather than trusting the boundary —
+# `tools/verify_ucrtbase_cohab.py`, wired into `vibeos-cli check`, asserts the
+# archive's symbols are a subset of what msvcrt_shared's C objects define.
+[package]
+name = "crt-shared-rust"
+version = "0.1.0"
+edition = "2021"
+
+[lib]
+# A plain rlib, for the same reason msvcrt-crt-rust is one: `msvcrt-difftest` and
+# `msvcrt-seh-difftest` link this code to grade it against the genuine C, and a
+# staticlib crate-type demands a `#[panic_handler]` in the same invocation, which
+# is then a duplicate lang item in the harness's std test binary. The staticlib
+# role is the sibling `crt-shared-cargo`.
+path = "src/lib.rs"
+
+[features]
+# Nothing is on by default: the prelude is always available, and every
+# symbol-bearing module is opt-in. That is what lets msvcrt-crt-rust depend on
+# this crate unconditionally (it needs the prelude) while msvcrt-scanf-difftest
+# and msvcrt-seh-difftest keep `cpp` off, exactly as they do today.
+default = []
+
+# cpp.c + cpp_rtti + except.c + except_<arch>.c + seh_i386. One feature, not
+# five, because they are not separable: except.c's catch-matching path calls
+# `find_caught_type` and `copy_exception`, cppexcept.h inlines that live in
+# cpp_rtti, and the arch files are the other side of except.c's `#ifndef
+# __i386__` gate. Cohab resolves by first-match, so a half-enabled set would
+# link without complaint and dispatch through two different unwinders.
+cpp = []
+
+# undname.c — the name demangler. Separate from `cpp` because it shares nothing
+# with the exception machinery: no locale, no fd table, no global state, just a
+# recursive-descent parser over a mangled name. msvcrt-crt-rust turns it on
+# unconditionally, matching the ungated `pub mod undname;` it had before.
+undname = []
+
+# The ucrtbase live set. `msvcrt_shared` is compiled `-D_MSVCR_VER=0
+# -D__UCRTSUPPORT__`, and that macro does not merely ADD bodies — it swaps the
+# set in both directions, which is why this is a cfg over the same files rather
+# than a second copy of them:
+#
+#   OUT (msvcrt owns these, ucrt has its own):
+#     cpp.c    — set_terminate, _get_terminate, terminate, unexpected
+#     except.c — __pxcptinfoptrs, signal, raise
+#
+#   IN (`#if _MSVCR_VER >= 80 / >= 140 || defined(__UCRTSUPPORT__)`, so they are
+#       NOT compiled at msvcrt's _MSVCR_VER=0 and had no Rust body until now):
+#     cpp.c    — _is_exception_typeof, __clean_type_info_names_internal,
+#                type_info_name_internal_method, __AdjustPointer,
+#                type_info_entry_malloc, type_info_entry_free,
+#                __std_type_info_compare, __std_type_info_name
+#     except.c — __std_exception_copy, __std_exception_destroy,
+#                __current_exception, __current_exception_context,
+#                __processing_throw
+#
+# Getting the OUT half wrong is the quiet one: leaving `signal`/`raise` in would
+# hand ucrtbase msvcrt's signal table under --allow-multiple-definition, silently.
+ucrtsupport = []
+
+[dependencies]
+msvcrt-sys = { path = "../msvcrt-sys" }

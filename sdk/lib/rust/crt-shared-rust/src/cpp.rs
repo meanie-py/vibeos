@@ -3,7 +3,7 @@ use crate::prelude::*;
 // The macro-generated half of cpp.c: the vtables, the RTTI/throw descriptors, the
 // `rtti_rva*` helpers and the seven `CREATE_*` bodies. See cpp_rtti.rs for why they
 // cannot come from the translator.
-use super::cpp_rtti::*;
+use crate::cpp_rtti::*;
 use msvcrt_sys::*;
 use core::ffi::c_void;
 
@@ -787,6 +787,7 @@ pub unsafe extern "C" fn throw_exception(msg: *const i8) {
         (core::ptr::addr_of!(exception_exception_type)).cast(),
     );
 }
+#[cfg(not(feature = "ucrtsupport"))]
 #[no_mangle]
 pub unsafe extern "C" fn set_terminate(func: terminate_function) -> terminate_function {
     let data = msvcrt_get_thread_data();
@@ -795,6 +796,7 @@ pub unsafe extern "C" fn set_terminate(func: terminate_function) -> terminate_fu
     previous
 }
 
+#[cfg(not(feature = "ucrtsupport"))]
 #[no_mangle]
 pub unsafe extern "C" fn _get_terminate() -> terminate_function {
     let data: *mut thread_data_t = msvcrt_get_thread_data();
@@ -822,6 +824,20 @@ pub unsafe extern "C" fn _set_se_translator(func: _se_translator_function) -> _s
     previous
 }
 
+// `terminate` is msvcrt's own only when msvcrt owns the CRT. Under `__UCRTSUPPORT__` the
+// genuine UCRT supplies it, so the definition drops out and the six callers in except.rs and
+// except_i386.rs bind to ucrt's through the declaration below instead. Removing the
+// definition WITHOUT the declaration is the trap: those callers are in bodies that stay, so
+// the build would fail — loudly, which is the good case. The quiet failure is the reverse,
+// leaving our definition in and silently handing ucrtbase msvcrt's terminate handler slot
+// under --allow-multiple-definition.
+#[cfg(feature = "ucrtsupport")]
+unsafe extern "C" {
+    /// `eh.h` / `corecrt_terminate.h`: `void __cdecl terminate(void);`
+    pub fn terminate();
+}
+
+#[cfg(not(feature = "ucrtsupport"))]
 #[no_mangle]
 pub unsafe extern "C" fn terminate() {
     let data = msvcrt_get_thread_data();
@@ -834,6 +850,7 @@ pub unsafe extern "C" fn terminate() {
     abort();
 }
 
+#[cfg(not(feature = "ucrtsupport"))]
 #[no_mangle]
 pub unsafe extern "C" fn unexpected() {
     let data = msvcrt_get_thread_data();
@@ -2013,3 +2030,285 @@ pub unsafe extern "system" fn _CxxThrowException(object: *mut core::ffi::c_void,
 // ============================================================================
 // END ORIGINAL C SOURCE
 // ============================================================================
+
+// cpp.c's debug channel is `msvcrt` (except.c's is `seh`), so the prefixes below differ from
+// the sibling files' by exactly that. Spelled as a `macro_rules!` and not a no-op `fn`: an
+// out-of-line no-op is an optimization barrier that uncloaks latent ABI mismatches into a
+// `ud2`, which is a rule AGENTS.md carries because it cost a BUGCHECK.
+macro_rules! FIXME {
+    ($msg:literal $(, $($arg:tt)*)?) => {{
+        OutputDebugStringA($msg.as_ptr());
+    }};
+}
+
+// ── the `__UCRTSUPPORT__` half of cpp.c ──────────────────────────────────────────────────
+//
+// Ten bodies inside `#if _MSVCR_VER >= 80 || defined(__UCRTSUPPORT__)` and
+// `#if _MSVCR_VER >= 140 || defined(__UCRTSUPPORT__)`. msvcrt compiles this TU at
+// `_MSVCR_VER = 0` without the macro, so none is built there and none had a Rust body until
+// ucrtbase's cohab needed them; ucrtbase.spec exports all but the two `static` helpers.
+//
+// rustconv translation (2026-09-05, --seal-facts --seal-calls --seal-wide, $0.12), audit
+// clean -- no unverified constants, no rejects. Diffed against the C by hand afterwards,
+// because sealing's blind spot is a body that keeps SOME sealed tokens and permutes the rest
+// and no audit flags that. Two things that survived the diff and are worth not re-deriving:
+// `__std_type_info_name`'s trailing-space trim reads `name[--len]`, whose final `len` differs
+// from the Rust loop's but is dead after the loop; and `__std_type_info_hash` XORs a SIGNED
+// `char`, so `*p as usize` sign-extending is the faithful reading, not a bug.
+
+#[cfg(feature = "ucrtsupport")]
+#[repr(C)]
+pub struct type_info140 {
+    pub name: *mut ::core::ffi::c_char,
+    pub mangled: [::core::ffi::c_char; 1],
+}
+
+#[cfg(feature = "ucrtsupport")]
+#[repr(C)]
+pub struct type_info_entry {
+    pub entry: SLIST_ENTRY,
+    pub name: [::core::ffi::c_char; 1],
+}
+
+#[cfg(feature = "ucrtsupport")]
+#[repr(C)]
+pub struct __type_info_node {
+    pub memPtr: *mut core::ffi::c_void,
+    pub next: *mut __type_info_node,
+}
+
+// The C wraps this whole body in `__TRY { ... } __EXCEPT_PAGE_FAULT __ENDTRY`, and the
+// handler is ABSENT here on purpose, not dropped. msvcrt builds with DUMMY_PSEH, where that
+// expands to the try body followed by a branch guarded on `_SEH2_Volatile0` — an always-zero
+// global — so the handler is compiled and never runs. __RTtypeid, __RTDynamicCast and
+// __RTCastToVoid above carry the same reasoning at length; unlike them this one has no
+// handler BODY to keep (a page fault just leaves `ret` at -1 and falls into the
+// `terminate()` below), so there is nothing to guard and the branch is simply not emitted.
+#[cfg(feature = "ucrtsupport")]
+#[no_mangle]
+pub unsafe extern "C" fn _is_exception_typeof(ti: *const type_info, ep: *mut EXCEPTION_POINTERS) -> i32 {
+    let mut ret: i32 = -(1 as i32);
+    let rec: *mut EXCEPTION_RECORD = (*ep).ExceptionRecord;
+
+    if is_cxx_exception(rec) != 0 {
+        let et: *const cxx_exception_type = (*rec).ExceptionInformation[2 as usize] as *const cxx_exception_type;
+        // `ExceptionInformation` is `ULONG_PTR[15]`, which bindgen renders as the arch's
+        // concrete width (u64 / u32). `rtti_rva` declares `base: usize`, so the cast is to the
+        // CALLEE'S declared type, not to a width guessed from this arch -- the C says
+        // `uintptr_t base`, which is the same thing.
+        let base: usize = if (CXX_EXCEPTION_PARAMS as usize) == (4 as usize) {
+            (*rec).ExceptionInformation[3 as usize] as usize
+        } else {
+            0 as usize
+        };
+        let tit: *const cxx_type_info_table = rtti_rva((*et).type_info_table, base);
+        let count = (*tit).count as usize;
+        let mut i: usize = 0 as usize;
+
+        while i < count {
+            let cti: *const cxx_type_info = rtti_rva((*tit).info[i], base);
+            let except_ti: *const type_info = rtti_rva((*cti).type_info, base);
+            // `mangled` is C's trailing flexible array, so it is `[c_char; 1]` here and needs
+            // `.as_ptr()` -- the same spelling the `bad_typeid`/`bad_cast` comparisons use
+            // above. NO `.offset(1)`: those skip a leading byte because `type_info_compare`
+            // does, and this C is a plain `strcmp(ti->mangled, except_ti->mangled)`.
+            if ti == except_ti
+                || strcmp((*ti).mangled.as_ptr(), (*except_ti).mangled.as_ptr()) == 0
+            {
+                ret = 1 as i32;
+                break;
+            }
+            i += 1;
+        }
+
+        if i == count {
+            ret = 0 as i32;
+        }
+    }
+
+    if ret == -(1 as i32) {
+        terminate();
+    }
+
+    ret
+}
+
+#[cfg(feature = "ucrtsupport")]
+#[no_mangle]
+pub unsafe extern "C" fn __clean_type_info_names_internal(p: *mut core::ffi::c_void) {
+    FIXME!(c"fixme:msvcrt:__clean_type_info_names_internal (%p) stub\n", p);
+}
+#[cfg(all(feature = "ucrtsupport", target_arch = "x86"))]
+#[no_mangle]
+pub unsafe extern "thiscall" fn type_info_name_internal_method(_this: *mut type_info, node: *mut __type_info_node) -> *const i8 {
+    static mut once: i32 = 0;
+    if !node.is_null() && (unsafe {
+        let old = once;
+        once += 1;
+        old == 0
+    }) {
+        FIXME!(c"fixme:msvcrt:type_info_name_internal_method type_info_node parameter ignored\n");
+    }
+    type_info_name(_this)
+}
+
+#[cfg(all(feature = "ucrtsupport", not(target_arch = "x86")))]
+#[no_mangle]
+pub unsafe extern "C" fn type_info_name_internal_method(_this: *mut type_info, node: *mut __type_info_node) -> *const i8 {
+    static mut once: i32 = 0;
+    if !node.is_null() && (unsafe {
+        let old = once;
+        once += 1;
+        old == 0
+    }) {
+        FIXME!(c"fixme:msvcrt:type_info_name_internal_method type_info_node parameter ignored\n");
+    }
+    type_info_name(_this)
+}
+#[cfg(feature = "ucrtsupport")]
+#[no_mangle]
+pub unsafe extern "C" fn __AdjustPointer(obj: *mut core::ffi::c_void, off: *const this_ptr_offsets) -> *mut core::ffi::c_void {
+    get_this_pointer(off, obj)
+}
+#[cfg(feature = "ucrtsupport")]
+unsafe extern "C" fn type_info_entry_malloc(size: usize) -> *mut core::ffi::c_void {
+    // `FIELD_OFFSET!` yields `i32`, matching the C macro's `LONG`. The C adds it to a
+    // `size_t`, promoting; Rust needs the widening spelled out.
+    let ret =
+        malloc(FIELD_OFFSET!(type_info_entry, name) as usize + size) as *mut type_info_entry;
+    return (*ret).name.as_mut_ptr() as *mut core::ffi::c_void;
+}
+
+#[cfg(feature = "ucrtsupport")]
+unsafe extern "C" fn type_info_entry_free(ptr: *mut core::ffi::c_void) {
+    // The C rebinds its own parameter (`ptr = (char*)ptr - FIELD_OFFSET(...)`); Rust needs the
+    // binding declared `mut` to do that, and the translation emitted the assignment without it.
+    let mut ptr = ptr;
+    let offset = FIELD_OFFSET!(type_info_entry, name);
+    ptr = (ptr as *mut u8).offset(-(offset as isize)) as *mut core::ffi::c_void;
+    free(ptr);
+}
+
+#[cfg(feature = "ucrtsupport")]
+#[no_mangle]
+pub unsafe extern "C" fn __std_type_info_compare(
+    l: *const type_info140,
+    r: *const type_info140,
+) -> i32 {
+    let ret = if l == r {
+        0
+    } else {
+        strcmp(
+            (*l).mangled.as_ptr().add(1),
+            (*r).mangled.as_ptr().add(1),
+        )
+    };
+    ret
+}
+
+#[cfg(feature = "ucrtsupport")]
+#[no_mangle]
+pub unsafe extern "C" fn __std_type_info_name(
+    ti: *mut type_info140,
+    header: *mut SLIST_HEADER,
+) -> *const core::ffi::c_char {
+    if (*ti).name.is_null() {
+        let name: *mut core::ffi::c_char = __unDName(
+            // The C's first two literal `0`s are a NULL output buffer and a zero buflen --
+            // "allocate it for me, through the two callbacks below". Only the second is an
+            // integer.
+            core::ptr::null_mut(),
+            core::ptr::addr_of_mut!((*ti).mangled)
+                .cast::<core::ffi::c_char>()
+                .add(1 as usize),
+            0,
+            // `malloc_func_t`/`free_func_t` are `Option<fn>` (C's nullable function pointer),
+            // and Rust does not coerce a bare fn item into the Option.
+            Some(type_info_entry_malloc),
+            Some(type_info_entry_free),
+            // `__unDName` declares `flags` as `unsigned short`; bindgen renders both
+            // constants as u32. 8192 | 2048 = 10240, so the narrowing is exact.
+            (UNDNAME_NO_ARGUMENTS | UNDNAME_32_BIT_DECODE) as u16,
+        ) as *mut core::ffi::c_char;
+
+        if !name.is_null() {
+            let mut len: u32 = strlen(name) as u32;
+
+            while len > 0 && *name.add((len - 1) as usize) as u8 == b' ' {
+                len -= 1;
+                *name.add(len as usize) = 0 as core::ffi::c_char;
+            }
+
+            if !InterlockedCompareExchangePointer(
+                core::ptr::addr_of_mut!((*ti).name) as *mut *mut core::ffi::c_void,
+                name as *mut core::ffi::c_void,
+                core::ptr::null_mut(),
+            )
+            .is_null()
+            {
+                type_info_entry_free(name as *mut core::ffi::c_void);
+            } else {
+                let entry = (name as *mut u8).sub(
+                    FIELD_OFFSET!(type_info_entry, name) as usize,
+                ) as *mut type_info_entry;
+
+                InterlockedPushEntrySList(
+                    header,
+                    core::ptr::addr_of_mut!((*entry).entry),
+                );
+            }
+        }
+    }
+
+    (*ti).name as *const core::ffi::c_char
+}
+
+#[cfg(feature = "ucrtsupport")]
+#[no_mangle]
+pub unsafe extern "C" fn __std_type_info_destroy_list(header: *mut SLIST_HEADER) {
+    let mut cur: *mut SLIST_ENTRY = unsafe { InterlockedFlushSList(header) };
+    while !cur.is_null() {
+        let next: *mut SLIST_ENTRY = unsafe { (*cur).Next };
+        unsafe {
+            // The C's `free(cur)` converts `SLIST_ENTRY*` to `void*` implicitly.
+            free(cur as *mut core::ffi::c_void);
+        }
+        cur = next;
+    }
+}
+
+#[cfg(feature = "ucrtsupport")]
+#[no_mangle]
+pub unsafe extern "C" fn __std_type_info_hash(ti: *const type_info140) -> usize {
+    unsafe {
+        let mut hash: usize;
+        let fnv_prime: usize;
+
+        #[cfg(target_pointer_width = "64")]
+        {
+            hash = 0xcbf29ce484222325;
+            fnv_prime = 0x100000001b3;
+        }
+
+        #[cfg(not(target_pointer_width = "64"))]
+        {
+            hash = 0x811c9dc5;
+            fnv_prime = 0x1000193;
+        }
+
+        let mut p = (*ti).mangled.as_ptr().add(1);
+
+        while *p != 0 {
+            hash ^= *p as usize;
+            hash = hash.wrapping_mul(fnv_prime);
+            p = p.add(1);
+        }
+
+        #[cfg(target_pointer_width = "64")]
+        {
+            hash ^= hash >> 32;
+        }
+
+        hash
+    }
+}
