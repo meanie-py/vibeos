@@ -2178,7 +2178,8 @@ pub unsafe extern "C" fn xHalIoReadPartitionTable(
     const PARTITION_EZDRIVE: u32 = 0x55;
     const PARTITION_ENTRY_UNUSED: u8 = 0x00;
     const EFI_PMBR_OSTYPE_EFI: u8 = 0xEE;
-    const PARTITION_FAT_16: u8 = 0x06;
+    // ntdddisk.h:270 -- PARTITION_FAT_16 is 0x04; 0x06 is PARTITION_HUGE.
+    const PARTITION_FAT_16: u8 = 0x04;
     const TAG_FILE_SYSTEM: u32 = u32::from_be_bytes(*b"SYSF");
     const IRP_MJ_READ: u8 = 0x03;
     const SL_OVERRIDE_VERIFY_VOLUME: u8 = 0x02;

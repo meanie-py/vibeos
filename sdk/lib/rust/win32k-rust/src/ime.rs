@@ -1190,8 +1190,10 @@ unsafe fn UserSetImeConversionKeyStateImpl(pti: PTHREADINFO, dwConversion: DWORD
     const VK_DBE_DBCSCHAR: UINT = 0xF4;
     const VK_DBE_ROMAN: UINT = 0xF5;
     const VK_DBE_NOROMAN: UINT = 0xF6;
-    const VK_DBE_CODEINPUT: UINT = 0xF8;
-    const VK_DBE_NOCODEINPUT: UINT = 0xF9;
+    // jpnvkeys.h:24-25. 0xF8/0xF9 are ENTERIMECONFIGMODE/FLUSHSTRING -- this shadow
+    // silently aliased two DIFFERENT virtual keys over the correct file-scope pair.
+    const VK_DBE_CODEINPUT: UINT = 0xFA;
+    const VK_DBE_NOCODEINPUT: UINT = 0xFB;
 
     if (*pti).KeyboardLayout.is_null() {
         return;
