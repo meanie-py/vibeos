@@ -2419,7 +2419,11 @@ def cmd_translate(args):
         elif cpp_com_mode:
             assert cpp_com_cls is not None
             sorted_deps = prepare_helper_closure(
-                deps, args.class_name, cpp_com_cls.plain_state_fields()
+                deps,
+                args.class_name,
+                cpp_com_cls.plain_state_fields(),
+                cpp_com_cls.island_struct_field_types,
+                cpp_com_cls.sdk_type_aliases,
             )
             # The mirror of the --free-functions report above, and it was missing for years.
             # prepare_helper_closure keeps the class closure, so the TU's file-scope functions
