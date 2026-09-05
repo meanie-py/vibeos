@@ -338,6 +338,17 @@ def source_lint_specs(repo: Path) -> list[tuple]:
     # exports). Baseline EMPTY = strict: a header that grows a new alias fails here.
     vcm = repo / "tools" / "verify_conv_macros.py"
     specs.append(("verify_conv_macros", [py, str(vcm)] if vcm.is_file() else ["MISSING"], "stdout"))
+    # ucrtbase.dll is vendored Microsoft UCRT plus OUR msvcrt_shared, so the Rust archive it
+    # links must cover msvcrt_shared's surface and nothing else. The failure this catches has
+    # no diagnostic of its own: ucrtbase.spec and msvcrt's cohab archive collide on 891 names
+    # of which only 35 are msvcrt_shared's, and the module links with
+    # --allow-multiple-definition, so linking the wrong archive silently replaces 856 genuine
+    # UCRT bodies with msvcrt-contract ones and still builds, boots and looks fine. Baseline
+    # EMPTY = strict.
+    vuc = repo / "tools" / "verify_ucrtbase_cohab.py"
+    specs.append(
+        ("verify_ucrtbase_cohab", [py, str(vuc)] if vuc.is_file() else ["MISSING"], "stdout")
+    )
     # vendor.yaml — which C is NOT ours to translate. Every progress number in this project
     # is a fraction whose denominator is "C that is ours", and before the registry that set
     # was prose in rust-port-status.md, a one-tree manifest under external/, and a hardcoded

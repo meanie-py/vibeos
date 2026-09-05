@@ -380,6 +380,21 @@ dependencies = [
 ]
 
 [[package]]
+name = "crt-shared-cargo"
+version = "0.1.0"
+dependencies = [
+ "crt-shared-rust",
+ "panic-common",
+]
+
+[[package]]
+name = "crt-shared-rust"
+version = "0.1.0"
+dependencies = [
+ "msvcrt-sys",
+]
+
+[[package]]
 name = "crt-startup-rust"
 version = "0.1.0"
 dependencies = [
@@ -1332,6 +1347,7 @@ name = "msvcrt-crt-rust"
 version = "0.1.0"
 dependencies = [
  "cnt-rust",
+ "crt-shared-rust",
  "msvcrt-sys",
 ]
 

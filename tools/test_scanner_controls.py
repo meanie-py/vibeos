@@ -1199,6 +1199,14 @@ UNCOVERED: dict[str, str] = {
         'is undname.c\'s `case \'C\': "pascal"` shipping as "__stdcall", plus negatives for '
         "each way a faithful translation legitimately SPELLS a literal differently"
     ),
+    "verify_ucrtbase_cohab": (
+        "covered by tools/test_verify_ucrtbase_cohab.py (8 tests) — positive control is the "
+        "one-line accident the crate split exists to prevent, `crt-shared-cargo` depending on "
+        "`msvcrt-crt-rust`, plus the transitive form; negatives are the correct wiring and a "
+        "`[features]` entry that NAMES a crate without depending on it. Not a fixture-dir "
+        "control because the lint reads a dependency GRAPH and an nm'd archive, neither of "
+        "which the tree-walking driver above can express"
+    ),
     "gen_ctype_tables": (
         "covered by tools/test_gen_ctype_tables.py (9 tests) — positive control is prove() "
         "exiting on ONE wrong byte in 257, which is the claim the whole generator rests on"
