@@ -458,9 +458,33 @@ pub unsafe extern "C" fn KiSynchronousExceptionHandler(
                 FaultCode2 |= 0x1;
             }
 
-            if (IFSC & 0x3C) == 0x04 ||
+            // A SAME-EL instruction abort (EC 0x21) on a user-range VA, or on a
+            // permission fault, is never something paging can fix, and asking
+            // it to try produces a silent, unbreakable loop:
+            //
+            //   MmArmAccessFault's valid-PTE path bugchecks an instruction fetch
+            //   only when the PTE says NOT executable (UXN, bit 54). A user page
+            //   that IS user-executable passes that test and it returns
+            //   STATUS_SUCCESS — "spurious, retry". But AArch64 makes every
+            //   EL0-writable page implicitly PXN, so EL1 can never execute it: the
+            //   retry faults at the same PC, forever, at EL1, with nothing printed
+            //   and every timed wait dead. That is what the ~2% arm64 boot wedge
+            //   was (soak 2026-09-05: 5/300 rounds, every vCPU sample at
+            //   PC=0x10000, PSTATE EL1h, the odd one out caught in KiTrapReturn).
+            //   The kernel never legitimately executes user memory, and an
+            //   instruction-fetch permission fault has no paging remedy at any
+            //   address (that is PXN/UXN, not a paged-out page), so both go
+            //   straight to the exception path, where an unhandled kernel fault
+            //   bugchecks with the frame and the stack — a crash we can read,
+            //   instead of a hang we cannot.
+            let FaultVa = (*TrapFrame).__bindgen_anon_2.__bindgen_anon_1.FaultAddress as ULONG_PTR;
+            let NeverRetriable = EC == 0x21
+                && (FaultVa < MmUserProbeAddress || (IFSC & 0x3C) == 0x0C);
+
+            if !NeverRetriable && (
+               (IFSC & 0x3C) == 0x04 ||
                (IFSC & 0x3C) == 0x08 ||
-               (IFSC & 0x3C) == 0x0C
+               (IFSC & 0x3C) == 0x0C)
             {
                 let Status2 = MmAccessFault(
                     FaultCode2,

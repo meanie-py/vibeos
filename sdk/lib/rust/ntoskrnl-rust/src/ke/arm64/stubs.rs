@@ -1092,6 +1092,39 @@ pub unsafe extern "system" fn KiDispatchException(
                     (*ExceptionRecord).ExceptionInformation[1] as PVOID,
                 );
             }
+            // [KSTKW] the kernel-range words on the faulting stack. The trap
+            // frame alone cannot name WHO got here when the fault is a wild
+            // jump: PC is the bad target and LR is whatever the jumper left
+            // (a `br` leaves it untouched, and the 2026-09-05 fault-loop frame
+            // had LR=0 and every callee-saved register zero). The return
+            // addresses of the frames that led to the jump are still on the
+            // stack above SP, and a bugcheck is the last moment they exist.
+            // Bounded to the thread's own stack and to pages that are mapped,
+            // so the dump cannot fault on the way down.
+            if !thread.is_null() {
+                let sp = (*TrapFrame).Sp as ULONG_PTR;
+                let base = (*thread).StackBase as ULONG_PTR;
+                let limit = (*thread).StackLimit as ULONG_PTR;
+                if sp >= limit && sp < base && (sp & 7) == 0 {
+                    let mut printed: u32 = 0;
+                    let mut off: ULONG_PTR = 0;
+                    while sp + off < base && off < 0x800 && printed < 48 {
+                        let at = sp + off;
+                        if MmIsAddressValid(at as PVOID) == 0 {
+                            break;
+                        }
+                        let w = *(at as *const ULONG_PTR);
+                        // Kernel-range words only: return addresses and kernel
+                        // pointers. User values and small integers are noise.
+                        if w >= 0xFFFF_0000_0000_0000 {
+                            ARM64_UART_TRACE_HEX(b"[KSTKW] sp+=\0".as_ptr() as PCSTR, off);
+                            ARM64_UART_TRACE_HEX(b"[KSTKW]   =\0".as_ptr() as PCSTR, w);
+                            printed += 1;
+                        }
+                        off += 8;
+                    }
+                }
+            }
         }
         KeBugCheckEx(
             KMODE_EXCEPTION_NOT_HANDLED,
