@@ -529,6 +529,30 @@ Field-manual § pointers hold the full writeups. **Update on state change.**
   `freeldr-rust`, `TAG_HAL` at three, and byte-reversed pairs in `pcix-rust`, `win32k-rust`,
   `fltmgr-rust` and `classpnp-rust`. One of this family wedged the arm64 boot (field manual,
   "The same-named constant with a DIFFERENT value per driver"). Burn down per crate.
+  > **Pool-tag tier CLEARED, 770 -> 731** (2026-09-05). Six constants, 15 wrong definitions,
+  > every one evaluated against its C macro rather than eyeballed. Two were real defects, not
+  > accounting noise: `config-rust` ALLOCATED the hive `ViewLock`/`FlusherLock` in `cminit.rs`
+  > under one `TAG_CMHIVE` and FREED them in `cmapi.rs` under another (`ExFreePoolWithTag`
+  > mismatch on the registry path, 4 values for one macro); and classpnp's
+  > `DICTIONARY_SIGNATURE` was WRITTEN with the byte-reversed value while
+  > `TestDictionarySignature` compared against a function-local shadow holding the correct one,
+  > so every dictionary validity check failed. `TAG_CM` was wrong at 7 of 14 sites, `TAG_USTR`
+  > 3 of 13, `TAG_DIB` and `TAG_FAT_IO_CONTEXT` 1 each. Fixing `TAG_USTR`/`TAG_DIB` also
+  > repaired latent CROSS-CRATE mismatches (rtl-strings vs ntdll/win32k; dibobj vs
+  > dib_helpers). 3 further entries cleared by another lane's `ICIF_SET_SIZE_VARIABLE` fix
+  > arriving in the same merge. Remaining 731 are Tier 2 semantic constants (~25: oleaut32's
+  > `VT_*_PRIO` table, samsrv, `PARTITION_FAT_16`, `SP_UNTAGGED`) and Tier 3 debug/trace enums
+  > (~32 cdrom/disk `TRACE_*`, serial `DPFLTR_*`) which corrupt only log filtering.
+- **classpnp `ClasspAccessAlignmentProperty` spun forever on arm64 — FIXED** (2026-09-05).
+  An empty `_ => {}` catch-all as the last arm of a `match` that IS the body of a
+  goto-elimination `'work: loop`. utils.c's switch has no `default:`, so an unmatched value
+  falls out of the switch onto `Exit:`; the empty arm instead reaches the end of the loop and
+  re-matches the unchanged scrutinee forever. arm64 emitted a literal `b .` INSIDE the
+  function. Found only because this lane linked `classpnp.sys` for arm64 — **it is not in
+  arm64's default target set**, so no arm64 sweep had ever scanned that binary (exactly the
+  ucrtbase/`exp2` blind spot, one driver over). Swept the tree for the shape: 0 others.
+  Worth fixing separately: a `build-arm64` that silently omits a driver every other arch
+  builds means every post-link gate is blind to it.
 - **classpnp's `KeRaiseIrql`/`KeLowerIrql`/`IoWMIDeviceObjectToProviderId` shims called
   THEMSELVES — FIXED** (2026-07-26 found, 2026-09-05 fixed). Each `#[no_mangle]` body in
   `classpnp-rust/src/ddk_shims.rs` declared an `extern` block for its OWN name and called it.

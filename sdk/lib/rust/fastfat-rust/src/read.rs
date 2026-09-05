@@ -124,7 +124,8 @@ const CCB_FLAG_ALLOW_EXTENDED_DASD_IO: u32 = 0x2000;
 const IRP_CONTEXT_FLAG_OVERRIDE_VERIFY: u32 = 0x1000;
 const VCB_STATE_FLAG_LOCKED: u32 = 0x0001;
 const READ_AHEAD_GRANULARITY: u32 = 0x10000; // typical
-const TAG_FAT_IO_CONTEXT: u32 = 0x58746146; // 'DFAT'
+// C: fastfat/nodetype.h `#define TAG_FAT_IO_CONTEXT 'XtaF'` (big-endian).
+const TAG_FAT_IO_CONTEXT: u32 = u32::from_be_bytes(*b"XtaF");
 
 const FAT_NTC_FCB: u16 = 0x0502; // FAT NTC FCB node type
 const FCB_STATE_PAGING_FILE: u32 = 0x04; // bit 5
@@ -372,7 +373,6 @@ pub unsafe extern "system" fn FatCommonRead(IrpContext: *mut IRP_CONTEXT, Irp: *
     const IRP_CONTEXT_FLAG_OVERRIDE_VERIFY: u32 = 0x1000;
     const VCB_STATE_FLAG_LOCKED: u32 = 0x0001;
     const READ_AHEAD_GRANULARITY: u32 = 0x10000;
-    const TAG_FAT_IO_CONTEXT: u32 = 0x74614644;
     let mut Vcb: *mut VCB = core::ptr::null_mut();
     let mut FcbOrDcb: *mut FCB = core::ptr::null_mut();
     let mut Ccb: *mut CCB = core::ptr::null_mut();

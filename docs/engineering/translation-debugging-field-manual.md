@@ -2062,6 +2062,19 @@ the commented ones. **Prefer bindgen enums over local consts in new translations
 Cross-driver value bleed: cdfs and fastfat both define a WAIT flag, with different values. A
 "known" constant is only known *within its module*.
 
+**The divergence is usually CROSS-file, and the alloc/free pair is where it bites.** The
+same sweep one lane later, driven by the baseline this class fills: `TAG_CMHIVE` had **four**
+values across `config-rust` for one C macro (`cmlib.h`'s `'vHMC'`), and `cminit.rs` ALLOCATED
+the hive's `ViewLock`/`FlusherLock` under one of them while `cmapi.rs` FREED them under
+another — an `ExFreePoolWithTag` mismatch on the registry path. `TAG_CM` had 7 wrong spellings
+of 14; `TAG_USTR` 3 of 13. Two rules fall out. **(1) Evaluate, never eyeball** — write the
+oracle down as a table and compute each definition, because `from_le_bytes(*b"RTSU")` and C's
+`'RTSU'` are DIFFERENT numbers and the eye reads them as the same; spell the fixed value
+`u32::from_be_bytes(*b"<exact C literal>")` so the oracle is visible in the source. **(2) A
+nested `mod` does not inherit its parent's private consts** — which is why a copy exists inside
+one at all, and how it then drifts. Delete such a copy and the crate stops compiling; the fix
+is `use super::TAG_X;`, not a second definition.
+
 **Within ONE crate the same divergence cannot be legitimate, and a pool tag is where it hides.**
 Symptom: arm64 wedged in freeldr right after `Switching stack...`, EL1 sync exception, `ESR
 EC 0x3C ISS 0xF000` — a `brk #0xF000` from `arm64_debug.rs`'s `DbgBreakPoint`, reached through
@@ -2348,6 +2361,19 @@ pattern position is a fresh *binding*, so it matches everything and **silently k
 later arm**. It has shipped a BUGCHECK 0x1E, killed USB enumeration, and caused an OS-wide
 `LCMapString` failure (a `switch` whose case labels became an or-pattern that swallowed a
 neighbour).
+
+**An EMPTY catch-all inside a goto-elimination loop is an infinite spin, not a swallowed case.**
+C `switch`es with no `default:` label are translated as `'work: loop { match .. }`, each
+`goto Exit`/`break` becoming `break 'work`. Falling out of a C switch means *leaving* it — but
+a `_ => {}` arm reaches the END of the loop body and re-matches the UNCHANGED scrutinee, so the
+"do nothing" arm loops forever. classpnp's `ClasspAccessAlignmentProperty` shipped this and
+arm64 emitted it as a literal `b .` inside the function: a silent hang on the storage-property
+path, no bugcheck and no serial output. **Whenever the C switch has no `default:`, the Rust
+catch-all must be `_ => { break 'label; }`** — an empty arm is only correct when the match is
+NOT the body of a goto-elimination loop. `scan_ud2` catches it post-link on arm64; a source
+scanner cannot, because on other arches LLVM merges the block and no self-branch appears.
+Corollary worth internalising: it was invisible for as long as it was, because classpnp.sys is
+not in arm64's default target set, so no arm64 sweep had ever linked or scanned that binary.
 
 **Upstream cause: an incomplete bindgen island** `[§9.112]`. A constant missing from the island
 is exactly the one a dispatcher matches on. **An island's completeness is a correctness
