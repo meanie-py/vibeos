@@ -481,6 +481,21 @@ land; date every addition.** Source docs live in `docs/engineering/archive/`.
 The committed home for open bugs (was: agent MEMORY.md, which other agents never see).
 Field-manual § pointers hold the full writeups. **Update on state change.**
 
+- **PARTLY FIXED (2026-09-05, task #39): the ~2% arm64 `--smp 1` boot wedge is an EL1 fault
+  loop at a user PC, and the loop is now closed — the jumper is not yet found.** A 300-round
+  soak on fixed media hit it 5 times (1.7%), and every capture showed the same shape: a vCPU at
+  **EL1h with `PC=0x10000`**, register file byte-identical across samples, every timed wait
+  dead, serial stopped one `DbgPrint` before `CreateProcessW`. `KiSynchronousExceptionHandler`
+  sent the same-EL instruction abort to `MmAccessFault`, whose valid-PTE path only bugchecks an
+  instruction fetch when the PTE is **U**XN — a user-executable page passes and returns
+  `STATUS_SUCCESS`, so the handler eret'd to the same PC forever. AArch64 makes every
+  EL0-writable page implicitly PXN, so that retry could never succeed. Fixed: EC 0x21 below
+  `MmUserProbeAddress`, or on a permission IFSC, now dispatches as a kernel AV and bugchecks
+  `0x1E` with the frame plus a new `[KSTKW]` kernel-stack-word dump. **Still open: who sets an
+  EL1 PC to `0x10000`.** The captured frame had `LR=0` and every callee-saved register zero,
+  with `X18` a TEB and `X28` a user start-context, so the stack words are the lead. This is the
+  last flip blocker for `DefaultOS`. Field manual: "An EL1 instruction fetch on a user page
+  loops silently forever". OWNED BY the smp-bringup lane.
 - **FIXED (E22, 2026-08-01): every 32-bit process silently lost the `cbSize`-validated USER32
   APIs.** `TrackMouseEvent` (so no 32-bit app ever received `WM_MOUSELEAVE`/`WM_MOUSEHOVER`),
   `GetCursorInfo`, `GetGUIThreadInfo`, `GetComboBoxInfo`, `GetMenuInfo` and `SendInput` (all

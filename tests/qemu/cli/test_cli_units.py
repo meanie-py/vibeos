@@ -1147,6 +1147,51 @@ def test_save_hang_state_separates_a_frozen_box_from_a_blocked_one(tmp_path, _no
     assert "EXECUTING" in (tmp_path / "b" / "hang-cpustate.txt").read_text()
 
 
+def test_save_hang_state_names_a_kernel_fault_loop_at_a_user_pc(tmp_path, _no_resample_wait):
+    # The third reading of "the PC never moved": a same-EL instruction abort
+    # the handler keeps resolving as spurious, eret'ing straight back to the
+    # same PC. Two samples cannot separate that from a dead clock — but the
+    # arm64 register dump can: kernel EL (PSTATE M != 0) with a PC in the user
+    # half. Five real captures said FROZEN before this existed.
+    dump = "CPU#0\n PC=0000000000010000 X00=0\nPSTATE=0000000020000345 --C- EL1h\n"
+    v = _hang_vm(tmp_path / "loop", None, lambda: dump)
+    v.save_hang_state("boot-wait timeout")
+    body = (tmp_path / "loop" / "hang-cpustate.txt").read_text()
+    assert "FAULT-LOOP" in body and "CPU#0 pc=0x0000000000010000" in body
+    # The plain readings must not be promoted: a kernel PC at EL1 is FROZEN...
+    idle = "CPU#0\n PC=fffff80042192824 X00=0\nPSTATE=0000000020000345 --C- EL1h\n"
+    v = _hang_vm(tmp_path / "idle", None, lambda: idle)
+    v.save_hang_state("boot-wait timeout")
+    assert "FAULT-LOOP" not in (tmp_path / "idle" / "hang-cpustate.txt").read_text()
+    # ...and a user PC at EL0 is a user thread, which is fine.
+    user = "CPU#0\n PC=0000000000010000 X00=0\nPSTATE=0000000060000000 -ZC- EL0t\n"
+    v = _hang_vm(tmp_path / "user", None, lambda: user)
+    v.save_hang_state("boot-wait timeout")
+    assert "FAULT-LOOP" not in (tmp_path / "user" / "hang-cpustate.txt").read_text()
+
+
+def test_capture_cpu_state_disassembles_at_every_pc():
+    # A register dump says WHERE a vCPU is; only the code there says what it is
+    # doing (wfi / b . / an unfetchable page). One `x /6i` per vCPU, at that
+    # vCPU's own PC, after the register dump it was parsed from.
+    v = vm_mod.QemuVM.__new__(vm_mod.QemuVM)
+    seen = []
+
+    class _Qmp:
+        def hmp(self, cmd):
+            seen.append(cmd)
+            if cmd == "info registers -a":
+                return "CPU#0\n PC=fffff80042192824\nCPU#1\n PC=0000000000010000\n"
+            if cmd.startswith("x /6i"):
+                return f"disasm for {cmd}"
+            return "ok"
+
+    v.qmp = _Qmp()  # type: ignore[assignment]
+    out = v.capture_cpu_state()
+    assert seen[-2:] == ["x /6i 0xfffff80042192824", "x /6i 0x0000000000010000"]
+    assert "=== CPU#1 x /6i 0x0000000000010000 ===" in out
+
+
 def test_save_hang_state_survives_a_dead_monitor(tmp_path, _no_resample_wait):
     # A diagnostic that raises on an already-failing run destroys the failure it
     # was there to explain, so a dead QMP must degrade to a note in the file —

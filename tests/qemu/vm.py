@@ -1695,6 +1695,25 @@ class QemuVM:
             except Exception as exc:  # QMP dead//timed out — say so, don't raise
                 body = f"<unavailable: {exc!r}>"
             chunks.append(f"=== {cmd} ===\n{body}")
+        # The instructions AT each PC. A register dump says where a vCPU is;
+        # only the code there says what it is doing — a `wfi` is idle, a `b .`
+        # is a deliberate park, and an unmapped or user page under a kernel PC
+        # is a fault loop. `x /6i` reads through the guest's current
+        # translation, so a PC the CPU cannot fetch comes back as an error
+        # line, which is itself the answer.
+        try:
+            from .cli.triage import cpu_pcs
+
+            pcs = cpu_pcs("\n".join(chunks))
+        except Exception:
+            pcs = []
+        for idx, pc in pcs:
+            cmd = f"x /6i 0x{pc}"
+            try:
+                body = self.qmp.hmp(cmd).strip()
+            except Exception as exc:
+                body = f"<unavailable: {exc!r}>"
+            chunks.append(f"=== CPU#{idx} {cmd} ===\n{body}")
         return "\n\n".join(chunks) + "\n"
 
     def save_hang_state(self, phase: str) -> str:
@@ -1751,6 +1770,30 @@ class QemuVM:
                 else "FROZEN — every vCPU PC is identical across both samples; "
                 "nothing was scheduled in between"
             )
+            # A same-PC pair has a THIRD reading the two-sample test cannot
+            # see: a tight fault loop — abort, handler, eret to the same PC,
+            # repeat — never moves the PC either, yet nothing is frozen. On
+            # arm64 the register dump carries the tell (kernel EL, user PC),
+            # so name it here rather than let the file say FROZEN and send the
+            # reader after a dead clock. The 2026-09-05 wedge sat behind that
+            # word for five captures in a row.
+            try:
+                from .cli.triage import cpu_kernel_at_user_pc
+
+                looped = cpu_kernel_at_user_pc(second) or cpu_kernel_at_user_pc(
+                    self.hang_cpu_state
+                )
+            except Exception:
+                looped = []
+            if looped:
+                where = ", ".join(f"CPU#{i} pc=0x{pc}" for i, pc in looped)
+                verdict = (
+                    "FAULT-LOOP — a vCPU is at kernel EL with a USER-range PC "
+                    f"({where}); the kernel cannot execute there, so it is "
+                    "retrying the same instruction abort forever. Not a dead "
+                    "clock, not blocked. Read the trap handler's retry decision "
+                    "for this abort, not the timers.  [" + verdict + "]"
+                )
         smp = smp_count()
         body = (
             f"=== hang capture: {phase} ===\n"

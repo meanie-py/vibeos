@@ -6390,6 +6390,21 @@ boot, `PTE=…447` (AttrIndx 1) with `OPC=0xB83F6AB4` — a plain `str`; after, 
 whole class collapsed to the one case that is *supposed* to happen.
 
 ### arm64 bring-up bugs worth recognising again
+- **An EL1 instruction fetch on a user page loops silently forever — the fault handler called it
+  spurious.** Symptom: a ~2% arm64 boot wedge with no bugcheck, no serial, every timed wait
+  dead, every vCPU sample at the same user-range PC (`0x10000`) at EL1h; the whole box reads
+  FROZEN. Cause: `KiSynchronousExceptionHandler` (trap.rs) sent every same-EL instruction abort
+  to `MmAccessFault`, and `MmArmAccessFault`'s valid-PTE path bugchecks an instruction fetch only
+  when the PTE says NOT executable (UXN, bit 54); a page that is *user*-executable passes and it
+  returns `STATUS_SUCCESS` — "spurious, retry". AArch64 makes every EL0-writable page implicitly
+  PXN, so EL1 can never execute it, and the retry faults at the same PC without end. Fix: a
+  same-EL instruction abort (EC 0x21) on a VA below `MmUserProbeAddress`, or with a permission
+  IFSC, never goes to paging — it is dispatched as a kernel access violation and bugchecks with
+  the frame plus `[KSTKW]`, the kernel-range words on the faulting stack (a wild `br` leaves LR
+  useless; the callers' return addresses above SP are the only route back to the jumper).
+  **Recognition rule: a "spurious fault, retry" return is only safe when the retry can succeed.
+  An instruction-fetch permission fault has no paging remedy at any address — PXN/UXN is not a
+  paged-out page — and a retry that cannot succeed is a hang with the handler's name on it.**
 - **Every arm64 syscall ran with interrupts MASKED, end to end.** Taking any exception sets
   PSTATE.DAIF to all-masked in hardware; nothing in `KiEL0SynchronousEntry` (trap.S) undid it,
   so kernel-mode interrupt latency was bounded by the longest system call and every blocking
@@ -7236,6 +7251,17 @@ introduced at any heap exit — it is an external stray write.**
   answers a box that has gone silent. Both backends used to run `-monitor none`, so for years
   every wedge was triaged from the serial tail alone and nobody ever asked the VM where it
   stopped.
+- **"The PC never moved" has THREE readings, and the two-sample verdict only separates two.**
+  `hang-cpustate.txt` samples every vCPU twice and writes FROZEN (dead clock, nothing scheduled)
+  or EXECUTING (blocked on something specific). The third is a **tight fault loop**: abort →
+  handler → `eret` to the SAME PC → abort, which never moves the PC either and is the busiest
+  CPU on the box. Five captures of the arm64 `--smp 1` boot wedge said FROZEN this way (2026-09-05).
+  The tell is in the register dump, not the PC: **kernel EL with a user-range PC** (arm64:
+  `PSTATE` M[3:0] ≠ 0 and `PC` below `0x0000_8000_0000_0000`) has no benign reading, and the
+  capture now writes **FAULT-LOOP** for it and names the CPU. The capture also runs `x /6i` at
+  each PC — a `wfi` is idle, a `b .` is a park, and an unfetchable page is the loop. If a FROZEN
+  verdict ever comes with an odd sample out in `KiTrapReturn`, that is the loop caught mid-eret,
+  not a dead clock; read the trap handler's retry decision for that abort, not the timers.
 - **A foreign binary that is stuck is usually one of three shapes** `[§9.29]`: sample the guest
   PC a dozen times via QMP `info registers` — all samples at one PC means a spin; parked in a
   wait with no file I/O (break on `NtReadFile`/`NtDelayExecution`); or spinning at a fixed
