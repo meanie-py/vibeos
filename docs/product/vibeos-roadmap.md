@@ -543,6 +543,36 @@ Field-manual § pointers hold the full writeups. **Update on state change.**
   > arriving in the same merge. Remaining 731 are Tier 2 semantic constants (~25: oleaut32's
   > `VT_*_PRIO` table, samsrv, `PARTITION_FAT_16`, `SP_UNTAGGED`) and Tier 3 debug/trace enums
   > (~32 cdrom/disk `TRACE_*`, serial `DPFLTR_*`) which corrupt only log filtering.
+  > **Tier 2 (semantic) CLEARED** (2026-09-05): 10 constants, 16 wrong definitions, each
+  > checked against its SDK header. Three had real behaviour behind them.
+  > `SRB_FUNCTION_STORAGE_REQUEST_BLOCK` (srb.h `0x28`) was WRITTEN into `srbEx.Function` as
+  > `0x10` and TESTED against `0x16` in the same file — the SRB-Ex branch could never be
+  > taken; a third copy in `disk.rs` invented `0xF0`. `RTL_ENCRYPT_OPTION_*` had all three
+  > values PERMUTED in one block (`SAME_PROCESS=1, CROSS_PROCESS=0, SAME_LOGON=3` vs the
+  > header's `0/1/2`) — the recall failure a seal cannot catch, because the SET is right and
+  > only the slots are wrong. A `VK_DBE_CODEINPUT`/`NOCODEINPUT` shadow held `0xF8`/`0xF9`,
+  > which are the real `ENTERIMECONFIGMODE`/`FLUSHSTRING`: not wrong numbers but two
+  > DIFFERENT keys aliased. Plus `SAM_SERVER_INITIALIZE` (both copies wrong; `0x04`),
+  > `PARTITION_FAT_16` (`0x06` is `PARTITION_HUGE`) and `SP_UNTAGGED` (wrong in three files).
+  > **And 10 entries were FALSE POSITIVES, annotated not fixed**: oleaut32's `VT_*_PRIO`
+  > ladders look like one table shifted by one, but variant.c declares TWO function-local
+  > `enum coerceprio`s that reuse the same member names with different values, and both Rust
+  > ladders match their own enum member-for-member. Now carry
+  > `// nolint: const-contradiction (function-local C enum)` with the reasoning, so the next
+  > agent does not re-investigate. **The baseline is a work queue, not a defect list** —
+  > classifying is as much of the job as fixing.
+- **127 constants are INVENTED and say so — OPEN** (2026-09-05). Found while chasing
+  `SP_UNTAGGED` into `disk-rust`. Tree-wide, 127 `const` definitions carry `// placeholder`,
+  `// typical`, `// guess` or `// adjust as needed`, and `disk.rs:617` has a whole block under
+  the header *"Constants used by the function (values typical of Windows DDK; adjust as
+  needed)"*. These are not drift from a real value — they are numbers the model made up, and
+  they compile. Two were live in that one block: `SRB_FUNCTION_STORAGE_REQUEST_BLOCK = 0xF0`
+  (real `0x28`, and not any `SRB_FUNCTION_*`) and `SP_UNTAGGED = 0xFFFFFFFF` (real `(UCHAR)~0`
+  == `0xFF`; the `((ULONG)~0)` one is the neighbouring `SP_UNINITIALIZED_VALUE`). This is a
+  DISTINCT class from `scan_const_contradictions`, which can only see a name that disagrees
+  with ITSELF — a constant invented once, consistently, is invisible to it. A gate is cheap
+  here because the sites are self-labelled: grep the annotation, resolve each against its
+  header, and fail on any that survives. Worth doing before the class grows.
 - **classpnp `ClasspAccessAlignmentProperty` spun forever on arm64 — FIXED** (2026-09-05).
   An empty `_ => {}` catch-all as the last arm of a `match` that IS the body of a
   goto-elimination `'work: loop`. utils.c's switch has no `default:`, so an unmatched value

@@ -109,7 +109,8 @@ pub const TRACE_FLAG_SCSI: u32 = 18;
 // Win8+ pool types absent from ntkrnl-sys POOL_TYPE enum (NonPagedPoolNx = NonPagedPool|0x200)
 pub const NonPagedPoolNx: u32 = 512;
 pub const NonPagedPoolNxCacheAligned: u32 = 516;
-pub const SP_UNTAGGED: u32 = 0;
+// ddk/srb.h:55 == ((UCHAR) ~0) == 0xFF.
+pub const SP_UNTAGGED: u32 = 0xFF;
 
 // --- enum-variant aliases (C members used bare/wrong-prefix; real names in types_*.rs) ---
 pub use crate::types::CLASS_FUNCTION_SUPPORT_Supported as Supported;
