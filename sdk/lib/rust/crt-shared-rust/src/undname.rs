@@ -27,11 +27,22 @@ macro_rules! FIXME {
     ($($arg:tt)*) => {{}};
 }
 
-// `atoi` and `isdigit` are msvcrt's own, already Rust at the crate root (string.c's and
-// ctype.c's families). undname.c calls them as ordinary CRT siblings, so import rather
-// than re-declare -- an `extern` block here would have been a second, unchecked
-// declaration of a function this very crate defines.
-use crate::{atoi, isdigit};
+// `atoi` and `isdigit` are ordinary CRT siblings undname.c calls, and after the split out of
+// msvcrt-crt-rust they are no longer defined by THIS crate, so they are `extern` again.
+//
+// That inversion is the point of the split, not an accident of it. This crate is linked into
+// two different CRTs: in msvcrt.dll the names bind to msvcrt-crt-rust's own Rust bodies
+// (string.c's and ctype.c's families), and in ucrtbase.dll they bind to the genuine Microsoft
+// UCRT's. undname must call ITS HOST's atoi, and a `use` would have hard-wired msvcrt's into
+// both. The signatures below are transcribed from stdlib.h and ctype.h, per the prelude's
+// rule -- a declaration that disagrees with the host's is not a build error, it is a silent
+// ABI mismatch.
+unsafe extern "C" {
+    /// `stdlib.h`: `int __cdecl atoi(const char *_Str);`
+    fn atoi(_Str: *const c_char) -> c_int;
+    /// `ctype.h`: `int __cdecl isdigit(int _C);`
+    fn isdigit(_C: c_int) -> c_int;
+}
 
 // ── str_printf: the one function in this file that is hand-written, and why ──────────
 //

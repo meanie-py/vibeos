@@ -77,7 +77,14 @@ heap = []
 # fits. The gate stayed shut on that reasoning for a whole wave; nothing was measured.
 #
 # msvcrt-scanf-difftest and msvcrt-seh-difftest still leave it off, for their own reasons.
-cpp = []
+#
+# The bodies themselves now live in `crt-shared-rust` (they are cmake's `msvcrt_shared`,
+# compiled a second time into ucrtbase.dll), so this feature FORWARDS rather than gating a
+# local `pub mod`. That is what keeps the two harnesses' `default-features = false` builds
+# free of cpp/except symbols exactly as before: the dependency below is unconditional,
+# because the prelude comes through it, but every symbol-bearing module in that crate is
+# off until this forwards it on.
+cpp = ["crt-shared-rust/cpp"]
 
 # lock.c + thread.c (`src/msvcrt/lock.rs`, `src/msvcrt/thread.rs`) — the CRT's mutual
 # exclusion table and its per-thread state block. ON for every build that produces
@@ -256,3 +263,13 @@ dllmain = ["heap", "stdio", "locale", "data", "cpp", "conio-exit", "threading"]
 [dependencies]
 cnt-rust = { path = "../cnt-rust", default-features = false }
 msvcrt-sys = { path = "../msvcrt-sys" }
+
+# The `msvcrt_shared` half of this crate, split out because it is ALSO linked into
+# ucrtbase.dll and therefore must not be able to reach msvcrt's floor (see that crate's
+# Cargo.toml for the 856-body shadowing measurement).
+#
+# Unconditional, and `undname` is on here, because that is what the tree had before the
+# split: `pub mod undname;` was ungated, and the prelude is needed by every module. `cpp`
+# is NOT listed — the feature above forwards it, so a `default-features = false` harness
+# build still gets no cpp/except symbols.
+crt-shared-rust = { path = "../crt-shared-rust", features = ["undname"] }

@@ -27,7 +27,7 @@ pub unsafe extern "system" fn PspGetOrSetContextKernelRoutine(
     // so CONTAINING_RECORD here is just a typed cast (offset 0).
     let GetSetContext: PGET_SET_CTX_CONTEXT = Apc as PGET_SET_CTX_CONTEXT;
     let Thread: PKTHREAD = (*Apc).SystemArgument2 as PKTHREAD;
-    debug_assert!(ntkrnl_sys::inline::tier1::KeGetCurrentThread() == Thread);
+    ntkrnl_sys::ASSERT!(ntkrnl_sys::inline::tier1::KeGetCurrentThread() == Thread);
 
     // Kernel-mode requests use the saved trap frame stashed on the KTHREAD.
     let mut TrapFrame: PKTRAP_FRAME = core::ptr::null_mut();

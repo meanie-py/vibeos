@@ -39,15 +39,15 @@ pub unsafe extern "system" fn MiMapPageInHyperSpace(
     let mut PointerPte: PMMPTE;
     let mut Offset: PFN_NUMBER;
 
-    debug_assert!(Page != 0);
-    debug_assert!(MiGetPfnEntry(Page) != core::ptr::null_mut());
+    ntkrnl_sys::ASSERT!(Page != 0);
+    ntkrnl_sys::ASSERT!(MiGetPfnEntry(Page) != core::ptr::null_mut());
 
     TempPte = ValidKernelPteLocal;
     TempPte.set_page_frame_number(Page);
 
     PointerPte = MmFirstReservedMappingPte;
 
-    debug_assert!(Process == PsGetCurrentProcess());
+    ntkrnl_sys::ASSERT!(Process == PsGetCurrentProcess());
     KeAcquireSpinLock(
         core::ptr::addr_of_mut!((*(Process as *mut ntkrnl_sys::ddk::_EPROCESS)).HyperSpaceLock) as *mut usize,
         OldIrql,
@@ -75,11 +75,11 @@ pub unsafe extern "system" fn MiUnmapPageInHyperSpace(
 ) {
     let Process = opaque_ptr(Process);
     let Address = opaque_ptr(Address);
-    debug_assert!(Process == PsGetCurrentProcess());
+    ntkrnl_sys::ASSERT!(Process == PsGetCurrentProcess());
 
     (*MiAddressToPte(Address)).Long = 0;
 
-    debug_assert!(KeGetCurrentIrql() == DISPATCH_LEVEL);
+    ntkrnl_sys::ASSERT!(KeGetCurrentIrql() == DISPATCH_LEVEL);
     KeReleaseSpinLock(
         core::ptr::addr_of_mut!((*(Process as *mut ntkrnl_sys::ddk::_EPROCESS)).HyperSpaceLock) as *mut usize,
         OldIrql,
@@ -97,9 +97,9 @@ pub unsafe extern "system" fn MiMapPagesInZeroSpace(
     let mut Offset: PFN_NUMBER;
     let PageFrameIndex: PFN_NUMBER;
 
-    debug_assert!(KeGetCurrentIrql() == PASSIVE_LEVEL);
-    debug_assert!(NumberOfPages != 0);
-    debug_assert!(NumberOfPages <= MI_ZERO_PTES as PFN_NUMBER);
+    ntkrnl_sys::ASSERT!(KeGetCurrentIrql() == PASSIVE_LEVEL);
+    ntkrnl_sys::ASSERT!(NumberOfPages != 0);
+    ntkrnl_sys::ASSERT!(NumberOfPages <= MI_ZERO_PTES as PFN_NUMBER);
 
     PointerPte = MiFirstReservedZeroingPte;
 
@@ -118,7 +118,7 @@ pub unsafe extern "system" fn MiMapPagesInZeroSpace(
     MI_PAGE_DISABLE_CACHE(&mut TempPte);
     MI_PAGE_WRITE_THROUGH(&mut TempPte);
 
-    debug_assert!(Pfn1 as ULONG_PTR != LIST_HEAD);
+    ntkrnl_sys::ASSERT!(Pfn1 as ULONG_PTR != LIST_HEAD);
     while Pfn1 as ULONG_PTR != LIST_HEAD {
         let PageFrameIndex = MiGetPfnEntryIndex(Pfn1);
 
@@ -141,9 +141,9 @@ pub unsafe extern "system" fn MiUnmapPagesInZeroSpace(
     let VirtualAddress = opaque_ptr(VirtualAddress);
     let PointerPte: PMMPTE;
 
-    debug_assert!(KeGetCurrentIrql() == PASSIVE_LEVEL);
-    debug_assert!(NumberOfPages != 0);
-    debug_assert!(NumberOfPages <= MI_ZERO_PTES as PFN_NUMBER);
+    ntkrnl_sys::ASSERT!(KeGetCurrentIrql() == PASSIVE_LEVEL);
+    ntkrnl_sys::ASSERT!(NumberOfPages != 0);
+    ntkrnl_sys::ASSERT!(NumberOfPages <= MI_ZERO_PTES as PFN_NUMBER);
 
     PointerPte = MiAddressToPte(VirtualAddress);
 

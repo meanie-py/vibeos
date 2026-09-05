@@ -202,7 +202,7 @@ pub unsafe extern "system" fn IopQueueIrpToThread_shim(irp: PIRP) {
 /// then re-initializes it.
 #[no_mangle]
 pub unsafe extern "system" fn IopUnQueueIrpFromThread_shim(irp: PIRP) {
-    debug_assert!(KeAreAllApcsDisabled() != 0);
+    ntkrnl_sys::ASSERT!(KeAreAllApcsDisabled() != 0);
     let entry = core::ptr::addr_of_mut!((*irp).ThreadListEntry);
     if IsListEmpty(entry) {
         return;
@@ -255,7 +255,7 @@ pub unsafe extern "system" fn IopLockFileObject_shim(
 pub unsafe extern "system" fn IopUnlockFileObject_shim(file_object: PFILE_OBJECT) {
     let busy = AtomicU32::from_ptr(core::ptr::addr_of_mut!((*file_object).Busy));
     let prev = busy.swap(0, Ordering::SeqCst);
-    debug_assert!(prev == 1);
+    ntkrnl_sys::ASSERT!(prev == 1);
     if (*file_object).Waiters != 0 {
         KeSetEvent(core::ptr::addr_of_mut!((*file_object).Lock), 0, 0);
     }

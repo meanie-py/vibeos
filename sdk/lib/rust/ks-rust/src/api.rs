@@ -183,7 +183,7 @@ pub unsafe extern "system" fn KsDefaultDispatchPower(
                 (*ObjectHeader).PowerContext,
                 Irp,
             );
-            debug_assert!(NT_SUCCESS(Status));
+            ntkrnl_sys::ASSERT!(NT_SUCCESS(Status));
         }
         ListEntry = (*ListEntry).Flink;
     }
@@ -521,8 +521,8 @@ pub unsafe extern "C" fn KspAddObjectCreateItemToList(
         );
 
         if (*((*CreateEntry).CreateItem)).Create.is_none() {
-            debug_assert!(IsListEmpty(&mut (*CreateEntry).ObjectItemList));
-            debug_assert!((*CreateEntry).ReferenceCount == 0);
+            ntkrnl_sys::ASSERT!(IsListEmpty(&mut (*CreateEntry).ObjectItemList));
+            ntkrnl_sys::ASSERT!((*CreateEntry).ReferenceCount == 0);
 
             (*((*CreateEntry).CreateItem)).Context = Context;
             (*((*CreateEntry).CreateItem)).Create = Create;
@@ -1439,7 +1439,7 @@ pub unsafe extern "C" fn KspCountMethodSets(
     }
 
     if (*AutomationTableA).MethodItemSize != 0 && (*AutomationTableB).MethodItemSize != 0 {
-        debug_assert!((*AutomationTableA).MethodItemSize == (*AutomationTableB).MethodItemSize);
+        ntkrnl_sys::ASSERT!((*AutomationTableA).MethodItemSize == (*AutomationTableB).MethodItemSize);
     }
 
     let mut Count = (*AutomationTableA).MethodSetsCount;
@@ -1547,7 +1547,7 @@ pub unsafe extern "C" fn KspCountPropertySets(
     /* sanity check */
     // DPRINT removed
     // DPRINT removed
-    debug_assert!((*AutomationTableA).PropertyItemSize == (*AutomationTableB).PropertyItemSize);
+    ntkrnl_sys::ASSERT!((*AutomationTableA).PropertyItemSize == (*AutomationTableB).PropertyItemSize);
 
     /* now iterate all property sets and compare their guids */
     let mut Count = (*AutomationTableA).PropertySetsCount;

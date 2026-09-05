@@ -196,7 +196,7 @@ pub unsafe fn CmpRemoveKeyHash(KeyHash: PCM_KEY_HASH) {
     
     loop {
         Current = *Prev;
-        debug_assert!(!Current.is_null());
+        ntkrnl_sys::ASSERT!(!Current.is_null());
         ASSERT_VALID_HASH(Current);
         
         if Current == KeyHash {

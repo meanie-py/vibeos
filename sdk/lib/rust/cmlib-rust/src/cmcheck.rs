@@ -59,6 +59,13 @@ unsafe extern "system" {
     fn HvIsCellAllocated(Hive: *mut HHIVE, Cell: u32) -> u8;
     fn HvGetCellSize(Hive: *mut _HHIVE, Cell: *mut c_void) -> u32;
 }
+unsafe extern "system" {
+    // NTAPI. Resolvable in BOTH of cmlib's link contexts, which is why an assert here can
+    // be loud rather than fatal: ntoskrnl exports RtlAssert, and freeldr defines its own
+    // #[no_mangle] one in debug.rs. Declared locally rather than imported from
+    // ntkrnl_sys::ddk because cmlib takes that crate with default-features = false.
+    fn RtlAssert(FailedAssertion: PVOID, FileName: PVOID, LineNumber: u32, Message: *mut i8);
+}
 unsafe extern "C" {
     fn PAGED_CODE();
     fn DPRINT1(format: *const i8, ...);
@@ -853,10 +860,20 @@ unsafe fn CmpValidateKey(
 pub unsafe extern "system" fn HvValidateBin(Hive: *mut HHIVE, Bin: *mut HBIN) -> i32 {
     PAGED_CODE();
     if !(!Bin.is_null()) {
-        panic!("ASSERT(Bin)");
+        RtlAssert(
+            b"Bin\0".as_ptr() as *mut core::ffi::c_void,
+            b"cmcheck.rs\0".as_ptr() as *mut core::ffi::c_void,
+            line!(),
+            core::ptr::null_mut::<i8>(),
+        );
     }
     if !(!Hive.is_null()) {
-        panic!("ASSERT(Hive)");
+        RtlAssert(
+            b"Hive\0".as_ptr() as *mut core::ffi::c_void,
+            b"cmcheck.rs\0".as_ptr() as *mut core::ffi::c_void,
+            line!(),
+            core::ptr::null_mut::<i8>(),
+        );
     }
     if (*Bin).Signature != HV_HBIN_SIGNATURE { // BUG1 FIXED: was 0x6E696248 ("Hbin"), correct is 0x6E696268 ("hbin")
         // DPRINT removed

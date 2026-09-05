@@ -133,12 +133,10 @@ pub unsafe extern "system" fn KsGetOuterUnknown(
         as PKSBASIC_HEADER;
 
     let type_val = (*BasicHeader).Type as u32;
-    debug_assert!(
-        type_val == KsObjectTypeDevice as u32
+    ntkrnl_sys::ASSERT!(type_val == KsObjectTypeDevice as u32
             || type_val == KsObjectTypeFilterFactory as u32
             || type_val == KsObjectTypeFilter as u32
-            || type_val == KsObjectTypePin as u32
-    );
+            || type_val == KsObjectTypePin as u32);
 
     (*BasicHeader).OuterUnknown
 }

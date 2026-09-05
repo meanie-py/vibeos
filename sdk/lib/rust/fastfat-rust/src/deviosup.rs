@@ -2172,9 +2172,7 @@ pub unsafe extern "system" fn FatBuildZeroMdl(
         }
 
         // Fallback by half and round down to a page multiple.
-        debug_assert!(
-            (*(*IrpContext).Vcb).Bpb.BytesPerSector <= PAGE_SIZE as u16
-        );
+        ntkrnl_sys::ASSERT!((*(*IrpContext).Vcb).Bpb.BytesPerSector <= PAGE_SIZE as u16);
         Length = BlockAlignTruncate(Length / 2, (PAGE_SIZE) as u32);
         if Length < (PAGE_SIZE) as u32 {
             Length = (PAGE_SIZE) as u32;

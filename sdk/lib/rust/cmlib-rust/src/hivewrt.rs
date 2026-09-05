@@ -94,9 +94,9 @@ const HV_CLEAN_BLOCK: u32 = 0;
 /// which are no-ops in the NDEBUG cmlib build.
 unsafe fn HvpValidateBaseHeader(RegistryHive: *mut HHIVE) {
     let BaseBlock = (*RegistryHive).BaseBlock;
-    debug_assert!((*BaseBlock).Signature == HV_HBLOCK_SIGNATURE);
-    debug_assert!((*BaseBlock).Format == HBASE_FORMAT_MEMORY);
-    debug_assert!((*BaseBlock).Major == HSYS_MAJOR);
+    ntkrnl_sys::ASSERT!((*BaseBlock).Signature == HV_HBLOCK_SIGNATURE);
+    ntkrnl_sys::ASSERT!((*BaseBlock).Format == HBASE_FORMAT_MEMORY);
+    ntkrnl_sys::ASSERT!((*BaseBlock).Major == HSYS_MAJOR);
 }
 
 /// Writes data (dirty or non) to a primary hive during syncing operation.
@@ -108,12 +108,10 @@ unsafe fn HvpWriteHive(RegistryHive: *mut HHIVE, OnlyDirty: u8, FileType: u32) -
     let mut LastIndex: u32;
     let mut Block: *mut c_void;
 
-    debug_assert!((*RegistryHive).ReadOnly == 0);
-    debug_assert!(
-        (*(*RegistryHive).BaseBlock).Length
-            == (*RegistryHive).Storage[Stable as usize].Length * HBLOCK_SIZE
-    );
-    debug_assert!((*(*RegistryHive).BaseBlock).RootCell != HCELL_NIL);
+    ntkrnl_sys::ASSERT!((*RegistryHive).ReadOnly == 0);
+    ntkrnl_sys::ASSERT!((*(*RegistryHive).BaseBlock).Length
+            == (*RegistryHive).Storage[Stable as usize].Length * HBLOCK_SIZE);
+    ntkrnl_sys::ASSERT!((*(*RegistryHive).BaseBlock).RootCell != HCELL_NIL);
 
     /* Validate the base header before we go further */
     HvpValidateBaseHeader(RegistryHive);
@@ -381,8 +379,8 @@ pub unsafe extern "system" fn HvSyncHive(RegistryHive: *mut HHIVE) -> u8 {
     #[cfg(not(feature = "bldr"))]
     let HardErrors: u8;
 
-    assert!((*RegistryHive).ReadOnly == 0);
-    assert!((*RegistryHive).Signature == HV_HHIVE_SIGNATURE);
+    ntkrnl_sys::ASSERT!((*RegistryHive).ReadOnly == 0);
+    ntkrnl_sys::ASSERT!((*RegistryHive).Signature == HV_HHIVE_SIGNATURE);
 
     if (*RegistryHive).HiveFlags & HIVE_VOLATILE != 0 {
         DbgPrint(
@@ -456,8 +454,8 @@ pub unsafe extern "system" fn HvHiveWillShrink(
 
 #[no_mangle]
 pub unsafe extern "system" fn HvWriteHive(RegistryHive: *mut HHIVE) -> i32 {
-    debug_assert!((*RegistryHive).ReadOnly == 0);
-    debug_assert!((*RegistryHive).Signature == HV_HHIVE_SIGNATURE);
+    ntkrnl_sys::ASSERT!((*RegistryHive).ReadOnly == 0);
+    ntkrnl_sys::ASSERT!((*RegistryHive).Signature == HV_HHIVE_SIGNATURE);
 
     #[cfg(not(feature = "bldr"))]
     {
@@ -475,9 +473,9 @@ pub unsafe extern "system" fn HvWriteHive(RegistryHive: *mut HHIVE) -> i32 {
 }
 #[no_mangle]
 pub unsafe extern "system" fn HvWriteAlternateHive(RegistryHive: *mut HHIVE) -> i32 {
-    core::assert!((*RegistryHive).ReadOnly == 0);
-    core::assert!((*RegistryHive).Signature == HV_HHIVE_SIGNATURE);
-    core::assert!((*RegistryHive).Alternate != 0);
+    ntkrnl_sys::ASSERT!((*RegistryHive).ReadOnly == 0);
+    ntkrnl_sys::ASSERT!((*RegistryHive).Signature == HV_HHIVE_SIGNATURE);
+    ntkrnl_sys::ASSERT!((*RegistryHive).Alternate != 0);
     #[cfg(not(feature = "bldr"))]
     {
         { let _ts = core::ptr::addr_of_mut!((*(*RegistryHive).BaseBlock).TimeStamp); KeQuerySystemTime(_ts as *mut _) };
@@ -491,8 +489,8 @@ pub unsafe extern "system" fn HvWriteAlternateHive(RegistryHive: *mut HHIVE) -> 
 #[no_mangle]
 pub unsafe extern "system" fn HvSyncHiveFromRecover(RegistryHive: *mut HHIVE) -> i32 {
     unsafe {
-        debug_assert!((*RegistryHive).ReadOnly == 0);
-        debug_assert!((*RegistryHive).Signature == HV_HHIVE_SIGNATURE);
+        ntkrnl_sys::ASSERT!((*RegistryHive).ReadOnly == 0);
+        ntkrnl_sys::ASSERT!((*RegistryHive).Signature == HV_HHIVE_SIGNATURE);
 
         HvpWriteHive(RegistryHive, 1u8, HFILE_TYPE_PRIMARY) as i32
     }

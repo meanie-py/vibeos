@@ -18,7 +18,12 @@ pub use ntkrnl_sys::ddk::_SEEKMODE_SeekRelative as SeekRelative;
 pub const FIRST_BIOS_DISK: UCHAR = 0x80;
 pub const FIRST_PARTITION: ULONG = 1;
 // arch/pc/hardware.h: #define TAG_HW_DISK_CONTEXT 'cDwH'
-pub const TAG_HW_DISK_CONTEXT: ULONG = u32::from_le_bytes(*b"cDwH");
+// A C multi-character literal is BIG-endian by definition -- 'cDwH' is
+// ('c'<<24)|('D'<<16)|('w'<<8)|'H' = 0x63447748 on every target. from_le_bytes
+// here yielded 0x48774463, the bytes reversed, disagreeing with uefidisk.rs's
+// spelling of the SAME constant. Self-consistent while one file both allocates
+// and frees, and wrong the moment they meet.
+pub const TAG_HW_DISK_CONTEXT: ULONG = u32::from_be_bytes(*b"cDwH");
 
 // hwdisk.c: typedef struct tagDISKCONTEXT
 #[repr(C)]

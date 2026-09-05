@@ -77,6 +77,7 @@ const SCSI_REQUEST_BLOCK_SIZE: usize = core::mem::size_of::<SCSI_REQUEST_BLOCK>(
 const STATUS_INVALID_LEVEL: NTSTATUS = 0xC0000148u32 as i32;
 use core::ffi::c_void;
 use core::mem::offset_of;
+use ntkrnl_sys::ddk::RtlAssert;
 
 extern "C" {
     fn CdromDbgPrintForce2(format: *const i8, arg1: usize, arg2: usize) -> u32;
@@ -894,7 +895,7 @@ pub unsafe extern "C" fn DeviceIsPlayActive(Device: WDFDEVICE) -> u8 {
     }
 
     // Allocate the required memory
-    debug_assert!(core::mem::size_of::<SUB_Q_CURRENT_POSITION>() >= core::mem::size_of::<CDROM_SUB_Q_DATA_FORMAT>());
+    ntkrnl_sys::ASSERT!(core::mem::size_of::<SUB_Q_CURRENT_POSITION>() >= core::mem::size_of::<CDROM_SUB_Q_DATA_FORMAT>());
     currentBuffer = ExAllocatePoolWithTag(
         NonPagedPoolNxCacheAligned,
         core::mem::size_of::<SUB_Q_CURRENT_POSITION>(),
@@ -2362,7 +2363,7 @@ pub unsafe extern "system" fn RequestHandleExclusiveAccessQueryLockState(
         &mut exclusiveLockState as *mut _ as *mut *mut core::ffi::c_void,
         core::ptr::null_mut(),
     );
-    assert!(status >= 0, "NT_ASSERT");
+    ntkrnl_sys::ASSERT!(status >= 0, "NT_ASSERT");
 
     core::ptr::write_bytes(
         exclusiveLockState as *mut u8,
@@ -3547,14 +3548,19 @@ pub unsafe extern "system" fn RequestHandleScsiPassThrough(
         let request_context = RequestGetContext(Request);
         // NT_ASSERT(request_context->SyncRequired) in C
         // We expand NT_ASSERT as a plain assertion; SyncRequired is a bool field.
-        core::assert!((*request_context).SyncRequired != 0);
+        ntkrnl_sys::ASSERT!((*request_context).SyncRequired != 0);
     }
 
     // PAGED_CODE() expansion: assert IRQL <= APC_LEVEL
     {
         let irql = KeGetCurrentIrql();
         if irql as u32 > APC_LEVEL as u32 {
-            panic!("IRQL too high for paged code in RequestHandleScsiPassThrough");
+            RtlAssert(
+                b"KeGetCurrentIrql() <= APC_LEVEL\0".as_ptr() as *mut core::ffi::c_void,
+                b"ioctl.rs\0".as_ptr() as *mut core::ffi::c_void,
+                line!(),
+                b"PAGED_CODE: RequestHandleScsiPassThrough\0".as_ptr() as *mut i8,
+            );
         }
     }
 
@@ -4382,7 +4388,7 @@ pub unsafe extern "C" fn RequestHandleGetDriveGeometry(
     let mut outputBuffer: *mut core::ffi::c_void = core::ptr::null_mut();
 
     // PAGED_CODE() expansion: assert IRQL <= APC_LEVEL
-    debug_assert!(KeGetCurrentIrql() <= APC_LEVEL);
+    ntkrnl_sys::ASSERT!(KeGetCurrentIrql() <= APC_LEVEL);
 
     *DataLength = 0;
 
@@ -4430,7 +4436,7 @@ pub unsafe extern "C" fn RequestHandleGetDriveGeometry(
             }
             _ => {
                 // NT_ASSERT(FALSE)
-                debug_assert!(false);
+                ntkrnl_sys::ASSERT!(false);
             }
         }
     }
@@ -5643,7 +5649,7 @@ pub unsafe extern "C" fn RequestHandleLoadEjectMedia(
     let zpoddInfo: *mut ZERO_POWER_ODD_INFO = (*DeviceExtension).ZeroPowerODDInfo;
 
     // PAGED_CODE(); equivalent: ensure IRQL <= APC_LEVEL
-    assert!(ntkrnl_sys::ke::KeGetCurrentIrql() <= ntkrnl_sys::base::APC_LEVEL);
+    ntkrnl_sys::ASSERT!(ntkrnl_sys::ke::KeGetCurrentIrql() <= ntkrnl_sys::base::APC_LEVEL);
 
     *DataLength = 0;
 
@@ -6137,10 +6143,10 @@ pub unsafe extern "C" fn DeviceHandleRawRead(
         );
 
         if (*currentIrpStack).Parameters.DeviceIoControl.OutputBufferLength > 0 {
-            debug_assert!(!(*irp).MdlAddress.is_null());
+            ntkrnl_sys::ASSERT!(!(*irp).MdlAddress.is_null());
             outputVirtAddr = MmGetMdlVirtualAddress((*irp).MdlAddress);
             if (outputVirtAddr as usize) & (*(*DeviceExtension).AdapterDescriptor).AlignmentMask as usize != 0 {
-                debug_assert!(false);
+                ntkrnl_sys::ASSERT!(false);
                 *DataLength = 0;
                 status = STATUS_INVALID_PARAMETER;
             }
@@ -6250,7 +6256,7 @@ pub unsafe extern "C" fn DeviceHandleRawRead(
                     (*cdb).READ_CD.as_mut().set_SubChannelSelection(1);
                 }
                 _ => {
-                    debug_assert!(false);
+                    ntkrnl_sys::ASSERT!(false);
                 }
             }
 
@@ -6318,7 +6324,7 @@ pub unsafe extern "C" fn DeviceHandlePlayAudioMsf(
     let mut input_buffer: *mut CDROM_PLAY_AUDIO_MSF = core::ptr::null_mut();
 
     // PAGED_CODE();
-    assert_eq!(KeGetCurrentIrql(), PASSIVE_LEVEL);
+    ntkrnl_sys::ASSERT!(KeGetCurrentIrql() == PASSIVE_LEVEL);
 
     *DataLength = 0;
 
@@ -6381,7 +6387,12 @@ pub unsafe extern "C" fn DeviceHandleReadQChannel(
 
     // PAGED_CODE ();
     if KeGetCurrentIrql() > APC_LEVEL {
-        panic!("PAGED_CODE violation: IRQL {} > APC_LEVEL", KeGetCurrentIrql());
+        RtlAssert(
+            b"KeGetCurrentIrql() <= APC_LEVEL\0".as_ptr() as *mut core::ffi::c_void,
+            b"ioctl.rs\0".as_ptr() as *mut core::ffi::c_void,
+            line!(),
+            b"PAGED_CODE\0".as_ptr() as *mut i8,
+        );
     }
 
     *DataLength = 0;
@@ -6465,7 +6476,12 @@ pub unsafe extern "C" fn DeviceHandleResumeAudio(
     DataLength: *mut usize,
 ) -> NTSTATUS {
     if ntkrnl_sys::ke::KeGetCurrentIrql() > ntkrnl_sys::base::APC_LEVEL {
-        panic!("PAGED_CODE violation: IRQL > APC_LEVEL");
+        RtlAssert(
+            b"KeGetCurrentIrql() <= APC_LEVEL\0".as_ptr() as *mut core::ffi::c_void,
+            b"ioctl.rs\0".as_ptr() as *mut core::ffi::c_void,
+            line!(),
+            b"PAGED_CODE\0".as_ptr() as *mut i8,
+        );
     }
     let mut status: NTSTATUS = ntkrnl_sys::base::STATUS_SUCCESS;
     *DataLength = 0;

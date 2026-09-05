@@ -24,7 +24,6 @@ pub type FIND_PCI_BIOS = unsafe extern "C" fn(PPCI_REGISTRY_INFO) -> BOOLEAN;
 pub static mut FindPciBios: *mut core::ffi::c_void = core::ptr::null_mut();
 
 // arch/pc/hardware.h: #define TAG_HW_RESOURCE_LIST 'lRwH'
-pub const TAG_HW_RESOURCE_LIST: ULONG = u32::from_le_bytes(*b"lRwH");
 
 // ---- Dropped non-fn content faithfully restored (rustconv drops structs/consts) ----
 

@@ -34,7 +34,7 @@ The kernel + win32k + the core client-DLL/boot spine + the driver fleet are **~9
 ### Tier 2 — Systemic Rust-native fixes (above Wine-DLL translation)
 
 - **⭐ Exported-symbol trampoline refactor** *(new; Size: M, mechanical)* — split every exported symbol into a snake_case **native `nt_foo()`** (plain Rust ABI, holds the logic) + a generated **`NtFoo` trampoline** that is the *only* place `extern "system"/"fastcall"/stdcall` lives. Done mechanically in Python across all ~1,700+ monolith exports (thousands fleet-wide). **This is the capstone of the ghost-tax "two copies of the truth" program**: internal callers hit the native fn, so there is no hand-written `extern` decl left to drift — it kills the ABI-mismatch bug class the crate-split flushes cross-crate, `scan_cc_mismatch` catches same-crate (316 baseline), and `verify_ffi` guards (161). Also the natural substrate for idiomation (§3) and for **generating** crate-split's cross-crate decls instead of hand-writing them — so do it *aware of* the crate-split. **Re-scoped 2026-07-25 — Size is L-XL, not M: the real surface is 24,823 `#[no_mangle]` exports fleet-wide** (the ~1,700 figure was ntoskrnl-only, and is accurate for it; win32k alone is 3,788). It also cannot be an edit campaign over the decls that exist — it must GENERATE them from one authority and retype call sites in the same pass. Two shortcuts were probed and closed as dead ends (decl-follows-def bakes in wrong ABIs; `verify_ffi`'s 6 ABI findings are correctly baselined local shims, not bugs) — see the warnings-burndown lane plan, 2026-07-25, before restarting.
-- **msvcrt / ucrtbase from pieces** *(new; Size: M-L)* — the CRT floor is still ~581 `.c`. Rather than translate it from scratch, **assemble** the Rust CRT from what already exists — `cnt-rust` (libcntpr kernel CRT subset) + the 39-crate `rtl-rust` umbrella — and NT-ify the gaps. Displaces the last big userland C floor.
+- **msvcrt / ucrtbase from pieces** *(Size: M-L; msvcrt DONE, ucrtbase's rail LANDED 2026-09-05)* — the CRT floor is still ~581 `.c`. Rather than translate it from scratch, **assemble** the Rust CRT from what already exists — `cnt-rust` (libcntpr kernel CRT subset) + the 39-crate `rtl-rust` umbrella — and NT-ify the gaps. Displaces the last big userland C floor. **ucrtbase now links Rust**: its shared TUs live in `crt-shared-rust` and it links `crt-shared-cargo`, deliberately NOT msvcrt's archive — those two collide with ucrtbase.spec on 891 names of which only 35 are ours, so the obvious wiring would have silently shadowed 856 genuine Microsoft UCRT bodies under `--allow-multiple-definition`. `tools/verify_ucrtbase_cohab.py` gates it; see rust-port-status.md's CRT row.
 - **ntoskrnl crate-split continuation** *(Size: M)* — debug + land **ex** (x86 hang, branch `ex-crate-split-x86-hang`), then split **ke** and **mm/ARM3**; then **win32k** (flat 257K single crate, textbook USER/GDI seam, `freetype` a free leaf — one coordinated pass in a quiet window). Detail + recipe: the crate-split plan.
 
 ### Tier 3 — Resume translation (the through-line)
@@ -481,6 +481,108 @@ land; date every addition.** Source docs live in `docs/engineering/archive/`.
 The committed home for open bugs (was: agent MEMORY.md, which other agents never see).
 Field-manual § pointers hold the full writeups. **Update on state change.**
 
+- **freeldr's `FREELDR_HEAP_VERIFIER` is DEAD in Rust — OPEN** (2026-09-04). `heap.c:25` defines
+  it **unconditionally**, so the C always compiles the redzone allocation, the redzone writes
+  and the three `FrLdrHeapVerify` checks. The translation turned it into
+  `#[cfg(feature = "FREELDR_HEAP_VERIFIER")]` at five sites in `freeldr-rust/src/heap.rs`, and
+  the feature is not declared in that crate's `Cargo.toml` (`default = []`, only `uefi` and
+  `rosload` exist) — so all five are permanently off. It is self-consistent (alloc and free
+  both skip the redzone), which is why nothing has failed, but freeldr has shipped with its
+  heap verifier silently disabled. Fix is to declare the feature and enable it by default,
+  which needs a boot behind it since it changes every freeldr allocation's layout.
+- **A green smoke on amd64 can HIDE a freeldr assertion storm** (2026-09-05). `DbgBreakPoint`
+  is a real `brk #0xF000` on arm64 and an EMPTY STUB on i386/amd64, so the same failing
+  assertion wedges one arch and merely prints on another while the boot reaches the desktop
+  marker and the verdict says PASS. amd64 printed the bad-tag assertion 38 times — once per
+  file loaded — under a green smoke. When touching freeldr assertions, grep the serial log for
+  `Assertion`, do not read the verdict. Field manual, "The same-named constant with a DIFFERENT
+  value per driver".
+- **`ASSERT!` is FATAL in the boot loader, print-and-continue in the kernel** (2026-09-04).
+  `ntkrnl_sys::ASSERT!` calls `RtlAssert`, and there are two of them: the kernel's
+  (`rtl-diag/src/assert.rs` — prints, capped at 20, returns) and freeldr's
+  (`freeldr-rust/src/debug.rs` — prints, then `DbgBreakPoint()`). On arm64 that breakpoint is a
+  real `brk #0xF000` (`arm64_debug.rs:48`) and wedges the boot; on i386/amd64 it is an empty
+  stub (`frldr.rs:719`) so the same assert prints and sails on. So an assertion's severity
+  depends on the LINK, not the crate — and `uefildr-cargo/build.rs` shows the loader link pulls
+  in `freeldr-rust`, `cmlib-rust`, `cnt-rust-lib`, `cport-rust` and `hal-rust`, of which
+  `hal-rust` is ALSO in the kernel link. Any future tool that makes assertions live must read
+  that link set rather than filter by crate name.
+- **75 newly-visible same-name/different-value constants — baselined work queue** (2026-09-04).
+  `scan_const_contradictions` could only parse integer literals, so every
+  `u32::from_*_bytes(*b"..")` pool tag was invisible to it. Now evaluated; the backlog includes
+  `TAG_CM` at four values inside `config-rust`, `TAG_HW_RESOURCE_LIST` at five inside
+  `freeldr-rust`, `TAG_HAL` at three, and byte-reversed pairs in `pcix-rust`, `win32k-rust`,
+  `fltmgr-rust` and `classpnp-rust`. One of this family wedged the arm64 boot (field manual,
+  "The same-named constant with a DIFFERENT value per driver"). Burn down per crate.
+- **classpnp's `KeRaiseIrql`/`KeLowerIrql` shims call THEMSELVES — OPEN** (2026-07-26). In
+  `classpnp-rust/src/ddk_shims.rs`, the `#[no_mangle] extern "system" fn KeRaiseIrql` body
+  declares `extern "system" { fn KeRaiseIrql(..); }` and calls it. That extern binds to the
+  `#[no_mangle]` definition *in the same image* — itself — so it is infinite self-recursion,
+  which LLVM folds to a single `b .`. Verified in the arm64 binary:
+  `<KeRaiseIrql>: b 0x…d274 <KeRaiseIrql>`. Same family as the "never hand-write memcpy in
+  Rust" rule in AGENTS.md: a `#[no_mangle]` shim may never call the symbol it defines.
+  Per-arch truth (`hal.spec:84,86`, `ntoskrnl.spec:635`): i386 uses the `KfRaiseIrql`/
+  `KfLowerIrql` FASTCALL inlines (the shim's x86 branch is correct); **arm64 exports BOTH from
+  HAL**, so the shim should simply not exist there — defining it shadows the import and creates
+  the self-call; **amd64** exports neither `KeRaiseIrql` (a CR8 FORCEINLINE upstream) nor a
+  public `KeLowerIrql` (private, `KxLowerIrql`), so it needs a real CR8 body like the
+  `KeGetCurrentIrql` shim beside it. Latent on master since `e33a810c9ad` (this lane's own
+  clashing-extern Phase 2 — the self-call predates it; that commit only changed the ABI).
+  Reachable only if something calls these in classpnp; not fixed blind because it is boot-path
+  storage IRQL code that wants a smoke run. Owner: task #4.
+  > Found via `scan_ud2`'s driver sweep. The other 11 spins in the same report are **faithful**:
+  > upstream ReactOS really does write `UNIMPLEMENTED; while (TRUE);` in pcix's arbiter and
+  > power paths, so `loop {}` is correct there and must NOT be "fixed" — check the C before
+  > touching one (`ario_Initializer` has it commented out, `ario_Constructor` does not).
+- **Kernel asserts that hung the box — 92 FIXED, remaining work is mechanical** (2026-07-26).
+  A Rust panic in kernel mode reaches a `#[panic_handler]` that prints to debugcon and loops
+  forever: a silent hang, no bugcheck, no dump. Fixed in two passes — **31** spelled
+  `panic!`/`unreachable!` (now gated by `scan_assert_to_ub.py`, baseline empty) and **61**
+  spelled `assert!`, migrated to the new `ntkrnl_sys::ASSERT!`/`NT_ASSERT!` macros which expand
+  to `RtlAssert`: loud, non-fatal, matching C under `-DDBG=1`. Deliberately left alone: 599
+  `size_of`/`offset_of` layout checks, 8 uniata `const _: () = {}` register-layout locks, and 4
+  kdbg `#[cfg(test)]` asserts — all of which *should* be compile-time or fatal.
+  **`debug_assert!` — DONE for kernel crates, 454 sites** (2026-07-26, `migrate_debug_assert.py`).
+  The population was never 1962: that counted bindgen boilerplate (16 `__BindgenBitfieldUnit`
+  bounds checks per island × 3 arches × ~30 crates), 149 `cfg(debug_assertions)` gates and 8
+  comments. **490** real invocations — 454 kernel, 36 usermode. Kernel is migrated to
+  `ntkrnl_sys::ASSERT!`; usermode needs an ntdll-side macro (`RtlAssert` is exported there too,
+  with `PCHAR` rather than `PSTR`) and is the remaining slice, along with the two crates whose
+  local `macro_rules! ASSERT` expands to `debug_assert!` (usbaudio, mouhid).
+  Two things made this safe rather than a risk decision: the shipping `RtlAssert` is **Rust**
+  (`rtl-diag/src/assert.rs` — `assert.c` is inert cohab source), and it prints only the first
+  **20** failures then returns, so no assertion can hang or flood the log however many go live.
+  Making them live immediately paid: `hidusb.sys` failed to link on amd64 because
+  `KeGetCurrentIrql` is HAL-exported on i386/arm/arm64 but a CR8 FORCEINLINE on amd64 — the C
+  `ASSERT` at `hidusb.c:410` had been dead in Rust, so nothing had ever referenced the symbol.
+  Field manual, "`NT_ASSERT`/`ASSERT`/`PAGED_CODE` are DIAGNOSTICS" + §9.135.
+- **`!x` translated as bitwise NOT — 8 sites, 5 of them live branches** (2026-07-26). C's `!` is
+  logical; Rust's `!` on an integer is bitwise, so `!(flags & FLAG) != 0` is true for every value
+  a flag test can produce — a constant condition that compiles clean and trips no rustc lint. The
+  class was *already in the field manual* and still shipped: classpnp's `ADJUST_FUA_FLAG`
+  collapsed to its first term (forcing Force Unit Access onto devices that had reported it
+  unsupported), an always-true `||` arm disabled win32k's CJK line-break rule, kernel32's
+  `DuplicateConsoleHandle` lost a validation arm, and scsiport kept only the null half of an
+  assert. Now gated: `scan_bitwise_not_bool.py`, baseline EMPTY, with controls covering the two
+  idioms it must never flag (`x & !MASK != 0`, and the macro bang in `offset_of!`) — a first
+  draft that missed those reported 4710 sites.
+- **`.try_into().unwrap()` — FIXED where it mattered; the rest is cosmetic** (2026-07-26).
+  All 234 sites in the Rust tree were audited. Exactly one was reachable and it was a
+  usermode-triggerable **kernel** panic: `handle_internal_message`'s `WM_ASYNC_SHOWWINDOW` arm
+  (`win32k-rust/src/message.rs`) narrowed a 64-bit `WPARAM` to `INT` with `.unwrap()`.
+  `NtUserShowWindowAsync` takes `nCmdShow` as a `LONG` straight from usermode and range-checks
+  only the top (`> SW_MAX`), so `ShowWindow(hwnd, -1)` sign-extends to
+  `0xFFFF_FFFF_FFFF_FFFF` and panics in win32k. The C — recovered from history, the file was
+  retired in `8d3c33ee41e` — is `co_WinPosShowWindow(pWnd, wparam)`, whose implicit truncation
+  round-trips `-1` correctly. Fixed to `wparam as INT`.
+  The other 233 cannot fail: 146 have compile-time-constant receivers, and the two big runtime
+  families are same-width identity conversions (allocation sizes into `RtlAllocateHeap`'s
+  `SIZE_T = ULONG_PTR`; message args into externs declared `wParam: usize` / `lParam: isize`).
+  **So task #19 is mechanical cleanup, not a backlog of live panics** — worth doing for the
+  named-anti-pattern reason, but it needs the compiler as the per-site oracle for the target
+  type, so it is a build-bound batch. Owed: a gate so new ones cannot land (`crate-repair`
+  refuses to *generate* the pattern, but nothing stops one being hand-written). Field manual,
+  "Semantic rewrites that flip meaning".
 - **FIXED (E22, 2026-08-01): every 32-bit process silently lost the `cbSize`-validated USER32
   APIs.** `TrackMouseEvent` (so no 32-bit app ever received `WM_MOUSELEAVE`/`WM_MOUSEHOVER`),
   `GetCursorInfo`, `GetGUIThreadInfo`, `GetComboBoxInfo`, `GetMenuInfo` and `SendInput` (all
@@ -902,6 +1004,18 @@ Field-manual § pointers hold the full writeups. **Update on state change.**
   four clock routines are a correct per-arch `fastcall`/`C` cfg split of a C `FASTCALL`. Both
   vindicate the projection's rule that i386-says-`C` stays `C` — and both are exactly what
   `CALLBACK_SYSTEM`'s blanket sed would have broken.
+
+  **The sweep was under-counting by 10% (2026-07-26).** The pass looked for a hardcoded stem
+  list, `("types", "bindgen")`, but `gen_driver_types.sh` names islands from a per-crate
+  `TYPES_STEM` — so three stems were skipped in silence while the tool still printed a grand
+  total: `hal_bindgen` (ntkrnl-sys, 642), `island` (shell32-rust, 342 — landed the same day) and
+  `win_sys` (oleaut32-rust, 831). Stems are now discovered from the filenames, which also
+  removed a latent soundness bug: one witness set was pooled across every island in a crate, so
+  a `stdcall` entry in one could promote a same-named cdecl entry in another, projecting across
+  a boundary where the key means different things. Per-stem grouping lowered no crate's count.
+  **Tree-wide total: 17,717 → 19,532 slots / 39 crates.** The pass was also write-capable, wired
+  into generation, and had **zero tests**; it now has eight, each validated by breaking the tool
+  and confirming the intended control fires. Field manual, "An oracle needs an oracle".
 - **8 `scan_cc_mismatch` entries in `ntkrnl-sys/src/bindgen_i386.rs` — benign, baselined**
   (`Ke386SanitizeFlags`, `Ke386SanitizeSeg`, `Ke{Query,Register}InterruptHandler`,
   `KiFillTrapFrameDebug`, `KiGetThreadNpxArea`, `KiSetTebBase`, `KiUserTrap`). The island

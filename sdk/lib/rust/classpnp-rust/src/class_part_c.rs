@@ -280,7 +280,7 @@ pub unsafe extern "C" fn ClassAddChild(
     {
         let mut testChild = (*(Parent as PCOMMON_DEVICE_EXTENSION)).ChildList;
         while !testChild.is_null() {
-            debug_assert!(testChild != Child);
+            ntkrnl_sys::ASSERT!(testChild != Child);
             testChild = (*(testChild as PCOMMON_DEVICE_EXTENSION)).ChildList;
         }
     }

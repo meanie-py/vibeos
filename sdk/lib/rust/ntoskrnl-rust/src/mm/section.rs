@@ -293,7 +293,7 @@ unsafe fn MmspCheckSegmentBounds(
     if (Flags & EXEFMT_LOAD_ASSUME_SEGMENTS_NO_OVERLAP) != 0 { return 1; }
     let segs = (*ImageSectionObject).Segments;
     let nr = (*ImageSectionObject).NrSegments as usize;
-    debug_assert!(nr >= 1);
+    ntkrnl_sys::ASSERT!(nr >= 1);
 
     for i in 0..nr {
         let s = segs.add(i);
@@ -365,18 +365,18 @@ unsafe fn MmspPageAlignSegments(
 
             let end_of_eff = ((*eff).Image.VirtualAddress as u64)
                 + ((*eff).Length.QuadPart as u64);
-            debug_assert!((end_of_eff & page_mask) == 0);
+            ntkrnl_sys::ASSERT!((end_of_eff & page_mask) == 0);
 
             if end_of_eff == (*cur).Image.VirtualAddress as u64 {
                 last_segment += 1;
-                debug_assert!(last_segment <= i);
-                debug_assert!(last_segment < nr);
+                ntkrnl_sys::ASSERT!(last_segment <= i);
+                ntkrnl_sys::ASSERT!(last_segment < nr);
 
                 let next_eff = segs.add(last_segment);
                 if last_segment != i {
                     *next_eff = *cur;
                 }
-                debug_assert!(((*next_eff).Image.VirtualAddress as u64 & page_mask) == 0);
+                ntkrnl_sys::ASSERT!(((*next_eff).Image.VirtualAddress as u64 & page_mask) == 0);
                 let len = (*next_eff).Length.QuadPart as u64;
                 let len_rounded = (len + page_mask) & !page_mask;
                 (*next_eff).Length.QuadPart = len_rounded as i64;
@@ -390,7 +390,7 @@ unsafe fn MmspPageAlignSegments(
                 let cur_end_rounded = ((*cur).Image.VirtualAddress as u64
                     + (*cur).Length.QuadPart as u64
                     + page_mask) & !page_mask;
-                debug_assert!(cur_end_rounded >= end_of_eff);
+                ntkrnl_sys::ASSERT!(cur_end_rounded >= end_of_eff);
                 (*eff).Length.QuadPart =
                     (cur_end_rounded - (*eff).Image.VirtualAddress as u64) as i64;
 
@@ -401,7 +401,7 @@ unsafe fn MmspPageAlignSegments(
                 if ((*eff).Protection & PAGE_IS_WRITABLE)       != 0 { protection_flags |= 1 << 1; }
                 if ((*eff).Protection & PAGE_IS_EXECUTABLE)     != 0 { protection_flags |= 1 << 2; }
                 if ((*eff).Protection & PAGE_IS_WRITECOPY)      != 0 { protection_flags |= 1 << 3; }
-                debug_assert!(protection_flags < 16);
+                ntkrnl_sys::ASSERT!(protection_flags < 16);
                 (*eff).Protection = FLAGS_TO_PROTECTION[protection_flags as usize];
 
                 if ((*cur).Protection & PAGE_IS_WRITECOPY) == 0
@@ -461,7 +461,7 @@ pub unsafe extern "system" fn MmFixupImageSectionSegments(
         (*seg).FileObject = FileObject;
     }
 
-    debug_assert!((*ImageSectionObject).RefCount > 0);
+    ntkrnl_sys::ASSERT!((*ImageSectionObject).RefCount > 0);
     (*ImageSectionObject).FileObject = FileObject;
 
     STATUS_SUCCESS

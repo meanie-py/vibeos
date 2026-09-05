@@ -55,7 +55,7 @@ const CMLIB_HCELL_DEBUG: u32 = 0;
 
 // ── HvpGetCellHeader (static __inline) — resolve an HCELL_INDEX to its PHCELL ──
 unsafe fn HvpGetCellHeader(RegistryHive: *mut HHIVE, CellIndex: HCELL_INDEX) -> *mut HCELL {
-    debug_assert!(CellIndex != HCELL_NIL);
+    ntkrnl_sys::ASSERT!(CellIndex != HCELL_NIL);
     if (*RegistryHive).Flat == 0 {
         let CellType = HvGetCellType(CellIndex);
         let CellBlock = HvGetCellBlock(CellIndex);
@@ -120,7 +120,7 @@ pub unsafe extern "system" fn HvMarkCellDirty(
     CellIndex: HCELL_INDEX,
     _HoldingLock: u8,
 ) -> u8 {
-    debug_assert!((*RegistryHive).ReadOnly == 0);
+    ntkrnl_sys::ASSERT!((*RegistryHive).ReadOnly == 0);
 
     if HvGetCellType(CellIndex) != Stable {
         return 1;
@@ -154,7 +154,7 @@ pub unsafe extern "system" fn HvMarkCellDirty(
 
 #[no_mangle]
 pub unsafe extern "system" fn HvIsCellDirty(Hive: *mut HHIVE, Cell: HCELL_INDEX) -> u8 {
-    debug_assert!((*Hive).ReadOnly == 0);
+    ntkrnl_sys::ASSERT!((*Hive).ReadOnly == 0);
     if HvGetCellType(Cell) == Volatile {
         return 1;
     }
@@ -180,7 +180,7 @@ unsafe fn HvpComputeFreeListIndex(Size: u32) -> u32 {
         6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6,
         6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6,
     ];
-    debug_assert!(Size >= (1 << 3));
+    ntkrnl_sys::ASSERT!(Size >= (1 << 3));
     let mut Index = (Size >> 3) - 1;
     if Index >= 16 {
         if Index > 127 {
@@ -238,7 +238,7 @@ unsafe extern "C" fn HvpRemoveFree(
     let Storage: u32;
     let Index: u32;
 
-    assert!((*RegistryHive).ReadOnly == 0);
+    ntkrnl_sys::ASSERT!((*RegistryHive).ReadOnly == 0);
 
     Storage = HvGetCellType(CellIndex);
     Index = HvpComputeFreeListIndex((*(CellBlock as *mut HCELL)).Size as u32);
@@ -257,7 +257,7 @@ unsafe extern "C" fn HvpRemoveFree(
     // Something bad happened (the block to free was not on its free list).
     // C dumps the free lists via CMLTRACE then ASSERT(FALSE); the trace is
     // NDEBUG-disabled, so we just assert.
-    assert!(false);
+    ntkrnl_sys::ASSERT!(false);
 }
 #[no_mangle]
 pub unsafe extern "system" fn HvAllocateCell(
@@ -278,7 +278,7 @@ pub unsafe extern "system" fn HvAllocateCell(
     let Bin: *mut HBIN;
 
     // ASSERT(RegistryHive->ReadOnly == FALSE);
-    core::assert_eq!((*RegistryHive).ReadOnly, 0);
+    ntkrnl_sys::ASSERT!((*RegistryHive).ReadOnly == 0);
 
     // Size = ROUND_UP(Size + sizeof(HCELL), 16);
     Size = ROUND_UP(Size as usize + core::mem::size_of::<HCELL>(), 16) as u32;
@@ -334,13 +334,13 @@ pub unsafe extern "system" fn HvReallocateCell(RegistryHive: *mut _HHIVE, CellIn
     let NewCellIndex: u32;
     let Storage: u32;
 
-    debug_assert!(CellIndex != HCELL_NIL);
+    ntkrnl_sys::ASSERT!(CellIndex != HCELL_NIL);
 
     Storage = HvGetCellType(CellIndex);
 
     OldCell = HvGetCell(RegistryHive, CellIndex);
     OldCellSize = HvGetCellSize(RegistryHive, OldCell);
-    debug_assert!(OldCellSize > 0);
+    ntkrnl_sys::ASSERT!(OldCellSize > 0);
 
     if Size > (OldCellSize as u32) {
         NewCellIndex = HvAllocateCell(RegistryHive, Size, Storage, HCELL_NIL);
@@ -363,10 +363,10 @@ pub unsafe extern "system" fn HvReallocateCell(RegistryHive: *mut _HHIVE, CellIn
 pub unsafe extern "system" fn HvFreeCell(RegistryHive: *mut HHIVE, CellIndex: HCELL_INDEX) {
     const HCELL_TYPE_MASK: u32 = 0x8000_0000;
 
-    assert!((*RegistryHive).ReadOnly == 0);
+    ntkrnl_sys::ASSERT!((*RegistryHive).ReadOnly == 0);
 
     let Free: *mut HCELL = HvpGetCellHeader(RegistryHive, CellIndex);
-    assert!((*Free).Size < 0);
+    ntkrnl_sys::ASSERT!((*Free).Size < 0);
     (*Free).Size = -((*Free).Size);
 
     let CellType = HvGetCellType(CellIndex);
@@ -475,9 +475,9 @@ pub unsafe extern "system" fn HvTrackCellRef(
 
     PAGED_CODE();
 
-    assert!(!CellRef.is_null());
-    assert!(!Hive.is_null());
-    assert!(Cell != HCELL_NIL);
+    ntkrnl_sys::ASSERT!(!CellRef.is_null());
+    ntkrnl_sys::ASSERT!(!Hive.is_null());
+    ntkrnl_sys::ASSERT!(Cell != HCELL_NIL);
 
     if ((*CellRef).StaticCount as u32) < (STATIC_CELL_PAIR_COUNT as u32) {
         (*CellRef).StaticArray[(*CellRef).StaticCount as usize].Hive = Hive;
@@ -490,12 +490,12 @@ pub unsafe extern "system" fn HvTrackCellRef(
     DbgPrint(b"HvTrackCellRef: Static array full, use dynamic array.\n\0".as_ptr() as *const u8);
 
     if (*CellRef).Max == 0 {
-        assert!((*CellRef).CellArray.is_null());
-        assert!((*CellRef).Count == 0);
+        ntkrnl_sys::ASSERT!((*CellRef).CellArray.is_null());
+        ntkrnl_sys::ASSERT!((*CellRef).Count == 0);
     } else {
-        assert!(!(*CellRef).CellArray.is_null());
+        ntkrnl_sys::ASSERT!(!(*CellRef).CellArray.is_null());
     }
-    assert!((*CellRef).Count <= (*CellRef).Max);
+    ntkrnl_sys::ASSERT!((*CellRef).Count <= (*CellRef).Max);
 
     if (*CellRef).Count == (*CellRef).Max {
         let size = ((*CellRef).Max as usize + CELL_REF_INCREMENT as usize) * core::mem::size_of::<HV_HIVE_CELL_PAIR>();

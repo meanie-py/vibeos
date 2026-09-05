@@ -154,8 +154,17 @@ MACRO_CALL_RE = re.compile(r"(?<![A-Za-z0-9_])([A-Za-z_][A-Za-z0-9_]*)\s*!")
 # ...plus plain calls to the upstream names themselves. Usermode translations
 # keep `FIXME(...)`/`ERR(...)` and bind them to the wine debug channel through
 # an `extern` declaration, so the call reads exactly like the C did.
+# ...and the plain-call printers a crate provides because the upstream spelling
+# is unavailable to it. freeldr's `DbgPrintSz` is the whole reason this list is
+# not just ALWAYS_ON: freeldr-rust builds on STABLE, where a C-variadic `DbgPrint`
+# definition needs the nightly `c_variadic` feature, so its DbgPrint takes the
+# format string ALONE and the crate prints formatted text as sprintf-into-a-buffer
+# followed by DbgPrintSz. That reaches the serial port exactly as DbgPrint does.
+# Missing it scored freeldr's RtlAssert -- which prints on every assertion -- as
+# having dropped both of its diagnostics.
+LIVE_PRINT_EXTRA = ("DbgPrintSz",)
 LIVE_PRINT_FN_RE = re.compile(
-    r"(?<![A-Za-z0-9_])(" + "|".join(ALWAYS_ON) + r")\s*\(",
+    r"(?<![A-Za-z0-9_])(" + "|".join(ALWAYS_ON + LIVE_PRINT_EXTRA) + r")\s*\(",
 )
 DECL_BEFORE_RE = re.compile(r"\bfn\s+$")
 

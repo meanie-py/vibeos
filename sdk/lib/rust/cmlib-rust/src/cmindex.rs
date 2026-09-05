@@ -1098,11 +1098,9 @@ pub unsafe extern "system" fn CmpComputeHashKey(
     AllowSeparators: u8,
 ) -> u32 {
     // ASSERT((Name->Length == 0) || (AllowSeparators) || (Name->Buffer[0] != OBJ_NAME_PATH_SEPARATOR));
-    debug_assert!(
-        (*Name).Length == 0
+    ntkrnl_sys::ASSERT!((*Name).Length == 0
             || AllowSeparators != 0
-            || *(*Name).Buffer != OBJ_NAME_PATH_SEPARATOR as u16
-    );
+            || *(*Name).Buffer != OBJ_NAME_PATH_SEPARATOR as u16);
 
     // if (!Name->Length) return Hash;
     if (*Name).Length == 0 {
@@ -1114,7 +1112,7 @@ pub unsafe extern "system" fn CmpComputeHashKey(
     let mut i: u32 = 0;
     while i < (*Name).Length as u32 {
         // ASSERT(AllowSeparators || (*Cp != OBJ_NAME_PATH_SEPARATOR));
-        debug_assert!(AllowSeparators != 0 || *Cp != OBJ_NAME_PATH_SEPARATOR as u16);
+        ntkrnl_sys::ASSERT!(AllowSeparators != 0 || *Cp != OBJ_NAME_PATH_SEPARATOR as u16);
 
         let Value: u32;
         // if (*Cp >= L'a')
@@ -1217,7 +1215,7 @@ pub unsafe extern "system" fn CmpFindSubKeyByName(
             if (*index_root).Signature == CM_KEY_INDEX_ROOT {
                 found = CmpFindSubKeyInRoot(hive, index_root, search_name, &mut sub_key);
 
-                debug_assert!(cell_to_release != HCELL_NIL);
+                ntkrnl_sys::ASSERT!(cell_to_release != HCELL_NIL);
                 HvReleaseCell(hive, cell_to_release);
 
                 if found & INVALID_INDEX != 0 {
@@ -1231,16 +1229,14 @@ pub unsafe extern "system" fn CmpFindSubKeyByName(
                 index_root = HvGetCell(hive, sub_key) as *mut CM_KEY_INDEX;
             }
 
-            debug_assert!(
-                (*index_root).Signature == CM_KEY_INDEX_LEAF
+            ntkrnl_sys::ASSERT!((*index_root).Signature == CM_KEY_INDEX_LEAF
                     || (*index_root).Signature == CM_KEY_FAST_LEAF
-                    || (*index_root).Signature == CM_KEY_HASH_LEAF
-            );
+                    || (*index_root).Signature == CM_KEY_HASH_LEAF);
 
             if (*index_root).Signature != CM_KEY_HASH_LEAF {
                 found = CmpFindSubKeyInLeaf(hive, index_root, search_name, &mut sub_key);
 
-                debug_assert!(cell_to_release != HCELL_NIL);
+                ntkrnl_sys::ASSERT!(cell_to_release != HCELL_NIL);
                 HvReleaseCell(hive, cell_to_release);
 
                 if found & INVALID_INDEX != 0 {
@@ -1253,7 +1249,7 @@ pub unsafe extern "system" fn CmpFindSubKeyByName(
                     search_name,
                 );
 
-                debug_assert!(cell_to_release != HCELL_NIL);
+                ntkrnl_sys::ASSERT!(cell_to_release != HCELL_NIL);
                 HvReleaseCell(hive, cell_to_release);
             }
 
@@ -1437,11 +1433,11 @@ pub unsafe extern "system" fn CmpSelectLeaf(
     IndexKey = HvGetCell(Hive, (*KeyNode).__bindgen_anon_1.__bindgen_anon_1.SubKeyLists[Type as usize]) as PCM_KEY_INDEX;
 
     if IndexKey.is_null() {
-        debug_assert!(!IndexKey.is_null());
+        ntkrnl_sys::ASSERT!(!IndexKey.is_null());
         return HCELL_NIL;
     }
 
-    debug_assert!((*IndexKey).Signature == CM_KEY_INDEX_ROOT);
+    ntkrnl_sys::ASSERT!((*IndexKey).Signature == CM_KEY_INDEX_ROOT);
 
     loop {
         SubKeyIndex = CmpFindSubKeyInRoot(Hive, IndexKey, Name, &mut LeafCell);
@@ -1477,7 +1473,7 @@ pub unsafe extern "system" fn CmpSelectLeaf(
                 FastLeaf = LeafKey as PCM_KEY_FAST_INDEX;
                 CurrentCell = (*FastLeaf).List[0].Cell;
             } else {
-                debug_assert!((*LeafKey).Signature == CM_KEY_INDEX_LEAF as u16);
+                ntkrnl_sys::ASSERT!((*LeafKey).Signature == CM_KEY_INDEX_LEAF as u16);
                 CurrentCell = (*LeafKey).List[0];
             }
 
@@ -1487,7 +1483,7 @@ pub unsafe extern "system" fn CmpSelectLeaf(
                 return HCELL_NIL;
             }
 
-            debug_assert!(Result != 0);
+            ntkrnl_sys::ASSERT!(Result != 0);
 
             if Result >= 0 {
                 LeafCell = *core::ptr::addr_of!((*IndexKey).List).cast::<HCELL_INDEX>().add(SubKeyIndex as usize);
