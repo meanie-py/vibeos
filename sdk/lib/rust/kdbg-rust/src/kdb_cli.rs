@@ -2818,11 +2818,11 @@ pub unsafe extern "C" fn KdbpCmdSet(
                 }
 
                 if KdbpGetEnterCondition(l, 1u8, &mut ConditionFirst) == 0 {
-                    debug_assert!(false);
+                    ntkrnl_sys::ASSERT!(false);
                 }
 
                 if KdbpGetEnterCondition(l, 0u8, &mut ConditionLast) == 0 {
-                    debug_assert!(false);
+                    ntkrnl_sys::ASSERT!(false);
                 }
 
                 crate::kdbp_print!(b"  #%02d  %-20s %-8s %-8s\n\0",
@@ -2834,7 +2834,7 @@ pub unsafe extern "C" fn KdbpCmdSet(
                 l += 1;
             }
 
-            debug_assert!(l == (21 - 1));
+            ntkrnl_sys::ASSERT!(l == (21 - 1));
             crate::kdbp_print!(b"       %-20s %-8s %-8s\n\0",
                 ExceptionNames[l as usize],
                 KDB_ENTER_CONDITION_TO_STRING(ConditionFirst),
@@ -2899,11 +2899,11 @@ pub unsafe extern "C" fn KdbpCmdSet(
                 }
             } else {
                 if KdbpGetEnterCondition(l, 1u8, &mut ConditionFirst) == 0 {
-                    debug_assert!(false);
+                    ntkrnl_sys::ASSERT!(false);
                 }
 
                 if KdbpGetEnterCondition(l, 0u8, &mut ConditionLast) == 0 {
-                    debug_assert!(false);
+                    ntkrnl_sys::ASSERT!(false);
                 }
 
                 if l < (21 - 1) {

@@ -206,7 +206,7 @@ pub unsafe extern "system" fn WmipCaptureGuidObjectAttributes(
     let CapturedObjectAttributes = opaque_ptr(CapturedObjectAttributes);
     let CapturedObjectName = opaque_ptr(CapturedObjectName);
     let ObjectNameBuffer = opaque_ptr(ObjectNameBuffer);
-    debug_assert!(AccessMode != 0);
+    ntkrnl_sys::ASSERT!(AccessMode != 0);
 
     ProbeForRead(
         GuidObjectAttributes as PVOID,
@@ -324,7 +324,7 @@ pub unsafe extern "system" fn WmipClearIrpObjectList(Irp: PIRP) {
     while ListEntry != core::ptr::addr_of_mut!((*IrpContext).GuidObjectListHead) {
         let GuidObject = CONTAINING_RECORD!(ListEntry, WMIP_GUID_OBJECT, IrpLink);
 
-        debug_assert!((*GuidObject).Irp == Irp);
+        ntkrnl_sys::ASSERT!((*GuidObject).Irp == Irp);
         (*GuidObject).Irp = core::ptr::null_mut();
 
         let NextEntry = (*ListEntry).Flink;

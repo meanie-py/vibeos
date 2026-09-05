@@ -41,7 +41,7 @@ pub unsafe extern "C" fn KiIpiSend(
     } else if IpiRequest == IPI_FREEZE {
         HalSendNMI(TargetSet);
     } else {
-        core::debug_assert!(false);
+        ntkrnl_sys::ASSERT!(false);
     }
 }
 

@@ -82,7 +82,7 @@ pub unsafe extern "system" fn KiScanReadyQueues(
             }
 
             if (Summary & PRIORITY_MASK(Index)) != 0 {
-                debug_assert!(!IsListEmpty(core::ptr::addr_of_mut!((*Prcb).DispatcherReadyListHead[Index as usize]) as PLIST_ENTRY));
+                ntkrnl_sys::ASSERT!(!IsListEmpty(core::ptr::addr_of_mut!((*Prcb).DispatcherReadyListHead[Index as usize]) as PLIST_ENTRY));
 
                 Summary ^= PRIORITY_MASK(Index);
                 ListHead = core::ptr::addr_of_mut!((*Prcb).DispatcherReadyListHead[Index as usize]) as PLIST_ENTRY;
@@ -90,24 +90,20 @@ pub unsafe extern "system" fn KiScanReadyQueues(
 
                 loop {
                     Thread = CONTAINING_RECORD!(NextEntry, _KTHREAD, __bindgen_anon_3.WaitListEntry) as PKTHREAD;
-                    debug_assert!((*Thread).Priority == Index as i8);
+                    ntkrnl_sys::ASSERT!((*Thread).Priority == Index as i8);
 
                     if WaitLimit >= *kt_WaitTime(Thread) {
                         NextEntry = (*NextEntry).Blink;
-                        debug_assert!(((*Prcb).ReadySummary & PRIORITY_MASK(Index)) != 0);
+                        ntkrnl_sys::ASSERT!(((*Prcb).ReadySummary & PRIORITY_MASK(Index)) != 0);
                         if RemoveEntryList((*NextEntry).Flink) {
                             (*Prcb).ReadySummary ^= PRIORITY_MASK(Index);
                         }
 
-                        debug_assert!(
-                            ((*Thread).PriorityDecrement >= 0) &&
-                            ((*Thread).PriorityDecrement <= (*Thread).Priority)
-                        );
+                        ntkrnl_sys::ASSERT!(((*Thread).PriorityDecrement >= 0) &&
+                            ((*Thread).PriorityDecrement <= (*Thread).Priority));
                         (*Thread).PriorityDecrement += (THREAD_BOOST_PRIORITY as i8 - (*Thread).Priority);
-                        debug_assert!(
-                            ((*Thread).PriorityDecrement >= 0) &&
-                            ((*Thread).PriorityDecrement <= THREAD_BOOST_PRIORITY as i8)
-                        );
+                        ntkrnl_sys::ASSERT!(((*Thread).PriorityDecrement >= 0) &&
+                            ((*Thread).PriorityDecrement <= THREAD_BOOST_PRIORITY as i8));
 
                         (*Thread).Priority = THREAD_BOOST_PRIORITY as i8;
                         *kt_Quantum(Thread) = (WAIT_QUANTUM_DECREMENT * 4) as i8;

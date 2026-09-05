@@ -1364,6 +1364,67 @@ def test_run_summary_json(tmp_path, monkeypatch):
 # --- cargo-link guard: skips cleanly when the PoCs aren't present ----------
 
 
+@pytest.mark.parametrize("failure", [None, "timeout", "missing"])
+def test_command_timings_survive_failures(monkeypatch, failure):
+    from . import artifacts
+
+    ticks = iter([10.0, 12.0, 15.5, 16.0])
+    monkeypatch.setattr(artifacts.time, "monotonic", lambda: next(ticks))
+
+    def execute(*args, **kwargs):
+        if failure == "timeout":
+            raise subprocess.TimeoutExpired(["fixture"], 1)
+        if failure == "missing":
+            raise FileNotFoundError("fixture")
+        return subprocess.CompletedProcess(["fixture"], 0, "", "")
+
+    monkeypatch.setattr(artifacts.subprocess, "run", execute)
+    run = Run("build", "amd64", ts=1700000000)
+    cp = run.run(["fixture"], stage="ninja", timeout=1)
+    run.finalize()
+    expected = {
+        "stage": "ninja",
+        "start_seconds": 2.0,
+        "seconds": 3.5,
+        "exit": {None: 0, "timeout": 124, "missing": 127}[failure],
+    }
+    summary = json.loads((run.dir / "summary.json").read_text())
+    assert summary["command_timings"] == [expected]
+    journal = json.loads(run.commands_log.read_text())
+    assert all(journal[key] == value for key, value in expected.items())
+    assert cp.returncode == expected["exit"]
+
+
+def test_rust_source_closure_tracks_shared_dependencies(tmp_path):
+    """Exercise the shipping CMake helper, not a Python imitation of it."""
+    workspace = tmp_path / "workspace"
+    for name, deps in (
+        ("leaf", '[dependencies]\nshared = { path = "../shared" }'),
+        ("shared", ""),
+        ("unrelated", ""),
+    ):
+        crate = workspace / name
+        (crate / "src").mkdir(parents=True)
+        (crate / "Cargo.toml").write_text(f'[package]\nname = "{name}"\n{deps}\n')
+        (crate / "src/lib.rs").write_text("")
+        (crate / "build.rs").write_text("fn main() {}")
+    helper = Path(__file__).resolve().parents[3] / "sdk/cmake/rust-crate-deps.cmake"
+    output = tmp_path / "sources.txt"
+    script = tmp_path / "fixture.cmake"
+    script.write_text(
+        "cmake_minimum_required(VERSION 3.16)\n"
+        f'include("{helper}")\nrust_crate_sources(sources "{workspace}" leaf)\n'
+        f'file(WRITE "{output}" "${{sources}}")\n'
+    )
+    subprocess.run(["cmake", "-P", str(script)], check=True, capture_output=True, text=True)
+    sources = set(output.read_text().split(";"))
+    assert sources == {
+        str(workspace / crate / source)
+        for crate in ("leaf", "shared")
+        for source in ("src/lib.rs", "Cargo.toml", "build.rs")
+    }
+
+
 def test_cargo_link_guard_skips_when_pocs_absent(tmp_path, monkeypatch):
     """The guard must no-op (skip, never fail) when the cargo-link PoCs are
     absent — so it never blocks `check --strict` on a tree without them. At the
@@ -1503,6 +1564,52 @@ def test_parse_sccache_json_scalar_and_garbage():
     st = cachecfg.parse_sccache_json(json.dumps({"stats": {"cache_hits": 5, "cache_misses": 0}}))
     assert st["hits"] == 5 and st["hit_rate"] == 1.0
     assert cachecfg.parse_sccache_json("not json") == {}
+
+
+def test_sccache_non_cacheable_is_not_a_miss():
+    stats = cachecfg.parse_sccache_json(
+        json.dumps(
+            {
+                "stats": {
+                    "compile_requests": 7,
+                    "requests_not_cacheable": 5,
+                    "not_cached": {"crate-type": 5},
+                    "cache_errors": 1,
+                    "compilations": 2,
+                    "cache_hits": 1,
+                    "cache_misses": 1,
+                }
+            }
+        )
+    )
+    assert stats["non_cacheable"] == 5
+    assert stats["non_cacheable_reasons"] == {"crate-type": 5}
+    assert stats["cache_errors"] == 1
+    assert stats["compilations"] == 2
+    assert stats["hit_rate"] == 0.5
+
+
+def test_sccache_stats_use_compilers_canonical_context(tmp_path, monkeypatch):
+    cache = cachecfg.CacheEnv(tmp_path, tmp_path / "cc", tmp_path / "sc", None, "sccache")
+    run = Run("build", "amd64", ts=1700000000)
+    calls = []
+
+    def execute(cmd, **kwargs):
+        calls.append((cmd, kwargs["cwd"]))
+        return subprocess.CompletedProcess(cmd, 0, '{"stats": {}}', "")
+
+    monkeypatch.setattr(run, "run", execute)
+
+    def wrap(cmd):
+        return ["canonical-wrapper", *cmd]
+
+    env = build_mod._setup_cache(run, tmp_path, tmp_path / "build-amd64", cache, wrap=wrap)
+    assert env is not None
+    build_mod._collect_cache_stats(run, cache, env, repo=tmp_path, wrap=wrap)
+    assert calls == [
+        (["canonical-wrapper", "sccache", "--zero-stats"], tmp_path),
+        (["canonical-wrapper", "sccache", "--show-stats", "--stats-format=json"], tmp_path),
+    ]
 
 
 # --- per-arch QEMU concurrency sub-cap (serialize same-arch boots) ---------
@@ -3290,6 +3397,54 @@ def test_check_update_baseline_rejects_unknown_tool(tmp_path, monkeypatch):
     assert not called, "an unknown tool name must not rewrite any baseline"
 
 
+@pytest.mark.parametrize("selection", ["", ",", "typo", "toolA,typo"])
+def test_partial_check_rejects_bad_selection(tmp_path, monkeypatch, selection):
+    monkeypatch.setattr(lints, "lint_tool_names", lambda repo: {"toolA"})
+    monkeypatch.setattr(lints, "run_source_lints", lambda *a, **k: pytest.fail("must not execute"))
+    assert debugcmd_mod.check(Namespace(only=selection), tmp_path) == 2
+
+
+def test_partial_check_cannot_rewrite_baselines(tmp_path, monkeypatch):
+    monkeypatch.setattr(lints, "write_baselines", lambda *a, **k: pytest.fail("must not write"))
+    assert debugcmd_mod.check(Namespace(only="toolA", update_baseline="__ALL__"), tmp_path) == 2
+
+
+@pytest.mark.parametrize("fail", [False, True])
+def test_partial_check_runs_only_selected_and_reports_scope(tmp_path, monkeypatch, fail):
+    specs = [(name, [name], "stdout") for name in ("toolA", "toolB")]
+    monkeypatch.setattr(lints, "source_lint_specs", lambda repo: specs)
+    called = []
+
+    def stage(run, repo, name, cmd, *, strict, findings_from):
+        called.append((name, strict))
+        run.add(Stage(name, status="fail" if fail else "ok"))
+
+    monkeypatch.setattr(lints, "_lint_stage", stage)
+    monkeypatch.setattr(lints, "run_cargo_link_guard", lambda *a, **k: pytest.fail("not selected"))
+    monkeypatch.setattr(lints, "run_binary_lints", lambda *a, **k: pytest.fail("not selected"))
+    monkeypatch.setattr(
+        lints, "run_committed_drift_guard", lambda *a, **k: pytest.fail("not selected")
+    )
+    rc = debugcmd_mod.check(Namespace(only=" toolB,toolB ", strict=True, arch="amd64"), tmp_path)
+    assert rc == int(fail)
+    assert called == [("toolB", True)]
+    summaries = list((tmp_path / "artifacts").glob("*-check-partial-amd64/summary.json"))
+    assert len(summaries) == 1
+    summary = json.loads(summaries[0].read_text())
+    assert summary["command"] == "check-partial"
+    assert summary["coverage"] == "partial"
+    assert summary["selected_scanners"] == ["toolB"]
+    assert summary["omitted_scanners"] == ["toolA"]
+    assert summary["verdict"] == ("FAIL" if fail else "WARN")
+
+
+def test_source_lint_api_rejects_unknown_selection(tmp_path, monkeypatch):
+    monkeypatch.setattr(lints, "source_lint_specs", lambda repo: [("a", ["a"], "stdout")])
+    monkeypatch.setattr(lints, "_lint_stage", lambda *a, **k: pytest.fail("must not execute"))
+    with pytest.raises(ValueError):
+        lints.run_source_lints(Run("check", "amd64"), tmp_path, strict=True, only={"typo"})
+
+
 def test_write_baselines_only_filter(tmp_path, monkeypatch):
     """write_baselines(only={...}) rewrites just those tools' files."""
     bdir = tmp_path / lints.BASELINE_DIR
@@ -4936,6 +5091,88 @@ def test_land_foreground_conducts_inline(lane_repo, tmp_path, monkeypatch):
     monkeypatch.setattr(q_mod, "drain", lambda repo, log, **k: drained.append(1) or 0)
     assert land_mod.land(_Args(direct=False, foreground=True), lane) == 0
     assert drained == [1]
+
+
+# --- land: the check-tooling preflight -------------------------------------
+#
+# The conductor runs check-tooling as part of the batched gate, so a lint failure there
+# bounces the WHOLE train for 3 builds + 4 boots of fleet load. On 2026-07-26 that cost
+# was paid for one line 101 characters long. These cover the preflight that moves the
+# identical verdict into the lane, where it costs ~40s.
+
+
+def _fake_cli(repo: Path, *, rc: int, out: str = "") -> None:
+    """Plant a stand-in `vibeos-cli` so the preflight runs its REAL subprocess path."""
+    p = repo / "vibeos-cli"
+    p.write_text(f"#!/bin/sh\ncat <<'XEOF'\n{out}\nXEOF\nexit {rc}\n")
+    p.chmod(0o755)
+
+
+def test_lint_preflight_blocks_a_red_check_tooling(tiny_repo: Path, tmp_path, monkeypatch):
+    monkeypatch.setattr("tests.qemu.cli.artifacts.ARTIFACT_ROOT", tmp_path / "art")
+    _fake_cli(tiny_repo, rc=1, out="  ✗ ruff:tools/*.py\n\nFAIL — 1/15 checks failed:")
+    with pytest.raises(land_mod.LandAbort) as ei:
+        land_mod._lint_preflight(tiny_repo, Run("land", "t"), _Args())
+    # the failing check must be NAMED — "exit 1" alone sends you back to re-run it by hand
+    assert "ruff:tools/*.py" in str(ei.value)
+
+
+def test_lint_preflight_passes_a_green_check_tooling(tiny_repo: Path, tmp_path, monkeypatch):
+    monkeypatch.setattr("tests.qemu.cli.artifacts.ARTIFACT_ROOT", tmp_path / "art")
+    _fake_cli(tiny_repo, rc=0, out="OK — all 15 tooling checks passed.")
+    run = Run("land", "t")
+    land_mod._lint_preflight(tiny_repo, run, _Args())  # must not raise
+    assert any(s.name == "lint" and s.status == "ok" for s in run.stages)
+
+
+def test_lint_preflight_fails_OPEN_when_it_cannot_run(tiny_repo: Path, tmp_path, monkeypatch):
+    """A broken preflight must never wedge the fleet's ability to land. No vibeos-cli here
+    at all, so the subprocess raises — that has to warn and continue, NOT abort. Only a
+    check that actually ran and returned nonzero may block."""
+    monkeypatch.setattr("tests.qemu.cli.artifacts.ARTIFACT_ROOT", tmp_path / "art")
+    assert not (tiny_repo / "vibeos-cli").exists()
+    run = Run("land", "t")
+    land_mod._lint_preflight(tiny_repo, run, _Args())  # must not raise
+    assert any(s.name == "lint" and s.status == "warn" for s in run.stages)
+
+
+def test_lint_preflight_honours_skip_lint(tiny_repo: Path, tmp_path, monkeypatch):
+    monkeypatch.setattr("tests.qemu.cli.artifacts.ARTIFACT_ROOT", tmp_path / "art")
+    _fake_cli(tiny_repo, rc=1, out="✗ everything")
+    run = Run("land", "t")
+    land_mod._lint_preflight(tiny_repo, run, _Args(skip_lint=True))  # must not raise
+    assert any(s.name == "lint" and s.status == "skip" for s in run.stages)
+
+
+def test_red_lint_keeps_the_lane_OUT_of_the_queue(lane_repo, tmp_path, monkeypatch):
+    """The point of the whole thing: a red lane must not reach the batch at all. Checking
+    that _lint_preflight raises is not enough — what matters is that nothing was queued,
+    because a submission is what costs the fleet a gate."""
+    lane, _ = lane_repo
+    monkeypatch.setattr("tests.qemu.cli.artifacts.ARTIFACT_ROOT", tmp_path / "art")
+    monkeypatch.setattr(hl_mod, "HOSTLOCK_DIR", tmp_path / "locks")
+    monkeypatch.setattr(
+        land_mod, "_spawn_detached", lambda *a: pytest.fail("conducted despite a red lint")
+    )
+    _fake_cli(lane, rc=1, out="  ✗ pyright:tests/qemu/cli")
+    subprocess.run(["git", "add", "-A"], cwd=lane, check=True, capture_output=True)
+    subprocess.run(["git", "commit", "-qm", "cli"], cwd=lane, check=True, capture_output=True)
+    assert land_mod.land(_Args(direct=False), lane) != 0, "a red lint must fail the land"
+    assert not q_mod.pending(lane), "a lane that fails its own lint reached the queue"
+
+
+def test_green_lint_still_reaches_the_queue(lane_repo, tmp_path, monkeypatch):
+    """The negative control for the test above — proves it is the LINT VERDICT gating the
+    submission and not the fake CLI merely existing."""
+    lane, _ = lane_repo
+    monkeypatch.setattr("tests.qemu.cli.artifacts.ARTIFACT_ROOT", tmp_path / "art")
+    monkeypatch.setattr(hl_mod, "HOSTLOCK_DIR", tmp_path / "locks")
+    monkeypatch.setattr(land_mod, "_spawn_detached", lambda argv, cwd, log: None)
+    _fake_cli(lane, rc=0, out="OK")
+    subprocess.run(["git", "add", "-A"], cwd=lane, check=True, capture_output=True)
+    subprocess.run(["git", "commit", "-qm", "cli"], cwd=lane, check=True, capture_output=True)
+    assert land_mod.land(_Args(direct=False), lane) == 0
+    assert q_mod.pending(lane), "a green lane must still be queued"
 
 
 def test_prune_never_reclaims_the_integration_tree(tmp_path):

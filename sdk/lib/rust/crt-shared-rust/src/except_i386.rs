@@ -24,15 +24,15 @@ use msvcrt_sys::FALSE;
 // as the C reads, and keeps the fact that they are NOT ntdll's RtlUnwind in one place.
 use msvcrt_sys::__wine_RtlUnwind as RtlUnwind;
 // The parts of this TU that are macro expansions or header inlines, so have no C text.
-use super::seh_i386::{
+use crate::seh_i386::{
     call_filter, call_finally_block, call_handler, continue_after_catch, NtCurrentTeb,
     __wine_pop_frame, __wine_push_frame,
 };
 // The siblings this file calls, all already Rust. `find_catch_handler` and
 // `dump_function_descr` sit ABOVE except.c's `#ifndef __i386__` gate precisely so both arch
 // implementations can call them; the rest is cpp.c's exception-object registry.
-use super::cpp::terminate;
-use super::except::{
+use crate::cpp::terminate;
+use crate::except::{
     dump_function_descr, find_catch_handler, _CreateFrameInfo, __CxxUnregisterExceptionObject,
     __DestructExceptionObject,
 };

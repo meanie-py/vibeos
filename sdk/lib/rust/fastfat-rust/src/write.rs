@@ -23,6 +23,7 @@ use crate::types::{DEFERRED_FLUSH_CONTEXT};
 use crate::ddk_shims::{FsRtlAllocatePoolWithTag, FsRtlEnterFileSystem, FsRtlExitFileSystem};
 
 extern "system" {
+    fn RtlAssert( FailedAssertion: *const u8, FileName: *const u8, LineNumber: u32, Message: *const u8, );
     } extern "C" { fn DebugTrace(level: i32, component: u32, format: *const i8, ...) -> i32; } extern "system" {
     fn BooleanFlagOn(Flags: u32, Flag: u32) -> u8;
     fn FatDecodeFileObject( FileObject: PFILE_OBJECT, Vcb: *mut PVCB, FcbOrDcb: *mut PFCB, Ccb: *mut PCCB, ) -> TYPE_OF_OPEN;
@@ -113,7 +114,12 @@ pub unsafe extern "system" fn FatDeferredFlush(Parameter: *mut core::ffi::c_void
 
     // NT_ASSERT(FcbOrDcb != NULL)
     if FcbOrDcb.is_null() {
-        panic!("FcbOrDcb != NULL");
+        RtlAssert(
+            b"FcbOrDcb != NULL\0".as_ptr(),
+            b"write.rs\0".as_ptr(),
+            line!(),
+            core::ptr::null(),
+        );
     }
 
     IoSetTopLevelIrp(FSRTL_FSP_TOP_LEVEL_IRP);
@@ -398,13 +404,13 @@ pub unsafe extern "system" fn FatCommonWrite(
     TypeOfOpen = FatDecodeFileObject(FileObject, &mut Vcb, &mut FcbOrDcb, &mut Ccb);
 
 
-    debug_assert!(Vcb.is_null() == false);
+    ntkrnl_sys::ASSERT!(Vcb.is_null() == false);
 
     if TypeOfOpen == (UserVolumeOpen) as i32 {
         NonCachedIo = 1;
     }
 
-    debug_assert!(!(NonCachedIo == 0 && TypeOfOpen == (VirtualVolumeFile) as i32));
+    ntkrnl_sys::ASSERT!(!(NonCachedIo == 0 && TypeOfOpen == (VirtualVolumeFile) as i32));
 
     if PagingIo != 0 {
         // CollectWriteStats(Vcb, TypeOfOpen, ByteCount) expanded inline
@@ -496,7 +502,7 @@ pub unsafe extern "system" fn FatCommonWrite(
             (*IrpContext).Flags |= IRP_CONTEXT_FLAG_WRITE_THROUGH;
         }
 
-        debug_assert!((FsRtlNumberOfRunsInLargeMcb(&(*Vcb).DirtyFatMcb) & 1) == 0);
+        ntkrnl_sys::ASSERT!((FsRtlNumberOfRunsInLargeMcb(&(*Vcb).DirtyFatMcb) & 1) == 0);
 
         if FatLookupMcbEntry(Vcb, &(*Vcb).DirtyFatMcb, StartingVbo, &mut DirtyLbo, &mut DirtyByteCount, core::ptr::null_mut()) == 0
             || (DirtyLbo == 0 && DirtyByteCount >= ByteCount)
@@ -522,7 +528,7 @@ pub unsafe extern "system" fn FatCommonWrite(
             } else {
                 DirtyVbo = DirtyLbo as VBO;
 
-                debug_assert!(DirtyVbo != 0 && DirtyVbo < StartingVbo + ByteCount);
+                ntkrnl_sys::ASSERT!(DirtyVbo != 0 && DirtyVbo < StartingVbo + ByteCount);
 
                 if DirtyVbo + DirtyByteCount >= StartingVbo + ByteCount {
                     DirtyByteCount = StartingVbo + ByteCount - DirtyVbo;
@@ -531,7 +537,7 @@ pub unsafe extern "system" fn FatCommonWrite(
                     if FatLookupMcbEntry(Vcb, &(*Vcb).DirtyFatMcb, DirtyVbo + DirtyByteCount, &mut CleanLbo, &mut CleanByteCount, core::ptr::null_mut()) == 0 {
                         MoreDirtyRuns = 0;
                     } else {
-                        debug_assert!(CleanLbo == 0);
+                        ntkrnl_sys::ASSERT!(CleanLbo == 0);
                         if DirtyVbo + DirtyByteCount + CleanByteCount >= StartingVbo + ByteCount {
                             MoreDirtyRuns = 0;
                         } else {
@@ -711,7 +717,7 @@ pub unsafe extern "system" fn FatCommonWrite(
     //  from write.c L1136-2952 — the original pipeline output stubbed this
     //  whole section, silently completing every user write with 0 bytes.)
     //
-    debug_assert!(!FcbOrDcb.is_null());
+    ntkrnl_sys::ASSERT!(!FcbOrDcb.is_null());
 
     // C nulls Irp on async handoff; shadow the parameter mutably.
     let mut Irp: PIRP = Irp;
@@ -769,7 +775,7 @@ pub unsafe extern "system" fn FatCommonWrite(
                 FcbCanDemoteToShared = 1;
             }
 
-            debug_assert!(if WriteToEof != 0 { PagingIo == 0 } else { true });
+            ntkrnl_sys::ASSERT!(if WriteToEof != 0 { PagingIo == 0 } else { true });
 
             //  Acquire the Fcb: paging IO takes the paging resource shared,
             //  everything else the main resource shared.
@@ -814,7 +820,7 @@ pub unsafe extern "system" fn FatCommonWrite(
             ValidDataToDisk = (*FcbOrDcb).ValidDataToDisk;
             ValidDataLength = (*FcbOrDcb).Header.ValidDataLength.u.LowPart;
             FileSize = (*FcbOrDcb).Header.FileSize.u.LowPart;
-            debug_assert!(ValidDataLength <= FileSize);
+            ntkrnl_sys::ASSERT!(ValidDataLength <= FileSize);
 
             if PagingIo != 0 {
                 if StartingVbo >= FileSize {
@@ -1020,7 +1026,7 @@ pub unsafe extern "system" fn FatCommonWrite(
                     //  is fatal, so we go straight to the minimum-size allocation
                     //  (the C fallback path).
                     FatAddFileAllocation(IrpContext, FcbOrDcb, FileObject, FileSize);
-                    debug_assert!((*FcbOrDcb).Header.AllocationSize.u.LowPart >= FileSize);
+                    ntkrnl_sys::ASSERT!((*FcbOrDcb).Header.AllocationSize.u.LowPart >= FileSize);
                 }
 
                 (*FcbOrDcb).Header.FileSize.u.LowPart = FileSize;
@@ -1055,7 +1061,7 @@ pub unsafe extern "system" fn FatCommonWrite(
                 if (StartingVbo & (SectorSize - 1)) != 0
                     || (BytesToWrite != ByteCount && StartingVbo + ByteCount < ValidDataToCheck)
                 {
-                    debug_assert!(false);
+                    ntkrnl_sys::ASSERT!(false);
                     Status = STATUS_NOT_IMPLEMENTED;
                     break 'try_exit;
                 }
@@ -1102,7 +1108,7 @@ pub unsafe extern "system" fn FatCommonWrite(
                 break 'try_exit;
             } else {
                 //  Cached write.
-                debug_assert!(PagingIo == 0);
+                ntkrnl_sys::ASSERT!(PagingIo == 0);
 
                 if (*FileObject).PrivateCacheMap.is_null() {
                     DebugTrace(0, Dbg, b"Initialize cache mapping.\n\0".as_ptr() as *const i8, 0);
@@ -1188,7 +1194,7 @@ pub unsafe extern "system" fn FatCommonWrite(
                     break 'try_exit;
                 } else {
                     DebugTrace(0, Dbg, b"MDL write.\n\0".as_ptr() as *const i8, 0);
-                    debug_assert!(Wait != 0);
+                    ntkrnl_sys::ASSERT!(Wait != 0);
                     CcPrepareMdlWrite(
                         FileObject,
                         core::ptr::addr_of_mut!(StartingByte),
@@ -1229,7 +1235,7 @@ pub unsafe extern "system" fn FatCommonWrite(
                 (*IrpContext).Flags |= IRP_CONTEXT_FLAG_WRITE_THROUGH;
             }
 
-            debug_assert!(NonCachedIo != 0 && PagingIo != 0);
+            ntkrnl_sys::ASSERT!(NonCachedIo != 0 && PagingIo != 0);
 
             if StartingVbo >= (*FcbOrDcb).Header.FileSize.u.LowPart {
                 DebugTrace(0, Dbg, b"PagingIo dirent started beyond EOF.\n\0".as_ptr() as *const i8, 0);

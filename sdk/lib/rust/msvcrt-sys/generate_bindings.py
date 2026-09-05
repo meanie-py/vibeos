@@ -295,6 +295,25 @@ ALLOWLIST_TYPES = [
     # winnt.h: data.c's `_get_osver`/`_get_winmajor`/`_get_winminor` fill one of these.
     "_OSVERSIONINFOW",
     "OSVERSIONINFOW",
+    # winnt.h's interlocked singly-linked list, for cpp.c's `__std_type_info_name` /
+    # `__std_type_info_destroy_list` (the `__UCRTSUPPORT__` half, so ucrtbase.dll only).
+    #
+    # These are here rather than hand-written precisely because the layout is the thing.
+    # `type_info_entry` is `{ SLIST_ENTRY entry; char name[1]; }`, and BOTH of the file's
+    # allocation helpers do raw pointer arithmetic across it -- `type_info_entry_malloc`
+    # returns `ret->name` and `type_info_entry_free` walks
+    # `FIELD_OFFSET(type_info_entry, name)` back to the block start before calling `free`.
+    # So a wrong size or alignment for SLIST_ENTRY is not a compile error, it is `free()`
+    # on a pointer into the middle of a heap block. And the alignment is exactly what a
+    # hand-rolled version gets wrong: winnt.h declares SLIST_ENTRY `DECLSPEC_ALIGN(16)` on
+    # x64 while x86 leaves it at pointer alignment, so the field offset differs by arch for
+    # a reason no amount of reading the struct body reveals.
+    #
+    # SLIST_HEADER is a UNION whose x64 arm is 16 bytes; nothing here reads its fields, but
+    # it is the declared parameter type of both entry points and of the two Interlocked
+    # SList imports in crt-shared-rust's prelude, so it comes in with its twin.
+    "SLIST_ENTRY",
+    "SLIST_HEADER",
     # ── locale.c ─────────────────────────────────────────────────────────
     # The typedef spellings locale.c uses in its own signatures. The underlying
     # `threadlocaleinfostruct` is already above; these are the names the code says.

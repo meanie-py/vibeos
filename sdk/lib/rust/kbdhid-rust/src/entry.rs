@@ -121,7 +121,7 @@ pub unsafe extern "system" fn KbdHid_Create(
     /* is the driver already in use */
     if (*DeviceExtension).FileObject.is_null() {
         /* did the caller specify correct attributes */
-        debug_assert!(!(*IoStack).Parameters.Create.SecurityContext.is_null());
+        ntkrnl_sys::ASSERT!(!(*IoStack).Parameters.Create.SecurityContext.is_null());
         if (*(*IoStack).Parameters.Create.SecurityContext).DesiredAccess != 0 {
             /* store file object */
             (*DeviceExtension).FileObject = (*IoStack).FileObject;
@@ -269,7 +269,7 @@ pub unsafe extern "system" fn KbdHid_AddDevice(
     (*DeviceExtension).Irp = IoAllocateIrp((*NextDeviceObject).StackSize, FALSE);
 
     /* FIXME handle allocation error */
-    debug_assert!(!(*DeviceExtension).Irp.is_null());
+    ntkrnl_sys::ASSERT!(!(*DeviceExtension).Irp.is_null());
 
     /* set power state to D0 */
     // C: State.DeviceState = PowerDeviceD0; PoSetPowerState(DO, DevicePowerState, State);

@@ -119,6 +119,11 @@ def build_parser() -> argparse.ArgumentParser:
     c.add_argument("--arch", choices=ACCEPTED_ARCHES, required=False)
     c.add_argument("--strict", action="store_true", help="block on NEW findings")
     c.add_argument(
+        "--only",
+        metavar="TOOL[,TOOL...]",
+        help="run selected source scanners only; explicitly PARTIAL, not a landing gate",
+    )
+    c.add_argument(
         "--update-baseline",
         nargs="?",
         const="__ALL__",
@@ -261,6 +266,11 @@ def build_parser() -> argparse.ArgumentParser:
     )
     la.add_argument(
         "--no-push", action="store_true", help="do everything but the push (rehearse a landing)"
+    )
+    la.add_argument(
+        "--skip-lint",
+        action="store_true",
+        help="skip the check-tooling preflight (the conductor still runs it; report every use)",
     )
     la.add_argument(
         "--dry-run",

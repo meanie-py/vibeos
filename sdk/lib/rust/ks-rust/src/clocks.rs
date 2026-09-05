@@ -498,8 +498,8 @@ pub unsafe extern "system" fn IKsClock_DispatchDeviceIoControl(
 
     IoStack = IoGetCurrentIrpStackLocation(Irp);
 
-    debug_assert!((*IoStack).Parameters.DeviceIoControl.IoControlCode == IOCTL_KS_PROPERTY);
-    debug_assert!((*IoStack).Parameters.DeviceIoControl.InputBufferLength as usize >= core::mem::size_of::<KSPROPERTY>());
+    ntkrnl_sys::ASSERT!((*IoStack).Parameters.DeviceIoControl.IoControlCode == IOCTL_KS_PROPERTY);
+    ntkrnl_sys::ASSERT!((*IoStack).Parameters.DeviceIoControl.InputBufferLength as usize >= core::mem::size_of::<KSPROPERTY>());
 
     Status = KsPropertyHandler(Irp, 1, ClockPropertySet.as_mut_ptr());
 

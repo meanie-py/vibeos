@@ -47,6 +47,7 @@ use crate::ddk_shims::{FsRtlAllocatePoolWithTag, FsRtlDeleteTunnelCache, FsRtlIn
 use ntkrnl_sys::ddk::{RTL_SPLAY_LINKS};
 
 extern "system" {
+    fn RtlAssert( FailedAssertion: *const u8, FileName: *const u8, LineNumber: u32, Message: *const u8, );
     fn PAGED_CODE();
     fn UNREFERENCED_PARAMETER(_: *const core::ffi::c_void);
     fn NT_ASSERT(cond: i32);
@@ -2162,7 +2163,12 @@ pub unsafe extern "system" fn FatCheckFreeDirentBitmap(
 
     // NT_ASSERT
     if (*Dcb).Header.AllocationSize.QuadPart == FCB_LOOKUP_ALLOCATIONSIZE_HINT {
-        panic!("NT_ASSERT: Dcb->Header.AllocationSize.QuadPart != FCB_LOOKUP_ALLOCATIONSIZE_HINT");
+        RtlAssert(
+            b"Dcb->Header.AllocationSize.QuadPart != FCB_LOOKUP_ALLOCATIONSIZE_HINT\0".as_ptr(),
+            b"strucsup.rs\0".as_ptr(),
+            line!(),
+            core::ptr::null(),
+        );
     }
 
     let dir_ent_size = core::mem::size_of::<DIRENT>() as u32;
@@ -2222,7 +2228,12 @@ pub unsafe extern "system" fn FatCheckFreeDirentBitmap(
 
                 // NT_ASSERT: new buffer must be larger
                 if !(bytes_in_bitmap_buffer > bytes_in_old_bitmap_buffer) {
-                    panic!("NT_ASSERT: BytesInBitmapBuffer > BytesInOldBitmapBuffer");
+                    RtlAssert(
+                        b"BytesInBitmapBuffer > BytesInOldBitmapBuffer\0".as_ptr(),
+                        b"strucsup.rs\0".as_ptr(),
+                        line!(),
+                        core::ptr::null(),
+                    );
                 }
 
                 // Zero the tail of the new buffer
@@ -2275,7 +2286,7 @@ pub unsafe extern "system" fn FatAllocateCloseContext(
     #[cfg(debug_assertions)]
     {
         if !Vcb.is_null() {
-            debug_assert!(!(0 == (*Vcb).CloseContextCount)); // NT_ASSERT( 0 != Vcb->CloseContextCount)
+            ntkrnl_sys::ASSERT!(!(0 == (*Vcb).CloseContextCount)); // NT_ASSERT( 0 != Vcb->CloseContextCount)
             InterlockedDecrement(
                 core::ptr::addr_of_mut!((*Vcb).CloseContextCount) as *mut i32
             );
