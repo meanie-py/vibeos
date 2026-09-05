@@ -995,6 +995,29 @@ error would usually fire first. **Rule: when a flip needs a `*_RustBridge` forwa
 forwarder belongs in the TU that OWNS the target function, not in the TU being flipped away.**
 Grep a new module for any name that appears both as a `link_name` and as a `#[no_mangle]` fn.
 
+**A third route, shorter than both: an `extern` block *inside* the `#[no_mangle] fn` that
+redeclares the very name the fn defines.** `#[no_mangle] fn KeRaiseIrql(..) { extern "system"
+{ fn KeRaiseIrql(..); } KeRaiseIrql(..) }` reads as "forward to the real export", and is not:
+a local strong definition beats an importlib thunk, so the call binds to the enclosing
+function. classpnp shipped three of these — `KeRaiseIrql`, `KeLowerIrql`,
+`IoWMIDeviceObjectToProviderId` — as literal two-byte infinite loops
+(`4fb90 <KeRaiseIrql>: eb fe  jmp 4fb90`), spinning any storage path that touched IRQL with no
+bugcheck and no serial output. **A shim is only ever needed on the arch that has NO export**,
+so the fix is per-arch `cfg`, not a forwarding body: check `hal.spec` / `ntoskrnl.spec` for the
+`-arch=` list before writing one. Here i386 wanted the FASTCALL `KfRaiseIrql` decoration,
+amd64 wanted real CR8 bodies for both, and arm64 wanted no definition at all.
+
+**And the `-arch=` list is only half the check — `-private` decides whether you can LINK it.**
+`ntoskrnl.spec:635` really does export `KeLowerIrql` on amd64, but as
+`@ cdecl -arch=x86_64 -private KeLowerIrql(long) KxLowerIrql`, and `spec2def.c:750` keeps
+private exports out of the *import library*: the symbol is in the DLL and unreachable from a
+driver. Dropping the shim on that reading cost a `ld.lld: error: undefined symbol:
+KeLowerIrql`. So the real question a shim answers is not "does the OS export this" but "is
+there an importlib entry" — grep the spec line for `-private` before deleting a definition.
+**A `#[no_mangle]` shim that
+mentions its own name in an `extern` block is always this bug** — and note the shape survives
+`cargo check`, `clippy` and code review, and is only visible post-link.
+
 ### captures(none)-class hardening that is still worth doing
 - **Stale/hoisted load through a `static mut` table across a foreign call** — a by-handle
   lookup wrongly rejects an object; a `DbgPrint` between the reads "fixes" it. `read_volatile`
