@@ -2020,3 +2020,6 @@ i386's `IoDeviceObject` baseline turns out to be seeded on the LUCKY side of a c
 reports a phantom regression on about half of all i386 sweeps. That is the inverse of arm64,
 whose floor deliberately absorbs the worse value. Left alone deliberately — lowering a shared
 gate floor wants a decision, not a quiet edit. Evidence and a nine-run sample are on the task.
+**Decided 2026-09-05:** the i386 `IoDeviceObject` floor is lowered to 184/5, the worse face,
+matching what arm64's floor already does. The ratchet only flags regressions, so the lucky face
+now reads as slack rather than as a phantom regression.
