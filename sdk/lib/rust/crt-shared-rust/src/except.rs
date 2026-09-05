@@ -2249,3 +2249,62 @@ pub unsafe extern "C" fn __CxxUnregisterExceptionObject(frame_info: *mut cxx_fra
 //
 // #endif /* _MSVCR_VER>=140 */
 //
+
+// ── the `__UCRTSUPPORT__` half of except.c ───────────────────────────────────────────────
+//
+// Five bodies inside `#if _MSVCR_VER>=140 || defined(__UCRTSUPPORT__)`. msvcrt compiles this
+// TU at `_MSVCR_VER = 0` without the macro, so none of them is built there and none had a
+// Rust body until ucrtbase's cohab needed them; ucrtbase.spec exports all five.
+//
+// rustconv translation (2026-09-05, --seal-facts --seal-calls --seal-wide, $0.02). Each was
+// diffed against the C by hand afterwards -- they are short enough that the whole body is the
+// review, and sealing's blind spot is a body that keeps SOME sealed tokens and permutes the
+// rest, which no audit flags.
+
+// `__std_exception_data` is NOT redefined here: the C declares it at line 1013, ABOVE the
+// `#if`, so it is in both configurations and the earlier translation already carries it. The
+// compiler caught the duplicate, which is the cheap way round -- a second `#[repr(C)]` copy
+// that drifted from the first would not have been caught by anything.
+
+#[cfg(feature = "ucrtsupport")]
+#[no_mangle]
+pub unsafe extern "C" fn __std_exception_copy(
+    src: *const __std_exception_data,
+    dst: *mut __std_exception_data,
+) {
+    if (*src).dofree != 0 && !(*src).what.is_null() {
+        (*dst).what = _strdup((*src).what);
+        (*dst).dofree = 1;
+    } else {
+        (*dst).what = (*src).what;
+        (*dst).dofree = 0;
+    }
+}
+
+#[cfg(feature = "ucrtsupport")]
+#[no_mangle]
+pub unsafe extern "C" fn __std_exception_destroy(data: *mut __std_exception_data) {
+    if (*data).dofree != 0 {
+        free((*data).what as *mut core::ffi::c_void);
+    }
+    (*data).what = core::ptr::null_mut();
+    (*data).dofree = 0;
+}
+
+#[cfg(feature = "ucrtsupport")]
+#[no_mangle]
+pub unsafe extern "C" fn __current_exception() -> *mut *mut core::ffi::c_void {
+    core::ptr::addr_of_mut!((*msvcrt_get_thread_data()).exc_record) as *mut *mut core::ffi::c_void
+}
+
+#[cfg(feature = "ucrtsupport")]
+#[no_mangle]
+pub unsafe extern "C" fn __current_exception_context() -> *mut *mut core::ffi::c_void {
+    core::ptr::addr_of_mut!((*msvcrt_get_thread_data()).ctx_record) as *mut *mut core::ffi::c_void
+}
+
+#[cfg(feature = "ucrtsupport")]
+#[no_mangle]
+pub unsafe extern "C" fn __processing_throw() -> *mut i32 {
+    core::ptr::addr_of_mut!((*msvcrt_get_thread_data()).processing_throw)
+}
