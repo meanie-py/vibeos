@@ -97,7 +97,8 @@ const CM_BOOT_FLAG_MAX: u16 = CM_BOOT_FLAG_ACCEPTED + 999;
 const CM_KCB_READ_ONLY_KEY: u32 = 0x80;
 
 // Pool tag for CM allocations
-const TAG_CM: ULONG = u32::from_le_bytes(*b"MCmC");
+// C: cmlib.h `#define TAG_CM '  MC'`. A multi-char literal is BIG-endian. ntapi.c:912 allocates with plain TAG_CM.
+const TAG_CM: ULONG = u32::from_be_bytes(*b"  MC");
 
 // Misc
 const PRODUCT_ACTIVATION_VERSION: ULONG = 0x0000;
