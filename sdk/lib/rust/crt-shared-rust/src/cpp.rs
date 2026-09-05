@@ -3,7 +3,7 @@ use crate::prelude::*;
 // The macro-generated half of cpp.c: the vtables, the RTTI/throw descriptors, the
 // `rtti_rva*` helpers and the seven `CREATE_*` bodies. See cpp_rtti.rs for why they
 // cannot come from the translator.
-use super::cpp_rtti::*;
+use crate::cpp_rtti::*;
 use msvcrt_sys::*;
 use core::ffi::c_void;
 
@@ -787,6 +787,7 @@ pub unsafe extern "C" fn throw_exception(msg: *const i8) {
         (core::ptr::addr_of!(exception_exception_type)).cast(),
     );
 }
+#[cfg(not(feature = "ucrtsupport"))]
 #[no_mangle]
 pub unsafe extern "C" fn set_terminate(func: terminate_function) -> terminate_function {
     let data = msvcrt_get_thread_data();
@@ -795,6 +796,7 @@ pub unsafe extern "C" fn set_terminate(func: terminate_function) -> terminate_fu
     previous
 }
 
+#[cfg(not(feature = "ucrtsupport"))]
 #[no_mangle]
 pub unsafe extern "C" fn _get_terminate() -> terminate_function {
     let data: *mut thread_data_t = msvcrt_get_thread_data();
@@ -822,6 +824,20 @@ pub unsafe extern "C" fn _set_se_translator(func: _se_translator_function) -> _s
     previous
 }
 
+// `terminate` is msvcrt's own only when msvcrt owns the CRT. Under `__UCRTSUPPORT__` the
+// genuine UCRT supplies it, so the definition drops out and the six callers in except.rs and
+// except_i386.rs bind to ucrt's through the declaration below instead. Removing the
+// definition WITHOUT the declaration is the trap: those callers are in bodies that stay, so
+// the build would fail — loudly, which is the good case. The quiet failure is the reverse,
+// leaving our definition in and silently handing ucrtbase msvcrt's terminate handler slot
+// under --allow-multiple-definition.
+#[cfg(feature = "ucrtsupport")]
+unsafe extern "C" {
+    /// `eh.h` / `corecrt_terminate.h`: `void __cdecl terminate(void);`
+    pub fn terminate();
+}
+
+#[cfg(not(feature = "ucrtsupport"))]
 #[no_mangle]
 pub unsafe extern "C" fn terminate() {
     let data = msvcrt_get_thread_data();
@@ -834,6 +850,7 @@ pub unsafe extern "C" fn terminate() {
     abort();
 }
 
+#[cfg(not(feature = "ucrtsupport"))]
 #[no_mangle]
 pub unsafe extern "C" fn unexpected() {
     let data = msvcrt_get_thread_data();

@@ -38,9 +38,9 @@ use core::ffi::c_void;
 // through the prelude — these are OUR definitions, not the C's, and naming the owning module
 // is what makes the init order auditable against main.c side by side.
 use super::console::msvcrt_free_console;
-use super::cpp::msvcrt_init_exception;
+use crt_shared_rust::cpp::msvcrt_init_exception;
 use super::data::{msvcrt_free_args, msvcrt_init_args};
-use super::except::{msvcrt_free_signals, msvcrt_init_signals};
+use crt_shared_rust::except::{msvcrt_free_signals, msvcrt_init_signals};
 use super::file::{msvcrt_free_io, msvcrt_init_io};
 use super::heap::{msvcrt_destroy_heap, msvcrt_init_heap};
 use super::locale::{_free_locale, free_locinfo, msvcrt_init_locale};

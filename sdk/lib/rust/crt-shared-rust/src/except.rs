@@ -39,7 +39,7 @@
 #![allow(non_snake_case, non_camel_case_types, non_upper_case_globals)]
 
 // rustconv-assembly: whole-tu
-use super::cpp_rtti::{
+use crate::cpp_rtti::{
     _SEH2_Volatile0,
     call_dtor, copy_exception, find_caught_type, is_cxx_exception, rtti_handler, rtti_is_set,
     rtti_rva,
@@ -48,7 +48,7 @@ use crate::prelude::*;
 use core::ffi::c_void;
 // cpp.c's `terminate`, called by `check_noexcept` when an exception escapes a noexcept
 // function. Same TU family, same feature gate.
-use super::cpp::terminate;
+use crate::cpp::terminate;
 use msvcrt_sys::*;
 // Both globs above export `FALSE`/`TRUE` (prelude u8, island u32), so an unqualified
 // mention is ambiguous. Name the island's explicitly, as lock.rs does — every use here
@@ -777,6 +777,19 @@ unsafe extern "C" fn msvcrt_console_handler(ctrlType: DWORD) -> BOOL {
     ret
 }
 
+// Same shape as cpp.rs's `terminate`, and the C says so directly: `__pxcptinfoptrs` is
+// DEFINED inside except.c's `#ifndef __UCRTSUPPORT__` block (line 529), but its three callers
+// in `msvcrt_exception_filter` (567, 593, 622) sit OUTSIDE it and survive the flip. So under
+// __UCRTSUPPORT__ this TU calls a `__pxcptinfoptrs` it does not define, and resolves to the
+// genuine UCRT's — which ucrtbase.spec does export. The fourth caller in the C (line 700) is
+// inside the signal block and goes away with `signal`/`raise`.
+#[cfg(feature = "ucrtsupport")]
+unsafe extern "C" {
+    /// `corecrt_internal.h`: `void ** __cdecl __pxcptinfoptrs(void);`
+    fn __pxcptinfoptrs() -> *mut *mut core::ffi::c_void;
+}
+
+#[cfg(not(feature = "ucrtsupport"))]
 #[no_mangle]
 pub unsafe extern "C" fn __pxcptinfoptrs() -> *mut *mut core::ffi::c_void {
     core::ptr::addr_of_mut!((*msvcrt_get_thread_data()).xcptinfo) as *mut *mut core::ffi::c_void
@@ -869,6 +882,7 @@ pub unsafe extern "C" fn msvcrt_init_signals() {
 pub unsafe extern "C" fn msvcrt_free_signals() {
     SetConsoleCtrlHandler(Some(msvcrt_console_handler), FALSE as BOOL);
 }
+#[cfg(not(feature = "ucrtsupport"))]
 #[no_mangle]
 pub unsafe extern "C" fn signal(sig: i32, func: __sighandler_t) -> __sighandler_t {
     let mut ret: __sighandler_t = SIG_ERR();
@@ -889,6 +903,7 @@ pub unsafe extern "C" fn signal(sig: i32, func: __sighandler_t) -> __sighandler_
     ret
 }
 
+#[cfg(not(feature = "ucrtsupport"))]
 #[no_mangle]
 pub unsafe extern "C" fn raise(sig: i32) -> i32 {
     let handler: __sighandler_t;
