@@ -27,7 +27,7 @@
 use crate::prelude::*;
 // The translated half of the same TU: the descriptors below name its ctors and dtors as
 // function pointers, exactly as DEFINE_CXX_DATA does in the C.
-use super::cpp::*;
+use crate::cpp::*;
 use core::ffi::{c_char, c_int, c_uint, c_void};
 use msvcrt_sys::*;
 // Disambiguate the two globs' `FALSE`/`TRUE` (prelude u8, island u32); every use in this

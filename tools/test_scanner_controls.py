@@ -38,9 +38,12 @@ would be the same bug this file exists to prevent.)
 
 from __future__ import annotations
 
+import importlib.util
 import subprocess
 import sys
+from contextlib import redirect_stderr, redirect_stdout
 from dataclasses import dataclass, field
+from io import StringIO
 from pathlib import Path
 
 import pytest
@@ -64,11 +67,10 @@ class Control:
     # Only files matching this suffix are handed over when pass_files is set —
     # a crate fixture ships a Cargo.toml the scanner must not be asked to parse.
     file_suffix: str = ".rs"
-    # scan_irql_balance / scan_ob_refcount ALWAYS build a whole-workspace
-    # call-graph summary (their own comment: "call-graph facts are global"),
-    # so each invocation costs ~50s no matter how small the fixture. Marked
-    # so a local run can `-m "not slow"`; the gate still runs everything —
-    # skipping a control by default would recreate the blind spot.
+    # Fixtures with a complete, self-contained call graph can inject that
+    # workspace through the scanner's API, without changing CLI/gate defaults.
+    summary_workspace: bool = False
+    # Local optional filtering only; the gate runs all controls.
     slow: bool = False
 
 
@@ -1146,7 +1148,7 @@ CONTROLS: list[Control] = [
         name="scan_irql_balance",
         script="tools/scan_irql_balance.py",
         argv=["--lint"],
-        slow=True,
+        summary_workspace=True,
         bad={"bad.rs": _IRQL_BAD},
         good={"good.rs": _IRQL_GOOD},
     ),
@@ -1198,6 +1200,14 @@ UNCOVERED: dict[str, str] = {
         "covered by tools/test_verify_translation_literals.py (12 tests) — positive control "
         'is undname.c\'s `case \'C\': "pascal"` shipping as "__stdcall", plus negatives for '
         "each way a faithful translation legitimately SPELLS a literal differently"
+    ),
+    "verify_ucrtbase_cohab": (
+        "covered by tools/test_verify_ucrtbase_cohab.py (8 tests) — positive control is the "
+        "one-line accident the crate split exists to prevent, `crt-shared-cargo` depending on "
+        "`msvcrt-crt-rust`, plus the transitive form; negatives are the correct wiring and a "
+        "`[features]` entry that NAMES a crate without depending on it. Not a fixture-dir "
+        "control because the lint reads a dependency GRAPH and an nm'd archive, neither of "
+        "which the tree-walking driver above can express"
     ),
     "gen_ctype_tables": (
         "covered by tools/test_gen_ctype_tables.py (9 tests) — positive control is prove() "
@@ -1270,6 +1280,15 @@ def _run(ctl: Control, root: Path) -> tuple[int, str]:
         assert targets, f"{ctl.name}: fixture produced no {ctl.file_suffix} files"
     else:
         targets = [str(root)]
+    if ctl.summary_workspace:
+        spec = importlib.util.spec_from_file_location(ctl.name, REPO / ctl.script)
+        assert spec is not None and spec.loader is not None
+        module = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(module)
+        out = StringIO()
+        with redirect_stdout(out), redirect_stderr(out):
+            rc = module.main([*ctl.argv, *targets], summary_root=root)
+        return rc, out.getvalue()
     cmd = [sys.executable, str(REPO / ctl.script), *ctl.argv, *targets]
     p = subprocess.run(cmd, cwd=REPO, capture_output=True, text=True)
     return p.returncode, (p.stdout or "") + (p.stderr or "")
@@ -1283,6 +1302,46 @@ def _materialize(tmp_path: Path, files: dict[str, str]) -> Path:
         target.parent.mkdir(parents=True, exist_ok=True)
         target.write_text(content)
     return d
+
+
+def test_irql_fixture_summary_resolves_cross_file_wrapper(tmp_path):
+    ctl = next(c for c in CONTROLS if c.name == "scan_irql_balance")
+    root = _materialize(
+        tmp_path,
+        {
+            "wrapper.rs": "unsafe fn raise_wrapper() -> u8 {\n"
+            "let saved = KeRaiseIrqlToDpcLevel();\nreturn saved;\n}\n",
+            "caller.rs": "unsafe fn caller(cond: bool) {\nlet saved = raise_wrapper();\n"
+            "if cond { return; }\nKeLowerIrql(saved);\n}\n",
+        },
+    )
+    rc, out = _run(ctl, root)
+    assert rc == 1 and "IRQL_LEAK_RETURN" in out and "caller.rs" in out
+    (root / "caller.rs").write_text(
+        "unsafe fn caller() {\nlet saved = raise_wrapper();\nKeLowerIrql(saved);\nreturn;\n}\n"
+    )
+    rc, out = _run(ctl, root)
+    assert rc == 0 and out == ""
+
+
+def test_irql_cli_default_still_builds_whole_workspace_summaries(tmp_path, monkeypatch):
+    spec = importlib.util.spec_from_file_location(
+        "irql_default_control", REPO / "tools/scan_irql_balance.py"
+    )
+    assert spec is not None and spec.loader is not None
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    seen = []
+
+    def files(paths):
+        seen.append(paths)
+        return iter(())
+
+    monkeypatch.setattr(module, "_iter_files", files)
+    monkeypatch.setattr(module, "build_summaries", lambda *a: (set(), set(), {}))
+    target = tmp_path / "selected.rs"
+    assert module.main(["--lint", str(target)]) == 0
+    assert seen == [[module.RUST_WS], [target]]
 
 
 @pytest.mark.parametrize(

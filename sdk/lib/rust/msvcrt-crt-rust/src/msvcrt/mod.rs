@@ -121,22 +121,6 @@ pub mod locale;
 #[cfg(feature = "data")]
 pub mod data;
 
-// undname.c: the Visual C++ symbol demangler behind `__unDName` and `__unDNameEx`.
-//
-// 1,788 lines of C and exactly TWO exports — everything else is `static`. That ratio is
-// what makes it a whole-file flip with no cohab subtlety at all: define those two and the
-// C object is never pulled from the archive, so all 27 helpers go with it in one step.
-//
-// It is also the most self-contained file in msvcrt. No locale, no fd table, no Win32
-// beyond the caller-supplied malloc/free in `parsed_symbol`, and no global state — a
-// `parsed_symbol` carries its own arena (`und_alloc` bump-allocates and never frees) and
-// its own three `struct array` stacks. The whole thing is a recursive-descent parser over
-// a mangled name.
-//
-// `str_printf` is HAND-WRITTEN and is the only one; the reason it could not be a C shim
-// like file.c's and process.c's twenty is written out at its definition.
-pub mod undname;
-
 // ctype.c's three DATA exports — the two 257-entry locale tables and `MSVCRT__pwctype`.
 // Its 44 FUNCTIONS were hand-written in waves 9/10 and live in lib.rs beside the wide
 // `isw*` family they share `_isctype_l` with, so this module is deliberately data-only;
@@ -215,74 +199,15 @@ pub mod math;
 #[cfg(feature = "stdio")]
 pub mod process;
 
-// cpp.c: the C++ RTTI / exception-object subsystem — 47 spec exports, the largest single
-// block of C left in msvcrt. Whole-file, plus a hand-written `cpp_rtti` companion for the
-// half of the TU that exists only as MACRO expansions (the five vtables, the RTTI and throw
-// descriptors, and the seven bodies `CREATE_EXCEPTION_OBJECT` / `CREATE_TYPE_INFO_VTABLE`
-// generate). rustconv's scanner reads source text, so a macro invocation is where those
-// would be — they are not "missed", they are not there to see.
-//
-// Behind the `cpp` DEFAULT feature, and OFF for the host harnesses for a plain reason: the
-// vtables are `global_asm!` in `.data` naming COFF symbols, and the RTTI walk calls
-// `RtlPcToFileHeader` to find an image base. Neither means anything in an ELF test binary.
-//
-// The 11 `#if _MSVCR_VER >= 80/140 || defined(__UCRTSUPPORT__)` bodies (`__AdjustPointer`,
-// the four `__std_type_info_*`, `_is_exception_typeof`, …) are deliberately absent: msvcrt
-// compiles at `_MSVCR_VER = 0` without `__UCRTSUPPORT__`, so nothing here builds them. They
-// are owed only if someone flips msvcrt_shared for ucrtbase, and the translation run
-// recorded each one as an audit finding rather than dropping it quietly.
-#[cfg(feature = "cpp")]
-pub mod cpp;
-#[cfg(feature = "cpp")]
-pub mod cpp_rtti;
-
-// except.c: the exception DISPATCHER — the C signal layer (`signal`/`raise` and the SEH
-// filter that turns a hardware fault into a C signal) plus the C++ frame handler that walks
-// a function's try blocks looking for a catch. 21 of the 21 symbols msvcrt.dll's copy of
-// this TU defines.
-//
-// Rides the `cpp` feature with cpp.c because it is not separable from it: the catch-matching
-// path calls `find_caught_type` and `copy_exception`, cppexcept.h inlines that live in
-// `cpp_rtti`, and both are equally unlinkable in an ELF host binary.
-//
-// The arch split is the thing to know before editing: everything from `ip_to_state` to
-// `__CxxFrameHandler` is `#[cfg(not(target_arch = "x86"))]` because it is inside
-// `#ifndef __i386__` in the C, where i386 gets a DIFFERENT implementation from except_i386.c.
-// Cohab resolves by first-match, so an ungated body there would replace except_i386.c's
-// 32-bit SEH walk with the RVA one and link without complaint. `dump_function_descr` and
-// `find_catch_handler` sit above that gate and are called BY those still-C arch files.
-#[cfg(feature = "cpp")]
-pub mod except;
-
-// except_i386.c: the OTHER side of that gate — 32-bit SEH, where an exception frame is a
-// linked list threaded through `fs:0` rather than a table the unwinder looks up by PC. The
-// `#ifdef __i386__` around the whole TU is why both modules are `#![cfg(target_arch = "x86")]`
-// from the inside as well as gated here: on amd64/arm64 this file compiles to nothing at all,
-// and `except.rs` supplies the same exported names from the other implementation.
-//
-// `seh_i386` is its hand-written companion, the same relationship `cpp_rtti` has to `cpp`: six
-// `__ASM_GLOBAL_FUNC` thunks that run on somebody else's frame, and wine/exception.h's two
-// `static inline` frame-list helpers. None of them has C text a translator could read.
-//
-// Seven bodies of the C are NOT here, on purpose: `_global_unwind2`, `_except_handler2/3`,
-// `_local_unwind2`, `longjmp` and the two `__regs__setjmp*` are all inside `#ifndef
-// __REACTOS__` and are in no object this tree builds.
-#[cfg(all(feature = "cpp", target_arch = "x86"))]
-pub mod except_i386;
-#[cfg(all(feature = "cpp", target_arch = "x86"))]
-pub mod seh_i386;
-
-// The other two arms of the same gate, and the reason `except.rs`'s `unsafe extern "C"` block
-// declaring `call_catch_handler`/`call_unwind_handler`/`get_exception_pc`/`handle_fpieee_flt`
-// is now satisfied by Rust on every arch rather than by a surviving C sibling. Each is tiny —
-// four bodies and one `__ASM_GLOBAL_FUNC` — because that is genuinely all the 64-bit
-// dispatcher cannot say portably. Both carry their asm inline instead of a `seh_*` companion;
-// one thunk does not earn a module.
-#[cfg(all(feature = "cpp", target_arch = "x86_64"))]
-pub mod except_x86_64;
-#[cfg(all(feature = "cpp", target_arch = "aarch64"))]
-pub mod except_arm64;
-
+// cpp.c, cpp_rtti, except.c, except_<arch>.c, seh_i386 and undname.c MOVED to the
+// `crt-shared-rust` crate. They are cmake's `msvcrt_shared` — the TUs compiled twice, once
+// here and once with `-D__UCRTSUPPORT__` into ucrtbase.dll — so they are the only part of
+// this crate that is linked into a CRT that is NOT msvcrt, and they had to stop being able
+// to reach msvcrt's floor. Their `#[no_mangle]`s still arrive in this crate's archive
+// through the dependency, so the flip is unchanged on this side; what changed is that
+// nothing ELSE in this crate can now leak into ucrtbase. The measurement that forced it
+// (856 genuine UCRT bodies would have been shadowed, silently) is in that crate's
+// Cargo.toml.
 // lock.c + thread.c — the mutual-exclusion table and the per-thread state block. Gated
 // together behind `threading` because the host harness supplies its own `_lock`,
 // `_unlock` and `msvcrt_get_thread_data`; see the feature's note in Cargo.toml.
