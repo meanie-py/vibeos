@@ -41,7 +41,7 @@ unsafe fn read_flags() -> usize {
 /// initially masked. Called with interrupts disabled.
 #[unsafe(no_mangle)]
 pub unsafe extern "system" fn HalpInitializeLegacyPICs() {
-    debug_assert_eq!(unsafe { read_flags() } & EFLAGS_INTERRUPT_MASK as usize, 0);
+    ntkrnl_sys::ASSERT!(unsafe { read_flags() } & EFLAGS_INTERRUPT_MASK as usize == 0);
 
     // ── master ──
     let mut icw1 = _I8259_ICW1 { Bits: 0 };

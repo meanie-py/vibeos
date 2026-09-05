@@ -214,7 +214,7 @@ unsafe fn DetectInternal(SystemKey: PCONFIGURATION_COMPONENT_DATA, BusNumber: *m
     let Size: u32;
 
     Size = crate::FIELD_OFFSET!(CM_PARTIAL_RESOURCE_LIST, PartialDescriptors) as u32;
-    PartialResourceList = FrLdrHeapAlloc(Size as usize, 0x74736952) as PCM_PARTIAL_RESOURCE_LIST;
+    PartialResourceList = FrLdrHeapAlloc(Size as usize, TAG_HW_RESOURCE_LIST) as PCM_PARTIAL_RESOURCE_LIST;
     if PartialResourceList.is_null() {
         ERR(b"Failed to allocate resource descriptor\n\0".as_ptr() as *const i8);
         return;

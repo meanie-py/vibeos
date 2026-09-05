@@ -80,6 +80,7 @@ extern "C" {
 
 // SeDeleteClientSecurity is the macro from sefuncs.h, exposed as Rust inline.
 use ntkrnl_sys::inline::tier1::SeDeleteClientSecurity;
+use ntkrnl_sys::ddk::RtlAssert;
 
 // UNIMPLEMENTED_DBGBREAK: debug-only no-op stub
 #[allow(non_snake_case)]
@@ -260,7 +261,12 @@ unsafe fn CmpSetValueKeyNew(
 
     if (*Parent).__bindgen_anon_1.__bindgen_anon_1.ValueList.Count != 0 {
         if (*Parent).__bindgen_anon_1.__bindgen_anon_1.ValueList.List == 0xFFFFFFFF {
-            panic!("ASSERT: Parent->ValueList.List != HCELL_NIL");
+            RtlAssert(
+                b"Parent->ValueList.List != HCELL_NIL\0".as_ptr() as *mut core::ffi::c_void,
+                b"cmapi.rs\0".as_ptr() as *mut core::ffi::c_void,
+                line!(),
+                core::ptr::null_mut::<i8>(),
+            );
         }
         if HvMarkCellDirty(Hive, (*Parent).__bindgen_anon_1.__bindgen_anon_1.ValueList.List, 0u8) == 0 {
             return STATUS_NO_LOG_SPACE;
@@ -279,12 +285,22 @@ unsafe fn CmpSetValueKeyNew(
 
     CellData = HvGetCell(Hive, ValueCell) as PCELL_DATA;
     if CellData.is_null() {
-        panic!("ASSERT: CellData");
+        RtlAssert(
+            b"CellData\0".as_ptr() as *mut core::ffi::c_void,
+            b"cmapi.rs\0".as_ptr() as *mut core::ffi::c_void,
+            line!(),
+            core::ptr::null_mut::<i8>(),
+        );
     }
 
     HvReleaseCell(Hive, ValueCell);
     if HvIsCellDirty(Hive, ValueCell) == 0 {
-        panic!("ASSERT: HvIsCellDirty(Hive, ValueCell)");
+        RtlAssert(
+            b"HvIsCellDirty(Hive, ValueCell)\0".as_ptr() as *mut core::ffi::c_void,
+            b"cmapi.rs\0".as_ptr() as *mut core::ffi::c_void,
+            line!(),
+            core::ptr::null_mut::<i8>(),
+        );
     }
 
     (*CellData).u.KeyValue.Signature = 0x6B76u16;
@@ -318,7 +334,12 @@ unsafe fn CmpSetValueKeyNew(
 
         (*CellData).u.KeyValue.DataLength = DataSize;
         if HvIsCellDirty(Hive, (*CellData).u.KeyValue.Data) == 0 {
-            panic!("ASSERT: HvIsCellDirty(Hive, CellData->u.KeyValue.Data)");
+            RtlAssert(
+                b"HvIsCellDirty(Hive, CellData->u.KeyValue.Data)\0".as_ptr() as *mut core::ffi::c_void,
+                b"cmapi.rs\0".as_ptr() as *mut core::ffi::c_void,
+                line!(),
+                core::ptr::null_mut::<i8>(),
+            );
         }
     } else {
         (*CellData).u.KeyValue.DataLength = DataSize + 0x80000000u32;

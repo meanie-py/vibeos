@@ -88,13 +88,13 @@ pub unsafe extern "system" fn MiSimpleRead(
     Paging: BOOLEAN,
     ReadStatus: PIO_STATUS_BLOCK,
 ) -> NTSTATUS {
-    debug_assert!(!FileObject.is_null());
-    debug_assert!(!FileOffset.is_null());
-    debug_assert!(!Buffer.is_null());
-    debug_assert!(!ReadStatus.is_null());
+    ntkrnl_sys::ASSERT!(!FileObject.is_null());
+    ntkrnl_sys::ASSERT!(!FileOffset.is_null());
+    ntkrnl_sys::ASSERT!(!Buffer.is_null());
+    ntkrnl_sys::ASSERT!(!ReadStatus.is_null());
 
     let DeviceObject: PDEVICE_OBJECT = MmGetDeviceObjectForFile(FileObject);
-    debug_assert!(!DeviceObject.is_null());
+    ntkrnl_sys::ASSERT!(!DeviceObject.is_null());
 
     // Pre-seed an internal-error sentinel so callers see a non-success status
     // unless completion fills the block in.

@@ -1073,7 +1073,7 @@ pub unsafe extern "C" fn FdoIoctlDiskDeleteDriveLayout(
 ) -> NTSTATUS {
     // PAGED_CODE assertion: IRQL must be <= APC_LEVEL
     const APC_LEVEL: u8 = 1;
-    core::assert!(KeGetCurrentIrql() <= APC_LEVEL);
+    ntkrnl_sys::ASSERT!(KeGetCurrentIrql() <= APC_LEVEL);
 
     PartMgrAcquireLayoutLock(FdoExtension);
 

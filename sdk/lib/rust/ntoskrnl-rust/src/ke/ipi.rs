@@ -309,7 +309,7 @@ pub unsafe extern "system" fn KiIpiSendPacket(
 ) {
     #[cfg(feature = "smp")]
     {
-        core::debug_assert!(KeGetCurrentIrql() == SYNCH_LEVEL);
+        ntkrnl_sys::ASSERT!(KeGetCurrentIrql() == SYNCH_LEVEL);
 
         let CurrentPrcb = KeGetCurrentPrcb();
 
@@ -688,7 +688,7 @@ pub unsafe extern "system" fn KeIpiGenericCall(
     {
         if Affinity != 0 {
             // Sanity check
-            core::debug_assert!(Prcb == KeGetCurrentPrcb());
+            ntkrnl_sys::ASSERT!(Prcb == KeGetCurrentPrcb());
 
             // Wait for every target to signal done via KiIpiSignalPacketDone,
             // which clears its bit in Prcb->TargetSet (published by

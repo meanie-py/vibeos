@@ -424,7 +424,11 @@ def _expand_default_helper_arguments(
 
 
 def _argument_c_type(
-    argument: str, symbols: dict[str, str], call_returns: dict[str, str] | None = None
+    argument: str,
+    symbols: dict[str, str],
+    call_returns: dict[str, str] | None = None,
+    field_types: dict[str, dict[str, str]] | None = None,
+    type_aliases: dict[str, str] | None = None,
 ) -> str | None:
     text = argument.strip()
     explicit_cast = re.search(r"\(\s*(?P<type>[A-Za-z_]\w*(?:\s+[A-Za-z_]\w*)*\s*\*+)\s*\)", text)
@@ -453,6 +457,30 @@ def _argument_c_type(
         return "LPCWSTR"
     if re.fullmatch(r'"(?:\\.|[^"\\])*"', text):
         return "LPCSTR"
+    member = re.fullmatch(
+        r"(?:this\s*->\s*)?(?P<base>[A-Za-z_]\w*)\s*(?P<op>\.|->)\s*(?P<field>[A-Za-z_]\w*)",
+        text,
+    )
+    if member is not None:
+        # C++ types `hittest.iItem` from the STRUCT, and without this a member access was
+        # no evidence at all -- which is how two same-arity overloads stayed tied and hard
+        # -failed before payment. The struct shape comes from the caller (the per-arch
+        # bindgen islands), so this function stays free of any table of its own.
+        if not field_types:
+            return None
+        base_type = symbols.get(member.group("base"))
+        if base_type is None:
+            return None
+        # Win32 hides most stars behind a typedef (`LPNMLISTVIEW`), so resolve the
+        # spelling before asking whether the access went through a pointer.
+        if type_aliases:
+            base_type = type_aliases.get(base_type, base_type)
+        # `->` must go through a pointer and `.` must not. A mismatch means the symbol
+        # table and the source disagree, so decline instead of typing the field anyway.
+        indirect = "*" in base_type
+        if indirect != (member.group("op") == "->"):
+            return None
+        return field_types.get(base_type.replace("*", "").strip(), {}).get(member.group("field"))
     identifier = re.fullmatch(r"(?:this\s*->\s*)?([A-Za-z_]\w*)", text)
     if identifier is None:
         return None
@@ -462,6 +490,48 @@ def _argument_c_type(
     if c_type == "CStringA":
         return "LPCSTR"
     return c_type
+
+
+# Unambiguous C/Win32 integer spellings. Used only to REJECT a candidate whose
+# parameter is a pointer: an integer lvalue has no conversion to a pointer type in C++
+# (a literal 0 does, but a literal is never typed here), so this can only ever discard
+# a candidate the compiler discards too. Kept deliberately small -- a name that is not
+# certainly an integer is simply absent, which decides nothing.
+_C_INTEGER_KEYS = frozenset(
+    {
+        "INT",
+        "UINT",
+        "long",
+        "unsigned long",
+        "short",
+        "unsigned short",
+        "char",
+        "signed char",
+        "unsigned char",
+        "long long",
+        "unsigned long long",
+        "DWORD",
+        "LONG",
+        "ULONG",
+        "WORD",
+        "BYTE",
+        "SHORT",
+        "USHORT",
+        "UCHAR",
+        "BOOL",
+        "BOOLEAN",
+        "SIZE_T",
+        "INT_PTR",
+        "UINT_PTR",
+        "LONG_PTR",
+        "ULONG_PTR",
+    }
+)
+
+
+def integer_cannot_bind_pointer(actual: str, expected: str) -> bool:
+    """True when ``actual`` is certainly an integer and ``expected`` is certainly a pointer."""
+    return _abi_c_type_key(actual) in _C_INTEGER_KEYS and "*" in _abi_c_type_key(expected)
 
 
 def _abi_types_compatible(actual: str, expected: str) -> bool:
@@ -475,7 +545,10 @@ def _abi_types_compatible(actual: str, expected: str) -> bool:
 
 def _abi_c_type_key(c_type: str) -> str:
     """Collapse spelling-only Win32 aliases for overload binding, not codegen."""
-    text = " ".join(c_type.replace("CONST", "const").split())
+    # A C++ `T&` parameter binds an LVALUE of type T, so for BINDING the reference is
+    # not part of the type. (It very much is for codegen, which is why this collapse is
+    # scoped to overload keys — the caller still emits the reference.)
+    text = " ".join(c_type.replace("CONST", "const").split()).rstrip("&").strip()
     aliases = {
         "int": "INT",
         "unsigned int": "UINT",

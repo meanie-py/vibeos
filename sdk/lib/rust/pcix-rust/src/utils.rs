@@ -1457,10 +1457,7 @@ pub unsafe extern "system" fn PciCanDisableDecodes(
 pub unsafe extern "system" fn PciClassifyDeviceType(
     PdoExtension: PPCI_PDO_EXTENSION,
 ) -> PCI_DEVICE_TYPES {
-    debug_assert_eq!(
-        (*PdoExtension).ExtensionType,
-        _PCI_SIGNATURE_PciPdoExtensionType as ULONG
-    );
+    ntkrnl_sys::ASSERT!((*PdoExtension).ExtensionType == _PCI_SIGNATURE_PciPdoExtensionType as ULONG);
     if (*PdoExtension).BaseClass as u32 != PCI_CLASS_BRIDGE_DEV {
         return _PCI_DEVICE_TYPES_PciTypeDevice;
     }
@@ -1799,7 +1796,12 @@ pub unsafe extern "system" fn PciGetDeviceCapabilities(
     if KeGetCurrentIrql() > APC_LEVEL {
         // In ReactOS this would DbgPrint and ASSERT(FALSE).
         // Preserve the intent with a panic.
-        panic!("Pageable code called at IRQL > APC_LEVEL");
+        RtlAssert(
+            b"FALSE\0".as_ptr() as *mut core::ffi::c_void,
+            b"utils.rs\0".as_ptr() as *mut core::ffi::c_void,
+            line!(),
+            b"Pageable code called at IRQL > APC_LEVEL\0".as_ptr() as *mut i8,
+        );
     }
 
     // Zero out capabilities and set initial values
@@ -1839,7 +1841,7 @@ pub unsafe extern "system" fn PciGetDeviceCapabilities(
     (*Irp).IoStatus.__bindgen_anon_1.Status = STATUS_NOT_SUPPORTED;
 
     let IoStackLocation = IoGetNextIrpStackLocation(Irp);
-    assert!(!IoStackLocation.is_null(), "IoStackLocation is null");
+    ntkrnl_sys::ASSERT!(!IoStackLocation.is_null(), "IoStackLocation is null");
 
     core::ptr::write_bytes(
         IoStackLocation as *mut u8,

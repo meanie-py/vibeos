@@ -6,12 +6,36 @@
 # accepted — `--check` fails on anything NOT listed here, so a NEW self-recursion
 # (like bootvid's memcpy/memset, field manual §9.60) is caught immediately.
 #
-# Fixing the debt (owed, not this lane):
-#   exp2/exp2f/exp2l  — a C `exp2()` whose body LLVM recognised and folded into a
-#                       call to exp2 itself. Same idiom-recursion trap as §9.60,
-#                       in C. Needs -fno-builtin-exp2 on those TUs (or a real impl).
-#   classpnp KeRaiseIrql/KeLowerIrql/IoWMIDeviceObjectToProviderId
-#                     — local stubs shadowing the ntoskrnl imports; hang if called.
+# 2026-09-05: the exp2/exp2f/exp2l debt below is PAID and its 26 entries are gone —
+# beepmidi, calc, dsound, the 22 d3dx9_*, and ucrtbase's pair. The note used to read
+# "needs -fno-builtin-exp2 on those TUs (or a real impl)"; the actual fix was one
+# word. `sdk/lib/crt/math/exp2.c` and `exp2f.c` are
+# `{ static const T TWO = 2; return pow(TWO, x); }` with a comment claiming the
+# `static const` stops clang folding the pow call back into exp2. It does not —
+# constant propagation reads straight through it — so both compiled to a single
+# branch-to-self. `static const volatile` forces a real load, leaving no
+# compile-time 2 to fold, and all three arches come back clean.
+#
+# What surfaced it is worth keeping: scan_ud2's driver sweep filters on
+# `rust_begin_unwind` and so only inspects Rust-CONTAINING binaries. ucrtbase.dll
+# had no Rust until the msvcrt_shared cohab landed, so in two years that sweep had
+# never once looked at it. THIS lint saw the spins the whole time and had them
+# baselined; nothing acted on it until a second tool reported the same fact as new.
+#
+# 2026-09-05: the classpnp trio below is PAID too, in a different lane on the same day.
+# KeRaiseIrql/KeLowerIrql/IoWMIDeviceObjectToProviderId were `eb fe` on amd64 and `b .`
+# on arm64: each #[no_mangle] body declared an `extern` block for its OWN name, and a
+# local strong definition beats the importlib thunk, so the call bound to the enclosing
+# function. The fix is per-arch cfg, not a better forwarder — define a symbol ONLY on the
+# arch where none is importable. Watch for `-private` in the .spec: it exports from the
+# DLL but is withheld from the import lib (see spec2def.c, OutputLine_def), which is why
+# amd64 KeLowerIrql still needed a CR8 body even though ntoskrnl.spec has an entry.
+#
+# Note both fixes landed the same day from different lanes, each removing entries from
+# THIS file. The exp2 and classpnp stories are the same moral twice: a lint that had the
+# finding baselined and correct for months, waiting on someone to read it.
+#
+# Remaining debt (owed, not this lane):
 #   ftfd rust_begin_unwind — a `#[panic_handler]` written `loop {}`: a panic that
 #                       hangs SILENTLY. Should adopt panic-common (prints + bugchecks).
 #   cdrom abort       — abort() stub written as a spin.
@@ -20,37 +44,11 @@
 #                       fstub-rust halstub.rs `loop {}`). Appears only in the
 #                       SMP-kernel sibling binary (ntkrnlmp.exe, built via
 #                       --smp-kernel); same fn in ntoskrnl.exe doesn't fold to
-#                       a first-insn self-jump there.
+#                       a first-insn self-jump there. KEPT even though an ordinary
+#                       3-arch sweep does not produce that binary — dropping it
+#                       would fail the next --smp-kernel build.
 #
 # Refresh (after fixing some): re-run the scanner on all 3 arches and union the output.
-beepmidi.dll: exp2
-calc.exe: exp2
 cdrom.sys: abort
-classpnp.sys: IoWMIDeviceObjectToProviderId
-classpnp.sys: KeLowerIrql
-classpnp.sys: KeRaiseIrql
-d3dx9_24.dll: exp2
-d3dx9_25.dll: exp2
-d3dx9_26.dll: exp2
-d3dx9_27.dll: exp2
-d3dx9_28.dll: exp2
-d3dx9_29.dll: exp2
-d3dx9_30.dll: exp2
-d3dx9_31.dll: exp2
-d3dx9_32.dll: exp2
-d3dx9_33.dll: exp2
-d3dx9_34.dll: exp2
-d3dx9_35.dll: exp2
-d3dx9_36.dll: exp2
-d3dx9_37.dll: exp2
-d3dx9_38.dll: exp2
-d3dx9_39.dll: exp2
-d3dx9_40.dll: exp2
-d3dx9_41.dll: exp2
-d3dx9_42.dll: exp2
-d3dx9_43.dll: exp2
-dsound.dll: exp2
 ftfd.dll: _RNvCsiGVaDesi5rv_7___rustc17rust_begin_unwind
 ntkrnlmp.exe: xHalHaltSystem
-ucrtbase.dll: exp2f
-ucrtbase.dll: exp2l

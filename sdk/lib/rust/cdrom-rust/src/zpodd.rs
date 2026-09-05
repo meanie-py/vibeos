@@ -12,6 +12,7 @@ use ntkrnl_sys::ob::*;
 use ntkrnl_sys::rtl::*;
 use ntkrnl_sys::ddk::{D3COLD_SUPPORT_INTERFACE, DEVICE_WAKE_DEPTH, _DEVICE_WAKE_DEPTH_DeviceWakeDepthD3cold as DeviceWakeDepthD3cold, _DEVICE_WAKE_DEPTH_DeviceWakeDepthNotWakeable as DeviceWakeDepthNotWakeable, _KWAIT_REASON_Executive, _IO_STATUS_BLOCK, IoBuildDeviceIoControlRequest, IoBuildSynchronousFsdRequest, IoGetAttachedDeviceReference, IoGetNextIrpStackLocation, KEVENT, KeInitializeEvent, KeWaitForSingleObject, _EVENT_TYPE_NotificationEvent, PD3COLD_SUPPORT_INTERFACE, PINTERFACE, PSTORAGE_IDLE_POWERUP_REASON, STORAGE_IDLE_POWER, STORAGE_IDLE_POWERUP_REASON};
 use core::ffi::c_void;
+use ntkrnl_sys::ddk::RtlAssert;
 
 extern "C" {
     static GUID_D3COLD_SUPPORT_INTERFACE: GUID;
@@ -303,13 +304,28 @@ pub unsafe extern "C" fn DeviceQueryD3ColdInterface(
 
         // NT_ASSERT equivalent
         if (*D3ColdInterface).SetD3ColdSupport.is_none() {
-            core::panic!("NT_ASSERT failed");
+            RtlAssert(
+                b"D3ColdInterface->SetD3ColdSupport != NULL\0".as_ptr() as *mut core::ffi::c_void,
+                b"zpodd.rs\0".as_ptr() as *mut core::ffi::c_void,
+                line!(),
+                core::ptr::null_mut::<i8>(),
+            );
         }
         if (*D3ColdInterface).GetIdleWakeInfo.is_none() {
-            core::panic!("NT_ASSERT failed");
+            RtlAssert(
+                b"D3ColdInterface->GetIdleWakeInfo != NULL\0".as_ptr() as *mut core::ffi::c_void,
+                b"zpodd.rs\0".as_ptr() as *mut core::ffi::c_void,
+                line!(),
+                core::ptr::null_mut::<i8>(),
+            );
         }
         if (*D3ColdInterface).GetD3ColdCapability.is_none() {
-            core::panic!("NT_ASSERT failed");
+            RtlAssert(
+                b"D3ColdInterface->GetD3ColdCapability != NULL\0".as_ptr() as *mut core::ffi::c_void,
+                b"zpodd.rs\0".as_ptr() as *mut core::ffi::c_void,
+                line!(),
+                core::ptr::null_mut::<i8>(),
+            );
         }
     }
 

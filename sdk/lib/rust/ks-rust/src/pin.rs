@@ -1804,7 +1804,9 @@ pub unsafe extern "system" fn IKsPin_DispatchKsStream(
             None,
         );
 
-        ASSERT(!((*(*This).Pin.Descriptor).Flags & KSPIN_FLAG_DISPATCH_LEVEL_PROCESSING as ULONG) != 0);
+        // C: `ASSERT(!(Flags & KSPIN_FLAG_DISPATCH_LEVEL_PROCESSING))`. Rust's `!` is
+        // bitwise on a ULONG, so this could never be zero — vacuous until spelled `== 0`.
+        ASSERT(((*(*This).Pin.Descriptor).Flags & KSPIN_FLAG_DISPATCH_LEVEL_PROCESSING as ULONG) == 0);
         ASSERT(!(*This).PinWorker.is_null());
 
         InterlockedIncrement(&mut (*This).IrpCount);

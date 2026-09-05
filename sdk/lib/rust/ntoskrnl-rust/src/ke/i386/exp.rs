@@ -249,8 +249,8 @@ pub unsafe extern "fastcall" fn KiUpdateDr7(Dr7: ULONG) -> ULONG {
     let debug_mask = (*(KeGetCurrentThread() as *mut _KTHREAD)).Header.__bindgen_anon_1.__bindgen_anon_1.__bindgen_anon_3.__bindgen_anon_1.DebugActive as ULONG;
 
     if (debug_mask & DR_MASK(8)) != 0 {
-        debug_assert!((debug_mask & DR_REG_MASK) != 0);
-        debug_assert!((Dr7 & !DR7_RESERVED_MASK) == DR7_OVERRIDE_MASK);
+        ntkrnl_sys::ASSERT!((debug_mask & DR_REG_MASK) != 0);
+        ntkrnl_sys::ASSERT!((Dr7 & !DR7_RESERVED_MASK) == DR7_OVERRIDE_MASK);
         return 0;
     }
 
@@ -267,7 +267,7 @@ pub unsafe extern "fastcall" fn KiRecordDr7(Dr7Ptr: *mut ULONG, DrMask: *mut ULO
         *DrMask
     };
 
-    debug_assert!((*Dr7Ptr & DR7_RESERVED_MASK) == 0);
+    ntkrnl_sys::ASSERT!((*Dr7Ptr & DR7_RESERVED_MASK) == 0);
 
     let mut new_mask = mask;
     let result: BOOLEAN;
@@ -280,7 +280,7 @@ pub unsafe extern "fastcall" fn KiRecordDr7(Dr7Ptr: *mut ULONG, DrMask: *mut ULO
             new_mask |= DR_MASK(8);
             *Dr7Ptr |= DR7_OVERRIDE_MASK;
         } else {
-            debug_assert!(new_mask == 0);
+            ntkrnl_sys::ASSERT!(new_mask == 0);
         }
     } else {
         result = if new_mask != 0 { 1u8 } else { 0u8 };
@@ -784,7 +784,7 @@ pub unsafe extern "system" fn KiDispatchException(
         _ => {}
     }
 
-    debug_assert!(!((PreviousMode == 0i8) && (context.EFlags & EFLAGS_V86_MASK) != 0));
+    ntkrnl_sys::ASSERT!(!((PreviousMode == 0i8) && (context.EFlags & EFLAGS_V86_MASK) != 0));
 
     if PreviousMode == 0i8 {
         if FirstChance != 0 {

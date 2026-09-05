@@ -216,3 +216,61 @@ mod offset_check_amd64;
 
 #[cfg(target_arch = "x86")]
 mod offset_check_i386;
+
+// ============================================================================
+// C's diagnostic macros — ASSERT / NT_ASSERT
+// ============================================================================
+//
+// `ASSERT(exp)` and `NT_ASSERT(exp)` call RtlAssert under -DDBG=1 (which CMake sets) and
+// compile to nothing in retail. RtlAssert prints and RETURNS: neither configuration stops
+// the machine. Translations have historically picked one of two wrong answers --
+// `debug_assert!`, which is dead code in our release profile, or a hard `assert!`/`panic!`,
+// which in kernel mode reaches a #[panic_handler] that loops forever and so HANGS the box
+// with no bugcheck and no dump. Both are documented in the field manual under
+// "NT_ASSERT/ASSERT/PAGED_CODE are DIAGNOSTICS, not control flow".
+//
+// A macro_rules! and NOT a fn, deliberately: an out-of-line no-op fn is an optimization
+// barrier that uncloaks latent ABI mismatches into `ud2` (AGENTS.md).
+//
+// stringify!($e) gives a better assertion string than the hand-written ones ever did --
+// several translated sites said only "NT_ASSERT failed", which names nothing.
+
+/// C `ASSERT(exp)` / `NT_ASSERT(exp)`: print via RtlAssert and CONTINUE, exactly as the C does.
+#[macro_export]
+macro_rules! ASSERT {
+    ($e:expr) => {
+        if !$e {
+            #[allow(unused_unsafe)]
+            unsafe {
+                $crate::ddk::RtlAssert(
+                    concat!(stringify!($e), "\0").as_ptr() as *mut ::core::ffi::c_void,
+                    concat!(file!(), "\0").as_ptr() as *mut ::core::ffi::c_void,
+                    line!(),
+                    ::core::ptr::null_mut::<i8>(),
+                );
+            }
+        }
+    };
+    ($e:expr, $msg:expr) => {
+        if !$e {
+            #[allow(unused_unsafe)]
+            unsafe {
+                $crate::ddk::RtlAssert(
+                    concat!(stringify!($e), "\0").as_ptr() as *mut ::core::ffi::c_void,
+                    concat!(file!(), "\0").as_ptr() as *mut ::core::ffi::c_void,
+                    line!(),
+                    concat!($msg, "\0").as_ptr() as *mut i8,
+                );
+            }
+        }
+    };
+}
+
+/// Spelled separately because the C headers do, and a reader grepping for either should
+/// find it. Identical expansion — `NT_ASSERT` differs from `ASSERT` only in which retail
+/// build strips it, and we build with DBG.
+#[macro_export]
+macro_rules! NT_ASSERT {
+    ($e:expr) => { $crate::ASSERT!($e) };
+    ($e:expr, $msg:expr) => { $crate::ASSERT!($e, $msg) };
+}

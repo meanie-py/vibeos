@@ -223,7 +223,7 @@ flowing at the deadline) with **no** kernel census/lockdep wedge self-report.
 - Auto-push discipline unchanged: a ×3-clean-gate-green landing is still what
   authorizes a push — but drive it through `land` (below), not by hand.
 
-### `land [--direct] [--drain] [--wait] [--retries N] [--clean] [--no-push] [--dry-run]`
+### `land [--direct] [--drain] [--wait] [--retries N] [--clean] [--no-push] [--dry-run] [--skip-lint]`
 **The way to land — it is a MERGE QUEUE.** With no flags, `land`:
 
 1. publishes this lane's tip to the queue (`refs/vibeos/queue/<seq>` + a record
@@ -268,6 +268,16 @@ the lock, so there is no daemon to supervise and nothing that can be "down".
   `--direct`. (It gave up instantly at first, which left submissions with no conductor
   — observed within minutes of shipping.) Nothing is blocked by it waiting, and a
   conductor that wakes to an empty queue exits in ~1s.
+- **`check-tooling` runs in YOUR lane before the submission is published.** The
+  conductor runs the identical command inside the batched gate, so this can never
+  block anything the gate would have passed — it is the same verdict moved from the
+  most expensive place in the system to the cheapest. It has to be: a red batch is 3
+  builds + 4 boots of fleet load, and the lint that bounced a lane on 2026-07-26 was
+  one line 101 characters long. Only a check that *ran and returned nonzero* blocks;
+  if the preflight itself cannot run it warns and proceeds, because a broken
+  preflight must never be able to wedge the fleet's ability to land. `--skip-lint`
+  overrides (report every use). It lints the lane tip, not the tip merged with
+  master, so it is an early filter and not a replacement for the gate.
 - `--drain` conducts without submitting; `--foreground` conducts inline instead of
   spawning; `--wait` blocks for your own verdict if you'd rather not poll.
 
@@ -573,11 +583,24 @@ scrape stdout for the result — stdout is intentionally lossy.
 Exit code: `0` for OK/WARN, `1` for FAIL. Stdout glyphs: `✓` ok, `⚠` warn,
 `✗` fail, `·` skip.
 
+For performance, read `summary.json.command_timings`: each subprocess has a
+`stage`, `start_seconds` offset from run start, `seconds`, and `exit`. The same
+fields appear in `commands.jsonl`. These are command timings, not verdict-stage
+timings; concurrent durations overlap and must not be summed as elapsed time.
+They include subprocess-internal waits, but not fleet acquisition outside the
+subprocess. Rust cache statistics also preserve `non_cacheable`,
+`non_cacheable_reasons`, `cache_errors`, and `compilations`; zero requests is not
+evidence of a cache miss. See [build reuse plan](../../../docs/engineering/build-reuse-plan.md)
+for the remaining measurement and invalidation work.
+
 ---
 
 ## Typical loops
 
 ```bash
+# targeted source-scanner investigation (explicitly partial; never a landing gate)
+./vibeos-cli check --arch amd64 --strict --only scan_orphan_modules,verify_match_consts
+
 # edit Rust → fast warm check it still boots i386
 ./vibeos-cli build  --arch i386 && ./vibeos-cli smoke --arch i386
 

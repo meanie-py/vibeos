@@ -544,7 +544,7 @@ extern "C" {
 pub unsafe extern "system" fn DriverEvtCleanup(Driver: WDFOBJECT) {
     let driver: WDFDRIVER = Driver as WDFDRIVER;
 
-    debug_assert_eq!(KeGetCurrentIrql(), PASSIVE_LEVEL);
+    ntkrnl_sys::ASSERT!(KeGetCurrentIrql() == PASSIVE_LEVEL);
 
     TracePrint!(
         TRACE_LEVEL_INFORMATION,
@@ -3585,7 +3585,7 @@ pub unsafe extern "system" fn RequestEvtCleanup(request: *mut core::ffi::c_void)
     let requestContext = RequestGetContext(request);
     if (*requestContext).SyncRequired != 0 {
         // NT_ASSERT(KeReadStateEvent(requestContext->SyncEvent) != 0)
-        core::assert!(KeReadStateEvent((*requestContext).SyncEvent as *mut ntkrnl_sys::ddk::_KEVENT) != 0);
+        ntkrnl_sys::ASSERT!(KeReadStateEvent((*requestContext).SyncEvent as *mut ntkrnl_sys::ddk::_KEVENT) != 0);
     }
 }
 

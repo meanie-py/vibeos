@@ -3,6 +3,7 @@ use crate::frldr::*;
 use ntkrnl_sys::ddk::{CPPORT, HEADLESS_LOADER_BLOCK, PCSTR, PGUID, RtlCompareMemory};
 // freeldr_ddk_imports dropped (not in ddk): PortNumber
 use core::ffi::c_void;
+use crate::ffi::RtlAssert;
 
 // cportlib Cp* are NTAPI (stdcall on i386); libcportlib.a exports
 // `_CpInitialize@12` / `_CpPutByte@8` / `_CpDoesPortExist@4` /
@@ -128,7 +129,12 @@ unsafe fn WinLdrPortInitialize(
     }
 
     if LoaderRedirectionInformation.IsMMIODevice != 0 {
-        panic!("ASSERT: LoaderRedirectionInformation.IsMMIODevice == FALSE");
+        RtlAssert(
+            b"LoaderRedirectionInformation.IsMMIODevice == FALSE\0".as_ptr() as *mut core::ffi::c_void,
+            b"headless.rs\0".as_ptr() as *mut core::ffi::c_void,
+            line!(),
+            core::ptr::null_mut::<i8>(),
+        );
     }
 
     if CpDoesPortExist(PortAddress) != 0 || CpDoesPortExist(PortAddress) != 0 {

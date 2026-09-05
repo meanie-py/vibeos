@@ -2335,7 +2335,7 @@ pub unsafe extern "system" fn FatOpenTargetDirectory(
             // NT_ASSERT(i != 0);
             if i == 0 {
                 // We'll keep a debug assert; using core::assert! in Rust
-                core::debug_assert!(false, "i != 0");
+                ntkrnl_sys::ASSERT!(false, "i != 0");
             }
             (*FileObject).FileName.Length -= core::mem::size_of::<u16>() as u16;
             i -= 1;
@@ -3843,7 +3843,7 @@ pub unsafe extern "system" fn FatCheckSystemSecurityAccess(IrpContext: *mut IRP_
     // PAGED_CODE();
     let irp_sp: *mut IO_STACK_LOCATION = IoGetCurrentIrpStackLocation((*IrpContext).OriginatingIrp);
     let security_context: *mut IO_SECURITY_CONTEXT = ((*irp_sp).Parameters.Create.SecurityContext).cast();
-    core::debug_assert!(!security_context.is_null());
+    ntkrnl_sys::ASSERT!(!security_context.is_null());
     let access_state: *mut _ACCESS_STATE = (*security_context).AccessState;
     if ((*access_state).RemainingDesiredAccess & ACCESS_SYSTEM_SECURITY) != 0 {
         if SeSinglePrivilegeCheck(FatSecurityPrivilege, 1 as KPROCESSOR_MODE) == 0 {

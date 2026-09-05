@@ -58,8 +58,8 @@ pub unsafe fn KbdHid_DispatchInputData(
     }
 
     /* sanity check */
-    debug_assert!(!(*DeviceExtension).ClassService.is_null());
-    debug_assert!(!(*DeviceExtension).ClassDeviceObject.is_null());
+    ntkrnl_sys::ASSERT!(!(*DeviceExtension).ClassService.is_null());
+    ntkrnl_sys::ASSERT!(!(*DeviceExtension).ClassDeviceObject.is_null());
 
     let mut OldIrql: KIRQL = 0;
     let mut InputDataConsumed: ULONG = 0;
@@ -187,7 +187,7 @@ pub unsafe extern "system" fn KbdHid_ReadCompletion(
     }
 
     // print out raw report (DPRINT — omitted, debug only)
-    debug_assert!((*DeviceExtension).ReportLength >= 9);
+    ntkrnl_sys::ASSERT!((*DeviceExtension).ReportLength >= 9);
 
     /* get current usages */
     ButtonLength = (*DeviceExtension).UsageListLength as ULONG;
@@ -223,7 +223,7 @@ pub unsafe extern "system" fn KbdHid_ReadCompletion(
         (*DeviceExtension).MakeUsageList,
         (*DeviceExtension).UsageListLength as ULONG,
     );
-    debug_assert!(_s == hid_sys::HIDP_STATUS_SUCCESS);
+    ntkrnl_sys::ASSERT!(_s == hid_sys::HIDP_STATUS_SUCCESS);
 
     /* replace previous usage list with current list */
     RtlMoveMemory(

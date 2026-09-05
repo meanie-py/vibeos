@@ -13,7 +13,7 @@ import subprocess
 from pathlib import Path
 
 from . import lints
-from .artifacts import Run
+from .artifacts import Run, Stage
 
 # debug verb -> shell tool that implements it (run-id passthrough)
 _SHELL_VERB = {
@@ -85,6 +85,28 @@ def debug(args, repo: Path) -> int:
 
 def check(args, repo: Path) -> int:
     ub = getattr(args, "update_baseline", None)
+    selection = getattr(args, "only", None)
+    if selection is not None:
+        if ub is not None:
+            print("--only cannot be combined with --update-baseline")
+            return 2
+        only = {name.strip() for name in selection.split(",") if name.strip()}
+        known = lints.lint_tool_names(repo)
+        if not only or only - known:
+            print(f"empty or unknown scanner selection: {', '.join(sorted(only - known))}")
+            print(f"known: {', '.join(sorted(known))}")
+            return 2
+        # A separate command identity prevents a partial result being mistaken
+        # for a complete check in artifact discovery or fleet health history.
+        run = Run("check-partial", getattr(args, "arch", None) or "all")
+        run.extra["coverage"] = "partial"
+        run.extra["selected_scanners"] = sorted(only)
+        run.extra["omitted_scanners"] = sorted(known - only)
+        run.add(
+            Stage("partial", status="warn", detail="selected source scanners only; not a full gate")
+        )
+        lints.run_source_lints(run, repo, strict=bool(getattr(args, "strict", False)), only=only)
+        return run.finalize(repo)
     if ub is not None:
         # --update-baseline           -> "__ALL__" (blanket; the footgun, see lints)
         # --update-baseline lint_kernel[,tool2,...] -> just those tools (T2 1b)

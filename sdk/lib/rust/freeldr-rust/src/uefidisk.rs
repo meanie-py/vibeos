@@ -609,7 +609,13 @@ unsafe fn UefiGetBootPartitionEntry(
 
 unsafe extern "C" fn UefiDiskClose(FileId: u32) -> ARC_STATUS {
     let Context = FsGetDeviceSpecific(FileId) as *mut DISKCONTEXT;
-    FrLdrTempFree(Context as *mut core::ffi::c_void, 0x4B534944u32);
+    // The C frees with TAG_HW_DISK_CONTEXT (its own comment says so, below).
+    // Translation substituted the magic literal 0x4B534944 -- ASCII "DISK",
+    // which is not this tag and not any tag: the block is allocated below with
+    // TAG_HW_DISK_CONTEXT ('cDwH' = 0x63447748), so every UefiDiskClose hit
+    // FrLdrHeapFreeEx's tag-mismatch branch. Dead under a dead ASSERT on
+    // i386/amd64; on arm64 DbgBreakPoint is a real `brk` and it wedged the boot.
+    FrLdrTempFree(Context as *mut core::ffi::c_void, TAG_HW_DISK_CONTEXT);
     ESUCCESS
 }
 

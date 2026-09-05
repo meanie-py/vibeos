@@ -995,6 +995,29 @@ error would usually fire first. **Rule: when a flip needs a `*_RustBridge` forwa
 forwarder belongs in the TU that OWNS the target function, not in the TU being flipped away.**
 Grep a new module for any name that appears both as a `link_name` and as a `#[no_mangle]` fn.
 
+**A third route, shorter than both: an `extern` block *inside* the `#[no_mangle] fn` that
+redeclares the very name the fn defines.** `#[no_mangle] fn KeRaiseIrql(..) { extern "system"
+{ fn KeRaiseIrql(..); } KeRaiseIrql(..) }` reads as "forward to the real export", and is not:
+a local strong definition beats an importlib thunk, so the call binds to the enclosing
+function. classpnp shipped three of these — `KeRaiseIrql`, `KeLowerIrql`,
+`IoWMIDeviceObjectToProviderId` — as literal two-byte infinite loops
+(`4fb90 <KeRaiseIrql>: eb fe  jmp 4fb90`), spinning any storage path that touched IRQL with no
+bugcheck and no serial output. **A shim is only ever needed on the arch that has NO export**,
+so the fix is per-arch `cfg`, not a forwarding body: check `hal.spec` / `ntoskrnl.spec` for the
+`-arch=` list before writing one. Here i386 wanted the FASTCALL `KfRaiseIrql` decoration,
+amd64 wanted real CR8 bodies for both, and arm64 wanted no definition at all.
+
+**And the `-arch=` list is only half the check — `-private` decides whether you can LINK it.**
+`ntoskrnl.spec:635` really does export `KeLowerIrql` on amd64, but as
+`@ cdecl -arch=x86_64 -private KeLowerIrql(long) KxLowerIrql`, and `spec2def.c:750` keeps
+private exports out of the *import library*: the symbol is in the DLL and unreachable from a
+driver. Dropping the shim on that reading cost a `ld.lld: error: undefined symbol:
+KeLowerIrql`. So the real question a shim answers is not "does the OS export this" but "is
+there an importlib entry" — grep the spec line for `-private` before deleting a definition.
+**A `#[no_mangle]` shim that
+mentions its own name in an `extern` block is always this bug** — and note the shape survives
+`cargo check`, `clippy` and code review, and is only visible post-link.
+
 ### captures(none)-class hardening that is still worth doing
 - **Stale/hoisted load through a `static mut` table across a foreign call** — a by-handle
   lookup wrongly rejects an object; a `DbgPrint` between the reads "fixes" it. `read_volatile`
@@ -2038,6 +2061,49 @@ the commented ones. **Prefer bindgen enums over local consts in new translations
 ### The same-named constant with a DIFFERENT value per driver
 Cross-driver value bleed: cdfs and fastfat both define a WAIT flag, with different values. A
 "known" constant is only known *within its module*.
+
+**Within ONE crate the same divergence cannot be legitimate, and a pool tag is where it hides.**
+Symptom: arm64 wedged in freeldr right after `Switching stack...`, EL1 sync exception, `ESR
+EC 0x3C ISS 0xF000` — a `brk #0xF000` from `arm64_debug.rs`'s `DbgBreakPoint`, reached through
+freeldr's `RtlAssert` from `FrLdrHeapFreeEx`'s tag-check. Cause, two of them: `uefidisk.rs`
+freed a `DISKCONTEXT` with the magic literal `0x4B534944` (ASCII `"DISK"`, not any tag) where
+the preserved C comment in the same file says `TAG_HW_DISK_CONTEXT`; and `hwdisk.rs` spelled
+that tag `u32::from_le_bytes(*b"cDwH")` = `0x48774463` while `uefidisk.rs` spelled it
+`from_be_bytes(*b"cDwH")` = `0x63447748`. A C multi-character literal is big-endian by
+definition — `'cDwH'` is `('c'<<24)|('D'<<16)|('w'<<8)|'H'` — so the `le` spelling had the
+bytes reversed. Fix: free with the named constant, never a re-derived literal; and note that
+`from_le_bytes(*b"HwDc")` and `from_be_bytes(*b"cDwH")` are the SAME number, so the function
+and the byte string must be chosen as a pair. Compare tags by VALUE, never by spelling.
+
+**ONE defect, THREE presentations, one per arch — and only one of them is visible to a gate.**
+The identical bad-tag free showed up as: a fatal wedge on arm64 (`DbgBreakPoint` is a real
+`brk #0xF000`, `arm64_debug.rs:48`); a silent scroll of 38 printed assertions *under a GREEN
+smoke verdict* on amd64 (`DbgBreakPoint` is an empty stub, `frldr.rs:719`, so the boot survives
+and reaches the desktop marker); and nothing at all on i386, which boots the same media but
+never takes the CD file-close path. Reading amd64's exit code would have said PASS. The bug was
+found only by grepping its serial log for `Assertion` after arm64's crash gave a reason to look.
+So: **when a diagnostic's severity is arch-split, a green verdict on the lenient arch is not
+evidence** — grep the serial log for the diagnostic itself. And the three tags behind it were
+trivial to fix once visible; the expensive thing was the arch-split no-op stub that hid one
+presentation and the missing scanner coverage that hid the rest.
+
+The full set, all with the C as oracle: `uefidisk.rs` froze a magic `0x4B534944` (`"DISK"`)
+where the C says `TAG_HW_DISK_CONTEXT`; `iso.rs` froze `0x49736F46` (`"IsoF"`) for
+`TAG_ISO_FILE` (`"FosI"`) — byte-reversed, one assertion per file loaded; `RtlAllocateHeap`
+allocated with `0x20746C52` while `RtlFreeHeap` freed with `0x206C7452`, the C passing `' ltR'`
+to BOTH; and `TAG_HW_RESOURCE_LIST` existed in **seven** spellings, two of them
+function-local `const`s inside `machpc.rs` shadowing the correct glob-imported one (see "A local
+`const` silently SHADOWS a glob import" above — same class, and `machpc.c:172` frees with that
+tag, so a shadowed alloc could never match an unshadowed free).
+
+`scan_const_contradictions` exists precisely for "one name, two values, both ours" and reported
+neither, because its `CONST_RE` matched only integer literals: every `u32::from_*_bytes(*b"..")`
+constant in the tree was invisible to it — pool tags, the largest duplicated-constant family we
+have. Teaching it to evaluate them surfaced **75** further divergences at once, including
+`TAG_CM` at four distinct values inside `config-rust` and `TAG_HW_RESOURCE_LIST` at five inside
+`freeldr-rust`. The lesson is not "we lacked a gate" but **a gate can have a hole shaped exactly
+like the family it most needed to cover** — when a scanner reports zero for a population you
+know is duplicated, check that it can PARSE that population before believing the zero.
 
 ### A local `const` silently SHADOWS a glob import — no warning at either site
 `ARM3/special.rs` declared `const POOL_FLAG_SPECIAL_POOL: ULONG = 0x10` while
@@ -3946,6 +4012,20 @@ N+1 as evidence that the fix for bug N was wrong.**
   **always true**. Recurs wherever a C macro yields an `int`: `if(!MSVCRT_CHECK_PMT(x))` is
   `if X!(x) == 0`, never Rust's `!`. Loud when the result feeds a condition (`expected bool`),
   **silent** when it feeds an integer.
+  **2026-07-26: gated — `scan_bitwise_not_bool.py`, baseline EMPTY.** Being *written down here*
+  was not enough; a sweep still found 8 live sites, and only 3 were assertions. The rest were
+  branches: classpnp's `ADJUST_FUA_FLAG` (`DEV_WRITE_CACHE && !DEV_POWER_PROTECTED &&
+  !CLASS_SPECIAL_FUA_NOT_SUPPORTED`) collapsed to its first term, forcing Force Unit Access onto
+  power-protected devices and onto devices that had explicitly reported FUA unsupported; an
+  always-true `||` arm disabled win32k's CJK line-break rule in word wrap; kernel32's
+  `DuplicateConsoleHandle` lost its `DUPLICATE_SAME_ACCESS` validation; and scsiport kept only
+  the null half of `ASSERT(Lun && !Lun->Common.IsFDO)`. Two idioms the scanner must NOT flag,
+  and both are everywhere: `x & !MASK != 0` (the unknown-flag test — genuinely bitwise) and the
+  macro bang in `offset_of!(T,f) == 0`. Missing them is not cosmetic — the first draft reported
+  **4710** sites, essentially all of them these two, which is worth exactly as much as no
+  scanner at all.
+  > A documented bug class with no gate is a bug class that recurs. The entry existed the whole
+  > time these eight shipped.
 - **C post-inc/dec rewritten with the wrong read order** (`x = y--` reading the post value).
 - **A post-decrement INSIDE a loop condition — `while (a && b && len--)`.** The decrement is
   part of the test, so the loop exits having *already* wrapped `len` to `SIZE_MAX`, and the
@@ -3999,6 +4079,25 @@ N+1 as evidence that the fix for bug N was wrong.**
   `LOBYTE` macros, whose results C promotes to `int` before any arithmetic.
 - **A narrowing cast truncates a wider C operand**; **a u64 sentinel cast as i64 inverts a
   bounds check**.
+- **C's implicit narrowing translated as `.try_into().unwrap()` — a PANIC where C round-tripped.**
+  The inverse of the `mbrtowc` bullet above: there the narrowing was load-bearing and got
+  dropped; here it is load-bearing and got replaced with an assertion. `co_WinPosShowWindow(pWnd,
+  wparam)` narrows a 64-bit `WPARAM` to `INT`, and that truncation is how a negative `nCmdShow`
+  survives the round trip — `NtUserShowWindowAsync` takes it as a `LONG` straight from usermode
+  and range-checks only the TOP (`> SW_MAX`), so `-1` passes, sign-extends into the WPARAM as
+  `0xFFFF_FFFF_FFFF_FFFF`, and C truncates it back to `-1`. `wparam.try_into().unwrap()` instead
+  **panics inside win32k**, making an unprivileged `ShowWindow(hwnd, -1)` a kernel DoS. Whenever
+  a value crosses the usermode boundary as a `WPARAM`/`LPARAM`/handle-width integer and is then
+  narrowed, the C truncation is the contract: write `as`. `crate-repair` already refuses to
+  *generate* this suggestion; the ones in the tree predate that rule.
+  **Audit result (2026-07-26), so nobody re-derives it:** all 234 `.try_into().unwrap()` sites
+  were checked and this was the only reachable one. 146 have compile-time-constant receivers
+  (`ERROR_SUCCESS`, `IDOK`, `WLX_SAS_ACTION_NONE`, `size_of::<T>()`) and cannot fail; the two
+  largest runtime families are same-width identity conversions — allocation sizes reaching
+  `RtlAllocateHeap`'s `SIZE_T` (`= ULONG_PTR`, pointer-width on every arch) via an `as usize`
+  receiver, and message arguments reaching hand-written externs declared `wParam: usize` /
+  `lParam: isize`. The population is cosmetic noise around one real bug, so treat it as
+  mechanical cleanup and not as a backlog of live panics.
 - **`_Analysis_assume_` translated as live code** → a NULL deref the annotation existed to
   assume away.
 - **A facility-status return convention confused** — `return 0` where SUCCESS is a nonzero
@@ -4262,6 +4361,13 @@ different question, racily).
   instruction**, so the table has exactly one entry; the check runs *after* `MmAccessFault`
   declines; and it cannot swallow a fault it doesn't own (one exact PC, kernel-mode only).
   This cleared three stuck kmtest quarantines that were one missing primitive, not three bugs.
+- **A `Result` return does not protect a volatile dereference.** The scalar probe helpers
+  checked alignment/range, then accessed unmapped or read-only user pages without recovery.
+  Use the protected-copy primitive for the access itself, including touch-test reads and
+  UNICODE_STRING headers. After taking an object reference, install `ObjRefGuard` before
+  any fallible capture: a translated `return Err` otherwise skips C's cleanup label.
+  Flexible-array captures must snapshot the count, check the byte extent against the supplied
+  length with checked arithmetic, and copy each entry before inspecting it (`TokenAuditPolicy`).
 - **`_SEH2_EXCEPT(...)` emitted as an UNCONDITIONAL bare block** runs the handler on success.
   **Eager filter evaluation** additionally feeds the provable-null-deref ud2 fold.
 - **Do NOT delete `_SEH2_TRY` "dead-code" wrappers** — they are an LLVM optimisation barrier.
@@ -4330,7 +4436,16 @@ woke a latent panic** `[§9.57]`, arm64-only.
 
 **Check the direction PER SITE — this class errs both ways, and neither fix may be a blanket
 sweep.**
-- **Too weak** `[§9.135]`: **1962** `debug_assert!` sites across `sdk/lib/rust` are dead code.
+- **Too weak** `[§9.135]`: **490** `debug_assert!` sites across `sdk/lib/rust` are dead code.
+  (Recorded as 1962 until 2026-07-26. The real figure is 490 invocations — 454 in kernel crates,
+  36 in usermode. The inflation was **81% generated code**: bindgen emits 16 `debug_assert!`
+  bounds checks per `__BindgenBitfieldUnit` island, ×3 arches, ×~30 crates, plus 149
+  `cfg(debug_assertions)` gates and 8 comments that a substring grep counts as invocations.
+  **A generated file cannot be identified by its NAME** — `types_amd64.rs` IS bindgen output
+  while `winldr_amd64.rs` is hand-written freeldr source, and `bindgen_common.rs` is generated
+  but carries `//! Do not edit manually` instead of the bindgen banner. Key on content.
+  Same variable-stem trap as `[§9.122]`: the producer names islands from `TYPES_STEM`, so every
+  consumer that hardcodes a literal is wrong in one direction or the other.)
   `debug_assert!` is gated on `cfg(debug_assertions)`, the workspace `[profile.release]` never sets
   `debug-assertions`, and every kernel crate builds `--release` — while CMake sets `-DDBG=1`, so
   the C `ASSERT` these came from calls `RtlAssert` and fires loudly. Proven by execution, not
@@ -4355,9 +4470,64 @@ sweep.**
   the real bug is open**, because they are currently the only way to tell which assert fired. Note
   the same file *preserved* its two genuine bugchecks, so "the translator mangles all bugchecks"
   would have been the wrong generalisation too.
+- **Too strong AND silent — `panic!`, the worst of the three** (2026-07-26). A Rust `panic!` in
+  kernel mode reaches a `#[panic_handler]` that prints `PANIC:<file>:<line>` to debugcon and then
+  **loops forever**. So it is strictly worse than the `KeBugCheckEx` variant above — a bugcheck at
+  least names itself and leaves a dump — and worse than retail C, which compiles the assert to
+  nothing. The failure presentation is a dead VM with no crash, which reads as a hang bug in
+  whatever ran last, not as an assert. 19 exported kernel functions had it across cdrom,
+  classpnp, fastfat and pcix, including three `PAGED_CODE()` expansions that had faithfully
+  reproduced the `KdPrint` and then rendered the trailing `ASSERT(FALSE)` as a hang. Two carried
+  comments admitting the shortcut ("Preserve the intent with a panic"). **Fix: call `RtlAssert`**
+  — it is what the C's `ASSERT` calls under `-DBG=1`, it prints loudly, and it RETURNS, so
+  execution continues exactly as C does. The in-tree idiom already existed in
+  `classpnp/lock.rs`, `pcix/device.rs` and `fastfat/create.rs`; prefer `line!()` over a
+  hand-copied constant. Note this is *not* the "do NOT silence it" case: RtlAssert keeps the
+  check loud, it only stops it being fatal.
+- **The tree holds three inconsistent populations of the same C macro**, measured 2026-07-26
+  across the 119 kernel-mode crates:
+  - **1962 `debug_assert!` — dead** (§9.135 above).
+  - **31 `panic!`/`unreachable!` — hang.** Fixed to `RtlAssert`; gated now.
+  - **61 hard `assert!` — hang.** Also fixed, via the shared macro below. These are *not* the
+    layout checks: of 682 `assert!` in kernel crates, **599 are `size_of`/`offset_of`/`align_of`**
+    structural verification (compile-time-foldable, benign, and a good pattern — don't touch
+    them). The 61 are translated C asserts and read exactly like it:
+    `assert!(status >= 0, "NT_ASSERT")`, `assert_eq!(KeGetCurrentIrql(), PASSIVE_LEVEL)` (a
+    `PAGED_CODE`), `assert!(false, "Supported case should be handled earlier")` (an
+    `ASSERT(FALSE)`), and a run in `classpnp/power.rs` carrying the C expression verbatim as the
+    message.
+  So whether a given C `ASSERT` did nothing or hung the box depended on which translation pass
+  happened to touch it. That inconsistency was the finding — not any individual site.
+- **Separating the runtime asserts from the compile-time ones is the whole difficulty**, and a
+  keyword filter is not enough. `size_of`/`offset_of` catches most, but uniata's `regidx.rs`
+  holds eight `assert!(IDX_IO1_i_Status == 7)`-style register-layout locks inside a
+  `const _: () = { … }` whose opening line is far above — no layout keyword on the assert line
+  at all. Converting those is an E0015 (`cannot call non-const function in constants`), so the
+  compiler catches it, but only if you build every affected crate. **Track const-item nesting by
+  brace depth, not by inspecting the assert's own line**, and treat a build of each touched
+  crate as part of the change. Same for `#[cfg(test)] mod tests`: kdbg's disassembler tests use
+  `assert_eq!` and *should* panic — a test that continues past a failure is not a test.
+- **`ntkrnl_sys::ASSERT!` is the one spelling, and it unblocks the §9.135 flip.** §9.135 parks
+  the 1962-site `debug_assert!` problem on "1962 assertions going live at once needs a triage
+  pass across all three arches", and the reason that triage is frightening is that a live
+  `debug_assert!` *hangs*. `ntkrnl-sys` now exports
+  `macro_rules! ASSERT` (and `NT_ASSERT`), expanding to `if !$e { RtlAssert(stringify!($e),
+  file!(), line!(), …) }` — loud, non-fatal, exactly what C does under `-DDBG=1`. That removes
+  the scary part: the flip makes assertions *visible*, not *fatal*. `stringify!` also beats the
+  hand-written strings, several of which said only "NT_ASSERT failed", naming nothing.
+  A `macro_rules!` and not a fn, deliberately: an out-of-line no-op fn is an optimization barrier
+  that uncloaks latent ABI mismatches into `ud2`. `$crate::ddk::RtlAssert` resolves in both
+  kernel and bootloader links (ntoskrnl exports it; freeldr defines its own `#[no_mangle]` one),
+  so it works in dual-built crates — cmlib uses it from both `ntoskrnl.exe` and `rosload.exe`.
+  Two crates still define a local `macro_rules! ASSERT` expanding to `debug_assert!`
+  (usbaudio, mouhid) — i.e. the dead direction; migrating those and the 1962 is the remaining
+  work, and it is now a mechanical substitution rather than a risk decision.
 - Gate: `tools/scan_assert_to_ub.py`, empty baseline. **The gate that should have caught the
   third one reported a clean zero** — see the oracle section; a lint that under-matches is
-  indistinguishable from a lint that passes.
+  indistinguishable from a lint that passes. It looked only for `unreachable_unchecked`, so all
+  31 `panic!` sites were invisible; it now covers those. It deliberately does **not** yet flag
+  the 73 `assert!` sites: gating them before the macro exists would mean 73 baseline entries
+  suppressing a class we intend to fix, and a baseline that large reads as permission.
 - **A C debug macro that does NOT block, translated as `loop {}`**, hangs the boot. Read what
   the macro expands to.
 - **`DPRINT` is NDEBUG-dead in C**; translated as a live `DbgPrint` it is a boot slowdown that
@@ -5603,6 +5773,25 @@ count change to notice. When adding a pattern for a shape, grep the tree for tha
 assert the pattern matches what you find — a control fixture you wrote yourself only proves the
 regex matches *your idea* of the spelling.
 
+**Where the producer has a variable, the consumer must not have a literal.** `gen_driver_types.sh`
+names its bindgen island from `TYPES_STEM`, which is per-crate and arbitrary;
+`normalize_island_abi.py` swept for the stems it happened to know, `("types", "bindgen")`,
+anchored at the start of the filename. So it never saw `hal_bindgen_*.rs` — an island AGENTS.md
+names explicitly as load-bearing — and when shell32 landed its COM island as `TYPES_STEM=island`
+the sweep skipped it too. 1,815 slots across three stems, 10% of the tree, passed over while the
+tool printed a confident grand total. Nothing failed; the number was just quietly smaller than
+the truth, and the coupling that would have revealed it (`TYPES_STEM` ↔ the stem list) lives in
+two different files in two different languages. **Derive the vocabulary from the filesystem, not
+from a literal you must remember to extend.** Over-matching is the cheap direction here — a
+non-island `<name>_i386.rs` carries no callback slots, so sweeping it is a no-op — while
+under-matching is the silent one. The same asymmetry decides most discovery-vs-allowlist calls.
+
+Deriving stems also fixed a latent correctness bug the allowlist was hiding: the pass pooled one
+witness set across every island in a crate, so a `stdcall` entry in `types` could promote a
+same-named entry that `types_rpc` recorded as genuinely cdecl. Each island is an independent
+bindgen run over a different header set, so name correspondence holds *within* a stem and not
+across one. Grouping by stem is what makes the projection sound, not tidiness.
+
 ### "Canonicalising" a mismatch can silence it by editing the EVIDENCE
 A lint that reports `X disagrees with Y` has no opinion about which side is wrong, so a
 mechanical pass that makes them agree will always turn it green — including by changing the
@@ -6414,6 +6603,21 @@ boot, `PTE=…447` (AttrIndx 1) with `OPC=0xB83F6AB4` — a plain `str`; after, 
 whole class collapsed to the one case that is *supposed* to happen.
 
 ### arm64 bring-up bugs worth recognising again
+- **An EL1 instruction fetch on a user page loops silently forever — the fault handler called it
+  spurious.** Symptom: a ~2% arm64 boot wedge with no bugcheck, no serial, every timed wait
+  dead, every vCPU sample at the same user-range PC (`0x10000`) at EL1h; the whole box reads
+  FROZEN. Cause: `KiSynchronousExceptionHandler` (trap.rs) sent every same-EL instruction abort
+  to `MmAccessFault`, and `MmArmAccessFault`'s valid-PTE path bugchecks an instruction fetch only
+  when the PTE says NOT executable (UXN, bit 54); a page that is *user*-executable passes and it
+  returns `STATUS_SUCCESS` — "spurious, retry". AArch64 makes every EL0-writable page implicitly
+  PXN, so EL1 can never execute it, and the retry faults at the same PC without end. Fix: a
+  same-EL instruction abort (EC 0x21) on a VA below `MmUserProbeAddress`, or with a permission
+  IFSC, never goes to paging — it is dispatched as a kernel access violation and bugchecks with
+  the frame plus `[KSTKW]`, the kernel-range words on the faulting stack (a wild `br` leaves LR
+  useless; the callers' return addresses above SP are the only route back to the jumper).
+  **Recognition rule: a "spurious fault, retry" return is only safe when the retry can succeed.
+  An instruction-fetch permission fault has no paging remedy at any address — PXN/UXN is not a
+  paged-out page — and a retry that cannot succeed is a hang with the handler's name on it.**
 - **Every arm64 syscall ran with interrupts MASKED, end to end.** Taking any exception sets
   PSTATE.DAIF to all-masked in hardware; nothing in `KiEL0SynchronousEntry` (trap.S) undid it,
   so kernel-mode interrupt latency was bounded by the longest system call and every blocking
@@ -7260,6 +7464,17 @@ introduced at any heap exit — it is an external stray write.**
   answers a box that has gone silent. Both backends used to run `-monitor none`, so for years
   every wedge was triaged from the serial tail alone and nobody ever asked the VM where it
   stopped.
+- **"The PC never moved" has THREE readings, and the two-sample verdict only separates two.**
+  `hang-cpustate.txt` samples every vCPU twice and writes FROZEN (dead clock, nothing scheduled)
+  or EXECUTING (blocked on something specific). The third is a **tight fault loop**: abort →
+  handler → `eret` to the SAME PC → abort, which never moves the PC either and is the busiest
+  CPU on the box. Five captures of the arm64 `--smp 1` boot wedge said FROZEN this way (2026-09-05).
+  The tell is in the register dump, not the PC: **kernel EL with a user-range PC** (arm64:
+  `PSTATE` M[3:0] ≠ 0 and `PC` below `0x0000_8000_0000_0000`) has no benign reading, and the
+  capture now writes **FAULT-LOOP** for it and names the CPU. The capture also runs `x /6i` at
+  each PC — a `wfi` is idle, a `b .` is a park, and an unfetchable page is the loop. If a FROZEN
+  verdict ever comes with an odd sample out in `KiTrapReturn`, that is the loop caught mid-eret,
+  not a dead clock; read the trap handler's retry decision for that abort, not the timers.
 - **A foreign binary that is stuck is usually one of three shapes** `[§9.29]`: sample the guest
   PC a dozen times via QMP `info registers` — all samples at one PC means a spin; parked in a
   wait with no file I/O (break on `NtReadFile`/`NtDelayExecution`); or spinning at a fixed

@@ -851,7 +851,7 @@ pub unsafe extern "C" fn MmcDataFindProfileInProfiles(
             b"Profile total length %x is not integral multiple of 4\n\0".as_ptr() as *const i8,
             (*ProfileHeader).Header.AdditionalLength as core::ffi::c_uint,
         );
-        debug_assert!(false); // NT_ASSERT(FALSE)
+        ntkrnl_sys::ASSERT!(false); // NT_ASSERT(FALSE)
         return;
     }
 
