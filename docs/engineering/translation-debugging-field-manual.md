@@ -4742,6 +4742,30 @@ Restoring them and then getting **silence** back is what proved the create half 
 absence is only evidence once the print exists. Same counting recipe as above, with
 `grep -c 'DPRINT1(' <file>.rs` (commented C) against the live print count.
 
+**The third shape: the calls survive, and the MACRO is empty.** A `DPRINT1!("...")` at the call
+site looks like a live diagnostic to a reader and to a counting grep, and expands to nothing.
+The header the shape comes from is `// DPRINT/DPRINT1/ASSERT/PAGED_CODE are no-ops under the
+driver's NDEBUG build` over `macro_rules! DPRINT1 { ($($t:tt)*) => {}; }`, repeated per file —
+acpi-rust opened nine files that way, pci-rust one. **The comment is half wrong.** `#define
+NDEBUG` silences `DPRINT`; `DPRINT1` sits OUTSIDE that guard in `sdk/include/reactos/debug.h`
+and is live whenever `DBG` is set, which our media is. So 56 always-on diagnostics — every ACPI
+eval failure path, every PCI BAR-probe size mismatch, every unknown PnP minor function — were
+compiled to nothing while reading as present. Twenty of them had additionally lost their format
+string to `DPRINT1!()`, so the message existed only in the C.
+
+Fixing it is one macro per crate, not one per file: `#[macro_use] mod dprint;` at the crate root
+(`macro_rules!` is textually scoped, so it must precede the `mod` lines). Keep it a
+`macro_rules!` — the no-op-`fn` rule below applies to the real one too — and fold `file!()` /
+`line!()` into the format literal with `concat!` rather than passing `__RELFILE__`/`__LINE__` as
+two extra varargs the way the C macro does. Expect the compiler to reject the sub-`int`
+arguments the C promoted for free (`error[E0617]: can't pass u8 to variadic function`): cast to
+`core::ffi::c_uint`, which is the C default argument promotion written out.
+
+`scan_dropped_prints` scores an empty `macro_rules!` as NOOP and its callers as silent, the same
+as the `fn` form — but only since 2026-09-05. Before that its prefilter needed a literal
+`DPRINT1(`, so a file whose only mention was `macro_rules! DPRINT1 {` over `DPRINT1!(..)` call
+sites was never opened at all, and every one of these was invisible to the gate.
+
 ### A `cfg(debug_assertions)` block is not code that works — it is code with no evidence either way
 
 Same family as the entry above: source that is present in the tree and absent from the artifact.

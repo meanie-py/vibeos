@@ -61,13 +61,6 @@ use ntkrnl_sys::inline::tier1::{IoGetCurrentIrpStackLocation, IoMarkIrpPending};
 use ntkrnl_sys::inline::ex::ExInitializeFastMutex;
 use ntkrnl_sys::inline::common::InitializeObjectAttributes;
 
-// DPRINT/DPRINT1/ASSERT/PAGED_CODE are no-ops under the driver's NDEBUG build.
-macro_rules! DPRINT {
-    ($($t:tt)*) => {};
-}
-macro_rules! DPRINT1 {
-    ($($t:tt)*) => {};
-}
 macro_rules! ASSERT {
     ($($t:tt)*) => {};
 }
