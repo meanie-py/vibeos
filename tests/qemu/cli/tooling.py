@@ -40,6 +40,9 @@ _PYTEST_SUITES = [
     # Winsock catalog is invisible to the import walk, so dropping one is silent
     # until a guest calls socket() and fails somewhere unrelated.
     (".", ".", "tools/fex/test_wow64_closure.py"),
+    # tools/test_vendored.py existed but was collected by nothing, so the registry
+    # that gates "is this C ours to translate" had its oracle sitting unrun.
+    (".", ".", "tools/test_vendored.py"),
     # An oracle needs an oracle. verify_c_signatures reports its own type-resolution gaps as
     # defects in the code when it is wrong, and reports "verified" over types it never
     # resolved when it is blind — neither shows up in review or in its own output.
