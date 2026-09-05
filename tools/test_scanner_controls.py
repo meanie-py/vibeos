@@ -200,11 +200,45 @@ pub unsafe extern "system" fn Boom() {
 }
 """
 
+_BITWISE_NOT_BAD = """\
+pub unsafe fn adjust_fua(flags: u32, special: u32) -> bool {
+    // C: DEV_WRITE_CACHE && !DEV_POWER_PROTECTED && !CLASS_SPECIAL_FUA_NOT_SUPPORTED.
+    // Both negated guards are BITWISE not -> constant true -> both guards dead.
+    (flags & 0x1) != 0 && !(flags & 0x10) != 0 && !(special & 0x80) != 0
+}
+"""
+
+# The GOOD fixture carries the fix AND both idioms the scanner must never flag. Without
+# them a scanner that simply matched every `!` would still pass its negative control.
+_BITWISE_NOT_GOOD = """\
+pub unsafe fn adjust_fua(flags: u32, special: u32) -> bool {
+    (flags & 0x1) != 0 && (flags & 0x10) == 0 && (special & 0x80) == 0
+}
+pub fn unknown_flag_test(opts: u32) -> bool {
+    // `x & !MASK` — genuinely bitwise, genuinely wanted: "any bit outside MASK?"
+    (opts & !(0x1u32 | 0x2u32)) != 0
+}
+pub fn layout_check() {
+    // A MACRO bang, not the not-operator.
+    assert!(core::mem::offset_of!(SomeStruct, first_field) == 0);
+}
+pub fn deliberate(x: u32) -> bool {
+    !x != 0 // nolint: bitwise-not-bool (complement really is wanted)
+}
+"""
+
 _ASSERT_UB_BAD = """\
 pub unsafe fn paged_thing() {
     // PAGED_CODE() — a DBG-only diagnostic, lowered to UB (§9.120).
     if KeGetCurrentIrql() > APC_LEVEL {
         core::hint::unreachable_unchecked();
+    }
+}
+pub unsafe fn asserted_thing(p: *const u8) {
+    // The second lowering of the same class: a panic!, which in kernel mode is a
+    // SILENT HANG (the panic handler loops forever). Worse than the bugcheck variant.
+    if p.is_null() {
+        panic!("NT_ASSERT failed");
     }
 }
 """
@@ -213,6 +247,29 @@ pub unsafe fn paged_thing() {
     if KeGetCurrentIrql() > APC_LEVEL {
         DbgPrint(b"NTDDK: Pageable code called at IRQL > APC_LEVEL\\n\\0".as_ptr() as *const i8);
     }
+}
+pub unsafe fn asserted_thing(p: *const u8) {
+    // The faithful lowering: what C's ASSERT calls under DBG. Prints and RETURNS.
+    if p.is_null() {
+        RtlAssert(
+            b"p != NULL\\0".as_ptr() as *mut core::ffi::c_void,
+            b"good.rs\\0".as_ptr() as *mut core::ffi::c_void,
+            line!(),
+            core::ptr::null_mut::<i8>(),
+        );
+    }
+}
+pub unsafe fn reports_unimplemented() {
+    // ReactOS's UNIMPLEMENTED macro: the macro name is TEXT inside a format string.
+    // This neither panics nor hangs, and flagging it is the false positive that made
+    // the scanner report pcix/fdo.rs twice. Literals must be blanked before matching.
+    DbgPrint(b"WARNING:  %s at %s:%d is unimplemented!()\\n\\0".as_ptr() as *const i8);
+}
+#[cfg(target_arch = "aarch64")]
+pub unsafe fn port_io() -> u8 {
+    // A hang macro with no assert origin is legitimate — this branch genuinely cannot
+    // run. Only an assert-DERIVED one is a defect, so the origin test is what gates.
+    unreachable!("x86 port I/O is not used on the arm64 UEFI loader")
 }
 """
 
@@ -1041,6 +1098,13 @@ CONTROLS: list[Control] = [
         argv=["--lint"],
         bad={"bad.rs": _ASSERT_UB_BAD},
         good={"good.rs": _ASSERT_UB_GOOD},
+    ),
+    Control(
+        name="scan_bitwise_not_bool",
+        script="tools/scan_bitwise_not_bool.py",
+        argv=["--lint"],
+        bad={"bad.rs": _BITWISE_NOT_BAD},
+        good={"good.rs": _BITWISE_NOT_GOOD},
     ),
     Control(
         name="scan_magic_offsets",

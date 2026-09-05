@@ -980,7 +980,7 @@ pub unsafe extern "C" fn CdPrepareBuffers(
         if ((DiskOffset as u32 & 2047) != 0) || // SECTOR_MASK = SECTOR_SIZE-1 (2047)
            (((CurrentByteCount & 2047) != 0) && (CurrentByteCount < 2048)) // SECTOR_SIZE = 2048
         {
-            debug_assert!(SafeNodeType(Fcb) != 0x0304); // CDFS_NTC_FCB_INDEX
+            ntkrnl_sys::ASSERT!(SafeNodeType(Fcb) != 0x0304); // CDFS_NTC_FCB_INDEX
 
             if ((*IrpContext).Flags & IRP_CONTEXT_FLAG_WAIT) == 0 {
                 // DUMMY_PSEH: cannot raise+catch. Return CANT_WAIT as a sentinel
@@ -1750,7 +1750,9 @@ pub unsafe extern "C" fn CdMultipleXAAsync(
         }
 
         // Validate byte count
-        NT_ASSERT((!SectorOffset((*ThisIoRun).DiskByteCount) != 0) as i32);
+        // C: `NT_ASSERT(!SectorOffset(...))` — logical not, so `== 0`. Spelled with Rust's
+        // bitwise `!` this could never be zero and the assertion was vacuous.
+        NT_ASSERT((SectorOffset((*ThisIoRun).DiskByteCount) == 0) as i32);
 
         RawByteCount = SectorsFromBytes((*ThisIoRun).DiskByteCount) * RAW_SECTOR_SIZE;
 
@@ -1997,7 +1999,7 @@ pub unsafe extern "system" fn CdSingleSyncCompletionRoutine(
     Irp: PIRP,
     Context: *mut core::ffi::c_void,
 ) -> i32 {
-    debug_assert!(!Context.is_null());
+    ntkrnl_sys::ASSERT!(!Context.is_null());
     let _ = DeviceObject;
 
     AssertVerifyDeviceIrp(Irp);

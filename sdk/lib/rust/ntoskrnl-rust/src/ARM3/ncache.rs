@@ -26,7 +26,7 @@ pub unsafe extern "system" fn MmAllocateNonCachedMemory(NumberOfBytes: SIZE_T) -
     let mut PointerPte: PMMPTE;
     let mut TempPte: MMPTE;
 
-    debug_assert!(NumberOfBytes != 0);
+    ntkrnl_sys::ASSERT!(NumberOfBytes != 0);
     PageCount = BYTES_TO_PAGES(NumberOfBytes) as PFN_COUNT;
 
     LowAddress = core::mem::zeroed();
@@ -54,7 +54,7 @@ pub unsafe extern "system" fn MmAllocateNonCachedMemory(NumberOfBytes: SIZE_T) -
     MdlPageCount = ADDRESS_AND_SIZE_TO_SPAN_PAGES(BaseAddress, (*Mdl).ByteCount as SIZE_T) as PFN_COUNT;
 
     if PageCount != MdlPageCount {
-        debug_assert!(PageCount > MdlPageCount);
+        ntkrnl_sys::ASSERT!(PageCount > MdlPageCount);
         MmFreePagesFromMdl(Mdl);
         ExFreePoolWithTag(Mdl as PVOID, TAG_MDL);
         return core::ptr::null_mut();
@@ -115,8 +115,8 @@ pub unsafe extern "system" fn MmFreeNonCachedMemory(
     let mut PointerPte: PMMPTE;
     let PageCount: PFN_COUNT;
 
-    debug_assert!(NumberOfBytes != 0);
-    debug_assert!(PAGE_ALIGN(BaseAddress as usize) == BaseAddress as usize);
+    ntkrnl_sys::ASSERT!(NumberOfBytes != 0);
+    ntkrnl_sys::ASSERT!(PAGE_ALIGN(BaseAddress as usize) == BaseAddress as usize);
 
     PageCount = BYTES_TO_PAGES(NumberOfBytes) as PFN_COUNT;
 

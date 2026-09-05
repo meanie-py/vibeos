@@ -349,7 +349,7 @@ pub unsafe extern "system" fn RtlpInsertAvlTreeNode(
     search_result: u32,
 ) {
     if search_result == TABLE_FOUND_NODE {
-        debug_assert!(false, "RtlpInsertAvlTreeNode: duplicate insertion blocked");
+        ntkrnl_sys::ASSERT!(false, "RtlpInsertAvlTreeNode: duplicate insertion blocked");
         return;
     }
 
@@ -361,7 +361,7 @@ pub unsafe extern "system" fn RtlpInsertAvlTreeNode(
 
     if search_result == TABLE_EMPTY_TREE {
         insert_as_right_child(root_node(table), new_node);
-        debug_assert_eq!(depth(table), 0);
+        ntkrnl_sys::ASSERT!(depth(table) == 0);
         set_depth(table, 1);
         return;
     }

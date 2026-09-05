@@ -514,7 +514,7 @@ pub unsafe fn DbgGetAdditionalSenseCodeQualifierStr(srb: PSTORAGE_REQUEST_BLOCK_
     let mut ad_sense_code_qual_str: PCHAR = b"?\0".as_ptr() as PCHAR;
     if ((*srb).SrbStatus & (SRB_STATUS_AUTOSENSE_VALID) as u8) != 0 {
         let sense_data: PVOID = SrbGetSenseInfoBuffer((srb).cast());
-        core::assert!(!sense_data.is_null());
+        ntkrnl_sys::ASSERT!(!sense_data.is_null());
         let mut ad_sense_code: u8 = 0;
         let mut ad_sense_code_qual: u8 = 0;
         let valid_sense = ScsiGetSenseKeyAndCodes(

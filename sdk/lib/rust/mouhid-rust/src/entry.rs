@@ -28,7 +28,7 @@ use ntkrnl_sys::ddk::{
 };
 
 macro_rules! ASSERT {
-    ($e:expr) => { debug_assert!($e) };
+    ($e:expr) => { ntkrnl_sys::ASSERT!($e) };
 }
 
 use crate::types::PMOUHID_DEVICE_EXTENSION;

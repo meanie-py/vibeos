@@ -76,7 +76,7 @@ unsafe extern "system" fn ExpDeleteProfile(ObjectBody: PVOID) {
 
     if !(*Profile).LockedBufferAddress.is_null() {
         let State = KeStopProfile((*Profile).ProfileObject);
-        debug_assert!(State != 0);
+        ntkrnl_sys::ASSERT!(State != 0);
 
         MmUnmapLockedPages((*Profile).LockedBufferAddress, (*Profile).Mdl);
         MmUnlockPages((*Profile).Mdl);

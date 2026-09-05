@@ -36,7 +36,7 @@ pub unsafe extern "system" fn Ki386EnableGlobalPage(Context: ULONG_PTR) -> ULONG
         const CR4_PGE: u32 = 0x80;
 
         Cr4 = __readcr4();
-        debug_assert!((Cr4 & CR4_PGE) == 0);
+        ntkrnl_sys::ASSERT!((Cr4 & CR4_PGE) == 0);
 
         __writecr3(__readcr3());
 
@@ -50,7 +50,7 @@ pub unsafe extern "system" fn Ki386EnableGlobalPage(Context: ULONG_PTR) -> ULONG
         const CR4_PGE: u64 = 0x80;
 
         Cr4 = __readcr4();
-        debug_assert!((Cr4 & CR4_PGE) == 0);
+        ntkrnl_sys::ASSERT!((Cr4 & CR4_PGE) == 0);
 
         __writecr3(__readcr3());
 

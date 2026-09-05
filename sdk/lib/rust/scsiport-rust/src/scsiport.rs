@@ -423,8 +423,8 @@ pub unsafe extern "system" fn ScsiPortGetPhysicalAddress(
         let LunExtension =
             (*(*IoStack).DeviceObject).DeviceExtension as *mut SCSI_PORT_LUN_EXTENSION;
 
-        debug_assert!(!LunExtension.is_null());
-        debug_assert!((*LunExtension).Common.IsFDO == 0);
+        ntkrnl_sys::ASSERT!(!LunExtension.is_null());
+        ntkrnl_sys::ASSERT!((*LunExtension).Common.IsFDO == 0);
 
         let SrbInfo = SpiGetSrbData(DeviceExtension, LunExtension, (((*Srb).QueueTag) as u32) as _);
         let mut SGList = (*SrbInfo).ScatterGather;
@@ -1390,7 +1390,9 @@ pub unsafe extern "C" fn ScsiPortNotification_v(
                     as *mut SCSI_PORT_LUN_EXTENSION;
 
                 // ASSERT(LunExtension && !LunExtension->Common.IsFDO)
-                if !(!LunExtension.is_null() && !(*LunExtension).Common.IsFDO != 0) {
+                // `!IsFDO != 0` was bitwise-not and always true, so only the null half of
+                // the assert had any effect.
+                if !(!LunExtension.is_null() && (*LunExtension).Common.IsFDO == 0) {
                     DbgBreakPoint();
                 }
 

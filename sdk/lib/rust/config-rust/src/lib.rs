@@ -13,13 +13,13 @@
 #![allow(unused_mut)]
 #![allow(unused_imports)]
 
-/// ASSERT macro — maps to debug_assert! (no-op in release). A crate-local convenience
+/// ASSERT macro — maps to ntkrnl_sys::ASSERT!(no-op in release). A crate-local convenience
 /// (ntoskrnl-rust defines its own identical copy; it isn't exported). Defined before
 /// the `pub mod`s so submodules see it via textual macro scope.
 #[allow(unused_macros)]
 macro_rules! ASSERT {
     ($e:expr) => {
-        debug_assert!($e)
+        ntkrnl_sys::ASSERT!($e)
     };
 }
 

@@ -76,7 +76,7 @@ extern "system" {
 const STATUS_CONFLICTING_ADDRESSES: NTSTATUS = 0xC0000018u32 as NTSTATUS;
 
 unsafe fn IopGetNextResourceList(ResourceList: *const IO_RESOURCE_LIST) -> PIO_RESOURCE_LIST {
-    debug_assert!((*ResourceList).Count > 0 && (*ResourceList).Count < 1000);
+    ntkrnl_sys::ASSERT!((*ResourceList).Count > 0 && (*ResourceList).Count < 1000);
     (core::ptr::addr_of!((*ResourceList).Descriptors[0]).add((*ResourceList).Count as usize)
         as *const u8) as PIO_RESOURCE_LIST
 }
@@ -114,8 +114,8 @@ unsafe fn IopFindBusNumberResource(
     let mut Start: ULONG;
     let mut ConflictingDesc: CM_PARTIAL_RESOURCE_DESCRIPTOR = core::mem::zeroed();
 
-    debug_assert!((*IoDesc).Type == (*CmDesc).Type);
-    debug_assert!((*IoDesc).Type == 6); // CmResourceTypeBusNumber
+    ntkrnl_sys::ASSERT!((*IoDesc).Type == (*CmDesc).Type);
+    ntkrnl_sys::ASSERT!((*IoDesc).Type == 6); // CmResourceTypeBusNumber
 
     Start = (*IoDesc).u.BusNumber.MinBusNumber;
     while Start <= (*IoDesc).u.BusNumber.MaxBusNumber - (*IoDesc).u.BusNumber.Length + 1 {
@@ -140,8 +140,8 @@ unsafe fn IopFindMemoryResource(
     let mut Start: ULONGLONG;
     let mut ConflictingDesc: CM_PARTIAL_RESOURCE_DESCRIPTOR = core::mem::zeroed();
 
-    debug_assert!((*IoDesc).Type == (*CmDesc).Type);
-    debug_assert!((*IoDesc).Type == 3); // CmResourceTypeMemory
+    ntkrnl_sys::ASSERT!((*IoDesc).Type == (*CmDesc).Type);
+    ntkrnl_sys::ASSERT!((*IoDesc).Type == 3); // CmResourceTypeMemory
 
     if (*IoDesc).u.Memory.Alignment == 0 {
         // Set Alignment to 1 via direct field write
@@ -176,8 +176,8 @@ unsafe fn IopFindPortResource(
     let mut Start: ULONGLONG;
     let mut ConflictingDesc: CM_PARTIAL_RESOURCE_DESCRIPTOR = core::mem::zeroed();
 
-    debug_assert!((*IoDesc).Type == (*CmDesc).Type);
-    debug_assert!((*IoDesc).Type == 1); // CmResourceTypePort
+    ntkrnl_sys::ASSERT!((*IoDesc).Type == (*CmDesc).Type);
+    ntkrnl_sys::ASSERT!((*IoDesc).Type == 1); // CmResourceTypePort
 
     if (*IoDesc).u.Port.Alignment == 0 {
         (*(IoDesc)).u.Port.Alignment = 1;
@@ -210,8 +210,8 @@ unsafe fn IopFindDmaResource(
 ) -> BOOLEAN {
     let mut Channel: ULONG;
 
-    debug_assert!((*IoDesc).Type == (*CmDesc).Type);
-    debug_assert!((*IoDesc).Type == 4); // CmResourceTypeDma
+    ntkrnl_sys::ASSERT!((*IoDesc).Type == (*CmDesc).Type);
+    ntkrnl_sys::ASSERT!((*IoDesc).Type == 4); // CmResourceTypeDma
 
     Channel = (*IoDesc).u.Dma.MinimumChannel;
     while Channel <= (*IoDesc).u.Dma.MaximumChannel {
@@ -233,8 +233,8 @@ unsafe fn IopFindInterruptResource(
 ) -> BOOLEAN {
     let mut Vector: ULONG;
 
-    debug_assert!((*IoDesc).Type == (*CmDesc).Type);
-    debug_assert!((*IoDesc).Type == 2); // CmResourceTypeInterrupt
+    ntkrnl_sys::ASSERT!((*IoDesc).Type == (*CmDesc).Type);
+    ntkrnl_sys::ASSERT!((*IoDesc).Type == 2); // CmResourceTypeInterrupt
 
     Vector = (*IoDesc).u.Interrupt.MinimumVector;
     while Vector <= (*IoDesc).u.Interrupt.MaximumVector {
@@ -817,7 +817,7 @@ pub unsafe extern "C" fn IopUpdateResourceMap(
         let mut TranslatedSuffix: _UNICODE_STRING = core::mem::zeroed();
         let mut OldLength: ULONG = 0;
 
-        debug_assert!(!(*DeviceNode).ResourceListTranslated.is_null());
+        ntkrnl_sys::ASSERT!(!(*DeviceNode).ResourceListTranslated.is_null());
 
         static TRANSLATED_SUFFIX: [u16; 12] = [b'.' as u16, b'T' as u16, b'r' as u16, b'a' as u16, b'n' as u16, b's' as u16, b'l' as u16, b'a' as u16, b't' as u16, b'e' as u16, b'd' as u16, 0];
         RtlInitUnicodeString(&mut TranslatedSuffix, TRANSLATED_SUFFIX.as_ptr());
@@ -832,7 +832,7 @@ pub unsafe extern "C" fn IopUpdateResourceMap(
             &mut OldLength,
         );
         if Status == 0x80000005u32 as i32 || Status == 0xC0000023u32 as i32 {
-            debug_assert!(OldLength != 0);
+            ntkrnl_sys::ASSERT!(OldLength != 0);
 
             NameU.Buffer = ExAllocatePool(PagedPool, (OldLength + TranslatedSuffix.Length as ULONG) as _)
                 as *mut u16;
@@ -860,7 +860,7 @@ pub unsafe extern "C" fn IopUpdateResourceMap(
             ZwClose(PnpMgrLevel2);
             return Status;
         } else {
-            debug_assert!(false);
+            ntkrnl_sys::ASSERT!(false);
         }
 
         NameU.Length = OldLength as u16 - core::mem::size_of::<u16>() as u16;
@@ -1047,7 +1047,7 @@ unsafe fn IopTranslateDeviceResources(DeviceNode: PDEVICE_NODE) -> NTSTATUS {
                     }
 
                     if AddressSpace != 0 {
-                        debug_assert!(false);
+                        ntkrnl_sys::ASSERT!(false);
                     }
                 }
 
@@ -1181,10 +1181,8 @@ pub unsafe extern "system" fn IopAssignDeviceResources(DeviceNode: PDEVICE_NODE)
         return Status;
     }
 
-    debug_assert!(
-        IopDetectResourceConflict((*DeviceNode).ResourceList, 0u8, core::ptr::null_mut())
-            != STATUS_CONFLICTING_ADDRESSES
-    );
+    ntkrnl_sys::ASSERT!(IopDetectResourceConflict((*DeviceNode).ResourceList, 0u8, core::ptr::null_mut())
+            != STATUS_CONFLICTING_ADDRESSES);
 
     crate::dbg_print!(b"PNPRES: translating\n\0");
     Status = IopTranslateDeviceResources(DeviceNode);

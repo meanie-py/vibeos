@@ -1,5 +1,5 @@
 use ntkrnl_sys::base::*;
-use crate::frldr::*;
+use crate::frldr::*;  // supplies the ONE correct TAG_HW_RESOURCE_LIST
 use ntkrnl_sys::ddk::{CM_PARTIAL_RESOURCE_DESCRIPTOR, CM_PARTIAL_RESOURCE_LIST, KAFFINITY, PCM_DISK_GEOMETRY_DEVICE_DATA, PCM_KEYBOARD_DEVICE_DATA, PCM_PARTIAL_RESOURCE_DESCRIPTOR, PCM_PARTIAL_RESOURCE_LIST, PCM_PNP_BIOS_DEVICE_NODE, PCM_PNP_BIOS_INSTALLATION_CHECK, PCM_SERIAL_DEVICE_DATA, PCONFIGURATION_COMPONENT_DATA, PCSTR};
 // freeldr_ddk_imports dropped (not in ddk): BusNumber, PortNumber
 use core::ffi::c_void;
@@ -912,7 +912,7 @@ unsafe fn DetectSerialPointerPeripheral(
         }
 
         Size = core::mem::offset_of!(CM_PARTIAL_RESOURCE_LIST, PartialDescriptors) as ULONG;
-        PartialResourceList = FrLdrHeapAlloc(Size as usize, 0x48775273) as PCM_PARTIAL_RESOURCE_LIST;
+        PartialResourceList = FrLdrHeapAlloc(Size as usize, TAG_HW_RESOURCE_LIST) as PCM_PARTIAL_RESOURCE_LIST;
         if PartialResourceList == core::ptr::null_mut() {
             ERR(b"Failed to allocate resource descriptor\n\0".as_ptr() as PCHAR);
             return;
@@ -1104,7 +1104,6 @@ unsafe fn DetectParallelPorts(BusKey: PCONFIGURATION_COMPONENT_DATA) {
     let mut i: u32;
     let mut Size: u32;
 
-    const TAG_HW_RESOURCE_LIST: u32 = 0x74736C52;
     const MAX_LPT_PORTS: usize = 3;
 
     TRACE(b"DetectParallelPorts() called\n\0".as_ptr() as *const i8);
@@ -1436,7 +1435,7 @@ unsafe fn DetectPS2Mouse(BusKey: PCONFIGURATION_COMPONENT_DATA) {
         // CM_PARTIAL_RESOURCE_DESCRIPTOR; correct on amd64 (20B) but
         // 4 bytes too BIG on i386 (16B). Use FIELD_OFFSET! for both arches.
         Size = crate::FIELD_OFFSET!(CM_PARTIAL_RESOURCE_LIST, PartialDescriptors[1]);
-        PartialResourceList = FrLdrHeapAlloc(Size as usize, 0x52736c48) as PCM_PARTIAL_RESOURCE_LIST;
+        PartialResourceList = FrLdrHeapAlloc(Size as usize, TAG_HW_RESOURCE_LIST) as PCM_PARTIAL_RESOURCE_LIST;
         if PartialResourceList.is_null() {
             ERR(b"Failed to allocate resource descriptor\n\0".as_ptr() as *const i8);
             return;
@@ -1474,7 +1473,7 @@ unsafe fn DetectPS2Mouse(BusKey: PCONFIGURATION_COMPONENT_DATA) {
 
             // C: Size = FIELD_OFFSET(CM_PARTIAL_RESOURCE_LIST, PartialDescriptors).
             Size = crate::FIELD_OFFSET!(CM_PARTIAL_RESOURCE_LIST, PartialDescriptors);
-            PartialResourceList = FrLdrHeapAlloc(Size as usize, 0x52736c48) as PCM_PARTIAL_RESOURCE_LIST;
+            PartialResourceList = FrLdrHeapAlloc(Size as usize, TAG_HW_RESOURCE_LIST) as PCM_PARTIAL_RESOURCE_LIST;
             if PartialResourceList.is_null() {
                 ERR(b"Failed to allocate resource descriptor\n\0".as_ptr() as *const i8);
                 return;
@@ -1514,7 +1513,6 @@ unsafe fn CreateBusMousePeripheralKey(
     let mut PeripheralKey: PCONFIGURATION_COMPONENT_DATA = core::ptr::null_mut();
     let mut Size: u32;
 
-    const TAG_HW_RESOURCE_LIST: u32 = 0x48574C53;
     const CM_RESOURCE_PORT_IO: u16 = 1;
     const CM_RESOURCE_INTERRUPT_LATCHED: u16 = 1;
     const CmResourceTypePort: u8 = 1;

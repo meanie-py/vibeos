@@ -102,9 +102,7 @@ pub unsafe extern "system" fn HidCreate(DeviceObject: PDEVICE_OBJECT, Irp: PIRP)
     //
     // sanity check for hidclass driver
     //
-    debug_assert!(
-        (*IoStack).MajorFunction == IRP_MJ_CREATE || (*IoStack).MajorFunction == IRP_MJ_CLOSE
-    );
+    ntkrnl_sys::ASSERT!((*IoStack).MajorFunction == IRP_MJ_CREATE || (*IoStack).MajorFunction == IRP_MJ_CLOSE);
 
     //
     // complete request
@@ -133,7 +131,7 @@ pub unsafe extern "system" fn HidUsb_ReadReportCompletion(
     // get urb
     //
     Urb = Context as PURB;
-    debug_assert!(!Urb.is_null());
+    ntkrnl_sys::ASSERT!(!Urb.is_null());
 
     if (*Irp).PendingReturned != FALSE {
         //
@@ -159,10 +157,8 @@ pub unsafe extern "system" fn HidUsb_ReadReportCompletion(
         //
         // FIXME handle error
         //
-        debug_assert!(
-            (*Urb).__bindgen_anon_1.UrbHeader.Status == crate::glue::USBD_STATUS_SUCCESS
-                || (*Urb).__bindgen_anon_1.UrbHeader.Status == crate::glue::USBD_STATUS_DEVICE_GONE
-        );
+        ntkrnl_sys::ASSERT!((*Urb).__bindgen_anon_1.UrbHeader.Status == crate::glue::USBD_STATUS_SUCCESS
+                || (*Urb).__bindgen_anon_1.UrbHeader.Status == crate::glue::USBD_STATUS_DEVICE_GONE);
 
         //
         // free the urb
@@ -254,15 +250,15 @@ pub unsafe extern "system" fn HidUsb_ReadReport(DeviceObject: PDEVICE_OBJECT, Ir
     //
     // sanity checks
     //
-    debug_assert!((*IoStack).Parameters.DeviceIoControl.OutputBufferLength != 0);
-    debug_assert!(!(*Irp).UserBuffer.is_null());
-    debug_assert!(!(*HidDeviceExtension).InterfaceInfo.is_null());
+    ntkrnl_sys::ASSERT!((*IoStack).Parameters.DeviceIoControl.OutputBufferLength != 0);
+    ntkrnl_sys::ASSERT!(!(*Irp).UserBuffer.is_null());
+    ntkrnl_sys::ASSERT!(!(*HidDeviceExtension).InterfaceInfo.is_null());
 
     //
     // get interrupt input pipe
     //
     PipeInformation = HidUsb_GetInputInterruptInterfaceHandle((*HidDeviceExtension).InterfaceInfo);
-    debug_assert!(!PipeInformation.is_null());
+    ntkrnl_sys::ASSERT!(!PipeInformation.is_null());
 
     //
     // lets allocate urb
@@ -287,9 +283,9 @@ pub unsafe extern "system" fn HidUsb_ReadReport(DeviceObject: PDEVICE_OBJECT, Ir
     //
     // sanity check
     //
-    debug_assert!(!(*Irp).UserBuffer.is_null());
-    debug_assert!((*IoStack).Parameters.DeviceIoControl.OutputBufferLength != 0);
-    debug_assert!(!(*PipeInformation).PipeHandle.is_null());
+    ntkrnl_sys::ASSERT!(!(*Irp).UserBuffer.is_null());
+    ntkrnl_sys::ASSERT!((*IoStack).Parameters.DeviceIoControl.OutputBufferLength != 0);
+    ntkrnl_sys::ASSERT!(!(*PipeInformation).PipeHandle.is_null());
 
     //
     // build the urb
@@ -362,14 +358,12 @@ pub unsafe fn HidUsb_GetReportDescriptor(DeviceObject: PDEVICE_OBJECT, Irp: PIRP
     //
     // sanity checks
     //
-    debug_assert!(!HidDeviceExtension.is_null());
-    debug_assert!(!(*HidDeviceExtension).HidDescriptor.is_null());
-    debug_assert!((*(*HidDeviceExtension).HidDescriptor).bNumDescriptors >= 1);
-    debug_assert!(
-        (*(*HidDeviceExtension).HidDescriptor).DescriptorList[0].bReportType
-            == HID_REPORT_DESCRIPTOR_TYPE
-    );
-    debug_assert!((*(*HidDeviceExtension).HidDescriptor).DescriptorList[0].wReportLength > 0);
+    ntkrnl_sys::ASSERT!(!HidDeviceExtension.is_null());
+    ntkrnl_sys::ASSERT!(!(*HidDeviceExtension).HidDescriptor.is_null());
+    ntkrnl_sys::ASSERT!((*(*HidDeviceExtension).HidDescriptor).bNumDescriptors >= 1);
+    ntkrnl_sys::ASSERT!((*(*HidDeviceExtension).HidDescriptor).DescriptorList[0].bReportType
+            == HID_REPORT_DESCRIPTOR_TYPE);
+    ntkrnl_sys::ASSERT!((*(*HidDeviceExtension).HidDescriptor).DescriptorList[0].wReportLength > 0);
 
     //
     // FIXME: support old hid version
@@ -420,7 +414,7 @@ pub unsafe fn HidUsb_GetReportDescriptor(DeviceObject: PDEVICE_OBJECT, Irp: PIRP
         (*IoStack).Parameters.DeviceIoControl.OutputBufferLength,
         BufferLength,
     );
-    debug_assert!(Length != 0);
+    ntkrnl_sys::ASSERT!(Length != 0);
 
     //
     // copy result
@@ -478,7 +472,7 @@ pub unsafe extern "system" fn HidInternalDeviceControl(DeviceObject: PDEVICE_OBJ
         //
         // store result
         //
-        debug_assert!(!(*HidDeviceExtension).DeviceDescriptor.is_null());
+        ntkrnl_sys::ASSERT!(!(*HidDeviceExtension).DeviceDescriptor.is_null());
         (*Irp).IoStatus.Information = size_of::<HID_DESCRIPTOR>() as _;
         Attributes = (*Irp).UserBuffer as PHID_DEVICE_ATTRIBUTES;
         (*Attributes).Size = size_of::<HID_DEVICE_ATTRIBUTES>() as u32;
@@ -496,7 +490,7 @@ pub unsafe extern "system" fn HidInternalDeviceControl(DeviceObject: PDEVICE_OBJ
         //
         // sanity check
         //
-        debug_assert!(!(*HidDeviceExtension).HidDescriptor.is_null());
+        ntkrnl_sys::ASSERT!(!(*HidDeviceExtension).HidDescriptor.is_null());
 
         //
         // store length
@@ -546,13 +540,13 @@ pub unsafe extern "system" fn HidInternalDeviceControl(DeviceObject: PDEVICE_OBJ
         || ioctl == IOCTL_HID_GET_INDEXED_STRING
         || ioctl == IOCTL_HID_GET_MS_GENRE_DESCRIPTOR
     {
-        debug_assert!(false);
+        ntkrnl_sys::ASSERT!(false);
         (*Irp).IoStatus.__bindgen_anon_1.Status = STATUS_NOT_IMPLEMENTED;
         IoCompleteRequest(Irp, IO_NO_INCREMENT);
         return STATUS_NOT_IMPLEMENTED;
     } else {
         // UNIMPLEMENTED
-        debug_assert!(false);
+        ntkrnl_sys::ASSERT!(false);
         let Status = (*Irp).IoStatus.__bindgen_anon_1.Status;
         IoCompleteRequest(Irp, IO_NO_INCREMENT);
         return Status;

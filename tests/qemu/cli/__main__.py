@@ -263,6 +263,11 @@ def build_parser() -> argparse.ArgumentParser:
         "--no-push", action="store_true", help="do everything but the push (rehearse a landing)"
     )
     la.add_argument(
+        "--skip-lint",
+        action="store_true",
+        help="skip the check-tooling preflight (the conductor still runs it; report every use)",
+    )
+    la.add_argument(
         "--dry-run",
         action="store_true",
         help="report the plan (merge needed? gate needed? who is landing) and exit",

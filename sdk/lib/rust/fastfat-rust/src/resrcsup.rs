@@ -231,16 +231,16 @@ pub unsafe extern "system" fn FatAcquireFcbForLazyWrite(
 
     // Assert node type
     let node_type = (*fcb_ptr).Header.NodeTypeCode;
-    debug_assert_eq!(node_type, (FAT_NTC_FCB) as i16);
+    ntkrnl_sys::ASSERT!(node_type == (FAT_NTC_FCB) as i16);
 
     // Assert that LazyWriteThread is currently NULL
-    debug_assert!((*fcb_ptr).Specific.Fcb.as_ref().LazyWriteThread.is_null());
+    ntkrnl_sys::ASSERT!((*fcb_ptr).Specific.Fcb.as_ref().LazyWriteThread.is_null());
 
     // Set this thread as the LazyWriteThread
     (*fcb_ptr).Specific.Fcb.as_mut().LazyWriteThread = (PsGetCurrentThread()).cast();
 
     // Assert that the current thread is not NULL
-    debug_assert!(!PsGetCurrentThread().is_null());
+    ntkrnl_sys::ASSERT!(!PsGetCurrentThread().is_null());
 
     // Set global lazy write thread if not already set
     let fat_data = core::ptr::addr_of_mut!(FatData);
@@ -249,7 +249,7 @@ pub unsafe extern "system" fn FatAcquireFcbForLazyWrite(
     }
 
     // Kludge: pretend this is the top‑level IRP
-    debug_assert!(IoGetTopLevelIrp().is_null());
+    ntkrnl_sys::ASSERT!(IoGetTopLevelIrp().is_null());
     IoSetTopLevelIrp((FSRTL_CACHE_TOP_LEVEL_IRP as *mut core::ffi::c_void).cast());
 
     1 // TRUE
@@ -326,7 +326,7 @@ pub unsafe extern "system" fn FatAcquireFcbForReadAhead(
     //  and complete the request with hard errors or verify.  It will
     //  have to deal with them, somehow....
 
-    debug_assert!(IoGetTopLevelIrp().is_null());
+    ntkrnl_sys::ASSERT!(IoGetTopLevelIrp().is_null());
 
     IoSetTopLevelIrp(FSRTL_CACHE_TOP_LEVEL_IRP);
 
@@ -367,7 +367,7 @@ pub unsafe extern "system" fn FatAcquireForCcFlush(
     let _ = DeviceObject;
 
     // NT_ASSERT( IoGetTopLevelIrp() != (PIRP)FSRTL_CACHE_TOP_LEVEL_IRP );
-    core::debug_assert!(!IoGetTopLevelIrp().is_null() && IoGetTopLevelIrp() != FSRTL_CACHE_TOP_LEVEL_IRP);
+    ntkrnl_sys::ASSERT!(!IoGetTopLevelIrp().is_null() && IoGetTopLevelIrp() != FSRTL_CACHE_TOP_LEVEL_IRP);
 
     if IoGetTopLevelIrp().is_null() {
         IoSetTopLevelIrp(FSRTL_CACHE_TOP_LEVEL_IRP);
@@ -454,7 +454,7 @@ pub unsafe extern "system" fn FatNoOpAcquire(
         DbgBreakPoint();
     }
 
-    debug_assert!(IoGetTopLevelIrp().is_null());
+    ntkrnl_sys::ASSERT!(IoGetTopLevelIrp().is_null());
 
     IoSetTopLevelIrp((1 as *mut core::ffi::c_void).cast());
 

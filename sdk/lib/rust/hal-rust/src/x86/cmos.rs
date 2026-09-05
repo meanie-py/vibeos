@@ -258,9 +258,7 @@ pub unsafe extern "system" fn HalpInitializeCmos() {
         core::ptr::write_volatile(&raw mut HalpCmosCenturyOffset, 50);
         // C: ASSERT(HalpBusType == MACHINE_TYPE_ISA).  We only ship for ISA
         // PC-AT; debug_assert keeps it free in release.
-        debug_assert!(
-            core::ptr::read_volatile(&raw const HalpBusType) == MACHINE_TYPE_ISA as ULONG
-        );
+        ntkrnl_sys::ASSERT!(core::ptr::read_volatile(&raw const HalpBusType) == MACHINE_TYPE_ISA as ULONG);
     }
 }
 

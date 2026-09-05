@@ -279,7 +279,7 @@ pub unsafe extern "system" fn PciFdoIrpStartDevice(
 
     Resources = (*IoStackLocation).Parameters.StartDevice.AllocatedResources;
     if !Resources.is_null() && !((*DeviceExtension).BusRootFdoExtension == DeviceExtension) {
-        assert!((*Resources).Count == 1);
+        ntkrnl_sys::ASSERT!((*Resources).Count == 1);
         DbgPrint(
             (b"ERROR:  %s at %s:%d is unimplemented!()\n\0".as_ptr() as *const i8).cast(),
             b"PciFdoIrpStartDevice\0".as_ptr() as *const i8,
@@ -297,7 +297,7 @@ pub unsafe extern "system" fn PciFdoIrpStartDevice(
     }
 
     if !Resources.is_null() && !((*DeviceExtension).BusRootFdoExtension == DeviceExtension) {
-        assert!((*Resources).Count == 1);
+        ntkrnl_sys::ASSERT!((*Resources).Count == 1);
         DbgPrint(
             (b"ERROR:  %s at %s:%d is unimplemented!()\n\0".as_ptr() as *const i8).cast(),
             b"PciFdoIrpStartDevice\0".as_ptr() as *const i8,

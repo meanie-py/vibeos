@@ -55,6 +55,27 @@ NOLINT_RE = re.compile(r"//\s*nolint(?::\s*assert-to-ub\b|\s*$|:?\s*\()")
 
 HIT_RE = re.compile(r"\bunreachable_unchecked\s*\(")
 
+# Second lowering of the same class, found 2026-07-26: the assert became a `panic!`.
+# In kernel mode that is the WORST of the three. The #[panic_handler] prints to debugcon
+# and then loops forever, so it is a silent hang -- no bugcheck, no dump, no marker --
+# where retail C does nothing at all and DBG C calls RtlAssert and RETURNS. 19 exported
+# functions had it across cdrom/classpnp/fastfat/pcix, and this gate reported a clean
+# zero for all of them because it only ever looked for UB.
+#
+# Keyed on ASSERT ORIGIN, not on the macro alone: a bare `unreachable!()` is often
+# legitimate (freeldr guards x86 port I/O that genuinely cannot run on arm64), so
+# flagging every hang macro would be noise. What makes it a defect is that a C
+# diagnostic -- which continues -- was turned into one that does not.
+PANIC_RE = re.compile(r"\b(?:core::)?(?:panic|unreachable|todo|unimplemented)!\s*\(")
+# CASE-SENSITIVE on purpose. The C macros are uppercase, and matching case-insensitively
+# made the word "assert" in ordinary English prose an origin signal -- a comment reading
+# "a hang macro with no assert origin is legitimate" three lines above an unrelated
+# `unreachable!()` was enough to flag it. The lowercase forms that DO matter are spelled
+# out (`assert:` with its colon, `Assertion`), so nothing real is lost.
+ASSERT_ORIGIN_RE = re.compile(
+    r"(NT_ASSERT|PAGED_CODE|Pageable code|IRQL too high for paged|ASSERT|assert:|Assertion)"
+)
+
 # Preceding-line shapes that make the call a legitimate noreturn tail rather
 # than an assertion: a bugcheck/raise/entry-point call, or an explicit
 # DEFAULT_UNREACHABLE translation note. NOTE the names are matched as
@@ -66,26 +87,42 @@ NORETURN_CTX_RE = re.compile(
 )
 
 
-def scan_file(path: Path) -> list[tuple[int, str]]:
-    """[(line_no, source_line)] for unreachable_unchecked that is not a noreturn tail."""
+# Blank string literals (keeping their newlines, so line numbers stay aligned) before
+# looking for the MACRO. Required, not cosmetic: ReactOS's UNIMPLEMENTED macro expands to
+# DbgPrint("WARNING: %s at %s:%d is unimplemented!()\n", ...) -- the macro name appears as
+# TEXT inside a format string, and pcix/fdo.rs was flagged twice for a DbgPrint that
+# neither panics nor hangs. The ORIGIN test still reads the raw line, because the evidence
+# there ("ASSERT failed", "NT_ASSERT: ...") lives inside the panic message itself.
+_STR_RE = re.compile(r'b?"(?:\\.|[^"\\])*"', re.S)
+
+
+def _blank_strings(text: str) -> str:
+    return _STR_RE.sub(lambda m: '""' + "\n" * m.group(0).count("\n"), text)
+
+
+def scan_file(path: Path) -> list[tuple[int, str, str]]:
+    """[(line_no, kind, source_line)] for assert lowerings that are worse than the C."""
     try:
-        lines = path.read_text(errors="replace").splitlines()
+        raw = path.read_text(errors="replace")
     except OSError:
         return []
+    lines = raw.split("\n")
+    code = _blank_strings(raw).split("\n")
     out = []
     for i, line in enumerate(lines):
         stripped = line.strip()
         if stripped.startswith("//") or stripped.startswith("*"):
             continue
-        if not HIT_RE.search(line):
-            continue
         if NOLINT_RE.search(line):
             continue
-        # Look back a few lines for a noreturn call this is tailing.
         ctx = "\n".join(lines[max(0, i - 3) : i])
-        if NORETURN_CTX_RE.search(ctx):
-            continue
-        out.append((i + 1, stripped[:110]))
+        if HIT_RE.search(code[i]):
+            # Look back a few lines for a noreturn call this is tailing.
+            if NORETURN_CTX_RE.search(ctx):
+                continue
+            out.append((i + 1, "ub", stripped[:110]))
+        elif PANIC_RE.search(code[i]) and ASSERT_ORIGIN_RE.search(line + "\n" + ctx):
+            out.append((i + 1, "hang", stripped[:110]))
     return out
 
 
@@ -105,25 +142,34 @@ def main() -> int:
     for f in sorted(set(files)):
         if SKIP_FILE_RE.search(str(f)):
             continue
-        for ln, src in scan_file(f):
+        for ln, kind, src in scan_file(f):
             try:
                 rel = f.relative_to(REPO)
             except ValueError:
                 rel = f
-            findings.append((str(rel), ln, src))
+            findings.append((str(rel), ln, kind, src))
 
-    for rel, ln, src in findings:
+    WHY = {
+        "ub": "unreachable_unchecked() is UB — C asserts are not __assume(0)",
+        "hang": "panic! from an assert is a SILENT HANG in kernel mode — C's ASSERT returns",
+    }
+    for rel, ln, kind, src in findings:
         if lint:
-            print(f"{rel}:{ln}: assert-to-ub")
+            print(f"{rel}:{ln}: assert-to-{kind}")
         else:
-            print(f"{rel}:{ln}: unreachable_unchecked() is UB — C asserts are not __assume(0)")
+            print(f"{rel}:{ln}: {WHY[kind]}")
             print(f"    {src}")
 
     if not lint:
-        print(f"\n{len(findings)} assert-lowered-to-UB site(s)")
-        if findings:
-            print("fix: emit the C diagnostic (DbgPrint) and continue, or return an error;")
-            print("     if it really tails a noreturn call: // nolint: assert-to-ub (reason)")
+        n_ub = sum(1 for f in findings if f[2] == "ub")
+        n_hang = len(findings) - n_ub
+        print(f"\n{len(findings)} site(s): {n_ub} lowered to UB, {n_hang} lowered to a hang")
+        if n_ub:
+            print("fix (ub):   emit the C diagnostic (DbgPrint) and continue, or return an error;")
+            print("            if it tails a noreturn call: // nolint: assert-to-ub (reason)")
+        if n_hang:
+            print("fix (hang): call RtlAssert(cond, file, line!(), msg) — what C's ASSERT calls")
+            print("            under DBG. It prints loudly and RETURNS, so control flow matches C.")
     return 1 if findings else 0
 
 
