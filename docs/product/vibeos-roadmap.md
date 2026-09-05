@@ -514,22 +514,25 @@ Field-manual § pointers hold the full writeups. **Update on state change.**
   `freeldr-rust`, `TAG_HAL` at three, and byte-reversed pairs in `pcix-rust`, `win32k-rust`,
   `fltmgr-rust` and `classpnp-rust`. One of this family wedged the arm64 boot (field manual,
   "The same-named constant with a DIFFERENT value per driver"). Burn down per crate.
-- **classpnp's `KeRaiseIrql`/`KeLowerIrql` shims call THEMSELVES — OPEN** (2026-07-26). In
-  `classpnp-rust/src/ddk_shims.rs`, the `#[no_mangle] extern "system" fn KeRaiseIrql` body
-  declares `extern "system" { fn KeRaiseIrql(..); }` and calls it. That extern binds to the
-  `#[no_mangle]` definition *in the same image* — itself — so it is infinite self-recursion,
-  which LLVM folds to a single `b .`. Verified in the arm64 binary:
-  `<KeRaiseIrql>: b 0x…d274 <KeRaiseIrql>`. Same family as the "never hand-write memcpy in
-  Rust" rule in AGENTS.md: a `#[no_mangle]` shim may never call the symbol it defines.
-  Per-arch truth (`hal.spec:84,86`, `ntoskrnl.spec:635`): i386 uses the `KfRaiseIrql`/
-  `KfLowerIrql` FASTCALL inlines (the shim's x86 branch is correct); **arm64 exports BOTH from
-  HAL**, so the shim should simply not exist there — defining it shadows the import and creates
-  the self-call; **amd64** exports neither `KeRaiseIrql` (a CR8 FORCEINLINE upstream) nor a
-  public `KeLowerIrql` (private, `KxLowerIrql`), so it needs a real CR8 body like the
-  `KeGetCurrentIrql` shim beside it. Latent on master since `e33a810c9ad` (this lane's own
-  clashing-extern Phase 2 — the self-call predates it; that commit only changed the ABI).
-  Reachable only if something calls these in classpnp; not fixed blind because it is boot-path
-  storage IRQL code that wants a smoke run. Owner: task #4.
+- **classpnp's `KeRaiseIrql`/`KeLowerIrql`/`IoWMIDeviceObjectToProviderId` shims called
+  THEMSELVES — FIXED** (2026-07-26 found, 2026-09-05 fixed). Each `#[no_mangle]` body in
+  `classpnp-rust/src/ddk_shims.rs` declared an `extern` block for its OWN name and called it.
+  A local strong definition beats an importlib thunk, so the call bound to the enclosing
+  function; LLVM tail-folded all three to a single instruction — `4fb90 <KeRaiseIrql>: eb fe
+  jmp 4fb90` on amd64, `b .` on arm64. Any classpnp path that touched IRQL spun that CPU
+  forever with no bugcheck and no serial output. Same family as the "never hand-write memcpy
+  in Rust" rule in AGENTS.md: **a `#[no_mangle]` shim may never call the symbol it defines.**
+  The fix is per-arch `cfg`, not a better forwarding body — define a symbol ONLY on the arch
+  where none is importable: i386 keeps the `KfRaiseIrql`/`KfLowerIrql` FASTCALL inlines
+  (already correct), amd64 gets real CR8 bodies for both, arm64 defines neither and binds
+  `hal.spec:84,86`. **The trap that cost a link:** `ntoskrnl.spec:635` really does export
+  amd64 `KeLowerIrql`, but `-private`, and `spec2def.c:750` keeps private exports out of the
+  *import lib* — so the question is never "is it exported" but "is there an importlib entry".
+  Verified in the emitted code on all three arches (CR8 on amd64, `adrp/ldr/br x16` import
+  thunk on arm64, `call @KfRaiseIrql@4` unchanged on i386), all three smoke green with zero
+  assertions, and the three entries are out of `tools/lint-baseline/scan_self_recursive.txt`.
+  Note classpnp.sys is not in arm64's default target set, so it was linked explicitly to
+  verify. Field manual: "NEVER hand-write memcpy…", third route to the same `jmp .`.
   > Found via `scan_ud2`'s driver sweep. The other 11 spins in the same report are **faithful**:
   > upstream ReactOS really does write `UNIMPLEMENTED; while (TRUE);` in pcix's arbiter and
   > power paths, so `loop {}` is correct there and must NOT be "fixed" — check the C before

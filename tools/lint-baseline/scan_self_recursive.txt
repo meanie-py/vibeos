@@ -10,8 +10,15 @@
 #   exp2/exp2f/exp2l  — a C `exp2()` whose body LLVM recognised and folded into a
 #                       call to exp2 itself. Same idiom-recursion trap as §9.60,
 #                       in C. Needs -fno-builtin-exp2 on those TUs (or a real impl).
-#   classpnp KeRaiseIrql/KeLowerIrql/IoWMIDeviceObjectToProviderId
-#                     — local stubs shadowing the ntoskrnl imports; hang if called.
+#   classpnp KeRaiseIrql/KeLowerIrql/IoWMIDeviceObjectToProviderId — FIXED 2026-09-05.
+#                       They were `eb fe` (`jmp .`) on amd64 and `b .` on arm64: each
+#                       #[no_mangle] body declared an `extern` block for its OWN name, and
+#                       a local strong definition beats the importlib thunk. Fix was per-arch
+#                       cfg, not a better forwarder — define a symbol ONLY where none is
+#                       importable. Watch for `-private` in the .spec: it exports from the
+#                       DLL but is withheld from the import lib (see spec2def.c,
+#                       OutputLine_def), which is why amd64 KeLowerIrql needed a CR8 body
+#                       even though ntoskrnl.spec has an entry for it.
 #   ftfd rust_begin_unwind — a `#[panic_handler]` written `loop {}`: a panic that
 #                       hangs SILENTLY. Should adopt panic-common (prints + bugchecks).
 #   cdrom abort       — abort() stub written as a spin.
@@ -26,9 +33,6 @@
 beepmidi.dll: exp2
 calc.exe: exp2
 cdrom.sys: abort
-classpnp.sys: IoWMIDeviceObjectToProviderId
-classpnp.sys: KeLowerIrql
-classpnp.sys: KeRaiseIrql
 d3dx9_24.dll: exp2
 d3dx9_25.dll: exp2
 d3dx9_26.dll: exp2
