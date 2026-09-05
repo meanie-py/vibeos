@@ -3915,6 +3915,13 @@ static NTSTATUS Wow64pIoctlAfdSelect(WOW64_IOCTL_FN Fn, ULONG *a, const char *Wh
     Need = (ULONG)sizeof(*In32) + Count * (ULONG)sizeof(WOW64_AFD_HANDLE32);
     if (a[7] < Need)
         return Wow64pIoctlBadArg(Who, "input shorter than HandleCount handles");
+    /* The OUTPUT buffer is checked too, and up front rather than at copy-back
+     * time. HandleCount comes from the guest and sizes the write below; taking
+     * it on trust would walk off the end of the guest's buffer, which is the
+     * very bug class this marshaller exists to close. Checking after the call
+     * would also be too late to refuse — the select would already have run. */
+    if ((a[8] ? a[9] : a[7]) < Need)
+        return Wow64pIoctlBadArg(Who, "output shorter than HandleCount handles");
 
     P64 = (WOW64_AFD_POLLHDR64 *)Wow64pIoctlAlloc(sizeof(*P64) +
                                                   (SIZE_T)Count * sizeof(*H64));
