@@ -481,26 +481,29 @@ land; date every addition.** Source docs live in `docs/engineering/archive/`.
 The committed home for open bugs (was: agent MEMORY.md, which other agents never see).
 Field-manual § pointers hold the full writeups. **Update on state change.**
 
-- **A 32-bit `socket()` AVs right after msafd.dll maps — OPEN** (2026-09-05). marshal32's
-  `select()` rung reaches `socket()` and dies there. Narrowed with per-call breadcrumbs and
-  per-open path logging over four boots. **Established:** `WSAStartup` returns fine (the
-  catalog is read); inside `socket()` the provider load does
-  `NtOpenFile [redir] '\??\X:\reactos\syswow64\msafd.dll' => 00000000`, then
-  `NtCreateSection` and `NtMapViewOfSection base=0x01AA0000`, all succeeding — then
-  `0xc0000005` with **`rip == addr == 0x181764`**, an address inside no mapped image, and
-  `exit = 0x80`. No loader syscalls occur between the map and the fault.
-  **Ruled out:** wrong-bitness DLL (the opened file is PE32 from syswow64, and the `[redir]`
-  tag proves system32->syswow64 redirection fired); msafd not staged (it is, and the CD list
-  confirms it); E24's Wow6432Node redirection (its `REDIRECT_ROOT` is
-  `\REGISTRY\MACHINE\SOFTWARE`, while the Winsock catalog lives under `SYSTEM`); a jump to
-  an unbound IAT slot landing on a known export (no export at that RVA in any staged module);
-  and identification by mapped size — `NtMapViewOfSection`'s ViewSize is a caller-supplied
-  in/out cell, so it is NOT reliable evidence of which image mapped. **Zero
-  `NtDeviceIoControlFile` calls precede the fault**, so this is UPSTREAM of the E25 AFD
-  marshallers — they remain unexercised and E25 must not land on it. The other 8 ladder guests
-  pass unchanged. Next step needs guest-loader instrumentation (ntdll-rust `ldrpe.rs`: log the
-  module base recorded for each load and the entry point actually called) or GDB on the guest;
-  static inference from the serial log is spent.
+- **RVA arithmetic on a PE mapped as DATA crashed the WoW64 layer — FIXED** (2026-09-05).
+  `Wow64pPatchTransitionSlot` runs on every successful `NtMapViewOfSection` and guarded only on
+  DOS magic + PE signature + `Size >= 0x1000`, none of which separates an IMAGE mapping
+  (sections at RVAs) from a raw DATA mapping of the same file (sections at FILE offsets). ws2_32
+  maps msafd.dll as data before loading it properly, so the export walk read RVAs into raw file
+  bytes and **wow64.dll took the access violation on the guest's behalf** — which is why the
+  faulting address was inside no guest module. The discriminator is the ViewSize: an image view
+  equals SizeOfImage, a data view is the file page-rounded (msafd: file 0x55400 -> 0x56000
+  observed, vs SizeOfImage 0x49000). `Wow64pFindExport32` was also written for one trusted
+  input (our own ntdll32) and now sees every module a guest maps, so all of its RVAs are
+  range-checked and the name compare is bounded. Symptom to recognise again: `rip` inside
+  wow64.dll after a map, with a guest that never reached its DllMain.
+- **32-bit `socket()` returns WSAEINVAL — OPEN** (2026-09-05). With the crash above fixed,
+  msafd.dll loads for real (`[LDR] init 'msafd.dll' DllBase=72150000 EntryPoint=72151220 ...
+  RETURNED ret=1`) and `socket(AF_INET, SOCK_DGRAM, IPPROTO_UDP)` now FAILS CLEANLY with
+  `WSAGetLastError = 0x2726` (WSAEINVAL) instead of faulting — marshal32 exits 0xbb02
+  (M32_FAIL_WSA_SOCKET). **Still zero `NtDeviceIoControlFile`**: it fails before opening
+  `\Device\Afd`, so the E25 AFD marshallers remain unexercised and E25 must not land on it.
+  Lead: the last syscall in the window is `NtRequestWaitReplyPort => c000000d`
+  (STATUS_INVALID_PARAMETER), an LPC round-trip, which is worth pulling on before the provider
+  negotiation itself. Diagnostic scaffolding is deliberately still in the lane for this hunt —
+  the per-DLL `[LDR] init` logging in ntdll-rust `ldrinit.rs` (~4,600 lines/boot) — and must
+  come out before anything here lands.
 - **freeldr's `FREELDR_HEAP_VERIFIER` is DEAD in Rust — OPEN** (2026-09-04). `heap.c:25` defines
   it **unconditionally**, so the C always compiles the redzone allocation, the redzone writes
   and the three `FrLdrHeapVerify` checks. The translation turned it into
