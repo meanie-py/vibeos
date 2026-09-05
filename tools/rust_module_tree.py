@@ -46,6 +46,15 @@ RE_INCLUDE_ENV = re.compile(r"include!\s*\(\s*(?:env|concat)!")
 RE_CARGO_TARGET_PATH = re.compile(r'^\s*path\s*=\s*"([^"]+)"', re.M)
 
 
+# Necessary (not sufficient) tokens for the module grammar below. Comments and
+# strings can produce false positives, which simply take the full parser path.
+# No parsed declaration can exist when these literal keywords are absent.
+RE_MODULE_KEYWORD = re.compile(r"\bmod\b|include")
+_COMMENT_START = re.compile(r'//|/\*|"')
+_STRING_DELIMITER = re.compile(r'["\\]')
+_BLOCK_DELIMITER = re.compile(r"/\*|\*/")
+
+
 def crate_root_of(path):
     """Nearest ancestor directory containing a Cargo.toml."""
     d = os.path.dirname(os.path.abspath(path))
@@ -74,38 +83,37 @@ def strip_comments(text):
     out = []
     i, n = 0, len(text)
     while i < n:
-        c = text[i]
-        if c == '"':
-            out.append(c)
-            i += 1
+        match = _COMMENT_START.search(text, i)
+        if match is None:
+            out.append(text[i:])
+            break
+        out.append(text[i : match.start()])
+        token = match.group()
+        i = match.end()
+        if token == "//":
+            end = text.find("\n", i)
+            i = n if end < 0 else end
+        elif token == "/*":
+            depth = 1
+            while depth:
+                marker = _BLOCK_DELIMITER.search(text, i)
+                if marker is None:
+                    i = n
+                    break
+                depth += 1 if marker.group() == "/*" else -1
+                i = marker.end()
+            out.append(" ")
+        else:
             while i < n:
-                if text[i] == "\\":
-                    out.append(text[i : i + 2])
-                    i += 2
-                    continue
-                out.append(text[i])
-                if text[i] == '"':
-                    i += 1
+                marker = _STRING_DELIMITER.search(text, i)
+                if marker is None:
+                    i = n
+                    break
+                i = marker.end()
+                if marker.group() == '"':
                     break
                 i += 1
-            continue
-        if text.startswith("//", i):
-            while i < n and text[i] != "\n":
-                i += 1
-            continue
-        if text.startswith("/*", i):
-            depth, i = 1, i + 2
-            while i < n and depth:
-                if text.startswith("/*", i):
-                    depth, i = depth + 1, i + 2
-                elif text.startswith("*/", i):
-                    depth, i = depth - 1, i + 2
-                else:
-                    i += 1
-            out.append(" ")
-            continue
-        out.append(c)
-        i += 1
+            out.append(text[match.start() : i])
     return "".join(out)
 
 
@@ -120,6 +128,8 @@ def decl_sites(text):
         src/wkssvc/domain.rs, not src/domain.rs.
     So scan the whole text and track inline-module nesting by brace depth.
     """
+    if not RE_MODULE_KEYWORD.search(text):
+        return []
     # Comments must go first: dhcpcsvc's lib.rs documents the exclusion as
     # `// pub mod tree;`, and counting that as a declaration would resurrect the
     # very dead file this function exists to recognise.
@@ -211,6 +221,8 @@ def crate_live_files(crate_dir, _cache={}):  # noqa: B006 — deliberate memo ca
             raw = Path(f).read_text(encoding="utf-8", errors="replace")
         except OSError:
             continue
+        if not RE_MODULE_KEYWORD.search(raw):
+            continue  # reachable leaf: no module/include edges to discover
         text = strip_comments(raw)
         fdir = os.path.dirname(f)
         stem = os.path.splitext(os.path.basename(f))[0]
@@ -279,9 +291,10 @@ def crate_is_opaque(crate_dir, _cache={}):  # noqa: B006 — intentional memo ca
     opaque = False
     for f in crate_live_files(crate_dir):
         try:
-            if RE_INCLUDE_ENV.search(
-                strip_comments(Path(f).read_text(encoding="utf-8", errors="replace"))
-            ):
+            raw = Path(f).read_text(encoding="utf-8", errors="replace")
+            if "include" not in raw:
+                continue
+            if RE_INCLUDE_ENV.search(strip_comments(raw)):
                 opaque = True
                 break
         except OSError:

@@ -858,8 +858,15 @@ def source_lint_specs(repo: Path) -> list[tuple]:
     return specs
 
 
-def run_source_lints(run: Run, repo: Path, *, strict: bool) -> None:
-    for name, cmd, src in source_lint_specs(repo):
+def run_source_lints(run: Run, repo: Path, *, strict: bool, only: set[str] | None = None) -> None:
+    specs = source_lint_specs(repo)
+    if only is not None:
+        unknown = only - {name for name, _, _ in specs}
+        if not only or unknown:
+            raise ValueError(f"empty or unknown scanner selection: {sorted(unknown)}")
+    for name, cmd, src in specs:
+        if only is not None and name not in only:
+            continue
         _lint_stage(run, repo, name, cmd, strict=strict, findings_from=src)
 
 

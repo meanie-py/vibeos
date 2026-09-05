@@ -573,11 +573,24 @@ scrape stdout for the result — stdout is intentionally lossy.
 Exit code: `0` for OK/WARN, `1` for FAIL. Stdout glyphs: `✓` ok, `⚠` warn,
 `✗` fail, `·` skip.
 
+For performance, read `summary.json.command_timings`: each subprocess has a
+`stage`, `start_seconds` offset from run start, `seconds`, and `exit`. The same
+fields appear in `commands.jsonl`. These are command timings, not verdict-stage
+timings; concurrent durations overlap and must not be summed as elapsed time.
+They include subprocess-internal waits, but not fleet acquisition outside the
+subprocess. Rust cache statistics also preserve `non_cacheable`,
+`non_cacheable_reasons`, `cache_errors`, and `compilations`; zero requests is not
+evidence of a cache miss. See [build reuse plan](../../../docs/engineering/build-reuse-plan.md)
+for the remaining measurement and invalidation work.
+
 ---
 
 ## Typical loops
 
 ```bash
+# targeted source-scanner investigation (explicitly partial; never a landing gate)
+./vibeos-cli check --arch amd64 --strict --only scan_orphan_modules,verify_match_consts
+
 # edit Rust → fast warm check it still boots i386
 ./vibeos-cli build  --arch i386 && ./vibeos-cli smoke --arch i386
 
