@@ -346,7 +346,9 @@ def source_lint_specs(repo: Path) -> list[tuple]:
     # UCRT bodies with msvcrt-contract ones and still builds, boots and looks fine. Baseline
     # EMPTY = strict.
     vuc = repo / "tools" / "verify_ucrtbase_cohab.py"
-    specs.append(("verify_ucrtbase_cohab", [py, str(vuc)] if vuc.is_file() else ["MISSING"], "stdout"))
+    specs.append(
+        ("verify_ucrtbase_cohab", [py, str(vuc)] if vuc.is_file() else ["MISSING"], "stdout")
+    )
     # vendor.yaml — which C is NOT ours to translate. Every progress number in this project
     # is a fraction whose denominator is "C that is ours", and before the registry that set
     # was prose in rust-port-status.md, a one-tree manifest under external/, and a hardcoded

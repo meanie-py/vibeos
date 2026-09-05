@@ -42,6 +42,7 @@ def _crate(ws: Path, name: str, deps: str = "", extra: str = "") -> None:
 
 # ── positive controls: the gate MUST fire ────────────────────────────────────────────────
 
+
 def test_direct_dependency_on_msvcrt_is_caught(tmp_path: Path):
     """The one-line accident: ucrtbase's archive depends on msvcrt's cohab crate."""
     _crate(tmp_path, "crt-shared-cargo", 'msvcrt-crt-rust = { path = "../msvcrt-crt-rust" }\n')
@@ -73,6 +74,7 @@ def test_missing_archive_crate_is_caught(tmp_path: Path):
 
 
 # ── negative controls: the gate must STAY QUIET ──────────────────────────────────────────
+
 
 def test_the_real_layout_is_clean(tmp_path: Path):
     """The shipping workspace. If this ever fires, the split has been undone."""

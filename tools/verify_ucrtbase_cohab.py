@@ -81,7 +81,7 @@ def _deps_of(crate_dir: Path) -> set[str]:
             continue
         if not in_deps or not stripped or stripped.startswith("#"):
             continue
-        m = re.match(r'^([A-Za-z0-9_-]+)\s*=', stripped)
+        m = re.match(r"^([A-Za-z0-9_-]+)\s*=", stripped)
         if m:
             out.add(m.group(1))
     return out
@@ -137,7 +137,9 @@ def _nm_defined(path: Path) -> set[str] | None:
         try:
             res = subprocess.run(
                 [nm, "--defined-only", str(path)],
-                capture_output=True, text=True, timeout=120,
+                capture_output=True,
+                text=True,
+                timeout=120,
             )
         except (OSError, subprocess.TimeoutExpired):
             # OSError, not FileNotFoundError: a present-but-non-executable llvm-nm raises
@@ -174,17 +176,14 @@ def check_archive() -> list[str]:
             continue  # not built here; the structural check still ran
 
         archive = (
-            build / "sdk" / "lib" / "rust" / "target" / triple / "release"
-            / "libcrt_shared_cargo.a"
+            build / "sdk" / "lib" / "rust" / "target" / triple / "release" / "libcrt_shared_cargo.a"
         )
         if not archive.is_file():
             archive = build / "dll" / "win32" / "ucrtbase" / "libcrt_shared_cargo.a"
         if not archive.is_file():
             continue  # ucrtbase cohab not wired into this build dir yet
 
-        shared_dir = (
-            build / "dll" / "win32" / "msvcrt" / "CMakeFiles" / "msvcrt_shared.dir"
-        )
+        shared_dir = build / "dll" / "win32" / "msvcrt" / "CMakeFiles" / "msvcrt_shared.dir"
         objs = sorted(shared_dir.rglob("*.obj")) + sorted(shared_dir.rglob("*.o"))
         if not objs:
             findings.append(
@@ -270,10 +269,9 @@ def check_archive() -> list[str]:
             )
 
         extra = sorted(
-            s for s in rust_syms
-            if strip(s) not in c_norm
-            and strip(s) in exported
-            and not is_rust_internal(s)
+            s
+            for s in rust_syms
+            if strip(s) not in c_norm and strip(s) in exported and not is_rust_internal(s)
         )
         if extra:
             more = f", +{len(extra) - 12} more" if len(extra) > 12 else ""
