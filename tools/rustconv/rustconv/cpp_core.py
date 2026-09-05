@@ -453,6 +453,15 @@ def _argument_c_type(
             false_type is None or _abi_types_compatible(true_type, false_type)
         ):
             return true_type
+    # A NONZERO integer literal is an int and, unlike `0`, is not a null pointer
+    # constant -- so it can never bind a pointer parameter. `0` is deliberately left
+    # untyped: typing it `int` would discard a pointer candidate the source may well
+    # have meant. (`SelectItem(-2, ...)` is CDefView's case.)
+    integer_literal = re.fullmatch(r"[+-]?(?:0[xX][0-9a-fA-F]+|\d+)[uUlL]*", text)
+    if integer_literal is not None:
+        digits = text.rstrip("uUlL").lstrip("+-")
+        value = int(digits, 16) if digits[:2].lower() == "0x" else int(digits)
+        return "int" if value != 0 else None
     if re.fullmatch(r'L"(?:\\.|[^"\\])*"', text):
         return "LPCWSTR"
     if re.fullmatch(r'"(?:\\.|[^"\\])*"', text):
@@ -525,8 +534,21 @@ _C_INTEGER_KEYS = frozenset(
         "UINT_PTR",
         "LONG_PTR",
         "ULONG_PTR",
+        # Fixed by the Win32 ABI to integer types: LRESULT/LPARAM are LONG_PTR,
+        # WPARAM is UINT_PTR, HRESULT/LSTATUS/NTSTATUS are LONG.
+        "LRESULT",
+        "LPARAM",
+        "WPARAM",
+        "HRESULT",
+        "LSTATUS",
+        "NTSTATUS",
     }
 )
+
+
+def is_c_integer(c_type: str) -> bool:
+    """Whether ``c_type`` is certainly an integer. An absent name answers False, not True."""
+    return _abi_c_type_key(c_type) in _C_INTEGER_KEYS
 
 
 def integer_cannot_bind_pointer(actual: str, expected: str) -> bool:

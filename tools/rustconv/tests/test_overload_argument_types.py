@@ -156,3 +156,50 @@ def test_a_genuinely_ambiguous_call_still_hard_fails():
     candidates = [_dep("C_f_a", [("int", "i")]), _dep("C_f_b", [("DWORD", "d")])]
     with pytest.raises(CppComError, match="cannot bind overloaded sibling call"):
         _bind("{ f(SOME_UNKNOWN_MACRO); }", candidates)
+
+
+def test_a_nonzero_integer_literal_is_an_int_but_zero_stays_untyped():
+    """`0` is a null pointer constant; typing it `int` would discard a real candidate."""
+    from rustconv.cpp_core import _argument_c_type as arg
+
+    assert arg("-2", {}) == "int"
+    assert arg("42", {}) == "int"
+    assert arg("0x10", {}) == "int"
+    assert arg("0", {}) is None
+    assert arg("0L", {}) is None
+
+
+def test_an_integer_does_not_bind_a_struct_parameter():
+    """A plain C aggregate has no converting constructor, by value or by reference."""
+    from rustconv.cpp_com import _no_viable_conversion
+
+    fields = island_struct_field_types(ISLANDS)
+    assert _no_viable_conversion("LRESULT", "LVITEMW&", fields)
+    assert _no_viable_conversion("int", "LVITEMW", fields)
+    # A pointer to that struct is rejected too, but by the POINTER rule -- an integer
+    # binds neither the aggregate nor a pointer to it.
+    assert _no_viable_conversion("int", "LVITEMW *", fields)
+    # A pointer argument against that pointer parameter is the case that must survive.
+    assert not _no_viable_conversion("LVITEMW *", "LVITEMW *", fields)
+    # Without a field map nothing is provable, so nothing is rejected.
+    assert not _no_viable_conversion("LRESULT", "LVITEMW&", None)
+
+
+def test_the_vtable_arity_fallback_will_not_cross_an_impossible_conversion():
+    """A private helper must not inherit a vtable signature it does not implement.
+
+    The fallback binds on arity when the exact shape misses -- which is correct, because
+    the scanner and the vtable often spell one parameter differently. Unconstrained it
+    also captured CDefView's `SelectAndPositionItem(int, UINT, POINT *)` and OVERWROTE
+    its parameters with the slot's `(PCUITEMID_CHILD, UINT, POINT *)`. Nothing downstream
+    could see that swap.
+    """
+    from rustconv.cpp_com import _shapes_provably_disagree
+
+    aliases = island_pointer_aliases(ISLANDS)
+    vtable = [("PCUITEMID_CHILD", "pidl"), ("UINT", "f"), ("POINT *", "pt")]
+    helper = [("int", "Idx"), ("UINT", "fSVSI"), ("POINT *", "ppt")]
+    assert _shapes_provably_disagree(helper, vtable, aliases)
+    # The real implementor differs only in SPELLING and must still bind.
+    method = [("LPCITEMIDLIST", "item"), ("UINT", "flags"), ("POINT *", "point")]
+    assert not _shapes_provably_disagree(method, vtable, aliases)

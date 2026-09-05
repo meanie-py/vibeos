@@ -2383,7 +2383,12 @@ def cmd_translate(args):
         # Extract call graph and topologically sort
         deps = extract_call_graph(scan, spec_exports=file_res.exports)
         if cpp_com_mode:
-            deps = apply_interface_method_signatures(deps, args.class_name, cpp_com_interfaces)
+            deps = apply_interface_method_signatures(
+                deps,
+                args.class_name,
+                cpp_com_interfaces,
+                cpp_com_cls.sdk_type_aliases if cpp_com_cls is not None else None,
+            )
         sorted_deps = topological_sort(deps)
         cpp_com_wide_statics = ""
 
