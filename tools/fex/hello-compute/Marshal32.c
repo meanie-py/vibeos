@@ -59,6 +59,7 @@
  * rung so serial alone triages ([WINLOGON] marshal32.exe exit = 0x...).
  */
 
+#include <winsock2.h>
 #include <windows.h>
 #include <winternl.h>
 
@@ -108,6 +109,14 @@
 #define M32_FAIL_RDIR_LEAK    0xBAFC /* the 64-bit view can see the 32-bit value */
 #define M32_FAIL_RDIR_64VIEW  0xBAFD /* KEY_WOW64_64KEY did not reach the 64-bit view */
 #define M32_FAIL_RDIR_SHARED  0xBAFE /* a 64-bit-only key stopped resolving */
+/* Socket rungs get their own block: the 0xBAFx range is full, and these are the
+ * first checks that reach a DRIVER payload (AFD) rather than a syscall argument. */
+#define M32_FAIL_WSA_STARTUP  0xBB01 /* WSAStartup failed — no Winsock at all */
+#define M32_FAIL_WSA_SOCKET   0xBB02 /* socket() failed — provider never loaded */
+#define M32_FAIL_SELECT_CALL  0xBB03 /* select() returned SOCKET_ERROR */
+#define M32_FAIL_SELECT_READY 0xBB04 /* select() claimed a fresh socket was ready */
+#define M32_FAIL_SELECT_GUARD 0xBB05 /* something wrote past the guest's fd_set */
+#define M32_FAIL_SELECT_COUNT 0xBB06 /* fd_count came back altered */
 #define M32_PASS              0x600D
 
 static void Report(const char *msg)
@@ -1025,6 +1034,104 @@ static int CheckRegistryRedirection(void)
     return 0;
 }
 
+/* ---------------------------------------------------------------------------
+ * select() on a fresh socket — the first check that reaches an AFD payload.
+ *
+ * IOCTL_AFD_SELECT carries AFD_POLL_INFO, which the E25 audit classified
+ * SEMANTIC rather than merely WIDENING: the header grows 16 -> 24 AND the
+ * Handles[] element stride grows 12 -> 16, so the array cannot be copied
+ * wholesale at either end. It is also the only IN/OUT payload in the audited
+ * set — the driver writes Events and Status back per handle — which makes it
+ * the one that fails in both directions if the marshaller is wrong.
+ *
+ * Deliberately NETWORK-FREE. No bind, no connect, no packet: a fresh UDP
+ * socket with a zero timeout still builds a full AFD_POLL_INFO, issues the
+ * IOCTL, and takes the write-back. Sending anything would drag in the netstack
+ * intermittent tracked as #83 and make a red run ambiguous, which is exactly
+ * what a first-exercise rung must not be.
+ * ------------------------------------------------------------------------ */
+static int CheckSocketSelect(void)
+{
+    WSADATA wsa;
+    SOCKET s;
+    /* The fd_set is followed by a canary in the same object. If a marshaller
+     * ever sizes the write-back from the guest's HandleCount without measuring
+     * the guest's buffer, it lands here instead of silently past the end. */
+    struct
+    {
+        fd_set set;
+        DWORD  guard;
+    } fds;
+    struct timeval tv;
+    int rc;
+
+    if (WSAStartup(0x0202, &wsa) != 0)
+    {
+        Report("[marshal32] FAIL: WSAStartup\n");
+        return M32_FAIL_WSA_STARTUP;
+    }
+
+    /* SOCK_DGRAM needs no peer, so this cannot block or touch the wire. If the
+     * Winsock provider (msafd.dll) is not staged into SysWOW64 this is where it
+     * shows up, and it shows up as a plain failure rather than a hang. */
+    s = socket(AF_INET, SOCK_DGRAM, IPPROTO_UDP);
+    if (s == INVALID_SOCKET)
+    {
+        ReportHex("[marshal32] FAIL: socket() failed, WSAGetLastError =",
+                  (DWORD)WSAGetLastError());
+        WSACleanup();
+        return M32_FAIL_WSA_SOCKET;
+    }
+
+    fds.guard = 0x5A5AA5A5;
+    FD_ZERO(&fds.set);
+    FD_SET(s, &fds.set);
+    tv.tv_sec = 0;
+    tv.tv_usec = 0;
+
+    rc = select(0, &fds.set, NULL, NULL, &tv);
+
+    if (rc == SOCKET_ERROR)
+    {
+        ReportHex("[marshal32] FAIL: select() errored, WSAGetLastError =",
+                  (DWORD)WSAGetLastError());
+        closesocket(s);
+        WSACleanup();
+        return M32_FAIL_SELECT_CALL;
+    }
+    if (fds.guard != 0x5A5AA5A5)
+    {
+        ReportHex("[marshal32] FAIL: select() overwrote past the fd_set, guard =",
+                  fds.guard);
+        closesocket(s);
+        WSACleanup();
+        return M32_FAIL_SELECT_GUARD;
+    }
+    /* Nothing was ever sent to it, so it must not be readable. A marshaller
+     * that mis-shapes the write-back tends to report garbage readiness here
+     * rather than fail outright, so this is the check with real teeth. */
+    if (rc != 0)
+    {
+        ReportHex("[marshal32] FAIL: fresh socket reported ready, select =", (DWORD)rc);
+        closesocket(s);
+        WSACleanup();
+        return M32_FAIL_SELECT_READY;
+    }
+    if (fds.set.fd_count != 0)
+    {
+        ReportHex("[marshal32] FAIL: select() left fd_count wrong, count =",
+                  (DWORD)fds.set.fd_count);
+        closesocket(s);
+        WSACleanup();
+        return M32_FAIL_SELECT_COUNT;
+    }
+
+    closesocket(s);
+    WSACleanup();
+    Report("[marshal32] select: AFD_POLL_INFO round-tripped, fd_set intact\n");
+    return 0;
+}
+
 int start(void) /* cdecl: i386 symbol is _start, matching -Wl,-e,_start */
 {
     int rc;
@@ -1058,8 +1165,12 @@ int start(void) /* cdecl: i386 symbol is _start, matching -Wl,-e,_start */
     rc = CheckRegistryRedirection();
     if (rc) ExitProcess(rc);
 
+    rc = CheckSocketSelect();
+    if (rc) ExitProcess(rc);
+
     Report("[marshal32] PASS: TBI + IOCP + monitors + out-cells + reg-names "
-           "+ wow64-flags + cbSize + last-error + reg-redirect all verified\n");
+           "+ wow64-flags + cbSize + last-error + reg-redirect + select "
+           "all verified\n");
     ExitProcess(M32_PASS);
     return 0;
 }
