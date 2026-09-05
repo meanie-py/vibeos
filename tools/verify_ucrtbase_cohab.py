@@ -87,10 +87,16 @@ def _deps_of(crate_dir: Path) -> set[str]:
     return out
 
 
-def check_structure() -> list[str]:
-    """`crt-shared-cargo` must not reach `msvcrt-crt-rust`, transitively or otherwise."""
+def check_structure(ws: Path | None = None) -> list[str]:
+    """`crt-shared-cargo` must not reach `msvcrt-crt-rust`, transitively or otherwise.
+
+    `ws` overrides the workspace root so the control tests in
+    tools/test_verify_ucrtbase_cohab.py can point this at a fixture that DOES have the
+    forbidden edge -- a gate nobody has watched fail is a gate nobody knows works.
+    """
+    ws = WS if ws is None else ws
     findings: list[str] = []
-    start = WS / UCRT_ARCHIVE_CRATE
+    start = ws / UCRT_ARCHIVE_CRATE
     if not start.is_dir():
         return [
             f"sdk/lib/rust/{UCRT_ARCHIVE_CRATE}: crate is MISSING -- ucrtbase's Rust archive "
@@ -104,7 +110,7 @@ def check_structure() -> list[str]:
     queue = [UCRT_ARCHIVE_CRATE]
     while queue:
         cur = queue.pop(0)
-        for dep in sorted(_deps_of(WS / cur)):
+        for dep in sorted(_deps_of(ws / cur)):
             if dep in parent:
                 continue
             parent[dep] = cur
