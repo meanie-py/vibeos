@@ -6503,6 +6503,7 @@ def _parser():
         "parse_kmtest_serial",
         Path(__file__).resolve().parents[3] / "tools" / "conformance" / "parse_kmtest_serial.py",
     )
+    assert spec is not None and spec.loader is not None
     mod = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(mod)
     return mod
@@ -6592,7 +6593,7 @@ def test_reseeding_a_row_keeps_its_bistable_marks():
         }
     ]
     text, refusal = conformance_mod.merge_baseline_rows(prev, res, ["IoDeviceObject"], _fmt)
-    assert refusal is None
+    assert refusal is None and text is not None
     assert "    assert? IoDeviceObject_drv.c:206" in text, "the flake mark was dropped"
 
 
@@ -6631,7 +6632,7 @@ def test_reseeding_one_row_leaves_every_other_rows_identities_alone():
         },
     ]
     text, refusal = conformance_mod.merge_baseline_rows(prev, res, ["FsRtlLegal"], _fmt)
-    assert refusal is None
+    assert refusal is None and text is not None
     # the re-seeded row drops the assertion that no longer fails
     assert "FsRtlLegal.c:11" not in text
     # the untouched row keeps BOTH of its identities, mark included

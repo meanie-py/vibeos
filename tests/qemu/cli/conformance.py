@@ -169,11 +169,12 @@ def merge_baseline_rows(existing_text: str, results, only, fmt):
                 out.append(line)
             continue
         name = line.split()[0] if line.strip() and not line.startswith("#") else None
-        dropping = name is not None and name in by_name and name in wanted
-        if dropping:
+        if name is not None and name in by_name and name in wanted:
+            dropping = True
             out.append(fmt(by_name[name], _flaky_of(existing_text, name)))
             seen.add(name)
         else:
+            dropping = False
             out.append(line)
     # A named test the baseline does not carry yet is an ADDITION, not a re-seed.
     # Appending is right — it raises the floor — but say so rather than silently
