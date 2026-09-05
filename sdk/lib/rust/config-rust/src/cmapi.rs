@@ -1855,7 +1855,9 @@ pub unsafe extern "system" fn CmUnloadKey(
     const STATUS_INVALID_PARAMETER: i32 = -1073741811i32;
     const STATUS_CANNOT_DELETE: i32 = -1073741535i32;
     const REG_FORCE_UNLOAD: u32 = 1;
-    const TAG_CMHIVE: u32 = 0x4D48434D;
+    // C: cmlib.h `#define TAG_CMHIVE 'vHMC'` (big-endian multi-char literal). cminit.rs ALLOCATES the ViewLock/FlusherLock
+    // this function frees, so a divergent value here is a real tag mismatch.
+    const TAG_CMHIVE: u32 = u32::from_be_bytes(*b"vHMC");
     const TAG_CM: u32 = 0x20204D43;
 
     CMP_ASSERT_EXCLUSIVE_REGISTRY_LOCK();

@@ -66,7 +66,9 @@ const RTL_DUP_ALLOCATE_NULL_STRING: u32 = 2;
 
 // String allocator tags (sdk/lib/rtl/rtlp.h). C multi-char literals
 // are big-endian; `u32::from_le_bytes(*b"RTSU")` gives the same value.
-const TAG_USTR: u32 = u32::from_le_bytes(*b"RTSU");
+// C: tag.h `#define TAG_USTR 'RTSU'`. from_le_bytes(*b"RTSU") is the REVERSE of
+// that literal -- the byte string and the fn must be chosen as a PAIR.
+const TAG_USTR: u32 = u32::from_be_bytes(*b"RTSU");
 const TAG_ASTR: u32 = u32::from_le_bytes(*b"RTSA");
 const TAG_OSTR: u32 = u32::from_le_bytes(*b"RTSO");
 
@@ -8590,6 +8592,10 @@ pub unsafe extern "system" fn RtlQueryAtomListInAtomTable(
     unused_variables
 )]
 mod path_wave {
+    // One definition, from the file scope above. This module used to carry its own
+    // `const TAG_USTR` -- a nested mod does not inherit the outer one, which is how the
+    // copy got here, and how it then drifted to the byte-reversed value.
+    use super::TAG_USTR;
     use super::{
         rtl_alloc, rtl_free, wcslen, RtlAppendUnicodeStringToString, RtlCopyUnicodeString,
         RtlDetermineDosPathNameType_U, RtlDetermineDosPathNameType_Ustr, RtlEqualUnicodeString,
@@ -8663,7 +8669,6 @@ mod path_wave {
     const FILE_DIRECTORY_FILE: u32 = 0x0000_0001;
     const FILE_SYNCHRONOUS_IO_NONALERT: u32 = 0x0000_0020;
     const FILE_REMOVABLE_MEDIA: u32 = 0x0000_0001;
-    const TAG_USTR: u32 = u32::from_le_bytes(*b"RTSU");
 
     #[inline]
     fn NT_SUCCESS(s: NTSTATUS) -> bool {
@@ -9379,7 +9384,6 @@ mod path_wave {
     ) -> NTSTATUS {
         const RTL_FIND_CHAR_IN_UNICODE_STRING_START_AT_END: ULONG = 0x00000001;
         const RTL_USER_PROCESS_PARAMETERS_NORMALIZED: ULONG = 0x00000001;
-        const TAG_USTR: ULONG = 0x53_5452_55; // placeholder tag
         const UNICODE_STRING_MAX_BYTES: ULONG = 65534;
         const STATUS_NAME_TOO_LONG: NTSTATUS = 0xC0000106u32 as NTSTATUS;
 

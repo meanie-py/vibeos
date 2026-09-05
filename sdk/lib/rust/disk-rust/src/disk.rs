@@ -615,7 +615,9 @@ const STATUS_NO_MEDIA_IN_DEVICE: NTSTATUS = 0xC0000013u32 as i32 ;
 // Forward declarations for functions not available in ntkrnl_sys
 
 // Constants used by the function (values typical of Windows DDK; adjust as needed)
-const SP_UNTAGGED: u32 = 0xFFFFFFFF; // Typically ULONG_MAX
+// ddk/srb.h:55 `#define SP_UNTAGGED ((UCHAR) ~0)` == 0xFF. Not ULONG_MAX: the
+// neighbouring SP_UNINITIALIZED_VALUE is the ((ULONG) ~0) one.
+const SP_UNTAGGED: u32 = 0xFF;
 const SRB_SIMPLE_TAG_REQUEST: u16 = 0x08;
 const CLASS_SRBEX_NO_SRBEX_DATA_BUFFER_SIZE: u32 = 0x60;
 const DEV_POWER_PROTECTED: i32 = 0x10;
@@ -2238,7 +2240,9 @@ pub unsafe extern "C" fn DiskModeSelect(
     const NON_PAGED_POOL_NX_CACHE_ALIGNED: u32 = 0x20; // NonPagedPoolNxCacheAligned placeholder
     const DISK_TAG_MODE_DATA: u32 = 0x4D446353;         // 'MODE' placeholder
     const SRB_TYPE_STORAGE_REQUEST_BLOCK: u32 = 8;     // typical
-    const SRB_FUNCTION_STORAGE_REQUEST_BLOCK: u8 = 0xF0; // placeholder
+    // ddk/srb.h:108 == 0x28. 0xF0 was an INVENTED value labelled "placeholder";
+    // it is not any SRB_FUNCTION_* and compiled perfectly happily.
+    const SRB_FUNCTION_STORAGE_REQUEST_BLOCK: u8 = 0x28;
     const SRB_SIGNATURE: u32 = 0x53524254;              // 'SRBT'
     const STORAGE_REQUEST_BLOCK_VERSION_1: u32 = 1;
     const SRB_FUNCTION_EXECUTE_SCSI: u32 = 0x00;        // placeholder

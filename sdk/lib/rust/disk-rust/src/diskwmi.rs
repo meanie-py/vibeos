@@ -286,7 +286,9 @@ const IOCTL_SCSI_MINIPORT_READ_SMART_LOG: u32 = 0x050028;
 const IOCTL_SCSI_MINIPORT_WRITE_SMART_LOG: u32 = 0x05002C;
 const IOCTL_SCSI_MINIPORT_IDENTIFY: u32 = 0x050030;
 const SRB_TYPE_STORAGE_REQUEST_BLOCK: u8 = 3;
-const SRB_FUNCTION_STORAGE_REQUEST_BLOCK: u8 = 0x10;
+// ddk/srb.h:108 == 0x28. This constant is WRITTEN into srbEx.Function here and TESTED
+// against a second, differently-wrong copy below -- the test could never match.
+const SRB_FUNCTION_STORAGE_REQUEST_BLOCK: u8 = 0x28;
 const SRB_SIGNATURE: u32 = 0x53524253;
 const STORAGE_REQUEST_BLOCK_VERSION_1: u32 = 1;
 const SRB_FUNCTION_IO_CONTROL: u32 = 2;
@@ -294,7 +296,9 @@ const SRB_FLAGS_DATA_IN: u32 = 0x40;
 const SRB_FLAGS_NO_QUEUE_FREEZE: u32 = 0x100;
 const SRB_FLAGS_NO_KEEP_AWAKE: u32 = 0x100000;
 const SRB_SIMPLE_TAG_REQUEST: u16 = 0x20;
-const SP_UNTAGGED: u32 = 0;
+// ddk/srb.h:55 `#define SP_UNTAGGED ((UCHAR) ~0)` == 0xFF. QueueTag is a UCHAR, so
+// neither 0 nor 0xFFFFFFFF can ever compare equal to an untagged request.
+const SP_UNTAGGED: u32 = 0xFF;
 const STOR_ADDRESS_TYPE_BTL8: u16 = 0;
 const STOR_ADDR_BTL8_ADDRESS_LENGTH: u32 = 0xC;
 const SMART_CYL_LOW: u8 = 0x4F;
@@ -1759,10 +1763,12 @@ pub unsafe extern "system" fn DiskInfoExceptionComplete(
     const SRB_STATUS_QUEUE_FROZEN: i32 = 0x40;
     const SRB_STATUS_SUCCESS: u32 = 0x00;
     const SRB_STATUS_DATA_OVERRUN: u32 = 0x12;
-    const SRB_FUNCTION_STORAGE_REQUEST_BLOCK: i32 = 0x16;
+    // ddk/srb.h:108 == 0x28 (see the write site above).
+    const SRB_FUNCTION_STORAGE_REQUEST_BLOCK: i32 = 0x28;
     const SRB_FUNCTION_EXECUTE_SCSI: u32 = 0x00;
     const SRB_SIMPLE_TAG_REQUEST: u16 = 0x20;
-    const SP_UNTAGGED: u32 = 0xffffffff;
+    // ddk/srb.h:55 -- (UCHAR)~0 is 0xFF, not a 32-bit ~0.
+    const SP_UNTAGGED: u32 = 0xFF;
     const MAXIMUM_RETRIES: u32 = 3;
     const STATUS_VERIFY_REQUIRED: NTSTATUS = 0x80000016u32 as i32;
     const STATUS_IO_DEVICE_ERROR: NTSTATUS = 0xC0000185u32 as i32 ;
