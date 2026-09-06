@@ -4792,6 +4792,24 @@ which is harmless for build correctness because every mtime carries it equally. 
 NOT work, both measured: switching `current_clocksource` from `tsc` to
 `hyperv_clocksource_tsc_page` (the slew is reapplied), and reaching for the WSL kernel cmdline.
 
+**A residual offset is left behind, and the way to clear it is a SLEW, never a step.** Disabling
+timesyncd stops the stepping but leaves the standing error frozen in place and nothing steering
+the clock. Measured here: we are **~1.58s AHEAD** of true time and still gaining at roughly
++25 ppm (~2s/day, unbounded). Mind the sign — NTP's `theta = ((T2-T1)+(T3-T4))/2` is how far the
+*server leads the client*, so `theta = -1.58s` means WE lead, and "correcting" it with a one-shot
+`ntpdate`-style step would step the clock **backwards**: the precise event this whole entry is
+about. **On a VM guest, prefer nulling drift with an `adjtimex` frequency correction over any
+mechanism that steps** — a temporarily larger negative correction bleeds off the standing offset
+while the clock still advances monotonically the whole time, so it is safe to run with builds
+live. Set the frequency off a multi-hour baseline, not two samples.
+
+**And do not motivate this with gate stamps or boot durations — both are fine, and an agent who
+checks them will wrongly conclude the drift is harmless.** `STAMP_MAX_AGE_S` is 24h
+(`cli/land.py:75`), against which 1.6s is nothing, and boot timing is `time.monotonic()`
+(`vm.py:1468`), which an absolute offset never touches. The reason to care is that the error is
+*unbounded*: it was ~8% monotonic skew that broke timing, and it is the drift, not today's
+magnitude, that eventually breaks wall-clock comparisons.
+
 **Keep the fixture guard anyway.** `tools/test_build_invalidation.py` detects a step and skips
 loudly with its measured size rather than reporting a dependency-edge failure it cannot observe —
 a real invalidation bug fails on EVERY run, not only when the clock steps, so the guard cannot
