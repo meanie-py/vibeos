@@ -486,6 +486,25 @@ land; date every addition.** Source docs live in `docs/engineering/archive/`.
 The committed home for open bugs (was: agent MEMORY.md, which other agents never see).
 Field-manual § pointers hold the full writeups. **Update on state change.**
 
+- **FIXED (2026-09-05): freeldr printed NOTHING — all ~2200 `ERR`/`FIXME` sites were silenced
+  by a dropped disjunct, and `/DEBUG=` was dead code.** A boot log contained zero `DbgPrint2`
+  output; the `[freeldr]`/`[FLDR]` stamps that *do* appear ride a separate hand-added path, which
+  is why the gap was never obvious. Three independent defects in `freeldr-rust/src/debug.rs`,
+  all in one function: (1) the port kept only the first half of the C's gate
+  `if (!(DbgChannels[Mask] & Level) && !(Level & DBG_DEFAULT_LEVELS)) return;` — the second term
+  is channel-independent and is what makes ERR and FIXME always-on, so requiring an open channel
+  silenced every one of them; (2) the `err:`/`fixme:`/`warn:`/`trace:` level tag was dropped, so
+  nothing was distinguishable from anything else; (3) `DbgPrint2`/`DbgPrint` were non-variadic
+  (stable Rust cannot *define* a C-variadic) and printed their format string literally, so `%s`
+  and `%lu` came out as those two characters. Separately `DbgParseDebugChannels` was a no-op stub
+  and is the ONLY caller of `DbgAddDebugChannel`, so no boot option could ever set a channel bit
+  — WARN/TRACE were unreachable rather than merely off — and `DebugDumpBuffer` was a stub too.
+  All four fixed. The formatter takes varargs on stable by declaring the argument slots as fixed
+  parameters and handing the resulting array to `_vsnprintf` as a `va_list`, which works because
+  `va_list` is `*mut c_char` on all three targets; **no call site changed** (3038 of them) since
+  the callee's arity is invisible to a cdecl/win64 caller. Field manual: "Which of the four is
+  silent is a property of the HEADER" (whose freeldr row this corrects) and "A printf-style
+  callee can take varargs on stable Rust".
 - **PARTLY FIXED (2026-09-05, task #39): the ~2% arm64 `--smp 1` boot wedge is an EL1 fault
   loop at a user PC, and the loop is now closed — the jumper is not yet found.** A 300-round
   soak on fixed media hit it 5 times (1.7%), and every capture showed the same shape: a vCPU at
@@ -501,22 +520,38 @@ Field-manual § pointers hold the full writeups. **Update on state change.**
   with `X18` a TEB and `X28` a user start-context, so the stack words are the lead. This is the
   last flip blocker for `DefaultOS`. Field manual: "An EL1 instruction fetch on a user page
   loops silently forever". OWNED BY the smp-bringup lane.
-- **System cursors are NEVER loaded on an i386 boot — ROOT-CAUSED, OPEN, and it is a DUMMY_PSEH
-  symptom** (2026-09-05). `SYSTEMCUR(ARROW) == NULL, should not happen!!` fires **78x** per boot
-  (6 system classes x 13 GUI processes) and, critically, keeps firing to within 300 lines of
-  `shell ready` — `gasyscur[ROCR_ARROW].handle` is NULL for the *entire* boot, so every
-  server-side class registers with `hCursor = NULL`. Chain: `co_IntInitializeDesktopGraphics`
-  normally loads cursors/icons via `KeUserModeCallback`, but that block is `#if
-  !defined(_USE_DUMMY_PSEH)` and **`_USE_DUMMY_PSEH` is defined on all three arches here**, so
-  it is compiled out and deferred to `co_IntDeferredCursorsAndIcons()` on a real GUI thread.
-  That deferred path never completes: `gbDesktopCursorsAndIconsLoaded` stays 0 all boot, user32's
-  `LoadSystemCursors()` never runs (its own `ERR("Loading System Cursors")` never prints), and so
-  `NtUserSetSystemCursor` is never called. Every link in the chain — `SYSTEMCUR_ARROW`,
-  `LoadSystemCursors`'s `!gpsi || !gpsi->hIconSmWindows` guard, guicheck's `co_add_gui_app` — was
-  diffed against the retired C and is byte-faithful, so this is NOT a translation defect. It is a
-  **downstream cost of the DUMMY_PSEH hack** and a concrete argument for the Tier-1 DUMMY_PSEH
-  resolution. Remaining question: which of `co_IntDeferredCursorsAndIcons`'s three early-return
-  guards trips (desktop-thread check vs NULL `KernelCallbackTable`).
+- **PARTLY FIXED (2026-09-05): system cursors now load, and the residual 24 are a pure ordering
+  effect.** `SYSTEMCUR(ARROW) == NULL, should not happen!!` was firing **78x** per boot (6 system
+  classes x 13 GUI processes) and kept firing to within 300 lines of `shell ready` —
+  `gasyscur[ROCR_ARROW].handle` was NULL for the *entire* boot, so every server-side class
+  registered with `hCursor = NULL`. Chain: `co_IntInitializeDesktopGraphics` normally loads
+  cursors/icons via `KeUserModeCallback`, but that block is `#if !defined(_USE_DUMMY_PSEH)` and
+  `-D_USE_DUMMY_PSEH=1` is on all 5924 i386 TUs, so it is compiled out and deferred to
+  `co_IntDeferredCursorsAndIcons()` on a real GUI thread. Instrumentation showed that deferred
+  path was entered **exactly once per boot**, on the desktop thread, where its own guard returns
+  immediately — so it never ran at all. Fixed by also calling it from `co_int_graphics_check`,
+  **after** `co_add_gui_app`: ordering is load-bearing, because `NtUserSetSystemCursor` only
+  stores into `gasyscur` for a process that already has `W32PF_CREATEDWINORDC`, and calling
+  before that loads every cursor in user mode and then silently drops it in the kernel (the
+  syscall just returns FALSE — a first attempt did exactly this and moved the count not at all).
+  Result: 78 -> 24, boot green at 37s, and the feared `LoadImageW`/`RtlVirtualUnwind` AV from
+  letting the callback finally run did **not** materialise. **The residual 24 is 4 processes x 6
+  classes that register system classes without ever passing through `co_int_graphics_check`, so
+  the hook cannot fire for them**: every one of the 24 is emitted strictly *before* the load
+  (serial lines 1263-1513 vs the load at 1552), and there are zero in the 750 lines after it.
+  Closing that last gap means giving the early path a cursor source of its own, i.e. the Tier-1
+  DUMMY_PSEH resolution — this entry stays open as a concrete argument for it, not as a
+  translation defect: every link (`SYSTEMCUR_ARROW`, `LoadSystemCursors`'s
+  `!gpsi || !gpsi->hIconSmWindows` guard, `co_add_gui_app`) was diffed against the retired C and
+  is byte-faithful.
+- **OPEN (2026-09-05, found the same night the freeldr debug channel was un-silenced): freeldr
+  fails to load `\reactos\system32\drivers\ntoskrnl.dll`.** `PeLdrLoadImage(...ntoskrnl.dll)
+  failed` -> `PeLdrpLoadAndScanReferencedDll() failed` -> `PeLdrScanImportDescriptorTable()
+  failed`, three times per boot. Something imports from `ntoskrnl.dll` rather than
+  `ntoskrnl.exe`, and the loader resolves the name against the `drivers\` directory where no
+  such file exists. The boot survives it, which is exactly why it went unnoticed: these are ERR
+  messages on freeldr's channel, and that channel printed nothing at all until tonight. First
+  finding attributable to that fix.
 - **`Cannot open winsta` x229 per boot is winlogon thread teardown — ROOT-CAUSED, benign, OPEN**
   (2026-09-05). Instrumented boot: 228 of 229 come from PID 0x9c (winlogon), all with
   `hWinSta = NULL` and `STATUS_INVALID_HANDLE` (not an access denial), all from one call site —
