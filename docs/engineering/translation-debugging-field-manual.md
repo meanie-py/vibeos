@@ -5117,7 +5117,8 @@ Symptom: a gate goes RED with **no failing test**. Cause: the verdict depended o
 not on the diff. Fix: check the host before you read the artifact, because the artifact cannot
 tell you the difference.
 
-**Host disk exhaustion is the one that has actually cost us a day.** At 100% on `/` the failure
+**Host disk exhaustion is the one that has actually cost us a day** (four lanes chasing it at
+once — that synthesis is the control plane's, not a measured figure). At 100% on `/` the failure
 does not look like a disk problem — it surfaced as a gate RED with no failing test, an ENOSPC
 raised deep in `artifacts.py` writing `summary.json`, "system is running low on memory" in two
 agents' harnesses, and a conductor dying mid-drain. At **0 bytes free the harness cannot run any
@@ -5126,7 +5127,17 @@ you would reach for to diagnose it is the tooling that stops working. **`df -h /
 anything else.** The cause was not capacity: a 148G *orphaned* sccache, invisible to the running
 server (sccache evicts only entries in its own index, so bytes written by earlier server
 generations are unreclaimable at any cap — the server reported a 10 GiB cap against a 148G
-directory and had taken zero writes in 30 minutes while builds ran).
+directory and had taken zero writes in 30 minutes while builds ran; measured 940G used/16G free
+before, 793G/163G after, the cache dir itself 148G -> 4.0K).
+
+**The recurrence condition is the line that matters, and it is verified: the cap lives only in
+the STARTING PROCESS'S ENVIRONMENT.** Any bare `sccache` server start outside `cachecfg`'s env
+recreates this exactly. Two corollaries that cost time on their own: `~/.config/sccache/config`
+is **inert** on sccache 0.8.2 (writing one leaves the server still reporting the old cap), and
+the variable is `SCCACHE_CACHE_SIZE`, **not** `SCCACHE_MAXSIZE` — `cachecfg.py:111` is correct
+and must not be "fixed". Note also what it was *not*: no OOM daemon is installed and there were
+zero oom matches in `dmesg`/`journalctl`, so the "running low on memory" message was a symptom
+of the full disk, not a second problem.
 
 The general shape, and it has three known members: **a verdict that depends on state outside the
 diff is not a gate.**
@@ -5139,6 +5150,11 @@ diff is not a gate.**
   it never touched.
 - **What a warm gate declines to rebuild** — §9.126 above, the mirror image: green because
   nothing recompiled.
+- **An artifact that PREDATES the change under test** — a `check` went green on a cohab flip
+  because `build-i386`'s `libcrt_shared_cargo.a` was a day older than the flip, so the verdict
+  was rendered against an object that did not contain the change being graded. Distinct from the
+  previous member: not a rebuild that was skipped, but a *correct* verdict about the *wrong
+  object*. (msvcrt-homebrew's finding.)
 
 The AGENTS.md fleet-isolation rule already forbids *reading* generated artifacts from a sibling
 worktree. These are the same defect one level up: the corpus is discovered rather than declared.
