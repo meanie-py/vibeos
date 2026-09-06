@@ -493,8 +493,9 @@ Field-manual § pointers hold the full writeups. **Update on state change.**
   input (our own ntdll32) and now sees every module a guest maps, so all of its RVAs are
   range-checked and the name compare is bounded. Symptom to recognise again: `rip` inside
   wow64.dll after a map, with a guest that never reached its DllMain.
-- **32-bit `socket()` returns WSAEINVAL because the WSH helper is unstaged — FIX IN FLIGHT,
-  BOOT-UNVERIFIED** (2026-09-05). With the crash above fixed, msafd.dll loaded for real (`[LDR] init 'msafd.dll'
+- **32-bit `socket()` returned WSAEINVAL because the WSH helper was unstaged — FIXED,
+  BOOT-VERIFIED** (2026-09-05, ladder run `20260905-233102-smoke-amd64`: `socket()` succeeds,
+  `select()` is reached and issues four AFD IOCTLs where there were previously zero). With the crash above fixed, msafd.dll loaded for real (`[LDR] init 'msafd.dll'
   ... RETURNED ret=1`) and `socket()` still failed with `0x2726`. The cause was the SAME
   dynamic-edge blind spot one hop deeper: msafd reads `HelperDllName` from the registry and
   `LoadLibraryW`s the WSH_* helper (msafd-rust `misc/helpers.rs`), which nettcpip.inf declares
@@ -506,6 +507,26 @@ Field-manual § pointers hold the full writeups. **Update on state change.**
   error surfaces a full frame from the absent DLL. `wow64-closure.py` now keys the derivation
   by READER (ws2_32 reads LibraryPath/PackedCatalogItem, msafd reads HelperDllName) and follows
   dynamic edges transitively. Lesson: a runtime-load edge is never known to be the last one.
+- **AFD IOCTLs are REFUSED because async I/O is unsupported under WoW64 — OPEN, and it is the
+  E25 blocker** (2026-09-05). With the staging fixed, marshal32 finally reaches `select()` and
+  msafd issues `NtDeviceIoControlFile` — **8 log lines, 4 calls, up from zero**. All four are
+  refused before the payload is touched: `async request (Event=... Apc=00000000) is not
+  supported under WoW64 yet (needs kernel-side IO_STATUS_BLOCK32) — refusing`, returning
+  `c0000002`. AFD is inherently async and msafd always passes an Event, so **no AFD call can
+  ever reach the marshallers until this is done** — E25 remains unexercised and unlandable, for
+  a different reason than before. The refusal itself is correct and deliberate
+  (`wow64_manual.c` `Wow64pRefuseAsync`, guarding the dead-frame-IOSB class, field manual
+  §9.36); the owed fix is kernel-side, writing an `IO_STATUS_BLOCK32` on completion when the
+  requesting process is WoW64 — what NT gates with `IoIs32bitProcess()`. See wow64-plan.md.
+- **msafd returns garbage from a FAILED `AFD_SELECT` — OPEN** (2026-09-05). Downstream of the
+  above: with the IOCTL returning `c0000002`, `select()` on a single-socket `fd_set` returned
+  **5** — more than the number of sockets in the set, on a fresh UDP socket nothing was ever
+  sent to. It did NOT return `SOCKET_ERROR`, so a caller checking only for failure would treat
+  5 as five ready sockets. The `fd_set` guard canary was INTACT, so this is a bad return value,
+  not a buffer overrun. Caught only by the ladder rung's `rc != 0` assertion — the check
+  described as "the one with real teeth" when it was written, which is exactly what it turned
+  out to be. Re-check this once async IOCTLs work; it may be purely a
+  failed-IOCTL path, or it may be a live bug in the poll-count accumulation.
 - **EVERY CSR call from a WoW64 guest fails — `NtRequestWaitReplyPort => c000000d` — OPEN**
   (2026-09-05). Found while chasing the socket() bug above; it is NOT its cause (there is no
   LPC call inside the socket() window at all — that lead was wrong). It is unconditional and
