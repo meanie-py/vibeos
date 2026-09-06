@@ -1071,11 +1071,11 @@ pub unsafe extern "system" fn RegDeleteKeyExW(
     }
 
     if samDesired & KEY_WOW64_32KEY != 0 {
-        ERR!(b"Wow64 not yet supported!\n\0".as_ptr() as *const i8);
+        ERR!("Wow64 not yet supported!\n");
     }
 
     if samDesired & KEY_WOW64_64KEY != 0 {
-        ERR!(b"Wow64 not yet supported!\n\0".as_ptr() as *const i8);
+        ERR!("Wow64 not yet supported!\n");
     }
 
     RtlInitUnicodeString(&mut SubKeyName, lpSubKey);
@@ -4374,7 +4374,7 @@ pub unsafe extern "system" fn RegLoadMUIStringW(
         }
 
         if !pszDirectory.is_null() && *pszDirectory != 0 {
-            FIXME!(b"BaseDir parameter not yet supported!\n\0".as_ptr());
+            FIXME!("BaseDir parameter not yet supported!\n");
             return ERROR_INVALID_PARAMETER as LONG;
         }
 

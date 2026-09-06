@@ -29,7 +29,12 @@ The kernel + win32k + the core client-DLL/boot spine + the driver fleet are **~9
 ### Tier 1 — Finish the high-value unlocks
 
 - **`--allow-multiple-definition` elimination** — kill the load-bearing link flag categorically (spike proven; see the ratchet doc + `tools/scan_duplicate_symbols.py`).
-- **DUMMY_PSEH resolution** — decide + execute the path off the SEH-is-dead-code hack across all arches (spike + open-question doc landed).
+- **DUMMY_PSEH resolution** — decide + execute the path off the SEH-is-dead-code hack across
+  all arches (spike + open-question doc landed). **It has a measured functional cost now**:
+  `_USE_DUMMY_PSEH` compiles out `co_IntInitializeDesktopGraphics`'s cursor/icon
+  `KeUserModeCallback`, the deferred replacement never completes, and system cursors are
+  therefore never loaded on an i386 boot — see the bug registry entry. That is no longer a
+  theoretical tax on code shape; it is a visibly broken subsystem.
 
 ### Tier 2 — Systemic Rust-native fixes (above Wine-DLL translation)
 
@@ -496,6 +501,35 @@ Field-manual § pointers hold the full writeups. **Update on state change.**
   with `X18` a TEB and `X28` a user start-context, so the stack words are the lead. This is the
   last flip blocker for `DefaultOS`. Field manual: "An EL1 instruction fetch on a user page
   loops silently forever". OWNED BY the smp-bringup lane.
+- **System cursors are NEVER loaded on an i386 boot — ROOT-CAUSED, OPEN, and it is a DUMMY_PSEH
+  symptom** (2026-09-05). `SYSTEMCUR(ARROW) == NULL, should not happen!!` fires **78x** per boot
+  (6 system classes x 13 GUI processes) and, critically, keeps firing to within 300 lines of
+  `shell ready` — `gasyscur[ROCR_ARROW].handle` is NULL for the *entire* boot, so every
+  server-side class registers with `hCursor = NULL`. Chain: `co_IntInitializeDesktopGraphics`
+  normally loads cursors/icons via `KeUserModeCallback`, but that block is `#if
+  !defined(_USE_DUMMY_PSEH)` and **`_USE_DUMMY_PSEH` is defined on all three arches here**, so
+  it is compiled out and deferred to `co_IntDeferredCursorsAndIcons()` on a real GUI thread.
+  That deferred path never completes: `gbDesktopCursorsAndIconsLoaded` stays 0 all boot, user32's
+  `LoadSystemCursors()` never runs (its own `ERR("Loading System Cursors")` never prints), and so
+  `NtUserSetSystemCursor` is never called. Every link in the chain — `SYSTEMCUR_ARROW`,
+  `LoadSystemCursors`'s `!gpsi || !gpsi->hIconSmWindows` guard, guicheck's `co_add_gui_app` — was
+  diffed against the retired C and is byte-faithful, so this is NOT a translation defect. It is a
+  **downstream cost of the DUMMY_PSEH hack** and a concrete argument for the Tier-1 DUMMY_PSEH
+  resolution. Remaining question: which of `co_IntDeferredCursorsAndIcons`'s three early-return
+  guards trips (desktop-thread check vs NULL `KernelCallbackTable`).
+- **`Cannot open winsta` x229 per boot is winlogon thread teardown — ROOT-CAUSED, benign, OPEN**
+  (2026-09-05). Instrumented boot: 228 of 229 come from PID 0x9c (winlogon), all with
+  `hWinSta = NULL` and `STATUS_INVALID_HANDLE` (not an access denial), all from one call site —
+  `UserCloseClipboard()`, reached from `ExitThreadCallback` (win32k `main.c:798`), which calls it
+  **unconditionally for every exiting GUI thread**. Byte-identical in the C, so faithful. Two
+  takeaways: the ERR is upstream false-alarm noise on a cleanup path (~10% of the boot log), and
+  the number means **winlogon tears down 228 GUI threads during boot**, which is worth a look in
+  its own right.
+- **`Sending to Suspended Thread Msg 121` x333 per boot — benign, OPEN** (2026-09-05). `0x121` is
+  `WM_ENTERIDLE`, which a modal loop sends purely to say it is idle; dropping it with
+  `STATUS_UNSUCCESSFUL` costs nothing. `IsThreadSuspended` and both its accessors
+  (`KTHREAD.SuspendCount`, `PsGetThreadFreezeCount`) were diffed against the C and are faithful.
+  Noted because winsta.rs ties this exact message to the DUMMY_PSEH cursor path historically.
 - **freeldr's `FREELDR_HEAP_VERIFIER` is DEAD in Rust — OPEN** (2026-09-04). `heap.c:25` defines
   it **unconditionally**, so the C always compiles the redzone allocation, the redzone writes
   and the three `FrLdrHeapVerify` checks. The translation turned it into

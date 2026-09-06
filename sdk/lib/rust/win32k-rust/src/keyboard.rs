@@ -8,11 +8,7 @@ use core::ffi::c_void;
 const UNICODE_NULL: WCHAR = 0;
 
 // ERR/TRACE/WARN/FIXME — DbgPrint-style no-ops (release).
-macro_rules! ERR { ($($t:tt)*) => {{}}; }
-macro_rules! TRACE { ($($t:tt)*) => {{}}; }
-macro_rules! WARN { ($($t:tt)*) => {{}}; }
 #[allow(unused_macros)]
-macro_rules! FIXME { ($($t:tt)*) => {{}}; }
 
 // USERTAG_KBDTABLE 'tksU' (tags.h). C multi-char literal is big-endian, so the
 // in-memory little-endian bytes are 'U','s','k','t'.
@@ -928,7 +924,7 @@ unsafe fn IntLanguageToggle(
     let mut wParam: WPARAM = 0;
 
     if pFocusQueue.is_null() {
-        ERR!(b"IntLanguageToggle(): NULL pFocusQueue\n\0".as_ptr() as *const i8);
+        ERR!("IntLanguageToggle(): NULL pFocusQueue\n");
         return;
     }
     pWnd = (*pFocusQueue).spwndFocus;

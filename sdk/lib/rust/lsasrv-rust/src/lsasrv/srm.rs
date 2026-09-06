@@ -1,3 +1,4 @@
+use core::ffi::c_ulong;
 use crate::prelude::*;
 use core::mem::size_of;
 use core::ptr::{addr_of_mut, null_mut};
@@ -89,7 +90,7 @@ unsafe extern "system" fn LsapRmServerThread(_StartContext: *mut c_void) -> u32 
 
     Status = NtListenPort(SeLsaCommandPort, addr_of_mut!(Message.Header) as *mut _PORT_MESSAGE);
     if Status < 0 {
-        ERR!(b"LsapRmServerThread - Port Listen failed 0x%lx\n\0".as_ptr() as *const u8, Status as c_ulong);
+        ERR!("LsapRmServerThread - Port Listen failed 0x%lx\n", Status as c_ulong);
         return Status as u32;
     }
 
@@ -102,13 +103,13 @@ unsafe extern "system" fn LsapRmServerThread(_StartContext: *mut c_void) -> u32 
         addr_of_mut!(RemotePortView),
     );
     if Status < 0 {
-        ERR!(b"LsapRmServerThread - Port Accept Connect failed 0x%lx\n\0".as_ptr() as *const u8, Status as c_ulong);
+        ERR!("LsapRmServerThread - Port Accept Connect failed 0x%lx\n", Status as c_ulong);
         return Status as u32;
     }
 
     Status = NtCompleteConnectPort(MessagePort);
     if Status < 0 {
-        ERR!(b"LsapRmServerThread - Port Complete Connect failed 0x%lx\n\0".as_ptr() as *const u8, Status as c_ulong);
+        ERR!("LsapRmServerThread - Port Complete Connect failed 0x%lx\n", Status as c_ulong);
         return Status as u32;
     }
 
@@ -117,7 +118,7 @@ unsafe extern "system" fn LsapRmServerThread(_StartContext: *mut c_void) -> u32 
     loop {
         Status = NtReplyWaitReceivePort(MessagePort, null_mut(), ReplyMessage, addr_of_mut!(Message.Header) as *mut _PORT_MESSAGE);
         if Status < 0 {
-            ERR!(b"LsapRmServerThread - Failed to get message: 0x%lx\n\0".as_ptr() as *const u8, Status as c_ulong);
+            ERR!("LsapRmServerThread - Failed to get message: 0x%lx\n", Status as c_ulong);
             ReplyMessage = null_mut();
             continue;
         }
@@ -139,12 +140,12 @@ unsafe extern "system" fn LsapRmServerThread(_StartContext: *mut c_void) -> u32 
                 3 => LsapAsync(&mut Message),
                 2 => LsapComponentTest(&mut Message),
                 _ => {
-                    ERR!(b"LsapRmServerThread - invalid API number: 0x%lx\n\0".as_ptr() as *const u8, Message.ApiNumber as c_ulong);
+                    ERR!("LsapRmServerThread - invalid API number: 0x%lx\n", Message.ApiNumber as c_ulong);
                     ReplyMessage = null_mut();
                 }
             }
         } else {
-            ERR!(b"LsapRmServerThread - unexpected message type: 0x%lx\n\0".as_ptr() as *const u8, Message.Header.u2.s2.Type as c_ulong);
+            ERR!("LsapRmServerThread - unexpected message type: 0x%lx\n", Message.Header.u2.s2.Type as c_ulong);
             ReplyMessage = null_mut();
         }
     }

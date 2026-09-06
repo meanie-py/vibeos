@@ -23,11 +23,6 @@ use ntkrnl_sys::ob::ObDereferenceObject;
 #[allow(unused_imports)]
 use core::ffi::c_void;
 
-// C debug macros — silenced via macro_rules! (variadic no-op).
-#[allow(unused_macros)] macro_rules! TRACE { ($($t:tt)*) => { () }; }
-#[allow(unused_macros)] macro_rules! ERR { ($($t:tt)*) => { () }; }
-
-
 // STATUS_DEVICE_DOES_NOT_EXIST not in ntkrnl_sys::constants — define locally
 // (matches winerror.h / ntstatus.h).
 const STATUS_DEVICE_DOES_NOT_EXIST: NTSTATUS = 0xC00000C0_u32 as i32;
@@ -174,7 +169,7 @@ unsafe fn EngpHasVgaDriver(pGraphicsDevice: PGRAPHICS_DEVICE) -> u8 {
     // Open the key for the adapters
     let mut Status = RegOpenKey(KEY_VIDEO.as_ptr(), &mut hkey);
     if !NT_SUCCESS(Status) {
-        ERR!(b"EngpHasVgaDriver: open DEVICEMAP\\VIDEO failed 0x%08x\n\0".as_ptr() as *const i8, Status);
+        ERR!("EngpHasVgaDriver: open DEVICEMAP\\VIDEO failed 0x%08x\n", Status);
         return 0;
     }
 
@@ -333,13 +328,13 @@ pub unsafe extern "C" fn EngpUpdateGraphicsDeviceList() -> NTSTATUS {
     // Open the key for the adapters
     let mut Status = RegOpenKey(KEY_VIDEO.as_ptr(), &mut hkey);
     if !NT_SUCCESS(Status) {
-        ERR!(b"EngpUpdateGraphicsDeviceList: open DEVICEMAP\\VIDEO failed 0x%lx\n\0".as_ptr() as *const i8, Status);
+        ERR!("EngpUpdateGraphicsDeviceList: open DEVICEMAP\\VIDEO failed 0x%lx\n", Status);
         return Status;
     }
 
     // Get the maximum number of adapters
     if RegReadDWORD(hkey, MAX_OBJ_NUMBER.as_ptr(), &mut ulMaxObjectNumber as *mut ULONG as *mut DWORD) == 0 {
-        ERR!(b"Could not read MaxObjectNumber, defaulting to 0.\n\0".as_ptr() as *const i8);
+        ERR!("Could not read MaxObjectNumber, defaulting to 0.\n");
     }
 
     // Loop through all adapters, to detect new ones
@@ -471,7 +466,7 @@ unsafe fn EngpGetRegistryHandleFromDeviceMap(
 
     Status = RegOpenKey(KEY_VIDEO.as_ptr(), &mut hKey);
     if !NT_SUCCESS(Status) {
-        ERR!(b"Could not open HARDWARE\\DEVICEMAP\\VIDEO registry key: status 0x%08x\n\0".as_ptr() as *const i8, Status);
+        ERR!("Could not open HARDWARE\\DEVICEMAP\\VIDEO registry key: status 0x%08x\n", Status);
         return core::ptr::null_mut();
     }
 
@@ -485,7 +480,7 @@ unsafe fn EngpGetRegistryHandleFromDeviceMap(
 
     Status = RegOpenKey(szDeviceKey.as_ptr(), &mut hKey);
     if !NT_SUCCESS(Status) {
-        ERR!(b"Could not open registry key '%S': status 0x%08x\n\0".as_ptr() as *const i8, szDeviceKey.as_ptr(), Status);
+        ERR!("Could not open registry key '%S': status 0x%08x\n", szDeviceKey.as_ptr(), Status);
         return core::ptr::null_mut();
     }
 
@@ -687,7 +682,7 @@ pub unsafe extern "system" fn EngpRegisterGraphicsDevice(
     let size = core::mem::size_of::<GRAPHICS_DEVICE>();
     let pGraphicsDevice = ExAllocatePoolWithTag(PagedPool, size as _, GDITAG_GDEVICE) as PGRAPHICS_DEVICE;
     if pGraphicsDevice.is_null() {
-        ERR!(b"ExAllocatePoolWithTag failed\n\0".as_ptr() as *const i8);
+        ERR!("ExAllocatePoolWithTag failed\n");
         return core::ptr::null_mut();
     }
     core::ptr::write_bytes(pGraphicsDevice as *mut u8, 0, size);
@@ -702,7 +697,7 @@ pub unsafe extern "system" fn EngpRegisterGraphicsDevice(
         &mut pDeviceObject as *mut _ as *mut *mut ntkrnl_sys::ddk::_DEVICE_OBJECT,
     );
     if !NT_SUCCESS(Status) {
-        ERR!(b"Could not open device, 0x%lx\n\0".as_ptr() as *const i8, Status);
+        ERR!("Could not open device, 0x%lx\n", Status);
         ExFreePoolWithTag(pGraphicsDevice as PVOID, GDITAG_GDEVICE);
         return core::ptr::null_mut();
     }
@@ -731,7 +726,7 @@ pub unsafe extern "system" fn EngpRegisterGraphicsDevice(
         &mut ulReturn as *mut ULONG as LPDWORD,
     );
     if ioctl_status != ERROR_SUCCESS {
-        ERR!(b"EngDeviceIoControl(IOCTL_VIDEO_INIT_WIN32K_CALLBACKS) failed 0x%lx\n\0".as_ptr() as *const i8, ioctl_status);
+        ERR!("EngDeviceIoControl(IOCTL_VIDEO_INIT_WIN32K_CALLBACKS) failed 0x%lx\n", ioctl_status);
     }
     (*pGraphicsDevice).PhysDeviceHandle = Win32kCallbacks.pPhysDeviceObject as PDEVICE_OBJECT;
 
@@ -759,7 +754,7 @@ pub unsafe extern "system" fn EngpRegisterGraphicsDevice(
         + core::mem::size_of::<u16>();
     let pwsz = ExAllocatePoolWithTag(PagedPool, cj as _, GDITAG_DRVSUP) as PWSTR;
     if pwsz.is_null() {
-        ERR!(b"Could not allocate string buffer\n\0".as_ptr() as *const i8);
+        ERR!("Could not allocate string buffer\n");
         ExFreePoolWithTag(pGraphicsDevice as PVOID, GDITAG_GDEVICE);
         return core::ptr::null_mut();
     }

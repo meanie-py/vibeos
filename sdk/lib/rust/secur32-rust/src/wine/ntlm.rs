@@ -1747,7 +1747,7 @@ pub unsafe extern "system" fn ntlm_VerifySignature(
     }
 
     if MessageSeqNo != 0 {
-        FIXME!(b"Ignoring MessageSeqNo\n\0".as_ptr() as LPCSTR);
+        FIXME!("Ignoring MessageSeqNo\n");
     }
 
     helper = (*phContext).dwLower as PNegoHelper;
@@ -1844,11 +1844,11 @@ pub unsafe extern "system" fn ntlm_EncryptMessage(
     }
 
     if fQOP != 0 {
-        FIXME!(b"Ignoring fQOP\n\0".as_ptr() as *const i8);
+        FIXME!("Ignoring fQOP\n");
     }
 
     if MessageSeqNo != 0 {
-        FIXME!(b"Ignoring MessageSeqNo\n\0".as_ptr() as *const i8);
+        FIXME!("Ignoring MessageSeqNo\n");
     }
 
     if pMessage.is_null() || (*pMessage).pBuffers.is_null() || (*pMessage).cBuffers < 2 {
@@ -1930,7 +1930,7 @@ pub unsafe extern "system" fn ntlm_DecryptMessage(
     }
 
     if MessageSeqNo != 0 {
-        FIXME!(b"Ignoring MessageSeqNo\n\0".as_ptr() as PCHAR);
+        FIXME!("Ignoring MessageSeqNo\n");
     }
 
     if pMessage.is_null() || (*pMessage).pBuffers.is_null() || (*pMessage).cBuffers < 2 {

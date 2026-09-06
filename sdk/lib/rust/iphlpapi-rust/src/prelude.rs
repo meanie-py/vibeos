@@ -396,7 +396,6 @@ extern "system" {
     pub fn DhcpReleaseParameters(AdapterName: PWSTR) -> DWORD;
 }
 
-
 // 5j. tdilib (sdk/lib/tdilib) — the ONLY sibling-C left after the FULL flip. ReactOS-internal,
 // no WINAPI in tdilib.h, so cdecl (extern "C"). Signatures verbatim from sdk/lib/tdilib/tdilib.h.
 extern "C" {
@@ -581,9 +580,5 @@ pub use crate::types::{
 // hazard — an out-of-line no-op is an optimization barrier that can uncloak a latent ABI
 // mismatch into a ud2). The single no-op lives in the C shim, exactly as for every other
 // wine-derived crate in the tree; these macros are pure syntax forwarding to it.
-macro_rules! TRACE { ($($arg:tt)*) => { () }; }
-macro_rules! ERR   { ($($arg:tt)*) => { () }; }
-macro_rules! WARN  { ($($arg:tt)*) => { () }; }
-macro_rules! FIXME { ($($arg:tt)*) => { () }; }
 // (no `use` here: a `use` would import the name in ALL namespaces and collide with the
 // same-named extern "C" fn above. Textual `#[macro_use]` scoping from lib.rs instead.)

@@ -190,7 +190,7 @@ pub unsafe extern "system" fn SamIFree_SAMPR_ALIAS_INFO_BUFFER(
         }
 
         _ => {
-            FIXME!(b"Unsupported information class: %lu\n\0".as_ptr() as LPSTR, InformationClass);
+            FIXME!("Unsupported information class: %lu\n", InformationClass);
         }
     }
 
@@ -297,7 +297,7 @@ pub unsafe extern "system" fn SamIFree_SAMPR_DISPLAY_INFO_BUFFER(
         }
 
         _ => {
-            FIXME!(b"Unsupported information class: %lu\n\0".as_ptr() as *const i8, InformationClass);
+            FIXME!("Unsupported information class: %lu\n", InformationClass);
         }
     }
 }
@@ -373,7 +373,7 @@ pub unsafe extern "system" fn SamIFree_SAMPR_DOMAIN_INFO_BUFFER(
         DomainModifiedInformation2 => {}
 
         _ => {
-            FIXME!(b"Unsupported information class: %lu\n\0".as_ptr() as LPSTR, InformationClass);
+            FIXME!("Unsupported information class: %lu\n", InformationClass);
         }
     }
 
@@ -468,7 +468,7 @@ pub unsafe extern "system" fn SamIFree_SAMPR_GROUP_INFO_BUFFER(
 
         _ => {
             FIXME!(
-                b"Unsupported information class: %lu\n\0".as_ptr() as *const i8,
+                "Unsupported information class: %lu\n",
                 InformationClass,
             );
         }
@@ -694,7 +694,7 @@ pub unsafe extern "system" fn SamIFree_SAMPR_USER_INFO_BUFFER(
         }
 
         UserSetPasswordInformation => {
-            ERR!(b"Information class UserSetPasswordInformation cannot be queried!\n\0".as_ptr() as LPSTR);
+            ERR!("Information class UserSetPasswordInformation cannot be queried!\n");
         }
 
         UserControlInformation => {}
@@ -760,7 +760,7 @@ pub unsafe extern "system" fn SamIFree_SAMPR_USER_INFO_BUFFER(
         }
 
         _ => {
-            FIXME!(b"Unsupported information class: %lu\n\0".as_ptr() as LPSTR, InformationClass);
+            FIXME!("Unsupported information class: %lu\n", InformationClass);
         }
     }
 

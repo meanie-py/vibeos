@@ -949,6 +949,17 @@ in callers that contain no such code. `msvcrt_get_file` returns NULL on `calloc`
 precisely what the C does.** The tell that you are in this row rather than the CC row is that
 the ud2 count tracks the number of *callers*, and the C source has the same missing check.
 
+**Making a silent debug macro real is a trigger for this row, and the trap is not a
+regression.** Burning down the no-op `ERR`/`FIXME` macros put two `ud2` in `user32.dll`
+(`GetScrollPos`, `GetScrollRange`) that master did not have. `IntGetSBData` returns NULL on two
+arms and every caller derefs the result unchecked — *which is what `scrollbar.c` does*. While
+`ERR` expanded to nothing, LLVM had no side effect to keep and deleted the whole branch, so the
+UB was invisible; an opaque `DbgPrint` call must be kept, the NULL now visibly reaches a deref,
+and the tail folds. Same fix, same reasoning as below. The general point: an empty debug macro
+is not merely a lost message, it is also **an optimiser hint that erases the evidence** — so
+expect this class when you turn one on, and read the trap as a pre-existing latent fold rather
+than as damage the change did.
+
 **Fix by restoring the C's codegen shape — `#[inline(never)]` on the callee — not by adding the
 null check.** Adding it is a behaviour change on the path the C would fault on, i.e. a
 divergence in a differential port; out-of-line, the caller gets an opaque pointer, emits the
@@ -3815,6 +3826,61 @@ since the name is coming from user-mode"). Do not close such a finding by adding
 that clears the lint row and leaves the defect. It is the same relationship as `[§9.53]`: what
 looks like a missing diagnostic is a missing handler.
 
+**Resolved, and the resolution is the lesson: FOLLOW THE POINTER BEFORE RESTORING THE PRINT.**
+That handler is unreachable, and printing from it would have asserted something false about where
+the function's input comes from. `ValueName` is kernel-pool memory by the time it arrives —
+the one live caller is `CmSetValueKey` <- `NtSetValueKey`, which captures the string with
+`ProbeAndCaptureUnicodeString` (probing header AND buffer, copying both into pool). The right
+close was a comment stating that, plus a `nolint: dropped-print` carrying the reason. But four
+lines up in that same caller sat the real defect — see the next entry. **A dropped SEH region is
+a lead, not a location:** the handler you are looking at may be dead while the check it implies
+is missing somewhere upstream that no lint row points to.
+
+### The SEH region was dropped and took the BOUNDS CHECK with it
+
+**Symptom.** A syscall dereferences a caller-supplied pointer in kernel mode with nothing
+validating it. There is no crash to chase and no lint row to read — the code looks like it
+handles errors, because the `if (!NT_SUCCESS(Status))` arms are still standing. `NtSetValueKey`
+had this shape:
+
+```rust
+Status = STATUS_SUCCESS;          // where ProbeForRead(Data, DataSize, 1) belongs
+if NT_SUCCESS(Status) {
+    ...
+    core::ptr::copy_nonoverlapping(Data as *const u8, DataCopy as *mut u8, DataSize as usize);
+    if !NT_SUCCESS(Status) { ... }   // unreachable: nothing between here and the assignment
+```
+
+Any unprivileged process can call it. A bad `Data` faults with no SEH to catch it (DUMMY_PSEH)
+and BUGCHECKs the box; a `Data` pointing into KERNEL space is copied into a registry value the
+same caller reads straight back with `NtQueryValueKey`.
+
+**Cause.** The C wraps `ProbeForRead` in one `_SEH2_TRY` and the copy in a second. Translation
+drops SEH regions, and the *probe went with the region* — leaving an assignment that hardcodes
+the success the probe was supposed to establish. This is why it does not read as a stub: the
+status variable is real, the checks against it are real, only the thing that could ever set it is
+gone. Grep-wise it is invisible; the C's own trailing comment is the only oracle.
+
+**Fix.** Validate-first (`dummy-pseh-verdict.md`): `probe_user_buffer` / `probe_read_user` /
+`probe_write_user` from `ntkrnl-sys::probe` return `Result<_, NTSTATUS>` instead of raising.
+Match the C's alignment argument. Say in the comment what validate-first does NOT restore — the
+C's second SEH also covers the window between probe and copy, and a range check proves where a
+buffer is, never that it stays mapped.
+
+**Finding the rest.** Same self-oracle question as `scan_dropped_prints`, inverted onto
+validation: count `ProbeFor*` in a file's commented-out C against live probe calls in its Rust.
+That gives **40 dropped probe calls across 13 files** — `config-rust/ntapi.rs` (8),
+`win32k-rust/font.rs` (6), `ntstubs.rs` (5), `coord.rs` (4), `fastfat-rust/fsctrl.rs` (4),
+`ex-rust/harderr.rs` (4), and a tail. The win32k ones are the sharp end: `NtGdiAddFontResourceW`
+is a directly user-callable syscall doing `RtlCopyMemory` off `pwcFiles` with no probe at all.
+
+**Two traps when you go looking.** The scanner needs `tree_sitter_rust`, which lives in the MAIN
+checkout's `.venv`, not the system python — a sizing pass that wraps the import in
+`except: continue` reports a beautiful **zero**. Judge a clean result by whether the harness
+could have spoken at all. And the probes may have been restructured rather than dropped: a
+function that captures via `ProbeAndCaptureUnicodeString` upstream needs no probe of its own, so
+compare against where the pointer actually comes from before writing a finding.
+
 ### A `#if` on a WINDOWS VERSION comes back as `#[cfg(target_arch)]`
 
 **Symptom.** Either a hard parse error (`attributes on expressions are experimental`, because
@@ -4662,6 +4728,31 @@ nothing. It has false-greened arm64 six times in a row (fastfat → ramdisk → 
 user32 → advapi32). Rule: **`vibeos-cli smoke` hard-fails on stale media — never bypass it, and
 judge a build by artifact existence, not a reported exit code.**
 
+### Cargo depfiles leave directory contents or lockfile changes stale
+
+**Symptom:** Ninja reports no work after an input-file edit or a lockfile-only
+dependency update, but a cold build produces a different executable.
+
+**Cause:** Cargo's recursive `rerun-if-changed=directory` watch becomes only a
+directory path in the emitted depfile. Ninja does not recursively inspect that
+directory; editing an existing child does not change its parent directory's
+mtime. Cargo depfiles also do not replace the workspace `Cargo.lock` edge.
+
+**Fix:** Retain explicit lockfile dependencies and conservative source edges.
+Before narrowing, represent both watched directories (membership changes) and
+their input files (content changes). The real warm/cold controls in
+`tools/test_build_invalidation.py` demonstrate stale output for directory-only
+and missing-lockfile edges, and passing output for explicit file watches and
+lockfile dependencies. These fixture controls do not establish completeness of
+the production build-script input graph.
+
+Native inputs have two layers too: an outer Ninja edge cannot compensate for a
+missing Cargo build-script header watch. The C and preprocessed-assembly fixture
+controls change only an included header, force Ninja to invoke Cargo by removing
+the copied executable, and still observe stale output until a cold build.
+Represent the native include closure in build-script watches as well as the
+outer dependency graph; watching only the `.c` or `.S` file is insufficient.
+
 ### A flipped TU's leftover `.obj` keeps voting on the NEXT flip's closure
 ninja never deletes the object of a source you remove from a CMake list, so every TU we flip
 leaves a stale `.obj` under the link root forever. `rustconv hybrid-closure` globs `*.obj` for
@@ -5045,6 +5136,32 @@ arguments the C promoted for free (`error[E0617]: can't pass u8 to variadic func
 as the `fn` form — but only since 2026-09-05. Before that its prefilter needed a literal
 `DPRINT1(`, so a file whose only mention was `macro_rules! DPRINT1 {` over `DPRINT1!(..)` call
 sites was never opened at all, and every one of these was invisible to the gate.
+
+**Which of the four is silent is a property of the HEADER, not of the name.** The burndown of
+the 177 baselined NOOP macros (2026-09-05) turned on 92 `ERR`, 66 `FIXME`, 18 `DPRINT1` and one
+`DbgPrint` across 33 crates, and getting that right meant reading each flavour's own gate rather
+than the comment above the macro — every one of which said some version of "no-ops under NDEBUG",
+and none of which was checked:
+
+| header | `ERR` | `FIXME` | `WARN` / `TRACE` | the gate |
+|---|---|---|---|---|
+| `sdk/include/reactos/debug.h` | — | — | — | `DPRINT1` always on under `DBG`; only `DPRINT` sees `NDEBUG` |
+| `sdk/include/wine/debug.h` | **on** | **on** | off | libwine's `default_flags` is `ERR\|FIXME`; `DEBUGCHANNEL` overrides |
+| `win32ss/user/ntuser/win32kdebug.h` | **on** | off | off | `DBG_PRINT` short-circuits on `level == ERR_LEVEL` before reading `ppi->DbgChannelLevel[ch]`, which starts ERR-only |
+| `boot/freeldr/freeldr/include/debug.h` | off | off | off | `DbgChannels[]` starts all-zero; the `/DEBUG=` boot option opens a channel |
+
+So a silent `FIXME` is a dropped diagnostic in a wine DLL and faithful in win32k, and freeldr's
+four are faithful at boot but must still route to `DbgPrint2` so `/DEBUG=` works. Where silence
+IS faithful, say so at the macro and mark it `// nolint: scan_dropped_prints` with the reason
+rather than leaving a baseline row — a baseline row means debt, and this is not debt.
+
+Two mechanical traps in the conversion, both of which the compiler catches only *after* the
+macro is real: a call site written as `ERR!("... 0x{:x}\n", x)` is **Rust** format syntax that a
+silent macro accepted and a `printf` will not (three of these had shipped), and `debugstr_w(x)`
+is a NULL-returning shim in this tree — feeding NULL to a live `%s` faults, so print the wide
+string directly with `%S`. A third is worth automating around: when a script rewrites the format
+argument, scope the "strip the trailing cast" rule to *inside* the macro invocation. Applied
+file-wide it silently ate the first half of `as *const u8 as *const i8` in ordinary code.
 
 ### A `cfg(debug_assertions)` block is not code that works — it is code with no evidence either way
 
@@ -7662,6 +7779,19 @@ touching the loader** — the El Torito entry folds in `uefildr`.
 **Before declaring any smoke red, check whether the host was busy** (`./vibeos-cli ps`,
 `./vibeos-cli host-status`). A lone red while another arch is mid-gate is a prime contention
 suspect; re-run host-quiet to decide.
+
+### New builds pass an older CPU-lease waiter
+
+**Symptom:** `host-status` shows an older waiter still queued while newer builds
+acquire permits. **Cause:** admitting queued requests against total pool capacity
+ignores running holders. With four permits, two held, and two waiters requesting
+two each, only the earlier waiter is entitled to the free pair. A free-count
+snapshot also races concurrent acquirers. **Fix:** admit only the ticket head;
+drop its ticket immediately on acquiring permits, not when work finishes. Builds
+still run concurrently within the pool. The isolated live-flock regression is
+`test_hostlock_fifo_respects_existing_permit_holders`. Old processes/worktrees
+retain their prior admission code until restarted/updated; do not rewrite another
+worktree or kill a running build to propagate this fix.
 
 ### Contention wears three costumes, not one
 1. **`HANG_TIMEOUT` at `[freeldr] Switching stack...`** with zero kernel serial (the CGU lottery,

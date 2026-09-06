@@ -13,16 +13,17 @@ was serial was the *orchestrator* — i.e. the human. This driver removes that:
   1+2. builds + lanes, PIPELINED (F5, 2026-07-06) — every arch's build is
      submitted at once (they self-throttle on the broker's build share, default 2
      concurrent fleet-wide; amd64 is submitted first, since it feeds two lanes),
-     and each arch's smoke, its strict lint, and (for amd64) the net lane launch
+     and each arch's smoke, its strict guards, and (for amd64) the net lane launch
      THE MOMENT its own build lands rather than behind an all-arches barrier.
      Safe by hostlock design:
      windows-host boots run on the Windows scheduling domain (`bootcpu` pool)
      and coexist with the next WSL-side build (build ∥ boot is the documented
      contract). Opt out of builds with --no-build (all lanes launch at once).
-     The lint gate (BLOCKING) is `check --strict --arch <a>` per built arch —
-     the full scanner suite: source lints baseline-diff NEW=0, cargo-link/
-     committed-drift bit-rot guards, per-arch binary lints. Reuses the `check`
-     command verbatim so there is ONE strict-check code path. A NEW finding
+     The lint gate combines `check --strict --scope source` ONCE after all builds
+     settle with `check --strict --scope arch --arch <a>` per built arch:
+     source lints baseline-diff NEW=0, cargo-link/committed-drift bit-rot guards,
+     and per-arch binary lints. Each partition uses the existing strict checkers.
+     Both partitions must pass before stamping. A NEW finding
      (classification LINT_FAIL) blocks the push stamp; smokes still run so the
      matrix stays informative. Opt out with --no-lint.
      `check-tooling` (OUR python: ruff/pyright/pytest over rustconv + cli +
@@ -360,12 +361,14 @@ def _child_classification(stdout: str) -> str:
 
 
 def _lint_once(repo: Path, arch: str, root: Path) -> dict:
-    """Run `vibeos-cli check --strict --arch <arch>` for one built arch. This is
-    the T3 land-gate: the scanner suite (verify_*, lint_kernel, scan_ud2,
-    committed_drift, cargo_link, …) enforces baseline-diff NEW=0 instead of the
-    old warn-only path. Returns a compact result; exit != 0 blocks the stamp."""
+    """Run one strict partition: shared source, or one arch's complete guards.
+
+    Each child is explicitly partial. Only the parent gate combines ALL of them
+    into a full verdict; a failing or absent partition must block its stamp.
+    """
     root.mkdir(parents=True, exist_ok=True)
-    cmd = [str(repo / "vibeos-cli"), "check", "--strict", "--arch", arch]
+    cmd = [str(repo / "vibeos-cli"), "check", "--strict", "--scope"]
+    cmd += ["source"] if arch == "source" else ["arch", "--arch", arch]
     env = dict(os.environ, VIBEOS_ARTIFACT_ROOT=str(root))
     t0 = time.monotonic()
     proc = subprocess.run(cmd, cwd=str(repo), env=env, capture_output=True, text=True)
@@ -388,7 +391,7 @@ def _cohab_once(repo: Path, arch: str, root: Path) -> dict:
     """Run `tools/verify_cohab_coverage.py` for one built arch.
 
     This lives here rather than in `check --strict` for one reason: it reads OBJECT FILES.
-    `check` is source-only by contract and runs with no build at all, and the whole point of
+    ordinary `check` can run without a build, and the whole point of
     this verifier is that the source cannot answer the question — a cohab flip is correct only
     if the symbols the Rust actually EMITS match the ones the C object actually EXPORTS, after
     every `-D`, `#ifdef` and ABI decoration. So it launches with the arch's smoke, the moment
@@ -674,9 +677,8 @@ def gate(args, repo: Path) -> int:
     # stricter than the broker (2 concurrent builds are sanctioned fleet-wide) and made the
     # gate's build phase sum-of-arches for no reason.
     #
-    # Lint (`check --strict`, T3) is source-only per arch → independent of the
-    # build artifacts; it launches alongside the arch's smoke and gates the push
-    # stamp, not the boots.
+    # Strict arch guards follow their own build; shared source checks follow the
+    # complete build matrix. Both gate the push stamp, not the boots.
     net_requested = not getattr(args, "no_net", False)
     do_lint = not getattr(args, "no_lint", False)
     build_order = sorted(arches, key=lambda a: a != "amd64")  # amd64 first, rest in order
@@ -708,7 +710,7 @@ def gate(args, repo: Path) -> int:
     max_workers = (
         min(
             n_lanes * 2
-            + (len(arches) if do_lint else 0)
+            + (len(arches) + 1 if do_lint else 0)
             + (len(arches) if do_build else 0)
             # check-tooling + difftest: two arch-independent workers
             + (2 if do_lint else 0),
@@ -733,8 +735,8 @@ def gate(args, repo: Path) -> int:
                 fut[ex.submit(_lane_once, "net", gate_root / "smoke-net-a1")] = "net"
             if do_lint:
                 lfut[ex.submit(_lint_once, repo, arch, gate_root / f"lint-{arch}")] = arch
-            # Post-build by necessity: this one reads the arch's OBJECTS, which is exactly
-            # why `check --strict` (source-only, no build) cannot host it. It therefore
+            # Post-build by necessity: this one reads the arch's OBJECTS and
+            # requires artifacts produced by this gate, not an arbitrary check. It
             # needs BOTH opt-ins: it is static verification like the lint (--no-lint means
             # "skip that"), and it can only judge artifacts this run produced — the verifier
             # refuses an archive older than the tree, so under --no-build a stale carry-over
@@ -797,6 +799,12 @@ def gate(args, repo: Path) -> int:
             for arch in build_order:
                 _launch_lanes(arch)
 
+        if do_lint:
+            # Some source scanners consume generated headers. Wait for this
+            # worktree's build matrix to settle, then run the identical suite
+            # ONCE, without caching or reading a sibling's generated state.
+            lfut[ex.submit(_lint_once, repo, "source", gate_root / "lint-source")] = "source"
+
         net_lane = ("amd64" in arches) and net_requested
         lanes = list(arches) + (["net"] if net_lane else [])
 
@@ -814,7 +822,7 @@ def gate(args, repo: Path) -> int:
                         else f"NEW lint findings (exit {r['exit']})",
                         salient=[]
                         if r["ok"]
-                        else [r["salient"] or f"check --strict --arch {r['arch']} failed"],
+                        else [r["salient"] or f"strict check partition {r['arch']} failed"],
                     )
                 )
                 if not r["ok"] and not run.classification:
@@ -979,11 +987,9 @@ def gate(args, repo: Path) -> int:
         bool(results)
         and all(results.get(a, {}).get("ok") for a in requested_lanes)
         and len(results) == len(requested_lanes)
-        # T3: strict lints must be clean for every requested arch. lint_ok has no
-        # entry when --no-lint or the arch didn't build (the latter already fails
-        # the results check above), so default True there and let those paths gate
-        # on their own condition.
-        and all(lint_ok.get(a, True) for a in requested)
+        # Fail closed: BOTH the shared suite and every requested arch's guards
+        # must return success. --no-lint remains explicitly unstamped below.
+        and (not do_lint or all(lint_ok.get(a, False) for a in ["source", *requested]))
         # Same per-arch contract as lint_ok, and defaulting True for the same reasons
         # (--no-lint/--no-build, or an arch that never built). A cohab gap means a module's
         # Rust is not actually the thing that links — the build is green and the port is

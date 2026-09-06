@@ -401,7 +401,7 @@ pub unsafe extern "system" fn LsapInitLsa() -> NTSTATUS {
 
     Status = LsapRmInitializeServer();
     if !NT_SUCCESS(Status) {
-        ERR!(b"LsapRmInitializeServer() failed (Status 0x%08lx)\n\0".as_ptr() as *const i8, Status);
+        ERR!("LsapRmInitializeServer() failed (Status 0x%08lx)\n", Status);
         return Status;
     }
 
@@ -411,24 +411,24 @@ pub unsafe extern "system" fn LsapInitLsa() -> NTSTATUS {
 
     Status = LsapInitAuthPackages();
     if !NT_SUCCESS(Status) {
-        ERR!(b"LsapInitAuthPackages() failed (Status 0x%08lx)\n\0".as_ptr() as *const i8, Status);
+        ERR!("LsapInitAuthPackages() failed (Status 0x%08lx)\n", Status);
         return Status;
     }
 
     Status = RtlAdjustPrivilege(SE_CREATE_TOKEN_PRIVILEGE as ULONG, 1u8, 0u8, &mut PrivilegeEnabled);
     if !NT_SUCCESS(Status) {
-        ERR!(b"RtlAdjustPrivilege(SE_CREATE_TOKEN_PRIVILEGE) failed, ignoring (Status 0x%08lx)\n\0".as_ptr() as *const i8, Status);
+        ERR!("RtlAdjustPrivilege(SE_CREATE_TOKEN_PRIVILEGE) failed, ignoring (Status 0x%08lx)\n", Status);
     }
 
     Status = StartAuthenticationPort();
     if !NT_SUCCESS(Status) {
-        ERR!(b"StartAuthenticationPort() failed (Status 0x%08lx)\n\0".as_ptr() as *const i8, Status);
+        ERR!("StartAuthenticationPort() failed (Status 0x%08lx)\n", Status);
         return Status;
     }
 
     Status = LsarStartRpcServer();
     if !NT_SUCCESS(Status) {
-        ERR!(b"LsarStartRpcServer() failed (Status 0x%08lx)\n\0".as_ptr() as *const i8, Status);
+        ERR!("LsarStartRpcServer() failed (Status 0x%08lx)\n", Status);
         return Status;
     }
 

@@ -287,12 +287,16 @@ def _permits_claimed_ahead(pool: str, me: Path | None) -> int:
 
 
 def _may_attempt(pool: str, me: Path | None, need: int, capacity: int) -> bool:
-    """True when taking `need` permits cannot delay an earlier arrival. The head of the
-    queue always passes (nothing is ahead of it), so the queue can never deadlock itself;
-    a later arrival may only backfill into permits nobody ahead of it is owed."""
+    """Only the ticket head may claim permits; active work remains concurrent.
+
+    Comparing queued demand with TOTAL capacity allowed barging when running
+    work already held some permits. Even a free-count snapshot would race other
+    acquirers. Serialize admission, not execution: the successful acquirer drops
+    its ticket immediately, letting the next waiter take any remaining permits.
+    """
     if me is None:
         return True
-    return need + _permits_claimed_ahead(pool, me) <= capacity
+    return _permits_claimed_ahead(pool, me) == 0
 
 
 def _acquire_one(

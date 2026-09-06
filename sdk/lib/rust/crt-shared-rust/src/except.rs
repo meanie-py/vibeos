@@ -139,16 +139,6 @@ extern "C" {
 // not a macro DEFINITION, so a prefix spelled here would read as a literal the C does not
 // have. Spelled at the call site it is invisible to that diff and visible to a reader, which
 // is the right way round.
-macro_rules! ERR {
-    ($msg:literal $(, $($arg:tt)*)?) => {{
-        OutputDebugStringA($msg.as_ptr());
-    }};
-}
-macro_rules! FIXME {
-    ($msg:literal $(, $($arg:tt)*)?) => {{
-        OutputDebugStringA($msg.as_ptr());
-    }};
-}
 
 // ---- file-scope preamble (translated) ----
 pub static mut sighandlers: [__sighandler_t; NSIG as usize] = [SIG_DFL; NSIG as usize];
@@ -331,7 +321,7 @@ unsafe extern "C" fn cxx_local_unwind(
 
     while trylevel > last_level {
         if trylevel < 0 || trylevel >= ((*descr).unwind_count) as i32 {
-            ERR!(c"err:seh:invalid trylevel %d\n", trylevel);
+            ERR!("seh:invalid trylevel %d\n", trylevel);
             terminate();
         }
         if rtti_is_set((*unwind_table.offset(trylevel as isize)).handler) {
@@ -584,7 +574,7 @@ unsafe extern "C" fn check_noexcept(
         && (*descr).magic() >= CXX_FRAME_MAGIC_VC8
         && ((*descr).flags & FUNC_DESCR_NOEXCEPT) != 0
     {
-        ERR!(c"err:seh:noexcept function propagating exception\n");
+        ERR!("seh:noexcept function propagating exception\n");
         terminate();
     }
 }
@@ -607,7 +597,7 @@ unsafe extern "C" fn cxx_frame_handler(
     let mut unwindlevel: i32 = -1;
 
     if (*descr).magic() < CXX_FRAME_MAGIC_VC6 || (*descr).magic() > CXX_FRAME_MAGIC_VC8 {
-        FIXME!(c"fixme:seh:unhandled frame magic %x\n", (*descr).magic());
+        FIXME!("seh:unhandled frame magic %x\n", (*descr).magic());
         return _EXCEPTION_DISPOSITION_ExceptionContinueSearch;
     }
 
@@ -1042,7 +1032,7 @@ pub unsafe extern "C" fn __CxxQueryExceptionSize() -> u32 {
 
 #[no_mangle]
 pub unsafe extern "C" fn __intrinsic_abnormal_termination() -> i32 {
-    FIXME!(c"fixme:seh:(void)stub\n");
+    FIXME!("seh:(void)stub\n");
     0
 }
 
@@ -1093,7 +1083,7 @@ pub unsafe extern "C" fn _FindAndUnlinkFrame(fi: *mut frame_info) {
         cur = (*cur).next;
     }
 
-    ERR!(c"err:seh:frame not found, native crashes in this case\n");
+    ERR!("seh:frame not found, native crashes in this case\n");
 }
 #[no_mangle]
 pub unsafe extern "C" fn _IsExceptionObjectToBeDestroyed(obj: *const core::ffi::c_void) -> i32 {

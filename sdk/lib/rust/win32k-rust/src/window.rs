@@ -42,11 +42,6 @@ macro_rules! w {
 
 
 // ---- Debug-channel macros — no kernel symbol, no-op. ----
-macro_rules! ERR    { ($($t:tt)*) => {{}}; }
-macro_rules! WARN   { ($($t:tt)*) => {{}}; }
-macro_rules! TRACE  { ($($t:tt)*) => {{}}; }
-macro_rules! FIXME  { ($($t:tt)*) => {{}}; }
-macro_rules! DPRINT { ($($t:tt)*) => {{}}; }
 macro_rules! RIPMSG { ($($t:tt)*) => {{}}; }
 
 // ---- Pool tags (tags.h). C 4-char literal is big-endian → from_le_bytes reverses it. ----
@@ -1656,7 +1651,7 @@ unsafe extern "C" fn IntLinkWindow(Wnd: PWND, WndInsertAfter: PWND) {
 
 unsafe fn IntLinkWindow_impl(Wnd: PWND, WndInsertAfter: PWND) {
     if Wnd == WndInsertAfter {
-        ERR!(b"Trying to link window 0x%p to itself\n\0".as_ptr() as *const i8, Wnd);
+        ERR!("Trying to link window 0x%p to itself\n", Wnd);
         return;
     }
 
@@ -1739,7 +1734,7 @@ pub unsafe extern "fastcall" fn IntLinkHwnd(Wnd: PWND, mut hWndPrev: HWND) {
         }
 
         if Wnd == WndInsertAfter {
-            ERR!(b"Trying to link window 0x%p to itself\n\0".as_ptr() as *const i8, Wnd);
+            ERR!("Trying to link window 0x%p to itself\n", Wnd);
         } else {
             IntLinkWindow(Wnd, WndInsertAfter);
         }
@@ -1819,7 +1814,7 @@ pub unsafe extern "C" fn IntLinkHwnd(Wnd: PWND, mut hWndPrev: HWND) {
         }
 
         if Wnd == WndInsertAfter {
-            ERR!(b"Trying to link window 0x%p to itself\n\0".as_ptr() as *const i8, Wnd);
+            ERR!("Trying to link window 0x%p to itself\n", Wnd);
         } else {
             IntLinkWindow(Wnd, WndInsertAfter);
         }
@@ -2388,7 +2383,7 @@ pub unsafe extern "system" fn NtUserBuildHwndList(
 
             Status = PsLookupThreadByThreadId(UlongToHandle(dwThreadId), &mut Thread);
             if !NT_SUCCESS(Status) {
-                ERR!(b"Thread Id is not valid!\n\0".as_ptr());
+                ERR!("Thread Id is not valid!\n");
                 Status = STATUS_INVALID_PARAMETER;
                 break 'quit;
             }
@@ -2410,7 +2405,7 @@ pub unsafe extern "system" fn NtUserBuildHwndList(
                             *phwndList = UserHMGetHandle(Window as PVOID);
                             phwndList = phwndList.add(1);
                             if !NT_SUCCESS(Status) {
-                                ERR!(b"Failure to build window list!\n\0".as_ptr());
+                                ERR!("Failure to build window list!\n");
                                 break;
                             }
                         }
@@ -2751,7 +2746,7 @@ unsafe fn IntCreateWindow(
 
             if CallProc.is_null() {
                 EngSetLastError(ERROR_NOT_ENOUGH_MEMORY);
-                ERR!(b"Warning: Unable to create CallProc for edit control. Control may not operate correctly! hwnd %p\n\0".as_ptr(), hWnd);
+                ERR!("Warning: Unable to create CallProc for edit control. Control may not operate correctly! hwnd %p\n", hWnd);
             } else {
                 UserAddCallProcToClass((*pWnd).pcls, CallProc);
             }
@@ -2864,7 +2859,7 @@ unsafe fn IntCreateWindow(
 }
 
 unsafe fn alloc_error(pWnd: PWND) -> PWND {
-    ERR!(b"IntCreateWindow Allocation Error.\n\0".as_ptr());
+    ERR!("IntCreateWindow Allocation Error.\n");
     SetLastNtError(STATUS_INSUFFICIENT_RESOURCES);
     error_only(pWnd)
 }
@@ -2912,7 +2907,7 @@ pub unsafe extern "fastcall" fn co_UserCreateWindowEx(
 
     pti = GetW32ThreadInfo();
     if pti.is_null() || (*pti).rpdesk.is_null() {
-        ERR!(b"Thread is not attached to a desktop! Cannot create window (%wZ)\n\0".as_ptr() as *const i8, ClassName);
+        ERR!("Thread is not attached to a desktop! Cannot create window (%wZ)\n", ClassName);
         return core::ptr::null_mut();
     }
     WinSta = (*(*pti).rpdesk).rpwinstaParent;
@@ -2925,7 +2920,7 @@ pub unsafe extern "fastcall" fn co_UserCreateWindowEx(
         Class = IntGetAndReferenceClass(ClassName, (*Cs).hInstance, 0i32);
         if Class.is_null() {
             EngSetLastError(ERROR_CANNOT_FIND_WND_CLASS);
-            ERR!(b"Failed to find class %wZ\n\0".as_ptr() as *const i8, ClassName);
+            ERR!("Failed to find class %wZ\n", ClassName);
             break 'cleanup;
         }
 
@@ -2942,7 +2937,7 @@ pub unsafe extern "fastcall" fn co_UserCreateWindowEx(
                 hWndParent = (*Cs).hwndParent;
             }
         } else if (((*Cs).style as u32) & (WS_CHILD | WS_POPUP)) == WS_CHILD {
-            ERR!(b"Cannot create a child window (%wZ) without a parent\n\0".as_ptr() as *const i8, ClassName);
+            ERR!("Cannot create a child window (%wZ) without a parent\n", ClassName);
             EngSetLastError(ERROR_TLW_WITH_WSCHILD);
             break 'cleanup;
         } else if (*Cs).lpszClass != MAKEINTATOM((*gpsi).atomSysClass[ICLS_DESKTOP as usize]) as LPCWSTR
@@ -2959,10 +2954,10 @@ pub unsafe extern "fastcall" fn co_UserCreateWindowEx(
         OwnerWindow = if !hWndOwner.is_null() { UserGetWindowObject(hWndOwner) } else { core::ptr::null_mut() };
 
         if !hWndParent.is_null() && ParentWindow.is_null() {
-            ERR!(b"Got invalid parent window handle for %wZ\n\0".as_ptr() as *const i8, ClassName);
+            ERR!("Got invalid parent window handle for %wZ\n", ClassName);
             break 'cleanup;
         } else if !hWndOwner.is_null() && OwnerWindow.is_null() {
-            ERR!(b"Got invalid owner window handle for %wZ\n\0".as_ptr() as *const i8, ClassName);
+            ERR!("Got invalid owner window handle for %wZ\n", ClassName);
             ParentWindow = core::ptr::null_mut();
             break 'cleanup;
         }
@@ -2971,7 +2966,7 @@ pub unsafe extern "fastcall" fn co_UserCreateWindowEx(
             if IntIsDesktopWindow(OwnerWindow) != 0 {
                 OwnerWindow = core::ptr::null_mut();
             } else if !ParentWindow.is_null() && IntIsDesktopWindow(ParentWindow) == 0 {
-                ERR!(b"an owned window must be created as top-level\n\0".as_ptr() as *const i8);
+                ERR!("an owned window must be created as top-level\n");
                 EngSetLastError(STATUS_ACCESS_DENIED as u32);
                 break 'cleanup;
             } else {
@@ -2999,7 +2994,7 @@ pub unsafe extern "fastcall" fn co_UserCreateWindowEx(
             dwVer,
         );
         if Window.is_null() {
-            ERR!(b"IntCreateWindow(%wZ) failed\n\0".as_ptr() as *const i8, ClassName);
+            ERR!("IntCreateWindow(%wZ) failed\n", ClassName);
             break 'cleanup;
         }
 
@@ -3017,12 +3012,12 @@ pub unsafe extern "fastcall" fn co_UserCreateWindowEx(
             pCsw = ExAllocatePoolWithTag(NonPagedPool, core::mem::size_of::<CREATESTRUCTW>() as _, TAG_HOOK) as *mut CREATESTRUCTW;
             pCbtCreate = ExAllocatePoolWithTag(NonPagedPool, core::mem::size_of::<CBT_CREATEWNDW>() as _, TAG_HOOK) as *mut CBT_CREATEWNDW;
             if pCsw.is_null() || pCbtCreate.is_null() {
-                ERR!(b"UserHeapAlloc() failed!\n\0".as_ptr() as *const i8);
+                ERR!("UserHeapAlloc() failed!\n");
                 break 'cleanup;
             }
 
             if IntMsgCreateStructW(Window, pCsw, Cs, &mut pszClass, &mut pszName) == 0 {
-                ERR!(b"IntMsgCreateStructW() failed!\n\0".as_ptr() as *const i8);
+                ERR!("IntMsgCreateStructW() failed!\n");
                 break 'cleanup;
             }
 
@@ -3031,7 +3026,7 @@ pub unsafe extern "fastcall" fn co_UserCreateWindowEx(
 
             Result = co_HOOK_CallHooks(WH_CBT as INT, HCBT_CREATEWND as i32, hWnd as WPARAM, pCbtCreate as LPARAM);
             if Result != 0 {
-                ERR!(b"WH_CBT HCBT_CREATEWND hook failed! 0x%x\n\0".as_ptr() as *const i8, Result);
+                ERR!("WH_CBT HCBT_CREATEWND hook failed! 0x%x\n", Result);
                 break 'cleanup;
             }
             (*Cs).cx = (*pCsw).cx;
@@ -3077,7 +3072,7 @@ pub unsafe extern "fastcall" fn co_UserCreateWindowEx(
         (*Window).rcClient = (*Window).rcWindow;
 
         if !(*Window).spwndNext.is_null() || !(*Window).spwndPrev.is_null() {
-            ERR!(b"Window 0x%p has been linked too early!\n\0".as_ptr() as *const i8, Window);
+            ERR!("Window 0x%p has been linked too early!\n", Window);
         }
 
         if ((*Window).state2 & WNDS2_WIN31COMPAT) == 0 {
@@ -3096,7 +3091,7 @@ pub unsafe extern "fastcall" fn co_UserCreateWindowEx(
 
         Result = co_IntSendMessage(UserHMGetHandle(Window as PVOID), WM_NCCREATE, 0, Cs as LPARAM);
         if Result == 0 {
-            ERR!(b"co_UserCreateWindowEx(%wZ): NCCREATE message failed\n\0".as_ptr() as *const i8, ClassName);
+            ERR!("co_UserCreateWindowEx(%wZ): NCCREATE message failed\n", ClassName);
             break 'cleanup;
         }
 
@@ -3153,7 +3148,7 @@ pub unsafe extern "fastcall" fn co_UserCreateWindowEx(
 
         Result = co_IntSendMessage(UserHMGetHandle(Window as PVOID), WM_CREATE, 0, Cs as LPARAM);
         if Result == -1isize as LRESULT {
-            ERR!(b"co_UserCreateWindowEx(%wZ): WM_CREATE message failed\n\0".as_ptr() as *const i8, ClassName);
+            ERR!("co_UserCreateWindowEx(%wZ): WM_CREATE message failed\n", ClassName);
             break 'cleanup;
         }
 
@@ -3303,7 +3298,7 @@ pub unsafe extern "C" fn co_UserCreateWindowEx(
 
     pti = GetW32ThreadInfo();
     if pti.is_null() || (*pti).rpdesk.is_null() {
-        ERR!(b"Thread is not attached to a desktop! Cannot create window (%wZ)\n\0".as_ptr() as *const i8, ClassName);
+        ERR!("Thread is not attached to a desktop! Cannot create window (%wZ)\n", ClassName);
         return core::ptr::null_mut();
     }
     WinSta = (*(*pti).rpdesk).rpwinstaParent;
@@ -3316,7 +3311,7 @@ pub unsafe extern "C" fn co_UserCreateWindowEx(
         Class = IntGetAndReferenceClass(ClassName, (*Cs).hInstance, 0i32);
         if Class.is_null() {
             EngSetLastError(ERROR_CANNOT_FIND_WND_CLASS);
-            ERR!(b"Failed to find class %wZ\n\0".as_ptr() as *const i8, ClassName);
+            ERR!("Failed to find class %wZ\n", ClassName);
             break 'cleanup;
         }
 
@@ -3333,7 +3328,7 @@ pub unsafe extern "C" fn co_UserCreateWindowEx(
                 hWndParent = (*Cs).hwndParent;
             }
         } else if (((*Cs).style as u32) & (WS_CHILD | WS_POPUP)) == WS_CHILD {
-            ERR!(b"Cannot create a child window (%wZ) without a parent\n\0".as_ptr() as *const i8, ClassName);
+            ERR!("Cannot create a child window (%wZ) without a parent\n", ClassName);
             EngSetLastError(ERROR_TLW_WITH_WSCHILD);
             break 'cleanup;
         } else if (*Cs).lpszClass != MAKEINTATOM((*gpsi).atomSysClass[ICLS_DESKTOP as usize]) as LPCWSTR
@@ -3350,10 +3345,10 @@ pub unsafe extern "C" fn co_UserCreateWindowEx(
         OwnerWindow = if !hWndOwner.is_null() { UserGetWindowObject(hWndOwner) } else { core::ptr::null_mut() };
 
         if !hWndParent.is_null() && ParentWindow.is_null() {
-            ERR!(b"Got invalid parent window handle for %wZ\n\0".as_ptr() as *const i8, ClassName);
+            ERR!("Got invalid parent window handle for %wZ\n", ClassName);
             break 'cleanup;
         } else if !hWndOwner.is_null() && OwnerWindow.is_null() {
-            ERR!(b"Got invalid owner window handle for %wZ\n\0".as_ptr() as *const i8, ClassName);
+            ERR!("Got invalid owner window handle for %wZ\n", ClassName);
             ParentWindow = core::ptr::null_mut();
             break 'cleanup;
         }
@@ -3362,7 +3357,7 @@ pub unsafe extern "C" fn co_UserCreateWindowEx(
             if IntIsDesktopWindow(OwnerWindow) != 0 {
                 OwnerWindow = core::ptr::null_mut();
             } else if !ParentWindow.is_null() && IntIsDesktopWindow(ParentWindow) == 0 {
-                ERR!(b"an owned window must be created as top-level\n\0".as_ptr() as *const i8);
+                ERR!("an owned window must be created as top-level\n");
                 EngSetLastError(STATUS_ACCESS_DENIED as u32);
                 break 'cleanup;
             } else {
@@ -3390,7 +3385,7 @@ pub unsafe extern "C" fn co_UserCreateWindowEx(
             dwVer,
         );
         if Window.is_null() {
-            ERR!(b"IntCreateWindow(%wZ) failed\n\0".as_ptr() as *const i8, ClassName);
+            ERR!("IntCreateWindow(%wZ) failed\n", ClassName);
             break 'cleanup;
         }
 
@@ -3408,12 +3403,12 @@ pub unsafe extern "C" fn co_UserCreateWindowEx(
             pCsw = ExAllocatePoolWithTag(NonPagedPool, core::mem::size_of::<CREATESTRUCTW>() as _, TAG_HOOK) as *mut CREATESTRUCTW;
             pCbtCreate = ExAllocatePoolWithTag(NonPagedPool, core::mem::size_of::<CBT_CREATEWNDW>() as _, TAG_HOOK) as *mut CBT_CREATEWNDW;
             if pCsw.is_null() || pCbtCreate.is_null() {
-                ERR!(b"UserHeapAlloc() failed!\n\0".as_ptr() as *const i8);
+                ERR!("UserHeapAlloc() failed!\n");
                 break 'cleanup;
             }
 
             if IntMsgCreateStructW(Window, pCsw, Cs, &mut pszClass, &mut pszName) == 0 {
-                ERR!(b"IntMsgCreateStructW() failed!\n\0".as_ptr() as *const i8);
+                ERR!("IntMsgCreateStructW() failed!\n");
                 break 'cleanup;
             }
 
@@ -3422,7 +3417,7 @@ pub unsafe extern "C" fn co_UserCreateWindowEx(
 
             Result = co_HOOK_CallHooks(WH_CBT as INT, HCBT_CREATEWND as i32, hWnd as WPARAM, pCbtCreate as LPARAM);
             if Result != 0 {
-                ERR!(b"WH_CBT HCBT_CREATEWND hook failed! 0x%x\n\0".as_ptr() as *const i8, Result);
+                ERR!("WH_CBT HCBT_CREATEWND hook failed! 0x%x\n", Result);
                 break 'cleanup;
             }
             (*Cs).cx = (*pCsw).cx;
@@ -3468,7 +3463,7 @@ pub unsafe extern "C" fn co_UserCreateWindowEx(
         (*Window).rcClient = (*Window).rcWindow;
 
         if !(*Window).spwndNext.is_null() || !(*Window).spwndPrev.is_null() {
-            ERR!(b"Window 0x%p has been linked too early!\n\0".as_ptr() as *const i8, Window);
+            ERR!("Window 0x%p has been linked too early!\n", Window);
         }
 
         if ((*Window).state2 & WNDS2_WIN31COMPAT) == 0 {
@@ -3487,7 +3482,7 @@ pub unsafe extern "C" fn co_UserCreateWindowEx(
 
         Result = co_IntSendMessage(UserHMGetHandle(Window as PVOID), WM_NCCREATE, 0, Cs as LPARAM);
         if Result == 0 {
-            ERR!(b"co_UserCreateWindowEx(%wZ): NCCREATE message failed\n\0".as_ptr() as *const i8, ClassName);
+            ERR!("co_UserCreateWindowEx(%wZ): NCCREATE message failed\n", ClassName);
             break 'cleanup;
         }
 
@@ -3544,7 +3539,7 @@ pub unsafe extern "C" fn co_UserCreateWindowEx(
 
         Result = co_IntSendMessage(UserHMGetHandle(Window as PVOID), WM_CREATE, 0, Cs as LPARAM);
         if Result == -1isize as LRESULT {
-            ERR!(b"co_UserCreateWindowEx(%wZ): WM_CREATE message failed\n\0".as_ptr() as *const i8, ClassName);
+            ERR!("co_UserCreateWindowEx(%wZ): WM_CREATE message failed\n", ClassName);
             break 'cleanup;
         }
 
@@ -3743,7 +3738,7 @@ pub unsafe extern "system" fn NtUserCreateWindowEx(
     'cleanup: loop {
         if (dwStyle & (WS_POPUP | WS_CHILD)) != WS_CHILD {
             if !hMenu.is_null() && UserGetMenuObject(hMenu).is_null() {
-                ERR!(b"NtUserCreateWindowEx: Got an invalid menu handle!\n\0".as_ptr() as *const i8);
+                ERR!("NtUserCreateWindowEx: Got an invalid menu handle!\n");
                 EngSetLastError(ERROR_INVALID_MENU_HANDLE);
                 return core::ptr::null_mut();
             }
@@ -3754,7 +3749,7 @@ pub unsafe extern "system" fn NtUserCreateWindowEx(
             plstrWindowName,
         );
         if !NT_SUCCESS(Status) {
-            ERR!(b"NtUserCreateWindowEx: failed to capture plstrWindowName\n\0".as_ptr() as *const i8);
+            ERR!("NtUserCreateWindowEx: failed to capture plstrWindowName\n");
             SetLastNtError(Status);
             return core::ptr::null_mut();
         }
@@ -3771,7 +3766,7 @@ pub unsafe extern "system" fn NtUserCreateWindowEx(
                 plstrClassName,
             );
             if !NT_SUCCESS(Status) {
-                ERR!(b"NtUserCreateWindowEx: failed to capture plstrClassName\n\0".as_ptr() as *const i8);
+                ERR!("NtUserCreateWindowEx: failed to capture plstrClassName\n");
                 SetLastNtError(Status);
                 break 'cleanup;
             }
@@ -3792,7 +3787,7 @@ pub unsafe extern "system" fn NtUserCreateWindowEx(
                 plstrClsVersion,
             );
             if !NT_SUCCESS(Status) {
-                ERR!(b"NtUserCreateWindowEx: failed to capture plstrClsVersion\n\0".as_ptr() as *const i8);
+                ERR!("NtUserCreateWindowEx: failed to capture plstrClsVersion\n");
                 SetLastNtError(Status);
                 break 'cleanup;
             }
@@ -3827,7 +3822,7 @@ pub unsafe extern "system" fn NtUserCreateWindowEx(
         );
 
         if pwnd.is_null() {
-            ERR!(b"co_UserCreateWindowEx failed!\n\0".as_ptr() as *const i8);
+            ERR!("co_UserCreateWindowEx failed!\n");
         }
         hwnd = if !pwnd.is_null() {
             UserHMGetHandle(pwnd as PVOID)
@@ -3876,7 +3871,7 @@ unsafe fn IntDestroyOwnedWindows(Window: PWND) {
             co_UserDestroyWindow(pWnd as PVOID);
             UserDerefObjectCo(pWnd as PVOID);
         } else {
-            ERR!(b"IntWndBelongsToThread(0x%p) is FALSE, ignoring.\n\0".as_ptr() as *const i8, pWnd);
+            ERR!("IntWndBelongsToThread(0x%p) is FALSE, ignoring.\n", pWnd);
         }
 
         phWnd = phWnd.add(1);

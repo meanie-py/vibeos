@@ -1,11 +1,6 @@
 use win32k_sys::win32k::*;
 use core::ffi::c_void;
 
-// C debug macros — silenced via macro_rules! (variadic no-op).
-#[allow(unused_macros)] macro_rules! TRACE { ($($t:tt)*) => { () }; }
-#[allow(unused_macros)] macro_rules! ERR { ($($t:tt)*) => { () }; }
-
-
 extern "C" {
 
 }
@@ -307,7 +302,7 @@ pub unsafe extern "system" fn EngCreateClip() -> *mut CLIPOBJ {
         return Clip as *mut CLIPOBJ;
     }
 
-    ERR!(b"Clip object allocation failed!\n\0".as_ptr() as *const i8);
+    ERR!("Clip object allocation failed!\n");
     core::ptr::null_mut()
 }
 
@@ -353,7 +348,7 @@ pub unsafe extern "system" fn CLIPOBJ_cEnumStart(
                 CompareFunc = Some(CompareLeftUp);
             }
             _ => {
-                ERR!(b"Invalid iDirection %lu\n\0".as_ptr() as _, iDirection);
+                ERR!("Invalid iDirection %lu\n", iDirection);
                 iDirection = (*Clip).iDirection;
                 CompareFunc = None;
             }

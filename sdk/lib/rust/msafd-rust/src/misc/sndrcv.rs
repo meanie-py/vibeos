@@ -324,7 +324,7 @@ pub unsafe extern "system" fn WSPRecv(
                 core::mem::size_of::<MSAFD_RECV_APC_CONTEXT>(),
             ) as PMSAFD_RECV_APC_CONTEXT;
             if APCContext.is_null() {
-                ERR!(b"Not enough memory for APC Context\n\0".as_ptr() as _);
+                ERR!("Not enough memory for APC Context\n");
                 NtClose(SockEvent);
                 return MsafdReturnWithErrno(
                     STATUS_INSUFFICIENT_RESOURCES,
@@ -541,7 +541,7 @@ pub unsafe extern "system" fn WSPRecvFrom(
             APCFunction = as_apc(MsafdRecvAPC);
             APCContext = HeapAlloc(GlobalHeap, 0, core::mem::size_of::<MSAFD_RECV_APC_CONTEXT>()) as PMSAFD_RECV_APC_CONTEXT;
             if APCContext.is_null() {
-                ERR!(b"Not enough memory for APC Context\n\0".as_ptr() as *const i8);
+                ERR!("Not enough memory for APC Context\n");
                 NtClose(SockEvent);
                 return MsafdReturnWithErrno(STATUS_INSUFFICIENT_RESOURCES, lpErrno, 0, lpNumberOfBytesRead) as i32;
             }
@@ -714,7 +714,7 @@ pub unsafe extern "system" fn WSPSend(
             APCContext = HeapAlloc(GlobalHeap, 0, core::mem::size_of::<MSAFD_SEND_APC_CONTEXT>())
                 as PMSAFD_SEND_APC_CONTEXT;
             if APCContext.is_null() {
-                ERR!(b"Not enough memory for APC Context\n\0".as_ptr() as _);
+                ERR!("Not enough memory for APC Context\n");
                 NtClose(SockEvent);
                 return MsafdReturnWithErrno(
                     STATUS_INSUFFICIENT_RESOURCES,
@@ -918,7 +918,7 @@ pub unsafe extern "system" fn WSPSendTo(
             APCFunction = as_apc(MsafdSendAPC);
             APCContext = HeapAlloc(GlobalHeap, 0, core::mem::size_of::<MSAFD_SEND_APC_CONTEXT>()) as PMSAFD_SEND_APC_CONTEXT;
             if APCContext.is_null() {
-                ERR!(b"Not enough memory for APC Context\n\0".as_ptr() as PCHAR);
+                ERR!("Not enough memory for APC Context\n");
                 NtClose(SockEvent);
                 return MsafdReturnWithErrno(STATUS_INSUFFICIENT_RESOURCES, lpErrno, 0, lpNumberOfBytesSent) as i32;
             }

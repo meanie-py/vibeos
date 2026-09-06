@@ -22,11 +22,6 @@ use core::ffi::c_void;
 // the channel is on, and one of them here is `*(ULONG64*)ep->ContextRecord->Rip` — a load
 // through the FAULTING PC. Evaluating it unconditionally would take a second fault inside a
 // filter that is about to return CONTINUE_SEARCH, turning a diagnostic into the crash.
-macro_rules! FIXME {
-    ($msg:literal $(, $($arg:tt)*)?) => {{
-        OutputDebugStringA($msg.as_ptr());
-    }};
-}
 
 // `__ASM_GLOBAL_FUNC( call_exc_handler, ... )` from the C, transcribed. It has no C text for
 // rustconv to translate — it is a file-scope macro invocation — so it is hand-carried, and it
@@ -111,7 +106,7 @@ pub unsafe extern "C" fn handle_fpieee_flt(
     handler: Option<unsafe extern "C" fn(*mut _FPIEEE_RECORD) -> i32>,
 ) -> i32 {
     FIXME!(
-        c"fixme:seh:(%lx %p %p) opcode: %#I64x\n",
+        "seh:(%lx %p %p) opcode: %#I64x\n",
         exception_code,
         ep,
         handler,

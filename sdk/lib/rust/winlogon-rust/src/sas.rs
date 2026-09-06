@@ -38,15 +38,6 @@ macro_rules! w {
 
 
 // Debug macros dropped (as in the other flipped files; call-sites already `!`).
-macro_rules! ERR {
-    ($($t:tt)*) => {{}};
-}
-macro_rules! WARN {
-    ($($t:tt)*) => {{}};
-}
-macro_rules! TRACE {
-    ($($t:tt)*) => {{}};
-}
 
 // C macros → helper fns.
 #[inline]
@@ -722,20 +713,20 @@ unsafe fn RestoreAllConnections(Session: PWLSESSION) {
     }
 
     if ImpersonateLoggedOnUser((*Session).UserToken) == 0 {
-        ERR!(b"WL: ImpersonateLoggedOnUser() failed with error %lu\n\0".as_ptr() as *const i8, GetLastError());
+        ERR!("WL: ImpersonateLoggedOnUser() failed with error %lu\n", GetLastError());
         return;
     }
 
     'quit: {
         dRet = WNetOpenEnumW(RESOURCE_REMEMBERED, RESOURCETYPE_DISK, 0, core::ptr::null_mut(), &mut hEnum);
         if dRet != WN_SUCCESS {
-            ERR!(b"Failed to open enumeration: %lu\n\0".as_ptr() as *const i8, dRet);
+            ERR!("Failed to open enumeration: %lu\n", dRet);
             break 'quit;
         }
 
         lpRes = HeapAlloc(GetProcessHeap(), 0, dSize as SIZE_T) as LPNETRESOURCE;
         if lpRes.is_null() {
-            ERR!(b"Failed to allocate memory\n\0".as_ptr() as *const i8);
+            ERR!("Failed to allocate memory\n");
             WNetCloseEnum(hEnum);
             break 'quit;
         }
@@ -842,7 +833,7 @@ unsafe fn HandleLogon(Session: PWLSESSION) -> BOOL {
                 || ((*(*Session).Profile).dwType != WLX_PROFILE_TYPE_V1_0
                     && (*(*Session).Profile).dwType != WLX_PROFILE_TYPE_V2_0)
             {
-                ERR!(b"WL: Wrong profile\n\0".as_ptr() as *const _);
+                ERR!("WL: Wrong profile\n");
                 break 'cleanup;
             }
 
@@ -893,7 +884,7 @@ unsafe fn HandleLogon(Session: PWLSESSION) -> BOOL {
             }
 
             if LoadUserProfileW((*Session).UserToken, core::ptr::addr_of_mut!(ProfileInfo)) == 0 {
-                ERR!(b"WL: LoadUserProfileW() failed\n\0".as_ptr() as *const _);
+                ERR!("WL: LoadUserProfileW() failed\n");
                 break 'cleanup;
             }
             (*Session).hProfileInfo = ProfileInfo.hProfile;
@@ -1100,7 +1091,7 @@ unsafe fn CreateLogoffSecurityAttributes(
         &mut pEveryoneSID,
     ) == 0
     {
-        ERR!(b"Failed to initialize security descriptor for logoff thread!\n\0".as_ptr() as *const i8);
+        ERR!("Failed to initialize security descriptor for logoff thread!\n");
         return STATUS_UNSUCCESSFUL;
     }
 
@@ -1112,7 +1103,7 @@ unsafe fn CreateLogoffSecurityAttributes(
             + core::mem::size_of::<ACL>()) as SIZE_T,
     ) as *mut BYTE;
     if pMem.is_null() {
-        ERR!(b"Failed to allocate memory for logoff security descriptor!\n\0".as_ptr() as *const i8);
+        ERR!("Failed to allocate memory for logoff security descriptor!\n");
         return STATUS_NO_MEMORY;
     }
 
@@ -1134,19 +1125,19 @@ unsafe fn CreateLogoffSecurityAttributes(
     Access.Trustee.ptstrName = pEveryoneSID as _;
 
     if SetEntriesInAclW(1, &mut Access, core::ptr::null_mut(), &mut pACL) != ERROR_SUCCESS {
-        ERR!(b"Failed to set Access Rights for logoff thread. Logging out will most likely fail.\n\0".as_ptr() as *const i8);
+        ERR!("Failed to set Access Rights for logoff thread. Logging out will most likely fail.\n");
         HeapFree(GetProcessHeap(), 0, pMem as _);
         return STATUS_UNSUCCESSFUL;
     }
 
     if InitializeSecurityDescriptor(SecurityDescriptor, SECURITY_DESCRIPTOR_REVISION as _) == 0 {
-        ERR!(b"Failed to initialize security descriptor for logoff thread!\n\0".as_ptr() as *const i8);
+        ERR!("Failed to initialize security descriptor for logoff thread!\n");
         HeapFree(GetProcessHeap(), 0, pMem as _);
         return STATUS_UNSUCCESSFUL;
     }
 
     if SetSecurityDescriptorDacl(SecurityDescriptor, 1, pACL, 0) == 0 {
-        ERR!(b"SetSecurityDescriptorDacl Error %lu\n\0".as_ptr() as *const i8, GetLastError());
+        ERR!("SetSecurityDescriptorDacl Error %lu\n", GetLastError());
         HeapFree(GetProcessHeap(), 0, pMem as _);
         return STATUS_UNSUCCESSFUL;
     }
@@ -1342,14 +1333,14 @@ pub unsafe extern "C" fn HandleShutdown(Session: PWLSESSION, wlxAction: DWORD) -
 
     Status = RunLogoffShutdownThread(Session, core::ptr::null_mut(), wlxAction);
     if !NT_SUCCESS(Status) {
-        ERR!(b"Failed to start the Shutdown thread, Status 0x%08lx\n\0".as_ptr() as PCSTR, Status);
+        ERR!("Failed to start the Shutdown thread, Status 0x%08lx\n", Status);
     }
 
     DisplayStatusMessage(Session, (*Session).WinlogonDesktop, uMsgId);
 
     UninitializeSAS(Session);
 
-    ERR!(b"Shutting down NT...\n\0".as_ptr() as PCSTR);
+    ERR!("Shutting down NT...\n");
     RtlAdjustPrivilege(SE_SHUTDOWN_PRIVILEGE, 1u8, 0u8, core::ptr::addr_of_mut!(Old));
     if wlxAction == WLX_SAS_ACTION_SHUTDOWN_REBOOT {
         NtShutdownSystem(ShutdownReboot);

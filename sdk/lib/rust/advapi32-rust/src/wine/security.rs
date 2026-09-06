@@ -2640,7 +2640,7 @@ unsafe fn DumpSidNumeric(psid: PSID, pwptr: *mut *mut WCHAR, plen: *mut ULONG) -
     }
 
     if (*pisid).IdentifierAuthority.Value[0] != 0 || (*pisid).IdentifierAuthority.Value[1] != 0 {
-        FIXME!(b"not matching MS' bugs\n\0".as_ptr() as LPCSTR);
+        FIXME!("not matching MS' bugs\n");
         SetLastError(ERROR_INVALID_SID);
         return 0;
     }

@@ -17,6 +17,13 @@ and the VIBEOS_KMTEST_SERIAL tee in kmtest.c):
     [KMTEST-SWEEP] done total=...
     *** BUGCHECK: 0x...
 
+plus, from kmt_test.h's KmtVOk, one line per FAILING assertion:
+
+    <file>.c:<line>: Test failed: <message>
+
+Successes emit nothing (`if (0/*KmtReportSuccess*/)`), which is why the pass count
+is still gated as a count below — there are no per-success identities to compare.
+
 Output (stdout): one line per launched test —
     <Test> <STATUS> pass=N fail=N skip=N [exit=N] [errors=N]
 STATUS: OK (END seen + exit 0), FAIL-EXIT (END + nonzero exit), NO-END (launched,
@@ -25,9 +32,31 @@ with no exit). A trailing summary line reports totals + whether the sweep finish
 (done marker) or died (BUGCHECK).
 
 This is the read side of the ratchet: `--baseline <file>` compares against a stored
-baseline (same format) and exits 1 on any regression (new CRASH/TIMEOUT/FAILSTART,
-pass count dropped, fail count grew). `--write-baseline <file>` stores the current
-results as the new floor.
+baseline (same format) and exits 1 on any regression. `--write-baseline <file>` stores
+the current results as the new floor.
+
+THE FLOOR IS A SET OF ASSERTION IDENTITIES, NOT A SET OF COUNTS. A baseline row may
+carry indented continuation lines naming the assertions expected to fail:
+
+    IoDeviceObject OK pass=185 fail=2 skip=0
+        assert  IoDeviceObject_drv.c:198
+        assert? IoDeviceObject_drv.c:206
+
+`assert` is expected to fail; `assert?` is known-bistable, so it is a regression
+neither when it fires nor when it does not, and a re-seed carries it forward rather
+than banking whichever face one boot showed.
+
+Counts cannot express what a run did: fix three assertions, break three others, and
+pass/fail/skip do not move. Measured over 595 archived arm64 sweeps, 33 of the 37
+count-signatures shared by more than one run cover runs whose FAILING ASSERTIONS
+differ — the worst is 10 runs with byte-identical counts differing in 6 identities.
+A count-gated ratchet accepts all of them as the same result.
+
+So the gate is: a new status in BAD, a DROPPED pass count (counts, necessarily —
+successes have no identities), or an assertion failing that the floor does not list.
+A fail count that grew without a new identity is a loop running longer, not a
+regression. A row with no `assert` lines has not been seeded yet and keeps the old
+fail-count gate, so seeding can proceed per-arch without a flag day.
 """
 
 import argparse
@@ -43,6 +72,10 @@ EXIT = re.compile(r"\[KMTEST-SWEEP\] exit (\S+) code=(\d+)")
 TIMEOUT = re.compile(r"\[KMTEST-SWEEP\] TIMEOUT (\S+)")
 DONE = re.compile(r"\[KMTEST-SWEEP\] done (.*)")
 BUGCHECK = re.compile(r"\*\*\* BUGCHECK: (0x[0-9A-Fa-f]+)")
+# kmt_test.h's KmtVOk emits one of these per FAILING assertion (successes are not
+# logged — `if (0/*KmtReportSuccess*/)`). `<file>:<line>` is the assertion's identity;
+# the message carries run-varying values (addresses, NTSTATUS) and is NOT part of it.
+ASSERT_FAIL = re.compile(r"^(\S+\.c:\d+): Test failed:")
 
 
 def parse(log_text):
@@ -55,24 +88,52 @@ def parse(log_text):
         m = LAUNCH.search(line)
         if m:
             current = {
-                "name": m.group(1), "status": None, "pass": 0, "fail": 0,
-                "skip": 0, "exit": None, "errors": 0, "end_seen": False,
+                "name": m.group(1),
+                "status": None,
+                "pass": 0,
+                "fail": 0,
+                "skip": 0,
+                "exit": None,
+                "errors": 0,
+                "end_seen": False,
+                "asserts": set(),
             }
             results.append(current)
             continue
         m = FAILSTART.search(line)
         if m:
-            results.append({
-                "name": m.group(1), "status": "FAILSTART", "pass": 0, "fail": 0,
-                "skip": 0, "exit": None, "errors": 0, "end_seen": False,
-            })
+            results.append(
+                {
+                    "name": m.group(1),
+                    "status": "FAILSTART",
+                    "pass": 0,
+                    "fail": 0,
+                    "skip": 0,
+                    "exit": None,
+                    "errors": 0,
+                    "end_seen": False,
+                    "asserts": set(),
+                }
+            )
             current = None
             continue
         m = END.search(line)
         if m and current and m.group(1) == current["name"]:
             current["pass"], current["fail"], current["skip"] = (
-                int(m.group(2)), int(m.group(3)), int(m.group(4)))
+                int(m.group(2)),
+                int(m.group(3)),
+                int(m.group(4)),
+            )
             current["end_seen"] = True
+            continue
+        m = ASSERT_FAIL.match(line.strip())
+        if m and current:
+            # Attributed to the launched test, not to the next END: a test that
+            # CRASHes or TIMEOUTs never emits END, and attributing on END alone
+            # would bleed its failures into whichever test ends next. That
+            # misattribution is real — a 595-run arm64 soak shows ExPools.c lines
+            # surfacing under ExSequencedList exactly when the run ahead died.
+            current["asserts"].add(m.group(1))
             continue
         if current and ERROR.search(line):
             current["errors"] += 1
@@ -117,8 +178,16 @@ def parse(log_text):
     # later pass. Keep the most-complete result per name, preserving first-seen
     # order. A genuinely flaky test (real CRASH on some runs) is caught later by
     # the design's >=3-run stability check + flaky.txt, not hidden here.
-    RANK = {"OK": 6, "FAIL-EXIT": 5, "NO-END": 4, "TIMEOUT": 3, "CRASH": 3,
-            "FAILSTART": 2, "INCOMPLETE": 1, None: 0}
+    RANK = {
+        "OK": 6,
+        "FAIL-EXIT": 5,
+        "NO-END": 4,
+        "TIMEOUT": 3,
+        "CRASH": 3,
+        "FAILSTART": 2,
+        "INCOMPLETE": 1,
+        None: 0,
+    }
     best, order = {}, []
     for r in results:
         n = r["name"]
@@ -132,20 +201,50 @@ def parse(log_text):
     return results, done_line, bugcheck
 
 
-def fmt(r):
+def fmt(r, flaky=()):
+    """One baseline row, plus an indented `assert` line per failing assertion.
+
+    Counts alone cannot express what a run did: fix three assertions, break three
+    others, and pass/fail/skip are unchanged. Measured on 595 archived arm64
+    sweeps, 33 of the 37 count-signatures shared by more than one run cover runs
+    whose FAILING ASSERTIONS differ — the worst is 10 runs with byte-identical
+    counts differing in 6 identities. So the identity set is the floor and the
+    counts are commentary.
+
+    `assert?` marks an identity known to come and go. A bistable row is not a
+    regression when it appears and not an improvement when it does not; without
+    the mark, every soak round would report one or the other forever.
+    """
     line = f"{r['name']} {r['status']} pass={r['pass']} fail={r['fail']} skip={r['skip']}"
     if r["exit"] is not None:
         line += f" exit={r['exit']}"
     if r["errors"]:
         line += f" errors={r['errors']}"
+    flaky = set(flaky)
+    for a in sorted(r.get("asserts") or ()):
+        line += f"\n    assert{'?' if a in flaky else ''} {a}"
+    # A known-bistable identity keeps its row on a run where it did NOT fire —
+    # dropping it would re-seed the flake away and hand the next run a false
+    # regression.
+    for a in sorted(flaky - set(r.get("asserts") or ())):
+        line += f"\n    assert? {a}"
     return line
 
 
 def load_baseline(path):
     base = {}
+    entry = None
     for line in Path(path).read_text().splitlines():
-        line = line.strip()
+        raw, line = line, line.strip()
         if not line or line.startswith("#"):
+            continue
+        if raw[:1].isspace() and line.split()[0] in ("assert", "assert?"):
+            if entry is None:
+                continue  # an assert line before any test row: ignore, not crash
+            kind, ident = line.split(None, 1)
+            entry.setdefault("asserts", set()).add(ident.strip())
+            if kind == "assert?":
+                entry.setdefault("flaky", set()).add(ident.strip())
             continue
         parts = line.split()
         entry = {"status": parts[1]}
@@ -170,12 +269,26 @@ def compare(results, base):
             regressions.append(f"{r['name']}: {b['status']} -> {r['status']}")
             continue
         if r["status"] not in BAD and b["status"] not in BAD:
+            # A dropped pass count is still count-gated, and has to be: kmtest
+            # logs nothing per SUCCEEDING assertion (kmt_test.h disables that
+            # branch), so successes have no identities to compare. A test that
+            # quietly stops asserting shows up here and nowhere else.
             if r["pass"] < b.get("pass", 0):
-                regressions.append(
-                    f"{r['name']}: pass {b['pass']} -> {r['pass']} (dropped)")
-            if r["fail"] > b.get("fail", 0):
-                regressions.append(
-                    f"{r['name']}: fail {b['fail']} -> {r['fail']} (grew)")
+                regressions.append(f"{r['name']}: pass {b['pass']} -> {r['pass']} (dropped)")
+            known = b.get("asserts")
+            if known is None:
+                # Row not seeded with identities yet — gate it the old way rather
+                # than silently not gating it at all. Seeding is per-arch and
+                # incremental; see --write-baseline.
+                if r["fail"] > b.get("fail", 0):
+                    regressions.append(f"{r['name']}: fail {b['fail']} -> {r['fail']} (grew)")
+            else:
+                # The real gate: assertions that fail now and were not failing
+                # before. Offsetting changes cannot hide here, and a fail COUNT
+                # that grew without a new identity is a loop running longer, not
+                # a regression.
+                for a in sorted(set(r.get("asserts") or ()) - known):
+                    regressions.append(f"{r['name']}: NEW failing assertion {a}")
     ran = {r["name"] for r in results}
     for name, b in base.items():
         if name not in ran:
@@ -197,14 +310,18 @@ def main():
     print("\n".join(lines))
     ok = sum(1 for r in results if r["status"] == "OK")
     bad = sum(1 for r in results if r["status"] in BAD)
-    print(f"# summary: launched={len(results)} ok={ok} bad={bad} "
-          f"sweep={'done: ' + done_line if done_line else 'DID NOT FINISH'}"
-          f"{' bugcheck=' + bugcheck if bugcheck else ''}")
+    print(
+        f"# summary: launched={len(results)} ok={ok} bad={bad} "
+        f"sweep={'done: ' + done_line if done_line else 'DID NOT FINISH'}"
+        f"{' bugcheck=' + bugcheck if bugcheck else ''}"
+    )
 
     if args.write_baseline:
         Path(args.write_baseline).write_text(
             "# kmtest conformance baseline — parse_kmtest_serial.py format\n"
-            + "\n".join(lines) + "\n")
+            + "\n".join(lines)
+            + "\n"
+        )
         print(f"# baseline written: {args.write_baseline}")
 
     if args.baseline:

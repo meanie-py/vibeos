@@ -222,10 +222,6 @@ fn abs(i: core::ffi::c_int) -> core::ffi::c_int {
 }
 
 // ReactOS WINE_*_DEBUG_CHANNEL trace macros — no-ops in the cohab build.
-macro_rules! ERR   { ($($t:tt)*) => {{ }}; }
-macro_rules! WARN  { ($($t:tt)*) => {{ }}; }
-macro_rules! TRACE { ($($t:tt)*) => {{ }}; }
-macro_rules! FIXME { ($($t:tt)*) => {{ }}; }
 
 // ---- file-scope preamble (translated) ----
 #[repr(C)]
@@ -552,7 +548,7 @@ unsafe fn CURSORICON_ConvertPngToBmpIcon(
 
 unsafe fn LoadSystemCursors() {
     if gpsi.is_null() || (*crate::internal::gpsi_perusr()).hIconSmWindows.is_null() {
-        ERR!(b"Loading System Cursors\n\0".as_ptr() as *const core::ffi::c_char);
+        ERR!("Loading System Cursors\n");
         NtUserSetSystemCursor(LoadImageW(core::ptr::null_mut(), IDC_ARROW, IMAGE_CURSOR, 0, 0, LR_DEFAULTSIZE) as HCURSOR, OCR_NORMAL);
         NtUserSetSystemCursor(LoadImageW(core::ptr::null_mut(), IDC_IBEAM, IMAGE_CURSOR, 0, 0, LR_DEFAULTSIZE) as HCURSOR, OCR_IBEAM);
         NtUserSetSystemCursor(LoadImageW(core::ptr::null_mut(), IDC_WAIT, IMAGE_CURSOR, 0, 0, LR_DEFAULTSIZE) as HCURSOR, OCR_WAIT);
@@ -825,7 +821,7 @@ unsafe fn DIB_GetBitmapInfo(
         TRACE!(b"We have a PNG icon\n\0".as_ptr() as *const i8);
     } else {
         ERR!(
-            b"Unknown/wrong size for header of 0x%x\n\0".as_ptr() as *const i8,
+            "Unknown/wrong size for header of 0x%x\n",
             (*header).biSize,
         );
     }
@@ -1122,7 +1118,7 @@ unsafe fn get_best_icon_file_entry(
         if ((*entry).dwDIBOffset > dwFileSize)
             || (((*entry).dwDIBOffset + (*entry).dwDIBSize) > dwFileSize)
         {
-            ERR!(b"Corrupted icon file?.\n\0".as_ptr());
+            ERR!("Corrupted icon file?.\n");
             HeapFree(GetProcessHeap(), 0, fakeDir as LPVOID);
             return core::ptr::null();
         }
@@ -1644,14 +1640,14 @@ unsafe fn CURSORICON_GetCursorDataFromANI(
     /* Find the root chunk */
     riff_find_chunk(ANI_ACON_ID, ANI_RIFF_ID, &root_chunk, &mut ACON_chunk);
     if ACON_chunk.data.is_null() {
-        ERR!(b"Failed to get root chunk.\n\0".as_ptr() as *const core::ffi::c_char);
+        ERR!("Failed to get root chunk.\n");
         return 0;
     }
 
     /* Find the header chunk */
     riff_find_chunk(ANI_anih_ID, 0, &ACON_chunk, &mut anih_chunk);
     if ACON_chunk.data.is_null() {
-        ERR!(b"Failed to get header chunk.\n\0".as_ptr() as *const core::ffi::c_char);
+        ERR!("Failed to get header chunk.\n");
         return 0;
     }
     pHeader = anih_chunk.data as *const ani_header;
@@ -1667,8 +1663,7 @@ unsafe fn CURSORICON_GetCursorDataFromANI(
     if (*pHeader).flags & ANI_FLAG_SEQUENCE != 0 {
         riff_find_chunk(ANI_seq__ID, 0, &ACON_chunk, &mut seq_chunk);
         if seq_chunk.data.is_null() {
-            ERR!(b"No sequence data although the flag is set!\n\0".as_ptr()
-                as *const core::ffi::c_char);
+            ERR!("No sequence data although the flag is set!\n");
             return 0;
         }
     }
@@ -1682,7 +1677,7 @@ unsafe fn CURSORICON_GetCursorDataFromANI(
     /* Get the frames chunk */
     riff_find_chunk(ANI_fram_ID, ANI_LIST_ID, &ACON_chunk, &mut fram_chunk);
     if fram_chunk.data.is_null() {
-        ERR!(b"Failed to get icon list.\n\0".as_ptr() as *const core::ffi::c_char);
+        ERR!("Failed to get icon list.\n");
         return 0;
     }
     icon_chunk = fram_chunk.data;
@@ -1732,8 +1727,7 @@ unsafe fn CURSORICON_GetCursorDataFromANI(
                 fuLoad,
             );
             if pDirEntry.is_null() {
-                ERR!(b"Unable to find the right file entry for frame %d.\n\0".as_ptr()
-                    as *const core::ffi::c_char);
+                ERR!("Unable to find the right file entry for frame %d.\n");
                 HeapFree(GetProcessHeap(), 0, (*pCurData).aspcur as LPVOID);
                 core::ptr::write_bytes(pCurData, 0, 1);
                 return 0;
@@ -1986,13 +1980,13 @@ unsafe fn BITMAP_LoadImageW(
                         4 => pixel >>= 4,
                         8 => {}
                         _ => {
-                            FIXME!(b"Unhandled bit depth %d.\n\0".as_ptr(), bpp2);
+                            FIXME!("Unhandled bit depth %d.\n", bpp2 as core::ffi::c_uint);
                             break 'create_bitmap;
                         }
                     }
 
                     if pixel as u16 >= numColors {
-                        ERR!(b"Wrong pixel passed in.\n\0".as_ptr());
+                        ERR!("Wrong pixel passed in.\n");
                         break 'create_bitmap;
                     }
 
@@ -2116,7 +2110,7 @@ unsafe fn BITMAP_LoadImageW(
             SRCCOPY,
         ) == 0
         {
-            ERR!(b"StretchDIBits failed!.\n\0".as_ptr());
+            ERR!("StretchDIBits failed!.\n");
             SelectObject(hdc, hbmpOld as *mut core::ffi::c_void);
             DeleteObject(hbmpRet as *mut core::ffi::c_void);
             hbmpRet = core::ptr::null_mut();
@@ -2530,11 +2524,11 @@ unsafe fn BITMAP_CopyImage(
     }
 
     if flags & LR_COPYFROMRESOURCE != 0 {
-        FIXME!(b"The flag LR_COPYFROMRESOURCE is not implemented for bitmaps\n\0".as_ptr());
+        FIXME!("The flag LR_COPYFROMRESOURCE is not implemented for bitmaps\n");
     }
 
     if flags & LR_COPYRETURNORG != 0 {
-        FIXME!(b"The flag LR_COPYRETURNORG is not implemented for bitmaps\n\0".as_ptr());
+        FIXME!("The flag LR_COPYRETURNORG is not implemented for bitmaps\n");
     }
 
     if desiredx == 0 {
@@ -2877,7 +2871,7 @@ pub unsafe extern "system" fn CopyImage(
                     let mut bm: BITMAP = core::mem::zeroed();
                     let mut iconinfo: ICONINFO = core::mem::zeroed();
                     if GetIconInfo(hImage as HICON, &mut iconinfo) == 0 {
-                        ERR!(b"GetIconInfo Failed. hImage %p\n\0".as_ptr() as *const i8, hImage);
+                        ERR!("GetIconInfo Failed. hImage %p\n", hImage);
                         return core::ptr::null_mut();
                     }
                     if GetObjectW(
@@ -2886,7 +2880,7 @@ pub unsafe extern "system" fn CopyImage(
                         core::ptr::addr_of_mut!(bm) as LPVOID,
                     ) == 0
                     {
-                        ERR!(b"GetObject Failed. iconinfo %p\n\0".as_ptr() as *const i8, core::ptr::addr_of!(iconinfo));
+                        ERR!("GetObject Failed. iconinfo %p\n", core::ptr::addr_of!(iconinfo));
                         return core::ptr::null_mut();
                     }
 
@@ -3453,7 +3447,7 @@ pub unsafe extern "system" fn CreateIconFromResourceEx(
     let mut BmpIconSize: DWORD = 0;
 
     if pbIconBits.is_null() || (cbIconBits as usize) < 2 * core::mem::size_of::<DWORD>() {
-        ERR!(b"Invalid IconBits array\n\0".as_ptr());
+        ERR!("Invalid IconBits array\n");
         return core::ptr::null_mut();
     }
 
@@ -3475,7 +3469,7 @@ pub unsafe extern "system" fn CreateIconFromResourceEx(
         /* Convert to win32k-ready data */
         if memcmp(pbIconBits as *const c_void, b"RIFF\0".as_ptr() as *const c_void, 4) == 0 {
             if CURSORICON_GetCursorDataFromANI(&mut cursorData, pbIconBits, cbIconBits, uFlags) == 0 {
-                ERR!(b"Could not get cursor data from .ani.\n\0".as_ptr());
+                ERR!("Could not get cursor data from .ani.\n");
                 return core::ptr::null_mut();
             }
             isAnimated = ((cursorData.CURSORF_flags & CURSORF_ACON) != 0) as BOOL;
@@ -3563,7 +3557,7 @@ pub unsafe extern "system" fn CreateIconFromResourceEx(
                 pbBmpIcon.add((*entry).dwDIBOffset as usize) as *const BITMAPINFO,
             ) == 0
             {
-                ERR!(b"Couldn't get cursor/icon data\n\0".as_ptr());
+                ERR!("Couldn't get cursor/icon data\n");
                 return create_icon_from_resource_cleanup(cursorData, isAnimated, pbBmpIcon);
             }
         }
@@ -3579,7 +3573,7 @@ pub unsafe extern "system" fn CreateIconFromResourceEx(
     }
 
     if NtUserSetCursorIconData(hIcon, core::ptr::null_mut(), core::ptr::null_mut(), &mut cursorData) == 0 {
-        ERR!(b"NtUserSetCursorIconData failed.\n\0".as_ptr());
+        ERR!("NtUserSetCursorIconData failed.\n");
         NtUserDestroyCursor(hIcon as HANDLE, 1);
         return create_icon_from_resource_cleanup(cursorData, isAnimated, pbBmpIcon);
     }

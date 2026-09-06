@@ -40,10 +40,10 @@ does NOT certify that helper as a replacement for the broad production edges.
 
 Leaf and shared package-version manifest edits are now covered, with and without
 emitted depfiles: only their consumers run, and executed warm/cold outputs agree.
-All 17 invalidation tests passed. Still required before narrowing production
-dependencies: lockfile and workspace-inheritance cases,
-generated bindings, assembly/C shims, spec files, and added/deleted build-script
-inputs without a Rust source edit. Use Cargo metadata and emitted dependency
+The initial 17 invalidation tests passed; subsequent coverage is recorded below.
+Still required before narrowing production dependencies: workspace-inherited
+dependency resolution, real generated bindings, assembly/C shims, spec files,
+and complete directory-input tracking. Use Cargo metadata and emitted dependency
 information rather than expanding the existing manifest regex. Only then replace
 the workspace-wide dependency trigger in `sdk/cmake/gcc.cmake`.
 
@@ -187,11 +187,95 @@ were 1.52s (amd64), 0.81s (arm64), and 9.67s (i386); strict checks still took
 15–16 minutes per architecture. Do not compare this whole-gate duration with the
 earlier cold gate as a controlled speedup benchmark.
 
-The next gate optimization is explicit shared/per-architecture check partitioning:
+Implemented next: explicit shared/per-architecture check partitioning:
 `source_lint_specs(repo)` currently produces identical commands for each of the
 three `check --strict --arch` children (45 scanners, 135 invocations in this
-snapshot). Run that complete source suite once after
+snapshot before partitioning). The gate now runs that complete source suite once after
 this worktree's generated inputs are ready, while retaining Cargo-link,
-committed-drift, binary and cohab guards for every requested architecture. Require
-both shared and per-architecture results before stamping; partial diagnostics
-must never satisfy that condition. This partitioning is not implemented yet.
+committed-drift, binary and cohab guards for every requested architecture. Both
+shared and per-architecture results must pass before stamping. `check --scope
+source|arch --strict` exposes these explicitly partial partitions; the arch
+partition requires `--arch`, and neither can rewrite baselines or combine with
+`--only`. Ordinary unpartitioned `check` still runs its complete previous suite.
+Tests cover partition coverage, invalid combinations, failure propagation,
+once-only scheduling after all builds, and stamp refusal on either partition's
+failure. Full gate `20260905-113218-gate-i386+amd64+arm64` passed every stage;
+the sole warning was the dirty tree/no push stamp. The source child recorded
+exactly 45 commands in 874s, with per-arch guards taking 80s (amd64), 32s (arm64),
+and 86s (i386). All desktop screenshots were checked. Overall time was 26m00s
+under integration-build contention: the build matrix finished at 687s. This
+proves 90 duplicate source-scanner invocations removed, not an end-to-end latency
+speedup against the earlier differently loaded runs.
+
+The continuation also reproduced a CPU-broker fairness bug with real isolated
+flocks: total pool capacity was mistaken for availability, allowing a newer
+two-permit build to overtake an older waiter while another build held the other
+two permits. Admission now follows ticket order; acquiring permits drops the
+ticket immediately, preserving concurrent execution. All 30 host-lock/landing-lock
+tests passed, including the formerly failing active-holder control. This does
+not hot-patch already running processes or sibling worktrees.
+
+An invalidation-fixture run exposed configure metadata dated ahead of Ninja's
+generated manifest, causing 100 futile regeneration attempts. Initial generated
+CMake metadata now shares the fixture's initial source epoch. Regeneration stays
+enabled; no retry or dependency assertion was removed. A test deliberately dates
+`CMakeSystem.cmake` one day ahead and verifies normalization and no-op behavior.
+The suite now contains 18 invalidation tests. This is fixture clock ordering, not
+a change to production build timestamps or proof of the host's clock-step cause.
+The final tooling rerun passed all 26 checks with both the timestamp and admission
+fixes included. The admission change was exercised by isolated real-flock tests;
+already running fleet processes were not changed underneath the gate.
+
+## Expanded invalidation controls
+
+The fixture now covers workspace-inherited package versions, lockfile-only Git
+revision changes, and generated Rust built from a watched input directory. Git
+dependencies use an isolated local repository and Cargo home; no network or
+shared cache mutation is needed. Warm outputs are compared with executed cold
+outputs, and invocation journals check affected consumers.
+
+Two demonstrated constraints prevent depfile-only narrowing:
+
+- A Cargo directory watch appears as a directory prerequisite in its emitted
+  depfile. Ninja notices additions/removals but not an existing file's content
+  edit. The negative control ships stale generated Rust on that edit. Emitting
+  both the directory and every input file closes all three cases in the fixture.
+  Production directory watches still need an audited input-expansion mechanism;
+  this fixture does not change them or certify arbitrary directory trees.
+  `reactos-link::Linker::link` currently emits precisely these `src` directory
+  watches for workspace crates, so this is relevant to replacing its broad loop,
+  not merely a hypothetical fixture limitation.
+- Cargo's depfile does not supply the lockfile edge. Changing only the pinned
+  Git revision leaves the warm executable stale without an explicit Ninja
+  dependency. Adding that edge rebuilds all workspace consumers and matches
+  cold output. Production `add_cargo_module` already preserves this edge; do
+  not drop it during package-closure narrowing.
+
+Workspace-inherited version edits rebuild all three fixture consumers, with and
+without emitted depfiles. This proves inherited package metadata, not inherited
+dependency/feature resolution. The generated Rust case uses `OUT_DIR` and
+`include!`, not the production bindgen pipeline. No production trigger was
+narrowed, no baseline changed, and no boot code changed in this test-only slice.
+All 25 invalidation cases passed as part of all 26 `check-tooling` checks. No
+OS build or desktop smoke was rerun for these test/documentation-only changes.
+
+### Native compiler inputs
+
+Twelve additional fixture cases compile and archive real C or preprocessed
+assembly, then read the linked native symbol from a Rust executable. They
+exercise source-only and included-header-only edits with three input policies:
+no outer depfile, source-only build-script watches with a depfile, and explicit
+source/header watches with a depfile. Only the affected leaf should run; warm
+and cold executed outputs are compared.
+
+The negative controls distinguish both missing layers. Without an outer edge,
+Ninja never invokes Cargo. Without a Cargo header watch, even deleting the copied
+executable to force that invocation still leaves the native value stale. Explicit
+header watches plus the emitted depfile close both layers in this fixture.
+
+This uses fixture-owned host compiler calls, not production `reactos-link` or
+cc-rs header discovery. Production native include-closure auditing, actual bindgen
+generation, spec-file inputs, and workspace-inherited dependency resolution remain
+required before narrowing production triggers. No production code is changed.
+All 37 invalidation cases passed within all 26 `check-tooling` checks. OS builds
+and desktop smokes were not rerun for this test/documentation-only batch.

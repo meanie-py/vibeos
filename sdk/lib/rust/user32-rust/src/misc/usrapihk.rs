@@ -4,9 +4,6 @@ use core::ffi::c_void;
 
 // ── No-op debug macros (the C ERR/WARN compile to nothing under the Wine debug-
 //   channel guard). Consume args so side effects still type-check.
-macro_rules! ERR  { ($($arg:expr),* $(,)?) => { { $( let _ = $arg; )* } }; }
-#[allow(unused_macros)]
-macro_rules! WARN { ($($arg:expr),* $(,)?) => { { $( let _ = $arg; )* } }; }
 
 // ── ntdll Rtl* string helper + the `LoadUserApiHook` inline live in crate::internal.
 use crate::internal::{LoadUserApiHook, RtlInitUnicodeString, RtlIsThreadWithinLoaderCallout};

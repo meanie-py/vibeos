@@ -8,8 +8,6 @@ const TRUE: BOOL = 1;
 
 // NDEBUG build: Wine TRACE/WARN compile to nothing (printf-style format +
 // varargs), so model them as macros that discard their arguments.
-macro_rules! TRACE { ($($t:tt)*) => {{}} }
-macro_rules! WARN  { ($($t:tt)*) => {{}} }
 
 extern "system" {
     fn LoadLibraryW(lpLibFileName: LPCWSTR) -> HMODULE;

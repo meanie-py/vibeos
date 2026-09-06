@@ -97,18 +97,18 @@ pub unsafe extern "system" fn EVENTLOG_HANDLE_A_bind(UNCServerName: EVENTLOG_HAN
         &mut pszStringBinding,
     );
     if status != 0 {
-        ERR!(b"RpcStringBindingCompose returned 0x%x\n\0".as_ptr(), status);
+        ERR!("RpcStringBindingCompose returned 0x%x\n", status);
         return core::ptr::null_mut();
     }
 
     status = RpcBindingFromStringBindingA(pszStringBinding, &mut hBinding);
     if status != RPC_S_OK {
-        ERR!(b"RpcBindingFromStringBinding returned 0x%x\n\0".as_ptr(), status);
+        ERR!("RpcBindingFromStringBinding returned 0x%x\n", status);
     }
 
     status = RpcStringFreeA(&mut pszStringBinding);
     if status != RPC_S_OK {
-        ERR!(b"RpcStringFree returned 0x%x\n\0".as_ptr(), status);
+        ERR!("RpcStringFree returned 0x%x\n", status);
     }
 
     hBinding
@@ -138,18 +138,18 @@ pub unsafe extern "system" fn EVENTLOG_HANDLE_W_bind(UNCServerName: EVENTLOG_HAN
         &mut pszStringBinding,
     );
     if status != RPC_S_OK {
-        ERR!(b"RpcStringBindingCompose returned 0x%x\n\0".as_ptr(), status);
+        ERR!("RpcStringBindingCompose returned 0x%x\n", status);
         return core::ptr::null_mut();
     }
 
     status = RpcBindingFromStringBindingW(pszStringBinding, &mut hBinding);
     if status != RPC_S_OK {
-        ERR!(b"RpcBindingFromStringBinding returned 0x%x\n\0".as_ptr(), status);
+        ERR!("RpcBindingFromStringBinding returned 0x%x\n", status);
     }
 
     status = RpcStringFreeW(&mut pszStringBinding);
     if status != RPC_S_OK {
-        ERR!(b"RpcStringFree returned 0x%x\n\0".as_ptr(), status);
+        ERR!("RpcStringFree returned 0x%x\n", status);
     }
 
     hBinding

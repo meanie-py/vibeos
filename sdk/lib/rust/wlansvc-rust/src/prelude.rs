@@ -12,9 +12,18 @@ pub use core::ptr::{addr_of, addr_of_mut};
 // MACROS: an out-of-line no-op fn is an optimization barrier that uncloaks latent ABI mismatches
 // into ud2 (field manual §9.65) — and the dhcpcsvc bug where one became `loop {}` hung the caller.
 #[macro_export] macro_rules! DPRINT  { ($($arg:tt)*) => {{}}; }
-#[macro_export] macro_rules! DPRINT1 { ($($arg:tt)*) => {{}}; }
-#[macro_export] macro_rules! FIXME   { ($($arg:tt)*) => {{}}; }
-pub use crate::{DPRINT, DPRINT1, FIXME};
+#[macro_export]
+macro_rules! DPRINT1 {
+    ($fmt:literal $(, $arg:expr)* $(,)?) => {
+        unsafe {
+            $crate::prelude::DbgPrint(
+                concat!("(", file!(), ":", line!(), ") ", $fmt, "\0").as_ptr() as *const _
+                $(, $arg)*,
+            )
+        }
+    };
+}
+pub use crate::{DPRINT, DPRINT1};
 
 extern "C" {
     pub fn DbgPrint(Format: *const c_char, ...) -> u32;

@@ -1,5 +1,6 @@
 use win32k_sys::win32k::*;
 use ntkrnl_sys::ddk::PsGetCurrentProcessWin32Process;
+use ntkrnl_sys::driver_ddk::DbgPrint;
 use ntkrnl_sys::ddk::{ExAllocatePoolWithTag, ExFreePoolWithTag};
 use ntkrnl_sys::base::STATUS_SUCCESS;
 use core::ffi::c_void;
@@ -51,9 +52,10 @@ extern "system" {
 // XFORMOBJ_vInit is FORCEINLINE (xformobj.h): pxo->pmx = pmx.
 #[inline(always)] unsafe fn XFORMOBJ_vInit(pxo: *mut XFORMOBJ, pmx: *mut MATRIX) { (*(pxo as *mut _EXFORMOBJ)).pmx = pmx; }
 
-// Diagnostics — no-ops under the DUMMY_PSEH / release kernel build.
+// NT_ASSERT is debug-only and stays silent. DbgPrint is NOT: region.c calls the
+// real cdecl-variadic ntoskrnl export directly (IntDumpRegion), so shadowing it
+// with a silent macro discarded the dump it exists to produce.
 macro_rules! NT_ASSERT { ($($t:tt)*) => { () }; }
-macro_rules! DbgPrint { ($($t:tt)*) => { () }; }
 
 // ---- file-scope preamble (translated) ----
 #[no_mangle]
@@ -222,11 +224,11 @@ unsafe fn IntDumpRegion(hRgn: HRGN) {
 
     Data = REGION_LockRgn(hRgn);
     if Data.is_null() {
-        DbgPrint!(b"IntDumpRegion called with invalid region!\n\0".as_ptr() as PCHAR);
+        DbgPrint(b"IntDumpRegion called with invalid region!\n\0".as_ptr() as PCHAR);
         return;
     }
 
-    DbgPrint!(
+    DbgPrint(
         b"IntDumpRegion(%x): %d,%d-%d,%d %d\n\0".as_ptr() as PCHAR,
         hRgn,
         (*Data).rdh.rcBound.left,
@@ -245,11 +247,11 @@ unsafe fn IntDumpRegion(hRgn: HRGN) {
 
     Data = REGION_LockRgn(hRgn);
     if Data.is_null() {
-        DbgPrint!(b"IntDumpRegion called with invalid region!\n\0".as_ptr() as PCHAR);
+        DbgPrint(b"IntDumpRegion called with invalid region!\n\0".as_ptr() as PCHAR);
         return;
     }
 
-    DbgPrint!(
+    DbgPrint(
         b"IntDumpRegion(%x): %d,%d-%d,%d %d\n\0".as_ptr() as PCHAR,
         hRgn,
         (*Data).rdh.rcBound.left,

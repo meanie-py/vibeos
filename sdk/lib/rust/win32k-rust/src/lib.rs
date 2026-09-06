@@ -47,6 +47,12 @@ macro_rules! fastcall_fn {
     };
 }
 
+// win32k's ERR/FIXME/WARN/TRACE (win32kdebug.h) + debug.h's DPRINT/DPRINT1 for the
+// whole crate; `#[macro_use]` must precede the modules that call them
+// (macro_rules! is textually scoped).
+#[macro_use]
+mod win32kdebug;
+
 pub mod sort; // gdi/eng/sort.c — EngSort (proving slice)
 pub mod gdiobj; // gdi/ntgdi/gdiobj.c (+split2) — GDI handle table [Phase 1a]
 pub mod object; // user/ntuser/object.c — USER handle/object table [Phase 1b]
