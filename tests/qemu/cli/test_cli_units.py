@@ -7242,3 +7242,26 @@ def test_kmtest_payload_already_present_runs_nothing(tmp_path, monkeypatch):
 
     monkeypatch.setattr(gate_mod.subprocess, "run", _boom)
     assert gate_mod._ensure_kmtest_payload(tmp_path, ["arm64"]) == (True, "")
+
+
+def test_every_tools_test_file_is_actually_collected_by_something() -> None:
+    """A test suite nobody runs is worse than no suite: it reads as coverage.
+
+    Three separate files had sat unrun in `tools/` before anyone noticed, and the newest of
+    them was the oracle for the checker that gates the merge train. The registry is an
+    explicit list on purpose — a suite may legitimately need a build, or be too slow for the
+    tooling gate — so this does not auto-collect. It just makes leaving one out a DECISION
+    somebody has to write down.
+    """
+    from tests.qemu.cli.tooling import _PYTEST_SUITES
+
+    repo = Path(__file__).resolve().parents[3]
+    registered = {t if p == "." else f"{p}/{t}" for p, _pp, t in _PYTEST_SUITES}
+    exempt: dict[str, str] = {}  # path -> why; keep the reason with the exemption
+    found = {f"tools/{p.name}" for p in (repo / "tools").glob("test_*.py")}
+    assert found, "no tools/test_*.py found at all — this guard is measuring nothing"
+    missing = sorted(found - registered - set(exempt))
+    assert not missing, (
+        "these tools/ suites are collected by nothing; add them to _PYTEST_SUITES "
+        f"or give each an `exempt` entry saying why: {missing}"
+    )
