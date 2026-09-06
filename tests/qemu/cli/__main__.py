@@ -120,7 +120,7 @@ def build_parser() -> argparse.ArgumentParser:
     c.add_argument("--strict", action="store_true", help="block on NEW findings")
     c.add_argument(
         "--scope",
-        choices=("source", "arch"),
+        choices=("source", "source-early", "source-deferred", "arch"),
         help="strict partial check: shared sources or per-architecture guards; not a full gate",
     )
     c.add_argument(

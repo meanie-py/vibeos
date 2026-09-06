@@ -911,6 +911,10 @@ corruption class (field manual §9.36, which cost this project real days). So:
   the file handle** until completion rather than return over a live pointer into
   a dead frame.
 
+*Still true only for the functions listed below that use `Wow64pFinishIosb`.*
+`NtReadFile`/`NtWriteFile` (M15b) and the IOCTL family (M15c) no longer marshal
+through a host IOSB at all and accept an `Event`; see the two notes below.
+
 *~~Owed~~ — **LANDED 2026-07-14 (M15b)**: the kernel-side IOSB32 fix is in.*
 Design as planned, with the per-IRP gate solved by a **per-call TEB latch**:
 wow64.dll's `NtReadFile`/`NtWriteFile` thunks store the guest IOSB pointer in
@@ -926,6 +930,25 @@ and accept Event-based/polled overlapped I/O; only a guest APC routine still
 refuses loudly (no 64→32 user-APC dispatch yet). 64-bit host code in the same
 process is unaffected: its calls never latch. i386 kernels compile the capture
 out (no WoW64-of-32-bit; its bindgen EPROCESS has no Wow64Process).
+**M15c (2026-09-06) extends the same mechanism to the IOCTL family**
+(`NtDeviceIoControlFile`/`NtFsControlFile` via `IopDeviceFsIoControl`), which
+was the last thing keeping E25 unexercised: msafd always passes an `Event`
+because AFD is inherently async, so the refusal blocked every socket call a
+32-bit guest could make. Three obligations per consumer, each **silent** if
+skipped: probe the guest block at 8 bytes, mark the IRP, and narrow the write
+on the fast-I/O path (it completes inline, never builds an IRP, so the flag
+cannot reach it). One asymmetry against M15b is deliberate: a **marshalled**
+IOCTL still completes synchronously, because the hazard there is the PAYLOAD,
+not the IOSB — the widened input, the WSABUF array and the AFD_POLL_INFO shadow
+are host-heap blocks the thunk frees on the way out, and METHOD_BUFFERED copies
+SystemBuffer back into that shadow *at completion*. `Wow64pIoctlCall` therefore
+blocks, re-signals the guest's event (msafd's `SockEvent` is a SYNCHRONIZATION
+event, so our own wait consumes the signal `MsafdWaitForAlert` is about to wait
+for — missing that is a silent guest hang), then copies back and frees. The
+unmarshalled path carries no shadow and is genuinely async. Oracle:
+**`marshal32.exe`**'s select rung, `0xbb04` -> `0x600d`, 9/9 guests PASS on
+ladder `20260906-132106-smoke-amd64`.
+
 Oracle: **`async32.exe`** (`Async32.c`, winlogon `TryStartWow64Async`) —
 overlapped ReadFile with event: `OVERLAPPED.Internal/InternalHigh` (the IOSB32)
 must show SUCCESS/512, **`.Offset` must survive** (a 16-byte write would clobber

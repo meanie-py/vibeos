@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import itertools
 import re
+from collections.abc import Mapping
 from dataclasses import dataclass
 
 from .dead_regions import dead_region_spans, in_dead_region
@@ -33,6 +34,9 @@ class SealedCall:
     # the C site spells implicitly. Recorded because the Rust site can then be REPAIRED
     # rather than rejected -- see `repair_dropped_receivers`.
     receiver: bool = False
+    # This callee is an ATL CWindow method, so `argc` counts a leading window HANDLE the C++
+    # site spells implicitly. Recorded for the same reason -- see `repair_window_receivers`.
+    hwnd_receiver: bool = False
 
 
 @dataclass(frozen=True)
@@ -175,6 +179,8 @@ def seal_calls(
     function_like_macros: frozenset[str] = frozenset(),
     tu_source: str = "",
     receiver_callees: frozenset[str] = frozenset(),
+    callee_cpp_names: Mapping[str, str] | None = None,
+    hwnd_receiver_callees: Mapping[str, int] | None = None,
 ) -> SealedCalls:
     """Replace each known runtime-callee occurrence with a unique token.
 
@@ -247,6 +253,34 @@ def seal_calls(
             else counted[0]
         )
         argc_max = _defaulted_param_count(decl_scope, original)
+        # A sibling METHOD is sealed under its LOWERED name (`CDefView_LoadColumn_body`), a
+        # spelling that appears nowhere in the C++ source -- so the default-argument lookup
+        # above silently found nothing and the tolerance it exists to provide never applied to
+        # a method at all. Free functions escaped this only because their name is not
+        # rewritten. `LoadColumn(UINT, UINT, BOOL, UINT ForceWidth = 0)` called with three
+        # arguments then rejected the only correct five-argument lowering, and no retry could
+        # ever have passed: three of CDefView's six survivors were this one bug.
+        if argc_max is None and callee_cpp_names:
+            cpp_name = callee_cpp_names.get(original)
+            if cpp_name:
+                argc_max = _defaulted_param_count(decl_scope, cpp_name)
+        # An ATL CWindow method reaches Rust as the Win32 API of the same name with the window
+        # handle prepended, so its faithful site has one more argument than the C++ one -- the
+        # same implicit receiver as a sibling method, wearing a base class's name. Declared
+        # counts come from atlwin.h (see cpp_core.cwindow_method_arity), never a remembered
+        # list, and only for a class that actually derives from CWindow, where the member hides
+        # the global and a bare call cannot mean the Win32 function.
+        # `::` is how the C++ says which one it means, and ignoring it inverted the fix: the
+        # SAME name is a member call bare (`ScreenToClient(&pt)`, handle implicit) and the
+        # Win32 API when qualified (`::GetWindowRect(hWndHdr, &r)`, handle already an
+        # argument). Adding a receiver to the qualified form broke three bodies that had been
+        # correct, which is the tell that the rule -- not the model -- was wrong.
+        qualified = masked[:start].rstrip().endswith("::")
+        if hwnd_receiver_callees and original in hwnd_receiver_callees and not qualified:
+            declared = hwnd_receiver_callees[original]
+            if argc is not None:
+                argc += 1
+                argc_max = max(declared + 1, argc)
         # A C++ METHOD call carries an implicit receiver that the Rust lowering spells as an
         # explicit leading `this`, so a faithful Rust call site has exactly one MORE argument
         # than the C one. Counting the C site alone both rejects correct output and -- the
@@ -267,6 +301,7 @@ def seal_calls(
                 argc,
                 argc_max,
                 is_receiver,
+                bool(hwnd_receiver_callees) and original in hwnd_receiver_callees and not qualified,
             )
         )
         result = result[:start] + placeholder + result[end:]
@@ -661,6 +696,78 @@ def repair_dropped_receivers(rust: str, sealed: SealedCalls) -> tuple[str, list[
     return rust, sorted({repaired for _, _, repaired in insertions})
 
 
+def repair_window_receivers(rust: str, sealed: SealedCalls) -> tuple[str, list[str]]:
+    """Turn `(*obj).Method(args)` into `Method(obj, args)` for an ATL CWindow method.
+
+    `m_ListView.DestroyWindow()` has a receiver that is a WINDOW, not an object: the field is
+    an `HWND`, so Rust method-call syntax on it does not exist and the only lowering is the
+    Win32 API with the handle as argument zero. A model that has just written the implicit
+    form correctly still reaches for method syntax when the C++ names a receiver -- CDefView's
+    `DestroyViewWindow` did exactly that, one site, in an otherwise faithful body.
+
+    Mechanical and unambiguous, so the tool owns it rather than asking the prompt to. Scoped
+    to callees the CWindow header proves are window methods, which no COM interface method can
+    be, and applied only to a site whose receiver parenthesis is balanced and whose argument
+    list is then short by exactly the handle.
+    """
+    if not any(call.hwnd_receiver for call in sealed.calls):
+        return rust, []
+    windowed = {call.placeholder for call in sealed.calls if call.hwnd_receiver}
+    repaired: list[str] = []
+    for call in sealed.calls:
+        if call.placeholder not in windowed or call.argc is None:
+            continue
+        while True:
+            masked = _code_mask(rust)
+            match = re.search(rf"\(\s*\*\s*(?P<recv>.+?)\)\s*\.\s*{call.placeholder}\b", masked)
+            if match is None:
+                break
+            receiver = rust[match.start("recv") : match.end("recv")]
+            if receiver.count("(") != receiver.count(")"):
+                break
+            counted = _argument_count(masked, match.end())
+            if counted is None or counted[0] != call.argc - 1:
+                break
+            opening = masked.find("(", match.end())
+            separator = ", " if counted[0] else ""
+            rust = (
+                rust[: match.start()]
+                + call.placeholder
+                + rust[match.end() : opening + 1]
+                + receiver
+                + separator
+                + rust[opening + 1 :]
+            )
+            repaired.append(f"{call.placeholder}={call.original}")
+            break
+    # The implicit form of the same omission: a BARE member call short by exactly the handle.
+    # `ScreenToClient(&pt)` inside a CWindowImpl class is `this->m_hWnd`'s window, and the model
+    # writes the C++ arity even when it has the extern declaration in front of it -- twice, in
+    # two independent samples of CDefView_OnContextMenu. The receiver can only be `this->m_hWnd`
+    # here (an explicit one is handled above, a qualified `::` call is not a member at all), so
+    # inserting it is a mechanical lowering rather than a guess, exactly as
+    # `repair_dropped_receivers` inserts the sibling `this` it is the analogue of.
+    masked = _code_mask(rust)
+    for call in sealed.calls:
+        if call.placeholder not in windowed or call.argc is None:
+            continue
+        for match in re.finditer(rf"\b{re.escape(call.placeholder)}\b", masked):
+            if masked[: match.start()].rstrip().endswith((".", ">")):
+                continue
+            counted = _argument_count(masked, match.end())
+            if counted is None or "::<" in counted[1] or counted[0] != call.argc - 1:
+                continue
+            if re.match(r"\s*\(\s*\*\s*this\s*\)\s*\.\s*m_hWnd\b", counted[1]):
+                continue
+            opening = masked.find("(", match.end())
+            insertion = "(*this).m_hWnd" + (", " if counted[0] else "")
+            rust = rust[: opening + 1] + insertion + rust[opening + 1 :]
+            repaired.append(f"{call.placeholder}={call.original}")
+            masked = _code_mask(rust)
+            break
+    return rust, sorted(set(repaired))
+
+
 def unseal_calls(rust: str, sealed: SealedCalls, *, dead_omissions: list[str] | None = None) -> str:
     """Verify the closed call set and restore the callee names.
 
@@ -669,6 +776,7 @@ def unseal_calls(rust: str, sealed: SealedCalls, *, dead_omissions: list[str] | 
     """
     rust = scrub_comment_token_echoes(rust)
     rust, _repaired = repair_dropped_receivers(rust, sealed)
+    rust, _windowed = repair_window_receivers(rust, sealed)
     expected = {call.placeholder for call in sealed.calls}
     masked = _code_mask(rust)
     executable = _PLACEHOLDER_RE.findall(masked)

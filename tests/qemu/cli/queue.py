@@ -666,7 +666,7 @@ def gate_batch(wt: Path, log, *, retries: int = 2) -> GateVerdict:
         cwd=str(wt),
         capture_output=True,
         text=True,
-        env=dict(os.environ, VIBEOS_ARTIFACT_ROOT=str(root)),
+        env=dict(os.environ, VIBEOS_ARTIFACT_ROOT=str(root), VIBEOS_JOB_CLASS="integration"),
     )
     fresh = sorted(root.glob("*-gate-*"))
     artifact = str(fresh[-1]) if fresh else ""

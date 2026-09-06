@@ -2626,6 +2626,110 @@ def test_hostlock_queue_status_reports_waiters(tmp_path, monkeypatch):
         os.close(b)
 
 
+def test_hostlock_shadow_priority_ages_without_enforcement(tmp_path, monkeypatch):
+    monkeypatch.setattr(hl_mod, "HOSTLOCK_DIR", tmp_path)
+    waiters = [
+        {"pid": "lane", "job_class": "interactive", "waited_s": 50, "clock": "monotonic"},
+        {"pid": "train", "job_class": "integration", "waited_s": 1, "clock": "monotonic"},
+    ]
+    proposal = hl_mod.admission_shadow(waiters)
+    assert proposal["proposed"] == ["train", "lane"]
+    assert proposal["changed"] and not proposal["enforced"]
+    waiters[0]["waited_s"] = 122
+    assert hl_mod.admission_shadow(waiters)["proposed"] == ["lane", "train"]
+    waiters[0]["job_class"] = "background"
+    assert hl_mod.admission_shadow(waiters)["proposed"] == ["lane", "train"]
+    waiters[0]["clock"] = "legacy-wall"
+    assert "proposed" not in hl_mod.admission_shadow(waiters)
+    (tmp_path / "admission-shadow.disabled").touch()
+    assert hl_mod.admission_shadow([])["mode"] == "disabled"
+
+
+def test_hostlock_ticket_metadata_and_shadow_leave_fifo_intact(tmp_path, monkeypatch):
+    monkeypatch.setattr(hl_mod, "HOSTLOCK_DIR", tmp_path)
+    monkeypatch.setenv("VIBEOS_HOSTLOCK_FAIR", "1")
+    monkeypatch.setenv("VIBEOS_JOB_CLASS", "interactive")
+    first = hl_mod._ticket_take("cpuheavy", 2)
+    assert first is not None
+    monkeypatch.setenv("VIBEOS_JOB_CLASS", "integration")
+    second = hl_mod._ticket_take("cpuheavy", 2)
+    assert second is not None
+    try:
+        q = hl_mod.queue_status("cpuheavy")
+        assert [w["job_class"] for w in q] == ["interactive", "integration"]
+        assert all(w["clock"] == "monotonic" for w in q)
+        monkeypatch.setattr(hl_mod.time, "time", lambda: -1000000)
+        assert all(w["waited_s"] >= 0 for w in hl_mod.queue_status("cpuheavy"))
+        assert hl_mod.admission_shadow(q)["changed"]
+        assert hl_mod._may_attempt("cpuheavy", first[1], 2, 4)
+        assert not hl_mod._may_attempt("cpuheavy", second[1], 2, 4)
+        # Status must not reap or mutate live tickets, even with shadow reporting.
+        before = [p.read_bytes() for _, p in (first, second)]
+        hl_mod.status()
+        assert before == [p.read_bytes() for _, p in (first, second)]
+    finally:
+        hl_mod._ticket_drop(first)
+        hl_mod._ticket_drop(second)
+
+
+@pytest.mark.parametrize(
+    "raw", ["[]", "null", "{", '{"queued_monotonic": NaN}', '{"queued_monotonic": true}']
+)
+def test_hostlock_shadow_malformed_ticket_is_unknown(tmp_path, monkeypatch, raw):
+    monkeypatch.setattr(hl_mod, "HOSTLOCK_DIR", tmp_path)
+    fd = _fake_ticket(tmp_path, "cpuheavy", ns=1, pid=111, need=2)
+    try:
+        os.write(fd, raw.encode())
+        q = hl_mod.queue_status("cpuheavy")
+        assert q[0]["clock"] == "legacy-wall"
+        assert "proposed" not in hl_mod.admission_shadow(q)
+    finally:
+        os.close(fd)
+    assert hl_mod.queue_status("cpuheavy") == []
+
+
+def test_hostlock_acquisition_records_wait_and_class(tmp_path, monkeypatch, capsys):
+    monkeypatch.setattr(hl_mod, "HOSTLOCK_DIR", tmp_path)
+    monkeypatch.setenv("VIBEOS_JOB_CLASS", "integration")
+    fds = hl_mod.acquire_cpu_share("build:amd64", n=2, leases=2, timeout=0)
+    assert fds is not None
+    try:
+        holders = hl_mod.status()["cpuheavy"]
+        assert all(h["holder"]["job_class"] == "integration" for h in holders)
+        assert all(h["holder"]["wait_seconds"] >= 0 for h in holders)
+        assert '"enforced": false' in capsys.readouterr().out
+    finally:
+        hl_mod.release_all(fds)
+
+
+def test_hostlock_build_admission_timings(tmp_path, monkeypatch):
+    from contextlib import contextmanager
+
+    now = [0.0]
+    monkeypatch.setattr(hl_mod.time, "monotonic", lambda: now[0])
+    monkeypatch.setenv("VIBEOS_HOST_BROKER", "1")
+
+    @contextmanager
+    def cpu(*args, **kw):
+        now[0] += 7
+        yield [1, 2]
+
+    @contextmanager
+    def directory(*args, **kw):
+        now[0] += 3
+        yield 3
+
+    monkeypatch.setattr(hl_mod, "cpu_share", cpu)
+    monkeypatch.setattr(hl_mod, "build_dir_lock", directory)
+    with hl_mod.build_lock(tmp_path, "amd64") as timing:
+        assert timing["cpu_wait_s"] == 7
+        assert timing["builddir_wait_s"] == 3
+        assert timing["cpu_granted"] and timing["builddir_granted"]
+    monkeypatch.setenv("VIBEOS_HOST_BROKER", "0")
+    with hl_mod.build_lock(tmp_path, "amd64") as timing:
+        assert timing == {"enabled": False}
+
+
 def test_hostlock_build_dir_same_blocks_different_ok(tmp_path, monkeypatch):
     monkeypatch.setattr(hl_mod, "HOSTLOCK_DIR", tmp_path)
     d1 = tmp_path / "build-amd64"
@@ -3530,20 +3634,31 @@ def test_check_partition_rejects_ambiguous_or_incomplete_request(tmp_path, monke
     assert debugcmd_mod.check(Namespace(**options), tmp_path) == 2
 
 
-@pytest.mark.parametrize("failed", [None, "source", "i386"])
+@pytest.mark.parametrize("failed", [None, "source-early", "source-deferred", "i386"])
 def test_gate_runs_source_once_after_build_matrix_and_requires_every_partition(
     tmp_path, monkeypatch, failed
 ):
     built = set()
     seen = []
     stamped = []
+    import threading
+
+    early_started = threading.Event()
+    builds_done = threading.Event()
 
     def build(repo, run, arch, args):
+        assert early_started.wait(5), "early source checks must not wait for builds"
         built.add(arch)
+        if len(built) == 3:
+            builds_done.set()
         return {"arch": arch, "ok": True, "exit": 0, "seconds": 0.01}
 
     def lint(repo, arch, root):
-        if arch == "source":
+        if arch == "source-early":
+            assert not built
+            early_started.set()
+            assert builds_done.wait(5), "builds must overlap the early partition"
+        elif arch == "source-deferred":
             assert built == {"i386", "amd64", "arm64"}
         else:
             assert arch in built
@@ -3558,12 +3673,12 @@ def test_gate_runs_source_once_after_build_matrix_and_requires_every_partition(
     monkeypatch.setattr(gate_mod, "_smoke_once", _spy_smoke_ok([]))
     monkeypatch.setattr(gate_mod, "_write_gate_stamp", lambda *a, **k: stamped.append(1))
     rc = gate_mod.gate(_gate_args(no_lint=False, no_build=False, no_net=True), tmp_path)
-    assert sorted(seen) == ["amd64", "arm64", "i386", "source"]
+    assert sorted(seen) == ["amd64", "arm64", "i386", "source-deferred", "source-early"]
     assert bool(stamped) == (failed is None)
     assert rc == int(failed is not None)
 
 
-@pytest.mark.parametrize("arch", ["source", "amd64"])
+@pytest.mark.parametrize("arch", ["source", "source-early", "source-deferred", "amd64"])
 def test_gate_child_requests_explicit_strict_partition(tmp_path, monkeypatch, arch):
     calls = []
 
@@ -3572,9 +3687,58 @@ def test_gate_child_requests_explicit_strict_partition(tmp_path, monkeypatch, ar
         return subprocess.CompletedProcess(cmd, 0, "", "")
 
     monkeypatch.setattr(gate_mod.subprocess, "run", execute)
+    if arch in ("source-early", "source-deferred"):
+        monkeypatch.setattr(
+            gate_mod,
+            "_read_summary",
+            lambda root: {
+                "checked_source_checks": [
+                    s[0] for s in lints.source_partition_specs(tmp_path, arch)
+                ]
+            },
+        )
     assert gate_mod._lint_once(tmp_path, arch, tmp_path / "logs")["ok"]
-    suffix = ["source"] if arch == "source" else ["arch", "--arch", arch]
+    suffix = [arch] if arch.startswith("source") else ["arch", "--arch", arch]
     assert calls == [[str(tmp_path / "vibeos-cli"), "check", "--strict", "--scope", *suffix]]
+
+
+def test_source_partition_inventory_is_disjoint_complete_and_conservative(tmp_path, monkeypatch):
+    original = lints.source_lint_specs(tmp_path)
+    early = lints.source_partition_specs(tmp_path, "source-early")
+    deferred = lints.source_partition_specs(tmp_path, "source-deferred")
+    assert set(s[0] for s in early).isdisjoint(s[0] for s in deferred)
+    assert sorted(early + deferred) == sorted(original)
+    assert {s[0] for s in early} == lints.EARLY_SOURCE_CHECKS
+    for mutation in ([*original, original[0]], [s for s in original if s[0] != early[0][0]]):
+        monkeypatch.setattr(lints, "source_lint_specs", lambda repo, specs=mutation: specs)
+        with pytest.raises(ValueError, match="inventory"):
+            lints.source_partition_specs(tmp_path, "source-early")
+    monkeypatch.setattr(
+        lints, "source_lint_specs", lambda repo: [*original, ("future", ["future"], "stdout")]
+    )
+    assert "future" in {s[0] for s in lints.source_partition_specs(tmp_path, "source-deferred")}
+
+
+@pytest.mark.parametrize("scope", ["source-early", "source-deferred"])
+@pytest.mark.parametrize("drop", [False, True])
+def test_source_partition_checks_executed_inventory(tmp_path, monkeypatch, scope, drop):
+    def execute(run, repo, name, cmd, **kwargs):
+        if not drop:
+            run.add(Stage(name, status="ok"))
+
+    monkeypatch.setattr(lints, "_lint_stage", execute)
+    assert debugcmd_mod.check(Namespace(scope=scope, strict=True), tmp_path) == int(drop)
+
+
+@pytest.mark.parametrize("inventory", [None, [], ["wrong"], ["scan_octal_literals"]])
+def test_gate_rejects_missing_or_partial_source_inventory(tmp_path, monkeypatch, inventory):
+    monkeypatch.setattr(
+        gate_mod.subprocess, "run", lambda *a, **k: subprocess.CompletedProcess([], 0, "", "")
+    )
+    monkeypatch.setattr(
+        gate_mod, "_read_summary", lambda root: {"checked_source_checks": inventory}
+    )
+    assert not gate_mod._lint_once(tmp_path, "source-early", tmp_path / "logs")["ok"]
 
 
 def test_write_baselines_only_filter(tmp_path, monkeypatch):
@@ -5736,6 +5900,7 @@ def test_queue_batch_gate_is_cold_and_collects_all_failures(monkeypatch, tmp_pat
 
     def _fake_run(cmd, **kw):
         seen["cmd"] = cmd
+        seen["env"] = kw.get("env", {})
         return subprocess.CompletedProcess(cmd, 0, "", "")
 
     monkeypatch.setattr(q_mod.subprocess, "run", _fake_run)
@@ -5743,6 +5908,22 @@ def test_queue_batch_gate_is_cold_and_collects_all_failures(monkeypatch, tmp_pat
     q_mod.gate_batch(tmp_path, lambda m: None, retries=0)
     assert "--clean" in seen["cmd"], seen["cmd"]
     assert "--keep-going" in seen["cmd"], seen["cmd"]
+    assert seen["env"]["VIBEOS_JOB_CLASS"] == "integration"
+
+
+def test_direct_land_gate_tags_integration(tmp_path):
+    from argparse import Namespace
+
+    class Recorder(Run):
+        def run(self, cmd, **kw):
+            assert kw["env"]["VIBEOS_JOB_CLASS"] == "integration"
+            assert "PATH" in kw["env"]
+            return subprocess.CompletedProcess(cmd, 0)
+
+        def add(self, stage):
+            assert stage.status == "ok"
+
+    land_mod._run_gate(tmp_path, Recorder("test-direct", "all"), Namespace(clean=True, retries=0))
 
 
 def test_queue_batch_gate_cold_can_be_opted_out(monkeypatch, tmp_path):

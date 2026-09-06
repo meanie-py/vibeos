@@ -250,6 +250,65 @@ def test_an_undecided_foreign_tree_fails_the_check(tmp_path):
     assert any("UNCLASSIFIED" in p and "newly_imported" in p for p in vendored.check(reg))
 
 
+def test_a_nested_worktree_is_not_this_tree(tmp_path):
+    """Fleet isolation, read side: another lane's checkout is not our finding.
+
+    Agents run worktrees nested inside worktrees (.claude/worktrees/<lane>), and an
+    unguarded walk read one at a DIFFERENT commit and reported 50 UNCLASSIFIED trees
+    that belong to another branch. A gate whose verdict changes with which worktrees
+    happen to exist on disk is not a gate — and the pruning has to key on the checkout
+    itself, not on the ".claude" name, or the next nesting convention walks right in.
+    """
+    _write(
+        tmp_path,
+        """
+        containers: []
+        trees:
+          - {path: vend, name: V, reason: r}
+    """,
+    )
+    (tmp_path / "vend").mkdir()
+    lane = tmp_path / "somewhere" / "another-lane"
+    lane.mkdir(parents=True)
+    # A LINKED worktree carries a .git FILE, which is the case that bit us.
+    (lane / ".git").write_text("gitdir: /elsewhere/.git/worktrees/another-lane\n")
+    for i in range(8):
+        (lane / f"f{i}.c").write_text("/* Copyright (c) Microsoft Corporation */\n")
+
+    reg = vendored.load(tmp_path)
+    vendored.write_stamps(reg)
+    assert vendored.check(reg) == [], "another worktree's files were reported as ours"
+
+    # ...but the same files in OUR tree still have to be found, or the prune has
+    # quietly become a way to hide foreign code from the registry.
+    ours = tmp_path / "somewhere" / "our-import"
+    ours.mkdir(parents=True)
+    for i in range(8):
+        (ours / f"f{i}.c").write_text("/* Copyright (c) Microsoft Corporation */\n")
+    reg = vendored.load(tmp_path)
+    assert any("UNCLASSIFIED" in p and "our-import" in p for p in vendored.check(reg))
+
+
+def test_a_primary_checkout_nested_in_the_tree_is_also_skipped(tmp_path):
+    """The .git DIRECTORY form — a plain clone someone left inside the tree."""
+    _write(
+        tmp_path,
+        """
+        containers: []
+        trees:
+          - {path: vend, name: V, reason: r}
+    """,
+    )
+    (tmp_path / "vend").mkdir()
+    clone = tmp_path / "vendor-scratch"
+    (clone / ".git").mkdir(parents=True)
+    for i in range(8):
+        (clone / f"f{i}.c").write_text("/* Copyright (c) Microsoft Corporation */\n")
+    reg = vendored.load(tmp_path)
+    vendored.write_stamps(reg)
+    assert vendored.check(reg) == []
+
+
 def test_declaring_it_ours_settles_it_without_pretending_it_is_vendored(tmp_path):
     _write(
         tmp_path,

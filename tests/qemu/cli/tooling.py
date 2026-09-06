@@ -25,13 +25,24 @@ _PYRIGHT = str(_VBIN / "pyright")
 # Surface roots. rustconv carries its own [tool.ruff]/[tool.pyright]; the cli +
 # tools/*.py use the repo-root config. ruff/pyright discover the nearest config
 # per file, so passing the paths is enough.
-_RUFF_ROOTS = ["tools/rustconv/rustconv", "tests/qemu/cli"]
+# tools/fex was outside every lint root, which is how an unused import and an
+# unlinted closure walker sat there unnoticed. A tool the merge train depends on
+# belongs under the same standard as the rest of our python.
+_RUFF_ROOTS = ["tools/rustconv/rustconv", "tests/qemu/cli", "tools/fex"]
 _PYRIGHT_ROOTS = ["tools/rustconv/rustconv", "tests/qemu/cli"]
 # (package_dir, pythonpath, pytest_target) — pytest needs each package importable.
 _PYTEST_SUITES = [
     ("tools/rustconv", "tools/rustconv", "tests"),
     (".", ".", "tests/qemu/cli/test_cli_units.py"),
     (".", ".", "tools/wow64gen/test_wow64gen.py"),
+    # The SysWOW64 closure decides which DLLs a 32-bit guest can load at all, and
+    # its DYNAMIC half has no other oracle: a provider reached only through the
+    # Winsock catalog is invisible to the import walk, so dropping one is silent
+    # until a guest calls socket() and fails somewhere unrelated.
+    (".", ".", "tools/fex/test_wow64_closure.py"),
+    # tools/test_vendored.py existed but was collected by nothing, so the registry
+    # that gates "is this C ours to translate" had its oracle sitting unrun.
+    (".", ".", "tools/test_vendored.py"),
     # An oracle needs an oracle. verify_c_signatures reports its own type-resolution gaps as
     # defects in the code when it is wrong, and reports "verified" over types it never
     # resolved when it is blind — neither shows up in review or in its own output.
@@ -47,6 +58,8 @@ _PYTEST_SUITES = [
     (".", ".", "tools/test_kernel_probe.py"),
     (".", ".", "tools/test_scan_orphan_modules.py"),
     (".", ".", "tools/test_build_invalidation.py"),
+    (".", ".", "tools/test_bindgen_generation.py"),
+    (".", ".", "tools/test_gate_source_partitions.py"),
     (".", ".", "tools/test_cargo_depgraph.py"),
     (".", ".", "tools/test_retarget_cargo_depfile.py"),
     (".", ".", "tools/test_rust_module_tree.py"),
