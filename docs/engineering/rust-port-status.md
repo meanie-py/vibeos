@@ -2167,12 +2167,13 @@ big but cold: cdrom 211K, disk 170K, classpnp 166K, kernel32 161K, buslogic 138K
 ## Shared substrate crates (ported once, consumed by many islands)
 
 Some header material is invisible to bindgen and therefore gets re-ported by hand into every
-module that needs it. Two crates now own that material, and both exist because the hand copies
-had measurably drifted:
+module that needs it. Three crates now own that material, and all three exist because the hand
+copies had measurably drifted — or, for `va-slots-rust`, because they were about to:
 
 | Crate | What it owns | Why it exists |
 |---|---|---|
 | `strsafe-rust` | `strsafe.h`'s `static __inline` bounded string ops | `STRSAFEAPI` is `static __inline`, so **no object file in the tree defines any of them** — the last `.c` a module flips takes the module's only definition with it. Four copies existed (msgina, syssetup, desk, sysdm), no two the same subset, and msgina's `StringCchPrintfW` had DROPPED the caller's bound and forwarded to `wsprintfW` — a stack overrun on a `WCHAR[256]`. Consumers: desk, syssetup, sysdm, msgina, rosload, uefildr. |
+| `va-slots-rust` | Receiving C varargs on stable Rust: the slot-capture helpers (`format_slots`, `format_slots_z`) and the measured `VA_SLOTS`/`VA_STAGE` bounds | Stable Rust cannot **define** a C-variadic, so every printf-family entry point in the tree took a fixed parameter list and printed its format string LITERALLY, dropping every argument. It can **receive** one: all three targets pass varargs as a flat ascending slot sequence and `va_list` is `*mut c_char` on all three, so the trailing slots become ordinary fixed parameters replayed as the va_list, and no call site changes. Extracted at the THIRD copy rather than the fourth: the bounds are only safe **because they were measured** (widest live format = 11 slots, counted in slots not specifiers), so each copy is a fresh chance to guess them. Exports no `#[no_mangle]` symbol, which is what lets `drvtrace-shim` keep the LLVM-module isolation it exists for (§9.99). Consumers: freeldr-rust, kd-rust, drvtrace-shim. |
 | `win32macros-rust` | The function-like Win32 macros (`LOWORD`/`HIWORD`/`MAKELONG`/`MAKELANGID`/`MAKELCID`/`MAKEINTRESOURCEW`/`RGB`/`Get?Value`/`GET_?_LPARAM`/`ZeroMemory`/`_countof`/`ARRAYSIZE`) plus the constants bindgen folds away (`DWLP_MSGRESULT`/`DWLP_DLGPROC`/`DWLP_USER`, `INVALID_HANDLE_VALUE`, `UNICODE_NULL`) | bindgen emits **no** function-like macro and drops cast/`sizeof`/pointer-literal constants. Before extraction: `LOWORD` defined **32× across 12 crates in 8 spellings**, `HIWORD` in 8, `ZeroMemory` in 6, `DWLP_USER` in 9 — and all four `RGB` copies had dropped `wingdi.h`'s per-component `BYTE` mask, so an out-of-range component bled into the next channel. Transcribed from the headers, not from the copies, with 13 known-answer tests. Consumers: desk, sysdm, intl, syssetup, aclui, netcfgx, netid, umpnpmgr, samlib, ntmarta, authz, msv1_0 (+ recyclebin, parked). |
 
 **The sharing boundary is narrower than "core primitives."** A shared crate cannot depend on any

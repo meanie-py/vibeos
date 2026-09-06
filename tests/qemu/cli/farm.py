@@ -130,10 +130,10 @@ def _farm_arch(
     stats: dict,
 ) -> None:
     i = 0
-    while time.time() < deadline and i < max_boots:
+    while time.monotonic() < deadline and i < max_boots:
         i += 1
         run = Run("farm", arch)
-        t0 = time.time()
+        t0 = time.monotonic()
         try:
             r = _one_boot(run, repo, arch, until="", fail_on=None, idx=0, total=1)
         except Exception as e:  # a farm worker must never die silently
@@ -143,7 +143,7 @@ def _farm_arch(
                 "classification": "FARM_ERROR",
                 "salient": [repr(e)[:200]],
             }
-        dur = time.time() - t0
+        dur = time.monotonic() - t0
         run.classification = r.get("classification", "") or ""
         try:
             run.finalize(repo)
@@ -194,7 +194,9 @@ def farm(args, repo: Path) -> int:
     arches = [a.strip() for a in (args.arches or "amd64").split(",") if a.strip()]
     minutes = float(args.minutes or 0)
     max_boots = int(args.boots or (10**9 if minutes else 5))
-    deadline = time.time() + (minutes * 60 if minutes else 10**9)
+    # monotonic: "soak for N minutes" is an elapsed-time question, and a
+    # wall-clock step would silently lengthen or shorten the soak.
+    deadline = time.monotonic() + (minutes * 60 if minutes else 10**9)
     tripwire = (getattr(args, "tripwire", "") or "").strip()
     if tripwire:
         os.environ["VIBEOS_TRIPWIRE"] = tripwire

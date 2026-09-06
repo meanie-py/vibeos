@@ -16,16 +16,34 @@
 
 const TRACE_LEVEL_WARNING: u32 = 3; // ETW: 1=critical 2=error 3=warning
 
-/// classpnp/disk WPP TracePrint: error/warning levels forward the (raw) format
-/// string to the debug serial so failure paths are not silent; %-specifiers
-/// print literally — enough to identify the site.
+/// classpnp/disk WPP TracePrint: error/warning levels reach the debug serial so
+/// failure paths are not silent. Stable rustc cannot DEFINE a C-variadic, so the
+/// trailing slots are declared as fixed parameters and replayed as the va_list
+/// (see `va_slots_rust`); this used to hand the raw format string to DbgPrint's
+/// `%s` and every specifier printed literally with its argument dropped, which
+/// on these call sites means the status code you actually wanted was the part
+/// thrown away.
 #[no_mangle]
-pub unsafe extern "C" fn TracePrint(lvl: u32, _flags: u32, fmt: *const i8) {
+pub unsafe extern "C" fn TracePrint(
+    lvl: u32,
+    _flags: u32,
+    fmt: *const i8,
+    a0: usize, a1: usize, a2: usize, a3: usize, a4: usize, a5: usize,
+    a6: usize, a7: usize, a8: usize, a9: usize, a10: usize, a11: usize,
+) {
     if lvl <= TRACE_LEVEL_WARNING && !fmt.is_null() {
         unsafe extern "C" {
             fn DbgPrint(Format: *const i8, ...) -> u32;
         }
-        DbgPrint(c"[CLASSPNP] %s".as_ptr(), fmt);
+        // Format here rather than passing `fmt` on to DbgPrint, so the prefix and
+        // the message stay one call and cannot interleave with another CPU's.
+        let mut buf: [i8; 512] = [0; 512];
+        va_slots_rust::format_slots_z(
+            &mut buf,
+            fmt,
+            &[a0, a1, a2, a3, a4, a5, a6, a7, a8, a9, a10, a11],
+        );
+        DbgPrint(c"[CLASSPNP] %s".as_ptr(), buf.as_ptr());
     }
 }
 

@@ -133,10 +133,14 @@ endforeach()
     # make the ordering observable again. Detect it instead of hiding it behind
     # a sleep or a retry -- CLOCK_MONOTONIC carries the same NTP slew as
     # CLOCK_REALTIME, so realtime advancing less than monotonic isolates a step
-    # and nothing else. Seen on WSL2 with a miscalibrated TSC (`dmesg` reports
-    # "Adjusting tsc more than 11%"): the kernel holds a +7.7% tick and
-    # systemd-timesyncd, pinned at its 32s minimum poll, steps realtime back
-    # ~2.4s every poll.
+    # and nothing else -- though only a STEP: a pure frequency error moves both
+    # clocks together and slips past. Seen on WSL2 when systemd-timesyncd and the
+    # kernel slew fell into a feedback loop -- timesyncd steps the clock back, the
+    # kernel slews harder, the slew saturates at tick 11000 (nominal 10000) where
+    # it can never converge, so timesyncd steps again, ~2.4s every 32s. Fixed
+    # host-side by disabling systemd-timesyncd; the guard stays, because it
+    # defends against a step from any cause.
+    # See docs/engineering/translation-debugging-field-manual.md.
     def _mark_clock(self):
         self._clock_mark = (time.time_ns(), time.monotonic_ns())
 
