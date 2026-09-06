@@ -522,7 +522,10 @@ const TAG_IO_RUNS: u32 = 0x69746146; // Just a placeholder; use real tag if know
 
 const IRP_BUFFERED_IO: u32 = 0x00000010;
 const IRP_DEALLOCATE_BUFFER: u32 = 0x00000020;
-const NonPagedPoolNx: POOL_TYPE = 0; // fatprocs.h: `#define NonPagedPoolNx NonPagedPool`
+// fatprocs.h:47: `#define NonPagedPoolNx NonPagedPool` under
+// `#ifdef __REACTOS__` -- NX pool is NT6.2 and this kernel has none, so the
+// Windows value (0x200/0x204) is not what any TU here compiles.
+const NonPagedPoolNx: POOL_TYPE = 0;
                                      // -- ReactOS downgrades the NT6.2 NX pool types, so the
                                      // literal 0x200 the translation used is not a pool type
                                      // this kernel knows.
@@ -532,7 +535,10 @@ const TAG_IO_USER_BUFFER: u32 = 0x51746146; // 'bUu' tag placeholder
 
 // Constants from file level or needed locally
 const IoWriteAccess: u32 = 1; // LOCK_OPERATION: _LOCK_OPERATION_IoWriteAccess
-const NonPagedPoolNxCacheAligned: u32 = 4; // fatprocs.h: `#define NonPagedPoolNxCacheAligned
+// fatprocs.h:47: `#define NonPagedPoolNxCacheAligned NonPagedPoolCacheAligned` under
+// `#ifdef __REACTOS__` -- NX pool is NT6.2 and this kernel has none, so the
+// Windows value (0x200/0x204) is not what any TU here compiles.
+const NonPagedPoolNxCacheAligned: u32 = 4;
                                            // NonPagedPoolCacheAligned` (= 4, pooltype.h)
 const TAG_IO_BUFFER: u32 = 0x4F746146; /* placeholder */
 #[no_mangle]
@@ -1690,7 +1696,10 @@ pub unsafe extern "system" fn FatSingleAsync(
 
 #[no_mangle]
 pub unsafe extern "system" fn FatPagingFileErrorHandler(Irp: PIRP, Event: PKEVENT) -> NTSTATUS {
-    const NonPagedPoolNx: u32 = 0; // fatprocs.h downgrades it to NonPagedPool
+    // fatprocs.h:47: `#define NonPagedPoolNx NonPagedPool` under
+    // `#ifdef __REACTOS__` -- NX pool is NT6.2 and this kernel has none, so the
+    // Windows value (0x200/0x204) is not what any TU here compiles.
+    const NonPagedPoolNx: u32 = 0;
     const FAT_TAG: u32 = 0x46617420; // ' taF' (LE bytes)
 
     let status: NTSTATUS;

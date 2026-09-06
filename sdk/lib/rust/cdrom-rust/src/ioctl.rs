@@ -389,7 +389,10 @@ const FDO_HACK_NO_RESERVE6: u32 = 0x8;           // actual value unknown  // was
 const SRB_FLAGS_QUEUE_ACTION_ENABLE: u8 = 0x2;    // actual value unknown  // was 0 (LLM-invented); bindgen-correct
 const SRB_SIMPLE_TAG_REQUEST: u8 = 0x20;          // actual value unknown  // was 0 (LLM-invented); bindgen-correct
 const CDROM_TAG_SRB: u32 = 0x53436353;                 // actual value unknown
-const NonPagedPoolNx: u32 = 0x200;           // POOL_TYPE NonPagedPoolNx (512)
+// cdrom.h:68: `#define NonPagedPoolNx NonPagedPool` under
+// `#ifdef __REACTOS__` -- NX pool is NT6.2 and this kernel has none, so the
+// Windows value (0x200/0x204) is not what any TU here compiles.
+const NonPagedPoolNx: u32 = 0;
 
 // PAGED_CODE();
 
@@ -787,7 +790,10 @@ const RESERVATION_ACTION_RELEASE: u8 = 0x2;  // was 3 (LLM-invented); bindgen-co
 const RESERVATION_ACTION_PREEMPT: u8 = 0x4;  // was 5 (LLM-invented); bindgen-correct
 const RESERVATION_ACTION_PREEMPT_ABORT: u8 = 0x5;  // was 6 (LLM-invented); bindgen-correct
 
-const NonPagedPoolNxCacheAligned: u32 = 0x204; // NonPagedPoolNx (512) + CacheAligned (4)
+// cdrom.h:68: `#define NonPagedPoolNxCacheAligned NonPagedPoolCacheAligned` under
+// `#ifdef __REACTOS__` -- NX pool is NT6.2 and this kernel has none, so the
+// Windows value (0x200/0x204) is not what any TU here compiles.
+const NonPagedPoolNxCacheAligned: u32 = 4;
 const CDROM_TAG_PLAY_ACTIVE: u32 = 0x70436353; // CDROM_TAG_PLAY_ACTIVE placeholder
 const AUDIO_STATUS_IN_PROGRESS: u8 = 0x11; // AUDIO_STATUS_IN_PROGRESS
 

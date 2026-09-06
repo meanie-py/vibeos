@@ -145,7 +145,10 @@ const FALSE: u8 = 0;
 const IOCTL_SCSI_GET_ADDRESS: u32 = 0x41018; // CTL_CODE(IOCTL_SCSI_BASE,0x406,METHOD_BUFFERED,FILE_ANY_ACCESS); was 0x41018c (fabricated extra digit)
 const IOCTL_STORAGE_QUERY_PROPERTY: u32 = 0x002D1400; // typical value, replace if needed
 const CDROM_TAG_DESCRIPTOR: u32 = 0x44436353; // placeholder
-const NonPagedPoolNx: u32 = 0x200;
+// cdrom.h:68: `#define NonPagedPoolNx NonPagedPool` under
+// `#ifdef __REACTOS__` -- NX pool is NT6.2 and this kernel has none, so the
+// Windows value (0x200/0x204) is not what any TU here compiles.
+const NonPagedPoolNx: u32 = 0;
 const PropertyStandardQuery: u32 = 0;
 const STATUS_UNSUCCESSFUL: NTSTATUS = 0xC0000001u32 as i32;
 

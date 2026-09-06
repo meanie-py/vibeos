@@ -177,8 +177,14 @@ const FAT_DIRENT_ATTR_VOLUME_ID: u8 = 0x08;
 const FAT_DIRENT_DELETED: u8 = 0xE5;
 const FAT_DIRENT_REALLY_0E5: u8 = 0x05;
 
-const NonPagedPoolNx: u32 = 512; // NonPagedPoolNx = 0x200
-const NonPagedPoolNxCacheAligned: u32 = 516; // NonPagedPoolNxCacheAligned
+// fatprocs.h:47: `#define NonPagedPoolNx NonPagedPool` under
+// `#ifdef __REACTOS__` -- NX pool is NT6.2 and this kernel has none, so the
+// Windows value (0x200/0x204) is not what any TU here compiles.
+const NonPagedPoolNx: u32 = 0;
+// fatprocs.h:47: `#define NonPagedPoolNxCacheAligned NonPagedPoolCacheAligned` under
+// `#ifdef __REACTOS__` -- NX pool is NT6.2 and this kernel has none, so the
+// Windows value (0x200/0x204) is not what any TU here compiles.
+const NonPagedPoolNxCacheAligned: u32 = 4;
 const TAG_ENTRY_LOOKUP_BUFFER: u32 = 0x4C746146;
 
 // fastfat's real LBO is LONGLONG (fat.h:34, and crate::types::LBO = LONGLONG), i.e.

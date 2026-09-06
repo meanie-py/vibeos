@@ -483,6 +483,16 @@ land; date every addition.** Source docs live in `docs/engineering/archive/`.
 
 ## Known bugs & flakes (live registry)
 
+- **`test_build_invalidation.py` is mtime-flaky and it rejects real batches — OPEN**
+  (2026-09-06). `test_generated_rust_tracks_directory_input_add_edit_remove[files-depfile]`
+  failed one conductor batch with `ninja explain: restat of output leaf older than most recent
+  input .../generated.rs` — two timestamps **1 ms apart**. It passed on an immediate rerun with
+  no change. The batch was a TOOLING_FAIL on two innocent lanes, which the conductor then had to
+  split to find a culprit that was not there. A build-invalidation test that races the clock
+  cannot distinguish "cargo failed to invalidate" from "the filesystem gave us the same
+  millisecond" — it needs to force a distinct mtime between the write and the rebuild rather
+  than hope for one.
+
 The committed home for open bugs (was: agent MEMORY.md, which other agents never see).
 Field-manual § pointers hold the full writeups. **Update on state change.**
 

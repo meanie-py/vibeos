@@ -166,7 +166,10 @@ pub unsafe extern "system" fn ScratchBuffer_Allocate(
     // Constants used by this function
     const TRACE_LEVEL_WARNING: u32 = 3; // storswtr.h:26-30
     const TRACE_FLAG_INIT: u32 = 8; // storswtr.h:80-98 (an ORDINAL enum, not a bitmask)
-    const NonPagedPoolNx: u32 = 0x200;
+    // cdrom.h:68: `#define NonPagedPoolNx NonPagedPool` under
+    // `#ifdef __REACTOS__` -- NX pool is NT6.2 and this kernel has none, so the
+    // Windows value (0x200/0x204) is not what any TU here compiles.
+    const NonPagedPoolNx: u32 = 0;
     const CDROM_TAG_SCRATCH: u32 = 0x42436353; // 'CScr'
 
     // Forward declarations for unknown symbols

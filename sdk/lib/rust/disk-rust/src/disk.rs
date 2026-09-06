@@ -2237,7 +2237,10 @@ pub unsafe extern "C" fn DiskModeSelect(
     const APC_LEVEL: KIRQL = 1;
     const TRACE_LEVEL_ERROR: u32 = 2; // storswtr.h:26-30
     const TRACE_FLAG_IOCTL: u32 = 4; // storswtr.h:80-98 (an ORDINAL enum, not a bitmask)
-    const NON_PAGED_POOL_NX_CACHE_ALIGNED: u32 = 4; // disk.h:76 downgrades it to
+    // disk.h:75: `#define NON_PAGED_POOL_NX_CACHE_ALIGNED NonPagedPoolCacheAligned` under
+    // `#ifdef __REACTOS__` -- NX pool is NT6.2 and this kernel has none, so the
+    // Windows value (0x200/0x204) is not what any TU here compiles.
+    const NON_PAGED_POOL_NX_CACHE_ALIGNED: u32 = 4;
                                                 // NonPagedPoolCacheAligned
     const DISK_TAG_MODE_DATA: u32 = 0x4D446353;         // 'MODE' placeholder
     const SRB_TYPE_STORAGE_REQUEST_BLOCK: u32 = 1;     // srb.h:664

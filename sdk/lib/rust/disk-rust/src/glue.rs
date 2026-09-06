@@ -31,7 +31,10 @@ pub const DISK_TAG_INFO_EXCEPTION: u32 = 0x41446353; // 'ADcS'
 pub const DISK_TAG_SRB: u32 = 0x53446353;            // 'SDcS'
 
 // POOL_TYPE: NonPagedPoolNx(512) | CacheAligned(4)
-pub const NonPagedPoolNxCacheAligned: i32 = 516;
+// disk.h:75: `#define NonPagedPoolNxCacheAligned NonPagedPoolCacheAligned` under
+// `#ifdef __REACTOS__` -- NX pool is NT6.2 and this kernel has none, so the
+// Windows value (0x200/0x204) is not what any TU here compiles.
+pub const NonPagedPoolNxCacheAligned: i32 = 4;
 
 // sizeof-based #defines.
 // C: #define FUNCTIONAL_EXTENSION_SIZE sizeof(FUNCTIONAL_DEVICE_EXTENSION) + sizeof(DISK_DATA)
@@ -72,7 +75,10 @@ pub const TRACE_FLAG_WMI: u32 = 6; // storswtr.h:80-98 (an ORDINAL enum, not a b
 pub const TRACE_FLAG_SCSI: u32 = 17; // storswtr.h:80-98 (an ORDINAL enum, not a bitmask)
 pub const DISK_TAG_DISABLE_CACHE: u32 = 0x43446353; // 'CDcS'
 pub const DISK_TAG_CCONTEXT: u32 = 0x63446353;      // 'cDcS'
-pub const NonPagedPoolNx: i32 = 512;
+// disk.h:75: `#define NonPagedPoolNx NonPagedPool` under
+// `#ifdef __REACTOS__` -- NX pool is NT6.2 and this kernel has none, so the
+// Windows value (0x200/0x204) is not what any TU here compiles.
+pub const NonPagedPoolNx: i32 = 0;
 
 // harvested:
 pub const DO_VERIFY_VOLUME: u32 = 0x00000002;

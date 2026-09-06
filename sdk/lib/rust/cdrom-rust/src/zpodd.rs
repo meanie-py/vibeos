@@ -37,7 +37,10 @@ unsafe extern "C" {
 
 const IRP_MN_QUERY_INTERFACE: u8 = 0x08u8;
 
-const NonPagedPoolNx: u32 = 512;
+// cdrom.h:68: `#define NonPagedPoolNx NonPagedPool` under
+// `#ifdef __REACTOS__` -- NX pool is NT6.2 and this kernel has none, so the
+// Windows value (0x200/0x204) is not what any TU here compiles.
+const NonPagedPoolNx: u32 = 0;
 const CDROM_TAG_ZERO_POWER_ODD: u32 = 0x5A436353;
 const FeatureRemovableMedium: u32 = 0x0003; // ntddmmc.h:78
 const LOADING_MECHANISM_TRAY: u32 = 1;

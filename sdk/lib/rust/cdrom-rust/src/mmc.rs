@@ -328,7 +328,10 @@ pub unsafe extern "system" fn DeviceGetConfigurationWithAlloc(
     // Forward declarations for external symbols not in imports
     const STATUS_INTERNAL_ERROR: i32 = (0xC000000Fu32 as i32);
     const CDROM_TAG_FEATURE: u32 = 0x46436353; // 'CDDR' little-endian? typical tag
-    const NonPagedPoolNxCacheAligned: u32 = 0x204; // NonPagedPoolNx (512) + CacheAligned (4)
+    // cdrom.h:68: `#define NonPagedPoolNxCacheAligned NonPagedPoolCacheAligned` under
+    // `#ifdef __REACTOS__` -- NX pool is NT6.2 and this kernel has none, so the
+    // Windows value (0x200/0x204) is not what any TU here compiles.
+    const NonPagedPoolNxCacheAligned: u32 = 4;
     const TRACE_LEVEL_ERROR: u32 = 2; // storswtr.h:26-30
     const TRACE_FLAG_IOCTL: u32 = 4; // storswtr.h:80-98 (an ORDINAL enum, not a bitmask)
 

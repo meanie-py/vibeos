@@ -107,8 +107,14 @@ pub const TRACE_FLAG_DUMP: u32 = 16; // storswtr.h:80-98 (an ORDINAL enum, not a
 pub const TRACE_FLAG_SCSI: u32 = 17; // storswtr.h:80-98 (an ORDINAL enum, not a bitmask)
 
 // Win8+ pool types absent from ntkrnl-sys POOL_TYPE enum (NonPagedPoolNx = NonPagedPool|0x200)
-pub const NonPagedPoolNx: u32 = 512;
-pub const NonPagedPoolNxCacheAligned: u32 = 516;
+// classp.h: `#define NonPagedPoolNx NonPagedPool` under
+// `#ifdef __REACTOS__` -- NX pool is NT6.2 and this kernel has none, so the
+// Windows value (0x200/0x204) is not what any TU here compiles.
+pub const NonPagedPoolNx: u32 = 0;
+// classp.h: `#define NonPagedPoolNxCacheAligned NonPagedPoolCacheAligned` under
+// `#ifdef __REACTOS__` -- NX pool is NT6.2 and this kernel has none, so the
+// Windows value (0x200/0x204) is not what any TU here compiles.
+pub const NonPagedPoolNxCacheAligned: u32 = 4;
 // ddk/srb.h:55 == ((UCHAR) ~0) == 0xFF.
 pub const SP_UNTAGGED: u32 = 0xFF;
 

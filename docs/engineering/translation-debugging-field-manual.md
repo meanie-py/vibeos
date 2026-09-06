@@ -2184,6 +2184,19 @@ findings were overwhelmingly false. The corpus that works is the C module the cr
 plus the SDK headers, and a name resolving to two values inside *that* is reported ambiguous
 rather than guessed at.
 
+**A checker's SEEDED value can be the wrong oracle, and then it demands the bug.**
+`verify_constants` seeds `NonPagedPoolNx = 512` from the Windows WDK, because ReactOS's headers
+only mention the name in SAL annotations and an unseeded name would let a fabricated value pass
+silently. Correct reasoning, wrong number for this tree: NX pool is an NT6.2 feature ReactOS
+does not implement, so *every* in-tree consumer redefines the name to the plain pool type first
+(`#define NonPagedPoolNx NonPagedPool` in cdfs, fastfat, cdrom, disk and classpnp, under an
+`#ifdef __REACTOS__` that is always on). Nothing here compiles 512, so the checker was demanding
+the one value that is wrong, and it rejected a land for correct code. Fix the SEED, not the
+finding — seeding the effective value keeps the cross-check alive, where a skip-list entry would
+have disabled it. Generally: when a gate contradicts you about a constant, ask which of you is
+modelling the preprocessor, because a flat header catalog cannot see a module-local `#define`
+that shadows a DDK enum.
+
 **Two oracle shapes cost one line each and pay for themselves.** C's implicit enum numbering
 continues from an explicit initialiser (`FcbGood = 1, FcbBad,` makes `FcbBad` 2), and getting
 that wrong reports the CORRECT `FcbNeedsToBeVerified = 3` as a mismatch against a phantom 2 —

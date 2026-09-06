@@ -328,7 +328,10 @@ type KIRQL = u8;
 type PCSTR = *const i8;
 
 
-const NonPagedPoolNx: u32 = 0x200;
+// disk.h:75: `#define NonPagedPoolNx NonPagedPool` under
+// `#ifdef __REACTOS__` -- NX pool is NT6.2 and this kernel has none, so the
+// Windows value (0x200/0x204) is not what any TU here compiles.
+const NonPagedPoolNx: u32 = 0;
 const TRACE_FLAG_GENERAL: u32 = 0; // storswtr.h:80-98 (an ORDINAL enum, not a bitmask)
 
 

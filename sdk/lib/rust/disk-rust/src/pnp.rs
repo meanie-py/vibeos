@@ -159,7 +159,10 @@ const PARTITION0_LIST_SIZE: ULONG = 4; // example constant
 const SENSE_BUFFER_SIZE_EX: SIZE_T = core::mem::size_of::<SENSE_DATA_EX>() as SIZE_T;
 const SCSI_DISK_TIMEOUT: ULONG = 0x0A;
 const DISK_DEFAULT_FAILURE_POLLING_PERIOD: ULONG = 600;
-const NonPagedPoolNxCacheAligned: POOL_TYPE = 4; // disk.h:76 downgrades it to
+// disk.h:75: `#define NonPagedPoolNxCacheAligned NonPagedPoolCacheAligned` under
+// `#ifdef __REACTOS__` -- NX pool is NT6.2 and this kernel has none, so the
+// Windows value (0x200/0x204) is not what any TU here compiles.
+const NonPagedPoolNxCacheAligned: POOL_TYPE = 4;
                                                  // NonPagedPoolCacheAligned
 const DISK_TAG_START: ULONG = 0x73446353;
 const MAX_SECTORS_PER_VERIFY: ULONG = 0x0100;

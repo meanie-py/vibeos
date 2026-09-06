@@ -158,7 +158,10 @@ const DEBUG_TRACE_STRUCSUP: u32 = 0x20000000;
 const FcbGood: u32 = 1;          // Placeholder
 const FILE_ATTRIBUTE_DIRECTORY: u32 = 0x10;
 const TAG_FCB: u32 = 0x46746146; // 'T' 'A' 'C' 'F'? placeholder
-const NonPagedPoolNx: ntkrnl_sys::mm::POOL_TYPE = 0x200;
+// fatprocs.h:47: `#define NonPagedPoolNx NonPagedPool` under
+// `#ifdef __REACTOS__` -- NX pool is NT6.2 and this kernel has none, so the
+// Windows value (0x200/0x204) is not what any TU here compiles.
+const NonPagedPoolNx: ntkrnl_sys::mm::POOL_TYPE = 0;
 const NTDDI_VERSION: u32 = 0x0A000000; // assume Windows 10 for compilation
 
 // Forward declarations for external functions not already available
@@ -179,7 +182,10 @@ const VCB_GOOD: VCB_CONDITION = crate::types::_VCB_CONDITION_VcbGood; // 1 — b
 const VIRTUAL_VOLUME_FILE: FILE_TYPE = 5; // fatprocs.h:53 _TYPE_OF_OPEN, which starts at 1:
                                           // 1 is UnopenedFileObject, so every later decode of
                                           // the virtual volume file said "not open"
-const NON_PAGED_POOL_NX: POOL_TYPE = 0; // fatprocs.h:47 downgrades NonPagedPoolNx to
+// fatprocs.h:47: `#define NON_PAGED_POOL_NX NonPagedPool` under
+// `#ifdef __REACTOS__` -- NX pool is NT6.2 and this kernel has none, so the
+// Windows value (0x200/0x204) is not what any TU here compiles.
+const NON_PAGED_POOL_NX: POOL_TYPE = 0;
                                         // NonPagedPool on ReactOS
 const TAG_VCB_STATS: u32 = 0x56746146; // placeholder
 const TAG_VPB: u32 = u32::from_be_bytes(*b"vtaF"); // nolint: const-contradiction (per-driver pool tag, each verified against its own C)

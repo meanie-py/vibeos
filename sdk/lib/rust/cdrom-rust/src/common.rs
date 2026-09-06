@@ -268,7 +268,10 @@ const TRACE_FLAG_IOCTL: u32 = 4; // storswtr.h:80-98 (an ORDINAL enum, not a bit
 /// _IRQL_requires_max_(APC_LEVEL)
 
 // Constants (approximate values; some are typical Windows DDK constants)
-const NonPagedPoolNx: u32 = 0x200; // POOL_TYPE
+// cdrom.h:68: `#define NonPagedPoolNx NonPagedPool` under
+// `#ifdef __REACTOS__` -- NX pool is NT6.2 and this kernel has none, so the
+// Windows value (0x200/0x204) is not what any TU here compiles.
+const NonPagedPoolNx: u32 = 0;
 const CDROM_TAG_COMPLETION_CONTEXT: u32 = 0x63436353; // placeholder, replace with actual tag
 
 const START_UNIT_TIMEOUT: u32 = 0xf0; // typical timeout in seconds  // was 60 (LLM-invented); bindgen-correct
@@ -296,7 +299,10 @@ const CDROM_READ_CAPACITY_TIMEOUT: u32 = 0x14; // typical value, if incorrect ca
 const SCSIOP_READ_CAPACITY: u8 = 0x25;
 
 const CDROM_TAG_STREAM: u32 = 0x4F434353;
-const NonPagedPoolNxCacheAligned: u32 = 0x204; // NonPagedPoolNx (512) + CacheAligned (4)
+// cdrom.h:68: `#define NonPagedPoolNxCacheAligned NonPagedPoolCacheAligned` under
+// `#ifdef __REACTOS__` -- NX pool is NT6.2 and this kernel has none, so the
+// Windows value (0x200/0x204) is not what any TU here compiles.
+const NonPagedPoolNxCacheAligned: u32 = 4;
 const SCSIOP_SET_STREAMING: u8 = 0xB6;
 #[no_mangle]
 pub unsafe extern "C" fn RequestSetReceivedTime(Request: WDFREQUEST) {
@@ -587,7 +593,10 @@ pub unsafe extern "system" fn DeviceSendSrbSynchronously(
 
     const SENSE_BUFFER_SIZE: u32 = 18; // placeholder
     const CDROM_TAG_SENSE_INFO: u32 = 0x49436353; // 'SENS' placeholder
-    const NonPagedPoolNxCacheAligned: u32 = 0x204; // NonPagedPoolNx (512) + CacheAligned (4)
+    // cdrom.h:68: `#define NonPagedPoolNxCacheAligned NonPagedPoolCacheAligned` under
+    // `#ifdef __REACTOS__` -- NX pool is NT6.2 and this kernel has none, so the
+    // Windows value (0x200/0x204) is not what any TU here compiles.
+    const NonPagedPoolNxCacheAligned: u32 = 4;
     const SRB_FUNCTION_EXECUTE_SCSI: u32 = 0x00;
     const SRB_SIMPLE_TAG_REQUEST: u32 = 0x20;
     const SRB_FLAGS_DISABLE_SYNCH_TRANSFER: u32 = 0x00000008;
@@ -872,7 +881,10 @@ pub unsafe extern "C" fn DeviceSendNotification(
 ) {
     const TRACE_LEVEL_WARNING: u32 = 3; // storswtr.h:26-30
     const TRACE_FLAG_MCN: u32 = 12; // storswtr.h:80-98 (an ORDINAL enum, not a bitmask)
-    const NonPagedPoolNx: u32 = 0x200;
+    // cdrom.h:68: `#define NonPagedPoolNx NonPagedPool` under
+    // `#ifdef __REACTOS__` -- NX pool is NT6.2 and this kernel has none, so the
+    // Windows value (0x200/0x204) is not what any TU here compiles.
+    const NonPagedPoolNx: u32 = 0;
     const CDROM_TAG_NOTIFICATION: u32 = 0x6F436353;
 
     let mut notification: *mut TARGET_DEVICE_CUSTOM_NOTIFICATION;
