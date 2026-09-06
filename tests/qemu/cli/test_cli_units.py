@@ -146,6 +146,88 @@ def test_smp_patch_is_idempotent_on_arm64_media(tmp_path: Path):
     assert vm_mod.smp_selected_iso(src, tmp_path / "work") == src
 
 
+def _stub_mcopy(monkeypatch, ini_text: str = "[FREELOADER]\n/SOS /RDPATH=x\n"):
+    """Stand in for mcopy: extraction writes the ini out, write-back is a no-op.
+
+    The real transform needs a FAT image; what these tests are about is the
+    CACHING, so the FAT plumbing is stubbed and the calls are recorded.
+    """
+    calls: list[list[str]] = []
+
+    def fake_run(cmd, **kwargs):
+        calls.append(list(cmd))
+        # `mcopy -o -i IMG ::/freeldr.ini OUT` — the extraction direction
+        if cmd[-2].startswith("::"):
+            Path(cmd[-1]).write_text(ini_text)
+        return subprocess.CompletedProcess(cmd, 0, b"", b"")
+
+    monkeypatch.setattr(vm_mod.subprocess, "run", fake_run)
+    return calls
+
+
+def test_testkernel_boot_img_is_built_once_and_reused(tmp_path: Path, monkeypatch):
+    """The kmtest sweep copied 283 MB per boot — 40 boots, ~12 GB of identical
+    bytes, which filled the disk under other lanes. The second call must reuse."""
+    src = tmp_path / "boot.img"
+    src.write_bytes(b"BOOTIMG" * 100)
+    work = tmp_path / "work"
+    work.mkdir()
+    calls = _stub_mcopy(monkeypatch)
+
+    first = vm_mod.testkernel_boot_img(src, work)
+    assert first.exists()
+    assert first != src, "must not mutate the build tree's media"
+    built = len(calls)
+    assert built > 0
+
+    second = vm_mod.testkernel_boot_img(src, work)
+    assert second == first
+    assert len(calls) == built, "second boot rebuilt the image instead of reusing it"
+
+
+def test_testkernel_boot_img_rekeys_when_the_source_changes(tmp_path: Path, monkeypatch):
+    """A rebuild re-stages boot.img. Reusing the old variant would boot stale
+    media, which is the one failure worse than the copying it replaces."""
+    src = tmp_path / "boot.img"
+    src.write_bytes(b"OLD")
+    work = tmp_path / "work"
+    work.mkdir()
+    _stub_mcopy(monkeypatch)
+
+    old = vm_mod.testkernel_boot_img(src, work)
+    src.write_bytes(b"NEWER-AND-LONGER")
+    os.utime(src, (1, 1))
+    new = vm_mod.testkernel_boot_img(src, work)
+
+    assert new != old, "a re-staged boot.img must produce a new cache key"
+    assert not old.exists(), "the stale variant should be pruned"
+
+
+def test_testkernel_boot_img_never_writes_the_shared_file_in_place(tmp_path: Path, monkeypatch):
+    """AGENTS.md records SIGBUS from a tool rewriting a shared inode under a
+    sibling's mapping. Building via a temp + os.replace means an already-open
+    boot keeps a valid inode, so guard that the staging path is what gets
+    written and the shared name only ever appears via replace."""
+    src = tmp_path / "boot.img"
+    src.write_bytes(b"BOOTIMG")
+    work = tmp_path / "work"
+    work.mkdir()
+    _stub_mcopy(monkeypatch)
+
+    replaced: list[tuple[str, str]] = []
+    real_replace = os.replace
+    monkeypatch.setattr(
+        vm_mod.os, "replace",
+        lambda a, b: (replaced.append((str(a), str(b))), real_replace(a, b))[1],
+    )
+
+    out = vm_mod.testkernel_boot_img(src, work)
+    assert len(replaced) == 1, "the shared image must appear via exactly one atomic replace"
+    staged, final = replaced[0]
+    assert str(out) == final
+    assert "staging" in staged, "content must be built at a private path first"
+
+
 def test_mp_entry_names_are_equal_length_to_the_defaults_they_replace():
     """The in-place poke can pad a shorter replacement but never a longer one, and
     arm64 relies on an exact-length swap. Guard the table itself so renaming one
