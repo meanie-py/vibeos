@@ -579,7 +579,14 @@ Field-manual § pointers hold the full writeups. **Update on state change.**
   before that loads every cursor in user mode and then silently drops it in the kernel (the
   syscall just returns FALSE — a first attempt did exactly this and moved the count not at all).
   Result: 78 -> 24, boot green at 37s, and the feared `LoadImageW`/`RtlVirtualUnwind` AV from
-  letting the callback finally run did **not** materialise. **The residual 24 is 4 processes x 6
+  letting the callback finally run did **not** materialise.
+  **Read the count as `6 x (processes that missed)`, not as a raw number.** Observed 78 (13x6),
+  24 (4x6) and, on a later boot with no win32k change in between, 30 (5x6) — every value seen so
+  far is an exact multiple of the six cursor classes. So movement in units of 6 is just how many
+  GUI processes happened to register before the deferred load on that boot, and only a
+  **non-multiple of 6** would mean something structural changed. Worth knowing before someone
+  reads 24 -> 30 as a regression and goes looking for one; verified here that neither the
+  origin/master merge nor the varargs work touched the win32k cursor path at all. **The residual 24 is 4 processes x 6
   classes that register system classes without ever passing through `co_int_graphics_check`, so
   the hook cannot fire for them**: every one of the 24 is emitted strictly *before* the load
   (serial lines 1263-1513 vs the load at 1552), and there are zero in the 750 lines after it.
