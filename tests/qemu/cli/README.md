@@ -338,6 +338,18 @@ wait times), and recent verdicts — a rejected lane's triage pointer lives here
 `--mine` filters verdicts to this lane. The lock holder also appears in
 `host-status` as a `LANDING :` line plus the `land` queue.
 
+### `disk-status [--sizes]`
+
+JSON report of filesystem headroom and live disk reservations. `--sizes` also
+measures this lane's build/target directories and the shared compiler caches;
+it reads metadata only and deletes nothing. CLI builds reserve 32 GiB and tooling
+runs 4 GiB, leaving a 20 GiB headroom floor. Gate/land parents check headroom;
+their children reserve independently. Host-wide policy lives at
+`<HOSTLOCK_DIR>/disk/policy.json`; see the fleet migration plan for its schema.
+Admission refusals are infrastructure failures, not code regressions. These are
+cooperative estimates, not filesystem quotas: legacy lanes and other writers
+remain unaccounted for. Automatic retention is not enabled.
+
 ### `host-status [--json]`
 
 Shows current permits, holders, and FIFO waiters across worktrees. Updated builds

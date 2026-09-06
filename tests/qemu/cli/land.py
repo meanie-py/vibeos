@@ -190,6 +190,11 @@ def _lint_preflight(repo: Path, run: Run, args) -> None:
         run.add(Stage("lint", status="warn", detail=f"check-tooling could not run: {exc}"))
         return
     dt = time.monotonic() - t0
+    if cp.returncode and any(
+        line.startswith("DISK_ADMISSION_FAIL:") for line in (cp.stdout or "").splitlines()
+    ):
+        run.classification = "DISK_ADMISSION_FAIL"
+        raise LandAbort(cp.stdout.strip())
     if cp.returncode == 0:
         run.add(Stage("lint", status="ok", detail=f"check-tooling clean ({dt:.0f}s)"))
         return
@@ -454,7 +459,7 @@ def _land_queued(args, repo: Path) -> int:
         )
         return run.finalize(repo)
     except (queue.QueueError, LandAbort) as e:
-        run.classification = "LAND_ABORT"
+        run.classification = run.classification or "LAND_ABORT"
         run.add(Stage("land", status="fail", detail=str(e).splitlines()[0], salient=[str(e)]))
         return run.finalize(repo)
 

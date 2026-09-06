@@ -12,7 +12,7 @@ import sys
 from pathlib import Path
 
 from . import build as build_mod
-from . import cargoswap, debugcmd, hostlock, tooling
+from . import cargoswap, debugcmd, diskspace, hostlock, tooling
 from . import conformance as conformance_mod
 from . import difftest as difftest_mod
 from . import farm as farm_mod
@@ -534,6 +534,14 @@ def build_parser() -> argparse.ArgumentParser:
     )
     hs.set_defaults(fn=hostlock.cmd_status)
 
+    ds = sub.add_parser(
+        "disk-status", help="disk headroom, live reservations, and optional footprint report"
+    )
+    ds.add_argument(
+        "--sizes", action="store_true", help="measure this lane's outputs and shared caches"
+    )
+    ds.set_defaults(fn=diskspace.command)
+
     ct = sub.add_parser(
         "check-tooling",
         help="lint/type/test gate for our own Python tools (rustconv, cli, tools)",
@@ -601,6 +609,15 @@ def build_parser() -> argparse.ArgumentParser:
 
 def main(argv: list[str] | None = None) -> int:
     args = build_parser().parse_args(argv)
+    if args.cmd in diskspace.REQUESTS:
+        try:
+            with diskspace.reserve(REPO, args.cmd):
+                return args.fn(args, REPO)
+        except diskspace.AdmissionError as exc:
+            # stdout is the durable fallback when even summary.json cannot be
+            # created. The conductor classifies this as infrastructure, not code.
+            print(f"{diskspace.FAILURE}: {exc}", flush=True)
+            return 2
     return args.fn(args, REPO)
 
 

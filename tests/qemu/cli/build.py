@@ -158,20 +158,8 @@ def _setup_cache(
             return None
         run.add(Stage("ccache-config", status="ok", detail="ENABLE_CCACHE=1"))
 
-    # zero per-build counters so the post-build stats are this build's delta
-    if cache.use_ccache:
-        run.run(
-            [cache.ccache_bin or "ccache", "-z"], cwd=repo, env=env, stage="ccache-zero", timeout=60
-        )
-    if cache.use_sccache:
-        stats_cmd = [cache.sccache_bin or "sccache", "--zero-stats"]
-        run.run(
-            wrap(stats_cmd) if wrap else stats_cmd,
-            cwd=repo,
-            env=env,
-            stage="sccache-zero",
-            timeout=60,
-        )
+    # Never reset shared counters: concurrent builds would erase each other's
+    # measurements. Collection below is explicitly a shared snapshot, not a delta.
     run.add(Stage("cache", status="ok", detail=cache.summary()))
     return env
 
@@ -184,6 +172,7 @@ def _collect_cache_stats(
     A true no-op can have zero requests. Counters may include concurrent work:
     ccache is fleet-wide and canonical sccache is shared by this worktree's arches.
     """
+    run.extra["cache_stats_scope"] = "shared cumulative snapshots; not per-build attribution"
     if cache.use_ccache:
         cp = run.run(
             [cache.ccache_bin or "ccache", "--print-stats"],

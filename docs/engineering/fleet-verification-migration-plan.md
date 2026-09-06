@@ -160,7 +160,70 @@ Extend the existing broker rather than introducing a second scheduler. Include
 mixed-version lanes, crashed waiters, aging, and same-directory contention in
 admission tests.
 
-## Then: focused preflight and evidence reuse
+## Disk admission and retention (promoted ahead of priority enforcement)
+
+First disk slice: `vibeos-cli disk-status [--sizes]` reports free bytes, live
+reservations, and optional sizes for this lane's build/target outputs and shared
+compiler caches. CLI build and tooling entry points reserve estimated growth
+before expensive work, under one host lock. Defaults are 32 GiB per build,
+4 GiB per tooling run, and 20 GiB unreserved headroom. Gate/land parents perform
+the headroom check but reserve zero additional bytes; child jobs reserve their
+own budgets. These initial estimates require measurement and tuning.
+
+One host policy file, `<HOSTLOCK_DIR>/disk/policy.json`, controls all updated
+lanes; the first reservation pins the documented defaults there under the host
+lock without overwriting existing policy. Read-only status never creates it.
+It has exactly these keys:
+
+```json
+{"version":1,"min_free_gib":20,"requests_gib":{"build":32,"check-tooling":4,"gate":0,"land":0}}
+```
+
+Invalid policy or unreadable live reservations fail closed. Reservations are
+per filesystem (repo, cache parent, temporary and artifact roots, deduplicated
+by device); flock ownership makes dead CLI processes reclaimable. The complete
+growth estimate stays reserved until exit, deliberately conservative as bytes
+are written. No CPU lease is acquired first. Refusals emit `DISK_ADMISSION_FAIL`
+on stdout even when an artifact file cannot be created, and the merge conductor
+treats them as infrastructure failures rather than rejecting code.
+
+This is cooperative admission, NOT a physical quota or a guarantee against
+ENOSPC: old lanes, raw tool invocations, standalone smoke/difftest, Windows-side
+QEMU storage, and unexpected growth remain outside this first slice. Do not
+raise parallelism on the assumption that the whole fleet is already covered.
+The initial host policy is created once; nothing is auto-deleted.
+
+Still owed for retention: classify disk growth, choose byte budgets and retention
+windows for successful/failed runs, protect the integration working set, and
+make cleanup targeted and host-locked with active-job exclusion. Start with
+rebuildable completed outputs, not paid translations or blanket cache eviction.
+Admission prevents more cooperating jobs starting under pressure; it does not
+solve accumulation. Extend the accounting to the remaining writers before
+claiming fleet-wide disk safety.
+
+Cache audit: compiler caches are shared under the worktree parent, and canonical
+build paths make unchanged compiler inputs reusable across lanes. Per-worktree
+servers preserve mount-namespace correctness; they do not imply separate disk
+caches. Cargo/Ninja outputs and links remain private, as required by isolation.
+On 2026-09-06 the shared caches occupied about 5.5 GiB, versus about 37 GiB for
+this lane's three build directories plus Cargo target output. This is a point
+measurement after manual cleanup, not a historical attribution of the full disk.
+Per-build cache-counter resets have been removed: shared counters are now
+explicitly cumulative snapshots, not trustworthy per-build hit-rate deltas.
+All four observed live sccache processes used the same shared cache directory.
+
+Disk-slice verification: 435 CLI tests passed, including concurrent reservations,
+crashed-owner release, malformed-policy refusal, and stdout-only infrastructure
+classification and actionable land-preflight errors. All 30 tooling checks
+passed; final CLI tests (including 14 disk cases) and static checks were rerun
+green after policy bootstrap and error propagation were finalized.
+The ARM64 warm build passed with fresh images: 151s CPU wait, 209s Ninja, 407s
+total. Its shared sccache snapshot recorded 87 hits, 23 misses, and zero cache
+errors, with explicit shared-counter labelling. Reservations were empty after
+both real jobs exited. This is not a new full gate or three-architecture smoke.
+Local evidence: `/tmp/vibeos-cli/20260906-171615-build-arm64/summary.json`.
+
+## Focused preflight and evidence reuse
 
 A proposed `vibeos-cli preflight` should provide focused development feedback,
 broaden conservatively for uncertain dependencies, and never mint a push stamp.

@@ -566,6 +566,9 @@ def gate_batch(wt: Path, log, *, retries: int = 2) -> GateVerdict:
         except (OSError, ValueError):
             pass
     ok = cp.returncode == 0
+    if any(line.startswith("DISK_ADMISSION_FAIL:") for line in (cp.stdout or "").splitlines()):
+        classification = "DISK_ADMISSION_FAIL"
+        salient = cp.stdout.strip()
     why = "" if ok else f" ({classification or cp.returncode})"
     log(f"queue: gate {'GREEN' if ok else 'RED'}{why}")
     return GateVerdict(ok, classification, artifact, salient, MappingProxyType(stages))
@@ -601,7 +604,14 @@ class Inconclusive(NoVerdict):
 # it must not reject a lane. Note these were previously reaching the queue as "" — the gate
 # was dropping the child's classification entirely (see gate._child_classification), so this
 # entry changes the REASON the train halts, not whether it halts.
-INCONCLUSIVE = {"", "LAUNCH_FAIL", "HOST_STARVED", "NET_HANG", "BUILD_INCOMPLETE"}
+INCONCLUSIVE = {
+    "",
+    "LAUNCH_FAIL",
+    "HOST_STARVED",
+    "NET_HANG",
+    "BUILD_INCOMPLETE",
+    "DISK_ADMISSION_FAIL",
+}
 
 
 class BaseCheck:

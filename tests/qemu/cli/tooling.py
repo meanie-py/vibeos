@@ -30,7 +30,7 @@ _PYRIGHT_ROOTS = ["tools/rustconv/rustconv", "tests/qemu/cli"]
 # (package_dir, pythonpath, pytest_target) — pytest needs each package importable.
 _PYTEST_SUITES = [
     ("tools/rustconv", "tools/rustconv", "tests"),
-    (".", ".", "tests/qemu/cli/test_cli_units.py"),
+    (".", ".", "tests/qemu/cli"),
     (".", ".", "tools/wow64gen/test_wow64gen.py"),
     # An oracle needs an oracle. verify_c_signatures reports its own type-resolution gaps as
     # defects in the code when it is wrong, and reports "verified" over types it never
