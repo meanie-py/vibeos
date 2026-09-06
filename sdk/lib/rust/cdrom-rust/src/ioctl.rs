@@ -236,8 +236,8 @@ pub const READ_DVD_STRUCTURE_FORMAT_STRINGS: [LPCSTR; 6] = [
 
 const WDF_REQUEST_SEND_OPTION_SYNCHRONOUS: ULONG = 2;
 
-const TRACE_LEVEL_WARNING: u32 = 0x00000003;
-const TRACE_FLAG_IOCTL: u32 = 0x00000001;
+const TRACE_LEVEL_WARNING: u32 = 3; // storswtr.h:26-30
+const TRACE_FLAG_IOCTL: u32 = 4; // storswtr.h:80-98 (an ORDINAL enum, not a bitmask)
 const MAXIMUM_RETRIES: u8 = 0x4;  // was 5 (LLM-invented); bindgen-correct
 const RAW_SECTOR_SIZE: u32 = 2352;
 const CD_RAW_SECTOR_WITH_SUBCODE_SIZE: u32 = 2448;
@@ -258,7 +258,7 @@ const IOCTL_CDROM_TRACK_ISRC: u32 = 0x3;  // was 0x002D5010 (LLM-invented); bind
 
 const FILE_DEVICE_DVD: u32 = 0x33;
 
-const TRACE_LEVEL_ERROR: u32 = 2;
+const TRACE_LEVEL_ERROR: u32 = 2; // storswtr.h:26-30
 const IOCTL_DVD_SEND_KEY: u32 = 0x00335008; // FIXED 2026-07-05: translation invented wrong value (verified vs psdk headers)
 const DVD_CHALLENGE_KEY: u32 = 1;
 const DVD_BUS_KEY1: u32 = 2;
@@ -282,7 +282,7 @@ unsafe extern "system" {
 
 // Forward declarations for unknown symbols (caller dedups)
 
-const TRACE_LEVEL_INFORMATION: u32 = 0x4;
+const TRACE_LEVEL_INFORMATION: u32 = 4; // storswtr.h:26-30
 const CDROM_EXCLUSIVE_CALLER_LENGTH: u32 = 0x40;  // was 256 (LLM-invented); bindgen-correct
 const CDROM_LOCK_IGNORE_VOLUME: u32 = 0x1;
 const IO_CDROM_EXCLUSIVE_LOCK: u32 = 0x40040085;
@@ -335,8 +335,8 @@ const STORAGE_EVENT_NOTIFICATION_VERSION_V1: u32 = 1; // unverified
 const STORAGE_EVENT_MEDIA_STATUS: u32 = 0x00000001; // unverified
 const STORAGE_EVENT_DEVICE_STATUS: u32 = 0x00000002; // unverified
 const STORAGE_EVENT_DEVICE_OPERATION: u32 = 0x00000004; // unverified
-const TRACE_LEVEL_VERBOSE: u32 = 4; // unverified
-const TRACE_FLAG_MCN: u32 = 0x00000001; // unverified
+const TRACE_LEVEL_VERBOSE: u32 = 5; // storswtr.h:26-30
+const TRACE_FLAG_MCN: u32 = 12; // storswtr.h:80-98 (an ORDINAL enum, not a bitmask)
 
 const IOCTL_STORAGE_EJECTION_CONTROL: u32 = 0x002D0940; // TODO: value
 const SecureMediaLock: i32 = 0;
@@ -426,8 +426,8 @@ pub unsafe extern "C" fn ReadQChannel(
     const CDB_USE_MSF: u8 = 0x1;  // was 0x02 (LLM-invented); bindgen-correct
     const CDB_SUBCHANNEL_BLOCK: u8 = 0x1;  // was 0x40 (LLM-invented); bindgen-correct
     const SCSIOP_READ_SUB_CHANNEL: u8 = 0x42;
-    const TRACE_LEVEL_VERBOSE: u32 = 0;
-    const TRACE_FLAG_IOCTL: u32 = 0;
+    const TRACE_LEVEL_VERBOSE: u32 = 5; // storswtr.h:26-30
+    const TRACE_FLAG_IOCTL: u32 = 4; // storswtr.h:80-98 (an ORDINAL enum, not a bitmask)
 
     let mut status: i32 = STATUS_SUCCESS;
     let mut transferByteCount: u32 = 0;
@@ -772,7 +772,7 @@ const SCSIOP_SET_CD_SPEED: u8 = 0xBB;    // assumed value
 const SCSIOP_SET_STREAMING: u8 = 0xB6;   // assumed value
 
 // Constants
-const TRACE_FLAG_POWER: u32 = 0x00000008; // typical
+const TRACE_FLAG_POWER: u32 = 2; // storswtr.h:80-98 (an ORDINAL enum, not a bitmask)
 
 // Forward declarations of extern functions not in available imports
 
@@ -996,8 +996,8 @@ pub unsafe extern "C" fn RequestHandleGetMediaTypeEx(
     const MEDIA_CURRENTLY_MOUNTED: u32 = 0x80000000;
     const SCSIOP_TEST_UNIT_READY: u8 = 0x00;
     const CDROM_TEST_UNIT_READY_TIMEOUT: u32 = 0x14;  // was 10 (LLM-invented); bindgen-correct
-    const TRACE_LEVEL_INFORMATION: u32 = 4;
-    const TRACE_FLAG_IOCTL: u32 = 0x80;
+    const TRACE_LEVEL_INFORMATION: u32 = 4; // storswtr.h:26-30
+    const TRACE_FLAG_IOCTL: u32 = 4; // storswtr.h:80-98 (an ORDINAL enum, not a bitmask)
 
     let mut status: i32 = STATUS_SUCCESS;
     let cd_data: *mut CDROM_DATA = core::ptr::addr_of_mut!((*DeviceExtension).DeviceAdditionalData);
@@ -3255,8 +3255,8 @@ pub unsafe extern "C" fn RequestValidateDvdEndSession(
         if (RequestParameters.Parameters.DeviceIoControl.as_ref().InputBufferLength as usize)
             < core::mem::size_of::<DVD_SESSION_ID>()
         {
-            const TRACE_LEVEL_ERROR: u32 = 2; // TRACE_LEVEL_ERROR
-            const TRACE_FLAG_IOCTL: u32 = 0x0001; // TRACE_FLAG_IOCTL
+            const TRACE_LEVEL_ERROR: u32 = 2; // storswtr.h:26-30
+            const TRACE_FLAG_IOCTL: u32 = 4; // storswtr.h:80-98 (an ORDINAL enum, not a bitmask)
             TracePrint!(
                 TRACE_LEVEL_ERROR,
                 TRACE_FLAG_IOCTL,
@@ -4315,8 +4315,8 @@ pub unsafe extern "C" fn RequestHandleGetConfiguration(
             cdb.GET_CONFIGURATION.as_mut().set_RequestType((*inputBuffer).RequestType as u8);
 
             if is_type_one && hack_flag_set {
-                const TRACE_LEVEL_WARNING: u32 = 3;
-                const TRACE_FLAG_IOCTL: u32 = 4;
+                const TRACE_LEVEL_WARNING: u32 = 3; // storswtr.h:26-30
+                const TRACE_FLAG_IOCTL: u32 = 4; // storswtr.h:80-98 (an ORDINAL enum, not a bitmask)
                 TracePrint!(TRACE_LEVEL_WARNING, TRACE_FLAG_IOCTL, b"DeviceHandleGetConfiguration: Changing TYPE_ONE Get Config to TYPE_ALL\n\0".as_ptr() as *const i8);
                 const SCSI_GET_CONFIGURATION_REQUEST_TYPE_ALL: u8 = 0;
                 cdb.GET_CONFIGURATION.as_mut().set_RequestType(SCSI_GET_CONFIGURATION_REQUEST_TYPE_ALL);
@@ -4330,8 +4330,8 @@ pub unsafe extern "C" fn RequestHandleGetConfiguration(
 
                 if is_type_one && hack_flag_set {
                     if (data_transfer_length as usize) < core::mem::size_of::<GET_CONFIGURATION_HEADER>() {
-                        const TRACE_LEVEL_ERROR: u32 = 2;
-                        const TRACE_FLAG_IOCTL: u32 = 4;
+                        const TRACE_LEVEL_ERROR: u32 = 2; // storswtr.h:26-30
+                        const TRACE_FLAG_IOCTL: u32 = 4; // storswtr.h:80-98 (an ORDINAL enum, not a bitmask)
                         TracePrint!(TRACE_LEVEL_ERROR, TRACE_FLAG_IOCTL, b"DeviceHandleGetConfiguration: No get config header!\n\0".as_ptr() as *const i8);
                         *DataLength = 0;
                         status = STATUS_INVALID_DEVICE_REQUEST;
@@ -5311,7 +5311,7 @@ pub unsafe extern "C" fn RequestIsRealtimeStreaming(Request: WDFREQUEST, IsReadR
     useStreaming
 }
 
-const TRACE_FLAG_RW: u32 = 0x00000002;
+const TRACE_FLAG_RW: u32 = 3; // storswtr.h:80-98 (an ORDINAL enum, not a bitmask)
 const FeatureRandomWritable: u32 = 0x0020;
 const FeatureIncrementalStreamingWritable: u32 = 0x0021;
 const FeatureRestrictedOverwrite: u32 = 0x0022;

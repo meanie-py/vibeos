@@ -172,12 +172,19 @@ const VCB_STATE_FLAG_HOTPLUGGABLE: u32 = 0x00200000;
 const VCB_STATE_FLAG_DEFERRED_FLUSH: u32 = 0x1000;
 const FILESYSTEM_STATISTICS_TYPE_FAT: u16 = 0x02;
 const PACKED_BOOT_SECTOR_SIZE: usize = core::mem::size_of::<PACKED_BOOT_SECTOR>();
-const FAT_MAX_LARGE_QUADPART: u64 = 0x7FFFFFFF_FFFFFFFF; // placeholder for FatMaxLarge
+// fatdata.c:63 `LARGE_INTEGER FatMaxLarge = {MAXULONG,MAXLONG}` -- LowPart 0xFFFFFFFF,
+// HighPart 0x7FFFFFFF. Verified, not a placeholder.
+const FAT_MAX_LARGE_QUADPART: u64 = 0x7FFFFFFF_FFFFFFFF;
 const VCB_GOOD: VCB_CONDITION = crate::types::_VCB_CONDITION_VcbGood; // 1 — bindgen ground truth (was 0)
-const VIRTUAL_VOLUME_FILE: FILE_TYPE = 1; // placeholder
-const NON_PAGED_POOL_NX: POOL_TYPE = 0x200; // placeholder NonPagedPoolNx
+const VIRTUAL_VOLUME_FILE: FILE_TYPE = 5; // fatprocs.h:53 _TYPE_OF_OPEN, which starts at 1:
+                                          // 1 is UnopenedFileObject, so every later decode of
+                                          // the virtual volume file said "not open"
+const NON_PAGED_POOL_NX: POOL_TYPE = 0; // fatprocs.h:47 downgrades NonPagedPoolNx to
+                                        // NonPagedPool on ReactOS
 const TAG_VCB_STATS: u32 = 0x56746146; // placeholder
-const TAG_VPB: u32 = 0x20425056; // placeholder
+const TAG_VPB: u32 = u32::from_be_bytes(*b"vtaF"); // nolint: const-contradiction (per-driver pool tag, each verified against its own C)
+                                                  // nodetype.h:174 'vtaF'; 0x20425056 was
+                                                  // an invented " BPV" that no free would match
 const FCB_LOOKUP_ALLOCATIONSIZE_HINT: i64 = -1;
 
 // ==== recovered (stitcher-drop): FatFreeStringBuffer ====

@@ -37,7 +37,7 @@ extern "C" {
     fn CdromRustScratchAllocatePartialMdl(DeviceExtension: PCDROM_DEVICE_EXTENSION) -> i32;
 }
 
-const TRACE_LEVEL_FATAL: u32 = 1;
+const TRACE_LEVEL_FATAL: u32 = 1; // storswtr.h:26-30
 const STATUS_INTERNAL_ERROR: i32 = 0xC00000E5u32 as i32;
 const STATUS_INTEGER_OVERFLOW: i32 = 0xC0000095u32 as i32;
 extern "C" {
@@ -78,8 +78,8 @@ extern "C" {
 }
 
 const WDF_REQUEST_REUSE_NO_FLAGS: u32 = 0;
-const TRACE_LEVEL_ERROR: u32 = 2;
-const TRACE_FLAG_GENERAL: u32 = 1;
+const TRACE_LEVEL_ERROR: u32 = 2; // storswtr.h:26-30
+const TRACE_FLAG_GENERAL: u32 = 0; // storswtr.h:80-98 (an ORDINAL enum, not a bitmask)
 
 const DPFLTR_ERROR_LEVEL: u32 = 0;
 const DPFLTR_CDROM_ID: u32 = 0x52; // DPFLTR component id for cdrom
@@ -109,8 +109,8 @@ const FDO_HACK_NO_STREAMING: u32 = 0x20; // placeholder  // was 0x00000001 (LLM-
 const WDF_REQUEST_SEND_OPTION_SYNCHRONOUS: u32 = 0x0002;
 const SRB_STATUS_ABORTED: u8 = 0x02;
 
-const TRACE_LEVEL_WARNING: u32 = 3;  // assumed value
-const TRACE_FLAG_INIT: u32 = 0;       // unknown; placeholder
+const TRACE_LEVEL_WARNING: u32 = 3; // storswtr.h:26-30
+const TRACE_FLAG_INIT: u32 = 8; // storswtr.h:80-98 (an ORDINAL enum, not a bitmask)
 const SRB_STATUS_SUCCESS: u32 = 0x1;  // was 0 (LLM-invented); bindgen-correct
 const STATUS_SUCCESS: i32 = 0;
 const TRUE: i32 = 1;
@@ -164,8 +164,8 @@ pub unsafe extern "system" fn ScratchBuffer_Allocate(
     DeviceExtension: *mut CDROM_DEVICE_EXTENSION,
 ) -> u8 {
     // Constants used by this function
-    const TRACE_LEVEL_WARNING: u32 = 4;
-    const TRACE_FLAG_INIT: u32 = 0x00000001;
+    const TRACE_LEVEL_WARNING: u32 = 3; // storswtr.h:26-30
+    const TRACE_FLAG_INIT: u32 = 8; // storswtr.h:80-98 (an ORDINAL enum, not a bitmask)
     const NonPagedPoolNx: u32 = 0x200;
     const CDROM_TAG_SCRATCH: u32 = 0x42436353; // 'CScr'
 

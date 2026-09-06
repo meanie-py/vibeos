@@ -23,8 +23,8 @@ pub const IOCTL_DISK_GET_DRIVE_GEOMETRY: u32 = 0x00070000;
 
 // storswtr.h WPP_DEFINE_BIT sequential bit positions (GENERAL=1, PNP=2, POWER=3,
 // RW=4, IOCTL=5, QUEUE=6, WMI=7). Debug-trace flags only.
-pub const TRACE_FLAG_IOCTL: u32 = 5;
-pub const TRACE_FLAG_PNP: u32 = 2;
+pub const TRACE_FLAG_IOCTL: u32 = 4; // storswtr.h:80-98 (an ORDINAL enum, not a bitmask)
+pub const TRACE_FLAG_PNP: u32 = 1; // storswtr.h:80-98 (an ORDINAL enum, not a bitmask)
 
 // FourCC pool tags ('ADcS' / 'SDcS'), C multichar value (MSB-first).
 pub const DISK_TAG_INFO_EXCEPTION: u32 = 0x41446353; // 'ADcS'
@@ -62,14 +62,14 @@ pub const IRP_MJ_SCSI: u32 = 0x0f;
 pub const STATUS_IO_DEVICE_ERROR: i32 = 0xC0000185u32 as i32;
 pub const STATUS_NONEXISTENT_SECTOR: i32 = 0xC0000015u32 as i32;
 pub const STATUS_VERIFY_REQUIRED: i32 = 0x80000016u32 as i32;
-pub const TRACE_LEVEL_ERROR: u32 = 2;
-pub const TRACE_LEVEL_INFORMATION: u32 = 4;
-pub const TRACE_LEVEL_VERBOSE: u32 = 5;
+pub const TRACE_LEVEL_ERROR: u32 = 2; // storswtr.h:26-30
+pub const TRACE_LEVEL_INFORMATION: u32 = 4; // storswtr.h:26-30
+pub const TRACE_LEVEL_VERBOSE: u32 = 5; // storswtr.h:26-30
 
 // storswtr.h WPP bit positions (continued) + disk.h FourCC pool tags + pool type.
-pub const TRACE_FLAG_GENERAL: u32 = 1;
-pub const TRACE_FLAG_WMI: u32 = 7;
-pub const TRACE_FLAG_SCSI: u32 = 18;
+pub const TRACE_FLAG_GENERAL: u32 = 0; // storswtr.h:80-98 (an ORDINAL enum, not a bitmask)
+pub const TRACE_FLAG_WMI: u32 = 6; // storswtr.h:80-98 (an ORDINAL enum, not a bitmask)
+pub const TRACE_FLAG_SCSI: u32 = 17; // storswtr.h:80-98 (an ORDINAL enum, not a bitmask)
 pub const DISK_TAG_DISABLE_CACHE: u32 = 0x43446353; // 'CDcS'
 pub const DISK_TAG_CCONTEXT: u32 = 0x63446353;      // 'cDcS'
 pub const NonPagedPoolNx: i32 = 512;

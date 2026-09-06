@@ -155,10 +155,12 @@ const SRB_FLAGS_QUEUE_ACTION_ENABLE: ULONG = 0x2;
 const SRB_FLAGS_NO_QUEUE_FREEZE: ULONG = 0x100;
 const DEV_SAFE_START_UNIT: USHORT = 0x4;
 const PARTITION0_LIST_SIZE: ULONG = 4; // example constant
-const SENSE_BUFFER_SIZE_EX: SIZE_T = 18; // typical
+// scsi.h:596 `sizeof(SENSE_DATA_EX)` -- take it from the type, not from a guess.
+const SENSE_BUFFER_SIZE_EX: SIZE_T = core::mem::size_of::<SENSE_DATA_EX>() as SIZE_T;
 const SCSI_DISK_TIMEOUT: ULONG = 0x0A;
 const DISK_DEFAULT_FAILURE_POLLING_PERIOD: ULONG = 600;
-const NonPagedPoolNxCacheAligned: POOL_TYPE = 0x0204; // use real value if known
+const NonPagedPoolNxCacheAligned: POOL_TYPE = 4; // disk.h:76 downgrades it to
+                                                 // NonPagedPoolCacheAligned
 const DISK_TAG_START: ULONG = 0x73446353;
 const MAX_SECTORS_PER_VERIFY: ULONG = 0x0100;
 const TRUE: BOOLEAN = 1;
@@ -188,7 +190,7 @@ pub unsafe extern "system" fn DiskAddDevice(
     const APC_LEVEL: u8 = 1;
     const PLUGPLAY_REGKEY_DEVICE: u32 = 1;
     const RTL_QUERY_REGISTRY_TYPECHECK_SHIFT: u32 = 24;
-    const TRACE_FLAG_PNP: u32 = 0x00000002;
+    const TRACE_FLAG_PNP: u32 = 1; // storswtr.h:80-98 (an ORDINAL enum, not a bitmask)
 
     let mut rootPartitionMountable: ULONG = 0; // FALSE
     let mut configurationInformation: PCONFIGURATION_INFORMATION = core::ptr::null_mut();
@@ -392,7 +394,7 @@ pub unsafe extern "system" fn DiskInitFdo(Fdo: PDEVICE_OBJECT) -> NTSTATUS {
     ) as PSENSE_DATA;
 
     if (*fdo_extension).SenseData.is_null() {
-        const TRACE_FLAG_PNP: u32 = 0x00000001; // local definition to match expected constant
+        const TRACE_FLAG_PNP: u32 = 1; // storswtr.h:80-98 (an ORDINAL enum, not a bitmask)
         TracePrint(
             2,
             TRACE_FLAG_PNP,
@@ -531,7 +533,7 @@ pub unsafe extern "system" fn DiskInitFdo(Fdo: PDEVICE_OBJECT) -> NTSTATUS {
                 TRUE,
                 DISK_DEFAULT_FAILURE_POLLING_PERIOD,
             );
-            const TRACE_FLAG_PNP: u32 = 0x00000001; // reuse
+            const TRACE_FLAG_PNP: u32 = 1; // storswtr.h:80-98 (an ORDINAL enum, not a bitmask)
             TracePrint(
                 4,
                 TRACE_FLAG_PNP,
@@ -772,7 +774,7 @@ pub unsafe extern "system" fn DiskStartFdo(Fdo: PDEVICE_OBJECT) -> NTSTATUS {
     // Unknown constants
     const APC_LEVEL: i32 = 1;
     const IOCTL_STORAGE_GET_HOTPLUG_INFO: u32 = 0x002D0C14;
-    const TRACE_FLAG_PNP: u32 = 0x2;
+    const TRACE_FLAG_PNP: u32 = 1; // storswtr.h:80-98 (an ORDINAL enum, not a bitmask)
     const DiskWriteCacheDefault: i32 = 0;
     const DiskWriteCacheDisable: i32 = 1;
     const DiskWriteCacheEnable: i32 = 2;

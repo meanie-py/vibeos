@@ -515,21 +515,25 @@ const MDL_PAGES_LOCKED: u32 = 0x0002;
 // Forward declarations for unknown functions/macros
 
 // Constants not available in imports
-const FAT_MAX_IO_RUNS_ON_STACK: usize = 10; // Guessed value; adjust as needed
+const FAT_MAX_IO_RUNS_ON_STACK: usize = 5; // fatdata.h: ((ULONG) 5)
 const TAG_IO_RUNS: u32 = 0x69746146; // Just a placeholder; use real tag if known
 
 // Global FatData (assumed defined elsewhere; minimal access)
 
 const IRP_BUFFERED_IO: u32 = 0x00000010;
 const IRP_DEALLOCATE_BUFFER: u32 = 0x00000020;
-const NonPagedPoolNx: POOL_TYPE = 0x200; // NonPagedPoolNx
+const NonPagedPoolNx: POOL_TYPE = 0; // fatprocs.h: `#define NonPagedPoolNx NonPagedPool`
+                                     // -- ReactOS downgrades the NT6.2 NX pool types, so the
+                                     // literal 0x200 the translation used is not a pool type
+                                     // this kernel knows.
 const TAG_IO_USER_BUFFER: u32 = 0x51746146; // 'bUu' tag placeholder
 
 // Declarations for unknown external functions used by this function
 
 // Constants from file level or needed locally
 const IoWriteAccess: u32 = 1; // LOCK_OPERATION: _LOCK_OPERATION_IoWriteAccess
-const NonPagedPoolNxCacheAligned: u32 = 0x0204; /* placeholder */
+const NonPagedPoolNxCacheAligned: u32 = 4; // fatprocs.h: `#define NonPagedPoolNxCacheAligned
+                                           // NonPagedPoolCacheAligned` (= 4, pooltype.h)
 const TAG_IO_BUFFER: u32 = 0x4F746146; /* placeholder */
 #[no_mangle]
 pub unsafe extern "system" fn FatPagingFileIo(Irp: PIRP, Fcb: PFCB) {
@@ -1686,7 +1690,7 @@ pub unsafe extern "system" fn FatSingleAsync(
 
 #[no_mangle]
 pub unsafe extern "system" fn FatPagingFileErrorHandler(Irp: PIRP, Event: PKEVENT) -> NTSTATUS {
-    const NonPagedPoolNx: u32 = 0x200;
+    const NonPagedPoolNx: u32 = 0; // fatprocs.h downgrades it to NonPagedPool
     const FAT_TAG: u32 = 0x46617420; // ' taF' (LE bytes)
 
     let status: NTSTATUS;

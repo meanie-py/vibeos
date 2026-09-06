@@ -134,11 +134,11 @@ struct WDF_OBJECT_ATTRIBUTES_impl {
 }
 
 // Constants (deduplicated; TRACE_LEVEL_* values only gate tracing).
-const TRACE_LEVEL_ERROR: u32 = 1;
-const TRACE_LEVEL_WARNING: u32 = 2;
-const TRACE_LEVEL_INFORMATION: u32 = 3;
-const TRACE_FLAG_PNP: u32 = 2;
-const TRACE_FLAG_INIT: u32 = 0x200;
+const TRACE_LEVEL_ERROR: u32 = 2; // storswtr.h:26-30
+const TRACE_LEVEL_WARNING: u32 = 3; // storswtr.h:26-30
+const TRACE_LEVEL_INFORMATION: u32 = 4; // storswtr.h:26-30
+const TRACE_FLAG_PNP: u32 = 1; // storswtr.h:80-98 (an ORDINAL enum, not a bitmask)
+const TRACE_FLAG_INIT: u32 = 8; // storswtr.h:80-98 (an ORDINAL enum, not a bitmask)
 
 const IOCTL_SCSI_EXECUTE_NONE: u32 = 0x001B0013;
 const FALSE: u8 = 0;
@@ -676,8 +676,8 @@ pub unsafe extern "C" fn DeviceInitPowerContext(
     // Unknown extern declarations
 
     // Local constants
-    const TRACE_LEVEL_ERROR: u32 = 2;
-    const TRACE_FLAG_PNP: u32 = 0x00008000;
+    const TRACE_LEVEL_ERROR: u32 = 2; // storswtr.h:26-30
+    const TRACE_FLAG_PNP: u32 = 1; // storswtr.h:80-98 (an ORDINAL enum, not a bitmask)
     const IOCTL_SCSI_EXECUTE_IN: u32 = 0x1b0011;  // was 0x0000001B (LLM-invented); bindgen-correct
 
     let mut status: NTSTATUS = 0; // STATUS_SUCCESS
@@ -1039,8 +1039,8 @@ pub unsafe extern "C" fn DeviceScanForSpecial(
     Function: Option<unsafe extern "C" fn(*mut CDROM_DEVICE_EXTENSION, usize)>,
 ) {
     // Constants with inline comment
-    const TRACE_LEVEL_INFORMATION: u32 = 4; // TRACE_LEVEL_INFORMATION
-    const TRACE_FLAG_INIT: u32 = 0; // TRACE_FLAG_INIT
+    const TRACE_LEVEL_INFORMATION: u32 = 4; // storswtr.h:26-30
+    const TRACE_FLAG_INIT: u32 = 8; // storswtr.h:80-98 (an ORDINAL enum, not a bitmask)
 
     PAGED_CODE();
 

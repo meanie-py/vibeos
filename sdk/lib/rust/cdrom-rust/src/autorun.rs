@@ -117,12 +117,12 @@ pub static MCN_REG_AUTORUN_ENABLE_INSTANCE_NAME: [u16; 16] = [
 ];
 
 // Trace levels/flags (WPP tracing gates; only used to gate DbgPrint-style output)
-const TRACE_LEVEL_ERROR: u32 = 1;
-const TRACE_LEVEL_WARNING: u32 = 2;
-const TRACE_LEVEL_INFORMATION: u32 = 3;
-const TRACE_LEVEL_VERBOSE: u32 = 5;
-const TRACE_FLAG_MCN: u32 = 0x00000010;
-const TRACE_FLAG_POWER: u32 = 0x00000020;
+const TRACE_LEVEL_ERROR: u32 = 2; // storswtr.h:26-30
+const TRACE_LEVEL_WARNING: u32 = 3; // storswtr.h:26-30
+const TRACE_LEVEL_INFORMATION: u32 = 4; // storswtr.h:26-30
+const TRACE_LEVEL_VERBOSE: u32 = 5; // storswtr.h:26-30
+const TRACE_FLAG_MCN: u32 = 12; // storswtr.h:80-98 (an ORDINAL enum, not a bitmask)
+const TRACE_FLAG_POWER: u32 = 2; // storswtr.h:80-98 (an ORDINAL enum, not a bitmask)
 
 // MEDIA_CHANGE_DETECTION_STATE enum values (bindgen-prefixed)
 use crate::types::_MEDIA_CHANGE_DETECTION_STATE_MediaUnknown as MediaUnknown;
@@ -1792,10 +1792,10 @@ pub unsafe extern "system" fn DeviceMediaChangeRegistryCallBack(
     Context: *mut core::ffi::c_void,
     EntryContext: *mut core::ffi::c_void,
 ) -> i32 {
-    const TRACE_LEVEL_WARNING: u32 = 2;
-    const TRACE_LEVEL_INFORMATION: u32 = 3;
-    const TRACE_LEVEL_VERBOSE: u32 = 5;
-    const TRACE_FLAG_MCN: u32 = 0x10;
+    const TRACE_LEVEL_WARNING: u32 = 3; // storswtr.h:26-30
+    const TRACE_LEVEL_INFORMATION: u32 = 4; // storswtr.h:26-30
+    const TRACE_LEVEL_VERBOSE: u32 = 5; // storswtr.h:26-30
+    const TRACE_FLAG_MCN: u32 = 12; // storswtr.h:80-98 (an ORDINAL enum, not a bitmask)
     const TRUE: u32 = 1;
 
     PAGED_CODE();

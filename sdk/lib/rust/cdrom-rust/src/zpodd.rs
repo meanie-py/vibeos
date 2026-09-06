@@ -39,14 +39,14 @@ const IRP_MN_QUERY_INTERFACE: u8 = 0x08u8;
 
 const NonPagedPoolNx: u32 = 512;
 const CDROM_TAG_ZERO_POWER_ODD: u32 = 0x5A436353;
-const FeatureRemovableMedium: u32 = 0x0D; // actual value unknown, dummy
+const FeatureRemovableMedium: u32 = 0x0003; // ntddmmc.h:78
 const LOADING_MECHANISM_TRAY: u32 = 1;
 const LOADING_MECHANISM_CADDY: u32 = 0x0;  // was 2 (LLM-invented); bindgen-correct
 const DELAY_TIME_TO_ENTER_ZERO_POWER_IN_MS: u32 = 0xea60;  // was 0 (LLM-invented); bindgen-correct
 const FeatureProfileList: u32 = 0;
 const SCSI_GET_CONFIGURATION_REQUEST_TYPE_ALL: u32 = 0;
-const TRACE_LEVEL_INFORMATION: u32 = 4;
-const TRACE_FLAG_POWER: u32 = 0x10;
+const TRACE_LEVEL_INFORMATION: u32 = 4; // storswtr.h:26-30
+const TRACE_FLAG_POWER: u32 = 2; // storswtr.h:80-98 (an ORDINAL enum, not a bitmask)
 const PowerSystemWorking: u32 = 1;
 // CTL_CODE(IOCTL_STORAGE_BASE=0x2d, code, METHOD_BUFFERED=0, FILE_ANY_ACCESS=0)
 const IOCTL_STORAGE_GET_IDLE_POWERUP_REASON: u32 = 0x002D1C84;

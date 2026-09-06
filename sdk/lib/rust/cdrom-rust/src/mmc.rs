@@ -28,8 +28,8 @@ unsafe extern "C" {
 // Declared as `const` here, matching how the sibling modules (pnppower.rs, scratch.rs)
 // already do it. Values from sdk/include/ddk/storswtr.h; inert in any case, because
 // TracePrint is a no-op in the retail (non-WPP) build.
-const TRACE_FLAG_IOCTL: u32 = 5; // WPP_DEFINE_BIT index in WPP_NORMAL_FLAGS (storswtr.h:39)
-const TRACE_LEVEL_ERROR: u32 = 2; // storswtr.h:27 / evntrace.h:63
+const TRACE_FLAG_IOCTL: u32 = 4; // storswtr.h:80-98 (an ORDINAL enum, not a bitmask)
+const TRACE_LEVEL_ERROR: u32 = 2; // storswtr.h:26-30
 // C min() is a macro; extern "system" decl = i386 stdcall/cdecl mismatch vs
 // ddk_shims' extern "C" def → stack corruption. Local wrapper instead.
 #[inline] fn min(a: u32, b: u32) -> u32 { core::cmp::min(a, b) }
@@ -48,8 +48,8 @@ unsafe extern "C" {
     fn DeviceFindFeaturePage( Buffer: *mut GET_CONFIGURATION_HEADER, Length: u32, Feature: FEATURE_NUMBER, ) -> *mut FEATURE_HEADER;
 }
 
-const TRACE_LEVEL_WARNING: u32 = 4;
-const TRACE_FLAG_INIT: u32 = 0x00000010;
+const TRACE_LEVEL_WARNING: u32 = 3; // storswtr.h:26-30
+const TRACE_FLAG_INIT: u32 = 8; // storswtr.h:80-98 (an ORDINAL enum, not a bitmask)
 const SCSIOP_MODE_SENSE10: u8 = 0x5A;
 const MODE_PAGE_CAPABILITIES: u8 = 0x2A;
 
@@ -68,7 +68,7 @@ const ProfileCdRewritable: FEATURE_PROFILE_TYPE = 0x000A;
 const ProfileDvdRecordable: FEATURE_PROFILE_TYPE = 0x0012;
 const ProfileCdRecordable: FEATURE_PROFILE_TYPE = 0x0009;
 
-const TRACE_LEVEL_INFORMATION: u32 = 4;
+const TRACE_LEVEL_INFORMATION: u32 = 4; // storswtr.h:26-30
 
 // Forward declarations for unknown functions
 
@@ -329,8 +329,8 @@ pub unsafe extern "system" fn DeviceGetConfigurationWithAlloc(
     const STATUS_INTERNAL_ERROR: i32 = (0xC000000Fu32 as i32);
     const CDROM_TAG_FEATURE: u32 = 0x46436353; // 'CDDR' little-endian? typical tag
     const NonPagedPoolNxCacheAligned: u32 = 0x204; // NonPagedPoolNx (512) + CacheAligned (4)
-    const TRACE_LEVEL_ERROR: u32 = 1;
-    const TRACE_FLAG_IOCTL: u32 = 1;
+    const TRACE_LEVEL_ERROR: u32 = 2; // storswtr.h:26-30
+    const TRACE_FLAG_IOCTL: u32 = 4; // storswtr.h:80-98 (an ORDINAL enum, not a bitmask)
 
     let mut status: i32 = STATUS_SUCCESS;
     let mut header: GET_CONFIGURATION_HEADER = core::mem::zeroed();

@@ -561,7 +561,7 @@ Field-manual § pointers hold the full writeups. **Update on state change.**
   > `// nolint: const-contradiction (function-local C enum)` with the reasoning, so the next
   > agent does not re-investigate. **The baseline is a work queue, not a defect list** —
   > classifying is as much of the job as fixing.
-- **127 constants are INVENTED and say so — OPEN** (2026-09-05). Found while chasing
+- **Constants that are INVENTED and say so — FIXED, and now gated** (2026-09-05). Found while chasing
   `SP_UNTAGGED` into `disk-rust`. Tree-wide, 127 `const` definitions carry `// placeholder`,
   `// typical`, `// guess` or `// adjust as needed`, and `disk.rs:617` has a whole block under
   the header *"Constants used by the function (values typical of Windows DDK; adjust as
@@ -573,6 +573,42 @@ Field-manual § pointers hold the full writeups. **Update on state change.**
   with ITSELF — a constant invented once, consistently, is invisible to it. A gate is cheap
   here because the sites are self-labelled: grep the annotation, resolve each against its
   header, and fail on any that survives. Worth doing before the class grows.
+  Done: `tools/scan_invented_constants.py` (wired into `vibeos-cli check`, baseline
+  `tools/lint-baseline/scan_invented_constants.txt`) scrapes the self-accusing comment, then
+  resolves each name against a NARROWLY scoped oracle — the C module the crate translates plus
+  the SDK headers — and classifies MISMATCH / AMBIGUOUS / UNRESOLVED. A repo-wide catalog was
+  deliberately not used: it collides on short names and its findings are overwhelmingly false
+  (§9.113b). 209 self-labelled sites, 29 MISMATCH, all fixed; **11** remain, none of them a
+  mismatch. The interesting half is that ~65 of the labelled constants were CORRECT — the
+  comment was the only thing wrong — which is why the annotation alone was never a defect list.
+  What the 29 were: fastfat `VIRTUAL_VOLUME_FILE = 1` where `fatprocs.h`'s `_TYPE_OF_OPEN`
+  starts at 1 and 1 is `UnopenedFileObject`, so every later decode of the virtual volume file
+  said "not open"; fastfat `TAG_VPB` frozen as `0x20425056` (`" BPV"`, invented) against
+  `nodetype.h`'s `'vtaF'`, a tag no free could ever match; cabinet's LZX decoder sizing its main
+  tree with a function-local `LZX_NUM_CHARS = 0` while the decode loop split literal-from-match
+  on the correct file-scope 256; scsiport numbering `CmResourceType*` from 0, which shifts every
+  resource type down one and collides `CmResourceTypePort` with `CmResourceTypeNull`; disk's
+  `SRB_EX_DATA_TYPE_SCSI_CDB16 = 0` (real `0x40`) and a PERMUTED
+  `FAILURE_PREDICTION_SMART`/`_IOCTL` pair; `SRBEX_DATA_SCSI_CDB16_LENGTH` frozen at 32 where
+  the C is `20 + sizeof(ULONG) + sizeof(PVOID)`, i.e. correct on 64-bit and four bytes long on
+  i386 — now computed. Plus 156 `TRACE_LEVEL_*`/`TRACE_FLAG_*` declarations across
+  cdrom/disk/classpnp normalised to `storswtr.h`: the flags are an ORDINAL enum (0..17) that the
+  translation had spread across ~40 distinct bitmask-looking values, and even the two `glue.rs`
+  "canonical" copies were off by one. Those are log-filtering only — the ReactOS
+  `StorDebugPrint` marks the flag `UNREFERENCED_PARAMETER` — but they now have one oracle.
+- **scsiport ships a TRUNCATED `SpiParseDeviceInfo` — OPEN** (2026-09-05). Found by the
+  invented-constant sweep, not by the sweep's own findings: the function carried a preamble of
+  22 placeholder constants, and reading it showed the translation was ABANDONED mid-body. C's
+  `scsiport.c:2634-3014` is ~380 lines that walk the registry's
+  `REG_FULL_RESOURCE_DESCRIPTOR` and switch on Port / Memory / Interrupt / Dma /
+  DeviceSpecific; the Rust (`scsiport.rs:2530`) enumerates the values and then stops, leaving
+  the model's own notes in the tree — *"Actually let's rewrite the whole block with explicit
+  structure. I'll rebuild."* The C is cohab-flipped OUT (`CMakeLists.txt:56`), so this is what
+  ships: scsiport parses no device info at all. Fixing it is a rustconv job, not a hand edit.
+  The class is worth a scanner of its own — `classpnp-rust/src/power.rs:366` carries
+  *"[Error handling block same as C, omitted for brevity but will be included]"* and
+  `acpi-rust/src/bus.rs:17` records a truncated struct. A translation that announces its own
+  incompleteness in a comment is the cheapest possible defect to find.
 - **classpnp `ClasspAccessAlignmentProperty` spun forever on arm64 — FIXED** (2026-09-05).
   An empty `_ => {}` catch-all as the last arm of a `match` that IS the body of a
   goto-elimination `'work: loop`. utils.c's switch has no `default:`, so an unmatched value

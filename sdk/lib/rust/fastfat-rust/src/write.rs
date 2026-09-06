@@ -188,7 +188,10 @@ const TAG_FAT_IO_CONTEXT: u32 = 0x58746146; // placeholder
 const TAG_IO_RUNS: u32 = 0x69746146;
 const FLUSH: u32 = 1;
 
-const NonPagedPoolNx: POOL_TYPE = 0x0200; // placeholder
+const NonPagedPoolNx: POOL_TYPE = 0; // fatprocs.h: `#define NonPagedPoolNx NonPagedPool`
+                                     // -- ReactOS downgrades the NT6.2 NX pool types, so the
+                                     // literal 0x200 the translation used is not a pool type
+                                     // this kernel knows.
 const PagedPool: POOL_TYPE = 1; // placeholder
 
 
