@@ -15,7 +15,7 @@ import subprocess
 import time
 from pathlib import Path
 
-from . import archcfg, cachecfg, canon, hostlock, lints, provenance
+from . import archcfg, cachecfg, canon, hostdisk, hostlock, lints, provenance
 from .artifacts import Run, Stage
 
 _UNDEF = re.compile(r"undefined (?:symbol|reference)[^\w]*[`']?([@\w]+)", re.I)
@@ -64,6 +64,12 @@ def source_date_epoch(repo: Path) -> str | None:
 def _classify_build_failure(out: str, err: str) -> tuple[str, list[str]]:
     blob = out + "\n" + err
     low = blob.lower()
+    # Host disk exhaustion FIRST: an ENOSPC surfaces as compiler/linker "error:"
+    # text and would otherwise be filed as CARGO_CHECK_FAIL or BUILD_FAIL — i.e.
+    # as a defect in the diff, which is exactly the wrong cause. It cost four
+    # lanes a day on 2026-09-06. The detail always carries free bytes.
+    if hostdisk.looks_like_enospc(blob):
+        return "DISK_FULL", hostdisk.enospc_detail()
     if "cmake error" in low:
         return "CMAKE_CONFIGURE_FAIL", [
             ln.strip() for ln in blob.splitlines() if "CMake Error" in ln

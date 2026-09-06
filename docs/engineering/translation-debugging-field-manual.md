@@ -5139,7 +5139,17 @@ and must not be "fixed". Note also what it was *not*: no OOM daemon is installed
 zero oom matches in `dmesg`/`journalctl`, so the "running low on memory" message was a symptom
 of the full disk, not a second problem.
 
-The general shape, and it has three known members: **a verdict that depends on state outside the
+**A killed `land` leaves NO queue entry and NO error**, and that is the consequence worth
+knowing on its own. One lane ate five harness kills in a session — all reported as "the system is
+running low on memory", none of them memory — and one of them landed on `./vibeos-cli land`
+mid-preflight. `land-status` then simply does not list you, which is indistinguishable from "the
+conductor hasn't got to you yet" unless you are looking for it; that lane waited on a queue
+position it did not have. **If you believe you are queued, confirm with `land-status --mine`
+rather than assuming.** Note the misdirection is active, not merely vague: the harness reports
+these kills with a memory message *even when `MemAvailable` is fine*, so the message points away
+from the cause.
+
+The general shape, and it has four known members: **a verdict that depends on state outside the
 diff is not a gate.**
 - **Host disk** — above; RED with nothing failing.
 - **Which artifacts a worktree happens to carry** — `scan_ud2`'s arm64 driver sweep has no
@@ -5150,16 +5160,22 @@ diff is not a gate.**
   it never touched.
 - **What a warm gate declines to rebuild** — §9.126 above, the mirror image: green because
   nothing recompiled.
-- **An artifact that PREDATES the change under test** — a `check` went green on a cohab flip
-  because `build-i386`'s `libcrt_shared_cargo.a` was a day older than the flip, so the verdict
-  was rendered against an object that did not contain the change being graded. Distinct from the
-  previous member: not a rebuild that was skipped, but a *correct* verdict about the *wrong
-  object*. (msvcrt-homebrew's finding.)
+- **An artifact that PREDATES the change under test** — a lint reading build output passes
+  because the artifact is older than the change being graded, so an absent symbol shadows
+  nothing. Distinct from the member above: not a rebuild that was skipped, but a *correct*
+  verdict about the *wrong object*, and it needs a different fix. Symptom is a false GREEN
+  rather than a red, so it is written up under "Stale artifacts & false greens" — see the
+  `verify_ucrtbase_cohab` entry there rather than duplicating it here.
 
 The AGENTS.md fleet-isolation rule already forbids *reading* generated artifacts from a sibling
 worktree. These are the same defect one level up: the corpus is discovered rather than declared.
 A sweep should name what it grades and hard-fail when a member is missing, exactly as
 `verify_signatures` now hard-fails instead of falling back to a sibling's headers.
+
+**The disk member is now mechanized** — `tests/qemu/cli/hostdisk.py`. `gate` refuses to start
+without headroom (`host-disk` stage), and an ENOSPC during a build classifies as `DISK_FULL`
+ahead of the generic matchers instead of being filed as a defect in the diff. Both always print
+free bytes and the threshold missed, because the number is what ends the investigation.
 
 
 ### A difftest oracle that is the source the port was MADE from grades nothing

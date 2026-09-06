@@ -65,7 +65,7 @@ import sys
 import time
 from pathlib import Path
 
-from . import archcfg, hostlock
+from . import archcfg, hostdisk, hostlock
 from .artifacts import Run, Stage
 
 # A failure with one of these classifications is a *documented* flake or an
@@ -659,6 +659,12 @@ def gate(args, repo: Path) -> int:
     smoke_extra: list[str] = ["--no-net"]
 
     run = Run("gate", "+".join(arches))
+    # Host free space BEFORE anything builds. A full disk does not present as a
+    # disk problem — it surfaces as a RED with no failing test, an ENOSPC while
+    # WRITING the verdict, and a harness "low on memory" message that points away
+    # from the cause. One line here beats four lanes re-reading artifacts.
+    if not hostdisk.preflight(run, repo, arches):
+        return 1
     # Sample the checkout BEFORE anything builds: the stamp must certify this tree, not
     # whatever HEAD happens to be when the gate finishes (see _write_gate_stamp).
     gated_state = _tree_state(repo)
