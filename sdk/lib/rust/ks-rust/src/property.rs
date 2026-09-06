@@ -16,6 +16,67 @@ extern "system" {
     fn ProbeForWrite(Address: PVOID, Length: ULONG_PTR, Alignment: ULONG);
 }
 
+// MmUserProbeAddress — highest user-mode address + 1, a DATA export from ntoskrnl
+// (`@ extern MmUserProbeAddress` in ntoskrnl.spec).
+//
+// It is declared here rather than reached through `ntkrnl_sys::probe` on purpose, and
+// the reason is a link error, not a preference: that module declares the symbol as a
+// plain `extern "C" static`, which resolves only for crates linked INTO ntoskrnl. ks is
+// a separate .sys, so importing it that way gives
+// `ld.lld: error: undefined symbol: _MmUserProbeAddress`. A data import needs the
+// per-arch import form — i386/arm64 raw-dylib +verbatim (the symbol IS the value),
+// amd64 binds __imp_ and dereferences — which is the same shape win32k-rust's
+// safe_user_io.rs and class.rs already use.
+#[cfg(any(target_arch = "x86", target_arch = "aarch64"))]
+#[link(name = "ntoskrnl.exe", kind = "raw-dylib", modifiers = "+verbatim")]
+extern "C" {
+    static MmUserProbeAddress: ULONG_PTR;
+}
+#[cfg(target_arch = "x86_64")]
+extern "C" {
+    #[link_name = "__imp_MmUserProbeAddress"]
+    static MmUserProbeAddress_imp: *const ULONG_PTR;
+}
+#[cfg(any(target_arch = "x86", target_arch = "aarch64"))]
+#[inline(always)]
+unsafe fn mm_user_probe_address() -> ULONG_PTR {
+    MmUserProbeAddress
+}
+#[cfg(target_arch = "x86_64")]
+#[inline(always)]
+unsafe fn mm_user_probe_address() -> ULONG_PTR {
+    *MmUserProbeAddress_imp
+}
+
+/// Validate that [address, address+length) lies below MmUserProbeAddress and meets
+/// `alignment`, without raising and without touching the page — the DDK ProbeFor*
+/// macros do both, and under DUMMY_PSEH either one is fatal with no handler to reach.
+///
+/// Named for win32k's `SafeProbeForRead`, which it mirrors exactly. That is not
+/// cosmetic: `scan_dropped_probes` recognises validation by name, so a local helper
+/// called something else reads to the scanner as no validation at all and re-reports
+/// this function as ALL. Matching the house spelling keeps the lint honest without
+/// teaching it every crate's private vocabulary.
+#[inline]
+unsafe fn KsSafeProbeForRead(
+    address: *const c_void,
+    length: usize,
+    alignment: usize,
+) -> NTSTATUS {
+    if length == 0 {
+        return STATUS_SUCCESS;
+    }
+    if alignment > 1 && (address as ULONG_PTR) & (alignment as ULONG_PTR - 1) != 0 {
+        return STATUS_DATATYPE_MISALIGNMENT;
+    }
+    let start = address as ULONG_PTR;
+    let last = start.wrapping_add(length as ULONG_PTR).wrapping_sub(1);
+    if last < start || last >= mm_user_probe_address() {
+        return STATUS_ACCESS_VIOLATION;
+    }
+    STATUS_SUCCESS
+}
+
 // guiddef.h IsEqualGUIDAligned (private per-module helper; bool form — all call
 // sites in this file use it in boolean context).
 #[inline(always)]
@@ -348,9 +409,23 @@ pub unsafe extern "system" fn KsFastPropertyHandler(
             core::mem::size_of::<KSPROPERTY>(),
         );
     } else {
-        // ProbeForRead(Property, sizeof(KSPROPERTY), sizeof(UCHAR));
-        if (Property as usize) < (core::mem::size_of::<KSPROPERTY>() as usize) {
-            Status = STATUS_INVALID_PARAMETER;
+        // C: ProbeForRead(Property, sizeof(KSPROPERTY), sizeof(UCHAR)) inside a
+        // _SEH2_TRY that stashes the exception code in Status. The probe became the
+        // comment above and the check below, and that check is not a bounds check: it
+        // compares an ADDRESS against a SIZE, so it rejects only the first 24-odd bytes
+        // of the address space and passes every kernel pointer. UserMode is the only
+        // branch that reaches it — the KernelMode caller above is trusted — so this is
+        // the path where validation actually matters.
+        //
+        // probe_user_buffer range-checks against MmUserProbeAddress without touching
+        // the page, which is what DUMMY_PSEH requires here.
+        let probe_status = KsSafeProbeForRead(
+            Property as *const c_void,
+            core::mem::size_of::<KSPROPERTY>(),
+            core::mem::size_of::<UCHAR>(),
+        );
+        if !NT_SUCCESS(probe_status) {
+            Status = probe_status;
         } else {
             core::ptr::copy_nonoverlapping(
                 Property as *const u8,

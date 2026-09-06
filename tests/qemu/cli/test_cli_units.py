@@ -7034,3 +7034,111 @@ def test_seed_asserts_will_not_add_a_row_the_floor_does_not_carry():
     text, report = conformance_mod.seed_asserts_into_baseline(prev, rounds, P)
     assert "NewTest" not in text.replace("NewTest.c", "")
     assert "not on the floor" in report
+
+
+# ---------------------------------------------------------------------------
+# conformance ratchet wired into `gate` (2026-09-06)
+# ---------------------------------------------------------------------------
+# The ratchet was report-only for its whole life: it computed a correct verdict
+# and nothing was obliged to act on it. These pin the three things that make it
+# a real gate rather than a louder log line.
+
+
+def test_conformance_lane_is_retryable_so_one_bistable_cannot_reject_a_batch():
+    """A first-attempt ratchet miss must classify as a RETRYABLE flake.
+
+    The identity floor marks the bistables it knows about (`assert?`), but the
+    corpus is not closed — an intermittent that never fired during seeding is
+    indistinguishable from a regression on any single sweep. The merge queue
+    gates ONCE for N lanes, so a non-retryable miss would reject a whole batch
+    of innocent lanes on a coin flip. A real regression still fails the retry.
+    """
+    assert "CONFORMANCE_FLAKE" in gate_mod.RETRYABLE
+
+
+def test_conformance_lane_skips_loudly_when_the_arch_has_no_floor(tmp_path):
+    """No baseline means nothing to ratchet against. It must SKIP, not silently
+    pass — a stage that cannot fail must not read as one that held."""
+    r = gate_mod._conformance_once(tmp_path, "i386", tmp_path / "conf")
+    assert r["verdict"] == "SKIP"
+    assert r["ok"] is True
+    assert "no baseline" in r["salient"]
+
+
+def test_conformance_lane_reports_the_failing_identities_not_the_whole_table(tmp_path, monkeypatch):
+    """The sweep prints a per-test table; only the NEW failing assertions belong
+    in the gate summary, or the real signal drowns."""
+    base = tmp_path / "tools" / "conformance-baseline" / "amd64"
+    base.mkdir(parents=True)
+    (base / "kmtest.txt").write_text("IoDeviceObject 12 0\n")
+
+    class _CP:
+        returncode = 1
+        stdout = (
+            "  IoDeviceObject   pass=11 fail=1\n"
+            "  RATCHET REGRESSIONS (1):\n"
+            "    IoDeviceObject: NEW failing assertion IoDeviceObject_drv.c:206\n"
+        )
+        stderr = ""
+
+    monkeypatch.setattr(gate_mod.subprocess, "run", lambda *a, **k: _CP())
+    r = gate_mod._conformance_once(tmp_path, "amd64", tmp_path / "conf")
+    assert r["ok"] is False
+    assert r["classification"] == "CONFORMANCE_FLAKE"
+    assert r["retryable"] is True
+    assert "IoDeviceObject_drv.c:206" in r["salient"]
+    assert "pass=11" not in r["salient"], "the per-test table must not reach the summary"
+
+
+# ---------------------------------------------------------------------------
+# the kmtest payload provisioning scar (2026-09-06)
+# ---------------------------------------------------------------------------
+# Wiring the conformance lanes made the gate build stamp VIBEOS_PAYLOAD=kmtest
+# unconditionally. kmtest-sweep-<arch>.exe is GITIGNORED, so the change worked in
+# the worktree that had months of conformance runs behind it and broke the first
+# fresh tree it met — the merge queue's integration worktree — as a BUILD_FAIL
+# attributed to whichever innocent lanes shared the batch.
+
+
+def test_kmtest_payload_is_built_when_missing_not_assumed_present(tmp_path, monkeypatch):
+    """A fresh worktree has sweep.c and not the exe. The gate must BUILD it."""
+    sh = tmp_path / "tools" / "payloads" / "kmtest"
+    sh.mkdir(parents=True)
+    (sh / "build.sh").write_text("#!/bin/bash\n")
+    (tmp_path / ".build-tools" / "llvm-mingw").mkdir(parents=True)
+
+    calls = []
+
+    def _fake_run(cmd, **kw):
+        calls.append(cmd)
+        (sh / f"kmtest-sweep-{cmd[2]}.exe").write_text("x")
+        return subprocess.CompletedProcess(cmd, 0, "", "")
+
+    monkeypatch.setattr(gate_mod.subprocess, "run", _fake_run)
+    ok, why = gate_mod._ensure_kmtest_payload(tmp_path, ["i386", "amd64"])
+    assert ok and why == ""
+    assert [c[2] for c in calls] == ["i386", "amd64"], "must build each missing arch"
+
+
+def test_kmtest_payload_failure_disables_the_ratchet_it_does_not_break_the_build(tmp_path):
+    """No toolchain means we cannot build the exe — and must NOT stamp the payload
+    anyway, which is what failed the livecd media step for the whole batch."""
+    sh = tmp_path / "tools" / "payloads" / "kmtest"
+    sh.mkdir(parents=True)
+    (sh / "build.sh").write_text("#!/bin/bash\n")
+    ok, why = gate_mod._ensure_kmtest_payload(tmp_path, ["i386"])
+    assert ok is False
+    assert "llvm-mingw" in why, f"must name the missing toolchain, got {why!r}"
+
+
+def test_kmtest_payload_already_present_runs_nothing(tmp_path, monkeypatch):
+    sh = tmp_path / "tools" / "payloads" / "kmtest"
+    sh.mkdir(parents=True)
+    (sh / "build.sh").write_text("#!/bin/bash\n")
+    (sh / "kmtest-sweep-arm64.exe").write_text("x")
+
+    def _boom(*a, **k):
+        raise AssertionError("must not shell out when the payload is already there")
+
+    monkeypatch.setattr(gate_mod.subprocess, "run", _boom)
+    assert gate_mod._ensure_kmtest_payload(tmp_path, ["arm64"]) == (True, "")
