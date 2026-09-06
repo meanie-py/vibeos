@@ -199,7 +199,8 @@ pub static mut IopFsNotifyChangeQueueHead: _LIST_ENTRY = _LIST_ENTRY {
 };
 static mut IopFsRegistrationOps: ULONG = 0;
 
-const TAG_VPB: u32 = 0x20425056;
+const TAG_VPB: u32 = 0x20425056; // nolint: const-contradiction (per-driver pool tag, each verified against its own C)
+                                 // tag.h:94 ' BPV'
 const TAG_FS_CHANGE_NOTIFY: u32 = 0x4E435346;
 const TAG_DEV2DOS: u32 = 0x20643244;
 const MOUNTMGR_DEVICE_NAME: &[u16] = &[

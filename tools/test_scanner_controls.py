@@ -1264,6 +1264,14 @@ UNCOVERED: dict[str, str] = {
     ),
     "scan_duplicate_symbols": "operates on link artifacts, not source",
     "scan_const_contradictions": "needs the whole tree (finds one NAME with two VALUES)",
+    "scan_invented_constants": (
+        "needs the real tree on BOTH sides: the self-labelled Rust const and the C module "
+        "that crate translates. A synthetic fixture would only prove the regex fires. Its "
+        "risky half -- the C expression evaluator -- is unit-tested directly in "
+        "tools/test_scan_invented_constants.py, which pins the two bugs it has actually had "
+        "(a name regex matching inside 0x0501, and C's implicit enum numbering after an "
+        "explicit initialiser)."
+    ),
     "scan_inline_flag_literals": "needs the sdk/include header catalog to know the right value",
     "shell32_tail_inventory": (
         "not a pattern scanner: reconciles the four LIVE CMake source lists against the "
