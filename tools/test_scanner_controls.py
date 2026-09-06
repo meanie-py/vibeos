@@ -988,6 +988,38 @@ _VENDOR_GOOD_YAML = (
 """
 )
 
+# scan_dropped_probes. The NtSetValueKey shape (#79): the C probes Data inside one
+# _SEH2_TRY and copies it inside a second, both regions dropped, leaving a bare
+# `Status = STATUS_SUCCESS` where the bounds check belongs. The GOOD half proves the
+# scanner clears once validation is restored through the substrate — including the
+# turbofish spelling, which an earlier revision of the call regex could not see.
+_DROPPEDPROBE_BAD = """
+pub unsafe fn NtSetValueKey(Data: PVOID, DataSize: ULONG) -> NTSTATUS {
+    let mut Status = STATUS_SUCCESS;
+    core::ptr::copy_nonoverlapping(Data as *const u8, DataCopy as *mut u8, DataSize as usize);
+    Status
+}
+// NTSTATUS NtSetValueKey(PVOID Data, ULONG DataSize)
+// {
+//     _SEH2_TRY { ProbeForRead(Data, DataSize, 1); } _SEH2_END;
+//     RtlCopyMemory(DataCopy, Data, DataSize);
+// }
+"""
+
+_DROPPEDPROBE_GOOD = """
+pub unsafe fn NtSetValueKey(Data: PVOID, DataSize: ULONG) -> NTSTATUS {
+    probe_user_buffer(Data as *const c_void, DataSize as usize, 1, PreviousMode)?;
+    let _hdr = probe_read_user::<u32>(Data as *const u32)?;
+    core::ptr::copy_nonoverlapping(Data as *const u8, DataCopy as *mut u8, DataSize as usize);
+    STATUS_SUCCESS
+}
+// NTSTATUS NtSetValueKey(PVOID Data, ULONG DataSize)
+// {
+//     _SEH2_TRY { ProbeForRead(Data, DataSize, 1); } _SEH2_END;
+//     RtlCopyMemory(DataCopy, Data, DataSize);
+// }
+"""
+
 CONTROLS: list[Control] = [
     Control(
         name="vendored_registry",
@@ -1013,6 +1045,14 @@ CONTROLS: list[Control] = [
         argv=["--lint"],
         bad={"cmsysini.rs": _DROPPEDPRINT_BAD},
         good={"cmsysini.rs": _DROPPEDPRINT_GOOD},
+        pass_files=True,
+    ),
+    Control(
+        name="scan_dropped_probes",
+        script="tools/scan_dropped_probes.py",
+        argv=["--lint"],
+        bad={"ntapi.rs": _DROPPEDPROBE_BAD},
+        good={"ntapi.rs": _DROPPEDPROBE_GOOD},
         pass_files=True,
     ),
     Control(

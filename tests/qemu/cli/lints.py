@@ -649,6 +649,29 @@ def source_lint_specs(repo: Path) -> list[tuple]:
             "stdout",
         )
     )
+    # The same oracle as scan_dropped_prints, opposite stakes: not "did it stay silent
+    # where its C spoke" but "did it dereference a user pointer where its C validated
+    # one". A dropped print costs a debugging cycle; a dropped probe is a security bug,
+    # and under DUMMY_PSEH there is no SEH to contain it. NtSetValueKey (#79) shipped a
+    # bare `Status = STATUS_SUCCESS;` where ProbeForRead belongs and copied straight off
+    # the caller's raw pointer -- so a Data pointing into KERNEL SPACE was copied into a
+    # registry value the same unprivileged caller reads back with NtQueryValueKey.
+    # Nothing else is positioned to see it: the raw-pointer deref is ordinary correct
+    # code in any other context, and only the commented-out C saying "I probed this
+    # first" makes it a bug, so rustc, the build and the boot are all silent. Every
+    # remaining row is an Nt* syscall entry point. ALL is the high-confidence kind;
+    # PARTIAL is advisory (the C often probes a struct field-by-field where the Rust
+    # probes the buffer once). A false positive is settled by FOLLOWING THE POINTER to
+    # the caller -- a callee whose buffer was already captured into pool is genuinely
+    # safe -- and then suppressed with that reason via `nolint: dropped-probe`.
+    sdpr = repo / "tools" / "scan_dropped_probes.py"
+    specs.append(
+        (
+            "scan_dropped_probes",
+            [py, str(sdpr), "--lint"] if sdpr.is_file() else ["MISSING"],
+            "stdout",
+        )
+    )
     # The same NOOP shape scan_dropped_prints finds, but keyed on a property of the CRATE
     # ("you already define this as a macro_rules!") instead of a hardcoded print list — so it
     # covers the names that emit nothing and were therefore outside every scanner here.

@@ -3880,19 +3880,58 @@ Match the C's alignment argument. Say in the comment what validate-first does NO
 C's second SEH also covers the window between probe and copy, and a range check proves where a
 buffer is, never that it stays mapped.
 
-**Finding the rest.** Same self-oracle question as `scan_dropped_prints`, inverted onto
-validation: count `ProbeFor*` in a file's commented-out C against live probe calls in its Rust.
-That gives **40 dropped probe calls across 13 files** — `config-rust/ntapi.rs` (8),
-`win32k-rust/font.rs` (6), `ntstubs.rs` (5), `coord.rs` (4), `fastfat-rust/fsctrl.rs` (4),
-`ex-rust/harderr.rs` (4), and a tail. The win32k ones are the sharp end: `NtGdiAddFontResourceW`
-is a directly user-callable syscall doing `RtlCopyMemory` off `pwcFiles` with no probe at all.
+**Finding the rest.** `tools/scan_dropped_probes.py`, gated by `vibeos-cli check` against
+`tools/lint-baseline/scan_dropped_probes.txt`. Same self-oracle as `scan_dropped_prints` and the
+same brace-depth/tree-sitter parser (shared via `c_function_bodies` / `rust_function_items`),
+asking the inverted question: not "did it stay silent where its C spoke" but "did it dereference
+a user pointer where its C validated one". It opened at **26 functions — 19 ALL, 7 PARTIAL**, and
+every ALL was an `Nt*` syscall entry point. The sharp ones were not subtle once seen:
+`NtGdiExtGetObjectW` copied up to `sizeof(object)` bytes of KERNEL STACK to an unvalidated
+caller pointer (disclosure and arbitrary write in one statement); `NtGdiCombineTransform` passed
+three unchecked user pointers straight to a routine that writes through one of them.
 
-**Two traps when you go looking.** The scanner needs `tree_sitter_rust`, which lives in the MAIN
-checkout's `.venv`, not the system python — a sizing pass that wraps the import in
+**A dropped probe hides behind a plausible comment.** `NtGdiCreateDIBSection` carried
+`// ProbeForRead calls are no-ops in this translation context` over the place three progressive
+probes belonged. It reads like a considered decision and it is simply false — those probes are
+the only bounds check on `bmi`, and dropping them also froze `Status` at `STATUS_SUCCESS` so the
+`if (!NT_SUCCESS(Status))` beneath could never fire. DUMMY_PSEH is the reason the *handler* is
+omitted and equally the reason the *probe* must stay: with no handler an unvalidated access is
+not an exception, it is the machine.
+
+**Overflow guards are not probes, and one can hide the absence of the other.**
+`NtGdiPolyPolyDraw` kept careful `Count > isize::MAX / sizeof(POINT)` checks and had both its
+`ProbeForRead`s dropped. A guard bounds the SIZE of an access; a probe bounds its ADDRESS.
+Watch the second SEH region too: that function's copy length is `nPoints`, the SUM of the
+caller's count array, so it is not covered by a probe sized on `Count`.
+
+**Three traps when you go looking.** (1) The scanner needs `tree_sitter_rust`, which lives in the
+MAIN checkout's `.venv`, not the system python — a sizing pass that wraps the import in
 `except: continue` reports a beautiful **zero**. Judge a clean result by whether the harness
-could have spoken at all. And the probes may have been restructured rather than dropped: a
-function that captures via `ProbeAndCaptureUnicodeString` upstream needs no probe of its own, so
-compare against where the pointer actually comes from before writing a finding.
+could have spoken at all. (2) The substrate is generic, so `probe_read_user::<u32>(h)` puts a
+TURBOFISH between the name and the paren; a call-detecting regex that requires `name\s*\(` scores
+every generic probe as absent and reports its function as ALL. The scanner's `--self-test` caught
+this before the baseline was ever seeded, which is the whole reason that self-test exists. (3)
+The probe may have been restructured rather than dropped: a callee whose buffer arrived through
+`ProbeAndCaptureUnicodeString` one frame up is already in pool and needs no probe of its own
+(`CmpSetValueKeyNew`). Follow the pointer to its caller, then suppress with that reason —
+`// nolint: dropped-probe (caller captures into pool)`.
+
+**`ntkrnl_sys::probe` does not link from a separate `.sys`.** It declares
+`MmUserProbeAddress` as a plain `extern "C" static`, which resolves only for crates linked
+INTO ntoskrnl (config-rust, ex-rust, ntoskrnl-rust). Reach for it from a standalone driver
+and the whole build dies at the link with
+`ld.lld: error: undefined symbol: _MmUserProbeAddress` — ks.sys did exactly this. A DATA
+import needs the per-arch import form: i386/arm64 `raw-dylib` `+verbatim` (the symbol IS the
+value), amd64 binds `__imp_MmUserProbeAddress` and dereferences. Copy the shape from
+`win32k-rust/src/safe_user_io.rs`; `ks-rust/src/property.rs` now carries it too. Note the
+failure is at LINK, not at `cargo check` — nothing links during a crate check, so this class
+sails through every check you would run first.
+
+**Use the right validator for the crate.** win32k has its own `SafeProbeForRead`/`SafeProbeForWrite`
+(`win32k-rust/src/safe_user_io.rs`): same range and alignment arithmetic as the DDK macros, but
+they RETURN a status instead of raising. Do not reach for the DDK `ProbeFor*` there, and do not
+assume the kernel-side `ntkrnl_sys::probe` helpers raise either — they do not touch the page,
+they range-check and return `Result`.
 
 ### A `#if` on a WINDOWS VERSION comes back as `#[cfg(target_arch)]`
 
