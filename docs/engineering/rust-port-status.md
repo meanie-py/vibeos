@@ -1227,6 +1227,47 @@ msvcrt has a cohab. Doing it means a lib-level `crtmath-rust` archive linked ahe
 five consumers — which is also the rail the ucrtbase lane needs. Note `sinf`/`cosf`/`powf` are
 in that 18, so the `sincosf` implib question is a crtmath question too.
 
+#### crtmath sized, and the island question answered — 2026-09-06
+
+`profile_derive sdk/lib/crt --target crtmath --usermode` derives cleanly (159 compiled TUs,
+155 headers). Sorting those 159 by who actually owns them is the point of running it:
+
+| bucket | files | lines |
+|---|---|---|
+| AMD LibM — `math/libm_sse2/`, vendored | 48 | 8,900 |
+| Sun FDLIBM — `math/ieee754/`, vendored | 3 | 1,346 |
+| i386-only (x87 asm shims, `_CI*`, `libm_sse2.c`) | 13 | 772 |
+| already has a `cnt-rust` Rust body | 60 | 2,234 |
+| **ours, still C** | **35** | **1,259** |
+
+So the lane is ~1,259 lines, not the ~4,100 the raw file sizes suggest, and both vendored
+trees are now in `vendor.yaml` — registering them is most of what made the number move.
+
+**It does NOT want a bindgen island, and that is the design decision.** An island buys exact
+struct layouts and header constants; crtmath has essentially no structs (`_exception` is
+already in msvcrt-sys) and the surface is pure numerics plus the FPU control word. The 61
+libm bodies already in `cabi/math.rs` were done without one, are graded per-symbol in
+cnt-difftest against the same C `crtmath` compiles, and now ship in the kernel, msvcrt.dll
+and ucrtbase.dll alike. The remaining 35 files belong in the same place by the same method.
+
+What the derive DOES owe, and what the next lane must not skip:
+
+* **5 BLOCKING `SWITCH_CONST_IN_BASE_HEADER` findings** — `_PC_24`, `_PC_53`, `_PC_64`,
+  `_RC_DOWN`, `_RC_UP`, all `switch` labels in `float/i386/cntrlfp.c`, all owned by
+  `float.h`, none in any `-sys` crate. Untranslated they become a silent catch-all arm
+  (§9.112). Transcribe them into the crate, per the finding's own instruction; do not
+  allowlist `float.h`, which re-emits the platform.
+* **423 `.c` under `sdk/lib/crt` that nothing compiles** (`DEAD_SOURCE`). Not translation
+  debt; do not pay for any of them.
+* **Two islands would be needed IF one were ever generated** — `libm_inlines.h` and
+  `rtlfuncs.h` both define `return`, and no TU includes both. That only matters for the
+  AMD tree, which is vendored, so it is a fact to record rather than act on.
+
+The five-consumer rail the paragraph above asks for is now half built: msvcrt.dll (wave 14m)
+and ucrtbase.dll (2026-09-05) both whole-archive `cabi-math` ahead of `libcrtmath.a`.
+msvcrt20, msvcrt40 and crtdll do not, and that — not the translation — is the remaining
+plumbing.
+
 The regression is the one worth carrying forward: `_mbctype` was **two arrays**. `msvcrt.spec`
 exports it as `@ extern _mbctype MSVCRT_mbctype`, mbcs.rs defined `MSVCRT_mbctype` without
 `#[no_mangle]`, and the mangled Rust static therefore did not satisfy the export — mbcs.c's
@@ -2126,12 +2167,13 @@ big but cold: cdrom 211K, disk 170K, classpnp 166K, kernel32 161K, buslogic 138K
 ## Shared substrate crates (ported once, consumed by many islands)
 
 Some header material is invisible to bindgen and therefore gets re-ported by hand into every
-module that needs it. Two crates now own that material, and both exist because the hand copies
-had measurably drifted:
+module that needs it. Three crates now own that material, and all three exist because the hand
+copies had measurably drifted — or, for `va-slots-rust`, because they were about to:
 
 | Crate | What it owns | Why it exists |
 |---|---|---|
 | `strsafe-rust` | `strsafe.h`'s `static __inline` bounded string ops | `STRSAFEAPI` is `static __inline`, so **no object file in the tree defines any of them** — the last `.c` a module flips takes the module's only definition with it. Four copies existed (msgina, syssetup, desk, sysdm), no two the same subset, and msgina's `StringCchPrintfW` had DROPPED the caller's bound and forwarded to `wsprintfW` — a stack overrun on a `WCHAR[256]`. Consumers: desk, syssetup, sysdm, msgina, rosload, uefildr. |
+| `va-slots-rust` | Receiving C varargs on stable Rust: the slot-capture helpers (`format_slots`, `format_slots_z`) and the measured `VA_SLOTS`/`VA_STAGE` bounds | Stable Rust cannot **define** a C-variadic, so every printf-family entry point in the tree took a fixed parameter list and printed its format string LITERALLY, dropping every argument. It can **receive** one: all three targets pass varargs as a flat ascending slot sequence and `va_list` is `*mut c_char` on all three, so the trailing slots become ordinary fixed parameters replayed as the va_list, and no call site changes. Extracted at the THIRD copy rather than the fourth: the bounds are only safe **because they were measured** (widest live format = 11 slots, counted in slots not specifiers), so each copy is a fresh chance to guess them. Exports no `#[no_mangle]` symbol, which is what lets `drvtrace-shim` keep the LLVM-module isolation it exists for (§9.99). Consumers: freeldr-rust, kd-rust, drvtrace-shim. |
 | `win32macros-rust` | The function-like Win32 macros (`LOWORD`/`HIWORD`/`MAKELONG`/`MAKELANGID`/`MAKELCID`/`MAKEINTRESOURCEW`/`RGB`/`Get?Value`/`GET_?_LPARAM`/`ZeroMemory`/`_countof`/`ARRAYSIZE`) plus the constants bindgen folds away (`DWLP_MSGRESULT`/`DWLP_DLGPROC`/`DWLP_USER`, `INVALID_HANDLE_VALUE`, `UNICODE_NULL`) | bindgen emits **no** function-like macro and drops cast/`sizeof`/pointer-literal constants. Before extraction: `LOWORD` defined **32× across 12 crates in 8 spellings**, `HIWORD` in 8, `ZeroMemory` in 6, `DWLP_USER` in 9 — and all four `RGB` copies had dropped `wingdi.h`'s per-component `BYTE` mask, so an out-of-range component bled into the next channel. Transcribed from the headers, not from the copies, with 13 known-answer tests. Consumers: desk, sysdm, intl, syssetup, aclui, netcfgx, netid, umpnpmgr, samlib, ntmarta, authz, msv1_0 (+ recyclebin, parked). |
 
 **The sharing boundary is narrower than "core primitives."** A shared crate cannot depend on any

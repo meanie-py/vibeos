@@ -40,6 +40,7 @@ from .cpp_core import (
     _split_args,
     c_type_to_rust,
     integer_cannot_bind_pointer,
+    is_c_integer,
 )
 from .fact_seal import _named_cast_spans
 
@@ -114,6 +115,48 @@ _RAII_CONTAINER_LOWERINGS: dict[str, tuple[str, str]] = {
         "`GetAt(POSITION) -> *mut T`. A `POSITION` is null at the end of the list.",
     ),
 }
+
+
+def _no_viable_conversion(
+    actual_key: str, expected_key: str, field_types: dict[str, dict[str, str]] | None
+) -> bool:
+    """Whether C++ has NO conversion from ``actual_key`` to ``expected_key``.
+
+    Only proven impossibilities count. A candidate this rejects was never in the
+    compiler's overload set, so rejecting it can never change which method a
+    well-formed call resolves to -- it only breaks ties that scoring cannot.
+    """
+    if integer_cannot_bind_pointer(actual_key, expected_key):
+        return True
+    # An integer does not convert to a C aggregate, by value or by reference: a plain
+    # C struct has no converting constructor. `_PidlByItem(LRESULT)` against
+    # `_PidlByItem(LVITEM&)` is CDefView's case.
+    referent = expected_key.rstrip("*& ")
+    return bool(
+        field_types
+        and "*" not in expected_key
+        and is_c_integer(actual_key)
+        and referent in field_types
+    )
+
+
+def _shapes_provably_disagree(
+    source_params: Sequence[tuple[str, str]],
+    vtable_params: Sequence[tuple[str, str]],
+    type_aliases: dict[str, str] | None = None,
+) -> bool:
+    """True when some parameter pair has no conversion in either direction.
+
+    Used to constrain an ARITY-only vtable match. Deliberately one-sided: it reports a
+    disagreement only for a pair it can prove (an integer against a pointer), so a merely
+    unfamiliar spelling still binds exactly as before.
+    """
+    for (source_type, _), (vtable_type, _) in zip(source_params, vtable_params, strict=True):
+        left = _canonical_sdk_type(source_type, type_aliases)
+        right = _canonical_sdk_type(vtable_type, type_aliases)
+        if integer_cannot_bind_pointer(left, right) or integer_cannot_bind_pointer(right, left):
+            return True
+    return False
 
 
 def _canonical_sdk_type(c_type: str, type_aliases: dict[str, str] | None) -> str:
@@ -214,7 +257,7 @@ def _bind_sibling_overload(
             expected_key = _canonical_sdk_type(expected, type_aliases)
             if _abi_types_compatible(actual_key, expected_key):
                 score += 1
-            elif integer_cannot_bind_pointer(actual_key, expected_key):
+            elif _no_viable_conversion(actual_key, expected_key, field_types):
                 # Not merely a worse match -- no such conversion exists, so C++ never
                 # had this candidate in the set at all. Scoring alone could not separate
                 # `f(int)` from `f(PCUITEMID_CHILD)` for a UINT argument, because an
@@ -5035,6 +5078,25 @@ impl Drop for CStringW {
 static CPP_COM_EMPTY_WSTR: [WCHAR; 1] = [0];"""
 
 
+# `r#` makes a keyword usable as an identifier, but the language forbids it for these
+# four -- there is no spelling of a parameter named `self`, so the name must change.
+_RUST_UNRAWABLE = frozenset({"crate", "self", "super", "Self"})
+
+
+def rust_safe_parameter(name: str) -> str:
+    """Spell a C parameter name so it is a legal Rust identifier.
+
+    A C++ parameter may be named `move`, `type`, `ref`, `match`, `box` -- all Rust
+    keywords. Rendering one bare produced a contract signature that CANNOT COMPILE, and
+    the deterministic audit then rejected the model for writing `r#move`, the only legal
+    form. shell32's `CDefView::SetClipboard(BOOL move)` failed exactly this way, and no
+    number of retries could have fixed it: the contract itself was unsatisfiable.
+    """
+    if name in _RUST_UNRAWABLE:
+        return f"{name}_"
+    return f"r#{name}" if name in _RUST_KEYWORDS else name
+
+
 def worker_signature(
     name: str, class_name: str | None, params: list[tuple[str, str]], return_type: str
 ) -> str:
@@ -5054,7 +5116,7 @@ def worker_signature(
         while declarator.startswith(("&", "*")):
             c_type = f"{c_type} {declarator[0]}"
             declarator = declarator[1:]
-        rendered.append(f"{declarator}: {c_type_to_rust(c_type)}")
+        rendered.append(f"{rust_safe_parameter(declarator)}: {c_type_to_rust(c_type)}")
     ret = "()" if not return_type or return_type.strip() == "void" else c_type_to_rust(return_type)
     return f"pub unsafe fn {name}_body({', '.join(rendered)}) -> {ret}"
 
@@ -5450,7 +5512,10 @@ def raii_container_contract(fields: list[PlainStateField]) -> str:
 
 
 def apply_interface_method_signatures(
-    deps: list[FunctionDep], class_name: str, interfaces: list[InterfaceSpec]
+    deps: list[FunctionDep],
+    class_name: str,
+    interfaces: list[InterfaceSpec],
+    type_aliases: dict[str, str] | None = None,
 ) -> list[FunctionDep]:
     """Replace parsed COM method types with the flattened vtable authority.
 
@@ -5482,10 +5547,23 @@ def apply_interface_method_signatures(
             if tuple(_abi_c_type_key(c_type) for c_type, _ in method.params[1:]) == source_shape
         ]
         if len(matches) != 1:
+            # The arity fallback is load-bearing: the scanner and the vtable routinely
+            # SPELL one parameter differently (`LPCITEMIDLIST` vs `PCUITEMID_CHILD`), so
+            # an exact key match fails on methods that genuinely do implement the slot.
+            #
+            # Unconstrained, though, it also binds a private overload that merely happens
+            # to share the arity -- and the caller then OVERWRITES that helper's parameter
+            # list with the vtable's, so a helper taking an `int` index silently claims a
+            # PIDL pointer. CDefView has exactly this pair (`SelectAndPositionItem(int,
+            # UINT, POINT *)` beside the STDMETHOD of the same name). Nothing downstream
+            # can see the swap, which is what makes it worth refusing here.
+            #
+            # So: keep the fallback, but never let it cross a conversion C++ does not have.
             same_arity = [
                 (index, method)
                 for index, method in enumerate(candidates)
                 if len(method.params) - 1 == len(candidate.params)
+                and not _shapes_provably_disagree(candidate.params, method.params[1:], type_aliases)
             ]
             if len(same_arity) == 1:
                 matches = same_arity

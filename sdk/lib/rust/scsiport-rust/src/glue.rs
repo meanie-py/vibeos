@@ -12,6 +12,12 @@ pub const CM_RESOURCE_INTERRUPT_LATCHED: u32 = 1;
 pub const CM_RESOURCE_INTERRUPT_LEVEL_SENSITIVE: u32 = 0;
 pub const CM_RESOURCE_MEMORY_READ_WRITE: u32 = 0;
 pub const CM_RESOURCE_PORT_IO: u32 = 1;
+// cmtypes.h:33. Registry value TYPE, not a struct -- which is why the C's
+// `sizeof(REG_FULL_RESOURCE_DESCRIPTOR)` is sizeof(9) == 4; see SpiParseDeviceInfo.
+// Only hal_bindgen_{i386,amd64} carry it and there is no hal_bindgen_arm64, so it is
+// localized here with its siblings rather than imported from the hal island.
+pub const REG_FULL_RESOURCE_DESCRIPTOR: u32 = 9;
+pub const CmResourceTypeDeviceSpecific: u8 = 5;  // cmtypes.h:14
 pub const CmResourceTypeDma: u8 = 4;
 pub const CmResourceTypeInterrupt: u8 = 2;
 pub const CmResourceTypeMemory: u8 = 3;

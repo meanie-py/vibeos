@@ -58,6 +58,69 @@ def test_eval_c_shapes(expr: str, want: int) -> None:
     assert sic.eval_c(expr, {}) == want
 
 
+def test_the_crate_dir_walk_never_descends_into_excluded_trees(monkeypatch, tmp_path):
+    """Pruning is load-bearing, not an optimisation.
+
+    `REPO.rglob(stem)` descended into every excluded tree before the path test could reject
+    it, `sdk/lib/rust/target` included — which a CONCURRENT cargo build deletes directories
+    out of. It raced and died with FileNotFoundError inside pathlib, and the gate reported
+    that crash as "NEW lint findings": a crash misfiled as a verdict. It only became
+    reachable when the source-early partition began running scanners alongside builds instead
+    of after them.
+
+    Asserting on the RESULT cannot catch a regression here — filtering afterwards returns the
+    same directories, which is exactly why the bug survived. So assert on what is VISITED.
+    """
+    for rel in (
+        "sdk/lib/rust/target/x86_64-pc-windows-gnu/msvcrt",
+        "build-i386/msvcrt",
+        "dll/msvcrt",
+    ):
+        (tmp_path / rel).mkdir(parents=True)
+    monkeypatch.setattr(sic, "REPO", tmp_path)
+    visited: list[str] = []
+    real_walk = sic.os.walk
+
+    def spy(top, **kw):
+        for root, dirs, files in real_walk(top, **kw):
+            visited.append(str(Path(root).relative_to(tmp_path)))
+            yield root, dirs, files
+
+    monkeypatch.setattr(sic.os, "walk", spy)
+    hits = sic.c_dirs_for("msvcrt-rust")
+    assert [str(h.relative_to(tmp_path)) for h in hits] == ["dll/msvcrt"]
+    # Without this the test is VACUOUS against the very implementation it guards: the old
+    # rglob version never calls os.walk, so `visited` would be empty and the assertion below
+    # would pass by finding nothing. Demand that the walk actually happened.
+    assert visited, "c_dirs_for must walk-and-prune; rglob descends into excluded trees first"
+    bad = [v for v in visited if v.startswith(("sdk/lib/rust", "build-"))]
+    assert not bad, f"walked into an excluded tree: {bad}"
+
+
+def test_a_directory_vanishing_mid_walk_is_not_fatal(monkeypatch, tmp_path):
+    """The race itself: a build deleting a directory under the walker must not kill the scan.
+
+    A scanner that dies on a concurrent build is a scanner that reports host timing as a
+    source defect.
+    """
+    (tmp_path / "dll/msvcrt").mkdir(parents=True)
+    doomed = tmp_path / "dll/doomed"
+    doomed.mkdir()
+    monkeypatch.setattr(sic, "REPO", tmp_path)
+    real_walk = sic.os.walk
+
+    def spy(top, **kw):
+        for root, dirs, files in real_walk(top, **kw):
+            if doomed.exists():
+                doomed.rmdir()  # vanishes after being listed, before being descended
+            yield root, dirs, files
+
+    monkeypatch.setattr(sic.os, "walk", spy)
+    hits = sic.c_dirs_for("msvcrt-rust")  # must not raise
+    assert [str(h.relative_to(tmp_path)) for h in hits] == ["dll/msvcrt"]
+    assert not doomed.exists(), "the race never happened, so this proved nothing"
+
+
 def test_eval_c_resolves_named_operands() -> None:
     table = {"BASE": "0x10", "OFFSET": "(BASE + 4)"}
     assert sic.eval_c("OFFSET", table) == 0x14
