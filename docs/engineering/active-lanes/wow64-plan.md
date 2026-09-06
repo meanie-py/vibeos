@@ -927,7 +927,19 @@ and both fast-IO direct writes emit the 8-byte `{Status, Information}` layout
 when marked — sync AND async. The thunks now pass the guest IOSB straight
 through (no host stack IOSB → the dead-frame hazard is gone by construction)
 and accept Event-based/polled overlapped I/O; only a guest APC routine still
-refuses loudly (no 64→32 user-APC dispatch yet). 64-bit host code in the same
+refuses loudly.
+
+*What the APC refusal actually needs — the old note here said "no 64→32
+user-APC dispatch yet" and that was wrong.* The guest-entry half exists and is
+load-bearing: `Wow64pBuildLoaderApcFrame` builds a `KiUserApcDispatcher`-ABI
+frame, `Wow64pKiUserApcDispatcher32` is resolved from ntdll32 at startup, and
+the pair runs on every guest thread start. Missing is (a) INTERCEPTION — the
+kernel's `KiInitializeUserApc` builds a 64-bit `UAPC_FRAME` targeting the 64-bit
+dispatcher, so a guest's 32-bit routine passed through would be `call`ed as
+native x64; wow64.dll must substitute a host thunk as the `NormalRoutine` and
+carry the guest routine/context as arguments — and (b) the frame builder taking
+its routine as a parameter instead of hardcoding the loader thunk. Nothing on
+the ladder needs it (msafd uses Events), so it stays refused by choice. 64-bit host code in the same
 process is unaffected: its calls never latch. i386 kernels compile the capture
 out (no WoW64-of-32-bit; its bindgen EPROCESS has no Wow64Process).
 **M15c (2026-09-06) extends the same mechanism to the IOCTL family**
@@ -948,6 +960,24 @@ for — missing that is a silent guest hang), then copies back and frees. The
 unmarshalled path carries no shadow and is genuinely async. Oracle:
 **`marshal32.exe`**'s select rung, `0xbb04` -> `0x600d`, 9/9 guests PASS on
 ladder `20260906-132106-smoke-amd64`.
+
+**M15c addendum (2026-09-06): `IOCTL_AFD_SEND_DATAGRAM` is marshalled**, which
+retires the last refusal in the AFD family. `AFD_SEND_INFO_UDP` is 56 → 104 and
+audited SEMANTIC for its nested `TDI_REQUEST_SEND_DATAGRAM` /
+`TDI_CONNECTION_INFORMATION`, but reading both ends collapses most of that:
+`AfdPacketSocketWriteData` consumes only `BufferArray`, `BufferCount` and
+`TdiConnection.RemoteAddress`; `WSPSendTo` fills only those plus `AfdFlags` and
+`RemoteAddressLength`. `TdiRequest` is touched by neither, so it is carried as
+opaque zero padding rather than translated — writing a host-shaped
+`TDI_REQUEST` there would manufacture content no one supplies. `RemoteAddress`'
+pointee is pointer-free and width-identical, so the pointer widening is the
+whole job (same shape as `RECV_DATAGRAM`'s `Address`). **The rung's assertion is
+the implicit bind, not the send.** A successful `sendto` proves little; AFD only
+reaches `WarmSocketForBind` by dereferencing `RemoteAddress` for
+`Address[0].AddressType`, so a socket that comes back bound AF_INET with a real
+port is evidence the driver read the family through the widened pointer. The
+byte count covers the WSABUF stride separately, and the rung sends UNBOUND on
+purpose — binding first would skip the very dereference under test.
 
 Oracle: **`async32.exe`** (`Async32.c`, winlogon `TryStartWow64Async`) —
 overlapped ReadFile with event: `OVERLAPPED.Internal/InternalHigh` (the IOSB32)

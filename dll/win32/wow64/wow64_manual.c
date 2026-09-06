@@ -1277,8 +1277,15 @@ static NTSTATUS Wow64pFinishIosb(NTSTATUS St, HANDLE File,
  * async. That kills the dead-frame hazard outright (the kernel holds a
  * pointer into the GUEST's IOSB, which outlives this frame by construction),
  * so Event-based/polled overlapped I/O from guests is now allowed through.
- * A guest APC routine still can't be honored (no 64->32 user-APC dispatch
- * yet) — that stays a loud refusal. */
+ * A guest APC routine still can't be honored — that stays a loud refusal, but
+ * NOT because guest entry is missing: Wow64pBuildLoaderApcFrame already builds
+ * a KiUserApcDispatcher-ABI frame and runs on every guest thread start. What is
+ * missing is interception. The kernel's KiInitializeUserApc builds a 64-bit
+ * UAPC_FRAME aimed at the 64-bit dispatcher, so a guest's 32-bit routine passed
+ * through would be called as native x64; wow64.dll has to substitute its own
+ * host thunk as the NormalRoutine and carry the guest routine/context along,
+ * and the frame builder has to take its routine as a parameter instead of
+ * hardcoding the loader thunk. */
 typedef NTSTATUS (WINAPI *WOW64_RW_FN)(HANDLE, HANDLE, PVOID, PVOID, PVOID,
                                        PVOID, ULONG, PLARGE_INTEGER, PULONG);
 
@@ -1305,7 +1312,8 @@ static NTSTATUS Wow64pReadWriteFile(WOW64_RW_FN Fn, ULONG *a, const char *Who)
     if (a[2])
     {
         DbgPrint("[WOW64]   %s: guest ApcRoutine=%08lx is not supported yet "
-                 "(no 64->32 user-APC dispatch) — refusing\n", Who, a[2]);
+                 "(needs a host thunk standing in as the NormalRoutine) — "
+                 "refusing\n", Who, a[2]);
         return WOW64_STATUS_NOT_IMPLEMENTED;
     }
 
@@ -4198,13 +4206,15 @@ static NTSTATUS Wow64pIoControl(WOW64_IOCTL_FN Fn, ULONG *a, const char *Who)
      * IOSB we could offer the kernel was a host one on this frame; the kernel
      * now writes the GUEST's 8-byte block directly (Wow64pLatchIosb32 above), which
      * outlives us by construction. An APC routine is still refused — that needs
-     * 64->32 user-APC dispatch, which does not exist yet. AFD is inherently
+     * a host-side thunk to stand in as the kernel's NormalRoutine (see the
+     * M15b note above — the guest-entry half already exists). AFD is inherently
      * async and msafd always passes an Event, so this refusal was blocking
      * every socket operation a 32-bit guest could make. */
     if (a[2])
     {
         DbgPrint("[WOW64]   %s: guest ApcRoutine=%08lx is not supported yet "
-                 "(no 64->32 user-APC dispatch) — refusing\n", Who, a[2]);
+                 "(needs a host thunk standing in as the NormalRoutine) — "
+                 "refusing\n", Who, a[2]);
         return WOW64_STATUS_NOT_IMPLEMENTED;
     }
 

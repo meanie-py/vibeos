@@ -598,8 +598,41 @@ Field-manual § pointers hold the full writeups. **Update on state change.**
   unmarshalled path has no shadow and is genuinely async now. Blocking has one trap worth
   remembering: msafd's `SockEvent` is a SYNCHRONIZATION event, so the thunk's own wait consumes
   the very signal `MsafdWaitForAlert` is about to wait for — missing the re-signal is a guest
-  hang with no error printed anywhere. Still OPEN: a guest `ApcRoutine` (no 64->32 user-APC
-  dispatch).
+  hang with no error printed anywhere. `IOCTL_AFD_SEND_DATAGRAM` was the last refusal in this
+  family and is now marshalled too (see the entry below). Still OPEN: a guest `ApcRoutine`.
+- **A guest `ApcRoutine` is still refused, but NOT for the reason previously recorded — OPEN**
+  (2026-09-06). This entry said "no 64->32 user-APC dispatch"; that was written from the
+  refusal's own comment and is wrong. The guest-entry half EXISTS and is load-bearing:
+  `Wow64pBuildLoaderApcFrame` (`wow64.c`) builds a `KiUserApcDispatcher`-ABI frame and
+  `Wow64pKiUserApcDispatcher32` is resolved out of ntdll32 at startup, and that pair runs on
+  EVERY guest thread start (`Wow64pGuestThreadStart`), not on some experimental path. What is
+  actually missing is two smaller things. First, INTERCEPTION: the kernel's `KiInitializeUserApc`
+  builds a 64-bit `UAPC_FRAME` and points the trap frame at the 64-bit `KiUserApcDispatcher`, so
+  a guest's 32-bit `ApcRoutine` handed through would eventually be `call`ed as native x64 — x86
+  bytes executed as x86-64. wow64.dll needs to substitute its own host-side thunk as the
+  `NormalRoutine`, carrying the guest routine and context as arguments. Second, the frame builder
+  hardcodes `Wow64pLdrInitThunk32` at `[E+0]`; it needs the routine as a parameter. Neither is
+  architecture. Nothing on the ladder needs it today (msafd uses Events, not APCs), so it stays
+  a loud refusal by choice rather than by blockage — but whoever picks it up should not go
+  looking for machinery that is already there.
+- **FIXED (2026-09-06): `IOCTL_AFD_SEND_DATAGRAM` was the last refused AFD payload, so 32-bit
+  guests could not send UDP at all.** `AFD_SEND_INFO_UDP` is 56 -> 104 and the audit calls it
+  SEMANTIC because it embeds `TDI_REQUEST_SEND_DATAGRAM` and `TDI_CONNECTION_INFORMATION`.
+  Reading both consumers shrank the job a long way: `AfdPacketSocketWriteData` reads only
+  `BufferArray`, `BufferCount` and `TdiConnection.RemoteAddress`, and msafd's `WSPSendTo` fills
+  only those plus `AfdFlags` and `RemoteAddressLength`. **`TdiRequest` is written by NEITHER
+  side**, so it is carried as opaque zero padding — synthesizing a host-shaped `TDI_REQUEST`
+  would invent content nobody supplies and the driver would read it back as though the guest
+  had meant it. `RemoteAddress` points at a `TRANSPORT_ADDRESS` (LONG + `TA_ADDRESS`{USHORT,
+  USHORT, UCHAR[]}) which is pointer-free and width-identical, so widening the pointer is the
+  whole job, exactly as `RECV_DATAGRAM` already does for its `Address`. Three independent
+  witnesses agreed on 56/104: the bindgen types, a host layout program, and the audit baseline.
+  A NULL `RemoteAddress` is now refused because `AfdPacketSocketWriteData` dereferences it
+  unconditionally — a native i386 guest can still walk the kernel through that null deref, which
+  is a separate pre-existing hazard. Oracle: marshal32's new sendto rung, whose teeth are not
+  that `sendto` succeeded but that the socket comes back IMPLICITLY BOUND — AFD only reaches
+  `WarmSocketForBind` by dereferencing `RemoteAddress` for `Address[0].AddressType`, so AF_INET
+  plus a real port proves the driver read the family through the pointer we widened.
 - **msafd interprets a FAILED `AFD_SELECT` as success — upstream wart, OPEN but no longer
   reachable here** (2026-09-05, re-checked 2026-09-06). The `select()` = 5 on a single-socket
   `fd_set` is explained: `WSPSelect` never checks the IOCTL status before walking `PollInfo`, so
