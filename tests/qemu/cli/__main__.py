@@ -460,6 +460,16 @@ def build_parser() -> argparse.ArgumentParser:
         help="exit nonzero on any ratchet regression (default: report-only)",
     )
     cf.add_argument(
+        "--seed-asserts",
+        action="store_true",
+        help="with --repeat N (N>=3): add the failing-assertion identities to the "
+        "existing baseline rows WITHOUT touching their counts or status. An "
+        "identity every round that ran the test agreed on is written `assert`; "
+        "one they disagreed on is written `assert?` (bistable). This is how a "
+        "count-only baseline is upgraded to an identity floor — never a "
+        "wholesale --write-baseline, which re-rolls the counts from one boot",
+    )
+    cf.add_argument(
         "--smp",
         type=int,
         default=0,
