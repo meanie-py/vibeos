@@ -104,14 +104,16 @@ unsafe fn ExfWakePushLock(PushLock: PEX_PUSH_LOCK, mut OldValue: EX_PUSH_LOCK) {
     let mut OldIrql: KIRQL;
 
     loop {
-        debug_assert!(!OldValue.__bindgen_anon_1.__bindgen_anon_1.MultipleShared() != 0);
+        // C (ntoskrnl/ex/pushlock.c:87): `ASSERT(!OldValue.MultipleShared)`. The getter
+        // returns ULONG_PTR, so Rust's `!` is bitwise and the test could never be zero.
+        ntkrnl_sys::ASSERT!(OldValue.__bindgen_anon_1.__bindgen_anon_1.MultipleShared() == 0);
 
         while OldValue.__bindgen_anon_1.__bindgen_anon_1.Locked() != 0 {
             NewValue.__bindgen_anon_1.Value = OldValue.__bindgen_anon_1.Value & !EX_PUSH_LOCK_WAKING;
 
-            debug_assert!(NewValue.__bindgen_anon_1.__bindgen_anon_1.Waking() == 0);
-            debug_assert!(NewValue.__bindgen_anon_1.__bindgen_anon_1.Locked() != 0);
-            debug_assert!(NewValue.__bindgen_anon_1.__bindgen_anon_1.Waiting() != 0);
+            ntkrnl_sys::ASSERT!(NewValue.__bindgen_anon_1.__bindgen_anon_1.Waking() == 0);
+            ntkrnl_sys::ASSERT!(NewValue.__bindgen_anon_1.__bindgen_anon_1.Locked() != 0);
+            ntkrnl_sys::ASSERT!(NewValue.__bindgen_anon_1.__bindgen_anon_1.Waiting() != 0);
 
             NewValue.__bindgen_anon_1.Ptr = InterlockedCompareExchangePointer(
                 core::ptr::addr_of_mut!((*PushLock).__bindgen_anon_1.Ptr),
@@ -144,7 +146,7 @@ unsafe fn ExfWakePushLock(PushLock: PEX_PUSH_LOCK, mut OldValue: EX_PUSH_LOCK) {
         PreviousWaitBlock = (*WaitBlock).Previous;
         if ((*WaitBlock).Flags & EX_PUSH_LOCK_FLAGS_EXCLUSIVE == 0) || PreviousWaitBlock.is_null() {
             NewValue.__bindgen_anon_1.Value = 0;
-            debug_assert!(NewValue.__bindgen_anon_1.__bindgen_anon_1.Waking() == 0);
+            ntkrnl_sys::ASSERT!(NewValue.__bindgen_anon_1.__bindgen_anon_1.Waking() == 0);
 
             NewValue.__bindgen_anon_1.Ptr = InterlockedCompareExchangePointer(
                 core::ptr::addr_of_mut!((*PushLock).__bindgen_anon_1.Ptr),
@@ -160,8 +162,8 @@ unsafe fn ExfWakePushLock(PushLock: PEX_PUSH_LOCK, mut OldValue: EX_PUSH_LOCK) {
             (*FirstWaitBlock).Last = PreviousWaitBlock;
             (*WaitBlock).Previous = core::ptr::null_mut();
 
-            debug_assert!(FirstWaitBlock != WaitBlock);
-            debug_assert!((*PushLock).__bindgen_anon_1.__bindgen_anon_1.Waiting() != 0);
+            ntkrnl_sys::ASSERT!(FirstWaitBlock != WaitBlock);
+            ntkrnl_sys::ASSERT!((*PushLock).__bindgen_anon_1.__bindgen_anon_1.Waiting() != 0);
 
             InterlockedAndPointer(
                 core::ptr::addr_of_mut!((*PushLock).__bindgen_anon_1.Value) as *mut PVOID,
@@ -180,7 +182,7 @@ unsafe fn ExfWakePushLock(PushLock: PEX_PUSH_LOCK, mut OldValue: EX_PUSH_LOCK) {
     loop {
         PreviousWaitBlock = (*WaitBlock).Previous;
 
-        debug_assert!((*WaitBlock).Signaled == 0);
+        ntkrnl_sys::ASSERT!((*WaitBlock).Signaled == 0);
 
         #[cfg(debug_assertions)]
         {
@@ -239,8 +241,8 @@ unsafe fn ExpOptimizePushLockList(PushLock: PEX_PUSH_LOCK, mut OldValue: EX_PUSH
 
         NewValue.__bindgen_anon_1.Value = OldValue.__bindgen_anon_1.Value & !EX_PUSH_LOCK_WAKING;
 
-        debug_assert!(NewValue.__bindgen_anon_1.__bindgen_anon_1.Locked() != 0);
-        debug_assert!(NewValue.__bindgen_anon_1.__bindgen_anon_1.Waking() == 0);
+        ntkrnl_sys::ASSERT!(NewValue.__bindgen_anon_1.__bindgen_anon_1.Locked() != 0);
+        ntkrnl_sys::ASSERT!(NewValue.__bindgen_anon_1.__bindgen_anon_1.Waking() == 0);
 
         NewValue.__bindgen_anon_1.Ptr = InterlockedCompareExchangePointer(
             core::ptr::addr_of_mut!((*PushLock).__bindgen_anon_1.Ptr),
@@ -334,7 +336,7 @@ fastcall_export! {
     let mut NewValue: EX_PUSH_LOCK = core::mem::zeroed();
     let mut OldValue: EX_PUSH_LOCK;
 
-    debug_assert!((pWaitBlock as ULONG_PTR & 0xF) == 0);
+    ntkrnl_sys::ASSERT!((pWaitBlock as ULONG_PTR & 0xF) == 0);
 
     (*WaitBlock).Flags = EX_PUSH_LOCK_FLAGS_WAIT;
 
@@ -369,7 +371,7 @@ fastcall_export! {
     loop {
         if OldValue.__bindgen_anon_1.__bindgen_anon_1.Locked() == 0 {
             NewValue.__bindgen_anon_1.Value = OldValue.__bindgen_anon_1.Value | EX_PUSH_LOCK_LOCK;
-            debug_assert!(NewValue.__bindgen_anon_1.__bindgen_anon_1.Locked() != 0);
+            ntkrnl_sys::ASSERT!(NewValue.__bindgen_anon_1.__bindgen_anon_1.Locked() != 0);
 
             if InterlockedCompareExchangePointer(
                 core::ptr::addr_of_mut!((*PushLock).__bindgen_anon_1.Ptr),
@@ -426,8 +428,8 @@ fastcall_export! {
                 (*WaitBlock).PushLock = PushLock;
             }
 
-            debug_assert!(NewValue.__bindgen_anon_1.__bindgen_anon_1.Waiting() != 0);
-            debug_assert!(NewValue.__bindgen_anon_1.__bindgen_anon_1.Locked() != 0);
+            ntkrnl_sys::ASSERT!(NewValue.__bindgen_anon_1.__bindgen_anon_1.Waiting() != 0);
+            ntkrnl_sys::ASSERT!(NewValue.__bindgen_anon_1.__bindgen_anon_1.Locked() != 0);
 
             TempValue = NewValue;
             NewValue.__bindgen_anon_1.Ptr = InterlockedCompareExchangePointer(
@@ -490,10 +492,10 @@ fastcall_export! {
                     0i8,
                 );
                 synctrace_pl_satisfied(PushLock as _);
-                debug_assert!((*WaitBlock).Signaled != 0);
+                ntkrnl_sys::ASSERT!((*WaitBlock).Signaled != 0);
             }
 
-            debug_assert!((*WaitBlock).ShareCount == 0);
+            ntkrnl_sys::ASSERT!((*WaitBlock).ShareCount == 0);
 
             OldValue = NewValue;
         }
@@ -521,7 +523,7 @@ fastcall_export! {
                 NewValue.__bindgen_anon_1.Value = OldValue.__bindgen_anon_1.Value | EX_PUSH_LOCK_LOCK;
             }
 
-            debug_assert!(NewValue.__bindgen_anon_1.__bindgen_anon_1.Locked() != 0);
+            ntkrnl_sys::ASSERT!(NewValue.__bindgen_anon_1.__bindgen_anon_1.Locked() != 0);
 
             NewValue.__bindgen_anon_1.Ptr = InterlockedCompareExchangePointer(
                 core::ptr::addr_of_mut!((*PushLock).__bindgen_anon_1.Ptr),
@@ -562,7 +564,7 @@ fastcall_export! {
                     | (WaitBlock as PushLockVal);
             }
 
-            debug_assert!(NewValue.__bindgen_anon_1.__bindgen_anon_1.Waiting() != 0);
+            ntkrnl_sys::ASSERT!(NewValue.__bindgen_anon_1.__bindgen_anon_1.Waiting() != 0);
 
             #[cfg(debug_assertions)]
             {
@@ -634,10 +636,10 @@ fastcall_export! {
                     0i8,
                 );
                 synctrace_pl_satisfied(PushLock as _);
-                debug_assert!((*WaitBlock).Signaled != 0);
+                ntkrnl_sys::ASSERT!((*WaitBlock).Signaled != 0);
             }
 
-            debug_assert!((*WaitBlock).ShareCount == 0);
+            ntkrnl_sys::ASSERT!((*WaitBlock).ShareCount == 0);
         }
     }
     }
@@ -651,7 +653,7 @@ fastcall_export! {
     let mut WaitBlock: PEX_PUSH_LOCK_WAIT_BLOCK;
     let mut LastWaitBlock: PEX_PUSH_LOCK_WAIT_BLOCK;
 
-    debug_assert!(OldValue.__bindgen_anon_1.__bindgen_anon_1.Locked() != 0);
+    ntkrnl_sys::ASSERT!(OldValue.__bindgen_anon_1.__bindgen_anon_1.Locked() != 0);
 
     loop {
         if OldValue.__bindgen_anon_1.__bindgen_anon_1.Waiting() == 0 {
@@ -689,7 +691,7 @@ fastcall_export! {
                 }
 
                 if (*WaitBlock).ShareCount > 0 {
-                    debug_assert!((*WaitBlock).Flags & EX_PUSH_LOCK_FLAGS_EXCLUSIVE != 0);
+                    ntkrnl_sys::ASSERT!((*WaitBlock).Flags & EX_PUSH_LOCK_FLAGS_EXCLUSIVE != 0);
 
                     if InterlockedDecrement(core::ptr::addr_of_mut!((*WaitBlock).ShareCount))
                         > 0
@@ -705,11 +707,9 @@ fastcall_export! {
                     NewValue.__bindgen_anon_1.__bindgen_anon_1.set_MultipleShared(0);
                     NewValue.__bindgen_anon_1.__bindgen_anon_1.set_Locked(0);
 
-                    debug_assert!(
-                        NewValue.__bindgen_anon_1.__bindgen_anon_1.Waking() != 0
+                    ntkrnl_sys::ASSERT!(NewValue.__bindgen_anon_1.__bindgen_anon_1.Waking() != 0
                             && NewValue.__bindgen_anon_1.__bindgen_anon_1.Locked() == 0
-                            && NewValue.__bindgen_anon_1.__bindgen_anon_1.MultipleShared() == 0
-                    );
+                            && NewValue.__bindgen_anon_1.__bindgen_anon_1.MultipleShared() == 0);
 
                     NewValue.__bindgen_anon_1.Ptr = InterlockedCompareExchangePointer(
                         core::ptr::addr_of_mut!((*PushLock).__bindgen_anon_1.Ptr),
@@ -725,11 +725,9 @@ fastcall_export! {
                     NewValue.__bindgen_anon_1.__bindgen_anon_1.set_Locked(0);
                     NewValue.__bindgen_anon_1.__bindgen_anon_1.set_Waking(1);
 
-                    debug_assert!(
-                        NewValue.__bindgen_anon_1.__bindgen_anon_1.Waking() != 0
+                    ntkrnl_sys::ASSERT!(NewValue.__bindgen_anon_1.__bindgen_anon_1.Waking() != 0
                             && NewValue.__bindgen_anon_1.__bindgen_anon_1.Locked() == 0
-                            && NewValue.__bindgen_anon_1.__bindgen_anon_1.MultipleShared() == 0
-                    );
+                            && NewValue.__bindgen_anon_1.__bindgen_anon_1.MultipleShared() == 0);
 
                     WakeValue = NewValue;
                     NewValue.__bindgen_anon_1.Ptr = InterlockedCompareExchangePointer(
@@ -792,8 +790,8 @@ fastcall_export! {
             WaitBlock = (*WaitBlock).Next;
         }
 
-        debug_assert!((*WaitBlock).ShareCount > 0);
-        debug_assert!((*WaitBlock).Flags & EX_PUSH_LOCK_FLAGS_EXCLUSIVE != 0);
+        ntkrnl_sys::ASSERT!((*WaitBlock).ShareCount > 0);
+        ntkrnl_sys::ASSERT!((*WaitBlock).Flags & EX_PUSH_LOCK_FLAGS_EXCLUSIVE != 0);
 
         if InterlockedDecrement(core::ptr::addr_of_mut!((*WaitBlock).ShareCount)) > 0 {
             return;
@@ -806,11 +804,9 @@ fastcall_export! {
             NewValue.__bindgen_anon_1.__bindgen_anon_1.set_MultipleShared(0);
             NewValue.__bindgen_anon_1.__bindgen_anon_1.set_Locked(0);
 
-            debug_assert!(
-                NewValue.__bindgen_anon_1.__bindgen_anon_1.Waking() != 0
+            ntkrnl_sys::ASSERT!(NewValue.__bindgen_anon_1.__bindgen_anon_1.Waking() != 0
                     && NewValue.__bindgen_anon_1.__bindgen_anon_1.Locked() == 0
-                    && NewValue.__bindgen_anon_1.__bindgen_anon_1.MultipleShared() == 0
-            );
+                    && NewValue.__bindgen_anon_1.__bindgen_anon_1.MultipleShared() == 0);
 
             NewValue.__bindgen_anon_1.Ptr = InterlockedCompareExchangePointer(
                 core::ptr::addr_of_mut!((*PushLock).__bindgen_anon_1.Ptr),
@@ -826,11 +822,9 @@ fastcall_export! {
             NewValue.__bindgen_anon_1.__bindgen_anon_1.set_Locked(0);
             NewValue.__bindgen_anon_1.__bindgen_anon_1.set_Waking(1);
 
-            debug_assert!(
-                NewValue.__bindgen_anon_1.__bindgen_anon_1.Waking() != 0
+            ntkrnl_sys::ASSERT!(NewValue.__bindgen_anon_1.__bindgen_anon_1.Waking() != 0
                     && NewValue.__bindgen_anon_1.__bindgen_anon_1.Locked() == 0
-                    && NewValue.__bindgen_anon_1.__bindgen_anon_1.MultipleShared() == 0
-            );
+                    && NewValue.__bindgen_anon_1.__bindgen_anon_1.MultipleShared() == 0);
 
             WakeValue = NewValue;
             NewValue.__bindgen_anon_1.Ptr = InterlockedCompareExchangePointer(
@@ -856,18 +850,14 @@ fastcall_export! {
     let mut OldValue = *PushLock;
 
     loop {
-        debug_assert!(OldValue.__bindgen_anon_1.__bindgen_anon_1.Locked() != 0);
-        debug_assert!(
-            OldValue.__bindgen_anon_1.__bindgen_anon_1.Waiting() != 0 || OldValue.__bindgen_anon_1.__bindgen_anon_1.Shared() == 0
-        );
+        ntkrnl_sys::ASSERT!(OldValue.__bindgen_anon_1.__bindgen_anon_1.Locked() != 0);
+        ntkrnl_sys::ASSERT!(OldValue.__bindgen_anon_1.__bindgen_anon_1.Waiting() != 0 || OldValue.__bindgen_anon_1.__bindgen_anon_1.Shared() == 0);
 
         if (OldValue.__bindgen_anon_1.__bindgen_anon_1.Waiting() != 0) && (OldValue.__bindgen_anon_1.__bindgen_anon_1.Waking() == 0)
         {
             NewValue.__bindgen_anon_1.Value = (OldValue.__bindgen_anon_1.Value & !EX_PUSH_LOCK_LOCK) | EX_PUSH_LOCK_WAKING;
 
-            debug_assert!(
-                NewValue.__bindgen_anon_1.__bindgen_anon_1.Waking() != 0 && NewValue.__bindgen_anon_1.__bindgen_anon_1.Locked() == 0
-            );
+            ntkrnl_sys::ASSERT!(NewValue.__bindgen_anon_1.__bindgen_anon_1.Waking() != 0 && NewValue.__bindgen_anon_1.__bindgen_anon_1.Locked() == 0);
 
             WakeValue = NewValue;
             NewValue.__bindgen_anon_1.Ptr = InterlockedCompareExchangePointer(
@@ -883,10 +873,8 @@ fastcall_export! {
         } else {
             NewValue.__bindgen_anon_1.Value = OldValue.__bindgen_anon_1.Value & !EX_PUSH_LOCK_LOCK;
 
-            debug_assert!(
-                NewValue.__bindgen_anon_1.__bindgen_anon_1.Waking() != 0
-                    || NewValue.__bindgen_anon_1.__bindgen_anon_1.Waiting() == 0
-            );
+            ntkrnl_sys::ASSERT!(NewValue.__bindgen_anon_1.__bindgen_anon_1.Waking() != 0
+                    || NewValue.__bindgen_anon_1.__bindgen_anon_1.Waiting() == 0);
 
             NewValue.__bindgen_anon_1.Ptr = InterlockedCompareExchangePointer(
                 core::ptr::addr_of_mut!((*PushLock).__bindgen_anon_1.Ptr),

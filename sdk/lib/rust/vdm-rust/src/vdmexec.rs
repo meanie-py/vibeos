@@ -78,8 +78,8 @@ pub unsafe extern "system" fn VdmSwapContext(
     OutContext: PCONTEXT,
     InContext: PCONTEXT,
 ) {
-    debug_assert!(KeGetCurrentIrql() == APC_LEVEL);
-    debug_assert!((*TrapFrame).DbgArgMark == 0xBADB0D00);
+    ntkrnl_sys::ASSERT!(KeGetCurrentIrql() == APC_LEVEL);
+    ntkrnl_sys::ASSERT!((*TrapFrame).DbgArgMark == 0xBADB0D00);
 
     if (*TrapFrame).EFlags & EFLAGS_V86_MASK != 0 {
         (*OutContext).SegGs = (*TrapFrame).V86Gs;
@@ -180,8 +180,8 @@ pub unsafe extern "system" fn VdmpStartExecution() -> NTSTATUS {
 
     let Interrupts = ((*VdmTib).VdmContext.EFlags & EFLAGS_INTERRUPT_MASK) != 0;
 
-    debug_assert!(*VdmState == 0);
-    debug_assert!((*VdmTib).VdmContext.EFlags & EFLAGS_V86_MASK != 0);
+    ntkrnl_sys::ASSERT!(*VdmState == 0);
+    ntkrnl_sys::ASSERT!((*VdmTib).VdmContext.EFlags & EFLAGS_V86_MASK != 0);
 
     if KeI386VirtualIntExtensions != 0 && ((*VdmTib).VdmContext.EFlags & EFLAGS_V86_MASK != 0) {
         if Interrupts {
@@ -214,10 +214,8 @@ pub unsafe extern "system" fn VdmpStartExecution() -> NTSTATUS {
 
 #[no_mangle]
 pub unsafe extern "system" fn VdmEndExecution(TrapFrame: PKTRAP_FRAME, VdmTib: PVDM_TIB) {
-    debug_assert!(
-        ((*TrapFrame).EFlags & EFLAGS_V86_MASK != 0)
-            || ((*TrapFrame).SegCs != (KGDT_R3_CODE | RPL_MASK) as ULONG)
-    );
+    ntkrnl_sys::ASSERT!(((*TrapFrame).EFlags & EFLAGS_V86_MASK != 0)
+            || ((*TrapFrame).SegCs != (KGDT_R3_CODE | RPL_MASK) as ULONG));
 
     let mut OldIrql: KIRQL = 0;
     // [guard] KeRaiseIrql(APC_LEVEL, &mut OldIrql);
@@ -255,7 +253,7 @@ pub unsafe extern "system" fn VdmDispatchBop(TrapFrame: PKTRAP_FRAME) -> BOOLEAN
 
         if *(Eip as *const u16) == 0xC4C4 {
             if *Eip.offset(2) == 0x50 {
-                debug_assert!(false);
+                ntkrnl_sys::ASSERT!(false);
             }
 
             VdmBopCount += 1;
@@ -271,7 +269,7 @@ pub unsafe extern "system" fn VdmDispatchBop(TrapFrame: PKTRAP_FRAME) -> BOOLEAN
             return 0u8;
         }
     } else {
-        debug_assert!(false);
+        ntkrnl_sys::ASSERT!(false);
     }
 
     1u8
@@ -285,7 +283,7 @@ pub unsafe extern "system" fn VdmDispatchPageFault(TrapFrame: PKTRAP_FRAME) -> B
         return 0u8;
     }
 
-    debug_assert!((*TrapFrame).EFlags & EFLAGS_V86_MASK != 0);
+    ntkrnl_sys::ASSERT!((*TrapFrame).EFlags & EFLAGS_V86_MASK != 0);
 
     (*VdmTib).EventInfo.Event = VdmMemAccess;
     (*VdmTib).EventInfo.InstructionSize = 0;

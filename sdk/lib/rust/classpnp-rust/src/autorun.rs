@@ -192,6 +192,7 @@ pub static mut StoragePredictFailureEventGuid: GUID = _GUID {
 // ClasspScreenOff: single no_mangle definition lives in globals.rs — a local twin
 // here split-brained against power.rs's writes (screen-off never seen). Import it.
 use crate::types::ClasspScreenOff;
+use ntkrnl_sys::ddk::RtlAssert;
 
 pub static mut BreakOnMcnDisable: ULONG = FALSE as ULONG;
 
@@ -347,7 +348,7 @@ pub unsafe extern "C" fn ClasspInterpretGesnData(
             (*FdoExtension).__bindgen_anon_1.__bindgen_anon_1.as_ref().DeviceObject,
         );
     }
-    debug_assert!(dataLength == 4, "dataLength == 4");
+    ntkrnl_sys::ASSERT!(dataLength == 4, "dataLength == 4");
     if (*(*Header).ClassEventData.as_ptr() as i32 & 0xf) == 0 {
         return status;
     }
@@ -369,10 +370,7 @@ pub unsafe extern "C" fn ClasspInterpretGesnData(
                             .as_ptr() as PCHAR,
                         (*FdoExtension).__bindgen_anon_1.__bindgen_anon_1.as_ref().DeviceObject,
                     );
-                    debug_assert!(
-                        CountOfSetBitsUChar((*info).Gesn.EventMask) != 1,
-                        "CountOfSetBitsUChar(info->Gesn.EventMask) != 1"
-                    );
+                    ntkrnl_sys::ASSERT!(CountOfSetBitsUChar((*info).Gesn.EventMask) != 1, "CountOfSetBitsUChar(info->Gesn.EventMask) != 1");
                     (*info).Gesn.NoChangeEventMask |= OP_CHANGE_MASK;
                     (*info).Gesn.EventMask &= !OP_CHANGE_MASK;
                     (*info).Gesn.HackEventMask = 1u8;
@@ -459,7 +457,7 @@ pub unsafe extern "C" fn ClasspInterpretGesnData(
                                 );
                                 srbPtr = srbEx as PSCSI_REQUEST_BLOCK;
                             } else {
-                                debug_assert!(0i32 == 0);
+                                ntkrnl_sys::ASSERT!(0i32 == 0);
                                 srb.CdbLength = 6u8;
                                 srb.Length = core::mem::size_of::<SCSI_REQUEST_BLOCK>() as USHORT;
                                 srb.SrbStatus =
@@ -1412,7 +1410,12 @@ pub unsafe extern "C" fn ClasspInitializePolling(
             b"NTDDK: Pageable code called at IRQL > APC_LEVEL (%d)\n\0".as_ptr() as *const u8 as PCSTR,
             KeGetCurrentIrql() as i32,
         );
-        core::panic!("Pageable code called above APC_LEVEL");
+        RtlAssert(
+            b"FALSE\0".as_ptr() as *mut core::ffi::c_void,
+            b"autorun.rs\0".as_ptr() as *mut core::ffi::c_void,
+            line!(),
+            b"Pageable code called at IRQL > APC_LEVEL\0".as_ptr() as *mut i8,
+        );
     }
 
     if !(*FdoExtension).MediaChangeDetectionInfo.is_null() {
@@ -1505,16 +1508,36 @@ pub unsafe extern "C" fn ClasspInitializePolling(
                 (*FdoExtension).__bindgen_anon_1.__bindgen_anon_1.as_ref().DeviceObject as *mut c_void,
             );
             if (*info).Gesn.Supported == 0 {
-                core::panic!("assert: info->Gesn.Supported");
+                RtlAssert(
+                    b"info->Gesn.Supported\0".as_ptr() as *mut core::ffi::c_void,
+                    b"autorun.rs\0".as_ptr() as *mut core::ffi::c_void,
+                    line!(),
+                    core::ptr::null_mut::<i8>(),
+                );
             }
             if (*info).Gesn.Buffer.is_null() {
-                core::panic!("assert: info->Gesn.Buffer != NULL");
+                RtlAssert(
+                    b"info->Gesn.Buffer != NULL\0".as_ptr() as *mut core::ffi::c_void,
+                    b"autorun.rs\0".as_ptr() as *mut core::ffi::c_void,
+                    line!(),
+                    core::ptr::null_mut::<i8>(),
+                );
             }
             if (*info).Gesn.BufferSize == 0 {
-                core::panic!("assert: info->Gesn.BufferSize != 0");
+                RtlAssert(
+                    b"info->Gesn.BufferSize != 0\0".as_ptr() as *mut core::ffi::c_void,
+                    b"autorun.rs\0".as_ptr() as *mut core::ffi::c_void,
+                    line!(),
+                    core::ptr::null_mut::<i8>(),
+                );
             }
             if (*info).Gesn.EventMask == 0 {
-                core::panic!("assert: info->Gesn.EventMask != 0");
+                RtlAssert(
+                    b"info->Gesn.EventMask != 0\0".as_ptr() as *mut core::ffi::c_void,
+                    b"autorun.rs\0".as_ptr() as *mut core::ffi::c_void,
+                    line!(),
+                    core::ptr::null_mut::<i8>(),
+                );
             }
             GesnSupported = 1u8;
         } else {
@@ -1529,16 +1552,36 @@ pub unsafe extern "C" fn ClasspInitializePolling(
 
     if GesnSupported == 0 {
         if (*info).Gesn.Supported != 0 {
-            core::panic!("assert: info->Gesn.Supported == 0");
+            RtlAssert(
+                b"info->Gesn.Supported == 0\0".as_ptr() as *mut core::ffi::c_void,
+                b"autorun.rs\0".as_ptr() as *mut core::ffi::c_void,
+                line!(),
+                core::ptr::null_mut::<i8>(),
+            );
         }
         if !(*info).Gesn.Buffer.is_null() {
-            core::panic!("assert: info->Gesn.Buffer == NULL");
+            RtlAssert(
+                b"info->Gesn.Buffer == NULL\0".as_ptr() as *mut core::ffi::c_void,
+                b"autorun.rs\0".as_ptr() as *mut core::ffi::c_void,
+                line!(),
+                core::ptr::null_mut::<i8>(),
+            );
         }
         if (*info).Gesn.BufferSize != 0 {
-            core::panic!("assert: info->Gesn.BufferSize == 0");
+            RtlAssert(
+                b"info->Gesn.BufferSize == 0\0".as_ptr() as *mut core::ffi::c_void,
+                b"autorun.rs\0".as_ptr() as *mut core::ffi::c_void,
+                line!(),
+                core::ptr::null_mut::<i8>(),
+            );
         }
         if (*info).Gesn.EventMask != 0 {
-            core::panic!("assert: info->Gesn.EventMask == 0");
+            RtlAssert(
+                b"info->Gesn.EventMask == 0\0".as_ptr() as *mut core::ffi::c_void,
+                b"autorun.rs\0".as_ptr() as *mut core::ffi::c_void,
+                line!(),
+                core::ptr::null_mut::<i8>(),
+            );
         }
         (*info).Gesn.Supported = 0u8;
     }
@@ -2857,15 +2900,15 @@ pub unsafe extern "system" fn ClasspTimerTick(
     let fdo_extension = DeferredContext as PFUNCTIONAL_DEVICE_EXTENSION;
     let _ = (Dpc, SystemArgument1, SystemArgument2);
 
-    assert!(!fdo_extension.is_null());
+    ntkrnl_sys::ASSERT!(!fdo_extension.is_null());
 
     let common_extension = core::ptr::addr_of_mut!((*fdo_extension).__bindgen_anon_1.CommonExtension);
     let device_object = (*fdo_extension).__bindgen_anon_1.__bindgen_anon_1.as_ref().DeviceObject;
-    assert!((*common_extension).as_ref().__bindgen_anon_1.IsFdo() != 0u8);
+    ntkrnl_sys::ASSERT!((*common_extension).as_ref().__bindgen_anon_1.IsFdo() != 0u8);
 
     let is_removed = ClassAcquireRemoveLockR(device_object, ClasspTimerTick as *mut core::ffi::c_void as PIRP);
 
-    assert!(is_removed != REMOVE_COMPLETE);
+    ntkrnl_sys::ASSERT!(is_removed != REMOVE_COMPLETE);
 
     if is_removed == 0 {
         let info = (*fdo_extension).FailurePredictionInfo;
@@ -3024,7 +3067,7 @@ pub unsafe extern "C" fn ClasspEnableTimer(
         fdoData = (*FdoExtension).PrivateFdoData;
     }
     if !fdoData.is_null() {
-        debug_assert!((*fdoData).TimerInitialized != 0);
+        ntkrnl_sys::ASSERT!((*fdoData).TimerInitialized != 0);
         if (*fdoData).TimerInitialized == 0 {
             let status = ClasspInitializeTimer(FdoExtension);
             if status < 0 {
@@ -3422,9 +3465,9 @@ pub unsafe extern "C" fn ClasspFailurePredictionPeriodMissed(
     let mut missedPeriod: BOOLEAN = 0u8;
 
     // NT_ASSERT
-    assert!(!FdoExtension.is_null());
-    assert!(!(*FdoExtension).FailurePredictionInfo.is_null());
-    assert!(
+    ntkrnl_sys::ASSERT!(!FdoExtension.is_null());
+    ntkrnl_sys::ASSERT!(!(*FdoExtension).FailurePredictionInfo.is_null());
+    ntkrnl_sys::ASSERT!(
         (*(*FdoExtension).FailurePredictionInfo).Method as u32
             != _PREDICT_FAILURE_METHOD_FailurePredictionNone as u32
     );

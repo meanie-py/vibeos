@@ -319,9 +319,6 @@ const SPY_RESULT_OK: INT = 0x0001;
 // Lightweight debug-channel stubs (WINE_DEFAULT_DEBUG_CHANNEL). These are
 // no-ops; the C ERR/WARN/TRACE compile to debug-channel calls.
 // ─────────────────────────────────────────────────────────────────────────────
-macro_rules! ERR  { ($($t:tt)*) => {{ }}; }
-macro_rules! WARN { ($($t:tt)*) => {{ }}; }
-macro_rules! TRACE { ($($t:tt)*) => {{ }}; }
 
 // ─────────────────────────────────────────────────────────────────────────────
 // file-scope tables / globals

@@ -294,7 +294,7 @@ pub unsafe extern "system" fn ExCompareExchangeCallBack(
 }
 
 unsafe extern "system" fn ExpDeleteCallback(Object: PVOID) {
-    debug_assert!(IsListEmpty(core::ptr::addr_of_mut!(
+    ntkrnl_sys::ASSERT!(IsListEmpty(core::ptr::addr_of_mut!(
         (*(Object as *mut _CALLBACK_OBJECT)).RegisteredCallbacks
     )));
 }

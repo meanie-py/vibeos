@@ -596,7 +596,7 @@ unsafe extern "C" fn SHELL_ArgifyW(
                             pv,
                         ) as DWORD;
                         if chars >= ARRAY_SIZE!(buf) {
-                            ERR!(b"pidl format buffer too small!\n".as_ptr() as *const u8);
+                            ERR!("pidl format buffer too small!\n");
                         }
                         used += chars;
                         if used < len {
@@ -2411,7 +2411,7 @@ unsafe extern "C" fn SHELL_translate_idlist(
         if buffer[0] == ':' as u16 && buffer[1] == ':' as u16 {
             if strlenW(buffer.as_ptr()) + 1 > (parametersLen) as usize {
                 ERR!(
-                    b"parameters len exceeds buffer size (%i > %i), truncating\n\0".as_ptr() as *const i8,
+                    "parameters len exceeds buffer size (%i > %i), truncating\n",
                     lstrlenW(buffer.as_ptr()) + 1,
                     parametersLen,
                 );
@@ -2419,7 +2419,7 @@ unsafe extern "C" fn SHELL_translate_idlist(
             lstrcpynW(wszParameters, buffer.as_ptr(), (parametersLen) as i32);
             if strlenW(CPP_COM_WSTR_AB68B18B313D.as_ptr()) > (dwApplicationNameLen) as usize {
                 ERR!(
-                    b"application len exceeds buffer size (%i), truncating\n\0".as_ptr() as *const i8,
+                    "application len exceeds buffer size (%i), truncating\n",
                     dwApplicationNameLen,
                 );
             }
@@ -2467,7 +2467,7 @@ unsafe extern "C" fn SHELL_translate_idlist(
                 );
                 if resultLen > dwApplicationNameLen {
                     ERR!(
-                        b"Argify buffer not large enough... truncating\n\0".as_ptr() as *const i8,
+                        "Argify buffer not large enough... truncating\n",
                     );
                 }
                 appKnownSingular = (FALSE) as u8;

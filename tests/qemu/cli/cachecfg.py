@@ -139,6 +139,10 @@ def parse_sccache_json(text: str) -> dict:
         "hits": hits,
         "misses": misses,
         "hit_rate": (hits / denom) if denom else 0.0,
+        "non_cacheable": _total(s.get("requests_not_cacheable", 0)),
+        "non_cacheable_reasons": s.get("not_cached", {}),
+        "cache_errors": _total(s.get("cache_errors", 0)),
+        "compilations": _total(s.get("compilations", 0)),
     }
 
 

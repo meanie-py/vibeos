@@ -6,8 +6,6 @@ use crate::k32_externs::{CreateFileW, CloseHandle, GetLastError, SetLastError, B
 pub const STATUS_REQUEST_ABORTED: NTSTATUS = 0xC000_0240u32 as NTSTATUS;
 
 // DEBUG_CHANNEL TRACE/WARN are no-ops here (NDEBUG).
-macro_rules! TRACE { ($($arg:tt)*) => {} }
-macro_rules! WARN  { ($($arg:tt)*) => {} }
 
 // kernel32.h flags for PrivCopyFileExW && BasepCopyFileExW
 pub const BASEP_COPY_REPLACE: DWORD = 0x200;

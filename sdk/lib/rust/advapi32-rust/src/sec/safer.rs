@@ -43,7 +43,7 @@ pub unsafe extern "system" fn SaferIdentifyLevel(
     }
 
     FIXME!(
-        b"(%lu, %p, %p, %p) stub\n\0".as_ptr() as *const i8,
+        "(%lu, %p, %p, %p) stub\n",
         dwNumProperties,
         pCodeProperties,
         pLevelHandle,
@@ -85,7 +85,7 @@ pub unsafe extern "system" fn SaferComputeTokenFromLevel(
     pReserved: PVOID,
 ) -> BOOL {
     FIXME!(
-        b"(%p, %p, %p, 0x%lx, %p) stub\n\0".as_ptr() as PCHAR,
+        "(%p, %p, %p, 0x%lx, %p) stub\n",
         LevelHandle,
         InAccessToken,
         OutAccessToken,

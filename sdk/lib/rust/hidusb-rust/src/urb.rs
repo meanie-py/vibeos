@@ -62,7 +62,7 @@ pub unsafe fn HidUsb_GetInputInterruptInterfaceHandle(
     //
     // sanity check
     //
-    debug_assert!((*InterfaceInformation).NumberOfPipes != 0);
+    ntkrnl_sys::ASSERT!((*InterfaceInformation).NumberOfPipes != 0);
 
     Index = 0;
     while Index < (*InterfaceInformation).NumberOfPipes {
@@ -175,10 +175,10 @@ pub unsafe fn HidUsb_ResetInterruptPipe(DeviceObject: PDEVICE_OBJECT) -> NTSTATU
     //
     // get interrupt pipe handle
     //
-    debug_assert!(!(*HidDeviceExtension).InterfaceInfo.is_null());
+    ntkrnl_sys::ASSERT!(!(*HidDeviceExtension).InterfaceInfo.is_null());
     PipeInformation = HidUsb_GetInputInterruptInterfaceHandle((*HidDeviceExtension).InterfaceInfo);
-    debug_assert!(!PipeInformation.is_null());
-    debug_assert!(!(*PipeInformation).PipeHandle.is_null());
+    ntkrnl_sys::ASSERT!(!PipeInformation.is_null());
+    ntkrnl_sys::ASSERT!(!(*PipeInformation).PipeHandle.is_null());
 
     //
     // allocate urb
@@ -243,8 +243,8 @@ pub unsafe fn HidUsb_AbortPipe(DeviceObject: PDEVICE_OBJECT) -> NTSTATUS { unsaf
     // get pipe information
     //
     PipeInformation = HidUsb_GetInputInterruptInterfaceHandle((*HidDeviceExtension).InterfaceInfo);
-    debug_assert!(!PipeInformation.is_null());
-    debug_assert!(!(*PipeInformation).PipeHandle.is_null());
+    ntkrnl_sys::ASSERT!(!PipeInformation.is_null());
+    ntkrnl_sys::ASSERT!(!(*PipeInformation).PipeHandle.is_null());
 
     //
     // init urb
@@ -391,7 +391,7 @@ pub unsafe extern "system" fn HidUsb_ResetWorkerRoutine(
     //
     // cleanup
     //
-    debug_assert!(KeGetCurrentIrql() == PASSIVE_LEVEL);
+    ntkrnl_sys::ASSERT!(KeGetCurrentIrql() == PASSIVE_LEVEL);
     IoFreeWorkItem((*ResetContext).WorkItem);
     IoCompleteRequest((*ResetContext).Irp, IO_NO_INCREMENT);
     ExFreePoolWithTag(ResetContext as PVOID, HIDUSB_TAG);

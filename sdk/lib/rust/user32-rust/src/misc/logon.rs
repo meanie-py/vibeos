@@ -31,7 +31,6 @@ extern "C" {
 // WINE_DEFAULT_DEBUG_CHANNEL(user32) - debug channel macro, no Rust equivalent
 
 // ERR(...) — ReactOS debug print; no-op in the cohab build.
-macro_rules! ERR { ($($t:tt)*) => {{ }}; }
 
 // csrmsg.h: CSR_CREATE_API_NUMBER(ServerId, ApiId) := (CSR_API_NUMBER)((ServerId<<16)|ApiId).
 #[inline]
@@ -83,7 +82,7 @@ pub unsafe extern "system" fn RegisterLogonProcess(dwProcessId: DWORD, bRegister
         );
 
         if !NT_SUCCESS(ApiMessage.Status) {
-            ERR!(b"Failed to register logon process with CSRSS\n\0".as_ptr() as *const i8);
+            ERR!("Failed to register logon process with CSRSS\n");
             UserSetLastNTError(ApiMessage.Status);
         }
     }

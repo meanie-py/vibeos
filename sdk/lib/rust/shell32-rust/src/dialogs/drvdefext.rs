@@ -1607,7 +1607,7 @@ pub unsafe fn CDrvDefExt_ExtraPageProc_body(this: *mut CDrvDefExt, hwndDlg: HWND
                         {
                             unsafe {
                                 ERR!(
-                                    "Failed to create defrag process {}\n\0",
+                                    "Failed to create defrag process {}\n",
                                     wszCmd.as_ptr()
                                 )
                             };
@@ -1636,7 +1636,7 @@ pub unsafe fn CDrvDefExt_ExtraPageProc_body(this: *mut CDrvDefExt, hwndDlg: HWND
                         {
                             unsafe {
                                 ERR!(
-                                    "Failed to create backup process {}\n\0",
+                                    "Failed to create backup process {}\n",
                                     wszBuf.as_ptr()
                                 )
                             };

@@ -11,6 +11,11 @@
 #![allow(unused_assignments, static_mut_refs)]
 #![allow(clippy::all)]
 
+// Wine's ERR/FIXME/WARN/TRACE for the whole crate; `#[macro_use]` must precede the
+// modules that call them (macro_rules! is textually scoped).
+#[macro_use]
+mod winedebug;
+
 pub mod types; // bindgen island, per arch (gen_driver_types.sh snmpapi)
 #[macro_use]
 pub mod prelude; // the ONE import surface: types glob + debug macros + CRT externs

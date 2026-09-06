@@ -224,10 +224,10 @@ pub unsafe fn Hid_SelectConfiguration(DeviceObject: PDEVICE_OBJECT) -> NTSTATUS 
     //
     // sanity check
     //
-    debug_assert!(!InterfaceDescriptor.is_null());
-    debug_assert!((*InterfaceDescriptor).bInterfaceClass == USB_DEVICE_CLASS_HUMAN_INTERFACE as UCHAR);
-    debug_assert!((*InterfaceDescriptor).bDescriptorType == USB_INTERFACE_DESCRIPTOR_TYPE as UCHAR);
-    debug_assert!((*InterfaceDescriptor).bLength as usize == size_of::<_USB_INTERFACE_DESCRIPTOR>());
+    ntkrnl_sys::ASSERT!(!InterfaceDescriptor.is_null());
+    ntkrnl_sys::ASSERT!((*InterfaceDescriptor).bInterfaceClass == USB_DEVICE_CLASS_HUMAN_INTERFACE as UCHAR);
+    ntkrnl_sys::ASSERT!((*InterfaceDescriptor).bDescriptorType == USB_INTERFACE_DESCRIPTOR_TYPE as UCHAR);
+    ntkrnl_sys::ASSERT!((*InterfaceDescriptor).bLength as usize == size_of::<_USB_INTERFACE_DESCRIPTOR>());
 
     //
     // setup interface list
@@ -436,7 +436,7 @@ pub unsafe fn Hid_GetProtocol(DeviceObject: PDEVICE_OBJECT) { unsafe {
     //
     DeviceExtension = (*DeviceObject).DeviceExtension as PHID_DEVICE_EXTENSION;
     HidDeviceExtension = (*DeviceExtension).MiniDeviceExtension as PHID_USB_DEVICE_EXTENSION;
-    debug_assert!(!(*HidDeviceExtension).InterfaceInfo.is_null());
+    ntkrnl_sys::ASSERT!(!(*HidDeviceExtension).InterfaceInfo.is_null());
 
     if (*(*HidDeviceExtension).InterfaceInfo).SubClass != 0x1 {
         //
@@ -566,9 +566,9 @@ pub unsafe fn Hid_PnpStart(DeviceObject: PDEVICE_OBJECT) -> NTSTATUS { unsafe {
     //
     // sanity check
     //
-    debug_assert!(DescriptorLength != 0);
-    debug_assert!(!(*HidDeviceExtension).ConfigurationDescriptor.is_null());
-    debug_assert!((*(*HidDeviceExtension).ConfigurationDescriptor).bLength != 0);
+    ntkrnl_sys::ASSERT!(DescriptorLength != 0);
+    ntkrnl_sys::ASSERT!(!(*HidDeviceExtension).ConfigurationDescriptor.is_null());
+    ntkrnl_sys::ASSERT!((*(*HidDeviceExtension).ConfigurationDescriptor).bLength != 0);
 
     //
     // store full length
@@ -623,16 +623,16 @@ pub unsafe fn Hid_PnpStart(DeviceObject: PDEVICE_OBJECT) -> NTSTATUS { unsafe {
     //
     // sanity check
     //
-    debug_assert!((*InterfaceDescriptor).bInterfaceClass == USB_DEVICE_CLASS_HUMAN_INTERFACE as UCHAR);
-    debug_assert!((*InterfaceDescriptor).bDescriptorType == USB_INTERFACE_DESCRIPTOR_TYPE as UCHAR);
-    debug_assert!((*InterfaceDescriptor).bLength as usize == size_of::<_USB_INTERFACE_DESCRIPTOR>());
+    ntkrnl_sys::ASSERT!((*InterfaceDescriptor).bInterfaceClass == USB_DEVICE_CLASS_HUMAN_INTERFACE as UCHAR);
+    ntkrnl_sys::ASSERT!((*InterfaceDescriptor).bDescriptorType == USB_INTERFACE_DESCRIPTOR_TYPE as UCHAR);
+    ntkrnl_sys::ASSERT!((*InterfaceDescriptor).bLength as usize == size_of::<_USB_INTERFACE_DESCRIPTOR>());
 
     //
     // move to next descriptor
     //
     HidDescriptor = ((InterfaceDescriptor as usize)
         + (*InterfaceDescriptor).bLength as usize) as PHID_DESCRIPTOR;
-    debug_assert!((*HidDescriptor).bLength >= 2);
+    ntkrnl_sys::ASSERT!((*HidDescriptor).bLength >= 2);
 
     //
     // check if this is the hid descriptor
@@ -666,7 +666,7 @@ pub unsafe fn Hid_PnpStart(DeviceObject: PDEVICE_OBJECT) -> NTSTATUS { unsafe {
         //
         // FIXME parse hid descriptor / select configuration / set idle / get protocol
         //
-        debug_assert!(false);
+        ntkrnl_sys::ASSERT!(false);
     }
     Status
 }}

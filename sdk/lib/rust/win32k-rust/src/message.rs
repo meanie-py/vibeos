@@ -23,11 +23,6 @@ use ntkrnl_sys::rtl::{RtlCopyMemory, RtlZeroMemory};
 use ntkrnl_sys::base::{InsertHeadList, InsertTailList};
 use core::ffi::c_void;
 
-// Debug-channel sinks (no kernel symbol in non-DBG build; inert no-op macros).
-macro_rules! ERR { ($($t:tt)*) => {{}}; }
-macro_rules! TRACE { ($($t:tt)*) => {{}}; }
-macro_rules! WARN { ($($t:tt)*) => {{}}; }
-
 // minwindef.h word macros.
 #[inline(always)]
 fn LOWORD(l: DWORD) -> DWORD { l & 0xffff }
@@ -845,7 +840,7 @@ unsafe fn CopyMsgToUserMem(
                 Size,
             );
             if !NT_SUCCESS(Status) {
-                ERR!(b"Failed to copy message from kernel: invalid usermode lParam buffer\n\0".as_ptr() as *const i8);
+                ERR!("Failed to copy message from kernel: invalid usermode lParam buffer\n");
                 ExFreePool((*KernelModeMsg).lParam as PVOID);
                 return Status;
             }
@@ -1205,7 +1200,15 @@ unsafe fn handle_internal_message(pWnd: PWND, msg: UINT, wparam: WPARAM, lparam:
 
     match msg {
         WM_ASYNC_SHOWWINDOW => {
-            return co_WinPosShowWindow(pWnd, wparam.try_into().unwrap()).into();
+            // The C is `co_WinPosShowWindow(pWnd, wparam)` — an implicit narrowing
+            // conversion, and the truncation is load-bearing. `NtUserShowWindowAsync` takes
+            // nCmdShow as a LONG straight from usermode and range-checks only the TOP of it
+            // (`> SW_MAX`), so a negative value passes and reaches here sign-extended:
+            // -1 becomes 0xFFFF_FFFF_FFFF_FFFF as a 64-bit WPARAM. C truncates that back to
+            // -1 and round-trips; `try_into().unwrap()` panicked instead, which is an
+            // unprivileged ShowWindow(hwnd, -1) away from taking down win32k. `as` is both
+            // faithful to the C and the only spelling that cannot fault.
+            return co_WinPosShowWindow(pWnd, wparam as INT).into();
         }
         WM_ASYNC_SETWINDOWPOS => {
             let winpos = lparam as PWINDOWPOS;
@@ -1383,7 +1386,7 @@ unsafe fn IntDispatchMessage_impl(pMsg: PMSG) -> LRESULT {
     {
         (*Window).state2 &= !WNDS2_WMPAINTSENT;
         ERR!(
-            (b"Message WM_PAINT count %d Internal Paint Set? %s\n\0".as_ptr() as _),
+            "Message WM_PAINT count %d Internal Paint Set? %s\n",
             (*head_pti(Window)).cPaintsReady,
             if (*Window).state & WNDS_INTERNALPAINT != 0 {
                 b"TRUE\0".as_ptr()
@@ -1598,7 +1601,7 @@ unsafe fn co_IntWaitMessage(
         Status = co_MsqWaitForNewMessages(pti, Window, MsgFilterMin, MsgFilterMax);
         if !NT_SUCCESS(Status) {
             SetLastNtError(Status);
-            ERR!(b"Exit co_IntWaitMessage on error!\n\0".as_ptr() as *const i8);
+            ERR!("Exit co_IntWaitMessage on error!\n");
             return FALSE as BOOL;
         }
         if Status == STATUS_USER_APC || Status == STATUS_TIMEOUT {
@@ -1969,19 +1972,19 @@ unsafe fn UserPostMessage(
 
         let Window: PWND = UserGetWindowObject(Wnd);
         if Window.is_null() {
-            ERR!(b"UserPostMessage: Invalid handle 0x%p Msg 0x%x!\n\0".as_ptr() as *const i8, Wnd, Msg);
+            ERR!("UserPostMessage: Invalid handle 0x%p Msg 0x%x!\n", Wnd, Msg);
             return (FALSE as i32) ;
         }
 
         pti = head_pti(Window);
 
         if (*pti).TIF_flags & TIF_INCLEANUP != 0 {
-            ERR!(b"Attempted to post message to window %p when the thread is in cleanup!\n\0".as_ptr() as *const i8, Wnd);
+            ERR!("Attempted to post message to window %p when the thread is in cleanup!\n", Wnd);
             return FALSE as _;
         }
 
         if (*Window).state & WNDS_DESTROYED != 0 {
-            ERR!(b"Attempted to post message to window %p that is being destroyed!\n\0".as_ptr() as *const i8, Wnd);
+            ERR!("Attempted to post message to window %p that is being destroyed!\n", Wnd);
             EngSetLastError(ERROR_INVALID_WINDOW_HANDLE);
             return FALSE as _;
         }
@@ -2382,7 +2385,7 @@ unsafe fn co_IntSendMessageWithCallBack(
 
     'cleanup: {
         if (*Window).state & WNDS_DESTROYED != 0 {
-            ERR!(b"Attempted to send message to window %p that is being destroyed\n\0".as_ptr() as *const i8, hWnd);
+            ERR!("Attempted to send message to window %p that is being destroyed\n", hWnd);
             break 'cleanup;
         }
 
@@ -2419,7 +2422,7 @@ unsafe fn co_IntSendMessageWithCallBack(
         }
 
         if !NT_SUCCESS(PackParam(&mut lParamPacked, Msg, wParam, lParam, (!ptiSendTo.is_null()) as BOOL)) {
-            ERR!(b"Failed to pack message parameters\n\0".as_ptr() as *const i8);
+            ERR!("Failed to pack message parameters\n");
             break 'cleanup;
         }
 
@@ -2477,7 +2480,7 @@ unsafe fn co_IntSendMessageWithCallBack(
 
         if ptiSendTo.is_null() {
             if !NT_SUCCESS(UnpackParam(lParamPacked, Msg, wParam, lParam, 0)) {
-                ERR!(b"Failed to unpack message parameters\n\0".as_ptr() as *const i8);
+                ERR!("Failed to unpack message parameters\n");
             }
             Ret = 1;
             break 'cleanup;
@@ -2485,7 +2488,7 @@ unsafe fn co_IntSendMessageWithCallBack(
 
         Message = AllocateUserMessage(0);
         if Message.is_null() {
-            ERR!(b"Failed to allocate message\n\0".as_ptr() as *const i8);
+            ERR!("Failed to allocate message\n");
             break 'cleanup;
         }
 
@@ -2545,7 +2548,7 @@ unsafe fn co_IntDoSendMessage(
     }
 
     if !Window.is_null() && ((*Window).state & WNDS_DESTROYED) != 0 {
-        ERR!(b"co_IntDoSendMessage Window Exiting!\n\0".as_ptr() as *const i8);
+        ERR!("co_IntDoSendMessage Window Exiting!\n");
     }
 
     ptiSendTo = IntSendTo(Window, gptiCurrent, Msg);
@@ -3761,7 +3764,7 @@ pub unsafe extern "system" fn NtUserMessageCall(
                     &mut uResult,
                 ) as BOOL;
                 if Ret == 0 {
-                    ERR!(b"Callback failure!\n\0".as_ptr() as *const i8);
+                    ERR!("Callback failure!\n");
                 }
             }
         }
@@ -4389,7 +4392,7 @@ pub unsafe extern "system" fn NtUserMessageCall(
                     &mut uResult,
                 ) as BOOL;
                 if Ret == 0 {
-                    ERR!(b"Callback failure!\n\0".as_ptr() as *const i8);
+                    ERR!("Callback failure!\n");
                 }
             }
         }
@@ -4674,17 +4677,17 @@ pub unsafe extern "system" fn NtUserWaitForInputIdle(
                     PM_REMOVE | PM_QS_SENDMESSAGE,
                     0,
                 );
-                ERR!(b"WFII: WAIT 2\n\0".as_ptr() as *const i8);
+                ERR!("WFII: WAIT 2\n");
             }
             x if x == STATUS_TIMEOUT => {
-                ERR!(b"WFII: timeout\n\0".as_ptr() as *const i8);
+                ERR!("WFII: timeout\n");
                 break;
             }
             x if x == WAIT_FAILED as NTSTATUS => {
                 break;
             }
             _ => {
-                ERR!(b"WFII: finished\n\0".as_ptr() as *const i8);
+                ERR!("WFII: finished\n");
                 Status = STATUS_SUCCESS;
                 break;
             }

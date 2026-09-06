@@ -261,10 +261,7 @@ macro_rules! min {
     };
 }
 
-pub use crate::{
-    ARRAYSIZE, ARRAY_SIZE, HIBYTE, LOBYTE, MSVCRT_CHECK_PMT, MSVCRT_CHECK_PMT_ERR,
-    FIELD_OFFSET, LANGIDFROMLCID, MAKELANGID, MAKELCID, MSVCRT_INVALID_PMT, min, wstr,
-};
+pub use crate::{ARRAYSIZE, ARRAY_SIZE, HIBYTE, LOBYTE, MSVCRT_CHECK_PMT, MSVCRT_CHECK_PMT_ERR, FIELD_OFFSET, LANGIDFROMLCID, MAKELANGID, MAKELCID, MSVCRT_INVALID_PMT, min, wstr};
 
 // ── the CRT (cdecl) ────────────────────────────────────────────────────────────────────────
 // From `dll/win32/msvcrt/include/{string,stdlib,ctype,corecrt_malloc,corecrt_wstring,
@@ -621,6 +618,46 @@ pub unsafe fn InterlockedCompareExchangePointer(
         Ok(prev) => prev,
         Err(prev) => prev,
     }
+}
+
+/// `winnt.h:7174` on i386 only: `#define SLIST_ENTRY SINGLE_LIST_ENTRY`.
+///
+/// A MACRO, not a typedef, so there is no symbol for bindgen to snapshot and the i386 island
+/// carries `SINGLE_LIST_ENTRY` alone — while amd64 and arm64 get a real
+/// `typedef struct DECLSPEC_ALIGN(16) _SLIST_ENTRY {...} SLIST_ENTRY` at line 7124 and need
+/// no alias. Hence the `cfg`: spelling this unconditionally would collide with the genuine
+/// type on the 64-bit arches.
+///
+/// The two are NOT interchangeable and that is the whole point of routing this through
+/// bindgen: on x64 the entry is 16-byte aligned, on x86 it is a bare pointer, so
+/// `FIELD_OFFSET(type_info_entry, name)` differs by arch. cpp.c's `type_info_entry_free`
+/// subtracts exactly that offset before calling `free`, so getting it wrong is not a
+/// compile error, it is `free()` on a pointer into the middle of a heap block.
+#[cfg(target_arch = "x86")]
+pub type SLIST_ENTRY = SINGLE_LIST_ENTRY;
+
+// ── winbase.h:3867/3876 — the interlocked SList family, REAL IMPORTS ─────────────────────
+//
+// Unlike the `InterlockedCompareExchange*` family above these are NOT `__INTRIN_INLINE`
+// intrinsics: `nm` on msvcrt_shared's own `cpp.c.obj` shows `U __imp_InterlockedFlushSList`
+// and `U __imp_InterlockedPushEntrySList`, i.e. the C resolves them as kernel32 dllimports.
+// So an `extern` block is the faithful lowering here, and writing a Rust body instead would
+// be a second, divergent implementation of a lock-free list.
+//
+// `extern "system"` and not `extern "C"`: the header says WINAPI, which is `__stdcall` on
+// i386 and plain cdecl on x64/arm64, and `"system"` is exactly that per-arch split. Spelling
+// `"C"` would build everywhere and imbalance the stack on every i386 call.
+//
+// Used only by cpp.c's `__UCRTSUPPORT__` half (`__std_type_info_name` publishes a demangled
+// name onto the list, `__std_type_info_destroy_list` flushes it), so ucrtbase.dll only.
+unsafe extern "system" {
+    /// `PSLIST_ENTRY WINAPI InterlockedPushEntrySList(PSLIST_HEADER, PSLIST_ENTRY);`
+    pub fn InterlockedPushEntrySList(
+        ListHead: *mut SLIST_HEADER,
+        ListEntry: *mut SLIST_ENTRY,
+    ) -> *mut SLIST_ENTRY;
+    /// `PSLIST_ENTRY WINAPI InterlockedFlushSList(PSLIST_HEADER);`
+    pub fn InterlockedFlushSList(ListHead: *mut SLIST_HEADER) -> *mut SLIST_ENTRY;
 }
 
 pub unsafe fn InterlockedCompareExchange(

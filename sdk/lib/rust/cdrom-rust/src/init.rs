@@ -134,18 +134,21 @@ struct WDF_OBJECT_ATTRIBUTES_impl {
 }
 
 // Constants (deduplicated; TRACE_LEVEL_* values only gate tracing).
-const TRACE_LEVEL_ERROR: u32 = 1;
-const TRACE_LEVEL_WARNING: u32 = 2;
-const TRACE_LEVEL_INFORMATION: u32 = 3;
-const TRACE_FLAG_PNP: u32 = 2;
-const TRACE_FLAG_INIT: u32 = 0x200;
+const TRACE_LEVEL_ERROR: u32 = 2; // storswtr.h:26-30
+const TRACE_LEVEL_WARNING: u32 = 3; // storswtr.h:26-30
+const TRACE_LEVEL_INFORMATION: u32 = 4; // storswtr.h:26-30
+const TRACE_FLAG_PNP: u32 = 1; // storswtr.h:80-98 (an ORDINAL enum, not a bitmask)
+const TRACE_FLAG_INIT: u32 = 8; // storswtr.h:80-98 (an ORDINAL enum, not a bitmask)
 
 const IOCTL_SCSI_EXECUTE_NONE: u32 = 0x001B0013;
 const FALSE: u8 = 0;
 const IOCTL_SCSI_GET_ADDRESS: u32 = 0x41018; // CTL_CODE(IOCTL_SCSI_BASE,0x406,METHOD_BUFFERED,FILE_ANY_ACCESS); was 0x41018c (fabricated extra digit)
 const IOCTL_STORAGE_QUERY_PROPERTY: u32 = 0x002D1400; // typical value, replace if needed
 const CDROM_TAG_DESCRIPTOR: u32 = 0x44436353; // placeholder
-const NonPagedPoolNx: u32 = 0x200;
+// cdrom.h:68: `#define NonPagedPoolNx NonPagedPool` under
+// `#ifdef __REACTOS__` -- NX pool is NT6.2 and this kernel has none, so the
+// Windows value (0x200/0x204) is not what any TU here compiles.
+const NonPagedPoolNx: u32 = 0;
 const PropertyStandardQuery: u32 = 0;
 const STATUS_UNSUCCESSFUL: NTSTATUS = 0xC0000001u32 as i32;
 
@@ -676,8 +679,8 @@ pub unsafe extern "C" fn DeviceInitPowerContext(
     // Unknown extern declarations
 
     // Local constants
-    const TRACE_LEVEL_ERROR: u32 = 2;
-    const TRACE_FLAG_PNP: u32 = 0x00008000;
+    const TRACE_LEVEL_ERROR: u32 = 2; // storswtr.h:26-30
+    const TRACE_FLAG_PNP: u32 = 1; // storswtr.h:80-98 (an ORDINAL enum, not a bitmask)
     const IOCTL_SCSI_EXECUTE_IN: u32 = 0x1b0011;  // was 0x0000001B (LLM-invented); bindgen-correct
 
     let mut status: NTSTATUS = 0; // STATUS_SUCCESS
@@ -1039,8 +1042,8 @@ pub unsafe extern "C" fn DeviceScanForSpecial(
     Function: Option<unsafe extern "C" fn(*mut CDROM_DEVICE_EXTENSION, usize)>,
 ) {
     // Constants with inline comment
-    const TRACE_LEVEL_INFORMATION: u32 = 4; // TRACE_LEVEL_INFORMATION
-    const TRACE_FLAG_INIT: u32 = 0; // TRACE_FLAG_INIT
+    const TRACE_LEVEL_INFORMATION: u32 = 4; // storswtr.h:26-30
+    const TRACE_FLAG_INIT: u32 = 8; // storswtr.h:80-98 (an ORDINAL enum, not a bitmask)
 
     PAGED_CODE();
 
@@ -4524,7 +4527,7 @@ pub unsafe extern "system" fn DeviceInitAllocateBuffers(
     // allocate a private extension for class data
     if (*DeviceExtension).PrivateFdoData.is_null() {
         (*DeviceExtension).PrivateFdoData = ExAllocatePoolWithTag(
-            0x200, /* NonPagedPoolNx */
+            0, // NonPagedPoolNx: ReactOS #defines it to NonPagedPool (no NX pool here)
             core::mem::size_of::<CDROM_PRIVATE_FDO_DATA>() as u32,
             0x74767250, /* CDROM_TAG_PRIVATE_DATA */
         ) as *mut CDROM_PRIVATE_FDO_DATA;

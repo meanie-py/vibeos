@@ -435,12 +435,10 @@ pub unsafe extern "system" fn FatDeleteDirent(
     DebugTrace(1, Dbg, b"FatDeleteDirent\n\0".as_ptr() as *const i8, 0i32);
     DebugTrace(0, Dbg, b"  FcbOrDcb = %p\n\0".as_ptr() as *const i8, FcbOrDcb as *mut core::ffi::c_void);
 
-    debug_assert!(
-        ExIsResourceAcquiredExclusiveLite(
+    ntkrnl_sys::ASSERT!(ExIsResourceAcquiredExclusiveLite(
             core::ptr::addr_of_mut!((*(*FcbOrDcb).Vcb).Resource)
-        ) != 0
-    );
-    debug_assert!(NodeType((FcbOrDcb).cast()) != FAT_NTC_ROOT_DCB);
+        ) != 0);
+    ntkrnl_sys::ASSERT!(NodeType((FcbOrDcb).cast()) != FAT_NTC_ROOT_DCB);
 
     if DeleteEa != 0
         && ((*FcbOrDcb).Header.AllocationSize.__bindgen_anon_1.LowPart != 0
@@ -477,7 +475,7 @@ pub unsafe extern "system" fn FatDeleteDirent(
                 );
             }
 
-            debug_assert!((*Dirent).FirstClusterOfFile == 0 || DeleteEa == 0);
+            ntkrnl_sys::ASSERT!((*Dirent).FirstClusterOfFile == 0 || DeleteEa == 0);
             (*Dirent).FileName[0] = FAT_DIRENT_DELETED;
 
             Offset += core::mem::size_of::<DIRENT>() as u32;
@@ -509,14 +507,12 @@ pub unsafe extern "system" fn FatDeleteDirent(
             / (core::mem::size_of::<DIRENT>() as u32)
             + 1;
 
-        debug_assert!(
-            dcb.UnusedDirentVbo == 0xffffffff_u32
+        ntkrnl_sys::ASSERT!(dcb.UnusedDirentVbo == 0xffffffff_u32
                 || RtlAreBitsSet(
                     core::ptr::addr_of_mut!(dcb.FreeDirentBitmap) as *mut _,
                     (*FcbOrDcb).LfnOffsetWithinDirectory / (core::mem::size_of::<DIRENT>() as u32),
                     DirentsToDelete,
-                ) != 0
-        );
+                ) != 0);
 
         RtlClearBits(
             core::ptr::addr_of_mut!(dcb.FreeDirentBitmap) as *mut _,
@@ -742,7 +738,7 @@ pub unsafe extern "system" fn FatLocateDirent(
                     {
                         LfnInProgress = 0;
                     } else {
-                        debug_assert!((LfnIndex % 13) == 0 && LfnIndex != 0);
+                        ntkrnl_sys::ASSERT!((LfnIndex % 13) == 0 && LfnIndex != 0);
                         LfnIndex -= 13;
 
                         core::ptr::copy_nonoverlapping(
@@ -851,7 +847,7 @@ pub unsafe extern "system" fn FatLocateDirent(
                 && LfnIndex == 0
                 && FatComputeLfnChecksum(*Dirent) == LfnChecksum
             {
-                debug_assert!(Ordinal == 1);
+                ntkrnl_sys::ASSERT!(Ordinal == 1);
                 FoundValidLfn = 1;
                 (*LongFileName).Length = (LfnSize * core::mem::size_of::<WCHAR>() as u32) as u16;
 

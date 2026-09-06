@@ -62,8 +62,6 @@ extern "C" {
 // DEBUG_CHANNEL(kernel32file) TRACE/WARN — compiled with NDEBUG in the C, so these
 // are no-ops. As macros they swallow the mixed (C-string / Rust-&str) call args the
 // translation emitted without a type-check, matching the C #define NDEBUG behavior.
-macro_rules! TRACE { ($($arg:tt)*) => {{ let _ = ($($arg)*,); }} }
-macro_rules! WARN  { ($($arg:tt)*) => {{ let _ = ($($arg)*,); }} }
 
 // ---- file-scope preamble (translated) ----
 // @c2rust file-scope data (compiler-exact tables/statics)

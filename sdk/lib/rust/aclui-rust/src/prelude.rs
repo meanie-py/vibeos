@@ -8,10 +8,27 @@ pub use core::ffi::{c_char, c_int, c_long, c_short, c_uchar, c_uint, c_ushort, c
 pub use core::ptr::{addr_of, addr_of_mut};
 
 // ================= debug ======================================================================
-// reactos/debug.h DPRINT/DPRINT1 — no-op MACROS, never out-of-line fns
-// (field manual §9.65: an out-of-line no-op is an optimization barrier).
+// `NDEBUG` silences DPRINT only. DPRINT1 sits OUTSIDE that guard in
+// sdk/include/reactos/debug.h, so it is live whenever DBG is set — and our media is
+// built -DCMAKE_BUILD_TYPE=Debug, i.e. -DDBG=1. Both stay MACROS, never out-of-line
+// fns (field manual §9.65: a no-op fn is an optimization barrier). The C passes
+// __RELFILE__/__LINE__ as two extra varargs; file!()/line!() fold into the literal.
 #[macro_export] macro_rules! DPRINT  { ($($arg:tt)*) => {{}}; }
-#[macro_export] macro_rules! DPRINT1 { ($($arg:tt)*) => {{}}; }
+// ntdll exports DbgPrint; every usermode DLL links it.
+extern "C" {
+    pub fn DbgPrint(Format: *const c_char, ...) -> u32;
+}
+#[macro_export]
+macro_rules! DPRINT1 {
+    ($fmt:literal $(, $arg:expr)* $(,)?) => {
+        unsafe {
+            $crate::prelude::DbgPrint(
+                concat!("(", file!(), ":", line!(), ") ", $fmt, "\0").as_ptr() as *const _
+                $(, $arg)*,
+            )
+        }
+    };
+}
 pub use crate::{DPRINT, DPRINT1};
 
 // ================= CRT ========================================================================
@@ -230,14 +247,7 @@ macro_rules! ListView_SetExtendedListViewStyleEx {
     };
 }
 
-pub use crate::{
-    CFSTR_DSOP_DS_SELECTION_LIST, CopyMemory, FAILED, HandleToScm, ScmToHandle, SUCCEEDED, FIELD_OFFSET, IS_INTRESOURCE,
-    InterlockedDecrement, InterlockedIncrement, ListView_FindItem, ListView_GetItem,
-    ListView_GetNextItem, ListView_InsertColumn, ListView_InsertItem,
-    ListView_SetColumn, ListView_SetExtendedListViewStyleEx, ListView_SetImageList,
-    ListView_SetItem, ListView_SortItems, MAKEINTRESOURCE, MAKEWPARAM, V_ARRAY, V_VT,
-    max, min,
-};
+pub use crate::{CFSTR_DSOP_DS_SELECTION_LIST, CopyMemory, FAILED, HandleToScm, ScmToHandle, SUCCEEDED, FIELD_OFFSET, IS_INTRESOURCE, InterlockedDecrement, InterlockedIncrement, ListView_FindItem, ListView_GetItem, ListView_GetNextItem, ListView_InsertColumn, ListView_InsertItem, ListView_SetColumn, ListView_SetExtendedListViewStyleEx, ListView_SetImageList, ListView_SetItem, ListView_SortItems, MAKEINTRESOURCE, MAKEWPARAM, V_ARRAY, V_VT, max, min};
 
 // winbase.h's InterlockedIncrement/Decrement are COMPILER INTRINSICS, not library symbols, and
 // which library happens to carry a `_Interlocked*` symbol differs per arch: the i386 link found

@@ -58,6 +58,7 @@ use crate::types::{_SCSI_REQUEST_BLOCK};
 use crate::srblib::{SrbGetDataBuffer, SrbGetDataTransferLength, SrbGetSenseInfoBuffer, SrbGetSenseInfoBufferLength, SrbGetSrbFlags, SrbSetQueueSortKey, SrbSetScsiStatus};
 // resolve_imports.py: explicit kernel/private-type imports
 use crate::glue::{max};
+use ntkrnl_sys::ddk::RtlAssert;
 
 extern "C" {
     fn DbgPrint(format: *const u8, ...);
@@ -657,15 +658,15 @@ pub unsafe extern "C" fn DestroyTransferPacket(pkt: PTRANSFER_PACKET) {
     let fdo_data = (*fdo_ext).PrivateFdoData;
     let mut old_irql: KIRQL = 0;
 
-    debug_assert!((*pkt).SlistEntry.Next.is_null());
+    ntkrnl_sys::ASSERT!((*pkt).SlistEntry.Next.is_null());
 
     KeAcquireSpinLock(
         (core::ptr::addr_of_mut!((*fdo_data).SpinLock)).cast(),
         core::ptr::addr_of_mut!(old_irql),
     );
 
-    debug_assert!(!IsListEmpty(core::ptr::addr_of!((*pkt).AllPktsListEntry)));
-    debug_assert!(!IsListEmpty(core::ptr::addr_of!((*fdo_data).AllTransferPacketsList)));
+    ntkrnl_sys::ASSERT!(!IsListEmpty(core::ptr::addr_of!((*pkt).AllPktsListEntry)));
+    ntkrnl_sys::ASSERT!(!IsListEmpty(core::ptr::addr_of!((*fdo_data).AllTransferPacketsList)));
 
     RemoveEntryList(core::ptr::addr_of_mut!((*pkt).AllPktsListEntry));
     InitializeListHead(core::ptr::addr_of_mut!((*pkt).AllPktsListEntry));
@@ -699,7 +700,12 @@ pub unsafe extern "C" fn EnqueueFreeTransferPacket(Fdo: PDEVICE_OBJECT, Pkt: PTR
         // In debug builds, NT_ASSERT would break; for translation we just keep the check.
         // If it's a macro that always evaluates, we can keep it as a call.
         // For safety, we'll leave it as a panic if not null.
-        core::panic!("Assertion failed: !Pkt->SlistEntry.Next");
+        RtlAssert(
+            b"!Pkt->SlistEntry.Next\0".as_ptr() as *mut core::ffi::c_void,
+            b"xferpkt.rs\0".as_ptr() as *mut core::ffi::c_void,
+            line!(),
+            core::ptr::null_mut::<i8>(),
+        );
     }
 
     allocateNode = (*Pkt).AllocateNode;

@@ -5,11 +5,6 @@ use crate::internal::{HIWORD, LOWORD};
 use crate::FIELD_OFFSET;
 
 // ---- debug-print macros (DbgPrint-free no-ops; mirror cursoricon.rs) ----
-macro_rules! TRACE { ($($t:tt)*) => {{ }}; }
-macro_rules! WARN  { ($($t:tt)*) => {{ }}; }
-#[allow(unused_macros)]
-macro_rules! ERR   { ($($t:tt)*) => {{ }}; }
-macro_rules! FIXME { ($($t:tt)*) => {{ }}; }
 
 // ---- kernel32.dll exports (WINAPI = stdcall) ----
 extern "system" {
@@ -832,7 +827,7 @@ unsafe fn ICO_ExtractIconExW(
                     core::ptr::null_mut(),
                 ) as *mut BYTE;
                 if igdata.is_null() {
-                    FIXME!(b"no matching real address for icongroup!\n\0".as_ptr());
+                    FIXME!("no matching real address for icongroup!\n");
                     break 'end;
                 }
                 *pIconId.add(i as usize) =

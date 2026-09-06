@@ -241,8 +241,13 @@ def test_write_baseline_announces_a_lowered_floor_but_allows_it():
     assert conformance_mod.baseline_lowering_note([_res("ExHardError", 31, 0)], base) is None
 
 
-def _fmt(r: dict) -> str:
-    return f"{r['name']} {r['status']} pass={r['pass']} fail={r['fail']} skip={r['skip']}"
+def _fmt(r: dict, flaky=()) -> str:
+    # Mirrors parser.fmt's signature: merge_baseline_rows hands it the `assert?`
+    # marks the row already carries, so a re-seed cannot delete them.
+    line = f"{r['name']} {r['status']} pass={r['pass']} fail={r['fail']} skip={r['skip']}"
+    for a in sorted(set(r.get("asserts") or ()) | set(flaky)):
+        line += f"\n    assert{'?' if a in set(flaky) else ''} {a}"
+    return line
 
 
 _BASELINE_FIXTURE = (
@@ -1147,6 +1152,51 @@ def test_save_hang_state_separates_a_frozen_box_from_a_blocked_one(tmp_path, _no
     assert "EXECUTING" in (tmp_path / "b" / "hang-cpustate.txt").read_text()
 
 
+def test_save_hang_state_names_a_kernel_fault_loop_at_a_user_pc(tmp_path, _no_resample_wait):
+    # The third reading of "the PC never moved": a same-EL instruction abort
+    # the handler keeps resolving as spurious, eret'ing straight back to the
+    # same PC. Two samples cannot separate that from a dead clock — but the
+    # arm64 register dump can: kernel EL (PSTATE M != 0) with a PC in the user
+    # half. Five real captures said FROZEN before this existed.
+    dump = "CPU#0\n PC=0000000000010000 X00=0\nPSTATE=0000000020000345 --C- EL1h\n"
+    v = _hang_vm(tmp_path / "loop", None, lambda: dump)
+    v.save_hang_state("boot-wait timeout")
+    body = (tmp_path / "loop" / "hang-cpustate.txt").read_text()
+    assert "FAULT-LOOP" in body and "CPU#0 pc=0x0000000000010000" in body
+    # The plain readings must not be promoted: a kernel PC at EL1 is FROZEN...
+    idle = "CPU#0\n PC=fffff80042192824 X00=0\nPSTATE=0000000020000345 --C- EL1h\n"
+    v = _hang_vm(tmp_path / "idle", None, lambda: idle)
+    v.save_hang_state("boot-wait timeout")
+    assert "FAULT-LOOP" not in (tmp_path / "idle" / "hang-cpustate.txt").read_text()
+    # ...and a user PC at EL0 is a user thread, which is fine.
+    user = "CPU#0\n PC=0000000000010000 X00=0\nPSTATE=0000000060000000 -ZC- EL0t\n"
+    v = _hang_vm(tmp_path / "user", None, lambda: user)
+    v.save_hang_state("boot-wait timeout")
+    assert "FAULT-LOOP" not in (tmp_path / "user" / "hang-cpustate.txt").read_text()
+
+
+def test_capture_cpu_state_disassembles_at_every_pc():
+    # A register dump says WHERE a vCPU is; only the code there says what it is
+    # doing (wfi / b . / an unfetchable page). One `x /6i` per vCPU, at that
+    # vCPU's own PC, after the register dump it was parsed from.
+    v = vm_mod.QemuVM.__new__(vm_mod.QemuVM)
+    seen = []
+
+    class _Qmp:
+        def hmp(self, cmd):
+            seen.append(cmd)
+            if cmd == "info registers -a":
+                return "CPU#0\n PC=fffff80042192824\nCPU#1\n PC=0000000000010000\n"
+            if cmd.startswith("x /6i"):
+                return f"disasm for {cmd}"
+            return "ok"
+
+    v.qmp = _Qmp()  # type: ignore[assignment]
+    out = v.capture_cpu_state()
+    assert seen[-2:] == ["x /6i 0xfffff80042192824", "x /6i 0x0000000000010000"]
+    assert "=== CPU#1 x /6i 0x0000000000010000 ===" in out
+
+
 def test_save_hang_state_survives_a_dead_monitor(tmp_path, _no_resample_wait):
     # A diagnostic that raises on an already-failing run destroys the failure it
     # was there to explain, so a dead QMP must degrade to a note in the file —
@@ -1319,6 +1369,67 @@ def test_run_summary_json(tmp_path, monkeypatch):
 # --- cargo-link guard: skips cleanly when the PoCs aren't present ----------
 
 
+@pytest.mark.parametrize("failure", [None, "timeout", "missing"])
+def test_command_timings_survive_failures(monkeypatch, failure):
+    from . import artifacts
+
+    ticks = iter([10.0, 12.0, 15.5, 16.0])
+    monkeypatch.setattr(artifacts.time, "monotonic", lambda: next(ticks))
+
+    def execute(*args, **kwargs):
+        if failure == "timeout":
+            raise subprocess.TimeoutExpired(["fixture"], 1)
+        if failure == "missing":
+            raise FileNotFoundError("fixture")
+        return subprocess.CompletedProcess(["fixture"], 0, "", "")
+
+    monkeypatch.setattr(artifacts.subprocess, "run", execute)
+    run = Run("build", "amd64", ts=1700000000)
+    cp = run.run(["fixture"], stage="ninja", timeout=1)
+    run.finalize()
+    expected = {
+        "stage": "ninja",
+        "start_seconds": 2.0,
+        "seconds": 3.5,
+        "exit": {None: 0, "timeout": 124, "missing": 127}[failure],
+    }
+    summary = json.loads((run.dir / "summary.json").read_text())
+    assert summary["command_timings"] == [expected]
+    journal = json.loads(run.commands_log.read_text())
+    assert all(journal[key] == value for key, value in expected.items())
+    assert cp.returncode == expected["exit"]
+
+
+def test_rust_source_closure_tracks_shared_dependencies(tmp_path):
+    """Exercise the shipping CMake helper, not a Python imitation of it."""
+    workspace = tmp_path / "workspace"
+    for name, deps in (
+        ("leaf", '[dependencies]\nshared = { path = "../shared" }'),
+        ("shared", ""),
+        ("unrelated", ""),
+    ):
+        crate = workspace / name
+        (crate / "src").mkdir(parents=True)
+        (crate / "Cargo.toml").write_text(f'[package]\nname = "{name}"\n{deps}\n')
+        (crate / "src/lib.rs").write_text("")
+        (crate / "build.rs").write_text("fn main() {}")
+    helper = Path(__file__).resolve().parents[3] / "sdk/cmake/rust-crate-deps.cmake"
+    output = tmp_path / "sources.txt"
+    script = tmp_path / "fixture.cmake"
+    script.write_text(
+        "cmake_minimum_required(VERSION 3.16)\n"
+        f'include("{helper}")\nrust_crate_sources(sources "{workspace}" leaf)\n'
+        f'file(WRITE "{output}" "${{sources}}")\n'
+    )
+    subprocess.run(["cmake", "-P", str(script)], check=True, capture_output=True, text=True)
+    sources = set(output.read_text().split(";"))
+    assert sources == {
+        str(workspace / crate / source)
+        for crate in ("leaf", "shared")
+        for source in ("src/lib.rs", "Cargo.toml", "build.rs")
+    }
+
+
 def test_cargo_link_guard_skips_when_pocs_absent(tmp_path, monkeypatch):
     """The guard must no-op (skip, never fail) when the cargo-link PoCs are
     absent — so it never blocks `check --strict` on a tree without them. At the
@@ -1458,6 +1569,52 @@ def test_parse_sccache_json_scalar_and_garbage():
     st = cachecfg.parse_sccache_json(json.dumps({"stats": {"cache_hits": 5, "cache_misses": 0}}))
     assert st["hits"] == 5 and st["hit_rate"] == 1.0
     assert cachecfg.parse_sccache_json("not json") == {}
+
+
+def test_sccache_non_cacheable_is_not_a_miss():
+    stats = cachecfg.parse_sccache_json(
+        json.dumps(
+            {
+                "stats": {
+                    "compile_requests": 7,
+                    "requests_not_cacheable": 5,
+                    "not_cached": {"crate-type": 5},
+                    "cache_errors": 1,
+                    "compilations": 2,
+                    "cache_hits": 1,
+                    "cache_misses": 1,
+                }
+            }
+        )
+    )
+    assert stats["non_cacheable"] == 5
+    assert stats["non_cacheable_reasons"] == {"crate-type": 5}
+    assert stats["cache_errors"] == 1
+    assert stats["compilations"] == 2
+    assert stats["hit_rate"] == 0.5
+
+
+def test_sccache_stats_use_compilers_canonical_context(tmp_path, monkeypatch):
+    cache = cachecfg.CacheEnv(tmp_path, tmp_path / "cc", tmp_path / "sc", None, "sccache")
+    run = Run("build", "amd64", ts=1700000000)
+    calls = []
+
+    def execute(cmd, **kwargs):
+        calls.append((cmd, kwargs["cwd"]))
+        return subprocess.CompletedProcess(cmd, 0, '{"stats": {}}', "")
+
+    monkeypatch.setattr(run, "run", execute)
+
+    def wrap(cmd):
+        return ["canonical-wrapper", *cmd]
+
+    env = build_mod._setup_cache(run, tmp_path, tmp_path / "build-amd64", cache, wrap=wrap)
+    assert env is not None
+    build_mod._collect_cache_stats(run, cache, env, repo=tmp_path, wrap=wrap)
+    assert calls == [
+        (["canonical-wrapper", "sccache", "--zero-stats"], tmp_path),
+        (["canonical-wrapper", "sccache", "--show-stats", "--stats-format=json"], tmp_path),
+    ]
 
 
 # --- per-arch QEMU concurrency sub-cap (serialize same-arch boots) ---------
@@ -2394,17 +2551,36 @@ def test_hostlock_fifo_head_is_never_blocked_by_itself(tmp_path, monkeypatch):
     assert hl_mod.queue_status("cpuheavy") == []
 
 
-def test_hostlock_fifo_backfill_when_head_not_delayed(tmp_path, monkeypatch):
-    """A latecomer MAY use permits nobody ahead of it is owed (throughput preserved)."""
+def test_hostlock_fifo_respects_existing_permit_holders(tmp_path, monkeypatch):
+    """Capacity is not availability: an active build owns half the pool."""
     monkeypatch.setattr(hl_mod, "HOSTLOCK_DIR", tmp_path)
-    ahead = _fake_ticket(tmp_path, "cpuheavy", ns=1, pid=999999, need=1)
+    held = hl_mod.acquire_cpu_share("running", n=2, leases=4, timeout=1.0)
+    assert held is not None
+    ahead = _fake_ticket(tmp_path, "cpuheavy", ns=1, pid=999999, need=2)
+    late = None
     try:
-        # 4 permits, one earlier waiter owed 1 → 3 spare, so our 2 fit without delaying it.
-        fds = hl_mod.acquire_cpu_share("late", n=2, leases=4, timeout=1.0)
-        assert fds is not None
-        hl_mod.release_all(fds)
+        # The only free pair is owed to the older waiter, even though both
+        # waiters' requests fit within the pool's TOTAL capacity.
+        late = hl_mod.acquire_cpu_share("late", n=2, leases=4, timeout=0.1)
+        assert late is None
     finally:
+        hl_mod.release_all(late)
         os.close(ahead)
+        hl_mod.release_all(held)
+
+
+def test_hostlock_fifo_admission_does_not_serialize_running_work(tmp_path, monkeypatch):
+    """Once admitted, a holder's remaining capacity is available to the next build."""
+    monkeypatch.setattr(hl_mod, "HOSTLOCK_DIR", tmp_path)
+    first = hl_mod.acquire_cpu_share("first", n=1, leases=4, timeout=1.0)
+    assert first is not None
+    second = None
+    try:
+        second = hl_mod.acquire_cpu_share("second", n=2, leases=4, timeout=1.0)
+        assert second is not None  # first still owns its permit
+    finally:
+        hl_mod.release_all(second)
+        hl_mod.release_all(first)
 
 
 def test_hostlock_fifo_orphan_ticket_is_reaped(tmp_path, monkeypatch):
@@ -3243,6 +3419,160 @@ def test_check_update_baseline_rejects_unknown_tool(tmp_path, monkeypatch):
     args = Namespace(update_baseline="bogus_tool", arch=None, strict=False)
     assert debugcmd_mod.check(args, tmp_path) == 2
     assert not called, "an unknown tool name must not rewrite any baseline"
+
+
+@pytest.mark.parametrize("selection", ["", ",", "typo", "toolA,typo"])
+def test_partial_check_rejects_bad_selection(tmp_path, monkeypatch, selection):
+    monkeypatch.setattr(lints, "lint_tool_names", lambda repo: {"toolA"})
+    monkeypatch.setattr(lints, "run_source_lints", lambda *a, **k: pytest.fail("must not execute"))
+    assert debugcmd_mod.check(Namespace(only=selection), tmp_path) == 2
+
+
+def test_partial_check_cannot_rewrite_baselines(tmp_path, monkeypatch):
+    monkeypatch.setattr(lints, "write_baselines", lambda *a, **k: pytest.fail("must not write"))
+    assert debugcmd_mod.check(Namespace(only="toolA", update_baseline="__ALL__"), tmp_path) == 2
+
+
+@pytest.mark.parametrize("fail", [False, True])
+def test_partial_check_runs_only_selected_and_reports_scope(tmp_path, monkeypatch, fail):
+    specs = [(name, [name], "stdout") for name in ("toolA", "toolB")]
+    monkeypatch.setattr(lints, "source_lint_specs", lambda repo: specs)
+    called = []
+
+    def stage(run, repo, name, cmd, *, strict, findings_from):
+        called.append((name, strict))
+        run.add(Stage(name, status="fail" if fail else "ok"))
+
+    monkeypatch.setattr(lints, "_lint_stage", stage)
+    monkeypatch.setattr(lints, "run_cargo_link_guard", lambda *a, **k: pytest.fail("not selected"))
+    monkeypatch.setattr(lints, "run_binary_lints", lambda *a, **k: pytest.fail("not selected"))
+    monkeypatch.setattr(
+        lints, "run_committed_drift_guard", lambda *a, **k: pytest.fail("not selected")
+    )
+    rc = debugcmd_mod.check(Namespace(only=" toolB,toolB ", strict=True, arch="amd64"), tmp_path)
+    assert rc == int(fail)
+    assert called == [("toolB", True)]
+    summaries = list((tmp_path / "artifacts").glob("*-check-partial-amd64/summary.json"))
+    assert len(summaries) == 1
+    summary = json.loads(summaries[0].read_text())
+    assert summary["command"] == "check-partial"
+    assert summary["coverage"] == "partial"
+    assert summary["selected_scanners"] == ["toolB"]
+    assert summary["omitted_scanners"] == ["toolA"]
+    assert summary["verdict"] == ("FAIL" if fail else "WARN")
+
+
+def test_source_lint_api_rejects_unknown_selection(tmp_path, monkeypatch):
+    monkeypatch.setattr(lints, "source_lint_specs", lambda repo: [("a", ["a"], "stdout")])
+    monkeypatch.setattr(lints, "_lint_stage", lambda *a, **k: pytest.fail("must not execute"))
+    with pytest.raises(ValueError):
+        lints.run_source_lints(Run("check", "amd64"), tmp_path, strict=True, only={"typo"})
+
+
+@pytest.mark.parametrize("scope", ["source", "arch", None])
+@pytest.mark.parametrize("fail", [False, True])
+def test_check_partitions_preserve_full_coverage(tmp_path, monkeypatch, scope, fail):
+    seen = []
+
+    def source(run, repo, *, strict):
+        assert strict
+        seen.append("source")
+        run.add(Stage("source", status="fail" if fail else "ok"))
+
+    def guard(name):
+        def execute(run, repo, arch, **kwargs):
+            assert arch == "amd64"
+            if name == "binary":
+                assert kwargs["strict"]
+            seen.append(name)
+            run.add(Stage(name, status="fail" if fail else "ok"))
+
+        return execute
+
+    monkeypatch.setattr(lints, "run_source_lints", source)
+    monkeypatch.setattr(lints, "run_cargo_link_guard", guard("cargo"))
+    monkeypatch.setattr(lints, "run_committed_drift_guard", guard("drift"))
+    monkeypatch.setattr(lints, "run_binary_lints", guard("binary"))
+    assert debugcmd_mod.check(Namespace(scope=scope, strict=True, arch="amd64"), tmp_path) == int(
+        fail
+    )
+    assert (
+        seen
+        == {
+            "source": ["source"],
+            "arch": ["cargo", "drift", "binary"],
+            None: ["source", "cargo", "drift", "binary"],
+        }[scope]
+    )
+    command = f"check-{scope}" if scope else "check"
+    summary = json.loads(
+        next((tmp_path / "artifacts").glob(f"*-{command}-amd64/summary.json")).read_text()
+    )
+    assert summary["verdict"] == ("FAIL" if fail else "WARN" if scope else "OK")
+    assert summary.get("coverage") == ("partial" if scope else None)
+
+
+@pytest.mark.parametrize(
+    "options",
+    [
+        {"scope": "bogus", "strict": True},
+        {"scope": "source"},
+        {"scope": "arch", "strict": True},
+        {"scope": "source", "strict": True, "only": "a"},
+        {"scope": "arch", "strict": True, "arch": "amd64", "update_baseline": "__ALL__"},
+    ],
+)
+def test_check_partition_rejects_ambiguous_or_incomplete_request(tmp_path, monkeypatch, options):
+    monkeypatch.setattr(lints, "run_source_lints", lambda *a, **k: pytest.fail("must not scan"))
+    monkeypatch.setattr(lints, "write_baselines", lambda *a, **k: pytest.fail("must not write"))
+    assert debugcmd_mod.check(Namespace(**options), tmp_path) == 2
+
+
+@pytest.mark.parametrize("failed", [None, "source", "i386"])
+def test_gate_runs_source_once_after_build_matrix_and_requires_every_partition(
+    tmp_path, monkeypatch, failed
+):
+    built = set()
+    seen = []
+    stamped = []
+
+    def build(repo, run, arch, args):
+        built.add(arch)
+        return {"arch": arch, "ok": True, "exit": 0, "seconds": 0.01}
+
+    def lint(repo, arch, root):
+        if arch == "source":
+            assert built == {"i386", "amd64", "arm64"}
+        else:
+            assert arch in built
+        seen.append(arch)
+        return _lint_once_stub(arch != failed)(repo, arch, root)
+
+    monkeypatch.setattr(gate_mod, "_build_once", build)
+    monkeypatch.setattr(gate_mod, "_lint_once", lint)
+    monkeypatch.setattr(gate_mod, "_cohab_once", _cohab_once_stub(True))
+    monkeypatch.setattr(gate_mod, "_tooling_once", _tooling_once_stub(True))
+    monkeypatch.setattr(gate_mod, "_difftest_once", _difftest_once_stub(True))
+    monkeypatch.setattr(gate_mod, "_smoke_once", _spy_smoke_ok([]))
+    monkeypatch.setattr(gate_mod, "_write_gate_stamp", lambda *a, **k: stamped.append(1))
+    rc = gate_mod.gate(_gate_args(no_lint=False, no_build=False, no_net=True), tmp_path)
+    assert sorted(seen) == ["amd64", "arm64", "i386", "source"]
+    assert bool(stamped) == (failed is None)
+    assert rc == int(failed is not None)
+
+
+@pytest.mark.parametrize("arch", ["source", "amd64"])
+def test_gate_child_requests_explicit_strict_partition(tmp_path, monkeypatch, arch):
+    calls = []
+
+    def execute(cmd, **kwargs):
+        calls.append(cmd)
+        return subprocess.CompletedProcess(cmd, 0, "", "")
+
+    monkeypatch.setattr(gate_mod.subprocess, "run", execute)
+    assert gate_mod._lint_once(tmp_path, arch, tmp_path / "logs")["ok"]
+    suffix = ["source"] if arch == "source" else ["arch", "--arch", arch]
+    assert calls == [[str(tmp_path / "vibeos-cli"), "check", "--strict", "--scope", *suffix]]
 
 
 def test_write_baselines_only_filter(tmp_path, monkeypatch):
@@ -4893,6 +5223,88 @@ def test_land_foreground_conducts_inline(lane_repo, tmp_path, monkeypatch):
     assert drained == [1]
 
 
+# --- land: the check-tooling preflight -------------------------------------
+#
+# The conductor runs check-tooling as part of the batched gate, so a lint failure there
+# bounces the WHOLE train for 3 builds + 4 boots of fleet load. On 2026-07-26 that cost
+# was paid for one line 101 characters long. These cover the preflight that moves the
+# identical verdict into the lane, where it costs ~40s.
+
+
+def _fake_cli(repo: Path, *, rc: int, out: str = "") -> None:
+    """Plant a stand-in `vibeos-cli` so the preflight runs its REAL subprocess path."""
+    p = repo / "vibeos-cli"
+    p.write_text(f"#!/bin/sh\ncat <<'XEOF'\n{out}\nXEOF\nexit {rc}\n")
+    p.chmod(0o755)
+
+
+def test_lint_preflight_blocks_a_red_check_tooling(tiny_repo: Path, tmp_path, monkeypatch):
+    monkeypatch.setattr("tests.qemu.cli.artifacts.ARTIFACT_ROOT", tmp_path / "art")
+    _fake_cli(tiny_repo, rc=1, out="  ✗ ruff:tools/*.py\n\nFAIL — 1/15 checks failed:")
+    with pytest.raises(land_mod.LandAbort) as ei:
+        land_mod._lint_preflight(tiny_repo, Run("land", "t"), _Args())
+    # the failing check must be NAMED — "exit 1" alone sends you back to re-run it by hand
+    assert "ruff:tools/*.py" in str(ei.value)
+
+
+def test_lint_preflight_passes_a_green_check_tooling(tiny_repo: Path, tmp_path, monkeypatch):
+    monkeypatch.setattr("tests.qemu.cli.artifacts.ARTIFACT_ROOT", tmp_path / "art")
+    _fake_cli(tiny_repo, rc=0, out="OK — all 15 tooling checks passed.")
+    run = Run("land", "t")
+    land_mod._lint_preflight(tiny_repo, run, _Args())  # must not raise
+    assert any(s.name == "lint" and s.status == "ok" for s in run.stages)
+
+
+def test_lint_preflight_fails_OPEN_when_it_cannot_run(tiny_repo: Path, tmp_path, monkeypatch):
+    """A broken preflight must never wedge the fleet's ability to land. No vibeos-cli here
+    at all, so the subprocess raises — that has to warn and continue, NOT abort. Only a
+    check that actually ran and returned nonzero may block."""
+    monkeypatch.setattr("tests.qemu.cli.artifacts.ARTIFACT_ROOT", tmp_path / "art")
+    assert not (tiny_repo / "vibeos-cli").exists()
+    run = Run("land", "t")
+    land_mod._lint_preflight(tiny_repo, run, _Args())  # must not raise
+    assert any(s.name == "lint" and s.status == "warn" for s in run.stages)
+
+
+def test_lint_preflight_honours_skip_lint(tiny_repo: Path, tmp_path, monkeypatch):
+    monkeypatch.setattr("tests.qemu.cli.artifacts.ARTIFACT_ROOT", tmp_path / "art")
+    _fake_cli(tiny_repo, rc=1, out="✗ everything")
+    run = Run("land", "t")
+    land_mod._lint_preflight(tiny_repo, run, _Args(skip_lint=True))  # must not raise
+    assert any(s.name == "lint" and s.status == "skip" for s in run.stages)
+
+
+def test_red_lint_keeps_the_lane_OUT_of_the_queue(lane_repo, tmp_path, monkeypatch):
+    """The point of the whole thing: a red lane must not reach the batch at all. Checking
+    that _lint_preflight raises is not enough — what matters is that nothing was queued,
+    because a submission is what costs the fleet a gate."""
+    lane, _ = lane_repo
+    monkeypatch.setattr("tests.qemu.cli.artifacts.ARTIFACT_ROOT", tmp_path / "art")
+    monkeypatch.setattr(hl_mod, "HOSTLOCK_DIR", tmp_path / "locks")
+    monkeypatch.setattr(
+        land_mod, "_spawn_detached", lambda *a: pytest.fail("conducted despite a red lint")
+    )
+    _fake_cli(lane, rc=1, out="  ✗ pyright:tests/qemu/cli")
+    subprocess.run(["git", "add", "-A"], cwd=lane, check=True, capture_output=True)
+    subprocess.run(["git", "commit", "-qm", "cli"], cwd=lane, check=True, capture_output=True)
+    assert land_mod.land(_Args(direct=False), lane) != 0, "a red lint must fail the land"
+    assert not q_mod.pending(lane), "a lane that fails its own lint reached the queue"
+
+
+def test_green_lint_still_reaches_the_queue(lane_repo, tmp_path, monkeypatch):
+    """The negative control for the test above — proves it is the LINT VERDICT gating the
+    submission and not the fake CLI merely existing."""
+    lane, _ = lane_repo
+    monkeypatch.setattr("tests.qemu.cli.artifacts.ARTIFACT_ROOT", tmp_path / "art")
+    monkeypatch.setattr(hl_mod, "HOSTLOCK_DIR", tmp_path / "locks")
+    monkeypatch.setattr(land_mod, "_spawn_detached", lambda argv, cwd, log: None)
+    _fake_cli(lane, rc=0, out="OK")
+    subprocess.run(["git", "add", "-A"], cwd=lane, check=True, capture_output=True)
+    subprocess.run(["git", "commit", "-qm", "cli"], cwd=lane, check=True, capture_output=True)
+    assert land_mod.land(_Args(direct=False), lane) == 0
+    assert q_mod.pending(lane), "a green lane must still be queued"
+
+
 def test_prune_never_reclaims_the_integration_tree(tmp_path):
     """It is idle between batches — exactly prune's target shape — but its warm caches are
     what make a batch gate in minutes, and EVERY landing in the fleet would pay for a cold
@@ -6195,3 +6607,249 @@ def test_vendored_registry_stage_is_silent_on_stdout_when_green():
     assert r.returncode == 0, r.stdout + r.stderr
     assert r.stdout == "", f"stdout must be empty when green, got: {r.stdout!r}"
     assert "OK" in r.stderr
+
+
+# --- the ratchet gates on assertion IDENTITIES, not counts (#78) --------------
+
+_SWEEP = """\
+[KMTEST-SWEEP] launch IoDeviceObject
+IoDeviceObject_drv.c:198: Test failed: Status = 0xc0000034, expected 0x00000000
+IoDeviceObject_drv.c:206: Test failed: Ptr = FFFF800004952878, expected 0
+[KMTEST:END IoDeviceObject pass=185 fail=2 skip=0]
+[KMTEST-SWEEP] exit IoDeviceObject code=0
+[KMTEST-SWEEP] done 1 tests
+"""
+
+
+def _parser():
+    import importlib.util
+
+    spec = importlib.util.spec_from_file_location(
+        "parse_kmtest_serial",
+        Path(__file__).resolve().parents[3] / "tools" / "conformance" / "parse_kmtest_serial.py",
+    )
+    assert spec is not None and spec.loader is not None
+    mod = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(mod)
+    return mod
+
+
+def test_failing_assertions_are_parsed_and_round_trip_through_the_baseline():
+    """file:line is the identity. The message is deliberately NOT part of it —
+    it carries addresses and NTSTATUS values that differ every boot."""
+    P = _parser()
+    results, _done, _bug = P.parse(_SWEEP)
+    assert [r["name"] for r in results] == ["IoDeviceObject"]
+    assert results[0]["asserts"] == {"IoDeviceObject_drv.c:198", "IoDeviceObject_drv.c:206"}
+    text = P.fmt(results[0])
+    assert "    assert IoDeviceObject_drv.c:198" in text
+    base = _round_trip(P, text)
+    assert base["IoDeviceObject"]["asserts"] == results[0]["asserts"]
+    assert P.compare(results, base) == []
+
+
+def _round_trip(P, text):
+    import tempfile
+
+    fn = tempfile.mktemp()
+    Path(fn).write_text("# hdr\n" + text + "\n")
+    return P.load_baseline(fn)
+
+
+def test_offsetting_changes_are_caught_though_the_counts_never_move():
+    """THE point of #78. One assertion starts failing and another stops, so
+    pass/fail/skip are byte-identical and the count ratchet reports nothing.
+    Measured on 595 archived arm64 sweeps: 33 of the 37 count-signatures shared
+    by more than one run cover runs whose failing assertions differ."""
+    P = _parser()
+    banked, _, _ = P.parse(_SWEEP)
+    base = _round_trip(P, P.fmt(banked[0]))
+    swapped = _SWEEP.replace("IoDeviceObject_drv.c:206", "IoDeviceObject_drv.c:301")
+    now, _, _ = P.parse(swapped)
+    assert now[0]["pass"] == banked[0]["pass"] and now[0]["fail"] == banked[0]["fail"]
+    # count-only floor (a row not yet seeded with identities) sees nothing
+    countonly = {
+        "IoDeviceObject": {k: v for k, v in base["IoDeviceObject"].items() if k != "asserts"}
+    }
+    assert P.compare(now, countonly) == []
+    # identity floor names it
+    assert P.compare(now, base) == [
+        "IoDeviceObject: NEW failing assertion IoDeviceObject_drv.c:301"
+    ]
+
+
+def test_a_bistable_assertion_marked_with_a_question_mark_is_not_a_regression():
+    """IoDeviceObject really is bistable on all three arches. Without the mark
+    every soak round reports a regression or an improvement, forever."""
+    P = _parser()
+    results, _, _ = P.parse(_SWEEP)
+    base = _round_trip(P, P.fmt(results[0], flaky={"IoDeviceObject_drv.c:206"}))
+    assert base["IoDeviceObject"]["flaky"] == {"IoDeviceObject_drv.c:206"}
+    # it fired this time: known, so silent
+    assert P.compare(results, base) == []
+    # and it did not fire this time: still silent, and still on the floor
+    quiet = _SWEEP.replace(
+        "IoDeviceObject_drv.c:206: Test failed: Ptr = FFFF800004952878, expected 0\n", ""
+    ).replace("fail=2", "fail=1")
+    now, _, _ = P.parse(quiet)
+    assert P.compare(now, base) == []
+
+
+def test_reseeding_a_row_keeps_its_bistable_marks():
+    """A wholesale re-seed from one boot must not delete an `assert?` — that
+    banks whichever face this boot showed and hands the next run a false
+    regression. Same failure --only exists to prevent, one level down."""
+    prev = (
+        "# hdr\n"
+        "IoDeviceObject OK pass=185 fail=2 skip=0\n"
+        "    assert IoDeviceObject_drv.c:198\n"
+        "    assert? IoDeviceObject_drv.c:206\n"
+    )
+    assert conformance_mod._flaky_of(prev, "IoDeviceObject") == {"IoDeviceObject_drv.c:206"}
+    # this boot did NOT show the bistable one
+    res = [
+        {
+            "name": "IoDeviceObject",
+            "status": "OK",
+            "pass": 185,
+            "fail": 1,
+            "skip": 0,
+            "asserts": {"IoDeviceObject_drv.c:198"},
+        }
+    ]
+    text, refusal = conformance_mod.merge_baseline_rows(prev, res, ["IoDeviceObject"], _fmt)
+    assert refusal is None and text is not None
+    assert "    assert? IoDeviceObject_drv.c:206" in text, "the flake mark was dropped"
+
+
+def test_an_unseeded_row_still_gates_on_the_fail_count():
+    """Identity seeding is per-arch and incremental. A row with no `assert`
+    lines must keep its old count gate rather than silently gating nothing."""
+    P = _parser()
+    base = _round_trip(P, "IoDeviceObject OK pass=185 fail=2 skip=0")
+    assert base["IoDeviceObject"].get("asserts") is None
+    worse = _SWEEP.replace("fail=2", "fail=3")
+    now, _, _ = P.parse(worse)
+    assert P.compare(now, base) == ["IoDeviceObject: fail 2 -> 3 (grew)"]
+
+
+def test_reseeding_one_row_leaves_every_other_rows_identities_alone():
+    """--only replaces the named row's whole assert block and nothing else. An
+    indented `assert` line belongs to the row above it, not to a test named
+    "assert" — getting that wrong would rewrite the file into nonsense."""
+    prev = (
+        "# hdr\n"
+        "FsRtlLegal OK pass=100 fail=1 skip=0\n"
+        "    assert FsRtlLegal.c:11\n"
+        "IoDeviceObject OK pass=185 fail=2 skip=0\n"
+        "    assert IoDeviceObject_drv.c:198\n"
+        "    assert? IoDeviceObject_drv.c:206\n"
+    )
+    res = [
+        {"name": "FsRtlLegal", "status": "OK", "pass": 132, "fail": 0, "skip": 0, "asserts": set()},
+        {
+            "name": "IoDeviceObject",
+            "status": "OK",
+            "pass": 185,
+            "fail": 1,
+            "skip": 0,
+            "asserts": {"IoDeviceObject_drv.c:198"},
+        },
+    ]
+    text, refusal = conformance_mod.merge_baseline_rows(prev, res, ["FsRtlLegal"], _fmt)
+    assert refusal is None and text is not None
+    # the re-seeded row drops the assertion that no longer fails
+    assert "FsRtlLegal.c:11" not in text
+    # the untouched row keeps BOTH of its identities, mark included
+    assert "    assert IoDeviceObject_drv.c:198" in text
+    assert "    assert? IoDeviceObject_drv.c:206" in text
+
+
+def test_seed_asserts_adds_identities_without_touching_the_counts():
+    """--seed-asserts upgrades a count-only floor in place. Re-rolling the counts
+    from the soak is exactly what a wholesale --write-baseline does wrong."""
+    P = _parser()
+    prev = "# hdr\nExPools OK pass=100 fail=2 skip=0 exit=0\n"
+    rounds = [
+        [
+            {
+                "name": "ExPools",
+                "status": "OK",
+                "pass": 7,
+                "fail": 2,
+                "skip": 0,
+                "asserts": {"ExPools.c:119", "ExPools.c:176"},
+            }
+        ],
+        [
+            {
+                "name": "ExPools",
+                "status": "OK",
+                "pass": 7,
+                "fail": 2,
+                "skip": 0,
+                "asserts": {"ExPools.c:119", "ExPools.c:176"},
+            }
+        ],
+        [
+            {
+                "name": "ExPools",
+                "status": "OK",
+                "pass": 7,
+                "fail": 1,
+                "skip": 0,
+                "asserts": {"ExPools.c:119"},
+            }
+        ],
+    ]
+    text, report = conformance_mod.seed_asserts_into_baseline(prev, rounds, P)
+    # the banked counts survive verbatim
+    assert "ExPools OK pass=100 fail=2 skip=0 exit=0" in text
+    # unanimous -> assert; seen in 2 of 3 -> assert?
+    assert "    assert ExPools.c:119" in text
+    assert "    assert? ExPools.c:176" in text
+    assert "1 stable + 1 bistable" in report
+
+
+def test_seed_asserts_ignores_rounds_where_the_test_never_completed():
+    """A round that CRASHed has no assertions for that test — it says nothing
+    about which of them fail. Counting it as "did not fail" would mark every
+    stable failure bistable and permanently weaken the floor from one bad boot."""
+    P = _parser()
+    prev = "# hdr\nExPools OK pass=100 fail=2 skip=0\n"
+    good = {
+        "name": "ExPools",
+        "status": "OK",
+        "pass": 7,
+        "fail": 1,
+        "skip": 0,
+        "asserts": {"ExPools.c:119"},
+    }
+    dead = {"name": "ExPools", "status": "CRASH", "pass": 0, "fail": 0, "skip": 0, "asserts": set()}
+    text, _report = conformance_mod.seed_asserts_into_baseline(
+        prev, [[good], [dead], [good], [good]], P
+    )
+    assert "    assert ExPools.c:119" in text, "the crashed round diluted unanimity"
+    assert "assert?" not in text
+
+
+def test_seed_asserts_will_not_add_a_row_the_floor_does_not_carry():
+    """Adding a test to the floor is --write-baseline's job: it has the coverage
+    refusal in front of it, and this does not."""
+    P = _parser()
+    prev = "# hdr\nExPools OK pass=100 fail=2 skip=0\n"
+    rounds = [
+        [
+            {
+                "name": "NewTest",
+                "status": "OK",
+                "pass": 1,
+                "fail": 1,
+                "skip": 0,
+                "asserts": {"NewTest.c:5"},
+            }
+        ]
+    ] * 3
+    text, report = conformance_mod.seed_asserts_into_baseline(prev, rounds, P)
+    assert "NewTest" not in text.replace("NewTest.c", "")
+    assert "not on the floor" in report

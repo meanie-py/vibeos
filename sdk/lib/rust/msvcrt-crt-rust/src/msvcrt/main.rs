@@ -38,9 +38,9 @@ use core::ffi::c_void;
 // through the prelude — these are OUR definitions, not the C's, and naming the owning module
 // is what makes the init order auditable against main.c side by side.
 use super::console::msvcrt_free_console;
-use super::cpp::msvcrt_init_exception;
+use crt_shared_rust::cpp::msvcrt_init_exception;
 use super::data::{msvcrt_free_args, msvcrt_init_args};
-use super::except::{msvcrt_free_signals, msvcrt_init_signals};
+use crt_shared_rust::except::{msvcrt_free_signals, msvcrt_init_signals};
 use super::file::{msvcrt_free_io, msvcrt_init_io};
 use super::heap::{msvcrt_destroy_heap, msvcrt_init_heap};
 use super::locale::{_free_locale, free_locinfo, msvcrt_init_locale};
@@ -52,14 +52,6 @@ use super::time::msvcrt_init_clock;
 // wine's always-on ERR channel. As in the except modules, the whole message including the
 // `err:msvcrt:` prefix is a `c"…"` literal at the call site so the literal-multiset diff
 // against main.c sees a channel call on both sides and a macro body with nothing in it.
-macro_rules! ERR {
-    ($msg:literal $(, $($arg:tt)*)?) => {{
-        OutputDebugStringA($msg.as_ptr());
-    }};
-}
-macro_rules! TRACE {
-    ($($arg:tt)*) => {{}};
-}
 
 /// `psdk/winbase.h:529` — `#define TLS_OUT_OF_INDEXES (DWORD)0xFFFFFFFF`. A macro, so there
 /// is no symbol for the island to snapshot.
@@ -79,7 +71,7 @@ unsafe fn msvcrt_init_tls() -> BOOL {
     msvcrt_tls_index = TlsAlloc();
 
     if msvcrt_tls_index == TLS_OUT_OF_INDEXES {
-        ERR!(c"err:msvcrt:TlsAlloc() failed!\n");
+        ERR!("msvcrt:TlsAlloc() failed!\n");
         return FALSE as BOOL;
     }
     TRUE as BOOL
@@ -88,7 +80,7 @@ unsafe fn msvcrt_init_tls() -> BOOL {
 /// `static inline BOOL msvcrt_free_tls(void)`.
 unsafe fn msvcrt_free_tls() -> BOOL {
     if TlsFree(msvcrt_tls_index) == 0 {
-        ERR!(c"err:msvcrt:TlsFree() failed!\n");
+        ERR!("msvcrt:TlsFree() failed!\n");
         return FALSE as BOOL;
     }
     TRUE as BOOL

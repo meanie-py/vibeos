@@ -5,7 +5,6 @@ use crate::floatobj::*;
 use ntkrnl_sys::ddk::{ExAllocatePoolWithTag, ExFreePoolWithTag};
 use ntkrnl_sys::base::STATUS_SUCCESS;
 
-#[allow(unused_macros)] macro_rules! ERR { ($($t:tt)*) => { () }; }
 
 // CRT (cdecl); DIB_XXBPP_FloodFillSolid is plain cdecl (dib*.h, BOOLEAN).
 extern "C" {

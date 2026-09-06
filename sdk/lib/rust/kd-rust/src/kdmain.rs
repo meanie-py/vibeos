@@ -4,6 +4,7 @@ use ntkrnl_sys::base::*;
 use ntkrnl_sys::interlocked::*;
 use ntkrnl_sys::ke::*;
 use ntkrnl_sys::ddk::{
+    RtlAssert,
     HAL_DISPATCH,
     HalDisplayString, IoCreateDriver, IoDeleteDriver, IoRegisterBootDriverReinitialization,
     IoRegisterDriverReinitialization, ObMakeTemporaryObject, ANSI_STRING, CPPORT, PCSTR,
@@ -342,7 +343,12 @@ unsafe fn KdpInitDriver() -> NTSTATUS {
     };
 
     if KeGetCurrentIrql() != PASSIVE_LEVEL as u8 {
-        panic!("ASSERT failed");
+        RtlAssert(
+            b"KeGetCurrentIrql() == PASSIVE_LEVEL\0".as_ptr() as *mut core::ffi::c_void,
+            b"kdmain.rs\0".as_ptr() as *mut core::ffi::c_void,
+            line!(),
+            core::ptr::null_mut::<i8>(),
+        );
     }
 
     if _InterlockedCompareExchange8(

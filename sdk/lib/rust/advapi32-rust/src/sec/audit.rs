@@ -538,7 +538,7 @@ pub unsafe extern "system" fn AccessCheckByTypeResultListAndAuditAlarmA(
     AccessStatusList: LPDWORD,
     pfGenerateOnClose: LPBOOL,
 ) -> i32 {
-    FIXME!(b"%s() not implemented!\n\0".as_ptr() as LPCSTR, b"AccessCheckByTypeResultListAndAuditAlarmA\0".as_ptr() as LPCSTR);
+    FIXME!("%s() not implemented!\n", b"AccessCheckByTypeResultListAndAuditAlarmA\0".as_ptr() as LPCSTR);
     SetLastError(ERROR_CALL_NOT_IMPLEMENTED);
     0
 }

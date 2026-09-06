@@ -3,12 +3,6 @@ use ntkrnl_sys::ddk::{ExAllocatePoolWithTag, ExFreePoolWithTag, PsGetCurrentThre
 use ntkrnl_sys::base::{NT_SUCCESS, STATUS_SUCCESS};
 use core::ffi::c_void;
 
-// ERR/WARN/FIXME/TRACE — DbgPrint-style no-ops (no kernel symbol in non-DBG build).
-macro_rules! ERR { ($($t:tt)*) => {{}}; }
-macro_rules! WARN { ($($t:tt)*) => {{}}; }
-macro_rules! FIXME { ($($t:tt)*) => {{}}; }
-macro_rules! TRACE { ($($t:tt)*) => {{}}; }
-
 // LOWORD/HIWORD (minwindef.h).
 #[inline(always)]
 fn LOWORD(l: DWORD) -> DWORD { l & 0xffff }
@@ -2720,7 +2714,7 @@ unsafe fn co_WinPosMinMaximize(
         ShowFlag as LPARAM,
     ) != 0
     {
-        ERR!(b"WinPosMinMaximize WH_CBT Call Hook return!\n\0".as_ptr());
+        ERR!("WinPosMinMaximize WH_CBT Call Hook return!\n");
         return SWP_NOSIZE | SWP_NOMOVE;
     }
 
@@ -4435,7 +4429,7 @@ unsafe extern "fastcall" fn co_IntCalculateSnapPosition(
             (*pos2).left = (*pos2).right - width as i32;
         }
         _ => {
-            ERR!(b"Unexpected snap edge %#x\n\0".as_ptr() as *const i8, Edge);
+            ERR!("Unexpected snap edge %#x\n", Edge);
         }
     }
 
@@ -4483,7 +4477,7 @@ unsafe extern "C" fn co_IntCalculateSnapPosition(
             (*pos2).left = (*pos2).right - width as i32;
         }
         _ => {
-            ERR!(b"Unexpected snap edge %#x\n\0".as_ptr() as *const i8, Edge);
+            ERR!("Unexpected snap edge %#x\n", Edge);
         }
     }
 

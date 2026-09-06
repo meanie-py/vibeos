@@ -161,7 +161,7 @@ unsafe fn GetFallbackHKCRKey(
         }
         if *SubKeyName == 0 {
             ERR!(
-                b"Key name %S is invalid!\n\0".as_ptr() as *const i8,
+                "Key name %S is invalid!\n",
                 KeyName.Buffer,
             );
             return ERROR_INTERNAL_ERROR as LONG;
@@ -981,7 +981,7 @@ pub unsafe extern "system" fn EnumHKCRValue(
             core::ptr::null_mut(),
         );
         if ErrorCode != ERROR_SUCCESS as LONG {
-            ERR!(b"Could not query info of key %p (Err: %d)\n\0".as_ptr() as *const i8, FallbackKey, ErrorCode);
+            ERR!("Could not query info of key %p (Err: %d)\n", FallbackKey, ErrorCode);
             break 'exit;
         }
 
@@ -1015,7 +1015,7 @@ pub unsafe extern "system" fn EnumHKCRValue(
             );
             if ErrorCode != ERROR_SUCCESS as LONG {
                 if ErrorCode != ERROR_NO_MORE_ITEMS as LONG {
-                    ERR!(b"Returning %d.\n\0".as_ptr() as *const i8, ErrorCode);
+                    ERR!("Returning %d.\n", ErrorCode);
                 }
                 break 'exit;
             }
@@ -1034,7 +1034,7 @@ pub unsafe extern "system" fn EnumHKCRValue(
             if ErrorCode == ERROR_SUCCESS as LONG {
                 dwIndex += 1;
             } else if ErrorCode != ERROR_FILE_NOT_FOUND as LONG {
-                ERR!(b"Got error %d while querying for %s on HKCU side.\n\0".as_ptr() as *const i8, ErrorCode, FallbackValueName);
+                ERR!("Got error %d while querying for %s on HKCU side.\n", ErrorCode, FallbackValueName);
                 break 'exit;
             }
 

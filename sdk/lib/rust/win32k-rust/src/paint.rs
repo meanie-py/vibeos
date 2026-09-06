@@ -95,7 +95,7 @@ pub unsafe extern "system" fn EngPaint(
     mix: MIX,
 ) -> BOOL {
     let rop4: ROP4 = mix_to_rop4(mix);
-    debug_assert!(!rop4_uses_source(rop4));
+    ntkrnl_sys::ASSERT!(!rop4_uses_source(rop4));
 
     IntEngBitBlt(
         pso,

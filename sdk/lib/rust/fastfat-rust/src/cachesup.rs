@@ -1281,7 +1281,7 @@ pub unsafe extern "system" fn FatPrefetchPages(
     }
 
     // ASSERT(PageCount < (PFN_NUMBER)MAXULONG);
-    core::debug_assert!(PageCount < MAXULONG as u32);
+    ntkrnl_sys::ASSERT!(PageCount < MAXULONG as u32);
 
     IoInitializePriorityInfo(&mut priority_information);
 

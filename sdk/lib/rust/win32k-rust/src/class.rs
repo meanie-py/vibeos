@@ -6,10 +6,6 @@ use ntkrnl_sys::base::{NT_SUCCESS, STATUS_INSUFFICIENT_RESOURCES, STATUS_SUCCESS
 use ntkrnl_sys::constants::{STATUS_BUFFER_TOO_SMALL, STATUS_INVALID_PARAMETER, STATUS_OBJECT_NAME_NOT_FOUND};
 use core::ffi::c_void;
 
-// Debug channel macros (DBG_DEFAULT_CHANNEL) — no-ops under NDEBUG.
-macro_rules! TRACE { ($($t:tt)*) => {{}}; }
-macro_rules! ERR   { ($($t:tt)*) => {{}}; }
-
 // SetLastNtError is FASTCALL (`@SetLastNtError@4`).
 #[cfg(target_arch = "x86")]
 extern "fastcall" {
@@ -1849,7 +1845,7 @@ unsafe fn IntSetClassMenuName(Class: PCLS, MenuName: PUNICODE_STRING) -> BOOL {
                     Class = (*Class).pclsNext;
                 }
             } else {
-                ERR!(b"Failed to copy class menu name!\n\0".as_ptr());
+                ERR!("Failed to copy class menu name!\n");
                 UserHeapFree(strBufW as *mut core::ffi::c_void);
             }
         } else {
@@ -2107,7 +2103,7 @@ pub unsafe extern "C" fn UserSetClassLongPtr(mut Class: PCLS, Index: INT, NewLon
                     NewSmallIcon = UserGetCurIconObject(SmallIconHandle);
                     NewIconFromCache = 1u8;
                 } else {
-                    ERR!(b"Failed getting a small icon for the class.\n\0".as_ptr());
+                    ERR!("Failed getting a small icon for the class.\n");
                 }
             }
 
@@ -2163,7 +2159,7 @@ pub unsafe extern "C" fn UserSetClassLongPtr(mut Class: PCLS, Index: INT, NewLon
             let Value = NewLong as PUNICODE_STRING;
 
             if IntSetClassMenuName(Class, Value) == 0 {
-                ERR!(b"Setting the class menu name failed!\n\0".as_ptr());
+                ERR!("Setting the class menu name failed!\n");
             }
         }
 
@@ -2323,7 +2319,7 @@ pub unsafe extern "fastcall" fn UserRegisterSystemClasses() -> BOOL {
         wc.hCursor = core::ptr::null_mut();
         if (*entry).hCursor == OCR_NORMAL as HICON {
             if SYSTEMCUR_ARROW().is_null() {
-                ERR!(b"SYSTEMCUR(ARROW) == NULL, should not happen!!\n\0".as_ptr());
+                ERR!("SYSTEMCUR(ARROW) == NULL, should not happen!!\n");
             } else {
                 wc.hCursor = UserHMGetHandle(SYSTEMCUR_ARROW()) as _;
             }
@@ -2358,7 +2354,7 @@ pub unsafe extern "fastcall" fn UserRegisterSystemClasses() -> BOOL {
 
             (*ppi).dwRegisteredClasses |= ICLASS_TO_MASK((*entry).iCls as u32);
         } else {
-            ERR!(b"!!! Registering system class failed!\n\0".as_ptr());
+            ERR!("!!! Registering system class failed!\n");
             Ret = 0;
         }
 
@@ -2431,7 +2427,7 @@ pub unsafe extern "C" fn UserRegisterSystemClasses() -> BOOL {
         wc.hCursor = core::ptr::null_mut();
         if (*entry).hCursor == OCR_NORMAL as HICON {
             if SYSTEMCUR_ARROW().is_null() {
-                ERR!(b"SYSTEMCUR(ARROW) == NULL, should not happen!!\n\0".as_ptr());
+                ERR!("SYSTEMCUR(ARROW) == NULL, should not happen!!\n");
             } else {
                 wc.hCursor = UserHMGetHandle(SYSTEMCUR_ARROW()) as _;
             }
@@ -2466,7 +2462,7 @@ pub unsafe extern "C" fn UserRegisterSystemClasses() -> BOOL {
 
             (*ppi).dwRegisteredClasses |= ICLASS_TO_MASK((*entry).iCls as u32);
         } else {
-            ERR!(b"!!! Registering system class failed!\n\0".as_ptr());
+            ERR!("!!! Registering system class failed!\n");
             Ret = 0;
         }
 
@@ -2720,7 +2716,7 @@ pub unsafe extern "system" fn NtUserUnregisterClass(
         ClassNameOrAtom,
     );
     if !NT_SUCCESS(Status) {
-        ERR!(b"Error capturing the class name\n\0".as_ptr() as *const i8);
+        ERR!("Error capturing the class name\n");
         SetLastNtError(Status);
         return 0;
     }
@@ -2784,7 +2780,7 @@ pub unsafe extern "system" fn NtUserGetClassInfo(
 
     Status = ProbeAndCaptureUnicodeStringOrAtom(&mut SafeClassName, ClassName);
     if !NT_SUCCESS(Status) {
-        ERR!(b"Error capturing the class name\n\0".as_ptr() as *const _);
+        ERR!("Error capturing the class name\n");
         SetLastNtError(Status);
         return 0;
     }

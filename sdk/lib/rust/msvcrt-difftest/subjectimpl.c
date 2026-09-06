@@ -575,3 +575,25 @@ int _scprintf(const char *format, ...)
     va_end(ap);
     return n;
 }
+
+/*
+ * DbgPrint — what the crate under test's ERR/FIXME macros call.
+ *
+ * Those were empty macros until 2026-09-05, so nothing referenced this and the host
+ * link found no gap. They print for real now (wine/debug.h has ERR and FIXME on by
+ * default), which on the host means an undefined symbol unless it is supplied here.
+ *
+ * stderr is the host's stand-in for the serial port. NOT silent: an ERR firing during
+ * a differential run is a finding, and swallowing it here would reintroduce, in the
+ * harness, exactly the silence this symbol exists because we removed.
+ */
+int DbgPrint(const char *format, ...)
+{
+    va_list ap;
+    int n;
+
+    va_start(ap, format);
+    n = vfprintf(stderr, format, ap);
+    va_end(ap);
+    return n;
+}

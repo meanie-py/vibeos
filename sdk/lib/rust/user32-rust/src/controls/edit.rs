@@ -159,10 +159,6 @@ extern "C" {
 }
 
 // ── file-local helpers (macros/inlines the C uses; not shared symbols) ─────────
-macro_rules! ERR   { ($($t:tt)*) => {{ }}; }
-macro_rules! TRACE { ($($t:tt)*) => {{ }}; }
-macro_rules! FIXME { ($($t:tt)*) => {{ }}; }
-macro_rules! WARN  { ($($t:tt)*) => {{ }}; }
 
 #[inline] fn min<T: PartialOrd>(a: T, b: T) -> T { if a < b { a } else { b } }
 #[inline] fn max<T: PartialOrd>(a: T, b: T) -> T { if a > b { a } else { b } }
@@ -636,7 +632,7 @@ unsafe fn EDIT_BuildLineDefs_ML(es: *mut EDITSTATE, mut istart: INT, iend: INT, 
     }
 
     if current_line.is_null() {
-        FIXME!(b" modification occurred outside buffer\n\0".as_ptr() as *const i8);
+        FIXME!(" modification occurred outside buffer\n");
         return;
     }
 
@@ -1323,15 +1319,7 @@ unsafe fn EDIT_LockBuffer(es: *mut EDITSTATE) {
                 textA = LocalLock((*es).hloc32A) as *mut CHAR;
             }
         } else {
-            /* ERR!() is a NO-OP in this translation (every ERR/WARN/TRACE was
-             * nulled out), so this used to fail in total silence and the caller
-             * then dereferenced es->text == NULL. */
-            DbgPrint(
-                b"[EDIT] LockBuffer: es->hloc32W is NULL - no buffer was ever \
-                  allocated; es->text stays NULL and the next access will AV\n\0"
-                    .as_ptr() as *const i8,
-            );
-            ERR!();
+            ERR!("no buffer ... please report\n");
             return;
         }
 
@@ -1756,7 +1744,7 @@ unsafe fn EDIT_ImmSetCompositionWindow(es: *mut EDITSTATE, pt: POINT) {
     let mut CompForm: COMPOSITIONFORM = core::mem::zeroed();
     let hIMC = ImmGetContext((*es).hwndSelf);
     if hIMC.is_null() {
-        ERR!(b"!hIMC\n\0".as_ptr() as *const i8);
+        ERR!("!hIMC\n");
         return;
     }
 
@@ -3003,7 +2991,7 @@ unsafe fn EDIT_ContextMenuCommand(es: *mut EDITSTATE, id: UINT) {
             SendMessageW((*es).hwndSelf, EM_SETSEL, 0, -1i32 as LPARAM);
         }
         _ => {
-            ERR!(b"unknown menu item, please report\n\0".as_ptr());
+            ERR!("unknown menu item, please report\n");
         }
     }
 }
@@ -3267,7 +3255,7 @@ unsafe fn EDIT_WM_KeyDown(es: *mut EDITSTATE, key: INT) -> LRESULT {
             }
             x if x == VK_BACK => {
                 if control != 0 {
-                    FIXME!(b"Ctrl+Backspace\n\0".as_ptr() as *const i8);
+                    FIXME!("Ctrl+Backspace\n");
                 }
             }
             _ => {}
@@ -3874,7 +3862,7 @@ unsafe fn EDIT_GetCompositionStr(hIMC: HIMC, CompFlag: LPARAM, es: *mut EDITSTAT
 
     lpCompStr = HeapAlloc(GetProcessHeap(), 0, (buflen as usize + core::mem::size_of::<u16>()) as _) as LPWSTR;
     if lpCompStr.is_null() {
-        ERR!(b"Unable to allocate IME CompositionString\n\0".as_ptr());
+        ERR!("Unable to allocate IME CompositionString\n");
         return;
     }
 
@@ -3889,7 +3877,7 @@ unsafe fn EDIT_GetCompositionStr(hIMC: HIMC, CompFlag: LPARAM, es: *mut EDITSTAT
             dwBufLenAttr += 1;
             lpCompStrAttr = HeapAlloc(GetProcessHeap(), 0, (dwBufLenAttr + 1) as _) as LPSTR;
             if lpCompStrAttr.is_null() {
-                ERR!(b"Unable to allocate IME Attribute String\n\0".as_ptr());
+                ERR!("Unable to allocate IME Attribute String\n");
                 HeapFree(GetProcessHeap(), 0, lpCompStr as _);
                 return;
             }
@@ -3914,7 +3902,7 @@ unsafe fn EDIT_GetResultStr(hIMC: HIMC, es: *mut EDITSTATE) {
         (buflen as usize + core::mem::size_of::<u16>()) as _,
     ) as LPWSTR;
     if lpResultStr.is_null() {
-        ERR!(b"Unable to alloc buffer for IME string\n\0".as_ptr() as *const i8);
+        ERR!("Unable to alloc buffer for IME string\n");
         return;
     }
 
@@ -4116,7 +4104,7 @@ pub unsafe extern "system" fn EditWndProc_common(hwnd: HWND, msg: UINT, mut wPar
             NtUserSetWindowFNID(hwnd, FNID_EDIT as u16);
         } else {
             if (*pWnd).fnid != FNID_EDIT {
-                ERR!(b"Wrong window class for Edit! fnId 0x%x\n\0".as_ptr() as *const i8, (*pWnd).fnid as u32);
+                ERR!("Wrong window class for Edit! fnId 0x%x\n", (*pWnd).fnid as u32);
                 return 0;
             }
         }
@@ -4194,7 +4182,7 @@ pub unsafe extern "system" fn EditWndProc_common(hwnd: HWND, msg: UINT, mut wPar
             result = EDIT_EM_GetThumb(es);
         }
         0x00bf | 0x00c0 | 0x00c3 | 0x00ca => {
-            FIXME!(b"undocumented message 0x%x, please report\n\0".as_ptr() as *const i8, msg);
+            FIXME!("undocumented message 0x%x, please report\n", msg);
             result = DefWindowProcW(hwnd, msg, wParam, lParam);
         }
         EM_LINELENGTH => {

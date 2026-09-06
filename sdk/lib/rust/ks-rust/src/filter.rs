@@ -1817,8 +1817,8 @@ pub unsafe extern "C" fn IKsFilter_RemoveFilterFromFilterFactory(
         .wrapping_sub(core::mem::size_of::<KSBASIC_HEADER>())
         as PKSBASIC_HEADER;
 
-    debug_assert!((*BasicHeader).Type as u32 == KsObjectTypeFilterFactory as u32);
-    debug_assert!(!(*BasicHeader).FirstChild.Filter.is_null());
+    ntkrnl_sys::ASSERT!((*BasicHeader).Type as u32 == KsObjectTypeFilterFactory as u32);
+    ntkrnl_sys::ASSERT!(!(*BasicHeader).FirstChild.Filter.is_null());
 
     Filter = (*BasicHeader).FirstChild.Filter;
     LastFilter = core::ptr::null_mut();
@@ -1841,13 +1841,13 @@ pub unsafe extern "C" fn IKsFilter_RemoveFilterFromFilterFactory(
             .wrapping_sub(core::mem::size_of::<KSBASIC_HEADER>())
             as PKSBASIC_HEADER;
 
-        debug_assert!((*BasicHeader).Type as u32 == KsObjectTypeFilter as u32);
+        ntkrnl_sys::ASSERT!((*BasicHeader).Type as u32 == KsObjectTypeFilter as u32);
 
         LastFilter = Filter;
         if !(*BasicHeader).Next.Filter.is_null() {
             Filter = (*BasicHeader).Next.Filter;
         } else {
-            debug_assert!(false);
+            ntkrnl_sys::ASSERT!(false);
             break;
         }
     }

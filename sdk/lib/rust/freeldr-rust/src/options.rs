@@ -27,7 +27,8 @@ extern "C" {
     fn UiEditBox(MessageText: PCSTR, EditTextBuffer: PCHAR, Length: ULONG) -> BOOLEAN;
     fn UiGetScreenHeight() -> ULONG;
     fn UiGetMenuBgColor() -> UCHAR;
-    fn DbgParseDebugChannels(Channels: PCSTR);
+    // PCHAR, not PCSTR: the C splits this buffer in place with NULs.
+    fn DbgParseDebugChannels(Channels: PCHAR);
 }
 
 // ATTR(fg,bg) is the (UCHAR)(((bg)<<4)|((fg)&0xF)) macro from ui.h. Translate
@@ -142,7 +143,7 @@ pub unsafe extern "C" fn DoOptionsMenu(OperatingSystem: *mut OperatingSystemItem
                 (core::mem::size_of_val(&DebugChannelString) / core::mem::size_of::<CHAR>()) as ULONG,
             ) != 0
             {
-                DbgParseDebugChannels(DebugChannelString.as_ptr());
+                DbgParseDebugChannels(DebugChannelString.as_mut_ptr());
             }
         }
         11 => {

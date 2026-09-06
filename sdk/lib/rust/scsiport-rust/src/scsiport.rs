@@ -423,8 +423,8 @@ pub unsafe extern "system" fn ScsiPortGetPhysicalAddress(
         let LunExtension =
             (*(*IoStack).DeviceObject).DeviceExtension as *mut SCSI_PORT_LUN_EXTENSION;
 
-        debug_assert!(!LunExtension.is_null());
-        debug_assert!((*LunExtension).Common.IsFDO == 0);
+        ntkrnl_sys::ASSERT!(!LunExtension.is_null());
+        ntkrnl_sys::ASSERT!((*LunExtension).Common.IsFDO == 0);
 
         let SrbInfo = SpiGetSrbData(DeviceExtension, LunExtension, (((*Srb).QueueTag) as u32) as _);
         let mut SGList = (*SrbInfo).ScatterGather;
@@ -1390,7 +1390,9 @@ pub unsafe extern "C" fn ScsiPortNotification_v(
                     as *mut SCSI_PORT_LUN_EXTENSION;
 
                 // ASSERT(LunExtension && !LunExtension->Common.IsFDO)
-                if !(!LunExtension.is_null() && !(*LunExtension).Common.IsFDO != 0) {
+                // `!IsFDO != 0` was bitwise-not and always true, so only the null half of
+                // the assert had any effect.
+                if !(!LunExtension.is_null() && (*LunExtension).Common.IsFDO == 0) {
                     DbgBreakPoint();
                 }
 
@@ -2538,11 +2540,11 @@ unsafe fn SpiParseDeviceInfo(
     const SCSI_MAXIMUM_LOGICAL_UNITS: u8 = 0x08; // unknown, placeholder
     const SRB_FLAGS_DISABLE_SYNCH_TRANSFER: u32 = 0x08; // placeholder
     const SRB_FLAGS_DISABLE_DISCONNECT: u32 = 0x04; // placeholder
-    const CmResourceTypePort: u8 = 0; // placeholder
-    const CmResourceTypeMemory: u8 = 1; // placeholder
-    const CmResourceTypeInterrupt: u8 = 2; // placeholder
-    const CmResourceTypeDma: u8 = 3; // placeholder
-    const CmResourceTypeDeviceSpecific: u8 = 4; // placeholder
+    // cmtypes.h:77-83. The translation numbered these from 0, which shifts every
+    // type down one and makes CmResourceTypePort collide with CmResourceTypeNull.
+    // glue.rs already carries the correct Port/Memory/Interrupt/Dma; only
+    // DeviceSpecific is local.
+    const CmResourceTypeDeviceSpecific: u8 = 5;
     const CM_RESOURCE_INTERRUPT_LATCHED: u32 = 1; // placeholder
     const Latched: u32 = 0x01; // placeholder
     const LevelSensitive: u32 = 0x00; // placeholder

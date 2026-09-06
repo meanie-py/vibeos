@@ -5231,7 +5231,7 @@ pub unsafe extern "system" fn SamrGetMembersInAlias(
         );
         if !NT_SUCCESS(Status) {
             ERR!(
-                b"failed with status 0x%08lx\n\0".as_ptr() as *const core::ffi::c_char,
+                "failed with status 0x%08lx\n",
                 Status,
             );
             break 'done;

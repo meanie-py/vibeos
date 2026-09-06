@@ -77,21 +77,46 @@ pub fn IMAGE_ORDINAL(ordinal: usize) -> usize {
 }
 
 // ---------------------------------------------------------------------
-// Debug-channel macros. TRACE/WARN/FIXME are DbgPrint2 calls gated on a
-// per-file channel mask (compiled out entirely in the NDEBUG freeldr
-// build); ERR is the error path. None affects boot behavior — model as
-// no-ops that swallow the varargs (faithful to the NDEBUG build;
-// functionally inert when DBG since DbgPrint2 is mask-gated anyway).
-// Call sites are rewritten `TRACE(...)` → `TRACE!(...)`.
-// ---------------------------------------------------------------------
+// boot/freeldr/freeldr/include/debug.h: all four are `DbgPrint2(DbgDefaultChannel,
+// <LEVEL>, __FILE__, __LINE__, fmt, ...)` under DBG. The level gate lives INSIDE
+// DbgPrint2, and it has TWO terms: `DbgChannels[Mask] & Level` OR
+// `Level & DBG_DEFAULT_LEVELS`. `DbgChannels` does start all-zero until the `/DEBUG=`
+// boot option opens a channel, but the second term is channel-independent and covers
+// ERR and FIXME — so those two print on every boot and only WARN/TRACE wait for
+// `/DEBUG=`. (An earlier revision of this comment cited only the first term and
+// concluded all four were silent-but-faithful; see debug.rs, where the port had
+// dropped the same disjunct and really was silencing every ERR freeldr has.)
+//
+// `DbgDefaultChannel` is per-file, exactly as `DBG_DEFAULT_CHANNEL(ch)` makes it in the
+// C, so each translated module names its own; the macro just reads it at the call site.
 #[macro_export]
-macro_rules! TRACE { ($($a:tt)*) => {{}} }
+macro_rules! __freeldr_dbg {
+    ($level:expr, $fmt:literal $(, $arg:expr)* $(,)?) => {{
+        // Through the `ffi` extern, not `crate::debug`: the `debug` module is
+        // `#[cfg(not(feature = "rosload"))]` and rosload.exe imports DbgPrint2 from
+        // freeldr.sys, so a direct path stops resolving on that third archive.
+        // (freeldr's own definition is not variadic — stable Rust cannot DEFINE a
+        // C-variadic — but it now captures the argument slots as fixed parameters
+        // and formats through `_vsnprintf`, so `%s`/`%lu` substitute properly. See
+        // debug.rs `DbgFormatSlots`. cdecl is what lets the arities differ.)
+        $crate::ffi::DbgPrint2(
+            DbgDefaultChannel,
+            $level,
+            concat!(file!(), "\0").as_ptr() as *const core::ffi::c_char,
+            line!(),
+            concat!($fmt, "\0").as_ptr() as *const core::ffi::c_char
+            $(, $arg)*,
+        )
+    }};
+}
 #[macro_export]
-macro_rules! WARN  { ($($a:tt)*) => {{}} }
+macro_rules! TRACE { ($($a:tt)*) => { $crate::__freeldr_dbg!($crate::frldr::TRACE_LEVEL, $($a)*) } }
 #[macro_export]
-macro_rules! ERR   { ($($a:tt)*) => {{}} }
+macro_rules! WARN  { ($($a:tt)*) => { $crate::__freeldr_dbg!($crate::frldr::WARN_LEVEL,  $($a)*) } }
 #[macro_export]
-macro_rules! FIXME { ($($a:tt)*) => {{}} }
+macro_rules! ERR   { ($($a:tt)*) => { $crate::__freeldr_dbg!($crate::frldr::ERR_LEVEL,   $($a)*) } }
+#[macro_export]
+macro_rules! FIXME { ($($a:tt)*) => { $crate::__freeldr_dbg!($crate::frldr::FIXME_LEVEL, $($a)*) } }
 
 // ---------------------------------------------------------------------
 // freeldr-internal C externs — cdecl. (ARC_STATUS/OPENMODE/SEEKMODE/

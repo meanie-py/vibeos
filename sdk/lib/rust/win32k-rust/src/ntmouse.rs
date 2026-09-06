@@ -4,13 +4,9 @@ use ntkrnl_sys::ddk::{PsGetCurrentThreadWin32Thread};
 use core::ffi::c_void;
 
 // Debug-channel macros — no kernel symbol, no-op.
-macro_rules! TRACE { ($($t:tt)*) => {{}}; }
 #[allow(unused_macros)]
-macro_rules! ERR { ($($t:tt)*) => {{}}; }
 #[allow(unused_macros)]
-macro_rules! WARN { ($($t:tt)*) => {{}}; }
 #[allow(unused_macros)]
-macro_rules! FIXME { ($($t:tt)*) => {{}}; }
 
 // BOOL is i32; bindgen's FALSE/TRUE are u32. Shadow them as BOOL.
 const FALSE: BOOL = 0;

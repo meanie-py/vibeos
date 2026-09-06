@@ -68,7 +68,7 @@ pub unsafe extern "system" fn FstubTranslateResource(
     let mut Affinity: KAFFINITY = 0;
     let mut Status: NTSTATUS = STATUS_UNSUCCESSFUL;
 
-    debug_assert!((*Source).Type == CM_RESOURCE_TYPE_INTERRUPT);
+    ntkrnl_sys::ASSERT!((*Source).Type == CM_RESOURCE_TYPE_INTERRUPT);
 
     /* Copy common information */
     (*Target).Type = (*Source).Type;
@@ -94,7 +94,7 @@ pub unsafe extern "system" fn FstubTranslateResource(
         while k < AlternativesCount {
             let Alternative: PIO_RESOURCE_DESCRIPTOR = Alternatives.add(k as usize);
 
-            debug_assert!((*Alternative).Type == CM_RESOURCE_TYPE_INTERRUPT);
+            ntkrnl_sys::ASSERT!((*Alternative).Type == CM_RESOURCE_TYPE_INTERRUPT);
 
             /* Try to find the device vector by trial & error: try a vector
              * and translate it. */
@@ -143,7 +143,7 @@ pub unsafe extern "system" fn FstubTranslateRequirement(
     let mut Irql: KIRQL = 0;
     let mut Affinity: KAFFINITY = 0;
 
-    debug_assert!((*Source).Type == CM_RESOURCE_TYPE_INTERRUPT);
+    ntkrnl_sys::ASSERT!((*Source).Type == CM_RESOURCE_TYPE_INTERRUPT);
 
     /* Allocate output buffer. Pool tag 'Fstb' (little-endian byte order). */
     let allocation = ExAllocatePoolWithTag(
@@ -195,8 +195,8 @@ pub unsafe extern "system" fn xHalGetInterruptTranslator(
     Translator: PTRANSLATOR_INTERFACE,
     _BridgeBusNumber: PULONG,
 ) -> NTSTATUS {
-    debug_assert!(Version == HAL_IRQ_TRANSLATOR_VERSION);
-    debug_assert!(Size as usize >= core::mem::size_of::<TRANSLATOR_INTERFACE>());
+    ntkrnl_sys::ASSERT!(Version == HAL_IRQ_TRANSLATOR_VERSION);
+    ntkrnl_sys::ASSERT!(Size as usize >= core::mem::size_of::<TRANSLATOR_INTERFACE>());
 
     /* Only (E)ISA interfaces are supported */
     if BridgeInterfaceType == Internal || BridgeInterfaceType >= MicroChannel {

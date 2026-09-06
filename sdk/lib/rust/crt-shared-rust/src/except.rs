@@ -39,7 +39,7 @@
 #![allow(non_snake_case, non_camel_case_types, non_upper_case_globals)]
 
 // rustconv-assembly: whole-tu
-use super::cpp_rtti::{
+use crate::cpp_rtti::{
     _SEH2_Volatile0,
     call_dtor, copy_exception, find_caught_type, is_cxx_exception, rtti_handler, rtti_is_set,
     rtti_rva,
@@ -48,7 +48,7 @@ use crate::prelude::*;
 use core::ffi::c_void;
 // cpp.c's `terminate`, called by `check_noexcept` when an exception escapes a noexcept
 // function. Same TU family, same feature gate.
-use super::cpp::terminate;
+use crate::cpp::terminate;
 use msvcrt_sys::*;
 // Both globs above export `FALSE`/`TRUE` (prelude u8, island u32), so an unqualified
 // mention is ambiguous. Name the island's explicitly, as lock.rs does — every use here
@@ -139,16 +139,6 @@ extern "C" {
 // not a macro DEFINITION, so a prefix spelled here would read as a literal the C does not
 // have. Spelled at the call site it is invisible to that diff and visible to a reader, which
 // is the right way round.
-macro_rules! ERR {
-    ($msg:literal $(, $($arg:tt)*)?) => {{
-        OutputDebugStringA($msg.as_ptr());
-    }};
-}
-macro_rules! FIXME {
-    ($msg:literal $(, $($arg:tt)*)?) => {{
-        OutputDebugStringA($msg.as_ptr());
-    }};
-}
 
 // ---- file-scope preamble (translated) ----
 pub static mut sighandlers: [__sighandler_t; NSIG as usize] = [SIG_DFL; NSIG as usize];
@@ -331,7 +321,7 @@ unsafe extern "C" fn cxx_local_unwind(
 
     while trylevel > last_level {
         if trylevel < 0 || trylevel >= ((*descr).unwind_count) as i32 {
-            ERR!(c"err:seh:invalid trylevel %d\n", trylevel);
+            ERR!("seh:invalid trylevel %d\n", trylevel);
             terminate();
         }
         if rtti_is_set((*unwind_table.offset(trylevel as isize)).handler) {
@@ -584,7 +574,7 @@ unsafe extern "C" fn check_noexcept(
         && (*descr).magic() >= CXX_FRAME_MAGIC_VC8
         && ((*descr).flags & FUNC_DESCR_NOEXCEPT) != 0
     {
-        ERR!(c"err:seh:noexcept function propagating exception\n");
+        ERR!("seh:noexcept function propagating exception\n");
         terminate();
     }
 }
@@ -607,7 +597,7 @@ unsafe extern "C" fn cxx_frame_handler(
     let mut unwindlevel: i32 = -1;
 
     if (*descr).magic() < CXX_FRAME_MAGIC_VC6 || (*descr).magic() > CXX_FRAME_MAGIC_VC8 {
-        FIXME!(c"fixme:seh:unhandled frame magic %x\n", (*descr).magic());
+        FIXME!("seh:unhandled frame magic %x\n", (*descr).magic());
         return _EXCEPTION_DISPOSITION_ExceptionContinueSearch;
     }
 
@@ -777,6 +767,19 @@ unsafe extern "C" fn msvcrt_console_handler(ctrlType: DWORD) -> BOOL {
     ret
 }
 
+// Same shape as cpp.rs's `terminate`, and the C says so directly: `__pxcptinfoptrs` is
+// DEFINED inside except.c's `#ifndef __UCRTSUPPORT__` block (line 529), but its three callers
+// in `msvcrt_exception_filter` (567, 593, 622) sit OUTSIDE it and survive the flip. So under
+// __UCRTSUPPORT__ this TU calls a `__pxcptinfoptrs` it does not define, and resolves to the
+// genuine UCRT's — which ucrtbase.spec does export. The fourth caller in the C (line 700) is
+// inside the signal block and goes away with `signal`/`raise`.
+#[cfg(feature = "ucrtsupport")]
+unsafe extern "C" {
+    /// `corecrt_internal.h`: `void ** __cdecl __pxcptinfoptrs(void);`
+    fn __pxcptinfoptrs() -> *mut *mut core::ffi::c_void;
+}
+
+#[cfg(not(feature = "ucrtsupport"))]
 #[no_mangle]
 pub unsafe extern "C" fn __pxcptinfoptrs() -> *mut *mut core::ffi::c_void {
     core::ptr::addr_of_mut!((*msvcrt_get_thread_data()).xcptinfo) as *mut *mut core::ffi::c_void
@@ -869,6 +872,7 @@ pub unsafe extern "C" fn msvcrt_init_signals() {
 pub unsafe extern "C" fn msvcrt_free_signals() {
     SetConsoleCtrlHandler(Some(msvcrt_console_handler), FALSE as BOOL);
 }
+#[cfg(not(feature = "ucrtsupport"))]
 #[no_mangle]
 pub unsafe extern "C" fn signal(sig: i32, func: __sighandler_t) -> __sighandler_t {
     let mut ret: __sighandler_t = SIG_ERR();
@@ -889,6 +893,7 @@ pub unsafe extern "C" fn signal(sig: i32, func: __sighandler_t) -> __sighandler_
     ret
 }
 
+#[cfg(not(feature = "ucrtsupport"))]
 #[no_mangle]
 pub unsafe extern "C" fn raise(sig: i32) -> i32 {
     let handler: __sighandler_t;
@@ -1027,7 +1032,7 @@ pub unsafe extern "C" fn __CxxQueryExceptionSize() -> u32 {
 
 #[no_mangle]
 pub unsafe extern "C" fn __intrinsic_abnormal_termination() -> i32 {
-    FIXME!(c"fixme:seh:(void)stub\n");
+    FIXME!("seh:(void)stub\n");
     0
 }
 
@@ -1078,7 +1083,7 @@ pub unsafe extern "C" fn _FindAndUnlinkFrame(fi: *mut frame_info) {
         cur = (*cur).next;
     }
 
-    ERR!(c"err:seh:frame not found, native crashes in this case\n");
+    ERR!("seh:frame not found, native crashes in this case\n");
 }
 #[no_mangle]
 pub unsafe extern "C" fn _IsExceptionObjectToBeDestroyed(obj: *const core::ffi::c_void) -> i32 {
@@ -2234,3 +2239,62 @@ pub unsafe extern "C" fn __CxxUnregisterExceptionObject(frame_info: *mut cxx_fra
 //
 // #endif /* _MSVCR_VER>=140 */
 //
+
+// ── the `__UCRTSUPPORT__` half of except.c ───────────────────────────────────────────────
+//
+// Five bodies inside `#if _MSVCR_VER>=140 || defined(__UCRTSUPPORT__)`. msvcrt compiles this
+// TU at `_MSVCR_VER = 0` without the macro, so none of them is built there and none had a
+// Rust body until ucrtbase's cohab needed them; ucrtbase.spec exports all five.
+//
+// rustconv translation (2026-09-05, --seal-facts --seal-calls --seal-wide, $0.02). Each was
+// diffed against the C by hand afterwards -- they are short enough that the whole body is the
+// review, and sealing's blind spot is a body that keeps SOME sealed tokens and permutes the
+// rest, which no audit flags.
+
+// `__std_exception_data` is NOT redefined here: the C declares it at line 1013, ABOVE the
+// `#if`, so it is in both configurations and the earlier translation already carries it. The
+// compiler caught the duplicate, which is the cheap way round -- a second `#[repr(C)]` copy
+// that drifted from the first would not have been caught by anything.
+
+#[cfg(feature = "ucrtsupport")]
+#[no_mangle]
+pub unsafe extern "C" fn __std_exception_copy(
+    src: *const __std_exception_data,
+    dst: *mut __std_exception_data,
+) {
+    if (*src).dofree != 0 && !(*src).what.is_null() {
+        (*dst).what = _strdup((*src).what);
+        (*dst).dofree = 1;
+    } else {
+        (*dst).what = (*src).what;
+        (*dst).dofree = 0;
+    }
+}
+
+#[cfg(feature = "ucrtsupport")]
+#[no_mangle]
+pub unsafe extern "C" fn __std_exception_destroy(data: *mut __std_exception_data) {
+    if (*data).dofree != 0 {
+        free((*data).what as *mut core::ffi::c_void);
+    }
+    (*data).what = core::ptr::null_mut();
+    (*data).dofree = 0;
+}
+
+#[cfg(feature = "ucrtsupport")]
+#[no_mangle]
+pub unsafe extern "C" fn __current_exception() -> *mut *mut core::ffi::c_void {
+    core::ptr::addr_of_mut!((*msvcrt_get_thread_data()).exc_record) as *mut *mut core::ffi::c_void
+}
+
+#[cfg(feature = "ucrtsupport")]
+#[no_mangle]
+pub unsafe extern "C" fn __current_exception_context() -> *mut *mut core::ffi::c_void {
+    core::ptr::addr_of_mut!((*msvcrt_get_thread_data()).ctx_record) as *mut *mut core::ffi::c_void
+}
+
+#[cfg(feature = "ucrtsupport")]
+#[no_mangle]
+pub unsafe extern "C" fn __processing_throw() -> *mut i32 {
+    core::ptr::addr_of_mut!((*msvcrt_get_thread_data()).processing_throw)
+}

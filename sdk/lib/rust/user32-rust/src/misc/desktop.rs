@@ -54,7 +54,6 @@ extern "system" {
 const IDC_ARROW: LPCWSTR = 32512usize as LPCWSTR;
 
 // `ERR(...)` — ReactOS debug print; a no-op in the cohab build (DUMMY debug).
-macro_rules! ERR { ($($arg:tt)*) => {{ }}; }
 
 // csrmsg.h: `CSR_CREATE_API_NUMBER(ServerId, ApiId) := (CSR_API_NUMBER)((ServerId<<16)|ApiId)`.
 #[inline]
@@ -437,7 +436,7 @@ pub unsafe extern "system" fn RealSystemParametersInfoA(
                     pvParam as PCSZ,
                 ) == 0
                 {
-                    ERR!(b"RtlCreateUnicodeStringFromAsciiz failed\n\0".as_ptr() as PCHAR);
+                    ERR!("RtlCreateUnicodeStringFromAsciiz failed\n");
                     return 0;
                 }
                 pvParam = core::ptr::addr_of_mut!(ustrWallpaper) as PVOID;
