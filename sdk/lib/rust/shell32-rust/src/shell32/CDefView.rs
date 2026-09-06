@@ -1,4 +1,10 @@
 // rustconv-assembly: class:CDefView
+//! ORPHAN-BY-DESIGN: 6 workers were rejected by the deterministic audit and are absent
+//! (DoColumnContextMenu, OpenSelectedItems, OnContextMenu, _DoCopyToMoveToFolder,
+//! DestroyViewWindow, drag_notify_subitem). Three of them are still CALLED by bodies
+//! that did land, so wiring this module in would not compile. Kept unreferenced rather
+//! than deleted: it is 179 translated functions of paid artifact, and the audit findings
+//! name exactly what is owed. Wire it up once those six land.
 use crate::prelude::*;
 use crate::wine::shlmenu::COLORREF;
 use crate::def_view_util::FolderViewModeToShellViewId;
