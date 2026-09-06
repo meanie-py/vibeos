@@ -90,6 +90,10 @@ from .artifacts import Run, Stage
 # ~87% of the time. It is retryable ONLY when smoke characterized it as
 # slow/contended (serial still flowing at the deadline) AND the kernel didn't
 # self-report stuck threads — see _retryable().
+# The payload/baseline suite name, from its owner — not re-spelled here, so the two
+# places that stamp VIBEOS_PAYLOAD cannot drift apart.
+from .conformance import SUITE as SUITE_NAME
+
 RETRYABLE = {
     "KNOWN_FLAKE",
     "FLAKY",
@@ -207,6 +211,52 @@ def _first_salient(summary: dict) -> str:
             for s in st.get("salient", []):
                 return str(s)
     return ""
+
+
+def _ensure_kmtest_payload(repo: Path, arches: list[str]) -> tuple[bool, str]:
+    """Make the kmtest sweep runner exist for every arch, or say why it cannot.
+
+    THIS FUNCTION IS A SCAR. Wiring the conformance lanes in made the gate build stamp
+    VIBEOS_PAYLOAD=kmtest unconditionally, and `kmtest-sweep-<arch>.exe` is a GITIGNORED
+    build product: `git worktree add` brings sweep.c and the test lists but not the exes.
+    So the change worked in my own worktree, where months of conformance runs had left
+    them lying around, and broke the FIRST fresh tree it met — the merge queue's own
+    integration worktree — with
+
+        payloads/compile.py: ERROR: payload 'kmtest': src missing: .../kmtest-sweep-i386.exe
+
+    which surfaces as the livecd media step failing, i.e. a BUILD_FAIL attributed to
+    whichever innocent lanes happened to be in the batch. Every lane in the fleet would
+    have inherited that. conformance.py already had `_worktree_provisioning_gaps` for
+    exactly this class; the gate path simply went around it.
+
+    Building it is cheap and correct: sweep.c is committed, the recipe is one
+    cross-compile per arch, and the toolchain is the one thing AGENTS.md explicitly
+    allows sharing between worktrees because it is content-addressed. What we must NOT
+    do is copy the exe from a sibling worktree — that is the fleet-isolation trap that
+    had verify_signatures grading one tree's Rust against another tree's headers.
+    """
+    script = repo / "tools" / "payloads" / SUITE_NAME / "build.sh"
+    if not script.is_file():
+        return False, f"no {script}"
+    missing = [
+        a
+        for a in arches
+        if not (repo / "tools" / "payloads" / SUITE_NAME / f"{SUITE_NAME}-sweep-{a}.exe").is_file()
+    ]
+    if not missing:
+        return True, ""
+    tc = repo / ".build-tools" / "llvm-mingw"
+    if not tc.exists() and not list(repo.parent.glob("llvm-mingw-*")):
+        # Without the pinned clang we cannot build it, and we must not stamp the
+        # payload either — that is what breaks the media step. Report, do not guess.
+        return False, f"missing {tc} (pinned clang), needed to build {', '.join(missing)}"
+    for a in missing:
+        cp = subprocess.run(["bash", str(script), a], cwd=str(repo), capture_output=True, text=True)
+        if cp.returncode != 0:
+            tail = ((cp.stderr or cp.stdout or "").strip().splitlines() or ["(no output)"])[-1]
+            return False, f"build.sh {a} failed: {tail}"
+    return True, ""
 
 
 def _conformance_once(repo: Path, arch: str, root: Path) -> dict:
@@ -776,6 +826,34 @@ def gate(args, repo: Path) -> int:
     # desktop does. `--no-conformance` opts out (and is what a docs-only or
     # tooling-only change should use if the media cannot be staged).
     conf_requested = not getattr(args, "no_conformance", False)
+    if conf_requested:
+        # Provision BEFORE any build is submitted. The build stamps the payload into the
+        # build dir, so discovering the exe is missing at media-roll time is discovering
+        # it far too late — it fails the livecd step and reads as a BUILD_FAIL against
+        # whichever lanes share the batch. See _ensure_kmtest_payload for the incident.
+        conf_ok, conf_why = _ensure_kmtest_payload(repo, arches)
+        if not conf_ok:
+            # Degrade the ratchet, never the build: without the payload the honest state
+            # is "conformance did not run", and stamping VIBEOS_PAYLOAD anyway would
+            # break every arch's media. Loud, not silent — the stage is recorded so a
+            # green gate cannot be read as "the ratchet held".
+            conf_requested = False
+            # _build_once reads this same flag; without clearing it the builds would
+            # still stamp VIBEOS_PAYLOAD=kmtest and fail the media step — the exact
+            # breakage this block exists to prevent.
+            args.no_conformance = True
+            run.add(
+                Stage(
+                    "conformance",
+                    status="warn",
+                    detail="DISABLED — ratchet did not run",
+                    salient=[
+                        f"{conf_why}",
+                        "fix: bash tools/payloads/kmtest/build.sh <arch>; "
+                        "this gate did NOT verify kmtest conformance",
+                    ],
+                )
+            )
     do_lint = not getattr(args, "no_lint", False)
     build_order = sorted(arches, key=lambda a: a != "amd64")  # amd64 first, rest in order
     results: dict[str, dict] = {}

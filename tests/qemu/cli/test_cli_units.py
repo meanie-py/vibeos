@@ -6907,3 +6907,57 @@ def test_conformance_lane_reports_the_failing_identities_not_the_whole_table(tmp
     assert r["retryable"] is True
     assert "IoDeviceObject_drv.c:206" in r["salient"]
     assert "pass=11" not in r["salient"], "the per-test table must not reach the summary"
+
+
+# ---------------------------------------------------------------------------
+# the kmtest payload provisioning scar (2026-09-06)
+# ---------------------------------------------------------------------------
+# Wiring the conformance lanes made the gate build stamp VIBEOS_PAYLOAD=kmtest
+# unconditionally. kmtest-sweep-<arch>.exe is GITIGNORED, so the change worked in
+# the worktree that had months of conformance runs behind it and broke the first
+# fresh tree it met — the merge queue's integration worktree — as a BUILD_FAIL
+# attributed to whichever innocent lanes shared the batch.
+
+
+def test_kmtest_payload_is_built_when_missing_not_assumed_present(tmp_path, monkeypatch):
+    """A fresh worktree has sweep.c and not the exe. The gate must BUILD it."""
+    sh = tmp_path / "tools" / "payloads" / "kmtest"
+    sh.mkdir(parents=True)
+    (sh / "build.sh").write_text("#!/bin/bash\n")
+    (tmp_path / ".build-tools" / "llvm-mingw").mkdir(parents=True)
+
+    calls = []
+
+    def _fake_run(cmd, **kw):
+        calls.append(cmd)
+        (sh / f"kmtest-sweep-{cmd[2]}.exe").write_text("x")
+        return subprocess.CompletedProcess(cmd, 0, "", "")
+
+    monkeypatch.setattr(gate_mod.subprocess, "run", _fake_run)
+    ok, why = gate_mod._ensure_kmtest_payload(tmp_path, ["i386", "amd64"])
+    assert ok and why == ""
+    assert [c[2] for c in calls] == ["i386", "amd64"], "must build each missing arch"
+
+
+def test_kmtest_payload_failure_disables_the_ratchet_it_does_not_break_the_build(tmp_path):
+    """No toolchain means we cannot build the exe — and must NOT stamp the payload
+    anyway, which is what failed the livecd media step for the whole batch."""
+    sh = tmp_path / "tools" / "payloads" / "kmtest"
+    sh.mkdir(parents=True)
+    (sh / "build.sh").write_text("#!/bin/bash\n")
+    ok, why = gate_mod._ensure_kmtest_payload(tmp_path, ["i386"])
+    assert ok is False
+    assert "llvm-mingw" in why, f"must name the missing toolchain, got {why!r}"
+
+
+def test_kmtest_payload_already_present_runs_nothing(tmp_path, monkeypatch):
+    sh = tmp_path / "tools" / "payloads" / "kmtest"
+    sh.mkdir(parents=True)
+    (sh / "build.sh").write_text("#!/bin/bash\n")
+    (sh / "kmtest-sweep-arm64.exe").write_text("x")
+
+    def _boom(*a, **k):
+        raise AssertionError("must not shell out when the payload is already there")
+
+    monkeypatch.setattr(gate_mod.subprocess, "run", _boom)
+    assert gate_mod._ensure_kmtest_payload(tmp_path, ["arm64"]) == (True, "")
