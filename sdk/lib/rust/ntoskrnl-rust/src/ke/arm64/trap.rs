@@ -93,18 +93,35 @@ pub unsafe extern "C" fn KiTrapReturnProbe(tf: *const _KTRAP_FRAME) {
         return;
     }
     let spsr = (*tf).Spsr;
-    // Only EL0t (user) returns — M[3:0]==0.
-    if (spsr & 0xF) != 0 {
+    let pc = (*tf).Pc;
+    let el = spsr & 0xF;
+    // A KERNEL return (M[3:0] != 0) to a USER-range PC. This used to `return`
+    // here, looking only at EL0t frames — so the one frame shape that cannot
+    // possibly be right was the one shape the probe declined to inspect. The
+    // kernel never executes user memory and AArch64 will not let it (an
+    // EL0-writable page is implicitly PXN), so this erets straight into a fault
+    // that repeats forever.
+    if el != 0 {
+        if pc < 0x0000_8000_0000_0000 {
+            TrapPuts(b"[TRPROBE] EL1ret to USER pc tf=");
+            TrapPutHex64(tf as u64);
+            TrapPuts(b" spsr="); TrapPutHex32(spsr);
+            TrapPuts(b" pc=");   TrapPutHex64(pc);
+            TrapPuts(b" sp=");   TrapPutHex64((*tf).Sp);
+            TrapPuts(b" lr=");   TrapPutHex64((*tf).Lr);
+            TrapPuts(b"\r\n");
+        }
         return;
     }
-    let pc = (*tf).Pc;
     // Illegal for an EL0t AArch64 return: M[4] (bit4), IL (bit20), or any of
     // bits[19:10] set (a valid user PSTATE is ~NZCV|DAIF|SS|feature-bits, never
     // a pointer pattern — the captured corruption was 0x0013DC80).
     let spsr_bad = (spsr & 0x0010_0010) != 0 || (spsr & 0x000F_FC00) != 0;
     // ELR (eret target) must be a real user-code VA: non-tiny and canonical
     // low half. pc==0 / pc<0x10000 (null or near-null entry) is a bug too.
-    let pc_bad = pc < 0x1_0000 || (pc >> 48) != 0;
+    // `<=`, not `<`: the boundary value 0x10000 is exactly the PC the arm64
+    // boot wedge kept showing, and a strict less-than passed it as good.
+    let pc_bad = pc <= 0x1_0000 || (pc >> 48) != 0;
     if spsr_bad || pc_bad {
         TrapPuts(b"[TRPROBE] EL0ret BAD tf=");
         TrapPutHex64(tf as u64);
@@ -353,6 +370,106 @@ unsafe fn KiDeliverUserApcArm64(
     KfLowerIrql(OldIrql);
 }
 
+/// How many times in a row the pager may claim it resolved the SAME fault
+/// before we stop believing it. A real re-fault after a genuine fix-up is one
+/// or two (copy-on-write, a racing trim); dozens with the address, the faulting
+/// PC and the address space all unchanged is not a retry, it is a loop.
+const KI_FAULT_RETRY_REPORT: u32 = 64;
+
+/// Where "retrying" stops being a description and becomes a proof. Measured,
+/// not guessed: a clean arm64 boot ALREADY drives the same (VA, PC, address
+/// space) past 64 consecutive pager-reported successes and then completes, so
+/// 64 is a fine place to start printing and a catastrophic place to start
+/// killing — a first cut at 64 fatal murdered a services.exe thread on every
+/// boot with an access violation that had never happened before.
+///
+/// A genuine unbreakable loop reaches this in a few seconds of emulated time,
+/// because each turn is one exception round trip and nothing else runs; the
+/// boot budget is 180s, so a true hang still crashes long inside it. Anything
+/// that legitimately re-faults keeps working.
+const KI_FAULT_RETRY_FATAL: u32 = 1_000_000;
+
+/// Per-CPU last-fault fingerprint: (fault VA, faulting PC, TTBR0, count).
+/// TTBR0 rather than the thread pointer because the question this answers is
+/// "same translation, same instruction" — the address space is what decides
+/// which page table the walker consults. Indexed by MPIDR Aff0; a diagnostic,
+/// so a torn read on a foreign CPU's slot can at worst delay the report.
+static mut KiFaultRetryState: [(u64, u64, u64, u32); 8] = [(0, 0, 0, 0); 8];
+
+#[inline(always)]
+unsafe fn ki_cpu_slot() -> usize {
+    let mpidr: u64;
+    core::arch::asm!("mrs {}, mpidr_el1", out(reg) mpidr, options(nomem, nostack));
+    (mpidr & 0x7) as usize
+}
+
+/// Forget the fingerprint. Called whenever a fault does NOT end in the pager
+/// reporting success, because that breaks any loop in progress.
+unsafe fn ki_fault_retry_forget() {
+    KiFaultRetryState[ki_cpu_slot()] = (0, 0, 0, 0);
+}
+
+/// True when the pager has now claimed success on the identical fault
+/// `KI_FAULT_RETRY_LIMIT` times running — i.e. we are in an unbreakable
+/// abort/handler/eret loop and returning again would hang the machine silently.
+///
+/// This is the instrument the arm64 boot wedge needed and nobody had: the loop
+/// runs with DAIF masked, so no timer ever fires, no watchdog can observe it,
+/// and the only evidence is a vCPU whose PC never moves. Seven captures over
+/// two 400-round soaks said "FROZEN" and none of them could say WHY, because
+/// the box cannot report on itself once it is in here.
+unsafe fn ki_fault_retry_tripped(TrapFrame: PKTRAP_FRAME, DFSC: ULONG) -> bool {
+    let va = (*TrapFrame).__bindgen_anon_2.__bindgen_anon_1.FaultAddress as u64;
+    let pc = (*TrapFrame).Pc;
+    let ttbr0: u64;
+    core::arch::asm!("mrs {}, ttbr0_el1", out(reg) ttbr0, options(nomem, nostack));
+
+    let slot = ki_cpu_slot();
+    let st = KiFaultRetryState[slot];
+    let n = if st.0 == va && st.1 == pc && st.2 == ttbr0 { st.3 + 1 } else { 1 };
+    KiFaultRetryState[slot] = (va, pc, ttbr0, n);
+    // Report once, on the way past the reporting mark, and keep going. Printing
+    // every turn would itself hang the box on the UART.
+    if n != KI_FAULT_RETRY_REPORT && n != KI_FAULT_RETRY_FATAL {
+        return false;
+    }
+    let fatal = n >= KI_FAULT_RETRY_FATAL;
+    if fatal {
+        KiFaultRetryState[slot] = (0, 0, 0, 0);
+    }
+
+    // Dump the contradiction itself: what the HARDWARE said (ESR/DFSC) beside
+    // what SOFTWARE reads for the same VA out of the self-map. If the PTE reads
+    // valid while DFSC says translation fault, the two are looking at different
+    // copies or at different tables, and TTBR0 says which address space the
+    // walker was actually using.
+    let ttbr1: u64;
+    core::arch::asm!("mrs {}, ttbr1_el1", out(reg) ttbr1, options(nomem, nostack));
+    TrapPuts(if fatal {
+        b"\r\n*** FAULT LOOP (FATAL): the pager reported success on the same fault ".as_slice()
+    } else {
+        b"\r\n[FAULTLOOP] note: the pager has reported success on the same fault ".as_slice()
+    });
+    TrapPutHex32(n);
+    TrapPuts(b" times\r\n");
+    TrapPuts(b"[FAULTLOOP] VA=");    TrapPutHex64(va);
+    TrapPuts(b" PC=");               TrapPutHex64(pc);
+    TrapPuts(b" ESR=");              TrapPutHex32((*TrapFrame).Esr);
+    TrapPuts(b" DFSC=");             TrapPutHex32(DFSC);
+    TrapPuts(b"\r\n[FAULTLOOP] TTBR0="); TrapPutHex64(ttbr0);
+    TrapPuts(b" TTBR1=");            TrapPutHex64(ttbr1);
+    // Same self-map formula the DFSC-0x21 diagnostic above uses. Reading it can
+    // itself fault if the chain is broken; that fault is not this one, and it
+    // would be a far louder failure than the silence we are replacing.
+    let pte_va = 0xFFFFF68000000000u64
+        .wrapping_add(((va >> 12) & 0xF_FFFF_FFFFu64) << 3);
+    let pte = core::ptr::read_volatile(pte_va as *const u64);
+    TrapPuts(b" PTE@");              TrapPutHex64(pte_va);
+    TrapPuts(b"=");                  TrapPutHex64(pte);
+    TrapPuts(b"\r\n");
+    fatal
+}
+
 #[no_mangle]
 pub unsafe extern "C" fn KiSynchronousExceptionHandler(
     TrapFrame: PKTRAP_FRAME,
@@ -417,8 +534,23 @@ pub unsafe extern "C" fn KiSynchronousExceptionHandler(
                     TrapFrame as *mut core::ffi::c_void
                 );
                 if Status >= 0 {
-                    return;
+                    // "Resolved" — but only believe it while it stays true. A
+                    // pager that keeps succeeding on a fault that keeps
+                    // recurring is not fixing anything, and returning to the
+                    // faulting instruction one more time is what turns a bug
+                    // into a silent whole-machine freeze.
+                    if !ki_fault_retry_tripped(TrapFrame, DFSC) {
+                        return;
+                    }
+                    // Fall through to the dispatch below: an unhandled kernel
+                    // exception bugchecks with the frame, the stack bounds and
+                    // the [KSTKW] stack words. A readable crash beats a hang,
+                    // and this deliberately mints no new bugcheck code.
+                } else {
+                    ki_fault_retry_forget();
                 }
+            } else {
+                ki_fault_retry_forget();
             }
 
             let mut ExRec: EXCEPTION_RECORD = core::mem::zeroed();

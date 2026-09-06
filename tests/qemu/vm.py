@@ -1714,6 +1714,30 @@ class QemuVM:
             except Exception as exc:
                 body = f"<unavailable: {exc!r}>"
             chunks.append(f"=== CPU#{idx} {cmd} ===\n{body}")
+        # The memory under each stack pointer, read through the guest's OWN
+        # translation. This is the decisive test for a wedge parked on a stack
+        # access: if the monitor cannot read it, the page is GONE and the guest
+        # is re-faulting on it forever; if the words come back, the page is
+        # mapped and the fault is not a translation fault, so look at
+        # permissions or at something other than paging. That fork cannot be
+        # answered after teardown, and no in-guest probe can answer it at all —
+        # the guest is the thing that is stuck.
+        # 0xB8 bytes covers an arm64 KTRAP_FRAME through TfX0 (trap.S: TfSpsr
+        # 0xA0, TfEsr 0xA4, TfSp 0xA8, TfX0 0xB0), so a frame-restore wedge
+        # shows the exact words the restore sequence was reading.
+        try:
+            from .cli.triage import cpu_sps
+
+            sps = cpu_sps("\n".join(chunks))
+        except Exception:
+            sps = []
+        for idx, sp in sps:
+            cmd = f"x /23gx 0x{sp}"
+            try:
+                body = self.qmp.hmp(cmd).strip()
+            except Exception as exc:
+                body = f"<unavailable: {exc!r}>"
+            chunks.append(f"=== CPU#{idx} stack {cmd} ===\n{body}")
         return "\n\n".join(chunks) + "\n"
 
     def save_hang_state(self, phase: str) -> str:

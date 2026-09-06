@@ -6568,6 +6568,13 @@ whole class collapsed to the one case that is *supposed* to happen.
   IFSC, never goes to paging — it is dispatched as a kernel access violation and bugchecks with
   the frame plus `[KSTKW]`, the kernel-range words on the faulting stack (a wild `br` leaves LR
   useless; the callers' return addresses above SP are the only route back to the jumper).
+  The probe written to catch this exact frame — `KiTrapReturnProbe`, inspecting the EL0-return
+  state at the `eret` — missed for three independent reasons: its call site is `#ifdef
+  ARM64_TRAP_DEBUG` and that macro is **defined nowhere in the repo**, so it is dead source that
+  reads like an armed instrument; it returns early unless the frame says EL0t, and this one says
+  EL1h; and its bound is `pc < 0x10000`, a strict less-than at exactly the observed PC. **Before
+  trusting an in-tree probe's silence, grep for its GUARD, not its code** — `#ifdef`, `cfg`,
+  feature, and early-return each turn a probe into decoration, and all three did here.
   **Recognition rule: a "spurious fault, retry" return is only safe when the retry can succeed.
   An instruction-fetch permission fault has no paging remedy at any address — PXN/UXN is not a
   paged-out page — and a retry that cannot succeed is a hang with the handler's name on it.**

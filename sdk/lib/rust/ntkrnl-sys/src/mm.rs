@@ -833,14 +833,45 @@ pub fn MI_SET_PROCESS2(_name: &str) {}
 // MI_USAGE_PAGED_POOL / MI_USAGE_NONPAGED_POOL — see MI_PFN_USAGES enum below
 
 // PTE write helpers
+/// Make a just-written translation-table entry visible to the HARDWARE page
+/// table walker.
+///
+/// On x86 this is free: a store to a page table is guaranteed visible to the
+/// walker, so making an invalid entry valid needs nothing but the store. On
+/// AArch64 the walker is a SEPARATE OBSERVER — the store may still be sitting
+/// in the store buffer, where this core's own loads see it and the walker does
+/// not. Software then walks the table, reads "valid", and reports the fault
+/// resolved, while the MMU keeps taking a translation fault on the same
+/// address. Both are telling the truth about different copies.
+///
+/// `dsb ishst` is the architecturally required publish (inner-shareable, stores
+/// only — the minimum that orders the entry write ahead of any subsequent
+/// walk). No TLBI: invalid -> valid needs no invalidate, and the callers that
+/// change a LIVE mapping already do their own break-before-make. No `isb`
+/// either — the return to the faulting instruction is context-synchronising.
+///
+/// This lives in the shared helper rather than at the call sites because the
+/// arch-neutral fault path (`ARM3/pagfault.rs`) writes valid entries at ~15
+/// places and had the barrier at none of them; `arm64/page.rs` paired it by
+/// hand at exactly two (its `dsb ish`/`isb` pairs are now redundant, and
+/// harmless). Centralising it is the only way the next new call site is right
+/// by default.
+#[inline(always)]
+unsafe fn mi_publish_pte() {
+    #[cfg(target_arch = "aarch64")]
+    core::arch::asm!("dsb ishst", options(nostack, preserves_flags));
+}
+
 #[inline]
 pub unsafe fn MI_WRITE_VALID_PTE(pte: PMMPTE, value: MMPTE) {
     core::ptr::write_volatile(pte, value);
+    mi_publish_pte();
 }
 
 #[inline]
 pub unsafe fn MI_WRITE_VALID_PDE(pde: PMMPDE, value: MMPTE) {
     core::ptr::write_volatile(pde, value);
+    mi_publish_pte();
 }
 
 #[inline]

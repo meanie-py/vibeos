@@ -1192,6 +1192,38 @@ def test_capture_cpu_state_disassembles_at_every_pc():
     assert "=== CPU#1 x /6i 0x0000000000010000 ===" in out
 
 
+def test_capture_cpu_state_reads_the_memory_under_every_stack_pointer():
+    # The decisive test for a wedge parked on a stack access: can the MONITOR
+    # read the page, using the guest's own translation? Unreadable means the
+    # page is gone and the guest is re-faulting on it forever; readable means
+    # the fault is not a translation fault. Nothing inside the guest can answer
+    # that, because the guest is what is stuck.
+    v = vm_mod.QemuVM.__new__(vm_mod.QemuVM)
+    seen = []
+
+    class _Qmp:
+        def hmp(self, cmd):
+            seen.append(cmd)
+            if cmd == "info registers -a":
+                return " PC=fffff8004219280c  SP=ffff800004a26a00\nCPU#0 header above\n"
+            return "ok"
+
+    # One CPU, banner first so the slicer credits it.
+    class _Qmp2(_Qmp):
+        def hmp(self, cmd):
+            seen.append(cmd)
+            if cmd == "info registers -a":
+                return "CPU#0\n PC=fffff8004219280c X00=0\n SP=ffff800004a26a00\n"
+            return "ok"
+
+    v.qmp = _Qmp2()  # type: ignore[assignment]
+    out = v.capture_cpu_state()
+    assert "x /23gx 0xffff800004a26a00" in seen
+    assert "=== CPU#0 stack x /23gx 0xffff800004a26a00 ===" in out
+    # The stack read must come AFTER the register dump it was parsed from.
+    assert seen.index("info registers -a") < seen.index("x /23gx 0xffff800004a26a00")
+
+
 def test_save_hang_state_survives_a_dead_monitor(tmp_path, _no_resample_wait):
     # A diagnostic that raises on an already-failing run destroys the failure it
     # was there to explain, so a dead QMP must degrade to a note in the file —

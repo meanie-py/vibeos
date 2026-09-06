@@ -2074,3 +2074,66 @@ Two side notes from the same soak. The `0xE3` (`#43`) fired once **on the MP ker
 still not MP-conditional, but it is not UP-conditional either. And 294/300 clean rounds showed
 exactly the two enumerated MP-conditional rows (`KeEvent` MP-skip, `IoInterrupt` upstream gap)
 and nothing else: the collapse delta is stable at zero unexplained across 294 samples.
+
+### The one probe built to catch this could never have fired — three separate reasons
+
+`KiTrapReturnProbe` (trap.rs) exists precisely to catch a bad EL0-return state at the `eret`,
+and it was in the tree for the whole five weeks this wedge went unexplained. It missed for three
+independent reasons, each sufficient on its own:
+
+1. **It is not compiled.** The call site is `#ifdef ARM64_TRAP_DEBUG` in `trap.S:251`, and
+   `ARM64_TRAP_DEBUG` is defined **nowhere in the repo** — not a CMakeLists, not a header, not a
+   cmake cache. The probe is dead source on disk, which reads exactly like an armed instrument.
+2. **It returns early on the frame that matters.** `if (spsr & 0xF) != 0 { return; }` — it looks
+   only at EL0t returns. The wedge's frame says **EL1h**, so even compiled in, it would have
+   declined to look.
+3. **Its PC bound is off by one at exactly the observed value.** `pc < 0x1_0000` is a strict
+   less-than and the wedge's PC is `0x10000` exactly. Even had it looked, it would have passed
+   the frame as good.
+
+The frame it declined to inspect is the whole answer: `Spsr` says **EL1h** while the register
+file is a **user thread's** — `X18` a TEB (`0x7ffffffe7000`; in kernel mode x18 is the KPCR, per
+`KeGetPcr` = `mov x0, x18`), `X28` a user start-context, `LR` and every callee-saved register
+zero. A frame carrying user register content with a kernel `Spsr` is not a wild branch. It is a
+**corrupted or mis-built trap frame**, and `KiInitializeContextThread` writes `Spsr = 0` (EL0t)
+for exactly this shape of thread — so something changed it, or built it somewhere else.
+
+**Owed, deliberately deferred:** fix (2) and (3) so the probe also flags a KERNEL return whose
+`Pc` is a user VA, and decide whether to compile it in for the MP kernel. Not done in this pass
+because editing any `.rs` while the 400-round verification soak runs on fixed media makes every
+remaining round abort on a staleness check — the soak is the verification of the fix that is
+gating now, and it outranks a second instrument.
+
+Note the shape, which is the same one this lane has now hit three times: **an instrument that is
+present, plausible, and structurally incapable of firing.** Grep for the guard, not the code.
+
+### Lead for the first cause: arm64 decides a frame's target EL from the CALLER's mode
+
+Not proven to be this wedge — the stack dump is what will settle that — but a real defect found
+while reading the frame, and the only mechanism so far that produces the observed state without
+invoking corruption.
+
+`KeContextToTrapFrame` (arm64 `stubs.rs`, and the C it came from) picks the frame's exception
+level like this:
+
+```rust
+if PreviousMode == UserMode { Spsr = Cpsr & !0xF; }        // EL0t
+else                        { Spsr = (Cpsr & !0xF) | 0x5; } // EL1h
+```
+
+`PreviousMode` is the **caller's** trust level, not the **frame's** target level, and those are
+different questions. `KiContinue` (`ke/except.rs`, the core of `NtContinue`) branches on
+`KeGetPreviousMode()` and passes `KernelMode` straight through on the kernel path. So a
+kernel-mode caller continuing a trap frame that returns to **user** code stamps **EL1h** onto a
+frame whose `Pc` is a user VA. The `eret` then lands at EL1 with a user PC — the wedge's state
+exactly, including a user TEB in `X18` and every callee-saved register zero.
+
+The asymmetry is the tell: **i386 and amd64 do not do this.** They ask the FRAME, via
+`KiUserTrap(TrapFrame)`, and `arm64 has no `KiUserTrap` at all` — grep finds none in
+`ke/arm64/` or `ntoskrnl/ke/arm64/`. arm64 substituted the caller's mode for a frame property
+that only the frame knows.
+
+**Owed, same deferral as the probe fix** (editing `.rs` aborts the running soak on staleness):
+give arm64 a frame-based target-mode test and use it here, rather than the caller's
+`PreviousMode`. Then re-soak. If the wedge survives that, the cause is corruption and the
+`[KSTKW]` dump is the instrument for it.

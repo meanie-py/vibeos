@@ -451,6 +451,7 @@ def symbolicate_pc(repo: Path, arch: str, serial: str) -> str | None:
 # requires an `0x` prefix, which the monitor never emits.
 _CPU_BANNER = re.compile(r"^CPU#(\d+)\b", re.MULTILINE)
 _CPU_PC = re.compile(r"\b(?:PC|RIP|EIP)=([0-9A-Fa-f]{8,16})\b")
+_CPU_SP = re.compile(r"\b(?:SP|RSP|ESP)=([0-9A-Fa-f]{8,16})\b")
 
 
 def cpu_pcs(state: str) -> list[tuple[int, str]]:
@@ -476,6 +477,23 @@ _CPU_PSTATE = re.compile(r"\bPSTATE=([0-9A-Fa-f]{8,16})\b")
 
 # Below this, an arm64 VA is in the low (user) half of the address space.
 _ARM64_USER_LIMIT = 0x0000_8000_0000_0000
+
+
+def cpu_sps(state: str) -> list[tuple[int, str]]:
+    """[(cpu_index, sp_hex)] parsed out of a `capture_cpu_state()` blob.
+
+    Same slicing rule as cpu_pcs: a vCPU is credited only with its own block.
+    `info registers` prints the stack pointer as `SP=` on arm64 (padded, hence
+    the loose left boundary), `RSP=` on amd64 and `ESP=` on i386.
+    """
+    banners = list(_CPU_BANNER.finditer(state))
+    found = []
+    for i, m in enumerate(banners):
+        end = banners[i + 1].start() if i + 1 < len(banners) else len(state)
+        sp = _CPU_SP.search(state, m.end(), end)
+        if sp:
+            found.append((int(m.group(1)), sp.group(1)))
+    return found
 
 
 def cpu_kernel_at_user_pc(state: str) -> list[tuple[int, str]]:

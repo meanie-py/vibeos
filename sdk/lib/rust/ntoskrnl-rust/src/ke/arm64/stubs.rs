@@ -744,7 +744,47 @@ pub unsafe extern "system" fn KeContextToTrapFrame(
         (*TrapFrame).Sp = (*Context).Sp;
         (*TrapFrame).Pc = (*Context).Pc;
 
-        if PreviousMode == 1i8 {
+        // Which exception level this frame RETURNS to is a property of the
+        // FRAME, not of whoever is asking. `PreviousMode` is the caller's trust
+        // level, and the two differ exactly when a kernel-mode caller sets the
+        // context of a user thread — NtContinue's kernel path, NtSetContextThread
+        // — which stamped EL1h onto a frame whose Pc is a user VA. The eret then
+        // lands at EL1 on a user page, which AArch64 makes implicitly PXN, so it
+        // faults on the same instruction forever.
+        //
+        // i386 and amd64 never had this: they ask the frame, via KiUserTrap.
+        // arm64 has no KiUserTrap, so ask the frame directly — its own
+        // PreviousMode field, stamped by the trap prolog that built it
+        // (trap.S: TRAP_PROLOG_EL0 writes UserMode, TRAP_PROLOG writes
+        // KernelMode). Fall back to the caller's mode only for a frame that
+        // claims neither.
+        // NOTE the asymmetry, which is deliberate and was measured. A frame
+        // that is merely ZEROED reads PreviousMode == KernelMode, and
+        // KiInitializeContextThread hands us exactly that: RtlZeroMemory, then
+        // this call, and only afterwards does it stamp PreviousMode = UserMode
+        // and force Spsr = 0. Trusting the frame's field outright therefore
+        // calls every brand-new user thread a kernel frame — 78 times in one
+        // arm64 boot, harmless there only because that caller overwrites Spsr
+        // straight after. So the caller's mode still decides.
+        //
+        // The frame gets a VETO in the one direction that cannot be a zeroed
+        // field: the caller says KernelMode while the frame positively says
+        // UserMode. Only a real user trap frame carries that, so the
+        // disagreement is genuine and the frame is right — this is NtContinue's
+        // kernel path and NtSetContextThread on a user thread, the case that
+        // stamps EL1h onto a user Pc and erets into a fault that repeats
+        // forever.
+        let frame_says_user =
+            (*TrapFrame).__bindgen_anon_1.__bindgen_anon_1.PreviousMode == 1i8;
+        let to_user = PreviousMode == 1i8 || frame_says_user;
+        if to_user && PreviousMode != 1i8 {
+            ARM64_UART_TRACE_HEX(
+                b"[CTX2TF] kernel caller, USER frame; honouring the frame, Pc=\0".as_ptr()
+                    as PCSTR,
+                (*Context).Pc as ULONG_PTR,
+            );
+        }
+        if to_user {
             (*TrapFrame).Spsr = (*Context).Cpsr & !0xF;
         } else {
             (*TrapFrame).Spsr = ((*Context).Cpsr & !0xF) | 0x5;
