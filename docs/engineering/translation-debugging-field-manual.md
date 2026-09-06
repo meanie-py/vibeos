@@ -4793,6 +4793,34 @@ so the guard cannot mask one. Switching `current_clocksource` from `tsc` to
 `hyperv_clocksource_tsc_page` does NOT help — the slew is reapplied — and a durable fix needs
 the WSL kernel cmdline, i.e. a restart that kills every running lane.
 
+### Deleting a file is a DIRECTORY change, and a recursive watch has no margin for it
+
+**Symptom:** the same fixture staleness as the clock entry above — a generated value from the
+previous step survives a rebuild — but the clock is provably clean. In
+`test_build_invalidation.py` it read `'5' != '4'` after removing an input: passes in isolation
+and on an idle host, fails under fleet load, three land preflights in a row.
+
+**Cause:** a build script watching a directory (`cargo:rerun-if-changed=inputs`) can only see a
+deletion as the directory's mtime. The test deleted with a bare `unlink()`, which stamps that
+directory with the host clock — while the fixture deliberately keeps its sources *behind* its
+own build outputs and forces every `write()` mutation to be strictly newer than every prior
+artifact. Measured margin on an idle host: **8ms**. Invert those 8ms and Cargo reads "not
+newer", skips the build script, and the stale generated file survives. Ninja still re-runs the
+rule, so the invocation assertion passes and only the VALUE is wrong — which is why it reads as
+a build-tool race rather than a test bug.
+
+**Fix:** age the containing directory the way the fixture ages a file (`BuildFixture.remove`).
+No sleep and no retry, and it hides nothing: the directory genuinely changed, so the edge under
+test still has to carry it. Forcing the inversion (stamp the build outputs 1s into the future,
+then unlink) reproduces it every time — do that rather than trying to catch it under load.
+
+**Two independent mechanisms, one symptom — this is what makes such a flake look unfixable.**
+The clock step above and this margin produce the identical staleness in the identical test, and
+neither fix subsumes the other. The clock cause was removed host-side (timesyncd disabled,
+verified 0 backward steps over 120s), so that guard is now a tripwire for something that should
+not recur; this one is the live mechanism. If the test misbehaves again, check the ordering
+first, then the clock — and do not "tidy" either guard away as redundant.
+
 ### Cargo depfiles leave directory contents or lockfile changes stale
 
 **Symptom:** Ninja reports no work after an input-file edit or a lockfile-only

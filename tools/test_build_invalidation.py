@@ -191,6 +191,10 @@ endforeach()
         dest.unlink()
         mtime_ns = self._next_mtime_ns()
         os.utime(dest.parent, ns=(mtime_ns, mtime_ns))
+        # Same reason write() marks here: this stamp establishes an ordering that
+        # a backwards clock step would make unobservable. Two independent
+        # mechanisms, one symptom — see the field manual.
+        self._mark_clock()
 
     @staticmethod
     def main_source(name, value):
