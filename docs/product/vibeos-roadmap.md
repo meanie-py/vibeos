@@ -544,14 +544,23 @@ Field-manual § pointers hold the full writeups. **Update on state change.**
   translation defect: every link (`SYSTEMCUR_ARROW`, `LoadSystemCursors`'s
   `!gpsi || !gpsi->hIconSmWindows` guard, `co_add_gui_app`) was diffed against the retired C and
   is byte-faithful.
-- **OPEN (2026-09-05, found the same night the freeldr debug channel was un-silenced): freeldr
-  fails to load `\reactos\system32\drivers\ntoskrnl.dll`.** `PeLdrLoadImage(...ntoskrnl.dll)
-  failed` -> `PeLdrpLoadAndScanReferencedDll() failed` -> `PeLdrScanImportDescriptorTable()
-  failed`, three times per boot. Something imports from `ntoskrnl.dll` rather than
-  `ntoskrnl.exe`, and the loader resolves the name against the `drivers\` directory where no
-  such file exists. The boot survives it, which is exactly why it went unnoticed: these are ERR
-  messages on freeldr's channel, and that channel printed nothing at all until tonight. First
-  finding attributable to that fix.
+- **FIXED pending validation (2026-09-06): `ks.sys`, `pcix.sys` and `ramdisk.sys` imported a
+  nonexistent `ntoskrnl.dll`.** Found by the freeldr debug channel on its FIRST boot after being
+  un-silenced — `PeLdrLoadImage('...\drivers\ntoskrnl.dll') failed` ->
+  `PeLdrpLoadAndScanReferencedDll() failed` -> `PeLdrScanImportDescriptorTable() failed`, three
+  times per boot, immediately after `ks.sys` and `ramdisk.sys` load. Cause:
+  `#[link(name = "ntoskrnl", kind = "raw-dylib")]` appends `.dll` to an extensionless name, so
+  the descriptor names a file that does not exist; the correct `name = "ntoskrnl.exe"` is what 15
+  other crates already use, and the bare form existed in exactly the 3 crates that carry
+  raw-dylib kernel DATA imports (ramdisk's own comment, "the first cohab driver to import kernel
+  data", explains the copy path). Confirmed against the binaries: those 3 `.sys` carry both
+  `ntoskrnl.dll` and `ntoskrnl.exe` strings while healthy drivers carry only `.exe`. **Not
+  cosmetic** — everything on that descriptor is a DATA import (`ExEventObjectType`,
+  `ExSemaphoreObjectType`, `IoFileObjectType`, `KeLoaderBlock`), so its IAT slots are never
+  filled and any path reading them gets an unresolved pointer; the boot stays green only because
+  those paths are not exercised (ramdisk is not the boot device here). 9 sites in 8 files fixed.
+  Field manual: "raw-dylib in a freeldr-loaded DLL hangs the boot". Owed: a lint so the bare form
+  cannot come back.
 - **`Cannot open winsta` x229 per boot is winlogon thread teardown — ROOT-CAUSED, benign, OPEN**
   (2026-09-05). Instrumented boot: 228 of 229 come from PID 0x9c (winlogon), all with
   `hWinSta = NULL` and `STATUS_INVALID_HANDLE` (not an access denial), all from one call site —

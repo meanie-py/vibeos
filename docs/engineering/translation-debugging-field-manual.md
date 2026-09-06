@@ -6409,12 +6409,31 @@ C file-scope global defined in Rust **without `#[no_mangle]`**. Each layer caugh
 previous could not.
 
 ### raw-dylib in a freeldr-loaded DLL hangs the boot
-A DLL that FreeLDR itself loads (`kdcom.dll`, `bootvid.dll`) must **not** use
-`#[link(kind="raw-dylib")]` for cross-DLL kernel-data imports — the second `ntoskrnl.exe`
-import descriptor it emits hangs FreeLDR's PE loader. Conversely, cross-DLL DATA refs in a
+A DLL that FreeLDR loads in the CORE phase (`kdcom.dll`, `bootvid.dll` — alongside
+`ntoskrnl.exe` itself) must **not** use `#[link(kind="raw-dylib")]` for cross-DLL kernel-data
+imports — the second `ntoskrnl.exe` import descriptor it emits hangs FreeLDR's PE loader. **The
+phase is the whole point, so do not read this as "never two descriptors":** a BOOT DRIVER is
+loaded later, when `ntoskrnl.exe` is already in the loader module list, and a second descriptor
+against a name already in that list resolves from it instead of going to disk. `cdfs.sys` ships
+`2x ntoskrnl.exe` today and boots every time — check with
+`llvm-readobj --coff-imports <x>.sys | grep Name:` before believing a duplicate is your bug. Conversely, cross-DLL DATA refs in a
 *kernel*-loaded Rust DLL **need** raw-dylib on i386, and `cgu>1` can emit a duplicate
 descriptor. win32k's variant: a fake-export phantom descriptor (freeldr OOM) plus a real-export
 per-arch bugcheck.
+
+**Give the raw-dylib link name its `.exe`, and grep the tree before copying the pattern.**
+`#[link(name = "ntoskrnl", kind = "raw-dylib")]` appends `.dll` to an extensionless name, so the
+import descriptor asks for `ntoskrnl.dll` — a file that does not exist. FreeLDR then fails
+`PeLdrLoadImage('...\drivers\ntoskrnl.dll')` -> `PeLdrpLoadAndScanReferencedDll` ->
+`PeLdrScanImportDescriptorTable` and the boot CONTINUES, so the only symptom is three ERR lines
+on freeldr's channel; when that channel was silent (see the DbgPrint2 entry above) there was no
+symptom at all. The IAT slots for that descriptor are never filled, so every symbol on it — all
+DATA imports, which is the whole reason for raw-dylib here — is an unresolved read waiting for a
+code path to touch it. Correct form is `name = "ntoskrnl.exe"`, which 15 crates already use;
+`ks-rust`, `pcix-rust` and `ramdisk-rust` had the bare form, and the comment on ramdisk's ("the
+first cohab driver to import kernel data") tells you why: it was written once without the
+extension and copied twice. A tree-wide `grep -rn 'link(name = "ntoskrnl"'` distinguishes the two
+forms instantly and is worth running whenever this pattern spreads.
 
 ### Cohab link-clean ≠ runtime-correct
 A clean cargo + ninja can still bugcheck mid-init. The link is a necessary gate, never a

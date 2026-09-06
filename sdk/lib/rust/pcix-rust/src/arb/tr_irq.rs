@@ -16,7 +16,7 @@ use core::ffi::c_void;
 // C `HalGetInterruptTranslator` is a macro: HALDISPATCH->HalGetInterruptTranslator
 // (a HAL_DISPATCH dispatch-table member, NOT an export). Call it through the
 // ntoskrnl-exported HalDispatchTable global instead of a (nonexistent) extern fn.
-#[link(name = "ntoskrnl", kind = "raw-dylib")]
+#[link(name = "ntoskrnl.exe", kind = "raw-dylib")]
 extern "C" {
     pub static mut HalDispatchTable: HAL_DISPATCH;
 }

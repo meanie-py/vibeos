@@ -19,7 +19,7 @@ use ntkrnl_sys::ddk::INTERFACE_TYPE;
 // plain `extern { static }` that references `_InitSafeBootMode` directly, but the
 // import lib only provides `__imp__InitSafeBootMode`. Shadow it with a raw-dylib
 // data import so the `__imp_` thunk is generated.
-#[link(name = "ntoskrnl", kind = "raw-dylib")]
+#[link(name = "ntoskrnl.exe", kind = "raw-dylib")]
 extern "C" {
     // ULONG in ntoskrnl/ex/init.c — BOOLEAN under-read was LE-benign but wrong
     static InitSafeBootMode: ULONG;
