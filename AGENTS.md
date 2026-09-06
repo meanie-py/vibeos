@@ -85,6 +85,14 @@ progress on *anything*, and then say exactly what you need.
 don't bail at the big number. Kernel hangs and BUGCHECKs are ~1 root cause; keep going until
 found. **Don't invent time or session budgets.**
 
+**A fact that survives a compaction has lost its evidence.** Summarization preserves the
+CLAIM and drops the provenance, so a stale line reads as current: an OOM kill nobody logged, a
+WSL death that happened two days ago, a "lane owes a HANG_TIMEOUT investigation" verdict that
+never existed. Two agents did this on the same day, and both had relayed it onward before
+anyone checked. Before you repeat a carried-over fact — and *especially* before you hand it to
+another agent or the user as evidence — re-derive it: `uptime`, `dmesg`, the summary.json, the
+actual exit code. Report what you observed and what you inferred as different things.
+
 **Deferral is temporary, never silent.** Deferred work stays tracked and owed. Don't drop a
 thing permanently by calling it "out of scope."
 

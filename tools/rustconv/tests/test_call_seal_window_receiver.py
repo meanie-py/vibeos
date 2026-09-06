@@ -178,3 +178,74 @@ def test_a_receiver_with_arguments_keeps_them_after_the_handle():
     token = _only(sealed, "ScreenToClient").placeholder
     rust, _ = repair_window_receivers(f"(*(*this).m_ListView).{token}(&mut pt);", sealed)
     assert rust == f"{token}((*this).m_ListView, &mut pt);"
+
+
+def test_a_qualified_call_is_the_win32_api_and_keeps_its_arity():
+    """`::GetWindowRect(hWndHdr, &r)` already passes the handle; adding one inverts the fix."""
+    body = "void f(void)\n{\n    ::ScreenToClient(hWndHdr, &pt);\n}\n"
+    sealed = seal_calls(
+        body,
+        {"ScreenToClient"},
+        hwnd_receiver_callees=cwindow_method_arity(ATLWIN),
+    )
+    call = _only(sealed, "ScreenToClient")
+    assert call.argc == 2
+    assert not call.hwnd_receiver
+
+
+def test_the_same_name_bare_is_still_the_member():
+    """Both spellings occur in one file, so the discrimination has to be per SITE."""
+    body = "void f(void)\n{\n    ScreenToClient(&pt);\n    ::ScreenToClient(hWnd, &other);\n}\n"
+    sealed = seal_calls(
+        body,
+        {"ScreenToClient"},
+        hwnd_receiver_callees=cwindow_method_arity(ATLWIN),
+    )
+    member, api = sorted(sealed.calls, key=lambda call: call.placeholder)
+    assert (member.argc, member.hwnd_receiver) == (2, True)
+    assert (api.argc, api.hwnd_receiver) == (2, False)
+
+
+def test_a_bare_member_call_gets_the_implicit_handle():
+    """`ScreenToClient(&pt)` in a CWindowImpl class means this->m_hWnd's window."""
+    from rustconv.call_seal import repair_window_receivers
+
+    body = "void f(void)\n{\n    ScreenToClient(&pt);\n}\n"
+    sealed = seal_calls(
+        body,
+        {"ScreenToClient"},
+        hwnd_receiver_callees=cwindow_method_arity(ATLWIN),
+    )
+    token = _only(sealed, "ScreenToClient").placeholder
+    rust, repaired = repair_window_receivers(f"{token}(&mut pt);", sealed)
+    assert rust == f"{token}((*this).m_hWnd, &mut pt);"
+    assert repaired == [f"{token}=ScreenToClient"]
+
+
+def test_a_zero_argument_member_call_gets_only_the_handle():
+    from rustconv.call_seal import repair_window_receivers
+
+    body = "void f(void)\n{\n    DestroyWindow();\n}\n"
+    sealed = seal_calls(
+        body,
+        {"DestroyWindow"},
+        hwnd_receiver_callees=cwindow_method_arity(ATLWIN),
+    )
+    token = _only(sealed, "DestroyWindow").placeholder
+    rust, _ = repair_window_receivers(f"{token}();", sealed)
+    assert rust == f"{token}((*this).m_hWnd);"
+
+
+def test_an_already_correct_handle_is_not_doubled():
+    from rustconv.call_seal import repair_window_receivers
+
+    body = "void f(void)\n{\n    ScreenToClient(&pt);\n}\n"
+    sealed = seal_calls(
+        body,
+        {"ScreenToClient"},
+        hwnd_receiver_callees=cwindow_method_arity(ATLWIN),
+    )
+    token = _only(sealed, "ScreenToClient").placeholder
+    rust, repaired = repair_window_receivers(f"{token}((*this).m_hWnd, &mut pt);", sealed)
+    assert rust == f"{token}((*this).m_hWnd, &mut pt);"
+    assert repaired == []

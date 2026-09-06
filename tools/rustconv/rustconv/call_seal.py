@@ -270,7 +270,13 @@ def seal_calls(
         # counts come from atlwin.h (see cpp_core.cwindow_method_arity), never a remembered
         # list, and only for a class that actually derives from CWindow, where the member hides
         # the global and a bare call cannot mean the Win32 function.
-        if hwnd_receiver_callees and original in hwnd_receiver_callees:
+        # `::` is how the C++ says which one it means, and ignoring it inverted the fix: the
+        # SAME name is a member call bare (`ScreenToClient(&pt)`, handle implicit) and the
+        # Win32 API when qualified (`::GetWindowRect(hWndHdr, &r)`, handle already an
+        # argument). Adding a receiver to the qualified form broke three bodies that had been
+        # correct, which is the tell that the rule -- not the model -- was wrong.
+        qualified = masked[:start].rstrip().endswith("::")
+        if hwnd_receiver_callees and original in hwnd_receiver_callees and not qualified:
             declared = hwnd_receiver_callees[original]
             if argc is not None:
                 argc += 1
@@ -295,7 +301,7 @@ def seal_calls(
                 argc,
                 argc_max,
                 is_receiver,
-                bool(hwnd_receiver_callees) and original in hwnd_receiver_callees,
+                bool(hwnd_receiver_callees) and original in hwnd_receiver_callees and not qualified,
             )
         )
         result = result[:start] + placeholder + result[end:]
@@ -733,6 +739,31 @@ def repair_window_receivers(rust: str, sealed: SealedCalls) -> tuple[str, list[s
                 + rust[opening + 1 :]
             )
             repaired.append(f"{call.placeholder}={call.original}")
+            break
+    # The implicit form of the same omission: a BARE member call short by exactly the handle.
+    # `ScreenToClient(&pt)` inside a CWindowImpl class is `this->m_hWnd`'s window, and the model
+    # writes the C++ arity even when it has the extern declaration in front of it -- twice, in
+    # two independent samples of CDefView_OnContextMenu. The receiver can only be `this->m_hWnd`
+    # here (an explicit one is handled above, a qualified `::` call is not a member at all), so
+    # inserting it is a mechanical lowering rather than a guess, exactly as
+    # `repair_dropped_receivers` inserts the sibling `this` it is the analogue of.
+    masked = _code_mask(rust)
+    for call in sealed.calls:
+        if call.placeholder not in windowed or call.argc is None:
+            continue
+        for match in re.finditer(rf"\b{re.escape(call.placeholder)}\b", masked):
+            if masked[: match.start()].rstrip().endswith((".", ">")):
+                continue
+            counted = _argument_count(masked, match.end())
+            if counted is None or "::<" in counted[1] or counted[0] != call.argc - 1:
+                continue
+            if re.match(r"\s*\(\s*\*\s*this\s*\)\s*\.\s*m_hWnd\b", counted[1]):
+                continue
+            opening = masked.find("(", match.end())
+            insertion = "(*this).m_hWnd" + (", " if counted[0] else "")
+            rust = rust[: opening + 1] + insertion + rust[opening + 1 :]
+            repaired.append(f"{call.placeholder}={call.original}")
+            masked = _code_mask(rust)
             break
     return rust, sorted(set(repaired))
 
