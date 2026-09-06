@@ -88,6 +88,18 @@ def _finding_lines(out: str) -> set[str]:
     return {ln.rstrip() for ln in out.splitlines() if ln.strip() and not _SUMMARY_LINE.search(ln)}
 
 
+def _scanner_error(cp: subprocess.CompletedProcess, findings_from: str) -> bool:
+    """Crashes outrank partial/baselined output: the scan never completed."""
+    if cp.returncode < 0 or re.search(
+        r"^Traceback \(most recent call last\):", cp.stderr or "", re.M
+    ):
+        return True
+    text = cp.stdout or ""
+    if findings_from != "stdout":
+        text += "\n" + (cp.stderr or "")
+    return cp.returncode != 0 and not _finding_lines(text)
+
+
 # Finding identity WITHOUT the line/column, so LINE DRIFT is not a new finding.
 # Same disease as the count-bearing summary lines above, one level deeper: the baseline
 # stored 'qemu/lib/common.sh:90:17: … SLOT_INDEX …', a 3-line COMMENT was inserted earlier
@@ -197,6 +209,19 @@ def _lint_stage(
             Stage(name, status=st, detail="tool unavailable — LINT NOT RUN (no coverage)")
         )
     cp = run.run(cmd, cwd=cwd or repo, stage=f"lint:{name}")
+    if _scanner_error(cp, "both" if by_exit_code else findings_from):
+        run.classification = "SCANNER_ERROR"
+        return run.add(
+            Stage(
+                name,
+                exit=cp.returncode,
+                status="fail",
+                detail="SCANNER_ERROR: scanner did not complete; coverage unavailable",
+                salient=_rel(
+                    (cp.stderr or cp.stdout or f"exit {cp.returncode}"), repo
+                ).splitlines()[-4:],
+            )
+        )
     if by_exit_code:
         text = _rel((cp.stdout or "") + "\n" + (cp.stderr or ""), repo)
         if cp.returncode == 0:
@@ -948,7 +973,9 @@ def source_lint_specs(repo: Path) -> list[tuple]:
     return specs
 
 
-# Audited CLI paths read Rust sources only and exclude Cargo target output.
+# Audited CLI paths read Rust sources only and prune Cargo output before traversal.
+# Build independence alone is insufficient: excluded directories must never be
+# entered while builds mutate them. test_gate_source_partitions audits scandir.
 # Everything not explicitly audited stays deferred, including new scanners.
 # See docs/engineering/fleet-verification-migration-plan.md for input contracts.
 EARLY_SOURCE_CHECKS = frozenset(
@@ -1016,6 +1043,8 @@ def write_baselines(repo: Path, only: set[str] | None = None) -> dict:
             cp = subprocess.run(cmd, cwd=repo, capture_output=True, text=True, timeout=600)
         except (OSError, subprocess.SubprocessError):
             continue
+        if _scanner_error(cp, src):
+            raise RuntimeError(f"SCANNER_ERROR: {name} did not complete; refusing baseline update")
         text = _rel(cp.stdout if src == "stdout" else (cp.stdout + "\n" + cp.stderr), repo)
         cur = _finding_lines(text)
         prev = _baseline(repo, name)
