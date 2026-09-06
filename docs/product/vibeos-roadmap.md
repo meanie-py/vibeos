@@ -495,8 +495,9 @@ Field-manual § pointers hold the full writeups. **Update on state change.**
   wow64.dll after a map, with a guest that never reached its DllMain.
 - **32-bit `socket()` returned WSAEINVAL because the WSH helper was unstaged — FIXED,
   BOOT-VERIFIED** (2026-09-05, ladder run `20260905-233102-smoke-amd64`: `socket()` succeeds,
-  `select()` is reached and issues four AFD IOCTLs where there were previously zero). With the crash above fixed, msafd.dll loaded for real (`[LDR] init 'msafd.dll'
-  ... RETURNED ret=1`) and `socket()` still failed with `0x2726`. The cause was the SAME
+  `select()` is reached and issues four AFD IOCTLs where there were previously zero). With the
+  RVA-on-a-data-mapping crash above fixed, msafd.dll loaded for real and `socket()` STILL
+  failed with `0x2726`. The cause was the SAME
   dynamic-edge blind spot one hop deeper: msafd reads `HelperDllName` from the registry and
   `LoadLibraryW`s the WSH_* helper (msafd-rust `misc/helpers.rs`), which nettcpip.inf declares
   as `%SystemRoot%\System32\wshtcpip.dll`. That DLL was BUILT and never staged into SysWOW64,
