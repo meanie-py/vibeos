@@ -24,11 +24,11 @@ type PCSTR = *const i8;
 type c_char = i8;
 
 // HalDispatchTable is an ntoskrnl data export (cross-DLL data → raw-dylib).
-#[link(name = "ntoskrnl", kind = "raw-dylib")]
+#[link(name = "ntoskrnl.exe", kind = "raw-dylib", modifiers = "+verbatim")]
 extern "system" {
     fn RtlAssert(FailedAssertion: PVOID, FileName: PVOID, LineNumber: ULONG, Message: PVOID);
 }
-#[link(name = "ntoskrnl", kind = "raw-dylib")]
+#[link(name = "ntoskrnl.exe", kind = "raw-dylib", modifiers = "+verbatim")]
 extern "C" {
     pub static mut HalDispatchTable: HAL_DISPATCH;
 }
