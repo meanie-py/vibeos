@@ -309,14 +309,15 @@ The host fixture gate therefore requires `bindgen`/libclang and Cargo's cached
 cc-rs dependencies in addition to the existing CMake/Ninja/Rust/native toolchain;
 missing prerequisites fail the test rather than skipping this coverage.
 
-These are additive safeguards, not a complete graph replacement. Still owed:
+These are additive safeguards, not a complete graph replacement. Work left at
+that stage included:
 compiler-command replay and committed-flags C paths, native header generators,
 binding regeneration/postprocessing for the committed per-arch islands, spec
 inputs, directory membership/shadowed-header changes, and inherited dependency
-resolution. In particular, `generate_ks_inc` currently treats an existing output
-as memoized across build-script runs; input discovery alone cannot make that
-generator fresh. It needs a separately tested freshness fix before claiming
-the generated-header path is covered. No broad production edge is removed.
+resolution. In particular, `generate_ks_inc` treated an existing output as
+memoized across build-script runs; input discovery alone could not make that
+generator fresh. The next slice addresses that shortcut. No broad production
+edge is removed.
 
 The first gate's tooling run exposed another fixture setup clock edge: a copied
 executable was 430 ms older than its initial source. Setup edits made after the
@@ -338,3 +339,51 @@ failure above, not an OS failure; the corrected tooling rerun passed separately.
 No green gate stamp is claimed for this dirty-tree run. The previously queued
 tip `2e016c6595fe` landed independently as `41589edd0c53` through the conductor's
 green integration gate; this new production/test batch is a separate local change.
+
+### Compiler replay and invocation-scoped native generation
+
+The compiler-command replay, committed-flags C, geninc compiler, and host-tool
+compiler paths now use the same depfile discovery as cc-rs. Command tracing sees
+the augmented command. Relative prerequisites are resolved from the compiler's
+working directory before Cargo watches them; compile-db entries need not execute
+from the build-script directory. Failed compiler commands retain their failure
+status rather than being obscured by an absent depfile error.
+
+`generate_ks_inc` now uses `InvocationOutput`: it regenerates on the first request
+in each new Linker invocation, then reuses that result in memory. A surviving
+file in OUT_DIR no longer bypasses compilation, dependency discovery, or updated
+constants. The reuse avoids recompiling once per assembly consumer.
+
+Four C/assembly controls exercise the shipping cc-rs and raw-command paths,
+including a different compiler cwd and a transitive system header with spaces.
+Two generator controls compile and execute a real C generator whose header sets
+the generated Rust constant. The disk-existence negative control stays stale
+even when Cargo sees the edit; the invocation cache matches cold output and a
+journal proves two requests invoke the generator only once per build script.
+These test the shipping cache/discovery mechanism, not the full SDK geninc
+layout extraction or a complete cmake-off OS image.
+
+Still owed before dependency narrowing: runtime template/include discovery in
+native-hpp and other generators, complete cmake-off generator validation,
+committed bindgen-island regeneration/postprocessing, spec inputs, directory
+membership/shadowing, and workspace-inherited dependency resolution. Broad
+production watches remain in place.
+
+The first tooling run in this slice failed two older controls (bindgen without
+header tracking and directory-only removal tracking). Fixture time ordering now
+also covers membership changes and generated outputs: additions/removals stamp
+the parent directory, existing-file edits do not, and an executed CMake edge
+stamps its output after current fixture inputs. Missing edges never execute that
+completion step and remain stale. A deterministic day-ahead input control proves
+no-op stability after an executed rebuild; all eight focused clock/bindgen/
+directory cases passed, including the negative controls. This changes only the
+fixture clock model, not production timestamps, graph edges, or assertions.
+
+Verification: the corrected tree passed all 26 tooling checks, including 49
+invalidation cases. The clean gate at
+`/tmp/vibeos-cli/20260905-234449-gate-i386+amd64+arm64/summary.json` passed all
+three builds, desktop smokes (screenshots inspected), architecture/source
+checks, cohab, difftests, and all 15 network tests. Its overall `TOOLING_FAIL`
+records the first fixture failures above; the subsequent full tooling rerun
+passed separately. No clean green gate stamp or master landing is claimed for
+this local batch.

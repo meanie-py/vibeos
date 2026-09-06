@@ -124,11 +124,15 @@ fn shell_quote(s: &std::ffi::OsStr) -> String {
 /// `Command::status()` that records the command first when `--trace` is on.
 trait TracedStatus {
     fn traced_status(&mut self) -> std::io::Result<ExitStatus>;
+    fn native_status(&mut self, source: &Path) -> std::io::Result<ExitStatus>;
 }
 impl TracedStatus for Command {
     fn traced_status(&mut self) -> std::io::Result<ExitStatus> {
         trace_command(self);
         self.status()
+    }
+    fn native_status(&mut self, source: &Path) -> std::io::Result<ExitStatus> {
+        native_deps::run(self, source, |cmd| cmd.traced_status())
     }
 }
 
@@ -531,6 +535,7 @@ pub struct Linker {
     /// llvm-dlltool converts delay-imports to regular ones so every dependency
     /// loads at once and LdrpLoadDll recursion overflows the default 1MB stack.
     stack_reserve: Option<u64>,
+    ks_includes: native_deps::InvocationOutput,
 }
 
 impl Linker {
@@ -594,6 +599,7 @@ impl Linker {
             force_undefined: Vec::new(),
             allow_stdcall_fixup: false,
             stack_reserve: None,
+            ks_includes: Default::default(),
         }
     }
 
@@ -1384,7 +1390,7 @@ impl Linker {
                     let status = Command::new(&args[0])
                         .args(&args[1..])
                         .current_dir(&dir)
-                        .traced_status()
+                        .native_status(&abs)
                         .unwrap_or_else(|e| panic!("replay clang for {rel} (lib {name}): {e}"));
                     if !status.success() {
                         panic!("c_from_compile_db: compile failed for {rel} (lib {name})");
@@ -2254,7 +2260,7 @@ impl Linker {
                     .arg("-o")
                     .arg(&obj)
                     .current_dir(&self.repo_root)
-                    .traced_status()
+                    .native_status(&abs)
                     .unwrap_or_else(|e| {
                         panic!("committed-flags clang for {rel} (lib {name}): {e}")
                     });
@@ -2286,13 +2292,13 @@ impl Linker {
     /// `.asmdef` table is pure compile-time constants, so the `.obj` section bytes
     /// (and hence the emitted text) are byte-identical to cmake's `native-geninc`.
     fn generate_ks_inc(&self) -> PathBuf {
+        self.ks_includes.get_or_generate(|| self.generate_ks_inc_uncached())
+    }
+
+    fn generate_ks_inc_uncached(&self) -> PathBuf {
         let out_asm = PathBuf::from(env::var("OUT_DIR").unwrap()).join("asm");
         std::fs::create_dir_all(&out_asm).expect("mkdir asm");
         let dst = out_asm.join(self.ks_inc_name());
-        // Memoize: each module's asm build calls this once; reuse within a build.
-        if dst.exists() {
-            return out_asm;
-        }
         let clang = self.clang_path();
         let xdk = self.generate_xdk_headers();
         let committed_hdrs = self
@@ -2334,7 +2340,7 @@ impl Linker {
             .arg("-o")
             .arg(&obj)
             .current_dir(&self.repo_root)
-            .traced_status()
+            .native_status(&src)
             .unwrap_or_else(|e| panic!("cmake-off geninc clang for genincdata.c: {e}"));
         if !status.success() {
             panic!("cmake-off geninc: genincdata.c compile failed");
@@ -2366,7 +2372,7 @@ impl Linker {
         cmd.args(cc_tool.args());
         cmd.arg("-O2").arg("-o").arg(&exe).arg(&src);
         let status = cmd
-            .traced_status()
+            .native_status(&src)
             .unwrap_or_else(|e| panic!("host cc ({}): {e}", cc_tool.path().display()));
         if !status.success() {
             panic!("host cc failed to compile {src_rel}");

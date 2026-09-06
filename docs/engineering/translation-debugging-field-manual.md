@@ -4415,8 +4415,24 @@ Represent the native include closure in build-script watches as well as the
 outer dependency graph; watching only the `.c` or `.S` file is insufficient.
 The cc-rs paths in `reactos-link` now emit compiler-discovered file watches via
 `native_deps::compile`; retain `-MD` rather than `-MMD` so `-isystem` SDK inputs
-are included. Compiler-command replay and native generators remain separate
-paths to audit before removing conservative watches.
+are included. Compiler-command replay now uses the same discovery and rebases
+relative inputs from the compiler's cwd to Cargo's. Runtime generator inputs
+(such as native-hpp template includes) remain distinct from compiler inputs.
+
+### Generated assembly constants stay stale despite a build-script rerun
+
+**Symptom:** Cargo reruns after a header edit, but generated constants still
+reflect the previous layout; deleting the generated output changes the result.
+
+**Cause:** `generate_ks_inc` treated an existing OUT_DIR file as cached across
+invocations, returning before generation and dependency discovery.
+
+**Fix:** Cache only within one Linker invocation using `InvocationOutput`.
+Regenerate on its first request even when the file survives from an older run.
+The real C-generator fixture demonstrates stale output with the disk shortcut
+and fresh output with invocation-only caching, without duplicating generation
+for multiple consumers in one build script. Runtime template dependency closure
+still needs its own tracking; compiler depfiles cannot infer those reads.
 
 ### A bindgen depfile makes every unchanged Ninja build run again
 
@@ -7573,6 +7589,12 @@ An observed output 430 ms older than its just-built source caused a false no-op
 failure. `BuildFixture` now explicitly reconfigures after initial setup and
 switches to strictly newer mutation timestamps only after a successful build;
 the regression injects a forward clock step without weakening the no-op check.
+Directory membership changes also need ordered parent-directory timestamps;
+ordinary content edits must not touch that directory or the negative control
+would acquire a fake edge. Executed fixture commands stamp their outputs after
+the current inputs, covering clock steps during generation/compilation too.
+This completion step never runs for a missing dependency edge; the stale-value
+and affected-consumer assertions remain the oracle.
 
 ### A cached handle in a reference shim is per-PROCESS, but the tests run per-THREAD
 
