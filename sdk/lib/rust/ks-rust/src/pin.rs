@@ -18,7 +18,7 @@ use core::ptr::{addr_of_mut, addr_of};
 // IoFileObjectType is an ntoskrnl DATA export (`@ extern`) — cross-DLL data imports need
 // raw-dylib (`__imp_` indirection); the substrate's plain extern references the bare symbol
 // and fails to link. This shadows it locally for pin.rs's single use site.
-#[link(name = "ntoskrnl.exe", kind = "raw-dylib")]
+#[link(name = "ntoskrnl.exe", kind = "raw-dylib", modifiers = "+verbatim")]
 extern "C" {
     static IoFileObjectType: PVOID;
 }

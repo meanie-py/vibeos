@@ -381,7 +381,7 @@ static GUID_BUS_TYPE_RAMDISK: GUID = GUID {
 // symbol; a cohab DRIVER importing it links on amd64 but i386/arm64 PE need the raw-dylib
 // data-import thunk (__imp_). ramdisk is the first cohab driver to import kernel data.
 // ramdisk.rs shadows the `globals::*` / `glue::*` globs with an explicit `use` of THIS.
-#[link(name = "ntoskrnl.exe", kind = "raw-dylib")]
+#[link(name = "ntoskrnl.exe", kind = "raw-dylib", modifiers = "+verbatim")]
 extern "C" {
     pub static mut KeLoaderBlock: ntkrnl_sys::ddk::PLOADER_PARAMETER_BLOCK;
 }

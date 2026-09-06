@@ -63,7 +63,7 @@ extern "system" {
     fn RtlxAnsiStringToUnicodeSize(AnsiString: *const ANSI_STRING) -> ULONG;
 }
 // NlsMbCodePageTag is an ntoskrnl data export (cross-DLL data import → raw-dylib).
-#[link(name = "ntoskrnl.exe", kind = "raw-dylib")]
+#[link(name = "ntoskrnl.exe", kind = "raw-dylib", modifiers = "+verbatim")]
 extern "C" {
     // BOOLEAN (u8) in sdk/lib/rtl/nls.c — an i32 decl over-reads 3 neighbor bytes
     static mut NlsMbCodePageTag: u8;

@@ -549,9 +549,13 @@ Field-manual § pointers hold the full writeups. **Update on state change.**
   un-silenced — `PeLdrLoadImage('...\drivers\ntoskrnl.dll') failed` ->
   `PeLdrpLoadAndScanReferencedDll() failed` -> `PeLdrScanImportDescriptorTable() failed`, three
   times per boot, immediately after `ks.sys` and `ramdisk.sys` load. Cause:
-  `#[link(name = "ntoskrnl", kind = "raw-dylib")]` appends `.dll` to an extensionless name, so
-  the descriptor names a file that does not exist; the correct `name = "ntoskrnl.exe"` is what 15
-  other crates already use, and the bare form existed in exactly the 3 crates that carry
+  `#[link(name = "ntoskrnl", kind = "raw-dylib")]` appends `.dll` to the link name, so the
+  descriptor names a file that does not exist. rustc appends it **unconditionally** unless
+  `modifiers = "+verbatim"` is set, so `name = "ntoskrnl.exe"` alone is NOT the fix — it yields
+  `ntoskrnl.exe.dll` (confirmed on the binaries and in a boot log before being corrected). The
+  correct form, which the 15 working crates all use, is
+  `name = "ntoskrnl.exe", kind = "raw-dylib", modifiers = "+verbatim"`. The bare form existed in
+  exactly the 3 crates that carry
   raw-dylib kernel DATA imports (ramdisk's own comment, "the first cohab driver to import kernel
   data", explains the copy path). Confirmed against the binaries: those 3 `.sys` carry both
   `ntoskrnl.dll` and `ntoskrnl.exe` strings while healthy drivers carry only `.exe`. **Not

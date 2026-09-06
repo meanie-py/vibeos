@@ -4644,6 +4644,31 @@ nothing. It has false-greened arm64 six times in a row (fastfat → ramdisk → 
 user32 → advapi32). Rule: **`vibeos-cli smoke` hard-fails on stale media — never bypass it, and
 judge a build by artifact existence, not a reported exit code.**
 
+### Cargo depfiles leave directory contents or lockfile changes stale
+
+**Symptom:** Ninja reports no work after an input-file edit or a lockfile-only
+dependency update, but a cold build produces a different executable.
+
+**Cause:** Cargo's recursive `rerun-if-changed=directory` watch becomes only a
+directory path in the emitted depfile. Ninja does not recursively inspect that
+directory; editing an existing child does not change its parent directory's
+mtime. Cargo depfiles also do not replace the workspace `Cargo.lock` edge.
+
+**Fix:** Retain explicit lockfile dependencies and conservative source edges.
+Before narrowing, represent both watched directories (membership changes) and
+their input files (content changes). The real warm/cold controls in
+`tools/test_build_invalidation.py` demonstrate stale output for directory-only
+and missing-lockfile edges, and passing output for explicit file watches and
+lockfile dependencies. These fixture controls do not establish completeness of
+the production build-script input graph.
+
+Native inputs have two layers too: an outer Ninja edge cannot compensate for a
+missing Cargo build-script header watch. The C and preprocessed-assembly fixture
+controls change only an included header, force Ninja to invoke Cargo by removing
+the copied executable, and still observe stale output until a cold build.
+Represent the native include closure in build-script watches as well as the
+outer dependency graph; watching only the `.c` or `.S` file is insufficient.
+
 ### A flipped TU's leftover `.obj` keeps voting on the NEXT flip's closure
 ninja never deletes the object of a source you remove from a CMake list, so every TU we flip
 leaves a stale `.obj` under the link root forever. `rustconv hybrid-closure` globs `*.obj` for
@@ -4918,6 +4943,37 @@ MSVC *intrinsic*).
 
 A whole family of bugs where the *verification* is wrong, so the code looks correct. These cost
 more than ordinary bugs because their output is trusted.
+
+### A difftest oracle that is the source the port was MADE from grades nothing
+
+**Symptom.** A host difftest is green, has been green for months, and the shipped Rust is still
+wrong on one arch. Nothing in the harness looks suspicious: the reference TU compiles genuine
+tree C, the comparison is bit-exact, the fuzz domain is wide.
+
+**Cause.** The reference compiles the C the translation was ported from — but a *different*
+arch links a *different* C for that symbol. `sdk/lib/crt/math/math.cmake` is the worked
+example: amd64 and i386 take AMD's `math/libm_sse2/*.c` while arm64 takes the portable
+`math/arm64/*.c`, and cnt-rust's cohab body replaces BOTH. Grading it against the arm64
+source confirms only that the port matches its own origin. Whatever the other arch used to do
+is graded by nothing at all, and a flip that changed that arch's behaviour reads as green.
+
+Found this way, all of them invisible until the oracle was corrected: `ldexp` had traded AMD's
+single-rounding exponent arithmetic for a multiply-through-`2^-1022` stepping that
+double-rounds on gradual underflow (wrong in 2,764 of 5.2M cases vs glibc); `_logb`/`_logbf`
+returned `x * x` for an infinity, folding `-inf` to `+inf` where the C says in as many words
+"For VC++, return infinity of same sign"; `tan` went from AMD's 244-line implementation to
+`sin(x)/cos(x)`, which on top of the tree's ~1e-10-accurate `math/sin.c` is up to 0.056
+absolute away from what amd64 used to compute.
+
+**Fix.** Before trusting any per-symbol oracle, read the per-arch source lists and check that
+the reference is what the arch under test actually LINKS, not merely genuine tree C. The tell
+in this case was an asymmetry inside one harness — `atan2f` was graded against AMD's source
+while its double sibling `atan2` was graded against arm64's. When one Rust body replaces two
+different C implementations, one oracle cannot cover both: grade bit-exact against the
+algorithm the Rust implements AND to a measured ULP bound against the other, so a later change
+that drifts away from the arch that lost its implementation still fails. Where the two are too
+far apart for any bound to grade (`tan`), say so in the test with the measurement, rather than
+inventing a tolerance wide enough to pass.
 
 ### A tri-state preflight that only refuses on `False` waves through the case that actually bites
 
@@ -6421,19 +6477,31 @@ against a name already in that list resolves from it instead of going to disk. `
 descriptor. win32k's variant: a fake-export phantom descriptor (freeldr OOM) plus a real-export
 per-arch bugcheck.
 
-**Give the raw-dylib link name its `.exe`, and grep the tree before copying the pattern.**
-`#[link(name = "ntoskrnl", kind = "raw-dylib")]` appends `.dll` to an extensionless name, so the
-import descriptor asks for `ntoskrnl.dll` — a file that does not exist. FreeLDR then fails
-`PeLdrLoadImage('...\drivers\ntoskrnl.dll')` -> `PeLdrpLoadAndScanReferencedDll` ->
-`PeLdrScanImportDescriptorTable` and the boot CONTINUES, so the only symptom is three ERR lines
-on freeldr's channel; when that channel was silent (see the DbgPrint2 entry above) there was no
-symptom at all. The IAT slots for that descriptor are never filled, so every symbol on it — all
-DATA imports, which is the whole reason for raw-dylib here — is an unresolved read waiting for a
-code path to touch it. Correct form is `name = "ntoskrnl.exe"`, which 15 crates already use;
-`ks-rust`, `pcix-rust` and `ramdisk-rust` had the bare form, and the comment on ramdisk's ("the
-first cohab driver to import kernel data") tells you why: it was written once without the
-extension and copied twice. A tree-wide `grep -rn 'link(name = "ntoskrnl"'` distinguishes the two
-forms instantly and is worth running whenever this pattern spreads.
+**A raw-dylib link name needs `modifiers = "+verbatim"`, not just the right string.** rustc
+appends `.dll` to a raw-dylib link name **unconditionally** unless `+verbatim` is set — it does
+not check whether the name already carries an extension. So all three of these are different:
+
+| attribute | descriptor emitted |
+|---|---|
+| `name = "ntoskrnl"` | `ntoskrnl.dll` — wrong, no such file |
+| `name = "ntoskrnl.exe"` | `ntoskrnl.exe.dll` — wrong, and a tempting "fix" |
+| `name = "ntoskrnl.exe", modifiers = "+verbatim"` | `ntoskrnl.exe` — correct |
+
+`ks-rust`, `pcix-rust` and `ramdisk-rust` shipped the first form; ramdisk's comment ("the first
+cohab driver to import kernel data") explains the copy path. The symptom is three ERR lines on
+freeldr's channel — `PeLdrLoadImage('...\drivers\ntoskrnl.dll') failed` ->
+`PeLdrpLoadAndScanReferencedDll` -> `PeLdrScanImportDescriptorTable` — and the boot CONTINUES, so
+while that channel was silent there was no symptom at all. It is not cosmetic: the IAT slots for
+a failed descriptor are never filled, and everything on it is a DATA import (which is the whole
+reason for raw-dylib here), so each is an unresolved read waiting for a code path to reach it.
+
+Two process lessons, both of which cost a cycle here. **Diff the WHOLE attribute, not the field
+you are focused on.** A `grep` that extracted only `name = "..."` showed 15 crates "already
+doing it right" and made the second row above look like the fix; the modifier was the part that
+mattered and it was never in the output. **And verify against the binary, not the source:**
+`llvm-readobj --coff-imports <x>.sys | grep Name:` prints the descriptor that actually shipped,
+and it is what caught `ntoskrnl.exe.dll` immediately. The serial log then confirms causality for
+free, because the failing name tracks the attribute string verbatim.
 
 ### Cohab link-clean ≠ runtime-correct
 A clean cargo + ninja can still bugcheck mid-init. The link is a necessary gate, never a
@@ -7724,6 +7792,19 @@ touching the loader** — the El Torito entry folds in `uefildr`.
 **Before declaring any smoke red, check whether the host was busy** (`./vibeos-cli ps`,
 `./vibeos-cli host-status`). A lone red while another arch is mid-gate is a prime contention
 suspect; re-run host-quiet to decide.
+
+### New builds pass an older CPU-lease waiter
+
+**Symptom:** `host-status` shows an older waiter still queued while newer builds
+acquire permits. **Cause:** admitting queued requests against total pool capacity
+ignores running holders. With four permits, two held, and two waiters requesting
+two each, only the earlier waiter is entitled to the free pair. A free-count
+snapshot also races concurrent acquirers. **Fix:** admit only the ticket head;
+drop its ticket immediately on acquiring permits, not when work finishes. Builds
+still run concurrently within the pool. The isolated live-flock regression is
+`test_hostlock_fifo_respects_existing_permit_holders`. Old processes/worktrees
+retain their prior admission code until restarted/updated; do not rewrite another
+worktree or kill a running build to propagate this fix.
 
 ### Contention wears three costumes, not one
 1. **`HANG_TIMEOUT` at `[freeldr] Switching stack...`** with zero kernel serial (the CGU lottery,
