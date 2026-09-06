@@ -595,7 +595,7 @@ Field-manual § pointers hold the full writeups. **Update on state change.**
   translation defect: every link (`SYSTEMCUR_ARROW`, `LoadSystemCursors`'s
   `!gpsi || !gpsi->hIconSmWindows` guard, `co_add_gui_app`) was diffed against the retired C and
   is byte-faithful.
-- **OPEN, BLOCKS EVERY LANE'S LANDING ~50% OF THE TIME (2026-09-06): `tools/test_build_invalidation.py`
+- **FIXED (2026-09-06), was: blocks every lane's landing ~50% of the time — `tools/test_build_invalidation.py`
   is flaky.** Landed tonight (`2e016c6595f` "Cover native source and header invalidation layers",
   in as `41589edd0c53`). Measured 5 consecutive full-file runs on an IDLE host: **3 failed, 2
   passed** (see the fuller 6-run table below). No

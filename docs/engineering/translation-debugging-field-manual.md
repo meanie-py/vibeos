@@ -4741,6 +4741,28 @@ nothing. It has false-greened arm64 six times in a row (fastfat → ramdisk → 
 user32 → advapi32). Rule: **`vibeos-cli smoke` hard-fails on stale media — never bypass it, and
 judge a build by artifact existence, not a reported exit code.**
 
+### An mtime that loses a race: two independent causes, one symptom
+
+`tools/test_build_invalidation.py` has flaked from **two unrelated mechanisms**, and they
+need telling apart because the remedy and the tell differ. Mechanism (a) is the host clock,
+below. Mechanism (b) is a **sub-10ms mtime margin on a WATCHED DIRECTORY** (msvcrt-homebrew,
+`e60618df52f`): the remove step used a bare `unlink()`, which leaves the parent directory's
+mtime at the host clock, and Cargo's `rerun-if-changed=<dir>` can see *only* a directory
+mtime. With ~8ms of margin against the preceding cold build's artifacts, load inverts it,
+Cargo skips the build script, and a **stale generated value survives a rebuild that really
+happened**. Remedy: age the directory the way `write()` ages a file (`os.utime` on the
+parent), never a bare `unlink`.
+
+**The tell that separates them.** (a) makes Ninja re-run an edge that was up to date, so the
+INVOCATION assert fails (`Left contains one more item: 'leaf'`). (b) leaves the invocation
+assert **passing** — Ninja does re-run the rule — and corrupts only the VALUE (`'5' != '4'`).
+So an invocation-count assert cannot see (b), and the realtime-vs-monotonic guard cannot
+either: no clock steps, so both clocks stay in lockstep and the guard correctly stays quiet.
+**Since systemd-timesyncd was disabled host-side, (a) can no longer fire** — the guard is a
+tripwire for a cause that has been removed, worth keeping but not worth suspecting. A flake
+in this file from today onward is (b) or something new; checking `adjtimex`, finding
+`tick 10000`, and concluding the test is fine is the wrong turn this entry exists to prevent.
+
 ### The HOST CLOCK steps backwards, so an output is older than its own input
 
 **Symptom:** a warm build re-runs an edge that is genuinely up to date, roughly half the
