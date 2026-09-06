@@ -42,8 +42,9 @@ Leaf and shared package-version manifest edits are now covered, with and without
 emitted depfiles: only their consumers run, and executed warm/cold outputs agree.
 The initial 17 invalidation tests passed; subsequent coverage is recorded below.
 Still required before narrowing production dependencies: workspace-inherited
-dependency resolution, real generated bindings, assembly/C shims, spec files,
-and complete directory-input tracking. Use Cargo metadata and emitted dependency
+dependency resolution, production generator/replay paths, spec files, and complete
+directory-input tracking (native and bindgen controls are described below).
+Use Cargo metadata and emitted dependency
 information rather than expanding the existing manifest regex. Only then replace
 the workspace-wide dependency trigger in `sdk/cmake/gcc.cmake`.
 
@@ -279,3 +280,61 @@ generation, spec-file inputs, and workspace-inherited dependency resolution rema
 required before narrowing production triggers. No production code is changed.
 All 37 invalidation cases passed within all 26 `check-tooling` checks. OS builds
 and desktop smokes were not rerun for this test/documentation-only batch.
+
+### Production native discovery and real bindgen controls
+
+`reactos-link::native_deps::compile` now obtains a Make depfile from the same
+GCC/Clang invocation that compiles a native source, preserving target, language,
+defines, and include ordering. `-MD` includes system headers too; `-MMD` would
+omit SDK headers passed through `-isystem`. Every discovered file becomes an
+explicit Cargo watch. Missing, empty, or unsupported depfiles hard-fail, and an
+old depfile is removed before compilation so it cannot mask missing output.
+The production C-shim, individual assembly, spec-stub, and assembly-archive
+cc-rs paths use this helper. Archive member order and link ordering are retained.
+
+Two host fixtures call this shipping helper through the actual `reactos-link`
+dependency. Editing a transitive system header with a space in its name rebuilds
+only the C/assembly consumer and matches a cold executable. Parser unit controls
+cover escaped spaces/hash/dollar paths, continued lines, and malformed rules.
+
+Four more controls run real bindgen, include its output into Rust, and change only
+a nested header's constant and struct layout. With the generator's own depfile,
+warm output matches cold output; without it, the generator and final executable
+stay stale. Bindgen emits an absolute output target: CMP0116 NEW makes that match
+Ninja's target, while OLD requires retargeting with the shipping depfile helper.
+Both policies have positive and negative controls. Using OLD with an unretargeted
+absolute depfile instead rebuilds on every no-op (the fixture's no-op assertion
+caught this).
+The host fixture gate therefore requires `bindgen`/libclang and Cargo's cached
+cc-rs dependencies in addition to the existing CMake/Ninja/Rust/native toolchain;
+missing prerequisites fail the test rather than skipping this coverage.
+
+These are additive safeguards, not a complete graph replacement. Still owed:
+compiler-command replay and committed-flags C paths, native header generators,
+binding regeneration/postprocessing for the committed per-arch islands, spec
+inputs, directory membership/shadowed-header changes, and inherited dependency
+resolution. In particular, `generate_ks_inc` currently treats an existing output
+as memoized across build-script runs; input discovery alone cannot make that
+generator fresh. It needs a separately tested freshness fix before claiming
+the generated-header path is covered. No broad production edge is removed.
+
+The first gate's tooling run exposed another fixture setup clock edge: a copied
+executable was 430 ms older than its initial source. Setup edits made after the
+constructor were incorrectly treated as post-build mutations. Initial setup now
+keeps the past epoch until the first compile, which explicitly reconfigures to
+consume initial CMake edits. Only edits after a successful build use the strict
+newer-than-artifacts epoch. A deterministic forward-clock setup control preserves
+the no-op assertion and proves a later genuine edit still rebuilds. Production
+timestamps and dependency edges are untouched by this fixture correction.
+The corrected tree passed all 26 `check-tooling` checks, including 44 invalidation
+cases and the native depfile parser's Rust unit tests. The original gate's tooling
+failure remains in its artifact record; the separate rerun verifies the fix.
+
+Clean gate evidence: `/tmp/vibeos-cli/20260905-225220-gate-i386+amd64+arm64/summary.json`.
+All three builds, desktop smokes (screenshots inspected), architecture partitions,
+the shared source partition, cohab checks, network tests, and difftests passed.
+The gate's overall verdict is `FAIL: TOOLING_FAIL` from the initial fixture-clock
+failure above, not an OS failure; the corrected tooling rerun passed separately.
+No green gate stamp is claimed for this dirty-tree run. The previously queued
+tip `2e016c6595fe` landed independently as `41589edd0c53` through the conductor's
+green integration gate; this new production/test batch is a separate local change.

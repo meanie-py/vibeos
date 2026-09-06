@@ -4413,6 +4413,22 @@ controls change only an included header, force Ninja to invoke Cargo by removing
 the copied executable, and still observe stale output until a cold build.
 Represent the native include closure in build-script watches as well as the
 outer dependency graph; watching only the `.c` or `.S` file is insufficient.
+The cc-rs paths in `reactos-link` now emit compiler-discovered file watches via
+`native_deps::compile`; retain `-MD` rather than `-MMD` so `-isystem` SDK inputs
+are included. Compiler-command replay and native generators remain separate
+paths to audit before removing conservative watches.
+
+### A bindgen depfile makes every unchanged Ninja build run again
+
+**Symptom:** Bindings regenerate and their Rust consumer rebuilds on a no-op.
+Ninja explains that it expected `bindings.rs` but got an absolute output path.
+
+**Cause:** Bindgen emits an absolute depfile target when given an absolute
+output path; CMake's OLD CMP0116 policy passes it through without normalization.
+
+**Fix:** Use CMP0116 NEW, or retarget the depfile to Ninja's build-root-relative
+output when supporting OLD. Do not drop the depfile: the real bindgen warm/cold
+fixture proves a nested-header-only constant/layout edit then stays stale.
 
 ### A flipped TU's leftover `.obj` keeps voting on the NEXT flip's closure
 ninja never deletes the object of a source you remove from a CMake list, so every TU we flip
@@ -7550,6 +7566,13 @@ failure is not a control. Reproduce it under the load that triggers it (8 worker
 here), then pin it with a test that **fakes the trigger deterministically** — the regression
 test steps the clock backwards by the exact observed 2,593,682,747 ns and fails against the
 old allocator with the live signature.
+
+For the warm/cold build fixtures, initial source customization must keep the
+fixture's past epoch until the first build, not merely until CMake configuration.
+An observed output 430 ms older than its just-built source caused a false no-op
+failure. `BuildFixture` now explicitly reconfigures after initial setup and
+switches to strictly newer mutation timestamps only after a successful build;
+the regression injects a forward clock step without weakening the no-op check.
 
 ### A cached handle in a reference shim is per-PROCESS, but the tests run per-THREAD
 

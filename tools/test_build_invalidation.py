@@ -21,8 +21,9 @@ class BuildFixture:
     ):
         self.root = root
         self.build = root / "build"
-        self.configured = False
+        self.compiled = False
         self.initial_mtime_ns = time.time_ns() - 3_600_000_000_000
+        self.setup_mtime_ns = self.initial_mtime_ns
         self.env = {
             **os.environ,
             "RUSTC_WRAPPER": "",
@@ -111,7 +112,10 @@ foreach(name leaf peer other)
 endforeach()
 ''',
         )
-        self.run("cmake", "-S", str(root), "-B", str(self.build), "-G", "Ninja")
+        self.configure()
+
+    def configure(self):
+        self.run("cmake", "-S", str(self.root), "-B", str(self.build), "-G", "Ninja")
         # Configure itself can straddle a host-clock adjustment: CMakeSystem.cmake
         # then appears newer than each newly regenerated build.ninja, causing
         # Ninja's 100-regeneration failure before any dependency edge is tested.
@@ -121,7 +125,6 @@ endforeach()
         for path in self.build.rglob("*"):
             if path.is_file():
                 os.utime(path, ns=(self.initial_mtime_ns, self.initial_mtime_ns))
-        self.configured = True
 
     def write(self, path, text):
         dest = self.root / path
@@ -133,8 +136,12 @@ endforeach()
         # mutations are explicitly newer than every prior fixture artifact. This
         # does not add missing Ninja dependency edges (the negative controls must
         # still fail to rebuild). No sleeps or retries hide invalidation failures.
-        mtime_ns = self.initial_mtime_ns
-        if self.configured:
+        # Distinct setup writes still need distinct mtimes: Git's stat cache
+        # otherwise misses same-size edits while constructing local revisions.
+        # Use whole seconds: some Git builds compare only the seconds field.
+        self.setup_mtime_ns += 1_000_000_000
+        mtime_ns = self.setup_mtime_ns
+        if self.compiled:
             mtime_ns = (
                 max(
                     time.time_ns(),
@@ -163,7 +170,14 @@ endforeach()
         return {name: self.run(str(self.build / name)) for name in ("leaf", "peer", "other")}
 
     def compile(self):
+        if not self.compiled:
+            # Tests customize sources/build.rs/CMake after construction. Those
+            # are INITIAL inputs, not mutations of an already built artifact.
+            # Keep their epoch in the past too, and explicitly reconfigure to
+            # consume any CMake edits with that same initial timestamp.
+            self.configure()
         self.run("ninja", "-C", str(self.build), "-j1", "-d", "explain")
+        self.compiled = True
         self.build_explanation = self.last_stderr
         return self.outputs()
 
@@ -197,6 +211,33 @@ def test_initial_configure_metadata_cannot_be_in_the_future(tmp_path, monkeypatc
     before = fixture.invocations()
     assert fixture.compile() == initial
     assert fixture.invocations() == before, fixture.build_explanation
+
+
+def test_initial_setup_edits_do_not_use_mutation_epoch(tmp_path, monkeypatch):
+    fixture = BuildFixture(tmp_path)
+    with monkeypatch.context() as patch:
+        # A forward host-clock step during setup must not timestamp an initial
+        # source newer than the compiler artifacts produced after it steps back.
+        patch.setattr(time, "time_ns", lambda: fixture.initial_mtime_ns + 86_400_000_000_000)
+        fixture.write("leaf/src/main.rs", fixture.main_source("leaf", 7))
+    assert (
+        fixture.initial_mtime_ns
+        < (tmp_path / "leaf/src/main.rs").stat().st_mtime_ns
+        < time.time_ns()
+    )
+    initial = fixture.compile()
+    assert initial["leaf"].startswith("7:")
+    before = fixture.invocations()
+    assert fixture.compile() == initial
+    assert fixture.invocations() == before
+    fixture.write("leaf/src/main.rs", fixture.main_source("leaf", 8))
+    assert (tmp_path / "leaf/src/main.rs").stat().st_mtime_ns > (
+        fixture.build / "leaf"
+    ).stat().st_mtime_ns
+    warm = fixture.compile()
+    assert fixture.invocations()[len(before) :] == ["leaf"]
+    assert warm["leaf"].startswith("8:")
+    assert warm == fixture.cold()
 
 
 @pytest.mark.parametrize(
@@ -401,6 +442,135 @@ fn main() {
     cold = fixture.cold()
     assert cold["leaf"] == "2\n"
     assert (warm != cold) if missing_edge else (warm == cold)
+
+
+@pytest.mark.parametrize("kind", ["c", "S"])
+def test_production_native_discovery_tracks_transitive_system_headers(tmp_path, kind):
+    fixture = BuildFixture(tmp_path / "with spaces", emitted_deps=True)
+    manifest = (fixture.root / "leaf/Cargo.toml").read_text()
+    fixture.write(
+        "leaf/Cargo.toml",
+        manifest + '\n[build-dependencies]\ncc = "1"\n'
+        f'reactos-link = {{ path = "{REPO}/sdk/lib/rust/reactos-link" }}\n',
+    )
+    fixture.write("leaf/native/outer.h", "#include <nested value.h>\n")
+    fixture.write("leaf/system/nested value.h", "#define VALUE 1\n")
+    source = (
+        '#include "outer.h"\nunsigned int native_value = VALUE;\n'
+        if kind == "c"
+        else '#include "outer.h"\n.data\n.balign 4\n.globl native_value\n'
+        'native_value:\n.long VALUE\n.section .note.GNU-stack,"",@progbits\n'
+    )
+    fixture.write(f"leaf/native/value.{kind}", source)
+    fixture.write(
+        "leaf/build.rs",
+        """fn main() {
+    let mut build = cc::Build::new();
+    build.file("native/value.KIND").flag("-isystem").flag("system");
+    let source = std::path::Path::new("native/value.KIND");
+    for object in reactos_link::native_deps::compile(&build, source) {
+        println!("cargo:rustc-link-arg={}", object.display());
+    }
+}
+""".replace("KIND", kind),
+    )
+    fixture.write(
+        "leaf/src/main.rs",
+        'extern "C" { static native_value: u32; }\n'
+        'fn main() { println!("{}", unsafe { native_value }); }\n',
+    )
+    initial = fixture.compile()
+    assert initial["leaf"] == "1\n"
+    before = fixture.invocations()
+    assert fixture.compile() == initial
+    assert fixture.invocations() == before
+    fixture.write("leaf/system/nested value.h", "#define VALUE 2\n")
+    warm = fixture.compile()
+    assert fixture.invocations()[len(before) :] == ["leaf"]
+    assert warm["leaf"] == "2\n"
+    assert warm["peer"] == initial["peer"]
+    assert warm["other"] == initial["other"]
+    assert warm == fixture.cold()
+
+    if kind == "c":
+        fixture.write(
+            "parser/Cargo.toml",
+            '[workspace]\n[package]\nname = "native-depfile-tests"\nversion = "0.1.0"\n'
+            'edition = "2021"\n[lib]\n'
+            f'path = "{REPO}/sdk/lib/rust/reactos-link/src/native_deps.rs"\n'
+            '[dependencies]\ncc = "1"\n',
+        )
+        fixture.run(
+            "cargo",
+            "test",
+            "--offline",
+            "--manifest-path",
+            str(fixture.root / "parser/Cargo.toml"),
+            "--target-dir",
+            str(fixture.build / "cargo"),
+            "--lib",
+        )
+
+
+@pytest.mark.parametrize("policy", ["OLD", "NEW"])
+@pytest.mark.parametrize("track_headers", [False, True])
+def test_real_bindgen_depfile_tracks_nested_header_and_layout(tmp_path, track_headers, policy):
+    fixture = BuildFixture(tmp_path, emitted_deps=True, depfile_policy=policy)
+    fixture.write("bindings/wrapper.h", '#include "nested.h"\n')
+    fixture.write(
+        "bindings/nested.h", "#define VALUE 1\nstruct Payload { unsigned char data[1]; };\n"
+    )
+    generated = fixture.build / "bindings.rs"
+    cmake = (tmp_path / "CMakeLists.txt").read_text()
+    depfile = 'DEPFILE "${CMAKE_BINARY_DIR}/bindings.d"' if track_headers else ""
+    retarget = ""
+    if policy == "OLD":
+        retarget = f'''
+    COMMAND "{sys.executable}" "{REPO}/tools/retarget_cargo_depfile.py"
+        --source "${{CMAKE_BINARY_DIR}}/bindings.d"
+        --cargo-output "${{CMAKE_BINARY_DIR}}/bindings.rs"
+        --target bindings.rs --output "${{CMAKE_BINARY_DIR}}/bindings.d"
+'''
+    fixture.write(
+        "CMakeLists.txt",
+        cmake
+        + f"""
+add_custom_command(OUTPUT "${{CMAKE_BINARY_DIR}}/bindings.rs"
+    COMMAND bindgen "${{CMAKE_SOURCE_DIR}}/bindings/wrapper.h"
+        --output "${{CMAKE_BINARY_DIR}}/bindings.rs"
+        --depfile "${{CMAKE_BINARY_DIR}}/bindings.d" --no-layout-tests
+    {retarget}
+    DEPENDS "${{CMAKE_SOURCE_DIR}}/bindings/wrapper.h"
+    {depfile}
+    VERBATIM)
+add_custom_command(OUTPUT "${{CMAKE_BINARY_DIR}}/leaf" APPEND
+    DEPENDS "${{CMAKE_BINARY_DIR}}/bindings.rs")
+""",
+    )
+    fixture.write("leaf/build.rs", "fn main() {}\n")
+    fixture.write(
+        "leaf/src/main.rs",
+        f'include!("{generated}");\n'
+        'fn main() { println!("{}:{}", VALUE, std::mem::size_of::<Payload>()); }\n',
+    )
+    initial = fixture.compile()
+    assert initial["leaf"] == "1:1\n"
+    before = fixture.invocations()
+    assert fixture.compile() == initial
+    assert fixture.invocations() == before
+    fixture.write(
+        "bindings/nested.h", "#define VALUE 2\nstruct Payload { unsigned char data[8]; };\n"
+    )
+    warm = fixture.compile()
+    if track_headers:
+        assert fixture.invocations()[len(before) :] == ["leaf"]
+        assert warm["leaf"] == "2:8\n"
+    else:
+        assert fixture.invocations() == before
+        assert warm == initial
+    cold = fixture.cold()
+    assert cold["leaf"] == "2:8\n"
+    assert (warm == cold) if track_headers else (warm != cold)
 
 
 @pytest.mark.parametrize("emitted_deps", [False, True])

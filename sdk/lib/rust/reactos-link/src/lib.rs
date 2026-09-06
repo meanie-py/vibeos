@@ -24,6 +24,8 @@ use std::env;
 use std::path::{Path, PathBuf};
 use std::process::{Command, ExitStatus};
 
+pub mod native_deps;
+
 // ---- cmake-off `--trace` (ninja-`-v`-style command list) ------------------
 // When `VIBEOS_LINK_TRACE` names a DIRECTORY, every command the engine spawns is
 // appended (one shell-quoted line, prefixed `cd <dir> && ` when a working dir is
@@ -1417,7 +1419,6 @@ impl Linker {
                 if !abs.exists() {
                     panic!("missing asm source for archive: {}", abs.display());
                 }
-                b.file(&abs);
                 println!("cargo:rerun-if-changed={}", abs.display());
             }
             b.out_dir(self.obj_dir())
@@ -1429,10 +1430,14 @@ impl Linker {
                 .flag(llvm_mingw.join("lib/clang/19/include").to_str().unwrap());
             self.add_kernel_asm_includes(&mut b);
             b.flag("-x").flag("assembler-with-cpp");
+            let mut objs = Vec::new();
             for rel in rels {
-                trace_cc(&b, &self.repo_root.join(rel));
+                let source = self.repo_root.join(rel);
+                let mut single = b.clone();
+                single.file(&source);
+                trace_cc(&single, &source);
+                objs.extend(native_deps::compile(&single, &source));
             }
-            let objs = b.compile_intermediates();
             if objs.is_empty() {
                 panic!("asm_archive {name}: cc-rs produced no objects");
             }
@@ -2412,7 +2417,7 @@ fn apply_base(build: &mut cc::Build, clang: &Path, set: AsmDefineSet, arch: &Arc
 
 fn emit_objs(build: &cc::Build, source: &Path) {
     trace_cc(build, source);
-    let objs = build.compile_intermediates();
+    let objs = native_deps::compile(build, source);
     if objs.is_empty() {
         panic!("cc-rs produced no objects for {}", source.display());
     }
