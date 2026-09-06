@@ -483,15 +483,26 @@ land; date every addition.** Source docs live in `docs/engineering/archive/`.
 
 ## Known bugs & flakes (live registry)
 
-- **`test_build_invalidation.py` is mtime-flaky and it rejects real batches — OPEN**
-  (2026-09-06). `test_generated_rust_tracks_directory_input_add_edit_remove[files-depfile]`
-  failed one conductor batch with `ninja explain: restat of output leaf older than most recent
-  input .../generated.rs` — two timestamps **1 ms apart**. It passed on an immediate rerun with
-  no change. The batch was a TOOLING_FAIL on two innocent lanes, which the conductor then had to
-  split to find a culprit that was not there. A build-invalidation test that races the clock
-  cannot distinguish "cargo failed to invalidate" from "the filesystem gave us the same
-  millisecond" — it needs to force a distinct mtime between the write and the rebuild rather
-  than hope for one.
+- **`test_build_invalidation.py` is flaky UNDER LOAD and it bounces conductor batches — OPEN**
+  (2026-09-06). Two different tests in the file have failed the same way:
+  `test_generated_rust_tracks_directory_input_add_edit_remove[files-depfile]` (line 522) with
+  `ninja explain: restat of output leaf older than most recent input .../generated.rs`, and
+  `test_lockfile_only_git_pin_change_requires_explicit_edge[False]` (line 472). Both are the
+  *no-op rebuild* assertion — `assert fixture.invocations() == before` — failing with
+  `Left contains one more item: 'leaf'`, i.e. a spurious rebuild.
+  **It is load-dependent, not random**: the file passed 3/3 run in isolation, and failed
+  roughly 1 run in 3 inside `check-tooling`, which runs 27 checks on a machine already carrying
+  the build fleet. That is precisely when the conductor runs it, so it preferentially fires
+  where it costs the most — it already cost one two-lane batch a TOOLING_FAIL, which the
+  conductor then split to find a culprit that did not exist, and it blocked this lane's `land`
+  preflight three times running.
+  Common shape: the first `compile()` runs cargo, and a file cargo writes can end up with an
+  mtime AFTER the `cmake -E touch` stamp ninja uses for `leaf`; the next ninja run restats,
+  sees the stamp older than its input, and rebuilds. Under load cargo takes longer and the
+  window widens. A build-invalidation test cannot distinguish "cargo failed to invalidate" from
+  "the stamp lost a race with cargo's own output" — the fixture needs to establish that
+  ordering rather than hope for it. **Owned by the build-invalidation lane**: the fix must not
+  simply relax the assertion, which is the only thing catching real invalidation bugs.
 
 The committed home for open bugs (was: agent MEMORY.md, which other agents never see).
 Field-manual § pointers hold the full writeups. **Update on state change.**
