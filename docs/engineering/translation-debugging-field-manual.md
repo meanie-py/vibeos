@@ -4442,6 +4442,21 @@ and fresh output with invocation-only caching, without duplicating generation
 for multiple consumers in one build script. Runtime template dependency closure
 still needs its own tracking; compiler depfiles cannot infer those reads.
 
+### Bindgen regeneration overwrites another invocation or unrelated islands
+
+**Symptom:** Concurrent generators share `/tmp/bindgen_<arch>_raw.rs`, or a run's
+final normalization rewrites islands it never regenerated.
+
+**Cause:** Fixed scratch filenames and normalization aimed at the live crate,
+not the files produced by this invocation.
+
+**Fix:** Kernel/HAL generators use `tools/bindgen-stage.sh`: exclusive new output
+directories, retained raw/header depfiles, staged postprocessing, and stem-scoped
+normalization. `COMPLETE` marks successful completion; absence means partial
+output, never a usable generation result. Both scripts are stage-only now; they
+do not install into `ntkrnl-sys/src`. Missing HAL export metadata fails loudly.
+Concurrency/failure controls live in `tools/test_bindgen_generation.py`.
+
 ### A bindgen depfile makes every unchanged Ninja build run again
 
 **Symptom:** Bindings regenerate and their Rust consumer rebuilds on a no-op.

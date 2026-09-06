@@ -422,12 +422,8 @@ end-to-end controls use spaces, which Cargo escapes; the hpp protocol separately
 tests `#`/`$` escaping. Do not claim arbitrary-filename closure or narrow broad
 watches until the Cargo-to-Ninja transport has a lossless mechanism.
 
-The next committed-island coverage slice must first isolate
-`ntkrnl-sys/generate_bindings.sh`: it currently writes fixed
-`/tmp/ntkrnl_sys_wrapper.h` and `/tmp/bindgen_<arch>_raw.rs` names and installs
-directly into `src/`. Add invocation-private scratch and an explicit staging
-output before running regeneration controls; do not let concurrent lanes share
-those files or overwrite integrated Rust as a test side effect. Spec watches
+The committed-island isolation slice below replaces the kernel/HAL generators'
+shared temporary names and live-crate writes. Spec watches
 already exist at the `Linker::link` call sites for both exports and import libs;
 their outstanding item is a real generation/invalidation control.
 
@@ -439,3 +435,44 @@ cohab, difftests, and 15 network tests. Its 35m06s wall time includes fleet
 build-queue waits; it is not an isolated build-speed measurement. Overall
 `WARN` is solely the dirty-tree/no-push-stamp condition, not a failed check.
 This batch is local work, not a master landing.
+
+### Staged kernel/HAL bindgen regeneration
+
+The kernel and HAL scripts now share `tools/bindgen-stage.sh`. Both are
+**stage-only**, including no-argument invocations: outputs go to a new private
+`.build-tools/bindgen-runs/` directory, or a caller's new `--output-dir`.
+Existing output directories and destinations inside another Git worktree are
+rejected. Generated build headers must be present in this worktree and cannot
+be symlinked to foreign inputs. The pinned toolchain may still be shared.
+
+Raw bindgen output and header depfiles are retained under `raw/`, postprocessed
+islands/helpers under `src/`, and `COMPLETE` is created only after every pass
+succeeds. ABI normalization targets only the staged `bindgen` or `hal_bindgen`
+stem. It no longer scans unrelated integrated islands. HAL postprocessing now
+fails on a missing kernel export spec instead of silently dropping raw-dylib
+data-import annotations. No generated Rust is installed by these scripts.
+
+`tools/test_bindgen_generation.py` exercises the shipping scripts, actual
+bindgen, postprocessor, and ABI normalizer on small owned header fixtures.
+Eleven controls cover concurrent byte-identical runs, private defaults, nested
+header/layout changes, shared-helper extraction, callback normalization, HAL
+data imports, failed bindgen/normalization/spec lookup, and refused unsafe
+inputs/outputs. A host Rust consumer executes the postprocessed amd64 fixture
+and observes its changed layout. These are generator controls, not proof of
+automatic Ninja invalidation or full regenerated-kernel ABI conformance.
+
+Real production-header regeneration also succeeded for kernel arm64/amd64/i386
+and HAL amd64/i386. Repeated normalized outputs were byte-identical. Retained
+staging roots for this run are `.build-tools/bindgen-runs/kernel-verified-20260906`
+and `.build-tools/bindgen-runs/hal-verified-20260906`. Committed bindings remain
+untouched; reviewing/installing staged output and booting it are separate work.
+Other crates' generators have not yet been migrated to this staging mechanism.
+
+Verification: all 27 `check-tooling` checks passed, including the eleven new
+generator controls. Focused controls and direct shellcheck passed after the
+final isolation edits. The CLI shellcheck partition also passed at
+`/tmp/vibeos-cli/20260906-114626-check-partial-amd64/summary.json` (explicitly a
+partial diagnostic, not a full gate). Staged output differs from integrated
+bindings; repeatability does not establish that those differences are safe to
+install. No OS images or integrated Rust changed, so this tooling-only slice
+did not rerun desktop smokes or claim a new full-gate stamp.
