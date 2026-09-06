@@ -18,6 +18,7 @@ from . import (
     callout_annotate,
     candidate_oracle,
     cpp_com,
+    cpp_core,
     cpp_tu,
     crate_repair,
     difftest_gen,
@@ -2541,6 +2542,41 @@ def cmd_translate(args):
                 if callee in own or (callee.endswith("_body") and callee[: -len("_body")] in own)
             )
 
+        # The C++ spelling behind each lowered sibling name, so the default-argument lookup
+        # in `seal_calls` can find a declaration that only ever names the METHOD.
+        callee_cpp_names: dict[str, str] = {}
+        for dep in sorted_deps:
+            for callee in dep.callees:
+                for lowered in (callee, f"{callee}_body"):
+                    cpp_name = lowered[: -len("_body")] if lowered.endswith("_body") else lowered
+                    for owner in methods_by_class:
+                        prefix = f"{owner}_"
+                        if cpp_name.startswith(prefix) and cpp_name[len(prefix) :]:
+                            callee_cpp_names[lowered] = cpp_name[len(prefix) :]
+                            break
+
+        # ATL CWindow methods, for classes that derive from CWindow. See
+        # `cpp_core.cwindow_method_arity` for why their arity is off by the window handle.
+        atlwin = REACTOS_ROOT / "sdk" / "lib" / "atl" / "atlwin.h"
+        window_classes = [
+            owner
+            for owner in methods_by_class
+            if cpp_core.derives_from_cwindow(scan.raw_source, owner)
+        ]
+        cwindow_arity = (
+            cpp_core.cwindow_method_arity(atlwin.read_text(encoding="utf-8", errors="replace"))
+            if window_classes and atlwin.is_file()
+            else {}
+        )
+        hwnd_by_dep = {
+            dep.name: (
+                cwindow_arity
+                if cwindow_arity and getattr(dep, "cpp_class", None) in window_classes
+                else {}
+            )
+            for dep in sorted_deps
+        }
+
         call_seals = (
             {
                 dep.name: seal_calls(
@@ -2549,6 +2585,8 @@ def cmd_translate(args):
                     seal_macros,
                     tu_source=scan.raw_source,
                     receiver_callees=receivers_by_dep[dep.name],
+                    callee_cpp_names=callee_cpp_names,
+                    hwnd_receiver_callees=hwnd_by_dep[dep.name],
                 )
                 for dep in sorted_deps
             }
