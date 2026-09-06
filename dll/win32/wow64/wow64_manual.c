@@ -246,6 +246,7 @@ NTSTATUS WINAPI NtQueryDirectoryFile(HANDLE File, HANDLE Event, PVOID ApcRoutine
                                      PVOID FileName, BOOLEAN RestartScan);
 NTSTATUS WINAPI NtWaitForSingleObject(HANDLE Object, BOOLEAN Alertable,
                                       PLARGE_INTEGER Timeout);
+NTSTATUS WINAPI NtSetEvent(HANDLE Event, PLONG PreviousState);
 NTSTATUS WINAPI NtWaitForMultipleObjects(ULONG Count, HANDLE Objects[],
                                          ULONG WaitType, BOOLEAN Alertable,
                                          PLARGE_INTEGER Timeout);
@@ -1217,9 +1218,12 @@ static NTSTATUS Wow64Manual_NtFlushVirtualMemory(ULONG *a)
  *     polling its IOSB), we block on the file handle until completion rather
  *     than return with a live pointer into a dead frame.
  *
- * The real fix for async is kernel-side: I/O completion should write an
+ * The real fix for async is kernel-side: I/O completion writes an
  * IO_STATUS_BLOCK32 when the requesting process is WoW64 (what NT's
- * IoIs32bitProcess() gates). Owed; see wow64-plan.md.
+ * IoIs32bitProcess() gates). That is DONE for NtReadFile/NtWriteFile (M15b)
+ * and for the IOCTL family (M15c) — see Wow64pLatchIosb32. The functions still
+ * using Wow64pFinishIosb below are the ones not yet converted; they keep the
+ * refusal, which is why it is still here.
  */
 #define WOW64_STATUS_PENDING         ((NTSTATUS)0x00000103)
 #define WOW64_STATUS_NOT_IMPLEMENTED ((NTSTATUS)0xC0000002)
@@ -1278,10 +1282,11 @@ static NTSTATUS Wow64pFinishIosb(NTSTATUS St, HANDLE File,
 typedef NTSTATUS (WINAPI *WOW64_RW_FN)(HANDLE, HANDLE, PVOID, PVOID, PVOID,
                                        PVOID, ULONG, PLARGE_INTEGER, PULONG);
 
-/* TEB.Instrumentation offset (arm64 host) — pinned by the kernel-side layout
- * assert (ntkrnl-sys offset_check_arm64.rs: _TEB.Instrumentation == 5816).
- * Drift here degrades to "latch never matches" + the kernel's loud [IOSB32]
- * mismatch print + the async32.exe oracle failing its OVERLAPPED.Offset
+/* TEB.Instrumentation offset. Identical on both 64-bit hosts and pinned by a
+ * layout assert on each (offset_check_amd64.rs and offset_check_arm64.rs:
+ * _TEB.Instrumentation == 5816), so this is one constant rather than a
+ * per-arch table. Drift degrades to "latch never matches" + the kernel's loud
+ * [IOSB32] mismatch print + the async32.exe oracle failing its OVERLAPPED
  * clobber check — never to silent corruption. */
 #define WOW64_TEB_INSTRUMENTATION0 5816
 
@@ -3796,6 +3801,49 @@ static NTSTATUS Wow64pIoctlBadArg(const char *Who, const char *Why)
 typedef NTSTATUS (WINAPI *WOW64_IOCTL_FN)(HANDLE, HANDLE, PVOID, PVOID, PVOID,
                                           ULONG, PVOID, ULONG, PVOID, ULONG);
 
+/* Issue a MARSHALLED IOCTL and do not come back until the driver is done.
+ *
+ * M15c pairs with the kernel-side IOSB32 work below: a plain (unmarshalled)
+ * IOCTL now latches the guest's own 8-byte IOSB and may pend for real. A
+ * marshalled one cannot, and the reason is the PAYLOAD, not the IOSB — the
+ * widened input, the WSABUF array and the AFD_POLL_INFO shadow are all
+ * host-heap blocks this frame frees on the way out, and for METHOD_BUFFERED
+ * the kernel copies its SystemBuffer back into that shadow at completion
+ * time. Returning while the request is live would hand the kernel a freed
+ * pointer — the same dead-frame class as the old stack IOSB, just with a
+ * bigger blast radius. So we block, and only then copy back and free.
+ *
+ * Blocking is invisible to the caller that matters: msafd's own idiom is
+ * "issue, and if STATUS_PENDING immediately MsafdWaitForAlert(SockEvent)".
+ * But its SockEvent is a SYNCHRONIZATION (auto-reset) event, so OUR wait
+ * consumes the very signal that wait is about to look for — hence the
+ * re-signal. Getting that wrong is a guest hang, not a visible error. */
+static NTSTATUS Wow64pIoctlCall(WOW64_IOCTL_FN Fn, HANDLE File, HANDLE Event,
+                                WOW64_IO_STATUS_BLOCK64_M *I64, ULONG Code,
+                                PVOID In, ULONG InLen, PVOID Out, ULONG OutLen,
+                                const char *Who)
+{
+    NTSTATUS St = Fn(File, Event, NULL, NULL, I64, Code, In, InLen, Out, OutLen);
+    NTSTATUS Wait;
+
+    if (St != WOW64_STATUS_PENDING)
+        return St;
+
+    Wait = NtWaitForSingleObject(Event ? Event : File, FALSE, NULL);
+    if (Wait < 0)
+    {
+        /* The shadow is about to be freed under a request the driver still
+         * owns. Nothing here can make that safe, so say so rather than free
+         * quietly and corrupt later. */
+        DbgPrint("[WOW64]   %s: wait on a pended marshalled IOCTL failed %08lx — "
+                 "the driver may still own our shadow buffer\n", Who, Wait);
+        return Wait;
+    }
+    if (Event)
+        NtSetEvent(Event, NULL);
+    return (NTSTATUS)(ULONG)I64->Status;
+}
+
 /* The AFD_WSABUF array every transfer IOCTL points at: {len, ptr} per element,
  * 8 bytes wide in the guest and 16 here. IN only — AFD reads it to find the
  * guest's data buffers, and reports what it moved through the IOSB. */
@@ -3849,6 +3897,7 @@ static NTSTATUS Wow64pIoctlAfdXfer(WOW64_IOCTL_FN Fn, ULONG *a, const char *Who)
     WOW64_AFD_WSABUF64 *B64;
     WOW64_AFD_XFER64 *In64;
     HANDLE File = (HANDLE)(LONG_PTR)(LONG)a[0];
+    HANDLE Event = (HANDLE)(LONG_PTR)(LONG)a[1];
     NTSTATUS St;
 
     if (!In32 || a[7] < sizeof(*In32))
@@ -3869,8 +3918,8 @@ static NTSTATUS Wow64pIoctlAfdXfer(WOW64_IOCTL_FN Fn, ULONG *a, const char *Who)
     In64->AfdFlags    = In32->AfdFlags;
     In64->TdiFlags    = In32->TdiFlags;
 
-    St = Fn(File, NULL, NULL, NULL, &Iosb64, a[5], In64, sizeof(WOW64_AFD_XFER64),
-            (PVOID)(ULONG_PTR)a[8], a[9]);
+    St = Wow64pIoctlCall(Fn, File, Event, &Iosb64, a[5], In64, sizeof(WOW64_AFD_XFER64),
+                         (PVOID)(ULONG_PTR)a[8], a[9], Who);
     Wow64pIoctlFree(In64);
     Wow64pIoctlFree(B64);
     return Wow64pFinishIosb(St, File, &Iosb64, a[4], Who);
@@ -3887,6 +3936,7 @@ static NTSTATUS Wow64pIoctlAfdRecvFrom(WOW64_IOCTL_FN Fn, ULONG *a, const char *
     WOW64_AFD_WSABUF64 *B64;
     WOW64_AFD_XFERUDP64 In64 = {0};
     HANDLE File = (HANDLE)(LONG_PTR)(LONG)a[0];
+    HANDLE Event = (HANDLE)(LONG_PTR)(LONG)a[1];
     NTSTATUS St;
 
     if (!In32 || a[7] < sizeof(*In32))
@@ -3903,8 +3953,8 @@ static NTSTATUS Wow64pIoctlAfdRecvFrom(WOW64_IOCTL_FN Fn, ULONG *a, const char *
     In64.Address       = (ULONGLONG)(ULONG_PTR)In32->Address;
     In64.AddressLength = (ULONGLONG)(ULONG_PTR)In32->AddressLength;
 
-    St = Fn(File, NULL, NULL, NULL, &Iosb64, a[5], &In64, sizeof(In64),
-            (PVOID)(ULONG_PTR)a[8], a[9]);
+    St = Wow64pIoctlCall(Fn, File, Event, &Iosb64, a[5], &In64, sizeof(In64),
+                         (PVOID)(ULONG_PTR)a[8], a[9], Who);
     Wow64pIoctlFree(B64);
     return Wow64pFinishIosb(St, File, &Iosb64, a[4], Who);
 }
@@ -3923,6 +3973,7 @@ static NTSTATUS Wow64pIoctlAfdSelect(WOW64_IOCTL_FN Fn, ULONG *a, const char *Wh
     WOW64_AFD_POLLHDR64 *P64;
     WOW64_AFD_HANDLE64 *H64;
     HANDLE File = (HANDLE)(LONG_PTR)(LONG)a[0];
+    HANDLE Event = (HANDLE)(LONG_PTR)(LONG)a[1];
     NTSTATUS St;
     ULONG Count, i, Need;
 
@@ -3959,9 +4010,9 @@ static NTSTATUS Wow64pIoctlAfdSelect(WOW64_IOCTL_FN Fn, ULONG *a, const char *Wh
         H64[i].Status = H32[i].Status;
     }
 
-    St = Fn(File, NULL, NULL, NULL, &Iosb64, a[5],
-            P64, (ULONG)(sizeof(*P64) + Count * sizeof(*H64)),
-            P64, (ULONG)(sizeof(*P64) + Count * sizeof(*H64)));
+    St = Wow64pIoctlCall(Fn, File, Event, &Iosb64, a[5],
+                         P64, (ULONG)(sizeof(*P64) + Count * sizeof(*H64)),
+                         P64, (ULONG)(sizeof(*P64) + Count * sizeof(*H64)), Who);
     if (St >= 0 && Out32)
     {
         HOut32 = (WOW64_AFD_HANDLE32 *)(Out32 + 1);
@@ -3984,6 +4035,7 @@ static NTSTATUS Wow64pIoctlAfdEventSelect(WOW64_IOCTL_FN Fn, ULONG *a, const cha
     WOW64_IO_STATUS_BLOCK64_M Iosb64 = {0};
     WOW64_AFD_EVSEL64 In64 = {0};
     HANDLE File = (HANDLE)(LONG_PTR)(LONG)a[0];
+    HANDLE Event = (HANDLE)(LONG_PTR)(LONG)a[1];
     NTSTATUS St;
 
     if (!In32 || a[7] < sizeof(*In32))
@@ -3991,8 +4043,8 @@ static NTSTATUS Wow64pIoctlAfdEventSelect(WOW64_IOCTL_FN Fn, ULONG *a, const cha
     In64.EventObject = (ULONGLONG)(LONG_PTR)(LONG)In32->EventObject;  /* HANDLE: sign-extend */
     In64.Events      = In32->Events;
 
-    St = Fn(File, NULL, NULL, NULL, &Iosb64, a[5], &In64, sizeof(In64),
-            (PVOID)(ULONG_PTR)a[8], a[9]);
+    St = Wow64pIoctlCall(Fn, File, Event, &Iosb64, a[5], &In64, sizeof(In64),
+                         (PVOID)(ULONG_PTR)a[8], a[9], Who);
     return Wow64pFinishIosb(St, File, &Iosb64, a[4], Who);
 }
 
@@ -4004,6 +4056,7 @@ static NTSTATUS Wow64pIoctlAfdEnumEvents(WOW64_IOCTL_FN Fn, ULONG *a, const char
     WOW64_IO_STATUS_BLOCK64_M Iosb64 = {0};
     WOW64_AFD_ENUMEV64 In64 = {0};
     HANDLE File = (HANDLE)(LONG_PTR)(LONG)a[0];
+    HANDLE Event = (HANDLE)(LONG_PTR)(LONG)a[1];
     NTSTATUS St;
     ULONG i;
 
@@ -4011,8 +4064,8 @@ static NTSTATUS Wow64pIoctlAfdEnumEvents(WOW64_IOCTL_FN Fn, ULONG *a, const char
         return Wow64pIoctlBadArg(Who, "input shorter than AFD_ENUM_NETWORK_EVENTS_INFO");
     In64.Event = (ULONGLONG)(LONG_PTR)(LONG)In32->Event;
 
-    St = Fn(File, NULL, NULL, NULL, &Iosb64, a[5], &In64, sizeof(In64),
-            (PVOID)(ULONG_PTR)a[8], a[9]);
+    St = Wow64pIoctlCall(Fn, File, Event, &Iosb64, a[5], &In64, sizeof(In64),
+                         (PVOID)(ULONG_PTR)a[8], a[9], Who);
     if (St >= 0)
     {
         In32->PollEvents = In64.PollEvents;
@@ -4029,6 +4082,7 @@ static NTSTATUS Wow64pIoctlAfdAccept(WOW64_IOCTL_FN Fn, ULONG *a, const char *Wh
     WOW64_IO_STATUS_BLOCK64_M Iosb64 = {0};
     WOW64_AFD_ACCEPT64 In64 = {0};
     HANDLE File = (HANDLE)(LONG_PTR)(LONG)a[0];
+    HANDLE Event = (HANDLE)(LONG_PTR)(LONG)a[1];
     NTSTATUS St;
 
     if (!In32 || a[7] < sizeof(*In32))
@@ -4037,8 +4091,8 @@ static NTSTATUS Wow64pIoctlAfdAccept(WOW64_IOCTL_FN Fn, ULONG *a, const char *Wh
     In64.SequenceNumber = In32->SequenceNumber;
     In64.ListenHandle   = (ULONGLONG)(LONG_PTR)(LONG)In32->ListenHandle;
 
-    St = Fn(File, NULL, NULL, NULL, &Iosb64, a[5], &In64, sizeof(In64),
-            (PVOID)(ULONG_PTR)a[8], a[9]);
+    St = Wow64pIoctlCall(Fn, File, Event, &Iosb64, a[5], &In64, sizeof(In64),
+                         (PVOID)(ULONG_PTR)a[8], a[9], Who);
     return Wow64pFinishIosb(St, File, &Iosb64, a[4], Who);
 }
 
@@ -4050,13 +4104,14 @@ static NTSTATUS Wow64pIoctlAfdTdiHandles(WOW64_IOCTL_FN Fn, ULONG *a, const char
     WOW64_IO_STATUS_BLOCK64_M Iosb64 = {0};
     WOW64_AFD_TDIH64 Out64 = {0};
     HANDLE File = (HANDLE)(LONG_PTR)(LONG)a[0];
+    HANDLE Event = (HANDLE)(LONG_PTR)(LONG)a[1];
     NTSTATUS St;
 
     if (!Out32 || a[9] < sizeof(*Out32))
         return Wow64pIoctlBadArg(Who, "output shorter than AFD_TDI_HANDLE_DATA");
 
-    St = Fn(File, NULL, NULL, NULL, &Iosb64, a[5], (PVOID)(ULONG_PTR)a[6], a[7],
-            &Out64, sizeof(Out64));
+    St = Wow64pIoctlCall(Fn, File, Event, &Iosb64, a[5], (PVOID)(ULONG_PTR)a[6], a[7],
+                         &Out64, sizeof(Out64), Who);
     if (St >= 0)
     {
         Out32->TdiAddressHandle    = (ULONG)Out64.TdiAddressHandle;
@@ -4068,11 +4123,22 @@ static NTSTATUS Wow64pIoctlAfdTdiHandles(WOW64_IOCTL_FN Fn, ULONG *a, const char
 static NTSTATUS Wow64pIoControl(WOW64_IOCTL_FN Fn, ULONG *a, const char *Who)
 {
     HANDLE File = (HANDLE)(LONG_PTR)(LONG)a[0];
-    WOW64_IO_STATUS_BLOCK64_M Iosb64 = {0};
+    HANDLE Event = (HANDLE)(LONG_PTR)(LONG)a[1];
     NTSTATUS St;
 
-    if (Wow64pRefuseAsync(a[1], a[2], Who))
+    /* M15c: an Event is no longer a refusal. It used to be, because the only
+     * IOSB we could offer the kernel was a host one on this frame; the kernel
+     * now writes the GUEST's 8-byte block directly (Wow64pLatchIosb32 above), which
+     * outlives us by construction. An APC routine is still refused — that needs
+     * 64->32 user-APC dispatch, which does not exist yet. AFD is inherently
+     * async and msafd always passes an Event, so this refusal was blocking
+     * every socket operation a 32-bit guest could make. */
+    if (a[2])
+    {
+        DbgPrint("[WOW64]   %s: guest ApcRoutine=%08lx is not supported yet "
+                 "(no 64->32 user-APC dispatch) — refusing\n", Who, a[2]);
         return WOW64_STATUS_NOT_IMPLEMENTED;
+    }
 
     switch (a[5])
     {
@@ -4103,9 +4169,16 @@ static NTSTATUS Wow64pIoControl(WOW64_IOCTL_FN Fn, ULONG *a, const char *Who)
         break;
     }
 
-    St = Fn(File, NULL, NULL, NULL, &Iosb64, a[5],
-            (PVOID)(ULONG_PTR)a[6], a[7], (PVOID)(ULONG_PTR)a[8], a[9]);
-    return Wow64pFinishIosb(St, File, &Iosb64, a[4], Who);
+    /* No shadow on this path, so nothing of ours has to outlive the call: latch
+     * the guest's IOSB and let the request pend for real if it wants to. This
+     * is the one IOCTL path that is genuinely asynchronous under WoW64. */
+    Wow64pLatchIosb32(a[4]);
+    St = Fn(File, Event, NULL, (PVOID)(ULONG_PTR)a[3], (PVOID)(ULONG_PTR)a[4],
+            a[5], (PVOID)(ULONG_PTR)a[6], a[7], (PVOID)(ULONG_PTR)a[8], a[9]);
+    /* Consumed by the kernel at entry; cleared here for the paths that fail
+     * before reaching it (bad handle, failed probe). */
+    Wow64pLatchIosb32(0);
+    return St;
 }
 
 static NTSTATUS Wow64Manual_NtCreateNamedPipeFile(ULONG *a)
