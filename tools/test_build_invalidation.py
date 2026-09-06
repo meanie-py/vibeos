@@ -122,6 +122,29 @@ endforeach()
             if path.is_file():
                 os.utime(path, ns=(self.initial_mtime_ns, self.initial_mtime_ns))
         self.configured = True
+        self.clock_step_ns = 0
+        self._mark_clock()
+
+    # A backwards CLOCK_REALTIME step between writing an input and stamping the
+    # output built from it makes the output look OLDER than its input, so Ninja
+    # re-runs an edge that is genuinely up to date. That is a host fault, not a
+    # missing dependency edge: a real invalidation bug fails on EVERY run, while
+    # this fails only when the clock happens to step, and no dependency edge can
+    # make the ordering observable again. Detect it instead of hiding it behind
+    # a sleep or a retry -- CLOCK_MONOTONIC carries the same NTP slew as
+    # CLOCK_REALTIME, so realtime advancing less than monotonic isolates a step
+    # and nothing else. Seen on WSL2 with a miscalibrated TSC (`dmesg` reports
+    # "Adjusting tsc more than 11%"): the kernel holds a +7.7% tick and
+    # systemd-timesyncd, pinned at its 32s minimum poll, steps realtime back
+    # ~2.4s every poll.
+    def _mark_clock(self):
+        self._clock_mark = (time.time_ns(), time.monotonic_ns())
+
+    def _check_clock(self):
+        real, mono = self._clock_mark
+        lost = (time.monotonic_ns() - mono) - (time.time_ns() - real)
+        if lost > 50_000_000:
+            self.clock_step_ns = max(self.clock_step_ns, lost)
 
     def write(self, path, text):
         dest = self.root / path
@@ -143,6 +166,10 @@ endforeach()
                 + 1_000_000
             )
         os.utime(dest, ns=(mtime_ns, mtime_ns))
+        if self.configured:
+            # The ordering this stamp establishes is only observable while the
+            # clock does not step backwards before the outputs are stamped.
+            self._mark_clock()
 
     @staticmethod
     def main_source(name, value):
@@ -165,6 +192,15 @@ endforeach()
     def compile(self):
         self.run("ninja", "-C", str(self.build), "-j1", "-d", "explain")
         self.build_explanation = self.last_stderr
+        self._check_clock()
+        if self.clock_step_ns:
+            pytest.skip(
+                "host CLOCK_REALTIME stepped backwards "
+                f"{self.clock_step_ns / 1e9:.3f}s during this build, so an output "
+                "can be stamped older than the input it was built from and "
+                "timestamp ordering is unobservable; fix the host clock "
+                "(see docs/engineering/translation-debugging-field-manual.md)"
+            )
         return self.outputs()
 
     def invocations(self):

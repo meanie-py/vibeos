@@ -4769,6 +4769,49 @@ nothing. It has false-greened arm64 six times in a row (fastfat → ramdisk → 
 user32 → advapi32). Rule: **`vibeos-cli smoke` hard-fails on stale media — never bypass it, and
 judge a build by artifact existence, not a reported exit code.**
 
+### The HOST CLOCK steps backwards, so an output is older than its own input
+
+**Symptom:** a warm build re-runs an edge that is genuinely up to date, roughly half the
+time, with no source change. `ninja -d explain` names the input outright:
+`restat of output leaf older than most recent input ../leaf/src/main.rs (…332394124566 vs
+…334251030013)` — the input is ~2.4s *newer* than the output just built from it. It moves
+between tests run to run, and passes in isolation often enough to look like a race in the
+build tool.
+
+**Cause:** not the build graph — `CLOCK_REALTIME` on the host is non-monotonic. On WSL2 with a
+miscalibrated guest TSC (`dmesg`: `Adjusting tsc more than 11% (4482949 vs 4434052)`) the
+kernel compensates with a maximal tick adjustment, leaving `CLOCK_MONOTONIC` ~8% fast, and
+`systemd-timesyncd` — pinned at its 32s *minimum* poll because it can never converge — steps
+realtime back ~2.4s every poll. Measure it in one command:
+
+```bash
+python3 -c "
+import time
+r0,m0=time.time_ns(),time.monotonic_ns(); end=m0+60_000_000_000; steps=0; prev=r0
+while time.monotonic_ns()<end:
+    r=time.time_ns()
+    if r<prev: steps+=1
+    prev=r
+print('realtime lost:', ((time.time_ns()-r0)-(time.monotonic_ns()-m0))/1e9, 's; steps:', steps)"
+```
+Corroborate with `timedatectl show-timesync --all`: `PollIntervalUSec=32s` sitting at the
+minimum, and an `NTPMessage` whose `OriginateTimestamp` is seconds *ahead* of the server's
+`ReceiveTimestamp`.
+
+**Why it is worse than a flake:** the *other* direction is a false green. A source edited just
+after a step gets an mtime OLDER than an artifact built before it, so ninja/cmake/cargo/make
+skip the rebuild and the stale artifact ships — the exact class this section exists for. Any
+"impossible" staleness on this fleet should have the clock ruled out first.
+
+**Fix:** the host clock. `CLOCK_MONOTONIC` carries the same NTP slew as `CLOCK_REALTIME`, so
+realtime advancing *less* than monotonic isolates a step and nothing else — that is the whole
+detector, and it needs no sleep, retry or threshold tuning. `tools/test_build_invalidation.py`
+uses it to skip (loudly, with the measured step) rather than report a dependency-edge failure
+it cannot observe; a real invalidation bug fails on EVERY run, not only when the clock steps,
+so the guard cannot mask one. Switching `current_clocksource` from `tsc` to
+`hyperv_clocksource_tsc_page` does NOT help — the slew is reapplied — and a durable fix needs
+the WSL kernel cmdline, i.e. a restart that kills every running lane.
+
 ### Cargo depfiles leave directory contents or lockfile changes stale
 
 **Symptom:** Ninja reports no work after an input-file edit or a lockfile-only
@@ -6590,12 +6633,43 @@ C file-scope global defined in Rust **without `#[no_mangle]`**. Each layer caugh
 previous could not.
 
 ### raw-dylib in a freeldr-loaded DLL hangs the boot
-A DLL that FreeLDR itself loads (`kdcom.dll`, `bootvid.dll`) must **not** use
-`#[link(kind="raw-dylib")]` for cross-DLL kernel-data imports — the second `ntoskrnl.exe`
-import descriptor it emits hangs FreeLDR's PE loader. Conversely, cross-DLL DATA refs in a
+A DLL that FreeLDR loads in the CORE phase (`kdcom.dll`, `bootvid.dll` — alongside
+`ntoskrnl.exe` itself) must **not** use `#[link(kind="raw-dylib")]` for cross-DLL kernel-data
+imports — the second `ntoskrnl.exe` import descriptor it emits hangs FreeLDR's PE loader. **The
+phase is the whole point, so do not read this as "never two descriptors":** a BOOT DRIVER is
+loaded later, when `ntoskrnl.exe` is already in the loader module list, and a second descriptor
+against a name already in that list resolves from it instead of going to disk. `cdfs.sys` ships
+`2x ntoskrnl.exe` today and boots every time — check with
+`llvm-readobj --coff-imports <x>.sys | grep Name:` before believing a duplicate is your bug. Conversely, cross-DLL DATA refs in a
 *kernel*-loaded Rust DLL **need** raw-dylib on i386, and `cgu>1` can emit a duplicate
 descriptor. win32k's variant: a fake-export phantom descriptor (freeldr OOM) plus a real-export
 per-arch bugcheck.
+
+**A raw-dylib link name needs `modifiers = "+verbatim"`, not just the right string.** rustc
+appends `.dll` to a raw-dylib link name **unconditionally** unless `+verbatim` is set — it does
+not check whether the name already carries an extension. So all three of these are different:
+
+| attribute | descriptor emitted |
+|---|---|
+| `name = "ntoskrnl"` | `ntoskrnl.dll` — wrong, no such file |
+| `name = "ntoskrnl.exe"` | `ntoskrnl.exe.dll` — wrong, and a tempting "fix" |
+| `name = "ntoskrnl.exe", modifiers = "+verbatim"` | `ntoskrnl.exe` — correct |
+
+`ks-rust`, `pcix-rust` and `ramdisk-rust` shipped the first form; ramdisk's comment ("the first
+cohab driver to import kernel data") explains the copy path. The symptom is three ERR lines on
+freeldr's channel — `PeLdrLoadImage('...\drivers\ntoskrnl.dll') failed` ->
+`PeLdrpLoadAndScanReferencedDll` -> `PeLdrScanImportDescriptorTable` — and the boot CONTINUES, so
+while that channel was silent there was no symptom at all. It is not cosmetic: the IAT slots for
+a failed descriptor are never filled, and everything on it is a DATA import (which is the whole
+reason for raw-dylib here), so each is an unresolved read waiting for a code path to reach it.
+
+Two process lessons, both of which cost a cycle here. **Diff the WHOLE attribute, not the field
+you are focused on.** A `grep` that extracted only `name = "..."` showed 15 crates "already
+doing it right" and made the second row above look like the fix; the modifier was the part that
+mattered and it was never in the output. **And verify against the binary, not the source:**
+`llvm-readobj --coff-imports <x>.sys | grep Name:` prints the descriptor that actually shipped,
+and it is what caught `ntoskrnl.exe.dll` immediately. The serial log then confirms causality for
+free, because the failing name tracks the attribute string verbatim.
 
 ### Cohab link-clean ≠ runtime-correct
 A clean cargo + ninja can still bugcheck mid-init. The link is a necessary gate, never a
