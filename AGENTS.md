@@ -93,6 +93,15 @@ anyone checked. Before you repeat a carried-over fact — and *especially* befor
 another agent or the user as evidence — re-derive it: `uptime`, `dmesg`, the summary.json, the
 actual exit code. Report what you observed and what you inferred as different things.
 
+The general shape, of which the stale summary is one case: **a confident prediction about
+directly observable behaviour, made by someone who did not observe it, and caught by whoever
+inherited it.** It recurs: a vacuous assertion proposed as a fix, a merge conflict predicted
+that did not exist, an arity rule that broke three correct bodies, an argument made to a peer
+and then made back an hour later by its own author. Each was cheap to check against the thing
+itself and none was checked by the one who made it — and one of them cost a paid translation to
+discover. Cheapness relative to the error is the point; that is what makes this a rule rather
+than an apology.
+
 **Deferral is temporary, never silent.** Deferred work stays tracked and owed. Don't drop a
 thing permanently by calling it "out of scope."
 

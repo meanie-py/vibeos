@@ -4784,6 +4784,19 @@ so the guard cannot mask one. Switching `current_clocksource` from `tsc` to
 `hyperv_clocksource_tsc_page` does NOT help — the slew is reapplied — and a durable fix needs
 the WSL kernel cmdline, i.e. a restart that kills every running lane.
 
+**A second cause in the same file was the ORACLE, not the build.** The `missing_edge` negative
+controls asserted `fixture.invocations() == before` — that the build system did *not* rebuild.
+Cargo and Ninja never promised that: mtime granularity alone can make an unchanged input look
+new, so conservative over-invalidation is legal, and it is the safe direction. Under concurrent
+fleet load two different tests failed on two consecutive runs, each with an EXTRA invocation and
+never a missing one, while the file passed 37/37 in isolation. **The signature that separates a
+wrong oracle from a real regression is a failure that MOVES between tests across runs and
+vanishes when run alone.** The assertions were removed, not relaxed: `>= before` is vacuous
+because the invocation log is append-only, so it holds whether the edge is missing or the build
+merely rebuilt too much. The missing edge is pinned by the value assertions (`warm == initial`,
+`warm != cold`), which is also why removing the counts cannot mask the directory-watch bug
+below — that one is caught by a value, which no count could have caught anyway.
+
 ### Cargo depfiles leave directory contents or lockfile changes stale
 
 **Symptom:** Ninja reports no work after an input-file edit or a lockfile-only
