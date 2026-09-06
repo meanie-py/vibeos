@@ -483,6 +483,28 @@ land; date every addition.** Source docs live in `docs/engineering/archive/`.
 
 ## Known bugs & flakes (live registry)
 
+- **Fleet disk exhaustion interrupted landing — OPEN, deferred by user**
+  (2026-09-06; owner: bughunt/Codex). The shared WSL filesystem reached zero
+  available bytes during `land`'s tooling preflight; the failure summary itself
+  then failed with `ENOSPC`. User reclaimed space (163 GB available afterward).
+  Follow-up: measure build/cache/artifact growth, add disk headroom checks and
+  warnings before expensive work, establish bounded retention, and make cleanup
+  targeted, host-locked, and safe for active lanes and paid translation output.
+  Preserve enough headroom to record failure evidence. Do not treat manual
+  cleanup as prevention or silently skip checks when space runs out.
+
+- **Binary-lint corpus depends on existing artifacts — OPEN** (2026-09-06;
+  owner: bughunt/Codex). `tools/scan_ud2.py::find_rust_binaries` discovers existing
+  `.sys/.dll/.exe` files beneath the selected build directory and filters with
+  `nm`; missing optional outputs are not an inventory failure. Claude flagged
+  the ARM64 corpus gap; the exact missing binary/example is still requested.
+  Follow-up: derive required scan inputs from the build/media contract, report
+  expected/scanned/missing inventories, fail on missing required inputs or failed
+  symbol/disassembly tools, and test identical verdicts in fresh and populated
+  worktrees. Preserve separate kernel scanning and staging-copy exclusions.
+  This is separate from the source-partition migration; no corpus fix is claimed
+  by moving lints earlier.
+
 - **`test_build_invalidation.py` bounced conductor batches — FIXED (2026-09-06), root cause was the HOST CLOCK.**
   (2026-09-06). Two different tests in the file have failed the same way:
   `test_generated_rust_tracks_directory_input_add_edit_remove[files-depfile]` (line 522) with

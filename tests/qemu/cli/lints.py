@@ -925,6 +925,33 @@ def source_lint_specs(repo: Path) -> list[tuple]:
     return specs
 
 
+# Audited CLI paths read Rust sources only and exclude Cargo target output.
+# Everything not explicitly audited stays deferred, including new scanners.
+# See docs/engineering/fleet-verification-migration-plan.md for input contracts.
+EARLY_SOURCE_CHECKS = frozenset(
+    {
+        "scan_invented_constants",
+        "scan_extern_decl_drift",
+        "scan_octal_literals",
+        "scan_type_alias_contradictions",
+        "scan_irql_balance",
+        "scan_ob_refcount",
+    }
+)
+
+
+def source_partition_specs(repo: Path, phase: str) -> list[tuple]:
+    """Disjoint, exhaustive views of the original commands; unknown work waits."""
+    if phase not in ("source-early", "source-deferred"):
+        raise ValueError(f"unknown source partition: {phase}")
+    specs = source_lint_specs(repo)
+    names = [name for name, _, _ in specs]
+    if len(names) != len(set(names)) or EARLY_SOURCE_CHECKS - set(names):
+        raise ValueError("source inventory has duplicate names or missing audited checks")
+    early = phase == "source-early"
+    return [spec for spec in specs if (spec[0] in EARLY_SOURCE_CHECKS) == early]
+
+
 def run_source_lints(run: Run, repo: Path, *, strict: bool, only: set[str] | None = None) -> None:
     specs = source_lint_specs(repo)
     if only is not None:

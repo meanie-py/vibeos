@@ -65,6 +65,7 @@ gate, and every queued lane is a blocked agent. That is what the merge queue add
 from __future__ import annotations
 
 import json
+import os
 import subprocess
 import time
 from pathlib import Path
@@ -236,7 +237,7 @@ def _run_gate(repo: Path, run: Run, args) -> None:
     if getattr(args, "clean", False):
         cmd.append("--clean")
     t0 = time.monotonic()
-    cp = run.run(cmd, cwd=repo, stage="gate")
+    cp = run.run(cmd, cwd=repo, stage="gate", env=dict(os.environ, VIBEOS_JOB_CLASS="integration"))
     dt = time.monotonic() - t0
     if cp.returncode != 0:
         run.add(

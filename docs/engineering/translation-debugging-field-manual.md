@@ -4886,6 +4886,61 @@ controls change only an included header, force Ninja to invoke Cargo by removing
 the copied executable, and still observe stale output until a cold build.
 Represent the native include closure in build-script watches as well as the
 outer dependency graph; watching only the `.c` or `.S` file is insufficient.
+The cc-rs paths in `reactos-link` now emit compiler-discovered file watches via
+`native_deps::compile`; retain `-MD` rather than `-MMD` so `-isystem` SDK inputs
+are included. Compiler-command replay now uses the same discovery and rebases
+relative inputs from the compiler's cwd to Cargo's. Runtime generator inputs
+(such as native-hpp template includes) remain distinct from compiler inputs.
+For cmake-off XDK headers, `native-hpp --depfile` records each template fragment
+actually loaded, and `native_deps::run_hpp` publishes its cwd-relative closure
+to Cargo before installing the generated header. CMake's broad watches remain.
+Keep the transport boundary in view: Cargo's executable `.d` escapes spaces but
+leaves `#`/`$` in watched filenames unescaped. Ninja interprets those as syntax,
+reports nonexistent partial prerequisites with `-d explain`, and reruns on every
+no-op. Correct generator escaping alone does not repair this downstream gap;
+arbitrary-filename Cargo-to-Ninja closure is still unresolved.
+
+### Generated assembly constants stay stale despite a build-script rerun
+
+**Symptom:** Cargo reruns after a header edit, but generated constants still
+reflect the previous layout; deleting the generated output changes the result.
+
+**Cause:** `generate_ks_inc` treated an existing OUT_DIR file as cached across
+invocations, returning before generation and dependency discovery.
+
+**Fix:** Cache only within one Linker invocation using `InvocationOutput`.
+Regenerate on its first request even when the file survives from an older run.
+The real C-generator fixture demonstrates stale output with the disk shortcut
+and fresh output with invocation-only caching, without duplicating generation
+for multiple consumers in one build script. Runtime template dependency closure
+still needs its own tracking; compiler depfiles cannot infer those reads.
+
+### Bindgen regeneration overwrites another invocation or unrelated islands
+
+**Symptom:** Concurrent generators share `/tmp/bindgen_<arch>_raw.rs`, or a run's
+final normalization rewrites islands it never regenerated.
+
+**Cause:** Fixed scratch filenames and normalization aimed at the live crate,
+not the files produced by this invocation.
+
+**Fix:** Kernel/HAL generators use `tools/bindgen-stage.sh`: exclusive new output
+directories, retained raw/header depfiles, staged postprocessing, and stem-scoped
+normalization. `COMPLETE` marks successful completion; absence means partial
+output, never a usable generation result. Both scripts are stage-only now; they
+do not install into `ntkrnl-sys/src`. Missing HAL export metadata fails loudly.
+Concurrency/failure controls live in `tools/test_bindgen_generation.py`.
+
+### A bindgen depfile makes every unchanged Ninja build run again
+
+**Symptom:** Bindings regenerate and their Rust consumer rebuilds on a no-op.
+Ninja explains that it expected `bindings.rs` but got an absolute output path.
+
+**Cause:** Bindgen emits an absolute depfile target when given an absolute
+output path; CMake's OLD CMP0116 policy passes it through without normalization.
+
+**Fix:** Use CMP0116 NEW, or retarget the depfile to Ninja's build-root-relative
+output when supporting OLD. Do not drop the depfile: the real bindgen warm/cold
+fixture proves a nested-header-only constant/layout edit then stays stale.
 
 ### A flipped TU's leftover `.obj` keeps voting on the NEXT flip's closure
 ninja never deletes the object of a source you remove from a CMake list, so every TU we flip
@@ -8232,6 +8287,19 @@ failure is not a control. Reproduce it under the load that triggers it (8 worker
 here), then pin it with a test that **fakes the trigger deterministically** — the regression
 test steps the clock backwards by the exact observed 2,593,682,747 ns and fails against the
 old allocator with the live signature.
+
+For the warm/cold build fixtures, initial source customization must keep the
+fixture's past epoch until the first build, not merely until CMake configuration.
+An observed output 430 ms older than its just-built source caused a false no-op
+failure. `BuildFixture` now explicitly reconfigures after initial setup and
+switches to strictly newer mutation timestamps only after a successful build;
+the regression injects a forward clock step without weakening the no-op check.
+Directory membership changes also need ordered parent-directory timestamps;
+ordinary content edits must not touch that directory or the negative control
+would acquire a fake edge. Executed fixture commands stamp their outputs after
+the current inputs, covering clock steps during generation/compilation too.
+This completion step never runs for a missing dependency edge; the stale-value
+and affected-consumer assertions remain the oracle.
 
 ### A cached handle in a reference shim is per-PROCESS, but the tests run per-THREAD
 

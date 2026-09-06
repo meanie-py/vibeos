@@ -184,11 +184,16 @@ overnight soak: `farm --arches i386,amd64,arm64 --minutes 480 --tripwire
 
 ### `gate [--arches i386,amd64,arm64] [--retries N] [--no-build] [--clean] [--no-net]`
 
-The full source-scanner suite runs **once**, after the build matrix finishes so
-generated inputs belong to this worktree. Cargo-link, committed-drift, binary and
+The source-scanner suite runs **once in two disjoint partitions**. Five audited
+Rust-source checks start with the builds (`source-early`); all other checks wait
+for the build matrix (`source-deferred`) so generated inputs belong to this
+worktree. New scanners default to deferred. Children report executed inventories,
+and the parent rejects missing/incorrect coverage. Standalone `--scope source`
+still runs the whole source suite. Cargo-link, committed-drift, binary and
 cohab guards remain per architecture. A push stamp requires the shared source
 result and every requested architecture's guards, as well as the other gate stages.
-The underlying `check --scope source --strict` and
+The underlying `check --scope source-early --strict`,
+`check --scope source-deferred --strict`, `check --scope source --strict`, and
 `check --scope arch --strict --arch X` commands are explicitly partial diagnostics,
 not standalone full checks. They cannot combine with `--only` or baseline updates;
 ordinary `check --strict --arch X` still runs both partitions.
@@ -332,6 +337,20 @@ The merge queue at a glance: who is training, what is queued behind them (with
 wait times), and recent verdicts — a rejected lane's triage pointer lives here.
 `--mine` filters verdicts to this lane. The lock holder also appears in
 `host-status` as a `LANDING :` line plus the `land` queue.
+
+### `host-status [--json]`
+
+Shows current permits, holders, and FIFO waiters across worktrees. Updated builds
+record their job class and permit wait time. Queue/direct-land gates tag their
+children `integration`; other commands default to `interactive`.
+
+`admission_shadow` compares FIFO with a proposed bounded 120-second integration
+head start. **FIFO remains active; the proposal is not enforced.** Unknown or
+legacy waiter metadata suppresses the proposal. The shared file
+`<HOSTLOCK_DIR>/admission-shadow.disabled` disables proposals without changing
+locks (default root `/tmp/vibeos-qemu-locks/host`). Build `summary.json` records
+separate `admission.cpu_wait_s` and `admission.builddir_wait_s` timings.
+See `docs/engineering/fleet-verification-migration-plan.md` for rollout boundaries.
 
 ### `boot --arch X --until M [--fail-on RE]`
 Raw fast boot, **no staleness gate**, but reuses smoke's *exact* arch-config so

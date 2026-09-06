@@ -19,8 +19,9 @@ was serial was the *orchestrator* — i.e. the human. This driver removes that:
      windows-host boots run on the Windows scheduling domain (`bootcpu` pool)
      and coexist with the next WSL-side build (build ∥ boot is the documented
      contract). Opt out of builds with --no-build (all lanes launch at once).
-     The lint gate combines `check --strict --scope source` ONCE after all builds
-     settle with `check --strict --scope arch --arch <a>` per built arch:
+     The lint gate runs disjoint source-early/source-deferred partitions once:
+     audited source-only checks start immediately, others after all builds.
+     It combines both with `check --strict --scope arch --arch <a>` per built arch:
      source lints baseline-diff NEW=0, cargo-link/committed-drift bit-rot guards,
      and per-arch binary lints. Each partition uses the existing strict checkers.
      Both partitions must pass before stamping. A NEW finding
@@ -65,7 +66,7 @@ import sys
 import time
 from pathlib import Path
 
-from . import archcfg, hostlock
+from . import archcfg, hostlock, lints
 from .artifacts import Run, Stage
 
 # A failure with one of these classifications is a *documented* flake or an
@@ -368,7 +369,7 @@ def _lint_once(repo: Path, arch: str, root: Path) -> dict:
     """
     root.mkdir(parents=True, exist_ok=True)
     cmd = [str(repo / "vibeos-cli"), "check", "--strict", "--scope"]
-    cmd += ["source"] if arch == "source" else ["arch", "--arch", arch]
+    cmd += [arch] if arch.startswith("source") else ["arch", "--arch", arch]
     env = dict(os.environ, VIBEOS_ARTIFACT_ROOT=str(root))
     t0 = time.monotonic()
     proc = subprocess.run(cmd, cwd=str(repo), env=env, capture_output=True, text=True)
@@ -378,9 +379,16 @@ def _lint_once(repo: Path, arch: str, root: Path) -> dict:
         if "✗" in ln or "FAIL" in ln:
             salient = ln.strip()
             break
+    inventory_ok = True
+    if arch in ("source-early", "source-deferred"):
+        expected = [name for name, _, _ in lints.source_partition_specs(repo, arch)]
+        summary = _read_summary(root)
+        inventory_ok = summary.get("checked_source_checks") == expected
+        if not inventory_ok:
+            salient = "missing or incorrect source-partition coverage inventory"
     return {
         "arch": arch,
-        "ok": proc.returncode == 0,
+        "ok": proc.returncode == 0 and inventory_ok,
         "seconds": dt,
         "salient": salient,
         "exit": proc.returncode,
@@ -677,8 +685,8 @@ def gate(args, repo: Path) -> int:
     # stricter than the broker (2 concurrent builds are sanctioned fleet-wide) and made the
     # gate's build phase sum-of-arches for no reason.
     #
-    # Strict arch guards follow their own build; shared source checks follow the
-    # complete build matrix. Both gate the push stamp, not the boots.
+    # Strict arch guards follow their own build; only deferred source checks need
+    # the complete build matrix. Both source partitions gate the push stamp.
     net_requested = not getattr(args, "no_net", False)
     do_lint = not getattr(args, "no_lint", False)
     build_order = sorted(arches, key=lambda a: a != "amd64")  # amd64 first, rest in order
@@ -710,7 +718,7 @@ def gate(args, repo: Path) -> int:
     max_workers = (
         min(
             n_lanes * 2
-            + (len(arches) + 1 if do_lint else 0)
+            + (len(arches) + 2 if do_lint else 0)
             + (len(arches) if do_build else 0)
             # check-tooling + difftest: two arch-independent workers
             + (2 if do_lint else 0),
@@ -723,6 +731,9 @@ def gate(args, repo: Path) -> int:
         # check-tooling needs no build artifacts, so start it immediately — it
         # overlaps the first build instead of adding wall-clock.
         if do_lint:
+            lfut[ex.submit(_lint_once, repo, "source-early", gate_root / "lint-source-early")] = (
+                "source-early"
+            )
             tfut[ex.submit(_tooling_once, repo, gate_root / "tooling")] = "tooling"
             # Same shape as check-tooling: host-only, needs no build artifacts,
             # so it overlaps the first build rather than adding wall-clock.
@@ -800,10 +811,11 @@ def gate(args, repo: Path) -> int:
                 _launch_lanes(arch)
 
         if do_lint:
-            # Some source scanners consume generated headers. Wait for this
-            # worktree's build matrix to settle, then run the identical suite
-            # ONCE, without caching or reading a sibling's generated state.
-            lfut[ex.submit(_lint_once, repo, "source", gate_root / "lint-source")] = "source"
+            # Header-dependent and unaudited scanners wait for this worktree's
+            # build matrix. Early + deferred retain the original full inventory.
+            lfut[
+                ex.submit(_lint_once, repo, "source-deferred", gate_root / "lint-source-deferred")
+            ] = "source-deferred"
 
         net_lane = ("amd64" in arches) and net_requested
         lanes = list(arches) + (["net"] if net_lane else [])
@@ -989,7 +1001,10 @@ def gate(args, repo: Path) -> int:
         and len(results) == len(requested_lanes)
         # Fail closed: BOTH the shared suite and every requested arch's guards
         # must return success. --no-lint remains explicitly unstamped below.
-        and (not do_lint or all(lint_ok.get(a, False) for a in ["source", *requested]))
+        and (
+            not do_lint
+            or all(lint_ok.get(a, False) for a in ["source-early", "source-deferred", *requested])
+        )
         # Same per-arch contract as lint_ok, and defaulting True for the same reasons
         # (--no-lint/--no-build, or an arch that never built). A cohab gap means a module's
         # Rust is not actually the thing that links — the build is green and the port is
