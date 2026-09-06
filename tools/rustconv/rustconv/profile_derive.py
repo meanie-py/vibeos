@@ -478,6 +478,42 @@ def _read(path: Path) -> str:
     return path.read_text(encoding="utf-8", errors="replace")
 
 
+def _read_with_includes(path: Path, _seen: frozenset[Path] = frozenset()) -> str:
+    """`_read`, but splicing `include(<file>.cmake)` in at the include site.
+
+    A tree may define its targets in included `.cmake` fragments rather than inline --
+    sdk/lib/crt does, and so do ntoskrnl, freeldr and winsrv; 36 CMakeLists.txt in this repo
+    use the pattern. Without this, `--target crtmath` fails with "no target 'crtmath'" and
+    the whole module is invisible to the profiler, which is a silent gap: the answer looks
+    like "that target does not exist" rather than "this tool cannot see it".
+
+    Textual splicing rather than a second parse pass, because CMake's `include()` runs the
+    file in the CURRENT variable scope -- `crtmath.cmake` reads `${CRT_MATH_SOURCE}` that
+    `math/math.cmake` appended to earlier. Pasting at the include site is exactly those
+    semantics, and it keeps the single-pass parser below unchanged.
+
+    Only literal relative paths are followed. A `${VAR}`-built include is left alone: the
+    variables are not resolved yet at read time, and guessing would splice the wrong file.
+    """
+    text = _read(path)
+    if path in _seen:  # include cycles are legal to write and fatal to recurse on
+        return ""
+    seen = _seen | {path}
+    out, pos = [], 0
+    for m in re.finditer(r"^[ \t]*include\s*\(\s*([^)${}\s\"]+\.cmake)\s*\)", text, re.M):
+        inc = (path.parent / m.group(1)).resolve()
+        out.append(text[pos : m.start()])
+        if inc.is_file():
+            out.append(f"\n# ---- spliced from {m.group(1)} ----\n")
+            out.append(_read_with_includes(inc, seen))
+            out.append(f"\n# ---- end {m.group(1)} ----\n")
+        else:
+            out.append(m.group(0))  # unresolvable: leave it, the caller may report it
+        pos = m.end()
+    out.append(text[pos:])
+    return "".join(out)
+
+
 def _rel(path: Path, root: Path) -> str:
     return str(path.relative_to(root)) if _is_within(path, root) else str(path)
 
@@ -722,7 +758,7 @@ def _target_names(cmake: Path) -> set[str]:
     """Every add_library()/add_executable() target name in a CMakeLists."""
     if not cmake.is_file():
         raise ProfileDeriveError(f"no CMakeLists.txt at {cmake}")
-    text = _strip_cmake_comments(_read(cmake))
+    text = _strip_cmake_comments(_read_with_includes(cmake))
     return {
         m.group(2)
         for m in re.finditer(r"\b(add_library|add_executable)\s*\(\s*([A-Za-z0-9_${}]+)", text)
@@ -749,7 +785,7 @@ def parse_cmakelists(
     if not cmake.is_file():
         raise ProfileDeriveError(f"no CMakeLists.txt at {cmake}")
     module_dir = cmake.parent
-    raw_text = _read(cmake)
+    raw_text = _read_with_includes(cmake)
     restored_sources: list[str] = []
     if flipped_sources:
         raw_text, restored_sources = uncomment_flipped_source_lists(raw_text, module_dir)

@@ -4944,6 +4944,37 @@ MSVC *intrinsic*).
 A whole family of bugs where the *verification* is wrong, so the code looks correct. These cost
 more than ordinary bugs because their output is trusted.
 
+### A difftest oracle that is the source the port was MADE from grades nothing
+
+**Symptom.** A host difftest is green, has been green for months, and the shipped Rust is still
+wrong on one arch. Nothing in the harness looks suspicious: the reference TU compiles genuine
+tree C, the comparison is bit-exact, the fuzz domain is wide.
+
+**Cause.** The reference compiles the C the translation was ported from — but a *different*
+arch links a *different* C for that symbol. `sdk/lib/crt/math/math.cmake` is the worked
+example: amd64 and i386 take AMD's `math/libm_sse2/*.c` while arm64 takes the portable
+`math/arm64/*.c`, and cnt-rust's cohab body replaces BOTH. Grading it against the arm64
+source confirms only that the port matches its own origin. Whatever the other arch used to do
+is graded by nothing at all, and a flip that changed that arch's behaviour reads as green.
+
+Found this way, all of them invisible until the oracle was corrected: `ldexp` had traded AMD's
+single-rounding exponent arithmetic for a multiply-through-`2^-1022` stepping that
+double-rounds on gradual underflow (wrong in 2,764 of 5.2M cases vs glibc); `_logb`/`_logbf`
+returned `x * x` for an infinity, folding `-inf` to `+inf` where the C says in as many words
+"For VC++, return infinity of same sign"; `tan` went from AMD's 244-line implementation to
+`sin(x)/cos(x)`, which on top of the tree's ~1e-10-accurate `math/sin.c` is up to 0.056
+absolute away from what amd64 used to compute.
+
+**Fix.** Before trusting any per-symbol oracle, read the per-arch source lists and check that
+the reference is what the arch under test actually LINKS, not merely genuine tree C. The tell
+in this case was an asymmetry inside one harness — `atan2f` was graded against AMD's source
+while its double sibling `atan2` was graded against arm64's. When one Rust body replaces two
+different C implementations, one oracle cannot cover both: grade bit-exact against the
+algorithm the Rust implements AND to a measured ULP bound against the other, so a later change
+that drifts away from the arch that lost its implementation still fails. Where the two are too
+far apart for any bound to grade (`tan`), say so in the test with the measurement, rather than
+inventing a tolerance wide enough to pass.
+
 ### A tri-state preflight that only refuses on `False` waves through the case that actually bites
 
 **Symptom.** A preflight written to prevent exactly one failure lets it happen anyway, on a

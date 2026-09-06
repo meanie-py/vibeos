@@ -3206,6 +3206,8 @@ extern "C" {
     fn ref_modf(x: f64, iptr: *mut f64) -> f64;
     fn ref_atan(x: f64) -> f64;
     fn ref_atan2(y: f64, x: f64) -> f64;
+    fn ref_atan_p(x: f64) -> f64;
+    fn ref_atan2_p(y: f64, x: f64) -> f64;
     // Wave MATH-TIERC sub-wave 8
     fn ref_exp2(x: f64) -> f64;
     fn ref_tanh(x: f64) -> f64;
@@ -3784,6 +3786,25 @@ fn diff_math_tan() {
     // ref_sin/ref_cos (same algorithm as cnt-rust's sin/cos), so this is
     // bit-exact — including the cos(x)→0 ±inf limit (identical operands
     // divided on both sides). Edge bits + a dense moderate sweep.
+    //
+    // amd64 links AMD's 244-line math/libm_sse2/tan.c, NOT arm64's 18-line
+    // `sin(x)/cos(x)` that this Rust implements, so the cohab flip swapped the
+    // implementation there and no oracle saw it — the same blind spot that hid
+    // ldexp's and _logb's real defects. Unlike those two there is nothing to
+    // fix here in tan itself, and unlike atan/atan2 the swap is NOT a wash, so
+    // there is deliberately no second assertion: the gap is far too wide for a
+    // bound that would grade anything.
+    //
+    // Measured, AMD's tan vs this one built on the tree's own sin.c/cos.c:
+    // max absolute difference 0.056 (at x = 413.119), 1.2e-10 at x = -1, over
+    // a 1M-point sweep of the same domain this test uses. The cause is not tan
+    // but math/sin.c — a 9-term Taylor series over a naive quadrant reduction,
+    // good to about 1e-10 relative — which amd64 and arm64 have both always
+    // linked for sin/cos. So amd64 kept an accurate `tan` on top of inaccurate
+    // sin/cos until the flip, and now has neither. Fixing that means either
+    // porting AMD's tan.c or replacing sin/cos wholesale, and it is a decision
+    // about which CRT we want rather than a translation bug; until it is made,
+    // this comment is the record that the regression is known and measured.
     let mut rng = Rng(0x7a17_c05c);
     let edges = [
         0.0f64, -0.0, 1.0, -1.0, 0.5, -0.5, 3.0, -3.0, 100.0, -100.0, 1000.0, -1000.0,
@@ -3850,9 +3871,31 @@ fn diff_math_ldexp_logb() {
     for &b in &b64 {
         let x = f64::from_bits(b);
         for &n in &ns {
+            let got = cabi::ldexp(x, n);
+            let amd = unsafe { ref_ldexp(x, n) };
+            if same_f64(got, amd) {
+                continue;
+            }
+            // AMD's ldexp.c has a REAL BUG, and this is the only place the two
+            // disagree. Its denormal path normalizes by 2^53, range-checks the
+            // *pre*-compensation exponent (`<= 2046`), then adds the 53 back
+            // before packing -- so a subnormal x with a large n can pack a
+            // biased exponent above 2047, which overflows the 11-bit field
+            // straight into the SIGN bit and is then scaled by 2^-53.
+            // ldexp(0x1p-1074, 2048) returns 0x8000000000000001 (minus the
+            // smallest subnormal) where the answer is 0x7cd0000000000000
+            // (2^974) -- confirmed against glibc.
+            //
+            // So here the Rust is CORRECTER than the C it replaces on x86, and
+            // the assertion is against musl's scalbn (math/scalbn.c, the same
+            // function under its C99 name, built for every arch) instead. The
+            // exception is pinned to the exact shape of the defect so it cannot
+            // quietly widen into cover for a translation bug.
+            let subnormal = b & 0x7FF0_0000_0000_0000 == 0 && b & 0x000F_FFFF_FFFF_FFFF != 0;
+            assert!(subnormal && n > 1023, "ldexp {b:#018x} n={n} (unexpected AMD divergence)");
             assert!(
-                same_f64(cabi::ldexp(x, n), unsafe { ref_ldexp(x, n) }),
-                "ldexp {b:#018x} n={n}"
+                same_f64(got, unsafe { ref_scalbn(x, n) }),
+                "ldexp {b:#018x} n={n} (vs musl scalbn)"
             );
         }
         assert!(same_f64(cabi::_logb(x), unsafe { ref__logb(x) }), "_logb {b:#018x}");
@@ -3916,10 +3959,26 @@ fn diff_math_modf() {
 }
 
 fn diff_math_atan() {
-    // atan: range-reduction + odd polynomial; atan2: quadrant dispatch over
-    // atan. Bit-exact vs the portable fdlibm C across edge bits + a heavy
-    // random bit image (atan), and a grid + random pairs (atan2, exercising
-    // every sign/zero/inf quadrant branch).
+    // TWO oracles, because the tree ships two different C implementations of
+    // these and cnt-rust's Rust replaces both (math.cmake: math/arm64/*.c on
+    // arm64, AMD's math/libm_sse2/*.c on amd64 and i386):
+    //
+    //   ref_atan_p / ref_atan2_p — the portable fdlibm C, the algorithm the
+    //       Rust actually implements. Graded BIT-EXACT, as before.
+    //   ref_atan  / ref_atan2    — AMD's, what x86 linked before the flip.
+    //       Graded to 1 ULP. A different algorithm cannot be bit-exact, but it
+    //       is a real regression detector for the arches that lost AMD's body,
+    //       and it is the check that did not exist at all before: atan/atan2
+    //       had only the portable oracle, i.e. the very source the port was
+    //       made from, so amd64's shipped behaviour was graded by nothing.
+    //
+    // The swap itself is a wash on accuracy, measured over 2M random finite
+    // inputs against `atanl`: AMD is not correctly rounded 0.019% of the time,
+    // fdlibm 0.023%, both with a 0.795 ULP maximum error. The two differ on
+    // exactly two shapes, each 1 ULP: AMD quiets a signalling NaN and fdlibm
+    // returns it raw, and just past the ±pi/2 boundary (|y| large, x a tiny
+    // negative) fdlibm rounds up to the correctly-rounded neighbour where AMD
+    // stays at pi/2.
     let mut rng = Rng(0xa7a2_0007);
     let mut b64 = f64_edge_bits();
     for _ in 0..200_000 {
@@ -3927,7 +3986,9 @@ fn diff_math_atan() {
     }
     for &b in &b64 {
         let x = f64::from_bits(b);
-        assert!(same_f64(cabi::atan(x), unsafe { ref_atan(x) }), "atan {b:#018x}");
+        let got = cabi::atan(x);
+        assert!(same_f64(got, unsafe { ref_atan_p(x) }), "atan {b:#018x}");
+        assert!(near_ulps(got, unsafe { ref_atan(x) }, 1), "atan vs AMD {b:#018x}");
     }
     // atan2 over all (edge × edge) pairs + random pairs.
     let edges = f64_edge_bits();
@@ -3935,25 +3996,64 @@ fn diff_math_atan() {
         for &bx in &edges {
             let y = f64::from_bits(by);
             let x = f64::from_bits(bx);
+            let got = cabi::atan2(y, x);
             assert!(
-                same_f64(cabi::atan2(y, x), unsafe { ref_atan2(y, x) }),
+                same_f64(got, unsafe { ref_atan2_p(y, x) }),
                 "atan2 y={by:#018x} x={bx:#018x}"
+            );
+            assert!(
+                near_ulps(got, unsafe { ref_atan2(y, x) }, 1),
+                "atan2 vs AMD y={by:#018x} x={bx:#018x}"
             );
         }
     }
     for _ in 0..200_000 {
         let y = f64::from_bits(rng.next());
         let x = f64::from_bits(rng.next());
+        let got = cabi::atan2(y, x);
         assert!(
-            same_f64(cabi::atan2(y, x), unsafe { ref_atan2(y, x) }),
+            same_f64(got, unsafe { ref_atan2_p(y, x) }),
             "atan2 y={:#018x} x={:#018x}",
+            y.to_bits(),
+            x.to_bits()
+        );
+        assert!(
+            near_ulps(got, unsafe { ref_atan2(y, x) }, 1),
+            "atan2 vs AMD y={:#018x} x={:#018x}",
             y.to_bits(),
             x.to_bits()
         );
     }
 }
 
-// --- Wave MATH-TIERC sub-wave 8: exp2 --------------------------------------
+/// Two finite results within `max` ULPs, or both NaN / both the same infinity.
+///
+/// The loose comparison exists for ONE purpose: grading the Rust against a
+/// DIFFERENT algorithm than the one it implements (AMD's atan/atan2 vs the
+/// fdlibm the port follows). Everywhere the tree grades a port against its own
+/// algorithm's C, `same_f64` is the bar and stays the bar -- this must never be
+/// reached for to soften a bit-exactness failure.
+fn near_ulps(a: f64, b: f64, max: i64) -> bool {
+    if a.is_nan() || b.is_nan() {
+        return a.is_nan() && b.is_nan();
+    }
+    if a == b {
+        return true;
+    }
+    if !a.is_finite() || !b.is_finite() {
+        return false;
+    }
+    // Map to a monotone ordering across the sign boundary, then subtract.
+    let key = |v: f64| -> i64 {
+        let bits = v.to_bits() as i64;
+        if bits < 0 {
+            i64::MIN - bits
+        } else {
+            bits
+        }
+    };
+    (key(a) - key(b)).abs() <= max
+}
 
 fn diff_math_exp2() {
     // 2**x, AMD-libm splitexp path + small-arg rational. Bit-exact vs the
