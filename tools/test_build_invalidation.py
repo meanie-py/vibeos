@@ -390,6 +390,148 @@ def test_manifest_edit_reaches_only_consumers(tmp_path, crate, affected, emitted
     assert warm == fixture.cold()
 
 
+@pytest.mark.parametrize("policy", ["OLD", "NEW"])
+@pytest.mark.parametrize("tracked", [False, True])
+def test_native_hpp_runtime_include_discovery(tmp_path, policy, tracked):
+    fixture = BuildFixture(tmp_path / "with spaces", emitted_deps=True, depfile_policy=policy)
+    manifest = (fixture.root / "leaf/Cargo.toml").read_text()
+    fixture.write(
+        "leaf/Cargo.toml",
+        manifest + "\n[build-dependencies]\n"
+        f'reactos-link = {{ path = "{REPO}/sdk/lib/rust/reactos-link" }}\n',
+    )
+    # Cargo's exported .d escapes spaces but not #/$; exercise those separately
+    # at the hpp protocol boundary below, not as a falsely green Ninja control.
+    fragment = "nested value.h"
+    fixture.write("leaf/templates/top.h", "$include(middle.h)\n")
+    fixture.write("leaf/templates/middle.h", f"$include({fragment})\n")
+    fixture.write(f"leaf/templates/{fragment}", "pub const VALUE: u32 = 1;\n")
+    fixture.write(
+        "leaf/build.rs",
+        """use std::{path::{Path, PathBuf}, process::Command};
+fn main() {
+    println!("cargo:rerun-if-changed=templates/top.h");
+    let out = PathBuf::from(std::env::var_os("OUT_DIR").unwrap());
+    let exe = out.join("hpp");
+    assert!(Command::new("cc").arg("HPP_SOURCE").arg("-o").arg(&exe)
+        .status().unwrap().success());
+    let mut cmd = Command::new(exe);
+    cmd.current_dir("templates").arg("top.h").arg(out.join("generated.rs"));
+    let status = RUN;
+    assert!(status.success());
+}
+""".replace("HPP_SOURCE", str(REPO / "sdk/tools/hpp/hpp.c")).replace(
+            "RUN",
+            'reactos_link::native_deps::run_hpp(&mut cmd, Path::new("templates/top.h"), '
+            "|cmd| cmd.status()).unwrap()"
+            if tracked
+            else "cmd.status().unwrap()",
+        ),
+    )
+    fixture.write(
+        "leaf/src/main.rs",
+        'include!(concat!(env!("OUT_DIR"), "/generated.rs"));\n'
+        'fn main() { println!("{VALUE}"); }\n',
+    )
+    initial = fixture.compile()
+    assert initial["leaf"] == "1\n"
+    before = fixture.invocations()
+    assert fixture.compile() == initial
+    assert fixture.invocations() == before
+    fixture.write(f"leaf/templates/{fragment}", "pub const VALUE: u32 = 2;\n")
+    warm = fixture.compile()
+    assert fixture.invocations()[len(before) :] == (["leaf"] if tracked else [])
+    assert warm["leaf"] == ("2\n" if tracked else "1\n")
+    cold = fixture.cold()
+    assert cold["leaf"] == "2\n"
+    assert (warm == cold) if tracked else (warm != cold)
+    if tracked:
+        fixture.write("leaf/templates/replacement.h", "pub const VALUE: u32 = 3;\n")
+        fixture.write("leaf/templates/middle.h", "$include(replacement.h)\n")
+        assert fixture.compile()["leaf"] == "3\n"
+        before = fixture.invocations()
+        fixture.write("leaf/templates/replacement.h", "pub const VALUE: u32 = 4;\n")
+        warm = fixture.compile()
+        assert warm["leaf"] == "4\n"
+        assert fixture.invocations()[len(before) :] == ["leaf"]
+        before = fixture.invocations()
+        assert fixture.compile() == warm
+        assert fixture.invocations() == before
+        assert warm == fixture.cold()
+
+
+def test_native_hpp_real_templates_and_failure_reporting(tmp_path):
+    exe = tmp_path / "hpp"
+    subprocess.run(["cc", str(REPO / "sdk/tools/hpp/hpp.c"), "-o", str(exe)], check=True)
+    templates = REPO / "sdk/include/xdk"
+    depfile = tmp_path / "inputs.d"
+    for name in ("winnt", "ntdef", "devioctl", "wdm", "ntddk", "ntifs"):
+        plain, tracked = tmp_path / f"{name}.plain", tmp_path / f"{name}.tracked"
+        subprocess.run([str(exe), f"{name}.template.h", str(plain)], cwd=templates, check=True)
+        subprocess.run(
+            [str(exe), f"{name}.template.h", str(tracked), "--depfile", str(depfile)],
+            cwd=templates,
+            check=True,
+        )
+        assert plain.read_bytes() == tracked.read_bytes()
+        inputs = depfile.read_text().removeprefix("vibeos-native:").split()
+        assert f"{name}.template.h" in inputs
+        assert len(inputs) > 1
+        assert all((templates / p).is_file() for p in inputs)
+    source = tmp_path / "bad.h"
+    special = tmp_path / "space #$fragment.h"
+    special.write_text("fragment output\n")
+    source.write_text(f"$include({special.name})\n")
+    subprocess.run(
+        [str(exe), str(source), str(tmp_path / "special.out"), "--depfile", str(depfile)],
+        cwd=tmp_path,
+        check=True,
+    )
+    assert " space\\ \\#$$fragment.h" in depfile.read_text()
+    assert (tmp_path / "special.out").read_text() == "fragment output\n"
+    for contents in ("$include(missing.h)\n", "$include(missing-close\n"):
+        source.write_text(contents)
+        depfile.write_text("vibeos-native: stale.h\n")
+        result = subprocess.run(
+            [str(exe), str(source), str(tmp_path / "bad.out"), "--depfile", str(depfile)],
+            cwd=tmp_path,
+            capture_output=True,
+            text=True,
+        )
+        assert result.returncode != 0
+        assert result.stderr
+        assert not depfile.exists()
+    source.write_text("valid output\n")
+    result = subprocess.run(
+        [str(exe), str(source), str(tmp_path / "bad.out"), "--depfile", str(tmp_path / "absent/d")],
+        capture_output=True,
+        text=True,
+    )
+    assert result.returncode != 0
+    assert "Cannot open dependency file" in result.stderr
+
+
+@pytest.mark.parametrize("failed_output", ["header", "depfile"])
+def test_native_hpp_write_errors_fail_loudly(tmp_path, failed_output):
+    # Linux's full device fails writes, including stdio's buffered fclose path.
+    # Use an owned symlink so hpp's failed-depfile cleanup cannot remove it.
+    assert Path("/dev/full").exists(), "host write-error control requires /dev/full"
+    exe = tmp_path / "hpp"
+    subprocess.run(["cc", str(REPO / "sdk/tools/hpp/hpp.c"), "-o", str(exe)], check=True)
+    source, output, depfile = tmp_path / "input.h", tmp_path / "output.h", tmp_path / "input.d"
+    source.write_text("valid output\n")
+    (output if failed_output == "header" else depfile).symlink_to("/dev/full")
+    result = subprocess.run(
+        [str(exe), str(source), str(output), "--depfile", str(depfile)],
+        capture_output=True,
+        text=True,
+    )
+    assert result.returncode != 0
+    assert "generation failed" in result.stderr
+    assert not depfile.exists()
+    assert Path("/dev/full").exists()
+
+
 @pytest.mark.parametrize("cache", ["disk", "invocation"])
 def test_native_generator_output_is_only_cached_within_one_invocation(tmp_path, cache):
     fixture = BuildFixture(tmp_path, emitted_deps=True)

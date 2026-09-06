@@ -2158,12 +2158,15 @@ impl Linker {
             // template name against its WORKING_DIR (the xdk source dir), exactly
             // like the cmake custom_command.
             let tmp = dst.with_extension("h.tmp");
-            let status = Command::new(&hpp)
+            let mut command = Command::new(&hpp);
+            command
                 .arg(tmpl)
                 .arg(&tmp)
-                .current_dir(&xdk_src)
-                .traced_status()
-                .unwrap_or_else(|e| panic!("native-hpp {tmpl}: {e}"));
+                .current_dir(&xdk_src);
+            let status = native_deps::run_hpp(&mut command, &xdk_src.join(tmpl), |cmd| {
+                cmd.traced_status()
+            })
+            .unwrap_or_else(|e| panic!("native-hpp {tmpl}: {e}"));
             if !status.success() {
                 panic!("native-hpp failed for {tmpl}");
             }

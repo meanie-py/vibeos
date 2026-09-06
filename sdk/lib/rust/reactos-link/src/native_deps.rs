@@ -39,6 +39,25 @@ pub fn run(
     Ok(status)
 }
 
+/// Run native-hpp with runtime template discovery, resolved against its cwd.
+pub fn run_hpp(
+    command: &mut Command,
+    source: &Path,
+    execute: impl FnOnce(&mut Command) -> std::io::Result<ExitStatus>,
+) -> std::io::Result<ExitStatus> {
+    let depfile = prepare(source);
+    command.arg("--depfile").arg(&depfile);
+    let base = command
+        .get_current_dir()
+        .map(Path::to_path_buf)
+        .unwrap_or(std::env::current_dir()?);
+    let status = execute(command)?;
+    if status.success() {
+        watch(&depfile, &base);
+    }
+    Ok(status)
+}
+
 /// Compile one configured source and expose its actual include closure to Cargo.
 /// Keep this on the compile itself: a separate preprocessor can disagree with
 /// the compiler's target, defines, include ordering, or language flags.

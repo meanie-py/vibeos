@@ -4418,6 +4418,14 @@ The cc-rs paths in `reactos-link` now emit compiler-discovered file watches via
 are included. Compiler-command replay now uses the same discovery and rebases
 relative inputs from the compiler's cwd to Cargo's. Runtime generator inputs
 (such as native-hpp template includes) remain distinct from compiler inputs.
+For cmake-off XDK headers, `native-hpp --depfile` records each template fragment
+actually loaded, and `native_deps::run_hpp` publishes its cwd-relative closure
+to Cargo before installing the generated header. CMake's broad watches remain.
+Keep the transport boundary in view: Cargo's executable `.d` escapes spaces but
+leaves `#`/`$` in watched filenames unescaped. Ninja interprets those as syntax,
+reports nonexistent partial prerequisites with `-d explain`, and reruns on every
+no-op. Correct generator escaping alone does not repair this downstream gap;
+arbitrary-filename Cargo-to-Ninja closure is still unresolved.
 
 ### Generated assembly constants stay stale despite a build-script rerun
 

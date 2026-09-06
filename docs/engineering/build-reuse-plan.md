@@ -363,8 +363,8 @@ journal proves two requests invoke the generator only once per build script.
 These test the shipping cache/discovery mechanism, not the full SDK geninc
 layout extraction or a complete cmake-off OS image.
 
-Still owed before dependency narrowing: runtime template/include discovery in
-native-hpp and other generators, complete cmake-off generator validation,
+Still owed before dependency narrowing: runtime input discovery in other
+generators, complete cmake-off generator validation,
 committed bindgen-island regeneration/postprocessing, spec inputs, directory
 membership/shadowing, and workspace-inherited dependency resolution. Broad
 production watches remain in place.
@@ -387,3 +387,55 @@ checks, cohab, difftests, and all 15 network tests. Its overall `TOOLING_FAIL`
 records the first fixture failures above; the subsequent full tooling rerun
 passed separately. No clean green gate stamp or master landing is claimed for
 this local batch.
+
+### Native-hpp runtime template discovery
+
+`native-hpp` now optionally accepts `--depfile <path>` and records files actually
+loaded by its recursive template parser, not just its compiled C headers. It
+emits a single `vibeos-native` Make rule with escaped paths. Failed generation
+removes the partial depfile; output and depfile write/close errors fail the
+command. A malformed `$include` missing its closing parenthesis reports an error
+instead of dereferencing a null pointer.
+
+The cmake-off `generate_xdk_headers` path uses `native_deps::run_hpp` to remove
+stale dependency output, request fresh discovery, and publish Cargo watches
+relative to the tool's working directory before installing the temporary header.
+The ordinary two-argument hpp interface and CMake's recursive XDK header watches
+are unchanged. No production watch narrowing is part of this slice.
+
+Four CMake/Ninja/Cargo controls cover tracked/untracked nested fragments under
+CMP0116 OLD and NEW. They require no-op stability, leaf-only invalidation, and
+warm/cold equivalence for the tracked path; untracked edits remain stale. The
+tracked controls also replace an include and then edit its newly discovered
+fragment. A host-tool control compares all six real XDK template outputs byte
+for byte with/without discovery, checks special-character escaping, and requires
+hard failures for missing/malformed inputs and an unwritable depfile path.
+Two more controls force buffered header/depfile write failures through owned
+symlinks to `/dev/full`, checking nonzero status and partial-depfile removal.
+This is real template generation coverage, not a complete cmake-off image test.
+
+An additional Cargo transport limitation remains owed: its emitted executable
+`.d` preserves unescaped `#` and `$` in filenames even when the build script
+correctly watches those paths. Ninja then splits the prerequisite and rebuilds
+on a no-op (`ninja -d explain` identifies nonexistent partial filenames). The
+end-to-end controls use spaces, which Cargo escapes; the hpp protocol separately
+tests `#`/`$` escaping. Do not claim arbitrary-filename closure or narrow broad
+watches until the Cargo-to-Ninja transport has a lossless mechanism.
+
+The next committed-island coverage slice must first isolate
+`ntkrnl-sys/generate_bindings.sh`: it currently writes fixed
+`/tmp/ntkrnl_sys_wrapper.h` and `/tmp/bindgen_<arch>_raw.rs` names and installs
+directly into `src/`. Add invocation-private scratch and an explicit staging
+output before running regeneration controls; do not let concurrent lanes share
+those files or overwrite integrated Rust as a test side effect. Spec watches
+already exist at the `Linker::link` call sites for both exports and import libs;
+their outstanding item is a real generation/invalidation control.
+
+Verification: all 26 tooling checks passed, including 56 invalidation cases.
+The clean three-arch gate at
+`/tmp/vibeos-cli/20260906-105002-gate-i386+amd64+arm64/summary.json` passed all
+builds, desktop smokes (screenshots inspected), architecture/source checks,
+cohab, difftests, and 15 network tests. Its 35m06s wall time includes fleet
+build-queue waits; it is not an isolated build-speed measurement. Overall
+`WARN` is solely the dirty-tree/no-push-stamp condition, not a failed check.
+This batch is local work, not a master landing.
