@@ -198,8 +198,6 @@ pub const MSVCRT_INTERNAL_BUFSIZ: usize = 4096;
 // wine's debug macros. MACROS, never no-op fns: an out-of-line no-op is an
 // optimization barrier that uncloaks latent ABI mismatches (-> ud2 -> BUGCHECK).
 // Same shape the other translated usermode crates use.
-macro_rules! TRACE { ($($arg:tt)*) => {{}}; }
-macro_rules! ERR   { ($($arg:tt)*) => {{}}; }
 
 /// `include/crt/stdio.h:59-61`. Plain 0/1/2, but not in the island because they are
 /// not on its allowlist; cited rather than assumed.
@@ -1828,7 +1826,7 @@ unsafe extern "C" fn msvcrt_get_flags(mode: *const wchar_t, open_flags: *mut i32
                 }
             }
             _ => {
-                ERR!("incorrect mode flag: %c\n", *mode.offset(-1));
+                ERR!("incorrect mode flag: %c\n", *mode.offset(-1) as core::ffi::c_int);
                 mode = mode.offset(1);
             }
         }
@@ -2378,7 +2376,7 @@ unsafe extern "C" fn split_oflags(oflags: u32) -> u32 {
                     _O_RDWR | _O_WRONLY | _O_TEMPORARY | _O_NOINHERIT | _O_SEQUENTIAL |
                     _O_RANDOM | _O_SHORT_LIVED | _O_WTEXT | _O_U16TEXT | _O_U8TEXT));
     if unsupp != 0 {
-        ERR!(b":unsupported oflags %#x\n\0".as_ptr() as PCHAR, unsupp);
+        ERR!(":unsupported oflags %#x\n", unsupp);
     }
 
     (wxflags) as u32

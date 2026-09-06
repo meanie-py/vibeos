@@ -2035,11 +2035,6 @@ pub unsafe extern "system" fn _CxxThrowException(object: *mut core::ffi::c_void,
 // the sibling files' by exactly that. Spelled as a `macro_rules!` and not a no-op `fn`: an
 // out-of-line no-op is an optimization barrier that uncloaks latent ABI mismatches into a
 // `ud2`, which is a rule AGENTS.md carries because it cost a BUGCHECK.
-macro_rules! FIXME {
-    ($msg:literal $(, $($arg:tt)*)?) => {{
-        OutputDebugStringA($msg.as_ptr());
-    }};
-}
 
 // ── the `__UCRTSUPPORT__` half of cpp.c ──────────────────────────────────────────────────
 //
@@ -2136,7 +2131,7 @@ pub unsafe extern "C" fn _is_exception_typeof(ti: *const type_info, ep: *mut EXC
 #[cfg(feature = "ucrtsupport")]
 #[no_mangle]
 pub unsafe extern "C" fn __clean_type_info_names_internal(p: *mut core::ffi::c_void) {
-    FIXME!(c"fixme:msvcrt:__clean_type_info_names_internal (%p) stub\n", p);
+    FIXME!("msvcrt:__clean_type_info_names_internal (%p) stub\n", p);
 }
 #[cfg(all(feature = "ucrtsupport", target_arch = "x86"))]
 #[no_mangle]
@@ -2147,7 +2142,7 @@ pub unsafe extern "thiscall" fn type_info_name_internal_method(_this: *mut type_
         once += 1;
         old == 0
     }) {
-        FIXME!(c"fixme:msvcrt:type_info_name_internal_method type_info_node parameter ignored\n");
+        FIXME!("msvcrt:type_info_name_internal_method type_info_node parameter ignored\n");
     }
     type_info_name(_this)
 }
@@ -2161,7 +2156,7 @@ pub unsafe extern "C" fn type_info_name_internal_method(_this: *mut type_info, n
         once += 1;
         old == 0
     }) {
-        FIXME!(c"fixme:msvcrt:type_info_name_internal_method type_info_node parameter ignored\n");
+        FIXME!("msvcrt:type_info_name_internal_method type_info_node parameter ignored\n");
     }
     type_info_name(_this)
 }

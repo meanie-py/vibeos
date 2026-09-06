@@ -443,8 +443,10 @@ pub const CM_CHECK_REGISTRY_VALIDATE_HIVE: u32 = 0x00000008;
 pub const CM_CHECK_REGISTRY_FIX_HIVE: u32 = 0x00000010;
 
 // CM Pool tags (from config/cm.h)
-pub const TAG_CM: u32 = u32::from_le_bytes(*b"MmCk");      // 'kCmM'
-pub const TAG_CMHIVE: u32 = u32::from_le_bytes(*b"vHmC");  // 'CmHv'
+// C: cmlib.h `#define TAG_CM '  MC'`. A multi-char literal is BIG-endian.
+pub const TAG_CM: u32 = u32::from_be_bytes(*b"  MC");
+// C: cmlib.h `#define TAG_CMHIVE 'vHMC'` (big-endian multi-char literal).
+pub const TAG_CMHIVE: u32 = u32::from_be_bytes(*b"vHMC");
 pub const TAG_CMSD: u32 = u32::from_le_bytes(*b"dSmC");    // 'CmSd'
 pub const TAG_KCB: u32 = u32::from_le_bytes(*b"bcKM");     // 'MKcb'
 

@@ -19,10 +19,6 @@ use core::ffi::c_void;
 // NT_SUCCESS is imported for parity with sibling translations.
 const _: () = { let _ = NT_SUCCESS; };
 
-// Debug-channel macros — no kernel symbol, no-op.
-macro_rules! ERR { ($($t:tt)*) => {{}}; }
-macro_rules! TRACE { ($($t:tt)*) => {{}}; }
-
 // USERTAG / GDI pool tags. C multi-char literals are big-endian; the LE byte
 // order is the literal reversed.
 //   TAG_INTERNAL_SYNC = 'cnys' (0x636E7973) -> LE bytes "sync"
@@ -249,7 +245,7 @@ unsafe fn RemoveTimer_impl(pTmr: PTIMER) -> BOOL {
         Ret = UserDeleteObject(UserHMGetHandle(pTmr) as PVOID, TYPE_TIMER as u32);
     }
     if Ret == 0 {
-        ERR!(b"Warning: Unable to delete timer\n\0".as_ptr() as *const i8);
+        ERR!("Warning: Unable to delete timer\n");
     }
 
     Ret
@@ -475,7 +471,7 @@ pub unsafe extern "system" fn SystemTimerProc(hwnd: HWND, uMsg: UINT, idEvent: U
     if !hwnd.is_null() {
         pWnd = UserGetWindowObject(hwnd);
         if pWnd.is_null() {
-            ERR!(b"System Timer Proc has invalid window handle! %p Id: %u\n\0".as_ptr(), hwnd, idEvent);
+            ERR!("System Timer Proc has invalid window handle! %p Id: %u\n", hwnd, idEvent);
             return;
         }
     } else {
@@ -532,7 +528,7 @@ pub unsafe extern "system" fn SystemTimerProc(hwnd: HWND, uMsg: UINT, idEvent: U
             return;
         }
         _ => {
-            ERR!(b"System Timer Proc invalid id %u!\n\0".as_ptr(), idEvent);
+            ERR!("System Timer Proc invalid id %u!\n", idEvent);
         }
     }
     IntKillTimer(pWnd, idEvent, 1);

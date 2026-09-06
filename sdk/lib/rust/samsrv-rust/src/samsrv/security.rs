@@ -28,8 +28,9 @@ pub unsafe extern "C" fn SampCreateServerSD(
     const SAM_SERVER_EXECUTE: u32 = 0x00020008;
     const SAM_SERVER_ALL_ACCESS: u32 = 0x000F003F;
     const SAM_SERVER_CREATE_DOMAIN: u32 = 0x0004;
-    const SAM_SERVER_INITIALIZE: u32 = 0x0010;
-    const SAM_SERVER_SHUTDOWN: u32 = 0x0020;
+    // ddk/ntsam.h:100-101. Both were shifted one bit left of the real values.
+    const SAM_SERVER_INITIALIZE: u32 = 0x0004;
+    const SAM_SERVER_SHUTDOWN: u32 = 0x0002;
 
     'done: {
         Status = RtlAllocateAndInitializeSid(
@@ -483,7 +484,8 @@ pub unsafe extern "C" fn SampCreateAccountDomainSD(ServerSd: *mut PSECURITY_DESC
     const DOMAIN_CREATE_USER: ULONG = 0x0020;
     const DOMAIN_CREATE_ALIAS: ULONG = 0x0040;
     const SAM_SERVER_CREATE_DOMAIN: ULONG = 0x0004;
-    const SAM_SERVER_INITIALIZE: ULONG = 0x0001;
+    // ddk/ntsam.h:101 -- INITIALIZE is 0x04 (0x01 is SAM_SERVER_CONNECT).
+    const SAM_SERVER_INITIALIZE: ULONG = 0x0004;
     const SAM_SERVER_SHUTDOWN: ULONG = 0x0002;
 
     'done: {

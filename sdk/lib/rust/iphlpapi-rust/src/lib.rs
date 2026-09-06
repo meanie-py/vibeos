@@ -15,6 +15,11 @@
 #![allow(unused_assignments, static_mut_refs)]
 #![allow(clippy::all)]
 
+// Wine's ERR/FIXME/WARN/TRACE for the whole crate; `#[macro_use]` must precede the
+// modules that call them (macro_rules! is textually scoped).
+#[macro_use]
+mod winedebug;
+
 pub mod types; // IP_*/MIB_*/TDI struct layouts (bindgen, per arch) + re-exported nt base types
 #[macro_use]
 pub mod prelude; // the ONE import surface: types glob + skipped consts + wine-debug + bridges

@@ -470,7 +470,8 @@ pub unsafe extern "system" fn HvTrackCellRef(
 ) -> u8 {
     const STATIC_CELL_PAIR_COUNT: usize = 4;
     const CELL_REF_INCREMENT: u32 = 10;
-    const TAG_CM: u32 = 0x434D;
+    // C: cmlib.h `#define TAG_CM '  MC'`. A multi-char literal is BIG-endian.
+    const TAG_CM: u32 = u32::from_be_bytes(*b"  MC");
     const HCELL_NIL: HCELL_INDEX = 0xFFFFFFFF;
 
     PAGED_CODE();

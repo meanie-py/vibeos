@@ -13,11 +13,6 @@ use core::ffi::c_void;
 
 // See except_x86_64.rs for why the whole message including wine's channel prefix is a
 // `c"…"` literal at the call site and this body carries no literal of its own.
-macro_rules! FIXME {
-    ($msg:literal $(, $($arg:tt)*)?) => {{
-        OutputDebugStringA($msg.as_ptr());
-    }};
-}
 
 // The C's two `__ASM_GLOBAL_FUNC`s, transcribed — neither has C text for rustconv to
 // translate. clang defines `__SEH__` for aarch64-w64-mingw32 and not
@@ -124,7 +119,7 @@ pub unsafe extern "C" fn handle_fpieee_flt(
     ep: *mut EXCEPTION_POINTERS,
     handler: Option<unsafe extern "C" fn(*mut _FPIEEE_RECORD) -> i32>
 ) -> i32 {
-    FIXME!(c"fixme:seh:(%lx %p %p)\n", exception_code, ep, handler);
+    FIXME!("seh:(%lx %p %p)\n", exception_code, ep, handler);
     EXCEPTION_CONTINUE_SEARCH as i32
 }
 

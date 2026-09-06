@@ -20,10 +20,6 @@ const TRUE: BOOL = 1;
 
 // ── No-op debug macros (ERR/WARN/TRACE/FIXME) — the C macros compile to nothing
 // under the Wine debug-channel guard. Consume args so side effects still type-check.
-macro_rules! ERR   { ($($arg:expr),* $(,)?) => { { $( let _ = $arg; )* } }; }
-#[allow(unused_macros)]
-macro_rules! WARN  { ($($arg:expr),* $(,)?) => { { $( let _ = $arg; )* } }; }
-macro_rules! TRACE { ($($arg:expr),* $(,)?) => { { $( let _ = $arg; )* } }; }
 
 // ── user32-internal helpers exported from still-C user32 object files (link within DLL).
 //   GET_WORD/GET_DWORD are C macros (`*(WORD*)ptr`) — reproduced as inline fns below,
@@ -358,7 +354,7 @@ unsafe fn GetMenuItemInfo_common(
 
     if (*lpmii).fMask & MIIM_TYPE != 0 {
         if (*lpmii).fMask & (MIIM_STRING | MIIM_FTYPE | MIIM_BITMAP) != 0 {
-            ERR!(b"invalid combination of fMask bits used\n\0".as_ptr());
+            ERR!("invalid combination of fMask bits used\n");
             SetLastError(ERROR_INVALID_PARAMETER);
             return 0;
         }
@@ -489,7 +485,7 @@ pub unsafe extern "system" fn PopupMenuWndProcW(
             }
         } else {
             if (*pWnd).fnid != FNID_MENU as DWORD {
-                ERR!(b"Wrong window class for Menu!\n\0".as_ptr() as *const i8);
+                ERR!("Wrong window class for Menu!\n");
                 return 0;
             }
         }
@@ -742,7 +738,7 @@ unsafe fn MENU_NormalizeMenuItemInfoStruct(pmii_in: *const MENUITEMINFOW, pmii_o
         && (*pmii_out).fMask & (MIIM_STRING | MIIM_FTYPE | MIIM_BITMAP) != 0)
         || ((*pmii_out).fMask & MIIM_FTYPE != 0 && (*pmii_out).fType & MFT_BITMAP != 0)
     {
-        ERR!(b"invalid combination of fMask bits used\n\0".as_ptr() as LPCSTR);
+        ERR!("invalid combination of fMask bits used\n");
         SetLastError(ERROR_INVALID_PARAMETER);
         return FALSE;
     }

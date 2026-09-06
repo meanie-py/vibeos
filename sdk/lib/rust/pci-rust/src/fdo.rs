@@ -335,8 +335,9 @@ unsafe fn FdoQueryBusRelations(
     let device_extension = (*DeviceObject).DeviceExtension as PFDO_DEVICE_EXTENSION;
 
     if (*Irp).IoStatus.Information != 0 {
-        /* FIXME: Another bus driver already created a DEVICE_RELATIONS — must
-                  merge. DPRINT1("FIXME: leaking old bus relations\n"); */
+        /* FIXME: Another bus driver already created a DEVICE_RELATIONS structure
+                  so we must merge this structure with our own */
+        DPRINT1!("FIXME: leaking old bus relations\n");
     }
 
     // Size = sizeof(DEVICE_RELATIONS) + sizeof(Relations->Objects) * (Count - 1)
@@ -635,7 +636,7 @@ pub unsafe extern "system" fn FdoPnpControl(DeviceObject: PDEVICE_OBJECT, Irp: P
         }
 
         _ => {
-            // DPRINT1("Unknown PNP minor function 0x%x\n", ...); break.
+            DPRINT1!("Unknown PNP minor function 0x%x\n", (*irp_sp).MinorFunction as core::ffi::c_uint);
         }
     }
 

@@ -16,9 +16,6 @@ use crate::wcslen;
 // console.c's TRACE/WARN are wine-debug macros the translation drops. A `macro_rules!`
 // no-op, never an out-of-line `fn` — an out-of-line no-op is an optimization barrier that
 // has uncloaked latent ABI mismatches into `ud2` before now.
-macro_rules! TRACE {
-    ($($arg:tt)*) => {{}};
-}
 use core::ffi::c_void;
 
 // ---- file-scope preamble (translated) ----

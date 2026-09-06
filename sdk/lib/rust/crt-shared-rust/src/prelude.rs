@@ -261,10 +261,7 @@ macro_rules! min {
     };
 }
 
-pub use crate::{
-    ARRAYSIZE, ARRAY_SIZE, HIBYTE, LOBYTE, MSVCRT_CHECK_PMT, MSVCRT_CHECK_PMT_ERR,
-    FIELD_OFFSET, LANGIDFROMLCID, MAKELANGID, MAKELCID, MSVCRT_INVALID_PMT, min, wstr,
-};
+pub use crate::{ARRAYSIZE, ARRAY_SIZE, HIBYTE, LOBYTE, MSVCRT_CHECK_PMT, MSVCRT_CHECK_PMT_ERR, FIELD_OFFSET, LANGIDFROMLCID, MAKELANGID, MAKELCID, MSVCRT_INVALID_PMT, min, wstr};
 
 // ── the CRT (cdecl) ────────────────────────────────────────────────────────────────────────
 // From `dll/win32/msvcrt/include/{string,stdlib,ctype,corecrt_malloc,corecrt_wstring,

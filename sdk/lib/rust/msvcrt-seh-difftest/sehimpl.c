@@ -980,3 +980,24 @@ unsigned char seh_fp_regarea_byte(int i)
 {
     return (i >= 0 && i < SIZE_OF_80387_REGISTERS) ? g_ctx.FloatSave.RegisterArea[i] : 0;
 }
+
+/*
+ * DbgPrint — what crt-shared-rust's ERR/FIXME macros call.
+ *
+ * except.c's SEH diagnostics ("invalid trylevel %d", "frame not found, native crashes
+ * in this case") were empty macros until 2026-09-05 and print for real now, so the host
+ * link needs the symbol. stderr stands in for the serial port; deliberately not silent,
+ * since an SEH ERR firing mid-difftest is precisely a finding.
+ */
+#include <stdarg.h>
+
+int DbgPrint(const char *format, ...)
+{
+    va_list ap;
+    int n;
+
+    va_start(ap, format);
+    n = vfprintf(stderr, format, ap);
+    va_end(ap);
+    return n;
+}

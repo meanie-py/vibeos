@@ -20,9 +20,6 @@ const FALSE: BOOL = 0;
 const TRUE: BOOL = 1;
 
 // Wine debug-channel stubs (WINE_DEFAULT_DEBUG_CHANNEL(scrollbar)) — no-ops.
-macro_rules! ERR  { ($($t:tt)*) => {{ }}; }
-macro_rules! WARN { ($($t:tt)*) => {{ }}; }
-macro_rules! TRACE { ($($t:tt)*) => {{ }}; }
 
 // C `max()` macro equivalent (windef.h) — used by the scrollbar geometry math.
 #[inline]
@@ -127,6 +124,16 @@ static mut ScrollTrackHitTest: DWORD = SCROLL_NOWHERE;
 static mut ScrollTrackVertical: BOOL = 0;
 static mut ScrollMovingThumb: BOOL = 0;
 
+// `#[inline(never)]` restores the C's codegen shape, and is load-bearing (field manual
+// §9.99, middle row). This returns NULL on two arms and every caller derefs the result
+// unchecked — exactly as scrollbar.c does. Inlined, LLVM sees NULL reach a deref,
+// concludes UB and folds the tail to `ud2`; out of line the caller gets an opaque
+// pointer and emits the ordinary load, faulting where the C faults. The NULL arms are
+// SB_CTL-with-short-cbwndExtra and a Bar outside SB_{HORZ,VERT,CTL}, and no caller here
+// reaches either (GetScrollPos/GetScrollRange send SB_CTL to the window first), so this
+// is a codegen fix and not a papered-over bug. The traps only appeared once ERR became
+// a real call: silent, LLVM dropped the whole branch and the UB was invisible.
+#[inline(never)]
 unsafe fn IntGetSBData(pwnd: PWND, Bar: INT) -> PSBDATA {
     crate::wow64::wow64_unsupported("SBINFO");
     let pSBInfo: PSBINFO = DesktopPtrToUser((*pwnd).pSBInfo as *mut _) as PSBINFO;
@@ -141,14 +148,14 @@ unsafe fn IntGetSBData(pwnd: PWND, Bar: INT) -> PSBDATA {
             if ((*pwnd).cbwndExtra as usize)
                 < (core::mem::size_of::<SBWND>() - core::mem::size_of::<WND>())
             {
-                ERR!(b"IntGetSBData Wrong Extra bytes for CTL Scrollbar!\n\0".as_ptr());
+                ERR!("IntGetSBData Wrong Extra bytes for CTL Scrollbar!\n");
                 return core::ptr::null_mut();
             }
             let pSBWnd: PSBWND = pwnd as PSBWND;
             return core::ptr::addr_of_mut!((*pSBWnd).SBCalc) as PSBDATA;
         }
         _ => {
-            ERR!(b"IntGetSBData Bad Bar!\n\0".as_ptr());
+            ERR!("IntGetSBData Bad Bar!\n");
         }
     }
     core::ptr::null_mut()
@@ -1382,7 +1389,7 @@ pub unsafe extern "system" fn ScrollBarWndProc_common(
             TRACE!(b"ScrollBar CTL size %d\n\0".as_ptr(),
                   (core::mem::size_of::<SBWND>() - core::mem::size_of::<WND>()) as INT);
             if ((*pWnd).cbwndExtra as usize) < (core::mem::size_of::<SBWND>() - core::mem::size_of::<WND>()) {
-                ERR!(b"Wrong Extra bytes for Scrollbar!\n\0".as_ptr());
+                ERR!("Wrong Extra bytes for Scrollbar!\n");
                 return 0;
             }
 
@@ -1392,7 +1399,7 @@ pub unsafe extern "system" fn ScrollBarWndProc_common(
             NtUserSetWindowFNID(Wnd, FNID_SCROLLBAR as u16);
         } else {
             if (*pWnd).fnid != FNID_SCROLLBAR {
-                ERR!(b"Wrong window class for Scrollbar!\n\0".as_ptr());
+                ERR!("Wrong window class for Scrollbar!\n");
                 return 0;
             }
         }
@@ -1552,7 +1559,7 @@ pub unsafe extern "system" fn ScrollBarWndProc_common(
             let pSBData: PSBDATA = core::ptr::addr_of_mut!((*pSBWnd).SBCalc) as PSBDATA;
             let ret: DWORD = NtUserSBGetParms(Wnd, SB_CTL as INT, pSBData, lParam as *mut SCROLLINFO) as DWORD;
             if ret == 0 {
-                ERR!(b"SBM_GETSCROLLINFO No ScrollInfo\n\0".as_ptr());
+                ERR!("SBM_GETSCROLLINFO No ScrollInfo\n");
             }
             return ret as LRESULT;
         }

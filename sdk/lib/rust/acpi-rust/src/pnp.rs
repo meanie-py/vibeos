@@ -52,14 +52,6 @@ use ntkrnl_sys::ddk::{
 use acpica_sys::{AcpiInitializeSubsystem, AcpiInitializeTables, AcpiLoadTables,
     AcpiTerminate, AcpiGetHandle};
 
-// DPRINT/DPRINT1/PAGED_CODE are no-ops under the driver's NDEBUG build.
-macro_rules! DPRINT {
-    ($($t:tt)*) => {};
-}
-macro_rules! DPRINT1 {
-    ($($t:tt)*) => {};
-}
-
 // ---- Pool tags. C multichar 'WXYZ' = ('W'<<24)|('X'<<16)|('Y'<<8)|'Z'. ----
 const TAG_IpcA: u32 = u32::from_be_bytes([b'I', b'p', b'c', b'A']);
 const TAG_DpcA: u32 = u32::from_be_bytes([b'D', b'p', b'c', b'A']);

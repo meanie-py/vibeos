@@ -904,7 +904,7 @@ pub unsafe fn COpenWithMenu_IconToBitmap_body(this: *mut COpenWithMenu, hIcon: H
         DI_NORMAL,
     ) == 0
     {
-        ERR!("DrawIcon failed: {:x}\n", GetLastError());
+        ERR!("DrawIcon failed: %x\n", GetLastError());
     }
     SelectObject(hdc, hbmOld);
     DeleteDC(hdc);

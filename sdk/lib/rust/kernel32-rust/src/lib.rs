@@ -50,6 +50,11 @@ pub const fn to_w<const N: usize>(s: &str) -> [u16; N] {
 
 // Foundation: k32-internal types/constants, the cohab import surface (Base*/
 // Win32/SharedUserData/macros), proc.c's globals, and the aggregated substrate.
+// Wine's ERR/FIXME/WARN/TRACE for the whole crate; `#[macro_use]` must precede the
+// modules that call them (macro_rules! is textually scoped).
+#[macro_use]
+mod winedebug;
+
 pub mod k32_externs;
 pub mod k32_globals;
 pub mod k32_inlines; // #[no_mangle] RTL FORCEINLINE bodies; NOT globbed by substrate

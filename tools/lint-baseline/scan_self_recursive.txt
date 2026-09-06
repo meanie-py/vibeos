@@ -22,9 +22,20 @@
 # never once looked at it. THIS lint saw the spins the whole time and had them
 # baselined; nothing acted on it until a second tool reported the same fact as new.
 #
+# 2026-09-05: the classpnp trio below is PAID too, in a different lane on the same day.
+# KeRaiseIrql/KeLowerIrql/IoWMIDeviceObjectToProviderId were `eb fe` on amd64 and `b .`
+# on arm64: each #[no_mangle] body declared an `extern` block for its OWN name, and a
+# local strong definition beats the importlib thunk, so the call bound to the enclosing
+# function. The fix is per-arch cfg, not a better forwarder — define a symbol ONLY on the
+# arch where none is importable. Watch for `-private` in the .spec: it exports from the
+# DLL but is withheld from the import lib (see spec2def.c, OutputLine_def), which is why
+# amd64 KeLowerIrql still needed a CR8 body even though ntoskrnl.spec has an entry.
+#
+# Note both fixes landed the same day from different lanes, each removing entries from
+# THIS file. The exp2 and classpnp stories are the same moral twice: a lint that had the
+# finding baselined and correct for months, waiting on someone to read it.
+#
 # Remaining debt (owed, not this lane):
-#   classpnp KeRaiseIrql/KeLowerIrql/IoWMIDeviceObjectToProviderId
-#                     — local stubs shadowing the ntoskrnl imports; hang if called.
 #   ftfd rust_begin_unwind — a `#[panic_handler]` written `loop {}`: a panic that
 #                       hangs SILENTLY. Should adopt panic-common (prints + bugchecks).
 #   cdrom abort       — abort() stub written as a spin.
@@ -39,8 +50,5 @@
 #
 # Refresh (after fixing some): re-run the scanner on all 3 arches and union the output.
 cdrom.sys: abort
-classpnp.sys: IoWMIDeviceObjectToProviderId
-classpnp.sys: KeLowerIrql
-classpnp.sys: KeRaiseIrql
 ftfd.dll: _RNvCsiGVaDesi5rv_7___rustc17rust_begin_unwind
 ntkrnlmp.exe: xHalHaltSystem

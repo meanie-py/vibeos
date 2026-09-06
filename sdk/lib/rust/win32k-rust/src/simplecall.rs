@@ -7,12 +7,6 @@ use ntkrnl_sys::ddk::ExAllocatePoolWithTag;
 use ntkrnl_sys::ob::ObDereferenceObject;
 use ntkrnl_sys::rtl::RtlZeroMemory;
 
-// Debug-channel macros — no kernel symbol, no-op.
-macro_rules! ERR   { ($($t:tt)*) => {{}}; }
-macro_rules! TRACE { ($($t:tt)*) => {{}}; }
-macro_rules! WARN  { ($($t:tt)*) => {{}}; }
-macro_rules! FIXME { ($($t:tt)*) => {{}}; }
-
 // USERTAG_SWP pool tag. C multi-char literal 'wssU' is big-endian; the LE byte
 // order is the literal reversed -> "Ussw".
 const USERTAG_SWP: u32 = u32::from_le_bytes(*b"Ussw");

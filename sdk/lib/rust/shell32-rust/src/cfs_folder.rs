@@ -2507,7 +2507,7 @@ pub unsafe fn CFSFolder_GetDetailsOf_body(this: *mut CFSFolder, pidl: PCUITEMID_
         }
         _ => {
             // ERR is a macro/log stub preserved verbatim
-            ERR!("Missing case for column {}\n", iColumn);
+            ERR!("Missing case for column %d\n", iColumn);
         }
     }
 

@@ -635,11 +635,6 @@ fn main() {
         ("floor", "double ref_floor(double x){return __builtin_floor(x);}".to_string()),
         ("ceilf", "float ref_ceilf(float x){return __builtin_ceilf(x);}".to_string()),
         ("floorf", "float ref_floorf(float x){return __builtin_floorf(x);}".to_string()),
-        // Wave MATH-TIERC sub-wave 5: ldexp = the portable arm64/ldexp.c
-        // (== scalbn stepping); _logb/_logbf = the genuine arm64/logb.c (both
-        // MSVC-name funcs in one TU). Renamed to ref_*; bit-exact.
-        ("ldexp", format!("#include <math.h>\n#define ldexp ref_ldexp\n{}", inc(s("math/arm64/ldexp.c")))),
-        ("logb", format!("#include <math.h>\n#include <float.h>\n#define _logb ref__logb\n#define _logbf ref__logbf\n{}", inc(s("math/arm64/logb.c")))),
         // Wave MATH-TIERC sub-wave 6: fabs/fabsf = the genuine portable
         // math/fabs.c + math/fabsf.c (the same C arm64 ships and that amd64's
         // asm mirrors). math.h FIRST so the rename hits only the definition;
@@ -652,6 +647,13 @@ fn main() {
         // (no FP rounding). Self-contained C faithful to math/libm_sse2/modf.c
         // (the GET/PUT_BITS_DP64 union-based bit moves inlined) so it needs
         // none of the AMD libm.h headers. Exact ⇒ bit-exact vs the Rust.
+        // The PORTABLE atan/atan2 (math/arm64/{atan,atan2}.c, fdlibm) — the
+        // algorithm cnt-rust actually implements, so this is the bit-exact
+        // oracle. It is NOT what amd64/i386 link; those get AMD's, which is
+        // graded alongside it as `ref_atan`/`ref_atan2` to a 1-ULP bound. Both
+        // in ONE TU, atan.c first so ref_atan_p is declared before atan2.c
+        // calls it (separate TUs give an implicit-int declaration and garbage).
+        ("atan_p", format!("#include <math.h>\n#define atan ref_atan_p\n#define atan2 ref_atan2_p\n{}\n{}", inc(s("math/arm64/atan.c")), inc(s("math/arm64/atan2.c")))),
         ("modf", "double ref_modf(double x, double *iptr){\
             union {double d; unsigned long long i;} u; long long xexp;\
             unsigned long long ux, ax, mask;\
@@ -666,12 +668,6 @@ fn main() {
             mask = 1; mask = (mask << (52 - xexp)) - 1;\
             u.i = ux & ~mask; *iptr = u.d; return x - u.d;\
         }".to_string()),
-        // Wave MATH-TIERC sub-wave 7: atan/atan2 = the genuine portable
-        // fdlibm math/arm64/{atan,atan2}.c (the algorithm flipped uniformly).
-        // Both compiled in ONE TU (atan.c first so ref_atan is defined before
-        // atan2.c's call). fabs stays host (bit-exact, only hit on the finite
-        // domain). Renamed → ref_atan / ref_atan2; bit-exact vs the Rust.
-        ("atan", format!("#include <math.h>\n#define atan ref_atan\n#define atan2 ref_atan2\n{}\n{}", inc(s("math/arm64/atan.c")), inc(s("math/arm64/atan2.c")))),
         // float-cvt Phase 2 — _ecvt has its own dedicated cc::Build
         // (`ecvt_build`, like scanf) because format_float casts to
         // `long double`: the SysV host default is 80-bit x87 which
@@ -868,6 +864,25 @@ fn main() {
         ("tanhf", format!("#include <math.h>\n#define tanhf ref_tanhf\n{}", inc(libm_dir.join("tanhf.c")))),
         ("tanf", format!("#include <math.h>\n#define tanf ref_tanf\n{}", inc(libm_dir.join("tanf.c")))),
         ("atan2f", format!("#include <math.h>\n#define atan2f ref_atan2f\n{}", inc(libm_dir.join("atan2f.c")))),
+        // ── the OTHER HALF of sub-waves 5 and 7 ──────────────────────────
+        // atan/atan2/ldexp/_logb/_logbf were graded against math/arm64/*.c,
+        // which is NOT what amd64 (or i386) links: math.cmake lines 95-123 put
+        // AMD's math/libm_sse2/*.c on the x86 arches and math/arm64/*.c only on
+        // arm64. So the oracle was the very source the Rust was ported FROM —
+        // it could only ever confirm the port, never the SHIPPED semantics, and
+        // it graded 0% of amd64's real behaviour. The tell was the asymmetry:
+        // atan2f was already here while its double sibling atan2 was not.
+        //
+        // AMD's bodies differ from the portable ones only in their ERROR
+        // domains, where they route through `_handle_error` (a NaN/±0/±inf
+        // return + the __setusermatherr callback; ReactOS's _handle_error.c
+        // drops the EDOM/ERANGE and the AMD_F_* flag word). Grading here is
+        // therefore what makes those domains visible at all.
+        ("atan", format!("#include <math.h>\n#include <errno.h>\n#define atan ref_atan\n{}", inc(libm_dir.join("atan.c")))),
+        ("atan2", format!("#include <math.h>\n#include <errno.h>\n#define atan2 ref_atan2\n{}", inc(libm_dir.join("atan2.c")))),
+        ("ldexp", format!("#include <math.h>\n#include <errno.h>\n#define ldexp ref_ldexp\n{}", inc(libm_dir.join("ldexp.c")))),
+        ("logb", format!("#include <math.h>\n#include <errno.h>\n#define _logb ref__logb\n{}", inc(libm_dir.join("logb.c")))),
+        ("logbf", format!("#include <math.h>\n#include <errno.h>\n#define _logbf ref__logbf\n{}", inc(libm_dir.join("logbf.c")))),
     ];
     let libm_stubs = out.join("ref_libm_stubs.c");
     fs::write(

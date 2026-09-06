@@ -1030,10 +1030,6 @@ pub struct SFV_CREATE {
 }
 
 macro_rules! ASSERT { ($($arg:tt)*) => {{}}; }
-macro_rules! ERR { ($($arg:tt)*) => {{}}; }
-macro_rules! WARN { ($($arg:tt)*) => {{}}; }
-macro_rules! TRACE { ($($arg:tt)*) => {{}}; }
-macro_rules! FIXME { ($($arg:tt)*) => {{}}; }
 
 pub type SVSIF = UINT;
 

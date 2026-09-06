@@ -13,10 +13,6 @@ use crate::wine_list::*;
 
 // DPRINT-style debug macros (ERR/FIXME/WARN/TRACE) → no-ops, mirroring
 // the C `#define ERR!(...) DPRINT1(...)` etc. under NDEBUG. Args dropped.
-macro_rules! ERR { ($($t:tt)*) => {{}}; }
-macro_rules! FIXME { ($($t:tt)*) => {{}}; }
-macro_rules! WARN { ($($t:tt)*) => {{}}; }
-macro_rules! TRACE { ($($t:tt)*) => {{}}; }
 
 // #define MAXIMUM_WAITQUEUE_OBJECTS (MAXIMUM_WAIT_OBJECTS - 1)
 const MAXIMUM_WAITQUEUE_OBJECTS: LONG = MAXIMUM_WAIT_OBJECTS - 1;
@@ -1245,7 +1241,7 @@ unsafe fn tp_object_initialize(object: *mut threadpool_object, pool: *mut thread
 
     if !environment.is_null() {
         if (*environment).Version != 1 && (*environment).Version != 3 {
-            FIXME!(b"unsupported environment version %lu\n\0".as_ptr() as *const i8, (*environment).Version);
+            FIXME!("unsupported environment version %lu\n", (*environment).Version);
         }
 
         (*object).group = impl_from_TP_CLEANUP_GROUP((*environment).CleanupGroup);
@@ -1255,11 +1251,11 @@ unsafe fn tp_object_initialize(object: *mut threadpool_object, pool: *mut thread
         (*object).race_dll = (*environment).RaceDll;
 
         if !(*environment).ActivationContext.is_null() {
-            FIXME!(b"activation context not supported yet\n\0".as_ptr() as *const i8);
+            FIXME!("activation context not supported yet\n");
         }
 
         if (*environment).u.s.Persistent() != 0 {
-            FIXME!(b"persistent threads not supported yet\n\0".as_ptr() as *const i8);
+            FIXME!("persistent threads not supported yet\n");
         }
     }
 

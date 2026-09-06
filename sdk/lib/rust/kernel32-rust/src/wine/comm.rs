@@ -9,10 +9,6 @@ extern "C" {
 // ---- cohab glue (kernel32 Rust port: SERIAL/IOCTL FFI + intra-DLL imports) ----
 use crate::string::nls_subst::{HeapAlloc, HeapFree};
 
-macro_rules! TRACE { ($($t:tt)*) => {{}} }
-macro_rules! WARN  { ($($t:tt)*) => {{}} }
-macro_rules! FIXME { ($($t:tt)*) => {{}} }
-macro_rules! ERR   { ($($t:tt)*) => {{}} }
 
 // BOOL is i32; nt::* glob exports FALSE/TRUE as u32 — shadow with BOOL-typed consts.
 const FALSE: BOOL = 0;
@@ -823,7 +819,7 @@ pub unsafe extern "system" fn EscapeCommFunction(
         }
         _ => {
             ERR!(
-                b"Unknown function code (%u)\n\0".as_ptr() as LPCSTR,
+                "Unknown function code (%u)\n",
                 func,
             );
             SetLastError(ERROR_INVALID_PARAMETER);

@@ -119,6 +119,11 @@ def build_parser() -> argparse.ArgumentParser:
     c.add_argument("--arch", choices=ACCEPTED_ARCHES, required=False)
     c.add_argument("--strict", action="store_true", help="block on NEW findings")
     c.add_argument(
+        "--scope",
+        choices=("source", "arch"),
+        help="strict partial check: shared sources or per-architecture guards; not a full gate",
+    )
+    c.add_argument(
         "--only",
         metavar="TOOL[,TOOL...]",
         help="run selected source scanners only; explicitly PARTIAL, not a landing gate",
@@ -458,6 +463,16 @@ def build_parser() -> argparse.ArgumentParser:
         "--gate",
         action="store_true",
         help="exit nonzero on any ratchet regression (default: report-only)",
+    )
+    cf.add_argument(
+        "--seed-asserts",
+        action="store_true",
+        help="with --repeat N (N>=3): add the failing-assertion identities to the "
+        "existing baseline rows WITHOUT touching their counts or status. An "
+        "identity every round that ran the test agreed on is written `assert`; "
+        "one they disagreed on is written `assert?` (bistable). This is how a "
+        "count-only baseline is upgraded to an identity floor — never a "
+        "wholesale --write-baseline, which re-rolls the counts from one boot",
     )
     cf.add_argument(
         "--smp",

@@ -4,12 +4,6 @@ use core::ffi::c_void;
 // ── No-op debug macros (the C ERR/WARN/TRACE/FIXME compile to nothing under the
 //   Wine debug-channel guard). Consume args so side effects still type-check.
 //   Mirror windows/menu.rs 23-26. Must precede first use (textual macro scope).
-macro_rules! ERR   { ($($arg:expr),* $(,)?) => { { $( let _ = $arg; )* } }; }
-#[allow(unused_macros)]
-macro_rules! WARN  { ($($arg:expr),* $(,)?) => { { $( let _ = $arg; )* } }; }
-macro_rules! TRACE { ($($arg:expr),* $(,)?) => { { $( let _ = $arg; )* } }; }
-#[allow(unused_macros)]
-macro_rules! FIXME { ($($arg:expr),* $(,)?) => { { $( let _ = $arg; )* } }; }
 
 // ── ntdll Rtl* string helpers + LOWORD/HIWORD/MAKELONG + ValidateHwnd live in
 //   crate::internal; the gpsi per-user accessor + NtCurrentTeb too.
@@ -565,7 +559,7 @@ unsafe fn IntInitializeImmEntryTable() -> BOOL {
         ghImm32 = LoadLibraryW(ImmFile.as_ptr());
         imm32 = ghImm32;
         if imm32.is_null() {
-            ERR!(b"Did not load imm32.dll!\n\0".as_ptr());
+            ERR!("Did not load imm32.dll!\n");
             return FALSE;
         }
         return TRUE;
@@ -576,7 +570,7 @@ unsafe fn IntInitializeImmEntryTable() -> BOOL {
         ($field:ident, $ty:ty, $name:literal) => {{
             let proc = GetProcAddress(imm32, $name.as_ptr() as LPCSTR);
             if proc.is_none() {
-                ERR!(b"Could not load proc\n\0".as_ptr());
+                ERR!("Could not load proc\n");
                 return FALSE;
             }
             gImmApiEntries.$field = core::mem::transmute::<_, $ty>(proc);
@@ -1226,7 +1220,7 @@ unsafe fn User32DoImeHelp_impl(pimeui: PIMEUI, wParam: WPARAM, lParam: LPARAM) -
             WinHelpW(core::ptr::null_mut(), szHelpFile.as_ptr(), HELP_FINDER, 0);
         } else {
             FIXME!(
-                b"(%p, %p, %p): %s\n\0".as_ptr(),
+                "(%p, %p, %p): %s\n",
                 pimeui,
                 wParam,
                 lParam,
@@ -1652,14 +1646,14 @@ unsafe extern "system" fn ImeWndProc_common(
 
     pWnd = ValidateHwnd(hwnd);
     if pWnd.is_null() {
-        ERR!(b"hwnd was %p\n\0".as_ptr() as *const i8, hwnd);
+        ERR!("hwnd was %p\n", hwnd);
         return 0;
     }
 
     if (*pWnd).fnid == 0 {
         NtUserSetWindowFNID(hwnd, FNID_IME as u16);
     } else if (*pWnd).fnid != FNID_IME as DWORD {
-        ERR!(b"fnid was 0x%x\n\0".as_ptr() as *const i8, (*pWnd).fnid as u32);
+        ERR!("fnid was 0x%x\n", (*pWnd).fnid as u32);
         return 0;
     }
 
@@ -1670,7 +1664,7 @@ unsafe extern "system" fn ImeWndProc_common(
             core::mem::size_of::<IMEUI>() as SIZE_T,
         ) as PIMEUI;
         if pimeui.is_null() {
-            ERR!(b"HeapAlloc failed\n\0".as_ptr() as *const i8);
+            ERR!("HeapAlloc failed\n");
             NtUserSetWindowFNID(hwnd, FNID_DESTROY as u16);
             return 0;
         }
@@ -1679,7 +1673,7 @@ unsafe extern "system" fn ImeWndProc_common(
     } else {
         pimeui = GetWindowLongPtrW(hwnd, GWLP_IMEWND_PIMEUI as core::ffi::c_int) as PIMEUI;
         if pimeui.is_null() {
-            ERR!(b"Invalid IMEWND\n\0".as_ptr() as *const i8);
+            ERR!("Invalid IMEWND\n");
             NtUserSetWindowFNID(hwnd, FNID_DESTROY as u16);
             return 0;
         }
@@ -1824,7 +1818,7 @@ pub unsafe extern "system" fn UpdatePerUserImmEnabling() -> BOOL {
 
     imm32 = LoadLibraryW(w!("imm32.dll").as_ptr() as PCWSTR);
     if imm32.is_null() {
-        ERR!(b"Imm32 not installed!\n\0".as_ptr() as *const i8);
+        ERR!("Imm32 not installed!\n");
         ret = 0;
     }
 

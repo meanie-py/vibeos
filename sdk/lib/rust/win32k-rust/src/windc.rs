@@ -8,10 +8,6 @@ use ntkrnl_sys::base::{
 #[allow(unused_imports)]
 use core::ffi::c_void;
 
-// Debug-channel macros — no kernel symbol, no-op.
-macro_rules! ERR   { ($($t:tt)*) => {{}}; }
-macro_rules! TRACE { ($($t:tt)*) => {{}}; }
-
 // CONTAINING_RECORD(addr, type, field) — offset_of! based, like sibling crates.
 macro_rules! CONTAINING_RECORD {
     ($addr:expr, $type:ty, $field:ident) => {
@@ -588,7 +584,7 @@ unsafe fn UserGetDCEx_impl(Wnd: PWND, mut ClipRegion: HANDLE, mut Flags: ULONG) 
     }
 
     if GreIsHandleValid((*Dce).hDC as HGDIOBJ) == 0 {
-        ERR!(b"FIXME: Got DCE with invalid hDC! %p\n\0".as_ptr() as PCHAR, (*Dce).hDC);
+        ERR!("FIXME: Got DCE with invalid hDC! %p\n", (*Dce).hDC);
         (*Dce).hDC = DceCreateDisplayDC();
     }
 
@@ -624,7 +620,7 @@ unsafe fn UserGetDCEx_impl(Wnd: PWND, mut ClipRegion: HANDLE, mut Flags: ULONG) 
         bUpdateVisRgn = 1;
     } else if !ClipRegion.is_null() {
         if !(*Dce).hrgnClip.is_null() {
-            ERR!(b"Should not be called!!\n\0".as_ptr() as PCHAR);
+            ERR!("Should not be called!!\n");
             GreDeleteObject((*Dce).hrgnClip as HGDIOBJ);
             (*Dce).hrgnClip = core::ptr::null_mut();
         }
@@ -733,7 +729,7 @@ unsafe fn DceFreeWindowDCE_impl(Window: PWND) {
     let mut ListEntry: PLIST_ENTRY;
 
     if DCECount <= 0 {
-        ERR!(b"FreeWindowDCE No Entry! %d\n\0".as_ptr() as PCHAR, DCECount);
+        ERR!("FreeWindowDCE No Entry! %d\n", DCECount);
         return;
     }
 
@@ -761,7 +757,7 @@ unsafe fn DceFreeWindowDCE_impl(Window: PWND) {
                         (*pDCE).hDC,
                     );
                     if GreSetDCOwner((*pDCE).hDC, GDI_OBJ_HMGR_NONE) == 0 {
-                        ERR!(b"Fail Owner Switch hDC-> %p \n\0".as_ptr() as PCHAR, (*pDCE).hDC);
+                        ERR!("Fail Owner Switch hDC-> %p \n", (*pDCE).hDC);
                         break;
                     }
                 } else if ((*(*Window).pcls).style & CS_OWNDC) != 0 {
@@ -769,14 +765,14 @@ unsafe fn DceFreeWindowDCE_impl(Window: PWND) {
                     continue;
                 } else {
                     ERR!(
-                        b"Not POWNED or CLASSDC hwndCurrent -> %p \n\0".as_ptr() as PCHAR,
+                        "Not POWNED or CLASSDC hwndCurrent -> %p \n",
                         (*pDCE).hwndCurrent,
                     );
                 }
             } else {
                 if ((*pDCE).DCXFlags & DCX_DCEBUSY) != 0 {
                     ERR!(
-                        b"[%p] GetDC() without ReleaseDC()!\n\0".as_ptr() as PCHAR,
+                        "[%p] GetDC() without ReleaseDC()!\n",
                         UserHMGetHandle(Window),
                     );
                     DceReleaseDC(pDCE, 0);

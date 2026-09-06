@@ -830,14 +830,14 @@ pub unsafe extern "C" fn LsarpCreateAccount(
     let mut Status: NTSTATUS = STATUS_SUCCESS;
 
     if ConvertSidToStringSid(AccountSid as PSID, &mut SidString) == 0 {
-        ERR!(b"ConvertSidToStringSid failed\n\0".as_ptr() as *const i8);
+        ERR!("ConvertSidToStringSid failed\n");
         return STATUS_INVALID_PARAMETER;
     }
 
     'done: {
         Status = LsapCreateAccountSd(&mut AccountSd, &mut AccountSdSize);
         if !NT_SUCCESS(Status) {
-            ERR!(b"LsapCreateAccountSd returned 0x%08lx\n\0".as_ptr() as *const i8, Status);
+            ERR!("LsapCreateAccountSd returned 0x%08lx\n", Status);
             break 'done;
         }
 
@@ -851,7 +851,7 @@ pub unsafe extern "C" fn LsarpCreateAccount(
             AccountObject,
         );
         if !NT_SUCCESS(Status) {
-            ERR!(b"LsapCreateDbObject failed (Status 0x%08lx)\n\0".as_ptr() as *const i8, Status);
+            ERR!("LsapCreateDbObject failed (Status 0x%08lx)\n", Status);
             break 'done;
         }
 
@@ -1435,7 +1435,7 @@ unsafe fn LsarpOpenAccount(
     let mut Status: NTSTATUS = STATUS_SUCCESS;
 
     if ConvertSidToStringSid(AccountSid as PSID, &mut SidString) == 0 {
-        ERR!(b"ConvertSidToStringSid failed\n\0".as_ptr());
+        ERR!("ConvertSidToStringSid failed\n");
         return STATUS_INVALID_PARAMETER;
     }
 
@@ -1450,7 +1450,7 @@ unsafe fn LsarpOpenAccount(
     );
     if !NT_SUCCESS(Status) {
         ERR!(
-            b"LsapOpenDbObject(Accounts/%S) failed (Status 0x%08lx)\n\0".as_ptr(),
+            "LsapOpenDbObject(Accounts/%S) failed (Status 0x%08lx)\n",
             SidString,
             Status,
         );
@@ -3517,7 +3517,7 @@ pub unsafe extern "system" fn LsarRetrievePrivateData(
     );
     if !NT_SUCCESS(Status) {
         ERR!(
-            b"LsapValidateDbObject returned 0x%08lx\n\0".as_ptr() as *const i8,
+            "LsapValidateDbObject returned 0x%08lx\n",
             Status,
         );
         return Status;
@@ -3535,7 +3535,7 @@ pub unsafe extern "system" fn LsarRetrievePrivateData(
         );
         if !NT_SUCCESS(Status) {
             ERR!(
-                b"LsapOpenDbObject failed (Status 0x%08lx)\n\0".as_ptr() as *const i8,
+                "LsapOpenDbObject failed (Status 0x%08lx)\n",
                 Status,
             );
             break 'done;

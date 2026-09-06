@@ -12,8 +12,6 @@ use crate::k32_externs::*;
 use crate::string::nls_subst::NT_SUCCESS;
 
 // DEBUG_CHANNEL TRACE/WARN are no-ops here (NDEBUG), matching wine/res.rs.
-macro_rules! TRACE { ($($arg:tt)*) => {} }
-macro_rules! WARN  { ($($arg:tt)*) => {} }
 
 // winbase.h sentinels not in the ntdll FFI surface.
 pub const INVALID_SET_FILE_POINTER: DWORD = 0xFFFFFFFF;

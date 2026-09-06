@@ -16,7 +16,7 @@ extern "C" {
 #[inline]
 fn ATTR(fg: UCHAR, bg: UCHAR) -> UCHAR { (bg << 4) | fg }
 const COLOR_BLACK: UCHAR = 0;
-const COLOR_GRAY: UCHAR = 7;
+const COLOR_GRAY: UCHAR = 7; // nolint: const-contradiction (unrelated namespaces: an ICM colour type vs a console colour)
 
 // keycodes.h scancodes returned by ConvertToBiosExtValue (UCHAR).
 const KEY_EXTENDED: UCHAR = 0x00;

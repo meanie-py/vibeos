@@ -148,6 +148,11 @@ pub unsafe extern "C" fn _ultow(value: u32, string: *mut u16, radix: i32) -> *mu
 // ── helpers copied verbatim from cnt-rust `cabi/mod.rs` (pub(crate) there,
 //    so not importable). Same code = same semantics the harness graded.
 #[allow(dead_code)]
+// Wine's ERR/FIXME/WARN/TRACE for the whole crate; `#[macro_use]` must precede the
+// modules that call them (macro_rules! is textually scoped).
+#[macro_use]
+mod winedebug;
+
 mod h {
     #[inline]
     pub(super) unsafe fn cstr_slice<'a>(p: *const u8) -> &'a [u8] {

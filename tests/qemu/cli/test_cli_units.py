@@ -241,8 +241,13 @@ def test_write_baseline_announces_a_lowered_floor_but_allows_it():
     assert conformance_mod.baseline_lowering_note([_res("ExHardError", 31, 0)], base) is None
 
 
-def _fmt(r: dict) -> str:
-    return f"{r['name']} {r['status']} pass={r['pass']} fail={r['fail']} skip={r['skip']}"
+def _fmt(r: dict, flaky=()) -> str:
+    # Mirrors parser.fmt's signature: merge_baseline_rows hands it the `assert?`
+    # marks the row already carries, so a re-seed cannot delete them.
+    line = f"{r['name']} {r['status']} pass={r['pass']} fail={r['fail']} skip={r['skip']}"
+    for a in sorted(set(r.get("asserts") or ()) | set(flaky)):
+        line += f"\n    assert{'?' if a in set(flaky) else ''} {a}"
+    return line
 
 
 _BASELINE_FIXTURE = (
@@ -2578,17 +2583,36 @@ def test_hostlock_fifo_head_is_never_blocked_by_itself(tmp_path, monkeypatch):
     assert hl_mod.queue_status("cpuheavy") == []
 
 
-def test_hostlock_fifo_backfill_when_head_not_delayed(tmp_path, monkeypatch):
-    """A latecomer MAY use permits nobody ahead of it is owed (throughput preserved)."""
+def test_hostlock_fifo_respects_existing_permit_holders(tmp_path, monkeypatch):
+    """Capacity is not availability: an active build owns half the pool."""
     monkeypatch.setattr(hl_mod, "HOSTLOCK_DIR", tmp_path)
-    ahead = _fake_ticket(tmp_path, "cpuheavy", ns=1, pid=999999, need=1)
+    held = hl_mod.acquire_cpu_share("running", n=2, leases=4, timeout=1.0)
+    assert held is not None
+    ahead = _fake_ticket(tmp_path, "cpuheavy", ns=1, pid=999999, need=2)
+    late = None
     try:
-        # 4 permits, one earlier waiter owed 1 → 3 spare, so our 2 fit without delaying it.
-        fds = hl_mod.acquire_cpu_share("late", n=2, leases=4, timeout=1.0)
-        assert fds is not None
-        hl_mod.release_all(fds)
+        # The only free pair is owed to the older waiter, even though both
+        # waiters' requests fit within the pool's TOTAL capacity.
+        late = hl_mod.acquire_cpu_share("late", n=2, leases=4, timeout=0.1)
+        assert late is None
     finally:
+        hl_mod.release_all(late)
         os.close(ahead)
+        hl_mod.release_all(held)
+
+
+def test_hostlock_fifo_admission_does_not_serialize_running_work(tmp_path, monkeypatch):
+    """Once admitted, a holder's remaining capacity is available to the next build."""
+    monkeypatch.setattr(hl_mod, "HOSTLOCK_DIR", tmp_path)
+    first = hl_mod.acquire_cpu_share("first", n=1, leases=4, timeout=1.0)
+    assert first is not None
+    second = None
+    try:
+        second = hl_mod.acquire_cpu_share("second", n=2, leases=4, timeout=1.0)
+        assert second is not None  # first still owns its permit
+    finally:
+        hl_mod.release_all(second)
+        hl_mod.release_all(first)
 
 
 def test_hostlock_fifo_orphan_ticket_is_reaped(tmp_path, monkeypatch):
@@ -3475,6 +3499,112 @@ def test_source_lint_api_rejects_unknown_selection(tmp_path, monkeypatch):
     monkeypatch.setattr(lints, "_lint_stage", lambda *a, **k: pytest.fail("must not execute"))
     with pytest.raises(ValueError):
         lints.run_source_lints(Run("check", "amd64"), tmp_path, strict=True, only={"typo"})
+
+
+@pytest.mark.parametrize("scope", ["source", "arch", None])
+@pytest.mark.parametrize("fail", [False, True])
+def test_check_partitions_preserve_full_coverage(tmp_path, monkeypatch, scope, fail):
+    seen = []
+
+    def source(run, repo, *, strict):
+        assert strict
+        seen.append("source")
+        run.add(Stage("source", status="fail" if fail else "ok"))
+
+    def guard(name):
+        def execute(run, repo, arch, **kwargs):
+            assert arch == "amd64"
+            if name == "binary":
+                assert kwargs["strict"]
+            seen.append(name)
+            run.add(Stage(name, status="fail" if fail else "ok"))
+
+        return execute
+
+    monkeypatch.setattr(lints, "run_source_lints", source)
+    monkeypatch.setattr(lints, "run_cargo_link_guard", guard("cargo"))
+    monkeypatch.setattr(lints, "run_committed_drift_guard", guard("drift"))
+    monkeypatch.setattr(lints, "run_binary_lints", guard("binary"))
+    assert debugcmd_mod.check(Namespace(scope=scope, strict=True, arch="amd64"), tmp_path) == int(
+        fail
+    )
+    assert (
+        seen
+        == {
+            "source": ["source"],
+            "arch": ["cargo", "drift", "binary"],
+            None: ["source", "cargo", "drift", "binary"],
+        }[scope]
+    )
+    command = f"check-{scope}" if scope else "check"
+    summary = json.loads(
+        next((tmp_path / "artifacts").glob(f"*-{command}-amd64/summary.json")).read_text()
+    )
+    assert summary["verdict"] == ("FAIL" if fail else "WARN" if scope else "OK")
+    assert summary.get("coverage") == ("partial" if scope else None)
+
+
+@pytest.mark.parametrize(
+    "options",
+    [
+        {"scope": "bogus", "strict": True},
+        {"scope": "source"},
+        {"scope": "arch", "strict": True},
+        {"scope": "source", "strict": True, "only": "a"},
+        {"scope": "arch", "strict": True, "arch": "amd64", "update_baseline": "__ALL__"},
+    ],
+)
+def test_check_partition_rejects_ambiguous_or_incomplete_request(tmp_path, monkeypatch, options):
+    monkeypatch.setattr(lints, "run_source_lints", lambda *a, **k: pytest.fail("must not scan"))
+    monkeypatch.setattr(lints, "write_baselines", lambda *a, **k: pytest.fail("must not write"))
+    assert debugcmd_mod.check(Namespace(**options), tmp_path) == 2
+
+
+@pytest.mark.parametrize("failed", [None, "source", "i386"])
+def test_gate_runs_source_once_after_build_matrix_and_requires_every_partition(
+    tmp_path, monkeypatch, failed
+):
+    built = set()
+    seen = []
+    stamped = []
+
+    def build(repo, run, arch, args):
+        built.add(arch)
+        return {"arch": arch, "ok": True, "exit": 0, "seconds": 0.01}
+
+    def lint(repo, arch, root):
+        if arch == "source":
+            assert built == {"i386", "amd64", "arm64"}
+        else:
+            assert arch in built
+        seen.append(arch)
+        return _lint_once_stub(arch != failed)(repo, arch, root)
+
+    monkeypatch.setattr(gate_mod, "_build_once", build)
+    monkeypatch.setattr(gate_mod, "_lint_once", lint)
+    monkeypatch.setattr(gate_mod, "_cohab_once", _cohab_once_stub(True))
+    monkeypatch.setattr(gate_mod, "_tooling_once", _tooling_once_stub(True))
+    monkeypatch.setattr(gate_mod, "_difftest_once", _difftest_once_stub(True))
+    monkeypatch.setattr(gate_mod, "_smoke_once", _spy_smoke_ok([]))
+    monkeypatch.setattr(gate_mod, "_write_gate_stamp", lambda *a, **k: stamped.append(1))
+    rc = gate_mod.gate(_gate_args(no_lint=False, no_build=False, no_net=True), tmp_path)
+    assert sorted(seen) == ["amd64", "arm64", "i386", "source"]
+    assert bool(stamped) == (failed is None)
+    assert rc == int(failed is not None)
+
+
+@pytest.mark.parametrize("arch", ["source", "amd64"])
+def test_gate_child_requests_explicit_strict_partition(tmp_path, monkeypatch, arch):
+    calls = []
+
+    def execute(cmd, **kwargs):
+        calls.append(cmd)
+        return subprocess.CompletedProcess(cmd, 0, "", "")
+
+    monkeypatch.setattr(gate_mod.subprocess, "run", execute)
+    assert gate_mod._lint_once(tmp_path, arch, tmp_path / "logs")["ok"]
+    suffix = ["source"] if arch == "source" else ["arch", "--arch", arch]
+    assert calls == [[str(tmp_path / "vibeos-cli"), "check", "--strict", "--scope", *suffix]]
 
 
 def test_write_baselines_only_filter(tmp_path, monkeypatch):
@@ -6509,3 +6639,249 @@ def test_vendored_registry_stage_is_silent_on_stdout_when_green():
     assert r.returncode == 0, r.stdout + r.stderr
     assert r.stdout == "", f"stdout must be empty when green, got: {r.stdout!r}"
     assert "OK" in r.stderr
+
+
+# --- the ratchet gates on assertion IDENTITIES, not counts (#78) --------------
+
+_SWEEP = """\
+[KMTEST-SWEEP] launch IoDeviceObject
+IoDeviceObject_drv.c:198: Test failed: Status = 0xc0000034, expected 0x00000000
+IoDeviceObject_drv.c:206: Test failed: Ptr = FFFF800004952878, expected 0
+[KMTEST:END IoDeviceObject pass=185 fail=2 skip=0]
+[KMTEST-SWEEP] exit IoDeviceObject code=0
+[KMTEST-SWEEP] done 1 tests
+"""
+
+
+def _parser():
+    import importlib.util
+
+    spec = importlib.util.spec_from_file_location(
+        "parse_kmtest_serial",
+        Path(__file__).resolve().parents[3] / "tools" / "conformance" / "parse_kmtest_serial.py",
+    )
+    assert spec is not None and spec.loader is not None
+    mod = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(mod)
+    return mod
+
+
+def test_failing_assertions_are_parsed_and_round_trip_through_the_baseline():
+    """file:line is the identity. The message is deliberately NOT part of it —
+    it carries addresses and NTSTATUS values that differ every boot."""
+    P = _parser()
+    results, _done, _bug = P.parse(_SWEEP)
+    assert [r["name"] for r in results] == ["IoDeviceObject"]
+    assert results[0]["asserts"] == {"IoDeviceObject_drv.c:198", "IoDeviceObject_drv.c:206"}
+    text = P.fmt(results[0])
+    assert "    assert IoDeviceObject_drv.c:198" in text
+    base = _round_trip(P, text)
+    assert base["IoDeviceObject"]["asserts"] == results[0]["asserts"]
+    assert P.compare(results, base) == []
+
+
+def _round_trip(P, text):
+    import tempfile
+
+    fn = tempfile.mktemp()
+    Path(fn).write_text("# hdr\n" + text + "\n")
+    return P.load_baseline(fn)
+
+
+def test_offsetting_changes_are_caught_though_the_counts_never_move():
+    """THE point of #78. One assertion starts failing and another stops, so
+    pass/fail/skip are byte-identical and the count ratchet reports nothing.
+    Measured on 595 archived arm64 sweeps: 33 of the 37 count-signatures shared
+    by more than one run cover runs whose failing assertions differ."""
+    P = _parser()
+    banked, _, _ = P.parse(_SWEEP)
+    base = _round_trip(P, P.fmt(banked[0]))
+    swapped = _SWEEP.replace("IoDeviceObject_drv.c:206", "IoDeviceObject_drv.c:301")
+    now, _, _ = P.parse(swapped)
+    assert now[0]["pass"] == banked[0]["pass"] and now[0]["fail"] == banked[0]["fail"]
+    # count-only floor (a row not yet seeded with identities) sees nothing
+    countonly = {
+        "IoDeviceObject": {k: v for k, v in base["IoDeviceObject"].items() if k != "asserts"}
+    }
+    assert P.compare(now, countonly) == []
+    # identity floor names it
+    assert P.compare(now, base) == [
+        "IoDeviceObject: NEW failing assertion IoDeviceObject_drv.c:301"
+    ]
+
+
+def test_a_bistable_assertion_marked_with_a_question_mark_is_not_a_regression():
+    """IoDeviceObject really is bistable on all three arches. Without the mark
+    every soak round reports a regression or an improvement, forever."""
+    P = _parser()
+    results, _, _ = P.parse(_SWEEP)
+    base = _round_trip(P, P.fmt(results[0], flaky={"IoDeviceObject_drv.c:206"}))
+    assert base["IoDeviceObject"]["flaky"] == {"IoDeviceObject_drv.c:206"}
+    # it fired this time: known, so silent
+    assert P.compare(results, base) == []
+    # and it did not fire this time: still silent, and still on the floor
+    quiet = _SWEEP.replace(
+        "IoDeviceObject_drv.c:206: Test failed: Ptr = FFFF800004952878, expected 0\n", ""
+    ).replace("fail=2", "fail=1")
+    now, _, _ = P.parse(quiet)
+    assert P.compare(now, base) == []
+
+
+def test_reseeding_a_row_keeps_its_bistable_marks():
+    """A wholesale re-seed from one boot must not delete an `assert?` — that
+    banks whichever face this boot showed and hands the next run a false
+    regression. Same failure --only exists to prevent, one level down."""
+    prev = (
+        "# hdr\n"
+        "IoDeviceObject OK pass=185 fail=2 skip=0\n"
+        "    assert IoDeviceObject_drv.c:198\n"
+        "    assert? IoDeviceObject_drv.c:206\n"
+    )
+    assert conformance_mod._flaky_of(prev, "IoDeviceObject") == {"IoDeviceObject_drv.c:206"}
+    # this boot did NOT show the bistable one
+    res = [
+        {
+            "name": "IoDeviceObject",
+            "status": "OK",
+            "pass": 185,
+            "fail": 1,
+            "skip": 0,
+            "asserts": {"IoDeviceObject_drv.c:198"},
+        }
+    ]
+    text, refusal = conformance_mod.merge_baseline_rows(prev, res, ["IoDeviceObject"], _fmt)
+    assert refusal is None and text is not None
+    assert "    assert? IoDeviceObject_drv.c:206" in text, "the flake mark was dropped"
+
+
+def test_an_unseeded_row_still_gates_on_the_fail_count():
+    """Identity seeding is per-arch and incremental. A row with no `assert`
+    lines must keep its old count gate rather than silently gating nothing."""
+    P = _parser()
+    base = _round_trip(P, "IoDeviceObject OK pass=185 fail=2 skip=0")
+    assert base["IoDeviceObject"].get("asserts") is None
+    worse = _SWEEP.replace("fail=2", "fail=3")
+    now, _, _ = P.parse(worse)
+    assert P.compare(now, base) == ["IoDeviceObject: fail 2 -> 3 (grew)"]
+
+
+def test_reseeding_one_row_leaves_every_other_rows_identities_alone():
+    """--only replaces the named row's whole assert block and nothing else. An
+    indented `assert` line belongs to the row above it, not to a test named
+    "assert" — getting that wrong would rewrite the file into nonsense."""
+    prev = (
+        "# hdr\n"
+        "FsRtlLegal OK pass=100 fail=1 skip=0\n"
+        "    assert FsRtlLegal.c:11\n"
+        "IoDeviceObject OK pass=185 fail=2 skip=0\n"
+        "    assert IoDeviceObject_drv.c:198\n"
+        "    assert? IoDeviceObject_drv.c:206\n"
+    )
+    res = [
+        {"name": "FsRtlLegal", "status": "OK", "pass": 132, "fail": 0, "skip": 0, "asserts": set()},
+        {
+            "name": "IoDeviceObject",
+            "status": "OK",
+            "pass": 185,
+            "fail": 1,
+            "skip": 0,
+            "asserts": {"IoDeviceObject_drv.c:198"},
+        },
+    ]
+    text, refusal = conformance_mod.merge_baseline_rows(prev, res, ["FsRtlLegal"], _fmt)
+    assert refusal is None and text is not None
+    # the re-seeded row drops the assertion that no longer fails
+    assert "FsRtlLegal.c:11" not in text
+    # the untouched row keeps BOTH of its identities, mark included
+    assert "    assert IoDeviceObject_drv.c:198" in text
+    assert "    assert? IoDeviceObject_drv.c:206" in text
+
+
+def test_seed_asserts_adds_identities_without_touching_the_counts():
+    """--seed-asserts upgrades a count-only floor in place. Re-rolling the counts
+    from the soak is exactly what a wholesale --write-baseline does wrong."""
+    P = _parser()
+    prev = "# hdr\nExPools OK pass=100 fail=2 skip=0 exit=0\n"
+    rounds = [
+        [
+            {
+                "name": "ExPools",
+                "status": "OK",
+                "pass": 7,
+                "fail": 2,
+                "skip": 0,
+                "asserts": {"ExPools.c:119", "ExPools.c:176"},
+            }
+        ],
+        [
+            {
+                "name": "ExPools",
+                "status": "OK",
+                "pass": 7,
+                "fail": 2,
+                "skip": 0,
+                "asserts": {"ExPools.c:119", "ExPools.c:176"},
+            }
+        ],
+        [
+            {
+                "name": "ExPools",
+                "status": "OK",
+                "pass": 7,
+                "fail": 1,
+                "skip": 0,
+                "asserts": {"ExPools.c:119"},
+            }
+        ],
+    ]
+    text, report = conformance_mod.seed_asserts_into_baseline(prev, rounds, P)
+    # the banked counts survive verbatim
+    assert "ExPools OK pass=100 fail=2 skip=0 exit=0" in text
+    # unanimous -> assert; seen in 2 of 3 -> assert?
+    assert "    assert ExPools.c:119" in text
+    assert "    assert? ExPools.c:176" in text
+    assert "1 stable + 1 bistable" in report
+
+
+def test_seed_asserts_ignores_rounds_where_the_test_never_completed():
+    """A round that CRASHed has no assertions for that test — it says nothing
+    about which of them fail. Counting it as "did not fail" would mark every
+    stable failure bistable and permanently weaken the floor from one bad boot."""
+    P = _parser()
+    prev = "# hdr\nExPools OK pass=100 fail=2 skip=0\n"
+    good = {
+        "name": "ExPools",
+        "status": "OK",
+        "pass": 7,
+        "fail": 1,
+        "skip": 0,
+        "asserts": {"ExPools.c:119"},
+    }
+    dead = {"name": "ExPools", "status": "CRASH", "pass": 0, "fail": 0, "skip": 0, "asserts": set()}
+    text, _report = conformance_mod.seed_asserts_into_baseline(
+        prev, [[good], [dead], [good], [good]], P
+    )
+    assert "    assert ExPools.c:119" in text, "the crashed round diluted unanimity"
+    assert "assert?" not in text
+
+
+def test_seed_asserts_will_not_add_a_row_the_floor_does_not_carry():
+    """Adding a test to the floor is --write-baseline's job: it has the coverage
+    refusal in front of it, and this does not."""
+    P = _parser()
+    prev = "# hdr\nExPools OK pass=100 fail=2 skip=0\n"
+    rounds = [
+        [
+            {
+                "name": "NewTest",
+                "status": "OK",
+                "pass": 1,
+                "fail": 1,
+                "skip": 0,
+                "asserts": {"NewTest.c:5"},
+            }
+        ]
+    ] * 3
+    text, report = conformance_mod.seed_asserts_into_baseline(prev, rounds, P)
+    assert "NewTest" not in text.replace("NewTest.c", "")
+    assert "not on the floor" in report

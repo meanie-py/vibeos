@@ -36,7 +36,6 @@ macro_rules! w {
 
 
 // ── No-op debug macro (TRACE compiles to nothing; consume args so they type-check).
-macro_rules! TRACE { ($($arg:expr),* $(,)?) => { { $( let _ = $arg; )* } }; }
 
 // WC_SWITCH = MAKEINTATOM(0x8003) (undocuser.h) — atom encoded as a class-name pointer.
 const WC_SWITCH: PCWSTR = 0x8003 as PCWSTR;

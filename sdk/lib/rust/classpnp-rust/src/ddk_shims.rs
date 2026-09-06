@@ -457,25 +457,42 @@ use core::sync::atomic::{AtomicI32, Ordering};
 // The translated callers declare these `extern "C"` (cdecl `_X`), but the kernel exports
 // them stdcall (`_X@N`). Provide cdecl shims that forward to the real stdcall export
 // (resolved via the ntoskrnl/hal importlibs on the cohab link line).
-// KeRaiseIrql/KeLowerIrql are inline on i386 (no kernel export — it's KfRaiseIrql fastcall);
-// the ntkrnl_sys tier1 inlines do the correct per-arch thing.
+//
+// A `#[no_mangle]` definition of a name the importlib ALSO offers is not a forwarder: the
+// local strong definition wins, so `extern "system" { fn X }` written inside `fn X` binds
+// to X itself. LLVM tail-folds that to `jmp .`, and these three shipped as literal 2-byte
+// infinite loops — `4fb90 <KeRaiseIrql>: eb fe  jmp 4fb90` in classpnp.sys on amd64. Any
+// classpnp path that touched IRQL spun the CPU forever: no bugcheck, no serial output.
+// So define a symbol ONLY on the arch that has none, and stay silent where the export exists.
+//   i386  — hal.spec exports the stdcall pair, but the callers want cdecl and the primitive
+//           is FASTCALL KfRaiseIrql; the tier1 inline does that decoration.
+//   amd64 — NEITHER is linkable. sdk/include/xdk/amd64/ke.h:102 makes KeRaiseIrql a macro over
+//           KfRaiseIrql, so nothing exports it at all; KeLowerIrql is exported but
+//           `-private` (ntoskrnl.spec:635 -> KxLowerIrql), and spec2def.c:750 keeps private
+//           exports OUT of the import lib — so a driver cannot bind it either. Both get a
+//           real CR8 body here. (Reading the .spec is not enough: check for `-private`.)
+//   arm64 — hal.spec:84,86 export both stdcall, non-private. Define neither.
+#[cfg(not(target_arch = "aarch64"))]
 #[no_mangle] pub unsafe extern "system" fn KeRaiseIrql(NewIrql: u8, OldIrql: *mut u8) {
     #[cfg(target_arch = "x86")]
     { ntkrnl_sys::inline::tier1::KeRaiseIrql(NewIrql, OldIrql); }
-    #[cfg(not(target_arch = "x86"))]
-    { extern "system" { fn KeRaiseIrql(n: u8, o: *mut u8); } KeRaiseIrql(NewIrql, OldIrql); }
+    #[cfg(target_arch = "x86_64")]
+    { *OldIrql = ntkrnl_sys::inline::ke::KfRaiseIrql_amd64(NewIrql); }
 }
+#[cfg(not(target_arch = "aarch64"))]
 #[no_mangle] pub unsafe extern "system" fn KeLowerIrql(NewIrql: u8) {
     #[cfg(target_arch = "x86")]
     { ntkrnl_sys::inline::tier1::KeLowerIrql(NewIrql); }
-    #[cfg(not(target_arch = "x86"))]
-    { extern "system" { fn KeLowerIrql(n: u8); } KeLowerIrql(NewIrql); }
+    #[cfg(target_arch = "x86_64")]
+    { ntkrnl_sys::inline::ke::KeLowerIrql_amd64(NewIrql); }
 }
-// IoWMIDeviceObjectToProviderId: exported only on amd64/arm64 (WMI provider id). Not boot-
-// critical on i386 (telemetry path) — stub to 0 there; forward to the real export elsewhere.
+// IoWMIDeviceObjectToProviderId: ntoskrnl.spec:518 exports it on amd64/arm64 only, so those
+// arches must IMPORT it (classwmi.rs:940 already declares it) rather than shadow it with a
+// self-call. i386 has no export and this is a telemetry path, not boot-critical — stub to 0.
+#[cfg(target_arch = "x86")]
 #[no_mangle] pub unsafe extern "C" fn IoWMIDeviceObjectToProviderId(Dev: PDEVICE_OBJECT) -> u32 {
-    #[cfg(target_arch = "x86")] { let _ = Dev; 0 }
-    #[cfg(not(target_arch = "x86"))] { ntkrnl_sys::ddk::IoWMIDeviceObjectToProviderId(Dev) }
+    let _ = Dev;
+    0
 }
 // IoQueueWorkItemEx is NOT exported by ReactOS ntoskrnl (only IoQueueWorkItem exists).
 // FAITHFUL trampoline (2026-07-07): the old shim forwarded straight to IoQueueWorkItem,

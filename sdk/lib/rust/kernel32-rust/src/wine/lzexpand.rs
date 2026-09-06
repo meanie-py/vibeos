@@ -22,8 +22,6 @@ extern "system" {
 }
 
 // ---- cohab glue: Wine debug macros (no-ops, as in the other ported modules) ----
-macro_rules! TRACE { ($($t:tt)*) => {{}} }
-macro_rules! WARN  { ($($t:tt)*) => {{}} }
 
 // ---- cohab glue: LZ error codes (sdk/include/psdk/lzexpand.h) ----
 pub const LZERROR_BADINHANDLE:  INT = -1;
