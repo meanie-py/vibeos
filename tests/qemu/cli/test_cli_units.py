@@ -5,6 +5,8 @@ Run: <venv>/bin/python -m pytest tests/qemu/cli/test_cli_units.py -q
 
 from __future__ import annotations
 
+import contextlib
+import io
 import json
 import os
 import re
@@ -5411,6 +5413,23 @@ def test_lint_preflight_blocks_a_red_check_tooling(tiny_repo: Path, tmp_path, mo
     assert "ruff:tools/*.py" in str(ei.value)
 
 
+def test_lint_preflight_KEEPS_the_output_it_captured(tiny_repo: Path, tmp_path, monkeypatch):
+    """The child writes no artifact dir, so this capture is the only copy of the failing
+    test's own output — check-tooling prints it AFTER the summary line. A preflight that
+    reports the ✗ and drops the rest leaves a lane nothing to debug when the failure does
+    not reproduce, which is exactly what happened on 2026-09-06."""
+    monkeypatch.setattr("tests.qemu.cli.artifacts.ARTIFACT_ROOT", tmp_path / "art")
+    detail = "=== pytest:tools/test_x.py ===\nE   assert 1 == 2"
+    _fake_cli(tiny_repo, rc=1, out=f"  ✗ pytest:tools/test_x.py\n\nFAIL — 1/28:\n{detail}")
+    run = Run("land", "t")
+    with pytest.raises(land_mod.LandAbort) as ei:
+        land_mod._lint_preflight(tiny_repo, run, _Args())
+    log = run.dir / "preflight-check-tooling.log"
+    assert log.exists(), "the captured output must survive the abort"
+    assert "assert 1 == 2" in log.read_text()
+    assert str(log) in str(ei.value), "and the abort must say where it is"
+
+
 def test_lint_preflight_passes_a_green_check_tooling(tiny_repo: Path, tmp_path, monkeypatch):
     monkeypatch.setattr("tests.qemu.cli.artifacts.ARTIFACT_ROOT", tmp_path / "art")
     _fake_cli(tiny_repo, rc=0, out="OK — all 15 tooling checks passed.")
@@ -5467,6 +5486,87 @@ def test_green_lint_still_reaches_the_queue(lane_repo, tmp_path, monkeypatch):
     subprocess.run(["git", "commit", "-qm", "cli"], cwd=lane, check=True, capture_output=True)
     assert land_mod.land(_Args(direct=False), lane) == 0
     assert q_mod.pending(lane), "a green lane must still be queued"
+
+
+def test_a_killed_submit_is_REPORTED_not_silently_absent(lane_repo, tmp_path, monkeypatch):
+    """A `land` killed mid-preflight leaves the lane unregistered with no error.
+
+    That is not hypothetical: the host filled its disk and the harness killed five background
+    commands in one session, reporting each as low memory. One was a `land`. `land-status`
+    simply did not list the lane, which is indistinguishable from "the conductor has not
+    reached me yet" — so the agent waited on a queue position it never had. Asking everyone to
+    remember to double-check is the rule-instead-of-mechanism the repo forbids; leave a marker
+    and let the tool say it.
+    """
+    lane, _ = lane_repo
+    head = q_mod.git(lane, "rev-parse", "HEAD")
+    attempt = q_mod.begin_attempt(lane, q_mod.lane_id(lane), head)
+    assert attempt.is_file()
+    # Nothing is queued and the marker's process is alive (it is us), so this is an IN-FLIGHT
+    # submit, not an abandoned one — it must stay quiet, or it cries wolf at every land.
+    assert q_mod.abandoned_attempts(lane) == [], "a live submit must not report as abandoned"
+    # Now the kill: rewrite the marker with a pid that cannot be running.
+    rec = json.loads(attempt.read_text())
+    rec["pid"] = 2**22  # above every /proc/sys/kernel/pid_max in practice
+    attempt.write_text(json.dumps(rec))
+    found = q_mod.abandoned_attempts(lane)
+    assert len(found) == 1 and found[0]["tip"] == head
+
+    # and the agent has to SEE it, which is the entire point
+    out = io.StringIO()
+    with contextlib.redirect_stdout(out):
+        land_mod.cmd_land_status(_Args(mine=True), lane)
+    printed = out.getvalue()
+    assert "NOT QUEUED" in printed, printed
+    assert "re-run" in printed, "must say what to do, not just that something is wrong"
+
+
+def test_a_malformed_marker_REPORTS_rather_than_going_quiet(lane_repo, tmp_path):
+    """`os.kill(-1, 0)` SUCCEEDS -- it is the broadcast form -- so a record with a missing or
+    unparsable pid used to read as "alive" and suppress itself forever, which is the exact
+    silent omission this feature exists to remove. A marker truncated by the disk filling
+    produces one, and that is the very scenario that motivated the feature.
+    """
+    lane, _ = lane_repo
+    attempt = q_mod.begin_attempt(lane, q_mod.lane_id(lane), q_mod.git(lane, "rev-parse", "HEAD"))
+    for bad in ({"lane": q_mod.lane_id(lane), "tip": "abc"}, {"pid": "not-an-int"}, {"pid": -1}):
+        rec = {"lane": q_mod.lane_id(lane), "tip": "abc", "started_at": time.time(), **bad}
+        attempt.write_text(json.dumps(rec))
+        assert q_mod.abandoned_attempts(lane), f"a marker with pid={bad} went silent"
+
+
+def test_a_RECYCLED_pid_does_not_suppress_the_marker(lane_repo, tmp_path):
+    """A pid alive but started AFTER the marker was written belongs to something else.
+
+    The host churns thousands of build processes, so reuse is ordinary; treating the new
+    occupant as our submit would suppress the marker permanently. Fails toward reporting, like
+    the malformed case.
+    """
+    lane, _ = lane_repo
+    attempt = q_mod.begin_attempt(lane, q_mod.lane_id(lane), q_mod.git(lane, "rev-parse", "HEAD"))
+    rec = json.loads(attempt.read_text())
+    # our own pid is certainly alive, but claim the marker predates the epoch
+    rec["started_at"] = 1.0
+    attempt.write_text(json.dumps(rec))
+    assert q_mod.abandoned_attempts(lane), "a recycled pid must not suppress the marker"
+    # negative control: with an honest started_at the same live pid IS our submit, and quiet
+    rec["started_at"] = time.time()
+    attempt.write_text(json.dumps(rec))
+    assert q_mod.abandoned_attempts(lane) == [], "a genuinely in-flight submit must stay quiet"
+
+
+def test_an_enqueued_lane_is_not_reported_as_abandoned(lane_repo, tmp_path, monkeypatch):
+    """The negative control. A marker left behind by a submit that SUCCEEDED must not be
+    reported — otherwise the warning appears on every successful land and gets tuned out,
+    which is how a true signal becomes noise."""
+    lane, _ = lane_repo
+    head = q_mod.git(lane, "rev-parse", "HEAD")
+    attempt = q_mod.begin_attempt(lane, q_mod.lane_id(lane), head)
+    rec = json.loads(attempt.read_text())
+    rec["pid"] = 2**22
+    attempt.write_text(json.dumps(rec))
+    q_mod.submit(lane, tip=head)
+    assert q_mod.abandoned_attempts(lane) == [], "a queued lane is not an abandoned submit"
 
 
 def test_prune_never_reclaims_the_integration_tree(tmp_path):

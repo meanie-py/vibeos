@@ -33,3 +33,17 @@ path = "src/lib.rs"
 # `_MSVCR_VER = 0` never compiled. See crt-shared-rust/Cargo.toml for the full live set.
 crt-shared-rust = { path = "../crt-shared-rust", features = ["cpp", "undname", "ucrtsupport"] }
 panic-common = { path = "../panic-common", features = ["user"] }
+# The ucrtbase half of the math wave. ucrtbase.dll does not get its math from the vendored
+# `sdk/lib/ucrt` -- it links OUR `crtmath` for it (see its CMakeLists) -- so these 66
+# kernel-proven libm exports flip crtmath's C bodies here by lld first-match, exactly as they
+# already do in msvcrt.dll via msvcrt-crt-cargo. Same reasoning for putting it on the
+# staticlib and not on crt-shared-rust: the rlib is what msvcrt-difftest and
+# msvcrt-seh-difftest link, and 66 #[no_mangle] libm names there would shadow the HOST libm
+# under the reference TUs, contaminating the oracle.
+#
+# This does NOT weaken the crate's guarantee. cnt-rust has an EMPTY [dependencies] table, so
+# the edge cannot reach msvcrt-crt-rust, which is the one thing this crate exists to keep out
+# -- `tools/verify_ucrtbase_cohab.py` walks the graph and asserts it rather than trusting the
+# claim. Every one of the 66 is graded bit-exact against the C sdk/lib/crt/math compiles, in
+# cnt-difftest, per-arch.
+cnt-rust = { path = "../cnt-rust", default-features = false, features = ["cabi-math"] }

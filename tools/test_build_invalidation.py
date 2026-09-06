@@ -201,6 +201,18 @@ endforeach()
         )
 
     def remove(self, path):
+        """Delete an input, and age the DIRECTORY the way write() ages a file.
+
+        Deleting a file is a change to its directory, and a recursive watch
+        (Cargo's `rerun-if-changed=<dir>`) can only see it as a directory mtime.
+        A bare unlink leaves that mtime at the host clock, which beat the
+        preceding cold build's artifacts by 8ms on an idle host — no margin at
+        all. Invert it and the watch reads "not newer", the build script does not
+        re-run, and the stale generated value survives a rebuild that really did
+        happen; that is the `'5' != '4'` this test hit under fleet load, and
+        forcing the inversion reproduces it every time. It hides nothing: the
+        directory genuinely changed, so the edge under test still has to carry it.
+        """
         dest = self.root / path
         mtime_ns = self.next_mtime()
         dest.unlink()

@@ -912,23 +912,339 @@ pub extern "C" fn fmod(x: f64, y: f64) -> f64 {
 // ===========================================================================
 // Wave MATH-TIERC sub-wave 3 — tan (f64)
 //
-// `tan(x) = sin(x)/cos(x)` — the portable `arm64/tan.c` form, applied
-// uniformly to BOTH amd64 and arm64 per the standing directive ("give every
-// arch the same thing — we don't care about hand-optimized"). This replaces
-// amd64's hand-optimized AMD-libm `libm_sse2/tan.c` with the same simple
-// quotient arm64 already used. Bit-exact: our Rust `sin`/`cos` are proven
-// equal to the C `sin`/`cos` (sw1), so this quotient equals the C
-// `arm64/tan.c` quotient bit-for-bit (incl. the cos(x)→0 ±inf limit, where
-// both divide identical operands). amd64/arm64 only (the `float` feature);
-// i386 keeps its x87 `tan_asm.s`.
+// A hand port of AMD's `math/libm_sse2/tan.c` plus the `__remainder_piby2`
+// (`math/libm_sse2/remainder_piby2.c`) it calls for large arguments, applied
+// uniformly to amd64 and arm64. i386 keeps its x87 `tan_asm.s`.
+//
+// It used to be `sin(x)/cos(x)` — arm64's 18-line `arm64/tan.c` — imposed on
+// amd64 as well, and that WAS a regression, discovered only when the difftest
+// oracle was repointed at the C each arch actually links. The composed form
+// inherits every error in `math/sin.c`, a 9-term Taylor series over a naive
+// quadrant reduction that is good to about 1e-10 relative (and returns
+// -3.3e-15 for `sin(0)`). Measured against AMD's on the difftest's own domain
+// the two were up to 0.056 APART in absolute terms, 1.2e-10 at x = -1. So
+// amd64 had an accurate tan sitting on inaccurate sin/cos, and the flip left
+// it with neither. Against `tanl`, AMD's peak error is 0.94 ULP and the
+// composed form's is 1.81, missing the correctly-rounded result 2.4% of the
+// time against AMD's 0.28%.
+//
+// Porting it rather than keeping the quotient gives every arch the accurate
+// body instead of every arch the inaccurate one; "give every arch the same
+// thing" is preserved, it is simply now the same GOOD thing. arm64 gains the
+// accuracy it never had. `math/sin.c` itself is untouched and still the weak
+// link for `sin`/`cos` — a separate lane.
+//
+// One deliberate deviation, the established one for every AMD body in this
+// file (exp2, sinh, cosh, tanh, asin, acos, hypot, …): the C's error paths go
+// through `_handle_error`, which returns the encoded value AND invokes any
+// `__setusermatherr` callback. Only the VALUE is reproduced here. Reaching the
+// callback would mean an `extern` to `libm_sse2/_handle_error.c`, which no
+// arch but amd64 and i386 builds, and would fork this body per arch for a hook
+// nothing in the tree installs.
 // ===========================================================================
 
-/// `double tan(double)` — sin/cos quotient (the portable arm64 form).
+/// `tan(x + xx)` on `[-pi/4, pi/4]`; with `recip`, `-1/tan(x + xx)` instead.
+///
+/// Faithful to AMD's `static inline tan_piby4`. The `> 0.68` transforms use
+/// `tan(pi/4 - x) = (1 - tan x)/(1 + tan x)` to hold relative precision near
+/// the interval ends; the core is their Remez [2,3] rational on `[0, 0.68]`.
+// `extern "C"` is load-bearing, not decoration: on the i386 no-SSE baseline the
+// Rust ABI would pass these f64s in xmm and rustc rejects the definition
+// outright. The C ABI uses x87/stack, which is what the rest of this file
+// already relies on.
+extern "C" fn tan_piby4(mut x: f64, mut xx: f64, recip: bool) -> f64 {
+    const PIBY4_LEAD: f64 = 7.85398163397448278999e-01; // 0x3fe921fb54442d18
+    const PIBY4_TAIL: f64 = 3.06161699786838240164e-17; // 0x3c81a62633145c06
+
+    let mut transform = 0i32;
+    if x > 0.68 {
+        transform = 1;
+        x = PIBY4_LEAD - x;
+        let xl = PIBY4_TAIL - xx;
+        x += xl;
+        xx = 0.0;
+    } else if x < -0.68 {
+        transform = -1;
+        x = PIBY4_LEAD + x;
+        let xl = PIBY4_TAIL + xx;
+        x += xl;
+        xx = 0.0;
+    }
+
+    let r = x * x + 2.0 * x * xx;
+    let t1 = x;
+    let t2 = xx
+        + x * r
+            * (0.372379159759792203640806338901e0
+                + (-0.229345080057565662883358588111e-1
+                    + 0.224044448537022097264602535574e-3 * r)
+                    * r)
+            / (0.111713747927937668539901657944e1
+                + (-0.515658515729031149329237816945e0
+                    + (0.260656620398645407524064091208e-1
+                        - 0.232371494088563558304549252913e-3 * r)
+                        * r)
+                    * r);
+
+    if transform != 0 {
+        let t = t1 + t2;
+        let tf = transform as f64;
+        return if recip {
+            tf * (2.0 * t / (t - 1.0) - 1.0)
+        } else {
+            tf * (1.0 - 2.0 * t / (1.0 + t))
+        };
+    }
+
+    if recip {
+        // -1.0/(t1 + t2), computed to more than working precision: split the
+        // sum at the top 32 bits so the correction term is exact.
+        let t = t1 + t2;
+        let z1 = fb64(t.to_bits() & 0xFFFF_FFFF_0000_0000);
+        let z2 = t2 - (z1 - t1);
+        let trec = -1.0 / t;
+        let trec_top = fb64(trec.to_bits() & 0xFFFF_FFFF_0000_0000);
+        trec_top + trec * ((1.0 + trec_top * z1) + trec_top * z2)
+    } else {
+        t1 + t2
+    }
+}
+
+/// The first 1,260 bits of `2/pi`, in 10-bit chunks — AMD's `pibits` table
+/// from `remainder_piby2.c`, transcribed mechanically.
+///
+/// The `_DP64` suffix is not decoration: `remainder_piby2f_inline` further down
+/// carries the SAME two names from AMD's f32 reduction with different values
+/// (36-bit chunks, a 13-entry table), and one file cannot spell two quantities
+/// with one name. The suffixes follow libm_util.h's own DP64/SP32 convention.
+///
+/// The six leading zeros are padding so that `first = xexp / 10` indexes
+/// correctly for small exponents; `last = first + 18` and `xexp <= 1023`, so
+/// the highest index reached is 120.
+#[rustfmt::skip]
+const PIBITS_DP64: [u64; 126] = [
+    0, 0, 0, 0, 0, 0,
+    162, 998, 54, 915, 580, 84, 671, 777, 855, 839,
+    851, 311, 448, 877, 553, 358, 316, 270, 260, 127,
+    593, 398, 701, 942, 965, 390, 882, 283, 570, 265,
+    221, 184, 6, 292, 750, 642, 465, 584, 463, 903,
+    491, 114, 786, 617, 830, 930, 35, 381, 302, 749,
+    72, 314, 412, 448, 619, 279, 894, 260, 921, 117,
+    569, 525, 307, 637, 156, 529, 504, 751, 505, 160,
+    945, 1022, 151, 1023, 480, 358, 15, 956, 753, 98,
+    858, 41, 721, 987, 310, 507, 242, 498, 777, 733,
+    244, 399, 870, 633, 510, 651, 373, 158, 940, 506,
+    997, 965, 947, 833, 825, 990, 165, 164, 746, 431,
+    949, 1004, 287, 565, 464, 533, 515, 193, 111, 798,
+];
+
+/// `void __remainder_piby2(double x, double *r, double *rr, int *region)` —
+/// Payne–Hanek reduction of a positive `x >= 1` into `[-pi/4, pi/4]`.
+///
+/// Returns `(r, rr, region)`: the extra-precise remainder as an unevaluated
+/// sum, and how many quarter-turns were removed, mod 4. Faithful to AMD's C,
+/// including the fully unrolled long multiplication (correct only because
+/// `bitsper` is fixed at 10, as their comment says) and the deliberate
+/// "shifted one place too far" construction of `rr` that the final `*= 2.0`
+/// compensates.
+fn remainder_piby2(x_in: f64) -> (f64, f64, i32) {
+    const PIBY2_LEAD: f64 = 1.57079632679489655800e+00; // 0x3ff921fb54442d18
+    const PIBY2_PART1: f64 = 1.57079631090164184570e+00; // 0x3ff921fb50000000
+    const PIBY2_PART2: f64 = 1.58932547122958567343e-08; // 0x3e5110b460000000
+    const PIBY2_PART3: f64 = 6.12323399573676480327e-17; // 0x3c91a62633145c06
+    const BITSPER_DP64: i32 = 10;
+
+    let mut res = [0u64; 20];
+    let mut ux = x_in.to_bits();
+
+    let xexp = ((ux & 0x7FF0_0000_0000_0000) >> 52) as i32 - 1023;
+    // ux is now the mantissa bit pattern of x as a plain integer.
+    ux = (ux & 0x000F_FFFF_FFFF_FFFF) | 0x0010_0000_0000_0000;
+
+    let mask: u64 = (1u64 << BITSPER_DP64) - 1;
+
+    // The positions of the first and last chunks of 2/pi we need. 180 is the
+    // theoretical maximum number of bits (175 for IEEE double) that must come
+    // out of the middle of 2/pi for this to be accurate enough.
+    let first = xexp / BITSPER_DP64;
+    let resexp = xexp - first * BITSPER_DP64;
+    let last = (first + 180 / BITSPER_DP64) as usize;
+
+    // Long multiplication of the bits of 2/pi by the integer mantissa,
+    // unrolled exactly as the C is.
+    res[19] = 0;
+    let mut u = PIBITS_DP64[last] * ux;
+    res[18] = u & mask;
+    let mut carry = u >> BITSPER_DP64;
+    for k in 1..=18usize {
+        u = PIBITS_DP64[last - k] * ux + carry;
+        res[18 - k] = u & mask;
+        carry = u >> BITSPER_DP64;
+    }
+
+    // Reconstruct the result.
+    let ltb = (((res[0] << BITSPER_DP64) | res[1]) >> (BITSPER_DP64 - 1 - resexp)) as i32 & 7;
+    // determ says whether the fractional part is >= 0.5.
+    let determ = ltb & 1 != 0;
+
+    let mut i = 1usize;
+    let mut mant: u64;
+    let highbitsrr: u64;
+    let region: i32;
+    if determ {
+        // The mantissa is >= 0.5; subtract it from 1.0 by negating the bits.
+        region = ((ltb >> 1) + 1) & 3;
+        mant = !res[1] & ((1u64 << (BITSPER_DP64 - resexp)) - 1);
+        while mant < 0x0020_0000_0000_0000 {
+            i += 1;
+            mant = (mant << BITSPER_DP64) | (!res[i] & mask);
+        }
+        highbitsrr = (!res[i + 1]) << (64 - BITSPER_DP64);
+    } else {
+        region = ltb >> 1;
+        mant = res[1] & ((1u64 << (BITSPER_DP64 - resexp)) - 1);
+        while mant < 0x0020_0000_0000_0000 {
+            i += 1;
+            mant = (mant << BITSPER_DP64) | res[i];
+        }
+        highbitsrr = res[i + 1] << (64 - BITSPER_DP64);
+    }
+
+    let mut rexp = 52 + resexp - i as i32 * BITSPER_DP64;
+    let mut highbitsrr = highbitsrr;
+    while mant >= 0x0020_0000_0000_0000 {
+        rexp += 1;
+        highbitsrr = (highbitsrr >> 1) | ((mant & 1) << 63);
+        mant >>= 1;
+    }
+
+    // Put the result exponent onto the mantissa pattern.
+    let mut u = ((rexp as i64 + 1023) as u64) << 52;
+    let mut bits = (mant & 0x000F_FFFF_FFFF_FFFF) | u;
+    if determ {
+        // If we negated the mantissa we negate x too.
+        bits |= 0x8000_0000_0000_0000;
+    }
+    let mut x = fb64(bits);
+
+    // Build the bit pattern for rr. The shift is one place too far on purpose.
+    highbitsrr >>= 12;
+    u = ((rexp as i64 + 1023 - 53) as u64) << 52;
+    let t = fb64(u);
+    let mut xx = fb64(u | highbitsrr);
+    // Subtract the implicit bit we accidentally added, set the sign, and
+    // double to account for that extra shift.
+    xx -= t;
+    xx *= if determ { -2.0 } else { 2.0 };
+
+    // (x, xx) is an extra-precise version of the fractional part of x * 2/pi.
+    // Multiply it by pi/2 in the same extra precision to get (r, rr).
+    let hx = fb64(x.to_bits() & 0xFFFF_FFFF_F800_0000);
+    let tx = x - hx;
+    let c = PIBY2_LEAD * x;
+    let cc = ((((PIBY2_PART1 * hx - c) + PIBY2_PART1 * tx) + PIBY2_PART2 * hx) + PIBY2_PART2 * tx)
+        + (PIBY2_LEAD * xx + PIBY2_PART3 * x);
+    x = c + cc;
+    (x, (c - x) + cc, region)
+}
+
+/// `double tan(double)` — AMD's `libm_sse2/tan.c`.
 #[no_mangle]
 pub extern "C" fn tan(x: f64) -> f64 {
-    let s = sin(x);
-    let c = cos(x);
-    s / c
+    let ux = x.to_bits();
+    let ax = ux & 0x7FFF_FFFF_FFFF_FFFF;
+
+    if ax <= 0x3fe9_21fb_5444_2d18 {
+        // |x| <= pi/4
+        if ax < 0x3f20_0000_0000_0000 {
+            // |x| < 2^-13
+            if ax < 0x3e40_0000_0000_0000 {
+                // |x| < 2^-27: tan x == x to working precision. (The C raises
+                // AMD_F_INEXACT for the nonzero case via `val_with_flags`,
+                // which is a no-op in this tree — `_set_statfp` on amd64, and
+                // nothing at all elsewhere.)
+                return x;
+            }
+            // The temporary is load-bearing, and the C says why: it stops the
+            // compiler rewriting `x + x*x*x/3` as `x * (1 + x*x/3)`, which
+            // rounds differently and wrongly.
+            let tmp = x * x * x * 0.333333333333333333;
+            return x + tmp;
+        }
+        return tan_piby4(x, 0.0, false);
+    }
+
+    if ux & 0x7FF0_0000_0000_0000 == 0x7FF0_0000_0000_0000 {
+        // NaN → quieted; infinity → the indefinite NaN. (AMD routes both
+        // through _handle_error; this is that call's value.)
+        if ux & 0x000F_FFFF_FFFF_FFFF != 0 {
+            return fb64(ux | 0x0008_0000_0000_0000);
+        }
+        return fb64(0xFFF8_0000_0000_0000);
+    }
+
+    let xneg = ax != ux;
+    let x = if xneg { -x } else { x };
+
+    let (r, rr, region);
+    if x < 5.0e5 {
+        // Subtract the right multiple of pi/2 by hand, carrying extra
+        // precision where x is close to an exact multiple of it.
+        const TWOBYPI: f64 = 6.36619772367581382433e-01; // 0x3fe45f306dc9c883
+        const PIBY2_1: f64 = 1.57079632673412561417e+00; // 0x3ff921fb54400000
+        const PIBY2_1TAIL: f64 = 6.07710050650619224932e-11; // 0x3dd0b4611a626331
+        const PIBY2_2: f64 = 6.07710050630396597660e-11; // 0x3dd0b4611a600000
+        const PIBY2_2TAIL: f64 = 2.02226624879595063154e-21; // 0x3ba3198a2e037073
+        const PIBY2_3: f64 = 2.02226624871116645580e-21; // 0x3ba3198a2e000000
+        const PIBY2_3TAIL: f64 = 8.47842766036889956997e-32; // 0x397b839a252049c1
+
+        let xexp = ax >> 52;
+        // How many pi/2 is x a multiple of?
+        let npi2: i32 = if ax <= 0x400f_6a7a_2955_385e {
+            // 5pi/4
+            if ax <= 0x4002_d97c_7f33_21d2 { 1 } else { 2 } // 3pi/4
+        } else if ax <= 0x401c_463a_becc_b2bb {
+            // 9pi/4
+            if ax <= 0x4015_fdbb_e9bb_a775 { 3 } else { 4 } // 7pi/4
+        } else {
+            (x * TWOBYPI + 0.5) as i32
+        };
+        let n = npi2 as f64;
+
+        let mut rhead = x - n * PIBY2_1;
+        let mut rtail = n * PIBY2_1TAIL;
+        // Unsigned and WRAPPING, exactly as the C's `unsigned long long
+        // expdiff` is: if the remainder's exponent ever exceeded x's, the
+        // difference wraps huge and both `> 15` tests take the extra-precision
+        // branch. A signed subtraction would silently take the other one.
+        let expdiff = xexp.wrapping_sub((rhead.to_bits() & 0x7FF0_0000_0000_0000) >> 52);
+        if expdiff > 15 {
+            // The remainder is small compared with x, so x matches the
+            // multiple of pi/2 to at least 15 bits — go to the next term.
+            let mut t = rhead;
+            rtail = n * PIBY2_2;
+            rhead = t - rtail;
+            rtail = n * PIBY2_2TAIL - ((t - rhead) - rtail);
+            if expdiff > 48 {
+                // ... and to at least 48 bits: one more.
+                t = rhead;
+                rtail = n * PIBY2_3;
+                rhead = t - rtail;
+                rtail = n * PIBY2_3TAIL - ((t - rhead) - rtail);
+            }
+        }
+        r = rhead - rtail;
+        rr = (rhead - r) - rtail;
+        region = npi2 & 3;
+    } else {
+        let red = remainder_piby2(x);
+        r = red.0;
+        rr = red.1;
+        region = red.2;
+    }
+
+    let t = tan_piby4(r, rr, region & 1 != 0);
+    if xneg { -t } else { t }
 }
 
 // ===========================================================================
@@ -2775,9 +3091,9 @@ extern "C" fn tanf_piby4(x: f64, recip: i32) -> f64 {
 /// libm_inlines.h `__remainder_piby2f_inline`: reduce |x| (bits in `ux`) to
 /// [-pi/4,pi/4]; returns (r, region) where region = #pi/2 subtracted mod 4.
 fn remainder_piby2f_inline(ux_in: u64) -> (f64, i32) {
-    const BITSPER: i32 = 36;
+    const BITSPER_SP32: i32 = 36;
     const PIBY2: f64 = 1.57079632679489655800e+00;
-    const PIBITS: [u64; 13] = [
+    const PIBITS_SP32: [u64; 13] = [
         0,
         5215,
         13000023176,
@@ -2795,26 +3111,26 @@ fn remainder_piby2f_inline(ux_in: u64) -> (f64, i32) {
 
     let xexp = (((ux_in & 0x7ff0_0000_0000_0000) >> 52) as i64 - 1023) as i32;
     let ux = ((ux_in & 0x000f_ffff_ffff_ffff) | 0x0010_0000_0000_0000) >> 29;
-    let mask: u64 = (1u64 << BITSPER) - 1;
-    let first = xexp / BITSPER;
-    let resexp = xexp - first * BITSPER;
-    let last = first + 120 / BITSPER;
+    let mask: u64 = (1u64 << BITSPER_SP32) - 1;
+    let first = xexp / BITSPER_SP32;
+    let resexp = xexp - first * BITSPER_SP32;
+    let last = first + 120 / BITSPER_SP32;
 
     let mut res = [0u64; 10];
     res[4] = 0;
-    let mut u = PIBITS[last as usize] * ux;
+    let mut u = PIBITS_SP32[last as usize] * ux;
     res[3] = u & mask;
-    let mut carry = u >> BITSPER;
-    u = PIBITS[(last - 1) as usize] * ux + carry;
+    let mut carry = u >> BITSPER_SP32;
+    u = PIBITS_SP32[(last - 1) as usize] * ux + carry;
     res[2] = u & mask;
-    carry = u >> BITSPER;
-    u = PIBITS[(last - 2) as usize] * ux + carry;
+    carry = u >> BITSPER_SP32;
+    u = PIBITS_SP32[(last - 2) as usize] * ux + carry;
     res[1] = u & mask;
-    carry = u >> BITSPER;
-    u = PIBITS[first as usize] * ux + carry;
+    carry = u >> BITSPER_SP32;
+    u = PIBITS_SP32[first as usize] * ux + carry;
     res[0] = u & mask;
 
-    let ltb = (((res[0] << BITSPER) | res[1]) >> (BITSPER - 1 - resexp)) & 7;
+    let ltb = (((res[0] << BITSPER_SP32) | res[1]) >> (BITSPER_SP32 - 1 - resexp)) & 7;
     let determ = ltb & 1;
 
     let mut i = 1usize;
@@ -2823,18 +3139,18 @@ fn remainder_piby2f_inline(ux_in: u64) -> (f64, i32) {
     let nextbits: u64;
     if determ != 0 {
         region = (((ltb >> 1) + 1) & 3) as i32;
-        mant = !res[1] & ((1u64 << (BITSPER - resexp)) - 1);
+        mant = !res[1] & ((1u64 << (BITSPER_SP32 - resexp)) - 1);
         while mant < 0x0000_0000_0001_0000 {
             i += 1;
-            mant = (mant << BITSPER) | (!res[i] & mask);
+            mant = (mant << BITSPER_SP32) | (!res[i] & mask);
         }
         nextbits = !res[i + 1] & mask;
     } else {
         region = (ltb >> 1) as i32;
-        mant = res[1] & ((1u64 << (BITSPER - resexp)) - 1);
+        mant = res[1] & ((1u64 << (BITSPER_SP32 - resexp)) - 1);
         while mant < 0x0000_0000_0001_0000 {
             i += 1;
-            mant = (mant << BITSPER) | res[i];
+            mant = (mant << BITSPER_SP32) | res[i];
         }
         nextbits = res[i + 1];
     }
@@ -2848,9 +3164,9 @@ fn remainder_piby2f_inline(ux_in: u64) -> (f64, i32) {
         bc += 1;
         mant <<= 1;
     }
-    mant |= nextbits >> (BITSPER - bc);
+    mant |= nextbits >> (BITSPER_SP32 - bc);
 
-    let rexp = 52 + resexp - bc - (i as i32) * BITSPER;
+    let rexp = 52 + resexp - bc - (i as i32) * BITSPER_SP32;
     let mut uxr = ((rexp as i64 + 1023) as u64) << 52;
     uxr = (mant & 0x000f_ffff_ffff_ffff) | uxr;
     if determ != 0 {
