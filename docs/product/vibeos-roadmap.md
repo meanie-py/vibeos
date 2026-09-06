@@ -534,26 +534,36 @@ Field-manual § pointers hold the full writeups. **Update on state change.**
   error surfaces a full frame from the absent DLL. `wow64-closure.py` now keys the derivation
   by READER (ws2_32 reads LibraryPath/PackedCatalogItem, msafd reads HelperDllName) and follows
   dynamic edges transitively. Lesson: a runtime-load edge is never known to be the last one.
-- **AFD IOCTLs are REFUSED because async I/O is unsupported under WoW64 — OPEN, and it is the
-  E25 blocker** (2026-09-05). With the staging fixed, marshal32 finally reaches `select()` and
-  msafd issues `NtDeviceIoControlFile` — **8 log lines, 4 calls, up from zero**. All four are
-  refused before the payload is touched: `async request (Event=... Apc=00000000) is not
-  supported under WoW64 yet (needs kernel-side IO_STATUS_BLOCK32) — refusing`, returning
-  `c0000002`. AFD is inherently async and msafd always passes an Event, so **no AFD call can
-  ever reach the marshallers until this is done** — E25 remains unexercised and unlandable, for
-  a different reason than before. The refusal itself is correct and deliberate
-  (`wow64_manual.c` `Wow64pRefuseAsync`, guarding the dead-frame-IOSB class, field manual
-  §9.36); the owed fix is kernel-side, writing an `IO_STATUS_BLOCK32` on completion when the
-  requesting process is WoW64 — what NT gates with `IoIs32bitProcess()`. See wow64-plan.md.
-- **msafd returns garbage from a FAILED `AFD_SELECT` — OPEN** (2026-09-05). Downstream of the
-  above: with the IOCTL returning `c0000002`, `select()` on a single-socket `fd_set` returned
-  **5** — more than the number of sockets in the set, on a fresh UDP socket nothing was ever
-  sent to. It did NOT return `SOCKET_ERROR`, so a caller checking only for failure would treat
-  5 as five ready sockets. The `fd_set` guard canary was INTACT, so this is a bad return value,
-  not a buffer overrun. Caught only by the ladder rung's `rc != 0` assertion — the check
-  described as "the one with real teeth" when it was written, which is exactly what it turned
-  out to be. Re-check this once async IOCTLs work; it may be purely a
-  failed-IOCTL path, or it may be a live bug in the poll-count accumulation.
+- **AFD IOCTLs were REFUSED because async I/O was unsupported under WoW64 — FIXED,
+  BOOT-VERIFIED** (2026-09-06, ladder `20260906-132106-smoke-amd64`: **9/9 guests PASS**,
+  marshal32 `0xbb04` -> `0x600d`, AFD refusals 4 -> 0, IOCTL statuses `4x c0000002` ->
+  `3x SUCCESS + 1x 00000102`). This was the E25 blocker: msafd always passes an Event because
+  AFD is inherently async, and `Wow64pRefuseAsync` refused on sight, so the E25 marshallers had
+  never once run. The refusal was CORRECT when written — the only IOSB wow64.dll could give the
+  kernel was a host one on its own frame, and pending on that is the dead-frame-IOSB class
+  (field manual §9.36). Fixed the way that comment already said was owed: the kernel writes the
+  GUEST's 8-byte block, which outlives the thunk by construction. The machinery existed already
+  (M15b, built for `NtReadFile`/`NtWriteFile`); the IOCTL family was simply never wired into it.
+  Three obligations in `IopDeviceFsIoControl`, each **silent** rather than loud if skipped:
+  probe the guest block at 8 bytes not 16, mark the IRP, and narrow the write on the fast-I/O
+  path — which completes inline, never builds an IRP, and so can never see the flag. Marshalled
+  IOCTLs still complete synchronously and the reason is the PAYLOAD, not the IOSB: the widened
+  input, WSABUF array and AFD_POLL_INFO shadow are host-heap blocks the thunk frees on the way
+  out, and METHOD_BUFFERED copies SystemBuffer back into that shadow AT COMPLETION. The
+  unmarshalled path has no shadow and is genuinely async now. Blocking has one trap worth
+  remembering: msafd's `SockEvent` is a SYNCHRONIZATION event, so the thunk's own wait consumes
+  the very signal `MsafdWaitForAlert` is about to wait for — missing the re-signal is a guest
+  hang with no error printed anywhere. Still OPEN: a guest `ApcRoutine` (no 64->32 user-APC
+  dispatch).
+- **msafd interprets a FAILED `AFD_SELECT` as success — upstream wart, OPEN but no longer
+  reachable here** (2026-09-05, re-checked 2026-09-06). The `select()` = 5 on a single-socket
+  `fd_set` is explained: `WSPSelect` never checks the IOCTL status before walking `PollInfo`, so
+  a failed IOCTL leaves the guest's own REQUEST mask sitting in `Handles[].Events` and the loop
+  reads it back as the RESULT, `FD_SET`ting sockets that were never ready. It returns the count
+  rather than `SOCKET_ERROR`, though it does set `*lpErrno` — so a caller checking only for
+  failure sees five ready sockets. Byte-faithful to the C, so this is upstream behaviour and is
+  left alone. With the refusal above fixed the precondition is gone (the rung now returns 0 and
+  passes), but the wart would resurface behind any future IOCTL failure.
 - **EVERY CSR call from a WoW64 guest fails — `NtRequestWaitReplyPort => c000000d` — OPEN**
   (2026-09-05). Found while chasing the socket() bug above; it is NOT its cause (there is no
   LPC call inside the socket() window at all — that lead was wrong). It is unconditional and
