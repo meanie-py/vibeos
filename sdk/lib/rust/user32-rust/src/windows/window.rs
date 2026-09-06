@@ -70,9 +70,6 @@ unsafe fn RtlZeroMemory(dst: *mut core::ffi::c_void, len: usize) {
 
 // WINE_DEFAULT_DEBUG_CHANNEL trace macros — no-ops in this build (DUMMY build,
 // the C versions resolve to DbgPrint; the bodies are not load-bearing).
-macro_rules! TRACE { ($($arg:tt)*) => {{ }}; }
-macro_rules! WARN  { ($($arg:tt)*) => {{ }}; }
-macro_rules! ERR   { ($($arg:tt)*) => {{ }}; }
 
 // ───────────────────────────────────────────────────────────────────────────
 // gdi32 / kernel32 / user32 public exports (stdcall → extern "system" on i386).

@@ -117,12 +117,12 @@ pub static MCN_REG_AUTORUN_ENABLE_INSTANCE_NAME: [u16; 16] = [
 ];
 
 // Trace levels/flags (WPP tracing gates; only used to gate DbgPrint-style output)
-const TRACE_LEVEL_ERROR: u32 = 1;
-const TRACE_LEVEL_WARNING: u32 = 2;
-const TRACE_LEVEL_INFORMATION: u32 = 3;
-const TRACE_LEVEL_VERBOSE: u32 = 5;
-const TRACE_FLAG_MCN: u32 = 0x00000010;
-const TRACE_FLAG_POWER: u32 = 0x00000020;
+const TRACE_LEVEL_ERROR: u32 = 2; // storswtr.h:26-30
+const TRACE_LEVEL_WARNING: u32 = 3; // storswtr.h:26-30
+const TRACE_LEVEL_INFORMATION: u32 = 4; // storswtr.h:26-30
+const TRACE_LEVEL_VERBOSE: u32 = 5; // storswtr.h:26-30
+const TRACE_FLAG_MCN: u32 = 12; // storswtr.h:80-98 (an ORDINAL enum, not a bitmask)
+const TRACE_FLAG_POWER: u32 = 2; // storswtr.h:80-98 (an ORDINAL enum, not a bitmask)
 
 // MEDIA_CHANGE_DETECTION_STATE enum values (bindgen-prefixed)
 use crate::types::_MEDIA_CHANGE_DETECTION_STATE_MediaUnknown as MediaUnknown;
@@ -136,7 +136,10 @@ const WDF_REQUEST_SEND_OPTION_SYNCHRONOUS: u32 = 0x02;
 const KEY_ALL_ACCESS: u32 = 0xF003F;
 const CDROM_TAG_AUTORUN_DISABLE: u32 = 0x41436353; // 'DCAT'
 const STATUS_INTERNAL_ERROR: NTSTATUS = 0xC00000E5_u32 as i32;
-const NonPagedPoolNx: u32 = 0x200; // NonPagedPoolNx
+// cdrom.h:68: `#define NonPagedPoolNx NonPagedPool` under
+// `#ifdef __REACTOS__` -- NX pool is NT6.2 and this kernel has none, so the
+// Windows value (0x200/0x204) is not what any TU here compiles.
+const NonPagedPoolNx: u32 = 0;
 
 const PARAMETER_KEY_NAME: [u16; 11] = [
     0x0050, 0x0061, 0x0072, 0x0061, 0x006D, 0x0065, 0x0074, 0x0065, 0x0072, 0x0073, 0
@@ -161,7 +164,10 @@ const STATUS_INVALID_DEVICE_STATE: NTSTATUS = (0xC0000184u32 as i32) as NTSTATUS
 
 // Constants
 const CDROM_TAG_GESN: u32 = 0x47436353; // 'GESN' tag (little-endian)
-const NonPagedPoolNxCacheAligned: u32 = 0x204; // NonPagedPoolNx (512) + CacheAligned (4)
+// cdrom.h:68: `#define NonPagedPoolNxCacheAligned NonPagedPoolCacheAligned` under
+// `#ifdef __REACTOS__` -- NX pool is NT6.2 and this kernel has none, so the
+// Windows value (0x200/0x204) is not what any TU here compiles.
+const NonPagedPoolNxCacheAligned: u32 = 4;
 
 // Registry key/value name strings (wide strings, matching DeviceGetParameter/DeviceSetParameter PWSTR args)
 static CLASSP_REG_SUBKEY_NAME_W: [u16; 6] = [b'C' as u16, b'l' as u16, b'a' as u16, b's' as u16, b's' as u16, 0];
@@ -312,7 +318,7 @@ pub unsafe extern "C" fn GesnDataInterpret(
                         (*DeviceExtension).Device as *const core::ffi::c_void,
                     );
 
-                    core::debug_assert!(CountOfSetBitsUChar((*info).Gesn.EventMask) != 1);
+                    ntkrnl_sys::ASSERT!(CountOfSetBitsUChar((*info).Gesn.EventMask) != 1);
 
                     (*info).Gesn.NoChangeEventMask |= OpChangeMask;
                     (*info).Gesn.EventMask &= !OpChangeMask;
@@ -1242,7 +1248,7 @@ pub unsafe extern "C" fn DeviceInitializeGesn(
     let mut atapiResets: u32 = 0;
     let info: *mut MEDIA_CHANGE_DETECTION_INFO = (*DeviceExtension).MediaChangeDetectionInfo;
 
-    debug_assert!(!info.is_null(), "info != NULL");
+    ntkrnl_sys::ASSERT!(!info.is_null(), "info != NULL");
 
     // Read if we already know the abilities of the device
     DeviceGetParameter(
@@ -1328,10 +1334,7 @@ pub unsafe extern "C" fn DeviceInitializeGesn(
                 break;
             }
 
-            debug_assert!(
-                ((*info).MediaChangeSrb.SrbFlags & SRB_FLAGS_NO_QUEUE_FREEZE) != 0,
-                "SRB_FLAGS_NO_QUEUE_FREEZE not set"
-            );
+            ntkrnl_sys::ASSERT!(((*info).MediaChangeSrb.SrbFlags & SRB_FLAGS_NO_QUEUE_FREEZE) != 0, "SRB_FLAGS_NO_QUEUE_FREEZE not set");
 
             status = DeviceSendRequestSynchronously((*DeviceExtension).Device, (*info).MediaChangeRequest, 1);
 
@@ -1795,10 +1798,10 @@ pub unsafe extern "system" fn DeviceMediaChangeRegistryCallBack(
     Context: *mut core::ffi::c_void,
     EntryContext: *mut core::ffi::c_void,
 ) -> i32 {
-    const TRACE_LEVEL_WARNING: u32 = 2;
-    const TRACE_LEVEL_INFORMATION: u32 = 3;
-    const TRACE_LEVEL_VERBOSE: u32 = 5;
-    const TRACE_FLAG_MCN: u32 = 0x10;
+    const TRACE_LEVEL_WARNING: u32 = 3; // storswtr.h:26-30
+    const TRACE_LEVEL_INFORMATION: u32 = 4; // storswtr.h:26-30
+    const TRACE_LEVEL_VERBOSE: u32 = 5; // storswtr.h:26-30
+    const TRACE_FLAG_MCN: u32 = 12; // storswtr.h:80-98 (an ORDINAL enum, not a bitmask)
     const TRUE: u32 = 1;
 
     PAGED_CODE();
@@ -2363,7 +2366,7 @@ pub unsafe extern "system" fn RequestMcnSyncIrpCompletion(
     }
     let _ = DeviceObject;
 
-    debug_assert!(Irp == (*info).MediaChangeSyncIrp);
+    ntkrnl_sys::ASSERT!(Irp == (*info).MediaChangeSyncIrp);
 
     ntkrnl_sys::ddk::IoReuseIrp((*info).MediaChangeSyncIrp, ntkrnl_sys::constants::STATUS_NOT_SUPPORTED);
 

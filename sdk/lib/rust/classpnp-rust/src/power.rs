@@ -513,16 +513,16 @@ pub unsafe extern "system" fn ClasspPowerDownCompletion(
     }
 
     let srbFlags = SrbGetSrbFlags(srbHeader as PVOID);
-    assert!(
+    ntkrnl_sys::ASSERT!(
         srbFlags & SRB_FLAGS_FREE_SENSE_BUFFER == 0,
         "!TEST_FLAG(srbFlags, SRB_FLAGS_FREE_SENSE_BUFFER)"
     );
-    assert!(
+    ntkrnl_sys::ASSERT!(
         srbFlags & SRB_FLAGS_PORT_DRIVER_ALLOCSENSE == 0,
         "!TEST_FLAG(srbFlags, SRB_FLAGS_PORT_DRIVER_ALLOCSENSE)"
     );
-    assert!((*PowerContext).Options.PowerDown() == (TRUE) as u32, "PowerContext->Options.PowerDown == TRUE");
-    assert!((*PowerContext).Options.HandleSpinDown() != 0, "PowerContext->Options.HandleSpinDown");
+    ntkrnl_sys::ASSERT!((*PowerContext).Options.PowerDown() == (TRUE) as u32, "PowerContext->Options.PowerDown == TRUE");
+    ntkrnl_sys::ASSERT!((*PowerContext).Options.HandleSpinDown() != 0, "PowerContext->Options.HandleSpinDown");
 
     if Irp == OriginalIrp && (*Irp).PendingReturned != 0 {
         IoMarkIrpPending(Irp);
@@ -1120,8 +1120,8 @@ pub unsafe extern "system" fn ClasspPowerDownCompletion(
                         b"(%p)\tPreviously unlocked queue\n\0".as_ptr() as *const i8,
                         OriginalIrp,
                     );
-                    assert!(NT_SUCCESS((*Irp).IoStatus.__bindgen_anon_1.Status), "NT_SUCCESS(Irp->IoStatus.__bindgen_anon_1.Status)");
-                    assert!((*srbHeader).SrbStatus == (SRB_STATUS_SUCCESS) as u8, "srbHeader->SrbStatus == SRB_STATUS_SUCCESS");
+                    ntkrnl_sys::ASSERT!(NT_SUCCESS((*Irp).IoStatus.__bindgen_anon_1.Status), "NT_SUCCESS(Irp->IoStatus.__bindgen_anon_1.Status)");
+                    ntkrnl_sys::ASSERT!((*srbHeader).SrbStatus == (SRB_STATUS_SUCCESS) as u8, "srbHeader->SrbStatus == SRB_STATUS_SUCCESS");
                     if NT_SUCCESS((*Irp).IoStatus.__bindgen_anon_1.Status) {
                         (*PowerContext).QueueLocked = FALSE;
                     }

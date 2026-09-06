@@ -26,9 +26,6 @@ use acpica_sys::{AcpiEvaluateObject, AcpiGetName};
 // ACPICA constants bindgen emits.
 use acpica_sys::{ACPI_SINGLE_NAME, ACPI_TYPE_INTEGER};
 
-// DPRINT/DPRINT1/ASSERT/PAGED_CODE are no-ops under the driver's NDEBUG build.
-macro_rules! DPRINT  { ($($t:tt)*) => {}; }
-macro_rules! DPRINT1 { ($($t:tt)*) => {}; }
 // ACPI_DEBUG_PRINT / ACPI_FUNCTION_TRACE / ACPI_MODULE_NAME are no-ops (NDEBUG).
 macro_rules! ACPI_DEBUG_PRINT { ($($t:tt)*) => {}; }
 
@@ -414,7 +411,7 @@ pub unsafe extern "C" fn acpi_device_sleep_wake(
     if ACPI_SUCCESS(status) {
         return 0;
     } else if status != AE_NOT_FOUND {
-        DPRINT1!();
+        DPRINT1!("_DSW execution failed\n");
         (*dev).wakeup.flags.set_valid(0);
         return -1;
     }
@@ -429,7 +426,7 @@ pub unsafe extern "C" fn acpi_device_sleep_wake(
         core::ptr::null_mut(),
     );
     if ACPI_FAILURE(status) && (status != AE_NOT_FOUND) {
-        DPRINT1!();
+        DPRINT1!("_PSW execution failed\n");
         (*dev).wakeup.flags.set_valid(0);
         return -1;
     }

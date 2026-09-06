@@ -272,6 +272,9 @@ def test_generated_banner_is_what_identifies_an_island(tmp_path):
     # A hand-written per-arch module sharing the naming convention carries no banner.
     (src / "seh_i386.rs").write_text("pub fn hand_written() {}\n")
 
+    # island_paths groups by stem before arch, so one crate's independent bindgen runs never
+    # pool their witnesses (see test_witness_does_not_leak_across_stems).
     found = normalize.island_paths(src)
-    assert [p.name for p in found["i386"]] == ["win_sys_i386.rs"]
-    assert [p.name for p in found["amd64"]] == ["win_sys_amd64.rs"]
+    assert [p.name for p in found["win_sys"]["i386"]] == ["win_sys_i386.rs"]
+    assert [p.name for p in found["win_sys"]["amd64"]] == ["win_sys_amd64.rs"]
+    assert "seh" not in found, "a bannerless hand-written per-arch module is not an island"

@@ -118,7 +118,6 @@ pub unsafe extern "system" fn MIDL_user_free(ptr: *mut core::ffi::c_void) {
 pub unsafe extern "system" fn DNSRSLVR_RPC_HANDLE_rundown(hClientHandle: DNSRSLVR_HANDLE) {
 }
 
-
 // ============================================================================
 // ORIGINAL C SOURCE
 // ============================================================================

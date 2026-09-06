@@ -90,10 +90,7 @@ pub use crate::shellutils::{
 // would re-open exactly the nominal split the module header warns about.
 pub use crate::win32::{CopyMemory, HIWORD, LOWORD, ZeroMemory};
 // Crate-root `#[macro_export]` macros — text substitution, so no types to split on.
-pub use crate::{
-    FIELD_OFFSET, ImageList_AddIcon, MAKELONG, MAKEROP4, TRACE_ON, UNREFERENCED_PARAMETER, V_BSTR,
-    V_VT, _countof,
-};
+pub use crate::{FIELD_OFFSET, ImageList_AddIcon, MAKELONG, MAKEROP4, TRACE_ON, UNREFERENCED_PARAMETER, V_BSTR, V_VT, _countof};
 
 // shell32-internal helpers that already have a Rust home. These are shell32's own EXPORTS —
 // the island correctly omits them, because `BLOCKLIST_FUNCS_FROM_CRATE` drops every function

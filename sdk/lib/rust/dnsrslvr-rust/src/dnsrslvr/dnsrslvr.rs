@@ -59,7 +59,6 @@ unsafe extern "system" fn ServiceControlHandler(
     }
 }
 
-
 #[no_mangle]
 pub unsafe extern "system" fn ServiceMain(
     argc: u32,
@@ -124,7 +123,6 @@ pub unsafe extern "system" fn DllMain(
     }
     1i32
 }
-
 
 // ============================================================================
 // ORIGINAL C SOURCE

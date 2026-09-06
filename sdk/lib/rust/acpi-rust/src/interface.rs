@@ -25,13 +25,6 @@ use ntkrnl_sys::ddk::{
 // must come from the ntkrnl-sys inline impl or the cohab link fails.
 use ntkrnl_sys::inline::tier1::IoGetCurrentIrpStackLocation;
 
-// DPRINT/DPRINT1/ASSERT/PAGED_CODE are no-ops under the driver's NDEBUG build.
-macro_rules! DPRINT {
-    ($($t:tt)*) => {};
-}
-macro_rules! DPRINT1 {
-    ($($t:tt)*) => {};
-}
 // `UNIMPLEMENTED` is a no-op marker macro in the ReactOS DDK.
 macro_rules! UNIMPLEMENTED {
     () => {};
@@ -151,7 +144,7 @@ pub unsafe extern "C" fn Bus_PDO_QueryInterface(
     if (*IrpSp).Parameters.QueryInterface.Version != 1 {
         DPRINT1!(
             "Invalid version number: %d\n",
-            (*IrpSp).Parameters.QueryInterface.Version
+            (*IrpSp).Parameters.QueryInterface.Version as core::ffi::c_uint
         );
         return STATUS_INVALID_PARAMETER;
     }
@@ -169,7 +162,7 @@ pub unsafe extern "C" fn Bus_PDO_QueryInterface(
         {
             DPRINT1!(
                 "Buffer too small! (%d)\n",
-                (*IrpSp).Parameters.QueryInterface.Size
+                (*IrpSp).Parameters.QueryInterface.Size as core::ffi::c_uint
             );
             return STATUS_BUFFER_TOO_SMALL;
         }

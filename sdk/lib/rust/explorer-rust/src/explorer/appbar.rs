@@ -107,14 +107,14 @@ pub unsafe extern "C" fn CAppBarManager_OnAppBarNew(
 
     if !(*this).m_hAppBarDPA.is_null() {
         if !CAppBarManager_FindAppBar(this, hWnd).is_null() {
-            ERR!(b"Already exists: %p\n\0".as_ptr() as PCHAR, hWnd);
+            ERR!("Already exists: %p\n", hWnd);
             return 0u8;
         }
     } else {
         let c_nGrow: UINT = 4;
         (*this).m_hAppBarDPA = DPA_Create(c_nGrow as INT);
         if (*this).m_hAppBarDPA.is_null() {
-            ERR!(b"Out of memory\n\0".as_ptr() as PCHAR);
+            ERR!("Out of memory\n");
             return 0u8;
         }
     }
@@ -131,7 +131,7 @@ pub unsafe extern "C" fn CAppBarManager_OnAppBarNew(
         LocalFree(pAppBar as HLOCAL);
     }
 
-    ERR!(b"Out of memory\n\0".as_ptr() as PCHAR);
+    ERR!("Out of memory\n");
     0u8
 }
 
@@ -174,19 +174,19 @@ pub unsafe extern "C" fn CAppBarManager_OnAppBarQueryPos(
     let hWnd = UlongToHandle((*pData).abd.hWnd32) as HWND;
     let pAppBar1 = CAppBarManager_FindAppBar(this, hWnd);
     if pAppBar1.is_null() {
-        ERR!(b"Not found: %p\n\0".as_ptr() as *const i8, hWnd);
+        ERR!("Not found: %p\n", hWnd);
         return;
     }
 
     let pOutput = AppBar_LockOutput(pData);
     if pOutput.is_null() {
-        ERR!(b"!pOutput: %d\n\0".as_ptr() as *const i8, (*pData).dwProcessId);
+        ERR!("!pOutput: %d\n", (*pData).dwProcessId);
         return;
     }
     (*pOutput).rc = (*pData).abd.rc;
 
     if IsRectEmpty(&(*pOutput).rc) != 0 {
-        ERR!(b"IsRectEmpty\n\0".as_ptr() as *const i8);
+        ERR!("IsRectEmpty\n");
     }
 
     let hMon1 = MonitorFromRect(&(*pOutput).rc, MONITOR_DEFAULTTOPRIMARY);
@@ -274,7 +274,7 @@ pub unsafe extern "C" fn CAppBarManager_OnAppBarNotifyAll(
 ) {
 
     TRACE!(
-        b"%p, %p, 0x%X, %p\n\0".as_ptr() as *const i8,
+        "%p, %p, 0x%X, %p\n",
         hMon,
         hwndIgnore,
         dwNotify,
@@ -681,7 +681,7 @@ pub unsafe extern "C" fn CAppBarManager_GetAppBarMessage(
     if (*pCopyData).cbData != core::mem::size_of::<APPBAR_COMMAND>() as u32
         || (*pData).abd.cbSize != core::mem::size_of_val(&(*pData).abd) as u32
     {
-        ERR!(b"Invalid AppBar message\n\0".as_ptr() as *const i8);
+        ERR!("Invalid AppBar message\n");
         return core::ptr::null_mut();
     }
 
@@ -704,7 +704,7 @@ pub unsafe extern "C" fn CAppBarManager_OnAppBarGetTaskbarPos(
 
     let pOutput = AppBar_LockOutput(pData);
     if pOutput.is_null() {
-        ERR!(b"!pOutput: %d\n\0".as_ptr() as *const i8, (*pData).dwProcessId);
+        ERR!("!pOutput: %d\n", (*pData).dwProcessId);
         return 0u8;
     }
 
@@ -723,7 +723,7 @@ pub unsafe extern "C" fn CAppBarManager_OnAppBarActivationChange(
     let hWnd = UlongToHandle((*pData).abd.hWnd32) as HWND;
     let pAppBar = FindAppBar(this, hWnd);
     if pAppBar.is_null() {
-        ERR!(b"Not found: %p\n\0".as_ptr() as *const i8, hWnd);
+        ERR!("Not found: %p\n", hWnd);
         return;
     }
 
@@ -826,7 +826,7 @@ pub unsafe extern "C" fn CAppBarManager_OnAppBarMessage(
             CAppBarManager_OnAppBarSetState(this, (*pData).abd.lParam64 as UINT);
         }
         _ => {
-            FIXME!(b"0x%X\n\0".as_ptr() as *const i8, (*pData).dwMessage);
+            FIXME!("0x%X\n", (*pData).dwMessage);
             return 0;
         }
     }

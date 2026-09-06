@@ -376,7 +376,8 @@ unsafe fn CmpAddDriverToList(
     let mut Buffer: *mut u16;
 
     const CM_BOOT_DEBUG: u32 = 0;
-    const TAG_CM: u32 = 0x4D432020;
+    // C: cmlib.h `#define TAG_CM '  MC'`. A multi-char literal is BIG-endian. cmboot.c:387
+    const TAG_CM: u32 = u32::from_be_bytes(*b"  MC");
     const HCELL_NIL: HCELL_INDEX = 0xFFFFFFFF;
     const REG_SZ: u32 = 1;
     const REG_EXPAND_SZ: u32 = 2;
@@ -1367,7 +1368,8 @@ unsafe fn CmpIsSafe(
     const REG_EXPAND_SZ: u32 = 2;
     const KEY_COMP_NAME: u16 = 0x0020;
     const OBJ_NAME_PATH_SEPARATOR: u16 = '\\' as u16;
-    const TAG_CM: u32 = 0x20434D20;
+    // C: cmlib.h `#define TAG_CM '  MC'`. A multi-char literal is BIG-endian. cmboot.c:387
+    const TAG_CM: u32 = u32::from_be_bytes(*b"  MC");
 
     DriverNode = HvGetCell(Hive, DriverCell) as PCM_KEY_NODE;
     if DriverNode.is_null() {

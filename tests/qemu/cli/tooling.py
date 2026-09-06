@@ -43,6 +43,14 @@ _PYTEST_SUITES = [
     (".", ".", "tools/test_verify_cohab_coverage.py"),
     (".", ".", "tools/test_scan_import_cc.py"),
     (".", ".", "tools/test_scan_octal_literals.py"),
+    (".", ".", "tools/test_scan_invented_constants.py"),
+    (".", ".", "tools/test_kernel_probe.py"),
+    (".", ".", "tools/test_scan_orphan_modules.py"),
+    (".", ".", "tools/test_build_invalidation.py"),
+    (".", ".", "tools/test_cargo_depgraph.py"),
+    (".", ".", "tools/test_retarget_cargo_depfile.py"),
+    (".", ".", "tools/test_rust_module_tree.py"),
+    (".", ".", "tools/test_scan_self_recursive.py"),
     # Same shape as the two above: the matcher is pure functions over a string, and its
     # positive control is the real demangler bug — a sequencing error that shipped because
     # no value-based check can see it.
@@ -54,6 +62,12 @@ _PYTEST_SUITES = [
     # (§9.120). Also fails on any gate lint that is in neither the control table
     # nor the documented-exemption list, so coverage gaps stay loud.
     (".", ".", "tools/test_scanner_controls.py"),
+    # A WRITE-capable tool needs the same treatment as a read-only one, and more:
+    # migrate_debug_assert rewrote 454 sites, and its failure modes (a dropped
+    # message, a mangled path-qualified invocation, a silently skipped form) all
+    # leave a tree that still compiles. It shipped `core::ntkrnl_sys::ASSERT!` into
+    # 15 files on its first run.
+    (".", ".", "tools/test_migrate_debug_assert.py"),
 ]
 
 

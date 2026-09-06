@@ -120,6 +120,11 @@ def scan_phantoms(roots):
 
 def scan(roots):
     findings, declared, rootless, stale = [], [], [], []
+    # Membership is queried once per file, but the crate's reachable set is
+    # invariant during this scan. Re-normalizing N paths for each of N files
+    # made large crates quadratic in realpath calls. Keep this cache local:
+    # later scans must not inherit a previous scan's normalized membership.
+    normalized_live = {}
     for root in roots:
         for dirpath, dirnames, filenames in os.walk(root):
             dirnames[:] = [d for d in dirnames if d not in SKIP_DIRS]
@@ -144,10 +149,12 @@ def scan(roots):
                     continue
                 if crate_is_opaque(crate):
                     continue
-                live = crate_live_files(crate)
+                if crate not in normalized_live:
+                    normalized_live[crate] = {os.path.realpath(x) for x in crate_live_files(crate)}
+                live = normalized_live[crate]
                 if not live:  # unparseable crate -> fail open
                     continue
-                if os.path.realpath(path) in {os.path.realpath(x) for x in live}:
+                if os.path.realpath(path) in live:
                     # WIRED. If it still carries the banner, that banner is a LIE, and a
                     # lying banner is worse than no banner: `scan_extern_arity` and
                     # `scan_cc_mismatch` both skip a file on sight of it, on the stated

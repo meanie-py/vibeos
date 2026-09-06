@@ -544,6 +544,22 @@ def source_lint_specs(repo: Path) -> list[tuple]:
             "stdout",
         )
     )
+    # C's `!x` is LOGICAL not; Rust's `!x` on an integer is BITWISE. So a translated
+    # `!(flags & FLAG)` becomes `!(flags & FLAG) != 0`, which is true for every value a
+    # flag test can produce — a CONSTANT condition that types fine, compiles clean and
+    # trips no rustc lint. Eight sites on 2026-07-26, and only three were assertions:
+    # the rest were live branches, including classpnp's ADJUST_FUA_FLAG collapsing to
+    # its first term (forcing FUA onto devices that had reported it unsupported) and an
+    # always-true arm that disabled win32k's CJK line-break rule. Nothing but reading
+    # the C finds these, which is exactly why it is a gate. Baseline is EMPTY.
+    sbn = repo / "tools" / "scan_bitwise_not_bool.py"
+    specs.append(
+        (
+            "scan_bitwise_not_bool",
+            [py, str(sbn), "--lint"] if sbn.is_file() else ["MISSING"],
+            "stdout",
+        )
+    )
     # One constant name, two values, both ours (§9.113b). The ORACLE-FREE half of
     # the invented-constant hunt: verify_constants needs the right C header in its
     # catalog, and the 18 findings of 2026-07-24 hid precisely because theirs
@@ -558,6 +574,26 @@ def source_lint_specs(repo: Path) -> list[tuple]:
         (
             "scan_const_contradictions",
             [py, str(scc), "--lint"] if scc.is_file() else ["MISSING"],
+            "stdout",
+        )
+    )
+    # The ORACLE-BEARING half, and the half the above is blind to by construction:
+    # a constant with exactly ONE definition in the tree cannot contradict itself,
+    # so a lone wrong value is invisible there forever. This one needs no inference
+    # because the translator labelled the population itself -- "// placeholder",
+    # "// guessed value", "// assumed" -- and then resolves each name against a
+    # NARROWLY scoped oracle (the C module the crate translates, plus the SDK
+    # headers), because a repo-wide catalog collides on short names and its
+    # findings are overwhelmingly false (§9.113b). fastfat's
+    # IRP_CONTEXT_FLAG_DISABLE_DIRTY was one of these, at 0x100 against
+    # fatstruc.h's 0x01, and it cost a BUGCHECK 0x50 on arm64 through an infinite
+    # recursion whose guard could never fire. MISMATCH is a defect; UNRESOLVED is
+    # a review queue, so the baseline gates NEW only.
+    sic = repo / "tools" / "scan_invented_constants.py"
+    specs.append(
+        (
+            "scan_invented_constants",
+            [py, str(sic), "--lint"] if sic.is_file() else ["MISSING"],
             "stdout",
         )
     )
@@ -869,8 +905,15 @@ def source_lint_specs(repo: Path) -> list[tuple]:
     return specs
 
 
-def run_source_lints(run: Run, repo: Path, *, strict: bool) -> None:
-    for name, cmd, src in source_lint_specs(repo):
+def run_source_lints(run: Run, repo: Path, *, strict: bool, only: set[str] | None = None) -> None:
+    specs = source_lint_specs(repo)
+    if only is not None:
+        unknown = only - {name for name, _, _ in specs}
+        if not only or unknown:
+            raise ValueError(f"empty or unknown scanner selection: {sorted(unknown)}")
+    for name, cmd, src in specs:
+        if only is not None and name not in only:
+            continue
         _lint_stage(run, repo, name, cmd, strict=strict, findings_from=src)
 
 

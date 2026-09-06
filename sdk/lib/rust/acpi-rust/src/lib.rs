@@ -16,6 +16,11 @@
 //! `AcpiOsPrintf` (C-variadic) stays a tiny C shim (acpi_printf_shim.c); under
 //! the driver's NDEBUG build `AcpiOsVprintf` is a no-op anyway.
 
+// DPRINT/DPRINT1 for the whole crate; `#[macro_use]` must precede the modules
+// that call them (macro_rules! is textually scoped).
+#[macro_use]
+mod dprint;
+
 pub mod types;
 pub mod shared;
 pub mod osl;

@@ -210,6 +210,78 @@ SetTokenSessionIdTests(
     ok_ntstatus(Status, STATUS_PRIVILEGE_NOT_HELD);
 }
 
+/* Bad captures must neither fault the kernel nor retain token references. */
+static
+VOID
+SetTokenCaptureFailureTests(HANDLE Token)
+{
+    NTSTATUS Status;
+    OBJECT_BASIC_INFORMATION Before, After;
+    ULONG i;
+    PVOID Page;
+    ULONG OldProtect;
+
+    Page = VirtualAlloc(NULL, 4096, MEM_COMMIT | MEM_RESERVE, PAGE_READWRITE);
+    ok(Page != NULL, "Failed to allocate capture test page\n");
+    if (!Page)
+        return;
+
+    Status = NtQueryObject(Token, ObjectBasicInformation, &Before, sizeof(Before), NULL);
+    ok_ntstatus(Status, STATUS_SUCCESS);
+    if (!NT_SUCCESS(Status))
+    {
+        VirtualFree(Page, 0, MEM_RELEASE);
+        return;
+    }
+
+    /* Range-valid and aligned, but inaccessible when the kernel captures it. */
+    if (!VirtualProtect(Page, 4096, PAGE_NOACCESS, &OldProtect))
+    {
+        ok(0, "Failed to protect capture test page\n");
+        VirtualFree(Page, 0, MEM_RELEASE);
+        return;
+    }
+    for (i = 0; i < 16; ++i)
+    {
+        Status = NtSetInformationToken(Token, TokenOwner, Page, sizeof(TOKEN_OWNER));
+        ok_ntstatus(Status, STATUS_ACCESS_VIOLATION);
+    }
+    Status = NtQueryObject(Token, ObjectBasicInformation, &After, sizeof(After), NULL);
+    ok_ntstatus(Status, STATUS_SUCCESS);
+    if (NT_SUCCESS(Status))
+        ok_eq_ulong(After.PointerCount, Before.PointerCount);
+
+    VirtualFree(Page, 0, MEM_RELEASE);
+}
+
+static
+VOID
+SetTokenAuditExtentTests(HANDLE Token)
+{
+    NTSTATUS Status;
+    /* Internal se.h wire format: ULONG count + { ULONG category; UCHAR value; }.
+     * Twelve bytes hold one entry, including its alignment padding. */
+    ULONG Policy[3] = {0};
+    ULONG TwoPolicies[5] = {2, 0, 0, 0, 0};
+
+    Status = NtSetInformationToken(Token, TokenAuditPolicy, &Policy, 0);
+    ok_ntstatus(Status, STATUS_INFO_LENGTH_MISMATCH);
+
+    Policy[0] = 2;
+    Status = NtSetInformationToken(Token, TokenAuditPolicy, &Policy, sizeof(Policy));
+    ok_ntstatus(Status, STATUS_INFO_LENGTH_MISMATCH);
+
+    /* This count overflows a 32-bit byte extent and exceeds a 64-bit buffer. */
+    Policy[0] = MAXULONG;
+    Status = NtSetInformationToken(Token, TokenAuditPolicy, &Policy, sizeof(Policy));
+    ok_ntstatus(Status, STATUS_INFO_LENGTH_MISMATCH);
+
+    /* A complete variable-length array must reach the privilege check. Like
+     * SetTokenSessionIdTests, this test runs without enabled TCB privilege. */
+    Status = NtSetInformationToken(Token, TokenAuditPolicy, TwoPolicies, sizeof(TwoPolicies));
+    ok_ntstatus(Status, STATUS_PRIVILEGE_NOT_HELD);
+}
+
 START_TEST(NtSetInformationToken)
 {
     NTSTATUS Status;
@@ -240,6 +312,8 @@ START_TEST(NtSetInformationToken)
     ok_ntstatus(Status, STATUS_INVALID_INFO_CLASS);
 
     /* Now perform tests for each class */
+    SetTokenCaptureFailureTests(Token);
+    SetTokenAuditExtentTests(Token);
     SetTokenDefaultDaclTests(Token);
     SetTokenSessionIdTests(Token);
 

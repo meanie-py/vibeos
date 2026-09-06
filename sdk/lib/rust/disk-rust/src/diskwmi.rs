@@ -285,8 +285,10 @@ const IOCTL_SCSI_MINIPORT_READ_SMART_THRESHOLDS: u32 = 0x050024;
 const IOCTL_SCSI_MINIPORT_READ_SMART_LOG: u32 = 0x050028;
 const IOCTL_SCSI_MINIPORT_WRITE_SMART_LOG: u32 = 0x05002C;
 const IOCTL_SCSI_MINIPORT_IDENTIFY: u32 = 0x050030;
-const SRB_TYPE_STORAGE_REQUEST_BLOCK: u8 = 3;
-const SRB_FUNCTION_STORAGE_REQUEST_BLOCK: u8 = 0x10;
+const SRB_TYPE_STORAGE_REQUEST_BLOCK: u8 = 1; // srb.h:664
+// ddk/srb.h:108 == 0x28. This constant is WRITTEN into srbEx.Function here and TESTED
+// against a second, differently-wrong copy below -- the test could never match.
+const SRB_FUNCTION_STORAGE_REQUEST_BLOCK: u8 = 0x28;
 const SRB_SIGNATURE: u32 = 0x53524253;
 const STORAGE_REQUEST_BLOCK_VERSION_1: u32 = 1;
 const SRB_FUNCTION_IO_CONTROL: u32 = 2;
@@ -294,17 +296,19 @@ const SRB_FLAGS_DATA_IN: u32 = 0x40;
 const SRB_FLAGS_NO_QUEUE_FREEZE: u32 = 0x100;
 const SRB_FLAGS_NO_KEEP_AWAKE: u32 = 0x100000;
 const SRB_SIMPLE_TAG_REQUEST: u16 = 0x20;
-const SP_UNTAGGED: u32 = 0;
-const STOR_ADDRESS_TYPE_BTL8: u16 = 0;
-const STOR_ADDR_BTL8_ADDRESS_LENGTH: u32 = 0xC;
+// ddk/srb.h:55 `#define SP_UNTAGGED ((UCHAR) ~0)` == 0xFF. QueueTag is a UCHAR, so
+// neither 0 nor 0xFFFFFFFF can ever compare equal to an untagged request.
+const SP_UNTAGGED: u32 = 0xFF;
+const STOR_ADDRESS_TYPE_BTL8: u16 = 1; // scsi.h:3571 (0 is STOR_ADDRESS_TYPE_UNKNOWN)
+const STOR_ADDR_BTL8_ADDRESS_LENGTH: u32 = 4; // scsi.h:3574
 const SMART_CYL_LOW: u8 = 0x4F;
 const SMART_CYL_HI: u8 = 0xC2;
 const IRP_MJ_SCSI: u32 = 0x0F;
 
 const IOCTL_STORAGE_PREDICT_FAILURE: u32 = 0x002D1100;
 
-const TRACE_LEVEL_ERROR: u32 = 3;
-const TRACE_FLAG_WMI: u32 = 0x800;
+const TRACE_LEVEL_ERROR: u32 = 2; // storswtr.h:26-30
+const TRACE_FLAG_WMI: u32 = 6; // storswtr.h:80-98 (an ORDINAL enum, not a bitmask)
 const STATUS_IO_DEVICE_ERROR: i32 = 0xC0000185_u32 as i32;
 
 #[repr(C)]
@@ -324,14 +328,17 @@ type KIRQL = u8;
 type PCSTR = *const i8;
 
 
-const NonPagedPoolNx: u32 = 0x200;
-const TRACE_FLAG_GENERAL: u32 = 0;
+// disk.h:75: `#define NonPagedPoolNx NonPagedPool` under
+// `#ifdef __REACTOS__` -- NX pool is NT6.2 and this kernel has none, so the
+// Windows value (0x200/0x204) is not what any TU here compiles.
+const NonPagedPoolNx: u32 = 0;
+const TRACE_FLAG_GENERAL: u32 = 0; // storswtr.h:80-98 (an ORDINAL enum, not a bitmask)
 
 
 // Forward declarations for unknown functions
 
 // Constants required by the function
-const TRACE_LEVEL_INFORMATION: u32 = 4;
+const TRACE_LEVEL_INFORMATION: u32 = 4; // storswtr.h:26-30
 const MODE_PAGE_FAULT_REPORTING: UCHAR = 0x1C;
 const STATUS_WMI_READ_ONLY: NTSTATUS = 0xC00002C6u32 as i32;
 const STATUS_WMI_GUID_NOT_FOUND: NTSTATUS = 0xC0000295u32 as i32;
@@ -339,7 +346,9 @@ const IO_NO_INCREMENT: CCHAR = 0;
 
 
 const SMART_LOG_SECTOR_SIZE: usize = 512;
-const FailurePredictionSense: u32 = 2; // TODO: verify
+const FailurePredictionSense: u32 = 3; // classpnp.h:237 -- and diskwmi.rs already carried a
+                                       // function-local copy holding the correct 3, so this
+                                       // file compared the same capability two ways
 const FailurePredictionNone: u32 = 0;
 const STATUS_INSUFFICIENT_RESOURCES: i32 = 0xC000009Au32 as i32 ;
 const STATUS_NOT_SUPPORTED: i32 = 0xC00000BBu32 as i32 ;
@@ -356,8 +365,8 @@ const ReadLogSectors: u32 = 6;
 const WriteLogSectors: u32 = 7;
 const ExecuteSelfTest: u32 = 8;
 
-const FailurePredictionSmart: i32 = 0;
-const FailurePredictionIoctl: i32 = 1;
+const FailurePredictionSmart: i32 = 2; // classpnp.h:237
+const FailurePredictionIoctl: i32 = 1; // classpnp.h:237
 
 unsafe fn DiskEnableSmart(FdoExtension: PFUNCTIONAL_DEVICE_EXTENSION) -> NTSTATUS {
     const SRB_ARRAY_SIZE: usize = core::mem::size_of::<SRB_IO_CONTROL>() + core::mem::size_of::<SENDCMDINPARAMS>();
@@ -1759,19 +1768,21 @@ pub unsafe extern "system" fn DiskInfoExceptionComplete(
     const SRB_STATUS_QUEUE_FROZEN: i32 = 0x40;
     const SRB_STATUS_SUCCESS: u32 = 0x00;
     const SRB_STATUS_DATA_OVERRUN: u32 = 0x12;
-    const SRB_FUNCTION_STORAGE_REQUEST_BLOCK: i32 = 0x16;
+    // ddk/srb.h:108 == 0x28 (see the write site above).
+    const SRB_FUNCTION_STORAGE_REQUEST_BLOCK: i32 = 0x28;
     const SRB_FUNCTION_EXECUTE_SCSI: u32 = 0x00;
     const SRB_SIMPLE_TAG_REQUEST: u16 = 0x20;
-    const SP_UNTAGGED: u32 = 0xffffffff;
+    // ddk/srb.h:55 -- (UCHAR)~0 is 0xFF, not a 32-bit ~0.
+    const SP_UNTAGGED: u32 = 0xFF;
     const MAXIMUM_RETRIES: u32 = 3;
     const STATUS_VERIFY_REQUIRED: NTSTATUS = 0x80000016u32 as i32;
     const STATUS_IO_DEVICE_ERROR: NTSTATUS = 0xC0000185u32 as i32 ;
     const IRP_MJ_SCSI: u8 = 0x0F;
     const MODE_PAGE_FAULT_REPORTING: u8 = 0x1C;
-    const TRACE_LEVEL_INFORMATION: u32 = 4;
-    const TRACE_LEVEL_WARNING: u32 = 3;
-    const TRACE_FLAG_GENERAL: u32 = 0x00000001;
-    const TRACE_FLAG_WMI: u32 = 0x00000080;
+    const TRACE_LEVEL_INFORMATION: u32 = 4; // storswtr.h:26-30
+    const TRACE_LEVEL_WARNING: u32 = 3; // storswtr.h:26-30
+    const TRACE_FLAG_GENERAL: u32 = 0; // storswtr.h:80-98 (an ORDINAL enum, not a bitmask)
+    const TRACE_FLAG_WMI: u32 = 6; // storswtr.h:80-98 (an ORDINAL enum, not a bitmask)
 
     let commonExtension: PCOMMON_DEVICE_EXTENSION = (*DeviceObject).DeviceExtension as PCOMMON_DEVICE_EXTENSION;
     let diskData: PDISK_DATA = (*commonExtension).DriverData as PDISK_DATA;
@@ -2626,8 +2637,8 @@ pub unsafe extern "system" fn DiskFdoQueryWmiDataBlock(
     }
 
     {
-        const TRACE_LEVEL_INFORMATION: u32 = 4;
-        const TRACE_FLAG_WMI: u32 = 0x8000; // TRACE_FLAG_WMI
+        const TRACE_LEVEL_INFORMATION: u32 = 4; // storswtr.h:26-30
+        const TRACE_FLAG_WMI: u32 = 6; // storswtr.h:80-98 (an ORDINAL enum, not a bitmask)
         TracePrint(
             (TRACE_LEVEL_INFORMATION) as i32,
             TRACE_FLAG_WMI,
@@ -2822,8 +2833,8 @@ pub unsafe extern "system" fn DiskFdoQueryWmiDataBlock(
     }
 
     {
-        const TRACE_LEVEL_INFORMATION: u32 = 4;
-        const TRACE_FLAG_WMI: u32 = 0x8000; // TRACE_FLAG_WMI
+        const TRACE_LEVEL_INFORMATION: u32 = 4; // storswtr.h:26-30
+        const TRACE_FLAG_WMI: u32 = 6; // storswtr.h:80-98 (an ORDINAL enum, not a bitmask)
         TracePrint(
             (TRACE_LEVEL_INFORMATION) as i32,
             TRACE_FLAG_WMI,

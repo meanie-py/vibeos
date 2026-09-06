@@ -121,7 +121,6 @@ pub unsafe extern "system" fn CmpInitializeHive(
     const HBLOCK_SIZE: u32 = 4096;
     const HSECTOR_SIZE: u32 = 512;
     const HCELL_NIL: HCELL_INDEX = 0xFFFFFFFF;
-    const TAG_CMHIVE: u32 = 0x4D436D43;
     const STATUS_INVALID_PARAMETER: i32 = -1073741811i32;
     const STATUS_REGISTRY_IO_FAILED: i32 = 0xC000_014Du32 as i32;
     const STATUS_REGISTRY_CORRUPT: i32 = 0xC000_014Cu32 as i32;

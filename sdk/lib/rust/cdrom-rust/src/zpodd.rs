@@ -12,6 +12,7 @@ use ntkrnl_sys::ob::*;
 use ntkrnl_sys::rtl::*;
 use ntkrnl_sys::ddk::{D3COLD_SUPPORT_INTERFACE, DEVICE_WAKE_DEPTH, _DEVICE_WAKE_DEPTH_DeviceWakeDepthD3cold as DeviceWakeDepthD3cold, _DEVICE_WAKE_DEPTH_DeviceWakeDepthNotWakeable as DeviceWakeDepthNotWakeable, _KWAIT_REASON_Executive, _IO_STATUS_BLOCK, IoBuildDeviceIoControlRequest, IoBuildSynchronousFsdRequest, IoGetAttachedDeviceReference, IoGetNextIrpStackLocation, KEVENT, KeInitializeEvent, KeWaitForSingleObject, _EVENT_TYPE_NotificationEvent, PD3COLD_SUPPORT_INTERFACE, PINTERFACE, PSTORAGE_IDLE_POWERUP_REASON, STORAGE_IDLE_POWER, STORAGE_IDLE_POWERUP_REASON};
 use core::ffi::c_void;
+use ntkrnl_sys::ddk::RtlAssert;
 
 extern "C" {
     static GUID_D3COLD_SUPPORT_INTERFACE: GUID;
@@ -36,16 +37,19 @@ unsafe extern "C" {
 
 const IRP_MN_QUERY_INTERFACE: u8 = 0x08u8;
 
-const NonPagedPoolNx: u32 = 512;
+// cdrom.h:68: `#define NonPagedPoolNx NonPagedPool` under
+// `#ifdef __REACTOS__` -- NX pool is NT6.2 and this kernel has none, so the
+// Windows value (0x200/0x204) is not what any TU here compiles.
+const NonPagedPoolNx: u32 = 0;
 const CDROM_TAG_ZERO_POWER_ODD: u32 = 0x5A436353;
-const FeatureRemovableMedium: u32 = 0x0D; // actual value unknown, dummy
+const FeatureRemovableMedium: u32 = 0x0003; // ntddmmc.h:78
 const LOADING_MECHANISM_TRAY: u32 = 1;
 const LOADING_MECHANISM_CADDY: u32 = 0x0;  // was 2 (LLM-invented); bindgen-correct
 const DELAY_TIME_TO_ENTER_ZERO_POWER_IN_MS: u32 = 0xea60;  // was 0 (LLM-invented); bindgen-correct
 const FeatureProfileList: u32 = 0;
 const SCSI_GET_CONFIGURATION_REQUEST_TYPE_ALL: u32 = 0;
-const TRACE_LEVEL_INFORMATION: u32 = 4;
-const TRACE_FLAG_POWER: u32 = 0x10;
+const TRACE_LEVEL_INFORMATION: u32 = 4; // storswtr.h:26-30
+const TRACE_FLAG_POWER: u32 = 2; // storswtr.h:80-98 (an ORDINAL enum, not a bitmask)
 const PowerSystemWorking: u32 = 1;
 // CTL_CODE(IOCTL_STORAGE_BASE=0x2d, code, METHOD_BUFFERED=0, FILE_ANY_ACCESS=0)
 const IOCTL_STORAGE_GET_IDLE_POWERUP_REASON: u32 = 0x002D1C84;
@@ -303,13 +307,28 @@ pub unsafe extern "C" fn DeviceQueryD3ColdInterface(
 
         // NT_ASSERT equivalent
         if (*D3ColdInterface).SetD3ColdSupport.is_none() {
-            core::panic!("NT_ASSERT failed");
+            RtlAssert(
+                b"D3ColdInterface->SetD3ColdSupport != NULL\0".as_ptr() as *mut core::ffi::c_void,
+                b"zpodd.rs\0".as_ptr() as *mut core::ffi::c_void,
+                line!(),
+                core::ptr::null_mut::<i8>(),
+            );
         }
         if (*D3ColdInterface).GetIdleWakeInfo.is_none() {
-            core::panic!("NT_ASSERT failed");
+            RtlAssert(
+                b"D3ColdInterface->GetIdleWakeInfo != NULL\0".as_ptr() as *mut core::ffi::c_void,
+                b"zpodd.rs\0".as_ptr() as *mut core::ffi::c_void,
+                line!(),
+                core::ptr::null_mut::<i8>(),
+            );
         }
         if (*D3ColdInterface).GetD3ColdCapability.is_none() {
-            core::panic!("NT_ASSERT failed");
+            RtlAssert(
+                b"D3ColdInterface->GetD3ColdCapability != NULL\0".as_ptr() as *mut core::ffi::c_void,
+                b"zpodd.rs\0".as_ptr() as *mut core::ffi::c_void,
+                line!(),
+                core::ptr::null_mut::<i8>(),
+            );
         }
     }
 

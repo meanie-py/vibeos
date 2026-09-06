@@ -27,12 +27,6 @@ const STATUS_WAIT_2: NTSTATUS = 0x00000002;
 const STATUS_USER_APC: NTSTATUS = 0x000000C0;
 use core::ffi::c_void;
 
-// Debug-channel macros — no kernel symbol, no-op.
-macro_rules! ERR   { ($($t:tt)*) => {{}}; }
-macro_rules! TRACE { ($($t:tt)*) => {{}}; }
-macro_rules! WARN  { ($($t:tt)*) => {{}}; }
-macro_rules! FIXME { ($($t:tt)*) => {{}}; }
-
 // --- NTAPI/stdcall (`_Name@N`) eng exports. extern "system" = stdcall i386. ---
 extern "system" {
     fn EngGetTickCount() -> ULONGLONG;
@@ -771,9 +765,9 @@ unsafe fn IntMsqSetWakeMaskImpl(WakeMask: DWORD) -> HANDLE {
                 && ((*(*Win32Thread).pcti).fsWakeBits as DWORD & LOWORD(WakeMask) as DWORD) != 0)
         {
             ERR!(
-                b"Chg 0x%x Wake 0x%x Mask 0x%x\n\0".as_ptr() as PCHAR,
-                (*(*Win32Thread).pcti).fsChangeBits,
-                (*(*Win32Thread).pcti).fsWakeBits,
+                "Chg 0x%x Wake 0x%x Mask 0x%x\n",
+                (*(*Win32Thread).pcti).fsChangeBits as core::ffi::c_uint,
+                (*(*Win32Thread).pcti).fsWakeBits as core::ffi::c_uint,
                 WakeMask,
             );
             KeSetEvent((*Win32Thread).pEventQueueServer as _, IO_NO_INCREMENT as KPRIORITY, 0u8);
@@ -827,7 +821,7 @@ unsafe fn MsqWakeQueue_impl(pti: PTHREADINFO, MessageBits: DWORD, KeyEvent: BOOL
     let Queue: PUSER_MESSAGE_QUEUE = (*pti).MessageQueue;
 
     if (*Queue).QF_flags & QF_INDESTROY != 0 {
-        ERR!(b"This Message Queue is in Destroy!\n\0".as_ptr() as *const i8);
+        ERR!("This Message Queue is in Destroy!\n");
     }
     (*(*pti).pcti).fsWakeBits |= MessageBits as WORD;
     (*(*pti).pcti).fsChangeBits |= MessageBits as WORD;
@@ -1387,7 +1381,7 @@ pub unsafe extern "system" fn MsqRemoveWindowMessagesFromQueue(Window: PWND) {
             as PUSER_SENT_MESSAGE;
 
         if (*SentMessage).Msg.hwnd == UserHMGetHandle(Window) {
-            ERR!(b"Remove Window Messages %p From Sent Queue\n\0".as_ptr() as *const i8, SentMessage);
+            ERR!("Remove Window Messages %p From Sent Queue\n", SentMessage);
             CurrentEntry = (*CurrentEntry).Flink;
         } else {
             CurrentEntry = (*CurrentEntry).Flink;
@@ -1474,7 +1468,7 @@ unsafe fn co_MsqDispatchOneSentMessage_impl(pti: PTHREADINFO) -> BOOLEAN {
                     core::ptr::addr_of_mut!((*Message).ListEntry),
                 );
                 MsqWakeQueue((*Message).ptiCallBackSender, QS_SENDMESSAGE, 1);
-                ERR!(b"Callback Message not processed yet. Requeuing the message\n\0".as_ptr() as *const i8);
+                ERR!("Callback Message not processed yet. Requeuing the message\n");
                 Ret = 0;
                 break 'exit;
             }
@@ -1604,7 +1598,7 @@ unsafe fn co_MsqSendMessageAsync_impl(
     let Message: PUSER_SENT_MESSAGE = AllocateUserMessage(0);
 
     if Message.is_null() {
-        ERR!(b"MsqSendMessageAsync(): Not enough memory to allocate a message\n\0".as_ptr() as *const i8);
+        ERR!("MsqSendMessageAsync(): Not enough memory to allocate a message\n");
         return 0;
     }
 
@@ -1706,7 +1700,7 @@ unsafe fn co_MsqSendMessage_impl(
     }
 
     if IsThreadSuspended(ptirec) != 0 {
-        ERR!(b"Sending to _KWAIT_REASON_Suspended Thread Msg %lx\n\0".as_ptr() as *const i8, Msg);
+        ERR!("Sending to Suspended Thread Msg %lx\n", Msg);
         if !uResult.is_null() {
             *uResult = -1i64 as ULONG_PTR;
         }
@@ -1725,7 +1719,7 @@ unsafe fn co_MsqSendMessage_impl(
                         if !uResult.is_null() {
                             *uResult = -1i64 as ULONG_PTR;
                         }
-                        ERR!(b"Running across the border without a passport!\n\0".as_ptr() as *const i8);
+                        ERR!("Running across the border without a passport!\n");
                         EngSetLastError(ERROR_ACCESS_DENIED);
                         return STATUS_UNSUCCESSFUL;
                     }
@@ -1734,7 +1728,7 @@ unsafe fn co_MsqSendMessage_impl(
                     if !uResult.is_null() {
                         *uResult = -1i64 as ULONG_PTR;
                     }
-                    ERR!(b"Running across the border without a passport!\n\0".as_ptr() as *const i8);
+                    ERR!("Running across the border without a passport!\n");
                     return STATUS_UNSUCCESSFUL;
                 }
                 _ => {}
@@ -1745,14 +1739,14 @@ unsafe fn co_MsqSendMessage_impl(
             if !uResult.is_null() {
                 *uResult = -1i64 as ULONG_PTR;
             }
-            ERR!(b"Can not tell the other State we have Create!\n\0".as_ptr() as *const i8);
+            ERR!("Can not tell the other State we have Create!\n");
             return STATUS_UNSUCCESSFUL;
         }
     }
 
     Message = AllocateUserMessage(1);
     if Message.is_null() {
-        ERR!(b"MsqSendMessage(): Not enough memory to allocate a message\n\0".as_ptr() as *const i8);
+        ERR!("MsqSendMessage(): Not enough memory to allocate a message\n");
         if !uResult.is_null() {
             *uResult = -1i64 as ULONG_PTR;
         }
@@ -1831,9 +1825,9 @@ unsafe fn co_MsqSendMessage_impl(
                 Entry = (*Entry).Flink;
             }
 
-            ERR!(b"MsqSendMessage (blocked) timed out 1 Status %lx\n\0".as_ptr() as *const i8, WaitStatus);
+            ERR!("MsqSendMessage (blocked) timed out 1 Status %lx\n", WaitStatus);
         } else if WaitStatus == STATUS_WAIT_1 {
-            ERR!(b"Bk Receiving Thread woken up dead!\n\0".as_ptr() as *const i8);
+            ERR!("Bk Receiving Thread woken up dead!\n");
             (*Message).flags |= SMF_RECEIVERDIED;
         }
 
@@ -1888,7 +1882,7 @@ unsafe fn co_MsqSendMessage_impl(
                 WARN!(b"MsqSendMessage timed out 2 Status %lx\n\0".as_ptr() as *const i8, WaitStatus);
                 break;
             } else if WaitStatus == STATUS_WAIT_2 {
-                ERR!(b"NB Receiving Thread woken up dead!\n\0".as_ptr() as *const i8);
+                ERR!("NB Receiving Thread woken up dead!\n");
                 (*Message).flags |= SMF_RECEIVERDIED;
                 break;
             }
@@ -1916,7 +1910,7 @@ unsafe fn co_MsqSendMessage_impl(
         (*Message).flags |= SMF_SENDERDIED;
 
         co_IntDeliverUserAPC();
-        ERR!(b"User APC Returned\n\0".as_ptr() as *const i8);
+        ERR!("User APC Returned\n");
     }
 
     KeSetEvent((*pti).pEventQueueServer as _, IO_NO_INCREMENT as KPRIORITY, 0u8);
@@ -2002,7 +1996,7 @@ unsafe fn MsqPostMessage_impl(
     if ((*pti).TIF_flags & TIF_INCLEANUP as FLONG != 0)
         || ((*MessageQueue).QF_flags & QF_INDESTROY != 0)
     {
-        ERR!(b"Post Msg; Thread or Q is Dead!\n\0".as_ptr() as *const i8);
+        ERR!("Post Msg; Thread or Q is Dead!\n");
         return;
     }
 
@@ -2190,7 +2184,7 @@ pub unsafe extern "system" fn co_IntProcessMouseMessage(
     pti = PsGetCurrentThreadWin32Thread() as PTHREADINFO;
     pwndDesktop = UserGetDesktopWindow();
     if pwndDesktop.is_null() {
-        ERR!(b"No desktop window!\n\0".as_ptr());
+        ERR!("No desktop window!\n");
         return FALSE as BOOL;
     }
 
@@ -2375,7 +2369,7 @@ pub unsafe extern "system" fn co_IntProcessMouseMessage(
             core::ptr::addr_of_mut!(hook) as LPARAM,
         );
 
-        ERR!(b"WH_MOUSE dropped mouse message!\n\0".as_ptr());
+        ERR!("WH_MOUSE dropped mouse message!\n");
 
         core::ptr::write_volatile(RemoveMessages, TRUE as BOOL);
         return FALSE as BOOL;
@@ -2441,7 +2435,7 @@ pub unsafe extern "system" fn co_IntProcessMouseMessage(
                         }
                     }
                     _ => {
-                        ERR!(b"unknown WM_MOUSEACTIVATE code %d\n\0".as_ptr(), ret);
+                        ERR!("unknown WM_MOUSEACTIVATE code %d\n", ret);
                     }
                 }
                 if ret as UINT == MA_NOACTIVATEANDEAT || ret as UINT == MA_NOACTIVATE {
@@ -2560,7 +2554,7 @@ unsafe extern "C" fn co_IntProcessKeyboardMessage(Msg: *mut MSG, RemoveMessages:
                 (*Msg).lParam,
             );
 
-            ERR!(b"KeyboardMessage WH_KEYBOARD Call Hook return!\n\0".as_ptr());
+            ERR!("KeyboardMessage WH_KEYBOARD Call Hook return!\n");
 
             *RemoveMessages = TRUE as BOOL;
 
@@ -2694,7 +2688,7 @@ pub unsafe extern "system" fn co_MsqPeekHardwareMessage(
 
     if (*MessageQueue).ptiSysLock != pti {
         ERR!(
-            b"Thread Q is locked to ptiSysLock 0x%p pti 0x%p\n\0".as_ptr() as *const i8,
+            "Thread Q is locked to ptiSysLock 0x%p pti 0x%p\n",
             (*MessageQueue).ptiSysLock,
             pti,
         );

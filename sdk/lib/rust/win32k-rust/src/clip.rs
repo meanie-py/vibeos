@@ -1,11 +1,6 @@
 use win32k_sys::win32k::*;
 use core::ffi::c_void;
 
-// C debug macros — silenced via macro_rules! (variadic no-op).
-#[allow(unused_macros)] macro_rules! TRACE { ($($t:tt)*) => { () }; }
-#[allow(unused_macros)] macro_rules! ERR { ($($t:tt)*) => { () }; }
-
-
 extern "C" {
 
 }
@@ -49,7 +44,7 @@ unsafe extern "C" fn CompareRightDown(
     }
     else
     {
-        debug_assert!((*r1).bottom == (*r2).bottom);
+        ntkrnl_sys::ASSERT!((*r1).bottom == (*r2).bottom);
         if (*r1).left < (*r2).left
         {
             Cmp = -1;
@@ -60,7 +55,7 @@ unsafe extern "C" fn CompareRightDown(
         }
         else
         {
-            debug_assert!((*r1).right == (*r2).right);
+            ntkrnl_sys::ASSERT!((*r1).right == (*r2).right);
             Cmp = 0;
         }
     }
@@ -81,13 +76,13 @@ unsafe extern "C" fn CompareRightUp(
     } else if (*r2).bottom < (*r1).bottom {
         Cmp = -1;
     } else {
-        debug_assert_eq!((*r1).top, (*r2).top);
+        ntkrnl_sys::ASSERT!((*r1).top == (*r2).top);
         if (*r1).left < (*r2).left {
             Cmp = -1;
         } else if (*r2).left < (*r1).left {
             Cmp = 1;
         } else {
-            debug_assert_eq!((*r1).right, (*r2).right);
+            ntkrnl_sys::ASSERT!((*r1).right == (*r2).right);
             Cmp = 0;
         }
     }
@@ -307,7 +302,7 @@ pub unsafe extern "system" fn EngCreateClip() -> *mut CLIPOBJ {
         return Clip as *mut CLIPOBJ;
     }
 
-    ERR!(b"Clip object allocation failed!\n\0".as_ptr() as *const i8);
+    ERR!("Clip object allocation failed!\n");
     core::ptr::null_mut()
 }
 
@@ -353,7 +348,7 @@ pub unsafe extern "system" fn CLIPOBJ_cEnumStart(
                 CompareFunc = Some(CompareLeftUp);
             }
             _ => {
-                ERR!(b"Invalid iDirection %lu\n\0".as_ptr() as _, iDirection);
+                ERR!("Invalid iDirection %lu\n", iDirection);
                 iDirection = (*Clip).iDirection;
                 CompareFunc = None;
             }

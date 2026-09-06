@@ -93,7 +93,7 @@ pub unsafe extern "system" fn NpFindRelativePrefix(
     }
 
     // ASSERT(Dcb->NodeType == NPFS_NTC_ROOT_DCB);
-    debug_assert!((*Dcb).NodeType == NPFS_NTC_ROOT_DCB);
+    ntkrnl_sys::ASSERT!((*Dcb).NodeType == NPFS_NTC_ROOT_DCB);
 
     Buffer = ExAllocatePoolWithTag(
         PagedPool,

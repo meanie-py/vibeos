@@ -87,7 +87,7 @@ pub unsafe extern "C" fn AddReactOSArcDiskInfo(
     ValidPartitionTable: u8,
 ) {
 
-    debug_assert!((reactos_disk_count as usize) < 32);
+    ntkrnl_sys::ASSERT!((reactos_disk_count as usize) < 32);
 
     reactos_arc_disk_info[reactos_disk_count as usize].DiskSignature.Signature = Signature;
     reactos_arc_disk_info[reactos_disk_count as usize].DiskSignature.CheckSum = Checksum;

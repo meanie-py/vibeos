@@ -5,11 +5,6 @@ use ntkrnl_sys::ddk::{ExFreePoolWithTag};
 use ntkrnl_sys::rtl::{RtlCopyMemory, RtlZeroMemory};
 use ntkrnl_sys::base::IsListEmpty;
 
-// Debug-channel sinks (no kernel symbol in non-DBG build; inert no-op macros).
-macro_rules! ERR { ($($t:tt)*) => {{}}; }
-macro_rules! TRACE { ($($t:tt)*) => {{}}; }
-macro_rules! WARN { ($($t:tt)*) => {{}}; }
-
 // ---- file-scope preamble (translated) ----
 pub const FW_COMPLETED: u32 = 0;
 
@@ -368,7 +363,7 @@ unsafe fn IntSendSyncPaint_impl(Wnd: PWND, Flags: ULONG) {
                 if (*Message).Msg.message == WM_SYNCPAINT
                     && (*Message).Msg.hwnd == UserHMGetHandle(Wnd)
                 {
-                    ERR!(b"SendSyncPaint Found one in the Sent Msg Queue!\n\0".as_ptr() as *const i8);
+                    ERR!("SendSyncPaint Found one in the Sent Msg Queue!\n");
                     bSend = 0u8;
                     break;
                 }
@@ -610,7 +605,7 @@ unsafe fn co_IntPaintWindows(mut Wnd: PWND, Flags: ULONG, Recurse: i32) {
                         );
 
                         if (*head_pti(Wnd)).ppi != (*pti).ppi {
-                            ERR!(b"Sending DC to another Process!!!\n\0".as_ptr() as *const i8);
+                            ERR!("Sending DC to another Process!!!\n");
                         }
 
                         (*Wnd).state &= !(WNDS_SENDERASEBACKGROUND | WNDS_ERASEBACKGROUND);
@@ -1384,7 +1379,7 @@ unsafe fn IntGetPaintMessage(
     }
 
     if (*Thread).TIF_flags & TIF_SYSTEMTHREAD != 0 {
-        ERR!(b"WM_PAINT is in a System Thread!\n\0".as_ptr() as *const i8);
+        ERR!("WM_PAINT is in a System Thread!\n");
     }
 
     StartWnd = UserGetDesktopWindow();
@@ -1676,7 +1671,7 @@ unsafe fn IntBeginPaint(Window: PWND, Ps: PPAINTSTRUCT) -> HDC {
     RtlZeroMemory(Ps as *mut _, core::mem::size_of::<PAINTSTRUCT>() as _);
 
     if (*Window).state2 & WNDS2_ENDPAINTINVALIDATE != 0 {
-        ERR!(b"BP: Another thread invalidated this window\n\0".as_ptr() as *const _);
+        ERR!("BP: Another thread invalidated this window\n");
     }
 
     (*Ps).hdc = UserGetDCEx(
@@ -1780,7 +1775,7 @@ unsafe fn IntEndPaint_impl(Wnd: PWND, Ps: PPAINTSTRUCT) -> BOOL {
     UserReleaseDC(Wnd, hdc, 1u8 as BOOL);
 
     if (*Wnd).state2 & WNDS2_ENDPAINTINVALIDATE != 0 {
-        ERR!(b"EP: Another thread invalidated this window\n\0".as_ptr() as *const i8);
+        ERR!("EP: Another thread invalidated this window\n");
         (*Wnd).state2 &= !WNDS2_ENDPAINTINVALIDATE;
     }
 
@@ -2057,7 +2052,7 @@ unsafe fn co_UserGetUpdateRgn(Window: PWND, hRgn: HRGN, bErase: i32) -> i32 {
     Type = IntIntersectWithParents(Window, &mut Rect);
 
     if (*Window).hrgnUpdate == HRGN_WINDOW {
-        ERR!(b"GURn: Caller is passing Window Region 1\n\0".as_ptr() as *const i8);
+        ERR!("GURn: Caller is passing Window Region 1\n");
         if Type == 0 {
             NtGdiSetRectRgn(hRgn, 0, 0, 0, 0);
             return NULLREGION as i32;
@@ -2122,7 +2117,7 @@ unsafe fn co_UserGetUpdateRect(Window: PWND, pRect: PRECT, bErase: i32) -> i32 {
     } else {
         if (*Window).hrgnUpdate == HRGN_WINDOW {
             *pRect = core::mem::transmute((*Window).rcClient);
-            ERR!(b"GURt: Caller is retrieving Window Region 1\n\0".as_ptr() as *const i8);
+            ERR!("GURt: Caller is retrieving Window Region 1\n");
         } else {
             RegionType = IntGdiGetRgnBox((*Window).hrgnUpdate, pRect as _ );
 
@@ -2269,7 +2264,7 @@ pub unsafe extern "system" fn NtUserRedrawWindow(
             }
             REGION_UnlockRgn(RgnUpdate);
         } else if hrgnUpdate == HRGN_WINDOW {
-            ERR!(b"NTRW: Caller is passing Window Region 1\n\0".as_ptr() as *const i8);
+            ERR!("NTRW: Caller is passing Window Region 1\n");
         }
 
         UserRefObjectCo(Wnd, &mut Ref);
@@ -2713,14 +2708,14 @@ pub unsafe extern "system" fn NtUserDrawCaptionTemp(
             {
                 Ret = 1;
                 if uFlags & DC_DRAWCAPTIONMD != 0 {
-                    ERR!(b"NC Caption Mode\n\0".as_ptr() as *const core::ffi::c_char);
+                    ERR!("NC Caption Mode\n");
                     // C-exact UINT->INT: uFlags is user-controlled (syscall
                     // param) — try_into().unwrap() was a user-triggerable
                     // kernel panic on uFlags >= 0x80000000.
                     UserDrawCaptionBar(pWnd, hDC, uFlags as _);
                     break 'block;
                 } else if uFlags & DC_DRAWFRAMEMD != 0 {
-                    ERR!(b"NC Paint Mode\n\0".as_ptr() as *const core::ffi::c_char);
+                    ERR!("NC Paint Mode\n");
                     NC_DoNCPaint(pWnd, hDC, uFlags as _); // same: user-controlled uFlags
                     break 'block;
                 }
@@ -2816,11 +2811,11 @@ pub unsafe extern "system" fn NtUserDrawCaptionTemp(
             {
                 Ret = 1;
                 if uFlags & DC_DRAWCAPTIONMD != 0 {
-                    ERR!(b"NC Caption Mode\n\0".as_ptr() as *const core::ffi::c_char);
+                    ERR!("NC Caption Mode\n");
                     UserDrawCaptionBar(pWnd, hDC, uFlags as INT);
                     break 'block;
                 } else if uFlags & DC_DRAWFRAMEMD != 0 {
-                    ERR!(b"NC Paint Mode\n\0".as_ptr() as *const core::ffi::c_char);
+                    ERR!("NC Paint Mode\n");
                     NC_DoNCPaint(pWnd, hDC, uFlags as INT);
                     break 'block;
                 }

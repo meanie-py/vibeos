@@ -72,9 +72,24 @@ def parse_ntstatus_cast(s: str) -> int | None:
 # a definition to cross-check against, a fabricated Rust value would pass
 # silently. Seed them explicitly. Verified against the Windows WDK.
 WDK_CONSTANT_SEED = {
-    # POOL_TYPE — the no-execute variants (wdm.h). NonPagedPoolNx = 512.
-    "NonPagedPoolNx": 512,  # 0x200
-    "NonPagedPoolNxCacheAligned": 516,  # 0x204 = NonPagedPoolNx + 4
+    # POOL_TYPE — the no-execute variants (wdm.h). Windows: NonPagedPoolNx = 512.
+    #
+    # But seed the value THIS TREE COMPILES, not the one Windows ships. NX pool is
+    # an NT6.2 feature ReactOS does not implement, so every in-tree consumer
+    # redefines the name to the plain pool type before using it, under an
+    # `#ifdef __REACTOS__` (and `__REACTOS__` is defined tree-wide,
+    # CMakeLists.txt:87): cdfs/cdprocs.h:62, fastfat/fatprocs.h:47,
+    # cdrom/cdrom.h:68, disk/disk.h:75, classpnp/dictlib.c:32 — all
+    # `#define NonPagedPoolNx NonPagedPool`. Nothing here ever compiles 512, so
+    # seeding 512 made this checker demand the one value that is WRONG for the
+    # tree, and it flagged correct Rust as a mismatch.
+    #
+    # Seeding the effective value instead of skipping the name keeps the check
+    # alive: an invented pool type still fails. If a module ever uses real NX
+    # pool, it will stop defining the macro, and this seed is what must change.
+    "NonPagedPoolNx": 0,  # NonPagedPool
+    "NonPagedPoolNxCacheAligned": 4,  # NonPagedPoolCacheAligned
+    # No in-tree module overrides this one, so it keeps the Windows value.
     "NonPagedPoolSessionNx": 544,  # 0x220 = NonPagedPoolNx + 32
 }
 

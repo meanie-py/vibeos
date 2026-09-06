@@ -132,7 +132,6 @@ pub unsafe extern "system" fn UsrSpImportSecurityContext(
     (ERROR_NOT_SUPPORTED) as i32
 }
 
-
 // ============================================================================
 // ORIGINAL C SOURCE
 // ============================================================================

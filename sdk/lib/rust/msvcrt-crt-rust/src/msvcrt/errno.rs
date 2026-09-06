@@ -115,7 +115,6 @@ pub static mut MSVCRT__sys_nerr: c_uint = 43;
 // wine's debug macros. A MACRO, never a no-op fn: an out-of-line no-op is an
 // optimization barrier that uncloaks latent ABI mismatches (-> ud2 -> BUGCHECK).
 // Same shape file.rs and the other translated usermode crates use.
-macro_rules! FIXME { ($($arg:tt)*) => {{}}; }
 
 /// `include/stdlib.h:259` — `typedef void (__cdecl *_invalid_parameter_handler)(
 /// const wchar_t*, const wchar_t*, const wchar_t*, unsigned, uintptr_t);`
@@ -495,7 +494,7 @@ pub unsafe extern "C" fn __wcserror(str: *const u16) -> *mut u16 {
 
     err = __wcserror_s((*data).wcserror_buffer, 256, str);
     if err != 0 {
-        FIXME!(b"bad wcserror call (%d)\n\0".as_ptr() as *const i8, err);
+        FIXME!("bad wcserror call (%d)\n", err);
     }
 
     (*data).wcserror_buffer

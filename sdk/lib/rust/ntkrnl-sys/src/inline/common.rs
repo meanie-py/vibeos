@@ -128,7 +128,7 @@ pub unsafe fn ProbeForWriteUlong(ptr: *mut ULONG) {
 
 /// DefaultSetInfoBufferCheck — validate info class and probe buffer for SET operations.
 ///
-/// With DUMMY_PSEH, the SEH handlers are dead code; probing may fault.
+/// Return probe failures directly; callers capture the contents with protected copies.
 #[inline]
 pub unsafe fn DefaultSetInfoBufferCheck(
     class: ULONG,
@@ -155,7 +155,11 @@ pub unsafe fn DefaultSetInfoBufferCheck(
     }
 
     if previous_mode != KernelMode {
-        ProbeForRead(buffer, buffer_length as ULONG_PTR, info.AlignmentSET as ULONG);
+        if let Err(status) = crate::probe::probe_user_buffer(
+            buffer, buffer_length as usize, info.AlignmentSET as usize, previous_mode,
+        ) {
+            return status;
+        }
     }
 
     STATUS_SUCCESS

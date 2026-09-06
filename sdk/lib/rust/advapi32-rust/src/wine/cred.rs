@@ -485,7 +485,7 @@ unsafe fn mac_read_credential_from_item(
                 (*credential).LastWritten.dwHighDateTime = win_time.u.__bindgen_anon_1.HighPart as u32;
             }
         } else {
-            FIXME!(b"unhandled attribute %u\n\0".as_ptr() as *const _, tag as u32);
+            FIXME!("unhandled attribute %u\n", tag as u32);
         }
         i += 1;
     }
@@ -715,16 +715,16 @@ unsafe fn mac_write_credential(credential: *const CREDENTIALW, preserve_blob: BO
     let mut attr_list: SecKeychainAttributeList = core::mem::zeroed();
 
     if (*credential).Flags != 0 {
-        FIXME!(b"Flags 0x%x not written\n\0".as_ptr() as *const core::ffi::c_char, (*credential).Flags);
+        FIXME!("Flags 0x%x not written\n", (*credential).Flags);
     }
     if (*credential).Type != CRED_TYPE_DOMAIN_PASSWORD {
-        FIXME!(b"credential type of %d not supported\n\0".as_ptr() as *const core::ffi::c_char, (*credential).Type);
+        FIXME!("credential type of %d not supported\n", (*credential).Type);
     }
     if (*credential).Persist != CRED_PERSIST_LOCAL_MACHINE {
-        FIXME!(b"persist value of %d not supported\n\0".as_ptr() as *const core::ffi::c_char, (*credential).Persist);
+        FIXME!("persist value of %d not supported\n", (*credential).Persist);
     }
     if (*credential).AttributeCount != 0 {
-        FIXME!(b"custom attributes not supported\n\0".as_ptr() as *const core::ffi::c_char);
+        FIXME!("custom attributes not supported\n");
     }
 
     userlen = WideCharToMultiByte(CP_UTF8, 0, (*credential).UserName, -1, core::ptr::null_mut(), 0, core::ptr::null_mut(), core::ptr::null_mut());
@@ -747,14 +747,14 @@ unsafe fn mac_write_credential(credential: *const CREDENTIALW, preserve_blob: BO
     status = SecKeychainAddGenericPassword(core::ptr::null_mut(), strlen(servername), servername, strlen(username),
                                            username, strlen(password), password, core::ptr::addr_of_mut!(keychain_item));
     if status != noErr {
-        ERR!(b"SecKeychainAddGenericPassword returned %d\n\0".as_ptr() as *const core::ffi::c_char, status);
+        ERR!("SecKeychainAddGenericPassword returned %d\n", status);
     }
     let mut status = status;
     if status == errSecDuplicateItem {
         status = SecKeychainFindGenericPassword(core::ptr::null_mut(), strlen(servername), servername, strlen(username),
                                                 username, core::ptr::null_mut(), core::ptr::null_mut(), core::ptr::addr_of_mut!(keychain_item));
         if status != noErr {
-            ERR!(b"SecKeychainFindGenericPassword returned %d\n\0".as_ptr() as *const core::ffi::c_char, status);
+            ERR!("SecKeychainFindGenericPassword returned %d\n", status);
         }
     }
     heap_free(username as *mut core::ffi::c_void);
@@ -1912,7 +1912,7 @@ pub unsafe extern "system" fn CredReadDomainCredentialsW(
     Size: *mut DWORD,
     Credentials: *mut *mut PCREDENTIALW,
 ) -> BOOL {
-    FIXME!(b"(%p, 0x%x, %p, %p) stub\n\0".as_ptr() as *const i8,
+    FIXME!("(%p, 0x%x, %p, %p) stub\n",
           TargetInformation, Flags, Size, Credentials);
 
     *Size = 0;
@@ -1970,13 +1970,13 @@ pub unsafe extern "system" fn CredWriteW(Credential: PCREDENTIALW, Flags: DWORD)
     }
 
     if Flags & !CRED_PRESERVE_CREDENTIAL_BLOB != 0 {
-        FIXME!(b"unhandled flags 0x%x\n\0".as_ptr() as *const i8, Flags);
+        FIXME!("unhandled flags 0x%x\n", Flags);
         SetLastError(ERROR_INVALID_FLAGS);
         return 0;
     }
 
     if (*Credential).Type != CRED_TYPE_GENERIC && (*Credential).Type != CRED_TYPE_DOMAIN_PASSWORD {
-        FIXME!(b"unhandled type %d\n\0".as_ptr() as *const i8, (*Credential).Type);
+        FIXME!("unhandled type %d\n", (*Credential).Type);
         SetLastError(ERROR_INVALID_PARAMETER);
         return 0;
     }
@@ -1995,7 +1995,7 @@ pub unsafe extern "system" fn CredWriteW(Credential: PCREDENTIALW, Flags: DWORD)
                 && strchrW((*Credential).UserName, '\\' as u16).is_null()
                 && strchrW((*Credential).UserName, '@' as u16).is_null())
         {
-            ERR!(b"bad username %s\n\0".as_ptr() as *const i8, debugstr_w((*Credential).UserName));
+            ERR!("bad username %S\n", (*Credential).UserName);
             SetLastError(ERROR_BAD_USERNAME);
             return 0;
         }
@@ -2207,7 +2207,7 @@ pub unsafe extern "system" fn CredMarshalCredentialW(
             *p.offset(len as isize + 3) = 0;
         }
         BinaryBlobCredential => {
-            FIXME!(b"BinaryBlobCredential not implemented\n\0".as_ptr() as *const core::ffi::c_char);
+            FIXME!("BinaryBlobCredential not implemented\n");
             return 0;
         }
         _ => {
@@ -2418,7 +2418,7 @@ pub unsafe extern "system" fn CredIsMarshaledCredentialW(name: LPCWSTR) -> BOOL 
         }
 
         if type_val == BinaryBlobCredential {
-            FIXME!(b"BinaryBlobCredential not checked\n\0".as_ptr() as *const core::ffi::c_char);
+            FIXME!("BinaryBlobCredential not checked\n");
         }
 
         if type_val > BinaryBlobCredential {

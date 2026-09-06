@@ -10,14 +10,6 @@
 // symbol). #[macro_use] on `mod glue` puts them in scope crate-wide. The translation
 // also emitted `extern "C" { fn TRACE(...) }` decls in some files — those are deleted
 // per-file during integration (the macro supersedes them).
-#[macro_export]
-macro_rules! TRACE { ($($arg:tt)*) => {{}}; }
-#[macro_export]
-macro_rules! ERR { ($($arg:tt)*) => {{}}; }
-#[macro_export]
-macro_rules! WARN { ($($arg:tt)*) => {{}}; }
-#[macro_export]
-macro_rules! FIXME { ($($arg:tt)*) => {{}}; }
 
 // FIELD_OFFSET(type, field) — byte offset of a struct field (SDK macro used as a
 // const expression in IOCTL buffer-size math). offset_of! is the Rust equivalent.

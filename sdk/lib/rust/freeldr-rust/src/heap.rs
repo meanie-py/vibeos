@@ -158,9 +158,9 @@ pub unsafe extern "C" fn FrLdrHeapVerify(
         }
 
         if (*Block).Tag != 0 {
-            debug_assert!(*REDZONE_SIZE(Block) <= (*Block).Size as u64 * core::mem::size_of::<HEAP_BLOCK>() as u64);
-            debug_assert!(*REDZONE_LOW(Block) == REDZONE_MARK);
-            debug_assert!(*REDZONE_HI(Block) == REDZONE_MARK);
+            ntkrnl_sys::ASSERT!(*REDZONE_SIZE(Block) <= (*Block).Size as u64 * core::mem::size_of::<HEAP_BLOCK>() as u64);
+            ntkrnl_sys::ASSERT!(*REDZONE_LOW(Block) == REDZONE_MARK);
+            ntkrnl_sys::ASSERT!(*REDZONE_HI(Block) == REDZONE_MARK);
         }
 
         Block = Block.offset(1 + (*Block).Size as isize);
@@ -352,7 +352,7 @@ pub unsafe extern "C" fn FrLdrHeapAllocateEx(
     Block = core::ptr::addr_of_mut!((*Heap).Blocks).offset((*Heap).TerminatingBlock as isize);
     Block = core::ptr::addr_of_mut!((*Heap).Blocks).offset((*(*Block).Data.as_mut_ptr()).Flink as isize);
     while (*Block).Size != 0 {
-        debug_assert!((*Block).Tag == 0);
+        ntkrnl_sys::ASSERT!((*Block).Tag == 0);
 
         if (*Block).Size < BlockSize {
             Block = core::ptr::addr_of_mut!((*Heap).Blocks).offset((*(*Block).Data.as_mut_ptr()).Flink as isize);
@@ -454,7 +454,7 @@ pub unsafe extern "C" fn FrLdrHeapFreeEx(
     let Time = __rdtsc();
 
     TRACE(b"HeapFree(%p, %p)\n\0".as_ptr() as PCHAR, HeapHandle, Pointer);
-    debug_assert!(Tag != 0x646E4523);
+    ntkrnl_sys::ASSERT!(Tag != 0x646E4523);
 
     #[cfg(feature = "FREELDR_HEAP_VERIFIER")]
     {
@@ -465,7 +465,7 @@ pub unsafe extern "C" fn FrLdrHeapFreeEx(
         (Pointer > (Heap as PUCHAR).offset((*Heap).MaximumSize as isize) as PVOID)
     {
         ERR(b"HEAP: trying to free %p outside of heap %p\n\0".as_ptr() as PCHAR, Pointer, Heap);
-        debug_assert!(0u8 == 1u8);
+        ntkrnl_sys::ASSERT!(0u8 == 1u8);
     }
 
     Block = (Pointer as PHEAP_BLOCK).offset(-1);
@@ -473,16 +473,16 @@ pub unsafe extern "C" fn FrLdrHeapFreeEx(
     {
         Block = (Block as PUCHAR).offset(-(REDZONE_LOW_OFFSET as isize)) as PHEAP_BLOCK;
 
-        debug_assert!(*REDZONE_SIZE(Block) <= (*Block).Size as u64 * core::mem::size_of::<HEAP_BLOCK>() as u64);
-        debug_assert!(*REDZONE_LOW(Block) == REDZONE_MARK);
-        debug_assert!(*REDZONE_HI(Block) == REDZONE_MARK);
+        ntkrnl_sys::ASSERT!(*REDZONE_SIZE(Block) <= (*Block).Size as u64 * core::mem::size_of::<HEAP_BLOCK>() as u64);
+        ntkrnl_sys::ASSERT!(*REDZONE_LOW(Block) == REDZONE_MARK);
+        ntkrnl_sys::ASSERT!(*REDZONE_HI(Block) == REDZONE_MARK);
     }
 
     if (Tag != 0 && (*Block).Tag != Tag) || ((*Block).Tag == 0)
     {
         ERR(b"HEAP: Bad tag! Pointer=%p: block tag '%.4s', requested '%.4s', size=0x%lx\n\0".as_ptr() as PCHAR,
             Pointer, core::ptr::addr_of!((*Block).Tag), core::ptr::addr_of!(Tag), (*Block).Size as u32);
-        debug_assert!(0u8 == 1u8);
+        ntkrnl_sys::ASSERT!(0u8 == 1u8);
     }
 
     (*Block).Tag = 0;
@@ -696,13 +696,20 @@ pub unsafe extern "system" fn ExFreePoolWithTag(
     FrLdrHeapFreeEx(FrLdrDefaultHeap, P, Tag);
 }
 
+// heap.c:623 and :639 both pass ' ltR' -- ONE tag for the pair. Translation
+// emitted two different literals: the free got 0x206C7452 (correct) and the
+// alloc got 0x20746C52, 't' and 'l' transposed. Every RtlFreeHeap in freeldr
+// therefore hit the tag-mismatch branch. Named once so the pair cannot drift
+// again: a constant declared once cannot disagree with itself.
+const TAG_RTL_HEAP: ULONG = u32::from_be_bytes(*b" ltR");
+
 #[no_mangle]
 pub unsafe extern "system" fn RtlAllocateHeap(
     _HeapHandle: PVOID,
     Flags: ULONG,
     Size: SIZE_T) -> PVOID
 {
-    let ptr = FrLdrHeapAllocateEx(FrLdrDefaultHeap, Size, 0x20746C52);
+    let ptr = FrLdrHeapAllocateEx(FrLdrDefaultHeap, Size, TAG_RTL_HEAP);
     if !ptr.is_null() && (Flags & HEAP_ZERO_MEMORY) != 0
     {
         RtlZeroMemory(ptr, Size);
@@ -717,7 +724,7 @@ pub unsafe extern "system" fn RtlFreeHeap(
     _Flags: ULONG,
     HeapBase: PVOID) -> BOOLEAN
 {
-    FrLdrHeapFreeEx(FrLdrDefaultHeap, HeapBase, 0x206C7452u32);
+    FrLdrHeapFreeEx(FrLdrDefaultHeap, HeapBase, TAG_RTL_HEAP);
     1u8
 }
 

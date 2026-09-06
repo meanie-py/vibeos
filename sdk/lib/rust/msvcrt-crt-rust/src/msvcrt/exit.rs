@@ -11,15 +11,6 @@ use crate::prelude::*;
 // this module, so the import cannot dangle.
 use crate::msvcrt::console::_cputs;
 
-macro_rules! TRACE {
-    ($($arg:tt)*) => {{}};
-}
-macro_rules! FIXME {
-    ($($arg:tt)*) => {{}};
-}
-macro_rules! ERR {
-    ($($arg:tt)*) => {{}};
-}
 
 extern "C" {
     // THIS tree's `sdk/include/crt/stdio.h:92,100` — `#define _iob __iob_func()` and
@@ -358,7 +349,7 @@ pub unsafe extern "C" fn abort() {
 
 #[no_mangle]
 pub unsafe extern "C" fn _wassert(str: *const wchar_t, file: *const wchar_t, line: core::ffi::c_uint) {
-    ERR!("(%s,%s,%d)\n", debugstr_w(str), debugstr_w(file), line);
+    ERR!("(%S,%S,%d)\n", str, file, line);
     if (MSVCRT_error_mode == _OUT_TO_MSGBOX as core::ffi::c_int)
         || ((MSVCRT_error_mode == _OUT_TO_DEFAULT as core::ffi::c_int) && (MSVCRT_app_type == 2))
     {

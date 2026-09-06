@@ -3,9 +3,6 @@ use core::ffi::c_void;
 
 // WARN/ERR/FIXME/TRACE are wine debug-channel macros (no-op here, matching the
 // other integrated user32-rust bodies — window.rs/message.rs).
-macro_rules! WARN  { ($($t:tt)*) => {{ }}; }
-macro_rules! ERR   { ($($t:tt)*) => {{ }}; }
-macro_rules! FIXME { ($($t:tt)*) => {{ }}; }
 
 // LOWORD / MAKEWPARAM are macros — use crate::internal::*. ValidateHwnd lives in
 // crate::internal (correctly fastcall-split on i386).
@@ -385,7 +382,7 @@ pub unsafe extern "system" fn StaticWndProc_common(hwnd: HWND, uMsg: UINT, wPara
             NtUserSetWindowFNID(hwnd, FNID_STATIC as u16);
         } else {
             if (*pWnd).fnid != FNID_STATIC {
-                ERR!(b"Wrong window class for Static! fnId 0x%x\n\0".as_ptr() as *const i8, (*pWnd).fnid as u32);
+                ERR!("Wrong window class for Static! fnId 0x%x\n", (*pWnd).fnid as u32);
                 return 0;
             }
         }
@@ -398,7 +395,7 @@ pub unsafe extern "system" fn StaticWndProc_common(hwnd: HWND, uMsg: UINT, wPara
     match uMsg {
         WM_CREATE => {
             if style < 0 || style > SS_TYPEMASK as LONG {
-                ERR!(b"Unknown style 0x%02lx\n\0".as_ptr() as *const i8, style);
+                ERR!("Unknown style 0x%02lx\n", style);
                 return -1;
             }
             STATIC_update_uistate(hwnd, unicode);
@@ -587,7 +584,7 @@ pub unsafe extern "system" fn StaticWndProc_common(hwnd: HWND, uMsg: UINT, wPara
                     lResult = STATIC_SetIcon(hwnd, lParam as HICON, full_style as DWORD) as LRESULT;
                 }
                 _ => {
-                    FIXME!(b"STM_SETIMAGE: Unhandled type %lx\n\0".as_ptr() as *const i8, wParam);
+                    FIXME!("STM_SETIMAGE: Unhandled type %lx\n", wParam);
                 }
             }
             STATIC_TryPaintFcn(hwnd, full_style);

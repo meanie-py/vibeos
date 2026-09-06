@@ -103,7 +103,7 @@ pub unsafe extern "C" fn _font_assert(msg: *const i8, file: *const i8, line: i32
     // `cfg(not(_WIN32K_))` arm called the USER-MODE `ExitProcess` — which doesn't
     // exist in kernel mode and broke the arm64 win32k.sys link with an undefined
     // symbol once _font_assert wasn't dead-code-eliminated (amd64 DCE'd it).
-    core::debug_assert!(false);
+    ntkrnl_sys::ASSERT!(false);
 }
 
 unsafe fn TEXT_Ellipsify(
@@ -355,7 +355,10 @@ unsafe fn TEXT_WordBreak(
                 p = p.sub(1);
                 *p != SPACE as u16
             }
-            && (!IsCJKT(*p.add(1)) != 0
+            // C: `!IsCJKT(p[1])`. IsCJKT returns BOOL, so Rust's `!` is bitwise —
+            // `!0`/`!1` are both non-zero, making this arm always true and disabling
+            // the CJK line-break rule for the whole `||` chain.
+            && (IsCJKT(*p.add(1)) == 0
                 || *p.add(1) == 0
                 || wcschr(KinsokuClassA.as_ptr(), *p.add(1) as i32) != core::ptr::null_mut())
         {}
@@ -417,7 +420,7 @@ unsafe fn TEXT_SkipChars(
 
     if prefix != 0 {
         let str_on_entry = start_str;
-        core::debug_assert!(max >= n);
+        ntkrnl_sys::ASSERT!(max >= n);
         max -= n;
         while n > 0 {
             n -= 1;

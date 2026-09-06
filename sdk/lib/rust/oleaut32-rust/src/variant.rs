@@ -2889,20 +2889,24 @@ pub unsafe extern "system" fn VarAdd(mut left: LPVARIANT, mut right: LPVARIANT, 
     let mut tempRight: VARIANT = core::mem::zeroed();
     let r8res: f64;
 
-    const VT_EMPTY_PRIO: u32 = 0;
-    const VT_UI1_PRIO: u32 = 1;
-    const VT_I2_PRIO: u32 = 2;
-    const VT_I4_PRIO: u32 = 3;
-    const VT_I8_PRIO: u32 = 4;
-    const VT_BSTR_PRIO: u32 = 5;
-    const VT_R4_PRIO: u32 = 6;
-    const VT_R8_PRIO: u32 = 7;
-    const VT_CY_PRIO: u32 = 8;
-    const VT_DATE_PRIO: u32 = 9;
-    const VT_DECIMAL_PRIO: u32 = 10;
-    const VT_DISPATCH_PRIO: u32 = 11;
-    const VT_NULL_PRIO: u32 = 12;
-    const VT_ERROR_PRIO: u32 = 13;
+    // variant.c:3140 declares `enum coerceprio` FUNCTION-LOCAL; the sibling ladder
+    // below (variant.c:3353) is a DIFFERENT enum that reuses the same member names
+    // with different values. Both are faithful -- verified member-for-member against
+    // their own C enum -- so the cross-value disagreement is correct, not a bug.
+    const VT_EMPTY_PRIO: u32 = 0;  // nolint: const-contradiction (function-local C enum)
+    const VT_UI1_PRIO: u32 = 1;  // nolint: const-contradiction (function-local C enum)
+    const VT_I2_PRIO: u32 = 2;  // nolint: const-contradiction (function-local C enum)
+    const VT_I4_PRIO: u32 = 3;  // nolint: const-contradiction (function-local C enum)
+    const VT_I8_PRIO: u32 = 4;  // nolint: const-contradiction (function-local C enum)
+    const VT_BSTR_PRIO: u32 = 5;  // nolint: const-contradiction (function-local C enum)
+    const VT_R4_PRIO: u32 = 6;  // nolint: const-contradiction (function-local C enum)
+    const VT_R8_PRIO: u32 = 7;  // nolint: const-contradiction (function-local C enum)
+    const VT_CY_PRIO: u32 = 8;  // nolint: const-contradiction (function-local C enum)
+    const VT_DATE_PRIO: u32 = 9;  // nolint: const-contradiction (function-local C enum)
+    const VT_DECIMAL_PRIO: u32 = 10;  // nolint: const-contradiction (function-local C enum)
+    const VT_DISPATCH_PRIO: u32 = 11;  // nolint: const-contradiction (function-local C enum)
+    const VT_NULL_PRIO: u32 = 12;  // nolint: const-contradiction (function-local C enum)
+    const VT_ERROR_PRIO: u32 = 13;  // nolint: const-contradiction (function-local C enum)
 
     static PRIO2VT: [VARTYPE; 14] = [
         VT_EMPTY, VT_UI1, VT_I2, VT_I4, VT_I8, VT_BSTR, VT_R4,
@@ -3237,16 +3241,18 @@ pub unsafe extern "system" fn VarMul(left: LPVARIANT, right: LPVARIANT, result: 
     const I8_MAX: i64 = 0x7FFFFFFFFFFFFFFF;
     const I8_MIN: i64 = -0x7FFFFFFFFFFFFFFF - 1;
 
-    const VT_UI1_PRIO: u16 = 0;
-    const VT_I2_PRIO: u16 = 1;
-    const VT_I4_PRIO: u16 = 2;
-    const VT_I8_PRIO: u16 = 3;
-    const VT_CY_PRIO: u16 = 4;
-    const VT_R4_PRIO: u16 = 5;
-    const VT_R8_PRIO: u16 = 6;
-    const VT_DECIMAL_PRIO: u16 = 7;
-    const VT_NULL_PRIO: u16 = 8;
-    const VT_ERROR_PRIO: u16 = 9;
+    // variant.c:3353: a SECOND, shorter `enum coerceprio` (no EMPTY/BSTR/DATE/DISPATCH).
+    // Same member names as the ladder above, deliberately different values. See there.
+    const VT_UI1_PRIO: u16 = 0;  // nolint: const-contradiction (function-local C enum)
+    const VT_I2_PRIO: u16 = 1;  // nolint: const-contradiction (function-local C enum)
+    const VT_I4_PRIO: u16 = 2;  // nolint: const-contradiction (function-local C enum)
+    const VT_I8_PRIO: u16 = 3;  // nolint: const-contradiction (function-local C enum)
+    const VT_CY_PRIO: u16 = 4;  // nolint: const-contradiction (function-local C enum)
+    const VT_R4_PRIO: u16 = 5;  // nolint: const-contradiction (function-local C enum)
+    const VT_R8_PRIO: u16 = 6;  // nolint: const-contradiction (function-local C enum)
+    const VT_DECIMAL_PRIO: u16 = 7;  // nolint: const-contradiction (function-local C enum)
+    const VT_NULL_PRIO: u16 = 8;  // nolint: const-contradiction (function-local C enum)
+    const VT_ERROR_PRIO: u16 = 9;  // nolint: const-contradiction (function-local C enum)
 
     let prio2vt: [VARTYPE; 10] = [VT_UI1, VT_I2, VT_I4, VT_I8, VT_CY, VT_R4, VT_R8, VT_DECIMAL, VT_NULL, VT_ERROR];
 

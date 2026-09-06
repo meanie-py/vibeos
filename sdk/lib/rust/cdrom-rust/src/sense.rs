@@ -93,12 +93,12 @@ unsafe extern "system" {
 
 // -------- Constants used in the bodies (single definitions) --------
 // Trace levels/flags (TracePrint takes u32 args).
-const TRACE_LEVEL_ERROR: u32 = 1;
-const TRACE_LEVEL_WARNING: u32 = 2;
-const TRACE_LEVEL_INFORMATION: u32 = 4;
-const TRACE_LEVEL_VERBOSE: u32 = 5;
-const TRACE_FLAG_GENERAL: u32 = 0x1;
-const TRACE_FLAG_MCN: u32 = 0x2;
+const TRACE_LEVEL_ERROR: u32 = 2; // storswtr.h:26-30
+const TRACE_LEVEL_WARNING: u32 = 3; // storswtr.h:26-30
+const TRACE_LEVEL_INFORMATION: u32 = 4; // storswtr.h:26-30
+const TRACE_LEVEL_VERBOSE: u32 = 5; // storswtr.h:26-30
+const TRACE_FLAG_GENERAL: u32 = 0; // storswtr.h:80-98 (an ORDINAL enum, not a bitmask)
+const TRACE_FLAG_MCN: u32 = 12; // storswtr.h:80-98 (an ORDINAL enum, not a bitmask)
 
 // CdromMmcUpdateState enum value (UpdateState field is LONG/i32).
 const CdromMmcUpdateRequired: i32 = 1;

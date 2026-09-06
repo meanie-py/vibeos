@@ -86,7 +86,7 @@ const STATUS_DEVICE_DOES_NOT_EXIST: i32 = 0xC00000C0u32 as i32;
 // KMDF WDF_REQUEST_REUSE_FLAGS::WDF_REQUEST_REUSE_NO_FLAGS == 0
 const WDF_REQUEST_REUSE_NO_FLAGS: u32 = 0;
 // WPP trace flag (gates tracing only; any distinct nonzero value is fine).
-const TRACE_FLAG_POWER: u32 = 0x00000010;
+const TRACE_FLAG_POWER: u32 = 2; // storswtr.h:80-98 (an ORDINAL enum, not a bitmask)
 
 // SRB_STATUS(x) macro: mask out the status-modifier bits.
 // Returns u32 so it compares directly against SRB_STATUS_SUCCESS/_PENDING (u32).
@@ -204,8 +204,8 @@ const STATUS_MORE_PROCESSING_REQUIRED: i32 = 0xC0000016u32 as i32;
 // ---------------------------------------------------------------------------
 
 const WDF_NO_OBJECT_ATTRIBUTES: PWDF_OBJECT_ATTRIBUTES = core::ptr::null_mut(); // NULL for object attributes handle
-const TRACE_LEVEL_WARNING: u32 = 2; // common value, adjust if needed
-const TRACE_FLAG_INIT: u32 = 1; // common value
+const TRACE_LEVEL_WARNING: u32 = 3; // storswtr.h:26-30
+const TRACE_FLAG_INIT: u32 = 8; // storswtr.h:80-98 (an ORDINAL enum, not a bitmask)
 
 const CdRomDeviceInterface: i32 = 0;
 const MountedDeviceInterface: i32 = 1;
@@ -227,9 +227,9 @@ const WdfRequestTypeDeviceControl: u32 = 7; // Common KMDF value
 const WdfRequestTypeRead: u32 = 3;
 const WdfRequestTypeWrite: u32 = 4;
 #[allow(dead_code)]
-const TRACE_LEVEL_INFORMATION: u32 = 4; // Typical WPP level
-const TRACE_LEVEL_VERBOSE: u32 = 5;
-const TRACE_FLAG_GENERAL: u32 = 0x00000001; // Typical flag
+const TRACE_LEVEL_INFORMATION: u32 = 4; // storswtr.h:26-30
+const TRACE_LEVEL_VERBOSE: u32 = 5; // storswtr.h:26-30
+const TRACE_FLAG_GENERAL: u32 = 0; // storswtr.h:80-98 (an ORDINAL enum, not a bitmask)
 
 type NTSTATUS = i32;
 type BOOLEAN = u8;
@@ -255,8 +255,8 @@ const MediaUnknown: i32 = 0;
 const MediaUnavailable: i32 = 1;
 const DO_VERIFY_VOLUME: u32 = 0x02;
 const CdromMmcUpdateRequired: i32 = 1;
-const TRACE_LEVEL_ERROR: u32 = 1;
-const TRACE_FLAG_IOCTL: u32 = 2;
+const TRACE_LEVEL_ERROR: u32 = 2; // storswtr.h:26-30
+const TRACE_FLAG_IOCTL: u32 = 4; // storswtr.h:80-98 (an ORDINAL enum, not a bitmask)
 
 // Forward declarations for unknown external functions
 
@@ -268,7 +268,10 @@ const TRACE_FLAG_IOCTL: u32 = 2;
 /// _IRQL_requires_max_(APC_LEVEL)
 
 // Constants (approximate values; some are typical Windows DDK constants)
-const NonPagedPoolNx: u32 = 0x200; // POOL_TYPE
+// cdrom.h:68: `#define NonPagedPoolNx NonPagedPool` under
+// `#ifdef __REACTOS__` -- NX pool is NT6.2 and this kernel has none, so the
+// Windows value (0x200/0x204) is not what any TU here compiles.
+const NonPagedPoolNx: u32 = 0;
 const CDROM_TAG_COMPLETION_CONTEXT: u32 = 0x63436353; // placeholder, replace with actual tag
 
 const START_UNIT_TIMEOUT: u32 = 0xf0; // typical timeout in seconds  // was 60 (LLM-invented); bindgen-correct
@@ -296,7 +299,10 @@ const CDROM_READ_CAPACITY_TIMEOUT: u32 = 0x14; // typical value, if incorrect ca
 const SCSIOP_READ_CAPACITY: u8 = 0x25;
 
 const CDROM_TAG_STREAM: u32 = 0x4F434353;
-const NonPagedPoolNxCacheAligned: u32 = 0x204; // NonPagedPoolNx (512) + CacheAligned (4)
+// cdrom.h:68: `#define NonPagedPoolNxCacheAligned NonPagedPoolCacheAligned` under
+// `#ifdef __REACTOS__` -- NX pool is NT6.2 and this kernel has none, so the
+// Windows value (0x200/0x204) is not what any TU here compiles.
+const NonPagedPoolNxCacheAligned: u32 = 4;
 const SCSIOP_SET_STREAMING: u8 = 0xB6;
 #[no_mangle]
 pub unsafe extern "C" fn RequestSetReceivedTime(Request: WDFREQUEST) {
@@ -587,7 +593,10 @@ pub unsafe extern "system" fn DeviceSendSrbSynchronously(
 
     const SENSE_BUFFER_SIZE: u32 = 18; // placeholder
     const CDROM_TAG_SENSE_INFO: u32 = 0x49436353; // 'SENS' placeholder
-    const NonPagedPoolNxCacheAligned: u32 = 0x204; // NonPagedPoolNx (512) + CacheAligned (4)
+    // cdrom.h:68: `#define NonPagedPoolNxCacheAligned NonPagedPoolCacheAligned` under
+    // `#ifdef __REACTOS__` -- NX pool is NT6.2 and this kernel has none, so the
+    // Windows value (0x200/0x204) is not what any TU here compiles.
+    const NonPagedPoolNxCacheAligned: u32 = 4;
     const SRB_FUNCTION_EXECUTE_SCSI: u32 = 0x00;
     const SRB_SIMPLE_TAG_REQUEST: u32 = 0x20;
     const SRB_FLAGS_DISABLE_SYNCH_TRANSFER: u32 = 0x00000008;
@@ -605,10 +614,10 @@ pub unsafe extern "system" fn DeviceSendSrbSynchronously(
     const STATUS_INSUFFICIENT_RESOURCES: i32 = (0xC000009Au32 as i32);
     const STATUS_CANCELLED: i32 = (0xC0000120u32 as i32);
     const STATUS_PENDING: i32 = 0x103;
-    const TRACE_LEVEL_ERROR: u32 = 2;
-    const TRACE_FLAG_GENERAL: u32 = 0x00000001;
-    const TRACE_LEVEL_INFORMATION: u32 = 4;
-    const TRACE_FLAG_POWER: u32 = 0x00000010;
+    const TRACE_LEVEL_ERROR: u32 = 2; // storswtr.h:26-30
+    const TRACE_FLAG_GENERAL: u32 = 0; // storswtr.h:80-98 (an ORDINAL enum, not a bitmask)
+    const TRACE_LEVEL_INFORMATION: u32 = 4; // storswtr.h:26-30
+    const TRACE_FLAG_POWER: u32 = 2; // storswtr.h:80-98 (an ORDINAL enum, not a bitmask)
     const WDF_REQUEST_REUSE_NO_FLAGS: u32 = 0;
     const IoReadAccess: u32 = 0;
     const IoWriteAccess: u32 = 1;
@@ -870,9 +879,12 @@ pub unsafe extern "C" fn DeviceSendNotification(
     ExtraDataSize: u32,
     ExtraData: *mut core::ffi::c_void,
 ) {
-    const TRACE_LEVEL_WARNING: u32 = 3;
-    const TRACE_FLAG_MCN: u32 = 0x100;
-    const NonPagedPoolNx: u32 = 0x200;
+    const TRACE_LEVEL_WARNING: u32 = 3; // storswtr.h:26-30
+    const TRACE_FLAG_MCN: u32 = 12; // storswtr.h:80-98 (an ORDINAL enum, not a bitmask)
+    // cdrom.h:68: `#define NonPagedPoolNx NonPagedPool` under
+    // `#ifdef __REACTOS__` -- NX pool is NT6.2 and this kernel has none, so the
+    // Windows value (0x200/0x204) is not what any TU here compiles.
+    const NonPagedPoolNx: u32 = 0;
     const CDROM_TAG_NOTIFICATION: u32 = 0x6F436353;
 
     let mut notification: *mut TARGET_DEVICE_CUSTOM_NOTIFICATION;
@@ -2202,10 +2214,10 @@ pub unsafe extern "C" fn MediaReadCapacityDataInterpret(
 }
 #[no_mangle]
 pub unsafe extern "system" fn DevicePickDvdRegion(Device: WDFDEVICE) {
-    const TRACE_LEVEL_VERBOSE: u32 = 0x00000002;
-    const TRACE_FLAG_IOCTL: u32 = 0x00000001;
-    const TRACE_LEVEL_INFORMATION: u32 = 0x00000004;
-    const TRACE_LEVEL_WARNING: u32 = 0x00000003;
+    const TRACE_LEVEL_VERBOSE: u32 = 5; // storswtr.h:26-30
+    const TRACE_FLAG_IOCTL: u32 = 4; // storswtr.h:80-98 (an ORDINAL enum, not a bitmask)
+    const TRACE_LEVEL_INFORMATION: u32 = 4; // storswtr.h:26-30
+    const TRACE_LEVEL_WARNING: u32 = 3; // storswtr.h:26-30
     // CTL_CODE(IOCTL_DVD_BASE=FILE_DEVICE_DVD=0x33, 0x401, METHOD_BUFFERED, FILE_READ_ACCESS)
     const IOCTL_DVD_READ_KEY: u32 = 0x0033_5004;
     // pool tag 'vCcS' (displays "ScCv") — cdrom.h DVD_TAG_DVD_REGION
@@ -2712,7 +2724,7 @@ pub unsafe extern "system" fn RequestSetContextFields(
     let mut syncEvent: *mut KEVENT = core::ptr::null_mut();
 
     syncEvent = ExAllocatePoolWithTag(
-        0x200u32, // NonPagedPoolNx
+        0, // NonPagedPoolNx: ReactOS #defines it to NonPagedPool (no NX pool here)
         core::mem::size_of::<KEVENT>(),
         0x74764553u32, // CDROM_TAG_SYNC_EVENT
     ) as *mut KEVENT;

@@ -443,8 +443,10 @@ pub const CM_CHECK_REGISTRY_VALIDATE_HIVE: u32 = 0x00000008;
 pub const CM_CHECK_REGISTRY_FIX_HIVE: u32 = 0x00000010;
 
 // CM Pool tags (from config/cm.h)
-pub const TAG_CM: u32 = u32::from_le_bytes(*b"MmCk");      // 'kCmM'
-pub const TAG_CMHIVE: u32 = u32::from_le_bytes(*b"vHmC");  // 'CmHv'
+// C: cmlib.h `#define TAG_CM '  MC'`. A multi-char literal is BIG-endian.
+pub const TAG_CM: u32 = u32::from_be_bytes(*b"  MC");
+// C: cmlib.h `#define TAG_CMHIVE 'vHMC'` (big-endian multi-char literal).
+pub const TAG_CMHIVE: u32 = u32::from_be_bytes(*b"vHMC");
 pub const TAG_CMSD: u32 = u32::from_le_bytes(*b"dSmC");    // 'CmSd'
 pub const TAG_KCB: u32 = u32::from_le_bytes(*b"bcKM");     // 'MKcb'
 
@@ -731,7 +733,7 @@ pub unsafe extern "system" fn CmpCloseKeyObject(
         // marker. The translation turned it into an unconditional KeBugCheck(0),
         // which would kill a release machine on a case NT just walks past, with
         // the meaningless stop code 0 (UNDEFINED_BUG_CODE). Field manual §9.113.
-        debug_assert!(false, "CmpCloseKeyObject: key body still has a NotifyBlock");
+        ntkrnl_sys::ASSERT!(false, "CmpCloseKeyObject: key body still has a NotifyBlock");
     }
 }
 

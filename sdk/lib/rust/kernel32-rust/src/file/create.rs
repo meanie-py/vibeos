@@ -3,8 +3,6 @@ use crate::prelude::*;
 use crate::k32_externs::{InitializeObjectAttributes, SearchPathW};
 
 // ---- no-op Wine debug shims (NDEBUG: TRACE/WARN/ERR/FIXME compile out) ----
-macro_rules! TRACE { ($($t:tt)*) => {{}} }
-macro_rules! WARN  { ($($t:tt)*) => {{}} }
 
 const STATUS_FILE_IS_A_DIRECTORY: NTSTATUS = 0xC00000BAu32 as NTSTATUS;
 

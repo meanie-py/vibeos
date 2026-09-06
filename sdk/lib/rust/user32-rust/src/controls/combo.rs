@@ -31,10 +31,6 @@ unsafe fn SetWindowLongPtrW(hWnd: HWND, nIndex: i32, dwNewLong: LONG_PTR) -> LON
 }
 
 // Wine debug-channel stubs (WINE_DEFAULT_DEBUG_CHANNEL(combo)) — no-ops.
-macro_rules! ERR   { ($($t:tt)*) => {{ }}; }
-macro_rules! WARN  { ($($t:tt)*) => {{ }}; }
-macro_rules! TRACE { ($($t:tt)*) => {{ }}; }
-macro_rules! FIXME { ($($t:tt)*) => {{ }}; }
 // debugstr_w / wine_dbgstr_rect — used only inside the no-op trace macros; provide
 // dummy implementations so any stray call site still type-checks.
 #[inline]
@@ -682,12 +678,12 @@ unsafe fn COMBO_Create(
                 TRACE!(b"init done\n\0".as_ptr());
                 return 0;
             }
-            ERR!(b"edit control failure.\n\0".as_ptr());
+            ERR!("edit control failure.\n");
         } else {
-            ERR!(b"listbox failure.\n\0".as_ptr());
+            ERR!("listbox failure.\n");
         }
     } else {
-        ERR!(b"no owner for visible combo.\n\0".as_ptr());
+        ERR!("no owner for visible combo.\n");
     }
 
     -1
@@ -740,7 +736,7 @@ unsafe fn CBPaintText(lphc: LPHEADCOMBO, hdc_paint: HDC) {
     if id != LB_ERR {
         size = SendMessageW((*lphc).hWndLBox, LB_GETTEXTLEN, id as WPARAM, 0) as INT;
         if size == LB_ERR {
-            FIXME!(b"LB_ERR probably not handled yet\n\0".as_ptr() as *const i8);
+            FIXME!("LB_ERR probably not handled yet\n");
         }
         pText = HeapAlloc(
             GetProcessHeap(),
@@ -1813,7 +1809,7 @@ pub unsafe extern "system" fn ComboWndProc_common(
         } else {
             if (*pWnd).fnid != FNID_COMBOBOX as u32 {
                 ERR!(
-                    b"Wrong window class for ComboBox! fnId 0x%x\n\0".as_ptr() as *const i8,
+                    "Wrong window class for ComboBox! fnId 0x%x\n",
                     (*pWnd).fnid as UINT,
                 );
                 return 0;

@@ -115,7 +115,7 @@ pub unsafe extern "system" fn WSPEventSelect(
     NtClose(SockEvent);
 
     if Status != STATUS_SUCCESS {
-        ERR!(b"Got status 0x%08x.\n\0".as_ptr(), Status);
+        ERR!("Got status 0x%08x.\n", Status);
         return MsafdReturnWithErrno(Status, lpErrno, 0, core::ptr::null_mut()) as i32;
     }
 
@@ -164,7 +164,7 @@ pub unsafe extern "system" fn WSPEnumNetworkEvents(
     );
 
     if !NT_SUCCESS(Status) {
-        ERR!(b"Could not make an event %x\n\0".as_ptr() as _, Status);
+        ERR!("Could not make an event %x\n", Status);
         return SOCKET_ERROR;
     }
 
@@ -191,7 +191,7 @@ pub unsafe extern "system" fn WSPEnumNetworkEvents(
     NtClose(SockEvent);
 
     if Status != STATUS_SUCCESS {
-        ERR!(b"Status 0x%08x\n\0".as_ptr() as _, Status);
+        ERR!("Status 0x%08x\n", Status);
         return MsafdReturnWithErrno(Status, lpErrno, 0, core::ptr::null_mut()) as i32;
     }
 
