@@ -959,6 +959,7 @@ EARLY_SOURCE_CHECKS = frozenset(
         "scan_type_alias_contradictions",
         "scan_irql_balance",
         "scan_ob_refcount",
+        "scan_rawdylib_linkname",
     }
 )
 

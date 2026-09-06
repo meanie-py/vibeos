@@ -49,6 +49,7 @@ WHAT COUNTS AS A FINDING
 """
 
 import argparse
+import os
 import re
 import sys
 from pathlib import Path
@@ -130,6 +131,24 @@ def scan_text(text: str):
             )
 
 
+def iter_rs(root: Path):
+    """Yield every .rs under `root`, pruning cargo `target/` DURING the walk.
+
+    Filtering "/target/" out of an rglob result is too late: rglob has already
+    descended, and a concurrent cargo build deletes directories out from under it,
+    so the scanner dies with FileNotFoundError deep inside pathlib. The gate then
+    reports that crash as "NEW lint findings" with no findings in it. Pruning the
+    dirnames list keeps us out of target/ entirely, and onerror keeps any other
+    directory vanishing mid-walk from being fatal.
+    """
+    for dirpath, dirnames, filenames in os.walk(root, onerror=lambda _e: None):
+        dirnames[:] = [d for d in dirnames if d != "target"]
+        base = Path(dirpath)
+        for fn in filenames:
+            if fn.endswith(".rs"):
+                yield base / fn
+
+
 def main() -> int:
     ap = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     ap.add_argument("--root", action="append", help="roots to scan (default: sdk)")
@@ -144,9 +163,7 @@ def main() -> int:
 
     findings = files = 0
     for root in roots:
-        for path in sorted(root.rglob("*.rs")):
-            if "/target/" in str(path):
-                continue
+        for path in sorted(iter_rs(root)):
             try:
                 text = path.read_text(encoding="utf-8", errors="replace")
             except OSError:
