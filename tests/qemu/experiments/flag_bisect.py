@@ -52,8 +52,8 @@ def run_variant(name: str, extra: list[str]) -> str:
                             stderr=subprocess.DEVNULL, preexec_fn=os.setpgrp)
     try:
         # Wait for shell ready (i386 boots ~50s here).
-        deadline = time.time() + 180
-        while time.time() < deadline:
+        deadline = time.monotonic() + 180
+        while time.monotonic() < deadline:
             if ser.exists() and b"shell ready" in ser.read_bytes():
                 break
             if proc.poll() is not None:
