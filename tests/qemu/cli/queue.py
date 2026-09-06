@@ -141,6 +141,72 @@ def _results_dir(repo: Path) -> Path:
     return queue_dir(repo) / "results"
 
 
+def _attempts_dir(repo: Path) -> Path:
+    return queue_dir(repo) / "attempts"
+
+
+def begin_attempt(repo: Path, lane: str, tip: str) -> Path:
+    """Record that a submit is IN PROGRESS, so a killed one leaves evidence.
+
+    `land` runs a multi-minute preflight before it enqueues anything. A kill in that window
+    (the host filling its disk does it, and the harness reports it as low memory) leaves no
+    queue entry and no error, and `land-status` omitting a lane is indistinguishable from a
+    conductor that has not reached it — so the agent waits on a position it never had. Ask
+    nobody to remember that: leave a marker and let the tool say it.
+
+    Removed by `end_attempt` on every ordinary exit INCLUDING an abort, via `finally`. A
+    SIGKILL is precisely the case that skips `finally`, which is what makes a surviving
+    marker mean "killed" rather than "failed".
+    """
+    d = _attempts_dir(repo)
+    d.mkdir(parents=True, exist_ok=True)
+    path = d / f"{lane.replace('/', '_')}.json"
+    path.write_text(
+        json.dumps({"lane": lane, "tip": tip, "pid": os.getpid(), "started_at": time.time()}),
+        encoding="utf-8",
+    )
+    return path
+
+
+def end_attempt(path: Path | None) -> None:
+    if path is not None:
+        path.unlink(missing_ok=True)
+
+
+def _pid_alive(pid: int) -> bool:
+    try:
+        os.kill(pid, 0)
+    except ProcessLookupError:
+        return False
+    except PermissionError:
+        return True  # exists, owned by someone else
+    return True
+
+
+def abandoned_attempts(repo: Path, *, lane: str | None = None) -> list[dict]:
+    """Submits that started, never enqueued, and whose process is gone.
+
+    A live pid is an in-flight submit, not an abandoned one, so it is excluded — this must
+    not cry wolf at the agent watching its own `land` run.
+    """
+    out: list[dict] = []
+    queued = {s.lane for s in pending(repo)}
+    d = _attempts_dir(repo)
+    if not d.is_dir():
+        return out
+    for f in sorted(d.glob("*.json")):
+        try:
+            rec = json.loads(f.read_text(encoding="utf-8"))
+        except (OSError, ValueError):
+            continue
+        if lane is not None and rec.get("lane") != lane:
+            continue
+        if rec.get("lane") in queued or _pid_alive(int(rec.get("pid", -1))):
+            continue
+        out.append(rec)
+    return out
+
+
 def lane_id(repo: Path) -> str:
     branch = git(repo, "rev-parse", "--abbrev-ref", "HEAD")
     return f"{branch}@{repo.resolve().name}"

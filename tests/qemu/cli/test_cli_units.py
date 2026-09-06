@@ -5,6 +5,8 @@ Run: <venv>/bin/python -m pytest tests/qemu/cli/test_cli_units.py -q
 
 from __future__ import annotations
 
+import contextlib
+import io
 import json
 import os
 import re
@@ -5320,6 +5322,53 @@ def test_green_lint_still_reaches_the_queue(lane_repo, tmp_path, monkeypatch):
     subprocess.run(["git", "commit", "-qm", "cli"], cwd=lane, check=True, capture_output=True)
     assert land_mod.land(_Args(direct=False), lane) == 0
     assert q_mod.pending(lane), "a green lane must still be queued"
+
+
+def test_a_killed_submit_is_REPORTED_not_silently_absent(lane_repo, tmp_path, monkeypatch):
+    """A `land` killed mid-preflight leaves the lane unregistered with no error.
+
+    That is not hypothetical: the host filled its disk and the harness killed five background
+    commands in one session, reporting each as low memory. One was a `land`. `land-status`
+    simply did not list the lane, which is indistinguishable from "the conductor has not
+    reached me yet" — so the agent waited on a queue position it never had. Asking everyone to
+    remember to double-check is the rule-instead-of-mechanism the repo forbids; leave a marker
+    and let the tool say it.
+    """
+    lane, _ = lane_repo
+    head = q_mod.git(lane, "rev-parse", "HEAD")
+    attempt = q_mod.begin_attempt(lane, q_mod.lane_id(lane), head)
+    assert attempt.is_file()
+    # Nothing is queued and the marker's process is alive (it is us), so this is an IN-FLIGHT
+    # submit, not an abandoned one — it must stay quiet, or it cries wolf at every land.
+    assert q_mod.abandoned_attempts(lane) == [], "a live submit must not report as abandoned"
+    # Now the kill: rewrite the marker with a pid that cannot be running.
+    rec = json.loads(attempt.read_text())
+    rec["pid"] = 2**22  # above every /proc/sys/kernel/pid_max in practice
+    attempt.write_text(json.dumps(rec))
+    found = q_mod.abandoned_attempts(lane)
+    assert len(found) == 1 and found[0]["tip"] == head
+
+    # and the agent has to SEE it, which is the entire point
+    out = io.StringIO()
+    with contextlib.redirect_stdout(out):
+        land_mod.cmd_land_status(_Args(mine=True), lane)
+    printed = out.getvalue()
+    assert "NOT QUEUED" in printed, printed
+    assert "re-run" in printed, "must say what to do, not just that something is wrong"
+
+
+def test_an_enqueued_lane_is_not_reported_as_abandoned(lane_repo, tmp_path, monkeypatch):
+    """The negative control. A marker left behind by a submit that SUCCEEDED must not be
+    reported — otherwise the warning appears on every successful land and gets tuned out,
+    which is how a true signal becomes noise."""
+    lane, _ = lane_repo
+    head = q_mod.git(lane, "rev-parse", "HEAD")
+    attempt = q_mod.begin_attempt(lane, q_mod.lane_id(lane), head)
+    rec = json.loads(attempt.read_text())
+    rec["pid"] = 2**22
+    attempt.write_text(json.dumps(rec))
+    q_mod.submit(lane, tip=head)
+    assert q_mod.abandoned_attempts(lane) == [], "a queued lane is not an abandoned submit"
 
 
 def test_prune_never_reclaims_the_integration_tree(tmp_path):
