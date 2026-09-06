@@ -4814,12 +4814,19 @@ No sleep and no retry, and it hides nothing: the directory genuinely changed, so
 test still has to carry it. Forcing the inversion (stamp the build outputs 1s into the future,
 then unlink) reproduces it every time — do that rather than trying to catch it under load.
 
-**Two independent mechanisms, one symptom — this is what makes such a flake look unfixable.**
-The clock step above and this margin produce the identical staleness in the identical test, and
-neither fix subsumes the other. The clock cause was removed host-side (timesyncd disabled,
-verified 0 backward steps over 120s), so that guard is now a tripwire for something that should
-not recur; this one is the live mechanism. If the test misbehaves again, check the ordering
-first, then the clock — and do not "tidy" either guard away as redundant.
+**THREE independent mechanisms, one symptom — this is what makes such a flake look unfixable.**
+The clock step above, this margin, and a third in the same test's negative control produce
+staleness-shaped failures that no single fix subsumes. The third is an ORACLE fault rather than
+a system one: `missing_edge` asserts `invocations() == before`, but over-invalidation is legal,
+so under load the build is right and the assertion is wrong — relaxing it to `>=` is safe only
+because the value assertions here pin what the count no longer does.
+
+The clock cause was removed host-side (timesyncd disabled, verified 0 backward steps over
+120s), so that guard is now a tripwire for something that should not recur; this one is the
+live mechanism. If the test misbehaves again, check the ordering
+first, then the oracle, then the clock — and do not "tidy" any of the three away as redundant.
+Three lanes each found one of these within a day, each initially certain it was the whole
+story.
 
 ### Cargo depfiles leave directory contents or lockfile changes stale
 
