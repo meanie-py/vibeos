@@ -547,14 +547,23 @@ Field-manual § pointers hold the full writeups. **Update on state change.**
 - **OPEN, BLOCKS EVERY LANE'S LANDING ~50% OF THE TIME (2026-09-06): `tools/test_build_invalidation.py`
   is flaky.** Landed tonight (`2e016c6595f` "Cover native source and header invalidation layers",
   in as `41589edd0c53`). Measured 5 consecutive full-file runs on an IDLE host: **3 failed, 2
-  passed**, a different test each time and never more than one per run —
-  `test_generated_rust_tracks_directory_input_add_edit_remove[directory-depfile]` (`assert [] ==
-  ['leaf']`, expected a rebuild and got none), then
-  `test_native_inputs_reach_linked_rust_executable[source-only-source-S]` and
-  `[source-only-header-c]` (both the INVERSE — a rebuild happened where none was expected). No
+  passed** (see the fuller 6-run table below). No
   `pytest-randomly`/`xdist` installed, so it is not test-order shuffling; every failure is in the
   "did ninja re-run `leaf`" assertion class, in both directions, which points at mtime/timestamp
   sensitivity rather than a missing dependency edge. Every test passes in isolation in ~5s.
+  **Frequency and signature, 6 full-file runs on an idle host: 4 failed, 2 passed, and FOUR
+  DIFFERENT tests** — `test_generated_rust_tracks_directory_input_add_edit_remove[directory-depfile]`,
+  `test_native_inputs_reach_linked_rust_executable[source-only-source-S]` and
+  `[source-only-header-c]`, and `test_lockfile_only_git_pin_change_requires_explicit_edge[False]`.
+  Never more than one per run. **The dominant signature is a SPURIOUS `leaf` rebuild**: 3 of the 4
+  are `Left contains one more item: 'leaf'` — an extra `leaf` invocation on a `compile()` that
+  should have been a no-op — and only the first was the opposite (a rebuild that failed to
+  happen). `leaf` is the one target with extra inputs (`include_str!("../payload.txt")` +
+  `env!("SCHEMA")`), so it is the most-dependent target in the fixture and the one most likely to
+  trip a timestamp comparison. A source whose mtime sits in the FUTURE relative to its built
+  output makes that output permanently dirty, which reproduces the "rebuilds every time"
+  direction exactly; `write()`'s `max(now, max_existing) + 1ms` is the mechanism that can put it
+  there, since built artifacts are stamped with the real clock.
   Impact: `vibeos-cli land` runs `check-tooling` as a pre-queue gate, so this aborts landings
   that have nothing to do with it, and the conductor runs the same check inside its gate (a red
   batch there costs 3 builds + 4 boots of fleet load before the split exonerates the innocent
