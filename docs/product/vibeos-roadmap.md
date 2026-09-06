@@ -673,8 +673,16 @@ Field-manual § pointers hold the full writeups. **Update on state change.**
   `ExSemaphoreObjectType`, `IoFileObjectType`, `KeLoaderBlock`), so its IAT slots are never
   filled and any path reading them gets an unresolved pointer; the boot stays green only because
   those paths are not exercised (ramdisk is not the boot device here). 9 sites in 8 files fixed.
-  Field manual: "raw-dylib in a freeldr-loaded DLL hangs the boot". Owed: a lint so the bare form
-  cannot come back.
+  Field manual: "raw-dylib in a freeldr-loaded DLL hangs the boot". **Owed lint DELIVERED
+  (2026-09-06): `tools/scan_rawdylib_linkname.py`**, wired into `vibeos-cli check` with an EMPTY
+  baseline. It resolves each name the way rustc does and reports DOUBLE_EXT (`ntoskrnl.exe` with
+  no `+verbatim` -> `ntoskrnl.exe.dll`), WRONG_EXT (bare `ntoskrnl` -> `ntoskrnl.dll`, the
+  original bug) and NO_EXT. It deliberately does NOT demand `+verbatim` everywhere — bare `ntdll`
+  -> `ntdll.dll` is correct, and a scanner flagging it would teach the next agent to write
+  `ntdll.dll.dll`. Validated by replaying `2a89c05d763^` through it: flags all four sites naming
+  `ntoskrnl.exe.dll`, and the pre-repair spelling naming `ntoskrnl.dll` — the two filenames that
+  actually appeared in the boot log. Positive AND negative controls in
+  `tools/test_scanner_controls.py`.
 - **`Cannot open winsta` x229 per boot is winlogon thread teardown — ROOT-CAUSED, benign, OPEN**
   (2026-09-05). Instrumented boot: 228 of 229 come from PID 0x9c (winlogon), all with
   `hWinSta = NULL` and `STATUS_INVALID_HANDLE` (not an access denial), all from one call site —
