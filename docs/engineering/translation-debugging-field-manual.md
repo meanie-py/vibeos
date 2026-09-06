@@ -6934,6 +6934,15 @@ whole class collapsed to the one case that is *supposed* to happen.
   deleted outright, and its oracle (rustconv's trailing C comments) is absent from hand-written
   bridge modules like `ARM3/helpers.rs` anyway. Grep the C for `ASSERT` before calling a
   translated MM/KE helper faithful.
+  **Know which hang you are now in.** Restoring the guard did NOT make the boot pass — it
+  converted an unobservable freeze (EL1, DAIF all masked, PC parked, no timer, no bugcheck,
+  nothing downstream can see it) into a *livelock with interrupts on*: zero fault-retry
+  reports, and instead ~1.1M `ws-lock-excl`/`ws-unlock-excl` pairs from one thread in the
+  flight recorder. Neither boots, but they are very different debugging positions, and the
+  second one is reachable by every instrument we own. Expect this shape whenever you refuse a
+  bad value inside a helper whose caller has no error return: the caller cannot observe the
+  refusal, so it retries. That is a step forward, not a fix, and the real repair belongs where
+  the bad value is chosen.
 - **"Software says valid, hardware says translation fault" has two causes on arm64, and they
   need opposite fixes.** Either the entry was never published to the page-table walker (a
   separate observer from this core's loads -- needs `dsb ishst`; see `MI_WRITE_VALID_PTE`), or

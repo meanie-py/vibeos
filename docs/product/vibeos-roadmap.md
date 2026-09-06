@@ -483,6 +483,41 @@ land; date every addition.** Source docs live in `docs/engineering/archive/`.
 
 ## Known bugs & flakes (live registry)
 
+- **Nothing caps `/tmp/vibeos-cli` retention — OPEN tooling gap** (2026-09-06). A long soak
+  writes one artifact dir per round with a ~7MB `serial.log` in it, forever; `pytest`'s
+  `tmp_path_factory` keeps its last 3 runs but the CLI keeps everything. Found while the host
+  root filesystem hit 100% (the actual weight that day was ~400G of sibling worktrees plus a
+  148G sccache, NOT this — but the gap is real and unbounded). The failure mode is worth
+  recognising: at 0 bytes free the agent harness cannot run ANY shell command, because it
+  creates each command's stdout file under `/tmp` first, so even `true` fails with ENOSPC and
+  it presents as a broken tool rather than a full disk. Retention belongs in the CLI, not in
+  each lane remembering to clean up (`vibeos-cli prune` is delete-only and manual).
+
+- **No scanner catches a C `ASSERT` that VANISHES in translation — OPEN tooling gap**
+  (2026-09-06, found via task #39). `MI_MAKE_HARDWARE_PTE_USER` was translated without the
+  three ASSERTs the C original opens with (`ASSERT(ProtectionMask & MM_PROTECT_ACCESS)` and
+  friends, commented *"check that we are not setting valid a page that should not be"*). On
+  arm64 those asserts were the only thing between a zeroed protection mask and a `Valid = 1`
+  descriptor the MMU rejects, so their absence turned a loud precondition failure into a pager
+  reporting success forever with interrupts masked — an unobservable freeze. Cost a boot and
+  ~3 soaks to find.
+  `scan_assert_to_ub` does **not** cover it: that gate catches an assert lowered to
+  `unreachable_unchecked()` (present and wrong), not one deleted outright.
+  **Do not file this as "clone `scan_dropped_prints`".** That scanner's oracle is rustconv's
+  trailing C comments in the same `.rs`, and the two implementations that carried this bug
+  (`ntoskrnl-rust/src/ARM3/helpers.rs`, `ntkrnl-sys/src/inline/mm.rs`) are HAND-WRITTEN bridge
+  modules with no trailing C — a same-file diff has nothing to compare and reports clean on the
+  exact function that cost the boot. The oracle has to be cross-file: the C `FORCEINLINE` in
+  `ntoskrnl/mm/ARM3/miarm.h` (and `ke.h`) paired by name against its Rust twin.
+  Shape precedent already exists — `scan_extern_decl_drift.py`, `scan_extern_arity.py` and
+  `verify_signatures` all pair C declarations against Rust. Unlike `verify_signatures` this one
+  reads **no generated headers** (source `.h` + source `.rs` only), so it is not build-dependent
+  and belongs in the `source-early` partition.
+  Two scoping rules: the finding must be *"fewer asserts than the C"*, not *"no asserts"* (a
+  partial drop is the same class; #39 dropped 3 of 3, the easy end); and it need not generalise
+  beyond the `miarm.h`/`ke.h` FORCEINLINE surface, where hardware-precondition asserts live and
+  the bridge modules deliberately mirror C names. Closest model: `scan_invented_constants`.
+
 - **`test_build_invalidation.py` is flaky UNDER LOAD and it bounces conductor batches — OPEN**
   (2026-09-06). Two different tests in the file have failed the same way:
   `test_generated_rust_tracks_directory_input_add_edit_remove[files-depfile]` (line 522) with

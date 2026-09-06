@@ -527,6 +527,7 @@ pub unsafe fn MI_MAKE_HARDWARE_PTE_KERNEL(
 
 /// MI_MAKE_HARDWARE_PTE_USER — create user hardware PTE.
 #[inline]
+#[track_caller]
 pub unsafe fn MI_MAKE_HARDWARE_PTE_USER(
     new_pte: ddk::PMMPTE,
     _mapping_pte: ddk::PMMPTE,

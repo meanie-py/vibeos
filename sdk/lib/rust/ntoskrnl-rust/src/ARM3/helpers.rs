@@ -523,6 +523,7 @@ pub unsafe fn MI_MAKE_HARDWARE_PTE(
 }
 
 #[inline]
+#[track_caller]
 pub unsafe fn MI_MAKE_HARDWARE_PTE_USER(
     new_pte: &mut MMPTE,
     _mapping_pte: PMMPTE,

@@ -884,6 +884,7 @@ pub fn MI_SET_PROCESS2(_name: &str) {}
 /// fault then takes the invalid path and the thread gets a clean access
 /// violation instead of taking the box down with it.
 #[inline]
+#[track_caller]
 pub unsafe fn mi_user_pte_may_be_valid(protection_mask: usize) -> bool {
     // MM_PROTECT_ACCESS is the three access bits; a mask with none of them set
     // names MM_ZERO_ACCESS (0), MM_NOACCESS (8), MM_GUARDPAGE/MM_DECOMMIT (0x10)
@@ -891,25 +892,49 @@ pub unsafe fn mi_user_pte_may_be_valid(protection_mask: usize) -> bool {
     if protection_mask & MM_PROTECT_ACCESS as usize != 0 {
         return true;
     }
-    mi_report_no_access_valid_pte(protection_mask);
+    let loc = core::panic::Location::caller();
+    mi_report_no_access_valid_pte(protection_mask, loc.file(), loc.line());
     false
 }
 
 /// One line per distinct offending mask per boot — enough to name the caller's
 /// protection without turning a hot fault path into a serial-console flood.
+///
+/// The call site comes from `#[track_caller]` rather than a read of x30 or a tag
+/// threaded through every caller: it is stable Rust, exact, and costs nothing at
+/// the sites. It only reaches the real ARM3 caller because
+/// `MI_MAKE_HARDWARE_PTE_USER` is `#[track_caller]` too — without that the
+/// location stops at the helper and names itself.
 #[inline(never)]
-unsafe fn mi_report_no_access_valid_pte(protection_mask: usize) {
+unsafe fn mi_report_no_access_valid_pte(protection_mask: usize, file: &str, line: u32) {
     static mut REPORTED: u32 = 0;
     let bit = 1u32 << (protection_mask & 31);
     if REPORTED & bit != 0 {
         return;
     }
     REPORTED |= bit;
+
+    // Location::file() is a plain &str, not NUL-terminated, so it cannot be
+    // handed to DbgPrint's %s directly. Copy the TAIL (the interesting half:
+    // ".../ARM3/pagfault.rs") into a NUL-terminated stack buffer.
+    let mut buf = [0u8; 64];
+    let src = file.as_bytes();
+    let take = if src.len() > 63 { 63 } else { src.len() };
+    let start = src.len() - take;
+    let mut i = 0;
+    while i < take {
+        buf[i] = src[start + i];
+        i += 1;
+    }
+    buf[take] = 0;
+
     crate::driver_ddk::DbgPrint(
-        b"[NOACCESSPTE] refused a VALID user PTE for protection mask %u (grants no access; \
-          would be a hardware-invalid L3 descriptor on arm64)\n\0"
+        b"[NOACCESSPTE] refused a VALID user PTE for protection mask %u at %s:%u \
+          (grants no access; would be a hardware-invalid L3 descriptor on arm64)\n\0"
             .as_ptr() as *const i8,
         protection_mask as u32,
+        buf.as_ptr() as *const i8,
+        line,
     );
 }
 
