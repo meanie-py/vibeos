@@ -5112,6 +5112,40 @@ MSVC *intrinsic*).
 A whole family of bugs where the *verification* is wrong, so the code looks correct. These cost
 more than ordinary bugs because their output is trusted.
 
+### A gate can be RED for reasons that are not in the tree at all
+Symptom: a gate goes RED with **no failing test**. Cause: the verdict depended on host state,
+not on the diff. Fix: check the host before you read the artifact, because the artifact cannot
+tell you the difference.
+
+**Host disk exhaustion is the one that has actually cost us a day.** At 100% on `/` the failure
+does not look like a disk problem — it surfaced as a gate RED with no failing test, an ENOSPC
+raised deep in `artifacts.py` writing `summary.json`, "system is running low on memory" in two
+agents' harnesses, and a conductor dying mid-drain. At **0 bytes free the harness cannot run any
+command, not even `true`**, because it creates each command's stdout file first — so the tooling
+you would reach for to diagnose it is the tooling that stops working. **`df -h /` before
+anything else.** The cause was not capacity: a 148G *orphaned* sccache, invisible to the running
+server (sccache evicts only entries in its own index, so bytes written by earlier server
+generations are unreclaimable at any cap — the server reported a 10 GiB cap against a 148G
+directory and had taken zero writes in 30 minutes while builds ran).
+
+The general shape, and it has three known members: **a verdict that depends on state outside the
+diff is not a gate.**
+- **Host disk** — above; RED with nothing failing.
+- **Which artifacts a worktree happens to carry** — `scan_ud2`'s arm64 driver sweep has no
+  defined corpus. arm64 has no `livecd` DAG (`archcfg.py:209` builds a hand-picked staged set),
+  so the sweep grades whatever binaries are sitting in `build-arm64/`: nothing in a fresh
+  integration worktree, an arbitrary accumulation in a long-lived lane. A real `disk.sys` finding
+  has therefore never blocked a gate, and a lane can equally eat a red arm64 result for a driver
+  it never touched.
+- **What a warm gate declines to rebuild** — §9.126 above, the mirror image: green because
+  nothing recompiled.
+
+The AGENTS.md fleet-isolation rule already forbids *reading* generated artifacts from a sibling
+worktree. These are the same defect one level up: the corpus is discovered rather than declared.
+A sweep should name what it grades and hard-fail when a member is missing, exactly as
+`verify_signatures` now hard-fails instead of falling back to a sibling's headers.
+
+
 ### A difftest oracle that is the source the port was MADE from grades nothing
 
 **Symptom.** A host difftest is green, has been green for months, and the shipped Rust is still
