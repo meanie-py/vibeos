@@ -154,6 +154,10 @@ all included), then auto-triage on failure.
   as a `health` WARN stage (+ `census_stuck` in summary.json) — the
   "boots green but threads are silently parked forever" signal, trendable
   across runs.
+- Every smoke boot owns `<run-dir>/bootN/serial.log` (zero-based), including
+  `--repeat` runs. `summary.json` lists all results under `boots`; its top-level
+  serial archive selects the first failure, or first success if all passed.
+  Use those paths for live observation and evidence, not the legacy per-arch log.
 - `--tripwire "SPECIALPOOL=Gla5"` arms per-boot kernel debug knobs via QEMU
   fw_cfg (no media rebuild; kernel side `ntoskrnl-rust/src/tripwire.rs`) —
   special pool turns silent pool corruption into an immediate symbolicated
@@ -165,7 +169,7 @@ all included), then auto-triage on failure.
   largest silent gaps, and per-file freeldr load throughput (the `[FLDR]`
   stamps from `boot/freeldr/freeldr/ntldr/winldr.c`, enabled by the
   `Debug=` line in `boot/bootdata/livecd.ini`). Standalone analyzer:
-  `python3 tools/boot_phase_report.py qemu/<vm_arch>_smoke_live.log
+  `python3 tools/boot_phase_report.py <run-dir>/boot0/serial.log
   [--sizes build-<arch>]`. This is how the 27s freeldr silent gap and the
   5s menu-countdown tax were found (docs/engineering/
   performance-investigation.md).

@@ -104,11 +104,35 @@ stamp was installed.
       the existing whole-worktree prune is not a substitute for that proof.
 - [ ] Bound successful/failed run artifacts separately, preserving failure evidence.
 
-Fleet handoff follow-ups (not implemented by the traversal-safety slice): verify
-and preserve each repeated boot's serial log before retaining/deleting run
-artifacts; measure ARM64 media staging copies and investigate immutable backing
-images plus per-run writable overlays. The handoff's approximately 293 MB per
-boot and cache-eviction explanation remain reports, not local measurements.
+Follow-on implementation: smoke/raw-boot callers give QemuVM an owned
+`bootN/serial.log` path. The summary lists every boot's result and log; the
+top-level archive selects the first failure (or first success), never a later
+boot's overwritten per-arch file. Other QemuVM callers retain their existing
+live-log convention for compatibility and still need migration. Regression
+tests cover overlapping streams, repeated boots, and launch failures without
+borrowing another boot's evidence.
+
+SMP media copies now write sparse all-zero extents while retaining exact bytes
+and independent files. This is neither a hardlink nor a shared backing image;
+the source can change after copying without affecting the owned copy. Local
+ARM64 source measurement: 293,601,280 logical/allocated bytes, with 145,752,064
+bytes in all-zero 1 MiB chunks. Actual savings depend on filesystem support and
+the image contents. A real SMP-copy check produced 147,390,464 allocated bytes
+(140.6 MiB instead of 280 MiB), equal logical length, and exactly one changed
+byte: the intended UP-to-MP selector. Windows staging currently copies these files separately
+and is not claimed to preserve sparsity; its normal stop path already removes
+the per-run staging directory. Cross-run immutable backing images/overlays and
+artifact retention remain follow-ups, not enabled cleanup.
+
+Follow-up verification: 458 CLI tests plus lint/type checks passed. ARM64's
+`20260906-193550-smoke-arm64` passed two independent desktop boots in 1m22s;
+both full logs retain the required markers, and the top archive exactly matches
+boot0. amd64's `20260906-193748-smoke-amd64` passed in 37s and i386's
+`20260906-194035-smoke-i386` passed in 34s. Screenshots were
+inspected. These are warm-build checks, not a clean-tree gate; amd64 networking
+was omitted from this targeted logging test and remains mandatory in the train.
+
+The handoff's cache-eviction explanation remains unverified.
 Keep failure evidence and active images protected. Verify sccache request/hit
 and eviction behavior before changing its cap (`SCCACHE_CACHE_SIZE`); do not
 infer a broken shared cache merely from large private Cargo targets.
