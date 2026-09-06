@@ -5357,6 +5357,40 @@ def test_a_killed_submit_is_REPORTED_not_silently_absent(lane_repo, tmp_path, mo
     assert "re-run" in printed, "must say what to do, not just that something is wrong"
 
 
+def test_a_malformed_marker_REPORTS_rather_than_going_quiet(lane_repo, tmp_path):
+    """`os.kill(-1, 0)` SUCCEEDS -- it is the broadcast form -- so a record with a missing or
+    unparsable pid used to read as "alive" and suppress itself forever, which is the exact
+    silent omission this feature exists to remove. A marker truncated by the disk filling
+    produces one, and that is the very scenario that motivated the feature.
+    """
+    lane, _ = lane_repo
+    attempt = q_mod.begin_attempt(lane, q_mod.lane_id(lane), q_mod.git(lane, "rev-parse", "HEAD"))
+    for bad in ({"lane": q_mod.lane_id(lane), "tip": "abc"}, {"pid": "not-an-int"}, {"pid": -1}):
+        rec = {"lane": q_mod.lane_id(lane), "tip": "abc", "started_at": time.time(), **bad}
+        attempt.write_text(json.dumps(rec))
+        assert q_mod.abandoned_attempts(lane), f"a marker with pid={bad} went silent"
+
+
+def test_a_RECYCLED_pid_does_not_suppress_the_marker(lane_repo, tmp_path):
+    """A pid alive but started AFTER the marker was written belongs to something else.
+
+    The host churns thousands of build processes, so reuse is ordinary; treating the new
+    occupant as our submit would suppress the marker permanently. Fails toward reporting, like
+    the malformed case.
+    """
+    lane, _ = lane_repo
+    attempt = q_mod.begin_attempt(lane, q_mod.lane_id(lane), q_mod.git(lane, "rev-parse", "HEAD"))
+    rec = json.loads(attempt.read_text())
+    # our own pid is certainly alive, but claim the marker predates the epoch
+    rec["started_at"] = 1.0
+    attempt.write_text(json.dumps(rec))
+    assert q_mod.abandoned_attempts(lane), "a recycled pid must not suppress the marker"
+    # negative control: with an honest started_at the same live pid IS our submit, and quiet
+    rec["started_at"] = time.time()
+    attempt.write_text(json.dumps(rec))
+    assert q_mod.abandoned_attempts(lane) == [], "a genuinely in-flight submit must stay quiet"
+
+
 def test_an_enqueued_lane_is_not_reported_as_abandoned(lane_repo, tmp_path, monkeypatch):
     """The negative control. A marker left behind by a submit that SUCCEEDED must not be
     reported — otherwise the warning appears on every successful land and gets tuned out,

@@ -173,14 +173,55 @@ def end_attempt(path: Path | None) -> None:
         path.unlink(missing_ok=True)
 
 
-def _pid_alive(pid: int) -> bool:
+def _proc_started_at(pid: int) -> float | None:
+    """Wall-clock start time of `pid` from /proc, or None if it cannot be read.
+
+    Field 22 of /proc/<pid>/stat is the process start in clock ticks since boot; /proc/stat's
+    `btime` is boot in epoch seconds. The comm field can contain spaces and parentheses, so
+    split after the LAST ')' rather than tokenizing the whole line.
+    """
+    try:
+        raw = Path(f"/proc/{pid}/stat").read_text()
+        fields = raw[raw.rindex(")") + 2 :].split()
+        ticks = float(fields[19])  # field 22 overall, 20th after the comm
+        hz = os.sysconf("SC_CLK_TCK")
+        for line in Path("/proc/stat").read_text().splitlines():
+            if line.startswith("btime "):
+                return float(line.split()[1]) + ticks / hz
+    except (OSError, ValueError, IndexError):
+        return None
+    return None
+
+
+def _pid_alive(pid: int, *, since: float | None = None) -> bool:
+    """Is `pid` running, and is it plausibly still OUR process?
+
+    `since` is the marker's own `started_at`. A pid that is alive but STARTED AFTER the marker
+    was written is a recycled pid belonging to something else -- on a host churning through
+    thousands of build processes that is not exotic -- and treating it as alive would suppress
+    the marker permanently. Both this and the malformed-pid guard in `abandoned_attempts` fail
+    toward REPORTING, because silence is the bug this whole mechanism exists to remove.
+    """
     try:
         os.kill(pid, 0)
     except ProcessLookupError:
         return False
     except PermissionError:
-        return True  # exists, owned by someone else
+        pass  # exists, owned by someone else
+    if since is not None:
+        started = _proc_started_at(pid)
+        # 2s of slack: the marker is written moments after the process starts, and the two
+        # clocks (wall clock vs boot + ticks) do not agree to better than that.
+        if started is not None and started > since + 2.0:
+            return False
     return True
+
+
+def _as_float(v: object) -> float | None:
+    try:
+        return float(v)  # type: ignore[arg-type]
+    except (TypeError, ValueError):
+        return None
 
 
 def abandoned_attempts(repo: Path, *, lane: str | None = None) -> list[dict]:
@@ -201,7 +242,19 @@ def abandoned_attempts(repo: Path, *, lane: str | None = None) -> list[dict]:
             continue
         if lane is not None and rec.get("lane") != lane:
             continue
-        if rec.get("lane") in queued or _pid_alive(int(rec.get("pid", -1))):
+        if rec.get("lane") in queued:
+            continue
+        pid = rec.get("pid")
+        if not isinstance(pid, int) or pid <= 0:
+            # An unusable pid must REPORT, not suppress. `os.kill(-1, 0)` succeeds -- it is
+            # the BROADCAST form -- so a malformed record (a marker truncated by the disk
+            # filling, which is exactly the scenario that produces one) would otherwise read
+            # as "alive" forever and stay silent. A marker existing at all means a submit
+            # started. Never let a pid from a file reach os.kill unvalidated: signal 0 is
+            # harmless, but a broadcast kill in fleet tooling is one edit away.
+            out.append(rec)
+            continue
+        if _pid_alive(pid, since=_as_float(rec.get("started_at"))):
             continue
         out.append(rec)
     return out
