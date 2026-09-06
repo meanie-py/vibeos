@@ -5217,6 +5217,82 @@ MSVC *intrinsic*).
 A whole family of bugs where the *verification* is wrong, so the code looks correct. These cost
 more than ordinary bugs because their output is trusted.
 
+### A gate can be RED for reasons that are not in the tree at all
+Symptom: a gate goes RED with **no failing test**. Cause: the verdict depended on host state,
+not on the diff. Fix: check the host before you read the artifact, because the artifact cannot
+tell you the difference.
+
+**Host disk exhaustion is the one that has actually cost us a day** (four lanes chasing it at
+once — that synthesis is the control plane's, not a measured figure). At 100% on `/` the failure
+does not look like a disk problem — it surfaced as a gate RED with no failing test, an ENOSPC
+raised deep in `artifacts.py` writing `summary.json`, "system is running low on memory" in two
+agents' harnesses, and a conductor dying mid-drain. At **0 bytes free the harness cannot run any
+command, not even `true`**, because it creates each command's stdout file first — so the tooling
+you would reach for to diagnose it is the tooling that stops working. **`df -h /` before
+anything else.** The cause was not capacity: a 148G *orphaned* sccache, invisible to the running
+server (sccache evicts only entries in its own index, so bytes written by earlier server
+generations are unreclaimable at any cap — the server reported a 10 GiB cap against a 148G
+directory and had taken zero writes in 30 minutes while builds ran; measured 940G used/16G free
+before, 793G/163G after, the cache dir itself 148G -> 4.0K).
+
+**The recurrence condition is the line that matters, and it is verified: the cap lives only in
+the STARTING PROCESS'S ENVIRONMENT.** Any bare `sccache` server start outside `cachecfg`'s env
+recreates this exactly. Two corollaries that cost time on their own: `~/.config/sccache/config`
+is **inert** on sccache 0.8.2 (writing one leaves the server still reporting the old cap), and
+the variable is `SCCACHE_CACHE_SIZE`, **not** `SCCACHE_MAXSIZE` — `cachecfg.py:111` is correct
+and must not be "fixed". Note also what it was *not*: no OOM daemon is installed and there were
+zero oom matches in `dmesg`/`journalctl`, so the "running low on memory" message was a symptom
+of the full disk, not a second problem.
+
+**A killed `land` leaves NO queue entry and NO error**, and that is the consequence worth
+knowing on its own. One lane ate five harness kills in a session — all reported as "the system is
+running low on memory", none of them memory — and one of them landed on `./vibeos-cli land`
+mid-preflight. `land-status` then simply does not list you, which is indistinguishable from "the
+conductor hasn't got to you yet" unless you are looking for it; that lane waited on a queue
+position it did not have. **If you believe you are queued, confirm with `land-status --mine`
+rather than assuming.** Note the misdirection is active, not merely vague: the harness reports
+these kills with a memory message *even when `MemAvailable` is fine*, so the message points away
+from the cause.
+
+The general shape, and it has five known members: **a verdict that depends on state outside the
+diff is not a gate.**
+- **Host disk** — above; RED with nothing failing.
+- **Which artifacts a worktree happens to carry** — `scan_ud2`'s arm64 driver sweep has no
+  defined corpus. arm64 has no `livecd` DAG (`archcfg.py:209` builds a hand-picked staged set),
+  so the sweep grades whatever binaries are sitting in `build-arm64/`: nothing in a fresh
+  integration worktree, an arbitrary accumulation in a long-lived lane. A real `disk.sys` finding
+  has therefore never blocked a gate, and a lane can equally eat a red arm64 result for a driver
+  it never touched.
+- **What a warm gate declines to rebuild** — §9.126 above, the mirror image: green because
+  nothing recompiled.
+- **An artifact that PREDATES the change under test** — a lint reading build output passes
+  because the artifact is older than the change being graded, so an absent symbol shadows
+  nothing. Distinct from the member above: not a rebuild that was skipped, but a *correct*
+  verdict about the *wrong object*, and it needs a different fix. Symptom is a false GREEN
+  rather than a red, so it is written up under "Stale artifacts & false greens" — see the
+  `verify_ucrtbase_cohab` entry there rather than duplicating it here.
+- **A line number read out of the SHARED MAIN worktree** — two lanes cited the same symbol in
+  the same commit as line 100 and line 111; the difference was an 11-line uncommitted change in
+  main that neither had made. Both were honest and both were wrong. This member is the worst of
+  the family for a reason worth stating: **a wrong gate gets re-run, a wrong doc gets believed.**
+  When a fact is going into a doc, cite it from a COMMITTED ref — `git show <sha>:path` — not
+  from a working tree, so the next reader can reproduce it. The useful discrimination, and it
+  scopes the worry: **where a line number is NAVIGATION it degrades gracefully** (a reader who
+  lands near `cmtypes.h:33` still finds the declaration and self-corrects); **where the line
+  number IS the claim, it can be wrong for two honest readers at once.** Only the second kind
+  needs the committed ref. (msvcrt-homebrew's finding.)
+
+The AGENTS.md fleet-isolation rule already forbids *reading* generated artifacts from a sibling
+worktree. These are the same defect one level up: the corpus is discovered rather than declared.
+A sweep should name what it grades and hard-fail when a member is missing, exactly as
+`verify_signatures` now hard-fails instead of falling back to a sibling's headers.
+
+**The disk member is now mechanized** — `tests/qemu/cli/hostdisk.py`. `gate` refuses to start
+without headroom (`host-disk` stage), and an ENOSPC during a build classifies as `DISK_FULL`
+ahead of the generic matchers instead of being filed as a defect in the diff. Both always print
+free bytes and the threshold missed, because the number is what ends the investigation.
+
+
 ### A difftest oracle that is the source the port was MADE from grades nothing
 
 **Symptom.** A host difftest is green, has been green for months, and the shipped Rust is still
