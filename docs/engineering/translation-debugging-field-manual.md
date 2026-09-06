@@ -5245,15 +5245,26 @@ zero oom matches in `dmesg`/`journalctl`.
 
 **Correction, from a third occurrence: the harness's "running low on memory" kill is NOT a
 symptom of the full disk, and this entry originally said it was.** It fired again with the disk
-at 84% (159G free, inodes 5%) and killed three background waiters at once. Both occurrences share
-one shape: `MemFree` at or near zero while **`MemAvailable` is tens of GB** (35G against 1.3G
-free the first time, 40G against 0 the second, with 40G in buff/cache). On Linux a near-zero
+at 84% (159G free, inodes 5%) and killed three background waiters at once. Three independent
+observations share one shape: `MemFree` at or near zero while **`MemAvailable` is tens of GB**
+(35G against 1.3G free, 40G against 0, 41G against 2.0G, with ~40G in buff/cache each time), at
+two very different disk states. On Linux a near-zero
 `MemFree` is the *normal, healthy* state — the kernel spends idle RAM on page cache and reclaims
 it on demand — so a watchdog reading `MemFree` rather than `MemAvailable` will fire continuously
-on any machine doing heavy build I/O, which is every host here. That mechanism is a hypothesis
-(the harness is above this repo and cannot be read from it); the *verified* part is that the
+on any machine doing heavy build I/O, which is every host here. It also explains the FREQUENCY, which a
+genuine-pressure theory cannot: real pressure would be intermittent and would leave OOM traces.
+That mechanism is a hypothesis (the harness is above this repo and cannot be read from it —
+nothing under `tests/qemu/cli/` reads `/proc/meminfo`, and the tree's only `MemFree` hits are an
+unrelated identifier in ReactOS's own msconfig); the *verified* part is that the
 message appears with tens of GB available and no OOM daemon installed, i.e. **it is uncorrelated
 with real memory pressure and cannot be used to diagnose anything.**
+
+**How this correction got made is itself the lesson, and it generalizes to every entry here.**
+Three kills arrived, the entry above said check the disk first, the disk was fine — so the entry
+was falsified *by being used*. That only works because it was specific enough to be wrong. The
+instinct when writing one of these is to hedge ("mysterious kills can have host causes"), and a
+hedged entry would have survived contact and taught nobody anything. **Write the falsifiable
+version; being wrong in a way the next reader can detect is worth more than being unfalsifiable.**
 
 Practical consequence: **treat a "low on memory" kill as an unexplained kill.** Check `df -h /`
 because that IS one real cause, but a healthy disk does not clear it — check what the killed
