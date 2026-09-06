@@ -2226,6 +2226,34 @@ finish is usually a body it also could not source constants for. Grep the tree f
 `omitted for brevity`, `I'll rebuild`, `rest of the function`; this is the cheapest defect
 class we have, and nothing was looking for it.
 
+**Both shipping instances turned out to be hand-translatable in one sitting** — the "it is a
+rustconv job" reflex above was wrong for them, and the reason generalizes: an abandoned body is
+abandoned because it is *long*, not because it is *hard*. scsiport's was a flat registry walk
+plus a five-way resource switch; classpnp's was ~55 lines of retry logic. What the paid path
+would have bought is exactly what cost nothing here, because **the crate already contained a
+correct sibling to copy the idioms from** (`SpiResourceToConfig` does the same switch 1000
+lines up, and `power.rs:753` already masks `SRB_STATUS` correctly). Check for that sibling
+before you pay: if one exists, the substrate is already proven and the work is transcription.
+
+**Three things to check when you finish one, none of which the compiler will tell you:**
+- **A `match` on constants that are not in scope silently becomes a binding** that matches
+  everything. The tell is a rustc *unreachable pattern* warning on the later arms — so grep the
+  build for that warning specifically, since a body full of `_ =>` arms looks identical either
+  way.
+- **`goto` out of a `switch` case is not a state transition.** classpnp's C jumps to a label
+  *inside* `case PowerUpDeviceStarted`, past its error check; the translation had re-encoded it
+  as "set the state and re-dispatch", which re-runs the check the goto exists to skip. A label
+  in the middle of a case needs a flag, not a state value.
+- **Diff the two sides as a TABLE, not by reading.** For scsiport: extract every registry name
+  literal from both sides and `nl` them side by side (13 v 13, in order), then every assignment
+  LHS with `sort | uniq -c`. Both came out identical, which is worth more than re-reading the
+  body, and it is the same technique the msvcrt permutation lesson recommends for call arguments.
+
+Finally, **check whether the truncation actually ships before ranking it.** cmlib's `cmindex.rs`
+carries two functions in the same state and a documented infinite loop, but `cmindex.c` is still
+in its CMake source list, so the C body wins at link and the Rust is dead. Same defect, entirely
+different urgency — and cohab-flipping that file later would arm it.
+
 ### A local `const` silently SHADOWS a glob import — no warning at either site
 `ARM3/special.rs` declared `const POOL_FLAG_SPECIAL_POOL: ULONG = 0x10` while
 `use ntkrnl_sys::mm::*` was already supplying the real `0x20` (`miarm.h:328`). `0x10` is

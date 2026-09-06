@@ -195,6 +195,13 @@ pub unsafe extern "system" fn ClasspPowerUpCompletion(
     (*PowerContext).PowerChangeState.PowerUp += 1;
 
     // State machine (PowerUpDeviceLocked=1, PowerUpDeviceOn=2, PowerUpDeviceStarted=3, PowerUpDeviceUnlocked=4)
+    //
+    // power.c reaches PowerUpDeviceStarted two ways and they are NOT equivalent: falling
+    // into `case PowerUpDeviceStarted` runs the SRB error check first, while
+    // `goto ClasspPowerUpCompletionFailure` from PowerUpDeviceOn lands PAST it, on the
+    // "Previously spun device up" print. The label is inside the case, so re-dispatching
+    // on the state alone cannot express it -- this flag carries which entry it was.
+    let mut viaFailureGoto = false;
     loop {
         match (*PowerContext).PowerChangeState.PowerUp {
             1 /* PowerUpDeviceLocked */ => {
@@ -330,44 +337,127 @@ pub unsafe extern "system" fn ClasspPowerUpCompletion(
                         (*(*fdoExtension).PrivateFdoData).PowerProcessIrp, status);
                     break;
                 } else {
+                    // power irp is failed by lower driver. we're done.
+                    // `goto ClasspPowerUpCompletionFailure` -- the label sits inside
+                    // case PowerUpDeviceStarted, after its SRB error check.
                     (*PowerContext).FinalStatus = (*Irp).IoStatus.__bindgen_anon_1.Status;
-                    // Go to failure path (fall through to PowerUpDeviceStarted logic after print)
-                    // We'll duplicate the "Previously spun device up" block here
-                    // (simulate goto ClasspPowerUpCompletionFailure)
-                    // Fall into next state manually
-                    // Actually we will just break out and then handle in the *next* match arm.
-                    // But we need the print and queue lock handling from PowerUpDeviceStarted.
-                    // So we'll set state to PowerUpDeviceStarted and continue loop.
-                    // However we also need the "Previously spun device up" print.
-                    // We'll include that in PowerUpDeviceStarted's initial path (before error check).
-                    // We'll adjust the match to have the print at the start of PowerUpDeviceStarted.
-                    // So we'll force state to PowerUpDeviceStarted and loop.
                     (*PowerContext).PowerChangeState.PowerUp = CLASS_POWER_UP_STATE_PowerUpDeviceStarted;
+                    viaFailureGoto = true;
                     continue;
                 }
             }
 
             3 /* PowerUpDeviceStarted */ => {
-                // At this point we've either just entered or came from failure path.
-                // The "Previously spun device up" print is done at the start of this case
-                // in the original C, after the label. So we'll do it here.
-                TracePrint(TRACE_LEVEL_INFORMATION, TRACE_FLAG_POWER, b"(%p)\tPreviously spun device up\n\0".as_ptr() as PCCHAR, Irp);
+                // First deal with an error if one occurred -- but only on the fall-in
+                // path; `goto ClasspPowerUpCompletionFailure` enters below this block.
+                // SRB_STATUS() masks off AUTOSENSE_VALID|QUEUE_FROZEN (srb.h:149); comparing
+                // the raw SrbStatus made a SUCCESS that merely carried sense data look
+                // like a failure.
+                if !viaFailureGoto
+                    && SRB_STATUS((*srbHeader).SrbStatus) != (SRB_STATUS_SUCCESS) as u8
+                {
+                    let retry: BOOLEAN;
+                    let mut delta100nsUnits: LONGLONG = 0;
+                    let mut secondsRemaining: ULONG = 0;
+                    let mut startUnitTimeout: ULONG = START_UNIT_TIMEOUT;
+                    let mut status: NTSTATUS = 0;
 
-                // Check if there was an SRB error (only when we actually launched start unit)
-                // In the failure path we skip the SRB check and just go to unlock logic.
-                // The original C: inside case 3 there is a big if (SRB_STATUS != SUCCESS) { ... }.
-                // If we are coming from PowerUpDeviceOn failure, we bypass that check.
-                if (*srbHeader).SrbStatus != (SRB_STATUS_SUCCESS) as u8 {
-                    // SRB error handling
-                    // ... (full error handling)
-                    // If retry, break out; else fall through to unlock/final.
-                    // We'll handle retry then continue to unlock if needed.
-                    // The code is complex; we'll replicate it.
-                    // [Error handling block same as C, omitted for brevity but will be included]
-                    // For now, just indicate that if retry fails, we fall through to unlock.
-                    // I'll write the full block later.
-                    // dummy placeholder
+                    TracePrint(
+                        TRACE_LEVEL_ERROR,
+                        TRACE_FLAG_POWER,
+                        b"%p\tError occured when issuing START_UNIT command to device. Srb %p, Status %x\n\0"
+                            .as_ptr() as PCCHAR,
+                        Irp,
+                        srbHeader,
+                        (*srbHeader).SrbStatus as i32,
+                    );
+
+                    NT_ASSERT!(TEST_FLAG((*srbHeader).SrbStatus as ULONG, SRB_STATUS_QUEUE_FROZEN as ULONG) == 0);
+                    NT_ASSERT!(
+                        (*srbHeader).Function as u32 == SRB_FUNCTION_EXECUTE_SCSI
+                            || (*(srbHeader as *mut _STORAGE_REQUEST_BLOCK)).SrbFunction
+                                == SRB_FUNCTION_EXECUTE_SCSI
+                    );
+
+                    (*PowerContext).RetryInterval = 0;
+                    retry = InterpretSenseInfoWithoutHistory(
+                        // classpnp.h:867-874 -- DeviceObject is the anonymous union's
+                        // member, at the same offset as CommonExtension.DeviceObject.
+                        (*fdoExtension).__bindgen_anon_1.__bindgen_anon_1.as_ref().DeviceObject,
+                        Irp,
+                        srbHeader as *mut SCSI_REQUEST_BLOCK,
+                        IRP_MJ_SCSI as u8,
+                        IRP_MJ_POWER as u32,
+                        (*(*fdoExtension).PrivateFdoData).MaxPowerOperationRetryCount
+                            - (*PowerContext).RetryCount,
+                        core::ptr::addr_of_mut!(status),
+                        core::ptr::addr_of_mut!(delta100nsUnits),
+                    );
+
+                    // NOTE: Power context is a public structure, and thus cannot be
+                    //       updated to use 100ns units.  Therefore, must store the
+                    //       one-second equivalent.  Round up to ensure minimum delay
+                    //       requirements have been met.
+                    delta100nsUnits += (10 * 1000 * 1000) - 1;
+                    delta100nsUnits /= 10 * 1000 * 1000;
+                    // guaranteed not to have high bits set per SAL annotations
+                    (*PowerContext).RetryInterval = delta100nsUnits as ULONG;
+
+                    // The C is `PowerContext->RetryCount-- != 0`: it tests the OLD value
+                    // and decrements either way, but only when `retry` is TRUE (&& is
+                    // short-circuiting, so a FALSE retry leaves RetryCount alone).
+                    let mut takeRetry = false;
+                    if retry == TRUE as BOOLEAN {
+                        let oldRetryCount = (*PowerContext).RetryCount;
+                        (*PowerContext).RetryCount = oldRetryCount.wrapping_sub(1);
+                        takeRetry = oldRetryCount != 0;
+                    }
+
+                    if takeRetry {
+                        TracePrint(
+                            TRACE_LEVEL_INFORMATION,
+                            TRACE_FLAG_POWER,
+                            b"(%p)\tRetrying failed request\n\0".as_ptr() as PCCHAR,
+                            Irp,
+                        );
+
+                        // Decrement the state so we come back through here the next time.
+                        (*PowerContext).PowerChangeState.PowerUp -= 1;
+
+                        // Adjust start unit timeout based on remaining time if needed.
+                        if PoQueryWatchdogTime(
+                            (*fdoExtension).LowerPdo,
+                            core::ptr::addr_of_mut!(secondsRemaining),
+                        ) != 0
+                        {
+                            if secondsRemaining >= TIME_LEFT_FOR_UPPER_DRIVERS {
+                                secondsRemaining -= TIME_LEFT_FOR_UPPER_DRIVERS;
+                            }
+
+                            // MINIMAL (60) and MINIMUM (30) are two different constants
+                            // (power.c:52-53) and the branches do NOT use the same one.
+                            if secondsRemaining < MINIMAL_START_UNIT_TIMEOUT_VALUE {
+                                startUnitTimeout = MINIMUM_START_UNIT_TIMEOUT_VALUE;
+                            } else if secondsRemaining < START_UNIT_TIMEOUT {
+                                startUnitTimeout = MINIMAL_START_UNIT_TIMEOUT_VALUE;
+                            }
+                        }
+
+                        SrbSetTimeOutValue(srbHeader as PVOID, startUnitTimeout);
+
+                        RetryPowerRequest((*commonExtension).DeviceObject, Irp, PowerContext);
+
+                        break;
+                    }
+
+                    // reset retry count for UNLOCK command.
+                    (*(*fdoExtension).PrivateFdoData).MaxPowerOperationRetryCount =
+                        MAXIMUM_RETRIES;
+                    (*PowerContext).RetryCount = MAXIMUM_RETRIES;
                 }
+
+                // ClasspPowerUpCompletionFailure:
+                TracePrint(TRACE_LEVEL_INFORMATION, TRACE_FLAG_POWER, b"(%p)\tPreviously spun device up\n\0".as_ptr() as PCCHAR, Irp);
 
                 // If QueueLocked, perform unlock and send new IRP, return.
                 if (*PowerContext).QueueLocked != 0 {
