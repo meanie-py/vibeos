@@ -13,10 +13,6 @@
 // Wine debug macros — no-ops in the NDEBUG build (TRACE/WARN/ERR/FIXME compile
 // out in the C too). Defined at crate root before the body modules so textual
 // macro scoping makes them visible to every translated file.
-macro_rules! TRACE { ($($arg:tt)*) => {{}}; }
-macro_rules! WARN { ($($arg:tt)*) => {{}}; }
-macro_rules! ERR { ($($arg:tt)*) => {{}}; }
-macro_rules! FIXME { ($($arg:tt)*) => {{}}; }
 // Lowercase aliases — some translated files (lookup.rs) emit `trace!`/`warn!`/etc.
 macro_rules! trace { ($($arg:tt)*) => {{}}; }
 macro_rules! warn { ($($arg:tt)*) => {{}}; }
@@ -46,6 +42,11 @@ macro_rules! wide {
 }
 #[macro_export]
 macro_rules! wstr { ($s:literal) => { $crate::wide!($s) }; }
+
+// Wine's ERR/FIXME/WARN/TRACE for the whole crate; `#[macro_use]` must precede the
+// modules that call them (macro_rules! is textually scoped).
+#[macro_use]
+mod winedebug;
 
 mod consts;
 mod prelude;

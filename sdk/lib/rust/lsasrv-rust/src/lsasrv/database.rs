@@ -151,7 +151,7 @@ unsafe fn LsapCreateDatabaseKeys() -> NTSTATUS {
             core::ptr::null_mut(),
         );
         if !NT_SUCCESS(status) {
-            ERR!(b"Failed to create the 'Policy' key (Status: 0x%08lx)\n\0".as_ptr() as *const u8, status);
+            ERR!("Failed to create the 'Policy' key (Status: 0x%08lx)\n", status);
             break 'done;
         }
 
@@ -170,7 +170,7 @@ unsafe fn LsapCreateDatabaseKeys() -> NTSTATUS {
             core::ptr::null_mut(),
         );
         if !NT_SUCCESS(status) {
-            ERR!(b"Failed to create the 'Accounts' key (Status: 0x%08lx)\n\0".as_ptr() as *const u8, status);
+            ERR!("Failed to create the 'Accounts' key (Status: 0x%08lx)\n", status);
             break 'done;
         }
 
@@ -189,7 +189,7 @@ unsafe fn LsapCreateDatabaseKeys() -> NTSTATUS {
             core::ptr::null_mut(),
         );
         if !NT_SUCCESS(status) {
-            ERR!(b"Failed to create the 'Domains' key (Status: 0x%08lx)\n\0".as_ptr() as *const u8, status);
+            ERR!("Failed to create the 'Domains' key (Status: 0x%08lx)\n", status);
             break 'done;
         }
 
@@ -208,7 +208,7 @@ unsafe fn LsapCreateDatabaseKeys() -> NTSTATUS {
             core::ptr::null_mut(),
         );
         if !NT_SUCCESS(status) {
-            ERR!(b"Failed to create the 'Secrets' key (Status: 0x%08lx)\n\0".as_ptr() as *const u8, status);
+            ERR!("Failed to create the 'Secrets' key (Status: 0x%08lx)\n", status);
             break 'done;
         }
 
@@ -541,7 +541,7 @@ unsafe fn LsapGetDomainInfo() -> i32 {
             ) as *mut u16;
             if AccountDomainName.Buffer.is_null() {
                 ERR!(
-                    b"Failed to allocate the account domain name buffer\n\0".as_ptr() as *const i8,
+                    "Failed to allocate the account domain name buffer\n",
                 );
                 status = STATUS_INSUFFICIENT_RESOURCES;
                 break 'done status;
@@ -595,33 +595,33 @@ pub unsafe extern "C" fn LsapInitDatabase() -> i32 {
     TRACE!(b"LsapInitDatabase()\n\0".as_ptr() as *const u8);
     status = LsapOpenServiceKey();
     if !NT_SUCCESS(status) {
-        ERR!(b"Failed to open the service key (Status: 0x%08lx)\n\0".as_ptr() as *const u8, status as u32);
+        ERR!("Failed to open the service key (Status: 0x%08lx)\n", status as u32);
         return status;
     }
 
     if LsapIsDatabaseInstalled() == 0u8 {
         status = LsapCreateDatabaseKeys();
         if !NT_SUCCESS(status) {
-            ERR!(b"Failed to create the LSA database keys (Status: 0x%08lx)\n\0".as_ptr() as *const u8, status as u32);
+            ERR!("Failed to create the LSA database keys (Status: 0x%08lx)\n", status as u32);
             return status;
         }
 
         status = LsapCreateDatabaseObjects();
         if !NT_SUCCESS(status) {
-            ERR!(b"Failed to create the LSA database objects (Status: 0x%08lx)\n\0".as_ptr() as *const u8, status as u32);
+            ERR!("Failed to create the LSA database objects (Status: 0x%08lx)\n", status as u32);
             return status;
         }
     } else {
         status = LsapUpdateDatabase();
         if !NT_SUCCESS(status) {
-            ERR!(b"Failed to update the LSA database (Status: 0x%08lx)\n\0".as_ptr() as *const u8, status as u32);
+            ERR!("Failed to update the LSA database (Status: 0x%08lx)\n", status as u32);
             return status;
         }
     }
 
     status = LsapGetDomainInfo();
     if !NT_SUCCESS(status) {
-        ERR!(b"Failed to get the domain information (Status: 0x%08lx)\n\0".as_ptr() as *const u8, status as u32);
+        ERR!("Failed to get the domain information (Status: 0x%08lx)\n", status as u32);
         return status;
     }
 
@@ -902,7 +902,7 @@ pub unsafe extern "C" fn LsapValidateDbObject(
     if DesiredAccess != 0 {
         if ((*Handle).Access & DesiredAccess) != DesiredAccess {
             ERR!(
-                b"LsapValidateDbObject access check failed %08lx  %08lx\n\0".as_ptr() as *const i8,
+                "LsapValidateDbObject access check failed %08lx  %08lx\n",
                 (*Handle).Access,
                 DesiredAccess,
             );
@@ -1037,7 +1037,7 @@ pub unsafe extern "C" fn LsapSetObjectAttribute(
     );
     if Status < 0 {
         ERR!(
-            b"NtCreateKey failed for '%S' with status 0x%lx\n\0".as_ptr() as *const i8,
+            "NtCreateKey failed for '%S' with status 0x%lx\n",
             AttributeName,
             Status,
         );
@@ -1055,7 +1055,7 @@ pub unsafe extern "C" fn LsapSetObjectAttribute(
 
     if Status < 0 {
         ERR!(
-            b"RtlpNtSetValueKey failed for '%S' with status 0x%lx\n\0".as_ptr() as *const i8,
+            "RtlpNtSetValueKey failed for '%S' with status 0x%lx\n",
             AttributeName,
             Status,
         );

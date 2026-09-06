@@ -15,8 +15,6 @@ use core::ffi::c_void;
 // No file-scope type, constant, or table declarations to translate.
 
 // Debug-channel / stub macros — no kernel symbol, no-op.
-macro_rules! ERR { ($($t:tt)*) => {{}}; }
-macro_rules! TRACE { ($($t:tt)*) => {{}}; }
 #[allow(unused_imports)]
 use {ERR as _ERR, TRACE as _TRACE};
 

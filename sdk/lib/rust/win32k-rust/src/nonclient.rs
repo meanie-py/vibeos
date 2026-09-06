@@ -3,12 +3,6 @@ use win32k_sys::win32k::*;
 use ntkrnl_sys::ddk::PsGetCurrentThreadWin32Thread;
 use core::ffi::c_void;
 
-// Debug-channel macros — no kernel symbol, no-op.
-macro_rules! ERR   { ($($t:tt)*) => {{}}; }
-macro_rules! TRACE { ($($t:tt)*) => {{}}; }
-macro_rules! WARN  { ($($t:tt)*) => {{}}; }
-macro_rules! FIXME { ($($t:tt)*) => {{}}; }
-
 // --- cdecl (`_Name`) win32k/user exports referenced by nonclient. ---
 extern "C" {
     fn MENU_DrawMenuBar(hDC: HDC, Rect: *mut RECT, pWnd: PWND, suppress_draw: BOOL) -> UINT;

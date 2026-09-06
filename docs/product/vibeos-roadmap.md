@@ -496,6 +496,17 @@ Field-manual § pointers hold the full writeups. **Update on state change.**
   with `X18` a TEB and `X28` a user start-context, so the stack words are the lead. This is the
   last flip blocker for `DefaultOS`. Field manual: "An EL1 instruction fetch on a user page
   loops silently forever". OWNED BY the smp-bringup lane.
+- **Three upstream win32k `ERR`s fire on every clean i386 boot — NEWLY VISIBLE, OPEN**
+  (2026-09-05). The no-op-debug-macro burndown made win32k's always-on `ERR` real, and a green
+  boot to `shell ready` now prints 640 lines from exactly three sites: `msgqueue.split2.c`'s
+  `"Sending to Suspended Thread Msg %lx"` **333x** (mostly `Msg 121` = `WM_UNKNOWN`-range),
+  `clipboard.c`'s `"Cannot open winsta"` **229x**, and `class.c`'s
+  `"SYSTEMCUR(ARROW) == NULL, should not happen!!"` **78x** — upstream's own wording on that
+  last one. All three are genuine ReactOS `ERR()` calls that a stock DBG build would also print,
+  so this is not a regression we introduced and not noise to suppress; it is three real defects
+  that were invisible for as long as the macros were silent. Boot time is unaffected (32s).
+  Nobody owns these yet. Field manual: the no-op-macro entry under "An arch-gated no-op trace fn
+  discards the diagnostics on the arch that needs them".
 - **freeldr's `FREELDR_HEAP_VERIFIER` is DEAD in Rust — OPEN** (2026-09-04). `heap.c:25` defines
   it **unconditionally**, so the C always compiles the redzone allocation, the redzone writes
   and the three `FrLdrHeapVerify` checks. The translation turned it into

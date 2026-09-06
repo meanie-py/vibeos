@@ -7,9 +7,6 @@ pub use crate::types::*;
 pub use core::ffi::{c_char, c_int, c_long, c_short, c_uchar, c_uint, c_ushort, c_void};
 pub use core::ptr::{addr_of, addr_of_mut};
 
-#[macro_export] macro_rules! FIXME { ($($arg:tt)*) => {{}}; }
-pub use crate::FIXME;
-
 // ================= CRT (cdecl) — msvcrt/ntdll exports ==========================================
 // NEVER hand-write memcpy/memset/memmove/memcmp in Rust: LLVM folds any byte-copy loop back into
 // a call to the function itself → infinite self-recursion → silent hang. Import them (AGENTS.md).

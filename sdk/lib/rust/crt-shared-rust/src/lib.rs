@@ -23,6 +23,11 @@
 /// translated TU's own include closure, never inferred from a call site. Lives here rather
 /// than in msvcrt-crt-rust because this is the crate that cannot assume which CRT it is
 /// inside; msvcrt-crt-rust re-exports it, so `crate::prelude::*` still resolves there.
+// Wine's ERR/FIXME/WARN/TRACE for the whole crate; `#[macro_use]` must precede the
+// modules that call them (macro_rules! is textually scoped).
+#[macro_use]
+mod winedebug;
+
 pub mod prelude;
 
 // undname.c: msvcrt's name demangler, and the most self-contained file in msvcrt. No locale,

@@ -167,7 +167,7 @@ pub unsafe extern "C" fn flatten_cmdline(prog: *const core::ffi::c_char, argv: *
     }
     argstr = HeapAlloc(GetProcessHeap(), 0, (argstr_size + 1) * core::mem::size_of::<core::ffi::c_char>() as SIZE_T) as *mut core::ffi::c_char;
     if argstr.is_null() {
-        ERR!(b"ERROR: Not enough memory\n\0".as_ptr() as *const core::ffi::c_char);
+        ERR!("ERROR: Not enough memory\n");
         return core::ptr::null_mut();
     }
 

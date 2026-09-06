@@ -205,11 +205,6 @@ fn snwprintf_status(rc: i32) -> NTSTATUS {
 
 // ===================== desktop.c macro/inline reimplementations =====================
 
-// Debug channel macros — no-ops under NDEBUG.
-macro_rules! TRACE { ($($t:tt)*) => {{}}; }
-macro_rules! ERR   { ($($t:tt)*) => {{}}; }
-macro_rules! WARN  { ($($t:tt)*) => {{}}; }
-
 // SharedUserData = ((KUSER_SHARED_DATA *)USER_SHARED_DATA). i386 USER_SHARED_DATA
 // is 0xFFDF0000 (kernel VA); amd64/arm64 share the canonical 0x7FFE0000 kernel alias
 // via KUSER_SHARED_DATA kernel mapping — use the documented kernel-VA constant.
@@ -1616,7 +1611,7 @@ unsafe fn IntSetFocusMessageQueueImpl(NewQueue: PUSER_MESSAGE_QUEUE) {
     let Old: PUSER_MESSAGE_QUEUE;
     let pdo: PDESKTOP = IntGetActiveDesktop();
     if pdo.is_null() {
-        ERR!(b"IntSetFocusMessageQueue: no active desktop!\n\0".as_ptr() as *const i8);
+        ERR!("IntSetFocusMessageQueue: no active desktop!\n");
         return;
     }
     if !NewQueue.is_null() {
@@ -1645,7 +1640,7 @@ unsafe fn IntSetFocusMessageQueueImpl(NewQueue: PUSER_MESSAGE_QUEUE) {
         gpqForeground = (*pdo).ActiveMessageQueue;
     } else {
         gpqForeground = core::ptr::null_mut();
-        ERR!(b"ptiLastInput is CLEARED!!\n\0".as_ptr() as *const i8);
+        ERR!("ptiLastInput is CLEARED!!\n");
         ptiLastInput = core::ptr::null_mut();
     }
 }
@@ -2290,7 +2285,7 @@ pub unsafe extern "C" fn co_IntShellHookNotify(Message: WPARAM, wParam: WPARAM, 
         (*gpsi).uiShellMsg = IntAddAtom(w!("SHELLHOOK").as_ptr() as *mut u16) as _;
 
         if (*gpsi).uiShellMsg == 0 {
-            ERR!(b"LastError: %x\n\0".as_ptr() as *const i8, EngGetLastError());
+            ERR!("LastError: %x\n", EngGetLastError());
         }
     }
 
@@ -3582,7 +3577,7 @@ pub unsafe extern "C" fn IntSetThreadDesktop(hDesktop: HDESK, FreeOnFailure: BOO
         Status = IntValidateDesktopHandle(hDesktop, 1i32 as KPROCESSOR_MODE, 0, &mut pdesk);
         if !NT_SUCCESS(Status) {
             ERR!(
-                b"Validation of desktop handle 0x%p failed\n\0".as_ptr() as *const i8,
+                "Validation of desktop handle 0x%p failed\n",
                 hDesktop,
             );
             return 0;
@@ -3598,8 +3593,7 @@ pub unsafe extern "C" fn IntSetThreadDesktop(hDesktop: HDESK, FreeOnFailure: BOO
         if !pdesk.is_null() {
             ObDereferenceObject(pdesk as *mut core::ffi::c_void);
         }
-        ERR!(b"Attempted to change thread desktop although the thread has windows!\n\0".as_ptr()
-            as *const i8);
+        ERR!("Attempted to change thread desktop although the thread has windows!\n");
         EngSetLastError(ERROR_BUSY);
         return 0;
     }
@@ -3611,7 +3605,7 @@ pub unsafe extern "C" fn IntSetThreadDesktop(hDesktop: HDESK, FreeOnFailure: BOO
     if pdesk != core::ptr::null_mut() {
         Status = IntMapDesktopView(pdesk);
         if !NT_SUCCESS(Status) {
-            ERR!(b"Failed to map desktop heap!\n\0".as_ptr() as *const i8);
+            ERR!("Failed to map desktop heap!\n");
             ObDereferenceObject(pdesk as *mut core::ffi::c_void);
             SetLastNtError(Status);
             return 0;
@@ -3620,7 +3614,7 @@ pub unsafe extern "C" fn IntSetThreadDesktop(hDesktop: HDESK, FreeOnFailure: BOO
         pctiNew = DesktopHeapAlloc(pdesk, core::mem::size_of::<CLIENTTHREADINFO>() as _)
             as PCLIENTTHREADINFO;
         if pctiNew == core::ptr::null_mut() {
-            ERR!(b"Failed to allocate new pcti\n\0".as_ptr() as *const i8);
+            ERR!("Failed to allocate new pcti\n");
             IntUnmapDesktopView(pdesk);
             ObDereferenceObject(pdesk as *mut core::ffi::c_void);
             EngSetLastError(ERROR_NOT_ENOUGH_MEMORY);
@@ -3633,8 +3627,7 @@ pub unsafe extern "C" fn IntSetThreadDesktop(hDesktop: HDESK, FreeOnFailure: BOO
         && hDesktop != core::ptr::null_mut()
     {
         ERR!(
-            b"The process 0x%p '%s' didn't have an assigned startup desktop before, assigning it now!\n\0"
-                .as_ptr() as *const i8,
+            "The process 0x%p '%s' didn't have an assigned startup desktop before, assigning it now!\n",
             ppi_pe_process((*pti).ppi),
             core::ptr::addr_of!((*ppi_pe_process((*pti).ppi)).ImageFileName),
         );
@@ -3645,7 +3638,7 @@ pub unsafe extern "C" fn IntSetThreadDesktop(hDesktop: HDESK, FreeOnFailure: BOO
 
     if (*pti).rpdesk != core::ptr::null_mut() {
         if IntCheckProcessDesktopClasses((*pti).rpdesk, FreeOnFailure as u8 as _) == 0 {
-            ERR!(b"Failed to move process classes to shared heap!\n\0".as_ptr() as *const i8);
+            ERR!("Failed to move process classes to shared heap!\n");
             if !pdesk.is_null() {
                 DesktopHeapFree(pdesk, pctiNew as *mut core::ffi::c_void);
                 IntUnmapDesktopView(pdesk);

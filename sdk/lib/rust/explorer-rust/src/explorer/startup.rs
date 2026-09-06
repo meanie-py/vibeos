@@ -79,7 +79,7 @@ unsafe fn runCmd(cmdline: LPWSTR, dir: LPCWSTR, wait: i32, minimized: i32) -> i3
         &mut info,
     ) == 0
     {
-        TRACE!(b"Failed to run command (%lu)\n\0".as_ptr() as *const i8, GetLastError());
+        TRACE!("Failed to run command (%lu)\n", GetLastError());
         /* Boot/test marker — startup-item visibility (task: ProcessStartupItems
          * reliability; docs/engineering/payload-harness-design.md Workstream A).
          * TRACE! is DCE'd in release builds, so these are real DbgPrints. */
@@ -91,7 +91,7 @@ unsafe fn runCmd(cmdline: LPWSTR, dir: LPCWSTR, wait: i32, minimized: i32) -> i3
         return INVALID_RUNCMD_RETURN;
     }
 
-    TRACE!(b"Successfully ran command\n\0".as_ptr() as *const i8);
+    TRACE!("Successfully ran command\n");
     DbgPrint(
         b"[EXPLORER] startup: runCmd OK (PID %lu): %ws\n\0".as_ptr() as *const i8,
         info.dwProcessId,
@@ -115,9 +115,9 @@ unsafe fn runCmd(cmdline: LPWSTR, dir: LPCWSTR, wait: i32, minimized: i32) -> i3
 
             if dwWait != WAIT_OBJECT_0 + nCount {
                 if dwWait >= WAIT_OBJECT_0 && dwWait < WAIT_OBJECT_0 + nCount {
-                    TRACE!(b"Event %u signaled\n\0".as_ptr() as *const i8, dwWait - WAIT_OBJECT_0);
+                    TRACE!("Event %u signaled\n", dwWait - WAIT_OBJECT_0);
                 } else {
-                    WARN!(b"Return code: %u\n\0".as_ptr() as *const i8, dwWait);
+                    WARN!("Return code: %u\n", dwWait);
                 }
                 break;
             }
@@ -148,9 +148,9 @@ unsafe fn ProcessRunKeys(hkRoot: HKEY, szKeyName: LPCWSTR, bDelete: i32, bSynchr
     let mut szValue: *mut u16 = core::ptr::null_mut();
 
     if hkRoot as usize == 0x80000002 {
-        TRACE!(b"processing %ls entries under HKLM\n\0".as_ptr(), szKeyName);
+        TRACE!("processing %ls entries under HKLM\n", szKeyName);
     } else {
-        TRACE!(b"processing %ls entries under HKCU\n\0".as_ptr(), szKeyName);
+        TRACE!("processing %ls entries under HKCU\n", szKeyName);
     }
 
     res = RegOpenKeyExW(
@@ -161,7 +161,7 @@ unsafe fn ProcessRunKeys(hkRoot: HKEY, szKeyName: LPCWSTR, bDelete: i32, bSynchr
         &mut hkWin,
     ) as i32;
     if res != ERROR_SUCCESS as i32 {
-        TRACE!(b"RegOpenKeyW failed on Software\\Microsoft\\Windows\\CurrentVersion (%ld)\n\0".as_ptr(), res);
+        TRACE!("RegOpenKeyW failed on Software\\Microsoft\\Windows\\CurrentVersion (%ld)\n", res);
         res = 'end: {
             break 'end res;
         };
@@ -175,10 +175,10 @@ unsafe fn ProcessRunKeys(hkRoot: HKEY, szKeyName: LPCWSTR, bDelete: i32, bSynchr
         ) as i32;
         if res != ERROR_SUCCESS as i32 {
             if res == ERROR_FILE_NOT_FOUND as i32 {
-                TRACE!(b"Key doesn't exist - nothing to be done\n\0".as_ptr());
+                TRACE!("Key doesn't exist - nothing to be done\n");
                 res = ERROR_SUCCESS as i32;
             } else {
-                TRACE!(b"RegOpenKeyExW failed on run key (%ld)\n\0".as_ptr(), res);
+                TRACE!("RegOpenKeyExW failed on run key (%ld)\n", res);
             }
             res = 'end: {
                 break 'end res;
@@ -199,13 +199,13 @@ unsafe fn ProcessRunKeys(hkRoot: HKEY, szKeyName: LPCWSTR, bDelete: i32, bSynchr
                 core::ptr::null_mut(),
             ) as i32;
             if res != ERROR_SUCCESS as i32 {
-                TRACE!(b"Couldn't query key info (%ld)\n\0".as_ptr(), res);
+                TRACE!("Couldn't query key info (%ld)\n", res);
                 res = 'end: {
                     break 'end res;
                 };
             } else {
                 if i == 0 {
-                    TRACE!(b"No commands to execute.\n\0".as_ptr());
+                    TRACE!("No commands to execute.\n");
                     res = ERROR_SUCCESS as i32;
                     res = 'end: {
                         break 'end res;
@@ -213,7 +213,7 @@ unsafe fn ProcessRunKeys(hkRoot: HKEY, szKeyName: LPCWSTR, bDelete: i32, bSynchr
                 } else {
                     szCmdLine = HeapAlloc(hProcessHeap, 0, cbMaxCmdLine as SIZE_T) as *mut u16;
                     if szCmdLine.is_null() {
-                        TRACE!(b"Couldn't allocate memory for the commands to be executed\n\0".as_ptr());
+                        TRACE!("Couldn't allocate memory for the commands to be executed\n");
                         res = ERROR_NOT_ENOUGH_MEMORY as i32;
                         res = 'end: {
                             break 'end res;
@@ -222,7 +222,7 @@ unsafe fn ProcessRunKeys(hkRoot: HKEY, szKeyName: LPCWSTR, bDelete: i32, bSynchr
                         cchMaxValue += 1;
                         szValue = HeapAlloc(hProcessHeap, 0, (cchMaxValue as SIZE_T) * core::mem::size_of::<u16>() as SIZE_T) as *mut u16;
                         if szValue.is_null() {
-                            TRACE!(b"Couldn't allocate memory for the value names\n\0".as_ptr());
+                            TRACE!("Couldn't allocate memory for the value names\n");
                             res = ERROR_NOT_ENOUGH_MEMORY as i32;
                             res = 'end: {
                                 break 'end res;
@@ -247,7 +247,7 @@ unsafe fn ProcessRunKeys(hkRoot: HKEY, szKeyName: LPCWSTR, bDelete: i32, bSynchr
                                     &mut cbDataLength,
                                 ) as i32;
                                 if res != ERROR_SUCCESS as i32 {
-                                    TRACE!(b"Couldn't read in value %lu - %ld\n\0".as_ptr(), i, res);
+                                    TRACE!("Couldn't read in value %lu - %ld\n", i, res);
                                     continue;
                                 }
 
@@ -258,12 +258,12 @@ unsafe fn ProcessRunKeys(hkRoot: HKEY, szKeyName: LPCWSTR, bDelete: i32, bSynchr
                                 if bDelete != 0 {
                                     res = RegDeleteValueW(hkRun, szValue) as i32;
                                     if res != ERROR_SUCCESS as i32 {
-                                        TRACE!(b"Couldn't delete value - %lu, %ld. Running command anyways.\n\0".as_ptr(), i, res);
+                                        TRACE!("Couldn't delete value - %lu, %ld. Running command anyways.\n", i, res);
                                     }
                                 }
 
                                 if type_ != REG_SZ && type_ != REG_EXPAND_SZ {
-                                    TRACE!(b"Incorrect type of value #%lu (%lu)\n\0".as_ptr(), i, type_);
+                                    TRACE!("Incorrect type of value #%lu (%lu)\n", i, type_);
                                     continue;
                                 }
 
@@ -273,7 +273,7 @@ unsafe fn ProcessRunKeys(hkRoot: HKEY, szKeyName: LPCWSTR, bDelete: i32, bSynchr
                                         szCmdLineExp = HeapAlloc(hProcessHeap, 0, (dwNumOfChars as SIZE_T) * core::mem::size_of::<u16>() as SIZE_T) as *mut u16;
 
                                         if szCmdLineExp.is_null() {
-                                            TRACE!(b"Couldn't allocate memory for the commands to be executed\n\0".as_ptr());
+                                            TRACE!("Couldn't allocate memory for the commands to be executed\n");
                                             res = ERROR_NOT_ENOUGH_MEMORY as i32;
                                             res = 'end: {
                                                 break 'end res;
@@ -292,7 +292,7 @@ unsafe fn ProcessRunKeys(hkRoot: HKEY, szKeyName: LPCWSTR, bDelete: i32, bSynchr
                                     0,
                                 );
                                 if res == INVALID_RUNCMD_RETURN {
-                                    TRACE!(b"Error running cmd #%lu (%lu)\n\0".as_ptr(), i, GetLastError());
+                                    TRACE!("Error running cmd #%lu (%lu)\n", i, GetLastError());
                                 }
 
                                 if !szCmdLineExp.is_null() {
@@ -300,7 +300,7 @@ unsafe fn ProcessRunKeys(hkRoot: HKEY, szKeyName: LPCWSTR, bDelete: i32, bSynchr
                                     szCmdLineExp = core::ptr::null_mut();
                                 }
 
-                                TRACE!(b"Done processing cmd #%lu\n\0".as_ptr(), i);
+                                TRACE!("Done processing cmd #%lu\n", i);
                             }
 
                             res = ERROR_SUCCESS as i32;
@@ -327,7 +327,7 @@ unsafe fn ProcessRunKeys(hkRoot: HKEY, szKeyName: LPCWSTR, bDelete: i32, bSynchr
         RegCloseKey(hkWin);
     }
 
-    TRACE!(b"done\n\0".as_ptr());
+    TRACE!("done\n");
 
     if res == ERROR_SUCCESS as i32 { 1 } else { 0 }
 }
@@ -409,12 +409,12 @@ unsafe fn AutoStartupApplications(nCSIDL_Folder: i32) -> u8 {
     const SHGFP_TYPE_CURRENT: u32 = 0;
     const UNICODE_NULL: u16 = 0;
 
-    TRACE!(b"(%d)\n\0".as_ptr(), nCSIDL_Folder);
+    TRACE!("(%d)\n", nCSIDL_Folder);
 
     hResult = SHGetFolderPathW(core::ptr::null_mut(), nCSIDL_Folder, core::ptr::null_mut(), SHGFP_TYPE_CURRENT, szPath.as_mut_ptr());
     cchPathLen = wcslen(szPath.as_ptr());
     if !SUCCEEDED(hResult) || cchPathLen == 0 {
-        WARN!(b"SHGetFolderPath() failed with error %lu\n\0".as_ptr(), GetLastError());
+        WARN!("SHGetFolderPath() failed with error %lu\n", GetLastError());
         return 0u8;
     }
 
@@ -422,7 +422,7 @@ unsafe fn AutoStartupApplications(nCSIDL_Folder: i32) -> u8 {
 
     hFind = FindFirstFileW(szPath.as_ptr(), core::ptr::addr_of_mut!(FoundData));
     if hFind == INVALID_HANDLE_VALUE {
-        WARN!(b"FindFirstFile(%s) failed with error %lu\n\0".as_ptr(), debugstr_w(szPath.as_ptr()), GetLastError());
+        WARN!("FindFirstFile(%s) failed with error %lu\n", debugstr_w(szPath.as_ptr()), GetLastError());
         return 0u8;
     }
 
@@ -445,7 +445,7 @@ unsafe fn AutoStartupApplications(nCSIDL_Folder: i32) -> u8 {
         szPath[cchPathLen + 1] = UNICODE_NULL;
         StringCbCatW(szPath.as_mut_ptr(), core::mem::size_of_val(&szPath), FoundData.cFileName.as_ptr());
 
-        TRACE!(b"Executing %s in directory %s\n\0".as_ptr(), debugstr_w(FoundData.cFileName.as_ptr()), debugstr_w(szPath.as_ptr()));
+        TRACE!("Executing %s in directory %s\n", debugstr_w(FoundData.cFileName.as_ptr()), debugstr_w(szPath.as_ptr()));
 
         let mut dwType: u32 = 0;
         if GetBinaryTypeW(szPath.as_ptr(), core::ptr::addr_of_mut!(dwType)) != 0 {
@@ -480,12 +480,12 @@ pub unsafe extern "C" fn ProcessStartupItems(bRunOnce: i32) -> i32 {
 
     res = GetWindowsDirectoryW(gen_path.as_mut_ptr(), gen_path.len() as u32);
     if res == 0 {
-        TRACE!(b"Couldn't get the windows directory - error %lu\n\0".as_ptr() as *const i8, GetLastError());
+        TRACE!("Couldn't get the windows directory - error %lu\n", GetLastError());
         return 100;
     }
 
     if SetCurrentDirectoryW(gen_path.as_ptr()) == 0 {
-        TRACE!(b"Cannot set the dir to %ls (%lu)\n\0".as_ptr() as *const i8, gen_path.as_ptr(), GetLastError());
+        TRACE!("Cannot set the dir to %ls (%lu)\n", gen_path.as_ptr(), GetLastError());
         return 100;
     }
 
@@ -518,7 +518,7 @@ pub unsafe extern "C" fn ProcessStartupItems(bRunOnce: i32) -> i32 {
         res = ProcessRunKeys(HKEY_CURRENT_USER, w!("RunOnce").as_ptr() as LPCWSTR, 1, 0) as u32;
     }
 
-    TRACE!(b"Operation done\n\0".as_ptr() as *const i8);
+    TRACE!("Operation done\n");
 
     if res != 0 { 0 } else { 101 }
 }

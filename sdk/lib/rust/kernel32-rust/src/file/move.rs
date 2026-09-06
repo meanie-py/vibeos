@@ -55,8 +55,6 @@ unsafe fn RTL_CONSTANT_STRING(s: *const i8) -> _UNICODE_STRING {
 }
 
 // NDEBUG: Wine/ReactOS debug shims compile out. Macros swallow mixed args.
-macro_rules! FIXME { ($($arg:tt)*) => {{ let _ = ($($arg)*,); }} }
-macro_rules! TRACE { ($($arg:tt)*) => {{ let _ = ($($arg)*,); }} }
 #[inline] unsafe fn UNIMPLEMENTED_DBGBREAK(_msg: *const i8) {}
 
 // ---- file-scope preamble (translated) ----
@@ -1255,7 +1253,7 @@ pub unsafe extern "system" fn ReplaceFileW(
     let mut Buffer: PVOID = core::ptr::null_mut();
 
     if dwReplaceFlags != 0 {
-        FIXME!(b"Ignoring flags %x\n\0".as_ptr() as LPCSTR, dwReplaceFlags);
+        FIXME!("Ignoring flags %x\n", dwReplaceFlags);
     }
 
     if lpReplacedFileName.is_null() || lpReplacementFileName.is_null() {

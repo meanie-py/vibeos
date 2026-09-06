@@ -28,7 +28,6 @@ pub unsafe extern "system" fn MprAdminIsServiceRunning(server: LPWSTR) -> BOOL {
     (FALSE) as i32
 }
 
-
 // ============================================================================
 // ORIGINAL C SOURCE
 // ============================================================================

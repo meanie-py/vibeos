@@ -7,9 +7,6 @@ use ENCODING::*;
 use crate::string::nls_subst::{HeapAlloc, HeapFree, RtlUshortByteSwap};
 
 // ---- cohab glue: Wine debug macros (no-ops, as in the other ported modules) ----
-macro_rules! TRACE { ($($t:tt)*) => {{}} }
-macro_rules! WARN  { ($($t:tt)*) => {{}} }
-macro_rules! FIXME { ($($t:tt)*) => {{}} }
 
 // ---- cohab glue: kernel32 Rust exports this module calls (real stdcall @N exports) ----
 extern "system" {
@@ -324,7 +321,7 @@ unsafe fn PROFILE_WriteLine(
             );
         }
         _ => {
-            FIXME!(b"encoding type %d not implemented\n\0" as *const u8 as *const ::core::ffi::c_char, encoding as ::core::ffi::c_uint);
+            FIXME!("encoding type %d not implemented\n", encoding as ::core::ffi::c_uint);
         }
     }
 }
@@ -592,7 +589,7 @@ unsafe fn PROFILE_Load(
         }
         _ => {
             FIXME!(
-                b"encoding type %d not implemented\n\0" as *const u8 as *const ::core::ffi::c_char,
+                "encoding type %d not implemented\n",
                 *pEncoding as ::core::ffi::c_uint,
             );
             HeapFree(GetProcessHeap(), 0, buffer_base);
@@ -2463,7 +2460,7 @@ pub unsafe extern "system" fn WritePrivateProfileStructA(
 
 #[no_mangle]
 pub unsafe extern "system" fn OpenProfileUserMapping() -> BOOL {
-    FIXME!(b"(), stub!\n");
+    FIXME!("(), stub!\n");
     SetLastError(ERROR_CALL_NOT_IMPLEMENTED);
     return 0;
 }

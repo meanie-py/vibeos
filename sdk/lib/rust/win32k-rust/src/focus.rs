@@ -6,12 +6,6 @@ use ntkrnl_sys::ddk::ExFreePoolWithTag;
 use ntkrnl_sys::ob::ObDereferenceObject;
 use ntkrnl_sys::interlocked::{InterlockedIncrement, InterlockedDecrement};
 
-// Debug-channel macros — no kernel symbol, no-op.
-macro_rules! ERR   { ($($t:tt)*) => {{}}; }
-macro_rules! TRACE { ($($t:tt)*) => {{}}; }
-macro_rules! WARN  { ($($t:tt)*) => {{}}; }
-macro_rules! FIXME { ($($t:tt)*) => {{}}; }
-
 // USERTAG_WINDOWLIST pool tag = 'lwsU' (tags.h). C 4-char literal is big-endian;
 // the LE byte order is the literal reversed -> "Uswl".
 const USERTAG_WINDOWLIST: u32 = u32::from_le_bytes(*b"Uswl");
@@ -462,7 +456,7 @@ unsafe fn co_IntSendDeactivateMessages_impl(hWndPrev: HWND, hWnd: HWND, Clear: B
                     (*WndPrev).state &= !(WNDS_ACTIVEFRAME | WNDS_HASCAPTION);
                 }
             } else {
-                ERR!(b"Application is keeping itself Active to prevent the change!\n\0".as_ptr() as *const i8);
+                ERR!("Application is keeping itself Active to prevent the change!\n");
                 Ret = 0;
             }
 
@@ -782,7 +776,7 @@ unsafe fn co_IntMakeWindowActive_impl(Window: PWND) -> BOOL {
         WndSetLastActive(spwndOwner, Window);
         return 1;
     }
-    ERR!(b"MakeWindowActive Failed!\n\0".as_ptr() as *const i8);
+    ERR!("MakeWindowActive Failed!\n");
     0
 }
 
@@ -1517,7 +1511,7 @@ unsafe fn co_IntSetActiveWindow_impl(
         core::ptr::addr_of_mut!(cbt) as LPARAM,
     ) != 0
     {
-        ERR!(b"SetActiveWindow: WH_CBT Call Hook return!\n\0".as_ptr());
+        ERR!("SetActiveWindow: WH_CBT Call Hook return!\n");
         return 0;
     }
 
@@ -1549,7 +1543,7 @@ unsafe fn co_IntSetActiveWindow_impl(
         || (!Wnd.is_null() && VerifyWnd(Wnd).is_null())
         || ThreadQueue != (*pti).MessageQueue
     {
-        ERR!(b"SetActiveWindow: Summary ERROR, active state changed!\n\0".as_ptr());
+        ERR!("SetActiveWindow: Summary ERROR, active state changed!\n");
         return 0;
     }
 
@@ -1799,7 +1793,7 @@ unsafe fn co_UserSetFocus_impl(Window: PWND) -> HWND {
         }
 
         if (*head_pti(core::ptr::addr_of!((*Window).head))).MessageQueue != ThreadQueue {
-            ERR!(b"SetFocus Must have the same Q!\n\0".as_ptr() as *const i8);
+            ERR!("SetFocus Must have the same Q!\n");
             return core::ptr::null_mut();
         }
 
@@ -1824,7 +1818,7 @@ unsafe fn co_UserSetFocus_impl(Window: PWND) -> HWND {
             hWndPrev as LPARAM,
         ) != 0
         {
-            ERR!(b"SetFocus 1 WH_CBT Call Hook return!\n\0".as_ptr() as *const i8);
+            ERR!("SetFocus 1 WH_CBT Call Hook return!\n");
             return core::ptr::null_mut();
         }
 
@@ -1835,14 +1829,14 @@ unsafe fn co_UserSetFocus_impl(Window: PWND) -> HWND {
                     (*ppi_w32pf_flags((*pti).ppi)) |= W32PF_ALLOWFOREGROUNDACTIVATE;
                 }
                 if co_IntSetForegroundAndFocusWindow(pwndTop, 0, 1) == 0 {
-                    ERR!(b"SetFocus: Set Foreground and Focus Failed!\n\0".as_ptr() as *const i8);
+                    ERR!("SetFocus: Set Foreground and Focus Failed!\n");
                     return core::ptr::null_mut();
                 }
             }
 
             if pwndTop != (*ThreadQueue).spwndActive {
                 if co_IntSetActiveWindow(pwndTop, 0, 0, 0) == 0 {
-                    ERR!(b"SetFocus: Set Active Failed!\n\0".as_ptr() as *const i8);
+                    ERR!("SetFocus: Set Active Failed!\n");
                     return core::ptr::null_mut();
                 }
             }
@@ -1851,7 +1845,7 @@ unsafe fn co_UserSetFocus_impl(Window: PWND) -> HWND {
                 return core::ptr::null_mut();
             }
             if pwndTop != (*ThreadQueue).spwndActive {
-                ERR!(b"SetFocus: Top window did not go active!\n\0".as_ptr() as *const i8);
+                ERR!("SetFocus: Top window did not go active!\n");
                 return core::ptr::null_mut();
             }
         }
@@ -1871,7 +1865,7 @@ unsafe fn co_UserSetFocus_impl(Window: PWND) -> HWND {
             hWndPrev as LPARAM,
         ) != 0
         {
-            ERR!(b"SetFocus: 2 WH_CBT Call Hook return!\n\0".as_ptr() as *const i8);
+            ERR!("SetFocus: 2 WH_CBT Call Hook return!\n");
             return core::ptr::null_mut();
         }
         IntSendFocusMessages(pti, core::ptr::null_mut());
@@ -1989,7 +1983,7 @@ unsafe fn co_UserSetCapture_impl(hWnd: HWND) -> HWND {
         Window = UserGetWindowObject(hWnd);
         if !Window.is_null() {
             if (*head_pti(core::ptr::addr_of!((*Window).head))).MessageQueue != ThreadQueue {
-                ERR!(b"Window Thread does not match Current!\n\0".as_ptr() as *const i8);
+                ERR!("Window Thread does not match Current!\n");
                 return core::ptr::null_mut();
             }
         }

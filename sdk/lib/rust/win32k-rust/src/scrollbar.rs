@@ -3,12 +3,6 @@ use win32k_sys::win32k::*;
 use ntkrnl_sys::ddk::{PsGetCurrentThreadWin32Thread};
 use core::ffi::c_void;
 
-// Debug-channel macros — no kernel symbol, no-op (retail).
-macro_rules! ERR   { ($($t:tt)*) => {{}}; }
-macro_rules! TRACE { ($($t:tt)*) => {{}}; }
-macro_rules! WARN  { ($($t:tt)*) => {{}}; }
-macro_rules! FIXME { ($($t:tt)*) => {{}}; }
-
 // ASSERT_REFS_CO(obj) — debug-only ref assert; no-op in retail.
 #[inline(always)]
 unsafe fn ASSERT_REFS_CO(_Window: PWND) {}
@@ -459,12 +453,12 @@ unsafe fn co_IntGetScrollInfo_impl(
     (*lpsi).fMask &= !SIF_THEMED;
     if SBID_IS_VALID(nBar) == 0 {
         EngSetLastError(ERROR_INVALID_PARAMETER);
-        ERR!(b"Trying to get scrollinfo for unknown scrollbar type %d\n\0".as_ptr() as *const i8, nBar);
+        ERR!("Trying to get scrollinfo for unknown scrollbar type %d\n", nBar);
         return 0;
     }
 
     if (*Window).pSBInfo.is_null() {
-        ERR!(b"IntGetScrollInfo No window scrollbar info\n\0".as_ptr() as *const i8);
+        ERR!("IntGetScrollInfo No window scrollbar info\n");
         return 0;
     }
 
@@ -896,12 +890,12 @@ unsafe fn co_IntSetScrollBarInfo_impl(
 
     if SBID_IS_VALID(Bar) == 0 {
         EngSetLastError(ERROR_INVALID_PARAMETER);
-        ERR!(b"Trying to get scrollinfo for unknown scrollbar type %d\n\0".as_ptr() as *const i8, Bar);
+        ERR!("Trying to get scrollinfo for unknown scrollbar type %d\n", Bar);
         return 0;
     }
 
     if co_IntCreateScrollBars(Window) == 0 {
-        ERR!(b"Failed to create scrollbars for window\n\0".as_ptr() as *const i8);
+        ERR!("Failed to create scrollbars for window\n");
         return 0;
     }
 
@@ -948,7 +942,7 @@ unsafe fn co_IntCreateScrollBars_impl(Window: PWND) -> BOOL {
     (*Window).pSBInfoex = ExAllocatePoolWithTag(PagedPool, Size as usize, TAG_SBARINFO) as *mut SBINFOEX;
     if (*Window).pSBInfoex.is_null() {
         ERR!(
-            b"Unable to allocate memory for scrollbar information for window %p\n\0".as_ptr(),
+            "Unable to allocate memory for scrollbar information for window %p\n",
             UserHMGetHandle(Window),
         );
         return 0;
@@ -959,7 +953,7 @@ unsafe fn co_IntCreateScrollBars_impl(Window: PWND) -> BOOL {
     (*Window).pSBInfo = DesktopHeapAlloc((*Window).head.rpdesk, core::mem::size_of::<SBINFO>() as ULONG) as *mut SBINFO;
     if (*Window).pSBInfo.is_null() {
         ERR!(
-            b"Unable to allocate memory for scrollbar information for window %p\n\0".as_ptr(),
+            "Unable to allocate memory for scrollbar information for window %p\n",
             UserHMGetHandle(Window),
         );
         return 0;

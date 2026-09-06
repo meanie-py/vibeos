@@ -35,7 +35,7 @@ pub unsafe extern "C" fn UpdateStartMenu(
     }
 
     if bRefresh != 0 {
-        FIXME!(b"Refresh the Start menu with communicating with SHELL32\n\0".as_ptr() as *const i8);
+        FIXME!("Refresh the Start menu with communicating with SHELL32\n");
     }
 
     if !pbb.is_null() {

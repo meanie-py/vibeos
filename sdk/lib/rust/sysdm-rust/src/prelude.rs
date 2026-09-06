@@ -18,10 +18,27 @@ pub use core::ffi::{
 pub use core::ptr::{addr_of, addr_of_mut};
 
 // ================= debug ======================================================================
-// reactos/debug.h DPRINT/DPRINT1 — no-op MACROS, never out-of-line fns
-// (field manual §9.65: an out-of-line no-op is an optimization barrier).
+// `NDEBUG` silences DPRINT only. DPRINT1 sits OUTSIDE that guard in
+// sdk/include/reactos/debug.h, so it is live whenever DBG is set — and our media is
+// built -DCMAKE_BUILD_TYPE=Debug, i.e. -DDBG=1. Both stay MACROS, never out-of-line
+// fns (field manual §9.65: a no-op fn is an optimization barrier). The C passes
+// __RELFILE__/__LINE__ as two extra varargs; file!()/line!() fold into the literal.
 #[macro_export] macro_rules! DPRINT  { ($($arg:tt)*) => {{}}; }
-#[macro_export] macro_rules! DPRINT1 { ($($arg:tt)*) => {{}}; }
+// ntdll exports DbgPrint; every usermode DLL links it.
+extern "C" {
+    pub fn DbgPrint(Format: *const c_char, ...) -> u32;
+}
+#[macro_export]
+macro_rules! DPRINT1 {
+    ($fmt:literal $(, $arg:expr)* $(,)?) => {
+        unsafe {
+            $crate::prelude::DbgPrint(
+                concat!("(", file!(), ":", line!(), ") ", $fmt, "\0").as_ptr() as *const _
+                $(, $arg)*,
+            )
+        }
+    };
+}
 pub use crate::{DPRINT, DPRINT1};
 
 // ================= CRT ========================================================================
@@ -344,11 +361,7 @@ pub const DISP_CHANGE_BADPARAM: LONG = crate::types::DISP_CHANGE_BADPARAM as LON
 #[macro_export] macro_rules! DESK_EXT_DISPLAYSTATEFLAGS { () => { $crate::w!("Display State Flags") }; }
 #[macro_export] macro_rules! DESK_EXT_MONITORNAME { () => { $crate::w!("Monitor Name") }; }
 #[macro_export] macro_rules! DESK_EXT_MONITORDEVICE { () => { $crate::w!("Monitor Device") }; }
-pub use crate::{
-    DESK_EXT_DISPLAYDEVICE, DESK_EXT_DISPLAYID, DESK_EXT_DISPLAYKEY, DESK_EXT_DISPLAYNAME,
-    DESK_EXT_DISPLAYSTATEFLAGS, DESK_EXT_EXTINTERFACE, DESK_EXT_MONITORDEVICE,
-    DESK_EXT_MONITORNAME, DESK_EXT_PRUNINGMODE,
-};
+pub use crate::{DESK_EXT_DISPLAYDEVICE, DESK_EXT_DISPLAYID, DESK_EXT_DISPLAYKEY, DESK_EXT_DISPLAYNAME, DESK_EXT_DISPLAYSTATEFLAGS, DESK_EXT_EXTINTERFACE, DESK_EXT_MONITORDEVICE, DESK_EXT_MONITORNAME, DESK_EXT_PRUNINGMODE};
 // regstr.h:76. In the C this is only ever used in a string-literal CONCATENATION
 // (`REGSTR_PATH_CONTROLSFOLDER TEXT("\\Desk")`), which has no Rust spelling at all — so the
 // macro takes the suffix and produces the whole path in one `w!`. The translation had rendered
@@ -361,8 +374,6 @@ macro_rules! REGSTR_PATH_CONTROLSFOLDER {
     };
 }
 pub use crate::REGSTR_PATH_CONTROLSFOLDER;
-
-
 
 // dmilib.h's `_ID_STRINGS` enum, which smbios.c uses by BARE MEMBER NAME to index
 // `PCHAR DmiStrings[ID_STRINGS_MAX]`. bindgen prefixes every member with the enum's own tag,
@@ -386,7 +397,6 @@ pub use crate::types::_ID_STRINGS_SYS_SKU as SYS_SKU;
 pub use crate::types::_ID_STRINGS_SYS_VENDOR as SYS_VENDOR;
 pub use crate::types::_ID_STRINGS_SYS_VERSION as SYS_VERSION;
 
-
 // ---- CRT the module reaches that desk's block did not need ----
 extern "C" {
     pub fn strstr(h: *const c_char, n: *const c_char) -> *mut c_char;
@@ -404,7 +414,6 @@ pub use self::{wcscat as _tcscat, wcschr as _tcschr, wcsstr as _tcsstr};
 // winuser.h:1216 `#define HWND_DESKTOP ((HWND)0)` — a NULL window handle, not an integer.
 pub const HWND_DESKTOP: HWND = core::ptr::null_mut();
 pub use win32macros_rust::UNICODE_NULL; // ntdef.h `((WCHAR)0)`
-
 
 // ---- the remaining CRT / TCHAR surface ----
 extern "C" {
@@ -440,7 +449,6 @@ pub use crate::types::{
     tagTVHITTESTINFO as TV_HITTESTINFO, tagTVKEYDOWN as TV_KEYDOWN,
     NMLVDISPINFOW as NMLVDISPINFO,
 };
-
 
 // shlobj_undoc.h's `tagWALK_TREE_CMD` enum, which performance.c passes to
 // IRegTreeOptions_WalkTree by bare member name. Same bindgen enum-tag prefix as dmilib's.
@@ -523,7 +531,6 @@ pub use crate::sysdm::startrec::StartRecDlgProc;
 pub use crate::sysdm::userprofile::UserProfileDlgProc;
 pub use crate::sysdm::virtmem::VirtMemDlgProc;
 
-
 // ================= strsafe.h ==================================================================
 // The shared crate (sdk/lib/rust/strsafe-rust). `STRSAFEAPI` is `static __inline`, so no object
 // file in the tree defines these — see that crate for why they are ported once rather than per
@@ -592,13 +599,7 @@ macro_rules! TreeView_GetSelection { ($h:expr $(,)?) => { $crate::TreeView_GetNe
 macro_rules! TreeView_HitTest { ($h:expr, $p:expr $(,)?) => { $crate::prelude::SendMessageW($h, TVM_HITTEST, 0, $p as *mut _ as LPARAM) as HTREEITEM }; }
 #[macro_export]
 macro_rules! Button_SetCheck { ($h:expr, $c:expr $(,)?) => { { $crate::prelude::SendMessageW($h, BM_SETCHECK, $c as WPARAM, 0); } }; }
-pub use crate::{
-    Button_SetCheck, ListView_DeleteAllItems, ListView_DeleteItem, ListView_EditLabel,
-    ListView_GetColumnWidth, ListView_GetEditControl, ListView_GetItem, ListView_GetItemCount,
-    ListView_GetItemText, ListView_GetNextItem, ListView_GetSelectedCount, ListView_SetColumnWidth, ListView_SetExtendedListViewStyle,
-    ListView_SetItemText, ListView_Update, TreeView_GetNextItem,
-    TreeView_GetSelection, TreeView_HitTest,
-};
+pub use crate::{Button_SetCheck, ListView_DeleteAllItems, ListView_DeleteItem, ListView_EditLabel, ListView_GetColumnWidth, ListView_GetEditControl, ListView_GetItem, ListView_GetItemCount, ListView_GetItemText, ListView_GetNextItem, ListView_GetSelectedCount, ListView_SetColumnWidth, ListView_SetExtendedListViewStyle, ListView_SetItemText, ListView_Update, TreeView_GetNextItem, TreeView_GetSelection, TreeView_HitTest};
 
 // sysdm.c's own variadic. Stable Rust cannot DEFINE one, so the entry point is a trampoline in
 // dll/cpl/sysdm/rust_varargs_shim.c and the real body is `ResourceMessageBox_v` next to it.
@@ -614,7 +615,6 @@ extern "C" {
         ...
     ) -> INT;
 }
-
 
 // The A/W pairs desk's block did not carry. sysdm compiles -DUNICODE, so every unsuffixed
 // spelling in the C is the W entry point — the same rule winuser.h/winbase.h apply with their
@@ -648,7 +648,6 @@ extern "C" {
     pub fn StringCchPrintfW(d: *mut WCHAR, cch: usize, f: *const WCHAR, ...) -> HRESULT;
 }
 pub use self::StringCchPrintfW as StringCchPrintf;
-
 
 // ================= COM (COBJMACROS) ===========================================================
 // performance.c drives shell32's IRegTreeOptions through objbase.h's COBJMACROS, which expand to

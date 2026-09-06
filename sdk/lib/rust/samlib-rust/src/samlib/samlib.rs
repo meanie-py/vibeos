@@ -1765,7 +1765,6 @@ pub unsafe extern "system" fn SamTestPrivateFunctionsUser(UserHandle: SAM_HANDLE
     STATUS_NOT_IMPLEMENTED
 }
 
-
 // ============================================================================
 // ORIGINAL C SOURCE
 // ============================================================================

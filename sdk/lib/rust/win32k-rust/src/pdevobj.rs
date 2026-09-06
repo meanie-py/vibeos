@@ -150,10 +150,6 @@ extern "C" {
 
 // C macros — silenced via macro_rules! (variadic no-op).
 macro_rules! NT_ASSERT { ($($t:tt)*) => { () }; }
-macro_rules! TRACE { ($($t:tt)*) => { () }; }
-macro_rules! ERR { ($($t:tt)*) => { () }; }
-macro_rules! WARN { ($($t:tt)*) => { () }; }
-macro_rules! DPRINT1 { ($($t:tt)*) => { () }; }
 // RtlEqualMemory is `#define RtlEqualMemory(a,b,n) (!memcmp(a,b,n))` (winnt.h).
 #[inline(always)]
 unsafe fn RtlEqualMemory(s1: *const core::ffi::c_void, s2: *const core::ffi::c_void, n: usize) -> u32 {
@@ -339,7 +335,7 @@ unsafe fn PDEVOBJ_bEnablePDEV(
     );
 
     if (*ppdev).dhpdev.is_null() {
-        ERR!(b"Failed to enable PDEV\n\0".as_ptr() as PCHAR);
+        ERR!("Failed to enable PDEV\n");
         return 0u8;
     }
 
@@ -643,14 +639,14 @@ pub unsafe extern "C" fn PDEVOBJ_Create(
     }
     
     if pldev.is_null() {
-        ERR!(b"Could not load display driver '%S'\n\0".as_ptr() as *const i8,
+        ERR!("Could not load display driver '%S'\n",
             if ldevtype == LDEV_DEVICE_META { [0u16].as_ptr() } else { (*pdm).dmDeviceName.as_ptr() });
         return core::ptr::null_mut();
     }
 
     ppdev = PDEVOBJ_AllocPDEV();
     if ppdev.is_null() {
-        ERR!(b"failed to allocate a PDEV\n\0".as_ptr() as *const i8);
+        ERR!("failed to allocate a PDEV\n");
         return core::ptr::null_mut();
     }
 
@@ -950,14 +946,14 @@ pub unsafe extern "C" fn PDEVOBJ_lChangeDisplaySettings(
         if !pustrDeviceName.is_null() {
             pGraphicsDevice = EngpFindGraphicsDevice(pustrDeviceName, 0);
             if pGraphicsDevice.is_null() {
-                ERR!(b"Wrong device name provided: '%wZ'\n\0".as_ptr() as *const i8, pustrDeviceName);
+                ERR!("Wrong device name provided: '%wZ'\n", pustrDeviceName);
                 lRet = DISP_CHANGE_BADPARAM as i32;
                 break 'cleanup;
             }
         } else if !RequestedMode.is_null() {
             pGraphicsDevice = EngpFindGraphicsDevice(core::ptr::null_mut(), 0);
             if pGraphicsDevice.is_null() {
-                ERR!(b"Wrong device'\n\0".as_ptr() as *const i8);
+                ERR!("Wrong device'\n");
                 lRet = DISP_CHANGE_BADPARAM as i32;
                 break 'cleanup;
             }
@@ -965,7 +961,7 @@ pub unsafe extern "C" fn PDEVOBJ_lChangeDisplaySettings(
 
         if !pGraphicsDevice.is_null() {
             if LDEVOBJ_bProbeAndCaptureDevmode(pGraphicsDevice, RequestedMode, core::ptr::addr_of_mut!(pdm), bSearchClosestMode) == 0 {
-                ERR!(b"DrvProbeAndCaptureDevmode() failed\n\0".as_ptr() as *const i8);
+                ERR!("DrvProbeAndCaptureDevmode() failed\n");
                 lRet = DISP_CHANGE_BADMODE as i32;
                 break 'cleanup;
             }
@@ -983,7 +979,7 @@ pub unsafe extern "C" fn PDEVOBJ_lChangeDisplaySettings(
         }
 
         if pmdev.is_null() {
-            ERR!(b"Failed to create new MDEV\n\0".as_ptr() as *const i8);
+            ERR!("Failed to create new MDEV\n");
             lRet = DISP_CHANGE_FAILED as i32;
             break 'cleanup;
         }
@@ -1010,7 +1006,7 @@ pub unsafe extern "C" fn PDEVOBJ_lChangeDisplaySettings(
                             (*mdev_get(pmdevOld, i as usize)).ppdev = (*mdev_get(pmdev, j as usize)).ppdev;
                             (*mdev_get(pmdev, j as usize)).ppdev = tmp;
                         } else {
-                            ERR!(b"Failed to apply new settings\n\0".as_ptr() as *const i8);
+                            ERR!("Failed to apply new settings\n");
                         }
                         break;
                     }

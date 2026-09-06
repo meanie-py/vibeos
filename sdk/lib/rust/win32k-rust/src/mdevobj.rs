@@ -27,27 +27,8 @@ unsafe fn ExAllocatePoolZero(PoolType: POOL_TYPE, NumberOfBytes: SIZE_T, Tag: UL
     allocation
 }
 
-// DbgPrint is cdecl variadic (ntddk @ varargs DbgPrint). The C source uses
-// the win32kdebug.h TRACE/ERR/WARN channel macros. This is a DBG=TRUE build
-// (CMakeCache DBG:BOOL=TRUE), so they expand to DBG_PRINT → DbgPrint, with
-// the TRACE channel (EngMDev) disabled at boot (silent). Faithfully model:
-//   ERR / WARN  → DbgPrint unconditionally
-//   TRACE       → no-op (channel-disabled at boot)
 extern "C" {
     fn DbgPrint(Format: *const c_char, ...) -> u32;
-}
-macro_rules! ERR {
-    ($fmt:expr $(, $arg:expr)* $(,)?) => {
-        { DbgPrint($fmt.as_ptr() as *const c_char $(, $arg)*); }
-    };
-}
-macro_rules! WARN {
-    ($fmt:expr $(, $arg:expr)* $(,)?) => {
-        { DbgPrint($fmt.as_ptr() as *const c_char $(, $arg)*); }
-    };
-}
-macro_rules! TRACE {
-    ($($arg:tt)*) => { {} };
 }
 
 // win32k-internal callees not in the win32k-sys bindgen surface (they live in
@@ -178,7 +159,7 @@ pub unsafe extern "C" fn MDEVOBJ_Create(
         0x7665644Du32, // 'Mdev' GDITAG_MDEV
     ) as PMDEVOBJ;
     if pmdev.is_null() {
-        ERR!(b"Failed to allocate memory for MDEV\n\0");
+        ERR!("Failed to allocate memory for MDEV\n");
         return core::ptr::null_mut();
     }
 
@@ -220,7 +201,7 @@ pub unsafe extern "C" fn MDEVOBJ_Create(
         ) != 0
         {
             ERR!(
-                b"MDEVOBJ_Create: ProbeAndCapture OK for '%S', creating PDEV (mode %lux%lux%lu)\n\0",
+                "MDEVOBJ_Create: ProbeAndCapture OK for '%S', creating PDEV (mode %lux%lux%lu)\n",
                 (*pGraphicsDevice).szWinDeviceName.as_ptr(),
                 if !localPdm.is_null() { (*localPdm).dmPelsWidth } else { 0 },
                 if !localPdm.is_null() { (*localPdm).dmPelsHeight } else { 0 },
@@ -229,13 +210,13 @@ pub unsafe extern "C" fn MDEVOBJ_Create(
             ppdev = PDEVOBJ_Create(pGraphicsDevice, localPdm, dwAccelerationLevel, LDEV_DEVICE_DISPLAY);
             if ppdev.is_null() {
                 ERR!(
-                    b"MDEVOBJ_Create: PDEVOBJ_Create FAILED for '%S'\n\0",
+                    "MDEVOBJ_Create: PDEVOBJ_Create FAILED for '%S'\n",
                     (*pGraphicsDevice).szWinDeviceName.as_ptr(),
                 );
             }
         } else {
             ERR!(
-                b"MDEVOBJ_Create: LDEVOBJ_bProbeAndCaptureDevmode FAILED for '%S'\n\0",
+                "MDEVOBJ_Create: LDEVOBJ_bProbeAndCaptureDevmode FAILED for '%S'\n",
                 (*pGraphicsDevice).szWinDeviceName.as_ptr(),
             );
             ppdev = core::ptr::null_mut();

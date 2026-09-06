@@ -69,11 +69,26 @@ extern "system" {
 }
 
 // DPRINT/DPRINT1 are debug macros — translate to no-ops here so call
-// sites can keep their `DPRINT1("...", ...)` syntax (variadic). The
-// printf-family doesn't have a clean stable Rust analog; replace with
-// a macro stub that swallows args.
+// sites can keep their `DPRINT1("...", ...)` syntax (variadic).
+//
+// `NDEBUG` silences DPRINT only — DPRINT1 sits OUTSIDE that guard in
+// sdk/include/reactos/debug.h and is live under DBG, which our media always is.
+// ntdll exports DbgPrint; file!()/line!() fold in via concat! the way the C's
+// __RELFILE__/__LINE__ varargs do.
+extern "C" {
+    fn DbgPrint(Format: *const core::ffi::c_char, ...) -> u32;
+}
 macro_rules! DPRINT  { ($($t:tt)*) => { () } }
-macro_rules! DPRINT1 { ($($t:tt)*) => { () } }
+macro_rules! DPRINT1 {
+    ($fmt:literal $(, $arg:expr)* $(,)?) => {
+        unsafe {
+            DbgPrint(
+                concat!("(", file!(), ":", line!(), ") ", $fmt, "\0").as_ptr() as *const _
+                $(, $arg)*,
+            )
+        }
+    };
+}
 
 // `max(a, b)`/`min(a, b)` — C `MAX/MIN` macros, polymorphic. Use Rust's
 // generic Ord-based versions so we don't need monomorphic ULONG vs i16

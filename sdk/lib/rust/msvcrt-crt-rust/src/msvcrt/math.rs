@@ -74,18 +74,7 @@ extern "system" {
     static __os_arm64x_set_x64_information: Option<unsafe extern "system" fn(ULONG, ULONG_PTR, *mut core::ffi::c_void) -> NTSTATUS>;
 }
 
-/// wine/debug.h's `TRACE`, which msvcrt compiles out. A `macro_rules!` and never an
-/// out-of-line `fn`: a no-op function is an optimization barrier that uncloaks latent ABI
-/// mismatches into `ud2`. Same shape as file.rs's.
-macro_rules! TRACE {
-    ($($arg:tt)*) => {{}};
-}
 
-/// wine/debug.h's `ERR`, the loud sibling of `TRACE`. Same rule: a `macro_rules!` and never
-/// an out-of-line `fn`.
-macro_rules! ERR {
-    ($($arg:tt)*) => {{}};
-}
 
 // `dll/win32/msvcrt/include/math.h:310-312` defines these as MACROS over the CRT's own
 // classification entry points, so they expand at each use site and never appear as calls in
@@ -1423,7 +1412,7 @@ unsafe extern "C" fn fenv_encode(mut x: u32, mut y: u32) -> __msvcrt_ulong {
     y &= !(_MCW_EM | _MCW_IC | _MCW_RC | _MCW_DN);
 
     if x != 0 || y != 0 {
-        FIXME!(b"unsupported flags: %x, %x\n\0".as_ptr() as PCHAR, x, y);
+        FIXME!("unsupported flags: %x, %x\n", x, y);
     }
     ret
 }

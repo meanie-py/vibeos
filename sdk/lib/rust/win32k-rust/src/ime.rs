@@ -9,12 +9,6 @@ use ntkrnl_sys::ddk::{ExAllocatePoolWithTag, ExFreePoolWithTag};
 use ntkrnl_sys::interlocked::{InterlockedIncrement, InterlockedDecrement};
 use core::ffi::c_void;
 
-// ERR/TRACE/WARN/FIXME — DbgPrint-style no-ops (release).
-macro_rules! ERR { ($($t:tt)*) => {{}}; }
-macro_rules! TRACE { ($($t:tt)*) => {{}}; }
-macro_rules! WARN { ($($t:tt)*) => {{}}; }
-macro_rules! FIXME { ($($t:tt)*) => {{}}; }
-
 // gfIMEShowStatus — DEFINED here (was in ime.c, now flipped to Rust). Other
 // win32k objects import it. `BOOL gfIMEShowStatus = (BOOL)-1;`
 #[no_mangle]
@@ -1141,7 +1135,7 @@ pub unsafe extern "system" fn NtUserBuildHimcList(
 
     'quit: {
         if IS_IMM_MODE() == 0 {
-            ERR!(b"!IS_IMM_MODE()\n\0".as_ptr() as *const i8);
+            ERR!("!IS_IMM_MODE()\n");
             EngSetLastError(ERROR_CALL_NOT_IMPLEMENTED);
             break 'quit;
         }
@@ -1254,13 +1248,13 @@ pub unsafe extern "system" fn NtUserNotifyIMEStatus(
 
     'quit: {
         if IS_IMM_MODE() == 0 {
-            ERR!(b"!IS_IMM_MODE()\n\0".as_ptr());
+            ERR!("!IS_IMM_MODE()\n");
             break 'quit;
         }
 
         pwnd = ValidateHwndNoErr(hwnd);
         if pwnd.is_null() {
-            ERR!(b"Invalid HWND %p\n\0".as_ptr(), hwnd);
+            ERR!("Invalid HWND %p\n", hwnd);
             break 'quit;
         }
 
@@ -1319,7 +1313,7 @@ pub unsafe extern "system" fn NtUserDisableThreadIme(dwThreadID: DWORD) -> BOOL 
 
     'quit: {
         if IS_IMM_MODE() == 0 {
-            ERR!(b"!IS_IMM_MODE()\n\0".as_ptr() as *const i8);
+            ERR!("!IS_IMM_MODE()\n");
             EngSetLastError(ERROR_CALL_NOT_IMPLEMENTED);
             break 'quit;
         }
@@ -1526,14 +1520,14 @@ pub unsafe extern "system" fn NtUserSetAppImeLevel(hWnd: HWND, dwLevel: DWORD) -
 
     'quit: {
         if IS_IMM_MODE() == 0 {
-            ERR!(b"!IS_IMM_MODE()\n\0".as_ptr() as *const i8);
+            ERR!("!IS_IMM_MODE()\n");
             EngSetLastError(ERROR_CALL_NOT_IMPLEMENTED);
             break 'quit;
         }
 
         pWnd = ValidateHwndNoErr(hWnd);
         if pWnd.is_null() {
-            ERR!(b"Invalid HWND: %p\n\0".as_ptr() as *const i8, hWnd);
+            ERR!("Invalid HWND: %p\n", hWnd);
             break 'quit;
         }
 
@@ -1609,7 +1603,7 @@ pub unsafe extern "system" fn NtUserSetImeInfoEx(pImeInfoEx: *const IMEINFOEX) -
 
     'quit: {
         if IS_IMM_MODE() == 0 {
-            ERR!(b"!IS_IMM_MODE()\n\0".as_ptr() as *const i8);
+            ERR!("!IS_IMM_MODE()\n");
             break 'quit;
         }
 
@@ -1620,7 +1614,7 @@ pub unsafe extern "system" fn NtUserSetImeInfoEx(pImeInfoEx: *const IMEINFOEX) -
         );
         if !NT_SUCCESS(__SehStatus) {
             ERR!(
-                b"Exception in NtUserSetImeInfoEx: pImeInfoEx=%p\n\0".as_ptr() as *const i8,
+                "Exception in NtUserSetImeInfoEx: pImeInfoEx=%p\n",
                 pImeInfoEx,
             );
             break 'quit;
@@ -1902,13 +1896,13 @@ pub unsafe extern "system" fn NtUserSetImeOwnerWindow(hImeWnd: HWND, hwndFocus: 
 
     'quit: {
         if IS_IMM_MODE() == 0 {
-            ERR!(b"!IS_IMM_MODE()\n\0".as_ptr() as *const i8);
+            ERR!("!IS_IMM_MODE()\n");
             break 'quit;
         }
 
         pImeWnd = ValidateHwndNoErr(hImeWnd);
         if pImeWnd.is_null() || (*pImeWnd).fnid as u32 != FNID_IME {
-            ERR!(b"Not IME window: %p\n\0".as_ptr() as *const i8, hImeWnd);
+            ERR!("Not IME window: %p\n", hImeWnd);
             break 'quit;
         }
 
@@ -2098,7 +2092,7 @@ unsafe fn UserCreateInputContext_impl(dwClientImcData: ULONG_PTR) -> PIMC {
     let pdesk: PDESKTOP = (*pti).rpdesk;
 
     if IS_IMM_MODE() == 0 || ((*pti).TIF_flags & TIF_DISABLEIME) != 0 {
-        ERR!(b"IME is disabled\n\0".as_ptr() as PCHAR);
+        ERR!("IME is disabled\n");
         return core::ptr::null_mut();
     }
 
@@ -2147,7 +2141,7 @@ pub unsafe extern "system" fn NtUserCreateInputContext(dwClientImcData: ULONG_PT
 
     'quit: {
         if IS_IMM_MODE() == 0 {
-            ERR!(b"!IS_IMM_MODE()\n\0".as_ptr() as *const i8);
+            ERR!("!IS_IMM_MODE()\n");
             EngSetLastError(ERROR_CALL_NOT_IMPLEMENTED);
             break 'quit;
         }
@@ -2264,13 +2258,13 @@ pub unsafe extern "system" fn NtUserAssociateInputContext(
 
     'quit: {
         if IS_IMM_MODE() == 0 {
-            ERR!(b"!IS_IMM_MODE()\n\0".as_ptr() as *const i8);
+            ERR!("!IS_IMM_MODE()\n");
             break 'quit;
         }
 
         pWnd = ValidateHwndNoErr(hWnd);
         if pWnd.is_null() {
-            ERR!(b"Invalid HWND: %p\n\0".as_ptr() as *const i8, hWnd);
+            ERR!("Invalid HWND: %p\n", hWnd);
             break 'quit;
         }
 
@@ -2318,7 +2312,7 @@ unsafe fn UserUpdateInputContextImpl(pIMC: PIMC, dwType: DWORD, dwValue: DWORD_P
             (*pIMC).hImeWnd = dwValue as HWND;
         }
         _ => {
-            ERR!(b"Unhandled dwType: %lu\n\0".as_ptr() as *const i8, dwType);
+            ERR!("Unhandled dwType: %lu\n", dwType);
             return 0;
         }
     }
@@ -2338,13 +2332,13 @@ pub unsafe extern "system" fn NtUserUpdateInputContext(
 
     'quit: {
         if IS_IMM_MODE() == 0 {
-            ERR!(b"!IS_IMM_MODE()\n\0".as_ptr() as *const i8);
+            ERR!("!IS_IMM_MODE()\n");
             break 'quit;
         }
 
         pIMC = UserGetObject(gHandleTable, hIMC as _, TYPE_INPUTCONTEXT) as PIMC;
         if pIMC.is_null() {
-            ERR!(b"Invalid HIMC %p\n\0".as_ptr() as *const i8, hIMC);
+            ERR!("Invalid HIMC %p\n", hIMC);
             break 'quit;
         }
 
@@ -2369,7 +2363,7 @@ pub unsafe extern "system" fn NtUserQueryInputContext(hIMC: HIMC, dwType: DWORD)
 
         pIMC = UserGetObject(gHandleTable, hIMC as _, TYPE_INPUTCONTEXT) as PIMC;
         if pIMC.is_null() {
-            ERR!(b"Invalid HIMC %p\n\0".as_ptr() as *const i8, hIMC);
+            ERR!("Invalid HIMC %p\n", hIMC);
             break 'quit;
         }
 
@@ -2606,7 +2600,7 @@ unsafe fn co_IntCreateDefaultImeWindow_impl(pwndTarget: PWND, hInst: HINSTANCE) 
         pimeui = IntGetImeUIFromWnd(pImeWnd);
         Status = SafeProbeForWrite(pimeui as *mut _, core::mem::size_of_val(&*pimeui) as _, 1);
         if !NT_SUCCESS(Status) {
-            ERR!(b"Exception in co_IntCreateDefaultImeWindow: %p\n\0".as_ptr() as *const i8, pimeui);
+            ERR!("Exception in co_IntCreateDefaultImeWindow: %p\n", pimeui);
         } else {
             (*pimeui).__bindgen_anon_1.set_fDefault(1);
             if IS_WND_CHILD(pwndTarget) != 0 && head_pti((*pwndTarget).spwndParent) != pti {
@@ -2654,7 +2648,7 @@ unsafe fn IntImeCanDestroyDefIMEforChild_impl(pImeWnd: PWND, pwndTarget: PWND) -
 
     Status = SafeProbeForRead(pimeui as _, core::mem::size_of::<IMEUI>() as _, 1);
     if !NT_SUCCESS(Status) {
-        ERR!(b"Exception in IntImeCanDestroyDefIMEforChild: %p\n\0".as_ptr() as *const i8, pimeui);
+        ERR!("Exception in IntImeCanDestroyDefIMEforChild: %p\n", pimeui);
     } else {
         SafeImeUI = *pimeui;
         if SafeImeUI.__bindgen_anon_1.fChildThreadDef() == 0 {
@@ -2710,7 +2704,7 @@ unsafe fn IntImeCanDestroyDefIME_impl(pImeWnd: PWND, pwndTarget: PWND) -> BOOL {
     // Check IMEUI.fDestroy
     Status = SafeProbeForRead(pimeui as *mut core::ffi::c_void, core::mem::size_of::<IMEUI>() as _, 1);
     if !NT_SUCCESS(Status) {
-        ERR!(b"Exception in IntImeCanDestroyDefIME: %p\n\0".as_ptr() as PCHAR, pimeui);
+        ERR!("Exception in IntImeCanDestroyDefIME: %p\n", pimeui);
     } else {
         SafeImeUI = *pimeui;
         if SafeImeUI.__bindgen_anon_1.fDestroy() != 0 {
@@ -3022,7 +3016,7 @@ unsafe fn IntNotifyImeShowStatus_impl(pImeWnd: PWND) {
 
     pimeui = IntGetImeUIFromWnd(pImeWnd);
     if pimeui.is_null() {
-        ERR!(b"Invalid IMEWND %p\n\0".as_ptr() as *const i8, pImeWnd);
+        ERR!("Invalid IMEWND %p\n", pImeWnd);
         return;
     }
 

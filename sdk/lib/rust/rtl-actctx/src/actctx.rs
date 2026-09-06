@@ -411,7 +411,7 @@ unsafe fn free_entity_array(array: *mut entity_array) {
                 RtlFreeHeap(GetProcessHeap(), 0, (*entity).u.settings.ns as *mut _);
             }
             _ => {
-                FIXME!(b"Unknown entity kind %d\n\0".as_ptr() as PCHAR, (*entity).kind);
+                FIXME!("Unknown entity kind %d\n", (*entity).kind);
             }
         }
         i += 1;
@@ -720,7 +720,7 @@ unsafe fn push_xmlns(xmlbuf: *mut xmlbuf_t, attr: *const xml_attr) {
     let ns: *mut xml_attr;
 
     if (*xmlbuf).ns_pos == MAX_NAMESPACES as core::ffi::c_int - 1 {
-        FIXME!(b"too many namespaces in manifest\n\0".as_ptr() as *const core::ffi::c_char);
+        FIXME!("too many namespaces in manifest\n");
         set_error(xmlbuf);
         return;
     }
@@ -916,7 +916,7 @@ unsafe fn next_xml_elem(xmlbuf: *mut xmlbuf_t, elem: *mut xml_elem, parent: *con
         (*elem).ns = find_xmlns(xmlbuf, core::ptr::addr_of_mut!((*elem).ns));
         if xml_name_cmp(elem, parent) == 0 {
             ERR!(
-                b"wrong closing element %s for %s\n\0".as_ptr() as *const core::ffi::c_char,
+                "wrong closing element %s for %s\n",
                 debugstr_xmlstr(core::ptr::addr_of!((*elem).name)),
                 debugstr_xmlstr(core::ptr::addr_of!((*parent).name)),
             );
@@ -1022,7 +1022,7 @@ unsafe fn parse_version(str: *const xmlstr_t, version: *mut assembly_version) ->
         return 1;
     };
 
-    FIXME!(b"Wrong version definition in manifest file (%s)\n\0".as_ptr() as *const core::ffi::c_char, debugstr_xmlstr(str));
+    FIXME!("Wrong version definition in manifest file (%s)\n", debugstr_xmlstr(str));
     result as BOOL
 }
 
@@ -1044,7 +1044,7 @@ unsafe fn parse_expect_end_elem(xmlbuf: *mut xmlbuf_t, parent: *const xml_elem) 
 
     if next_xml_elem(xmlbuf, &mut elem, parent) != 0 {
         FIXME!(
-            b"unexpected element %s\n\0".as_ptr() as *const core::ffi::c_char,
+            "unexpected element %s\n",
             debugstr_xml_elem(&elem),
         );
         set_error(xmlbuf);
@@ -1530,7 +1530,7 @@ unsafe fn parse_typelib_version(str: *const xmlstr_t, entity: *mut entity) -> BO
         return 1u8 as BOOL;
     }
 
-    FIXME!(b"wrong typelib version value (%s)\n\0".as_ptr() as *const core::ffi::c_char, debugstr_xmlstr(str));
+    FIXME!("wrong typelib version value (%s)\n", debugstr_xmlstr(str));
     0u8 as BOOL
 }
 
@@ -1691,12 +1691,12 @@ unsafe fn parse_binding_redirect_elem(xmlbuf: *mut xmlbuf_t, parent: *const xml_
     while next_xml_attr(xmlbuf, &mut attr, &mut end) != 0 {
         if xml_attr_cmp(&attr, oldVersionW.as_ptr()) != 0 {
             FIXME!(
-                b"Not stored yet %s\n\0".as_ptr() as *const core::ffi::c_char,
+                "Not stored yet %s\n",
                 debugstr_xml_attr(&attr),
             );
         } else if xml_attr_cmp(&attr, newVersionW.as_ptr()) != 0 {
             FIXME!(
-                b"Not stored yet %s\n\0".as_ptr() as *const core::ffi::c_char,
+                "Not stored yet %s\n",
                 debugstr_xml_attr(&attr),
             );
         } else if is_xmlns_attr(&attr) == 0 {
@@ -2120,7 +2120,7 @@ unsafe fn parse_file_elem(
             ];
             if xmlstr_cmpi(core::ptr::addr_of!(attr.value), sha1W.as_ptr()) == 0 {
                 FIXME!(
-                    b"hashalg should be SHA1, got %s\n\0".as_ptr() as *const core::ffi::c_char,
+                    "hashalg should be SHA1, got %s\n",
                     debugstr_xmlstr(core::ptr::addr_of!(attr.value)),
                 );
             }
@@ -2391,7 +2391,7 @@ unsafe fn parse_requested_execution_level_elem(
                 (*assembly).run_level = ACTCTX_RUN_LEVEL_REQUIRE_ADMIN;
             } else {
                 FIXME!(
-                    b"unknown execution level: %s\n\0".as_ptr() as *const core::ffi::c_char,
+                    "unknown execution level: %s\n",
                     debugstr_xmlstr(core::ptr::addr_of!(attr.value)),
                 );
             }
@@ -2402,7 +2402,7 @@ unsafe fn parse_requested_execution_level_elem(
                 (*assembly).ui_access = 1;
             } else {
                 FIXME!(
-                    b"unknown uiAccess value: %s\n\0".as_ptr() as *const core::ffi::c_char,
+                    "unknown uiAccess value: %s\n",
                     debugstr_xmlstr(core::ptr::addr_of!(attr.value)),
                 );
             }
@@ -2509,7 +2509,7 @@ unsafe fn parse_assembly_elem(
             static v10W: [WCHAR; 4] = [b'1' as WCHAR, b'.' as WCHAR, b'0' as WCHAR, 0];
             if xmlstr_cmp(core::ptr::addr_of!(attr.value), v10W.as_ptr()) == 0 {
                 FIXME!(
-                    b"wrong version %s\n\0".as_ptr() as *const core::ffi::c_char,
+                    "wrong version %s\n",
                     debugstr_xmlstr(core::ptr::addr_of!(attr.value)),
                 );
                 break;
@@ -2567,8 +2567,7 @@ unsafe fn parse_assembly_elem(
                     ) != 0
                 {
                     FIXME!(
-                        b"wrong version for assembly manifest: %u.%u.%u.%u / %u.%u.%u.%u\n\0".as_ptr()
-                            as *const core::ffi::c_char,
+                        "wrong version for assembly manifest: %u.%u.%u.%u / %u.%u.%u.%u\n",
                         (*expected_ai).version.major as core::ffi::c_uint,
                         (*expected_ai).version.minor as core::ffi::c_uint,
                         (*expected_ai).version.build as core::ffi::c_uint,
@@ -2586,7 +2585,7 @@ unsafe fn parse_assembly_elem(
                         || ((*assembly).id.version.build == (*expected_ai).version.build
                             && (*assembly).id.version.revision < (*expected_ai).version.revision))
                 {
-                    FIXME!(b"wrong version for shared assembly manifest\n\0".as_ptr() as *const core::ffi::c_char);
+                    FIXME!("wrong version for shared assembly manifest\n");
                     set_error(xmlbuf);
                 }
             }
@@ -2634,7 +2633,7 @@ unsafe fn parse_manifest_buffer(
 
     if xml_elem_cmp(&elem, assemblyW.as_ptr(), asmv1W.as_ptr()) == 0 {
         FIXME!(
-            b"root element is %s, not <assembly>\n\0".as_ptr() as *const core::ffi::c_char,
+            "root element is %s, not <assembly>\n",
             debugstr_xml_elem(&elem),
         );
         return STATUS_SXS_CANT_GEN_ACTCTX;
@@ -2643,7 +2642,7 @@ unsafe fn parse_manifest_buffer(
     parse_assembly_elem(xmlbuf, assembly, acl, &elem, ai);
     if (*xmlbuf).error != 0 {
         FIXME!(
-            b"failed to parse manifest %s\n\0".as_ptr() as *const core::ffi::c_char,
+            "failed to parse manifest %s\n",
             debugstr_w((*assembly).manifest.info),
         );
         return STATUS_SXS_CANT_GEN_ACTCTX;
@@ -2651,14 +2650,14 @@ unsafe fn parse_manifest_buffer(
 
     if next_xml_elem(xmlbuf, &mut elem, &parent) != 0 {
         FIXME!(
-            b"unexpected element %s\n\0".as_ptr() as *const core::ffi::c_char,
+            "unexpected element %s\n",
             debugstr_xml_elem(&elem),
         );
         return STATUS_SXS_CANT_GEN_ACTCTX;
     }
 
     if (*xmlbuf).ptr != (*xmlbuf).end {
-        FIXME!(b"parse error\n\0".as_ptr() as *const core::ffi::c_char);
+        FIXME!("parse error\n");
         return STATUS_SXS_CANT_GEN_ACTCTX;
     }
     STATUS_SUCCESS
@@ -5273,7 +5272,7 @@ pub unsafe extern "system" fn RtlReleaseActivationContext(handle: HANDLE) {
 
 #[no_mangle]
 pub unsafe extern "system" fn RtlZombifyActivationContext(handle: HANDLE) -> NTSTATUS {
-    FIXME!(b"%p: stub\n\0".as_ptr() as *const _, handle);
+    FIXME!("%p: stub\n", handle);
 
     if handle == ACTCTX_FAKE_HANDLE {
         return STATUS_SUCCESS;
@@ -5795,7 +5794,7 @@ pub unsafe extern "system" fn RtlQueryInformationActivationContext(
         }
 
         _ => {
-            FIXME!(b"class %u not implemented\n\0".as_ptr() as PCHAR, class);
+            FIXME!("class %u not implemented\n", class);
             return STATUS_NOT_IMPLEMENTED;
         }
     }

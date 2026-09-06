@@ -1,14 +1,5 @@
 use win32k_sys::win32k::*;
 
-// C debug macros — silenced via macro_rules! (variadic no-op).
-#[allow(unused_macros)] macro_rules! TRACE { ($($t:tt)*) => { () }; }
-#[allow(unused_macros)] macro_rules! ERR { ($($t:tt)*) => { () }; }
-#[allow(unused_macros)] macro_rules! FIXME { ($($t:tt)*) => { () }; }
-
-
-// TRACE/ERR/FIXME are <debug.h> macros that expand to DbgPrint-flavored
-// variadic functions in non-NDEBUG kernel builds. Matches pdevobj.rs /
-// engbrush.rs / ldevobj.rs declaration style.
 extern "C" {
 
 }
@@ -323,7 +314,7 @@ pub unsafe extern "system" fn EngDeleteWnd(
     Window = UserGetWindowObject((*Clip).Hwnd);
     if Window == core::ptr::null_mut()
     {
-        ERR!(b"Couldnt get window object for WndObjInt->Hwnd!!!\n\0".as_ptr() as *const i8);
+        ERR!("Couldnt get window object for WndObjInt->Hwnd!!!\n");
     }
     else
     {
