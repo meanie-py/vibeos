@@ -7,7 +7,8 @@ use crate::surface::gajBitsPerFormat;
 use crate::dib_helpers::abs;
 
 // ---- pool tags + small helpers ----
-const TAG_DIB: u32 = u32::from_le_bytes(*b"BID ");
+// C: win32ss/user/ntuser/tags.h `#define TAG_DIB ' BID'` (big-endian).
+const TAG_DIB: u32 = u32::from_be_bytes(*b" BID");
 const TAG_GBMI: u32 = u32::from_le_bytes(*b"GBmi");
 #[inline(always)] fn abs_i32(x: i32) -> i32 { x.wrapping_abs() }
 #[inline(always)] fn min_u32(a: u32, b: u32) -> u32 { if a < b { a } else { b } }
@@ -2216,7 +2217,6 @@ unsafe fn DIB_FreeConvertedBitmapInfo_impl(
     orig: *mut BITMAPINFO,
     usage: u32,
 ) {
-    const TAG_DIB: u32 = 0x20424944;
 
     if converted == orig {
         return;

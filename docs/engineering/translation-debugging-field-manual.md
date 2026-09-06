@@ -2073,6 +2073,19 @@ the commented ones. **Prefer bindgen enums over local consts in new translations
 Cross-driver value bleed: cdfs and fastfat both define a WAIT flag, with different values. A
 "known" constant is only known *within its module*.
 
+**The divergence is usually CROSS-file, and the alloc/free pair is where it bites.** The
+same sweep one lane later, driven by the baseline this class fills: `TAG_CMHIVE` had **four**
+values across `config-rust` for one C macro (`cmlib.h`'s `'vHMC'`), and `cminit.rs` ALLOCATED
+the hive's `ViewLock`/`FlusherLock` under one of them while `cmapi.rs` FREED them under
+another — an `ExFreePoolWithTag` mismatch on the registry path. `TAG_CM` had 7 wrong spellings
+of 14; `TAG_USTR` 3 of 13. Two rules fall out. **(1) Evaluate, never eyeball** — write the
+oracle down as a table and compute each definition, because `from_le_bytes(*b"RTSU")` and C's
+`'RTSU'` are DIFFERENT numbers and the eye reads them as the same; spell the fixed value
+`u32::from_be_bytes(*b"<exact C literal>")` so the oracle is visible in the source. **(2) A
+nested `mod` does not inherit its parent's private consts** — which is why a copy exists inside
+one at all, and how it then drifts. Delete such a copy and the crate stops compiling; the fix
+is `use super::TAG_X;`, not a second definition.
+
 **Within ONE crate the same divergence cannot be legitimate, and a pool tag is where it hides.**
 Symptom: arm64 wedged in freeldr right after `Switching stack...`, EL1 sync exception, `ESR
 EC 0x3C ISS 0xF000` — a `brk #0xF000` from `arm64_debug.rs`'s `DbgBreakPoint`, reached through
@@ -2359,6 +2372,19 @@ pattern position is a fresh *binding*, so it matches everything and **silently k
 later arm**. It has shipped a BUGCHECK 0x1E, killed USB enumeration, and caused an OS-wide
 `LCMapString` failure (a `switch` whose case labels became an or-pattern that swallowed a
 neighbour).
+
+**An EMPTY catch-all inside a goto-elimination loop is an infinite spin, not a swallowed case.**
+C `switch`es with no `default:` label are translated as `'work: loop { match .. }`, each
+`goto Exit`/`break` becoming `break 'work`. Falling out of a C switch means *leaving* it — but
+a `_ => {}` arm reaches the END of the loop body and re-matches the UNCHANGED scrutinee, so the
+"do nothing" arm loops forever. classpnp's `ClasspAccessAlignmentProperty` shipped this and
+arm64 emitted it as a literal `b .` inside the function: a silent hang on the storage-property
+path, no bugcheck and no serial output. **Whenever the C switch has no `default:`, the Rust
+catch-all must be `_ => { break 'label; }`** — an empty arm is only correct when the match is
+NOT the body of a goto-elimination loop. `scan_ud2` catches it post-link on arm64; a source
+scanner cannot, because on other arches LLVM merges the block and no self-branch appears.
+Corollary worth internalising: it was invisible for as long as it was, because classpnp.sys is
+not in arm64's default target set, so no arm64 sweep had ever linked or scanned that binary.
 
 **Upstream cause: an incomplete bindgen island** `[§9.112]`. A constant missing from the island
 is exactly the one a dispatcher matches on. **An island's completeness is a correctness
@@ -3715,6 +3741,61 @@ Four things that cost precision, all of them found by being wrong first:
 since the name is coming from user-mode"). Do not close such a finding by adding a bare print —
 that clears the lint row and leaves the defect. It is the same relationship as `[§9.53]`: what
 looks like a missing diagnostic is a missing handler.
+
+**Resolved, and the resolution is the lesson: FOLLOW THE POINTER BEFORE RESTORING THE PRINT.**
+That handler is unreachable, and printing from it would have asserted something false about where
+the function's input comes from. `ValueName` is kernel-pool memory by the time it arrives —
+the one live caller is `CmSetValueKey` <- `NtSetValueKey`, which captures the string with
+`ProbeAndCaptureUnicodeString` (probing header AND buffer, copying both into pool). The right
+close was a comment stating that, plus a `nolint: dropped-print` carrying the reason. But four
+lines up in that same caller sat the real defect — see the next entry. **A dropped SEH region is
+a lead, not a location:** the handler you are looking at may be dead while the check it implies
+is missing somewhere upstream that no lint row points to.
+
+### The SEH region was dropped and took the BOUNDS CHECK with it
+
+**Symptom.** A syscall dereferences a caller-supplied pointer in kernel mode with nothing
+validating it. There is no crash to chase and no lint row to read — the code looks like it
+handles errors, because the `if (!NT_SUCCESS(Status))` arms are still standing. `NtSetValueKey`
+had this shape:
+
+```rust
+Status = STATUS_SUCCESS;          // where ProbeForRead(Data, DataSize, 1) belongs
+if NT_SUCCESS(Status) {
+    ...
+    core::ptr::copy_nonoverlapping(Data as *const u8, DataCopy as *mut u8, DataSize as usize);
+    if !NT_SUCCESS(Status) { ... }   // unreachable: nothing between here and the assignment
+```
+
+Any unprivileged process can call it. A bad `Data` faults with no SEH to catch it (DUMMY_PSEH)
+and BUGCHECKs the box; a `Data` pointing into KERNEL space is copied into a registry value the
+same caller reads straight back with `NtQueryValueKey`.
+
+**Cause.** The C wraps `ProbeForRead` in one `_SEH2_TRY` and the copy in a second. Translation
+drops SEH regions, and the *probe went with the region* — leaving an assignment that hardcodes
+the success the probe was supposed to establish. This is why it does not read as a stub: the
+status variable is real, the checks against it are real, only the thing that could ever set it is
+gone. Grep-wise it is invisible; the C's own trailing comment is the only oracle.
+
+**Fix.** Validate-first (`dummy-pseh-verdict.md`): `probe_user_buffer` / `probe_read_user` /
+`probe_write_user` from `ntkrnl-sys::probe` return `Result<_, NTSTATUS>` instead of raising.
+Match the C's alignment argument. Say in the comment what validate-first does NOT restore — the
+C's second SEH also covers the window between probe and copy, and a range check proves where a
+buffer is, never that it stays mapped.
+
+**Finding the rest.** Same self-oracle question as `scan_dropped_prints`, inverted onto
+validation: count `ProbeFor*` in a file's commented-out C against live probe calls in its Rust.
+That gives **40 dropped probe calls across 13 files** — `config-rust/ntapi.rs` (8),
+`win32k-rust/font.rs` (6), `ntstubs.rs` (5), `coord.rs` (4), `fastfat-rust/fsctrl.rs` (4),
+`ex-rust/harderr.rs` (4), and a tail. The win32k ones are the sharp end: `NtGdiAddFontResourceW`
+is a directly user-callable syscall doing `RtlCopyMemory` off `pwcFiles` with no probe at all.
+
+**Two traps when you go looking.** The scanner needs `tree_sitter_rust`, which lives in the MAIN
+checkout's `.venv`, not the system python — a sizing pass that wraps the import in
+`except: continue` reports a beautiful **zero**. Judge a clean result by whether the harness
+could have spoken at all. And the probes may have been restructured rather than dropped: a
+function that captures via `ProbeAndCaptureUnicodeString` upstream needs no probe of its own, so
+compare against where the pointer actually comes from before writing a finding.
 
 ### A `#if` on a WINDOWS VERSION comes back as `#[cfg(target_arch)]`
 
