@@ -19,8 +19,14 @@ extern "C" {
 
 // ---- file-scope preamble (translated) ----
 pub const MdlMappingNoExecute: u32 = 0;
-pub const NonPagedPoolNx: POOL_TYPE = NonPagedPool;
-pub const NonPagedPoolNxCacheAligned: POOL_TYPE = NonPagedPoolCacheAligned;
+// classp.h: `#define NonPagedPoolNx NonPagedPool` under
+// `#ifdef __REACTOS__` -- NX pool is NT6.2 and this kernel has none, so the
+// Windows value (0x200/0x204) is not what any TU here compiles.
+pub const NonPagedPoolNx: POOL_TYPE = 0;
+// classp.h: `#define NonPagedPoolNxCacheAligned NonPagedPoolCacheAligned` under
+// `#ifdef __REACTOS__` -- NX pool is NT6.2 and this kernel has none, so the
+// Windows value (0x200/0x204) is not what any TU here compiles.
+pub const NonPagedPoolNxCacheAligned: POOL_TYPE = 4;
 pub const POOL_NX_ALLOCATION: u32 = 0x0200;
 // C: dictlib.c `#define DICTIONARY_SIGNATURE 'tciD'` = 0x74636944 (big-endian).
 // 0x44696374 is those bytes REVERSED, and only InitializeDictionary used it --

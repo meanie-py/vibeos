@@ -24,9 +24,9 @@ pub const STATUS_IO_DEVICE_ERROR: i32 = 0xC0000185u32 as i32;
 pub const STATUS_IO_TIMEOUT: i32 = 0xC00000B5u32 as i32;
 pub const STATUS_MEDIA_CHANGED: i32 = 0x8000001Cu32 as i32;
 pub const STATUS_VERIFY_REQUIRED: i32 = 0x80000016u32 as i32;
-pub const TRACE_LEVEL_ERROR: u32 = 2;
-pub const TRACE_LEVEL_INFORMATION: u32 = 4;
-pub const TRACE_LEVEL_WARNING: u32 = 3;
+pub const TRACE_LEVEL_ERROR: u32 = 2; // storswtr.h:26-30
+pub const TRACE_LEVEL_INFORMATION: u32 = 4; // storswtr.h:26-30
+pub const TRACE_LEVEL_WARNING: u32 = 3; // storswtr.h:26-30
 pub const VPB_MOUNTED: u32 = 0x0001;
 
 // harvested:
@@ -62,8 +62,8 @@ pub const STATUS_NONEXISTENT_SECTOR: i32 = 0xC0000015u32 as i32;
 pub const STATUS_TRIM_READ_ZERO_NOT_SUPPORTED: i32 = 0xC0000472u32 as i32;
 pub const STATUS_WMI_GUID_NOT_FOUND: i32 = 0xC0000295u32 as i32;
 pub const STATUS_WMI_INSTANCE_NOT_FOUND: i32 = 0xC0000296u32 as i32;
-pub const TRACE_LEVEL_FATAL: u32 = 1;
-pub const TRACE_LEVEL_VERBOSE: u32 = 5;
+pub const TRACE_LEVEL_FATAL: u32 = 1; // storswtr.h:26-30
+pub const TRACE_LEVEL_VERBOSE: u32 = 5; // storswtr.h:26-30
 pub const USHORT_MAX: u32 = 0xffff;
 pub const VER_NT_DOMAIN_CONTROLLER: u32 = 0x0000002;
 pub const VER_NT_SERVER: u32 = 0x0000003;
@@ -87,28 +87,34 @@ pub const CLASS_TAG_MODE_DATA: u32 = 0x6f4c6353;  // 'oLcS'
 pub const CLASS_TAG_WMI: u32 = 0x774c6353;  // 'wLcS'
 
 // WPP_DEFINE_BIT trace flags from storswtr.h (sequential; WPP disabled in this build)
-pub const TRACE_FLAG_GENERAL: u32 = 1;
-pub const TRACE_FLAG_PNP: u32 = 2;
-pub const TRACE_FLAG_POWER: u32 = 3;
-pub const TRACE_FLAG_RW: u32 = 4;
-pub const TRACE_FLAG_IOCTL: u32 = 5;
-pub const TRACE_FLAG_QUEUE: u32 = 6;
-pub const TRACE_FLAG_WMI: u32 = 7;
-pub const TRACE_FLAG_TIMER: u32 = 8;
-pub const TRACE_FLAG_INIT: u32 = 9;
-pub const TRACE_FLAG_LOCK: u32 = 10;
-pub const TRACE_FLAG_DEBUG1: u32 = 11;
-pub const TRACE_FLAG_DEBUG2: u32 = 12;
-pub const TRACE_FLAG_MCN: u32 = 13;
-pub const TRACE_FLAG_ISR: u32 = 14;
-pub const TRACE_FLAG_ENUM: u32 = 15;
-pub const TRACE_FLAG_LOGOTEST: u32 = 16;
-pub const TRACE_FLAG_DUMP: u32 = 17;
-pub const TRACE_FLAG_SCSI: u32 = 18;
+pub const TRACE_FLAG_GENERAL: u32 = 0; // storswtr.h:80-98 (an ORDINAL enum, not a bitmask)
+pub const TRACE_FLAG_PNP: u32 = 1; // storswtr.h:80-98 (an ORDINAL enum, not a bitmask)
+pub const TRACE_FLAG_POWER: u32 = 2; // storswtr.h:80-98 (an ORDINAL enum, not a bitmask)
+pub const TRACE_FLAG_RW: u32 = 3; // storswtr.h:80-98 (an ORDINAL enum, not a bitmask)
+pub const TRACE_FLAG_IOCTL: u32 = 4; // storswtr.h:80-98 (an ORDINAL enum, not a bitmask)
+pub const TRACE_FLAG_QUEUE: u32 = 5; // storswtr.h:80-98 (an ORDINAL enum, not a bitmask)
+pub const TRACE_FLAG_WMI: u32 = 6; // storswtr.h:80-98 (an ORDINAL enum, not a bitmask)
+pub const TRACE_FLAG_TIMER: u32 = 7; // storswtr.h:80-98 (an ORDINAL enum, not a bitmask)
+pub const TRACE_FLAG_INIT: u32 = 8; // storswtr.h:80-98 (an ORDINAL enum, not a bitmask)
+pub const TRACE_FLAG_LOCK: u32 = 9; // storswtr.h:80-98 (an ORDINAL enum, not a bitmask)
+pub const TRACE_FLAG_DEBUG1: u32 = 10; // storswtr.h:80-98 (an ORDINAL enum, not a bitmask)
+pub const TRACE_FLAG_DEBUG2: u32 = 11; // storswtr.h:80-98 (an ORDINAL enum, not a bitmask)
+pub const TRACE_FLAG_MCN: u32 = 12; // storswtr.h:80-98 (an ORDINAL enum, not a bitmask)
+pub const TRACE_FLAG_ISR: u32 = 13; // storswtr.h:80-98 (an ORDINAL enum, not a bitmask)
+pub const TRACE_FLAG_ENUM: u32 = 14; // storswtr.h:80-98 (an ORDINAL enum, not a bitmask)
+pub const TRACE_FLAG_LOGOTEST: u32 = 15; // storswtr.h:80-98 (an ORDINAL enum, not a bitmask)
+pub const TRACE_FLAG_DUMP: u32 = 16; // storswtr.h:80-98 (an ORDINAL enum, not a bitmask)
+pub const TRACE_FLAG_SCSI: u32 = 17; // storswtr.h:80-98 (an ORDINAL enum, not a bitmask)
 
 // Win8+ pool types absent from ntkrnl-sys POOL_TYPE enum (NonPagedPoolNx = NonPagedPool|0x200)
-pub const NonPagedPoolNx: u32 = 512;
-pub const NonPagedPoolNxCacheAligned: u32 = 516;
+// classp.h: `#define NonPagedPoolNx NonPagedPool` under
+// `#ifdef __REACTOS__` -- NX pool is NT6.2 and this kernel has none, so the
+// Windows value (0x200/0x204) is not what any TU here compiles.
+pub const NonPagedPoolNx: u32 = 0;
+// classp.h: `#define NonPagedPoolNxCacheAligned NonPagedPoolCacheAligned` under
+// `#ifdef __REACTOS__` -- NX pool is NT6.2 and this kernel has none, so the
+// Windows value (0x200/0x204) is not what any TU here compiles.
+pub const NonPagedPoolNxCacheAligned: u32 = 4;
 // ddk/srb.h:55 == ((UCHAR) ~0) == 0xFF.
 pub const SP_UNTAGGED: u32 = 0xFF;
 

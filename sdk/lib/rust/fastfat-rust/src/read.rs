@@ -34,7 +34,10 @@ const FO_SYNCHRONOUS_IO: u32 = 0x00000002;
 const IRP_NOCACHE: u32 = 0x00000001;
 const IRP_MN_MDL: u32 = 0x02;
 const FCB_LOOKUP_ALLOCATIONSIZE_HINT: i64 = -1; // ((LONGLONG)-1)
-const NonPagedPoolNx: POOL_TYPE = 0x200; // 512
+// fatprocs.h:47: `#define NonPagedPoolNx NonPagedPool` under
+// `#ifdef __REACTOS__` -- NX pool is NT6.2 and this kernel has none, so the
+// Windows value (0x200/0x204) is not what any TU here compiles.
+const NonPagedPoolNx: POOL_TYPE = 0;
 const Flush: u32 = 1; // FAT_FLUSH_TYPE::Flush
 // NTSTATUS macro: top two bits set (severity == ERROR == 3).
 #[inline]

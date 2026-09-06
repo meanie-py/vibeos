@@ -635,7 +635,11 @@ unsafe extern "C" fn LZXfdi_init(window: i32, decomp_state: *mut fdi_decomp_stat
         const DECR_DATAFORMAT: i32 = 1;
         const DECR_NOMEMORY: i32 = 3;
         const DECR_OK: i32 = 0;
-        const LZX_NUM_CHARS: u32 = 0; // Placeholder, value not critical for init
+        // cabinet.h:186 `#define LZX_NUM_CHARS (256)`. It is very much critical: this
+        // function computes main_elements = LZX_NUM_CHARS + (posn_slots << 3), and the
+        // decoder splits literal from match on `main_element < LZX_NUM_CHARS` using the
+        // correct file-scope 256. A 0 here sized the main tree 256 symbols short.
+        const LZX_NUM_CHARS: u32 = 256;
         const LZX_BLOCKTYPE_INVALID: i32 = 0;
 
         let wndsize: u32 = 1u32 << (window as u32);

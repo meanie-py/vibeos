@@ -37,9 +37,9 @@ const STATUS_NO_MEDIA_IN_DEVICE: NTSTATUS = 0xC0000013u32 as i32;
 const STATUS_INTERNAL_ERROR: NTSTATUS = 0xC00000E5u32 as i32;
 const STATUS_INVALID_LEVEL: NTSTATUS = 0xC0000148u32 as i32;
 // WPP trace flags/levels (gate tracing only; distinct nonzero values).
-const TRACE_FLAG_POWER: u32 = 0x10;
-const TRACE_FLAG_QUEUE: u32 = 0x20;
-const TRACE_LEVEL_WARNING: u32 = 2;
+const TRACE_FLAG_POWER: u32 = 2; // storswtr.h:80-98 (an ORDINAL enum, not a bitmask)
+const TRACE_FLAG_QUEUE: u32 = 5; // storswtr.h:80-98 (an ORDINAL enum, not a bitmask)
+const TRACE_LEVEL_WARNING: u32 = 3; // storswtr.h:26-30
 
 // These two WDF ioctl handlers are DEFINED `extern "C"` (aacs.rs / ioctl.rs);
 // their decls must match that decoration — i386 was declaring them
@@ -302,12 +302,12 @@ extern "C" {
     fn BootEnvironmentIsWinPE() -> BOOLEAN;
 }
 
-const TRACE_LEVEL_INFORMATION: u32 = 4;
-const TRACE_FLAG_INIT: u32 = 0x00000001;
+const TRACE_LEVEL_INFORMATION: u32 = 4; // storswtr.h:26-30
+const TRACE_FLAG_INIT: u32 = 8; // storswtr.h:80-98 (an ORDINAL enum, not a bitmask)
 
 // Forward‑declared constants (unknown values, placeholders)
-const TRACE_LEVEL_FATAL: u32 = 1;          // placeholder
-const TRACE_FLAG_PNP: u32 = 0x00000001;     // placeholder
+const TRACE_LEVEL_FATAL: u32 = 1; // storswtr.h:26-30
+const TRACE_FLAG_PNP: u32 = 1; // storswtr.h:80-98 (an ORDINAL enum, not a bitmask)
 const CDROM_TAG_STRINGS: u32 = 0x73436353; // 'CDRM' in LE
 const SCSI_CDROM_TIMEOUT: u32 = 0xa;       // seconds, placeholder  // was 1800 (LLM-invented); bindgen-correct
 const WRITE_RETRY_DELAY_DVD_1x: u64 = 473_373; // 100ns units (47.3ms) — C cdrom.h:118 ((LONGLONG)473373); was 10_000_000 (LLM-invented 1s placeholder)
@@ -439,8 +439,8 @@ const SL_OVERRIDE_VERIFY_VOLUME: u8 = 0x02;         // SL_OVERRIDE_VERIFY_VOLUME
 const CDROM_VOLUME_VERIFY_CHECKED: u8 = 0x34;       // CDROM_VOLUME_VERIFY_CHECKED (MinorFunction)  // was 0x01 (LLM-invented); bindgen-correct
 const WdfRequestTypeRead: u32 = 3;                  // WDF_REQUEST_TYPE WdfRequestTypeRead
 const WdfRequestTypeWrite: u32 = 4;                 // WDF_REQUEST_TYPE WdfRequestTypeWrite
-const TRACE_LEVEL_VERBOSE: u32 = 5;                 // TRACE_LEVEL_VERBOSE
-const TRACE_FLAG_GENERAL: u32 = 0x00000001;         // TRACE_FLAG_GENERAL
+const TRACE_LEVEL_VERBOSE: u32 = 5; // storswtr.h:26-30
+const TRACE_FLAG_GENERAL: u32 = 0; // storswtr.h:80-98 (an ORDINAL enum, not a bitmask)
 const STATUS_VERIFY_REQUIRED: i32 = 0x80000016_u32 as i32; // STATUS_VERIFY_REQUIRED
 const STATUS_DEVICE_BUSY: i32 = 0x80000011_u32 as i32;     // STATUS_DEVICE_BUSY
 const STATUS_ACCESS_DENIED: i32 = 0xC0000022u32 as i32;   // STATUS_ACCESS_DENIED
@@ -464,8 +464,8 @@ const IOCTL_STORAGE_QUERY_PROPERTY: u32 = 0x002D1400;
 const STATUS_IO_DEVICE_ERROR: i32 = 0xC0000185_u32 as i32;
 const RequestSetupMcnSyncIrp: usize = 0;
 
-const TRACE_LEVEL_ERROR: u32 = 0; // unknown value
-const TRACE_FLAG_IOCTL: u32 = 0; // unknown value
+const TRACE_LEVEL_ERROR: u32 = 2; // storswtr.h:26-30
+const TRACE_FLAG_IOCTL: u32 = 4; // storswtr.h:80-98 (an ORDINAL enum, not a bitmask)
 const IOCTL_STORAGE_EVENT_NOTIFICATION: u32 = 0x2D1C90;
 const WdfRequestTypeDeviceControl: u32 = 14; // WDF_REQUEST_TYPE (0xe)
 const WdfRequestTypeDeviceControlInternal: u32 = 15; // WDF_REQUEST_TYPE (0xf)
@@ -1117,8 +1117,8 @@ pub unsafe extern "system" fn DeviceEvtCleanup(Device: WDFOBJECT) {
 #[no_mangle]
 pub unsafe extern "system" fn DeviceEvtSelfManagedIoCleanup(Device: *mut core::ffi::c_void) {
     // const values for TracePrint flags
-    const TRACE_LEVEL_INFORMATION: u32 = 4;      // guessed
-    const TRACE_FLAG_PNP: u32 = 0x00000010;      // guessed
+    const TRACE_LEVEL_INFORMATION: u32 = 4; // storswtr.h:26-30
+    const TRACE_FLAG_PNP: u32 = 1; // storswtr.h:80-98 (an ORDINAL enum, not a bitmask)
 
     let status: i32; // NTSTATUS mapped to i32
     let deviceExtension: *mut CDROM_DEVICE_EXTENSION; // NULL initially
@@ -1505,8 +1505,8 @@ pub unsafe extern "C" fn NormalizeIoctl(requestParameters: *mut WDF_REQUEST_PARA
     const IOCTL_DVD_BASE: u32 = 0x00000033;
     const IOCTL_CDROM_BASE: u32 = 0x00000002;
     const IOCTL_STORAGE_BASE: u32 = 0x0000002d;
-    const TRACE_LEVEL_VERBOSE: u32 = 4;
-    const TRACE_FLAG_IOCTL: u32 = 0x100;
+    const TRACE_LEVEL_VERBOSE: u32 = 5; // storswtr.h:26-30
+    const TRACE_FLAG_IOCTL: u32 = 4; // storswtr.h:80-98 (an ORDINAL enum, not a bitmask)
 
     let mut ioctlCode: u32;
     let mut baseCode: u32;

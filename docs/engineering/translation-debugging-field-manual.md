@@ -2073,6 +2073,36 @@ the commented ones. **Prefer bindgen enums over local consts in new translations
 Cross-driver value bleed: cdfs and fastfat both define a WAIT flag, with different values. A
 "known" constant is only known *within its module*.
 
+**Triage by whether two definitions ever have to AGREE, not by how wrong the value looks.**
+A 770-entry baseline is a work queue, not a defect list, and working it alphabetically wastes
+the effort on the harmless majority. The severity of a wrong constant is predicted by one
+question: *is there a second site that must produce the same number?* Rank the queue by it.
+
+- **Rendezvous pairs — fix first.** Alloc↔free (`ExAllocatePoolWithTag`/`ExFreePoolWithTag`),
+  write↔compare (a signature stamped at init and tested later), set↔test (a flag written by one
+  file and masked by another), request↔dispatch (a function code the caller sends and the
+  callee `match`es). Both halves live in different files or different `mod`s, so they drift
+  independently and the mismatch is *unconditional*: `TAG_CMHIVE` (alloc in `cminit.rs`, free
+  in `cmapi.rs`), `DICTIONARY_SIGNATURE` (stamped byte-reversed, tested against a correct
+  function-local shadow, so every test failed), `SRB_FUNCTION_STORAGE_REQUEST_BLOCK` (`0x10`
+  at the write site, `0x16` at the test site, `0xF0` invented elsewhere; C says `0x28`).
+- **Permutations within one block — fix second.** Where a *set* of related constants is right
+  but the values are in the wrong slots (`ksecdd`'s three `RTL_ENCRYPT_OPTION_*`). No
+  rendezvous is needed: the single site is simply wrong. See the `_tzset` recall case in
+  AGENTS.md — a constant seal cannot detect this, since its invariant is a closed set.
+- **Self-consistent wrongness — fix last, and say so.** One name, one wrong value, used at
+  every site. A pool tag that is wrong *identically* at alloc and free works perfectly; it
+  corrupts only pool accounting and `!poolused` output. Real, worth fixing, not urgent.
+
+Corollary, and the reason this class stayed invisible for so long: **most wrong constants are
+symptomless, and that is not evidence they are harmless.** Four independent reasons suppress
+the symptom — self-consistent wrongness costs nothing; the check that would catch it is itself
+disabled (`ExFreePoolWithTag`'s tag validation is compiled out of free builds, and
+`FREELDR_HEAP_VERIFIER` is dead in the Rust port); the smoke test only exercises boot-to-
+desktop, so anything past it is untested; and several of these defects removed a *check* or a
+*fast path* rather than breaking a *function*. So do not read a green gate as a verdict on this
+class, and do not deprioritise an entry because "it clearly still boots."
+
 **The divergence is usually CROSS-file, and the alloc/free pair is where it bites.** The
 same sweep one lane later, driven by the baseline this class fills: `TAG_CMHIVE` had **four**
 values across `config-rust` for one C macro (`cmlib.h`'s `'vHMC'`), and `cminit.rs` ALLOCATED
@@ -2128,6 +2158,73 @@ have. Teaching it to evaluate them surfaced **75** further divergences at once, 
 `freeldr-rust`. The lesson is not "we lacked a gate" but **a gate can have a hole shaped exactly
 like the family it most needed to cover** — when a scanner reports zero for a population you
 know is duplicated, check that it can PARSE that population before believing the zero.
+
+### The constant that ACCUSES ITSELF in its own comment
+Symptom: none, usually — that is the point. Cause: the translator did not have the value, wrote
+a number that compiles, and labelled it. Fix: resolve it against the C, and reword the comment;
+a verified value that still says `// placeholder` is indistinguishable from an unverified one.
+
+    const FAT_MAX_IO_RUNS_ON_STACK: usize = 10; // Guessed value; adjust as needed
+    const EA_NEED_EA_FLAG: u32 = 0x80;          // placeholder, actual value unknown
+    const LZX_NUM_CHARS: u32 = 0;               // Placeholder, value not critical for init
+
+This is the half of the invented-constant problem that `scan_const_contradictions` cannot see
+by construction: a constant with exactly ONE definition in the tree never disagrees with
+itself, so a lone wrong value is invisible there forever. `scan_invented_constants.py` covers
+it, and three things about the population are worth knowing before you work the queue.
+
+**About a third of the labelled constants are CORRECT.** 65 of 209 matched their header exactly
+— the comment was the only defect. So the annotation is a *search key*, never a defect list,
+and the reason the class needs a tool rather than a grep is that a human reading 209 apologetic
+comments has no way to tell those 65 from the rest.
+
+**Scope the oracle to the module, not the repo.** A catalog sweeping all ~2200 headers was
+tried for `verify_constants.py` and rejected: unrelated headers collide on short names and the
+findings were overwhelmingly false. The corpus that works is the C module the crate translates
+plus the SDK headers, and a name resolving to two values inside *that* is reported ambiguous
+rather than guessed at.
+
+**A checker's SEEDED value can be the wrong oracle, and then it demands the bug.**
+`verify_constants` seeds `NonPagedPoolNx = 512` from the Windows WDK, because ReactOS's headers
+only mention the name in SAL annotations and an unseeded name would let a fabricated value pass
+silently. Correct reasoning, wrong number for this tree: NX pool is an NT6.2 feature ReactOS
+does not implement, so *every* in-tree consumer redefines the name to the plain pool type first
+(`#define NonPagedPoolNx NonPagedPool` in cdfs, fastfat, cdrom, disk and classpnp, under an
+`#ifdef __REACTOS__` that is always on). Nothing here compiles 512, so the checker was demanding
+the one value that is wrong, and it rejected a land for correct code. Fix the SEED, not the
+finding — seeding the effective value keeps the cross-check alive, where a skip-list entry would
+have disabled it. Generally: when a gate contradicts you about a constant, ask which of you is
+modelling the preprocessor, because a flat header catalog cannot see a module-local `#define`
+that shadows a DDK enum.
+
+**Two oracle shapes cost one line each and pay for themselves.** C's implicit enum numbering
+continues from an explicit initialiser (`FcbGood = 1, FcbBad,` makes `FcbBad` 2), and getting
+that wrong reports the CORRECT `FcbNeedsToBeVerified = 3` as a mismatch against a phantom 2 —
+false findings are how a scanner like this gets ignored. And rustconv re-spells `NonPagedPoolNx`
+as `NON_PAGED_POOL_NX` to satisfy Rust naming, so an exact-name lookup misses; a
+spelling-insensitive fallback, used only when it resolves UNIQUELY, converted six of the
+remaining "unresolved" into confirmed defects.
+
+Two shapes to expect in the findings. **A sizeof frozen to a number is an arch bug waiting**:
+`SRBEX_DATA_SCSI_CDB16_LENGTH` is `20 + sizeof(ULONG) + sizeof(PVOID)`, and the frozen 32 is
+right on 64-bit and four bytes long on i386 — write the arithmetic, not the answer. **A ReactOS
+compat `#define` is the oracle, not the NT value**: `fatprocs.h` and `disk.h` both downgrade
+`NonPagedPoolNx` to `NonPagedPool`, so the translation's dutiful NT6.2 `0x200` is a pool type
+this kernel does not have.
+
+### A translation that ABANDONED a function says so, in English, in the tree
+Symptom: a function that compiles, runs, and does nothing. Cause: the model ran out of room or
+resolve mid-body and left its own notes behind. Fix: re-translate that function; it is a
+rustconv job, not a hand edit.
+
+`scsiport-rust`'s `SpiParseDeviceInfo` enumerates the registry values it was asked to parse and
+then stops, ~300 lines short of the C, with `// Actually let's rewrite the whole block with
+explicit structure. I'll rebuild.` sitting where the resource-descriptor switch should be. The
+C is cohab-flipped out, so that is what ships. It was found while chasing a *constant* — the
+function carried a preamble of 22 placeholders, which is the tell: a body the model could not
+finish is usually a body it also could not source constants for. Grep the tree for
+`omitted for brevity`, `I'll rebuild`, `rest of the function`; this is the cheapest defect
+class we have, and nothing was looking for it.
 
 ### A local `const` silently SHADOWS a glob import — no warning at either site
 `ARM3/special.rs` declared `const POOL_FLAG_SPECIAL_POOL: ULONG = 0x10` while

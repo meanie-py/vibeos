@@ -2868,7 +2868,7 @@ pub unsafe extern "C" fn DeviceProcessDsmTrimRequest(
     #[cfg(not(any(target_arch = "arm", target_arch = "aarch64")))]
     {
         buffer = ExAllocatePoolWithTag(
-            0x200u32, // NonPagedPoolNx
+            0, // NonPagedPoolNx: ReactOS #defines it to NonPagedPool (no NX pool here)
             bufferLength as usize,
             u32::from_ne_bytes(*b"TpLC"),
         ) as *mut _UNMAP_LIST_HEADER;
