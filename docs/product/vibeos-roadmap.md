@@ -501,22 +501,30 @@ Field-manual § pointers hold the full writeups. **Update on state change.**
   with `X18` a TEB and `X28` a user start-context, so the stack words are the lead. This is the
   last flip blocker for `DefaultOS`. Field manual: "An EL1 instruction fetch on a user page
   loops silently forever". OWNED BY the smp-bringup lane.
-- **System cursors are NEVER loaded on an i386 boot — ROOT-CAUSED, OPEN, and it is a DUMMY_PSEH
-  symptom** (2026-09-05). `SYSTEMCUR(ARROW) == NULL, should not happen!!` fires **78x** per boot
-  (6 system classes x 13 GUI processes) and, critically, keeps firing to within 300 lines of
-  `shell ready` — `gasyscur[ROCR_ARROW].handle` is NULL for the *entire* boot, so every
-  server-side class registers with `hCursor = NULL`. Chain: `co_IntInitializeDesktopGraphics`
-  normally loads cursors/icons via `KeUserModeCallback`, but that block is `#if
-  !defined(_USE_DUMMY_PSEH)` and **`_USE_DUMMY_PSEH` is defined on all three arches here**, so
-  it is compiled out and deferred to `co_IntDeferredCursorsAndIcons()` on a real GUI thread.
-  That deferred path never completes: `gbDesktopCursorsAndIconsLoaded` stays 0 all boot, user32's
-  `LoadSystemCursors()` never runs (its own `ERR("Loading System Cursors")` never prints), and so
-  `NtUserSetSystemCursor` is never called. Every link in the chain — `SYSTEMCUR_ARROW`,
-  `LoadSystemCursors`'s `!gpsi || !gpsi->hIconSmWindows` guard, guicheck's `co_add_gui_app` — was
-  diffed against the retired C and is byte-faithful, so this is NOT a translation defect. It is a
-  **downstream cost of the DUMMY_PSEH hack** and a concrete argument for the Tier-1 DUMMY_PSEH
-  resolution. Remaining question: which of `co_IntDeferredCursorsAndIcons`'s three early-return
-  guards trips (desktop-thread check vs NULL `KernelCallbackTable`).
+- **PARTLY FIXED (2026-09-05): system cursors now load, and the residual 24 are a pure ordering
+  effect.** `SYSTEMCUR(ARROW) == NULL, should not happen!!` was firing **78x** per boot (6 system
+  classes x 13 GUI processes) and kept firing to within 300 lines of `shell ready` —
+  `gasyscur[ROCR_ARROW].handle` was NULL for the *entire* boot, so every server-side class
+  registered with `hCursor = NULL`. Chain: `co_IntInitializeDesktopGraphics` normally loads
+  cursors/icons via `KeUserModeCallback`, but that block is `#if !defined(_USE_DUMMY_PSEH)` and
+  `-D_USE_DUMMY_PSEH=1` is on all 5924 i386 TUs, so it is compiled out and deferred to
+  `co_IntDeferredCursorsAndIcons()` on a real GUI thread. Instrumentation showed that deferred
+  path was entered **exactly once per boot**, on the desktop thread, where its own guard returns
+  immediately — so it never ran at all. Fixed by also calling it from `co_int_graphics_check`,
+  **after** `co_add_gui_app`: ordering is load-bearing, because `NtUserSetSystemCursor` only
+  stores into `gasyscur` for a process that already has `W32PF_CREATEDWINORDC`, and calling
+  before that loads every cursor in user mode and then silently drops it in the kernel (the
+  syscall just returns FALSE — a first attempt did exactly this and moved the count not at all).
+  Result: 78 -> 24, boot green at 37s, and the feared `LoadImageW`/`RtlVirtualUnwind` AV from
+  letting the callback finally run did **not** materialise. **The residual 24 is 4 processes x 6
+  classes that register system classes without ever passing through `co_int_graphics_check`, so
+  the hook cannot fire for them**: every one of the 24 is emitted strictly *before* the load
+  (serial lines 1263-1513 vs the load at 1552), and there are zero in the 750 lines after it.
+  Closing that last gap means giving the early path a cursor source of its own, i.e. the Tier-1
+  DUMMY_PSEH resolution — this entry stays open as a concrete argument for it, not as a
+  translation defect: every link (`SYSTEMCUR_ARROW`, `LoadSystemCursors`'s
+  `!gpsi || !gpsi->hIconSmWindows` guard, `co_add_gui_app`) was diffed against the retired C and
+  is byte-faithful.
 - **`Cannot open winsta` x229 per boot is winlogon thread teardown — ROOT-CAUSED, benign, OPEN**
   (2026-09-05). Instrumented boot: 228 of 229 come from PID 0x9c (winlogon), all with
   `hWinSta = NULL` and `STATUS_INVALID_HANDLE` (not an access denial), all from one call site —
