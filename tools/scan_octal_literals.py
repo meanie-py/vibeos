@@ -71,6 +71,9 @@ import re
 import sys
 from pathlib import Path
 
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+from rs_walk import iter_rs_files
+
 # A leading-zero literal in NUMERIC position.
 #
 # The lookbehind rejects `e`/`E`/`+`/`-` so a float exponent is not a candidate, and every
@@ -204,9 +207,7 @@ def main() -> int:
     findings = 0
     files = 0
     for root in roots:
-        for path in sorted(root.rglob("*.rs")):
-            if "/target/" in str(path):
-                continue
+        for path in sorted(iter_rs_files(root)):
             try:
                 text = path.read_text(encoding="utf-8", errors="replace")
             except OSError:

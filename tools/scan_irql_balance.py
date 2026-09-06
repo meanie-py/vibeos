@@ -76,7 +76,9 @@ from pathlib import Path
 
 REPO = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(REPO / "tools" / "rustconv"))
+sys.path.insert(0, str(REPO / "tools"))
 import tree_sitter_rust as tsr  # noqa: E402
+from rs_walk import iter_rs_files  # noqa: E402
 from tree_sitter import Language, Parser  # noqa: E402
 
 RUST_WS = REPO / "sdk" / "lib" / "rust"
@@ -572,11 +574,7 @@ def _iter_files(paths):
     for p in paths:
         p = Path(p)
         if p.is_dir():
-            for f in p.rglob("*.rs"):
-                s = str(f)
-                if "/target/" in s or f.name.startswith("bindgen_") or f.name == "build.rs":
-                    continue
-                yield f
+            yield from iter_rs_files(p, skip_generated=True)
         elif p.suffix == ".rs":
             yield p
 

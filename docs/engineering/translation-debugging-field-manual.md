@@ -8448,6 +8448,21 @@ missing answer. **A degraded oracle is worse than one that refuses to answer**, 
 `ProvenanceError` exists for. Generalise: when a walk and a build share a tree, the walk must
 be idempotent-under-mutation or scoped so it never sees the other arch at all.
 
+**The same race reached the SOURCE SCANNERS, and there the crash is misfiled as a verdict.** Six
+of them walked with `for p in root.rglob("*.rs"): if "/target/" in str(p): continue` — which
+reads as an exclusion and is not one, because `rglob` has already descended into `target/`
+before the test runs. Harmless while lints ran *after* the builds; the `source-early` partition
+(`EARLY_SOURCE_CHECKS`, `cli/lints.py`) moved them to t=0 *alongside* three builds, and cargo
+deletes directories out from under the walk. The gate renders that `FileNotFoundError` as
+**"NEW lint findings (exit 1)" with no findings in it**, so the lane is bounced for a defect it
+did not cause — and the next lane's identical bounce looks like a real regression. Two things
+generalise. **Filtering a path after the walk yields it is not an exclusion**; prune during the
+walk (`os.walk` + `dirnames[:] = ...`, plus `onerror` so a vanishing directory is survivable
+anyway), which here also took the traversal from 0.67s to 0.02s. And **a scanner can match
+nothing in a tree and still die in it** — the exposure is the ~5,700 directories under
+`sdk/lib/rust/target`, not the 22 `.rs` files that matched. `tools/rs_walk.py` is now the one
+traversal all six share.
+
 ### A rare unit-test failure in the HARNESS is a bug report, not noise — and the wall clock is not monotonic
 
 **Symptom.** `test_queue_is_fifo_by_arrival` failed roughly 1 run in 80, only ever under
