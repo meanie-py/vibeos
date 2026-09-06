@@ -9,6 +9,28 @@
 // driver: the ~45 ScsiPort* exports come from the #[no_mangle] symbols here. Boot-loaded
 // + on the LiveCD IDE read-stack via uniata/atapi ScsiPort* imports.
 
+// Compile-time UTF-16 NUL-terminated literal: `wide!("ResourceList")` -> &'static [u16; N].
+// The registry value names SpiParseDeviceInfo matches with _wcsnicmp are C `L"..."`
+// literals; building them here rather than by hand is what keeps the terminating NUL
+// from going missing (the whole reason rustconv grew --seal-wide). ASCII literals only.
+#[macro_export]
+macro_rules! wide {
+    ($s:literal) => {{
+        const B: &[u8] = $s.as_bytes();
+        const N: usize = B.len() + 1;
+        const W: [u16; N] = {
+            let mut a = [0u16; N];
+            let mut i = 0;
+            while i < B.len() {
+                a[i] = B[i] as u16;
+                i += 1;
+            }
+            a
+        };
+        &W
+    }};
+}
+
 pub mod types;
 pub mod glue;
 pub mod inlines;

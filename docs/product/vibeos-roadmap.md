@@ -745,19 +745,65 @@ Field-manual § pointers hold the full writeups. **Update on state change.**
   translation had spread across ~40 distinct bitmask-looking values, and even the two `glue.rs`
   "canonical" copies were off by one. Those are log-filtering only — the ReactOS
   `StorDebugPrint` marks the flag `UNREFERENCED_PARAMETER` — but they now have one oracle.
-- **scsiport ships a TRUNCATED `SpiParseDeviceInfo` — OPEN** (2026-09-05). Found by the
-  invented-constant sweep, not by the sweep's own findings: the function carried a preamble of
-  22 placeholder constants, and reading it showed the translation was ABANDONED mid-body. C's
-  `scsiport.c:2634-3014` is ~380 lines that walk the registry's
-  `REG_FULL_RESOURCE_DESCRIPTOR` and switch on Port / Memory / Interrupt / Dma /
-  DeviceSpecific; the Rust (`scsiport.rs:2530`) enumerates the values and then stops, leaving
-  the model's own notes in the tree — *"Actually let's rewrite the whole block with explicit
-  structure. I'll rebuild."* The C is cohab-flipped OUT (`CMakeLists.txt:56`), so this is what
-  ships: scsiport parses no device info at all. Fixing it is a rustconv job, not a hand edit.
-  The class is worth a scanner of its own — `classpnp-rust/src/power.rs:366` carries
-  *"[Error handling block same as C, omitted for brevity but will be included]"* and
-  `acpi-rust/src/bus.rs:17` records a truncated struct. A translation that announces its own
-  incompleteness in a comment is the cheapest possible defect to find.
+- **Translations that ABANDONED a function mid-body — the shipping two are FIXED** (2026-09-06).
+  Found by the invented-constant sweep, not by the sweep's own findings: a preamble of 22
+  placeholder constants turned out to be marking a body the model had given up on. The class
+  announces itself in English, in the tree, which makes it the cheapest defect there is to find.
+  - `scsiport` `SpiParseDeviceInfo` — C `scsiport.c:2634-3014` is ~380 lines walking the
+    device node's registry values; the Rust enumerated them and stopped, leaving the model's
+    note *"Actually let's rewrite the whole block with explicit structure. I'll rebuild."* The
+    loop still terminated (`ZwEnumerateValueKey` runs out), so it was a silent no-op parse, not
+    a hang: **scsiport applied no registry tuning at all** — MaximumLogicalUnit,
+    InitiatorTargetId, the four Disable* knobs, DriverParameters, MaximumSGList,
+    NumberOfRequests, and the whole ResourceList/Configuration Data resource walk. Hand-
+    translated; all 22 placeholders resolved to the crate's real substrate. Two constants were
+    genuinely absent and are now in `glue.rs` beside their siblings: `CmResourceTypeDeviceSpecific`
+    (cmtypes.h:14) and `REG_FULL_RESOURCE_DESCRIPTOR` (cmtypes.h:33) — the latter localized
+    rather than imported because only `hal_bindgen_{i386,amd64}` carry it and **there is no
+    `hal_bindgen_arm64`**, so the hal-island import that rustc suggests breaks arm64.
+  - `classpnp` `ClasspPowerUpCompletion` — *"[Error handling block same as C, omitted for
+    brevity but will be included]"*, ~55 C lines. START_UNIT failures were never interpreted
+    and **never retried**: no `InterpretSenseInfoWithoutHistory`, no watchdog-aware timeout,
+    no `RetryPowerRequest`. Two further defects fell out of writing it: the surviving guard
+    compared the RAW `SrbStatus` instead of `SRB_STATUS()` (srb.h:149 masks off
+    `AUTOSENSE_VALID|QUEUE_FROZEN`, so a success carrying sense data read as a failure), and
+    the state machine had collapsed C's `goto ClasspPowerUpCompletionFailure` into a plain
+    re-dispatch — the label sits *inside* `case PowerUpDeviceStarted`, past its error check,
+    so the goto path was wrongly running that check. Now carried by an explicit flag.
+  - **Two preserved C quirks, deliberately not "fixed":** `sizeof(REG_FULL_RESOURCE_DESCRIPTOR)`
+    is `sizeof(9)` == 4, because the identifier is a macro and not a type; and
+    `CM_RESOURCE_DMA_8` is **0**, so `Flags & CM_RESOURCE_DMA_8` is always false and the
+    8-bit DMA branch is dead upstream too.
+- **disk-rust: 4 hand-inlined asserts that HANG instead of RtlAssert — OPEN** (2026-09-06).
+  `scan_ud2`'s arm64 driver sweep flags three branch-to-self spins in `DiskIoctlIsWritable`
+  (`disk.rs:10780`). They are **not** the §9.99 CC/sig-mismatch fold the scanner files them
+  under — reading the instruction before the trap, as the manual's triage table says to, gives
+  `brk #0xf001` (the deliberate breakpoint), then `b .`. These are the PAGED_CODE / CHECK_IRQL
+  expansions written out longhand as `DbgPrint` + `int 0x2C`/`brk #0xF001` + `loop {}`. That is
+  the exact pattern the 2026-07-26 "kernel asserts that hung the box" pass replaced with
+  `ntkrnl_sys::ASSERT!`/`NT_ASSERT!` → `RtlAssert` (loud, non-fatal, matching C under `-DDBG=1`);
+  these 4 survived it because they are inlined macro expansions, not `assert!` calls, so the
+  migration's grep never saw them. Only 4 sites, both files in `disk-rust`
+  (`disk.rs`, `ddk_shims.rs`), and `disk-rust` uses `ASSERT!` zero times. Small and mechanical.
+- **`scan_ud2`'s arm64 driver coverage is INCIDENTAL, not defined — OPEN** (2026-09-06).
+  Found while chasing the above. arm64 has no `livecd` DAG; `archcfg.py:209` builds a
+  hand-picked staged set plus a ramdisk, and `disk.sys` is in neither the required nor the
+  optional target list. So the driver sweep grades **whatever binaries happen to be sitting in
+  `build-arm64/`** — which in a fresh integration worktree is a handful of staged files, and in
+  a long-lived lane worktree is however much someone once ran `ninja` for. Consequences both
+  ways: the disk.sys bug above has never blocked a gate (the conductor's worktree does not
+  build the file), and conversely a lane can eat a red arm64 `scan_ud2` for a driver it never
+  touched. A verdict that depends on which artifacts a worktree happens to carry is the same
+  shape as the AGENTS.md §7-8 fleet-isolation rule about resolving generated artifacts from
+  siblings — the sweep should name its corpus, not discover it.
+- **cmlib `CmpAddToLeaf` + `CmpSelectLeaf` are truncated — OPEN, but LATENT** (2026-09-06).
+  The same sweep found them via `cmindex.rs`'s own review header: `CmpAddToLeaf` inserts
+  nothing (C 987-1099 absent) and `CmpSelectLeaf` is missing ~100 lines including the split,
+  which the header argues makes a full leaf spin forever. **These do not ship** — unlike
+  scsiport/classpnp, `cmindex.c` is still in `sdk/lib/cmlib/CMakeLists.txt:10`, so the C body
+  wins at link and the Rust is dead. Same file also records an i386 ABI bug: five `NTAPI`
+  callees declared `extern "C"` instead of `extern "system"`. Worth doing before cmlib is
+  cohab-flipped, not after.
 - **classpnp `ClasspAccessAlignmentProperty` spun forever on arm64 — FIXED** (2026-09-05).
   An empty `_ => {}` catch-all as the last arm of a `match` that IS the body of a
   goto-elimination `'work: loop`. utils.c's switch has no `default:`, so an unmatched value
