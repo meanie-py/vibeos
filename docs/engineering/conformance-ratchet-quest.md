@@ -1801,3 +1801,68 @@ kernel. It is sound evidence about the HARNESS (flake structure, count-blindness
 of the corpus and the comparison, not of one lane's kernel) and worthless as a floor for ours.
 Seeding is owed, per arch, from `--write-baseline` on our own tree at a known commit; until
 then every row keeps its count gate and nothing regresses.
+
+### 2026-09-06 — the ratchet is WIRED INTO THE GATE, and stops being advisory
+
+For its whole life the ratchet computed a correct verdict and nothing was obliged to
+act on it. `--gate` existed, and no gate passed it. That is now the default:
+`vibeos-cli gate` runs one conformance lane per arch, and a ratchet regression withholds
+the push stamp exactly as a dead desktop does. `--no-conformance` opts out.
+
+**Why it reuses the gate's media instead of building its own.** The sweep needs media
+built with `VIBEOS_PAYLOAD=kmtest`, which the gate's build did not stamp — a lane running
+`--no-build` against a `<none>`-stamped build dir boots fine and reports
+`[KMTEST-SWEEP] launch FAILED` minutes later, a layer from the cause. The two options were
+a second build per arch, or teaching the gate's build to carry the payload. Measured on a
+live fleet, that is not a close call: the host broker sat at **4/4 build permits with lanes
+queued 12+ minutes** while the boot pool sat at **1/8**. Builds are the bottleneck; boots
+are nearly free. So the gate build now passes `--kmtests` and stamps the payload, and the
+conformance lanes boot the same media the smoke does. Cost: three extra parallel boots,
+zero extra builds.
+
+**Why the lane is flake-retryable.** This is the part that decides whether the gate is
+usable at all. The floor marks the bistables it KNOWS about (`assert?`), but the corpus is
+not closed: an intermittent that simply did not fire during the 15 seeding boots is
+indistinguishable from a real regression on any single sweep. The merge queue gates ONCE
+for N lanes, so a non-retryable miss would reject a whole batch of innocent lanes on a coin
+flip — precisely the failure the 2026-08-08 NET_FLAKE incident recorded, where a lane whose
+entire diff was three baseline edits and a doc got rejected. So a first-attempt miss is
+`CONFORMANCE_FLAKE` and retries; a real regression reproduces and ends red. A repeated
+experiment that holds the suspected cause fixed falsifies nothing, and the converse applies
+here: an experiment that does not repeat has not established anything either.
+
+**What it is still not.** The floor is 702 identities over 91 rows per arch, seeded from 15
+boots. It gates what those boots saw. An assertion that fails only under a load the gate
+does not produce is not on it, and the retry that protects innocent lanes will also mask a
+genuine regression that reproduces less than every other run. The ratchet is a floor, not a
+proof.
+
+### 2026-09-06 (same day) — the retry earned its keep on its FIRST real gate, and found a new arm64 bistable
+
+The first gate to run the wired-in ratchet went green with one line under it:
+`conformance:arm64 — PASS, 3 attempts, recovered-after-flake`. i386 and amd64 held on the
+first sweep; arm64 reported
+
+    ExPools: NEW failing assertion ExPools.c:176
+    ExPools: NEW failing assertion ExPools.c:181
+
+failed the same way on the first retry, and held clean on the second.
+
+**This is the case the retry was built for, arriving immediately.** Had the lane been
+non-retryable — the obvious first implementation — the very first gate would have been RED,
+and in the merge queue it would have rejected every innocent lane in the batch alongside it.
+The design note written that morning ("an intermittent that never fired during the 15 seeding
+boots is indistinguishable from a regression on any single sweep") was not hypothetical for
+even one gate.
+
+**Both identities are now marked `assert?` on the arm64 floor** (bistables there: 4 → 6). The
+alternative was leaving every arm64 gate with a real chance of burning all its retries, which
+blocks the fleet — a worse failure than absorbing two known-intermittent lines.
+
+**What that mark does NOT settle, and is owed.** `ExPools.c:176` and `:181` sit either side of
+`:178`, which is on the floor as a STABLE failure. A cluster of three neighbouring assertions
+where one always fails and two fail about two runs in three is not noise-shaped; it looks like
+one intermittent defect in arm64 pool allocation, and the `assert?` marks silence the symptom
+rather than explaining it. Hit rate observed here is 2/3, which is frequent enough to soak
+cheaply: `vibeos-cli conformance --arch arm64 --repeat 20` and read which of the three fire
+together. Nothing else in the tree is watching this now that the ratchet is quiet about it.

@@ -31,7 +31,10 @@ use crate::dib_helpers::abs;
 extern "C" {
     fn DecompressBitmap(sizl: SIZEL, pvCompressedBits: PVOID, pvBits: PVOID, lDelta: LONG, iFormat: ULONG, cjSizeImage: ULONG);
 }
-extern "system" { fn SafeProbeForWrite(a: *mut core::ffi::c_void, l: usize, al: u32) -> i32; }
+extern "system" {
+    fn SafeProbeForWrite(a: *mut core::ffi::c_void, l: usize, al: u32) -> i32;
+    fn SafeProbeForRead(a: *const core::ffi::c_void, l: usize, al: u32) -> i32;
+}
 // ProbeForRead/Write (Mm, NTAPI) — raise on bad user pointer (DUMMY_PSEH: validate-then-deref).
 extern "system" {
     fn ProbeForRead(a: *const core::ffi::c_void, l: usize, al: u32);
@@ -239,6 +242,18 @@ pub unsafe extern "system" fn NtGdiCreateBitmap(
     (*psurf).flags |= (API_BITMAP | DDB_SURFACE) as ULONG;
 
     if !pUnsafeBits.is_null() {
+        // The C probes pUnsafeBits for READ here and, from the handler, deletes the
+        // surface it just allocated and returns NULL. The probe was dropped, so
+        // UnsafeSetBitmapBits copied cjSize bytes off the caller's raw pointer with
+        // nothing to catch a fault — and cjSize is caller-influenced (width x height).
+        if !NT_SUCCESS(SafeProbeForRead(
+            pUnsafeBits as *const core::ffi::c_void,
+            cjSize as usize,
+            1,
+        )) {
+            GDIOBJ_vDeleteObject(core::ptr::addr_of_mut!((*psurf).BaseObject));
+            return core::ptr::null_mut();
+        }
         UnsafeSetBitmapBits(psurf, cjSize as ULONG, pUnsafeBits as *const core::ffi::c_void);
     } else {
         RtlZeroMemory(
@@ -711,6 +726,20 @@ pub unsafe extern "system" fn NtGdiSetBitmapBits(
         || (*psurf).SurfObj.iBitmapFormat > BMF_32BPP
     {
         EngSetLastError(ERROR_INVALID_HANDLE);
+        SURFACE_ShareUnlockSurface(psurf);
+        return 0;
+    }
+
+    // The C probes pUnsafeBits inside a _SEH2_TRY and returns 0 from the handler. It
+    // probes for WRITE even though this call only READS the buffer — upstream's choice,
+    // kept because ProbeForWrite is the stricter of the two and matching the C is what
+    // makes the oracle meaningful. Dropped in translation, so UnsafeSetBitmapBits read
+    // `Bytes` (a caller-supplied DWORD) off the caller's raw pointer unchecked.
+    if !NT_SUCCESS(SafeProbeForWrite(
+        pUnsafeBits as *mut core::ffi::c_void,
+        Bytes as usize,
+        1,
+    )) {
         SURFACE_ShareUnlockSurface(psurf);
         return 0;
     }

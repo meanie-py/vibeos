@@ -826,6 +826,15 @@ float math inside a body (x87), float pointers, float struct fields. Two fixes:
   4-byte FLOAT on the stack, bit-identical to a `u32`; amd64/arm64 pass it in a vector register
   and need the native `f32`. A plain `f32` won't compile on i386; a plain `u32` corrupts the
   others (`SetMiterLimit`).
+- **A crate-PRIVATE helper is not exempt — give it `extern "C"`.** The `"Rust"` ABI passes
+  f64 in xmm on x86, so a plain `fn helper(x: f64, xx: f64) -> f64` in a libm crate is rejected
+  even though nothing outside the crate calls it; `extern "C"` uses x87/stack and compiles.
+  This is why every float helper in `cnt-rust/src/cabi/math.rs` is `extern "C"`. Two traps
+  around it: the rejection is **codegen-time, so `cargo check` cannot see it** — only a real
+  `cargo build --target i686-pc-windows-gnu` with `-C target-feature=-sse,-sse2` will (a green
+  amd64 + arm64 build proves nothing here); and the check fires per-ABI-classification, not
+  per-mention, so a sibling `fn f(x: f64) -> (f64, f64)` returning through sret can sit right
+  next to the rejected one and compile — don't conclude from it that plain `fn` is fine.
 
 ### i386 symbol lookup and asm aliasing
 - **Three decoration schemes**: cdecl `_name`, stdcall `_name@N`, fastcall `@name@N`. A grep
@@ -3908,19 +3917,58 @@ Match the C's alignment argument. Say in the comment what validate-first does NO
 C's second SEH also covers the window between probe and copy, and a range check proves where a
 buffer is, never that it stays mapped.
 
-**Finding the rest.** Same self-oracle question as `scan_dropped_prints`, inverted onto
-validation: count `ProbeFor*` in a file's commented-out C against live probe calls in its Rust.
-That gives **40 dropped probe calls across 13 files** — `config-rust/ntapi.rs` (8),
-`win32k-rust/font.rs` (6), `ntstubs.rs` (5), `coord.rs` (4), `fastfat-rust/fsctrl.rs` (4),
-`ex-rust/harderr.rs` (4), and a tail. The win32k ones are the sharp end: `NtGdiAddFontResourceW`
-is a directly user-callable syscall doing `RtlCopyMemory` off `pwcFiles` with no probe at all.
+**Finding the rest.** `tools/scan_dropped_probes.py`, gated by `vibeos-cli check` against
+`tools/lint-baseline/scan_dropped_probes.txt`. Same self-oracle as `scan_dropped_prints` and the
+same brace-depth/tree-sitter parser (shared via `c_function_bodies` / `rust_function_items`),
+asking the inverted question: not "did it stay silent where its C spoke" but "did it dereference
+a user pointer where its C validated one". It opened at **26 functions — 19 ALL, 7 PARTIAL**, and
+every ALL was an `Nt*` syscall entry point. The sharp ones were not subtle once seen:
+`NtGdiExtGetObjectW` copied up to `sizeof(object)` bytes of KERNEL STACK to an unvalidated
+caller pointer (disclosure and arbitrary write in one statement); `NtGdiCombineTransform` passed
+three unchecked user pointers straight to a routine that writes through one of them.
 
-**Two traps when you go looking.** The scanner needs `tree_sitter_rust`, which lives in the MAIN
-checkout's `.venv`, not the system python — a sizing pass that wraps the import in
+**A dropped probe hides behind a plausible comment.** `NtGdiCreateDIBSection` carried
+`// ProbeForRead calls are no-ops in this translation context` over the place three progressive
+probes belonged. It reads like a considered decision and it is simply false — those probes are
+the only bounds check on `bmi`, and dropping them also froze `Status` at `STATUS_SUCCESS` so the
+`if (!NT_SUCCESS(Status))` beneath could never fire. DUMMY_PSEH is the reason the *handler* is
+omitted and equally the reason the *probe* must stay: with no handler an unvalidated access is
+not an exception, it is the machine.
+
+**Overflow guards are not probes, and one can hide the absence of the other.**
+`NtGdiPolyPolyDraw` kept careful `Count > isize::MAX / sizeof(POINT)` checks and had both its
+`ProbeForRead`s dropped. A guard bounds the SIZE of an access; a probe bounds its ADDRESS.
+Watch the second SEH region too: that function's copy length is `nPoints`, the SUM of the
+caller's count array, so it is not covered by a probe sized on `Count`.
+
+**Three traps when you go looking.** (1) The scanner needs `tree_sitter_rust`, which lives in the
+MAIN checkout's `.venv`, not the system python — a sizing pass that wraps the import in
 `except: continue` reports a beautiful **zero**. Judge a clean result by whether the harness
-could have spoken at all. And the probes may have been restructured rather than dropped: a
-function that captures via `ProbeAndCaptureUnicodeString` upstream needs no probe of its own, so
-compare against where the pointer actually comes from before writing a finding.
+could have spoken at all. (2) The substrate is generic, so `probe_read_user::<u32>(h)` puts a
+TURBOFISH between the name and the paren; a call-detecting regex that requires `name\s*\(` scores
+every generic probe as absent and reports its function as ALL. The scanner's `--self-test` caught
+this before the baseline was ever seeded, which is the whole reason that self-test exists. (3)
+The probe may have been restructured rather than dropped: a callee whose buffer arrived through
+`ProbeAndCaptureUnicodeString` one frame up is already in pool and needs no probe of its own
+(`CmpSetValueKeyNew`). Follow the pointer to its caller, then suppress with that reason —
+`// nolint: dropped-probe (caller captures into pool)`.
+
+**`ntkrnl_sys::probe` does not link from a separate `.sys`.** It declares
+`MmUserProbeAddress` as a plain `extern "C" static`, which resolves only for crates linked
+INTO ntoskrnl (config-rust, ex-rust, ntoskrnl-rust). Reach for it from a standalone driver
+and the whole build dies at the link with
+`ld.lld: error: undefined symbol: _MmUserProbeAddress` — ks.sys did exactly this. A DATA
+import needs the per-arch import form: i386/arm64 `raw-dylib` `+verbatim` (the symbol IS the
+value), amd64 binds `__imp_MmUserProbeAddress` and dereferences. Copy the shape from
+`win32k-rust/src/safe_user_io.rs`; `ks-rust/src/property.rs` now carries it too. Note the
+failure is at LINK, not at `cargo check` — nothing links during a crate check, so this class
+sails through every check you would run first.
+
+**Use the right validator for the crate.** win32k has its own `SafeProbeForRead`/`SafeProbeForWrite`
+(`win32k-rust/src/safe_user_io.rs`): same range and alignment arithmetic as the DDK macros, but
+they RETURN a status instead of raising. Do not reach for the DDK `ProbeFor*` there, and do not
+assume the kernel-side `ntkrnl_sys::probe` helpers raise either — they do not touch the page,
+they range-check and return `Result`.
 
 ### A `#if` on a WINDOWS VERSION comes back as `#[cfg(target_arch)]`
 
@@ -4769,6 +4817,40 @@ nothing. It has false-greened arm64 six times in a row (fastfat → ramdisk → 
 user32 → advapi32). Rule: **`vibeos-cli smoke` hard-fails on stale media — never bypass it, and
 judge a build by artifact existence, not a reported exit code.**
 
+### A lint that reads BUILD OUTPUT passes on an artifact predating the change under test
+
+**Symptom:** a source lint is green locally and fails in the gate, on the same commit. Not
+flakiness and not a merge: the gate built all three arches, and the local run read one arch's
+day-old objects.
+
+**Cause:** `verify_ucrtbase_cohab` asks whether the Rust archive defines symbols that would
+displace vendored UCRT bodies — a question about `libcrt_shared_cargo.a`, not about source.
+Locally that archive was dated a day before the commit that added the symbols, so it did not
+contain the change being checked. **An absent symbol shadows nothing, so the check passed by
+answering about an older tree.** Every "does X define too much" check has this shape: the
+failing direction needs the artifact to be current, and staleness always answers in the
+passing direction.
+
+**Fix:** build the arch before trusting a lint that reads its output — `./vibeos-cli build
+--arch <a>` — or read the artifact's mtime against the commit you are testing. A green from a
+lint whose input predates your change is not evidence. Worth the wall-clock: one cold build
+beats a merge-queue round trip, and the queue can cost hours per attempt.
+
+**A fourth member of "a verdict that depends on state outside the diff is not a gate"** (see
+"A gate can be RED for reasons that are not in the tree at all"), and distinct from that entry's
+third: a warm gate declining to rebuild is a verdict on a *skipped* recompile, while this is a
+verdict rendered against the wrong object entirely. They fail differently and need different
+fixes — the first wants a `--clean`, this one wants the lint to know how old its input is.
+
+**The same shape reaches DOCUMENTATION, and there it is worse — a wrong gate gets re-run, a
+wrong doc gets believed.** *Any fact read out of the shared main worktree can be a fact about
+someone else's uncommitted work.* Main's working tree carries other agents' in-flight edits with
+nothing marking them as uncommitted, and every agent reads it by default when checking a claim.
+Two of us cited a line number for the same symbol in the same commit on the same day and got 100
+and 111 — the difference was exactly an 11-line uncommitted change in main that neither of us
+had touched, so both numbers were correct and one was useless. **Cite `git show <ref>:<path>`
+rather than the working tree, and quote a grep-able symbol rather than a line number.**
+
 ### The HOST CLOCK steps backwards, so an output is older than its own input
 
 **Symptom:** a warm build re-runs an edge that is genuinely up to date, roughly half the
@@ -4861,6 +4943,41 @@ mask one, and it still defends if timesyncd is ever re-enabled. The detector is 
 `CLOCK_MONOTONIC` carries the same NTP slew as `CLOCK_REALTIME`, so realtime advancing *less* than
 monotonic isolates a step — no sleep, retry, or threshold tuning. **Its limit:** it catches
 STEPS, not slew. A pure frequency error moves both clocks together and slips straight past it.
+
+### Deleting a file is a DIRECTORY change, and a recursive watch has no margin for it
+
+**Symptom:** the same fixture staleness as the clock entry above — a generated value from the
+previous step survives a rebuild — but the clock is provably clean. In
+`test_build_invalidation.py` it read `'5' != '4'` after removing an input: passes in isolation
+and on an idle host, fails under fleet load, three land preflights in a row.
+
+**Cause:** a build script watching a directory (`cargo:rerun-if-changed=inputs`) can only see a
+deletion as the directory's mtime. The test deleted with a bare `unlink()`, which stamps that
+directory with the host clock — while the fixture deliberately keeps its sources *behind* its
+own build outputs and forces every `write()` mutation to be strictly newer than every prior
+artifact. Measured margin on an idle host: **8ms**. Invert those 8ms and Cargo reads "not
+newer", skips the build script, and the stale generated file survives. Ninja still re-runs the
+rule, so the invocation assertion passes and only the VALUE is wrong — which is why it reads as
+a build-tool race rather than a test bug.
+
+**Fix:** age the containing directory the way the fixture ages a file (`BuildFixture.remove`).
+No sleep and no retry, and it hides nothing: the directory genuinely changed, so the edge under
+test still has to carry it. Forcing the inversion (stamp the build outputs 1s into the future,
+then unlink) reproduces it every time — do that rather than trying to catch it under load.
+
+**THREE independent mechanisms, one symptom — this is what makes such a flake look unfixable.**
+The clock step above, this margin, and a third in the same test's negative control produce
+staleness-shaped failures that no single fix subsumes. The third is an ORACLE fault rather than
+a system one: `missing_edge` asserts `invocations() == before`, but over-invalidation is legal,
+so under load the build is right and the assertion is wrong — relaxing it to `>=` is safe only
+because the value assertions here pin what the count no longer does.
+
+The clock cause was removed host-side (timesyncd disabled, verified 0 backward steps over
+120s), so that guard is now a tripwire for something that should not recur; this one is the
+live mechanism. If the test misbehaves again, check the ordering
+first, then the oracle, then the clock — and do not "tidy" any of the three away as redundant.
+Three lanes each found one of these within a day, each initially certain it was the whole
+story.
 
 ### Cargo depfiles leave directory contents or lockfile changes stale
 

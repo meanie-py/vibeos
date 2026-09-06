@@ -725,6 +725,29 @@ pub unsafe extern "fastcall" fn KiCheckForSListFault(TrapFrame: PKTRAP_FRAME) ->
         let slist_header: ULARGE_INTEGER;
         let resume_address: PVOID;
         if is_user_slist_fault {
+            // The C probes TrapFrame->Ebp before this read — ProbeForRead(Ebp,
+            // sizeof(ULARGE_INTEGER), TYPE_ALIGNMENT(SLIST_HEADER)) — inside a
+            // _SEH2_TRY that returns FALSE from the handler, and it does so ONLY on
+            // this branch. That asymmetry is the whole point: the kernel branch below
+            // faulted at a kernel address we control, while here Ebp is a USER
+            // register at the moment of a user-mode fault, so its value is chosen by
+            // the faulting process. Dropping the probe made this an arbitrary kernel
+            // read reachable by faulting at KeUserPopEntrySListFault with any Ebp —
+            // in trap context, where DUMMY_PSEH means the fault it causes is terminal.
+            //
+            // UserMode is passed explicitly rather than queried: we are here precisely
+            // because this is the user-mode SList fault path, and probe_user_buffer
+            // returns Ok unconditionally for KernelMode.
+            if ntkrnl_sys::probe::probe_user_buffer(
+                (*TrapFrame).Ebp as *const core::ffi::c_void,
+                core::mem::size_of::<ULARGE_INTEGER>(),
+                core::mem::align_of::<ULARGE_INTEGER>(),
+                1i8,
+            )
+            .is_err()
+            {
+                return 0u8;
+            }
             slist_header = *((*TrapFrame).Ebp as PULARGE_INTEGER);
             resume_address = KeUserPopEntrySListResume;
         } else {

@@ -383,6 +383,7 @@ dependencies = [
 name = "crt-shared-cargo"
 version = "0.1.0"
 dependencies = [
+ "cnt-rust",
  "crt-shared-rust",
  "panic-common",
 ]

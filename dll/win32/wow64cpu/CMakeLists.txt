@@ -77,10 +77,26 @@ foreach(_f ${_wow64_guests})
     endif()
 endforeach()
 if(_wow64_guest_ok)
+    # The closure runs at CONFIGURE time, so ninja has no idea it exists: editing
+    # wow64-closure.py or the INF it derives dynamic edges from would leave the
+    # previously-staged module list on the livecd and the next boot would test the
+    # OLD closure while looking like it tested the new one. Re-configure on either.
+    set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS
+                 ${REACTOS_SOURCE_DIR}/tools/fex/wow64-closure.py
+                 ${REACTOS_SOURCE_DIR}/media/inf/nettcpip.inf)
     execute_process(
         COMMAND python3 ${REACTOS_SOURCE_DIR}/tools/fex/wow64-closure.py
                 --build-dir ${REACTOS_SOURCE_DIR}/build-i386
                 --include-prestaged --no-strip
+                # Every guest we STAGE is also a closure root. It was not always so:
+                # the roots were the stock applets, and a ladder guest's imports were
+                # covered only because some applet happened to import the same DLLs.
+                # marshal32 linking ws2_32 was covered by that coincidence; the next
+                # guest to link something new would have half-bound instead, which is
+                # the crash-at-first-call this closure exists to prevent. Adding them
+                # is currently a no-op (measured: same 64 modules), which is the point
+                # — it costs nothing and stops depending on luck.
+                ${_wow64_guests}
                 ${REACTOS_SOURCE_DIR}/build-i386/base/applications/testgui/testgui.exe
                 ${REACTOS_SOURCE_DIR}/tools/doom/doom-i386.exe
                 ${REACTOS_SOURCE_DIR}/build-fex-hello/gui32.exe

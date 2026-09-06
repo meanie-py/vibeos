@@ -537,9 +537,33 @@ pub unsafe extern "system" fn NtGdiAddFontResourceW(
         return 0;
     }
 
-    if !IntCheckFontPathNames(pwcFiles, cFiles, cwc) != 0 {
+    // The C probes pwcFiles here — ProbeForRead(pwcFiles, cwc * sizeof(WCHAR),
+    // sizeof(WCHAR)) — inside a _SEH2_TRY whose handler frees the buffer and returns 0.
+    // That probe was dropped, so both IntCheckFontPathNames (which WALKS the string)
+    // and the RtlCopyMemory below ran straight off the caller's raw pointer. Under
+    // DUMMY_PSEH nothing catches the resulting fault, so validate first; alignment 2
+    // matches the C's sizeof(WCHAR).
+    //
+    // IntCheckFontPathNames was also being called TWICE here, the first result thrown
+    // away into an empty `if` whose condition (`!f(..) != 0`) could not have done
+    // anything either way — a translation artifact, not a second check. One call, as
+    // the C has, so the user buffer is walked once.
+    //
+    // Both failure exits now free SafeFileName.Buffer. The C leaks it on the
+    // IntCheckFontPathNames path (a bare `return` out of _SEH2_TRY, so the handler
+    // that frees never runs) — reachable from user mode with an attacker-chosen cwc,
+    // which makes it a paged-pool exhaustion primitive rather than a stray leak.
+    if !NT_SUCCESS(SafeProbeForRead(
+        pwcFiles as PVOID,
+        (cwc as usize) * core::mem::size_of::<u16>(),
+        core::mem::size_of::<u16>() as ULONG,
+    )) {
+        ExFreePoolWithTag(SafeFileName.Buffer as PVOID, TAG_STRING);
+        return 0;
     }
+
     if IntCheckFontPathNames(pwcFiles, cFiles, cwc) == 0 {
+        ExFreePoolWithTag(SafeFileName.Buffer as PVOID, TAG_STRING);
         return 0;
     }
 
@@ -586,9 +610,33 @@ pub unsafe extern "system" fn NtGdiAddFontResourceW(
         return 0;
     }
 
-    if !IntCheckFontPathNames(pwcFiles, cFiles, cwc) != 0 {
+    // The C probes pwcFiles here — ProbeForRead(pwcFiles, cwc * sizeof(WCHAR),
+    // sizeof(WCHAR)) — inside a _SEH2_TRY whose handler frees the buffer and returns 0.
+    // That probe was dropped, so both IntCheckFontPathNames (which WALKS the string)
+    // and the RtlCopyMemory below ran straight off the caller's raw pointer. Under
+    // DUMMY_PSEH nothing catches the resulting fault, so validate first; alignment 2
+    // matches the C's sizeof(WCHAR).
+    //
+    // IntCheckFontPathNames was also being called TWICE here, the first result thrown
+    // away into an empty `if` whose condition (`!f(..) != 0`) could not have done
+    // anything either way — a translation artifact, not a second check. One call, as
+    // the C has, so the user buffer is walked once.
+    //
+    // Both failure exits now free SafeFileName.Buffer. The C leaks it on the
+    // IntCheckFontPathNames path (a bare `return` out of _SEH2_TRY, so the handler
+    // that frees never runs) — reachable from user mode with an attacker-chosen cwc,
+    // which makes it a paged-pool exhaustion primitive rather than a stray leak.
+    if !NT_SUCCESS(SafeProbeForRead(
+        pwcFiles as PVOID,
+        (cwc as usize) * core::mem::size_of::<u16>(),
+        core::mem::size_of::<u16>() as ULONG,
+    )) {
+        ExFreePoolWithTag(SafeFileName.Buffer as PVOID, TAG_STRING);
+        return 0;
     }
+
     if IntCheckFontPathNames(pwcFiles, cFiles, cwc) == 0 {
+        ExFreePoolWithTag(SafeFileName.Buffer as PVOID, TAG_STRING);
         return 0;
     }
 
@@ -637,7 +685,21 @@ pub unsafe extern "system" fn NtGdiRemoveFontResourceW(
         return 0;
     }
 
+    // Same dropped probe as NtGdiAddFontResourceW above, same shape: the C wraps this
+    // in _SEH2_TRY after ProbeForRead(pwszFiles, cwc * sizeof(WCHAR), sizeof(WCHAR)),
+    // and both IntCheckFontPathNames and the RtlCopyMemory below read the caller's
+    // buffer. Validate first, and free on the failure path the C leaks.
+    if !NT_SUCCESS(SafeProbeForRead(
+        pwszFiles as PVOID,
+        (cwc as usize) * core::mem::size_of::<u16>(),
+        core::mem::size_of::<u16>() as ULONG,
+    )) {
+        ExFreePoolWithTag(SafeFileName.Buffer as PVOID, TAG_STRING);
+        return 0;
+    }
+
     if IntCheckFontPathNames(pwszFiles, cFiles, cwc) == 0 {
+        ExFreePoolWithTag(SafeFileName.Buffer as PVOID, TAG_STRING);
         return 0;
     }
 
@@ -1448,6 +1510,30 @@ pub unsafe extern "system" fn NtGdiGetFontResourceInfoInternalW(
     RtlZeroMemory(SafeFileNames.Buffer as *mut core::ffi::c_void, SafeFileNames.MaximumLength as usize);
 
     /* Check buffers and copy pwszFiles to safe unicode string */
+    // The C probes all three user pointers inside a _SEH2_TRY and stashes the exception
+    // code in Status; ALL THREE were dropped. That did two things. It left the
+    // `if (!NT_SUCCESS(Status))` below checking a status nothing could ever set — the
+    // same dead-check shape as NtSetValueKey (#79) — and it let `*pdwBytes` be read and
+    // `pvBuf` be written at whatever addresses the caller passed, from an unprivileged
+    // syscall. Under DUMMY_PSEH a fault here is not an access violation, it is the box.
+    //
+    // Validate-first, so the existing status check now sits BEFORE the dereferences it
+    // was supposed to guard rather than after them. pvBuf is probed only when non-null,
+    // matching the C's `if (pvBuf)`.
+    Status = SafeProbeForRead(pwszFiles as PVOID, cbStringSize as usize, 1);
+    if NT_SUCCESS(Status) {
+        Status = SafeProbeForWrite(pdwBytes as PVOID, core::mem::size_of::<DWORD>(), 1);
+    }
+    if NT_SUCCESS(Status) && !pvBuf.is_null() {
+        Status = SafeProbeForWrite(pvBuf as PVOID, cjIn as usize, 1);
+    }
+
+    if !NT_SUCCESS(Status) {
+        SetLastNtError(Status);
+        ExFreePoolWithTag(SafeFileNames.Buffer as LPVOID, TAG_USTR);
+        return 0;
+    }
+
     dwBytes = *pdwBytes;
     dwBytesRequested = dwBytes;
 
@@ -1460,12 +1546,6 @@ pub unsafe extern "system" fn NtGdiGetFontResourceInfoInternalW(
         Buffer = ExAllocatePoolWithTag(PagedPool, dwBytes as usize, TAG_FINF);
     } else {
         Buffer = ExAllocatePoolWithTag(PagedPool, core::mem::size_of::<DWORD>(), TAG_FINF);
-    }
-
-    if !NT_SUCCESS(Status) {
-        SetLastNtError(Status);
-        ExFreePoolWithTag(SafeFileNames.Buffer as LPVOID, TAG_USTR);
-        return 0;
     }
 
     /* Do the actual call */

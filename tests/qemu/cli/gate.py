@@ -91,7 +91,22 @@ from .artifacts import Run, Stage
 # ~87% of the time. It is retryable ONLY when smoke characterized it as
 # slow/contended (serial still flowing at the deadline) AND the kernel didn't
 # self-report stuck threads — see _retryable().
-RETRYABLE = {"KNOWN_FLAKE", "FLAKY", "LAUNCH_FAIL", "NET_FLAKE", "HOST_STARVED"}
+# The payload/baseline suite name, from its owner — not re-spelled here, so the two
+# places that stamp VIBEOS_PAYLOAD cannot drift apart.
+from .conformance import SUITE as SUITE_NAME
+
+RETRYABLE = {
+    "KNOWN_FLAKE",
+    "FLAKY",
+    "LAUNCH_FAIL",
+    "NET_FLAKE",
+    "HOST_STARVED",
+    # A conformance ratchet miss retries for the same reason NET_FLAKE does: the
+    # identity floor marks the bistables it KNOWS about, and one that never fired
+    # during seeding looks exactly like a regression on a single sweep. A real
+    # regression reproduces on the retry; a coin-flip does not. See _conformance_once.
+    "CONFORMANCE_FLAKE",
+}
 
 
 def _retryable(classification: str, summary: dict) -> bool:
@@ -197,6 +212,118 @@ def _first_salient(summary: dict) -> str:
             for s in st.get("salient", []):
                 return str(s)
     return ""
+
+
+def _ensure_kmtest_payload(repo: Path, arches: list[str]) -> tuple[bool, str]:
+    """Make the kmtest sweep runner exist for every arch, or say why it cannot.
+
+    THIS FUNCTION IS A SCAR. Wiring the conformance lanes in made the gate build stamp
+    VIBEOS_PAYLOAD=kmtest unconditionally, and `kmtest-sweep-<arch>.exe` is a GITIGNORED
+    build product: `git worktree add` brings sweep.c and the test lists but not the exes.
+    So the change worked in my own worktree, where months of conformance runs had left
+    them lying around, and broke the FIRST fresh tree it met — the merge queue's own
+    integration worktree — with
+
+        payloads/compile.py: ERROR: payload 'kmtest': src missing: .../kmtest-sweep-i386.exe
+
+    which surfaces as the livecd media step failing, i.e. a BUILD_FAIL attributed to
+    whichever innocent lanes happened to be in the batch. Every lane in the fleet would
+    have inherited that. conformance.py already had `_worktree_provisioning_gaps` for
+    exactly this class; the gate path simply went around it.
+
+    Building it is cheap and correct: sweep.c is committed, the recipe is one
+    cross-compile per arch, and the toolchain is the one thing AGENTS.md explicitly
+    allows sharing between worktrees because it is content-addressed. What we must NOT
+    do is copy the exe from a sibling worktree — that is the fleet-isolation trap that
+    had verify_signatures grading one tree's Rust against another tree's headers.
+    """
+    script = repo / "tools" / "payloads" / SUITE_NAME / "build.sh"
+    if not script.is_file():
+        return False, f"no {script}"
+    missing = [
+        a
+        for a in arches
+        if not (repo / "tools" / "payloads" / SUITE_NAME / f"{SUITE_NAME}-sweep-{a}.exe").is_file()
+    ]
+    if not missing:
+        return True, ""
+    tc = repo / ".build-tools" / "llvm-mingw"
+    if not tc.exists() and not list(repo.parent.glob("llvm-mingw-*")):
+        # Without the pinned clang we cannot build it, and we must not stamp the
+        # payload either — that is what breaks the media step. Report, do not guess.
+        return False, f"missing {tc} (pinned clang), needed to build {', '.join(missing)}"
+    for a in missing:
+        cp = subprocess.run(["bash", str(script), a], cwd=str(repo), capture_output=True, text=True)
+        if cp.returncode != 0:
+            tail = ((cp.stderr or cp.stdout or "").strip().splitlines() or ["(no output)"])[-1]
+            return False, f"build.sh {a} failed: {tail}"
+    return True, ""
+
+
+def _conformance_once(repo: Path, arch: str, root: Path) -> dict:
+    """Run the kmtest conformance ratchet for one arch as its own gate lane.
+
+    The ratchet compares which ASSERTIONS fail against the per-arch identity floor in
+    `tools/conformance-baseline/<arch>/kmtest.txt`, so it catches what the smoke cannot:
+    the smoke asks "does the desktop come up", and every one of these regressions comes
+    up to a perfectly good desktop with a kernel API quietly answering wrong.
+
+    It reuses THIS GATE'S MEDIA (`--no-build`), which is why the gate's build carries the
+    kmtest payload when conformance is on. The alternative — a second build per arch —
+    would roughly double the gate's build cost, and builds are the fleet's actual
+    bottleneck: the host broker runs 4/4 build permits with lanes queuing 12+ minutes
+    while the boot pool sits at 1/8. Boots are the cheap resource; spend those.
+
+    RETRY SEMANTICS, and why they are not optional. The floor marks known-bistable
+    identities `assert?`, but the corpus is not closed — a bistable that simply did not
+    fire during seeding is indistinguishable from a regression on any single sweep. So a
+    first-attempt failure is CONFORMANCE_FLAKE and retryable, exactly as NET_FLAKE is: a
+    real regression reproduces, a coin-flip does not. Without this, one unlucky boot
+    would reject a whole merge-queue batch of innocent lanes.
+    """
+    t0 = time.monotonic()
+    root.mkdir(parents=True, exist_ok=True)
+    baseline = repo / "tools" / "conformance-baseline" / arch / "kmtest.txt"
+    if not baseline.is_file():
+        # No floor means nothing to ratchet against. Skip loudly rather than passing
+        # silently: a gate stage that cannot fail must not read as one that held.
+        return {
+            "arch": f"conf:{arch}",
+            "verdict": "SKIP",
+            "classification": "",
+            "ok": True,
+            "retryable": False,
+            "seconds": 0.0,
+            "run_dir": str(root),
+            "salient": f"no baseline at {baseline}",
+        }
+    cmd = [
+        str(repo / "vibeos-cli"),
+        "conformance",
+        "--arch",
+        arch,
+        "--gate",
+        "--no-build",
+    ]
+    cp = subprocess.run(cmd, cwd=str(repo), capture_output=True, text=True, env=dict(os.environ))
+    out = (cp.stdout or "") + (cp.stderr or "")
+    (root / "conformance.log").write_text(out)
+    ok = cp.returncode == 0
+    # The regression lines are the only part worth carrying up; the sweep prints a
+    # per-test table that would drown the gate summary.
+    salient = [ln.strip() for ln in out.splitlines() if "NEW failing assertion" in ln]
+    if not salient and not ok:
+        salient = [ln.strip() for ln in out.splitlines() if "->" in ln and ":" in ln][:6]
+    return {
+        "arch": f"conf:{arch}",
+        "verdict": "PASS" if ok else "RATCHET",
+        "classification": "" if ok else "CONFORMANCE_FLAKE",
+        "ok": ok,
+        "retryable": not ok,
+        "seconds": time.monotonic() - t0,
+        "run_dir": str(root),
+        "salient": "; ".join(salient[:6]) or ("" if ok else f"conformance exited {cp.returncode}"),
+    }
 
 
 def _net_once(repo: Path, root: Path) -> dict:
@@ -327,8 +454,21 @@ def _build_once(repo: Path, run: Run, arch: str, args) -> dict:
         cmd.append("--clean")
     if getattr(args, "keep_going", False):
         cmd.append("--keep-going")
+    env = None
+    if not getattr(args, "no_conformance", False):
+        # Stage the kmtest corpus into THIS media so the conformance lanes can boot it
+        # with --no-build instead of each doing its own build. The payload selection is
+        # stamped into the build dir (payload-harness-design.md), so it must be set here,
+        # on the build the gate actually runs — a gate build with no selection stamps
+        # `<none>`, and the conformance lane would then boot fine and report
+        # `[KMTEST-SWEEP] launch FAILED` minutes later, a layer away from the cause.
+        #
+        # This only ADDS files to the ramdisk; the smoke boots the same media and still
+        # asserts the same desktop marker, and nothing launches the corpus unless asked.
+        cmd.append("--kmtests")
+        env = dict(os.environ, VIBEOS_PAYLOAD="kmtest")
     t0 = time.monotonic()
-    cp = run.run(cmd, cwd=repo, stage=f"build:{arch}")
+    cp = run.run(cmd, cwd=repo, stage=f"build:{arch}", env=env)
     return {
         "arch": arch,
         "ok": cp.returncode == 0,
@@ -694,6 +834,40 @@ def gate(args, repo: Path) -> int:
     # Strict arch guards follow their own build; only deferred source checks need
     # the complete build matrix. Both source partitions gate the push stamp.
     net_requested = not getattr(args, "no_net", False)
+    # The kmtest conformance ratchet, one lane per arch. On by default: a ratchet that
+    # only reports is a ratchet nothing has to obey, and the whole point of seeding the
+    # identity floors was to make a kernel-API regression stop a landing the way a dead
+    # desktop does. `--no-conformance` opts out (and is what a docs-only or
+    # tooling-only change should use if the media cannot be staged).
+    conf_requested = not getattr(args, "no_conformance", False)
+    if conf_requested:
+        # Provision BEFORE any build is submitted. The build stamps the payload into the
+        # build dir, so discovering the exe is missing at media-roll time is discovering
+        # it far too late — it fails the livecd step and reads as a BUILD_FAIL against
+        # whichever lanes share the batch. See _ensure_kmtest_payload for the incident.
+        conf_ok, conf_why = _ensure_kmtest_payload(repo, arches)
+        if not conf_ok:
+            # Degrade the ratchet, never the build: without the payload the honest state
+            # is "conformance did not run", and stamping VIBEOS_PAYLOAD anyway would
+            # break every arch's media. Loud, not silent — the stage is recorded so a
+            # green gate cannot be read as "the ratchet held".
+            conf_requested = False
+            # _build_once reads this same flag; without clearing it the builds would
+            # still stamp VIBEOS_PAYLOAD=kmtest and fail the media step — the exact
+            # breakage this block exists to prevent.
+            args.no_conformance = True
+            run.add(
+                Stage(
+                    "conformance",
+                    status="warn",
+                    detail="DISABLED — ratchet did not run",
+                    salient=[
+                        f"{conf_why}",
+                        "fix: bash tools/payloads/kmtest/build.sh <arch>; "
+                        "this gate did NOT verify kmtest conformance",
+                    ],
+                )
+            )
     do_lint = not getattr(args, "no_lint", False)
     build_order = sorted(arches, key=lambda a: a != "amd64")  # amd64 first, rest in order
     results: dict[str, dict] = {}
@@ -710,6 +884,8 @@ def gate(args, repo: Path) -> int:
     def _lane_once(lane: str, root: Path) -> dict:
         if lane == "net":
             return _net_once(repo, root)
+        if lane.startswith("conf:"):
+            return _conformance_once(repo, lane.split(":", 1)[1], root)
         return _smoke_once(repo, lane, root, smoke_extra)
 
     # Workers: every lane's first pass can be in flight while retries queue, plus
@@ -720,7 +896,11 @@ def gate(args, repo: Path) -> int:
     # inside a single task (see phase 3 — concurrent attempts recreate the very load
     # NET_FLAKE and HOST_STARVED are defined by). Keep the +n_lanes headroom anyway so
     # a retrying lane never has to wait on a first-pass worker to drain.
-    n_lanes = len(arches) + (1 if net_requested and "amd64" in arches else 0)
+    n_lanes = (
+        len(arches)
+        + (1 if net_requested and "amd64" in arches else 0)
+        + (len(arches) if conf_requested else 0)
+    )
     max_workers = (
         min(
             n_lanes * 2
@@ -750,6 +930,10 @@ def gate(args, repo: Path) -> int:
             fut[ex.submit(_lane_once, arch, gate_root / f"smoke-{arch}-a1")] = arch
             if arch == "amd64" and net_requested:
                 fut[ex.submit(_lane_once, "net", gate_root / "smoke-net-a1")] = "net"
+            if conf_requested:
+                fut[ex.submit(_lane_once, f"conf:{arch}", gate_root / f"conf-{arch}-a1")] = (
+                    f"conf:{arch}"
+                )
             if do_lint:
                 lfut[ex.submit(_lint_once, repo, arch, gate_root / f"lint-{arch}")] = arch
             # Post-build by necessity: this one reads the arch's OBJECTS and
@@ -824,7 +1008,11 @@ def gate(args, repo: Path) -> int:
             ] = "source-deferred"
 
         net_lane = ("amd64" in arches) and net_requested
-        lanes = list(arches) + (["net"] if net_lane else [])
+        lanes = (
+            list(arches)
+            + (["net"] if net_lane else [])
+            + ([f"conf:{a}" for a in arches] if conf_requested else [])
+        )
 
         def _collect_lints() -> None:
             for f in cf.as_completed(lfut):
@@ -943,7 +1131,7 @@ def gate(args, repo: Path) -> int:
             def _retry_lane(a: str) -> tuple[dict, int]:
                 r, n = None, 0
                 for k in range(retries):
-                    r = _lane_once(a, gate_root / f"smoke-{a}-r{k + 1}")
+                    r = _lane_once(a, gate_root / f"smoke-{a.replace(':', '-')}-r{k + 1}")
                     n += 1
                     if r["ok"]:
                         break
@@ -965,7 +1153,10 @@ def gate(args, repo: Path) -> int:
                     prev["attempts"] = r["attempts"]
 
     # --- verdict matrix ---
-    for arch in _resolve_arches(getattr(args, "arches", None)) + (["net"] if net_lane else []):
+    _conf_lanes = [f"conf:{a}" for a in arches] if conf_requested else []
+    for arch in (
+        _resolve_arches(getattr(args, "arches", None)) + (["net"] if net_lane else []) + _conf_lanes
+    ):
         r = results.get(arch)
         if r is None:
             continue  # build-failed arch already has its Stage
@@ -985,9 +1176,12 @@ def gate(args, repo: Path) -> int:
         if r["ok"] and r.get("recovered"):
             first = r.get("first_classification") or "a flake"
             salient.append(f"first pass was {first}; passed on retry")
+        stage_name = (
+            f"conformance:{arch.split(':', 1)[1]}" if arch.startswith("conf:") else f"smoke:{arch}"
+        )
         run.add(
             Stage(
-                f"smoke:{arch}",
+                stage_name,
                 exit=r.get("exit", 0),
                 seconds=r["seconds"],
                 status=status,
@@ -1000,7 +1194,14 @@ def gate(args, repo: Path) -> int:
 
     # --- push stamp (T1.3): green FULL gate on a clean tree mints the credential ---
     requested = _resolve_arches(getattr(args, "arches", None))
-    requested_lanes = requested + (["net"] if net_lane else [])
+    requested_lanes = (
+        requested
+        + (["net"] if net_lane else [])
+        # The whole point of wiring the ratchet in: a conformance regression must
+        # withhold the push credential, exactly as a dead desktop does. Without this
+        # line the lane would run, print red, and still mint the stamp.
+        + ([f"conf:{a}" for a in requested] if conf_requested else [])
+    )
     all_ok = (
         bool(results)
         and all(results.get(a, {}).get("ok") for a in requested_lanes)

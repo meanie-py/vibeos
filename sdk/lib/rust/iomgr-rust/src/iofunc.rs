@@ -172,7 +172,13 @@ const IRP_READ_OPERATION: u32 = 0x00000100;
  * before an IOSB-bearing syscall; the Nt* entry consumes the latch (read-and-
  * clear, honored only when it matches the IoStatusBlock argument exactly) and
  * marks the IRP so IopCompleteRequest writes the 32-bit layout at completion —
- * sync AND async, which lets the wow64 thunk stop refusing Event-based I/O. */
+ * sync AND async, which lets the wow64 thunk stop refusing Event-based I/O.
+ *
+ * Consumers: NtReadFile / NtWriteFile (M15b) and NtDeviceIoControlFile /
+ * NtFsControlFile via IopDeviceFsIoControl (M15c). Each has three obligations,
+ * and skipping any one of them is silent rather than loud: probe the guest's
+ * block at 8 bytes, mark the IRP, and narrow the write on whatever inline
+ * completion path bypasses the IRP entirely (fast I/O). */
 pub(crate) const IRP_WOW64_IOSB32: u32 = 0x8000_0000;
 
 #[repr(C)]
@@ -536,11 +542,29 @@ unsafe fn IopDeviceFsIoControl(
         NonPagedPool
     };
 
+    // wow64-plan M15c: same latch NtReadFile/NtWriteFile consume. Must run
+    // before any early return -- it is read-and-clear, so leaving it set would
+    // let the NEXT IOSB-bearing syscall on this thread inherit a stale address.
+    let Iosb32 = IopCaptureWow64Iosb32(IoStatusBlock, PreviousMode);
+
     if PreviousMode != 0i8 {
+        // A WoW64 guest's IOSB is 8 bytes, not 16. Probing for 16 would reject
+        // a guest block sitting in the last 8 bytes of a valid page.
+        let (IosbSize, IosbAlign) = if Iosb32 {
+            (
+                core::mem::size_of::<IoStatusBlock32>(),
+                core::mem::align_of::<IoStatusBlock32>(),
+            )
+        } else {
+            (
+                core::mem::size_of::<_IO_STATUS_BLOCK>(),
+                core::mem::align_of::<_IO_STATUS_BLOCK>(),
+            )
+        };
         if let Err(e) = probe_user_buffer(
             IoStatusBlock as *const core::ffi::c_void,
-            core::mem::size_of::<_IO_STATUS_BLOCK>(),
-            core::mem::align_of::<_IO_STATUS_BLOCK>(),
+            IosbSize,
+            IosbAlign,
             PreviousMode,
         ) { return e; }
         if AccessType == METHOD_BUFFERED {
@@ -673,7 +697,21 @@ unsafe fn IopDeviceFsIoControl(
             ) != 0
             {
                 let mut CompletionInfo: IO_COMPLETION_CONTEXT = core::mem::zeroed();
-                write_user_nofail(IoStatusBlock, KernelIosb, PreviousMode);
+                // The fast-io path completes inline and never builds an IRP, so
+                // the IRP_WOW64_IOSB32 flag below cannot reach it -- it has to
+                // narrow the block itself.
+                if Iosb32 {
+                    write_user_nofail(
+                        IoStatusBlock as *mut IoStatusBlock32,
+                        IoStatusBlock32 {
+                            Status: KernelIosb.__bindgen_anon_1.Status,
+                            Information: KernelIosb.Information as u32,
+                        },
+                        PreviousMode,
+                    );
+                } else {
+                    write_user_nofail(IoStatusBlock, KernelIosb, PreviousMode);
+                }
 
                 if !(*FileObject).CompletionContext.is_null() {
                     CompletionInfo = *((*FileObject).CompletionContext);
@@ -837,6 +875,11 @@ unsafe fn IopDeviceFsIoControl(
 
     if IsDevIoCtl == 0 {
         (*Irp).Flags |= IRP_DEFER_IO_COMPLETION;
+    }
+
+    // After the METHOD_* arms above, which ASSIGN Flags rather than OR into it.
+    if Iosb32 {
+        (*Irp).Flags |= IRP_WOW64_IOSB32;
     }
 
     if IoControlCode == FSCTL_DISMOUNT_VOLUME {

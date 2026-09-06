@@ -53,6 +53,7 @@ the baseline.
 from __future__ import annotations
 
 import argparse
+import os
 import re
 import sys
 from collections import defaultdict
@@ -265,14 +266,24 @@ def c_dirs_for(crate: str) -> list[Path]:
     collides on short names and its findings are overwhelmingly false."""
     stem = crate.removesuffix("-rust").removesuffix("-sys")
     stem = {"ntkrnl": "ntoskrnl", "rtlk": "rtl", "win32k": "win32ss"}.get(stem, stem)
+    # PRUNE during the walk, don't filter after it. `REPO.rglob(stem)` descends into every
+    # excluded tree before the `rel.startswith(...)` test can reject it -- including
+    # `sdk/lib/rust/target`, which a CONCURRENT cargo build is deleting directories out of.
+    # That raced and crashed the scanner with FileNotFoundError deep inside pathlib, which the
+    # gate reported as "NEW lint findings" -- a crash misfiled as a verdict. It only became
+    # reachable when the source-early partition started running scanners alongside builds
+    # rather than after them. `onerror` keeps a directory vanishing mid-walk from being fatal
+    # anywhere else, and pruning is also much faster: target/ dwarfs the rest of the tree.
+    skip = ("build-", "modules/rostests", "sdk/lib/rust", ".git")
     hits = []
-    for d in REPO.rglob(stem):
-        if not d.is_dir():
-            continue
-        rel = str(d.relative_to(REPO))
-        if rel.startswith(("build-", "modules/rostests", "sdk/lib/rust", ".git")):
-            continue
-        hits.append(d)
+    for root, dirnames, _files in os.walk(REPO, onerror=lambda _e: None):
+        rel_root = Path(root).relative_to(REPO)
+        dirnames[:] = [
+            d
+            for d in dirnames
+            if not str(rel_root / d if str(rel_root) != "." else Path(d)).startswith(skip)
+        ]
+        hits.extend(Path(root) / d for d in dirnames if d == stem)
     return hits
 
 

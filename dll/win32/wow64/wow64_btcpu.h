@@ -31,6 +31,13 @@
  * addresses. */
 BOOLEAN Wow64IsCurrentProcess(HANDLE Process);
 
+/* PEB64->ProcessHeap. Shared rather than duplicated: the accessor hard-codes
+ * TEB/PEB field offsets (this DLL imports ntdll only, so there is no
+ * RtlGetProcessHeap), and a second copy of those offsets is a second thing to
+ * get wrong. Marshallers whose temp size depends on a guest-supplied count use
+ * it. */
+PVOID Wow64pProcessHeap(VOID);
+
 /* NtAllocateVirtualMemory */
 VOID Wow64NotifyAllocBefore(PVOID Base, SIZE_T Size, ULONG Type, ULONG Protect);
 VOID Wow64NotifyAllocAfter(PVOID Base, SIZE_T Size, ULONG Type, ULONG Protect,

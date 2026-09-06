@@ -12,6 +12,18 @@
 
 extern crate crt_shared_rust;
 
+// The ucrtbase half of the math wave, and the reason it needs an `extern crate` rather than
+// just a manifest entry: a dependency nothing references contributes NO objects to a
+// staticlib, so the feature would compile cabi/math.rs and the 66 `#[no_mangle]` libm bodies
+// would never reach the archive. That failure is silent -- the build is green, the gate is
+// green, and the flip simply has not happened. (Confirmed the hard way: with the manifest
+// edit alone, `libcrt_shared_cargo.a` defined 268 symbols and not one of them was `tan`.)
+//
+// ucrtbase.dll does not take its math from the vendored `sdk/lib/ucrt`; it links OUR
+// `crtmath`, so these flip crtmath's C by lld first-match exactly as they already do in
+// msvcrt.dll. Mirrors msvcrt-crt-cargo's `extern crate cnt_rust`.
+extern crate cnt_rust;
+
 // Absorbed by --allow-multiple-definition against any other Rust staticlib in the module
 // (mirrors msvcrt-crt-cargo and crt-dllmain-rust).
 #[no_mangle]
