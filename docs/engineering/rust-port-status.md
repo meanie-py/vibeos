@@ -1227,6 +1227,47 @@ msvcrt has a cohab. Doing it means a lib-level `crtmath-rust` archive linked ahe
 five consumers — which is also the rail the ucrtbase lane needs. Note `sinf`/`cosf`/`powf` are
 in that 18, so the `sincosf` implib question is a crtmath question too.
 
+#### crtmath sized, and the island question answered — 2026-09-06
+
+`profile_derive sdk/lib/crt --target crtmath --usermode` derives cleanly (159 compiled TUs,
+155 headers). Sorting those 159 by who actually owns them is the point of running it:
+
+| bucket | files | lines |
+|---|---|---|
+| AMD LibM — `math/libm_sse2/`, vendored | 48 | 8,900 |
+| Sun FDLIBM — `math/ieee754/`, vendored | 3 | 1,346 |
+| i386-only (x87 asm shims, `_CI*`, `libm_sse2.c`) | 13 | 772 |
+| already has a `cnt-rust` Rust body | 60 | 2,234 |
+| **ours, still C** | **35** | **1,259** |
+
+So the lane is ~1,259 lines, not the ~4,100 the raw file sizes suggest, and both vendored
+trees are now in `vendor.yaml` — registering them is most of what made the number move.
+
+**It does NOT want a bindgen island, and that is the design decision.** An island buys exact
+struct layouts and header constants; crtmath has essentially no structs (`_exception` is
+already in msvcrt-sys) and the surface is pure numerics plus the FPU control word. The 61
+libm bodies already in `cabi/math.rs` were done without one, are graded per-symbol in
+cnt-difftest against the same C `crtmath` compiles, and now ship in the kernel, msvcrt.dll
+and ucrtbase.dll alike. The remaining 35 files belong in the same place by the same method.
+
+What the derive DOES owe, and what the next lane must not skip:
+
+* **5 BLOCKING `SWITCH_CONST_IN_BASE_HEADER` findings** — `_PC_24`, `_PC_53`, `_PC_64`,
+  `_RC_DOWN`, `_RC_UP`, all `switch` labels in `float/i386/cntrlfp.c`, all owned by
+  `float.h`, none in any `-sys` crate. Untranslated they become a silent catch-all arm
+  (§9.112). Transcribe them into the crate, per the finding's own instruction; do not
+  allowlist `float.h`, which re-emits the platform.
+* **423 `.c` under `sdk/lib/crt` that nothing compiles** (`DEAD_SOURCE`). Not translation
+  debt; do not pay for any of them.
+* **Two islands would be needed IF one were ever generated** — `libm_inlines.h` and
+  `rtlfuncs.h` both define `return`, and no TU includes both. That only matters for the
+  AMD tree, which is vendored, so it is a fact to record rather than act on.
+
+The five-consumer rail the paragraph above asks for is now half built: msvcrt.dll (wave 14m)
+and ucrtbase.dll (2026-09-05) both whole-archive `cabi-math` ahead of `libcrtmath.a`.
+msvcrt20, msvcrt40 and crtdll do not, and that — not the translation — is the remaining
+plumbing.
+
 The regression is the one worth carrying forward: `_mbctype` was **two arrays**. `msvcrt.spec`
 exports it as `@ extern _mbctype MSVCRT_mbctype`, mbcs.rs defined `MSVCRT_mbctype` without
 `#[no_mangle]`, and the mangled Rust static therefore did not satisfy the export — mbcs.c's
