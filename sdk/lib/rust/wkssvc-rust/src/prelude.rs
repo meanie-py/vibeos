@@ -11,11 +11,7 @@ pub use core::ptr::{addr_of, addr_of_mut};
 // The wine/debug.h channel (TRACE/ERR/WARN/FIXME). Kept as no-op MACROS, never out-of-line fns:
 // an out-of-line no-op is an optimization barrier that uncloaks latent ABI mismatches into ud2
 // (field manual §9.65). The WINE_-prefixed spellings are the same macros under their long names.
-#[macro_export] macro_rules! TRACE { ($($arg:tt)*) => {{}}; }
-#[macro_export] macro_rules! ERR   { ($($arg:tt)*) => {{}}; }
-#[macro_export] macro_rules! WARN  { ($($arg:tt)*) => {{}}; }
-#[macro_export] macro_rules! FIXME { ($($arg:tt)*) => {{}}; }
-pub use crate::{ERR, FIXME, TRACE, WARN};
+
 #[macro_export] macro_rules! WINE_TRACE { ($($arg:tt)*) => {{}}; }
 #[macro_export] macro_rules! WINE_ERR   { ($($arg:tt)*) => {{}}; }
 #[macro_export] macro_rules! WINE_WARN  { ($($arg:tt)*) => {{}}; }
@@ -293,7 +289,6 @@ pub use crate::types::{
 pub type RPC_STATUS = LONG;
 pub type RPC_MGR_EPV = *mut c_void;
 pub type UUID = GUID;
-
 
 // The MIDL allocator hooks are APPLICATION-supplied: the C defines them in this module's own
 // rpcserver.c and the generated _s.c marshaller calls them. They are NOT rpcrt4 imports —

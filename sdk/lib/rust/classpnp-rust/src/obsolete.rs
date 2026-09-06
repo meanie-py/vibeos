@@ -43,9 +43,9 @@ pub type PCSCAN_LIST_ENTRY = *mut _CSCAN_LIST_ENTRY;
 // External declarations for unknown functions
 
 // Function constants
-const TRACE_LEVEL_WARNING: u32 = 4;
-const TRACE_LEVEL_INFORMATION: u32 = 4; // Adjust as needed, often 4.
-const TRACE_FLAG_GENERAL: u32 = 0x00000001;
+const TRACE_LEVEL_WARNING: u32 = 3; // storswtr.h:26-30
+const TRACE_LEVEL_INFORMATION: u32 = 4; // storswtr.h:26-30
+const TRACE_FLAG_GENERAL: u32 = 0; // storswtr.h:80-98 (an ORDINAL enum, not a bitmask)
 const SRB_STATUS_QUEUE_FROZEN: u8 = 0x40;
 const MAXIMUM_RETRIES: u32 = 0x04;
 const SL_OVERRIDE_VERIFY_VOLUME: u8 = 0x02; // approximate, actual may differ

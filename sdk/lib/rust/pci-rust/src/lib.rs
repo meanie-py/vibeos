@@ -11,6 +11,11 @@
 // One C file → one module (rustconv per-file convention). `shared` holds the
 // driver-private device extensions (pci.h) used across all three modules, plus
 // the module-global DriverExtension / HasDebuggingDevice / PciDebuggingDevice.
+// DPRINT/DPRINT1 for the whole crate; `#[macro_use]` must precede the modules
+// that call them (macro_rules! is textually scoped).
+#[macro_use]
+mod dprint;
+
 pub mod shared;
 pub mod pci;
 pub mod fdo;

@@ -98,7 +98,7 @@ const ICIF_QUERY: ULONG = 0x01;
 const ICIF_SET: ULONG = 0x02;
 const ICIF_QUERY_SIZE_VARIABLE: ULONG = 0x04;
 const ICIF_SIZE_VARIABLE: ULONG = 0x08;
-const ICIF_SET_SIZE_VARIABLE: ULONG = 0x10;
+const ICIF_SET_SIZE_VARIABLE: ULONG = ntkrnl_sys::inline::common::ICIF_SET_SIZE_VARIABLE as ULONG;
 const ICIF_PROBE_READ_WRITE: ULONG = 0x200;
 const ICIF_FORCE_RETURN_LENGTH_PROBE: ULONG = 0x400;
 
@@ -1032,6 +1032,8 @@ pub unsafe extern "system" fn NtSetInformationToken(
         core::ptr::null_mut(),
     );
     if status >= 0 {
+        // Own the reference across every early return from a failed capture.
+        let _token_ref = ObjRefGuard::new(token as PVOID);
         'cleanup: loop {
             match TokenInformationClass as ULONG {
                 4 => {
@@ -1290,20 +1292,52 @@ pub unsafe extern "system" fn NtSetInformationToken(
                 16 => {
                     let policy_information = TokenInformation as PTOKEN_AUDIT_POLICY_INFORMATION;
                     let mut audit_policy: _SEP_AUDIT_POLICY = core::mem::zeroed();
+                    let header_size = core::mem::offset_of!(TOKEN_AUDIT_POLICY_INFORMATION, Policies);
+                    if (TokenInformationLength as usize) < header_size {
+                        status = STATUS_INFO_LENGTH_MISMATCH;
+                        break 'cleanup;
+                    }
+                    // Capture the count once. Never re-read a caller-controlled
+                    // count after checking the extent of its flexible array.
+                    let policy_count = match probe_read_user::<ULONG>(TokenInformation as _, previous_mode) {
+                        Ok(v) => v,
+                        Err(s) => return s,
+                    };
+                    let policy_size = core::mem::size_of::<_TOKEN_AUDIT_POLICY_INFORMATION__bindgen_ty_1>();
+                    let required_length = match (policy_count as usize).checked_mul(policy_size)
+                        .and_then(|size| size.checked_add(header_size))
+                    {
+                        Some(size) if size <= TokenInformationLength as usize => size,
+                        _ => {
+                            status = STATUS_INFO_LENGTH_MISMATCH;
+                            break 'cleanup;
+                        }
+                    };
+                    if let Err(s) = probe_user_buffer(
+                        TokenInformation, required_length, core::mem::align_of::<ULONG>(), previous_mode,
+                    ) {
+                        return s;
+                    }
 
-                    for i in 0..(*policy_information).PolicyCount {
-                        let policy = (*policy_information).Policies.as_ptr().offset(i as isize);
+                    for i in 0..policy_count {
+                        let policy_ptr = (policy_information as *const u8)
+                            .wrapping_add(header_size + i as usize * policy_size)
+                            .cast::<_TOKEN_AUDIT_POLICY_INFORMATION__bindgen_ty_1>();
+                        let policy = match probe_read_user(policy_ptr, previous_mode) {
+                            Ok(v) => v,
+                            Err(s) => return s,
+                        };
                         let elements = &mut audit_policy.__bindgen_anon_1.PolicyElements;
-                        match (*policy).Category {
-                            AUDIT_CATEGORY_SYSTEM => elements.set_System((*policy).Value),
-                            AUDIT_CATEGORY_LOGON => elements.set_Logon((*policy).Value),
-                            AUDIT_CATEGORY_OBJECT_ACCESS => elements.set_ObjectAccess((*policy).Value),
-                            AUDIT_CATEGORY_PRIVILEGE_USE => elements.set_PrivilegeUse((*policy).Value),
-                            AUDIT_CATEGORY_DETAILED_TRACKING => elements.set_DetailedTracking((*policy).Value),
-                            AUDIT_CATEGORY_POLICY_CHANGE => elements.set_PolicyChange((*policy).Value),
-                            AUDIT_CATEGORY_ACCOUNT_MANAGEMENT => elements.set_AccountManagement((*policy).Value),
-                            AUDIT_CATEGORY_DIRECTORY_SERVICE_ACCESS => elements.set_DirectoryServiceAccess((*policy).Value),
-                            AUDIT_CATEGORY_ACCOUNT_LOGON => elements.set_AccountLogon((*policy).Value),
+                        match policy.Category {
+                            AUDIT_CATEGORY_SYSTEM => elements.set_System(policy.Value),
+                            AUDIT_CATEGORY_LOGON => elements.set_Logon(policy.Value),
+                            AUDIT_CATEGORY_OBJECT_ACCESS => elements.set_ObjectAccess(policy.Value),
+                            AUDIT_CATEGORY_PRIVILEGE_USE => elements.set_PrivilegeUse(policy.Value),
+                            AUDIT_CATEGORY_DETAILED_TRACKING => elements.set_DetailedTracking(policy.Value),
+                            AUDIT_CATEGORY_POLICY_CHANGE => elements.set_PolicyChange(policy.Value),
+                            AUDIT_CATEGORY_ACCOUNT_MANAGEMENT => elements.set_AccountManagement(policy.Value),
+                            AUDIT_CATEGORY_DIRECTORY_SERVICE_ACCESS => elements.set_DirectoryServiceAccess(policy.Value),
+                            AUDIT_CATEGORY_ACCOUNT_LOGON => elements.set_AccountLogon(policy.Value),
                             _ => {}
                         }
                     }
@@ -1350,7 +1384,6 @@ pub unsafe extern "system" fn NtSetInformationToken(
             break;
         }
 
-        ObDereferenceObject(token as PVOID);
     }
 
     status

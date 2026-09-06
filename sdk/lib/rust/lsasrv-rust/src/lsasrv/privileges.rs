@@ -549,11 +549,6 @@ pub unsafe extern "C" fn LsarpEnumeratePrivileges(
     EnumerationBuffer: PLSAPR_PRIVILEGE_ENUM_BUFFER,
     PreferedMaximumLength: DWORD,
 ) -> NTSTATUS {
-    macro_rules! TRACE {
-        ($($arg:tt)*) => {
-            // Trace omitted
-        };
-    }
 
     let mut Privileges: PLSAPR_POLICY_PRIVILEGE_DEF = core::ptr::null_mut::<LSAPR_POLICY_PRIVILEGE_DEF>();
     let mut EnumIndex: u32;

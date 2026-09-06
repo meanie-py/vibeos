@@ -75,9 +75,37 @@ unsafe fn co_int_graphics_check(create: BOOL) -> BOOL {
     let w32data: PPROCESSINFO = PsGetCurrentProcessWin32Process() as PPROCESSINFO;
     let flags = (*pw32(w32data)).W32PF_flags;
     if create != 0 {
-        if flags & W32PF_CREATEDWINORDC == 0 && flags & W32PF_MANUALGUICHECK == 0 {
-            return co_add_gui_app(w32data);
+        // LOCAL FIX (not upstream): retry the deferred cursor/icon load on every GUI
+        // check, and do it AFTER co_add_gui_app.
+        //
+        // co_IntInitializeDesktopGraphics' cursor/icon block is compiled out here by
+        // this tree's `#if !defined(_USE_DUMMY_PSEH)` (and -D_USE_DUMMY_PSEH=1 is on
+        // every i386 TU, so the comment claiming i386 keeps it is wrong), leaving
+        // co_IntDeferredCursorsAndIcons as the only path that ever loads them. It was
+        // reached EXACTLY ONCE per boot, on the desktop thread, where its own guard
+        // makes it return immediately — so gasyscur stayed NULL for the whole boot and
+        // every system class registered with hCursor = NULL.
+        //
+        // Order matters: NtUserSetSystemCursor only stores into gasyscur for a process
+        // that already has W32PF_CREATEDWINORDC (cursoricon.c), which co_add_gui_app is
+        // what sets. Calling before it loads every cursor in user mode and then throws
+        // them away in the kernel — silently, since the syscall just returns FALSE.
+        //
+        // The call is idempotent and self-guarded (gbDesktopCursorsAndIconsLoaded, the
+        // desktop-thread check, and a NULL KernelCallbackTable all bail), so attempting
+        // it from each GUI thread costs one predictable-branch test once loaded.
+        let ret = if flags & W32PF_CREATEDWINORDC == 0 && flags & W32PF_MANUALGUICHECK == 0 {
+            co_add_gui_app(w32data)
+        } else {
+            1
+        };
+        // Only once the process really is a GUI app: NtUserSetSystemCursor stores
+        // nothing without W32PF_CREATEDWINORDC, so on a failed co_add_gui_app this
+        // would load every cursor in user mode just to have the kernel drop it.
+        if ret != 0 {
+            co_IntDeferredCursorsAndIcons();
         }
+        return ret;
     } else {
         if flags & W32PF_CREATEDWINORDC != 0 && flags & W32PF_MANUALGUICHECK == 0 {
             remove_gui_app(w32data);

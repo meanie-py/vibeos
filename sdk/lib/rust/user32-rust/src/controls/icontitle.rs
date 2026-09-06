@@ -3,14 +3,6 @@ use win32k_sys::win32k::*;
 use core::ffi::c_void;
 
 // ---- debug-print macros (DbgPrint-free no-ops; mirror cursoricon.rs) ----
-#[allow(unused_macros)]
-macro_rules! TRACE { ($($t:tt)*) => {{ }}; }
-#[allow(unused_macros)]
-macro_rules! WARN  { ($($t:tt)*) => {{ }}; }
-#[allow(unused_macros)]
-macro_rules! ERR   { ($($t:tt)*) => {{ }}; }
-#[allow(unused_macros)]
-macro_rules! FIXME { ($($t:tt)*) => {{ }}; }
 
 // These user32 entry points are inline ntwrapper wrappers (NtUser* multiplexers),
 // not external link symbols — import them instead of declaring them extern.

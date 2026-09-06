@@ -2,12 +2,6 @@ use win32k_sys::win32k::*;
 use ntkrnl_sys::ddk::{PsGetCurrentThreadWin32Thread, RtlUnicodeToMultiByteSize};
 use ntkrnl_sys::base::NT_SUCCESS;
 
-// TRACE/WARN/ERR/FIXME — DbgPrint-style no-ops (no kernel symbol in non-DBG build).
-macro_rules! TRACE { ($($t:tt)*) => {{}}; }
-macro_rules! WARN { ($($t:tt)*) => {{}}; }
-macro_rules! ERR { ($($t:tt)*) => {{}}; }
-macro_rules! FIXME { ($($t:tt)*) => {{}}; }
-
 // min/max (windef.h macros).
 #[inline(always)]
 fn min<T: PartialOrd>(a: T, b: T) -> T { if a < b { a } else { b } }
@@ -420,7 +414,7 @@ unsafe fn DefWndHandleSysCommand(mut pWnd: PWND, wParam: WPARAM, lParam: LPARAM)
         }
 
         SC_SCREENSAVE => {
-            ERR!(b"Screensaver Called!\n\0".as_ptr());
+            ERR!("Screensaver Called!\n");
             UserPostMessage(hwndSAS, WM_LOGONNOTIFY, LN_START_SCREENSAVE as _, 0);
         }
 
@@ -687,7 +681,7 @@ unsafe fn DefWndSetIcon_impl(pWnd: PWND, wParam: WPARAM, lParam: LPARAM) -> LRES
             hIconSmall = lParam as HICON;
         }
         ICON_SMALL2 => {
-            ERR!(b"FIXME: Set ICON_SMALL2 support!\n\0".as_ptr());
+            ERR!("FIXME: Set ICON_SMALL2 support!\n");
         }
         _ => {}
     }

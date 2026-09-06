@@ -90,9 +90,11 @@ def scan_pe(objd: str, pe: Path) -> list[tuple[str, str]]:
             capture_output=True,
             text=True,
             timeout=180,
+            check=True,
         ).stdout
-    except (OSError, subprocess.SubprocessError):
-        return []
+    except (OSError, subprocess.SubprocessError) as error:
+        detail = getattr(error, "stderr", None) or str(error)
+        raise RuntimeError(f"cannot disassemble {pe}: {detail}") from error
 
     hits: list[tuple[str, str]] = []
     lines = out.split("\n")
@@ -133,12 +135,22 @@ def main() -> int:
     repo = args.build_dir.resolve().parent
     objd = objdump(args.build_dir)
     hits: list[tuple[str, str]] = []
+    scanned = 0
     for pe in sorted(args.build_dir.rglob("*")):
         if pe.suffix not in _SUFFIXES or not pe.is_file():
             continue
         if any(s in str(pe) for s in _SKIP_DIRS):
             continue
-        hits.extend(scan_pe(objd, pe))
+        try:
+            hits.extend(scan_pe(objd, pe))
+        except RuntimeError as error:
+            print(f"scan_self_recursive: {error}", file=sys.stderr)
+            return 2
+        scanned += 1
+
+    if not scanned:
+        print(f"scan_self_recursive: no PE inputs in {args.build_dir}", file=sys.stderr)
+        return 2
 
     baseline = load_baseline(repo)
     found = {f"{mod}: {sym}" for mod, sym in hits}

@@ -54,6 +54,14 @@ _PYTEST_SUITES = [
     (".", ".", "tools/test_verify_cohab_coverage.py"),
     (".", ".", "tools/test_scan_import_cc.py"),
     (".", ".", "tools/test_scan_octal_literals.py"),
+    (".", ".", "tools/test_scan_invented_constants.py"),
+    (".", ".", "tools/test_kernel_probe.py"),
+    (".", ".", "tools/test_scan_orphan_modules.py"),
+    (".", ".", "tools/test_build_invalidation.py"),
+    (".", ".", "tools/test_cargo_depgraph.py"),
+    (".", ".", "tools/test_retarget_cargo_depfile.py"),
+    (".", ".", "tools/test_rust_module_tree.py"),
+    (".", ".", "tools/test_scan_self_recursive.py"),
     # Same shape as the two above: the matcher is pure functions over a string, and its
     # positive control is the real demangler bug — a sequencing error that shipped because
     # no value-based check can see it.

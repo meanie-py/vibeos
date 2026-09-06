@@ -174,7 +174,6 @@ pub unsafe extern "system" fn LsaSpSetExtendedInformation(
     STATUS_NOT_IMPLEMENTED
 }
 
-
 // ============================================================================
 // ORIGINAL C SOURCE
 // ============================================================================

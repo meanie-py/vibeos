@@ -50,13 +50,6 @@ extern "system" {
     ) -> POWER_STATE;
 }
 
-// ---- Debug print macros: no-ops under the driver's NDEBUG build. ----
-macro_rules! DPRINT1 {
-    ($($t:tt)*) => {};
-}
-macro_rules! DPRINT {
-    ($($t:tt)*) => {};
-}
 // NT_ASSERT maps to the no-op ASSERT helper (kept from the substrate).
 macro_rules! NT_ASSERT {
     ($($t:tt)*) => {};

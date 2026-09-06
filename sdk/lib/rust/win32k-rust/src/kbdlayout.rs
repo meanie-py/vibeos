@@ -27,18 +27,9 @@ macro_rules! w {
 }
 
 
-// ERR/TRACE/WARN/FIXME — DbgPrint-style no-ops (release).
-// ERR! made REAL in this file (2026-07-07 doom-playable triage): every
-// keyboard-layout load failure was a silent no-op, so gspklBaseLayout==NULL
-// (=> win32k drops EVERY key: "NO keyboard layout") had no serial signature.
-// Args at each site are already DbgPrint-style (fmt, ...).
 extern "C" {
     fn DbgPrint(Format: *const i8, ...) -> u32;
 }
-macro_rules! ERR { ($($t:tt)*) => {{ DbgPrint($($t)*); }}; }
-macro_rules! TRACE { ($($t:tt)*) => {{}}; }
-macro_rules! WARN { ($($t:tt)*) => {{}}; }
-macro_rules! FIXME { ($($t:tt)*) => {{}}; }
 
 // gspklBaseLayout — kbdlayout.c-owned global (win32k-sys only declares it extern).
 // kbdlayout.rs is the defining site now; #[no_mangle] shadows the glob extern import.
@@ -499,7 +490,7 @@ unsafe fn UserLoadKbdFile(pwszKLID: PUNICODE_STRING) -> PKBDFILE {
     ) as PKBDFILE;
 
     if pkf.is_null() {
-        ERR!(b"Failed to create object!\n\0".as_ptr() as *const i8);
+        ERR!("Failed to create object!\n");
         return core::ptr::null_mut();
     }
 
@@ -519,7 +510,7 @@ unsafe fn UserLoadKbdFile(pwszKLID: PUNICODE_STRING) -> PKBDFILE {
         Status = RegOpenKey(wszLayoutRegKey.as_mut_ptr(), &mut hKey);
         if !NT_SUCCESS(Status) {
             ERR!(
-                b"Failed to open keyboard layouts registry key %ws (%lx)\n\0".as_ptr() as *const i8,
+                "Failed to open keyboard layouts registry key %ws (%lx)\n",
                 wszLayoutRegKey.as_ptr(),
                 Status,
             );
@@ -540,7 +531,7 @@ unsafe fn UserLoadKbdFile(pwszKLID: PUNICODE_STRING) -> PKBDFILE {
 
         if !NT_SUCCESS(Status2) {
             ERR!(
-                b"Can't get layout filename for %wZ (%lx)\n\0".as_ptr() as *const i8,
+                "Can't get layout filename for %wZ (%lx)\n",
                 pwszKLID,
                 Status2,
             );
@@ -554,7 +545,7 @@ unsafe fn UserLoadKbdFile(pwszKLID: PUNICODE_STRING) -> PKBDFILE {
         ) == 0
         {
             ERR!(
-                b"Failed to load %ws dll!\n\0".as_ptr() as *const i8,
+                "Failed to load %ws dll!\n",
                 wszLayoutPath.as_ptr(),
             );
             break 'cleanup;
@@ -595,7 +586,7 @@ unsafe fn co_UserLoadKbdLayout(pustrKLID: PUNICODE_STRING, hKL: HKL) -> PKL {
         core::mem::size_of::<KL>() as _,
     ) as PKL;
     if pKl.is_null() {
-        ERR!(b"Failed to create object!\n\0".as_ptr() as _);
+        ERR!("Failed to create object!\n");
         return core::ptr::null_mut();
     }
 
@@ -607,7 +598,7 @@ unsafe fn co_UserLoadKbdLayout(pustrKLID: PUNICODE_STRING, hKL: HKL) -> PKL {
 
     /* If we failed, remove KL object */
     if (*pKl).spkf.is_null() {
-        ERR!(b"UserLoadKbdFile failed!\n\0".as_ptr() as _, pustrKLID);
+        ERR!("UserLoadKbdFile failed!\n", pustrKLID);
         UserDeleteObject(UserHMGetHandle(pKl), TYPE_KBDLAYOUT);
         return core::ptr::null_mut();
     }
@@ -618,7 +609,7 @@ unsafe fn co_UserLoadKbdLayout(pustrKLID: PUNICODE_STRING, hKL: HKL) -> PKL {
         16,
         &mut lCid as *mut LCID as *mut u32,
     )) {
-        ERR!(b"RtlUnicodeStringToInteger failed\n\0".as_ptr() as _, pustrKLID);
+        ERR!("RtlUnicodeStringToInteger failed\n", pustrKLID);
         UserDeleteObject(UserHMGetHandle(pKl), TYPE_KBDLAYOUT);
         return core::ptr::null_mut();
     }

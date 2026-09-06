@@ -1754,7 +1754,15 @@ pub unsafe extern "C" fn ClasspAccessAlignmentProperty(
                 status = STATUS_INTERNAL_ERROR;
                 break 'work;
             }
-            _ => {}
+            // utils.c's switch has NO `default:` label, so an unmatched value falls
+            // straight out of the switch onto `Exit:`. An empty arm does NOT do that
+            // inside the goto-elimination loop: it reaches the end of `'work: loop`
+            // and re-matches the UNCHANGED scrutinee forever. arm64 emitted it as a
+            // literal `b .` -- a silent hang on the storage property path, no bugcheck
+            // and no serial output. Leaving the switch IS the break.
+            _ => {
+                break 'work;
+            }
         }
     }
     // Exit label (after loop)
@@ -2860,7 +2868,7 @@ pub unsafe extern "C" fn DeviceProcessDsmTrimRequest(
     #[cfg(not(any(target_arch = "arm", target_arch = "aarch64")))]
     {
         buffer = ExAllocatePoolWithTag(
-            0x200u32, // NonPagedPoolNx
+            0, // NonPagedPoolNx: ReactOS #defines it to NonPagedPool (no NX pool here)
             bufferLength as usize,
             u32::from_ne_bytes(*b"TpLC"),
         ) as *mut _UNMAP_LIST_HEADER;

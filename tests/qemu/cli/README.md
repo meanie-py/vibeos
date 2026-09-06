@@ -183,10 +183,20 @@ overnight soak: `farm --arches i386,amd64,arm64 --minutes 480 --tripwire
 "SPECIALPOOL=*"`. Staleness-gated like smoke.
 
 ### `gate [--arches i386,amd64,arm64] [--retries N] [--no-build] [--clean] [--no-net]`
+
+The full source-scanner suite runs **once**, after the build matrix finishes so
+generated inputs belong to this worktree. Cargo-link, committed-drift, binary and
+cohab guards remain per architecture. A push stamp requires the shared source
+result and every requested architecture's guards, as well as the other gate stages.
+The underlying `check --scope source --strict` and
+`check --scope arch --strict --arch X` commands are explicitly partial diagnostics,
+not standalone full checks. They cannot combine with `--only` or baseline updates;
+ordinary `check --strict --arch X` still runs both partitions.
+
 **The parallel pre-land verdict** — the North Star "gate ×3 (all arches green)"
-done concurrently instead of by a serial human loop. It builds each arch (serial,
-still under the exclusive host CPU lease — `--no-build` to skip), then launches
-**all arches' smokes in parallel** (wall-clock goes sum→max), then for any arch
+done concurrently instead of by a serial human loop. It submits every arch's build
+to the shared host CPU broker (`--no-build` to skip), then launches each arch's
+smoke as soon as its own build finishes. For any arch
 that fails retryably launches up to `--retries` (default 2) concurrent fresh
 attempts and passes the arch on the first green. Retry-eligible: a *documented*
 flake (`KNOWN_FLAKE` / `FLAKY`), an environment failure (`LAUNCH_FAIL`), or a
@@ -205,11 +215,11 @@ flowing at the deadline) with **no** kernel census/lockdep wedge self-report.
   capacity-derived — 8 on a 24-vCPU box, was a flat 4) and the global QEMU cap
   (16); the per-arch serialize cap is bypassed on the default windows-host TCG
   backend, so same-arch retries run in parallel too.
-- **`cohab:<arch>` — the one stage that must read binaries.** `tools/verify_cohab_
+- **`cohab:<arch>` — fresh object coverage.** `tools/verify_cohab_
   coverage.py` asks each flipped C object what it *exports* (`llvm-nm`, after every
   `-D`, `#ifdef` and ABI decoration) and checks that something linking ahead of the
-  static library defines it. Not a `check` lint, because `check` is source-only by
-  contract and the source cannot answer: `cargo check` never codegens, so
+  static library defines it. Unlike standalone checks, it requires objects
+  produced by this gate. Source analysis cannot answer: `cargo check` never codegens, so
   `global_asm!` is never assembled and `#[export_name]` never becomes a symbol.
   Eight msvcrt `__stdcall` stubs shipped as `___adj_fdiv_m16i@4@4` — `#[export_name]`
   STACKS with i386 PE decoration rather than replacing it — and built, linked and
@@ -583,11 +593,24 @@ scrape stdout for the result — stdout is intentionally lossy.
 Exit code: `0` for OK/WARN, `1` for FAIL. Stdout glyphs: `✓` ok, `⚠` warn,
 `✗` fail, `·` skip.
 
+For performance, read `summary.json.command_timings`: each subprocess has a
+`stage`, `start_seconds` offset from run start, `seconds`, and `exit`. The same
+fields appear in `commands.jsonl`. These are command timings, not verdict-stage
+timings; concurrent durations overlap and must not be summed as elapsed time.
+They include subprocess-internal waits, but not fleet acquisition outside the
+subprocess. Rust cache statistics also preserve `non_cacheable`,
+`non_cacheable_reasons`, `cache_errors`, and `compilations`; zero requests is not
+evidence of a cache miss. See [build reuse plan](../../../docs/engineering/build-reuse-plan.md)
+for the remaining measurement and invalidation work.
+
 ---
 
 ## Typical loops
 
 ```bash
+# targeted source-scanner investigation (explicitly partial; never a landing gate)
+./vibeos-cli check --arch amd64 --strict --only scan_orphan_modules,verify_match_consts
+
 # edit Rust → fast warm check it still boots i386
 ./vibeos-cli build  --arch i386 && ./vibeos-cli smoke --arch i386
 

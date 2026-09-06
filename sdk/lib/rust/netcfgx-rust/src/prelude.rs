@@ -14,10 +14,27 @@ pub use core::ffi::{c_char, c_int, c_long, c_short, c_uchar, c_uint, c_ulong, c_
 pub use core::ptr::{addr_of, addr_of_mut};
 
 // ================= debug ======================================================================
-// reactos/debug.h DPRINT/DPRINT1 — no-op MACROS, never out-of-line fns
-// (field manual §9.65: an out-of-line no-op is an optimization barrier).
+// `NDEBUG` silences DPRINT only. DPRINT1 sits OUTSIDE that guard in
+// sdk/include/reactos/debug.h, so it is live whenever DBG is set — and our media is
+// built -DCMAKE_BUILD_TYPE=Debug, i.e. -DDBG=1. Both stay MACROS, never out-of-line
+// fns (field manual §9.65: a no-op fn is an optimization barrier). The C passes
+// __RELFILE__/__LINE__ as two extra varargs; file!()/line!() fold into the literal.
 #[macro_export] macro_rules! DPRINT  { ($($arg:tt)*) => {{}}; }
-#[macro_export] macro_rules! DPRINT1 { ($($arg:tt)*) => {{}}; }
+// ntdll exports DbgPrint; every usermode DLL links it.
+extern "C" {
+    pub fn DbgPrint(Format: *const c_char, ...) -> u32;
+}
+#[macro_export]
+macro_rules! DPRINT1 {
+    ($fmt:literal $(, $arg:expr)* $(,)?) => {
+        unsafe {
+            $crate::prelude::DbgPrint(
+                concat!("(", file!(), ":", line!(), ") ", $fmt, "\0").as_ptr() as *const _
+                $(, $arg)*,
+            )
+        }
+    };
+}
 pub use crate::{DPRINT, DPRINT1};
 
 // ================= CRT ========================================================================
@@ -260,14 +277,7 @@ macro_rules! ListView_DeleteItem {
     ($h:expr, $i:expr $(,)?) => { $crate::prelude::SendMessageW($h, LVM_DELETEITEM as UINT, $i as WPARAM, 0) as BOOL };
 }
 
-pub use crate::{
-    Button_SetCheck, ComboBox_AddString, ComboBox_GetCurSel, ComboBox_ResetContent,
-    ComboBox_SetCurSel, CopyMemory, Edit_GetText, Edit_GetTextLength, Edit_LimitText,
-    Edit_SetText, FIELD_OFFSET, FIRST_IPADDRESS, FOURTH_IPADDRESS, IsEqualCLSID,
-    IsEqualGUID, IsEqualIID, ListBox_AddString, ListBox_GetCurSel, ListBox_GetItemData,
-    ListBox_SetCurSel, ListBox_SetItemData, ListView_DeleteItem, ListView_GetItemCount,
-    MAKEIPADDRESS, MAKEIPRANGE, PropSheet_Changed, SECOND_IPADDRESS, THIRD_IPADDRESS,
-};
+pub use crate::{Button_SetCheck, ComboBox_AddString, ComboBox_GetCurSel, ComboBox_ResetContent, ComboBox_SetCurSel, CopyMemory, Edit_GetText, Edit_GetTextLength, Edit_LimitText, Edit_SetText, FIELD_OFFSET, FIRST_IPADDRESS, FOURTH_IPADDRESS, IsEqualCLSID, IsEqualGUID, IsEqualIID, ListBox_AddString, ListBox_GetCurSel, ListBox_GetItemData, ListBox_SetCurSel, ListBox_SetItemData, ListView_DeleteItem, ListView_GetItemCount, MAKEIPADDRESS, MAKEIPRANGE, PropSheet_Changed, SECOND_IPADDRESS, THIRD_IPADDRESS};
 // MAKEINTRESOURCE (no suffix) is MAKEINTRESOURCEW only because netcfgx compiles -DUNICODE.
 // That is this module's property, not the shared crate's, so the alias stays here.
 pub use win32macros_rust::MAKEINTRESOURCEW as MAKEINTRESOURCE;

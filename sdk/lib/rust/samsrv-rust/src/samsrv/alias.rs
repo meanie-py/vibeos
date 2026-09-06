@@ -228,14 +228,14 @@ pub unsafe extern "C" fn SampGetMembersInAlias(
             &mut MembersKeyHandle,
         );
         if !NT_SUCCESS(Status) {
-            ERR!(b"SampRegOpenKey failed with status 0x%08lx\n\0".as_ptr(), Status);
+            ERR!("SampRegOpenKey failed with status 0x%08lx\n", Status);
             break 'done;
         }
 
         /* Get the number of members */
         Status = SampRegQueryKeyInfo(MembersKeyHandle, core::ptr::null_mut(), &mut Count);
         if !NT_SUCCESS(Status) {
-            ERR!(b"SampRegQueryKeyInfo failed with status 0x%08lx\n\0".as_ptr(), Status);
+            ERR!("SampRegQueryKeyInfo failed with status 0x%08lx\n", Status);
             break 'done;
         }
 
@@ -323,7 +323,7 @@ pub unsafe extern "C" fn SampRemoveAllMembersFromAlias(
         );
         if !NT_SUCCESS(s) {
             ERR!(
-                b"SampRegOpenKey failed (Status 0x%08lx)\n\0".as_ptr() as *const i8,
+                "SampRegOpenKey failed (Status 0x%08lx)\n",
                 s,
             );
             break 'done s;
@@ -333,7 +333,7 @@ pub unsafe extern "C" fn SampRemoveAllMembersFromAlias(
         let s = SampGetMembersInAlias(AliasObject, &mut MemberCount, &mut MemberArray);
         if !NT_SUCCESS(s) {
             ERR!(
-                b"SampGetMembersInAlias failed (Status 0x%08lx)\n\0".as_ptr() as *const i8,
+                "SampGetMembersInAlias failed (Status 0x%08lx)\n",
                 s,
             );
             break 'done s;

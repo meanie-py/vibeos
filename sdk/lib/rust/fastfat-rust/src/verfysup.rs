@@ -378,7 +378,10 @@ pub unsafe extern "system" fn FatDeferredCleanVolume(
 }
 
 
-const NonPagedPoolNx: u32 = 0x200;
+// fatprocs.h:47: `#define NonPagedPoolNx NonPagedPool` under
+// `#ifdef __REACTOS__` -- NX pool is NT6.2 and this kernel has none, so the
+// Windows value (0x200/0x204) is not what any TU here compiles.
+const NonPagedPoolNx: u32 = 0;
 
 const VCB_STATE_FLAG_WRITE_PROTECTED: u32 = 0x4000;
 const VolumeDirtyWithSurfaceTest: i32 = 2;

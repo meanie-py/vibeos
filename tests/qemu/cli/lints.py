@@ -577,6 +577,26 @@ def source_lint_specs(repo: Path) -> list[tuple]:
             "stdout",
         )
     )
+    # The ORACLE-BEARING half, and the half the above is blind to by construction:
+    # a constant with exactly ONE definition in the tree cannot contradict itself,
+    # so a lone wrong value is invisible there forever. This one needs no inference
+    # because the translator labelled the population itself -- "// placeholder",
+    # "// guessed value", "// assumed" -- and then resolves each name against a
+    # NARROWLY scoped oracle (the C module the crate translates, plus the SDK
+    # headers), because a repo-wide catalog collides on short names and its
+    # findings are overwhelmingly false (§9.113b). fastfat's
+    # IRP_CONTEXT_FLAG_DISABLE_DIRTY was one of these, at 0x100 against
+    # fatstruc.h's 0x01, and it cost a BUGCHECK 0x50 on arm64 through an infinite
+    # recursion whose guard could never fire. MISMATCH is a defect; UNRESOLVED is
+    # a review queue, so the baseline gates NEW only.
+    sic = repo / "tools" / "scan_invented_constants.py"
+    specs.append(
+        (
+            "scan_invented_constants",
+            [py, str(sic), "--lint"] if sic.is_file() else ["MISSING"],
+            "stdout",
+        )
+    )
     # The type-level sibling of the above, and the reason it exists is that a width
     # disagreement does not merely compare wrong, it CORRUPTS MEMORY. fastfat's VBO
     # (task #46) was `ULONG32` in the generated islands, `LARGE_INTEGER` in dirsup.rs
@@ -885,8 +905,15 @@ def source_lint_specs(repo: Path) -> list[tuple]:
     return specs
 
 
-def run_source_lints(run: Run, repo: Path, *, strict: bool) -> None:
-    for name, cmd, src in source_lint_specs(repo):
+def run_source_lints(run: Run, repo: Path, *, strict: bool, only: set[str] | None = None) -> None:
+    specs = source_lint_specs(repo)
+    if only is not None:
+        unknown = only - {name for name, _, _ in specs}
+        if not only or unknown:
+            raise ValueError(f"empty or unknown scanner selection: {sorted(unknown)}")
+    for name, cmd, src in specs:
+        if only is not None and name not in only:
+            continue
         _lint_stage(run, repo, name, cmd, strict=strict, findings_from=src)
 
 

@@ -7,7 +7,7 @@ use winsrv_sys::winsrv::*;
 unsafe extern "system" fn InitializeAllCallback(pItem: *mut core::ffi::c_void, pData: *mut core::ffi::c_void) -> i32 {
     let pOct = pItem as *mut IOleCommandTarget;
     let phr = pData as *mut HRESULT;
-    TRACE!(b"Initializing SSO %p\n\0".as_ptr() as *const i8, pOct);
+    TRACE!("Initializing SSO %p\n", pOct);
     *phr = (*pOct).Exec(
         &CGID_ShellServiceObject,
         OLECMDID_NEW,
@@ -19,7 +19,7 @@ unsafe extern "system" fn InitializeAllCallback(pItem: *mut core::ffi::c_void, p
 }
 unsafe extern "system" fn ShutdownAllCallback(pItem: *mut core::ffi::c_void, _pData: *mut core::ffi::c_void) -> i32 {
     let pOct = pItem as *mut IOleCommandTarget;
-    TRACE!(b"Shutting down SSO %p\n\0".as_ptr() as PCHAR, pOct);
+    TRACE!("Shutting down SSO %p\n", pOct);
     (*pOct).Exec(
         &CGID_ShellServiceObject,
         OLECMDID_SAVE,
@@ -50,13 +50,13 @@ pub unsafe extern "C" fn InitShellServices(phdpa: *mut HDPA) -> HRESULT {
 
     *phdpa = core::ptr::null_mut();
 
-    TRACE!(b"Enumerating Shell Service Object GUIDs...\n\0".as_ptr() as *const i8);
+    TRACE!("Enumerating Shell Service Object GUIDs...\n");
 
     if RegOpenKeyW(HKEY_LOCAL_MACHINE,
         w!("SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\ShellServiceObjectDelayLoad").as_ptr(),
         &mut hkey) != 0
     {
-        ERR!(b"RegOpenKeyW failed.\n\0".as_ptr() as *const i8);
+        ERR!("RegOpenKeyW failed.\n");
         return HRESULT_FROM_WIN32(GetLastError());
     }
 
@@ -72,14 +72,14 @@ pub unsafe extern "C" fn InitShellServices(phdpa: *mut HDPA) -> HRESULT {
         }
 
         if type_ != REG_SZ {
-            WARN!(b"Value type was not REG_SZ.\n\0".as_ptr() as *const i8);
+            WARN!("Value type was not REG_SZ.\n");
             count += 1;
             continue;
         }
 
         hr = CLSIDFromString(value.as_ptr(), &mut clsid);
         if FAILED_UNEXPECTEDLY(hr) != 0 {
-            ERR!(b"CLSIDFromString failed %08x.\n\0".as_ptr() as *const i8, hr);
+            ERR!("CLSIDFromString failed %08x.\n", hr);
             RegCloseKey(hkey);
             *phdpa = core::ptr::null_mut();
             ShutdownShellServices(hdpa);
@@ -88,7 +88,7 @@ pub unsafe extern "C" fn InitShellServices(phdpa: *mut HDPA) -> HRESULT {
 
         hr = CoCreateInstance(&clsid, core::ptr::null_mut(), CLSCTX_INPROC_SERVER, &IID_IOleCommandTarget, &mut pOct as *mut *mut IOleCommandTarget as *mut *mut core::ffi::c_void);
         if FAILED_UNEXPECTEDLY(hr) != 0 {
-            ERR!(b"CoCreateInstance failed %08x.\n\0".as_ptr() as *const i8, hr);
+            ERR!("CoCreateInstance failed %08x.\n", hr);
             RegCloseKey(hkey);
             *phdpa = core::ptr::null_mut();
             ShutdownShellServices(hdpa);
@@ -101,7 +101,7 @@ pub unsafe extern "C" fn InitShellServices(phdpa: *mut HDPA) -> HRESULT {
     }
 
     if ret != ERROR_NO_MORE_ITEMS as i32 {
-        ERR!(b"RegEnumValueW failed %08x.\n\0".as_ptr() as *const i8, ret);
+        ERR!("RegEnumValueW failed %08x.\n", ret);
         hr = HRESULT_FROM_WIN32(GetLastError());
         RegCloseKey(hkey);
         *phdpa = core::ptr::null_mut();

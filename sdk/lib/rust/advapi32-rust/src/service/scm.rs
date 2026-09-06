@@ -59,7 +59,7 @@ pub unsafe extern "system" fn SVCCTL_HANDLEA_bind(szMachineName: SVCCTL_HANDLEA)
 pub unsafe extern "system" fn SVCCTL_HANDLEA_unbind(szMachineName: SVCCTL_HANDLEA, mut hBinding: handle_t) {
     let status: RPC_STATUS = RpcBindingFree(&mut hBinding);
     if status != RPC_S_OK {
-        ERR!(b"RpcBindingFree returned 0x%x\n\0".as_ptr() as LPCSTR, status);
+        ERR!("RpcBindingFree returned 0x%x\n", status);
     }
 }
 #[no_mangle]
@@ -131,7 +131,7 @@ unsafe fn ScmEncryptPassword(
     /* Get the session key */
     Status = SystemFunction028(ContextHandle, SessionKey.as_mut_ptr());
     if !NT_SUCCESS(Status) {
-        ERR!(b"SystemFunction028 failed (Status 0x%08lx)\n\0".as_ptr() as LPCSTR, Status);
+        ERR!("SystemFunction028 failed (Status 0x%08lx)\n", Status);
         return RtlNtStatusToDosError(Status);
     }
 
@@ -154,7 +154,7 @@ unsafe fn ScmEncryptPassword(
         core::ptr::addr_of_mut!(outData),
     );
     if Status != STATUS_BUFFER_TOO_SMALL {
-        ERR!(b"SystemFunction004 failed (Status 0x%08lx)\n\0".as_ptr() as LPCSTR, Status);
+        ERR!("SystemFunction004 failed (Status 0x%08lx)\n", Status);
         return RtlNtStatusToDosError(Status);
     }
 
@@ -174,7 +174,7 @@ unsafe fn ScmEncryptPassword(
         core::ptr::addr_of_mut!(outData),
     );
     if !NT_SUCCESS(Status) {
-        ERR!(b"SystemFunction004 failed (Status 0x%08lx)\n\0".as_ptr() as LPCSTR, Status);
+        ERR!("SystemFunction004 failed (Status 0x%08lx)\n", Status);
         HeapFree(GetProcessHeap(), 0, pBuffer as LPVOID);
         return RtlNtStatusToDosError(Status);
     }
@@ -407,7 +407,7 @@ pub unsafe extern "system" fn ChangeServiceConfigW(
                 core::ptr::addr_of_mut!(dwPasswordSize),
             );
             if dwError != ERROR_SUCCESS {
-                ERR!(b"ScmEncryptPassword failed (Error %lu)\n\0".as_ptr() as *const i8, dwError);
+                ERR!("ScmEncryptPassword failed (Error %lu)\n", dwError);
                 break 'done;
             }
         }
@@ -488,7 +488,7 @@ pub unsafe extern "system" fn ControlServiceEx(
     pControlParams: PVOID,
 ) -> BOOL {
     FIXME!(
-        b"ControlServiceEx(%p %lu %lu %p)\n\0".as_ptr() as *const i8,
+        "ControlServiceEx(%p %lu %lu %p)\n",
         hService,
         dwControl,
         dwInfoLevel,

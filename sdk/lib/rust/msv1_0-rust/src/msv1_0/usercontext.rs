@@ -10,7 +10,6 @@ pub unsafe extern "system" fn UsrSpInitUserModeContext(
     STATUS_NOT_IMPLEMENTED
 }
 
-
 // ============================================================================
 // ORIGINAL C SOURCE
 // ============================================================================

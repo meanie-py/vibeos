@@ -164,8 +164,9 @@ def _setup_cache(
             [cache.ccache_bin or "ccache", "-z"], cwd=repo, env=env, stage="ccache-zero", timeout=60
         )
     if cache.use_sccache:
+        stats_cmd = [cache.sccache_bin or "sccache", "--zero-stats"]
         run.run(
-            [cache.sccache_bin or "sccache", "--zero-stats"],
+            wrap(stats_cmd) if wrap else stats_cmd,
             cwd=repo,
             env=env,
             stage="sccache-zero",
@@ -175,9 +176,14 @@ def _setup_cache(
     return env
 
 
-def _collect_cache_stats(run: Run, cache: cachecfg.CacheEnv, env: dict) -> None:
-    """Post-build hit rates — also the determinism gauge: a no-source-change
-    rebuild should be ~100% hits; any miss = something varied (plan §determinism)."""
+def _collect_cache_stats(
+    run: Run, cache: cachecfg.CacheEnv, env: dict, *, repo: Path | None = None, wrap=None
+) -> None:
+    """Post-build compiler-cache telemetry, not a freshness verdict.
+
+    A true no-op can have zero requests. Counters may include concurrent work:
+    ccache is fleet-wide and canonical sccache is shared by this worktree's arches.
+    """
     if cache.use_ccache:
         cp = run.run(
             [cache.ccache_bin or "ccache", "--print-stats"],
@@ -196,9 +202,12 @@ def _collect_cache_stats(run: Run, cache: cachecfg.CacheEnv, env: dict) -> None:
             )
         )
     if cache.use_sccache:
+        # The canonical wrapper selects the worktree's server and starts it in
+        # the correct mount namespace. Outside it, stats describe another daemon.
+        stats_cmd = [cache.sccache_bin or "sccache", "--show-stats", "--stats-format=json"]
         cp = run.run(
-            [cache.sccache_bin or "sccache", "--show-stats", "--stats-format=json"],
-            cwd=run.dir,
+            wrap(stats_cmd) if wrap else stats_cmd,
+            cwd=repo if wrap else run.dir,
             env=env,
             stage="sccache-stats",
             timeout=60,
@@ -962,7 +971,7 @@ def _build_locked(args, repo: Path, run, arch: str, cfg, build_dir: Path, cold: 
 
     # --- cache hit-rate stats (also the determinism gauge) ---
     if caching and build_env is not None:
-        _collect_cache_stats(run, cache, build_env)
+        _collect_cache_stats(run, cache, build_env, repo=repo, wrap=wrap)
 
     # --- arm64 re-stage into ramdisk/boot.img ---
     if cfg.needs_mkramdisk:

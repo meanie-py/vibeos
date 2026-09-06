@@ -29,7 +29,12 @@ The kernel + win32k + the core client-DLL/boot spine + the driver fleet are **~9
 ### Tier 1 — Finish the high-value unlocks
 
 - **`--allow-multiple-definition` elimination** — kill the load-bearing link flag categorically (spike proven; see the ratchet doc + `tools/scan_duplicate_symbols.py`).
-- **DUMMY_PSEH resolution** — decide + execute the path off the SEH-is-dead-code hack across all arches (spike + open-question doc landed).
+- **DUMMY_PSEH resolution** — decide + execute the path off the SEH-is-dead-code hack across
+  all arches (spike + open-question doc landed). **It has a measured functional cost now**:
+  `_USE_DUMMY_PSEH` compiles out `co_IntInitializeDesktopGraphics`'s cursor/icon
+  `KeUserModeCallback`, the deferred replacement never completes, and system cursors are
+  therefore never loaded on an i386 boot — see the bug registry entry. That is no longer a
+  theoretical tax on code shape; it is a visibly broken subsystem.
 
 ### Tier 2 — Systemic Rust-native fixes (above Wine-DLL translation)
 
@@ -478,6 +483,27 @@ land; date every addition.** Source docs live in `docs/engineering/archive/`.
 
 ## Known bugs & flakes (live registry)
 
+- **`test_build_invalidation.py` is flaky UNDER LOAD and it bounces conductor batches — OPEN**
+  (2026-09-06). Two different tests in the file have failed the same way:
+  `test_generated_rust_tracks_directory_input_add_edit_remove[files-depfile]` (line 522) with
+  `ninja explain: restat of output leaf older than most recent input .../generated.rs`, and
+  `test_lockfile_only_git_pin_change_requires_explicit_edge[False]` (line 472). Both are the
+  *no-op rebuild* assertion — `assert fixture.invocations() == before` — failing with
+  `Left contains one more item: 'leaf'`, i.e. a spurious rebuild.
+  **It is load-dependent, not random**: the file passed 3/3 run in isolation, and failed
+  roughly 1 run in 3 inside `check-tooling`, which runs 27 checks on a machine already carrying
+  the build fleet. That is precisely when the conductor runs it, so it preferentially fires
+  where it costs the most — it already cost one two-lane batch a TOOLING_FAIL, which the
+  conductor then split to find a culprit that did not exist, and it blocked this lane's `land`
+  preflight three times running.
+  Common shape: the first `compile()` runs cargo, and a file cargo writes can end up with an
+  mtime AFTER the `cmake -E touch` stamp ninja uses for `leaf`; the next ninja run restats,
+  sees the stamp older than its input, and rebuilds. Under load cargo takes longer and the
+  window widens. A build-invalidation test cannot distinguish "cargo failed to invalidate" from
+  "the stamp lost a race with cargo's own output" — the fixture needs to establish that
+  ordering rather than hope for it. **Owned by the build-invalidation lane**: the fix must not
+  simply relax the assertion, which is the only thing catching real invalidation bugs.
+
 The committed home for open bugs (was: agent MEMORY.md, which other agents never see).
 Field-manual § pointers hold the full writeups. **Update on state change.**
 
@@ -545,6 +571,85 @@ Field-manual § pointers hold the full writeups. **Update on state change.**
   **payload**, a `CSR_API_MESSAGE` full of 32-bit guest pointers that 64-bit csrss would
   misread, so this needs per-API marshalling and is its own task, not a bolt-on. Same family:
   `NtReplyPort`, `NtReplyWaitReceivePort`, `NtRequestPort`, `NtReplyWaitReplyPort`.
+- **FIXED (2026-09-05): freeldr printed NOTHING — all ~2200 `ERR`/`FIXME` sites were silenced
+  by a dropped disjunct, and `/DEBUG=` was dead code.** A boot log contained zero `DbgPrint2`
+  output; the `[freeldr]`/`[FLDR]` stamps that *do* appear ride a separate hand-added path, which
+  is why the gap was never obvious. Three independent defects in `freeldr-rust/src/debug.rs`,
+  all in one function: (1) the port kept only the first half of the C's gate
+  `if (!(DbgChannels[Mask] & Level) && !(Level & DBG_DEFAULT_LEVELS)) return;` — the second term
+  is channel-independent and is what makes ERR and FIXME always-on, so requiring an open channel
+  silenced every one of them; (2) the `err:`/`fixme:`/`warn:`/`trace:` level tag was dropped, so
+  nothing was distinguishable from anything else; (3) `DbgPrint2`/`DbgPrint` were non-variadic
+  (stable Rust cannot *define* a C-variadic) and printed their format string literally, so `%s`
+  and `%lu` came out as those two characters. Separately `DbgParseDebugChannels` was a no-op stub
+  and is the ONLY caller of `DbgAddDebugChannel`, so no boot option could ever set a channel bit
+  — WARN/TRACE were unreachable rather than merely off — and `DebugDumpBuffer` was a stub too.
+  All four fixed. The formatter takes varargs on stable by declaring the argument slots as fixed
+  parameters and handing the resulting array to `_vsnprintf` as a `va_list`, which works because
+  `va_list` is `*mut c_char` on all three targets; **no call site changed** (3038 of them) since
+  the callee's arity is invisible to a cdecl/win64 caller. Field manual: "Which of the four is
+  silent is a property of the HEADER" (whose freeldr row this corrects) and "A printf-style
+  callee can take varargs on stable Rust".
+- **PARTLY FIXED (2026-09-05, task #39): the ~2% arm64 `--smp 1` boot wedge is an EL1 fault
+  loop at a user PC, and the loop is now closed — the jumper is not yet found.** A 300-round
+  soak on fixed media hit it 5 times (1.7%), and every capture showed the same shape: a vCPU at
+  **EL1h with `PC=0x10000`**, register file byte-identical across samples, every timed wait
+  dead, serial stopped one `DbgPrint` before `CreateProcessW`. `KiSynchronousExceptionHandler`
+  sent the same-EL instruction abort to `MmAccessFault`, whose valid-PTE path only bugchecks an
+  instruction fetch when the PTE is **U**XN — a user-executable page passes and returns
+  `STATUS_SUCCESS`, so the handler eret'd to the same PC forever. AArch64 makes every
+  EL0-writable page implicitly PXN, so that retry could never succeed. Fixed: EC 0x21 below
+  `MmUserProbeAddress`, or on a permission IFSC, now dispatches as a kernel AV and bugchecks
+  `0x1E` with the frame plus a new `[KSTKW]` kernel-stack-word dump. **Still open: who sets an
+  EL1 PC to `0x10000`.** The captured frame had `LR=0` and every callee-saved register zero,
+  with `X18` a TEB and `X28` a user start-context, so the stack words are the lead. This is the
+  last flip blocker for `DefaultOS`. Field manual: "An EL1 instruction fetch on a user page
+  loops silently forever". OWNED BY the smp-bringup lane.
+- **PARTLY FIXED (2026-09-05): system cursors now load, and the residual 24 are a pure ordering
+  effect.** `SYSTEMCUR(ARROW) == NULL, should not happen!!` was firing **78x** per boot (6 system
+  classes x 13 GUI processes) and kept firing to within 300 lines of `shell ready` —
+  `gasyscur[ROCR_ARROW].handle` was NULL for the *entire* boot, so every server-side class
+  registered with `hCursor = NULL`. Chain: `co_IntInitializeDesktopGraphics` normally loads
+  cursors/icons via `KeUserModeCallback`, but that block is `#if !defined(_USE_DUMMY_PSEH)` and
+  `-D_USE_DUMMY_PSEH=1` is on all 5924 i386 TUs, so it is compiled out and deferred to
+  `co_IntDeferredCursorsAndIcons()` on a real GUI thread. Instrumentation showed that deferred
+  path was entered **exactly once per boot**, on the desktop thread, where its own guard returns
+  immediately — so it never ran at all. Fixed by also calling it from `co_int_graphics_check`,
+  **after** `co_add_gui_app`: ordering is load-bearing, because `NtUserSetSystemCursor` only
+  stores into `gasyscur` for a process that already has `W32PF_CREATEDWINORDC`, and calling
+  before that loads every cursor in user mode and then silently drops it in the kernel (the
+  syscall just returns FALSE — a first attempt did exactly this and moved the count not at all).
+  Result: 78 -> 24, boot green at 37s, and the feared `LoadImageW`/`RtlVirtualUnwind` AV from
+  letting the callback finally run did **not** materialise. **The residual 24 is 4 processes x 6
+  classes that register system classes without ever passing through `co_int_graphics_check`, so
+  the hook cannot fire for them**: every one of the 24 is emitted strictly *before* the load
+  (serial lines 1263-1513 vs the load at 1552), and there are zero in the 750 lines after it.
+  Closing that last gap means giving the early path a cursor source of its own, i.e. the Tier-1
+  DUMMY_PSEH resolution — this entry stays open as a concrete argument for it, not as a
+  translation defect: every link (`SYSTEMCUR_ARROW`, `LoadSystemCursors`'s
+  `!gpsi || !gpsi->hIconSmWindows` guard, `co_add_gui_app`) was diffed against the retired C and
+  is byte-faithful.
+- **OPEN (2026-09-05, found the same night the freeldr debug channel was un-silenced): freeldr
+  fails to load `\reactos\system32\drivers\ntoskrnl.dll`.** `PeLdrLoadImage(...ntoskrnl.dll)
+  failed` -> `PeLdrpLoadAndScanReferencedDll() failed` -> `PeLdrScanImportDescriptorTable()
+  failed`, three times per boot. Something imports from `ntoskrnl.dll` rather than
+  `ntoskrnl.exe`, and the loader resolves the name against the `drivers\` directory where no
+  such file exists. The boot survives it, which is exactly why it went unnoticed: these are ERR
+  messages on freeldr's channel, and that channel printed nothing at all until tonight. First
+  finding attributable to that fix.
+- **`Cannot open winsta` x229 per boot is winlogon thread teardown — ROOT-CAUSED, benign, OPEN**
+  (2026-09-05). Instrumented boot: 228 of 229 come from PID 0x9c (winlogon), all with
+  `hWinSta = NULL` and `STATUS_INVALID_HANDLE` (not an access denial), all from one call site —
+  `UserCloseClipboard()`, reached from `ExitThreadCallback` (win32k `main.c:798`), which calls it
+  **unconditionally for every exiting GUI thread**. Byte-identical in the C, so faithful. Two
+  takeaways: the ERR is upstream false-alarm noise on a cleanup path (~10% of the boot log), and
+  the number means **winlogon tears down 228 GUI threads during boot**, which is worth a look in
+  its own right.
+- **`Sending to Suspended Thread Msg 121` x333 per boot — benign, OPEN** (2026-09-05). `0x121` is
+  `WM_ENTERIDLE`, which a modal loop sends purely to say it is idle; dropping it with
+  `STATUS_UNSUCCESSFUL` costs nothing. `IsThreadSuspended` and both its accessors
+  (`KTHREAD.SuspendCount`, `PsGetThreadFreezeCount`) were diffed against the C and are faithful.
+  Noted because winsta.rs ties this exact message to the DUMMY_PSEH cursor path historically.
 - **freeldr's `FREELDR_HEAP_VERIFIER` is DEAD in Rust — OPEN** (2026-09-04). `heap.c:25` defines
   it **unconditionally**, so the C always compiles the redzone allocation, the redzone writes
   and the three `FrLdrHeapVerify` checks. The translation turned it into
@@ -578,22 +683,115 @@ Field-manual § pointers hold the full writeups. **Update on state change.**
   `freeldr-rust`, `TAG_HAL` at three, and byte-reversed pairs in `pcix-rust`, `win32k-rust`,
   `fltmgr-rust` and `classpnp-rust`. One of this family wedged the arm64 boot (field manual,
   "The same-named constant with a DIFFERENT value per driver"). Burn down per crate.
-- **classpnp's `KeRaiseIrql`/`KeLowerIrql` shims call THEMSELVES — OPEN** (2026-07-26). In
-  `classpnp-rust/src/ddk_shims.rs`, the `#[no_mangle] extern "system" fn KeRaiseIrql` body
-  declares `extern "system" { fn KeRaiseIrql(..); }` and calls it. That extern binds to the
-  `#[no_mangle]` definition *in the same image* — itself — so it is infinite self-recursion,
-  which LLVM folds to a single `b .`. Verified in the arm64 binary:
-  `<KeRaiseIrql>: b 0x…d274 <KeRaiseIrql>`. Same family as the "never hand-write memcpy in
-  Rust" rule in AGENTS.md: a `#[no_mangle]` shim may never call the symbol it defines.
-  Per-arch truth (`hal.spec:84,86`, `ntoskrnl.spec:635`): i386 uses the `KfRaiseIrql`/
-  `KfLowerIrql` FASTCALL inlines (the shim's x86 branch is correct); **arm64 exports BOTH from
-  HAL**, so the shim should simply not exist there — defining it shadows the import and creates
-  the self-call; **amd64** exports neither `KeRaiseIrql` (a CR8 FORCEINLINE upstream) nor a
-  public `KeLowerIrql` (private, `KxLowerIrql`), so it needs a real CR8 body like the
-  `KeGetCurrentIrql` shim beside it. Latent on master since `e33a810c9ad` (this lane's own
-  clashing-extern Phase 2 — the self-call predates it; that commit only changed the ABI).
-  Reachable only if something calls these in classpnp; not fixed blind because it is boot-path
-  storage IRQL code that wants a smoke run. Owner: task #4.
+  > **Pool-tag tier CLEARED, 770 -> 731** (2026-09-05). Six constants, 15 wrong definitions,
+  > every one evaluated against its C macro rather than eyeballed. Two were real defects, not
+  > accounting noise: `config-rust` ALLOCATED the hive `ViewLock`/`FlusherLock` in `cminit.rs`
+  > under one `TAG_CMHIVE` and FREED them in `cmapi.rs` under another (`ExFreePoolWithTag`
+  > mismatch on the registry path, 4 values for one macro); and classpnp's
+  > `DICTIONARY_SIGNATURE` was WRITTEN with the byte-reversed value while
+  > `TestDictionarySignature` compared against a function-local shadow holding the correct one,
+  > so every dictionary validity check failed. `TAG_CM` was wrong at 7 of 14 sites, `TAG_USTR`
+  > 3 of 13, `TAG_DIB` and `TAG_FAT_IO_CONTEXT` 1 each. Fixing `TAG_USTR`/`TAG_DIB` also
+  > repaired latent CROSS-CRATE mismatches (rtl-strings vs ntdll/win32k; dibobj vs
+  > dib_helpers). 3 further entries cleared by another lane's `ICIF_SET_SIZE_VARIABLE` fix
+  > arriving in the same merge. Remaining 731 are Tier 2 semantic constants (~25: oleaut32's
+  > `VT_*_PRIO` table, samsrv, `PARTITION_FAT_16`, `SP_UNTAGGED`) and Tier 3 debug/trace enums
+  > (~32 cdrom/disk `TRACE_*`, serial `DPFLTR_*`) which corrupt only log filtering.
+  > **Tier 2 (semantic) CLEARED** (2026-09-05): 10 constants, 16 wrong definitions, each
+  > checked against its SDK header. Three had real behaviour behind them.
+  > `SRB_FUNCTION_STORAGE_REQUEST_BLOCK` (srb.h `0x28`) was WRITTEN into `srbEx.Function` as
+  > `0x10` and TESTED against `0x16` in the same file — the SRB-Ex branch could never be
+  > taken; a third copy in `disk.rs` invented `0xF0`. `RTL_ENCRYPT_OPTION_*` had all three
+  > values PERMUTED in one block (`SAME_PROCESS=1, CROSS_PROCESS=0, SAME_LOGON=3` vs the
+  > header's `0/1/2`) — the recall failure a seal cannot catch, because the SET is right and
+  > only the slots are wrong. A `VK_DBE_CODEINPUT`/`NOCODEINPUT` shadow held `0xF8`/`0xF9`,
+  > which are the real `ENTERIMECONFIGMODE`/`FLUSHSTRING`: not wrong numbers but two
+  > DIFFERENT keys aliased. Plus `SAM_SERVER_INITIALIZE` (both copies wrong; `0x04`),
+  > `PARTITION_FAT_16` (`0x06` is `PARTITION_HUGE`) and `SP_UNTAGGED` (wrong in three files).
+  > **And 10 entries were FALSE POSITIVES, annotated not fixed**: oleaut32's `VT_*_PRIO`
+  > ladders look like one table shifted by one, but variant.c declares TWO function-local
+  > `enum coerceprio`s that reuse the same member names with different values, and both Rust
+  > ladders match their own enum member-for-member. Now carry
+  > `// nolint: const-contradiction (function-local C enum)` with the reasoning, so the next
+  > agent does not re-investigate. **The baseline is a work queue, not a defect list** —
+  > classifying is as much of the job as fixing.
+- **Constants that are INVENTED and say so — FIXED, and now gated** (2026-09-05). Found while chasing
+  `SP_UNTAGGED` into `disk-rust`. Tree-wide, 127 `const` definitions carry `// placeholder`,
+  `// typical`, `// guess` or `// adjust as needed`, and `disk.rs:617` has a whole block under
+  the header *"Constants used by the function (values typical of Windows DDK; adjust as
+  needed)"*. These are not drift from a real value — they are numbers the model made up, and
+  they compile. Two were live in that one block: `SRB_FUNCTION_STORAGE_REQUEST_BLOCK = 0xF0`
+  (real `0x28`, and not any `SRB_FUNCTION_*`) and `SP_UNTAGGED = 0xFFFFFFFF` (real `(UCHAR)~0`
+  == `0xFF`; the `((ULONG)~0)` one is the neighbouring `SP_UNINITIALIZED_VALUE`). This is a
+  DISTINCT class from `scan_const_contradictions`, which can only see a name that disagrees
+  with ITSELF — a constant invented once, consistently, is invisible to it. A gate is cheap
+  here because the sites are self-labelled: grep the annotation, resolve each against its
+  header, and fail on any that survives. Worth doing before the class grows.
+  Done: `tools/scan_invented_constants.py` (wired into `vibeos-cli check`, baseline
+  `tools/lint-baseline/scan_invented_constants.txt`) scrapes the self-accusing comment, then
+  resolves each name against a NARROWLY scoped oracle — the C module the crate translates plus
+  the SDK headers — and classifies MISMATCH / AMBIGUOUS / UNRESOLVED. A repo-wide catalog was
+  deliberately not used: it collides on short names and its findings are overwhelmingly false
+  (§9.113b). 209 self-labelled sites, 29 MISMATCH, all fixed; **11** remain, none of them a
+  mismatch. The interesting half is that ~65 of the labelled constants were CORRECT — the
+  comment was the only thing wrong — which is why the annotation alone was never a defect list.
+  What the 29 were: fastfat `VIRTUAL_VOLUME_FILE = 1` where `fatprocs.h`'s `_TYPE_OF_OPEN`
+  starts at 1 and 1 is `UnopenedFileObject`, so every later decode of the virtual volume file
+  said "not open"; fastfat `TAG_VPB` frozen as `0x20425056` (`" BPV"`, invented) against
+  `nodetype.h`'s `'vtaF'`, a tag no free could ever match; cabinet's LZX decoder sizing its main
+  tree with a function-local `LZX_NUM_CHARS = 0` while the decode loop split literal-from-match
+  on the correct file-scope 256; scsiport numbering `CmResourceType*` from 0, which shifts every
+  resource type down one and collides `CmResourceTypePort` with `CmResourceTypeNull`; disk's
+  `SRB_EX_DATA_TYPE_SCSI_CDB16 = 0` (real `0x40`) and a PERMUTED
+  `FAILURE_PREDICTION_SMART`/`_IOCTL` pair; `SRBEX_DATA_SCSI_CDB16_LENGTH` frozen at 32 where
+  the C is `20 + sizeof(ULONG) + sizeof(PVOID)`, i.e. correct on 64-bit and four bytes long on
+  i386 — now computed. Plus 156 `TRACE_LEVEL_*`/`TRACE_FLAG_*` declarations across
+  cdrom/disk/classpnp normalised to `storswtr.h`: the flags are an ORDINAL enum (0..17) that the
+  translation had spread across ~40 distinct bitmask-looking values, and even the two `glue.rs`
+  "canonical" copies were off by one. Those are log-filtering only — the ReactOS
+  `StorDebugPrint` marks the flag `UNREFERENCED_PARAMETER` — but they now have one oracle.
+- **scsiport ships a TRUNCATED `SpiParseDeviceInfo` — OPEN** (2026-09-05). Found by the
+  invented-constant sweep, not by the sweep's own findings: the function carried a preamble of
+  22 placeholder constants, and reading it showed the translation was ABANDONED mid-body. C's
+  `scsiport.c:2634-3014` is ~380 lines that walk the registry's
+  `REG_FULL_RESOURCE_DESCRIPTOR` and switch on Port / Memory / Interrupt / Dma /
+  DeviceSpecific; the Rust (`scsiport.rs:2530`) enumerates the values and then stops, leaving
+  the model's own notes in the tree — *"Actually let's rewrite the whole block with explicit
+  structure. I'll rebuild."* The C is cohab-flipped OUT (`CMakeLists.txt:56`), so this is what
+  ships: scsiport parses no device info at all. Fixing it is a rustconv job, not a hand edit.
+  The class is worth a scanner of its own — `classpnp-rust/src/power.rs:366` carries
+  *"[Error handling block same as C, omitted for brevity but will be included]"* and
+  `acpi-rust/src/bus.rs:17` records a truncated struct. A translation that announces its own
+  incompleteness in a comment is the cheapest possible defect to find.
+- **classpnp `ClasspAccessAlignmentProperty` spun forever on arm64 — FIXED** (2026-09-05).
+  An empty `_ => {}` catch-all as the last arm of a `match` that IS the body of a
+  goto-elimination `'work: loop`. utils.c's switch has no `default:`, so an unmatched value
+  falls out of the switch onto `Exit:`; the empty arm instead reaches the end of the loop and
+  re-matches the unchanged scrutinee forever. arm64 emitted a literal `b .` INSIDE the
+  function. Found only because this lane linked `classpnp.sys` for arm64 — **it is not in
+  arm64's default target set**, so no arm64 sweep had ever scanned that binary (exactly the
+  ucrtbase/`exp2` blind spot, one driver over). Swept the tree for the shape: 0 others.
+  Worth fixing separately: a `build-arm64` that silently omits a driver every other arch
+  builds means every post-link gate is blind to it.
+- **classpnp's `KeRaiseIrql`/`KeLowerIrql`/`IoWMIDeviceObjectToProviderId` shims called
+  THEMSELVES — FIXED** (2026-07-26 found, 2026-09-05 fixed). Each `#[no_mangle]` body in
+  `classpnp-rust/src/ddk_shims.rs` declared an `extern` block for its OWN name and called it.
+  A local strong definition beats an importlib thunk, so the call bound to the enclosing
+  function; LLVM tail-folded all three to a single instruction — `4fb90 <KeRaiseIrql>: eb fe
+  jmp 4fb90` on amd64, `b .` on arm64. Any classpnp path that touched IRQL spun that CPU
+  forever with no bugcheck and no serial output. Same family as the "never hand-write memcpy
+  in Rust" rule in AGENTS.md: **a `#[no_mangle]` shim may never call the symbol it defines.**
+  The fix is per-arch `cfg`, not a better forwarding body — define a symbol ONLY on the arch
+  where none is importable: i386 keeps the `KfRaiseIrql`/`KfLowerIrql` FASTCALL inlines
+  (already correct), amd64 gets real CR8 bodies for both, arm64 defines neither and binds
+  `hal.spec:84,86`. **The trap that cost a link:** `ntoskrnl.spec:635` really does export
+  amd64 `KeLowerIrql`, but `-private`, and `spec2def.c:750` keeps private exports out of the
+  *import lib* — so the question is never "is it exported" but "is there an importlib entry".
+  Verified in the emitted code on all three arches (CR8 on amd64, `adrp/ldr/br x16` import
+  thunk on arm64, `call @KfRaiseIrql@4` unchanged on i386), all three smoke green with zero
+  assertions, and the three entries are out of `tools/lint-baseline/scan_self_recursive.txt`.
+  Note classpnp.sys is not in arm64's default target set, so it was linked explicitly to
+  verify. Field manual: "NEVER hand-write memcpy…", third route to the same `jmp .`.
   > Found via `scan_ud2`'s driver sweep. The other 11 spins in the same report are **faithful**:
   > upstream ReactOS really does write `UNIMPLEMENTED; while (TRUE);` in pcix's arbiter and
   > power paths, so `loop {}` is correct there and must NOT be "fixed" — check the C before

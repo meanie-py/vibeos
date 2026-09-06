@@ -1059,7 +1059,7 @@ unsafe fn LsapAddLocalGroups(
                 Length as SIZE_T,
             ) as PTOKEN_GROUPS;
             if Groups.is_null() {
-                ERR!(b"Group buffer allocation failed!\n\0".as_ptr() as *const core::ffi::c_char);
+                ERR!("Group buffer allocation failed!\n");
                 return STATUS_INSUFFICIENT_RESOURCES;
             }
             (*Groups).GroupCount =
@@ -1105,7 +1105,7 @@ unsafe fn LsapAddLocalGroups(
                 Length as SIZE_T,
             ) as PTOKEN_GROUPS;
             if Groups.is_null() {
-                ERR!(b"Group buffer allocation failed!\n\0".as_ptr() as *const core::ffi::c_char);
+                ERR!("Group buffer allocation failed!\n");
                 return STATUS_INSUFFICIENT_RESOURCES;
             }
             (*Groups).GroupCount = (*LocalGroups).GroupCount;
@@ -1125,7 +1125,7 @@ unsafe fn LsapAddLocalGroups(
         }
     } else {
         FIXME!(
-            b"TokenInformationType %d is not supported!\n\0".as_ptr() as *const core::ffi::c_char,
+            "TokenInformationType %d is not supported!\n",
             TokenInformationType as u32,
         );
         return STATUS_NOT_IMPLEMENTED;
@@ -1154,7 +1154,7 @@ unsafe fn LsapAddDefaultGroups(
                 length as SIZE_T,
             ) as PTOKEN_GROUPS;
             if groups_ptr.is_null() {
-                ERR!(b"Group buffer allocation failed!\n\0".as_ptr() as *const core::ffi::c_char);
+                ERR!("Group buffer allocation failed!\n");
                 return STATUS_INSUFFICIENT_RESOURCES;
             }
 
@@ -1177,7 +1177,7 @@ unsafe fn LsapAddDefaultGroups(
                 length as SIZE_T,
             ) as PTOKEN_GROUPS;
             if groups_ptr.is_null() {
-                ERR!(b"Group buffer allocation failed!\n\0".as_ptr() as *const core::ffi::c_char);
+                ERR!("Group buffer allocation failed!\n");
                 return STATUS_INSUFFICIENT_RESOURCES;
             }
             (*token_info1).Groups = groups_ptr;
@@ -1213,7 +1213,7 @@ unsafe fn LsapAddDefaultGroups(
             5 => LsapServiceSid,
             _ => {
                 FIXME!(
-                    b"LogonType %d is not supported!\n\0".as_ptr() as *const core::ffi::c_char,
+                    "LogonType %d is not supported!\n",
                     LogonType as core::ffi::c_uint,
                 );
                 return STATUS_NOT_IMPLEMENTED;
@@ -1240,7 +1240,7 @@ unsafe fn LsapAddDefaultGroups(
         (*groups_ptr).GroupCount = (*groups_ptr).GroupCount.wrapping_add(1);
     } else {
         FIXME!(
-            b"TokenInformationType %d is not supported!\n\0".as_ptr() as *const core::ffi::c_char,
+            "TokenInformationType %d is not supported!\n",
             TokenInformationType as core::ffi::c_uint,
         );
         return STATUS_NOT_IMPLEMENTED;
@@ -1875,7 +1875,7 @@ pub unsafe extern "C" fn LsapLogonUser(
 
     Package = LsapGetAuthenticationPackage(PackageId);
     if Package.is_null() {
-        ERR!(b"LsapGetAuthenticationPackage() failed to find a package\n\0".as_ptr() as *const u8);
+        ERR!("LsapGetAuthenticationPackage() failed to find a package\n");
         return STATUS_NO_SUCH_PACKAGE;
     }
 
@@ -1886,7 +1886,7 @@ pub unsafe extern "C" fn LsapLogonUser(
             (*RequestMsg).__bindgen_anon_1.__bindgen_anon_1.__bindgen_anon_1.LogonUserW.__bindgen_anon_1.Request.AuthenticationInformationLength as SIZE_T,
         );
         if LocalAuthInfo.is_null() {
-            ERR!(b"RtlAllocateHeap() failed\n\0".as_ptr() as *const u8);
+            ERR!("RtlAllocateHeap() failed\n");
             return STATUS_INSUFFICIENT_RESOURCES;
         }
 
@@ -1898,7 +1898,7 @@ pub unsafe extern "C" fn LsapLogonUser(
             core::ptr::null_mut(),
         );
         if !NT_SUCCESS(Status) {
-            ERR!(b"NtReadVirtualMemory() failed (Status 0x%08lx)\n\0".as_ptr() as *const u8, Status);
+            ERR!("NtReadVirtualMemory() failed (Status 0x%08lx)\n", Status);
             RtlFreeHeap(RtlGetProcessHeap(), 0, LocalAuthInfo);
             return Status;
         }
@@ -1919,7 +1919,7 @@ pub unsafe extern "C" fn LsapLogonUser(
                 &mut LocalGroups,
             );
             if !NT_SUCCESS(Status) {
-                ERR!(b"LsapCopyLocalGroups failed (Status 0x%08lx)\n\0".as_ptr() as *const u8, Status);
+                ERR!("LsapCopyLocalGroups failed (Status 0x%08lx)\n", Status);
                 break 'done Status;
             }
             else {
@@ -1982,45 +1982,45 @@ pub unsafe extern "C" fn LsapLogonUser(
         }
 
         if !NT_SUCCESS(Status) {
-            ERR!(b"LsaApLogonUser/Ex/2 failed (Status 0x%08lx)\n\0".as_ptr() as *const u8, Status);
+            ERR!("LsaApLogonUser/Ex/2 failed (Status 0x%08lx)\n", Status);
             break 'done Status;
         }
 
         if !LocalGroups.is_null() && (*LocalGroups).GroupCount > 0 {
             Status = LsapAddLocalGroups(TokenInformation, TokenInformationType, LocalGroups);
             if !NT_SUCCESS(Status) {
-                ERR!(b"LsapAddLocalGroupsToTokenInfo() failed (Status 0x%08lx)\n\0".as_ptr() as *const u8, Status);
+                ERR!("LsapAddLocalGroupsToTokenInfo() failed (Status 0x%08lx)\n", Status);
                 break 'done Status;
             }
         }
 
         Status = LsapAddDefaultGroups(TokenInformation, TokenInformationType, LogonType);
         if !NT_SUCCESS(Status) {
-            ERR!(b"LsapAddDefaultGroups() failed (Status 0x%08lx)\n\0".as_ptr() as *const u8, Status);
+            ERR!("LsapAddDefaultGroups() failed (Status 0x%08lx)\n", Status);
             break 'done Status;
         }
 
         Status = LsapAddSamGroups(TokenInformation, TokenInformationType);
         if !NT_SUCCESS(Status) {
-            ERR!(b"LsapAddSamGroups() failed (Status 0x%08lx)\n\0".as_ptr() as *const u8, Status);
+            ERR!("LsapAddSamGroups() failed (Status 0x%08lx)\n", Status);
             break 'done Status;
         }
 
         Status = LsapSetTokenOwner(TokenInformation, TokenInformationType);
         if !NT_SUCCESS(Status) {
-            ERR!(b"LsapSetTokenOwner() failed (Status 0x%08lx)\n\0".as_ptr() as *const u8, Status);
+            ERR!("LsapSetTokenOwner() failed (Status 0x%08lx)\n", Status);
             break 'done Status;
         }
 
         Status = LsapAddTokenDefaultDacl(TokenInformation, TokenInformationType);
         if !NT_SUCCESS(Status) {
-            ERR!(b"LsapAddTokenDefaultDacl() failed (Status 0x%08lx)\n\0".as_ptr() as *const u8, Status);
+            ERR!("LsapAddTokenDefaultDacl() failed (Status 0x%08lx)\n", Status);
             break 'done Status;
         }
 
         Status = LsapSetPrivileges(TokenInformation, TokenInformationType);
         if !NT_SUCCESS(Status) {
-            ERR!(b"LsapSetPrivileges() failed (Status 0x%08lx)\n\0".as_ptr() as *const u8, Status);
+            ERR!("LsapSetPrivileges() failed (Status 0x%08lx)\n", Status);
             break 'done Status;
         }
 
@@ -2106,11 +2106,11 @@ pub unsafe extern "C" fn LsapLogonUser(
             RtlFreeHeap(RtlGetProcessHeap(), 0, TokenSd as PVOID);
 
             if !NT_SUCCESS(Status) {
-                ERR!(b"NtCreateToken failed (Status 0x%08lx)\n\0".as_ptr() as *const u8, Status);
+                ERR!("NtCreateToken failed (Status 0x%08lx)\n", Status);
                 break 'done Status;
             }
         } else {
-            FIXME!(b"TokenInformationType %d is not supported!\n\0".as_ptr() as *const u8, TokenInformationType as u32);
+            FIXME!("TokenInformationType %d is not supported!\n", TokenInformationType as u32);
             Status = STATUS_NOT_IMPLEMENTED;
             break 'done Status;
         }
@@ -2119,7 +2119,7 @@ pub unsafe extern "C" fn LsapLogonUser(
             UserName = &mut (*(LocalAuthInfo as *mut _MSV1_0_INTERACTIVE_LOGON)).UserName;
             LogonDomainName = &mut (*(LocalAuthInfo as *mut _MSV1_0_INTERACTIVE_LOGON)).LogonDomainName;
         } else {
-            FIXME!(b"LogonType %lu is not supported yet!\n\0".as_ptr() as *const u8, LogonType as u32);
+            FIXME!("LogonType %lu is not supported yet!\n", LogonType as u32);
         }
 
         Status = LsapSetLogonSessionData(
@@ -2130,7 +2130,7 @@ pub unsafe extern "C" fn LsapLogonUser(
             (*TokenInfo1).User.User.Sid,
         );
         if !NT_SUCCESS(Status) {
-            ERR!(b"LsapSetLogonSessionData failed (Status 0x%08lx)\n\0".as_ptr() as *const u8, Status);
+            ERR!("LsapSetLogonSessionData failed (Status 0x%08lx)\n", Status);
             break 'done Status;
         }
 
@@ -2144,7 +2144,7 @@ pub unsafe extern "C" fn LsapLogonUser(
             (DUPLICATE_SAME_ACCESS | DUPLICATE_SAME_ATTRIBUTES | DUPLICATE_CLOSE_SOURCE) as ULONG,
         );
         if !NT_SUCCESS(Status) {
-            ERR!(b"NtDuplicateObject failed (Status 0x%08lx)\n\0".as_ptr() as *const u8, Status);
+            ERR!("NtDuplicateObject failed (Status 0x%08lx)\n", Status);
         }
 
         // Success path; Status will be the result of the duplicate call.
@@ -2243,7 +2243,7 @@ pub unsafe extern "C" fn LsapLogonUser(
                 LsapFreeHeap(TokenInfo1 as PVOID);
             }
         } else {
-            FIXME!(b"TokenInformationType %d is not supported!\n\0".as_ptr() as *const u8, TokenInformationType as u32);
+            FIXME!("TokenInformationType %d is not supported!\n", TokenInformationType as u32);
         }
     }
 

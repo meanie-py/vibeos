@@ -22,11 +22,6 @@ const USERTAG_Q: u32 = u32::from_le_bytes(*b"Usqu");           // 'uqsU'
 // PWND_BOTTOM = ((PWND)1) — macro, no symbol (ntuser.h). Matches hotkey.rs.
 const PWND_BOTTOM: PWND = 1usize as PWND;
 
-// Debug-channel macros — no kernel symbol, no-op (matches misc.rs et al).
-macro_rules! ERR   { ($($t:tt)*) => {{}}; }
-macro_rules! TRACE { ($($t:tt)*) => {{}}; }
-macro_rules! FIXME { ($($t:tt)*) => {{}}; }
-
 // UlongToHandle(ul) = (HANDLE)(ULONG_PTR)(ul) — basetsd.h macro, no symbol.
 #[inline(always)]
 unsafe fn UlongToHandle(ul: DWORD) -> HANDLE {
@@ -944,7 +939,7 @@ pub unsafe extern "system" fn NtUserSendInput(
                     FIXME!("INPUT_HARDWARE not supported!\n");
                 }
                 _ => {
-                    ERR!("SendInput(): Invalid input type: 0x{:x}\n", SafeInput.type_);
+                    ERR!("SendInput(): Invalid input type: 0x%x\n", SafeInput.type_);
                 }
             }
         }

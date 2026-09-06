@@ -110,6 +110,42 @@ trees:
       would destroy the property that makes them useful — they exist to test what our
       compiler and our SEH do, and a test we rewrote cannot tell us that.
 
+  # ── AMD's libm, under crtmath ───────────────────────────────────────────
+  - path: sdk/lib/crt/math/libm_sse2
+    name: AMD LibM for Windows
+    upstream: https://github.com/amd/win-libm
+    license: MIT
+    modified: unknown
+    version:
+      literal: git commit 6121d02
+    reason: >
+      AMD's optimised libm, carried under sdk/lib/crt/math and linked into the `crtmath`
+      static library that msvcrt.dll, ucrtbase.dll and the static CRT consumers all share.
+      66 files, ~12.9K lines, every one carrying AMD's MIT header; the tree is a drop, not
+      a fork we maintain.
+
+      Registered 2026-09-05 because it was about to be translated by mistake. It is 8,900
+      of the ~12,500 compiled lines under sdk/lib/crt that carried no Rust twin, and 3,337
+      of the 4,149 lines specifically left in `crtmath` — so counting it as ours made
+      crtmath look 3x bigger than the work actually is, and made the biggest single files
+      in the "remaining" list (log_256_lead_tail_table.c and its siblings, ~2.5K lines of
+      AMD's tuned constants) read as translation debt. They are somebody else's constants.
+
+      It already sat in media/doc/3rd Party Files.txt with an exact path, a pinned commit
+      and an upstream URL; it was simply never in the gated registry. That is the same
+      failure the msvcrt percentage had three times — a true fact living only in prose,
+      where nothing checks it.
+    review: >
+      The version is a LITERAL, not a probe, and that is a weakness worth stating: there is
+      no version macro, stamp or manifest anywhere in the tree, so `git commit 6121d02` is
+      copied from 3rd Party Files.txt and cannot be verified against the source here. It is
+      recorded so a future re-vendor has a starting point, not because it is checkable.
+      Confirming it against github.com/amd/win-libm is owed.
+
+      NOTE the tree is NOT wholly foreign in effect: `crtmath` also compiles ~1,263 lines of
+      OUR C beside it (stubs.c, fdivbug.c, machfpcw.c, the ieee754/ Bessel set), and those
+      remain translation targets. The vendored boundary is this directory, not the library.
+
   # ── the Microsoft CRT under ucrtbase.dll ────────────────────────────────
   - path: sdk/lib/ucrt
     name: Microsoft UCRT

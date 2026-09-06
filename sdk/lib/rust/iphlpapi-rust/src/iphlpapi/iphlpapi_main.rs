@@ -85,7 +85,7 @@ pub unsafe extern "system" fn CreateIpForwardEntry(pRoute: PMIB_IPFORWARDROW) ->
 #[no_mangle]
 pub unsafe extern "system" fn CreateIpNetEntry(pArpEntry: PMIB_IPNETROW) -> DWORD {
     TRACE!((b"pArpEntry %p\n\0".as_ptr() as *const i8), pArpEntry);
-    FIXME!((b":stub\n\0".as_ptr() as *const i8));
+    FIXME!(":stub\n");
     return 0 as DWORD;
 }
 // ---- 06_CreateProxyArpEntry.rs ----
@@ -101,7 +101,7 @@ pub unsafe extern "system" fn CreateProxyArpEntry(
         dwMask,
         dwIfIndex,
     );
-    FIXME!((b":stub\n\0".as_ptr() as *const i8));
+    FIXME!(":stub\n");
     ERROR_NOT_SUPPORTED
 }
 // ---- 07_DeleteIPAddress.rs ----
@@ -119,7 +119,7 @@ pub unsafe extern "system" fn DeleteIpForwardEntry(pRoute: PMIB_IPFORWARDROW) ->
 #[no_mangle]
 pub unsafe extern "system" fn DeleteIpNetEntry(pArpEntry: PMIB_IPNETROW) -> DWORD {
     TRACE!((b"pArpEntry %p\n\0".as_ptr() as *const i8), pArpEntry);
-    FIXME!((b":stub\n\0".as_ptr() as *const i8));
+    FIXME!(":stub\n");
     return 0 as DWORD;
 }
 // ---- 10_DeleteProxyArpEntry.rs ----
@@ -130,7 +130,7 @@ pub unsafe extern "system" fn DeleteProxyArpEntry(
     dwIfIndex: DWORD,
 ) -> DWORD {
     TRACE!((b"dwAddress 0x%08lx, dwMask 0x%08lx, dwIfIndex 0x%08lx\n\0".as_ptr() as *const i8), dwAddress, dwMask, dwIfIndex);
-    FIXME!((b":stub\n\0".as_ptr() as *const i8));
+    FIXME!(":stub\n");
     ERROR_NOT_SUPPORTED
 }
 // ---- 11_EnableRouter.rs ----
@@ -140,7 +140,7 @@ pub unsafe extern "system" fn EnableRouter(
     pOverlapped: *mut OVERLAPPED,
 ) -> DWORD {
     TRACE!((b"pHandle %p, pOverlapped %p\n\0".as_ptr() as *const i8), pHandle, pOverlapped);
-    FIXME!((b":stub\n\0".as_ptr() as *const i8));
+    FIXME!(":stub\n");
     ERROR_NOT_SUPPORTED
 }
 // ---- 12_FlushIpNetTable.rs ----
@@ -185,7 +185,7 @@ pub unsafe extern "system" fn FlushIpNetTable(dwIfIndex: DWORD) -> DWORD {
 #[no_mangle]
 pub unsafe extern "system" fn GetAdapterIndex(AdapterName: LPWSTR, IfIndex: PULONG) -> DWORD {
     TRACE!((b"AdapterName %p, IfIndex %p\n\0".as_ptr() as *const i8), AdapterName, IfIndex);
-    FIXME!((b":stub\n\0".as_ptr() as *const i8));
+    FIXME!(":stub\n");
     ERROR_NOT_SUPPORTED
 }
 // ---- 14_TcpTableSorter.rs ----
@@ -2000,7 +2000,7 @@ pub unsafe extern "system" fn NotifyAddrChange(
 ) -> DWORD {
 
     FIXME!(
-        (b"(Handle %p, overlapped %p): stub\n\0".as_ptr() as *const i8),
+        "(Handle %p, overlapped %p): stub\n",
         Handle,
         overlapped,
     );
@@ -2022,7 +2022,7 @@ pub unsafe extern "system" fn NotifyRouteChange(
     overlapped: LPOVERLAPPED,
 ) -> DWORD {
     FIXME!(
-        (b"(Handle %p, overlapped %p): stub\n\0".as_ptr() as *const i8),
+        "(Handle %p, overlapped %p): stub\n",
         Handle,
         overlapped,
     );
@@ -2061,7 +2061,7 @@ pub unsafe extern "system" fn SendARP(
 // ---- 45_SetIfEntry.rs ----
 #[no_mangle]
 pub unsafe extern "system" fn SetIfEntry(pIfRow: PMIB_IFROW) -> DWORD {
-    FIXME!((b"(pIfRow %p): stub\n\0".as_ptr() as *const i8), pIfRow);
+    FIXME!("(pIfRow %p): stub\n", pIfRow);
     ERROR_NOT_SUPPORTED
 }
 // ---- 46_SetIpForwardEntry.rs ----
@@ -2136,19 +2136,19 @@ pub unsafe extern "system" fn SetIpNetEntry(pArpEntry: PMIB_IPNETROW) -> DWORD {
 // ---- 48_SetIpStatistics.rs ----
 #[no_mangle]
 pub unsafe extern "system" fn SetIpStatistics(pIpStats: PMIB_IPSTATS) -> DWORD {
-    FIXME!((b"(pIpStats %p): stub\n\0".as_ptr() as *const i8), pIpStats);
+    FIXME!("(pIpStats %p): stub\n", pIpStats);
     0
 }
 // ---- 49_SetIpTTL.rs ----
 #[no_mangle]
 pub unsafe extern "system" fn SetIpTTL(nTTL: UINT) -> DWORD {
-    FIXME!((b"(nTTL %d): stub\n\0".as_ptr() as *const i8), nTTL);
+    FIXME!("(nTTL %d): stub\n", nTTL);
     0
 }
 // ---- 50_SetTcpEntry.rs ----
 #[no_mangle]
 pub unsafe extern "system" fn SetTcpEntry(pTcpRow: PMIB_TCPROW) -> DWORD {
-    FIXME!((b"(pTcpRow %p): stub\n\0".as_ptr() as *const i8), pTcpRow);
+    FIXME!("(pTcpRow %p): stub\n", pTcpRow);
     0
 }
 // ---- 51_UnenableRouter.rs ----
@@ -2158,7 +2158,7 @@ pub unsafe extern "system" fn UnenableRouter(
     lpdwEnableCount: LPDWORD,
 ) -> DWORD {
     FIXME!(
-        (b"(pOverlapped %p, lpdwEnableCount %p): stub\n\0".as_ptr() as *const i8),
+        "(pOverlapped %p, lpdwEnableCount %p): stub\n",
         pOverlapped,
         lpdwEnableCount,
     );
@@ -2171,13 +2171,13 @@ pub unsafe extern "system" fn GetIpErrorString(
     Buffer: PWSTR,
     Size: PDWORD,
 ) -> DWORD {
-    FIXME!((b":stub\n\0".as_ptr() as *const i8));
+    FIXME!(":stub\n");
     0u32
 }
 // ---- 53_GetAdapterOrderMap.rs ----
 #[no_mangle]
 pub unsafe extern "system" fn GetAdapterOrderMap() -> PIP_ADAPTER_ORDER_MAP {
-    FIXME!((b":stub\n\0".as_ptr() as *const i8));
+    FIXME!(":stub\n");
     core::ptr::null_mut()
 }
 // ---- 54_GetAdaptersAddresses.rs ----
@@ -2380,7 +2380,7 @@ pub unsafe extern "system" fn GetAdaptersAddresses(
 // ---- 55_CancelIPChangeNotify.rs ----
 #[no_mangle]
 pub unsafe extern "system" fn CancelIPChangeNotify(notifyOverlapped: LPOVERLAPPED) -> BOOL {
-    FIXME!((b":stub\n\0".as_ptr() as *const i8));
+    FIXME!(":stub\n");
     0
 }
 // ---- 56_GetBestInterfaceEx.rs ----
@@ -2389,7 +2389,7 @@ pub unsafe extern "system" fn GetBestInterfaceEx(
     pDestAddr: *mut sockaddr,
     pdwBestIfIndex: PDWORD,
 ) -> DWORD {
-    FIXME!((b":stub\n\0".as_ptr() as *const i8));
+    FIXME!(":stub\n");
     return 0;
 }
 // ---- 57_NhpAllocateAndGetInterfaceInfoFromStack.rs ----
@@ -2404,7 +2404,7 @@ pub unsafe extern "system" fn NhpAllocateAndGetInterfaceInfoFromStack(
     hHeap: HANDLE,
     dwFlags: DWORD,
 ) -> DWORD {
-    FIXME!(b":stub\n\0".as_ptr());
+    FIXME!(":stub\n");
     0
 }
 // ---- 58_GetIcmpStatisticsEx.rs ----
@@ -2443,7 +2443,7 @@ pub unsafe extern "system" fn GetIcmpStatisticsEx(
 // ---- 59_SetIpForwardEntryToStack.rs ----
 #[no_mangle]
 pub unsafe extern "system" fn SetIpForwardEntryToStack(pRoute: PMIB_IPFORWARDROW) -> DWORD {
-    FIXME!((b"SetIpForwardEntryToStack() stub\n\0".as_ptr() as *const i8));
+    FIXME!("SetIpForwardEntryToStack() stub\n");
     0
 }
 // ---- 60_GetInterfaceNameInternal.rs ----

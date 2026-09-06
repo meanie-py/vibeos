@@ -1212,7 +1212,6 @@ pub unsafe fn CMergedFolder_MapColumnToSCID_body(this: *mut CMergedFolder, iColu
 
 pub unsafe fn CMergedFolder_QueryNameSpace2_body(this: *mut CMergedFolder, dwUnknown: ULONG, pInfo: *mut QUERYNAMESPACEINFO) -> HRESULT { E_NOTIMPL }
 
-
 // ============================================================================
 // ORIGINAL C SOURCE
 // ============================================================================

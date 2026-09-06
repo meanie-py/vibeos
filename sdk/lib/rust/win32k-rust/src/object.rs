@@ -50,11 +50,6 @@ unsafe fn ExAllocatePoolZero(PoolType: POOL_TYPE, NumberOfBytes: SIZE_T, Tag: UL
     allocation
 }
 
-// DbgPrint is cdecl variadic (ntddk @ varargs DbgPrint). This is a DBG=TRUE
-// build (CMakeCache DBG:BOOL=TRUE), so win32kdebug.h ERR/TRACE expand to
-// DBG_PRINT → DbgPrint. ERR is ERR_LEVEL (always prints); TRACE is channel-
-// gated and the UserObj channel is disabled by default at boot, so TRACE is
-// effectively silent — faithfully a no-op in the boot path.
 extern "C" {
     fn DbgPrint(Format: *const c_char, ...) -> u32;
 }
@@ -198,14 +193,6 @@ unsafe fn IntDereferenceProcessInfo(ppi: PPROCESSINFO) {
 // remaining args are the already-formed variadic values. DbgPrint is cdecl
 // variadic. We pass the format verbatim (the C `"err: "`/`"(%s:%d) "`
 // prefixes are cosmetic and not behaviourally observable).
-macro_rules! ERR {
-    ($fmt:expr $(, $arg:expr)* $(,)?) => {
-        { DbgPrint($fmt.as_ptr() as *const c_char $(, $arg)*); }
-    };
-}
-macro_rules! TRACE {
-    ($($arg:tt)*) => { {} };
-}
 
 // C: PUSER_HANDLE_TABLE gHandleTable = NULL;  — object.c OWNS this exported
 // global. win32k-sys bindgen also declares it `extern static mut`; the glob
@@ -460,7 +447,7 @@ unsafe extern "C" fn AllocSysObjectCB(
     /* Allocate the clipboard data */
     Object = ExAllocatePoolZero(PagedPool, Size, USERTAG_CLIPBOARD);
     if Object.is_null() {
-        ERR!(b"ExAllocatePoolZero failed. No object created.\n\0");
+        ERR!("ExAllocatePoolZero failed. No object created.\n");
         return core::ptr::null_mut();
     }
 
@@ -513,7 +500,7 @@ pub unsafe extern "C" fn DbgUserDumpHandleTable() {
         w!("GestureInfo").as_ptr() as *const u16,
     ];
 
-    ERR!(b"Total handles count: %lu\n\0", (*gpsi).cHandleEntries);
+    ERR!("Total handles count: %lu\n", (*gpsi).cHandleEntries);
 
     core::ptr::write_bytes(HandleCounts.as_mut_ptr() as *mut u8, 0, core::mem::size_of_val(&HandleCounts));
 
@@ -521,7 +508,7 @@ pub unsafe extern "C" fn DbgUserDumpHandleTable() {
     while !ppiList.is_null() {
         let peProcess = (*(ppiList as *mut W32PROCESS)).peProcess as *mut _EPROCESS;
         ERR!(
-            b"Process %s (%p) handles count: %d\n\t\0",
+            "Process %s (%p) handles count: %d\n\t",
             (*peProcess).ImageFileName.as_ptr(),
             (*peProcess).UniqueProcessId,
             *ppi_user_handle_count(ppiList)
@@ -546,7 +533,7 @@ pub unsafe extern "C" fn DbgUserDumpHandleTable() {
         ppiList = (*ppiList).ppiNext;
     }
 
-    ERR!(b"Total handles of the running processes: \n\t\0");
+    ERR!("Total handles of the running processes: \n\t");
     i = 1;
     while i < TYPE_CTYPES as i32 {
         DbgPrint(
@@ -569,7 +556,7 @@ pub unsafe extern "C" fn DbgUserDumpHandleTable() {
         i += 1;
     }
 
-    ERR!(b"Total handles count allocated: \n\t\0");
+    ERR!("Total handles count allocated: \n\t");
     i = 1;
     while i < TYPE_CTYPES as i32 {
         DbgPrint(
@@ -663,7 +650,7 @@ unsafe fn alloc_user_entry(ht: PUSER_HANDLE_TABLE) -> PUSER_HANDLE_ENTRY {
 
     if (*ht).nb_handles >= (*ht).allocated_handles {
         ERR!(
-            b"Out of user handles! Used -> %lu, NM_Handle -> %d\n\0",
+            "Out of user handles! Used -> %lu, NM_Handle -> %d\n",
             (*gpsi).cHandleEntries,
             (*ht).nb_handles
         );
@@ -797,14 +784,14 @@ pub unsafe extern "fastcall" fn UserCreateHandleTable() -> BOOL {
 
     mem = UserHeapAlloc((core::mem::size_of::<USER_HANDLE_ENTRY>() * HandleCount as usize) as SIZE_T);
     if mem.is_null() {
-        ERR!(b"Failed creating handle table\n\0");
+        ERR!("Failed creating handle table\n");
         return 0;
     }
 
     gHandleTable = UserHeapAlloc(core::mem::size_of::<USER_HANDLE_TABLE>() as SIZE_T) as PUSER_HANDLE_TABLE;
     if gHandleTable.is_null() {
         UserHeapFree(mem);
-        ERR!(b"Failed creating handle table\n\0");
+        ERR!("Failed creating handle table\n");
         return 0;
     }
 
@@ -821,14 +808,14 @@ pub unsafe extern "C" fn UserCreateHandleTable() -> BOOL {
 
     mem = UserHeapAlloc((core::mem::size_of::<USER_HANDLE_ENTRY>() * HandleCount as usize) as SIZE_T);
     if mem.is_null() {
-        ERR!(b"Failed creating handle table\n\0");
+        ERR!("Failed creating handle table\n");
         return 0;
     }
 
     gHandleTable = UserHeapAlloc(core::mem::size_of::<USER_HANDLE_TABLE>() as SIZE_T) as PUSER_HANDLE_TABLE;
     if gHandleTable.is_null() {
         UserHeapFree(mem);
-        ERR!(b"Failed creating handle table\n\0");
+        ERR!("Failed creating handle table\n");
         return 0;
     }
 
@@ -856,13 +843,13 @@ pub unsafe extern "fastcall" fn UserCreateObject(
         &mut ObjectOwner as *mut PVOID,
     );
     if Object.is_null() {
-        ERR!(b"User object allocation failed. Out of memory!\n\0");
+        ERR!("User object allocation failed. Out of memory!\n");
         return core::ptr::null_mut();
     }
 
     let hi = UserAllocHandle(ht, Object, type_, ObjectOwner);
     if hi == 0 as HANDLE {
-        ERR!(b"Out of user handles!\n\0");
+        ERR!("Out of user handles!\n");
         ObjectCallbacks[type_ as usize].ObjectFree.unwrap()(Object);
         return core::ptr::null_mut();
     }
@@ -896,13 +883,13 @@ pub unsafe extern "C" fn UserCreateObject(
         &mut ObjectOwner as *mut PVOID,
     );
     if Object.is_null() {
-        ERR!(b"User object allocation failed. Out of memory!\n\0");
+        ERR!("User object allocation failed. Out of memory!\n");
         return core::ptr::null_mut();
     }
 
     let hi = UserAllocHandle(ht, Object, type_, ObjectOwner);
     if hi == 0 as HANDLE {
-        ERR!(b"Out of user handles!\n\0");
+        ERR!("Out of user handles!\n");
         ObjectCallbacks[type_ as usize].ObjectFree.unwrap()(Object);
         return core::ptr::null_mut();
     }
@@ -1181,7 +1168,7 @@ pub unsafe extern "C" fn UserDestroyObjectsForOwner(
         if (ObjectCallbacks[entry_type(Entry) as usize].ObjectDestroy.unwrap())(entry_ptr(Entry)) == 0 {
             // C varargs default-promote BYTE -> int for "%u".
             ERR!(
-                b"Failed destructing object %p, type %u.\n\0",
+                "Failed destructing object %p, type %u.\n",
                 entry_ptr(Entry),
                 entry_type(Entry) as c_int
             );

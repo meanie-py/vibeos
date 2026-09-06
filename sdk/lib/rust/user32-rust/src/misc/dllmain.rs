@@ -4,8 +4,6 @@ use crate::internal::{NtCurrentPeb, NtCurrentTeb};
 use core::ffi::c_void;
 
 // ---- debug-print macros (ReactOS wine debug — no-ops in the cohab build) ----
-macro_rules! TRACE { ($($t:tt)*) => {{ }}; }
-macro_rules! ERR  { ($($t:tt)*) => {{ }}; }
 
 // ---- constants not present in the win32k bindgen surface ----
 // ntstatus.h
@@ -833,7 +831,7 @@ pub unsafe extern "system" fn User32CallSetWndIconsFromKernel(
         hIconSmWindows = (*Common).hIconSmWindows;
     }
     ERR!(
-        b"hIconSmWindows %p hIconWindows %p \n\0".as_ptr() as *const i8,
+        "hIconSmWindows %p hIconWindows %p \n",
         hIconSmWindows,
         hIconWindows,
     );

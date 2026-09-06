@@ -26,8 +26,8 @@ const IOCTL_AACS_READ_MEDIA_KEY_BLOCK: u32 = 0x003350C4; // FIXED 2026-07-05: tr
 const IOCTL_AACS_READ_MEDIA_KEY_BLOCK_SIZE: u32 = 0x003350C0; // FIXED 2026-07-05: translation invented wrong value (verified vs psdk headers)
 const AACS_MKB_PACK_SIZE: u32 = 0x8000;
 const SCSIOP_READ_DVD_STRUCTURE: u8 = 0xAD;
-const TRACE_LEVEL_WARNING: i32 = 0;
-const TRACE_FLAG_INIT: i32 = 0;
+const TRACE_LEVEL_WARNING: i32 = 3; // storswtr.h:26-30
+const TRACE_FLAG_INIT: i32 = 8; // storswtr.h:80-98 (an ORDINAL enum, not a bitmask)
 
 // WDF_REQUEST_PARAMETERS is assumed defined elsewhere with correct layout
 // CDROM_DEVICE_EXTENSION is assumed defined elsewhere

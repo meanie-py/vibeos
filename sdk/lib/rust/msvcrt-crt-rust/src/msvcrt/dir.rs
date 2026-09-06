@@ -7,7 +7,6 @@ use crate::{wcscpy, wcslen};
 // wine's debug macros. A MACRO, never a no-op fn: an out-of-line no-op is an
 // optimization barrier that uncloaks latent ABI mismatches (-> ud2 -> BUGCHECK).
 // Same shape errno.rs, file.rs and the other translated usermode modules use.
-macro_rules! FIXME { ($($arg:tt)*) => {{}}; }
 
 // ---- file-scope preamble (translated) ----
 // No file-scope declarations to translate.
@@ -1668,7 +1667,7 @@ pub unsafe extern "C" fn _wsearchenv_s(
     }
 
     if count > (MAX_PATH) as usize {
-        FIXME!(b"count > MAX_PATH not supported\n\0".as_ptr());
+        FIXME!("count > MAX_PATH not supported\n");
     }
 
     fname_len = wcslen(file);

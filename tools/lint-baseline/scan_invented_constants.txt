@@ -1,0 +1,11 @@
+AMBIGUOUS sdk/lib/rust/cmlib-rust/src/hiveinit.rs: NTDDI_VERSION ours 0x5010000 vs {0x5020400, 0x6000000}
+UNRESOLVED sdk/lib/rust/cdfs-rust/src/deviosup.rs: BugCheckFileId 0x0
+UNRESOLVED sdk/lib/rust/cdrom-rust/src/autorun.rs: IOCTL_MCN_SYNC_FAKE_IOCTL 0x1
+UNRESOLVED sdk/lib/rust/cdrom-rust/src/common.rs: IOCTL_MCN_SYNC_FAKE_IOCTL 0x0
+UNRESOLVED sdk/lib/rust/fastfat-rust/src/devctrl.rs: Dbg 0x0
+UNRESOLVED sdk/lib/rust/fastfat-rust/src/fsctrl.rs: FAT_ENTRY 0xFFFFFFF
+UNRESOLVED sdk/lib/rust/fastfat-rust/src/fsctrl.rs: SET_PURGE_FAILURE_MODE_DISABLED 0x2
+UNRESOLVED sdk/lib/rust/fastfat-rust/src/fsctrl.rs: SET_PURGE_FAILURE_MODE_ENABLED 0x1
+UNRESOLVED sdk/lib/rust/fastfat-rust/src/lockctrl.rs: Dbg 0x0
+UNRESOLVED sdk/lib/rust/fastfat-rust/src/strucsup.rs: IOCTL_CDROM_READ_TOC 0x24000
+UNRESOLVED sdk/lib/rust/ntkrnl-sys/src/constants.rs: OBP_CREATE_INFO_LOOKASIDE_MAX_SIZE 0x0

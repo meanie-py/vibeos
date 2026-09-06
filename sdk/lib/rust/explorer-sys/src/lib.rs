@@ -29,6 +29,11 @@ use core::ffi::c_void;
 pub use winsrv_sys;
 
 // Explorer-wide shared C++ types (TaskbarSettings, TW_STRUCKRECTS2, …).
+// Wine's ERR/FIXME/WARN/TRACE for the whole crate; `#[macro_use]` must precede the
+// modules that call them (macro_rules! is textually scoped).
+#[macro_use]
+pub mod winedebug;
+
 pub mod types;
 
 // ATL/WTL replacement substrate for the tier-C COM/window-server classes
@@ -1364,25 +1369,4 @@ pub fn LOBYTE(w: u16) -> u8 {
 #[inline]
 pub fn MAKEINTRESOURCEW(i: u16) -> *const u16 {
     i as usize as *const u16
-}
-
-// Wine debug-channel macros (TRACE/WARN/ERR/FIXME). The C++ side routes these
-// through wine_dbg_log with runtime channel gating; the Rust cohab compiles
-// them out for now (channels are off in normal boots). TODO: route to
-// OutputDebugStringA behind a feature if a debug session needs them.
-#[macro_export]
-macro_rules! TRACE {
-    ($($t:tt)*) => {{}};
-}
-#[macro_export]
-macro_rules! WARN {
-    ($($t:tt)*) => {{}};
-}
-#[macro_export]
-macro_rules! ERR {
-    ($($t:tt)*) => {{}};
-}
-#[macro_export]
-macro_rules! FIXME {
-    ($($t:tt)*) => {{}};
 }

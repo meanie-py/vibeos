@@ -38,10 +38,6 @@ use ntkrnl_sys::ddk::{
     ZwClose, ZwCreateKey, ZwSetValueKey, PCWSTR,
 };
 
-// DPRINT/DPRINT1/ASSERT/PAGED_CODE are no-ops under the driver's NDEBUG build.
-macro_rules! DPRINT  { ($($t:tt)*) => {}; }
-macro_rules! DPRINT1 { ($($t:tt)*) => {}; }
-
 // ---- ACPI exception codes (acexcep.h). AE_OK/BAD_PARAMETER/BUFFER_OVERFLOW are
 //      in crate::shared, but we avoid that glob (see top), so define the ones we
 //      use locally. EXCEP_ENV(c)=c|0x0000, EXCEP_PGM(c)=c|0x1000. Values match

@@ -9,9 +9,7 @@ use core::ffi::c_void;
 // DBG_DEFAULT_CHANNEL(UserPainting) — function-like macro, no translatable decl.
 
 // Debug-channel macros — no kernel symbol, no-op.
-macro_rules! ERR { ($($t:tt)*) => {{}}; }
 #[allow(unused_macros)]
-macro_rules! TRACE { ($($t:tt)*) => {{}}; }
 
 // --- FASTCALL (i386) / cdecl (else) win32k exports not covered by win32k-sys ---
 #[cfg(target_arch = "x86")]
