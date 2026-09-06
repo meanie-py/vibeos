@@ -104,5 +104,14 @@ stamp was installed.
       the existing whole-worktree prune is not a substitute for that proof.
 - [ ] Bound successful/failed run artifacts separately, preserving failure evidence.
 
+Fleet handoff follow-ups (not implemented by the traversal-safety slice): verify
+and preserve each repeated boot's serial log before retaining/deleting run
+artifacts; measure ARM64 media staging copies and investigate immutable backing
+images plus per-run writable overlays. The handoff's approximately 293 MB per
+boot and cache-eviction explanation remain reports, not local measurements.
+Keep failure evidence and active images protected. Verify sccache request/hit
+and eviction behavior before changing its cap (`SCCACHE_CACHE_SIZE`); do not
+infer a broken shared cache merely from large private Cargo targets.
+
 Until those checks complete, the pilot and retention machinery are migration
 infrastructure, not a claim that the 37 GiB working set has been reclaimed.

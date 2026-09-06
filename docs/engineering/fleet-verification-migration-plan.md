@@ -55,6 +55,42 @@ not a gate). Full certification remains the merge conductor's job.
 The ARM64 `scan_ud2` corpus concern is tracked in the roadmap's live bug registry;
 it is not fixed by rescheduling source checks.
 
+### Concurrent traversal and incomplete checks
+
+The fleet handoff exposed a stronger requirement than source-only inputs:
+post-filtering `rglob` results still enters mutable Cargo/build directories and
+can crash while a sibling process removes them. All six early scanners now use
+`tools/source_walk.py`, pruning excluded directories before traversal. The
+invented-constant C-oracle search uses the same mechanism. Missing or unreadable
+included source fails loudly rather than silently shrinking coverage.
+
+Regression fixtures audit both directory entry and file reads, require actual
+source reads, and compare findings while generated files/directories churn.
+A source-I/O failure is tested separately from harmless generated-output churn.
+This traversal audit is a prerequisite for adding any scanner to the early set;
+source independence alone is insufficient. Newly added scanners still default
+to deferred, not an inventory-construction failure.
+
+Scanner tracebacks, signals, and nonzero exits without findings produce
+`SCANNER_ERROR`, even if partial output matches the baseline. Baseline updates
+also refuse incomplete results. The gate preserves this classification, blocks
+certification, and the merge queue treats it as inconclusive rather than blaming
+or recursively bisecting lanes as though it were a new source finding. Required
+check inventories and baseline rules for completed scans are unchanged.
+
+Handoff reconciliation: Claude's `f9ca41a6a88` identified the C-oracle traversal
+fix; this implementation generalizes pruning without swallowing source I/O
+errors. The reported `scan_rawdylib_linkname` scanner is not in this checkout;
+audit its traversal before promoting it when it arrives. Neither this change
+nor early scheduling resolves the separately tracked ARM64 binary-corpus gap.
+
+Local validation: all 31 tooling checks and 465 CLI/traversal tests passed.
+`20260906-185617-check-source-early-all` completed all six scanners in 6m52s;
+each finding set exactly matched the previous cold gate (11/49/0/9/8/0), not
+merely its baseline threshold. Its WARN explicitly means partial coverage,
+not a full gate or push stamp. No new OS build/smoke run is claimed for this
+tooling-only slice; the conductor must certify the eventual merged tree.
+
 Mechanism:
 
 - `source_partition_specs` partitions the original command inventory without

@@ -58,6 +58,9 @@ import sys
 from collections import defaultdict
 from pathlib import Path
 
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
+from tools.source_walk import source_files, source_walk
+
 REPO = Path(__file__).resolve().parent.parent
 RUST_ROOT = REPO / "sdk" / "lib" / "rust"
 
@@ -213,10 +216,7 @@ def harvest(paths: list[Path]) -> dict[str, set[tuple[int, str]]]:
     raw: dict[str, str] = {}
     sites: dict[str, list[tuple[str, str]]] = defaultdict(list)
     for p in paths:
-        try:
-            text = _strip_comments(p.read_text(errors="ignore"))
-        except OSError:
-            continue
+        text = _strip_comments(p.read_text(errors="ignore"))
         rel = _rel(p)
         for i, line in enumerate(text.splitlines(), 1):
             m = DEFINE_RE.match(line)
@@ -266,13 +266,10 @@ def c_dirs_for(crate: str) -> list[Path]:
     stem = crate.removesuffix("-rust").removesuffix("-sys")
     stem = {"ntkrnl": "ntoskrnl", "rtlk": "rtl", "win32k": "win32ss"}.get(stem, stem)
     hits = []
-    for d in REPO.rglob(stem):
-        if not d.is_dir():
-            continue
-        rel = str(d.relative_to(REPO))
-        if rel.startswith(("build-", "modules/rostests", "sdk/lib/rust", ".git")):
-            continue
-        hits.append(d)
+    for parent, dirs, _ in source_walk(
+        REPO, exclude_prefixes=("build-", "modules/rostests", "sdk/lib/rust", ".git")
+    ):
+        hits.extend(parent / name for name in dirs if name == stem)
     return hits
 
 
@@ -282,7 +279,7 @@ _HEADER_CACHE: list[Path] | None = None
 def sdk_headers() -> list[Path]:
     global _HEADER_CACHE
     if _HEADER_CACHE is None:
-        _HEADER_CACHE = sorted((REPO / "sdk" / "include").rglob("*.h"))
+        _HEADER_CACHE = sorted(source_files(REPO / "sdk" / "include", "*.h"))
     return _HEADER_CACHE
 
 
@@ -293,7 +290,7 @@ def oracle_for(crate: str) -> dict[str, set[tuple[int, str]]]:
     if crate not in _ORACLE_CACHE:
         paths = list(sdk_headers())
         for d in c_dirs_for(crate):
-            paths += sorted(d.rglob("*.h")) + sorted(d.rglob("*.c"))
+            paths += sorted(source_files(d, "*.h")) + sorted(source_files(d, "*.c"))
         _ORACLE_CACHE[crate] = harvest(paths)
     return _ORACLE_CACHE[crate]
 
@@ -304,13 +301,10 @@ def oracle_for(crate: str) -> dict[str, set[tuple[int, str]]]:
 def collect() -> list[tuple[str, str, str, int, str, str]]:
     """[(crate, rel, name, value, rust_type, comment)] for self-labelled consts."""
     out = []
-    for path in sorted(RUST_ROOT.rglob("*.rs")):
+    for path in sorted(source_files(RUST_ROOT)):
         if SKIP_FILE_RE.search(str(path)):
             continue
-        try:
-            text = path.read_text(errors="replace")
-        except OSError:
-            continue
+        text = path.read_text(errors="replace")
         if GENERATED_RE.search(text[:800]):
             continue
         rel = str(path.relative_to(REPO))

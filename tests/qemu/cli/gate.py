@@ -382,18 +382,22 @@ def _lint_once(repo: Path, arch: str, root: Path) -> dict:
             salient = ln.strip()
             break
     inventory_ok = True
+    summary = _read_summary(root)
+    classification = summary.get("classification") or ""
+    if lints._scanner_error(proc, "stdout"):
+        classification = "SCANNER_ERROR"
     if arch in ("source-early", "source-deferred"):
         expected = [name for name, _, _ in lints.source_partition_specs(repo, arch)]
-        summary = _read_summary(root)
         inventory_ok = summary.get("checked_source_checks") == expected
         if not inventory_ok:
             salient = "missing or incorrect source-partition coverage inventory"
     return {
         "arch": arch,
-        "ok": proc.returncode == 0 and inventory_ok,
+        "ok": proc.returncode == 0 and inventory_ok and classification != "SCANNER_ERROR",
         "seconds": dt,
         "salient": salient,
         "exit": proc.returncode,
+        "classification": "SCANNER_ERROR" if not inventory_ok else classification,
     }
 
 
@@ -839,14 +843,20 @@ def gate(args, repo: Path) -> int:
                         status="ok" if r["ok"] else "fail",
                         detail="check --strict clean"
                         if r["ok"]
-                        else f"NEW lint findings (exit {r['exit']})",
+                        else (
+                            "SCANNER_ERROR: scanner did not complete; coverage unavailable"
+                            if r.get("classification") == "SCANNER_ERROR"
+                            else f"NEW lint findings (exit {r['exit']})"
+                        ),
                         salient=[]
                         if r["ok"]
                         else [r["salient"] or f"strict check partition {r['arch']} failed"],
                     )
                 )
-                if not r["ok"] and not run.classification:
-                    run.classification = "LINT_FAIL"
+                if not r["ok"] and (
+                    r.get("classification") == "SCANNER_ERROR" or not run.classification
+                ):
+                    run.classification = r.get("classification") or "LINT_FAIL"
 
         def _collect_cohab() -> None:
             for f in cf.as_completed(cfut):
