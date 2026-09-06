@@ -137,14 +137,20 @@ fi
 # marshal32.exe — the M18 marshaller-verification guest: NtQueryInformationThread
 # TBI (verified against the guest's OWN TEB32), IOCP post/get sentinel round-trip
 # (NtRemoveIoCompletion out-slots + IOSB), EnumDisplayMonitors/GetMonitorInfo/
-# MonitorFromPoint (count-aware HMONITOR array + the new flat thunks).
-if [ -f "$I386_BUILD/win32ss/user/user32/CMakeFiles/libuser32.dir/libuser32.a" ]; then
+# MonitorFromPoint (count-aware HMONITOR array + the new flat thunks), and
+# select() on a fresh UDP socket — the first rung to reach an AFD DRIVER payload
+# (AFD_POLL_INFO), which is why it links ws2_32. That link is also what pulls
+# ws2_32 into the staged import closure, and with it msafd via the Winsock
+# catalog, so the AFD marshallers become reachable by a guest at all.
+if [ -f "$I386_BUILD/win32ss/user/user32/CMakeFiles/libuser32.dir/libuser32.a" ] && \
+   [ -f "$I386_BUILD/dll/win32/ws2_32/CMakeFiles/libws2_32.dir/libws2_32.a" ]; then
     "$LLVM_MINGW/i686-w64-mingw32-clang" -O1 -nostdlib -Wl,-e,_start \
         -Wl,--subsystem,windows:5.1 -Wl,--major-os-version,5 -Wl,--minor-os-version,1 \
         -o "$HARNESS_BUILD/marshal32.exe" "$HARNESS_SRC/Marshal32.c" \
         "$I386_BUILD/win32ss/user/user32/CMakeFiles/libuser32.dir/libuser32.a" \
         "$I386_BUILD/dll/win32/kernel32/CMakeFiles/libkernel32.dir/libkernel32.a" \
-        "$I386_BUILD/dll/ntdll/CMakeFiles/libntdll.dir/libntdll.a"
+        "$I386_BUILD/dll/ntdll/CMakeFiles/libntdll.dir/libntdll.a" \
+        "$I386_BUILD/dll/win32/ws2_32/CMakeFiles/libws2_32.dir/libws2_32.a"
 else
     echo "[!] marshal32.exe skipped: build-i386 importlibs missing ($I386_BUILD)"
 fi

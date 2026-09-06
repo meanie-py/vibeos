@@ -552,6 +552,80 @@ land; date every addition.** Source docs live in `docs/engineering/archive/`.
 The committed home for open bugs (was: agent MEMORY.md, which other agents never see).
 Field-manual § pointers hold the full writeups. **Update on state change.**
 
+- **RVA arithmetic on a PE mapped as DATA crashed the WoW64 layer — FIXED** (2026-09-05).
+  `Wow64pPatchTransitionSlot` runs on every successful `NtMapViewOfSection` and guarded only on
+  DOS magic + PE signature + `Size >= 0x1000`, none of which separates an IMAGE mapping
+  (sections at RVAs) from a raw DATA mapping of the same file (sections at FILE offsets). ws2_32
+  maps msafd.dll as data before loading it properly, so the export walk read RVAs into raw file
+  bytes and **wow64.dll took the access violation on the guest's behalf** — which is why the
+  faulting address was inside no guest module. The discriminator is the ViewSize: an image view
+  equals SizeOfImage, a data view is the file page-rounded (msafd: file 0x55400 -> 0x56000
+  observed, vs SizeOfImage 0x49000). `Wow64pFindExport32` was also written for one trusted
+  input (our own ntdll32) and now sees every module a guest maps, so all of its RVAs are
+  range-checked and the name compare is bounded. Symptom to recognise again: `rip` inside
+  wow64.dll after a map, with a guest that never reached its DllMain.
+- **32-bit `socket()` returned WSAEINVAL because the WSH helper was unstaged — FIXED,
+  BOOT-VERIFIED** (2026-09-05, ladder run `20260905-233102-smoke-amd64`: `socket()` succeeds,
+  `select()` is reached and issues four AFD IOCTLs where there were previously zero). With the
+  RVA-on-a-data-mapping crash above fixed, msafd.dll loaded for real and `socket()` STILL
+  failed with `0x2726`. The cause was the SAME
+  dynamic-edge blind spot one hop deeper: msafd reads `HelperDllName` from the registry and
+  `LoadLibraryW`s the WSH_* helper (msafd-rust `misc/helpers.rs`), which nettcpip.inf declares
+  as `%SystemRoot%\System32\wshtcpip.dll`. That DLL was BUILT and never staged into SysWOW64,
+  `LoadLibraryW` returned NULL, and helpers.rs returns WSAEINVAL straight out of WSPSocket.
+  Visible in the log as two `NtQueryAttributesFile => c0000034` immediately after msafd's
+  DllMain. **The one-hop fix is what disguised it**: staging the provider made every symptom of
+  the previous bug vanish while the module it loads at runtime was still missing, because the
+  error surfaces a full frame from the absent DLL. `wow64-closure.py` now keys the derivation
+  by READER (ws2_32 reads LibraryPath/PackedCatalogItem, msafd reads HelperDllName) and follows
+  dynamic edges transitively. Lesson: a runtime-load edge is never known to be the last one.
+- **AFD IOCTLs were REFUSED because async I/O was unsupported under WoW64 — FIXED,
+  BOOT-VERIFIED** (2026-09-06, ladder `20260906-132106-smoke-amd64`: **9/9 guests PASS**,
+  marshal32 `0xbb04` -> `0x600d`, AFD refusals 4 -> 0, IOCTL statuses `4x c0000002` ->
+  `3x SUCCESS + 1x 00000102`). This was the E25 blocker: msafd always passes an Event because
+  AFD is inherently async, and `Wow64pRefuseAsync` refused on sight, so the E25 marshallers had
+  never once run. The refusal was CORRECT when written — the only IOSB wow64.dll could give the
+  kernel was a host one on its own frame, and pending on that is the dead-frame-IOSB class
+  (field manual §9.36). Fixed the way that comment already said was owed: the kernel writes the
+  GUEST's 8-byte block, which outlives the thunk by construction. The machinery existed already
+  (M15b, built for `NtReadFile`/`NtWriteFile`); the IOCTL family was simply never wired into it.
+  Three obligations in `IopDeviceFsIoControl`, each **silent** rather than loud if skipped:
+  probe the guest block at 8 bytes not 16, mark the IRP, and narrow the write on the fast-I/O
+  path — which completes inline, never builds an IRP, and so can never see the flag. Marshalled
+  IOCTLs still complete synchronously and the reason is the PAYLOAD, not the IOSB: the widened
+  input, WSABUF array and AFD_POLL_INFO shadow are host-heap blocks the thunk frees on the way
+  out, and METHOD_BUFFERED copies SystemBuffer back into that shadow AT COMPLETION. The
+  unmarshalled path has no shadow and is genuinely async now. Blocking has one trap worth
+  remembering: msafd's `SockEvent` is a SYNCHRONIZATION event, so the thunk's own wait consumes
+  the very signal `MsafdWaitForAlert` is about to wait for — missing the re-signal is a guest
+  hang with no error printed anywhere. Still OPEN: a guest `ApcRoutine` (no 64->32 user-APC
+  dispatch).
+- **msafd interprets a FAILED `AFD_SELECT` as success — upstream wart, OPEN but no longer
+  reachable here** (2026-09-05, re-checked 2026-09-06). The `select()` = 5 on a single-socket
+  `fd_set` is explained: `WSPSelect` never checks the IOCTL status before walking `PollInfo`, so
+  a failed IOCTL leaves the guest's own REQUEST mask sitting in `Handles[].Events` and the loop
+  reads it back as the RESULT, `FD_SET`ting sockets that were never ready. It returns the count
+  rather than `SOCKET_ERROR`, though it does set `*lpErrno` — so a caller checking only for
+  failure sees five ready sockets. Byte-faithful to the C, so this is upstream behaviour and is
+  left alone. With the refusal above fixed the precondition is gone (the rung now returns 0 and
+  passes), but the wart would resurface behind any future IOCTL failure.
+- **EVERY CSR call from a WoW64 guest fails — `NtRequestWaitReplyPort => c000000d` — OPEN**
+  (2026-09-05). Found while chasing the socket() bug above; it is NOT its cause (there is no
+  LPC call inside the socket() window at all — that lead was wrong). It is unconditional and
+  the arithmetic is exact: `PORT_MESSAGE` is **24 bytes on i386 and 40 on amd64** (the
+  `ClientId` union is 2 pointers, and `ClientViewSize` is a `SIZE_T`), and the syscall has NO
+  manual marshaller — the log line prints without `[manual]`, so it takes the flat
+  pointer-widening auto thunk. The guest sets `TotalLength = DataLength + 24`; the kernel
+  (`lpc-rust/src/send.rs`) checks `DataLength + sizeof(PORT_MESSAGE) > TotalLength`, i.e.
+  `DataLength + 40 > DataLength + 24`, which is **always true**. Hence 100% failure, every
+  call, deterministically. `NtConnectPort`/`NtSecureConnectPort` are already on the manual list
+  and thunk `PORT_VIEW` + `CSR_API_CONNECTINFO`, so the connect succeeds and only the calls
+  fail. There is already a workaround papering over one symptom — `WOW64: CreateThread
+  continuing without CSRSS thread notify (0xc000000d)`. Fixing the header is mechanical
+  (translate 24<->40, payload follows contiguously, rewrite TotalLength); the real work is the
+  **payload**, a `CSR_API_MESSAGE` full of 32-bit guest pointers that 64-bit csrss would
+  misread, so this needs per-API marshalling and is its own task, not a bolt-on. Same family:
+  `NtReplyPort`, `NtReplyWaitReceivePort`, `NtRequestPort`, `NtReplyWaitReplyPort`.
 - **FIXED (2026-09-05): freeldr printed NOTHING — all ~2200 `ERR`/`FIXME` sites were silenced
   by a dropped disjunct, and `/DEBUG=` was dead code.** A boot log contained zero `DbgPrint2`
   output; the `[freeldr]`/`[FLDR]` stamps that *do* appear ride a separate hand-added path, which
