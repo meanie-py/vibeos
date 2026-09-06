@@ -7,13 +7,9 @@ use core::ffi::c_void;
 
 // Debug-channel macros — no kernel symbol, no-op.
 #[allow(unused_macros)]
-macro_rules! TRACE { ($($t:tt)*) => {{}}; }
 #[allow(unused_macros)]
-macro_rules! ERR { ($($t:tt)*) => {{}}; }
 #[allow(unused_macros)]
-macro_rules! WARN { ($($t:tt)*) => {{}}; }
 #[allow(unused_macros)]
-macro_rules! FIXME { ($($t:tt)*) => {{}}; }
 
 // Pool tags (tags.h): USERTAG_CURSOR = 'ucsU', TAG_STRING = ' RTS'.
 // C multi-char constants are big-endian; reverse for little-endian bytes.

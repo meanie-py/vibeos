@@ -77,11 +77,6 @@ extern "C" {
     fn EngpGetDisplayDriverParameters( pGraphicsDevice: PGRAPHICS_DEVICE, pdm: PDEVMODEW, ) -> i32;
 }
 
-// C debug macros — silenced via macro_rules! (variadic no-op).
-#[allow(unused_macros)] macro_rules! TRACE { ($($t:tt)*) => { () }; }
-#[allow(unused_macros)] macro_rules! ERR { ($($t:tt)*) => { () }; }
-#[allow(unused_macros)] macro_rules! WARN { ($($t:tt)*) => { () }; }
-
 // FORCEINLINE NTSTRSAFEAPI in ddk/ntstrsafe.h:174 — inline-expand.
 // Returns STATUS_SUCCESS (0) on success, STATUS_BUFFER_OVERFLOW (0xC0000023u32 as i32) on overflow.
 #[inline]
@@ -524,7 +519,7 @@ pub unsafe extern "system" fn LDEVOBJ_pLoadDriver(
     if pleLink == core::ptr::addr_of_mut!(gleLdevListHead) as PLIST_ENTRY {
         pldev = LDEVOBJ_AllocLDEV(ldevtype);
         if pldev.is_null() {
-            ERR!(b"Could not allocate LDEV\n\0".as_ptr() as *const i8);
+            ERR!("Could not allocate LDEV\n");
             EngReleaseSemaphore(ghsemLDEVList);
             TRACE!(b"LDEVOBJ_pLoadDriver returning %p\n\0".as_ptr() as *const i8, pldev);
             return pldev;
@@ -533,7 +528,7 @@ pub unsafe extern "system" fn LDEVOBJ_pLoadDriver(
         if LDEVOBJ_bLoadImage(pldev, core::ptr::addr_of_mut!(strDriverName)) == 0 {
             LDEVOBJ_vFreeLDEV(pldev);
             pldev = core::ptr::null_mut();
-            ERR!(b"LDEVOBJ_bLoadImage failed\n\0".as_ptr() as *const i8);
+            ERR!("LDEVOBJ_bLoadImage failed\n");
             EngReleaseSemaphore(ghsemLDEVList);
             TRACE!(b"LDEVOBJ_pLoadDriver returning %p\n\0".as_ptr() as *const i8, pldev);
             return pldev;
@@ -547,12 +542,12 @@ pub unsafe extern "system" fn LDEVOBJ_pLoadDriver(
                 (*(*pldev).pGdiDriverInfo).EntryPoint,
             );
         if LDEVOBJ_bEnableDriver(pldev, entry_point) == 0 {
-            ERR!(b"LDEVOBJ_bEnableDriver failed\n\0".as_ptr() as *const i8);
+            ERR!("LDEVOBJ_bEnableDriver failed\n");
 
             if LDEVOBJ_bUnloadImage(pldev) != 0 {
                 LDEVOBJ_vFreeLDEV(pldev);
             } else {
-                ERR!(b"Could not unload driver. Leaking memory\n\0".as_ptr() as *const i8);
+                ERR!("Could not unload driver. Leaking memory\n");
             }
             pldev = core::ptr::null_mut();
             EngReleaseSemaphore(ghsemLDEVList);
@@ -629,7 +624,7 @@ pub unsafe extern "system" fn LDEVOBJ_ulGetDriverModes(
 
     cbSize = (*pldev).__bindgen_anon_1.pfn.GetModes.unwrap()(hDriver, 0, core::ptr::null_mut());
     if cbSize == 0 {
-        ERR!(b"DrvGetModes returned 0\n\0".as_ptr() as *const i8);
+        ERR!("DrvGetModes returned 0\n");
         LDEVOBJ_vDereference(pldev);
         *ppdm = pdm;
         return cbSize;
@@ -637,7 +632,7 @@ pub unsafe extern "system" fn LDEVOBJ_ulGetDriverModes(
 
     pdm = ExAllocatePoolWithTag(PagedPool, cbSize as SIZE_T, GDITAG_DEVMODE) as PDEVMODEW;
     if pdm.is_null() {
-        ERR!(b"Could not allocate devmodeinfo\n\0".as_ptr() as *const i8);
+        ERR!("Could not allocate devmodeinfo\n");
         LDEVOBJ_vDereference(pldev);
         *ppdm = pdm;
         return cbSize;
@@ -645,7 +640,7 @@ pub unsafe extern "system" fn LDEVOBJ_ulGetDriverModes(
 
     cbSize = (*pldev).__bindgen_anon_1.pfn.GetModes.unwrap()(hDriver, cbSize, pdm);
     if cbSize == 0 {
-        ERR!(b"DrvrGetModes returned 0 on second call\n\0".as_ptr() as *const i8);
+        ERR!("DrvrGetModes returned 0 on second call\n");
         ExFreePoolWithTag(pdm as PVOID, GDITAG_DEVMODE);
         pdm = core::ptr::null_mut();
     }
@@ -691,7 +686,7 @@ pub unsafe extern "C" fn LDEVOBJ_bBuildDevmodeList(
 
         pdminfo = ExAllocatePoolWithTag(PagedPool, cbFull as SIZE_T, 0x444D4447u32) as PDEVMODEINFO;
         if pdminfo.is_null() {
-            ERR!(b"Could not allocate devmodeinfo\n\0".as_ptr() as *const i8);
+            ERR!("Could not allocate devmodeinfo\n");
             ExFreePoolWithTag(pdm as PVOID, 0x444D4447u32);
             pwsz = pwsz.add(wcslen(pwsz) + 1);
             continue;
@@ -722,7 +717,7 @@ pub unsafe extern "C" fn LDEVOBJ_bBuildDevmodeList(
     }
 
     if (*pGraphicsDevice).pdevmodeInfo.is_null() || cModes == 0 {
-        ERR!(b"No devmodes\n\0".as_ptr() as *const i8);
+        ERR!("No devmodes\n");
         return 0u8;
     }
 
@@ -733,7 +728,7 @@ pub unsafe extern "C" fn LDEVOBJ_bBuildDevmodeList(
         0x47444447u32
     ) as *mut DEVMODEENTRY;
     if (*pGraphicsDevice).pDevModeList.is_null() {
-        ERR!(b"No devmode list\n\0".as_ptr() as *const i8);
+        ERR!("No devmode list\n");
         return 0u8;
     }
 
@@ -892,7 +887,7 @@ pub unsafe extern "C" fn LDEVOBJ_bProbeAndCaptureDevmode(
     Status = EngpGetDisplayDriverParameters(pGraphicsDevice, core::ptr::addr_of_mut!(dmSearch));
     if !NT_SUCCESS(Status) {
         ERR!(
-            b"EngpGetDisplayDriverParameters() failed with status 0x%08x\n\0".as_ptr() as *const i8,
+            "EngpGetDisplayDriverParameters() failed with status 0x%08x\n",
             Status,
         );
         return 0;
@@ -989,7 +984,7 @@ pub unsafe extern "C" fn LDEVOBJ_bProbeAndCaptureDevmode(
 
     if pdmSelected.is_null() {
         ERR!(
-            b"Requested mode not found (%dx%dx%d %d Hz)\n\0".as_ptr() as *const i8,
+            "Requested mode not found (%dx%dx%d %d Hz)\n",
             dmSearch.dmPelsWidth,
             dmSearch.dmPelsHeight,
             dmSearch.dmBitsPerPel,

@@ -1127,7 +1127,7 @@ pub unsafe extern "C" fn SampGetAccountDomainInfo(AccountDomainInfo: *mut PPOLIC
     );
     if Status != STATUS_SUCCESS {
         ERR!(
-            b"LsaOpenPolicy failed (Status: 0x%08lx)\n\0".as_ptr(),
+            "LsaOpenPolicy failed (Status: 0x%08lx)\n",
             Status,
         );
         return Status;
@@ -1178,7 +1178,7 @@ pub unsafe extern "C" fn SampInitializeSAM() -> BOOL {
             &mut hSamKey,
         );
         if !NT_SUCCESS(Status) {
-            ERR!(b"Failed to open the SAM key (Status: 0x%08lx)\n\0".as_ptr(), Status);
+            ERR!("Failed to open the SAM key (Status: 0x%08lx)\n", Status);
             return 0;
         }
 
@@ -1190,7 +1190,7 @@ pub unsafe extern "C" fn SampInitializeSAM() -> BOOL {
 
         pBuiltinSid = RtlAllocateHeap(RtlGetProcessHeap(), 0, RtlLengthRequiredSid(1) as SIZE_T);
         if pBuiltinSid.is_null() {
-            ERR!(b"Failed to allocate the Builtin Domain SID\n\0".as_ptr());
+            ERR!("Failed to allocate the Builtin Domain SID\n");
             bResult = 0;
             break 'done;
         }
@@ -1200,7 +1200,7 @@ pub unsafe extern "C" fn SampInitializeSAM() -> BOOL {
 
         pInteractiveSid = RtlAllocateHeap(RtlGetProcessHeap(), 0, RtlLengthRequiredSid(1) as SIZE_T);
         if pInteractiveSid.is_null() {
-            ERR!(b"Failed to allocate the Interactive SID\n\0".as_ptr());
+            ERR!("Failed to allocate the Interactive SID\n");
             bResult = 0;
             break 'done;
         }
@@ -1211,7 +1211,7 @@ pub unsafe extern "C" fn SampInitializeSAM() -> BOOL {
         pAuthenticatedUserSid =
             RtlAllocateHeap(RtlGetProcessHeap(), 0, RtlLengthRequiredSid(1) as SIZE_T);
         if pAuthenticatedUserSid.is_null() {
-            ERR!(b"Failed to allocate the Authenticated User SID\n\0".as_ptr());
+            ERR!("Failed to allocate the Authenticated User SID\n");
             bResult = 0;
             break 'done;
         }
@@ -1221,7 +1221,7 @@ pub unsafe extern "C" fn SampInitializeSAM() -> BOOL {
 
         Status = SampGetAccountDomainInfo(&mut AccountDomainInfo);
         if !NT_SUCCESS(Status) {
-            ERR!(b"SampGetAccountDomainInfo failed (Status %08lx)\n\0".as_ptr(), Status);
+            ERR!("SampGetAccountDomainInfo failed (Status %08lx)\n", Status);
             bResult = 0;
             break 'done;
         }

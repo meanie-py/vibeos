@@ -44,9 +44,6 @@ const TLS_OUT_OF_INDEXES: DWORD = 0xFFFF_FFFF;
 
 // ── The DEBUG_SPY channel is off in this build: TRACE is a no-op. The dump helpers
 //   are thus dead at runtime but structurally faithful. (TRACE_ON(message) == FALSE.)
-macro_rules! TRACE {
-    ($($arg:tt)*) => {{}};
-}
 
 // ───────────────────────────────────────────────────────────────────────────────
 // Name tables. The C tables are `const char * const Xxx[]` — arrays of C string

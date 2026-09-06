@@ -188,11 +188,6 @@ extern "C" {
 // ─── No-op debug macros (ERR/WARN/TRACE/FIXME) ────────────────────────────────
 // Consume all args (so any side-effect-bearing expression still type-checks)
 // then discard — the C macros compile to nothing under the debug-channel guard.
-macro_rules! ERR   { ($($arg:expr),* $(,)?) => { { $( let _ = $arg; )* } }; }
-macro_rules! WARN  { ($($arg:expr),* $(,)?) => { { $( let _ = $arg; )* } }; }
-macro_rules! TRACE { ($($arg:expr),* $(,)?) => { { $( let _ = $arg; )* } }; }
-#[allow(unused_macros)]
-macro_rules! FIXME { ($($arg:expr),* $(,)?) => { { $( let _ = $arg; )* } }; }
 
 #[inline]
 unsafe fn debugstr_w(_s: LPCWSTR) -> *const i8 { b"\0".as_ptr() as *const i8 }
@@ -758,7 +753,7 @@ unsafe fn LISTBOX_PaintItem(
                 }
             } else {
                 ERR!(
-                    b"called with an out of bounds index %d(%d) in owner draw, Not good.\n\0".as_ptr() as PCHAR,
+                    "called with an out of bounds index %d(%d) in owner draw, Not good.\n",
                     index,
                     (*descr).nb_items,
                 );
@@ -1655,7 +1650,7 @@ unsafe fn LISTBOX_SetFont(descr: *mut LB_DESCR, font: HFONT) -> INT {
 
     hdc = GetDCEx((*descr).self_, 0 as HRGN, DCX_CACHE);
     if hdc.is_null() {
-        ERR!(b"unable to get DC.\n\0".as_ptr() as *const i8);
+        ERR!("unable to get DC.\n");
         return 16;
     }
     if !font.is_null() {
@@ -2987,7 +2982,7 @@ pub unsafe extern "system" fn ListBoxWndProc_common(
             NtUserSetWindowFNID(hwnd, FNID_LISTBOX as WORD);
         } else {
             if (*pWnd).fnid != FNID_LISTBOX as DWORD {
-                ERR!(b"Wrong window class for listbox! fnId 0x%x\n\0".as_ptr() as *const i8, (*pWnd).fnid as UINT);
+                ERR!("Wrong window class for listbox! fnId 0x%x\n", (*pWnd).fnid as UINT);
                 return 0;
             }
         }

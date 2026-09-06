@@ -160,7 +160,7 @@ unsafe fn CRYPT_VerifyImage(lpszImage: LPCSTR, pData: *mut u8) -> i32 {
         return 0;
     }
 
-    FIXME!(b"(%s, %p): not verifying image\n\0".as_ptr() as LPCSTR, lpszImage, pData);
+    FIXME!("(%s, %p): not verifying image\n", lpszImage, pData);
 
     1
 }
@@ -195,7 +195,7 @@ unsafe fn CRYPT_LoadProvider(pImage: PCWSTR) -> PCRYPTPROV {
             } else {
                 NTE_PROVIDER_DLL_FAIL
             };
-            FIXME!(b"Failed to load dll %s\n\0".as_ptr() as *const i8, debugstr_w(pImage));
+            FIXME!("Failed to load dll %S\n", pImage);
             break 'error;
         }
         (*provider).dwMagic = MAGIC_CRYPTPROV;
@@ -352,7 +352,7 @@ unsafe fn CRYPT_CreateMachineGuid() {
 
 #[no_mangle]
 pub unsafe extern "system" fn CloseEncryptedFileRaw(context: *mut core::ffi::c_void) {
-    FIXME!(b"(%p): stub\n\0".as_ptr() as *const i8, context);
+    FIXME!("(%p): stub\n", context);
 }
 
 #[no_mangle]

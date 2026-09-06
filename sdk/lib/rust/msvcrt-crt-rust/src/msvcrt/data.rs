@@ -9,9 +9,6 @@ use crate::msvcrt::environ::env_init;
 use crate::wcslen;
 
 // data.c's wine-debug diagnostics. `macro_rules!`, never a `fn`.
-macro_rules! TRACE {
-    ($($arg:tt)*) => {{}};
-}
 
 // ---- file-scope preamble (translated) ----
 static mut initial_wargv: *mut *mut wchar_t = core::ptr::null_mut();

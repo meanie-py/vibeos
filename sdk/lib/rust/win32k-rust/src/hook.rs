@@ -11,12 +11,6 @@ use core::ffi::c_void;
 
 const UNICODE_NULL: u16 = 0;
 
-// Debug-channel macros — no kernel symbol, no-op.
-macro_rules! ERR   { ($($t:tt)*) => {{}}; }
-macro_rules! TRACE { ($($t:tt)*) => {{}}; }
-macro_rules! WARN  { ($($t:tt)*) => {{}}; }
-macro_rules! FIXME { ($($t:tt)*) => {{}}; }
-
 // WH_* / HCBT_* bindgen-typed inconsistently (some i32, some u32). i32 aliases for
 // use as match-arm patterns against an INT scrutinee (faithful — C treats all as int).
 const WHI_MSGFILTER: INT = WH_MSGFILTER as INT;
@@ -641,7 +635,7 @@ unsafe fn co_IntCallLowLevelHook_impl(
     );
     if !NT_SUCCESS(Status) {
         ERR!(
-            b"Error Hook Call SendMsg. %d Status: 0x%x\n\0".as_ptr() as *const i8,
+            "Error Hook Call SendMsg. %d Status: 0x%x\n",
             (*Hook).HookId,
             Status,
         );
@@ -818,7 +812,7 @@ unsafe fn co_IntCallDebugHook_impl(
         }
 
         if BadChk != 0 {
-            ERR!(b"HOOK WH_DEBUG read from lParam ERROR!\n\0".as_ptr() as *const i8);
+            ERR!("HOOK WH_DEBUG read from lParam ERROR!\n");
             return lResult;
         }
     } else {
@@ -875,7 +869,7 @@ unsafe fn co_IntCallDebugHook_impl(
         }
 
         if BadChk != 0 {
-            ERR!(b"HOOK WH_DEBUG read from Debug.lParam ERROR!\n\0".as_ptr() as *const i8);
+            ERR!("HOOK WH_DEBUG read from Debug.lParam ERROR!\n");
             ExFreePoolWithTag(HooklParam, TAG_HOOK);
             return lResult;
         }
@@ -924,7 +918,7 @@ unsafe extern "system" fn co_UserCallNextHookEx(
             }
 
             if BadChk != 0 {
-                ERR!(b"HOOK WH_MOUSE read from lParam ERROR!\n\0".as_ptr() as *const i8);
+                ERR!("HOOK WH_MOUSE read from lParam ERROR!\n");
             }
         }
 
@@ -956,7 +950,7 @@ unsafe extern "system" fn co_UserCallNextHookEx(
                 }
 
                 if BadChk != 0 {
-                    ERR!(b"HOOK WH_MOUSE_LL read from lParam ERROR!\n\0".as_ptr() as *const i8);
+                    ERR!("HOOK WH_MOUSE_LL read from lParam ERROR!\n");
                 }
             }
 
@@ -986,7 +980,7 @@ unsafe extern "system" fn co_UserCallNextHookEx(
                 }
 
                 if BadChk != 0 {
-                    ERR!(b"HOOK WH_KEYBORD_LL read from lParam ERROR!\n\0".as_ptr() as *const i8);
+                    ERR!("HOOK WH_KEYBORD_LL read from lParam ERROR!\n");
                 }
             }
 
@@ -1013,7 +1007,7 @@ unsafe extern "system" fn co_UserCallNextHookEx(
                 }
 
                 if BadChk != 0 {
-                    ERR!(b"HOOK WH_XMESSAGEX read from lParam ERROR!\n\0".as_ptr() as *const i8);
+                    ERR!("HOOK WH_XMESSAGEX read from lParam ERROR!\n");
                 }
             }
 
@@ -1037,8 +1031,7 @@ unsafe extern "system" fn co_UserCallNextHookEx(
                     }
 
                     if BadChk != 0 {
-                        ERR!(b"HOOK WH_GETMESSAGE write to lParam ERROR!\n\0".as_ptr()
-                            as *const i8);
+                        ERR!("HOOK WH_GETMESSAGE write to lParam ERROR!\n");
                     }
                 }
             }
@@ -1116,7 +1109,7 @@ unsafe extern "system" fn co_UserCallNextHookEx(
                     }
 
                     if BadChk != 0 {
-                        ERR!(b"HOOK HCBT_CREATEWND write ERROR!\n\0".as_ptr() as *const i8);
+                        ERR!("HOOK HCBT_CREATEWND write ERROR!\n");
                     }
 
                     if BadChk == 0 && !(*Hook).Proc.is_none() {
@@ -1146,8 +1139,7 @@ unsafe extern "system" fn co_UserCallNextHookEx(
                         }
 
                         if BadChk != 0 {
-                            ERR!(b"HOOK HCBT_MOVESIZE read from lParam ERROR!\n\0".as_ptr()
-                                as *const i8);
+                            ERR!("HOOK HCBT_MOVESIZE read from lParam ERROR!\n");
                         }
                     }
 
@@ -1178,8 +1170,7 @@ unsafe extern "system" fn co_UserCallNextHookEx(
                         }
 
                         if BadChk != 0 {
-                            ERR!(b"HOOK HCBT_ACTIVATE read from lParam ERROR!\n\0".as_ptr()
-                                as *const i8);
+                            ERR!("HOOK HCBT_ACTIVATE read from lParam ERROR!\n");
                         }
                     }
 
@@ -1220,7 +1211,7 @@ unsafe extern "system" fn co_UserCallNextHookEx(
                 }
 
                 if BadChk != 0 {
-                    ERR!(b"HOOK WH_JOURNAL read from lParam ERROR!\n\0".as_ptr() as *const i8);
+                    ERR!("HOOK WH_JOURNAL read from lParam ERROR!\n");
                 }
             }
 
@@ -1249,7 +1240,7 @@ unsafe extern "system" fn co_UserCallNextHookEx(
                     }
 
                     if BadChk != 0 {
-                        ERR!(b"HOOK WH_JOURNAL write to lParam ERROR!\n\0".as_ptr() as *const i8);
+                        ERR!("HOOK WH_JOURNAL write to lParam ERROR!\n");
                     }
                 }
             }
@@ -1264,7 +1255,7 @@ unsafe extern "system" fn co_UserCallNextHookEx(
         }
 
         _ => {
-            ERR!(b"Unsupported HOOK Id -> %d\n\0".as_ptr() as *const i8, (*Hook).HookId);
+            ERR!("Unsupported HOOK Id -> %d\n", (*Hook).HookId);
         }
     }
 
@@ -1523,7 +1514,7 @@ pub unsafe extern "system" fn co_HOOK_CallHooks(
                 (*pti).aphkStart[HOOKID_TO_INDEX(HookId) as usize]
             ) as PLIST_ENTRY;
             if IsListEmpty(pLastHead) != 0 {
-                ERR!(b"No Local Hook Found!\n\0".as_ptr() as PCHAR);
+                ERR!("No Local Hook Found!\n");
                 break 'Exit;
             }
 
@@ -1581,7 +1572,7 @@ pub unsafe extern "system" fn co_HOOK_CallHooks(
                     TYPE_HOOK,
                 ) as PHOOK;
                 if Hook.is_null() {
-                    ERR!(b"Invalid hook!\n\0".as_ptr() as PCHAR);
+                    ERR!("Invalid hook!\n");
                     i += 1;
                     continue;
                 }
@@ -1735,7 +1726,7 @@ pub unsafe extern "system" fn co_HOOK_CallHooks(
                 (*pti).aphkStart[HOOKID_TO_INDEX(HookId) as usize]
             ) as PLIST_ENTRY;
             if IsListEmpty(pLastHead) != 0 {
-                ERR!(b"No Local Hook Found!\n\0".as_ptr() as PCHAR);
+                ERR!("No Local Hook Found!\n");
                 break 'Exit;
             }
 
@@ -1793,7 +1784,7 @@ pub unsafe extern "system" fn co_HOOK_CallHooks(
                     TYPE_HOOK,
                 ) as PHOOK;
                 if Hook.is_null() {
-                    ERR!(b"Invalid hook!\n\0".as_ptr() as PCHAR);
+                    ERR!("Invalid hook!\n");
                     i += 1;
                     continue;
                 }

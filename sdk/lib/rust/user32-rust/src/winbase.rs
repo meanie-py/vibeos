@@ -124,9 +124,3 @@ macro_rules! FIELD_OFFSET {
         unsafe { (core::ptr::addr_of!((*base).$field) as usize) - (base as usize) }
     }};
 }
-
-/// `WARN(...)` — ReactOS debug print; a no-op in the cohab build (DUMMY debug).
-#[macro_export]
-macro_rules! WARN {
-    ($($arg:tt)*) => {{}};
-}

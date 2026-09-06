@@ -1,12 +1,6 @@
 use win32k_sys::win32k::*;
 use ntkrnl_sys::STATUS_SUCCESS;
 
-// C debug macros — silenced via macro_rules! (variadic no-op).
-#[allow(unused_macros)] macro_rules! TRACE { ($($t:tt)*) => { () }; }
-#[allow(unused_macros)] macro_rules! ERR { ($($t:tt)*) => { () }; }
-#[allow(unused_macros)] macro_rules! WARN { ($($t:tt)*) => { () }; }
-#[allow(unused_macros)] macro_rules! FIXME { ($($t:tt)*) => { () }; }
-
 // PALETTE_ulGetRGBColorFromIndex / PALETTE_vSetRGBColorForIndex are
 // FORCEINLINE in win32ss/gdi/ntgdi/palette.h:140-159 — provide #[no_mangle]
 // cdecl wrappers so still-C TUs can link against them too.
@@ -52,9 +46,6 @@ extern "system" {
     fn EXLATEOBJ_vCleanup(exlo: *mut EXLATEOBJ);
 }
 
-// ERR/DPRINT macros from <debug.h>: variadic. The C uses NDEBUG=0/1 to gate;
-// for kernel binary, ERR is a real symbol that takes (channel, fmt, ...).
-// Mirror the pattern used in ldevobj.rs/pdevobj.rs.
 extern "C" {
 
 }
@@ -413,7 +404,7 @@ unsafe fn FixupDIBBrushPalette(
         0,
     );
     if ppalNew.is_null() {
-        ERR!(b"Failed to allcate palette for brush\n\0".as_ptr() as *const i8);
+        ERR!("Failed to allcate palette for brush\n");
         return core::ptr::null_mut();
     }
 
@@ -458,7 +449,7 @@ pub unsafe extern "system" fn EBRUSHOBJ_bRealizeBrush(
         // _PDEVOBJ has DriverFunctions inside an anonymous union (bindgen).
         pfnRealizeBrush = (*ppdev).__bindgen_anon_1.DriverFunctions.RealizeBrush;
         if pfnRealizeBrush.is_none() {
-            ERR!(b"No DrvRealizeBrush. Cannot realize brush\n\0".as_ptr() as *const i8);
+            ERR!("No DrvRealizeBrush. Cannot realize brush\n");
             return FALSE as BOOL;
         }
 
@@ -487,7 +478,7 @@ pub unsafe extern "system" fn EBRUSHOBJ_bRealizeBrush(
     if (*pbrBody).flAttrs & BR_IS_DIBPALCOLORS != 0 {
         ppalPattern = FixupDIBBrushPalette((*psurfPattern).ppal, (*pebo).ppalDC);
         if ppalPattern.is_null() {
-            ERR!(b"FixupDIBBrushPalette() failed.\n\0".as_ptr() as *const i8);
+            ERR!("FixupDIBBrushPalette() failed.\n");
             return FALSE as BOOL;
         }
 
@@ -542,7 +533,7 @@ pub unsafe extern "system" fn EBRUSHOBJ_psoMask(pebo: *mut EBRUSHOBJ) -> *mut SU
             let psurfMask: PSURFACE =
                 GDIOBJ_ShareLockObj(hbmMask as HGDIOBJ, GDI_OBJECT_TYPE_BITMAP) as PSURFACE;
             if psurfMask.is_null() {
-                ERR!(b"Failed to lock hatch brush\n\0".as_ptr() as *const i8);
+                ERR!("Failed to lock hatch brush\n");
                 return core::ptr::null_mut();
             }
 

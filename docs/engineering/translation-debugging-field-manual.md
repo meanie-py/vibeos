@@ -949,6 +949,17 @@ in callers that contain no such code. `msvcrt_get_file` returns NULL on `calloc`
 precisely what the C does.** The tell that you are in this row rather than the CC row is that
 the ud2 count tracks the number of *callers*, and the C source has the same missing check.
 
+**Making a silent debug macro real is a trigger for this row, and the trap is not a
+regression.** Burning down the no-op `ERR`/`FIXME` macros put two `ud2` in `user32.dll`
+(`GetScrollPos`, `GetScrollRange`) that master did not have. `IntGetSBData` returns NULL on two
+arms and every caller derefs the result unchecked — *which is what `scrollbar.c` does*. While
+`ERR` expanded to nothing, LLVM had no side effect to keep and deleted the whole branch, so the
+UB was invisible; an opaque `DbgPrint` call must be kept, the NULL now visibly reaches a deref,
+and the tail folds. Same fix, same reasoning as below. The general point: an empty debug macro
+is not merely a lost message, it is also **an optimiser hint that erases the evidence** — so
+expect this class when you turn one on, and read the trap as a pre-existing latent fold rather
+than as damage the change did.
+
 **Fix by restoring the C's codegen shape — `#[inline(never)]` on the callee — not by adding the
 null check.** Adding it is a behaviour change on the path the C would fault on, i.e. a
 divergence in a differential port; out-of-line, the caller gets an opaque pointer, emits the
@@ -5016,6 +5027,32 @@ arguments the C promoted for free (`error[E0617]: can't pass u8 to variadic func
 as the `fn` form — but only since 2026-09-05. Before that its prefilter needed a literal
 `DPRINT1(`, so a file whose only mention was `macro_rules! DPRINT1 {` over `DPRINT1!(..)` call
 sites was never opened at all, and every one of these was invisible to the gate.
+
+**Which of the four is silent is a property of the HEADER, not of the name.** The burndown of
+the 177 baselined NOOP macros (2026-09-05) turned on 92 `ERR`, 66 `FIXME`, 18 `DPRINT1` and one
+`DbgPrint` across 33 crates, and getting that right meant reading each flavour's own gate rather
+than the comment above the macro — every one of which said some version of "no-ops under NDEBUG",
+and none of which was checked:
+
+| header | `ERR` | `FIXME` | `WARN` / `TRACE` | the gate |
+|---|---|---|---|---|
+| `sdk/include/reactos/debug.h` | — | — | — | `DPRINT1` always on under `DBG`; only `DPRINT` sees `NDEBUG` |
+| `sdk/include/wine/debug.h` | **on** | **on** | off | libwine's `default_flags` is `ERR\|FIXME`; `DEBUGCHANNEL` overrides |
+| `win32ss/user/ntuser/win32kdebug.h` | **on** | off | off | `DBG_PRINT` short-circuits on `level == ERR_LEVEL` before reading `ppi->DbgChannelLevel[ch]`, which starts ERR-only |
+| `boot/freeldr/freeldr/include/debug.h` | off | off | off | `DbgChannels[]` starts all-zero; the `/DEBUG=` boot option opens a channel |
+
+So a silent `FIXME` is a dropped diagnostic in a wine DLL and faithful in win32k, and freeldr's
+four are faithful at boot but must still route to `DbgPrint2` so `/DEBUG=` works. Where silence
+IS faithful, say so at the macro and mark it `// nolint: scan_dropped_prints` with the reason
+rather than leaving a baseline row — a baseline row means debt, and this is not debt.
+
+Two mechanical traps in the conversion, both of which the compiler catches only *after* the
+macro is real: a call site written as `ERR!("... 0x{:x}\n", x)` is **Rust** format syntax that a
+silent macro accepted and a `printf` will not (three of these had shipped), and `debugstr_w(x)`
+is a NULL-returning shim in this tree — feeding NULL to a live `%s` faults, so print the wide
+string directly with `%S`. A third is worth automating around: when a script rewrites the format
+argument, scope the "strip the trailing cast" rule to *inside* the macro invocation. Applied
+file-wide it silently ate the first half of `as *const u8 as *const i8` in ordinary code.
 
 ### A `cfg(debug_assertions)` block is not code that works — it is code with no evidence either way
 

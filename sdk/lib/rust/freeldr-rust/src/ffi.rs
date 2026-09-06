@@ -77,21 +77,41 @@ pub fn IMAGE_ORDINAL(ordinal: usize) -> usize {
 }
 
 // ---------------------------------------------------------------------
-// Debug-channel macros. TRACE/WARN/FIXME are DbgPrint2 calls gated on a
-// per-file channel mask (compiled out entirely in the NDEBUG freeldr
-// build); ERR is the error path. None affects boot behavior — model as
-// no-ops that swallow the varargs (faithful to the NDEBUG build;
-// functionally inert when DBG since DbgPrint2 is mask-gated anyway).
-// Call sites are rewritten `TRACE(...)` → `TRACE!(...)`.
-// ---------------------------------------------------------------------
+// boot/freeldr/freeldr/include/debug.h: all four are `DbgPrint2(DbgDefaultChannel,
+// <LEVEL>, __FILE__, __LINE__, fmt, ...)` under DBG. The level gate lives INSIDE
+// DbgPrint2 (`DbgChannels[Mask] & Level`), and `DbgChannels` starts all-zero, so
+// nothing prints until the `/DEBUG=` boot option opens a channel — which is why a
+// silent macro looked harmless and still lost every diagnostic for anyone who sets it.
+//
+// `DbgDefaultChannel` is per-file, exactly as `DBG_DEFAULT_CHANNEL(ch)` makes it in the
+// C, so each translated module names its own; the macro just reads it at the call site.
 #[macro_export]
-macro_rules! TRACE { ($($a:tt)*) => {{}} }
+macro_rules! __freeldr_dbg {
+    ($level:expr, $fmt:literal $(, $arg:expr)* $(,)?) => {{
+        // Through the `ffi` extern, not `crate::debug`: the `debug` module is
+        // `#[cfg(not(feature = "rosload"))]` and rosload.exe imports DbgPrint2 from
+        // freeldr.sys, so a direct path stops resolving on that third archive.
+        // (freeldr's own definition is not variadic — stable Rust cannot DEFINE a
+        // C-variadic — so it prints the format literally today; that is owed
+        // independently, and cdecl lets the extra arguments pass harmlessly.)
+        $crate::ffi::DbgPrint2(
+            DbgDefaultChannel,
+            $level,
+            concat!(file!(), "\0").as_ptr() as *const core::ffi::c_char,
+            line!(),
+            concat!($fmt, "\0").as_ptr() as *const core::ffi::c_char
+            $(, $arg)*,
+        )
+    }};
+}
 #[macro_export]
-macro_rules! WARN  { ($($a:tt)*) => {{}} }
+macro_rules! TRACE { ($($a:tt)*) => { $crate::__freeldr_dbg!($crate::frldr::TRACE_LEVEL, $($a)*) } }
 #[macro_export]
-macro_rules! ERR   { ($($a:tt)*) => {{}} }
+macro_rules! WARN  { ($($a:tt)*) => { $crate::__freeldr_dbg!($crate::frldr::WARN_LEVEL,  $($a)*) } }
 #[macro_export]
-macro_rules! FIXME { ($($a:tt)*) => {{}} }
+macro_rules! ERR   { ($($a:tt)*) => { $crate::__freeldr_dbg!($crate::frldr::ERR_LEVEL,   $($a)*) } }
+#[macro_export]
+macro_rules! FIXME { ($($a:tt)*) => { $crate::__freeldr_dbg!($crate::frldr::FIXME_LEVEL, $($a)*) } }
 
 // ---------------------------------------------------------------------
 // freeldr-internal C externs — cdecl. (ARC_STATUS/OPENMODE/SEEKMODE/

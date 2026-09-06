@@ -2,7 +2,7 @@ use crate::ntwrapper::*;
 use win32k_sys::win32k::*;
 use crate::internal::*;
 use crate::winbase::*;
-use crate::{FIELD_OFFSET, WARN};
+use crate::FIELD_OFFSET;
 use core::ffi::c_void;
 
 extern "system" {

@@ -1756,7 +1756,6 @@ pub unsafe fn CMenuDeskBar__OnNotify_body(this: *mut CMenuDeskBar, uMsg: UINT, w
     let _winEventHandler_cpp_com_guard = CppComPtrGuard::new(core::ptr::addr_of_mut!(winEventHandler));
     // IID_PPV_ARG equivalent: obtain the IID and a suitable void** pointer
 
-
     // Call IUnknown::QueryInterface on m_Client
     let hr = ((*(*(*this).m_Client).lpVtbl).QueryInterface)((*this).m_Client, core::ptr::addr_of!(IID_IWinEventHandler), core::ptr::addr_of_mut!(winEventHandler).cast());
 

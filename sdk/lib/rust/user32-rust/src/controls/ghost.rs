@@ -3,13 +3,6 @@ use win32k_sys::win32k::*;
 use core::ffi::c_void;
 
 // ── No-op debug macros (the Wine ERR/WARN/TRACE/FIXME channels compile to nothing). ──
-#[allow(unused_macros)]
-macro_rules! TRACE { ($($t:tt)*) => {{ }}; }
-macro_rules! ERR   { ($($arg:expr),* $(,)?) => { { $( let _ = $arg; )* } }; }
-#[allow(unused_macros)]
-macro_rules! WARN  { ($($arg:expr),* $(,)?) => { { $( let _ = $arg; )* } }; }
-#[allow(unused_macros)]
-macro_rules! FIXME { ($($arg:expr),* $(,)?) => { { $( let _ = $arg; )* } }; }
 
 // ── substrate / cross-module imports ──────────────────────────────────────────
 use crate::internal::ValidateHwnd;
@@ -227,7 +220,7 @@ unsafe fn IntMakeGhostImage(hbm: HBITMAP) {
     GetObjectW(hbm as HGDIOBJ, core::mem::size_of::<BITMAP>() as i32, core::ptr::addr_of_mut!(bm) as LPVOID);
 
     if bm.bmBitsPixel != 32 || bm.bmBits.is_null() {
-        ERR!(b"bm.bmBitsPixel == %d, bm.bmBits == %p\n\0".as_ptr(),
+        ERR!("bm.bmBitsPixel == %d, bm.bmBits == %p\n",
             bm.bmBitsPixel as i32, bm.bmBits);
         return;
     }
@@ -263,7 +256,7 @@ unsafe fn Ghost_GetText(hwndTarget: HWND, pcchTextW: *mut INT, cchExtra: INT) ->
     pszTextNewW = HeapAlloc(GetProcessHeap(), 0, (cchTextW as usize * core::mem::size_of::<WCHAR>()) as _) as LPWSTR;
     loop {
         if pszTextNewW.is_null() {
-            ERR!(b"HeapAlloc failed\n\0".as_ptr() as *const i8);
+            ERR!("HeapAlloc failed\n");
             if !pszTextW.is_null() {
                 HeapFree(GetProcessHeap(), 0, pszTextW as _);
             }
@@ -304,7 +297,7 @@ unsafe fn Ghost_OnCreate(hwnd: HWND, lpcs: *mut CREATESTRUCTW) -> BOOL {
         if (*pWnd).fnid == 0 {
             NtUserSetWindowFNID(hwnd, FNID_GHOST as u16);
         } else if (*pWnd).fnid != FNID_GHOST as DWORD {
-            ERR!(b"Wrong window class for Ghost! fnId 0x%x\n\0".as_ptr() as *const i8, (*pWnd).fnid as u32);
+            ERR!("Wrong window class for Ghost! fnId 0x%x\n", (*pWnd).fnid as u32);
             return 0;
         }
     }
@@ -325,14 +318,14 @@ unsafe fn Ghost_OnCreate(hwnd: HWND, lpcs: *mut CREATESTRUCTW) -> BOOL {
 
     pData = HeapAlloc(GetProcessHeap(), 0, core::mem::size_of::<GHOST_DATA>()) as *mut GHOST_DATA;
     if pData.is_null() {
-        ERR!(b"HeapAlloc failed\n\0".as_ptr() as *const i8);
+        ERR!("HeapAlloc failed\n");
         return 0;
     }
 
     GetWindowRect(hwndTarget, &mut rc);
     hbm32bpp = IntGetWindowBitmap(hwndTarget, rc.right - rc.left, rc.bottom - rc.top);
     if hbm32bpp.is_null() {
-        ERR!(b"hbm32bpp was NULL\n\0".as_ptr() as *const i8);
+        ERR!("hbm32bpp was NULL\n");
         HeapFree(GetProcessHeap(), 0, pData as *mut core::ffi::c_void);
         return 0;
     }
@@ -357,7 +350,7 @@ unsafe fn Ghost_OnCreate(hwnd: HWND, lpcs: *mut CREATESTRUCTW) -> BOOL {
         cchTextW *= 2;
         pszTextW = Ghost_GetText(hwndTarget, &mut cchTextW, cchExtraW);
         if pszTextW.is_null() {
-            ERR!(b"Ghost_GetText failed\n\0".as_ptr() as *const i8);
+            ERR!("Ghost_GetText failed\n");
             DeleteObject(hbm32bpp as HGDIOBJ);
             HeapFree(GetProcessHeap(), 0, pData as *mut core::ffi::c_void);
             return 0;

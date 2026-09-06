@@ -12,12 +12,6 @@ use ntkrnl_sys::constants::STATUS_INVALID_HANDLE;
 // stored little-endian = bytes "Uscb".
 const USERTAG_CLIPBOARD: u32 = u32::from_le_bytes(*b"Uscb");
 
-// TRACE/debug macros — no-op (no kernel symbol).
-macro_rules! ERR { ($($t:tt)*) => {{}}; }
-macro_rules! TRACE { ($($t:tt)*) => {{}}; }
-macro_rules! WARN { ($($t:tt)*) => {{}}; }
-macro_rules! FIXME { ($($t:tt)*) => {{}}; }
-
 extern "C" {
     fn memcpy(dest: PVOID, src: PVOID, n: usize) -> PVOID;
 }
@@ -85,7 +79,7 @@ unsafe fn IntGetWinStaForCbAccessImpl() -> PWINSTATION_OBJECT {
         core::ptr::null_mut(),
     );
     if !NT_SUCCESS(Status) {
-        ERR!(b"Cannot open winsta\n\0".as_ptr() as *const i8);
+        ERR!("Cannot open winsta\n");
         SetLastNtError(Status);
         return core::ptr::null_mut();
     }

@@ -67,7 +67,7 @@ pub unsafe extern "C" fn WLDAP32_ber_printf_v(
                     ret = ber_printf(berelement, new_fmt.as_ptr());
                 }
                 _ => {
-                    FIXME!(b"Unknown format '%c'\n\0".as_ptr() as PCHAR, new_fmt[0]);
+                    FIXME!("Unknown format '%c'\n", new_fmt[0]);
                     ret = -1;
                 }
             }
@@ -282,7 +282,7 @@ pub unsafe extern "C" fn WLDAP32_ber_scanf_v(berelement: *mut BerElement, fmt: P
                     ret = ber_scanf(berelement, new_fmt.as_ptr());
                 }
                 _ => {
-                    FIXME!(b"Unknown format '%c'\n\0".as_ptr() as PCHAR, new_fmt[0]);
+                    FIXME!("Unknown format '%c'\n", new_fmt[0]);
                     ret = -1;
                 }
             }
