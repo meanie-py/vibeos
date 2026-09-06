@@ -2383,7 +2383,12 @@ def cmd_translate(args):
         # Extract call graph and topologically sort
         deps = extract_call_graph(scan, spec_exports=file_res.exports)
         if cpp_com_mode:
-            deps = apply_interface_method_signatures(deps, args.class_name, cpp_com_interfaces)
+            deps = apply_interface_method_signatures(
+                deps,
+                args.class_name,
+                cpp_com_interfaces,
+                cpp_com_cls.sdk_type_aliases if cpp_com_cls is not None else None,
+            )
         sorted_deps = topological_sort(deps)
         cpp_com_wide_statics = ""
 
@@ -2419,7 +2424,11 @@ def cmd_translate(args):
         elif cpp_com_mode:
             assert cpp_com_cls is not None
             sorted_deps = prepare_helper_closure(
-                deps, args.class_name, cpp_com_cls.plain_state_fields()
+                deps,
+                args.class_name,
+                cpp_com_cls.plain_state_fields(),
+                cpp_com_cls.island_struct_field_types,
+                cpp_com_cls.sdk_type_aliases,
             )
             # The mirror of the --free-functions report above, and it was missing for years.
             # prepare_helper_closure keeps the class closure, so the TU's file-scope functions

@@ -79,7 +79,6 @@ unsafe fn FindAcpiBios() -> PRSDP_DESCRIPTOR {
 #[no_mangle]
 pub unsafe extern "C" fn DetectAcpiBios(SystemKey: PCONFIGURATION_COMPONENT_DATA, BusNumber: *mut ULONG) {
 
-    const TAG_HW_RESOURCE_LIST: ULONG = 0x52776448;
     const FIELD_OFFSET_CM_PARTIAL_RESOURCE_LIST_PARTIALDESCRIPTORS: usize =
         core::mem::size_of::<USHORT>() + core::mem::size_of::<USHORT>() + core::mem::size_of::<ULONG>();
 

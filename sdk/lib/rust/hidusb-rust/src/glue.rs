@@ -264,3 +264,22 @@ unsafe extern "system" {
         InterfaceProtocol: i32,
     ) -> PUSB_INTERFACE_DESCRIPTOR;
 }
+
+// ============================================================================
+// KeGetCurrentIrql — HAL exports it on i386/arm/arm64 (hal.spec: `@ stdcall
+// -arch=i386,arm,arm64`) but NOT on amd64, where it is a FORCEINLINE reading
+// CR8. hidusb.sys links hidclass/ntoskrnl/usbd/hal, none of which provides it
+// there, so the amd64 image needs its own. Same shape as classpnp's ddk_shims.
+//
+// It only became a link error when `ASSERT(KeGetCurrentIrql() == PASSIVE_LEVEL)`
+// at hidusb.c:410 stopped being dead code: as a `debug_assert!` the call was
+// compiled out of the release profile entirely, so nothing ever referenced the
+// symbol. Making the assertion live is what surfaced it.
+// ============================================================================
+#[cfg(target_arch = "x86_64")]
+#[no_mangle]
+pub unsafe extern "system" fn KeGetCurrentIrql() -> u8 {
+    let irql: u64;
+    core::arch::asm!("mov {}, cr8", out(reg) irql, options(nomem, nostack, preserves_flags));
+    irql as u8
+}

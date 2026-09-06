@@ -136,14 +136,6 @@ pub unsafe fn windows_dir() -> *const WCHAR {
 }
 
 // ── Wine TRACE/FIXME/WARN/ERR — no-op (args discarded) ───────────────
-#[macro_export]
-macro_rules! TRACE { ($($t:tt)*) => {{}}; }
-#[macro_export]
-macro_rules! FIXME { ($($t:tt)*) => {{}}; }
-#[macro_export]
-macro_rules! WARN { ($($t:tt)*) => {{}}; }
-#[macro_export]
-macro_rules! ERR { ($($t:tt)*) => {{}}; }
 
 // ── libc string/mem (linked from cnt-rust) ──────────────────────────
 extern "C" {

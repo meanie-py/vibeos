@@ -135,7 +135,7 @@ pub unsafe extern "C" fn InterpretTransferPacketError(Pkt: PTRANSFER_PACKET) -> 
     if !(*fdoData).InterpretSenseInfo.is_null() {
         let mut tempSrb: _SCSI_REQUEST_BLOCK = ::core::mem::zeroed();
         let mut srbPtr: PSCSI_REQUEST_BLOCK = (*Pkt).Srb as PVOID as PSCSI_REQUEST_BLOCK;
-        debug_assert!(!(*(*fdoData).InterpretSenseInfo).Interpret.is_none());
+        ntkrnl_sys::ASSERT!(!(*(*fdoData).InterpretSenseInfo).Interpret.is_none());
         if (*((*Pkt).Srb as PVOID as PSCSI_REQUEST_BLOCK)).Function as i32 == (SRB_FUNCTION_STORAGE_REQUEST_BLOCK) as i32
             && ((*(*fdoExtension).__bindgen_anon_1.CommonExtension.as_ref().DriverExtension).SrbSupport
                 & CLASS_SRB_STORAGE_REQUEST_BLOCK as u32)
@@ -162,7 +162,7 @@ pub unsafe extern "C" fn InterpretTransferPacketError(Pkt: PTRANSFER_PACKET) -> 
         let mut senseKey: u8 = 0;
         let mut additionalSenseCode: u8 = 0;
         let mut additionalSenseQual: u8 = 0;
-        debug_assert!(!senseInfoBuffer.is_null());
+        ntkrnl_sys::ASSERT!(!senseInfoBuffer.is_null());
         validSense = ScsiGetSenseKeyAndCodes(
             senseInfoBuffer,
             (senseInfoBufferLength) as _,
@@ -367,7 +367,7 @@ pub unsafe extern "C" fn InterpretTransferPacketError(Pkt: PTRANSFER_PACKET) -> 
                                             isInformationValid = 1;
                                         }
                                     } else {
-                                        debug_assert!(false);
+                                        ntkrnl_sys::ASSERT!(false);
                                     }
                                 }
                             }

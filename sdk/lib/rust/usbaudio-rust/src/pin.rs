@@ -103,10 +103,10 @@ fn UlongToPtr(val: ULONG) -> *mut c_void {
 }
 
 macro_rules! ASSERT {
-    ($e:expr) => { debug_assert!($e); };
+    ($e:expr) => { ntkrnl_sys::ASSERT!($e); };
 }
 macro_rules! NT_ASSERT {
-    ($e:expr) => { debug_assert!($e); };
+    ($e:expr) => { ntkrnl_sys::ASSERT!($e); };
 }
 
 const MAXULONG: ULONG = 0xFFFF_FFFFu32;
@@ -157,7 +157,7 @@ pub unsafe extern "C" fn GetMaxPacketSizeForInterface(
     CommonDescriptor = (InterfaceDescriptor as ULONG_PTR)
         .wrapping_add((*InterfaceDescriptor).bLength as ULONG_PTR)
         as PUSB_COMMON_DESCRIPTOR;
-    debug_assert!((*InterfaceDescriptor).bNumEndpoints > 0);
+    ntkrnl_sys::ASSERT!((*InterfaceDescriptor).bNumEndpoints > 0);
     loop {
         if CommonDescriptor.is_null() {
             break;

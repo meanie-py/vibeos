@@ -284,7 +284,7 @@ unsafe extern "system" fn Arm64DmaMapTransfer(
     let offset = (CurrentVa as usize).wrapping_sub(start_va);
     let byte_count = (*Mdl).ByteCount as usize;
     let byte_offset = (*Mdl).ByteOffset as usize;
-    debug_assert!(offset >= byte_offset && offset < byte_offset + byte_count);
+    ntkrnl_sys::ASSERT!(offset >= byte_offset && offset < byte_offset + byte_count);
 
     let pfn_array = Mdl.offset(1) as *const ddk::PFN_NUMBER;
     let mut idx = offset >> PAGE_SHIFT;

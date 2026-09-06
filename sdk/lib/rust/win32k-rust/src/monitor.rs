@@ -4,11 +4,6 @@ use ntkrnl_sys::base::{NT_SUCCESS, STATUS_SUCCESS, STATUS_INSUFFICIENT_RESOURCES
 use ntkrnl_sys::constants::{STATUS_INVALID_PARAMETER, STATUS_BUFFER_OVERFLOW};
 use ntkrnl_sys::ddk::{ExAllocatePoolWithTag, ExFreePoolWithTag};
 
-// Debug-channel macros — no kernel symbol, no-op.
-macro_rules! ERR   { ($($t:tt)*) => {{}}; }
-macro_rules! TRACE { ($($t:tt)*) => {{}}; }
-macro_rules! WARN  { ($($t:tt)*) => {{}}; }
-
 // USERTAG pool tag. C multi-char literal 'rmsU' is big-endian; the LE byte
 // order is the literal reversed -> "Usmr".
 const USERTAG_MONITORRECTS: u32 = u32::from_le_bytes(*b"Usmr");

@@ -47,13 +47,6 @@ use ntkrnl_sys::ddk::{
     _DEVICE_POWER_STATE_PowerDeviceD3 as PowerDeviceD3,
 };
 
-// DPRINT/DPRINT1/ASSERT are no-ops under the driver's NDEBUG build.
-macro_rules! DPRINT {
-    ($($t:tt)*) => {};
-}
-macro_rules! DPRINT1 {
-    ($($t:tt)*) => {};
-}
 macro_rules! ASSERT {
     ($($t:tt)*) => {};
 }

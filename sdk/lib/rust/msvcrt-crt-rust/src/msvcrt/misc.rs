@@ -9,12 +9,6 @@ use core::ffi::c_void;
 
 // misc.c's wine-debug diagnostics. `macro_rules!`, never a `fn` — an out-of-line no-op is
 // an optimization barrier that has uncloaked latent ABI mismatches into `ud2`.
-macro_rules! ERR {
-    ($($arg:tt)*) => {{}};
-}
-macro_rules! TRACE {
-    ($($arg:tt)*) => {{}};
-}
 
 // ---- file-scope preamble (translated) ----
 static mut output_format: core::ffi::c_uint = 0;

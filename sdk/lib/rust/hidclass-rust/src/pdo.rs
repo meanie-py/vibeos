@@ -204,7 +204,7 @@ unsafe fn HidClassPDO_HandleQueryHardwareId(DeviceObject: PDEVICE_OBJECT, Irp: P
 
     // get device extension
     let PDODeviceExtension = (*DeviceObject).DeviceExtension as PHIDCLASS_PDO_DEVICE_EXTENSION;
-    debug_assert!((*PDODeviceExtension).Common.IsFDO == 0);
+    ntkrnl_sys::ASSERT!((*PDODeviceExtension).Common.IsFDO == 0);
 
     // copy current stack location
     IoCopyCurrentIrpStackLocationToNext(Irp);
@@ -252,7 +252,7 @@ unsafe fn HidClassPDO_HandleQueryHardwareId(DeviceObject: PDEVICE_OBJECT, Irp: P
         &mut (*PDODeviceExtension).Common.DeviceDescription,
         (*PDODeviceExtension).CollectionNumber,
     );
-    debug_assert!(!CollectionDescription.is_null());
+    ntkrnl_sys::ASSERT!(!CollectionDescription.is_null());
 
     if (*CollectionDescription).UsagePage == HID_USAGE_PAGE_GENERIC {
         match (*CollectionDescription).Usage {
@@ -344,7 +344,7 @@ unsafe fn HidClassPDO_HandleQueryHardwareId(DeviceObject: PDEVICE_OBJECT, Irp: P
 unsafe fn HidClassPDO_HandleQueryInstanceId(DeviceObject: PDEVICE_OBJECT, Irp: PIRP) -> NTSTATUS {
     // get device extension
     let PDODeviceExtension = (*DeviceObject).DeviceExtension as PHIDCLASS_PDO_DEVICE_EXTENSION;
-    debug_assert!((*PDODeviceExtension).Common.IsFDO == 0);
+    ntkrnl_sys::ASSERT!((*PDODeviceExtension).Common.IsFDO == 0);
 
     // allocate buffer
     let Buffer =
@@ -388,7 +388,7 @@ unsafe fn HidClassPDO_HandleQueryCompatibleId(_DeviceObject: PDEVICE_OBJECT, Irp
 pub unsafe extern "system" fn HidClassPDO_PnP(DeviceObject: PDEVICE_OBJECT, Irp: PIRP) -> NTSTATUS {
     // get device extension
     let PDODeviceExtension = (*DeviceObject).DeviceExtension as PHIDCLASS_PDO_DEVICE_EXTENSION;
-    debug_assert!((*PDODeviceExtension).Common.IsFDO == 0);
+    ntkrnl_sys::ASSERT!((*PDODeviceExtension).Common.IsFDO == 0);
 
     // get current irp stack location
     let IoStack = IoGetCurrentIrpStackLocation(Irp);
@@ -595,7 +595,7 @@ pub unsafe fn HidClassPDO_CreatePDO(
 
     // get device extension
     let FDODeviceExtension = (*DeviceObject).DeviceExtension as PHIDCLASS_FDO_EXTENSION;
-    debug_assert!((*FDODeviceExtension).Common.IsFDO != 0);
+    ntkrnl_sys::ASSERT!((*FDODeviceExtension).Common.IsFDO != 0);
 
     // first allocate device relations
     // FIELD_OFFSET(DEVICE_RELATIONS, Objects) + sizeof(PDEVICE_OBJECT) * CollectionDescLength

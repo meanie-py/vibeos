@@ -82,7 +82,7 @@ pub unsafe extern "system" fn InbvPortInitialize(
 ) -> BOOLEAN {
     let PortAddress = opaque_ptr(PortAddress);
     let PortId = opaque_ptr(PortId);
-    debug_assert!(IsMMIODevice == 0u8);
+    ntkrnl_sys::ASSERT!(IsMMIODevice == 0u8);
 
     let mut baud_rate = BaudRate;
     let mut port_number = PortNumber;

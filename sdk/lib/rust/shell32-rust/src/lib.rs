@@ -23,23 +23,16 @@
 
 // Wine debug calls are macros in the C++ source. Keep them as macros in Rust too: an
 // out-of-line no-op function is an optimization/ABI barrier and is not equivalent.
-macro_rules! TRACE {
-    ($($arg:tt)*) => {{}};
-}
-macro_rules! WARN {
-    ($($arg:tt)*) => {{}};
-}
-macro_rules! ERR {
-    ($($arg:tt)*) => {{}};
-}
-macro_rules! FIXME {
-    ($($arg:tt)*) => {{}};
-}
 macro_rules! MESSAGE {
     ($($arg:tt)*) => {{}};
 }
 
 // Foundation: minimal Win32 type aliases (grows as waves land).
+// Wine's ERR/FIXME/WARN/TRACE for the whole crate; `#[macro_use]` must precede the
+// modules that call them (macro_rules! is textually scoped).
+#[macro_use]
+mod winedebug;
+
 pub mod types;
 
 // ATL smart pointers and containers — the shared substrate in front of the remaining

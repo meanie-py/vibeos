@@ -189,7 +189,7 @@ pub unsafe extern "system" fn MiInitializeSessionSpaceLayout() {
 
     MmSessionBase = MiSessionPoolStart;
 
-    debug_assert!((MmSessionBase as ULONG_PTR) + MmSessionSize == PTE_BASE);
+    ntkrnl_sys::ASSERT!((MmSessionBase as ULONG_PTR) + MmSessionSize == PTE_BASE);
 
     MiSessionSpaceEnd = MiSessionImageEnd;
 
@@ -343,7 +343,7 @@ pub unsafe extern "system" fn MiInitMachineDependent(
             - (MmNonPagedSystemStart as ULONG_PTR))
             >> PAGE_SHIFT) as ULONG;
         MmNumberOfSystemPtes -= 1;
-        debug_assert!(MmNumberOfSystemPtes > 1000);
+        ntkrnl_sys::ASSERT!(MmNumberOfSystemPtes > 1000);
     }
 
     if MmSizeOfPagedPoolInBytes
@@ -353,7 +353,7 @@ pub unsafe extern "system" fn MiInitMachineDependent(
     }
 
     MmPfnDatabase = 0xB0000000 as PMMPFN;
-    debug_assert!(((MmPfnDatabase as ULONG_PTR) & (PDE_MAPPED_VA - 1)) == 0);
+    ntkrnl_sys::ASSERT!(((MmPfnDatabase as ULONG_PTR) & (PDE_MAPPED_VA - 1)) == 0);
 
     MmNonPagedPoolStart =
         ((MmPfnDatabase as ULONG_PTR) + (MxPfnAllocation << PAGE_SHIFT)) as PVOID;
@@ -361,7 +361,7 @@ pub unsafe extern "system" fn MiInitMachineDependent(
     page_frame_index = MxGetNextPage(
         MxPfnAllocation + (MmSizeOfNonPagedPoolInBytes >> PAGE_SHIFT),
     );
-    debug_assert!(page_frame_index != 0);
+    ntkrnl_sys::ASSERT!(page_frame_index != 0);
 
     MmMaximumNonPagedPoolInPages = MmMaximumNonPagedPoolInBytes >> PAGE_SHIFT;
 
@@ -434,9 +434,7 @@ pub unsafe extern "system" fn MiInitMachineDependent(
         pointer_pte = (pointer_pte as usize + core::mem::size_of::<MMPTE>()) as PMMPTE;
     }
 
-    debug_assert!(
-        MiAddressToPte(MmNonPagedSystemStart) < MiAddressToPte(MmNonPagedPoolExpansionStart)
-    );
+    ntkrnl_sys::ASSERT!(MiAddressToPte(MmNonPagedSystemStart) < MiAddressToPte(MmNonPagedPoolExpansionStart));
 
     // Trace 'D' = PTE mapping done
     MiInitializeNonPagedPool();
@@ -538,15 +536,15 @@ pub unsafe extern "system" fn MiInitMachineDependent(
         core::ptr::null_mut(),
     );
 
-    debug_assert!((MmFreePagesByColor[0] as ULONG_PTR) < PTE_BASE);
+    ntkrnl_sys::ASSERT!((MmFreePagesByColor[0] as ULONG_PTR) < PTE_BASE);
     start_pde = MiAddressToPde(MmFreePagesByColor[0] as PVOID);
-    debug_assert!((*start_pde).valid());
+    ntkrnl_sys::ASSERT!((*start_pde).valid());
     pointer_pte = MiAddressToPte(MmFreePagesByColor[0] as PVOID);
-    debug_assert!((*pointer_pte).valid());
+    ntkrnl_sys::ASSERT!((*pointer_pte).valid());
     last_pte = MiAddressToPte(
         ((MmFreePagesByColor[1].add(MmSecondaryColors as usize) as ULONG_PTR) - 1) as PVOID,
     );
-    debug_assert!((*last_pte).valid());
+    ntkrnl_sys::ASSERT!((*last_pte).valid());
 
     while pointer_pte <= last_pte {
         pfn1 = MiGetPfnEntry(PFN_FROM_PTE(pointer_pte));

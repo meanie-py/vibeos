@@ -615,7 +615,9 @@ const STATUS_NO_MEDIA_IN_DEVICE: NTSTATUS = 0xC0000013u32 as i32 ;
 // Forward declarations for functions not available in ntkrnl_sys
 
 // Constants used by the function (values typical of Windows DDK; adjust as needed)
-const SP_UNTAGGED: u32 = 0xFFFFFFFF; // Typically ULONG_MAX
+// ddk/srb.h:55 `#define SP_UNTAGGED ((UCHAR) ~0)` == 0xFF. Not ULONG_MAX: the
+// neighbouring SP_UNINITIALIZED_VALUE is the ((ULONG) ~0) one.
+const SP_UNTAGGED: u32 = 0xFF;
 const SRB_SIMPLE_TAG_REQUEST: u16 = 0x08;
 const CLASS_SRBEX_NO_SRBEX_DATA_BUFFER_SIZE: u32 = 0x60;
 const DEV_POWER_PROTECTED: i32 = 0x10;
@@ -943,7 +945,7 @@ pub unsafe extern "C" fn DiskCreateFdo(
     const STATUS_UNSUCCESSFUL: i32 = 0xC0000001u32 as i32;
     const DIRECTORY_ALL_ACCESS: u32 = 0x000F01FF;
     const APC_LEVEL: u32 = 1;
-    const TRACE_FLAG_PNP: u32 = 2;
+    const TRACE_FLAG_PNP: u32 = 1; // storswtr.h:80-98 (an ORDINAL enum, not a bitmask)
 
     let mut deviceName: *const i8 = core::ptr::null();
     let mut handle: *mut core::ffi::c_void = core::ptr::null_mut();
@@ -2233,19 +2235,29 @@ pub unsafe extern "C" fn DiskModeSelect(
     // Forward declarations for symbols not in the provided import list
     // Constants needed from the original C / anchor
     const APC_LEVEL: KIRQL = 1;
-    const TRACE_LEVEL_ERROR: u32 = 2;
-    const TRACE_FLAG_IOCTL: u32 = 0x80;          // placeholder
-    const NON_PAGED_POOL_NX_CACHE_ALIGNED: u32 = 0x20; // NonPagedPoolNxCacheAligned placeholder
+    const TRACE_LEVEL_ERROR: u32 = 2; // storswtr.h:26-30
+    const TRACE_FLAG_IOCTL: u32 = 4; // storswtr.h:80-98 (an ORDINAL enum, not a bitmask)
+    // disk.h:75: `#define NON_PAGED_POOL_NX_CACHE_ALIGNED NonPagedPoolCacheAligned` under
+    // `#ifdef __REACTOS__` -- NX pool is NT6.2 and this kernel has none, so the
+    // Windows value (0x200/0x204) is not what any TU here compiles.
+    const NON_PAGED_POOL_NX_CACHE_ALIGNED: u32 = 4;
+                                                // NonPagedPoolCacheAligned
     const DISK_TAG_MODE_DATA: u32 = 0x4D446353;         // 'MODE' placeholder
-    const SRB_TYPE_STORAGE_REQUEST_BLOCK: u32 = 8;     // typical
-    const SRB_FUNCTION_STORAGE_REQUEST_BLOCK: u8 = 0xF0; // placeholder
+    const SRB_TYPE_STORAGE_REQUEST_BLOCK: u32 = 1;     // srb.h:664
+    // ddk/srb.h:108 == 0x28. 0xF0 was an INVENTED value labelled "placeholder";
+    // it is not any SRB_FUNCTION_* and compiled perfectly happily.
+    const SRB_FUNCTION_STORAGE_REQUEST_BLOCK: u8 = 0x28;
     const SRB_SIGNATURE: u32 = 0x53524254;              // 'SRBT'
     const STORAGE_REQUEST_BLOCK_VERSION_1: u32 = 1;
     const SRB_FUNCTION_EXECUTE_SCSI: u32 = 0x00;        // placeholder
-    const STOR_ADDRESS_TYPE_BTL8: u16 = 2;              // placeholder
-    const STOR_ADDR_BTL8_ADDRESS_LENGTH: u32 = 8;       // placeholder
-    const SRB_EX_DATA_TYPE_SCSI_CDB16: u16 = 0;         // placeholder
-    const SRBEX_DATA_SCSI_CDB16_LENGTH: u32 = 32;       // placeholder
+    const STOR_ADDRESS_TYPE_BTL8: u16 = 1;              // scsi.h:3571
+    const STOR_ADDR_BTL8_ADDRESS_LENGTH: u32 = 4;       // scsi.h:3574
+    const SRB_EX_DATA_TYPE_SCSI_CDB16: u16 = 0x40;      // srb.h:459 SrbExDataTypeScsiCdb16
+    // srb.h:489 `((20 * sizeof(UCHAR)) + sizeof(ULONG) + sizeof(PVOID))` -- POINTER
+    // WIDTH dependent, so a frozen 32 is right on 64-bit and 4 bytes too long on
+    // i386, where it would describe an SRB extended-data block past its own end.
+    const SRBEX_DATA_SCSI_CDB16_LENGTH: u32 =
+        (20 + core::mem::size_of::<u32>() + core::mem::size_of::<*mut core::ffi::c_void>()) as u32;
     const SCSIOP_MODE_SELECT: u8 = 0x15;                // typical
     const STATUS_VERIFY_REQUIRED: NTSTATUS = 0x80000016u32 as i32;
     const SRB_STATUS_DATA_OVERRUN: u8 = 0x12;
@@ -2963,7 +2975,7 @@ pub unsafe extern "system" fn DiskFdoProcessError(
 }
 
 
-const TRACE_FLAG_INIT: u32 = 2; // typical value, adjust if needed
+const TRACE_FLAG_INIT: u32 = 8; // storswtr.h:80-98 (an ORDINAL enum, not a bitmask)
 #[no_mangle]
 pub unsafe extern "system" fn DiskSetSpecialHacks(
     FdoExtension: PFUNCTIONAL_DEVICE_EXTENSION,
@@ -9999,8 +10011,10 @@ pub unsafe extern "C" fn DiskIoctlEnableFailurePrediction(
     if (*enablePrediction).Set != 0
         && (*enablePrediction).Enabled != (*diskData).FailurePredictionEnabled
     {
-        const FAILURE_PREDICTION_SMART: u32 = 1; // placeholder
-        const FAILURE_PREDICTION_IOCTL: u32 = 2; // placeholder
+        // classpnp.h:233 -- these two were PERMUTED (Ioctl is 1, Smart is 2), which a
+        // set-based constant seal cannot detect: the set is right, the slots are not.
+        const FAILURE_PREDICTION_SMART: u32 = 2;
+        const FAILURE_PREDICTION_IOCTL: u32 = 1;
 
         if (*diskData).FailurePredictionCapability == FAILURE_PREDICTION_SMART
             || (*diskData).FailurePredictionCapability == FAILURE_PREDICTION_IOCTL
@@ -10099,9 +10113,15 @@ pub unsafe extern "C" fn DiskIoctlGetCacheInformation(
                 ((*fdoExtension).DeviceFlags as u16 & !0x1u16) as USHORT;
         }
 
+        // ADJUST_FUA_FLAG (classpnp.h): DEV_WRITE_CACHE && !DEV_POWER_PROTECTED &&
+        // !CLASS_SPECIAL_FUA_NOT_SUPPORTED. The two negated guards were `!(x & FLAG) != 0`,
+        // which is Rust's BITWISE not — never zero for a flag test, so both were always
+        // true and the whole condition collapsed to DEV_WRITE_CACHE alone. That forced FUA
+        // on power-protected devices and on devices that had explicitly reported it
+        // unsupported. C's `!` is logical; the faithful spelling is `== 0`.
         if ((*fdoExtension).DeviceFlags as i32 & 0x1i32) != 0
-            && !((*fdoExtension).DeviceFlags as i32 & 0x10i32) != 0
-            && !((*fdoExtension).ScanForSpecialFlags as u32 & 0x80u32) != 0
+            && ((*fdoExtension).DeviceFlags as i32 & 0x10i32) == 0
+            && ((*fdoExtension).ScanForSpecialFlags as u32 & 0x80u32) == 0
         {
             (*fdoExtension).CdbForceUnitAccess = 1u8; // TRUE
         } else {
@@ -10977,9 +10997,11 @@ pub unsafe extern "C" fn DiskIoctlPredictFailure(
     const APC_LEVEL: KIRQL = 1;
     const DISPATCH_LEVEL: KIRQL = 2;
     const STATUS_INVALID_LEVEL: NTSTATUS = 0xC0000148_u32 as i32;
-    const FailurePredictionSense: i32 = 1; // placeholder
+    const FailurePredictionSense: i32 = 3; // classpnp.h:237 (None 0, Ioctl 1, Smart 2, Sense 3);
+                                       // 1 is FailurePredictionIoctl, so the SMART-sense
+                                       // capability test below could never match
     const FailurePredictionSmart: i32 = 2; // placeholder
-    const TRACE_FLAG_IOCTL: u32 = 0; // placeholder
+    const TRACE_FLAG_IOCTL: u32 = 4; // storswtr.h:80-98 (an ORDINAL enum, not a bitmask)
     const DISK_TAG_SMART: u32 = 0x61446353; // 'aDcS' (disk.h)
     const NonPagedPool: u32 = 0; // placeholder
     const SynchronizationEvent: i32 = 0x01; // placeholder

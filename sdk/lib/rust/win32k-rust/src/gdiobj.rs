@@ -3,12 +3,7 @@ use ntkrnl_sys::ddk::{KeEnterCriticalRegion, KeLeaveCriticalRegion};
 use ntkrnl_sys::interlocked::{InterlockedIncrement, InterlockedDecrement, InterlockedExchangeAdd};
 
 // C debug macros — silenced via macro_rules! (variadic no-op).
-#[allow(unused_macros)] macro_rules! TRACE { ($($t:tt)*) => { () }; }
-#[allow(unused_macros)] macro_rules! ERR { ($($t:tt)*) => { () }; }
-#[allow(unused_macros)] macro_rules! WARN { ($($t:tt)*) => { () }; }
 #[allow(unused_macros)] macro_rules! NT_ASSERT { ($($t:tt)*) => { () }; }
-#[allow(unused_macros)] macro_rules! FIXME { ($($t:tt)*) => { () }; }
-#[allow(unused_macros)] macro_rules! DPRINT1 { ($($t:tt)*) => { () }; }
 
 // These are real exported kernel symbols. ntkrnl-sys declares them too, but
 // nominally typed against ntkrnl-sys's own bindgen structs (distinct nominal

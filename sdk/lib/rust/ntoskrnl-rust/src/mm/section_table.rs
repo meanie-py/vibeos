@@ -189,8 +189,8 @@ pub unsafe extern "system" fn _MmSetPageEntrySectionSegment(
     _file: *const i8,
     _line: i32,
 ) -> NTSTATUS {
-    debug_assert!((*Segment).Locked != 0);
-    debug_assert!(!IS_SWAP_FROM_SSE(Entry) || !IS_DIRTY_SSE(Entry));
+    ntkrnl_sys::ASSERT!((*Segment).Locked != 0);
+    ntkrnl_sys::ASSERT!(!IS_SWAP_FROM_SSE(Entry) || !IS_DIRTY_SSE(Entry));
 
     let table_ptr = core::ptr::addr_of_mut!((*Segment).PageTable) as PRTL_GENERIC_TABLE;
     let PageTable = MiSectionPageTableGetOrAllocate(table_ptr, Offset);
@@ -198,7 +198,7 @@ pub unsafe extern "system" fn _MmSetPageEntrySectionSegment(
         return STATUS_NO_MEMORY;
     }
 
-    debug_assert!(!MiSectionPageTableGet(table_ptr, Offset).is_null());
+    ntkrnl_sys::ASSERT!(!MiSectionPageTableGet(table_ptr, Offset).is_null());
 
     (*PageTable).Segment = Segment;
     let page_index = (((*Offset).QuadPart - (*PageTable).FileOffset.QuadPart) as ULONG_PTR)
@@ -276,7 +276,7 @@ pub unsafe extern "system" fn _MmGetPageEntrySectionSegment(
     _file: *const i8,
     _line: i32,
 ) -> ULONG_PTR {
-    debug_assert!((*Segment).Locked != 0);
+    ntkrnl_sys::ASSERT!((*Segment).Locked != 0);
 
     let mut file_offset: LARGE_INTEGER = core::mem::zeroed();
     file_offset.QuadPart = round_down(
@@ -346,10 +346,7 @@ pub unsafe extern "system" fn MmGetSectionAssociation(
         segment = (*page_table).Segment;
         (*Offset).QuadPart = (*page_table).FileOffset.QuadPart
             + ((raw_offset as u64) << PAGE_SHIFT) as i64;
-        debug_assert_eq!(
-            PFN_FROM_SSE((*page_table).PageEntries[raw_offset as usize]),
-            Page,
-        );
+        ntkrnl_sys::ASSERT!(PFN_FROM_SSE((*page_table).PageEntries[raw_offset as usize]) == Page);
         InterlockedIncrement64((*segment).ReferenceCount);
     }
 
@@ -365,7 +362,7 @@ pub unsafe extern "system" fn MmSetSectionAssociation(
 ) -> NTSTATUS {
     let table_ptr = core::ptr::addr_of_mut!((*Segment).PageTable) as PRTL_GENERIC_TABLE;
     let page_table = MiSectionPageTableGet(table_ptr, Offset);
-    debug_assert!(!page_table.is_null());
+    ntkrnl_sys::ASSERT!(!page_table.is_null());
 
     let actual_offset =
         (((*Offset).QuadPart - (*page_table).FileOffset.QuadPart) as ULONG_PTR) as ULONG;

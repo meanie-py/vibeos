@@ -4,7 +4,6 @@ use crate::brushbody::pbrushbody;
 use crate::floatobj::*;
 use ntkrnl_sys::ddk::{ExAllocatePoolWithTag, ExFreePoolWithTag};
 
-#[allow(unused_macros)] macro_rules! ERR { ($($t:tt)*) => { () }; }
 #[inline(always)] unsafe fn RtlCopyMemory(dst: *mut c_void, src: *const c_void, n: usize) { core::ptr::copy_nonoverlapping(src as *const u8, dst as *mut u8, n); }
 
 // CRT (cdecl); GDI_Bezier is a real cdecl fn (bezier.c → bezier.rs).
@@ -1168,12 +1167,12 @@ pub unsafe extern "system" fn NtGdiPolyDraw(
     let mut bResult: i32;
 
     if cpt == 0 {
-        ERR!(b"cpt is 0\n\0".as_ptr() as *const i8);
+        ERR!("cpt is 0\n");
         return 0;
     }
 
     if cpt > ((MAXULONG - cpt) / core::mem::size_of::<POINT>() as u32) {
-        ERR!(b"cpt is too large\n\0".as_ptr() as *const i8, cpt);
+        ERR!("cpt is too large\n", cpt);
         return 0;
     }
 
@@ -1181,7 +1180,7 @@ pub unsafe extern "system" fn NtGdiPolyDraw(
 
     pjBuffer = ExAllocatePoolWithTag(PagedPool, (cjSizePt + cpt as usize) as SIZE_T, TAG_SHAPE) as PBYTE;
     if pjBuffer.is_null() {
-        ERR!(b"Failed to allocate buffer\n\0".as_ptr() as *const i8);
+        ERR!("Failed to allocate buffer\n");
         return 0;
     }
 

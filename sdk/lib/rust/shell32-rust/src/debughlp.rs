@@ -349,7 +349,7 @@ pub unsafe extern "C" fn pcheck(pidl: LPCITEMIDLIST) -> i32 {
                         pidl,
                         pidltemp,
                         (*pidltemp).mkid.cb as u32,
-                        type_val
+                        type_val as core::ffi::c_uint
                     );
                     dump_pidl_hex(pidltemp);
                     return FALSE;

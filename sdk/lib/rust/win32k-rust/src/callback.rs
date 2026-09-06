@@ -35,9 +35,6 @@ extern "C" {
 // ERR() is a debug-channel macro (debug.h) — expands to __noop in non-debug
 // builds, so there is no exported symbol. Swallow all args (matches cliprgn.rs/
 // ntuser.rs which stub ERR as a no-op).
-macro_rules! ERR {
-    ($($arg:tt)*) => {{ let _ = ($($arg)*); }};
-}
 
 // USERTAG_CALLBACK = 'ccsU' (tags.h). C multichar is big-endian: bytes in memory
 // little-endian are 'U','s','c','c'.
@@ -1053,7 +1050,7 @@ pub unsafe extern "system" fn co_IntCallEventProc(
 
     Argument = IntCbAllocateMemory(ArgumentLength);
     if Argument.is_null() {
-        ERR!(b"EventProc callback failed: out of memory\n\0".as_ptr() as *const u8);
+        ERR!("EventProc callback failed: out of memory\n");
         return 0;
     }
     Common = Argument as PEVENTPROC_CALLBACK_ARGUMENTS;
@@ -1110,7 +1107,7 @@ pub unsafe extern "system" fn co_IntCallLoadMenu(
 
     Argument = IntCbAllocateMemory(ArgumentLength);
     if Argument.is_null() {
-        ERR!(b"LoadMenu callback failed: out of memory\n\0".as_ptr() as *const u8);
+        ERR!("LoadMenu callback failed: out of memory\n");
         return 0 as HMENU;
     }
     Common = Argument as PLOADMENU_CALLBACK_ARGUMENTS;
@@ -1405,7 +1402,7 @@ unsafe fn co_IntDeliverUserAPC_impl() {
     UserEnterCo();
 
     if !NT_SUCCESS(Status) {
-        ERR!(b"Delivering User APC callback failed!\n\0".as_ptr());
+        ERR!("Delivering User APC callback failed!\n");
     }
 }
 
@@ -1560,7 +1557,7 @@ pub unsafe extern "system" fn co_ClientImmLoadLayout(
         || ResultLength != core::mem::size_of::<IMMLOADLAYOUT_CALLBACK_OUTPUT>() as u32
     {
         ERR!(
-            b"0x%lX, %p, %lu\n\0".as_ptr() as *const u8,
+            "0x%lX, %p, %lu\n",
             Status,
             ResultPointer,
             ResultLength,

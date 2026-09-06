@@ -8,7 +8,6 @@ use core::ffi::c_void;
 static mut gDebugChannel: ULONG = 200 as ULONG;
 
 // DEBUG_CHANNEL TRACE is a no-op here (NDEBUG), matching wine/res.rs + fileinfo.rs.
-macro_rules! TRACE { ($($arg:tt)*) => {} }
 
 // Use the bindgen kernel FFI types directly (the C uses the SDK types).
 pub type LPCVOID = *const core::ffi::c_void;

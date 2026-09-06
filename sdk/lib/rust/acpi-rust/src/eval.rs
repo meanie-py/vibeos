@@ -88,10 +88,6 @@ const ACPI_EVAL_INPUT_BUFFER_COMPLEX_SIGNATURE: ULONG =
     u32::from_be_bytes([b'C', b'i', b'e', b'A']);
 const ACPI_EVAL_OUTPUT_BUFFER_SIGNATURE: ULONG = u32::from_be_bytes([b'B', b'o', b'e', b'A']);
 
-// DPRINT/DPRINT1/ASSERT are no-ops under the driver's NDEBUG build.
-macro_rules! DPRINT  { ($($t:tt)*) => {}; }
-macro_rules! DPRINT1 { ($($t:tt)*) => {}; }
-
 // ===========================================================================
 //  acpiioct.h structs (NOT in any -sys crate — defined locally per the brief).
 //  Layouts taken verbatim from sdk/include/ddk/acpiioct.h.
@@ -300,7 +296,7 @@ unsafe fn EvalConvertObjectReference(
     let handle = read_unaligned(addr_of!((*Reference).Reference.Handle));
     let AcpiStatus = AcpiGetName(handle, ACPI_SINGLE_NAME, &mut OutName);
     if !ACPI_SUCCESS(AcpiStatus) {
-        DPRINT1!();
+        DPRINT1!("AcpiGetName() failed on %p with status 0x%04x\n", handle, AcpiStatus);
         return STATUS_UNSUCCESSFUL;
     }
 
@@ -375,7 +371,7 @@ unsafe fn EvalGetElementSize(
             TotalCount = 1;
         }
         _ => {
-            DPRINT1!();
+            DPRINT1!("Unsupported element type %u\n", obj_type);
             return STATUS_UNSUCCESSFUL;
         }
     }
@@ -465,7 +461,7 @@ unsafe fn EvalConvertEvaluationResults(
             }
         }
         _ => {
-            DPRINT1!();
+            DPRINT1!("Unsupported element type %u\n", obj_type);
             return STATUS_UNSUCCESSFUL;
         }
     }
@@ -520,7 +516,7 @@ unsafe fn EvalConvertParameterObjects(
         Offset = Offset.wrapping_add(ACPI_METHOD_ARGUMENT_LENGTH_FROM_ARGUMENT(Argument));
 
         if !AcpiVerifyInBuffer(IoStack, Offset) {
-            DPRINT1!();
+            DPRINT1!("Argument buffer outside of argument bounds\n");
             return STATUS_ACPI_INVALID_ARGTYPE;
         }
     }
@@ -576,7 +572,7 @@ unsafe fn EvalConvertParameterObjects(
             let Status =
                 RtlULongMult(pkg_count, core::mem::size_of::<ACPI_OBJECT>() as ULONG, &mut PackageSize);
             if !NT_SUCCESS(Status) {
-                DPRINT1!();
+                DPRINT1!("Invalid package count 0x%x\n", pkg_count);
                 return STATUS_ACPI_INCORRECT_ARGUMENT_COUNT;
             }
 
@@ -610,7 +606,7 @@ unsafe fn EvalConvertParameterObjects(
             }
         }
         _ => {
-            DPRINT1!();
+            DPRINT1!("Unknown argument type %u\n", arg_type as core::ffi::c_uint);
             return STATUS_UNSUCCESSFUL;
         }
     }
@@ -631,7 +627,7 @@ unsafe fn EvalCreateParametersList(
     //   = offsetof(Signature) + sizeof(Signature) = 0 + 4 = 4.
     let through_signature = core::mem::size_of::<ULONG>() as ULONG;
     if !AcpiVerifyInBuffer(IoStack, through_signature) {
-        DPRINT1!();
+        DPRINT1!("Buffer too small\n");
         return STATUS_INFO_LENGTH_MISMATCH;
     }
 
@@ -639,7 +635,7 @@ unsafe fn EvalCreateParametersList(
     match signature {
         s if s == ACPI_EVAL_INPUT_BUFFER_SIGNATURE => {
             if !AcpiVerifyInBuffer(IoStack, core::mem::size_of::<ACPI_EVAL_INPUT_BUFFER>() as ULONG) {
-                DPRINT1!();
+                DPRINT1!("Buffer too small\n");
                 return STATUS_INFO_LENGTH_MISMATCH;
             }
             (*ParamList).Count = 0;
@@ -649,7 +645,7 @@ unsafe fn EvalCreateParametersList(
                 IoStack,
                 core::mem::size_of::<ACPI_EVAL_INPUT_BUFFER_SIMPLE_INTEGER>() as ULONG,
             ) {
-                DPRINT1!();
+                DPRINT1!("Buffer too small\n");
                 return STATUS_INFO_LENGTH_MISMATCH;
             }
 
@@ -677,7 +673,7 @@ unsafe fn EvalCreateParametersList(
                 IoStack,
                 core::mem::size_of::<ACPI_EVAL_INPUT_BUFFER_SIMPLE_STRING>() as ULONG,
             ) {
-                DPRINT1!();
+                DPRINT1!("Buffer too small\n");
                 return STATUS_INFO_LENGTH_MISMATCH;
             }
 
@@ -709,7 +705,7 @@ unsafe fn EvalCreateParametersList(
                 IoStack,
                 core::mem::size_of::<ACPI_EVAL_INPUT_BUFFER_COMPLEX>() as ULONG,
             ) {
-                DPRINT1!();
+                DPRINT1!("Buffer too small\n");
                 return STATUS_INFO_LENGTH_MISMATCH;
             }
 
@@ -719,7 +715,7 @@ unsafe fn EvalCreateParametersList(
             let count = (*ComplexBuffer).ArgumentCount;
             (*ParamList).Count = count;
             if count == 0 {
-                DPRINT1!();
+                DPRINT1!("No arguments\n");
                 return STATUS_ACPI_INCORRECT_ARGUMENT_COUNT;
             }
 
@@ -727,7 +723,7 @@ unsafe fn EvalCreateParametersList(
             let Status =
                 RtlULongMult(count, core::mem::size_of::<ACPI_OBJECT>() as ULONG, &mut ArgumentsSize);
             if !NT_SUCCESS(Status) {
-                DPRINT1!();
+                DPRINT1!("Invalid argument count 0x%x\n", count);
                 return STATUS_ACPI_INCORRECT_ARGUMENT_COUNT;
             }
 
@@ -754,7 +750,7 @@ unsafe fn EvalCreateParametersList(
                     Length.wrapping_add(ACPI_METHOD_ARGUMENT_LENGTH_FROM_ARGUMENT(Argument));
 
                 if !AcpiVerifyInBuffer(IoStack, Length) {
-                    DPRINT1!();
+                    DPRINT1!("Argument buffer outside of argument bounds\n");
                     ExFreePoolWithTag((*ParamList).Pointer as PVOID, TAG_ACPI_PARAMETERS_LIST);
                     return STATUS_ACPI_INVALID_ARGTYPE;
                 }
@@ -771,7 +767,7 @@ unsafe fn EvalCreateParametersList(
             }
         }
         _ => {
-            DPRINT1!();
+            DPRINT1!("Unsupported input buffer signature: 0x%lx\n", signature);
             return STATUS_INVALID_PARAMETER_1;
         }
     }
@@ -908,7 +904,7 @@ unsafe fn EvalCreateOutputArguments(
     }
 
     if !AcpiVerifyOutBuffer(IoStack, core::mem::size_of::<ACPI_EVAL_OUTPUT_BUFFER>() as ULONG) {
-        DPRINT1!();
+        DPRINT1!("Buffer too small\n");
         return STATUS_BUFFER_TOO_SMALL;
     }
 

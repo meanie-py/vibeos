@@ -4,10 +4,6 @@ use core::ffi::c_void;
 use crate::string::nls_subst::{HeapAlloc, HeapFree, HeapReAlloc};
 
 // ---- logging macros (no-op; established sibling convention from comm.rs) ----
-macro_rules! TRACE { ($($t:tt)*) => {{}} }
-macro_rules! WARN  { ($($t:tt)*) => {{}} }
-macro_rules! ERR   { ($($t:tt)*) => {{}} }
-macro_rules! FIXME { ($($t:tt)*) => {{}} }
 // debugstr_a/_w only ever appear inside the (no-op) TRACE/ERR/WARN args, so
 // they can be no-op macros too — faithful to the C, evaluates nothing.
 macro_rules! debugstr_a { ($($t:tt)*) => {{ () }} }
@@ -1936,7 +1932,7 @@ unsafe fn write_raw_resources(updates: *mut QUEUEDUPDATES) -> BOOL {
 
         ret = read_mapped_resources(updates, (*read_map).base, (*read_map).size);
         if ret == 0 {
-            ERR!(b"failed to read existing resources\n\0".as_ptr() as *const i8);
+            ERR!("failed to read existing resources\n");
             break 'done;
         }
     }
@@ -1963,12 +1959,12 @@ unsafe fn write_raw_resources(updates: *mut QUEUEDUPDATES) -> BOOL {
     }
 
     if (PeSectionAlignment as LONG) <= 0 {
-        ERR!(b"invalid section alignment %08x\n\0".as_ptr() as *const i8, PeSectionAlignment);
+        ERR!("invalid section alignment %08x\n", PeSectionAlignment);
         break 'done;
     }
 
     if (PeFileAlignment as LONG) <= 0 {
-        ERR!(b"invalid file alignment %08x\n\0".as_ptr() as *const i8, PeFileAlignment);
+        ERR!("invalid file alignment %08x\n", PeFileAlignment);
         break 'done;
     }
 
@@ -2036,7 +2032,7 @@ unsafe fn write_raw_resources(updates: *mut QUEUEDUPDATES) -> BOOL {
 
             nt = get_nt_header((*write_map).base, mapping_size) as *mut IMAGE_NT_HEADERS32;
             if nt.is_null() {
-                ERR!(b"couldn't get NT header\n\0".as_ptr() as *const i8);
+                ERR!("couldn't get NT header\n");
                 break 'done;
             }
             nt64 = nt as *mut IMAGE_NT_HEADERS64;
@@ -2077,7 +2073,7 @@ unsafe fn write_raw_resources(updates: *mut QUEUEDUPDATES) -> BOOL {
 
             nt = get_nt_header((*write_map).base, mapping_size) as *mut IMAGE_NT_HEADERS32;
             if nt.is_null() {
-                ERR!(b"couldn't get NT header\n\0".as_ptr() as *const i8);
+                ERR!("couldn't get NT header\n");
                 break 'done;
             }
             nt64 = nt as *mut IMAGE_NT_HEADERS64;

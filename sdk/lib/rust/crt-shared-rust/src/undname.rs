@@ -14,24 +14,23 @@ const AVAIL_SIZE: core::ffi::c_uint =
 // wine/debug.h's channels. No-ops here for the same reason every other translated msvcrt
 // module makes them no-ops -- and `macro_rules!`, never an out-of-line `fn`: an
 // out-of-line no-op is an optimization barrier that uncloaks latent ABI mismatches.
-macro_rules! ERR {
-    ($($arg:tt)*) => {{}};
-}
-macro_rules! WARN {
-    ($($arg:tt)*) => {{}};
-}
-macro_rules! TRACE {
-    ($($arg:tt)*) => {{}};
-}
-macro_rules! FIXME {
-    ($($arg:tt)*) => {{}};
-}
 
-// `atoi` and `isdigit` are msvcrt's own, already Rust at the crate root (string.c's and
-// ctype.c's families). undname.c calls them as ordinary CRT siblings, so import rather
-// than re-declare -- an `extern` block here would have been a second, unchecked
-// declaration of a function this very crate defines.
-use crate::{atoi, isdigit};
+// `atoi` and `isdigit` are ordinary CRT siblings undname.c calls, and after the split out of
+// msvcrt-crt-rust they are no longer defined by THIS crate, so they are `extern` again.
+//
+// That inversion is the point of the split, not an accident of it. This crate is linked into
+// two different CRTs: in msvcrt.dll the names bind to msvcrt-crt-rust's own Rust bodies
+// (string.c's and ctype.c's families), and in ucrtbase.dll they bind to the genuine Microsoft
+// UCRT's. undname must call ITS HOST's atoi, and a `use` would have hard-wired msvcrt's into
+// both. The signatures below are transcribed from stdlib.h and ctype.h, per the prelude's
+// rule -- a declaration that disagrees with the host's is not a build error, it is a silent
+// ABI mismatch.
+unsafe extern "C" {
+    /// `stdlib.h`: `int __cdecl atoi(const char *_Str);`
+    fn atoi(_Str: *const c_char) -> c_int;
+    /// `ctype.h`: `int __cdecl isdigit(int _C);`
+    fn isdigit(_C: c_int) -> c_int;
+}
 
 // ── str_printf: the one function in this file that is hand-written, and why ──────────
 //
@@ -653,7 +652,7 @@ unsafe extern "C" fn get_qualifier(sym: *mut parsed_symbol, xdt: *mut datatype_t
             return FALSE;
         }
         if pclass.is_null() {
-            FIXME!(b"Got pointer to class %s member without storage\n\0".as_ptr(), class);
+            FIXME!("Got pointer to class %s member without storage\n", class);
             return FALSE;
         }
         *pclass = class;
@@ -958,7 +957,7 @@ unsafe extern "C" fn get_calling_convention(
                 b'K' | b'L' => {}
                 b'M' => *call_conv = b"clrcall\0".as_ptr() as *const i8,
                 _ => {
-                    ERR!(b"Unknown calling convention %c\n\0".as_ptr() as PCHAR, ch);
+                    ERR!("Unknown calling convention %c\n", ch as core::ffi::c_int);
                     return (FALSE) as i32;
                 }
             }
@@ -975,7 +974,7 @@ unsafe extern "C" fn get_calling_convention(
                 b'K' | b'L' => {}
                 b'M' => *call_conv = b"__clrcall\0".as_ptr() as *const i8,
                 _ => {
-                    ERR!(b"Unknown calling convention %c\n\0".as_ptr() as PCHAR, ch);
+                    ERR!("Unknown calling convention %c\n", ch as core::ffi::c_int);
                     return (FALSE) as i32;
                 }
             }
@@ -1373,7 +1372,7 @@ unsafe extern "C" fn demangle_datatype(
                 }
             }
             _ => {
-                ERR!(b"Unknown type %c\n\0".as_ptr(), dt);
+                ERR!("Unknown type %c\n", dt as core::ffi::c_int);
             }
         }
         break;
@@ -1780,7 +1779,7 @@ unsafe extern "C" fn symbol_demangle(sym: *mut parsed_symbol) -> u8 {
                                 b'3' => function_name = b"`RTTI Class Hierarchy Descriptor'\0".as_ptr() as *const i8,
                                 b'4' => function_name = b"`RTTI Complete Object Locator'\0".as_ptr() as *const i8,
                                 _ => {
-                                    ERR!(b"Unknown RTTI operator: _R%c\n\0".as_ptr(), *(*sym).current);
+                                    ERR!("Unknown RTTI operator: _R%c\n", *(*sym).current as core::ffi::c_int);
                                 }
                             }
                         }
@@ -1799,13 +1798,13 @@ unsafe extern "C" fn symbol_demangle(sym: *mut parsed_symbol) -> u8 {
                                     (*sym).current = (*sym).current.offset(-1);
                                 }
                                 _ => {
-                                    FIXME!(b"Unknown operator: __%c\n\0".as_ptr(), *(*sym).current);
+                                    FIXME!("Unknown operator: __%c\n", *(*sym).current as core::ffi::c_int);
                                     return FALSE;
                                 }
                             }
                         }
                         _ => {
-                            ERR!(b"Unknown operator: _%c\n\0".as_ptr(), *(*sym).current);
+                            ERR!("Unknown operator: _%c\n", *(*sym).current as core::ffi::c_int);
                             return FALSE;
                         }
                     }
@@ -1820,7 +1819,7 @@ unsafe extern "C" fn symbol_demangle(sym: *mut parsed_symbol) -> u8 {
                 }
                 _ => {
                     // FIXME: Other operators
-                    ERR!(b"Unknown operator: %c\n\0".as_ptr(), *(*sym).current);
+                    ERR!("Unknown operator: %c\n", *(*sym).current as core::ffi::c_int);
                     return FALSE;
                 }
             }

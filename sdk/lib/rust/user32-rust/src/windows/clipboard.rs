@@ -10,8 +10,6 @@ use crate::ntwrapper::NtUserxEnumClipboardFormats;
 use core::ffi::c_void;
 
 // ERR/FIXME debug-channel macros — no-ops (WINE_DEFAULT_DEBUG_CHANNEL).
-macro_rules! ERR { ($($t:tt)*) => {{ }}; }
-macro_rules! FIXME { ($($t:tt)*) => {{ }}; }
 
 const CP_ACP: UINT = 0;
 const GMEM_MOVEABLE: UINT = 0x0002;
@@ -278,7 +276,7 @@ pub unsafe extern "system" fn GetClipboardData(uFormat: UINT) -> HANDLE {
                 pNewData = IntSynthesizeWideChar(pData, cbData, (gcd.uFmtRet == CF_OEMTEXT) as BOOL);
             }
             _ => {
-                FIXME!(b"Format: %u != %u\n\0".as_ptr(), uFormat, gcd.uFmtRet);
+                FIXME!("Format: %u != %u\n", uFormat, gcd.uFmtRet);
             }
         }
 
@@ -381,7 +379,7 @@ pub unsafe extern "system" fn SetClipboardData(uFormat: UINT, hMem: HANDLE) -> H
 
     if hRet.is_null() {
         ERR!(
-            b"SetClipboardData(%u, %p) failed\n\0".as_ptr() as *const i8,
+            "SetClipboardData(%u, %p) failed\n",
             uFormat,
             hMem,
         );

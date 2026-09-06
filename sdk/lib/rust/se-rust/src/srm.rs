@@ -144,7 +144,7 @@ pub unsafe extern "system" fn SepRegQueryHelper(
     );
     if Status < 0 {
         let CloseStatus = ZwClose(KeyHandle);
-        debug_assert!(CloseStatus >= 0);
+        ntkrnl_sys::ASSERT!(CloseStatus >= 0);
         return Status;
     }
 
@@ -153,7 +153,7 @@ pub unsafe extern "system" fn SepRegQueryHelper(
     {
         Status = STATUS_OBJECT_TYPE_MISMATCH;
         let CloseStatus = ZwClose(KeyHandle);
-        debug_assert!(CloseStatus >= 0);
+        ntkrnl_sys::ASSERT!(CloseStatus >= 0);
         return Status;
     }
 
@@ -170,7 +170,7 @@ pub unsafe extern "system" fn SepRegQueryHelper(
     }
 
     let CloseStatus = ZwClose(KeyHandle);
-    debug_assert!(CloseStatus >= 0);
+    ntkrnl_sys::ASSERT!(CloseStatus >= 0);
 
     Status
 }
@@ -287,7 +287,7 @@ unsafe fn SepAdtInitializeBounds() {
 unsafe fn SepRmSetAuditEvent(Message: PSEP_RM_API_MESSAGE) -> NTSTATUS {
     SepAdtInitializeBounds();
 
-    debug_assert!((*Message).ApiNumber == 0); // RmAuditSetCommand
+    ntkrnl_sys::ASSERT!((*Message).ApiNumber == 0); // RmAuditSetCommand
     (*Message).ApiNumber = 0;
 
     SepAdtAuditingEnabled = (*Message).u.SetAuditEvent.Enabled;
@@ -302,7 +302,7 @@ unsafe fn SepRmSetAuditEvent(Message: PSEP_RM_API_MESSAGE) -> NTSTATUS {
 #[no_mangle]
 pub unsafe extern "system" fn SepRmInsertLogonSessionIntoToken(Token: PTOKEN) -> NTSTATUS {
     let Token = opaque_ptr(Token);
-    debug_assert!(!Token.is_null());
+    ntkrnl_sys::ASSERT!(!Token.is_null());
 
     KeAcquireGuardedMutex(&raw mut SepRmDbLock);
 
@@ -350,7 +350,7 @@ pub unsafe extern "system" fn SepRmInsertLogonSessionIntoToken(Token: PTOKEN) ->
 #[no_mangle]
 pub unsafe extern "system" fn SepRmRemoveLogonSessionFromToken(Token: PTOKEN) -> NTSTATUS {
     let Token = opaque_ptr(Token);
-    debug_assert!(!Token.is_null());
+    ntkrnl_sys::ASSERT!(!Token.is_null());
 
     KeAcquireGuardedMutex(&raw mut SepRmDbLock);
 

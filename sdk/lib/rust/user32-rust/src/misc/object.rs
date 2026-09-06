@@ -8,7 +8,6 @@ use crate::winbase::{WideCharToMultiByte, CP_THREAD_ACP};
 use crate::ntwrapper::GetUserObjectInformationW;
 
 // ── No-op debug macro (TRACE compiles to nothing; consume args so they type-check).
-macro_rules! TRACE { ($($arg:expr),* $(,)?) => { { $( let _ = $arg; )* } }; }
 
 // kernel32 heap + error glue (extern "system" = stdcall on i386).
 extern "system" {

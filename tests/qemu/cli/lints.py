@@ -338,6 +338,17 @@ def source_lint_specs(repo: Path) -> list[tuple]:
     # exports). Baseline EMPTY = strict: a header that grows a new alias fails here.
     vcm = repo / "tools" / "verify_conv_macros.py"
     specs.append(("verify_conv_macros", [py, str(vcm)] if vcm.is_file() else ["MISSING"], "stdout"))
+    # ucrtbase.dll is vendored Microsoft UCRT plus OUR msvcrt_shared, so the Rust archive it
+    # links must cover msvcrt_shared's surface and nothing else. The failure this catches has
+    # no diagnostic of its own: ucrtbase.spec and msvcrt's cohab archive collide on 891 names
+    # of which only 35 are msvcrt_shared's, and the module links with
+    # --allow-multiple-definition, so linking the wrong archive silently replaces 856 genuine
+    # UCRT bodies with msvcrt-contract ones and still builds, boots and looks fine. Baseline
+    # EMPTY = strict.
+    vuc = repo / "tools" / "verify_ucrtbase_cohab.py"
+    specs.append(
+        ("verify_ucrtbase_cohab", [py, str(vuc)] if vuc.is_file() else ["MISSING"], "stdout")
+    )
     # vendor.yaml — which C is NOT ours to translate. Every progress number in this project
     # is a fraction whose denominator is "C that is ours", and before the registry that set
     # was prose in rust-port-status.md, a one-tree manifest under external/, and a hardcoded
@@ -533,6 +544,22 @@ def source_lint_specs(repo: Path) -> list[tuple]:
             "stdout",
         )
     )
+    # C's `!x` is LOGICAL not; Rust's `!x` on an integer is BITWISE. So a translated
+    # `!(flags & FLAG)` becomes `!(flags & FLAG) != 0`, which is true for every value a
+    # flag test can produce — a CONSTANT condition that types fine, compiles clean and
+    # trips no rustc lint. Eight sites on 2026-07-26, and only three were assertions:
+    # the rest were live branches, including classpnp's ADJUST_FUA_FLAG collapsing to
+    # its first term (forcing FUA onto devices that had reported it unsupported) and an
+    # always-true arm that disabled win32k's CJK line-break rule. Nothing but reading
+    # the C finds these, which is exactly why it is a gate. Baseline is EMPTY.
+    sbn = repo / "tools" / "scan_bitwise_not_bool.py"
+    specs.append(
+        (
+            "scan_bitwise_not_bool",
+            [py, str(sbn), "--lint"] if sbn.is_file() else ["MISSING"],
+            "stdout",
+        )
+    )
     # One constant name, two values, both ours (§9.113b). The ORACLE-FREE half of
     # the invented-constant hunt: verify_constants needs the right C header in its
     # catalog, and the 18 findings of 2026-07-24 hid precisely because theirs
@@ -547,6 +574,26 @@ def source_lint_specs(repo: Path) -> list[tuple]:
         (
             "scan_const_contradictions",
             [py, str(scc), "--lint"] if scc.is_file() else ["MISSING"],
+            "stdout",
+        )
+    )
+    # The ORACLE-BEARING half, and the half the above is blind to by construction:
+    # a constant with exactly ONE definition in the tree cannot contradict itself,
+    # so a lone wrong value is invisible there forever. This one needs no inference
+    # because the translator labelled the population itself -- "// placeholder",
+    # "// guessed value", "// assumed" -- and then resolves each name against a
+    # NARROWLY scoped oracle (the C module the crate translates, plus the SDK
+    # headers), because a repo-wide catalog collides on short names and its
+    # findings are overwhelmingly false (§9.113b). fastfat's
+    # IRP_CONTEXT_FLAG_DISABLE_DIRTY was one of these, at 0x100 against
+    # fatstruc.h's 0x01, and it cost a BUGCHECK 0x50 on arm64 through an infinite
+    # recursion whose guard could never fire. MISMATCH is a defect; UNRESOLVED is
+    # a review queue, so the baseline gates NEW only.
+    sic = repo / "tools" / "scan_invented_constants.py"
+    specs.append(
+        (
+            "scan_invented_constants",
+            [py, str(sic), "--lint"] if sic.is_file() else ["MISSING"],
             "stdout",
         )
     )

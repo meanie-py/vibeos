@@ -106,9 +106,6 @@ unsafe fn DesktopPtrToUser(p: PVOID) -> PVOID {
 }
 
 /// `TRACE!(...)` — WINE debug channel; a no-op in the cohab build.
-macro_rules! TRACE {
-    ($($t:tt)*) => {{}};
-}
 
 // ---- file-scope preamble (translated) ----
 #[repr(C)]

@@ -177,8 +177,14 @@ const FAT_DIRENT_ATTR_VOLUME_ID: u8 = 0x08;
 const FAT_DIRENT_DELETED: u8 = 0xE5;
 const FAT_DIRENT_REALLY_0E5: u8 = 0x05;
 
-const NonPagedPoolNx: u32 = 512; // NonPagedPoolNx = 0x200
-const NonPagedPoolNxCacheAligned: u32 = 516; // NonPagedPoolNxCacheAligned
+// fatprocs.h:47: `#define NonPagedPoolNx NonPagedPool` under
+// `#ifdef __REACTOS__` -- NX pool is NT6.2 and this kernel has none, so the
+// Windows value (0x200/0x204) is not what any TU here compiles.
+const NonPagedPoolNx: u32 = 0;
+// fatprocs.h:47: `#define NonPagedPoolNxCacheAligned NonPagedPoolCacheAligned` under
+// `#ifdef __REACTOS__` -- NX pool is NT6.2 and this kernel has none, so the
+// Windows value (0x200/0x204) is not what any TU here compiles.
+const NonPagedPoolNxCacheAligned: u32 = 4;
 const TAG_ENTRY_LOOKUP_BUFFER: u32 = 0x4C746146;
 
 // fastfat's real LBO is LONGLONG (fat.h:34, and crate::types::LBO = LONGLONG), i.e.
@@ -311,7 +317,7 @@ pub unsafe extern "system" fn FatAddMcbEntry(
     Vbo >>= (*Vcb).AllocationSupport.LogOfBytesPerSector as u32;
     Lbo >>= (*Vcb).AllocationSupport.LogOfBytesPerSector as i64;
 
-    debug_assert!(SectorCount != 0);
+    ntkrnl_sys::ASSERT!(SectorCount != 0);
 
     if Mcb != &raw mut (*Vcb).DirtyFatMcb {
         #[cfg(debug_assertions)]
@@ -324,10 +330,8 @@ pub unsafe extern "system" fn FatAddMcbEntry(
                 &mut sparse_vbo,
                 &mut sparse_byte_count,
             );
-            debug_assert!(
-                non_sparse != 0
-                    || (sparse_vbo == Vbo && sparse_byte_count == SectorCount as i64)
-            );
+            ntkrnl_sys::ASSERT!(non_sparse != 0
+                    || (sparse_vbo == Vbo && sparse_byte_count == SectorCount as i64));
         }
     }
 
@@ -349,10 +353,8 @@ pub unsafe extern "system" fn FatAddMcbEntry(
                 &mut sparse_vbo,
                 &mut sparse_byte_count,
             );
-            debug_assert!(
-                non_sparse != 0
-                    || (sparse_vbo == Vbo && sparse_byte_count == SectorCount as i64)
-            );
+            ntkrnl_sys::ASSERT!(non_sparse != 0
+                    || (sparse_vbo == Vbo && sparse_byte_count == SectorCount as i64));
         }
     }
 
@@ -2190,7 +2192,7 @@ pub unsafe extern "system" fn FatFlushAndCleanVolume(
     // PAGED_CODE(); - no operation
 
     // NT_ASSERT(FatVcbAcquiredExclusive(IrpContext, Vcb));
-    debug_assert!(ExIsResourceAcquiredExclusiveLite(&raw mut (*Vcb).Resource) != 0);
+    ntkrnl_sys::ASSERT!(ExIsResourceAcquiredExclusiveLite(&raw mut (*Vcb).Resource) != 0);
 
     // There is no fail, flush everything.
     if FlushType != NoFlush {
@@ -2326,7 +2328,7 @@ pub unsafe extern "system" fn FatSetPurgeFailureMode(
                 (*fcb).PurgeFailureModeEnableCount += 1;
             } else {
                 // Original: ASSERT(FlagOn(SetPurgeInput->Flags, SET_PURGE_FAILURE_MODE_DISABLED));
-                debug_assert!((input_flags & SET_PURGE_FAILURE_MODE_DISABLED) != 0);
+                ntkrnl_sys::ASSERT!((input_flags & SET_PURGE_FAILURE_MODE_DISABLED) != 0);
 
                 if (*fcb).PurgeFailureModeEnableCount == 0 {
                     break STATUS_INVALID_PARAMETER;

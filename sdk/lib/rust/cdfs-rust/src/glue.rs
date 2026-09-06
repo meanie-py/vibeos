@@ -70,7 +70,8 @@ pub const SYSTEM_USE_XA_FORM2: u32 = 0x0010;
 pub const SYSTEM_XA_SIGNATURE: u32 = 0x4158;
 pub const TAG_DIRENT_NAME: u32 = 0x6e646443;  // 'nddC'
 pub const TAG_VOL_DESC: u32 = 0x64766443;  // 'dvdC'
-pub const TAG_VPB: u32 = 0x70766443;  // 'pvdC'
+pub const TAG_VPB: u32 = 0x70766443; // nolint: const-contradiction (per-driver pool tag, each verified against its own C)
+                                     // cdprocs.h:106 'pvdC'
 pub const VPB_LOCKED: u32 = 0x0002;
 pub const VPB_MOUNTED: u32 = 0x0001;
 pub const VPB_REMOVE_PENDING: u32 = 0x0008;

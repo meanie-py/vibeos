@@ -130,6 +130,8 @@ members = [
     "crt-dllmain-rust",
     "crt0-rust",
     "msvcrt-sys",
+    "crt-shared-rust",
+    "crt-shared-cargo",
     "msvcrt-crt-rust",
     "msvcrt-crt-cargo",
     "msvcrt-difftest",

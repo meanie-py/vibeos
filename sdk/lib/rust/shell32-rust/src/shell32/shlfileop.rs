@@ -2202,8 +2202,8 @@ unsafe extern "C" fn check_flags(fFlags: FILEOP_FLAGS) {
         | FOF_WANTMAPPINGHANDLE) as u16;
     if (fFlags as u16 & wUnsupportedFlags) != 0 {
         FIXME!(
-            b"Unsupported flags: %04x\n\0".as_ptr() as PCHAR,
-            fFlags,
+            "Unsupported flags: %04x\n",
+            fFlags as core::ffi::c_uint,
         );
     }
 }

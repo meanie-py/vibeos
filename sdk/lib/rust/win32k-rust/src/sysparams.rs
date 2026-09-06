@@ -29,11 +29,6 @@ macro_rules! w {
 }
 
 
-// C debug-channel macros — no kernel symbol, no-op.
-macro_rules! ERR   { ($($t:tt)*) => {{}}; }
-#[allow(unused_macros)] macro_rules! WARN  { ($($t:tt)*) => {{}}; }
-#[allow(unused_macros)] macro_rules! TRACE { ($($t:tt)*) => {{}}; }
-
 // L"..." literal → NUL-terminated UTF-16 static, yields *const u16. (ASCII source.)
 macro_rules! wide_str {
     ($s:literal) => {{
@@ -590,7 +585,7 @@ unsafe fn SpiMemCopy(pvDst: PVOID, pvSrc: PVOID, cbSize: ULONG, bProtect: BOOL) 
 
     if !NT_SUCCESS(Status) {
         SetLastNtError(Status);
-        ERR!(b"SpiMemCopy failed, pvDst=%p, pvSrc=%p, bProtect=%d\n\0".as_ptr() as *const i8, pvDst, pvSrc, bProtect);
+        ERR!("SpiMemCopy failed, pvDst=%p, pvSrc=%p, bProtect=%d\n", pvDst, pvSrc, bProtect);
     }
 
     NT_SUCCESS(Status) as UINT_PTR
@@ -2571,7 +2566,7 @@ unsafe fn UserSystemParametersInfo_impl(
 
     /* Get a pointer to the current Windowstation */
     if (*ppi).prpwinsta.is_null() {
-        ERR!(b"UserSystemParametersInfo called without active window station.\n\0".as_ptr());
+        ERR!("UserSystemParametersInfo called without active window station.\n");
     }
 
     if (fWinIni & SPIF_PROTECT) != 0

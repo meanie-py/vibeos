@@ -19,6 +19,11 @@
 
 // Win32 predefined consts, macros, and the WLSession/hAppInstance globals
 // (owned by winlogon.rs, re-exported here) the leaf modules share.
+// Wine's ERR/FIXME/WARN/TRACE for the whole crate; `#[macro_use]` must precede the
+// modules that call them (macro_rules! is textually scoped).
+#[macro_use]
+mod winedebug;
+
 pub mod preamble;
 
 // winlogon.c — the main: WinMain bootstrap (winsta/desktop, services+lsass

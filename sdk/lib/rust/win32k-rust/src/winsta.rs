@@ -141,8 +141,6 @@ unsafe fn ex_desktop_object_type() -> *mut _OBJECT_TYPE { ExDesktopObjectType }
 unsafe fn ex_desktop_object_type() -> *mut _OBJECT_TYPE { *ExDesktopObjectType_imp }
 
 // ---- macro / static-inline reimplementations (no kernel symbol) ----
-macro_rules! ERR   { ($($t:tt)*) => {{}}; }
-macro_rules! FIXME { ($($t:tt)*) => {{}}; }
 #[allow(unused_imports)] use {ERR as _ERR, FIXME as _FIXME};
 
 // Pool tags (C multichar literal is big-endian; reverse for from_le_bytes).
@@ -953,7 +951,7 @@ unsafe fn BuildUserModeWindowStationName(
     /* Retrieve the current process LUID */
     Status = GetProcessLuid(core::ptr::null_mut(), core::ptr::null_mut(), &mut CallerLuid);
     if !NT_SUCCESS(Status) {
-        ERR!(b"Failed to retrieve the caller LUID, Status 0x%08lx\n\0".as_ptr() as *const i8, Status);
+        ERR!("Failed to retrieve the caller LUID, Status 0x%08lx\n", Status);
         return Status;
     }
 
@@ -966,7 +964,7 @@ unsafe fn BuildUserModeWindowStationName(
     ) as usize;
     MemSize = MemSize * core::mem::size_of::<u16>() + core::mem::size_of::<u16>();
     if MemSize > MAXUSHORT as usize {
-        ERR!(b"Window station name length is too long.\n\0".as_ptr() as *const i8);
+        ERR!("Window station name length is too long.\n");
         return STATUS_NAME_TOO_LONG;
     }
     StrSize = MemSize as u16;
@@ -1001,7 +999,7 @@ unsafe fn BuildUserModeWindowStationName(
             PAGE_READWRITE,
         );
         if !NT_SUCCESS(Status) {
-            ERR!(b"ZwAllocateVirtualMemory() failed, Status 0x%08lx\n\0".as_ptr() as *const i8, Status);
+            ERR!("ZwAllocateVirtualMemory() failed, Status 0x%08lx\n", Status);
             return Status;
         }
 
@@ -1027,7 +1025,7 @@ unsafe fn BuildUserModeWindowStationName(
             CallerLuid.LowPart,
         ));
         if !NT_SUCCESS(Status) {
-            ERR!(b"Impossible to build a valid window station name, Status 0x%08lx\n\0".as_ptr() as *const i8, Status);
+            ERR!("Impossible to build a valid window station name, Status 0x%08lx\n", Status);
             break 'quit Status;
         }
         (**WindowStationName).Length =
@@ -1356,7 +1354,7 @@ pub unsafe extern "system" fn NtUserGetObjectInformation(
                 } else if !DesktopObject.is_null() {
                     FIXME!(b"Setting DF_ALLOWOTHERACCOUNTHOOK is unimplemented.\n\0".as_ptr());
                 } else {
-                    ERR!(b"No associated WinStaObject nor DesktopObject!\n\0".as_ptr());
+                    ERR!("No associated WinStaObject nor DesktopObject!\n");
                 }
 
                 pvData = &mut ObjectFlags as *mut _ as PVOID;
@@ -1414,7 +1412,7 @@ pub unsafe extern "system" fn NtUserGetObjectInformation(
 
             x if x == UOI_USER_SID => {
                 Status = STATUS_NOT_IMPLEMENTED;
-                ERR!(b"UOI_USER_SID unimplemented!\n\0".as_ptr());
+                ERR!("UOI_USER_SID unimplemented!\n");
             }
 
             _ => {

@@ -230,12 +230,6 @@ unsafe fn toupperW(ch: core::ffi::c_int) -> core::ffi::c_int {
 
 // WINE_DEFAULT_DEBUG_CHANNEL — ERR/TRACE compile to no-ops (discard args, like
 // window.rs / message.rs). debugstr_w args are therefore never evaluated.
-macro_rules! ERR {
-    ($($t:tt)*) => {{}};
-}
-macro_rules! TRACE {
-    ($($t:tt)*) => {{}};
-}
 
 // wine debug helper — formats a UNICODE_STRING for the trace channels. Args are
 // discarded by the no-op TRACE macro above, so this never actually runs.
@@ -383,7 +377,7 @@ unsafe fn DIALOG_GetControl32(mut p: *const u16, info: *mut DLG_CONTROL_INFO, di
             (*info).className = CLASS_NAMES[id as usize].as_ptr();
         } else {
             (*info).className = core::ptr::null_mut();
-            ERR!(b"Unknown built-in class id %04x\n\0".as_ptr() as LPCSTR, id as u32);
+            ERR!("Unknown built-in class id %04x\n", id as u32);
         }
         p = p.add(2);
     } else {

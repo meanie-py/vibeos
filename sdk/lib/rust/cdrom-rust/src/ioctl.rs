@@ -77,6 +77,7 @@ const SCSI_REQUEST_BLOCK_SIZE: usize = core::mem::size_of::<SCSI_REQUEST_BLOCK>(
 const STATUS_INVALID_LEVEL: NTSTATUS = 0xC0000148u32 as i32;
 use core::ffi::c_void;
 use core::mem::offset_of;
+use ntkrnl_sys::ddk::RtlAssert;
 
 extern "C" {
     fn CdromDbgPrintForce2(format: *const i8, arg1: usize, arg2: usize) -> u32;
@@ -235,8 +236,8 @@ pub const READ_DVD_STRUCTURE_FORMAT_STRINGS: [LPCSTR; 6] = [
 
 const WDF_REQUEST_SEND_OPTION_SYNCHRONOUS: ULONG = 2;
 
-const TRACE_LEVEL_WARNING: u32 = 0x00000003;
-const TRACE_FLAG_IOCTL: u32 = 0x00000001;
+const TRACE_LEVEL_WARNING: u32 = 3; // storswtr.h:26-30
+const TRACE_FLAG_IOCTL: u32 = 4; // storswtr.h:80-98 (an ORDINAL enum, not a bitmask)
 const MAXIMUM_RETRIES: u8 = 0x4;  // was 5 (LLM-invented); bindgen-correct
 const RAW_SECTOR_SIZE: u32 = 2352;
 const CD_RAW_SECTOR_WITH_SUBCODE_SIZE: u32 = 2448;
@@ -257,7 +258,7 @@ const IOCTL_CDROM_TRACK_ISRC: u32 = 0x3;  // was 0x002D5010 (LLM-invented); bind
 
 const FILE_DEVICE_DVD: u32 = 0x33;
 
-const TRACE_LEVEL_ERROR: u32 = 2;
+const TRACE_LEVEL_ERROR: u32 = 2; // storswtr.h:26-30
 const IOCTL_DVD_SEND_KEY: u32 = 0x00335008; // FIXED 2026-07-05: translation invented wrong value (verified vs psdk headers)
 const DVD_CHALLENGE_KEY: u32 = 1;
 const DVD_BUS_KEY1: u32 = 2;
@@ -281,7 +282,7 @@ unsafe extern "system" {
 
 // Forward declarations for unknown symbols (caller dedups)
 
-const TRACE_LEVEL_INFORMATION: u32 = 0x4;
+const TRACE_LEVEL_INFORMATION: u32 = 4; // storswtr.h:26-30
 const CDROM_EXCLUSIVE_CALLER_LENGTH: u32 = 0x40;  // was 256 (LLM-invented); bindgen-correct
 const CDROM_LOCK_IGNORE_VOLUME: u32 = 0x1;
 const IO_CDROM_EXCLUSIVE_LOCK: u32 = 0x40040085;
@@ -334,8 +335,8 @@ const STORAGE_EVENT_NOTIFICATION_VERSION_V1: u32 = 1; // unverified
 const STORAGE_EVENT_MEDIA_STATUS: u32 = 0x00000001; // unverified
 const STORAGE_EVENT_DEVICE_STATUS: u32 = 0x00000002; // unverified
 const STORAGE_EVENT_DEVICE_OPERATION: u32 = 0x00000004; // unverified
-const TRACE_LEVEL_VERBOSE: u32 = 4; // unverified
-const TRACE_FLAG_MCN: u32 = 0x00000001; // unverified
+const TRACE_LEVEL_VERBOSE: u32 = 5; // storswtr.h:26-30
+const TRACE_FLAG_MCN: u32 = 12; // storswtr.h:80-98 (an ORDINAL enum, not a bitmask)
 
 const IOCTL_STORAGE_EJECTION_CONTROL: u32 = 0x002D0940; // TODO: value
 const SecureMediaLock: i32 = 0;
@@ -388,7 +389,10 @@ const FDO_HACK_NO_RESERVE6: u32 = 0x8;           // actual value unknown  // was
 const SRB_FLAGS_QUEUE_ACTION_ENABLE: u8 = 0x2;    // actual value unknown  // was 0 (LLM-invented); bindgen-correct
 const SRB_SIMPLE_TAG_REQUEST: u8 = 0x20;          // actual value unknown  // was 0 (LLM-invented); bindgen-correct
 const CDROM_TAG_SRB: u32 = 0x53436353;                 // actual value unknown
-const NonPagedPoolNx: u32 = 0x200;           // POOL_TYPE NonPagedPoolNx (512)
+// cdrom.h:68: `#define NonPagedPoolNx NonPagedPool` under
+// `#ifdef __REACTOS__` -- NX pool is NT6.2 and this kernel has none, so the
+// Windows value (0x200/0x204) is not what any TU here compiles.
+const NonPagedPoolNx: u32 = 0;
 
 // PAGED_CODE();
 
@@ -425,8 +429,8 @@ pub unsafe extern "C" fn ReadQChannel(
     const CDB_USE_MSF: u8 = 0x1;  // was 0x02 (LLM-invented); bindgen-correct
     const CDB_SUBCHANNEL_BLOCK: u8 = 0x1;  // was 0x40 (LLM-invented); bindgen-correct
     const SCSIOP_READ_SUB_CHANNEL: u8 = 0x42;
-    const TRACE_LEVEL_VERBOSE: u32 = 0;
-    const TRACE_FLAG_IOCTL: u32 = 0;
+    const TRACE_LEVEL_VERBOSE: u32 = 5; // storswtr.h:26-30
+    const TRACE_FLAG_IOCTL: u32 = 4; // storswtr.h:80-98 (an ORDINAL enum, not a bitmask)
 
     let mut status: i32 = STATUS_SUCCESS;
     let mut transferByteCount: u32 = 0;
@@ -771,7 +775,7 @@ const SCSIOP_SET_CD_SPEED: u8 = 0xBB;    // assumed value
 const SCSIOP_SET_STREAMING: u8 = 0xB6;   // assumed value
 
 // Constants
-const TRACE_FLAG_POWER: u32 = 0x00000008; // typical
+const TRACE_FLAG_POWER: u32 = 2; // storswtr.h:80-98 (an ORDINAL enum, not a bitmask)
 
 // Forward declarations of extern functions not in available imports
 
@@ -786,7 +790,10 @@ const RESERVATION_ACTION_RELEASE: u8 = 0x2;  // was 3 (LLM-invented); bindgen-co
 const RESERVATION_ACTION_PREEMPT: u8 = 0x4;  // was 5 (LLM-invented); bindgen-correct
 const RESERVATION_ACTION_PREEMPT_ABORT: u8 = 0x5;  // was 6 (LLM-invented); bindgen-correct
 
-const NonPagedPoolNxCacheAligned: u32 = 0x204; // NonPagedPoolNx (512) + CacheAligned (4)
+// cdrom.h:68: `#define NonPagedPoolNxCacheAligned NonPagedPoolCacheAligned` under
+// `#ifdef __REACTOS__` -- NX pool is NT6.2 and this kernel has none, so the
+// Windows value (0x200/0x204) is not what any TU here compiles.
+const NonPagedPoolNxCacheAligned: u32 = 4;
 const CDROM_TAG_PLAY_ACTIVE: u32 = 0x70436353; // CDROM_TAG_PLAY_ACTIVE placeholder
 const AUDIO_STATUS_IN_PROGRESS: u8 = 0x11; // AUDIO_STATUS_IN_PROGRESS
 
@@ -894,7 +901,7 @@ pub unsafe extern "C" fn DeviceIsPlayActive(Device: WDFDEVICE) -> u8 {
     }
 
     // Allocate the required memory
-    debug_assert!(core::mem::size_of::<SUB_Q_CURRENT_POSITION>() >= core::mem::size_of::<CDROM_SUB_Q_DATA_FORMAT>());
+    ntkrnl_sys::ASSERT!(core::mem::size_of::<SUB_Q_CURRENT_POSITION>() >= core::mem::size_of::<CDROM_SUB_Q_DATA_FORMAT>());
     currentBuffer = ExAllocatePoolWithTag(
         NonPagedPoolNxCacheAligned,
         core::mem::size_of::<SUB_Q_CURRENT_POSITION>(),
@@ -995,8 +1002,8 @@ pub unsafe extern "C" fn RequestHandleGetMediaTypeEx(
     const MEDIA_CURRENTLY_MOUNTED: u32 = 0x80000000;
     const SCSIOP_TEST_UNIT_READY: u8 = 0x00;
     const CDROM_TEST_UNIT_READY_TIMEOUT: u32 = 0x14;  // was 10 (LLM-invented); bindgen-correct
-    const TRACE_LEVEL_INFORMATION: u32 = 4;
-    const TRACE_FLAG_IOCTL: u32 = 0x80;
+    const TRACE_LEVEL_INFORMATION: u32 = 4; // storswtr.h:26-30
+    const TRACE_FLAG_IOCTL: u32 = 4; // storswtr.h:80-98 (an ORDINAL enum, not a bitmask)
 
     let mut status: i32 = STATUS_SUCCESS;
     let cd_data: *mut CDROM_DATA = core::ptr::addr_of_mut!((*DeviceExtension).DeviceAdditionalData);
@@ -2362,7 +2369,7 @@ pub unsafe extern "system" fn RequestHandleExclusiveAccessQueryLockState(
         &mut exclusiveLockState as *mut _ as *mut *mut core::ffi::c_void,
         core::ptr::null_mut(),
     );
-    assert!(status >= 0, "NT_ASSERT");
+    ntkrnl_sys::ASSERT!(status >= 0, "NT_ASSERT");
 
     core::ptr::write_bytes(
         exclusiveLockState as *mut u8,
@@ -3254,8 +3261,8 @@ pub unsafe extern "C" fn RequestValidateDvdEndSession(
         if (RequestParameters.Parameters.DeviceIoControl.as_ref().InputBufferLength as usize)
             < core::mem::size_of::<DVD_SESSION_ID>()
         {
-            const TRACE_LEVEL_ERROR: u32 = 2; // TRACE_LEVEL_ERROR
-            const TRACE_FLAG_IOCTL: u32 = 0x0001; // TRACE_FLAG_IOCTL
+            const TRACE_LEVEL_ERROR: u32 = 2; // storswtr.h:26-30
+            const TRACE_FLAG_IOCTL: u32 = 4; // storswtr.h:80-98 (an ORDINAL enum, not a bitmask)
             TracePrint!(
                 TRACE_LEVEL_ERROR,
                 TRACE_FLAG_IOCTL,
@@ -3547,14 +3554,19 @@ pub unsafe extern "system" fn RequestHandleScsiPassThrough(
         let request_context = RequestGetContext(Request);
         // NT_ASSERT(request_context->SyncRequired) in C
         // We expand NT_ASSERT as a plain assertion; SyncRequired is a bool field.
-        core::assert!((*request_context).SyncRequired != 0);
+        ntkrnl_sys::ASSERT!((*request_context).SyncRequired != 0);
     }
 
     // PAGED_CODE() expansion: assert IRQL <= APC_LEVEL
     {
         let irql = KeGetCurrentIrql();
         if irql as u32 > APC_LEVEL as u32 {
-            panic!("IRQL too high for paged code in RequestHandleScsiPassThrough");
+            RtlAssert(
+                b"KeGetCurrentIrql() <= APC_LEVEL\0".as_ptr() as *mut core::ffi::c_void,
+                b"ioctl.rs\0".as_ptr() as *mut core::ffi::c_void,
+                line!(),
+                b"PAGED_CODE: RequestHandleScsiPassThrough\0".as_ptr() as *mut i8,
+            );
         }
     }
 
@@ -4309,8 +4321,8 @@ pub unsafe extern "C" fn RequestHandleGetConfiguration(
             cdb.GET_CONFIGURATION.as_mut().set_RequestType((*inputBuffer).RequestType as u8);
 
             if is_type_one && hack_flag_set {
-                const TRACE_LEVEL_WARNING: u32 = 3;
-                const TRACE_FLAG_IOCTL: u32 = 4;
+                const TRACE_LEVEL_WARNING: u32 = 3; // storswtr.h:26-30
+                const TRACE_FLAG_IOCTL: u32 = 4; // storswtr.h:80-98 (an ORDINAL enum, not a bitmask)
                 TracePrint!(TRACE_LEVEL_WARNING, TRACE_FLAG_IOCTL, b"DeviceHandleGetConfiguration: Changing TYPE_ONE Get Config to TYPE_ALL\n\0".as_ptr() as *const i8);
                 const SCSI_GET_CONFIGURATION_REQUEST_TYPE_ALL: u8 = 0;
                 cdb.GET_CONFIGURATION.as_mut().set_RequestType(SCSI_GET_CONFIGURATION_REQUEST_TYPE_ALL);
@@ -4324,8 +4336,8 @@ pub unsafe extern "C" fn RequestHandleGetConfiguration(
 
                 if is_type_one && hack_flag_set {
                     if (data_transfer_length as usize) < core::mem::size_of::<GET_CONFIGURATION_HEADER>() {
-                        const TRACE_LEVEL_ERROR: u32 = 2;
-                        const TRACE_FLAG_IOCTL: u32 = 4;
+                        const TRACE_LEVEL_ERROR: u32 = 2; // storswtr.h:26-30
+                        const TRACE_FLAG_IOCTL: u32 = 4; // storswtr.h:80-98 (an ORDINAL enum, not a bitmask)
                         TracePrint!(TRACE_LEVEL_ERROR, TRACE_FLAG_IOCTL, b"DeviceHandleGetConfiguration: No get config header!\n\0".as_ptr() as *const i8);
                         *DataLength = 0;
                         status = STATUS_INVALID_DEVICE_REQUEST;
@@ -4382,7 +4394,7 @@ pub unsafe extern "C" fn RequestHandleGetDriveGeometry(
     let mut outputBuffer: *mut core::ffi::c_void = core::ptr::null_mut();
 
     // PAGED_CODE() expansion: assert IRQL <= APC_LEVEL
-    debug_assert!(KeGetCurrentIrql() <= APC_LEVEL);
+    ntkrnl_sys::ASSERT!(KeGetCurrentIrql() <= APC_LEVEL);
 
     *DataLength = 0;
 
@@ -4430,7 +4442,7 @@ pub unsafe extern "C" fn RequestHandleGetDriveGeometry(
             }
             _ => {
                 // NT_ASSERT(FALSE)
-                debug_assert!(false);
+                ntkrnl_sys::ASSERT!(false);
             }
         }
     }
@@ -5305,7 +5317,7 @@ pub unsafe extern "C" fn RequestIsRealtimeStreaming(Request: WDFREQUEST, IsReadR
     useStreaming
 }
 
-const TRACE_FLAG_RW: u32 = 0x00000002;
+const TRACE_FLAG_RW: u32 = 3; // storswtr.h:80-98 (an ORDINAL enum, not a bitmask)
 const FeatureRandomWritable: u32 = 0x0020;
 const FeatureIncrementalStreamingWritable: u32 = 0x0021;
 const FeatureRestrictedOverwrite: u32 = 0x0022;
@@ -5643,7 +5655,7 @@ pub unsafe extern "C" fn RequestHandleLoadEjectMedia(
     let zpoddInfo: *mut ZERO_POWER_ODD_INFO = (*DeviceExtension).ZeroPowerODDInfo;
 
     // PAGED_CODE(); equivalent: ensure IRQL <= APC_LEVEL
-    assert!(ntkrnl_sys::ke::KeGetCurrentIrql() <= ntkrnl_sys::base::APC_LEVEL);
+    ntkrnl_sys::ASSERT!(ntkrnl_sys::ke::KeGetCurrentIrql() <= ntkrnl_sys::base::APC_LEVEL);
 
     *DataLength = 0;
 
@@ -6137,10 +6149,10 @@ pub unsafe extern "C" fn DeviceHandleRawRead(
         );
 
         if (*currentIrpStack).Parameters.DeviceIoControl.OutputBufferLength > 0 {
-            debug_assert!(!(*irp).MdlAddress.is_null());
+            ntkrnl_sys::ASSERT!(!(*irp).MdlAddress.is_null());
             outputVirtAddr = MmGetMdlVirtualAddress((*irp).MdlAddress);
             if (outputVirtAddr as usize) & (*(*DeviceExtension).AdapterDescriptor).AlignmentMask as usize != 0 {
-                debug_assert!(false);
+                ntkrnl_sys::ASSERT!(false);
                 *DataLength = 0;
                 status = STATUS_INVALID_PARAMETER;
             }
@@ -6250,7 +6262,7 @@ pub unsafe extern "C" fn DeviceHandleRawRead(
                     (*cdb).READ_CD.as_mut().set_SubChannelSelection(1);
                 }
                 _ => {
-                    debug_assert!(false);
+                    ntkrnl_sys::ASSERT!(false);
                 }
             }
 
@@ -6318,7 +6330,7 @@ pub unsafe extern "C" fn DeviceHandlePlayAudioMsf(
     let mut input_buffer: *mut CDROM_PLAY_AUDIO_MSF = core::ptr::null_mut();
 
     // PAGED_CODE();
-    assert_eq!(KeGetCurrentIrql(), PASSIVE_LEVEL);
+    ntkrnl_sys::ASSERT!(KeGetCurrentIrql() == PASSIVE_LEVEL);
 
     *DataLength = 0;
 
@@ -6381,7 +6393,12 @@ pub unsafe extern "C" fn DeviceHandleReadQChannel(
 
     // PAGED_CODE ();
     if KeGetCurrentIrql() > APC_LEVEL {
-        panic!("PAGED_CODE violation: IRQL {} > APC_LEVEL", KeGetCurrentIrql());
+        RtlAssert(
+            b"KeGetCurrentIrql() <= APC_LEVEL\0".as_ptr() as *mut core::ffi::c_void,
+            b"ioctl.rs\0".as_ptr() as *mut core::ffi::c_void,
+            line!(),
+            b"PAGED_CODE\0".as_ptr() as *mut i8,
+        );
     }
 
     *DataLength = 0;
@@ -6465,7 +6482,12 @@ pub unsafe extern "C" fn DeviceHandleResumeAudio(
     DataLength: *mut usize,
 ) -> NTSTATUS {
     if ntkrnl_sys::ke::KeGetCurrentIrql() > ntkrnl_sys::base::APC_LEVEL {
-        panic!("PAGED_CODE violation: IRQL > APC_LEVEL");
+        RtlAssert(
+            b"KeGetCurrentIrql() <= APC_LEVEL\0".as_ptr() as *mut core::ffi::c_void,
+            b"ioctl.rs\0".as_ptr() as *mut core::ffi::c_void,
+            line!(),
+            b"PAGED_CODE\0".as_ptr() as *mut i8,
+        );
     }
     let mut status: NTSTATUS = ntkrnl_sys::base::STATUS_SUCCESS;
     *DataLength = 0;

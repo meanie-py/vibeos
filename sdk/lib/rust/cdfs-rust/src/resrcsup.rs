@@ -82,7 +82,7 @@ pub unsafe extern "system" fn CdAcquireForCache(Fcb: *mut FCB, Wait: i32) -> i32
         return 0;
     }
     // NT_ASSERT(IoGetTopLevelIrp() == NULL);
-    core::assert!(IoGetTopLevelIrp().is_null());
+    ntkrnl_sys::ASSERT!(IoGetTopLevelIrp().is_null());
     let fsrtl_cache_top_level_irp: *mut IRP = 1 as *mut IRP;
     IoSetTopLevelIrp(fsrtl_cache_top_level_irp);
     return 1;

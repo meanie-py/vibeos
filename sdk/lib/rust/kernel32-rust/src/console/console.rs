@@ -400,7 +400,10 @@ pub unsafe extern "system" fn DuplicateConsoleHandle(
     let DuplicateHandleRequest: PCONSOLE_DUPLICATEHANDLE = &mut ApiMessage.Data.DuplicateHandleRequest;
 
     if (dwOptions & !(DUPLICATE_CLOSE_SOURCE | DUPLICATE_SAME_ACCESS)) != 0
-        || (!(dwOptions & DUPLICATE_SAME_ACCESS) != 0
+        // C: `!(dwOptions & DUPLICATE_SAME_ACCESS)`. Logical not, so `== 0` — Rust's `!`
+        // here was bitwise and always non-zero. (The line above IS the legitimate
+        // `x & !(MASK)` unknown-flag test; only this one was wrong.)
+        || ((dwOptions & DUPLICATE_SAME_ACCESS) == 0
             && (dwDesiredAccess & !(GENERIC_READ | GENERIC_WRITE)) != 0)
     {
         SetLastError(ERROR_INVALID_PARAMETER);

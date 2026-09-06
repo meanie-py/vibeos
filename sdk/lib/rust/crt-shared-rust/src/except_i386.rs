@@ -24,15 +24,15 @@ use msvcrt_sys::FALSE;
 // as the C reads, and keeps the fact that they are NOT ntdll's RtlUnwind in one place.
 use msvcrt_sys::__wine_RtlUnwind as RtlUnwind;
 // The parts of this TU that are macro expansions or header inlines, so have no C text.
-use super::seh_i386::{
+use crate::seh_i386::{
     call_filter, call_finally_block, call_handler, continue_after_catch, NtCurrentTeb,
     __wine_pop_frame, __wine_push_frame,
 };
 // The siblings this file calls, all already Rust. `find_catch_handler` and
 // `dump_function_descr` sit ABOVE except.c's `#ifndef __i386__` gate precisely so both arch
 // implementations can call them; the rest is cpp.c's exception-object registry.
-use super::cpp::terminate;
-use super::except::{
+use crate::cpp::terminate;
+use crate::except::{
     dump_function_descr, find_catch_handler, _CreateFrameInfo, __CxxUnregisterExceptionObject,
     __DestructExceptionObject,
 };
@@ -40,9 +40,6 @@ use core::ffi::c_void;
 
 // Off by default upstream, so a body here would print what the C does not. `TRACE_ON!(seh)`
 // is the guard the C puts in front of the expensive ones and is false for the same reason.
-macro_rules! TRACE {
-    ($($arg:tt)*) => {{}};
-}
 macro_rules! TRACE_ON {
     ($($arg:tt)*) => {
         0
@@ -57,16 +54,6 @@ macro_rules! TRACE_EXCEPTION_TYPE {
 // carry no literal of their own and the literal-multiset diff against the C stays honest.
 // TRACE and WARN get no body — they are off by default upstream, so dropping them loses
 // nothing upstream would have printed.
-macro_rules! ERR {
-    ($msg:literal $(, $($arg:tt)*)?) => {{
-        OutputDebugStringA($msg.as_ptr());
-    }};
-}
-macro_rules! FIXME {
-    ($msg:literal $(, $($arg:tt)*)?) => {{
-        OutputDebugStringA($msg.as_ptr());
-    }};
-}
 
 unsafe extern "C" {
     /// `sdk/lib/pseh/i386/seh.s`. The ReactOS arm of except_i386.c only DECLARES it — the
@@ -170,7 +157,7 @@ unsafe extern "C" fn cxx_local_unwind(
 
     while trylevel != last_level {
         if trylevel < 0 || trylevel >= (*descr).unwind_count as i32 {
-            ERR!(c"err:seh:invalid trylevel %d
+            ERR!("seh:invalid trylevel %d
 ", trylevel);
             terminate();
         }
@@ -370,7 +357,7 @@ unsafe extern "C" fn check_noexcept(
         && (*descr).magic() >= CXX_FRAME_MAGIC_VC8
         && ((*descr).flags & FUNC_DESCR_NOEXCEPT) != 0
     {
-        ERR!(c"err:seh:noexcept function propagating exception\n");
+        ERR!("seh:noexcept function propagating exception\n");
         terminate();
     }
 }
@@ -386,7 +373,7 @@ pub unsafe extern "C" fn cxx_frame_handler(
     let mut exc_type: *mut cxx_exception_type;
 
     if (*descr).magic() < CXX_FRAME_MAGIC_VC6 || (*descr).magic() > CXX_FRAME_MAGIC_VC8 {
-        ERR!(c"err:seh:invalid frame magic %x
+        ERR!("seh:invalid frame magic %x
 ", (*descr).magic());
         return _EXCEPTION_DISPOSITION_ExceptionContinueSearch as u32;
     }
@@ -724,7 +711,7 @@ pub unsafe extern "C" fn handle_fpieee_flt(
         return ret;
     }
 
-    FIXME!(c"fixme:seh:unsupported opcode: %lx\n", *((*ctx).ErrorOffset as *const u32));
+    FIXME!("seh:unsupported opcode: %lx\n", *((*ctx).ErrorOffset as *const u32));
     return EXCEPTION_CONTINUE_SEARCH as i32;
 }
 

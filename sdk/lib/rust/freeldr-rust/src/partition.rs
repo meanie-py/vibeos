@@ -366,7 +366,7 @@ pub unsafe extern "C" fn DiskGetBootPartitionEntry(
         }
         _ => {
             ERR(b"Drive 0x%X partition type = %d, should not happen!\n\0".as_ptr() as PCHAR, (DriveNumber) as usize, (DiskPartitionType[DriveNumber as usize]) as usize);
-            debug_assert!(false);
+            ntkrnl_sys::ASSERT!(false);
         }
     }
     0u8
@@ -404,7 +404,7 @@ pub unsafe extern "C" fn DiskGetPartitionEntry(
             ERR(
                 b"Drive 0x%X partition type = %d, should not happen!\n\0".as_ptr() as PCHAR, (DriveNumber) as usize, (DiskPartitionType[DriveNumber as usize]) as usize,
             );
-            debug_assert!(false);
+            ntkrnl_sys::ASSERT!(false);
         }
     }
     0u8

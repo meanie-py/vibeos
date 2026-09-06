@@ -513,7 +513,6 @@ pub unsafe extern "system" fn MIDL_user_free(ptr: *mut core::ffi::c_void) {
 pub unsafe extern "system" fn WLANSVC_RPC_HANDLE_rundown(hClientHandle: WLANSVC_RPC_HANDLE) {
 }
 
-
 // ============================================================================
 // ORIGINAL C SOURCE
 // ============================================================================

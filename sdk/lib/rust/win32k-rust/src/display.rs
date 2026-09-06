@@ -25,10 +25,6 @@ macro_rules! w {
 }
 
 
-// C debug macros — silenced via macro_rules! (variadic no-op).
-#[allow(unused_macros)] macro_rules! TRACE { ($($t:tt)*) => { () }; }
-#[allow(unused_macros)] macro_rules! ERR { ($($t:tt)*) => { () }; }
-
 // tags.h: USERTAG_DISPLAYINFO 'idsU', GDITAG_DEVMODE 'vedG' (C multichar
 // big-endian — reversed bytes for from_le_bytes).
 const USERTAG_DISPLAYINFO: u32 = u32::from_le_bytes(*b"Udsi");
@@ -236,7 +232,7 @@ pub unsafe extern "system" fn InitDisplayDriver(
     /* Open the driver's registry key */
     Status = RegOpenKey(pwszRegKey, &mut hkey);
     if !NT_SUCCESS(Status) {
-        ERR!();
+        ERR!("Failed to open registry key: %ls\n", pwszRegKey);
         return core::ptr::null_mut();
     }
 
@@ -250,7 +246,7 @@ pub unsafe extern "system" fn InitDisplayDriver(
         &mut cbSize,
     );
     if !NT_SUCCESS(Status) {
-        ERR!();
+        ERR!("Didn't find 'InstalledDisplayDrivers', status = 0x%lx\n", Status);
         ZwClose(hkey as _);
         return core::ptr::null_mut();
     }
@@ -315,7 +311,7 @@ pub unsafe extern "system" fn InitVideo() -> NTSTATUS {
     let mut Status: NTSTATUS;
     let mut hkey: HKEY = core::ptr::null_mut();
 
-    ERR!();
+    ERR!("InitVideo() called\n");
 
     Status = RegOpenKey(
         w!("\\Registry\\Machine\\System\\CurrentControlSet\\Control\\GraphicsDrivers\\BaseVideo").as_ptr() as *const u16,
@@ -326,11 +322,11 @@ pub unsafe extern "system" fn InitVideo() -> NTSTATUS {
     }
     gbBaseVideo = if NT_SUCCESS(Status) { 1 } else { 0 };
     if gbBaseVideo != 0 {
-        ERR!();
+        ERR!("InitVideo: VGA mode requested.\n");
     }
 
     Status = EngpUpdateGraphicsDeviceList();
-    ERR!();
+    ERR!("InitVideo: EngpUpdateGraphicsDeviceList returned 0x%lx\n", Status);
     if !NT_SUCCESS(Status) {
         return Status;
     }
@@ -562,7 +558,7 @@ pub unsafe extern "system" fn UserEnumCurrentDisplaySettings(
 ) -> NTSTATUS {
     let ppdev: PPDEVOBJ = EngpGetPDEV(pustrDevice);
     if ppdev.is_null() {
-        ERR!();
+        ERR!("No PDEV found!\n");
         return STATUS_INVALID_PARAMETER_1;
     }
 
@@ -917,7 +913,7 @@ pub unsafe extern "C" fn UserDisplayNotifyShutdown(ppiCurrent: PPROCESSINFO) {
             core::ptr::null_mut(),
         );
         if !gpFullscreen.is_null() {
-            ERR!();
+            ERR!("Failed to restore display mode!\n");
         }
     }
 }

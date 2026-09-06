@@ -200,7 +200,7 @@ pub unsafe extern "C" fn SockGetTdiName(
         Status = SockLoadTransportMapping(Transport, core::ptr::addr_of_mut!(Mapping));
 
         if Status != 0 {
-            ERR!(b"Can't get mapping for %S\n\0".as_ptr() as *const i8, Transports);
+            ERR!("Can't get mapping for %S\n", Transports);
             HeapFree(GlobalHeap, 0, Transports as *mut core::ffi::c_void);
             return Status;
         }
@@ -209,7 +209,7 @@ pub unsafe extern "C" fn SockGetTdiName(
             Status = SockLoadHelperDll(Transport, Mapping, core::ptr::addr_of_mut!(HelperData));
 
             if Status != 0 {
-                ERR!(b"Can't load helper DLL for Transport %S.\n\0".as_ptr() as *const i8, Transport);
+                ERR!("Can't load helper DLL for Transport %S.\n", Transport);
                 HeapFree(GlobalHeap, 0, Transports as *mut core::ffi::c_void);
                 HeapFree(GlobalHeap, 0, Mapping as *mut core::ffi::c_void);
                 return Status;
@@ -260,7 +260,7 @@ pub unsafe extern "C" fn SockLoadTransportMapping(
     let TransportKey = TransportKeyBuffer.as_mut_ptr();
 
     if !build_transport_winsock_key(&mut TransportKeyBuffer, TransportName) {
-        ERR!(b"Transport key too long\n\0".as_ptr());
+        ERR!("Transport key too long\n");
         return WSAEINVAL as INT;
     }
 
@@ -269,7 +269,7 @@ pub unsafe extern "C" fn SockLoadTransportMapping(
     let Status = RegOpenKeyExW(HKEY_LOCAL_MACHINE, TransportKey as LPCWSTR, 0, KEY_READ, &mut KeyHandle);
 
     if Status != 0 {
-        ERR!(b"Error reading transport mapping registry\n\0".as_ptr());
+        ERR!("Error reading transport mapping registry\n");
         return WSAEINVAL as INT;
     }
 
@@ -277,7 +277,7 @@ pub unsafe extern "C" fn SockLoadTransportMapping(
     let Status = RegQueryValueExW(KeyHandle, REG_MAPPING.as_ptr(), core::ptr::null_mut(), core::ptr::null_mut(), core::ptr::null_mut(), &mut MappingSize as PDWORD);
 
     if Status != 0 {
-        ERR!(b"Error reading transport mapping registry\n\0".as_ptr());
+        ERR!("Error reading transport mapping registry\n");
         RegCloseKey(KeyHandle);
         return WSAEINVAL as INT;
     }
@@ -285,14 +285,14 @@ pub unsafe extern "C" fn SockLoadTransportMapping(
     *Mapping = HeapAlloc(GlobalHeap, 0, MappingSize as usize) as PWINSOCK_MAPPING;
 
     if (*Mapping).is_null() {
-        ERR!(b"Buffer allocation failed\n\0".as_ptr());
+        ERR!("Buffer allocation failed\n");
         return WSAEINVAL as INT;
     }
 
     let Status = RegQueryValueExW(KeyHandle, REG_MAPPING.as_ptr(), core::ptr::null_mut(), core::ptr::null_mut(), *Mapping as LPBYTE, &mut MappingSize as PDWORD);
 
     if Status != 0 {
-        ERR!(b"Error reading transport mapping registry\n\0".as_ptr());
+        ERR!("Error reading transport mapping registry\n");
         HeapFree(GlobalHeap, 0, *Mapping as *mut core::ffi::c_void);
         RegCloseKey(KeyHandle);
         return WSAEINVAL as INT;
@@ -320,7 +320,7 @@ pub unsafe extern "C" fn SockLoadTransportList(
     );
 
     if Status != 0 {
-        ERR!(b"Error reading transport list registry\n\0".as_ptr() as *const i8);
+        ERR!("Error reading transport list registry\n");
         return WSAEINVAL as INT;
     }
 
@@ -334,14 +334,14 @@ pub unsafe extern "C" fn SockLoadTransportList(
     );
 
     if Status != 0 {
-        ERR!(b"Error reading transport list registry\n\0".as_ptr() as *const i8);
+        ERR!("Error reading transport list registry\n");
         return WSAEINVAL as INT;
     }
 
     *TransportList = HeapAlloc(GlobalHeap, 0, TransportListSize as usize) as PWSTR;
 
     if (*TransportList).is_null() {
-        ERR!(b"Buffer allocation failed\n\0".as_ptr() as *const i8);
+        ERR!("Buffer allocation failed\n");
         return WSAEINVAL as INT;
     }
 
@@ -355,7 +355,7 @@ pub unsafe extern "C" fn SockLoadTransportList(
     );
 
     if Status != 0 {
-        ERR!(b"Error reading transport list registry\n\0".as_ptr() as *const i8);
+        ERR!("Error reading transport list registry\n");
         HeapFree(GlobalHeap, 0, *TransportList as *mut core::ffi::c_void);
         return WSAEINVAL as INT;
     }
@@ -377,7 +377,7 @@ pub unsafe extern "C" fn SockLoadHelperDll(
     ) as PHELPER_DATA;
 
     if HelperData.is_null() {
-        ERR!(b"Buffer allocation failed\n\0".as_ptr() as *const i8);
+        ERR!("Buffer allocation failed\n");
         return WSAEINVAL as INT;
     }
 
@@ -385,7 +385,7 @@ pub unsafe extern "C" fn SockLoadHelperDll(
     let HelperKey = HelperKeyBuffer.as_mut_ptr();
 
     if !build_transport_winsock_key(&mut HelperKeyBuffer, TransportName) {
-        ERR!(b"Helper key too long\n\0".as_ptr());
+        ERR!("Helper key too long\n");
         HeapFree(GlobalHeap, 0, HelperData as *mut core::ffi::c_void);
         return WSAEINVAL as INT;
     }
@@ -395,7 +395,7 @@ pub unsafe extern "C" fn SockLoadHelperDll(
     let mut Status: i32 = RegOpenKeyExW(HKEY_LOCAL_MACHINE, HelperKey, 0, KEY_READ, &mut KeyHandle);
 
     if Status != 0 {
-        ERR!(b"Error reading helper DLL parameters\n\0".as_ptr() as *const i8);
+        ERR!("Error reading helper DLL parameters\n");
         HeapFree(GlobalHeap, 0, HelperData as *mut core::ffi::c_void);
         return WSAEINVAL as INT;
     }
@@ -438,7 +438,7 @@ pub unsafe extern "C" fn SockLoadHelperDll(
     let HelperDllName: PWSTR = HeapAlloc(GlobalHeap, 0, 512) as PWSTR;
 
     if HelperDllName.is_null() {
-        ERR!(b"Buffer allocation failed\n\0".as_ptr() as *const i8);
+        ERR!("Buffer allocation failed\n");
         HeapFree(GlobalHeap, 0, HelperData as *mut core::ffi::c_void);
         return WSAEINVAL as INT;
     }
@@ -446,7 +446,7 @@ pub unsafe extern "C" fn SockLoadHelperDll(
     let FullHelperDllName: PWSTR = HeapAlloc(GlobalHeap, 0, 512) as PWSTR;
 
     if FullHelperDllName.is_null() {
-        ERR!(b"Buffer allocation failed\n\0".as_ptr() as *const i8);
+        ERR!("Buffer allocation failed\n");
         HeapFree(GlobalHeap, 0, HelperDllName as *mut core::ffi::c_void);
         HeapFree(GlobalHeap, 0, HelperData as *mut core::ffi::c_void);
         return WSAEINVAL as INT;
@@ -463,7 +463,7 @@ pub unsafe extern "C" fn SockLoadHelperDll(
     );
 
     if Status != 0 {
-        ERR!(b"Error reading helper DLL parameters\n\0".as_ptr() as *const i8);
+        ERR!("Error reading helper DLL parameters\n");
         HeapFree(GlobalHeap, 0, FullHelperDllName as *mut core::ffi::c_void);
         HeapFree(GlobalHeap, 0, HelperDllName as *mut core::ffi::c_void);
         HeapFree(GlobalHeap, 0, HelperData as *mut core::ffi::c_void);
@@ -478,7 +478,7 @@ pub unsafe extern "C" fn SockLoadHelperDll(
     HeapFree(GlobalHeap, 0, FullHelperDllName as *mut core::ffi::c_void);
 
     if (*HelperData).hInstance.is_null() {
-        ERR!(b"Error loading helper DLL\n\0".as_ptr() as *const i8);
+        ERR!("Error loading helper DLL\n");
         HeapFree(GlobalHeap, 0, HelperData as *mut core::ffi::c_void);
         return WSAEINVAL as INT;
     }

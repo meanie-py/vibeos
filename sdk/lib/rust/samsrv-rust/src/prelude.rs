@@ -399,7 +399,6 @@ pub unsafe fn RtlEqualMemory(dst: *const VOID, src: *const VOID, len: usize) -> 
     (memcmp(dst, src, len) == 0) as ULONG
 }
 
-
 // ============================================================================
 // CRT (cdecl → extern "C"); resolve against ntdll/CRT at link.
 // ============================================================================

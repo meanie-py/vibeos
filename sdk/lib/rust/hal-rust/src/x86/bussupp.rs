@@ -66,7 +66,7 @@ use crate::x86::pcr::KeGetCurrentPrcb;
 // HalDispatchTable / HalPrivateDispatchTable:
 //
 // In the full HAL build these come from `hal_ddk`, where bindgen decorates
-// them with `#[link(name = "ntoskrnl.exe", kind = "raw-dylib")]` — correct
+// them with `#[link(name = "ntoskrnl.exe", kind = "raw-dylib", modifiers = "+verbatim")]` — correct
 // for the real HAL (the kernel exports them).
 //
 // In the FreeLDR `--features minihal` build there is NO ntoskrnl.exe; the

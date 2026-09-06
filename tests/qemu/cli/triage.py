@@ -469,6 +469,41 @@ def cpu_pcs(state: str) -> list[tuple[int, str]]:
     return found
 
 
+# arm64 only: `info registers` prints PSTATE after the register file. M[3:0]
+# is the exception level the vCPU is executing at — 0 = EL0t (user), 4/5 =
+# EL1t/EL1h (kernel).
+_CPU_PSTATE = re.compile(r"\bPSTATE=([0-9A-Fa-f]{8,16})\b")
+
+# Below this, an arm64 VA is in the low (user) half of the address space.
+_ARM64_USER_LIMIT = 0x0000_8000_0000_0000
+
+
+def cpu_kernel_at_user_pc(state: str) -> list[tuple[int, str]]:
+    """[(cpu_index, pc_hex)] for every arm64 vCPU executing at EL1 with a PC in
+    the USER half of the address space.
+
+    That combination has exactly one benign reading — none. The kernel never
+    executes user memory, and AArch64 will not let it (EL0-writable pages are
+    implicitly PXN), so a vCPU parked there is taking the same instruction
+    abort over and over: the handler resolves it as spurious and erets back to
+    the same PC. Two samples of that read as FROZEN, because the PC never
+    moves — but nothing is frozen; it is the busiest CPU on the box. This is
+    the signature the 2026-09-05 arm64 boot wedge was hiding behind.
+    """
+    banners = list(_CPU_BANNER.finditer(state))
+    found = []
+    for i, m in enumerate(banners):
+        end = banners[i + 1].start() if i + 1 < len(banners) else len(state)
+        pc = _CPU_PC.search(state, m.end(), end)
+        ps = _CPU_PSTATE.search(state, m.end(), end)
+        if not pc or not ps:
+            continue
+        el = int(ps.group(1), 16) & 0xF
+        if el != 0 and int(pc.group(1), 16) < _ARM64_USER_LIMIT:
+            found.append((int(m.group(1)), pc.group(1)))
+    return found
+
+
 def symbolicate_cpu_state(repo: Path, arch: str, state: str, *, mp: bool = False) -> list[str]:
     """One "CPU#n 0xADDR -> symbol" line per vCPU we could locate.
 

@@ -62,6 +62,18 @@ import sys
 
 ARCHES = ("i386", "amd64", "arm64")
 
+# An island is `<stem>_<arch>.rs`, and the stem is whatever that crate's `TYPES_STEM` said —
+# it is NOT drawn from a fixed vocabulary. Discovering stems from the filenames rather than
+# listing them is the whole point: an earlier version hardcoded ("types", "bindgen"), and when
+# shell32 landed its COM island as TYPES_STEM=island the tree-wide sweep skipped 342 slots in
+# a 44k-line island without a word. A tool whose coverage silently depends on someone
+# remembering to extend a literal is a tool that reports a clean number for work it never did.
+# `\w+` is greedy and the arch is anchored at the end, so `types_rpc_i386.rs` -> stem
+# `types_rpc`. Over-matching a non-island (`size_check_i386.rs`) is harmless: the rewrite is
+# keyed on callback slots cross-checked against that same stem's i386 witness, so a file
+# carrying none is a no-op. Under-matching is the bug this shape exists to prevent.
+_ISLAND_FILE = re.compile(rf"^(?P<stem>\w+)_(?P<arch>{'|'.join(ARCHES)})\.rs$")
+
 # Crates that are ALSO compiled for a 32-bit HOST target by a difftest harness
 # (`i686-unknown-linux-gnu`). They must keep their literal `stdcall`, because the whole premise
 # of this pass — that `system` IS stdcall on x86 — is false off Windows: `"system"` is stdcall
@@ -78,9 +90,10 @@ HOST_HARNESS_CRATES = frozenset(
     {"msvcrt-crt-rust", "msvcrt-sys", "cnt-rust", "cnt-ctype", "rtl-strings"}
 )
 
-# What makes a file an island is that it is GENERATED per arch — not what it happens to be
-# named. This was an allowlist of stems ("types", "bindgen") and silently skipped every island
-# generated under another name: oleaut32's `win_sys_<arch>.rs` (bindgen), ntkrnl-sys's
+# The stem regex above says which files COULD be an island; this says which ones ARE. Both
+# halves are needed and they close different holes. Naming alone once meant an allowlist of
+# stems ("types", "bindgen") that silently skipped every island generated under another name:
+# oleaut32's `win_sys_<arch>.rs` (bindgen), ntkrnl-sys's
 # `hal_bindgen_<arch>.rs`, shell32's `island_<arch>.rs`, oleaut32's `commacros_<arch>.rs`. A
 # skipped island is invisible rather than loud — the slot simply stays literal and the
 # mismatch surfaces later as an E0308 in a consumer, which is how oleaut32's PROPSHEETPAGEW
@@ -145,33 +158,38 @@ _DECL = re.compile(
 )
 
 
-def island_paths(crate_src: pathlib.Path, stem: str | None = None) -> dict[str, list[pathlib.Path]]:
-    """arch -> the crate's island files for that arch.
+def island_paths(
+    crate_src: pathlib.Path, stem: str | None = None
+) -> dict[str, dict[str, list[pathlib.Path]]]:
+    """stem -> arch -> the crate's island files.
 
-    `stem` restricts the match to exactly `<stem>_<arch>.rs`. gen_driver_types.sh generates
-    ONE stem per invocation (`TYPES_STEM`, several islands per crate — netapi32 carries six),
-    so a generation run must normalize the three files it just wrote and nothing else.
-    Without this the pass would also rewrite a sibling stem that this run never regenerated,
-    which is a tool mutating output it does not own."""
-    pattern = (
-        rf"{re.escape(stem)}_({'|'.join(ARCHES)})\.rs$"
-        if stem
-        else rf"\w+_({'|'.join(ARCHES)})\.rs$"
-    )
-    out: dict[str, list[pathlib.Path]] = {a: [] for a in ARCHES}
+    Grouping by stem is a correctness requirement, not tidiness. A crate can carry several
+    islands (netapi32 has `types`, `types_rpc`, `types_browser`) because its TUs have
+    mutually-irreconcilable header sets, and each is an INDEPENDENT bindgen run. Pooling them
+    into one witness set would let a stdcall entry in one island promote a same-named entry in
+    another that bindgen recorded as cdecl — projecting across a boundary where the
+    name correspondence this pass relies on does not hold. Within a stem the correspondence is
+    exact, because the three arches are the same bindgen invocation over the same headers.
+
+    `stem` restricts the result to exactly that one. gen_driver_types.sh writes ONE stem per
+    invocation, so a generation run must normalize the three files it just wrote and nothing
+    else — rewriting a sibling stem it never regenerated is a tool mutating output it does not
+    own."""
+    out: dict[str, dict[str, list[pathlib.Path]]] = {}
     for p in sorted(crate_src.rglob("*.rs")):
-        m = re.match(pattern, p.name)
-        if not m:
+        m = _ISLAND_FILE.match(p.name)
+        if not m or (stem is not None and m.group("stem") != stem):
             continue
         # An explicit --stem names the files a generation run just wrote, banner or not.
         # Without one, the banner is what separates a generated island from a hand-written
-        # per-arch module that merely shares the naming convention.
+        # per-arch module that merely shares the naming convention (ke_<arch>.rs,
+        # seh_<arch>.rs). The stem regex alone would happily rewrite those.
         if stem is None:
             with p.open(encoding="utf-8", errors="replace") as fh:
                 head = "".join(next(fh, "") for _ in range(8))
             if not _GENERATED.search(head):
                 continue
-        out[m.group(1)].append(p)
+        out.setdefault(m.group("stem"), {a: [] for a in ARCHES})[m.group("arch")].append(p)
     return out
 
 
@@ -276,50 +294,56 @@ def normalize_crate(
             f"    {crate_name}: SKIPPED — compiled for a 32-bit HOST target by a difftest "
             f"harness, where `system` is cdecl and an explicit `stdcall` is not"
         ]
-    islands = island_paths(crate_src, stem)
-    if not islands["i386"]:
-        return 0, []
-    # The witness: everything the i386 island records as stdcall — INCLUDING what a previous
-    # run already rewrote to `system`, because on i386 `system` IS stdcall and so carries the
-    # same evidence. Without that this pass is only idempotent in the trivial sense: the second
-    # run finds no witness left on i386 and silently stops projecting onto 64-bit entries it
-    # had not reached yet, which is how ntkrnl-sys's KIPI_BROADCAST_WORKER stayed `extern "C"`
-    # on amd64 while its i386 twin said `system`. `C` on i386 is still excluded — that is the
-    # genuinely-cdecl case and rewriting it would be a real ABI break.
-    stdcall: set[str] = set()
-    for p in islands["i386"]:
-        for key, abi in scan(p.read_text(errors="replace")).items():
-            if abi in ("stdcall", "system"):
-                stdcall.add(key)
-    if not stdcall:
-        return 0, []
     total, notes = 0, []
-    for arch in ARCHES:
-        frm = "stdcall" if arch == "i386" else "C"
-        for p in islands[arch]:
-            text = p.read_text(errors="replace")
-            # Project the witness through this island's aliases: a slot i386 inlined as
-            # stdcall may be a NAMED alias here (C function TYPES take that shape), and the
-            # two spellings share no key of their own.
-            keys = stdcall | {
-                ty for slot, ty in alias_fields(text).items() if slot in stdcall
-            }
-            # Follow bare `pub type A = B;` forwards so a witness keyed on A reaches whichever
-            # alias in the chain actually carries the fn pointer. Transitive, with a visited
-            # set — a self-referential or mutually-referential pair would otherwise spin.
-            chain = alias_chains(text)
-            frontier, seen = set(keys), set(keys)
-            while frontier:
-                nxt = {chain[k] for k in frontier if k in chain} - seen
-                seen |= nxt
-                frontier = nxt
-            keys = seen
-            new, n = rewrite(text, keys, frm)
-            if n and apply:
-                p.write_text(new)
-            if n:
-                total += n
-                notes.append(f"    {p.relative_to(crate_src.parent.parent)}: {n} ({frm} -> system)")
+    # Per stem, never pooled: the witness set is only valid inside the one bindgen run that
+    # produced it (see island_paths).
+    for islands in island_paths(crate_src, stem).values():
+        if not islands["i386"]:
+            continue  # no i386 twin -> no witness -> nothing is knowable about this stem
+        # The witness: everything this stem's i386 island records as stdcall — INCLUDING what
+        # a previous run already rewrote to `system`, because on i386 `system` IS stdcall and
+        # so carries the same evidence. Without that this pass is only idempotent in the
+        # trivial sense: the second run finds no witness left on i386 and silently stops
+        # projecting onto 64-bit entries it had not reached yet, which is how ntkrnl-sys's
+        # KIPI_BROADCAST_WORKER stayed `extern "C"` on amd64 while its i386 twin said
+        # `system`. `C` on i386 is still excluded — that is the genuinely-cdecl case and
+        # rewriting it would be a real ABI break.
+        stdcall: set[str] = set()
+        for p in islands["i386"]:
+            for key, abi in scan(p.read_text(errors="replace")).items():
+                if abi in ("stdcall", "system"):
+                    stdcall.add(key)
+        if not stdcall:
+            continue
+        for arch in ARCHES:
+            frm = "stdcall" if arch == "i386" else "C"
+            for p in islands[arch]:
+                text = p.read_text(errors="replace")
+                # Project the witness through this island's aliases: a slot i386 inlined as
+                # stdcall may be a NAMED alias here (C function TYPES take that shape), and
+                # the two spellings share no key of their own.
+                keys = stdcall | {
+                    ty for slot, ty in alias_fields(text).items() if slot in stdcall
+                }
+                # Follow bare `pub type A = B;` forwards so a witness keyed on A reaches
+                # whichever alias in the chain actually carries the fn pointer. Transitive,
+                # with a visited set — a self-referential or mutually-referential pair would
+                # otherwise spin.
+                chain = alias_chains(text)
+                frontier, seen = set(keys), set(keys)
+                while frontier:
+                    nxt = {chain[k] for k in frontier if k in chain} - seen
+                    seen |= nxt
+                    frontier = nxt
+                keys = seen
+                new, n = rewrite(text, keys, frm)
+                if n and apply:
+                    p.write_text(new)
+                if n:
+                    total += n
+                    notes.append(
+                        f"    {p.relative_to(crate_src.parent.parent)}: {n} ({frm} -> system)"
+                    )
     return total, notes
 
 

@@ -148,6 +148,11 @@ pub unsafe extern "C" fn _ultow(value: u32, string: *mut u16, radix: i32) -> *mu
 // ── helpers copied verbatim from cnt-rust `cabi/mod.rs` (pub(crate) there,
 //    so not importable). Same code = same semantics the harness graded.
 #[allow(dead_code)]
+// Wine's ERR/FIXME/WARN/TRACE for the whole crate; `#[macro_use]` must precede the
+// modules that call them (macro_rules! is textually scoped).
+#[macro_use]
+mod winedebug;
+
 mod h {
     #[inline]
     pub(super) unsafe fn cstr_slice<'a>(p: *const u8) -> &'a [u8] {
@@ -4418,8 +4423,14 @@ pub mod printf_shells;
 // exactly as they are file-static in wcs.c.
 pub mod wcs_rest;
 
+// The import surface every whole-C-file translation compiles against. It MOVED to
+// `crt-shared-rust` with cpp.c/except.c/undname.c, because that crate is linked into
+// ucrtbase.dll where this one is not, and it cannot depend on msvcrt's floor to supply
+// it. Re-exported rather than re-declared so `crate::prelude::*` keeps resolving here —
+// one copy, two crates, which is the rule for a header the tree ports per module.
+pub use crt_shared_rust::prelude;
+
 // Wave 15 — whole-C-file rustconv translations (mbcs.c first). See src/msvcrt/mod.rs.
-pub mod prelude;
 mod msvcrt;
 
 // Wave 16 — string.c's remaining `_l` exports (plus `_strdup`, `_atoflt`, `I10_OUTPUT`).

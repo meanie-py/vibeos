@@ -341,7 +341,6 @@ pub unsafe extern "system" fn MIDL_user_free(ptr: *mut core::ffi::c_void) {
     HeapFree(GetProcessHeap(), 0, ptr);
 }
 
-
 // ============================================================================
 // ORIGINAL C SOURCE
 // ============================================================================

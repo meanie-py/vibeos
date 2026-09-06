@@ -12,7 +12,7 @@ pub unsafe extern "system" fn AddUsersToEncryptedFile(
     lpcwstr: LPCWSTR,
     pencryption_certificate_list: PENCRYPTION_CERTIFICATE_LIST,
 ) -> DWORD {
-    FIXME!(b"%s() not implemented!\n\0".as_ptr() as LPCSTR, b"AddUsersToEncryptedFile\0".as_ptr() as LPCSTR);
+    FIXME!("%s() not implemented!\n", b"AddUsersToEncryptedFile\0".as_ptr() as LPCSTR);
     ERROR_CALL_NOT_IMPLEMENTED
 }
 
@@ -63,7 +63,7 @@ pub unsafe extern "system" fn EncryptFileW(lpFileName: LPCWSTR) -> u8 {
 
 #[no_mangle]
 pub unsafe extern "system" fn EncryptionDisable(DirPath: LPCWSTR, Disable: BOOL) -> BOOL {
-    FIXME!(b"%s() not implemented!\n\0".as_ptr() as LPCSTR, b"EncryptionDisable\0".as_ptr() as LPCSTR);
+    FIXME!("%s() not implemented!\n", b"EncryptionDisable\0".as_ptr() as LPCSTR);
     SetLastError(ERROR_CALL_NOT_IMPLEMENTED);
     FALSE
 }
@@ -135,7 +135,7 @@ pub unsafe extern "system" fn RemoveUsersFromEncryptedFile(
     lpcwstr: LPCWSTR,
     pencryption_certificate_hash_list: PENCRYPTION_CERTIFICATE_HASH_LIST,
 ) -> DWORD {
-    FIXME!(b"%s() not implemented!\n\0".as_ptr() as LPCSTR, b"RemoveUsersFromEncryptedFile\0".as_ptr() as LPCSTR);
+    FIXME!("%s() not implemented!\n", b"RemoveUsersFromEncryptedFile\0".as_ptr() as LPCSTR);
     ERROR_CALL_NOT_IMPLEMENTED
 }
 
