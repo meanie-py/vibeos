@@ -5241,8 +5241,23 @@ recreates this exactly. Two corollaries that cost time on their own: `~/.config/
 is **inert** on sccache 0.8.2 (writing one leaves the server still reporting the old cap), and
 the variable is `SCCACHE_CACHE_SIZE`, **not** `SCCACHE_MAXSIZE` — `cachecfg.py:111` is correct
 and must not be "fixed". Note also what it was *not*: no OOM daemon is installed and there were
-zero oom matches in `dmesg`/`journalctl`, so the "running low on memory" message was a symptom
-of the full disk, not a second problem.
+zero oom matches in `dmesg`/`journalctl`.
+
+**Correction, from a third occurrence: the harness's "running low on memory" kill is NOT a
+symptom of the full disk, and this entry originally said it was.** It fired again with the disk
+at 84% (159G free, inodes 5%) and killed three background waiters at once. Both occurrences share
+one shape: `MemFree` at or near zero while **`MemAvailable` is tens of GB** (35G against 1.3G
+free the first time, 40G against 0 the second, with 40G in buff/cache). On Linux a near-zero
+`MemFree` is the *normal, healthy* state — the kernel spends idle RAM on page cache and reclaims
+it on demand — so a watchdog reading `MemFree` rather than `MemAvailable` will fire continuously
+on any machine doing heavy build I/O, which is every host here. That mechanism is a hypothesis
+(the harness is above this repo and cannot be read from it); the *verified* part is that the
+message appears with tens of GB available and no OOM daemon installed, i.e. **it is uncorrelated
+with real memory pressure and cannot be used to diagnose anything.**
+
+Practical consequence: **treat a "low on memory" kill as an unexplained kill.** Check `df -h /`
+because that IS one real cause, but a healthy disk does not clear it — check what the killed
+command had already done, because a kill mid-`land` is the expensive case below.
 
 **A killed `land` leaves NO queue entry and NO error**, and that is the consequence worth
 knowing on its own. One lane ate five harness kills in a session — all reported as "the system is
