@@ -715,6 +715,28 @@ Field-manual § pointers hold the full writeups. **Update on state change.**
     is `sizeof(9)` == 4, because the identifier is a macro and not a type; and
     `CM_RESOURCE_DMA_8` is **0**, so `Flags & CM_RESOURCE_DMA_8` is always false and the
     8-bit DMA branch is dead upstream too.
+- **disk-rust: 4 hand-inlined asserts that HANG instead of RtlAssert — OPEN** (2026-09-06).
+  `scan_ud2`'s arm64 driver sweep flags three branch-to-self spins in `DiskIoctlIsWritable`
+  (`disk.rs:10780`). They are **not** the §9.99 CC/sig-mismatch fold the scanner files them
+  under — reading the instruction before the trap, as the manual's triage table says to, gives
+  `brk #0xf001` (the deliberate breakpoint), then `b .`. These are the PAGED_CODE / CHECK_IRQL
+  expansions written out longhand as `DbgPrint` + `int 0x2C`/`brk #0xF001` + `loop {}`. That is
+  the exact pattern the 2026-07-26 "kernel asserts that hung the box" pass replaced with
+  `ntkrnl_sys::ASSERT!`/`NT_ASSERT!` → `RtlAssert` (loud, non-fatal, matching C under `-DDBG=1`);
+  these 4 survived it because they are inlined macro expansions, not `assert!` calls, so the
+  migration's grep never saw them. Only 4 sites, both files in `disk-rust`
+  (`disk.rs`, `ddk_shims.rs`), and `disk-rust` uses `ASSERT!` zero times. Small and mechanical.
+- **`scan_ud2`'s arm64 driver coverage is INCIDENTAL, not defined — OPEN** (2026-09-06).
+  Found while chasing the above. arm64 has no `livecd` DAG; `archcfg.py:209` builds a
+  hand-picked staged set plus a ramdisk, and `disk.sys` is in neither the required nor the
+  optional target list. So the driver sweep grades **whatever binaries happen to be sitting in
+  `build-arm64/`** — which in a fresh integration worktree is a handful of staged files, and in
+  a long-lived lane worktree is however much someone once ran `ninja` for. Consequences both
+  ways: the disk.sys bug above has never blocked a gate (the conductor's worktree does not
+  build the file), and conversely a lane can eat a red arm64 `scan_ud2` for a driver it never
+  touched. A verdict that depends on which artifacts a worktree happens to carry is the same
+  shape as the AGENTS.md §7-8 fleet-isolation rule about resolving generated artifacts from
+  siblings — the sweep should name its corpus, not discover it.
 - **cmlib `CmpAddToLeaf` + `CmpSelectLeaf` are truncated — OPEN, but LATENT** (2026-09-06).
   The same sweep found them via `cmindex.rs`'s own review header: `CmpAddToLeaf` inserts
   nothing (C 987-1099 absent) and `CmpSelectLeaf` is missing ~100 lines including the split,
