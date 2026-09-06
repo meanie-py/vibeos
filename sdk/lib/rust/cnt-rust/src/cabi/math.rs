@@ -948,7 +948,11 @@ pub extern "C" fn fmod(x: f64, y: f64) -> f64 {
 /// Faithful to AMD's `static inline tan_piby4`. The `> 0.68` transforms use
 /// `tan(pi/4 - x) = (1 - tan x)/(1 + tan x)` to hold relative precision near
 /// the interval ends; the core is their Remez [2,3] rational on `[0, 0.68]`.
-fn tan_piby4(mut x: f64, mut xx: f64, recip: bool) -> f64 {
+// `extern "C"` is load-bearing, not decoration: on the i386 no-SSE baseline the
+// Rust ABI would pass these f64s in xmm and rustc rejects the definition
+// outright. The C ABI uses x87/stack, which is what the rest of this file
+// already relies on.
+extern "C" fn tan_piby4(mut x: f64, mut xx: f64, recip: bool) -> f64 {
     const PIBY4_LEAD: f64 = 7.85398163397448278999e-01; // 0x3fe921fb54442d18
     const PIBY4_TAIL: f64 = 3.06161699786838240164e-17; // 0x3c81a62633145c06
 

@@ -826,6 +826,15 @@ float math inside a body (x87), float pointers, float struct fields. Two fixes:
   4-byte FLOAT on the stack, bit-identical to a `u32`; amd64/arm64 pass it in a vector register
   and need the native `f32`. A plain `f32` won't compile on i386; a plain `u32` corrupts the
   others (`SetMiterLimit`).
+- **A crate-PRIVATE helper is not exempt — give it `extern "C"`.** The `"Rust"` ABI passes
+  f64 in xmm on x86, so a plain `fn helper(x: f64, xx: f64) -> f64` in a libm crate is rejected
+  even though nothing outside the crate calls it; `extern "C"` uses x87/stack and compiles.
+  This is why every float helper in `cnt-rust/src/cabi/math.rs` is `extern "C"`. Two traps
+  around it: the rejection is **codegen-time, so `cargo check` cannot see it** — only a real
+  `cargo build --target i686-pc-windows-gnu` with `-C target-feature=-sse,-sse2` will (a green
+  amd64 + arm64 build proves nothing here); and the check fires per-ABI-classification, not
+  per-mention, so a sibling `fn f(x: f64) -> (f64, f64)` returning through sret can sit right
+  next to the rejected one and compile — don't conclude from it that plain `fn` is fine.
 
 ### i386 symbol lookup and asm aliasing
 - **Three decoration schemes**: cdecl `_name`, stdcall `_name@N`, fastcall `@name@N`. A grep
