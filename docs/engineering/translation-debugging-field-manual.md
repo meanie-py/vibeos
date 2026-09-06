@@ -4797,10 +4797,11 @@ passing direction.
 lint whose input predates your change is not evidence. Worth the wall-clock: one cold build
 beats a merge-queue round trip, and the queue can cost hours per attempt.
 
-Same family as the orphaned sccache under "Harness flakes, contention & host starvation": a
-tool reporting a healthy result for state it has stopped accounting for. The corollary that
-makes it dangerous is that BOTH of this file's stale-artifact classes fail silently green —
-see also `--clean` in `vibeos-cli`'s own docs, which exists for this reason.
+**A fourth member of "a verdict that depends on state outside the diff is not a gate"** (see
+"A gate can be RED for reasons that are not in the tree at all"), and distinct from that entry's
+third: a warm gate declining to rebuild is a verdict on a *skipped* recompile, while this is a
+verdict rendered against the wrong object entirely. They fail differently and need different
+fixes — the first wants a `--clean`, this one wants the lint to know how old its input is.
 
 ### The HOST CLOCK steps backwards, so an output is older than its own input
 
@@ -8108,56 +8109,6 @@ still run concurrently within the pool. The isolated live-flock regression is
 `test_hostlock_fifo_respects_existing_permit_holders`. Old processes/worktrees
 retain their prior admission code until restarted/updated; do not rewrite another
 worktree or kill a running build to propagate this fix.
-
-### A FULL DISK wears five costumes, and the loudest one says "memory"
-
-**Run `df -h /` before diagnosing any of these.** One cause, five faces; four agents chased it
-separately in one day and none of them ran that command.
-
-- a gate RED with no failing test;
-- `OSError [Errno 28] No space left on device` at `artifacts.py:182`, writing `summary.json`;
-- **the agent harness reporting "the system is running low on memory" and killing a background
-  task** — this is the dangerous one. It names a plausible cause that is not the real one, so
-  it gets accepted at face value: it killed three builds, a `land` mid-preflight (leaving a
-  lane sitting unregistered while its agent believed it was queued) and two waiters in one
-  session, and two agents independently built memory theories on it — one escalating "the fleet
-  is memory-bound" to its user, the other filing a "low-memory reaper" that does not exist;
-- a land conductor dying mid-drain;
-- at **0 bytes free, no command runs at all**, not even `true`, because the harness creates each
-  command's stdout file before running it.
-
-**Disconfirming checks, so nobody repeats them:** no OOM daemon is installed (earlyoom,
-systemd-oomd, nohang, oomd all inactive), `dmesg` and `journalctl` have zero `oom` matches, and
-`MemAvailable` was 35G. Note `MemFree` read 1.3G — it reads near-zero on any box with a warm
-page cache, so a wait-for-memory loop keyed on it waits forever for a condition that never
-existed.
-
-**Cause (measured): an ORPHANED sccache tree, not capacity.** 1007G total at 99% full, 16G
-free, with the sccache directory at 148G. The running server reported `Max cache size 10 GiB`
-against it and had taken **zero writes in 30 minutes while builds were actively compiling** —
-the decisive measurement. sccache evicts only entries in its OWN index: a server started
-without the fleet env comes up at the 10 GiB default and builds a fresh index, so every byte
-written by earlier server generations is invisible to it. It will never reclaim those bytes at
-**any** cap, and it keeps adding to them. The tool truthfully reports a small, healthy, bounded
-cap for a directory it has stopped accounting for. Reclaiming took it 148G → 4.0K and the root
-filesystem 99% → 83% (163G free); the server then reported 150 GiB and evicted correctly for
-the first time.
-
-**CHECK THE CAP AGAINST THE DIRECTORY SIZE, NOT THE CAP ALONE.** Trimming the cap frees
-nothing.
-
-**Two traps for whoever touches this next:**
-- On sccache 0.8.2 the env var is `SCCACHE_CACHE_SIZE`, **not** `SCCACHE_MAXSIZE`; setting the
-  latter leaves the server at the 10 GiB default. `tests/qemu/cli/cachecfg.py` is CORRECT —
-  `SCCACHE_MAXSIZE` is only the name of its Python constant, and the line that matters reads
-  `e["SCCACHE_CACHE_SIZE"] = SCCACHE_MAXSIZE`. Do not "fix" it.
-- A `~/.config/sccache/config` file is INERT on 0.8.2 — the server still reports 10 GiB with one
-  present. **So the cap lives ONLY in the starting process's environment**, which is the
-  recurrence condition: any bare `sccache` server start outside cachecfg's env recreates this,
-  and that is almost certainly how it happened.
-
-Same family as the stale-artifact false greens under "Stale artifacts & false greens": a tool
-reporting a healthy result for state it has stopped accounting for.
 
 ### Contention wears three costumes, not one
 1. **`HANG_TIMEOUT` at `[freeldr] Switching stack...`** with zero kernel serial (the CGU lottery,
