@@ -157,6 +157,33 @@ def test_the_authority_set_is_the_whole_link_line_except_ucrt():
     )
 
 
+def test_export_set_honours_the_specs_arch_filter():
+    """An export exists only on the arches its spec line names, and (b) depends on that.
+
+    This one shipped and bounced a correct lane. The parse skipped `-arch=` with
+    `(?:-\S+\s+)*`, so the export set was arch-blind, and the 11 float bodies ucrtbase
+    declares `-arch=!i386` -- `tanf`, `sqrtf`, `_logbf` and friends -- were reported as i386
+    shadowing. On i386 ucrtbase has no such export, so nothing there can be displaced and
+    every finding was noise. Pin both directions: absent where the spec excludes it, present
+    where it does not, or the assertion silently stops meaning anything.
+    """
+    spec = vuc.REPO / "dll" / "win32" / "ucrtbase" / "ucrtbase.spec"
+    if not spec.is_file():
+        pytest.skip("ucrtbase.spec not present")
+    floats = {"acosf", "asinf", "atan2f", "atanf", "coshf", "modff", "sinhf", "sqrtf", "tanf"}
+    i386 = vuc._spec_exports(spec, "i386")
+    assert not (floats & i386), (
+        f"-arch=!i386 exports leaked into the i386 set: {sorted(floats & i386)}"
+    )
+    for arch in ("amd64", "arm64"):
+        assert floats <= vuc._spec_exports(spec, arch), (
+            f"{arch} must still see them, or the filter is dropping real exports"
+        )
+    # And the filter must not gut the set wholesale -- a parser that returns nothing also
+    # passes the assertion above, and would make the whole shadowing check vacuous.
+    assert len(i386) > 1000, f"i386 export set implausibly small ({len(i386)})"
+
+
 def test_every_modelled_target_has_a_real_object_directory():
     """A path typo silently contributes ZERO symbols, which reads as mass shadowing.
 

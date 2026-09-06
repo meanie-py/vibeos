@@ -56,6 +56,22 @@ import sys
 from pathlib import Path
 
 REPO = Path(__file__).resolve().parent.parent
+
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+
+
+def _spec_exports(spec: Path, arch: str) -> set[str]:
+    """Export NAMES ucrtbase.spec declares for one arch, `-arch=` filters honoured.
+
+    Delegates to export_census.parse_spec, which resolves the filter the way spec2def does
+    (including negated tags like `-arch=!i386`) and hard-fails on an unknown tag rather than
+    dropping the line silently. Imported lazily so this module still loads if that tool moves.
+    """
+    from export_census import parse_spec
+
+    return set(parse_spec(spec, arch))
+
+
 WS = REPO / "sdk" / "lib" / "rust"
 
 # The crate ucrtbase links, and the crate it must never be able to reach.
@@ -309,17 +325,18 @@ def check_archive() -> list[str]:
         #
         # Reporting the (a)-only symbols as findings is what a strict gate looks like right
         # before someone turns it off: 114 lines of noise around zero real defects.
+        # `-arch=` is part of (b), not decoration. A spec line is an export only on the
+        # arches it names: `@ cdecl -arch=!i386 tanf(float)` means ucrtbase has NO tanf on
+        # i386, so a Rust tanf there displaces nothing a caller can reach. Skipping the flags
+        # without reading them (`(?:-\S+\s+)*` did exactly that) made the export set
+        # arch-blind and reported 11 float bodies -- __logbf, _sqrtf, _tanf and friends, all
+        # `-arch=!i386` -- as i386 shadowing. Every one was a false positive, and it bounced a
+        # correct lane. `export_census.parse_spec` already resolves this the way spec2def
+        # does, negations included; reuse it rather than grow a second parser to drift.
         spec = REPO / "dll" / "win32" / "ucrtbase" / "ucrtbase.spec"
         exported: set[str] = set()
         if spec.is_file():
-            for ln in spec.read_text(errors="replace").splitlines():
-                m = re.match(
-                    r"^[\d@]+\s+(?:cdecl|stdcall|varargs|extern|stub)\s+(?:-\S+\s+)*"
-                    r"([A-Za-z_?$][\w?$@]*)",
-                    ln.strip(),
-                )
-                if m:
-                    exported.add(m.group(1))
+            exported = set(_spec_exports(spec, arch))
         else:
             findings.append(
                 f"dll/win32/ucrtbase/ucrtbase.spec: MISSING -- cannot tell which symbols "
