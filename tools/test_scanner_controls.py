@@ -52,6 +52,49 @@ import vendored
 REPO = Path(__file__).resolve().parent.parent
 
 
+# Both historical spellings of the ks/pcix/ramdisk import bug. The first is what
+# shipped for months (`ntoskrnl.dll`, a file that does not exist); the second is
+# what the FIRST repair shipped, because rustc appends `.dll` even to a name that
+# already has an extension (`ntoskrnl.exe.dll`).
+_RAWDYLIB_BAD = """\
+#[link(name = "ntoskrnl", kind = "raw-dylib")]
+extern "C" {
+    fn IoAllocateIrp(n: i8, charge: i32) -> *mut u8;
+}
+
+#[link(name = "ntoskrnl.exe", kind = "raw-dylib")]
+extern "C" {
+    fn IoFreeIrp(irp: *mut u8);
+}
+"""
+
+# The corrected form, plus the two bare names that are CORRECT and must not be
+# flagged: ntdll really is ntdll.dll and hal really is hal.dll. A scanner that
+# just demanded +verbatim everywhere would flag these and teach the next agent to
+# write `ntdll.dll.dll`.
+_RAWDYLIB_GOOD = """\
+#[link(name = "ntoskrnl.exe", kind = "raw-dylib", modifiers = "+verbatim")]
+extern "C" {
+    fn IoAllocateIrp(n: i8, charge: i32) -> *mut u8;
+}
+
+#[link(name = "ntdll", kind = "raw-dylib")]
+extern "C" {
+    fn RtlInitUnicodeString(s: *mut u8, p: *const u16);
+}
+
+#[link(name = "hal", kind = "raw-dylib")]
+extern "C" {
+    fn KeStallExecutionProcessor(us: u32);
+}
+
+#[link(name = "ntoskrnl", kind = "static")]
+extern "C" {
+    fn NotRawDylibSoNotOurProblem();
+}
+"""
+
+
 @dataclass
 class Control:
     """One scanner + a fixture it MUST flag and one it must NOT."""
@@ -989,6 +1032,13 @@ _VENDOR_GOOD_YAML = (
 )
 
 CONTROLS: list[Control] = [
+    Control(
+        name="scan_rawdylib_linkname",
+        script="tools/scan_rawdylib_linkname.py",
+        argv=["--root"],
+        bad={"src/glue.rs": _RAWDYLIB_BAD},
+        good={"src/glue.rs": _RAWDYLIB_GOOD},
+    ),
     Control(
         name="vendored_registry",
         script="tools/vendored.py",

@@ -39,6 +39,7 @@ miscboot-rust-entry = []
 uefildr-rust-entry = []
 
 [dependencies]
+va-slots-rust = { path = "../va-slots-rust" }
 # default-features = false drops the `hal_bindgen` feature: freeldr is
 # pre-kernel and doesn't need HAL's raw-dylib import surface for
 # ntoskrnl.exe symbols. Without this, rustc emits import thunk .o files

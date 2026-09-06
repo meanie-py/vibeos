@@ -550,6 +550,9 @@ dependencies = [
 [[package]]
 name = "drvtrace-shim"
 version = "0.1.0"
+dependencies = [
+ "va-slots-rust",
+]
 
 [[package]]
 name = "dxg-rust"
@@ -653,6 +656,7 @@ version = "0.1.0"
 dependencies = [
  "cmboot-rust",
  "ntkrnl-sys",
+ "va-slots-rust",
 ]
 
 [[package]]
@@ -916,6 +920,7 @@ dependencies = [
  "dbgprint-rust",
  "kdcom-serial-rust",
  "ntkrnl-sys",
+ "va-slots-rust",
 ]
 
 [[package]]
@@ -2618,6 +2623,10 @@ version = "0.1.0"
 dependencies = [
  "panic-common",
 ]
+
+[[package]]
+name = "va-slots-rust"
+version = "0.1.0"
 
 [[package]]
 name = "valuable"

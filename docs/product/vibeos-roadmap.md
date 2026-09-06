@@ -501,6 +501,32 @@ land; date every addition.** Source docs live in `docs/engineering/archive/`.
   the consolidated entry below and the field manual, "The HOST CLOCK steps backwards, so an
   output is older than its own input".
 
+- **FIXED pending gate (2026-09-06): the LAST five varargs-discarding printf entry points, plus
+  four format-string bugs the fix itself created.** Follow-on to the freeldr `DbgPrint2` work.
+  Same defect: stable Rust cannot DEFINE a C-variadic, so each of these took a fixed parameter
+  list and printed its format string LITERALLY, dropping every argument. Converted to the
+  slot-capture technique: freeldr `TuiPrintf` (tui.c:39) and the `printf`/`TRACE_printf` aliases
+  over it, `rosload_shims.rs`'s cross-importlib `printf`, ntoskrnl's `KdIoPrintf` (kdio.c:574),
+  and classpnp/disk's `TracePrint`.
+  **Ported ONCE into a new `va-slots-rust` crate** rather than a third and fourth copy — the
+  VA_SLOTS/VA_STAGE bounds are only safe because they were MEASURED, so each copy is a chance to
+  guess them. rlib, no dependencies, exports no `#[no_mangle]` symbol so `drvtrace-shim` keeps the
+  LLVM-module isolation that is its whole reason to exist (§9.99).
+  **The fix makes a second bug, and this is the transferable part:** while a printer emits its
+  format verbatim, passing message TEXT as the format is harmless — a `%` comes out as a `%`. The
+  moment formatting is real, those sites consume slots nobody pushed. Four were already in the
+  tree, all of them divergences from the C (which uses `printf("%s\n", Text)` at every one):
+  `directui.rs` `UiInfoBox`/`UiMessageBox`/`UiMessageBoxCritical`, and `rosload_shims.rs`'s `puts`,
+  which handed an arbitrary string straight to `TuiPrintf` as its format. All four routed through
+  `%s`. Also clamped `KdIoPrintf`'s truncation path: the C is `Length = (ULONG)_vsnprintf(...)`
+  with no check, so a >512-byte format hands `KdIoPrintString` a length of 0xFFFFFFFF — tui.c:52
+  clamps for the identical idiom, and a 4GB overread inside the debug printer is the last thing
+  anyone would successfully debug.
+  Validated on a two-TU i386 host harness (variadic caller, non-variadic callee — the real shape):
+  11/11 including `%*s`, the 11-slot widest live format, NULL `%s`, the over-run-reads-zeros
+  degradation, and the truncation clamp. Field manual entry extended with the grep that finds the
+  data-as-format sites before you flip a verbatim printer.
+
 The committed home for open bugs (was: agent MEMORY.md, which other agents never see).
 Field-manual § pointers hold the full writeups. **Update on state change.**
 
@@ -553,7 +579,14 @@ Field-manual § pointers hold the full writeups. **Update on state change.**
   before that loads every cursor in user mode and then silently drops it in the kernel (the
   syscall just returns FALSE — a first attempt did exactly this and moved the count not at all).
   Result: 78 -> 24, boot green at 37s, and the feared `LoadImageW`/`RtlVirtualUnwind` AV from
-  letting the callback finally run did **not** materialise. **The residual 24 is 4 processes x 6
+  letting the callback finally run did **not** materialise.
+  **Read the count as `6 x (processes that missed)`, not as a raw number.** Observed 78 (13x6),
+  24 (4x6) and, on a later boot with no win32k change in between, 30 (5x6) — every value seen so
+  far is an exact multiple of the six cursor classes. So movement in units of 6 is just how many
+  GUI processes happened to register before the deferred load on that boot, and only a
+  **non-multiple of 6** would mean something structural changed. Worth knowing before someone
+  reads 24 -> 30 as a regression and goes looking for one; verified here that neither the
+  origin/master merge nor the varargs work touched the win32k cursor path at all. **The residual 24 is 4 processes x 6
   classes that register system classes without ever passing through `co_int_graphics_check`, so
   the hook cannot fire for them**: every one of the 24 is emitted strictly *before* the load
   (serial lines 1263-1513 vs the load at 1552), and there are zero in the 750 lines after it.
@@ -588,12 +621,22 @@ Field-manual § pointers hold the full writeups. **Update on state change.**
   outright — `restat of output leaf older than most recent input ../leaf/src/main.rs` with the
   input **1.86s NEWER** than the output built from it. Measured directly: over 120s of
   `CLOCK_MONOTONIC_RAW` the host lost **9.57s** of realtime in **4 backward steps of ~2.4s**, and
-  `CLOCK_MONOTONIC` runs **8.09% fast**. Cause is a miscalibrated WSL2 guest TSC (`dmesg`:
-  `Adjusting tsc more than 11% (4482949 vs 4434052)`) that the kernel over-compensates with a
-  maximal tick adjustment (`adjtimex` `tick 10773`, i.e. +7.7%, against NTP's own ±0.05% slew
-  limit), which `systemd-timesyncd` then steps back every poll — and it is pinned at its **32s
-  minimum poll** (`timedatectl show-timesync --all`) because it can never converge, with its
-  own `NTPMessage` showing our clock 3s ahead of the server.
+  `CLOCK_MONOTONIC` runs **8.09% fast**. Reproduced independently by the control-plane lane.
+  Cause is a **runaway feedback loop between `systemd-timesyncd` and the kernel's own slew**:
+  timesyncd steps the clock back, the kernel slews harder to catch up, the slew saturates at its
+  `tick` ceiling of **11000** (nominal 10000) where it has no headroom left and can never
+  converge, so timesyncd steps it back again — with the poll pinned at its **32s floor**
+  (`timedatectl show-timesync --all`, `PacketCount=3966`) and its own `NTPMessage` showing our
+  clock 3s ahead of the server. WSL2 adds a second time authority on the same clock:
+  `/proc/cmdline` carries `hv_utils.timesync_implicit=1`.
+  **My first attribution was wrong and is worth recording as the trap:** I read the oversized tick
+  as the kernel compensating for a miscalibrated guest TSC, on the strength of `dmesg`'s
+  `Adjusting tsc more than 11% (4482949 vs 4434052)`. That line is real but **incidental**, and it
+  points at hardware — which is how you end up costing the fleet a `wsl --shutdown` for something
+  a `systemctl` fixes. Two pieces of evidence settle it: `tick` at 11000 is **saturated, not
+  merely large** (my own 10773 sample was mid-adjustment, not the steady state), and after
+  stopping timesyncd the kernel returns to `tick 10000` with `freq` ≈ **-0.14 ppm** — a genuinely
+  11%-off TSC would have left a large residual correction behind, and there is none.
   **This is bigger than the flake, and the other direction is a FALSE GREEN**: a source edited
   just after a step gets an mtime OLDER than an artifact built before it, so ninja/cmake/cargo
   skip the rebuild and a stale artifact ships. Rule out the clock first for any "impossible"
@@ -606,11 +649,18 @@ Field-manual § pointers hold the full writeups. **Update on state change.**
   when the clock steps, so the guard cannot mask one. Validated 4/4 full-file runs green (was 4/6
   FAILING), 3-4 skips per run, rotating to a different test each time so nothing goes permanently
   unexercised.
-  **Still owed, NOT this lane's to do: the host clock itself.** Switching `current_clocksource`
-  from `tsc` to `hyperv_clocksource_tsc_page` does not help (the slew is reapplied, verified);
-  a durable fix needs the WSL kernel cmdline, i.e. a restart that kills every running lane.
-  Until then every mtime comparison and every `time.monotonic()` timeout on this fleet is
-  suspect — reported boot durations are ~8% wrong.
+  **Host clock FIXED (2026-09-06), by the control-plane lane with the user's approval:**
+  `systemctl disable --now systemd-timesyncd` — one service, persistent across WSL restarts, and
+  **no `wsl --shutdown`**, so no lane lost context and nothing paid was at risk. Verified here
+  independently over 90s: REALTIME/MONOTONIC/MONOTONIC_RAW agree to five decimals, **0 backward
+  steps**, `adjtimex tick 10000 freq -0.138 ppm offset 0`. What remains is a constant ~1.55s
+  absolute offset (the frozen residue of the last backward step), stable within noise and harmless
+  for build correctness since every mtime carries it equally. Two things measured NOT to work:
+  switching `current_clocksource` to `hyperv_clocksource_tsc_page` (slew is reapplied), and the
+  WSL kernel cmdline.
+  **The fixture guard STAYS** — it defends against a step from any cause and re-arms the moment
+  timesyncd is ever re-enabled. One documented limit: it catches STEPS, not slew; a pure frequency
+  error moves both clocks together and slips past it.
 - **FIXED pending validation (2026-09-06): `ks.sys`, `pcix.sys` and `ramdisk.sys` imported a
   nonexistent `ntoskrnl.dll`.** Found by the freeldr debug channel on its FIRST boot after being
   un-silenced — `PeLdrLoadImage('...\drivers\ntoskrnl.dll') failed` ->
@@ -630,8 +680,16 @@ Field-manual § pointers hold the full writeups. **Update on state change.**
   `ExSemaphoreObjectType`, `IoFileObjectType`, `KeLoaderBlock`), so its IAT slots are never
   filled and any path reading them gets an unresolved pointer; the boot stays green only because
   those paths are not exercised (ramdisk is not the boot device here). 9 sites in 8 files fixed.
-  Field manual: "raw-dylib in a freeldr-loaded DLL hangs the boot". Owed: a lint so the bare form
-  cannot come back.
+  Field manual: "raw-dylib in a freeldr-loaded DLL hangs the boot". **Owed lint DELIVERED
+  (2026-09-06): `tools/scan_rawdylib_linkname.py`**, wired into `vibeos-cli check` with an EMPTY
+  baseline. It resolves each name the way rustc does and reports DOUBLE_EXT (`ntoskrnl.exe` with
+  no `+verbatim` -> `ntoskrnl.exe.dll`), WRONG_EXT (bare `ntoskrnl` -> `ntoskrnl.dll`, the
+  original bug) and NO_EXT. It deliberately does NOT demand `+verbatim` everywhere — bare `ntdll`
+  -> `ntdll.dll` is correct, and a scanner flagging it would teach the next agent to write
+  `ntdll.dll.dll`. Validated by replaying `2a89c05d763^` through it: flags all four sites naming
+  `ntoskrnl.exe.dll`, and the pre-repair spelling naming `ntoskrnl.dll` — the two filenames that
+  actually appeared in the boot log. Positive AND negative controls in
+  `tools/test_scanner_controls.py`.
 - **`Cannot open winsta` x229 per boot is winlogon thread teardown — ROOT-CAUSED, benign, OPEN**
   (2026-09-05). Instrumented boot: 228 of 229 come from PID 0x9c (winlogon), all with
   `hWinSta = NULL` and `STATUS_INVALID_HANDLE` (not an access denial), all from one call site —

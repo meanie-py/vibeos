@@ -4778,11 +4778,16 @@ time, with no source change. `ninja -d explain` names the input outright:
 between tests run to run, and passes in isolation often enough to look like a race in the
 build tool.
 
-**Cause:** not the build graph — `CLOCK_REALTIME` on the host is non-monotonic. On WSL2 with a
-miscalibrated guest TSC (`dmesg`: `Adjusting tsc more than 11% (4482949 vs 4434052)`) the
-kernel compensates with a maximal tick adjustment, leaving `CLOCK_MONOTONIC` ~8% fast, and
-`systemd-timesyncd` — pinned at its 32s *minimum* poll because it can never converge — steps
-realtime back ~2.4s every poll. Measure it in one command:
+**Cause:** not the build graph — `CLOCK_REALTIME` on the host is non-monotonic, because
+**`systemd-timesyncd` and the kernel's own slew are in a runaway feedback loop**. timesyncd steps
+the clock back, the kernel slews harder to catch up, the slew saturates at its `tick` ceiling of
+11000 (nominal 10000, i.e. +10% and out of headroom), so it can never converge and timesyncd steps
+it back again — ~2.4s every poll, with the poll pinned at its 32s *floor*. On WSL2 a second time
+authority makes it worse: `/proc/cmdline` carries `hv_utils.timesync_implicit=1`, so Hyper-V host
+timesync is active on the same clock. `dmesg` also shows `Adjusting tsc more than 11% (4482949 vs
+4434052)` — that line is real but **incidental**, and reading it as the cause is the trap: it
+points at the guest TSC, and you will go looking for a clocksource or a kernel cmdline fix that
+does not help. Measure it in one command:
 
 ```bash
 python3 -c "
@@ -4794,23 +4799,68 @@ while time.monotonic_ns()<end:
     prev=r
 print('realtime lost:', ((time.time_ns()-r0)-(time.monotonic_ns()-m0))/1e9, 's; steps:', steps)"
 ```
-Corroborate with `timedatectl show-timesync --all`: `PollIntervalUSec=32s` sitting at the
-minimum, and an `NTPMessage` whose `OriginateTimestamp` is seconds *ahead* of the server's
-`ReceiveTimestamp`.
+Corroborate with `timedatectl show-timesync --all` (`PollIntervalUSec=32s` sitting at the minimum,
+and an `NTPMessage` whose `OriginateTimestamp` is seconds *ahead* of the server's
+`ReceiveTimestamp`) and with `adjtimex`: **`tick` at 11000 is SATURATED, not merely large**, which
+is the tell that separates a feedback loop from genuine hardware compensation. A sample anywhere
+below the ceiling (10773, say) is a mid-adjustment reading, not the steady state.
 
 **Why it is worse than a flake:** the *other* direction is a false green. A source edited just
 after a step gets an mtime OLDER than an artifact built before it, so ninja/cmake/cargo/make
 skip the rebuild and the stale artifact ships — the exact class this section exists for. Any
 "impossible" staleness on this fleet should have the clock ruled out first.
 
-**Fix:** the host clock. `CLOCK_MONOTONIC` carries the same NTP slew as `CLOCK_REALTIME`, so
-realtime advancing *less* than monotonic isolates a step and nothing else — that is the whole
-detector, and it needs no sleep, retry or threshold tuning. `tools/test_build_invalidation.py`
-uses it to skip (loudly, with the measured step) rather than report a dependency-edge failure
-it cannot observe; a real invalidation bug fails on EVERY run, not only when the clock steps,
-so the guard cannot mask one. Switching `current_clocksource` from `tsc` to
-`hyperv_clocksource_tsc_page` does NOT help — the slew is reapplied — and a durable fix needs
-the WSL kernel cmdline, i.e. a restart that kills every running lane.
+**Fix:** `systemctl disable --now systemd-timesyncd`. One service, persistent across WSL
+restarts, **no `wsl --shutdown`** — so no lane loses context and nothing paid is at risk. Confirm
+by re-running the sampler: all three clocks agree to five decimals, zero steps, and `adjtimex`
+returns to `tick 10000` with `freq` ≈ **-0.14 ppm**. That near-zero residual is the proof the
+hardware was never the problem: a genuinely 11%-off TSC would have left a large correction behind.
+What remains is a constant ~1.55s absolute offset (the frozen residue of the last backward step),
+which is harmless for build correctness because every mtime carries it equally. Two things that do
+NOT work, both measured: switching `current_clocksource` from `tsc` to
+`hyperv_clocksource_tsc_page` (the slew is reapplied), and reaching for the WSL kernel cmdline.
+
+**A residual offset is left behind, and the way to clear it is a SLEW, never a step.** Disabling
+timesyncd stops the stepping but leaves the standing error frozen in place and nothing steering
+the clock. Measured here: we are **~1.58s AHEAD** of true time and still gaining at roughly
++25 ppm (~2s/day, unbounded). Mind the sign — NTP's `theta = ((T2-T1)+(T3-T4))/2` is how far the
+*server leads the client*, so `theta = -1.58s` means WE lead, and "correcting" it with a one-shot
+`ntpdate`-style step would step the clock **backwards**: the precise event this whole entry is
+about. **On a VM guest, prefer nulling drift with an `adjtimex` frequency correction over any
+mechanism that steps** — a temporarily larger negative correction bleeds off the standing offset
+while the clock still advances monotonically the whole time, so it is safe to run with builds
+live. Set the frequency off a multi-hour baseline, not two samples.
+
+**The steps could also inflate the NORTH-STAR TEST's own tolerances.** `test_smoke.py`'s
+start-menu gate runs an **8-second wall-clock** window (`time.time() + 8.0`, line 427) with a 6s
+settle window after it (line 446), and a backward step *lowers* `time.time()`, so
+`while time.time() < deadline` stays true LONGER. A 2.4s step every 32s had roughly one-in-four
+odds of landing inside any given 8s window and stretched it ~30% when it did. The failure mode was
+never a spurious smoke failure — it was extra grace that could let a genuinely slow render squeak
+past, i.e. the same false-green family as the stale artifacts, sitting inside the test AGENTS.md
+calls the single source of truth for whether the OS works. Latent now that nothing steps the
+clock, not live; worth converting to `time.monotonic()` if you are in that file anyway, and worth
+remembering if anyone ever argues for re-enabling a stepping time source. (Most other deadlines in
+`tests/qemu` are already monotonic; the wall-clock stragglers are `vm.py:319`, `farm.py:133` and
+`experiments/flag_bisect.py:55` — all against caps of minutes to hours, where a 2.4s wobble is
+noise.)
+
+**And do not motivate this with gate stamps or boot durations — both are fine, and an agent who
+checks them will wrongly conclude the drift is harmless.** `STAMP_MAX_AGE_S` is 24h
+(`cli/land.py:75`), against which 1.6s is nothing — and `_prune_stale_stamps` compares
+`time.time()` against a file's `st_mtime`, both wall clock, so they move together and a step
+largely cancels. Boot timing is `time.monotonic()` (`vm.py:1468`), which an absolute offset never
+touches. The reason to care is that the error is
+*unbounded*: it was ~8% monotonic skew that broke timing, and it is the drift, not today's
+magnitude, that eventually breaks wall-clock comparisons.
+
+**Keep the fixture guard anyway.** `tools/test_build_invalidation.py` detects a step and skips
+loudly with its measured size rather than reporting a dependency-edge failure it cannot observe —
+a real invalidation bug fails on EVERY run, not only when the clock steps, so the guard cannot
+mask one, and it still defends if timesyncd is ever re-enabled. The detector is that
+`CLOCK_MONOTONIC` carries the same NTP slew as `CLOCK_REALTIME`, so realtime advancing *less* than
+monotonic isolates a step — no sleep, retry, or threshold tuning. **Its limit:** it catches
+STEPS, not slew. A pure frequency error moves both clocks together and slips straight past it.
 
 ### Cargo depfiles leave directory contents or lockfile changes stale
 
@@ -5312,6 +5362,23 @@ Three things make it safe rather than lucky:
   the end into the callee's own frame.
 - **It requires caller-pop.** Fine for cdecl and for the Windows 64-bit conventions; a `stdcall`
   callee would both mis-clean the stack and encode the byte count in its decorated name.
+
+**Then the dangerous part: making a verbatim printer FORMAT turns every "text passed as format"
+site into a live bug.** While the shim printed its format string literally, `TuiPrintf(MessageText)`
+and `puts` forwarding a string into a format parameter were harmless — the `%` came out as a `%`.
+The moment formatting is real, those same lines consume slots nobody pushed. Four such sites were
+already in the tree (`directui.rs` ×3, `rosload_shims.rs`'s `puts`), all of them *divergences from
+the C*, which uses `printf("%s\n", Text)` at every one. **Before flipping a verbatim printer,
+grep for calls whose format argument is not a literal** —
+`grep -nE '\b(printf|TuiPrintf)\(\s*[A-Za-z_][A-Za-z0-9_]*\s*[,)]'` — and route each through
+`%s`. The fix makes the bug, so it belongs in the same change.
+
+**Port the technique ONCE.** The bounds above are only safe *because they were measured*, so a
+per-crate copy is a per-crate chance to guess them; `va-slots-rust` is the single home (rlib, no
+dependencies, `_vsnprintf` resolved by whatever the final binary already links — libcntpr for
+freeldr, ntoskrnl for the kernel and drivers). It deliberately exports no `#[no_mangle]` symbol,
+so a consumer like `drvtrace-shim` — which exists precisely to keep a non-variadic *definition*
+out of the LLVM module holding variadic call sites (§9.99) — keeps that isolation.
 
 ### A `cfg(debug_assertions)` block is not code that works — it is code with no evidence either way
 

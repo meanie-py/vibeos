@@ -13,7 +13,7 @@ extern "C" {
     fn MachVideoClearScreen(attr: u32);
     fn TuiDrawText2(X: u32, Y: u32, Length: u32, Text: PCSTR, Attr: u8);
     fn TuiDrawCenteredText( Left: ULONG, Top: ULONG, Right: ULONG, Bottom: ULONG, TextString: PCSTR, Attr: UCHAR, );
-    fn TuiPrintf(MessageText: PCSTR);
+    fn TuiPrintf(Format: PCSTR, ...) -> i32;
     fn MiniTuiDrawMenu(MenuInfo: PUI_MENU_INFO);
     // TEN parameters. tui.h and tuimenu.rs both say so; the extra ShowBootOptions
     // that used to sit at index 2 is UiDisplayMenu's, not TuiDisplayMenu's, and
@@ -99,7 +99,10 @@ pub unsafe extern "C" fn UiDrawStatusText(StatusText: PCSTR) {
 
 #[no_mangle]
 pub unsafe extern "C" fn UiInfoBox(MessageText: PCSTR) {
-    TuiPrintf(MessageText);
+    // `%s`, not MessageText-as-format: the text is DATA. noui.c uses
+    // `printf("%s\n", …)` at every one of these sites for the same reason,
+    // and a `%` in a message would otherwise consume slots nobody pushed.
+    TuiPrintf(b"%s\0".as_ptr() as PCSTR, MessageText);
 }
 
 #[no_mangle]
@@ -107,12 +110,18 @@ pub unsafe extern "C" fn UiMessageBox(
     MessageText: PCSTR,
 ) {
     
-    TuiPrintf(MessageText);
+    // `%s`, not MessageText-as-format: the text is DATA. noui.c uses
+    // `printf("%s\n", …)` at every one of these sites for the same reason,
+    // and a `%` in a message would otherwise consume slots nobody pushed.
+    TuiPrintf(b"%s\0".as_ptr() as PCSTR, MessageText);
 }
 
 #[no_mangle]
 pub unsafe extern "C" fn UiMessageBoxCritical(MessageText: PCSTR) {
-    TuiPrintf(MessageText);
+    // `%s`, not MessageText-as-format: the text is DATA. noui.c uses
+    // `printf("%s\n", …)` at every one of these sites for the same reason,
+    // and a `%` in a message would otherwise consume slots nobody pushed.
+    TuiPrintf(b"%s\0".as_ptr() as PCSTR, MessageText);
 }
 
 #[no_mangle]
