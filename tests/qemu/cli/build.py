@@ -92,9 +92,7 @@ def _clean(run: Run, repo: Path, arch: str) -> None:
     # into the SHARED workspace cache sdk/lib/rust/target/<stem>, not build-<arch>,
     # so discover_rust_targets misses it — add it so --clean is genuinely cold
     # (automates the §9.6b manual `rm -rf sdk/lib/rust/target/<stem>`).
-    ws_target = provenance.workspace_cargo_target(repo, arch)
-    if ws_target is not None:
-        targets = [*targets, ws_target]
+    targets = [*targets, *provenance.workspace_cargo_targets(repo, arch)]
     archives = provenance.discover_rust_archives(build_dir)
     # Cargo COPIES its build output into build-<arch>; nuking the caches above
     # leaves those copies newer than their .rs → ninja "no work" → stale binary

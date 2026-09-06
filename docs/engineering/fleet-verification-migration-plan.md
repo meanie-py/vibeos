@@ -201,6 +201,10 @@ Admission prevents more cooperating jobs starting under pressure; it does not
 solve accumulation. Extend the accounting to the remaining writers before
 claiming fleet-wide disk safety.
 
+The first within-lane storage pilot and retention interlock are tracked in
+[`rust-output-retention-plan.md`](rust-output-retention-plan.md), including the
+required fleet cutover before cleanup may be enabled. Debug information stays on.
+
 Cache audit: compiler caches are shared under the worktree parent, and canonical
 build paths make unchanged compiler inputs reusable across lanes. Per-worktree
 servers preserve mount-namespace correctness; they do not imply separate disk

@@ -12,7 +12,7 @@ import sys
 from pathlib import Path
 
 from . import build as build_mod
-from . import cargoswap, debugcmd, diskspace, hostlock, tooling
+from . import cargoswap, debugcmd, diskspace, hostlock, maintenance, tooling
 from . import conformance as conformance_mod
 from . import difftest as difftest_mod
 from . import farm as farm_mod
@@ -567,10 +567,15 @@ def build_parser() -> argparse.ArgumentParser:
     pr.add_argument("--apply", action="store_true", help="actually delete (default: dry-run)")
     pr.add_argument("--self", action="store_true", help="also allow pruning the current worktree")
     pr.add_argument(
+        "--retain-gib",
+        type=float,
+        help="retain this fleet output budget; remove eligible trees largest-first only until met",
+    )
+    pr.add_argument(
         "--idle-hours",
         type=float,
         default=0,
-        help="only prune trees untouched for at least N hours (default 0 = no age filter)",
+        help="only prune trees untouched for N hours (default 24 with --retain-gib, otherwise 0)",
     )
     pr.set_defaults(fn=prune_mod.prune)
 
@@ -609,6 +614,19 @@ def build_parser() -> argparse.ArgumentParser:
 
 def main(argv: list[str] | None = None) -> int:
     args = build_parser().parse_args(argv)
+    if args.cmd not in maintenance.UNLOCKED:
+        try:
+            with maintenance.activity(REPO):
+                return _dispatch(args)
+        except maintenance.MaintenanceError as exc:
+            # Reuse the storage-admission infrastructure classification: no
+            # check ran, so the conductor must not blame a source regression.
+            print(f"DISK_ADMISSION_FAIL: maintenance: {exc}", flush=True)
+            return 2
+    return _dispatch(args)
+
+
+def _dispatch(args) -> int:
     if args.cmd in diskspace.REQUESTS:
         try:
             with diskspace.reserve(REPO, args.cmd):
