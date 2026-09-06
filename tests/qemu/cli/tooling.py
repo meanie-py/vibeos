@@ -114,9 +114,12 @@ def check_tooling(args, repo: Path) -> int:
     # 4. pytest
     if not args.no_tests:
         for pkg, pp, target in _PYTEST_SUITES:
+            # Label by the TARGET, not the package: twenty root-dir suites all
+            # rendered as `pytest:.`, so a failure line named nothing runnable.
+            label_target = target if pkg == "." else f"{pkg}/{target}"
             checks.append(
                 (
-                    f"pytest:{pkg}",
+                    f"pytest:{label_target}",
                     [sys.executable, "-m", "pytest", target, "-q"],
                     {"cwd": repo / pkg, "env_pp": pp},
                 )

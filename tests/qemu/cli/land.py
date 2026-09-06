@@ -192,11 +192,23 @@ def _lint_preflight(repo: Path, run: Run, args) -> None:
     if cp.returncode == 0:
         run.add(Stage("lint", status="ok", detail=f"check-tooling clean ({dt:.0f}s)"))
         return
+    # PERSIST what we captured before aborting. check-tooling prints the failing
+    # test's own output after the summary, and this is the only copy of it: the
+    # child writes no artifact dir, so discarding stdout here leaves a lane with a
+    # ✗ line and nothing to debug. That is not hypothetical — a preflight abort on
+    # 2026-09-06 named only `pytest:.` for a failure that did not reproduce, and
+    # the evidence was gone.
+    log = run.dir / "preflight-check-tooling.log"
+    try:
+        log.write_text((cp.stdout or "") + (cp.stderr or ""), encoding="utf-8", errors="replace")
+    except OSError:
+        pass
     salient = [ln.strip() for ln in (cp.stdout or "").splitlines() if "✗" in ln]
     raise LandAbort(
         "check-tooling FAILED — fix it before queueing, or the conductor bounces the whole "
         "batch (3 builds + 4 boots of fleet load) for it:\n    "
         + ("\n    ".join(salient) if salient else f"exit {cp.returncode}")
+        + f"\n  captured output: {log}"
         + "\n  run `./vibeos-cli check-tooling` for the detail."
         + "\n  override (report every use): ./vibeos-cli land --skip-lint"
     )

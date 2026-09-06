@@ -5247,6 +5247,23 @@ def test_lint_preflight_blocks_a_red_check_tooling(tiny_repo: Path, tmp_path, mo
     assert "ruff:tools/*.py" in str(ei.value)
 
 
+def test_lint_preflight_KEEPS_the_output_it_captured(tiny_repo: Path, tmp_path, monkeypatch):
+    """The child writes no artifact dir, so this capture is the only copy of the failing
+    test's own output — check-tooling prints it AFTER the summary line. A preflight that
+    reports the ✗ and drops the rest leaves a lane nothing to debug when the failure does
+    not reproduce, which is exactly what happened on 2026-09-06."""
+    monkeypatch.setattr("tests.qemu.cli.artifacts.ARTIFACT_ROOT", tmp_path / "art")
+    detail = "=== pytest:tools/test_x.py ===\nE   assert 1 == 2"
+    _fake_cli(tiny_repo, rc=1, out=f"  ✗ pytest:tools/test_x.py\n\nFAIL — 1/28:\n{detail}")
+    run = Run("land", "t")
+    with pytest.raises(land_mod.LandAbort) as ei:
+        land_mod._lint_preflight(tiny_repo, run, _Args())
+    log = run.dir / "preflight-check-tooling.log"
+    assert log.exists(), "the captured output must survive the abort"
+    assert "assert 1 == 2" in log.read_text()
+    assert str(log) in str(ei.value), "and the abort must say where it is"
+
+
 def test_lint_preflight_passes_a_green_check_tooling(tiny_repo: Path, tmp_path, monkeypatch):
     monkeypatch.setattr("tests.qemu.cli.artifacts.ARTIFACT_ROOT", tmp_path / "art")
     _fake_cli(tiny_repo, rc=0, out="OK — all 15 tooling checks passed.")
