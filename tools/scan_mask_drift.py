@@ -733,7 +733,13 @@ def scan_file(path: Path, rel: str) -> list[tuple[str, str, str, str, str, str]]
         for target, operand in hits:
             operand = trim_operand(operand)
             names = mask_names(operand)
-            for t in bound | {target.lower()}:
+            # Also index the underscore-free spelling: a translation renames the C's
+            # `lEvent` to snake_case `l_event`, and keying on the name alone then finds
+            # nothing in live code and reports a DROP for a mask that is right there.
+            # Collapsing underscores can in principle merge `a_b` with `ab`; that costs
+            # at most a missed report on a collision, against a false DROP on every
+            # camelCase parameter a translation renames — which is most of them.
+            for t in bound | {target.lower(), target.lower().replace("_", "")}:
                 if names:
                     d = live_names.setdefault(t, {})
                     for n in names:
@@ -747,8 +753,9 @@ def scan_file(path: Path, rel: str) -> list[tuple[str, str, str, str, str, str]]
     for target, names in sorted(c_masks.items()):
         if target in suppressed_targets:
             continue
-        lits = live_lits.get(target, [])
-        masked_live = live_names.get(target, {})
+        flat = target.replace("_", "")
+        lits = live_lits.get(target) or live_lits.get(flat, [])
+        masked_live = live_names.get(target) or live_names.get(flat, {})
         for name in sorted(names):
             if not lits:
                 # No literal to compare. Only a target the live code never masks
@@ -1014,6 +1021,26 @@ pub unsafe fn f(Irp: *mut IRP) -> bool {
 //     if (Irp->Flags & IRP_PAGING_IO)
 """,
         [],
+    ),
+    (
+        "a snake_case rename of the C's variable is the same variable",
+        """
+pub unsafe fn f(l_event: &mut LONG) {
+    *l_event &= !SHCNE_INTERRUPT;
+}
+//     lEvent &= ~SHCNE_INTERRUPT;
+""",
+        [],
+    ),
+    (
+        "renaming the variable does not excuse actually dropping the mask",
+        """
+pub unsafe fn f(l_event: &mut LONG) {
+    let _ = l_event;
+}
+//     lEvent &= ~SHCNE_INTERRUPT;
+""",
+        ["DROPPED"],
     ),
 ]
 

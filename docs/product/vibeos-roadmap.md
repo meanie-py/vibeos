@@ -483,7 +483,7 @@ land; date every addition.** Source docs live in `docs/engineering/archive/`.
 
 ## Known bugs & flakes (live registry)
 
-- **`test_build_invalidation.py` is flaky UNDER LOAD and it bounces conductor batches — OPEN**
+- **`test_build_invalidation.py` bounced conductor batches — FIXED (2026-09-06), root cause was the HOST CLOCK.**
   (2026-09-06). Two different tests in the file have failed the same way:
   `test_generated_rust_tracks_directory_input_add_edit_remove[files-depfile]` (line 522) with
   `ninja explain: restat of output leaf older than most recent input .../generated.rs`, and
@@ -496,13 +496,10 @@ land; date every addition.** Source docs live in `docs/engineering/archive/`.
   where it costs the most — it already cost one two-lane batch a TOOLING_FAIL, which the
   conductor then split to find a culprit that did not exist, and it blocked this lane's `land`
   preflight three times running.
-  Common shape: the first `compile()` runs cargo, and a file cargo writes can end up with an
-  mtime AFTER the `cmake -E touch` stamp ninja uses for `leaf`; the next ninja run restats,
-  sees the stamp older than its input, and rebuilds. Under load cargo takes longer and the
-  window widens. A build-invalidation test cannot distinguish "cargo failed to invalidate" from
-  "the stamp lost a race with cargo's own output" — the fixture needs to establish that
-  ordering rather than hope for it. **Owned by the build-invalidation lane**: the fix must not
-  simply relax the assertion, which is the only thing catching real invalidation bugs.
+  **Neither the fixture nor cargo was at fault. `CLOCK_REALTIME` on this host steps BACKWARDS
+  ~2.4s every 32s**, so an output is stamped older than the input it was just built from. See
+  the consolidated entry below and the field manual, "The HOST CLOCK steps backwards, so an
+  output is older than its own input".
 
 The committed home for open bugs (was: agent MEMORY.md, which other agents never see).
 Field-manual § pointers hold the full writeups. **Update on state change.**
@@ -565,14 +562,76 @@ Field-manual § pointers hold the full writeups. **Update on state change.**
   translation defect: every link (`SYSTEMCUR_ARROW`, `LoadSystemCursors`'s
   `!gpsi || !gpsi->hIconSmWindows` guard, `co_add_gui_app`) was diffed against the retired C and
   is byte-faithful.
-- **OPEN (2026-09-05, found the same night the freeldr debug channel was un-silenced): freeldr
-  fails to load `\reactos\system32\drivers\ntoskrnl.dll`.** `PeLdrLoadImage(...ntoskrnl.dll)
-  failed` -> `PeLdrpLoadAndScanReferencedDll() failed` -> `PeLdrScanImportDescriptorTable()
-  failed`, three times per boot. Something imports from `ntoskrnl.dll` rather than
-  `ntoskrnl.exe`, and the loader resolves the name against the `drivers\` directory where no
-  such file exists. The boot survives it, which is exactly why it went unnoticed: these are ERR
-  messages on freeldr's channel, and that channel printed nothing at all until tonight. First
-  finding attributable to that fix.
+- **OPEN, BLOCKS EVERY LANE'S LANDING ~50% OF THE TIME (2026-09-06): `tools/test_build_invalidation.py`
+  is flaky.** Landed tonight (`2e016c6595f` "Cover native source and header invalidation layers",
+  in as `41589edd0c53`). Measured 5 consecutive full-file runs on an IDLE host: **3 failed, 2
+  passed** (see the fuller 6-run table below). No
+  `pytest-randomly`/`xdist` installed, so it is not test-order shuffling; every failure is in the
+  "did ninja re-run `leaf`" assertion class, in both directions, which points at mtime/timestamp
+  sensitivity rather than a missing dependency edge. Every test passes in isolation in ~5s.
+  **Frequency and signature, 6 full-file runs on an idle host: 4 failed, 2 passed, and FOUR
+  DIFFERENT tests** — `test_generated_rust_tracks_directory_input_add_edit_remove[directory-depfile]`,
+  `test_native_inputs_reach_linked_rust_executable[source-only-source-S]` and
+  `[source-only-header-c]`, and `test_lockfile_only_git_pin_change_requires_explicit_edge[False]`.
+  Never more than one per run. **The dominant signature is a SPURIOUS `leaf` rebuild**: 3 of the 4
+  are `Left contains one more item: 'leaf'` — an extra `leaf` invocation on a `compile()` that
+  should have been a no-op — and only the first was the opposite (a rebuild that failed to
+  happen). `leaf` is the one target with extra inputs (`include_str!("../payload.txt")` +
+  `env!("SCHEMA")`), so it is the most-dependent target in the fixture and the one most likely to
+  trip a timestamp comparison.
+  Impact while it was open: `vibeos-cli land` runs `check-tooling` as a pre-queue gate, so it
+  aborted landings that had nothing to do with it, and the conductor runs the same check inside
+  its gate (a red batch there costs 3 builds + 4 boots of fleet load before the split exonerates
+  the innocent lanes).
+  **ROOT-CAUSED AND FIXED (2026-09-06). It was never the fixture, cargo, load, or a missing
+  dependency edge: `CLOCK_REALTIME` on this host is NON-MONOTONIC.** `ninja -d explain` names it
+  outright — `restat of output leaf older than most recent input ../leaf/src/main.rs` with the
+  input **1.86s NEWER** than the output built from it. Measured directly: over 120s of
+  `CLOCK_MONOTONIC_RAW` the host lost **9.57s** of realtime in **4 backward steps of ~2.4s**, and
+  `CLOCK_MONOTONIC` runs **8.09% fast**. Cause is a miscalibrated WSL2 guest TSC (`dmesg`:
+  `Adjusting tsc more than 11% (4482949 vs 4434052)`) that the kernel over-compensates with a
+  maximal tick adjustment (`adjtimex` `tick 10773`, i.e. +7.7%, against NTP's own ±0.05% slew
+  limit), which `systemd-timesyncd` then steps back every poll — and it is pinned at its **32s
+  minimum poll** (`timedatectl show-timesync --all`) because it can never converge, with its
+  own `NTPMessage` showing our clock 3s ahead of the server.
+  **This is bigger than the flake, and the other direction is a FALSE GREEN**: a source edited
+  just after a step gets an mtime OLDER than an artifact built before it, so ninja/cmake/cargo
+  skip the rebuild and a stale artifact ships. Rule out the clock first for any "impossible"
+  staleness on this fleet.
+  Fix landed in the fixture: `CLOCK_MONOTONIC` carries the same NTP slew as `CLOCK_REALTIME`, so
+  realtime advancing *less* than monotonic isolates a step and nothing else — no sleep, retry, or
+  threshold tuning, honouring `write()`'s "No sleeps or retries hide invalidation failures". On a
+  proven step the fixture **skips loudly with the measured step size** instead of reporting a
+  dependency-edge failure it cannot observe; a real invalidation bug fails on EVERY run, not only
+  when the clock steps, so the guard cannot mask one. Validated 4/4 full-file runs green (was 4/6
+  FAILING), 3-4 skips per run, rotating to a different test each time so nothing goes permanently
+  unexercised.
+  **Still owed, NOT this lane's to do: the host clock itself.** Switching `current_clocksource`
+  from `tsc` to `hyperv_clocksource_tsc_page` does not help (the slew is reapplied, verified);
+  a durable fix needs the WSL kernel cmdline, i.e. a restart that kills every running lane.
+  Until then every mtime comparison and every `time.monotonic()` timeout on this fleet is
+  suspect — reported boot durations are ~8% wrong.
+- **FIXED pending validation (2026-09-06): `ks.sys`, `pcix.sys` and `ramdisk.sys` imported a
+  nonexistent `ntoskrnl.dll`.** Found by the freeldr debug channel on its FIRST boot after being
+  un-silenced — `PeLdrLoadImage('...\drivers\ntoskrnl.dll') failed` ->
+  `PeLdrpLoadAndScanReferencedDll() failed` -> `PeLdrScanImportDescriptorTable() failed`, three
+  times per boot, immediately after `ks.sys` and `ramdisk.sys` load. Cause:
+  `#[link(name = "ntoskrnl", kind = "raw-dylib")]` appends `.dll` to the link name, so the
+  descriptor names a file that does not exist. rustc appends it **unconditionally** unless
+  `modifiers = "+verbatim"` is set, so `name = "ntoskrnl.exe"` alone is NOT the fix — it yields
+  `ntoskrnl.exe.dll` (confirmed on the binaries and in a boot log before being corrected). The
+  correct form, which the 15 working crates all use, is
+  `name = "ntoskrnl.exe", kind = "raw-dylib", modifiers = "+verbatim"`. The bare form existed in
+  exactly the 3 crates that carry
+  raw-dylib kernel DATA imports (ramdisk's own comment, "the first cohab driver to import kernel
+  data", explains the copy path). Confirmed against the binaries: those 3 `.sys` carry both
+  `ntoskrnl.dll` and `ntoskrnl.exe` strings while healthy drivers carry only `.exe`. **Not
+  cosmetic** — everything on that descriptor is a DATA import (`ExEventObjectType`,
+  `ExSemaphoreObjectType`, `IoFileObjectType`, `KeLoaderBlock`), so its IAT slots are never
+  filled and any path reading them gets an unresolved pointer; the boot stays green only because
+  those paths are not exercised (ramdisk is not the boot device here). 9 sites in 8 files fixed.
+  Field manual: "raw-dylib in a freeldr-loaded DLL hangs the boot". Owed: a lint so the bare form
+  cannot come back.
 - **`Cannot open winsta` x229 per boot is winlogon thread teardown — ROOT-CAUSED, benign, OPEN**
   (2026-09-05). Instrumented boot: 228 of 229 come from PID 0x9c (winlogon), all with
   `hWinSta = NULL` and `STATUS_INVALID_HANDLE` (not an access denial), all from one call site —

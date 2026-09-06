@@ -16,7 +16,7 @@ pub const PCI_COMMON_HDR_LENGTH: usize = 0x40;
 
 // HAL global dispatch table (ndk/haltypes.h). value type; code takes &addr.
 // ntoskrnl data export (cross-DLL data import → raw-dylib).
-#[link(name = "ntoskrnl", kind = "raw-dylib")]
+#[link(name = "ntoskrnl.exe", kind = "raw-dylib", modifiers = "+verbatim")]
 extern "C" {
     pub static mut HalPrivateDispatchTable: HAL_PRIVATE_DISPATCH;
 }
