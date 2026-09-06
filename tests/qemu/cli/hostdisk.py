@@ -38,11 +38,14 @@ CRITICAL_FREE_BYTES = 256 * 1024**2
 
 def human(n: int) -> str:
     """Bytes -> short human string. Exact enough to act on, short enough to log."""
+    # Separate float accumulator: dividing the int parameter in place retypes it
+    # (pyright reportAssignmentType) and loses the caller's contract.
+    v = float(n)
     for unit in ("B", "K", "M", "G", "T"):
-        if abs(n) < 1024 or unit == "T":
-            return f"{n:.0f}{unit}" if unit == "B" else f"{n:.1f}{unit}"
-        n /= 1024.0
-    return f"{n:.1f}T"
+        if abs(v) < 1024 or unit == "T":
+            return f"{v:.0f}{unit}" if unit == "B" else f"{v:.1f}{unit}"
+        v /= 1024.0
+    return f"{v:.1f}T"
 
 
 def free_bytes(path: Path) -> int | None:

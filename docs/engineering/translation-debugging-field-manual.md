@@ -5149,7 +5149,7 @@ rather than assuming.** Note the misdirection is active, not merely vague: the h
 these kills with a memory message *even when `MemAvailable` is fine*, so the message points away
 from the cause.
 
-The general shape, and it has four known members: **a verdict that depends on state outside the
+The general shape, and it has five known members: **a verdict that depends on state outside the
 diff is not a gate.**
 - **Host disk** — above; RED with nothing failing.
 - **Which artifacts a worktree happens to carry** — `scan_ud2`'s arm64 driver sweep has no
@@ -5166,6 +5166,12 @@ diff is not a gate.**
   verdict about the *wrong object*, and it needs a different fix. Symptom is a false GREEN
   rather than a red, so it is written up under "Stale artifacts & false greens" — see the
   `verify_ucrtbase_cohab` entry there rather than duplicating it here.
+- **A line number read out of the SHARED MAIN worktree** — two lanes cited the same symbol in
+  the same commit as line 100 and line 111; the difference was an 11-line uncommitted change in
+  main that neither had made. Both were honest and both were wrong. This member is the worst of
+  the family for a reason worth stating: **a wrong gate gets re-run, a wrong doc gets believed.**
+  When a fact is going into a doc, cite it from a COMMITTED ref — `git show <sha>:path` — not
+  from a working tree, so the next reader can reproduce it. (msvcrt-homebrew's finding.)
 
 The AGENTS.md fleet-isolation rule already forbids *reading* generated artifacts from a sibling
 worktree. These are the same defect one level up: the corpus is discovered rather than declared.
