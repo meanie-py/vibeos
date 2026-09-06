@@ -37,8 +37,18 @@ So `msafd.dll` — every socket's actual WSP* implementation — was built, was
 required, and was never staged. A 32-bit socket() could not work, and nothing
 said so.
 
-Those edges are DERIVED, not hand-listed: the catalog is declared in
-media/inf/*.inf, so this parses the same declaration the running system obeys.
+And the chain does not stop at the provider. msafd then reads its transport's
+`HelperDllName` and LoadLibraryW's the WSH_* helper (msafd-rust
+misc/helpers.rs). With msafd staged but `wshtcpip.dll` still missing, the guest
+looked FIXED — msafd mapped, DllMain ran, DLL_PROCESS_ATTACH returned 1 — and
+every socket() still failed with WSAEINVAL, because SockGetTdiName's
+LoadLibraryW returned NULL and the error surfaces a full frame away from the
+DLL that is actually absent. So the traversal follows dynamic edges
+TRANSITIVELY: a module admitted as somebody's runtime target is itself asked
+what it loads at runtime.
+
+Those edges are DERIVED, not hand-listed: both hops are declared in
+media/inf/*.inf, so this parses the same declarations the running system obeys.
 Hand-listing would rot the moment someone adds a provider; parsing cannot.
 
 Output: one "<name><TAB><path>" line per DLL, for mkramdisk.sh to mcopy.
@@ -60,23 +70,41 @@ PE_SUFFIXES = (".dll", ".drv", ".ocx", ".acm", ".cpl")
 PRESTAGED = {"ntdll.dll", "kernel32.dll", "user32.dll", "gdi32.dll", "ntdll_vista.dll"}
 
 # Modules that load OTHER modules at runtime by consulting a registry table,
-# mapped to the INF that declares that table. The importer never names the
-# provider in its import table, so only the declaration reveals the edge.
-CATALOG_OWNERS = {"ws2_32.dll": "media/inf/nettcpip.inf"}
+# mapped to the INF that declares that table and to the declarations THAT
+# module reads. The loader never names the target in its import table, so only
+# the declaration reveals the edge.
+#
+# The chain is more than one hop, which is why this is keyed by READER and not
+# just by file: ws2_32 reads the Winsock catalog to find the transport PROVIDER
+# (msafd), and msafd then reads its transport's HelperDllName to find the WSH_*
+# HELPER (wshtcpip). Staging only the provider gets you a msafd that loads
+# fine and then fails every socket() with WSAEINVAL, because
+# SockGetTdiName -> LoadLibraryW(helper) returned NULL. Both hops are declared
+# in the same INF, but by different values read by different modules.
+DYNAMIC_LOADERS = {
+    "ws2_32.dll": ("media/inf/nettcpip.inf", ("LibraryPath", "PackedCatalogItem")),
+    "msafd.dll": ("media/inf/nettcpip.inf", ("HelperDllName",)),
+}
 
-# A catalog entry spells its DLL either as a plain string value or packed into a
+# A declaration spells its DLL either as a plain string value or packed into a
 # binary blob (a WSAPROTOCOL_INFO whose leading field is the NUL-terminated
 # path). Both forms appear in one file, so both are read.
-_INF_LIBRARY_PATH = re.compile(r'"LibraryPath",0x00000000,"([^"]+)"')
-_INF_PACKED_ITEM = re.compile(r'"PackedCatalogItem",0x00000001,\\\n((?:[0-9A-Fa-f, \\\n]+))')
+_INF_STRING_DECLS = {
+    "LibraryPath": re.compile(r'"LibraryPath",0x00000000,"([^"]+)"'),
+    "HelperDllName": re.compile(r'"HelperDllName",0x00000000,"([^"]+)"'),
+}
+_INF_PACKED_DECLS = {
+    "PackedCatalogItem": re.compile(r'"PackedCatalogItem",0x00000001,\\\n((?:[0-9A-Fa-f, \\\n]+))'),
+}
 
 
-def catalog_providers(project_dir: Path, inf_rel: str) -> dict:
-    """Map lowercase provider DLL name -> how it was declared, from an INF.
+def declared_modules(project_dir: Path, inf_rel: str, kinds: tuple) -> dict:
+    """Map lowercase DLL name -> how it was declared, from one INF.
 
-    Returns a dict rather than a set so an unresolved provider can name the
-    exact declaration that demanded it, the way a missing import names its
-    importer.
+    `kinds` selects which declarations to read, because a single INF declares
+    edges belonging to DIFFERENT readers (see DYNAMIC_LOADERS). Returns a dict
+    rather than a set so an unresolved module can name the exact declaration
+    that demanded it, the way a missing import names its importer.
     """
     inf = project_dir / inf_rel
     if not inf.is_file():
@@ -87,14 +115,28 @@ def catalog_providers(project_dir: Path, inf_rel: str) -> dict:
     text = inf.read_text(errors="replace")
 
     found = {}
-    for m in _INF_LIBRARY_PATH.finditer(text):
-        found[Path(m.group(1).replace("\\", "/")).name.lower()] = f"{inf_rel} LibraryPath"
-    for m in _INF_PACKED_ITEM.finditer(text):
-        octets = re.findall(r"\b([0-9A-Fa-f]{2})\b", m.group(1))
-        raw = bytes(int(o, 16) for o in octets).split(b"\x00", 1)[0]
-        path = raw.decode("latin1").replace("\\", "/")
-        if path:
-            found[Path(path).name.lower()] = f"{inf_rel} PackedCatalogItem"
+    for kind in kinds:
+        if kind in _INF_STRING_DECLS:
+            for m in _INF_STRING_DECLS[kind].finditer(text):
+                name = Path(m.group(1).replace("\\", "/")).name.lower()
+                found[name] = f"{inf_rel} {kind}"
+        elif kind in _INF_PACKED_DECLS:
+            for m in _INF_PACKED_DECLS[kind].finditer(text):
+                octets = re.findall(r"\b([0-9A-Fa-f]{2})\b", m.group(1))
+                raw = bytes(int(o, 16) for o in octets).split(b"\x00", 1)[0]
+                path = raw.decode("latin1").replace("\\", "/")
+                if path:
+                    found[Path(path).name.lower()] = f"{inf_rel} {kind}"
+        else:
+            sys.exit(f"wow64-closure: unknown INF declaration kind: {kind}")
+    if not found:
+        # A reader listed in DYNAMIC_LOADERS whose declarations yield nothing
+        # means the INF changed shape under the regex — the exact silent
+        # partial-closure this derivation exists to prevent.
+        sys.exit(
+            f"wow64-closure: {inf_rel} declared no {'/'.join(kinds)} entry — "
+            "the INF changed shape and the dynamic edge is no longer derived"
+        )
     return found
 
 
@@ -200,13 +242,21 @@ def main() -> int:
             out[name] = index[name]
         stack.append(index[name])
 
-    def follow_catalog(name: str) -> None:
-        inf_rel = CATALOG_OWNERS.get(name)
-        if inf_rel is None:
+    def follow_dynamic(name: str) -> None:
+        """Admit the modules `name` loads at runtime, if it is a known loader.
+
+        Called whenever a module enters the closure, so the chain composes: the
+        provider msafd admitted here is itself a loader, and admitting it drags
+        in its own helper on the next hop.
+        """
+        spec = DYNAMIC_LOADERS.get(name)
+        if spec is None:
             return
-        for provider, decl in sorted(catalog_providers(project_dir, inf_rel).items()):
-            dynamic.setdefault(provider, decl)
-            admit(provider, f"{name} via {decl}")
+        inf_rel, kinds = spec
+        for target, decl in sorted(declared_modules(project_dir, inf_rel, kinds).items()):
+            dynamic.setdefault(target, decl)
+            admit(target, f"{name} via {decl}")
+            follow_dynamic(target)
 
     for r in args.roots:
         p = Path(r)
@@ -215,15 +265,15 @@ def main() -> int:
         if not p.exists():
             sys.exit(f"wow64-closure: root not found: {p}")
         stack.append(p)
-        follow_catalog(p.name.lower())
+        follow_dynamic(p.name.lower())
 
     while stack:
         cur = stack.pop()
         for dep in imports_of(objdump, cur):
             admit(dep, cur.name)
-            # A catalog owner drags in its providers whenever it enters the
+            # A runtime loader drags in its targets whenever it enters the
             # closure, including when it entered as somebody else's import.
-            follow_catalog(dep)
+            follow_dynamic(dep)
 
     if missing:
         # FAIL LOUD: a DLL we can't resolve is a module that will load half-bound
