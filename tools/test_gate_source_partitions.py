@@ -17,7 +17,14 @@ REPO = Path(__file__).resolve().parents[1]
 def test_early_scanner_without_builds_and_during_generated_header_writes(tmp_path, scanner):
     script = tmp_path / "tools" / f"{scanner}.py"
     script.parent.mkdir()
-    shutil.copyfile(REPO / "tools" / script.name, script)
+    # Copy the whole flat tools/ layer, not just the one script: a scanner may import a
+    # sibling module (rs_walk, the shared pruned traversal), and a fixture holding only the
+    # entry point turns that into ModuleNotFoundError here while the real tree is fine.
+    # Copying the layer rather than an enumerated list means the next shared helper needs no
+    # edit. Subdirectories stay out — nothing flat imports them by relative path, and the
+    # audit hook below still polices what any of it opens.
+    for mod in sorted((REPO / "tools").glob("*.py")):
+        shutil.copyfile(mod, script.parent / mod.name)
     for crate, source in (
         ("probe-rust", "pub type Width = u32;\npub fn probe() { let _value = 0444; }\n"),
         ("probe-sys", "pub type Width = u64;\n"),
