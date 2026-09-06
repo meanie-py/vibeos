@@ -483,7 +483,7 @@ land; date every addition.** Source docs live in `docs/engineering/archive/`.
 
 ## Known bugs & flakes (live registry)
 
-- **`test_build_invalidation.py` is flaky UNDER LOAD and it bounces conductor batches — OPEN**
+- **`test_build_invalidation.py` bounced conductor batches — FIXED (2026-09-06), root cause was the HOST CLOCK.**
   (2026-09-06). Two different tests in the file have failed the same way:
   `test_generated_rust_tracks_directory_input_add_edit_remove[files-depfile]` (line 522) with
   `ninja explain: restat of output leaf older than most recent input .../generated.rs`, and
@@ -496,13 +496,10 @@ land; date every addition.** Source docs live in `docs/engineering/archive/`.
   where it costs the most — it already cost one two-lane batch a TOOLING_FAIL, which the
   conductor then split to find a culprit that did not exist, and it blocked this lane's `land`
   preflight three times running.
-  Common shape: the first `compile()` runs cargo, and a file cargo writes can end up with an
-  mtime AFTER the `cmake -E touch` stamp ninja uses for `leaf`; the next ninja run restats,
-  sees the stamp older than its input, and rebuilds. Under load cargo takes longer and the
-  window widens. A build-invalidation test cannot distinguish "cargo failed to invalidate" from
-  "the stamp lost a race with cargo's own output" — the fixture needs to establish that
-  ordering rather than hope for it. **Owned by the build-invalidation lane**: the fix must not
-  simply relax the assertion, which is the only thing catching real invalidation bugs.
+  **Neither the fixture nor cargo was at fault. `CLOCK_REALTIME` on this host steps BACKWARDS
+  ~2.4s every 32s**, so an output is stamped older than the input it was just built from. See
+  the consolidated entry below and the field manual, "The HOST CLOCK steps backwards, so an
+  output is older than its own input".
 
 The committed home for open bugs (was: agent MEMORY.md, which other agents never see).
 Field-manual § pointers hold the full writeups. **Update on state change.**
@@ -581,20 +578,39 @@ Field-manual § pointers hold the full writeups. **Update on state change.**
   should have been a no-op — and only the first was the opposite (a rebuild that failed to
   happen). `leaf` is the one target with extra inputs (`include_str!("../payload.txt")` +
   `env!("SCHEMA")`), so it is the most-dependent target in the fixture and the one most likely to
-  trip a timestamp comparison. A source whose mtime sits in the FUTURE relative to its built
-  output makes that output permanently dirty, which reproduces the "rebuilds every time"
-  direction exactly; `write()`'s `max(now, max_existing) + 1ms` is the mechanism that can put it
-  there, since built artifacts are stamped with the real clock.
-  Impact: `vibeos-cli land` runs `check-tooling` as a pre-queue gate, so this aborts landings
-  that have nothing to do with it, and the conductor runs the same check inside its gate (a red
-  batch there costs 3 builds + 4 boots of fleet load before the split exonerates the innocent
-  lanes). **Deliberately not patched by the finder**: `BuildFixture.write` carries the comment
-  "No sleeps or retries hide invalidation failures", i.e. the author avoided the obvious sleep on
-  purpose, and this file exists precisely to catch invalidation bugs — a timing band-aid would
-  blind the thing we built it for. OWNED BY the bughunt lane. Suspect worth checking first:
-  `write()` sets `mtime = max(now, max(every existing file mtime)) + 1ms`, which walks source
-  mtimes monotonically AHEAD of the wall clock across a test, while directory mtimes and any
-  artifact stamped by the OS keep real time — so the ordering the assertions depend on can invert.
+  trip a timestamp comparison.
+  Impact while it was open: `vibeos-cli land` runs `check-tooling` as a pre-queue gate, so it
+  aborted landings that had nothing to do with it, and the conductor runs the same check inside
+  its gate (a red batch there costs 3 builds + 4 boots of fleet load before the split exonerates
+  the innocent lanes).
+  **ROOT-CAUSED AND FIXED (2026-09-06). It was never the fixture, cargo, load, or a missing
+  dependency edge: `CLOCK_REALTIME` on this host is NON-MONOTONIC.** `ninja -d explain` names it
+  outright — `restat of output leaf older than most recent input ../leaf/src/main.rs` with the
+  input **1.86s NEWER** than the output built from it. Measured directly: over 120s of
+  `CLOCK_MONOTONIC_RAW` the host lost **9.57s** of realtime in **4 backward steps of ~2.4s**, and
+  `CLOCK_MONOTONIC` runs **8.09% fast**. Cause is a miscalibrated WSL2 guest TSC (`dmesg`:
+  `Adjusting tsc more than 11% (4482949 vs 4434052)`) that the kernel over-compensates with a
+  maximal tick adjustment (`adjtimex` `tick 10773`, i.e. +7.7%, against NTP's own ±0.05% slew
+  limit), which `systemd-timesyncd` then steps back every poll — and it is pinned at its **32s
+  minimum poll** (`timedatectl show-timesync --all`) because it can never converge, with its
+  own `NTPMessage` showing our clock 3s ahead of the server.
+  **This is bigger than the flake, and the other direction is a FALSE GREEN**: a source edited
+  just after a step gets an mtime OLDER than an artifact built before it, so ninja/cmake/cargo
+  skip the rebuild and a stale artifact ships. Rule out the clock first for any "impossible"
+  staleness on this fleet.
+  Fix landed in the fixture: `CLOCK_MONOTONIC` carries the same NTP slew as `CLOCK_REALTIME`, so
+  realtime advancing *less* than monotonic isolates a step and nothing else — no sleep, retry, or
+  threshold tuning, honouring `write()`'s "No sleeps or retries hide invalidation failures". On a
+  proven step the fixture **skips loudly with the measured step size** instead of reporting a
+  dependency-edge failure it cannot observe; a real invalidation bug fails on EVERY run, not only
+  when the clock steps, so the guard cannot mask one. Validated 4/4 full-file runs green (was 4/6
+  FAILING), 3-4 skips per run, rotating to a different test each time so nothing goes permanently
+  unexercised.
+  **Still owed, NOT this lane's to do: the host clock itself.** Switching `current_clocksource`
+  from `tsc` to `hyperv_clocksource_tsc_page` does not help (the slew is reapplied, verified);
+  a durable fix needs the WSL kernel cmdline, i.e. a restart that kills every running lane.
+  Until then every mtime comparison and every `time.monotonic()` timeout on this fleet is
+  suspect — reported boot durations are ~8% wrong.
 - **FIXED pending validation (2026-09-06): `ks.sys`, `pcix.sys` and `ramdisk.sys` imported a
   nonexistent `ntoskrnl.dll`.** Found by the freeldr debug channel on its FIRST boot after being
   un-silenced — `PeLdrLoadImage('...\drivers\ntoskrnl.dll') failed` ->

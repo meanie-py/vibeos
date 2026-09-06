@@ -4741,6 +4741,49 @@ nothing. It has false-greened arm64 six times in a row (fastfat → ramdisk → 
 user32 → advapi32). Rule: **`vibeos-cli smoke` hard-fails on stale media — never bypass it, and
 judge a build by artifact existence, not a reported exit code.**
 
+### The HOST CLOCK steps backwards, so an output is older than its own input
+
+**Symptom:** a warm build re-runs an edge that is genuinely up to date, roughly half the
+time, with no source change. `ninja -d explain` names the input outright:
+`restat of output leaf older than most recent input ../leaf/src/main.rs (…332394124566 vs
+…334251030013)` — the input is ~2.4s *newer* than the output just built from it. It moves
+between tests run to run, and passes in isolation often enough to look like a race in the
+build tool.
+
+**Cause:** not the build graph — `CLOCK_REALTIME` on the host is non-monotonic. On WSL2 with a
+miscalibrated guest TSC (`dmesg`: `Adjusting tsc more than 11% (4482949 vs 4434052)`) the
+kernel compensates with a maximal tick adjustment, leaving `CLOCK_MONOTONIC` ~8% fast, and
+`systemd-timesyncd` — pinned at its 32s *minimum* poll because it can never converge — steps
+realtime back ~2.4s every poll. Measure it in one command:
+
+```bash
+python3 -c "
+import time
+r0,m0=time.time_ns(),time.monotonic_ns(); end=m0+60_000_000_000; steps=0; prev=r0
+while time.monotonic_ns()<end:
+    r=time.time_ns()
+    if r<prev: steps+=1
+    prev=r
+print('realtime lost:', ((time.time_ns()-r0)-(time.monotonic_ns()-m0))/1e9, 's; steps:', steps)"
+```
+Corroborate with `timedatectl show-timesync --all`: `PollIntervalUSec=32s` sitting at the
+minimum, and an `NTPMessage` whose `OriginateTimestamp` is seconds *ahead* of the server's
+`ReceiveTimestamp`.
+
+**Why it is worse than a flake:** the *other* direction is a false green. A source edited just
+after a step gets an mtime OLDER than an artifact built before it, so ninja/cmake/cargo/make
+skip the rebuild and the stale artifact ships — the exact class this section exists for. Any
+"impossible" staleness on this fleet should have the clock ruled out first.
+
+**Fix:** the host clock. `CLOCK_MONOTONIC` carries the same NTP slew as `CLOCK_REALTIME`, so
+realtime advancing *less* than monotonic isolates a step and nothing else — that is the whole
+detector, and it needs no sleep, retry or threshold tuning. `tools/test_build_invalidation.py`
+uses it to skip (loudly, with the measured step) rather than report a dependency-edge failure
+it cannot observe; a real invalidation bug fails on EVERY run, not only when the clock steps,
+so the guard cannot mask one. Switching `current_clocksource` from `tsc` to
+`hyperv_clocksource_tsc_page` does NOT help — the slew is reapplied — and a durable fix needs
+the WSL kernel cmdline, i.e. a restart that kills every running lane.
+
 ### Cargo depfiles leave directory contents or lockfile changes stale
 
 **Symptom:** Ninja reports no work after an input-file edit or a lockfile-only
