@@ -133,6 +133,18 @@ When you finish, lead with the outcome: the first sentence should answer "what
 happened" or "what did you find." Report faithfully — if tests fail, say so with the output; if
 a step was skipped, say that.
 
+**A relayed status claim needs its evidence, not just its wording.** Owed work that crosses a
+compaction boundary or a session hop keeps the sentence and loses the artifact: "lane X needs its
+smoke:arm64 HANG_TIMEOUT investigated before resubmitting" was relayed to that lane twice, and no
+such verdict had ever existed — `land-status` recorded only TOOLING_FAIL / LINT_FAIL / CONFLICT,
+all long since fixed, and no `summary.json` in the fleet contained the string. Cost: a lane told
+to stop and investigate a phantom. **Before relaying a claim about another lane's state, cite the
+artifact dir, run id, or verdict line; if you cannot, say you cannot and let them check.** And on
+the receiving end: verify a handed-down claim against the tool that would have produced it before
+acting on it — `land-status`, `summary.json`, the artifact dir. This cuts both ways for your own
+summaries, which are the same channel: a status line you carry forward without its evidence is
+a claim you can no longer support.
+
 **Written deliverables.** Match the length of docs you write to what the task needs: cover the
 substance, don't pad with filler sections, redundant summaries, or boilerplate.
 
@@ -293,7 +305,7 @@ guide: `tests/qemu/cli/README.md`.
 ./vibeos-cli check                          # source lints, 0 NEW vs tools/lint-baseline/
 ./vibeos-cli check-tooling                  # ruff+pyright+pytest for OUR python
 ./vibeos-cli difftest                       # host harnesses: shipping Rust vs the genuine C
-./vibeos-cli gate                           # build serial -> smoke all arches parallel -> retry known flakes
+./vibeos-cli gate                           # submit builds concurrently; broker admits; smoke each ready arch
 ./vibeos-cli land                           # THE way to land: submit to the merge queue (train it if free)
 ./vibeos-cli land-status --mine             # conductor + queue + MY verdict (landed / rejected + artifact)
 ./vibeos-cli ps                             # every QEMU across all worktrees + slot usage

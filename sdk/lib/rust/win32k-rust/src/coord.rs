@@ -323,15 +323,42 @@ pub unsafe extern "system" fn NtGdiCombineTransform(
     Unsafexform1: LPXFORM,
     Unsafexform2: LPXFORM,
 ) -> BOOL {
-    let Ret: BOOL;
+    // The C probes all three XFORMs inside one _SEH2_TRY and returns FALSE from the
+    // handler. All three probes were dropped in translation, so this called straight
+    // through with three unvalidated user pointers — and GreCombineTransform WRITES
+    // through UnsafeXFormResult, so a kernel-space pointer passed here is an arbitrary
+    // kernel write available to any unprivileged caller.
+    //
+    // Validate-first per docs/engineering/dummy-pseh-verdict.md: under DUMMY_PSEH a
+    // fault has no handler to reach, so the range must be proven before the call, not
+    // recovered from after it. SafeProbeFor* is win32k's own non-touching validator.
+    if !NT_SUCCESS(SafeProbeForWrite(
+        UnsafeXFormResult as *mut core::ffi::c_void,
+        core::mem::size_of::<XFORML>() as SIZE_T,
+        1,
+    )) {
+        return FALSE as BOOL;
+    }
+    if !NT_SUCCESS(SafeProbeForRead(
+        Unsafexform1 as *const core::ffi::c_void,
+        core::mem::size_of::<XFORML>() as SIZE_T,
+        1,
+    )) {
+        return FALSE as BOOL;
+    }
+    if !NT_SUCCESS(SafeProbeForRead(
+        Unsafexform2 as *const core::ffi::c_void,
+        core::mem::size_of::<XFORML>() as SIZE_T,
+        1,
+    )) {
+        return FALSE as BOOL;
+    }
 
-    Ret = GreCombineTransform(
+    GreCombineTransform(
         UnsafeXFormResult as *mut XFORML,
         Unsafexform1 as *mut XFORML,
         Unsafexform2 as *mut XFORML,
-    );
-
-    Ret
+    )
 }
 #[no_mangle]
 pub unsafe extern "system" fn NtGdiGetTransform(
@@ -379,6 +406,19 @@ pub unsafe extern "system" fn NtGdiGetTransform(
         }
 
         XFORMOBJ_vInit(core::ptr::addr_of_mut!(xo), pmx);
+
+        // The C probes pXForm for WRITE here and sets ret = FALSE from the handler;
+        // the probe was dropped and XFORMOBJ_iGetXform writes the caller's pointer
+        // unchecked. The null test above is not a substitute — it rejects one bad
+        // pointer out of the whole kernel range.
+        if !NT_SUCCESS(SafeProbeForWrite(
+            pXForm as *mut core::ffi::c_void,
+            core::mem::size_of::<XFORML>() as SIZE_T,
+            1,
+        )) {
+            ret = 0;
+            break 'leave;
+        }
 
         XFORMOBJ_iGetXform(core::ptr::addr_of!(xo), pXForm as *mut XFORML);
     }

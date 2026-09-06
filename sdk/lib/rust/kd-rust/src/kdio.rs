@@ -5,6 +5,7 @@
 //! Sibling-owned globals (KdbDebugState by kdterminal.rs) are referenced via
 //! extern decl.
 
+use va_slots_rust::format_slots;
 use ntkrnl_sys::base::*;
 use ntkrnl_sys::constants::{PACKET_TYPE_KD_ACKNOWLEDGE, PACKET_TYPE_KD_RESET};
 use ntkrnl_sys::globals::KdpContext;
@@ -811,15 +812,32 @@ pub unsafe extern "C" fn KdIoPuts(String: PCSTR) {
     KdIoPrintString(String, strlen(String) as ULONG);
 }
 
-/// KdIoPrintf — non-variadic in this Rust port. Defining a Rust C-variadic
-/// function requires nightly (`c_variadic`). External C callers (kd*.c) are
-/// excluded from build, so we only need to satisfy internal call sites, which
-/// use the `kdio_printf!` macro (formats inline and dispatches to KdIoPrintString).
-/// Keeping this exported as `extern "C"` so any future C consumer that links
-/// against the Rust kernel can call us with a pre-formatted string.
+/// KdIoPrintf — kdio.c:574. Stable rustc cannot DEFINE a C-variadic, so the
+/// trailing slots are declared as fixed parameters and replayed as the va_list
+/// (see `va_slots_rust`). It used to forward the format string to KdIoPuts, so a
+/// C consumer calling `KdIoPrintf("%s: exception 0x%08lx\n", …)` -- which is how
+/// every site in kdio.c calls it -- got the specifiers printed literally, with
+/// its arguments dropped. Internal Rust callers still use `kdio_printf!`.
 #[no_mangle]
-pub unsafe extern "C" fn KdIoPrintf(Format: PCSTR) {
-    KdIoPuts(Format);
+pub unsafe extern "C" fn KdIoPrintf(
+    Format: PCSTR,
+    a0: usize, a1: usize, a2: usize, a3: usize, a4: usize, a5: usize,
+    a6: usize, a7: usize, a8: usize, a9: usize, a10: usize, a11: usize,
+) {
+    let mut Buffer: [i8; 512] = [0; 512];
+    let Length = format_slots(
+        Buffer.as_mut_ptr(),
+        512,
+        Format as *const i8,
+        &[a0, a1, a2, a3, a4, a5, a6, a7, a8, a9, a10, a11],
+    );
+    // The C is `Length = (ULONG)_vsnprintf(...)` with no truncation check, so a
+    // format overrunning 512 bytes hands KdIoPrintString a length of 0xFFFFFFFF
+    // and walks off the buffer. Clamp instead, the way tui.c:52 does for the
+    // identical idiom -- a 4GB overread inside the debug printer is the last
+    // thing anyone would successfully debug.
+    let Length = if Length < 0 { 512 } else { Length };
+    KdIoPrintString(Buffer.as_ptr() as PCSTR, Length as ULONG);
 }
 
 // crash-value: when a boot opts into REAL WinDbg KD (/DEBUG /DEBUGPORT=COM2,

@@ -2,6 +2,13 @@ use win32k_sys::win32k::*;
 use ntkrnl_sys::ddk::{KeEnterCriticalRegion, KeLeaveCriticalRegion};
 use ntkrnl_sys::interlocked::{InterlockedIncrement, InterlockedDecrement, InterlockedExchangeAdd};
 
+// win32k's own non-raising user-pointer validator (safe_user_io.rs). Under
+// DUMMY_PSEH the DDK ProbeFor* macros are unusable here: they RAISE, and nothing
+// would catch it.
+extern "system" {
+    fn SafeProbeForWrite(a: *mut core::ffi::c_void, l: usize, al: u32) -> i32;
+}
+
 // C debug macros — silenced via macro_rules! (variadic no-op).
 #[allow(unused_macros)] macro_rules! NT_ASSERT { ($($t:tt)*) => { () }; }
 
@@ -1370,7 +1377,20 @@ pub unsafe extern "system" fn NtGdiExtGetObjectW(
 
     if !lpBuffer.is_null() && iResult != 0 {
         cjMaxSize = min(cjMaxSize, iResult);
-        
+
+        // The C probes lpBuffer for WRITE at cjMaxSize with sizeof(WORD) alignment
+        // inside a _SEH2_TRY, returning 0 from the handler. The probe was dropped, so
+        // this copied up to sizeof(object) bytes of KERNEL STACK to whatever address
+        // the caller passed — a kernel-stack disclosure and an arbitrary kernel write
+        // in the same statement, from an unprivileged GDI call.
+        if !NT_SUCCESS(SafeProbeForWrite(
+            lpBuffer as *mut core::ffi::c_void,
+            cjMaxSize as usize,
+            core::mem::size_of::<WORD>() as u32,
+        )) {
+            return 0;
+        }
+
         core::ptr::copy_nonoverlapping(
             core::ptr::addr_of!(object) as *const u8,
             lpBuffer as *mut u8,

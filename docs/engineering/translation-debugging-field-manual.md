@@ -826,6 +826,15 @@ float math inside a body (x87), float pointers, float struct fields. Two fixes:
   4-byte FLOAT on the stack, bit-identical to a `u32`; amd64/arm64 pass it in a vector register
   and need the native `f32`. A plain `f32` won't compile on i386; a plain `u32` corrupts the
   others (`SetMiterLimit`).
+- **A crate-PRIVATE helper is not exempt — give it `extern "C"`.** The `"Rust"` ABI passes
+  f64 in xmm on x86, so a plain `fn helper(x: f64, xx: f64) -> f64` in a libm crate is rejected
+  even though nothing outside the crate calls it; `extern "C"` uses x87/stack and compiles.
+  This is why every float helper in `cnt-rust/src/cabi/math.rs` is `extern "C"`. Two traps
+  around it: the rejection is **codegen-time, so `cargo check` cannot see it** — only a real
+  `cargo build --target i686-pc-windows-gnu` with `-C target-feature=-sse,-sse2` will (a green
+  amd64 + arm64 build proves nothing here); and the check fires per-ABI-classification, not
+  per-mention, so a sibling `fn f(x: f64) -> (f64, f64)` returning through sret can sit right
+  next to the rejected one and compile — don't conclude from it that plain `fn` is fine.
 
 ### i386 symbol lookup and asm aliasing
 - **Three decoration schemes**: cdecl `_name`, stdcall `_name@N`, fastcall `@name@N`. A grep
@@ -2225,6 +2234,34 @@ function carried a preamble of 22 placeholders, which is the tell: a body the mo
 finish is usually a body it also could not source constants for. Grep the tree for
 `omitted for brevity`, `I'll rebuild`, `rest of the function`; this is the cheapest defect
 class we have, and nothing was looking for it.
+
+**Both shipping instances turned out to be hand-translatable in one sitting** — the "it is a
+rustconv job" reflex above was wrong for them, and the reason generalizes: an abandoned body is
+abandoned because it is *long*, not because it is *hard*. scsiport's was a flat registry walk
+plus a five-way resource switch; classpnp's was ~55 lines of retry logic. What the paid path
+would have bought is exactly what cost nothing here, because **the crate already contained a
+correct sibling to copy the idioms from** (`SpiResourceToConfig` does the same switch 1000
+lines up, and `power.rs:753` already masks `SRB_STATUS` correctly). Check for that sibling
+before you pay: if one exists, the substrate is already proven and the work is transcription.
+
+**Three things to check when you finish one, none of which the compiler will tell you:**
+- **A `match` on constants that are not in scope silently becomes a binding** that matches
+  everything. The tell is a rustc *unreachable pattern* warning on the later arms — so grep the
+  build for that warning specifically, since a body full of `_ =>` arms looks identical either
+  way.
+- **`goto` out of a `switch` case is not a state transition.** classpnp's C jumps to a label
+  *inside* `case PowerUpDeviceStarted`, past its error check; the translation had re-encoded it
+  as "set the state and re-dispatch", which re-runs the check the goto exists to skip. A label
+  in the middle of a case needs a flag, not a state value.
+- **Diff the two sides as a TABLE, not by reading.** For scsiport: extract every registry name
+  literal from both sides and `nl` them side by side (13 v 13, in order), then every assignment
+  LHS with `sort | uniq -c`. Both came out identical, which is worth more than re-reading the
+  body, and it is the same technique the msvcrt permutation lesson recommends for call arguments.
+
+Finally, **check whether the truncation actually ships before ranking it.** cmlib's `cmindex.rs`
+carries two functions in the same state and a documented infinite loop, but `cmindex.c` is still
+in its CMake source list, so the C body wins at link and the Rust is dead. Same defect, entirely
+different urgency — and cohab-flipping that file later would arm it.
 
 ### A local `const` silently SHADOWS a glob import — no warning at either site
 `ARM3/special.rs` declared `const POOL_FLAG_SPECIAL_POOL: ULONG = 0x10` while
@@ -3880,19 +3917,58 @@ Match the C's alignment argument. Say in the comment what validate-first does NO
 C's second SEH also covers the window between probe and copy, and a range check proves where a
 buffer is, never that it stays mapped.
 
-**Finding the rest.** Same self-oracle question as `scan_dropped_prints`, inverted onto
-validation: count `ProbeFor*` in a file's commented-out C against live probe calls in its Rust.
-That gives **40 dropped probe calls across 13 files** — `config-rust/ntapi.rs` (8),
-`win32k-rust/font.rs` (6), `ntstubs.rs` (5), `coord.rs` (4), `fastfat-rust/fsctrl.rs` (4),
-`ex-rust/harderr.rs` (4), and a tail. The win32k ones are the sharp end: `NtGdiAddFontResourceW`
-is a directly user-callable syscall doing `RtlCopyMemory` off `pwcFiles` with no probe at all.
+**Finding the rest.** `tools/scan_dropped_probes.py`, gated by `vibeos-cli check` against
+`tools/lint-baseline/scan_dropped_probes.txt`. Same self-oracle as `scan_dropped_prints` and the
+same brace-depth/tree-sitter parser (shared via `c_function_bodies` / `rust_function_items`),
+asking the inverted question: not "did it stay silent where its C spoke" but "did it dereference
+a user pointer where its C validated one". It opened at **26 functions — 19 ALL, 7 PARTIAL**, and
+every ALL was an `Nt*` syscall entry point. The sharp ones were not subtle once seen:
+`NtGdiExtGetObjectW` copied up to `sizeof(object)` bytes of KERNEL STACK to an unvalidated
+caller pointer (disclosure and arbitrary write in one statement); `NtGdiCombineTransform` passed
+three unchecked user pointers straight to a routine that writes through one of them.
 
-**Two traps when you go looking.** The scanner needs `tree_sitter_rust`, which lives in the MAIN
-checkout's `.venv`, not the system python — a sizing pass that wraps the import in
+**A dropped probe hides behind a plausible comment.** `NtGdiCreateDIBSection` carried
+`// ProbeForRead calls are no-ops in this translation context` over the place three progressive
+probes belonged. It reads like a considered decision and it is simply false — those probes are
+the only bounds check on `bmi`, and dropping them also froze `Status` at `STATUS_SUCCESS` so the
+`if (!NT_SUCCESS(Status))` beneath could never fire. DUMMY_PSEH is the reason the *handler* is
+omitted and equally the reason the *probe* must stay: with no handler an unvalidated access is
+not an exception, it is the machine.
+
+**Overflow guards are not probes, and one can hide the absence of the other.**
+`NtGdiPolyPolyDraw` kept careful `Count > isize::MAX / sizeof(POINT)` checks and had both its
+`ProbeForRead`s dropped. A guard bounds the SIZE of an access; a probe bounds its ADDRESS.
+Watch the second SEH region too: that function's copy length is `nPoints`, the SUM of the
+caller's count array, so it is not covered by a probe sized on `Count`.
+
+**Three traps when you go looking.** (1) The scanner needs `tree_sitter_rust`, which lives in the
+MAIN checkout's `.venv`, not the system python — a sizing pass that wraps the import in
 `except: continue` reports a beautiful **zero**. Judge a clean result by whether the harness
-could have spoken at all. And the probes may have been restructured rather than dropped: a
-function that captures via `ProbeAndCaptureUnicodeString` upstream needs no probe of its own, so
-compare against where the pointer actually comes from before writing a finding.
+could have spoken at all. (2) The substrate is generic, so `probe_read_user::<u32>(h)` puts a
+TURBOFISH between the name and the paren; a call-detecting regex that requires `name\s*\(` scores
+every generic probe as absent and reports its function as ALL. The scanner's `--self-test` caught
+this before the baseline was ever seeded, which is the whole reason that self-test exists. (3)
+The probe may have been restructured rather than dropped: a callee whose buffer arrived through
+`ProbeAndCaptureUnicodeString` one frame up is already in pool and needs no probe of its own
+(`CmpSetValueKeyNew`). Follow the pointer to its caller, then suppress with that reason —
+`// nolint: dropped-probe (caller captures into pool)`.
+
+**`ntkrnl_sys::probe` does not link from a separate `.sys`.** It declares
+`MmUserProbeAddress` as a plain `extern "C" static`, which resolves only for crates linked
+INTO ntoskrnl (config-rust, ex-rust, ntoskrnl-rust). Reach for it from a standalone driver
+and the whole build dies at the link with
+`ld.lld: error: undefined symbol: _MmUserProbeAddress` — ks.sys did exactly this. A DATA
+import needs the per-arch import form: i386/arm64 `raw-dylib` `+verbatim` (the symbol IS the
+value), amd64 binds `__imp_MmUserProbeAddress` and dereferences. Copy the shape from
+`win32k-rust/src/safe_user_io.rs`; `ks-rust/src/property.rs` now carries it too. Note the
+failure is at LINK, not at `cargo check` — nothing links during a crate check, so this class
+sails through every check you would run first.
+
+**Use the right validator for the crate.** win32k has its own `SafeProbeForRead`/`SafeProbeForWrite`
+(`win32k-rust/src/safe_user_io.rs`): same range and alignment arithmetic as the DDK macros, but
+they RETURN a status instead of raising. Do not reach for the DDK `ProbeFor*` there, and do not
+assume the kernel-side `ntkrnl_sys::probe` helpers raise either — they do not touch the page,
+they range-check and return `Result`.
 
 ### A `#if` on a WINDOWS VERSION comes back as `#[cfg(target_arch)]`
 
@@ -4741,6 +4817,40 @@ nothing. It has false-greened arm64 six times in a row (fastfat → ramdisk → 
 user32 → advapi32). Rule: **`vibeos-cli smoke` hard-fails on stale media — never bypass it, and
 judge a build by artifact existence, not a reported exit code.**
 
+### A lint that reads BUILD OUTPUT passes on an artifact predating the change under test
+
+**Symptom:** a source lint is green locally and fails in the gate, on the same commit. Not
+flakiness and not a merge: the gate built all three arches, and the local run read one arch's
+day-old objects.
+
+**Cause:** `verify_ucrtbase_cohab` asks whether the Rust archive defines symbols that would
+displace vendored UCRT bodies — a question about `libcrt_shared_cargo.a`, not about source.
+Locally that archive was dated a day before the commit that added the symbols, so it did not
+contain the change being checked. **An absent symbol shadows nothing, so the check passed by
+answering about an older tree.** Every "does X define too much" check has this shape: the
+failing direction needs the artifact to be current, and staleness always answers in the
+passing direction.
+
+**Fix:** build the arch before trusting a lint that reads its output — `./vibeos-cli build
+--arch <a>` — or read the artifact's mtime against the commit you are testing. A green from a
+lint whose input predates your change is not evidence. Worth the wall-clock: one cold build
+beats a merge-queue round trip, and the queue can cost hours per attempt.
+
+**A fourth member of "a verdict that depends on state outside the diff is not a gate"** (see
+"A gate can be RED for reasons that are not in the tree at all"), and distinct from that entry's
+third: a warm gate declining to rebuild is a verdict on a *skipped* recompile, while this is a
+verdict rendered against the wrong object entirely. They fail differently and need different
+fixes — the first wants a `--clean`, this one wants the lint to know how old its input is.
+
+**The same shape reaches DOCUMENTATION, and there it is worse — a wrong gate gets re-run, a
+wrong doc gets believed.** *Any fact read out of the shared main worktree can be a fact about
+someone else's uncommitted work.* Main's working tree carries other agents' in-flight edits with
+nothing marking them as uncommitted, and every agent reads it by default when checking a claim.
+Two of us cited a line number for the same symbol in the same commit on the same day and got 100
+and 111 — the difference was exactly an 11-line uncommitted change in main that neither of us
+had touched, so both numbers were correct and one was useless. **Cite `git show <ref>:<path>`
+rather than the working tree, and quote a grep-able symbol rather than a line number.**
+
 ### The HOST CLOCK steps backwards, so an output is older than its own input
 
 **Symptom:** a warm build re-runs an edge that is genuinely up to date, roughly half the
@@ -4750,11 +4860,16 @@ time, with no source change. `ninja -d explain` names the input outright:
 between tests run to run, and passes in isolation often enough to look like a race in the
 build tool.
 
-**Cause:** not the build graph — `CLOCK_REALTIME` on the host is non-monotonic. On WSL2 with a
-miscalibrated guest TSC (`dmesg`: `Adjusting tsc more than 11% (4482949 vs 4434052)`) the
-kernel compensates with a maximal tick adjustment, leaving `CLOCK_MONOTONIC` ~8% fast, and
-`systemd-timesyncd` — pinned at its 32s *minimum* poll because it can never converge — steps
-realtime back ~2.4s every poll. Measure it in one command:
+**Cause:** not the build graph — `CLOCK_REALTIME` on the host is non-monotonic, because
+**`systemd-timesyncd` and the kernel's own slew are in a runaway feedback loop**. timesyncd steps
+the clock back, the kernel slews harder to catch up, the slew saturates at its `tick` ceiling of
+11000 (nominal 10000, i.e. +10% and out of headroom), so it can never converge and timesyncd steps
+it back again — ~2.4s every poll, with the poll pinned at its 32s *floor*. On WSL2 a second time
+authority makes it worse: `/proc/cmdline` carries `hv_utils.timesync_implicit=1`, so Hyper-V host
+timesync is active on the same clock. `dmesg` also shows `Adjusting tsc more than 11% (4482949 vs
+4434052)` — that line is real but **incidental**, and reading it as the cause is the trap: it
+points at the guest TSC, and you will go looking for a clocksource or a kernel cmdline fix that
+does not help. Measure it in one command:
 
 ```bash
 python3 -c "
@@ -4766,23 +4881,103 @@ while time.monotonic_ns()<end:
     prev=r
 print('realtime lost:', ((time.time_ns()-r0)-(time.monotonic_ns()-m0))/1e9, 's; steps:', steps)"
 ```
-Corroborate with `timedatectl show-timesync --all`: `PollIntervalUSec=32s` sitting at the
-minimum, and an `NTPMessage` whose `OriginateTimestamp` is seconds *ahead* of the server's
-`ReceiveTimestamp`.
+Corroborate with `timedatectl show-timesync --all` (`PollIntervalUSec=32s` sitting at the minimum,
+and an `NTPMessage` whose `OriginateTimestamp` is seconds *ahead* of the server's
+`ReceiveTimestamp`) and with `adjtimex`: **`tick` at 11000 is SATURATED, not merely large**, which
+is the tell that separates a feedback loop from genuine hardware compensation. A sample anywhere
+below the ceiling (10773, say) is a mid-adjustment reading, not the steady state.
 
 **Why it is worse than a flake:** the *other* direction is a false green. A source edited just
 after a step gets an mtime OLDER than an artifact built before it, so ninja/cmake/cargo/make
 skip the rebuild and the stale artifact ships — the exact class this section exists for. Any
 "impossible" staleness on this fleet should have the clock ruled out first.
 
-**Fix:** the host clock. `CLOCK_MONOTONIC` carries the same NTP slew as `CLOCK_REALTIME`, so
-realtime advancing *less* than monotonic isolates a step and nothing else — that is the whole
-detector, and it needs no sleep, retry or threshold tuning. `tools/test_build_invalidation.py`
-uses it to skip (loudly, with the measured step) rather than report a dependency-edge failure
-it cannot observe; a real invalidation bug fails on EVERY run, not only when the clock steps,
-so the guard cannot mask one. Switching `current_clocksource` from `tsc` to
-`hyperv_clocksource_tsc_page` does NOT help — the slew is reapplied — and a durable fix needs
-the WSL kernel cmdline, i.e. a restart that kills every running lane.
+**Fix:** `systemctl disable --now systemd-timesyncd`. One service, persistent across WSL
+restarts, **no `wsl --shutdown`** — so no lane loses context and nothing paid is at risk. Confirm
+by re-running the sampler: all three clocks agree to five decimals, zero steps, and `adjtimex`
+returns to `tick 10000` with `freq` ≈ **-0.14 ppm**. That near-zero residual is the proof the
+hardware was never the problem: a genuinely 11%-off TSC would have left a large correction behind.
+What remains is a constant ~1.55s absolute offset (the frozen residue of the last backward step),
+which is harmless for build correctness because every mtime carries it equally. Two things that do
+NOT work, both measured: switching `current_clocksource` from `tsc` to
+`hyperv_clocksource_tsc_page` (the slew is reapplied), and reaching for the WSL kernel cmdline.
+
+**A residual offset is left behind, and the way to clear it is a SLEW, never a step.** Disabling
+timesyncd stops the stepping but leaves the standing error frozen in place and nothing steering
+the clock. Measured here: we are **~1.58s AHEAD** of true time and still gaining at roughly
++25 ppm (~2s/day, unbounded). Mind the sign — NTP's `theta = ((T2-T1)+(T3-T4))/2` is how far the
+*server leads the client*, so `theta = -1.58s` means WE lead, and "correcting" it with a one-shot
+`ntpdate`-style step would step the clock **backwards**: the precise event this whole entry is
+about. **On a VM guest, prefer nulling drift with an `adjtimex` frequency correction over any
+mechanism that steps** — a temporarily larger negative correction bleeds off the standing offset
+while the clock still advances monotonically the whole time, so it is safe to run with builds
+live. Set the frequency off a multi-hour baseline, not two samples.
+
+**The steps could also inflate the NORTH-STAR TEST's own tolerances.** `test_smoke.py`'s
+start-menu gate runs an **8-second wall-clock** window (`time.time() + 8.0`, line 427) with a 6s
+settle window after it (line 446), and a backward step *lowers* `time.time()`, so
+`while time.time() < deadline` stays true LONGER. A 2.4s step every 32s had roughly one-in-four
+odds of landing inside any given 8s window and stretched it ~30% when it did. The failure mode was
+never a spurious smoke failure — it was extra grace that could let a genuinely slow render squeak
+past, i.e. the same false-green family as the stale artifacts, sitting inside the test AGENTS.md
+calls the single source of truth for whether the OS works. Latent now that nothing steps the
+clock, not live; worth converting to `time.monotonic()` if you are in that file anyway, and worth
+remembering if anyone ever argues for re-enabling a stepping time source. (Most other deadlines in
+`tests/qemu` are already monotonic; the wall-clock stragglers are `vm.py:319`, `farm.py:133` and
+`experiments/flag_bisect.py:55` — all against caps of minutes to hours, where a 2.4s wobble is
+noise.)
+
+**And do not motivate this with gate stamps or boot durations — both are fine, and an agent who
+checks them will wrongly conclude the drift is harmless.** `STAMP_MAX_AGE_S` is 24h
+(`cli/land.py:75`), against which 1.6s is nothing — and `_prune_stale_stamps` compares
+`time.time()` against a file's `st_mtime`, both wall clock, so they move together and a step
+largely cancels. Boot timing is `time.monotonic()` (`vm.py:1468`), which an absolute offset never
+touches. The reason to care is that the error is
+*unbounded*: it was ~8% monotonic skew that broke timing, and it is the drift, not today's
+magnitude, that eventually breaks wall-clock comparisons.
+
+**Keep the fixture guard anyway.** `tools/test_build_invalidation.py` detects a step and skips
+loudly with its measured size rather than reporting a dependency-edge failure it cannot observe —
+a real invalidation bug fails on EVERY run, not only when the clock steps, so the guard cannot
+mask one, and it still defends if timesyncd is ever re-enabled. The detector is that
+`CLOCK_MONOTONIC` carries the same NTP slew as `CLOCK_REALTIME`, so realtime advancing *less* than
+monotonic isolates a step — no sleep, retry, or threshold tuning. **Its limit:** it catches
+STEPS, not slew. A pure frequency error moves both clocks together and slips straight past it.
+
+### Deleting a file is a DIRECTORY change, and a recursive watch has no margin for it
+
+**Symptom:** the same fixture staleness as the clock entry above — a generated value from the
+previous step survives a rebuild — but the clock is provably clean. In
+`test_build_invalidation.py` it read `'5' != '4'` after removing an input: passes in isolation
+and on an idle host, fails under fleet load, three land preflights in a row.
+
+**Cause:** a build script watching a directory (`cargo:rerun-if-changed=inputs`) can only see a
+deletion as the directory's mtime. The test deleted with a bare `unlink()`, which stamps that
+directory with the host clock — while the fixture deliberately keeps its sources *behind* its
+own build outputs and forces every `write()` mutation to be strictly newer than every prior
+artifact. Measured margin on an idle host: **8ms**. Invert those 8ms and Cargo reads "not
+newer", skips the build script, and the stale generated file survives. Ninja still re-runs the
+rule, so the invocation assertion passes and only the VALUE is wrong — which is why it reads as
+a build-tool race rather than a test bug.
+
+**Fix:** age the containing directory the way the fixture ages a file (`BuildFixture.remove`).
+No sleep and no retry, and it hides nothing: the directory genuinely changed, so the edge under
+test still has to carry it. Forcing the inversion (stamp the build outputs 1s into the future,
+then unlink) reproduces it every time — do that rather than trying to catch it under load.
+
+**THREE independent mechanisms, one symptom — this is what makes such a flake look unfixable.**
+The clock step above, this margin, and a third in the same test's negative control produce
+staleness-shaped failures that no single fix subsumes. The third is an ORACLE fault rather than
+a system one: `missing_edge` asserts `invocations() == before`, but over-invalidation is legal,
+so under load the build is right and the assertion is wrong — relaxing it to `>=` is safe only
+because the value assertions here pin what the count no longer does.
+
+The clock cause was removed host-side (timesyncd disabled, verified 0 backward steps over
+120s), so that guard is now a tripwire for something that should not recur; this one is the
+live mechanism. If the test misbehaves again, check the ordering
+first, then the oracle, then the clock — and do not "tidy" any of the three away as redundant.
+Three lanes each found one of these within a day, each initially certain it was the whole
+story.
 
 **A second cause in the same file was the ORACLE, not the build.** The `missing_edge` negative
 controls asserted `fixture.invocations() == before` — that the build system did *not* rebuild.
@@ -4821,6 +5016,61 @@ controls change only an included header, force Ninja to invoke Cargo by removing
 the copied executable, and still observe stale output until a cold build.
 Represent the native include closure in build-script watches as well as the
 outer dependency graph; watching only the `.c` or `.S` file is insufficient.
+The cc-rs paths in `reactos-link` now emit compiler-discovered file watches via
+`native_deps::compile`; retain `-MD` rather than `-MMD` so `-isystem` SDK inputs
+are included. Compiler-command replay now uses the same discovery and rebases
+relative inputs from the compiler's cwd to Cargo's. Runtime generator inputs
+(such as native-hpp template includes) remain distinct from compiler inputs.
+For cmake-off XDK headers, `native-hpp --depfile` records each template fragment
+actually loaded, and `native_deps::run_hpp` publishes its cwd-relative closure
+to Cargo before installing the generated header. CMake's broad watches remain.
+Keep the transport boundary in view: Cargo's executable `.d` escapes spaces but
+leaves `#`/`$` in watched filenames unescaped. Ninja interprets those as syntax,
+reports nonexistent partial prerequisites with `-d explain`, and reruns on every
+no-op. Correct generator escaping alone does not repair this downstream gap;
+arbitrary-filename Cargo-to-Ninja closure is still unresolved.
+
+### Generated assembly constants stay stale despite a build-script rerun
+
+**Symptom:** Cargo reruns after a header edit, but generated constants still
+reflect the previous layout; deleting the generated output changes the result.
+
+**Cause:** `generate_ks_inc` treated an existing OUT_DIR file as cached across
+invocations, returning before generation and dependency discovery.
+
+**Fix:** Cache only within one Linker invocation using `InvocationOutput`.
+Regenerate on its first request even when the file survives from an older run.
+The real C-generator fixture demonstrates stale output with the disk shortcut
+and fresh output with invocation-only caching, without duplicating generation
+for multiple consumers in one build script. Runtime template dependency closure
+still needs its own tracking; compiler depfiles cannot infer those reads.
+
+### Bindgen regeneration overwrites another invocation or unrelated islands
+
+**Symptom:** Concurrent generators share `/tmp/bindgen_<arch>_raw.rs`, or a run's
+final normalization rewrites islands it never regenerated.
+
+**Cause:** Fixed scratch filenames and normalization aimed at the live crate,
+not the files produced by this invocation.
+
+**Fix:** Kernel/HAL generators use `tools/bindgen-stage.sh`: exclusive new output
+directories, retained raw/header depfiles, staged postprocessing, and stem-scoped
+normalization. `COMPLETE` marks successful completion; absence means partial
+output, never a usable generation result. Both scripts are stage-only now; they
+do not install into `ntkrnl-sys/src`. Missing HAL export metadata fails loudly.
+Concurrency/failure controls live in `tools/test_bindgen_generation.py`.
+
+### A bindgen depfile makes every unchanged Ninja build run again
+
+**Symptom:** Bindings regenerate and their Rust consumer rebuilds on a no-op.
+Ninja explains that it expected `bindings.rs` but got an absolute output path.
+
+**Cause:** Bindgen emits an absolute depfile target when given an absolute
+output path; CMake's OLD CMP0116 policy passes it through without normalization.
+
+**Fix:** Use CMP0116 NEW, or retarget the depfile to Ninja's build-root-relative
+output when supporting OLD. Do not drop the depfile: the real bindgen warm/cold
+fixture proves a nested-header-only constant/layout edit then stays stale.
 
 ### A flipped TU's leftover `.obj` keeps voting on the NEXT flip's closure
 ninja never deletes the object of a source you remove from a CMake list, so every TU we flip
@@ -5097,6 +5347,82 @@ MSVC *intrinsic*).
 A whole family of bugs where the *verification* is wrong, so the code looks correct. These cost
 more than ordinary bugs because their output is trusted.
 
+### A gate can be RED for reasons that are not in the tree at all
+Symptom: a gate goes RED with **no failing test**. Cause: the verdict depended on host state,
+not on the diff. Fix: check the host before you read the artifact, because the artifact cannot
+tell you the difference.
+
+**Host disk exhaustion is the one that has actually cost us a day** (four lanes chasing it at
+once — that synthesis is the control plane's, not a measured figure). At 100% on `/` the failure
+does not look like a disk problem — it surfaced as a gate RED with no failing test, an ENOSPC
+raised deep in `artifacts.py` writing `summary.json`, "system is running low on memory" in two
+agents' harnesses, and a conductor dying mid-drain. At **0 bytes free the harness cannot run any
+command, not even `true`**, because it creates each command's stdout file first — so the tooling
+you would reach for to diagnose it is the tooling that stops working. **`df -h /` before
+anything else.** The cause was not capacity: a 148G *orphaned* sccache, invisible to the running
+server (sccache evicts only entries in its own index, so bytes written by earlier server
+generations are unreclaimable at any cap — the server reported a 10 GiB cap against a 148G
+directory and had taken zero writes in 30 minutes while builds ran; measured 940G used/16G free
+before, 793G/163G after, the cache dir itself 148G -> 4.0K).
+
+**The recurrence condition is the line that matters, and it is verified: the cap lives only in
+the STARTING PROCESS'S ENVIRONMENT.** Any bare `sccache` server start outside `cachecfg`'s env
+recreates this exactly. Two corollaries that cost time on their own: `~/.config/sccache/config`
+is **inert** on sccache 0.8.2 (writing one leaves the server still reporting the old cap), and
+the variable is `SCCACHE_CACHE_SIZE`, **not** `SCCACHE_MAXSIZE` — `cachecfg.py:111` is correct
+and must not be "fixed". Note also what it was *not*: no OOM daemon is installed and there were
+zero oom matches in `dmesg`/`journalctl`, so the "running low on memory" message was a symptom
+of the full disk, not a second problem.
+
+**A killed `land` leaves NO queue entry and NO error**, and that is the consequence worth
+knowing on its own. One lane ate five harness kills in a session — all reported as "the system is
+running low on memory", none of them memory — and one of them landed on `./vibeos-cli land`
+mid-preflight. `land-status` then simply does not list you, which is indistinguishable from "the
+conductor hasn't got to you yet" unless you are looking for it; that lane waited on a queue
+position it did not have. **If you believe you are queued, confirm with `land-status --mine`
+rather than assuming.** Note the misdirection is active, not merely vague: the harness reports
+these kills with a memory message *even when `MemAvailable` is fine*, so the message points away
+from the cause.
+
+The general shape, and it has five known members: **a verdict that depends on state outside the
+diff is not a gate.**
+- **Host disk** — above; RED with nothing failing.
+- **Which artifacts a worktree happens to carry** — `scan_ud2`'s arm64 driver sweep has no
+  defined corpus. arm64 has no `livecd` DAG (`archcfg.py:209` builds a hand-picked staged set),
+  so the sweep grades whatever binaries are sitting in `build-arm64/`: nothing in a fresh
+  integration worktree, an arbitrary accumulation in a long-lived lane. A real `disk.sys` finding
+  has therefore never blocked a gate, and a lane can equally eat a red arm64 result for a driver
+  it never touched.
+- **What a warm gate declines to rebuild** — §9.126 above, the mirror image: green because
+  nothing recompiled.
+- **An artifact that PREDATES the change under test** — a lint reading build output passes
+  because the artifact is older than the change being graded, so an absent symbol shadows
+  nothing. Distinct from the member above: not a rebuild that was skipped, but a *correct*
+  verdict about the *wrong object*, and it needs a different fix. Symptom is a false GREEN
+  rather than a red, so it is written up under "Stale artifacts & false greens" — see the
+  `verify_ucrtbase_cohab` entry there rather than duplicating it here.
+- **A line number read out of the SHARED MAIN worktree** — two lanes cited the same symbol in
+  the same commit as line 100 and line 111; the difference was an 11-line uncommitted change in
+  main that neither had made. Both were honest and both were wrong. This member is the worst of
+  the family for a reason worth stating: **a wrong gate gets re-run, a wrong doc gets believed.**
+  When a fact is going into a doc, cite it from a COMMITTED ref — `git show <sha>:path` — not
+  from a working tree, so the next reader can reproduce it. The useful discrimination, and it
+  scopes the worry: **where a line number is NAVIGATION it degrades gracefully** (a reader who
+  lands near `cmtypes.h:33` still finds the declaration and self-corrects); **where the line
+  number IS the claim, it can be wrong for two honest readers at once.** Only the second kind
+  needs the committed ref. (msvcrt-homebrew's finding.)
+
+The AGENTS.md fleet-isolation rule already forbids *reading* generated artifacts from a sibling
+worktree. These are the same defect one level up: the corpus is discovered rather than declared.
+A sweep should name what it grades and hard-fail when a member is missing, exactly as
+`verify_signatures` now hard-fails instead of falling back to a sibling's headers.
+
+**The disk member is now mechanized** — `tests/qemu/cli/hostdisk.py`. `gate` refuses to start
+without headroom (`host-disk` stage), and an ENOSPC during a build classifies as `DISK_FULL`
+ahead of the generic matchers instead of being filed as a defect in the diff. Both always print
+free bytes and the threshold missed, because the number is what ends the investigation.
+
+
 ### A difftest oracle that is the source the port was MADE from grades nothing
 
 **Symptom.** A host difftest is green, has been green for months, and the shipped Rust is still
@@ -5297,6 +5623,23 @@ Three things make it safe rather than lucky:
   the end into the callee's own frame.
 - **It requires caller-pop.** Fine for cdecl and for the Windows 64-bit conventions; a `stdcall`
   callee would both mis-clean the stack and encode the byte count in its decorated name.
+
+**Then the dangerous part: making a verbatim printer FORMAT turns every "text passed as format"
+site into a live bug.** While the shim printed its format string literally, `TuiPrintf(MessageText)`
+and `puts` forwarding a string into a format parameter were harmless — the `%` came out as a `%`.
+The moment formatting is real, those same lines consume slots nobody pushed. Four such sites were
+already in the tree (`directui.rs` ×3, `rosload_shims.rs`'s `puts`), all of them *divergences from
+the C*, which uses `printf("%s\n", Text)` at every one. **Before flipping a verbatim printer,
+grep for calls whose format argument is not a literal** —
+`grep -nE '\b(printf|TuiPrintf)\(\s*[A-Za-z_][A-Za-z0-9_]*\s*[,)]'` — and route each through
+`%s`. The fix makes the bug, so it belongs in the same change.
+
+**Port the technique ONCE.** The bounds above are only safe *because they were measured*, so a
+per-crate copy is a per-crate chance to guess them; `va-slots-rust` is the single home (rlib, no
+dependencies, `_vsnprintf` resolved by whatever the final binary already links — libcntpr for
+freeldr, ntoskrnl for the kernel and drivers). It deliberately exports no `#[no_mangle]` symbol,
+so a consumer like `drvtrace-shim` — which exists precisely to keep a non-variadic *definition*
+out of the LLVM module holding variadic call sites (§9.99) — keeps that isolation.
 
 ### A `cfg(debug_assertions)` block is not code that works — it is code with no evidence either way
 
@@ -8150,6 +8493,19 @@ failure is not a control. Reproduce it under the load that triggers it (8 worker
 here), then pin it with a test that **fakes the trigger deterministically** — the regression
 test steps the clock backwards by the exact observed 2,593,682,747 ns and fails against the
 old allocator with the live signature.
+
+For the warm/cold build fixtures, initial source customization must keep the
+fixture's past epoch until the first build, not merely until CMake configuration.
+An observed output 430 ms older than its just-built source caused a false no-op
+failure. `BuildFixture` now explicitly reconfigures after initial setup and
+switches to strictly newer mutation timestamps only after a successful build;
+the regression injects a forward clock step without weakening the no-op check.
+Directory membership changes also need ordered parent-directory timestamps;
+ordinary content edits must not touch that directory or the negative control
+would acquire a fake edge. Executed fixture commands stamp their outputs after
+the current inputs, covering clock steps during generation/compilation too.
+This completion step never runs for a missing dependency edge; the stale-value
+and affected-consumer assertions remain the oracle.
 
 ### A cached handle in a reference shim is per-PROCESS, but the tests run per-THREAD
 

@@ -118,3 +118,140 @@ def test_unreadable_nm_does_not_silently_pass(tmp_path: Path, nm_name: str):
     missing = tmp_path / "not-an-archive.a"
     missing.write_text("this is not an archive")
     assert vuc._nm_defined(missing) in (None, set())
+
+
+# ── the ARCHIVE check's model of the link line ───────────────────────────────────────────
+
+
+def _ucrtbase_link_libraries() -> list[str]:
+    """The names inside ucrtbase's `target_link_libraries(ucrtbase ...)` block."""
+    import re
+
+    text = (REPO / "dll" / "win32" / "ucrtbase" / "CMakeLists.txt").read_text()
+    m = re.search(r"target_link_libraries\(ucrtbase\b(.*?)\)", text, re.S)
+    assert m, "ucrtbase's link line moved or changed shape"
+    names = []
+    for tok in m.group(1).split():
+        # skip linker flags and the ${...} holding the Rust archive path
+        if tok.startswith(("-", "$")):
+            continue
+        names.append(tok)
+    return names
+
+
+def test_the_authority_set_is_the_whole_link_line_except_ucrt():
+    """The archive check is only correct if its model IS the link line.
+
+    This is the assertion that actually rotted once: the tool modelled the authority as
+    `msvcrt_shared` alone, and the ucrtbase math flip -- a correct change, every symbol of it
+    a crtmath body we own and had graded -- came back as 60 findings. A gate that is red on a
+    correct change is one somebody switches off, so the set has to track the CMake rather than
+    be remembered. `ucrt` is the deliberate exclusion: it is the vendored Microsoft library,
+    and displacing one of ITS bodies is the entire defect this file exists to prevent.
+    """
+    linked = _ucrtbase_link_libraries()
+    assert "ucrt" in linked, "ucrt vanished from the link line; the exclusion below is stale"
+    assert set(linked) - {"ucrt"} == set(vuc.OURS_ON_LINK_LINE), (
+        "ucrtbase's link line and OURS_ON_LINK_LINE disagree -- a library added there without "
+        "a matching entry makes every symbol it defines look like ours shadowing genuine UCRT"
+    )
+
+
+def test_export_set_honours_the_specs_arch_filter():
+    """An export exists only on the arches its spec line names, and (b) depends on that.
+
+    This one shipped and bounced a correct lane. The parse skipped `-arch=` with
+    `(?:-\S+\s+)*`, so the export set was arch-blind, and the 11 float bodies ucrtbase
+    declares `-arch=!i386` -- `tanf`, `sqrtf`, `_logbf` and friends -- were reported as i386
+    shadowing. On i386 ucrtbase has no such export, so nothing there can be displaced and
+    every finding was noise. Pin both directions: absent where the spec excludes it, present
+    where it does not, or the assertion silently stops meaning anything.
+    """
+    spec = vuc.REPO / "dll" / "win32" / "ucrtbase" / "ucrtbase.spec"
+    if not spec.is_file():
+        pytest.skip("ucrtbase.spec not present")
+    floats = {"acosf", "asinf", "atan2f", "atanf", "coshf", "modff", "sinhf", "sqrtf", "tanf"}
+    i386 = vuc._spec_exports(spec, "i386")
+    assert not (floats & i386), (
+        f"-arch=!i386 exports leaked into the i386 set: {sorted(floats & i386)}"
+    )
+    for arch in ("amd64", "arm64"):
+        assert floats <= vuc._spec_exports(spec, arch), (
+            f"{arch} must still see them, or the filter is dropping real exports"
+        )
+    # And the filter must not gut the set wholesale -- a parser that returns nothing also
+    # passes the assertion above, and would make the whole shadowing check vacuous.
+    assert len(i386) > 1000, f"i386 export set implausibly small ({len(i386)})"
+
+
+def test_every_modelled_target_has_a_real_object_directory():
+    """A path typo silently contributes ZERO symbols, which reads as mass shadowing.
+
+    The check treats an authority target with no objects as a hard failure rather than as
+    'nothing to add', but only a real build proves the *path* is right -- so assert it against
+    whichever build dirs this worktree happens to have, and skip if it has none.
+    """
+    builds = [REPO / f"build-{a}" for a in ("i386", "amd64", "arm64")]
+    builds = [b for b in builds if b.is_dir()]
+    if not builds:
+        pytest.skip("no build dir in this worktree")
+    for build in builds:
+        for target, obj_dir in vuc.OURS_ON_LINK_LINE.items():
+            d = build / obj_dir
+            assert d.is_dir(), f"{build.name}: {target} object dir does not exist at {d}"
+
+
+# ── the REACHABILITY check ──────────────────────────────────────────────────────────────
+
+
+def _cargo_crate(ws, name: str, deps: str, lib_rs: str) -> None:
+    _crate(ws, name, deps)
+    src = ws / name / "src"
+    src.mkdir(parents=True, exist_ok=True)
+    (src / "lib.rs").write_text(lib_rs)
+
+
+def test_unreferenced_dependency_is_caught(tmp_path: Path):
+    """The real accident: a manifest edit alone, and the flip silently does not happen.
+
+    Adding `cnt-rust = { features = ["cabi-math"] }` to crt-shared-cargo without an
+    `extern crate cnt_rust;` built green, gated green, and put 268 symbols in the archive of
+    which not one was `tan`. Nothing in the tree said so, because every other check asks
+    whether the archive defines too MUCH.
+    """
+    _cargo_crate(
+        tmp_path,
+        "crt-shared-cargo",
+        'crt-shared-rust = { path = "../crt-shared-rust" }\ncnt-rust = { path = "../cnt-rust" }\n',
+        "extern crate crt_shared_rust;\n",
+    )
+    findings = vuc.check_extern_crates(tmp_path)
+    assert findings and "cnt-rust" in findings[0]
+    assert "extern crate cnt_rust;" in findings[0], "the fix must be in the message"
+
+
+def test_referenced_dependency_is_allowed(tmp_path: Path):
+    """The hyphen/underscore spelling difference must not read as a violation."""
+    _cargo_crate(
+        tmp_path,
+        "crt-shared-cargo",
+        'crt-shared-rust = { path = "../crt-shared-rust" }\ncnt-rust = { path = "../cnt-rust" }\n',
+        "extern crate crt_shared_rust;\nextern crate cnt_rust;\n",
+    )
+    assert vuc.check_extern_crates(tmp_path) == []
+
+
+def test_panic_common_needs_no_extern_crate(tmp_path: Path):
+    """It is reached through `#[panic_handler]`, which no grep for `extern crate` can see."""
+    _cargo_crate(
+        tmp_path,
+        "crt-shared-cargo",
+        'panic-common = { path = "../panic-common" }\n',
+        "#[panic_handler]\nfn panic(_: &core::panic::PanicInfo) -> ! { loop {} }\n",
+    )
+    assert vuc.check_extern_crates(tmp_path) == []
+
+
+def test_the_real_crate_references_everything_it_depends_on(tmp_path: Path):
+    """The shipping crate. Red here means a cohab is wired up but not actually linked."""
+    assert vuc.check_extern_crates() == []
