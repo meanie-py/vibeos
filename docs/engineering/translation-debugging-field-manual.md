@@ -4803,10 +4803,26 @@ mechanism that steps** — a temporarily larger negative correction bleeds off t
 while the clock still advances monotonically the whole time, so it is safe to run with builds
 live. Set the frequency off a multi-hour baseline, not two samples.
 
+**The steps could also inflate the NORTH-STAR TEST's own tolerances.** `test_smoke.py`'s
+start-menu gate runs an **8-second wall-clock** window (`time.time() + 8.0`, line 427) with a 6s
+settle window after it (line 446), and a backward step *lowers* `time.time()`, so
+`while time.time() < deadline` stays true LONGER. A 2.4s step every 32s had roughly one-in-four
+odds of landing inside any given 8s window and stretched it ~30% when it did. The failure mode was
+never a spurious smoke failure — it was extra grace that could let a genuinely slow render squeak
+past, i.e. the same false-green family as the stale artifacts, sitting inside the test AGENTS.md
+calls the single source of truth for whether the OS works. Latent now that nothing steps the
+clock, not live; worth converting to `time.monotonic()` if you are in that file anyway, and worth
+remembering if anyone ever argues for re-enabling a stepping time source. (Most other deadlines in
+`tests/qemu` are already monotonic; the wall-clock stragglers are `vm.py:319`, `farm.py:133` and
+`experiments/flag_bisect.py:55` — all against caps of minutes to hours, where a 2.4s wobble is
+noise.)
+
 **And do not motivate this with gate stamps or boot durations — both are fine, and an agent who
 checks them will wrongly conclude the drift is harmless.** `STAMP_MAX_AGE_S` is 24h
-(`cli/land.py:75`), against which 1.6s is nothing, and boot timing is `time.monotonic()`
-(`vm.py:1468`), which an absolute offset never touches. The reason to care is that the error is
+(`cli/land.py:75`), against which 1.6s is nothing — and `_prune_stale_stamps` compares
+`time.time()` against a file's `st_mtime`, both wall clock, so they move together and a step
+largely cancels. Boot timing is `time.monotonic()` (`vm.py:1468`), which an absolute offset never
+touches. The reason to care is that the error is
 *unbounded*: it was ~8% monotonic skew that broke timing, and it is the drift, not today's
 magnitude, that eventually breaks wall-clock comparisons.
 
