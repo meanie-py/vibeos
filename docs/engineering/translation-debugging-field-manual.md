@@ -5171,7 +5171,11 @@ diff is not a gate.**
   main that neither had made. Both were honest and both were wrong. This member is the worst of
   the family for a reason worth stating: **a wrong gate gets re-run, a wrong doc gets believed.**
   When a fact is going into a doc, cite it from a COMMITTED ref — `git show <sha>:path` — not
-  from a working tree, so the next reader can reproduce it. (msvcrt-homebrew's finding.)
+  from a working tree, so the next reader can reproduce it. The useful discrimination, and it
+  scopes the worry: **where a line number is NAVIGATION it degrades gracefully** (a reader who
+  lands near `cmtypes.h:33` still finds the declaration and self-corrects); **where the line
+  number IS the claim, it can be wrong for two honest readers at once.** Only the second kind
+  needs the committed ref. (msvcrt-homebrew's finding.)
 
 The AGENTS.md fleet-isolation rule already forbids *reading* generated artifacts from a sibling
 worktree. These are the same defect one level up: the corpus is discovered rather than declared.
