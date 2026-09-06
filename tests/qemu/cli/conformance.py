@@ -110,6 +110,83 @@ def baseline_lowering_note(results, base_map) -> str | None:
     )
 
 
+def seed_asserts_into_baseline(baseline_text: str, rounds, parser) -> tuple[str, str]:
+    """Add `assert` / `assert?` lines to existing rows. Counts are NOT touched.
+
+    Returns `(new_text, report)`.
+
+    Unanimity is computed PER TEST over the rounds that actually ran it to
+    completion, not over all rounds. A sweep that bugchecks partway through has
+    no assertions for anything after the crash, and counting those rounds as
+    "did not fail" would mark every later test's stable failures bistable —
+    turning one bad boot into a permanently weakened floor. That is the same
+    mistake `--only` exists to prevent, so this refuses to make it.
+
+    Rows the baseline does not carry are SKIPPED, not added: adding a test to
+    the floor is `--write-baseline`'s job and wants the coverage refusal in
+    front of it.
+    """
+    # test -> [set(identities), ...] one entry per round that ran it
+    seen: dict[str, list[set]] = {}
+    for results in rounds:
+        for r in results:
+            # A test that did not finish tells us nothing about which of its
+            # assertions fail; it only tells us the round died.
+            if r["status"] in parser.BAD:
+                continue
+            seen.setdefault(r["name"], []).append(set(r.get("asserts") or ()))
+
+    out: list[str] = []
+    stable = flaky = rows = 0
+    skipped: list[str] = []
+    unseen: list[str] = []
+    current: str | None = None
+    for line in baseline_text.splitlines():
+        # Drop any existing assert block; it is rebuilt from this soak.
+        if line[:1].isspace() and line.strip().startswith("assert"):
+            continue
+        stripped = line.strip()
+        if not stripped or stripped.startswith("#"):
+            out.append(line)
+            continue
+        current = stripped.split()[0]
+        out.append(line)
+        obs = seen.get(current)
+        if obs is None:
+            unseen.append(current)
+            continue
+        rows += 1
+        union = set().union(*obs) if obs else set()
+        for ident in sorted(union):
+            unanimous = all(ident in o for o in obs)
+            out.append(f"    assert{'' if unanimous else '?'} {ident}")
+            if unanimous:
+                stable += 1
+            else:
+                flaky += 1
+    for name in sorted(seen):
+        if name not in baseline_text:
+            skipped.append(name)
+
+    report = (
+        f"[conformance] seeded {rows} row(s) with {stable} stable + {flaky} bistable "
+        f"assertion identities from {len(rounds)} round(s)"
+    )
+    if unseen:
+        report += (
+            f"\n  {len(unseen)} baseline row(s) got NO identities — no round completed "
+            f"them, so their count gate stands: {', '.join(unseen[:8])}"
+            + (" ..." if len(unseen) > 8 else "")
+        )
+    if skipped:
+        report += (
+            f"\n  {len(skipped)} test(s) ran but are not on the floor; adding a row is "
+            f"--write-baseline's job, not this: {', '.join(skipped[:8])}"
+            + (" ..." if len(skipped) > 8 else "")
+        )
+    return "\n".join(out) + "\n", report
+
+
 def _flaky_of(baseline_text: str, name: str) -> set[str]:
     """The `assert?` identities row `name` already carries.
 
@@ -288,6 +365,19 @@ def conformance(args, repo: Path) -> int:
     fixed for the run, which is what makes rounds comparable.
     """
     repeat = int(getattr(args, "repeat", 0) or 0)
+    seed_asserts = bool(getattr(args, "seed_asserts", False))
+    if seed_asserts and repeat < 3:
+        # The whole value of an identity floor is telling a stable failure from a
+        # bistable one, and one or two boots cannot. The quest doc's own rule is
+        # ">=3 runs" before a baseline is believed; enforce it rather than letting
+        # a single lucky sweep mark 277 stable identities as gospel.
+        print(
+            "[conformance] --seed-asserts needs --repeat 3 or more: with fewer "
+            "rounds a bistable assertion is indistinguishable from a stable one, "
+            "and marking it `assert` freezes one boot's face into the floor.",
+            file=sys.stderr,
+        )
+        return 2
     if repeat <= 1:
         return _conformance_once(args, repo)
 
@@ -347,7 +437,55 @@ def conformance(args, repo: Path) -> int:
         shapes[r["shape"]] = shapes.get(r["shape"], 0) + 1
     for k, v in sorted(shapes.items(), key=lambda kv: -kv[1]):
         print(f"  {v:>3}  {k}")
+
+    if seed_asserts:
+        worst = max(worst, _seed_asserts_from_rounds(args, repo))
     return worst
+
+
+def _seed_asserts_from_rounds(args, repo: Path) -> int:
+    """Re-parse this soak's archived serial logs and write the identity floor."""
+    parser = _load_parser(repo)
+
+    base = args.arch.split("-")[0]
+    smp = args.smp or 0
+    name = f"{SUITE}-smp{smp}.txt" if smp > 1 else f"{SUITE}.txt"
+    baseline_path = repo / "tools" / "conformance-baseline" / base / name
+    if not baseline_path.is_file():
+        print(
+            f"[conformance] --seed-asserts needs an existing baseline at {baseline_path};"
+            " seed the counts first with --write-baseline",
+            file=sys.stderr,
+        )
+        return 2
+
+    rounds = []
+    for rec in _ROUNDS:
+        run_dir = Path(rec.get("run_dir", ""))
+        # GLOB, do not spell the name: the archived serial is named for the
+        # PYTEST arch, so i386 writes "i386-uefi_serial.log" and looking for
+        # "i386_serial.log" silently finds nothing. That failure is quiet — the
+        # soak runs, every round is clean, and the seeding step reports "0 rounds
+        # left a serial log" after the boots are already spent.
+        logs = sorted(run_dir.glob("*_serial.log")) if run_dir.is_dir() else []
+        if not logs:
+            continue
+        results, _done, _bug = parser.parse(logs[0].read_text(errors="replace"))
+        if results:
+            rounds.append(results)
+    if len(rounds) < 3:
+        print(
+            f"[conformance] --seed-asserts: only {len(rounds)} round(s) left an archived "
+            f"serial log with results; need 3. Nothing written.",
+            file=sys.stderr,
+        )
+        return 2
+
+    text, report = seed_asserts_into_baseline(baseline_path.read_text(), rounds, parser)
+    baseline_path.write_text(text)
+    print(report)
+    print(f"[conformance] identity floor written: {baseline_path}")
+    return 0
 
 
 def _conformance_once(args, repo: Path) -> int:

@@ -6763,3 +6763,93 @@ def test_reseeding_one_row_leaves_every_other_rows_identities_alone():
     # the untouched row keeps BOTH of its identities, mark included
     assert "    assert IoDeviceObject_drv.c:198" in text
     assert "    assert? IoDeviceObject_drv.c:206" in text
+
+
+def test_seed_asserts_adds_identities_without_touching_the_counts():
+    """--seed-asserts upgrades a count-only floor in place. Re-rolling the counts
+    from the soak is exactly what a wholesale --write-baseline does wrong."""
+    P = _parser()
+    prev = "# hdr\nExPools OK pass=100 fail=2 skip=0 exit=0\n"
+    rounds = [
+        [
+            {
+                "name": "ExPools",
+                "status": "OK",
+                "pass": 7,
+                "fail": 2,
+                "skip": 0,
+                "asserts": {"ExPools.c:119", "ExPools.c:176"},
+            }
+        ],
+        [
+            {
+                "name": "ExPools",
+                "status": "OK",
+                "pass": 7,
+                "fail": 2,
+                "skip": 0,
+                "asserts": {"ExPools.c:119", "ExPools.c:176"},
+            }
+        ],
+        [
+            {
+                "name": "ExPools",
+                "status": "OK",
+                "pass": 7,
+                "fail": 1,
+                "skip": 0,
+                "asserts": {"ExPools.c:119"},
+            }
+        ],
+    ]
+    text, report = conformance_mod.seed_asserts_into_baseline(prev, rounds, P)
+    # the banked counts survive verbatim
+    assert "ExPools OK pass=100 fail=2 skip=0 exit=0" in text
+    # unanimous -> assert; seen in 2 of 3 -> assert?
+    assert "    assert ExPools.c:119" in text
+    assert "    assert? ExPools.c:176" in text
+    assert "1 stable + 1 bistable" in report
+
+
+def test_seed_asserts_ignores_rounds_where_the_test_never_completed():
+    """A round that CRASHed has no assertions for that test — it says nothing
+    about which of them fail. Counting it as "did not fail" would mark every
+    stable failure bistable and permanently weaken the floor from one bad boot."""
+    P = _parser()
+    prev = "# hdr\nExPools OK pass=100 fail=2 skip=0\n"
+    good = {
+        "name": "ExPools",
+        "status": "OK",
+        "pass": 7,
+        "fail": 1,
+        "skip": 0,
+        "asserts": {"ExPools.c:119"},
+    }
+    dead = {"name": "ExPools", "status": "CRASH", "pass": 0, "fail": 0, "skip": 0, "asserts": set()}
+    text, _report = conformance_mod.seed_asserts_into_baseline(
+        prev, [[good], [dead], [good], [good]], P
+    )
+    assert "    assert ExPools.c:119" in text, "the crashed round diluted unanimity"
+    assert "assert?" not in text
+
+
+def test_seed_asserts_will_not_add_a_row_the_floor_does_not_carry():
+    """Adding a test to the floor is --write-baseline's job: it has the coverage
+    refusal in front of it, and this does not."""
+    P = _parser()
+    prev = "# hdr\nExPools OK pass=100 fail=2 skip=0\n"
+    rounds = [
+        [
+            {
+                "name": "NewTest",
+                "status": "OK",
+                "pass": 1,
+                "fail": 1,
+                "skip": 0,
+                "asserts": {"NewTest.c:5"},
+            }
+        ]
+    ] * 3
+    text, report = conformance_mod.seed_asserts_into_baseline(prev, rounds, P)
+    assert "NewTest" not in text.replace("NewTest.c", "")
+    assert "not on the floor" in report
