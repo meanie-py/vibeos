@@ -1,0 +1,42 @@
+# wow64 IOCTL payload audit — tools/wow64gen/ioctlaudit.py
+# Each row: IOCTL [method] handler payload verdict 32->64
+# IDENTICAL is the only verdict that means safe; NOPAYLOAD/UNRESOLVED mean the
+# tool saw no wire struct, NOT that the IOCTL is flat. Regenerate with `report`.
+IOCTL_AFD_ACCEPT [METHOD_BUFFERED] AfdAccept AFD_ACCEPT_DATA WIDENING 12->16
+IOCTL_AFD_BIND [METHOD_NEITHER] AfdBindSocket AFD_BIND_DATA IDENTICAL 16->16
+IOCTL_AFD_CONNECT [METHOD_NEITHER] AfdStreamSocketConnect AFD_CONNECT_INFO IDENTICAL 24->24
+IOCTL_AFD_DEFER_ACCEPT [METHOD_NEITHER] - - UNDISPATCHED ? (no case in the dispatch match)
+IOCTL_AFD_DISCONNECT [METHOD_NEITHER] AfdDisconnect AFD_DISCONNECT_INFO IDENTICAL 16->16 (same layout (union/bitfield))
+IOCTL_AFD_ENUM_NETWORK_EVENTS [METHOD_NEITHER] AfdEnumEvents AFD_ENUM_NETWORK_EVENTS_INFO WIDENING 48->56
+IOCTL_AFD_EVENT_SELECT [METHOD_NEITHER] AfdEventSelect AFD_EVENT_SELECT_INFO WIDENING 8->16
+IOCTL_AFD_GET_CONNECT_DATA [METHOD_NEITHER] AfdGetConnectData - NOPAYLOAD ? (no wire struct cast in the body)
+IOCTL_AFD_GET_CONNECT_OPTIONS [METHOD_NEITHER] AfdGetConnectOptions - NOPAYLOAD ? (no wire struct cast in the body)
+IOCTL_AFD_GET_CONTEXT [METHOD_NEITHER] AfdGetContext - NOPAYLOAD ? (no wire struct cast in the body)
+IOCTL_AFD_GET_CONTEXT_SIZE [METHOD_NEITHER] AfdGetContextSize - NOPAYLOAD ? (no wire struct cast in the body)
+IOCTL_AFD_GET_DISCONNECT_DATA [METHOD_NEITHER] AfdGetDisconnectData - NOPAYLOAD ? (no wire struct cast in the body)
+IOCTL_AFD_GET_DISCONNECT_OPTIONS [METHOD_NEITHER] AfdGetDisconnectOptions - NOPAYLOAD ? (no wire struct cast in the body)
+IOCTL_AFD_GET_INFO [METHOD_NEITHER] AfdGetInfo AFD_INFO IDENTICAL 24->24 (same layout (union/bitfield))
+IOCTL_AFD_GET_PEER_NAME [METHOD_NEITHER] AfdGetPeerName - NOPAYLOAD ? (no wire struct cast in the body)
+IOCTL_AFD_GET_PENDING_CONNECT_DATA [METHOD_NEITHER] - - UNDISPATCHED ? (no case in the dispatch match)
+IOCTL_AFD_GET_SOCK_NAME [METHOD_NEITHER] AfdGetSockName - NOPAYLOAD ? (no wire struct cast in the body)
+IOCTL_AFD_GET_TDI_HANDLES [METHOD_NEITHER] AfdGetTdiHandles AFD_TDI_HANDLE_DATA WIDENING 8->16
+IOCTL_AFD_RECV [METHOD_NEITHER] AfdConnectedSocketReadData AFD_RECV_INFO WIDENING 16->24
+IOCTL_AFD_RECV_DATAGRAM [METHOD_NEITHER] AfdPacketSocketReadData AFD_RECV_INFO_UDP WIDENING 24->40
+IOCTL_AFD_SELECT [METHOD_BUFFERED] AfdSelect AFD_POLL_INFO SEMANTIC 32->40 (union/bitfield with divergent layout)
+IOCTL_AFD_SEND [METHOD_NEITHER] AfdConnectedSocketWriteData AFD_SEND_INFO_UDP SEMANTIC 56->104 (union/bitfield with divergent layout)
+IOCTL_AFD_SEND [METHOD_NEITHER] AfdConnectedSocketWriteData AFD_SEND_INFO WIDENING 16->24
+IOCTL_AFD_SEND_DATAGRAM [METHOD_NEITHER] AfdPacketSocketWriteData AFD_SEND_INFO_UDP SEMANTIC 56->104 (union/bitfield with divergent layout)
+IOCTL_AFD_SET_CONNECT_DATA [METHOD_NEITHER] AfdSetConnectData - NOPAYLOAD ? (no wire struct cast in the body)
+IOCTL_AFD_SET_CONNECT_DATA_SIZE [METHOD_NEITHER] AfdSetConnectDataSize - NOPAYLOAD ? (no wire struct cast in the body)
+IOCTL_AFD_SET_CONNECT_OPTIONS [METHOD_NEITHER] AfdSetConnectOptions - NOPAYLOAD ? (no wire struct cast in the body)
+IOCTL_AFD_SET_CONNECT_OPTIONS_SIZE [METHOD_NEITHER] AfdSetConnectOptionsSize - NOPAYLOAD ? (no wire struct cast in the body)
+IOCTL_AFD_SET_CONTEXT [METHOD_NEITHER] AfdSetContext - NOPAYLOAD ? (no wire struct cast in the body)
+IOCTL_AFD_SET_DISCONNECT_DATA [METHOD_NEITHER] AfdSetDisconnectData - NOPAYLOAD ? (no wire struct cast in the body)
+IOCTL_AFD_SET_DISCONNECT_DATA_SIZE [METHOD_NEITHER] AfdSetDisconnectDataSize - NOPAYLOAD ? (no wire struct cast in the body)
+IOCTL_AFD_SET_DISCONNECT_OPTIONS [METHOD_NEITHER] AfdSetDisconnectOptions - NOPAYLOAD ? (no wire struct cast in the body)
+IOCTL_AFD_SET_DISCONNECT_OPTIONS_SIZE [METHOD_NEITHER] AfdSetDisconnectOptionsSize - NOPAYLOAD ? (no wire struct cast in the body)
+IOCTL_AFD_SET_INFO [METHOD_NEITHER] AfdSetInfo AFD_INFO IDENTICAL 24->24 (same layout (union/bitfield))
+IOCTL_AFD_START_LISTEN [METHOD_NEITHER] AfdListenSocket AFD_LISTEN_DATA IDENTICAL 12->12
+IOCTL_AFD_SUPER_CONNECT [METHOD_NEITHER] AfdStreamSocketSuperConnect AFD_SUPER_CONNECT_INFO IDENTICAL 16->16
+IOCTL_AFD_VALIDATE_GROUP [METHOD_NEITHER] - - UNDISPATCHED ? (no case in the dispatch match)
+IOCTL_AFD_WAIT_FOR_LISTEN [METHOD_BUFFERED] AfdWaitForListen - NOPAYLOAD ? (no wire struct cast in the body)

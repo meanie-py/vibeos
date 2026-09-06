@@ -6,17 +6,23 @@
 #
 # Prerequisites: cargo install bindgen-cli
 # Run from anywhere (paths are computed from script location).
-set -e
+# Stages only: [--output-dir NEW_DIRECTORY], default .build-tools/bindgen-runs/.
+# COMPLETE marks success; raw inputs/depfiles and normalized src/ are retained.
+set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 # ntkrnl-sys is at sdk/lib/rust/ntkrnl-sys, so reactos root is 4 levels up
 SRC="$(cd "$SCRIPT_DIR/../../../.." && pwd)"
 # In-repo toolchain (was a stale macOS-era sibling path).
 TOOLCHAIN="${SRC}/.build-tools/llvm-mingw"
-OUT_DIR="${SCRIPT_DIR}/src"
+# shellcheck source-path=SCRIPTDIR
+# shellcheck source=../../../../tools/bindgen-stage.sh
+source "${SRC}/tools/bindgen-stage.sh"
+bindgen_inputs arm64 amd64 i386
+bindgen_stage kernel "$@"
 
 # Wrapper header — includes full ntoskrnl internals + ARM3 MM
-WRAPPER="/tmp/ntkrnl_sys_wrapper.h"
+WRAPPER="${BINDGEN_RUN}/raw/ntkrnl_sys_wrapper.h"
 cat > "$WRAPPER" << 'HEADER'
 #define _NTOSKRNL_
 #define _NTSYSTEM_
@@ -54,14 +60,12 @@ COMMON_FLAGS=(
 
 run_bindgen() {
     local ARCH=$1
-    # Build dirs live INSIDE the repo root (per AGENTS.md: <root>/build-<arch>);
-    # in a git worktree this is the symlink to the main checkout's build dir.
-    # (Was "${SRC}/../build-${ARCH}" — a nonexistent sibling-of-root path.)
+    # Generated headers belong to this worktree; bindgen_inputs checked isolation.
     local BUILD_DIR="${SRC}/build-${ARCH}"
     local TARGET=$2
     shift 2
     local EXTRA_DEFS=("$@")
-    local RAW="/tmp/bindgen_${ARCH}_raw.rs"
+    local RAW="${BINDGEN_RUN}/raw/bindgen_${ARCH}.rs"
     local FINAL="${OUT_DIR}/bindgen_${ARCH}.rs"
 
     echo "=== Generating ${ARCH} (target: ${TARGET}) ==="
@@ -69,6 +73,7 @@ run_bindgen() {
     bindgen "$WRAPPER" \
         "${COMMON_FLAGS[@]}" \
         -o "$RAW" \
+        --depfile "${BINDGEN_RUN}/raw/bindgen_${ARCH}.d" \
         -- \
         -ferror-limit=0 -Wno-everything \
         -D_NTOSKRNL_ -D_NTSYSTEM_ \
@@ -118,7 +123,7 @@ run_bindgen i386 i686-pc-windows-gnu \
     -D_M_IX86 -D__i386__ -D_X86_
 
 echo ""
-echo "=== Done. Files in ${OUT_DIR}/ ==="
+echo "=== Generated. Normalizing staged files in ${OUT_DIR}/ ==="
 ls -la "${OUT_DIR}"/bindgen_*.rs
 
 # Spell ABI-identical callback slots `extern "system"` across the three islands this run just
@@ -129,5 +134,6 @@ ls -la "${OUT_DIR}"/bindgen_*.rs
 #
 # This lives in EVERY generator on purpose: normalization that only some of them apply is
 # normalization that the next regeneration of any other crate silently undoes.
-_isl_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-python3 "${_isl_dir}/../../../../tools/rustconv/normalize_island_abi.py" --apply "${_isl_dir}"
+python3 "${SRC}/tools/rustconv/normalize_island_abi.py" --apply --stem bindgen "$BINDGEN_RUN"
+touch "${BINDGEN_RUN}/COMPLETE"
+echo "bindgen: complete: ${BINDGEN_RUN}"

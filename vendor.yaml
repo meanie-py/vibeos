@@ -142,9 +142,51 @@ trees:
       recorded so a future re-vendor has a starting point, not because it is checkable.
       Confirming it against github.com/amd/win-libm is owed.
 
-      NOTE the tree is NOT wholly foreign in effect: `crtmath` also compiles ~1,263 lines of
-      OUR C beside it (stubs.c, fdivbug.c, machfpcw.c, the ieee754/ Bessel set), and those
+      NOTE the tree is NOT wholly foreign in effect: `crtmath` also compiles OUR C beside it
+      (stubs.c, fdivbug.c, machfpcw.c, the sdk/lib/crt/float control-word set), and those
       remain translation targets. The vendored boundary is this directory, not the library.
+      The `ieee754/` Bessel set was named here as ours when this entry was written; it is
+      not, it is Sun FDLIBM, and it now has its own entry below.
+
+  # ── Sun FDLIBM's Bessel functions, also under crtmath ───────────────────
+  - path: sdk/lib/crt/math/ieee754
+    name: FDLIBM (Sun Microsystems freely-distributable libm)
+    upstream: https://www.netlib.org/fdlibm/
+    license: "FDLIBM (Sun 1993 permissive; use/copy/modify/distribute, notice preserved)"
+    modified: yes
+    version:
+      file: sdk/lib/crt/math/ieee754/j0_y0.c
+      pattern: '\$NetBSD: e_j0\.c,v ([0-9.]+)'
+    reason: >
+      `__ieee754_j0/y0/j1/y1/jn/yn` -- the Bessel functions of the first and second kind,
+      which the C standard does not have and which almost nobody reimplements. 1,346 lines
+      across three files, every one carrying Sun's 1993 SunPro header and a NetBSD RCS id,
+      reached through this tree via NetBSD's libm. FDLIBM is the reference implementation
+      the whole Unix world's libm descends from; it is a real upstream that could be pulled
+      in at build time rather than carried, which is the test for this file.
+
+      Registered 2026-09-06, for exactly the reason the AMD entry above was: they are the
+      three largest files left in crtmath's "ours" column, so counting them as translation
+      debt made the remaining work look ~40% bigger than it is. Sitting under a directory
+      named `ieee754/` rather than `3rdparty/` is the only thing that hid them.
+
+      Note the boundary is this DIRECTORY. The thin `math/{j0_y0,j1_y1,jn_yn}.c` wrappers
+      one level up ARE ours -- 102 lines that set `errno = EDOM` on a non-finite argument
+      and then call the `__ieee754_*` body -- and they stay translation targets.
+    review: >
+      `modified: yes` is deliberate and is the weakness here. j0_y0.c and j1_y1.c carry a
+      1997 performance patch by Naohiko Shimizu (Tokai University) on top of Sun's text, so
+      this is a patched drop rather than a clean one, and a re-vendor from netlib would have
+      to re-apply or re-evaluate it. jn_yn.c appears unpatched.
+
+      The version probe reads the NetBSD RCS id rather than a release number, because FDLIBM
+      5.3 ships no version macro. That makes it a real probe -- it breaks loudly if the file
+      is replaced -- but it identifies NetBSD's revision of the file, not an FDLIBM release.
+
+      `math/s_modf.c` (194 lines) and `math/modf.c` carry the SAME Sun header while sitting
+      outside this directory. They are deliberately NOT covered by this entry: a path-based
+      registry should not claim files it does not name, and whether to move them under
+      `ieee754/` or give them their own entry is a question for whoever next touches modf.
 
   # ── the Microsoft CRT under ucrtbase.dll ────────────────────────────────
   - path: sdk/lib/ucrt

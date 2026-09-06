@@ -35,7 +35,9 @@ ExInterlocked OK pass=180 fail=0 skip=0 exit=0
 ExPools OK pass=14 fail=4 skip=0 exit=0
     assert ExPools.c:119
     assert ExPools.c:135
+    assert? ExPools.c:176
     assert ExPools.c:178
+    assert? ExPools.c:181
     assert ExPools.c:210
 ExResource OK pass=399 fail=2 skip=0 exit=0
     assert ExResource.c:409

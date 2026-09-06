@@ -649,6 +649,29 @@ def source_lint_specs(repo: Path) -> list[tuple]:
             "stdout",
         )
     )
+    # The same oracle as scan_dropped_prints, opposite stakes: not "did it stay silent
+    # where its C spoke" but "did it dereference a user pointer where its C validated
+    # one". A dropped print costs a debugging cycle; a dropped probe is a security bug,
+    # and under DUMMY_PSEH there is no SEH to contain it. NtSetValueKey (#79) shipped a
+    # bare `Status = STATUS_SUCCESS;` where ProbeForRead belongs and copied straight off
+    # the caller's raw pointer -- so a Data pointing into KERNEL SPACE was copied into a
+    # registry value the same unprivileged caller reads back with NtQueryValueKey.
+    # Nothing else is positioned to see it: the raw-pointer deref is ordinary correct
+    # code in any other context, and only the commented-out C saying "I probed this
+    # first" makes it a bug, so rustc, the build and the boot are all silent. Every
+    # remaining row is an Nt* syscall entry point. ALL is the high-confidence kind;
+    # PARTIAL is advisory (the C often probes a struct field-by-field where the Rust
+    # probes the buffer once). A false positive is settled by FOLLOWING THE POINTER to
+    # the caller -- a callee whose buffer was already captured into pool is genuinely
+    # safe -- and then suppressed with that reason via `nolint: dropped-probe`.
+    sdpr = repo / "tools" / "scan_dropped_probes.py"
+    specs.append(
+        (
+            "scan_dropped_probes",
+            [py, str(sdpr), "--lint"] if sdpr.is_file() else ["MISSING"],
+            "stdout",
+        )
+    )
     # The same NOOP shape scan_dropped_prints finds, but keyed on a property of the CRATE
     # ("you already define this as a macro_rules!") instead of a hardcoded print list — so it
     # covers the names that emit nothing and were therefore outside every scanner here.
@@ -923,6 +946,33 @@ def source_lint_specs(repo: Path) -> list[tuple]:
     # The bind-all *fixes* themselves are already in the tree and compile-verified.
 
     return specs
+
+
+# Audited CLI paths read Rust sources only and exclude Cargo target output.
+# Everything not explicitly audited stays deferred, including new scanners.
+# See docs/engineering/fleet-verification-migration-plan.md for input contracts.
+EARLY_SOURCE_CHECKS = frozenset(
+    {
+        "scan_invented_constants",
+        "scan_extern_decl_drift",
+        "scan_octal_literals",
+        "scan_type_alias_contradictions",
+        "scan_irql_balance",
+        "scan_ob_refcount",
+    }
+)
+
+
+def source_partition_specs(repo: Path, phase: str) -> list[tuple]:
+    """Disjoint, exhaustive views of the original commands; unknown work waits."""
+    if phase not in ("source-early", "source-deferred"):
+        raise ValueError(f"unknown source partition: {phase}")
+    specs = source_lint_specs(repo)
+    names = [name for name, _, _ in specs]
+    if len(names) != len(set(names)) or EARLY_SOURCE_CHECKS - set(names):
+        raise ValueError("source inventory has duplicate names or missing audited checks")
+    early = phase == "source-early"
+    return [spec for spec in specs if (spec[0] in EARLY_SOURCE_CHECKS) == early]
 
 
 def run_source_lints(run: Run, repo: Path, *, strict: bool, only: set[str] | None = None) -> None:

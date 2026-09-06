@@ -2459,7 +2459,10 @@ pub unsafe extern "system" fn NtUnmapViewOfSection(
 }
 
 #[no_mangle]
-pub unsafe extern "system" fn NtExtendSection(
+// The C probes new_maximum_size (ProbeForWriteLargeInteger) before reading it. This body
+// is an unimplemented stub that dereferences nothing, so there is no access to guard —
+// restore the probe together with the implementation, not before it.
+pub unsafe extern "system" fn NtExtendSection(  // nolint: dropped-probe (stub, derefs nothing)
     section_handle: HANDLE,
     new_maximum_size: *mut _LARGE_INTEGER,
 ) -> NTSTATUS {

@@ -15,7 +15,7 @@ import subprocess
 import time
 from pathlib import Path
 
-from . import archcfg, cachecfg, canon, hostlock, lints, provenance
+from . import archcfg, cachecfg, canon, hostdisk, hostlock, lints, provenance
 from .artifacts import Run, Stage
 
 _UNDEF = re.compile(r"undefined (?:symbol|reference)[^\w]*[`']?([@\w]+)", re.I)
@@ -64,6 +64,12 @@ def source_date_epoch(repo: Path) -> str | None:
 def _classify_build_failure(out: str, err: str) -> tuple[str, list[str]]:
     blob = out + "\n" + err
     low = blob.lower()
+    # Host disk exhaustion FIRST: an ENOSPC surfaces as compiler/linker "error:"
+    # text and would otherwise be filed as CARGO_CHECK_FAIL or BUILD_FAIL — i.e.
+    # as a defect in the diff, which is exactly the wrong cause. It cost four
+    # lanes a day on 2026-09-06. The detail always carries free bytes.
+    if hostdisk.looks_like_enospc(blob):
+        return "DISK_FULL", hostdisk.enospc_detail()
     if "cmake error" in low:
         return "CMAKE_CONFIGURE_FAIL", [
             ln.strip() for ln in blob.splitlines() if "CMake Error" in ln
@@ -338,7 +344,8 @@ def build(args, repo: Path) -> int:
     # per-build-dir lock (so two builds never corrupt the same dir, the
     # determinism-verify-vs-gate incident). Held around the whole build; on a stuck
     # holder it warns + proceeds unlocked, and it's a no-op when the broker is disabled.
-    with hostlock.build_lock(build_dir, arch):
+    with hostlock.build_lock(build_dir, arch) as admission:
+        run.extra["admission"] = admission
         return _build_locked(args, repo, run, arch, cfg, build_dir, cold)
 
 

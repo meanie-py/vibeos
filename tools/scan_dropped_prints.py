@@ -320,10 +320,15 @@ def c_func_name(sig: str) -> str | None:
     return name
 
 
-def c_functions(craw: str) -> dict[str, int]:
-    """{function name: count of always-on print calls in its body}."""
+def c_function_bodies(craw: str) -> list[tuple[str, str]]:
+    """[(function name, body text)] recovered from the commented-out C.
+
+    Deliberately carries no notion of WHAT is being counted inside a body, so every
+    scanner built on this oracle shares one brace-depth walk instead of forking it.
+    See STRUCTURE in the module docstring for why depth and not indentation.
+    """
     clean = blank_c_noise(craw)
-    out: dict[str, int] = {}
+    out: list[tuple[str, str]] = []
     depth = 0
     seg_start = 0
     body_start = None
@@ -340,13 +345,20 @@ def c_functions(craw: str) -> dict[str, int]:
                 if depth == 0 and body_start is not None:
                     name = c_func_name(sig)
                     if name:
-                        n = len(C_PRINT_RE.findall(clean[body_start:i]))
-                        out[name] = out.get(name, 0) + n
+                        out.append((name, clean[body_start:i]))
                 depth = 0
                 body_start = None
                 seg_start = i + 1
         elif ch == ";" and depth == 0:
             seg_start = i + 1
+    return out
+
+
+def c_functions(craw: str) -> dict[str, int]:
+    """{function name: count of always-on print calls in its body}."""
+    out: dict[str, int] = {}
+    for name, body in c_function_bodies(craw):
+        out[name] = out.get(name, 0) + len(C_PRINT_RE.findall(body))
     return out
 
 
@@ -407,6 +419,32 @@ def _macro_is_silent(src: bytes, node) -> bool:
     return True
 
 
+def rust_function_items(src: bytes) -> list[tuple[str, object, object]]:
+    """[(name, fn node, body node)] for every `fn` in the file.
+
+    The generic half of `rust_functions`, split out so the other scanners built on
+    this oracle share one tree-sitter walk rather than each re-deriving it.
+    """
+    import tree_sitter_rust as tsr
+    from tree_sitter import Language, Parser
+
+    global _PARSER
+    if _PARSER is None:
+        _PARSER = Parser(Language(tsr.language()))
+
+    found = []
+    for node in _walk(_PARSER.parse(src).root_node):
+        if node.type != "function_item":
+            continue
+        nm = node.child_by_field_name("name")
+        body = node.child_by_field_name("body")
+        if nm is None or body is None:
+            continue
+        name = src[nm.start_byte : nm.end_byte].decode("utf8", "replace")
+        found.append((name, node, body))
+    return found
+
+
 def rust_functions(
     src: bytes, live: str
 ) -> tuple[dict[str, tuple[int, int, int]], dict[str, tuple[int, int]]]:
@@ -418,24 +456,9 @@ def rust_functions(
     latent ABI mismatches into a `ud2` — and the `macro_rules!` spelling of the same
     silence, whose arms all transcribe to nothing. Both quiet every call site below.
     """
-    import tree_sitter_rust as tsr
-    from tree_sitter import Language, Parser
-
-    global _PARSER
-    if _PARSER is None:
-        _PARSER = Parser(Language(tsr.language()))
-
-    found = []
+    found = rust_function_items(src)
     noop: dict[str, tuple[int, int]] = {}
-    for node in _walk(_PARSER.parse(src).root_node):
-        if node.type != "function_item":
-            continue
-        nm = node.child_by_field_name("name")
-        body = node.child_by_field_name("body")
-        if nm is None or body is None:
-            continue
-        name = src[nm.start_byte : nm.end_byte].decode("utf8", "replace")
-        found.append((name, node, body))
+    for name, node, body in found:
         if name in ALWAYS_ON and not body.named_children:
             noop[name] = (node.start_byte, body.end_byte)
 

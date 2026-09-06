@@ -286,6 +286,20 @@ pytest tests/qemu/test_smoke.py -v --arch i386 -k "sacred_primitives or no_unexp
 
 Smoke/CLI harness internals (`vm.py`/`conftest.py`/`serial_client.py`/`qmp_client.py`/`debugcon.py`, boot media, QEMU backends + acceleration (windows-host TCG default / native KVM / WHPX opt-in), resource caps, debugcon boot tracing, test lifecycle): `tests/qemu/cli/README.md`.
 
+## Kernel/HAL bindgen staging
+
+`bash sdk/lib/rust/ntkrnl-sys/generate_bindings.sh` stages all three kernel
+islands; `generate_hal_bindings.sh` in that directory stages amd64/i386 HAL
+islands. Both default to a private `.build-tools/bindgen-runs/` directory and
+accept `--output-dir NEW_DIRECTORY` (parent must exist). Unlike their old
+behavior, neither command overwrites integrated bindings. Use this worktree's
+configured build headers; missing or symlinked generated inputs are refused.
+
+Each run retains `raw/` (raw Rust and header depfiles), `src/` (postprocessed and
+ABI-normalized Rust), and a `COMPLETE` marker written only on success. Review
+staged output before any integration; generation alone is not a compile/boot
+verdict. Failed output remains available for diagnosis without a success marker.
+
 ## Rust in the Kernel
 
 The Cargo workspace at `sdk/lib/rust/` holds Rust components that compile to PE-COFF static libraries (rlibs/staticlibs) and link into the cmake build. **All crates build for all 3 architectures unless explicitly noted.** The workspace long ago outgrew "kernel algorithms": it spans the bootloader (`freeldr-rust`), the HAL (`hal-rust`, all three arches), win32k (`win32k-rust`), user-mode components (`winlogon-rust`, `explorer`-side crates, server DLLs), and a growing driver fleet (`uniata`, the `usbport`/`usbhub`/HID stack, netstack, `disk`/`classpnp`, …).

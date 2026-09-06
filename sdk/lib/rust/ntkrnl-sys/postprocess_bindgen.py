@@ -29,8 +29,7 @@ def load_kernel_data_exports() -> set[str]:
     """
     spec = Path(__file__).resolve().parent.parent.parent.parent.parent / "ntoskrnl" / "ntoskrnl.spec"
     if not spec.exists():
-        print(f"WARNING: ntoskrnl.spec not found at {spec}; raw-dylib wrap will be a no-op", file=sys.stderr)
-        return set()
+        raise FileNotFoundError(f"required kernel data-export spec not found: {spec}")
     names = set()
     for line in spec.read_text().splitlines():
         # Match `@ extern Name` and `@ extern -arch=... Name` forms.
