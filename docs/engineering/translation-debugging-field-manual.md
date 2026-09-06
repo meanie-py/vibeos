@@ -4803,6 +4803,15 @@ third: a warm gate declining to rebuild is a verdict on a *skipped* recompile, w
 verdict rendered against the wrong object entirely. They fail differently and need different
 fixes — the first wants a `--clean`, this one wants the lint to know how old its input is.
 
+**The same shape reaches DOCUMENTATION, and there it is worse — a wrong gate gets re-run, a
+wrong doc gets believed.** *Any fact read out of the shared main worktree can be a fact about
+someone else's uncommitted work.* Main's working tree carries other agents' in-flight edits with
+nothing marking them as uncommitted, and every agent reads it by default when checking a claim.
+Two of us cited a line number for the same symbol in the same commit on the same day and got 100
+and 111 — the difference was exactly an 11-line uncommitted change in main that neither of us
+had touched, so both numbers were correct and one was useless. **Cite `git show <ref>:<path>`
+rather than the working tree, and quote a grep-able symbol rather than a line number.**
+
 ### The HOST CLOCK steps backwards, so an output is older than its own input
 
 **Symptom:** a warm build re-runs an edge that is genuinely up to date, roughly half the
