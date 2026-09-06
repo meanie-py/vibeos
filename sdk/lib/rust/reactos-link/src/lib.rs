@@ -24,6 +24,8 @@ use std::env;
 use std::path::{Path, PathBuf};
 use std::process::{Command, ExitStatus};
 
+pub mod native_deps;
+
 // ---- cmake-off `--trace` (ninja-`-v`-style command list) ------------------
 // When `VIBEOS_LINK_TRACE` names a DIRECTORY, every command the engine spawns is
 // appended (one shell-quoted line, prefixed `cd <dir> && ` when a working dir is
@@ -122,11 +124,15 @@ fn shell_quote(s: &std::ffi::OsStr) -> String {
 /// `Command::status()` that records the command first when `--trace` is on.
 trait TracedStatus {
     fn traced_status(&mut self) -> std::io::Result<ExitStatus>;
+    fn native_status(&mut self, source: &Path) -> std::io::Result<ExitStatus>;
 }
 impl TracedStatus for Command {
     fn traced_status(&mut self) -> std::io::Result<ExitStatus> {
         trace_command(self);
         self.status()
+    }
+    fn native_status(&mut self, source: &Path) -> std::io::Result<ExitStatus> {
+        native_deps::run(self, source, |cmd| cmd.traced_status())
     }
 }
 
@@ -529,6 +535,7 @@ pub struct Linker {
     /// llvm-dlltool converts delay-imports to regular ones so every dependency
     /// loads at once and LdrpLoadDll recursion overflows the default 1MB stack.
     stack_reserve: Option<u64>,
+    ks_includes: native_deps::InvocationOutput,
 }
 
 impl Linker {
@@ -592,6 +599,7 @@ impl Linker {
             force_undefined: Vec::new(),
             allow_stdcall_fixup: false,
             stack_reserve: None,
+            ks_includes: Default::default(),
         }
     }
 
@@ -1382,7 +1390,7 @@ impl Linker {
                     let status = Command::new(&args[0])
                         .args(&args[1..])
                         .current_dir(&dir)
-                        .traced_status()
+                        .native_status(&abs)
                         .unwrap_or_else(|e| panic!("replay clang for {rel} (lib {name}): {e}"));
                     if !status.success() {
                         panic!("c_from_compile_db: compile failed for {rel} (lib {name})");
@@ -1417,7 +1425,6 @@ impl Linker {
                 if !abs.exists() {
                     panic!("missing asm source for archive: {}", abs.display());
                 }
-                b.file(&abs);
                 println!("cargo:rerun-if-changed={}", abs.display());
             }
             b.out_dir(self.obj_dir())
@@ -1429,10 +1436,14 @@ impl Linker {
                 .flag(llvm_mingw.join("lib/clang/19/include").to_str().unwrap());
             self.add_kernel_asm_includes(&mut b);
             b.flag("-x").flag("assembler-with-cpp");
+            let mut objs = Vec::new();
             for rel in rels {
-                trace_cc(&b, &self.repo_root.join(rel));
+                let source = self.repo_root.join(rel);
+                let mut single = b.clone();
+                single.file(&source);
+                trace_cc(&single, &source);
+                objs.extend(native_deps::compile(&single, &source));
             }
-            let objs = b.compile_intermediates();
             if objs.is_empty() {
                 panic!("asm_archive {name}: cc-rs produced no objects");
             }
@@ -2147,12 +2158,15 @@ impl Linker {
             // template name against its WORKING_DIR (the xdk source dir), exactly
             // like the cmake custom_command.
             let tmp = dst.with_extension("h.tmp");
-            let status = Command::new(&hpp)
+            let mut command = Command::new(&hpp);
+            command
                 .arg(tmpl)
                 .arg(&tmp)
-                .current_dir(&xdk_src)
-                .traced_status()
-                .unwrap_or_else(|e| panic!("native-hpp {tmpl}: {e}"));
+                .current_dir(&xdk_src);
+            let status = native_deps::run_hpp(&mut command, &xdk_src.join(tmpl), |cmd| {
+                cmd.traced_status()
+            })
+            .unwrap_or_else(|e| panic!("native-hpp {tmpl}: {e}"));
             if !status.success() {
                 panic!("native-hpp failed for {tmpl}");
             }
@@ -2249,7 +2263,7 @@ impl Linker {
                     .arg("-o")
                     .arg(&obj)
                     .current_dir(&self.repo_root)
-                    .traced_status()
+                    .native_status(&abs)
                     .unwrap_or_else(|e| {
                         panic!("committed-flags clang for {rel} (lib {name}): {e}")
                     });
@@ -2281,13 +2295,13 @@ impl Linker {
     /// `.asmdef` table is pure compile-time constants, so the `.obj` section bytes
     /// (and hence the emitted text) are byte-identical to cmake's `native-geninc`.
     fn generate_ks_inc(&self) -> PathBuf {
+        self.ks_includes.get_or_generate(|| self.generate_ks_inc_uncached())
+    }
+
+    fn generate_ks_inc_uncached(&self) -> PathBuf {
         let out_asm = PathBuf::from(env::var("OUT_DIR").unwrap()).join("asm");
         std::fs::create_dir_all(&out_asm).expect("mkdir asm");
         let dst = out_asm.join(self.ks_inc_name());
-        // Memoize: each module's asm build calls this once; reuse within a build.
-        if dst.exists() {
-            return out_asm;
-        }
         let clang = self.clang_path();
         let xdk = self.generate_xdk_headers();
         let committed_hdrs = self
@@ -2329,7 +2343,7 @@ impl Linker {
             .arg("-o")
             .arg(&obj)
             .current_dir(&self.repo_root)
-            .traced_status()
+            .native_status(&src)
             .unwrap_or_else(|e| panic!("cmake-off geninc clang for genincdata.c: {e}"));
         if !status.success() {
             panic!("cmake-off geninc: genincdata.c compile failed");
@@ -2361,7 +2375,7 @@ impl Linker {
         cmd.args(cc_tool.args());
         cmd.arg("-O2").arg("-o").arg(&exe).arg(&src);
         let status = cmd
-            .traced_status()
+            .native_status(&src)
             .unwrap_or_else(|e| panic!("host cc ({}): {e}", cc_tool.path().display()));
         if !status.success() {
             panic!("host cc failed to compile {src_rel}");
@@ -2412,7 +2426,7 @@ fn apply_base(build: &mut cc::Build, clang: &Path, set: AsmDefineSet, arch: &Arc
 
 fn emit_objs(build: &cc::Build, source: &Path) {
     trace_cc(build, source);
-    let objs = build.compile_intermediates();
+    let objs = native_deps::compile(build, source);
     if objs.is_empty() {
         panic!("cc-rs produced no objects for {}", source.display());
     }

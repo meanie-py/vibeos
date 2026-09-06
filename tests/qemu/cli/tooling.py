@@ -48,6 +48,8 @@ _PYTEST_SUITES = [
     (".", ".", "tools/test_kernel_probe.py"),
     (".", ".", "tools/test_scan_orphan_modules.py"),
     (".", ".", "tools/test_build_invalidation.py"),
+    (".", ".", "tools/test_bindgen_generation.py"),
+    (".", ".", "tools/test_gate_source_partitions.py"),
     (".", ".", "tools/test_cargo_depgraph.py"),
     (".", ".", "tools/test_retarget_cargo_depfile.py"),
     (".", ".", "tools/test_rust_module_tree.py"),

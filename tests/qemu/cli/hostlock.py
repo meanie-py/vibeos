@@ -56,6 +56,7 @@ import contextlib
 import fcntl
 import hashlib
 import json
+import math
 import os
 import sys
 import time
@@ -127,6 +128,12 @@ def _slug(key: str) -> str:
 PROTOCOL_VERSION = 1
 
 
+def job_class() -> str:
+    """Advisory tagging only: no environment value changes admission."""
+    value = os.environ.get("VIBEOS_JOB_CLASS", "interactive")
+    return value if value in ("interactive", "integration", "background") else "unknown"
+
+
 def _self_meta(kind: str, **extra: object) -> dict:
     """Holder identity written into the lock file so `host-status` can show who has it."""
     meta = {
@@ -135,6 +142,7 @@ def _self_meta(kind: str, **extra: object) -> dict:
         "pid": os.getpid(),
         "argv": " ".join(sys.argv)[:200],
         "cwd": os.getcwd(),
+        "job_class": job_class(),
         # NB: NO wall-clock acquire time — Date.now()-style values would make the file's
         # content nondeterministic, but more importantly the reader derives liveness from
         # the pid, not a timestamp. Callers may add their own via **extra.
@@ -226,6 +234,7 @@ def _ticket_take(pool: str, need: int) -> tuple[int, Path] | None:
         fd = os.open(str(tmp), os.O_RDWR | os.O_CREAT, 0o644)
         try:
             fcntl.flock(fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
+            _write_meta(fd, _self_meta("waiter", queued_monotonic=time.monotonic()))
             os.rename(str(tmp), str(qd / name))  # atomic: visible ⇒ already locked
         except OSError:
             os.close(fd)
@@ -327,7 +336,8 @@ def _acquire_one(
                     except OSError:
                         os.close(fd)
                         continue
-                    _write_meta(fd, meta)
+                    _write_meta(fd, dict(meta, wait_seconds=time.monotonic() - t0))
+                    _report_shadow(pool)
                     if announced:
                         print(
                             f"{ACQUIRED_ANNOUNCE} ({meta.get('kind', '?')}) "
@@ -451,9 +461,10 @@ def acquire_cpu_share(
                     except OSError:
                         os.close(fd)
                         continue
-                    _write_meta(fd, meta)
+                    _write_meta(fd, dict(meta, wait_seconds=time.monotonic() - t0))
                     held.append(fd)
                     if len(held) == n:
+                        _report_shadow("cpuheavy")
                         if announced:
                             print(
                                 f"{ACQUIRED_ANNOUNCE} ({kind}, n={n}) "
@@ -588,7 +599,7 @@ def cpu_share(kind: str, n: int, **kw: object) -> Iterator[list[int] | None]:
 
 
 @contextmanager
-def build_lock(build_dir: str | Path, arch: str, **kw: object) -> Iterator[None]:
+def build_lock(build_dir: str | Path, arch: str, **kw: object) -> Iterator[dict]:
     """The build front-door grant: a ceil(K/max_builds) SHARE of the CPU pool (default
     2 of 4 → up to VIBEOS_MAX_CONCURRENT_BUILDS=2 builds coexist; two running builds
     exhaust the pool, so native-TCG boots stay starvation-protected exactly when the
@@ -596,11 +607,21 @@ def build_lock(build_dir: str | Path, arch: str, **kw: object) -> Iterator[None]
     acquired cpuheavy→builddir. VIBEOS_MAX_CONCURRENT_BUILDS=1 restores the original
     exclusive-host grant. No-op when the broker is disabled."""
     if not enabled():
-        yield None
+        yield {"enabled": False}
         return
     n = build_permits()
-    with cpu_share(f"build:{arch}", n, **kw), build_dir_lock(build_dir, arch=arch):
-        yield None
+    start = time.monotonic()
+    with cpu_share(f"build:{arch}", n, **kw) as cpu:
+        cpu_ready = time.monotonic()
+        with build_dir_lock(build_dir, arch=arch) as directory:
+            yield {
+                "enabled": True,
+                "job_class": job_class(),
+                "cpu_wait_s": cpu_ready - start,
+                "builddir_wait_s": time.monotonic() - cpu_ready,
+                "cpu_granted": cpu is not None,
+                "builddir_granted": directory is not None,
+            }
 
 
 @contextmanager
@@ -788,6 +809,7 @@ def status() -> dict:
     out["boot_leases_total"] = DEFAULT_BOOT_LEASES
     out["boot_leases_held"] = sum(1 for e in out["bootcpu"] if e["held"])
     out["queue"] = {p: queue_status(p) for p in ("land", "cpuheavy", "bootcpu")}
+    out["admission_shadow"] = admission_shadow(out["queue"]["cpuheavy"])
     return out
 
 
@@ -809,14 +831,64 @@ def queue_status(pool: str) -> list[dict]:
             waited = max(0.0, time.time() - int(parts[0]) / 1e9)
         except (IndexError, ValueError):
             waited = 0.0
+        meta = {}
+        try:
+            candidate = json.loads((qd / name).read_text())
+            if isinstance(candidate, dict):
+                meta = candidate
+        except (OSError, ValueError):
+            pass
+        queued = meta.get("queued_monotonic")
+        known_clock = False
+        if isinstance(queued, float) and math.isfinite(queued) and 0 <= queued <= time.monotonic():
+            known_clock = True
+            waited = time.monotonic() - queued
         waiters.append(
             {
                 "pid": parts[1] if len(parts) > 1 else "?",
                 "need": int(parts[2]) if len(parts) > 2 and parts[2].isdigit() else 1,
                 "waited_s": round(waited, 1),
+                "job_class": meta.get("job_class", "unknown"),
+                "clock": "monotonic" if known_clock else "legacy-wall",
             }
         )
     return waiters
+
+
+def admission_shadow(waiters: list[dict]) -> dict:
+    """Read-only candidate: give integration a bounded 120s head start.
+
+    Older ordinary work wins once its age exceeds that head start. Unknown/legacy
+    metadata suppresses the proposal, never silently classifies another lane.
+    This is NOT admission policy; FIFO and every lock operation remain unchanged.
+    """
+    result = {"mode": "shadow", "enforced": False, "boost_s": 120, "changed": False}
+    if (HOSTLOCK_DIR / "admission-shadow.disabled").exists():
+        return dict(result, mode="disabled", reason="host-wide kill switch")
+    if any(
+        w.get("clock") != "monotonic"
+        or w.get("job_class") not in ("interactive", "integration", "background")
+        for w in waiters
+    ):
+        return dict(result, reason="unknown or legacy waiter metadata; FIFO only")
+    order = sorted(
+        range(len(waiters)),
+        key=lambda i: (
+            -(waiters[i]["waited_s"] + (120 if waiters[i]["job_class"] == "integration" else 0))
+        ),
+    )
+    return dict(
+        result,
+        fifo=[w["pid"] for w in waiters],
+        proposed=[waiters[i]["pid"] for i in order],
+        changed=order != list(range(len(waiters))),
+    )
+
+
+def _report_shadow(pool: str | None) -> None:
+    if pool == "cpuheavy":
+        proposal = admission_shadow(queue_status(pool))
+        print("[hostlock] admission-shadow " + json.dumps(proposal, sort_keys=True), flush=True)
 
 
 def render_status(st: dict) -> str:
@@ -877,6 +949,9 @@ def render_status(st: dict) -> str:
         for e in st.get(pool, [])
         if e.get("protocol_skew")
     ]
+    shadow = st.get("admission_shadow")
+    if shadow:
+        lines.append("  admission: FIFO active; " + json.dumps(shadow, sort_keys=True))
     if skewed:
         lines.append(
             f"  ⚠ PROTOCOL SKEW: {len(skewed)} live holder(s) speak a different lease "

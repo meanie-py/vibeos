@@ -1,0 +1,21 @@
+# va-slots-rust — receiving C varargs on stable Rust, ported ONCE. See src/lib.rs.
+[package]
+name = "va-slots-rust"
+version = "0.1.0"
+edition = "2021"
+autobins = false
+autoexamples = false
+autotests = false
+autobenches = false
+
+[lib]
+# rlib: consumers are staticlib crates pulling this in as a path dependency, the same
+# shape as strsafe-rust. Nothing here is #[no_mangle] — the printf-family entry points
+# stay in their own crates, which matters for drvtrace-shim, whose whole reason to exist
+# is keeping a non-variadic DEF out of the LLVM module holding variadic call sites.
+crate-type = ["rlib"]
+
+# No dependencies ON PURPOSE. The whole surface is core primitives (usize/i8), identical
+# in every bindgen island in the tree, and `_vsnprintf` is resolved by whatever the final
+# binary already links: libcntpr for freeldr, ntoskrnl for the kernel and the drivers.
+[dependencies]

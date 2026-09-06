@@ -6,7 +6,6 @@ use core::ffi::c_void;
 extern "C" {
     fn strcmp(s1: *const i8, s2: *const i8) -> i32;
     fn strlen(s: *const i8) -> usize;
-    fn _vsnprintf(buffer: *mut i8, count: usize, format: *const i8, ap: *mut core::ffi::c_void) -> i32;
     fn UiMessageBox(msg: *const i8);
     fn sprintf(s: *mut i8, format: *const i8, ...) -> i32;
     fn UiMessageBoxCritical(MessageText: *const i8);
@@ -237,55 +236,10 @@ pub unsafe extern "C" fn DbgPrintSz(Str: PCSTR) {
 const DBG_DEFAULT_LEVELS: ULONG = crate::frldr::ERR_LEVEL | crate::frldr::FIXME_LEVEL;
 
 // ---------------------------------------------------------------------------
-// Formatting varargs without `c_variadic`.
-//
-// Stable Rust cannot DEFINE a C-variadic, so these entry points used to print
-// their format string LITERALLY -- every `%s`/`%lu` in freeldr's ~2200 live
-// call sites came out as the two characters, when it came out at all.
-//
-// We cannot *define* a variadic, but we can *receive* one. On all three of our
-// targets a variadic call places arguments in a flat, ascending slot sequence
-// (i386 cdecl: pushed on the stack, caller-pop; win64: RCX/RDX/R8/R9 then
-// stack; ARM64: x0-x7 then stack), and -- the fact that makes this work --
-// `va_list` is `*mut c_char` on all three (bindgen_{i386,amd64,arm64}.rs), a
-// plain pointer walked upward. Nothing about the SysV x86-64 register-save-area
-// va_list applies here.
-//
-// So: declare the trailing slots as ordinary fixed parameters, copy them into a
-// local array, and hand that array's address to libcntpr's `_vsnprintf` as the
-// va_list. The callee's declared arity does not affect a cdecl/win64 caller, so
-// the C header stays variadic and not one of the 3038 call sites changes.
-//
-// Two bounds, both measured rather than guessed (survey over every ERR/WARN/
-// TRACE/FIXME/DPRINT format literal in boot/freeldr + freeldr-rust):
-//
-//   DBG_VA_SLOTS = 12   The widest live format needs 11 slots
-//                       ("VolumeLabel: %c%c%c%c%c%c%c%c%c%c%c", fat.c). Zero
-//                       sites need more. Counted in SLOTS, not specifiers, so
-//                       an i386 `%I64x` is the 2 it really occupies. Capturing
-//                       12 reads at most one slot past what a caller pushed;
-//                       those loads land in the caller's own frame (always
-//                       mapped) and are never consumed, because the format
-//                       string is what decides how far `_vsnprintf` walks.
-//
-//   DBG_VA_STAGE = 32   The array handed to `_vsnprintf` is deliberately
-//                       LARGER than what we capture, with the tail zeroed. If
-//                       someone later writes a 20-specifier format, it reads
-//                       zeros -- printing `0` and `(null)` (streamout.c:537) --
-//                       instead of walking off the end of the array into this
-//                       function's own frame. Degrades, never corrupts.
-const DBG_VA_SLOTS: usize = 12;
-const DBG_VA_STAGE: usize = 32;
-
-/// Format `fmt` into `buf` using `slots` as the variadic argument sequence.
-/// `buf` is always NUL-terminated (`_vsnprintf` does not terminate on truncation).
-unsafe fn DbgFormatSlots(buf: &mut [i8], fmt: *const i8, slots: &[usize; DBG_VA_SLOTS]) {
-    let mut stage: [usize; DBG_VA_STAGE] = [0; DBG_VA_STAGE];
-    stage[..DBG_VA_SLOTS].copy_from_slice(slots);
-    let n = buf.len();
-    _vsnprintf(buf.as_mut_ptr(), n - 1, fmt, stage.as_mut_ptr() as *mut core::ffi::c_void);
-    buf[n - 1] = 0;
-}
+// Formatting varargs without `c_variadic`: the slot-capture technique, the
+// measured VA_SLOTS/VA_STAGE bounds and why they are safe all live in
+// `va_slots`, which the tui/rosload printf family shares with these.
+use va_slots_rust::format_slots_z;
 
 /// `DbgPrint(Format, ...)` -- freeldr's own, not ntoskrnl's.
 #[no_mangle]
@@ -298,7 +252,7 @@ pub unsafe extern "C" fn DbgPrint(
         DebugInit(core::ptr::null());
     }
     let mut buf: [i8; 512] = [0; 512];
-    DbgFormatSlots(&mut buf, Format as *const i8,
+    format_slots_z(&mut buf, Format as *const i8,
         &[a0, a1, a2, a3, a4, a5, a6, a7, a8, a9, a10, a11]);
     DbgPrintString(buf.as_ptr());
     0
@@ -348,7 +302,7 @@ pub unsafe extern "C" fn DbgPrint2(
         DebugStartOfLine = 0;
     }
     let mut buf: [i8; 2096] = [0; 2096];
-    DbgFormatSlots(&mut buf, Format as *const i8,
+    format_slots_z(&mut buf, Format as *const i8,
         &[a0, a1, a2, a3, a4, a5, a6, a7, a8, a9, a10, a11]);
     DbgPrintString(buf.as_ptr());
 }
@@ -499,7 +453,7 @@ pub unsafe extern "system" fn RtlAssert(
     LineNumber: ULONG,
     Message: PCHAR,
 ) {
-    // Format BEFORE printing. This predates DbgFormatSlots and stays as it is:
+    // Format BEFORE printing. This predates format_slots_z and stays as it is:
     // sprintf is variadic here and the argument list is fixed and known, so
     // there is nothing for the slot-capture path to add. (Historically this
     // mattered because DbgPrint printed its format RAW, so every assertion

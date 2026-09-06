@@ -344,7 +344,8 @@ def build(args, repo: Path) -> int:
     # per-build-dir lock (so two builds never corrupt the same dir, the
     # determinism-verify-vs-gate incident). Held around the whole build; on a stuck
     # holder it warns + proceeds unlocked, and it's a no-op when the broker is disabled.
-    with hostlock.build_lock(build_dir, arch):
+    with hostlock.build_lock(build_dir, arch) as admission:
+        run.extra["admission"] = admission
         return _build_locked(args, repo, run, arch, cfg, build_dir, cold)
 
 
