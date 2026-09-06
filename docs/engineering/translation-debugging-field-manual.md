@@ -4407,6 +4407,13 @@ and missing-lockfile edges, and passing output for explicit file watches and
 lockfile dependencies. These fixture controls do not establish completeness of
 the production build-script input graph.
 
+Native inputs have two layers too: an outer Ninja edge cannot compensate for a
+missing Cargo build-script header watch. The C and preprocessed-assembly fixture
+controls change only an included header, force Ninja to invoke Cargo by removing
+the copied executable, and still observe stale output until a cold build.
+Represent the native include closure in build-script watches as well as the
+outer dependency graph; watching only the `.c` or `.S` file is insufficient.
+
 ### A flipped TU's leftover `.obj` keeps voting on the NEXT flip's closure
 ninja never deletes the object of a source you remove from a CMake list, so every TU we flip
 leaves a stale `.obj` under the link root forever. `rustconv hybrid-closure` globs `*.obj` for

@@ -258,3 +258,24 @@ dependency/feature resolution. The generated Rust case uses `OUT_DIR` and
 narrowed, no baseline changed, and no boot code changed in this test-only slice.
 All 25 invalidation cases passed as part of all 26 `check-tooling` checks. No
 OS build or desktop smoke was rerun for these test/documentation-only changes.
+
+### Native compiler inputs
+
+Twelve additional fixture cases compile and archive real C or preprocessed
+assembly, then read the linked native symbol from a Rust executable. They
+exercise source-only and included-header-only edits with three input policies:
+no outer depfile, source-only build-script watches with a depfile, and explicit
+source/header watches with a depfile. Only the affected leaf should run; warm
+and cold executed outputs are compared.
+
+The negative controls distinguish both missing layers. Without an outer edge,
+Ninja never invokes Cargo. Without a Cargo header watch, even deleting the copied
+executable to force that invocation still leaves the native value stale. Explicit
+header watches plus the emitted depfile close both layers in this fixture.
+
+This uses fixture-owned host compiler calls, not production `reactos-link` or
+cc-rs header discovery. Production native include-closure auditing, actual bindgen
+generation, spec-file inputs, and workspace-inherited dependency resolution remain
+required before narrowing production triggers. No production code is changed.
+All 37 invalidation cases passed within all 26 `check-tooling` checks. OS builds
+and desktop smokes were not rerun for this test/documentation-only batch.

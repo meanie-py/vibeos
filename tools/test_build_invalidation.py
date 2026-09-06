@@ -326,6 +326,83 @@ def test_cargo_emitted_dependencies_close_non_rust_input_gap(tmp_path, asset, po
     assert warm == fixture.cold()
 
 
+@pytest.mark.parametrize("kind", ["c", "S"])
+@pytest.mark.parametrize("change", ["source", "header"])
+@pytest.mark.parametrize("mode", ["source-only", "source-depfile", "closure-depfile"])
+def test_native_inputs_reach_linked_rust_executable(tmp_path, kind, change, mode):
+    """Compile real C/preprocessed assembly, not a simulated native-input reader.
+
+    The assembly exports data, avoiding architecture-specific instructions. The
+    fixture intentionally owns its compiler calls; it does not certify cc-rs or
+    reactos-link's production header discovery.
+    """
+    fixture = BuildFixture(tmp_path, track_assets=False, emitted_deps=mode != "source-only")
+    source = (
+        '#include "value.h"\nunsigned int native_value = VALUE + OFFSET;\n'
+        if kind == "c"
+        else '#include "value.h"\n.data\n.balign 4\n.globl native_value\n'
+        'native_value:\n.long VALUE + OFFSET\n.section .note.GNU-stack,"",@progbits\n'
+    )
+    fixture.write("leaf/native/value.h", "#define VALUE 1\n")
+    fixture.write(f"leaf/native/value.{kind}", source.replace("OFFSET", "0"))
+    fixture.write(
+        "leaf/build.rs",
+        """use std::{env, path::PathBuf, process::Command};
+fn main() {
+    println!("cargo:rerun-if-changed=native/value.KIND");
+    WATCH_HEADER
+    let out = PathBuf::from(env::var_os("OUT_DIR").unwrap());
+    let object = out.join("native.o");
+    let archive = out.join("libnative.a");
+    assert!(Command::new("cc").args(["-c", "native/value.KIND", "-o"])
+        .arg(&object).status().unwrap().success());
+    assert!(Command::new("ar").arg("crs").arg(&archive).arg(&object)
+        .status().unwrap().success());
+    println!("cargo:rustc-link-search=native={}", out.display());
+    println!("cargo:rustc-link-lib=static=native");
+}
+""".replace("KIND", kind).replace(
+            "WATCH_HEADER",
+            'println!("cargo:rerun-if-changed=native/value.h");'
+            if mode != "source-depfile"
+            else "",
+        ),
+    )
+    fixture.write(
+        "leaf/src/main.rs",
+        'extern "C" { static native_value: u32; }\n'
+        'fn main() { println!("{}", unsafe { native_value }); }\n',
+    )
+    initial = fixture.compile()
+    assert initial["leaf"] == "1\n"
+    before = fixture.invocations()
+    assert fixture.compile() == initial
+    assert fixture.invocations() == before, fixture.build_explanation
+    if change == "source":
+        fixture.write(f"leaf/native/value.{kind}", source.replace("OFFSET", "1"))
+    else:
+        fixture.write("leaf/native/value.h", "#define VALUE 2\n")
+    warm = fixture.compile()
+    missing_edge = mode == "source-only" or (mode == "source-depfile" and change == "header")
+    if missing_edge:
+        assert fixture.invocations() == before
+        assert warm == initial
+        # Force only the outer layer: a missing Cargo header watch remains stale
+        # even when Ninja has been made to invoke Cargo again.
+        if mode == "source-depfile":
+            (fixture.build / "leaf").unlink()
+            assert fixture.compile() == initial
+            assert fixture.invocations()[len(before) :] == ["leaf"]
+    else:
+        assert fixture.invocations()[len(before) :] == ["leaf"]
+        assert warm["leaf"] == "2\n"
+        assert warm["peer"] == initial["peer"]
+        assert warm["other"] == initial["other"]
+    cold = fixture.cold()
+    assert cold["leaf"] == "2\n"
+    assert (warm != cold) if missing_edge else (warm == cold)
+
+
 @pytest.mark.parametrize("emitted_deps", [False, True])
 def test_workspace_inherited_version_reaches_final_executables(tmp_path, emitted_deps):
     fixture = BuildFixture(tmp_path, emitted_deps=emitted_deps)
