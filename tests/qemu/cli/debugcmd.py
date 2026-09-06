@@ -96,8 +96,12 @@ def check(args, repo: Path) -> int:
     selection = getattr(args, "only", None)
     scope = getattr(args, "scope", None)
     if scope is not None:
-        if scope not in ("source", "arch") or ub is not None or selection is not None:
-            print("--scope must be source or arch and cannot combine with --only/--update-baseline")
+        if (
+            scope not in ("source", "source-early", "source-deferred", "arch")
+            or ub is not None
+            or selection is not None
+        ):
+            print("invalid --scope or combination with --only/--update-baseline")
             return 2
         if not getattr(args, "strict", False) or (
             scope == "arch" and not getattr(args, "arch", None)
@@ -107,7 +111,30 @@ def check(args, repo: Path) -> int:
         run = Run(f"check-{scope}", getattr(args, "arch", None) or "all")
         run.extra.update(coverage="partial", scope=scope)
         run.add(Stage("partial", status="warn", detail=f"{scope} partition only; not a full gate"))
-        if scope == "source":
+        if scope in ("source-early", "source-deferred"):
+            expected = [name for name, _, _ in lints.source_partition_specs(repo, scope)]
+            lints.run_source_lints(run, repo, strict=True, only=set(expected))
+            actual = [stage.name for stage in run.stages if stage.name != "partial"]
+            run.extra.update(
+                checked_source_checks=actual,
+                unchecked_source_checks=sorted(lints.lint_tool_names(repo) - set(expected)),
+                unchecked_categories=[
+                    "architecture guards",
+                    "builds",
+                    "smokes",
+                    "tooling",
+                    "difftests",
+                ],
+            )
+            if actual != expected:
+                run.add(
+                    Stage(
+                        "coverage-inventory",
+                        status="fail",
+                        detail="executed checks differ from required partition",
+                    )
+                )
+        elif scope == "source":
             lints.run_source_lints(run, repo, strict=True)
         else:
             _strict_arch_checks(run, repo, args.arch)

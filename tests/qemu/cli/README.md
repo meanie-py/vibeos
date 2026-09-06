@@ -184,11 +184,16 @@ overnight soak: `farm --arches i386,amd64,arm64 --minutes 480 --tripwire
 
 ### `gate [--arches i386,amd64,arm64] [--retries N] [--no-build] [--clean] [--no-net]`
 
-The full source-scanner suite runs **once**, after the build matrix finishes so
-generated inputs belong to this worktree. Cargo-link, committed-drift, binary and
+The source-scanner suite runs **once in two disjoint partitions**. Five audited
+Rust-source checks start with the builds (`source-early`); all other checks wait
+for the build matrix (`source-deferred`) so generated inputs belong to this
+worktree. New scanners default to deferred. Children report executed inventories,
+and the parent rejects missing/incorrect coverage. Standalone `--scope source`
+still runs the whole source suite. Cargo-link, committed-drift, binary and
 cohab guards remain per architecture. A push stamp requires the shared source
 result and every requested architecture's guards, as well as the other gate stages.
-The underlying `check --scope source --strict` and
+The underlying `check --scope source-early --strict`,
+`check --scope source-deferred --strict`, `check --scope source --strict`, and
 `check --scope arch --strict --arch X` commands are explicitly partial diagnostics,
 not standalone full checks. They cannot combine with `--only` or baseline updates;
 ordinary `check --strict --arch X` still runs both partitions.

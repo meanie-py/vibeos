@@ -3478,20 +3478,31 @@ def test_check_partition_rejects_ambiguous_or_incomplete_request(tmp_path, monke
     assert debugcmd_mod.check(Namespace(**options), tmp_path) == 2
 
 
-@pytest.mark.parametrize("failed", [None, "source", "i386"])
+@pytest.mark.parametrize("failed", [None, "source-early", "source-deferred", "i386"])
 def test_gate_runs_source_once_after_build_matrix_and_requires_every_partition(
     tmp_path, monkeypatch, failed
 ):
     built = set()
     seen = []
     stamped = []
+    import threading
+
+    early_started = threading.Event()
+    builds_done = threading.Event()
 
     def build(repo, run, arch, args):
+        assert early_started.wait(5), "early source checks must not wait for builds"
         built.add(arch)
+        if len(built) == 3:
+            builds_done.set()
         return {"arch": arch, "ok": True, "exit": 0, "seconds": 0.01}
 
     def lint(repo, arch, root):
-        if arch == "source":
+        if arch == "source-early":
+            assert not built
+            early_started.set()
+            assert builds_done.wait(5), "builds must overlap the early partition"
+        elif arch == "source-deferred":
             assert built == {"i386", "amd64", "arm64"}
         else:
             assert arch in built
@@ -3506,12 +3517,12 @@ def test_gate_runs_source_once_after_build_matrix_and_requires_every_partition(
     monkeypatch.setattr(gate_mod, "_smoke_once", _spy_smoke_ok([]))
     monkeypatch.setattr(gate_mod, "_write_gate_stamp", lambda *a, **k: stamped.append(1))
     rc = gate_mod.gate(_gate_args(no_lint=False, no_build=False, no_net=True), tmp_path)
-    assert sorted(seen) == ["amd64", "arm64", "i386", "source"]
+    assert sorted(seen) == ["amd64", "arm64", "i386", "source-deferred", "source-early"]
     assert bool(stamped) == (failed is None)
     assert rc == int(failed is not None)
 
 
-@pytest.mark.parametrize("arch", ["source", "amd64"])
+@pytest.mark.parametrize("arch", ["source", "source-early", "source-deferred", "amd64"])
 def test_gate_child_requests_explicit_strict_partition(tmp_path, monkeypatch, arch):
     calls = []
 
@@ -3520,9 +3531,58 @@ def test_gate_child_requests_explicit_strict_partition(tmp_path, monkeypatch, ar
         return subprocess.CompletedProcess(cmd, 0, "", "")
 
     monkeypatch.setattr(gate_mod.subprocess, "run", execute)
+    if arch in ("source-early", "source-deferred"):
+        monkeypatch.setattr(
+            gate_mod,
+            "_read_summary",
+            lambda root: {
+                "checked_source_checks": [
+                    s[0] for s in lints.source_partition_specs(tmp_path, arch)
+                ]
+            },
+        )
     assert gate_mod._lint_once(tmp_path, arch, tmp_path / "logs")["ok"]
-    suffix = ["source"] if arch == "source" else ["arch", "--arch", arch]
+    suffix = [arch] if arch.startswith("source") else ["arch", "--arch", arch]
     assert calls == [[str(tmp_path / "vibeos-cli"), "check", "--strict", "--scope", *suffix]]
+
+
+def test_source_partition_inventory_is_disjoint_complete_and_conservative(tmp_path, monkeypatch):
+    original = lints.source_lint_specs(tmp_path)
+    early = lints.source_partition_specs(tmp_path, "source-early")
+    deferred = lints.source_partition_specs(tmp_path, "source-deferred")
+    assert set(s[0] for s in early).isdisjoint(s[0] for s in deferred)
+    assert sorted(early + deferred) == sorted(original)
+    assert {s[0] for s in early} == lints.EARLY_SOURCE_CHECKS
+    for mutation in ([*original, original[0]], [s for s in original if s[0] != early[0][0]]):
+        monkeypatch.setattr(lints, "source_lint_specs", lambda repo, specs=mutation: specs)
+        with pytest.raises(ValueError, match="inventory"):
+            lints.source_partition_specs(tmp_path, "source-early")
+    monkeypatch.setattr(
+        lints, "source_lint_specs", lambda repo: [*original, ("future", ["future"], "stdout")]
+    )
+    assert "future" in {s[0] for s in lints.source_partition_specs(tmp_path, "source-deferred")}
+
+
+@pytest.mark.parametrize("scope", ["source-early", "source-deferred"])
+@pytest.mark.parametrize("drop", [False, True])
+def test_source_partition_checks_executed_inventory(tmp_path, monkeypatch, scope, drop):
+    def execute(run, repo, name, cmd, **kwargs):
+        if not drop:
+            run.add(Stage(name, status="ok"))
+
+    monkeypatch.setattr(lints, "_lint_stage", execute)
+    assert debugcmd_mod.check(Namespace(scope=scope, strict=True), tmp_path) == int(drop)
+
+
+@pytest.mark.parametrize("inventory", [None, [], ["wrong"], ["scan_octal_literals"]])
+def test_gate_rejects_missing_or_partial_source_inventory(tmp_path, monkeypatch, inventory):
+    monkeypatch.setattr(
+        gate_mod.subprocess, "run", lambda *a, **k: subprocess.CompletedProcess([], 0, "", "")
+    )
+    monkeypatch.setattr(
+        gate_mod, "_read_summary", lambda root: {"checked_source_checks": inventory}
+    )
+    assert not gate_mod._lint_once(tmp_path, "source-early", tmp_path / "logs")["ok"]
 
 
 def test_write_baselines_only_filter(tmp_path, monkeypatch):
