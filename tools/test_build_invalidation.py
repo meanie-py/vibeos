@@ -133,16 +133,37 @@ endforeach()
         # mutations are explicitly newer than every prior fixture artifact. This
         # does not add missing Ninja dependency edges (the negative controls must
         # still fail to rebuild). No sleeps or retries hide invalidation failures.
-        mtime_ns = self.initial_mtime_ns
-        if self.configured:
-            mtime_ns = (
-                max(
-                    time.time_ns(),
-                    max(p.stat().st_mtime_ns for p in self.root.rglob("*") if p.is_file()),
-                )
-                + 1_000_000
-            )
+        mtime_ns = self.initial_mtime_ns if not self.configured else self._next_mtime_ns()
         os.utime(dest, ns=(mtime_ns, mtime_ns))
+
+    def _next_mtime_ns(self):
+        """A timestamp strictly newer than every artifact the fixture has produced."""
+        return (
+            max(
+                time.time_ns(),
+                max(p.stat().st_mtime_ns for p in self.root.rglob("*") if p.is_file()),
+            )
+            + 1_000_000
+        )
+
+    def remove(self, path):
+        """Delete an input, and age the DIRECTORY the way write() ages a file.
+
+        Deleting a file is a change to its directory, and a recursive watch
+        (Cargo's `rerun-if-changed=<dir>`) can only see it as a directory mtime.
+        A bare unlink leaves that mtime at the host clock, which beat the
+        preceding cold build's artifacts by 8ms on an idle host — no margin at
+        all. Invert it and the watch reads "not newer", the build script does
+        not re-run, and the stale generated value survives a rebuild that really
+        did happen; that is the `'5' != '4'` this test hit under fleet load, and
+        forcing the inversion reproduces it every time. Same ordering discipline
+        write() already applies, and it hides nothing: the directory genuinely
+        changed, so the edge under test still has to carry it.
+        """
+        dest = self.root / path
+        dest.unlink()
+        mtime_ns = self._next_mtime_ns()
+        os.utime(dest.parent, ns=(mtime_ns, mtime_ns))
 
     @staticmethod
     def main_source(name, value):
@@ -523,7 +544,7 @@ def test_generated_rust_tracks_directory_input_add_edit_remove(tmp_path, mode):
     for operation, expected in (("add", "3\n"), ("edit", "5\n"), ("remove", "4\n")):
         before = fixture.invocations()
         if operation == "remove":
-            (tmp_path / "leaf/inputs/one.txt").unlink()
+            fixture.remove("leaf/inputs/one.txt")
         else:
             fixture.write("leaf/inputs/two.txt", "2" if operation == "add" else "4")
         warm = fixture.compile()
