@@ -203,3 +203,25 @@ def test_the_vtable_arity_fallback_will_not_cross_an_impossible_conversion():
     # The real implementor differs only in SPELLING and must still bind.
     method = [("LPCITEMIDLIST", "item"), ("UINT", "flags"), ("POINT *", "point")]
     assert not _shapes_provably_disagree(method, vtable, aliases)
+
+
+def test_a_keyword_parameter_gets_a_signature_that_can_compile():
+    """`CDefView::SetClipboard(BOOL move)` -- `move` is a Rust keyword.
+
+    Rendered bare, the deterministic contract demanded a signature no Rust compiler
+    accepts, then rejected the paid body for writing `r#move` -- the only legal spelling.
+    Retrying could never have fixed that: the contract was unsatisfiable.
+    """
+    from rustconv.cpp_com import rust_safe_parameter, worker_signature
+
+    sig = worker_signature("CDefView_SetClipboard", "CDefView", [("BOOL", "move")], "HRESULT")
+    assert "r#move: BOOL" in sig
+    assert rust_safe_parameter("type") == "r#type"
+    # `r#self` and friends are forbidden outright, so the name must change instead.
+    assert rust_safe_parameter("self") == "self_"
+    assert rust_safe_parameter("crate") == "crate_"
+    # An ordinary name must be left completely alone.
+    assert rust_safe_parameter("pidl") == "pidl"
+    assert "pidl: PCUITEMID_CHILD" in worker_signature(
+        "CDefView_GetItemAttributes", "CDefView", [("PCUITEMID_CHILD", "pidl")], "SFGAOF"
+    )

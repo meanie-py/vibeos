@@ -5078,6 +5078,25 @@ impl Drop for CStringW {
 static CPP_COM_EMPTY_WSTR: [WCHAR; 1] = [0];"""
 
 
+# `r#` makes a keyword usable as an identifier, but the language forbids it for these
+# four -- there is no spelling of a parameter named `self`, so the name must change.
+_RUST_UNRAWABLE = frozenset({"crate", "self", "super", "Self"})
+
+
+def rust_safe_parameter(name: str) -> str:
+    """Spell a C parameter name so it is a legal Rust identifier.
+
+    A C++ parameter may be named `move`, `type`, `ref`, `match`, `box` -- all Rust
+    keywords. Rendering one bare produced a contract signature that CANNOT COMPILE, and
+    the deterministic audit then rejected the model for writing `r#move`, the only legal
+    form. shell32's `CDefView::SetClipboard(BOOL move)` failed exactly this way, and no
+    number of retries could have fixed it: the contract itself was unsatisfiable.
+    """
+    if name in _RUST_UNRAWABLE:
+        return f"{name}_"
+    return f"r#{name}" if name in _RUST_KEYWORDS else name
+
+
 def worker_signature(
     name: str, class_name: str | None, params: list[tuple[str, str]], return_type: str
 ) -> str:
@@ -5097,7 +5116,7 @@ def worker_signature(
         while declarator.startswith(("&", "*")):
             c_type = f"{c_type} {declarator[0]}"
             declarator = declarator[1:]
-        rendered.append(f"{declarator}: {c_type_to_rust(c_type)}")
+        rendered.append(f"{rust_safe_parameter(declarator)}: {c_type_to_rust(c_type)}")
     ret = "()" if not return_type or return_type.strip() == "void" else c_type_to_rust(return_type)
     return f"pub unsafe fn {name}_body({', '.join(rendered)}) -> {ret}"
 
