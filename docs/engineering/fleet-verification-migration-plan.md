@@ -2,7 +2,7 @@
 
 Owner: `bughunt` lane (Codex), gate partitioning and admission migration.
 Status: gate partitioning and admission shadow/telemetry verified locally,
-2026-09-06; not pushed. This plan does
+2026-09-06. Landing status is reported by `vibeos-cli land-status --mine`. This plan does
 not relax current AGENTS.md requirements or authorize competing fleet schedulers.
 
 ## Evidence and objective
@@ -40,6 +40,20 @@ The initial early set reads Rust source without following generated includes:
 These five commands run sequentially in one early worker, overlapping builds.
 They previously occupied about 7½ minutes. This is potential overlap, not a
 promised wall-time saving: contention can change their and the builds' duration.
+
+Landing follow-up (2026-09-06): `scan_invented_constants` is now the sixth early
+check after auditing its Rust-source and scoped C/SDK-header reads. Its fixture
+requires a real source/header mismatch, then proves changing generated headers
+and Cargo output cannot affect it. New inventory entries still default to
+deferred; only duplicate names or removal of an explicitly audited entry fail
+inventory construction. The five-check measurements below remain historical.
+Verification after syncing master: 442 scanner/CLI tests and 56 build-invalidation
+tests passed; type checking passed. A strict real-tree check of
+`scan_invented_constants` passed its unchanged baseline in 32s (explicitly partial,
+not a gate). Full certification remains the merge conductor's job.
+
+The ARM64 `scan_ud2` corpus concern is tracked in the roadmap's live bug registry;
+it is not fixed by rescheduling source checks.
 
 Mechanism:
 

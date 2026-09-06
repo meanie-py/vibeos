@@ -22,6 +22,7 @@ class BuildFixture:
         self.root = root
         self.build = root / "build"
         self.compiled = False
+        self.configured = False
         self.initial_mtime_ns = time.time_ns() - 3_600_000_000_000
         self.setup_mtime_ns = self.initial_mtime_ns
         self.env = {

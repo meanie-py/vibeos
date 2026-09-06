@@ -25,6 +25,13 @@ def test_early_scanner_without_builds_and_during_generated_header_writes(tmp_pat
         directory = tmp_path / "sdk/lib/rust" / crate / "src"
         directory.mkdir(parents=True)
         (directory / "lib.rs").write_text(source)
+    if scanner == "scan_invented_constants":
+        (tmp_path / "sdk/lib/rust/probe-rust/src/lib.rs").write_text(
+            "pub const PROBE_FLAG: u32 = 8; // guessed value\n"
+        )
+        header = tmp_path / "sdk/include/probe.h"
+        header.parent.mkdir(parents=True)
+        header.write_text("#define PROBE_FLAG 1\n")
 
     # An audit hook observes real opens, even if a scanner catches the exception.
     # This subprocess uses the shipping scanner unchanged, with its normal CLI.
@@ -67,10 +74,17 @@ sys.exit(code)
     assert "Traceback" not in fresh.stderr
     if scanner in ("scan_octal_literals", "scan_type_alias_contradictions"):
         assert fresh.stdout.strip(), "positive fixture must still be analyzed"
+    if scanner == "scan_invented_constants":
+        assert "MISMATCH" in fresh.stdout and "PROBE_FLAG" in fresh.stdout
     generated = tmp_path / "build-amd64/sdk/include/ddk/wdm.h"
     target = tmp_path / "sdk/lib/rust/target/debug/build/probe/out/generated.rs"
     generated.parent.mkdir(parents=True)
     target.parent.mkdir(parents=True)
+    if scanner == "scan_invented_constants":
+        # Same module name under a configured build must not join the C oracle.
+        foreign_oracle = tmp_path / "build-amd64/drivers/probe/generated.h"
+        foreign_oracle.parent.mkdir(parents=True)
+        foreign_oracle.write_text("#define PROBE_FLAG 8\n")
     stopped = threading.Event()
     started = threading.Event()
 

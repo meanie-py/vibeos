@@ -910,6 +910,7 @@ def source_lint_specs(repo: Path) -> list[tuple]:
 # See docs/engineering/fleet-verification-migration-plan.md for input contracts.
 EARLY_SOURCE_CHECKS = frozenset(
     {
+        "scan_invented_constants",
         "scan_extern_decl_drift",
         "scan_octal_literals",
         "scan_type_alias_contradictions",
