@@ -544,6 +544,27 @@ Field-manual § pointers hold the full writeups. **Update on state change.**
   translation defect: every link (`SYSTEMCUR_ARROW`, `LoadSystemCursors`'s
   `!gpsi || !gpsi->hIconSmWindows` guard, `co_add_gui_app`) was diffed against the retired C and
   is byte-faithful.
+- **OPEN, BLOCKS EVERY LANE'S LANDING ~50% OF THE TIME (2026-09-06): `tools/test_build_invalidation.py`
+  is flaky.** Landed tonight (`2e016c6595f` "Cover native source and header invalidation layers",
+  in as `41589edd0c53`). Measured 5 consecutive full-file runs on an IDLE host: **3 failed, 2
+  passed**, a different test each time and never more than one per run —
+  `test_generated_rust_tracks_directory_input_add_edit_remove[directory-depfile]` (`assert [] ==
+  ['leaf']`, expected a rebuild and got none), then
+  `test_native_inputs_reach_linked_rust_executable[source-only-source-S]` and
+  `[source-only-header-c]` (both the INVERSE — a rebuild happened where none was expected). No
+  `pytest-randomly`/`xdist` installed, so it is not test-order shuffling; every failure is in the
+  "did ninja re-run `leaf`" assertion class, in both directions, which points at mtime/timestamp
+  sensitivity rather than a missing dependency edge. Every test passes in isolation in ~5s.
+  Impact: `vibeos-cli land` runs `check-tooling` as a pre-queue gate, so this aborts landings
+  that have nothing to do with it, and the conductor runs the same check inside its gate (a red
+  batch there costs 3 builds + 4 boots of fleet load before the split exonerates the innocent
+  lanes). **Deliberately not patched by the finder**: `BuildFixture.write` carries the comment
+  "No sleeps or retries hide invalidation failures", i.e. the author avoided the obvious sleep on
+  purpose, and this file exists precisely to catch invalidation bugs — a timing band-aid would
+  blind the thing we built it for. OWNED BY the bughunt lane. Suspect worth checking first:
+  `write()` sets `mtime = max(now, max(every existing file mtime)) + 1ms`, which walks source
+  mtimes monotonically AHEAD of the wall clock across a test, while directory mtimes and any
+  artifact stamped by the OS keep real time — so the ordering the assertions depend on can invert.
 - **FIXED pending validation (2026-09-06): `ks.sys`, `pcix.sys` and `ramdisk.sys` imported a
   nonexistent `ntoskrnl.dll`.** Found by the freeldr debug channel on its FIRST boot after being
   un-silenced — `PeLdrLoadImage('...\drivers\ntoskrnl.dll') failed` ->
