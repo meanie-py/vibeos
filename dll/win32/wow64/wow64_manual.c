@@ -3729,6 +3729,12 @@ typedef struct { ULONG BufferArray, BufferCount, AfdFlags, TdiFlags; }
                                                                WOW64_AFD_XFER32;
 typedef struct { ULONG BufferArray, BufferCount, AfdFlags, TdiFlags;
                  ULONG Address, AddressLength; }               WOW64_AFD_XFERUDP32;
+typedef struct { ULONG BufferArray, BufferCount, AfdFlags;
+                 ULONG TdiRequest[5];
+                 LONG UserDataLength; ULONG UserData;
+                 LONG OptionsLength;  ULONG Options;
+                 LONG RemoteAddressLength; ULONG RemoteAddress; }
+                                                               WOW64_AFD_SENDUDP32;
 typedef struct { ULONG Handle, Events; LONG Status; }          WOW64_AFD_HANDLE32;
 typedef struct { LONGLONG Timeout; ULONG HandleCount, Exclusive; }
                                                                WOW64_AFD_POLLHDR32;
@@ -3744,6 +3750,12 @@ typedef struct { ULONGLONG BufferArray; ULONG BufferCount, AfdFlags, TdiFlags, _
                                                                WOW64_AFD_XFER64;
 typedef struct { ULONGLONG BufferArray; ULONG BufferCount, AfdFlags, TdiFlags, _p;
                  ULONGLONG Address, AddressLength; }           WOW64_AFD_XFERUDP64;
+typedef struct { ULONGLONG BufferArray; ULONG BufferCount, AfdFlags;
+                 ULONGLONG TdiRequest[5];
+                 LONG UserDataLength; ULONG _p0; ULONGLONG UserData;
+                 LONG OptionsLength;  ULONG _p1; ULONGLONG Options;
+                 LONG RemoteAddressLength; ULONG _p2; ULONGLONG RemoteAddress; }
+                                                               WOW64_AFD_SENDUDP64;
 typedef struct { ULONGLONG Handle; ULONG Events; LONG Status; } WOW64_AFD_HANDLE64;
 typedef struct { LONGLONG Timeout; ULONG HandleCount, _p; ULONGLONG Exclusive; }
                                                                WOW64_AFD_POLLHDR64;
@@ -3758,6 +3770,7 @@ typedef struct { ULONGLONG TdiAddressHandle, TdiConnectionHandle; }
 C_ASSERT(sizeof(WOW64_AFD_WSABUF32) == 8);  C_ASSERT(sizeof(WOW64_AFD_WSABUF64) == 16);
 C_ASSERT(sizeof(WOW64_AFD_XFER32) == 16);   C_ASSERT(sizeof(WOW64_AFD_XFER64) == 24);
 C_ASSERT(sizeof(WOW64_AFD_XFERUDP32) == 24);C_ASSERT(sizeof(WOW64_AFD_XFERUDP64) == 40);
+C_ASSERT(sizeof(WOW64_AFD_SENDUDP32) == 56);C_ASSERT(sizeof(WOW64_AFD_SENDUDP64) == 104);
 C_ASSERT(sizeof(WOW64_AFD_HANDLE32) == 12); C_ASSERT(sizeof(WOW64_AFD_HANDLE64) == 16);
 C_ASSERT(sizeof(WOW64_AFD_EVSEL32) == 8);   C_ASSERT(sizeof(WOW64_AFD_EVSEL64) == 16);
 C_ASSERT(sizeof(WOW64_AFD_ENUMEV32) == 48); C_ASSERT(sizeof(WOW64_AFD_ENUMEV64) == 56);
@@ -3952,6 +3965,61 @@ static NTSTATUS Wow64pIoctlAfdRecvFrom(WOW64_IOCTL_FN Fn, ULONG *a, const char *
     In64.TdiFlags      = In32->TdiFlags;
     In64.Address       = (ULONGLONG)(ULONG_PTR)In32->Address;
     In64.AddressLength = (ULONGLONG)(ULONG_PTR)In32->AddressLength;
+
+    St = Wow64pIoctlCall(Fn, File, Event, &Iosb64, a[5], &In64, sizeof(In64),
+                         (PVOID)(ULONG_PTR)a[8], a[9], Who);
+    Wow64pIoctlFree(B64);
+    return Wow64pFinishIosb(St, File, &Iosb64, a[4], Who);
+}
+
+/* IOCTL_AFD_SEND_DATAGRAM — AFD_SEND_INFO_UDP, 56 -> 104. The one AFD payload
+ * with nested structs, and the nesting is shallower than the declaration looks.
+ * AfdPacketSocketWriteData reads only BufferArray, BufferCount and
+ * TdiConnection.RemoteAddress; msafd's WSPSendTo fills only those plus AfdFlags
+ * and RemoteAddressLength. TdiRequest is written by NEITHER side, so it is
+ * carried as opaque zero padding rather than translated — synthesizing a
+ * host-shaped TDI_REQUEST there would invent content no one supplies, and the
+ * driver would read it back as if the guest had meant it.
+ *
+ * RemoteAddress points at a TRANSPORT_ADDRESS the guest built on its own stack
+ * (WSPSendTo's Buffer[128]). That pointee is LONG + TA_ADDRESS{USHORT, USHORT,
+ * UCHAR[]} — no pointers, identical on both widths — so widening the pointer is
+ * the whole job, exactly as for RECV_DATAGRAM's Address. The driver
+ * dereferences it in our own process context, so the guest address stays valid.
+ *
+ * The NULL check is ours, not the driver's: AfdPacketSocketWriteData
+ * dereferences RemoteAddress unconditionally (AddressType, TAAddressCount,
+ * TdiBuildConnectionInfo), so a guest passing NULL would take the kernel
+ * through a null deref. Native i386 guests can do that too — this refuses it on
+ * the one path we are already inspecting rather than widening a trap. */
+static NTSTATUS Wow64pIoctlAfdSendTo(WOW64_IOCTL_FN Fn, ULONG *a, const char *Who)
+{
+    const WOW64_AFD_SENDUDP32 *In32 = (const WOW64_AFD_SENDUDP32 *)(ULONG_PTR)a[6];
+    WOW64_IO_STATUS_BLOCK64_M Iosb64 = {0};
+    WOW64_AFD_WSABUF64 *B64;
+    WOW64_AFD_SENDUDP64 In64 = {0};
+    HANDLE File = (HANDLE)(LONG_PTR)(LONG)a[0];
+    HANDLE Event = (HANDLE)(LONG_PTR)(LONG)a[1];
+    NTSTATUS St;
+
+    if (!In32 || a[7] < sizeof(*In32))
+        return Wow64pIoctlBadArg(Who, "input shorter than AFD_SEND_INFO_UDP");
+    if (!In32->RemoteAddress)
+        return Wow64pIoctlBadArg(Who, "AFD_SEND_INFO_UDP with a NULL RemoteAddress");
+
+    B64 = Wow64pAfdWidenBufs(In32->BufferArray, In32->BufferCount, Who, &St);
+    if (St)
+        return St;
+
+    In64.BufferArray         = (ULONGLONG)(ULONG_PTR)B64;
+    In64.BufferCount         = In32->BufferCount;
+    In64.AfdFlags            = In32->AfdFlags;
+    In64.UserDataLength      = In32->UserDataLength;
+    In64.UserData            = (ULONGLONG)(ULONG_PTR)In32->UserData;
+    In64.OptionsLength       = In32->OptionsLength;
+    In64.Options             = (ULONGLONG)(ULONG_PTR)In32->Options;
+    In64.RemoteAddressLength = In32->RemoteAddressLength;
+    In64.RemoteAddress       = (ULONGLONG)(ULONG_PTR)In32->RemoteAddress;
 
     St = Wow64pIoctlCall(Fn, File, Event, &Iosb64, a[5], &In64, sizeof(In64),
                          (PVOID)(ULONG_PTR)a[8], a[9], Who);
@@ -4158,13 +4226,7 @@ static NTSTATUS Wow64pIoControl(WOW64_IOCTL_FN Fn, ULONG *a, const char *Who)
     case WOW64_IOCTL_AFD_GET_TDI_HANDLES:
         return Wow64pIoctlAfdTdiHandles(Fn, a, Who);
     case WOW64_IOCTL_AFD_SEND_DATAGRAM:
-        /* AFD_SEND_INFO_UDP is 56 -> 104 and SEMANTIC, not a field-widening:
-         * it embeds TDI_REQUEST_SEND_DATAGRAM and TDI_CONNECTION_INFORMATION,
-         * each with its own pointers. Refusing names the blocker; passing it
-         * flat would corrupt as before while looking handled. */
-        DbgPrint("[WOW64]   %s: IOCTL_AFD_SEND_DATAGRAM needs a deep "
-                 "AFD_SEND_INFO_UDP marshaller (nested TDI structs) — refusing\n", Who);
-        return WOW64_STATUS_NOT_IMPLEMENTED;
+        return Wow64pIoctlAfdSendTo(Fn, a, Who);
     default:
         break;
     }
