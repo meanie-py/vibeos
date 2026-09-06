@@ -77,6 +77,13 @@ foreach(_f ${_wow64_guests})
     endif()
 endforeach()
 if(_wow64_guest_ok)
+    # The closure runs at CONFIGURE time, so ninja has no idea it exists: editing
+    # wow64-closure.py or the INF it derives dynamic edges from would leave the
+    # previously-staged module list on the livecd and the next boot would test the
+    # OLD closure while looking like it tested the new one. Re-configure on either.
+    set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS
+                 ${REACTOS_SOURCE_DIR}/tools/fex/wow64-closure.py
+                 ${REACTOS_SOURCE_DIR}/media/inf/nettcpip.inf)
     execute_process(
         COMMAND python3 ${REACTOS_SOURCE_DIR}/tools/fex/wow64-closure.py
                 --build-dir ${REACTOS_SOURCE_DIR}/build-i386

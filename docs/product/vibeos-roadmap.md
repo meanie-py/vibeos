@@ -493,17 +493,36 @@ Field-manual § pointers hold the full writeups. **Update on state change.**
   input (our own ntdll32) and now sees every module a guest maps, so all of its RVAs are
   range-checked and the name compare is bounded. Symptom to recognise again: `rip` inside
   wow64.dll after a map, with a guest that never reached its DllMain.
-- **32-bit `socket()` returns WSAEINVAL — OPEN** (2026-09-05). With the crash above fixed,
-  msafd.dll loads for real (`[LDR] init 'msafd.dll' DllBase=72150000 EntryPoint=72151220 ...
-  RETURNED ret=1`) and `socket(AF_INET, SOCK_DGRAM, IPPROTO_UDP)` now FAILS CLEANLY with
-  `WSAGetLastError = 0x2726` (WSAEINVAL) instead of faulting — marshal32 exits 0xbb02
-  (M32_FAIL_WSA_SOCKET). **Still zero `NtDeviceIoControlFile`**: it fails before opening
-  `\Device\Afd`, so the E25 AFD marshallers remain unexercised and E25 must not land on it.
-  Lead: the last syscall in the window is `NtRequestWaitReplyPort => c000000d`
-  (STATUS_INVALID_PARAMETER), an LPC round-trip, which is worth pulling on before the provider
-  negotiation itself. Diagnostic scaffolding is deliberately still in the lane for this hunt —
-  the per-DLL `[LDR] init` logging in ntdll-rust `ldrinit.rs` (~4,600 lines/boot) — and must
-  come out before anything here lands.
+- **32-bit `socket()` returns WSAEINVAL because the WSH helper is unstaged — FIX IN FLIGHT,
+  BOOT-UNVERIFIED** (2026-09-05). With the crash above fixed, msafd.dll loaded for real (`[LDR] init 'msafd.dll'
+  ... RETURNED ret=1`) and `socket()` still failed with `0x2726`. The cause was the SAME
+  dynamic-edge blind spot one hop deeper: msafd reads `HelperDllName` from the registry and
+  `LoadLibraryW`s the WSH_* helper (msafd-rust `misc/helpers.rs`), which nettcpip.inf declares
+  as `%SystemRoot%\System32\wshtcpip.dll`. That DLL was BUILT and never staged into SysWOW64,
+  `LoadLibraryW` returned NULL, and helpers.rs returns WSAEINVAL straight out of WSPSocket.
+  Visible in the log as two `NtQueryAttributesFile => c0000034` immediately after msafd's
+  DllMain. **The one-hop fix is what disguised it**: staging the provider made every symptom of
+  the previous bug vanish while the module it loads at runtime was still missing, because the
+  error surfaces a full frame from the absent DLL. `wow64-closure.py` now keys the derivation
+  by READER (ws2_32 reads LibraryPath/PackedCatalogItem, msafd reads HelperDllName) and follows
+  dynamic edges transitively. Lesson: a runtime-load edge is never known to be the last one.
+- **EVERY CSR call from a WoW64 guest fails — `NtRequestWaitReplyPort => c000000d` — OPEN**
+  (2026-09-05). Found while chasing the socket() bug above; it is NOT its cause (there is no
+  LPC call inside the socket() window at all — that lead was wrong). It is unconditional and
+  the arithmetic is exact: `PORT_MESSAGE` is **24 bytes on i386 and 40 on amd64** (the
+  `ClientId` union is 2 pointers, and `ClientViewSize` is a `SIZE_T`), and the syscall has NO
+  manual marshaller — the log line prints without `[manual]`, so it takes the flat
+  pointer-widening auto thunk. The guest sets `TotalLength = DataLength + 24`; the kernel
+  (`lpc-rust/src/send.rs`) checks `DataLength + sizeof(PORT_MESSAGE) > TotalLength`, i.e.
+  `DataLength + 40 > DataLength + 24`, which is **always true**. Hence 100% failure, every
+  call, deterministically. `NtConnectPort`/`NtSecureConnectPort` are already on the manual list
+  and thunk `PORT_VIEW` + `CSR_API_CONNECTINFO`, so the connect succeeds and only the calls
+  fail. There is already a workaround papering over one symptom — `WOW64: CreateThread
+  continuing without CSRSS thread notify (0xc000000d)`. Fixing the header is mechanical
+  (translate 24<->40, payload follows contiguously, rewrite TotalLength); the real work is the
+  **payload**, a `CSR_API_MESSAGE` full of 32-bit guest pointers that 64-bit csrss would
+  misread, so this needs per-API marshalling and is its own task, not a bolt-on. Same family:
+  `NtReplyPort`, `NtReplyWaitReceivePort`, `NtRequestPort`, `NtReplyWaitReplyPort`.
 - **freeldr's `FREELDR_HEAP_VERIFIER` is DEAD in Rust — OPEN** (2026-09-04). `heap.c:25` defines
   it **unconditionally**, so the C always compiles the redzone allocation, the redzone writes
   and the three `FrLdrHeapVerify` checks. The translation turned it into
