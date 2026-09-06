@@ -237,6 +237,16 @@ def build_parser() -> argparse.ArgumentParser:
         action="store_true",
         help="skip the strict scanner suite (default-on; blocks the stamp on NEW findings)",
     )
+    g.add_argument(
+        "--no-conformance",
+        action="store_true",
+        help=(
+            "skip the kmtest conformance ratchet lanes (default-on: one boot per arch, "
+            "reusing this gate's media, failing on assertions that fail now and were not "
+            "failing in tools/conformance-baseline/<arch>/kmtest.txt). Turning it off also "
+            "drops --kmtests from the gate's builds"
+        ),
+    )
     g.set_defaults(fn=gate_mod.gate)
 
     la = sub.add_parser(
