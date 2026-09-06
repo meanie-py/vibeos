@@ -2,7 +2,8 @@ use ntkrnl_sys::base::*;
 use crate::frldr::*;
 use crate::ui_keystone::*;
 use crate::ui::{UiStatusBarFgColor, UiStatusBarBgColor, UiBackdropFgColor, UiBackdropBgColor, UiBackdropFillStyle, UiTitleBoxFgColor, UiTitleBoxBgColor, UiMessageBoxFgColor, UiMessageBoxBgColor, UiMenuFgColor, UiMenuBgColor, UiTextColor, UiSelectedTextColor, UiSelectedTextBgColor, UiEditBoxTextColor, UiEditBoxBgColor, UiShowTime, UiMenuBox, UiCenterMenu, UiUseSpecialEffects, UiScreenWidth, UiScreenHeight, UiTitleBoxTitleText, UiTimeText, UiMonthNames, UiProgressBar, UiVtbl};
-use ntkrnl_sys::ddk::{PCSTR, PSTR, TIMEINFO, va_list};
+use ntkrnl_sys::ddk::{PCSTR, PSTR, TIMEINFO};
+use va_slots_rust::format_slots;
 use core::ffi::c_void;
 use crate::tuimenu::{TuiDisplayMenu, TuiDrawMenu};
 
@@ -12,9 +13,6 @@ const TAG_TUI_SCREENBUFFER: ULONG = u32::from_be_bytes(*b"SiuT") as ULONG;
 const TAG_TUI_PALETTE: ULONG = u32::from_be_bytes(*b"PiuT") as ULONG;
 
 extern "C" {
-    fn va_start(ap: *mut va_list, last: ...);
-    fn _vsnprintf(buf: *mut i8, size: usize, fmt: PCSTR, ap: va_list) -> i32;
-    fn va_end(ap: va_list);
     // machine.h: VOID (*ConsPutChar)(int Ch) — canonical i32 (the
     // machpc.rs #[no_mangle] def matches machine.h; the rustconv `i8`
     // decl was the outlier).
@@ -45,27 +43,47 @@ extern "C" {
 }
 
 #[no_mangle]
-// C-variadic def unstable on stable rustc; callers keep their variadic
-// extern decl, cdecl caller-cleans → non-variadic def is ABI-safe
-// (debug.rs precedent). Emit the format string verbatim (no %-expansion;
-// freeldr console text is cosmetic to the `shell ready` smoke marker).
-pub unsafe extern "C" fn TuiPrintf(Format: PCSTR) -> i32 {
+// tui.c:39. Stable rustc cannot DEFINE a C-variadic, so the trailing slots are
+// declared as fixed parameters and replayed as the va_list -- see `va_slots`
+// for the technique and its measured bounds. Callers keep their variadic extern
+// decl; cdecl caller-cleans, so the arity difference is invisible to them.
+pub unsafe extern "C" fn TuiPrintf(
+    Format: PCSTR,
+    a0: usize, a1: usize, a2: usize, a3: usize, a4: usize, a5: usize,
+    a6: usize, a7: usize, a8: usize, a9: usize, a10: usize, a11: usize,
+) -> i32 {
+    let mut Buffer: [i8; 512] = [0; 512];
+    let mut Length = format_slots(
+        Buffer.as_mut_ptr(),
+        512,
+        Format as *const i8,
+        &[a0, a1, a2, a3, a4, a5, a6, a7, a8, a9, a10, a11],
+    );
+    // C: `if (Length == -1) Length = (INT)sizeof(Buffer);` -- _vsnprintf reports
+    // truncation as -1, and the C then emits the whole (unterminated) buffer.
+    if Length == -1 {
+        Length = 512;
+    }
     let mut i: i32 = 0;
-    while *Format.offset(i as isize) != 0 {
-        MachConsPutChar(*Format.offset(i as isize) as i32);
+    while i < Length {
+        MachConsPutChar(Buffer[i as usize] as i32);
         i += 1;
     }
-    i
+    Length
 }
 
 // freeldr.h `#define printf TuiPrintf` — rustconv expanded the macro to
 // `extern { fn printf(...) }` + call sites instead of resolving to
-// TuiPrintf. Real cdecl alias forwarding to TuiPrintf (non-variadic,
-// same verbatim-format degradation; cdecl caller-cleans → ABI-safe).
+// TuiPrintf. Real cdecl alias forwarding to TuiPrintf, replaying the same
+// captured slots (cdecl caller-cleans → the arity is ABI-safe).
 // UNIQUE: printf is a C macro, never a real symbol.
 #[no_mangle]
-pub unsafe extern "C" fn printf(Format: PCSTR) -> i32 {
-    TuiPrintf(Format)
+pub unsafe extern "C" fn printf(
+    Format: PCSTR,
+    a0: usize, a1: usize, a2: usize, a3: usize, a4: usize, a5: usize,
+    a6: usize, a7: usize, a8: usize, a9: usize, a10: usize, a11: usize,
+) -> i32 {
+    TuiPrintf(Format, a0, a1, a2, a3, a4, a5, a6, a7, a8, a9, a10, a11)
 }
 
 // `puts` — LLVM lowers `printf("...\n")` (constant string, trailing \n)
@@ -84,14 +102,17 @@ pub unsafe extern "C" fn puts(Str: PCSTR) -> i32 {
 
 // pcvideo.c:1038 `#define TRACE_printf(Format,...) do { TRACE(Format,...);
 // printf(Format,...); } while(0)`. TRACE is a no-op in the NDEBUG
-// freeldr build; printf == TuiPrintf. Non-variadic cdecl def emitting
-// the format verbatim (same degradation as TuiPrintf/the keystone
-// TRACE). Defined here (declared `extern` variadic in pcvideo.rs) so
-// the variadic call sites compile; cdecl caller-cleans → ABI-safe.
+// freeldr build; printf == TuiPrintf. Defined here (declared `extern`
+// variadic in pcvideo.rs) so the variadic call sites compile; the slots
+// are captured and replayed like TuiPrintf's own.
 // UNIQUE (C macro, no symbol).
 #[no_mangle]
-pub unsafe extern "C" fn TRACE_printf(Format: PCSTR) {
-    TuiPrintf(Format);
+pub unsafe extern "C" fn TRACE_printf(
+    Format: PCSTR,
+    a0: usize, a1: usize, a2: usize, a3: usize, a4: usize, a5: usize,
+    a6: usize, a7: usize, a8: usize, a9: usize, a10: usize, a11: usize,
+) {
+    TuiPrintf(Format, a0, a1, a2, a3, a4, a5, a6, a7, a8, a9, a10, a11);
 }
 
 #[no_mangle]
