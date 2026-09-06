@@ -483,6 +483,16 @@ land; date every addition.** Source docs live in `docs/engineering/archive/`.
 
 ## Known bugs & flakes (live registry)
 
+- **Fleet disk exhaustion interrupted landing — OPEN, deferred by user**
+  (2026-09-06; owner: bughunt/Codex). The shared WSL filesystem reached zero
+  available bytes during `land`'s tooling preflight; the failure summary itself
+  then failed with `ENOSPC`. User reclaimed space (163 GB available afterward).
+  Follow-up: measure build/cache/artifact growth, add disk headroom checks and
+  warnings before expensive work, establish bounded retention, and make cleanup
+  targeted, host-locked, and safe for active lanes and paid translation output.
+  Preserve enough headroom to record failure evidence. Do not treat manual
+  cleanup as prevention or silently skip checks when space runs out.
+
 - **Binary-lint corpus depends on existing artifacts — OPEN** (2026-09-06;
   owner: bughunt/Codex). `tools/scan_ud2.py::find_rust_binaries` discovers existing
   `.sys/.dll/.exe` files beneath the selected build directory and filters with
