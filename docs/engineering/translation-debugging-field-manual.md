@@ -6909,6 +6909,37 @@ boot, `PTE=…447` (AttrIndx 1) with `OPC=0xB83F6AB4` — a plain `str`; after, 
 whole class collapsed to the one case that is *supposed* to happen.
 
 ### arm64 bring-up bugs worth recognising again
+- **A dropped C `ASSERT` is a machine freeze on arm64, not a lost debug check.** Symptom: a
+  boot wedges with a vCPU at EL1, PC parked, DAIF all masked, no bugcheck and no timer; the
+  faulting VA is a user address, hardware reports a level-3 translation fault (EC 0x25,
+  DFSC 0x07), and the PTE software reads for that same VA has `Valid = 1`. Cause:
+  `MI_MAKE_HARDWARE_PTE_USER` was translated without the three ASSERTs the C original opens
+  with -- the ones commented *"check that we are not setting valid a page that should not be"*
+  (`ASSERT(ProtectionMask & MM_PROTECT_ACCESS)` and friends). `MM_PROTECT_ACCESS` is 7, so
+  `mask & 7 == 0` selects exactly the four rows of `MmProtectToPteMask` that are zero
+  (zero-access, no-access, guard, decommit). On x86 a zero row still leaves a translatable
+  page -- the helper's own `Valid | User | PFN` is a complete present PTE -- so the bug degrades
+  to a wrongly READABLE page and hides. On arm64 that table is the ONLY source of bit 1
+  (`NotLargePage`) and bit 10 (AF), so the same mask yields `Valid = 1` with descriptor type
+  `0b01`, which is RESERVED at level 3: the MMU refuses the translation, `MmAccessFault` reads
+  `Valid = 1` and reports `STATUS_SUCCESS`, and the trap returns to the same instruction
+  forever. Both are telling the truth about different fields of one word. Fix: restore the
+  assert as a real runtime guard, centrally (`ntkrnl_sys::mm::mi_user_pte_may_be_valid`) -- a
+  protection granting no access leaves the entry not-present, which is what the mask asked for,
+  so the fault takes the invalid path and the thread gets a clean access violation instead of
+  taking the box down. The reusable half: an `ASSERT` dropped in translation is not equivalent
+  to a dropped debug print. It encodes a precondition another arch enforces in *hardware*, so
+  the same wrong value that is survivable on x86 is unrecoverable on arm64. `scan_assert_to_ub`
+  does not cover this -- it catches an assert lowered to `unreachable_unchecked()`, not one
+  deleted outright, and its oracle (rustconv's trailing C comments) is absent from hand-written
+  bridge modules like `ARM3/helpers.rs` anyway. Grep the C for `ASSERT` before calling a
+  translated MM/KE helper faithful.
+- **"Software says valid, hardware says translation fault" has two causes on arm64, and they
+  need opposite fixes.** Either the entry was never published to the page-table walker (a
+  separate observer from this core's loads -- needs `dsb ishst`; see `MI_WRITE_VALID_PTE`), or
+  the entry is published and *malformed*. Dump the PTE through the self-map before choosing: a
+  well-formed user page reads `0x...443` (Valid, NotLargePage, Owner, AF), a malformed one
+  `0x...041`. Guessing wrong costs a build-and-soak cycle per guess.
 - **An EL1 instruction fetch on a user page loops silently forever — the fault handler called it
   spurious.** Symptom: a ~2% arm64 boot wedge with no bugcheck, no serial, every timed wait
   dead, every vCPU sample at the same user-range PC (`0x10000`) at EL1h; the whole box reads

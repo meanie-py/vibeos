@@ -856,6 +856,63 @@ pub fn MI_SET_PROCESS2(_name: &str) {}
 /// hand at exactly two (its `dsb ish`/`isb` pairs are now redundant, and
 /// harmless). Centralising it is the only way the next new call site is right
 /// by default.
+/// Refuse to build a VALID user PTE for a protection that grants no access.
+///
+/// The C original opens with three ASSERTs whose entire job is this check —
+/// "check that we are not setting valid a page that should not be":
+///
+/// ```c
+/// ASSERT(ProtectionMask & MM_PROTECT_ACCESS);
+/// ASSERT((ProtectionMask & MM_PROTECT_SPECIAL) != MM_GUARDPAGE);
+/// ASSERT(ProtectionMask != MM_OUTSWAPPED_KSTACK && ...);
+/// ```
+///
+/// The translation dropped all three. On x86 that loss is survivable: the mask
+/// contributes nothing, so the PTE comes out Valid|User|PFN — a wrongly
+/// READABLE page, but a page the hardware can translate. On arm64 it freezes
+/// the machine, because `MmProtectToPteMask` is the only source of bit 1
+/// (NotLargePage) and bit 10 (AF) there. A no-access mask therefore yields
+/// Valid=1 with descriptor type 0b01, which is RESERVED at level 3: the MMU
+/// raises a translation fault (DFSC 0x07) that software cannot see, because
+/// `MmAccessFault` reads Valid=1 and reports STATUS_SUCCESS. The faulting
+/// instruction retries forever with DAIF masked — no timer, no IPI, no
+/// bugcheck, a dead machine whose PC never moves.
+///
+/// So this is not a lost debug assert; it is the difference between a wrong
+/// page and an unkillable fault loop. Returning `false` leaves the entry
+/// not-present, which is what the caller's own protection mask asked for: the
+/// fault then takes the invalid path and the thread gets a clean access
+/// violation instead of taking the box down with it.
+#[inline]
+pub unsafe fn mi_user_pte_may_be_valid(protection_mask: usize) -> bool {
+    // MM_PROTECT_ACCESS is the three access bits; a mask with none of them set
+    // names MM_ZERO_ACCESS (0), MM_NOACCESS (8), MM_GUARDPAGE/MM_DECOMMIT (0x10)
+    // or 0x18 — exactly the four zero rows of MmProtectToPteMask.
+    if protection_mask & MM_PROTECT_ACCESS as usize != 0 {
+        return true;
+    }
+    mi_report_no_access_valid_pte(protection_mask);
+    false
+}
+
+/// One line per distinct offending mask per boot — enough to name the caller's
+/// protection without turning a hot fault path into a serial-console flood.
+#[inline(never)]
+unsafe fn mi_report_no_access_valid_pte(protection_mask: usize) {
+    static mut REPORTED: u32 = 0;
+    let bit = 1u32 << (protection_mask & 31);
+    if REPORTED & bit != 0 {
+        return;
+    }
+    REPORTED |= bit;
+    crate::driver_ddk::DbgPrint(
+        b"[NOACCESSPTE] refused a VALID user PTE for protection mask %u (grants no access; \
+          would be a hardware-invalid L3 descriptor on arm64)\n\0"
+            .as_ptr() as *const i8,
+        protection_mask as u32,
+    );
+}
+
 #[inline(always)]
 unsafe fn mi_publish_pte() {
     #[cfg(target_arch = "aarch64")]

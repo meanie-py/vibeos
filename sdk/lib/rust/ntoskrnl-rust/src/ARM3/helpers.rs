@@ -530,6 +530,11 @@ pub unsafe fn MI_MAKE_HARDWARE_PTE_USER(
     page_frame_number: PFN_NUMBER,
 ) {
     new_pte.Long = 0;
+    // The C original's three ASSERTs, restored: a mask granting no access must
+    // never be made valid. See ntkrnl_sys::mm::mi_user_pte_may_be_valid.
+    if !ntkrnl_sys::mm::mi_user_pte_may_be_valid(protection_mask as usize) {
+        return;
+    }
     new_pte.set_valid(true);
     #[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
     { new_pte.Long |= 4; }
