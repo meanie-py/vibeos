@@ -4644,6 +4644,31 @@ nothing. It has false-greened arm64 six times in a row (fastfat → ramdisk → 
 user32 → advapi32). Rule: **`vibeos-cli smoke` hard-fails on stale media — never bypass it, and
 judge a build by artifact existence, not a reported exit code.**
 
+### Cargo depfiles leave directory contents or lockfile changes stale
+
+**Symptom:** Ninja reports no work after an input-file edit or a lockfile-only
+dependency update, but a cold build produces a different executable.
+
+**Cause:** Cargo's recursive `rerun-if-changed=directory` watch becomes only a
+directory path in the emitted depfile. Ninja does not recursively inspect that
+directory; editing an existing child does not change its parent directory's
+mtime. Cargo depfiles also do not replace the workspace `Cargo.lock` edge.
+
+**Fix:** Retain explicit lockfile dependencies and conservative source edges.
+Before narrowing, represent both watched directories (membership changes) and
+their input files (content changes). The real warm/cold controls in
+`tools/test_build_invalidation.py` demonstrate stale output for directory-only
+and missing-lockfile edges, and passing output for explicit file watches and
+lockfile dependencies. These fixture controls do not establish completeness of
+the production build-script input graph.
+
+Native inputs have two layers too: an outer Ninja edge cannot compensate for a
+missing Cargo build-script header watch. The C and preprocessed-assembly fixture
+controls change only an included header, force Ninja to invoke Cargo by removing
+the copied executable, and still observe stale output until a cold build.
+Represent the native include closure in build-script watches as well as the
+outer dependency graph; watching only the `.c` or `.S` file is insufficient.
+
 ### A flipped TU's leftover `.obj` keeps voting on the NEXT flip's closure
 ninja never deletes the object of a source you remove from a CMake list, so every TU we flip
 leaves a stale `.obj` under the link root forever. `rustconv hybrid-closure` globs `*.obj` for
@@ -7670,6 +7695,19 @@ touching the loader** — the El Torito entry folds in `uefildr`.
 **Before declaring any smoke red, check whether the host was busy** (`./vibeos-cli ps`,
 `./vibeos-cli host-status`). A lone red while another arch is mid-gate is a prime contention
 suspect; re-run host-quiet to decide.
+
+### New builds pass an older CPU-lease waiter
+
+**Symptom:** `host-status` shows an older waiter still queued while newer builds
+acquire permits. **Cause:** admitting queued requests against total pool capacity
+ignores running holders. With four permits, two held, and two waiters requesting
+two each, only the earlier waiter is entitled to the free pair. A free-count
+snapshot also races concurrent acquirers. **Fix:** admit only the ticket head;
+drop its ticket immediately on acquiring permits, not when work finishes. Builds
+still run concurrently within the pool. The isolated live-flock regression is
+`test_hostlock_fifo_respects_existing_permit_holders`. Old processes/worktrees
+retain their prior admission code until restarted/updated; do not rewrite another
+worktree or kill a running build to propagate this fix.
 
 ### Contention wears three costumes, not one
 1. **`HANG_TIMEOUT` at `[freeldr] Switching stack...`** with zero kernel serial (the CGU lottery,

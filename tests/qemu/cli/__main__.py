@@ -119,6 +119,11 @@ def build_parser() -> argparse.ArgumentParser:
     c.add_argument("--arch", choices=ACCEPTED_ARCHES, required=False)
     c.add_argument("--strict", action="store_true", help="block on NEW findings")
     c.add_argument(
+        "--scope",
+        choices=("source", "arch"),
+        help="strict partial check: shared sources or per-architecture guards; not a full gate",
+    )
+    c.add_argument(
         "--only",
         metavar="TOOL[,TOOL...]",
         help="run selected source scanners only; explicitly PARTIAL, not a landing gate",

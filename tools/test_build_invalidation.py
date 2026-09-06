@@ -16,7 +16,9 @@ REPO = Path(__file__).resolve().parents[1]
 
 
 class BuildFixture:
-    def __init__(self, root, *, track_assets=True, emitted_deps=False, depfile_policy="OLD"):
+    def __init__(
+        self, root, *, track_assets=True, emitted_deps=False, depfile_policy="OLD", track_lock=False
+    ):
         self.root = root
         self.build = root / "build"
         self.configured = False
@@ -65,6 +67,9 @@ class BuildFixture:
         depfile_commands = ""
         depfile_option = ""
         policy = ""
+        lock_input = '"${CMAKE_SOURCE_DIR}/Cargo.lock"' if track_lock else ""
+        if track_lock:
+            self.run("cargo", "generate-lockfile", "--offline")
         if emitted_deps:
             target = "${name}"
             if depfile_policy == "NEW":
@@ -99,7 +104,7 @@ foreach(name leaf peer other)
         {depfile_commands}
         COMMAND ${{CMAKE_COMMAND}} -DLOG=${{CMAKE_BINARY_DIR}}/invocations
             -DNAME=${{name}} -P "${{CMAKE_SOURCE_DIR}}/record.cmake"
-        DEPENDS ${{inputs}} ${{assets}} "${{CMAKE_SOURCE_DIR}}/Cargo.toml"
+        DEPENDS ${{inputs}} ${{assets}} "${{CMAKE_SOURCE_DIR}}/Cargo.toml" {lock_input}
         {depfile_option}
         VERBATIM)
     add_custom_target(${{name}}_target ALL DEPENDS "${{CMAKE_BINARY_DIR}}/${{name}}")
@@ -107,6 +112,15 @@ endforeach()
 ''',
         )
         self.run("cmake", "-S", str(root), "-B", str(self.build), "-G", "Ninja")
+        # Configure itself can straddle a host-clock adjustment: CMakeSystem.cmake
+        # then appears newer than each newly regenerated build.ninja, causing
+        # Ninja's 100-regeneration failure before any dependency edge is tested.
+        # Establish the same initial epoch for generated configure state as for
+        # fixture sources. Leave regeneration enabled and all dependency edges
+        # intact; later mutations still use the strict ordering in write().
+        for path in self.build.rglob("*"):
+            if path.is_file():
+                os.utime(path, ns=(self.initial_mtime_ns, self.initial_mtime_ns))
         self.configured = True
 
     def write(self, path, text):
@@ -160,6 +174,29 @@ endforeach()
         self.run("cargo", "clean", "--target-dir", str(self.build / "cargo"))
         self.run("ninja", "-C", str(self.build), "-t", "clean")
         return self.compile()
+
+
+def test_initial_configure_metadata_cannot_be_in_the_future(tmp_path, monkeypatch):
+    original_run = BuildFixture.run
+    injected = []
+
+    def configure_with_clock_step(self, *cmd):
+        result = original_run(self, *cmd)
+        if cmd[0] == "cmake":
+            system = next(self.build.glob("CMakeFiles/*/CMakeSystem.cmake"))
+            future = time.time_ns() + 86_400_000_000_000
+            os.utime(system, ns=(future, future))
+            injected.append(system)
+        return result
+
+    monkeypatch.setattr(BuildFixture, "run", configure_with_clock_step)
+    fixture = BuildFixture(tmp_path)
+    assert injected
+    assert injected[0].stat().st_mtime_ns == fixture.initial_mtime_ns
+    initial = fixture.compile()
+    before = fixture.invocations()
+    assert fixture.compile() == initial
+    assert fixture.invocations() == before, fixture.build_explanation
 
 
 @pytest.mark.parametrize(
@@ -287,3 +324,215 @@ def test_cargo_emitted_dependencies_close_non_rust_input_gap(tmp_path, asset, po
     assert fixture.invocations()[len(before) :] == ["leaf"]
     assert warm != initial
     assert warm == fixture.cold()
+
+
+@pytest.mark.parametrize("kind", ["c", "S"])
+@pytest.mark.parametrize("change", ["source", "header"])
+@pytest.mark.parametrize("mode", ["source-only", "source-depfile", "closure-depfile"])
+def test_native_inputs_reach_linked_rust_executable(tmp_path, kind, change, mode):
+    """Compile real C/preprocessed assembly, not a simulated native-input reader.
+
+    The assembly exports data, avoiding architecture-specific instructions. The
+    fixture intentionally owns its compiler calls; it does not certify cc-rs or
+    reactos-link's production header discovery.
+    """
+    fixture = BuildFixture(tmp_path, track_assets=False, emitted_deps=mode != "source-only")
+    source = (
+        '#include "value.h"\nunsigned int native_value = VALUE + OFFSET;\n'
+        if kind == "c"
+        else '#include "value.h"\n.data\n.balign 4\n.globl native_value\n'
+        'native_value:\n.long VALUE + OFFSET\n.section .note.GNU-stack,"",@progbits\n'
+    )
+    fixture.write("leaf/native/value.h", "#define VALUE 1\n")
+    fixture.write(f"leaf/native/value.{kind}", source.replace("OFFSET", "0"))
+    fixture.write(
+        "leaf/build.rs",
+        """use std::{env, path::PathBuf, process::Command};
+fn main() {
+    println!("cargo:rerun-if-changed=native/value.KIND");
+    WATCH_HEADER
+    let out = PathBuf::from(env::var_os("OUT_DIR").unwrap());
+    let object = out.join("native.o");
+    let archive = out.join("libnative.a");
+    assert!(Command::new("cc").args(["-c", "native/value.KIND", "-o"])
+        .arg(&object).status().unwrap().success());
+    assert!(Command::new("ar").arg("crs").arg(&archive).arg(&object)
+        .status().unwrap().success());
+    println!("cargo:rustc-link-search=native={}", out.display());
+    println!("cargo:rustc-link-lib=static=native");
+}
+""".replace("KIND", kind).replace(
+            "WATCH_HEADER",
+            'println!("cargo:rerun-if-changed=native/value.h");'
+            if mode != "source-depfile"
+            else "",
+        ),
+    )
+    fixture.write(
+        "leaf/src/main.rs",
+        'extern "C" { static native_value: u32; }\n'
+        'fn main() { println!("{}", unsafe { native_value }); }\n',
+    )
+    initial = fixture.compile()
+    assert initial["leaf"] == "1\n"
+    before = fixture.invocations()
+    assert fixture.compile() == initial
+    assert fixture.invocations() == before, fixture.build_explanation
+    if change == "source":
+        fixture.write(f"leaf/native/value.{kind}", source.replace("OFFSET", "1"))
+    else:
+        fixture.write("leaf/native/value.h", "#define VALUE 2\n")
+    warm = fixture.compile()
+    missing_edge = mode == "source-only" or (mode == "source-depfile" and change == "header")
+    if missing_edge:
+        assert fixture.invocations() == before
+        assert warm == initial
+        # Force only the outer layer: a missing Cargo header watch remains stale
+        # even when Ninja has been made to invoke Cargo again.
+        if mode == "source-depfile":
+            (fixture.build / "leaf").unlink()
+            assert fixture.compile() == initial
+            assert fixture.invocations()[len(before) :] == ["leaf"]
+    else:
+        assert fixture.invocations()[len(before) :] == ["leaf"]
+        assert warm["leaf"] == "2\n"
+        assert warm["peer"] == initial["peer"]
+        assert warm["other"] == initial["other"]
+    cold = fixture.cold()
+    assert cold["leaf"] == "2\n"
+    assert (warm != cold) if missing_edge else (warm == cold)
+
+
+@pytest.mark.parametrize("emitted_deps", [False, True])
+def test_workspace_inherited_version_reaches_final_executables(tmp_path, emitted_deps):
+    fixture = BuildFixture(tmp_path, emitted_deps=emitted_deps)
+    workspace = (tmp_path / "Cargo.toml").read_text()
+    fixture.write("Cargo.toml", workspace + '\n[workspace.package]\nversion = "0.1.0"\n')
+    for name in ("leaf", "peer", "other"):
+        manifest = f"{name}/Cargo.toml"
+        fixture.write(
+            manifest,
+            (tmp_path / manifest)
+            .read_text()
+            .replace('version = "0.1.0"', "version.workspace = true"),
+        )
+        fixture.write(
+            f"{name}/src/main.rs",
+            fixture.main_source(name, 'env!("CARGO_PKG_VERSION_MINOR").parse::<u32>().unwrap()'),
+        )
+    initial = fixture.compile()
+    before = fixture.invocations()
+    fixture.write("Cargo.toml", workspace + '\n[workspace.package]\nversion = "0.2.0"\n')
+    warm = fixture.compile()
+    assert set(fixture.invocations()[len(before) :]) == {"leaf", "peer", "other"}
+    assert all(warm[name] != initial[name] for name in initial)
+    assert warm == fixture.cold()
+
+
+@pytest.mark.parametrize("track_lock", [False, True])
+def test_lockfile_only_git_pin_change_requires_explicit_edge(tmp_path, track_lock):
+    """Two local Git revisions provide a real resolution change without network."""
+    fixture = BuildFixture(tmp_path, emitted_deps=True, track_lock=track_lock)
+    dependency = tmp_path / "git-dependency"
+    fixture.write(
+        "git-dependency/Cargo.toml",
+        '[package]\nname = "pinned"\nversion = "0.1.0"\nedition = "2021"\n',
+    )
+    fixture.run("git", "init", str(dependency))
+    revisions = []
+    for value in (1, 2):
+        fixture.write("git-dependency/src/lib.rs", f"pub fn value() -> u32 {{ {value} }}\n")
+        fixture.run("git", "-C", str(dependency), "add", "Cargo.toml", "src/lib.rs")
+        fixture.run(
+            "git",
+            "-C",
+            str(dependency),
+            "-c",
+            "user.name=Fixture",
+            "-c",
+            "user.email=fixture@example.invalid",
+            "-c",
+            "commit.gpgsign=false",
+            "commit",
+            "-m",
+            f"value {value}",
+        )
+        revisions.append(fixture.run("git", "-C", str(dependency), "rev-parse", "HEAD").strip())
+    # Keep Cargo's Git cache fixture-local; production/shared caches are untouched.
+    fixture.env["CARGO_HOME"] = str(tmp_path / "cargo-home")
+    manifest = (tmp_path / "leaf/Cargo.toml").read_text()
+    fixture.write("leaf/Cargo.toml", manifest + f'pinned = {{ git = "{dependency.as_uri()}" }}\n')
+    fixture.write("leaf/src/main.rs", fixture.main_source("leaf", "pinned::value()"))
+    # Fetch only file://, then every compile and pin update is offline.
+    fixture.run("cargo", "generate-lockfile")
+    fixture.run("cargo", "update", "--offline", "-p", "pinned", "--precise", revisions[0])
+    initial = fixture.compile()
+    before = fixture.invocations()
+    assert fixture.compile() == initial
+    assert fixture.invocations() == before
+    fixture.run("cargo", "update", "--offline", "-p", "pinned", "--precise", revisions[1])
+    fixture.write("Cargo.lock", (tmp_path / "Cargo.lock").read_text())
+    warm = fixture.compile()
+    if track_lock:
+        assert set(fixture.invocations()[len(before) :]) == {"leaf", "peer", "other"}
+        assert warm["leaf"] != initial["leaf"]
+        assert warm["peer"] == initial["peer"]
+        assert warm["other"] == initial["other"]
+        assert warm == fixture.cold()
+    else:
+        assert fixture.invocations() == before
+        assert warm == initial
+        assert warm != fixture.cold(), "Cargo depfiles alone must expose the missing lockfile edge"
+
+
+@pytest.mark.parametrize("mode", ["source-only", "directory-depfile", "files-depfile"])
+def test_generated_rust_tracks_directory_input_add_edit_remove(tmp_path, mode):
+    """Cargo directory watches are recursive; Ninja depfile directory edges are not."""
+    emitted_deps = mode != "source-only"
+    fixture = BuildFixture(tmp_path, track_assets=False, emitted_deps=emitted_deps)
+    fixture.write("leaf/inputs/one.txt", "1")
+    fixture.write(
+        "leaf/build.rs",
+        """fn main() {
+    println!("cargo:rerun-if-changed=inputs");
+    let value: u32 = std::fs::read_dir("inputs").unwrap().map(|entry| {
+        let path = entry.unwrap().path();
+        WATCH_FILE
+        std::fs::read_to_string(path).unwrap().trim().parse::<u32>().unwrap()
+    }).sum();
+    let out = std::path::PathBuf::from(std::env::var_os("OUT_DIR").unwrap());
+    std::fs::write(out.join("generated.rs"), format!("const VALUE: u32 = {value};")).unwrap();
+}
+""".replace(
+            "WATCH_FILE",
+            'println!("cargo:rerun-if-changed={}", path.display());'
+            if mode == "files-depfile"
+            else "",
+        ),
+    )
+    fixture.write(
+        "leaf/src/main.rs",
+        'include!(concat!(env!("OUT_DIR"), "/generated.rs"));\n'
+        'fn main() { println!("{VALUE}"); }\n',
+    )
+    initial = fixture.compile()
+    assert initial["leaf"] == "1\n"
+    before = fixture.invocations()
+    assert fixture.compile() == initial
+    assert fixture.invocations() == before, fixture.build_explanation
+    for operation, expected in (("add", "3\n"), ("edit", "5\n"), ("remove", "4\n")):
+        before = fixture.invocations()
+        if operation == "remove":
+            (tmp_path / "leaf/inputs/one.txt").unlink()
+        else:
+            fixture.write("leaf/inputs/two.txt", "2" if operation == "add" else "4")
+        warm = fixture.compile()
+        if mode == "files-depfile" or (mode == "directory-depfile" and operation != "edit"):
+            assert fixture.invocations()[len(before) :] == ["leaf"], operation
+            assert warm["leaf"] == expected
+            assert warm == fixture.cold()
+        else:
+            assert fixture.invocations() == before, "negative control must miss the input edge"
+            cold = fixture.cold()
+            assert warm != cold
+            assert cold["leaf"] == expected
