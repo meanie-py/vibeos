@@ -22,6 +22,8 @@
 #define OP_COS   0
 #define OP_HYPOT 0
 #define OP_POW   0
+#define OP_LDEXP 0
+#define OP_LOGB  0
 
 /* MS <math.h> _exception .type values (glibc math.h does not define them). */
 #ifndef _DOMAIN

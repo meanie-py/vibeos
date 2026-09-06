@@ -5041,6 +5041,37 @@ MSVC *intrinsic*).
 A whole family of bugs where the *verification* is wrong, so the code looks correct. These cost
 more than ordinary bugs because their output is trusted.
 
+### A difftest oracle that is the source the port was MADE from grades nothing
+
+**Symptom.** A host difftest is green, has been green for months, and the shipped Rust is still
+wrong on one arch. Nothing in the harness looks suspicious: the reference TU compiles genuine
+tree C, the comparison is bit-exact, the fuzz domain is wide.
+
+**Cause.** The reference compiles the C the translation was ported from — but a *different*
+arch links a *different* C for that symbol. `sdk/lib/crt/math/math.cmake` is the worked
+example: amd64 and i386 take AMD's `math/libm_sse2/*.c` while arm64 takes the portable
+`math/arm64/*.c`, and cnt-rust's cohab body replaces BOTH. Grading it against the arm64
+source confirms only that the port matches its own origin. Whatever the other arch used to do
+is graded by nothing at all, and a flip that changed that arch's behaviour reads as green.
+
+Found this way, all of them invisible until the oracle was corrected: `ldexp` had traded AMD's
+single-rounding exponent arithmetic for a multiply-through-`2^-1022` stepping that
+double-rounds on gradual underflow (wrong in 2,764 of 5.2M cases vs glibc); `_logb`/`_logbf`
+returned `x * x` for an infinity, folding `-inf` to `+inf` where the C says in as many words
+"For VC++, return infinity of same sign"; `tan` went from AMD's 244-line implementation to
+`sin(x)/cos(x)`, which on top of the tree's ~1e-10-accurate `math/sin.c` is up to 0.056
+absolute away from what amd64 used to compute.
+
+**Fix.** Before trusting any per-symbol oracle, read the per-arch source lists and check that
+the reference is what the arch under test actually LINKS, not merely genuine tree C. The tell
+in this case was an asymmetry inside one harness — `atan2f` was graded against AMD's source
+while its double sibling `atan2` was graded against arm64's. When one Rust body replaces two
+different C implementations, one oracle cannot cover both: grade bit-exact against the
+algorithm the Rust implements AND to a measured ULP bound against the other, so a later change
+that drifts away from the arch that lost its implementation still fails. Where the two are too
+far apart for any bound to grade (`tan`), say so in the test with the measurement, rather than
+inventing a tolerance wide enough to pass.
+
 ### A tri-state preflight that only refuses on `False` waves through the case that actually bites
 
 **Symptom.** A preflight written to prevent exactly one failure lets it happen anyway, on a
@@ -5161,12 +5192,22 @@ and none of which was checked:
 | `sdk/include/reactos/debug.h` | — | — | — | `DPRINT1` always on under `DBG`; only `DPRINT` sees `NDEBUG` |
 | `sdk/include/wine/debug.h` | **on** | **on** | off | libwine's `default_flags` is `ERR\|FIXME`; `DEBUGCHANNEL` overrides |
 | `win32ss/user/ntuser/win32kdebug.h` | **on** | off | off | `DBG_PRINT` short-circuits on `level == ERR_LEVEL` before reading `ppi->DbgChannelLevel[ch]`, which starts ERR-only |
-| `boot/freeldr/freeldr/include/debug.h` | off | off | off | `DbgChannels[]` starts all-zero; the `/DEBUG=` boot option opens a channel |
+| `boot/freeldr/freeldr/include/debug.h` | **on** | **on** | off | `DbgChannels[]` starts all-zero and `/DEBUG=` opens a channel, but `DbgPrint2` also passes anything in `DBG_DEFAULT_LEVELS` (`ERR\|FIXME`, debug.c:33) regardless of channel |
 
-So a silent `FIXME` is a dropped diagnostic in a wine DLL and faithful in win32k, and freeldr's
-four are faithful at boot but must still route to `DbgPrint2` so `/DEBUG=` works. Where silence
+So a silent `FIXME` is a dropped diagnostic in a wine DLL and faithful in win32k. Where silence
 IS faithful, say so at the macro and mark it `// nolint: scan_dropped_prints` with the reason
 rather than leaving a baseline row — a baseline row means debt, and this is not debt.
+
+**Read the whole gate expression, not just the channel array.** The freeldr row above said
+`off/off/off` when it was first written, reasoning from `DbgChannels[]` being all-zero at boot
+with no `DEBUG_ALL`/`DEBUG_WARN`/`DEBUG_ERR` define anywhere in freeldr's CMake. That is true and
+it is not the gate. The C is
+`if (!(DbgChannels[Mask] & Level) && !(Level & DBG_DEFAULT_LEVELS)) return;` — a *second*,
+channel-independent term that lets `ERR` and `FIXME` through always. `freeldr-rust`'s port kept
+only the first half, so every one of freeldr's ~2200 live `ERR`/`FIXME` sites was silent, and a
+boot log contained no `DbgPrint2` output at all. Two lessons: an all-zero table is evidence about
+one operand, never about the branch; and when a port drops a disjunct, the result still compiles,
+still looks like the C, and fails only by saying nothing.
 
 Two mechanical traps in the conversion, both of which the compiler catches only *after* the
 macro is real: a call site written as `ERR!("... 0x{:x}\n", x)` is **Rust** format syntax that a
@@ -5175,6 +5216,31 @@ is a NULL-returning shim in this tree — feeding NULL to a live `%s` faults, so
 string directly with `%S`. A third is worth automating around: when a script rewrites the format
 argument, scope the "strip the trailing cast" rule to *inside* the macro invocation. Applied
 file-wide it silently ate the first half of `as *const u8 as *const i8` in ordinary code.
+
+**A printf-style callee can take varargs on stable Rust: declare the slots as fixed parameters.**
+Stable cannot *define* a C-variadic (`c_variadic` is nightly), which is why `freeldr-rust`'s
+`DbgPrint2`/`DbgPrint` shipped a fixed 5-parameter definition that printed its format string
+literally — `%s` and `%lu` came out as those two characters. You cannot define a variadic, but you
+can *receive* one. All three targets pass a variadic call as a flat ascending slot sequence
+(i386 cdecl: stack, caller-pop; win64: RCX/RDX/R8/R9 then stack; ARM64: x0–x7 then stack), and
+`va_list` is `*mut c_char` on all three (`bindgen_{i386,amd64,arm64}.rs`) — a plain pointer walked
+upward, nothing like the SysV x86-64 register-save-area form. So declare the trailing slots as
+ordinary fixed parameters, copy them into a local array, and pass that array's address as the
+`va_list` to libcntpr's `_vsnprintf`. The callee's declared arity is invisible to a cdecl/win64
+caller, so the C header stays variadic and **not one call site changes** — 3038 of them here.
+
+Three things make it safe rather than lucky:
+- **Size the slot count by measurement.** Sweep every format literal reaching the function and
+  count *slots*, not specifiers, so an i386 `%I64x` counts as the 2 it occupies. freeldr's widest
+  is 11 (`"VolumeLabel: %c%c…"`, fat.c); 12 captured covers it.
+- **Over-reading captured slots is harmless; over-reading the array is not.** Params the caller
+  never pushed resolve to loads from the caller's own frame — always mapped, and never *consumed*,
+  because the format string is what decides how far `_vsnprintf` walks. So make the array handed
+  to `_vsnprintf` strictly larger than what you capture and zero the tail: a format that outruns
+  the capture then reads zeros and prints `0`/`(null)` (streamout.c:537) instead of walking off
+  the end into the callee's own frame.
+- **It requires caller-pop.** Fine for cdecl and for the Windows 64-bit conventions; a `stdcall`
+  callee would both mis-clean the stack and encode the byte count in its decorated name.
 
 ### A `cfg(debug_assertions)` block is not code that works — it is code with no evidence either way
 

@@ -79,9 +79,13 @@ pub fn IMAGE_ORDINAL(ordinal: usize) -> usize {
 // ---------------------------------------------------------------------
 // boot/freeldr/freeldr/include/debug.h: all four are `DbgPrint2(DbgDefaultChannel,
 // <LEVEL>, __FILE__, __LINE__, fmt, ...)` under DBG. The level gate lives INSIDE
-// DbgPrint2 (`DbgChannels[Mask] & Level`), and `DbgChannels` starts all-zero, so
-// nothing prints until the `/DEBUG=` boot option opens a channel — which is why a
-// silent macro looked harmless and still lost every diagnostic for anyone who sets it.
+// DbgPrint2, and it has TWO terms: `DbgChannels[Mask] & Level` OR
+// `Level & DBG_DEFAULT_LEVELS`. `DbgChannels` does start all-zero until the `/DEBUG=`
+// boot option opens a channel, but the second term is channel-independent and covers
+// ERR and FIXME — so those two print on every boot and only WARN/TRACE wait for
+// `/DEBUG=`. (An earlier revision of this comment cited only the first term and
+// concluded all four were silent-but-faithful; see debug.rs, where the port had
+// dropped the same disjunct and really was silencing every ERR freeldr has.)
 //
 // `DbgDefaultChannel` is per-file, exactly as `DBG_DEFAULT_CHANNEL(ch)` makes it in the
 // C, so each translated module names its own; the macro just reads it at the call site.
@@ -92,8 +96,9 @@ macro_rules! __freeldr_dbg {
         // `#[cfg(not(feature = "rosload"))]` and rosload.exe imports DbgPrint2 from
         // freeldr.sys, so a direct path stops resolving on that third archive.
         // (freeldr's own definition is not variadic — stable Rust cannot DEFINE a
-        // C-variadic — so it prints the format literally today; that is owed
-        // independently, and cdecl lets the extra arguments pass harmlessly.)
+        // C-variadic — but it now captures the argument slots as fixed parameters
+        // and formats through `_vsnprintf`, so `%s`/`%lu` substitute properly. See
+        // debug.rs `DbgFormatSlots`. cdecl is what lets the arities differ.)
         $crate::ffi::DbgPrint2(
             DbgDefaultChannel,
             $level,
