@@ -198,11 +198,23 @@ def _lint_preflight(repo: Path, run: Run, args) -> None:
     if cp.returncode == 0:
         run.add(Stage("lint", status="ok", detail=f"check-tooling clean ({dt:.0f}s)"))
         return
+    # PERSIST what we captured before aborting. check-tooling prints the failing
+    # test's own output after the summary, and this is the only copy of it: the
+    # child writes no artifact dir, so discarding stdout here leaves a lane with a
+    # ✗ line and nothing to debug. That is not hypothetical — a preflight abort on
+    # 2026-09-06 named only `pytest:.` for a failure that did not reproduce, and
+    # the evidence was gone.
+    log = run.dir / "preflight-check-tooling.log"
+    try:
+        log.write_text((cp.stdout or "") + (cp.stderr or ""), encoding="utf-8", errors="replace")
+    except OSError:
+        pass
     salient = [ln.strip() for ln in (cp.stdout or "").splitlines() if "✗" in ln]
     raise LandAbort(
         "check-tooling FAILED — fix it before queueing, or the conductor bounces the whole "
         "batch (3 builds + 4 boots of fleet load) for it:\n    "
         + ("\n    ".join(salient) if salient else f"exit {cp.returncode}")
+        + f"\n  captured output: {log}"
         + "\n  run `./vibeos-cli check-tooling` for the detail."
         + "\n  override (report every use): ./vibeos-cli land --skip-lint"
     )
@@ -349,9 +361,13 @@ def _land_queued(args, repo: Path) -> int:
     other agent already is. Returns as soon as the work is either done (we trained) or in
     somebody else's hands (they are training) — never blocks holding a worktree hostage."""
     run = Run("land", "queue")
+    attempt = None
     try:
         _branch, head = _preflight(repo)
         lane = queue.lane_id(repo)
+        # Marker first: everything from here to the submit is the window where a kill leaves
+        # the lane silently unregistered. See queue.begin_attempt.
+        attempt = queue.begin_attempt(repo, lane, head)
         _report_prior_results(repo, lane, run)
         queue.git(repo, "fetch", "origin")
         if queue.git_ok(repo, "merge-base", "--is-ancestor", head, "origin/master"):
@@ -462,6 +478,11 @@ def _land_queued(args, repo: Path) -> int:
         run.classification = run.classification or "LAND_ABORT"
         run.add(Stage("land", status="fail", detail=str(e).splitlines()[0], salient=[str(e)]))
         return run.finalize(repo)
+    finally:
+        # Every ordinary exit clears the marker, an abort included: an abort is LOUD, and the
+        # marker exists only for the silent death. A SIGKILL skips this, which is the whole
+        # mechanism -- a surviving marker means "killed", not "failed".
+        queue.end_attempt(attempt)
 
 
 def _conductor_log(run: Run):
@@ -687,6 +708,16 @@ def cmd_land_status(args, repo: Path) -> int:
         print(f"  queued #{i + 1}: {s.lane} @ {s.tip[:12]}  ({waited // 60}m{waited % 60:02d}s)")
     if not subs:
         print("  queue: empty")
+    # A killed submit is INVISIBLE here otherwise, and "not listed" reads as "the conductor
+    # has not reached me" -- so the agent waits on a position it never had. Say it instead.
+    for rec in queue.abandoned_attempts(repo, lane=mine):
+        ago = max(0, int(now - float(rec.get("started_at", now))))
+        print(
+            f"  NOT QUEUED: {rec.get('lane')} @ {str(rec.get('tip', ''))[:12]} — a `land` "
+            f"started {ago // 60}m{ago % 60:02d}s ago DIED before it enqueued anything "
+            f"(pid {rec.get('pid')} is gone). You are not in the queue; re-run "
+            f"`./vibeos-cli land`. If the host was full, check `df -h /` first."
+        )
     for rec in recent:
         # `or ""` keeps the key a str: a record with no outcome yet reads as
         # REJECTED either way (a None key simply misses), but dict.get is typed

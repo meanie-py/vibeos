@@ -622,10 +622,6 @@ fn main() {
         ("log10", format!("#define log10 ref_log10\n{}", inc(s("math/arm64/log10.c")))),
         ("pow", format!("#include <math.h>\n#define pow ref_pow\n{}", inc(s("math/arm64/pow.c")))),
         ("fmod", format!("#include <math.h>\n#define fmod ref_fmod\n{}", inc(s("math/arm64/fmod.c")))),
-        // Wave MATH-TIERC sub-wave 3: tan = sin/cos (the portable arm64/tan.c
-        // form). Compute the reference via the genuine ref_sin/ref_cos (the
-        // same algorithm cnt-rust's sin/cos use) → bit-exact vs cabi::tan.
-        ("tan", "double ref_sin(double); double ref_cos(double);\ndouble ref_tan(double x){return ref_sin(x)/ref_cos(x);}".to_string()),
         // Wave MATH-TIERC sub-wave 4: ceil/floor via __builtin_* so clang -O2
         // lowers them to hardware roundsd/roundss (correctly rounded) — an
         // INDEPENDENT reference, not cnt-rust's #[no_mangle] ceil/floor (which
@@ -878,6 +874,12 @@ fn main() {
         // return + the __setusermatherr callback; ReactOS's _handle_error.c
         // drops the EDOM/ERANGE and the AMD_F_* flag word). Grading here is
         // therefore what makes those domains visible at all.
+        // tan: cnt-rust hand-ports AMD's body (it used to be arm64's 18-line
+        // `sin(x)/cos(x)`, which on top of math/sin.c cost amd64 up to 0.056
+        // absolute — see cabi/math.rs). Needs the out-of-line Payne-Hanek
+        // reduction, added to the build below; every other unit here gets the
+        // inline f32 twin from libm_inlines.h and needs nothing.
+        ("tan", format!("#include <math.h>\n#include <errno.h>\n#define tan ref_tan\n{}", inc(libm_dir.join("tan.c")))),
         ("atan", format!("#include <math.h>\n#include <errno.h>\n#define atan ref_atan\n{}", inc(libm_dir.join("atan.c")))),
         ("atan2", format!("#include <math.h>\n#include <errno.h>\n#define atan2 ref_atan2\n{}", inc(libm_dir.join("atan2.c")))),
         ("ldexp", format!("#include <math.h>\n#include <errno.h>\n#define ldexp ref_ldexp\n{}", inc(libm_dir.join("ldexp.c")))),
@@ -909,7 +911,9 @@ fn main() {
         .flag("-ffp-contract=off")
         .opt_level(2)
         .cargo_metadata(false)
-        .file(&libm_stubs);
+        .file(&libm_stubs)
+        // Out-of-line Payne-Hanek reduction, called by libm_sse2/tan.c.
+        .file(libm_dir.join("remainder_piby2.c"));
     for (sym, body) in &libm_units {
         let w = out.join(format!("ref_{sym}.c"));
         fs::write(&w, body).unwrap();

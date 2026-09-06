@@ -265,10 +265,17 @@ def c_dirs_for(crate: str) -> list[Path]:
     collides on short names and its findings are overwhelmingly false."""
     stem = crate.removesuffix("-rust").removesuffix("-sys")
     stem = {"ntkrnl": "ntoskrnl", "rtlk": "rtl", "win32k": "win32ss"}.get(stem, stem)
+    # PRUNE during the walk, don't filter after it. `REPO.rglob(stem)` descends into every
+    # excluded tree before the `rel.startswith(...)` test can reject it -- including
+    # `sdk/lib/rust/target`, which a CONCURRENT cargo build is deleting directories out of.
+    # That raced and crashed the scanner with FileNotFoundError deep inside pathlib, which the
+    # gate reported as "NEW lint findings" -- a crash misfiled as a verdict. It only became
+    # reachable when the source-early partition started running scanners alongside builds
+    # rather than after them. Included source I/O errors must still fail loudly:
+    # silently skipping unreadable source would shrink verification coverage.
+    skip = ("build-", "modules/rostests", "sdk/lib/rust", ".git")
     hits = []
-    for parent, dirs, _ in source_walk(
-        REPO, exclude_prefixes=("build-", "modules/rostests", "sdk/lib/rust", ".git")
-    ):
+    for parent, dirs, _ in source_walk(REPO, exclude_prefixes=skip):
         hits.extend(parent / name for name in dirs if name == stem)
     return hits
 

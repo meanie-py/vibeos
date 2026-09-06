@@ -526,9 +526,109 @@ land; date every addition.** Source docs live in `docs/engineering/archive/`.
   the consolidated entry below and the field manual, "The HOST CLOCK steps backwards, so an
   output is older than its own input".
 
+- **FIXED pending gate (2026-09-06): the LAST five varargs-discarding printf entry points, plus
+  four format-string bugs the fix itself created.** Follow-on to the freeldr `DbgPrint2` work.
+  Same defect: stable Rust cannot DEFINE a C-variadic, so each of these took a fixed parameter
+  list and printed its format string LITERALLY, dropping every argument. Converted to the
+  slot-capture technique: freeldr `TuiPrintf` (tui.c:39) and the `printf`/`TRACE_printf` aliases
+  over it, `rosload_shims.rs`'s cross-importlib `printf`, ntoskrnl's `KdIoPrintf` (kdio.c:574),
+  and classpnp/disk's `TracePrint`.
+  **Ported ONCE into a new `va-slots-rust` crate** rather than a third and fourth copy — the
+  VA_SLOTS/VA_STAGE bounds are only safe because they were MEASURED, so each copy is a chance to
+  guess them. rlib, no dependencies, exports no `#[no_mangle]` symbol so `drvtrace-shim` keeps the
+  LLVM-module isolation that is its whole reason to exist (§9.99).
+  **The fix makes a second bug, and this is the transferable part:** while a printer emits its
+  format verbatim, passing message TEXT as the format is harmless — a `%` comes out as a `%`. The
+  moment formatting is real, those sites consume slots nobody pushed. Four were already in the
+  tree, all of them divergences from the C (which uses `printf("%s\n", Text)` at every one):
+  `directui.rs` `UiInfoBox`/`UiMessageBox`/`UiMessageBoxCritical`, and `rosload_shims.rs`'s `puts`,
+  which handed an arbitrary string straight to `TuiPrintf` as its format. All four routed through
+  `%s`. Also clamped `KdIoPrintf`'s truncation path: the C is `Length = (ULONG)_vsnprintf(...)`
+  with no check, so a >512-byte format hands `KdIoPrintString` a length of 0xFFFFFFFF — tui.c:52
+  clamps for the identical idiom, and a 4GB overread inside the debug printer is the last thing
+  anyone would successfully debug.
+  Validated on a two-TU i386 host harness (variadic caller, non-variadic callee — the real shape):
+  11/11 including `%*s`, the 11-slot widest live format, NULL `%s`, the over-run-reads-zeros
+  degradation, and the truncation clamp. Field manual entry extended with the grep that finds the
+  data-as-format sites before you flip a verbatim printer.
+
 The committed home for open bugs (was: agent MEMORY.md, which other agents never see).
 Field-manual § pointers hold the full writeups. **Update on state change.**
 
+- **RVA arithmetic on a PE mapped as DATA crashed the WoW64 layer — FIXED** (2026-09-05).
+  `Wow64pPatchTransitionSlot` runs on every successful `NtMapViewOfSection` and guarded only on
+  DOS magic + PE signature + `Size >= 0x1000`, none of which separates an IMAGE mapping
+  (sections at RVAs) from a raw DATA mapping of the same file (sections at FILE offsets). ws2_32
+  maps msafd.dll as data before loading it properly, so the export walk read RVAs into raw file
+  bytes and **wow64.dll took the access violation on the guest's behalf** — which is why the
+  faulting address was inside no guest module. The discriminator is the ViewSize: an image view
+  equals SizeOfImage, a data view is the file page-rounded (msafd: file 0x55400 -> 0x56000
+  observed, vs SizeOfImage 0x49000). `Wow64pFindExport32` was also written for one trusted
+  input (our own ntdll32) and now sees every module a guest maps, so all of its RVAs are
+  range-checked and the name compare is bounded. Symptom to recognise again: `rip` inside
+  wow64.dll after a map, with a guest that never reached its DllMain.
+- **32-bit `socket()` returned WSAEINVAL because the WSH helper was unstaged — FIXED,
+  BOOT-VERIFIED** (2026-09-05, ladder run `20260905-233102-smoke-amd64`: `socket()` succeeds,
+  `select()` is reached and issues four AFD IOCTLs where there were previously zero). With the
+  RVA-on-a-data-mapping crash above fixed, msafd.dll loaded for real and `socket()` STILL
+  failed with `0x2726`. The cause was the SAME
+  dynamic-edge blind spot one hop deeper: msafd reads `HelperDllName` from the registry and
+  `LoadLibraryW`s the WSH_* helper (msafd-rust `misc/helpers.rs`), which nettcpip.inf declares
+  as `%SystemRoot%\System32\wshtcpip.dll`. That DLL was BUILT and never staged into SysWOW64,
+  `LoadLibraryW` returned NULL, and helpers.rs returns WSAEINVAL straight out of WSPSocket.
+  Visible in the log as two `NtQueryAttributesFile => c0000034` immediately after msafd's
+  DllMain. **The one-hop fix is what disguised it**: staging the provider made every symptom of
+  the previous bug vanish while the module it loads at runtime was still missing, because the
+  error surfaces a full frame from the absent DLL. `wow64-closure.py` now keys the derivation
+  by READER (ws2_32 reads LibraryPath/PackedCatalogItem, msafd reads HelperDllName) and follows
+  dynamic edges transitively. Lesson: a runtime-load edge is never known to be the last one.
+- **AFD IOCTLs were REFUSED because async I/O was unsupported under WoW64 — FIXED,
+  BOOT-VERIFIED** (2026-09-06, ladder `20260906-132106-smoke-amd64`: **9/9 guests PASS**,
+  marshal32 `0xbb04` -> `0x600d`, AFD refusals 4 -> 0, IOCTL statuses `4x c0000002` ->
+  `3x SUCCESS + 1x 00000102`). This was the E25 blocker: msafd always passes an Event because
+  AFD is inherently async, and `Wow64pRefuseAsync` refused on sight, so the E25 marshallers had
+  never once run. The refusal was CORRECT when written — the only IOSB wow64.dll could give the
+  kernel was a host one on its own frame, and pending on that is the dead-frame-IOSB class
+  (field manual §9.36). Fixed the way that comment already said was owed: the kernel writes the
+  GUEST's 8-byte block, which outlives the thunk by construction. The machinery existed already
+  (M15b, built for `NtReadFile`/`NtWriteFile`); the IOCTL family was simply never wired into it.
+  Three obligations in `IopDeviceFsIoControl`, each **silent** rather than loud if skipped:
+  probe the guest block at 8 bytes not 16, mark the IRP, and narrow the write on the fast-I/O
+  path — which completes inline, never builds an IRP, and so can never see the flag. Marshalled
+  IOCTLs still complete synchronously and the reason is the PAYLOAD, not the IOSB: the widened
+  input, WSABUF array and AFD_POLL_INFO shadow are host-heap blocks the thunk frees on the way
+  out, and METHOD_BUFFERED copies SystemBuffer back into that shadow AT COMPLETION. The
+  unmarshalled path has no shadow and is genuinely async now. Blocking has one trap worth
+  remembering: msafd's `SockEvent` is a SYNCHRONIZATION event, so the thunk's own wait consumes
+  the very signal `MsafdWaitForAlert` is about to wait for — missing the re-signal is a guest
+  hang with no error printed anywhere. Still OPEN: a guest `ApcRoutine` (no 64->32 user-APC
+  dispatch).
+- **msafd interprets a FAILED `AFD_SELECT` as success — upstream wart, OPEN but no longer
+  reachable here** (2026-09-05, re-checked 2026-09-06). The `select()` = 5 on a single-socket
+  `fd_set` is explained: `WSPSelect` never checks the IOCTL status before walking `PollInfo`, so
+  a failed IOCTL leaves the guest's own REQUEST mask sitting in `Handles[].Events` and the loop
+  reads it back as the RESULT, `FD_SET`ting sockets that were never ready. It returns the count
+  rather than `SOCKET_ERROR`, though it does set `*lpErrno` — so a caller checking only for
+  failure sees five ready sockets. Byte-faithful to the C, so this is upstream behaviour and is
+  left alone. With the refusal above fixed the precondition is gone (the rung now returns 0 and
+  passes), but the wart would resurface behind any future IOCTL failure.
+- **EVERY CSR call from a WoW64 guest fails — `NtRequestWaitReplyPort => c000000d` — OPEN**
+  (2026-09-05). Found while chasing the socket() bug above; it is NOT its cause (there is no
+  LPC call inside the socket() window at all — that lead was wrong). It is unconditional and
+  the arithmetic is exact: `PORT_MESSAGE` is **24 bytes on i386 and 40 on amd64** (the
+  `ClientId` union is 2 pointers, and `ClientViewSize` is a `SIZE_T`), and the syscall has NO
+  manual marshaller — the log line prints without `[manual]`, so it takes the flat
+  pointer-widening auto thunk. The guest sets `TotalLength = DataLength + 24`; the kernel
+  (`lpc-rust/src/send.rs`) checks `DataLength + sizeof(PORT_MESSAGE) > TotalLength`, i.e.
+  `DataLength + 40 > DataLength + 24`, which is **always true**. Hence 100% failure, every
+  call, deterministically. `NtConnectPort`/`NtSecureConnectPort` are already on the manual list
+  and thunk `PORT_VIEW` + `CSR_API_CONNECTINFO`, so the connect succeeds and only the calls
+  fail. There is already a workaround papering over one symptom — `WOW64: CreateThread
+  continuing without CSRSS thread notify (0xc000000d)`. Fixing the header is mechanical
+  (translate 24<->40, payload follows contiguously, rewrite TotalLength); the real work is the
+  **payload**, a `CSR_API_MESSAGE` full of 32-bit guest pointers that 64-bit csrss would
+  misread, so this needs per-API marshalling and is its own task, not a bolt-on. Same family:
+  `NtReplyPort`, `NtReplyWaitReceivePort`, `NtRequestPort`, `NtReplyWaitReplyPort`.
 - **FIXED (2026-09-05): freeldr printed NOTHING — all ~2200 `ERR`/`FIXME` sites were silenced
   by a dropped disjunct, and `/DEBUG=` was dead code.** A boot log contained zero `DbgPrint2`
   output; the `[freeldr]`/`[FLDR]` stamps that *do* appear ride a separate hand-added path, which
@@ -578,7 +678,14 @@ Field-manual § pointers hold the full writeups. **Update on state change.**
   before that loads every cursor in user mode and then silently drops it in the kernel (the
   syscall just returns FALSE — a first attempt did exactly this and moved the count not at all).
   Result: 78 -> 24, boot green at 37s, and the feared `LoadImageW`/`RtlVirtualUnwind` AV from
-  letting the callback finally run did **not** materialise. **The residual 24 is 4 processes x 6
+  letting the callback finally run did **not** materialise.
+  **Read the count as `6 x (processes that missed)`, not as a raw number.** Observed 78 (13x6),
+  24 (4x6) and, on a later boot with no win32k change in between, 30 (5x6) — every value seen so
+  far is an exact multiple of the six cursor classes. So movement in units of 6 is just how many
+  GUI processes happened to register before the deferred load on that boot, and only a
+  **non-multiple of 6** would mean something structural changed. Worth knowing before someone
+  reads 24 -> 30 as a regression and goes looking for one; verified here that neither the
+  origin/master merge nor the varargs work touched the win32k cursor path at all. **The residual 24 is 4 processes x 6
   classes that register system classes without ever passing through `co_int_graphics_check`, so
   the hook cannot fire for them**: every one of the 24 is emitted strictly *before* the load
   (serial lines 1263-1513 vs the load at 1552), and there are zero in the 750 lines after it.
@@ -613,12 +720,22 @@ Field-manual § pointers hold the full writeups. **Update on state change.**
   outright — `restat of output leaf older than most recent input ../leaf/src/main.rs` with the
   input **1.86s NEWER** than the output built from it. Measured directly: over 120s of
   `CLOCK_MONOTONIC_RAW` the host lost **9.57s** of realtime in **4 backward steps of ~2.4s**, and
-  `CLOCK_MONOTONIC` runs **8.09% fast**. Cause is a miscalibrated WSL2 guest TSC (`dmesg`:
-  `Adjusting tsc more than 11% (4482949 vs 4434052)`) that the kernel over-compensates with a
-  maximal tick adjustment (`adjtimex` `tick 10773`, i.e. +7.7%, against NTP's own ±0.05% slew
-  limit), which `systemd-timesyncd` then steps back every poll — and it is pinned at its **32s
-  minimum poll** (`timedatectl show-timesync --all`) because it can never converge, with its
-  own `NTPMessage` showing our clock 3s ahead of the server.
+  `CLOCK_MONOTONIC` runs **8.09% fast**. Reproduced independently by the control-plane lane.
+  Cause is a **runaway feedback loop between `systemd-timesyncd` and the kernel's own slew**:
+  timesyncd steps the clock back, the kernel slews harder to catch up, the slew saturates at its
+  `tick` ceiling of **11000** (nominal 10000) where it has no headroom left and can never
+  converge, so timesyncd steps it back again — with the poll pinned at its **32s floor**
+  (`timedatectl show-timesync --all`, `PacketCount=3966`) and its own `NTPMessage` showing our
+  clock 3s ahead of the server. WSL2 adds a second time authority on the same clock:
+  `/proc/cmdline` carries `hv_utils.timesync_implicit=1`.
+  **My first attribution was wrong and is worth recording as the trap:** I read the oversized tick
+  as the kernel compensating for a miscalibrated guest TSC, on the strength of `dmesg`'s
+  `Adjusting tsc more than 11% (4482949 vs 4434052)`. That line is real but **incidental**, and it
+  points at hardware — which is how you end up costing the fleet a `wsl --shutdown` for something
+  a `systemctl` fixes. Two pieces of evidence settle it: `tick` at 11000 is **saturated, not
+  merely large** (my own 10773 sample was mid-adjustment, not the steady state), and after
+  stopping timesyncd the kernel returns to `tick 10000` with `freq` ≈ **-0.14 ppm** — a genuinely
+  11%-off TSC would have left a large residual correction behind, and there is none.
   **This is bigger than the flake, and the other direction is a FALSE GREEN**: a source edited
   just after a step gets an mtime OLDER than an artifact built before it, so ninja/cmake/cargo
   skip the rebuild and a stale artifact ships. Rule out the clock first for any "impossible"
@@ -631,11 +748,18 @@ Field-manual § pointers hold the full writeups. **Update on state change.**
   when the clock steps, so the guard cannot mask one. Validated 4/4 full-file runs green (was 4/6
   FAILING), 3-4 skips per run, rotating to a different test each time so nothing goes permanently
   unexercised.
-  **Still owed, NOT this lane's to do: the host clock itself.** Switching `current_clocksource`
-  from `tsc` to `hyperv_clocksource_tsc_page` does not help (the slew is reapplied, verified);
-  a durable fix needs the WSL kernel cmdline, i.e. a restart that kills every running lane.
-  Until then every mtime comparison and every `time.monotonic()` timeout on this fleet is
-  suspect — reported boot durations are ~8% wrong.
+  **Host clock FIXED (2026-09-06), by the control-plane lane with the user's approval:**
+  `systemctl disable --now systemd-timesyncd` — one service, persistent across WSL restarts, and
+  **no `wsl --shutdown`**, so no lane lost context and nothing paid was at risk. Verified here
+  independently over 90s: REALTIME/MONOTONIC/MONOTONIC_RAW agree to five decimals, **0 backward
+  steps**, `adjtimex tick 10000 freq -0.138 ppm offset 0`. What remains is a constant ~1.55s
+  absolute offset (the frozen residue of the last backward step), stable within noise and harmless
+  for build correctness since every mtime carries it equally. Two things measured NOT to work:
+  switching `current_clocksource` to `hyperv_clocksource_tsc_page` (slew is reapplied), and the
+  WSL kernel cmdline.
+  **The fixture guard STAYS** — it defends against a step from any cause and re-arms the moment
+  timesyncd is ever re-enabled. One documented limit: it catches STEPS, not slew; a pure frequency
+  error moves both clocks together and slips past it.
 - **FIXED pending validation (2026-09-06): `ks.sys`, `pcix.sys` and `ramdisk.sys` imported a
   nonexistent `ntoskrnl.dll`.** Found by the freeldr debug channel on its FIRST boot after being
   un-silenced — `PeLdrLoadImage('...\drivers\ntoskrnl.dll') failed` ->
@@ -655,8 +779,16 @@ Field-manual § pointers hold the full writeups. **Update on state change.**
   `ExSemaphoreObjectType`, `IoFileObjectType`, `KeLoaderBlock`), so its IAT slots are never
   filled and any path reading them gets an unresolved pointer; the boot stays green only because
   those paths are not exercised (ramdisk is not the boot device here). 9 sites in 8 files fixed.
-  Field manual: "raw-dylib in a freeldr-loaded DLL hangs the boot". Owed: a lint so the bare form
-  cannot come back.
+  Field manual: "raw-dylib in a freeldr-loaded DLL hangs the boot". **Owed lint DELIVERED
+  (2026-09-06): `tools/scan_rawdylib_linkname.py`**, wired into `vibeos-cli check` with an EMPTY
+  baseline. It resolves each name the way rustc does and reports DOUBLE_EXT (`ntoskrnl.exe` with
+  no `+verbatim` -> `ntoskrnl.exe.dll`), WRONG_EXT (bare `ntoskrnl` -> `ntoskrnl.dll`, the
+  original bug) and NO_EXT. It deliberately does NOT demand `+verbatim` everywhere — bare `ntdll`
+  -> `ntdll.dll` is correct, and a scanner flagging it would teach the next agent to write
+  `ntdll.dll.dll`. Validated by replaying `2a89c05d763^` through it: flags all four sites naming
+  `ntoskrnl.exe.dll`, and the pre-repair spelling naming `ntoskrnl.dll` — the two filenames that
+  actually appeared in the boot log. Positive AND negative controls in
+  `tools/test_scanner_controls.py`.
 - **`Cannot open winsta` x229 per boot is winlogon thread teardown — ROOT-CAUSED, benign, OPEN**
   (2026-09-05). Instrumented boot: 228 of 229 come from PID 0x9c (winlogon), all with
   `hWinSta = NULL` and `STATUS_INVALID_HANDLE` (not an access denial), all from one call site —
@@ -770,19 +902,65 @@ Field-manual § pointers hold the full writeups. **Update on state change.**
   translation had spread across ~40 distinct bitmask-looking values, and even the two `glue.rs`
   "canonical" copies were off by one. Those are log-filtering only — the ReactOS
   `StorDebugPrint` marks the flag `UNREFERENCED_PARAMETER` — but they now have one oracle.
-- **scsiport ships a TRUNCATED `SpiParseDeviceInfo` — OPEN** (2026-09-05). Found by the
-  invented-constant sweep, not by the sweep's own findings: the function carried a preamble of
-  22 placeholder constants, and reading it showed the translation was ABANDONED mid-body. C's
-  `scsiport.c:2634-3014` is ~380 lines that walk the registry's
-  `REG_FULL_RESOURCE_DESCRIPTOR` and switch on Port / Memory / Interrupt / Dma /
-  DeviceSpecific; the Rust (`scsiport.rs:2530`) enumerates the values and then stops, leaving
-  the model's own notes in the tree — *"Actually let's rewrite the whole block with explicit
-  structure. I'll rebuild."* The C is cohab-flipped OUT (`CMakeLists.txt:56`), so this is what
-  ships: scsiport parses no device info at all. Fixing it is a rustconv job, not a hand edit.
-  The class is worth a scanner of its own — `classpnp-rust/src/power.rs:366` carries
-  *"[Error handling block same as C, omitted for brevity but will be included]"* and
-  `acpi-rust/src/bus.rs:17` records a truncated struct. A translation that announces its own
-  incompleteness in a comment is the cheapest possible defect to find.
+- **Translations that ABANDONED a function mid-body — the shipping two are FIXED** (2026-09-06).
+  Found by the invented-constant sweep, not by the sweep's own findings: a preamble of 22
+  placeholder constants turned out to be marking a body the model had given up on. The class
+  announces itself in English, in the tree, which makes it the cheapest defect there is to find.
+  - `scsiport` `SpiParseDeviceInfo` — C `scsiport.c:2634-3014` is ~380 lines walking the
+    device node's registry values; the Rust enumerated them and stopped, leaving the model's
+    note *"Actually let's rewrite the whole block with explicit structure. I'll rebuild."* The
+    loop still terminated (`ZwEnumerateValueKey` runs out), so it was a silent no-op parse, not
+    a hang: **scsiport applied no registry tuning at all** — MaximumLogicalUnit,
+    InitiatorTargetId, the four Disable* knobs, DriverParameters, MaximumSGList,
+    NumberOfRequests, and the whole ResourceList/Configuration Data resource walk. Hand-
+    translated; all 22 placeholders resolved to the crate's real substrate. Two constants were
+    genuinely absent and are now in `glue.rs` beside their siblings: `CmResourceTypeDeviceSpecific`
+    (cmtypes.h:14) and `REG_FULL_RESOURCE_DESCRIPTOR` (cmtypes.h:33) — the latter localized
+    rather than imported because only `hal_bindgen_{i386,amd64}` carry it and **there is no
+    `hal_bindgen_arm64`**, so the hal-island import that rustc suggests breaks arm64.
+  - `classpnp` `ClasspPowerUpCompletion` — *"[Error handling block same as C, omitted for
+    brevity but will be included]"*, ~55 C lines. START_UNIT failures were never interpreted
+    and **never retried**: no `InterpretSenseInfoWithoutHistory`, no watchdog-aware timeout,
+    no `RetryPowerRequest`. Two further defects fell out of writing it: the surviving guard
+    compared the RAW `SrbStatus` instead of `SRB_STATUS()` (srb.h:149 masks off
+    `AUTOSENSE_VALID|QUEUE_FROZEN`, so a success carrying sense data read as a failure), and
+    the state machine had collapsed C's `goto ClasspPowerUpCompletionFailure` into a plain
+    re-dispatch — the label sits *inside* `case PowerUpDeviceStarted`, past its error check,
+    so the goto path was wrongly running that check. Now carried by an explicit flag.
+  - **Two preserved C quirks, deliberately not "fixed":** `sizeof(REG_FULL_RESOURCE_DESCRIPTOR)`
+    is `sizeof(9)` == 4, because the identifier is a macro and not a type; and
+    `CM_RESOURCE_DMA_8` is **0**, so `Flags & CM_RESOURCE_DMA_8` is always false and the
+    8-bit DMA branch is dead upstream too.
+- **disk-rust: 4 hand-inlined asserts that HANG instead of RtlAssert — OPEN** (2026-09-06).
+  `scan_ud2`'s arm64 driver sweep flags three branch-to-self spins in `DiskIoctlIsWritable`
+  (`disk.rs:10780`). They are **not** the §9.99 CC/sig-mismatch fold the scanner files them
+  under — reading the instruction before the trap, as the manual's triage table says to, gives
+  `brk #0xf001` (the deliberate breakpoint), then `b .`. These are the PAGED_CODE / CHECK_IRQL
+  expansions written out longhand as `DbgPrint` + `int 0x2C`/`brk #0xF001` + `loop {}`. That is
+  the exact pattern the 2026-07-26 "kernel asserts that hung the box" pass replaced with
+  `ntkrnl_sys::ASSERT!`/`NT_ASSERT!` → `RtlAssert` (loud, non-fatal, matching C under `-DDBG=1`);
+  these 4 survived it because they are inlined macro expansions, not `assert!` calls, so the
+  migration's grep never saw them. Only 4 sites, both files in `disk-rust`
+  (`disk.rs`, `ddk_shims.rs`), and `disk-rust` uses `ASSERT!` zero times. Small and mechanical.
+- **`scan_ud2`'s arm64 driver coverage is INCIDENTAL, not defined — OPEN** (2026-09-06).
+  Found while chasing the above. arm64 has no `livecd` DAG; `archcfg.py:209` builds a
+  hand-picked staged set plus a ramdisk, and `disk.sys` is in neither the required nor the
+  optional target list. So the driver sweep grades **whatever binaries happen to be sitting in
+  `build-arm64/`** — which in a fresh integration worktree is a handful of staged files, and in
+  a long-lived lane worktree is however much someone once ran `ninja` for. Consequences both
+  ways: the disk.sys bug above has never blocked a gate (the conductor's worktree does not
+  build the file), and conversely a lane can eat a red arm64 `scan_ud2` for a driver it never
+  touched. A verdict that depends on which artifacts a worktree happens to carry is the same
+  shape as the AGENTS.md §7-8 fleet-isolation rule about resolving generated artifacts from
+  siblings — the sweep should name its corpus, not discover it.
+- **cmlib `CmpAddToLeaf` + `CmpSelectLeaf` are truncated — OPEN, but LATENT** (2026-09-06).
+  The same sweep found them via `cmindex.rs`'s own review header: `CmpAddToLeaf` inserts
+  nothing (C 987-1099 absent) and `CmpSelectLeaf` is missing ~100 lines including the split,
+  which the header argues makes a full leaf spin forever. **These do not ship** — unlike
+  scsiport/classpnp, `cmindex.c` is still in `sdk/lib/cmlib/CMakeLists.txt:10`, so the C body
+  wins at link and the Rust is dead. Same file also records an i386 ABI bug: five `NTAPI`
+  callees declared `extern "C"` instead of `extern "system"`. Worth doing before cmlib is
+  cohab-flipped, not after.
 - **classpnp `ClasspAccessAlignmentProperty` spun forever on arm64 — FIXED** (2026-09-05).
   An empty `_ => {}` catch-all as the last arm of a `match` that IS the body of a
   goto-elimination `'work: loop`. utils.c's switch has no `default:`, so an unmatched value

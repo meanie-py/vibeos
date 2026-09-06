@@ -246,6 +246,7 @@ NTSTATUS WINAPI NtQueryDirectoryFile(HANDLE File, HANDLE Event, PVOID ApcRoutine
                                      PVOID FileName, BOOLEAN RestartScan);
 NTSTATUS WINAPI NtWaitForSingleObject(HANDLE Object, BOOLEAN Alertable,
                                       PLARGE_INTEGER Timeout);
+NTSTATUS WINAPI NtSetEvent(HANDLE Event, PLONG PreviousState);
 NTSTATUS WINAPI NtWaitForMultipleObjects(ULONG Count, HANDLE Objects[],
                                          ULONG WaitType, BOOLEAN Alertable,
                                          PLARGE_INTEGER Timeout);
@@ -1122,7 +1123,7 @@ typedef struct _WOW64_IO_STATUS_BLOCK64_M {
  * scratch — guest memory is never modified. */
 #define WOW64_REDIR_MAX 260
 
-static void Wow64pRedirectPath(WOW64_UNICODE_STRING64_M *Name64, WCHAR *Scratch)
+static BOOLEAN Wow64pRedirectPath(WOW64_UNICODE_STRING64_M *Name64, WCHAR *Scratch)
 {
     static const WCHAR Sys32[] = {'\\','s','y','s','t','e','m','3','2','\\',0};
     static const WCHAR Wow64[] = {'\\','s','y','s','w','o','w','6','4','\\',0};
@@ -1131,8 +1132,19 @@ static void Wow64pRedirectPath(WOW64_UNICODE_STRING64_M *Name64, WCHAR *Scratch)
     ULONG i, j;
     LONG Hit = -1;
 
-    if (!Src || Chars == 0 || Chars > WOW64_REDIR_MAX)
-        return;
+    if (!Src || Chars == 0)
+        return FALSE;
+    if (Chars > WOW64_REDIR_MAX)
+    {
+        /* A path too long for the scratch buffer used to return quietly, which
+         * means a \system32\ path silently stayed \system32\ and the 32-bit
+         * process opened the 64-BIT file. That is a wrong-file open reported as
+         * success — exactly the failure this function exists to prevent — so it
+         * says so rather than degrading in silence. */
+        DbgPrint("[WOW64]   REDIRECT SKIPPED (path %lu chars > %u): '%.*S'\n",
+                 Chars, (unsigned)WOW64_REDIR_MAX, (int)Chars, Src);
+        return FALSE;
+    }
 
     for (i = 0; i + 10 <= Chars; i++)
     {
@@ -1145,13 +1157,14 @@ static void Wow64pRedirectPath(WOW64_UNICODE_STRING64_M *Name64, WCHAR *Scratch)
         if (j == 10) { Hit = (LONG)i; break; }
     }
     if (Hit < 0)
-        return;
+        return FALSE;
 
     for (i = 0; i < Chars; i++)
         Scratch[i] = Src[i];
     for (j = 0; j < 10; j++)
         Scratch[Hit + j] = Wow64[j];
     Name64->Buffer = (ULONG_PTR)Scratch;
+    return TRUE;
 }
 
 static void Wow64pCopyIosbDown(WOW64_IO_STATUS_BLOCK64_M *I64, ULONG Iosb32Ptr)
@@ -1205,9 +1218,12 @@ static NTSTATUS Wow64Manual_NtFlushVirtualMemory(ULONG *a)
  *     polling its IOSB), we block on the file handle until completion rather
  *     than return with a live pointer into a dead frame.
  *
- * The real fix for async is kernel-side: I/O completion should write an
+ * The real fix for async is kernel-side: I/O completion writes an
  * IO_STATUS_BLOCK32 when the requesting process is WoW64 (what NT's
- * IoIs32bitProcess() gates). Owed; see wow64-plan.md.
+ * IoIs32bitProcess() gates). That is DONE for NtReadFile/NtWriteFile (M15b)
+ * and for the IOCTL family (M15c) — see Wow64pLatchIosb32. The functions still
+ * using Wow64pFinishIosb below are the ones not yet converted; they keep the
+ * refusal, which is why it is still here.
  */
 #define WOW64_STATUS_PENDING         ((NTSTATUS)0x00000103)
 #define WOW64_STATUS_NOT_IMPLEMENTED ((NTSTATUS)0xC0000002)
@@ -1266,10 +1282,11 @@ static NTSTATUS Wow64pFinishIosb(NTSTATUS St, HANDLE File,
 typedef NTSTATUS (WINAPI *WOW64_RW_FN)(HANDLE, HANDLE, PVOID, PVOID, PVOID,
                                        PVOID, ULONG, PLARGE_INTEGER, PULONG);
 
-/* TEB.Instrumentation offset (arm64 host) — pinned by the kernel-side layout
- * assert (ntkrnl-sys offset_check_arm64.rs: _TEB.Instrumentation == 5816).
- * Drift here degrades to "latch never matches" + the kernel's loud [IOSB32]
- * mismatch print + the async32.exe oracle failing its OVERLAPPED.Offset
+/* TEB.Instrumentation offset. Identical on both 64-bit hosts and pinned by a
+ * layout assert on each (offset_check_amd64.rs and offset_check_arm64.rs:
+ * _TEB.Instrumentation == 5816), so this is one constant rather than a
+ * per-arch table. Drift degrades to "latch never matches" + the kernel's loud
+ * [IOSB32] mismatch print + the async32.exe oracle failing its OVERLAPPED
  * clobber check — never to silent corruption. */
 #define WOW64_TEB_INSTRUMENTATION0 5816
 
@@ -1425,12 +1442,19 @@ static NTSTATUS Wow64Manual_NtOpenFile(ULONG *a)
     WOW64_IO_STATUS_BLOCK64_M Iosb64 = {0};
     HANDLE Handle = NULL;
     NTSTATUS St;
+    BOOLEAN Redirected;
 
     Wow64pMarshalOa(&Oa64, &Uname64, a[2]);
-    Wow64pRedirectPath(&Uname64, RedirScratch);
+    Redirected = Wow64pRedirectPath(&Uname64, RedirScratch);
     St = NtOpenFile(&Handle, Access, &Oa64, &Iosb64, a[4], a[5]);
-    if (St < 0 && Oa64.ObjectName)
-        DbgPrint("[WOW64]   NtOpenFile '%.*S' => %08lx\n",
+    /* Logged on SUCCESS too. Printing only failures means you can see every
+     * path the process could not open and none of the ones it did — so a
+     * successful open of the WRONG file (the 64-bit copy, because redirection
+     * did not fire) is invisible, which is precisely the case this had to be
+     * used to diagnose. */
+    if (Oa64.ObjectName)
+        DbgPrint("[WOW64]   NtOpenFile%s '%.*S' => %08lx\n",
+                 Redirected ? " [redir]" : "",
                  (int)(Uname64.Length / sizeof(WCHAR)),
                  (PCWSTR)(ULONG_PTR)Uname64.Buffer, St);
     Wow64pCopyIosbDown(&Iosb64, a[3]);
@@ -3647,27 +3671,514 @@ static NTSTATUS Wow64Manual_NtSetEaFile(ULONG *a)
     return St;
 }
 
-/* NtDeviceIoControlFile / NtFsControlFile.
+/* NtDeviceIoControlFile / NtFsControlFile — M15c.
  *
- * The in/out buffers are IOCTL-specific and OPAQUE to us: most are flat
- * (width-identical) and pass through, but a minority embed pointers/ULONG_PTRs
- * and would need per-code marshalling. We can't know which from here, so we
- * marshal the IOSB (which we CAN see) and pass the buffers through. If a future
- * guest sends a pointer-bearing IOCTL, the failure will be a bad pointer inside
- * the driver — grep this comment when that happens. */
+ * This comment used to say the in/out buffers are "OPAQUE to us ... We can't
+ * know which from here", and predicted that a pointer-bearing IOCTL would show
+ * up as a bad pointer inside the driver. The prediction was right; the premise
+ * was wrong. The IoControlCode IS knowable — it is argument 5 — so the payload
+ * type is derivable from it, and clang can settle whether that payload changes
+ * shape. tools/wow64gen/ioctlaudit.py does exactly that against the LIVE driver
+ * (afd-rust; the driver's C sources on disk are cohab-flipped dead source) and
+ * records the verdicts in tools/lint-baseline/wow64_ioctl_audit.txt.
+ *
+ * Nine AFD payloads change shape between a 32-bit guest and this process, i.e.
+ * every socket a 32-bit app opens was passing through here mis-shaped.
+ *
+ * Flat-passing them is worse than a truncation, because AFD is METHOD_NEITHER:
+ * the driver dereferences the guest's buffer IN PLACE and writes back to it —
+ *     afd-rust/src/write.rs:  (*SendReq).BufferArray = LockBuffers(...)
+ * — so an 8-byte kernel pointer landed inside a 16-byte guest struct, clobbering
+ * BufferCount and leaking a kernel address to the guest. Marshalling through a
+ * host-side shadow fixes both halves: the driver reads a correctly-shaped
+ * struct, and its write-back lands in the shadow, which is where a kernel
+ * pointer belongs.
+ *
+ * Codes NOT in the table keep the old flat pass. That is deliberate: the audit
+ * says which ones diverge, and inventing marshalling for a width-identical
+ * payload would be its own bug. An audit row that is neither IDENTICAL nor
+ * handled here is a gap, and `ioctlaudit.py check` is what refuses to let a new
+ * one appear silently. */
+
+#define WOW64_STATUS_INVALID_PARAMETER ((NTSTATUS)0xC000000D)
+#define WOW64_STATUS_NO_MEMORY         ((NTSTATUS)0xC0000017)
+
+/* FILE_DEVICE_NETWORK << 12 | op << 2 | method — afd/shared.h's
+ * _AFD_CONTROL_CODE, mirrored so this DLL need not drag in a kernel header. The
+ * audit reads the same codes out of the live driver, so a drift between these
+ * and afd-rust turns up as a changed baseline row rather than a silent miss. */
+#define WOW64_AFD_CTL(op, method) \
+    (((ULONG)0x12 << 12) | ((ULONG)(op) << 2) | (ULONG)(method))
+
+#define WOW64_IOCTL_AFD_ACCEPT              WOW64_AFD_CTL(4,  0)
+#define WOW64_IOCTL_AFD_RECV                WOW64_AFD_CTL(5,  3)
+#define WOW64_IOCTL_AFD_RECV_DATAGRAM       WOW64_AFD_CTL(6,  3)
+#define WOW64_IOCTL_AFD_SEND                WOW64_AFD_CTL(7,  3)
+#define WOW64_IOCTL_AFD_SEND_DATAGRAM       WOW64_AFD_CTL(8,  3)
+#define WOW64_IOCTL_AFD_SELECT              WOW64_AFD_CTL(9,  0)
+#define WOW64_IOCTL_AFD_GET_TDI_HANDLES     WOW64_AFD_CTL(13, 3)
+#define WOW64_IOCTL_AFD_EVENT_SELECT        WOW64_AFD_CTL(33, 3)
+#define WOW64_IOCTL_AFD_ENUM_NETWORK_EVENTS WOW64_AFD_CTL(34, 3)
+
+/* Guest (32) and host (64) shapes. Sizes are asserted against the numbers the
+ * audit baseline records, so a header change breaks the build here AND turns
+ * the audit red — one of those alone could be argued away. */
+#include <pshpack4.h>
+typedef struct { ULONG len; ULONG buf; }                       WOW64_AFD_WSABUF32;
+typedef struct { ULONG BufferArray, BufferCount, AfdFlags, TdiFlags; }
+                                                               WOW64_AFD_XFER32;
+typedef struct { ULONG BufferArray, BufferCount, AfdFlags, TdiFlags;
+                 ULONG Address, AddressLength; }               WOW64_AFD_XFERUDP32;
+typedef struct { ULONG Handle, Events; LONG Status; }          WOW64_AFD_HANDLE32;
+typedef struct { LONGLONG Timeout; ULONG HandleCount, Exclusive; }
+                                                               WOW64_AFD_POLLHDR32;
+typedef struct { ULONG EventObject, Events; }                  WOW64_AFD_EVSEL32;
+typedef struct { ULONG Event, PollEvents; LONG EventStatus[10]; }
+                                                               WOW64_AFD_ENUMEV32;
+typedef struct { ULONG UseSAN, SequenceNumber, ListenHandle; } WOW64_AFD_ACCEPT32;
+typedef struct { ULONG TdiAddressHandle, TdiConnectionHandle; } WOW64_AFD_TDIH32;
+#include <poppack.h>
+
+typedef struct { ULONG len; ULONG _p; ULONGLONG buf; }         WOW64_AFD_WSABUF64;
+typedef struct { ULONGLONG BufferArray; ULONG BufferCount, AfdFlags, TdiFlags, _p; }
+                                                               WOW64_AFD_XFER64;
+typedef struct { ULONGLONG BufferArray; ULONG BufferCount, AfdFlags, TdiFlags, _p;
+                 ULONGLONG Address, AddressLength; }           WOW64_AFD_XFERUDP64;
+typedef struct { ULONGLONG Handle; ULONG Events; LONG Status; } WOW64_AFD_HANDLE64;
+typedef struct { LONGLONG Timeout; ULONG HandleCount, _p; ULONGLONG Exclusive; }
+                                                               WOW64_AFD_POLLHDR64;
+typedef struct { ULONGLONG EventObject; ULONG Events, _p; }    WOW64_AFD_EVSEL64;
+typedef struct { ULONGLONG Event; ULONG PollEvents; LONG EventStatus[10]; ULONG _p; }
+                                                               WOW64_AFD_ENUMEV64;
+typedef struct { ULONG UseSAN, SequenceNumber; ULONGLONG ListenHandle; }
+                                                               WOW64_AFD_ACCEPT64;
+typedef struct { ULONGLONG TdiAddressHandle, TdiConnectionHandle; }
+                                                               WOW64_AFD_TDIH64;
+
+C_ASSERT(sizeof(WOW64_AFD_WSABUF32) == 8);  C_ASSERT(sizeof(WOW64_AFD_WSABUF64) == 16);
+C_ASSERT(sizeof(WOW64_AFD_XFER32) == 16);   C_ASSERT(sizeof(WOW64_AFD_XFER64) == 24);
+C_ASSERT(sizeof(WOW64_AFD_XFERUDP32) == 24);C_ASSERT(sizeof(WOW64_AFD_XFERUDP64) == 40);
+C_ASSERT(sizeof(WOW64_AFD_HANDLE32) == 12); C_ASSERT(sizeof(WOW64_AFD_HANDLE64) == 16);
+C_ASSERT(sizeof(WOW64_AFD_EVSEL32) == 8);   C_ASSERT(sizeof(WOW64_AFD_EVSEL64) == 16);
+C_ASSERT(sizeof(WOW64_AFD_ENUMEV32) == 48); C_ASSERT(sizeof(WOW64_AFD_ENUMEV64) == 56);
+C_ASSERT(sizeof(WOW64_AFD_ACCEPT32) == 12); C_ASSERT(sizeof(WOW64_AFD_ACCEPT64) == 16);
+C_ASSERT(sizeof(WOW64_AFD_TDIH32) == 8);    C_ASSERT(sizeof(WOW64_AFD_TDIH64) == 16);
+/* AFD_POLL_INFO is split into header + element because the element stride
+ * changes too. The audit's 32 -> 40 are whole-struct sizes WITH the declared
+ * Handles[1] and rounded to the struct's 8-byte alignment: 16+12 rounds to 32,
+ * 24+16 is already 40. Handles[i] therefore lives at header + stride*i, and the
+ * trailing pad the 32-bit size carries is not addressable. */
+C_ASSERT(sizeof(WOW64_AFD_POLLHDR32) == 16);
+C_ASSERT(sizeof(WOW64_AFD_POLLHDR64) == 24);
+
+/* Guest-supplied counts size a host allocation, so they are bounded. The caps
+ * are far above any real use (winsock's FD_SETSIZE is 64; scatter/gather sends
+ * run to a handful of buffers) and refusing loudly beats trusting a count that
+ * a buggy guest computed. */
+#define WOW64_AFD_MAX_BUFFERS 1024
+#define WOW64_AFD_MAX_HANDLES 1024
+
+PVOID   WINAPI RtlAllocateHeap(PVOID HeapHandle, ULONG Flags, SIZE_T Size);
+BOOLEAN WINAPI RtlFreeHeap(PVOID HeapHandle, ULONG Flags, PVOID BaseAddress);
+
+static PVOID Wow64pIoctlAlloc(SIZE_T Size)
+{
+    return RtlAllocateHeap(Wow64pProcessHeap(), 0x00000008 /* ZERO_MEMORY */, Size);
+}
+
+static VOID Wow64pIoctlFree(PVOID P)
+{
+    if (P)
+        RtlFreeHeap(Wow64pProcessHeap(), 0, P);
+}
+
+static NTSTATUS Wow64pIoctlBadArg(const char *Who, const char *Why)
+{
+    DbgPrint("[WOW64]   %s: malformed 32-bit IOCTL payload: %s\n", Who, Why);
+    return WOW64_STATUS_INVALID_PARAMETER;
+}
+
 typedef NTSTATUS (WINAPI *WOW64_IOCTL_FN)(HANDLE, HANDLE, PVOID, PVOID, PVOID,
                                           ULONG, PVOID, ULONG, PVOID, ULONG);
+
+/* Issue a MARSHALLED IOCTL and do not come back until the driver is done.
+ *
+ * M15c pairs with the kernel-side IOSB32 work below: a plain (unmarshalled)
+ * IOCTL now latches the guest's own 8-byte IOSB and may pend for real. A
+ * marshalled one cannot, and the reason is the PAYLOAD, not the IOSB — the
+ * widened input, the WSABUF array and the AFD_POLL_INFO shadow are all
+ * host-heap blocks this frame frees on the way out, and for METHOD_BUFFERED
+ * the kernel copies its SystemBuffer back into that shadow at completion
+ * time. Returning while the request is live would hand the kernel a freed
+ * pointer — the same dead-frame class as the old stack IOSB, just with a
+ * bigger blast radius. So we block, and only then copy back and free.
+ *
+ * Blocking is invisible to the caller that matters: msafd's own idiom is
+ * "issue, and if STATUS_PENDING immediately MsafdWaitForAlert(SockEvent)".
+ * But its SockEvent is a SYNCHRONIZATION (auto-reset) event, so OUR wait
+ * consumes the very signal that wait is about to look for — hence the
+ * re-signal. Getting that wrong is a guest hang, not a visible error. */
+static NTSTATUS Wow64pIoctlCall(WOW64_IOCTL_FN Fn, HANDLE File, HANDLE Event,
+                                WOW64_IO_STATUS_BLOCK64_M *I64, ULONG Code,
+                                PVOID In, ULONG InLen, PVOID Out, ULONG OutLen,
+                                const char *Who)
+{
+    NTSTATUS St = Fn(File, Event, NULL, NULL, I64, Code, In, InLen, Out, OutLen);
+    NTSTATUS Wait;
+
+    if (St != WOW64_STATUS_PENDING)
+        return St;
+
+    Wait = NtWaitForSingleObject(Event ? Event : File, FALSE, NULL);
+    if (Wait < 0)
+    {
+        /* The shadow is about to be freed under a request the driver still
+         * owns. Nothing here can make that safe, so say so rather than free
+         * quietly and corrupt later. */
+        DbgPrint("[WOW64]   %s: wait on a pended marshalled IOCTL failed %08lx — "
+                 "the driver may still own our shadow buffer\n", Who, Wait);
+        return Wait;
+    }
+    if (Event)
+        NtSetEvent(Event, NULL);
+    return (NTSTATUS)(ULONG)I64->Status;
+}
+
+/* The AFD_WSABUF array every transfer IOCTL points at: {len, ptr} per element,
+ * 8 bytes wide in the guest and 16 here. IN only — AFD reads it to find the
+ * guest's data buffers, and reports what it moved through the IOSB. */
+static WOW64_AFD_WSABUF64 *Wow64pAfdWidenBufs(ULONG Buf32Ptr, ULONG Count,
+                                              const char *Who, NTSTATUS *St)
+{
+    const WOW64_AFD_WSABUF32 *B32 = (const WOW64_AFD_WSABUF32 *)(ULONG_PTR)Buf32Ptr;
+    WOW64_AFD_WSABUF64 *B64;
+    ULONG i;
+
+    *St = 0;
+    if (Count == 0)
+        return NULL;                    /* legal: a zero-buffer transfer */
+    if (Count > WOW64_AFD_MAX_BUFFERS)
+    {
+        *St = Wow64pIoctlBadArg(Who, "BufferCount above the marshalling cap");
+        return NULL;
+    }
+    if (!B32)
+    {
+        *St = Wow64pIoctlBadArg(Who, "non-zero BufferCount with a NULL BufferArray");
+        return NULL;
+    }
+    B64 = (WOW64_AFD_WSABUF64 *)Wow64pIoctlAlloc((SIZE_T)Count * sizeof(*B64));
+    if (!B64)
+    {
+        *St = WOW64_STATUS_NO_MEMORY;
+        return NULL;
+    }
+    for (i = 0; i < Count; i++)
+    {
+        B64[i].len = B32[i].len;
+        B64[i].buf = (ULONGLONG)(ULONG_PTR)B32[i].buf;   /* guest VA == host VA */
+    }
+    return B64;
+}
+
+/* IOCTL_AFD_SEND / IOCTL_AFD_RECV — AFD_SEND_INFO / AFD_RECV_INFO, 16 -> 24.
+ *
+ * The shadow is sized to the LARGEST payload this code can be read as, not to
+ * AFD_SEND_INFO. AfdConnectedSocketWriteData re-reads its buffer as the 104-byte
+ * AFD_SEND_INFO_UDP when the endpoint is connectionless, so a 24-byte shadow
+ * would be over-read exactly as the guest's 16-byte buffer is today. Zeroed and
+ * oversized, that read stays in bounds. (The connectionless case still lands on
+ * the SEND_DATAGRAM refusal below for its own payload; this only keeps the
+ * overload from reading off the end.) */
+static NTSTATUS Wow64pIoctlAfdXfer(WOW64_IOCTL_FN Fn, ULONG *a, const char *Who)
+{
+    const WOW64_AFD_XFER32 *In32 = (const WOW64_AFD_XFER32 *)(ULONG_PTR)a[6];
+    WOW64_IO_STATUS_BLOCK64_M Iosb64 = {0};
+    WOW64_AFD_WSABUF64 *B64;
+    WOW64_AFD_XFER64 *In64;
+    HANDLE File = (HANDLE)(LONG_PTR)(LONG)a[0];
+    HANDLE Event = (HANDLE)(LONG_PTR)(LONG)a[1];
+    NTSTATUS St;
+
+    if (!In32 || a[7] < sizeof(*In32))
+        return Wow64pIoctlBadArg(Who, "input shorter than AFD_SEND_INFO/AFD_RECV_INFO");
+
+    B64 = Wow64pAfdWidenBufs(In32->BufferArray, In32->BufferCount, Who, &St);
+    if (St)
+        return St;
+
+    In64 = (WOW64_AFD_XFER64 *)Wow64pIoctlAlloc(104);   /* AFD_SEND_INFO_UDP */
+    if (!In64)
+    {
+        Wow64pIoctlFree(B64);
+        return WOW64_STATUS_NO_MEMORY;
+    }
+    In64->BufferArray = (ULONGLONG)(ULONG_PTR)B64;
+    In64->BufferCount = In32->BufferCount;
+    In64->AfdFlags    = In32->AfdFlags;
+    In64->TdiFlags    = In32->TdiFlags;
+
+    St = Wow64pIoctlCall(Fn, File, Event, &Iosb64, a[5], In64, sizeof(WOW64_AFD_XFER64),
+                         (PVOID)(ULONG_PTR)a[8], a[9], Who);
+    Wow64pIoctlFree(In64);
+    Wow64pIoctlFree(B64);
+    return Wow64pFinishIosb(St, File, &Iosb64, a[4], Who);
+}
+
+/* IOCTL_AFD_RECV_DATAGRAM — AFD_RECV_INFO_UDP, 24 -> 40. Address and
+ * AddressLength point at guest buffers the driver WRITES, but their pointees
+ * (TRANSPORT_ADDRESS, INT) are width-identical, so widening the pointers is the
+ * whole job — the driver writes straight into guest memory. */
+static NTSTATUS Wow64pIoctlAfdRecvFrom(WOW64_IOCTL_FN Fn, ULONG *a, const char *Who)
+{
+    const WOW64_AFD_XFERUDP32 *In32 = (const WOW64_AFD_XFERUDP32 *)(ULONG_PTR)a[6];
+    WOW64_IO_STATUS_BLOCK64_M Iosb64 = {0};
+    WOW64_AFD_WSABUF64 *B64;
+    WOW64_AFD_XFERUDP64 In64 = {0};
+    HANDLE File = (HANDLE)(LONG_PTR)(LONG)a[0];
+    HANDLE Event = (HANDLE)(LONG_PTR)(LONG)a[1];
+    NTSTATUS St;
+
+    if (!In32 || a[7] < sizeof(*In32))
+        return Wow64pIoctlBadArg(Who, "input shorter than AFD_RECV_INFO_UDP");
+
+    B64 = Wow64pAfdWidenBufs(In32->BufferArray, In32->BufferCount, Who, &St);
+    if (St)
+        return St;
+
+    In64.BufferArray   = (ULONGLONG)(ULONG_PTR)B64;
+    In64.BufferCount   = In32->BufferCount;
+    In64.AfdFlags      = In32->AfdFlags;
+    In64.TdiFlags      = In32->TdiFlags;
+    In64.Address       = (ULONGLONG)(ULONG_PTR)In32->Address;
+    In64.AddressLength = (ULONGLONG)(ULONG_PTR)In32->AddressLength;
+
+    St = Wow64pIoctlCall(Fn, File, Event, &Iosb64, a[5], &In64, sizeof(In64),
+                         (PVOID)(ULONG_PTR)a[8], a[9], Who);
+    Wow64pIoctlFree(B64);
+    return Wow64pFinishIosb(St, File, &Iosb64, a[4], Who);
+}
+
+/* IOCTL_AFD_SELECT — AFD_POLL_INFO, 32 -> 40 for one handle. Doubly divergent:
+ * the header grows AND the Handles[] element stride goes 12 -> 16, so the array
+ * cannot be shared. IN/OUT: the driver writes Events and Status per handle, so
+ * both halves are copied. */
+static NTSTATUS Wow64pIoctlAfdSelect(WOW64_IOCTL_FN Fn, ULONG *a, const char *Who)
+{
+    const WOW64_AFD_POLLHDR32 *In32 = (const WOW64_AFD_POLLHDR32 *)(ULONG_PTR)a[6];
+    WOW64_AFD_POLLHDR32 *Out32 = (WOW64_AFD_POLLHDR32 *)(ULONG_PTR)(a[8] ? a[8] : a[6]);
+    const WOW64_AFD_HANDLE32 *H32;
+    WOW64_AFD_HANDLE32 *HOut32;
+    WOW64_IO_STATUS_BLOCK64_M Iosb64 = {0};
+    WOW64_AFD_POLLHDR64 *P64;
+    WOW64_AFD_HANDLE64 *H64;
+    HANDLE File = (HANDLE)(LONG_PTR)(LONG)a[0];
+    HANDLE Event = (HANDLE)(LONG_PTR)(LONG)a[1];
+    NTSTATUS St;
+    ULONG Count, i, Need;
+
+    if (!In32 || a[7] < sizeof(*In32))
+        return Wow64pIoctlBadArg(Who, "input shorter than AFD_POLL_INFO's header");
+    Count = In32->HandleCount;
+    if (Count > WOW64_AFD_MAX_HANDLES)
+        return Wow64pIoctlBadArg(Who, "HandleCount above the marshalling cap");
+    Need = (ULONG)sizeof(*In32) + Count * (ULONG)sizeof(WOW64_AFD_HANDLE32);
+    if (a[7] < Need)
+        return Wow64pIoctlBadArg(Who, "input shorter than HandleCount handles");
+    /* The OUTPUT buffer is checked too, and up front rather than at copy-back
+     * time. HandleCount comes from the guest and sizes the write below; taking
+     * it on trust would walk off the end of the guest's buffer, which is the
+     * very bug class this marshaller exists to close. Checking after the call
+     * would also be too late to refuse — the select would already have run. */
+    if ((a[8] ? a[9] : a[7]) < Need)
+        return Wow64pIoctlBadArg(Who, "output shorter than HandleCount handles");
+
+    P64 = (WOW64_AFD_POLLHDR64 *)Wow64pIoctlAlloc(sizeof(*P64) +
+                                                  (SIZE_T)Count * sizeof(*H64));
+    if (!P64)
+        return WOW64_STATUS_NO_MEMORY;
+    H64 = (WOW64_AFD_HANDLE64 *)(P64 + 1);
+    H32 = (const WOW64_AFD_HANDLE32 *)(In32 + 1);
+
+    P64->Timeout     = In32->Timeout;
+    P64->HandleCount = Count;
+    P64->Exclusive   = In32->Exclusive;
+    for (i = 0; i < Count; i++)
+    {
+        H64[i].Handle = (ULONGLONG)(ULONG_PTR)H32[i].Handle;
+        H64[i].Events = H32[i].Events;
+        H64[i].Status = H32[i].Status;
+    }
+
+    St = Wow64pIoctlCall(Fn, File, Event, &Iosb64, a[5],
+                         P64, (ULONG)(sizeof(*P64) + Count * sizeof(*H64)),
+                         P64, (ULONG)(sizeof(*P64) + Count * sizeof(*H64)), Who);
+    if (St >= 0 && Out32)
+    {
+        HOut32 = (WOW64_AFD_HANDLE32 *)(Out32 + 1);
+        Out32->HandleCount = P64->HandleCount;
+        for (i = 0; i < Count; i++)
+        {
+            HOut32[i].Handle = (ULONG)H64[i].Handle;
+            HOut32[i].Events = H64[i].Events;
+            HOut32[i].Status = H64[i].Status;
+        }
+    }
+    Wow64pIoctlFree(P64);
+    return Wow64pFinishIosb(St, File, &Iosb64, a[4], Who);
+}
+
+/* IOCTL_AFD_EVENT_SELECT — AFD_EVENT_SELECT_INFO, 8 -> 16. IN only. */
+static NTSTATUS Wow64pIoctlAfdEventSelect(WOW64_IOCTL_FN Fn, ULONG *a, const char *Who)
+{
+    const WOW64_AFD_EVSEL32 *In32 = (const WOW64_AFD_EVSEL32 *)(ULONG_PTR)a[6];
+    WOW64_IO_STATUS_BLOCK64_M Iosb64 = {0};
+    WOW64_AFD_EVSEL64 In64 = {0};
+    HANDLE File = (HANDLE)(LONG_PTR)(LONG)a[0];
+    HANDLE Event = (HANDLE)(LONG_PTR)(LONG)a[1];
+    NTSTATUS St;
+
+    if (!In32 || a[7] < sizeof(*In32))
+        return Wow64pIoctlBadArg(Who, "input shorter than AFD_EVENT_SELECT_INFO");
+    In64.EventObject = (ULONGLONG)(LONG_PTR)(LONG)In32->EventObject;  /* HANDLE: sign-extend */
+    In64.Events      = In32->Events;
+
+    St = Wow64pIoctlCall(Fn, File, Event, &Iosb64, a[5], &In64, sizeof(In64),
+                         (PVOID)(ULONG_PTR)a[8], a[9], Who);
+    return Wow64pFinishIosb(St, File, &Iosb64, a[4], Who);
+}
+
+/* IOCTL_AFD_ENUM_NETWORK_EVENTS — AFD_ENUM_NETWORK_EVENTS_INFO, 48 -> 56.
+ * Event is IN; PollEvents and the EventStatus[10] array are OUT. */
+static NTSTATUS Wow64pIoctlAfdEnumEvents(WOW64_IOCTL_FN Fn, ULONG *a, const char *Who)
+{
+    WOW64_AFD_ENUMEV32 *In32 = (WOW64_AFD_ENUMEV32 *)(ULONG_PTR)a[6];
+    WOW64_IO_STATUS_BLOCK64_M Iosb64 = {0};
+    WOW64_AFD_ENUMEV64 In64 = {0};
+    HANDLE File = (HANDLE)(LONG_PTR)(LONG)a[0];
+    HANDLE Event = (HANDLE)(LONG_PTR)(LONG)a[1];
+    NTSTATUS St;
+    ULONG i;
+
+    if (!In32 || a[7] < sizeof(*In32))
+        return Wow64pIoctlBadArg(Who, "input shorter than AFD_ENUM_NETWORK_EVENTS_INFO");
+    In64.Event = (ULONGLONG)(LONG_PTR)(LONG)In32->Event;
+
+    St = Wow64pIoctlCall(Fn, File, Event, &Iosb64, a[5], &In64, sizeof(In64),
+                         (PVOID)(ULONG_PTR)a[8], a[9], Who);
+    if (St >= 0)
+    {
+        In32->PollEvents = In64.PollEvents;
+        for (i = 0; i < 10; i++)
+            In32->EventStatus[i] = In64.EventStatus[i];
+    }
+    return Wow64pFinishIosb(St, File, &Iosb64, a[4], Who);
+}
+
+/* IOCTL_AFD_ACCEPT — AFD_ACCEPT_DATA, 12 -> 16. IN only. */
+static NTSTATUS Wow64pIoctlAfdAccept(WOW64_IOCTL_FN Fn, ULONG *a, const char *Who)
+{
+    const WOW64_AFD_ACCEPT32 *In32 = (const WOW64_AFD_ACCEPT32 *)(ULONG_PTR)a[6];
+    WOW64_IO_STATUS_BLOCK64_M Iosb64 = {0};
+    WOW64_AFD_ACCEPT64 In64 = {0};
+    HANDLE File = (HANDLE)(LONG_PTR)(LONG)a[0];
+    HANDLE Event = (HANDLE)(LONG_PTR)(LONG)a[1];
+    NTSTATUS St;
+
+    if (!In32 || a[7] < sizeof(*In32))
+        return Wow64pIoctlBadArg(Who, "input shorter than AFD_ACCEPT_DATA");
+    In64.UseSAN         = In32->UseSAN;
+    In64.SequenceNumber = In32->SequenceNumber;
+    In64.ListenHandle   = (ULONGLONG)(LONG_PTR)(LONG)In32->ListenHandle;
+
+    St = Wow64pIoctlCall(Fn, File, Event, &Iosb64, a[5], &In64, sizeof(In64),
+                         (PVOID)(ULONG_PTR)a[8], a[9], Who);
+    return Wow64pFinishIosb(St, File, &Iosb64, a[4], Who);
+}
+
+/* IOCTL_AFD_GET_TDI_HANDLES — AFD_TDI_HANDLE_DATA, 8 -> 16. OUT only: the
+ * driver writes two handles into Irp->UserBuffer, i.e. the OUTPUT buffer. */
+static NTSTATUS Wow64pIoctlAfdTdiHandles(WOW64_IOCTL_FN Fn, ULONG *a, const char *Who)
+{
+    WOW64_AFD_TDIH32 *Out32 = (WOW64_AFD_TDIH32 *)(ULONG_PTR)a[8];
+    WOW64_IO_STATUS_BLOCK64_M Iosb64 = {0};
+    WOW64_AFD_TDIH64 Out64 = {0};
+    HANDLE File = (HANDLE)(LONG_PTR)(LONG)a[0];
+    HANDLE Event = (HANDLE)(LONG_PTR)(LONG)a[1];
+    NTSTATUS St;
+
+    if (!Out32 || a[9] < sizeof(*Out32))
+        return Wow64pIoctlBadArg(Who, "output shorter than AFD_TDI_HANDLE_DATA");
+
+    St = Wow64pIoctlCall(Fn, File, Event, &Iosb64, a[5], (PVOID)(ULONG_PTR)a[6], a[7],
+                         &Out64, sizeof(Out64), Who);
+    if (St >= 0)
+    {
+        Out32->TdiAddressHandle    = (ULONG)Out64.TdiAddressHandle;
+        Out32->TdiConnectionHandle = (ULONG)Out64.TdiConnectionHandle;
+    }
+    return Wow64pFinishIosb(St, File, &Iosb64, a[4], Who);
+}
+
 static NTSTATUS Wow64pIoControl(WOW64_IOCTL_FN Fn, ULONG *a, const char *Who)
 {
     HANDLE File = (HANDLE)(LONG_PTR)(LONG)a[0];
-    WOW64_IO_STATUS_BLOCK64_M Iosb64 = {0};
+    HANDLE Event = (HANDLE)(LONG_PTR)(LONG)a[1];
     NTSTATUS St;
 
-    if (Wow64pRefuseAsync(a[1], a[2], Who))
+    /* M15c: an Event is no longer a refusal. It used to be, because the only
+     * IOSB we could offer the kernel was a host one on this frame; the kernel
+     * now writes the GUEST's 8-byte block directly (Wow64pLatchIosb32 above), which
+     * outlives us by construction. An APC routine is still refused — that needs
+     * 64->32 user-APC dispatch, which does not exist yet. AFD is inherently
+     * async and msafd always passes an Event, so this refusal was blocking
+     * every socket operation a 32-bit guest could make. */
+    if (a[2])
+    {
+        DbgPrint("[WOW64]   %s: guest ApcRoutine=%08lx is not supported yet "
+                 "(no 64->32 user-APC dispatch) — refusing\n", Who, a[2]);
         return WOW64_STATUS_NOT_IMPLEMENTED;
-    St = Fn(File, NULL, NULL, NULL, &Iosb64, a[5],
-            (PVOID)(ULONG_PTR)a[6], a[7], (PVOID)(ULONG_PTR)a[8], a[9]);
-    return Wow64pFinishIosb(St, File, &Iosb64, a[4], Who);
+    }
+
+    switch (a[5])
+    {
+    case WOW64_IOCTL_AFD_SEND:
+    case WOW64_IOCTL_AFD_RECV:
+        return Wow64pIoctlAfdXfer(Fn, a, Who);
+    case WOW64_IOCTL_AFD_RECV_DATAGRAM:
+        return Wow64pIoctlAfdRecvFrom(Fn, a, Who);
+    case WOW64_IOCTL_AFD_SELECT:
+        return Wow64pIoctlAfdSelect(Fn, a, Who);
+    case WOW64_IOCTL_AFD_EVENT_SELECT:
+        return Wow64pIoctlAfdEventSelect(Fn, a, Who);
+    case WOW64_IOCTL_AFD_ENUM_NETWORK_EVENTS:
+        return Wow64pIoctlAfdEnumEvents(Fn, a, Who);
+    case WOW64_IOCTL_AFD_ACCEPT:
+        return Wow64pIoctlAfdAccept(Fn, a, Who);
+    case WOW64_IOCTL_AFD_GET_TDI_HANDLES:
+        return Wow64pIoctlAfdTdiHandles(Fn, a, Who);
+    case WOW64_IOCTL_AFD_SEND_DATAGRAM:
+        /* AFD_SEND_INFO_UDP is 56 -> 104 and SEMANTIC, not a field-widening:
+         * it embeds TDI_REQUEST_SEND_DATAGRAM and TDI_CONNECTION_INFORMATION,
+         * each with its own pointers. Refusing names the blocker; passing it
+         * flat would corrupt as before while looking handled. */
+        DbgPrint("[WOW64]   %s: IOCTL_AFD_SEND_DATAGRAM needs a deep "
+                 "AFD_SEND_INFO_UDP marshaller (nested TDI structs) — refusing\n", Who);
+        return WOW64_STATUS_NOT_IMPLEMENTED;
+    default:
+        break;
+    }
+
+    /* No shadow on this path, so nothing of ours has to outlive the call: latch
+     * the guest's IOSB and let the request pend for real if it wants to. This
+     * is the one IOCTL path that is genuinely asynchronous under WoW64. */
+    Wow64pLatchIosb32(a[4]);
+    St = Fn(File, Event, NULL, (PVOID)(ULONG_PTR)a[3], (PVOID)(ULONG_PTR)a[4],
+            a[5], (PVOID)(ULONG_PTR)a[6], a[7], (PVOID)(ULONG_PTR)a[8], a[9]);
+    /* Consumed by the kernel at entry; cleared here for the paths that fail
+     * before reaching it (bad handle, failed probe). */
+    Wow64pLatchIosb32(0);
+    return St;
 }
 
 static NTSTATUS Wow64Manual_NtCreateNamedPipeFile(ULONG *a)

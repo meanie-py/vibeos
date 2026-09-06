@@ -308,6 +308,10 @@ void Wow64pInstallUserCallbackTable(void);
  * NtMapViewOfSection marshaller (wow64_manual.c) patches each image as it
  * maps via Wow64pPatchTransitionSlot. */
 PVOID Wow64pBopCode;
+
+/* Extent of the ntdll32 image view, so the export walk over it is bounded by
+ * the same rule as every other module's rather than trusted for being ours. */
+static SIZE_T Wow64pNtdll32Size;
 static ULONG_PTR Wow64pPeb32;  /* set in Wow64LdrpInitialize, for VEH diagnostics */
 
 /* ---- the rest of the CPU layer's memory-notification contract ------------ *
@@ -490,7 +494,7 @@ static VOID (WINAPI *Wow64pBTCpuThreadInit)(VOID);
  * ProcessEnvironmentBlock is at +0x60 and PEB64.ProcessHeap at +0x30 on both
  * 64-bit targets; this DLL deliberately imports ntdll only, so there is no
  * RtlGetProcessHeap to call. */
-static PVOID Wow64pProcessHeap(VOID)
+PVOID Wow64pProcessHeap(VOID)
 {
     PBYTE Peb = *(PBYTE *)((PBYTE)NtCurrentTeb() + 0x60);
     return Peb ? *(PVOID *)(Peb + 0x30) : NULL;
@@ -882,6 +886,7 @@ static PVOID Wow64pMapNtdll32(VOID)
         DbgPrint("[FEX-WOW64C] NtMapViewOfSection(ntdll32) FAILED %08lx\n", Status);
         return NULL;
     }
+    Wow64pNtdll32Size = ViewSize;
     DbgPrint("[FEX-WOW64C] ntdll32 mapped at %p size=%zx\n", Base, ViewSize);
     return Base;
 }
@@ -889,7 +894,7 @@ static PVOID Wow64pMapNtdll32(VOID)
 /* Resolve an export from the mapped 32-bit ntdll by hand (PE32 export
  * directory walk — arch-independent format; we avoid LdrGetProcedureAddress
  * because the i386 image is a raw section mapping, not a loader entry). */
-static PVOID Wow64pFindExport32(PVOID Base, const char *Name)
+static PVOID Wow64pFindExport32(PVOID Base, SIZE_T ImgSize, const char *Name)
 {
     PBYTE B = (PBYTE)Base;
     PIMAGE_NT_HEADERS32 Nt = (PIMAGE_NT_HEADERS32)(B + ((PIMAGE_DOS_HEADER)B)->e_lfanew);
@@ -899,19 +904,52 @@ static PVOID Wow64pFindExport32(PVOID Base, const char *Name)
     PUSHORT Ordinals;
     ULONG i;
 
-    if (!ExpRva)
+    /* Every RVA below is attacker-or-accident controlled data read out of a
+     * freshly mapped file, and this runs on EVERY map — so each one is range
+     * checked before it is dereferenced rather than trusted. An unchecked walk
+     * here faulted the whole 32-bit process (a 0xc0000005 inside wow64.dll with
+     * no hint that the WoW64 layer, rather than the guest, was the one reading
+     * out of bounds). */
+    if (!ExpRva || ExpRva > ImgSize || ImgSize < sizeof(*Exp) ||
+        ExpRva > ImgSize - sizeof(*Exp))
         return NULL;
     Exp = (PIMAGE_EXPORT_DIRECTORY)(B + ExpRva);
+
+    if (Exp->NumberOfNames > ImgSize / sizeof(ULONG))
+        return NULL;
+    if (Exp->AddressOfNames > ImgSize ||
+        Exp->AddressOfNameOrdinals > ImgSize ||
+        Exp->AddressOfFunctions > ImgSize)
+        return NULL;
+    if ((SIZE_T)Exp->NumberOfNames * sizeof(ULONG) > ImgSize - Exp->AddressOfNames ||
+        (SIZE_T)Exp->NumberOfNames * sizeof(USHORT) > ImgSize - Exp->AddressOfNameOrdinals)
+        return NULL;
+
     NameRvas = (PULONG)(B + Exp->AddressOfNames);
     Ordinals = (PUSHORT)(B + Exp->AddressOfNameOrdinals);
     FuncRvas = (PULONG)(B + Exp->AddressOfFunctions);
     for (i = 0; i < Exp->NumberOfNames; i++)
     {
-        const char *N = (const char *)(B + NameRvas[i]);
-        const char *M = Name;
-        while (*N && *N == *M) { N++; M++; }
-        if (*N == *M)
-            return B + FuncRvas[Ordinals[i]];
+        const char *N, *M = Name;
+        SIZE_T Left;
+
+        if (NameRvas[i] >= ImgSize)
+            return NULL;
+        N = (const char *)(B + NameRvas[i]);
+        Left = ImgSize - NameRvas[i];
+        /* Bounded: an unterminated name at the end of the view must stop at the
+         * view, not run past it. */
+        while (Left && *N && *N == *M) { N++; M++; Left--; }
+        if (Left && *N == *M)
+        {
+            ULONG Ord = Ordinals[i];
+            if (Ord >= Exp->NumberOfFunctions ||
+                (SIZE_T)Exp->AddressOfFunctions + ((SIZE_T)Ord + 1) * sizeof(ULONG) > ImgSize)
+                return NULL;
+            if (FuncRvas[Ord] >= ImgSize)
+                return NULL;
+            return B + FuncRvas[Ord];
+        }
     }
     return NULL;
 }
@@ -927,6 +965,7 @@ VOID Wow64pPatchTransitionSlot(PVOID Base, SIZE_T Size)
     PBYTE B = (PBYTE)Base;
     PIMAGE_NT_HEADERS32 Nt;
     PULONG Slot;
+    SIZE_T ImgSize;
 
     if (!Wow64pBopCode || !Base || Size < 0x1000)
         return;
@@ -937,7 +976,30 @@ VOID Wow64pPatchTransitionSlot(PVOID Base, SIZE_T Size)
         Nt->Signature != IMAGE_NT_SIGNATURE)
         return;
 
-    Slot = (PULONG)Wow64pFindExport32(Base, "Wow64Transition");
+    /* Everything below is RVA arithmetic, which is only meaningful for a SECTION
+     * mapped as an IMAGE. A PE mapped as a raw DATA file has its sections at
+     * FILE offsets instead, so the same RVAs point at unrelated bytes — or off
+     * the end of the view entirely. Both kinds of mapping arrive here, because
+     * this runs on every successful NtMapViewOfSection and both start with a
+     * valid MZ and PE signature at offset 0. Nothing before this line could tell
+     * them apart.
+     *
+     * The view size does. An image view is exactly the image: ViewSize ==
+     * SizeOfImage (ntdll32 maps at 0x142000, its SizeOfImage). A data view is
+     * the FILE, page-rounded — which is how a 32-bit socket() died: msafd.dll
+     * was mapped as data at ViewSize 0x56000 (file 0x55400 rounded) while its
+     * SizeOfImage is 0x49000, the export walk read RVAs into raw file bytes, and
+     * wow64.dll took the access violation on the guest's behalf.
+     *
+     * A data mapping has no transition slot to patch, so declining is the
+     * correct outcome, not a degraded one. */
+    ImgSize = Nt->OptionalHeader.SizeOfImage;
+    if (ImgSize < 0x1000 || ((ImgSize + 0xFFF) & ~(SIZE_T)0xFFF) != ((Size + 0xFFF) & ~(SIZE_T)0xFFF))
+        return;
+    if (ImgSize > Size)
+        return;
+
+    Slot = (PULONG)Wow64pFindExport32(Base, ImgSize, "Wow64Transition");
     if (Slot)
     {
         *Slot = (ULONG)(ULONG_PTR)Wow64pBopCode;
@@ -966,7 +1028,9 @@ VOID Wow64pPatchTransitionSlot(PVOID Base, SIZE_T Size)
     if (Wow64pBopCode)
     {
         static const UCHAR Pat[7] = {0xBA,0x00,0x03,0xFE,0x7F,0xFF,0x22};
-        SIZE_T Scan = (Size > 0x400000) ? 0x400000 : Size;
+        /* ImgSize, not Size: the authoritative extent is the PE header's, and
+         * scanning to a larger view size walks off the end of the image. */
+        SIZE_T Scan = (ImgSize > 0x400000) ? 0x400000 : ImgSize;
         PBYTE End = B + Scan - sizeof(Pat);
         PBYTE P;
         for (P = B; P <= End; P++)
@@ -1732,7 +1796,7 @@ Wow64LdrpInitialize(PVOID Context)
      * [Wow64Transition]`; statically the slot holds the native fallback, we
      * repoint it at the CPU layer's bridge in OUR process's COW data page). */
     {
-        PULONG Slot = (PULONG)Wow64pFindExport32(Ntdll32, "Wow64Transition");
+        PULONG Slot = (PULONG)Wow64pFindExport32(Ntdll32, Wow64pNtdll32Size, "Wow64Transition");
         PVOID Page;
         SIZE_T Size = sizeof(ULONG);
         ULONG OldProt = 0;
@@ -1761,8 +1825,8 @@ Wow64LdrpInitialize(PVOID Context)
              ImageBase32, Ntdll32);
 
     /* -- Resolve the guest ntdll32 loader entrypoints (M3b) ---------------- */
-    KiUserApcDispatcher32 = Wow64pFindExport32(Ntdll32, "KiUserApcDispatcher");
-    LdrInitThunk32 = Wow64pFindExport32(Ntdll32, "LdrInitializeThunk");
+    KiUserApcDispatcher32 = Wow64pFindExport32(Ntdll32, Wow64pNtdll32Size, "KiUserApcDispatcher");
+    LdrInitThunk32 = Wow64pFindExport32(Ntdll32, Wow64pNtdll32Size, "LdrInitializeThunk");
     /* #64: a guest thread routes through the same pair, so hoist them out of
      * this frame — Wow64pGuestThreadStart runs long after it is gone. */
     Wow64pKiUserApcDispatcher32 = KiUserApcDispatcher32;
@@ -1770,11 +1834,11 @@ Wow64LdrpInitialize(PVOID Context)
     /* M8: kernel->user callbacks re-enter the guest through its own 32-bit
      * callback dispatcher; the 64-bit PEB table points at our bridge. */
     Wow64pKiUserCallbackDispatcher32 =
-        Wow64pFindExport32(Ntdll32, "KiUserCallbackDispatcher");
+        Wow64pFindExport32(Ntdll32, Wow64pNtdll32Size, "KiUserCallbackDispatcher");
     /* E5: guest SEH entry — non-fatal if absent (redirect stays disabled and
      * guest faults fall back to the loud host-side diagnostics + death). */
     Wow64pKiUserExceptionDispatcher32 =
-        Wow64pFindExport32(Ntdll32, "KiUserExceptionDispatcher");
+        Wow64pFindExport32(Ntdll32, Wow64pNtdll32Size, "KiUserExceptionDispatcher");
     if (!Wow64pKiUserExceptionDispatcher32)
         DbgPrint("[FEX-WOW64C] WARN: ntdll32 has no KiUserExceptionDispatcher export — guest SEH dispatch disabled\n");
 #ifndef _M_ARM64
@@ -1830,7 +1894,7 @@ Wow64LdrpInitialize(PVOID Context)
      *          C3               ret
      */
     {
-        PVOID NtClose32 = Wow64pFindExport32(Ntdll32, "NtClose");
+        PVOID NtClose32 = Wow64pFindExport32(Ntdll32, Wow64pNtdll32Size, "NtClose");
         PBYTE P = ExitStub;
         PBYTE BopCall;
         ULONG Rel;

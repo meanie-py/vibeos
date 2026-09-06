@@ -5,6 +5,8 @@ Run: <venv>/bin/python -m pytest tests/qemu/cli/test_cli_units.py -q
 
 from __future__ import annotations
 
+import contextlib
+import io
 import json
 import os
 import re
@@ -5411,6 +5413,23 @@ def test_lint_preflight_blocks_a_red_check_tooling(tiny_repo: Path, tmp_path, mo
     assert "ruff:tools/*.py" in str(ei.value)
 
 
+def test_lint_preflight_KEEPS_the_output_it_captured(tiny_repo: Path, tmp_path, monkeypatch):
+    """The child writes no artifact dir, so this capture is the only copy of the failing
+    test's own output — check-tooling prints it AFTER the summary line. A preflight that
+    reports the ✗ and drops the rest leaves a lane nothing to debug when the failure does
+    not reproduce, which is exactly what happened on 2026-09-06."""
+    monkeypatch.setattr("tests.qemu.cli.artifacts.ARTIFACT_ROOT", tmp_path / "art")
+    detail = "=== pytest:tools/test_x.py ===\nE   assert 1 == 2"
+    _fake_cli(tiny_repo, rc=1, out=f"  ✗ pytest:tools/test_x.py\n\nFAIL — 1/28:\n{detail}")
+    run = Run("land", "t")
+    with pytest.raises(land_mod.LandAbort) as ei:
+        land_mod._lint_preflight(tiny_repo, run, _Args())
+    log = run.dir / "preflight-check-tooling.log"
+    assert log.exists(), "the captured output must survive the abort"
+    assert "assert 1 == 2" in log.read_text()
+    assert str(log) in str(ei.value), "and the abort must say where it is"
+
+
 def test_lint_preflight_passes_a_green_check_tooling(tiny_repo: Path, tmp_path, monkeypatch):
     monkeypatch.setattr("tests.qemu.cli.artifacts.ARTIFACT_ROOT", tmp_path / "art")
     _fake_cli(tiny_repo, rc=0, out="OK — all 15 tooling checks passed.")
@@ -5467,6 +5486,87 @@ def test_green_lint_still_reaches_the_queue(lane_repo, tmp_path, monkeypatch):
     subprocess.run(["git", "commit", "-qm", "cli"], cwd=lane, check=True, capture_output=True)
     assert land_mod.land(_Args(direct=False), lane) == 0
     assert q_mod.pending(lane), "a green lane must still be queued"
+
+
+def test_a_killed_submit_is_REPORTED_not_silently_absent(lane_repo, tmp_path, monkeypatch):
+    """A `land` killed mid-preflight leaves the lane unregistered with no error.
+
+    That is not hypothetical: the host filled its disk and the harness killed five background
+    commands in one session, reporting each as low memory. One was a `land`. `land-status`
+    simply did not list the lane, which is indistinguishable from "the conductor has not
+    reached me yet" — so the agent waited on a queue position it never had. Asking everyone to
+    remember to double-check is the rule-instead-of-mechanism the repo forbids; leave a marker
+    and let the tool say it.
+    """
+    lane, _ = lane_repo
+    head = q_mod.git(lane, "rev-parse", "HEAD")
+    attempt = q_mod.begin_attempt(lane, q_mod.lane_id(lane), head)
+    assert attempt.is_file()
+    # Nothing is queued and the marker's process is alive (it is us), so this is an IN-FLIGHT
+    # submit, not an abandoned one — it must stay quiet, or it cries wolf at every land.
+    assert q_mod.abandoned_attempts(lane) == [], "a live submit must not report as abandoned"
+    # Now the kill: rewrite the marker with a pid that cannot be running.
+    rec = json.loads(attempt.read_text())
+    rec["pid"] = 2**22  # above every /proc/sys/kernel/pid_max in practice
+    attempt.write_text(json.dumps(rec))
+    found = q_mod.abandoned_attempts(lane)
+    assert len(found) == 1 and found[0]["tip"] == head
+
+    # and the agent has to SEE it, which is the entire point
+    out = io.StringIO()
+    with contextlib.redirect_stdout(out):
+        land_mod.cmd_land_status(_Args(mine=True), lane)
+    printed = out.getvalue()
+    assert "NOT QUEUED" in printed, printed
+    assert "re-run" in printed, "must say what to do, not just that something is wrong"
+
+
+def test_a_malformed_marker_REPORTS_rather_than_going_quiet(lane_repo, tmp_path):
+    """`os.kill(-1, 0)` SUCCEEDS -- it is the broadcast form -- so a record with a missing or
+    unparsable pid used to read as "alive" and suppress itself forever, which is the exact
+    silent omission this feature exists to remove. A marker truncated by the disk filling
+    produces one, and that is the very scenario that motivated the feature.
+    """
+    lane, _ = lane_repo
+    attempt = q_mod.begin_attempt(lane, q_mod.lane_id(lane), q_mod.git(lane, "rev-parse", "HEAD"))
+    for bad in ({"lane": q_mod.lane_id(lane), "tip": "abc"}, {"pid": "not-an-int"}, {"pid": -1}):
+        rec = {"lane": q_mod.lane_id(lane), "tip": "abc", "started_at": time.time(), **bad}
+        attempt.write_text(json.dumps(rec))
+        assert q_mod.abandoned_attempts(lane), f"a marker with pid={bad} went silent"
+
+
+def test_a_RECYCLED_pid_does_not_suppress_the_marker(lane_repo, tmp_path):
+    """A pid alive but started AFTER the marker was written belongs to something else.
+
+    The host churns thousands of build processes, so reuse is ordinary; treating the new
+    occupant as our submit would suppress the marker permanently. Fails toward reporting, like
+    the malformed case.
+    """
+    lane, _ = lane_repo
+    attempt = q_mod.begin_attempt(lane, q_mod.lane_id(lane), q_mod.git(lane, "rev-parse", "HEAD"))
+    rec = json.loads(attempt.read_text())
+    # our own pid is certainly alive, but claim the marker predates the epoch
+    rec["started_at"] = 1.0
+    attempt.write_text(json.dumps(rec))
+    assert q_mod.abandoned_attempts(lane), "a recycled pid must not suppress the marker"
+    # negative control: with an honest started_at the same live pid IS our submit, and quiet
+    rec["started_at"] = time.time()
+    attempt.write_text(json.dumps(rec))
+    assert q_mod.abandoned_attempts(lane) == [], "a genuinely in-flight submit must stay quiet"
+
+
+def test_an_enqueued_lane_is_not_reported_as_abandoned(lane_repo, tmp_path, monkeypatch):
+    """The negative control. A marker left behind by a submit that SUCCEEDED must not be
+    reported — otherwise the warning appears on every successful land and gets tuned out,
+    which is how a true signal becomes noise."""
+    lane, _ = lane_repo
+    head = q_mod.git(lane, "rev-parse", "HEAD")
+    attempt = q_mod.begin_attempt(lane, q_mod.lane_id(lane), head)
+    rec = json.loads(attempt.read_text())
+    rec["pid"] = 2**22
+    attempt.write_text(json.dumps(rec))
+    q_mod.submit(lane, tip=head)
+    assert q_mod.abandoned_attempts(lane) == [], "a queued lane is not an abandoned submit"
 
 
 def test_prune_never_reclaims_the_integration_tree(tmp_path):
@@ -7034,3 +7134,111 @@ def test_seed_asserts_will_not_add_a_row_the_floor_does_not_carry():
     text, report = conformance_mod.seed_asserts_into_baseline(prev, rounds, P)
     assert "NewTest" not in text.replace("NewTest.c", "")
     assert "not on the floor" in report
+
+
+# ---------------------------------------------------------------------------
+# conformance ratchet wired into `gate` (2026-09-06)
+# ---------------------------------------------------------------------------
+# The ratchet was report-only for its whole life: it computed a correct verdict
+# and nothing was obliged to act on it. These pin the three things that make it
+# a real gate rather than a louder log line.
+
+
+def test_conformance_lane_is_retryable_so_one_bistable_cannot_reject_a_batch():
+    """A first-attempt ratchet miss must classify as a RETRYABLE flake.
+
+    The identity floor marks the bistables it knows about (`assert?`), but the
+    corpus is not closed — an intermittent that never fired during seeding is
+    indistinguishable from a regression on any single sweep. The merge queue
+    gates ONCE for N lanes, so a non-retryable miss would reject a whole batch
+    of innocent lanes on a coin flip. A real regression still fails the retry.
+    """
+    assert "CONFORMANCE_FLAKE" in gate_mod.RETRYABLE
+
+
+def test_conformance_lane_skips_loudly_when_the_arch_has_no_floor(tmp_path):
+    """No baseline means nothing to ratchet against. It must SKIP, not silently
+    pass — a stage that cannot fail must not read as one that held."""
+    r = gate_mod._conformance_once(tmp_path, "i386", tmp_path / "conf")
+    assert r["verdict"] == "SKIP"
+    assert r["ok"] is True
+    assert "no baseline" in r["salient"]
+
+
+def test_conformance_lane_reports_the_failing_identities_not_the_whole_table(tmp_path, monkeypatch):
+    """The sweep prints a per-test table; only the NEW failing assertions belong
+    in the gate summary, or the real signal drowns."""
+    base = tmp_path / "tools" / "conformance-baseline" / "amd64"
+    base.mkdir(parents=True)
+    (base / "kmtest.txt").write_text("IoDeviceObject 12 0\n")
+
+    class _CP:
+        returncode = 1
+        stdout = (
+            "  IoDeviceObject   pass=11 fail=1\n"
+            "  RATCHET REGRESSIONS (1):\n"
+            "    IoDeviceObject: NEW failing assertion IoDeviceObject_drv.c:206\n"
+        )
+        stderr = ""
+
+    monkeypatch.setattr(gate_mod.subprocess, "run", lambda *a, **k: _CP())
+    r = gate_mod._conformance_once(tmp_path, "amd64", tmp_path / "conf")
+    assert r["ok"] is False
+    assert r["classification"] == "CONFORMANCE_FLAKE"
+    assert r["retryable"] is True
+    assert "IoDeviceObject_drv.c:206" in r["salient"]
+    assert "pass=11" not in r["salient"], "the per-test table must not reach the summary"
+
+
+# ---------------------------------------------------------------------------
+# the kmtest payload provisioning scar (2026-09-06)
+# ---------------------------------------------------------------------------
+# Wiring the conformance lanes made the gate build stamp VIBEOS_PAYLOAD=kmtest
+# unconditionally. kmtest-sweep-<arch>.exe is GITIGNORED, so the change worked in
+# the worktree that had months of conformance runs behind it and broke the first
+# fresh tree it met — the merge queue's integration worktree — as a BUILD_FAIL
+# attributed to whichever innocent lanes shared the batch.
+
+
+def test_kmtest_payload_is_built_when_missing_not_assumed_present(tmp_path, monkeypatch):
+    """A fresh worktree has sweep.c and not the exe. The gate must BUILD it."""
+    sh = tmp_path / "tools" / "payloads" / "kmtest"
+    sh.mkdir(parents=True)
+    (sh / "build.sh").write_text("#!/bin/bash\n")
+    (tmp_path / ".build-tools" / "llvm-mingw").mkdir(parents=True)
+
+    calls = []
+
+    def _fake_run(cmd, **kw):
+        calls.append(cmd)
+        (sh / f"kmtest-sweep-{cmd[2]}.exe").write_text("x")
+        return subprocess.CompletedProcess(cmd, 0, "", "")
+
+    monkeypatch.setattr(gate_mod.subprocess, "run", _fake_run)
+    ok, why = gate_mod._ensure_kmtest_payload(tmp_path, ["i386", "amd64"])
+    assert ok and why == ""
+    assert [c[2] for c in calls] == ["i386", "amd64"], "must build each missing arch"
+
+
+def test_kmtest_payload_failure_disables_the_ratchet_it_does_not_break_the_build(tmp_path):
+    """No toolchain means we cannot build the exe — and must NOT stamp the payload
+    anyway, which is what failed the livecd media step for the whole batch."""
+    sh = tmp_path / "tools" / "payloads" / "kmtest"
+    sh.mkdir(parents=True)
+    (sh / "build.sh").write_text("#!/bin/bash\n")
+    ok, why = gate_mod._ensure_kmtest_payload(tmp_path, ["i386"])
+    assert ok is False
+    assert "llvm-mingw" in why, f"must name the missing toolchain, got {why!r}"
+
+
+def test_kmtest_payload_already_present_runs_nothing(tmp_path, monkeypatch):
+    sh = tmp_path / "tools" / "payloads" / "kmtest"
+    sh.mkdir(parents=True)
+    (sh / "build.sh").write_text("#!/bin/bash\n")
+    (sh / "kmtest-sweep-arm64.exe").write_text("x")
+
+    def _boom(*a, **k):
+        raise AssertionError("must not shell out when the payload is already there")
+
+    monkeypatch.setattr(gate_mod.subprocess, "run", _boom)
+    assert gate_mod._ensure_kmtest_payload(tmp_path, ["arm64"]) == (True, "")

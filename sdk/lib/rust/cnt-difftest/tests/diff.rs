@@ -3782,40 +3782,44 @@ fn diff_math_fmod() {
 // --- Wave MATH-TIERC sub-wave 3: tan ---------------------------------------
 
 fn diff_math_tan() {
-    // tan = sin/cos (portable arm64 form). Reference divides the genuine
-    // ref_sin/ref_cos (same algorithm as cnt-rust's sin/cos), so this is
-    // bit-exact — including the cos(x)→0 ±inf limit (identical operands
-    // divided on both sides). Edge bits + a dense moderate sweep.
+    // cnt-rust's tan is a hand port of AMD's math/libm_sse2/tan.c, which is
+    // what amd64 links; the oracle is that same C, bit-exact.
     //
-    // amd64 links AMD's 244-line math/libm_sse2/tan.c, NOT arm64's 18-line
-    // `sin(x)/cos(x)` that this Rust implements, so the cohab flip swapped the
-    // implementation there and no oracle saw it — the same blind spot that hid
-    // ldexp's and _logb's real defects. Unlike those two there is nothing to
-    // fix here in tan itself, and unlike atan/atan2 the swap is NOT a wash, so
-    // there is deliberately no second assertion: the gap is far too wide for a
-    // bound that would grade anything.
-    //
-    // Measured, AMD's tan vs this one built on the tree's own sin.c/cos.c:
-    // max absolute difference 0.056 (at x = 413.119), 1.2e-10 at x = -1, over
-    // a 1M-point sweep of the same domain this test uses. The cause is not tan
-    // but math/sin.c — a 9-term Taylor series over a naive quadrant reduction,
-    // good to about 1e-10 relative — which amd64 and arm64 have both always
-    // linked for sin/cos. So amd64 kept an accurate `tan` on top of inaccurate
-    // sin/cos until the flip, and now has neither. Fixing that means either
-    // porting AMD's tan.c or replacing sin/cos wholesale, and it is a decision
-    // about which CRT we want rather than a translation bug; until it is made,
-    // this comment is the record that the regression is known and measured.
+    // It was `sin(x)/cos(x)` graded against a reference composed from
+    // ref_sin/ref_cos — an oracle that could only ever confirm the quotient,
+    // never the implementation amd64 actually shipped, which is how a measured
+    // 0.056-absolute regression stayed invisible. The domain below is also
+    // wider than that test's ±2000: it now includes the |x| >= 5e5 arguments
+    // that take the Payne-Hanek path in `remainder_piby2`, which the old
+    // quotient had no equivalent of and which nothing exercised.
     let mut rng = Rng(0x7a17_c05c);
+    for &b in &f64_edge_bits() {
+        let x = f64::from_bits(b);
+        assert!(same_f64(cabi::tan(x), unsafe { ref_tan(x) }), "tan {b:#018x}");
+    }
     let edges = [
         0.0f64, -0.0, 1.0, -1.0, 0.5, -0.5, 3.0, -3.0, 100.0, -100.0, 1000.0, -1000.0,
+        // the branch boundaries the C dispatches on, from both sides
+        core::f64::consts::FRAC_PI_4, -core::f64::consts::FRAC_PI_4, 0.68, -0.68,
+        f64::from_bits(0x3f20_0000_0000_0000), f64::from_bits(0x3e40_0000_0000_0000),
+        f64::from_bits(0x400f_6a7a_2955_385e), f64::from_bits(0x4002_d97c_7f33_21d2),
+        f64::from_bits(0x401c_463a_becc_b2bb), f64::from_bits(0x4015_fdbb_e9bb_a775),
+        5.0e5, -5.0e5, 4.999_999e5, 5.000_001e5, 1.0e300, -1.0e300,
     ];
     for &x in &edges {
-        assert!(same_f64(cabi::tan(x), unsafe { ref_tan(x) }), "tan {x}");
+        assert!(same_f64(cabi::tan(x), unsafe { ref_tan(x) }), "tan {x:e}");
     }
+    // dense over the hand-reduction range, then the whole f64 line (which is
+    // overwhelmingly the Payne-Hanek path).
     for _ in 0..200_000 {
         let u = rng.next();
         let x = (u as f64) / (u64::MAX as f64) * 4000.0 - 2000.0;
         assert!(same_f64(cabi::tan(x), unsafe { ref_tan(x) }), "tan {x}");
+    }
+    for _ in 0..200_000 {
+        let b = rng.next();
+        let x = f64::from_bits(b);
+        assert!(same_f64(cabi::tan(x), unsafe { ref_tan(x) }), "tan {b:#018x}");
     }
 }
 

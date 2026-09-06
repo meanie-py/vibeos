@@ -8,6 +8,7 @@ edition = "2021"
 crate-type = ["rlib"]
 
 [dependencies]
+va-slots-rust = { path = "../va-slots-rust" }
 ntkrnl-sys = { path = "../ntkrnl-sys" }
 dbgprint-rust = { path = "../dbgprint-rust" }
 # crash-value: the REAL serial KD transport (WinDbg packet framing) embedded
