@@ -2574,6 +2574,110 @@ def test_hostlock_queue_status_reports_waiters(tmp_path, monkeypatch):
         os.close(b)
 
 
+def test_hostlock_shadow_priority_ages_without_enforcement(tmp_path, monkeypatch):
+    monkeypatch.setattr(hl_mod, "HOSTLOCK_DIR", tmp_path)
+    waiters = [
+        {"pid": "lane", "job_class": "interactive", "waited_s": 50, "clock": "monotonic"},
+        {"pid": "train", "job_class": "integration", "waited_s": 1, "clock": "monotonic"},
+    ]
+    proposal = hl_mod.admission_shadow(waiters)
+    assert proposal["proposed"] == ["train", "lane"]
+    assert proposal["changed"] and not proposal["enforced"]
+    waiters[0]["waited_s"] = 122
+    assert hl_mod.admission_shadow(waiters)["proposed"] == ["lane", "train"]
+    waiters[0]["job_class"] = "background"
+    assert hl_mod.admission_shadow(waiters)["proposed"] == ["lane", "train"]
+    waiters[0]["clock"] = "legacy-wall"
+    assert "proposed" not in hl_mod.admission_shadow(waiters)
+    (tmp_path / "admission-shadow.disabled").touch()
+    assert hl_mod.admission_shadow([])["mode"] == "disabled"
+
+
+def test_hostlock_ticket_metadata_and_shadow_leave_fifo_intact(tmp_path, monkeypatch):
+    monkeypatch.setattr(hl_mod, "HOSTLOCK_DIR", tmp_path)
+    monkeypatch.setenv("VIBEOS_HOSTLOCK_FAIR", "1")
+    monkeypatch.setenv("VIBEOS_JOB_CLASS", "interactive")
+    first = hl_mod._ticket_take("cpuheavy", 2)
+    assert first is not None
+    monkeypatch.setenv("VIBEOS_JOB_CLASS", "integration")
+    second = hl_mod._ticket_take("cpuheavy", 2)
+    assert second is not None
+    try:
+        q = hl_mod.queue_status("cpuheavy")
+        assert [w["job_class"] for w in q] == ["interactive", "integration"]
+        assert all(w["clock"] == "monotonic" for w in q)
+        monkeypatch.setattr(hl_mod.time, "time", lambda: -1000000)
+        assert all(w["waited_s"] >= 0 for w in hl_mod.queue_status("cpuheavy"))
+        assert hl_mod.admission_shadow(q)["changed"]
+        assert hl_mod._may_attempt("cpuheavy", first[1], 2, 4)
+        assert not hl_mod._may_attempt("cpuheavy", second[1], 2, 4)
+        # Status must not reap or mutate live tickets, even with shadow reporting.
+        before = [p.read_bytes() for _, p in (first, second)]
+        hl_mod.status()
+        assert before == [p.read_bytes() for _, p in (first, second)]
+    finally:
+        hl_mod._ticket_drop(first)
+        hl_mod._ticket_drop(second)
+
+
+@pytest.mark.parametrize(
+    "raw", ["[]", "null", "{", '{"queued_monotonic": NaN}', '{"queued_monotonic": true}']
+)
+def test_hostlock_shadow_malformed_ticket_is_unknown(tmp_path, monkeypatch, raw):
+    monkeypatch.setattr(hl_mod, "HOSTLOCK_DIR", tmp_path)
+    fd = _fake_ticket(tmp_path, "cpuheavy", ns=1, pid=111, need=2)
+    try:
+        os.write(fd, raw.encode())
+        q = hl_mod.queue_status("cpuheavy")
+        assert q[0]["clock"] == "legacy-wall"
+        assert "proposed" not in hl_mod.admission_shadow(q)
+    finally:
+        os.close(fd)
+    assert hl_mod.queue_status("cpuheavy") == []
+
+
+def test_hostlock_acquisition_records_wait_and_class(tmp_path, monkeypatch, capsys):
+    monkeypatch.setattr(hl_mod, "HOSTLOCK_DIR", tmp_path)
+    monkeypatch.setenv("VIBEOS_JOB_CLASS", "integration")
+    fds = hl_mod.acquire_cpu_share("build:amd64", n=2, leases=2, timeout=0)
+    assert fds is not None
+    try:
+        holders = hl_mod.status()["cpuheavy"]
+        assert all(h["holder"]["job_class"] == "integration" for h in holders)
+        assert all(h["holder"]["wait_seconds"] >= 0 for h in holders)
+        assert '"enforced": false' in capsys.readouterr().out
+    finally:
+        hl_mod.release_all(fds)
+
+
+def test_hostlock_build_admission_timings(tmp_path, monkeypatch):
+    from contextlib import contextmanager
+
+    now = [0.0]
+    monkeypatch.setattr(hl_mod.time, "monotonic", lambda: now[0])
+    monkeypatch.setenv("VIBEOS_HOST_BROKER", "1")
+
+    @contextmanager
+    def cpu(*args, **kw):
+        now[0] += 7
+        yield [1, 2]
+
+    @contextmanager
+    def directory(*args, **kw):
+        now[0] += 3
+        yield 3
+
+    monkeypatch.setattr(hl_mod, "cpu_share", cpu)
+    monkeypatch.setattr(hl_mod, "build_dir_lock", directory)
+    with hl_mod.build_lock(tmp_path, "amd64") as timing:
+        assert timing["cpu_wait_s"] == 7
+        assert timing["builddir_wait_s"] == 3
+        assert timing["cpu_granted"] and timing["builddir_granted"]
+    monkeypatch.setenv("VIBEOS_HOST_BROKER", "0")
+    with hl_mod.build_lock(tmp_path, "amd64") as timing:
+        assert timing == {"enabled": False}
+
+
 def test_hostlock_build_dir_same_blocks_different_ok(tmp_path, monkeypatch):
     monkeypatch.setattr(hl_mod, "HOSTLOCK_DIR", tmp_path)
     d1 = tmp_path / "build-amd64"
@@ -5564,6 +5668,7 @@ def test_queue_batch_gate_is_cold_and_collects_all_failures(monkeypatch, tmp_pat
 
     def _fake_run(cmd, **kw):
         seen["cmd"] = cmd
+        seen["env"] = kw.get("env", {})
         return subprocess.CompletedProcess(cmd, 0, "", "")
 
     monkeypatch.setattr(q_mod.subprocess, "run", _fake_run)
@@ -5571,6 +5676,22 @@ def test_queue_batch_gate_is_cold_and_collects_all_failures(monkeypatch, tmp_pat
     q_mod.gate_batch(tmp_path, lambda m: None, retries=0)
     assert "--clean" in seen["cmd"], seen["cmd"]
     assert "--keep-going" in seen["cmd"], seen["cmd"]
+    assert seen["env"]["VIBEOS_JOB_CLASS"] == "integration"
+
+
+def test_direct_land_gate_tags_integration(tmp_path):
+    from argparse import Namespace
+
+    class Recorder(Run):
+        def run(self, cmd, **kw):
+            assert kw["env"]["VIBEOS_JOB_CLASS"] == "integration"
+            assert "PATH" in kw["env"]
+            return subprocess.CompletedProcess(cmd, 0)
+
+        def add(self, stage):
+            assert stage.status == "ok"
+
+    land_mod._run_gate(tmp_path, Recorder("test-direct", "all"), Namespace(clean=True, retries=0))
 
 
 def test_queue_batch_gate_cold_can_be_opted_out(monkeypatch, tmp_path):

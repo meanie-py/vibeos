@@ -328,6 +328,20 @@ wait times), and recent verdicts — a rejected lane's triage pointer lives here
 `--mine` filters verdicts to this lane. The lock holder also appears in
 `host-status` as a `LANDING :` line plus the `land` queue.
 
+### `host-status [--json]`
+
+Shows current permits, holders, and FIFO waiters across worktrees. Updated builds
+record their job class and permit wait time. Queue/direct-land gates tag their
+children `integration`; other commands default to `interactive`.
+
+`admission_shadow` compares FIFO with a proposed bounded 120-second integration
+head start. **FIFO remains active; the proposal is not enforced.** Unknown or
+legacy waiter metadata suppresses the proposal. The shared file
+`<HOSTLOCK_DIR>/admission-shadow.disabled` disables proposals without changing
+locks (default root `/tmp/vibeos-qemu-locks/host`). Build `summary.json` records
+separate `admission.cpu_wait_s` and `admission.builddir_wait_s` timings.
+See `docs/engineering/fleet-verification-migration-plan.md` for rollout boundaries.
+
 ### `boot --arch X --until M [--fail-on RE]`
 Raw fast boot, **no staleness gate**, but reuses smoke's *exact* arch-config so
 the fast path can't diverge from the real smoke (the q35-vs-pc misdiagnosis
