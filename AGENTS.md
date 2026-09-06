@@ -241,6 +241,14 @@ wasted >$100 here.
 - **Cost estimates are a FLOOR.** `estimate` shows the single-prompt cost; `translate` re-sends
   context per function, so the real bill is routinely **2–5×** higher, and `-m opus` is full
   sync price. Watch the live `[running $X.XX]` counter — that's the truth.
+- **When a deterministic audit rejects a body, suspect the AUDIT before re-buying the body.**
+  A wrong checker bills you on every retry and can never pass, because the model keeps sending
+  the same correct answer. CDefView had six workers rejected across three paid runs by an arity
+  check that counted a C++ member call's receiver wrong; fixing the checker recovered **five of
+  the six at $0**, replayed from artifacts already bought. The tell is a reject that repeats
+  identically across samples, or several functions failing the same check at once. Read the
+  rejected `.partial` against the C first — it costs nothing, and if the model was right the
+  fix is free and retroactive.
 - **Never offload to the user** (save/run/commit/install it yourself).
 
 ### Rust is on pinned stable
