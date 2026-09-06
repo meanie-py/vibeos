@@ -4527,7 +4527,7 @@ pub unsafe extern "system" fn DeviceInitAllocateBuffers(
     // allocate a private extension for class data
     if (*DeviceExtension).PrivateFdoData.is_null() {
         (*DeviceExtension).PrivateFdoData = ExAllocatePoolWithTag(
-            0x200, /* NonPagedPoolNx */
+            0, // NonPagedPoolNx: ReactOS #defines it to NonPagedPool (no NX pool here)
             core::mem::size_of::<CDROM_PRIVATE_FDO_DATA>() as u32,
             0x74767250, /* CDROM_TAG_PRIVATE_DATA */
         ) as *mut CDROM_PRIVATE_FDO_DATA;

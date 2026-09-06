@@ -2724,7 +2724,7 @@ pub unsafe extern "system" fn RequestSetContextFields(
     let mut syncEvent: *mut KEVENT = core::ptr::null_mut();
 
     syncEvent = ExAllocatePoolWithTag(
-        0x200u32, // NonPagedPoolNx
+        0, // NonPagedPoolNx: ReactOS #defines it to NonPagedPool (no NX pool here)
         core::mem::size_of::<KEVENT>(),
         0x74764553u32, // CDROM_TAG_SYNC_EVENT
     ) as *mut KEVENT;
