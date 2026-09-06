@@ -82,7 +82,10 @@ PRESTAGED = {"ntdll.dll", "kernel32.dll", "user32.dll", "gdi32.dll", "ntdll_vist
 # SockGetTdiName -> LoadLibraryW(helper) returned NULL. Both hops are declared
 # in the same INF, but by different values read by different modules.
 DYNAMIC_LOADERS = {
-    "ws2_32.dll": ("media/inf/nettcpip.inf", ("LibraryPath", "PackedCatalogItem")),
+    "ws2_32.dll": (
+        "media/inf/nettcpip.inf",
+        ("LibraryPath", "PackedCatalogItem", "AutodialDLL"),
+    ),
     "msafd.dll": ("media/inf/nettcpip.inf", ("HelperDllName",)),
 }
 
@@ -92,6 +95,11 @@ DYNAMIC_LOADERS = {
 _INF_STRING_DECLS = {
     "LibraryPath": re.compile(r'"LibraryPath",0x00000000,"([^"]+)"'),
     "HelperDllName": re.compile(r'"HelperDllName",0x00000000,"([^"]+)"'),
+    # ws2_32 rasdial.rs tolerates this one being absent (it null-checks the
+    # handle), so it is not a crash waiting to happen the way the helper was.
+    # It is staged anyway: it is DECLARED, it is BUILT, and "the importer
+    # happens to cope" is the reasoning that left msafd unstaged.
+    "AutodialDLL": re.compile(r'"AutodialDLL",0x00000000,"([^"]+)"'),
 }
 _INF_PACKED_DECLS = {
     "PackedCatalogItem": re.compile(r'"PackedCatalogItem",0x00000001,\\\n((?:[0-9A-Fa-f, \\\n]+))'),
