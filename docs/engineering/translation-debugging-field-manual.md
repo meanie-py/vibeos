@@ -5440,6 +5440,28 @@ from the cause.
 
 The general shape, and it has six known members: **a verdict that depends on state outside the
 diff is not a gate.**
+- **WHEN the lint ran, relative to the builds** — `source-early` moved the audited source
+  scanners to t=0, concurrent with the builds instead of after them, and six of them enumerated
+  their inputs as `root.rglob("*.rs")` with an `if "/target/" in str(p): continue` filter.
+  `rglob` finishes descending into `sdk/lib/rust/target` **before** the filter ever sees a path,
+  so cargo unlinking a directory underneath the walk raises `FileNotFoundError` out of the
+  generator — pathlib's recursive selector catches only `PermissionError`. The scanner dies with
+  a traceback and the gate reports `lint:source-early: NEW lint findings (exit 1)` **with zero
+  findings in the artifact**, so the lane goes hunting a source defect that does not exist. Note
+  what makes this the purest member of the family: not one line of the scanners changed, and the
+  code was genuinely correct for years — only the timing moved. **If a source-lint verdict names
+  NEW findings and the artifact contains none, read it for a traceback before reading the diff.**
+  Fixed with `tools/source_walk.py` — `source_files()` excludes the mutable tree BEFORE scandir
+  rather than after. It deliberately does NOT swallow errors (`onerror=_raise`: a vanishing
+  *source* directory is an incomplete check, not an empty corpus), which is only a safe trade
+  because the churning tree is pruned first; the two halves go together. `scan_unpruned_walk`
+  gates the spelling so a seventh walk cannot be written the old way — the migration closed the
+  six, not the class, and 37 of 39 `.rs` walkers under `tools/` were written this way.
+  **Beware how easily this class is dismissed: a casual delete-a-directory-mid-walk test PASSES
+  against `rglob`** and "proves" there is no bug. The window has to be forced — start the walk,
+  advance it by exactly one file so it is mid-flight, then delete every directory it has not yet
+  reached (`tools/test_source_walk.py`). The general lesson outlives the fix: **a walk that
+  filters build output after the fact is already inside it.**
 - **Host disk** — above; RED with nothing failing.
 - **A scanner that CRASHED rather than found anything.** Five of the six audited source
   scanners walked `sdk/lib/rust` with `sorted(root.rglob("*.rs"))` and filtered `/target/`
