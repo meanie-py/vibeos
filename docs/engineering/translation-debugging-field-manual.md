@@ -5455,7 +5455,20 @@ from the cause.
 
 The general shape, and it has six known members: **a verdict that depends on state outside the
 diff is not a gate.**
-- **Host disk** — above; RED with nothing failing.
+- **Host disk** — above; RED with nothing failing. **And its sibling, which is worse because
+  every check you would run says the host is fine: RESERVATION HEADROOM, not fullness.** Six
+  lanes stalled with 117G free at 88% — `df` healthy, the 5G preflight threshold healthy — and
+  no gate could be admitted, because a 3-arch gate reserves 3x the per-build request above a
+  20G floor and the *unreserved remainder* had gone under. Every conduct failed
+  `DISK_ADMISSION_FAIL` on its own third arch, so the queue could not self-heal, and nothing in
+  the failure pointed at reservations. **"df looks fine" is a documented false negative for
+  this class**: fullness and admission headroom are different quantities and only one of them
+  was visible. `hostdisk.preflight` now prints the second one on the GREEN path too — the run
+  that looks healthy is exactly the case it exists for. The underlying defect is still owed and
+  is not a threshold: the gate reserves when a stage STARTS rather than when its CPU permit is
+  GRANTED, so it budgets for three concurrent builds that `cpuheavy` (4 permits, 2 per build)
+  will never allow. Lowering the per-build reservation is a stopgap; lowering the 20G floor
+  would be the same move as weakening a smoke test.
 - **A scanner that CRASHED rather than found anything.** Five of the six audited source
   scanners walked `sdk/lib/rust` with `sorted(root.rglob("*.rs"))` and filtered `/target/`
   *after* the walk had already descended into it. `Path.rglob` propagates the
