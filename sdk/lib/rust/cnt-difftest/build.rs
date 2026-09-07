@@ -598,11 +598,24 @@ fn main() {
         ("roundf", format!("#define roundf ref_roundf\n{}", inc(s("math/roundf.c")))),
         ("nextafter", "#include <stdint.h>\ndouble ref_nextafter(double x,double y){union{double f;uint64_t i;}ux={x},uy={y};uint64_t ax,ay;if(x!=x||y!=y)return x+y;if(ux.i==uy.i)return y;ax=ux.i&0x7fffffffffffffffULL;ay=uy.i&0x7fffffffffffffffULL;if(ax==0){if(ay==0)return y;ux.i=(uy.i&(1ULL<<63))|1;}else if(ax>ay||((ux.i^uy.i)&(1ULL<<63)))ux.i--;else ux.i++;return ux.f;}".to_string()),
         ("nextafterf", "#include <stdint.h>\nfloat ref_nextafterf(float x,float y){union{float f;uint32_t i;}ux={x},uy={y};uint32_t ax,ay;if(x!=x||y!=y)return x+y;if(ux.i==uy.i)return y;ax=ux.i&0x7fffffffu;ay=uy.i&0x7fffffffu;if(ax==0){if(ay==0)return y;ux.i=(uy.i&0x80000000u)|1;}else if(ax>ay||((ux.i^uy.i)&0x80000000u))ux.i--;else ux.i++;return ux.f;}".to_string()),
-        // Wave MATH-TIERC sub-wave 1: sin/cos = genuine portable .c
-        // (bit-exact under -ffp-contract=off). sqrt/sqrtf = libm (correctly
-        // rounded), matching cnt-rust's hardware sqrt instruction.
-        ("sin", format!("#define sin ref_sin\n{}", inc(s("math/sin.c")))),
-        ("cos", format!("#define cos ref_cos\n{}", inc(s("math/cos.c")))),
+        // Wave MATH-TIERC sub-wave 1: sqrt/sqrtf = libm (correctly rounded),
+        // matching cnt-rust's hardware sqrt instruction.
+        //
+        // sin/cos USED to be graded bit-exact against math/{sin,cos}.c, and
+        // that oracle is now GONE rather than relaxed. cnt-rust implements
+        // AMD's libm_sse2/{sin,cos}.asm, which no C in this tree expresses, so
+        // there is nothing to compile as a reference — and the portable .c is
+        // not a weaker oracle, it is a WRONG one: it answers -3.3e-15 for
+        // sin(0), carries ~1e8 ULP of error at its best, and returns 1e308
+        // above 1e9. Grading a correct implementation against it would only
+        // ever report the correct one as broken.
+        //
+        // So sin/cos join sqrt in being graded against libm, but to a ULP
+        // bound rather than bit-exactly, since AMD's algorithm and glibc's are
+        // different algorithms. See diff_math_sincos for the bound and why it
+        // is a real regression detector rather than a rubber stamp.
+        ("sin", "#include <math.h>\ndouble ref_sin(double x){return sin(x);}".to_string()),
+        ("cos", "#include <math.h>\ndouble ref_cos(double x){return cos(x);}".to_string()),
         ("sqrt", "#include <math.h>\ndouble ref_sqrt(double x){return sqrt(x);}".to_string()),
         ("sqrtf", "#include <math.h>\nfloat ref_sqrtf(float x){return sqrtf(x);}".to_string()),
         ("nexttowardf", "#include <stdint.h>\nfloat ref_nexttowardf(float x,double y){union{float f;uint32_t i;}ux={x};if(x!=x||y!=y)return x+(float)y;if((double)x==y)return (float)y;if(x==0){ux.i=1;union{double f;uint64_t u;}uy={y};if(uy.u>>63)ux.i|=0x80000000u;}else if((double)x<y){if(ux.i>>31)ux.i--;else ux.i++;}else{if(ux.i>>31)ux.i++;else ux.i--;}return ux.f;}".to_string()),

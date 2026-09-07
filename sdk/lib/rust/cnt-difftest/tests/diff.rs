@@ -3548,21 +3548,71 @@ fn diff_math_nextafterf() {
 }
 
 fn diff_math_sincos() {
-    // Faithful port of math/{sin,cos}.c → bit-exact on the finite domain
-    // (the `(int)` quadrant cast is meaningful only for moderate |x|).
+    // cnt-rust ports AMD's libm_sse2/{sin,cos}.asm; the oracle is libm, to 1
+    // ULP. Bit-exactness is not available (different algorithms) and the old
+    // bit-exact oracle, math/{sin,cos}.c, was deleted rather than loosened —
+    // see build.rs for why grading against it was worse than not grading.
+    //
+    // 1 ULP is a real bound, not a rubber stamp: glibc is under 0.55 ULP here,
+    // so anything that drifts algorithmically fails. For scale, the C this
+    // replaced misses this bound by eight orders of magnitude at its BEST
+    // (1.3e8 ULP for |x| < pi/4) and by infinitely much above 1e9, where it
+    // returns values larger than 1e160.
+    const BOUND: i64 = 1;
     let mut rng = Rng(0x713c_0d1a);
+
+    // Exact cases first. These are the ones the old implementation got wrong
+    // in kind rather than in degree, so they are asserted EXACTLY even though
+    // the sweep below is a tolerance: sin(±0) must carry the sign of zero, and
+    // cos(0) must be exactly 1.0.
+    assert_eq!(cabi::sin(0.0).to_bits(), 0u64, "sin(+0.0) must be +0.0");
+    assert_eq!(cabi::sin(-0.0).to_bits(), 1u64 << 63, "sin(-0.0) must be -0.0");
+    assert_eq!(cabi::cos(0.0), 1.0, "cos(0) must be exactly 1");
+    assert_eq!(cabi::cos(-0.0), 1.0, "cos(-0) must be exactly 1");
+
     let edges = [
         0.0f64, -0.0, 1.0, -1.0, 0.5, -0.5, 3.0, -3.0, 100.0, -100.0, 1000.0, -1000.0,
+        // The reduction boundaries: pi/4 (fast path ends), 2^-13 and 2^-27
+        // (cos's small-x branches), 5e5 (Cody-Waite gives way to Payne-Hanek).
+        core::f64::consts::FRAC_PI_4, -core::f64::consts::FRAC_PI_4,
+        core::f64::consts::FRAC_PI_2, core::f64::consts::PI,
+        1.220703125e-4, 7.450580596923828e-9, 1e-300,
+        499_999.0, 500_000.0, 500_001.0, -500_000.0,
+        // Large arguments, where the old body returned >1e160 instead of a
+        // value in [-1, 1]. Payne-Hanek has to carry these exactly.
+        1e10, -1e10, 1e18, 1e17, 1.234_567_89e17, f64::MAX,
     ];
     for &x in &edges {
-        assert!(same_f64(cabi::sin(x), unsafe { ref_sin(x) }), "sin {x}");
-        assert!(same_f64(cabi::cos(x), unsafe { ref_cos(x) }), "cos {x}");
+        let (s, c) = (cabi::sin(x), cabi::cos(x));
+        assert!(near_ulps(s, unsafe { ref_sin(x) }, BOUND), "sin {x:e}");
+        assert!(near_ulps(c, unsafe { ref_cos(x) }, BOUND), "cos {x:e}");
+        // A trig function that leaves [-1, 1] is the failure that made this
+        // lane exist, and a ULP comparison against a NaN/garbage reference
+        // could in principle pass it through. Assert the range outright.
+        assert!(s.abs() <= 1.0 && c.abs() <= 1.0, "sin/cos out of range at {x:e}");
     }
-    for _ in 0..200_000 {
-        let u = rng.next();
-        let x = (u as f64) / (u64::MAX as f64) * 4000.0 - 2000.0;
-        assert!(same_f64(cabi::sin(x), unsafe { ref_sin(x) }), "sin {x}");
-        assert!(same_f64(cabi::cos(x), unsafe { ref_cos(x) }), "cos {x}");
+
+    // Sweep every band with its own reduction path, not just the ±2000 the
+    // old test used — the failure modes here are all reduction failures, and
+    // ±2000 never leaves the Cody-Waite branch at all.
+    for &(lo, hi) in &[
+        (0.0f64, 0.785f64),
+        (0.785, 10.0),
+        (10.0, 1e5),
+        (1e5, 5e5),
+        (5e5, 1e9),
+        (1e9, 1e17),
+    ] {
+        for _ in 0..60_000 {
+            let u = rng.next();
+            let t = (u >> 11) as f64 / (1u64 << 53) as f64;
+            for x in [lo + t * (hi - lo), -(lo + t * (hi - lo))] {
+                let (s, c) = (cabi::sin(x), cabi::cos(x));
+                assert!(near_ulps(s, unsafe { ref_sin(x) }, BOUND), "sin {x:e}");
+                assert!(near_ulps(c, unsafe { ref_cos(x) }, BOUND), "cos {x:e}");
+                assert!(s.abs() <= 1.0 && c.abs() <= 1.0, "sin/cos out of range at {x:e}");
+            }
+        }
     }
 }
 
