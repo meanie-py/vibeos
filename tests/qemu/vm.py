@@ -206,9 +206,18 @@ def smp_count() -> int | None:
 def testkernel_boot_img(src: Path, work_dir: Path) -> Path:
     """The /TESTKERNEL variant of arm64 boot.img, built ONCE and shared read-only.
 
-    This used to be a 283 MB `copy2` plus an mcopy poke on every single boot. The
-    kmtest sweep is 40 boots, so it wrote ~12 GB of byte-identical media per
-    sweep and filled the disk out from under other lanes' gates.
+    This used to be a 280 MiB `copy2` plus an mcopy poke on every boot, i.e. on
+    every construction of this config.
+
+    Sizing it honestly, because the first version of this comment did not: the
+    /TESTKERNEL config is driven by tests/qemu/test_kernel.py, whose `vm`
+    fixture is scope="session", so its 28 tests share ONE boot and cost one
+    copy per pytest session rather than 28. The waste shows up wherever
+    qemu_args is called repeatedly instead -- `smoke --arch arm64-test
+    --repeat N` pays it N times -- and it is pure waste in every case, since
+    the transform is deterministic and every copy held identical bytes. (Do not
+    confuse this with the conformance/kmtest sweep, which maps arm64 to plain
+    Arm64Config and never went through this path at all.)
 
     Sharing is safe here, and it is not a new practice: `Arm64Config` already
     hands every parallel arm64 boot the SAME `qemu/boot.img`, and the drive is

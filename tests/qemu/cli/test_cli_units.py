@@ -166,8 +166,8 @@ def _stub_mcopy(monkeypatch, ini_text: str = "[FREELOADER]\n/SOS /RDPATH=x\n"):
 
 
 def test_testkernel_boot_img_is_built_once_and_reused(tmp_path: Path, monkeypatch):
-    """The kmtest sweep copied 283 MB per boot — 40 boots, ~12 GB of identical
-    bytes, which filled the disk under other lanes. The second call must reuse."""
+    """This copied 280 MiB on every construction of the config. The transform is
+    deterministic, so every copy held identical bytes. The second call must reuse."""
     src = tmp_path / "boot.img"
     src.write_bytes(b"BOOTIMG" * 100)
     work = tmp_path / "work"
