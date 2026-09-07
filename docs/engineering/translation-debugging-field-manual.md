@@ -8315,6 +8315,16 @@ worktree or kill a running build to propagate this fix.
    from 7 GiB to 37. The 20 GiB `min_free` floor is a different knob and is what stands between
    the fleet and an ENOSPC afternoon — when the build number stops being enough, do not reach
    for THAT one.
+   Two caveats on that `du`, both of which limit what it proves. A settled dir cannot show a
+   link-phase peak; sampling two LIVE arm64 builds showed no growth over settled (2.8-2.9G,
+   flat across 45s), which is weak positive evidence only — both were warm, both were the
+   SMALL arch, and a seconds-long link is easy to miss between samples. And the measurement
+   has a hole worth knowing on its own: **`du /tmp/vibeos` from the host reads `4.0K` and
+   exits 0.** Builds bind-mount the worktree at that canonical path inside a private
+   namespace (`canon-run.sh`, `unshare --map-root-user --mount`), so any host-side sizing of
+   the canonical path silently measures an empty directory rather than failing. A real peak
+   number needs a `du` INSIDE the build namespace during a cold i386 link; nobody has run
+   that, so `build = 15` is 2x measured SETTLED size, not 2x measured peak.
 
 ### `NET_FLAKE` that is not a flake `[§9.84]`
 A gate showing `✓ build ×3 ✓ lint ×3 ✓ smoke: all three` and a red net suite, where **all 15
