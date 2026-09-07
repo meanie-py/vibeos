@@ -25,6 +25,15 @@ the C over-allocates: `PRIVILEGE_SET`/`LPCP_DATA_INFO` do (real bugs), while
 `PKNODE KeNodeBlock[1] = { &KiNode0 };` really is one element and its check merely
 survives because the guard is a runtime variable. Read the C declaration first.
 
+There is one SYSTEMATIC false-positive source, and it is a direct consequence of
+this being i386-only: an array sized by an arch-dependent constant that happens to
+equal 1 on 32-bit. `MmSystemPageDirectory[PPE_PER_PAGE]` is `[PFN_NUMBER; 512]` on
+amd64/arm64 and `[PFN_NUMBER; 1]` on i386 (mm.rs:1265), so it is flagged here and
+would not be flagged at all on a 64-bit read. Check the declaration's LENGTH
+EXPRESSION before the length: a literal `1` is the bindgen flexible-array shape, a
+named constant is an arch-sized real array. Three of the first six sites graded
+fell this way.
+
 CORPUS IS DECLARED, NOT DISCOVERED. Globbing `build-<arch>` would grade whatever
 binaries a worktree happens to carry -- a verdict that depends on state outside
 the diff (field manual, "A gate can be RED for reasons that are not in the tree

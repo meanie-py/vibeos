@@ -5444,11 +5444,13 @@ two very different disk states. On Linux a near-zero
 it on demand — so a watchdog reading `MemFree` rather than `MemAvailable` will fire continuously
 on any machine doing heavy build I/O, which is every host here. It also explains the FREQUENCY, which a
 genuine-pressure theory cannot: real pressure would be intermittent and would leave OOM traces.
-That mechanism is a hypothesis (the harness is above this repo and cannot be read from it —
-nothing under `tests/qemu/cli/` reads `/proc/meminfo`, and the tree's only `MemFree` hits are an
-unrelated identifier in ReactOS's own msconfig); the *verified* part is that the
-message appears with tens of GB available and no OOM daemon installed, i.e. **it is uncorrelated
-with real memory pressure and cannot be used to diagnose anything.**
+That `MemFree`-watchdog story was a hypothesis and it did NOT survive — it is the first of the
+three wrong mechanisms catalogued below, and it is kept here rather than deleted because the
+part it got right still holds and is what the message actually costs you:
+**the message is uncorrelated with real memory pressure and cannot be used to diagnose
+anything.** (The harness sits above this repo and cannot be read from it — nothing under
+`tests/qemu/cli/` reads `/proc/meminfo`, and the tree's only `MemFree` hits are an unrelated
+identifier in ReactOS's own msconfig.)
 
 **How this correction got made is itself the lesson, and it generalizes to every entry here.**
 Three kills arrived, the entry above said check the disk first, the disk was fine — so the entry
@@ -5457,9 +5459,35 @@ instinct when writing one of these is to hedge ("mysterious kills can have host 
 hedged entry would have survived contact and taught nobody anything. **Write the falsifiable
 version; being wrong in a way the next reader can detect is worth more than being unfalsifiable.**
 
-Practical consequence: **treat a "low on memory" kill as an unexplained kill.** Check `df -h /`
-because that IS one real cause, but a healthy disk does not clear it — check what the killed
-command had already done, because a kill mid-`land` is the expensive case below.
+**Treat a "low on memory" kill as an UNEXPLAINED kill.** Three separate mechanisms have been
+proposed for it and all three were wrong — a memory reaper, the full disk, and (most recently,
+and most confidently) output. Each was inferred from a handful of samples of a supervisor that
+sits above this repo and that none of us can read. **The operational fact is enough, and it is
+the only thing here with a clean record:**
+
+| launch | record |
+|---|---|
+| `setsid nohup` | 3 for 3 survived — including one that outlived a sibling watcher killed at the same instant |
+| plain background | 5 kills, at 8, 12 and 36+ minutes |
+
+**Detach the WORK; treat any watcher as expendable and re-armable.** That is a workaround with
+evidence, not a theory of the cause.
+
+**What specifically does NOT work, because it was believed for several hours and written into
+this entry:** keeping the task talking. A chatty background watcher survived 36 minutes and 72
+heartbeats, which looked decisive; a second one of identical construction was killed after 25
+heartbeats while actively producing output. The kills span silent and chatty alike. **Do not add
+a heartbeat as a kill mitigation** — it does not help, and a lane that trusts it will lose a long
+job and then wrongly conclude that detachment is unreliable too.
+
+The near-miss is the reusable part. The "output" story had a positive control on both sides and
+still fell over, because one positive result was generalized into a mechanism and then into a
+design brief with confident numbers — a heartbeat interval derived from a kill window that only
+existed inside the story. A mechanization was written against it and reverted unlanded. **A
+measurement can constrain a STORY you have accepted while constraining nothing about the world,
+and the tell is that the numbers feel unusually specific for how little you know.** When the
+mechanism is unreadable, report the operational fact and stop; "unexplained" is a finding, not a
+placeholder for one.
 
 **A killed `land` leaves NO queue entry and NO error**, and that is the consequence worth
 knowing on its own. One lane ate five harness kills in a session — all reported as "the system is
@@ -5473,29 +5501,20 @@ from the cause.
 
 The general shape, and it has six known members: **a verdict that depends on state outside the
 diff is not a gate.**
-- **WHEN the lint ran, relative to the builds** — `source-early` moved the audited source
-  scanners to t=0, concurrent with the builds instead of after them, and six of them enumerated
-  their inputs as `root.rglob("*.rs")` with an `if "/target/" in str(p): continue` filter.
-  `rglob` finishes descending into `sdk/lib/rust/target` **before** the filter ever sees a path,
-  so cargo unlinking a directory underneath the walk raises `FileNotFoundError` out of the
-  generator — pathlib's recursive selector catches only `PermissionError`. The scanner dies with
-  a traceback and the gate reports `lint:source-early: NEW lint findings (exit 1)` **with zero
-  findings in the artifact**, so the lane goes hunting a source defect that does not exist. Note
-  what makes this the purest member of the family: not one line of the scanners changed, and the
-  code was genuinely correct for years — only the timing moved. **If a source-lint verdict names
-  NEW findings and the artifact contains none, read it for a traceback before reading the diff.**
-  Fixed with `tools/source_walk.py` — `source_files()` excludes the mutable tree BEFORE scandir
-  rather than after. It deliberately does NOT swallow errors (`onerror=_raise`: a vanishing
-  *source* directory is an incomplete check, not an empty corpus), which is only a safe trade
-  because the churning tree is pruned first; the two halves go together. `scan_unpruned_walk`
-  gates the spelling so a seventh walk cannot be written the old way — the migration closed the
-  six, not the class, and 37 of 39 `.rs` walkers under `tools/` were written this way.
-  **Beware how easily this class is dismissed: a casual delete-a-directory-mid-walk test PASSES
-  against `rglob`** and "proves" there is no bug. The window has to be forced — start the walk,
-  advance it by exactly one file so it is mid-flight, then delete every directory it has not yet
-  reached (`tools/test_source_walk.py`). The general lesson outlives the fix: **a walk that
-  filters build output after the fact is already inside it.**
-- **Host disk** — above; RED with nothing failing.
+- **Host disk** — above; RED with nothing failing. **And its sibling, which is worse because
+  every check you would run says the host is fine: RESERVATION HEADROOM, not fullness.** Six
+  lanes stalled with 117G free at 88% — `df` healthy, the 5G preflight threshold healthy — and
+  no gate could be admitted, because a 3-arch gate reserves 3x the per-build request above a
+  20G floor and the *unreserved remainder* had gone under. Every conduct failed
+  `DISK_ADMISSION_FAIL` on its own third arch, so the queue could not self-heal, and nothing in
+  the failure pointed at reservations. **"df looks fine" is a documented false negative for
+  this class**: fullness and admission headroom are different quantities and only one of them
+  was visible. `hostdisk.preflight` now prints the second one on the GREEN path too — the run
+  that looks healthy is exactly the case it exists for. The underlying defect is still owed and
+  is not a threshold: the gate reserves when a stage STARTS rather than when its CPU permit is
+  GRANTED, so it budgets for three concurrent builds that `cpuheavy` (4 permits, 2 per build)
+  will never allow. Lowering the per-build reservation is a stopgap; lowering the 20G floor
+  would be the same move as weakening a smoke test.
 - **A scanner that CRASHED rather than found anything.** Five of the six audited source
   scanners walked `sdk/lib/rust` with `sorted(root.rglob("*.rs"))` and filtered `/target/`
   *after* the walk had already descended into it. `Path.rglob` propagates the
@@ -5515,6 +5534,18 @@ diff is not a gate.**
   as a crash, and it runs BEFORE the baseline comparison — so a scanner that printed some
   findings and *then* died is still a crash, not a partial verdict you can grade. **The tell,
   reusable beyond this bug: a red with a finding COUNT but no finding TEXT is a crash.**
+  Two further things the fix taught, both about the class rather than the six sites.
+  `source_walk` deliberately does NOT swallow errors (`onerror=_raise`): a vanishing *source*
+  directory is an incomplete check, not an empty corpus. That is only a safe trade because the
+  churning tree is pruned first — the two halves go together, and taking the second without the
+  first would make the gate flap. And `scan_unpruned_walk` now gates the spelling, because the
+  migration closed the six sites and not the class: **37 of 39 `.rs` walkers under `tools/` were
+  written the old way**, so a seventh was a matter of time. **Beware how easily this class is
+  dismissed: a casual delete-a-directory-mid-walk test PASSES against `rglob`** and "proves"
+  there is no bug. The window has to be forced — start the walk, advance it by exactly one file
+  so it is mid-flight, then delete every directory it has not yet reached
+  (`tools/test_source_walk.py`). The general lesson outlives the fix: **a walk that filters
+  build output after the fact is already inside it.**
   Footnote worth its line: two lanes wrote this same fix within forty minutes of each other,
   neither knowing, and the merge conflicted across six scanners. Nobody wasted time — the
   landed version was better on both counts above and simply replaced the other — but when a

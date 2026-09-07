@@ -168,6 +168,45 @@ def enospc_detail(repo: Path | None = None) -> list[str]:
     ]
 
 
+def admission_lines(repo: Path, arches=()) -> list[str]:
+    """The quantity that actually gates a run, which `df` cannot show.
+
+    FULLNESS and ADMISSION HEADROOM are different numbers, and only one of them is
+    visible to the check every agent thinks to run. On 2026-09-06 six lanes stalled
+    with the host at 88% and 117G free — `df` fine, this module's own 5G threshold
+    fine — because a 3-arch gate reserves 3 x 25G of build headroom above a 20G
+    floor, and the unreserved remainder had gone under. Every conduct failed
+    DISK_ADMISSION_FAIL on its third arch, so the queue could not self-heal, and
+    nothing about the failure pointed at reservations. **"df looks fine" is a
+    documented false negative for that class**, which is why this prints on the
+    GREEN path too: the whole point is the run that looks healthy.
+
+    Reads `diskspace`, which owns the accounting; this only surfaces it. A failure
+    to read is REPORTED rather than swallowed — a missing number must not look like
+    a healthy one — but never blocks the free-space verdict, which stands alone.
+    """
+    try:
+        from . import diskspace
+
+        st = diskspace.status(repo)
+    except Exception as exc:  # reported below, never silently dropped
+        return [f"admission headroom unavailable ({type(exc).__name__}: {exc})"]
+    policy = st.get("policy") or {}
+    requests = policy.get("requests_gib") or {}
+    floor = policy.get("min_free_gib", 0)
+    n = len(list(arches)) or 1
+    wants = requests.get("build", 0) * n + requests.get("check-tooling", 0)
+    lines = []
+    for fs in st.get("filesystems") or []:
+        head = fs.get("unreserved_above_floor_bytes", 0)
+        mark = "" if head >= wants * 2**30 else "  << SHORT"
+        lines.append(
+            f"admission: {human(head)} unreserved above the {floor}G floor on "
+            f"{fs.get('path')} ({n}-arch run requests ~{wants}G){mark}"
+        )
+    return lines
+
+
 def preflight(run, repo: Path, arches) -> bool:
     """Gate preflight. Returns False (and records the stage) when space is short.
 
@@ -179,9 +218,17 @@ def preflight(run, repo: Path, arches) -> bool:
     from .artifacts import Stage
 
     rep = probe(gate_paths(repo, arches), threshold=MIN_FREE_BYTES)
+    admission = admission_lines(repo, arches)
+    for ln in admission:
+        run.log(ln)
     if rep["ok"]:
         smallest = min(rep["free"].values(), default=0)
-        run.add(Stage("host-disk", status="ok", detail=f"{human(smallest)} free"))
+        detail = f"{human(smallest)} free"
+        # Carry the SHORT marker into the stage line: a run that passes free-space
+        # but is out of reservation headroom is exactly the case that read healthy.
+        if any("<< SHORT" in ln for ln in admission):
+            detail += "; admission headroom SHORT"
+        run.add(Stage("host-disk", status="ok", detail=detail))
         return True
     for ln in rep["lines"]:
         run.log(ln)
