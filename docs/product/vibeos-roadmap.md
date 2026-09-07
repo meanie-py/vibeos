@@ -963,7 +963,7 @@ Field-manual § pointers hold the full writeups. **Update on state change.**
   `IopEnumerateDetectedDevices`, two NUMA `QSI_*` queries), `rtl-rust`, `oleaut32`'s
   `SafeArray{CopyData,GetLBound,GetUBound}`, `umpnpmgr`'s log-conf pair, and `usbaudio`'s
   topology builders.
-  **Graded so far: 3 confirmed bugs, 1 confirmed false positive, 45 ungraded.** Confirmed and
+  **Graded so far: 3 confirmed bugs, 3 confirmed false positives, 43 ungraded.** Confirmed and
   FIXED: `SePrivilegePolicyCheck` (`PRIVILEGE_SET.Privilege`, over-allocated as
   `size_of + (count-1)*size_of::<LUID_AND_ATTRIBUTES>`; `index` reaches 1 whenever a caller is
   granted both `WRITE_OWNER` and `ACCESS_SYSTEM_SECURITY`) and `LpcpCopyRequestData`
@@ -971,9 +971,12 @@ Field-manual § pointers hold the full writeups. **Update on state change.**
   CSRSS uses). Confirmed NOT a bug: `KeNodeBlock[Node]` in the two NUMA `QSI_*` queries — the C
   really is `PKNODE KeNodeBlock[1] = { &KiNode0 };`, a one-element array whose check merely
   survives because the guard is a runtime variable (the msvcrt `_setmaxstdio` face already in
-  the manual). **That ratio is the point: the tool finds the SHAPE, not the bug, and the
-  discriminator is always whether the C over-allocates.** Read the C declaration before
-  touching a site.
+  the manual), and `MmSystemPageDirectory[PPE_PER_PAGE]` in `MiFillSystemPageDirectory` for a
+  sharper reason: that constant is 512 on amd64/arm64 and **1 on i386** (`mm.rs:1265`), so an
+  arch-sized real array masquerades as a flexible one in a reader that only looks at i386.
+  **That ratio is the point: the tool finds the SHAPE, not the bug.** Two discriminators, in
+  order — does the C over-allocate, and is the declared length a LITERAL `1` or a named
+  arch-dependent constant? Read the declaration before touching a site.
   Not wired into the gate yet, deliberately: **89 of the 200 declared staticlib crates are not
   built for i386**, so a baseline captured today would bless whatever happens to be missing.
   The tool reports those as NOT BUILT (no coverage) rather than skipping them. Wiring it wants
