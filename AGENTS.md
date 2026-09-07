@@ -93,6 +93,15 @@ anyone checked. Before you repeat a carried-over fact — and *especially* befor
 another agent or the user as evidence — re-derive it: `uptime`, `dmesg`, the summary.json, the
 actual exit code. Report what you observed and what you inferred as different things.
 
+The general shape, of which the stale summary is one case: **a confident prediction about
+directly observable behaviour, made by someone who did not observe it, and caught by whoever
+inherited it.** It recurs: a vacuous assertion proposed as a fix, a merge conflict predicted
+that did not exist, an arity rule that broke three correct bodies, an argument made to a peer
+and then made back an hour later by its own author. Each was cheap to check against the thing
+itself and none was checked by the one who made it — and one of them cost a paid translation to
+discover. Cheapness relative to the error is the point; that is what makes this a rule rather
+than an apology.
+
 **Deferral is temporary, never silent.** Deferred work stays tracked and owed. Don't drop a
 thing permanently by calling it "out of scope."
 
@@ -253,6 +262,14 @@ wasted >$100 here.
 - **Cost estimates are a FLOOR.** `estimate` shows the single-prompt cost; `translate` re-sends
   context per function, so the real bill is routinely **2–5×** higher, and `-m opus` is full
   sync price. Watch the live `[running $X.XX]` counter — that's the truth.
+- **When a deterministic audit rejects a body, suspect the AUDIT before re-buying the body.**
+  A wrong checker bills you on every retry and can never pass, because the model keeps sending
+  the same correct answer. CDefView had six workers rejected across three paid runs by an arity
+  check that counted a C++ member call's receiver wrong; fixing the checker recovered **five of
+  the six at $0**, replayed from artifacts already bought. The tell is a reject that repeats
+  identically across samples, or several functions failing the same check at once. Read the
+  rejected `.partial` against the C first — it costs nothing, and if the model was right the
+  fix is free and retroactive.
 - **Never offload to the user** (save/run/commit/install it yourself).
 
 ### Rust is on pinned stable
