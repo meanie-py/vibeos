@@ -162,6 +162,32 @@ def workspace_cargo_target(repo: Path, arch: str) -> Path | None:
     return p if p.is_dir() else None
 
 
+def workspace_cargo_targets(repo: Path, arch: str) -> list[Path]:
+    """Outer and nested staticlib targets for THIS arch, including storage pilots.
+
+    Do not remove whole inner target directories: they contain other arches and
+    host build scripts that a concurrent architecture build may be using.
+    """
+    base = archcfg.base_arch(arch)
+    stem = _CARGO_STEM.get(base)
+    if stem is None:
+        return []
+    root = repo / "sdk/lib/rust/target"
+    if root.resolve() != repo.resolve() / "sdk/lib/rust/target":
+        raise ValueError(f"refusing symlinked workspace target: {root}")
+    stems = [stem, "i686-pc-windows-gnu"] if base == "i386" else [stem]
+    parents = [root, *sorted(root.glob("*-rustlib"))]
+    result = []
+    for parent in parents:
+        for target in stems:
+            path = parent / target
+            if parent.is_symlink() or path.is_symlink():
+                raise ValueError(f"refusing symlinked nested Cargo target: {path}")
+            if path.is_dir():
+                result.append(path)
+    return sorted(result)
+
+
 def discover_rust_module_outputs(repo: Path, arch: str) -> list[Path]:
     """Copied cargo-module output binaries under build-<arch>. add_cargo_module
     builds each into the workspace cargo cache then COPIES it in, so nuking the

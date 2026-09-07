@@ -8457,11 +8457,18 @@ deletes directories out from under the walk. The gate renders that `FileNotFound
 **"NEW lint findings (exit 1)" with no findings in it**, so the lane is bounced for a defect it
 did not cause — and the next lane's identical bounce looks like a real regression. Two things
 generalise. **Filtering a path after the walk yields it is not an exclusion**; prune during the
-walk (`os.walk` + `dirnames[:] = ...`, plus `onerror` so a vanishing directory is survivable
-anyway), which here also took the traversal from 0.67s to 0.02s. And **a scanner can match
-nothing in a tree and still die in it** — the exposure is the ~5,700 directories under
-`sdk/lib/rust/target`, not the 22 `.rs` files that matched. `tools/rs_walk.py` is now the one
-traversal all six share.
+walk (`os.walk` + `dirs[:] = ...`), which here also took the traversal of `sdk/lib/rust` from
+0.67s to 0.02s. And **a scanner can match nothing in a tree and still die in it** — the exposure
+is the ~5,700 directories under `sdk/lib/rust/target`, not the 22 `.rs` files that matched.
+`tools/source_walk.py` is now the one traversal all six share.
+
+Note what it deliberately does NOT do, and it is the same call `rglob_stable` made above:
+`source_walk` passes `onerror=_raise` rather than swallowing the error. Once the walk never
+enters build output, an OSError is no longer host timing — it is unreadable *source*, and a
+scanner that shrugs at that returns a short list, which for a lint means "clean". The
+survivability belongs in the pruning, not in a suppressed exception; the crash itself is then
+made honest one layer out, where the gate classifies a scanner that died as a CRASH instead of
+rendering it as findings.
 
 ### A rare unit-test failure in the HARNESS is a bug report, not noise — and the wall clock is not monotonic
 

@@ -63,11 +63,12 @@ import sys
 from collections import defaultdict
 from pathlib import Path
 
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
+from tools.source_walk import source_files
+
 REPO = Path(__file__).resolve().parent.parent
 
-sys.path.insert(0, str(REPO / "tools"))
-from rs_walk import iter_rs_files  # noqa: E402
-
+SKIP_FILE_RE = re.compile(r"(/target/|/\.responses/)")
 NOLINT_RE = re.compile(r"//\s*nolint(?::\s*type-alias-contradiction\b|\s*$|:?\s*\()")
 
 # [pub[(…)]] type NAME = RHS;   — no generics, no `where`; those are not the
@@ -198,11 +199,10 @@ def collect(root: Path):
         rust_root = root
     decls: dict[str, list[tuple[str, str, str]]] = defaultdict(list)
     aliases_by_arch: dict[str, dict[str, str]] = defaultdict(dict)
-    for path in sorted(iter_rs_files(rust_root)):
-        try:
-            text = path.read_text(errors="replace")
-        except OSError:
+    for path in sorted(source_files(rust_root)):
+        if SKIP_FILE_RE.search(str(path)):
             continue
+        text = path.read_text(errors="replace")
         # Repo-relative when scanning the repo (keeps the baseline stable and
         # readable); absolute otherwise, because the control harness identifies a
         # finding by looking for its fixture root in the line. Same rule, and the
