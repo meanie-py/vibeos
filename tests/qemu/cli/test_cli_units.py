@@ -27,7 +27,7 @@ from . import build as build_mod
 from . import config as config_mod
 from . import conformance as conformance_mod
 from . import gdbengine as ge_mod
-from . import heartbeat, lints, provenance, repro, triage
+from . import lints, provenance, repro, triage
 from .artifacts import Run, Stage
 
 # --- provenance: git fingerprint + stamp round-trip + staleness ------------
@@ -7242,84 +7242,3 @@ def test_kmtest_payload_already_present_runs_nothing(tmp_path, monkeypatch):
 
     monkeypatch.setattr(gate_mod.subprocess, "run", _boom)
     assert gate_mod._ensure_kmtest_payload(tmp_path, ["arm64"]) == (True, "")
-
-
-# --- Heartbeat: silence is what gets a background task killed --------------------
-
-
-def test_heartbeat_emits_while_the_body_runs():
-    buf = io.StringIO()
-    with heartbeat.beat("check-tooling", label="preflight", interval=0.02, stream=buf):
-        time.sleep(0.25)
-    lines = buf.getvalue().splitlines()
-    assert len(lines) >= 3, lines
-    assert all(ln.startswith("[preflight] check-tooling ") for ln in lines), lines
-
-
-def test_heartbeat_stays_silent_for_a_short_body():
-    """A stretch that finishes fast is not at risk and must not cost any output."""
-    buf = io.StringIO()
-    with heartbeat.beat("quick", interval=5.0, stream=buf):
-        pass
-    assert buf.getvalue() == ""
-
-
-def test_heartbeat_stops_when_the_body_ends():
-    buf = io.StringIO()
-    with heartbeat.beat("stage", interval=0.02, stream=buf):
-        time.sleep(0.1)
-    settled = buf.getvalue()
-    time.sleep(0.15)
-    assert buf.getvalue() == settled
-
-
-def test_heartbeat_stops_when_the_body_raises():
-    buf = io.StringIO()
-    with pytest.raises(RuntimeError), heartbeat.beat("stage", interval=0.02, stream=buf):
-        raise RuntimeError("boom")
-    settled = buf.getvalue()
-    time.sleep(0.1)
-    assert buf.getvalue() == settled
-
-
-@pytest.mark.parametrize("bad", [0, -1, 61, 3600])
-def test_heartbeat_refuses_an_interval_tuned_toward_the_kill_window(bad):
-    """30s is the PROVEN-survivor interval; the ~8min window is inferred from five
-    samples of a supervisor we cannot read, so the margin is not negotiable."""
-    with pytest.raises(ValueError), heartbeat.beat("stage", interval=bad):
-        pass
-
-
-def test_heartbeat_survives_a_closed_stream():
-    buf = io.StringIO()
-    with heartbeat.beat("stage", interval=0.02, stream=buf):
-        buf.close()
-        time.sleep(0.1)  # the body must still complete
-
-
-def test_heartbeat_elapsed_matches_the_repo_format():
-    assert heartbeat.elapsed(9) == "9s"
-    assert heartbeat.elapsed(59) == "59s"
-    assert heartbeat.elapsed(60) == "1m00s"
-    assert heartbeat.elapsed(200) == "3m20s"
-
-
-def test_land_preflight_is_wrapped_so_the_silent_stretch_talks(
-    tiny_repo: Path, tmp_path, monkeypatch
-):
-    """The whole point: `land`'s preflight captures its child's output, so without
-    this the process is silent for ~6 minutes -- and a killed land leaves no queue
-    entry, so the lane waits on a position it does not have."""
-    seen = []
-    real = heartbeat.beat
-
-    def spy(stage, **kw):
-        seen.append((stage, kw.get("label")))
-        return real(stage, **kw)
-
-    monkeypatch.setattr(land_mod.heartbeat, "beat", spy)
-    _fake_cli(tiny_repo, rc=0, out="OK — all 37 tooling checks passed.")
-    run = Run("land", "queue")
-    run.dir = tmp_path
-    land_mod._lint_preflight(tiny_repo, run, Namespace(skip_lint=False))
-    assert seen == [("check-tooling", "preflight")]

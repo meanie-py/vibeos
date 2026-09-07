@@ -70,7 +70,7 @@ import subprocess
 import time
 from pathlib import Path
 
-from . import heartbeat, hostlock, queue
+from . import hostlock, queue
 from .artifacts import Run, Stage
 
 STAMP_MAX_AGE_S = 24 * 3600
@@ -179,19 +179,13 @@ def _lint_preflight(repo: Path, run: Run, args) -> None:
         return
     t0 = time.monotonic()
     try:
-        # `capture_output` means the child's own progress never reaches our stdout,
-        # so this is ~6 minutes of total silence -- and a silent background task is
-        # what gets reaped on this host. The cost of losing it here is worse than a
-        # rerun: a killed `land` leaves NO queue entry and NO error, so the lane
-        # waits on a queue position it does not have. See heartbeat.py.
-        with heartbeat.beat("check-tooling", label="preflight"):
-            cp = subprocess.run(
-                [str(repo / "vibeos-cli"), "check-tooling"],
-                cwd=str(repo),
-                capture_output=True,
-                text=True,
-                timeout=1800,
-            )
+        cp = subprocess.run(
+            [str(repo / "vibeos-cli"), "check-tooling"],
+            cwd=str(repo),
+            capture_output=True,
+            text=True,
+            timeout=1800,
+        )
     except (OSError, subprocess.SubprocessError) as exc:
         run.add(Stage("lint", status="warn", detail=f"check-tooling could not run: {exc}"))
         return

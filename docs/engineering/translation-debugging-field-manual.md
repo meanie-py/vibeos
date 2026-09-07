@@ -5398,9 +5398,9 @@ two very different disk states. On Linux a near-zero
 it on demand — so a watchdog reading `MemFree` rather than `MemAvailable` will fire continuously
 on any machine doing heavy build I/O, which is every host here. It also explains the FREQUENCY, which a
 genuine-pressure theory cannot: real pressure would be intermittent and would leave OOM traces.
-That `MemFree`-watchdog story was a hypothesis and it has since been SUPERSEDED — see the
-experiment below, where the trigger turns out to be output rather than anything about memory.
-It is kept here because the part it got right still holds and is what the message costs you:
+That `MemFree`-watchdog story was a hypothesis and it did NOT survive — it is the first of the
+three wrong mechanisms catalogued below, and it is kept here rather than deleted because the
+part it got right still holds and is what the message actually costs you:
 **the message is uncorrelated with real memory pressure and cannot be used to diagnose
 anything.** (The harness sits above this repo and cannot be read from it — nothing under
 `tests/qemu/cli/` reads `/proc/meminfo`, and the tree's only `MemFree` hits are an unrelated
@@ -5413,66 +5413,35 @@ instinct when writing one of these is to hedge ("mysterious kills can have host 
 hedged entry would have survived contact and taught nobody anything. **Write the falsifiable
 version; being wrong in a way the next reader can detect is worth more than being unfalsifiable.**
 
-**RESOLVED, by experiment: the trigger is SILENCE — a background task that produces no output
-for some window gets reaped.** It is not memory, not idleness, and not duration. Controlled on
-both sides, which is what makes it a finding rather than a fourth list of survivors:
+**Treat a "low on memory" kill as an UNEXPLAINED kill.** Three separate mechanisms have been
+proposed for it and all three were wrong — a memory reaper, the full disk, and (most recently,
+and most confidently) output. Each was inferred from a handful of samples of a supervisor that
+sits above this repo and that none of us can read. **The operational fact is enough, and it is
+the only thing here with a clean record:**
 
-| launch | output | outcome |
-|---|---|---|
-| plain background | silent | **KILLED** (~8 min, twice; plus two builds sitting at one log line) |
-| `setsid nohup` | silent | survived |
-| plain background | heartbeat every 30s | survived 36 min / 72 heartbeats, exited normally |
+| launch | record |
+|---|---|
+| `setsid nohup` | 3 for 3 survived — including one that outlived a sibling watcher killed at the same instant |
+| plain background | 5 kills, at 8, 12 and 36+ minutes |
 
-The last row is the decisive one: same launch path as a task that had already died, differing
-only in that it talked. The row that made it the right experiment was a `find /` walk — heavily
-I/O-busy and silent — which died, ruling out idleness *before* the experiment ran. Without it
-the chatty-watcher result would have been ambiguous between "output matters" and "activity
-matters".
+**Detach the WORK; treat any watcher as expendable and re-armable.** That is a workaround with
+evidence, not a theory of the cause.
 
-So there are two independent routes, and knowing both is what makes the mitigation cheap:
-**detachment works because it removes the task from supervision, but it is not the trigger** — a
-supervised task that produces output is spared too. Earlier data where detached tasks survived
-is consistent with this rather than superseded; those survivors happened to be silent, so
-detachment was doing the work there.
+**What specifically does NOT work, because it was believed for several hours and written into
+this entry:** keeping the task talking. A chatty background watcher survived 36 minutes and 72
+heartbeats, which looked decisive; a second one of identical construction was killed after 25
+heartbeats while actively producing output. The kills span silent and chatty alike. **Do not add
+a heartbeat as a kill mitigation** — it does not help, and a lane that trusts it will lose a long
+job and then wrongly conclude that detachment is unreliable too.
 
-**The hazard is a long SILENT WAIT, not a long task**, so the cheap fix is usually to keep the
-watcher talking rather than to detach everything:
-
-```bash
-until [ -f sentinel ]; do echo "[watch] $(date)"; sleep 30; done
-```
-
-Under plain `run_in_background` those heartbeats land in the task's output file rather than
-becoming notifications, so they cost nothing in noise. General form: **detach the WORK and treat
-the watcher as expendable, or keep the watcher talking.**
-
-**For our own tools this is MECHANIZED, not remembered** — `tests/qemu/cli/heartbeat.py`, a
-`with heartbeat.beat("<stage>", label="<phase>")` around any stretch that would otherwise be
-silent. A rule saying "emit output" would be broken by people who have read it, because the
-moment you need it is the moment you are thinking about something else; that is the
-`pkill` → `vibeos-cli kill` precedent. Four of its choices are measurements rather than taste
-and should not be "cleaned up": the 30s default is the **proven-survivor** interval and it
-refuses anything above 60s rather than let a caller tune toward a kill window inferred from five
-samples; it writes to **stdout**, the stream the supervisor actually watches, not to a log or
-`summary.json`; it stays mid-stream, because the final stdout line is reserved for
-`vibeos-cli: exit=N`; and it emits nothing at t=0, so a stretch that finishes fast costs no
-output at all. First user is `land`'s `check-tooling` preflight — verified live at 11 lines over
-5m30s of what had been total silence.
-
-Two caveats, kept deliberately so this does not overclaim. The supervisor sits above this repo
-and none of us can read it, so **the correlation is measured and the mechanism is inferred.**
-And one lane's kills are confounded with the ENOSPC window and are not counted — five clean
-observations stand without them.
-
-The non-obvious victim worth naming: **`./vibeos-cli land` is at risk in a way nobody would
-guess**, because its preflight runs `check-tooling`, which prints nothing for ~6 minutes before
-enqueueing. The expensive part is invisible rather than absent. Check `df -h /` too — a full
-disk IS one real cause — but a healthy disk no longer leaves you with nothing.
-
-**Method note, because it is the entry's own rule applied to itself.** This said "treat it as an
-UNEXPLAINED kill" for as long as that was all the evidence supported, and refusing to guess a
-mechanism is why the entry now carries a correct one instead of a plausible one. The falsifiable
-version got tested; a hedged version would have been quietly wrong forever.
+The near-miss is the reusable part. The "output" story had a positive control on both sides and
+still fell over, because one positive result was generalized into a mechanism and then into a
+design brief with confident numbers — a heartbeat interval derived from a kill window that only
+existed inside the story. A mechanization was written against it and reverted unlanded. **A
+measurement can constrain a STORY you have accepted while constraining nothing about the world,
+and the tell is that the numbers feel unusually specific for how little you know.** When the
+mechanism is unreadable, report the operational fact and stop; "unexplained" is a finding, not a
+placeholder for one.
 
 **A killed `land` leaves NO queue entry and NO error**, and that is the consequence worth
 knowing on its own. One lane ate five harness kills in a session — all reported as "the system is
