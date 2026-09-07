@@ -20,6 +20,11 @@ larger length is a real fixed array to leave alone.
 It grades the BUILT ARTIFACT, so a stale `build-<arch>` reports the state of the
 last build and not of the tree -- do a build before believing a drop to zero.
 
+A HIT IS A SHAPE, NOT A BUG. The discriminator this reader cannot see is whether
+the C over-allocates: `PRIVILEGE_SET`/`LPCP_DATA_INFO` do (real bugs), while
+`PKNODE KeNodeBlock[1] = { &KiNode0 };` really is one element and its check merely
+survives because the guard is a runtime variable. Read the C declaration first.
+
 CORPUS IS DECLARED, NOT DISCOVERED. Globbing `build-<arch>` would grade whatever
 binaries a worktree happens to carry -- a verdict that depends on state outside
 the diff (field manual, "A gate can be RED for reasons that are not in the tree

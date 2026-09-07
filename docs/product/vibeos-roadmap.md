@@ -959,8 +959,18 @@ Field-manual § pointers hold the full writeups. **Update on state change.**
   the kernel (`LpcpCopyRequestData`, `MiFillSystemPageDirectory`, `SePrivilegePolicyCheck`,
   `IopEnumerateDetectedDevices`, two NUMA `QSI_*` queries), `rtl-rust`, `oleaut32`'s
   `SafeArray{CopyData,GetLBound,GetUBound}`, `umpnpmgr`'s log-conf pair, and `usbaudio`'s
-  topology builders. Each still needs the per-site judgement the tool cannot make — a `[T; 1]`
-  that really is one element is fine — but the shape is the one that panics the kernel.
+  topology builders.
+  **Graded so far: 3 confirmed bugs, 1 confirmed false positive, 45 ungraded.** Confirmed and
+  FIXED: `SePrivilegePolicyCheck` (`PRIVILEGE_SET.Privilege`, over-allocated as
+  `size_of + (count-1)*size_of::<LUID_AND_ATTRIBUTES>`; `index` reaches 1 whenever a caller is
+  granted both `WRITE_OWNER` and `ACCESS_SYSTEM_SECURITY`) and `LpcpCopyRequestData`
+  (`LPCP_DATA_INFO.Entries[1]` guarded by `NumberOfEntries`, on the `NtReadRequestData` path
+  CSRSS uses). Confirmed NOT a bug: `KeNodeBlock[Node]` in the two NUMA `QSI_*` queries — the C
+  really is `PKNODE KeNodeBlock[1] = { &KiNode0 };`, a one-element array whose check merely
+  survives because the guard is a runtime variable (the msvcrt `_setmaxstdio` face already in
+  the manual). **That ratio is the point: the tool finds the SHAPE, not the bug, and the
+  discriminator is always whether the C over-allocates.** Read the C declaration before
+  touching a site.
   Not wired into the gate yet, deliberately: **89 of the 200 declared staticlib crates are not
   built for i386**, so a baseline captured today would bless whatever happens to be missing.
   The tool reports those as NOT BUILT (no coverage) rather than skipping them. Wiring it wants

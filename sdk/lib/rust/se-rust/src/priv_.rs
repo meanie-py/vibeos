@@ -217,15 +217,23 @@ pub unsafe extern "system" fn SePrivilegePolicyCheck(
             (*privilege_set).PrivilegeCount = privilege_count;
             (*privilege_set).Control = 0;
 
+            // `Privilege` is a C flexible array, which is why the allocation above is
+            // `size_of::<PRIVILEGE_SET>() + (count - 1) * size_of::<LUID_AND_ATTRIBUTES>()`
+            // -- but bindgen models it as `[LUID_AND_ATTRIBUTES; 1]`, so `Privilege[index]`
+            // bounds-checks and PANICS the moment `index` reaches 1. It does exactly that
+            // when a caller is granted both WRITE_OWNER and ACCESS_SYSTEM_SECURITY.
+            let privilege = core::ptr::addr_of_mut!((*privilege_set).Privilege)
+                .cast::<LUID_AND_ATTRIBUTES>();
+
             if (access_mask & WRITE_OWNER) != 0 {
-                (*privilege_set).Privilege[index as usize].Luid = SeTakeOwnershipPrivilege;
-                (*privilege_set).Privilege[index as usize].Attributes = SE_PRIVILEGE_USED_FOR_ACCESS;
+                (*privilege.add(index as usize)).Luid = SeTakeOwnershipPrivilege;
+                (*privilege.add(index as usize)).Attributes = SE_PRIVILEGE_USED_FOR_ACCESS;
                 index += 1;
             }
 
             if (access_mask & ACCESS_SYSTEM_SECURITY) != 0 {
-                (*privilege_set).Privilege[index as usize].Luid = SeSecurityPrivilege;
-                (*privilege_set).Privilege[index as usize].Attributes = SE_PRIVILEGE_USED_FOR_ACCESS;
+                (*privilege.add(index as usize)).Luid = SeSecurityPrivilege;
+                (*privilege.add(index as usize)).Attributes = SE_PRIVILEGE_USED_FOR_ACCESS;
             }
         } else {
             *out_privilege_set = core::ptr::null_mut();
