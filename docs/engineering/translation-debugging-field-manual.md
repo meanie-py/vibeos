@@ -8608,6 +8608,54 @@ so only the bodies that actually changed re-paid.
 
 ## Working in this repo without breaking a sibling lane
 
+### N worktrees share ONE sccache dir, and each server enforces the cap against its OWN index
+
+**Symptom:** the disk hits 100% and the fleet dies in four unrelated-looking ways at once — a
+conductor killed mid-drain by `OSError: [Errno 28]` deep in `artifacts.py:182`, a gate reported
+as plain `RED`, "low memory" in two agents' harnesses, and builds failing with no obvious link.
+`du` shows the shared sccache directory far past its configured cap, with nothing misconfigured
+anywhere.
+
+**Cause:** `tools/canon-run.sh:102-104` derives `SCCACHE_SERVER_PORT` per worktree
+(`4300 + md5($ROOT) % 20000`, deliberately — a shared port let one lane's compiles run in
+another's namespace). So **every worktree gets its own sccache server, and all of them point at
+the same `SCCACHE_DIR`.** Each server keeps its own LRU index and enforces `SCCACHE_CACHE_SIZE`
+against *its own* entries only. The accounting is per-server; the resource is shared. With N
+worktrees the directory's real ceiling is **N × the cap** — 9 × 150G = 1.35 TB on a 1007 G disk —
+and entries written by a retired worktree's server are permanently orphaned, because no surviving
+server has them indexed. Verified from `/proc/<pid>/environ`: three live servers, three ports,
+one `SCCACHE_DIR`, all three correctly carrying `SCCACHE_CACHE_SIZE=150G`.
+
+This *qualifies* AGENTS.md's "sharing belongs ONLY in content-addressed caches designed for it".
+The cache directory is safe to share; the **cap** is not shared, and sizing it as though it were
+is how the disk fills with every component behaving correctly.
+
+**Fix:** size the cap as `disk_budget / N_worktrees`, not as the whole budget. Reclaiming the
+directory is safe in kind — content-addressed, so a lost entry is a cache miss, never corruption
+— but it costs cold Rust builds fleet-wide, so it is a fleet decision under the host lock, not a
+lane's to take.
+
+**`sccache -s` and `--stop-server` are NOT safe diagnostics — both need `SCCACHE_SERVER_PORT`.**
+Without it they talk to a *different* server on the default port. `-s` then reports that server's
+defaults (`Max cache size 10 GiB`, `0 compile requests`) as though describing yours, and
+`--stop-server` fails with "couldn't connect to server" — which reads as "nothing is running"
+while the real servers keep going. A diagnostic that lies is bad; a control command that silently
+no-ops while reporting a connection error is worse, because it makes you believe you changed the
+system. Always pass both `SCCACHE_DIR` and `SCCACHE_SERVER_PORT`, exactly as `cachecfg.py`
+exports them, or read `/proc/<pid>/environ` directly.
+
+**Two observations that share an unexamined assumption are ONE observation.** This bug was
+mis-diagnosed twice in an hour by two agents whose evidence appeared to converge. A wrong
+`Max cache size 10 GiB` (from the default-port server) suggested the config was not in effect; a
+second observation — "zero writes in 30 minutes while builds ran" — appeared to corroborate
+orphaning, but a heavily-*hit* cache produces exactly that too (239 hits of 511 requests), and a
+cache hit writes nothing. Both readings came through the same blind spot, so the pair carried no
+more weight than either alone. The real mechanism came only from `/proc/<pid>/environ` and
+`canon-run.sh` — evidence the suspect tool could not mediate. **When the diagnostic tool is part
+of the system under investigation, prefer evidence it cannot touch.**
+
+---
+
 ### A worktree showing a HUGE staged REVERT isn't your work `[§9.121]`
 `git status` in a checkout you haven't touched reports thousands of files staged, nothing
 unstaged, and `git diff --cached --shortstat HEAD` shows six-figure **deletions** that remove
