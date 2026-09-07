@@ -1327,6 +1327,34 @@ Three faces, all seen live:
   `msvcrt-seh-difftest` on its first run, and it could not have been found any other way:
   the module is `#![cfg(target_arch = "x86")]`, so nothing that runs on the build host ever
   executes it.
+- **`addr_of_mut!((*p).List[i])` — the face that does not look like indexing at all, and it
+  shipped in the kernel.** Taking a raw pointer to a member reads as address-taking, so it
+  slips past a reviewer scanning for `[i]` *loads*; but the index inside the place expression
+  still emits a bounds check, and `&raw mut` does not suppress it. cmlib's `CmpSelectLeaf`
+  wrote `*RootCell = addr_of_mut!((*IndexKey).List[i]) as PHCELL_INDEX` at three sites
+  (i = SubKeyIndex, +1, -1), so every subkey list whose index root held more than one leaf
+  panicked. The file's own accessor comment already said `NEVER index List[i] for i>=1` and
+  the reads in the same function used pointer arithmetic correctly — intra-file inconsistency
+  again, and again on the member-vs-pointer seam. **How to measure it rather than argue about
+  it:** `llvm-objdump -dr --disassemble-symbols=<sym>` and count `panic_bounds_check`
+  relocations; the immediate pushed just before each call is the ARRAY LENGTH, so a `$0x1`
+  names a flexible array and anything larger is a real fixed array you should leave alone.
+  Here: 4 sites, three pushing `$0x1` and one pushing `$0x2` (`SubKeyLists[Type]`, legitimate)
+  — after the fix only the `$0x2` remains. Note plain `objdump` does not accept
+  `--disassemble-symbols` and greps clean off its usage message, which is a zero that means
+  nothing; use `.build-tools/llvm-mingw/bin/llvm-objdump`.
+  Two things made this one expensive to find, both worth generalising. The module was filed as
+  dead code because a reviewer read `sdk/lib/cmlib/CMakeLists.txt` and saw `cmindex.c` in the
+  source list — but that is the SHARED list feeding the bootloader; the kernel target
+  `REMOVE_ITEM`s `CMLIB_RUST_FLIPPED` from it. **Settle "does this ship" against the artifact,
+  not the CMake**: the C `libcmlib.a` is a 248-byte placeholder TU and `nm` puts the symbol in
+  `libcmlib_rust.a`. And the bug report that sent everyone the wrong way was the file's own
+  `[correctness-review]` header, three months stale: all four bugs it listed had been fixed,
+  its line numbers pointed into a file a sixth of the current length, and it read as current
+  because a header has no timestamp a reader checks. **A stale review header is worse than no
+  header** — it is a claim with the authority of living next to the code and none of the
+  accountability. Re-verify one against the body before you act on it, and rewrite it when you
+  do.
 - **SILENT thread hang, message on debugcon not serial:** `IoCheckEaBufferValidity` panicked;
   the kernel panic handler writes `PANIC:<file>:<line>` to **debugcon port 0xe9**, then
   `loop {}`. QEMU's timer still preempts the spinning thread, so the box stays alive and it

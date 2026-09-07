@@ -950,14 +950,27 @@ Field-manual § pointers hold the full writeups. **Update on state change.**
   touched. A verdict that depends on which artifacts a worktree happens to carry is the same
   shape as the AGENTS.md §7-8 fleet-isolation rule about resolving generated artifacts from
   siblings — the sweep should name its corpus, not discover it.
-- **cmlib `CmpAddToLeaf` + `CmpSelectLeaf` are truncated — OPEN, but LATENT** (2026-09-06).
-  The same sweep found them via `cmindex.rs`'s own review header: `CmpAddToLeaf` inserts
-  nothing (C 987-1099 absent) and `CmpSelectLeaf` is missing ~100 lines including the split,
-  which the header argues makes a full leaf spin forever. **These do not ship** — unlike
-  scsiport/classpnp, `cmindex.c` is still in `sdk/lib/cmlib/CMakeLists.txt:10`, so the C body
-  wins at link and the Rust is dead. Same file also records an i386 ABI bug: five `NTAPI`
-  callees declared `extern "C"` instead of `extern "system"`. Worth doing before cmlib is
-  cohab-flipped, not after.
+- **cmlib `CmpSelectLeaf` panicked on any multi-leaf index root — FIXED** (2026-09-06).
+  It wrote `*RootCell` through `addr_of_mut!((*IndexKey).List[i])` at three sites
+  (i = SubKeyIndex, +1, -1). An array index inside a raw-ref still emits a bounds check, and
+  bindgen renders the C flexible array as `[HCELL_INDEX; 1]`, so each panicked for every
+  i >= 1 — i.e. as soon as a key's subkey list has more than one leaf. The file's own accessor
+  comment forbids exactly this (`NEVER index List[i] for i>=1`); the sites read as
+  address-taking rather than indexing, which is how they slipped past. Measured in the shipped
+  i386 object: 4 `panic_bounds_check` sites in the function, 3 pushing an array length of 1;
+  after routing them through `index_list_ptr`, only the legitimate length-2
+  `SubKeyLists[Type]` check remains. Small hives boot, which is why smoke never caught it.
+  **This entry previously said the opposite, twice over, and the correction matters more than
+  the fix.** It said both functions were truncated and that they *did not ship*. Both false:
+  `CmpAddToLeaf` and `CmpSelectLeaf` are complete (call-site table-diff vs the C: HvGetCell
+  8/8, CmpMaxIndexPerHblock 5/5, HCELL_NIL 13/13), and the kernel links the Rust —
+  `cmindex.c` is in `CMLIB_RUST_FLIPPED` and REMOVE_ITEM'd, so its appearance at
+  `CMakeLists.txt:10` is the shared list feeding the *bootloader*. The C `libcmlib.a` in
+  `build-i386` is a 248-byte placeholder. The entry came from `cmindex.rs`'s 2026-06-07 review
+  header, whose four "REAL BUGS" had all been fixed by `85479bd0878` without the text being
+  updated. **A stale review header reads as current and is worse than none**; the ABI
+  complaint it also carried is likewise dead (the five NTAPI callees are defined locally as
+  `extern "system"`). Header rewritten in place.
 - **classpnp `ClasspAccessAlignmentProperty` spun forever on arm64 — FIXED** (2026-09-05).
   An empty `_ => {}` catch-all as the last arm of a `match` that IS the body of a
   goto-elimination `'work: loop`. utils.c's switch has no `default:`, so an unmatched value
