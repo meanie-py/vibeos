@@ -8,9 +8,22 @@ from pathlib import Path
 
 import pytest
 
-from tests.qemu.cli.lints import EARLY_SOURCE_CHECKS
+from tests.qemu.cli.lints import EARLY_SOURCE_CHECKS, source_partition_specs
 
 REPO = Path(__file__).resolve().parents[1]
+
+
+# The shared fixture plants an octal literal and a Width u32/u64 disagreement, so
+# only these two have something to find in it. The rest are proven by the audit
+# hook and the concurrent-churn run, not by their output.
+_POSITIVE_FIXTURE = ("scan_octal_literals", "scan_type_alias_contradictions")
+
+
+def _registered_flags(scanner: str) -> list[str]:
+    for name, cmd, _src in source_partition_specs(REPO, "source-early"):
+        if name == scanner:
+            return [arg for arg in cmd[2:]]
+    raise AssertionError(f"{scanner} is in EARLY_SOURCE_CHECKS but has no spec")
 
 
 @pytest.mark.parametrize("scanner", sorted(EARLY_SOURCE_CHECKS))
@@ -56,9 +69,12 @@ except SystemExit as e:
 assert not reads, reads
 sys.exit(code)
 """
-    flags = (
-        [] if scanner in ("scan_octal_literals", "scan_type_alias_contradictions") else ["--lint"]
-    )
+    # Take the flags from the registration, not a list kept here: the gate owns how
+    # each scanner is invoked, and a second copy drifts silently. It already had --
+    # this exempted scan_type_alias_contradictions, which the gate DOES pass --lint,
+    # and passed --lint to scan_octal_literals, which it does not -- so the contract
+    # under test was an invocation that never runs.
+    flags = _registered_flags(scanner)
 
     def run():
         return subprocess.run(
@@ -72,7 +88,7 @@ sys.exit(code)
     fresh = run()
     assert fresh.returncode in (0, 1), fresh.stderr
     assert "Traceback" not in fresh.stderr
-    if scanner in ("scan_octal_literals", "scan_type_alias_contradictions"):
+    if scanner in _POSITIVE_FIXTURE:
         assert fresh.stdout.strip(), "positive fixture must still be analyzed"
     if scanner == "scan_invented_constants":
         assert "MISMATCH" in fresh.stdout and "PROBE_FLAG" in fresh.stdout
