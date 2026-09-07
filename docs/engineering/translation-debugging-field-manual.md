@@ -5375,6 +5375,39 @@ MSVC *intrinsic*).
 A whole family of bugs where the *verification* is wrong, so the code looks correct. These cost
 more than ordinary bugs because their output is trusted.
 
+### The oracle is the C, and the C is WRONG — a faithful port that ships a real defect
+
+**Symptom.** A translated body is bit-exact against its C, the difftest is green, and the
+function is badly broken anyway. `math/sin.c` is a 9-term Taylor series over
+`quadrant = (int)(x * 2/pi)`; cnt-rust's port of it matched bit-for-bit and returned
+`-3.3e-15` for `sin(0)`, `9.9997e-11` for `sin(1e-10)` (relative error 3.3e-5), and
+**`-1.56e+308` for `sin(1e18)`** — a trig function outside `[-1, 1]` by 308 orders of
+magnitude, which then poisons every arithmetic consumer downstream of the call.
+
+**Cause.** Bit-exactness measures *agreement with the oracle*, and says nothing about whether
+the oracle is right. Here the reference was ReactOS's own generic C, not Windows' behaviour, so
+"faithful" and "correct" were never the same claim.
+
+**The tell is a cheap one and worth running once per translated math body:** compare against the
+host libm over a few decades of the domain. It takes minutes, needs no build, and no amount of
+reading finds `1e308` — three of these faults were invisible in review and obvious in one table.
+Zero, tiny arguments, negative arguments and huge arguments are where implementations differ;
+the middle of the range agrees with everything.
+
+**Fix.** Check what the arch ACTUALLY LINKS before deciding the reference is authoritative. Here
+amd64's usermode msvcrt already linked AMD's `libm_sse2/sin.asm`, so the cohab flip had left one
+arch with two different `sin`s — a weak one in the kernel and a strong one in usermode — and
+porting the asm was a *correction*, not an improvement past the oracle. Then repoint the
+difftest rather than relaxing it: an oracle that is wrong is not a weaker oracle, it is one that
+reports the correct implementation as broken, so delete it and grade against libm to a ULP bound
+(the shape `sqrt` and `atan` already use). Keep the special values EXACT — `sin(±0)` carrying
+the sign of zero is a difference in kind, not in degree.
+
+**Related trap when transcribing the replacement:** a vendor's own paths may disagree with each
+other. AMD's SSE2 `sin` computes `(-0.0 * 0.0) * S1` and answers `+0.0` for `sin(-0.0)`, while
+the FMA3 path in the *same file* returns `x` below 2^-27 and answers `-0.0`. Neither is a
+transcription error, and only measurement finds it.
+
 ### A gate can be RED for reasons that are not in the tree at all
 Symptom: a gate goes RED with **no failing test**. Cause: the verdict depended on host state,
 not on the diff. Fix: check the host before you read the artifact, because the artifact cannot
