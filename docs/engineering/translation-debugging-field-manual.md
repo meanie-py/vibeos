@@ -5439,10 +5439,18 @@ diff is not a gate.**
   so the lane was told to go find a source defect it had not written, with no evidence to
   read. Latent for as long as source scanners ran *after* the builds; the `source-early`
   partition made it reachable by running them at t=0 **alongside** them. Fix has two halves,
-  and both are needed: prune during the walk (`tools/rust_sources.py` — removing the race
-  beats catching it, and it is much faster since `target/` dwarfs the sources), and make a
-  dead tool classify as `TOOLING_FAIL` carrying its stderr, never `LINT_FAIL`. **The tell,
+  and both are needed: prune during the walk (`tools/source_walk.py` — removing the race beats
+  catching it, and it is much faster since `target/` dwarfs the sources), and make a dead tool
+  classify as `SCANNER_ERROR` carrying its stderr, never `LINT_FAIL`. Two details in
+  `lints.py:_scanner_error` are what make the second half actually hold, and both were arrived
+  at by someone who had already been burned: it treats a NEGATIVE return code (a signal kill)
+  as a crash, and it runs BEFORE the baseline comparison — so a scanner that printed some
+  findings and *then* died is still a crash, not a partial verdict you can grade. **The tell,
   reusable beyond this bug: a red with a finding COUNT but no finding TEXT is a crash.**
+  Footnote worth its line: two lanes wrote this same fix within forty minutes of each other,
+  neither knowing, and the merge conflicted across six scanners. Nobody wasted time — the
+  landed version was better on both counts above and simply replaced the other — but when a
+  defect is announced fleet-wide, say whether you are taking it.
 - **Which artifacts a worktree happens to carry** — `scan_ud2`'s arm64 driver sweep has no
   defined corpus. arm64 has no `livecd` DAG (`archcfg.py:209` builds a hand-picked staged set),
   so the sweep grades whatever binaries are sitting in `build-arm64/`: nothing in a fresh

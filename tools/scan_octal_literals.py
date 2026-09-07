@@ -71,8 +71,8 @@ import re
 import sys
 from pathlib import Path
 
-sys.path.insert(0, str(Path(__file__).resolve().parent))
-from rust_sources import walk_rs
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
+from tools.source_walk import source_files
 
 # A leading-zero literal in NUMERIC position.
 #
@@ -207,11 +207,8 @@ def main() -> int:
     findings = 0
     files = 0
     for root in roots:
-        for path in walk_rs(root):
-            try:
-                text = path.read_text(encoding="utf-8", errors="replace")
-            except OSError:
-                continue
+        for path in sorted(source_files(root)):
+            text = path.read_text(encoding="utf-8", errors="replace")
             files += 1
             for lineno, lit, dec, oct_ in scan_text(text):
                 rel = path.relative_to(repo)

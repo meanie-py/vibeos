@@ -103,12 +103,12 @@ from collections import defaultdict
 from dataclasses import dataclass, field
 from pathlib import Path
 
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
+from tools.source_walk import source_files
+
 REPO = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(REPO / "tools" / "rustconv"))
-
-sys.path.insert(0, str(Path(__file__).resolve().parent))
 import tree_sitter_rust as tsr  # noqa: E402
-from rust_sources import walk_rs  # noqa: E402
 from tree_sitter import Language, Parser  # noqa: E402
 
 _LANG = Language(tsr.language())
@@ -413,7 +413,7 @@ def sweep(root_dir: Path, crate_dirs: list[Path]):
     aggregates: set[str] = set()
     crates = frozenset(crate_dirs)
     per: dict[Path, tuple] = {c: ({}, defaultdict(list), defaultdict(set)) for c in crate_dirs}
-    for rf in walk_rs(root_dir):
+    for rf in sorted(source_files(root_dir)):
         src = rf.read_bytes()
         crate = _owning_crate(rf, crates)
         defs, decls, called = per[crate] if crate is not None else (None, None, None)

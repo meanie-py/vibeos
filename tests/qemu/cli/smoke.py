@@ -251,7 +251,15 @@ def _smp_check(text: str, arch: str) -> dict | None:
     return None
 
 
-def _one_boot(
+def _one_boot(run: Run, repo: Path, arch: str, **kwargs) -> dict:
+    result = _boot_vm(run, repo, arch, **kwargs)
+    serial = run.dir / f"boot{kwargs['idx']}" / "serial.log"
+    if serial.is_file():
+        result["serial_log"] = str(serial)
+    return result
+
+
+def _boot_vm(
     run: Run,
     repo: Path,
     arch: str,
@@ -273,7 +281,13 @@ def _one_boot(
     # "native"; a WSL user can set qemu.backend="windows-host" to escape nested-virt contention.
     cli_cfg = cli_config.load(repo)
     backend = cli_cfg.get("qemu.backend", "native")
-    vm = QemuVM(config, work, backend=backend, windows=cli_cfg.get("qemu.windows", {}))
+    vm = QemuVM(
+        config,
+        work,
+        backend=backend,
+        windows=cli_cfg.get("qemu.windows", {}),
+        serial_log=work / "serial.log",
+    )
     label = f"boot {idx + 1}/{total}" if total > 1 else "boot"
     if backend != "native":
         run.log(f"backend={backend} (qemu.windows={cli_cfg.get('qemu.windows', {})})", header=label)
@@ -708,7 +722,7 @@ def smoke(args, repo: Path) -> int:
     npass = sum(1 for r in results if r["ok"])
     run.extra["passes"] = npass
     run.extra["runs"] = total
-    run.extra["live_log"] = str(repo / "qemu" / f"{archcfg.vm_arch(arch)}_smoke_live.log")
+    _boot_evidence(run, results)
 
     # Kernel sync-instrumentation health on GREEN boots: [CENSUS] STUCK /
     # [LOCKDEP] self-reports mean threads are permanently parked even though the
@@ -765,7 +779,7 @@ def smoke(args, repo: Path) -> int:
 
     # --timing: decompose the stamped live log into boot phases + biggest gaps.
     if getattr(args, "timing", False):
-        live = repo / "qemu" / f"{archcfg.vm_arch(arch)}_smoke_live.log"
+        live = Path(run.extra.get("live_log", run.dir / "serial.log"))
         tool = repo / "tools" / "boot_phase_report.py"
         if live.is_file() and tool.is_file():
             cp = subprocess.run(
@@ -779,6 +793,14 @@ def smoke(args, repo: Path) -> int:
                 run.log(report[:12000], header="boot-phase timing")
 
     return run.finalize(repo)
+
+
+def _boot_evidence(run: Run, results: list[dict]) -> None:
+    """Keep every boot; top-level serial must describe the selected verdict."""
+    run.extra["boots"] = results
+    selected = next((r for r in results if not r["ok"]), results[0])
+    if selected.get("serial_log"):
+        run.extra["live_log"] = selected["serial_log"]
 
 
 def boot(args, repo: Path) -> int:
@@ -806,5 +828,5 @@ def boot(args, repo: Path) -> int:
     )
     if not r["ok"]:
         run.classification = r.get("classification", "FAIL")
-    run.extra["live_log"] = str(repo / "qemu" / f"{archcfg.vm_arch(arch)}_smoke_live.log")
+    _boot_evidence(run, [r])
     return run.finalize(repo)

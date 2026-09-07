@@ -74,12 +74,12 @@ import re
 import sys
 from pathlib import Path
 
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
+from tools.source_walk import source_files
+
 REPO = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(REPO / "tools" / "rustconv"))
-
-sys.path.insert(0, str(Path(__file__).resolve().parent))
 import tree_sitter_rust as tsr  # noqa: E402
-from rust_sources import walk_rs  # noqa: E402
 from tree_sitter import Language, Parser  # noqa: E402
 
 RUST_WS = REPO / "sdk" / "lib" / "rust"
@@ -575,9 +575,10 @@ def _iter_files(paths):
     for p in paths:
         p = Path(p)
         if p.is_dir():
-            yield from walk_rs(
-                p, skip=lambda f: f.name.startswith("bindgen_") or f.name == "build.rs"
-            )
+            for f in source_files(p):
+                if f.name.startswith("bindgen_") or f.name == "build.rs":
+                    continue
+                yield f
         elif p.suffix == ".rs":
             yield p
 
@@ -633,8 +634,7 @@ def main(argv, *, summary_root=None):
                 findings.extend(_scan_function(body, src, lines, summaries))
             findings.sort()
         except Exception as e:
-            print(f"{f}: parse error: {e}", file=sys.stderr)
-            continue
+            raise RuntimeError(f"cannot analyze {f}: {e}") from e
         try:
             rel = f.resolve().relative_to(REPO)
         except ValueError:

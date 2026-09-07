@@ -63,10 +63,10 @@ import sys
 from collections import defaultdict
 from pathlib import Path
 
-REPO = Path(__file__).resolve().parent.parent
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
+from tools.source_walk import source_files
 
-sys.path.insert(0, str(Path(__file__).resolve().parent))
-from rust_sources import walk_rs  # noqa: E402
+REPO = Path(__file__).resolve().parent.parent
 
 SKIP_FILE_RE = re.compile(r"(/target/|/\.responses/)")
 NOLINT_RE = re.compile(r"//\s*nolint(?::\s*type-alias-contradiction\b|\s*$|:?\s*\()")
@@ -199,11 +199,10 @@ def collect(root: Path):
         rust_root = root
     decls: dict[str, list[tuple[str, str, str]]] = defaultdict(list)
     aliases_by_arch: dict[str, dict[str, str]] = defaultdict(dict)
-    for path in walk_rs(rust_root, skip=lambda p: bool(SKIP_FILE_RE.search(str(p)))):
-        try:
-            text = path.read_text(errors="replace")
-        except OSError:
+    for path in sorted(source_files(rust_root)):
+        if SKIP_FILE_RE.search(str(path)):
             continue
+        text = path.read_text(errors="replace")
         # Repo-relative when scanning the repo (keeps the baseline stable and
         # readable); absolute otherwise, because the control harness identifies a
         # finding by looking for its fixture root in the line. Same rule, and the

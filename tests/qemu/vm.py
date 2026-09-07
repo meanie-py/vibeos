@@ -115,6 +115,24 @@ _MP_ENTRY_FOR = {
 }
 
 
+def _write_sparse_image(path: Path, data: bytes | bytearray) -> None:
+    """Own-copy media: retain every byte without allocating all-zero extents.
+
+    No links, shared backing file, or dependency on the source after creation.
+    Filesystems without sparse support still produce the exact same image.
+    """
+    block = 64 * 1024
+    zeros = bytes(block)
+    with path.open("wb") as output:
+        for offset in range(0, len(data), block):
+            chunk = data[offset:offset + block]
+            if chunk == zeros[:len(chunk)]:
+                output.seek(len(chunk), os.SEEK_CUR)
+            else:
+                output.write(chunk)
+        output.truncate(len(data))
+
+
 def smp_selected_iso(iso: Path, work_dir: Path) -> Path:
     """Boot media whose freeldr default entry is the MP pair, WITHOUT rebuilding it.
 
@@ -189,7 +207,7 @@ def smp_selected_iso(iso: Path, work_dir: Path) -> Path:
     data[start:end] = new
     out = work_dir / iso.name
     out.parent.mkdir(parents=True, exist_ok=True)
-    out.write_bytes(data)
+    _write_sparse_image(out, data)
     return out
 
 
@@ -1032,6 +1050,7 @@ class QemuVM:
         windows: dict | None = None,
         gdb: bool = False,
         gdb_wait: bool = False,
+        serial_log: Path | None = None,
     ) -> None:
         self.config = config
         # An -smp N boot is slower in wall-clock than the UP boot the timeout was
@@ -1047,6 +1066,7 @@ class QemuVM:
         )
         self.work_dir = work_dir
         self.work_dir.mkdir(parents=True, exist_ok=True)
+        self.live_log_path = serial_log or LIVE_LOG_DIR / f"{config.arch}_smoke_live.log"
 
         # A SECOND, durable home for hang diagnostics. Under the pytest `vm`
         # fixture work_dir is a tmp_path_factory dir, and pytest keeps only the
@@ -1239,8 +1259,7 @@ class QemuVM:
         ]
 
     def _set_live_tee(self) -> None:
-        """Tee serial to a predictable per-arch live log (`tail -f`). Truncated per session."""
-        self.live_log_path = LIVE_LOG_DIR / f"{self.config.arch}_smoke_live.log"
+        """Tee to the caller's owned log, or the legacy per-arch live path."""
         # ASCII-only header: the tee file is latin-1 (byte-faithful to the serial stream).
         self.serial.set_tee(
             str(self.live_log_path),
