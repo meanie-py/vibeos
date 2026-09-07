@@ -1121,8 +1121,9 @@ pub extern "C" fn fmod(x: f64, y: f64) -> f64 {
 // Porting it rather than keeping the quotient gives every arch the accurate
 // body instead of every arch the inaccurate one; "give every arch the same
 // thing" is preserved, it is simply now the same GOOD thing. arm64 gains the
-// accuracy it never had. `math/sin.c` itself is untouched and still the weak
-// link for `sin`/`cos` — a separate lane.
+// accuracy it never had. `math/sin.c` was the weak link for `sin`/`cos` and is
+// no longer used by either: that lane is done, and the AMD port above ports
+// them the same way, reusing the `remainder_piby2` transcribed here.
 //
 // One deliberate deviation, the established one for every AMD body in this
 // file (exp2, sinh, cosh, tanh, asin, acos, hypot, …): the C's error paths go
