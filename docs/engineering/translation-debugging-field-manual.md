@@ -5446,6 +5446,19 @@ Under plain `run_in_background` those heartbeats land in the task's output file 
 becoming notifications, so they cost nothing in noise. General form: **detach the WORK and treat
 the watcher as expendable, or keep the watcher talking.**
 
+**For our own tools this is MECHANIZED, not remembered** — `tests/qemu/cli/heartbeat.py`, a
+`with heartbeat.beat("<stage>", label="<phase>")` around any stretch that would otherwise be
+silent. A rule saying "emit output" would be broken by people who have read it, because the
+moment you need it is the moment you are thinking about something else; that is the
+`pkill` → `vibeos-cli kill` precedent. Four of its choices are measurements rather than taste
+and should not be "cleaned up": the 30s default is the **proven-survivor** interval and it
+refuses anything above 60s rather than let a caller tune toward a kill window inferred from five
+samples; it writes to **stdout**, the stream the supervisor actually watches, not to a log or
+`summary.json`; it stays mid-stream, because the final stdout line is reserved for
+`vibeos-cli: exit=N`; and it emits nothing at t=0, so a stretch that finishes fast costs no
+output at all. First user is `land`'s `check-tooling` preflight — verified live at 11 lines over
+5m30s of what had been total silence.
+
 Two caveats, kept deliberately so this does not overclaim. The supervisor sits above this repo
 and none of us can read it, so **the correlation is measured and the mechanism is inferred.**
 And one lane's kills are confounded with the ENOSPC window and are not counted — five clean
