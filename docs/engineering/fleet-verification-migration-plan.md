@@ -127,6 +127,11 @@ and its child summaries. These temporary artifacts are not portable certificates
 
 ## Next: predictable admission for the merge train
 
+Capacity trial: [build-capacity-trial-plan.md](build-capacity-trial-plan.md)
+defines a coordinated three-build rollout with shared policy, per-build job
+caps, and pause/drain/rollback commands. It is not yet enabled; it does not
+replace the priority or lease-lifetime work below.
+
 Second slice implements observation only. Queue and direct-land gate children
 inherit `VIBEOS_JOB_CLASS=integration`; ordinary invocations default to
 `interactive`, with `background` available as an advisory tag. Tags do not grant
