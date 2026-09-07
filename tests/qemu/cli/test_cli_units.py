@@ -1614,9 +1614,9 @@ def test_sccache_stats_use_compilers_canonical_context(tmp_path, monkeypatch):
     assert env is not None
     build_mod._collect_cache_stats(run, cache, env, repo=tmp_path, wrap=wrap)
     assert calls == [
-        (["canonical-wrapper", "sccache", "--zero-stats"], tmp_path),
         (["canonical-wrapper", "sccache", "--show-stats", "--stats-format=json"], tmp_path),
     ]
+    assert "not per-build" in run.extra["cache_stats_scope"]
 
 
 # --- per-arch QEMU concurrency sub-cap (serialize same-arch boots) ---------

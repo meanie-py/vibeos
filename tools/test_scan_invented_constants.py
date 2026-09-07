@@ -20,6 +20,7 @@ real C module a crate translates, so a synthetic tree cannot exercise it.
 from __future__ import annotations
 
 import importlib.util
+import os
 import sys
 from pathlib import Path
 
@@ -79,14 +80,14 @@ def test_the_crate_dir_walk_never_descends_into_excluded_trees(monkeypatch, tmp_
         (tmp_path / rel).mkdir(parents=True)
     monkeypatch.setattr(sic, "REPO", tmp_path)
     visited: list[str] = []
-    real_walk = sic.os.walk
+    real_walk = os.walk
 
     def spy(top, **kw):
         for root, dirs, files in real_walk(top, **kw):
             visited.append(str(Path(root).relative_to(tmp_path)))
             yield root, dirs, files
 
-    monkeypatch.setattr(sic.os, "walk", spy)
+    monkeypatch.setattr(os, "walk", spy)
     hits = sic.c_dirs_for("msvcrt-rust")
     assert [str(h.relative_to(tmp_path)) for h in hits] == ["dll/msvcrt"]
     # Without this the test is VACUOUS against the very implementation it guards: the old
@@ -97,27 +98,29 @@ def test_the_crate_dir_walk_never_descends_into_excluded_trees(monkeypatch, tmp_
     assert not bad, f"walked into an excluded tree: {bad}"
 
 
-def test_a_directory_vanishing_mid_walk_is_not_fatal(monkeypatch, tmp_path):
-    """The race itself: a build deleting a directory under the walker must not kill the scan.
-
-    A scanner that dies on a concurrent build is a scanner that reports host timing as a
-    source defect.
-    """
+@pytest.mark.parametrize("relative", ["build-i386", "dll/doomed"])
+def test_vanishing_output_is_harmless_but_missing_source_fails(monkeypatch, tmp_path, relative):
+    """Output churn cannot matter; lost source must not silently reduce coverage."""
     (tmp_path / "dll/msvcrt").mkdir(parents=True)
-    doomed = tmp_path / "dll/doomed"
+    doomed = tmp_path / relative
     doomed.mkdir()
     monkeypatch.setattr(sic, "REPO", tmp_path)
-    real_walk = sic.os.walk
+    real_walk = os.walk
 
     def spy(top, **kw):
         for root, dirs, files in real_walk(top, **kw):
-            if doomed.exists():
+            if Path(root) == doomed.parent and doomed.exists():
+                assert doomed.name in dirs
                 doomed.rmdir()  # vanishes after being listed, before being descended
             yield root, dirs, files
 
-    monkeypatch.setattr(sic.os, "walk", spy)
-    hits = sic.c_dirs_for("msvcrt-rust")  # must not raise
-    assert [str(h.relative_to(tmp_path)) for h in hits] == ["dll/msvcrt"]
+    monkeypatch.setattr(os, "walk", spy)
+    if relative.startswith("build-"):
+        hits = sic.c_dirs_for("msvcrt-rust")
+        assert [str(h.relative_to(tmp_path)) for h in hits] == ["dll/msvcrt"]
+    else:
+        with pytest.raises(FileNotFoundError):
+            sic.c_dirs_for("msvcrt-rust")
     assert not doomed.exists(), "the race never happened, so this proved nothing"
 
 
