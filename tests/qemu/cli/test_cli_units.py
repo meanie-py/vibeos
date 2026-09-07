@@ -7242,4 +7242,3 @@ def test_kmtest_payload_already_present_runs_nothing(tmp_path, monkeypatch):
 
     monkeypatch.setattr(gate_mod.subprocess, "run", _boom)
     assert gate_mod._ensure_kmtest_payload(tmp_path, ["arm64"]) == (True, "")
-
