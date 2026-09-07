@@ -1070,7 +1070,7 @@ pub unsafe fn NtSetValueKey(Data: PVOID, DataSize: ULONG) -> NTSTATUS {
 # directory underneath raised FileNotFoundError out of the generator and the gate
 # reported `lint:source-early: NEW lint findings (exit 1)` with no findings in it.
 # The GOOD case pins the three ways this scanner must NOT fire, all of which a first
-# draft got wrong: the walk_files() spelling that is the fix, a non-Rust rglob (only
+# draft got wrong: the source_files() spelling that is the fix, a non-Rust rglob (only
 # the Rust walks cross a live cargo target dir), and a line carrying the explicit
 # opt-out marker that the discriminating control test needs.
 _UNPRUNED_BAD = """\
@@ -1091,11 +1091,11 @@ def collect_other(root: Path):
 _UNPRUNED_GOOD = """\
 from pathlib import Path
 
-from rust_sources import walk_files
+from source_walk import source_files
 
 
 def collect(root: Path):
-    yield from walk_files([root])
+    yield from source_files(root)
 
 
 def collect_pyfiles(root: Path):

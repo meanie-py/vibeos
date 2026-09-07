@@ -17,13 +17,14 @@ SAFETY (manual + gated, by user policy 2026-06-20):
 
 from __future__ import annotations
 
+import math
 import os
 import shutil
 import subprocess
 from dataclasses import dataclass
 from pathlib import Path
 
-from . import queue  # INTEGRATION_DIRNAME — never auto-reclaim the merge train's tree
+from . import canon, maintenance, queue  # integration tree stays warm
 
 # Same global lock dir vm.py / qemu/start.sh / qemu/ps use.
 LOCK_DIR = Path("/tmp/vibeos-qemu-locks")
@@ -159,6 +160,16 @@ def active_build_worktrees(worktrees: list[Path]) -> set[Path]:
         try:
             cwd = os.readlink(entry / "cwd")
         except OSError:
+            # An unattributable live compiler is not evidence of an idle tree.
+            if entry.exists():
+                active.update(wt.resolve() for wt in worktrees)
+            continue
+        # Bind-mount builds report /tmp/vibeos, not their physical worktree.
+        # Protect the fleet conservatively rather than misclassifying an orphan
+        # compiler as idle after its CLI parent (and shared lease) has died.
+        canonical = Path(canon.canon_path())
+        if Path(cwd) == canonical or canonical in Path(cwd).parents:
+            active.update(wt.resolve() for wt in worktrees)
             continue
         if wt := _attribute(cwd, worktrees):
             active.add(wt.resolve())
@@ -204,21 +215,28 @@ def classify(
 def _dir_size(path: Path) -> int:
     try:
         out = subprocess.run(
-            ["du", "-sb", str(path)], capture_output=True, text=True, check=True
+            ["du", "-s", "-B1", str(path)], capture_output=True, text=True, check=True
         ).stdout
         return int(out.split("\t", 1)[0])
-    except (OSError, subprocess.CalledProcessError, ValueError):
-        return 0
+    except (OSError, subprocess.CalledProcessError, ValueError) as exc:
+        raise maintenance.MaintenanceError(f"cannot measure {path}: {exc}") from exc
 
 
 def _newest_mtime(worktree: Path) -> float | None:
-    """Most recent mtime among the prunable dirs (proxy for 'recently built')."""
+    """Newest descendant mtime: rewriting an object need not touch its root dir."""
     best: float | None = None
     for rel in PRUNE_RELDIRS:
         d = worktree / rel
         if d.exists():
             m = d.stat().st_mtime
             best = m if best is None else max(best, m)
+            for parent, dirs, files in os.walk(d, followlinks=False):
+                for name in dirs + files:
+                    try:
+                        m = (Path(parent) / name).lstat().st_mtime
+                    except FileNotFoundError:
+                        continue
+                    best = max(best, m)
     return best
 
 
@@ -236,16 +254,54 @@ def _fmt(n: int) -> str:
 
 
 def prune(args, repo: Path) -> int:
+    try:
+        if not getattr(args, "apply", False):
+            return _prune(args, repo)
+        with maintenance.activity(repo, exclusive=True):
+            return _prune(args, repo)
+    except maintenance.MaintenanceError as exc:
+        print(f"PRUNE_REFUSED: {exc}")
+        return 2
+
+
+def select_budget(candidates: list[Candidate], budget: float | None) -> list[Candidate]:
+    """Keep protected outputs even if they alone exceed the requested budget."""
+    if budget is None:
+        return candidates
+    if not math.isfinite(budget) or budget < 0:
+        raise ValueError("--retain-gib must be finite and nonnegative")
+    remaining = sum(c.total for c in candidates)
+    result = []
+    for c in sorted(candidates, key=lambda c: c.total, reverse=True):
+        if c.eligible and remaining <= budget * 1024**3:
+            c = Candidate(c.worktree, c.dirs, False, "within retention budget")
+        elif c.eligible:
+            remaining -= c.total
+        result.append(c)
+    return result
+
+
+def _prune(args, repo: Path) -> int:
     import time
 
     worktrees = git_worktrees(repo)
     if not worktrees:
         print("prune: no git worktrees found")
         return 1
+    if getattr(args, "apply", False):
+        control = maintenance.hostlock.HOSTLOCK_DIR.resolve()
+        if any(control.is_relative_to(wt.resolve()) for wt in worktrees):
+            raise maintenance.MaintenanceError(
+                "host maintenance controls must be outside all worktrees"
+            )
     live = live_qemu_worktrees(worktrees)
     active = active_build_worktrees(worktrees)
     now = time.time()
     min_age = float(getattr(args, "idle_hours", 0) or 0)
+    if getattr(args, "retain_gib", None) is not None and min_age == 0:
+        min_age = 24  # bounded fleet retention must not reclaim newly completed work
+    if not math.isfinite(min_age) or min_age < 0:
+        raise maintenance.MaintenanceError("--idle-hours must be finite and nonnegative")
 
     candidates: list[Candidate] = []
     for wt in worktrees:
@@ -264,6 +320,11 @@ def prune(args, repo: Path) -> int:
         )
         candidates.append(Candidate(wt, dirs, eligible=reason is None, skip_reason=reason))
 
+    try:
+        candidates = select_budget(candidates, getattr(args, "retain_gib", None))
+    except ValueError as exc:
+        print(f"PRUNE_REFUSED: {exc}")
+        return 2
     candidates.sort(key=lambda c: c.total, reverse=True)
     reclaim = sum(c.total for c in candidates if c.eligible)
     held = sum(c.total for c in candidates if not c.eligible)
@@ -277,21 +338,36 @@ def prune(args, repo: Path) -> int:
         print(f"  {mark} {_fmt(c.total)}  {c.worktree.name}{note}")
     print()
     print(f"  reclaimable: {_fmt(reclaim)}   held (in use/recent): {_fmt(held)}")
+    budget = getattr(args, "retain_gib", None)
+    if budget is not None and held > budget * 1024**3:
+        print("  budget cannot be met: protected outputs exceed it; protection takes precedence")
 
     if not apply:
         print("\n  → re-run with --apply to delete the PRUNE rows.")
         return 0
 
     freed = 0
+    failures = 0
     for c in candidates:
         if not c.eligible:
             continue
         for d, sz in c.dirs:
+            maintenance.check_owner(repo)  # kill switch rechecked for every directory
+            # Never follow an ancestor symlink outside the selected worktree.
+            if d.resolve() != c.worktree.resolve() / d.relative_to(c.worktree):
+                raise maintenance.MaintenanceError(f"symlinked output path: {d}")
+            # Also catch raw/legacy activity visible at deletion time. Those clients
+            # are NOT race-safe; drain them before enabling the owner stamp.
+            if live_qemu_worktrees(worktrees) or active_build_worktrees(worktrees):
+                raise maintenance.MaintenanceError(
+                    "live QEMU/build detected; nothing further removed"
+                )
             try:
                 shutil.rmtree(d)
                 freed += sz
                 print(f"  removed {d}")
             except OSError as e:
+                failures += 1
                 print(f"  FAILED {d}: {e}")
     print(f"\n  freed {_fmt(freed)}.")
-    return 0
+    return 1 if failures else 0

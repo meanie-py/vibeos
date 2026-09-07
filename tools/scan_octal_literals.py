@@ -71,10 +71,8 @@ import re
 import sys
 from pathlib import Path
 
-# Run as a script from any cwd (the gate's partition harness uses runpy.run_path), so
-# tools/ is not necessarily sys.path[0] and the shared walker must be located explicitly.
-sys.path.insert(0, str(Path(__file__).resolve().parent))
-from rust_sources import walk_files
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
+from tools.source_walk import source_files
 
 # A leading-zero literal in NUMERIC position.
 #
@@ -209,13 +207,8 @@ def main() -> int:
     findings = 0
     files = 0
     for root in roots:
-        for path in sorted(walk_files([root])):
-            if "/target/" in str(path):
-                continue
-            try:
-                text = path.read_text(encoding="utf-8", errors="replace")
-            except OSError:
-                continue
+        for path in sorted(source_files(root)):
+            text = path.read_text(encoding="utf-8", errors="replace")
             files += 1
             for lineno, lit, dec, oct_ in scan_text(text):
                 rel = path.relative_to(repo)

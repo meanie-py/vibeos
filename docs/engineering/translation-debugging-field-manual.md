@@ -5384,11 +5384,17 @@ diff is not a gate.**
   what makes this the purest member of the family: not one line of the scanners changed, and the
   code was genuinely correct for years — only the timing moved. **If a source-lint verdict names
   NEW findings and the artifact contains none, read it for a traceback before reading the diff.**
-  Fixed with `tools/rust_sources.py` `walk_files()` (prune build dirs during descent, so a
-  concurrent `rm -rf` cannot be observed, plus `onerror` for everything else); the six migrated
-  with byte-identical output, and `scan_unpruned_walk` gates the spelling with the remaining 65
-  latent sites baselined. The general lesson outlives the fix: **a walk that filters build output
-  after the fact is already inside it.**
+  Fixed with `tools/source_walk.py` — `source_files()` excludes the mutable tree BEFORE scandir
+  rather than after. It deliberately does NOT swallow errors (`onerror=_raise`: a vanishing
+  *source* directory is an incomplete check, not an empty corpus), which is only a safe trade
+  because the churning tree is pruned first; the two halves go together. `scan_unpruned_walk`
+  gates the spelling so a seventh walk cannot be written the old way — the migration closed the
+  six, not the class, and 37 of 39 `.rs` walkers under `tools/` were written this way.
+  **Beware how easily this class is dismissed: a casual delete-a-directory-mid-walk test PASSES
+  against `rglob`** and "proves" there is no bug. The window has to be forced — start the walk,
+  advance it by exactly one file so it is mid-flight, then delete every directory it has not yet
+  reached (`tools/test_source_walk.py`). The general lesson outlives the fix: **a walk that
+  filters build output after the fact is already inside it.**
 - **Host disk** — above; RED with nothing failing.
 - **Which artifacts a worktree happens to carry** — `scan_ud2`'s arm64 driver sweep has no
   defined corpus. arm64 has no `livecd` DAG (`archcfg.py:209` builds a hand-picked staged set),

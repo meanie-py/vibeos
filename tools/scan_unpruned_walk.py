@@ -17,12 +17,17 @@ hunting a source defect that does not exist. Any future partition move re-arms
 whichever walks are still written this way, which is why the fix has to be a
 standing gate and not a one-time sweep.
 
-THE FIX at each site is `rust_sources.walk_files`, which prunes build directories
-during the descent (so a concurrent `rm -rf` inside one cannot be observed) and
-passes `onerror` (so anything else that vanishes mid-walk is survivable). Keep any
-existing post-filter — the migration is meant to change the walk and no verdict.
+THE FIX at each site is `tools/source_walk.py` — `source_files(root)`, or
+`source_walk(root)` when you need the dirnames. It excludes the mutable tree BEFORE
+scandir rather than after, so a concurrent `rm -rf` inside it cannot be observed.
+Note it deliberately does NOT swallow errors (`onerror=_raise`): a vanishing SOURCE
+directory is an incomplete check, not an empty corpus. That is only a safe trade
+because the churning tree is pruned first — the two halves go together.
 
-BASELINE. The six scanners in EARLY_SOURCE_CHECKS are migrated. The rest are
+BASELINE. The six scanners in EARLY_SOURCE_CHECKS are already migrated (they were
+fixed on master by the lane that introduced source_walk; this scanner is what stops
+a SEVENTH being written the old way tomorrow — the migration closed the six, not the
+class). The rest are
 latent, not harmless: they are in the baseline so the class cannot GROW while they
 are burned down, and each is a real hazard the moment its caller runs beside a
 build. A new row here means a new walk was written the old way — migrate it rather
@@ -123,7 +128,7 @@ def main(argv: list[str]) -> int:
         for f in new:
             print(f)
         if new:
-            print(f"\n{len(new)} NEW unpruned walk(s). Use tools/rust_sources.py walk_files().")
+            print(f"\n{len(new)} NEW unpruned walk(s). Use tools/source_walk.py source_files().")
         return 1 if new else 0
 
     for f in found:

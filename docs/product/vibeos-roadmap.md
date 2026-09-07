@@ -483,12 +483,15 @@ land; date every addition.** Source docs live in `docs/engineering/archive/`.
 
 ## Known bugs & flakes (live registry)
 
-- **Fleet disk exhaustion interrupted landing — OPEN, deferred by user**
+- **Fleet disk exhaustion interrupted landing — OPEN, admission slice implemented locally**
   (2026-09-06; owner: bughunt/Codex). The shared WSL filesystem reached zero
   available bytes during `land`'s tooling preflight; the failure summary itself
   then failed with `ENOSPC`. User reclaimed space (163 GB available afterward).
-  Follow-up: measure build/cache/artifact growth, add disk headroom checks and
-  warnings before expensive work, establish bounded retention, and make cleanup
+  `disk-status --sizes` and cooperative build/tooling disk reservations now expose
+  footprint and refuse new work without headroom. Disk refusals are inconclusive
+  infrastructure failures, not lane regressions. Not a physical quota: legacy
+  lanes, other writers, and larger-than-estimated growth remain unaccounted for.
+  Follow-up: measure growth and tune reservations, establish bounded retention, and make cleanup
   targeted, host-locked, and safe for active lanes and paid translation output.
   Preserve enough headroom to record failure evidence. Do not treat manual
   cleanup as prevention or silently skip checks when space runs out.

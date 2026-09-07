@@ -57,9 +57,10 @@ tools/scan_nightly_surface.py:60: unpruned rust walk: Why not `root.rglob("*.rs"
 tools/scan_rawdylib_linkname.py:147: unpruned rust walk: for path in sorted(root.rglob("*.rs")):
 tools/scan_silent_failures.py:110: unpruned rust walk: for p in sorted(root.rglob("*.rs")):
 tools/scan_wide_literals.py:574: unpruned rust walk: files.extend([r] if r.is_file() else sorted(r.rglob("*.rs")))
+tools/test_source_walk.py:17: unpruned rust walk: expected = sorted(p for p in tmp_path.rglob("*.rs") if "target" not in p.parts)
 tools/test_verify_cohab_coverage.py:290: unpruned rust walk: newest = max(rs.stat().st_mtime for rs in (root / "sdk/lib/rust").rglob("*.rs"))
 tools/verify_c_signatures.py:645: unpruned rust walk: for rf in sorted(rdir.rglob("*.rs")):
 tools/verify_cohab_coverage.py:170: unpruned rust walk: for rs in (ROOT / root).rglob("*.rs"):
 tools/verify_lost_exports.py:149: unpruned rust walk: for rf in crate.rglob("*.rs"):
 tools/verify_signatures.py:601: unpruned rust walk: for rs in sorted(src.rglob("*.rs")):
-tests/qemu/cli/provenance.py:253: unpruned rust walk: for p in root.rglob("*.rs"):
+tests/qemu/cli/provenance.py:279: unpruned rust walk: for p in root.rglob("*.rs"):
