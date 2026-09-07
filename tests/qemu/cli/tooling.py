@@ -55,6 +55,17 @@ _PYTEST_SUITES = [
     (".", ".", "tools/test_scan_import_cc.py"),
     (".", ".", "tools/test_scan_octal_literals.py"),
     (".", ".", "tools/test_scan_invented_constants.py"),
+    # These six existed and were collected by NOTHING — the same defect the two comments
+    # above record, twice more. test_verify_ucrtbase_cohab.py is the sharpest case: it was
+    # written the night the ucrtbase math flip landed, to prove the cohab checker parses
+    # `-arch=` spec filters, and it had never run in the gate once. The enumeration is now
+    # guarded by test_cli_units, so a new tools/test_*.py cannot go quiet again.
+    (".", ".", "tools/test_conformance_probe.py"),
+    (".", ".", "tools/test_export_census.py"),
+    (".", ".", "tools/test_gen_ctype_tables.py"),
+    (".", ".", "tools/test_verify_lost_exports.py"),
+    (".", ".", "tools/test_verify_translation_literals.py"),
+    (".", ".", "tools/test_verify_ucrtbase_cohab.py"),
     (".", ".", "tools/test_hostdisk.py"),
     (".", ".", "tools/test_scan_flex_array_panic.py"),
     (".", ".", "tools/test_kernel_probe.py"),
