@@ -483,6 +483,34 @@ land; date every addition.** Source docs live in `docs/engineering/archive/`.
 
 ## Known bugs & flakes (live registry)
 
+- **`conformance:arm64` wedges on an ExResource waiter-count race — OPEN, NOT a code regression**
+  (2026-09-06, found by the wow64-amd64 lane, NOT owned by it). Two independent arm64 runs on
+  the same tree both failed the kmtest sweep, and the line number MOVED between them:
+  `ExResource.c:432` in gate `20260906-221252`, `ExResource.c:469` in the standalone control
+  run. Both sites are the identical construct — start a thread that must BLOCK acquiring an
+  ERESOURCE, assert it times out, then assert a waiter count at that instant:
+  `StartThread(&ThreadData…, &Timeout, TRUE, TRUE)` → `ok_eq_hex(Status, STATUS_TIMEOUT)` →
+  `CheckResourceStatus(Res, …)`. A deterministic regression fails at the same line every time;
+  a race wanders, which is what this does. Both runs dropped exactly one assertion (399 → 398),
+  and i386/amd64 conformance PASSED in the same gate — only arm64 (TCG, the slowest target)
+  fails, on a host that was saturated all evening.
+  **Read the verdict carefully, because it overstates itself twice.** The headline is
+  `RATCHET REGRESSIONS (63)`, but 55 of those are `in baseline (OK) but never launched` — the
+  failing assertion wedges the sweep, so every test after ExResource in sweep order cascades.
+  One real regression is reported as 63. The headline naming ExResource IS correct (it is the
+  first thing that broke and it did produce results, 399 → 398); it is the *count* that
+  misrepresents the blast radius, not the file. Separately the assertion text offers "media was
+  not built with VIBEOS_PAYLOAD=kmtest" as the first explanation — that branch was checked and
+  ELIMINATED: `opt:kmtest_all`, `mkramdisk` and `payloads` are all present in the gate's
+  `build:arm64`.
+  Eliminated as direct causes: no commit in the last 80 touches `ntoskrnl/ex/resource.c`, and
+  no Rust port has taken ERESOURCE over (grepping `sdk/lib/rust` for
+  `ExAcquireResourceExclusiveLite`/`ExfAcquireResourceExclusive` finds only consumers and
+  bindgen types), so AGENTS.md's "check for a Rust port FIRST" does not redirect here. **That
+  eliminates the obvious candidate, not the class:** a waiter count asserted at an instant moves
+  if anything shifts timing — scheduler, timer resolution, KE wait paths, or an unrelated
+  translation that changed a hot path's cost. Do NOT weaken or quarantine the assertion; it is
+  asserting something true.
 - **Fleet disk exhaustion interrupted landing — OPEN, deferred by user**
   (2026-09-06; owner: bughunt/Codex). The shared WSL filesystem reached zero
   available bytes during `land`'s tooling preflight; the failure summary itself
