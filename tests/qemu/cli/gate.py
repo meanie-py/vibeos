@@ -519,19 +519,41 @@ def _lint_once(repo: Path, arch: str, root: Path) -> dict:
         if "✗" in ln or "FAIL" in ln:
             salient = ln.strip()
             break
+    summary = _read_summary(root)
+    # A scanner that DIED is not a lane's lint finding, and the difference has to
+    # survive into the parent verdict. `source-early` runs the audited scanners at
+    # t=0 alongside the builds, so cargo is deleting directories out of
+    # sdk/lib/rust/target while they walk it; the crash arrives as exit 1 with an
+    # empty stdout, and calling that "NEW lint findings" sends the lane hunting a
+    # defect that is not in its diff. Read the child's own stages rather than
+    # scraping its console: the tool-failure branch in lints.py is the authority.
+    crashed = [
+        s.get("name", "?")
+        for s in summary.get("stages", [])
+        if s.get("status") == "fail" and "TOOL CRASHED" in (s.get("detail") or "")
+    ]
+    if crashed:
+        salient = f"scanner crashed, not a finding: {', '.join(crashed)}"
     inventory_ok = True
     if arch in ("source-early", "source-deferred"):
         expected = [name for name, _, _ in lints.source_partition_specs(repo, arch)]
-        summary = _read_summary(root)
         inventory_ok = summary.get("checked_source_checks") == expected
         if not inventory_ok:
             salient = "missing or incorrect source-partition coverage inventory"
+    # stderr is where a traceback lands, and _lint_once used to drop it entirely.
+    try:
+        (root / "lint-console.log").write_text(
+            (proc.stdout or "") + (("\n--- stderr ---\n" + proc.stderr) if proc.stderr else "")
+        )
+    except OSError:
+        pass
     return {
         "arch": arch,
         "ok": proc.returncode == 0 and inventory_ok,
         "seconds": dt,
         "salient": salient,
         "exit": proc.returncode,
+        "crashed": crashed,
     }
 
 
@@ -1025,14 +1047,20 @@ def gate(args, repo: Path) -> int:
                         status="ok" if r["ok"] else "fail",
                         detail="check --strict clean"
                         if r["ok"]
-                        else f"NEW lint findings (exit {r['exit']})",
+                        else (
+                            f"scanner CRASHED (exit {r['exit']}) — no findings were produced"
+                            if r.get("crashed")
+                            else f"NEW lint findings (exit {r['exit']})"
+                        ),
                         salient=[]
                         if r["ok"]
                         else [r["salient"] or f"strict check partition {r['arch']} failed"],
                     )
                 )
                 if not r["ok"] and not run.classification:
-                    run.classification = "LINT_FAIL"
+                    # A dead scanner is OUR python breaking, not the lane's source.
+                    # TOOLING_FAIL says that; LINT_FAIL blames the diff.
+                    run.classification = "TOOLING_FAIL" if r.get("crashed") else "LINT_FAIL"
 
         def _collect_cohab() -> None:
             for f in cf.as_completed(cfut):

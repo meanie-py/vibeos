@@ -65,6 +65,9 @@ from pathlib import Path
 
 REPO = Path(__file__).resolve().parent.parent
 
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+from rust_sources import walk_rs  # noqa: E402
+
 SKIP_FILE_RE = re.compile(r"(/target/|/\.responses/)")
 NOLINT_RE = re.compile(r"//\s*nolint(?::\s*type-alias-contradiction\b|\s*$|:?\s*\()")
 
@@ -196,9 +199,7 @@ def collect(root: Path):
         rust_root = root
     decls: dict[str, list[tuple[str, str, str]]] = defaultdict(list)
     aliases_by_arch: dict[str, dict[str, str]] = defaultdict(dict)
-    for path in sorted(rust_root.rglob("*.rs")):
-        if SKIP_FILE_RE.search(str(path)):
-            continue
+    for path in walk_rs(rust_root, skip=lambda p: bool(SKIP_FILE_RE.search(str(p)))):
         try:
             text = path.read_text(errors="replace")
         except OSError:

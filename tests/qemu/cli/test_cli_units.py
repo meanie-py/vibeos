@@ -13,6 +13,7 @@ import re
 import socket
 import struct
 import subprocess
+import sys
 import threading
 import time
 from pathlib import Path
@@ -7242,3 +7243,92 @@ def test_kmtest_payload_already_present_runs_nothing(tmp_path, monkeypatch):
 
     monkeypatch.setattr(gate_mod.subprocess, "run", _boom)
     assert gate_mod._ensure_kmtest_payload(tmp_path, ["arm64"]) == (True, "")
+
+
+# --- A crashed scanner is not a lint finding ------------------------------------
+# `source-early` runs the audited source scanners at t=0, alongside the builds, so
+# cargo is deleting directories under sdk/lib/rust/target while they walk it. The
+# scanner dies with a traceback on stderr and nothing on stdout, and the gate used
+# to file that as "NEW lint findings (exit 1)" — a verdict naming a cause that is
+# not the real one, which sends the lane hunting a defect that is not in its diff.
+
+
+def _crashing_tool(tmp_path: Path) -> list[str]:
+    script = tmp_path / "boom.py"
+    script.write_text(
+        "import sys\n"
+        "raise FileNotFoundError(2, 'No such file or directory', "
+        "'sdk/lib/rust/target/debug/deps')\n"
+    )
+    return [sys.executable, str(script)]
+
+
+def test_a_crashed_scanner_is_named_a_tool_crash_not_a_finding(tmp_path):
+    run = Run("check", "source-early")
+    lints._lint_stage(
+        run, tmp_path, "scan_demo", _crashing_tool(tmp_path), strict=True, findings_from="stdout"
+    )
+    st = run.stages[-1]
+    assert st.status == "fail"
+    assert "TOOL CRASHED" in st.detail
+    assert "not a lint finding" in st.detail
+    # The traceback is the ONLY evidence and it is on stderr, which the
+    # stdout-only findings path used to discard entirely.
+    assert any("FileNotFoundError" in s for s in st.salient), st.salient
+
+
+def test_a_tool_that_fails_without_a_traceback_is_still_not_called_a_finding(tmp_path):
+    script = tmp_path / "quiet.py"
+    script.write_text("import sys; sys.exit(3)\n")
+    run = Run("check", "source-early")
+    lints._lint_stage(
+        run,
+        tmp_path,
+        "scan_demo",
+        [sys.executable, str(script)],
+        strict=True,
+        findings_from="stdout",
+    )
+    st = run.stages[-1]
+    assert st.status == "fail" and st.exit == 3
+    assert "no findings parsed" in st.detail and "TOOL CRASHED" not in st.detail
+
+
+def test_real_findings_are_still_reported_as_findings(tmp_path):
+    """The guard must not launder an actual NEW finding into a tool failure."""
+    script = tmp_path / "finds.py"
+    script.write_text("print('sdk/lib/rust/x.rs:12: something is wrong'); raise SystemExit(1)\n")
+    run = Run("check", "source-early")
+    lints._lint_stage(
+        run,
+        tmp_path,
+        "scan_demo",
+        [sys.executable, str(script)],
+        strict=True,
+        findings_from="stdout",
+    )
+    st = run.stages[-1]
+    assert st.status == "fail" and st.detail == "1 new" and "CRASH" not in st.detail
+
+
+@pytest.mark.parametrize(
+    "detail, want",
+    [("TOOL CRASHED (exit 1) — not a lint finding", ["scan_demo"]), ("3 new", [])],
+)
+def test_lint_once_lifts_a_child_crash_into_the_parent_verdict(tmp_path, monkeypatch, detail, want):
+    monkeypatch.setattr(
+        gate_mod,
+        "_read_summary",
+        lambda root: {"stages": [{"name": "scan_demo", "status": "fail", "detail": detail}]},
+    )
+    monkeypatch.setattr(
+        gate_mod.subprocess,
+        "run",
+        lambda *a, **k: types.SimpleNamespace(returncode=1, stdout="✗ scan_demo\n", stderr="tb"),
+    )
+    r = gate_mod._lint_once(tmp_path, "arm64", tmp_path / "lint")
+    assert r["crashed"] == want
+    if want:
+        assert "not a finding" in r["salient"]
+    # stderr is preserved either way — it was being thrown away.
+    assert "tb" in (tmp_path / "lint" / "lint-console.log").read_text()

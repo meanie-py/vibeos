@@ -5397,9 +5397,24 @@ rather than assuming.** Note the misdirection is active, not merely vague: the h
 these kills with a memory message *even when `MemAvailable` is fine*, so the message points away
 from the cause.
 
-The general shape, and it has five known members: **a verdict that depends on state outside the
+The general shape, and it has six known members: **a verdict that depends on state outside the
 diff is not a gate.**
 - **Host disk** — above; RED with nothing failing.
+- **A scanner that CRASHED rather than found anything.** Five of the six audited source
+  scanners walked `sdk/lib/rust` with `sorted(root.rglob("*.rs"))` and filtered `/target/`
+  *after* the walk had already descended into it. `Path.rglob` propagates the
+  `FileNotFoundError` a concurrent cargo build causes by deleting directories underneath
+  (verified empirically on 3.10.12 — pathlib does not swallow it), so the scanner died with
+  a traceback on **stderr** and nothing on stdout. `check --strict` correctly saw "no
+  findings, nonzero exit", but the gate rendered it as `NEW lint findings (exit 1)` with an
+  empty finding list, and `findings_from="stdout"` had already thrown the traceback away —
+  so the lane was told to go find a source defect it had not written, with no evidence to
+  read. Latent for as long as source scanners ran *after* the builds; the `source-early`
+  partition made it reachable by running them at t=0 **alongside** them. Fix has two halves,
+  and both are needed: prune during the walk (`tools/rust_sources.py` — removing the race
+  beats catching it, and it is much faster since `target/` dwarfs the sources), and make a
+  dead tool classify as `TOOLING_FAIL` carrying its stderr, never `LINT_FAIL`. **The tell,
+  reusable beyond this bug: a red with a finding COUNT but no finding TEXT is a crash.**
 - **Which artifacts a worktree happens to carry** — `scan_ud2`'s arm64 driver sweep has no
   defined corpus. arm64 has no `livecd` DAG (`archcfg.py:209` builds a hand-picked staged set),
   so the sweep grades whatever binaries are sitting in `build-arm64/`: nothing in a fresh
@@ -5424,6 +5439,12 @@ diff is not a gate.**
   lands near `cmtypes.h:33` still finds the declaration and self-corrects); **where the line
   number IS the claim, it can be wrong for two honest readers at once.** Only the second kind
   needs the committed ref. (msvcrt-homebrew's finding.)
+
+Two of the six are the same underlying mistake in opposite directions, which is why they
+keep recurring: the harness **inferred** what it was grading (whatever binaries sit in
+`build-arm64/`) or **inferred** why a command exited nonzero (it must have found something).
+Both are cheap to fix by making the thing declare itself — name the corpus, name the
+failure mode — and both are invisible until a lane is already chasing the wrong cause.
 
 The AGENTS.md fleet-isolation rule already forbids *reading* generated artifacts from a sibling
 worktree. These are the same defect one level up: the corpus is discovered rather than declared.

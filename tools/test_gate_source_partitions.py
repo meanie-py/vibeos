@@ -18,6 +18,9 @@ def test_early_scanner_without_builds_and_during_generated_header_writes(tmp_pat
     script = tmp_path / "tools" / f"{scanner}.py"
     script.parent.mkdir()
     shutil.copyfile(REPO / "tools" / script.name, script)
+    # Every early scanner walks the Rust tree through the shared walker, so the
+    # synthetic repo needs it too -- it is a sibling module, not an installed dep.
+    shutil.copyfile(REPO / "tools" / "rust_sources.py", script.parent / "rust_sources.py")
     for crate, source in (
         ("probe-rust", "pub type Width = u32;\npub fn probe() { let _value = 0444; }\n"),
         ("probe-sys", "pub type Width = u64;\n"),

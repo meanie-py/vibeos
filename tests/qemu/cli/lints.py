@@ -235,14 +235,26 @@ def _lint_stage(
         # findings exist but all are in the baseline → accepted
         return run.add(Stage(name, exit=cp.returncode, status="ok", detail="baselined"))
     if cp.returncode != 0:
-        # no parseable findings yet nonzero exit → the tool itself failed to run
+        # No parseable findings yet a nonzero exit: the TOOL failed to run. That is
+        # not a lint finding and must never be reported as one — a scanner that died
+        # on a FileNotFoundError sent a lane hunting a source defect that did not
+        # exist. Two things make it legible: the salient comes from stderr (a
+        # traceback lands there, and `findings_from="stdout"` had thrown it away, so
+        # the failure arrived with NO evidence at all), and it is the LAST lines
+        # rather than the first, because that is where the exception type sits.
+        err = _rel(cp.stderr or "", repo).splitlines()
+        crashed = any(ln.startswith("Traceback (most recent call last)") for ln in err)
         return run.add(
             Stage(
                 name,
                 exit=cp.returncode,
                 status=("fail" if strict else "warn"),
-                detail=f"exit {cp.returncode}",
-                salient=[ln for ln in text.splitlines()[:3]],
+                detail=(
+                    f"TOOL CRASHED (exit {cp.returncode}) — not a lint finding"
+                    if crashed
+                    else f"tool failed to run (exit {cp.returncode}) — no findings parsed"
+                ),
+                salient=(err[-3:] or text.splitlines()[:3]),
             )
         )
     return run.add(Stage(name, exit=0, status="ok"))

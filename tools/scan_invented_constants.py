@@ -60,6 +60,10 @@ from collections import defaultdict
 from pathlib import Path
 
 REPO = Path(__file__).resolve().parent.parent
+
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+from rust_sources import walk_rs  # noqa: E402
+
 RUST_ROOT = REPO / "sdk" / "lib" / "rust"
 
 SKIP_FILE_RE = re.compile(r"(bindgen_[a-z0-9_]+\.rs$|/target/|/\.responses/)")
@@ -315,9 +319,7 @@ def oracle_for(crate: str) -> dict[str, set[tuple[int, str]]]:
 def collect() -> list[tuple[str, str, str, int, str, str]]:
     """[(crate, rel, name, value, rust_type, comment)] for self-labelled consts."""
     out = []
-    for path in sorted(RUST_ROOT.rglob("*.rs")):
-        if SKIP_FILE_RE.search(str(path)):
-            continue
+    for path in walk_rs(RUST_ROOT, skip=lambda p: bool(SKIP_FILE_RE.search(str(p)))):
         try:
             text = path.read_text(errors="replace")
         except OSError:
