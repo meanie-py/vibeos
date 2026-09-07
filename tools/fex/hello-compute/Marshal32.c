@@ -1253,20 +1253,28 @@ static int CheckSocketSendTo(void)
     /* The teeth, and they need no network. AfdPacketSocketWriteData reaches
      * WarmSocketForBind only by dereferencing RemoteAddress for
      * Address[0].AddressType, and that happens BEFORE the datagram is handed to
-     * the transport. So AF_INET plus a real local port proves the driver read
-     * our address family through the pointer this marshaller widened. A
-     * mis-widened pointer yields a garbage AddressType, the null-address build
-     * fails, and the socket comes back unbound — which lands here, red, whether
-     * or not a network exists. */
+     * the transport. So the FAMILY coming back AF_INET is the proof: it is
+     * copied straight from the address we pointed at, through the pointer this
+     * marshaller widened. A mis-widened pointer yields a garbage AddressType,
+     * TaLengthOfTransportAddressByType returns 0, TaBuildNullTransportAddress
+     * returns NULL, and the send bails STATUS_NO_MEMORY with the socket still
+     * unbound — which lands here, red, network or no network.
+     *
+     * The PORT is deliberately not checked, and the first cut of this rung was
+     * wrong to check it. The implicit bind is to a NULL transport address by
+     * construction: TdiBuildNullTransportAddressInPlace (tdiconn.c) sets
+     * AddressType and then RtlZeroMemory's the address bytes, port included. So
+     * port 0 is the correct and only possible answer here, and asserting a
+     * non-zero one demanded something the driver never produces — it failed the
+     * rung while every marshalling property under test had actually passed. */
     local.sin_family = 0;
     local.sin_port   = 0;
     locallen = (int)sizeof(local);
     if (getsockname(s, (struct sockaddr *)&local, &locallen) == SOCKET_ERROR ||
-        local.sin_family != AF_INET || local.sin_port == 0)
+        local.sin_family != AF_INET)
     {
         ReportHex("[marshal32] FAIL: no implicit bind after sendto, family =",
                   (DWORD)local.sin_family);
-        ReportHex("[marshal32]   port =", (DWORD)ntohs(local.sin_port));
         closesocket(s);
         WSACleanup();
         return M32_FAIL_SENDTO_BIND;
