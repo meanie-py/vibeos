@@ -950,6 +950,22 @@ Field-manual § pointers hold the full writeups. **Update on state change.**
   touched. A verdict that depends on which artifacts a worktree happens to carry is the same
   shape as the AGENTS.md §7-8 fleet-isolation rule about resolving generated artifacts from
   siblings — the sweep should name its corpus, not discover it.
+- **49 more bindgen flexible-array bounds checks are live in built objects — OPEN** (2026-09-06).
+  Found by generalising the cmlib fix above into `tools/scan_flex_array_panic.py`, which reads
+  the i386 disassembly and keeps only `panic_bounds_check` sites whose pushed ARRAY LENGTH is 1
+  — the bindgen `[T; 1]` shape — while leaving real fixed arrays alone. The method validated
+  itself: run against the pre-fix artifact it independently found exactly the three
+  `CmpSelectLeaf` sites that were fixed by reading. **49 sites across 20 modules**, including
+  the kernel (`LpcpCopyRequestData`, `MiFillSystemPageDirectory`, `SePrivilegePolicyCheck`,
+  `IopEnumerateDetectedDevices`, two NUMA `QSI_*` queries), `rtl-rust`, `oleaut32`'s
+  `SafeArray{CopyData,GetLBound,GetUBound}`, `umpnpmgr`'s log-conf pair, and `usbaudio`'s
+  topology builders. Each still needs the per-site judgement the tool cannot make — a `[T; 1]`
+  that really is one element is fine — but the shape is the one that panics the kernel.
+  Not wired into the gate yet, deliberately: **89 of the 200 declared staticlib crates are not
+  built for i386**, so a baseline captured today would bless whatever happens to be missing.
+  The tool reports those as NOT BUILT (no coverage) rather than skipping them. Wiring it wants
+  the coverage gap closed first, or an explicit per-arch corpus like the one `scan_ud2` still
+  lacks.
 - **cmlib `CmpSelectLeaf` panicked on any multi-leaf index root — FIXED** (2026-09-06).
   It wrote `*RootCell` through `addr_of_mut!((*IndexKey).List[i])` at three sites
   (i = SubKeyIndex, +1, -1). An array index inside a raw-ref still emits a bounds check, and
