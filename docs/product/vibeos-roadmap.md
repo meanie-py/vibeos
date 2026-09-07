@@ -30,11 +30,16 @@ The kernel + win32k + the core client-DLL/boot spine + the driver fleet are **~9
 
 - **`--allow-multiple-definition` elimination** — kill the load-bearing link flag categorically (spike proven; see the ratchet doc + `tools/scan_duplicate_symbols.py`).
 - **DUMMY_PSEH resolution** — decide + execute the path off the SEH-is-dead-code hack across
-  all arches (spike + open-question doc landed). **It has a measured functional cost now**:
-  `_USE_DUMMY_PSEH` compiles out `co_IntInitializeDesktopGraphics`'s cursor/icon
-  `KeUserModeCallback`, the deferred replacement never completes, and system cursors are
-  therefore never loaded on an i386 boot — see the bug registry entry. That is no longer a
-  theoretical tax on code shape; it is a visibly broken subsystem.
+  all arches (spike + open-question doc landed). **It does NOT block the system-cursor bug —
+  that pointer was wrong and was removed 2026-09-06.** The reasoning was that `_USE_DUMMY_PSEH`
+  compiles out `co_IntInitializeDesktopGraphics`'s cursor/icon `KeUserModeCallback`, so
+  resolving DUMMY_PSEH would let it run. It would not. That function is already Rust
+  (`win32k-rust/src/winsta.rs`), where no C `#if` reaches it, and the block is still skipped
+  deliberately: it runs on the **system desktop thread**, whose process has no
+  `KernelCallbackTable`, so the user-mode callback cannot be made there at all — letting it run
+  is what produced the i386 "Sending to Suspended Thread" hang. The constraint is the thread,
+  not the SEH shape, and it survives DUMMY_PSEH resolution untouched. Judge this item on code
+  shape alone.
 
 ### Tier 2 — Systemic Rust-native fixes (above Wine-DLL translation)
 
@@ -660,8 +665,8 @@ Field-manual § pointers hold the full writeups. **Update on state change.**
   with `X18` a TEB and `X28` a user start-context, so the stack words are the lead. This is the
   last flip blocker for `DefaultOS`. Field manual: "An EL1 instruction fetch on a user page
   loops silently forever". OWNED BY the smp-bringup lane.
-- **PARTLY FIXED (2026-09-05): system cursors now load, and the residual 24 are a pure ordering
-  effect.** `SYSTEMCUR(ARROW) == NULL, should not happen!!` was firing **78x** per boot (6 system
+- **FIXED (2026-09-06): system cursors load, and the residual NULLs are correct behaviour
+  wearing an alarming message.** `SYSTEMCUR(ARROW) == NULL, should not happen!!` was firing **78x** per boot (6 system
   classes x 13 GUI processes) and kept firing to within 300 lines of `shell ready` —
   `gasyscur[ROCR_ARROW].handle` was NULL for the *entire* boot, so every server-side class
   registered with `hCursor = NULL`. Chain: `co_IntInitializeDesktopGraphics` normally loads
@@ -686,11 +691,30 @@ Field-manual § pointers hold the full writeups. **Update on state change.**
   classes that register system classes without ever passing through `co_int_graphics_check`, so
   the hook cannot fire for them**: every one of the 24 is emitted strictly *before* the load
   (serial lines 1263-1513 vs the load at 1552), and there are zero in the 750 lines after it.
-  Closing that last gap means giving the early path a cursor source of its own, i.e. the Tier-1
-  DUMMY_PSEH resolution — this entry stays open as a concrete argument for it, not as a
-  translation defect: every link (`SYSTEMCUR_ARROW`, `LoadSystemCursors`'s
+  **CLOSED 2026-09-06 — the residual is correct behaviour, and the message was the bug.**
+  An instrumented boot logged every `UserRegisterSystemClasses` with its pid and whether cursors
+  had loaded, plus which of the three bail branches the deferred load took. It resolved the one
+  question that mattered — whether those early processes ever draw anything — and they do not.
+  That boot showed 42 (**7**x6, the rule holding at a new multiple): pids 0x8c (csrss) and six
+  background services (eventlog, dcomlaunch, srvsvc, wuauserv, spooler…), each of which pulls in
+  user32/comctl32 for message-only windows and never renders. The deferred load then ran
+  (two `BAIL=desktopthread`, then `LOADING`), and **every process that draws visible UI
+  registers after it with `loaded=1` and takes the real cursor** — winlogon (0x9c, line 1802),
+  msgina's status dialog, explorer (0x238, line 1899, `_tWinMain` at 1910). Zero NULLs after the
+  load, as before.
+  So there is no gap to close, and the Tier-1 DUMMY_PSEH pointer that used to sit here was
+  wrong twice over: `co_IntInitializeDesktopGraphics` is already Rust (no C `#if` reaches it),
+  and the block is skipped because the callback would run on the system desktop thread, whose
+  process has no `KernelCallbackTable` — a constraint DUMMY_PSEH resolution does not touch.
+  Fixed by making the diagnostic honest instead: `SYSTEMCUR(ARROW) == NULL` is only reported
+  when `gbDesktopCursorsAndIconsLoaded != 0`, i.e. when it genuinely should not happen. Before
+  the load it is the expected state, and 42 lines/boot of `should not happen!!` for something
+  that must happen is a diagnostic that trains people to ignore it.
+  Not a translation defect: every link (`SYSTEMCUR_ARROW`, `LoadSystemCursors`'s
   `!gpsi || !gpsi->hIconSmWindows` guard, `co_add_gui_app`) was diffed against the retired C and
   is byte-faithful.
+  Still genuinely skipped and NOT covered by this entry: `MenuInit: skipping co_IntSetupOBM
+  (DUMMY_PSEH)` — a separate OBM bitmap path, unmeasured here.
 - **FIXED (2026-09-06), was: blocks every lane's landing ~50% of the time — `tools/test_build_invalidation.py`
   is flaky.** Landed tonight (`2e016c6595f` "Cover native source and header invalidation layers",
   in as `41589edd0c53`). Measured 5 consecutive full-file runs on an IDLE host: **3 failed, 2

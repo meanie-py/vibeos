@@ -2273,6 +2273,7 @@ pub unsafe extern "fastcall" fn UserRegisterSystemClasses() -> BOOL {
         return 1;
     }
 
+
     if hModClient.is_null() {
         return 0;
     }
@@ -2319,7 +2320,20 @@ pub unsafe extern "fastcall" fn UserRegisterSystemClasses() -> BOOL {
         wc.hCursor = core::ptr::null_mut();
         if (*entry).hCursor == OCR_NORMAL as HICON {
             if SYSTEMCUR_ARROW().is_null() {
-                ERR!("SYSTEMCUR(ARROW) == NULL, should not happen!!\n");
+                // Only a defect once the cursors are actually loaded. Before that
+                // it is the expected state and NOT worth an ERR: system cursors
+                // load via a user-mode callback, which cannot be made from the
+                // system desktop thread (its process has no KernelCallbackTable),
+                // so nothing can populate gasyscur until the first real GUI process
+                // exists. Every process registering before that legitimately gets
+                // NULL. Measured on an i386 boot: 7 such processes (csrss + six
+                // background services) x 6 server-side classes = 42 lines of
+                // "should not happen!!" for a state that must happen. Every process
+                // that draws visible UI -- winlogon, msgina, explorer -- registers
+                // after the load and takes the real cursor.
+                if crate::winsta::gbDesktopCursorsAndIconsLoaded != 0 {
+                    ERR!("SYSTEMCUR(ARROW) == NULL after the deferred load!!\n");
+                }
             } else {
                 wc.hCursor = UserHMGetHandle(SYSTEMCUR_ARROW()) as _;
             }
@@ -2381,6 +2395,7 @@ pub unsafe extern "C" fn UserRegisterSystemClasses() -> BOOL {
         return 1;
     }
 
+
     if hModClient.is_null() {
         return 0;
     }
@@ -2427,7 +2442,20 @@ pub unsafe extern "C" fn UserRegisterSystemClasses() -> BOOL {
         wc.hCursor = core::ptr::null_mut();
         if (*entry).hCursor == OCR_NORMAL as HICON {
             if SYSTEMCUR_ARROW().is_null() {
-                ERR!("SYSTEMCUR(ARROW) == NULL, should not happen!!\n");
+                // Only a defect once the cursors are actually loaded. Before that
+                // it is the expected state and NOT worth an ERR: system cursors
+                // load via a user-mode callback, which cannot be made from the
+                // system desktop thread (its process has no KernelCallbackTable),
+                // so nothing can populate gasyscur until the first real GUI process
+                // exists. Every process registering before that legitimately gets
+                // NULL. Measured on an i386 boot: 7 such processes (csrss + six
+                // background services) x 6 server-side classes = 42 lines of
+                // "should not happen!!" for a state that must happen. Every process
+                // that draws visible UI -- winlogon, msgina, explorer -- registers
+                // after the load and takes the real cursor.
+                if crate::winsta::gbDesktopCursorsAndIconsLoaded != 0 {
+                    ERR!("SYSTEMCUR(ARROW) == NULL after the deferred load!!\n");
+                }
             } else {
                 wc.hCursor = UserHMGetHandle(SYSTEMCUR_ARROW()) as _;
             }
