@@ -79,6 +79,11 @@ sys.path.insert(0, str(REPO / "tools" / "rustconv"))
 import tree_sitter_rust as tsr  # noqa: E402
 from tree_sitter import Language, Parser  # noqa: E402
 
+# Run as a script from any cwd (the gate's partition harness uses runpy.run_path), so
+# tools/ is not necessarily sys.path[0] and the shared walker must be located explicitly.
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+from rust_sources import walk_files  # noqa: E402
+
 RUST_WS = REPO / "sdk" / "lib" / "rust"
 
 _LANG = Language(tsr.language())
@@ -572,7 +577,7 @@ def _iter_files(paths):
     for p in paths:
         p = Path(p)
         if p.is_dir():
-            for f in p.rglob("*.rs"):
+            for f in walk_files([p]):
                 s = str(f)
                 if "/target/" in s or f.name.startswith("bindgen_") or f.name == "build.rs":
                     continue

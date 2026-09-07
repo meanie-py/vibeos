@@ -18,6 +18,11 @@ def test_early_scanner_without_builds_and_during_generated_header_writes(tmp_pat
     script = tmp_path / "tools" / f"{scanner}.py"
     script.parent.mkdir()
     shutil.copyfile(REPO / "tools" / script.name, script)
+    # The scanners share one pruned, crash-proof walk (tools/rust_sources.py) instead of
+    # each re-deriving `rglob` + a post-filter, which is the very defect this partition
+    # made reachable. It is a first-party dependency of the script under test, so the
+    # standalone copy has to carry it exactly as the real tools/ directory does.
+    shutil.copyfile(REPO / "tools" / "rust_sources.py", script.parent / "rust_sources.py")
     for crate, source in (
         ("probe-rust", "pub type Width = u32;\npub fn probe() { let _value = 0444; }\n"),
         ("probe-sys", "pub type Width = u64;\n"),

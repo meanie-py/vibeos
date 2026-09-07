@@ -108,6 +108,11 @@ sys.path.insert(0, str(REPO / "tools" / "rustconv"))
 import tree_sitter_rust as tsr  # noqa: E402
 from tree_sitter import Language, Parser  # noqa: E402
 
+# Run as a script from any cwd (the gate's partition harness uses runpy.run_path), so
+# tools/ is not necessarily sys.path[0] and the shared walker must be located explicitly.
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+from rust_sources import walk_files  # noqa: E402
+
 _LANG = Language(tsr.language())
 _PARSER = Parser(_LANG)
 RUST_WS = REPO / "sdk" / "lib" / "rust"
@@ -410,7 +415,7 @@ def sweep(root_dir: Path, crate_dirs: list[Path]):
     aggregates: set[str] = set()
     crates = frozenset(crate_dirs)
     per: dict[Path, tuple] = {c: ({}, defaultdict(list), defaultdict(set)) for c in crate_dirs}
-    for rf in sorted(root_dir.rglob("*.rs")):
+    for rf in sorted(walk_files([root_dir])):
         if "/target/" in str(rf):
             continue
         src = rf.read_bytes()

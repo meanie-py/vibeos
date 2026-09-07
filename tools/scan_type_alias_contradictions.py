@@ -63,6 +63,11 @@ import sys
 from collections import defaultdict
 from pathlib import Path
 
+# Run as a script from any cwd (the gate's partition harness uses runpy.run_path), so
+# tools/ is not necessarily sys.path[0] and the shared walker must be located explicitly.
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+from rust_sources import walk_files
+
 REPO = Path(__file__).resolve().parent.parent
 
 SKIP_FILE_RE = re.compile(r"(/target/|/\.responses/)")
@@ -196,7 +201,7 @@ def collect(root: Path):
         rust_root = root
     decls: dict[str, list[tuple[str, str, str]]] = defaultdict(list)
     aliases_by_arch: dict[str, dict[str, str]] = defaultdict(dict)
-    for path in sorted(rust_root.rglob("*.rs")):
+    for path in sorted(walk_files([rust_root])):
         if SKIP_FILE_RE.search(str(path)):
             continue
         try:

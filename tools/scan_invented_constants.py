@@ -59,6 +59,11 @@ import sys
 from collections import defaultdict
 from pathlib import Path
 
+# Run as a script from any cwd (the gate's partition harness uses runpy.run_path), so
+# tools/ is not necessarily sys.path[0] and the shared walker must be located explicitly.
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+from rust_sources import walk_files
+
 REPO = Path(__file__).resolve().parent.parent
 RUST_ROOT = REPO / "sdk" / "lib" / "rust"
 
@@ -315,7 +320,7 @@ def oracle_for(crate: str) -> dict[str, set[tuple[int, str]]]:
 def collect() -> list[tuple[str, str, str, int, str, str]]:
     """[(crate, rel, name, value, rust_type, comment)] for self-labelled consts."""
     out = []
-    for path in sorted(RUST_ROOT.rglob("*.rs")):
+    for path in sorted(walk_files([RUST_ROOT])):
         if SKIP_FILE_RE.search(str(path)):
             continue
         try:

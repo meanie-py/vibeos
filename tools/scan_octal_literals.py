@@ -71,6 +71,11 @@ import re
 import sys
 from pathlib import Path
 
+# Run as a script from any cwd (the gate's partition harness uses runpy.run_path), so
+# tools/ is not necessarily sys.path[0] and the shared walker must be located explicitly.
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+from rust_sources import walk_files
+
 # A leading-zero literal in NUMERIC position.
 #
 # The lookbehind rejects `e`/`E`/`+`/`-` so a float exponent is not a candidate, and every
@@ -204,7 +209,7 @@ def main() -> int:
     findings = 0
     files = 0
     for root in roots:
-        for path in sorted(root.rglob("*.rs")):
+        for path in sorted(walk_files([root])):
             if "/target/" in str(path):
                 continue
             try:

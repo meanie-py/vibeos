@@ -5371,8 +5371,24 @@ rather than assuming.** Note the misdirection is active, not merely vague: the h
 these kills with a memory message *even when `MemAvailable` is fine*, so the message points away
 from the cause.
 
-The general shape, and it has five known members: **a verdict that depends on state outside the
+The general shape, and it has six known members: **a verdict that depends on state outside the
 diff is not a gate.**
+- **WHEN the lint ran, relative to the builds** — `source-early` moved the audited source
+  scanners to t=0, concurrent with the builds instead of after them, and six of them enumerated
+  their inputs as `root.rglob("*.rs")` with an `if "/target/" in str(p): continue` filter.
+  `rglob` finishes descending into `sdk/lib/rust/target` **before** the filter ever sees a path,
+  so cargo unlinking a directory underneath the walk raises `FileNotFoundError` out of the
+  generator — pathlib's recursive selector catches only `PermissionError`. The scanner dies with
+  a traceback and the gate reports `lint:source-early: NEW lint findings (exit 1)` **with zero
+  findings in the artifact**, so the lane goes hunting a source defect that does not exist. Note
+  what makes this the purest member of the family: not one line of the scanners changed, and the
+  code was genuinely correct for years — only the timing moved. **If a source-lint verdict names
+  NEW findings and the artifact contains none, read it for a traceback before reading the diff.**
+  Fixed with `tools/rust_sources.py` `walk_files()` (prune build dirs during descent, so a
+  concurrent `rm -rf` cannot be observed, plus `onerror` for everything else); the six migrated
+  with byte-identical output, and `scan_unpruned_walk` gates the spelling with the remaining 65
+  latent sites baselined. The general lesson outlives the fix: **a walk that filters build output
+  after the fact is already inside it.**
 - **Host disk** — above; RED with nothing failing.
 - **Which artifacts a worktree happens to carry** — `scan_ud2`'s arm64 driver sweep has no
   defined corpus. arm64 has no `livecd` DAG (`archcfg.py:209` builds a hand-picked staged set),
