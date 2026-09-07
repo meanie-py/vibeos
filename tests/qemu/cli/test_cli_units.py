@@ -217,7 +217,8 @@ def test_testkernel_boot_img_never_writes_the_shared_file_in_place(tmp_path: Pat
     replaced: list[tuple[str, str]] = []
     real_replace = os.replace
     monkeypatch.setattr(
-        vm_mod.os, "replace",
+        vm_mod.os,
+        "replace",
         lambda a, b: (replaced.append((str(a), str(b))), real_replace(a, b))[1],
     )
 
