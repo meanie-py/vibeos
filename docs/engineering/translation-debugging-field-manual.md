@@ -5007,6 +5007,19 @@ first, then the oracle, then the clock — and do not "tidy" any of the three aw
 Three lanes each found one of these within a day, each initially certain it was the whole
 story.
 
+**A second cause in the same file was the ORACLE, not the build.** The `missing_edge` negative
+controls asserted `fixture.invocations() == before` — that the build system did *not* rebuild.
+Cargo and Ninja never promised that: mtime granularity alone can make an unchanged input look
+new, so conservative over-invalidation is legal, and it is the safe direction. Under concurrent
+fleet load two different tests failed on two consecutive runs, each with an EXTRA invocation and
+never a missing one, while the file passed 37/37 in isolation. **The signature that separates a
+wrong oracle from a real regression is a failure that MOVES between tests across runs and
+vanishes when run alone.** The assertions were removed, not relaxed: `>= before` is vacuous
+because the invocation log is append-only, so it holds whether the edge is missing or the build
+merely rebuilt too much. The missing edge is pinned by the value assertions (`warm == initial`,
+`warm != cold`), which is also why removing the counts cannot mask the directory-watch bug
+below — that one is caught by a value, which no count could have caught anyway.
+
 ### Cargo depfiles leave directory contents or lockfile changes stale
 
 **Symptom:** Ninja reports no work after an input-file edit or a lockfile-only
@@ -5362,6 +5375,39 @@ MSVC *intrinsic*).
 A whole family of bugs where the *verification* is wrong, so the code looks correct. These cost
 more than ordinary bugs because their output is trusted.
 
+### The oracle is the C, and the C is WRONG — a faithful port that ships a real defect
+
+**Symptom.** A translated body is bit-exact against its C, the difftest is green, and the
+function is badly broken anyway. `math/sin.c` is a 9-term Taylor series over
+`quadrant = (int)(x * 2/pi)`; cnt-rust's port of it matched bit-for-bit and returned
+`-3.3e-15` for `sin(0)`, `9.9997e-11` for `sin(1e-10)` (relative error 3.3e-5), and
+**`-1.56e+308` for `sin(1e18)`** — a trig function outside `[-1, 1]` by 308 orders of
+magnitude, which then poisons every arithmetic consumer downstream of the call.
+
+**Cause.** Bit-exactness measures *agreement with the oracle*, and says nothing about whether
+the oracle is right. Here the reference was ReactOS's own generic C, not Windows' behaviour, so
+"faithful" and "correct" were never the same claim.
+
+**The tell is a cheap one and worth running once per translated math body:** compare against the
+host libm over a few decades of the domain. It takes minutes, needs no build, and no amount of
+reading finds `1e308` — three of these faults were invisible in review and obvious in one table.
+Zero, tiny arguments, negative arguments and huge arguments are where implementations differ;
+the middle of the range agrees with everything.
+
+**Fix.** Check what the arch ACTUALLY LINKS before deciding the reference is authoritative. Here
+amd64's usermode msvcrt already linked AMD's `libm_sse2/sin.asm`, so the cohab flip had left one
+arch with two different `sin`s — a weak one in the kernel and a strong one in usermode — and
+porting the asm was a *correction*, not an improvement past the oracle. Then repoint the
+difftest rather than relaxing it: an oracle that is wrong is not a weaker oracle, it is one that
+reports the correct implementation as broken, so delete it and grade against libm to a ULP bound
+(the shape `sqrt` and `atan` already use). Keep the special values EXACT — `sin(±0)` carrying
+the sign of zero is a difference in kind, not in degree.
+
+**Related trap when transcribing the replacement:** a vendor's own paths may disagree with each
+other. AMD's SSE2 `sin` computes `(-0.0 * 0.0) * S1` and answers `+0.0` for `sin(-0.0)`, while
+the FMA3 path in the *same file* returns `x` below 2^-27 and answers `-0.0`. Neither is a
+transcription error, and only measurement finds it.
+
 ### A gate can be RED for reasons that are not in the tree at all
 Symptom: a gate goes RED with **no failing test**. Cause: the verdict depended on host state,
 not on the diff. Fix: check the host before you read the artifact, because the artifact cannot
@@ -5488,6 +5534,18 @@ diff is not a gate.**
   as a crash, and it runs BEFORE the baseline comparison — so a scanner that printed some
   findings and *then* died is still a crash, not a partial verdict you can grade. **The tell,
   reusable beyond this bug: a red with a finding COUNT but no finding TEXT is a crash.**
+  Two further things the fix taught, both about the class rather than the six sites.
+  `source_walk` deliberately does NOT swallow errors (`onerror=_raise`): a vanishing *source*
+  directory is an incomplete check, not an empty corpus. That is only a safe trade because the
+  churning tree is pruned first — the two halves go together, and taking the second without the
+  first would make the gate flap. And `scan_unpruned_walk` now gates the spelling, because the
+  migration closed the six sites and not the class: **37 of 39 `.rs` walkers under `tools/` were
+  written the old way**, so a seventh was a matter of time. **Beware how easily this class is
+  dismissed: a casual delete-a-directory-mid-walk test PASSES against `rglob`** and "proves"
+  there is no bug. The window has to be forced — start the walk, advance it by exactly one file
+  so it is mid-flight, then delete every directory it has not yet reached
+  (`tools/test_source_walk.py`). The general lesson outlives the fix: **a walk that filters
+  build output after the fact is already inside it.**
   Footnote worth its line: two lanes wrote this same fix within forty minutes of each other,
   neither knowing, and the merge conflicted across six scanners. Nobody wasted time — the
   landed version was better on both counts above and simply replaced the other — but when a
@@ -8572,6 +8630,28 @@ missing answer. **A degraded oracle is worse than one that refuses to answer**, 
 `ProvenanceError` exists for. Generalise: when a walk and a build share a tree, the walk must
 be idempotent-under-mutation or scoped so it never sees the other arch at all.
 
+**The same race reached the SOURCE SCANNERS, and there the crash is misfiled as a verdict.** Six
+of them walked with `for p in root.rglob("*.rs"): if "/target/" in str(p): continue` — which
+reads as an exclusion and is not one, because `rglob` has already descended into `target/`
+before the test runs. Harmless while lints ran *after* the builds; the `source-early` partition
+(`EARLY_SOURCE_CHECKS`, `cli/lints.py`) moved them to t=0 *alongside* three builds, and cargo
+deletes directories out from under the walk. The gate renders that `FileNotFoundError` as
+**"NEW lint findings (exit 1)" with no findings in it**, so the lane is bounced for a defect it
+did not cause — and the next lane's identical bounce looks like a real regression. Two things
+generalise. **Filtering a path after the walk yields it is not an exclusion**; prune during the
+walk (`os.walk` + `dirs[:] = ...`), which here also took the traversal of `sdk/lib/rust` from
+0.67s to 0.02s. And **a scanner can match nothing in a tree and still die in it** — the exposure
+is the ~5,700 directories under `sdk/lib/rust/target`, not the 22 `.rs` files that matched.
+`tools/source_walk.py` is now the one traversal all six share.
+
+Note what it deliberately does NOT do, and it is the same call `rglob_stable` made above:
+`source_walk` passes `onerror=_raise` rather than swallowing the error. Once the walk never
+enters build output, an OSError is no longer host timing — it is unreadable *source*, and a
+scanner that shrugs at that returns a short list, which for a lint means "clean". The
+survivability belongs in the pruning, not in a suppressed exception; the crash itself is then
+made honest one layer out, where the gate classifies a scanner that died as a CRASH instead of
+rendering it as findings.
+
 ### A rare unit-test failure in the HARNESS is a bug report, not noise — and the wall clock is not monotonic
 
 **Symptom.** `test_queue_is_fifo_by_arrival` failed roughly 1 run in 80, only ever under
@@ -8718,6 +8798,54 @@ so only the bodies that actually changed re-paid.
 ---
 
 ## Working in this repo without breaking a sibling lane
+
+### N worktrees share ONE sccache dir, and each server enforces the cap against its OWN index
+
+**Symptom:** the disk hits 100% and the fleet dies in four unrelated-looking ways at once — a
+conductor killed mid-drain by `OSError: [Errno 28]` deep in `artifacts.py:182`, a gate reported
+as plain `RED`, "low memory" in two agents' harnesses, and builds failing with no obvious link.
+`du` shows the shared sccache directory far past its configured cap, with nothing misconfigured
+anywhere.
+
+**Cause:** `tools/canon-run.sh:102-104` derives `SCCACHE_SERVER_PORT` per worktree
+(`4300 + md5($ROOT) % 20000`, deliberately — a shared port let one lane's compiles run in
+another's namespace). So **every worktree gets its own sccache server, and all of them point at
+the same `SCCACHE_DIR`.** Each server keeps its own LRU index and enforces `SCCACHE_CACHE_SIZE`
+against *its own* entries only. The accounting is per-server; the resource is shared. With N
+worktrees the directory's real ceiling is **N × the cap** — 9 × 150G = 1.35 TB on a 1007 G disk —
+and entries written by a retired worktree's server are permanently orphaned, because no surviving
+server has them indexed. Verified from `/proc/<pid>/environ`: three live servers, three ports,
+one `SCCACHE_DIR`, all three correctly carrying `SCCACHE_CACHE_SIZE=150G`.
+
+This *qualifies* AGENTS.md's "sharing belongs ONLY in content-addressed caches designed for it".
+The cache directory is safe to share; the **cap** is not shared, and sizing it as though it were
+is how the disk fills with every component behaving correctly.
+
+**Fix:** size the cap as `disk_budget / N_worktrees`, not as the whole budget. Reclaiming the
+directory is safe in kind — content-addressed, so a lost entry is a cache miss, never corruption
+— but it costs cold Rust builds fleet-wide, so it is a fleet decision under the host lock, not a
+lane's to take.
+
+**`sccache -s` and `--stop-server` are NOT safe diagnostics — both need `SCCACHE_SERVER_PORT`.**
+Without it they talk to a *different* server on the default port. `-s` then reports that server's
+defaults (`Max cache size 10 GiB`, `0 compile requests`) as though describing yours, and
+`--stop-server` fails with "couldn't connect to server" — which reads as "nothing is running"
+while the real servers keep going. A diagnostic that lies is bad; a control command that silently
+no-ops while reporting a connection error is worse, because it makes you believe you changed the
+system. Always pass both `SCCACHE_DIR` and `SCCACHE_SERVER_PORT`, exactly as `cachecfg.py`
+exports them, or read `/proc/<pid>/environ` directly.
+
+**Two observations that share an unexamined assumption are ONE observation.** This bug was
+mis-diagnosed twice in an hour by two agents whose evidence appeared to converge. A wrong
+`Max cache size 10 GiB` (from the default-port server) suggested the config was not in effect; a
+second observation — "zero writes in 30 minutes while builds ran" — appeared to corroborate
+orphaning, but a heavily-*hit* cache produces exactly that too (239 hits of 511 requests), and a
+cache hit writes nothing. Both readings came through the same blind spot, so the pair carried no
+more weight than either alone. The real mechanism came only from `/proc/<pid>/environ` and
+`canon-run.sh` — evidence the suspect tool could not mediate. **When the diagnostic tool is part
+of the system under investigation, prefer evidence it cannot touch.**
+
+---
 
 ### A worktree showing a HUGE staged REVERT isn't your work `[§9.121]`
 `git status` in a checkout you haven't touched reports thousands of files staged, nothing

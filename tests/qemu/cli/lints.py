@@ -948,6 +948,25 @@ def source_lint_specs(repo: Path) -> list[tuple]:
     # module no longer has). It found fastfat's FatGetNextMcbEntry storing 8 bytes
     # through a 4-byte out-param and freeldr's TuiDisplayMenu being called with 11
     # arguments for 10 parameters.
+    # A Rust-source walk written as `rglob("*.rs")` + a `"/target/" in path` filter.
+    # `rglob` finishes descending into sdk/lib/rust/target BEFORE the filter sees a
+    # path, so once `source-early` moved the audited scanners alongside the builds,
+    # cargo deleting a directory mid-walk killed the scanner with a traceback — and
+    # the gate reported it as `lint:source-early: NEW lint findings (exit 1)` with no
+    # findings in the artifact, sending a lane after a source defect that did not
+    # exist. The six EARLY_SOURCE_CHECKS scanners are migrated to
+    # tools/rust_sources.py walk_files() (prune during descent + onerror); baseline
+    # holds the 65 latent sites so the class cannot grow while they burn down. This
+    # one is DEFERRED on purpose: a guard against build-concurrency races has no
+    # business racing the builds.
+    suw = repo / "tools" / "scan_unpruned_walk.py"
+    specs.append(
+        (
+            "scan_unpruned_walk",
+            [py, str(suw), "--lint"] if suw.is_file() else ["MISSING"],
+            "stdout",
+        )
+    )
     sdd = repo / "tools" / "scan_extern_decl_drift.py"
     specs.append(
         (
@@ -986,6 +1005,7 @@ EARLY_SOURCE_CHECKS = frozenset(
         "scan_type_alias_contradictions",
         "scan_irql_balance",
         "scan_ob_refcount",
+        "scan_rawdylib_linkname",
     }
 )
 

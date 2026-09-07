@@ -1,6 +1,7 @@
 """No post-filter can make entering generated output safe."""
 
 import os
+import shutil
 from pathlib import Path
 
 import pytest
@@ -75,3 +76,52 @@ def test_oracle_prefix_exclusions_match_legacy_selection(tmp_path):
 def test_missing_root_fails(tmp_path):
     with pytest.raises(FileNotFoundError):
         list(source_files(tmp_path / "absent"))
+
+
+def test_old_rglob_spelling_actually_fails_this_race(tmp_path):
+    """The control this module rests on: prove the spelling it replaced really breaks.
+
+    Without this, every test above could pass against an unfixed tree and prove
+    nothing. It is worth stating how easily this class is dismissed: a casual
+    delete-a-directory-mid-walk test PASSES against `rglob`, because the window is
+    narrow and easy to miss entirely. It has to be forced — start the walk, advance it
+    by exactly one file so it is mid-flight, then delete every directory it has not yet
+    reached. `pathlib._RecursiveWildcardSelector` catches only `PermissionError`, so
+    the `FileNotFoundError` comes straight out of the generator and kills the caller.
+    That is the gate reporting `lint:source-early: NEW lint findings (exit 1)` with no
+    findings in the artifact.
+    """
+    for i in range(200):
+        sub = tmp_path / f"a{i:03d}"
+        sub.mkdir()
+        (sub / "x.rs").write_text("x")
+
+    stale = tmp_path.rglob("*.rs")  # unpruned-walk: intentional
+    first = next(stale)
+    for i in range(200):
+        sub = tmp_path / f"a{i:03d}"
+        if sub != first.parent and sub.exists():
+            shutil.rmtree(sub)
+
+    with pytest.raises(OSError):
+        list(stale)
+
+    # And the replacement is immune to the race that actually happens, which is the
+    # point of pruning rather than filtering: the churn is cargo's, inside target/, and
+    # a walk that never enters target/ cannot observe it. Note this walker does NOT
+    # swallow a vanishing SOURCE directory — `onerror=_raise` is deliberate ("missing
+    # source is an incomplete check, not an empty corpus"), and that is the right
+    # trade only because the mutable tree is excluded before scandir. Both halves of
+    # that bargain are asserted here so neither can be relaxed alone.
+    churn = tmp_path / "target" / "debug" / "build"
+    churn.mkdir(parents=True)
+    for i in range(200):
+        sub = churn / f"c{i:03d}"
+        sub.mkdir()
+        (sub / "out.rs").write_text("generated")
+
+    fresh = source_files(tmp_path)
+    first = next(fresh)
+    shutil.rmtree(tmp_path / "target")
+    rest = list(fresh)  # must not raise: the walk never entered target/
+    assert all("target" not in p.parts for p in [first, *rest])

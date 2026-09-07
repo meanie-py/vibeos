@@ -1590,6 +1590,45 @@ def test_worker_semantics_lowers_model_atl_com_ptr_wrapper_and_iid_pair():
     assert "core::ptr::addr_of_mut!(view).cast()" in normalized
 
 
+def test_worker_semantics_lowers_the_turbofish_com_ptr_spelling():
+    """`CComPtr::<T>::new()` is the same null construction as the annotated form.
+
+    Only the annotated spelling was lowered, so this one fell through untouched and the
+    declaration audit then reported zero raw-pointer slots for the local -- rejecting the last
+    CDefView worker over a spelling, not a semantic. `.as_ptr()` is a READ of the slot, like the
+    `.ptr` and `.0` accessors already normalized beside it, so lowering it leaves the
+    Attach/Detach refusal intact.
+    """
+    source = """HRESULT C::f() {
+        CComPtr<IShellView> view;
+        return view->Notify(this);
+    }"""
+    rust = """pub unsafe fn C_f_body(this: *mut C) -> HRESULT {
+        let mut view = CComPtr::<IShellView>::new();
+        let view_ptr = view.as_ptr();
+        ((*(*view_ptr).lpVtbl).Notify)(view_ptr, this)
+    }"""
+    normalized = normalize_worker_semantics(source, rust)
+    assert "let mut view: *mut IShellView = core::ptr::null_mut();" in normalized
+    assert "CComPtr" not in normalized
+    assert ".as_ptr()" not in normalized
+    assert "let view_ptr = view;" in normalized
+
+
+def test_worker_semantics_still_refuses_a_non_null_com_ptr_construction():
+    """The lowering is the null/default shape only; an ownership API stays a hard failure."""
+    source = """HRESULT C::f() {
+        CComPtr<IShellView> view;
+        return S_OK;
+    }"""
+    rust = """pub unsafe fn C_f_body(this: *mut C) -> HRESULT {
+        let mut view = CComPtr::<IShellView>::Attach(raw);
+        S_OK
+    }"""
+    with pytest.raises(CppComError, match=r"expected one null raw-pointer declaration"):
+        normalize_worker_semantics(source, rust)
+
+
 def test_sibling_receiver_insertion_preserves_explicit_other_object_receiver():
     source = """HRESULT C::f(ARG a) {
         C_g_body(a);
