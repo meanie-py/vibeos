@@ -145,6 +145,16 @@ acting on it — `land-status`, `summary.json`, the artifact dir. This cuts both
 summaries, which are the same channel: a status line you carry forward without its evidence is
 a claim you can no longer support.
 
+**An alarming inference deserves its cheapest disconfirming check BEFORE you relay it.**
+Relaying converts your uncertainty into someone else's fact, and from there it gets acted on. I
+had "someone forced a double drain on the merge queue" written and addressed, having seen five
+concurrent `land --drain --foreground` processes; their elapsed times were 64m/61m/43m/36m/6m,
+matching the five queue ages exactly — one blocked waiter per queued lane, which is the design.
+One `ps` killed it. Note also what that host-status could NOT tell me: one of the two lanes
+holding build permits was the user's own, deliberately taking over a tarpitted lane. A position
+is a measurement, not a property — timestamp it or don't send it, and say which parts you
+observed and which you inferred.
+
 **Written deliverables.** Match the length of docs you write to what the task needs: cover the
 substance, don't pad with filler sections, redundant summaries, or boilerplate.
 
