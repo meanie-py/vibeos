@@ -1386,6 +1386,20 @@ def test_vibeos_root_defaults_to_repo_parent(monkeypatch):
     assert cachecfg.vibeos_root(parent / "vibeos-wt-x") == parent
 
 
+def test_vibeos_root_escapes_harness_subagent_worktree(monkeypatch):
+    monkeypatch.delenv("VIBEOS_ROOT", raising=False)
+    # A subagent worktree at <lane>/.claude/worktrees/<name> must still resolve to the
+    # FLEET parent, not to its own private dir -- taking the literal parent built a 10G
+    # ccache+sccache pair under vibeos-fex/.claude/worktrees/ that nothing could hit,
+    # and misplaced the integration worktree and the ledger alongside it.
+    parent = Path("/home/u/os-playground")
+    lane = parent / "vibeos-fex"
+    assert cachecfg.vibeos_root(lane / ".claude" / "worktrees" / "fex-m4") == parent
+    # nested subagents: cut at the FIRST .claude, not the last
+    deep = lane / ".claude" / "worktrees" / "a" / ".claude" / "worktrees" / "b"
+    assert cachecfg.vibeos_root(deep) == parent
+
+
 def test_cache_enabled_flag_and_env(monkeypatch):
     from types import SimpleNamespace
 
