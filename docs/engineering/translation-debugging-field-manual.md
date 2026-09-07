@@ -8289,13 +8289,32 @@ still run concurrently within the pool. The isolated live-flock regression is
 retain their prior admission code until restarted/updated; do not rewrite another
 worktree or kill a running build to propagate this fix.
 
-### Contention wears three costumes, not one
+### Contention wears four costumes, not one
 1. **`HANG_TIMEOUT` at `[freeldr] Switching stack...`** with zero kernel serial (the CGU lottery,
    above).
 2. **A transient BUGCHECK** — e.g. `0x1E (0xc0000006 IN_PAGE_ERROR)` under memory/IO/KVM
    pressure. The identical binary boots green ×5 on a quiet host.
 3. **A late-boot hang that REACHES `shell ready`** — explorer never reaches
    `_tWinMain entered` within the timeout, because a normally-1m48s i386 boot drifts past 6 min.
+4. **`DISK_ADMISSION_FAIL`, on a host that passes every disk metric you would think to check.**
+   The blocker is RESERVATION headroom, not fullness: a 3-arch gate reserves `3 x build + 4
+   (check-tooling) + a 20 GiB min_free floor`, so at the historical `build = 32` it needed 120
+   GiB and went red with **109 GiB free and `df` at 89%** — while `hostdisk.py`'s refuse
+   threshold (5 G) measures fullness and stays green. Symptom is a queue that cannot self-heal:
+   every conduct dies on its own THIRD arch, so a conductor bisects for a culprit lane that does
+   not exist. Check `/tmp/vibeos-qemu-locks/host/disk/policy.json` against `df` and do the
+   arithmetic before suspecting any diff. `prune` will not rescue you — it reported 0 M against
+   365.9 G held across eleven worktrees, all touched <12h or running live QEMUs. Underlying
+   defect (owed): the gate reserves disk when a stage STARTS rather than when its CPU permit is
+   GRANTED, so it budgets for three concurrent builds the broker will never admit — cpuheavy is
+   4 permits at 2 each, so only two builds ever run. Stopgap in place is `build = 15`, ~2x the
+   largest MEASURED build dir — `du -sh build-*` across four lanes is remarkably consistent at
+   i386 7.5-7.6G, amd64 7.5-7.7G, arm64 2.8-2.9G — leaving 3x15+4+20 = 69 GiB against 106 free.
+   The first two values for this knob (32, then 25) were both picked from half-remembered
+   figures and both presented as measurement-backed; `du` takes seconds and moved the margin
+   from 7 GiB to 37. The 20 GiB `min_free` floor is a different knob and is what stands between
+   the fleet and an ENOSPC afternoon — when the build number stops being enough, do not reach
+   for THAT one.
 
 ### `NET_FLAKE` that is not a flake `[§9.84]`
 A gate showing `✓ build ×3 ✓ lint ×3 ✓ smoke: all three` and a red net suite, where **all 15
