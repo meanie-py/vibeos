@@ -185,3 +185,47 @@ except d.AdmissionError:
             if child.poll() is None:
                 child.kill()
             child.communicate(timeout=10)
+
+
+def test_a_build_is_not_billed_for_concurrency_the_broker_will_never_allow(isolated, monkeypatch):
+    """The wedge: three launched builds, two permits, and a refusal for unusable space."""
+    monkeypatch.setattr(cli, "REPO", isolated)
+    # One build already holds a claim, so a second cannot fit floor + live + budget.
+    with disk.reserve(isolated, "build"):
+        # Start-of-process admission must NOT count it: whether this build may run at all
+        # is the CPU broker's call, and reserving at launch is what billed three builds
+        # for a pool that admits two.
+        disk.refuse_if_hopeless(isolated, "build")
+        # Contention is still enforced -- just later, when the permit is actually held.
+        with (
+            pytest.raises(disk.AdmissionError, match="live reservations"),
+            disk.reserve(isolated, "build"),
+        ):
+            pytest.fail("the second claim must not be granted")
+
+
+def test_a_hopeless_host_still_refuses_before_the_build_runs(isolated, monkeypatch):
+    """Deferring must not turn an instant honest refusal into a slow one."""
+    monkeypatch.setattr(cli, "REPO", isolated)
+    monkeypatch.setattr(
+        disk, "filesystems", lambda repo: [{"device": "1", "path": str(repo), "free_bytes": 0}]
+    )
+    monkeypatch.setattr(cli.build_mod, "build", lambda *a: pytest.fail("build ran"))
+    assert cli.main(["build", "--arch", "arm64"]) == 2
+
+
+def test_an_admission_refusal_raised_deep_inside_a_command_still_classifies(isolated, monkeypatch):
+    """build claims disk after the CPU permit, so its AdmissionError starts inside args.fn."""
+    monkeypatch.setattr(cli, "REPO", isolated)
+
+    def refuse(*_a, **_kw):
+        raise disk.AdmissionError("build: no room at permit time")
+
+    monkeypatch.setattr(cli.build_mod, "build", refuse)
+    assert cli.main(["build", "--arch", "arm64"]) == 2
+
+
+def test_build_defers_and_the_other_kinds_do_not(isolated):
+    assert "build" in disk.DEFERRED
+    assert set(disk.REQUESTS) >= disk.DEFERRED
+    assert "check-tooling" not in disk.DEFERRED, "only a kind that waits on a CPU permit defers"

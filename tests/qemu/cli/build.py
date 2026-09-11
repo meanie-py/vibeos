@@ -15,7 +15,7 @@ import subprocess
 import time
 from pathlib import Path
 
-from . import archcfg, cachecfg, canon, hostdisk, hostlock, lints, provenance
+from . import archcfg, cachecfg, canon, diskspace, hostdisk, hostlock, lints, provenance
 from .artifacts import Run, Stage
 
 _UNDEF = re.compile(r"undefined (?:symbol|reference)[^\w]*[`']?([@\w]+)", re.I)
@@ -331,9 +331,14 @@ def build(args, repo: Path) -> int:
     # per-build-dir lock (so two builds never corrupt the same dir, the
     # determinism-verify-vs-gate incident). Held around the whole build; on a stuck
     # holder it warns + proceeds unlocked, and it's a no-op when the broker is disabled.
+    # Disk is claimed HERE, not at process start: only two builds can hold cpuheavy
+    # permits at once, so reserving before the broker admits us bills for concurrency
+    # that cannot happen and refuses builds for space nothing will use. reserve() never
+    # blocks -- it admits or raises -- so holding the CPU permit across it is safe.
     with hostlock.build_lock(build_dir, arch) as admission:
         run.extra["admission"] = admission
-        return _build_locked(args, repo, run, arch, cfg, build_dir, cold)
+        with diskspace.reserve(repo, "build"):
+            return _build_locked(args, repo, run, arch, cfg, build_dir, cold)
 
 
 def _flag_in_cache(build_dir: Path, flag: str) -> bool:

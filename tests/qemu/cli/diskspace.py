@@ -25,6 +25,18 @@ GIB = 1024**3
 REQUESTS = {"build": 32, "check-tooling": 4, "gate": 0, "land": 0}
 FAILURE = "DISK_ADMISSION_FAIL"
 
+# Kinds that claim their budget THEMSELVES, after the CPU broker admits them, instead of
+# at process start. A gate launches one build per arch at once, but the cpuheavy pool is
+# 4 permits at 2 per build, so at most TWO ever build -- reserving at start billed three
+# and refused the third for space the broker was never going to let it use. That wedged
+# the whole merge queue with 109 GiB free: 3x32 + 4 + 20 = 120 needed, and no lane at
+# fault, so the conductor bisected for a culprit that did not exist. Reserve for what can
+# actually run concurrently, not for what was launched.
+#
+# Safe to take the disk claim while holding a CPU permit only because reserve() never
+# BLOCKS -- it admits or raises immediately, so this cannot deadlock the broker.
+DEFERRED = frozenset({"build"})
+
 
 class AdmissionError(RuntimeError):
     pass
@@ -125,6 +137,31 @@ def _live(*, reap: bool) -> list[dict]:
                 if reap:
                     path.unlink(missing_ok=True)
     return leases
+
+
+def refuse_if_hopeless(repo: Path, kind: str) -> None:
+    """Fail-fast half of a DEFERRED kind's admission: is the host too full for this at ALL?
+
+    Deliberately ignores other lanes' live reservations, which is what makes it different
+    from reserve(): contention is settled later, once the CPU broker says this build may
+    actually run. Counting contention here is precisely the bug -- it refuses a build for
+    space that a concurrent build is merely holding a claim on.
+
+    Without this, deferring the reservation would mean a genuinely full host queues every
+    build for a CPU permit just to refuse it after, turning an instant honest error into a
+    slow one. The ENOSPC afternoon is why the floor exists; keep failing fast on it.
+    """
+    config = policy()
+    budget = int(config["requests_gib"][kind] * GIB)
+    floor = int(config["min_free_gib"] * GIB)
+    for volume in filesystems(repo):
+        if volume["free_bytes"] < floor + budget:
+            raise AdmissionError(
+                f"{kind}: {volume['path']} has {volume['free_bytes'] / GIB:.1f} GiB free; "
+                f"need {floor / GIB:.1f} headroom + {budget / GIB:.1f} requested, before any "
+                "other lane is counted. Use vibeos-cli disk-status; reclaim completed "
+                "disposable outputs."
+            )
 
 
 @contextlib.contextmanager

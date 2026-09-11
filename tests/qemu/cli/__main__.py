@@ -637,16 +637,24 @@ def main(argv: list[str] | None = None) -> int:
 
 
 def _dispatch(args) -> int:
-    if args.cmd in diskspace.REQUESTS:
-        try:
+    # The except must stay OUTSIDE the `in REQUESTS` test: a DEFERRED kind takes its own
+    # reservation deep inside the command (build, once the CPU broker admits it), and that
+    # AdmissionError has to reach the same stdout line and exit 2 as one raised here, or the
+    # conductor would classify an infrastructure refusal as a source regression.
+    try:
+        if args.cmd in diskspace.DEFERRED:
+            # Fail fast if the host is hopeless, then let the command claim its real
+            # budget once the CPU broker admits it.
+            diskspace.refuse_if_hopeless(REPO, args.cmd)
+        elif args.cmd in diskspace.REQUESTS:
             with diskspace.reserve(REPO, args.cmd):
                 return args.fn(args, REPO)
-        except diskspace.AdmissionError as exc:
-            # stdout is the durable fallback when even summary.json cannot be
-            # created. The conductor classifies this as infrastructure, not code.
-            print(f"{diskspace.FAILURE}: {exc}", flush=True)
-            return 2
-    return args.fn(args, REPO)
+        return args.fn(args, REPO)
+    except diskspace.AdmissionError as exc:
+        # stdout is the durable fallback when even summary.json cannot be
+        # created. The conductor classifies this as infrastructure, not code.
+        print(f"{diskspace.FAILURE}: {exc}", flush=True)
+        return 2
 
 
 def _cli_exit_code(argv: list[str] | None = None) -> int:
