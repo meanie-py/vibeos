@@ -157,3 +157,93 @@ def test_preflight_passes_and_records_headroom_when_healthy(tmp_path):
     assert hostdisk.preflight(run, tmp_path, ("i386",)) is True
     stage = next(s for s in run.stages if s.name == "host-disk")
     assert stage.status == "ok" and "free" in stage.detail
+
+
+# --- Admission headroom: the quantity `df` cannot show --------------------------
+# Six lanes stalled with the host at 88% and 117G free. Fullness was fine and this
+# module's own threshold was fine; what had gone under was reservation headroom.
+
+
+def _fake_status(free_gib, reserved_gib=0, floor=20, build=25, tooling=4):
+    return {
+        "policy": {
+            "min_free_gib": floor,
+            "requests_gib": {"build": build, "check-tooling": tooling},
+        },
+        "filesystems": [
+            {
+                "path": "/tmp/vibeos-cli",
+                "free_bytes": int(free_gib * 2**30),
+                "reserved_bytes": int(reserved_gib * 2**30),
+                "unreserved_above_floor_bytes": int((free_gib - reserved_gib - floor) * 2**30),
+            }
+        ],
+    }
+
+
+def _patch_status(monkeypatch, value):
+    from cli import diskspace
+
+    monkeypatch.setattr(diskspace, "status", lambda repo, **kw: value)
+
+
+def test_admission_reports_headroom_and_the_request(monkeypatch, tmp_path):
+    _patch_status(monkeypatch, _fake_status(free_gib=200))
+    (line,) = hostdisk.admission_lines(tmp_path, ["i386", "amd64", "arm64"])
+    assert "180.0G unreserved above the 20G floor" in line
+    assert "3-arch run requests ~79G" in line
+    assert "SHORT" not in line
+
+
+def test_admission_marks_the_case_that_stalled_six_lanes(monkeypatch, tmp_path):
+    """The real numbers: 109G free, 88% used, df perfectly healthy — and no gate
+    could be admitted, because a 3-arch run then requested 3x32+4 = 100G against
+    89G of headroom. (32G was the build reservation at the time; it was lowered to
+    25 afterwards as a stopgap, which is why the same free space passes today.)"""
+    _patch_status(monkeypatch, _fake_status(free_gib=109, build=32))
+    (line,) = hostdisk.admission_lines(tmp_path, ["i386", "amd64", "arm64"])
+    assert "<< SHORT" in line, line
+
+
+def test_admission_failure_is_reported_not_swallowed(monkeypatch, tmp_path):
+    """A missing number must never read as a healthy one."""
+    from cli import diskspace
+
+    def boom(repo, **kw):
+        raise RuntimeError("unreadable live disk lease")
+
+    monkeypatch.setattr(diskspace, "status", boom)
+    (line,) = hostdisk.admission_lines(tmp_path, ["i386"])
+    assert "unavailable" in line and "unreadable live disk lease" in line
+
+
+def test_preflight_stays_green_but_flags_short_headroom(monkeypatch, tmp_path):
+    """Free space fine, reservations exhausted: the run that read healthy."""
+    from cli.artifacts import Run
+
+    _patch_status(monkeypatch, _fake_status(free_gib=109, build=32))
+    monkeypatch.setattr(
+        hostdisk,
+        "probe",
+        lambda paths, threshold=None: {"ok": True, "free": {"/": 109 * 2**30}, "lines": []},
+    )
+    run = Run("hostdisk-admission", "amd64")
+    assert hostdisk.preflight(run, tmp_path, ["i386", "amd64", "arm64"]) is True
+    stage = next(s for s in run.stages if s.name == "host-disk")
+    assert stage.status == "ok" and "admission headroom SHORT" in stage.detail
+    assert "<< SHORT" in Path(run.full_log).read_text()
+
+
+def test_preflight_does_not_flag_when_headroom_is_ample(monkeypatch, tmp_path):
+    from cli.artifacts import Run
+
+    _patch_status(monkeypatch, _fake_status(free_gib=400))
+    monkeypatch.setattr(
+        hostdisk,
+        "probe",
+        lambda paths, threshold=None: {"ok": True, "free": {"/": 400 * 2**30}, "lines": []},
+    )
+    run = Run("hostdisk-admission-ok", "amd64")
+    assert hostdisk.preflight(run, tmp_path, ["i386"]) is True
+    stage = next(s for s in run.stages if s.name == "host-disk")
+    assert "SHORT" not in stage.detail

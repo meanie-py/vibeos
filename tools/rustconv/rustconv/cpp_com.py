@@ -3150,7 +3150,21 @@ def normalize_worker_semantics(source: str, rust: str) -> str:
             rust,
             count=1,
         )
+        # Same construction, spelled with a turbofish and no annotation. The annotated form
+        # above was the only one lowered, so `let mut pcdb2 = CComPtr::<ICommDlgBrowser2>::new()`
+        # fell through and the declaration audit reported zero raw-pointer slots -- the last
+        # CDefView worker, rejected for a spelling. Still only the null/default shape.
+        rust = re.sub(
+            rf"let\s+mut\s+{re.escape(name)}\s*=\s*CComPtr\s*::\s*<\s*"
+            rf"{re.escape(interface)}\s*>\s*::\s*new\(\)\s*;",
+            f"let mut {name}: *mut {interface} = core::ptr::null_mut();",
+            rust,
+            count=1,
+        )
         rust = re.sub(rf"\b{re.escape(name)}\.ptr\b", name, rust)
+        # `.as_ptr()` is a READ of the slot, like `.ptr` and `.0` beside it -- not an ownership
+        # API, so lowering it does not weaken the Attach/Detach refusal.
+        rust = re.sub(rf"\b{re.escape(name)}\.as_ptr\(\)", name, rust)
         copied_value = re.search(
             rf"\bCComPtr\s*<\s*{re.escape(interface)}\s*>\s+{re.escape(name)}\s*=\s*"
             r"(?P<this>this->)?(?P<value>[A-Za-z_]\w*)\s*;",
