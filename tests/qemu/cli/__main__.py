@@ -544,6 +544,20 @@ def build_parser() -> argparse.ArgumentParser:
     )
     hs.set_defaults(fn=hostlock.cmd_status)
 
+    from . import buildpolicy
+
+    bp = sub.add_parser("host-policy", help="preview or activate a drained-fleet build trial")
+    bp_mode = bp.add_mutually_exclusive_group()
+    bp_mode.add_argument(
+        "--apply", action="store_true", help="activate three builds after rollout/drain"
+    )
+    bp_mode.add_argument("--rollback", action="store_true", help="return to two builds after drain")
+    bp_mode.add_argument(
+        "--pause", action="store_true", help="refuse new CPU work; let holders finish"
+    )
+    bp_mode.add_argument("--resume", action="store_true", help="resume CPU admission after cutover")
+    bp.set_defaults(fn=buildpolicy.command)
+
     ds = sub.add_parser(
         "disk-status", help="disk headroom, live reservations, and optional footprint report"
     )

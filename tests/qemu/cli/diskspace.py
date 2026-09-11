@@ -22,16 +22,36 @@ from pathlib import Path
 from . import cachecfg, hostlock
 
 GIB = 1024**3
-REQUESTS = {"build": 32, "check-tooling": 4, "gate": 0, "land": 0}
+# MEASURED, not guessed (2026-09-11, fleet stopped, sampled every 20s across a cold
+# build): i386 and amd64 both PEAK at 7.44 GiB, and the ten arm64 build dirs on disk are
+# 2.8-3.0 GiB. `build` was 32 -- 4.3x the real peak -- and that over-estimate halts the
+# merge train, because a 3-arch gate submits three `build` reservations concurrently while
+# the CPU broker only ever admits two: 20 floor + 3x32 = 116 GiB had to be free or the
+# third arch took an instant DISK_ADMISSION_FAIL, which is INCONCLUSIVE, which stops the
+# drain for every queued lane. At 12 the same gate needs 56 GiB.
+#
+# 12 rather than 8 because a reservation bounds estimated additional WRITES, and a
+# cache-miss-heavy build also writes into the shared ccache/sccache on this same
+# filesystem; the cold build measured here grew them by 0 (every object was already
+# cached), so that component is unmeasured and 12 carries ~60% headroom over the observed
+# peak to cover it.
+#
+# The 3-vs-2 asymmetry itself is deliberate and stays: `reserve()` takes disk while
+# holding NO CPU permit, so a build queued for CPU holds its disk reservation. Inverting
+# that would mean sitting on a scarce CPU permit while blocked on disk. Accuracy is what
+# makes the asymmetry harmless, so if these numbers drift, re-measure -- don't re-order.
+REQUESTS = {"build": 12, "check-tooling": 4, "gate": 0, "land": 0}
 FAILURE = "DISK_ADMISSION_FAIL"
 
 # Kinds that claim their budget THEMSELVES, after the CPU broker admits them, instead of
 # at process start. A gate launches one build per arch at once, but the cpuheavy pool is
 # 4 permits at 2 per build, so at most TWO ever build -- reserving at start billed three
-# and refused the third for space the broker was never going to let it use. That wedged
-# the whole merge queue with 109 GiB free: 3x32 + 4 + 20 = 120 needed, and no lane at
-# fault, so the conductor bisected for a culprit that did not exist. Reserve for what can
-# actually run concurrently, not for what was launched.
+# and refused the third for space the broker was never going to let it use. Back when the
+# estimate was 32 GiB that wedged the whole merge queue with 109 GiB free: 3x32 + 4 + 20 =
+# 120 needed, no lane at fault, and the conductor bisected for a culprit that did not
+# exist. The measured 12 above shrinks that window; it does not close it, because the
+# refusal is INCONCLUSIVE and one of them halts the drain for every queued lane. Reserve
+# for what can actually run concurrently, not for what was launched.
 #
 # Safe to take the disk claim while holding a CPU permit only because reserve() never
 # BLOCKS -- it admits or raises immediately, so this cannot deadlock the broker.

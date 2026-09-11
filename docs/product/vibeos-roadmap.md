@@ -30,11 +30,16 @@ The kernel + win32k + the core client-DLL/boot spine + the driver fleet are **~9
 
 - **`--allow-multiple-definition` elimination** — kill the load-bearing link flag categorically (spike proven; see the ratchet doc + `tools/scan_duplicate_symbols.py`).
 - **DUMMY_PSEH resolution** — decide + execute the path off the SEH-is-dead-code hack across
-  all arches (spike + open-question doc landed). **It has a measured functional cost now**:
-  `_USE_DUMMY_PSEH` compiles out `co_IntInitializeDesktopGraphics`'s cursor/icon
-  `KeUserModeCallback`, the deferred replacement never completes, and system cursors are
-  therefore never loaded on an i386 boot — see the bug registry entry. That is no longer a
-  theoretical tax on code shape; it is a visibly broken subsystem.
+  all arches (spike + open-question doc landed). **It does NOT block the system-cursor bug —
+  that pointer was wrong and was removed 2026-09-06.** The reasoning was that `_USE_DUMMY_PSEH`
+  compiles out `co_IntInitializeDesktopGraphics`'s cursor/icon `KeUserModeCallback`, so
+  resolving DUMMY_PSEH would let it run. It would not. That function is already Rust
+  (`win32k-rust/src/winsta.rs`), where no C `#if` reaches it, and the block is still skipped
+  deliberately: it runs on the **system desktop thread**, whose process has no
+  `KernelCallbackTable`, so the user-mode callback cannot be made there at all — letting it run
+  is what produced the i386 "Sending to Suspended Thread" hang. The constraint is the thread,
+  not the SEH shape, and it survives DUMMY_PSEH resolution untouched. Judge this item on code
+  shape alone.
 
 ### Tier 2 — Systemic Rust-native fixes (above Wine-DLL translation)
 
@@ -663,8 +668,8 @@ Field-manual § pointers hold the full writeups. **Update on state change.**
   with `X18` a TEB and `X28` a user start-context, so the stack words are the lead. This is the
   last flip blocker for `DefaultOS`. Field manual: "An EL1 instruction fetch on a user page
   loops silently forever". OWNED BY the smp-bringup lane.
-- **PARTLY FIXED (2026-09-05): system cursors now load, and the residual 24 are a pure ordering
-  effect.** `SYSTEMCUR(ARROW) == NULL, should not happen!!` was firing **78x** per boot (6 system
+- **FIXED (2026-09-06): system cursors load, and the residual NULLs are correct behaviour
+  wearing an alarming message.** `SYSTEMCUR(ARROW) == NULL, should not happen!!` was firing **78x** per boot (6 system
   classes x 13 GUI processes) and kept firing to within 300 lines of `shell ready` —
   `gasyscur[ROCR_ARROW].handle` was NULL for the *entire* boot, so every server-side class
   registered with `hCursor = NULL`. Chain: `co_IntInitializeDesktopGraphics` normally loads
@@ -689,12 +694,31 @@ Field-manual § pointers hold the full writeups. **Update on state change.**
   classes that register system classes without ever passing through `co_int_graphics_check`, so
   the hook cannot fire for them**: every one of the 24 is emitted strictly *before* the load
   (serial lines 1263-1513 vs the load at 1552), and there are zero in the 750 lines after it.
-  Closing that last gap means giving the early path a cursor source of its own, i.e. the Tier-1
-  DUMMY_PSEH resolution — this entry stays open as a concrete argument for it, not as a
-  translation defect: every link (`SYSTEMCUR_ARROW`, `LoadSystemCursors`'s
+  **CLOSED 2026-09-06 — the residual is correct behaviour, and the message was the bug.**
+  An instrumented boot logged every `UserRegisterSystemClasses` with its pid and whether cursors
+  had loaded, plus which of the three bail branches the deferred load took. It resolved the one
+  question that mattered — whether those early processes ever draw anything — and they do not.
+  That boot showed 42 (**7**x6, the rule holding at a new multiple): pids 0x8c (csrss) and six
+  background services (eventlog, dcomlaunch, srvsvc, wuauserv, spooler…), each of which pulls in
+  user32/comctl32 for message-only windows and never renders. The deferred load then ran
+  (two `BAIL=desktopthread`, then `LOADING`), and **every process that draws visible UI
+  registers after it with `loaded=1` and takes the real cursor** — winlogon (0x9c, line 1802),
+  msgina's status dialog, explorer (0x238, line 1899, `_tWinMain` at 1910). Zero NULLs after the
+  load, as before.
+  So there is no gap to close, and the Tier-1 DUMMY_PSEH pointer that used to sit here was
+  wrong twice over: `co_IntInitializeDesktopGraphics` is already Rust (no C `#if` reaches it),
+  and the block is skipped because the callback would run on the system desktop thread, whose
+  process has no `KernelCallbackTable` — a constraint DUMMY_PSEH resolution does not touch.
+  Fixed by making the diagnostic honest instead: `SYSTEMCUR(ARROW) == NULL` is only reported
+  when `gbDesktopCursorsAndIconsLoaded != 0`, i.e. when it genuinely should not happen. Before
+  the load it is the expected state, and 42 lines/boot of `should not happen!!` for something
+  that must happen is a diagnostic that trains people to ignore it.
+  Not a translation defect: every link (`SYSTEMCUR_ARROW`, `LoadSystemCursors`'s
   `!gpsi || !gpsi->hIconSmWindows` guard, `co_add_gui_app`) was diffed against the retired C and
   is byte-faithful.
-- **OPEN, BLOCKS EVERY LANE'S LANDING ~50% OF THE TIME (2026-09-06): `tools/test_build_invalidation.py`
+  Still genuinely skipped and NOT covered by this entry: `MenuInit: skipping co_IntSetupOBM
+  (DUMMY_PSEH)` — a separate OBM bitmap path, unmeasured here.
+- **FIXED (2026-09-06), was: blocks every lane's landing ~50% of the time — `tools/test_build_invalidation.py`
   is flaky.** Landed tonight (`2e016c6595f` "Cover native source and header invalidation layers",
   in as `41589edd0c53`). Measured 5 consecutive full-file runs on an IDLE host: **3 failed, 2
   passed** (see the fuller 6-run table below). No
@@ -953,14 +977,56 @@ Field-manual § pointers hold the full writeups. **Update on state change.**
   touched. A verdict that depends on which artifacts a worktree happens to carry is the same
   shape as the AGENTS.md §7-8 fleet-isolation rule about resolving generated artifacts from
   siblings — the sweep should name its corpus, not discover it.
-- **cmlib `CmpAddToLeaf` + `CmpSelectLeaf` are truncated — OPEN, but LATENT** (2026-09-06).
-  The same sweep found them via `cmindex.rs`'s own review header: `CmpAddToLeaf` inserts
-  nothing (C 987-1099 absent) and `CmpSelectLeaf` is missing ~100 lines including the split,
-  which the header argues makes a full leaf spin forever. **These do not ship** — unlike
-  scsiport/classpnp, `cmindex.c` is still in `sdk/lib/cmlib/CMakeLists.txt:10`, so the C body
-  wins at link and the Rust is dead. Same file also records an i386 ABI bug: five `NTAPI`
-  callees declared `extern "C"` instead of `extern "system"`. Worth doing before cmlib is
-  cohab-flipped, not after.
+- **49 more bindgen flexible-array bounds checks are live in built objects — OPEN** (2026-09-06).
+  Found by generalising the cmlib fix above into `tools/scan_flex_array_panic.py`, which reads
+  the i386 disassembly and keeps only `panic_bounds_check` sites whose pushed ARRAY LENGTH is 1
+  — the bindgen `[T; 1]` shape — while leaving real fixed arrays alone. The method validated
+  itself: run against the pre-fix artifact it independently found exactly the three
+  `CmpSelectLeaf` sites that were fixed by reading. **49 sites across 20 modules**, including
+  the kernel (`LpcpCopyRequestData`, `MiFillSystemPageDirectory`, `SePrivilegePolicyCheck`,
+  `IopEnumerateDetectedDevices`, two NUMA `QSI_*` queries), `rtl-rust`, `oleaut32`'s
+  `SafeArray{CopyData,GetLBound,GetUBound}`, `umpnpmgr`'s log-conf pair, and `usbaudio`'s
+  topology builders.
+  **Graded so far: 3 confirmed bugs, 3 confirmed false positives, 43 ungraded.** Confirmed and
+  FIXED: `SePrivilegePolicyCheck` (`PRIVILEGE_SET.Privilege`, over-allocated as
+  `size_of + (count-1)*size_of::<LUID_AND_ATTRIBUTES>`; `index` reaches 1 whenever a caller is
+  granted both `WRITE_OWNER` and `ACCESS_SYSTEM_SECURITY`) and `LpcpCopyRequestData`
+  (`LPCP_DATA_INFO.Entries[1]` guarded by `NumberOfEntries`, on the `NtReadRequestData` path
+  CSRSS uses). Confirmed NOT a bug: `KeNodeBlock[Node]` in the two NUMA `QSI_*` queries — the C
+  really is `PKNODE KeNodeBlock[1] = { &KiNode0 };`, a one-element array whose check merely
+  survives because the guard is a runtime variable (the msvcrt `_setmaxstdio` face already in
+  the manual), and `MmSystemPageDirectory[PPE_PER_PAGE]` in `MiFillSystemPageDirectory` for a
+  sharper reason: that constant is 512 on amd64/arm64 and **1 on i386** (`mm.rs:1265`), so an
+  arch-sized real array masquerades as a flexible one in a reader that only looks at i386.
+  **That ratio is the point: the tool finds the SHAPE, not the bug.** Two discriminators, in
+  order — does the C over-allocate, and is the declared length a LITERAL `1` or a named
+  arch-dependent constant? Read the declaration before touching a site.
+  Not wired into the gate yet, deliberately: **89 of the 200 declared staticlib crates are not
+  built for i386**, so a baseline captured today would bless whatever happens to be missing.
+  The tool reports those as NOT BUILT (no coverage) rather than skipping them. Wiring it wants
+  the coverage gap closed first, or an explicit per-arch corpus like the one `scan_ud2` still
+  lacks.
+- **cmlib `CmpSelectLeaf` panicked on any multi-leaf index root — FIXED** (2026-09-06).
+  It wrote `*RootCell` through `addr_of_mut!((*IndexKey).List[i])` at three sites
+  (i = SubKeyIndex, +1, -1). An array index inside a raw-ref still emits a bounds check, and
+  bindgen renders the C flexible array as `[HCELL_INDEX; 1]`, so each panicked for every
+  i >= 1 — i.e. as soon as a key's subkey list has more than one leaf. The file's own accessor
+  comment forbids exactly this (`NEVER index List[i] for i>=1`); the sites read as
+  address-taking rather than indexing, which is how they slipped past. Measured in the shipped
+  i386 object: 4 `panic_bounds_check` sites in the function, 3 pushing an array length of 1;
+  after routing them through `index_list_ptr`, only the legitimate length-2
+  `SubKeyLists[Type]` check remains. Small hives boot, which is why smoke never caught it.
+  **This entry previously said the opposite, twice over, and the correction matters more than
+  the fix.** It said both functions were truncated and that they *did not ship*. Both false:
+  `CmpAddToLeaf` and `CmpSelectLeaf` are complete (call-site table-diff vs the C: HvGetCell
+  8/8, CmpMaxIndexPerHblock 5/5, HCELL_NIL 13/13), and the kernel links the Rust —
+  `cmindex.c` is in `CMLIB_RUST_FLIPPED` and REMOVE_ITEM'd, so its appearance at
+  `CMakeLists.txt:10` is the shared list feeding the *bootloader*. The C `libcmlib.a` in
+  `build-i386` is a 248-byte placeholder. The entry came from `cmindex.rs`'s 2026-06-07 review
+  header, whose four "REAL BUGS" had all been fixed by `85479bd0878` without the text being
+  updated. **A stale review header reads as current and is worse than none**; the ABI
+  complaint it also carried is likewise dead (the five NTAPI callees are defined locally as
+  `extern "system"`). Header rewritten in place.
 - **classpnp `ClasspAccessAlignmentProperty` spun forever on arm64 — FIXED** (2026-09-05).
   An empty `_ => {}` catch-all as the last arm of a `match` that IS the body of a
   goto-elimination `'work: loop`. utils.c's switch has no `default:`, so an unmatched value

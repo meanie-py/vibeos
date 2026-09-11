@@ -273,11 +273,21 @@ def _ninja_jobs() -> list[str]:
     survives for the one case it might matter again — build ∥ a WHPX boot, which is real
     hardware-virt and does contend — but even there the hostlock CPU-lease pool is the
     right throttle, not a blunt `-j` cap. Set VIBEOS_BUILD_CORE_RESERVE>0 to re-enable."""
+    policy = hostlock.buildpolicy.read(hostlock.HOSTLOCK_DIR)
+    if policy:
+        return ["-j", str(policy["ninja_jobs"])]
     reserve = int(os.environ.get("VIBEOS_BUILD_CORE_RESERVE", "0"))
     n = os.cpu_count() or 0
     if reserve <= 0 or n <= reserve:
         return []
     return ["-j", str(n - reserve)]
+
+
+def _policy_build_env(env: dict | None) -> dict | None:
+    policy = hostlock.buildpolicy.read(hostlock.HOSTLOCK_DIR)
+    if policy is None:
+        return env
+    return dict(os.environ if env is None else env, CARGO_BUILD_JOBS=str(policy["cargo_jobs"]))
 
 
 def _ninja_known_targets(repo: Path, build_dir: Path, wrap, env) -> set[str]:
@@ -335,10 +345,15 @@ def build(args, repo: Path) -> int:
     # permits at once, so reserving before the broker admits us bills for concurrency
     # that cannot happen and refuses builds for space nothing will use. reserve() never
     # blocks -- it admits or raises -- so holding the CPU permit across it is safe.
-    with hostlock.build_lock(build_dir, arch) as admission:
-        run.extra["admission"] = admission
-        with diskspace.reserve(repo, "build"):
-            return _build_locked(args, repo, run, arch, cfg, build_dir, cold)
+    try:
+        with hostlock.build_lock(build_dir, arch) as admission:
+            run.extra["admission"] = admission
+            with diskspace.reserve(repo, "build"):
+                return _build_locked(args, repo, run, arch, cfg, build_dir, cold)
+    except hostlock.buildpolicy.PolicyError as exc:
+        run.classification = "BUILD_POLICY_REFUSED"
+        run.add(Stage("admission", status="fail", detail=str(exc)))
+        return run.finalize(repo)
 
 
 def _flag_in_cache(build_dir: Path, flag: str) -> bool:
@@ -771,6 +786,11 @@ def _build_locked(args, repo: Path, run, arch: str, cfg, build_dir: Path, cold: 
         if build_env is None:
             return run.finalize(repo)  # ccache reconfigure failed hard
 
+    policy = hostlock.buildpolicy.read(hostlock.HOSTLOCK_DIR)
+    if policy:
+        build_env = _policy_build_env(build_env)
+        run.extra["build_policy"] = policy
+
     # --- fast-iterate: rustc incremental (opt-in; NOT for gate/determinism) ---
     # On a kernel .rs edit, `ntoskrnl-rust` is ONE 451K-LOC crate → rustc recompiles
     # the whole crate (measured ~13s vs ~5s with incremental). sccache CAN'T help a
@@ -894,7 +914,7 @@ def _build_locked(args, repo: Path, run, arch: str, cfg, build_dir: Path, cold: 
     # as absence. Anything we can't classify is a failure, never a shrug.
     for target in cfg.ninja_targets_optional:
         cp = run.run(
-            wrap(["ninja", target]),
+            wrap(["ninja", *_ninja_jobs(), target]),
             cwd=build_dir,
             env=build_env,
             stage=f"ninja-optional:{target}",
