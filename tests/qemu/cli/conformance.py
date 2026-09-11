@@ -267,10 +267,9 @@ def merge_baseline_rows(existing_text: str, results, only, fmt):
 
 
 def _run_dir(arch: str) -> Path:
-    ts = time.strftime("%Y%m%d-%H%M%S")
-    d = Path("/tmp/vibeos-cli") / f"{ts}-conformance-{arch}"
-    d.mkdir(parents=True, exist_ok=True)
-    return d
+    from .artifacts import create_run_dir
+
+    return create_run_dir("conformance", arch)
 
 
 # Durable soak ledger, alongside the flake farm's corpus so one triage pass can
@@ -671,6 +670,7 @@ def _conformance_once(args, repo: Path) -> int:
                 base,
                 hang_state_path.read_text(errors="replace"),
                 mp="ntkrnlmp.exe" in serial_text,
+                serial=serial_text,
             )
             if hang_pcs:
                 with hang_state_path.open("a") as f:

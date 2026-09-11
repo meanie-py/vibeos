@@ -134,7 +134,9 @@ def _cpu_state(
             state = vm.capture_cpu_state()
         except Exception:
             return None, []
-    lines = triage.symbolicate_cpu_state(repo, arch, state, mp="ntkrnlmp.exe" in serial)
+    lines = triage.symbolicate_cpu_state(
+        repo, arch, state, mp="ntkrnlmp.exe" in serial, serial=serial
+    )
     path = work / "hang-cpustate.txt"
     try:
         path.write_text(state + ("\n" + "\n".join(lines) + "\n" if lines else ""))

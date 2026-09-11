@@ -158,7 +158,7 @@ unsafe fn KiGetExceptionClassName(EC: ULONG) -> &'static [u8] {
     }
 }
 
-unsafe fn KiDumpTrapFrame(Tf: PKTRAP_FRAME) {
+pub(super) unsafe fn KiDumpTrapFrame(Tf: PKTRAP_FRAME) {
     let EC = ((*Tf).Esr >> 26) & 0x3F;
 
     TrapPuts(b"\r\n*** ARM64 EXCEPTION ***\r\n");

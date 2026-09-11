@@ -1061,6 +1061,37 @@ def test_symbolicate_cpu_state_resolves_mp_addresses_against_the_MP_index(tmp_pa
     assert "--mp" not in up[0], up[0]
 
 
+def test_symbolication_uses_this_boot_kernel_base(tmp_path):
+    tool = tmp_path / "qemu" / "addr2sym.sh"
+    tool.parent.mkdir(parents=True)
+    tool.write_text('#!/bin/sh\necho "ARGS:$*"\n')
+    serial = (
+        "ntkrnlmp.exe\n"
+        "[KRNLBASE] ntoskrnl runtime base=0xFFFFF80042190000\n"
+        "*** BUGCHECK: 0x0000001E (0x1, 0xfffff80042205e7c, 0x2, 0x0)\n"
+    )
+    fault = triage.symbolicate_pc(tmp_path, "arm64", serial)
+    assert fault is not None
+    assert "--reloc 0xfffff80041d90000" in fault
+    assert "--mp" in fault
+    cpus = triage.symbolicate_cpu_state(tmp_path, "arm64", _ARM64_REGS, serial=serial, mp=True)
+    assert all("--reloc 0xfffff80041d90000" in line for line in cpus)
+
+
+def test_kernel_relocation_prefers_latest_boot_and_preserves_legacy_behavior():
+    assert triage.kernel_relocation("arm64", "") is None
+    assert triage.kernel_relocation("i386", "") == "0x800c3000"
+    assert (
+        triage.kernel_relocation("amd64", "[KRNLBASE] ntoskrnl runtime base=fffff80000400000\n")
+        == "0xfffff80000000000"
+    )
+    serial = (
+        "[KRNLBASE] ntoskrnl runtime base=0xFFFFF80042190000\n"
+        "[KRNLBASE] ntoskrnl runtime base=0xFFFFF80042290000\n"
+    )
+    assert triage.kernel_relocation("arm64", serial) == "0xfffff80041e90000"
+
+
 def test_cpu_state_prefers_the_capture_taken_at_the_deadline(tmp_path):
     # wait_for_boot samples the instant the boot times out. Re-sampling later
     # would agree on a true hang but disagree on a merely-slow boot, which by
@@ -1994,6 +2025,42 @@ def test_gdbengine_gdb_arch_map():
     assert ge_mod._gdb_arch("arm64") == "aarch64"
 
 
+@pytest.mark.parametrize("smp", [None, "1", "4"])
+def test_gdbengine_smp_media_symbols_and_cpu_count_agree(tmp_path, monkeypatch, smp):
+    from types import SimpleNamespace
+
+    if smp is None:
+        monkeypatch.delenv("VIBEOS_QEMU_SMP", raising=False)
+    else:
+        monkeypatch.setenv("VIBEOS_QEMU_SMP", smp)
+    monkeypatch.setattr(ge_mod, "PROJECT_DIR", tmp_path)
+    monkeypatch.setattr(ge_mod.subprocess, "run", lambda *a, **kw: None)
+    monkeypatch.setattr(be_mod, "stage_media_paths", lambda args, staging: args)
+    monkeypatch.setattr(be_mod, "windows_free_tcp_port", lambda: 12345)
+    monkeypatch.setattr(be_mod, "windows_qemu_bin", lambda *a: "qemu-system-aarch64.exe")
+    monkeypatch.setattr(be_mod, "win_path", str)
+    monkeypatch.setattr(be_mod, "gateway_ip", lambda: "127.0.0.1")
+    selected = []
+
+    def qemu_args(work):
+        selected.append(vm_mod.smp_count())
+        return []
+
+    config = SimpleNamespace(qemu_bin="qemu-system-aarch64", qemu_args=qemu_args)
+    cmd, _ = ge_mod._build_windows_cmd(
+        "arm64", config, {"qemu_dir": "qemu"}, tmp_path, tmp_path, gdb_wait=True
+    )
+    assert selected == [int(smp) if smp else None]
+    if smp is None:
+        assert "-smp" not in cmd
+        assert ge_mod._kernel_image("arm64") == tmp_path / "build-arm64/ntoskrnl/ntoskrnl.exe"
+    else:
+        assert cmd[cmd.index("-smp") + 1] == smp
+        assert (
+            ge_mod._kernel_image("arm64") == tmp_path / "build-arm64/ntoskrnl/ntkrnlmp/ntkrnlmp.exe"
+        )
+
+
 def test_gdbengine_expand_verb():
     assert ge_mod._expand_verb("bt 50") == "bt-tagged 50"
     assert ge_mod._expand_verb("bt") == "bt-tagged"  # no trailing space
@@ -2029,6 +2096,42 @@ def test_gdbengine_manifest_roundtrip(tmp_path, monkeypatch):
     assert got.gdb_port == 54321 and got.win_uid == "vibeos-dbg-1-2" and got.arch == "amd64"
 
 
+@pytest.mark.parametrize("copy_fails", [False, True])
+def test_gdbengine_stop_preserves_serial_before_cleaning_staging(tmp_path, monkeypatch, copy_fails):
+    monkeypatch.setattr(ge_mod, "RUNS_DIR", tmp_path / "runs")
+    staging = tmp_path / "staging"
+    staging.mkdir()
+    serial = staging / "serial.log"
+    serial.write_text("boot evidence\n")
+    run = ge_mod.DebugRun(
+        run_id="arm64-archive",
+        arch="arm64",
+        backend="native",
+        gdb_host="127.0.0.1",
+        gdb_port=1234,
+        serial_log=str(serial),
+        kernel_image="/k/ntkrnlmp.exe",
+        staging=str(staging),
+    )
+    run.save()
+    if copy_fails:
+
+        def fail_copy(*args, **kwargs):
+            raise OSError("disk full")
+
+        monkeypatch.setattr(ge_mod.shutil, "copy2", fail_copy)
+        with pytest.raises(OSError, match="disk full"):
+            ge_mod.stop(run)
+        assert serial.read_text() == "boot evidence\n"
+    else:
+        ge_mod.stop(run)
+        assert not staging.exists()
+        archived = Path(ge_mod.DebugRun.load(run.run_id).serial_log)
+        assert archived.read_text() == "boot evidence\n"
+        ge_mod.stop(run)  # repeated cleanup must preserve the archive too
+        assert archived.read_text() == "boot evidence\n"
+
+
 def test_gdbengine_load_rejects_foreign_manifest(tmp_path, monkeypatch):
     # qemu/runs/ is shared with the bash toolkit, whose manifest lacks our fields.
     monkeypatch.setattr(ge_mod, "RUNS_DIR", tmp_path)
@@ -2036,6 +2139,70 @@ def test_gdbengine_load_rejects_foreign_manifest(tmp_path, monkeypatch):
     (tmp_path / "bash-run" / "manifest.json").write_text('{"run_id":"bash-run","qemu_pid":9}')
     with pytest.raises(ValueError, match="not a gdbengine run manifest"):
         ge_mod.DebugRun.load("bash-run")
+
+
+@pytest.mark.parametrize(
+    "result",
+    [None, {"hit": False, "checks": 0}, {"hit": "no", "checks": 2}, {"hit": False, "checks": 2}],
+)
+def test_gdbengine_probe_rejects_silent_script_failure(tmp_path, monkeypatch, result):
+    monkeypatch.setattr(ge_mod, "RUNS_DIR", tmp_path / "runs")
+    run = ge_mod.DebugRun("probe", "arm64", "windows-host", "host", 1234, "serial", "kernel")
+    run.save()
+    script = tmp_path / "watch.py"
+    script.write_text("# probe\n")
+
+    def fake_gdb(*args, **kwargs):
+        if result is not None:
+            (run.dir / "probe-result.json").write_text(json.dumps(result))
+        return subprocess.CompletedProcess([], 0)
+
+    monkeypatch.setattr(ge_mod.subprocess, "run", fake_gdb)
+    if result == {"hit": False, "checks": 2}:
+        assert ge_mod.probe(run, script, timeout=1) == result
+    else:
+        with pytest.raises(RuntimeError):
+            ge_mod.probe(run, script, timeout=1)
+
+
+@pytest.mark.parametrize("outcome", ["hit", "error", "cancel"])
+def test_gdbengine_probe_soak_stops_on_hit_or_error_and_cleans_up(tmp_path, monkeypatch, outcome):
+    from types import SimpleNamespace
+
+    monkeypatch.setattr(ge_mod, "RUNS_DIR", tmp_path / "runs")
+    kernel = tmp_path / "kernel"
+    kernel.write_bytes(b"frozen kernel")
+    (tmp_path / "qemu").mkdir()
+    (tmp_path / "qemu" / "boot.img").write_bytes(b"media")
+    script = tmp_path / "watch.py"
+    script.write_text("# probe\n")
+    monkeypatch.setattr(ge_mod, "_kernel_image", lambda arch: kernel)
+    monkeypatch.setattr(ge_mod, "_cfg", lambda repo: ("windows-host", {}))
+    runs = []
+    stopped = []
+
+    def fake_start(*args, **kwargs):
+        assert kwargs["gdb_wait"]
+        run = ge_mod.DebugRun(str(len(runs)), "arm64", "windows-host", "host", 1234, "s", "k")
+        run.save()
+        runs.append(run)
+        return run
+
+    def fake_probe(*args, **kwargs):
+        if outcome == "cancel":
+            raise KeyboardInterrupt
+        if outcome == "error":
+            raise RuntimeError("no coverage")
+        return {"hit": len(runs) == 2, "checks": 1}
+
+    monkeypatch.setattr(ge_mod, "start", fake_start)
+    monkeypatch.setattr(ge_mod, "probe", fake_probe)
+    monkeypatch.setattr(ge_mod, "stop", lambda run: stopped.append(run.run_id))
+    args = SimpleNamespace(arch="arm64", script=str(script), repeat=8, timeout=1)
+    assert ge_mod.cmd_probe(args, tmp_path) == {"hit": 0, "error": 2, "cancel": 130}[outcome]
+    assert stopped == (["0", "1"] if outcome == "hit" else ["0"])
+    last = json.loads((runs[-1].dir / "probe-summary.json").read_text())
+    assert last["verdict"] == {"hit": "HIT", "error": "PROBE_ERROR", "cancel": "CANCELLED"}[outcome]
 
 
 def test_gdbengine_status_uses_process_liveness_not_gdb_connect(monkeypatch):
@@ -7310,4 +7477,26 @@ def test_every_tools_test_file_is_actually_collected_by_something() -> None:
     assert not missing, (
         "these tools/ suites are collected by nothing; add them to _PYTEST_SUITES "
         f"or give each an `exempt` entry saying why: {missing}"
+    )
+
+
+def test_same_second_runs_keep_separate_artifacts(tmp_path, monkeypatch):
+    from concurrent.futures import ThreadPoolExecutor
+
+    from . import artifacts, conformance
+
+    monkeypatch.setattr(artifacts, "ARTIFACT_ROOT", tmp_path)
+    monkeypatch.setattr(artifacts.time, "time", lambda: 1700000000)
+
+    def create(i):
+        directory = Run("conformance", "arm64").dir if i % 2 else conformance._run_dir("arm64")
+        (directory / "summary.json").write_text(json.dumps({"owner": i}))
+        return directory
+
+    with ThreadPoolExecutor(max_workers=8) as pool:
+        directories = list(pool.map(create, range(32)))
+    assert len(set(directories)) == 32
+    assert all(d.name.endswith("-conformance-arm64") for d in directories)
+    assert [json.loads((d / "summary.json").read_text())["owner"] for d in directories] == list(
+        range(32)
     )

@@ -7544,9 +7544,13 @@ whole class collapsed to the one case that is *supposed* to happen.
   `ws-lock-excl`/`ws-unlock-excl` pairs are HISTORY from before the fault, not a live livelock
   (this entry said otherwise for a day), and the harness verdict `FROZEN — every vCPU PC is
   identical` is just the post-bugcheck halt. Symbolicate the parked PC before theorising about
-  it: ours was `xHalHaltSystem+8`, which is the machine having stopped correctly. Expect this shape whenever you refuse a
-  bad value inside a helper whose caller has no error return: the caller cannot observe the
-  refusal, so it retries. That is a step forward, not a fix, and the real repair belongs where
+  it: ours was `xHalHaltSystem+8`, the machine having stopped correctly. Worked example —
+  `20260906-190514-conformance-arm64/summary.json` records bugcheck `0x1E` and its sampled PC
+  `0xfffff80042205e7c` resolves into that halt path in the matching binary. A recorder's event
+  count describes preceding activity, never what the stopped CPU is doing now; re-derive the
+  live PC and its image relocation before naming a hang mechanism from one. Expect this shape
+  whenever you refuse a bad value inside a helper whose caller has no error return: the caller
+  cannot observe the refusal, so it retries. That is a step forward, not a fix, and the real repair belongs where
   the bad value is chosen.
 - **"Software says valid, hardware says translation fault" has two causes on arm64, and they
   need opposite fixes.** Either the entry was never published to the page-table walker (a
@@ -7566,6 +7570,22 @@ whole class collapsed to the one case that is *supposed* to happen.
   IFSC, never goes to paging — it is dispatched as a kernel access violation and bugchecks with
   the frame plus `[KSTKW]`, the kernel-range words on the faulting stack (a wild `br` leaves LR
   useless; the callers' return addresses above SP are the only route back to the jumper).
+  **A second swallowing path, same function (task #39).** Dispatching the fetch AV was not
+  enough. `KiDispatchException`'s user-address data-probe fixup accepted *every* access
+  violation, execute faults included (`ExceptionInformation[0] == 8`). It read the
+  inaccessible instruction as data, sometimes zeroed registers from its bits, advanced PC by
+  four and returned — so the recorded PC is wherever that walk ended, not the original bad
+  branch target. Five saved captures all end at `0x250000` for this reason. It is in the
+  failing binary as well: PE VA `0x414494` tests the fault address without reading the access
+  type at exception-record offset `0x20`, `0x4144f4` adds four to PC, `0x414574` can zero LR.
+  Fix: exclude execute faults from the fixup, and dump the trap's LR and integer registers at
+  the first unhandled fault. Excluding them exposes an EARLIER fault — patched runs stop at an
+  EL1 instruction abort with PC, LR and FP all zero (`ESR=0x86000007`) in `lsass.exe`, with the
+  semaphore-release frame still on the stack, while the same-commit control keeps the old
+  `0x250000` undefined-instruction signature. The guard exposes the earlier fault; it does not
+  repair the zero return. Binaries, indexes and logs for both sets are preserved under
+  `~/vibeos-flake-farm/fails/smp39-20260906-{original,first-fault,control}/` — and preserving
+  them is the point, because a capture left in `/tmp/vibeos-cli` is gone within days.
   The probe written to catch this exact frame — `KiTrapReturnProbe`, inspecting the EL0-return
   state at the `eret` — missed for three independent reasons: its call site is `#ifdef
   ARM64_TRAP_DEBUG` and that macro is **defined nowhere in the repo**, so it is dead source that

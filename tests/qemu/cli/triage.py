@@ -331,8 +331,8 @@ _SYM_OFFSET = re.compile(r"\+(\d+)\b")
 # 2026-07-12 and three fresh crashes from 2026-07-25 all agree on it exactly,
 # across 13 days of rebuilds.
 #
-# arm64/amd64: unknown. Their runtime base is never printed on serial and cannot
-# be recovered from a saved log, so they get no reloc and will simply decline.
+# Logs with [KRNLBASE] use the runtime base from the loader list. Logs without
+# that marker still have no known ARM64/amd64 relocation and must decline.
 #
 # A stale hardcoded value CANNOT produce a wrong answer here: it would push every
 # lookup outside the index, the offset guard above fires, and the result is "no
@@ -350,6 +350,16 @@ _RELOC_BY_ARCH = {"i386": "0x800c3000", "i386-uefi": "0x800c3000"}
 # needed hand-computing to reach `KiSynchronousExceptionEntry+4`.
 _MODULE_OFFSET = re.compile(r"^\*\*\*\s+P\d\s*=\s*(\S+?)\+0x([0-9a-fA-F]+)\s*$", re.MULTILINE)
 _PE_IMAGE_BASE = 0x400000
+
+_KERNEL_BASE = re.compile(r"\[KRNLBASE\] ntoskrnl runtime base=(?:0x)?([0-9a-fA-F]+)")
+
+
+def kernel_relocation(arch: str, serial: str) -> str | None:
+    """Use this boot's loader-reported base when available."""
+    matches = _KERNEL_BASE.findall(serial)
+    if matches:
+        return hex(int(matches[-1], 16) - _PE_IMAGE_BASE)
+    return _RELOC_BY_ARCH.get(arch)
 
 
 def faulting_module_offset(serial: str) -> tuple[str, int] | None:
@@ -438,7 +448,7 @@ def symbolicate_pc(repo: Path, arch: str, serial: str) -> str | None:
     # Prefer the banner's own module+RVA over a guessed reloc: it is exact, needs
     # no runtime base, and works on the arches that have no reloc entry at all.
     mod_off = faulting_module_offset(serial)
-    reloc = None if mod_off else _RELOC_BY_ARCH.get(arch)
+    reloc = None if mod_off else kernel_relocation(arch, serial)
     if mod_off:
         pc = hex(_PE_IMAGE_BASE + mod_off[1])
     # freeldr announces which kernel it loaded, so read it off the serial.
@@ -522,7 +532,9 @@ def cpu_kernel_at_user_pc(state: str) -> list[tuple[int, str]]:
     return found
 
 
-def symbolicate_cpu_state(repo: Path, arch: str, state: str, *, mp: bool = False) -> list[str]:
+def symbolicate_cpu_state(
+    repo: Path, arch: str, state: str, *, mp: bool = False, serial: str = ""
+) -> list[str]:
     """One "CPU#n 0xADDR -> symbol" line per vCPU we could locate.
 
     This is the payoff of capturing the state at all: on a silent wedge the
@@ -530,6 +542,6 @@ def symbolicate_cpu_state(repo: Path, arch: str, state: str, *, mp: bool = False
     """
     lines = []
     for idx, pc in cpu_pcs(state):
-        sym = _resolve_addr(repo, arch, f"0x{pc}", mp=mp, reloc=_RELOC_BY_ARCH.get(arch))
+        sym = _resolve_addr(repo, arch, f"0x{pc}", mp=mp, reloc=kernel_relocation(arch, serial))
         lines.append(f"CPU#{idx} {sym or f'0x{pc} -> (unresolved)'}")
     return lines

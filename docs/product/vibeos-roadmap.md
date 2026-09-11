@@ -702,8 +702,8 @@ Field-manual § pointers hold the full writeups. **Update on state change.**
   the callee's arity is invisible to a cdecl/win64 caller. Field manual: "Which of the four is
   silent is a property of the HEADER" (whose freeldr row this corrects) and "A printf-style
   callee can take varargs on stable Rust".
-- **PARTLY FIXED (2026-09-05, task #39): the ~2% arm64 `--smp 1` boot wedge is an EL1 fault
-  loop at a user PC, and the loop is now closed — the jumper is not yet found.** A 300-round
+- **PARTLY FIXED (task #39): the arm64 `--smp 1` wedge reaches an EL1 user PC;
+  exception handling hid the first fault, and the jumper is not yet found.** A 300-round
   soak on fixed media hit it 5 times (1.7%), and every capture showed the same shape: a vCPU at
   **EL1h with `PC=0x10000`**, register file byte-identical across samples, every timed wait
   dead, serial stopped one `DbgPrint` before `CreateProcessW`. `KiSynchronousExceptionHandler`
@@ -717,9 +717,30 @@ Field-manual § pointers hold the full writeups. **Update on state change.**
   with `X18` a TEB and `X28` a user start-context, so the stack words are the lead. This is the
   last flip blocker for `DefaultOS`. Field manual: "An EL1 instruction fetch on a user page
   loops silently forever". OWNED BY the smp-bringup lane.
+  **Correction 2026-09-06:** dispatching the fetch AV did not close the whole path.
+  `KiDispatchException` then treated execute faults as data probes, advanced PC by four,
+  and could zero registers. The later `0x250000`/zero-register captures therefore cannot
+  identify the original jump. The dispatcher now excludes execute faults from that fixup
+  and dumps the original integer registers, thread, and process. Fresh patched captures
+  (`20260906-220136`, `221936`, `222818`, `223301`, `224348`) now stop at **PC/LR/FP zero**,
+  an EL1 instruction-fetch AV (`ESR=0x86000007`) in `lsass.exe`; the semaphore-release frame
+  and waiter registers survive. The same-commit control reproduces the old `0x250000`
+  signature. Artifacts and exact binaries: `~/vibeos-flake-farm/fails/smp39-20260906-first-fault/`
+  and `smp39-20260906-control/`. The earlier fault is exposed; the underlying return/branch
+  defect remains open. Next: watch the saved return and record any preceding exception recovery.
+  **Update 2026-09-11:** the software-PTE Protection shift is fixed (`bc2c4d3810d`,
+  `MM_PTE_SOFTWARE_PROTECTION_BITS` 6 -> 1 on arm64; writers disagreed with the reader, so
+  `MmDecommittedPte` came out as the Prototype bit and decommitted faults fell through to
+  demand-zero with Protection 0). That removes the SILENT-WEDGE mechanism, not the fault: a
+  60-round `--smp 1` soak on top of it still took `BUGCHECK 0x1E` three times, all during boot
+  before any kmtest launched. Those three captures are LOST — they were left in
+  `/tmp/vibeos-cli`, which is cleaned within days; the durable `conformance.jsonl` rows prove
+  the hits and nothing else. Re-run and copy each fail into `~/vibeos-flake-farm/fails/` at
+  capture time. A per-thread flight-recorder dump (`flightrec_dump_thread`, wired into the
+  bugcheck sidecar) is in the tree to answer whether the crashing thread took an EARLIER
+  kernel fault it recovered from -- the last-32 tail window can neither show nor exclude that.
 - **FIXED (2026-09-06): system cursors load, and the residual NULLs are correct behaviour
-  wearing an alarming message.** `SYSTEMCUR(ARROW) == NULL, should not happen!!` was firing **78x** per boot (6 system
-  classes x 13 GUI processes) and kept firing to within 300 lines of `shell ready` —
+  wearing an alarming message.** `SYSTEMCUR(ARROW) == NULL, should not happen!!` was firing **78x** per boot (6 system  classes x 13 GUI processes) and kept firing to within 300 lines of `shell ready` —
   `gasyscur[ROCR_ARROW].handle` was NULL for the *entire* boot, so every server-side class
   registered with `hCursor = NULL`. Chain: `co_IntInitializeDesktopGraphics` normally loads
   cursors/icons via `KeUserModeCallback`, but that block is `#if !defined(_USE_DUMMY_PSEH)` and
@@ -1366,8 +1387,8 @@ Field-manual § pointers hold the full writeups. **Update on state change.**
     2026-07-26. That was wrong, and it was wrong because the first comparison used one smp1 run
     against one smp2 run — **always correlate against `smp` before calling an i386 delta a
     regression.**) The SHAPE is still the interesting part: pass drops by 4 while fail stays at
-    2, so 4 assertions stop EXECUTING rather than start failing — same shape as the arm64
-    `KeEvent` 132-pass drop below. A loop terminating early, not four broken assertions.
+    2, so 4 assertions stop EXECUTING rather than start failing. Counts alone do not say
+    why: the arm64 `KeEvent` 132-pass drop below comes from an explicit MP test exclusion.
 
   **ONE BOOT SEEDED TWO OF THESE ROWS.** `20260726-005733-conformance-i386` is the only smp2
   run in the whole corpus that produced the rare side of `FsRtlLegal` (2504) *and* the rare
@@ -1426,20 +1447,20 @@ Field-manual § pointers hold the full writeups. **Update on state change.**
     events were 100% working-set lock churn).
   This is the §9.98 physical-page-reuse cluster, **OWNED BY the smp-bringup lane** (task #19/#23)
   — the instrumentation and the corpus are the contribution from here, not a fix.
-- **arm64 UP:=smp1 collapse FAILS on `KeEvent`, deterministically — NEW, OPEN** (2026-07-29,
-  first three rounds of the instrumented soak). The MP kernel at one CPU is *not* equivalent
-  to the UP kernel on arm64, and the flip is gated on exactly that equivalence:
-  - `KeEvent: pass 42733 -> 42601 (dropped)` — **132 fewer passes, in every round so far**
-    (3/3). Deterministic, so it is a real MP-vs-UP semantic difference, not the flake.
-  - `ExPools: pass 14 -> 13, fail 4 -> 5` — present in rounds 1 and 3, absent in round 2, so
-    this one IS flaky, at one test.
-  Note the sweep launched **91** tests against an 89-test baseline, so the baseline also wants
-  re-seeding once the deltas are understood. Separating "deterministic" from "flaky" here is
-  only possible because rounds are repeated on one frozen media and recorded — see
-  `conformance --repeat` and `~/vibeos-flake-farm/conformance.jsonl`. **Next:** diff the
-  per-subtest KeEvent results between the UP baseline and an `--smp 1` round to name which 132
-  cases changed; `KeEvent` at 42733 cases is dominated by a few big loops, so the drop is
-  likely one loop terminating early rather than 132 unrelated failures.
+- **`KeEvent`'s 132-pass UP→smp1 drop is intentional test coverage, not an event failure**
+  (corrected 2026-09-06). `modules/rostests/kmtests/ntos_ke/KeEvent.c:85` explicitly excludes
+  its `Wait=TRUE` block when `KmtIsMultiProcessorBuild` is true: the test's manual cleanup
+  would leave the MP dispatcher lock held. Each of its two operations runs nine assertions
+  in `CheckEvent` plus two direct assertions, for **3 IRQLs × 2 event types × 2 operations
+  × 11 assertions = 132**. This exactly explains `42733/0 → 42601/0`; it is not an early
+  loop termination. Verified against `/tmp/vibeos-cli/20260906-211400-conformance-arm64/`
+  and the committed UP baseline. Tests and baseline remain unchanged. The separate
+  `ExPools` fluctuation remains tracked in its entry above.
+  The same run's `IoInterrupt` delta is different: **156 assertions execute and fail** at
+  `IoInterrupt.c:42`, expecting the held lock to equal `1`. The observed value is
+  `0xfffffa000610d8d1`, the running kmtest thread `0xfffffa000610d8d0 | 1`, matching the
+  checked-build owner stamp in both `ntkrnl-sys/src/inline/ke.rs` and C `spinlock.h`.
+  Preserve this reported discrepancy; it is not evidence that the lock was left free.
 - **i386 does not LINK on the merged tree — three fastfat ABI breaks, TRAIN BLOCKER, 2 of 3
   OPEN** (2026-07-28). `ld.lld: undefined symbol: _FatAddMcbEntry@20`, `_FatStringTo8dot3@12`,
   `_FatBreakOnInterestingIoCompletion`. Present in every i386 build tonight including the

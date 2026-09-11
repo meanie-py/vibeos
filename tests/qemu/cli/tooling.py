@@ -78,6 +78,7 @@ _PYTEST_SUITES = [
     (".", ".", "tools/test_retarget_cargo_depfile.py"),
     (".", ".", "tools/test_rust_module_tree.py"),
     (".", ".", "tools/test_scan_self_recursive.py"),
+    (".", ".", "tools/test_scan_dropped_asserts.py"),
     # Same shape as the two above: the matcher is pure functions over a string, and its
     # positive control is the real demangler bug — a sequencing error that shipped because
     # no value-based check can see it.

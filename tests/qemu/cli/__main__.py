@@ -392,6 +392,17 @@ def build_parser() -> argparse.ArgumentParser:
     gst.add_argument("--wait", action="store_true", help="halt at reset (-S) for boot-from-zero")
     gst.set_defaults(fn=gdb_mod.cmd_start)
 
+    gp = gdbsub.add_parser(
+        "probe", help="repeat a Python GDB probe on fresh boots; stop on hit/error"
+    )
+    gp.add_argument("arch", choices=ACCEPTED_ARCHES)
+    gp.add_argument("--script", required=True, help="GDB Python script setting VIBEOS_PROBE_RESULT")
+    gp.add_argument("--repeat", type=int, default=1)
+    gp.add_argument(
+        "--timeout", type=float, default=180.0, help="probe budget plus 30s cleanup margin"
+    )
+    gp.set_defaults(fn=gdb_mod.cmd_probe)
+
     gstat = gdbsub.add_parser("status", help="gdbstub reachability + serial size for a run")
     gstat.add_argument("run_id")
     gstat.set_defaults(fn=gdb_mod.cmd_status)

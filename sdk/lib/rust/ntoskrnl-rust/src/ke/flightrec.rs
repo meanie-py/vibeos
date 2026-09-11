@@ -58,6 +58,15 @@ pub const OP_PAGE_UNMAP: u32 = 49;
 /// descriptor or from a software PTE decoded with the hardware layout — and
 /// `valid()` is only bit 0, so it cannot settle that either.
 pub const OP_PAGE_PTE: u32 = 50;
+// ARM64 exception recovery: object is the named address. data retains the
+// exception code (PC), access kind (FAR), or zero (LR/resume).
+pub const OP_KERNEL_FAULT_PC: u32 = 64;
+pub const OP_KERNEL_FAULT_FAR: u32 = 65;
+pub const OP_KERNEL_FAULT_LR: u32 = 66;
+pub const OP_KERNEL_RESUME_PC: u32 = 67;
+pub const OP_KERNEL_RESUME_LR: u32 = 68;
+pub const OP_KERNEL_DATA_FIXUP: u32 = 69;
+
 
 /// Link-time tap for crates below ntoskrnl-rust in the dep graph (ntkrnl-sys
 /// inlines can't `use` this crate — the dependency points the other way).
@@ -133,6 +142,12 @@ pub fn flightrec_op_name(op: u32) -> *const u8 {
         OP_PAGE_MAP => b"page-map\0".as_ptr(),
         OP_PAGE_UNMAP => b"page-unmap\0".as_ptr(),
         OP_PAGE_PTE => b"page-pte-raw\0".as_ptr(),
+        OP_KERNEL_FAULT_PC => b"kernel-fault-pc\0".as_ptr(),
+        OP_KERNEL_FAULT_FAR => b"kernel-fault-far\0".as_ptr(),
+        OP_KERNEL_FAULT_LR => b"kernel-fault-lr\0".as_ptr(),
+        OP_KERNEL_RESUME_PC => b"kernel-resume-pc\0".as_ptr(),
+        OP_KERNEL_RESUME_LR => b"kernel-resume-lr\0".as_ptr(),
+        OP_KERNEL_DATA_FIXUP => b"kernel-data-fixup\0".as_ptr(),
         _ => b"?\0".as_ptr(),
     }
 }
@@ -174,6 +189,55 @@ pub fn flightrec_dump_recent(limit: usize) {
             );
         }
         seq += 1;
+    }
+}
+
+/// Crash sidecar: the most recent `limit` events belonging to ONE thread,
+/// oldest-first. The unfiltered tail dump answers "what happened last"; this
+/// answers "what happened to the thread that died", which is a different and
+/// usually more useful question — a busy ring buries a thread's own history
+/// under thousands of unrelated lock events. #39 needed exactly this: the
+/// last-32 window showed only two park events on an unrelated thread, which
+/// could neither show nor rule out an EARLIER kernel fault that this thread
+/// recovered from (OP_KERNEL_FAULT_PC / OP_KERNEL_RESUME_PC, recorded with the
+/// faulting thread). Scans the whole ring, so it sees the full 16K of history.
+pub fn flightrec_dump_thread(thread: usize, limit: usize) {
+    let cursor = VIBEOS_FLIGHTREC.cursor.load(Relaxed);
+    if cursor == 0 || thread == 0 {
+        return;
+    }
+    let span = core::cmp::min(cursor, FLIGHTREC_ENTRIES as u64);
+    let mut found: [u64; 64] = [0; 64];
+    let limit = core::cmp::min(limit, 64);
+    let mut n = 0usize;
+    let mut back = 0u64;
+    while back < span && n < limit {
+        let seq_expect = cursor - back;
+        let e = &VIBEOS_FLIGHTREC.entries[((seq_expect - 1) as usize) & (FLIGHTREC_ENTRIES - 1)];
+        // Torn slots (a writer recycled this one) are skipped, not trusted.
+        if e.seq.load(Relaxed) == seq_expect && e.thread.load(Relaxed) == thread {
+            found[n] = seq_expect;
+            n += 1;
+        }
+        back += 1;
+    }
+    crate::dbg_print!(
+        b"[FLIGHTREC] --- %lu event(s) for crashing thread %p, scanned %lu (oldest first) ---\n\0",
+        n as u32,
+        thread as *const (),
+        span as u32,
+    );
+    for i in (0..n).rev() {
+        let seq = found[i];
+        let e = &VIBEOS_FLIGHTREC.entries[((seq - 1) as usize) & (FLIGHTREC_ENTRIES - 1)];
+        let opdata = e.opdata.load(Relaxed);
+        crate::dbg_print!(
+            b"[FLIGHTREC]   seq=%lu %s obj=%p data=%lu\n\0",
+            seq as u32,
+            flightrec_op_name((opdata & 0xFF) as u32),
+            e.object.load(Relaxed) as *const (),
+            (opdata >> 8) as u32,
+        );
     }
 }
 

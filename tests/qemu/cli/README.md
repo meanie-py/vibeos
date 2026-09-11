@@ -462,6 +462,20 @@ RUN=$(./vibeos-cli gdb start amd64 | grep run-id | awk '{print $3}')
 ./vibeos-cli gdb stop $RUN
 ```
 
+For MP debugging, prefix `gdb start` with `VIBEOS_QEMU_SMP=1` (or the desired
+vCPU count). The launcher selects MP media, passes `-smp`, and records
+`ntkrnlmp.exe` as the symbol image. One vCPU still selects the MP kernel.
+
+For rare faults, `VIBEOS_QEMU_SMP=1 ./vibeos-cli gdb probe arm64 --script probe.py
+--repeat 80 --timeout 150` starts a fresh VM at reset for each probe. The GDB Python
+script gets `VIBEOS_PROBE_TIMEOUT` and `VIBEOS_PROBE_DIR`; it must use a bounded
+continue and set `VIBEOS_PROBE_RESULT = {"hit": bool, "checks": positive_int}`.
+Count actual probe coverage, not boots. Missing coverage or a script error stops
+the soak with exit 2; a hit stops with exit 0; exhausted no-hit runs exit 1.
+Each run retains the script, GDB output, kernel hash, result, and serial log under
+`qemu/runs/<run-id>/`. Kernel or media changes stop the soak. `gdb stop` also
+archives serial before removing VM staging.
+
 **CRITICAL gotcha (baked into the engine):** connecting to QEMU's gdbstub *halts
 the vCPUs*. So liveness (`status`/`ps`) checks the **Windows process + serial-file
 growth**, NEVER a socket connect to the stub — a connect-probe freezes the guest
@@ -631,12 +645,15 @@ Every run prints a bounded summary and writes a durable dir. **Read
 scrape stdout for the result — stdout is intentionally lossy.
 
 ```
-/tmp/vibeos-cli/<ts>-<cmd>-<arch>/
+/tmp/vibeos-cli/<ts>-<unique>-<cmd>-<arch>/
   summary.json     verdict, classification, per-stage status, salient lines, artifact paths
   full.log         raw stage output under === headers ===
   commands.jsonl   every subprocess invoked (cmd, cwd, exit, seconds)
   boot*/screen.ppm, serial tails, debugcon — on failure
 ```
+
+The unique component prevents concurrent runs from sharing an artifact directory,
+even when they start in the same second in different worktrees.
 
 Exit code: `0` for OK/WARN, `1` for FAIL. Stdout glyphs: `✓` ok, `⚠` warn,
 `✗` fail, `·` skip.

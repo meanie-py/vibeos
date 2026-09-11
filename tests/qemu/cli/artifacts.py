@@ -1,6 +1,6 @@
 """Durable artifact directory + token-frugal summary (plan §6).
 
-Every command run gets ${VIBEOS_ARTIFACT_ROOT:-/tmp/vibeos-cli}/<ts>-<cmd>-<arch>/
+Every command run gets ${VIBEOS_ARTIFACT_ROOT:-/tmp/vibeos-cli}/<ts>-<unique>-<cmd>-<arch>/
 with full.log (raw stage output under headers), summary.json (the machine-true
 verdict — re-readable, never scraped from stdout), commands.jsonl, and any
 serial/debugcon/screenshot captured. stdout gets only a bounded summary.
@@ -11,12 +11,25 @@ from __future__ import annotations
 import json
 import os
 import subprocess
+import tempfile
 import threading
 import time
 from dataclasses import dataclass, field
 from pathlib import Path
 
 ARTIFACT_ROOT = Path(os.environ.get("VIBEOS_ARTIFACT_ROOT", "/tmp/vibeos-cli"))
+
+
+def create_run_dir(command: str, arch: str, ts: int | None = None) -> Path:
+    """Atomically allocate a private directory, including for same-second runs."""
+    ts = ts if ts is not None else int(time.time())
+    stamp = time.strftime("%Y%m%d-%H%M%S", time.localtime(ts))
+    ARTIFACT_ROOT.mkdir(parents=True, exist_ok=True)
+    # Keep the date prefix and command/arch suffix for existing artifact scans.
+    # A random component also separates us from older lanes using bare seconds.
+    return Path(
+        tempfile.mkdtemp(prefix=f"{stamp}-", suffix=f"-{command}-{arch}", dir=ARTIFACT_ROOT)
+    )
 
 
 def archive_serial(run_dir: Path, live_log: str | Path | None, extra: dict) -> None:
@@ -74,11 +87,7 @@ class Run:
     def __init__(self, command: str, arch: str, ts: int | None = None):
         self.command = command
         self.arch = arch
-        ts = ts if ts is not None else int(time.time())
-        # ts passed in so callers (and tests) control it; default real time.
-        stamp = time.strftime("%Y%m%d-%H%M%S", time.localtime(ts))
-        self.dir = ARTIFACT_ROOT / f"{stamp}-{command}-{arch}"
-        self.dir.mkdir(parents=True, exist_ok=True)
+        self.dir = create_run_dir(command, arch, ts)
         self.full_log = self.dir / "full.log"
         self.commands_log = self.dir / "commands.jsonl"
         self.stages: list[Stage] = []

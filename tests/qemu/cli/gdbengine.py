@@ -23,6 +23,7 @@ Model (mirrors the bash toolkit's run-id + manifest so `qemu/ps` etc. interop):
 
 from __future__ import annotations
 
+import hashlib
 import json
 import os
 import shutil
@@ -32,7 +33,7 @@ from dataclasses import asdict, dataclass
 from datetime import datetime, timezone
 from pathlib import Path
 
-from ..vm import PROJECT_DIR, get_arch_config
+from ..vm import PROJECT_DIR, get_arch_config, smp_count
 from . import archcfg
 
 RUNS_DIR = PROJECT_DIR / "qemu" / "runs"
@@ -88,7 +89,11 @@ def _gdb_arch(arch: str) -> str:
 
 
 def _kernel_image(arch: str) -> Path:
-    return PROJECT_DIR / f"build-{arch}" / "ntoskrnl" / "ntoskrnl.exe"
+    arch = archcfg.base_arch(arch)
+    kernel_dir = PROJECT_DIR / f"build-{arch}" / "ntoskrnl"
+    if smp_count() is not None:
+        return kernel_dir / "ntkrnlmp" / "ntkrnlmp.exe"
+    return kernel_dir / "ntoskrnl.exe"
 
 
 def _now_iso() -> str:
@@ -208,6 +213,7 @@ def _build_windows_cmd(
         ),
     ]
     scratch_dev = be.stage_media_paths(scratch_dev, staging)
+    smp = smp_count()
 
     cmd = [
         win_bin,
@@ -222,6 +228,7 @@ def _build_windows_cmd(
         *(["-S"] if gdb_wait else []),
         *([] if is_arm64 else ["-debugcon", f"file:{be.win_path(debugcon)}"]),
         *scratch_dev,
+        *(["-smp", str(smp)] if smp is not None else []),
         *arch_args,
     ]
     meta = {
@@ -397,12 +404,123 @@ def inspect(run: DebugRun, verb: str, *, timeout: float = 60.0) -> str:
     return _run_gdb(run, ["-ex", _expand_verb(verb)], timeout=timeout)
 
 
+def probe(run: DebugRun, script: Path, *, timeout: float) -> dict:
+    """Run a GDB Python probe from reset, without scanning unloaded kernel memory.
+
+    The script must set VIBEOS_PROBE_RESULT = {"hit": bool, "checks": positive int}.
+    Missing coverage or a Python exception is an error, never a negative result.
+    """
+    result_path = run.dir / "probe-result.json"
+    saved_script = run.dir / "probe.py"
+    shutil.copy2(script, saved_script)
+    # Execute inside one GDB Python command: `source` alone reports Python errors
+    # while batch GDB can still exit zero. The result file is our success contract.
+    bootstrap = (
+        "import json, pathlib\n"
+        f"scope = {{'VIBEOS_PROBE_DIR': {str(run.dir)!r}, 'VIBEOS_PROBE_TIMEOUT': {timeout!r}}}\n"
+        f"path = pathlib.Path({str(saved_script)!r})\n"
+        "exec(compile(path.read_text(), str(path), 'exec'), scope)\n"
+        "result = scope['VIBEOS_PROBE_RESULT']\n"
+        f"pathlib.Path({str(result_path)!r}).write_text(json.dumps(result))\n"
+    )
+    gdb_arch = (
+        "i386:x86-64"
+        if run.arch.startswith("i386") and run.accel == "whpx"
+        else _gdb_arch(archcfg.base_arch(run.arch))
+    )
+    command = [
+        GDB_BIN,
+        "-q",
+        "-nx",
+        "-batch",
+        "-ex",
+        f"set architecture {gdb_arch}",
+        "-ex",
+        f"target remote {run.gdb_host}:{run.gdb_port}",
+        "-ex",
+        f"source {GDB_HELPERS / 'run-until-bp.py'}",
+        "-ex",
+        f"python exec({bootstrap!r})",
+        "-ex",
+        "delete breakpoints",
+        "-ex",
+        "detach",
+    ]
+    (run.dir / "probe-command.json").write_text(json.dumps(command, indent=2))
+    with (run.dir / "probe.log").open("w") as log:
+        cp = subprocess.run(command, stdout=log, stderr=subprocess.STDOUT, timeout=timeout + 30)
+    if cp.returncode != 0 or not result_path.is_file():
+        raise RuntimeError(f"probe failed (gdb exit {cp.returncode}); read {run.dir / 'probe.log'}")
+    result = json.loads(result_path.read_text())
+    if (
+        not isinstance(result, dict)
+        or type(result.get("hit")) is not bool
+        or type(result.get("checks")) is not int
+        or result["checks"] <= 0
+    ):
+        raise RuntimeError(f"probe did not establish coverage: {result!r}")
+    return result
+
+
+def cmd_probe(args, repo: Path) -> int:
+    script = Path(args.script).resolve()
+    if not script.is_file() or args.repeat < 1 or args.timeout <= 0:
+        raise ValueError("probe needs an existing Python script, positive repeat and timeout")
+    backend, win_cfg = _cfg(repo)
+    kernel = _kernel_image(args.arch)
+    kernel_hash = hashlib.sha256(kernel.read_bytes()).hexdigest()
+    media = repo / archcfg.arch_build(args.arch).boot_media_rel
+    media_stat = media.stat()
+    media_identity = (media_stat.st_size, media_stat.st_mtime_ns)
+    for i in range(args.repeat):
+        if hashlib.sha256(kernel.read_bytes()).hexdigest() != kernel_hash:
+            raise RuntimeError(
+                "kernel changed during probe soak; stop building and restart the probe"
+            )
+        current_stat = media.stat()
+        if (current_stat.st_size, current_stat.st_mtime_ns) != media_identity:
+            raise RuntimeError("boot media changed during probe soak; restart the probe")
+        run = start(args.arch, backend=backend, win_cfg=win_cfg, gdb_wait=True)
+        verdict = {"round": i + 1, "kernel_sha256": kernel_hash, "verdict": "PROBE_ERROR"}
+        try:
+            result = probe(run, script, timeout=args.timeout)
+            verdict.update(result)
+            verdict["verdict"] = "HIT" if result["hit"] else "NO_HIT"
+        except (OSError, ValueError, RuntimeError, subprocess.TimeoutExpired) as exc:
+            verdict["error"] = str(exc)
+        except KeyboardInterrupt:
+            verdict["verdict"] = "CANCELLED"
+            verdict["error"] = "interrupted by caller"
+        finally:
+            stop(run)
+            (run.dir / "probe-summary.json").write_text(json.dumps(verdict, indent=2))
+        print(f"probe {i + 1}/{args.repeat}: {verdict['verdict']} {run.dir}", flush=True)
+        if verdict["verdict"] == "PROBE_ERROR":
+            print(verdict.get("error", "unknown probe error"), flush=True)
+            return 2
+        if verdict["verdict"] == "CANCELLED":
+            return 130
+        if verdict["verdict"] == "HIT":
+            return 0
+    return 1
+
+
 def stop(run: DebugRun) -> None:
     """Kill the debug QEMU and mark the run stopped."""
     if run.backend == "windows-host" and run.win_uid:
         from .. import backend as be
 
         be.kill_by_uid(run.win_uid)
+    # Serial lives inside staging on windows-host. Preserve the experiment's
+    # evidence before deleting that directory; a stopped run must stay readable.
+    serial = Path(run.serial_log)
+    if serial.is_file():
+        archived = run.dir / "serial.log"
+        run.dir.mkdir(parents=True, exist_ok=True)
+        if serial.resolve() != archived.resolve():
+            shutil.copy2(serial, archived)
+        run.serial_log = str(archived)
+        run.save()
     if run.staging:
         shutil.rmtree(run.staging, ignore_errors=True)
 
