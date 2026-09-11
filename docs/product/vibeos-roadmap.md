@@ -516,6 +516,17 @@ land; date every addition.** Source docs live in `docs/engineering/archive/`.
   if anything shifts timing — scheduler, timer resolution, KE wait paths, or an unrelated
   translation that changed a hot path's cost. Do NOT weaken or quarantine the assertion; it is
   asserting something true.
+  **Update 2026-09-11 — a third and fourth site, and a GREEN run.** `conformance:arm64` on a
+  quiet host (queue empty, no conductor) came back `launched=91 ok=88 bad=3 regressions=[]`,
+  i.e. PASS, in 74.5s. ExResource itself reported `OK pass=399 fail=2`, failing at
+  `ExResource.c:409` and `ExResource.c:455` — **two further line numbers**, so four distinct
+  sites across four runs (432, 469, 409, 455), all the same block-then-assert-a-waiter-count
+  construct. That settles the race question: a deterministic regression does not move four
+  times. It also sharpens the mechanism — the baseline **already accepts two failing ExResource
+  assertions**, so the ratchet does not trip on a failure here at all; it trips only when the
+  *pass count* moves (399 → 398), which is what a wedge mid-sweep does. Under load a third
+  assertion flips and the sweep stops producing. Still OPEN, still not owned by the wow64 lane,
+  and still do not weaken the assertion.
 - **Fleet disk exhaustion interrupted landing — OPEN, admission slice implemented locally**
   (2026-09-06; owner: bughunt/Codex). The shared WSL filesystem reached zero
   available bytes during `land`'s tooling preflight; the failure summary itself
