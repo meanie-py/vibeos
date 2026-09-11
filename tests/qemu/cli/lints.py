@@ -931,6 +931,24 @@ def source_lint_specs(repo: Path) -> list[tuple]:
             "stdout",
         )
     )
+    # A C ASSERT that VANISHED when its FORCEINLINE was hand-translated. Not
+    # covered by scan_assert_to_ub (that catches an assert LOWERED to
+    # unreachable_unchecked, i.e. present and wrong) and NOT clonable from
+    # scan_dropped_prints, whose oracle is rustconv's trailing C comments —
+    # the bridge modules that carried this bug are hand-written and carry none,
+    # so a same-file diff reports clean on the exact function that cost the boot.
+    # The oracle is cross-file: the C FORCEINLINE paired by name against its Rust
+    # twin. It found MI_MAKE_HARDWARE_PTE_USER shipping 0 of the C's 4 asserts,
+    # which on arm64 turns a no-access protection mask into Valid=1 on a
+    # descriptor the MMU rejects (task #39).
+    sda = repo / "tools" / "scan_dropped_asserts.py"
+    specs.append(
+        (
+            "scan_dropped_asserts",
+            [py, str(sda), "--lint"] if sda.is_file() else ["MISSING"],
+            "stdout",
+        )
+    )
     # NOTE: scan_bind_all_matches (bind-all match-arm detector) is intentionally
     # NOT wired here yet. It runs `cargo check` in a SEPARATE cold target dir
     # (to avoid force-warn polluting the shared cache), which cold-triggers

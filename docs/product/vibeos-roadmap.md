@@ -493,9 +493,20 @@ land; date every addition.** Source docs live in `docs/engineering/archive/`.
   it presents as a broken tool rather than a full disk. Retention belongs in the CLI, not in
   each lane remembering to clean up (`vibeos-cli prune` is delete-only and manual).
 
-- **No scanner catches a C `ASSERT` that VANISHES in translation — OPEN tooling gap**
-  (2026-09-06, found via task #39). `MI_MAKE_HARDWARE_PTE_USER` was translated without the
-  three ASSERTs the C original opens with (`ASSERT(ProtectionMask & MM_PROTECT_ACCESS)` and
+- **No scanner catches a C `ASSERT` that VANISHES in translation — CLOSED (2026-09-06) by
+  `tools/scan_dropped_asserts.py`.** 89 findings baselined; gated at 0 NEW. It pairs each C
+  `FORCEINLINE` under `ntoskrnl/include/internal/**` + `ntoskrnl/mm/ARM3/*.h` against its
+  same-named Rust twin and reports FEWER asserts on the Rust side. Covered by 11 unit tests
+  (`tools/test_scan_dropped_asserts.py`) and a bad/good control in `test_scanner_controls.py`.
+  Registered in the **deferred** source partition, not `source-early` as scoped below: the
+  registry's contract is that unaudited new scanners stay deferred, and five of the six early
+  scanners currently have a live rglob-vs-cargo-delete defect. It prunes `target` during the
+  walk and tolerates `OSError`, so promotion is a deliberate audit somebody should do, not a
+  drive-by. The residual 89 are real owed work, mostly the MM working-set lock family
+  (`MiLockWorkingSet` and kin, 4-7 asserts each, all shipping zero) and the PTE writers.
+  Original finding, kept because the reasoning is what made the scanner correct:
+  `MI_MAKE_HARDWARE_PTE_USER` was translated without the
+  four ASSERTs the C original opens with (`ASSERT(ProtectionMask & MM_PROTECT_ACCESS)` and
   friends, commented *"check that we are not setting valid a page that should not be"*). On
   arm64 those asserts were the only thing between a zeroed protection mask and a `Valid = 1`
   descriptor the MMU rejects, so their absence turned a loud precondition failure into a pager
@@ -514,9 +525,10 @@ land; date every addition.** Source docs live in `docs/engineering/archive/`.
   Shape precedent already exists — `scan_extern_decl_drift.py`, `scan_extern_arity.py` and
   `verify_signatures` all pair C declarations against Rust. Unlike `verify_signatures` this one
   reads **no generated headers** (source `.h` + source `.rs` only), so it is not build-dependent
-  and belongs in the `source-early` partition.
+  and is a `source-early` candidate (see the promotion caveat above).
   Two scoping rules: the finding must be *"fewer asserts than the C"*, not *"no asserts"* (a
-  partial drop is the same class; #39 dropped 3 of 3, the easy end); and it need not generalise
+  partial drop is the same class; #39 dropped 4 of 4, the easy end — and the shipped scanner
+  does find real partial drops, e.g. `MiDereferencePfnAndDropLockCount` at 7 of 8); and it need not generalise
   beyond the `miarm.h`/`ke.h` FORCEINLINE surface, where hardware-precondition asserts live and
   the bridge modules deliberately mirror C names. Closest model: `scan_invented_constants`.
 

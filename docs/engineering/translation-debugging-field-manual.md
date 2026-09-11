@@ -7330,7 +7330,7 @@ whole class collapsed to the one case that is *supposed* to happen.
   boot wedges with a vCPU at EL1, PC parked, DAIF all masked, no bugcheck and no timer; the
   faulting VA is a user address, hardware reports a level-3 translation fault (EC 0x25,
   DFSC 0x07), and the PTE software reads for that same VA has `Valid = 1`. Cause:
-  `MI_MAKE_HARDWARE_PTE_USER` was translated without the three ASSERTs the C original opens
+  `MI_MAKE_HARDWARE_PTE_USER` was translated without the four ASSERTs the C original opens
   with -- the ones commented *"check that we are not setting valid a page that should not be"*
   (`ASSERT(ProtectionMask & MM_PROTECT_ACCESS)` and friends). `MM_PROTECT_ACCESS` is 7, so
   `mask & 7 == 0` selects exactly the four rows of `MmProtectToPteMask` that are zero
@@ -7349,14 +7349,20 @@ whole class collapsed to the one case that is *supposed* to happen.
   the same wrong value that is survivable on x86 is unrecoverable on arm64. `scan_assert_to_ub`
   does not cover this -- it catches an assert lowered to `unreachable_unchecked()`, not one
   deleted outright, and its oracle (rustconv's trailing C comments) is absent from hand-written
-  bridge modules like `ARM3/helpers.rs` anyway. Grep the C for `ASSERT` before calling a
-  translated MM/KE helper faithful.
+  bridge modules like `ARM3/helpers.rs` anyway. `tools/scan_dropped_asserts.py` now gates this
+  class -- it pairs the C `FORCEINLINE` against its same-named Rust twin cross-file and reports
+  fewer asserts on the Rust side -- but it opened with 89 findings, so a helper you are about to
+  trust may well be one of them. Grep the C for `ASSERT` before calling a translated MM/KE
+  helper faithful.
   **Know which hang you are now in.** Restoring the guard did NOT make the boot pass — it
   converted an unobservable freeze (EL1, DAIF all masked, PC parked, no timer, no bugcheck,
-  nothing downstream can see it) into a *livelock with interrupts on*: zero fault-retry
-  reports, and instead ~1.1M `ws-lock-excl`/`ws-unlock-excl` pairs from one thread in the
-  flight recorder. Neither boots, but they are very different debugging positions, and the
-  second one is reachable by every instrument we own. Expect this shape whenever you refuse a
+  nothing downstream can see it) into a clean `BUGCHECK 0x1E` with a full stack. Neither boots,
+  but they are very different debugging positions, and the second one is reachable by every
+  instrument we own. Two traps in reading the second: the flight recorder's ~1.1M
+  `ws-lock-excl`/`ws-unlock-excl` pairs are HISTORY from before the fault, not a live livelock
+  (this entry said otherwise for a day), and the harness verdict `FROZEN — every vCPU PC is
+  identical` is just the post-bugcheck halt. Symbolicate the parked PC before theorising about
+  it: ours was `xHalHaltSystem+8`, which is the machine having stopped correctly. Expect this shape whenever you refuse a
   bad value inside a helper whose caller has no error return: the caller cannot observe the
   refusal, so it retries. That is a step forward, not a fix, and the real repair belongs where
   the bad value is chosen.
