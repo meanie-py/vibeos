@@ -5,7 +5,6 @@ use crate::floatobj::*;
 use ntkrnl_sys::ddk::{ExAllocatePoolWithTag, ExFreePoolWithTag};
 use ntkrnl_sys::base::STATUS_SUCCESS;
 
-#[allow(unused_macros)] macro_rules! ERR { ($($t:tt)*) => { () }; }
 
 // CRT (cdecl); DIB_XXBPP_FloodFillSolid is plain cdecl (dib*.h, BOOLEAN).
 extern "C" {
@@ -695,8 +694,27 @@ pub unsafe extern "system" fn NtGdiPolyPolyDraw(
         } else if Count > (isize::MAX as u32) / core::mem::size_of::<u32>() as u32 {
             Status = -1073741670;
         } else {
+            // The C probes both arrays here — ProbeForRead(UnsafePoints, Count *
+            // sizeof(POINT), 1) and ProbeForRead(UnsafeCounts, Count * sizeof(ULONG), 1)
+            // — inside a _SEH2_TRY that stashes the exception code in Status. Both were
+            // dropped, so the loop below read UnsafeCounts[] straight off the caller's
+            // pointer. Note what survived and what did not: the overflow guards above
+            // were kept, the probes were not, and an overflow guard bounds the SIZE of
+            // an access, never its ADDRESS.
+            Status = SafeProbeForRead(
+                UnsafePoints as *const c_void,
+                Count as usize * core::mem::size_of::<POINT>(),
+                1,
+            );
+            if NT_SUCCESS(Status) {
+                Status = SafeProbeForRead(
+                    UnsafeCounts as *const c_void,
+                    Count as usize * core::mem::size_of::<u32>(),
+                    1,
+                );
+            }
             i = 0;
-            while i < Count {
+            while NT_SUCCESS(Status) && i < Count {
                 let count_val = *UnsafeCounts.add(i as usize);
                 if count_val < 2 {
                     nInvalid += 1;
@@ -723,9 +741,29 @@ pub unsafe extern "system" fn NtGdiPolyPolyDraw(
         return 0;
     }
 
+    // nPoints is the SUM of the caller's count array, so unlike Count (guarded above)
+    // nothing has bounded it — it can reach 0xFFFFFFFF. Both the allocation below and
+    // the copy that fills it size themselves on `nPoints * sizeof(POINT)`, which on a
+    // 32-bit usize wraps SILENTLY in release: a wrapped size allocates a small buffer,
+    // the range check passes on the same small length, and the copy then writes the
+    // real (huge) count into it. The C has the identical shape in size_t and is wrong
+    // the same way on i386. Settle the arithmetic once, here, where both users of it
+    // are still downstream.
+    let Some(points_bytes) = (nPoints as usize).checked_mul(core::mem::size_of::<POINT>())
+    else {
+        EngSetLastError(ERROR_INVALID_PARAMETER);
+        return 0;
+    };
+    let Some(temp_bytes) =
+        (Count as usize).checked_mul(core::mem::size_of::<u32>()).and_then(|c| c.checked_add(points_bytes))
+    else {
+        EngSetLastError(ERROR_INVALID_PARAMETER);
+        return 0;
+    };
+
     pTemp = ExAllocatePoolWithTag(
         PagedPool,
-        (Count as usize * core::mem::size_of::<u32>() + nPoints as usize * core::mem::size_of::<POINT>()) as SIZE_T,
+        temp_bytes as SIZE_T,
         0x70616853u32,
     );
     if pTemp.is_null() {
@@ -736,7 +774,18 @@ pub unsafe extern "system" fn NtGdiPolyPolyDraw(
     SafeCounts = pTemp as *mut u32;
     SafePoints = SafeCounts.add(Count as usize) as *mut POINT;
 
-    {
+    // The C's SECOND _SEH2_TRY covers these two copies, and it too was dropped, which
+    // left the `if (!NT_SUCCESS(Status))` below it checking a status nothing could set.
+    // This copy is the dangerous one: its length is nPoints, the SUM of the caller's
+    // count array, so it is not bounded by the Count * sizeof(POINT) probed above and
+    // can be made arbitrarily large. Probe the length actually about to be copied.
+    //
+    // What this does NOT restore, exactly as in NtSetValueKey (#79): the C's handler
+    // also covered the window between the check and the copy. A range check proves
+    // where the buffer is, never that it stays mapped.
+    Status = SafeProbeForRead(UnsafePoints as *const c_void, points_bytes, 1);
+
+    if NT_SUCCESS(Status) {
         core::ptr::copy_nonoverlapping(
             UnsafeCounts,
             SafeCounts,

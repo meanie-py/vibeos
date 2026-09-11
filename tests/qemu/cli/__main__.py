@@ -12,7 +12,7 @@ import sys
 from pathlib import Path
 
 from . import build as build_mod
-from . import cargoswap, debugcmd, hostlock, tooling
+from . import cargoswap, debugcmd, diskspace, hostlock, maintenance, tooling
 from . import conformance as conformance_mod
 from . import difftest as difftest_mod
 from . import farm as farm_mod
@@ -118,6 +118,16 @@ def build_parser() -> argparse.ArgumentParser:
     c = sub.add_parser("check", help="source lints (baseline-diff gate)")
     c.add_argument("--arch", choices=ACCEPTED_ARCHES, required=False)
     c.add_argument("--strict", action="store_true", help="block on NEW findings")
+    c.add_argument(
+        "--scope",
+        choices=("source", "source-early", "source-deferred", "arch"),
+        help="strict partial check: shared sources or per-architecture guards; not a full gate",
+    )
+    c.add_argument(
+        "--only",
+        metavar="TOOL[,TOOL...]",
+        help="run selected source scanners only; explicitly PARTIAL, not a landing gate",
+    )
     c.add_argument(
         "--update-baseline",
         nargs="?",
@@ -227,6 +237,16 @@ def build_parser() -> argparse.ArgumentParser:
         action="store_true",
         help="skip the strict scanner suite (default-on; blocks the stamp on NEW findings)",
     )
+    g.add_argument(
+        "--no-conformance",
+        action="store_true",
+        help=(
+            "skip the kmtest conformance ratchet lanes (default-on: one boot per arch, "
+            "reusing this gate's media, failing on assertions that fail now and were not "
+            "failing in tools/conformance-baseline/<arch>/kmtest.txt). Turning it off also "
+            "drops --kmtests from the gate's builds"
+        ),
+    )
     g.set_defaults(fn=gate_mod.gate)
 
     la = sub.add_parser(
@@ -261,6 +281,11 @@ def build_parser() -> argparse.ArgumentParser:
     )
     la.add_argument(
         "--no-push", action="store_true", help="do everything but the push (rehearse a landing)"
+    )
+    la.add_argument(
+        "--skip-lint",
+        action="store_true",
+        help="skip the check-tooling preflight (the conductor still runs it; report every use)",
     )
     la.add_argument(
         "--dry-run",
@@ -450,6 +475,16 @@ def build_parser() -> argparse.ArgumentParser:
         help="exit nonzero on any ratchet regression (default: report-only)",
     )
     cf.add_argument(
+        "--seed-asserts",
+        action="store_true",
+        help="with --repeat N (N>=3): add the failing-assertion identities to the "
+        "existing baseline rows WITHOUT touching their counts or status. An "
+        "identity every round that ran the test agreed on is written `assert`; "
+        "one they disagreed on is written `assert?` (bistable). This is how a "
+        "count-only baseline is upgraded to an identity floor — never a "
+        "wholesale --write-baseline, which re-rolls the counts from one boot",
+    )
+    cf.add_argument(
         "--smp",
         type=int,
         default=0,
@@ -509,6 +544,28 @@ def build_parser() -> argparse.ArgumentParser:
     )
     hs.set_defaults(fn=hostlock.cmd_status)
 
+    from . import buildpolicy
+
+    bp = sub.add_parser("host-policy", help="preview or activate a drained-fleet build trial")
+    bp_mode = bp.add_mutually_exclusive_group()
+    bp_mode.add_argument(
+        "--apply", action="store_true", help="activate three builds after rollout/drain"
+    )
+    bp_mode.add_argument("--rollback", action="store_true", help="return to two builds after drain")
+    bp_mode.add_argument(
+        "--pause", action="store_true", help="refuse new CPU work; let holders finish"
+    )
+    bp_mode.add_argument("--resume", action="store_true", help="resume CPU admission after cutover")
+    bp.set_defaults(fn=buildpolicy.command)
+
+    ds = sub.add_parser(
+        "disk-status", help="disk headroom, live reservations, and optional footprint report"
+    )
+    ds.add_argument(
+        "--sizes", action="store_true", help="measure this lane's outputs and shared caches"
+    )
+    ds.set_defaults(fn=diskspace.command)
+
     ct = sub.add_parser(
         "check-tooling",
         help="lint/type/test gate for our own Python tools (rustconv, cli, tools)",
@@ -534,10 +591,15 @@ def build_parser() -> argparse.ArgumentParser:
     pr.add_argument("--apply", action="store_true", help="actually delete (default: dry-run)")
     pr.add_argument("--self", action="store_true", help="also allow pruning the current worktree")
     pr.add_argument(
+        "--retain-gib",
+        type=float,
+        help="retain this fleet output budget; remove eligible trees largest-first only until met",
+    )
+    pr.add_argument(
         "--idle-hours",
         type=float,
         default=0,
-        help="only prune trees untouched for at least N hours (default 0 = no age filter)",
+        help="only prune trees untouched for N hours (default 24 with --retain-gib, otherwise 0)",
     )
     pr.set_defaults(fn=prune_mod.prune)
 
@@ -576,6 +638,28 @@ def build_parser() -> argparse.ArgumentParser:
 
 def main(argv: list[str] | None = None) -> int:
     args = build_parser().parse_args(argv)
+    if args.cmd not in maintenance.UNLOCKED:
+        try:
+            with maintenance.activity(REPO):
+                return _dispatch(args)
+        except maintenance.MaintenanceError as exc:
+            # Reuse the storage-admission infrastructure classification: no
+            # check ran, so the conductor must not blame a source regression.
+            print(f"DISK_ADMISSION_FAIL: maintenance: {exc}", flush=True)
+            return 2
+    return _dispatch(args)
+
+
+def _dispatch(args) -> int:
+    if args.cmd in diskspace.REQUESTS:
+        try:
+            with diskspace.reserve(REPO, args.cmd):
+                return args.fn(args, REPO)
+        except diskspace.AdmissionError as exc:
+            # stdout is the durable fallback when even summary.json cannot be
+            # created. The conductor classifies this as infrastructure, not code.
+            print(f"{diskspace.FAILURE}: {exc}", flush=True)
+            return 2
     return args.fn(args, REPO)
 
 

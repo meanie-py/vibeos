@@ -15,8 +15,6 @@ use core::ffi::c_void;
 // No file-scope type, constant, or table declarations to translate.
 
 // Debug-channel / stub macros — no kernel symbol, no-op.
-macro_rules! ERR { ($($t:tt)*) => {{}}; }
-macro_rules! TRACE { ($($t:tt)*) => {{}}; }
 #[allow(unused_imports)]
 use {ERR as _ERR, TRACE as _TRACE};
 
@@ -285,7 +283,31 @@ pub unsafe extern "system" fn NtUserSetSysColors(
 
     UserEnterExclusive();
 
-    IntSetSysColors(cElements as _, lpaElements, lpaRgbValues);
+    // The C probes both arrays inside a _SEH2_TRY whose handler calls
+    // SetLastNtError and sets Ret = FALSE. Both probes were dropped, so
+    // IntSetSysColors read cElements entries off two raw user pointers —
+    // and cElements is the caller's, bounded above only by 0x40000000.
+    let Status = SafeProbeForRead(
+        lpaElements as PVOID,
+        cElements as SIZE_T * core::mem::size_of::<INT>() as SIZE_T,
+        1,
+    );
+    let Status = if NT_SUCCESS(Status) {
+        SafeProbeForRead(
+            lpaRgbValues as PVOID,
+            cElements as SIZE_T * core::mem::size_of::<COLORREF>() as SIZE_T,
+            1,
+        )
+    } else {
+        Status
+    };
+
+    if NT_SUCCESS(Status) {
+        IntSetSysColors(cElements as _, lpaElements, lpaRgbValues);
+    } else {
+        SetLastNtError(Status);
+        Ret = 0;
+    }
 
     if Ret != 0 {
         UserSendNotifyMessage(HWND_BROADCAST, WM_SYSCOLORCHANGE, 0, 0);
@@ -589,12 +611,28 @@ pub unsafe extern "system" fn NtUserSetInformationThread(
                 if ThreadInformationLength != core::mem::size_of::<ULONG>() as ULONG {
                     Status = STATUS_INFO_LENGTH_MISMATCH;
                 } else {
-                    Status = STATUS_SUCCESS;
-                    CapturedFlags = *(ThreadInformation as PULONG);
+                    // The C probes ThreadInformation for WRITE inside a _SEH2_TRY
+                    // before reading it, and wraps the write-back in a second one.
+                    // Both were dropped, so the caller's raw pointer was dereferenced
+                    // twice unchecked. One probe for write covers both accesses, which
+                    // is exactly what the C's ProbeForWrite was doing.
+                    //
+                    // Severity, stated honestly: the CSRSS check at the top of this
+                    // function means an arbitrary process cannot reach here. This
+                    // hardens the kernel against a compromised csrss; it does not
+                    // close an unprivileged path the way the NtGdi* ones do.
+                    Status = SafeProbeForWrite(
+                        ThreadInformation,
+                        core::mem::size_of::<ULONG>() as SIZE_T,
+                        core::mem::align_of::<ULONG>() as ULONG,
+                    );
+                    if NT_SUCCESS(Status) {
+                        CapturedFlags = *(ThreadInformation as PULONG);
 
-                    Status = UserInitiateShutdown(Thread, core::ptr::addr_of_mut!(CapturedFlags));
+                        Status = UserInitiateShutdown(Thread, core::ptr::addr_of_mut!(CapturedFlags));
 
-                    core::ptr::write_volatile(ThreadInformation as PULONG, CapturedFlags);
+                        core::ptr::write_volatile(ThreadInformation as PULONG, CapturedFlags);
+                    }
                 }
             }
 
@@ -602,9 +640,17 @@ pub unsafe extern "system" fn NtUserSetInformationThread(
                 if ThreadInformationLength != core::mem::size_of::<NTSTATUS>() as ULONG {
                     Status = STATUS_INFO_LENGTH_MISMATCH;
                 } else {
-                    Status = STATUS_SUCCESS;
-                    let ShutdownStatus: NTSTATUS = *(ThreadInformation as *mut NTSTATUS);
-                    Status = UserEndShutdown(Thread, ShutdownStatus);
+                    // C: ProbeForRead(ThreadInformation, sizeof(ShutdownStatus),
+                    // __alignof(ShutdownStatus)) inside _SEH2_TRY — dropped.
+                    Status = SafeProbeForRead(
+                        ThreadInformation,
+                        core::mem::size_of::<NTSTATUS>() as SIZE_T,
+                        core::mem::align_of::<NTSTATUS>() as ULONG,
+                    );
+                    if NT_SUCCESS(Status) {
+                        let ShutdownStatus: NTSTATUS = *(ThreadInformation as *mut NTSTATUS);
+                        Status = UserEndShutdown(Thread, ShutdownStatus);
+                    }
                 }
             }
 
@@ -612,9 +658,17 @@ pub unsafe extern "system" fn NtUserSetInformationThread(
                 if ThreadInformationLength != core::mem::size_of::<HANDLE>() as ULONG {
                     Status = STATUS_INFO_LENGTH_MISMATCH;
                 } else {
-                    Status = STATUS_SUCCESS;
-                    let CsrPortHandle: HANDLE = *(ThreadInformation as PHANDLE);
-                    Status = InitCsrApiPort(CsrPortHandle);
+                    // C: ProbeForRead(ThreadInformation, sizeof(CsrPortHandle),
+                    // __alignof(CsrPortHandle)) inside _SEH2_TRY — dropped.
+                    Status = SafeProbeForRead(
+                        ThreadInformation,
+                        core::mem::size_of::<HANDLE>() as SIZE_T,
+                        core::mem::align_of::<HANDLE>() as ULONG,
+                    );
+                    if NT_SUCCESS(Status) {
+                        let CsrPortHandle: HANDLE = *(ThreadInformation as PHANDLE);
+                        Status = InitCsrApiPort(CsrPortHandle);
+                    }
                 }
             }
 

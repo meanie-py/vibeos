@@ -19,7 +19,7 @@ use core::mem::{align_of, size_of, offset_of};
 // fixed-arity `*_v` twin below, which holds ALL the logic. `VaArgs` reads the va_list.
 use varargs_rust::VaArgs;
 // resolve_imports.py: explicit kernel/private-type imports
-use crate::types::{ACCESS_RANGE, CONFIGURATION_INFO, HW_INITIALIZATION_DATA, IO_SCSI_CAPABILITIES, PORT_CONFIGURATION_INFORMATION, RESETBUS_PARAMS, SCSI_BUS_INFO, SCSI_NOTIFICATION_TYPE, SCSI_PHYSICAL_ADDRESS, SCSI_PORT_COMMON_EXTENSION, SCSI_PORT_DEVICE_EXTENSION, SCSI_PORT_DRIVER_EXTENSION, SCSI_PORT_LUN_EXTENSION, SCSI_REQUEST_BLOCK, SCSI_REQUEST_BLOCK_INFO, SCSI_SG_ADDRESS, SENSE_DATA, PSCSI_PORT_DEVICE_EXTENSION};
+use crate::types::{ACCESS_RANGE, CONFIGURATION_INFO, SCSI_MAXIMUM_LOGICAL_UNITS, HW_INITIALIZATION_DATA, IO_SCSI_CAPABILITIES, PORT_CONFIGURATION_INFORMATION, RESETBUS_PARAMS, SCSI_BUS_INFO, SCSI_NOTIFICATION_TYPE, SCSI_PHYSICAL_ADDRESS, SCSI_PORT_COMMON_EXTENSION, SCSI_PORT_DEVICE_EXTENSION, SCSI_PORT_DRIVER_EXTENSION, SCSI_PORT_LUN_EXTENSION, SCSI_REQUEST_BLOCK, SCSI_REQUEST_BLOCK_INFO, SCSI_SG_ADDRESS, SENSE_DATA, PSCSI_PORT_DEVICE_EXTENSION};
 // resolve_imports.py: explicit kernel/private-type imports
 
 extern "C" {
@@ -423,8 +423,8 @@ pub unsafe extern "system" fn ScsiPortGetPhysicalAddress(
         let LunExtension =
             (*(*IoStack).DeviceObject).DeviceExtension as *mut SCSI_PORT_LUN_EXTENSION;
 
-        debug_assert!(!LunExtension.is_null());
-        debug_assert!((*LunExtension).Common.IsFDO == 0);
+        ntkrnl_sys::ASSERT!(!LunExtension.is_null());
+        ntkrnl_sys::ASSERT!((*LunExtension).Common.IsFDO == 0);
 
         let SrbInfo = SpiGetSrbData(DeviceExtension, LunExtension, (((*Srb).QueueTag) as u32) as _);
         let mut SGList = (*SrbInfo).ScatterGather;
@@ -1390,7 +1390,9 @@ pub unsafe extern "C" fn ScsiPortNotification_v(
                     as *mut SCSI_PORT_LUN_EXTENSION;
 
                 // ASSERT(LunExtension && !LunExtension->Common.IsFDO)
-                if !(!LunExtension.is_null() && !(*LunExtension).Common.IsFDO != 0) {
+                // `!IsFDO != 0` was bitwise-not and always true, so only the null half of
+                // the assert had any effect.
+                if !(!LunExtension.is_null() && (*LunExtension).Common.IsFDO == 0) {
                     DbgBreakPoint();
                 }
 
@@ -2525,6 +2527,14 @@ unsafe fn SpiCreatePortConfig(
     STATUS_DEVICE_DOES_NOT_EXIST
 }
 
+// scsiport.c:2634-3014. Walks every value under the device node's registry key and
+// applies the ones scsiport understands: eight scalar tuning knobs, DriverParameters,
+// and the REG_FULL_RESOURCE_DESCRIPTOR blob whose partial descriptors carry the port /
+// memory / interrupt / DMA / device-specific resources.
+//
+// The C's `if`s are INDEPENDENT, not an else-chain, and several of them `continue` —
+// so a value whose name matches one test still falls through the remaining tests
+// unless that test skipped the iteration. Kept literally.
 unsafe fn SpiParseDeviceInfo(
     DeviceExtension: *mut SCSI_PORT_DEVICE_EXTENSION,
     Key: HANDLE,
@@ -2532,44 +2542,16 @@ unsafe fn SpiParseDeviceInfo(
     InternalConfigInfo: *mut CONFIGURATION_INFO,
     Buffer: *mut u8,
 ) {
-    const REG_DWORD: u32 = 4;
-    const REG_SZ: u32 = 1;
-    const REG_FULL_RESOURCE_DESCRIPTOR_TYPE: u32 = 0x0000000D;
-    const SCSI_MAXIMUM_LOGICAL_UNITS: u8 = 0x08; // unknown, placeholder
-    const SRB_FLAGS_DISABLE_SYNCH_TRANSFER: u32 = 0x08; // placeholder
-    const SRB_FLAGS_DISABLE_DISCONNECT: u32 = 0x04; // placeholder
-    const CmResourceTypePort: u8 = 0; // placeholder
-    const CmResourceTypeMemory: u8 = 1; // placeholder
-    const CmResourceTypeInterrupt: u8 = 2; // placeholder
-    const CmResourceTypeDma: u8 = 3; // placeholder
-    const CmResourceTypeDeviceSpecific: u8 = 4; // placeholder
-    const CM_RESOURCE_INTERRUPT_LATCHED: u32 = 1; // placeholder
-    const Latched: u32 = 0x01; // placeholder
-    const LevelSensitive: u32 = 0x00; // placeholder
-    const Width8Bits: u32 = 0; // placeholder
-    const Width16Bits: u32 = 1; // placeholder
-    const Width32Bits: u32 = 2; // placeholder
-    const CM_RESOURCE_DMA_8: u32 = 0x00; // placeholder
-    const CM_RESOURCE_DMA_16: u32 = 0x01; // placeholder
-    const CM_RESOURCE_DMA_8_AND_16: u32 = 0x04; // placeholder
-    const CM_RESOURCE_DMA_32: u32 = 0x02; // placeholder
-
-    let KeyValueInformation: *mut KEY_VALUE_FULL_INFORMATION;
-    let FullResource: *mut CM_FULL_RESOURCE_DESCRIPTOR;
-    let PartialDescriptor: *mut CM_PARTIAL_RESOURCE_DESCRIPTOR;
-    let ScsiDeviceData: *mut CM_SCSI_DEVICE_DATA;
+    let KeyValueInformation: *mut KEY_VALUE_FULL_INFORMATION =
+        Buffer as *mut KEY_VALUE_FULL_INFORMATION;
     let mut Length: u32 = 0;
-    let mut Count: u32;
     let mut Dma: u32 = 0;
     let mut Interrupt: u32 = 0;
     let mut Index: u32 = 0;
     let mut RangeCount: u32 = 0;
-    let UnicodeString: _UNICODE_STRING;
-    let AnsiString: ANSI_STRING;
-    let mut Status: i32 = 0; // STATUS_SUCCESS
+    let mut Status: NTSTATUS;
 
-    KeyValueInformation = Buffer as *mut KEY_VALUE_FULL_INFORMATION;
-
+    // Loop through all values in the device node
     loop {
         Status = ZwEnumerateValueKey(
             Key,
@@ -2586,23 +2568,380 @@ unsafe fn SpiParseDeviceInfo(
 
         Index += 1;
 
+        // Length for DWORD is ok?
         if (*KeyValueInformation).Type == REG_DWORD
             && (*KeyValueInformation).DataLength != core::mem::size_of::<u32>() as u32
         {
-            // skip
-        } else {
-            // continue? The C has continue after this block, but it's inside an if that doesn't contain the rest of loop.
-            // I'll restructure: if condition true, continue. So:
-            if (*KeyValueInformation).Type == REG_DWORD
-                && (*KeyValueInformation).DataLength != core::mem::size_of::<u32>() as u32
+            continue;
+        }
+
+        // `Name` is the trailing flexible array; NameLength is BYTES, so /2 is the
+        // character count _wcsnicmp is asked to compare.
+        let name = (*KeyValueInformation).Name.as_ptr();
+        let namechars = ((*KeyValueInformation).NameLength / 2) as usize;
+        let data = Buffer.add((*KeyValueInformation).DataOffset as usize);
+
+        // Get MaximumLogicalUnit
+        if _wcsnicmp(name, crate::wide!("MaximumLogicalUnit").as_ptr(), namechars) == 0 {
+            if (*KeyValueInformation).Type != REG_DWORD {
+                crate::glue::dprint_noop!(
+                    b"Bad data type for MaximumLogicalUnit\n\0".as_ptr() as *const i8
+                );
+                continue;
+            }
+
+            // The C reads ONE byte out of the DWORD, not the DWORD. Kept.
+            (*DeviceExtension).MaxLunCount = *data as ULONG;
+
+            // Check / reset if needed
+            if (*DeviceExtension).MaxLunCount > SCSI_MAXIMUM_LOGICAL_UNITS {
+                (*DeviceExtension).MaxLunCount = SCSI_MAXIMUM_LOGICAL_UNITS;
+            }
+
+            crate::glue::dprint_noop!(
+                b"MaximumLogicalUnit = %d\n\0".as_ptr() as *const i8,
+                (*DeviceExtension).MaxLunCount
+            );
+        }
+
+        // Get InitiatorTargetId
+        if _wcsnicmp(name, crate::wide!("InitiatorTargetId").as_ptr(), namechars) == 0 {
+            if (*KeyValueInformation).Type != REG_DWORD {
+                crate::glue::dprint_noop!(
+                    b"Bad data type for InitiatorTargetId\n\0".as_ptr() as *const i8
+                );
+                continue;
+            }
+
+            (*ConfigInfo).InitiatorBusId[0] = *data;
+
+            // Check / reset if needed. MaximumNumberOfTargets is UCHAR and the C does
+            // `- 1` in int arithmetic, so a value of 0 yields -1 and the test is always
+            // true — reproduced with an explicit i32 widening rather than a u8 wrap.
+            if (*ConfigInfo).InitiatorBusId[0] as i32
+                > (*ConfigInfo).MaximumNumberOfTargets as i32 - 1
             {
-                // no-op, fall through to continue? Actually the C code is:
-                // if (Type == REG_DWORD && DataLength != sizeof(ULONG)) { continue; }
-                // So we need that continue.
-                // But we'll handle with separate if.
+                // (CCHAR)SP_UNINITIALIZED_VALUE — 0xFFFFFFFF narrowed to signed char
+                // is -1, stored back into the UCHAR slot as 0xFF.
+                (*ConfigInfo).InitiatorBusId[0] = SP_UNINITIALIZED_VALUE as i8 as u8;
+            }
+
+            crate::glue::dprint_noop!(
+                b"InitiatorTargetId = %d\n\0".as_ptr() as *const i8,
+                (*ConfigInfo).InitiatorBusId[0]
+            );
+        }
+
+        // Get ScsiDebug
+        if _wcsnicmp(name, crate::wide!("ScsiDebug").as_ptr(), namechars) == 0 {
+            crate::glue::dprint_noop!(b"ScsiDebug key not supported\n\0".as_ptr() as *const i8);
+        }
+
+        // Check for a breakpoint
+        if _wcsnicmp(name, crate::wide!("BreakPointOnEntry").as_ptr(), namechars) == 0 {
+            crate::glue::dprint_noop!(b"Breakpoint on entry requested!\n\0".as_ptr() as *const i8);
+            DbgBreakPoint();
+        }
+
+        // Get DisableSynchronousTransfers
+        if _wcsnicmp(name, crate::wide!("DisableSynchronousTransfers").as_ptr(), namechars) == 0 {
+            (*DeviceExtension).SrbFlags |= SRB_FLAGS_DISABLE_SYNCH_TRANSFER;
+            crate::glue::dprint_noop!(b"Synch transfers disabled\n\0".as_ptr() as *const i8);
+        }
+
+        // Get DisableDisconnects
+        if _wcsnicmp(name, crate::wide!("DisableDisconnects").as_ptr(), namechars) == 0 {
+            (*DeviceExtension).SrbFlags |= SRB_FLAGS_DISABLE_DISCONNECT;
+            crate::glue::dprint_noop!(b"Disconnects disabled\n\0".as_ptr() as *const i8);
+        }
+
+        // Get DisableTaggedQueuing
+        if _wcsnicmp(name, crate::wide!("DisableTaggedQueuing").as_ptr(), namechars) == 0 {
+            (*InternalConfigInfo).DisableTaggedQueueing = TRUE as BOOLEAN;
+            crate::glue::dprint_noop!(b"Tagged queueing disabled\n\0".as_ptr() as *const i8);
+        }
+
+        // Get DisableMultipleRequests
+        if _wcsnicmp(name, crate::wide!("DisableMultipleRequests").as_ptr(), namechars) == 0 {
+            (*InternalConfigInfo).DisableMultipleLun = TRUE as BOOLEAN;
+            crate::glue::dprint_noop!(b"Multiple requests disabled\n\0".as_ptr() as *const i8);
+        }
+
+        // Get DriverParameters
+        if _wcsnicmp(name, crate::wide!("DriverParameters").as_ptr(), namechars) == 0 {
+            // Skip if nothing
+            if (*KeyValueInformation).DataLength == 0 {
+                continue;
+            }
+
+            // If there was something previously allocated - free it
+            if !(*InternalConfigInfo).Parameter.is_null() {
+                ExFreePool((*InternalConfigInfo).Parameter);
+            }
+
+            // Allocate it
+            (*InternalConfigInfo).Parameter = ExAllocatePoolWithTag(
+                NonPagedPool,
+                (*KeyValueInformation).DataLength,
+                TAG_SCSIPORT,
+            );
+
+            if !(*InternalConfigInfo).Parameter.is_null() {
+                if (*KeyValueInformation).Type != REG_SZ {
+                    // Just copy
+                    core::ptr::copy_nonoverlapping(
+                        (KeyValueInformation as *const u8)
+                            .add((*KeyValueInformation).DataOffset as usize),
+                        (*InternalConfigInfo).Parameter as *mut u8,
+                        (*KeyValueInformation).DataLength as usize,
+                    );
+                } else {
+                    // If it's a unicode string, convert it to ansi
+                    let mut UnicodeString: _UNICODE_STRING = core::mem::zeroed();
+                    let mut AnsiString: ANSI_STRING = core::mem::zeroed();
+
+                    UnicodeString.Length = (*KeyValueInformation).DataLength as USHORT;
+                    UnicodeString.MaximumLength = (*KeyValueInformation).DataLength as USHORT;
+                    UnicodeString.Buffer = (KeyValueInformation as *mut u8)
+                        .add((*KeyValueInformation).DataOffset as usize)
+                        as PWSTR;
+
+                    AnsiString.Length = 0;
+                    AnsiString.MaximumLength = (*KeyValueInformation).DataLength as USHORT;
+                    AnsiString.Buffer = (*InternalConfigInfo).Parameter as PCHAR;
+
+                    Status = RtlUnicodeStringToAnsiString(
+                        core::ptr::addr_of_mut!(AnsiString),
+                        core::ptr::addr_of_mut!(UnicodeString),
+                        FALSE as BOOLEAN,
+                    );
+
+                    // In case of error, free the allocated space
+                    if !NT_SUCCESS(Status) {
+                        ExFreePool((*InternalConfigInfo).Parameter);
+                        (*InternalConfigInfo).Parameter = core::ptr::null_mut();
+                    }
+                }
+            }
+
+            crate::glue::dprint_noop!(b"Found driver parameter\n\0".as_ptr() as *const i8);
+        }
+
+        // Get MaximumSGList
+        if _wcsnicmp(name, crate::wide!("MaximumSGList").as_ptr(), namechars) == 0 {
+            if (*KeyValueInformation).Type != REG_DWORD {
+                crate::glue::dprint_noop!(
+                    b"Bad data type for MaximumSGList\n\0".as_ptr() as *const i8
+                );
+                continue;
+            }
+
+            (*ConfigInfo).NumberOfPhysicalBreaks = *data as ULONG;
+
+            // Check / fix
+            if (*ConfigInfo).NumberOfPhysicalBreaks > SCSI_MAXIMUM_PHYSICAL_BREAKS {
+                (*ConfigInfo).NumberOfPhysicalBreaks = SCSI_MAXIMUM_PHYSICAL_BREAKS;
+            } else if (*ConfigInfo).NumberOfPhysicalBreaks < SCSI_MINIMUM_PHYSICAL_BREAKS {
+                (*ConfigInfo).NumberOfPhysicalBreaks = SCSI_MINIMUM_PHYSICAL_BREAKS;
+            }
+
+            crate::glue::dprint_noop!(
+                b"MaximumSGList = %d\n\0".as_ptr() as *const i8,
+                (*ConfigInfo).NumberOfPhysicalBreaks
+            );
+        }
+
+        // Get NumberOfRequests
+        if _wcsnicmp(name, crate::wide!("NumberOfRequests").as_ptr(), namechars) == 0 {
+            if (*KeyValueInformation).Type != REG_DWORD {
+                crate::glue::dprint_noop!(
+                    b"NumberOfRequests has wrong data type\n\0".as_ptr() as *const i8
+                );
+                continue;
+            }
+
+            (*DeviceExtension).RequestsNumber = *data as ULONG;
+
+            // Check / fix
+            if (*DeviceExtension).RequestsNumber < 16 {
+                (*DeviceExtension).RequestsNumber = 16;
+            } else if (*DeviceExtension).RequestsNumber > 512 {
+                (*DeviceExtension).RequestsNumber = 512;
+            }
+
+            crate::glue::dprint_noop!(
+                b"Number Of Requests = %d\n\0".as_ptr() as *const i8,
+                (*DeviceExtension).RequestsNumber
+            );
+        }
+
+        // Get resource list
+        if _wcsnicmp(name, crate::wide!("ResourceList").as_ptr(), namechars) == 0
+            || _wcsnicmp(name, crate::wide!("Configuration Data").as_ptr(), namechars) == 0
+        {
+            // cmtypes.h:33 `#define REG_FULL_RESOURCE_DESCRIPTOR 9` is a MACRO, not a
+            // type, so the C's `sizeof(REG_FULL_RESOURCE_DESCRIPTOR)` preprocesses to
+            // `sizeof(9)` == sizeof(int) == 4. That is the length floor that actually
+            // ships; widening it to size_of::<CM_FULL_RESOURCE_DESCRIPTOR>() would
+            // reject blobs the C accepts.
+            if (*KeyValueInformation).Type != REG_FULL_RESOURCE_DESCRIPTOR
+                || (*KeyValueInformation).DataLength < core::mem::size_of::<core::ffi::c_int>() as u32
+            {
+                crate::glue::dprint_noop!(b"Bad data type for ResourceList\n\0".as_ptr() as *const i8);
+                continue;
+            } else {
+                crate::glue::dprint_noop!(b"Found ResourceList\n\0".as_ptr() as *const i8);
+            }
+
+            let FullResource: *mut CM_FULL_RESOURCE_DESCRIPTOR =
+                data as *mut CM_FULL_RESOURCE_DESCRIPTOR;
+
+            // Copy some info from it
+            (*InternalConfigInfo).BusNumber = (*FullResource).BusNumber;
+            (*ConfigInfo).SystemIoBusNumber = (*FullResource).BusNumber;
+
+            // Loop through it
+            let count = (*FullResource).PartialResourceList.Count;
+            for Count in 0..count {
+                // Get partial descriptor
+                let PartialDescriptor: *mut CM_PARTIAL_RESOURCE_DESCRIPTOR = (*FullResource)
+                    .PartialResourceList
+                    .PartialDescriptors
+                    .as_mut_ptr()
+                    .add(Count as usize);
+
+                // Check datalength
+                if (PartialDescriptor.add(1) as usize - FullResource as usize)
+                    > (*KeyValueInformation).DataLength as usize
+                {
+                    crate::glue::dprint_noop!(
+                        b"Resource data is of incorrect size\n\0".as_ptr() as *const i8
+                    );
+                    break;
+                }
+
+                match (*PartialDescriptor).Type {
+                    CmResourceTypePort => {
+                        if RangeCount >= (*ConfigInfo).NumberOfAccessRanges {
+                            crate::glue::dprint_noop!(
+                                b"Too many access ranges\n\0".as_ptr() as *const i8
+                            );
+                            // C's `continue` inside a switch inside a for continues the
+                            // FOR, not the switch.
+                            continue;
+                        }
+
+                        let range = (*InternalConfigInfo).AccessRanges.add(RangeCount as usize);
+                        (*range).RangeInMemory = FALSE as BOOLEAN;
+                        (*range).RangeStart = (*PartialDescriptor).u.Port.Start;
+                        (*range).RangeLength = (*PartialDescriptor).u.Port.Length;
+                        RangeCount += 1;
+                    }
+
+                    CmResourceTypeMemory => {
+                        if RangeCount >= (*ConfigInfo).NumberOfAccessRanges {
+                            crate::glue::dprint_noop!(
+                                b"Too many access ranges\n\0".as_ptr() as *const i8
+                            );
+                            continue;
+                        }
+
+                        let range = (*InternalConfigInfo).AccessRanges.add(RangeCount as usize);
+                        (*range).RangeInMemory = TRUE as BOOLEAN;
+                        (*range).RangeStart = (*PartialDescriptor).u.Memory.Start;
+                        (*range).RangeLength = (*PartialDescriptor).u.Memory.Length;
+                        RangeCount += 1;
+                    }
+
+                    CmResourceTypeInterrupt => {
+                        if Interrupt == 0 {
+                            (*ConfigInfo).BusInterruptLevel = (*PartialDescriptor).u.Interrupt.Level;
+                            (*ConfigInfo).BusInterruptVector =
+                                (*PartialDescriptor).u.Interrupt.Vector;
+                            (*ConfigInfo).InterruptMode = if (*PartialDescriptor).Flags
+                                & CM_RESOURCE_INTERRUPT_LATCHED as u16
+                                != 0
+                            {
+                                Latched
+                            } else {
+                                LevelSensitive
+                            };
+                        } else if Interrupt == 1 {
+                            (*ConfigInfo).BusInterruptLevel2 =
+                                (*PartialDescriptor).u.Interrupt.Level;
+                            (*ConfigInfo).BusInterruptVector2 =
+                                (*PartialDescriptor).u.Interrupt.Vector;
+                            (*ConfigInfo).InterruptMode2 = if (*PartialDescriptor).Flags
+                                & CM_RESOURCE_INTERRUPT_LATCHED as u16
+                                != 0
+                            {
+                                Latched
+                            } else {
+                                LevelSensitive
+                            };
+                        }
+
+                        Interrupt += 1;
+                    }
+
+                    CmResourceTypeDma => {
+                        if Dma == 0 {
+                            (*ConfigInfo).DmaChannel = (*PartialDescriptor).u.Dma.Channel;
+                            (*ConfigInfo).DmaPort = (*PartialDescriptor).u.Dma.Port;
+
+                            if (*PartialDescriptor).Flags & CM_RESOURCE_DMA_8 as u16 != 0 {
+                                (*ConfigInfo).DmaWidth = Width8Bits;
+                            } else if (*PartialDescriptor).Flags & CM_RESOURCE_DMA_16 as u16 != 0
+                                || (*PartialDescriptor).Flags & CM_RESOURCE_DMA_8_AND_16 as u16 != 0
+                            {
+                                (*ConfigInfo).DmaWidth = Width16Bits;
+                            } else if (*PartialDescriptor).Flags & CM_RESOURCE_DMA_32 as u16 != 0 {
+                                (*ConfigInfo).DmaWidth = Width32Bits;
+                            }
+                        } else if Dma == 1 {
+                            (*ConfigInfo).DmaChannel2 = (*PartialDescriptor).u.Dma.Channel;
+                            (*ConfigInfo).DmaPort2 = (*PartialDescriptor).u.Dma.Port;
+
+                            if (*PartialDescriptor).Flags & CM_RESOURCE_DMA_8 as u16 != 0 {
+                                (*ConfigInfo).DmaWidth2 = Width8Bits;
+                            } else if (*PartialDescriptor).Flags & CM_RESOURCE_DMA_16 as u16 != 0
+                                || (*PartialDescriptor).Flags & CM_RESOURCE_DMA_8_AND_16 as u16 != 0
+                            {
+                                (*ConfigInfo).DmaWidth2 = Width16Bits;
+                            } else if (*PartialDescriptor).Flags & CM_RESOURCE_DMA_32 as u16 != 0 {
+                                (*ConfigInfo).DmaWidth2 = Width32Bits;
+                            }
+                        }
+
+                        Dma += 1;
+                    }
+
+                    CmResourceTypeDeviceSpecific => {
+                        let datasize = (*PartialDescriptor).u.DeviceSpecificData.DataSize;
+                        if (datasize as usize) < core::mem::size_of::<CM_SCSI_DEVICE_DATA>()
+                            || (PartialDescriptor.add(1) as usize - FullResource as usize)
+                                + datasize as usize
+                                > (*KeyValueInformation).DataLength as usize
+                        {
+                            crate::glue::dprint_noop!(
+                                b"Resource data length is incorrect\0".as_ptr() as *const i8
+                            );
+                            // C's `break` here leaves the SWITCH, not the for loop.
+                            // Falling out of the match arm is exactly that.
+                        } else {
+                            // Set only one field from it
+                            let ScsiDeviceData =
+                                PartialDescriptor.add(1) as *mut CM_SCSI_DEVICE_DATA;
+                            (*ConfigInfo).InitiatorBusId[0] = (*ScsiDeviceData).HostIdentifier;
+                        }
+                    }
+
+                    // The C switch has no `default:` — an unhandled resource type is
+                    // simply skipped.
+                    _ => {}
+                }
             }
         }
-        // Actually let's rewrite the whole block with explicit structure. I'll rebuild.
     }
 }
 

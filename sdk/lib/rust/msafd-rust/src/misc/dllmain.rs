@@ -288,7 +288,7 @@ pub unsafe extern "system" fn WSPSocket(
                             core::ptr::addr_of_mut!(HelperEvents));
 
     if Status != (NO_ERROR as i32) {
-        ERR!(b"SockGetTdiName: Status %x\n\0".as_ptr() as *const i8, Status);
+        ERR!("SockGetTdiName: Status %x\n", Status);
         'error: {
             TRACE!(b"Ending %x\n\0".as_ptr() as *const i8, Status);
             if !SharedData.is_null() {
@@ -647,7 +647,7 @@ pub unsafe extern "system" fn WSPSocket(
     HeapFree(GlobalHeap, 0, EABuffer as PVOID);
 
     if !NT_SUCCESS(Status) {
-        ERR!(b"Failed to open socket. Status 0x%08x\n\0".as_ptr() as *const i8, Status);
+        ERR!("Failed to open socket. Status 0x%08x\n", Status);
         Status = TranslateNtStatusError(Status);
         'error: {
             TRACE!(b"Ending %x\n\0".as_ptr() as *const i8, Status);
@@ -877,7 +877,7 @@ pub unsafe extern "C" fn TranslateNtStatusError(Status: NTSTATUS) -> INT {
         STATUS_ACCESS_DENIED => WSAEACCES as i32,
         STATUS_NOT_IMPLEMENTED => WSAEOPNOTSUPP as i32,
         _ => {
-            ERR!(b"MSAFD: Unhandled NTSTATUS value: 0x%x\n\0".as_ptr() as PCHAR, Status);
+            ERR!("MSAFD: Unhandled NTSTATUS value: 0x%x\n", Status);
             (WSAENETDOWN as i32)
         }
     }
@@ -929,7 +929,7 @@ pub unsafe extern "system" fn WSPCloseSocket(
         );
 
         if Status != 0 {
-            ERR!(b"WSHNotify failed. Error 0x%#x\n\0".as_ptr() as *const i8, Status);
+            ERR!("WSHNotify failed. Error 0x%#x\n", Status);
             if !lpErrno.is_null() {
                 *lpErrno = Status as INT;
             }
@@ -953,7 +953,7 @@ pub unsafe extern "system" fn WSPCloseSocket(
         0,
     );
     if !NT_SUCCESS(Status) {
-        ERR!(b"NtCreateEvent failed: 0x%08x\n\0".as_ptr() as *const i8, Status);
+        ERR!("NtCreateEvent failed: 0x%08x\n", Status);
         return SOCKET_ERROR;
     }
 
@@ -1400,7 +1400,7 @@ pub unsafe extern "system" fn WSPSelect(
         if !lpErrno.is_null() {
             *lpErrno = (WSAEFAULT as i32);
         }
-        ERR!(b"NtCreateEvent failed, 0x%08x\n\0".as_ptr() as *const i8, Status);
+        ERR!("NtCreateEvent failed, 0x%08x\n", Status);
         return SOCKET_ERROR;
     }
 
@@ -1438,7 +1438,7 @@ pub unsafe extern "system" fn WSPSelect(
                 j += 1;
             }
             if j >= HandleCount {
-                ERR!(b"Error while counting readfds %ld > %ld\n\0".as_ptr() as *const i8, j, HandleCount);
+                ERR!("Error while counting readfds %ld > %ld\n", j, HandleCount);
                 if !lpErrno.is_null() {
                     *lpErrno = (WSAEFAULT as i32);
                 }
@@ -1448,7 +1448,7 @@ pub unsafe extern "system" fn WSPSelect(
             }
             Socket = GetSocketStructure((*readfds).fd_array[i as usize]);
             if Socket.is_null() {
-                ERR!(b"Invalid socket handle provided in readfds %d\n\0".as_ptr() as *const i8, (*readfds).fd_array[i as usize]);
+                ERR!("Invalid socket handle provided in readfds %d\n", (*readfds).fd_array[i as usize]);
                 if !lpErrno.is_null() {
                     *lpErrno = (WSAENOTSOCK as i32);
                 }
@@ -1472,7 +1472,7 @@ pub unsafe extern "system" fn WSPSelect(
                 j += 1;
             }
             if j >= HandleCount {
-                ERR!(b"Error while counting writefds %ld > %ld\n\0".as_ptr() as *const i8, j, HandleCount);
+                ERR!("Error while counting writefds %ld > %ld\n", j, HandleCount);
                 if !lpErrno.is_null() {
                     *lpErrno = (WSAEFAULT as i32);
                 }
@@ -1482,7 +1482,7 @@ pub unsafe extern "system" fn WSPSelect(
             }
             Socket = GetSocketStructure((*writefds).fd_array[i as usize]);
             if Socket.is_null() {
-                ERR!(b"Invalid socket handle provided in writefds %d\n\0".as_ptr() as *const i8, (*writefds).fd_array[i as usize]);
+                ERR!("Invalid socket handle provided in writefds %d\n", (*writefds).fd_array[i as usize]);
                 if !lpErrno.is_null() {
                     *lpErrno = (WSAENOTSOCK as i32);
                 }
@@ -1510,7 +1510,7 @@ pub unsafe extern "system" fn WSPSelect(
                 j += 1;
             }
             if j > HandleCount {
-                ERR!(b"Error while counting exceptfds %ld > %ld\n\0".as_ptr() as *const i8, j, HandleCount);
+                ERR!("Error while counting exceptfds %ld > %ld\n", j, HandleCount);
                 if !lpErrno.is_null() {
                     *lpErrno = (WSAEFAULT as i32);
                 }
@@ -2351,7 +2351,7 @@ pub unsafe extern "system" fn WSPConnect(
     if (*(*Socket).SharedData).__bindgen_anon_1.NonBlocking() != 0 {
         APCContext = HeapAlloc(GlobalHeap, 0, core::mem::size_of::<MSAFD_CONNECT_APC_CONTEXT>()) as PMSAFD_CONNECT_APC_CONTEXT;
         if APCContext.is_null() {
-            ERR!(b"Not enough memory for APC Context\n\0".as_ptr() as *const i8);
+            ERR!("Not enough memory for APC Context\n");
             Status = STATUS_INSUFFICIENT_RESOURCES;
             'Leave: {
                 TRACE!(b"Ending %lx\n\0".as_ptr() as *const i8, Status);
@@ -3132,11 +3132,11 @@ pub unsafe extern "system" fn WSPIoctl(
                     *(lpvOutBuffer as *mut PVOID) = WSPGetAcceptExSockaddrs as PVOID;
                     cbRet = core::mem::size_of::<PVOID>() as DWORD;
                     Errno = NO_ERROR as INT;
-                    ERR!(b"SIO_GET_EXTENSION_FUNCTION_POINTER UNIMPLEMENTED\n\0".as_ptr());
+                    ERR!("SIO_GET_EXTENSION_FUNCTION_POINTER UNIMPLEMENTED\n");
                     Ret = SOCKET_ERROR;
                 } else {
                     ERR!(
-                        b"Querying unknown extension function: %x\n\0".as_ptr(),
+                        "Querying unknown extension function: %x\n",
                         (*(lpvInBuffer as *const GUID)).Data1,
                     );
                     Errno = WSAEOPNOTSUPP as INT;
@@ -3205,7 +3205,7 @@ pub unsafe extern "system" fn WSPIoctl(
             SetEvent((*lpOverlapped).hEvent);
         }
         if PostQueuedCompletionStatus(Handle as HANDLE, cbRet, 0, lpOverlapped as LPOVERLAPPED) == 0 {
-            ERR!(b"PostQueuedCompletionStatus failed %d\n\0".as_ptr(), GetLastError());
+            ERR!("PostQueuedCompletionStatus failed %d\n", GetLastError());
         }
         return NO_ERROR as INT;
     }
@@ -3548,7 +3548,7 @@ pub unsafe extern "system" fn WSPStartup(
     if ((LOBYTE((wVersionRequested as usize)) == 2 && HIBYTE((wVersionRequested as usize)) < 2) ||
         LOBYTE((wVersionRequested as usize)) < 2)
     {
-        ERR!(b"WSPStartup NOT SUPPORTED for version 0x%X\n\0".as_ptr() as PCHAR, wVersionRequested);
+        ERR!("WSPStartup NOT SUPPORTED for version 0x%X\n", wVersionRequested as core::ffi::c_uint);
         return (WSAVERNOTSUPPORTED as i32);
     } else {
         Status = (NO_ERROR as i32);
@@ -3951,7 +3951,7 @@ pub unsafe extern "system" fn WSPSetSockOpt(
             }
             _ => {
                 /* Obviously this is a hack */
-                ERR!(b"MSAFD: Set unknown optname %x\n\0".as_ptr() as PCHAR, optname);
+                ERR!("MSAFD: Set unknown optname %x\n", optname);
                 return NO_ERROR as INT;
             }
         }
@@ -4024,7 +4024,7 @@ pub unsafe extern "C" fn GetSocketInformation(
 
         APCContext = HeapAlloc(GlobalHeap, 0, core::mem::size_of::<MSAFD_INFO_APC_CONTEXT>()) as PMSAFD_INFO_APC_CONTEXT;
         if APCContext.is_null() {
-            ERR!(b"Not enough memory for APC Context\n\0".as_ptr() as PCHAR);
+            ERR!("Not enough memory for APC Context\n");
             NtClose(SockEvent);
             HeapFree(GlobalHeap, 0, InfoData as LPVOID);
             return (MsafdReturnWithErrno(STATUS_INSUFFICIENT_RESOURCES, core::ptr::null_mut(), 0, core::ptr::null_mut()) as i32);
@@ -4145,7 +4145,7 @@ pub unsafe extern "C" fn SetSocketInformation(
 
         APCContext = HeapAlloc(GlobalHeap, 0, core::mem::size_of::<MSAFD_INFO_APC_CONTEXT>()) as PMSAFD_INFO_APC_CONTEXT;
         if APCContext.is_null() {
-            ERR!(b"Not enough memory for APC Context\n\0".as_ptr() as PCHAR);
+            ERR!("Not enough memory for APC Context\n");
             NtClose(SockEvent);
             HeapFree(GlobalHeap, 0, InfoData as LPVOID);
             return (MsafdReturnWithErrno(STATUS_INSUFFICIENT_RESOURCES, core::ptr::null_mut(), 0, core::ptr::null_mut()) as i32);

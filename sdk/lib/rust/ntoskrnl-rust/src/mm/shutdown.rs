@@ -23,7 +23,7 @@ unsafe fn MiShutdownSystem() {
     while i < MmNumberOfPagingFiles {
         let pf = MmPagingFile[i as usize] as *mut _MMPAGING_FILE;
         // Free page file name
-        debug_assert!((*pf).PageFileName.Buffer != core::ptr::null_mut());
+        ntkrnl_sys::ASSERT!((*pf).PageFileName.Buffer != core::ptr::null_mut());
         ExFreePoolWithTag((*pf).PageFileName.Buffer as PVOID, TAG_MM);
         (*pf).PageFileName.Buffer = core::ptr::null_mut();
 
@@ -94,7 +94,7 @@ pub unsafe extern "C" fn MmShutdownSystem(Phase: ULONG) {
             i += 1;
         }
     } else {
-        debug_assert!(Phase == 2);
+        ntkrnl_sys::ASSERT!(Phase == 2);
 
         // UNIMPLEMENTED
     }

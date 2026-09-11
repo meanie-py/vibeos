@@ -463,7 +463,7 @@ pub unsafe extern "system" fn FatQueryNameInfo(
             0,
         );
 
-        assert_eq!(Status, STATUS_SUCCESS as i32, "NT_ASSERT failed");
+        ntkrnl_sys::ASSERT!(Status == STATUS_SUCCESS as i32);
 
         if Overflow == 0 {
             if *Length < ShortName.Length as i32 {
@@ -1083,7 +1083,7 @@ pub unsafe extern "system" fn FatSetDispositionInfo(
 
             // DbgDoit( NT_ASSERT( IrpContext->PinCount ));
             if cfg!(debug_assertions) {
-                assert!((*IrpContext).PinCount != 0);
+                ntkrnl_sys::ASSERT!((*IrpContext).PinCount != 0);
                 (*IrpContext).PinCount -= 1;
             }
 

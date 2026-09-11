@@ -380,6 +380,22 @@ dependencies = [
 ]
 
 [[package]]
+name = "crt-shared-cargo"
+version = "0.1.0"
+dependencies = [
+ "cnt-rust",
+ "crt-shared-rust",
+ "panic-common",
+]
+
+[[package]]
+name = "crt-shared-rust"
+version = "0.1.0"
+dependencies = [
+ "msvcrt-sys",
+]
+
+[[package]]
 name = "crt-startup-rust"
 version = "0.1.0"
 dependencies = [
@@ -535,6 +551,9 @@ dependencies = [
 [[package]]
 name = "drvtrace-shim"
 version = "0.1.0"
+dependencies = [
+ "va-slots-rust",
+]
 
 [[package]]
 name = "dxg-rust"
@@ -638,6 +657,7 @@ version = "0.1.0"
 dependencies = [
  "cmboot-rust",
  "ntkrnl-sys",
+ "va-slots-rust",
 ]
 
 [[package]]
@@ -901,6 +921,7 @@ dependencies = [
  "dbgprint-rust",
  "kdcom-serial-rust",
  "ntkrnl-sys",
+ "va-slots-rust",
 ]
 
 [[package]]
@@ -1332,6 +1353,7 @@ name = "msvcrt-crt-rust"
 version = "0.1.0"
 dependencies = [
  "cnt-rust",
+ "crt-shared-rust",
  "msvcrt-sys",
 ]
 
@@ -2602,6 +2624,10 @@ version = "0.1.0"
 dependencies = [
  "panic-common",
 ]
+
+[[package]]
+name = "va-slots-rust"
+version = "0.1.0"
 
 [[package]]
 name = "valuable"

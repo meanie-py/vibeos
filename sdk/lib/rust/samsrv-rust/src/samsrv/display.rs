@@ -28,10 +28,10 @@ unsafe fn SampFillUserDisplayCache(
     let mut UserEntry: PUSER_ENTRY;
     let mut Status: NTSTATUS;
 
-    FIXME!(b"SampFillUserDisplayCache(%p)\n\0".as_ptr() as *const i8, DomainObject);
+    FIXME!("SampFillUserDisplayCache(%p)\n", DomainObject);
 
     if UserListFilled != 0 {
-        FIXME!(b"Already filled!\n\0".as_ptr() as *const i8);
+        FIXME!("Already filled!\n");
         return STATUS_SUCCESS;
     }
 
@@ -48,7 +48,7 @@ unsafe fn SampFillUserDisplayCache(
 
         EnumIndex = 0;
         loop {
-            FIXME!(b"EnumIndex: %lu\n\0".as_ptr() as *const i8, EnumIndex);
+            FIXME!("EnumIndex: %lu\n", EnumIndex);
             NameLength = 64 * core::mem::size_of::<WCHAR>() as ULONG;
             Status = SampRegEnumerateSubKey(
                 UsersKeyHandle,
@@ -63,8 +63,8 @@ unsafe fn SampFillUserDisplayCache(
                 break;
             }
 
-            FIXME!(b"User name: %S\n\0".as_ptr() as *const i8, UserKeyName.as_ptr());
-            FIXME!(b"Name length: %lu\n\0".as_ptr() as *const i8, NameLength);
+            FIXME!("User name: %S\n", UserKeyName.as_ptr());
+            FIXME!("Name length: %lu\n", NameLength);
 
             Rid = wcstoul(UserKeyName.as_ptr(), core::ptr::null_mut(), 16);
             if Rid == 0 || Rid == ULONG::MAX {
@@ -72,7 +72,7 @@ unsafe fn SampFillUserDisplayCache(
                 continue;
             }
 
-            FIXME!(b"Rid: 0x%lx\n\0".as_ptr() as *const i8, Rid);
+            FIXME!("Rid: 0x%lx\n", Rid);
             Status = SampOpenDbObject(
                 DomainObject,
                 wide!("Users").as_ptr() as LPWSTR,
@@ -93,7 +93,7 @@ unsafe fn SampFillUserDisplayCache(
                 );
                 if NT_SUCCESS(Status) {
                     FIXME!(
-                        b"Account control: 0x%lx\n\0".as_ptr() as *const i8,
+                        "Account control: 0x%lx\n",
                         FixedUserData.UserAccountControl,
                     );
 
@@ -128,7 +128,7 @@ unsafe fn SampFillUserDisplayCache(
     }
 
     FIXME!(
-        b"SampFillUserDisplayCache() done (Status 0x%08lx)\n\0".as_ptr() as *const i8,
+        "SampFillUserDisplayCache() done (Status 0x%08lx)\n",
         Status,
     );
 

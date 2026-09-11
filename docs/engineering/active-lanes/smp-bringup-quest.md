@@ -2020,3 +2020,57 @@ i386's `IoDeviceObject` baseline turns out to be seeded on the LUCKY side of a c
 reports a phantom regression on about half of all i386 sweeps. That is the inverse of arm64,
 whose floor deliberately absorbs the worse value. Left alone deliberately — lowering a shared
 gate floor wants a decision, not a quiet edit. Evidence and a nine-run sample are on the task.
+**Decided 2026-09-05:** the i386 `IoDeviceObject` floor is lowered to 184/5, the worse face,
+matching what arm64's floor already does. The ratchet only flags regressions, so the lucky face
+now reads as slack rather than as a phantom regression.
+
+## #39 caught: the arm64 wedge is an EL1 fault loop at a user PC, not a dead clock (2026-09-05)
+
+A 300-round `--smp 1` kmtest soak on fixed media (`~/vibeos-soak/smp39-arm64/`) hit the wedge
+**5 times (1.7%)**, and the rebuilt instrument fired on every one. What it showed:
+
+| round | verdict | sample 1 | sample 2 | last serial line |
+|-------|---------|----------|----------|------------------|
+| 03:45 | FROZEN | `PC=0x10000` EL1h | same | `ScmStartUserModeService(DcomLaunch)` |
+| 04:19 | FROZEN | `PC=0x10000` EL1h | same | same |
+| 05:38 | FROZEN | `PC=0x10000` EL1h | same | same |
+| 06:26 | FROZEN | `PC=0x10000` EL1h | same | same |
+| 07:47 | EXECUTING | `ntoskrnl+0x2824` = **`KiTrapReturn+0x24`**, DAIF all masked | `PC=0x10000` EL1h | same |
+
+One shape, five times: the vCPU is at **EL1 with a user-range PC**, every timed wait is dead
+(`boot_timeout=180s` drained with the SCM one `DbgPrint` short of `CreateProcessW`), and the odd
+sample caught it inside the eret path. That is not a frozen clock. It is a tight loop: instruction
+abort at `0x10000` → `KiSynchronousExceptionHandler` → `MmAccessFault` says success →
+`KiTrapReturn` → `eret` to `0x10000` → abort. The register file is byte-identical across samples
+because every iteration restores it from the same trap frame.
+
+Why the kernel calls it success: `MmArmAccessFault`'s valid-PTE path (`ARM3/pagfault.rs`, the
+user-address branch) bugchecks an instruction fetch only when `MI_IS_PAGE_EXECUTABLE` is false
+(UXN, bit 54). A user page that is user-executable passes, and the function returns
+`STATUS_SUCCESS` — spurious, retry. On AArch64 an EL0-writable page is implicitly PXN, so EL1
+cannot execute it no matter what UXN says, and the retry can never succeed.
+
+**Fixed (this lane):** in `trap.rs`, a same-EL instruction abort (EC 0x21) whose VA is below
+`MmUserProbeAddress`, or whose IFSC is a permission fault, no longer goes to `MmAccessFault` — it
+is dispatched as a kernel access violation, which bugchecks `0x1E` with `[KEXC]`/`[KSTACK]`, plus
+a new `[KSTKW]` dump of the kernel-range words above the faulting SP. The trap frame alone cannot
+name the jumper: the captured frame had `LR=0` and **every callee-saved register zero**, with
+`X18` a TEB and `X28` a user start-context — a user thread's register file, at EL1, with the kernel
+about to fetch from the lowest user granule. Whatever jumped there did it with `br`, or by an eret
+from a frame that said `Pc=0x10000, Spsr=EL1h`. The stack words are how the next occurrence names
+it.
+
+**What this changes about #39:** the ~2% wedge is no longer a hang. The next soak round that hits
+it will BUGCHECK with a symbolicated frame and a stack, which is a bug we can read. The
+first-cause (who sets PC to `0x10000` at EL1) is still open and is the actual flip blocker; the
+loop that hid it for five weeks is closed.
+
+The instrument learned the same lesson: `save_hang_state` now writes **FAULT-LOOP** when a vCPU
+is at kernel EL with a user PC, and `capture_cpu_state` runs `x /6i` at every PC, so the next
+same-PC pair cannot masquerade as a dead clock.
+
+Two side notes from the same soak. The `0xE3` (`#43`) fired once **on the MP kernel at
+`--smp 1`** (`20260905-052822`), so "UP-only" was a sample-size artefact, not a property — it is
+still not MP-conditional, but it is not UP-conditional either. And 294/300 clean rounds showed
+exactly the two enumerated MP-conditional rows (`KeEvent` MP-skip, `IoInterrupt` upstream gap)
+and nothing else: the collapse delta is stable at zero unexplained across 294 samples.

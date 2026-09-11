@@ -34,7 +34,10 @@ const FO_SYNCHRONOUS_IO: u32 = 0x00000002;
 const IRP_NOCACHE: u32 = 0x00000001;
 const IRP_MN_MDL: u32 = 0x02;
 const FCB_LOOKUP_ALLOCATIONSIZE_HINT: i64 = -1; // ((LONGLONG)-1)
-const NonPagedPoolNx: POOL_TYPE = 0x200; // 512
+// fatprocs.h:47: `#define NonPagedPoolNx NonPagedPool` under
+// `#ifdef __REACTOS__` -- NX pool is NT6.2 and this kernel has none, so the
+// Windows value (0x200/0x204) is not what any TU here compiles.
+const NonPagedPoolNx: POOL_TYPE = 0;
 const Flush: u32 = 1; // FAT_FLUSH_TYPE::Flush
 // NTSTATUS macro: top two bits set (severity == ERROR == 3).
 #[inline]
@@ -124,7 +127,8 @@ const CCB_FLAG_ALLOW_EXTENDED_DASD_IO: u32 = 0x2000;
 const IRP_CONTEXT_FLAG_OVERRIDE_VERIFY: u32 = 0x1000;
 const VCB_STATE_FLAG_LOCKED: u32 = 0x0001;
 const READ_AHEAD_GRANULARITY: u32 = 0x10000; // typical
-const TAG_FAT_IO_CONTEXT: u32 = 0x58746146; // 'DFAT'
+// C: fastfat/nodetype.h `#define TAG_FAT_IO_CONTEXT 'XtaF'` (big-endian).
+const TAG_FAT_IO_CONTEXT: u32 = u32::from_be_bytes(*b"XtaF");
 
 const FAT_NTC_FCB: u16 = 0x0502; // FAT NTC FCB node type
 const FCB_STATE_PAGING_FILE: u32 = 0x04; // bit 5
@@ -372,7 +376,6 @@ pub unsafe extern "system" fn FatCommonRead(IrpContext: *mut IRP_CONTEXT, Irp: *
     const IRP_CONTEXT_FLAG_OVERRIDE_VERIFY: u32 = 0x1000;
     const VCB_STATE_FLAG_LOCKED: u32 = 0x0001;
     const READ_AHEAD_GRANULARITY: u32 = 0x10000;
-    const TAG_FAT_IO_CONTEXT: u32 = 0x74614644;
     let mut Vcb: *mut VCB = core::ptr::null_mut();
     let mut FcbOrDcb: *mut FCB = core::ptr::null_mut();
     let mut Ccb: *mut CCB = core::ptr::null_mut();

@@ -25,13 +25,24 @@ _PYRIGHT = str(_VBIN / "pyright")
 # Surface roots. rustconv carries its own [tool.ruff]/[tool.pyright]; the cli +
 # tools/*.py use the repo-root config. ruff/pyright discover the nearest config
 # per file, so passing the paths is enough.
-_RUFF_ROOTS = ["tools/rustconv/rustconv", "tests/qemu/cli"]
+# tools/fex was outside every lint root, which is how an unused import and an
+# unlinted closure walker sat there unnoticed. A tool the merge train depends on
+# belongs under the same standard as the rest of our python.
+_RUFF_ROOTS = ["tools/rustconv/rustconv", "tests/qemu/cli", "tools/fex"]
 _PYRIGHT_ROOTS = ["tools/rustconv/rustconv", "tests/qemu/cli"]
 # (package_dir, pythonpath, pytest_target) — pytest needs each package importable.
 _PYTEST_SUITES = [
     ("tools/rustconv", "tools/rustconv", "tests"),
-    (".", ".", "tests/qemu/cli/test_cli_units.py"),
+    (".", ".", "tests/qemu/cli"),
     (".", ".", "tools/wow64gen/test_wow64gen.py"),
+    # The SysWOW64 closure decides which DLLs a 32-bit guest can load at all, and
+    # its DYNAMIC half has no other oracle: a provider reached only through the
+    # Winsock catalog is invisible to the import walk, so dropping one is silent
+    # until a guest calls socket() and fails somewhere unrelated.
+    (".", ".", "tools/fex/test_wow64_closure.py"),
+    # tools/test_vendored.py existed but was collected by nothing, so the registry
+    # that gates "is this C ours to translate" had its oracle sitting unrun.
+    (".", ".", "tools/test_vendored.py"),
     # An oracle needs an oracle. verify_c_signatures reports its own type-resolution gaps as
     # defects in the code when it is wrong, and reports "verified" over types it never
     # resolved when it is blind — neither shows up in review or in its own output.
@@ -43,6 +54,30 @@ _PYTEST_SUITES = [
     (".", ".", "tools/test_verify_cohab_coverage.py"),
     (".", ".", "tools/test_scan_import_cc.py"),
     (".", ".", "tools/test_scan_octal_literals.py"),
+    (".", ".", "tools/test_scan_invented_constants.py"),
+    # These six existed and were collected by NOTHING — the same defect the two comments
+    # above record, twice more. test_verify_ucrtbase_cohab.py is the sharpest case: it was
+    # written the night the ucrtbase math flip landed, to prove the cohab checker parses
+    # `-arch=` spec filters, and it had never run in the gate once. The enumeration is now
+    # guarded by test_cli_units, so a new tools/test_*.py cannot go quiet again.
+    (".", ".", "tools/test_conformance_probe.py"),
+    (".", ".", "tools/test_export_census.py"),
+    (".", ".", "tools/test_gen_ctype_tables.py"),
+    (".", ".", "tools/test_verify_lost_exports.py"),
+    (".", ".", "tools/test_verify_translation_literals.py"),
+    (".", ".", "tools/test_verify_ucrtbase_cohab.py"),
+    (".", ".", "tools/test_hostdisk.py"),
+    (".", ".", "tools/test_scan_flex_array_panic.py"),
+    (".", ".", "tools/test_kernel_probe.py"),
+    (".", ".", "tools/test_scan_orphan_modules.py"),
+    (".", ".", "tools/test_build_invalidation.py"),
+    (".", ".", "tools/test_bindgen_generation.py"),
+    (".", ".", "tools/test_gate_source_partitions.py"),
+    (".", ".", "tools/test_source_walk.py"),
+    (".", ".", "tools/test_cargo_depgraph.py"),
+    (".", ".", "tools/test_retarget_cargo_depfile.py"),
+    (".", ".", "tools/test_rust_module_tree.py"),
+    (".", ".", "tools/test_scan_self_recursive.py"),
     # Same shape as the two above: the matcher is pure functions over a string, and its
     # positive control is the real demangler bug — a sequencing error that shipped because
     # no value-based check can see it.
@@ -54,6 +89,12 @@ _PYTEST_SUITES = [
     # (§9.120). Also fails on any gate lint that is in neither the control table
     # nor the documented-exemption list, so coverage gaps stay loud.
     (".", ".", "tools/test_scanner_controls.py"),
+    # A WRITE-capable tool needs the same treatment as a read-only one, and more:
+    # migrate_debug_assert rewrote 454 sites, and its failure modes (a dropped
+    # message, a mangled path-qualified invocation, a silently skipped form) all
+    # leave a tree that still compiles. It shipped `core::ntkrnl_sys::ASSERT!` into
+    # 15 files on its first run.
+    (".", ".", "tools/test_migrate_debug_assert.py"),
 ]
 
 
@@ -100,9 +141,12 @@ def check_tooling(args, repo: Path) -> int:
     # 4. pytest
     if not args.no_tests:
         for pkg, pp, target in _PYTEST_SUITES:
+            # Label by the TARGET, not the package: twenty root-dir suites all
+            # rendered as `pytest:.`, so a failure line named nothing runnable.
+            label_target = target if pkg == "." else f"{pkg}/{target}"
             checks.append(
                 (
-                    f"pytest:{pkg}",
+                    f"pytest:{label_target}",
                     [sys.executable, "-m", "pytest", target, "-q"],
                     {"cwd": repo / pkg, "env_pp": pp},
                 )

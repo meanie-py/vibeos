@@ -124,13 +124,11 @@ pub unsafe extern "system" fn ProbeForRead(
     let Current = Address as ULONG_PTR;
 
     if Length != 0 {
-        debug_assert!(
-            Alignment == 1
+        ntkrnl_sys::ASSERT!(Alignment == 1
                 || Alignment == 2
                 || Alignment == 4
                 || Alignment == 8
-                || Alignment == 16
-        );
+                || Alignment == 16);
 
         // FIXME(amd64-misalign-231): some kernel call path is reaching this
         // function with `Alignment` set to a non-power-of-2 junk value
@@ -246,13 +244,11 @@ pub unsafe extern "system" fn ProbeForWrite(
     let mut Current = Address as ULONG_PTR;
 
     if Length != 0 {
-        debug_assert!(
-            Alignment == 1
+        ntkrnl_sys::ASSERT!(Alignment == 1
                 || Alignment == 2
                 || Alignment == 4
                 || Alignment == 8
-                || Alignment == 16
-        );
+                || Alignment == 16);
 
         if (Current & (Alignment as ULONG_PTR - 1)) != 0 {
             probe_misalign_trace(b"W\0", Current, Length, Alignment, entry_lr);

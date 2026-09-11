@@ -36,11 +36,11 @@ pub unsafe extern "system" fn MmMapIoSpace(
     let CacheAttribute: MI_PFN_CACHE_ATTRIBUTE;
     let IsIoMapping: BOOLEAN;
 
-    debug_assert!(NumberOfBytes != 0);
+    ntkrnl_sys::ASSERT!(NumberOfBytes != 0);
 
     #[cfg(not(any(target_arch = "x86_64", target_arch = "aarch64")))]
     {
-        debug_assert!(PhysicalAddress.__bindgen_anon_1.HighPart == 0);
+        ntkrnl_sys::ASSERT!(PhysicalAddress.__bindgen_anon_1.HighPart == 0);
     }
 
     let CacheType = CacheType & 0xFF;
@@ -92,11 +92,11 @@ pub unsafe extern "system" fn MmMapIoSpace(
         MI_PAGE_DISABLE_CACHE(&mut TempPte);
         MI_PAGE_WRITE_COMBINED(&mut TempPte);
     } else {
-        debug_assert!(false);
+        ntkrnl_sys::ASSERT!(false);
     }
 
     Pfn = (PhysicalAddress.QuadPart >> PAGE_SHIFT) as PFN_NUMBER;
-    debug_assert!((Pfn1 == MiGetPfnEntry(Pfn)) || Pfn1.is_null());
+    ntkrnl_sys::ASSERT!((Pfn1 == MiGetPfnEntry(Pfn)) || Pfn1.is_null());
     KeFlushEntireTb(1u8, 1u8);
     KeInvalidateAllCaches();
 
@@ -124,7 +124,7 @@ pub unsafe extern "system" fn MmUnmapIoSpace(
     let PageCount: PFN_COUNT;
     let PointerPte: PMMPTE;
 
-    debug_assert!(NumberOfBytes != 0);
+    ntkrnl_sys::ASSERT!(NumberOfBytes != 0);
 
     PageCount = ADDRESS_AND_SIZE_TO_SPAN_PAGES(BaseAddress, NumberOfBytes) as PFN_COUNT;
 

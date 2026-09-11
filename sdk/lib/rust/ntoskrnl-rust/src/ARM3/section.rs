@@ -1857,9 +1857,7 @@ pub unsafe extern "system" fn MmCreateArm3Section(
         .set_WasPurged((*control_area).u.Flags.WasPurged() | kernel_call as ULONG);
 
     // Make sure the segment and the section are the same size, or the section is smaller
-    debug_assert!(
-        (*new_section).SizeOfSection.QuadPart as u64 <= (*new_section).Segment.read().SizeOfSegment
-    );
+    ntkrnl_sys::ASSERT!((*new_section).SizeOfSection.QuadPart as u64 <= (*new_section).Segment.read().SizeOfSegment);
 
     // Return the object and the creation status
     *section_object = new_section as PVOID;
@@ -2461,7 +2459,10 @@ pub unsafe extern "system" fn NtUnmapViewOfSection(
 }
 
 #[no_mangle]
-pub unsafe extern "system" fn NtExtendSection(
+// The C probes new_maximum_size (ProbeForWriteLargeInteger) before reading it. This body
+// is an unimplemented stub that dereferences nothing, so there is no access to guard —
+// restore the probe together with the implementation, not before it.
+pub unsafe extern "system" fn NtExtendSection(  // nolint: dropped-probe (stub, derefs nothing)
     section_handle: HANDLE,
     new_maximum_size: *mut _LARGE_INTEGER,
 ) -> NTSTATUS {

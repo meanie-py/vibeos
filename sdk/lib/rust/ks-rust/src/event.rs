@@ -24,7 +24,7 @@ extern "system" {
 // Object-type data exports (ntoskrnl). In the WDK these are `POBJECT_TYPE*`, hence the
 // `*ExEventObjectType` deref at the call site yields a POBJECT_TYPE. Cross-DLL DATA imports
 // need raw-dylib (`__imp_` indirection) — without it the link references the bare symbol.
-#[link(name = "ntoskrnl", kind = "raw-dylib")]
+#[link(name = "ntoskrnl.exe", kind = "raw-dylib", modifiers = "+verbatim")]
 extern "C" {
     static ExEventObjectType: *mut POBJECT_TYPE;
     static ExSemaphoreObjectType: *mut POBJECT_TYPE;

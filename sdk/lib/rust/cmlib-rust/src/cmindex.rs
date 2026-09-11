@@ -1,45 +1,50 @@
-//! [correctness-review 2026-06-07 · sonnet] Reviewed vs sdk/lib/cmlib/cmindex.c. Risk: HIGH.
-//! Behavior: 4 real bugs. Unverified: CmpDoFindSubKeyByNumber (extern, not translated here).
+//! [correctness-review 2026-09-06] Reviewed vs sdk/lib/cmlib/cmindex.c.
 //!
-//! REAL BUGS:
+//! THIS FILE SHIPS IN THE KERNEL. `cmindex.c` is listed in `CMLIB_RUST_FLIPPED`
+//! and REMOVE_ITEM'd from the kernel cmlib source list, so the C body does NOT win
+//! at link -- its appearance at `sdk/lib/cmlib/CMakeLists.txt:10` is the SHARED list
+//! that feeds the bootloader (`blcmlib`) and the host variant. Verified against the
+//! artifact, not the CMake: `build-i386/.../libcmlib.a` is a 248-byte placeholder TU
+//! and `_CmpSelectLeaf@20` is defined in `libcmlib_rust.a`. A prior review read the
+//! CMake alone and filed every bug here as "latent, the C wins" -- it does not.
 //!
-//! 1. `CmpAddToLeaf` @ cmindex.rs:202 — STUBBED BODY.
-//!    The Rust implementation performs only the resize/realloc guard (steps 1-6) then returns
-//!    `new_cell` without doing ANY of: HvGetCell on the reallocated cell, updating the FastLeaf
-//!    pointer, finding the insertion point via CmpFindSubKeyInLeaf, comparing via
-//!    CmpCompareInIndex, shifting existing entries via RtlMoveMemory, writing the new
-//!    Cell/HashKey/NameHint entry, or incrementing `Leaf->Count`. Every call to CmpAddToLeaf
-//!    returns a cell handle without actually inserting the key — registry key creation is silently
-//!    broken. C lines 987-1099 are entirely absent.
+//! FIXED 2026-09-06:
+//!   `CmpSelectLeaf` wrote `*RootCell` via `addr_of_mut!((*IndexKey).List[i])` at
+//!   three sites (i = SubKeyIndex, +1, -1). An array index inside a raw-ref is NOT
+//!   plain address-taking: it still emits a bounds check, and bindgen renders the C
+//!   flexible array as `[HCELL_INDEX; 1]`, so each one PANICS for every i >= 1 --
+//!   that is, for any subkey list whose index root has more than one leaf. Measured
+//!   in the shipped i386 object: 4 `panic_bounds_check` call sites in this function,
+//!   three of them pushing an array length of 1; after routing them through
+//!   `index_list_ptr` only the legitimate length-2 `SubKeyLists[Type]` check remains.
+//!   Small hives boot fine, which is why it survived the smoke.
+//!   Also restored the `ASSERT(IndexKey->Signature == CM_KEY_INDEX_ROOT)` the C makes
+//!   after a split; the C's trailing unreachable `return HCELL_NIL` has no counterpart
+//!   because Rust's `loop` with no `break` diverges.
 //!
-//! 2. `CmpSelectLeaf` @ cmindex.rs:258 — HEAVILY TRUNCATED (missing ~100 C lines).
-//!    The `else` branch (Result < 0 — new key sorts below the first entry of the current leaf)
-//!    is completely absent: C tries `List[SubKeyIndex - 1]` (or `List[0]`) before splitting.
-//!    The CmpSplitLeaf call + SubKeyLists update + IndexKey refresh loop are also missing.
-//!    The `continue` at Rust line 379 re-enters the outer `loop {}` without having done a split,
-//!    producing an infinite loop whenever a leaf is full and Result >= 0.
-//!    C lines 1391-1457 are entirely absent.
+//! The 2026-06-07 header this replaces listed four REAL BUGS, and ALL FOUR had been
+//! fixed by `85479bd0878` without anyone updating the text. It still cited line
+//! numbers (`cmindex.rs:202`, `:258`) from a file less than a sixth of the current
+//! length, and its claims that `CmpAddToLeaf` "inserts nothing" and that
+//! `CmpSelectLeaf` is "missing ~100 lines including the split" were both false against
+//! the code beneath it -- verified by table-diffing call sites with the C (HvGetCell
+//! 8/8, CmpMaxIndexPerHblock 5/5, HCELL_NIL 13/13). The five NTAPI callees it says are
+//! `extern "C"` are defined locally as `extern "system"`, and `CmpFindSubKeyByHash` is
+//! a local Rust fn, so neither ABI complaint applies either.
 //!
-//! 3. i386 ABI mismatch on all `unsafe extern "C"` NTAPI callees @ cmindex.rs:11-26.
-//!    `CmpDoCompareKeyName`, `CmpCompareInIndex`, `CmpFindSubKeyInRoot`, `CmpSplitLeaf`,
-//!    `CmpFindSubKeyInLeaf` are all `NTAPI` (stdcall on i386) in C, but are declared
-//!    `extern "C"` (cdecl) in Rust. Every call to these functions on i386 causes a stack
-//!    imbalance (callee pops args, caller also adjusts). amd64/arm64 are unaffected (cdecl==system).
-//!    Fix: change their block to `unsafe extern "system"`.
+//! Keep this header true or delete it: a stale review that names line numbers reads as
+//! current and outlives the defect it describes. This one cost a roadmap entry that
+//! filed a live kernel panic as dead code.
 //!
-//! 4. `CmpFindSubKeyByHash` @ cmindex.rs:12 — declared `extern "C"` but `static` in C.
-//!    `CmpFindSubKeyByHash` has C-internal linkage (`static`). If cmindex.c is excluded from
-//!    the build (as happens when this Rust file replaces it), the symbol does not exist and
-//!    the link will fail with an unresolved reference. The function must either be translated
-//!    into Rust or the static restriction must be lifted on the C side.
+//! VERIFIED OK (re-checked against cmindex.c):
+//!   CmpAddToLeaf -- complete; the RtlMoveMemory element counts are correct
+//!     (`core::ptr::copy` counts ELEMENTS, so the C's `* sizeof(...)` is right to drop).
+//!   CmpComputeHashKey -- correct (`<=` vs `<` on 'z' is equivalent: both yield 'Z').
+//!   CmpFindSubKeyByNumber / CmpFindSubKeyByName -- correct logic and ABI.
+//!   CmpMaxIndexPerHblock in glue.rs -- layout-derived, matches the C macro.
+//!   Constants (INVALID_INDEX, HCELL_NIL, CM_KEY_*) -- correct vs cmdata.h/hivedata.h.
 //!
-//! VERIFIED OK:
-//!    CmpComputeHashKey — correct (the <= vs < on 'z' is semantically equivalent: both yield 'Z').
-//!    CmpFindSubKeyByNumber — correct logic and ABI (extern "system", matches NTAPI).
-//!    CmpFindSubKeyByName — correct logic and ABI; `sub_key = 0` init is a minor style gap
-//!      (C leaves it uninitialized; both are fine in practice since it is always written first).
-//!    CmpMaxIndexPerHblock in glue.rs — layout-derived const expression matches C macro exactly.
-//!    Constants (INVALID_INDEX, HCELL_NIL, CM_KEY_*) — all correct vs cmdata.h/hivedata.h.
+//! STILL OPEN: CmpDoFindSubKeyByNumber is extern and not translated here.
 
 use ntkrnl_sys::constants::*;
 use ntkrnl_sys::ddk::{CM_KEY_NODE, CM_INDEX, CM_KEY_FAST_INDEX, CM_KEY_INDEX, CmpCompareCompressedName, CmpCompressedNameSize, CmpCopyCompressedName, HBIN, HCELL, HCELL_INDEX, HHIVE, HSTORAGE_TYPE, PCM_KEY_FAST_INDEX, PCM_KEY_INDEX, PCM_KEY_NODE, PCUNICODE_STRING, PHCELL_INDEX, PHHIVE, RtlCompareUnicodeString, HSTORAGE_TYPE_Stable as Stable, HSTORAGE_TYPE_Volatile as Volatile, _HHIVE, _UNICODE_STRING};
@@ -1098,11 +1103,9 @@ pub unsafe extern "system" fn CmpComputeHashKey(
     AllowSeparators: u8,
 ) -> u32 {
     // ASSERT((Name->Length == 0) || (AllowSeparators) || (Name->Buffer[0] != OBJ_NAME_PATH_SEPARATOR));
-    debug_assert!(
-        (*Name).Length == 0
+    ntkrnl_sys::ASSERT!((*Name).Length == 0
             || AllowSeparators != 0
-            || *(*Name).Buffer != OBJ_NAME_PATH_SEPARATOR as u16
-    );
+            || *(*Name).Buffer != OBJ_NAME_PATH_SEPARATOR as u16);
 
     // if (!Name->Length) return Hash;
     if (*Name).Length == 0 {
@@ -1114,7 +1117,7 @@ pub unsafe extern "system" fn CmpComputeHashKey(
     let mut i: u32 = 0;
     while i < (*Name).Length as u32 {
         // ASSERT(AllowSeparators || (*Cp != OBJ_NAME_PATH_SEPARATOR));
-        debug_assert!(AllowSeparators != 0 || *Cp != OBJ_NAME_PATH_SEPARATOR as u16);
+        ntkrnl_sys::ASSERT!(AllowSeparators != 0 || *Cp != OBJ_NAME_PATH_SEPARATOR as u16);
 
         let Value: u32;
         // if (*Cp >= L'a')
@@ -1217,7 +1220,7 @@ pub unsafe extern "system" fn CmpFindSubKeyByName(
             if (*index_root).Signature == CM_KEY_INDEX_ROOT {
                 found = CmpFindSubKeyInRoot(hive, index_root, search_name, &mut sub_key);
 
-                debug_assert!(cell_to_release != HCELL_NIL);
+                ntkrnl_sys::ASSERT!(cell_to_release != HCELL_NIL);
                 HvReleaseCell(hive, cell_to_release);
 
                 if found & INVALID_INDEX != 0 {
@@ -1231,16 +1234,14 @@ pub unsafe extern "system" fn CmpFindSubKeyByName(
                 index_root = HvGetCell(hive, sub_key) as *mut CM_KEY_INDEX;
             }
 
-            debug_assert!(
-                (*index_root).Signature == CM_KEY_INDEX_LEAF
+            ntkrnl_sys::ASSERT!((*index_root).Signature == CM_KEY_INDEX_LEAF
                     || (*index_root).Signature == CM_KEY_FAST_LEAF
-                    || (*index_root).Signature == CM_KEY_HASH_LEAF
-            );
+                    || (*index_root).Signature == CM_KEY_HASH_LEAF);
 
             if (*index_root).Signature != CM_KEY_HASH_LEAF {
                 found = CmpFindSubKeyInLeaf(hive, index_root, search_name, &mut sub_key);
 
-                debug_assert!(cell_to_release != HCELL_NIL);
+                ntkrnl_sys::ASSERT!(cell_to_release != HCELL_NIL);
                 HvReleaseCell(hive, cell_to_release);
 
                 if found & INVALID_INDEX != 0 {
@@ -1253,7 +1254,7 @@ pub unsafe extern "system" fn CmpFindSubKeyByName(
                     search_name,
                 );
 
-                debug_assert!(cell_to_release != HCELL_NIL);
+                ntkrnl_sys::ASSERT!(cell_to_release != HCELL_NIL);
                 HvReleaseCell(hive, cell_to_release);
             }
 
@@ -1437,11 +1438,11 @@ pub unsafe extern "system" fn CmpSelectLeaf(
     IndexKey = HvGetCell(Hive, (*KeyNode).__bindgen_anon_1.__bindgen_anon_1.SubKeyLists[Type as usize]) as PCM_KEY_INDEX;
 
     if IndexKey.is_null() {
-        debug_assert!(!IndexKey.is_null());
+        ntkrnl_sys::ASSERT!(!IndexKey.is_null());
         return HCELL_NIL;
     }
 
-    debug_assert!((*IndexKey).Signature == CM_KEY_INDEX_ROOT);
+    ntkrnl_sys::ASSERT!((*IndexKey).Signature == CM_KEY_INDEX_ROOT);
 
     loop {
         SubKeyIndex = CmpFindSubKeyInRoot(Hive, IndexKey, Name, &mut LeafCell);
@@ -1458,7 +1459,7 @@ pub unsafe extern "system" fn CmpSelectLeaf(
             }
 
             if ((*LeafKey).Count as u32) < CmpMaxIndexPerHblock {
-                *RootCell = core::ptr::addr_of_mut!((*IndexKey).List[SubKeyIndex as usize]) as PHCELL_INDEX;
+                *RootCell = index_list_ptr(IndexKey, SubKeyIndex) as PHCELL_INDEX;
                 return LeafCell;
             }
 
@@ -1477,7 +1478,7 @@ pub unsafe extern "system" fn CmpSelectLeaf(
                 FastLeaf = LeafKey as PCM_KEY_FAST_INDEX;
                 CurrentCell = (*FastLeaf).List[0].Cell;
             } else {
-                debug_assert!((*LeafKey).Signature == CM_KEY_INDEX_LEAF as u16);
+                ntkrnl_sys::ASSERT!((*LeafKey).Signature == CM_KEY_INDEX_LEAF as u16);
                 CurrentCell = (*LeafKey).List[0];
             }
 
@@ -1487,7 +1488,7 @@ pub unsafe extern "system" fn CmpSelectLeaf(
                 return HCELL_NIL;
             }
 
-            debug_assert!(Result != 0);
+            ntkrnl_sys::ASSERT!(Result != 0);
 
             if Result >= 0 {
                 LeafCell = *core::ptr::addr_of!((*IndexKey).List).cast::<HCELL_INDEX>().add(SubKeyIndex as usize);
@@ -1498,7 +1499,13 @@ pub unsafe extern "system" fn CmpSelectLeaf(
                 }
 
                 if ((*LeafKey).Count as u32) < CmpMaxIndexPerHblock {
-                    *RootCell = core::ptr::addr_of_mut!((*IndexKey).List[SubKeyIndex as usize]) as PHCELL_INDEX;
+                    // `addr_of_mut!((*IndexKey).List[i])` was the shape here, and it is
+                    // NOT merely address-taking: an array index inside a raw-ref still
+                    // emits a bounds check, so with bindgen rendering the C flexible
+                    // array as `[HCELL_INDEX; 1]` it panics for every i >= 1 — i.e. for
+                    // any root index past its first leaf. Verified: `&raw mut arr[i]`
+                    // with a runtime i out of range aborts. Hence the accessor.
+                    *RootCell = index_list_ptr(IndexKey, SubKeyIndex) as PHCELL_INDEX;
                     return LeafCell;
                 }
 
@@ -1511,7 +1518,7 @@ pub unsafe extern "system" fn CmpSelectLeaf(
                     }
 
                     if ((*LeafKey).Count as u32) < CmpMaxIndexPerHblock {
-                        *RootCell = core::ptr::addr_of_mut!((*IndexKey).List[(SubKeyIndex + 1) as usize]) as PHCELL_INDEX;
+                        *RootCell = index_list_ptr(IndexKey, SubKeyIndex + 1) as PHCELL_INDEX;
                         return LeafCell;
                     }
                 }
@@ -1528,7 +1535,7 @@ pub unsafe extern "system" fn CmpSelectLeaf(
                     }
 
                     if ((*LeafKey).Count as u32) < CmpMaxIndexPerHblock {
-                        *RootCell = core::ptr::addr_of_mut!((*IndexKey).List[(SubKeyIndex - 1) as usize]) as PHCELL_INDEX;
+                        *RootCell = index_list_ptr(IndexKey, SubKeyIndex - 1) as PHCELL_INDEX;
                         return LeafCell;
                     }
                 } else {
@@ -1568,6 +1575,14 @@ pub unsafe extern "system" fn CmpSelectLeaf(
         if IndexKey.is_null() {
             return HCELL_NIL;
         }
+
+        /* Make sure the new key became index root */
+        ntkrnl_sys::ASSERT!((*IndexKey).Signature == CM_KEY_INDEX_ROOT);
+
+        /* Now loop over with the new IndexKey value, which definitely has the
+         * space now. The C's unreachable `return HCELL_NIL` after this loop has
+         * no Rust counterpart: `loop` with no `break` diverges, so the tail is
+         * not just dead but rejected. */
     }
 }
 

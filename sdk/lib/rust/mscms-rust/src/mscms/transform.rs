@@ -38,7 +38,8 @@ static __wine_dbch_mscms: __wine_debug_channel = __wine_debug_channel {
     name: c"mscms".as_ptr() as *const i8,
 };
 
-const COLOR_GRAY: u32 = 0; // FIXME: placeholder
+const COLOR_GRAY: u32 = 1; // nolint: const-contradiction (unrelated namespaces: an ICM colour type vs a console colour)
+                           // icm.h:124 (the COLOR enum starts at 1, not 0)
 const COLOR_RGB: u32 = 0;
 const COLOR_XYZ: u32 = 0;
 const COLOR_Yxy: u32 = 0;

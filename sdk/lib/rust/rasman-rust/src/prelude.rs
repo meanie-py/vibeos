@@ -11,11 +11,6 @@ pub use core::ptr::{addr_of, addr_of_mut};
 // The wine/debug.h channel (TRACE/ERR/WARN/FIXME). Kept as no-op MACROS, never
 // out-of-line fns: an out-of-line no-op is an optimization barrier that uncloaks latent
 // ABI mismatches into ud2 (field manual §9.65).
-#[macro_export] macro_rules! TRACE { ($($arg:tt)*) => {{}}; }
-#[macro_export] macro_rules! ERR   { ($($arg:tt)*) => {{}}; }
-#[macro_export] macro_rules! WARN  { ($($arg:tt)*) => {{}}; }
-#[macro_export] macro_rules! FIXME { ($($arg:tt)*) => {{}}; }
-pub use crate::{ERR, FIXME, TRACE, WARN};
 
 // ================= CRT ========================================================================
 // NEVER hand-write memcpy/memset/memmove/memcmp in Rust: LLVM folds any byte-copy loop back into

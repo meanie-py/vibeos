@@ -37,7 +37,9 @@ pub type CmpNameTableEntry = CM_NAME_HASH_TABLE_ENTRY;
 
 // Constants from ntoskrnl/include/internal/cm.h that aren't in ntkrnl-sys
 // constants.rs yet. Keep local until they migrate.
-pub const TAG_CM: u32 = u32::from_le_bytes(*b"MmCk"); // 'kCmM' reversed for little-endian
+// C: cmlib.h `#define TAG_CM '  MC'`. A multi-char literal is BIG-endian. cmkcbncb.c:34,55,254
+// allocates with plain TAG_CM; "MmCk" is neither TAG_CM nor TAG_KCB.
+pub const TAG_CM: u32 = u32::from_be_bytes(*b"  MC");
 pub const TAG_KCB: u32 = u32::from_le_bytes(*b"bKmC"); // 'CmKb'
 pub const CONFIG_INITIALIZATION_FAILED: u32 = 0x00000067;
 pub const CMP_ENLIST_KCB_LOCKED_SHARED: ULONG = 0x1;
@@ -196,7 +198,7 @@ pub unsafe fn CmpRemoveKeyHash(KeyHash: PCM_KEY_HASH) {
     
     loop {
         Current = *Prev;
-        debug_assert!(!Current.is_null());
+        ntkrnl_sys::ASSERT!(!Current.is_null());
         ASSERT_VALID_HASH(Current);
         
         if Current == KeyHash {

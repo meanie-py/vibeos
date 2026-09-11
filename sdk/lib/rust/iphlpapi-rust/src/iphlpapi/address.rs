@@ -68,7 +68,7 @@ pub unsafe extern "system" fn GetAdaptersAddresses(
     let family = match family {
         AF_INET => AF_INET,
         AF_INET6 => {
-            FIXME!(b"IPv6 is not supported in ReactOS!\n\0".as_ptr() as *const i8);
+            FIXME!("IPv6 is not supported in ReactOS!\n");
             return ERROR_NO_DATA;
         }
         AF_UNSPEC => {
@@ -77,7 +77,7 @@ pub unsafe extern "system" fn GetAdaptersAddresses(
         }
         _ => {
             ERR!(
-                b"Invalid family 0x%x\n\0".as_ptr() as *const i8,
+                "Invalid family 0x%x\n",
                 family,
             );
             return ERROR_INVALID_PARAMETER;
@@ -92,7 +92,7 @@ pub unsafe extern "system" fn GetAdaptersAddresses(
     status = openTcpFile(&mut tcp_file, FILE_READ_DATA);
     if !NT_SUCCESS(status) {
         ERR!(
-            b"Could not open handle to tcpip.sys. Status %08x\n\0".as_ptr() as *const i8,
+            "Could not open handle to tcpip.sys. Status %08x\n",
             status,
         );
         return RtlNtStatusToDosError(status);
@@ -101,7 +101,7 @@ pub unsafe extern "system" fn GetAdaptersAddresses(
     status = GetInterfacesList(tcp_file, &mut interfaces_list, &mut interfaces_count);
     if !NT_SUCCESS(status) {
         ERR!(
-            b"Could not get adapters list. Status %08x\n\0".as_ptr() as *const i8,
+            "Could not get adapters list. Status %08x\n",
             status,
         );
         NtClose(tcp_file);
@@ -462,8 +462,7 @@ pub unsafe extern "system" fn GetAdaptersAddresses(
                                 ) as *mut u8;
                             } else {
                                 ERR!(
-                                    b"DhcpDomain name changed after probe!\n\0".as_ptr()
-                                        as *const i8,
+                                    "DhcpDomain name changed after probe!\n",
                                 );
                                 dhcp_domain_size = 0;
                             }
@@ -487,7 +486,7 @@ pub unsafe extern "system" fn GetAdaptersAddresses(
                                 ) as *mut u8;
                             } else {
                                 ERR!(
-                                    b"Domain name changed after probe!\n\0".as_ptr() as *const i8,
+                                    "Domain name changed after probe!\n",
                                 );
                                 domain_size = 0;
                             }
@@ -578,8 +577,7 @@ pub unsafe extern "system" fn GetAdaptersAddresses(
                                     ) as *mut u8;
                                 } else {
                                     ERR!(
-                                        b"Description name changed after probe!\n\0".as_ptr()
-                                            as *const i8,
+                                        "Description name changed after probe!\n",
                                     );
                                     description_size = 0;
                                 }
@@ -643,8 +641,7 @@ pub unsafe extern "system" fn GetAdaptersAddresses(
                                     ) as *mut u8;
                                 } else {
                                     ERR!(
-                                        b"Friendly name changed after probe!\n\0".as_ptr()
-                                            as *const i8,
+                                        "Friendly name changed after probe!\n",
                                     );
                                     friendly_size = 0;
                                 }
@@ -711,7 +708,7 @@ pub unsafe extern "system" fn GetAdaptersAddresses(
     }
 
     if adapters_count == 0 {
-        ERR!(b"No Adapters found!\n\0".as_ptr() as *const i8);
+        ERR!("No Adapters found!\n");
         *out_buf_len = 0;
         return ERROR_NO_DATA;
     }
@@ -775,8 +772,7 @@ pub unsafe extern "system" fn GetAdaptersAddresses(
                         current_aa = (*current_aa).Next;
                         if current_aa.is_null() {
                             ERR!(
-                                b"Got address for interface %u but no adapter was found for it.\n\0"
-                                    .as_ptr() as *const i8,
+                                "Got address for interface %u but no adapter was found for it.\n",
                                 addr_entry.iae_index,
                             );
                             break;
@@ -867,7 +863,7 @@ pub unsafe extern "system" fn GetAdaptersAddresses(
     } // end 'error block — falling out of it means a `break 'error` fired
 
     // Error path (the C `Error:` label)
-    ERR!(b"Failed! Status 0x%08x\n\0".as_ptr() as *const i8, status);
+    ERR!("Failed! Status 0x%08x\n", status);
     *out_buf_len = 0;
     if !interfaces_list.is_null() {
         HeapFree(GetProcessHeap(), 0, interfaces_list as *mut c_void);
@@ -1342,7 +1338,7 @@ pub unsafe extern "system" fn NhpAllocateAndGetInterfaceInfoFromStack(
     }
 
     // Error cleanup
-    ERR!(b"Failed! Status 0x%08x\n\0".as_ptr() as *const i8, status);
+    ERR!("Failed! Status 0x%08x\n", status);
     if !p_table.is_null() {
         HeapFree(h_heap, 0, p_table as *mut core::ffi::c_void);
     }

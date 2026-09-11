@@ -82,6 +82,7 @@ class Run:
         self.full_log = self.dir / "full.log"
         self.commands_log = self.dir / "commands.jsonl"
         self.stages: list[Stage] = []
+        self.command_timings: list[dict] = []
         # full.log / commands.jsonl are appended from WORKER THREADS now (gate submits its
         # per-arch builds concurrently), and a multi-KB build log is several buffer flushes
         # — without this the two builds' output interleaves mid-line and the log stops being
@@ -120,6 +121,13 @@ class Run:
             cp = subprocess.CompletedProcess(cmd, 127, "", str(e))
         dt = time.monotonic() - t0
         with self._log_lock:
+            timing = {
+                "stage": stage or cmd[0],
+                "start_seconds": round(t0 - self.start, 6),
+                "seconds": round(dt, 6),
+                "exit": rc,
+            }
+            self.command_timings.append(timing)
             with open(self.full_log, "a") as f:
                 f.write(f"\n=== {stage or cmd[0]}: {' '.join(cmd)} — exit {rc}, {dt:.1f}s ===\n")
                 if out:
@@ -127,12 +135,7 @@ class Run:
                 if err:
                     f.write("\n--- stderr ---\n" + err)
             with open(self.commands_log, "a") as f:
-                f.write(
-                    json.dumps(
-                        {"cmd": cmd, "cwd": str(cwd or ""), "exit": rc, "seconds": round(dt, 2)}
-                    )
-                    + "\n"
-                )
+                f.write(json.dumps({"cmd": cmd, "cwd": str(cwd or ""), **timing}) + "\n")
         return cp
 
     def log(self, text: str, header: str | None = None) -> None:
@@ -170,6 +173,9 @@ class Run:
             "classification": self.classification,
             "duration_ms": int(dur * 1000),
             "stages": [s.__dict__ for s in self.stages],
+            # Separate from verdict stages: one verdict can cover several commands,
+            # and parallel command durations must not be summed as elapsed time.
+            "command_timings": self.command_timings,
             "artifacts": {"full_log": str(self.full_log)},
             **self.extra,
         }

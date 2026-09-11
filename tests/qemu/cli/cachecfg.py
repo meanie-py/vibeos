@@ -17,7 +17,7 @@ Scope (MANDATORY since 2026-07-03 — on unless `--no-cache` / `VIBEOS_BUILD_CAC
     (automatic path rewriting; the ReactOS tree already wires `RULE_LAUNCH_COMPILE
     ccache` behind `-DENABLE_CCACHE`, which `build.py` toggles on).
   * **sccache for Rust** — caches rustc across the smoke harness's target-dir
-    nuke (`RUSTC_WRAPPER` + `CARGO_INCREMENTAL=0`), **same-worktree**.
+    nuke (`RUSTC_WRAPPER` + `CARGO_INCREMENTAL=0`), across canonical worktrees.
 
 Cross-worktree path-independence (both languages) comes from the CANONICAL BUILD
 PATH: `vibeos-cli build` runs cmake/ninja/cargo with the worktree bind-mounted at
@@ -41,7 +41,7 @@ from pathlib import Path
 # rustc working set (N divergent worktrees × 3 arches × ~250 crates) shares ONE
 # content-addressed pool, and at 50G it ran full (49/50G) and LRU-thrashed —
 # entries evicted before reuse → cold cross-worktree rebuilds. 150G holds the
-# fleet's unique set with headroom; bump further if `sccache -s` shows it full again.
+# fleet's unique set with headroom. Review the host disk budget before raising it.
 CCACHE_MAXSIZE = "50G"
 SCCACHE_MAXSIZE = "150G"
 _FALSEY = ("0", "false", "no", "off")
@@ -165,6 +165,10 @@ def parse_sccache_json(text: str) -> dict:
         "hits": hits,
         "misses": misses,
         "hit_rate": (hits / denom) if denom else 0.0,
+        "non_cacheable": _total(s.get("requests_not_cacheable", 0)),
+        "non_cacheable_reasons": s.get("not_cached", {}),
+        "cache_errors": _total(s.get("cache_errors", 0)),
+        "compilations": _total(s.get("compilations", 0)),
     }
 
 

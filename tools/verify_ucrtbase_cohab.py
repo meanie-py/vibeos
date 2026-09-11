@@ -1,0 +1,392 @@
+#!/usr/bin/env python3
+"""Assert that ucrtbase.dll's Rust cohab cannot shadow genuine Microsoft UCRT bodies.
+
+ucrtbase.dll is vendored Microsoft UCRT (`sdk/lib/ucrt`, see vendor.yaml) plus OUR
+`msvcrt_shared`, `crtmath`, `vcruntime` and `chkstk` plus 132 lines of its own C. The Rust we
+link into it may cover THOSE surfaces and nothing else -- and the reason that needs a tool
+rather than a rule is that violating it produces no diagnostic at all:
+
+    ucrtbase.spec exports        2,584 names
+    msvcrt's Rust cohab archive  1,229 names
+    they collide on                891, of which only 35 are msvcrt_shared's
+
+Linking msvcrt's archive into ucrtbase under `--whole-archive` would replace the other 856
+with bodies written and graded against MSVCRT's C at `_MSVCR_VER=0` -- our malloc, our
+_errno, our mbcs tables, our printf engine, standing in for the genuine UCRT's. The module
+links with `--allow-multiple-definition`, so it would build clean, boot, and behave subtly
+like msvcrt forever. That is the failure this file exists to make impossible.
+
+Two checks, deliberately at different strengths:
+
+  STRUCTURE (always runs, needs no build)
+      `crt-shared-cargo` -- the only Rust archive ucrtbase links -- must not reach
+      `msvcrt-crt-rust` through any path in the workspace dependency graph. This is the real
+      guarantee: a dependency edge that does not exist cannot be got wrong by a build flag,
+      which is exactly why the surface was split into its own crate instead of being scoped
+      with a cargo feature.
+
+  REACHABILITY (always runs, needs no build)
+      Every dependency of `crt-shared-cargo` must be named by an `extern crate` in its
+      lib.rs, or its objects never reach the archive at all and the cohab it was added for
+      silently does not happen. See `check_extern_crates` for the case that cost a build.
+
+  ARCHIVE (runs when this worktree has a build; hard-fails if it cannot trust one)
+      Every symbol the built `libcrt_shared_cargo.a` defines must also be defined by one of
+      OUR static libraries on ucrtbase's link line. This is the empirical backstop for the
+      case the structural check cannot see: someone adding a genuinely new `#[no_mangle]` to
+      crt-shared-rust itself.
+
+      "Ours" is read off `dll/win32/ucrtbase/CMakeLists.txt` -- every static library on that
+      link line except `ucrt` -- not msvcrt_shared alone. The Rust archive is whole-archived
+      AHEAD of all four, so replacing a body in any of them is ordinary cohab; only a body
+      that belongs to the vendored `ucrt` is the shadowing this file exists to stop. Modelling
+      it as msvcrt_shared alone made the gate reject the ucrtbase math flip -- 60 findings,
+      every one of them a crtmath symbol we own and had graded -- which is a gate lying about
+      a correct change, and a false red is how a gate gets turned off.
+
+Findings go to stdout, one per line, in the `path: message` shape `vibeos-cli check` parses.
+Exit 1 if any finding is emitted.
+"""
+
+from __future__ import annotations
+
+import re
+import subprocess
+import sys
+from pathlib import Path
+
+REPO = Path(__file__).resolve().parent.parent
+
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+
+
+def _spec_exports(spec: Path, arch: str) -> set[str]:
+    """Export NAMES ucrtbase.spec declares for one arch, `-arch=` filters honoured.
+
+    Delegates to export_census.parse_spec, which resolves the filter the way spec2def does
+    (including negated tags like `-arch=!i386`) and hard-fails on an unknown tag rather than
+    dropping the line silently. Imported lazily so this module still loads if that tool moves.
+    """
+    from export_census import parse_spec
+
+    return set(parse_spec(spec, arch))
+
+
+WS = REPO / "sdk" / "lib" / "rust"
+
+# The crate ucrtbase links, and the crate it must never be able to reach.
+UCRT_ARCHIVE_CRATE = "crt-shared-cargo"
+FORBIDDEN_CRATE = "msvcrt-crt-rust"
+
+# Reached through the `#[panic_handler]` attribute, not by name -- a reference the linker
+# honours and a grep for `extern crate` cannot see.
+EXTERN_CRATE_EXEMPT = {"panic-common"}
+
+# OUR static libraries on ucrtbase's link line (dll/win32/ucrtbase/CMakeLists.txt), mapped to
+# where CMake puts their objects. The Rust archive is whole-archived ahead of all of them, so
+# a Rust body replacing one of theirs is ordinary cohab -- these are jointly the authority on
+# what we are allowed to define. `ucrt` itself is deliberately absent: it is the vendored
+# Microsoft library, and displacing one of ITS bodies is precisely the defect.
+OURS_ON_LINK_LINE = {
+    "msvcrt_shared": Path("dll/win32/msvcrt/CMakeFiles/msvcrt_shared.dir"),
+    "crtmath": Path("sdk/lib/crt/CMakeFiles/crtmath.dir"),
+    "vcruntime": Path("sdk/lib/vcruntime/CMakeFiles/vcruntime.dir"),
+    "chkstk": Path("sdk/lib/crt/CMakeFiles/chkstk.dir"),
+    "wine": Path("sdk/lib/3rdparty/libwine/CMakeFiles/wine.dir"),
+}
+
+ARCHES = {
+    "i386": "i686-pc-windows-gnu",
+    "amd64": "x86_64-pc-windows-gnu",
+    "arm64": "aarch64-pc-windows-gnullvm",
+}
+
+
+def _deps_of(crate_dir: Path) -> set[str]:
+    """Path dependencies named in a crate's Cargo.toml.
+
+    Deliberately a regex over `[dependencies]` rather than a `cargo metadata` call: this runs
+    in the lint gate, where shelling out to cargo costs seconds and can block on the package
+    cache lock. The manifests here are hand-written and uniform (`name = { path = "..." }`),
+    so the parse is exact for the shape the workspace actually uses.
+    """
+    manifest = crate_dir / "Cargo.toml"
+    if not manifest.is_file():
+        return set()
+    text = manifest.read_text(errors="replace")
+    # Keep only dependency tables; a `[features]` entry may legitimately NAME a crate
+    # (`cpp = ["crt-shared-rust/cpp"]`) without depending on it from this crate.
+    out: set[str] = set()
+    in_deps = False
+    for line in text.splitlines():
+        stripped = line.strip()
+        if stripped.startswith("["):
+            in_deps = stripped.startswith("[dependencies") or (
+                stripped.startswith("[target.") and "dependencies" in stripped
+            )
+            continue
+        if not in_deps or not stripped or stripped.startswith("#"):
+            continue
+        m = re.match(r"^([A-Za-z0-9_-]+)\s*=", stripped)
+        if m:
+            out.add(m.group(1))
+    return out
+
+
+def check_extern_crates(ws: Path | None = None) -> list[str]:
+    """Every dependency of `crt-shared-cargo` must be named by an `extern crate` in its lib.rs.
+
+    A staticlib pulls in a dependency's objects only if something REFERENCES the crate. A
+    manifest entry alone compiles the dependency and then discards it, so its `#[no_mangle]`
+    bodies never reach the archive -- and nothing says so. The build is green, this file's
+    archive check is green (a symbol that is absent cannot shadow anything), and the cohab
+    flip has simply not happened.
+
+    That is not hypothetical: enabling `cabi-math` on cnt-rust for the ucrtbase math flip
+    landed 268 symbols in `libcrt_shared_cargo.a` and not one of them was `tan`. The archive
+    check said OK because its question is "does the archive define too much", and an empty
+    answer passes it. This one asks the other question.
+
+    Only `panic-common` is exempt: it is reached through the `#[panic_handler]` attribute
+    rather than by name, which is a reference the linker honours and a grep cannot see.
+    """
+    ws = WS if ws is None else ws
+    manifest_deps = _deps_of(ws / UCRT_ARCHIVE_CRATE)
+    lib = ws / UCRT_ARCHIVE_CRATE / "src" / "lib.rs"
+    if not lib.is_file():
+        return [f"sdk/lib/rust/{UCRT_ARCHIVE_CRATE}/src/lib.rs: MISSING"]
+    text = lib.read_text(errors="replace")
+    declared = set(re.findall(r"^\s*extern\s+crate\s+([A-Za-z0-9_]+)\s*;", text, re.M))
+    findings = []
+    for dep in sorted(manifest_deps - EXTERN_CRATE_EXEMPT):
+        if dep.replace("-", "_") not in declared:
+            findings.append(
+                f"sdk/lib/rust/{UCRT_ARCHIVE_CRATE}/src/lib.rs: depends on `{dep}` but never "
+                f"names it, so NONE of its objects reach libcrt_shared_cargo.a and whatever "
+                f"cohab that dependency was added for is silently not happening. "
+                f"fix: add `extern crate {dep.replace('-', '_')};`"
+            )
+    return findings
+
+
+def check_structure(ws: Path | None = None) -> list[str]:
+    """`crt-shared-cargo` must not reach `msvcrt-crt-rust`, transitively or otherwise.
+
+    `ws` overrides the workspace root so the control tests in
+    tools/test_verify_ucrtbase_cohab.py can point this at a fixture that DOES have the
+    forbidden edge -- a gate nobody has watched fail is a gate nobody knows works.
+    """
+    ws = WS if ws is None else ws
+    findings: list[str] = []
+    start = ws / UCRT_ARCHIVE_CRATE
+    if not start.is_dir():
+        return [
+            f"sdk/lib/rust/{UCRT_ARCHIVE_CRATE}: crate is MISSING -- ucrtbase's Rust archive "
+            f"has no manifest. fix: restore the crate, or drop the cohab from "
+            f"dll/win32/ucrtbase/CMakeLists.txt"
+        ]
+
+    # BFS the path-dependency graph, recording how we got there so a violation reports the
+    # actual chain rather than just the endpoint.
+    parent: dict[str, str | None] = {UCRT_ARCHIVE_CRATE: None}
+    queue = [UCRT_ARCHIVE_CRATE]
+    while queue:
+        cur = queue.pop(0)
+        for dep in sorted(_deps_of(ws / cur)):
+            if dep in parent:
+                continue
+            parent[dep] = cur
+            queue.append(dep)
+
+    if FORBIDDEN_CRATE in parent:
+        chain, node = [], FORBIDDEN_CRATE
+        while node is not None:
+            chain.append(node)
+            node = parent[node]
+        findings.append(
+            f"sdk/lib/rust/{UCRT_ARCHIVE_CRATE}/Cargo.toml: ucrtbase's Rust archive can reach "
+            f"{FORBIDDEN_CRATE} via {' -> '.join(reversed(chain))} -- that pulls msvcrt's "
+            f"whole CRT floor into ucrtbase.dll, silently replacing genuine UCRT bodies under "
+            f"--allow-multiple-definition. fix: keep the shared surface in crt-shared-rust; "
+            f"msvcrt-crt-rust must depend on IT, never the reverse"
+        )
+    return findings
+
+
+def _nm_defined(path: Path) -> set[str] | None:
+    """Globally-defined symbol names in an archive or object, or None if nm cannot read it."""
+    for nm in ("llvm-nm", "nm"):
+        try:
+            res = subprocess.run(
+                [nm, "--defined-only", str(path)],
+                capture_output=True,
+                text=True,
+                timeout=120,
+            )
+        except (OSError, subprocess.TimeoutExpired):
+            # OSError, not FileNotFoundError: a present-but-non-executable llvm-nm raises
+            # PermissionError, which took this whole check down the first time it ran here.
+            # Any failure to EXECUTE means "this nm is unusable, try the next"; a failure to
+            # READ is handled by the returncode check below. Never silently pass: if no nm
+            # works at all, _nm_defined returns None and the caller emits a finding.
+            continue
+        if res.returncode != 0:
+            continue
+        syms: set[str] = set()
+        for line in res.stdout.splitlines():
+            parts = line.split()
+            # `<addr> <type> <name>` for a definition; skip `<type> <name>` (undefined) and
+            # archive member headers. Only GLOBAL text/data can collide at link.
+            if len(parts) == 3 and parts[1] in "TDBRtdbr" and parts[1].isupper():
+                syms.add(parts[2])
+        return syms
+    return None
+
+
+def check_archive() -> list[str]:
+    """Built archive's symbols must be a subset of what OUR libs on the link line define.
+
+    Fleet isolation law: generated artifacts are per-commit, source-derived state, so they
+    come from THIS worktree or not at all. A sibling's build dir at another commit would make
+    the verdict depend on which lanes happen to exist -- `verify_signatures` moved 987 -> 9
+    findings that way with no source change.
+    """
+    findings: list[str] = []
+    for arch, triple in ARCHES.items():
+        build = REPO / f"build-{arch}"
+        if not build.is_dir():
+            continue  # not built here; the structural check still ran
+
+        archive = (
+            build / "sdk" / "lib" / "rust" / "target" / triple / "release" / "libcrt_shared_cargo.a"
+        )
+        if not archive.is_file():
+            archive = build / "dll" / "win32" / "ucrtbase" / "libcrt_shared_cargo.a"
+        if not archive.is_file():
+            continue  # ucrtbase cohab not wired into this build dir yet
+
+        objs: list[Path] = []
+        missing: list[str] = []
+        for target, obj_dir in OURS_ON_LINK_LINE.items():
+            d = build / obj_dir
+            found = sorted(d.rglob("*.obj")) + sorted(d.rglob("*.o"))
+            if found:
+                objs += found
+            else:
+                missing.append(f"{target} ({d})")
+        if missing:
+            # Partial evidence is worse than none: a target whose objects are absent
+            # contributes nothing to `c_norm`, so every symbol it defines looks like ours
+            # shadowing ucrt. That reads as a wall of false findings, not a soft verdict.
+            findings.append(
+                f"build-{arch}: libcrt_shared_cargo.a exists but the objects of "
+                f"{', '.join(missing)} do not -- cannot prove the Rust surface is a subset "
+                f"of the C's. fix: ./vibeos-cli build --arch {arch}"
+            )
+            continue
+
+        rust_syms = _nm_defined(archive)
+        if rust_syms is None:
+            findings.append(
+                f"build-{arch}: no usable nm for {archive.name} -- the subset assertion could "
+                f"not run. fix: install llvm-nm (this check must not silently pass)"
+            )
+            continue
+
+        c_syms: set[str] = set()
+        for obj in objs:
+            got = _nm_defined(obj)
+            if got:
+                c_syms |= got
+
+        def strip(sym: str, *, i386: bool = (arch == "i386")) -> str:
+            """i386 decorates cdecl exports with a leading underscore; compare bare.
+
+            `i386` is a bound default rather than a closure over the loop variable: this
+            function outlives the iteration that made it (ruff B023).
+            """
+            return sym[1:] if i386 and sym.startswith("_") else sym
+
+        c_norm = {strip(s) for s in c_syms}
+
+        # THE ASSERTION, stated precisely. "Subset of what we define" is very nearly right but
+        # over-fires: rustc bundles compiler-rt into every staticlib, so the archive also
+        # carries __divdc3, __absvdi2, _Unwind_Resume and ~100 more that no C of ours defines.
+        # Those are not the hazard. Shadowing needs BOTH halves --
+        #
+        #     (a) none of OUR static libs on the link line defines it, so we have no C body
+        #         to be the authority on what it should do, AND
+        #     (b) ucrtbase EXPORTS it, so a real caller reaches our body instead of the
+        #         genuine UCRT one.
+        #
+        # A compiler-rt builtin fails (b): ucrtbase.spec does not export __divdc3, so ours
+        # cannot displace anything callers see. An export we have no C for fails nothing and
+        # is exactly the 856-body accident this file exists to prevent.
+        #
+        # Reporting the (a)-only symbols as findings is what a strict gate looks like right
+        # before someone turns it off: 114 lines of noise around zero real defects.
+        # `-arch=` is part of (b), not decoration. A spec line is an export only on the
+        # arches it names: `@ cdecl -arch=!i386 tanf(float)` means ucrtbase has NO tanf on
+        # i386, so a Rust tanf there displaces nothing a caller can reach. Skipping the flags
+        # without reading them (`(?:-\S+\s+)*` did exactly that) made the export set
+        # arch-blind and reported 11 float bodies -- __logbf, _sqrtf, _tanf and friends, all
+        # `-arch=!i386` -- as i386 shadowing. Every one was a false positive, and it bounced a
+        # correct lane. `export_census.parse_spec` already resolves this the way spec2def
+        # does, negations included; reuse it rather than grow a second parser to drift.
+        spec = REPO / "dll" / "win32" / "ucrtbase" / "ucrtbase.spec"
+        exported: set[str] = set()
+        if spec.is_file():
+            exported = set(_spec_exports(spec, arch))
+        else:
+            findings.append(
+                f"dll/win32/ucrtbase/ucrtbase.spec: MISSING -- cannot tell which symbols "
+                f"ucrtbase exports, so the shadowing assertion for build-{arch} could not run"
+            )
+            continue
+
+        def is_rust_internal(sym: str) -> bool:
+            """True for a symbol no C declaration could ever name, so it cannot shadow one.
+
+            The check is about SHADOWING, and shadowing needs a name collision: a C caller
+            reaches a body by writing its identifier. Rust's mangled items (`_ZN..17h<hash>E`)
+            and the `.refptr.` COFF indirection stubs the linker emits for their statics carry
+            characters no C identifier has, so no ucrt TU can bind to them however many land in
+            the archive. Filtering them is not loosening the assertion -- keeping them in was
+            reporting 114 findings that were all noise, which is how a strict gate gets
+            disabled by the next person who reads it.
+            """
+            return (
+                sym.startswith((".refptr.", "_ZN", "__rust", "anon.", ".L", ".weak."))
+                or "_ZN" in sym
+                or not re.fullmatch(r"[A-Za-z_?@$][\w?@$]*", sym)
+            )
+
+        extra = sorted(
+            s
+            for s in rust_syms
+            if strip(s) not in c_norm and strip(s) in exported and not is_rust_internal(s)
+        )
+        if extra:
+            more = f", +{len(extra) - 12} more" if len(extra) > 12 else ""
+            shown = ", ".join(extra[:12]) + more
+            findings.append(
+                f"build-{arch}: libcrt_shared_cargo.a defines {len(extra)} symbol(s) that "
+                f"ucrtbase EXPORTS but none of our own static libs on its link line "
+                f"({', '.join(OURS_ON_LINK_LINE)}) defines, so each one "
+                f"silently replaces the genuine Microsoft UCRT body callers expect "
+                f"(--allow-multiple-definition raises nothing): {shown}. fix: move the body "
+                f"back to msvcrt-crt-rust, or -- if ucrtbase really does owe it to us -- add "
+                f"the C to SHARED_SOURCE so both sides agree on the surface"
+            )
+    return findings
+
+
+def main() -> int:
+    findings = check_structure() + check_extern_crates() + check_archive()
+    for f in findings:
+        print(f)
+    return 1 if findings else 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())

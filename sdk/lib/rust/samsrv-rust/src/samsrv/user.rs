@@ -461,8 +461,8 @@ pub unsafe extern "C" fn SampRemoveUserFromAllGroups(UserObject: PSAM_DB_OBJECT)
     Status
 }
 #[no_mangle]
-pub unsafe extern "C" fn SampRemoveUserFromAllAliases(_UserObject: PSAM_DB_OBJECT) -> NTSTATUS {
-    FIXME!(b"(%p)\n\0".as_ptr() as PCHAR, UserObject);
+pub unsafe extern "C" fn SampRemoveUserFromAllAliases(UserObject: PSAM_DB_OBJECT) -> NTSTATUS {
+    FIXME!("(%p)\n", UserObject);
     STATUS_SUCCESS
 }
 #[no_mangle]

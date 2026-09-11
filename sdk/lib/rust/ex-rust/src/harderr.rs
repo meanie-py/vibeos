@@ -21,6 +21,7 @@ use ntkrnl_sys::ddk::{
     ZwAllocateVirtualMemory, ZwFreeVirtualMemory,
     LpcRequestWaitReplyPort,
 };
+use ntkrnl_sys::probe::probe_user_buffer;
 use ntkrnl_sys::{opaque_ptr, opaque_ptr_const};
 
 extern "system" {
@@ -396,7 +397,41 @@ pub unsafe extern "system" fn NtRaiseHardError(
             }
         }
 
+        // The C wraps everything from here to the ExpRaiseHardError call in one
+        // _SEH2_TRY, whose handler frees SafeParams and returns the exception code. It
+        // contains FOUR probes and all four were dropped. Restored below in the C's own
+        // order; on failure we free SafeParams and return the status, as the handler did.
+        //
+        // The third of them is the one worth pausing on: SafeParams[i] is a pointer that
+        // was itself COPIED OUT OF USER MEMORY a few lines earlier, so it is entirely
+        // caller-chosen. Dereferencing it unprobed reads sizeof(UNICODE_STRING) from any
+        // address in the kernel — and the fourth probe then validates the Buffer pointer
+        // inside the header that was just read, which is why SafeString looks unused
+        // afterwards. It is not dead code; validating it IS its purpose, and dropping the
+        // probes turned a capture-and-validate sequence into a raw pointer chase.
+        if let Err(e) = probe_user_buffer(
+            Response as *const core::ffi::c_void,
+            core::mem::size_of::<ULONG>(),
+            core::mem::size_of::<ULONG>(),
+            PreviousMode,
+        ) {
+            if !SafeParams.is_null() {
+                ExFreePoolWithTag(SafeParams as PVOID, TAG_ERR);
+            }
+            return e;
+        }
+
         if !Parameters.is_null() {
+            if let Err(e) = probe_user_buffer(
+                Parameters as *const core::ffi::c_void,
+                ParamSize,
+                core::mem::size_of::<ULONG_PTR>(),
+                PreviousMode,
+            ) {
+                ExFreePoolWithTag(SafeParams as PVOID, TAG_ERR);
+                return e;
+            }
+
             core::ptr::copy_nonoverlapping(
                 Parameters as *const u8,
                 SafeParams as *mut u8,
@@ -406,11 +441,31 @@ pub unsafe extern "system" fn NtRaiseHardError(
             if UnicodeStringParameterMask != 0 {
                 for i in 0..(NumberOfParameters as usize) {
                     if (UnicodeStringParameterMask & (1 << i)) != 0 {
+                        if let Err(e) = probe_user_buffer(
+                            *SafeParams.add(i) as *const core::ffi::c_void,
+                            core::mem::size_of::<UNICODE_STRING>(),
+                            core::mem::size_of::<ULONG_PTR>(),
+                            PreviousMode,
+                        ) {
+                            ExFreePoolWithTag(SafeParams as PVOID, TAG_ERR);
+                            return e;
+                        }
+
                         core::ptr::copy_nonoverlapping(
                             *SafeParams.add(i) as *const u8,
                             core::ptr::addr_of_mut!(SafeString) as *mut u8,
                             core::mem::size_of::<UNICODE_STRING>(),
                         );
+
+                        if let Err(e) = probe_user_buffer(
+                            SafeString.Buffer as *const core::ffi::c_void,
+                            SafeString.MaximumLength as usize,
+                            core::mem::size_of::<UCHAR>(),
+                            PreviousMode,
+                        ) {
+                            ExFreePoolWithTag(SafeParams as PVOID, TAG_ERR);
+                            return e;
+                        }
                     }
                 }
             }

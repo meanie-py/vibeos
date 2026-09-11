@@ -4,10 +4,6 @@ use ntkrnl_sys::ddk::{KeUserModeCallback, ExAllocatePoolWithTag, ExFreePoolWithT
 use ntkrnl_sys::base::NT_SUCCESS;
 use ntkrnl_sys::rtl::RtlCopyMemory;
 
-// Debug-channel macros — no kernel symbol, no-op.
-macro_rules! ERR   { ($($t:tt)*) => {{}}; }
-macro_rules! TRACE { ($($t:tt)*) => {{}}; }
-
 // PagedPool POOL_TYPE variant.
 const PagedPool: POOL_TYPE = 1;
 
@@ -185,7 +181,7 @@ unsafe extern "system" fn IntDDEPostCallback(
     UserEnterCo();
 
     if !NT_SUCCESS(Status) || ResultPointer.is_null() {
-        ERR!(b"DDE Post callback failed!\n\0".as_ptr() as *const core::ffi::c_char);
+        ERR!("DDE Post callback failed!\n");
         IntCbFreeMemory(Argument);
         return 0;
     }
@@ -316,7 +312,7 @@ pub unsafe extern "system" fn IntDdePostMessageHook(
 
         size = IntDDEPostCallback(pWnd, Msg, wParam, &mut lp, &mut userBuf);
         if size == 0 {
-            ERR!(b"DDE Post Callback return 0 0x%x\n\0".as_ptr() as *const core::ffi::c_char, Msg);
+            ERR!("DDE Post Callback return 0 0x%x\n", Msg);
             return FALSE as BOOL;
         }
 
@@ -325,7 +321,7 @@ pub unsafe extern "system" fn IntDdePostMessageHook(
         } else {
             Buffer = ExAllocatePoolWithTag(PagedPool, size as _, USERTAG_DDE);
             if Buffer.is_null() {
-                ERR!(b"Failed to allocate %i bytes.\n\0".as_ptr() as *const core::ffi::c_char, size);
+                ERR!("Failed to allocate %i bytes.\n", size);
                 return FALSE as BOOL;
             }
             RtlCopyMemory(Buffer, userBuf, size as usize);
@@ -375,7 +371,7 @@ pub unsafe extern "system" fn IntDdePostMessageHook(
             USERTAG_DDE5,
         ) as PDDE_DATA;
         if pddeData.is_null() {
-            ERR!(b"Failed to allocate DDE_DATA\n\0".as_ptr() as *const core::ffi::c_char);
+            ERR!("Failed to allocate DDE_DATA\n");
             ExFreePoolWithTag(Buffer, USERTAG_DDE);
             return FALSE as BOOL;
         }

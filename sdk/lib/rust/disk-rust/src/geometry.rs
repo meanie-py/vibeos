@@ -102,13 +102,13 @@ const PARTITION_EXTENDED: u8 = 0x05;
 const PARTITION_XINT13_EXTENDED: u8 = 0x0F;
 const PARTITION_LDM: u8 = 0x42;
 
-const TRACE_LEVEL_INFORMATION: i32 = 4;
-const TRACE_FLAG_GENERAL: u32 = 0x00000004;
+const TRACE_LEVEL_INFORMATION: i32 = 4; // storswtr.h:26-30
+const TRACE_FLAG_GENERAL: u32 = 0; // storswtr.h:80-98 (an ORDINAL enum, not a bitmask)
 const DetectInt13: i32 = 1;
 
 type KIRQL = u8;
 
-const TRACE_LEVEL_ERROR: i32 = 2;
+const TRACE_LEVEL_ERROR: i32 = 2; // storswtr.h:26-30
 
 // Forward declarations for functions/constants not in the import list
 
@@ -694,7 +694,7 @@ pub unsafe extern "system" fn DiskSaveBusDetectInfo(
     // Declarations for symbols not in imports
 
     const APC_LEVEL: u8 = 1;
-    const TRACE_FLAG_GENERAL: i32 = 1;
+    const TRACE_FLAG_GENERAL: i32 = 0; // storswtr.h:80-98 (an ORDINAL enum, not a bitmask)
     const VALUE_BUFFER_SIZE: usize = 0x0800; // placeholder - adjust if needed
     const DISK_TAG_UPDATE_GEOM: u32 = 0x67446353; // example tag
 
@@ -900,7 +900,7 @@ pub unsafe extern "system" fn DiskUpdateGeometry(
     const DiskGeometryUnknown: DISK_GEOMETRY_SOURCE = 0;
     const DiskGeometryFromBios: DISK_GEOMETRY_SOURCE = 1;
     const DiskGeometryFromPort: DISK_GEOMETRY_SOURCE = 2;
-    const TRACE_FLAG_GENERAL: u32 = 0; // placeholder – actual value defined elsewhere
+    const TRACE_FLAG_GENERAL: u32 = 0; // storswtr.h:80-98 (an ORDINAL enum, not a bitmask)
 
     let diskData: PDISK_DATA = (*FdoExtension).__bindgen_anon_1.CommonExtension.as_ref().DriverData as PDISK_DATA;
     let mut i: u32;

@@ -66,7 +66,8 @@ pub struct _KSEC_LOGON_DATA {
 pub type KSEC_LOGON_DATA = _KSEC_LOGON_DATA;
 pub type PKSEC_LOGON_DATA = *mut _KSEC_LOGON_DATA;
 
-const RTL_ENCRYPT_OPTION_SAME_LOGON: u32 = 1;
+// ksecdd.h:25-27 / ntsecapi.h:700: SAME_PROCESS 0, CROSS_PROCESS 1, SAME_LOGON 2.
+const RTL_ENCRYPT_OPTION_SAME_LOGON: u32 = 2;
 
 #[no_mangle]
 pub unsafe extern "system" fn KsecInitializeEncryptionSupport() {
@@ -129,9 +130,12 @@ pub unsafe extern "system" fn KsecInitializeEncryptionSupport() {
 }
 
 unsafe fn KsecGetKeyData(mut KeyData: *mut UCHAR, mut OptionFlags: ULONG) {
-    const RTL_ENCRYPT_OPTION_SAME_PROCESS: u32 = 0x01;
-    const RTL_ENCRYPT_OPTION_SAME_LOGON: u32 = 0x03;
-    const RTL_ENCRYPT_OPTION_CROSS_PROCESS: u32 = 0x00;
+    // ksecdd.h:25-27 / ntsecapi.h:700: SAME_PROCESS 0, CROSS_PROCESS 1, SAME_LOGON 2. All THREE were
+    // permuted here -- the set of names is right and every value is in the wrong slot,
+    // which is the recall failure mode a seal cannot catch (AGENTS.md, msvcrt _tzset).
+    const RTL_ENCRYPT_OPTION_SAME_PROCESS: u32 = 0x00;
+    const RTL_ENCRYPT_OPTION_CROSS_PROCESS: u32 = 0x01;
+    const RTL_ENCRYPT_OPTION_SAME_LOGON: u32 = 0x02;
 
     let mut Md5Contexts: [MD5_CTX; 2] = [MD5_CTX {
         i: [0; 2],
@@ -428,7 +432,8 @@ pub unsafe extern "system" fn KsecEncryptMemory(
     Length: ULONG,
     OptionFlags: ULONG,
 ) -> NTSTATUS {
-    const RTL_ENCRYPT_OPTION_SAME_LOGON: u32 = 1;
+    // ksecdd.h:25-27 / ntsecapi.h:700: SAME_PROCESS 0, CROSS_PROCESS 1, SAME_LOGON 2.
+    const RTL_ENCRYPT_OPTION_SAME_LOGON: u32 = 2;
 
     /* Validate parameter */
     if OptionFlags > RTL_ENCRYPT_OPTION_SAME_LOGON {

@@ -1,0 +1,49 @@
+# crt-shared-cargo — the staticlib umbrella over `crt-shared-rust`, for ucrtbase.dll.
+#
+# Same `*-rust` (rlib: the code) + `*-cargo` (staticlib: the link artifact) split as
+# msvcrt-crt-cargo, and for the same load-bearing reason: a crate with `staticlib` in its
+# crate-type is a final no_std artifact, so rustc demands a `#[panic_handler]` in the very
+# same invocation that emits the rlib — and that panic_handler is then a duplicate
+# `panic_impl` lang item the moment the rlib is linked into a host harness's std test
+# binary. crate-type is not feature-conditional, so the two roles cannot live in one crate.
+#
+# THE POINT OF THIS CRATE: it is the ONLY Rust archive ucrtbase.dll links, and it pulls in
+# `crt-shared-rust` and nothing else. msvcrt-crt-rust is deliberately absent from the
+# dependency graph — that absence is the whole guarantee. ucrtbase.dll exports 2,584 names
+# and the msvcrt cohab archive exports 1,229, colliding on 891 of which only 35 are
+# msvcrt_shared's; linking msvcrt's archive here would silently replace 856 genuine
+# Microsoft UCRT bodies, because `--allow-multiple-definition` raises no diagnostic. A
+# dependency edge that does not exist cannot be got wrong by a build flag.
+#
+# `tools/verify_ucrtbase_cohab.py` asserts that property against the built archive rather
+# than trusting this comment.
+[package]
+name = "crt-shared-cargo"
+version = "0.1.0"
+edition = "2021"
+
+[lib]
+crate-type = ["staticlib"]
+path = "src/lib.rs"
+
+[dependencies]
+# `ucrtsupport` is what makes this the UCRT build rather than a second msvcrt one: it drops
+# set_terminate/_get_terminate/terminate/unexpected/__pxcptinfoptrs/signal/raise (ucrt has
+# its own) and enables the 13 `_MSVCR_VER >= 80/140 || __UCRTSUPPORT__` bodies that msvcrt's
+# `_MSVCR_VER = 0` never compiled. See crt-shared-rust/Cargo.toml for the full live set.
+crt-shared-rust = { path = "../crt-shared-rust", features = ["cpp", "undname", "ucrtsupport"] }
+panic-common = { path = "../panic-common", features = ["user"] }
+# The ucrtbase half of the math wave. ucrtbase.dll does not get its math from the vendored
+# `sdk/lib/ucrt` -- it links OUR `crtmath` for it (see its CMakeLists) -- so these 66
+# kernel-proven libm exports flip crtmath's C bodies here by lld first-match, exactly as they
+# already do in msvcrt.dll via msvcrt-crt-cargo. Same reasoning for putting it on the
+# staticlib and not on crt-shared-rust: the rlib is what msvcrt-difftest and
+# msvcrt-seh-difftest link, and 66 #[no_mangle] libm names there would shadow the HOST libm
+# under the reference TUs, contaminating the oracle.
+#
+# This does NOT weaken the crate's guarantee. cnt-rust has an EMPTY [dependencies] table, so
+# the edge cannot reach msvcrt-crt-rust, which is the one thing this crate exists to keep out
+# -- `tools/verify_ucrtbase_cohab.py` walks the graph and asserts it rather than trusting the
+# claim. Every one of the 66 is graded bit-exact against the C sdk/lib/crt/math compiles, in
+# cnt-difftest, per-arch.
+cnt-rust = { path = "../cnt-rust", default-features = false, features = ["cabi-math"] }

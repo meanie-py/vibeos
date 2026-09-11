@@ -19,18 +19,6 @@ extern "C" {
 // an optimization barrier that has uncloaked latent ABI mismatches into `ud2`. The call sites
 // are kept (that is what `scan_dropped_prints` grades): a diagnostic deleted from the source
 // is one nobody can ever turn back on.
-macro_rules! FIXME {
-    ($($arg:tt)*) => {{}};
-}
-macro_rules! TRACE {
-    ($($arg:tt)*) => {{}};
-}
-macro_rules! WARN {
-    ($($arg:tt)*) => {{}};
-}
-macro_rules! ERR {
-    ($($arg:tt)*) => {{}};
-}
 
 // ---- file-scope preamble (translated) ----
 pub const MAX_ELEM_LEN: usize = 64;
@@ -1042,7 +1030,7 @@ pub unsafe extern "C" fn __crtLCMapStringW(
     codepage: u32,
     xflag: i32,
 ) -> i32 {
-    FIXME!("(lcid %lx, flags %lx, %s(%d), %p(%d), %x, %d), partial stub!\n", lcid, mapflags, debugstr_w(src), srclen, dst, dstlen, codepage, xflag);
+    FIXME!("(lcid %lx, flags %lx, %S(%d), %p(%d), %x, %d), partial stub!\n", lcid, mapflags, src, srclen, dst, dstlen, codepage, xflag);
 
     return LCMapStringW(lcid, mapflags, src, srclen, dst, dstlen);
 }
@@ -1056,7 +1044,7 @@ pub unsafe extern "C" fn __crtCompareStringA(
     src2: *const i8,
     len2: i32,
 ) -> i32 {
-    FIXME!("(lcid %lx, flags %lx, %s(%d), %s(%d), partial stub\n", lcid, flags, debugstr_a(src1), len1, debugstr_a(src2), len2);
+    FIXME!("(lcid %lx, flags %lx, %s(%d), %s(%d), partial stub\n", lcid, flags, src1, len1, src2, len2);
     /* FIXME: probably not entirely right */
     CompareStringA(lcid, flags, src1, len1, src2, len2)
 }
@@ -1070,7 +1058,7 @@ pub unsafe extern "C" fn __crtCompareStringW(
     src2: *const wchar_t,
     len2: i32,
 ) -> i32 {
-    FIXME!("(lcid %lx, flags %lx, %s(%d), %s(%d), partial stub\n", lcid, flags, debugstr_w(src1), len1, debugstr_w(src2), len2);
+    FIXME!("(lcid %lx, flags %lx, %S(%d), %S(%d), partial stub\n", lcid, flags, src1, len1, src2, len2);
     /* FIXME: probably not entirely right */
     CompareStringW(lcid, flags, src1, len1, src2, len2)
 }
@@ -1082,7 +1070,7 @@ pub unsafe extern "C" fn __crtGetLocaleInfoW(
     buffer: *mut wchar_t,
     len: i32,
 ) -> i32 {
-    FIXME!("(lcid %lx, type %lx, %p(%d), partial stub\n", lcid, type, buffer, len);
+    FIXME!("(lcid %lx, type %lx, %p(%d), partial stub\n", lcid, r#type, buffer, len);
     /* FIXME: probably not entirely right */
     GetLocaleInfoW(lcid, r#type, buffer, len)
 }

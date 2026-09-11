@@ -40,7 +40,7 @@ pub unsafe extern "system" fn KeContextToTrapFrame(
 ) {
     let mut OldIrql: KIRQL;
 
-    debug_assert!((*Context).ContextFlags & CONTEXT_AMD64 != 0);
+    ntkrnl_sys::ASSERT!((*Context).ContextFlags & CONTEXT_AMD64 != 0);
     ContextFlags &= !CONTEXT_AMD64;
 
     OldIrql = KeGetCurrentIrql();
@@ -171,7 +171,7 @@ pub unsafe extern "system" fn KeTrapFrameToContext(
     }
 
     ContextFlags = (*Context).ContextFlags;
-    debug_assert!(ContextFlags & CONTEXT_AMD64 != 0);
+    ntkrnl_sys::ASSERT!(ContextFlags & CONTEXT_AMD64 != 0);
     ContextFlags &= !CONTEXT_AMD64;
 
     if ContextFlags & CONTEXT_INTEGER != 0 {

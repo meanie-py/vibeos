@@ -80,6 +80,7 @@ extern "C" {
 
 // SeDeleteClientSecurity is the macro from sefuncs.h, exposed as Rust inline.
 use ntkrnl_sys::inline::tier1::SeDeleteClientSecurity;
+use ntkrnl_sys::ddk::RtlAssert;
 
 // UNIMPLEMENTED_DBGBREAK: debug-only no-op stub
 #[allow(non_snake_case)]
@@ -243,6 +244,22 @@ pub unsafe extern "system" fn CmpDoFlushAll(ForceFlush: u8) -> u8 {
     return Result;
 }
 
+// The C wraps the CmpCopyName below in _SEH2_TRY/_SEH2_EXCEPT, whose handler reports
+// DPRINT1("Invalid user data!"), frees the cell and returns the exception code — the C
+// comment on it says "this can crash since the name is coming from user-mode."
+//
+// That handler is NOT reachable here, and adding a print for it would be a lie about
+// where this function's input comes from. ValueName is kernel-pool memory by the time
+// it arrives: the one live caller is CmSetValueKey <- NtSetValueKey, which captures the
+// string with ProbeAndCaptureUnicodeString (ntkrnl-sys/src/inline/common.rs) — for a
+// user-mode caller that probes the header AND the buffer and copies both into pool, so
+// no user page is touched from here. A KernelMode caller hands us its own kernel
+// buffer, and a driver passing a bad one bugchecks with or without this handler,
+// because DUMMY_PSEH means there is nothing to catch it (dummy-pseh-verdict.md).
+//
+// So the honest translation of the SEH region is its guarded statement alone. The place
+// that DID need the check is NtSetValueKey's Data path, where the probe really had been
+// dropped — see the comment there. nolint: dropped-print
 unsafe fn CmpSetValueKeyNew(
     Hive: PHHIVE,
     Parent: PCM_KEY_NODE,
@@ -260,7 +277,12 @@ unsafe fn CmpSetValueKeyNew(
 
     if (*Parent).__bindgen_anon_1.__bindgen_anon_1.ValueList.Count != 0 {
         if (*Parent).__bindgen_anon_1.__bindgen_anon_1.ValueList.List == 0xFFFFFFFF {
-            panic!("ASSERT: Parent->ValueList.List != HCELL_NIL");
+            RtlAssert(
+                b"Parent->ValueList.List != HCELL_NIL\0".as_ptr() as *mut core::ffi::c_void,
+                b"cmapi.rs\0".as_ptr() as *mut core::ffi::c_void,
+                line!(),
+                core::ptr::null_mut::<i8>(),
+            );
         }
         if HvMarkCellDirty(Hive, (*Parent).__bindgen_anon_1.__bindgen_anon_1.ValueList.List, 0u8) == 0 {
             return STATUS_NO_LOG_SPACE;
@@ -279,12 +301,22 @@ unsafe fn CmpSetValueKeyNew(
 
     CellData = HvGetCell(Hive, ValueCell) as PCELL_DATA;
     if CellData.is_null() {
-        panic!("ASSERT: CellData");
+        RtlAssert(
+            b"CellData\0".as_ptr() as *mut core::ffi::c_void,
+            b"cmapi.rs\0".as_ptr() as *mut core::ffi::c_void,
+            line!(),
+            core::ptr::null_mut::<i8>(),
+        );
     }
 
     HvReleaseCell(Hive, ValueCell);
     if HvIsCellDirty(Hive, ValueCell) == 0 {
-        panic!("ASSERT: HvIsCellDirty(Hive, ValueCell)");
+        RtlAssert(
+            b"HvIsCellDirty(Hive, ValueCell)\0".as_ptr() as *mut core::ffi::c_void,
+            b"cmapi.rs\0".as_ptr() as *mut core::ffi::c_void,
+            line!(),
+            core::ptr::null_mut::<i8>(),
+        );
     }
 
     (*CellData).u.KeyValue.Signature = 0x6B76u16;
@@ -318,7 +350,12 @@ unsafe fn CmpSetValueKeyNew(
 
         (*CellData).u.KeyValue.DataLength = DataSize;
         if HvIsCellDirty(Hive, (*CellData).u.KeyValue.Data) == 0 {
-            panic!("ASSERT: HvIsCellDirty(Hive, CellData->u.KeyValue.Data)");
+            RtlAssert(
+                b"HvIsCellDirty(Hive, CellData->u.KeyValue.Data)\0".as_ptr() as *mut core::ffi::c_void,
+                b"cmapi.rs\0".as_ptr() as *mut core::ffi::c_void,
+                line!(),
+                core::ptr::null_mut::<i8>(),
+            );
         }
     } else {
         (*CellData).u.KeyValue.DataLength = DataSize + 0x80000000u32;
@@ -1818,7 +1855,9 @@ pub unsafe extern "system" fn CmUnloadKey(
     const STATUS_INVALID_PARAMETER: i32 = -1073741811i32;
     const STATUS_CANNOT_DELETE: i32 = -1073741535i32;
     const REG_FORCE_UNLOAD: u32 = 1;
-    const TAG_CMHIVE: u32 = 0x4D48434D;
+    // C: cmlib.h `#define TAG_CMHIVE 'vHMC'` (big-endian multi-char literal). cminit.rs ALLOCATES the ViewLock/FlusherLock
+    // this function frees, so a divergent value here is a real tag mismatch.
+    const TAG_CMHIVE: u32 = u32::from_be_bytes(*b"vHMC");
     const TAG_CM: u32 = 0x20204D43;
 
     CMP_ASSERT_EXCLUSIVE_REGISTRY_LOCK();

@@ -65,6 +65,7 @@ gate, and every queued lane is a blocked agent. That is what the merge queue add
 from __future__ import annotations
 
 import json
+import os
 import subprocess
 import time
 from pathlib import Path
@@ -150,6 +151,75 @@ def _preflight(repo: Path) -> tuple[str, str]:
     return branch, _git(repo, "rev-parse", "HEAD")
 
 
+def _lint_preflight(repo: Path, run: Run, args) -> None:
+    """Run `check-tooling` HERE, before this lane consumes a batched gate.
+
+    The conductor already runs this exact command, so this can never block anything the
+    gate would have let through — it is the same verdict, moved from the most expensive
+    place in the system to the cheapest. That matters because a batched gate is 3 builds
+    + 4 boots of fleet load, and a red one bounces the whole train: the lint that
+    rejected this lane on 2026-07-26 was a single line 101 characters long.
+
+    Three properties make the move sound:
+      * `check-tooling` is arch-independent, host-only and deterministic (gate.py's
+        `_tooling_once` says so itself, and starts it before the first build);
+      * it needs no build-<arch>, so no fleet-isolation question arises;
+      * failing here is strictly earlier than failing there — never *more* strict.
+
+    It is an approximation in one direction only: we lint the lane tip, while the
+    conductor lints the tip MERGED with master. So this can miss a failure the merge
+    introduces. That is fine — it is an early filter, not a replacement for the gate.
+
+    FAIL OPEN if the check itself cannot run (missing venv, no ruff, timeout). A broken
+    preflight must never be able to wedge the fleet's ability to land; only a check that
+    ran and returned nonzero blocks.
+    """
+    if getattr(args, "skip_lint", False):
+        run.add(Stage("lint", status="skip", detail="--skip-lint: check-tooling not run"))
+        return
+    t0 = time.monotonic()
+    try:
+        cp = subprocess.run(
+            [str(repo / "vibeos-cli"), "check-tooling"],
+            cwd=str(repo),
+            capture_output=True,
+            text=True,
+            timeout=1800,
+        )
+    except (OSError, subprocess.SubprocessError) as exc:
+        run.add(Stage("lint", status="warn", detail=f"check-tooling could not run: {exc}"))
+        return
+    dt = time.monotonic() - t0
+    if cp.returncode and any(
+        line.startswith("DISK_ADMISSION_FAIL:") for line in (cp.stdout or "").splitlines()
+    ):
+        run.classification = "DISK_ADMISSION_FAIL"
+        raise LandAbort(cp.stdout.strip())
+    if cp.returncode == 0:
+        run.add(Stage("lint", status="ok", detail=f"check-tooling clean ({dt:.0f}s)"))
+        return
+    # PERSIST what we captured before aborting. check-tooling prints the failing
+    # test's own output after the summary, and this is the only copy of it: the
+    # child writes no artifact dir, so discarding stdout here leaves a lane with a
+    # ✗ line and nothing to debug. That is not hypothetical — a preflight abort on
+    # 2026-09-06 named only `pytest:.` for a failure that did not reproduce, and
+    # the evidence was gone.
+    log = run.dir / "preflight-check-tooling.log"
+    try:
+        log.write_text((cp.stdout or "") + (cp.stderr or ""), encoding="utf-8", errors="replace")
+    except OSError:
+        pass
+    salient = [ln.strip() for ln in (cp.stdout or "").splitlines() if "✗" in ln]
+    raise LandAbort(
+        "check-tooling FAILED — fix it before queueing, or the conductor bounces the whole "
+        "batch (3 builds + 4 boots of fleet load) for it:\n    "
+        + ("\n    ".join(salient) if salient else f"exit {cp.returncode}")
+        + f"\n  captured output: {log}"
+        + "\n  run `./vibeos-cli check-tooling` for the detail."
+        + "\n  override (report every use): ./vibeos-cli land --skip-lint"
+    )
+
+
 def _merge_master(repo: Path, run: Run) -> str:
     """Merge origin/master into HEAD (no-op when already contained). Returns the new HEAD.
     A conflicting merge is aborted and reported — resolving it is the lane's call, not
@@ -184,7 +254,7 @@ def _run_gate(repo: Path, run: Run, args) -> None:
     if getattr(args, "clean", False):
         cmd.append("--clean")
     t0 = time.monotonic()
-    cp = run.run(cmd, cwd=repo, stage="gate")
+    cp = run.run(cmd, cwd=repo, stage="gate", env=dict(os.environ, VIBEOS_JOB_CLASS="integration"))
     dt = time.monotonic() - t0
     if cp.returncode != 0:
         run.add(
@@ -291,9 +361,13 @@ def _land_queued(args, repo: Path) -> int:
     other agent already is. Returns as soon as the work is either done (we trained) or in
     somebody else's hands (they are training) — never blocks holding a worktree hostage."""
     run = Run("land", "queue")
+    attempt = None
     try:
         _branch, head = _preflight(repo)
         lane = queue.lane_id(repo)
+        # Marker first: everything from here to the submit is the window where a kill leaves
+        # the lane silently unregistered. See queue.begin_attempt.
+        attempt = queue.begin_attempt(repo, lane, head)
         _report_prior_results(repo, lane, run)
         queue.git(repo, "fetch", "origin")
         if queue.git_ok(repo, "merge-base", "--is-ancestor", head, "origin/master"):
@@ -335,6 +409,9 @@ def _land_queued(args, repo: Path) -> int:
                 )
             )
         else:
+            # Only on a REAL submission: if this tip is already queued we are adding no new
+            # risk to the batch, and a --dry-run has already returned above.
+            _lint_preflight(repo, run, args)
             sub = queue.submit(repo, tip=head, lane=lane)
             depth = len(queue.pending(repo))
             run.add(
@@ -398,9 +475,14 @@ def _land_queued(args, repo: Path) -> int:
         )
         return run.finalize(repo)
     except (queue.QueueError, LandAbort) as e:
-        run.classification = "LAND_ABORT"
+        run.classification = run.classification or "LAND_ABORT"
         run.add(Stage("land", status="fail", detail=str(e).splitlines()[0], salient=[str(e)]))
         return run.finalize(repo)
+    finally:
+        # Every ordinary exit clears the marker, an abort included: an abort is LOUD, and the
+        # marker exists only for the silent death. A SIGKILL skips this, which is the whole
+        # mechanism -- a surviving marker means "killed", not "failed".
+        queue.end_attempt(attempt)
 
 
 def _conductor_log(run: Run):
@@ -544,6 +626,11 @@ def _land_direct(args, repo: Path) -> int:
             _report_queue(run)
             return run.finalize(repo)
 
+        # BEFORE the land lock, not inside it: the direct path's gate is this lane's own,
+        # but a lint failure still burns a whole gate, and there is no reason to hold a
+        # fleet-wide lock for the ~40s this takes.
+        _lint_preflight(repo, run, args)
+
         _report_queue(run)
         timeout = float(getattr(args, "queue_timeout", 0) or hostlock.LAND_LOCK_TIMEOUT)
         t_queue = time.monotonic()
@@ -621,6 +708,16 @@ def cmd_land_status(args, repo: Path) -> int:
         print(f"  queued #{i + 1}: {s.lane} @ {s.tip[:12]}  ({waited // 60}m{waited % 60:02d}s)")
     if not subs:
         print("  queue: empty")
+    # A killed submit is INVISIBLE here otherwise, and "not listed" reads as "the conductor
+    # has not reached me" -- so the agent waits on a position it never had. Say it instead.
+    for rec in queue.abandoned_attempts(repo, lane=mine):
+        ago = max(0, int(now - float(rec.get("started_at", now))))
+        print(
+            f"  NOT QUEUED: {rec.get('lane')} @ {str(rec.get('tip', ''))[:12]} — a `land` "
+            f"started {ago // 60}m{ago % 60:02d}s ago DIED before it enqueued anything "
+            f"(pid {rec.get('pid')} is gone). You are not in the queue; re-run "
+            f"`./vibeos-cli land`. If the host was full, check `df -h /` first."
+        )
     for rec in recent:
         # `or ""` keeps the key a str: a record with no outcome yet reads as
         # REJECTED either way (a None key simply misses), but dict.get is typed

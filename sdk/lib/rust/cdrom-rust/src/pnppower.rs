@@ -52,8 +52,8 @@ const WDF_REQUEST_REUSE_NO_FLAGS: u32 = 0;
 const IOCTL_SCSI_EXECUTE_IN: u32 = 0x1b0011; // unknown  // was 0 (LLM-invented); bindgen-correct
 const IRP_MJ_SCSI: u8 = 0x0F;
 const SENSE_BUFFER_SIZE: u32 = 18;
-const TRACE_LEVEL_ERROR: u32 = 1;
-const TRACE_FLAG_GENERAL: u32 = 2;
+const TRACE_LEVEL_ERROR: u32 = 2; // storswtr.h:26-30
+const TRACE_FLAG_GENERAL: u32 = 0; // storswtr.h:80-98 (an ORDINAL enum, not a bitmask)
 #[no_mangle]
 pub unsafe extern "system" fn RequestProcessShutdownFlush(device: WDFDEVICE, irp: PIRP) -> NTSTATUS {
     let mut status: NTSTATUS = STATUS_SUCCESS;

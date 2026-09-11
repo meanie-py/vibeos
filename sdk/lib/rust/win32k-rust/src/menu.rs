@@ -6,11 +6,6 @@ use ntkrnl_sys::ps::PsGetCurrentProcess;
 use ntkrnl_sys::base::{NT_SUCCESS, STATUS_SUCCESS, STATUS_INSUFFICIENT_RESOURCES};
 use core::ffi::c_void;
 
-// Debug-channel sinks (no kernel symbol in non-DBG build; inert no-op macros).
-macro_rules! TRACE { ($($t:tt)*) => {{}}; }
-macro_rules! ERR { ($($t:tt)*) => {{}}; }
-macro_rules! FIXME { ($($t:tt)*) => {{}}; }
-
 // LOWORD/HIWORD/MAKELPARAM/MAKEWPARAM (minwindef.h).
 #[inline(always)]
 fn LOWORD(l: DWORD) -> DWORD { l & 0xffff }
@@ -1522,7 +1517,7 @@ pub unsafe extern "fastcall" fn IntSetMenuItemInfo(
             if !SubMenuObject.is_null() && UserObjectInDestroy(((*lpmii).hSubMenu as *mut core::ffi::c_void)) == 0 {
                 if MenuObject == SubMenuObject {
                     let mut hMenu: HANDLE = core::ptr::null_mut();
-                    ERR!(b"Pop Up Menu Double Trouble!\n\0".as_ptr());
+                    ERR!("Pop Up Menu Double Trouble!\n");
                     SubMenuObject = IntCreateMenu(
                         core::ptr::addr_of_mut!(hMenu),
                         0,
@@ -1536,7 +1531,7 @@ pub unsafe extern "fastcall" fn IntSetMenuItemInfo(
                     circref = 1;
                 }
                 if MENU_depth(SubMenuObject, 0) > (MAXMENUDEPTH as i32) {
-                    ERR!(b"Loop detected in menu hierarchy or maximum menu depth exceeded!\n\0".as_ptr());
+                    ERR!("Loop detected in menu hierarchy or maximum menu depth exceeded!\n");
                     if circref != 0 {
                         IntDestroyMenuObject(SubMenuObject, 0);
                     }
@@ -1705,7 +1700,7 @@ pub unsafe extern "C" fn IntSetMenuItemInfo(
             if !SubMenuObject.is_null() && UserObjectInDestroy((*lpmii).hSubMenu as _) == 0 {
                 if MenuObject == SubMenuObject {
                     let mut hMenu: HANDLE = core::ptr::null_mut();
-                    ERR!(b"Pop Up Menu Double Trouble!\n\0".as_ptr());
+                    ERR!("Pop Up Menu Double Trouble!\n");
                     SubMenuObject = IntCreateMenu(
                         core::ptr::addr_of_mut!(hMenu),
                         0,
@@ -1719,7 +1714,7 @@ pub unsafe extern "C" fn IntSetMenuItemInfo(
                     circref = 1;
                 }
                 if MENU_depth(SubMenuObject, 0) > MAXMENUDEPTH as i32 {
-                    ERR!(b"Loop detected in menu hierarchy or maximum menu depth exceeded!\n\0".as_ptr());
+                    ERR!("Loop detected in menu hierarchy or maximum menu depth exceeded!\n");
                     if circref != 0 {
                         IntDestroyMenuObject(SubMenuObject, 0);
                     }
@@ -2454,10 +2449,10 @@ unsafe fn MENU_DrawBitmapItem_impl(
                 HBMMENU_SYSTEM => {
                     if (*lpitem).dwItemData != 0 {
                         if !ValidateHwndNoErr((*lpitem).dwItemData as HWND).is_null() {
-                            ERR!(b"Get Item Data from this Window!!!\n\0".as_ptr());
+                            ERR!("Get Item Data from this Window!!!\n");
                         }
 
-                        ERR!(b"Draw Bitmap\n\0".as_ptr());
+                        ERR!("Draw Bitmap\n");
                         bmp = (*lpitem).dwItemData as HBITMAP;
                         if GreGetObject(
                             bmp as *mut core::ffi::c_void,
@@ -2475,7 +2470,7 @@ unsafe fn MENU_DrawBitmapItem_impl(
                                 UserReferenceObject(pIcon as *mut core::ffi::c_void);
                             }
                         }
-                        ERR!(b"Draw ICON\n\0".as_ptr());
+                        ERR!("Draw ICON\n");
                         if !pIcon.is_null() {
                             let cx = UserGetSystemMetrics(SM_CXSMICON);
                             let cy = UserGetSystemMetrics(SM_CYSMICON);
@@ -3535,7 +3530,7 @@ unsafe extern "C" fn MENU_EndMenu(pwnd: PWND) {
             fInsideMenuLoop = 0;
 
             if fInEndMenu != 0 {
-                ERR!(b"Already in End loop\n\0".as_ptr());
+                ERR!("Already in End loop\n");
                 return;
             }
 
@@ -3912,7 +3907,7 @@ unsafe fn MENU_ShowPopup(pwndOwner: PWND, menu: PMENU, id: UINT, mut flags: UINT
     pWnd = ValidateHwndNoErr((*menu).hWnd);
 
     if pWnd.is_null() {
-        ERR!(b"menu->hWnd bad hwnd %p\n\0".as_ptr(), (*menu).hWnd);
+        ERR!("menu->hWnd bad hwnd %p\n", (*menu).hWnd);
         return 0;
     }
 
@@ -4865,7 +4860,7 @@ unsafe fn MENU_TrackMenu(
     let pti: PTHREADINFO = PsGetCurrentThreadWin32Thread() as PTHREADINFO;
 
     if pti != head_pti(pwnd) {
-        ERR!(b"Not the same PTI!!!!\n\0".as_ptr());
+        ERR!("Not the same PTI!!!!\n");
     }
 
     mt.TrackFlags = 0;
@@ -6101,7 +6096,7 @@ pub unsafe extern "fastcall" fn UserCreateMenu(Desktop: PDESKTOP, PopupMenu: BOO
 
         if !NT_SUCCESS(Status) {
             ERR!(
-                b"Validation of window station handle (%p) failed\n\0".as_ptr() as *const u8,
+                "Validation of window station handle (%p) failed\n",
                 (*CurrentProcess).Win32WindowStation as HWINSTA,
             );
             SetLastNtError(Status);
@@ -6117,7 +6112,7 @@ pub unsafe extern "fastcall" fn UserCreateMenu(Desktop: PDESKTOP, PopupMenu: BOO
         if !Menu.is_null()
             && (*(*Menu).head.rpdesk).rpwinstaParent != WinStaObject
         {
-            ERR!(b"Desktop Window Station does not match Process one!\n\0".as_ptr() as *const u8);
+            ERR!("Desktop Window Station does not match Process one!\n");
         }
         ObDereferenceObject(WinStaObject as *mut _);
     } else {
@@ -6155,7 +6150,7 @@ pub unsafe extern "C" fn UserCreateMenu(Desktop: PDESKTOP, PopupMenu: BOOL) -> H
 
         if !NT_SUCCESS(Status) {
             ERR!(
-                b"Validation of window station handle (%p) failed\n\0".as_ptr() as *const u8,
+                "Validation of window station handle (%p) failed\n",
                 (*CurrentProcess).Win32WindowStation as HWINSTA,
             );
             SetLastNtError(Status);
@@ -6171,7 +6166,7 @@ pub unsafe extern "C" fn UserCreateMenu(Desktop: PDESKTOP, PopupMenu: BOOL) -> H
         if !Menu.is_null()
             && (*(*Menu).head.rpdesk).rpwinstaParent != WinStaObject
         {
-            ERR!(b"Desktop Window Station does not match Process one!\n\0".as_ptr() as *const u8);
+            ERR!("Desktop Window Station does not match Process one!\n");
         }
         ObDereferenceObject(WinStaObject as *mut _);
     } else {
@@ -6540,7 +6535,7 @@ unsafe fn MENU_GetSystemMenu(Window: PWND, Popup: PMENU) -> PMENU {
             hNewMenu = co_IntCallLoadMenu(hModClient, &mut MenuName);
         }
         if hNewMenu.is_null() {
-            ERR!(b"No Menu!!\n\0".as_ptr());
+            ERR!("No Menu!!\n");
             IntDestroyMenuObject(SysMenu, 0);
             return core::ptr::null_mut();
         }
@@ -6595,7 +6590,7 @@ unsafe fn MENU_GetSystemMenu(Window: PWND, Popup: PMENU) -> PMENU {
 
         return SysMenu;
     }
-    ERR!(b"failed to load system menu!\n\0".as_ptr());
+    ERR!("failed to load system menu!\n");
     core::ptr::null_mut()
 }
 }
@@ -7055,7 +7050,7 @@ pub unsafe extern "system" fn NtUserGetMenuBarInfo(
                 if !pPopupMenu.is_null() && !(*pPopupMenu).spmenu.is_null() {
                     if UserHMGetHandle((*pPopupMenu).spmenu) as HMENU != hMenu {
                         ERR!(
-                            b"Window Pop Up hMenu %p not the same as Get hMenu %p!\n\0".as_ptr(),
+                            "Window Pop Up hMenu %p not the same as Get hMenu %p!\n",
                             UserHMGetHandle((*pPopupMenu).spmenu),
                             hMenu,
                         );
@@ -7215,7 +7210,7 @@ pub unsafe extern "system" fn NtUserGetMenuBarInfo(
                 if !pPopupMenu.is_null() && !(*pPopupMenu).spmenu.is_null() {
                     if UserHMGetHandle((*pPopupMenu).spmenu) as HMENU != hMenu {
                         ERR!(
-                            b"Window Pop Up hMenu %p not the same as Get hMenu %p!\n\0".as_ptr(),
+                            "Window Pop Up hMenu %p not the same as Get hMenu %p!\n",
                             UserHMGetHandle((*pPopupMenu).spmenu),
                             hMenu,
                         );

@@ -15,7 +15,7 @@ import subprocess
 import time
 from pathlib import Path
 
-from . import archcfg, cachecfg, canon, hostlock, lints, provenance
+from . import archcfg, cachecfg, canon, hostdisk, hostlock, lints, provenance
 from .artifacts import Run, Stage
 
 _UNDEF = re.compile(r"undefined (?:symbol|reference)[^\w]*[`']?([@\w]+)", re.I)
@@ -64,6 +64,12 @@ def source_date_epoch(repo: Path) -> str | None:
 def _classify_build_failure(out: str, err: str) -> tuple[str, list[str]]:
     blob = out + "\n" + err
     low = blob.lower()
+    # Host disk exhaustion FIRST: an ENOSPC surfaces as compiler/linker "error:"
+    # text and would otherwise be filed as CARGO_CHECK_FAIL or BUILD_FAIL — i.e.
+    # as a defect in the diff, which is exactly the wrong cause. It cost four
+    # lanes a day on 2026-09-06. The detail always carries free bytes.
+    if hostdisk.looks_like_enospc(blob):
+        return "DISK_FULL", hostdisk.enospc_detail()
     if "cmake error" in low:
         return "CMAKE_CONFIGURE_FAIL", [
             ln.strip() for ln in blob.splitlines() if "CMake Error" in ln
@@ -92,9 +98,7 @@ def _clean(run: Run, repo: Path, arch: str) -> None:
     # into the SHARED workspace cache sdk/lib/rust/target/<stem>, not build-<arch>,
     # so discover_rust_targets misses it — add it so --clean is genuinely cold
     # (automates the §9.6b manual `rm -rf sdk/lib/rust/target/<stem>`).
-    ws_target = provenance.workspace_cargo_target(repo, arch)
-    if ws_target is not None:
-        targets = [*targets, ws_target]
+    targets = [*targets, *provenance.workspace_cargo_targets(repo, arch)]
     archives = provenance.discover_rust_archives(build_dir)
     # Cargo COPIES its build output into build-<arch>; nuking the caches above
     # leaves those copies newer than their .rs → ninja "no work" → stale binary
@@ -158,26 +162,21 @@ def _setup_cache(
             return None
         run.add(Stage("ccache-config", status="ok", detail="ENABLE_CCACHE=1"))
 
-    # zero per-build counters so the post-build stats are this build's delta
-    if cache.use_ccache:
-        run.run(
-            [cache.ccache_bin or "ccache", "-z"], cwd=repo, env=env, stage="ccache-zero", timeout=60
-        )
-    if cache.use_sccache:
-        run.run(
-            [cache.sccache_bin or "sccache", "--zero-stats"],
-            cwd=repo,
-            env=env,
-            stage="sccache-zero",
-            timeout=60,
-        )
+    # Never reset shared counters: concurrent builds would erase each other's
+    # measurements. Collection below is explicitly a shared snapshot, not a delta.
     run.add(Stage("cache", status="ok", detail=cache.summary()))
     return env
 
 
-def _collect_cache_stats(run: Run, cache: cachecfg.CacheEnv, env: dict) -> None:
-    """Post-build hit rates — also the determinism gauge: a no-source-change
-    rebuild should be ~100% hits; any miss = something varied (plan §determinism)."""
+def _collect_cache_stats(
+    run: Run, cache: cachecfg.CacheEnv, env: dict, *, repo: Path | None = None, wrap=None
+) -> None:
+    """Post-build compiler-cache telemetry, not a freshness verdict.
+
+    A true no-op can have zero requests. Counters may include concurrent work:
+    ccache is fleet-wide and canonical sccache is shared by this worktree's arches.
+    """
+    run.extra["cache_stats_scope"] = "shared cumulative snapshots; not per-build attribution"
     if cache.use_ccache:
         cp = run.run(
             [cache.ccache_bin or "ccache", "--print-stats"],
@@ -196,9 +195,12 @@ def _collect_cache_stats(run: Run, cache: cachecfg.CacheEnv, env: dict) -> None:
             )
         )
     if cache.use_sccache:
+        # The canonical wrapper selects the worktree's server and starts it in
+        # the correct mount namespace. Outside it, stats describe another daemon.
+        stats_cmd = [cache.sccache_bin or "sccache", "--show-stats", "--stats-format=json"]
         cp = run.run(
-            [cache.sccache_bin or "sccache", "--show-stats", "--stats-format=json"],
-            cwd=run.dir,
+            wrap(stats_cmd) if wrap else stats_cmd,
+            cwd=repo if wrap else run.dir,
             env=env,
             stage="sccache-stats",
             timeout=60,
@@ -271,11 +273,21 @@ def _ninja_jobs() -> list[str]:
     survives for the one case it might matter again — build ∥ a WHPX boot, which is real
     hardware-virt and does contend — but even there the hostlock CPU-lease pool is the
     right throttle, not a blunt `-j` cap. Set VIBEOS_BUILD_CORE_RESERVE>0 to re-enable."""
+    policy = hostlock.buildpolicy.read(hostlock.HOSTLOCK_DIR)
+    if policy:
+        return ["-j", str(policy["ninja_jobs"])]
     reserve = int(os.environ.get("VIBEOS_BUILD_CORE_RESERVE", "0"))
     n = os.cpu_count() or 0
     if reserve <= 0 or n <= reserve:
         return []
     return ["-j", str(n - reserve)]
+
+
+def _policy_build_env(env: dict | None) -> dict | None:
+    policy = hostlock.buildpolicy.read(hostlock.HOSTLOCK_DIR)
+    if policy is None:
+        return env
+    return dict(os.environ if env is None else env, CARGO_BUILD_JOBS=str(policy["cargo_jobs"]))
 
 
 def _ninja_known_targets(repo: Path, build_dir: Path, wrap, env) -> set[str]:
@@ -329,8 +341,14 @@ def build(args, repo: Path) -> int:
     # per-build-dir lock (so two builds never corrupt the same dir, the
     # determinism-verify-vs-gate incident). Held around the whole build; on a stuck
     # holder it warns + proceeds unlocked, and it's a no-op when the broker is disabled.
-    with hostlock.build_lock(build_dir, arch):
-        return _build_locked(args, repo, run, arch, cfg, build_dir, cold)
+    try:
+        with hostlock.build_lock(build_dir, arch) as admission:
+            run.extra["admission"] = admission
+            return _build_locked(args, repo, run, arch, cfg, build_dir, cold)
+    except hostlock.buildpolicy.PolicyError as exc:
+        run.classification = "BUILD_POLICY_REFUSED"
+        run.add(Stage("admission", status="fail", detail=str(exc)))
+        return run.finalize(repo)
 
 
 def _flag_in_cache(build_dir: Path, flag: str) -> bool:
@@ -763,6 +781,11 @@ def _build_locked(args, repo: Path, run, arch: str, cfg, build_dir: Path, cold: 
         if build_env is None:
             return run.finalize(repo)  # ccache reconfigure failed hard
 
+    policy = hostlock.buildpolicy.read(hostlock.HOSTLOCK_DIR)
+    if policy:
+        build_env = _policy_build_env(build_env)
+        run.extra["build_policy"] = policy
+
     # --- fast-iterate: rustc incremental (opt-in; NOT for gate/determinism) ---
     # On a kernel .rs edit, `ntoskrnl-rust` is ONE 451K-LOC crate → rustc recompiles
     # the whole crate (measured ~13s vs ~5s with incremental). sccache CAN'T help a
@@ -886,7 +909,7 @@ def _build_locked(args, repo: Path, run, arch: str, cfg, build_dir: Path, cold: 
     # as absence. Anything we can't classify is a failure, never a shrug.
     for target in cfg.ninja_targets_optional:
         cp = run.run(
-            wrap(["ninja", target]),
+            wrap(["ninja", *_ninja_jobs(), target]),
             cwd=build_dir,
             env=build_env,
             stage=f"ninja-optional:{target}",
@@ -962,7 +985,7 @@ def _build_locked(args, repo: Path, run, arch: str, cfg, build_dir: Path, cold: 
 
     # --- cache hit-rate stats (also the determinism gauge) ---
     if caching and build_env is not None:
-        _collect_cache_stats(run, cache, build_env)
+        _collect_cache_stats(run, cache, build_env, repo=repo, wrap=wrap)
 
     # --- arm64 re-stage into ramdisk/boot.img ---
     if cfg.needs_mkramdisk:

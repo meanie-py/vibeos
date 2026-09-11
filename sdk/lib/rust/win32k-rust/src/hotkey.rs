@@ -5,14 +5,9 @@ use ntkrnl_sys::ddk::{
 };
 
 // Debug-channel macros — no kernel symbol, no-op.
-macro_rules! ERR { ($($t:tt)*) => {{}}; }
-macro_rules! TRACE { ($($t:tt)*) => {{}}; }
 #[allow(unused_macros)]
-macro_rules! WARN { ($($t:tt)*) => {{}}; }
 #[allow(unused_macros)]
-macro_rules! FIXME { ($($t:tt)*) => {{}}; }
 #[allow(unused_macros)]
-macro_rules! DPRINT1 { ($($t:tt)*) => {{}}; }
 
 // BOOL is i32; bindgen's FALSE/TRUE are u32. Shadow them as BOOL.
 const FALSE: BOOL = 0;
@@ -275,7 +270,7 @@ pub unsafe extern "system" fn co_UserProcessHotKeys(wVk: WORD, bIsDown: BOOL) ->
     if !pHotKey.is_null() {
         if (*pHotKey).id == IDHK_SHIFTF12 || (*pHotKey).id == IDHK_F12 {
             if bIsDown != 0 {
-                ERR!(b"Hot key pressed for Debug Activation!\n\0".as_ptr());
+                ERR!("Hot key pressed for Debug Activation!\n");
             }
             return DoNotPostMsg;
         }

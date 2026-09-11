@@ -56,6 +56,7 @@ Wired into `vibeos-cli check`. Consumed by `verify_conv_macros.py` via `is_vendo
 from __future__ import annotations
 
 import argparse
+import os
 import re
 import sys
 from pathlib import Path
@@ -292,6 +293,19 @@ _SUSPECT_SUFFIXES = (".c", ".cpp", ".cxx", ".cc", ".h", ".hpp", ".hxx")
 _SUSPECT_SKIP = (".git", ".claude", "build-i386", "build-amd64", "build-arm64")
 
 
+def _is_nested_checkout(d: str) -> bool:
+    """True if `d` is the root of a DIFFERENT git worktree, repo or submodule.
+
+    Agents run worktrees nested inside other worktrees (.claude/worktrees/<lane>),
+    so an unguarded walk reads a sibling lane's tree at a sibling lane's commit and
+    reports its files as this tree's problem. That is the read-side of the fleet
+    isolation law: a verdict that changes with which worktrees happen to exist on
+    disk is not a gate. A linked worktree carries a `.git` FILE and a primary
+    checkout a `.git` DIRECTORY; either one means "not our files".
+    """
+    return os.path.exists(os.path.join(d, ".git"))
+
+
 def suspects(reg: Registry, min_files: int = 5) -> list[tuple[str, int]]:
     """Directories full of foreign-copyright source that the registry does NOT cover.
 
@@ -313,19 +327,29 @@ def suspects(reg: Registry, min_files: int = 5) -> list[tuple[str, int]]:
     treat a remaining hit as a finding — the list is undecided trees, not foreign ones.
     """
     hits: dict[str, int] = {}
-    for p in reg.repo.rglob("*"):
-        if p.suffix.lower() not in _SUSPECT_SUFFIXES or not p.is_file():
-            continue
-        rel = p.relative_to(reg.repo).as_posix()
-        if rel.split("/", 1)[0] in _SUSPECT_SKIP or reg.is_classified(rel):
-            continue
-        try:
-            head = p.read_text(errors="replace")[:4000]
-        except OSError:
-            continue
-        if _FOREIGN_HOLDER.search(head):
-            parent = rel.rsplit("/", 1)[0]
-            hits[parent] = hits.get(parent, 0) + 1
+    # os.walk rather than rglob so nested checkouts can be PRUNED instead of
+    # visited and filtered: a sibling lane's tree is both wrong to report and
+    # expensive to read.
+    root = str(reg.repo)
+    for dirpath, dirnames, filenames in os.walk(root):
+        rel_dir = os.path.relpath(dirpath, root).replace(os.sep, "/")
+        if rel_dir == ".":
+            rel_dir = ""
+            dirnames[:] = [d for d in dirnames if d not in _SUSPECT_SKIP]
+        dirnames[:] = [d for d in dirnames if not _is_nested_checkout(os.path.join(dirpath, d))]
+        for fn in filenames:
+            if os.path.splitext(fn)[1].lower() not in _SUSPECT_SUFFIXES:
+                continue
+            rel = f"{rel_dir}/{fn}" if rel_dir else fn
+            if reg.is_classified(rel):
+                continue
+            try:
+                with open(os.path.join(dirpath, fn), errors="replace") as fh:
+                    head = fh.read(4000)
+            except OSError:
+                continue
+            if _FOREIGN_HOLDER.search(head):
+                hits[rel_dir] = hits.get(rel_dir, 0) + 1
     return sorted(((d, n) for d, n in hits.items() if n >= min_files), key=lambda x: -x[1])
 
 

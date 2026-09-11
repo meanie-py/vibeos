@@ -7,7 +7,8 @@ use crate::surface::gajBitsPerFormat;
 use crate::dib_helpers::abs;
 
 // ---- pool tags + small helpers ----
-const TAG_DIB: u32 = u32::from_le_bytes(*b"BID ");
+// C: win32ss/user/ntuser/tags.h `#define TAG_DIB ' BID'` (big-endian).
+const TAG_DIB: u32 = u32::from_be_bytes(*b" BID");
 const TAG_GBMI: u32 = u32::from_le_bytes(*b"GBmi");
 #[inline(always)] fn abs_i32(x: i32) -> i32 { x.wrapping_abs() }
 #[inline(always)] fn min_u32(a: u32, b: u32) -> u32 { if a < b { a } else { b } }
@@ -1793,15 +1794,42 @@ pub unsafe extern "system" fn NtGdiCreateDIBSection(
     let mut hbitmap: HBITMAP = core::ptr::null_mut();
     let dc: *mut DC;
     let mut bDesktopDC: u8 = 0;
-    let Status: i32 = STATUS_SUCCESS;
+    let mut Status: i32 = STATUS_SUCCESS;
 
     if bmi.is_null() {
         return hbitmap;
     }
 
-    // _SEH2_TRY body (DUMMY_PSEH: execute directly, omit handler)
-    // ProbeForRead calls are no-ops in this translation context
-    let _ = DIB_BitmapInfoSize(bmi, Usage as u16);
+    // What stood here was the comment "ProbeForRead calls are no-ops in this
+    // translation context". They are not no-ops — they are the only bounds check on
+    // `bmi`, which is a user pointer. Dropping them left `Status` a constant
+    // STATUS_SUCCESS, so the `if (!NT_SUCCESS(Status))` below could never fire, and
+    // DIB_BitmapInfoSize plus DIB_CreateDIBSection read the caller's pointer freely.
+    //
+    // DUMMY_PSEH is the reason the handler is omitted, and also the reason the probe
+    // must stay: with no handler, an unvalidated access is not an exception, it is the
+    // machine. Validate-first, in the C's three progressive steps — the size field
+    // first, then the header it declares, then the full palette-dependent extent —
+    // because each length is read out of the buffer being validated.
+    Status = SafeProbeForRead(
+        core::ptr::addr_of!((*bmi).bmiHeader.biSize) as *const core::ffi::c_void,
+        core::mem::size_of::<DWORD>(),
+        1,
+    );
+    if NT_SUCCESS(Status) {
+        Status = SafeProbeForRead(
+            bmi as *const core::ffi::c_void,
+            (*bmi).bmiHeader.biSize as usize,
+            1,
+        );
+    }
+    if NT_SUCCESS(Status) {
+        Status = SafeProbeForRead(
+            bmi as *const core::ffi::c_void,
+            DIB_BitmapInfoSize(bmi, Usage as u16) as usize,
+            1,
+        );
+    }
 
     if !NT_SUCCESS(Status) {
         SetLastNtError(Status);
@@ -2216,7 +2244,6 @@ unsafe fn DIB_FreeConvertedBitmapInfo_impl(
     orig: *mut BITMAPINFO,
     usage: u32,
 ) {
-    const TAG_DIB: u32 = 0x20424944;
 
     if converted == orig {
         return;

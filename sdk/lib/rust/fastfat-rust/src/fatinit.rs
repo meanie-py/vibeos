@@ -140,7 +140,10 @@ const FILE_DEVICE_DISK_FILE_SYSTEM: ULONG = 0x0008;
 const FILE_DEVICE_CD_ROM_FILE_SYSTEM: ULONG = 0x0003;
 static FAT_DISK_DEVICE_NAME: [u16; 5] = [0x5C, 0x46, 0x61, 0x74, 0x00]; // L"\\Fat"
 static FAT_CDROM_DEVICE_NAME: [u16; 10] = [0x5C, 0x46, 0x61, 0x74, 0x43, 0x64, 0x72, 0x6F, 0x6D, 0x00]; // L"\\FatCdrom"
-const NonPagedPoolNx: ULONG = 512;
+// fatprocs.h:47: `#define NonPagedPoolNx NonPagedPool` under
+// `#ifdef __REACTOS__` -- NX pool is NT6.2 and this kernel has none, so the
+// Windows value (0x200/0x204) is not what any TU here compiles.
+const NonPagedPoolNx: ULONG = 0;
 const POOL_NX_ALLOCATION: ULONG = 512;
 const POOL_RAISE_IF_ALLOCATION_FAILURE: ULONG = 0x10;
 const PAGE_SIZE: SIZE_T = 0x1000;

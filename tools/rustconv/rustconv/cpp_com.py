@@ -39,6 +39,8 @@ from .cpp_core import (
     _sdk_numeric_definitions,
     _split_args,
     c_type_to_rust,
+    integer_cannot_bind_pointer,
+    is_c_integer,
 )
 from .fact_seal import _named_cast_spans
 
@@ -115,6 +117,66 @@ _RAII_CONTAINER_LOWERINGS: dict[str, tuple[str, str]] = {
 }
 
 
+def _no_viable_conversion(
+    actual_key: str, expected_key: str, field_types: dict[str, dict[str, str]] | None
+) -> bool:
+    """Whether C++ has NO conversion from ``actual_key`` to ``expected_key``.
+
+    Only proven impossibilities count. A candidate this rejects was never in the
+    compiler's overload set, so rejecting it can never change which method a
+    well-formed call resolves to -- it only breaks ties that scoring cannot.
+    """
+    if integer_cannot_bind_pointer(actual_key, expected_key):
+        return True
+    # An integer does not convert to a C aggregate, by value or by reference: a plain
+    # C struct has no converting constructor. `_PidlByItem(LRESULT)` against
+    # `_PidlByItem(LVITEM&)` is CDefView's case.
+    referent = expected_key.rstrip("*& ")
+    return bool(
+        field_types
+        and "*" not in expected_key
+        and is_c_integer(actual_key)
+        and referent in field_types
+    )
+
+
+def _shapes_provably_disagree(
+    source_params: Sequence[tuple[str, str]],
+    vtable_params: Sequence[tuple[str, str]],
+    type_aliases: dict[str, str] | None = None,
+) -> bool:
+    """True when some parameter pair has no conversion in either direction.
+
+    Used to constrain an ARITY-only vtable match. Deliberately one-sided: it reports a
+    disagreement only for a pair it can prove (an integer against a pointer), so a merely
+    unfamiliar spelling still binds exactly as before.
+    """
+    for (source_type, _), (vtable_type, _) in zip(source_params, vtable_params, strict=True):
+        left = _canonical_sdk_type(source_type, type_aliases)
+        right = _canonical_sdk_type(vtable_type, type_aliases)
+        if integer_cannot_bind_pointer(left, right) or integer_cannot_bind_pointer(right, left):
+            return True
+    return False
+
+
+def _canonical_sdk_type(c_type: str, type_aliases: dict[str, str] | None) -> str:
+    """Resolve an SDK macro type alias, ignoring a C++ reference and pointer suffix.
+
+    Both sides of an overload comparison need this: a struct field is typed from the
+    island (`LVITEMW`) while the candidate parameter is spelled with the macro the
+    source uses (`LVITEM&`). Comparing those raw is a miss, and a miss on EVERY
+    candidate is reported as an ambiguity — the failure this resolves.
+    """
+    if not type_aliases:
+        return c_type
+    text = " ".join(c_type.split())
+    suffix = ""
+    while text.endswith(("*", "&")):
+        suffix = ("*" if text.endswith("*") else "") + suffix
+        text = text[:-1].strip()
+    return f"{type_aliases.get(text, text)}{(' ' + suffix) if suffix else ''}"
+
+
 def _bind_sibling_overload(
     body: str,
     start: int,
@@ -125,6 +187,8 @@ def _bind_sibling_overload(
     class_name: str,
     source_name: str,
     call_returns: dict[str, str] | None = None,
+    field_types: dict[str, dict[str, str]] | None = None,
+    type_aliases: dict[str, str] | None = None,
 ) -> FunctionDep:
     """Bind an implicit ``this`` call using source-visible argument types."""
     if len(candidates) == 1:
@@ -136,7 +200,7 @@ def _bind_sibling_overload(
     symbols.update({field.name: field.c_type for field in state_fields})
     prefix = body[:start]
     for declaration in re.finditer(
-        r"\b(?P<type>[A-Za-z_]\w*(?:\s*\*)?)\s+(?P<name>[A-Za-z_]\w*)\s*"
+        r"\b(?P<type>[A-Za-z_]\w*(?:\s*\*)*)\s*(?P<name>[A-Za-z_]\w*)\s*"
         r"(?P<array>\[[^]]*\])?\s*(?:=|;)",
         prefix,
     ):
@@ -167,7 +231,7 @@ def _bind_sibling_overload(
             symbols[name] = f"{com_ptr.group('interface')} *"
             continue
         declaration = re.search(
-            rf"\b(?P<type>[A-Za-z_]\w*(?:\s*\*)?)\s+{re.escape(name)}\s*"
+            rf"\b(?P<type>[A-Za-z_]\w*(?:\s*\*)*)\s*{re.escape(name)}\s*"
             rf"(?P<array>\[[^]]*\])?\s*(?:=|;)",
             prefix,
         )
@@ -181,15 +245,29 @@ def _bind_sibling_overload(
             symbols[name] = c_type
 
     scores: list[tuple[int, FunctionDep]] = []
+    viable: list[FunctionDep] = []
     for candidate in candidates:
         score = 0
+        rejected = False
         for argument, (expected, _name) in zip(arguments, candidate.params, strict=True):
-            actual = _argument_c_type(argument, symbols, call_returns)
+            actual = _argument_c_type(argument, symbols, call_returns, field_types, type_aliases)
             if actual is None:
                 continue
-            if _abi_types_compatible(actual, expected):
+            actual_key = _canonical_sdk_type(actual, type_aliases)
+            expected_key = _canonical_sdk_type(expected, type_aliases)
+            if _abi_types_compatible(actual_key, expected_key):
                 score += 1
+            elif _no_viable_conversion(actual_key, expected_key, field_types):
+                # Not merely a worse match -- no such conversion exists, so C++ never
+                # had this candidate in the set at all. Scoring alone could not separate
+                # `f(int)` from `f(PCUITEMID_CHILD)` for a UINT argument, because an
+                # exact match is absent from BOTH.
+                rejected = True
+        if not rejected:
+            viable.append(candidate)
         scores.append((score, candidate))
+    if len(viable) == 1 and len(viable) < len(candidates):
+        return viable[0]
     if scores:
         best = max(score for score, _ in scores)
         winners = [candidate for score, candidate in scores if score == best]
@@ -386,6 +464,14 @@ class CppComClass:
     # Struct names the islands agree on (see island_struct_types). Used only to prove an
     # ATL container's element type is a C struct — i.e. trivially destructible.
     island_struct_types: frozenset[str] = frozenset()
+    # Field C types the islands agree on, per struct (see island_struct_field_types).
+    # Lets the overload binder type a member-access argument. Empty when no islands were
+    # supplied, which leaves such an argument untyped — i.e. an ambiguity, not a guess.
+    island_struct_field_types: dict[str, dict[str, str]] = field(default_factory=dict)
+    # SDK macro type aliases (see sdk_type_macro_aliases), used to canonicalize BOTH
+    # sides of an overload comparison: the island types a field `LVITEMW` while the C++
+    # candidate spells the same type `LVITEM&`.
+    sdk_type_aliases: dict[str, str] = field(default_factory=dict)
 
     def interface_names(self) -> list[str]:
         """Ordered, de-duplicated interfaces to materialize: QI'd (com_map) then
@@ -1036,6 +1122,121 @@ def island_struct_types(islands: Sequence[Path]) -> frozenset[str]:
     return _ISLAND_STRUCT_CACHE[key]
 
 
+_ISLAND_STRUCT_BODY = re.compile(r"^pub struct (?P<name>\w+) \{(?P<body>.*?)^\}", re.M | re.S)
+_ISLAND_STRUCT_FIELD = re.compile(r"^\s*pub (?P<field>\w+): (?P<type>[^,\n]+),\s*$", re.M)
+_ISLAND_FIELD_CACHE: dict[tuple[str, ...], dict[str, dict[str, str]]] = {}
+
+# bindgen spells C's primitives through core::ffi; overload binding compares C spellings.
+# Only these exact primitives are translated back. Anything else -- a pointer, an array,
+# a nested struct -- is left out entirely rather than guessed at, because an argument the
+# binder cannot type is SKIPPED (it scores nothing) while an argument it types WRONGLY
+# picks an overload. Silence is safe here; a bad guess is not.
+_ISLAND_FFI_PRIMITIVES = {
+    "::core::ffi::c_int": "int",
+    "::core::ffi::c_uint": "unsigned int",
+    "::core::ffi::c_long": "long",
+    "::core::ffi::c_ulong": "unsigned long",
+    "::core::ffi::c_short": "short",
+    "::core::ffi::c_ushort": "unsigned short",
+    "::core::ffi::c_char": "char",
+    "::core::ffi::c_schar": "signed char",
+    "::core::ffi::c_uchar": "unsigned char",
+    "::core::ffi::c_longlong": "long long",
+    "::core::ffi::c_ulonglong": "unsigned long long",
+}
+
+
+def island_struct_field_types(islands: Sequence[Path]) -> dict[str, dict[str, str]]:
+    """Field C types every per-arch bindgen island agrees on, keyed by struct name.
+
+    Exists so the overload binder can type a MEMBER ACCESS argument. C++ resolves
+    `SelectItem(hittest.iItem, ...)` by the static type of `hittest.iItem`; the binder
+    could previously type only bare identifiers and `this->x`, so a member access
+    contributed no evidence and two same-arity candidates stayed tied forever. That is
+    the shape CDefView_OnContextMenu hit against SelectItem(PCUITEMID_CHILD, UINT) vs
+    SelectItem(int, DWORD) -- a tie the ARGUMENT settles and nothing else can.
+
+    The islands are the right authority rather than a hand-written table: they are
+    generated from THIS worktree's headers at THIS commit, so a struct that changes
+    shape changes this answer with it, and the fleet-isolation READ rule already
+    guarantees they are not some sibling lane's.
+
+    Intersected across arches for the same reason as :func:`island_integer_aliases`,
+    and it is not hypothetical here: a field is only usable as evidence when its width
+    is a source fact rather than an ABI one. A field the arches DISAGREE on is dropped,
+    which turns a width-dependent overload back into the loud ambiguity it really is.
+
+    Aliases are followed, because C code names the alias: `LVHITTESTINFO hittest;` over
+    `pub struct tagLVHITTESTINFO`.
+    """
+    key = tuple(str(path) for path in islands)
+    cached = _ISLAND_FIELD_CACHE.get(key)
+    if cached is not None:
+        return cached
+    per_arch: list[dict[str, dict[str, str]]] = []
+    for path in islands:
+        arch = re.fullmatch(r"island_(\w+)\.rs", path.name)
+        try:
+            text = path.read_text(encoding="utf-8", errors="replace")
+        except OSError:
+            return {}
+        sources = [text]
+        if arch is not None:
+            workspace = path.parent.parent.parent
+            for match in _ISLAND_SYS_REF.finditer(text[:8192]):
+                companion = (
+                    workspace
+                    / f"{match.group('crate').replace('_', '-')}-sys"
+                    / "src"
+                    / f"bindgen_{arch.group(1)}.rs"
+                )
+                if companion.is_file():
+                    sources.append(companion.read_text(encoding="utf-8", errors="replace"))
+        fields: dict[str, dict[str, str]] = {}
+        aliases: dict[str, str] = {}
+        for source in sources:
+            for struct in _ISLAND_STRUCT_BODY.finditer(source):
+                members = {
+                    member.group("field"): _ISLAND_FFI_PRIMITIVES.get(
+                        " ".join(member.group("type").split()),
+                        " ".join(member.group("type").split()),
+                    )
+                    for member in _ISLAND_STRUCT_FIELD.finditer(struct.group("body"))
+                    # A field whose type is not a plain name is left untyped on purpose
+                    # (see _ISLAND_FFI_PRIMITIVES): pointers and arrays would need the
+                    # binder to reason about decay, which is exactly the guessing this
+                    # whole path refuses to do.
+                    if re.fullmatch(
+                        r"[A-Za-z_]\w*|::core::ffi::c_\w+",
+                        " ".join(member.group("type").split()),
+                    )
+                }
+                fields.setdefault(struct.group("name"), members)
+            for m in _ISLAND_TYPE_ALIAS.finditer(source):
+                aliases.setdefault(m.group("name"), m.group("rhs").strip().split("::")[-1])
+        for name in aliases:
+            current, hops = name, 0
+            while current in aliases and hops < _ISLAND_ALIAS_MAX_HOPS:
+                current = aliases[current]
+                hops += 1
+            if current in fields:
+                fields.setdefault(name, fields[current])
+        per_arch.append(fields)
+    if not per_arch:
+        return {}
+    shared: dict[str, dict[str, str]] = {}
+    for name, members in per_arch[0].items():
+        agreed = {
+            member: c_type
+            for member, c_type in members.items()
+            if all(other.get(name, {}).get(member) == c_type for other in per_arch[1:])
+        }
+        if agreed:
+            shared[name] = agreed
+    _ISLAND_FIELD_CACHE[key] = shared
+    return shared
+
+
 _RUST_KEYWORDS = frozenset(
     {
         "as",
@@ -1514,6 +1715,181 @@ def _base_is_declared_interface(source: Path, base: str) -> bool:
     return False
 
 
+_SDK_TYPE_MACRO = re.compile(
+    r"^[ \t]*#[ \t]*define[ \t]+(?P<name>\w+)[ \t]+(?P<target>\w+)[ \t]*$", re.M
+)
+_SDK_AW_MACRO = re.compile(
+    r"^[ \t]*#[ \t]*define[ \t]+(?P<name>\w+)[ \t]+__MINGW_NAME_AW\((?P<target>\w+)\)[ \t]*$", re.M
+)
+_SDK_MACRO_ALIAS_CACHE: dict[tuple[str, bool | None], dict[str, str]] = {}
+_MODULE_UNICODE_CACHE: dict[str, bool | None] = {}
+
+
+def module_is_unicode(source: Path) -> bool | None:
+    """Whether the module owning ``source`` compiles with UNICODE, per its CMakeLists.
+
+    ``__MINGW_NAME_AW(LVITEM)`` is ``LVITEMW`` or ``LVITEMA`` depending on it, so the
+    A/W half of the SDK's type names cannot be resolved without this. Returns None when
+    no `set_module_type()` is found rather than assuming a half: an unresolved alias
+    leaves an argument untyped, which is a loud ambiguity, while a WRONG half would
+    silently bind the wrong overload.
+    """
+    key = str(source)
+    if key in _MODULE_UNICODE_CACHE:
+        return _MODULE_UNICODE_CACHE[key]
+    verdict: bool | None = None
+    for parent in source.parents:
+        lists = parent / "CMakeLists.txt"
+        if not lists.is_file():
+            continue
+        try:
+            text = lists.read_text(encoding="utf-8", errors="replace")
+        except OSError:
+            continue
+        match = re.search(r"set_module_type\s*\((?P<args>[^)]*)\)", text)
+        if match is not None:
+            verdict = "UNICODE" in match.group("args").split()
+            break
+    _MODULE_UNICODE_CACHE[key] = verdict
+    return verdict
+
+
+def sdk_type_macro_aliases(repo_root: Path, unicode: bool | None = None) -> dict[str, str]:
+    """Object-like ``#define OLD NEW`` type aliases the SDK headers declare.
+
+    bindgen renders declarations, never the preprocessor, so an island can NEVER prove
+    one of these -- and Win32 is full of them: commctrl.h alone carries the whole legacy
+    ``#define LV_HITTESTINFO LVHITTESTINFO`` family. C code uses the old spelling freely,
+    so without this a struct the islands DO prove is unreachable under the name the
+    source actually writes.
+
+    Deliberately narrow. Only a bare identifier-to-identifier define is taken, and a name
+    defined two different ways anywhere in the tree is DROPPED rather than picked between,
+    because these feed overload binding where a wrong answer silently selects the wrong
+    method. A dropped alias just leaves the argument untyped, which is the pre-existing
+    loud ambiguity.
+    """
+    key = (str(repo_root), unicode)
+    cached = _SDK_MACRO_ALIAS_CACHE.get(key)
+    if cached is not None:
+        return cached
+    header_roots = [repo_root / "sdk/include"] + [
+        repo_root / f"build-{arch}" / "sdk" / "include" / "psdk"
+        for arch in ("i386", "amd64", "arm64")
+    ]
+    seen: dict[str, set[str]] = defaultdict(set)
+    for root in header_roots:
+        if not root.is_dir():
+            continue
+        for header in sorted(root.rglob("*.h")):
+            try:
+                text = header.read_text(encoding="utf-8", errors="replace")
+            except OSError:
+                continue
+            for match in _SDK_TYPE_MACRO.finditer(text):
+                seen[match.group("name")].add(match.group("target"))
+            if unicode is None:
+                continue
+            # `#define LVITEM __MINGW_NAME_AW(LVITEM)` — the A/W half is a build fact,
+            # not a source one, so it is resolved only when the module settled it.
+            for match in _SDK_AW_MACRO.finditer(text):
+                suffix = "W" if unicode else "A"
+                seen[match.group("name")].add(f"{match.group('target')}{suffix}")
+    direct = {name: next(iter(targets)) for name, targets in seen.items() if len(targets) == 1}
+    # `#define LV_ITEM LVITEM` sits on top of `#define LVITEM __MINGW_NAME_AW(LVITEM)`,
+    # so the legacy spelling only reaches a real struct by following the chain.
+    aliases: dict[str, str] = {}
+    for name in direct:
+        current, hops = name, 0
+        while current in direct and hops < _ISLAND_ALIAS_MAX_HOPS:
+            current = direct[current]
+            hops += 1
+        aliases[name] = current
+    _SDK_MACRO_ALIAS_CACHE[key] = aliases
+    return aliases
+
+
+_ISLAND_POINTER_ALIAS = re.compile(
+    r"^pub type (?P<name>\w+) = \*(?:mut|const) (?P<target>[\w:]+);", re.M
+)
+_ISLAND_POINTER_CACHE: dict[tuple[str, ...], dict[str, str]] = {}
+
+
+def island_pointer_aliases(islands: Sequence[Path]) -> dict[str, str]:
+    """Pointer typedefs the islands prove, as ``NAME -> "<pointee> *"``.
+
+    Win32 names most pointers with a typedef that hides the star (`LPNMLISTVIEW`), so
+    `params->iItem` cannot be typed from the spelling alone — and refusing to type it
+    is what leaves an overload tied. Rendering the star back makes the ordinary
+    pointer/member rules apply with no special case anywhere else.
+
+    Intersected across arches on the same principle as the rest of the island readers.
+    """
+    key = tuple(str(path) for path in islands)
+    cached = _ISLAND_POINTER_CACHE.get(key)
+    if cached is not None:
+        return cached
+    per_arch: list[dict[str, str]] = []
+    for path in islands:
+        arch = re.fullmatch(r"island_(\w+)\.rs", path.name)
+        try:
+            text = path.read_text(encoding="utf-8", errors="replace")
+        except OSError:
+            return {}
+        sources = [text]
+        if arch is not None:
+            workspace = path.parent.parent.parent
+            for match in _ISLAND_SYS_REF.finditer(text[:8192]):
+                companion = (
+                    workspace
+                    / f"{match.group('crate').replace('_', '-')}-sys"
+                    / "src"
+                    / f"bindgen_{arch.group(1)}.rs"
+                )
+                if companion.is_file():
+                    sources.append(companion.read_text(encoding="utf-8", errors="replace"))
+        found: dict[str, str] = {}
+        for source_text in sources:
+            for match in _ISLAND_POINTER_ALIAS.finditer(source_text):
+                found.setdefault(match.group("name"), f"{match.group('target').split('::')[-1]} *")
+        per_arch.append(found)
+    if not per_arch:
+        return {}
+    shared = {
+        name: target
+        for name, target in per_arch[0].items()
+        if all(other.get(name) == target for other in per_arch[1:])
+    }
+    _ISLAND_POINTER_CACHE[key] = shared
+    return shared
+
+
+def _source_sdk_type_aliases(source: Path) -> dict[str, str]:
+    """The SDK macro type aliases visible to ``source``, at its module's A/W half."""
+    repo_root = next(
+        (parent for parent in source.parents if (parent / "sdk/include").is_dir()), None
+    )
+    if repo_root is None:
+        return {}
+    return sdk_type_macro_aliases(repo_root, module_is_unicode(source))
+
+
+def _field_types_with_macro_aliases(
+    source: Path, island_files: Sequence[Path]
+) -> dict[str, dict[str, str]]:
+    """Island-proven struct fields, reachable under the SDK's macro spellings too."""
+    fields = dict(island_struct_field_types(island_files))
+    repo_root = next(
+        (parent for parent in source.parents if (parent / "sdk/include").is_dir()), None
+    )
+    if repo_root is None:
+        return fields
+    for name, target in sdk_type_macro_aliases(repo_root, module_is_unicode(source)).items():
+        if target in fields:
+            fields.setdefault(name, fields[target])
+    return fields
+
+
 def analyze_class(
     source: Path,
     class_name: str,
@@ -1748,6 +2124,11 @@ def analyze_class(
         local_base_classes=local_base_classes,
         island_scalar_types=island_integer_aliases(island_files),
         island_struct_types=island_struct_types(island_files),
+        island_struct_field_types=_field_types_with_macro_aliases(source, island_files),
+        sdk_type_aliases={
+            **island_pointer_aliases(island_files),
+            **_source_sdk_type_aliases(source),
+        },
     )
 
 
@@ -2769,7 +3150,21 @@ def normalize_worker_semantics(source: str, rust: str) -> str:
             rust,
             count=1,
         )
+        # Same construction, spelled with a turbofish and no annotation. The annotated form
+        # above was the only one lowered, so `let mut pcdb2 = CComPtr::<ICommDlgBrowser2>::new()`
+        # fell through and the declaration audit reported zero raw-pointer slots -- the last
+        # CDefView worker, rejected for a spelling. Still only the null/default shape.
+        rust = re.sub(
+            rf"let\s+mut\s+{re.escape(name)}\s*=\s*CComPtr\s*::\s*<\s*"
+            rf"{re.escape(interface)}\s*>\s*::\s*new\(\)\s*;",
+            f"let mut {name}: *mut {interface} = core::ptr::null_mut();",
+            rust,
+            count=1,
+        )
         rust = re.sub(rf"\b{re.escape(name)}\.ptr\b", name, rust)
+        # `.as_ptr()` is a READ of the slot, like `.ptr` and `.0` beside it -- not an ownership
+        # API, so lowering it does not weaken the Attach/Detach refusal.
+        rust = re.sub(rf"\b{re.escape(name)}\.as_ptr\(\)", name, rust)
         copied_value = re.search(
             rf"\bCComPtr\s*<\s*{re.escape(interface)}\s*>\s+{re.escape(name)}\s*=\s*"
             r"(?P<this>this->)?(?P<value>[A-Za-z_]\w*)\s*;",
@@ -4697,6 +5092,25 @@ impl Drop for CStringW {
 static CPP_COM_EMPTY_WSTR: [WCHAR; 1] = [0];"""
 
 
+# `r#` makes a keyword usable as an identifier, but the language forbids it for these
+# four -- there is no spelling of a parameter named `self`, so the name must change.
+_RUST_UNRAWABLE = frozenset({"crate", "self", "super", "Self"})
+
+
+def rust_safe_parameter(name: str) -> str:
+    """Spell a C parameter name so it is a legal Rust identifier.
+
+    A C++ parameter may be named `move`, `type`, `ref`, `match`, `box` -- all Rust
+    keywords. Rendering one bare produced a contract signature that CANNOT COMPILE, and
+    the deterministic audit then rejected the model for writing `r#move`, the only legal
+    form. shell32's `CDefView::SetClipboard(BOOL move)` failed exactly this way, and no
+    number of retries could have fixed it: the contract itself was unsatisfiable.
+    """
+    if name in _RUST_UNRAWABLE:
+        return f"{name}_"
+    return f"r#{name}" if name in _RUST_KEYWORDS else name
+
+
 def worker_signature(
     name: str, class_name: str | None, params: list[tuple[str, str]], return_type: str
 ) -> str:
@@ -4716,7 +5130,7 @@ def worker_signature(
         while declarator.startswith(("&", "*")):
             c_type = f"{c_type} {declarator[0]}"
             declarator = declarator[1:]
-        rendered.append(f"{declarator}: {c_type_to_rust(c_type)}")
+        rendered.append(f"{rust_safe_parameter(declarator)}: {c_type_to_rust(c_type)}")
     ret = "()" if not return_type or return_type.strip() == "void" else c_type_to_rust(return_type)
     return f"pub unsafe fn {name}_body({', '.join(rendered)}) -> {ret}"
 
@@ -4797,6 +5211,8 @@ def prepare_helper_closure(
     deps: list[FunctionDep],
     class_name: str,
     state_fields: list[PlainStateField] | None = None,
+    field_types: dict[str, dict[str, str]] | None = None,
+    type_aliases: dict[str, str] | None = None,
 ) -> list[FunctionDep]:
     """Select and bind the exact same-file helper closure for one COM class.
 
@@ -4919,6 +5335,8 @@ def prepare_helper_closure(
                     class_name,
                     source_name,
                     helper_returns,
+                    field_types,
+                    type_aliases,
                 )
             )
             if target.name not in selected:
@@ -4954,6 +5372,8 @@ def prepare_helper_closure(
                     class_name,
                     source_name,
                     helper_returns,
+                    field_types,
+                    type_aliases,
                 )
             )
             body = body[:start] + f"{target.name}_body" + body[end:]
@@ -4999,6 +5419,8 @@ def prepare_helper_closure(
                 class_name,
                 source_name,
                 helper_returns,
+                field_types,
+                type_aliases,
             )
             body = body[:start] + f"{target.name}_body" + body[end:]
             if target.name != dep.name:
@@ -5104,7 +5526,10 @@ def raii_container_contract(fields: list[PlainStateField]) -> str:
 
 
 def apply_interface_method_signatures(
-    deps: list[FunctionDep], class_name: str, interfaces: list[InterfaceSpec]
+    deps: list[FunctionDep],
+    class_name: str,
+    interfaces: list[InterfaceSpec],
+    type_aliases: dict[str, str] | None = None,
 ) -> list[FunctionDep]:
     """Replace parsed COM method types with the flattened vtable authority.
 
@@ -5136,10 +5561,23 @@ def apply_interface_method_signatures(
             if tuple(_abi_c_type_key(c_type) for c_type, _ in method.params[1:]) == source_shape
         ]
         if len(matches) != 1:
+            # The arity fallback is load-bearing: the scanner and the vtable routinely
+            # SPELL one parameter differently (`LPCITEMIDLIST` vs `PCUITEMID_CHILD`), so
+            # an exact key match fails on methods that genuinely do implement the slot.
+            #
+            # Unconstrained, though, it also binds a private overload that merely happens
+            # to share the arity -- and the caller then OVERWRITES that helper's parameter
+            # list with the vtable's, so a helper taking an `int` index silently claims a
+            # PIDL pointer. CDefView has exactly this pair (`SelectAndPositionItem(int,
+            # UINT, POINT *)` beside the STDMETHOD of the same name). Nothing downstream
+            # can see the swap, which is what makes it worth refusing here.
+            #
+            # So: keep the fallback, but never let it cross a conversion C++ does not have.
             same_arity = [
                 (index, method)
                 for index, method in enumerate(candidates)
                 if len(method.params) - 1 == len(candidate.params)
+                and not _shapes_provably_disagree(candidate.params, method.params[1:], type_aliases)
             ]
             if len(same_arity) == 1:
                 matches = same_arity

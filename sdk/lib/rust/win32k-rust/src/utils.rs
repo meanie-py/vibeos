@@ -291,7 +291,7 @@ pub unsafe extern "fastcall" fn IntEngFillBox(
     let psurf: *mut SURFACE = (*dc).dclevel.pSurface;
 
     ASSERT_DC_PREPARED(dc);
-    debug_assert!(!psurf.is_null());
+    ntkrnl_sys::ASSERT!(!psurf.is_null());
 
     let mut x = X;
     let mut width = Width;
@@ -342,7 +342,7 @@ pub unsafe extern "C" fn IntEngFillBox(
     let psurf: *mut SURFACE = (*dc).dclevel.pSurface;
 
     ASSERT_DC_PREPARED(dc);
-    debug_assert!(!psurf.is_null());
+    ntkrnl_sys::ASSERT!(!psurf.is_null());
 
     let mut x = X;
     let mut width = Width;

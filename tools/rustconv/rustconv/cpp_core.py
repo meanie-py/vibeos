@@ -424,7 +424,11 @@ def _expand_default_helper_arguments(
 
 
 def _argument_c_type(
-    argument: str, symbols: dict[str, str], call_returns: dict[str, str] | None = None
+    argument: str,
+    symbols: dict[str, str],
+    call_returns: dict[str, str] | None = None,
+    field_types: dict[str, dict[str, str]] | None = None,
+    type_aliases: dict[str, str] | None = None,
 ) -> str | None:
     text = argument.strip()
     explicit_cast = re.search(r"\(\s*(?P<type>[A-Za-z_]\w*(?:\s+[A-Za-z_]\w*)*\s*\*+)\s*\)", text)
@@ -449,10 +453,43 @@ def _argument_c_type(
             false_type is None or _abi_types_compatible(true_type, false_type)
         ):
             return true_type
+    # A NONZERO integer literal is an int and, unlike `0`, is not a null pointer
+    # constant -- so it can never bind a pointer parameter. `0` is deliberately left
+    # untyped: typing it `int` would discard a pointer candidate the source may well
+    # have meant. (`SelectItem(-2, ...)` is CDefView's case.)
+    integer_literal = re.fullmatch(r"[+-]?(?:0[xX][0-9a-fA-F]+|\d+)[uUlL]*", text)
+    if integer_literal is not None:
+        digits = text.rstrip("uUlL").lstrip("+-")
+        value = int(digits, 16) if digits[:2].lower() == "0x" else int(digits)
+        return "int" if value != 0 else None
     if re.fullmatch(r'L"(?:\\.|[^"\\])*"', text):
         return "LPCWSTR"
     if re.fullmatch(r'"(?:\\.|[^"\\])*"', text):
         return "LPCSTR"
+    member = re.fullmatch(
+        r"(?:this\s*->\s*)?(?P<base>[A-Za-z_]\w*)\s*(?P<op>\.|->)\s*(?P<field>[A-Za-z_]\w*)",
+        text,
+    )
+    if member is not None:
+        # C++ types `hittest.iItem` from the STRUCT, and without this a member access was
+        # no evidence at all -- which is how two same-arity overloads stayed tied and hard
+        # -failed before payment. The struct shape comes from the caller (the per-arch
+        # bindgen islands), so this function stays free of any table of its own.
+        if not field_types:
+            return None
+        base_type = symbols.get(member.group("base"))
+        if base_type is None:
+            return None
+        # Win32 hides most stars behind a typedef (`LPNMLISTVIEW`), so resolve the
+        # spelling before asking whether the access went through a pointer.
+        if type_aliases:
+            base_type = type_aliases.get(base_type, base_type)
+        # `->` must go through a pointer and `.` must not. A mismatch means the symbol
+        # table and the source disagree, so decline instead of typing the field anyway.
+        indirect = "*" in base_type
+        if indirect != (member.group("op") == "->"):
+            return None
+        return field_types.get(base_type.replace("*", "").strip(), {}).get(member.group("field"))
     identifier = re.fullmatch(r"(?:this\s*->\s*)?([A-Za-z_]\w*)", text)
     if identifier is None:
         return None
@@ -462,6 +499,61 @@ def _argument_c_type(
     if c_type == "CStringA":
         return "LPCSTR"
     return c_type
+
+
+# Unambiguous C/Win32 integer spellings. Used only to REJECT a candidate whose
+# parameter is a pointer: an integer lvalue has no conversion to a pointer type in C++
+# (a literal 0 does, but a literal is never typed here), so this can only ever discard
+# a candidate the compiler discards too. Kept deliberately small -- a name that is not
+# certainly an integer is simply absent, which decides nothing.
+_C_INTEGER_KEYS = frozenset(
+    {
+        "INT",
+        "UINT",
+        "long",
+        "unsigned long",
+        "short",
+        "unsigned short",
+        "char",
+        "signed char",
+        "unsigned char",
+        "long long",
+        "unsigned long long",
+        "DWORD",
+        "LONG",
+        "ULONG",
+        "WORD",
+        "BYTE",
+        "SHORT",
+        "USHORT",
+        "UCHAR",
+        "BOOL",
+        "BOOLEAN",
+        "SIZE_T",
+        "INT_PTR",
+        "UINT_PTR",
+        "LONG_PTR",
+        "ULONG_PTR",
+        # Fixed by the Win32 ABI to integer types: LRESULT/LPARAM are LONG_PTR,
+        # WPARAM is UINT_PTR, HRESULT/LSTATUS/NTSTATUS are LONG.
+        "LRESULT",
+        "LPARAM",
+        "WPARAM",
+        "HRESULT",
+        "LSTATUS",
+        "NTSTATUS",
+    }
+)
+
+
+def is_c_integer(c_type: str) -> bool:
+    """Whether ``c_type`` is certainly an integer. An absent name answers False, not True."""
+    return _abi_c_type_key(c_type) in _C_INTEGER_KEYS
+
+
+def integer_cannot_bind_pointer(actual: str, expected: str) -> bool:
+    """True when ``actual`` is certainly an integer and ``expected`` is certainly a pointer."""
+    return _abi_c_type_key(actual) in _C_INTEGER_KEYS and "*" in _abi_c_type_key(expected)
 
 
 def _abi_types_compatible(actual: str, expected: str) -> bool:
@@ -475,7 +567,10 @@ def _abi_types_compatible(actual: str, expected: str) -> bool:
 
 def _abi_c_type_key(c_type: str) -> str:
     """Collapse spelling-only Win32 aliases for overload binding, not codegen."""
-    text = " ".join(c_type.replace("CONST", "const").split())
+    # A C++ `T&` parameter binds an LVALUE of type T, so for BINDING the reference is
+    # not part of the type. (It very much is for codegen, which is why this collapse is
+    # scoped to overload keys — the caller still emits the reference.)
+    text = " ".join(c_type.replace("CONST", "const").split()).rstrip("&").strip()
     aliases = {
         "int": "INT",
         "unsigned int": "UINT",
@@ -491,3 +586,76 @@ def _abi_c_type_key(c_type: str) -> str:
     for spelling, canonical in aliases.items():
         text = re.sub(rf"\b{re.escape(spelling)}\b", canonical, text)
     return re.sub(r"\s*\*\s*", "*", text)
+
+
+_ATL_NOT_A_METHOD = frozenset({"if", "for", "while", "return", "switch", "sizeof", "ATLASSERT"})
+
+# A method declared at one level of nesting inside a class body: an optional storage
+# specifier, a return type, the name, and a parameter list that ends the declaration
+# (`;`) or opens an inline body (`{`).
+_ATL_METHOD_RE = re.compile(
+    r"(?m)^\s{4}(?:static\s+|virtual\s+)?[A-Za-z_][\w:*&<>\s]*?\b(\w+)\s*\(([^;{]*?)\)\s*"
+    r"(?:const\s*)?[{;]"
+)
+
+
+def class_body_text(source: str, class_name: str) -> str | None:
+    """The brace-balanced body of `class <class_name>`, or None when it is not here."""
+    match = re.search(rf"(?m)^class\s+{re.escape(class_name)}\b[^{{;]*\{{", source)
+    if match is None:
+        return None
+    depth, i = 1, match.end()
+    while i < len(source) and depth:
+        if source[i] == "{":
+            depth += 1
+        elif source[i] == "}":
+            depth -= 1
+        i += 1
+    return source[match.end() : i]
+
+
+def cwindow_method_arity(atlwin_source: str) -> dict[str, int]:
+    """Declared parameter count of every ATL `CWindow` method, by name.
+
+    A CWindow method call carries its window handle IMPLICITLY -- `DestroyWindow()` inside a
+    `CWindowImpl`-derived class is `this->m_hWnd`'s window, and `m_ListView.ScreenToClient(&pt)`
+    is that control's. The only Rust lowering is the Win32 API of the same name with the handle
+    as the FIRST argument, so a faithful Rust call site has one MORE argument than the C++ one.
+
+    Counting the C++ site alone therefore rejects correct output, and did: CDefView's
+    `DestroyWindow wants 0, got 1` and `ScreenToClient wants 1, got 2` were both the model
+    obeying the extern declaration the prompt handed it. `receiver_callees` already closes
+    exactly this hole for SIBLING methods; a base-class method needs the same treatment and an
+    authority for the count, which is this header rather than a remembered list.
+
+    Overloads collapse to the LARGEST count, which only widens the accepted range -- the safe
+    direction, since the C call site independently supplies the lower bound.
+    """
+    body = class_body_text(atlwin_source, "CWindow")
+    if body is None:
+        return {}
+    arity: dict[str, int] = {}
+    for match in _ATL_METHOD_RE.finditer(body):
+        name, params = match.group(1), match.group(2)
+        if name in _ATL_NOT_A_METHOD or name == "CWindow":
+            continue
+        arity[name] = max(arity.get(name, 0), _cwindow_param_count(params))
+    return arity
+
+
+def derives_from_cwindow(source: str, class_name: str) -> bool:
+    """Whether `class_name`'s base list names CWindow or CWindowImpl.
+
+    Only then does an unqualified `DestroyWindow()` in one of its bodies mean the member
+    rather than the Win32 API -- the member hides the global, so the two can never be
+    confused inside such a class.
+    """
+    match = re.search(rf"(?m)^class\s+{re.escape(class_name)}\b\s*:([^{{]*)\{{", source)
+    if match is None:
+        return False
+    return re.search(r"\bCWindow(?:Impl)?\b", match.group(1)) is not None
+
+
+def _cwindow_param_count(params: str) -> int:
+    text = params.strip()
+    return 0 if not text or text == "void" else len(_split_args(text))

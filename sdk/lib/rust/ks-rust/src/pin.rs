@@ -18,7 +18,7 @@ use core::ptr::{addr_of_mut, addr_of};
 // IoFileObjectType is an ntoskrnl DATA export (`@ extern`) — cross-DLL data imports need
 // raw-dylib (`__imp_` indirection); the substrate's plain extern references the bare symbol
 // and fails to link. This shadows it locally for pin.rs's single use site.
-#[link(name = "ntoskrnl", kind = "raw-dylib")]
+#[link(name = "ntoskrnl.exe", kind = "raw-dylib", modifiers = "+verbatim")]
 extern "C" {
     static IoFileObjectType: PVOID;
 }
@@ -1804,7 +1804,9 @@ pub unsafe extern "system" fn IKsPin_DispatchKsStream(
             None,
         );
 
-        ASSERT(!((*(*This).Pin.Descriptor).Flags & KSPIN_FLAG_DISPATCH_LEVEL_PROCESSING as ULONG) != 0);
+        // C: `ASSERT(!(Flags & KSPIN_FLAG_DISPATCH_LEVEL_PROCESSING))`. Rust's `!` is
+        // bitwise on a ULONG, so this could never be zero — vacuous until spelled `== 0`.
+        ASSERT(((*(*This).Pin.Descriptor).Flags & KSPIN_FLAG_DISPATCH_LEVEL_PROCESSING as ULONG) == 0);
         ASSERT(!(*This).PinWorker.is_null());
 
         InterlockedIncrement(&mut (*This).IrpCount);

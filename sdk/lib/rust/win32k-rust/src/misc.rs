@@ -26,12 +26,6 @@ macro_rules! w {
 }
 
 
-// Debug-channel macros — no kernel symbol, no-op.
-macro_rules! ERR   { ($($t:tt)*) => {{}}; }
-macro_rules! TRACE { ($($t:tt)*) => {{}}; }
-macro_rules! WARN  { ($($t:tt)*) => {{}}; }
-macro_rules! FIXME { ($($t:tt)*) => {{}}; }
-
 extern "C" {
     // _MmCopyFromCaller / _MmCopyToCaller — the C `MmCopy{From,To}Caller(x,y,z)`
     // macros forward to these (mmcopy.h). cdecl; provided by copy.rs as

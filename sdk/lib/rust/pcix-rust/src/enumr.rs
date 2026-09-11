@@ -19,7 +19,7 @@ use ntkrnl_sys::ddk::INTERFACE_TYPE;
 // plain `extern { static }` that references `_InitSafeBootMode` directly, but the
 // import lib only provides `__imp__InitSafeBootMode`. Shadow it with a raw-dylib
 // data import so the `__imp_` thunk is generated.
-#[link(name = "ntoskrnl", kind = "raw-dylib")]
+#[link(name = "ntoskrnl.exe", kind = "raw-dylib", modifiers = "+verbatim")]
 extern "C" {
     // ULONG in ntoskrnl/ex/init.c — BOOLEAN under-read was LE-benign but wrong
     static InitSafeBootMode: ULONG;
@@ -810,7 +810,7 @@ pub unsafe extern "system" fn PciApplyHacks(
         }
 
         PCI_HACK_FIXUP_AFTER_CONFIGURATION => {
-            assert!(!PdoExtension.is_null());
+            ntkrnl_sys::ASSERT!(!PdoExtension.is_null());
 
             if (*PciData).VendorID == 0x1045u16 && (*PciData).DeviceID != 0xC621u16 {
                 (*PciData).ProgIf &= !5u8;
@@ -865,7 +865,7 @@ pub unsafe extern "system" fn PciApplyHacks(
         }
 
         PCI_HACK_FIXUP_BEFORE_UPDATE => {
-            assert!(!PdoExtension.is_null());
+            ntkrnl_sys::ASSERT!(!PdoExtension.is_null());
 
             if (*(PdoExtension)).VendorId == 0x1014u16 && (*(PdoExtension)).DeviceId == 0x95u16 {
                 let mut Command: u16 = 0;
@@ -1264,7 +1264,7 @@ pub unsafe extern "system" fn PcipGetFunctionLimits(Context: *mut _PCI_CONFIGURA
         }
     }
 
-    debug_assert!((*pdo_extension).Resources.is_null());
+    ntkrnl_sys::ASSERT!((*pdo_extension).Resources.is_null());
 
     let resources = ExAllocatePoolWithTag(
         NonPagedPool,
@@ -1512,7 +1512,7 @@ pub unsafe extern "system" fn PciScanBus(DeviceExtension: PPCI_FDO_EXTENSION) ->
             process_flag = 1u8;
 
             status = PciPdoCreate(DeviceExtension, pci_slot, &mut device_object);
-            core::assert!(NT_SUCCESS(status));
+            ntkrnl_sys::ASSERT!(NT_SUCCESS(status));
             new_extension = (*device_object).DeviceExtension as PPCI_PDO_EXTENSION;
 
             if (hack_flags & (PCI_HACK_FAKE_CLASS_CODE as i64)) != 0 {
@@ -1545,7 +1545,7 @@ pub unsafe extern "system" fn PciScanBus(DeviceExtension: PPCI_FDO_EXTENSION) ->
                 }
 
                 *bridge_extension = new_extension;
-                core::assert!((*new_extension).NextBridge.is_null());
+                ntkrnl_sys::ASSERT!((*new_extension).NextBridge.is_null());
 
                 KeSetEvent(core::ptr::addr_of_mut!((*DeviceExtension).ChildListLock) as *mut core::ffi::c_void,
                            IO_NO_INCREMENT as i32,
@@ -1574,7 +1574,7 @@ pub unsafe extern "system" fn PciScanBus(DeviceExtension: PPCI_FDO_EXTENSION) ->
 
             if !NT_SUCCESS(status) {
                 status = PciSaveBiosConfig(new_extension, pci_data);
-                core::assert!(NT_SUCCESS(status));
+                ntkrnl_sys::ASSERT!(NT_SUCCESS(status));
                 (*new_extension).RawInterruptLine = (*pci_data).u.type0.InterruptLine;
                 (*new_extension).InitialCommand = (*pci_data).Command;
             }
@@ -1615,7 +1615,7 @@ pub unsafe extern "system" fn PciScanBus(DeviceExtension: PPCI_FDO_EXTENSION) ->
                 if temp_offset != cap_offset {
                     DbgPrint((b"PCI - Failed to read PCI capability at offset 0x%02x\n\0".as_ptr() as *const i8).cast(),
                              cap_offset as u32);
-                    core::assert!(temp_offset == cap_offset);
+                    ntkrnl_sys::ASSERT!(temp_offset == cap_offset);
                 }
 
                 match cap_header.CapabilityID as u32 {
@@ -1641,7 +1641,7 @@ pub unsafe extern "system" fn PciScanBus(DeviceExtension: PPCI_FDO_EXTENSION) ->
                                                           size) as u16;
                     if temp_offset != cap_offset {
                         DbgPrint((b"- Failed to read capability data. ***\n\0".as_ptr() as *const i8).cast());
-                        core::assert!(temp_offset == cap_offset);
+                        ntkrnl_sys::ASSERT!(temp_offset == cap_offset);
                     }
                 }
 
@@ -1710,7 +1710,7 @@ pub unsafe extern "system" fn PciQueryDeviceRelations(
 ) -> NTSTATUS {
     PAGED_CODE();
 
-    core::assert_eq!((*DeviceExtension).DeviceState, PciStarted as u8);
+    ntkrnl_sys::ASSERT!((*DeviceExtension).DeviceState == PciStarted as u8);
 
     let status = PciBeginStateTransition(DeviceExtension, PciSynchronizedOperation);
     if !NT_SUCCESS(status) {
@@ -1724,7 +1724,7 @@ pub unsafe extern "system" fn PciQueryDeviceRelations(
     }
 
     let status = PciScanBus(DeviceExtension);
-    core::assert!(NT_SUCCESS(status));
+    ntkrnl_sys::ASSERT!(NT_SUCCESS(status));
 
     let mut pdo_ext = (*DeviceExtension).ChildPdoList;
     let mut pdo_count: ULONG = 0;

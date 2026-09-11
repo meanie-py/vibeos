@@ -424,8 +424,12 @@ def test_start_menu_opens(vm: QemuVM, arch: str) -> None:
     region_delta = False
     for _attempt in range(3):
         _ctrl_esc()
-        deadline = time.time() + 8.0
-        while time.time() < deadline:
+        # monotonic, not time.time(): a backward wall-clock step LOWERS
+        # time.time(), so `while time.time() < deadline` stays true longer and
+        # silently hands a slow render extra grace. Lenient is the false-green
+        # direction, and this is the gate the whole smoke verdict rests on.
+        deadline = time.monotonic() + 8.0
+        while time.monotonic() < deadline:
             serial += vm.serial_output(timeout=1.0)
             vm.screendump(after_ppm)
             after = Image.open(after_ppm).convert("RGB")
@@ -443,10 +447,10 @@ def test_start_menu_opens(vm: QemuVM, arch: str) -> None:
     # the FINISHED render, not the first frame past the threshold. The
     # assertion below still uses the settled frame (it can only get lighter).
     if lit >= 0.60 and region_delta:
-        settle_deadline = time.time() + 6.0
+        settle_deadline = time.monotonic() + 6.0
         stable = 0
         prev = after
-        while time.time() < settle_deadline and stable < 2:
+        while time.monotonic() < settle_deadline and stable < 2:
             time.sleep(1.0)
             vm.screendump(after_ppm)
             cur = Image.open(after_ppm).convert("RGB")

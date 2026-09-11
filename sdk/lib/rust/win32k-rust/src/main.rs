@@ -11,9 +11,6 @@ use ntkrnl_sys::constants::STATUS_UNSUCCESSFUL;
 #[allow(unused_imports)]
 use core::ffi::c_void;
 
-// C debug-channel macro — no kernel symbol, no-op.
-#[allow(unused_macros)] macro_rules! ERR { ($($t:tt)*) => {{}}; }
-
 // MsqCleanupThreadMsgs / MsqDestroyMessageQueue / co_MsqInsertMouseMessage — msgqueue.rs
 // FASTCALL exports (i386 fastcall, cdecl else).
 #[cfg(target_arch = "x86")]

@@ -13,7 +13,7 @@ import subprocess
 from pathlib import Path
 
 from . import lints
-from .artifacts import Run
+from .artifacts import Run, Stage
 
 # debug verb -> shell tool that implements it (run-id passthrough)
 _SHELL_VERB = {
@@ -83,8 +83,83 @@ def debug(args, repo: Path) -> int:
     return subprocess.run(cmd, cwd=repo).returncode
 
 
+def _strict_arch_checks(run: Run, repo: Path, arch: str | None) -> None:
+    """One guard list shared by full checks and the gate's arch partition."""
+    lints.run_cargo_link_guard(run, repo, arch)
+    lints.run_committed_drift_guard(run, repo, arch)
+    if arch:
+        lints.run_binary_lints(run, repo, arch, strict=True)
+
+
 def check(args, repo: Path) -> int:
     ub = getattr(args, "update_baseline", None)
+    selection = getattr(args, "only", None)
+    scope = getattr(args, "scope", None)
+    if scope is not None:
+        if (
+            scope not in ("source", "source-early", "source-deferred", "arch")
+            or ub is not None
+            or selection is not None
+        ):
+            print("invalid --scope or combination with --only/--update-baseline")
+            return 2
+        if not getattr(args, "strict", False) or (
+            scope == "arch" and not getattr(args, "arch", None)
+        ):
+            print("--scope requires --strict; --scope arch also requires --arch")
+            return 2
+        run = Run(f"check-{scope}", getattr(args, "arch", None) or "all")
+        run.extra.update(coverage="partial", scope=scope)
+        run.add(Stage("partial", status="warn", detail=f"{scope} partition only; not a full gate"))
+        if scope in ("source-early", "source-deferred"):
+            expected = [name for name, _, _ in lints.source_partition_specs(repo, scope)]
+            lints.run_source_lints(run, repo, strict=True, only=set(expected))
+            actual = [stage.name for stage in run.stages if stage.name != "partial"]
+            run.extra.update(
+                checked_source_checks=actual,
+                unchecked_source_checks=sorted(lints.lint_tool_names(repo) - set(expected)),
+                unchecked_categories=[
+                    "architecture guards",
+                    "builds",
+                    "smokes",
+                    "tooling",
+                    "difftests",
+                ],
+            )
+            if actual != expected:
+                run.add(
+                    Stage(
+                        "coverage-inventory",
+                        status="fail",
+                        detail="executed checks differ from required partition",
+                    )
+                )
+        elif scope == "source":
+            lints.run_source_lints(run, repo, strict=True)
+        else:
+            _strict_arch_checks(run, repo, args.arch)
+        return run.finalize(repo)
+    if selection is not None:
+        if ub is not None:
+            print("--only cannot be combined with --update-baseline")
+            return 2
+        only = {name.strip() for name in selection.split(",") if name.strip()}
+        known = lints.lint_tool_names(repo)
+        if not only or only - known:
+            print(f"empty or unknown scanner selection: {', '.join(sorted(only - known))}")
+            print(f"known: {', '.join(sorted(known))}")
+            return 2
+        # A separate command identity prevents a partial result being mistaken
+        # for a complete check in artifact discovery or fleet health history.
+        run = Run("check-partial", getattr(args, "arch", None) or "all")
+        run.extra["coverage"] = "partial"
+        run.extra["selected_scanners"] = sorted(only)
+        run.extra["omitted_scanners"] = sorted(known - only)
+        run.add(
+            Stage("partial", status="warn", detail="selected source scanners only; not a full gate")
+        )
+        lints.run_source_lints(run, repo, strict=bool(getattr(args, "strict", False)), only=only)
+        return run.finalize(repo)
     if ub is not None:
         # --update-baseline           -> "__ALL__" (blanket; the footgun, see lints)
         # --update-baseline lint_kernel[,tool2,...] -> just those tools (T2 1b)
@@ -112,15 +187,5 @@ def check(args, repo: Path) -> int:
     strict = bool(getattr(args, "strict", False))
     lints.run_source_lints(run, repo, strict=strict)
     if strict:
-        # Guard the cargo-driven link PoCs (ntoskrnl/ntdll/ntdll_vista) against
-        # silent bit-rot — the pre-commit/merge gate is where to catch the
-        # off-default-path replacement links drifting. Self-skips when their
-        # prerequisites (target json / build-<arch> / nightly) are absent.
-        lints.run_cargo_link_guard(run, repo, getattr(args, "arch", None))
-        # Guard the cmake-off committed fallbacks (ks*.inc/cflags/.res/widl .rs)
-        # against silent staleness vs cmake regeneration. Self-skips without a
-        # configured build-<arch>/.
-        lints.run_committed_drift_guard(run, repo, getattr(args, "arch", None))
-        if getattr(args, "arch", None):
-            lints.run_binary_lints(run, repo, args.arch, strict=True)
+        _strict_arch_checks(run, repo, getattr(args, "arch", None))
     return run.finalize(repo)

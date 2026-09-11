@@ -393,7 +393,7 @@ pub unsafe extern "system" fn FatQueueClose(
     let mut StartWorker: BOOLEAN = 0;
 
     // FatAcquireCloseMutex
-    debug_assert!(KeAreApcsDisabled() != 0);
+    ntkrnl_sys::ASSERT!(KeAreApcsDisabled() != 0);
     ExAcquireFastMutexUnsafe(core::ptr::addr_of_mut!(FatCloseQueueMutex));
 
     if DelayClose != 0 {
@@ -435,7 +435,7 @@ pub unsafe extern "system" fn FatQueueClose(
     }
 
     // FatReleaseCloseMutex
-    debug_assert!(KeAreApcsDisabled() != 0);
+    ntkrnl_sys::ASSERT!(KeAreApcsDisabled() != 0);
     ExReleaseFastMutexUnsafe(core::ptr::addr_of_mut!(FatCloseQueueMutex));
 
     if StartWorker != 0 {

@@ -3528,7 +3528,7 @@ unsafe fn MiLockVirtualMemory(
 
                 TempStatus = MmAccessFault(1u32, CurrentVa, 0i8, 0xBADBADA3BADBADA3u64 as PVOID);
                 if TempStatus < 0 {
-                    debug_assert!(false);
+                    ntkrnl_sys::ASSERT!(false);
                     Status = TempStatus;
                     MmUnlockAddressSpace(AddressSpace as PVOID);
                     return Status;
@@ -3547,7 +3547,7 @@ unsafe fn MiLockVirtualMemory(
 
                 TempStatus = MmAccessFault(1u32, CurrentVa, 0i8, 0xBADBADA3BADBADA3u64 as PVOID);
                 if TempStatus < 0 {
-                    debug_assert!(false);
+                    ntkrnl_sys::ASSERT!(false);
                     Status = TempStatus;
                     MmUnlockAddressSpace(AddressSpace as PVOID);
                     return Status;
@@ -3558,7 +3558,7 @@ unsafe fn MiLockVirtualMemory(
         }
 
         Pfn1 = MiGetPfnEntry(PFN_FROM_PTE(PointerPte));
-        debug_assert!(!Pfn1.is_null());
+        ntkrnl_sys::ASSERT!(!Pfn1.is_null());
 
         if MI_IS_LOCKED_VA(Pfn1, MapType) != 0 {
             Status = STATUS_WAS_LOCKED;
@@ -3747,7 +3747,7 @@ unsafe fn MiUnlockVirtualMemory(
                 Status = STATUS_NOT_LOCKED;
             } else {
                 Pfn1 = MiGetPfnEntry(PFN_FROM_PTE(PointerPte));
-                debug_assert!(!Pfn1.is_null());
+                ntkrnl_sys::ASSERT!(!Pfn1.is_null());
 
                 if (((MapType & MAP_SYSTEM) != 0) && (MI_IS_LOCKED_VA(Pfn1, MAP_SYSTEM) == 0)) ||
                    (((MapType & MAP_PROCESS) != 0) && (MI_IS_LOCKED_VA(Pfn1, MAP_PROCESS) == 0)) {
@@ -3766,7 +3766,7 @@ unsafe fn MiUnlockVirtualMemory(
                 Status = STATUS_NOT_LOCKED;
             } else {
                 Pfn1 = MiGetPfnEntry(PFN_FROM_PTE(PointerPte));
-                debug_assert!(!Pfn1.is_null());
+                ntkrnl_sys::ASSERT!(!Pfn1.is_null());
 
                 if (((MapType & MAP_SYSTEM) != 0) && (MI_IS_LOCKED_VA(Pfn1, MAP_SYSTEM) == 0)) ||
                    (((MapType & MAP_PROCESS) != 0) && (MI_IS_LOCKED_VA(Pfn1, MAP_PROCESS) == 0)) {
@@ -4060,7 +4060,7 @@ pub unsafe extern "system" fn NtGetWriteWatch(
         );
     } else {
         CapturedEntryCount = *EntriesInUserAddressArray;
-        debug_assert!(CapturedEntryCount != 0);
+        ntkrnl_sys::ASSERT!(CapturedEntryCount != 0);
     }
 
     if ProcessHandle == NtCurrentProcess() {
@@ -4110,7 +4110,7 @@ pub unsafe extern "system" fn NtResetWriteWatch(
     let mut Status: NTSTATUS;
     let PreviousMode: KPROCESSOR_MODE = ExGetPreviousMode();
 
-    debug_assert!(KeGetCurrentIrql() == PASSIVE_LEVEL as u8);
+    ntkrnl_sys::ASSERT!(KeGetCurrentIrql() == PASSIVE_LEVEL as u8);
 
     if BaseAddress > MM_HIGHEST_USER_ADDRESS as PVOID {
         return STATUS_INVALID_PARAMETER_2;

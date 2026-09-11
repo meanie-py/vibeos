@@ -5181,6 +5181,12 @@ pub struct _LIST_ENTRY {
 pub type LIST_ENTRY = _LIST_ENTRY;
 #[repr(C)]
 #[derive(Debug, Copy, Clone)]
+pub struct _SINGLE_LIST_ENTRY {
+    pub Next: *mut _SINGLE_LIST_ENTRY,
+}
+pub type SINGLE_LIST_ENTRY = _SINGLE_LIST_ENTRY;
+#[repr(C)]
+#[derive(Debug, Copy, Clone)]
 pub struct _FLOATING_SAVE_AREA {
     pub ControlWord: DWORD,
     pub StatusWord: DWORD,
@@ -5253,6 +5259,20 @@ pub struct _SECURITY_ATTRIBUTES {
 }
 pub type SECURITY_ATTRIBUTES = _SECURITY_ATTRIBUTES;
 pub type LPSECURITY_ATTRIBUTES = *mut _SECURITY_ATTRIBUTES;
+#[repr(C)]
+#[derive(Copy, Clone)]
+pub union _SLIST_HEADER {
+    pub Alignment: ULONGLONG,
+    pub __bindgen_anon_1: _SLIST_HEADER__bindgen_ty_1,
+}
+#[repr(C)]
+#[derive(Debug, Copy, Clone)]
+pub struct _SLIST_HEADER__bindgen_ty_1 {
+    pub Next: SINGLE_LIST_ENTRY,
+    pub Depth: WORD,
+    pub Sequence: WORD,
+}
+pub type SLIST_HEADER = _SLIST_HEADER;
 #[repr(C)]
 #[derive(Copy, Clone)]
 pub struct _RTL_CRITICAL_SECTION_DEBUG {

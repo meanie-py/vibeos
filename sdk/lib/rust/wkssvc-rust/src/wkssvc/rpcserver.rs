@@ -350,7 +350,7 @@ pub unsafe extern "system" fn NetrWkstaSetInfo(
             }
         }
         _ => {
-            ERR!(b"Invalid Level %lu\n\0".as_ptr() as *const i8, Level);
+            ERR!("Invalid Level %lu\n", Level);
             dw_result = ERROR_INVALID_LEVEL;
         }
     }
@@ -758,7 +758,7 @@ pub unsafe extern "system" fn NetrWkstaUserGetInfo(
             }
         }
         _ => {
-            ERR!(b"\n\0".as_ptr() as *const i8);
+            ERR!("\n");
             dw_result = ERROR_INVALID_LEVEL;
         }
     }

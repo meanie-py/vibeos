@@ -119,7 +119,21 @@ contradicted assertion, and a plausible wrong fix died before it could be commit
 a fix on the test it was aimed at.
 
 - `tools/conformance-baseline/<arch>/kmtest.txt`: one line per test —
-  `name pass_count fail_count skip|crash|hang` at baseline time.
+  `name pass_count fail_count skip|crash|hang` at baseline time, followed by an indented
+  line per failing assertion:
+
+  ```
+  IoDeviceObject OK pass=185 fail=2 skip=0
+      assert  IoDeviceObject_drv.c:198
+      assert? IoDeviceObject_drv.c:206
+  ```
+
+  **The floor is the SET of `file:line` identities; the counts are commentary.** `assert?`
+  marks a known-bistable identity — not a regression when it fires, not an improvement when
+  it does not, and carried forward across a re-seed instead of being re-rolled from one boot.
+  The message text is deliberately NOT part of the identity: it carries addresses and
+  NTSTATUS values that differ every boot. A row with no `assert` lines has not been seeded
+  yet and keeps the old fail-count gate, so seeding proceeds per-arch with no flag day.
 - **Re-seed with `--write-baseline --only <TEST>…`, not a bare `--write-baseline`.** The
   bare form rewrites every row from the single sweep in front of it, so the rows we know
   are bistable (`IoDeviceObject` on all three arches, `ExPools` on arm64) get re-rolled
@@ -1728,3 +1742,127 @@ remembering:
 
 Both were fixed *before* the hunt could finish, and both had been silently useless for some
 time. **When a diagnostic reports itself healthy, check that it exercises its own output path.**
+
+---
+
+### 2026-09-05 — the ratchet gated on COUNTS, and 33 of 37 shared count-signatures hide a different result (#78)
+
+**The defect was in this document's own design.** "Only the per-test `fail` count, plus the
+named assertions behind it, means anything" was written in the M4 section from the start; only
+the count half was ever implemented. `compare()` gated on `pass` dropping and `fail` growing,
+so the one thing counts cannot express — **fix three assertions, break three others** — passed
+the gate in silence.
+
+That is not hypothetical, and the size of it is measurable. 596 complete arm64 sweeps were
+sitting in `/tmp/vibeos-cli` from the smp lane's soak:
+
+| | |
+|---|---|
+| distinct failing assertion identities ever seen | 336 |
+| fail in EVERY one of 596 runs (the real floor) | 277 |
+| intermittent | 59 |
+| distinct whole-run count-signatures | 92 |
+| count-signatures shared by >1 run | 37 |
+| **…of those, where the failing ASSERTIONS still differ** | **33** |
+
+The worst case is **10 runs with byte-identical pass/fail/skip for all 91 tests** that differ
+in 6 assertion identities. The count ratchet accepts every one as the same result. Replayed
+through the new comparison, the same pair reports
+`IoDeviceObject: NEW failing assertion IoDeviceObject_drv.c:206`.
+
+**92 count-signatures across 596 runs also explains the re-seeding.** A count floor can only
+equal one of those 92 faces, so honest runs read as regressions and get re-seeded away — and
+each re-seed is a chance to bank a lucky boot. `--only` was built to contain that damage; the
+identity floor removes most of the reason to re-seed at all.
+
+**What the identity is.** kmt_test.h's `KmtVOk` prints `<file>:<line>: Test failed: <message>`
+per failing assertion, and nothing at all per success (`if (0/*KmtReportSuccess*/)`). So
+`file:line` is the identity and the message is not — it carries addresses and NTSTATUS values
+that differ every boot. The absence of success lines is also why a **dropped `pass` count stays
+count-gated**: there are no per-success identities to compare, and a test that quietly stops
+asserting shows up nowhere else. A `fail` count that grew without a new identity is a loop
+running longer, and is no longer reported.
+
+**Bistability is marked, not re-seeded away.** 59 of the 336 identities are intermittent, with
+frequencies from 594/596 down to 1/596 — `IoDeviceObject_drv.c:198/206/300` and
+`ExPools.c:176/178/181` at the top, which is exactly the `IoDeviceObject` / `ExPools` pair this
+document already named as bistable, found independently from the logs. Those get `assert?`:
+silent whichever way they land, and carried across a re-seed by `_flaky_of` so one boot's face
+cannot become the floor.
+
+**Attribution is by LAUNCH, not by END.** A crashed or timed-out test never emits
+`[KMTEST:END]`, so attributing failures to the next END bleeds the dead test's assertions into
+whichever test ends after it. The soak shows this happening: `ExPools.c` lines surface under
+`ExSequencedList` on exactly the runs where the test ahead died.
+
+**The soak was NOT used to seed anything.** Its 610 rounds ran on `smp-bringup`
+(`3878df2735d`, `129e388f59d`) — neither is an ancestor of this lane, so it is another lane's
+kernel. It is sound evidence about the HARNESS (flake structure, count-blindness are properties
+of the corpus and the comparison, not of one lane's kernel) and worthless as a floor for ours.
+Seeding is owed, per arch, from `--write-baseline` on our own tree at a known commit; until
+then every row keeps its count gate and nothing regresses.
+
+### 2026-09-06 — the ratchet is WIRED INTO THE GATE, and stops being advisory
+
+For its whole life the ratchet computed a correct verdict and nothing was obliged to
+act on it. `--gate` existed, and no gate passed it. That is now the default:
+`vibeos-cli gate` runs one conformance lane per arch, and a ratchet regression withholds
+the push stamp exactly as a dead desktop does. `--no-conformance` opts out.
+
+**Why it reuses the gate's media instead of building its own.** The sweep needs media
+built with `VIBEOS_PAYLOAD=kmtest`, which the gate's build did not stamp — a lane running
+`--no-build` against a `<none>`-stamped build dir boots fine and reports
+`[KMTEST-SWEEP] launch FAILED` minutes later, a layer from the cause. The two options were
+a second build per arch, or teaching the gate's build to carry the payload. Measured on a
+live fleet, that is not a close call: the host broker sat at **4/4 build permits with lanes
+queued 12+ minutes** while the boot pool sat at **1/8**. Builds are the bottleneck; boots
+are nearly free. So the gate build now passes `--kmtests` and stamps the payload, and the
+conformance lanes boot the same media the smoke does. Cost: three extra parallel boots,
+zero extra builds.
+
+**Why the lane is flake-retryable.** This is the part that decides whether the gate is
+usable at all. The floor marks the bistables it KNOWS about (`assert?`), but the corpus is
+not closed: an intermittent that simply did not fire during the 15 seeding boots is
+indistinguishable from a real regression on any single sweep. The merge queue gates ONCE
+for N lanes, so a non-retryable miss would reject a whole batch of innocent lanes on a coin
+flip — precisely the failure the 2026-08-08 NET_FLAKE incident recorded, where a lane whose
+entire diff was three baseline edits and a doc got rejected. So a first-attempt miss is
+`CONFORMANCE_FLAKE` and retries; a real regression reproduces and ends red. A repeated
+experiment that holds the suspected cause fixed falsifies nothing, and the converse applies
+here: an experiment that does not repeat has not established anything either.
+
+**What it is still not.** The floor is 702 identities over 91 rows per arch, seeded from 15
+boots. It gates what those boots saw. An assertion that fails only under a load the gate
+does not produce is not on it, and the retry that protects innocent lanes will also mask a
+genuine regression that reproduces less than every other run. The ratchet is a floor, not a
+proof.
+
+### 2026-09-06 (same day) — the retry earned its keep on its FIRST real gate, and found a new arm64 bistable
+
+The first gate to run the wired-in ratchet went green with one line under it:
+`conformance:arm64 — PASS, 3 attempts, recovered-after-flake`. i386 and amd64 held on the
+first sweep; arm64 reported
+
+    ExPools: NEW failing assertion ExPools.c:176
+    ExPools: NEW failing assertion ExPools.c:181
+
+failed the same way on the first retry, and held clean on the second.
+
+**This is the case the retry was built for, arriving immediately.** Had the lane been
+non-retryable — the obvious first implementation — the very first gate would have been RED,
+and in the merge queue it would have rejected every innocent lane in the batch alongside it.
+The design note written that morning ("an intermittent that never fired during the 15 seeding
+boots is indistinguishable from a regression on any single sweep") was not hypothetical for
+even one gate.
+
+**Both identities are now marked `assert?` on the arm64 floor** (bistables there: 4 → 6). The
+alternative was leaving every arm64 gate with a real chance of burning all its retries, which
+blocks the fleet — a worse failure than absorbing two known-intermittent lines.
+
+**What that mark does NOT settle, and is owed.** `ExPools.c:176` and `:181` sit either side of
+`:178`, which is on the floor as a STABLE failure. A cluster of three neighbouring assertions
+where one always fails and two fail about two runs in three is not noise-shaped; it looks like
+one intermittent defect in arm64 pool allocation, and the `assert?` marks silence the symptom
+rather than explaining it. Hit rate observed here is 2/3, which is frequent enough to soak
+cheaply: `vibeos-cli conformance --arch arm64 --repeat 20` and read which of the three fire
+together. Nothing else in the tree is watching this now that the ratchet is quiet about it.

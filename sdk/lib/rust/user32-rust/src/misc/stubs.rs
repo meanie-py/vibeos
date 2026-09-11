@@ -3,10 +3,6 @@ use win32k_sys::win32k::*;
 use core::ffi::c_void;
 
 // ── No-op debug macros (Wine debug-channel guard compiles them to nothing).
-#[allow(unused_macros)]
-macro_rules! FIXME { ($($arg:expr),* $(,)?) => { { $( let _ = $arg; )* } }; }
-#[allow(unused_macros)]
-macro_rules! TRACE { ($($arg:expr),* $(,)?) => { { $( let _ = $arg; )* } }; }
 
 // ── NT_SUCCESS lives in crate::winbase; NtCurrentTeb in crate::internal.
 use crate::internal::NtCurrentTeb;
@@ -71,7 +67,7 @@ pub unsafe extern "system" fn WaitForInputIdle(
 
 #[no_mangle]
 pub unsafe extern "system" fn SetDebugErrorLevel(dwLevel: DWORD) {
-    FIXME!(b"(%lu): stub\n\0".as_ptr() as *const i8, dwLevel);
+    FIXME!("(%lu): stub\n", dwLevel);
 }
 
 #[no_mangle]

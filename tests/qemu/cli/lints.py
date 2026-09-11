@@ -88,6 +88,18 @@ def _finding_lines(out: str) -> set[str]:
     return {ln.rstrip() for ln in out.splitlines() if ln.strip() and not _SUMMARY_LINE.search(ln)}
 
 
+def _scanner_error(cp: subprocess.CompletedProcess, findings_from: str) -> bool:
+    """Crashes outrank partial/baselined output: the scan never completed."""
+    if cp.returncode < 0 or re.search(
+        r"^Traceback \(most recent call last\):", cp.stderr or "", re.M
+    ):
+        return True
+    text = cp.stdout or ""
+    if findings_from != "stdout":
+        text += "\n" + (cp.stderr or "")
+    return cp.returncode != 0 and not _finding_lines(text)
+
+
 # Finding identity WITHOUT the line/column, so LINE DRIFT is not a new finding.
 # Same disease as the count-bearing summary lines above, one level deeper: the baseline
 # stored 'qemu/lib/common.sh:90:17: … SLOT_INDEX …', a 3-line COMMENT was inserted earlier
@@ -197,6 +209,19 @@ def _lint_stage(
             Stage(name, status=st, detail="tool unavailable — LINT NOT RUN (no coverage)")
         )
     cp = run.run(cmd, cwd=cwd or repo, stage=f"lint:{name}")
+    if _scanner_error(cp, "both" if by_exit_code else findings_from):
+        run.classification = "SCANNER_ERROR"
+        return run.add(
+            Stage(
+                name,
+                exit=cp.returncode,
+                status="fail",
+                detail="SCANNER_ERROR: scanner did not complete; coverage unavailable",
+                salient=_rel(
+                    (cp.stderr or cp.stdout or f"exit {cp.returncode}"), repo
+                ).splitlines()[-4:],
+            )
+        )
     if by_exit_code:
         text = _rel((cp.stdout or "") + "\n" + (cp.stderr or ""), repo)
         if cp.returncode == 0:
@@ -338,6 +363,17 @@ def source_lint_specs(repo: Path) -> list[tuple]:
     # exports). Baseline EMPTY = strict: a header that grows a new alias fails here.
     vcm = repo / "tools" / "verify_conv_macros.py"
     specs.append(("verify_conv_macros", [py, str(vcm)] if vcm.is_file() else ["MISSING"], "stdout"))
+    # ucrtbase.dll is vendored Microsoft UCRT plus OUR msvcrt_shared, so the Rust archive it
+    # links must cover msvcrt_shared's surface and nothing else. The failure this catches has
+    # no diagnostic of its own: ucrtbase.spec and msvcrt's cohab archive collide on 891 names
+    # of which only 35 are msvcrt_shared's, and the module links with
+    # --allow-multiple-definition, so linking the wrong archive silently replaces 856 genuine
+    # UCRT bodies with msvcrt-contract ones and still builds, boots and looks fine. Baseline
+    # EMPTY = strict.
+    vuc = repo / "tools" / "verify_ucrtbase_cohab.py"
+    specs.append(
+        ("verify_ucrtbase_cohab", [py, str(vuc)] if vuc.is_file() else ["MISSING"], "stdout")
+    )
     # vendor.yaml — which C is NOT ours to translate. Every progress number in this project
     # is a fraction whose denominator is "C that is ours", and before the registry that set
     # was prose in rust-port-status.md, a one-tree manifest under external/, and a hardcoded
@@ -533,6 +569,22 @@ def source_lint_specs(repo: Path) -> list[tuple]:
             "stdout",
         )
     )
+    # C's `!x` is LOGICAL not; Rust's `!x` on an integer is BITWISE. So a translated
+    # `!(flags & FLAG)` becomes `!(flags & FLAG) != 0`, which is true for every value a
+    # flag test can produce — a CONSTANT condition that types fine, compiles clean and
+    # trips no rustc lint. Eight sites on 2026-07-26, and only three were assertions:
+    # the rest were live branches, including classpnp's ADJUST_FUA_FLAG collapsing to
+    # its first term (forcing FUA onto devices that had reported it unsupported) and an
+    # always-true arm that disabled win32k's CJK line-break rule. Nothing but reading
+    # the C finds these, which is exactly why it is a gate. Baseline is EMPTY.
+    sbn = repo / "tools" / "scan_bitwise_not_bool.py"
+    specs.append(
+        (
+            "scan_bitwise_not_bool",
+            [py, str(sbn), "--lint"] if sbn.is_file() else ["MISSING"],
+            "stdout",
+        )
+    )
     # One constant name, two values, both ours (§9.113b). The ORACLE-FREE half of
     # the invented-constant hunt: verify_constants needs the right C header in its
     # catalog, and the 18 findings of 2026-07-24 hid precisely because theirs
@@ -547,6 +599,26 @@ def source_lint_specs(repo: Path) -> list[tuple]:
         (
             "scan_const_contradictions",
             [py, str(scc), "--lint"] if scc.is_file() else ["MISSING"],
+            "stdout",
+        )
+    )
+    # The ORACLE-BEARING half, and the half the above is blind to by construction:
+    # a constant with exactly ONE definition in the tree cannot contradict itself,
+    # so a lone wrong value is invisible there forever. This one needs no inference
+    # because the translator labelled the population itself -- "// placeholder",
+    # "// guessed value", "// assumed" -- and then resolves each name against a
+    # NARROWLY scoped oracle (the C module the crate translates, plus the SDK
+    # headers), because a repo-wide catalog collides on short names and its
+    # findings are overwhelmingly false (§9.113b). fastfat's
+    # IRP_CONTEXT_FLAG_DISABLE_DIRTY was one of these, at 0x100 against
+    # fatstruc.h's 0x01, and it cost a BUGCHECK 0x50 on arm64 through an infinite
+    # recursion whose guard could never fire. MISMATCH is a defect; UNRESOLVED is
+    # a review queue, so the baseline gates NEW only.
+    sic = repo / "tools" / "scan_invented_constants.py"
+    specs.append(
+        (
+            "scan_invented_constants",
+            [py, str(sic), "--lint"] if sic.is_file() else ["MISSING"],
             "stdout",
         )
     )
@@ -599,6 +671,29 @@ def source_lint_specs(repo: Path) -> list[tuple]:
         (
             "scan_dropped_prints",
             [py, str(sdp), "--lint"] if sdp.is_file() else ["MISSING"],
+            "stdout",
+        )
+    )
+    # The same oracle as scan_dropped_prints, opposite stakes: not "did it stay silent
+    # where its C spoke" but "did it dereference a user pointer where its C validated
+    # one". A dropped print costs a debugging cycle; a dropped probe is a security bug,
+    # and under DUMMY_PSEH there is no SEH to contain it. NtSetValueKey (#79) shipped a
+    # bare `Status = STATUS_SUCCESS;` where ProbeForRead belongs and copied straight off
+    # the caller's raw pointer -- so a Data pointing into KERNEL SPACE was copied into a
+    # registry value the same unprivileged caller reads back with NtQueryValueKey.
+    # Nothing else is positioned to see it: the raw-pointer deref is ordinary correct
+    # code in any other context, and only the commented-out C saying "I probed this
+    # first" makes it a bug, so rustc, the build and the boot are all silent. Every
+    # remaining row is an Nt* syscall entry point. ALL is the high-confidence kind;
+    # PARTIAL is advisory (the C often probes a struct field-by-field where the Rust
+    # probes the buffer once). A false positive is settled by FOLLOWING THE POINTER to
+    # the caller -- a callee whose buffer was already captured into pool is genuinely
+    # safe -- and then suppressed with that reason via `nolint: dropped-probe`.
+    sdpr = repo / "tools" / "scan_dropped_probes.py"
+    specs.append(
+        (
+            "scan_dropped_probes",
+            [py, str(sdpr), "--lint"] if sdpr.is_file() else ["MISSING"],
             "stdout",
         )
     )
@@ -738,6 +833,26 @@ def source_lint_specs(repo: Path) -> list[tuple]:
     # lib had `_SetErrorMode@4`), and the tree carries three older instances that were papered
     # over with hand-written stdcall trampolines instead. Baseline holds 4 generated-island
     # findings where the C HEADER and the .spec genuinely disagree upstream.
+    # A raw-dylib link name that resolves to a file that is not there. rustc appends
+    # `.dll` to the name UNCONDITIONALLY — it does not look for an existing extension —
+    # so `name = "ntoskrnl"` names `ntoskrnl.dll`, and ks/pcix/ramdisk shipped that import
+    # descriptor for months while freeldr logged `PeLdrLoadImage(...ntoskrnl.dll) failed`
+    # into a debug channel that was itself silent. The reason this is a LINT and not a
+    # lesson is that the obvious fix is also wrong and also shipped: bare
+    # `name = "ntoskrnl.exe"` yields `ntoskrnl.exe.dll`, and nothing catches it — raw-dylib
+    # invents the descriptor, so there is no unresolved symbol and the link succeeds. It
+    # took llvm-readobj on the rebuilt binary to see it. Correct is the name WITH its real
+    # extension plus modifiers = "+verbatim". Note the scanner does NOT simply demand
+    # +verbatim everywhere: bare `ntdll` -> `ntdll.dll` is correct, and flagging it would
+    # teach the next agent to write `ntdll.dll.dll`. Baseline is EMPTY and should stay that way.
+    srd = repo / "tools" / "scan_rawdylib_linkname.py"
+    specs.append(
+        (
+            "scan_rawdylib_linkname",
+            [py, str(srd)] if srd.is_file() else ["MISSING"],
+            "stdout",
+        )
+    )
     sic = repo / "tools" / "scan_import_cc.py"
     specs.append(
         (
@@ -833,6 +948,25 @@ def source_lint_specs(repo: Path) -> list[tuple]:
     # module no longer has). It found fastfat's FatGetNextMcbEntry storing 8 bytes
     # through a 4-byte out-param and freeldr's TuiDisplayMenu being called with 11
     # arguments for 10 parameters.
+    # A Rust-source walk written as `rglob("*.rs")` + a `"/target/" in path` filter.
+    # `rglob` finishes descending into sdk/lib/rust/target BEFORE the filter sees a
+    # path, so once `source-early` moved the audited scanners alongside the builds,
+    # cargo deleting a directory mid-walk killed the scanner with a traceback — and
+    # the gate reported it as `lint:source-early: NEW lint findings (exit 1)` with no
+    # findings in the artifact, sending a lane after a source defect that did not
+    # exist. The six EARLY_SOURCE_CHECKS scanners are migrated to
+    # tools/rust_sources.py walk_files() (prune during descent + onerror); baseline
+    # holds the 65 latent sites so the class cannot grow while they burn down. This
+    # one is DEFERRED on purpose: a guard against build-concurrency races has no
+    # business racing the builds.
+    suw = repo / "tools" / "scan_unpruned_walk.py"
+    specs.append(
+        (
+            "scan_unpruned_walk",
+            [py, str(suw), "--lint"] if suw.is_file() else ["MISSING"],
+            "stdout",
+        )
+    )
     sdd = repo / "tools" / "scan_extern_decl_drift.py"
     specs.append(
         (
@@ -858,8 +992,45 @@ def source_lint_specs(repo: Path) -> list[tuple]:
     return specs
 
 
-def run_source_lints(run: Run, repo: Path, *, strict: bool) -> None:
-    for name, cmd, src in source_lint_specs(repo):
+# Audited CLI paths read Rust sources only and prune Cargo output before traversal.
+# Build independence alone is insufficient: excluded directories must never be
+# entered while builds mutate them. test_gate_source_partitions audits scandir.
+# Everything not explicitly audited stays deferred, including new scanners.
+# See docs/engineering/fleet-verification-migration-plan.md for input contracts.
+EARLY_SOURCE_CHECKS = frozenset(
+    {
+        "scan_invented_constants",
+        "scan_extern_decl_drift",
+        "scan_octal_literals",
+        "scan_type_alias_contradictions",
+        "scan_irql_balance",
+        "scan_ob_refcount",
+        "scan_rawdylib_linkname",
+    }
+)
+
+
+def source_partition_specs(repo: Path, phase: str) -> list[tuple]:
+    """Disjoint, exhaustive views of the original commands; unknown work waits."""
+    if phase not in ("source-early", "source-deferred"):
+        raise ValueError(f"unknown source partition: {phase}")
+    specs = source_lint_specs(repo)
+    names = [name for name, _, _ in specs]
+    if len(names) != len(set(names)) or EARLY_SOURCE_CHECKS - set(names):
+        raise ValueError("source inventory has duplicate names or missing audited checks")
+    early = phase == "source-early"
+    return [spec for spec in specs if (spec[0] in EARLY_SOURCE_CHECKS) == early]
+
+
+def run_source_lints(run: Run, repo: Path, *, strict: bool, only: set[str] | None = None) -> None:
+    specs = source_lint_specs(repo)
+    if only is not None:
+        unknown = only - {name for name, _, _ in specs}
+        if not only or unknown:
+            raise ValueError(f"empty or unknown scanner selection: {sorted(unknown)}")
+    for name, cmd, src in specs:
+        if only is not None and name not in only:
+            continue
         _lint_stage(run, repo, name, cmd, strict=strict, findings_from=src)
 
 
@@ -892,6 +1063,8 @@ def write_baselines(repo: Path, only: set[str] | None = None) -> dict:
             cp = subprocess.run(cmd, cwd=repo, capture_output=True, text=True, timeout=600)
         except (OSError, subprocess.SubprocessError):
             continue
+        if _scanner_error(cp, src):
+            raise RuntimeError(f"SCANNER_ERROR: {name} did not complete; refusing baseline update")
         text = _rel(cp.stdout if src == "stdout" else (cp.stdout + "\n" + cp.stderr), repo)
         cur = _finding_lines(text)
         prev = _baseline(repo, name)

@@ -56,7 +56,8 @@ const ANSI_NULL: CHAR = 0;
 const UNICODE_NULL: WCHAR = 0;
 const PF_PAE_ENABLED: usize = 9;
 const MEM_DOS_LIM: ULONG = 0x40000000;
-const TAG_CM: ULONG = u32::from_le_bytes(*b"Cm  ");
+// C: cmlib.h `#define TAG_CM '  MC'`. A multi-char literal is BIG-endian.
+const TAG_CM: ULONG = u32::from_be_bytes(*b"  MC");
 const CM_MAXIMUM_TYPE_COUNT: usize = 42;
 const REG_OPTION_NON_VOLATILE: ULONG = 0;
 const REG_CREATED_NEW_KEY: ULONG = 1;

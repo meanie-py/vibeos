@@ -95,7 +95,7 @@ pub unsafe extern "system" fn KiInitializeUserApc(
     let ApcFrame: *mut UAPC_FRAME;
     let Context: PCONTEXT;
 
-    debug_assert!(((*TrapFrame).SegCs & MODE_MASK) != 0);
+    ntkrnl_sys::ASSERT!(((*TrapFrame).SegCs & MODE_MASK) != 0);
 
     ApcFrame = (((*TrapFrame).Rsp as usize - core::mem::size_of::<UAPC_FRAME>()) & !15) as *mut UAPC_FRAME;
     Context = core::ptr::addr_of_mut!((*ApcFrame).Context);
@@ -217,10 +217,8 @@ unsafe fn KiUserModeCalloutImpl(CalloutFrame: PKCALLOUT_FRAME) -> NTSTATUS {
 
     CurrentThread = PsGetCurrentThread();
 
-    debug_assert!(KeGetCurrentIrql() == PASSIVE_LEVEL);
-    debug_assert!(
-        (*CurrentThread).ApcStateIndex == 0 && (*CurrentThread).__bindgen_anon_5.__bindgen_anon_8.__bindgen_anon_1.CombinedApcDisable == 0
-    );
+    ntkrnl_sys::ASSERT!(KeGetCurrentIrql() == PASSIVE_LEVEL);
+    ntkrnl_sys::ASSERT!((*CurrentThread).ApcStateIndex == 0 && (*CurrentThread).__bindgen_anon_5.__bindgen_anon_8.__bindgen_anon_1.CombinedApcDisable == 0);
 
     InitialStack = (CalloutFrame as ULONG_PTR) & !15;
 
@@ -303,8 +301,8 @@ pub unsafe extern "system" fn KeUserModeCallback(
     let Teb: PTEB;
     let mut GdiBatchCount: ULONG = 0;
 
-    debug_assert!((*PsGetCurrentThread()).__bindgen_anon_1.ApcState.KernelApcInProgress == 0);
-    debug_assert!(KeGetPreviousMode() == 1i8);
+    ntkrnl_sys::ASSERT!((*PsGetCurrentThread()).__bindgen_anon_1.ApcState.KernelApcInProgress == 0);
+    ntkrnl_sys::ASSERT!(KeGetPreviousMode() == 1i8);
 
     // DUMMY_PSEH: Check KernelCallbackTable before dispatching to user mode.
     // If user32.dll hasn't loaded yet, PEB->KernelCallbackTable is NULL and

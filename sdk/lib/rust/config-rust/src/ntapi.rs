@@ -97,7 +97,8 @@ const CM_BOOT_FLAG_MAX: u16 = CM_BOOT_FLAG_ACCEPTED + 999;
 const CM_KCB_READ_ONLY_KEY: u32 = 0x80;
 
 // Pool tag for CM allocations
-const TAG_CM: ULONG = u32::from_le_bytes(*b"MCmC");
+// C: cmlib.h `#define TAG_CM '  MC'`. A multi-char literal is BIG-endian. ntapi.c:912 allocates with plain TAG_CM.
+const TAG_CM: ULONG = u32::from_be_bytes(*b"  MC");
 
 // Misc
 const PRODUCT_ACTIVATION_VERSION: ULONG = 0x0000;
@@ -580,19 +581,30 @@ pub unsafe extern "system" fn NtEnumerateKey(
     }
 
     if PreviousMode != _KPROCESSOR_MODE_KernelMode {
-        if ResultLength.is_null()
-            || (ResultLength as usize) < core::mem::size_of::<ULONG>()
-            || ((ResultLength as usize) & (core::mem::size_of::<ULONG>() - 1)) != 0
-        {
+        // C: ProbeForWriteUlong(ResultLength) and ProbeForWrite(KeyInformation, Length,
+        // sizeof(ULONG)) inside a _SEH2_TRY. The translation kept the ALIGNMENT half of
+        // those probes and dropped the RANGE half entirely — and `(ptr as usize) <
+        // size_of::<ULONG>()` is not a range check at all, it compares an address
+        // against a size and so rejects only the first few bytes of the address space.
+        // Both pointers are written by CmEnumerateKey below, so a kernel address here
+        // was an arbitrary kernel write reachable from any caller that can open a key.
+        if let Err(e) = probe_user_buffer(
+            ResultLength as *const core::ffi::c_void,
+            core::mem::size_of::<ULONG>(),
+            core::mem::size_of::<ULONG>(),
+            PreviousMode,
+        ) {
             ObDereferenceObject(KeyObject as *mut core::ffi::c_void);
-            return STATUS_DATATYPE_MISALIGNMENT;
+            return e;
         }
-
-        if KeyInformation.is_null()
-            || (Length > 0 && ((KeyInformation as usize) & (core::mem::size_of::<ULONG>() - 1)) != 0)
-        {
+        if let Err(e) = probe_user_buffer(
+            KeyInformation as *const core::ffi::c_void,
+            Length as usize,
+            core::mem::size_of::<ULONG>(),
+            PreviousMode,
+        ) {
             ObDereferenceObject(KeyObject as *mut core::ffi::c_void);
-            return STATUS_DATATYPE_MISALIGNMENT;
+            return e;
         }
     }
 
@@ -663,17 +675,33 @@ pub unsafe extern "system" fn NtEnumerateValueKey(
     }
 
     if PreviousMode != _MODE_KernelMode {
-        if (ResultLength as usize) < core::mem::size_of::<ULONG>() ||
-           (ResultLength as usize).wrapping_add(core::mem::size_of::<ULONG>() - 1) < (ResultLength as usize) ||
-           (KeyValueInformation as usize) < core::mem::size_of::<ULONG>() ||
-           (KeyValueInformation as usize).wrapping_add(Length as usize) < (KeyValueInformation as usize) ||
-           (KeyValueInformation as usize).wrapping_add(Length as usize) > 0x7FFFFFFF
-        {
+        // C: ProbeForWriteUlong(ResultLength) and ProbeForWrite(KeyValueInformation,
+        // Length, sizeof(ULONG)) inside a _SEH2_TRY that dereferences the key object and
+        // returns the exception code. Replaced here by a hand-rolled check with the same
+        // three defects as NtQueryKey's — a hardcoded ceiling (0x7FFFFFFF) standing in
+        // for MmUserProbeAddress, no real alignment test, and a "touch" that is not one:
+        // `write_bytes(KeyValueInformation, 0, Length)` ZEROES the caller's whole output
+        // buffer, where ProbeForWrite touches one byte per page and preserves contents.
+        //
+        // probe_user_buffer is range plus alignment, no touch — correct under DUMMY_PSEH.
+        if let Err(e) = probe_user_buffer(
+            ResultLength as *const core::ffi::c_void,
+            core::mem::size_of::<ULONG>(),
+            core::mem::size_of::<ULONG>(),
+            PreviousMode,
+        ) {
             ObDereferenceObject(KeyObject as PVOID);
-            return STATUS_ACCESS_VIOLATION;
+            return e;
         }
-        core::ptr::write_volatile(ResultLength, core::ptr::read_volatile(ResultLength));
-        core::ptr::write_bytes(KeyValueInformation, 0, Length as usize);
+        if let Err(e) = probe_user_buffer(
+            KeyValueInformation as *const core::ffi::c_void,
+            Length as usize,
+            core::mem::size_of::<ULONG>(),
+            PreviousMode,
+        ) {
+            ObDereferenceObject(KeyObject as PVOID);
+            return e;
+        }
     }
 
     EnumerateValueKeyInfo.Object = KeyObject as PVOID;
@@ -769,25 +797,40 @@ pub unsafe extern "system" fn NtQueryKey(
     }
 
     if PreviousMode != 0i8 {
-        if !ResultLength.is_null() && (ResultLength as usize) < 0x80000000 {
-            if (ResultLength as usize).wrapping_add(core::mem::size_of::<ULONG>()) <= 0x80000000 {
-                let aligned = (ResultLength as usize) & !(core::mem::size_of::<ULONG>() - 1);
-                if aligned == (ResultLength as usize) {
-                    core::ptr::write_volatile(ResultLength, core::ptr::read_volatile(ResultLength));
-                }
-            }
+        // The C probes both output pointers here — ProbeForWriteUlong(ResultLength) and
+        // ProbeForWrite(KeyInformation, Length, sizeof(ULONG)) — inside a _SEH2_TRY whose
+        // handler dereferences the key object and returns the exception code.
+        //
+        // What stood here was a hand-rolled substitute that could not reject anything,
+        // in three independent ways. It compared both pointers against a hardcoded
+        // 0x80000000 instead of MmUserProbeAddress, which is simply the wrong boundary
+        // on every 64-bit target (valid user addresses run far above 2GB there). It
+        // "probed" by read-modify-writing EVERY BYTE of the caller's buffer one at a
+        // time, where ProbeForWrite touches one byte per page — O(Length) with Length
+        // attacker-supplied. And, fatally, it had NO FAILURE PATH: when a check did not
+        // hold it fell out of the `if` and used the pointer anyway. Code shaped like a
+        // bounds check that cannot return an error is worse than none, because it reads
+        // as though the question has already been answered.
+        //
+        // probe_user_buffer is range plus alignment and never touches the page, which is
+        // what DUMMY_PSEH requires — a touch that faults here has no handler to reach.
+        if let Err(e) = probe_user_buffer(
+            ResultLength as *const core::ffi::c_void,
+            core::mem::size_of::<ULONG>(),
+            core::mem::size_of::<ULONG>(),
+            PreviousMode,
+        ) {
+            ObDereferenceObject(KeyObject as PVOID);
+            return e;
         }
-        if !KeyInformation.is_null() && (KeyInformation as usize) < 0x80000000 {
-            if (KeyInformation as usize).wrapping_add(Length as usize) <= 0x80000000 {
-                let align = core::mem::size_of::<ULONG>();
-                let aligned = (KeyInformation as usize) & !(align - 1);
-                if aligned == (KeyInformation as usize) {
-                    let ptr = KeyInformation as *mut u8;
-                    for i in 0..Length {
-                        core::ptr::write_volatile(ptr.add(i as usize), core::ptr::read_volatile(ptr.add(i as usize)));
-                    }
-                }
-            }
+        if let Err(e) = probe_user_buffer(
+            KeyInformation as *const core::ffi::c_void,
+            Length as usize,
+            core::mem::size_of::<ULONG>(),
+            PreviousMode,
+        ) {
+            ObDereferenceObject(KeyObject as PVOID);
+            return e;
         }
     }
 
@@ -963,30 +1006,39 @@ pub unsafe extern "system" fn NtSetValueKey(
     }
 
     if PreviousMode != 0i8 && DataSize != 0 {
-        let mut DataCopy: PVOID = core::ptr::null_mut();
-
-        Status = STATUS_SUCCESS;
-
-        if NT_SUCCESS(Status) {
-            DataCopy = ExAllocatePoolWithTag(PagedPool, DataSize as _, TAG_CM);
-            if DataCopy.is_null() {
-                ObDereferenceObject(KeyObject as PVOID);
-                return STATUS_INSUFFICIENT_RESOURCES;
-            }
-
-            core::ptr::copy_nonoverlapping(Data as *const u8, DataCopy as *mut u8, DataSize as usize);
-
-            if !NT_SUCCESS(Status) {
-                ExFreePoolWithTag(DataCopy, TAG_CM);
-                ObDereferenceObject(KeyObject as PVOID);
-                return Status;
-            }
-
-            Data = DataCopy;
-        } else {
+        // The C probes Data (ProbeForRead, alignment 1) inside one SEH region and
+        // copies it inside a second. BOTH regions were dropped in translation:
+        // what stood here was a bare `Status = STATUS_SUCCESS;` where the probe
+        // belongs, followed by an unguarded copy straight off the caller's raw
+        // pointer — which left both `if (!NT_SUCCESS(Status))` arms below it
+        // unreachable, checking a status nothing could ever set.
+        //
+        // This is not a missing diagnostic, it is a missing bounds check on a
+        // user-mode pointer we then dereference in kernel mode. Unprivileged
+        // callers reach it directly: a bad Data faults with no SEH to catch it
+        // (DUMMY_PSEH) and takes the box down, and a Data pointing INTO KERNEL
+        // SPACE gets copied into a registry value the same caller can read back
+        // with NtQueryValueKey.
+        //
+        // Validate-first per docs/engineering/dummy-pseh-verdict.md. Alignment 1
+        // matches the C. Note what this does NOT restore: the C's second SEH also
+        // covered the window between probe and copy, and validate-first cannot —
+        // a range check proves where the buffer is, never that it stays mapped.
+        if let Err(e) =
+            probe_user_buffer(Data as *const c_void, DataSize as usize, 1, PreviousMode)
+        {
             ObDereferenceObject(KeyObject as PVOID);
-            return Status;
+            return e;
         }
+
+        let DataCopy = ExAllocatePoolWithTag(PagedPool, DataSize as _, TAG_CM);
+        if DataCopy.is_null() {
+            ObDereferenceObject(KeyObject as PVOID);
+            return STATUS_INSUFFICIENT_RESOURCES;
+        }
+
+        core::ptr::copy_nonoverlapping(Data as *const u8, DataCopy as *mut u8, DataSize as usize);
+        Data = DataCopy;
     }
 
     Status = ProbeAndCaptureUnicodeString(&mut ValueNameCopy, PreviousMode, ValueName);

@@ -74,7 +74,6 @@ extern "C" {
 type TCHAR = WCHAR;
 
 // ERR!(...) — ReactOS debug print; no-op in the cohab build.
-macro_rules! ERR { ($($t:tt)*) => {{ }}; }
 
 /// winnt.h `PtrToUlong` — truncating pointer→u32.
 #[inline]
@@ -775,7 +774,7 @@ unsafe fn UITOOLS95_DrawFrameCaption(dc: HDC, r: LPRECT, uFlags: UINT) -> BOOL {
             Symbol = b'2' as TCHAR;
         }
         _ => {
-            ERR!(b"Invalid caption; flags=0x%04x\n\0".as_ptr() as *const i8, uFlags);
+            ERR!("Invalid caption; flags=0x%04x\n", uFlags);
             return 0;
         }
     }
@@ -897,7 +896,7 @@ unsafe fn UITOOLS95_DrawFrameScroll(dc: HDC, r: LPRECT, uFlags: UINT) -> BOOL {
             return 1;
         }
         _ => {
-            ERR!(b"Invalid scroll; flags=0x%04x\n\0".as_ptr(), uFlags);
+            ERR!("Invalid scroll; flags=0x%04x\n", uFlags);
             return 0;
         }
     }
@@ -974,7 +973,7 @@ unsafe fn UITOOLS95_DrawFrameMenu(dc: HDC, r: LPRECT, uFlags: UINT) -> BOOL {
             Symbol = b'a' as TCHAR;
         }
         _ => {
-            ERR!(b"Invalid menu; flags=0x%04x\n\0".as_ptr() as *const i8, uFlags);
+            ERR!("Invalid menu; flags=0x%04x\n", uFlags);
             return 0;
         }
     }
@@ -1283,7 +1282,7 @@ unsafe fn IntDrawState(hdc: HDC, mut hbr: HBRUSH, func: DRAWSTATEPROC, lp: LPARA
             }
             _ =>
             {
-                ERR!(b"Invalid opcode: %u\n\0".as_ptr(), opcode);
+                ERR!("Invalid opcode: %u\n", opcode);
                 return 0;
             }
         }

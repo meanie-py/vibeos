@@ -6,7 +6,6 @@ use core::ffi::c_void;
 extern "C" {
     fn strcmp(s1: *const i8, s2: *const i8) -> i32;
     fn strlen(s: *const i8) -> usize;
-    fn _vsnprintf(buffer: *mut i8, count: usize, format: *const i8, ap: *mut core::ffi::c_void) -> i32;
     fn UiMessageBox(msg: *const i8);
     fn sprintf(s: *mut i8, format: *const i8, ...) -> i32;
     fn UiMessageBoxCritical(MessageText: *const i8);
@@ -233,19 +232,29 @@ pub unsafe extern "C" fn DbgPrintSz(Str: PCSTR) {
 }
 
 /// NOTE: the C prototype is variadic (`DbgPrint(fmt, ...)`); defining a
-/// C-variadic fn needs nightly `c_variadic`, and the freeldr cargo path pins
-/// STABLE (same E0554 wall as the arm64 lockdep probe). A non-variadic
-/// definition is ABI-compatible with variadic callers (cdecl caller-pop /
-/// win64 register args are simply ignored), so this prints the format string
-/// RAW: constant messages come out intact, `%`-formatted ones print their
-/// format literally. Strictly better than the silent stub this replaced;
-/// full formatting is owed once freeldr builds on nightly.
+// C debug.c:33 -- ERR and FIXME print even when their channel is closed.
+const DBG_DEFAULT_LEVELS: ULONG = crate::frldr::ERR_LEVEL | crate::frldr::FIXME_LEVEL;
+
+// ---------------------------------------------------------------------------
+// Formatting varargs without `c_variadic`: the slot-capture technique, the
+// measured VA_SLOTS/VA_STAGE bounds and why they are safe all live in
+// `va_slots`, which the tui/rosload printf family shares with these.
+use va_slots_rust::format_slots_z;
+
+/// `DbgPrint(Format, ...)` -- freeldr's own, not ntoskrnl's.
 #[no_mangle]
-pub unsafe extern "C" fn DbgPrint(Format: PCCH) -> u32 {
+pub unsafe extern "C" fn DbgPrint(
+    Format: PCCH,
+    a0: usize, a1: usize, a2: usize, a3: usize, a4: usize, a5: usize,
+    a6: usize, a7: usize, a8: usize, a9: usize, a10: usize, a11: usize,
+) -> u32 {
     if !DebugInitialized {
         DebugInit(core::ptr::null());
     }
-    DbgPrintString(Format as *const i8);
+    let mut buf: [i8; 512] = [0; 512];
+    format_slots_z(&mut buf, Format as *const i8,
+        &[a0, a1, a2, a3, a4, a5, a6, a7, a8, a9, a10, a11]);
+    DbgPrintString(buf.as_ptr());
     0
 }
 
@@ -256,9 +265,22 @@ pub unsafe extern "C" fn DbgPrint2(
     File: *const CHAR,
     Line: ULONG,
     Format: *mut CHAR,
+    a0: usize, a1: usize, a2: usize, a3: usize, a4: usize, a5: usize,
+    a6: usize, a7: usize, a8: usize, a9: usize, a10: usize, a11: usize,
 ) {
-    if Mask as usize >= crate::frldr::DBG_CHANNELS_COUNT
-        || (DbgChannels[Mask as usize] as u32 & Level) == 0 {
+    // C: `if (!(DbgChannels[Mask] & Level) && !(Level & DBG_DEFAULT_LEVELS))`.
+    // The second term was DROPPED in the original port, and it is the one that
+    // matters: DbgChannels[] starts all-zero (no DEBUG_ALL/_WARN/_ERR define in
+    // any freeldr CMakeLists) and only `/DEBUG=` opens a channel, so requiring
+    // an open channel silenced every ERR and FIXME freeldr has -- ~2200 sites,
+    // zero output in a boot log. ERR/FIXME are channel-INDEPENDENT here; only
+    // WARN and TRACE are gated, and their silence at boot is faithful.
+    //
+    // The bounds check is ours: C indexes DbgChannels[Mask] unguarded. Written
+    // so an out-of-range Mask still cannot suppress a default-level message.
+    let channel_open = (Mask as usize) < crate::frldr::DBG_CHANNELS_COUNT
+        && (DbgChannels[Mask as usize] as u32 & Level) != 0;
+    if !channel_open && (Level & DBG_DEFAULT_LEVELS) == 0 {
         return;
     }
     if !DebugInitialized {
@@ -268,21 +290,127 @@ pub unsafe extern "C" fn DbgPrint2(
         let mut hdr: [i8; 128] = [0; 128];
         sprintf(hdr.as_mut_ptr(), b"(%s:%lu) \0".as_ptr() as *const i8, File, Line);
         DbgPrintString(hdr.as_ptr());
+        // The level tag the C prints after the header, also dropped in the
+        // original port -- without it ERR and TRACE are indistinguishable.
+        DbgPrintString(match Level {
+            crate::frldr::ERR_LEVEL => b"err: \0".as_ptr() as *const i8,
+            crate::frldr::FIXME_LEVEL => b"fixme: \0".as_ptr() as *const i8,
+            crate::frldr::WARN_LEVEL => b"warn: \0".as_ptr() as *const i8,
+            crate::frldr::TRACE_LEVEL => b"trace: \0".as_ptr() as *const i8,
+            _ => b"\0".as_ptr() as *const i8,
+        });
         DebugStartOfLine = 0;
     }
-    DbgPrintString(Format);
+    let mut buf: [i8; 2096] = [0; 2096];
+    format_slots_z(&mut buf, Format as *const i8,
+        &[a0, a1, a2, a3, a4, a5, a6, a7, a8, a9, a10, a11]);
+    DbgPrintString(buf.as_ptr());
 }
 
 #[no_mangle]
 pub unsafe extern "C" fn DebugDumpBuffer(Mask: ULONG, Buffer: PVOID, Length: ULONG) {
-    let _ = Mask;
-    let _ = Buffer;
-    let _ = Length;
+    // Faithful port of debug.c. Note this one gates on TRACE_LEVEL alone with no
+    // DBG_DEFAULT_LEVELS bypass, so unlike DbgPrint2's ERR/FIXME it really is
+    // silent until `/DEBUG=` opens the channel — that silence is the C's.
+    let BufPtr = Buffer as *const u8;
+    if Mask as usize >= crate::frldr::DBG_CHANNELS_COUNT
+        || (DbgChannels[Mask as usize] as u32 & crate::frldr::TRACE_LEVEL) == 0
+    {
+        return;
+    }
+    if !DebugInitialized {
+        DebugInit(core::ptr::null());
+    }
+
+    let mut line: [i8; 128] = [0; 128];
+    // We don't want line headers.
+    DebugStartOfLine = 0;
+    sprintf(
+        line.as_mut_ptr(),
+        b"Dumping buffer at %p with length of %lu bytes:\n\0".as_ptr() as *const i8,
+        Buffer,
+        Length,
+    );
+    DbgPrintString(line.as_ptr());
+
+    let mut Offset: ULONG = 0;
+    while Offset < Length {
+        DebugStartOfLine = 0;
+        sprintf(line.as_mut_ptr(), b"%04x:\t\0".as_ptr() as *const i8, Offset);
+        DbgPrintString(line.as_ptr());
+
+        // Either 16 or the remaining number of bytes.
+        let Count = core::cmp::min(Length - Offset, 16);
+        for i in 0..Count {
+            sprintf(
+                line.as_mut_ptr(),
+                b"%02x%c\0".as_ptr() as *const i8,
+                *BufPtr.add(Offset as usize) as core::ffi::c_uint,
+                if i == 7 { b'-' } else { b' ' } as core::ffi::c_int,
+            );
+            DbgPrintString(line.as_ptr());
+            Offset += 1;
+        }
+
+        DbgPrintString(b"\n\0".as_ptr() as *const i8);
+    }
 }
 
+/// Case-sensitive `strchr` over a NUL-terminated C string; NULL if absent.
+/// Local rather than an extern so this file keeps its two-symbol libc surface.
+unsafe fn c_strchr(mut p: *mut i8, ch: u8) -> *mut i8 {
+    while *p != 0 {
+        if *p as u8 == ch {
+            return p;
+        }
+        p = p.add(1);
+    }
+    core::ptr::null_mut()
+}
+
+/// Faithful port of debug.c. This was a no-op stub, and since it is the ONLY
+/// caller of `DbgAddDebugChannel`, the whole `/DEBUG=` channel mechanism was
+/// dead: nothing could ever set a bit in `DbgChannels[]`, so freeldr's WARN and
+/// TRACE were unreachable by any boot option rather than merely off by default.
+/// (ERR/FIXME were separately silenced by the dropped `DBG_DEFAULT_LEVELS` term
+/// in DbgPrint2, so between the two, freeldr printed nothing at all.)
+///
+/// Mutates `Value` in place exactly as the C does — it overwrites the ',' and
+/// the '+'/'-' with NULs to split the string, which is why the parameter is
+/// PCHAR and not PCSTR. Syntax is `level+channel` / `level-channel`, comma
+/// separated, with an empty level meaning MAX_LEVEL.
 #[no_mangle]
 pub unsafe extern "C" fn DbgParseDebugChannels(Value: PCHAR) {
-    let _ = Value;
+    if Value.is_null() {
+        return;
+    }
+    let mut str_ = Value as *mut i8;
+    loop {
+        let separator = c_strchr(str_, b',');
+        if !separator.is_null() {
+            *separator = 0;
+        }
+
+        let mut c = c_strchr(str_, b'+');
+        if c.is_null() {
+            c = c_strchr(str_, b'-');
+        }
+
+        if !c.is_null() {
+            let op = *c;
+            *c = 0;
+            c = c.add(1);
+            DbgAddDebugChannel(c, str_, op);
+        }
+
+        // C writes `str = separator + 1` unconditionally and relies on the
+        // while-condition to stop; that forms NULL+1 on the last pass, which is
+        // UB in Rust as well as C. Same control flow, without the bad pointer.
+        if separator.is_null() {
+            break;
+        }
+        str_ = separator.add(1);
+    }
 }
 
 #[no_mangle]
@@ -320,15 +448,39 @@ pub unsafe extern "system" fn KeBugCheckEx(
 
 #[no_mangle]
 pub unsafe extern "system" fn RtlAssert(
-    _FailedAssertion: PVOID,
-    _FileName: PVOID,
-    _LineNumber: ULONG,
+    FailedAssertion: PVOID,
+    FileName: PVOID,
+    LineNumber: ULONG,
     Message: PCHAR,
 ) {
+    // Format BEFORE printing. This predates format_slots_z and stays as it is:
+    // sprintf is variadic here and the argument list is fixed and known, so
+    // there is nothing for the slot-capture path to add. (Historically this
+    // mattered because DbgPrint printed its format RAW, so every assertion
+    // freeldr ever raised reported `Assertion '%s' failed at %s line %lu` with
+    // no expression, file or line -- the one diagnostic that said nothing at
+    // the moment it fired. DbgPrint formats properly now, but a direct sprintf
+    // is still the clearer expression of a fixed argument list.)
+    let mut buf: [i8; 512] = [0; 512];
     if !Message.is_null() {
-        DbgPrint(b"Assertion \'%s\' failed at %s line %lu: %s\n\0".as_ptr() as PCCH);
+        sprintf(
+            buf.as_mut_ptr(),
+            b"Assertion \'%s\' failed at %s line %lu: %s\n\0".as_ptr() as *const i8,
+            FailedAssertion,
+            FileName,
+            LineNumber,
+            Message,
+        );
+        DbgPrintSz(buf.as_ptr() as PCSTR);
     } else {
-        DbgPrint(b"Assertion \'%s\' failed at %s line %lu\n\0".as_ptr() as PCCH);
+        sprintf(
+            buf.as_mut_ptr(),
+            b"Assertion \'%s\' failed at %s line %lu\n\0".as_ptr() as *const i8,
+            FailedAssertion,
+            FileName,
+            LineNumber,
+        );
+        DbgPrintSz(buf.as_ptr() as PCSTR);
     }
 
     DbgBreakPoint();

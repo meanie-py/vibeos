@@ -598,11 +598,24 @@ fn main() {
         ("roundf", format!("#define roundf ref_roundf\n{}", inc(s("math/roundf.c")))),
         ("nextafter", "#include <stdint.h>\ndouble ref_nextafter(double x,double y){union{double f;uint64_t i;}ux={x},uy={y};uint64_t ax,ay;if(x!=x||y!=y)return x+y;if(ux.i==uy.i)return y;ax=ux.i&0x7fffffffffffffffULL;ay=uy.i&0x7fffffffffffffffULL;if(ax==0){if(ay==0)return y;ux.i=(uy.i&(1ULL<<63))|1;}else if(ax>ay||((ux.i^uy.i)&(1ULL<<63)))ux.i--;else ux.i++;return ux.f;}".to_string()),
         ("nextafterf", "#include <stdint.h>\nfloat ref_nextafterf(float x,float y){union{float f;uint32_t i;}ux={x},uy={y};uint32_t ax,ay;if(x!=x||y!=y)return x+y;if(ux.i==uy.i)return y;ax=ux.i&0x7fffffffu;ay=uy.i&0x7fffffffu;if(ax==0){if(ay==0)return y;ux.i=(uy.i&0x80000000u)|1;}else if(ax>ay||((ux.i^uy.i)&0x80000000u))ux.i--;else ux.i++;return ux.f;}".to_string()),
-        // Wave MATH-TIERC sub-wave 1: sin/cos = genuine portable .c
-        // (bit-exact under -ffp-contract=off). sqrt/sqrtf = libm (correctly
-        // rounded), matching cnt-rust's hardware sqrt instruction.
-        ("sin", format!("#define sin ref_sin\n{}", inc(s("math/sin.c")))),
-        ("cos", format!("#define cos ref_cos\n{}", inc(s("math/cos.c")))),
+        // Wave MATH-TIERC sub-wave 1: sqrt/sqrtf = libm (correctly rounded),
+        // matching cnt-rust's hardware sqrt instruction.
+        //
+        // sin/cos USED to be graded bit-exact against math/{sin,cos}.c, and
+        // that oracle is now GONE rather than relaxed. cnt-rust implements
+        // AMD's libm_sse2/{sin,cos}.asm, which no C in this tree expresses, so
+        // there is nothing to compile as a reference — and the portable .c is
+        // not a weaker oracle, it is a WRONG one: it answers -3.3e-15 for
+        // sin(0), carries ~1e8 ULP of error at its best, and returns 1e308
+        // above 1e9. Grading a correct implementation against it would only
+        // ever report the correct one as broken.
+        //
+        // So sin/cos join sqrt in being graded against libm, but to a ULP
+        // bound rather than bit-exactly, since AMD's algorithm and glibc's are
+        // different algorithms. See diff_math_sincos for the bound and why it
+        // is a real regression detector rather than a rubber stamp.
+        ("sin", "#include <math.h>\ndouble ref_sin(double x){return sin(x);}".to_string()),
+        ("cos", "#include <math.h>\ndouble ref_cos(double x){return cos(x);}".to_string()),
         ("sqrt", "#include <math.h>\ndouble ref_sqrt(double x){return sqrt(x);}".to_string()),
         ("sqrtf", "#include <math.h>\nfloat ref_sqrtf(float x){return sqrtf(x);}".to_string()),
         ("nexttowardf", "#include <stdint.h>\nfloat ref_nexttowardf(float x,double y){union{float f;uint32_t i;}ux={x};if(x!=x||y!=y)return x+(float)y;if((double)x==y)return (float)y;if(x==0){ux.i=1;union{double f;uint64_t u;}uy={y};if(uy.u>>63)ux.i|=0x80000000u;}else if((double)x<y){if(ux.i>>31)ux.i--;else ux.i++;}else{if(ux.i>>31)ux.i++;else ux.i--;}return ux.f;}".to_string()),
@@ -622,10 +635,6 @@ fn main() {
         ("log10", format!("#define log10 ref_log10\n{}", inc(s("math/arm64/log10.c")))),
         ("pow", format!("#include <math.h>\n#define pow ref_pow\n{}", inc(s("math/arm64/pow.c")))),
         ("fmod", format!("#include <math.h>\n#define fmod ref_fmod\n{}", inc(s("math/arm64/fmod.c")))),
-        // Wave MATH-TIERC sub-wave 3: tan = sin/cos (the portable arm64/tan.c
-        // form). Compute the reference via the genuine ref_sin/ref_cos (the
-        // same algorithm cnt-rust's sin/cos use) → bit-exact vs cabi::tan.
-        ("tan", "double ref_sin(double); double ref_cos(double);\ndouble ref_tan(double x){return ref_sin(x)/ref_cos(x);}".to_string()),
         // Wave MATH-TIERC sub-wave 4: ceil/floor via __builtin_* so clang -O2
         // lowers them to hardware roundsd/roundss (correctly rounded) — an
         // INDEPENDENT reference, not cnt-rust's #[no_mangle] ceil/floor (which
@@ -635,11 +644,6 @@ fn main() {
         ("floor", "double ref_floor(double x){return __builtin_floor(x);}".to_string()),
         ("ceilf", "float ref_ceilf(float x){return __builtin_ceilf(x);}".to_string()),
         ("floorf", "float ref_floorf(float x){return __builtin_floorf(x);}".to_string()),
-        // Wave MATH-TIERC sub-wave 5: ldexp = the portable arm64/ldexp.c
-        // (== scalbn stepping); _logb/_logbf = the genuine arm64/logb.c (both
-        // MSVC-name funcs in one TU). Renamed to ref_*; bit-exact.
-        ("ldexp", format!("#include <math.h>\n#define ldexp ref_ldexp\n{}", inc(s("math/arm64/ldexp.c")))),
-        ("logb", format!("#include <math.h>\n#include <float.h>\n#define _logb ref__logb\n#define _logbf ref__logbf\n{}", inc(s("math/arm64/logb.c")))),
         // Wave MATH-TIERC sub-wave 6: fabs/fabsf = the genuine portable
         // math/fabs.c + math/fabsf.c (the same C arm64 ships and that amd64's
         // asm mirrors). math.h FIRST so the rename hits only the definition;
@@ -652,6 +656,13 @@ fn main() {
         // (no FP rounding). Self-contained C faithful to math/libm_sse2/modf.c
         // (the GET/PUT_BITS_DP64 union-based bit moves inlined) so it needs
         // none of the AMD libm.h headers. Exact ⇒ bit-exact vs the Rust.
+        // The PORTABLE atan/atan2 (math/arm64/{atan,atan2}.c, fdlibm) — the
+        // algorithm cnt-rust actually implements, so this is the bit-exact
+        // oracle. It is NOT what amd64/i386 link; those get AMD's, which is
+        // graded alongside it as `ref_atan`/`ref_atan2` to a 1-ULP bound. Both
+        // in ONE TU, atan.c first so ref_atan_p is declared before atan2.c
+        // calls it (separate TUs give an implicit-int declaration and garbage).
+        ("atan_p", format!("#include <math.h>\n#define atan ref_atan_p\n#define atan2 ref_atan2_p\n{}\n{}", inc(s("math/arm64/atan.c")), inc(s("math/arm64/atan2.c")))),
         ("modf", "double ref_modf(double x, double *iptr){\
             union {double d; unsigned long long i;} u; long long xexp;\
             unsigned long long ux, ax, mask;\
@@ -666,12 +677,6 @@ fn main() {
             mask = 1; mask = (mask << (52 - xexp)) - 1;\
             u.i = ux & ~mask; *iptr = u.d; return x - u.d;\
         }".to_string()),
-        // Wave MATH-TIERC sub-wave 7: atan/atan2 = the genuine portable
-        // fdlibm math/arm64/{atan,atan2}.c (the algorithm flipped uniformly).
-        // Both compiled in ONE TU (atan.c first so ref_atan is defined before
-        // atan2.c's call). fabs stays host (bit-exact, only hit on the finite
-        // domain). Renamed → ref_atan / ref_atan2; bit-exact vs the Rust.
-        ("atan", format!("#include <math.h>\n#define atan ref_atan\n#define atan2 ref_atan2\n{}\n{}", inc(s("math/arm64/atan.c")), inc(s("math/arm64/atan2.c")))),
         // float-cvt Phase 2 — _ecvt has its own dedicated cc::Build
         // (`ecvt_build`, like scanf) because format_float casts to
         // `long double`: the SysV host default is 80-bit x87 which
@@ -868,6 +873,31 @@ fn main() {
         ("tanhf", format!("#include <math.h>\n#define tanhf ref_tanhf\n{}", inc(libm_dir.join("tanhf.c")))),
         ("tanf", format!("#include <math.h>\n#define tanf ref_tanf\n{}", inc(libm_dir.join("tanf.c")))),
         ("atan2f", format!("#include <math.h>\n#define atan2f ref_atan2f\n{}", inc(libm_dir.join("atan2f.c")))),
+        // ── the OTHER HALF of sub-waves 5 and 7 ──────────────────────────
+        // atan/atan2/ldexp/_logb/_logbf were graded against math/arm64/*.c,
+        // which is NOT what amd64 (or i386) links: math.cmake lines 95-123 put
+        // AMD's math/libm_sse2/*.c on the x86 arches and math/arm64/*.c only on
+        // arm64. So the oracle was the very source the Rust was ported FROM —
+        // it could only ever confirm the port, never the SHIPPED semantics, and
+        // it graded 0% of amd64's real behaviour. The tell was the asymmetry:
+        // atan2f was already here while its double sibling atan2 was not.
+        //
+        // AMD's bodies differ from the portable ones only in their ERROR
+        // domains, where they route through `_handle_error` (a NaN/±0/±inf
+        // return + the __setusermatherr callback; ReactOS's _handle_error.c
+        // drops the EDOM/ERANGE and the AMD_F_* flag word). Grading here is
+        // therefore what makes those domains visible at all.
+        // tan: cnt-rust hand-ports AMD's body (it used to be arm64's 18-line
+        // `sin(x)/cos(x)`, which on top of math/sin.c cost amd64 up to 0.056
+        // absolute — see cabi/math.rs). Needs the out-of-line Payne-Hanek
+        // reduction, added to the build below; every other unit here gets the
+        // inline f32 twin from libm_inlines.h and needs nothing.
+        ("tan", format!("#include <math.h>\n#include <errno.h>\n#define tan ref_tan\n{}", inc(libm_dir.join("tan.c")))),
+        ("atan", format!("#include <math.h>\n#include <errno.h>\n#define atan ref_atan\n{}", inc(libm_dir.join("atan.c")))),
+        ("atan2", format!("#include <math.h>\n#include <errno.h>\n#define atan2 ref_atan2\n{}", inc(libm_dir.join("atan2.c")))),
+        ("ldexp", format!("#include <math.h>\n#include <errno.h>\n#define ldexp ref_ldexp\n{}", inc(libm_dir.join("ldexp.c")))),
+        ("logb", format!("#include <math.h>\n#include <errno.h>\n#define _logb ref__logb\n{}", inc(libm_dir.join("logb.c")))),
+        ("logbf", format!("#include <math.h>\n#include <errno.h>\n#define _logbf ref__logbf\n{}", inc(libm_dir.join("logbf.c")))),
     ];
     let libm_stubs = out.join("ref_libm_stubs.c");
     fs::write(
@@ -894,7 +924,9 @@ fn main() {
         .flag("-ffp-contract=off")
         .opt_level(2)
         .cargo_metadata(false)
-        .file(&libm_stubs);
+        .file(&libm_stubs)
+        // Out-of-line Payne-Hanek reduction, called by libm_sse2/tan.c.
+        .file(libm_dir.join("remainder_piby2.c"));
     for (sym, body) in &libm_units {
         let w = out.join(format!("ref_{sym}.c"));
         fs::write(&w, body).unwrap();

@@ -34,6 +34,29 @@ typedef struct _DEFINE
 DEFINE *gpDefines = 0;
 int iLine;
 const char *gpszCurFile;
+FILE *gDepFile;
+
+/* One Make rule, consumed by reactos-link's native dependency parser. */
+int
+RecordDependency(const char *path)
+{
+    const char *p;
+    if (!gDepFile) return 0;
+    fputc(' ', gDepFile);
+    for (p = path; *p; ++p)
+    {
+        if (*p == '\n' || *p == '\r')
+        {
+            fprintf(stderr, "Unsupported newline in dependency path\n");
+            return -1;
+        }
+        if (*p == ' ' || *p == '\t' || *p == '#' || *p == '\\')
+            fputc('\\', gDepFile);
+        if (*p == '$') fputc('$', gDepFile);
+        fputc(*p, gDepFile);
+    }
+    return ferror(gDepFile) ? -1 : 0;
+}
 
 char*
 convert_path(const char* origpath)
@@ -382,6 +405,11 @@ ParseInputFile(const char *pszInFile, FILE *fileOut)
     }
 
     /* Zero terminate the file */
+    if (RecordDependency(pszInFile) != 0)
+    {
+        free(pInputData);
+        return -1;
+    }
     pInputData[cbInFileLenth] = 0;
 
     pCurrentLine = pInputData;
@@ -553,6 +581,11 @@ ParseInputFile(const char *pszInFile, FILE *fileOut)
             }
             p1++;
             p2 = strchr(p1, ')');
+            if (!p2)
+            {
+                error("Parse error: expected ')' at %s:%d\n", pszInFile, iLine);
+                return -1;
+            }
             *p2 = 0;
 
             /* Parse the included file */
@@ -605,9 +638,9 @@ main(int argc, char* argv[])
     FILE* fileOut;
     int ret;
 
-    if (argc != 3)
+    if (argc != 3 && !(argc == 5 && strcmp(argv[3], "--depfile") == 0))
     {
-        error("Usage: hpp <inputfile> <outputfile>\n");
+        error("Usage: hpp <inputfile> <outputfile> [--depfile <path>]\n");
         exit(1);
     }
 
@@ -621,9 +654,33 @@ main(int argc, char* argv[])
         exit(1);
     }
 
+    if (argc == 5)
+    {
+        gDepFile = fopen(argv[4], "wb");
+        if (!gDepFile)
+        {
+            error("Cannot open dependency file %s\n", argv[4]);
+            fclose(fileOut);
+            return 1;
+        }
+        fputs("vibeos-native:", gDepFile);
+    }
+
     ret = ParseInputFile(pszInFile, fileOut);
 
-    fclose(fileOut);
+    if (ferror(fileOut)) ret = -1;
+    if (fclose(fileOut) != 0) ret = -1;
+    if (gDepFile)
+    {
+        fputc('\n', gDepFile);
+        if (ferror(gDepFile)) ret = -1;
+        if (fclose(gDepFile) != 0) ret = -1;
+        if (ret != 0)
+        {
+            error("Header/dependency generation failed for %s\n", pszInFile);
+            remove(argv[4]);
+        }
+    }
     free(pszInFile);
     free(pszOutFile);
 

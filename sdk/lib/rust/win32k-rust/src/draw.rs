@@ -3,13 +3,9 @@ use win32k_sys::win32k::*;
 use ntkrnl_sys::rtl::{RtlZeroMemory, RtlCopyMemory};
 
 // Debug-channel macros — no kernel symbol, no-op.
-macro_rules! ERR   { ($($t:tt)*) => {{}}; }
 #[allow(unused_macros)]
-macro_rules! TRACE { ($($t:tt)*) => {{}}; }
 #[allow(unused_macros)]
-macro_rules! WARN  { ($($t:tt)*) => {{}}; }
 #[allow(unused_macros)]
-macro_rules! FIXME { ($($t:tt)*) => {{}}; }
 
 // PtrToUlong (basetsd): (ULONG)(ULONG_PTR)(p)
 #[inline(always)]
@@ -762,7 +758,7 @@ unsafe fn UITOOLS95_DrawFrameButton_impl(hdc: HDC, rc: LPRECT, uState: UINT) -> 
             return UITOOLS95_DFC_ButtonCheckRadio(hdc, rc, uState, 1);
         }
         _ => {
-            ERR!(b"Invalid button state=0x%04x\n\0".as_ptr() as *const i8, uState);
+            ERR!("Invalid button state=0x%04x\n", uState);
         }
     }
     0

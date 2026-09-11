@@ -2,8 +2,6 @@ use win32k_sys::win32k::*;
 use core::ffi::c_void;
 
 // WINE debug macros — no-ops (mirror windows/menu.rs).
-macro_rules! ERR   { ($($t:tt)*) => {{ }}; }
-macro_rules! TRACE { ($($t:tt)*) => {{ }}; }
 
 // Substrate helpers (correctly split per ABI on i386).
 use crate::internal::{HIWORD, LOWORD, NtCurrentTeb, ValidateHwnd};
@@ -1042,7 +1040,7 @@ unsafe fn MDI_RestoreFrameMenu(frame: HWND, hChild: HWND, hBmpClose: HBITMAP) ->
     nItems = GetMenuItemCount(menu) - 1;
     iId = GetMenuItemID(menu, nItems);
     if !(iId == SC_RESTORE || iId == SC_CLOSE) {
-        ERR!(b"no system buttons then nothing to do\n\0".as_ptr() as LPCSTR);
+        ERR!("no system buttons then nothing to do\n");
         return 0u8 as BOOL;
     }
 
