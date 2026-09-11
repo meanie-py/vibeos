@@ -786,7 +786,14 @@ pub unsafe extern "system" fn LpcpCopyRequestData(
         return status;
     }
 
-    if BufferLength > (*data_info).Entries[Index as usize].DataLength {
+    // `Entries` is a C flexible array (lpc.h:74 declares `Entries[1]` alongside
+    // `NumberOfEntries`), so bindgen's `[_; 1]` makes `Entries[Index]` bounds-check
+    // and PANIC for any Index >= 1 -- exactly the values the guard above admits.
+    let entry = core::ptr::addr_of!((*data_info).Entries)
+        .cast::<ntkrnl_sys::ddk::_LPCP_DATA_INFO__bindgen_ty_1>()
+        .add(Index as usize);
+
+    if BufferLength > (*entry).DataLength {
         status = STATUS_INVALID_PARAMETER;
         KeReleaseGuardedMutex(core::ptr::addr_of_mut!(LpcpLock));
         ObDereferenceObject(client_thread as PVOID);
@@ -794,7 +801,7 @@ pub unsafe extern "system" fn LpcpCopyRequestData(
         return status;
     }
 
-    data_info_base_address = (*data_info).Entries[Index as usize].BaseAddress;
+    data_info_base_address = (*entry).BaseAddress;
 
     KeReleaseGuardedMutex(core::ptr::addr_of_mut!(LpcpLock));
 

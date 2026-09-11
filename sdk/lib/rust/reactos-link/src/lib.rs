@@ -25,6 +25,7 @@ use std::path::{Path, PathBuf};
 use std::process::{Command, ExitStatus};
 
 pub mod native_deps;
+mod storage;
 
 // ---- cmake-off `--trace` (ninja-`-v`-style command list) ------------------
 // When `VIBEOS_LINK_TRACE` names a DIRECTORY, every command the engine spawns is
@@ -1772,11 +1773,32 @@ impl Linker {
             "cargo:rerun-if-changed={}",
             crate_dir.join("Cargo.toml").display()
         );
-        let tgt_dir = workspace.join(format!(
-            "target/{}-{}-rustlib",
-            self.pkg_name,
-            crate_name.replace('-', "_")
-        ));
+        println!("cargo:rerun-if-env-changed=VIBEOS_RUST_STORAGE_PILOT");
+        let storage_pilot =
+            storage::pilot_enabled(env::var("VIBEOS_RUST_STORAGE_PILOT").ok().as_deref());
+        // Only three distinct main-body staticlibs, with identical codegen settings.
+        // Cargo locks this inner directory; the outer cargo uses another directory,
+        // so it never holds the lock its build script needs. No multi-package build
+        // (feature unification), shared cross-worktree path, or same-name variant.
+        let shared_pilot = storage_pilot
+            && storage::pilot_member(&self.pkg_name, crate_name)
+            && self.arch.name == "amd64"
+            && !self.target.is_json()
+            && target_stem == "x86_64-pc-windows-gnu"
+            && kernel
+            && default_features
+            && features.is_empty()
+            && rustflags.is_none()
+            && env::var("VIBEOS_EMIT_LLVM_IR").as_deref() != Ok("1");
+        let tgt_dir = workspace.join(if shared_pilot {
+            "target/storage-pilot-v1-amd64-rustlib".to_string()
+        } else {
+            format!(
+                "target/{}-{}-rustlib",
+                self.pkg_name,
+                crate_name.replace('-', "_")
+            )
+        });
         // Kernel json targets: the env CARGO (the pinned nightly, set by the outer
         // cargo) drives build-std. Builtin kernel targets and user-mode siblings run
         // the plain `cargo` rustup proxy, matching cmake's precompiled-std path — the

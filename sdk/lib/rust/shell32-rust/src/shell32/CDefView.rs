@@ -1,9 +1,10 @@
 // rustconv-assembly: class:CDefView
-//! ORPHAN-BY-DESIGN: 184 of 185 workers translated. `CDefView_OnContextMenu` alone is absent
-//! -- the deterministic audit rejects it on a CComPtr contract ("local pcdb2: expected one
-//! null raw-pointer declaration in worker, found 0"), which is a different bug class from the
-//! receiver arity that kept the other five out and is not yet closed. Hand-write it before
-//! this file is flipped; nothing here calls it, so the module is otherwise self-consistent.
+//! ORPHAN-BY-DESIGN: all 185 CDefView workers are translated and present, but the module is
+//! not in the tree yet -- CDefView.cpp is still the compiled implementation, and the cohab
+//! flip needs the three file-scope entry points (CDefView_CreateInstance,
+//! SHCreateShellFolderView, SelectionMoveCompareFunc), which a --free-functions run owns and
+//! which are absent from this class translation by construction. Wiring it in before those
+//! exist would leave the class unreachable. Nothing here is a decoy: no worker is missing.
 use crate::prelude::*;
 use crate::shell32::CDefViewBckgrndMenu::CDefViewBckgrndMenu_CreateInstance;
 use crate::wine::shlmenu::COLORREF;
@@ -4949,7 +4950,7 @@ pub unsafe fn CDefView_OpenSelectedItems_body(this: *mut CDefView, pszVerb: PCST
     }
 
     let cmf = CMF_DEFAULTONLY | GetContextMenuFlags_body((*this).m_pShellBrowser, 0);
-    let pCMRaw = pCM.as_ptr();
+    let pCMRaw = pCM;
     hResult = ((*(*pCMRaw).lpVtbl).QueryContextMenu)(
         pCMRaw,
         hMenu,
@@ -4975,6 +4976,203 @@ pub unsafe fn CDefView_OpenSelectedItems_body(this: *mut CDefView, pszVerb: PCST
     return hResult;
 }
 
+pub unsafe fn CDefView_OnContextMenu_body(this: *mut CDefView, uMsg: UINT, wParam: WPARAM, lParam: LPARAM, bHandled: &mut BOOL) -> LRESULT {
+    let mut pt = POINT {
+        x: GET_X_LPARAM(lParam),
+        y: GET_Y_LPARAM(lParam),
+    };
+    let mut hResult: HRESULT;
+
+    if !(*this).m_hContextMenu.is_null() {
+        return 0;
+    }
+
+    let hWndHdr = ListView_GetHeader((*this).m_ListView.m_hWnd);
+    let mut r: RECT = core::mem::zeroed();
+    if GetWindowRect(hWndHdr, &mut r) != 0
+        && PtInRect(&r, pt) != 0
+        && IsWindowVisible(hWndHdr) != 0
+    {
+        return CDefView_DoColumnContextMenu_body(this, lParam);
+    }
+
+    (*this).m_hContextMenu = CreatePopupMenu();
+    if (*this).m_hContextMenu.is_null() {
+        return E_FAIL;
+    }
+
+    if lParam != (!0 as LPARAM) {
+        let mut hittest: LV_HITTESTINFO = core::mem::zeroed();
+        hittest.pt = pt;
+        ScreenToClient((*this).m_ListView.m_hWnd, &mut hittest.pt);
+        (*this).m_ListView.HitTest(&mut hittest);
+
+        if (hittest.flags & LVHT_ONITEM) != 0
+            && (*this).m_ListView.GetItemState(hittest.iItem, LVIS_SELECTED)
+                != LVIS_SELECTED
+        {
+            CDefView_SelectItem_v2_body(
+                this,
+                hittest.iItem,
+                SVSI_SELECT | SVSI_DESELECTOTHERS | SVSI_ENSUREVISIBLE,
+            );
+        }
+    }
+
+    let count = (*this).m_ListView.GetSelectedCount();
+    let uItem: UINT = if count != 0 {
+        SVGIO_SELECTION
+    } else {
+        SVGIO_BACKGROUND
+    };
+
+    hResult = CDefView_GetItemObject_body(
+        this,
+        uItem,
+        IID_PPV_ARG!(IContextMenu, &mut (*this).m_pCM),
+    );
+    let mut _menu_cleanup = MenuCleanup::new(&mut (*this).m_pCM, &mut (*this).m_hContextMenu);
+    if ((hResult) < 0) as i32 != 0 {
+        return 0;
+    }
+
+    let cmf = GetContextMenuFlags_body(
+        (*this).m_pShellBrowser.as_ptr(),
+        CDefView_GetSelectionAttributes_body(this, SFGAO_CANRENAME),
+    );
+
+    let pContextMenu = (*this).m_pCM.as_ptr();
+    hResult = ((*(*pContextMenu).lpVtbl).QueryContextMenu)(
+        pContextMenu,
+        (*this).m_hContextMenu,
+        0,
+        CONTEXT_MENU_BASE_ID,
+        DVIDM_CONTEXTMENU_LAST,
+        cmf,
+    );
+    if ((hResult) < 0) as i32 != 0 {
+        return 0;
+    }
+
+    if !(*this).m_pCommDlgBrowser.is_null()
+        && (CDefView_GetCommDlgViewFlags_body(this) & CDB2GVF_NOSELECTVERB) == 0
+    {
+        let hMenuSource = LoadMenuW(
+            _AtlBaseModule.GetResourceInstance(),
+            MAKEINTRESOURCEW(IDM_DVSELECT),
+        );
+        Shell_MergeMenus(
+            (*this).m_hContextMenu,
+            GetSubMenu(hMenuSource, 0),
+            0,
+            DVIDM_COMMDLG_SELECT,
+            0xffff,
+            MM_ADDSEPARATOR | MM_DONTREMOVESEPS,
+        );
+        DestroyMenu(hMenuSource);
+        SetMenuDefaultItem(
+            (*this).m_hContextMenu,
+            DVIDM_COMMDLG_SELECT,
+            MF_BYCOMMAND,
+        );
+    }
+
+    if lParam == (!0 as LPARAM) {
+        let hFocus = GetFocus();
+        let mut lvIndex: i32 = -(1 as i32);
+
+        if hFocus == (*this).m_ListView.m_hWnd || (*this).m_ListView.IsChild(hFocus) != 0 {
+            lvIndex = (*this).m_ListView.GetNextItem(
+                -(1 as i32),
+                LVNI_SELECTED | LVNI_FOCUSED,
+            );
+            if lvIndex < 0 as i32 {
+                lvIndex = (*this).m_ListView.GetNextItem(
+                    -(1 as i32),
+                    LVNI_SELECTED,
+                );
+            }
+        }
+
+        if lvIndex > -(1 as i32) {
+            let mut rc: RECT = core::mem::zeroed();
+            rc.left = LVIR_ICON;
+            SendMessage(
+                (*this).m_ListView.m_hWnd,
+                LVM_GETITEMRECT,
+                lvIndex,
+                &mut rc as *mut RECT as LPARAM,
+            );
+            pt.x = (rc.right + rc.left) / 2;
+            pt.y = (rc.bottom + rc.top) / 2;
+        } else {
+            pt.x = 0;
+            pt.y = 0;
+        }
+
+        (*this).m_ListView.ClientToScreen(&mut pt);
+    }
+
+    let mut pcdb2: *mut ICommDlgBrowser2 = core::ptr::null_mut();
+    let _pcdb2_cpp_com_guard = CppComPtrGuard::new(core::ptr::addr_of_mut!(pcdb2));
+    if !(*this).m_pCommDlgBrowser.is_null() {
+        let pCommDlgBrowser = (*this).m_pCommDlgBrowser.as_ptr();
+        let hr_qi = ((*(*pCommDlgBrowser).lpVtbl).QueryInterface)(
+            pCommDlgBrowser,
+            IID_PPV_ARG!(ICommDlgBrowser2, &mut pcdb2),
+        );
+        if hr_qi >= 0 {
+            let pcdb2_ptr = pcdb2;
+            ((*(*pcdb2_ptr).lpVtbl).Notify)(
+                pcdb2_ptr,
+                this as *mut IShellView,
+                CDB2N_CONTEXTMENU_START,
+            );
+        }
+    }
+
+    let uCommand: UINT = TrackPopupMenu(
+        (*this).m_hContextMenu,
+        TPM_LEFTALIGN | TPM_RETURNCMD | TPM_LEFTBUTTON | TPM_RIGHTBUTTON,
+        pt.x,
+        pt.y,
+        0,
+        (*this).m_hWnd,
+        core::ptr::null::<RECT>(),
+    ) as UINT;
+
+    if uCommand >= DVIDM_ARRANGESORT_FIRST && uCommand <= DVIDM_ARRANGESORT_LAST {
+        SendMessage(
+            (*this).m_hWnd,
+            WM_COMMAND,
+            uCommand,
+            0,
+        );
+    } else if uCommand != 0
+        && !(uCommand == DVIDM_COMMDLG_SELECT
+            && CDefView_OnDefaultCommand_body(this) == S_OK)
+    {
+        CDefView_InvokeContextMenuCommand_body(
+            this,
+            &mut (*this).m_pCM,
+            MAKEINTRESOURCEA(uCommand - (CONTEXT_MENU_BASE_ID as UINT)),
+            &mut pt,
+            true,
+        );
+    }
+
+    if !pcdb2.is_null() {
+        let pcdb2_ptr = pcdb2;
+        ((*(*pcdb2_ptr).lpVtbl).Notify)(
+            pcdb2_ptr,
+            this as *mut IShellView,
+            CDB2N_CONTEXTMENU_DONE,
+        );
+    }
+
+    0
+}
+
 pub unsafe fn CDefView_OnExplorerCommand_body(this: *mut CDefView, uCommand: UINT, bUseSelection: BOOL) -> LRESULT {
     let mut hResult: HRESULT;
     let mut hMenu: HMENU = core::ptr::null_mut();
@@ -4998,7 +5196,7 @@ pub unsafe fn CDefView_OnExplorerCommand_body(this: *mut CDefView, uCommand: UIN
             return 0;
         }
 
-        let pCM_raw = pCM.as_ptr();
+        let pCM_raw = pCM;
         hResult = ((*(*pCM_raw).lpVtbl).QueryContextMenu)(
             pCM_raw,
             hMenu,
@@ -6063,14 +6261,14 @@ pub unsafe fn CDefView_LoadViewState_body(this: *mut CDefView) -> HRESULT {
 
     if hr >= 0 {
         let mut data: DWORD = 0;
-        hr = SHPropertyBag_ReadDWORD(pPB.as_ptr(), CPP_COM_WSTR_C47C37CF2996.as_ptr(), &mut data);
+        hr = SHPropertyBag_ReadDWORD(pPB, CPP_COM_WSTR_C47C37CF2996.as_ptr(), &mut data);
         if hr < 0 {
             hr = CDefView_GetDefaultViewStream_body(this, STGM_READ, pS.as_mut_ptr());
             fallback = true;
 
             if hr < 0 || {
                 hr = Read_body(
-                    pS.as_ptr(),
+                    pS,
                     &mut cvs as *mut PERSISTCLASSICVIEWSTATE as *mut core::ffi::c_void,
                     core::mem::size_of_val(&cvs) as ULONG
                 );
@@ -6083,16 +6281,16 @@ pub unsafe fn CDefView_LoadViewState_body(this: *mut CDefView) -> HRESULT {
                 return HResultFromWin32(ERROR_INVALID_DATA);
             }
 
-            hrColumns = LoadColumnsStream_body(&mut cols, pS.as_ptr());
+            hrColumns = LoadColumnsStream_body(&mut cols, pS);
         } else {
             cvs.FolderSettings.ViewMode = data;
             cvs.FolderSettings.fFlags = ReadDWORD_body(
-                pPB.as_ptr(),
+                pPB,
                 CPP_COM_WSTR_EC73128D2969.as_ptr(),
                 FWF_NOGROUPING
             );
             data = ReadDWORD_body(
-                pPB.as_ptr(),
+                pPB,
                 CPP_COM_WSTR_C6AD24AE112E.as_ptr(),
                 !0ul
             );
@@ -6102,18 +6300,18 @@ pub unsafe fn CDefView_LoadViewState_body(this: *mut CDefView) -> HRESULT {
                 LISTVIEW_SORT_INFO::UNSPECIFIEDCOLUMN as WORD
             };
             cvs.SortDir = ReadDWORD_body(
-                pPB.as_ptr(),
+                pPB,
                 CPP_COM_WSTR_7E65B4F82DCB.as_ptr(),
                 1
             ) as INT8;
 
             hrColumns = SHPropertyBag_ReadStream(
-                pPB.as_ptr(),
+                pPB,
                 CPP_COM_WSTR_98BD7125CFE5.as_ptr(),
                 pS.as_mut_ptr()
             );
             if hrColumns >= 0 {
-                hrColumns = LoadColumnsStream_body(&mut cols, pS.as_ptr());
+                hrColumns = LoadColumnsStream_body(&mut cols, pS);
             }
         }
     } else {
@@ -6135,7 +6333,7 @@ pub unsafe fn CDefView_LoadViewState_body(this: *mut CDefView) -> HRESULT {
 
         if hr < 0 || {
             hr = Read_body(
-                pS.as_ptr(),
+                pS,
                 &mut cvs as *mut PERSISTCLASSICVIEWSTATE as *mut core::ffi::c_void,
                 core::mem::size_of_val(&cvs) as ULONG
             );
@@ -6148,7 +6346,7 @@ pub unsafe fn CDefView_LoadViewState_body(this: *mut CDefView) -> HRESULT {
             return HResultFromWin32(ERROR_INVALID_DATA);
         }
 
-        hrColumns = LoadColumnsStream_body(&mut cols, pS.as_ptr());
+        hrColumns = LoadColumnsStream_body(&mut cols, pS);
     }
 
     (*this).m_FolderSettings.ViewMode = cvs.FolderSettings.ViewMode;
@@ -9289,6 +9487,122 @@ pub unsafe fn CDefView__DoFolderViewCB_body(this: *mut CDefView, uMsg: UINT, wPa
 //     InvokeContextMenuCommand(pCM, pszVerb, NULL);
 //
 //     return hResult;
+// }
+// LRESULT CDefView::OnContextMenu(UINT uMsg, WPARAM wParam, LPARAM lParam, BOOL &bHandled)
+// {
+//     POINT pt = { pt.x = GET_X_LPARAM(lParam), pt.y = GET_Y_LPARAM(lParam) };
+//     UINT    uCommand;
+//     HRESULT hResult;
+//
+//     TRACE("(%p)\n", this);
+//
+//     if (m_hContextMenu != NULL)
+//     {
+//         ERR("HACK: Aborting context menu in nested call\n");
+//         return 0;
+//     }
+//
+//     HWND hWndHdr = ListView_GetHeader(m_ListView.m_hWnd);
+//     RECT r;
+//     if (::GetWindowRect(hWndHdr, &r) && PtInRect(&r, pt) && ::IsWindowVisible(hWndHdr))
+//     {
+//         return DoColumnContextMenu(lParam);
+//     }
+//
+//     m_hContextMenu = CreatePopupMenu();
+//     if (!m_hContextMenu)
+//         return E_FAIL;
+//
+//     if (lParam != ~0) // unless app key (menu key) was pressed
+//     {
+//         LV_HITTESTINFO hittest = { pt };
+//         ScreenToClient(&hittest.pt);
+//         m_ListView.HitTest(&hittest);
+//
+//         // Right-Clicked item is selected? If selected, no selection change.
+//         // If not selected, then reset the selection and select the item.
+//         if ((hittest.flags & LVHT_ONITEM) &&
+//             m_ListView.GetItemState(hittest.iItem, LVIS_SELECTED) != LVIS_SELECTED)
+//         {
+//             SelectItem(hittest.iItem, SVSI_SELECT | SVSI_DESELECTOTHERS | SVSI_ENSUREVISIBLE);
+//         }
+//     }
+//
+//     UINT count = m_ListView.GetSelectedCount();
+//     // In case we still have this left over, clean it up
+//     hResult = GetItemObject(count ? SVGIO_SELECTION : SVGIO_BACKGROUND, IID_PPV_ARG(IContextMenu, &m_pCM));
+//     MenuCleanup _(m_pCM, m_hContextMenu);
+//     if (FAILED_UNEXPECTEDLY(hResult))
+//         return 0;
+//
+//     UINT cmf = GetContextMenuFlags(m_pShellBrowser, GetSelectionAttributes(SFGAO_CANRENAME));
+//     // Use 1 as the first id we want. 0 means that user canceled the menu
+//     hResult = m_pCM->QueryContextMenu(m_hContextMenu, 0, CONTEXT_MENU_BASE_ID, DVIDM_CONTEXTMENU_LAST, cmf);
+//     if (FAILED_UNEXPECTEDLY(hResult))
+//         return 0;
+//
+//     if (m_pCommDlgBrowser && !(GetCommDlgViewFlags() & CDB2GVF_NOSELECTVERB))
+//     {
+//         HMENU hMenuSource = LoadMenuW(_AtlBaseModule.GetResourceInstance(), MAKEINTRESOURCEW(IDM_DVSELECT));
+//         Shell_MergeMenus(m_hContextMenu, GetSubMenu(hMenuSource, 0), 0, DVIDM_COMMDLG_SELECT, 0xffff, MM_ADDSEPARATOR | MM_DONTREMOVESEPS);
+//         DestroyMenu(hMenuSource);
+//         SetMenuDefaultItem(m_hContextMenu, DVIDM_COMMDLG_SELECT, MF_BYCOMMAND);
+//         // TODO: ICommDlgBrowser2::GetDefaultMenuText == S_OK
+//     }
+//
+//     // There is no position requested, so try to find one
+//     if (lParam == ~0)
+//     {
+//         HWND hFocus = ::GetFocus();
+//         int lvIndex = -1;
+//
+//         if (hFocus == m_ListView.m_hWnd || m_ListView.IsChild(hFocus))
+//         {
+//             // Is there an item focused and selected?
+//             lvIndex = m_ListView.GetNextItem(-1, LVNI_SELECTED | LVNI_FOCUSED);
+//             // If not, find the first selected item
+//             if (lvIndex < 0)
+//                 lvIndex = m_ListView.GetNextItem(-1, LVNI_SELECTED);
+//         }
+//
+//         // We got something
+//         if (lvIndex > -1)
+//         {
+//             // Find the center of the icon
+//             RECT rc = { LVIR_ICON };
+//             m_ListView.SendMessage(LVM_GETITEMRECT, lvIndex, (LPARAM)&rc);
+//             pt.x = (rc.right + rc.left) / 2;
+//             pt.y = (rc.bottom + rc.top) / 2;
+//         }
+//         else
+//         {
+//             // We have to drop it somewhere
+//             pt.x = pt.y = 0;
+//         }
+//
+//         m_ListView.ClientToScreen(&pt);
+//     }
+//
+//     CComPtr<ICommDlgBrowser2> pcdb2;
+//     if (m_pCommDlgBrowser && SUCCEEDED(m_pCommDlgBrowser->QueryInterface(IID_PPV_ARG(ICommDlgBrowser2, &pcdb2))))
+//         pcdb2->Notify(static_cast<IShellView*>(this), CDB2N_CONTEXTMENU_START);
+//
+//     // This runs the message loop, calling back to us with f.e. WM_INITPOPUP (hence why m_hContextMenu and m_pCM exist)
+//     uCommand = TrackPopupMenu(m_hContextMenu,
+//                               TPM_LEFTALIGN | TPM_RETURNCMD | TPM_LEFTBUTTON | TPM_RIGHTBUTTON,
+//                               pt.x, pt.y, 0, m_hWnd, NULL);
+//     if (uCommand >= DVIDM_ARRANGESORT_FIRST && uCommand <= DVIDM_ARRANGESORT_LAST)
+//     {
+//         SendMessage(WM_COMMAND, uCommand, 0);
+//     }
+//     else if (uCommand != 0 && !(uCommand == DVIDM_COMMDLG_SELECT && OnDefaultCommand() == S_OK))
+//     {
+//         InvokeContextMenuCommand(m_pCM, MAKEINTRESOURCEA(uCommand - CONTEXT_MENU_BASE_ID), &pt);
+//     }
+//
+//     if (pcdb2)
+//         pcdb2->Notify(static_cast<IShellView*>(this), CDB2N_CONTEXTMENU_DONE);
+//     return 0;
 // }
 // LRESULT CDefView::OnExplorerCommand(UINT uCommand, BOOL bUseSelection)
 // {

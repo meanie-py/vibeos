@@ -1063,6 +1063,50 @@ pub unsafe fn NtSetValueKey(Data: PVOID, DataSize: ULONG) -> NTSTATUS {
 // }
 """
 
+# scan_unpruned_walk. Seeded from the `source-early` move (2026-09-06): six audited
+# scanners enumerated Rust sources with `rglob("*.rs")` and dropped build output with a
+# post-filter, which is too late by construction — rglob has already descended into
+# sdk/lib/rust/target. Run beside the builds instead of after them, cargo deleting a
+# directory underneath raised FileNotFoundError out of the generator and the gate
+# reported `lint:source-early: NEW lint findings (exit 1)` with no findings in it.
+# The GOOD case pins the three ways this scanner must NOT fire, all of which a first
+# draft got wrong: the source_files() spelling that is the fix, a non-Rust rglob (only
+# the Rust walks cross a live cargo target dir), and a line carrying the explicit
+# opt-out marker that the discriminating control test needs.
+_UNPRUNED_BAD = """\
+from pathlib import Path
+
+
+def collect(root: Path):
+    for p in root.rglob("*.rs"):
+        if "/target/" in str(p):
+            continue
+        yield p
+
+
+def collect_other(root: Path):
+    for p in root.glob("**/*.rs"):
+        yield p
+"""
+_UNPRUNED_GOOD = """\
+from pathlib import Path
+
+from source_walk import source_files
+
+
+def collect(root: Path):
+    yield from source_files(root)
+
+
+def collect_pyfiles(root: Path):
+    # Not a Rust walk: cannot cross a cargo target dir, so not this lint's business.
+    yield from root.rglob("*.py")
+
+
+def deliberate_control(root: Path):
+    return root.rglob("*.rs")  # unpruned-walk: intentional
+"""
+
 CONTROLS: list[Control] = [
     Control(
         name="scan_rawdylib_linkname",
@@ -1104,6 +1148,13 @@ CONTROLS: list[Control] = [
         bad={"ntapi.rs": _DROPPEDPROBE_BAD},
         good={"ntapi.rs": _DROPPEDPROBE_GOOD},
         pass_files=True,
+    ),
+    Control(
+        name="scan_unpruned_walk",
+        script="tools/scan_unpruned_walk.py",
+        argv=["--lint"],
+        bad={"walker.py": _UNPRUNED_BAD},
+        good={"walker.py": _UNPRUNED_GOOD},
     ),
     Control(
         name="scan_macro_fn_shadow",

@@ -1327,6 +1327,34 @@ Three faces, all seen live:
   `msvcrt-seh-difftest` on its first run, and it could not have been found any other way:
   the module is `#![cfg(target_arch = "x86")]`, so nothing that runs on the build host ever
   executes it.
+- **`addr_of_mut!((*p).List[i])` — the face that does not look like indexing at all, and it
+  shipped in the kernel.** Taking a raw pointer to a member reads as address-taking, so it
+  slips past a reviewer scanning for `[i]` *loads*; but the index inside the place expression
+  still emits a bounds check, and `&raw mut` does not suppress it. cmlib's `CmpSelectLeaf`
+  wrote `*RootCell = addr_of_mut!((*IndexKey).List[i]) as PHCELL_INDEX` at three sites
+  (i = SubKeyIndex, +1, -1), so every subkey list whose index root held more than one leaf
+  panicked. The file's own accessor comment already said `NEVER index List[i] for i>=1` and
+  the reads in the same function used pointer arithmetic correctly — intra-file inconsistency
+  again, and again on the member-vs-pointer seam. **How to measure it rather than argue about
+  it:** `llvm-objdump -dr --disassemble-symbols=<sym>` and count `panic_bounds_check`
+  relocations; the immediate pushed just before each call is the ARRAY LENGTH, so a `$0x1`
+  names a flexible array and anything larger is a real fixed array you should leave alone.
+  Here: 4 sites, three pushing `$0x1` and one pushing `$0x2` (`SubKeyLists[Type]`, legitimate)
+  — after the fix only the `$0x2` remains. Note plain `objdump` does not accept
+  `--disassemble-symbols` and greps clean off its usage message, which is a zero that means
+  nothing; use `.build-tools/llvm-mingw/bin/llvm-objdump`.
+  Two things made this one expensive to find, both worth generalising. The module was filed as
+  dead code because a reviewer read `sdk/lib/cmlib/CMakeLists.txt` and saw `cmindex.c` in the
+  source list — but that is the SHARED list feeding the bootloader; the kernel target
+  `REMOVE_ITEM`s `CMLIB_RUST_FLIPPED` from it. **Settle "does this ship" against the artifact,
+  not the CMake**: the C `libcmlib.a` is a 248-byte placeholder TU and `nm` puts the symbol in
+  `libcmlib_rust.a`. And the bug report that sent everyone the wrong way was the file's own
+  `[correctness-review]` header, three months stale: all four bugs it listed had been fixed,
+  its line numbers pointed into a file a sixth of the current length, and it read as current
+  because a header has no timestamp a reader checks. **A stale review header is worse than no
+  header** — it is a claim with the authority of living next to the code and none of the
+  accountability. Re-verify one against the body before you act on it, and rewrite it when you
+  do.
 - **SILENT thread hang, message on debugcon not serial:** `IoCheckEaBufferValidity` panicked;
   the kernel panic handler writes `PANIC:<file>:<line>` to **debugcon port 0xe9**, then
   `loop {}`. QEMU's timer still preempts the spinning thread, so the box stays alive and it
@@ -4979,6 +5007,19 @@ first, then the oracle, then the clock — and do not "tidy" any of the three aw
 Three lanes each found one of these within a day, each initially certain it was the whole
 story.
 
+**A second cause in the same file was the ORACLE, not the build.** The `missing_edge` negative
+controls asserted `fixture.invocations() == before` — that the build system did *not* rebuild.
+Cargo and Ninja never promised that: mtime granularity alone can make an unchanged input look
+new, so conservative over-invalidation is legal, and it is the safe direction. Under concurrent
+fleet load two different tests failed on two consecutive runs, each with an EXTRA invocation and
+never a missing one, while the file passed 37/37 in isolation. **The signature that separates a
+wrong oracle from a real regression is a failure that MOVES between tests across runs and
+vanishes when run alone.** The assertions were removed, not relaxed: `>= before` is vacuous
+because the invocation log is append-only, so it holds whether the edge is missing or the build
+merely rebuilt too much. The missing edge is pinned by the value assertions (`warm == initial`,
+`warm != cold`), which is also why removing the counts cannot mask the directory-watch bug
+below — that one is caught by a value, which no count could have caught anyway.
+
 ### Cargo depfiles leave directory contents or lockfile changes stale
 
 **Symptom:** Ninja reports no work after an input-file edit or a lockfile-only
@@ -5334,6 +5375,39 @@ MSVC *intrinsic*).
 A whole family of bugs where the *verification* is wrong, so the code looks correct. These cost
 more than ordinary bugs because their output is trusted.
 
+### The oracle is the C, and the C is WRONG — a faithful port that ships a real defect
+
+**Symptom.** A translated body is bit-exact against its C, the difftest is green, and the
+function is badly broken anyway. `math/sin.c` is a 9-term Taylor series over
+`quadrant = (int)(x * 2/pi)`; cnt-rust's port of it matched bit-for-bit and returned
+`-3.3e-15` for `sin(0)`, `9.9997e-11` for `sin(1e-10)` (relative error 3.3e-5), and
+**`-1.56e+308` for `sin(1e18)`** — a trig function outside `[-1, 1]` by 308 orders of
+magnitude, which then poisons every arithmetic consumer downstream of the call.
+
+**Cause.** Bit-exactness measures *agreement with the oracle*, and says nothing about whether
+the oracle is right. Here the reference was ReactOS's own generic C, not Windows' behaviour, so
+"faithful" and "correct" were never the same claim.
+
+**The tell is a cheap one and worth running once per translated math body:** compare against the
+host libm over a few decades of the domain. It takes minutes, needs no build, and no amount of
+reading finds `1e308` — three of these faults were invisible in review and obvious in one table.
+Zero, tiny arguments, negative arguments and huge arguments are where implementations differ;
+the middle of the range agrees with everything.
+
+**Fix.** Check what the arch ACTUALLY LINKS before deciding the reference is authoritative. Here
+amd64's usermode msvcrt already linked AMD's `libm_sse2/sin.asm`, so the cohab flip had left one
+arch with two different `sin`s — a weak one in the kernel and a strong one in usermode — and
+porting the asm was a *correction*, not an improvement past the oracle. Then repoint the
+difftest rather than relaxing it: an oracle that is wrong is not a weaker oracle, it is one that
+reports the correct implementation as broken, so delete it and grade against libm to a ULP bound
+(the shape `sqrt` and `atan` already use). Keep the special values EXACT — `sin(±0)` carrying
+the sign of zero is a difference in kind, not in degree.
+
+**Related trap when transcribing the replacement:** a vendor's own paths may disagree with each
+other. AMD's SSE2 `sin` computes `(-0.0 * 0.0) * S1` and answers `+0.0` for `sin(-0.0)`, while
+the FMA3 path in the *same file* returns `x` below 2^-27 and answers `-0.0`. Neither is a
+transcription error, and only measurement finds it.
+
 ### A gate can be RED for reasons that are not in the tree at all
 Symptom: a gate goes RED with **no failing test**. Cause: the verdict depended on host state,
 not on the diff. Fix: check the host before you read the artifact, because the artifact cannot
@@ -5358,8 +5432,62 @@ recreates this exactly. Two corollaries that cost time on their own: `~/.config/
 is **inert** on sccache 0.8.2 (writing one leaves the server still reporting the old cap), and
 the variable is `SCCACHE_CACHE_SIZE`, **not** `SCCACHE_MAXSIZE` — `cachecfg.py:111` is correct
 and must not be "fixed". Note also what it was *not*: no OOM daemon is installed and there were
-zero oom matches in `dmesg`/`journalctl`, so the "running low on memory" message was a symptom
-of the full disk, not a second problem.
+zero oom matches in `dmesg`/`journalctl`.
+
+**Correction, from a third occurrence: the harness's "running low on memory" kill is NOT a
+symptom of the full disk, and this entry originally said it was.** It fired again with the disk
+at 84% (159G free, inodes 5%) and killed three background waiters at once. Three independent
+observations share one shape: `MemFree` at or near zero while **`MemAvailable` is tens of GB**
+(35G against 1.3G free, 40G against 0, 41G against 2.0G, with ~40G in buff/cache each time), at
+two very different disk states. On Linux a near-zero
+`MemFree` is the *normal, healthy* state — the kernel spends idle RAM on page cache and reclaims
+it on demand — so a watchdog reading `MemFree` rather than `MemAvailable` will fire continuously
+on any machine doing heavy build I/O, which is every host here. It also explains the FREQUENCY, which a
+genuine-pressure theory cannot: real pressure would be intermittent and would leave OOM traces.
+That `MemFree`-watchdog story was a hypothesis and it did NOT survive — it is the first of the
+three wrong mechanisms catalogued below, and it is kept here rather than deleted because the
+part it got right still holds and is what the message actually costs you:
+**the message is uncorrelated with real memory pressure and cannot be used to diagnose
+anything.** (The harness sits above this repo and cannot be read from it — nothing under
+`tests/qemu/cli/` reads `/proc/meminfo`, and the tree's only `MemFree` hits are an unrelated
+identifier in ReactOS's own msconfig.)
+
+**How this correction got made is itself the lesson, and it generalizes to every entry here.**
+Three kills arrived, the entry above said check the disk first, the disk was fine — so the entry
+was falsified *by being used*. That only works because it was specific enough to be wrong. The
+instinct when writing one of these is to hedge ("mysterious kills can have host causes"), and a
+hedged entry would have survived contact and taught nobody anything. **Write the falsifiable
+version; being wrong in a way the next reader can detect is worth more than being unfalsifiable.**
+
+**Treat a "low on memory" kill as an UNEXPLAINED kill.** Three separate mechanisms have been
+proposed for it and all three were wrong — a memory reaper, the full disk, and (most recently,
+and most confidently) output. Each was inferred from a handful of samples of a supervisor that
+sits above this repo and that none of us can read. **The operational fact is enough, and it is
+the only thing here with a clean record:**
+
+| launch | record |
+|---|---|
+| `setsid nohup` | 3 for 3 survived — including one that outlived a sibling watcher killed at the same instant |
+| plain background | 5 kills, at 8, 12 and 36+ minutes |
+
+**Detach the WORK; treat any watcher as expendable and re-armable.** That is a workaround with
+evidence, not a theory of the cause.
+
+**What specifically does NOT work, because it was believed for several hours and written into
+this entry:** keeping the task talking. A chatty background watcher survived 36 minutes and 72
+heartbeats, which looked decisive; a second one of identical construction was killed after 25
+heartbeats while actively producing output. The kills span silent and chatty alike. **Do not add
+a heartbeat as a kill mitigation** — it does not help, and a lane that trusts it will lose a long
+job and then wrongly conclude that detachment is unreliable too.
+
+The near-miss is the reusable part. The "output" story had a positive control on both sides and
+still fell over, because one positive result was generalized into a mechanism and then into a
+design brief with confident numbers — a heartbeat interval derived from a kill window that only
+existed inside the story. A mechanization was written against it and reverted unlanded. **A
+measurement can constrain a STORY you have accepted while constraining nothing about the world,
+and the tell is that the numbers feel unusually specific for how little you know.** When the
+mechanism is unreadable, report the operational fact and stop; "unexplained" is a finding, not a
+placeholder for one.
 
 **A killed `land` leaves NO queue entry and NO error**, and that is the consequence worth
 knowing on its own. One lane ate five harness kills in a session — all reported as "the system is
@@ -5371,9 +5499,57 @@ rather than assuming.** Note the misdirection is active, not merely vague: the h
 these kills with a memory message *even when `MemAvailable` is fine*, so the message points away
 from the cause.
 
-The general shape, and it has five known members: **a verdict that depends on state outside the
+The general shape, and it has six known members: **a verdict that depends on state outside the
 diff is not a gate.**
-- **Host disk** — above; RED with nothing failing.
+- **Host disk** — above; RED with nothing failing. **And its sibling, which is worse because
+  every check you would run says the host is fine: RESERVATION HEADROOM, not fullness.** Six
+  lanes stalled with 117G free at 88% — `df` healthy, the 5G preflight threshold healthy — and
+  no gate could be admitted, because a 3-arch gate reserves 3x the per-build request above a
+  20G floor and the *unreserved remainder* had gone under. Every conduct failed
+  `DISK_ADMISSION_FAIL` on its own third arch, so the queue could not self-heal, and nothing in
+  the failure pointed at reservations. **"df looks fine" is a documented false negative for
+  this class**: fullness and admission headroom are different quantities and only one of them
+  was visible. `hostdisk.preflight` now prints the second one on the GREEN path too — the run
+  that looks healthy is exactly the case it exists for. The underlying defect is still owed and
+  is not a threshold: the gate reserves when a stage STARTS rather than when its CPU permit is
+  GRANTED, so it budgets for three concurrent builds that `cpuheavy` (4 permits, 2 per build)
+  will never allow. Lowering the per-build reservation is a stopgap; lowering the 20G floor
+  would be the same move as weakening a smoke test.
+- **A scanner that CRASHED rather than found anything.** Five of the six audited source
+  scanners walked `sdk/lib/rust` with `sorted(root.rglob("*.rs"))` and filtered `/target/`
+  *after* the walk had already descended into it. `Path.rglob` propagates the
+  `FileNotFoundError` a concurrent cargo build causes by deleting directories underneath
+  (verified empirically on 3.10.12 — pathlib does not swallow it), so the scanner died with
+  a traceback on **stderr** and nothing on stdout. `check --strict` correctly saw "no
+  findings, nonzero exit", but the gate rendered it as `NEW lint findings (exit 1)` with an
+  empty finding list, and `findings_from="stdout"` had already thrown the traceback away —
+  so the lane was told to go find a source defect it had not written, with no evidence to
+  read. Latent for as long as source scanners ran *after* the builds; the `source-early`
+  partition made it reachable by running them at t=0 **alongside** them. Fix has two halves,
+  and both are needed: prune during the walk (`tools/source_walk.py` — removing the race beats
+  catching it, and it is much faster since `target/` dwarfs the sources), and make a dead tool
+  classify as `SCANNER_ERROR` carrying its stderr, never `LINT_FAIL`. Two details in
+  `lints.py:_scanner_error` are what make the second half actually hold, and both were arrived
+  at by someone who had already been burned: it treats a NEGATIVE return code (a signal kill)
+  as a crash, and it runs BEFORE the baseline comparison — so a scanner that printed some
+  findings and *then* died is still a crash, not a partial verdict you can grade. **The tell,
+  reusable beyond this bug: a red with a finding COUNT but no finding TEXT is a crash.**
+  Two further things the fix taught, both about the class rather than the six sites.
+  `source_walk` deliberately does NOT swallow errors (`onerror=_raise`): a vanishing *source*
+  directory is an incomplete check, not an empty corpus. That is only a safe trade because the
+  churning tree is pruned first — the two halves go together, and taking the second without the
+  first would make the gate flap. And `scan_unpruned_walk` now gates the spelling, because the
+  migration closed the six sites and not the class: **37 of 39 `.rs` walkers under `tools/` were
+  written the old way**, so a seventh was a matter of time. **Beware how easily this class is
+  dismissed: a casual delete-a-directory-mid-walk test PASSES against `rglob`** and "proves"
+  there is no bug. The window has to be forced — start the walk, advance it by exactly one file
+  so it is mid-flight, then delete every directory it has not yet reached
+  (`tools/test_source_walk.py`). The general lesson outlives the fix: **a walk that filters
+  build output after the fact is already inside it.**
+  Footnote worth its line: two lanes wrote this same fix within forty minutes of each other,
+  neither knowing, and the merge conflicted across six scanners. Nobody wasted time — the
+  landed version was better on both counts above and simply replaced the other — but when a
+  defect is announced fleet-wide, say whether you are taking it.
 - **Which artifacts a worktree happens to carry** — `scan_ud2`'s arm64 driver sweep has no
   defined corpus. arm64 has no `livecd` DAG (`archcfg.py:209` builds a hand-picked staged set),
   so the sweep grades whatever binaries are sitting in `build-arm64/`: nothing in a fresh
@@ -5398,6 +5574,12 @@ diff is not a gate.**
   lands near `cmtypes.h:33` still finds the declaration and self-corrects); **where the line
   number IS the claim, it can be wrong for two honest readers at once.** Only the second kind
   needs the committed ref. (msvcrt-homebrew's finding.)
+
+Two of the six are the same underlying mistake in opposite directions, which is why they
+keep recurring: the harness **inferred** what it was grading (whatever binaries sit in
+`build-arm64/`) or **inferred** why a command exited nonzero (it must have found something).
+Both are cheap to fix by making the thing declare itself — name the corpus, name the
+failure mode — and both are invisible until a lane is already chasing the wrong cause.
 
 The AGENTS.md fleet-isolation rule already forbids *reading* generated artifacts from a sibling
 worktree. These are the same defect one level up: the corpus is discovered rather than declared.
@@ -8304,27 +8486,30 @@ worktree or kill a running build to propagate this fix.
    every conduct dies on its own THIRD arch, so a conductor bisects for a culprit lane that does
    not exist. Check `/tmp/vibeos-qemu-locks/host/disk/policy.json` against `df` and do the
    arithmetic before suspecting any diff. `prune` will not rescue you — it reported 0 M against
-   365.9 G held across eleven worktrees, all touched <12h or running live QEMUs. Underlying
-   defect (owed): the gate reserves disk when a stage STARTS rather than when its CPU permit is
-   GRANTED, so it budgets for three concurrent builds the broker will never admit — cpuheavy is
-   4 permits at 2 each, so only two builds ever run. Stopgap in place is `build = 15`, ~2x the
-   largest MEASURED build dir — `du -sh build-*` across four lanes is remarkably consistent at
-   i386 7.5-7.6G, amd64 7.5-7.7G, arm64 2.8-2.9G — leaving 3x15+4+20 = 69 GiB against 106 free.
-   The first two values for this knob (32, then 25) were both picked from half-remembered
-   figures and both presented as measurement-backed; `du` takes seconds and moved the margin
-   from 7 GiB to 37. The 20 GiB `min_free` floor is a different knob and is what stands between
-   the fleet and an ENOSPC afternoon — when the build number stops being enough, do not reach
-   for THAT one.
-   Two caveats on that `du`, both of which limit what it proves. A settled dir cannot show a
-   link-phase peak; sampling two LIVE arm64 builds showed no growth over settled (2.8-2.9G,
-   flat across 45s), which is weak positive evidence only — both were warm, both were the
-   SMALL arch, and a seconds-long link is easy to miss between samples. And the measurement
-   has a hole worth knowing on its own: **`du /tmp/vibeos` from the host reads `4.0K` and
-   exits 0.** Builds bind-mount the worktree at that canonical path inside a private
-   namespace (`canon-run.sh`, `unshare --map-root-user --mount`), so any host-side sizing of
-   the canonical path silently measures an empty directory rather than failing. A real peak
-   number needs a `du` INSIDE the build namespace during a cold i386 link; nobody has run
-   that, so `build = 15` is 2x measured SETTLED size, not 2x measured peak.
+   365.9 G held across eleven worktrees, all touched <12h or running live QEMUs. The knob is
+   `REQUESTS["build"]` in `tests/qemu/cli/diskspace.py`, and **it is the only durable one:
+   `policy.json` lives under `/tmp` and REGENERATES from `REQUESTS` at every boot**, so a
+   hand-edit of the json looks like it worked, survives a whole session, and silently evaporates
+   — one such edit to 15 took its fix with it. Settled: MEASURED 2026-09-11 with the fleet
+   stopped, sampling every 20s through a cold build, i386 and amd64 both peak at **7.44 GiB**
+   (arm64 dirs 2.8-3.0 G), and the estimate is now 12 — ~60% headroom over the observed peak,
+   because a reservation bounds additional WRITES and a cache-miss-heavy build also writes the
+   shared ccache/sccache on the same filesystem, a component that cold build could not measure
+   (it grew them by exactly 0, every object cached). 3x12+20 = 56 GiB, against 116 before.
+   The 20 GiB `min_free` floor is a different knob and is what stands between the fleet and an
+   ENOSPC afternoon — when the build number stops being enough, do not reach for THAT one.
+   **The 3-vs-2 asymmetry is NOT the defect**, though it reads like one and was filed here as
+   owed: `reserve()` takes disk while holding no CPU permit, so three builds hold reservations
+   while the broker admits two. Inverting it would mean sitting on a scarce CPU permit while
+   blocked on disk admission. Accuracy is what makes the asymmetry harmless — if the numbers
+   drift, re-measure, don't re-order.
+   Two notes on how to measure, both earned by getting it wrong. `du` on a SETTLED dir cannot
+   show a link-phase peak, and sampling live builds coarsely is weak evidence — a seconds-long
+   link hides between 45s samples; the number above comes from sampling a COLD build, which is
+   what it takes. And there is a hole worth knowing on its own: **`du /tmp/vibeos` from the host
+   reads `4.0K` and exits 0.** Builds bind-mount the worktree at that canonical path inside a
+   private namespace (`canon-run.sh`, `unshare --map-root-user --mount`), so any host-side
+   sizing of the canonical path silently measures an empty directory rather than failing.
 
 ### `NET_FLAKE` that is not a flake `[§9.84]`
 A gate showing `✓ build ×3 ✓ lint ×3 ✓ smoke: all three` and a red net suite, where **all 15
@@ -8476,6 +8661,28 @@ caller a short list means "this crate has no staticlib", which is a *staleness v
 missing answer. **A degraded oracle is worse than one that refuses to answer**, the same rule
 `ProvenanceError` exists for. Generalise: when a walk and a build share a tree, the walk must
 be idempotent-under-mutation or scoped so it never sees the other arch at all.
+
+**The same race reached the SOURCE SCANNERS, and there the crash is misfiled as a verdict.** Six
+of them walked with `for p in root.rglob("*.rs"): if "/target/" in str(p): continue` — which
+reads as an exclusion and is not one, because `rglob` has already descended into `target/`
+before the test runs. Harmless while lints ran *after* the builds; the `source-early` partition
+(`EARLY_SOURCE_CHECKS`, `cli/lints.py`) moved them to t=0 *alongside* three builds, and cargo
+deletes directories out from under the walk. The gate renders that `FileNotFoundError` as
+**"NEW lint findings (exit 1)" with no findings in it**, so the lane is bounced for a defect it
+did not cause — and the next lane's identical bounce looks like a real regression. Two things
+generalise. **Filtering a path after the walk yields it is not an exclusion**; prune during the
+walk (`os.walk` + `dirs[:] = ...`), which here also took the traversal of `sdk/lib/rust` from
+0.67s to 0.02s. And **a scanner can match nothing in a tree and still die in it** — the exposure
+is the ~5,700 directories under `sdk/lib/rust/target`, not the 22 `.rs` files that matched.
+`tools/source_walk.py` is now the one traversal all six share.
+
+Note what it deliberately does NOT do, and it is the same call `rglob_stable` made above:
+`source_walk` passes `onerror=_raise` rather than swallowing the error. Once the walk never
+enters build output, an OSError is no longer host timing — it is unreadable *source*, and a
+scanner that shrugs at that returns a short list, which for a lint means "clean". The
+survivability belongs in the pruning, not in a suppressed exception; the crash itself is then
+made honest one layer out, where the gate classifies a scanner that died as a CRASH instead of
+rendering it as findings.
 
 ### A rare unit-test failure in the HARNESS is a bug report, not noise — and the wall clock is not monotonic
 
