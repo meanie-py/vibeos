@@ -33,7 +33,7 @@ _PYRIGHT_ROOTS = ["tools/rustconv/rustconv", "tests/qemu/cli"]
 # (package_dir, pythonpath, pytest_target) — pytest needs each package importable.
 _PYTEST_SUITES = [
     ("tools/rustconv", "tools/rustconv", "tests"),
-    (".", ".", "tests/qemu/cli/test_cli_units.py"),
+    (".", ".", "tests/qemu/cli"),
     (".", ".", "tools/wow64gen/test_wow64gen.py"),
     # The SysWOW64 closure decides which DLLs a 32-bit guest can load at all, and
     # its DYNAMIC half has no other oracle: a provider reached only through the
@@ -55,12 +55,25 @@ _PYTEST_SUITES = [
     (".", ".", "tools/test_scan_import_cc.py"),
     (".", ".", "tools/test_scan_octal_literals.py"),
     (".", ".", "tools/test_scan_invented_constants.py"),
+    # These six existed and were collected by NOTHING — the same defect the two comments
+    # above record, twice more. test_verify_ucrtbase_cohab.py is the sharpest case: it was
+    # written the night the ucrtbase math flip landed, to prove the cohab checker parses
+    # `-arch=` spec filters, and it had never run in the gate once. The enumeration is now
+    # guarded by test_cli_units, so a new tools/test_*.py cannot go quiet again.
+    (".", ".", "tools/test_conformance_probe.py"),
+    (".", ".", "tools/test_export_census.py"),
+    (".", ".", "tools/test_gen_ctype_tables.py"),
+    (".", ".", "tools/test_verify_lost_exports.py"),
+    (".", ".", "tools/test_verify_translation_literals.py"),
+    (".", ".", "tools/test_verify_ucrtbase_cohab.py"),
     (".", ".", "tools/test_hostdisk.py"),
+    (".", ".", "tools/test_scan_flex_array_panic.py"),
     (".", ".", "tools/test_kernel_probe.py"),
     (".", ".", "tools/test_scan_orphan_modules.py"),
     (".", ".", "tools/test_build_invalidation.py"),
     (".", ".", "tools/test_bindgen_generation.py"),
     (".", ".", "tools/test_gate_source_partitions.py"),
+    (".", ".", "tools/test_source_walk.py"),
     (".", ".", "tools/test_cargo_depgraph.py"),
     (".", ".", "tools/test_retarget_cargo_depfile.py"),
     (".", ".", "tools/test_rust_module_tree.py"),

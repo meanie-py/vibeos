@@ -17,7 +17,7 @@ Scope (MANDATORY since 2026-07-03 — on unless `--no-cache` / `VIBEOS_BUILD_CAC
     (automatic path rewriting; the ReactOS tree already wires `RULE_LAUNCH_COMPILE
     ccache` behind `-DENABLE_CCACHE`, which `build.py` toggles on).
   * **sccache for Rust** — caches rustc across the smoke harness's target-dir
-    nuke (`RUSTC_WRAPPER` + `CARGO_INCREMENTAL=0`), **same-worktree**.
+    nuke (`RUSTC_WRAPPER` + `CARGO_INCREMENTAL=0`), across canonical worktrees.
 
 Cross-worktree path-independence (both languages) comes from the CANONICAL BUILD
 PATH: `vibeos-cli build` runs cmake/ninja/cargo with the worktree bind-mounted at
@@ -41,7 +41,7 @@ from pathlib import Path
 # rustc working set (N divergent worktrees × 3 arches × ~250 crates) shares ONE
 # content-addressed pool, and at 50G it ran full (49/50G) and LRU-thrashed —
 # entries evicted before reuse → cold cross-worktree rebuilds. 150G holds the
-# fleet's unique set with headroom; bump further if `sccache -s` shows it full again.
+# fleet's unique set with headroom. Review the host disk budget before raising it.
 CCACHE_MAXSIZE = "50G"
 SCCACHE_MAXSIZE = "150G"
 _FALSEY = ("0", "false", "no", "off")
@@ -50,11 +50,26 @@ _FALSEY = ("0", "false", "no", "off")
 def vibeos_root(repo: Path) -> Path:
     """The worktree-parent dir that owns caches. `VIBEOS_ROOT` env wins; else the
     repo's parent (siblings = the other worktrees), which gives every worktree the
-    SAME basedir → cross-worktree ccache hits."""
+    SAME basedir → cross-worktree ccache hits.
+
+    A harness subagent worktree breaks that assumption: it lives at
+    `<lane>/.claude/worktrees/<name>`, so its parent is that private dir rather than
+    the fleet parent. Taking it built a whole private ccache+sccache pair under
+    `vibeos-fex/.claude/worktrees/` — 10G that no other worktree could ever hit, and
+    every compile that filled it was a fleet-cache MISS never shared back. It also
+    misplaces the integration worktree (`queue.py`) and the ledger (`health.py`), which
+    is how it was found: a stray `vibeos-ledger.jsonl` sitting beside the caches. So
+    climb out to the real lane checkout before taking the parent; nested subagents
+    give several `.claude` segments, so cut at the FIRST one.
+    """
     env = os.environ.get("VIBEOS_ROOT")
     if env:
         return Path(env).expanduser().resolve()
-    return repo.resolve().parent
+    resolved = repo.resolve()
+    parts = resolved.parts
+    if ".claude" in parts:
+        resolved = Path(*parts[: parts.index(".claude")])
+    return resolved.parent
 
 
 def cache_enabled(args=None) -> bool:
@@ -94,6 +109,17 @@ class CacheEnv:
             e["CCACHE_NOHASHDIR"] = "true"  # cwd not in hash → worktree-independent
             e["CCACHE_SLOPPINESS"] = "time_macros"  # tolerate __DATE__/__TIME__ for hits
             e["CCACHE_MAXSIZE"] = CCACHE_MAXSIZE
+            # Pin the scratch dir next to the cache instead of letting ccache derive it
+            # from the effective uid. Builds run under `unshare --map-root-user`
+            # (tools/canon-run.sh), so inside the namespace euid is 0 and ccache picks
+            # /run/user/0 — real root's runtime dir, which maps to `nobody` inside the
+            # userns and is NOT writable. Every compile then dies with
+            # "Failed to create directory /run/user/0/ccache-tmp: Permission denied",
+            # surfacing as a bogus LINK_FAIL. It stayed hidden only while /run/user/0
+            # did not exist; a host reboot that starts any root session creates it and
+            # the whole fleet stops building. Same filesystem as the cache, so ccache's
+            # temp->cache renames stay atomic.
+            e["CCACHE_TEMPDIR"] = str(self.ccache_dir / "tmp")
         if self.use_sccache:
             e["RUSTC_WRAPPER"] = self.sccache_bin or "sccache"
             e["SCCACHE_DIR"] = str(self.sccache_dir)

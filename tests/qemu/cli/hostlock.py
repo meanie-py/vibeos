@@ -64,6 +64,10 @@ from collections.abc import Iterator
 from contextlib import contextmanager
 from pathlib import Path
 
+from . import buildpolicy
+
+HOST_POLICY_VERSION = 1
+
 # Shared with the qemu slot locks (vm.py LOCK_DIR) so `reap.sh`/`ps` live in one tree.
 HOSTLOCK_DIR = Path(os.environ.get("VIBEOS_HOSTLOCK_DIR", "/tmp/vibeos-qemu-locks/host"))
 # Pool size = max concurrent TCG boots (a build grabs ALL of them → exclusive). 4 suits a
@@ -112,7 +116,12 @@ _POLL = 0.5
 def enabled() -> bool:
     """The broker is on by default; `VIBEOS_HOST_BROKER=0` disables it (uncontended single
     agent / CI, where the locks are a no-op anyway, or to debug without arbitration)."""
-    return os.environ.get("VIBEOS_HOST_BROKER", "1").lower() not in ("0", "false", "no", "")
+    on = os.environ.get("VIBEOS_HOST_BROKER", "1").lower() not in ("0", "false", "no", "")
+    if not on and (
+        buildpolicy.read(HOSTLOCK_DIR) or (HOSTLOCK_DIR / "build-policy.paused").exists()
+    ):
+        raise buildpolicy.PolicyError("active host build policy requires the CPU broker")
+    return on
 
 
 def _slug(key: str) -> str:
@@ -328,6 +337,8 @@ def _acquire_one(
     ticket = _ticket_take(pool, 1) if pool else None
     try:
         while True:
+            if pool == "cpuheavy":
+                buildpolicy.require_admission(HOSTLOCK_DIR)
             if _may_attempt(pool or "", ticket[1] if ticket else None, 1, len(files)):
                 for p in files:
                     fd = os.open(str(p), os.O_RDWR | os.O_CREAT, 0o644)
@@ -359,6 +370,7 @@ def release(fd: int | None) -> None:
     """Release a lock (closing the fd also releases the flock; we unlock explicitly first)."""
     if fd is None:
         return
+    policy_guard = buildpolicy.take_guard(fd)
     try:
         fcntl.flock(fd, fcntl.LOCK_UN)
     except OSError:
@@ -367,6 +379,8 @@ def release(fd: int | None) -> None:
         os.close(fd)
     except OSError:
         pass
+    if policy_guard is not None:
+        policy_guard.__exit__(None, None, None)
 
 
 def _cpu_lease_files(leases: int) -> list[Path]:
@@ -396,6 +410,7 @@ def acquire_boot_lease(
     )
 
 
+@buildpolicy.guard
 def acquire_cpu_lease(
     kind: str,
     *,
@@ -405,6 +420,7 @@ def acquire_cpu_lease(
 ) -> int | None:
     """Acquire one CPU-heavy lease permit (default pool size 1). Returns the held fd or
     None on timeout. `kind` is a short tag for host-status (e.g. 'build:i386', 'boot:arm64')."""
+    buildpolicy.require_admission(HOSTLOCK_DIR)
     return _acquire_one(
         _cpu_lease_files(leases), timeout, _self_meta(kind, **extra), pool="cpuheavy"
     )
@@ -422,9 +438,13 @@ def build_permits(leases: int = DEFAULT_CPU_LEASES) -> int:
     defaults (K=4, max 2 builds) that's 2 — so two builds coexist, a third queues, and
     while TWO builds run the pool is exhausted (native-TCG boots excluded, preserving
     the starvation protection the old writer-takes-all grant existed for)."""
+    policy = buildpolicy.read(HOSTLOCK_DIR)
+    if policy:
+        return policy["leases"] // policy["max_builds"]
     return max(1, -(-leases // _max_builds()))
 
 
+@buildpolicy.guard
 def acquire_cpu_share(
     kind: str,
     *,
@@ -452,6 +472,7 @@ def acquire_cpu_share(
     ticket = _ticket_take("cpuheavy", n)
     try:
         while True:
+            buildpolicy.require_admission(HOSTLOCK_DIR)
             if _may_attempt("cpuheavy", ticket[1] if ticket else None, n, leases):
                 held: list[int] = []
                 for p in _cpu_lease_files(leases):
@@ -485,6 +506,7 @@ def acquire_cpu_share(
         _ticket_drop(ticket)
 
 
+@buildpolicy.guard
 def acquire_cpu_exclusive(
     kind: str,
     *,
@@ -502,6 +524,11 @@ def acquire_cpu_exclusive(
     announced = False
     for p in _cpu_lease_files(leases):
         while True:
+            try:
+                buildpolicy.require_admission(HOSTLOCK_DIR)
+            except RuntimeError:
+                release_all(held)
+                raise
             fd = os.open(str(p), os.O_RDWR | os.O_CREAT, 0o644)
             try:
                 fcntl.flock(fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
@@ -632,6 +659,10 @@ def build_dir_lock(build_dir: str | Path, **kw: object) -> Iterator[int | None]:
         return
     fd = acquire_build_dir(build_dir, **kw)  # type: ignore[arg-type]
     if fd is None:
+        if buildpolicy.read(HOSTLOCK_DIR):
+            raise buildpolicy.PolicyError(
+                "build-directory admission timed out; refusing unlocked work"
+            )
         print(
             f"[hostlock] WARNING: build-dir lock timeout ({build_dir}) — proceeding "
             "UNLOCKED (a holder looks stuck; check `vibeos-cli host-status`)",
@@ -804,7 +835,9 @@ def status() -> dict:
             out["builddir"].append(entry)
         elif p.name == "land":
             out["land"].append(entry)
-    out["cpu_leases_total"] = DEFAULT_CPU_LEASES
+    policy = buildpolicy.read(HOSTLOCK_DIR)
+    out["build_policy"] = policy
+    out["cpu_leases_total"] = policy["leases"] if policy else DEFAULT_CPU_LEASES
     out["cpu_leases_held"] = sum(1 for e in out["cpuheavy"] if e["held"])
     out["boot_leases_total"] = DEFAULT_BOOT_LEASES
     out["boot_leases_held"] = sum(1 for e in out["bootcpu"] if e["held"])

@@ -491,6 +491,8 @@ def _child_classification(stdout: str) -> str:
     the oldest waiting 54 minutes. The halt itself is still correct for a genuine unknown;
     what was wrong is calling a known failure unknown.
     """
+    if re.search(r"^DISK_ADMISSION_FAIL:", stdout, re.M):
+        return "DISK_ADMISSION_FAIL"
     m = re.search(r"^full log:\s*(\S+)/full\.log\s*$", stdout, re.M)
     if not m:
         return ""
@@ -520,18 +522,22 @@ def _lint_once(repo: Path, arch: str, root: Path) -> dict:
             salient = ln.strip()
             break
     inventory_ok = True
+    summary = _read_summary(root)
+    classification = summary.get("classification") or ""
+    if lints._scanner_error(proc, "stdout"):
+        classification = "SCANNER_ERROR"
     if arch in ("source-early", "source-deferred"):
         expected = [name for name, _, _ in lints.source_partition_specs(repo, arch)]
-        summary = _read_summary(root)
         inventory_ok = summary.get("checked_source_checks") == expected
         if not inventory_ok:
             salient = "missing or incorrect source-partition coverage inventory"
     return {
         "arch": arch,
-        "ok": proc.returncode == 0 and inventory_ok,
+        "ok": proc.returncode == 0 and inventory_ok and classification != "SCANNER_ERROR",
         "seconds": dt,
         "salient": salient,
         "exit": proc.returncode,
+        "classification": "SCANNER_ERROR" if not inventory_ok else classification,
     }
 
 
@@ -624,7 +630,13 @@ def _tooling_once(repo: Path, root: Path) -> dict:
             f"exit {proc.returncode}: {_last_words(console)}  "
             f"(full: {root / 'check-tooling-console.log'})"
         )
-    return {"ok": proc.returncode == 0, "seconds": dt, "salient": salient, "exit": proc.returncode}
+    return {
+        "ok": proc.returncode == 0,
+        "seconds": dt,
+        "salient": salient,
+        "exit": proc.returncode,
+        "classification": _child_classification(proc.stdout or ""),
+    }
 
 
 def _difftest_once(repo: Path, root: Path) -> dict:
@@ -994,7 +1006,7 @@ def gate(args, repo: Path) -> int:
             }
             arches = [a for a in arches if a in built]
             if not arches:
-                run.classification = "BUILD_FAIL"
+                run.classification = run.classification or "BUILD_FAIL"
                 return run.finalize(repo)
         else:
             for arch in build_order:
@@ -1025,14 +1037,20 @@ def gate(args, repo: Path) -> int:
                         status="ok" if r["ok"] else "fail",
                         detail="check --strict clean"
                         if r["ok"]
-                        else f"NEW lint findings (exit {r['exit']})",
+                        else (
+                            "SCANNER_ERROR: scanner did not complete; coverage unavailable"
+                            if r.get("classification") == "SCANNER_ERROR"
+                            else f"NEW lint findings (exit {r['exit']})"
+                        ),
                         salient=[]
                         if r["ok"]
                         else [r["salient"] or f"strict check partition {r['arch']} failed"],
                     )
                 )
-                if not r["ok"] and not run.classification:
-                    run.classification = "LINT_FAIL"
+                if not r["ok"] and (
+                    r.get("classification") == "SCANNER_ERROR" or not run.classification
+                ):
+                    run.classification = r.get("classification") or "LINT_FAIL"
 
         def _collect_cohab() -> None:
             for f in cf.as_completed(cfut):
@@ -1071,7 +1089,7 @@ def gate(args, repo: Path) -> int:
                     )
                 )
                 if not r["ok"] and not run.classification:
-                    run.classification = "TOOLING_FAIL"
+                    run.classification = r.get("classification") or "TOOLING_FAIL"
 
         def _collect_difftest() -> None:
             nonlocal difftest_ok

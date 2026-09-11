@@ -154,6 +154,10 @@ all included), then auto-triage on failure.
   as a `health` WARN stage (+ `census_stuck` in summary.json) — the
   "boots green but threads are silently parked forever" signal, trendable
   across runs.
+- Every smoke boot owns `<run-dir>/bootN/serial.log` (zero-based), including
+  `--repeat` runs. `summary.json` lists all results under `boots`; its top-level
+  serial archive selects the first failure, or first success if all passed.
+  Use those paths for live observation and evidence, not the legacy per-arch log.
 - `--tripwire "SPECIALPOOL=Gla5"` arms per-boot kernel debug knobs via QEMU
   fw_cfg (no media rebuild; kernel side `ntoskrnl-rust/src/tripwire.rs`) —
   special pool turns silent pool corruption into an immediate symbolicated
@@ -165,7 +169,7 @@ all included), then auto-triage on failure.
   largest silent gaps, and per-file freeldr load throughput (the `[FLDR]`
   stamps from `boot/freeldr/freeldr/ntldr/winldr.c`, enabled by the
   `Debug=` line in `boot/bootdata/livecd.ini`). Standalone analyzer:
-  `python3 tools/boot_phase_report.py qemu/<vm_arch>_smoke_live.log
+  `python3 tools/boot_phase_report.py <run-dir>/boot0/serial.log
   [--sizes build-<arch>]`. This is how the 27s freeldr silent gap and the
   5s menu-countdown tax were found (docs/engineering/
   performance-investigation.md).
@@ -338,6 +342,18 @@ wait times), and recent verdicts — a rejected lane's triage pointer lives here
 `--mine` filters verdicts to this lane. The lock holder also appears in
 `host-status` as a `LANDING :` line plus the `land` queue.
 
+### `disk-status [--sizes]`
+
+JSON report of filesystem headroom and live disk reservations. `--sizes` also
+measures this lane's build/target directories and the shared compiler caches;
+it reads metadata only and deletes nothing. CLI builds reserve 32 GiB and tooling
+runs 4 GiB, leaving a 20 GiB headroom floor. Gate/land parents check headroom;
+their children reserve independently. Host-wide policy lives at
+`<HOSTLOCK_DIR>/disk/policy.json`; see the fleet migration plan for its schema.
+Admission refusals are infrastructure failures, not code regressions. These are
+cooperative estimates, not filesystem quotas: legacy lanes and other writers
+remain unaccounted for. Automatic retention is not enabled.
+
 ### `host-status [--json]`
 
 Shows current permits, holders, and FIFO waiters across worktrees. Updated builds
@@ -457,7 +473,7 @@ invocations (a separate Windows process); address it by run-id, kill by uid tag.
 Every QEMU running **across all worktrees** + slot-pool usage. Run it first when
 you're unsure what's live or why KVM is contended.
 
-### `prune [--apply] [--self] [--idle-hours N]`
+### `prune [--apply] [--self] [--idle-hours N] [--retain-gib N]`
 Reclaim disk by GC'ing **idle worktrees' build-`<arch>`/ + Rust target dirs**.
 Build trees are ephemeral scratch — the shared cache rehydrates a pruned tree
 fast — so an idle lane's 26–42 G can be freed and regenerated on demand (measured
@@ -469,6 +485,19 @@ reads), never one with a **running ninja/cargo/rustc/clang/lld**, never the
 tree touched in the last N hours (recommended — the live gates are instantaneous,
 so an actively-worked lane that just isn't building *this second* otherwise looks
 prunable). Only ever removes the build/target dirs, never source or the worktree.
+
+`--retain-gib N` bounds reclamation: select eligible trees largest-first only
+until retained private outputs fit N GiB. Its default idle window is 24 hours.
+Protected trees can exceed the budget; they are never sacrificed to meet it.
+Shared caches are outside this budget. Descendant mtimes count as recent activity.
+
+Apply now requires an exclusive host maintenance lock and an exact pinned
+cleanup owner at `<HOSTLOCK_DIR>/maintenance-owner`. Creating
+`<HOSTLOCK_DIR>/maintenance-disabled` stops subsequent directory deletions.
+Updated artifact-consuming CLI commands hold shared leases on that lock.
+**Do not enable the owner until every lane is updated and older/raw jobs are
+drained**; they do not honor the lock. No owner is enabled automatically.
+See [storage/retention rollout](../../../docs/engineering/rust-output-retention-plan.md).
 
 ### `repro {report <pe>… | compare <a> <b> | diff-dirs <buildA> <buildB>}`
 The reproducible-builds gauge (determinism lane, rung 0 —
