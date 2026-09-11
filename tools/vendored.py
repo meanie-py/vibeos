@@ -286,7 +286,11 @@ _FOREIGN_HOLDER = re.compile(
     re.I,
 )
 _SUSPECT_SUFFIXES = (".c", ".cpp", ".cxx", ".cc", ".h", ".hpp", ".hxx")
-_SUSPECT_SKIP = (".git", "build-i386", "build-amd64", "build-arm64")
+# `.claude` holds the harness's own subagent worktrees (`.claude/worktrees/<name>`):
+# a whole second checkout of the repo, so scanning it reports ANOTHER tree's
+# uncatalogued Microsoft headers as findings against THIS one, and the verdict then
+# depends on which subagents happen to have run (AGENTS.md fleet-isolation rule 8).
+_SUSPECT_SKIP = (".git", ".claude", "build-i386", "build-amd64", "build-arm64")
 
 
 def _is_nested_checkout(d: str) -> bool:
