@@ -158,11 +158,36 @@ pub const MI_HYPERSPACE_PTES: usize = 255;
 // MM_EMPTY_LIST
 pub const MM_EMPTY_LIST: ULONG_PTR = ULONG_PTR::MAX;
 
-// MM_PTE_SOFTWARE_PROTECTION_BITS
+// MM_PTE_SOFTWARE_PROTECTION_BITS — where a SOFTWARE PTE keeps its Protection.
+//
+// This is the shift WRITERS use to build the PTE templates below; the READER is
+// `ntkrnl_sys::mm::MMPTE::soft_protection()`. They must agree, and on arm64 they
+// did not: the reader uses 1 (per ndk/arm64/mmtypes.h) while this said 6, which
+// is what ntoskrnl/include/internal/arm64/mm.h still carried.
+//
+// The header settles it. arm64 MMPTE_SOFTWARE is
+// `Valid:1, Protection:5, PageFileLow:4, Prototype:1, Transition:1, ...`, so a
+// 5-bit Protection at shift 6 would occupy bits 6..10 — overlapping PageFileLow
+// (6..9) and colliding with Prototype (bit 10). Structurally impossible for this
+// layout, and every other software variant in that header (TRANSITION,
+// PROTOTYPE, SUBSECTION, LIST) puts Protection at bits 1..5 too. Shift 1 is
+// correct; 6 was wrong.
+//
+// What the mismatch cost (task #39): MmDecommittedPte is MM_DECOMMIT << shift,
+// and MM_DECOMMIT is 0x10, so at shift 6 it built 0x400 — which IS the Prototype
+// bit. Every reader then saw that PTE as "Prototype=1, Protection=0". A fault on
+// a decommitted page therefore took neither the decommitted path (access
+// violation) nor the prototype path, and fell through to demand-zero with
+// Protection 0. That reached MI_MAKE_HARDWARE_PTE_USER, whose three C ASSERTs
+// against exactly that had been dropped in translation, and on arm64 the result
+// is Valid=1 on a RESERVED level-3 descriptor: the MMU refuses the translation
+// forever while MmAccessFault reads Valid and reports success, with DAIF masked.
+// A dead machine, no bugcheck, PC parked. Two independent defects had to line
+// up; either alone is survivable.
 #[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
 pub const MM_PTE_SOFTWARE_PROTECTION_BITS: u32 = 5;
 #[cfg(target_arch = "aarch64")]
-pub const MM_PTE_SOFTWARE_PROTECTION_BITS: u32 = 6;
+pub const MM_PTE_SOFTWARE_PROTECTION_BITS: u32 = 1;
 
 // PTE_READWRITE
 #[cfg(target_arch = "x86")]
