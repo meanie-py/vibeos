@@ -12,6 +12,17 @@ from . import diskspace as disk
 from . import gate, hostlock, land, queue
 from .artifacts import Run
 
+#: Room for exactly ONE build (plus the check-tooling job these tests nest inside it) and
+#: not two. DERIVED from the policy rather than hardcoded, because the tests assert "the
+#: SECOND build is refused" and a bare constant stops expressing that the moment
+#: REQUESTS["build"] is re-measured: 60 GiB said "one build" against a 32 GiB estimate and
+#: "four builds" against a 12 GiB one, so the tests failed for a reason that was not a
+#: regression. The assert pins the property the number has to keep having.
+ONE_BUILD_FREE = (20 + disk.REQUESTS["build"] + disk.REQUESTS["check-tooling"] + 1) * disk.GIB
+assert (20 + 2 * disk.REQUESTS["build"]) * disk.GIB > ONE_BUILD_FREE, (
+    "free space must admit one build and refuse two; re-check REQUESTS"
+)
+
 
 @pytest.fixture
 def isolated(tmp_path, monkeypatch):
@@ -19,7 +30,7 @@ def isolated(tmp_path, monkeypatch):
     monkeypatch.setattr(
         disk,
         "filesystems",
-        lambda repo: [{"device": "1", "path": str(repo), "free_bytes": 60 * disk.GIB}],
+        lambda repo: [{"device": "1", "path": str(repo), "free_bytes": ONE_BUILD_FREE}],
     )
     return tmp_path
 
@@ -28,7 +39,10 @@ def test_reserve_and_release_never_deletes_outputs(isolated):
     paid = isolated / "paid.rs"
     paid.write_text("paid translation")
     with disk.reserve(isolated, "build"):
-        assert disk.status(isolated)["filesystems"][0]["reserved_bytes"] == 32 * disk.GIB
+        assert (
+            disk.status(isolated)["filesystems"][0]["reserved_bytes"]
+            == disk.REQUESTS["build"] * disk.GIB
+        )
         with (
             pytest.raises(disk.AdmissionError, match="live reservations"),
             disk.reserve(isolated, "build"),
@@ -150,7 +164,8 @@ import sys
 from pathlib import Path
 from tests.qemu.cli import diskspace as d, hostlock
 hostlock.HOSTLOCK_DIR = Path(sys.argv[1]) / 'locks'
-d.filesystems = lambda repo: [{'device':'1', 'path':str(repo), 'free_bytes':60*d.GIB}]
+d.filesystems = lambda repo: [{'device':'1', 'path':str(repo),
+                               'free_bytes':(20+d.REQUESTS['build']+d.REQUESTS['check-tooling']+1)*d.GIB}]
 try:
     with d.reserve(Path(sys.argv[1]), 'build'):
         print('ADMITTED', flush=True)

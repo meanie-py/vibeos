@@ -22,7 +22,25 @@ from pathlib import Path
 from . import cachecfg, hostlock
 
 GIB = 1024**3
-REQUESTS = {"build": 32, "check-tooling": 4, "gate": 0, "land": 0}
+# MEASURED, not guessed (2026-09-11, fleet stopped, sampled every 20s across a cold
+# build): i386 and amd64 both PEAK at 7.44 GiB, and the ten arm64 build dirs on disk are
+# 2.8-3.0 GiB. `build` was 32 -- 4.3x the real peak -- and that over-estimate halts the
+# merge train, because a 3-arch gate submits three `build` reservations concurrently while
+# the CPU broker only ever admits two: 20 floor + 3x32 = 116 GiB had to be free or the
+# third arch took an instant DISK_ADMISSION_FAIL, which is INCONCLUSIVE, which stops the
+# drain for every queued lane. At 12 the same gate needs 56 GiB.
+#
+# 12 rather than 8 because a reservation bounds estimated additional WRITES, and a
+# cache-miss-heavy build also writes into the shared ccache/sccache on this same
+# filesystem; the cold build measured here grew them by 0 (every object was already
+# cached), so that component is unmeasured and 12 carries ~60% headroom over the observed
+# peak to cover it.
+#
+# The 3-vs-2 asymmetry itself is deliberate and stays: `reserve()` takes disk while
+# holding NO CPU permit, so a build queued for CPU holds its disk reservation. Inverting
+# that would mean sitting on a scarce CPU permit while blocked on disk. Accuracy is what
+# makes the asymmetry harmless, so if these numbers drift, re-measure -- don't re-order.
+REQUESTS = {"build": 12, "check-tooling": 4, "gate": 0, "land": 0}
 FAILURE = "DISK_ADMISSION_FAIL"
 
 
