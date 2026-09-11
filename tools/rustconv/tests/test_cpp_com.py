@@ -59,6 +59,19 @@ needs_generated_psdk_i386 = pytest.mark.skipif(
     reason=f"needs widl-generated headers in {GENERATED_PSDK_I386} (build i386 first)",
 )
 
+# Same rule, amd64. This one was missing and it cost a bogus merge-train rejection
+# (2026-09-11): `gate` runs check-tooling CONCURRENTLY with the builds it would need, so a
+# fresh integration worktree ran tooling at 13:33 against a build-amd64/sdk/include/psdk
+# that widl did not create until 14:15. The two ShellItemArray tests below hard-failed,
+# the lane was rejected TOOLING_FAIL, and the base re-gate then passed for no reason
+# except that the first gate had by then created the headers. Ordering tooling after the
+# builds would serialize the gate; declaring the dependency is the cheap half.
+GENERATED_PSDK_AMD64 = REACTOS_ROOT / "build-amd64" / "sdk" / "include" / "psdk"
+needs_generated_psdk_amd64 = pytest.mark.skipif(
+    not GENERATED_PSDK_AMD64.is_dir(),
+    reason=f"needs widl-generated headers in {GENERATED_PSDK_AMD64} (build amd64 first)",
+)
+
 WIDL_HEADER = r"""
 typedef struct IDragSourceHelperVtbl {
     BEGIN_INTERFACE
@@ -452,6 +465,7 @@ def test_internal_shell_object_creator_proves_nonaggregated_private_activation()
         cls.require_supported()
 
 
+@needs_generated_psdk_amd64
 def test_internal_scaffold_has_private_rust_factory_and_no_export_adapter():
     source = SHELL32 / "CEnumIDListBase.cpp"
     cls = analyze_class(source, "CEnumIDListBase", object_map_source=SHELL32 / "shell32.cpp")
@@ -465,6 +479,7 @@ def test_internal_scaffold_has_private_rust_factory_and_no_export_adapter():
     assert '#[no_mangle] pub unsafe extern "system" fn CEnumIDListBase_CreateInstance' not in rust
 
 
+@needs_generated_psdk_amd64
 def test_shell_item_array_internal_init_factory_sequence_and_stgmedium_lifecycle():
     source = SHELL32 / "CShellItem.cpp"
     cls = analyze_class(source, "CShellItemArray", object_map_source=SHELL32 / "shell32.cpp")
