@@ -718,7 +718,7 @@ def _build_locked(args, repo: Path, run, arch: str, cfg, build_dir: Path, cold: 
             # regardless, so flipping it no longer relinks the HAL (it used to
             # cost 9m25s i386 / 12m22s amd64 warm, which is why there has never
             # been an MP gate leg).
-            "VIBEOS_SMP_DEFAULT_BOOT": bool(getattr(args, "smp_kernel", False)),
+            "VIBEOS_UP_DEFAULT_BOOT": bool(getattr(args, "up_kernel", False)),
             # i386 HAL flavor: APIC (LAPIC/IOAPIC/TPR) is the DEFAULT as of the
             # i386-apic-hal lane landing. The legacy 8259 PIC is the opt-out
             # escape hatch (`--hal-pic` → -DVIBEOS_PIC_HAL=ON); reconciled every
@@ -993,14 +993,13 @@ def _build_locked(args, repo: Path, run, arch: str, cfg, build_dir: Path, cold: 
         ramdisk = repo / "qemu" / "ramdisk.img"
         flag = "--refresh" if ramdisk.is_file() else ""
         cmd = ["bash", str(mk)] + ([flag] if flag else [])
-        # The MP PAIR (ntkrnlmp.exe + halmp.dll) is staged unconditionally now, and
-        # freeldr.ini ships both a UP and an MP entry, so --smp here only moves
-        # `DefaultOS=` to the MP one at BUILD time. That is rarely what you want:
-        # vm.smp_selected_iso makes the same one-byte edit in a copy of the media at
-        # BOOT time, which lets one build serve both a UP and an MP run. Keep
-        # --smp-kernel for media that must default to MP with no harness in the loop.
-        if getattr(args, "smp_kernel", False):
-            cmd.append("--smp")
+        # Both pairs are staged unconditionally and freeldr.ini ships both entries;
+        # the MP one is the DEFAULT since 2026-09-12. `--up` here moves `DefaultOS=`
+        # back to the UP entry at BUILD time, which is the only way to get UP media.
+        # Nothing automated passes it -- gate, smoke and conformance all test the MP
+        # pair, because UP is a dead branch we are not shipping.
+        if getattr(args, "up_kernel", False):
+            cmd.append("--up")
         cp = run.run(cmd, cwd=repo, stage="mkramdisk", timeout=900)
         if cp.returncode != 0:
             run.classification = "RESTAGE_FAIL"

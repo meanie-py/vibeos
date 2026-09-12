@@ -81,12 +81,15 @@ def build_parser() -> argparse.ArgumentParser:
         "Debug/repro only; off by default",
     )
     b.add_argument(
-        "--smp-kernel",
+        "--up-kernel",
         action="store_true",
-        help="SMP bring-up (docs/engineering/smp-bringup-quest.md): build livecd "
-        "media whose freeldr default entry boots the MP kernel (ntkrnlmp.exe, "
-        "-DVIBEOS_SMP_DEFAULT_BOOT=ON). Opt-in only; default media stays UP. "
-        "Pair with `smoke --smp N` to boot it with N vCPUs",
+        help="OPT OUT to the UP kernel: build media whose freeldr default entry "
+        "boots ntoskrnl.exe + hal.dll (-DVIBEOS_UP_DEFAULT_BOOT=ON). The DEFAULT "
+        "is the MP pair (ntkrnlmp.exe + halmp.dll) since 2026-09-12, and nothing "
+        "automated should pass this -- UP is a dead branch, so a green UP run "
+        "tells us nothing about what we ship. Note this selects the KERNEL "
+        "FLAVOR, which is now independent of vCPU count: `--smp N` sets how many "
+        "CPUs the MP kernel runs on",
     )
     b.add_argument(
         "--kmtests",

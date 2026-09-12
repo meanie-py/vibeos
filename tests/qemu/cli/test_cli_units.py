@@ -4330,15 +4330,16 @@ def test_conformance_arch_normalization():
 
 
 def test_conformance_asks_the_build_for_the_kmtest_corpus(monkeypatch, tmp_path):
-    """conformance must pass --kmtests, and must NOT force an arm64 --smp-kernel.
+    """conformance must pass --kmtests, and must never opt out to the UP kernel.
 
     Both cmake options gating the corpus default OFF, so a build dir this worktree
     just created has no tests in it; the old preflight only refused when a cache
     existed and said OFF, and returned None — sailing through — when there was no
     cache at all. The arm64 half is the tail of the MP-media work: every media now
-    carries both kernel/HAL pairs and vm.smp_selected_iso repoints DefaultOS= in a
-    copy at boot, so forcing --smp-kernel would cost a media re-roll AND make the
-    --smp 1 and --smp 2 sweeps need two builds of one commit.
+    carries both kernel/HAL pairs and the MP one is the shipped default, so a
+    media re-roll buys nothing. The UP half is the live assertion now: `--up-kernel`
+    must never appear, because conformance is one of the automated paths that
+    exists to test what we SHIP, and UP is a dead branch.
 
     Nothing here may depend on the ambient checkout being provisioned: the merge
     queue gates in a fresh worktree that legitimately lacks the gitignored payload
@@ -4362,7 +4363,7 @@ def test_conformance_asks_the_build_for_the_kmtest_corpus(monkeypatch, tmp_path)
         )
         assert conformance_mod._conformance_once(args, tmp_path) == 1  # bailed on our stub
         assert seen and "--kmtests" in seen[0], seen
-        assert "--smp-kernel" not in seen[0], f"{arch}: media re-roll is no longer needed"
+        assert "--up-kernel" not in seen[0], f"{arch}: conformance must not test the UP kernel"
 
 
 def test_worktree_provisioning_preflight(tmp_path):
@@ -7790,3 +7791,38 @@ def test_mp_kernel_on_a_up_hal_is_still_caught_on_a_default_boot(monkeypatch):
     text = "[FLDR] load \\reactos\\ntkrnlmp.exe\n[FLDR] load \\reactos\\hal.dll\n"
     bad = smoke_mod._smp_check(text, "arm64")
     assert bad and bad["classification"] == "SMP_UP_HAL"
+
+
+def test_the_up_kernel_is_opt_in_only_and_nothing_automated_opts_in():
+    """UP is a dead branch: no automated path may select it.
+
+    The polarity was inverted on 2026-09-12 -- `--smp-kernel` (opt IN to MP) became
+    `--up-kernel` (opt OUT to UP), so the flavor a gate/smoke/conformance run gets
+    is MP unless a human deliberately asks otherwise. This pins both halves,
+    because the failure is silent in both directions: a run that boots the wrong
+    kernel reaches the desktop and looks identical to a correct one, and the old
+    flag name surviving anywhere would be a no-op that reads as still working.
+    """
+    import subprocess
+    import sys
+
+    repo = Path(__file__).resolve().parents[3]
+    # The opt-out exists and is spelled --up-kernel.
+    help_text = subprocess.run(
+        [sys.executable, "-m", "tests.qemu.cli", "build", "--help"],
+        cwd=repo, capture_output=True, text=True, timeout=120,
+    ).stdout
+    assert "--up-kernel" in help_text, help_text[:400]
+    assert "--smp-kernel" not in help_text, "the inverted flag name survived"
+
+    # And no source file still reads the retired knob (docs may discuss history).
+    # Assembled at runtime so this file does not match its OWN pattern -- spelling
+    # the names literally made the guard report itself and nothing else.
+    pat = "smp" + "_kernel|VIBEOS_SMP_" + "DEFAULT_BOOT"
+    stale = subprocess.run(
+        ["git", "-C", str(repo), "grep", "-lE", pat, "--", "*.py", "*.sh", "*.cmake", "*.txt"],
+        capture_output=True, text=True, timeout=60,
+    ).stdout.split()
+    # gcc.cmake keeps a historical note about the FORMER env var; it reads nothing.
+    stale = [f for f in stale if f != "sdk/cmake/gcc.cmake"]
+    assert not stale, f"these still reference the retired MP opt-in knob: {stale}"
