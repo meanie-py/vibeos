@@ -45,6 +45,7 @@ sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), "rus
 from rustconv.crate_repair import _mask_lexical, _match_forward
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+from lint_facts import source_facts
 from rust_module_tree import crate_live_files, crate_root_of
 
 REPO = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
@@ -132,6 +133,29 @@ def _return_kind(masked: bytes, after_params: int) -> str:
     return "unit" if not ret or ret == "()" else "value"
 
 
+@source_facts("tools/rustconv/rustconv/crate_repair.py")
+def arity_facts(data: bytes):
+    masked = _mask_lexical(data)
+    entry = {"decls": {}, "defs": {}}
+    for bm in RE_EXTERN_BLOCK.finditer(masked):
+        end = _match_forward(masked, bm.end() - 1)
+        if end is None:
+            continue
+        prev = bm.end()
+        for dm in RE_DECL.finditer(masked, bm.end(), end):
+            sig = _params(data, masked, dm.end() - 1)
+            if sig:
+                sym = _symbol(data[prev : dm.start()], dm.group(1), RE_LINK_NAME)
+                entry["decls"].setdefault(sym, []).append((dm.group(1).decode(), sig))
+            prev = dm.end()
+    for fm in RE_DEF.finditer(data):
+        sig = _params(data, masked, fm.end() - 1)
+        if sig:
+            sym = _symbol(data[fm.start() : fm.end()], fm.group(1), RE_EXPORT_NAME)
+            entry["defs"][sym] = sig
+    return entry
+
+
 def scan(root):
     crates = {}
     for dirpath, dirnames, filenames in os.walk(root):
@@ -157,28 +181,16 @@ def scan(root):
                 continue
             if b"extern" not in data and b"no_mangle" not in data:
                 continue
-            masked = _mask_lexical(data)
+            facts = arity_facts(data)
             entry = crates.setdefault(crate, {"decls": {}, "defs": {}})
-            for bm in RE_EXTERN_BLOCK.finditer(masked):
-                end = _match_forward(masked, bm.end() - 1)
-                if end is None:
-                    continue
-                prev = bm.end()
-                for dm in RE_DECL.finditer(masked, bm.end(), end):
-                    sig = _params(data, masked, dm.end() - 1)
-                    if sig:
-                        sym = _symbol(data[prev : dm.start()], dm.group(1), RE_LINK_NAME)
-                        entry["decls"].setdefault(sym, []).append((path, dm.group(1).decode(), sig))
-                    prev = dm.end()
-            for fm in RE_DEF.finditer(data):
-                sig = _params(data, masked, fm.end() - 1)
-                if sig:
-                    sym = _symbol(data[fm.start() : fm.end()], fm.group(1), RE_EXPORT_NAME)
-                    entry["defs"][sym] = (path, sig)
+            for sym, sites in facts["decls"].items():
+                entry["decls"].setdefault(sym, []).extend((path, *site) for site in sites)
+            for sym, sig in facts["defs"].items():
+                entry["defs"][sym] = (path, sig)
 
     findings = []
     for crate, e in crates.items():
-        live = crate_live_files(crate)
+        live = {os.path.realpath(x) for x in crate_live_files(crate)}
         for sym, sites in sorted(e["decls"].items()):
             if sym not in e["defs"]:
                 continue
@@ -187,7 +199,7 @@ def scan(root):
                 if "..." in sig[0] or "..." in dsig[0]:
                     continue
                 # A decl in an unreachable file cannot make a wrong call.
-                if live and os.path.realpath(path) not in {os.path.realpath(x) for x in live}:
+                if live and os.path.realpath(path) not in live:
                     continue
                 a, b = nargs(sig[1]), nargs(dsig[1])
                 if a != b:

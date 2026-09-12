@@ -12,6 +12,7 @@ import functools
 import hashlib
 import json
 import re
+import shlex
 import subprocess
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -176,7 +177,7 @@ def workspace_cargo_targets(repo: Path, arch: str) -> list[Path]:
     if root.resolve() != repo.resolve() / "sdk/lib/rust/target":
         raise ValueError(f"refusing symlinked workspace target: {root}")
     stems = [stem, "i686-pc-windows-gnu"] if base == "i386" else [stem]
-    parents = [root, *sorted(root.glob("*-rustlib"))]
+    parents = [root, *sorted(root.glob("*-rustlib")), *sorted(root.glob("*-cargo-link"))]
     result = []
     for parent in parents:
         for target in stems:
@@ -576,27 +577,44 @@ def cargo_module_rels(repo: Path) -> list[str]:
     return sorted(set(rels))
 
 
-def _newest_ws_src(repo: Path) -> tuple[float, str]:
-    """(mtime, repo-rel path) of the newest .rs/.toml in the rust workspace,
-    excluding cargo target dirs. This is a cargo-linked module's source-change
-    signal: since 2026-07-04 add_cargo_module's DEPENDS is the whole workspace
-    glob (one dependency graph — any workspace .rs can be in any module's link
-    closure), so a fresh build always leaves every cargo-linked binary newer
-    than this."""
-    ws = repo / "sdk" / "lib" / "rust"
-    newest, newest_rel = 0.0, ""
-    for pat in ("*.rs", "*.toml"):
-        for p in rglob_stable(ws, pat):
-            parts = p.relative_to(ws).parts
-            if parts and parts[0] == "target":
-                continue
-            try:
-                mt = p.stat().st_mtime
-            except OSError:
-                continue
-            if mt > newest:
-                newest, newest_rel = mt, str(p.relative_to(repo))
-    return newest, newest_rel
+def _cargo_link_inputs(repo: Path, build_dir: Path, artifact: Path) -> list[Path]:
+    """Read the copied PE's compiler dependency rule in this checkout's namespace."""
+    depfile = artifact.with_suffix(artifact.suffix + ".d")
+    try:
+        text = depfile.read_text().replace("\\\n", " ")
+        rule = text.splitlines()[0]
+        targets = (
+            artifact,
+            Path("/tmp/vibeos") / artifact.relative_to(repo),
+            artifact.relative_to(build_dir),
+        )
+        for target in targets:
+            prefix = str(target).replace(" ", "\\ ") + ": "
+            if rule.startswith(prefix):
+                words = shlex.split(rule[len(prefix) :], comments=False)
+                break
+        else:
+            raise ValueError("missing expected output rule")
+        if not words:
+            raise ValueError("empty input closure")
+        inputs = []
+        for word in words:
+            path = Path(word.replace("$$", "$"))
+            if path.is_relative_to("/tmp/vibeos"):
+                path = repo / path.relative_to("/tmp/vibeos")
+            elif not path.is_absolute():
+                path = build_dir / path
+            if not path.exists():
+                raise ValueError(f"missing dependency {path}")
+            inputs.append(path)
+            if path.is_dir():
+                # Cargo rerun-if-changed on a directory watches its whole tree.
+                inputs.extend(rglob_stable(path, "*"))
+        return inputs
+    except (OSError, ValueError, IndexError) as error:
+        raise ProvenanceError(
+            f"{depfile}: cannot verify cargo link inputs: {error}; run `build`"
+        ) from error
 
 
 def _media_manifest_rels(repo: Path, arch: str) -> set[str] | None:
@@ -623,21 +641,11 @@ def _media_manifest_rels(repo: Path, arch: str) -> set[str] | None:
 
 
 def cargo_link_staleness_reasons(repo: Path, arch: str) -> list[str]:
-    """The cargo-LINK false-green net (the 2026-07-04 ntoskrnl class) — ALL arches.
+    """Check each boot-relevant Cargo PE against its actual emitted input closure.
 
-    A cargo-linked PE (add_cargo_module) is produced by a custom command; before
-    2026-07-04 its DEPENDS globbed only the bin+body crates, so a kernel .rs edit
-    rebuilt libkernel_rust.a but never re-ran the LINK: `ninja livecd` re-rolled
-    a fresh ISO around a PRE-FIX ntoskrnl.exe and the gate false-greened
-    i386+amd64 smoke. This disproved boot_set_cohab_rels' x86 exemption ("a full
-    ninja livecd can't ship a stale cohab binary") for cargo-linked modules. The
-    build stamp is blind to it (a build RAN and re-stamped; ninja just did no
-    work), so — like the cohab net — this is mtime-based and gates both tiers.
-
-    Contract (matches add_cargo_module's workspace-glob DEPENDS): every
-    boot-relevant cargo-linked artifact must be NEWER than the newest workspace
-    .rs/.toml. Scope = the arch's boot set (arm64) or the CD manifest (x86);
-    absent artifacts are skipped (arch-gated/optional modules)."""
+    A workspace-wide maximum falsely rejects unrelated binaries after selective
+    rebuilds. Missing dependency evidence fails loudly; optional outputs skip.
+    """
     cfg = archcfg.arch_build(arch)
     build_dir = repo / f"build-{archcfg.base_arch(arch)}"
     if cfg.needs_mkramdisk:
@@ -646,9 +654,6 @@ def cargo_link_staleness_reasons(repo: Path, arch: str) -> list[str]:
         scope = _media_manifest_rels(repo, arch)
         if scope is None:
             return []  # no manifest yet — media absent, other checks report that
-    newest, newest_rel = _newest_ws_src(repo)
-    if not newest:
-        return []
     reasons = []
     for rel in cargo_module_rels(repo):
         if rel not in scope:
@@ -656,6 +661,12 @@ def cargo_link_staleness_reasons(repo: Path, arch: str) -> list[str]:
         artifact = build_dir / rel
         if not artifact.is_file():
             continue
+        inputs = _cargo_link_inputs(repo, build_dir, artifact)
+        newest_path = max(inputs, key=lambda p: p.stat().st_mtime_ns)
+        newest = newest_path.stat().st_mtime
+        newest_rel = str(
+            newest_path.relative_to(repo) if newest_path.is_relative_to(repo) else newest_path
+        )
         if artifact.stat().st_mtime < newest:
             lag = newest - artifact.stat().st_mtime
             note = (

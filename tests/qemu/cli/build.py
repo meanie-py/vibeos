@@ -399,7 +399,8 @@ def _maybe_canonize(
         # which is cached and harmless, and that is worth more than teaching this
         # generic mechanism which cmake options imply which others.
         stale.update({f: True for f in sticky_on if not _flag_in_cache(build_dir, f)})
-        if stale:
+        incomplete = not (build_dir / "build.ninja").is_file()
+        if stale or incomplete:
             defs = [f"-D{flag}={'ON' if on else 'OFF'}" for flag, on in stale.items()]
             cp = run.run(
                 canon.wrap(repo, ["cmake", *defs, "."]),
@@ -423,7 +424,19 @@ def _maybe_canonize(
                     )
                 )
                 return None
-            run.add(Stage("instr-config", status="ok", detail=" ".join(defs)))
+            if not (build_dir / "build.ninja").is_file():
+                run.classification = "CMAKE_CONFIGURE_FAIL"
+                run.add(
+                    Stage("instr-config", status="fail", detail="cmake produced no build.ninja")
+                )
+                return None
+            run.add(
+                Stage(
+                    "instr-config",
+                    status="ok",
+                    detail=" ".join(defs) or "recovered incomplete configure",
+                )
+            )
         return True
     if not canon.available():
         run.add(
@@ -1026,8 +1039,8 @@ def _build_locked(args, repo: Path, run, arch: str, cfg, build_dir: Path, cold: 
             Stage("build-index", exit=cp.returncode, status="ok" if cp.returncode == 0 else "warn")
         )
 
-    # --- auto-check (advisory) unless --no-check ---
-    if not getattr(args, "no_check", False):
+    # Source analysis belongs to check/gate; local build opts in explicitly.
+    if getattr(args, "check", False):
         lints.run_source_lints(run, repo, strict=False)
 
     # --- write provenance stamp ---

@@ -70,51 +70,6 @@ if(KDBG AND NOT ARCH STREQUAL "arm64")
         ${REACTOS_SOURCE_DIR}/ntoskrnl/kdbg/kdbg_rust_shims.c)
 endif()
 
-# Rust kernel code — single umbrella staticlib (pool + ob/obhandle + future modules)
-set(RUST_WORKSPACE_DIR "${CMAKE_SOURCE_DIR}/sdk/lib/rust")
-set(RUST_KERNEL_TARGET_DIR "${CMAKE_CURRENT_BINARY_DIR}/rust-kernel-target")
-if(ARCH STREQUAL "i386")
-    set(RUST_TARGET "i686-pc-windows-gnu")
-    # i386: disable SSE — CR4.OSFXSR not set until Phase 1 but pool init runs in Phase 0
-    set(RUST_EXTRA_ENV "RUSTFLAGS=-C target-feature=-sse,-sse2")
-elseif(ARCH STREQUAL "amd64")
-    set(RUST_TARGET "x86_64-pc-windows-gnu")
-    set(RUST_EXTRA_ENV "")
-elseif(ARCH STREQUAL "arm64")
-    set(RUST_TARGET "aarch64-pc-windows-gnullvm")
-    set(RUST_EXTRA_ENV "")
-endif()
-
-set(RUST_KERNEL_LIB "${CMAKE_CURRENT_BINARY_DIR}/libkernel_rust.a")
-
-# kernel-rust is an umbrella staticlib that pulls in EVERY sibling rlib via
-# `extern crate`, so its true input is the whole rust workspace — not the
-# hand-maintained 200-line file list this used to carry. That list was
-# necessarily incomplete (ntoskrnl-rust alone is ~405 .rs): editing any .rs not
-# listed left ninja thinking the staticlib was current, so a stale kernel
-# silently masked the source fix — field-manual §9.6b. Glob the whole workspace
-# (same mechanism as add_cargo_module in gcc.cmake), excluding cargo target/
-# dirs (build artifacts, not source). CONFIGURE_DEPENDS re-globs when files are
-# added/removed.
-file(GLOB_RECURSE _rust_kernel_srcs CONFIGURE_DEPENDS
-    ${RUST_WORKSPACE_DIR}/*.rs ${RUST_WORKSPACE_DIR}/*.toml)
-list(FILTER _rust_kernel_srcs EXCLUDE REGEX "/target/")
-
-add_custom_command(
-    OUTPUT ${RUST_KERNEL_LIB}
-    COMMAND ${CMAKE_COMMAND} -E env
-        CARGO_TARGET_DIR=${RUST_KERNEL_TARGET_DIR} ${RUST_EXTRA_ENV}
-        cargo build --release --target ${RUST_TARGET}
-            -p kernel-rust
-            --manifest-path ${RUST_WORKSPACE_DIR}/Cargo.toml
-    COMMAND ${CMAKE_COMMAND} -E copy
-        ${RUST_KERNEL_TARGET_DIR}/${RUST_TARGET}/release/libkernel_rust.a
-        ${RUST_KERNEL_LIB}
-    DEPENDS ${_rust_kernel_srcs}
-    COMMENT "Building Rust kernel code (${RUST_TARGET})"
-)
-add_custom_target(rust_kernel DEPENDS ${RUST_KERNEL_LIB})
-
 # ntoskrnl.exe: link driven by cargo (graduated from cmake add_executable).
 # ntoskrnl-cargo/build.rs (reactos-link) self-hosts the kernel-rust staticlib +
 # the cmake C-floor static libs (ntoskrnl_vista/cportlib/csq/pseh/arbiter/cmlib/
@@ -126,9 +81,7 @@ add_custom_target(rust_kernel DEPENDS ${RUST_KERNEL_LIB})
 # ADD_IMPORTLIB) at the top of this file STAYS — the tree imports libntoskrnl.
 # EXTRA_DEPENDS == the OLD ntoskrnl dependency closure (target_link_libraries +
 # add_importlibs + add_dependencies), so a cold build can't race a stale .a /
-# generated header the cargo link reuses by path. (rust_kernel kept as a dep:
-# the cargo build links its OWN kernel-rust, but the cmake target's build is the
-# proven-sufficient source of any generated prerequisites; revisit to drop it.)
+# generated header the cargo link reuses by path. Cargo builds its Rust body once.
 add_cargo_module(ntoskrnl ntoskrnl-cargo ntoskrnl.exe
     KIND kernelexe
     BODY_CRATE kernel-rust
@@ -144,7 +97,7 @@ add_cargo_module(ntoskrnl ntoskrnl-cargo ntoskrnl.exe
         # ("missing static lib … run ninja first"). Depend on the implib custom
         # targets explicitly so a cold build always produces them first.
         libkdcom_implib_target libbootvid_implib_target
-        psdk asm rust_kernel)
+        psdk asm)
 
 add_subdirectory(ntkrnlmp)
 

@@ -12,11 +12,11 @@ Two flock-based locks, both under a shared `/tmp` dir so every worktree sees the
 kernel auto-releases them when the holding process dies (no stale-lock cleanup needed):
 
 - **`cpuheavy`** — a counting pool of `VIBEOS_HOST_CPU_LEASES` permits (default 4):
-    * a cold **build** / `repro verify` grabs a **ceil(K/max_builds) share** (default 2 of 4,
-      `VIBEOS_MAX_CONCURRENT_BUILDS=2`) → up to two builds coexist instead of fleet-wide
-      build serialization; TWO running builds exhaust the pool, so native-TCG boots are
-      still excluded exactly when the host is build-saturated (the false-`HANG_TIMEOUT`
-      starvation incident). `VIBEOS_MAX_CONCURRENT_BUILDS=1` restores writer-takes-all.
+    * a cold **build** / `repro verify` grabs a **ceil(K/max_builds) share**.
+      Default concurrency scales with visible CPUs (up to four builds); on 24 CPUs
+      each build takes one of four permits. Explicit host policy and
+      `VIBEOS_MAX_CONCURRENT_BUILDS` override this. Exhausting the pool excludes
+      native-TCG boots; `VIBEOS_MAX_CONCURRENT_BUILDS=1` restores writer-takes-all.
       Shares are acquired with NO hold-and-wait (collect free slots nonblocking; on a
       shortfall release all + retry) so partial acquirers cannot deadlock;
     * a **TCG boot** grabs **1** permit → up to K TCG boots run in parallel (a ×3 gate keeps
@@ -427,10 +427,10 @@ def acquire_cpu_lease(
 
 
 def _max_builds() -> int:
-    """Max concurrent builds host-wide (VIBEOS_MAX_CONCURRENT_BUILDS, default 2).
-    Read at CALL time (not import) so tests and per-invocation env overrides work.
-    Set to 1 to restore the original exclusive-host build behavior."""
-    return max(1, int(os.environ.get("VIBEOS_MAX_CONCURRENT_BUILDS", "2")))
+    """Host-sized build admission; retain explicit overrides and host policy."""
+    cpus = len(os.sched_getaffinity(0)) if hasattr(os, "sched_getaffinity") else os.cpu_count()
+    default = max(1, min(DEFAULT_CPU_LEASES, (cpus or 1) // 6))
+    return max(1, int(os.environ.get("VIBEOS_MAX_CONCURRENT_BUILDS", str(default))))
 
 
 def build_permits(leases: int = DEFAULT_CPU_LEASES) -> int:

@@ -72,6 +72,7 @@ import sys
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
+from tools.lint_facts import source_facts
 from tools.source_walk import source_files
 
 # A leading-zero literal in NUMERIC position.
@@ -110,7 +111,14 @@ def strip_noise(text: str) -> str:
     def blank(s: str) -> str:
         return re.sub(r"[^\n]", " ", s)
 
+    special = re.compile(r"[rb/\"']")
     while i < n:
+        token = special.search(text, i)
+        if token is None:
+            out.append(text[i:])
+            break
+        out.append(text[i : token.start()])
+        i = token.start()
         c = text[i]
 
         # Raw string: r"...", r#"..."#, br##"..."##. No escapes inside.
@@ -178,6 +186,7 @@ def strip_noise(text: str) -> str:
     return "".join(out)
 
 
+@source_facts()
 def scan_text(text: str) -> list[tuple[int, str, int, int]]:
     """Return (line, literal, decimal_value, octal_value) for each disagreeing literal."""
     out: list[tuple[int, str, int, int]] = []

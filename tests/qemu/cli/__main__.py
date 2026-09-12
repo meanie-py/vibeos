@@ -61,7 +61,9 @@ def build_parser() -> argparse.ArgumentParser:
         action="store_true",
         help="fast-iterate: rustc incremental (Rust sccache OFF; non-reproducible, not for gate)",
     )
-    b.add_argument("--no-check", action="store_true", help="skip auto source-lints")
+    checks = b.add_mutually_exclusive_group()
+    checks.add_argument("--check", action="store_true", help="also run advisory source lints")
+    checks.add_argument("--no-check", action="store_true", help=argparse.SUPPRESS)
     b.add_argument(
         "--keep-going",
         action="store_true",

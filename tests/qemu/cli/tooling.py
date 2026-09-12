@@ -14,7 +14,10 @@ from __future__ import annotations
 import os
 import subprocess
 import sys
+from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
+
+from .lints import lint_jobs
 
 # venv that launched us (vibeos-cli picks the main checkout's .venv); its bin/
 # holds ruff + pyright, and sys.executable is the matching interpreter.
@@ -54,6 +57,9 @@ _PYTEST_SUITES = [
     (".", ".", "tools/test_verify_cohab_coverage.py"),
     (".", ".", "tools/test_scan_import_cc.py"),
     (".", ".", "tools/test_scan_octal_literals.py"),
+    (".", ".", "tools/test_lint_facts.py"),
+    (".", ".", "tools/test_cargo_link_context.py"),
+    (".", ".", "tools/test_nested_cargo_deps.py"),
     (".", ".", "tools/test_scan_invented_constants.py"),
     # These six existed and were collected by NOTHING — the same defect the two comments
     # above record, twice more. test_verify_ucrtbase_cohab.py is the sharpest case: it was
@@ -153,9 +159,9 @@ def check_tooling(args, repo: Path) -> int:
                 )
             )
 
-    results = []
-    for label, cmd, kw in checks:
-        results.append(_run(label, cmd, repo, **kw))
+    with ThreadPoolExecutor(max_workers=min(lint_jobs(), len(checks))) as pool:
+        futures = [pool.submit(_run, label, cmd, repo, **kw) for label, cmd, kw in checks]
+        results = [future.result() for future in futures]
 
     failed = [(lbl, tail) for lbl, ok, tail in results if not ok]
     width = max(len(lbl) for lbl, _, _ in results)

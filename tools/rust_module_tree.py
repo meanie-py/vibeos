@@ -21,7 +21,11 @@ findings in files this calls dead, so a false "dead" hides real bugs.
 
 import os
 import re
+import sys
 from pathlib import Path
+
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
+from tools.lint_facts import source_facts
 
 # `r#` is not optional decoration: ws2_32 translates upstream's async.c to a module
 # that can only be spelled `pub mod r#async;` (a keyword since edition 2018). Without
@@ -141,7 +145,8 @@ def decl_sites(text):
     while i < len(text):
         m = RE_MOD_ANY.search(text, i)
         upto = m.start() if m else len(text)
-        for c in text[i:upto]:
+        for brace in re.finditer(r"[{}]", text[i:upto]):
+            c = brace.group()
             if c == "{":
                 depth += 1
             elif c == "}":
@@ -199,6 +204,19 @@ def crate_roots(crate_dir):
     return roots
 
 
+@source_facts()
+def module_facts(raw):
+    if not RE_MODULE_KEYWORD.search(raw):
+        return [], [], [], False
+    text = strip_comments(raw)
+    return (
+        path_mod_targets(text),
+        RE_INCLUDE.findall(text),
+        decl_sites(raw),
+        bool(RE_INCLUDE_ENV.search(text)),
+    )
+
+
 def crate_live_files(crate_dir, _cache={}):  # noqa: B006 — deliberate memo cache
     # The mutable default IS the cache: it is read and written across calls (see the
     # `if crate_dir in _cache` below). Ruff's suggested fix (default None, init inside)
@@ -223,16 +241,16 @@ def crate_live_files(crate_dir, _cache={}):  # noqa: B006 — deliberate memo ca
             continue
         if not RE_MODULE_KEYWORD.search(raw):
             continue  # reachable leaf: no module/include edges to discover
-        text = strip_comments(raw)
+        paths_by_name, includes, declarations, _opaque = module_facts(raw)
         fdir = os.path.dirname(f)
         stem = os.path.splitext(os.path.basename(f))[0]
         base = fdir if stem in ("lib", "main", "mod") else os.path.join(fdir, stem)
-        for _name, paths in path_mod_targets(text):
+        for _name, paths in paths_by_name:
             for rel in paths:
                 queue.append((os.path.normpath(os.path.join(fdir, rel)), []))
-        for inc in RE_INCLUDE.finditer(text):
-            queue.append((os.path.normpath(os.path.join(fdir, inc.group(1))), []))
-        for name, encl in decl_sites(raw):
+        for include in includes:
+            queue.append((os.path.normpath(os.path.join(fdir, include)), []))
+        for name, encl in declarations:
             d = os.path.join(base, *(inline + encl))
             for cand in (os.path.join(d, name + ".rs"), os.path.join(d, name, "mod.rs")):
                 if os.path.exists(cand):
@@ -268,8 +286,9 @@ def crate_phantom_mods(crate_dir):
         # A `#[path = "..."]` module names its own file and is resolved by path_mod_targets,
         # not by the name-based search below — excluding it here keeps those from reading as
         # phantoms (the per-arch `types_i386.rs` selector is exactly this shape).
-        by_path = {name for name, _ in path_mod_targets(strip_comments(raw))}
-        for name, encl in decl_sites(raw):
+        paths_by_name, _includes, declarations, _opaque = module_facts(raw)
+        by_path = {name for name, _ in paths_by_name}
+        for name, encl in declarations:
             if name in by_path:
                 continue
             d = os.path.join(base, *encl)
@@ -294,7 +313,7 @@ def crate_is_opaque(crate_dir, _cache={}):  # noqa: B006 — intentional memo ca
             raw = Path(f).read_text(encoding="utf-8", errors="replace")
             if "include" not in raw:
                 continue
-            if RE_INCLUDE_ENV.search(strip_comments(raw)):
+            if module_facts(raw)[3]:
                 opaque = True
                 break
         except OSError:

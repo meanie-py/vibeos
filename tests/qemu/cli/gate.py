@@ -11,8 +11,8 @@ concurrent same-arch AND cross-arch boots are collision-safe. The only thing tha
 was serial was the *orchestrator* — i.e. the human. This driver removes that:
 
   1+2. builds + lanes, PIPELINED (F5, 2026-07-06) — every arch's build is
-     submitted at once (they self-throttle on the broker's build share, default 2
-     concurrent fleet-wide; amd64 is submitted first, since it feeds two lanes),
+     submitted at once (they self-throttle on the broker's build share, CPU-sized
+     concurrency fleet-wide; amd64 is submitted first, since it feeds two lanes),
      and each arch's smoke, its strict guards, and (for amd64) the net lane launch
      THE MOMENT its own build lands rather than behind an all-arches barrier.
      Safe by hostlock design:
@@ -434,18 +434,9 @@ def _net_once(repo: Path, root: Path) -> dict:
 def _build_once(repo: Path, run: Run, arch: str, args) -> dict:
     """Build one arch as its own gate lane.
 
-    Submitted CONCURRENTLY for every arch (2026-07-25) instead of the old serial loop. The
-    serial loop predated `hostlock` commit 226733668e6: build-vs-build is no longer
-    exclusive — a build takes a ceil(K/max_builds) SHARE of the cpuheavy pool, so
-    VIBEOS_MAX_CONCURRENT_BUILDS (default 2) fleet-wide is already the sanctioned limit, and
-    the per-build-dir lock is what actually protects a build dir. Submitting all arches
-    therefore doesn't mean three cold builds fighting over the box: the broker admits two
-    (FIFO, arrival-ordered) and queues the third. It just stops the gate from being stricter
-    than the broker it delegates to — which matters now that `land` serializes gates, making
-    gate wall-clock the landing throughput limit.
-
-    `--no-check` is passed when the strict lint lanes run: that suite is the same scanners,
-    blocking, so the build's warn-only pass is pure duplication (~20-40s/arch).
+    All architectures submit together; hostlock admits them against the shared
+    CPU pool and the per-build-directory lock protects each output tree.
+    Source lint runs in the gate partitions, independently of compilation.
     """
     cmd = [str(repo / "vibeos-cli"), "build", "--arch", arch]
     if not getattr(args, "no_lint", False):
@@ -933,12 +924,18 @@ def gate(args, repo: Path) -> int:
                 "source-early"
             )
             tfut[ex.submit(_tooling_once, repo, gate_root / "tooling")] = "tooling"
-            # Same shape as check-tooling: host-only, needs no build artifacts,
-            # so it overlaps the first build rather than adding wall-clock.
-            dfut[ex.submit(_difftest_once, repo, gate_root / "difftest")] = "difftest"
+
+        difftest_ready: set[str] = set()
+        difftest_dependencies = {"i386", "amd64"} & set(build_order)
 
         def _launch_lanes(arch: str) -> None:
             """Submit an arch's post-build lanes (smoke [+ net] + lint) immediately."""
+            difftest_ready.add(arch)
+            # These are HOST tests of genuine C, not artifact-independent tests:
+            # msvcrt requires amd64 objects/headers; SEH layout requires i386
+            # headers. Start when those producers finish, without waiting for ARM64.
+            if do_lint and not dfut and difftest_dependencies <= difftest_ready:
+                dfut[ex.submit(_difftest_once, repo, gate_root / "difftest")] = "difftest"
             fut[ex.submit(_lane_once, arch, gate_root / f"smoke-{arch}-a1")] = arch
             if arch == "amd64" and net_requested:
                 fut[ex.submit(_lane_once, "net", gate_root / "smoke-net-a1")] = "net"

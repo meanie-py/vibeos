@@ -763,6 +763,11 @@ def cargo_link_repo(tmp_path: Path) -> Path:
     )
     (r / "build-amd64" / "bar").mkdir(parents=True)
     (r / "build-amd64" / "bar" / "bar.exe").write_bytes(b"PE")
+    (r / "build-amd64" / "bar" / "bar.exe.d").write_text(
+        "/tmp/vibeos/build-amd64/bar/bar.exe: "
+        "/tmp/vibeos/sdk/lib/rust/bar-rust/src/lib.rs "
+        "/tmp/vibeos/sdk/lib/rust/bar-rust/Cargo.toml\n"
+    )
     (r / "build-amd64" / "boot").mkdir()
     (r / "build-amd64" / "boot" / "livecd.cmake.lst").write_text(
         "reactos/system32/bar.exe=/tmp/vibeos/build-amd64/bar/bar.exe\n"
@@ -804,6 +809,56 @@ def test_cargo_link_stale_binary_flagged_x86(cargo_link_repo: Path):
     assert any("bar.exe" in x and "stale" in x for x in reasons), reasons
     v = provenance.check_staleness(cargo_link_repo, "amd64")
     assert v.stale and not v.fresh, v.reasons
+
+
+@pytest.mark.parametrize("dependency", ["src/lib.rs", "Cargo.toml"])
+def test_cargo_link_only_own_closure(cargo_link_repo: Path, dependency: str):
+    test_cargo_link_fresh_binary_not_stale(cargo_link_repo)
+    unrelated = cargo_link_repo / "sdk/lib/rust/unrelated.rs"
+    unrelated.write_text("// unrelated")
+    assert provenance.cargo_link_staleness_reasons(cargo_link_repo, "amd64") == []
+    own = cargo_link_repo / "sdk/lib/rust/bar-rust" / dependency
+    os.utime(own, (3000, 3000))
+    assert provenance.cargo_link_staleness_reasons(cargo_link_repo, "amd64")
+
+
+@pytest.mark.parametrize("rule", [None, "wrong: input\n", "/tmp/vibeos/build-amd64/bar/bar.exe: "])
+def test_cargo_link_missing_evidence_fails(cargo_link_repo: Path, rule: str | None):
+    depfile = cargo_link_repo / "build-amd64/bar/bar.exe.d"
+    if rule is None:
+        depfile.unlink()
+    else:
+        depfile.write_text(rule)
+    with pytest.raises(provenance.ProvenanceError, match="cannot verify cargo link inputs"):
+        provenance.cargo_link_staleness_reasons(cargo_link_repo, "amd64")
+
+
+def test_cargo_link_depfile_spaces_and_missing_input(cargo_link_repo: Path):
+    test_cargo_link_fresh_binary_not_stale(cargo_link_repo)
+    asset = cargo_link_repo / "asset with spaces"
+    asset.write_text("data")
+    os.utime(asset, (1000, 1000))
+    depfile = cargo_link_repo / "build-amd64/bar/bar.exe.d"
+    depfile.write_text(
+        depfile.read_text().rstrip() + " " + chr(92) + "\n /tmp/vibeos/asset\\ with\\ spaces\n"
+    )
+    assert provenance.cargo_link_staleness_reasons(cargo_link_repo, "amd64") == []
+    asset.unlink()
+    with pytest.raises(provenance.ProvenanceError, match="missing dependency"):
+        provenance.cargo_link_staleness_reasons(cargo_link_repo, "amd64")
+
+
+def test_cargo_link_directory_watch(cargo_link_repo: Path):
+    test_cargo_link_fresh_binary_not_stale(cargo_link_repo)
+    src = cargo_link_repo / "sdk/lib/rust/bar-rust/src"
+    os.utime(src, (1000, 1000))
+    depfile = cargo_link_repo / "build-amd64/bar/bar.exe.d"
+    depfile.write_text(
+        "/tmp/vibeos/build-amd64/bar/bar.exe: /tmp/vibeos/sdk/lib/rust/bar-rust/src\n"
+    )
+    assert provenance.cargo_link_staleness_reasons(cargo_link_repo, "amd64") == []
+    os.utime(src / "lib.rs", (3000, 3000))
+    assert provenance.cargo_link_staleness_reasons(cargo_link_repo, "amd64")
 
 
 def test_cargo_link_scope_excludes_off_media_modules(cargo_link_repo: Path):
@@ -3102,11 +3157,11 @@ def test_hostlock_build_lock_cm_excludes_boot(tmp_path, monkeypatch):
 
 
 def test_hostlock_two_builds_coexist_third_queues(tmp_path, monkeypatch):
-    # Default policy (max 2 builds): each build takes ceil(4/2)=2 permits, so two
+    # Explicit two-build budget: each build takes ceil(4/2)=2 permits, so two
     # builds run concurrently and a third can't get a share.
     monkeypatch.setattr(hl_mod, "HOSTLOCK_DIR", tmp_path)
     monkeypatch.setenv("VIBEOS_HOST_BROKER", "1")
-    monkeypatch.delenv("VIBEOS_MAX_CONCURRENT_BUILDS", raising=False)
+    monkeypatch.setenv("VIBEOS_MAX_CONCURRENT_BUILDS", "2")
     assert hl_mod.build_permits(4) == 2
     a = hl_mod.acquire_cpu_share("build:i386", n=2, leases=4, timeout=0.0)
     b = hl_mod.acquire_cpu_share("build:amd64", n=2, leases=4, timeout=0.0)
@@ -3841,7 +3896,9 @@ def test_partial_check_runs_only_selected_and_reports_scope(tmp_path, monkeypatc
     monkeypatch.setattr(lints, "source_lint_specs", lambda repo: specs)
     called = []
 
-    def stage(run, repo, name, cmd, *, strict, findings_from):
+    def stage(run, repo, name, cmd, *, strict, findings_from, cp=None):
+        # `cp` mirrors the real _lint_stage: run_source_lints executes the
+        # scanners concurrently and hands the finished process to the classifier.
         called.append((name, strict))
         run.add(Stage(name, status="fail" if fail else "ok"))
 
@@ -3862,6 +3919,52 @@ def test_partial_check_runs_only_selected_and_reports_scope(tmp_path, monkeypatc
     assert summary["selected_scanners"] == ["toolB"]
     assert summary["omitted_scanners"] == ["toolA"]
     assert summary["verdict"] == ("FAIL" if fail else "WARN")
+
+
+def test_source_lints_run_concurrently_but_report_in_spec_order(tmp_path, monkeypatch):
+    """Scanners overlap; the artifact does not reorder.
+
+    Both halves matter. Concurrency is the whole point (the suite was 48% of a
+    build, serial, on a 24-core host), but stage ORDER is what the baseline diff
+    and every reader of summary.json depend on, so the two are asserted together
+    -- a future change that parallelises harder must not quietly shuffle stages.
+    """
+    import threading
+    import time
+
+    specs = [(f"s{i}", ["sleep-stub", str(i)], "stdout") for i in range(6)]
+    monkeypatch.setattr(lints, "source_lint_specs", lambda repo: specs)
+
+    live = 0
+    peak = 0
+    lock = threading.Lock()
+
+    def fake_run(self, cmd, cwd=None, env=None, stage=None, timeout=None):
+        nonlocal live, peak
+        with lock:
+            live += 1
+            peak = max(peak, live)
+        time.sleep(0.05)
+        with lock:
+            live -= 1
+        return subprocess.CompletedProcess(cmd, 0, "", "")
+
+    monkeypatch.setattr(Run, "run", fake_run)
+    monkeypatch.setattr(lints, "_baseline", lambda repo, name: [])
+    run = Run("check", "amd64")
+    lints.run_source_lints(run, tmp_path, strict=True)
+
+    assert peak > 1, "scanners did not overlap"
+    assert [st.name for st in run.stages] == [n for n, _, _ in specs]
+
+
+def test_lint_jobs_serial_when_pinned_to_one(tmp_path, monkeypatch):
+    """VIBEOS_LINT_JOBS=1 is the escape hatch back to the old behaviour."""
+    monkeypatch.setenv("VIBEOS_LINT_JOBS", "1")
+    assert lints.lint_jobs() == 1
+    monkeypatch.setenv("VIBEOS_LINT_JOBS", "not-a-number")
+    with pytest.raises(ValueError):
+        lints.lint_jobs()
 
 
 def test_source_lint_api_rejects_unknown_selection(tmp_path, monkeypatch):
@@ -3965,7 +4068,12 @@ def test_gate_runs_source_once_after_build_matrix_and_requires_every_partition(
     monkeypatch.setattr(gate_mod, "_lint_once", lint)
     monkeypatch.setattr(gate_mod, "_cohab_once", _cohab_once_stub(True))
     monkeypatch.setattr(gate_mod, "_tooling_once", _tooling_once_stub(True))
-    monkeypatch.setattr(gate_mod, "_difftest_once", _difftest_once_stub(True))
+
+    def difftest(repo, root):
+        assert {"i386", "amd64"} <= built, "host oracles require generated x86 inputs"
+        return _difftest_once_stub(True)(repo, root)
+
+    monkeypatch.setattr(gate_mod, "_difftest_once", difftest)
     monkeypatch.setattr(gate_mod, "_smoke_once", _spy_smoke_ok([]))
     monkeypatch.setattr(gate_mod, "_write_gate_stamp", lambda *a, **k: stamped.append(1))
     rc = gate_mod.gate(_gate_args(no_lint=False, no_build=False, no_net=True), tmp_path)
@@ -4268,6 +4376,7 @@ def _canonize_probe(monkeypatch, tmp_path, *, cache: str | None, canonical: bool
     if cache is not None:
         (build_dir / "CMakeCache.txt").write_text(cache)
 
+    (build_dir / "build.ninja").touch()
     cmds: list[list[str]] = []
 
     class _Cp:
@@ -4281,6 +4390,21 @@ def _canonize_probe(monkeypatch, tmp_path, *, cache: str | None, canonical: bool
     monkeypatch.setattr(build_mod.canon, "wrap", lambda _r, cmd: cmd)
     monkeypatch.setattr(build_mod.canon, "carried_options", lambda _bd: [])
     return cmds, run, repo, build_dir
+
+
+def test_incomplete_canonical_configure_is_recovered(monkeypatch, tmp_path):
+    cmds, run, repo, bd = _canonize_probe(monkeypatch, tmp_path, cache="", canonical=True)
+    (bd / "build.ninja").unlink()
+
+    def configure(cmd, **kwargs):
+        cmds.append(cmd)
+        (bd / "build.ninja").touch()
+        return type("Result", (), {"returncode": 0})()
+
+    monkeypatch.setattr(run, "run", configure)
+    build_mod._maybe_canonize(run, repo, bd, "i386", {})
+    assert cmds == [["cmake", "."]]
+    assert (bd / "build.ninja").is_file()
 
 
 def test_sticky_kmtests_rides_the_fresh_configure(monkeypatch, tmp_path):
@@ -7854,3 +7978,40 @@ def test_ledger_records_the_kernel_it_OBSERVED_not_the_flag():
         "mp_kernel must be read off the boot's serial"
     )
     assert '"mp_kernel": bool(smp)' not in src, "mp_kernel regressed to the flag"
+
+
+def test_fatal_scanner_diagnostic_cannot_be_baselined(tmp_path, monkeypatch):
+    cp = subprocess.CompletedProcess(
+        ["scanner"], 1, "header already baselined\n", "FATAL: missing generated headers\n"
+    )
+    monkeypatch.setattr(lints, "_baseline", lambda *_: {"header already baselined"})
+    run = Run("check", "all")
+    stage = lints._lint_stage(run, tmp_path, "scanner", ["scanner"], strict=True, cp=cp)
+    assert stage.status == "fail"
+    assert run.classification == "SCANNER_ERROR"
+
+
+def test_build_source_lint_is_opt_in():
+    from .__main__ import build_parser
+
+    parser = build_parser()
+    assert not parser.parse_args(["build", "--arch", "amd64"]).check
+    assert parser.parse_args(["build", "--arch", "amd64", "--check"]).check
+    assert not parser.parse_args(["build", "--arch", "amd64", "--no-check"]).check
+
+
+def test_hostlock_large_host_admits_the_full_arch_matrix(tmp_path, monkeypatch):
+    monkeypatch.setattr(hl_mod, "HOSTLOCK_DIR", tmp_path)
+    monkeypatch.setattr(os, "sched_getaffinity", lambda pid: set(range(24)))
+    monkeypatch.delenv("VIBEOS_MAX_CONCURRENT_BUILDS", raising=False)
+    assert hl_mod.build_permits(4) == 1
+
+
+def test_clean_discovers_isolated_cargo_links_only_for_requested_arch(tmp_path):
+    root = tmp_path / "sdk/lib/rust/target"
+    x86 = root / "sample-cargo-amd64-cargo-link/x86_64-pc-windows-gnu"
+    arm = root / "sample-cargo-arm64-cargo-link/aarch64-pc-windows-gnullvm"
+    x86.mkdir(parents=True)
+    arm.mkdir(parents=True)
+    assert provenance.workspace_cargo_targets(tmp_path, "amd64") == [x86]
+    assert provenance.workspace_cargo_targets(tmp_path, "arm64") == [arm]

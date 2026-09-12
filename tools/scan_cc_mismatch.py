@@ -54,6 +54,10 @@ import os
 import re
 import sys
 from collections import defaultdict
+from pathlib import Path
+
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
+from tools.lint_facts import source_facts
 
 REPO = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 BASE = os.path.join(REPO, "sdk", "lib", "rust")
@@ -209,26 +213,42 @@ def walk_i386_sources(crate_src: str):
             yield path, src
 
 
+@source_facts()
+def convention_facts(src: str):
+    """Shared declaration/definition index for local and imported ABI checks."""
+    spans = excluded_spans(src)
+    definitions, declarations = [], []
+    for m in DEF_RE.finditer(src):
+        definitions.append(
+            (
+                def_symbol(m),
+                m.group("cc"),
+                cfg_excludes_i386(m.group("cfg")) or in_spans(m.start(), spans),
+            )
+        )
+    lines = src.splitlines()
+    for m in DECL_BLOCK_RE.finditer(src):
+        cfg, cc, body = m.group("cfg"), m.group("cc"), m.group("body")
+        if cfg_excludes_i386(cfg) or in_spans(m.start(), spans):
+            continue
+        block_line = src.count("\n", 0, m.start())
+        for d in DECL_FN_RE.finditer(body):
+            line = block_line + body.count("\n", 0, d.start()) + 1
+            text = lines[line - 1] if line - 1 < len(lines) else ""
+            declarations.append((decl_symbol(d), cc, line, text))
+    return definitions, declarations
+
+
 def scan_crate(crate_src: str) -> list[str]:
     defs: dict[str, list[tuple[str, bool]]] = defaultdict(list)
     decls: dict[str, list[tuple[str, str, int]]] = defaultdict(list)
     for path, src in walk_i386_sources(crate_src):
-        spans = excluded_spans(src)
-        for m in DEF_RE.finditer(src):
-            cfg, cc = m.group("cfg"), m.group("cc")
-            defs[def_symbol(m)].append((cc, cfg_excludes_i386(cfg) or in_spans(m.start(), spans)))
-        src_lines = src.splitlines()
-        for m in DECL_BLOCK_RE.finditer(src):
-            cfg, cc, body = m.group("cfg"), m.group("cc"), m.group("body")
-            if cfg_excludes_i386(cfg) or in_spans(m.start(), spans):
-                continue
-            block_line = src.count("\n", 0, m.start())
-            for d in DECL_FN_RE.finditer(body):
-                line = block_line + body.count("\n", 0, d.start()) + 1
-                decl_line = src_lines[line - 1] if line - 1 < len(src_lines) else ""
-                if NOLINT_RE.search(decl_line):
-                    continue
-                decls[decl_symbol(d)].append((cc, path, line))
+        definitions, declarations = convention_facts(src)
+        for name, cc, excluded in definitions:
+            defs[name].append((cc, excluded))
+        for name, cc, line, text in declarations:
+            if not NOLINT_RE.search(text):
+                decls[name].append((cc, path, line))
     out = []
     for name, dd in decls.items():
         if name not in defs:
@@ -258,10 +278,9 @@ def crate_def_conventions(crate_src: str) -> dict[str, set[str]]:
     defs: dict[str, set[str]] = defaultdict(set)
     for path, src in walk_i386_sources(crate_src):
         del path
-        spans = excluded_spans(src)
-        for m in DEF_RE.finditer(src):
-            if not cfg_excludes_i386(m.group("cfg")) and not in_spans(m.start(), spans):
-                defs[def_symbol(m)].add(m.group("cc"))
+        for name, cc, excluded in convention_facts(src)[0]:
+            if not excluded:
+                defs[name].add(cc)
     return defs
 
 

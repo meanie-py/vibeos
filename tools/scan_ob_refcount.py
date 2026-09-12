@@ -46,17 +46,19 @@ import sys
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
+from tools.lint_facts import source_facts
 from tools.source_walk import source_files
 
 REPO = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(REPO / "tools" / "rustconv"))
 import tree_sitter_rust as tsr  # noqa: E402
-from tree_sitter import Language, Parser  # noqa: E402
+from tree_sitter import Language, Parser, Query, QueryCursor  # noqa: E402
 
 RUST_WS = REPO / "sdk" / "lib" / "rust"
 
 _LANG = Language(tsr.language())
 _PARSER = Parser(_LANG)
+_FUNCTIONS = Query(_LANG, "(function_item) @fn")
 
 # Acquires whose OBJECT is an out-param at a FIXED argument index (0-based).
 ACQ_OUT_IDX = {
@@ -175,16 +177,11 @@ def _enclosing_condition_idents(node, src: bytes, stop):
 
 def _find_functions(root):
     out = []
-
-    def rec(n):
-        if n.type == "function_item":
-            body = n.child_by_field_name("body")
-            if body is not None:
-                out.append(body)
-        for c in n.children:
-            rec(c)
-
-    rec(root)
+    nodes = QueryCursor(_FUNCTIONS).captures(root).get("fn", [])
+    for n in sorted(nodes, key=lambda node: node.start_byte):
+        body = n.child_by_field_name("body")
+        if body is not None:
+            out.append(body)
     return out
 
 
@@ -341,6 +338,7 @@ def _scan_function(body, src: bytes, lines):
     return findings if derefs_internally[0] else []
 
 
+@source_facts()
 def scan_source(src: bytes):
     tree = _PARSER.parse(src)
     lines = src.decode(errors="replace").splitlines()

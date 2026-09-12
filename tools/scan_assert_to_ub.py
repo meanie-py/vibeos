@@ -47,7 +47,10 @@ import re
 import sys
 from pathlib import Path
 
+from lint_facts import source_facts
+
 REPO = Path(__file__).resolve().parent.parent
+
 RUST_ROOT = REPO / "sdk" / "lib" / "rust"
 
 SKIP_FILE_RE = re.compile(r"(bindgen_[a-z0-9_]+\.rs$|/target/|/\.responses/|/tests?/)")
@@ -106,6 +109,11 @@ def scan_file(path: Path) -> list[tuple[int, str, str]]:
         raw = path.read_text(errors="replace")
     except OSError:
         return []
+    return assertion_facts(raw)
+
+
+@source_facts()
+def assertion_facts(raw):
     lines = raw.split("\n")
     code = _blank_strings(raw).split("\n")
     out = []

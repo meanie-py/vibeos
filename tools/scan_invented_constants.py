@@ -59,6 +59,7 @@ from collections import defaultdict
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
+from tools.lint_facts import source_facts
 from tools.source_walk import source_files, source_walk
 
 REPO = Path(__file__).resolve().parent.parent
@@ -213,11 +214,15 @@ def harvest(paths: list[Path]) -> dict[str, set[tuple[int, str]]]:
         except ValueError:
             return str(path)
 
+    return catalog_facts(tuple((_rel(p), p.read_text(errors="ignore")) for p in paths))
+
+
+@source_facts()
+def catalog_facts(contents):
     raw: dict[str, str] = {}
     sites: dict[str, list[tuple[str, str]]] = defaultdict(list)
-    for p in paths:
-        text = _strip_comments(p.read_text(errors="ignore"))
-        rel = _rel(p)
+    for rel, contents_text in contents:
+        text = _strip_comments(contents_text)
         for i, line in enumerate(text.splitlines(), 1):
             m = DEFINE_RE.match(line)
             if m and "(" not in m.group(1):
@@ -248,7 +253,7 @@ def harvest(paths: list[Path]) -> dict[str, set[tuple[int, str]]]:
                     # `FcbNeedsToBeVerified = 3` as a mismatch against a phantom 2.
                     val = eval_c(expr, raw)
                 raw.setdefault(em.group(1), expr)
-                sites[em.group(1)].append((expr, _rel(p)))
+                sites[em.group(1)].append((expr, rel))
                 nxt = (val if val is not None else nxt) + 1
 
     out: dict[str, set[tuple[int, str]]] = defaultdict(set)
@@ -257,7 +262,7 @@ def harvest(paths: list[Path]) -> dict[str, set[tuple[int, str]]]:
             v = eval_c(expr, raw)
             if v is not None:
                 out[name].add((v, where))
-    return out
+    return dict(out)
 
 
 def c_dirs_for(crate: str) -> list[Path]:
@@ -305,6 +310,25 @@ def oracle_for(crate: str) -> dict[str, set[tuple[int, str]]]:
 # ------------------------------------------------------------------ scan ---
 
 
+@source_facts()
+def invented_facts(text):
+    out = []
+    for line in text.splitlines():
+        if NOLINT_RE.search(line):
+            continue
+        m = CONST_RE.match(line)
+        if not m:
+            continue
+        comment = m.group(4) or ""
+        if not INVENTED_RE.search(comment) or CLEARED_RE.search(comment):
+            continue
+        val = rust_value(m.group(3))
+        if val is None:
+            continue
+        out.append((m.group(1), val, m.group(2).strip(), comment.strip()))
+    return out
+
+
 def collect() -> list[tuple[str, str, str, int, str, str]]:
     """[(crate, rel, name, value, rust_type, comment)] for self-labelled consts."""
     out = []
@@ -316,19 +340,7 @@ def collect() -> list[tuple[str, str, str, int, str, str]]:
             continue
         rel = str(path.relative_to(REPO))
         crate = Path(rel).relative_to("sdk/lib/rust").parts[0]
-        for line in text.splitlines():
-            if NOLINT_RE.search(line):
-                continue
-            m = CONST_RE.match(line)
-            if not m:
-                continue
-            comment = m.group(4) or ""
-            if not INVENTED_RE.search(comment) or CLEARED_RE.search(comment):
-                continue
-            val = rust_value(m.group(3))
-            if val is None:
-                continue
-            out.append((crate, rel, m.group(1), val, m.group(2).strip(), comment.strip()))
+        out.extend((crate, rel, *fact) for fact in invented_facts(text))
     return out
 
 

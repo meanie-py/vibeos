@@ -213,12 +213,15 @@ def check_structure(ws: Path | None = None) -> list[str]:
     return findings
 
 
-def _nm_defined(path: Path) -> set[str] | None:
+def _nm_defined(path: Path | list[Path]) -> set[str] | None:
     """Globally-defined symbol names in an archive or object, or None if nm cannot read it."""
-    for nm in ("llvm-nm", "nm"):
+    paths = [path] if isinstance(path, Path) else path
+    if not paths:
+        return set()
+    for nm in (str(REPO / ".build-tools/llvm-mingw/bin/llvm-nm"), "llvm-nm", "nm"):
         try:
             res = subprocess.run(
-                [nm, "--defined-only", str(path)],
+                [nm, "--defined-only", *(str(p) for p in paths)],
                 capture_output=True,
                 text=True,
                 timeout=120,
@@ -293,11 +296,12 @@ def check_archive() -> list[str]:
             )
             continue
 
-        c_syms: set[str] = set()
-        for obj in objs:
-            got = _nm_defined(obj)
-            if got:
-                c_syms |= got
+        # nm accepts many files. One invocation reads the complete C surface;
+        # spawning a process per object made a warm check take tens of seconds.
+        c_syms = _nm_defined(objs)
+        if c_syms is None:
+            findings.append(f"build-{arch}: nm could not read the complete C object surface")
+            continue
 
         def strip(sym: str, *, i386: bool = (arch == "i386")) -> str:
             """i386 decorates cdecl exports with a leading underscore; compare bare.

@@ -54,7 +54,12 @@ import argparse
 import os
 import re
 import sys
+from functools import cache
 from pathlib import Path
+
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
+from tools.lint_facts import source_facts
+from tools.source_walk import source_walk
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from rust_module_tree import (
@@ -209,14 +214,15 @@ def _enum_variant_names(body):
     return names
 
 
-def names_in_file(path):
-    """const/static names, enum-variant names, and explicit `pub use` re-exports
-    visible from one .rs file."""
+@cache
+def _read_text(path):
+    """One source read per invocation, shared by name and glob resolution."""
+    return Path(path).read_text(encoding="utf-8", errors="replace")
+
+
+@source_facts()
+def names_in_text(text):
     consts = set()
-    try:
-        text = Path(path).read_text(encoding="utf-8", errors="replace")
-    except OSError:
-        return consts
     for m in RE_PUB_CONST.finditer(text):
         consts.add(m.group(1))
     for em in ENUM_BODY.finditer(text):
@@ -225,14 +231,26 @@ def names_in_file(path):
     return consts
 
 
+@cache
+def _names_in_path(path):
+    return frozenset(names_in_text(_read_text(path)))
+
+
+def names_in_file(path):
+    """const/static names, enum-variant names, and explicit `pub use` re-exports
+    visible from one .rs file."""
+    try:
+        return set(_names_in_path(os.path.abspath(path)))
+    except OSError:
+        return set()
+
+
 def harvest_universe(roots):
     """Return a set of all const/static names and enum-variant names defined
     anywhere under the given roots. Over-approximates resolvability (safe for FP)."""
     consts = set()
     for root in roots:
-        for dp, _dn, fns in os.walk(root):
-            if "target" in dp.split(os.sep):
-                continue
+        for dp, _dn, fns in source_walk(Path(root)):
             for fn in fns:
                 if fn.endswith(".rs"):
                     consts |= names_in_file(os.path.join(dp, fn))
@@ -294,9 +312,7 @@ def crate_own_names(crate_dir, _cache={}):  # noqa: B006 — intentional memo ca
     names = set()
     src = os.path.join(crate_dir, "src")
     walk_root = src if os.path.isdir(src) else crate_dir
-    for dp, _dn, fns in os.walk(walk_root):
-        if "target" in dp.split(os.sep):
-            continue
+    for dp, _dn, fns in source_walk(Path(walk_root)):
         for fn in fns:
             if fn.endswith(".rs"):
                 names |= names_in_file(os.path.join(dp, fn))
@@ -357,7 +373,7 @@ def _module_file(crate_dir, parts):
     parent = _module_file(crate_dir, parts[:-1])
     if parent and os.path.exists(parent):
         try:
-            ptext = Path(parent).read_text(encoding="utf-8", errors="replace")
+            ptext = _read_text(os.path.abspath(parent))
         except OSError:
             return None
         for pm in RE_PATH_MOD.finditer(ptext):
@@ -392,7 +408,7 @@ def _names_from_file(crate_dir, f, parts, _seen, depth):
     _seen.add(f)
     names = names_in_file(f)
     try:
-        text = Path(f).read_text(encoding="utf-8", errors="replace")
+        text = _read_text(os.path.abspath(f))
     except OSError:
         return names, True
 
@@ -447,9 +463,18 @@ def _names_from_file(crate_dir, f, parts, _seen, depth):
     return names, all_ok
 
 
+@cache
+def _module_names_once(crate_dir, parts):
+    # One glob-resolution graph per module per invocation, not once per importer.
+    return module_names(crate_dir, list(parts), set(), 0)
+
+
 def module_names(crate_dir, parts, _seen=None, depth=0):
     """Names a `use <module>::*;` actually brings into scope, following the
     module's own `pub use ...::*;` re-export chain (e.g. types.rs -> types_<arch>.rs)."""
+    if _seen is None and depth == 0:
+        names, ok = _module_names_once(crate_dir, tuple(parts))
+        return set(names), ok
     if depth > 4:
         return set(), False
     f = _module_file(crate_dir, parts)
@@ -461,7 +486,7 @@ def module_names(crate_dir, parts, _seen=None, depth=0):
 def glob_scope(path, crate_dir):
     """(names reachable via this file's glob imports, all_globs_resolved)."""
     try:
-        text = Path(path).read_text(encoding="utf-8", errors="replace")
+        text = _read_text(os.path.abspath(path))
     except OSError:
         return set(), False
     names = set()
@@ -510,6 +535,7 @@ def crate_universe(crate_dir, _cache={}):  # noqa: B006 — intentional memo cac
 # ---------------------------------------------------------------------------
 
 
+@source_facts()
 def file_local_names(text: str):
     """Names that are definitely resolvable inside this file:
     local const/static, local enum variants, explicit `use`d names, and `let`
@@ -578,6 +604,8 @@ def iter_match_arms(lines):
     Heuristic line-based: a line containing `=>` whose left side (after stripping
     comments and leading whitespace) is a single bare identifier."""
     for i, raw in enumerate(lines, start=1):
+        if "=>" not in raw:
+            continue
         line = strip_line_comment(raw)
         if "=>" not in line:
             continue
@@ -635,10 +663,21 @@ def is_risky_pattern(left: str):
 # ---------------------------------------------------------------------------
 
 
+@source_facts()
+def match_arms(text):
+    return list(iter_match_arms(text.splitlines()))
+
+
 def scan_file(path, universe, use_crate_scope=True):
-    text = Path(path).read_text(encoding="utf-8", errors="replace")
-    lines = text.splitlines()
+    text = _read_text(os.path.abspath(path))
+    arms = match_arms(text)
+    if not any(is_risky_pattern(left)[0] is not None for _, left, _ in arms):
+        return []
     local_names, has_glob = file_local_names(text)
+    if all(
+        (ident := is_risky_pattern(left)[0]) is None or ident in local_names for _, left, _ in arms
+    ):
+        return []
     findings = []
 
     # Resolvability is a per-crate question, not a per-workspace one: only the
@@ -649,9 +688,8 @@ def scan_file(path, universe, use_crate_scope=True):
         universe = crate_universe(cdir)
         glob_names, globs_resolved = glob_scope(path, cdir)
 
-    arms = list(iter_match_arms(lines))
     # index arm linenos for "followed-by-more-arms" smell
-    arm_linenos = [a[0] for a in arms]
+    arm_lines = {a[0]: a[2] for a in arms}
 
     for lineno, left, raw in arms:
         ident, _reason = is_risky_pattern(left)
@@ -698,9 +736,9 @@ def scan_file(path, universe, use_crate_scope=True):
         # heuristic: another arm within the next ~80 lines at >= same indent.
         followed = False
         indent = len(raw) - len(raw.lstrip())
-        for ln2 in arm_linenos:
+        for ln2 in arm_lines:
             if lineno < ln2 <= lineno + 120:
-                raw2 = lines[ln2 - 1]
+                raw2 = arm_lines[ln2]
                 ind2 = len(raw2) - len(raw2.lstrip())
                 if ind2 == indent:
                     followed = True
@@ -727,6 +765,9 @@ def scan_file(path, universe, use_crate_scope=True):
 # second copy of a reachability walk is the same two-copies-of-the-truth shape
 # this scanner exists to catch. Re-exported so callers keep the old names.
 def main():
+    _read_text.cache_clear()
+    _names_in_path.cache_clear()
+    _module_names_once.cache_clear()
     ap = argparse.ArgumentParser(
         description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter
     )
@@ -777,9 +818,7 @@ def main():
         if os.path.isfile(t):
             scan_files.append(t)
         else:
-            for dp, _dn, fns in os.walk(t):
-                if "target" in dp.split(os.sep):
-                    continue
+            for dp, _dn, fns in source_walk(Path(t)):
                 for fn in fns:
                     if fn.endswith(".rs"):
                         scan_files.append(os.path.join(dp, fn))

@@ -49,15 +49,13 @@ layer fits — see "Relationship to `qemu/`" below.
 
 ## Subcommands — what each is for, and the strategy
 
-### `build --arch X [--clean] [--incremental] [--no-check] [--strict] [--no-cache]`
+### `build --arch X [--clean] [--incremental] [--check] [--strict] [--no-cache]`
 Compile the boot media for one arch, lint the binary, index symbols, and write a
 provenance stamp.
 
-- **Fast local iteration:** `--incremental --no-check` is the inner-loop combo.
-  A warm build is dominated by two things that neither caching nor the compiler
-  touch: the **source-lint suite** (~53s, led by `scan_inline_flag_literals`
-  AST-walking every `.rs`) and **linking**. `--no-check` skips the source lints
-  (they're a gate concern, not an every-edit one); `--incremental` turns on rustc
+- **Fast local iteration:** source lint is no longer part of a normal build.
+  Use `check` for source analysis or opt into advisory lint with `build --check`.
+  The gate runs the complete source inventory separately. `--incremental` turns on rustc
   incremental (a kernel `.rs` edit recompiles the ~13s `ntoskrnl-rust` crate in
   ~5s instead), trading the Rust sccache wrapper (sccache + incremental are
   mutually exclusive) — ccache for C/C++ stays on. **Both are LOCAL-only:**
@@ -88,9 +86,9 @@ provenance stamp.
   result or hand off. The clean build is the only one that proves a cold-link
   state. (The smoke harness's clean-build does the same nuke for the same
   reason.)
-- Auto-runs the binary lints (`scan_ud2`, sacred primitives) and source lints
-  (advisory) so you can't forget them. `--no-check` skips source lints;
-  `--strict` turns NEW lint findings into failures.
+- Runs binary lints (`scan_ud2`, sacred primitives, self-recursion).
+  Source lints are opt-in (`--check`); `--no-check` remains a compatibility alias
+  for the default. Strict source verification runs through `check --strict` / `gate`.
 - Build failures are **classified**: `CMAKE_CONFIGURE_FAIL` /
   `CARGO_CHECK_FAIL` / `LINK_FAIL` (with i386 PE-decoration hints on undefined
   symbols — `_Foo@N` = stdcall, `@Foo@N` = fastcall, `_Foo` = cdecl) /
