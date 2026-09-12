@@ -25,6 +25,8 @@ use std::path::{Path, PathBuf};
 use std::process::{Command, ExitStatus};
 
 pub mod native_deps;
+pub mod cargo_deps;
+pub mod compiler_env;
 mod storage;
 
 // ---- cmake-off `--trace` (ninja-`-v`-style command list) ------------------
@@ -1034,29 +1036,10 @@ impl Linker {
             );
         }
 
-        // Watch EVERY workspace crate's src/ (+ Cargo.toml). Because we emit
-        // explicit `rerun-if-changed` lines, cargo's default whole-package
-        // watching is disabled — and the inner `cargo build -p <crate>` below
-        // is only change-aware when it actually RUNS, i.e. when this build
-        // script re-runs. Before this, an edit in a transitive path-dep (e.g.
-        // ntoskrnl-rust behind the kernel-rust umbrella) left the outer cargo
-        // reporting the module fresh while shipping a STALE binary — a
-        // false-fresh that cost a debug round-trip on the WHPX spike (the
-        // vibeos-cli build printed success with a stale ntoskrnl.exe). The
-        // cost when nothing changed is one mtime sweep + a ~0.1s no-op inner
-        // cargo invocation per module.
+        // Workspace resolution/configuration affects every nested invocation.
         let workspace_root = self.repo_root.join("sdk/lib/rust");
-        if let Ok(entries) = std::fs::read_dir(&workspace_root) {
-            for e in entries.flatten() {
-                let src = e.path().join("src");
-                if src.is_dir() {
-                    println!("cargo:rerun-if-changed={}", src.display());
-                }
-                let manifest = e.path().join("Cargo.toml");
-                if manifest.is_file() {
-                    println!("cargo:rerun-if-changed={}", manifest.display());
-                }
-            }
+        for input in ["Cargo.toml", "Cargo.lock", ".cargo/config.toml"] {
+            println!("cargo:rerun-if-changed={}", workspace_root.join(input).display());
         }
 
         // Watch every C SHIM too — SAME false-fresh bug as the note above, one input
@@ -1849,23 +1832,7 @@ impl Linker {
                 // The outer cargo may still be nightly/build-std. Scrub its env
                 // so the stable builtin-target cargo behaves like cmake's fresh
                 // cargo process.
-                for v in [
-                    "RUSTC",
-                    "RUSTC_WRAPPER",
-                    "RUSTC_WORKSPACE_WRAPPER",
-                    "RUSTDOC",
-                    "RUSTUP_TOOLCHAIN",
-                    "CARGO",
-                    "RUSTFLAGS",
-                    "CARGO_ENCODED_RUSTFLAGS",
-                    "CARGO_BUILD_TARGET",
-                    "CARGO_BUILD_RUSTFLAGS",
-                    "CARGO_BUILD_RUSTC",
-                    "CARGO_UNSTABLE_BUILD_STD",
-                    "CARGO_UNSTABLE_BUILD_STD_FEATURES",
-                ] {
-                    cmd.env_remove(v);
-                }
+                compiler_env::scrub_outer_compiler(&mut cmd);
             }
             // The CRT-class kernel siblings (rtl-rust + cnt-rust-lib) need the
             // EXACT per-crate RUSTFLAGS cmake gives them, or LLVM's default
@@ -1982,23 +1949,7 @@ impl Linker {
             // encoded build-std rustflags — all of which override the stable
             // toolchain and reintroduce the missing-std E0463. Scrub them so
             // the child cargo starts clean, exactly like cmake's fresh process.
-            for v in [
-                "RUSTC",
-                "RUSTC_WRAPPER",
-                "RUSTC_WORKSPACE_WRAPPER",
-                "RUSTDOC",
-                "RUSTUP_TOOLCHAIN",
-                "CARGO",
-                "RUSTFLAGS",
-                "CARGO_ENCODED_RUSTFLAGS",
-                "CARGO_BUILD_TARGET",
-                "CARGO_BUILD_RUSTFLAGS",
-                "CARGO_BUILD_RUSTC",
-                "CARGO_UNSTABLE_BUILD_STD",
-                "CARGO_UNSTABLE_BUILD_STD_FEATURES",
-            ] {
-                cmd.env_remove(v);
-            }
+            compiler_env::scrub_outer_compiler(&mut cmd);
             // Run from the cmake build dir, exactly like cmake's custom_command.
             // Cargo discovers `.cargo/config.toml` by CWD, not by --manifest-path:
             // from here the workspace `sdk/lib/rust/.cargo/config.toml` is NOT
@@ -2053,6 +2004,7 @@ impl Linker {
         if !a.exists() {
             panic!("{crate_name} produced no {lib_file} at {}", a.display());
         }
+        cargo_deps::watch(&a.with_extension("d"), &a, &workspace);
         a
     }
 

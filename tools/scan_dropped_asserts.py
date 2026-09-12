@@ -65,7 +65,11 @@ from __future__ import annotations
 
 import re
 import sys
+from bisect import bisect_left
 from pathlib import Path
+
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
+from tools.lint_facts import source_facts
 
 REPO = Path(__file__).resolve().parent.parent
 RUST_WS = REPO / "sdk" / "lib" / "rust"
@@ -101,7 +105,15 @@ def strip_noise(text: str) -> str:
     """
     out = []
     i, n = 0, len(text)
+    special = re.compile(r"//|/\*|[\"']")
+    quotes = re.compile(r"[\\\"']")
     while i < n:
+        token = special.search(text, i)
+        if token is None:
+            out.append(text[i:])
+            break
+        out.append(text[i : token.start()])
+        i = token.start()
         c = text[i]
         nxt = text[i + 1] if i + 1 < n else ""
         if c == "/" and nxt == "/":
@@ -115,13 +127,15 @@ def strip_noise(text: str) -> str:
         elif c in "\"'":
             quote, start, i = c, i, i + 1
             while i < n:
-                if text[i] == "\\":
-                    i += 2
-                    continue
-                if text[i] == quote:
-                    i += 1
+                marker = quotes.search(text, i)
+                if marker is None:
+                    i = n
                     break
-                i += 1
+                i = marker.end()
+                if marker.group() == "\\":
+                    i += 1
+                elif marker.group() == quote:
+                    break
             out.append("\n" * text.count("\n", start, i))
         else:
             out.append(c)
@@ -141,20 +155,29 @@ def body_after(text: str, start: int) -> str | None:
     semi = text.find(";", start)
     if 0 <= semi < i:
         return None
-    depth, j = 0, i
-    while j < len(text):
-        if text[j] == "{":
-            depth += 1
-        elif text[j] == "}":
-            depth -= 1
-            if depth == 0:
-                return text[i : j + 1]
-        j += 1
+    depth = 0
+    for brace in re.compile(r"[{}]").finditer(text, i):
+        depth += 1 if brace.group() == "{" else -1
+        if depth == 0:
+            return text[i : brace.end()]
     return None
 
 
 def count_asserts(body: str) -> int:
     return len(ASSERT_RE.findall(body))
+
+
+@source_facts()
+def assertion_facts(raw: str, rust: bool):
+    text = strip_noise(raw)
+    pattern = RUST_FUNC_RE if rust else C_FUNC_RE
+    out = []
+    newlines = [m.start() for m in re.finditer("\n", text)]
+    for m in pattern.finditer(text):
+        body = body_after(text, m.end())
+        if body is not None:
+            out.append((m.group("name"), bisect_left(newlines, m.start()) + 1, count_asserts(body)))
+    return out
 
 
 def c_forceinlines(paths: list[Path]) -> dict[str, tuple[Path, int, int]]:
@@ -165,14 +188,7 @@ def c_forceinlines(paths: list[Path]) -> dict[str, tuple[Path, int, int]]:
             raw = p.read_text(errors="replace")
         except OSError:
             continue
-        text = strip_noise(raw)
-        for m in C_FUNC_RE.finditer(text):
-            body = body_after(text, m.end())
-            if body is None:
-                continue
-            name = m.group("name")
-            n = count_asserts(body)
-            line = text.count("\n", 0, m.start()) + 1
+        for name, line, n in assertion_facts(raw, False):
             if name not in found or n > found[name][2]:
                 found[name] = (p, line, n)
     return found
@@ -186,14 +202,7 @@ def rust_fns(paths: list[Path]) -> dict[str, tuple[list[tuple[Path, int]], int]]
             raw = p.read_text(errors="replace")
         except OSError:
             continue
-        text = strip_noise(raw)
-        for m in RUST_FUNC_RE.finditer(text):
-            body = body_after(text, m.end())
-            if body is None:
-                continue
-            name = m.group("name")
-            n = count_asserts(body)
-            line = text.count("\n", 0, m.start()) + 1
+        for name, line, n in assertion_facts(raw, True):
             sites, best = found.get(name, ([], -1))
             sites.append((p, line))
             found[name] = (sites, max(best, n))

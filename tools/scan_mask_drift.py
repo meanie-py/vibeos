@@ -105,6 +105,9 @@ import re
 import sys
 from pathlib import Path
 
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
+from tools.lint_facts import source_facts
+
 REPO = Path(__file__).resolve().parent.parent
 RUST_ROOT = REPO / "sdk" / "lib" / "rust"
 
@@ -386,6 +389,7 @@ def resolve(name: str, local: dict[str, int]) -> int | None:
 
 
 # ── comment / code split ─────────────────────────────────────────────
+@source_facts()
 def split_comments(src: bytes) -> tuple[str, list[str]]:
     """(live_code_text, comment_lines) with comments blanked out of the code.
 

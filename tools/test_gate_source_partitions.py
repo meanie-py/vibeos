@@ -32,6 +32,7 @@ def test_early_scanner_without_builds_and_during_generated_header_writes(tmp_pat
     script.parent.mkdir()
     shutil.copyfile(REPO / "tools" / script.name, script)
     shutil.copyfile(REPO / "tools/source_walk.py", script.parent / "source_walk.py")
+    shutil.copyfile(REPO / "tools/lint_facts.py", script.parent / "lint_facts.py")
     for crate, source in (
         ("probe-rust", "pub type Width = u32;\npub fn probe() { let _value = 0444; }\n"),
         ("probe-sys", "pub type Width = u64;\n"),

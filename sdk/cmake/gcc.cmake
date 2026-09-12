@@ -612,6 +612,8 @@ endfunction()
 ##   win32dll  : i386 lld forwarder fix only  (user DLL — no pefixup)  [ntdll]
 ##   efi       : strip --remove-section=.rossym  +  strip --strip-all
 ##   native    : none
+include(${CMAKE_CURRENT_LIST_DIR}/cargo_link_context.cmake)
+
 function(add_cargo_module _target _crate _output)
     cmake_parse_arguments(_acm "NO_CD" "KIND;DESTINATION;NAME_ON_CD;BODY_CRATE" "BODY_CRATES;EXTRA_DEPENDS" ${ARGN})
     if(NOT _acm_KIND)
@@ -669,7 +671,8 @@ function(add_cargo_module _target _crate _output)
     # --remap-path-prefix as non-cacheable, which silently disabled ALL Rust
     # build caching. See docs/engineering/build-cache-and-determinism-plan.md.
     string(REGEX REPLACE "-cargo$" "" _bin "${_crate}")
-    set(_cargo_exe "${_ws}/target/${_stem}/release/${_bin}.exe")
+    reactos_cargo_link_context("${_ws}" "${_crate}" "${ARCH}" _cargo_target_dir)
+    set(_cargo_exe "${_cargo_target_dir}/${_stem}/release/${_bin}.exe")
     set(_out "${CMAKE_CURRENT_BINARY_DIR}/${_output}")
 
     # sync-instrumentation §4 lockdep (Tier-2 opt-in): -DVIBEOS_LOCKDEP=ON lights
@@ -679,7 +682,7 @@ function(add_cargo_module _target _crate _output)
     # crate is not a cargo dep of the bin crate, so an outer --features can't
     # reach it). Confined to the kernel — other modules' build.rs ignore the
     # env. Default off = zero cost.
-    set(_cargo_env "")
+    set(_cargo_env "CARGO_TARGET_DIR=${_cargo_target_dir}" "CARGO_BUILD_JOBS=1")
     if(VIBEOS_LOCKDEP AND _crate MATCHES "^(ntoskrnl-cargo|ntkrnlmp-cargo)$")
         list(APPEND _cargo_env VIBEOS_LOCKDEP=1)
     endif()
@@ -724,80 +727,13 @@ function(add_cargo_module _target _crate _output)
             ${_ws}/${_body_crate}/*.rs ${_ws}/${_body_crate}/Cargo.toml)
         list(APPEND _srcs ${_bsrcs})
     endforeach()
-    # …but BODY_CRATES alone is NOT sufficient: the workspace is ONE dependency
-    # graph (path deps + a single Cargo.lock), so any workspace .rs can be in
-    # this module's link closure via the body crate's transitive deps. The
-    # hand-listed body crates rotted exactly like the old rust_kernel file list
-    # (field-manual §9.6b) — worst case 2026-07-04: ntoskrnl's BODY_CRATE is the
-    # one-file kernel-rust umbrella, so kernel .rs edits rebuilt libkernel_rust.a
-    # but never re-ran the cargo LINK; warm gates staged a pre-fix ntoskrnl.exe
-    # and false-greened i386+amd64 smoke (arm64's binary-vs-.rs staleness probe
-    # was the only thing that caught it). Depend on every workspace source: an
-    # edit re-runs cargo, a cheap freshness no-op for unaffected modules. Globbed
-    # once per configure (cached in a global property — ~40 call sites).
-    # NOTE: *.bin too — include_bytes!'d assets (e.g. the SMP AP trampoline
-    # aptramp64.bin) are real link inputs but not .rs; without this a
-    # regenerated blob ships a STALE binary with zero signal (cost an amd64
-    # SMP debug cycle 2026-07-10: a fixed trampoline never relinked hal.dll,
-    # same masking class as the kernel-asm staleness two comments up).
-    # NOTE: Cargo.lock too — it is not matched by *.toml, but it PINS every
-    # resolved dependency version, so it is as much a link input as any .rs. A
-    # `cargo update` (or a hand-edit) that moves a pinned version changes what
-    # gets linked while every globbed source stays byte-identical; cargo would
-    # notice on its next run, but ninja never re-invokes cargo, so the module
-    # ships a binary built against the OLD pin with zero signal. Exactly the
-    # masking class as the .S/.c/.spec gaps below, one layer further out.
-    get_property(_ws_srcs GLOBAL PROPERTY _REACTOS_CARGO_WS_SRCS)
-    if(NOT _ws_srcs)
-        file(GLOB_RECURSE _ws_srcs CONFIGURE_DEPENDS ${_ws}/*.rs ${_ws}/*.toml ${_ws}/*.bin)
-        list(FILTER _ws_srcs EXCLUDE REGEX "/target/")
-        if(EXISTS ${_ws}/Cargo.lock)
-            list(APPEND _ws_srcs ${_ws}/Cargo.lock)
-        endif()
-        set_property(GLOBAL PROPERTY _REACTOS_CARGO_WS_SRCS "${_ws_srcs}")
-    endif()
-    list(APPEND _srcs ${_ws_srcs})
-
-    # …and the workspace glob STILL isn't sufficient for the KERNEL cargo links:
-    # reactos-link assembles kernel `.S` (and cc-rs C shims) from SOURCE trees
-    # OUTSIDE the rust workspace — ntoskrnl/ke/<arch>/*.S, hal/**/*.S, ex/*.S,
-    # listed in each bin crate's build.rs `asm`/`c_shims`, invisible to cmake.
-    # cargo DOES rerun-if-changed those (reactos-link/src/lib.rs:1131), but ninja
-    # never re-invokes cargo because none of them are in this DEPENDS — so a
-    # kernel-asm edit ships a STALE binary with zero signal. Cost a full arm64
-    # debug cycle 2026-07-04: a KiTrapReturn IRQ-atomicity fix in ke/arm64/trap.S
-    # "verified fixed" against a kernel that never re-assembled it (same masking
-    # class as the 2026-07-04 rust false-green above, one layer down). Depend on
-    # the kernel source asm/C/headers for the kernel-linking kinds; globbed once
-    # (cached) — an unaffected edit is a cheap cargo freshness no-op.
-    if(_acm_KIND MATCHES "^(kernelexe|kerneldll|kernelmodedriver|win32dll)$")
-        get_property(_kern_srcs GLOBAL PROPERTY _REACTOS_CARGO_KERN_SRCS)
-        if(NOT _kern_srcs)
-            # *.c globs: the cc-rs `c_shims` sources (reactos-link) also live
-            # outside the rust workspace — pseh/rtl/crt shims and per-module C
-            # like dll/ntdll/seh_poc_user.c. Same masking class as the .S files:
-            # cargo rerun-if-changed's them, but without a ninja DEPENDS the
-            # cargo link is never re-invoked (a seh_poc_user.c edit shipped a
-            # stale ntdll.dll 2026-07-08).
-            # *.spec: reactos-link's spec2def() input — the module's export
-            # table. Same masking class as the .S/.c files: cargo
-            # rerun-if-changed's the spec, but without a ninja DEPENDS the
-            # cargo link is never re-invoked (an ntdll.spec forwarder edit
-            # shipped a stale ntdll.dll 2026-07-09, wow64 Phase B).
-            file(GLOB_RECURSE _kern_srcs CONFIGURE_DEPENDS
-                ${REACTOS_SOURCE_DIR}/ntoskrnl/*.S ${REACTOS_SOURCE_DIR}/ntoskrnl/*.inc
-                ${REACTOS_SOURCE_DIR}/hal/*.S ${REACTOS_SOURCE_DIR}/hal/*.inc
-                ${REACTOS_SOURCE_DIR}/dll/ntdll/*.c
-                ${REACTOS_SOURCE_DIR}/dll/ntdll/def/*.spec
-                ${REACTOS_SOURCE_DIR}/ntoskrnl/*.spec
-                ${REACTOS_SOURCE_DIR}/win32ss/*.spec
-                ${REACTOS_SOURCE_DIR}/sdk/lib/pseh/*.c
-                ${REACTOS_SOURCE_DIR}/sdk/lib/rtl/*.c
-                ${REACTOS_SOURCE_DIR}/sdk/lib/crt/*.c)
-            set_property(GLOBAL PROPERTY _REACTOS_CARGO_KERN_SRCS "${_kern_srcs}")
-        endif()
-        list(APPEND _srcs ${_kern_srcs})
-    endif()
+    # Bootstrap inputs; after the first link, Cargo's depfile carries the complete
+    # compiler-discovered closure, including nested body builds and native headers.
+    # Watching the entire workspace here AND in build.rs relinked unrelated DLLs
+    # after every kernel edit. Keep graph/config changes explicit.
+    list(APPEND _srcs "${_ws}/Cargo.toml" "${_ws}/Cargo.lock"
+        "${_ws}/.cargo/config.toml" "${REACTOS_SOURCE_DIR}/rust-toolchain.toml"
+        "${REACTOS_SOURCE_DIR}/.rust-nightly")
 
     # Kind-specific post-link (cmake passes these as the target's POST_BUILD).
     set(_postlink)
@@ -895,10 +831,8 @@ function(add_cargo_module _target _crate _output)
         set(_toolchain_env "RUSTFLAGS=${_rustflags}")
     endif()
 
-    # Supplement the conservative source globs with Cargo's actual emitted
-    # prerequisites (embedded assets and build-script data included). Keep the
-    # broad edges until nested Cargo bodies have a proven complete closure.
-    set(_cargo_depfile "${_ws}/target/${_stem}/release/${_bin}.d")
+    # Cargo exports native and nested-Rust inputs through the outer depfile.
+    set(_cargo_depfile "${_cargo_target_dir}/${_stem}/release/${_bin}.d")
     set(_retarget_depfile "${REACTOS_SOURCE_DIR}/tools/retarget_cargo_depfile.py")
     set(_dep_target "${_out}")
     if(POLICY CMP0116)
@@ -928,6 +862,7 @@ function(add_cargo_module _target _crate _output)
         ${_postlink}
         DEPENDS ${_srcs} ${_postdep} ${_acm_EXTRA_DEPENDS} "${_retarget_depfile}"
         DEPFILE "${_out}.d"
+        JOB_POOL vibeos_cargo_links
         WORKING_DIRECTORY ${_ws}
         COMMENT "Cargo-linking ${_output} (${_stem}) [reactos-link]"
         VERBATIM)

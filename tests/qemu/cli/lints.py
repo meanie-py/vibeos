@@ -91,7 +91,7 @@ def _finding_lines(out: str) -> set[str]:
 def _scanner_error(cp: subprocess.CompletedProcess, findings_from: str) -> bool:
     """Crashes outrank partial/baselined output: the scan never completed."""
     if cp.returncode < 0 or re.search(
-        r"^Traceback \(most recent call last\):", cp.stderr or "", re.M
+        r"^(?:Traceback \(most recent call last\):|FATAL:)", cp.stderr or "", re.M
     ):
         return True
     text = cp.stdout or ""
@@ -1045,20 +1045,13 @@ def source_partition_specs(repo: Path, phase: str) -> list[tuple]:
 
 
 def lint_jobs() -> int:
-    """Concurrent scanner processes. `VIBEOS_LINT_JOBS` overrides; 1 restores the
-    old serial behaviour.
-
-    The default is deliberately 8 rather than `cpu_count()`: the suite is bounded
-    below by its SLOWEST SINGLE scanner, and scan_extern_decl_drift alone is 103s
-    of a 852s serial total (measured 2026-09-12, i386). 8 workers already reach
-    852/8 = 106s, so anything wider buys ~nothing while multiplying the risk that
-    two lanes linting at once oversubscribe the box — the lint phase runs while
-    the build still holds its cpuheavy permits."""
-    try:
-        n = int(os.environ.get("VIBEOS_LINT_JOBS", "") or 8)
-    except ValueError:
-        n = 8
-    return max(1, min(n, 32))
+    """Use available host CPUs; an explicit job budget overrides detection."""
+    available = len(os.sched_getaffinity(0)) if hasattr(os, "sched_getaffinity") else os.cpu_count()
+    raw = os.environ.get("VIBEOS_LINT_JOBS")
+    n = int(raw) if raw else (available or 1)
+    if n < 1:
+        raise ValueError("VIBEOS_LINT_JOBS must be positive")
+    return n
 
 
 def run_source_lints(run: Run, repo: Path, *, strict: bool, only: set[str] | None = None) -> None:

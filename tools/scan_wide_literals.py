@@ -43,6 +43,9 @@ import re
 import sys
 from pathlib import Path
 
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
+from tools.lint_facts import source_facts
+
 ROOT = Path(__file__).resolve().parent.parent
 
 # The element type of a hand-encoded wide array. `u16` is only the spelling the FIRST
@@ -491,11 +494,15 @@ def scan_unterminated_uses(text: str, rel, decls: list[re.Match]) -> list[str]:
 
 def scan_file(path: Path) -> tuple[list[str], int, int]:
     """(findings, literals_seen, literals_compared)"""
-    text = path.read_text(errors="replace")
     try:
-        rel_path = path.relative_to(ROOT)
+        rel = str(path.relative_to(ROOT))
     except ValueError:
-        rel_path = path
+        rel = str(path)
+    return wide_facts(path.read_text(errors="replace"), rel)
+
+
+@source_facts()
+def wide_facts(text: str, rel_path: str):
     findings = scan_byte_casts(text, rel_path) + scan_source_text_leak(text, rel_path)
     findings += scan_unterminated_uses(text, rel_path, list(_DECL.finditer(text)))
     seen = compared = 0
@@ -537,10 +544,7 @@ def scan_file(path: Path) -> tuple[list[str], int, int]:
         # Report against the closest alternative — a comment may list a family
         # (`L"DependOnService" / L"DependOnGroup"`), and naming the nearest is the useful message.
         best = min(wants, key=lambda w: abs(len(w) - len(actual)))
-        try:
-            rel = path.relative_to(ROOT)
-        except ValueError:
-            rel = path  # a file outside the repo (a test fixture) — report it as given
+        rel = rel_path
         line = text[: m.start()].count("\n") + 1
         if best.startswith(actual) and len(actual) < len(best):
             dropped = best[len(actual) :]

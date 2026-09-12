@@ -108,6 +108,9 @@ import re
 import sys
 from pathlib import Path
 
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
+from tools.lint_facts import source_facts
+
 REPO = Path(__file__).resolve().parent.parent
 RUST_ROOT = REPO / "sdk" / "lib" / "rust"
 
@@ -500,7 +503,11 @@ def base_names(name: str) -> set[str]:
 
 def scan_file(path: Path, rel: str) -> list[tuple[str, str, str, str]]:
     """[(rel, fn name, kind, detail)] for one translated file."""
-    src = path.read_bytes()
+    return print_facts(path.read_bytes(), rel)
+
+
+@source_facts()
+def print_facts(src: bytes, rel: str):
     if not PREFILTER_RE.search(src):
         return []
     text = src.decode("utf8", "replace")
