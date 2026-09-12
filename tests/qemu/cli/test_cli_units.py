@@ -7810,7 +7810,10 @@ def test_the_up_kernel_is_opt_in_only_and_nothing_automated_opts_in():
     # The opt-out exists and is spelled --up-kernel.
     help_text = subprocess.run(
         [sys.executable, "-m", "tests.qemu.cli", "build", "--help"],
-        cwd=repo, capture_output=True, text=True, timeout=120,
+        cwd=repo,
+        capture_output=True,
+        text=True,
+        timeout=120,
     ).stdout
     assert "--up-kernel" in help_text, help_text[:400]
     assert "--smp-kernel" not in help_text, "the inverted flag name survived"
@@ -7821,7 +7824,9 @@ def test_the_up_kernel_is_opt_in_only_and_nothing_automated_opts_in():
     pat = "smp" + "_kernel|VIBEOS_SMP_" + "DEFAULT_BOOT"
     stale = subprocess.run(
         ["git", "-C", str(repo), "grep", "-lE", pat, "--", "*.py", "*.sh", "*.cmake", "*.txt"],
-        capture_output=True, text=True, timeout=60,
+        capture_output=True,
+        text=True,
+        timeout=60,
     ).stdout.split()
     # gcc.cmake keeps a historical note about the FORMER env var; it reads nothing.
     stale = [f for f in stale if f != "sdk/cmake/gcc.cmake"]
