@@ -1569,7 +1569,7 @@ def test_run_summary_json(tmp_path, monkeypatch):
     assert summary["arch"] == "i386"
 
 
-# --- cargo-link guard: skips cleanly when the PoCs aren't present ----------
+# --- command timing and shipping Cargo target coverage ------------------
 
 
 @pytest.mark.parametrize("failure", [None, "timeout", "missing"])
@@ -1633,52 +1633,16 @@ def test_rust_source_closure_tracks_shared_dependencies(tmp_path):
     }
 
 
-def test_cargo_link_guard_skips_when_pocs_absent(tmp_path, monkeypatch):
-    """The guard must no-op (skip, never fail) when the cargo-link PoCs are
-    absent — so it never blocks `check --strict` on a tree without them. At the
-    default arch (i386) all three PoCs apply."""
-    monkeypatch.setenv("VIBEOS_ARTIFACT_ROOT", str(tmp_path))
-    run = Run("check", "i386", ts=1700000000)
-    lints.run_cargo_link_guard(run, tmp_path)  # empty repo → no PoCs
-    stages = {s.name: s for s in run.stages}
-    for label in ("ntoskrnl", "ntdll", "ntdll_vista"):
-        name = f"cargo_link:{label}:i386"
-        assert name in stages, f"guard must emit a {name} stage"
-        assert stages[name].status == "skip"
-        assert "PoC absent" in stages[name].detail
-
-
-def test_cargo_link_guard_amd64_runs_all_pocs(tmp_path, monkeypatch):
-    """On amd64, all three cargo-link PoCs are attempted (and skip cleanly on an
-    empty repo). ntoskrnl-cargo became arch-general in cdcfc9fed55 — it is no
-    longer i386-only — so amd64 must exercise it too."""
-    monkeypatch.setenv("VIBEOS_ARTIFACT_ROOT", str(tmp_path))
-    run = Run("check", "amd64", ts=1700000000)
-    lints.run_cargo_link_guard(run, tmp_path, "amd64")
-    names = {s.name for s in run.stages}
-    for label in ("ntoskrnl", "ntdll", "ntdll_vista"):
-        assert f"cargo_link:{label}:amd64" in names, f"{label} PoC must run on amd64"
-
-
-def test_cargo_link_guard_respects_arch_filter(tmp_path, monkeypatch):
-    """The guard's per-PoC arch filter (`arch in arches`) must still gate: a PoC
-    declared for i386 only is not attempted on amd64. Verified against a synthetic
-    PoC table so the mechanism stays covered even though no real PoC is arch-limited
-    today."""
-    monkeypatch.setenv("VIBEOS_ARTIFACT_ROOT", str(tmp_path))
-    monkeypatch.setattr(
-        lints,
-        "_CARGO_LINK_POCS",
-        [
-            ("i386only", "i386only-cargo", "i386only", ("i386",), 1_000),
-            ("everywhere", "everywhere-cargo", "everywhere", ("i386", "amd64", "arm64"), 1_000),
-        ],
-    )
-    run = Run("check", "amd64", ts=1700000000)
-    lints.run_cargo_link_guard(run, tmp_path, "amd64")
-    names = {s.name for s in run.stages}
-    assert "cargo_link:i386only:amd64" not in names  # filtered out on amd64
-    assert "cargo_link:everywhere:amd64" in names
+def test_former_cargo_pocs_are_shipping_cmake_targets():
+    """The old off-path link probes duplicate modules built and smoked by the gate."""
+    repo = Path(__file__).resolve().parents[3]
+    for relative, module, crate in (
+        ("ntoskrnl/CMakeLists.txt", "ntoskrnl", "ntoskrnl-cargo"),
+        ("dll/ntdll/CMakeLists.txt", "ntdll", "ntdll-cargo"),
+        ("dll/ntdll/nt_0600/CMakeLists.txt", "ntdll_vista", "ntdll_vista-cargo"),
+    ):
+        source = (repo / relative).read_text()
+        assert f"add_cargo_module({module} {crate}" in source
 
 
 # --- cachecfg: VIBEOS_ROOT resolution, env overlay, stats parsing ----------
@@ -3073,12 +3037,13 @@ def test_hostlock_build_admission_timings(tmp_path, monkeypatch):
     monkeypatch.setattr(hl_mod, "cpu_share", cpu)
     monkeypatch.setattr(hl_mod, "build_dir_lock", directory)
     with hl_mod.build_lock(tmp_path, "amd64") as timing:
-        assert timing["cpu_wait_s"] == 7
+        assert timing["cpu_wait_s"] == 0
         assert timing["builddir_wait_s"] == 3
-        assert timing["cpu_granted"] and timing["builddir_granted"]
+        assert not timing["cpu_granted"] and timing["builddir_granted"]
     monkeypatch.setenv("VIBEOS_HOST_BROKER", "0")
     with hl_mod.build_lock(tmp_path, "amd64") as timing:
-        assert timing == {"enabled": False}
+        assert timing["scheduler"] == "host-jobs"
+        assert timing["builddir_granted"]
 
 
 def test_hostlock_build_dir_same_blocks_different_ok(tmp_path, monkeypatch):
@@ -3105,7 +3070,7 @@ def test_hostlock_disabled_is_noop(tmp_path, monkeypatch):
     with hl_mod.cpu_exclusive("build:i386") as fds:
         assert fds is None
     with hl_mod.build_dir_lock(tmp_path / "build-i386") as fd:
-        assert fd is None
+        assert fd is not None  # correctness lock survives CPU throttling opt-out
     with hl_mod.build_lock(tmp_path / "build-i386", "i386"):
         pass  # no-op grant, must not raise
 
@@ -3139,21 +3104,17 @@ def test_hostlock_boots_parallelize_but_block_a_build(tmp_path, monkeypatch):
     hl_mod.release_all(fds)
 
 
-def test_hostlock_build_lock_cm_excludes_boot(tmp_path, monkeypatch):
-    # With VIBEOS_MAX_CONCURRENT_BUILDS=1 the original writer-takes-all grant is
-    # restored: one build → exclusive host → boots excluded.
+def test_hostlock_build_coordinator_reserves_no_cpu(tmp_path, monkeypatch):
     monkeypatch.setattr(hl_mod, "HOSTLOCK_DIR", tmp_path)
     monkeypatch.setenv("VIBEOS_HOST_BROKER", "1")
-    monkeypatch.setenv("VIBEOS_MAX_CONCURRENT_BUILDS", "1")
     bd = tmp_path / "build-i386"
     bd.mkdir()
-    k = hl_mod.DEFAULT_CPU_LEASES
     with hl_mod.build_lock(bd, "i386"):
-        # the build holds the exclusive host → a boot can't get a permit
-        assert hl_mod.acquire_cpu_lease("boot:arm64", leases=k, timeout=0.2) is None
-    b = hl_mod.acquire_cpu_lease("boot:arm64", leases=k, timeout=0.2)
-    assert b is not None  # released when the cm exited
-    hl_mod.release(b)
+        assert not hl_mod.status()["cpu_leases_held"]
+        assert hl_mod.acquire_build_dir(bd, timeout=0) is None
+        boot = hl_mod.acquire_cpu_lease("boot:arm64", leases=1, timeout=0)
+        assert boot is not None
+        hl_mod.release(boot)
 
 
 def test_hostlock_two_builds_coexist_third_queues(tmp_path, monkeypatch):
@@ -3903,7 +3864,6 @@ def test_partial_check_runs_only_selected_and_reports_scope(tmp_path, monkeypatc
         run.add(Stage(name, status="fail" if fail else "ok"))
 
     monkeypatch.setattr(lints, "_lint_stage", stage)
-    monkeypatch.setattr(lints, "run_cargo_link_guard", lambda *a, **k: pytest.fail("not selected"))
     monkeypatch.setattr(lints, "run_binary_lints", lambda *a, **k: pytest.fail("not selected"))
     monkeypatch.setattr(
         lints, "run_committed_drift_guard", lambda *a, **k: pytest.fail("not selected")
@@ -3995,7 +3955,6 @@ def test_check_partitions_preserve_full_coverage(tmp_path, monkeypatch, scope, f
         return execute
 
     monkeypatch.setattr(lints, "run_source_lints", source)
-    monkeypatch.setattr(lints, "run_cargo_link_guard", guard("cargo"))
     monkeypatch.setattr(lints, "run_committed_drift_guard", guard("drift"))
     monkeypatch.setattr(lints, "run_binary_lints", guard("binary"))
     assert debugcmd_mod.check(Namespace(scope=scope, strict=True, arch="amd64"), tmp_path) == int(
@@ -4005,8 +3964,8 @@ def test_check_partitions_preserve_full_coverage(tmp_path, monkeypatch, scope, f
         seen
         == {
             "source": ["source"],
-            "arch": ["cargo", "drift", "binary"],
-            None: ["source", "cargo", "drift", "binary"],
+            "arch": ["drift", "binary"],
+            None: ["source", "drift", "binary"],
         }[scope]
     )
     command = f"check-{scope}" if scope else "check"
@@ -4283,7 +4242,7 @@ def test_hostlock_status_reports_both_pools(tmp_path, monkeypatch):
     assert "bootcpu" in st and "boot_leases_total" in st
     # render must not crash and should mention both pools
     body = hl_mod.render_status(st)
-    assert "build(cpuheavy)" in body and "boot(windows-host)" in body
+    assert "legacy/native(cpuheavy)" in body and "boot(windows-host)" in body
 
 
 def test_ninja_jobs_caps_and_reserves(monkeypatch):

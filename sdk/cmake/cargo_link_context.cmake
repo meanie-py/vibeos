@@ -9,14 +9,9 @@ function(reactos_cargo_link_context workspace crate arch output_dir)
         if(_cpus LESS 1)
             set(_cpus 1)
         endif()
-        # Match hostlock's default: up to four builds, six CPUs per build.
-        math(EXPR _builds "${_cpus} / 6")
-        if(_builds LESS 1)
-            set(_builds 1)
-        elseif(_builds GREATER 4)
-            set(_builds 4)
-        endif()
-        math(EXPR _jobs "${_cpus} / ${_builds}")
+        # These are coordinators, not CPU reservations. The global host-jobs
+        # broker admits each actual compiler/linker across all worktrees.
+        set(_jobs ${_cpus})
         if(DEFINED ENV{VIBEOS_CARGO_LINK_JOBS})
             set(_jobs "$ENV{VIBEOS_CARGO_LINK_JOBS}")
         endif()

@@ -72,12 +72,14 @@ This was a warm dependency-invalidation probe, not a replacement for the clean g
 An i386 refresh also passed the new validator and binary checks:
 `/tmp/vibeos-cli/20260912-182741-277su0zb-build-i386/summary.json`.
 
-## Follow-up after landing
+## Permit investigation
 
-Investigate permit ownership and lifecycle with paused agents. The user reported
-that every other agent was paused, while `host-status` still showed the integration
-conductor (PID 3835910) and its build children holding permits. This lane's final
-builds recorded roughly 837 seconds waiting for CPU permits. That establishes what
-the broker reported, not that the other lanes should have been active. Trace
-background-process ownership, pause/cancellation behavior, and lease cleanup before
-attributing this delay to legitimate concurrent work or simply raising limits.
+The delayed work was a detached WoW64 integration gate for `7e7f1275ff1b`,
+submitted at 15:57 and landed at 18:21 on 2026-09-12. Its gate artifact is
+`/tmp/vibeos-cli/queue-batch-01789249935459649416/20260912-175215-7kjhce67-gate-i386+amd64+arm64`.
+The user confirmed that lane runs from cron. Agent pause did not stop it.
+
+Whole-build permits have since been replaced with runnable compiler/linker
+admission; see [host job scheduling](host-job-scheduling.md). The cron continues
+normally, with integration work participating in the shared execution budget
+once it updates its checkout.

@@ -1,53 +1,13 @@
-"""Host CPU broker — cross-worktree advisory locks so CPU-heavy work doesn't starve,
-thrash, or corrupt itself on the shared dev host.
+"""Host ownership and correctness locks shared across worktrees.
 
-The contended resource on this box is **CPU**, not the QEMU accelerator: a cold build
-(`ninja -j` over all cores) and a TCG/arm64 boot are both CPU-bound, so running them
-together starves the boot into a false `HANG_TIMEOUT`, and two `build --clean` on the
-SAME build dir corrupt each other. The per-arch QEMU slot cap in `vm.py` only covers
-*accelerated* same-arch boots; this module covers the CPU-bound class that otherwise
-has to be arbitrated by hand ("taking the host" / "host free").
+New builds hold only their build-directory lock. The Rust host-jobs runner
+admits individual compiler/linker processes with priority and aging. Cargo,
+Ninja and directory waiters reserve no CPU capacity. The legacy cpuheavy pool
+remains for older lanes and native TCG; the runner discounts its live holders
+while those lanes migrate. Windows-host boots retain their separate boot pool.
 
-Two flock-based locks, both under a shared `/tmp` dir so every worktree sees them and the
-kernel auto-releases them when the holding process dies (no stale-lock cleanup needed):
-
-- **`cpuheavy`** — a counting pool of `VIBEOS_HOST_CPU_LEASES` permits (default 4):
-    * a cold **build** / `repro verify` grabs a **ceil(K/max_builds) share**.
-      Default concurrency scales with visible CPUs (up to four builds); on 24 CPUs
-      each build takes one of four permits. Explicit host policy and
-      `VIBEOS_MAX_CONCURRENT_BUILDS` override this. Exhausting the pool excludes
-      native-TCG boots; `VIBEOS_MAX_CONCURRENT_BUILDS=1` restores writer-takes-all.
-      Shares are acquired with NO hold-and-wait (collect free slots nonblocking; on a
-      shortfall release all + retry) so partial acquirers cannot deadlock;
-    * a **TCG boot** grabs **1** permit → up to K TCG boots run in parallel (a ×3 gate keeps
-      its boot parallelism); one running build leaves K-share permits of boot room.
-  A boot takes a permit iff its EFFECTIVE accelerator is `tcg` (CPU-bound emulation). KVM /
-  WHPX boots are hardware-accelerated → they take none and stay on the per-arch QEMU cap.
-  **Only NATIVE-backend TCG boots use `cpuheavy`** (arm64, or x86-degraded) — those run in
-  WSL and genuinely share cores with a WSL build, so a build must still exclude them.
-- **`bootcpu`** — a SEPARATE pool of `VIBEOS_BOOT_CPU_LEASES` permits for **windows-host**
-  QEMU boots (`qemu.exe` on the Windows side). Because that's a different scheduling domain
-  from the WSL build, a build's exclusive `cpuheavy` grant must NOT block it — the build
-  instead leaves physical-core headroom via its `-j` cap (`VIBEOS_BUILD_CORE_RESERVE`), so
-  build ∥ boot. This pool throttles boot-vs-boot only.
-- **`builddir:<canonical-path>`** — exclusive per-build-dir lock. Cheap insurance that two
-  builds never land on the same dir (the determinism-verify-vs-gate corruption class), held
-  *under* the cpuheavy grant.
-
-Acquire order is always `cpuheavy` → `builddir`, and a build grabs the K permits IN ORDER
-(0,1,…) so two builds can't deadlock. Timeouts fail SOFT (warn + proceed unlocked) rather
-than wedge a build forever — a generous default ceiling means hitting it implies a stuck
-holder, not real contention.
-
-**Admission is FIFO.** Waiting for a pool means taking an arrival-ordered ticket; you may
-only attempt to grab permits once doing so cannot delay an earlier arrival. Without that
-the release-all-and-retry loop is order-blind and degenerates to LIFO under load — measured
-2026-07-24: three staggered waiters acquired in EXACTLY reverse arrival order, 3 runs out of
-3, and a real arm64 build sat queued 23 minutes while the permits it needed changed hands
-between two other worktrees. Tickets are flock'd files, so a waiter that dies drops out of
-the queue via the kernel, same as a permit holder (details at "FIFO admission" below).
-`vibeos-cli host-status` prints the queue — starvation used to be invisible, reading as
-"my build is slow" rather than "I am third in line". `VIBEOS_HOSTLOCK_FAIR=0` opts out.
+Build-directory locks never fail open, including when CPU throttling is disabled.
+Legacy admission helpers remain available to existing non-build consumers.
 """
 
 from __future__ import annotations
@@ -627,47 +587,31 @@ def cpu_share(kind: str, n: int, **kw: object) -> Iterator[list[int] | None]:
 
 @contextmanager
 def build_lock(build_dir: str | Path, arch: str, **kw: object) -> Iterator[dict]:
-    """The build front-door grant: a ceil(K/max_builds) SHARE of the CPU pool (default
-    2 of 4 → up to VIBEOS_MAX_CONCURRENT_BUILDS=2 builds coexist; two running builds
-    exhaust the pool, so native-TCG boots stay starvation-protected exactly when the
-    host is build-saturated) AND the per-build-dir lock (same-dir corruption guard),
-    acquired cpuheavy→builddir. VIBEOS_MAX_CONCURRENT_BUILDS=1 restores the original
-    exclusive-host grant. No-op when the broker is disabled."""
-    if not enabled():
-        yield {"enabled": False}
-        return
-    n = build_permits()
+    """Serialize only this build directory; runnable tools acquire their own jobs.
+
+    A caller waiting for another build of the same output takes no CPU capacity.
+    The directory lock remains mandatory even when CPU throttling is disabled.
+    """
     start = time.monotonic()
-    with cpu_share(f"build:{arch}", n, **kw) as cpu:
-        cpu_ready = time.monotonic()
-        with build_dir_lock(build_dir, arch=arch) as directory:
-            yield {
-                "enabled": True,
-                "job_class": job_class(),
-                "cpu_wait_s": cpu_ready - start,
-                "builddir_wait_s": time.monotonic() - cpu_ready,
-                "cpu_granted": cpu is not None,
-                "builddir_granted": directory is not None,
-            }
+    with buildpolicy.session(HOSTLOCK_DIR), build_dir_lock(build_dir, arch=arch, **kw) as directory:
+        buildpolicy.require_admission(HOSTLOCK_DIR)
+        yield {
+            "enabled": True,
+            "scheduler": "host-jobs",
+            "job_class": job_class(),
+            "cpu_wait_s": 0.0,
+            "builddir_wait_s": time.monotonic() - start,
+            "cpu_granted": False,
+            "builddir_granted": directory is not None,
+        }
 
 
 @contextmanager
 def build_dir_lock(build_dir: str | Path, **kw: object) -> Iterator[int | None]:
-    """Context manager around the per-build-dir exclusive lock (no-op when disabled)."""
-    if not enabled():
-        yield None
-        return
+    """Mandatory exclusive build-directory ownership, independent of CPU throttling."""
     fd = acquire_build_dir(build_dir, **kw)  # type: ignore[arg-type]
     if fd is None:
-        if buildpolicy.read(HOSTLOCK_DIR):
-            raise buildpolicy.PolicyError(
-                "build-directory admission timed out; refusing unlocked work"
-            )
-        print(
-            f"[hostlock] WARNING: build-dir lock timeout ({build_dir}) — proceeding "
-            "UNLOCKED (a holder looks stuck; check `vibeos-cli host-status`)",
-            file=sys.stderr,
-        )
+        raise buildpolicy.PolicyError("build-directory admission timed out; refusing unlocked work")
     try:
         yield fd
     finally:
@@ -928,12 +872,12 @@ def render_status(st: dict) -> str:
     """Human-readable host-broker summary (the `vibeos-cli host-status` body)."""
     lines = [
         f"host broker: {'ON' if st['enabled'] else 'OFF (VIBEOS_HOST_BROKER=0)'}  —  "
-        f"build(cpuheavy) {st['cpu_leases_held']}/{st['cpu_leases_total']} · "
+        f"legacy/native(cpuheavy) {st['cpu_leases_held']}/{st['cpu_leases_total']} · "
         f"boot(windows-host) {st.get('boot_leases_held', 0)}/{st.get('boot_leases_total', 0)}"
     ]
     held_cpu = [e for e in st["cpuheavy"] if e["held"]]
     if not held_cpu:
-        lines.append("  cpuheavy : FREE — no cold build / TCG boot running")
+        lines.append("  cpuheavy : FREE — no legacy build / native TCG reservation")
     else:
         # Group permits by holder pid so an exclusive build (holds ALL K) shows one line.
         by_pid: dict = {}
@@ -998,9 +942,13 @@ def render_status(st: dict) -> str:
 def cmd_status(args, repo: Path) -> int:
     """`vibeos-cli host-status` — who holds the CPU lease / build-dir locks. `--json`
     feeds the wait-for-quiet poll guards agents have been hand-rolling."""
+    from . import hostjobs
+
     st = status()
+    st["jobs"] = hostjobs.status(repo)
     if getattr(args, "json", False):
         print(json.dumps(st, indent=2))
     else:
         print(render_status(st))
+        print(hostjobs.render_status(st["jobs"]))
     return 0

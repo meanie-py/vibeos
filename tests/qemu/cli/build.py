@@ -15,7 +15,7 @@ import subprocess
 import time
 from pathlib import Path
 
-from . import archcfg, cachecfg, canon, hostdisk, hostlock, lints, provenance
+from . import archcfg, cachecfg, canon, hostdisk, hostjobs, hostlock, lints, provenance
 from .artifacts import Run, Stage
 
 _UNDEF = re.compile(r"undefined (?:symbol|reference)[^\w]*[`']?([@\w]+)", re.I)
@@ -335,14 +335,11 @@ def build(args, repo: Path) -> int:
         )
         return run.finalize(repo)
 
-    # Host CPU broker: a build grabs a ceil(K/max_builds) SHARE of the cpuheavy pool
-    # (default 2 of 4 → two builds may run concurrently host-wide; two running builds
-    # exhaust the pool so native-TCG boots keep their starvation protection) AND the
-    # per-build-dir lock (so two builds never corrupt the same dir, the
-    # determinism-verify-vs-gate incident). Held around the whole build; on a stuck
-    # holder it warns + proceeds unlocked, and it's a no-op when the broker is disabled.
+    # Directory serialization is a correctness lock. CPU admission belongs to the
+    # compiler/linker processes, after Cargo and Ninja have resolved their own waits.
     try:
         with hostlock.build_lock(build_dir, arch) as admission:
+            hostjobs.ensure(repo)
             run.extra["admission"] = admission
             return _build_locked(args, repo, run, arch, cfg, build_dir, cold)
     except hostlock.buildpolicy.PolicyError as exc:
@@ -820,6 +817,10 @@ def _build_locked(args, repo: Path, run, arch: str, cfg, build_dir: Path, cold: 
                 detail="rustc INCREMENTAL on, Rust sccache OFF (fast-iterate; non-reproducible)",
             )
         )
+
+    build_env = hostjobs.environment(
+        repo, build_env, canonical=canon.is_canonical(build_dir), run_dir=run.dir
+    )
 
     # --- generated-header barrier ---
     # On a FRESH tree (canonize/provision) some RC + cc-rs compiles race ahead of

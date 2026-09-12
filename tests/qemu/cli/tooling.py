@@ -59,6 +59,7 @@ _PYTEST_SUITES = [
     (".", ".", "tools/test_scan_octal_literals.py"),
     (".", ".", "tools/test_lint_facts.py"),
     (".", ".", "tools/test_cargo_link_context.py"),
+    (".", ".", "tools/test_host_jobs.py"),
     (".", ".", "tools/test_nested_cargo_deps.py"),
     (".", ".", "tools/test_scan_invented_constants.py"),
     # These six existed and were collected by NOTHING — the same defect the two comments
