@@ -488,6 +488,35 @@ land; date every addition.** Source docs live in `docs/engineering/archive/`.
 
 ## Known bugs & flakes (live registry)
 
+- **Every 32-bit guest is refused by CSR — the shared section can't map into a WoW64 process**
+  (2026-09-11, wow64-amd64 lane, OPEN). A trace probe on a passing `smoke:amd64` boot
+  (`/tmp/vibeos-cli/20260911-234915-smoke-amd64/serial.log`) shows the real CSR/LPC blocker, and
+  it is **not** a marshalling bug. Per 32-bit guest process, in order:
+  `NtSecureConnectPort '\Windows\ApiPort' => c0000041` (PORT_CONNECTION_REFUSED, handle NULL),
+  then `NtRegisterThreadTerminatePort => c0000008` (INVALID_HANDLE, because there is no handle).
+  The server-side reason is already instrumented and names itself:
+  `[CSRSRV] AttachSharedSection: map at fixed base 000007fffebf0000 FAILED st=c0000018`
+  — **STATUS_CONFLICTING_ADDRESSES**, 12 times across **6 distinct pids**, with no successful
+  attach in the whole boot. `CsrSrvAttachSharedSection` (`csrsrv/server.rs:403`) passes the
+  GLOBAL `CsrSrvSharedSectionBase` as the *requested* base to `NtMapViewOfSection`, demanding
+  that every client map the section at the same address csrss itself got. In a WoW64 process
+  that address is occupied, so the attach fails, `AllowConnection` stays 0, and
+  `NtAcceptConnectPort` is called with Accept=FALSE — which is the `c0000041` the guest sees.
+  **What is NOT yet established:** what actually occupies that VA in a WoW64 process. That is
+  the next measurement, not an assumption.
+  **A second blocker is predicted (derived, NOT observed — the path is unreachable today):**
+  the base is `0x7ffffebf0000` ≈ 8 TB, and the client records it in
+  `Peb->ReadOnlySharedMemoryBase`. A 32-bit guest's PEB32 field is four bytes wide, so even a
+  successful attach at that base could not be named by the guest. If so the section must map
+  **below 4 GB** for WoW64 clients and the per-process base must travel back in
+  `ConnectInfo->SharedSectionBase` (which is already sent) rather than the global.
+  **Consequence for sequencing:** the `PORT_MESSAGE` 24→40 marshaller and the CSR payload work
+  are real (`NtRequestWaitReplyPort => c000000d` fires 5x, exactly as the kernel's
+  `DataLength + sizeof(PORT_MESSAGE) > TotalLength` check predicts) but they are DOWNSTREAM.
+  Fixing them first would change nothing, because no guest ever gets a port handle. Note the
+  kernel checks the header size BEFORE `ObReferenceObjectByHandle` (`lpc-rust/send.rs:407-420`),
+  which is why a guest with no connection still reports `c000000d` and not `c0000008`.
+  The desktop boots green throughout — this is confined to the 32-bit guest path.
 - **`conformance:arm64` wedges on an ExResource waiter-count race — OPEN, NOT a code regression**
   (2026-09-06, found by the wow64-amd64 lane, NOT owned by it). Two independent arm64 runs on
   the same tree both failed the kmtest sweep, and the line number MOVED between them:
