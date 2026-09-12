@@ -20,8 +20,7 @@ DbgPrint(_In_z_ _Printf_format_string_ PCSTR Format, ...);
 
 #include "wow64_win32k_thunks.gen.c"
 
-#define WOW64_STATUS_INVALID_SYSTEM_SERVICE ((NTSTATUS)0xC000001CL)
-#define WOW64_MANUAL_UNIMPL ((NTSTATUS)0x7FFFFFFF)
+#include "wow64_status.h"
 
 /* Shared with wow64_thunks.c (name-keyed, so one manual dispatcher serves
  * both tables). */
@@ -57,7 +56,7 @@ Wow64DispatchWin32kService(ULONG ServiceNumber, PULONG Arguments)
     if (!Entry->Thunk)
     {
         Status = Wow64ManualDispatch(Entry->Name, Arguments);
-        if (Status == WOW64_MANUAL_UNIMPL)
+        if (WOW64_IS_UNIMPL(Status))
         {
             DbgPrint("[WOW64] %s (0x%lx) NEEDS MANUAL MARSHALLER (win32k) — failing loud\n",
                      Entry->Name, ServiceNumber);

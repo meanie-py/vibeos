@@ -2074,3 +2074,162 @@ Two side notes from the same soak. The `0xE3` (`#43`) fired once **on the MP ker
 still not MP-conditional, but it is not UP-conditional either. And 294/300 clean rounds showed
 exactly the two enumerated MP-conditional rows (`KeEvent` MP-skip, `IoInterrupt` upstream gap)
 and nothing else: the collapse delta is stable at zero unexplained across 294 samples.
+
+### The one probe built to catch this could never have fired — three separate reasons
+
+`KiTrapReturnProbe` (trap.rs) exists precisely to catch a bad EL0-return state at the `eret`,
+and it was in the tree for the whole five weeks this wedge went unexplained. It missed for three
+independent reasons, each sufficient on its own:
+
+1. **It is not compiled.** The call site is `#ifdef ARM64_TRAP_DEBUG` in `trap.S:251`, and
+   `ARM64_TRAP_DEBUG` is defined **nowhere in the repo** — not a CMakeLists, not a header, not a
+   cmake cache. The probe is dead source on disk, which reads exactly like an armed instrument.
+2. **It returns early on the frame that matters.** `if (spsr & 0xF) != 0 { return; }` — it looks
+   only at EL0t returns. The wedge's frame says **EL1h**, so even compiled in, it would have
+   declined to look.
+3. **Its PC bound is off by one at exactly the observed value.** `pc < 0x1_0000` is a strict
+   less-than and the wedge's PC is `0x10000` exactly. Even had it looked, it would have passed
+   the frame as good.
+
+The frame it declined to inspect is the whole answer: `Spsr` says **EL1h** while the register
+file is a **user thread's** — `X18` a TEB (`0x7ffffffe7000`; in kernel mode x18 is the KPCR, per
+`KeGetPcr` = `mov x0, x18`), `X28` a user start-context, `LR` and every callee-saved register
+zero. A frame carrying user register content with a kernel `Spsr` is not a wild branch. It is a
+**corrupted or mis-built trap frame**, and `KiInitializeContextThread` writes `Spsr = 0` (EL0t)
+for exactly this shape of thread — so something changed it, or built it somewhere else.
+
+**Owed, deliberately deferred:** fix (2) and (3) so the probe also flags a KERNEL return whose
+`Pc` is a user VA, and decide whether to compile it in for the MP kernel. Not done in this pass
+because editing any `.rs` while the 400-round verification soak runs on fixed media makes every
+remaining round abort on a staleness check — the soak is the verification of the fix that is
+gating now, and it outranks a second instrument.
+
+Note the shape, which is the same one this lane has now hit three times: **an instrument that is
+present, plausible, and structurally incapable of firing.** Grep for the guard, not the code.
+
+### Lead for the first cause: arm64 decides a frame's target EL from the CALLER's mode
+
+Not proven to be this wedge — the stack dump is what will settle that — but a real defect found
+while reading the frame, and the only mechanism so far that produces the observed state without
+invoking corruption.
+
+`KeContextToTrapFrame` (arm64 `stubs.rs`, and the C it came from) picks the frame's exception
+level like this:
+
+```rust
+if PreviousMode == UserMode { Spsr = Cpsr & !0xF; }        // EL0t
+else                        { Spsr = (Cpsr & !0xF) | 0x5; } // EL1h
+```
+
+`PreviousMode` is the **caller's** trust level, not the **frame's** target level, and those are
+different questions. `KiContinue` (`ke/except.rs`, the core of `NtContinue`) branches on
+`KeGetPreviousMode()` and passes `KernelMode` straight through on the kernel path. So a
+kernel-mode caller continuing a trap frame that returns to **user** code stamps **EL1h** onto a
+frame whose `Pc` is a user VA. The `eret` then lands at EL1 with a user PC — the wedge's state
+exactly, including a user TEB in `X18` and every callee-saved register zero.
+
+The asymmetry is the tell: **i386 and amd64 do not do this.** They ask the FRAME, via
+`KiUserTrap(TrapFrame)`, and `arm64 has no `KiUserTrap` at all` — grep finds none in
+`ke/arm64/` or `ntoskrnl/ke/arm64/`. arm64 substituted the caller's mode for a frame property
+that only the frame knows.
+
+**Owed, same deferral as the probe fix** (editing `.rs` aborts the running soak on staleness):
+give arm64 a frame-based target-mode test and use it here, rather than the caller's
+`PreviousMode`. Then re-soak. If the wedge survives that, the cause is corruption and the
+`[KSTKW]` dump is the instrument for it.
+
+## #39 root-caused: a dropped `ASSERT`, not a memory barrier (2026-09-06)
+
+Two overnight soaks on the four fixes plus the `[FAULTLOOP]` tripwire settled the lane's two
+open questions and falsified my leading hypothesis.
+
+### The UP question is closed
+
+| kernel | rounds | wedges | `[FAULTLOOP]` reports |
+|---|---|---|---|
+| UP (`ntoskrnl.exe`) | 400 | 0 | **none, on any boot** |
+| MP (`ntkrnlmp.exe`, `--smp 1`) | 128 | 3 (2.3%) | every boot |
+
+The UP kernel's clean record used to rest on 35 samples, where a 1.3% rate yields zero 63% of
+the time — worth nothing. At 400 rounds it means something, and the discriminator is sharper
+than the wedge count: UP does not print a single retry report, ever. This is not a race that
+MP loses more often. It is a code path MP takes and UP does not. **The MP-conditional list for
+the UP:=smp1 criterion now has a real entry.**
+
+Note also that `--smp 1` means one core, so nothing here is a cross-CPU race. The earlier
+memory-ordering story — arm64's page-table walker as a separate observer needing `dsb ishst` —
+is **not** this bug. That barrier (`MI_WRITE_VALID_PTE`) is defensible on its own terms and
+stays, but it was not what wedged the box, and I had already noted that TCG models no store
+buffer. Recording it as falsified rather than quietly dropping it.
+
+### What the tripwire caught
+
+The wedge is not an infinite loop at one address. The faulting VA marches forward 4 bytes at a
+time through the user stack while the PC sits still at `KiDispatchException+0x458` — the kernel
+writing an exception frame onto the user stack — with each word taking 64+ pager round-trips:
+
+```
+[FAULTLOOP] VA=0x0000000000138118 PC=0xFFFFF800421A44B0 ESR=0x96000007 DFSC=0x00000007
+[FAULTLOOP] TTBR0=0x0000000042B5B000 PTE@0xFFFFF680000009C0=0x000000004738C041
+```
+
+`0x...041` is the whole bug: bit 0 (Valid) and bit 6 (Owner) set, **bit 1 (`NotLargePage`) clear**.
+A level-3 descriptor of type `0b01` is reserved, so the MMU raises a translation fault (DFSC
+0x07) that software cannot see — `MmAccessFault` reads Valid=1, concludes the page is already
+resolved, returns `STATUS_SUCCESS`, and the trap returns to the same instruction. With DAIF
+masked there is nothing left to break the loop.
+
+### Where the malformed entry comes from
+
+`MmProtectToPteMask` is the only source of bit 1 and bit 10 (AF) on arm64, and it is zero at
+exactly four rows — 0, 8, 16, 24, the no-access protections. The C original of
+`MI_MAKE_HARDWARE_PTE_USER` opens with three ASSERTs whose comment says precisely this:
+
+```c
+/* Check that we are not setting valid a page that should not be */
+ASSERT(ProtectionMask & MM_PROTECT_ACCESS);          /* == 7: selects those four rows */
+ASSERT((ProtectionMask & MM_PROTECT_SPECIAL) != MM_GUARDPAGE);
+ASSERT(ProtectionMask != MM_OUTSWAPPED_KSTACK && ...);
+```
+
+**Both Rust implementations dropped all three** (`ARM3/helpers.rs`, `ntkrnl-sys/inline/mm.rs`).
+On x86 the loss hides, because `Valid | User | PFN` is a complete present PTE there — you get a
+wrongly readable page, not a hang. On arm64 it is a frozen machine.
+
+The bit pattern also names the writer, which matters because there is a second candidate. The
+transition-PTE resolve path (`ARM3/pagfault.rs:1122`) ORs the same table in and then calls
+`MI_MAKE_ACCESSED_PAGE`, so a zero mask there would leave AF **set** (`0x...401`). The observed
+entry has AF clear, which only `MI_MAKE_HARDWARE_PTE_USER` produces. That sibling path carries
+the same latent hole and is owed a guard.
+
+### Fix, and what is still open
+
+`ntkrnl_sys::mm::mi_user_pte_may_be_valid` restores the assert as a runtime guard, centrally so
+both implementations and any future one inherit it: a protection granting no access leaves the
+entry not-present — which is what the mask asked for — so the fault takes the invalid path and
+the thread gets a clean access violation instead of taking the box down. It reports once per
+distinct mask as `[NOACCESSPTE]`.
+
+Still open, and the reason the guard reports the mask rather than just fixing the bits:
+
+- **Why does only the MP kernel reach this call with a no-access mask?** The `smp` feature
+  changes `SYNCH_LEVEL` (2 on UP, 12 on arm64 MP), `KeGetCurrentProcessorNumber` and the
+  spinlock bodies. Which of those steers a no-access protection into a make-this-valid helper
+  is not yet known. The mask value in the next boot's `[NOACCESSPTE]` line should name it —
+  16 means a guard page, 8 no-access, 0 zero-access.
+- **The guard treats a symptom at the callee.** The caller has no error return, so leaving the
+  entry not-present is caller-invisible and may leave PFN share counts inconsistent. It is
+  strictly better than a frozen box and it is the diagnostic that finds the caller, but the
+  real fix belongs where the mask is chosen.
+- **A design fix worth considering:** bit 1 is required by *every* valid L3 entry on arm64, so
+  smuggling it through the protection table is fragile by construction. Setting it in
+  `set_valid()` / `MI_WRITE_VALID_PTE` would make the whole class impossible.
+
+### Owed tooling
+
+`scan_assert_to_ub` does not cover this class. It catches an assert lowered to
+`unreachable_unchecked()` — present and wrong — not one deleted outright, and its sibling
+`scan_dropped_prints` relies on rustconv's trailing C comments as an oracle, which hand-written
+bridge modules like `ARM3/helpers.rs` do not have. A scanner pairing C `FORCEINLINE` helpers in
+`miarm.h` against their same-named Rust twins and flagging dropped ASSERTs would have caught
+this before a single boot.

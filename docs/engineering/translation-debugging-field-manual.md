@@ -5510,11 +5510,23 @@ diff is not a gate.**
   the failure pointed at reservations. **"df looks fine" is a documented false negative for
   this class**: fullness and admission headroom are different quantities and only one of them
   was visible. `hostdisk.preflight` now prints the second one on the GREEN path too — the run
-  that looks healthy is exactly the case it exists for. The underlying defect is still owed and
-  is not a threshold: the gate reserves when a stage STARTS rather than when its CPU permit is
-  GRANTED, so it budgets for three concurrent builds that `cpuheavy` (4 permits, 2 per build)
-  will never allow. Lowering the per-build reservation is a stopgap; lowering the 20G floor
-  would be the same move as weakening a smoke test.
+  that looks healthy is exactly the case it exists for. **The root cause was simply a WRONG
+  NUMBER, and I misdiagnosed it as a design flaw** — worth recording because the misdiagnosis
+  is the more instructive half. I wrote here that the defect was the ordering (`reserve()`
+  takes disk while holding no CPU permit, so three builds hold reservations while the broker
+  runs two) and that lowering the reservation was a mere stopgap. Both were wrong. Measuring
+  it (`bd8e4244236`, sampling the build dir every 20s through a cold build) put the i386 and
+  amd64 peaks at **7.44 GiB each** against a **32 GiB** estimate — 4.3x — so `20 + 3x32 = 116G`
+  had to be free or the third arch took an instant `DISK_ADMISSION_FAIL`. The ordering is
+  deliberate and stays: inverting it would mean sitting on a scarce CPU permit while blocked on
+  disk admission. **Accuracy is what makes the asymmetry harmless**, so the estimate was the
+  whole bug. The reusable part: a resource estimate nobody has measured is a plausible-looking
+  constant, and an architecture story will happily be built on top of it — I had a mechanism,
+  a permit-ordering argument, and no measurement. Measure the quantity before theorising about
+  the machine that consumes it. (Lowering the 20G *floor* would still be weakening a gate;
+  that part stands. And note `policy.json` lives under `/tmp` and regenerates from `REQUESTS`
+  every reboot — an earlier hand-edit to 15 evaporated at the next boot and took its fix with
+  it, so the code default is the only durable knob.)
 - **A scanner that CRASHED rather than found anything.** Five of the six audited source
   scanners walked `sdk/lib/rust` with `sorted(root.rglob("*.rs"))` and filtered `/target/`
   *after* the walk had already descended into it. `Path.rglob` propagates the
@@ -7508,6 +7520,56 @@ boot, `PTE=…447` (AttrIndx 1) with `OPC=0xB83F6AB4` — a plain `str`; after, 
 whole class collapsed to the one case that is *supposed* to happen.
 
 ### arm64 bring-up bugs worth recognising again
+- **A dropped C `ASSERT` is a machine freeze on arm64, not a lost debug check.** Symptom: a
+  boot wedges with a vCPU at EL1, PC parked, DAIF all masked, no bugcheck and no timer; the
+  faulting VA is a user address, hardware reports a level-3 translation fault (EC 0x25,
+  DFSC 0x07), and the PTE software reads for that same VA has `Valid = 1`. Cause:
+  `MI_MAKE_HARDWARE_PTE_USER` was translated without the four ASSERTs the C original opens
+  with -- the ones commented *"check that we are not setting valid a page that should not be"*
+  (`ASSERT(ProtectionMask & MM_PROTECT_ACCESS)` and friends). `MM_PROTECT_ACCESS` is 7, so
+  `mask & 7 == 0` selects exactly the four rows of `MmProtectToPteMask` that are zero
+  (zero-access, no-access, guard, decommit). On x86 a zero row still leaves a translatable
+  page -- the helper's own `Valid | User | PFN` is a complete present PTE -- so the bug degrades
+  to a wrongly READABLE page and hides. On arm64 that table is the ONLY source of bit 1
+  (`NotLargePage`) and bit 10 (AF), so the same mask yields `Valid = 1` with descriptor type
+  `0b01`, which is RESERVED at level 3: the MMU refuses the translation, `MmAccessFault` reads
+  `Valid = 1` and reports `STATUS_SUCCESS`, and the trap returns to the same instruction
+  forever. Both are telling the truth about different fields of one word. Fix: restore the
+  assert as a real runtime guard, centrally (`ntkrnl_sys::mm::mi_user_pte_may_be_valid`) -- a
+  protection granting no access leaves the entry not-present, which is what the mask asked for,
+  so the fault takes the invalid path and the thread gets a clean access violation instead of
+  taking the box down. The reusable half: an `ASSERT` dropped in translation is not equivalent
+  to a dropped debug print. It encodes a precondition another arch enforces in *hardware*, so
+  the same wrong value that is survivable on x86 is unrecoverable on arm64. `scan_assert_to_ub`
+  does not cover this -- it catches an assert lowered to `unreachable_unchecked()`, not one
+  deleted outright, and its oracle (rustconv's trailing C comments) is absent from hand-written
+  bridge modules like `ARM3/helpers.rs` anyway. `tools/scan_dropped_asserts.py` now gates this
+  class -- it pairs the C `FORCEINLINE` against its same-named Rust twin cross-file and reports
+  fewer asserts on the Rust side -- but it opened with 89 findings, so a helper you are about to
+  trust may well be one of them. Grep the C for `ASSERT` before calling a translated MM/KE
+  helper faithful.
+  **Know which hang you are now in.** Restoring the guard did NOT make the boot pass — it
+  converted an unobservable freeze (EL1, DAIF all masked, PC parked, no timer, no bugcheck,
+  nothing downstream can see it) into a clean `BUGCHECK 0x1E` with a full stack. Neither boots,
+  but they are very different debugging positions, and the second one is reachable by every
+  instrument we own. Two traps in reading the second: the flight recorder's ~1.1M
+  `ws-lock-excl`/`ws-unlock-excl` pairs are HISTORY from before the fault, not a live livelock
+  (this entry said otherwise for a day), and the harness verdict `FROZEN — every vCPU PC is
+  identical` is just the post-bugcheck halt. Symbolicate the parked PC before theorising about
+  it: ours was `xHalHaltSystem+8`, the machine having stopped correctly. Worked example —
+  `20260906-190514-conformance-arm64/summary.json` records bugcheck `0x1E` and its sampled PC
+  `0xfffff80042205e7c` resolves into that halt path in the matching binary. A recorder's event
+  count describes preceding activity, never what the stopped CPU is doing now; re-derive the
+  live PC and its image relocation before naming a hang mechanism from one. Expect this shape
+  whenever you refuse a bad value inside a helper whose caller has no error return: the caller
+  cannot observe the refusal, so it retries. That is a step forward, not a fix, and the real repair belongs where
+  the bad value is chosen.
+- **"Software says valid, hardware says translation fault" has two causes on arm64, and they
+  need opposite fixes.** Either the entry was never published to the page-table walker (a
+  separate observer from this core's loads -- needs `dsb ishst`; see `MI_WRITE_VALID_PTE`), or
+  the entry is published and *malformed*. Dump the PTE through the self-map before choosing: a
+  well-formed user page reads `0x...443` (Valid, NotLargePage, Owner, AF), a malformed one
+  `0x...041`. Guessing wrong costs a build-and-soak cycle per guess.
 - **An EL1 instruction fetch on a user page loops silently forever — the fault handler called it
   spurious.** Symptom: a ~2% arm64 boot wedge with no bugcheck, no serial, every timed wait
   dead, every vCPU sample at the same user-range PC (`0x10000`) at EL1h; the whole box reads
@@ -7520,6 +7582,29 @@ whole class collapsed to the one case that is *supposed* to happen.
   IFSC, never goes to paging — it is dispatched as a kernel access violation and bugchecks with
   the frame plus `[KSTKW]`, the kernel-range words on the faulting stack (a wild `br` leaves LR
   useless; the callers' return addresses above SP are the only route back to the jumper).
+  **A second swallowing path, same function (task #39).** Dispatching the fetch AV was not
+  enough. `KiDispatchException`'s user-address data-probe fixup accepted *every* access
+  violation, execute faults included (`ExceptionInformation[0] == 8`). It read the
+  inaccessible instruction as data, sometimes zeroed registers from its bits, advanced PC by
+  four and returned — so the recorded PC is wherever that walk ended, not the original bad
+  branch target. Five saved captures all end at `0x250000` for this reason. It is in the
+  failing binary as well: PE VA `0x414494` tests the fault address without reading the access
+  type at exception-record offset `0x20`, `0x4144f4` adds four to PC, `0x414574` can zero LR.
+  Fix: exclude execute faults from the fixup, and dump the trap's LR and integer registers at
+  the first unhandled fault. Excluding them exposes an EARLIER fault — patched runs stop at an
+  EL1 instruction abort with PC, LR and FP all zero (`ESR=0x86000007`) in `lsass.exe`, with the
+  semaphore-release frame still on the stack, while the same-commit control keeps the old
+  `0x250000` undefined-instruction signature. The guard exposes the earlier fault; it does not
+  repair the zero return. Binaries, indexes and logs for both sets are preserved under
+  `~/vibeos-flake-farm/fails/smp39-20260906-{original,first-fault,control}/` — and preserving
+  them is the point, because a capture left in `/tmp/vibeos-cli` is gone within days.
+  The probe written to catch this exact frame — `KiTrapReturnProbe`, inspecting the EL0-return
+  state at the `eret` — missed for three independent reasons: its call site is `#ifdef
+  ARM64_TRAP_DEBUG` and that macro is **defined nowhere in the repo**, so it is dead source that
+  reads like an armed instrument; it returns early unless the frame says EL0t, and this one says
+  EL1h; and its bound is `pc < 0x10000`, a strict less-than at exactly the observed PC. **Before
+  trusting an in-tree probe's silence, grep for its GUARD, not its code** — `#ifdef`, `cfg`,
+  feature, and early-return each turn a probe into decoration, and all three did here.
   **Recognition rule: a "spurious fault, retry" return is only safe when the retry can succeed.
   An instruction-fetch permission fault has no paging remedy at any address — PXN/UXN is not a
   paged-out page — and a retry that cannot succeed is a hang with the handler's name on it.**

@@ -134,7 +134,9 @@ def _cpu_state(
             state = vm.capture_cpu_state()
         except Exception:
             return None, []
-    lines = triage.symbolicate_cpu_state(repo, arch, state, mp="ntkrnlmp.exe" in serial)
+    lines = triage.symbolicate_cpu_state(
+        repo, arch, state, mp="ntkrnlmp.exe" in serial, serial=serial
+    )
     path = work / "hang-cpustate.txt"
     try:
         path.write_text(state + ("\n" + "\n".join(lines) + "\n" if lines else ""))
@@ -188,10 +190,18 @@ def _smp_check(text: str, arch: str) -> dict | None:
     existed the name carried no information — the flavor was a cmake cache var
     baked into a file always called hal.dll — so only the runtime marker existed.
     """
+    # n == 0 means "no --smp given", i.e. a DEFAULT boot. That used to return
+    # early, which was right while the default media was UP -- there was nothing
+    # to assert. Since the MP promotion (2026-09-12) the default media boots the
+    # MP pair, so the same names must be checked on every boot: otherwise a
+    # regression that quietly reverts DefaultOS= to the UP entry passes the whole
+    # gate green, which is precisely the false-green (`a boot that reached the
+    # desktop running the wrong kernel looks identical to a correct one`) that
+    # UP_KERNEL_ON_SMP_RUN exists to catch. Only the AP-liveness check below
+    # genuinely needs n > 1.
     smp = os.environ.get("VIBEOS_QEMU_SMP", "").strip()
-    if not smp.isdigit() or int(smp) < 1:
-        return None
-    n = int(smp)
+    n = int(smp) if smp.isdigit() and int(smp) >= 1 else 0
+    how = f"--smp {n}" if n else "the default boot"
 
     booted = _booted_kernel(text)
     if booted and booted != "ntkrnlmp.exe":
@@ -209,7 +219,7 @@ def _smp_check(text: str, arch: str) -> dict | None:
         return {
             "classification": "UP_KERNEL_ON_SMP_RUN",
             "salient": [
-                f"--smp {n} booted {booted}, not ntkrnlmp.exe",
+                f"{how} booted {booted}, not ntkrnlmp.exe",
                 fix,
             ],
         }
@@ -218,7 +228,7 @@ def _smp_check(text: str, arch: str) -> dict | None:
         return {
             "classification": "SMP_UP_HAL",
             "salient": [
-                f"--smp {n} loaded {hal}, not halmp.dll — the MP kernel is running "
+                f"{how} loaded {hal}, not halmp.dll — the MP kernel is running "
                 "on the UP HAL, so HalStartNextProcessor is the FALSE stub and "
                 "this boot is silently 1 CPU",
                 "the boot entry is missing /HAL=halmp.dll (livecd.ini "
@@ -238,6 +248,7 @@ def _smp_check(text: str, arch: str) -> dict | None:
         }
     # Same requirement test_milestones enforces: one marker per AP, printed by
     # KiSmpNoteApSwitch on the AP's first non-idle context switch.
+    # n == 0 (default boot) yields an empty range: one CPU has no APs to check.
     missing = [c for c in range(1, n) if f"CPU{c} scheduling live" not in text]
     if missing:
         return {

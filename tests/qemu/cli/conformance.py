@@ -267,10 +267,9 @@ def merge_baseline_rows(existing_text: str, results, only, fmt):
 
 
 def _run_dir(arch: str) -> Path:
-    ts = time.strftime("%Y%m%d-%H%M%S")
-    d = Path("/tmp/vibeos-cli") / f"{ts}-conformance-{arch}"
-    d.mkdir(parents=True, exist_ok=True)
-    return d
+    from .artifacts import create_run_dir
+
+    return create_run_dir("conformance", arch)
 
 
 # Durable soak ledger, alongside the flake farm's corpus so one triage pass can
@@ -671,6 +670,7 @@ def _conformance_once(args, repo: Path) -> int:
                 base,
                 hang_state_path.read_text(errors="replace"),
                 mp="ntkrnlmp.exe" in serial_text,
+                serial=serial_text,
             )
             if hang_pcs:
                 with hang_state_path.open("a") as f:
@@ -806,7 +806,16 @@ def _conformance_once(args, repo: Path) -> int:
         # into the shared corpus instead of having to be recovered by grepping
         # serial logs for an `ntkrnlmp.exe` load line.
         "smp": smp,
-        "mp_kernel": bool(smp),
+        # OBSERVED, not inferred. This was `bool(smp)`, which re-committed the very
+        # error the note above describes: it read the kernel off the FLAG instead of
+        # the boot. That was accurate only while `--smp N` was the only way to get
+        # MP media. Since the MP promotion (2026-09-12) a DEFAULT boot runs
+        # ntkrnlmp.exe with smp unset, so `bool(smp)` recorded every default MP
+        # round as UP -- silently poisoning the one field every flake-rate query
+        # filters on. The note above already prescribes the fix ("carry the kernel
+        # explicitly"); this is that, and the same expression is computed three
+        # lines from here for symbolication.
+        "mp_kernel": "ntkrnlmp.exe" in serial_text,
         "launched": len(results),
         "ok": ok,
         "bad": bad,

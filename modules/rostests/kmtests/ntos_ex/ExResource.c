@@ -542,6 +542,44 @@ TestResourceWithOwner(
     FinishThread(&ThreadDataOwner);
 }
 
+/* Exercise the release that wakes a higher-priority shared waiter. With one
+ * processor this makes the releasing thread resume through the dispatcher's
+ * context-switch return, the path implicated by ARM64 MP boot failure #39. */
+static
+VOID
+TestSharedReleasePreemption(
+    IN PERESOURCE Res)
+{
+    THREAD_DATA Waiter;
+    LARGE_INTEGER Timeout;
+    NTSTATUS Status;
+    ULONG Round;
+
+    if (skip(KeQueryPriorityThread(KeGetCurrentThread()) < LOW_REALTIME_PRIORITY,
+             "Need a higher priority for the shared waiter\n"))
+        return;
+
+    Timeout.QuadPart = -10 * 1000 * 10; /* 10 ms, as in TestResourceWithThreads */
+    for (Round = 0; Round < 32; ++Round)
+    {
+        InitThreadData(&Waiter, Res, ExAcquireResourceSharedLite);
+        KeEnterCriticalRegion();
+        ok_bool_true(ExAcquireResourceExclusiveLite(Res, TRUE), "exclusive acquire");
+        Status = StartThread(&Waiter, &Timeout, TRUE, TRUE);
+        ok_eq_hex(Status, STATUS_TIMEOUT);
+        ok_eq_ulong(ExGetSharedWaiterCount(Res), 1);
+        KeSetPriorityThread(Waiter.Thread, LOW_REALTIME_PRIORITY);
+
+        ExReleaseResourceForThreadLite(Res, (ULONG_PTR)KeGetCurrentThread());
+        KeLeaveCriticalRegion();
+
+        Status = KeWaitForSingleObject(&Waiter.OutEvent, Executive, KernelMode, FALSE, NULL);
+        ok_eq_hex(Status, STATUS_SUCCESS);
+        FinishThread(&Waiter);
+        CheckResourceStatus(Res, FALSE, 0LU, 0LU, 0LU);
+    }
+}
+
 START_TEST(ExResource)
 {
     NTSTATUS Status;
@@ -596,6 +634,7 @@ START_TEST(ExResource)
     CheckResourceStatus(&Res, FALSE, 0LU, 0LU, 0LU);
 
     TestResourceWithThreads(&Res);
+    TestSharedReleasePreemption(&Res);
 
     /* ExReinitializeResourceLite cleans up after us */
     Status = ExReinitializeResourceLite(&Res);

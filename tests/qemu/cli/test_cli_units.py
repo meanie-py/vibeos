@@ -146,6 +146,89 @@ def test_smp_patch_is_idempotent_on_arm64_media(tmp_path: Path):
     assert vm_mod.smp_selected_iso(src, tmp_path / "work") == src
 
 
+def _stub_mcopy(monkeypatch, ini_text: str = "[FREELOADER]\n/SOS /RDPATH=x\n"):
+    """Stand in for mcopy: extraction writes the ini out, write-back is a no-op.
+
+    The real transform needs a FAT image; what these tests are about is the
+    CACHING, so the FAT plumbing is stubbed and the calls are recorded.
+    """
+    calls: list[list[str]] = []
+
+    def fake_run(cmd, **kwargs):
+        calls.append(list(cmd))
+        # `mcopy -o -i IMG ::/freeldr.ini OUT` — the extraction direction
+        if cmd[-2].startswith("::"):
+            Path(cmd[-1]).write_text(ini_text)
+        return subprocess.CompletedProcess(cmd, 0, b"", b"")
+
+    monkeypatch.setattr(vm_mod.subprocess, "run", fake_run)
+    return calls
+
+
+def test_testkernel_boot_img_is_built_once_and_reused(tmp_path: Path, monkeypatch):
+    """This copied 280 MiB on every construction of the config. The transform is
+    deterministic, so every copy held identical bytes. The second call must reuse."""
+    src = tmp_path / "boot.img"
+    src.write_bytes(b"BOOTIMG" * 100)
+    work = tmp_path / "work"
+    work.mkdir()
+    calls = _stub_mcopy(monkeypatch)
+
+    first = vm_mod.testkernel_boot_img(src, work)
+    assert first.exists()
+    assert first != src, "must not mutate the build tree's media"
+    built = len(calls)
+    assert built > 0
+
+    second = vm_mod.testkernel_boot_img(src, work)
+    assert second == first
+    assert len(calls) == built, "second boot rebuilt the image instead of reusing it"
+
+
+def test_testkernel_boot_img_rekeys_when_the_source_changes(tmp_path: Path, monkeypatch):
+    """A rebuild re-stages boot.img. Reusing the old variant would boot stale
+    media, which is the one failure worse than the copying it replaces."""
+    src = tmp_path / "boot.img"
+    src.write_bytes(b"OLD")
+    work = tmp_path / "work"
+    work.mkdir()
+    _stub_mcopy(monkeypatch)
+
+    old = vm_mod.testkernel_boot_img(src, work)
+    src.write_bytes(b"NEWER-AND-LONGER")
+    os.utime(src, (1, 1))
+    new = vm_mod.testkernel_boot_img(src, work)
+
+    assert new != old, "a re-staged boot.img must produce a new cache key"
+    assert not old.exists(), "the stale variant should be pruned"
+
+
+def test_testkernel_boot_img_never_writes_the_shared_file_in_place(tmp_path: Path, monkeypatch):
+    """AGENTS.md records SIGBUS from a tool rewriting a shared inode under a
+    sibling's mapping. Building via a temp + os.replace means an already-open
+    boot keeps a valid inode, so guard that the staging path is what gets
+    written and the shared name only ever appears via replace."""
+    src = tmp_path / "boot.img"
+    src.write_bytes(b"BOOTIMG")
+    work = tmp_path / "work"
+    work.mkdir()
+    _stub_mcopy(monkeypatch)
+
+    replaced: list[tuple[str, str]] = []
+    real_replace = os.replace
+    monkeypatch.setattr(
+        vm_mod.os,
+        "replace",
+        lambda a, b: (replaced.append((str(a), str(b))), real_replace(a, b))[1],
+    )
+
+    out = vm_mod.testkernel_boot_img(src, work)
+    assert len(replaced) == 1, "the shared image must appear via exactly one atomic replace"
+    staged, final = replaced[0]
+    assert str(out) == final
+    assert "staging" in staged, "content must be built at a private path first"
+
+
 def test_mp_entry_names_are_equal_length_to_the_defaults_they_replace():
     """The in-place poke can pad a shorter replacement but never a longer one, and
     arm64 relies on an exact-length swap. Guard the table itself so renaming one
@@ -1061,6 +1144,37 @@ def test_symbolicate_cpu_state_resolves_mp_addresses_against_the_MP_index(tmp_pa
     assert "--mp" not in up[0], up[0]
 
 
+def test_symbolication_uses_this_boot_kernel_base(tmp_path):
+    tool = tmp_path / "qemu" / "addr2sym.sh"
+    tool.parent.mkdir(parents=True)
+    tool.write_text('#!/bin/sh\necho "ARGS:$*"\n')
+    serial = (
+        "ntkrnlmp.exe\n"
+        "[KRNLBASE] ntoskrnl runtime base=0xFFFFF80042190000\n"
+        "*** BUGCHECK: 0x0000001E (0x1, 0xfffff80042205e7c, 0x2, 0x0)\n"
+    )
+    fault = triage.symbolicate_pc(tmp_path, "arm64", serial)
+    assert fault is not None
+    assert "--reloc 0xfffff80041d90000" in fault
+    assert "--mp" in fault
+    cpus = triage.symbolicate_cpu_state(tmp_path, "arm64", _ARM64_REGS, serial=serial, mp=True)
+    assert all("--reloc 0xfffff80041d90000" in line for line in cpus)
+
+
+def test_kernel_relocation_prefers_latest_boot_and_preserves_legacy_behavior():
+    assert triage.kernel_relocation("arm64", "") is None
+    assert triage.kernel_relocation("i386", "") == "0x800c3000"
+    assert (
+        triage.kernel_relocation("amd64", "[KRNLBASE] ntoskrnl runtime base=fffff80000400000\n")
+        == "0xfffff80000000000"
+    )
+    serial = (
+        "[KRNLBASE] ntoskrnl runtime base=0xFFFFF80042190000\n"
+        "[KRNLBASE] ntoskrnl runtime base=0xFFFFF80042290000\n"
+    )
+    assert triage.kernel_relocation("arm64", serial) == "0xfffff80041e90000"
+
+
 def test_cpu_state_prefers_the_capture_taken_at_the_deadline(tmp_path):
     # wait_for_boot samples the instant the boot times out. Re-sampling later
     # would agree on a true hang but disagree on a merely-slow boot, which by
@@ -1197,6 +1311,38 @@ def test_capture_cpu_state_disassembles_at_every_pc():
     out = v.capture_cpu_state()
     assert seen[-2:] == ["x /6i 0xfffff80042192824", "x /6i 0x0000000000010000"]
     assert "=== CPU#1 x /6i 0x0000000000010000 ===" in out
+
+
+def test_capture_cpu_state_reads_the_memory_under_every_stack_pointer():
+    # The decisive test for a wedge parked on a stack access: can the MONITOR
+    # read the page, using the guest's own translation? Unreadable means the
+    # page is gone and the guest is re-faulting on it forever; readable means
+    # the fault is not a translation fault. Nothing inside the guest can answer
+    # that, because the guest is what is stuck.
+    v = vm_mod.QemuVM.__new__(vm_mod.QemuVM)
+    seen = []
+
+    class _Qmp:
+        def hmp(self, cmd):
+            seen.append(cmd)
+            if cmd == "info registers -a":
+                return " PC=fffff8004219280c  SP=ffff800004a26a00\nCPU#0 header above\n"
+            return "ok"
+
+    # One CPU, banner first so the slicer credits it.
+    class _Qmp2(_Qmp):
+        def hmp(self, cmd):
+            seen.append(cmd)
+            if cmd == "info registers -a":
+                return "CPU#0\n PC=fffff8004219280c X00=0\n SP=ffff800004a26a00\n"
+            return "ok"
+
+    v.qmp = _Qmp2()  # type: ignore[assignment]
+    out = v.capture_cpu_state()
+    assert "x /23gx 0xffff800004a26a00" in seen
+    assert "=== CPU#0 stack x /23gx 0xffff800004a26a00 ===" in out
+    # The stack read must come AFTER the register dump it was parsed from.
+    assert seen.index("info registers -a") < seen.index("x /23gx 0xffff800004a26a00")
 
 
 def test_save_hang_state_survives_a_dead_monitor(tmp_path, _no_resample_wait):
@@ -1962,6 +2108,42 @@ def test_gdbengine_gdb_arch_map():
     assert ge_mod._gdb_arch("arm64") == "aarch64"
 
 
+@pytest.mark.parametrize("smp", [None, "1", "4"])
+def test_gdbengine_smp_media_symbols_and_cpu_count_agree(tmp_path, monkeypatch, smp):
+    from types import SimpleNamespace
+
+    if smp is None:
+        monkeypatch.delenv("VIBEOS_QEMU_SMP", raising=False)
+    else:
+        monkeypatch.setenv("VIBEOS_QEMU_SMP", smp)
+    monkeypatch.setattr(ge_mod, "PROJECT_DIR", tmp_path)
+    monkeypatch.setattr(ge_mod.subprocess, "run", lambda *a, **kw: None)
+    monkeypatch.setattr(be_mod, "stage_media_paths", lambda args, staging: args)
+    monkeypatch.setattr(be_mod, "windows_free_tcp_port", lambda: 12345)
+    monkeypatch.setattr(be_mod, "windows_qemu_bin", lambda *a: "qemu-system-aarch64.exe")
+    monkeypatch.setattr(be_mod, "win_path", str)
+    monkeypatch.setattr(be_mod, "gateway_ip", lambda: "127.0.0.1")
+    selected = []
+
+    def qemu_args(work):
+        selected.append(vm_mod.smp_count())
+        return []
+
+    config = SimpleNamespace(qemu_bin="qemu-system-aarch64", qemu_args=qemu_args)
+    cmd, _ = ge_mod._build_windows_cmd(
+        "arm64", config, {"qemu_dir": "qemu"}, tmp_path, tmp_path, gdb_wait=True
+    )
+    assert selected == [int(smp) if smp else None]
+    if smp is None:
+        assert "-smp" not in cmd
+        assert ge_mod._kernel_image("arm64") == tmp_path / "build-arm64/ntoskrnl/ntoskrnl.exe"
+    else:
+        assert cmd[cmd.index("-smp") + 1] == smp
+        assert (
+            ge_mod._kernel_image("arm64") == tmp_path / "build-arm64/ntoskrnl/ntkrnlmp/ntkrnlmp.exe"
+        )
+
+
 def test_gdbengine_expand_verb():
     assert ge_mod._expand_verb("bt 50") == "bt-tagged 50"
     assert ge_mod._expand_verb("bt") == "bt-tagged"  # no trailing space
@@ -1997,6 +2179,42 @@ def test_gdbengine_manifest_roundtrip(tmp_path, monkeypatch):
     assert got.gdb_port == 54321 and got.win_uid == "vibeos-dbg-1-2" and got.arch == "amd64"
 
 
+@pytest.mark.parametrize("copy_fails", [False, True])
+def test_gdbengine_stop_preserves_serial_before_cleaning_staging(tmp_path, monkeypatch, copy_fails):
+    monkeypatch.setattr(ge_mod, "RUNS_DIR", tmp_path / "runs")
+    staging = tmp_path / "staging"
+    staging.mkdir()
+    serial = staging / "serial.log"
+    serial.write_text("boot evidence\n")
+    run = ge_mod.DebugRun(
+        run_id="arm64-archive",
+        arch="arm64",
+        backend="native",
+        gdb_host="127.0.0.1",
+        gdb_port=1234,
+        serial_log=str(serial),
+        kernel_image="/k/ntkrnlmp.exe",
+        staging=str(staging),
+    )
+    run.save()
+    if copy_fails:
+
+        def fail_copy(*args, **kwargs):
+            raise OSError("disk full")
+
+        monkeypatch.setattr(ge_mod.shutil, "copy2", fail_copy)
+        with pytest.raises(OSError, match="disk full"):
+            ge_mod.stop(run)
+        assert serial.read_text() == "boot evidence\n"
+    else:
+        ge_mod.stop(run)
+        assert not staging.exists()
+        archived = Path(ge_mod.DebugRun.load(run.run_id).serial_log)
+        assert archived.read_text() == "boot evidence\n"
+        ge_mod.stop(run)  # repeated cleanup must preserve the archive too
+        assert archived.read_text() == "boot evidence\n"
+
+
 def test_gdbengine_load_rejects_foreign_manifest(tmp_path, monkeypatch):
     # qemu/runs/ is shared with the bash toolkit, whose manifest lacks our fields.
     monkeypatch.setattr(ge_mod, "RUNS_DIR", tmp_path)
@@ -2004,6 +2222,70 @@ def test_gdbengine_load_rejects_foreign_manifest(tmp_path, monkeypatch):
     (tmp_path / "bash-run" / "manifest.json").write_text('{"run_id":"bash-run","qemu_pid":9}')
     with pytest.raises(ValueError, match="not a gdbengine run manifest"):
         ge_mod.DebugRun.load("bash-run")
+
+
+@pytest.mark.parametrize(
+    "result",
+    [None, {"hit": False, "checks": 0}, {"hit": "no", "checks": 2}, {"hit": False, "checks": 2}],
+)
+def test_gdbengine_probe_rejects_silent_script_failure(tmp_path, monkeypatch, result):
+    monkeypatch.setattr(ge_mod, "RUNS_DIR", tmp_path / "runs")
+    run = ge_mod.DebugRun("probe", "arm64", "windows-host", "host", 1234, "serial", "kernel")
+    run.save()
+    script = tmp_path / "watch.py"
+    script.write_text("# probe\n")
+
+    def fake_gdb(*args, **kwargs):
+        if result is not None:
+            (run.dir / "probe-result.json").write_text(json.dumps(result))
+        return subprocess.CompletedProcess([], 0)
+
+    monkeypatch.setattr(ge_mod.subprocess, "run", fake_gdb)
+    if result == {"hit": False, "checks": 2}:
+        assert ge_mod.probe(run, script, timeout=1) == result
+    else:
+        with pytest.raises(RuntimeError):
+            ge_mod.probe(run, script, timeout=1)
+
+
+@pytest.mark.parametrize("outcome", ["hit", "error", "cancel"])
+def test_gdbengine_probe_soak_stops_on_hit_or_error_and_cleans_up(tmp_path, monkeypatch, outcome):
+    from types import SimpleNamespace
+
+    monkeypatch.setattr(ge_mod, "RUNS_DIR", tmp_path / "runs")
+    kernel = tmp_path / "kernel"
+    kernel.write_bytes(b"frozen kernel")
+    (tmp_path / "qemu").mkdir()
+    (tmp_path / "qemu" / "boot.img").write_bytes(b"media")
+    script = tmp_path / "watch.py"
+    script.write_text("# probe\n")
+    monkeypatch.setattr(ge_mod, "_kernel_image", lambda arch: kernel)
+    monkeypatch.setattr(ge_mod, "_cfg", lambda repo: ("windows-host", {}))
+    runs = []
+    stopped = []
+
+    def fake_start(*args, **kwargs):
+        assert kwargs["gdb_wait"]
+        run = ge_mod.DebugRun(str(len(runs)), "arm64", "windows-host", "host", 1234, "s", "k")
+        run.save()
+        runs.append(run)
+        return run
+
+    def fake_probe(*args, **kwargs):
+        if outcome == "cancel":
+            raise KeyboardInterrupt
+        if outcome == "error":
+            raise RuntimeError("no coverage")
+        return {"hit": len(runs) == 2, "checks": 1}
+
+    monkeypatch.setattr(ge_mod, "start", fake_start)
+    monkeypatch.setattr(ge_mod, "probe", fake_probe)
+    monkeypatch.setattr(ge_mod, "stop", lambda run: stopped.append(run.run_id))
+    args = SimpleNamespace(arch="arm64", script=str(script), repeat=8, timeout=1)
+    assert ge_mod.cmd_probe(args, tmp_path) == {"hit": 0, "error": 2, "cancel": 130}[outcome]
+    assert stopped == (["0", "1"] if outcome == "hit" else ["0"])
+    last = json.loads((runs[-1].dir / "probe-summary.json").read_text())
+    assert last["verdict"] == {"hit": "HIT", "error": "PROBE_ERROR", "cancel": "CANCELLED"}[outcome]
 
 
 def test_gdbengine_status_uses_process_liveness_not_gdb_connect(monkeypatch):
@@ -4095,15 +4377,16 @@ def test_conformance_arch_normalization():
 
 
 def test_conformance_asks_the_build_for_the_kmtest_corpus(monkeypatch, tmp_path):
-    """conformance must pass --kmtests, and must NOT force an arm64 --smp-kernel.
+    """conformance must pass --kmtests, and must never opt out to the UP kernel.
 
     Both cmake options gating the corpus default OFF, so a build dir this worktree
     just created has no tests in it; the old preflight only refused when a cache
     existed and said OFF, and returned None — sailing through — when there was no
     cache at all. The arm64 half is the tail of the MP-media work: every media now
-    carries both kernel/HAL pairs and vm.smp_selected_iso repoints DefaultOS= in a
-    copy at boot, so forcing --smp-kernel would cost a media re-roll AND make the
-    --smp 1 and --smp 2 sweeps need two builds of one commit.
+    carries both kernel/HAL pairs and the MP one is the shipped default, so a
+    media re-roll buys nothing. The UP half is the live assertion now: `--up-kernel`
+    must never appear, because conformance is one of the automated paths that
+    exists to test what we SHIP, and UP is a dead branch.
 
     Nothing here may depend on the ambient checkout being provisioned: the merge
     queue gates in a fresh worktree that legitimately lacks the gitignored payload
@@ -4127,7 +4410,7 @@ def test_conformance_asks_the_build_for_the_kmtest_corpus(monkeypatch, tmp_path)
         )
         assert conformance_mod._conformance_once(args, tmp_path) == 1  # bailed on our stub
         assert seen and "--kmtests" in seen[0], seen
-        assert "--smp-kernel" not in seen[0], f"{arch}: media re-roll is no longer needed"
+        assert "--up-kernel" not in seen[0], f"{arch}: conformance must not test the UP kernel"
 
 
 def test_worktree_provisioning_preflight(tmp_path):
@@ -7326,3 +7609,295 @@ def test_every_tools_test_file_is_actually_collected_by_something() -> None:
         "these tools/ suites are collected by nothing; add them to _PYTEST_SUITES "
         f"or give each an `exempt` entry saying why: {missing}"
     )
+
+
+def test_same_second_runs_keep_separate_artifacts(tmp_path, monkeypatch):
+    from concurrent.futures import ThreadPoolExecutor
+
+    from . import artifacts, conformance
+
+    monkeypatch.setattr(artifacts, "ARTIFACT_ROOT", tmp_path)
+    monkeypatch.setattr(artifacts.time, "time", lambda: 1700000000)
+
+    def create(i):
+        directory = Run("conformance", "arm64").dir if i % 2 else conformance._run_dir("arm64")
+        (directory / "summary.json").write_text(json.dumps({"owner": i}))
+        return directory
+
+    with ThreadPoolExecutor(max_workers=8) as pool:
+        directories = list(pool.map(create, range(32)))
+    assert len(set(directories)) == 32
+    assert all(d.name.endswith("-conformance-arm64") for d in directories)
+    assert [json.loads((d / "summary.json").read_text())["owner"] for d in directories] == list(
+        range(32)
+    )
+
+
+# --- MP-default beta: the two flakes the fleet agreed to eat, and the evidence
+# trail that has to survive them. Both halves are pinned here because both have
+# already failed silently once: a signature that was too broad masked real bugs
+# for months (retired arm64_lpcexitthread_race), and three captures were lost to
+# /tmp retention when nothing preserved them.
+
+
+def _flake_names():
+    from .triage import KNOWN_FLAKES
+
+    return {f["name"] for f in KNOWN_FLAKES}
+
+
+def test_mp_beta_flake_signatures_are_registered():
+    assert {"arm64_smp39_zero_pc_fetch_abort", "i386_mp_win32k_av_0x1e"} <= _flake_names()
+
+
+def test_smp39_signature_needs_the_WHOLE_shape_not_just_the_esr():
+    """The SEH tests print an ESR on PURPOSE and pass.
+
+    `[UEXC] ESR=0x92000047` is a deliberate, passing user-mode SEH probe, and an
+    earlier draft that keyed on ESR alone would have swallowed unrelated reds.
+    A kernel fault with a NON-zero PC is also not #39.
+    """
+    from .triage import _match_known_flake
+
+    real = (
+        "[KEXC] Code=0xFFFFFFFFC0000005[KEXC] PC=0x0000000000000000"
+        "[KEXC] Spsr=0x0000000020000345[KEXC] ESR=0x0000000086000007\n"
+        "*** BUGCHECK: 0x0000001E (0xffffffffc0000005, 0x0000000000000000, 0x0, 0x0)\n"
+    )
+    hit = _match_known_flake(real, "0x0000001E", "bugcheck")
+    assert hit is not None and hit["name"] == "arm64_smp39_zero_pc_fetch_abort"
+
+    # A passing SEH probe plus an UNRELATED 0x1E must still block.
+    seh_plus_other = (
+        "[UEXC] ESR=0x0000000092000047[SEH-USER] hw-fault: caught=1 (PASS)\n"
+        "*** BUGCHECK: 0x0000001E (0xffffffffc0000005, 0xfffff80042190000, 0x0, 0x0)\n"
+    )
+    assert _match_known_flake(seh_plus_other, "0x0000001E", "bugcheck") is None
+
+    # Same fault class, NON-zero PC -> a different bug, must not be masked.
+    nonzero_pc = real.replace("PC=0x0000000000000000", "PC=0xFFFF8000050E08A0")
+    assert _match_known_flake(nonzero_pc, "0x0000001E", "bugcheck") is None
+
+
+def test_win32k_signature_is_pinned_to_one_rva():
+    """A different win32k fault is a different bug and must still go red."""
+    from .triage import _match_known_flake
+
+    mine = "*** BUGCHECK: 0x0000001E (0xc0000005, ...)\n***   P2 = win32k.sys+0x65EE1\n"
+    other = "*** BUGCHECK: 0x0000001E (0xc0000005, ...)\n***   P2 = win32k.sys+0x12345\n"
+    hit = _match_known_flake(mine, "0x0000001E", "bugcheck")
+    assert hit is not None and hit["name"] == "i386_mp_win32k_av_0x1e"
+    assert _match_known_flake(other, "0x0000001E", "bugcheck") is None
+
+
+def test_failed_boot_preserves_serial_and_pins_the_kernel(tmp_path, monkeypatch):
+    """Preserving a verdict without the serial and the matching symbol index is
+    how a flake becomes unreadable lore. Both are part of the contract."""
+    from . import artifacts
+
+    monkeypatch.setattr(artifacts, "FARM_DIR", tmp_path / "farm")
+    repo = tmp_path / "repo"
+    (repo / "build-arm64" / "ntoskrnl" / "ntkrnlmp").mkdir(parents=True)
+    (repo / "build-arm64" / "ntoskrnl" / "ntkrnlmp" / "ntkrnlmp.exe").write_bytes(b"KERNEL")
+    (repo / "qemu").mkdir(parents=True)
+    (repo / "qemu" / "symbols-arm64-mp.tsv").write_text("0000\tKiFoo\t-\n")
+
+    run = tmp_path / "20260912-000000-abcd-smoke-arm64"
+    run.mkdir()
+    (run / "arm64_serial.log").write_text("[FLDR] load ntkrnlmp.exe\n*** BUGCHECK: 0x0000001E\n")
+    (run / "summary.json").write_text("{}")
+
+    kept = artifacts.preserve_failure(run, "arm64", "BUGCHECK 0x1E", repo)
+    assert kept, "a red boot must leave evidence behind"
+    dst = Path(kept)
+    assert (dst / "arm64_serial.log").is_file(), "the serial IS the evidence"
+    manifest = json.loads((dst / "manifest.json").read_text())
+    assert manifest["mp_kernel"] is True
+    # Pinned by content hash, so the serial stays symbolicable after a rebuild.
+    kdir = Path(manifest["kernels_dir"])
+    assert (kdir / "ntkrnlmp.exe").read_bytes() == b"KERNEL"
+    assert (kdir / "symbols-arm64-mp.tsv").is_file()
+
+
+def test_preserving_the_same_build_twice_copies_the_kernel_once(tmp_path, monkeypatch):
+    """Content-addressed on purpose: a 1.7% flake across a busy fleet must not
+    grow the farm by a kernel image per occurrence."""
+    from . import artifacts
+
+    monkeypatch.setattr(artifacts, "FARM_DIR", tmp_path / "farm")
+    repo = tmp_path / "repo"
+    (repo / "build-arm64" / "ntoskrnl" / "ntkrnlmp").mkdir(parents=True)
+    (repo / "build-arm64" / "ntoskrnl" / "ntkrnlmp" / "ntkrnlmp.exe").write_bytes(b"KERNEL")
+
+    seen = []
+    for i in range(3):
+        run = tmp_path / f"run{i}"
+        run.mkdir()
+        (run / "arm64_serial.log").write_text("ntkrnlmp.exe\n")
+        kept = artifacts.preserve_failure(run, "arm64", "BUGCHECK 0x1E", repo)
+        assert kept
+        seen.append(json.loads((Path(kept) / "manifest.json").read_text())["kernels_dir"])
+
+    assert len(set(seen)) == 1, "same build must resolve to one parked copy"
+    assert len(list((tmp_path / "farm" / "kernels").iterdir())) == 1
+    assert len(list((tmp_path / "farm" / "fails" / "auto").iterdir())) == 3
+
+
+def test_a_non_boot_run_preserves_nothing(tmp_path, monkeypatch):
+    """finalize() runs for `build` and `check` too; those have no serial and
+    must not create empty farm entries."""
+    from . import artifacts
+
+    monkeypatch.setattr(artifacts, "FARM_DIR", tmp_path / "farm")
+    run = tmp_path / "build-run"
+    run.mkdir()
+    (run / "full.log").write_text("link error\n")
+    assert artifacts.preserve_failure(run, "arm64", "BUILD_FAIL", None) is None
+    assert not (tmp_path / "farm").exists()
+
+
+def test_a_red_run_actually_reaches_the_preserve_path(tmp_path, monkeypatch):
+    """finalize() must CALL preserve_failure, not merely be able to.
+
+    The unit tests above prove the helper works in isolation; this one pins the
+    wiring, because the two failure modes are indistinguishable from outside. An
+    unwired preserve path produces an empty fails/auto/ directory, and an empty
+    fails/auto/ is exactly what a healthy fleet produces too -- so the bug would
+    present as good news and stay hidden until someone needed a capture.
+    """
+    from . import artifacts
+
+    monkeypatch.setattr(artifacts, "ARTIFACT_ROOT", tmp_path / "runs")
+    monkeypatch.setattr(artifacts, "FARM_DIR", tmp_path / "farm")
+    seen = {}
+
+    def spy(run_dir, arch, classification, repo):
+        seen["called"] = (arch, classification)
+        return str(tmp_path / "farm" / "fails" / "auto" / "x")
+
+    monkeypatch.setattr(artifacts, "preserve_failure", spy)
+
+    run = artifacts.Run("smoke", "arm64")
+    run.verdict = "FAIL"
+    run.classification = "BUGCHECK 0x1E"
+    run.finalize(None)
+    assert seen.get("called") == ("arm64", "BUGCHECK 0x1E"), "a red boot bypassed preservation"
+    assert json.loads((run.dir / "summary.json").read_text())["preserved"]
+
+
+def test_a_green_run_preserves_nothing(tmp_path, monkeypatch):
+    """Preserving on success would bury the real failures in noise."""
+    from . import artifacts
+
+    monkeypatch.setattr(artifacts, "ARTIFACT_ROOT", tmp_path / "runs")
+    monkeypatch.setattr(artifacts, "FARM_DIR", tmp_path / "farm")
+    called = []
+    monkeypatch.setattr(artifacts, "preserve_failure", lambda *a: called.append(a))
+
+    run = artifacts.Run("smoke", "arm64")
+    run.verdict = "OK"
+    run.finalize(None)
+    assert not called
+
+
+def test_default_boot_now_asserts_the_mp_kernel(monkeypatch):
+    """Since the MP promotion the DEFAULT media boots ntkrnlmp.exe, so a plain
+    smoke must catch a silent revert to UP.
+
+    A boot that reaches the desktop on the wrong kernel is indistinguishable
+    from a correct one — screenshot included — so if this check only ran under
+    --smp, a regression flipping DefaultOS= back would be green everywhere.
+    """
+    from . import smoke as smoke_mod
+
+    monkeypatch.delenv("VIBEOS_QEMU_SMP", raising=False)
+    up = "[FLDR] load \\reactos\\ntoskrnl.exe\n[FLDR] load \\reactos\\hal.dll\n"
+    bad = smoke_mod._smp_check(up, "arm64")
+    assert bad and bad["classification"] == "UP_KERNEL_ON_SMP_RUN"
+    assert "the default boot" in bad["salient"][0], bad["salient"]
+
+    mp = "[FLDR] load \\reactos\\ntkrnlmp.exe\n[FLDR] load \\reactos\\halmp.dll\n"
+    assert smoke_mod._smp_check(mp, "arm64") is None
+
+
+def test_default_boot_does_not_demand_ap_liveness(monkeypatch):
+    """One CPU has no APs; the liveness check must not fire on a default boot."""
+    from . import smoke as smoke_mod
+
+    monkeypatch.delenv("VIBEOS_QEMU_SMP", raising=False)
+    mp_one_cpu = "[FLDR] load \\reactos\\ntkrnlmp.exe\n[FLDR] load \\reactos\\halmp.dll\n"
+    assert smoke_mod._smp_check(mp_one_cpu, "amd64") is None
+
+
+def test_mp_kernel_on_a_up_hal_is_still_caught_on_a_default_boot(monkeypatch):
+    """The MP kernel on the UP HAL boots to a desktop and silently runs 1 CPU —
+    arm64 has no MISMATCHED_HAL handshake to catch it."""
+    from . import smoke as smoke_mod
+
+    monkeypatch.delenv("VIBEOS_QEMU_SMP", raising=False)
+    text = "[FLDR] load \\reactos\\ntkrnlmp.exe\n[FLDR] load \\reactos\\hal.dll\n"
+    bad = smoke_mod._smp_check(text, "arm64")
+    assert bad and bad["classification"] == "SMP_UP_HAL"
+
+
+def test_the_up_kernel_is_opt_in_only_and_nothing_automated_opts_in():
+    """UP is a dead branch: no automated path may select it.
+
+    The polarity was inverted on 2026-09-12 -- `--smp-kernel` (opt IN to MP) became
+    `--up-kernel` (opt OUT to UP), so the flavor a gate/smoke/conformance run gets
+    is MP unless a human deliberately asks otherwise. This pins both halves,
+    because the failure is silent in both directions: a run that boots the wrong
+    kernel reaches the desktop and looks identical to a correct one, and the old
+    flag name surviving anywhere would be a no-op that reads as still working.
+    """
+    import subprocess
+    import sys
+
+    repo = Path(__file__).resolve().parents[3]
+    # The opt-out exists and is spelled --up-kernel.
+    help_text = subprocess.run(
+        [sys.executable, "-m", "tests.qemu.cli", "build", "--help"],
+        cwd=repo,
+        capture_output=True,
+        text=True,
+        timeout=120,
+    ).stdout
+    assert "--up-kernel" in help_text, help_text[:400]
+    assert "--smp-kernel" not in help_text, "the inverted flag name survived"
+
+    # And no source file still reads the retired knob (docs may discuss history).
+    # Assembled at runtime so this file does not match its OWN pattern -- spelling
+    # the names literally made the guard report itself and nothing else.
+    pat = "smp" + "_kernel|VIBEOS_SMP_" + "DEFAULT_BOOT"
+    stale = subprocess.run(
+        ["git", "-C", str(repo), "grep", "-lE", pat, "--", "*.py", "*.sh", "*.cmake", "*.txt"],
+        capture_output=True,
+        text=True,
+        timeout=60,
+    ).stdout.split()
+    # gcc.cmake keeps a historical note about the FORMER env var; it reads nothing.
+    stale = [f for f in stale if f != "sdk/cmake/gcc.cmake"]
+    assert not stale, f"these still reference the retired MP opt-in knob: {stale}"
+
+
+def test_ledger_records_the_kernel_it_OBSERVED_not_the_flag():
+    """`mp_kernel` must come from the serial, never from `--smp`.
+
+    It was `bool(smp)`, which was accurate only while `--smp N` was the sole way
+    to get MP media. Since the MP promotion a DEFAULT boot runs ntkrnlmp.exe with
+    smp unset, so the flag-derived value recorded every default MP round as UP --
+    and `mp_kernel` is the field every flake-rate query filters on, so the damage
+    is silent and retroactive: the rounds still happen, they just stop counting.
+
+    The same inference-as-observation bug already cost an A/B once (see the note
+    beside the field), which is why this is pinned rather than left to review.
+    """
+    import inspect
+
+    from . import conformance as conf
+
+    src = inspect.getsource(conf)
+    assert '"mp_kernel": "ntkrnlmp.exe" in serial_text' in src, (
+        "mp_kernel must be read off the boot's serial"
+    )
+    assert '"mp_kernel": bool(smp)' not in src, "mp_kernel regressed to the flag"

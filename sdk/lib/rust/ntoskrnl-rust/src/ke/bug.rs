@@ -1123,6 +1123,16 @@ pub unsafe extern "system" fn KeBugCheckWithTf(
     if KiFlightrecDumped == 0 {
         KiFlightrecDumped = 1;
         super::flightrec::flightrec_dump_recent(32);
+        // ...and this thread's OWN history, which the tail window cannot show.
+        // The unfiltered tail is dominated by whatever lock traffic happened to
+        // run last -- on the #39 capture it was two park events on an unrelated
+        // thread -- so an earlier kernel fault that THIS thread recovered from
+        // (OP_KERNEL_FAULT_PC / OP_KERNEL_RESUME_PC) falls outside it and is
+        // neither shown nor excluded. Scans the full 16K ring.
+        super::flightrec::flightrec_dump_thread(
+            crate::ke::ke_defs::KeGetCurrentThread() as usize,
+            64,
+        );
     }
 
     if BugCheckCode == POWER_FAILURE_SIMULATE {

@@ -140,6 +140,7 @@ pub const STATUS_ALREADY_COMMITTED: i32 = 0xC0000021_u32 as i32;
 pub const STATUS_INSUFFICIENT_RESOURCES: i32 = 0xC000009A_u32 as i32;
 pub const STATUS_NOT_IMPLEMENTED: i32 = 0xC0000002_u32 as i32;
 pub const STATUS_NO_MEMORY: i32 = 0xC0000017_u32 as i32;
+pub const STATUS_CONFLICTING_ADDRESSES: i32 = 0xC0000018_u32 as i32;
 pub const STATUS_SUCCESS: i32 = 0;
 
 // --- additions surfaced by csrsrv (Phase 2) ---

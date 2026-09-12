@@ -101,6 +101,11 @@ def _preserve_failure(run_dir: Path, rec: dict) -> str | None:
             src = run_dir / name
             if src.exists():
                 shutil.copy2(src, dst / name)
+        # The SERIAL is the evidence -- bugcheck banner, trap frame, flight
+        # recorder. Preserving a failure without it kept the verdict and dropped
+        # everything that explains it.
+        for src in run_dir.glob("*serial*.log"):
+            shutil.copy2(src, dst / src.name)
         shot = rec.get("screenshot")
         if shot and Path(shot).exists():
             shutil.copy2(shot, dst / Path(shot).name)
