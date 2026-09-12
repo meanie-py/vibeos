@@ -7826,3 +7826,26 @@ def test_the_up_kernel_is_opt_in_only_and_nothing_automated_opts_in():
     # gcc.cmake keeps a historical note about the FORMER env var; it reads nothing.
     stale = [f for f in stale if f != "sdk/cmake/gcc.cmake"]
     assert not stale, f"these still reference the retired MP opt-in knob: {stale}"
+
+
+def test_ledger_records_the_kernel_it_OBSERVED_not_the_flag():
+    """`mp_kernel` must come from the serial, never from `--smp`.
+
+    It was `bool(smp)`, which was accurate only while `--smp N` was the sole way
+    to get MP media. Since the MP promotion a DEFAULT boot runs ntkrnlmp.exe with
+    smp unset, so the flag-derived value recorded every default MP round as UP --
+    and `mp_kernel` is the field every flake-rate query filters on, so the damage
+    is silent and retroactive: the rounds still happen, they just stop counting.
+
+    The same inference-as-observation bug already cost an A/B once (see the note
+    beside the field), which is why this is pinned rather than left to review.
+    """
+    import inspect
+
+    from . import conformance as conf
+
+    src = inspect.getsource(conf)
+    assert '"mp_kernel": "ntkrnlmp.exe" in serial_text' in src, (
+        "mp_kernel must be read off the boot's serial"
+    )
+    assert '"mp_kernel": bool(smp)' not in src, "mp_kernel regressed to the flag"

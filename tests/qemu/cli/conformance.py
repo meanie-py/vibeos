@@ -806,7 +806,16 @@ def _conformance_once(args, repo: Path) -> int:
         # into the shared corpus instead of having to be recovered by grepping
         # serial logs for an `ntkrnlmp.exe` load line.
         "smp": smp,
-        "mp_kernel": bool(smp),
+        # OBSERVED, not inferred. This was `bool(smp)`, which re-committed the very
+        # error the note above describes: it read the kernel off the FLAG instead of
+        # the boot. That was accurate only while `--smp N` was the only way to get
+        # MP media. Since the MP promotion (2026-09-12) a DEFAULT boot runs
+        # ntkrnlmp.exe with smp unset, so `bool(smp)` recorded every default MP
+        # round as UP -- silently poisoning the one field every flake-rate query
+        # filters on. The note above already prescribes the fix ("carry the kernel
+        # explicitly"); this is that, and the same expression is computed three
+        # lines from here for symbolication.
+        "mp_kernel": "ntkrnlmp.exe" in serial_text,
         "launched": len(results),
         "ok": ok,
         "bad": bad,
