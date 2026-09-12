@@ -184,6 +184,7 @@ def _lint_stage(
     strict: bool,
     findings_from: str = "stdout",
     by_exit_code: bool = False,
+    cp: subprocess.CompletedProcess | None = None,
 ) -> Stage:
     """Run one lint; classify NEW-vs-baseline. Advisory unless strict.
 
@@ -208,7 +209,10 @@ def _lint_stage(
         return run.add(
             Stage(name, status=st, detail="tool unavailable — LINT NOT RUN (no coverage)")
         )
-    cp = run.run(cmd, cwd=cwd or repo, stage=f"lint:{name}")
+    # `cp` pre-supplied means the subprocess already ran (see `run_source_lints`,
+    # which executes the scanners concurrently and then classifies them in order).
+    if cp is None:
+        cp = run.run(cmd, cwd=cwd or repo, stage=f"lint:{name}")
     if _scanner_error(cp, "both" if by_exit_code else findings_from):
         run.classification = "SCANNER_ERROR"
         return run.add(
@@ -1022,16 +1026,63 @@ def source_partition_specs(repo: Path, phase: str) -> list[tuple]:
     return [spec for spec in specs if (spec[0] in EARLY_SOURCE_CHECKS) == early]
 
 
+def lint_jobs() -> int:
+    """Concurrent scanner processes. `VIBEOS_LINT_JOBS` overrides; 1 restores the
+    old serial behaviour.
+
+    The default is deliberately 8 rather than `cpu_count()`: the suite is bounded
+    below by its SLOWEST SINGLE scanner, and scan_extern_decl_drift alone is 103s
+    of a 852s serial total (measured 2026-09-12, i386). 8 workers already reach
+    852/8 = 106s, so anything wider buys ~nothing while multiplying the risk that
+    two lanes linting at once oversubscribe the box — the lint phase runs while
+    the build still holds its cpuheavy permits."""
+    try:
+        n = int(os.environ.get("VIBEOS_LINT_JOBS", "") or 8)
+    except ValueError:
+        n = 8
+    return max(1, min(n, 32))
+
+
 def run_source_lints(run: Run, repo: Path, *, strict: bool, only: set[str] | None = None) -> None:
+    """Execute the scanners CONCURRENTLY, then classify them in spec order.
+
+    The scanners are independent read-only passes over the source tree, each
+    graded against its own baseline file, so running them at the same time cannot
+    change any verdict — only the wall clock. It was 48% of a build: 54 stages,
+    851.6s summed against an 852.2s span (summed == span is what proves it was
+    serial), single-threaded on a 24-core host.
+
+    ONLY the subprocesses overlap. Every mutation of `run` — stage order, and the
+    SCANNER_ERROR classification — stays serial and in `specs` order, so the
+    artifact is byte-identical to the serial run and a scanner cannot win a race
+    to set the verdict."""
     specs = source_lint_specs(repo)
     if only is not None:
         unknown = only - {name for name, _, _ in specs}
         if not only or unknown:
             raise ValueError(f"empty or unknown scanner selection: {sorted(unknown)}")
-    for name, cmd, src in specs:
-        if only is not None and name not in only:
-            continue
-        _lint_stage(run, repo, name, cmd, strict=strict, findings_from=src)
+    todo = [(n, c, s) for n, c, s in specs if only is None or n in only]
+    # NOCHECK/MISSING never spawn anything; they are classified in phase 2 alone.
+    runnable = [(n, c) for n, c, _ in todo if c[0] not in ("NOCHECK", "MISSING")]
+    done: dict[str, subprocess.CompletedProcess] = {}
+    workers = min(lint_jobs(), len(runnable))
+    if workers > 1:
+        from concurrent.futures import ThreadPoolExecutor
+
+        # Threads, not processes: each worker blocks in subprocess.run, which holds
+        # no GIL, and `Run.run` already serialises its own log writes under a lock.
+        with ThreadPoolExecutor(max_workers=workers) as pool:
+            futures = {
+                name: pool.submit(run.run, cmd, cwd=repo, stage=f"lint:{name}")
+                for name, cmd in runnable
+            }
+            for name, fut in futures.items():
+                done[name] = fut.result()
+    else:
+        for name, cmd in runnable:
+            done[name] = run.run(cmd, cwd=repo, stage=f"lint:{name}")
+    for name, cmd, src in todo:
+        _lint_stage(run, repo, name, cmd, strict=strict, findings_from=src, cp=done.get(name))
 
 
 def lint_tool_names(repo: Path) -> set[str]:

@@ -3559,7 +3559,9 @@ def test_partial_check_runs_only_selected_and_reports_scope(tmp_path, monkeypatc
     monkeypatch.setattr(lints, "source_lint_specs", lambda repo: specs)
     called = []
 
-    def stage(run, repo, name, cmd, *, strict, findings_from):
+    def stage(run, repo, name, cmd, *, strict, findings_from, cp=None):
+        # `cp` mirrors the real _lint_stage: run_source_lints executes the
+        # scanners concurrently and hands the finished process to the classifier.
         called.append((name, strict))
         run.add(Stage(name, status="fail" if fail else "ok"))
 
@@ -3580,6 +3582,51 @@ def test_partial_check_runs_only_selected_and_reports_scope(tmp_path, monkeypatc
     assert summary["selected_scanners"] == ["toolB"]
     assert summary["omitted_scanners"] == ["toolA"]
     assert summary["verdict"] == ("FAIL" if fail else "WARN")
+
+
+def test_source_lints_run_concurrently_but_report_in_spec_order(tmp_path, monkeypatch):
+    """Scanners overlap; the artifact does not reorder.
+
+    Both halves matter. Concurrency is the whole point (the suite was 48% of a
+    build, serial, on a 24-core host), but stage ORDER is what the baseline diff
+    and every reader of summary.json depend on, so the two are asserted together
+    -- a future change that parallelises harder must not quietly shuffle stages.
+    """
+    import threading
+    import time
+
+    specs = [(f"s{i}", ["sleep-stub", str(i)], "stdout") for i in range(6)]
+    monkeypatch.setattr(lints, "source_lint_specs", lambda repo: specs)
+
+    live = 0
+    peak = 0
+    lock = threading.Lock()
+
+    def fake_run(self, cmd, cwd=None, env=None, stage=None, timeout=None):
+        nonlocal live, peak
+        with lock:
+            live += 1
+            peak = max(peak, live)
+        time.sleep(0.05)
+        with lock:
+            live -= 1
+        return subprocess.CompletedProcess(cmd, 0, "", "")
+
+    monkeypatch.setattr(Run, "run", fake_run)
+    monkeypatch.setattr(lints, "_baseline", lambda repo, name: [])
+    run = Run("check", "amd64")
+    lints.run_source_lints(run, tmp_path, strict=True)
+
+    assert peak > 1, "scanners did not overlap"
+    assert [st.name for st in run.stages] == [n for n, _, _ in specs]
+
+
+def test_lint_jobs_serial_when_pinned_to_one(tmp_path, monkeypatch):
+    """VIBEOS_LINT_JOBS=1 is the escape hatch back to the old behaviour."""
+    monkeypatch.setenv("VIBEOS_LINT_JOBS", "1")
+    assert lints.lint_jobs() == 1
+    monkeypatch.setenv("VIBEOS_LINT_JOBS", "not-a-number")
+    assert lints.lint_jobs() == 8  # a bad value must not disable linting
 
 
 def test_source_lint_api_rejects_unknown_selection(tmp_path, monkeypatch):
