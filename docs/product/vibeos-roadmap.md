@@ -504,12 +504,22 @@ land; date every addition.** Source docs live in `docs/engineering/archive/`.
   `NtAcceptConnectPort` is called with Accept=FALSE — which is the `c0000041` the guest sees.
   **What is NOT yet established:** what actually occupies that VA in a WoW64 process. That is
   the next measurement, not an assumption.
-  **A second blocker is predicted (derived, NOT observed — the path is unreachable today):**
-  the base is `0x7ffffebf0000` ≈ 8 TB, and the client records it in
-  `Peb->ReadOnlySharedMemoryBase`. A 32-bit guest's PEB32 field is four bytes wide, so even a
-  successful attach at that base could not be named by the guest. If so the section must map
-  **below 4 GB** for WoW64 clients and the per-process base must travel back in
-  `ConnectInfo->SharedSectionBase` (which is already sent) rather than the global.
+  **The predicted second blocker is now OBSERVED and FIXED (2026-09-12).** It was recorded here
+  as derived-not-observed; once the double-attach fix let guests get further, wow64's own
+  pre-existing diagnostic fired **25 times per boot**:
+  `[WOW64] CSR connect: shared section ABOVE 4GB (base=7fffebf0000 …) — guest-invisible!`
+  `CSR_API_CONNECTINFO.SharedSectionBase` is narrowed with a plain `(ULONG)` cast in
+  `wow64_manual.c`, so `0x7fffebf0000` truncated to `0xfebf0000` and kernel32 dereferenced
+  that. **Root cause was not wow64 but the kernel's based-section ceiling:** `SEC_BASED` means
+  one system-wide address for every mapping, `MiFindEmptyAddressRangeDownBasedTree` searches
+  downward from `MmHighSectionBase`, and `mminit.rs` set that to
+  `MmHighestUserAddress - 0x800000` — ~2 GB on i386 but ~8 TB on a 64-bit kernel. Fix: cap the
+  ceiling at the 32-bit user ceiling (`0x7F7EFFFF`), since a based address must be nameable by
+  every client the section can reach. No-op on i386; csrss is the only `SEC_BASED` creator in
+  the tree, so the address space given up is unused. Verified: ABOVE-4GB warnings 25 → 0,
+  desktop still reached. NOTE this did **not** fix `hello32.exe`, which still exits
+  `0xc0000005` exactly as it did before — that is a separate, still-unexplained fault, and the
+  MM fix neither caused nor cured it.
   **Consequence for sequencing:** the `PORT_MESSAGE` 24→40 marshaller and the CSR payload work
   are real (`NtRequestWaitReplyPort => c000000d` fires 5x, exactly as the kernel's
   `DataLength + sizeof(PORT_MESSAGE) > TotalLength` check predicts) but they are DOWNSTREAM.
