@@ -32,6 +32,131 @@ def create_run_dir(command: str, arch: str, ts: int | None = None) -> Path:
     )
 
 
+FARM_DIR = Path.home() / "vibeos-flake-farm"
+
+
+def _sha12(path: Path) -> str | None:
+    import hashlib
+
+    try:
+        return hashlib.sha256(path.read_bytes()).hexdigest()[:12]
+    except OSError:
+        return None
+
+
+def _snapshot_kernel(repo: Path, arch: str, mp: bool) -> dict:
+    """Park the booted kernel + its symbol index under farm/kernels/<sha12>/.
+
+    A preserved serial that cannot be symbolicated is not evidence. The index is
+    rebuilt on every `vibeos-cli build`, so by the time anyone reads a fleet
+    flake the tsv that matched it is long gone -- this is exactly how a capture
+    came back as `XHF_NOEXECUTE+310101`, a real-looking symbol from a stale
+    relocation. Content-addressed by the kernel's own hash, so N flakes on one
+    build cost ONE copy and re-preserving is free.
+    """
+    import shutil
+
+    base = repo / f"build-{arch}" / "ntoskrnl"
+    kernel = base / "ntkrnlmp" / "ntkrnlmp.exe" if mp else base / "ntoskrnl.exe"
+    sha = _sha12(kernel) if kernel.is_file() else None
+    if not sha:
+        return {"kernel_sha12": None, "kernels_dir": None}
+    dst = FARM_DIR / "kernels" / sha
+    info = {"kernel_sha12": sha, "kernels_dir": str(dst)}
+    if dst.is_dir():
+        return info  # already parked by an earlier flake on this build
+    try:
+        tmp = dst.with_name(dst.name + ".partial")
+        tmp.mkdir(parents=True, exist_ok=True)
+        shutil.copy2(kernel, tmp / kernel.name)
+        idx = repo / "qemu" / f"symbols-{arch}{'-mp' if mp else ''}.tsv"
+        if idx.is_file():
+            shutil.copy2(idx, tmp / idx.name)
+        hal = base.parent / "hal" / ("halmp" if mp else "hal") / ("halmp.dll" if mp else "hal.dll")
+        if hal.is_file():
+            shutil.copy2(hal, tmp / hal.name)
+        tmp.rename(dst)  # publish atomically: a half-copied dir must never look done
+    except OSError:
+        return {"kernel_sha12": sha, "kernels_dir": None}
+    return info
+
+
+def preserve_failure(
+    run_dir: Path, arch: str, classification: str, repo: Path | None
+) -> str | None:
+    """Copy a failed boot's evidence somewhere that survives, and pin the
+    binaries needed to read it later.
+
+    The artifact root defaults to /tmp/vibeos-cli and nothing caps its retention,
+    so a flake's serial is gone within days. That is not theoretical: three
+    BUGCHECK 0x1E captures from a 60-round arm64 soak were lost exactly this way,
+    and they were the whole point of the run. `farm` preserved failures already
+    but copied neither the serial nor the binaries -- the two things a later
+    reader actually needs. Now every command that boots gets this, because the
+    fleet runs `smoke`/`gate`, not `farm`.
+
+    Never raises: evidence collection must not turn a reported failure into a
+    crash in the reporter.
+    """
+    import shutil
+
+    try:
+        serials = sorted(run_dir.glob("*serial*.log"))
+        if not serials:
+            return None  # not a boot-bearing run; nothing to preserve
+        mp = any("ntkrnlmp.exe" in s.read_text(errors="replace") for s in serials)
+        dst = FARM_DIR / "fails" / "auto" / f"{run_dir.name}-{classification or 'FAIL'}"
+        dst.mkdir(parents=True, exist_ok=True)
+        for src in serials:
+            shutil.copy2(src, dst / src.name)
+        for name in ("summary.json", "full.log", "hang-cpustate.txt"):
+            src = run_dir / name
+            if src.is_file():
+                shutil.copy2(src, dst / name)
+        for shot in run_dir.glob("*.png"):
+            shutil.copy2(shot, dst / shot.name)
+        manifest = {
+            "run_id": run_dir.name,
+            "arch": arch,
+            "classification": classification,
+            "mp_kernel": mp,
+            "head": _head_sha(repo) if repo else None,
+            "dirty": _is_dirty(repo) if repo else None,
+        }
+        if repo:
+            manifest.update(_snapshot_kernel(repo, arch, mp))
+        (dst / "manifest.json").write_text(json.dumps(manifest, indent=2))
+        return str(dst)
+    except (OSError, ValueError):
+        return None
+
+
+def _head_sha(repo: Path) -> str | None:
+    try:
+        cp = subprocess.run(
+            ["git", "-C", str(repo), "rev-parse", "--short", "HEAD"],
+            capture_output=True,
+            text=True,
+            timeout=30,
+        )
+        return cp.stdout.strip() if cp.returncode == 0 else None
+    except (OSError, subprocess.SubprocessError):
+        return None
+
+
+def _is_dirty(repo: Path) -> bool | None:
+    try:
+        cp = subprocess.run(
+            ["git", "-C", str(repo), "status", "--porcelain"],
+            capture_output=True,
+            text=True,
+            timeout=30,
+        )
+        return bool(cp.stdout.strip()) if cp.returncode == 0 else None
+    except (OSError, subprocess.SubprocessError):
+        return None
+
+
 def archive_serial(run_dir: Path, live_log: str | Path | None, extra: dict) -> None:
     """Copy the boot's serial log into the run dir, and repoint `serial_log` at
     the copy.
@@ -189,6 +314,14 @@ class Run:
             **self.extra,
         }
         (self.dir / "summary.json").write_text(json.dumps(summary, indent=2))
+        # A red boot's evidence outlives the volatile artifact root. Done here
+        # rather than per-command because finalize() is the one choke point every
+        # command passes through, and the fleet runs smoke/gate, not farm.
+        if self.verdict not in ("OK", "WARN"):
+            kept = preserve_failure(self.dir, self.arch, self.classification, repo)
+            if kept:
+                summary["preserved"] = kept
+                (self.dir / "summary.json").write_text(json.dumps(summary, indent=2))
         self._ledger_append(repo, summary, dur)
         self._print_summary(dur)
         return 0 if self.verdict in ("OK", "WARN") else 1

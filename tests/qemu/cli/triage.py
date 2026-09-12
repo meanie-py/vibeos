@@ -114,6 +114,37 @@ KNOWN_FLAKES = [
         "any": ["0x0000000000000000, 0x0000000000000003)"],
         "note": "known arm64 ERESOURCE release-not-owned flake (roadmap; retry)",
     },
+    # MP-default beta (2026-09-12, user's call): the fleet now boots the MP
+    # kernel by default and eats these two while they are hunted in the open.
+    # Both signatures are DELIBERATELY narrow. The retired
+    # `arm64_lpcexitthread_race` entry above is the warning: a broad signature
+    # masked real bugs for months. Retire each of these the moment its root fix
+    # lands and a re-gate shows the signature gone.
+    {
+        "name": "arm64_smp39_zero_pc_fetch_abort",
+        "when": "bugcheck",
+        "code": "0x0000001E",
+        # The whole shape, not any one part: an EL1 instruction abort (ESR EC
+        # 0x21 / IFSC 0x07) taken at a ZERO PC, which is the `ldp x29,x30,[sp]`
+        # of a frame that was zeroed underneath its callee. ESR alone would be
+        # wrong -- the SEH tests print [UEXC] ESR=0x92000047 on PURPOSE and pass.
+        "any": [
+            "[KEXC]",
+            "PC=0x0000000000000000",
+            "ESR=0x0000000086000007",
+            "Spsr=0x0000000020000345",
+        ],
+        "note": "task #39 arm64 MP boot: zero-PC instruction abort (18/1375=1.3%); retry",
+    },
+    {
+        "name": "i386_mp_win32k_av_0x1e",
+        "when": "bugcheck",
+        "code": "0x0000001E",
+        # Pinned to the faulting RVA the banner resolves, so a DIFFERENT win32k
+        # fault still blocks. Found 1-in-200 on the first real i386 MP soak.
+        "any": ["win32k.sys+0x65EE1"],
+        "note": "i386 MP boot: win32k AV at winlogon desktop bringup (1/204=0.49%); retry",
+    },
 ]
 
 

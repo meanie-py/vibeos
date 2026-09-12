@@ -7500,3 +7500,210 @@ def test_same_second_runs_keep_separate_artifacts(tmp_path, monkeypatch):
     assert [json.loads((d / "summary.json").read_text())["owner"] for d in directories] == list(
         range(32)
     )
+
+
+# --- MP-default beta: the two flakes the fleet agreed to eat, and the evidence
+# trail that has to survive them. Both halves are pinned here because both have
+# already failed silently once: a signature that was too broad masked real bugs
+# for months (retired arm64_lpcexitthread_race), and three captures were lost to
+# /tmp retention when nothing preserved them.
+
+
+def _flake_names():
+    from .triage import KNOWN_FLAKES
+
+    return {f["name"] for f in KNOWN_FLAKES}
+
+
+def test_mp_beta_flake_signatures_are_registered():
+    assert {"arm64_smp39_zero_pc_fetch_abort", "i386_mp_win32k_av_0x1e"} <= _flake_names()
+
+
+def test_smp39_signature_needs_the_WHOLE_shape_not_just_the_esr():
+    """The SEH tests print an ESR on PURPOSE and pass.
+
+    `[UEXC] ESR=0x92000047` is a deliberate, passing user-mode SEH probe, and an
+    earlier draft that keyed on ESR alone would have swallowed unrelated reds.
+    A kernel fault with a NON-zero PC is also not #39.
+    """
+    from .triage import _match_known_flake
+
+    real = (
+        "[KEXC] Code=0xFFFFFFFFC0000005[KEXC] PC=0x0000000000000000"
+        "[KEXC] Spsr=0x0000000020000345[KEXC] ESR=0x0000000086000007\n"
+        "*** BUGCHECK: 0x0000001E (0xffffffffc0000005, 0x0000000000000000, 0x0, 0x0)\n"
+    )
+    hit = _match_known_flake(real, "0x0000001E", "bugcheck")
+    assert hit is not None and hit["name"] == "arm64_smp39_zero_pc_fetch_abort"
+
+    # A passing SEH probe plus an UNRELATED 0x1E must still block.
+    seh_plus_other = (
+        "[UEXC] ESR=0x0000000092000047[SEH-USER] hw-fault: caught=1 (PASS)\n"
+        "*** BUGCHECK: 0x0000001E (0xffffffffc0000005, 0xfffff80042190000, 0x0, 0x0)\n"
+    )
+    assert _match_known_flake(seh_plus_other, "0x0000001E", "bugcheck") is None
+
+    # Same fault class, NON-zero PC -> a different bug, must not be masked.
+    nonzero_pc = real.replace("PC=0x0000000000000000", "PC=0xFFFF8000050E08A0")
+    assert _match_known_flake(nonzero_pc, "0x0000001E", "bugcheck") is None
+
+
+def test_win32k_signature_is_pinned_to_one_rva():
+    """A different win32k fault is a different bug and must still go red."""
+    from .triage import _match_known_flake
+
+    mine = "*** BUGCHECK: 0x0000001E (0xc0000005, ...)\n***   P2 = win32k.sys+0x65EE1\n"
+    other = "*** BUGCHECK: 0x0000001E (0xc0000005, ...)\n***   P2 = win32k.sys+0x12345\n"
+    hit = _match_known_flake(mine, "0x0000001E", "bugcheck")
+    assert hit is not None and hit["name"] == "i386_mp_win32k_av_0x1e"
+    assert _match_known_flake(other, "0x0000001E", "bugcheck") is None
+
+
+def test_failed_boot_preserves_serial_and_pins_the_kernel(tmp_path, monkeypatch):
+    """Preserving a verdict without the serial and the matching symbol index is
+    how a flake becomes unreadable lore. Both are part of the contract."""
+    from . import artifacts
+
+    monkeypatch.setattr(artifacts, "FARM_DIR", tmp_path / "farm")
+    repo = tmp_path / "repo"
+    (repo / "build-arm64" / "ntoskrnl" / "ntkrnlmp").mkdir(parents=True)
+    (repo / "build-arm64" / "ntoskrnl" / "ntkrnlmp" / "ntkrnlmp.exe").write_bytes(b"KERNEL")
+    (repo / "qemu").mkdir(parents=True)
+    (repo / "qemu" / "symbols-arm64-mp.tsv").write_text("0000\tKiFoo\t-\n")
+
+    run = tmp_path / "20260912-000000-abcd-smoke-arm64"
+    run.mkdir()
+    (run / "arm64_serial.log").write_text("[FLDR] load ntkrnlmp.exe\n*** BUGCHECK: 0x0000001E\n")
+    (run / "summary.json").write_text("{}")
+
+    kept = artifacts.preserve_failure(run, "arm64", "BUGCHECK 0x1E", repo)
+    assert kept, "a red boot must leave evidence behind"
+    dst = Path(kept)
+    assert (dst / "arm64_serial.log").is_file(), "the serial IS the evidence"
+    manifest = json.loads((dst / "manifest.json").read_text())
+    assert manifest["mp_kernel"] is True
+    # Pinned by content hash, so the serial stays symbolicable after a rebuild.
+    kdir = Path(manifest["kernels_dir"])
+    assert (kdir / "ntkrnlmp.exe").read_bytes() == b"KERNEL"
+    assert (kdir / "symbols-arm64-mp.tsv").is_file()
+
+
+def test_preserving_the_same_build_twice_copies_the_kernel_once(tmp_path, monkeypatch):
+    """Content-addressed on purpose: a 1.7% flake across a busy fleet must not
+    grow the farm by a kernel image per occurrence."""
+    from . import artifacts
+
+    monkeypatch.setattr(artifacts, "FARM_DIR", tmp_path / "farm")
+    repo = tmp_path / "repo"
+    (repo / "build-arm64" / "ntoskrnl" / "ntkrnlmp").mkdir(parents=True)
+    (repo / "build-arm64" / "ntoskrnl" / "ntkrnlmp" / "ntkrnlmp.exe").write_bytes(b"KERNEL")
+
+    seen = []
+    for i in range(3):
+        run = tmp_path / f"run{i}"
+        run.mkdir()
+        (run / "arm64_serial.log").write_text("ntkrnlmp.exe\n")
+        kept = artifacts.preserve_failure(run, "arm64", "BUGCHECK 0x1E", repo)
+        assert kept
+        seen.append(json.loads((Path(kept) / "manifest.json").read_text())["kernels_dir"])
+
+    assert len(set(seen)) == 1, "same build must resolve to one parked copy"
+    assert len(list((tmp_path / "farm" / "kernels").iterdir())) == 1
+    assert len(list((tmp_path / "farm" / "fails" / "auto").iterdir())) == 3
+
+
+def test_a_non_boot_run_preserves_nothing(tmp_path, monkeypatch):
+    """finalize() runs for `build` and `check` too; those have no serial and
+    must not create empty farm entries."""
+    from . import artifacts
+
+    monkeypatch.setattr(artifacts, "FARM_DIR", tmp_path / "farm")
+    run = tmp_path / "build-run"
+    run.mkdir()
+    (run / "full.log").write_text("link error\n")
+    assert artifacts.preserve_failure(run, "arm64", "BUILD_FAIL", None) is None
+    assert not (tmp_path / "farm").exists()
+
+
+def test_a_red_run_actually_reaches_the_preserve_path(tmp_path, monkeypatch):
+    """finalize() must CALL preserve_failure, not merely be able to.
+
+    The unit tests above prove the helper works in isolation; this one pins the
+    wiring, because the two failure modes are indistinguishable from outside. An
+    unwired preserve path produces an empty fails/auto/ directory, and an empty
+    fails/auto/ is exactly what a healthy fleet produces too -- so the bug would
+    present as good news and stay hidden until someone needed a capture.
+    """
+    from . import artifacts
+
+    monkeypatch.setattr(artifacts, "ARTIFACT_ROOT", tmp_path / "runs")
+    monkeypatch.setattr(artifacts, "FARM_DIR", tmp_path / "farm")
+    seen = {}
+
+    def spy(run_dir, arch, classification, repo):
+        seen["called"] = (arch, classification)
+        return str(tmp_path / "farm" / "fails" / "auto" / "x")
+
+    monkeypatch.setattr(artifacts, "preserve_failure", spy)
+
+    run = artifacts.Run("smoke", "arm64")
+    run.verdict = "FAIL"
+    run.classification = "BUGCHECK 0x1E"
+    run.finalize(None)
+    assert seen.get("called") == ("arm64", "BUGCHECK 0x1E"), "a red boot bypassed preservation"
+    assert json.loads((run.dir / "summary.json").read_text())["preserved"]
+
+
+def test_a_green_run_preserves_nothing(tmp_path, monkeypatch):
+    """Preserving on success would bury the real failures in noise."""
+    from . import artifacts
+
+    monkeypatch.setattr(artifacts, "ARTIFACT_ROOT", tmp_path / "runs")
+    monkeypatch.setattr(artifacts, "FARM_DIR", tmp_path / "farm")
+    called = []
+    monkeypatch.setattr(artifacts, "preserve_failure", lambda *a: called.append(a))
+
+    run = artifacts.Run("smoke", "arm64")
+    run.verdict = "OK"
+    run.finalize(None)
+    assert not called
+
+
+def test_default_boot_now_asserts_the_mp_kernel(monkeypatch):
+    """Since the MP promotion the DEFAULT media boots ntkrnlmp.exe, so a plain
+    smoke must catch a silent revert to UP.
+
+    A boot that reaches the desktop on the wrong kernel is indistinguishable
+    from a correct one — screenshot included — so if this check only ran under
+    --smp, a regression flipping DefaultOS= back would be green everywhere.
+    """
+    from . import smoke as smoke_mod
+
+    monkeypatch.delenv("VIBEOS_QEMU_SMP", raising=False)
+    up = "[FLDR] load \\reactos\\ntoskrnl.exe\n[FLDR] load \\reactos\\hal.dll\n"
+    bad = smoke_mod._smp_check(up, "arm64")
+    assert bad and bad["classification"] == "UP_KERNEL_ON_SMP_RUN"
+    assert "the default boot" in bad["salient"][0], bad["salient"]
+
+    mp = "[FLDR] load \\reactos\\ntkrnlmp.exe\n[FLDR] load \\reactos\\halmp.dll\n"
+    assert smoke_mod._smp_check(mp, "arm64") is None
+
+
+def test_default_boot_does_not_demand_ap_liveness(monkeypatch):
+    """One CPU has no APs; the liveness check must not fire on a default boot."""
+    from . import smoke as smoke_mod
+
+    monkeypatch.delenv("VIBEOS_QEMU_SMP", raising=False)
+    mp_one_cpu = "[FLDR] load \\reactos\\ntkrnlmp.exe\n[FLDR] load \\reactos\\halmp.dll\n"
+    assert smoke_mod._smp_check(mp_one_cpu, "amd64") is None
+
+
+def test_mp_kernel_on_a_up_hal_is_still_caught_on_a_default_boot(monkeypatch):
+    """The MP kernel on the UP HAL boots to a desktop and silently runs 1 CPU —
+    arm64 has no MISMATCHED_HAL handshake to catch it."""
+    from . import smoke as smoke_mod
+
+    monkeypatch.delenv("VIBEOS_QEMU_SMP", raising=False)
+    text = "[FLDR] load \\reactos\\ntkrnlmp.exe\n[FLDR] load \\reactos\\hal.dll\n"
+    bad = smoke_mod._smp_check(text, "arm64")
+    assert bad and bad["classification"] == "SMP_UP_HAL"
