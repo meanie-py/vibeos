@@ -5510,11 +5510,23 @@ diff is not a gate.**
   the failure pointed at reservations. **"df looks fine" is a documented false negative for
   this class**: fullness and admission headroom are different quantities and only one of them
   was visible. `hostdisk.preflight` now prints the second one on the GREEN path too — the run
-  that looks healthy is exactly the case it exists for. The underlying defect is still owed and
-  is not a threshold: the gate reserves when a stage STARTS rather than when its CPU permit is
-  GRANTED, so it budgets for three concurrent builds that `cpuheavy` (4 permits, 2 per build)
-  will never allow. Lowering the per-build reservation is a stopgap; lowering the 20G floor
-  would be the same move as weakening a smoke test.
+  that looks healthy is exactly the case it exists for. **The root cause was simply a WRONG
+  NUMBER, and I misdiagnosed it as a design flaw** — worth recording because the misdiagnosis
+  is the more instructive half. I wrote here that the defect was the ordering (`reserve()`
+  takes disk while holding no CPU permit, so three builds hold reservations while the broker
+  runs two) and that lowering the reservation was a mere stopgap. Both were wrong. Measuring
+  it (`bd8e4244236`, sampling the build dir every 20s through a cold build) put the i386 and
+  amd64 peaks at **7.44 GiB each** against a **32 GiB** estimate — 4.3x — so `20 + 3x32 = 116G`
+  had to be free or the third arch took an instant `DISK_ADMISSION_FAIL`. The ordering is
+  deliberate and stays: inverting it would mean sitting on a scarce CPU permit while blocked on
+  disk admission. **Accuracy is what makes the asymmetry harmless**, so the estimate was the
+  whole bug. The reusable part: a resource estimate nobody has measured is a plausible-looking
+  constant, and an architecture story will happily be built on top of it — I had a mechanism,
+  a permit-ordering argument, and no measurement. Measure the quantity before theorising about
+  the machine that consumes it. (Lowering the 20G *floor* would still be weakening a gate;
+  that part stands. And note `policy.json` lives under `/tmp` and regenerates from `REQUESTS`
+  every reboot — an earlier hand-edit to 15 evaporated at the next boot and took its fix with
+  it, so the code default is the only durable knob.)
 - **A scanner that CRASHED rather than found anything.** Five of the six audited source
   scanners walked `sdk/lib/rust` with `sorted(root.rglob("*.rs"))` and filtered `/target/`
   *after* the walk had already descended into it. `Path.rglob` propagates the

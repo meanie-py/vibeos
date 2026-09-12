@@ -399,6 +399,66 @@ pub unsafe extern "system" fn CsrSrvCreateSharedSection(ParameterValue: *mut i8)
     STATUS_SUCCESS
 }
 
+
+/* A WoW64 process has TWO CSR clients: the native 64-bit ntdll, which connects
+ * during process creation, and the 32-bit guest's kernel32, which connects again
+ * from its own DllMain. The second connect calls CsrSrvAttachSharedSection on a
+ * process that ALREADY has the shared section mapped, and because the section is
+ * SEC_BASED -- every mapping must land on one system-wide address -- the second
+ * NtMapViewOfSection asks for an address its own first mapping occupies and comes
+ * back STATUS_CONFLICTING_ADDRESSES. That refusal propagated out as a bare
+ * c0000041 at the client, so no 32-bit guest has ever completed a CSR connect.
+ *
+ * Re-mapping is not what we want even if it were possible: the shared section is
+ * a heap whose contents include ABSOLUTE pointers (CsrSrvSharedStaticServerData
+ * and everything it points at), so a second view at a different address would
+ * hand the client pointers into another address space. The existing mapping is
+ * already correct and already at the right address -- the only thing owed is to
+ * report it.
+ *
+ * We must be certain the occupant is OURS before reporting it as the shared heap;
+ * treating a stranger's allocation as CSR's would give the client a foreign heap.
+ * So verify structurally rather than assume: the section is a heap, so the page at
+ * the based address is a HEAP_SEGMENT, and a HEAP_SEGMENT records its own
+ * BaseAddress. Signature plus a self-consistent BaseAddress identifies it. */
+const CSRP_HEAP_SEGMENT_SIGNATURE: ULONG = 0xffee_ffee; /* rtl-heap/src/types.rs:59 */
+/* HEAP_SEGMENT field offsets depend on HEAP_ENTRY, which is 16 bytes on 64-bit
+ * and 8 on 32-bit, so they are NOT a shared constant: 64-bit puts
+ * SegmentSignature@16 and BaseAddress@48; 32-bit would put them at 8 and 28.
+ * Rather than carry two layouts for a path that cannot occur on a 32-bit host --
+ * WoW64 means a 32-bit guest under a 64-bit kernel, so there is no second CSR
+ * client to collide with -- the check is 64-bit only and says so. A silently
+ * wrong offset here would misidentify a heap and is exactly the failure this
+ * function exists to prevent. */
+#[cfg(target_pointer_width = "64")]
+const CSRP_SEG_SIGNATURE_IDX: usize = 16 / 8; /* index into a [ULONGLONG] read */
+#[cfg(target_pointer_width = "64")]
+const CSRP_SEG_BASEADDRESS_IDX: usize = 48 / 8;
+
+#[cfg(not(target_pointer_width = "64"))]
+unsafe fn CsrpSharedSectionAlreadyMappedHere(_ProcessHandle: HANDLE) -> bool {
+    false
+}
+
+#[cfg(target_pointer_width = "64")]
+unsafe fn CsrpSharedSectionAlreadyMappedHere(ProcessHandle: HANDLE) -> bool {
+    let mut Hdr: [ULONGLONG; 8] = [0; 8];
+    let mut RdLen: SIZE_T = 0;
+    let St = NtReadVirtualMemory(
+        ProcessHandle,
+        CsrSrvSharedSectionBase,
+        &raw mut Hdr as PVOID,
+        core::mem::size_of_val(&Hdr) as SIZE_T,
+        &raw mut RdLen,
+    );
+    if St < 0 {
+        return false;
+    }
+    let Signature = (Hdr[CSRP_SEG_SIGNATURE_IDX] & 0xffff_ffff) as ULONG;
+    let BaseAddress = Hdr[CSRP_SEG_BASEADDRESS_IDX] as PVOID;
+    Signature == CSRP_HEAP_SEGMENT_SIGNATURE && BaseAddress == CsrSrvSharedSectionBase
+}
+
 #[no_mangle]
 pub unsafe extern "system" fn CsrSrvAttachSharedSection(
     CsrProcess: PCSR_PROCESS,
@@ -420,12 +480,37 @@ pub unsafe extern "system" fn CsrSrvAttachSharedSection(
             SEC_NO_CHANGE,
             PAGE_EXECUTE_READ,
         );
-        if Status < 0 {
+        if Status == STATUS_CONFLICTING_ADDRESSES && CsrpSharedSectionAlreadyMappedHere((*CsrProcess).ProcessHandle) {
+            /* Already mapped, verified ours: the second CSR client in a WoW64
+             * process. Fall through and report the existing base. */
+        } else if Status < 0 {
             crate::dbg_print!(
                 b"[CSRSRV] AttachSharedSection: map at fixed base %p FAILED st=%lx\n\0",
                 CsrSrvSharedSectionBase,
                 Status
             );
+            /* Not our heap (or unreadable) -- a genuine foreign collision, which
+             * is a different bug. Name the occupant instead of guessing. */
+            let mut Mbi: _MEMORY_BASIC_INFORMATION = core::mem::zeroed();
+            let mut RetLen: SIZE_T = 0;
+            let QSt = NtQueryVirtualMemory(
+                (*CsrProcess).ProcessHandle,
+                CsrSrvSharedSectionBase,
+                MemoryBasicInformation,
+                &raw mut Mbi as PVOID,
+                core::mem::size_of::<_MEMORY_BASIC_INFORMATION>() as SIZE_T,
+                &raw mut RetLen,
+            );
+            if QSt >= 0 {
+                crate::dbg_print!(
+                    b"[CSRSRV]   occupant: alloc=%p size=%p state=%lx protect=%lx type=%lx\n\0",
+                    Mbi.AllocationBase,
+                    Mbi.RegionSize as PVOID,
+                    Mbi.State,
+                    Mbi.Protect,
+                    Mbi.Type
+                );
+            }
             return Status;
         }
     }

@@ -497,6 +497,30 @@ land; date every addition.** Source docs live in `docs/engineering/archive/`.
   creates each command's stdout file under `/tmp` first, so even `true` fails with ENOSPC and
   it presents as a broken tool rather than a full disk. Retention belongs in the CLI, not in
   each lane remembering to clean up (`vibeos-cli prune` is delete-only and manual).
+  **Half-addressed 2026-09-12 by the MP promotion, and the half that is left is still
+  the retention cap.** A failed boot no longer depends on `/tmp` surviving: `Run.finalize()`
+  copies the serial, summary, cpustate and screenshot to `~/vibeos-flake-farm/fails/auto/`
+  and parks the kernel, HAL and symbol index content-addressed under `kernels/<sha12>/`
+  (one copy per build, not per flake), because a preserved serial without its index is
+  unreadable after the next build. So evidence loss on a RED run is closed. Everything a
+  GREEN run writes is still uncapped and still grows forever.
+
+- **MP kernel promoted to the DEFAULT boot on all three arches — 2026-09-12, user's call.**
+  `DefaultOS=` now selects `ntkrnlmp.exe` + `halmp.dll`; both UP entries still ship as the
+  opt-out. The UP:=smp1 collapse criterion had been met on all three arches since July; what
+  held the flip afterwards was boot reliability, and that number did not move in months of
+  soaking. Rates over `conformance.jsonl` rows with `arch`, `smp == 1`, `mp_kernel` TRUE —
+  **quote that filter**, since the file also holds 169 arm64 rounds predating the `mp_kernel`
+  field whose kernel is unrecorded, and blending them in yields a meaningless 2.72% spanning
+  two kernels: **amd64 0/203, i386 1/204 (0.49%), arm64 22/1375 (1.60%)**. The decision was
+  explicitly to stop measuring and get more eyes on it: a thousand identical soak rounds
+  sample one condition a thousand times, while fleet usage samples many for free. **Do not
+  propose more soak rounds as a precondition for anything here.** Two narrow signatures in
+  `triage.KNOWN_FLAKES` make the gate retry these once (~1-in-42 → ~1-in-3200 disruption);
+  across all 1375 MP rounds `0x1E` and `0xE3` are the only codes that have ever appeared, so
+  the pair is exhaustive, not merely sufficient. **#39 (arm64 `0x1E`) and #43 (`0xE3`) stay
+  OPEN and owed** — the flake registry is a licence to keep working, not to stop looking, and
+  each entry retires when its root fix lands and a re-gate shows the signature gone.
 
 - **No scanner catches a C `ASSERT` that VANISHES in translation — CLOSED (2026-09-06) by
   `tools/scan_dropped_asserts.py`.** 89 findings baselined; gated at 0 NEW. It pairs each C
@@ -537,7 +561,74 @@ land; date every addition.** Source docs live in `docs/engineering/archive/`.
   beyond the `miarm.h`/`ke.h` FORCEINLINE surface, where hardware-precondition asserts live and
   the bridge modules deliberately mirror C names. Closest model: `scan_invented_constants`.
 
-- **Fleet disk exhaustion interrupted landing — OPEN, admission slice implemented locally**
+- **Every 32-bit guest is refused by CSR — the shared section can't map into a WoW64 process**
+  (2026-09-11, wow64-amd64 lane, OPEN). A trace probe on a passing `smoke:amd64` boot
+  (`/tmp/vibeos-cli/20260911-234915-smoke-amd64/serial.log`) shows the real CSR/LPC blocker, and
+  it is **not** a marshalling bug. Per 32-bit guest process, in order:
+  `NtSecureConnectPort '\Windows\ApiPort' => c0000041` (PORT_CONNECTION_REFUSED, handle NULL),
+  then `NtRegisterThreadTerminatePort => c0000008` (INVALID_HANDLE, because there is no handle).
+  The server-side reason is already instrumented and names itself:
+  `[CSRSRV] AttachSharedSection: map at fixed base 000007fffebf0000 FAILED st=c0000018`
+  — **STATUS_CONFLICTING_ADDRESSES**, 12 times across **6 distinct pids**, with no successful
+  attach in the whole boot. `CsrSrvAttachSharedSection` (`csrsrv/server.rs:403`) passes the
+  GLOBAL `CsrSrvSharedSectionBase` as the *requested* base to `NtMapViewOfSection`, demanding
+  that every client map the section at the same address csrss itself got. In a WoW64 process
+  that address is occupied, so the attach fails, `AllowConnection` stays 0, and
+  `NtAcceptConnectPort` is called with Accept=FALSE — which is the `c0000041` the guest sees.
+  **What is NOT yet established:** what actually occupies that VA in a WoW64 process. That is
+  the next measurement, not an assumption.
+  **A second blocker is predicted (derived, NOT observed — the path is unreachable today):**
+  the base is `0x7ffffebf0000` ≈ 8 TB, and the client records it in
+  `Peb->ReadOnlySharedMemoryBase`. A 32-bit guest's PEB32 field is four bytes wide, so even a
+  successful attach at that base could not be named by the guest. If so the section must map
+  **below 4 GB** for WoW64 clients and the per-process base must travel back in
+  `ConnectInfo->SharedSectionBase` (which is already sent) rather than the global.
+  **Consequence for sequencing:** the `PORT_MESSAGE` 24→40 marshaller and the CSR payload work
+  are real (`NtRequestWaitReplyPort => c000000d` fires 5x, exactly as the kernel's
+  `DataLength + sizeof(PORT_MESSAGE) > TotalLength` check predicts) but they are DOWNSTREAM.
+  Fixing them first would change nothing, because no guest ever gets a port handle. Note the
+  kernel checks the header size BEFORE `ObReferenceObjectByHandle` (`lpc-rust/send.rs:407-420`),
+  which is why a guest with no connection still reports `c000000d` and not `c0000008`.
+  The desktop boots green throughout — this is confined to the 32-bit guest path.
+- **`conformance:arm64` wedges on an ExResource waiter-count race — OPEN, NOT a code regression**
+  (2026-09-06, found by the wow64-amd64 lane, NOT owned by it). Two independent arm64 runs on
+  the same tree both failed the kmtest sweep, and the line number MOVED between them:
+  `ExResource.c:432` in gate `20260906-221252`, `ExResource.c:469` in the standalone control
+  run. Both sites are the identical construct — start a thread that must BLOCK acquiring an
+  ERESOURCE, assert it times out, then assert a waiter count at that instant:
+  `StartThread(&ThreadData…, &Timeout, TRUE, TRUE)` → `ok_eq_hex(Status, STATUS_TIMEOUT)` →
+  `CheckResourceStatus(Res, …)`. A deterministic regression fails at the same line every time;
+  a race wanders, which is what this does. Both runs dropped exactly one assertion (399 → 398),
+  and i386/amd64 conformance PASSED in the same gate — only arm64 (TCG, the slowest target)
+  fails, on a host that was saturated all evening.
+  **Read the verdict carefully, because it overstates itself twice.** The headline is
+  `RATCHET REGRESSIONS (63)`, but 55 of those are `in baseline (OK) but never launched` — the
+  failing assertion wedges the sweep, so every test after ExResource in sweep order cascades.
+  One real regression is reported as 63. The headline naming ExResource IS correct (it is the
+  first thing that broke and it did produce results, 399 → 398); it is the *count* that
+  misrepresents the blast radius, not the file. Separately the assertion text offers "media was
+  not built with VIBEOS_PAYLOAD=kmtest" as the first explanation — that branch was checked and
+  ELIMINATED: `opt:kmtest_all`, `mkramdisk` and `payloads` are all present in the gate's
+  `build:arm64`.
+  Eliminated as direct causes: no commit in the last 80 touches `ntoskrnl/ex/resource.c`, and
+  no Rust port has taken ERESOURCE over (grepping `sdk/lib/rust` for
+  `ExAcquireResourceExclusiveLite`/`ExfAcquireResourceExclusive` finds only consumers and
+  bindgen types), so AGENTS.md's "check for a Rust port FIRST" does not redirect here. **That
+  eliminates the obvious candidate, not the class:** a waiter count asserted at an instant moves
+  if anything shifts timing — scheduler, timer resolution, KE wait paths, or an unrelated
+  translation that changed a hot path's cost. Do NOT weaken or quarantine the assertion; it is
+  asserting something true.
+  **Update 2026-09-11 — a third and fourth site, and a GREEN run.** `conformance:arm64` on a
+  quiet host (queue empty, no conductor) came back `launched=91 ok=88 bad=3 regressions=[]`,
+  i.e. PASS, in 74.5s. ExResource itself reported `OK pass=399 fail=2`, failing at
+  `ExResource.c:409` and `ExResource.c:455` — **two further line numbers**, so four distinct
+  sites across four runs (432, 469, 409, 455), all the same block-then-assert-a-waiter-count
+  construct. That settles the race question: a deterministic regression does not move four
+  times. It also sharpens the mechanism — the baseline **already accepts two failing ExResource
+  assertions**, so the ratchet does not trip on a failure here at all; it trips only when the
+  *pass count* moves (399 → 398), which is what a wedge mid-sweep does. Under load a third
+  assertion flips and the sweep stops producing. Still OPEN, still not owned by the wow64 lane,
+  and still do not weaken the assertion.- **Fleet disk exhaustion interrupted landing — OPEN, admission slice implemented locally**
   (2026-09-06; owner: bughunt/Codex). The shared WSL filesystem reached zero
   available bytes during `land`'s tooling preflight; the failure summary itself
   then failed with `ENOSPC`. User reclaimed space (163 GB available afterward).
@@ -655,8 +746,41 @@ Field-manual § pointers hold the full writeups. **Update on state change.**
   unmarshalled path has no shadow and is genuinely async now. Blocking has one trap worth
   remembering: msafd's `SockEvent` is a SYNCHRONIZATION event, so the thunk's own wait consumes
   the very signal `MsafdWaitForAlert` is about to wait for — missing the re-signal is a guest
-  hang with no error printed anywhere. Still OPEN: a guest `ApcRoutine` (no 64->32 user-APC
-  dispatch).
+  hang with no error printed anywhere. `IOCTL_AFD_SEND_DATAGRAM` was the last refusal in this
+  family and is now marshalled too (see the entry below). Still OPEN: a guest `ApcRoutine`.
+- **A guest `ApcRoutine` is still refused, but NOT for the reason previously recorded — OPEN**
+  (2026-09-06). This entry said "no 64->32 user-APC dispatch"; that was written from the
+  refusal's own comment and is wrong. The guest-entry half EXISTS and is load-bearing:
+  `Wow64pBuildLoaderApcFrame` (`wow64.c`) builds a `KiUserApcDispatcher`-ABI frame and
+  `Wow64pKiUserApcDispatcher32` is resolved out of ntdll32 at startup, and that pair runs on
+  EVERY guest thread start (`Wow64pGuestThreadStart`), not on some experimental path. What is
+  actually missing is two smaller things. First, INTERCEPTION: the kernel's `KiInitializeUserApc`
+  builds a 64-bit `UAPC_FRAME` and points the trap frame at the 64-bit `KiUserApcDispatcher`, so
+  a guest's 32-bit `ApcRoutine` handed through would eventually be `call`ed as native x64 — x86
+  bytes executed as x86-64. wow64.dll needs to substitute its own host-side thunk as the
+  `NormalRoutine`, carrying the guest routine and context as arguments. Second, the frame builder
+  hardcodes `Wow64pLdrInitThunk32` at `[E+0]`; it needs the routine as a parameter. Neither is
+  architecture. Nothing on the ladder needs it today (msafd uses Events, not APCs), so it stays
+  a loud refusal by choice rather than by blockage — but whoever picks it up should not go
+  looking for machinery that is already there.
+- **FIXED (2026-09-06): `IOCTL_AFD_SEND_DATAGRAM` was the last refused AFD payload, so 32-bit
+  guests could not send UDP at all.** `AFD_SEND_INFO_UDP` is 56 -> 104 and the audit calls it
+  SEMANTIC because it embeds `TDI_REQUEST_SEND_DATAGRAM` and `TDI_CONNECTION_INFORMATION`.
+  Reading both consumers shrank the job a long way: `AfdPacketSocketWriteData` reads only
+  `BufferArray`, `BufferCount` and `TdiConnection.RemoteAddress`, and msafd's `WSPSendTo` fills
+  only those plus `AfdFlags` and `RemoteAddressLength`. **`TdiRequest` is written by NEITHER
+  side**, so it is carried as opaque zero padding — synthesizing a host-shaped `TDI_REQUEST`
+  would invent content nobody supplies and the driver would read it back as though the guest
+  had meant it. `RemoteAddress` points at a `TRANSPORT_ADDRESS` (LONG + `TA_ADDRESS`{USHORT,
+  USHORT, UCHAR[]}) which is pointer-free and width-identical, so widening the pointer is the
+  whole job, exactly as `RECV_DATAGRAM` already does for its `Address`. Three independent
+  witnesses agreed on 56/104: the bindgen types, a host layout program, and the audit baseline.
+  A NULL `RemoteAddress` is now refused because `AfdPacketSocketWriteData` dereferences it
+  unconditionally — a native i386 guest can still walk the kernel through that null deref, which
+  is a separate pre-existing hazard. Oracle: marshal32's new sendto rung, whose teeth are not
+  that `sendto` succeeded but that the socket comes back IMPLICITLY BOUND — AFD only reaches
+  `WarmSocketForBind` by dereferencing `RemoteAddress` for `Address[0].AddressType`, so AF_INET
+  plus a real port proves the driver read the family through the pointer we widened.
 - **msafd interprets a FAILED `AFD_SELECT` as success — upstream wart, OPEN but no longer
   reachable here** (2026-09-05, re-checked 2026-09-06). The `select()` = 5 on a single-socket
   `fd_set` is explained: `WSPSelect` never checks the IOCTL status before walking `PollInfo`, so
