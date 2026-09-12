@@ -73,7 +73,7 @@ NtUserEnumDisplaySettings
 NtUserEnumDisplayDevices
 # These two ALSO carry a divergent struct (CreateDesktop: OBJECT_ATTRIBUTES;
 # GetIconInfo: ICONINFO HBITMAP widen), so they have NO dispatch entry yet and
-# hit the loud WOW64_MANUAL_UNIMPL stub (clean error, not a bugcheck) instead of
+# hit the loud WOW64_AUTOMARSHAL_UNIMPL stub (clean error, not a bugcheck) instead of
 # the silent-wrong flat thunk. Add a marshaller when a guest reaches them.
 NtUserCreateDesktop
 NtUserGetIconInfo
@@ -103,7 +103,7 @@ NtUserOpenWindowStation
 NtUserCreateWindowStation
 # E10, no dispatch entry: each carries a divergent struct no ladder guest
 # reaches, so per the M18 rule ("never ship a marshaller no guest can disprove")
-# they get the loud WOW64_MANUAL_UNIMPL stub — a clean error instead of the
+# they get the loud WOW64_AUTOMARSHAL_UNIMPL stub — a clean error instead of the
 # silent-wrong flat thunk they had. A marshaller lands when a guest arrives.
 #   NtUserSetCursorContents  ICONINFO (HBITMAP fields widen; 20 -> 32 bytes)
 #   NtGdiAddEmbFontToDC      PVOID *pFontID OUT slot

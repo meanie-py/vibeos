@@ -3133,3 +3133,74 @@ redirect builder runs BEFORE `CmpParseKey`'s own locking
 acquires and drops its own. Calling the inner parse twice for the fallback is
 safe for the same reason: each invocation is lock-balanced, acquiring in the
 cache lookup and releasing on every exit.
+
+## M19 — CSR/LPC scoping (2026-09-11): measured, and two of my own claims corrected
+
+The LPC family (`NtRequestWaitReplyPort`, `NtReplyPort`, `NtReplyWaitReceivePort`,
+`NtRequestPort`, `NtReplyWaitReplyPort`) is the last big refusal in the lane. This is the
+scoping pass, re-derived from the tree rather than from carried-over notes — which is how two
+of the carried-over claims turned out to be wrong.
+
+**The failure is real and deterministic.** `lpc-rust/src/send.rs:413` rejects a request when
+`DataLength + sizeof(PORT_MESSAGE) > TotalLength`. A 32-bit guest sets
+`TotalLength = DataLength + 24`; the amd64 kernel wants `+ 40`. Always true, so every call
+fails `STATUS_INVALID_PARAMETER` before it reaches a port.
+
+**Correction 1 — "there is no marshaller" was wrong.** There is one: a *generated flat thunk*.
+The name is absent from `manual.txt` and from the automarshal table, so wow64gen derived a
+thunk from the `.spec` that widens each pointer ARGUMENT and passes the 24-byte struct through
+untouched. The bug is not an absent marshaller, it is a thunk that marshals the pointer but not
+what it points at — the same shape as the `NtCreateIoCompletion` PHANDLE bug (M18).
+
+**Correction 2 — `USE_LPC6432` does not solve this,** though it looks purpose-built to.
+`ndk/lpctypes.h:106` carries an unused switch that swaps `LPC_CLIENT_ID`/`LPC_SIZE_T`/
+`LPC_PVOID` for their 64-bit forms, exactly to make a 32-bit and 64-bit side agree. Measured on
+the host rather than reasoned about:
+
+| build | `sizeof` | `ClientId` | `MessageId` | `ClientViewSize` |
+|---|---|---|---|---|
+| i386, plain | 24 | 8 | 16 | 20 |
+| i386, `USE_LPC6432` | **32** | 8 | 24 | 28 |
+| amd64 (either) | **40** | 8 | 24 | 32 |
+
+It narrows the gap and does not close it: the i386 ABI aligns `long long` to 4 where amd64
+aligns to 8, so the trailing `ULONGLONG` lands at 28 instead of 32. The header needs a real
+marshaller. (Had this not been measured it would have shipped as "ReactOS already has a switch
+for this.")
+
+**The payload is much smaller than "~100 per-API layouts".** `CSR_API_MESSAGE` is a
+`PORT_MESSAGE` header plus a `ULONG_PTR ApiMessageData[39]` union blob that each subsystem
+server casts to its own struct — nominally ~20 BASE + ~9 USER + ~74 CONSOLE layouts. But:
+
+- **13 of the 20 BASE APIs contain no pointer at all**, and the pointer-heavy ones
+  (`BASE_CHECK_VDM`, `BASE_GET_NEXT_VDM_COMMAND`, `BASE_GETSET_VDM_CURDIRS`) are 16-bit
+  DOS/Win16 support a WoW64 guest never reaches. The realistic pointer-bearing set is
+  `BASE_CREATE_PROCESS` (`PebAddressNative`), `BASE_SXS_CREATEPROCESS_MSG` and
+  `BASE_NLS_GET_USER_INFO` — one pointer each.
+- A pointer-free struct that only needs field-copy under a layout diff is precisely what
+  **marshalgen already generates**, from real clang i686-vs-aarch64 record layouts (M17).
+- `CSR_CAPTURE_BUFFER` carries a `PointerOffsetsArray`: CSR already enumerates its own pointers
+  because it already relocates them between client and server address space
+  (`csrsrv/api.rs:768`, `+= BufferDistance`). The offsets are validated to lie inside
+  `ApiMessageData`, so they are a ready-made table of where the pointers are — in 32-bit
+  coordinates, which is the part that still needs translating.
+
+So the job is: hand-write the PORT_MESSAGE header widen, hand-write the capture-buffer
+relocation, and point existing generation machinery at the message structs. There is precedent
+in the lane already — `Wow64pConnectPort` (`wow64_manual.c:1880`) widens the 0x24-byte
+`CSR_API_CONNECTINFO` today, discriminated by sniffing a port name ending in `ApiPort`. For the
+message APIs the discriminator is cleaner: `ApiNumber` is in the message.
+
+**Blocked on a diagnostic that is itself broken — fix this first.** `WOW64_MANUAL_UNIMPL` is
+`#define`d FOUR times, once per file, with no shared header anywhere in the module:
+`0x7FFFFFFF` in `wow64_manual.c`, `wow64_thunks.c` and `wow64_win32k.c`, but **`0xC0BBBBBB`**
+in generated `wow64_automarshal.c`. `Wow64ManualDispatch` tails unconditionally into
+`Wow64AutoMarshalDispatch`, so the value that actually comes back is `0xC0BBBBBB` — and both
+callers test `Status == WOW64_MANUAL_UNIMPL` against `0x7FFFFFFF`. **Both of those branches are
+dead.** An unhandled syscall returns `0xC0BBBBBB` to the guest instead of printing the
+`NEEDS MANUAL MARSHALLER` line that names it, and two comments still promise the old contract
+(`wow64_thunks.c:25`, `wow64_manual.c:4550`). That line is exactly the instrument needed to
+learn which LPC calls a guest actually makes, so it gets fixed before the probe: one shared
+header, two distinctly-named sentinels (a hand marshaller declining is genuinely different from
+no thunk existing anywhere), and `marshalgen.py` emitting the include instead of its own
+`#define` so the drift cannot recur.

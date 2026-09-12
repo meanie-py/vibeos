@@ -21,8 +21,7 @@ typedef LONG NTSTATUS;
 
 ULONG WINAPI DbgPrint(_In_z_ _Printf_format_string_ PCSTR Format, ...);
 
-/* Sentinel: this name has no hand marshaller yet -> caller fails loud. */
-#define WOW64_MANUAL_UNIMPL ((NTSTATUS)0x7FFFFFFF)
+#include "wow64_status.h"
 
 int Wow64pStrEq(const char *a, const char *b);
 
@@ -3090,9 +3089,10 @@ static NTSTATUS Wow64Manual_NtUserUnregisterClass(ULONG *a)
  * narrow to the guest's low 32 bits (all user handles are <4GB).
  * The two members that ALSO carry a divergent struct — NtUserCreateDesktop
  * (OBJECT_ATTRIBUTES) and NtUserGetIconInfo (ICONINFO HBITMAP widen) — are
- * listed in manual-win32k.txt WITHOUT a dispatch entry, so they hit the loud
- * WOW64_MANUAL_UNIMPL stub (a clean error, NOT a bugcheck) until a guest that
- * needs them arrives with a marshaller to disprove. */
+ * listed in manual-win32k.txt WITHOUT a dispatch entry, so they fall through
+ * to the generated table and come back WOW64_AUTOMARSHAL_UNIMPL, which the
+ * caller reports loudly by name (a clean error, NOT a bugcheck) until a guest
+ * that needs them arrives with a marshaller to disprove. */
 static NTSTATUS Wow64Manual_NtUserFindWindowEx(ULONG *a)
 {
     extern HANDLE NtUserFindWindowEx(PVOID, PVOID, PVOID, PVOID, ULONG);
@@ -4547,7 +4547,8 @@ static NTSTATUS Wow64Manual_NtUserMessageCall(ULONG *a)
     return St;
 }
 
-/* Name-dispatched entry point. Returns WOW64_MANUAL_UNIMPL if unhandled. */
+/* Name-dispatched entry point. An unhandled name tails into the generated
+ * table below, so it returns WOW64_AUTOMARSHAL_UNIMPL, not the manual one. */
 /* ---- M18: NtCreateIoCompletion (PHANDLE out-slot + optional OA) ----------
  * Flushed out by marshal32.exe: the .spec typed it flat, so the PHANDLE arg
  * got a flat thunk and the kernel's 8-byte handle write clobbered the guest's
