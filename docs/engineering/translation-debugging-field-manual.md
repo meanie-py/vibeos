@@ -6829,6 +6829,37 @@ been attacked rather than merely restated. A conclusion that feels settled is ex
 nobody re-derives it. *(Found jointly with the control-plane lane; the instances are drawn
 from both of our sessions.)*
 
+### A MISSING line is evidence only if you have seen the passing case emit it
+
+**The check:** before a silence becomes a finding, produce a run where the thing you are
+looking for DOES appear, and diff. Absence has no provenance on its own — a line can be
+missing because the event did not happen, or because nothing ever prints it here, or because
+whoever was reading had already stopped.
+
+**Sibling to "The artifact you consulted is not the one consulted at RUNTIME", not a case of
+it — the remedy is what separates them.** There, the fix is to identify what actually decides
+and go read that instead; the right artifact exists and you were looking at the wrong one.
+Here there is no better artifact to find. The log you have simply cannot answer a negative by
+itself, and the only move that works is to obtain a control that emits the line and compare.
+A reader who arrives at the wrong one of these two is pointed at a remedy that cannot help.
+
+**Two instances, one night (2026-09-13), running in OPPOSITE directions:**
+- absence read as absence of the EVENT. A WoW64 optional guest reported no verdict, so the
+  ladder treated it as never staged and passed the run as `9/9 guests PASS`. The guest had
+  launched and HUNG; the drain stops when the *required* guests report, and an optional one
+  runs after them, so its line was in the serial FILE and never in the text the check read.
+- absence read as evidence of a MISSING DISPATCH. `Example_drv.c:227`'s `IRP!` trace did not
+  print for a device-control IRP, which looked like `DeviceIoControl` returning success
+  without dispatching — a dramatic finding, nearly reported. That trace never prints for that
+  IRP type at all: the CLEAN round's serial is identical in that window, and only diffing
+  against it caught the error.
+
+Both would have shipped a confident wrong conclusion, and the same one-line move — get a
+control that emits it, diff — kills both. Note the second is the more dangerous shape: a
+silence that fits a striking hypothesis is read as confirming it, and nothing about the
+reading feels like an inference. *(First case found in the wow64 lane, second by
+conformance-ratchet.)*
+
 ### A TEXT-SHAPED match is not a PROOF `[§9.119]`
 The same regex measured **146** lowerable CRT forwarders; the sound implementation lowered
 **11**. Measuring a shape by its syntax measures an **upper bound, not a yield**, and the
