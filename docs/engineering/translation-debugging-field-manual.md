@@ -6967,10 +6967,17 @@ A reader who arrives at the wrong one of these two is pointed at a remedy that c
   against it caught the error.
 
 Both would have shipped a confident wrong conclusion, and the same one-line move — get a
-control that emits it, diff — kills both. Note the second is the more dangerous shape: a
-silence that fits a striking hypothesis is read as confirming it, and nothing about the
-reading feels like an inference. *(First case found in the wow64 lane, second by
-conformance-ratchet.)*
+control that emits it, diff — kills both.
+
+**The two directions are asymmetric and need different vigilance, which is why the pair is
+worth more than either instance.** The second is a false RED that would have been a
+spectacular finding — `DeviceIoControl` succeeding without dispatching is the kind of result
+that gets written up, and *a silence that contradicts you gets investigated; a silence that
+confirms you gets published*. The first is a false GREEN, which nobody looks at by definition:
+the run said 9/9 and there was no reason to open it. Reading this entry as "you nearly
+published something wrong" gets you half of it, and misses the half where you publish nothing
+because everything appeared fine. *(First case found in the wow64 lane, second by
+conformance-ratchet; the published/investigated line is the control-plane lane's.)*
 
 ### A TEXT-SHAPED match is not a PROOF `[§9.119]`
 The same regex measured **146** lowerable CRT forwarders; the sound implementation lowered
