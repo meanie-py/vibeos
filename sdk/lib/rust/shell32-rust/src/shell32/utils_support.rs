@@ -107,3 +107,64 @@ macro_rules! LOWORD {
     };
 }
 pub(crate) use LOWORD;
+
+// ------------------------------------------------------------------------------------------
+// utils.h `struct ClipboardViewerChain` — a HEADER-ONLY C++ struct
+// ------------------------------------------------------------------------------------------
+
+/// `winuser.h` `#define HWND_BOTTOM ((HWND)1)` — a cast macro, so no island can carry it.
+/// It is a SENTINEL here, not a window: `ClipboardViewerChain` uses it to mean "not hooked",
+/// which is why the distinction from a null `HWND` is load-bearing (see below).
+pub const HWND_BOTTOM: HWND = 1 as HWND;
+
+/// `utils.h:132`. bindgen renders the STRUCT and none of the methods, because they are defined
+/// inline in the header — the same shape as `ui/rosctrls.h`'s CListView, and handled the same
+/// way: the layout stays the island's, the behaviour is written here against it.
+///
+/// The C++ struct carries a DEFAULT MEMBER INITIALIZER, `HWND m_hWndNext = HWND_BOTTOM`, and
+/// that is not decoration. `Hook` only hooks when `m_hWndNext == HWND_BOTTOM`, so a
+/// zero-initialized chain never hooks at all and `Unhook` passes a null next-window to
+/// ChangeClipboardChain. A translated owner must therefore use `new()` rather than
+/// `core::mem::zeroed()` for this field.
+impl ClipboardViewerChain {
+    #[inline]
+    pub const fn new() -> Self {
+        Self { m_hWndNext: HWND_BOTTOM }
+    }
+
+    pub unsafe fn Unhook(&mut self, hWnd: HWND) {
+        if self.m_hWndNext != HWND_BOTTOM {
+            ChangeClipboardChain(hWnd, self.m_hWndNext);
+        }
+        self.m_hWndNext = HWND_BOTTOM;
+    }
+
+    pub unsafe fn Hook(&mut self, hWnd: HWND) {
+        if self.m_hWndNext == HWND_BOTTOM {
+            self.m_hWndNext = SetClipboardViewer(hWnd);
+        }
+    }
+
+    pub unsafe fn HandleChangeCBChain(&mut self, wParam: WPARAM, lParam: LPARAM) -> LRESULT {
+        if self.m_hWndNext == wParam as HWND {
+            self.m_hWndNext = lParam as HWND;
+            return self.m_hWndNext as LRESULT;
+        } else if !self.m_hWndNext.is_null() && self.m_hWndNext != HWND_BOTTOM {
+            return SendMessageW(self.m_hWndNext, WM_CHANGECBCHAIN, wParam, lParam);
+        }
+        0
+    }
+
+    pub unsafe fn HandleDrawClipboard(&mut self, wParam: WPARAM, lParam: LPARAM) -> LRESULT {
+        if !self.m_hWndNext.is_null() && self.m_hWndNext != HWND_BOTTOM {
+            return SendMessageW(self.m_hWndNext, WM_DRAWCLIPBOARD, wParam, lParam);
+        }
+        0
+    }
+}
+
+impl Default for ClipboardViewerChain {
+    fn default() -> Self {
+        Self::new()
+    }
+}
