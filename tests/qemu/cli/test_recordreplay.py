@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import json
 import subprocess
+import time
 from pathlib import Path
 
 import pytest
@@ -903,7 +904,140 @@ def test_the_gdb_flag_warns_that_stopping_a_replay_aborts_qemu(tmp_path, monkeyp
     # and it must not overstate: `continue` DOES work, so a blanket "gdb is
     # broken" would send people away from the half that is usable.
     assert "continue" in err
-    # and it must claim replay-specificity only where that was actually
-    # established: `interrupt` not landing turned out to reproduce on a
-    # non-replay control, so it is not evidence about replay at all.
-    assert "interrupt" not in err
+    # and it must say the conclusion that was actually reached: a breakpoint HIT
+    # aborts too, so there is no stopping mechanism left and a trace is a capture
+    # rather than a debugging session. Softer wording would leave someone
+    # planning a session that cannot work.
+    assert "BREAKPOINT HIT" in err
+    assert "CAPTURE" in err
+
+
+def test_record_waits_for_the_trace_to_stop_growing(tmp_path):
+    """`vibeos-cli conformance` returns while its QEMU is still shutting down, so
+    the boot command returning is NOT the recording ending. Measured on a kmtest
+    record: command returned 05:28:38, guest serial finished 05:29:23, trace
+    finished 05:29:39. Finalising at the first froze pristine/ mid-record, kept a
+    1,456-byte transcript of a 240,750-byte boot, and reported "trace 0MB" for
+    10.6MB — three silent corruptions from one early return.
+    """
+    import threading
+
+    from . import rrcmd
+
+    trace = tmp_path / "t"
+    trace.mkdir()
+    rrbin = trace / "replay.bin"
+    rrbin.write_bytes(b"")
+
+    def grow():
+        for n in range(1, 6):
+            time.sleep(0.05)
+            rrbin.write_bytes(b"x" * (n * 1000))
+
+    threading.Thread(target=grow, daemon=True).start()
+    size = rrcmd.await_trace_quiescence(trace, settle=0.4, limit=20.0)
+    assert size == 5000, "returned before the trace stopped growing"
+
+
+def test_quiescence_gives_up_loudly_rather_than_hanging(tmp_path, capsys):
+    """A trace that never settles must not block a recording forever — but the
+    caller has to be told the finalised trace may be truncated."""
+    from . import rrcmd
+
+    trace = tmp_path / "t"
+    trace.mkdir()
+    rrbin = trace / "replay.bin"
+    rrbin.write_bytes(b"x")
+    stop = False
+
+    import threading
+
+    def grow():
+        n = 1
+        while not stop and n < 10_000:
+            n += 1
+            rrbin.write_bytes(b"x" * n)
+            time.sleep(0.02)
+
+    t = threading.Thread(target=grow, daemon=True)
+    t.start()
+    rrcmd.await_trace_quiescence(trace, settle=5.0, limit=1.0)
+    stop = True
+    assert "still growing" in capsys.readouterr().err
+
+
+# --- reclaiming disk ------------------------------------------------------
+
+
+def _fake_trace(root: Path, name: str, size: int, age: float) -> Path:
+    import os
+
+    d = root / name
+    (d / "media").mkdir(parents=True)
+    rr.write_manifest(d, arch="arm64", argv=[], media={})
+    (d / "replay.bin").write_bytes(b"x" * size)
+    os.utime(d, (age, age))
+    return d
+
+
+class _PruneArgs:
+    root = None
+    keep = 2
+    name = None
+    apply = False
+
+    def __init__(self, root, **kw):
+        self.root = str(root)
+        for k, v in kw.items():
+            setattr(self, k, v)
+
+
+def test_prune_is_dry_run_unless_asked(tmp_path):
+    """A trace costs a full boot to make. Deleting one should take the same
+    deliberate second keystroke `vibeos-cli prune` asks for."""
+    from . import rrcmd
+
+    root = tmp_path / "traces"
+    root.mkdir()
+    for n, age in (("old", 1000), ("mid", 2000), ("new", 3000)):
+        _fake_trace(root, n, 100, age)
+    rrcmd.cmd_prune(_PruneArgs(root, keep=1), tmp_path)
+    assert {d.name for d in root.iterdir()} == {"old", "mid", "new"}, "dry run deleted something"
+
+
+def test_prune_keeps_the_NEWEST_n(tmp_path):
+    """Newest-first: the trace you just made is the one you are about to replay."""
+    from . import rrcmd
+
+    root = tmp_path / "traces"
+    root.mkdir()
+    for n, age in (("old", 1000), ("mid", 2000), ("new", 3000)):
+        _fake_trace(root, n, 100, age)
+    rrcmd.cmd_prune(_PruneArgs(root, keep=2, apply=True), tmp_path)
+    assert {d.name for d in root.iterdir()} == {"mid", "new"}
+
+
+def test_prune_by_name_ignores_the_keep_count(tmp_path):
+    """Deleting a KNOWN-BAD trace by name must work even when it is the newest —
+    e.g. a recording finalised mid-write, which looks valid and is not."""
+    from . import rrcmd
+
+    root = tmp_path / "traces"
+    root.mkdir()
+    for n, age in (("good", 1000), ("truncated", 3000)):
+        _fake_trace(root, n, 100, age)
+    rrcmd.cmd_prune(_PruneArgs(root, keep=5, name=["truncated"], apply=True), tmp_path)
+    assert {d.name for d in root.iterdir()} == {"good"}
+
+
+def test_prune_never_touches_a_directory_that_is_not_a_trace(tmp_path):
+    """The root is under the user's home. Anything without a manifest is not ours."""
+    from . import rrcmd
+
+    root = tmp_path / "traces"
+    root.mkdir()
+    _fake_trace(root, "atrace", 100, 1000)
+    (root / "someone-elses-data").mkdir()
+    rrcmd.cmd_prune(_PruneArgs(root, keep=0, apply=True), tmp_path)
+    assert (root / "someone-elses-data").is_dir()
+    assert not (root / "atrace").exists()

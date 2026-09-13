@@ -3154,6 +3154,22 @@ for by passing `--no-seal-wide`. Fix: when the bank directory's name lacks a tok
 defaults emit, pass the `--no-seal-*` matching how it was bought, or migrate the bank
 deliberately. Never `--no-resume`: that is an explicit PAID regeneration.
 
+**And before you ever conclude your paid work VANISHED, run the second test.** A commit can be
+absent from the merge queue, in neither the landed nor the rejected list, AND not an ancestor
+of `origin/master`, and still be perfectly fine — the queue tracks lane TIPS, so your own newer
+submission subsumes the older commit. Every signal reads "reaped, resubmit":
+
+    git merge-base --is-ancestor <missing> origin/master   # "has it LANDED?"
+    git merge-base --is-ancestor <missing> <my-lane-tip>   # "is it still TRAVELLING?"
+                                                           #   true  -> superseded, fine
+                                                           #   false -> genuinely lost
+
+Neither predicate alone answers "is it lost", and the first is the one nearest to hand. Cheap
+to get wrong elsewhere, expensive here: a translation lane that believes its work disappeared
+goes looking for what it did wrong, and that road ends at `--no-resume` and re-buying bodies
+that were sitting in the queue the whole time. It is the one failure of this class that spends
+money rather than time.
+
 This bit when the seal flags became default-ON: 24 of msvcrt's 26 banks stopped at
 `__callseal_v1`, leaving 2 reachable. **Settle it by constructing the path, never by counting**
 — three counts were offered that night and only the third answered the question asked:
@@ -3188,6 +3204,23 @@ Three distinct shapes, so you can recognise the next one:
   reproduce". The thing that decides is "the 9 runs THIS soak produced, identified by sha";
   "the last 9 by arch" merely correlates with it. A window is the easiest of the three to miss
   because the arithmetic over it is impeccable.
+
+**And a fourth, which is not "we consulted the wrong artifact" but "we held the RIGHT one and
+used it as an INSTRUCTION instead of as EVIDENCE".** A stale `ntdll_vista.dll` failed its
+provenance check; the check's remedy said "run `build`", which demonstrably could not clear
+it; the thing that DID work was `rm <the dll> && build`, and that command was passed between
+five lanes as a recipe. Nobody asked **why deleting an output would fix a staleness check** —
+and the answer to that question was the bug. `rm` works *precisely because* ninja has no edge
+from the crate's sources to the DLL: removing the output is the only way to make ninja rebuild
+something it otherwise has no reason to touch. The workaround was a complete description of
+the defect for as long as it was treated as a procedure. One line of CMake
+(`BODY_CRATES ntdll-rust smss-csrss-rust`, which the sibling target already declared) fixed it.
+
+The tell is specific and worth memorising: **a remedy whose mechanism you cannot state.** If
+you cannot say why the fix works, you are holding a diagnosis you have not read. And note the
+multiplier — a wrong remedy string is worse than no remedy at all, because every lane that
+hits it learns to distrust the message and memorise a recipe instead, which is exactly the
+"a remembered recipe IS the bug report" rule in AGENTS.md arriving from the tool's side.
 
 **The nastiest variant of it is a CITATION.** Same night, a different lane argued that a
 "flake" classification could not also reject a lane, and cited `queue.py:901` as its support.
@@ -5006,6 +5039,51 @@ returning `Result`, with the finally path on both exits. `try_return` must actua
 nothing. It has false-greened arm64 six times in a row (fastfat → ramdisk → pl011 → gdi32 →
 user32 → advapi32). Rule: **`vibeos-cli smoke` hard-fails on stale media — never bypass it, and
 judge a build by artifact existence, not a reported exit code.**
+
+### A correct staleness oracle and a build graph that cannot act on it
+
+**Symptom:** `build` fails `BUILD_INCOMPLETE` naming a stale binary — e.g.
+`dll/ntdll/nt_0600/ntdll_vista.dll: stale — sdk/lib/rust/smss-csrss-rust/src/basesrv newer
+than the cargo-linked binary` — and **the remedy the message gives does not work**. Re-running
+`build` changes nothing and `ninja <target>` reports "no work to do".
+
+**Cause: two tools each hold half of the answer, and the half that is RIGHT cannot act.**
+`provenance.py` knows the relationship, because `dll/ntdll/CMakeLists.txt` declares
+`BODY_CRATES ntdll-rust smss-csrss-rust`, so it can see that a basesrv source postdates the
+linked binary. Ninja can relink, but its graph has no edge from those sources to the
+cargo-linked output, so it correctly believes there is nothing to do. **The checker is right
+and powerless; the executor is empowered and wrong.** Re-running the executor therefore
+re-confirms its own wrong answer as often as you like.
+
+**Fix:** delete the artifact so the executor's graph and the oracle agree, then build —
+`rm build-<arch>/dll/ntdll/nt_0600/ntdll_vista.dll && ./vibeos-cli build --arch <arch>`.
+**Do NOT bypass the check.** The staleness is real, so a bypass ships an old binary, which is
+the one outcome worse than a failing build. The durable fix is the missing graph edge, not a
+louder message.
+
+**It is a stale-INCREMENTAL hazard, not a broken mainline, and the fleet measurement settles
+that beyond argument.** Sampled across five worktrees at one moment, with every one of them on
+the same master: integration ok/ok, conformance ok/ok, smp arm64 ok + amd64 STALE, research
+arm64 STALE + amd64 ok, shell32-com amd64 STALE. **Mixed WITHIN a lane** — the same checkout
+affected on one arch and not the other, purely by when each build dir last relinked. No
+property of a commit can do that. A fresh build links once against current sources and is
+fine; a tree that happened to relink after the change never sees it. So before concluding
+mainline is red, check your own build dir's mtimes against the named sources — it is a
+5-second check and the answer is per-build-dir, not per-commit. (Note also that it is not
+arch-specific: it was first reported on arm64 and reproduces on amd64. Both the "it is
+mainline" and the "it is arm64" framings were wrong, in opposite directions, about the same
+bug.)
+
+**The general shape, worth recognising beyond this one target:** when a verifier and an
+executor disagree about whether work is needed, being right buys the verifier nothing unless
+it can cause the work. A third sibling of the same family is a tool disagreeing not with
+another tool but with the WORLD — a command that reports a success it did not achieve; see
+`land` reporting OK without submitting, under "The artifact you consulted is not the one
+consulted at RUNTIME". Look for the pairing wherever a check is derived from a DIFFERENT
+source of truth than the thing that does the building — here CMake metadata versus the ninja
+graph. Related in mechanism, opposite in direction, to the gate's tooling stage racing its own
+builds (see above): there the oracle read a build that had not finished, here the oracle reads
+a build that will never finish the work it needs.
 
 ### A lint that reads BUILD OUTPUT passes on an artifact predating the change under test
 
@@ -6868,7 +6946,69 @@ That is also why it survives review — a reader asking "did you check?" gets a 
   authority.
 - banked soak records sorted by arch with the last nine taken, when the question was "the nine
   sweeps THIS soak produced" — the window silently mixed in two other shas and dropped one of
-  the real rows, turning a reproduced 33% into a 22% that did not match.
+  the real rows, turning a reproduced 33% into a 22% that did not match;
+- **`land queue — OK` on the screen while the work is neither landed nor queued.** Three
+  instances in one night, and it is three DIFFERENT mechanisms that present identically, which
+  is why "just fix `land`" does not close it: (a) `land` completes but the submission does not
+  persist; (b) the harness reaps `land` mid-flight for "low memory" while memory is fine — it
+  appears to read `MemFree` (~1 GB, almost all reclaimable page cache) rather than
+  `MemAvailable` (33-37 GB observed) — and it dies BEFORE submitting; (c) **the `OK` is real
+  but belongs to an EARLIER invocation**, still sitting in the transcript after the later
+  process is gone. Only (a) is reachable from inside the tool: a reaped process cannot verify
+  or report anything, and in (c) the tool never lied at all — its output outlived the run that
+  produced it, which is the compaction-provenance rule wearing a terminal line (*a true
+  statement that has lost the context making it true*). **The check is `git merge-base --is-ancestor <THE TIP YOU
+  JUST SUBMITTED> origin/master`** — and the capitalised part is the whole check, not emphasis.
+  "Did this lane land anything recently" is the question BOTH failure modes answer
+  affirmatively, so any check that can be satisfied by *a* landed row is satisfied by the wrong
+  evidence. `land-status` is not a safe fallback for this reason: it is where you deliberately
+  GO for confirmation, and it truthfully reports a `landed:` row for your PREVIOUS submission
+  while the tip you just sent is nowhere. One lane read exactly that row and told its user
+  "everything from tonight is now on master"; the tip was not an ancestor and the registry
+  entry it reported as filed was not there. A stale terminal line you might scroll past — this
+  one you seek out, and it looks right. If you use `land-status` at all, grep it for the
+  specific tip SHA, never read the list.
+  **(d) SUPERSESSION — and the check above returns the WRONG answer for it on its own.** The
+  queue tracks lane TIPS, so submitting a newer tip subsumes the older commit: the old entry
+  leaves the queue, appears in neither the landed nor the rejected list, and
+  `--is-ancestor <old> origin/master` says false. Every signal matches (b), and nothing is
+  wrong — the work is travelling inside the newer tip. Disambiguate with a second ancestry
+  test, against your own lane rather than master:
+  `git merge-base --is-ancestor <missing> <my-lane-tip>` — true means superseded and in
+  flight, false means genuinely lost. **The two tests fail differently and neither alone
+  answers the question you are asking:** against master answers *"has this landed"*, against
+  your own tip answers *"is this still travelling"*, and *"is this lost"* is the conjunction.
+  Pick the predicate that matches the question rather than the one nearest to hand.
+  There is also a direct signal that is easy to miss because it lives in a THIRD list:
+  `land-status` prints `superseded: <lane> @ <old> (?) this lane submitted <new>, which already
+  contains it`. A lane that checked the landed and rejected lists and concluded "vanished" had
+  looked in two of the three places. **The cost is asymmetric and it is not symmetric in the
+  way you would guess**: resubmitting on a false "lost" reading is harmless, but a lane that
+  concludes its work vanished goes looking for what it did wrong — and for a translation lane
+  that means RE-BUYING bodies that are sitting in the queue. The failure direction here is
+  money, not time.
+  Note what the working checks have in common and why it is not incidental: **they are made
+  from OUTSIDE the process, and they name the specific artifact** — the only place a check can
+  stand when the failure is the process dying, and the only form that survives an adjacent
+  truth being available. **Those two are extra requirements for THIS member of the class, not a
+  restatement of the entry.** Tested against the instances above: only the soak-window and
+  `land` cases are explained by them; the other eight — the sccache query, the ISO byte-scan,
+  `ls | wc -l`, `smoke-console.log`, the final classification, the two `#ifdef`s, the serial
+  log, the staging manifest — were ALL made from outside their process and ALL named a specific
+  artifact, and failed anyway because the artifact named had no authority over the question
+  asked. Satisfying both properties buys nothing on its own; the headline rule at the top of
+  this entry is still the one doing the work, and these two are what the process-death and
+  adjacent-truth variants need ON TOP of it.
+  This is the member of the class that costs WORK rather than analysis, and it fails in the
+  dangerous direction, because the wrong answer is the reassuring one: nothing looks missing
+  until someone needs the commit. **It can also be survived by LUCK, which is why nobody
+  notices they are exposed.** This lane checked `land-status` after every land out of habit
+  rather than design, and that happens to catch the failure — a land that dies before
+  submitting leaves no queue entry at all — so six submissions came through intact while the
+  deciding artifact was never once consulted. An intermediate record that happens to be honest
+  will hide the gap indefinitely. The rule is not "this lane got away with it"; it is that
+  getting away with it is the normal case, and the class is invisible precisely to the people
+  it has not yet cost anything.
 
 **The two halves compose, and then the wrong conclusion is unfalsifiable.** The clinching
 instance is fleet-wide and lasted a day: `qemu/gdb-helpers/find-kbase.py` relocates symbols to
@@ -7049,7 +7189,7 @@ recovered from a saved log" — it was on the next line. Until that was used, ev
 declined, and the one that mattered needed hand-computing to reach
 `KiSynchronousExceptionEntry+4`.
 
-### A COUNT can answer a different question than the one you asked
+### A tool can answer a NEIGHBOURING question, honestly, and you will not see the gap
 
 **Symptom:** a number is quoted as a hazard — "you have 660 banked `.responses` dirs, all bought
 unsealed, so expect a re-purchase refusal when you touch one" — and every downstream decision is
@@ -7082,6 +7222,20 @@ lying. It was answering a neighbouring question, and the gap between that questi
 invisible in the output. The tell is a claim whose subject is itself a reading — a count, a
 status line, an exit code — where the cheap disconfirming move is to re-derive it through the
 predicate that actually defines the set.
+
+**`ninja` reporting "no work to do" is the same shape, and it makes a build failure
+unfixable by its own printed remedy.** `provenance.py` refused an arm64 build as
+BUILD_INCOMPLETE — `ntdll_vista.dll` stale against `smss-csrss-rust/src/basesrv`, with
+`dll/ntdll/CMakeLists.txt` declaring `BODY_CRATES ntdll-rust smss-csrss-rust` — and told the
+operator to "run `build`". Running it changed nothing, twice, because ninja answers **"is my
+graph satisfied"**, not **"is this output current with respect to its real inputs"**. The edge
+was missing from the graph, so ninja's answer was honest and useless, and `build` just re-asked
+the same wrong question. The staleness was real: source touched today against a binary from
+nine days earlier. Deleting the OUTPUT is what works, because it changes the question ninja is
+being asked rather than arguing with the answer. Note also the queue consequence, since the
+symptom is misleading: BUILD_INCOMPLETE is INCONCLUSIVE (`queue.py:726`), so a conductor that
+hits this stalls the whole drain with nothing rejected — it reads as a wedged conductor, and
+the fix is in an integration worktree that is nobody's lane.
 
 ### An oracle needs an oracle `[§9.122]`
 A scanner printing `0 findings` is asserting one of two very different things: "I looked and the

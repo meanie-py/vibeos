@@ -51,6 +51,9 @@ import sys
 from collections import defaultdict
 from pathlib import Path
 
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
+from tools.source_walk import source_files
+
 REPO = Path(__file__).resolve().parent.parent
 RUST_ROOT = REPO / "sdk" / "lib" / "rust"
 
@@ -132,7 +135,7 @@ def arch_of(rel: str) -> str:
 def collect() -> dict[str, list[tuple[str, int, str]]]:
     """name -> [(rel_path, value, arch)]"""
     decls: dict[str, list[tuple[str, int, str]]] = defaultdict(list)
-    for path in sorted(RUST_ROOT.rglob("*.rs")):
+    for path in sorted(source_files(RUST_ROOT)):
         sp = str(path)
         if SKIP_FILE_RE.search(sp):
             continue

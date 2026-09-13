@@ -1,6 +1,7 @@
 """`vibeos-cli rr ...` — record a boot, then replay it deterministically.
 
     rr record --arch arm64 --payload kmtest     # boot once, keep the recording
+    rr prune --keep 3 [--apply]                  # traces are big; nothing else reclaims them
     rr list                                      # what traces exist
     rr info <trace>                              # what it is, and will it still replay
     rr replay <trace> [--gdb]                    # run that exact boot again
@@ -125,8 +126,9 @@ def cmd_record(args, repo: Path) -> int:
     # is the most valuable recording we can hold, and reporting it as a failure
     # would make the tool useless for exactly its purpose. Judge the trace by
     # whether it replays.
-    rrbin = trace / "replay.bin"
-    size = rrbin.stat().st_size if rrbin.is_file() else 0
+    # The boot command returning is not the recording ending; wait for the trace
+    # to stop growing before finalising anything. See await_trace_quiescence.
+    size = await_trace_quiescence(trace)
     if size:
         # Freeze the media now: they carry the `init` vmstate snapshot the
         # recording just wrote, which every replay loads. Before the boot they
@@ -161,6 +163,43 @@ def cmd_record(args, repo: Path) -> int:
         return 1
     print(f"[rr] replay it:  ./vibeos-cli rr replay {trace.name}")
     return 0
+
+
+def await_trace_quiescence(trace: Path, *, settle: float = 6.0, limit: float = 420.0) -> int:
+    """Block until the recording has actually finished, and return the final size.
+
+    The boot command returning does NOT mean QEMU has exited. `vibeos-cli
+    conformance` hands back as soon as its sweep is parsed, while the VM is still
+    shutting down — measured on a kmtest recording: the command returned at
+    05:28:38, the guest's serial finished at 05:29:23, and the trace finished at
+    05:29:39. Finalising at the first of those three froze pristine/ mid-record,
+    copied a 1,456-byte transcript for what became a 240,750-byte boot, and
+    reported "trace 0MB" for what became 10.6MB.
+
+    Every one of those is silent and each poisons something different: a
+    mid-record pristine/ may not carry the `init` snapshot every replay loads, and
+    a truncated record-serial.log is what `rr verify` diffs against — the same
+    false-green class as reading the serial path from the manifest.
+
+    Smoke never showed it because its harness waits for its own VM. kmtest is the
+    payload this lane is actually chartered for, so this mattered.
+    """
+    rrbin = trace / "replay.bin"
+    last, stable_since = -1, time.time()
+    deadline = time.time() + limit
+    while time.time() < deadline:
+        size = rrbin.stat().st_size if rrbin.is_file() else 0
+        if size != last:
+            last, stable_since = size, time.time()
+        elif time.time() - stable_since >= settle:
+            return size
+        time.sleep(2.0)
+    print(
+        f"[rr] WARNING: trace still growing after {limit:.0f}s; finalising anyway "
+        f"at {last:,} bytes — it may be truncated.",
+        file=sys.stderr,
+    )
+    return last
 
 
 def _keep_serial(trace: Path, name: str, *, expect_mode: str) -> Path | None:
@@ -355,12 +394,13 @@ def cmd_replay(args, repo: Path) -> int:
         # you cannot reverse-continue from, which is the point of having it.
         env["VIBEOS_QEMU_GDB"] = "wait"
         print(
-            "[rr] NOTE: on QEMU 9.0.2 the gdbstub is only PARTLY usable against a\n"
-            "     replay. Connecting, reading registers and `continue` all work;\n"
-            "     `stepi` aborts QEMU (`Playback shouldn't have to iowait`) — that one\n"
-            "     IS replay-specific. Nobody has yet stopped a replay at a point of\n"
-            "     interest, so reverse-continue/reverse-stepi stay untested rather than\n"
-            "     known-broken. See docs/engineering/qemu-record-replay.md.",
+            "[rr] NOTE: on QEMU 9.0.2 a replay CANNOT BE STOPPED, so it cannot be\n"
+            "     debugged. Attaching at -S and `continue` work; every later stop —\n"
+            "     stepi, attaching mid-run, and a BREAKPOINT HIT — aborts QEMU with\n"
+            "     `Playback shouldn't have to iowait`. Reverse execution is therefore\n"
+            "     unreachable. A trace is a deterministic CAPTURE (serial, screenshots,\n"
+            "     triage all work), not a debugging session.\n"
+            "     See docs/engineering/qemu-record-replay.md.",
             file=sys.stderr,
         )
 
@@ -424,6 +464,49 @@ def cmd_list(args, repo: Path) -> int:
     return 0
 
 
+def cmd_prune(args, repo: Path) -> int:
+    """Delete old traces, newest-first retention. DRY-RUN by default.
+
+    Traces are big and nothing was reclaiming them: a kmtest capture is ~1.4GB
+    (489MB of trace plus its media, twice, counting pristine/), and a handful of
+    experiment traces had the disk at 89% within a night. `vibeos-cli prune`
+    reclaims build and boot artifacts and does not know about ~/vibeos-rr at all,
+    so this is the only thing that will.
+
+    Dry-run by default and `--apply` to act, matching `vibeos-cli prune` — a
+    trace costs a full boot to make, so deleting one should take the same
+    deliberate second keystroke.
+    """
+    root = _root(args)
+    if not root.is_dir():
+        print(f"no traces (root {root} does not exist)")
+        return 0
+    traces = sorted(
+        (d for d in root.iterdir() if (d / "manifest.json").is_file()),
+        key=lambda d: d.stat().st_mtime,
+        reverse=True,
+    )
+    keep = max(0, int(args.keep))
+    doomed = traces[keep:]
+    if args.name:
+        doomed = [d for d in traces if d.name in set(args.name)]
+    if not doomed:
+        print(f"{len(traces)} trace(s), keeping {keep} — nothing to prune")
+        return 0
+    total = 0
+    for d in doomed:
+        size = sum(f.stat().st_size for f in d.rglob("*") if f.is_file())
+        total += size
+        print(f"{'DELETE' if args.apply else 'would delete'} {d.name:<34} {size / 1e6:8.0f}MB")
+        if args.apply:
+            shutil.rmtree(d, ignore_errors=True)
+    verb = "freed" if args.apply else "would free"
+    print(f"{verb} {total / 1e9:.2f}GB across {len(doomed)} trace(s)")
+    if not args.apply:
+        print("re-run with --apply to actually delete")
+    return 0
+
+
 def cmd_info(args, repo: Path) -> int:
     trace = _resolve_trace(args)
     m = rr.load_manifest(trace)
@@ -465,6 +548,7 @@ def rr_cmd(args, repo: Path) -> int:
         "list": cmd_list,
         "info": cmd_info,
         "verify": cmd_verify,
+        "prune": cmd_prune,
     }.get(verb)
     if fn is None:
         print(f"unknown rr verb: {verb}", file=sys.stderr)

@@ -48,6 +48,9 @@ import re
 import sys
 from pathlib import Path
 
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
+from tools.source_walk import source_files
+
 ROOT = Path(__file__).resolve().parent.parent
 
 # `@ stdcall GetEnvironmentStringsA() GetEnvironmentStrings` — a FORWARDER. The name after the
@@ -146,7 +149,7 @@ def audit(name: str, ddir: Path, crate: Path) -> tuple[list[tuple[str, str]], in
         exports.add(sym)
 
     rust = set()
-    for rf in crate.rglob("*.rs"):
+    for rf in source_files(crate):
         rust |= set(_RUST_FN.findall(rf.read_text(errors="replace")))
     # Assembly implementations count too.
     asm = set()

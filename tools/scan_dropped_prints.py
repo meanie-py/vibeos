@@ -111,6 +111,9 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 from tools.lint_facts import source_facts
 
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
+from tools.source_walk import source_files
+
 REPO = Path(__file__).resolve().parent.parent
 RUST_ROOT = REPO / "sdk" / "lib" / "rust"
 
@@ -556,7 +559,7 @@ def print_facts(src: bytes, rel: str):
 
 
 def rust_files() -> list[Path]:
-    return [p for p in sorted(RUST_ROOT.rglob("*.rs")) if not SKIP_FILE_RE.search(p.as_posix())]
+    return [p for p in sorted(source_files(RUST_ROOT)) if not SKIP_FILE_RE.search(p.as_posix())]
 
 
 SELF_TEST: list[tuple[str, str, list[str]]] = [
