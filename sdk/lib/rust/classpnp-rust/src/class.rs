@@ -146,7 +146,7 @@ unsafe extern "system" {
 }
 
 // ---- file-scope preamble (translated) ----
-pub const CLASS_INIT_GUID: u32 = 1;
+pub const CLASS_INIT_GUID: u32 = 1; // nolint: const-contradiction (class.c:24 defines it to 1 so classp.h EMITS the GUID storage in exactly this TU)
 pub const DEBUG_MAIN_SOURCE: u32 = 1;
 // ClassCheckVerifyComplete: real definition below (was a bogus `static mut ... = None`
 // stub that linked only while the CHECK_VERIFY ioctl arm was dead under the bind-all).

@@ -6,6 +6,7 @@
     rr info <trace>                              # what it is, and will it still replay
     rr replay <trace> [--gdb]                    # run that exact boot again
     rr verify <trace>                            # replay and diff serial vs the record
+    rr breaks <trace> [--near N]                 # icounts a replay can legally stop at
 
 A trace is a self-contained directory under $VIBEOS_RR_ROOT (default
 ~/vibeos-rr/): the instruction-stream log, private copies of every image the
@@ -27,6 +28,8 @@ divergence log.
 
 from __future__ import annotations
 
+import bisect
+import itertools
 import json
 import os
 import shutil
@@ -432,9 +435,11 @@ def cmd_replay(args, repo: Path) -> int:
             "     mid-run and even a breakpoint HIT all abort QEMU with\n"
             "     `Playback shouldn't have to iowait`. Stop it with QMP\n"
             "     `replay-break` at an icount instead, THEN attach gdb to the already\n"
-            "     -paused guest — that is verified working (registers read, QEMU\n"
-            "     survives). `rr replay` does not wire replay-break up yet; the\n"
-            "     recipe is in docs/engineering/qemu-record-replay.md.",
+            "     -paused guest — that works (registers read, QEMU survives) but is\n"
+            "     NOT reliable: 2 of 3 breaks stopped cleanly and the third aborted\n"
+            "     with the same error. Retry at a different icount. `rr replay` does\n"
+            "     not wire replay-break up yet; see\n"
+            "     docs/engineering/qemu-record-replay.md.",
             file=sys.stderr,
         )
 
@@ -574,6 +579,59 @@ def cmd_info(args, repo: Path) -> int:
     return 0
 
 
+def cmd_breaks(args, repo: Path) -> int:
+    trace = _resolve_trace(args)
+    bounds = rr.instruction_boundaries(trace)
+    if not bounds:
+        print(f"{trace} records no instruction chunks — there is nowhere to break")
+        return 1
+
+    if args.near is None:
+        gaps = [b - a for a, b in itertools.pairwise(bounds)]
+        gaps.sort()
+        print(f"trace:   {trace}")
+        print(f"{'boundaries:':<16} {len(bounds)}")
+        print(f"{'icount range:':<16} {bounds[0]} .. {bounds[-1]}")
+        if gaps:
+            mid = gaps[len(gaps) // 2]
+            print(f"{'chunk size:':<16} min {gaps[0]}  median {mid}  max {gaps[-1]}")
+        print(
+            "\nA `replay-break` must land on one of these. Anywhere else aborts the\n"
+            "replay with 'Playback shouldn't have to iowait'. Use --near <icount> to\n"
+            "pick one."
+        )
+        return 0
+
+    i = bisect.bisect_left(bounds, args.near)
+    exact = i < len(bounds) and bounds[i] == args.near
+    lo = max(0, i - args.count)
+    hi = min(len(bounds), i + args.count + 1)
+    for b in bounds[lo:hi]:
+        if b == args.near:
+            mark = "   <- requested (legal)"
+        elif not exact and i < len(bounds) and b == bounds[i]:
+            mark = "   <- snaps here"
+        else:
+            mark = ""
+        print(f"  {b}{mark}")
+    if exact:
+        print(f"\n{args.near} is a legal break icount.")
+    elif i == len(bounds):
+        print(
+            f"\n{args.near} is past the end of the recording (last boundary "
+            f"{bounds[-1]}) — a break there would never fire."
+        )
+        return 1
+    else:
+        prev = bounds[i - 1] if i else 0
+        print(
+            f"\n{args.near} is NOT legal: it sits {args.near - prev} instructions into a "
+            f"{bounds[i] - prev}-instruction chunk, leaving {bounds[i] - args.near}. "
+            f"Breaking there aborts the replay. Use {bounds[i]}."
+        )
+    return 0
+
+
 def rr_cmd(args, repo: Path) -> int:
     verb = args.rr_verb
     fn = {
@@ -581,6 +639,7 @@ def rr_cmd(args, repo: Path) -> int:
         "replay": cmd_replay,
         "list": cmd_list,
         "info": cmd_info,
+        "breaks": cmd_breaks,
         "verify": cmd_verify,
         "prune": cmd_prune,
     }.get(verb)

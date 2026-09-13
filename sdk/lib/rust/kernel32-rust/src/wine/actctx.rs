@@ -39,12 +39,22 @@ pub struct ACTCTXA {
 
 pub type PACTCTXA = *mut ACTCTXA;
 
+// winbase.h:531-538. These are the CALLER's bits: dwFlags arrives from the
+// application's ACTCTXA, so a dense renumbering is not a private encoding, it
+// misreads the caller. This block used to skip SET_PROCESS_DEFAULT (0x10) and
+// SOURCE_IS_ASSEMBLYREF (0x40) -- the two CreateActCtxA does not branch on --
+// and pack the rest, which put APPLICATION_NAME_VALID on 0x10 and
+// HMODULE_VALID on 0x20. A caller passing the real APPLICATION_NAME_VALID
+// (0x20) therefore took the hModule arm and never converted lpApplicationName,
+// and the real HMODULE_VALID (0x80) matched no arm at all.
 pub const ACTCTX_FLAG_PROCESSOR_ARCHITECTURE_VALID: DWORD = 0x0001;
 pub const ACTCTX_FLAG_LANGID_VALID: DWORD = 0x0002;
 pub const ACTCTX_FLAG_ASSEMBLY_DIRECTORY_VALID: DWORD = 0x0004;
 pub const ACTCTX_FLAG_RESOURCE_NAME_VALID: DWORD = 0x0008;
-pub const ACTCTX_FLAG_APPLICATION_NAME_VALID: DWORD = 0x0010;
-pub const ACTCTX_FLAG_HMODULE_VALID: DWORD = 0x0020;
+pub const ACTCTX_FLAG_SET_PROCESS_DEFAULT: DWORD = 0x0010;
+pub const ACTCTX_FLAG_APPLICATION_NAME_VALID: DWORD = 0x0020;
+pub const ACTCTX_FLAG_SOURCE_IS_ASSEMBLYREF: DWORD = 0x0040;
+pub const ACTCTX_FLAG_HMODULE_VALID: DWORD = 0x0080;
 
 pub const INVALID_HANDLE_VALUE: HANDLE = -1isize as HANDLE;
 

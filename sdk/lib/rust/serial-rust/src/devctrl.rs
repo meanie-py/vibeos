@@ -90,8 +90,8 @@ pub unsafe extern "system" fn SerialSetBaudRate(
     const BAUD_CLOCK: core::ffi::c_int = 1843200;
     const CLOCKS_PER_BIT: core::ffi::c_int = 16;
     const SR_LCR_DLAB: core::ffi::c_int = 0x80;
-    const DPFLTR_SERIAL_ID: core::ffi::c_int = 32;
-    const DPFLTR_TRACE_LEVEL: core::ffi::c_uint = 3;
+    const DPFLTR_SERIAL_ID: core::ffi::c_int = 39;
+    const DPFLTR_TRACE_LEVEL: core::ffi::c_uint = 2;
 
     let mut BaudRate: ULONG;
     let mut divisor: USHORT;

@@ -4994,7 +4994,7 @@ unsafe extern "C" fn fnIMLangFontLink2_CodePagesToCodePage(
         fn TranslateCharsetInfo(arg1: *const u32, arg2: *mut CHARSETINFO, arg3: u32) -> i32;
     }
     const TCI_SRCCODEPAGE: u32 = 0x00000001;
-    const TCI_SRCFONTSIG: u32 = 0x00000002;
+    const TCI_SRCFONTSIG: u32 = 0x3; // wingdi.h
     const S_OK: i32 = 0;
     const E_FAIL: i32 = 0x80004005u32 as i32;
 

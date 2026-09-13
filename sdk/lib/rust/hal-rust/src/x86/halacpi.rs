@@ -127,7 +127,7 @@ const BOOT_SIGNATURE: ULONG = u32::from_le_bytes(*b"BOOT");
 const SLIT_SIGNATURE: ULONG = u32::from_le_bytes(*b"SLIT");
 
 // TAG_HAL = 'lHaH' / ' laH' — HAL pool tag (matches halp.h).
-const TAG_HAL: ULONG = u32::from_le_bytes(*b"laHl");
+const TAG_HAL: ULONG = u32::from_be_bytes(*b" laH"); // C literal ' laH' -- hal/halx86/include/hal.h
 
 const STATUS_SUCCESS: NTSTATUS = 0x00000000;
 const STATUS_INSUFFICIENT_RESOURCES: NTSTATUS = 0xC000009A_u32 as NTSTATUS;

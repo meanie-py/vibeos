@@ -175,7 +175,7 @@ const FAT_NTC_IRP_CONTEXT: u32 = 0x0508;
 const FCB_STATE_PAGING_FILE: u32 = 0x00000004;
 const FCB_STATE_TEMPORARY: u32 = 0x20;
 const FcbGood: u32 = 1;
-const IRP_CONTEXT_FLAG_WAIT: u32 = 0x0002;
+const IRP_CONTEXT_FLAG_WAIT: u32 = 0x0002;  // nolint: const-contradiction (fastfat's own flag set, fatstruc.h:1563)
 const UserDirectoryOpen: u32 = crate::types::_TYPE_OF_OPEN_UserDirectoryOpen; // 3 — bindgen ground truth (was 1)
 const FILE_ATTRIBUTE_DIRECTORY: u32 = 0x10;
 const FILE_ATTRIBUTE_TEMPORARY: u32 = 0x100;
@@ -218,7 +218,7 @@ pub unsafe extern "system" fn FatExceptionFilter(
     const STATUS_CANT_WAIT: u32 = 0xC00000D8;
     const STATUS_VERIFY_REQUIRED: u32 = 0x80000016;
     const EXCEPTION_EXECUTE_HANDLER: u32 = 1;
-    const IRP_CONTEXT_FLAG_WAIT: u32 = 0x02; // TODO: verify value
+    const IRP_CONTEXT_FLAG_WAIT: u32 = 0x02; // TODO: verify value  // nolint: const-contradiction (fastfat's own flag set, fatstruc.h:1563)
     const IRP_CONTEXT_FLAG_DISABLE_WRITE_THROUGH: u32 = 0x08; // TODO: verify value
     const DEBUG_TRACE_UNWIND: u32 = 0x08; // TODO: verify value
     const Dbg: u32 = 0x00000002; // DEBUG_TRACE_CATCH_EXCEPTIONS; TODO: verify value
@@ -660,7 +660,7 @@ pub unsafe extern "system" fn FatFastQueryNetworkOpenInfo(
     DeviceObject: *mut DEVICE_OBJECT,
 ) -> i32 {
     // Local constants for missing FAT driver definitions
-    const IRP_CONTEXT_FLAG_WAIT: u32 = 0x02;
+    const IRP_CONTEXT_FLAG_WAIT: u32 = 0x02;  // nolint: const-contradiction (fastfat's own flag set, fatstruc.h:1563)
     const FAT_NTC_IRP_CONTEXT: u32 = 0x0508;
     const FCB_STATE_PAGING_FILE: u32 = 0x04;
     const FCB_STATE_TEMPORARY: u32 = 0x20;

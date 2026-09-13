@@ -100,7 +100,7 @@ const KEY_F8: ULONG = 0x42;
 const KEY_F10: ULONG = 0x44;
 
 // SystemPartition= / LoadIdentifier= argv buffer; TAG_STRING ('Stra' little-endian).
-const TAG_STRING: ULONG = u32::from_be_bytes(*b"Stra");
+const TAG_STRING: ULONG = u32::from_be_bytes(*b" rtS"); // nolint: const-contradiction (' rtS' -- freeldr/include/oslist.h:22; win32k's TAG_STRING is ' RTS')
 // FrLdrTempAlloc tag for OS display-name list ('OSNm').
 const TAG_OSNAME_LIST: ULONG = u32::from_be_bytes(*b"OSNm");
 

@@ -16,8 +16,8 @@ pub unsafe extern "C" fn InitializeCircularBuffer(
     mut pBuffer: PCIRCULAR_BUFFER,
     mut BufferSize: ULONG,
 ) -> NTSTATUS {
-    const DPFLTR_SERIAL_ID: u32 = 0;
-    const DPFLTR_TRACE_LEVEL: u32 = 4;
+    const DPFLTR_SERIAL_ID: u32 = 39;
+    const DPFLTR_TRACE_LEVEL: u32 = 2;
     const SERIAL_TAG: u32 = 0x6c726553;
     DbgPrintEx(
         DPFLTR_SERIAL_ID as ::core::ffi::c_int as ULONG,
@@ -55,8 +55,8 @@ pub unsafe extern "C" fn InitializeCircularBuffer(
 }
 #[no_mangle]
 pub unsafe extern "C" fn FreeCircularBuffer(pBuffer: PCIRCULAR_BUFFER) -> NTSTATUS {
-    const DPFLTR_SERIAL_ID: u32 = 0x36; // SERIAL component id
-    const DPFLTR_TRACE_LEVEL: u32 = 3;
+    const DPFLTR_SERIAL_ID: u32 = 39; // SERIAL component id
+    const DPFLTR_TRACE_LEVEL: u32 = 2;
     const SERIAL_TAG: u32 = 0x6c726553; // 'Serl'
 
     DbgPrintEx(
@@ -85,7 +85,7 @@ pub unsafe extern "C" fn FreeCircularBuffer(pBuffer: PCIRCULAR_BUFFER) -> NTSTAT
 }
 #[no_mangle]
 pub unsafe extern "C" fn IsCircularBufferEmpty(mut pBuffer: PCIRCULAR_BUFFER) -> BOOLEAN {
-    const DPFLTR_SERIAL_ID: u32 = 0;
+    const DPFLTR_SERIAL_ID: u32 = 39;
     const DPFLTR_TRACE_LEVEL: u32 = 2;
     DbgPrintEx(
         DPFLTR_SERIAL_ID as ::core::ffi::c_int as ULONG,
@@ -145,8 +145,8 @@ pub unsafe extern "C" fn PushCircularBufferEntry(
     mut pBuffer: PCIRCULAR_BUFFER,
     mut Entry: UCHAR,
 ) -> NTSTATUS {
-    const DPFLTR_SERIAL_ID: u32 = 135;
-    const DPFLTR_TRACE_LEVEL: u32 = 4;
+    const DPFLTR_SERIAL_ID: u32 = 39;
+    const DPFLTR_TRACE_LEVEL: u32 = 2;
 
     let mut NextPosition: ULONG = 0;
     DbgPrintEx(
@@ -196,7 +196,7 @@ pub unsafe extern "C" fn PopCircularBufferEntry(
     mut pBuffer: PCIRCULAR_BUFFER,
     mut Entry: PUCHAR,
 ) -> NTSTATUS {
-    const DPFLTR_SERIAL_ID: u32 = 0;
+    const DPFLTR_SERIAL_ID: u32 = 39;
     const DPFLTR_TRACE_LEVEL: u32 = 2;
     const STATUS_ARRAY_BOUNDS_EXCEEDED: NTSTATUS = 0xC000008Cu32 as NTSTATUS;
     DbgPrintEx(
@@ -241,7 +241,7 @@ pub unsafe extern "C" fn IncreaseCircularBufferSize(
     pBuffer: PCIRCULAR_BUFFER,
     NewBufferSize: ULONG,
 ) -> NTSTATUS {
-    const DPFLTR_SERIAL_ID: i32 = 0;
+    const DPFLTR_SERIAL_ID: i32 = 39;
     const DPFLTR_TRACE_LEVEL: u32 = 2;
     const SERIAL_TAG: u32 = 0x6c726553; // 'Serl'
 
