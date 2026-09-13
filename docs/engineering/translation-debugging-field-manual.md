@@ -3189,6 +3189,23 @@ Three distinct shapes, so you can recognise the next one:
   "the last 9 by arch" merely correlates with it. A window is the easiest of the three to miss
   because the arithmetic over it is impeccable.
 
+**And a fourth, which is not "we consulted the wrong artifact" but "we held the RIGHT one and
+used it as an INSTRUCTION instead of as EVIDENCE".** A stale `ntdll_vista.dll` failed its
+provenance check; the check's remedy said "run `build`", which demonstrably could not clear
+it; the thing that DID work was `rm <the dll> && build`, and that command was passed between
+five lanes as a recipe. Nobody asked **why deleting an output would fix a staleness check** —
+and the answer to that question was the bug. `rm` works *precisely because* ninja has no edge
+from the crate's sources to the DLL: removing the output is the only way to make ninja rebuild
+something it otherwise has no reason to touch. The workaround was a complete description of
+the defect for as long as it was treated as a procedure. One line of CMake
+(`BODY_CRATES ntdll-rust smss-csrss-rust`, which the sibling target already declared) fixed it.
+
+The tell is specific and worth memorising: **a remedy whose mechanism you cannot state.** If
+you cannot say why the fix works, you are holding a diagnosis you have not read. And note the
+multiplier — a wrong remedy string is worse than no remedy at all, because every lane that
+hits it learns to distrust the message and memorise a recipe instead, which is exactly the
+"a remembered recipe IS the bug report" rule in AGENTS.md arriving from the tool's side.
+
 **The nastiest variant of it is a CITATION.** Same night, a different lane argued that a
 "flake" classification could not also reject a lane, and cited `queue.py:901` as its support.
 The words it pasted were *"N submission(s) stay QUEUED; nothing was rejected"* — which says
