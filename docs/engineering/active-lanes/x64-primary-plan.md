@@ -43,6 +43,21 @@ waiting for SysWOW64 to stop needing an i386 ntdll. If it does not hold, we lear
 why, and the "last nightly cell" item gets an honest blocker instead of an
 assumption. Do not quote the payoff until someone has run it.
 
+## Where the fex lane's work transfers, and where it does not
+
+`dll/win32/wow64/CMakeLists.txt:5` builds the shared layer for `arm64 OR amd64`, and the CPU
+layer is the only thing that differs: a JIT on arm64 (FEX), a native heaven's-gate mode switch
+on amd64 (`wow64cpu`). So the marshalling investment is **arch-generic and transfers wholesale**
+— the CSR/LPC pointer-width family in particular (`ReadOnlyStaticServerData`'s 8-byte read at a
+4-byte stride, `BASE_STATIC_SERVER_DATA` narrowing, the CSR reply `Data` union,
+`BasepCreateThread`). Every one of those was found on one host and was already fixed on the
+other.
+
+**The amd64 `wow64cpu` heaven's-gate path is the part FEX's arm64 work says nothing about**, and
+it is therefore the piece that needs its own buttoning-up before amd64 can be called primary on
+x86 compatibility. (Reported by the control-plane lane, 2026-09-13; the CMake gate and the
+wow64.c comment check out.)
+
 ## What "primary" means — a decision, not an investigation
 
 Nobody has defined this, and it should be settled before the work is sequenced,

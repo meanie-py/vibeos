@@ -799,7 +799,7 @@ function(add_cargo_module _target _crate _output)
     # root (bump it THERE, not here). `-Z build-std` + the custom `x86-softfloat`
     # kernel json need nightly; amd64/arm64 are on pinned STABLE via
     # rust-toolchain.toml (no RUSTUP_TOOLCHAIN override → the toolchain file wins).
-    # See docs/engineering/active-lanes/stable-toolchain-plan.md.
+    # See docs/engineering/stable-toolchain-plan.md.
     set(_toolchain_env "")
     if(ARCH STREQUAL "i386")
         file(STRINGS "${CMAKE_SOURCE_DIR}/.rust-nightly" _rust_nightly LIMIT_COUNT 1)
