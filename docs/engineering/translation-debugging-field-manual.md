@@ -3032,6 +3032,25 @@ of them were **ours**, not the model's:
   (`tools/verify_translation_literals.py:strip_untaken_arms` already does it) or the check
   produces confident false positives and trains you to ignore it.
 
+  **A harder relative of the same thing: the translation takes the WRONG ARM, so a correctly
+  named constant carries the wrong VALUE.** Sealing cannot see this at all — it protects
+  constant OCCURRENCES, and every occurrence here is faithful; what moved is which `#if`
+  branch DEFINED the constant. `time.c:69` is a three-armed ladder, this DLL compiles the
+  FIRST arm (`_MSVCR_VER == 0` → `MIN_GMTIME64_TIME 0`, `MAX_GMTIME64_TIME _MAX__TIME64_T`),
+  and the translation took the `#else` (`-43200` / `_MAX__TIME64_T + 46800`). Not a compile
+  error, not a wrong number *for the arm it came from* — it silently widened
+  `_gmtime64_s`'s accepted range at BOTH ends by ~12 hours, admitting inputs msvcrt rejects
+  with EINVAL. Found and fixed by hand; there is no guard for it. Check it against the
+  `_MSVCR_VER` (or equivalent) the build **actually** uses, not the one the file reads most
+  naturally.
+
+  Detection is the literal-diff above, but **your arm tracker must understand `#elif`.** A
+  naive `#if`/`#endif` stack attributes an `#elif` body to the preceding `#if`, which
+  re-labels dead arms as live: auditing this exact ladder that way reported `43200` and
+  `1605600` as live-but-missing from the Rust, i.e. a fabricated finding pointing straight at
+  the constant that HAD genuinely been wrong. Read the source before believing your own
+  scanner — all six of that sweep's "only in C" literals were in untaken arms.
+
   **The cheapest defence that catches this class wholesale: diff every translated constant
   against its header, mechanically, and do not wait for the audit to nominate one.** msvcrt's
   wave 23 (console/misc/exit/locale) came back with the audit reporting ZERO findings and
