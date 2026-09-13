@@ -11,28 +11,26 @@
 //! What is actually left, measured by wiring it in and reading the errors (799 -> 521, every
 //! drop from a single root, not a slog):
 //!
-//! 1. ATL's CWindowImpl substrate does not exist anywhere in the tree, and this is the first
-//!    window class to need it: `StartWindowProc`, `CWindowImpl::Create`, and
-//!    `CWindowImpl::WindowProc` are unresolved. Note WHY `CDefView_WindowProc_body` opens with
-//!    `let pThis = hWnd as *mut CDefView` -- that is faithful, not a bug: ATL installs a
-//!    per-window machine-code THUNK that rewrites the first argument from the HWND to `this`.
-//!    Any port has to reproduce that contract (a GWLP_USERDATA lookup does, without executable
-//!    memory); it is shared infrastructure, since CMenuFocusManager, CMenuToolbars,
-//!    CChangeNotifyServer and CDirectoryWatcher are all ATL windows too.
+//! 1. RESOLVED (2026-09-13): ATL's CWindowImpl substrate now exists, as `crate::atlwin`, and
+//!    uses GWLP_USERDATA rather than ATL's per-instance machine-code thunk. The recorded
+//!    constraint was single ownership of thunk + registered class, NOT the mechanism, and
+//!    CDefView registers `SHELLDLL_DefView` in exactly one place, so nothing splits. The
+//!    mechanism decision, the ATL line-by-line correspondence and the one behavioural
+//!    difference it carries are all in that module's header; read it before porting
+//!    CMenuFocusManager, CMenuToolbars, CChangeNotifyServer or CDirectoryWatcher, each of
+//!    which inherits the mechanism and still needs its own ownership check.
 //!
-//!    The tree has already met this problem once and its answer is in utils.cpp, above
-//!    `CStubWindow32_CreateStub_RustBridge`: an ATL CWindowImpl's "per-instance thunk and
-//!    registered window class must have exactly ONE owner", so CStubWindow32 got a BRIDGE
-//!    rather than a second Rust implementation that would register the same class name and
-//!    split FindStubWindow. Note the constraint is SINGLE OWNERSHIP, not the thunk mechanism.
-//!    CStubWindow32 is bridged because two C++ TUs (utils.cpp, CDrivesFolder.cpp) still use
-//!    it. CDefView is NOT in that position: `SHELLDLL_DefView` is registered in exactly one
-//!    place -- CDefView.cpp:528 -- and no other C++ TU constructs the class. So a Rust
-//!    implementation here splits nothing, and the bridge precedent does not force a bridge.
-//! 2. The BEGIN_MSG_MAP table was not translated AT ALL. All 25 handlers are here as
-//!    `CDefView_On*_body` with ATL's exact `(uMsg, wParam, lParam, &mut bHandled)` shape, but
-//!    no ProcessWindowMessage exists to reach them, so today not one is reachable.
-//! 3. 145 remaining rustc errors (from 799). The mechanical seam is worked out: casts were
+//!    Note what `CDefView_WindowProc_body`'s `let pThis = hWnd as *mut CDefView` was: FAITHFUL,
+//!    not a bug. ATL's thunk rewrites the first argument from the HWND to `this`. Under
+//!    atlwin the first argument really is the HWND, so the same contract is now spelled as the
+//!    USERDATA lookup.
+//! 2. RESOLVED: the 25-entry BEGIN_MSG_MAP is translated, as
+//!    `CDefView_ProcessWindowMessage_body`. It is a sequence of `MESSAGE_HANDLER!` expansions
+//!    rather than a `match`, because ATL's macro is three-state: it sets `bHandled = TRUE`,
+//!    calls the handler, and falls through to the NEXT entry if the handler cleared it. That
+//!    is why every handler takes `&mut BOOL`, and why two entries (WM_DRAWITEM and
+//!    WM_MEASUREITEM) can share one handler that inspects the message and declines.
+//! 3. 135 remaining rustc errors (from 799). The mechanical seam is worked out: casts were
 //!    applied ONLY where all three of i386/amd64/arm64 reported the same expected/found pair
 //!    at the same rustc byte span, because a cast inferred from one target bakes that
 //!    target's pointer width -- the bug `crate-repair`'s three-arch rule exists to stop, and
@@ -80,6 +78,7 @@ use crate::def_view_support::*;
 use crate::rosctrls::*;
 use crate::def_view_support::UPDATEFOLDERVIEWFLAGS;
 use crate::atl::CSimpleMap;
+use crate::atlwin::{AtlCreateWindow, AtlRegisterWndClass, AtlStartWindowProc, AtlWindow, AtlWindowProc, AtlWindowState};
 
 // ReactOS ASSERT, like ATLASSERT, compiles out in a release build; the crate's other
 // modules each carry this same no-op copy.
@@ -713,6 +712,8 @@ pub struct CDefView {
     pub IServiceProvider_iface: IServiceProvider,
     pub ref_count: core::sync::atomic::AtomicI32,
     pub m_hWnd: HWND,
+    /// What C++ inherits from `CWindowImplRoot`/`CWindowImplBaseT`. See `crate::atlwin`.
+    pub m_atl: AtlWindowState,
     pub m_pSFParent: *mut IShellFolder,
     pub m_pSF2Parent: *mut IShellFolder2,
     pub m_pSDParent: *mut IShellDetails,
@@ -1643,6 +1644,7 @@ pub unsafe extern "C" fn CDefView_CreateInstance(
         IServiceProvider_iface: IServiceProvider { lpVtbl: core::ptr::addr_of!(CDEFVIEW_ISERVICEPROVIDER_VTBL) },
         ref_count: core::sync::atomic::AtomicI32::new(1),
         m_hWnd: core::mem::zeroed(),
+        m_atl: AtlWindowState::new(),
         m_pSFParent: core::mem::zeroed(),
         m_pSF2Parent: core::mem::zeroed(),
         m_pSDParent: core::mem::zeroed(),
@@ -2885,7 +2887,7 @@ pub unsafe fn CDefView_GetWndClassInfo_body(this: *mut CDefView) -> &'static mut
                 m_wc: WNDCLASSEX {
                     cbSize: core::mem::size_of::<WNDCLASSEX>() as u32,
                     style: CS_PARENTDC,
-                    lpfnWndProc: Some(StartWindowProc),
+                    lpfnWndProc: Some(AtlStartWindowProc::<CDefView>),
                     cbClsExtra: 0,
                     cbWndExtra: 0,
                     hInstance: core::ptr::null_mut(),
@@ -2907,7 +2909,7 @@ pub unsafe fn CDefView_GetWndClassInfo_body(this: *mut CDefView) -> &'static mut
             initialized = true;
         }
 
-        let result: &mut ATL::CWndClassInfo = &mut *wc.as_mut_ptr();
+        let result: &mut ATL_CWndClassInfo = &mut *wc.as_mut_ptr();
         result
     }
 }
@@ -2916,12 +2918,104 @@ pub unsafe fn CDefView_GetWindowProc_body(this: *mut CDefView) -> WNDPROC {
     (*this).WindowProc
 }
 
+/// CDefView.cpp:1013 `CDefView::WindowProc` — holds a reference across the dispatch, because a
+/// handler can Release the last one and ATL's base would then touch a freed object.
+///
+/// `let pThis = hWnd as *mut CDefView` is what the C++ says, and it was FAITHFUL: ATL's thunk
+/// rewrites the first argument from the HWND to `this`. Under `crate::atlwin` the first
+/// argument really is the HWND, so the same contract is spelled as the USERDATA lookup.
 pub unsafe fn CDefView_WindowProc_body(this: *mut CDefView, hWnd: HWND, uMsg: UINT, wParam: WPARAM, lParam: LPARAM) -> LRESULT {
-    let pThis = hWnd as *mut CDefView;
+    let _ = this;
+    let pThis = GetWindowLongPtr(hWnd.cast(), GWLP_USERDATA as INT) as *mut CDefView;
+    if pThis.is_null() {
+        return DefWindowProcW(hWnd, uMsg, wParam, lParam);
+    }
     let _ = CDefView_AddRef(pThis);
-    let result = CWindowImpl_CDefView_CWindow_CControlWinTraits_WindowProc_body(hWnd, uMsg, wParam, lParam);
+    let result = AtlWindowProc::<CDefView>(hWnd, uMsg, wParam, lParam);
     let _ = CDefView_Release(pThis);
     result
+}
+
+unsafe impl AtlWindow for CDefView {
+    #[inline]
+    unsafe fn atl_hwnd(this: *mut Self) -> *mut HWND {
+        core::ptr::addr_of_mut!((*this).m_hWnd)
+    }
+    #[inline]
+    unsafe fn atl_state(this: *mut Self) -> *mut AtlWindowState {
+        core::ptr::addr_of_mut!((*this).m_atl)
+    }
+    #[inline]
+    unsafe fn atl_process_window_message(
+        this: *mut Self,
+        hWnd: HWND,
+        uMsg: UINT,
+        wParam: WPARAM,
+        lParam: LPARAM,
+        lResult: *mut LRESULT,
+        dwMsgMapID: DWORD,
+    ) -> BOOL {
+        CDefView_ProcessWindowMessage_body(this, hWnd, uMsg, wParam, lParam, lResult, dwMsgMapID)
+    }
+}
+
+/// CDefView.cpp:433 `BEGIN_MSG_MAP(CDefView)` — all 25 entries, in source order.
+///
+/// ATL's `MESSAGE_HANDLER(msg, f)` expands to: match the message, set `bHandled = TRUE`, call
+/// the handler, and return TRUE only if the handler LEFT it true — a handler that clears
+/// `bHandled` falls through to the next entry and ultimately to DefWindowProc. That
+/// three-state behaviour is the whole reason the `&mut BOOL` is in every handler's signature,
+/// and it is why this cannot be a plain `match`: two entries (WM_DRAWITEM and WM_MEASUREITEM)
+/// share one handler, and any of them may decline after inspecting the message.
+pub unsafe fn CDefView_ProcessWindowMessage_body(
+    this: *mut CDefView,
+    hWnd: HWND,
+    uMsg: UINT,
+    wParam: WPARAM,
+    lParam: LPARAM,
+    lResult: *mut LRESULT,
+    dwMsgMapID: DWORD,
+) -> BOOL {
+    let _ = hWnd;
+    if dwMsgMapID != 0 {
+        return FALSE;
+    }
+    macro_rules! MESSAGE_HANDLER {
+        ($msg:expr, $handler:ident) => {
+            if uMsg == $msg as UINT {
+                let mut bHandled: BOOL = TRUE;
+                *lResult = $handler(this, uMsg, wParam, lParam, &mut bHandled);
+                if bHandled != FALSE {
+                    return TRUE;
+                }
+            }
+        };
+    }
+    MESSAGE_HANDLER!(WM_SIZE, CDefView_OnSize_body);
+    MESSAGE_HANDLER!(WM_SETFOCUS, CDefView_OnSetFocus_body);
+    MESSAGE_HANDLER!(WM_KILLFOCUS, CDefView_OnKillFocus_body);
+    MESSAGE_HANDLER!(WM_NCCREATE, CDefView_OnNCCreate_body);
+    MESSAGE_HANDLER!(WM_CREATE, CDefView_OnCreate_body);
+    MESSAGE_HANDLER!(WM_ACTIVATE, CDefView_OnActivate_body);
+    MESSAGE_HANDLER!(WM_NOTIFY, CDefView_OnNotify_body);
+    MESSAGE_HANDLER!(WM_COMMAND, CDefView_OnCommand_body);
+    MESSAGE_HANDLER!(SHV_CHANGE_NOTIFY, CDefView_OnChangeNotify_body);
+    MESSAGE_HANDLER!(SHV_UPDATESTATUSBAR, CDefView_OnUpdateStatusbar_body);
+    MESSAGE_HANDLER!(WM_CONTEXTMENU, CDefView_OnContextMenu_body);
+    MESSAGE_HANDLER!(WM_DRAWITEM, CDefView_OnMenuMessage_body);
+    MESSAGE_HANDLER!(WM_MEASUREITEM, CDefView_OnMenuMessage_body);
+    MESSAGE_HANDLER!(WM_SHOWWINDOW, CDefView_OnShowWindow_body);
+    MESSAGE_HANDLER!(WM_GETDLGCODE, CDefView_OnGetDlgCode_body);
+    MESSAGE_HANDLER!(WM_DESTROY, CDefView_OnDestroy_body);
+    MESSAGE_HANDLER!(WM_ERASEBKGND, CDefView_OnEraseBackground_body);
+    MESSAGE_HANDLER!(WM_PRINTCLIENT, CDefView_OnPrintClient_body);
+    MESSAGE_HANDLER!(WM_SYSCOLORCHANGE, CDefView_OnSysColorChange_body);
+    MESSAGE_HANDLER!(CWM_GETISHELLBROWSER, CDefView_OnGetShellBrowser_body);
+    MESSAGE_HANDLER!(WM_SETTINGCHANGE, CDefView_OnSettingChange_body);
+    MESSAGE_HANDLER!(WM_INITMENUPOPUP, CDefView_OnInitMenuPopup_body);
+    MESSAGE_HANDLER!(WM_CHANGECBCHAIN, CDefView_OnChangeCBChain_body);
+    MESSAGE_HANDLER!(WM_DRAWCLIPBOARD, CDefView_OnDrawClipboard_body);
+    FALSE
 }
 
 pub unsafe fn CDefView_ctor_body(this: *mut CDefView) -> () {
@@ -6813,7 +6907,26 @@ pub unsafe fn CDefView_CreateViewWindow3_body(this: *mut CDefView, psb: *mut ISh
     }
 
     let rcView: RECT = *prcView;
-    Create((*this).m_hWndParent, rcView, core::ptr::null_mut(), WS_CHILD | WS_CLIPSIBLINGS | WS_CLIPCHILDREN | WS_TABSTOP, 0, 0u32);
+    // CDefView.cpp:3912 `Create(m_hWndParent, rcView, NULL, WS_CHILD|..., 0, 0U)`. C++ resolves
+    // this through CWindowImpl::Create, which registers the class and then calls the base.
+    {
+        let wc = CDefView_GetWndClassInfo_body(this);
+        if wc.m_lpszOrigName.is_null() {
+            wc.m_lpszOrigName = wc.m_wc.lpszClassName;
+        }
+        let atom = AtlRegisterWndClass(wc, GetModuleHandleW(core::ptr::null()));
+        AtlCreateWindow::<CDefView>(
+            this,
+            (*this).m_hWndParent,
+            &rcView,
+            core::ptr::null(),
+            WS_CHILD | WS_CLIPSIBLINGS | WS_CLIPCHILDREN | WS_TABSTOP,
+            0,
+            core::ptr::null_mut(),
+            atom,
+            GetModuleHandleW(core::ptr::null()),
+        );
+    }
 
     if (*this).m_hWnd.is_null() {
         return E_FAIL;
