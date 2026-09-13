@@ -40,28 +40,10 @@ tools/rustconv/rustconv/verify_ffi.py:246: unpruned rust walk: for f in src.rglo
 tools/rustconv/rustconv/verify_ffi.py:640: unpruned rust walk: for f in src_dir.rglob("*.rs")
 tools/rustconv/tests/test_export_audit.py:343: unpruned rust walk: fns = scan_rust_fns(sorted(OLE32_RUST.rglob("*.rs")))
 tools/scan_arch_cfg.py:95: unpruned rust walk: for path in root.rglob("*.rs"):
-tools/scan_assert_to_ub.py:147: unpruned rust walk: files.extend(root.rglob("*.rs"))
-tools/scan_bitwise_not_bool.py:134: unpruned rust walk: files.extend(root.rglob("*.rs"))
 tools/scan_bool_width.py:50: unpruned rust walk: for f in RUST_ROOT.rglob("*.rs"):
-tools/scan_bugcheck_codes.py:100: unpruned rust walk: files.extend(root.rglob("*.rs"))
-tools/scan_bugcheck_stubs.py:180: unpruned rust walk: for rs in root.rglob("*.rs"):
-tools/scan_const_contradictions.py:135: unpruned rust walk: for path in sorted(RUST_ROOT.rglob("*.rs")):
-tools/scan_dangling_transmute.py:108: unpruned rust walk: for f in root.rglob("*.rs"):
-tools/scan_dropped_prints.py:559: unpruned rust walk: return [p for p in sorted(RUST_ROOT.rglob("*.rs")) if not SKIP_FILE_RE.search(p.as_posix())]
-tools/scan_duplicate_symbols.py:121: unpruned rust walk: for rs in src.rglob("*.rs"):
-tools/scan_inline_flag_literals.py:341: unpruned rust walk: files = [str(p) for p in (REPO / "sdk" / "lib" / "rust").rglob("*.rs")]
-tools/scan_macro_fn_shadow.py:119: unpruned rust walk: return [p for p in sorted(RUST_ROOT.rglob("*.rs")) if not SKIP_FILE_RE.search(p.as_posix())]
-tools/scan_magic_offsets.py:134: unpruned rust walk: paths.extend(sorted(p.rglob("*.rs")) if p.is_dir() else [p])
-tools/scan_magic_offsets.py:136: unpruned rust walk: paths = sorted(RUST_ROOT.rglob("*.rs"))
-tools/scan_mask_drift.py:792: unpruned rust walk: return [p for p in sorted(RUST_ROOT.rglob("*.rs")) if not SKIP_FILE_RE.search(str(p))]
 tools/scan_nightly_surface.py:60: unpruned rust walk: Why not `root.rglob("*.rs")` with a `"/target/" in str(p)` filter (which is what
-tools/scan_silent_failures.py:110: unpruned rust walk: for p in sorted(root.rglob("*.rs")):
-tools/scan_wide_literals.py:578: unpruned rust walk: files.extend([r] if r.is_file() else sorted(r.rglob("*.rs")))
 tools/test_build_invalidation.py:142: unpruned build walk: for path in self.build.rglob("*"):
 tools/test_source_walk.py:17: unpruned rust walk: expected = sorted(p for p in tmp_path.rglob("*.rs") if "target" not in p.parts)
 tools/test_verify_cohab_coverage.py:290: unpruned rust walk: newest = max(rs.stat().st_mtime for rs in (root / "sdk/lib/rust").rglob("*.rs"))
-tools/verify_c_signatures.py:645: unpruned rust walk: for rf in sorted(rdir.rglob("*.rs")):
 tools/verify_cohab_coverage.py:170: unpruned rust walk: for rs in (ROOT / root).rglob("*.rs"):
-tools/verify_lost_exports.py:149: unpruned rust walk: for rf in crate.rglob("*.rs"):
-tools/verify_signatures.py:601: unpruned rust walk: for rs in sorted(src.rglob("*.rs")):
 tests/qemu/cli/provenance.py:280: unpruned rust walk: for p in root.rglob("*.rs"):

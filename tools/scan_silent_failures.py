@@ -56,6 +56,9 @@ sys.path.insert(0, str(REPO / "tools" / "rustconv"))
 import tree_sitter_rust as tsr  # noqa: E402
 from tree_sitter import Language, Parser  # noqa: E402
 
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
+from tools.source_walk import source_files  # noqa: E402
+
 RUST_WS = REPO / "sdk" / "lib" / "rust"
 CACHE_PATH = REPO / "tools" / ".cache" / "silent_failures.json"
 
@@ -107,7 +110,7 @@ def iter_rust_files(roots: list[Path]):
     same way `scan_cc_mismatch` honours it.
     """
     for root in roots:
-        for p in sorted(root.rglob("*.rs")):
+        for p in sorted(source_files(root)):
             if any(part in EXCLUDE_PARTS for part in p.parts):
                 continue
             if p.name in EXCLUDE_NAMES or p.name.startswith("bindgen_"):

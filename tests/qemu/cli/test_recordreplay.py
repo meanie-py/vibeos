@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import json
 import subprocess
+import time
 from pathlib import Path
 
 import pytest
@@ -903,7 +904,63 @@ def test_the_gdb_flag_warns_that_stopping_a_replay_aborts_qemu(tmp_path, monkeyp
     # and it must not overstate: `continue` DOES work, so a blanket "gdb is
     # broken" would send people away from the half that is usable.
     assert "continue" in err
-    # and it must claim replay-specificity only where that was actually
-    # established: `interrupt` not landing turned out to reproduce on a
-    # non-replay control, so it is not evidence about replay at all.
-    assert "interrupt" not in err
+    # and it must say the conclusion that was actually reached: a breakpoint HIT
+    # aborts too, so there is no stopping mechanism left and a trace is a capture
+    # rather than a debugging session. Softer wording would leave someone
+    # planning a session that cannot work.
+    assert "BREAKPOINT HIT" in err
+    assert "CAPTURE" in err
+
+
+def test_record_waits_for_the_trace_to_stop_growing(tmp_path):
+    """`vibeos-cli conformance` returns while its QEMU is still shutting down, so
+    the boot command returning is NOT the recording ending. Measured on a kmtest
+    record: command returned 05:28:38, guest serial finished 05:29:23, trace
+    finished 05:29:39. Finalising at the first froze pristine/ mid-record, kept a
+    1,456-byte transcript of a 240,750-byte boot, and reported "trace 0MB" for
+    10.6MB — three silent corruptions from one early return.
+    """
+    import threading
+
+    from . import rrcmd
+
+    trace = tmp_path / "t"
+    trace.mkdir()
+    rrbin = trace / "replay.bin"
+    rrbin.write_bytes(b"")
+
+    def grow():
+        for n in range(1, 6):
+            time.sleep(0.05)
+            rrbin.write_bytes(b"x" * (n * 1000))
+
+    threading.Thread(target=grow, daemon=True).start()
+    size = rrcmd.await_trace_quiescence(trace, settle=0.4, limit=20.0)
+    assert size == 5000, "returned before the trace stopped growing"
+
+
+def test_quiescence_gives_up_loudly_rather_than_hanging(tmp_path, capsys):
+    """A trace that never settles must not block a recording forever — but the
+    caller has to be told the finalised trace may be truncated."""
+    from . import rrcmd
+
+    trace = tmp_path / "t"
+    trace.mkdir()
+    rrbin = trace / "replay.bin"
+    rrbin.write_bytes(b"x")
+    stop = False
+
+    import threading
+
+    def grow():
+        n = 1
+        while not stop and n < 10_000:
+            n += 1
+            rrbin.write_bytes(b"x" * n)
+            time.sleep(0.02)
+
+    t = threading.Thread(target=grow, daemon=True)
+    t.start()
+    rrcmd.await_trace_quiescence(trace, settle=5.0, limit=1.0)
+    stop = True
+    assert "still growing" in capsys.readouterr().err
