@@ -260,6 +260,15 @@ qemu/run-until.sh $RUN --break KeBugCheckEx --timeout 180 --then triage-bugcheck
 ```
 On the amd64 KiUnwaitThread BUGCHECK flake, this returns the stop code, exception code, faulting PC + symbol, full KTRAP_FRAME, and `identify-object` on the bogus pointer — all in one tool call.
 
+**If a breakpoint never fires on a symbol you know is hot, check which image
+`find-kbase` chose.** Every media now carries BOTH kernels and boots MP by
+default, while `VIBEOS_KERNEL` still names the UP image — so the scan could match
+`ntoskrnl` while `ntkrnlmp` is executing, relocate every symbol to an image the
+guest never runs, and leave breakpoints silently dead. `find-kbase` now prefers
+the image containing `$pc`, then the MP image, and says so on stderr when it
+overrides. Read its `[find-kbase] matched ... at 0x...` line against the guest's
+own `[KRNLBASE]` serial line if anything looks wrong.
+
 Full toolkit reference + design: `docs/engineering/kernel-debugging-infra.md` and `qemu/README.md`. (`qemu/ps` shows every live QEMU across all worktrees + slot usage; QEMUs are capped via `VIBEOS_QEMU_MAX_CONCURRENT`/`VIBEOS_QEMU_MAX_LIFETIME`; **same-arch i386/amd64 boots run in parallel on the default `windows-host` TCG backend** — the per-arch sub-cap is bypassed there (`vm.py:1295-1299`) and only serializes the accelerator-sharing backends (native+KVM, windows-host+WHPX); see the North Star note + `qemu/README.md` → Resource management); run `qemu/build-index.sh <arch>` after each kernel build for offline sym lookup.)
 
 ### Record/replay — when the bug is too rare to catch live
