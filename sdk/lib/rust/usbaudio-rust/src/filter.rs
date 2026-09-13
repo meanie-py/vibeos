@@ -668,7 +668,12 @@ pub unsafe extern "C" fn CountTopologyComponents(
                         Length = ((*FeatureUnitDescriptor).bLength as i32 - 7) as ULONG;
                         Index = 0;
                         while Index < Length {
-                            Value |= (*FeatureUnitDescriptor).bmaControls[Index as usize];
+                            // bmaControls is a FLEXIBLE array (usbaudio.h: `UCHAR
+                            // bmaControls[1]`) whose real length is bLength - 7, and the
+                            // loop above bounds Index by exactly that. bindgen's `[UCHAR; 1]`
+                            // made every feature-unit descriptor longer than 8 bytes -- which
+                            // is essentially all of them -- a panic.
+                            Value |= (&raw const (*FeatureUnitDescriptor).bmaControls).cast::<UCHAR>().add(Index as usize).read();
                             Index = Index.wrapping_add(1);
                         }
 
@@ -886,7 +891,7 @@ pub unsafe extern "C" fn BuildUSBAudioFilterTopology(
                         Length = ((*FeatureUnitDescriptor).bLength as i32 - 7) as ULONG;
                         Index = 0;
                         while Index < Length {
-                            Value = (Value as i32 | (*FeatureUnitDescriptor).bmaControls[Index as usize] as i32) as UCHAR;
+                            Value = (Value as i32 | (&raw const (*FeatureUnitDescriptor).bmaControls).cast::<UCHAR>().add(Index as usize).read() as i32) as UCHAR;
                             Index = Index.wrapping_add(1);
                         }
 
