@@ -7049,7 +7049,7 @@ recovered from a saved log" — it was on the next line. Until that was used, ev
 declined, and the one that mattered needed hand-computing to reach
 `KiSynchronousExceptionEntry+4`.
 
-### A COUNT can answer a different question than the one you asked
+### A tool can answer a NEIGHBOURING question, honestly, and you will not see the gap
 
 **Symptom:** a number is quoted as a hazard — "you have 660 banked `.responses` dirs, all bought
 unsealed, so expect a re-purchase refusal when you touch one" — and every downstream decision is
@@ -7082,6 +7082,20 @@ lying. It was answering a neighbouring question, and the gap between that questi
 invisible in the output. The tell is a claim whose subject is itself a reading — a count, a
 status line, an exit code — where the cheap disconfirming move is to re-derive it through the
 predicate that actually defines the set.
+
+**`ninja` reporting "no work to do" is the same shape, and it makes a build failure
+unfixable by its own printed remedy.** `provenance.py` refused an arm64 build as
+BUILD_INCOMPLETE — `ntdll_vista.dll` stale against `smss-csrss-rust/src/basesrv`, with
+`dll/ntdll/CMakeLists.txt` declaring `BODY_CRATES ntdll-rust smss-csrss-rust` — and told the
+operator to "run `build`". Running it changed nothing, twice, because ninja answers **"is my
+graph satisfied"**, not **"is this output current with respect to its real inputs"**. The edge
+was missing from the graph, so ninja's answer was honest and useless, and `build` just re-asked
+the same wrong question. The staleness was real: source touched today against a binary from
+nine days earlier. Deleting the OUTPUT is what works, because it changes the question ninja is
+being asked rather than arguing with the answer. Note also the queue consequence, since the
+symptom is misleading: BUILD_INCOMPLETE is INCONCLUSIVE (`queue.py:726`), so a conductor that
+hits this stalls the whole drain with nothing rejected — it reads as a wedged conductor, and
+the fix is in an integration worktree that is nobody's lane.
 
 ### An oracle needs an oracle `[§9.122]`
 A scanner printing `0 findings` is asserting one of two very different things: "I looked and the
