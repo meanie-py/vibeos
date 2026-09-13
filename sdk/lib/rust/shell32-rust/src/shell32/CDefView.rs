@@ -32,7 +32,7 @@
 //! 2. The BEGIN_MSG_MAP table was not translated AT ALL. All 25 handlers are here as
 //!    `CDefView_On*_body` with ATL's exact `(uMsg, wParam, lParam, &mut bHandled)` shape, but
 //!    no ProcessWindowMessage exists to reach them, so today not one is reachable.
-//! 3. 268 remaining rustc errors (from 799). The mechanical seam is worked out: casts were
+//! 3. 145 remaining rustc errors (from 799). The mechanical seam is worked out: casts were
 //!    applied ONLY where all three of i386/amd64/arm64 reported the same expected/found pair
 //!    at the same rustc byte span, because a cast inferred from one target bakes that
 //!    target's pointer width -- the bug `crate-repair`'s three-arch rule exists to stop, and
@@ -41,8 +41,33 @@
 //!    repair belongs on the scrutinee, and three of those settled 52 arm errors at once); a
 //!    leading `!` is C's logical-not but Rust's BITWISE not, so appending `!= 0` would make
 //!    the wrong reading permanent (scan_bitwise_not_bool's class); and `CComPtr` vs raw
-//!    pointer is an ownership question, not a spelling one. What is left is mostly those,
-//!    plus reference-to-pointer coercions and the E0599/E0609 tail.
+//!    pointer is an ownership question, not a spelling one.
+//!
+//!    READ THAT COUNT CAREFULLY: 268 -> 261 is not seven errors of progress. The paid output
+//!    carried its OWN private copy of 27 substrate types -- 15 SDK layouts the bindgen island
+//!    already owns, and 12 COM interfaces `shellcom` already owns -- and those copies made the
+//!    file typecheck against ITSELF. Deleting them fixed ~40 errors and SURFACED ~35 that the
+//!    private copies had been hiding, which is why the total barely moved. The count was the
+//!    less informative number the whole time; the file now compiles against the same substrate
+//!    as the rest of the crate, which is the thing that actually changed.
+//!
+//!    What is left is dominated by ONE unanswered question, not by a grind: roughly 50 of
+//!    the 145 are the type-identity split described in item 4, and four more were tried as
+//!    reference-to-pointer coercions and REVERTED, because `as *mut _` cannot bridge two
+//!    distinct structs -- it just splits one error into two and hides which question it was.
+//!
+//! 4. THE SUBSTRATE BOUNDARY, which is a decision and not a repair. prelude.rs states it:
+//!    "the island owns DATA LAYOUTS; `shellcom` owns VTABLE ABI". `shellcom` does not hold to
+//!    its own half -- it declares its own `ITEMIDLIST`, `GUID`, `SHELLDETAILS` and `LRESULT`
+//!    rather than taking them from the island -- so an island-first TU that calls a `shellcom`
+//!    vtable slot gets a nominal split at every PIDL and every GUID. Measured here:
+//!    `*const shellcom::ITEMIDLIST` vs `*const _ITEMIDLIST` 14 times, `*const shellcom::GUID`
+//!    vs `*const com_sys::_GUID` 6, and `*mut i64` vs `&mut isize` (LRESULT) 8. All three
+//!    pairs are ABI-identical, so a `.cast()` compiles at every one of those ~28 sites. That
+//!    is exactly why they are still red: 28 casts would make the question unaskable rather
+//!    than answer it. CDefView is the FIRST module to sit on both sides of the line -- the 40
+//!    landed COM-class modules compile against the hand-written types.rs/shellcom.rs, and this
+//!    one is island-first per prelude.rs -- which is why it is the module that found this.
 //!
 //! Real bugs already fixed in here, recorded because each is a CLASS the next TU will hit:
 //! `Draw`'s C++ function-pointer parameter sat in three places as raw C text; the static
@@ -60,6 +85,15 @@ use crate::atl::CSimpleMap;
 // modules each carry this same no-op copy.
 macro_rules! ASSERT { ($($arg:tt)*) => {{}}; }
 use crate::shellcom::REFGUID;
+// The COM interfaces come from `shellcom`, which owns VTABLE ABI (see prelude.rs's
+// BOUNDARY note): the island renders these as bindgen C++ classes with `Option<fn>`
+// slots, and a call through an `Option` slot is E0618. Slot order and arity were
+// compared against the local copies these replace before deleting them.
+use crate::shellcom::{IFolderView, IFolderViewVtbl, IDropTarget, IDropTargetVtbl,
+                      IDataObject, IDataObjectVtbl, IStream, IStreamVtbl,
+                      IUnknown, IUnknownVtbl, IBindCtx, IBindCtxVtbl,
+                      IContextMenu, IEnumIDList, IPersistFolder2,
+                      IShellFolder, IShellFolder2};
 use crate::drv_def_ext::RGB;
 use crate::drives_folder::HResultFromWin32;
 use crate::drives_folder_tu::UlongToPtr;
@@ -184,31 +218,6 @@ extern "C" {
     pub static IID_IShellView3: IID;
 }
 
-// Deterministic from shobjidl.h
-#[repr(C)]
-pub struct IFolderView {
-    pub lpVtbl: *const IFolderViewVtbl,
-}
-#[repr(C)]
-pub struct IFolderViewVtbl {
-    pub QueryInterface: unsafe extern "system" fn(This: *mut IFolderView, riid: REFIID, ppvObject: *mut *mut core::ffi::c_void) -> HRESULT,
-    pub AddRef: unsafe extern "system" fn(This: *mut IFolderView) -> ULONG,
-    pub Release: unsafe extern "system" fn(This: *mut IFolderView) -> ULONG,
-    pub GetCurrentViewMode: unsafe extern "system" fn(This: *mut IFolderView, mode: *mut UINT) -> HRESULT,
-    pub SetCurrentViewMode: unsafe extern "system" fn(This: *mut IFolderView, mode: UINT) -> HRESULT,
-    pub GetFolder: unsafe extern "system" fn(This: *mut IFolderView, riid: REFIID, ppv: *mut *mut core::ffi::c_void) -> HRESULT,
-    pub Item: unsafe extern "system" fn(This: *mut IFolderView, index: i32, ppidl: *mut PITEMID_CHILD) -> HRESULT,
-    pub ItemCount: unsafe extern "system" fn(This: *mut IFolderView, flags: UINT, items: *mut i32) -> HRESULT,
-    pub Items: unsafe extern "system" fn(This: *mut IFolderView, flags: UINT, riid: REFIID, ppv: *mut *mut core::ffi::c_void) -> HRESULT,
-    pub GetSelectionMarkedItem: unsafe extern "system" fn(This: *mut IFolderView, item: *mut i32) -> HRESULT,
-    pub GetFocusedItem: unsafe extern "system" fn(This: *mut IFolderView, item: *mut i32) -> HRESULT,
-    pub GetItemPosition: unsafe extern "system" fn(This: *mut IFolderView, pidl: PCUITEMID_CHILD, ppt: *mut POINT) -> HRESULT,
-    pub GetSpacing: unsafe extern "system" fn(This: *mut IFolderView, pt: *mut POINT) -> HRESULT,
-    pub GetDefaultSpacing: unsafe extern "system" fn(This: *mut IFolderView, pt: *mut POINT) -> HRESULT,
-    pub GetAutoArrange: unsafe extern "system" fn(This: *mut IFolderView) -> HRESULT,
-    pub SelectItem: unsafe extern "system" fn(This: *mut IFolderView, item: i32, flags: DWORD) -> HRESULT,
-    pub SelectAndPositionItems: unsafe extern "system" fn(This: *mut IFolderView, cidl: UINT, apidl: PCUITEMID_CHILD_ARRAY, apt: *mut POINT, flags: DWORD) -> HRESULT,
-}
 extern "C" {
     pub static IID_IFolderView: IID;
 }
@@ -273,21 +282,6 @@ extern "C" {
     pub static IID_IOleCommandTarget: IID;
 }
 
-// Deterministic from oleidl.h
-#[repr(C)]
-pub struct IDropTarget {
-    pub lpVtbl: *const IDropTargetVtbl,
-}
-#[repr(C)]
-pub struct IDropTargetVtbl {
-    pub QueryInterface: unsafe extern "system" fn(This: *mut IDropTarget, riid: REFIID, ppvObject: *mut *mut core::ffi::c_void) -> HRESULT,
-    pub AddRef: unsafe extern "system" fn(This: *mut IDropTarget) -> ULONG,
-    pub Release: unsafe extern "system" fn(This: *mut IDropTarget) -> ULONG,
-    pub DragEnter: unsafe extern "system" fn(This: *mut IDropTarget, pDataObj: *mut IDataObject, grfKeyState: DWORD, pt: POINTL, pdwEffect: *mut DWORD) -> HRESULT,
-    pub DragOver: unsafe extern "system" fn(This: *mut IDropTarget, grfKeyState: DWORD, pt: POINTL, pdwEffect: *mut DWORD) -> HRESULT,
-    pub DragLeave: unsafe extern "system" fn(This: *mut IDropTarget) -> HRESULT,
-    pub Drop: unsafe extern "system" fn(This: *mut IDropTarget, pDataObj: *mut IDataObject, grfKeyState: DWORD, pt: POINTL, pdwEffect: *mut DWORD) -> HRESULT,
-}
 extern "C" {
     pub static IID_IDropTarget: IID;
 }
@@ -382,26 +376,6 @@ extern "C" {
     pub static IID_IShellBrowser: IID;
 }
 
-// Deterministic from objidl.h
-#[repr(C)]
-pub struct IDataObject {
-    pub lpVtbl: *const IDataObjectVtbl,
-}
-#[repr(C)]
-pub struct IDataObjectVtbl {
-    pub QueryInterface: unsafe extern "system" fn(This: *mut IDataObject, riid: REFIID, ppvObject: *mut *mut core::ffi::c_void) -> HRESULT,
-    pub AddRef: unsafe extern "system" fn(This: *mut IDataObject) -> ULONG,
-    pub Release: unsafe extern "system" fn(This: *mut IDataObject) -> ULONG,
-    pub GetData: unsafe extern "system" fn(This: *mut IDataObject, pformatetcIn: *mut FORMATETC, pmedium: *mut STGMEDIUM) -> HRESULT,
-    pub GetDataHere: unsafe extern "system" fn(This: *mut IDataObject, pformatetc: *mut FORMATETC, pmedium: *mut STGMEDIUM) -> HRESULT,
-    pub QueryGetData: unsafe extern "system" fn(This: *mut IDataObject, pformatetc: *mut FORMATETC) -> HRESULT,
-    pub GetCanonicalFormatEtc: unsafe extern "system" fn(This: *mut IDataObject, pformatectIn: *mut FORMATETC, pformatetcOut: *mut FORMATETC) -> HRESULT,
-    pub SetData: unsafe extern "system" fn(This: *mut IDataObject, pformatetc: *mut FORMATETC, pmedium: *mut STGMEDIUM, fRelease: BOOL) -> HRESULT,
-    pub EnumFormatEtc: unsafe extern "system" fn(This: *mut IDataObject, dwDirection: DWORD, ppenumFormatEtc: *mut *mut IEnumFORMATETC) -> HRESULT,
-    pub DAdvise: unsafe extern "system" fn(This: *mut IDataObject, pformatetc: *mut FORMATETC, advf: DWORD, pAdvSink: *mut IAdviseSink, pdwConnection: *mut DWORD) -> HRESULT,
-    pub DUnadvise: unsafe extern "system" fn(This: *mut IDataObject, dwConnection: DWORD) -> HRESULT,
-    pub EnumDAdvise: unsafe extern "system" fn(This: *mut IDataObject, ppenumAdvise: *mut *mut IEnumSTATDATA) -> HRESULT,
-}
 extern "C" {
     pub static IID_IDataObject: IID;
 }
@@ -461,28 +435,6 @@ extern "C" {
     pub static IID_IAdviseSink: IID;
 }
 
-// Deterministic from objidl.h
-#[repr(C)]
-pub struct IStream {
-    pub lpVtbl: *const IStreamVtbl,
-}
-#[repr(C)]
-pub struct IStreamVtbl {
-    pub QueryInterface: unsafe extern "system" fn(This: *mut IStream, riid: REFIID, ppvObject: *mut *mut core::ffi::c_void) -> HRESULT,
-    pub AddRef: unsafe extern "system" fn(This: *mut IStream) -> ULONG,
-    pub Release: unsafe extern "system" fn(This: *mut IStream) -> ULONG,
-    pub Read: unsafe extern "system" fn(This: *mut IStream, pv: *mut core::ffi::c_void, cb: ULONG, pcbRead: *mut ULONG) -> HRESULT,
-    pub Write: unsafe extern "system" fn(This: *mut IStream, pv: *const core::ffi::c_void, cb: ULONG, pcbWritten: *mut ULONG) -> HRESULT,
-    pub Seek: unsafe extern "system" fn(This: *mut IStream, dlibMove: LARGE_INTEGER, dwOrigin: DWORD, plibNewPosition: *mut ULARGE_INTEGER) -> HRESULT,
-    pub SetSize: unsafe extern "system" fn(This: *mut IStream, libNewSize: ULARGE_INTEGER) -> HRESULT,
-    pub CopyTo: unsafe extern "system" fn(This: *mut IStream, pstm: *mut IStream, cb: ULARGE_INTEGER, pcbRead: *mut ULARGE_INTEGER, pcbWritten: *mut ULARGE_INTEGER) -> HRESULT,
-    pub Commit: unsafe extern "system" fn(This: *mut IStream, grfCommitFlags: DWORD) -> HRESULT,
-    pub Revert: unsafe extern "system" fn(This: *mut IStream) -> HRESULT,
-    pub LockRegion: unsafe extern "system" fn(This: *mut IStream, libOffset: ULARGE_INTEGER, cb: ULARGE_INTEGER, dwLockType: DWORD) -> HRESULT,
-    pub UnlockRegion: unsafe extern "system" fn(This: *mut IStream, libOffset: ULARGE_INTEGER, cb: ULARGE_INTEGER, dwLockType: DWORD) -> HRESULT,
-    pub Stat: unsafe extern "system" fn(This: *mut IStream, pstatstg: *mut STATSTG, grfStatFlag: DWORD) -> HRESULT,
-    pub Clone: unsafe extern "system" fn(This: *mut IStream, ppstm: *mut *mut IStream) -> HRESULT,
-}
 extern "C" {
     pub static IID_IStream: IID;
 }
@@ -636,42 +588,10 @@ extern "C" {
     pub static IID_ITypeLib: IID;
 }
 
-// Deterministic from unknwn.h
-#[repr(C)]
-pub struct IUnknown {
-    pub lpVtbl: *const IUnknownVtbl,
-}
-#[repr(C)]
-pub struct IUnknownVtbl {
-    pub QueryInterface: unsafe extern "system" fn(This: *mut IUnknown, riid: REFIID, ppvObject: *mut *mut core::ffi::c_void) -> HRESULT,
-    pub AddRef: unsafe extern "system" fn(This: *mut IUnknown) -> ULONG,
-    pub Release: unsafe extern "system" fn(This: *mut IUnknown) -> ULONG,
-}
 extern "C" {
     pub static IID_IUnknown: IID;
 }
 
-// Deterministic from objidl.h
-#[repr(C)]
-pub struct IBindCtx {
-    pub lpVtbl: *const IBindCtxVtbl,
-}
-#[repr(C)]
-pub struct IBindCtxVtbl {
-    pub QueryInterface: unsafe extern "system" fn(This: *mut IBindCtx, riid: REFIID, ppvObject: *mut *mut core::ffi::c_void) -> HRESULT,
-    pub AddRef: unsafe extern "system" fn(This: *mut IBindCtx) -> ULONG,
-    pub Release: unsafe extern "system" fn(This: *mut IBindCtx) -> ULONG,
-    pub RegisterObjectBound: unsafe extern "system" fn(This: *mut IBindCtx, punk: *mut IUnknown) -> HRESULT,
-    pub RevokeObjectBound: unsafe extern "system" fn(This: *mut IBindCtx, punk: *mut IUnknown) -> HRESULT,
-    pub ReleaseBoundObjects: unsafe extern "system" fn(This: *mut IBindCtx) -> HRESULT,
-    pub SetBindOptions: unsafe extern "system" fn(This: *mut IBindCtx, pbindopts: *mut BIND_OPTS) -> HRESULT,
-    pub GetBindOptions: unsafe extern "system" fn(This: *mut IBindCtx, pbindopts: *mut BIND_OPTS) -> HRESULT,
-    pub GetRunningObjectTable: unsafe extern "system" fn(This: *mut IBindCtx, pprot: *mut *mut IRunningObjectTable) -> HRESULT,
-    pub RegisterObjectParam: unsafe extern "system" fn(This: *mut IBindCtx, pszKey: LPOLESTR, punk: *mut IUnknown) -> HRESULT,
-    pub GetObjectParam: unsafe extern "system" fn(This: *mut IBindCtx, pszKey: LPOLESTR, ppunk: *mut *mut IUnknown) -> HRESULT,
-    pub EnumObjectParam: unsafe extern "system" fn(This: *mut IBindCtx, ppenum: *mut *mut IEnumString) -> HRESULT,
-    pub RevokeObjectParam: unsafe extern "system" fn(This: *mut IBindCtx, pszKey: LPOLESTR) -> HRESULT,
-}
 extern "C" {
     pub static IID_IBindCtx: IID;
 }
@@ -744,6 +664,21 @@ pub struct LISTVIEW_SORT_INFO {
     pub Reserved: UINT8,
     pub ListColumn: INT,
     pub FolderColumn: INT,
+}
+
+/// CDefView.cpp:70 `enum { UNSPECIFIEDCOLUMN = -1 };` plus the `Reset()` the struct declares
+/// inline. A C++ member enum is an associated const, not a field: `cols.UNSPECIFIEDCOLUMN`
+/// and `LISTVIEW_SORT_INFO::UNSPECIFIEDCOLUMN` name the same thing there, only the second here.
+impl LISTVIEW_SORT_INFO {
+    pub const UNSPECIFIEDCOLUMN: INT = -1;
+
+    /// C:71 `*(UINT*)this = 0; ListColumn = UNSPECIFIEDCOLUMN;` -- the cast-write clears
+    /// exactly the first UINT, which is the four bytes Direction/bLoadedFromViewState/
+    /// bColumnIsFolderColumn/Reserved occupy. It deliberately does NOT touch FolderColumn.
+    pub unsafe fn Reset(&mut self) {
+        core::ptr::write(self as *mut Self as *mut UINT, 0);
+        self.ListColumn = Self::UNSPECIFIEDCOLUMN;
+    }
 }
 
 // Deterministic COM scaffold for CDefView; method bodies are generated separately.
@@ -1699,10 +1634,10 @@ pub unsafe extern "C" fn CDefView_CreateInstance(
     if this.is_null() { return E_OUTOFMEMORY; }
     core::ptr::write(this, CDefView {
         IShellView3_iface: IShellView3 { lpVtbl: core::ptr::addr_of!(CDEFVIEW_ISHELLVIEW3_VTBL) },
-        IFolderView_iface: IFolderView { lpVtbl: core::ptr::addr_of!(CDEFVIEW_IFOLDERVIEW_VTBL) },
+        IFolderView_iface: IFolderView { lpVtbl: core::ptr::addr_of!(CDEFVIEW_IFOLDERVIEW_VTBL) as *mut _ },
         IShellFolderView_iface: IShellFolderView { lpVtbl: core::ptr::addr_of!(CDEFVIEW_ISHELLFOLDERVIEW_VTBL) },
         IOleCommandTarget_iface: IOleCommandTarget { lpVtbl: core::ptr::addr_of!(CDEFVIEW_IOLECOMMANDTARGET_VTBL) },
-        IDropTarget_iface: IDropTarget { lpVtbl: core::ptr::addr_of!(CDEFVIEW_IDROPTARGET_VTBL) },
+        IDropTarget_iface: IDropTarget { lpVtbl: core::ptr::addr_of!(CDEFVIEW_IDROPTARGET_VTBL) as *mut _ },
         IDropSource_iface: IDropSource { lpVtbl: core::ptr::addr_of!(CDEFVIEW_IDROPSOURCE_VTBL) },
         IViewObject_iface: IViewObject { lpVtbl: core::ptr::addr_of!(CDEFVIEW_IVIEWOBJECT_VTBL) },
         IServiceProvider_iface: IServiceProvider { lpVtbl: core::ptr::addr_of!(CDEFVIEW_ISERVICEPROVIDER_VTBL) },
@@ -1716,7 +1651,9 @@ pub unsafe extern "C" fn CDefView_CreateInstance(
         m_pCommDlgBrowser: core::mem::zeroed(),
         m_pFolderFilter: core::mem::zeroed(),
         m_pShellFolderViewDual: core::mem::zeroed(),
-        m_ClipboardChain: core::mem::zeroed(),
+        // NOT `zeroed()`: utils.h gives m_hWndNext the default member initializer
+        // `HWND_BOTTOM`, and `Hook` only hooks when it still holds that sentinel.
+        m_ClipboardChain: ClipboardViewerChain::new(),
         m_ListView: core::mem::zeroed(),
         m_hWndParent: core::mem::zeroed(),
         m_FolderSettings: core::mem::zeroed(),
@@ -2387,35 +2324,7 @@ pub struct BIND_OPTS {
     pub dwTickCountDeadline: DWORD,
 }
 
-#[repr(C)]
-pub struct BITMAP {
-    pub bmType: LONG,
-    pub bmWidth: LONG,
-    pub bmHeight: LONG,
-    pub bmWidthBytes: LONG,
-    pub bmPlanes: WORD,
-    pub bmBitsPixel: WORD,
-    pub bmBits: LPVOID,
-}
 
-#[repr(C)]
-pub struct CMINVOKECOMMANDINFOEX {
-    pub cbSize: DWORD,
-    pub fMask: DWORD,
-    pub hwnd: HWND,
-    pub lpVerb: LPCSTR,
-    pub lpParameters: LPCSTR,
-    pub lpDirectory: LPCSTR,
-    pub nShow: INT,
-    pub dwHotKey: DWORD,
-    pub hIcon: HANDLE,
-    pub lpTitle: LPCSTR,
-    pub lpVerbW: LPCWSTR,
-    pub lpParametersW: LPCWSTR,
-    pub lpDirectoryW: LPCWSTR,
-    pub lpTitleW: LPCWSTR,
-    pub ptInvoke: POINT,
-}
 
 #[repr(C)]
 pub struct DISPPARAMS {
@@ -2441,69 +2350,11 @@ pub struct IDLDESC {
     pub wIDLFlags: USHORT,
 }
 
-#[repr(C)]
-pub struct ITEMSPACING {
-    pub cxSmall: i32,
-    pub cySmall: i32,
-    pub cxLarge: i32,
-    pub cyLarge: i32,
-}
 
-#[repr(C)]
-pub struct LVHITTESTINFO {
-    pub pt: POINT,
-    pub flags: UINT,
-    pub iItem: i32,
-    pub iSubItem: i32,
-}
 
-#[repr(C)]
-pub struct LVITEMA {
-    pub mask: UINT,
-    pub iItem: i32,
-    pub iSubItem: i32,
-    pub state: UINT,
-    pub stateMask: UINT,
-    pub pszText: LPSTR,
-    pub cchTextMax: i32,
-    pub iImage: i32,
-    pub lParam: LPARAM,
-    pub iIndent: i32,
-    pub iGroupId: i32,
-    pub cColumns: UINT,
-    pub puColumns: PUINT,
-}
 
-#[repr(C)]
-pub struct LVITEMW {
-    pub mask: UINT,
-    pub iItem: i32,
-    pub iSubItem: i32,
-    pub state: UINT,
-    pub stateMask: UINT,
-    pub pszText: LPWSTR,
-    pub cchTextMax: i32,
-    pub iImage: i32,
-    pub lParam: LPARAM,
-    pub iIndent: i32,
-    pub iGroupId: i32,
-    pub cColumns: UINT,
-    pub puColumns: PUINT,
-}
 
-#[repr(C)]
-pub struct OLECMD {
-    pub cmdID: ULONG,
-    pub cmdf: DWORD,
-}
 
-#[repr(C)]
-pub struct OLECMDTEXT {
-    pub cmdtextf: DWORD,
-    pub cwActual: ULONG,
-    pub cwBuf: ULONG,
-    pub rgwz: [WCHAR; 1],
-}
 
 #[repr(C)]
 pub struct OLEMENUGROUPWIDTHS {
@@ -2516,18 +2367,7 @@ pub struct PARAMDESC {
     pub wParamFlags: USHORT,
 }
 
-#[repr(C)]
-pub struct SFVM_PROPPAGE_DATA {
-    pub dwReserved: DWORD,
-    pub pfn: LPFNADDPROPSHEETPAGE,
-    pub lParam: LPARAM,
-}
 
-#[repr(C)]
-pub struct SHChangeNotifyEntry {
-    pub pidl: PCIDLIST_ABSOLUTE,
-    pub fRecursive: BOOL,
-}
 
 #[repr(C)]
 pub struct STATDATA {
@@ -2705,31 +2545,16 @@ extern "C" {
     pub static IID_IShellFolderViewDual: IID;
 }
 
-#[repr(C)]
-pub struct TBADDBITMAP {
-    pub hInst: HINSTANCE,
-    pub nID: UINT_PTR,
-}
 
-#[repr(C)]
-pub struct SFV_CREATE {
-    pub cbSize: UINT,
-    pub pshf: *mut IShellFolder,
-    pub psvOuter: *mut core::ffi::c_void,
-    pub psfvcb: *mut core::ffi::c_void,
-}
 
 macro_rules! ASSERT { ($($arg:tt)*) => {{}}; }
 
-pub type SVSIF = UINT;
 
-pub type LPTBBUTTONSB = *mut core::ffi::c_void;
 
 macro_rules! LOWORD { ($value:expr) => { (((($value as usize) & 0xffff) as UINT) as u16) }; }
 
 pub type LPFNSVADDPROPSHEETPAGE = Option<unsafe extern "system" fn(HPROPSHEETPAGE, LPARAM) -> BOOL>;
 
-pub type ITEMIDLIST_ABSOLUTE = ITEMIDLIST;
 
 pub const DROPEFFECT_NONE: DWORD = 0;
 pub const DROPEFFECT_MOVE: DWORD = 2;
@@ -2947,7 +2772,7 @@ pub unsafe fn AppendMenuItem_body(hMenu: HMENU, MF: UINT, Id: UINT, String: LPCW
     mii.fType = MF & !mii.fState;
     mii.wID = Id;
     mii.dwTypeData = String as *mut u16;
-    mii.dwItemData = Data;
+    mii.dwItemData = Data as ULONG_PTR;
     unsafe { InsertMenuItemW(hMenu, (-(1 as i32)) as u32, TRUE, &mii) }
 }
 
@@ -2956,7 +2781,7 @@ pub unsafe fn GetMenuItemDataById_body(hMenu: HMENU, Id: UINT) -> SIZE_T {
     mii.cbSize = FIELD_OFFSET!(MENUITEMINFOW, hbmpItem) as _;
     mii.fMask = MIIM_DATA;
     if unsafe { GetMenuItemInfoW(hMenu, Id, FALSE, &mut mii) } != 0 {
-        return mii.dwItemData;
+        return mii.dwItemData as SIZE_T;
     } else {
         return 0;
     }
@@ -3191,7 +3016,7 @@ pub unsafe fn CDefView_IncludeObject_body(this: *mut CDefView, pidl: PCUITEMID_C
 pub unsafe fn CDefView_OnDefaultCommand_body(this: *mut CDefView) -> HRESULT {
     let mut ret: HRESULT = S_FALSE;
 
-    let browser = (*this).m_pCommDlgBrowser.p;
+    let browser = (*this).m_pCommDlgBrowser;
     if !browser.is_null() {
         ret = ((*(*browser).lpVtbl).OnDefaultCommand)(browser, this);
     }
@@ -3202,7 +3027,7 @@ pub unsafe fn CDefView_OnDefaultCommand_body(this: *mut CDefView) -> HRESULT {
 pub unsafe fn CDefView_OnStateChange_body(this: *mut CDefView, uFlags: UINT) -> HRESULT {
     let mut ret: HRESULT = S_FALSE;
 
-    let pCommDlgBrowser = (*this).m_pCommDlgBrowser.p;
+    let pCommDlgBrowser = (*this).m_pCommDlgBrowser;
     if !pCommDlgBrowser.is_null() {
         ret = ((*(*pCommDlgBrowser).lpVtbl).OnStateChange)(pCommDlgBrowser, this as _, uFlags);
     }
@@ -3212,47 +3037,47 @@ pub unsafe fn CDefView_OnStateChange_body(this: *mut CDefView, uFlags: UINT) -> 
 
 pub unsafe fn CDefView_CheckToolbar_body(this: *mut CDefView) -> () {
     unsafe {
-        let mut result: isize = 0;
+        let mut result: LRESULT = 0;
 
         if !((*this).m_pCommDlgBrowser).is_null() {
             ((*(*(*this).m_pShellBrowser).lpVtbl).SendControlMsg)(
                 (*this).m_pShellBrowser,
                 FCW_TOOLBAR,
                 TB_CHECKBUTTON,
-                FCIDM_TB_SMALLICON,
-                if (*this).m_FolderSettings.ViewMode == FVM_LIST {
+                FCIDM_TB_SMALLICON as WPARAM,
+                (if (*this).m_FolderSettings.ViewMode == FVM_LIST {
                     TRUE
                 } else {
                     FALSE
-                },
+                }) as LPARAM,
                 &mut result,
             );
             ((*(*(*this).m_pShellBrowser).lpVtbl).SendControlMsg)(
                 (*this).m_pShellBrowser,
                 FCW_TOOLBAR,
                 TB_CHECKBUTTON,
-                FCIDM_TB_REPORTVIEW,
-                if (*this).m_FolderSettings.ViewMode == FVM_DETAILS {
+                FCIDM_TB_REPORTVIEW as WPARAM,
+                (if (*this).m_FolderSettings.ViewMode == FVM_DETAILS {
                     TRUE
                 } else {
                     FALSE
-                },
+                }) as LPARAM,
                 &mut result,
             );
             ((*(*(*this).m_pShellBrowser).lpVtbl).SendControlMsg)(
                 (*this).m_pShellBrowser,
                 FCW_TOOLBAR,
                 TB_ENABLEBUTTON,
-                FCIDM_TB_SMALLICON,
-                TRUE,
+                FCIDM_TB_SMALLICON as WPARAM,
+                TRUE as LPARAM,
                 &mut result,
             );
             ((*(*(*this).m_pShellBrowser).lpVtbl).SendControlMsg)(
                 (*this).m_pShellBrowser,
                 FCW_TOOLBAR,
                 TB_ENABLEBUTTON,
-                FCIDM_TB_REPORTVIEW,
-                TRUE,
+                FCIDM_TB_REPORTVIEW as WPARAM,
+                TRUE as LPARAM,
                 &mut result,
             );
         }
@@ -3276,17 +3101,17 @@ pub unsafe fn CDefView_UpdateStatusbar_body(this: *mut CDefView) -> () {
         StringCchPrintfW(szPartText.as_mut_ptr(), szPartText.len(), szFormat.as_ptr(), (*this).m_ListView.GetItemCount());
     }
 
-    let mut lResult: isize = 0;
+    let mut lResult: LRESULT = 0;
     ((*(*(*this).m_pShellBrowser).lpVtbl).SendControlMsg)(
         (*this).m_pShellBrowser,
         FCW_STATUS,
         SB_SETTEXT,
         0,
         szPartText.as_mut_ptr() as LPARAM,
-        &mut lResult,
+        &mut lResult as *mut _,
     );
 
-    if (*this).m_isFullStatusBar != 0 {
+    if (*this).m_isFullStatusBar {
         let mut uTotalFileSize: u64 = 0;
         let mut uFileFlags: u16 = ((LVNI_ALL) as u16);
         let mut nItem: i32 = -1;
@@ -3321,7 +3146,7 @@ pub unsafe fn CDefView_UpdateStatusbar_body(this: *mut CDefView) -> () {
             SB_SETTEXT,
             1,
             szPartText.as_mut_ptr() as LPARAM,
-            &mut lResult,
+            &mut lResult as *mut _,
         );
     }
 
@@ -3363,7 +3188,7 @@ pub unsafe fn CDefView_UpdateStatusbarLocation_body(this: *mut CDefView) -> () {
     let mut pIcon: LPARAM = 0;
     let mut szPartText = [0u16; ((MAX_PATH) as usize)];
     szPartText[0] = 0;
-    if (*this).m_isFullStatusBar != 0 {
+    if (*this).m_isFullStatusBar {
         let mut csidl: i32 = 0;
         if CDefView_IsSpecialFolder_body(this, &mut csidl) == 0
             || (csidl != ((CSIDL_NETWORK) as i32) && csidl != CSIDL_BITBUCKET)
@@ -3479,13 +3304,14 @@ pub unsafe fn CDefView_CreateList_body(this: *mut CDefView) -> BOOL {
         dwStyle,
         dwExStyle,
         ID_LISTVIEW,
+        core::ptr::null_mut(), // rosctrls.h:8 `LPVOID lpCreateParam = NULL`
     );
 
     if (*this).m_ListView.is_null() {
         return FALSE;
     }
 
-    (*this).m_ListView.SetExtendedListViewStyle(ListExStyle);
+    (*this).m_ListView.SetExtendedListViewStyle(ListExStyle, 0); // rosctrls.h:47 `dwMask = 0`
 
     return TRUE;
 }
@@ -3589,7 +3415,7 @@ pub unsafe fn CDefView_InitList_body(this: *mut CDefView) -> BOOL {
             0
         };
         CDefView_LoadColumns_body(this, pColumns, ColumnCount);
-        if (*this).m_sortInfo.bColumnIsFolderColumn != 0 {
+        if (*this).m_sortInfo.bColumnIsFolderColumn {
             (*this).m_sortInfo.bColumnIsFolderColumn = ((FALSE) != 0);
             let hr: HRESULT = CDefView_MapFolderColumnToListColumn_body(this, (*this).m_sortInfo.ListColumn as UINT);
             (*this).m_sortInfo.ListColumn = if hr >= 0 { hr as _ } else { 0 };
@@ -3657,7 +3483,7 @@ pub unsafe fn CDefView_LoadColumn_body(this: *mut CDefView, FoldCol: UINT, ListC
     let mut ListCol = ListCol;
     let mut buf = [0u16; ((MAX_PATH) as usize)];
     let mut sd: SHELLDETAILS = core::mem::zeroed();
-    sd.str.uType = if STRRET_WSTR != 0 { 0 } else { 1 };
+    sd.str_.uType = if STRRET_WSTR != 0 { 0 } else { 1 };
 
     let mut hr: HRESULT;
     hr = CDefView_GetDetailsByFolderColumn_body(this, core::ptr::null(), FoldCol, &mut sd);
@@ -3668,7 +3494,7 @@ pub unsafe fn CDefView_LoadColumn_body(this: *mut CDefView, FoldCol: UINT, ListC
     hr = StrRetToStrNW(
         buf.as_mut_ptr(),
         buf.len() as UINT,
-        &mut sd.str,
+        &mut sd.str_,
         core::ptr::null(),
     );
     if hr < 0 {
@@ -3873,7 +3699,7 @@ pub unsafe fn CDefView__Sort_body(this: *mut CDefView, Col: i32) -> BOOL {
     let prevCol = (*this).m_sortInfo.ListColumn;
     (*this).m_sortInfo.bLoadedFromViewState = ((FALSE) != 0);
 
-    if ((*this).m_ListView.GetWindowLongPtr(GWL_STYLE) & LVS_NOSORTHEADER) != 0 {
+    if ((*this).m_ListView.GetWindowLongPtr(GWL_STYLE) & (LVS_NOSORTHEADER as LONG_PTR)) != 0 {
         return TRUE;
     }
 
@@ -3897,13 +3723,13 @@ pub unsafe fn CDefView__Sort_body(this: *mut CDefView, Col: i32) -> BOOL {
     if prevCol != -1 && prevCol != (*this).m_sortInfo.ListColumn {
         hColumn.mask = HDI_FORMAT;
         Header_GetItem(hHeader, prevCol, &mut hColumn);
-        hColumn.fmt &= !(HDF_SORTUP | HDF_SORTDOWN);
+        hColumn.fmt &= !((HDF_SORTUP | HDF_SORTDOWN) as INT);
         Header_SetItem(hHeader, prevCol, &mut hColumn);
     }
 
     hColumn.mask = HDI_FORMAT;
     Header_GetItem(hHeader, (*this).m_sortInfo.ListColumn, &mut hColumn);
-    hColumn.fmt &= !(HDF_SORTDOWN | HDF_SORTUP);
+    hColumn.fmt &= !((HDF_SORTDOWN | HDF_SORTUP) as INT);
     hColumn.fmt |= (((if (*this).m_sortInfo.Direction > 0 {
         HDF_SORTUP
     } else {
@@ -3919,7 +3745,7 @@ pub unsafe fn CDefView__Sort_body(this: *mut CDefView, Col: i32) -> BOOL {
 
 pub unsafe fn CDefView_GetItemAttributes_body(this: *mut CDefView, pidl: PCUITEMID_CHILD, Query: UINT) -> SFGAOF {
     let mut Attr: SFGAOF = Query as SFGAOF;
-    return if ((*(*(*this).m_pSFParent).lpVtbl).GetAttributesOf)((*this).m_pSFParent, 1, &pidl, &mut Attr) >= 0 {
+    return if ((*(*(*this).m_pSFParent).lpVtbl).GetAttributesOf)((*this).m_pSFParent, 1, &pidl as *const _, &mut Attr) >= 0 {
         Attr & Query
     } else {
         0
@@ -4011,7 +3837,7 @@ pub unsafe fn CDefView_LV_AddItem_body(this: *mut CDefView, pidl: PCUITEMID_CHIL
     lvItem.pszText = LPSTR_TEXTCALLBACKW;
     lvItem.iImage = I_IMAGECALLBACK;
     lvItem.stateMask = LVIS_CUT;
-    if (*this).m_HasCutItems != 0 {
+    if (*this).m_HasCutItems {
         lvItem.mask |= LVIF_STATE;
         lvItem.state = if CDefView_GetItemAttributes_body(this, pidl, SFGAO_HIDDEN | SFGAO_GHOSTED) != 0 {
             LVIS_CUT
@@ -4052,7 +3878,7 @@ pub unsafe fn CDefView_LV_RenameItem_body(this: *mut CDefView, pidlOld: PCUITEMI
         lvItem.iSubItem = 0;
         lvItem.lParam = ILClone(pidlNew) as LPARAM;
         lvItem.pszText = LPSTR_TEXTCALLBACKW;
-        lvItem.iImage = SHMapPIDLToSystemImageListIndex((*this).m_pSFParent, pidlNew, 0);
+        lvItem.iImage = SHMapPIDLToSystemImageListIndex((*this).m_pSFParent, pidlNew, core::ptr::null_mut());
         (*this).m_ListView.SetItem(&mut lvItem);
         (*this).m_ListView.Update(nItem);
 
@@ -4069,14 +3895,14 @@ pub unsafe fn CDefView_LV_UpdateItem_body(this: *mut CDefView, nItem: INT, pidl:
         let mut bResult: BOOL = FALSE;
         let mut lvItem: LVITEMW = core::mem::zeroed::<LVITEMW>();
         if nItem >= 0 {
-            CDefView__DoFolderViewCB_body(this, SFVM_UPDATINGOBJECT, nItem as usize, pidl as LPARAM);
+            CDefView__DoFolderViewCB_body(this, SFVM_UPDATINGOBJECT, nItem as WPARAM, pidl as LPARAM);
 
             lvItem.mask = LVIF_IMAGE;
             lvItem.iItem = nItem;
             lvItem.iSubItem = 0;
-            lvItem.iImage = SHMapPIDLToSystemImageListIndex((*this).m_pSFParent, pidl, 0);
+            lvItem.iImage = SHMapPIDLToSystemImageListIndex((*this).m_pSFParent, pidl, core::ptr::null_mut());
             lvItem.stateMask = LVIS_CUT;
-            if (*this).m_HasCutItems != 0 {
+            if (*this).m_HasCutItems {
                 lvItem.mask |= LVIF_STATE;
                 lvItem.state = if CDefView_GetItemAttributes_body(this, pidl, SFGAO_HIDDEN | SFGAO_GHOSTED) != 0 {
                     LVIS_CUT
@@ -4171,11 +3997,11 @@ pub unsafe fn CDefView_FillList_body(this: *mut CDefView, IsRefreshCommand: BOOL
         FALSE,
     );
     if (CDefView_GetCommDlgViewFlags_body(this) & CDB2GVF_SHOWALLFILES) != 0 {
-        shellstate.fShowAllObjects = TRUE;
-        shellstate.fShowSuperHidden = TRUE;
+        shellstate.set_fShowAllObjects(TRUE);
+        shellstate.set_fShowSuperHidden(TRUE);
     }
 
-    if shellstate.fShowAllObjects != 0 {
+    if shellstate.fShowAllObjects() != 0 {
         dFlags |= SHCONTF_INCLUDEHIDDEN;
         let _ = (*this).m_ListView.SendMessageW(
             LVM_SETCALLBACKMASK,
@@ -4183,7 +4009,7 @@ pub unsafe fn CDefView_FillList_body(this: *mut CDefView, IsRefreshCommand: BOOL
             0,
         );
     }
-    if shellstate.fShowSuperHidden != 0 {
+    if shellstate.fShowSuperHidden() != 0 {
         dFlags |= SHCONTF_INCLUDESUPERHIDDEN;
         let _ = (*this).m_ListView.SendMessageW(
             LVM_SETCALLBACKMASK,
@@ -4200,7 +4026,7 @@ pub unsafe fn CDefView_FillList_body(this: *mut CDefView, IsRefreshCommand: BOOL
     );
     if hRes != S_OK {
         if !pEnumIDList.is_null() {
-            (*(*pEnumIDList).lpVtbl).Release(pEnumIDList);
+            ((*(*pEnumIDList).lpVtbl).Release)(pEnumIDList);
         }
         if hRes == S_FALSE {
             return NOERROR;
@@ -4211,7 +4037,7 @@ pub unsafe fn CDefView_FillList_body(this: *mut CDefView, IsRefreshCommand: BOOL
     hdpa = DPA_Create(16);
     if hdpa.is_null() {
         if !pEnumIDList.is_null() {
-            (*(*pEnumIDList).lpVtbl).Release(pEnumIDList);
+            ((*(*pEnumIDList).lpVtbl).Release)(pEnumIDList);
         }
         return E_OUTOFMEMORY;
     }
@@ -4220,7 +4046,7 @@ pub unsafe fn CDefView_FillList_body(this: *mut CDefView, IsRefreshCommand: BOOL
         == ((*(*pEnumIDList).lpVtbl).Next)(
             pEnumIDList,
             1,
-            &mut pidl,
+            &mut pidl as *mut _,
             &mut dwFetched,
         ))
         && dwFetched != 0
@@ -4235,7 +4061,7 @@ pub unsafe fn CDefView_FillList_body(this: *mut CDefView, IsRefreshCommand: BOOL
     DPA_DestroyCallback(hdpa, Some(CDefView_fill_list), this as *mut _);
 
     let mut sortCol: i32 = -(1 as i32);
-    if IsRefreshCommand == 0 && (*this).m_sortInfo.bLoadedFromViewState == 0 {
+    if IsRefreshCommand == 0 && !(*this).m_sortInfo.bLoadedFromViewState {
         (*this).m_sortInfo.Direction = 0;
         sortCol = 0 as i32;
         if !(*this).m_pSF2Parent.is_null() {
@@ -4288,7 +4114,7 @@ pub unsafe fn CDefView_FillList_body(this: *mut CDefView, IsRefreshCommand: BOOL
     );
 
     if !pEnumIDList.is_null() {
-        (*(*pEnumIDList).lpVtbl).Release(pEnumIDList);
+        ((*(*pEnumIDList).lpVtbl).Release)(pEnumIDList);
     }
 
     return S_OK;
@@ -4330,7 +4156,7 @@ pub unsafe fn CDefView_OnDestroy_body(this: *mut CDefView, uMsg: UINT, wParam: W
 
 pub unsafe fn CDefView_OnEraseBackground_body(this: *mut CDefView, uMsg: UINT, wParam: WPARAM, lParam: LPARAM, bHandled: &mut BOOL) -> LRESULT {
     if ((*this).m_FolderSettings.fFlags & (FWF_DESKTOP | FWF_TRANSPARENT)) != 0 {
-        return SendMessageW(GetParent(), WM_ERASEBKGND, wParam, lParam);
+        return SendMessageW(GetParent((*this).m_hWnd), WM_ERASEBKGND, wParam, lParam);
     }
     *bHandled = FALSE;
     0
@@ -4415,7 +4241,7 @@ pub unsafe fn CDefView_OnSysColorChange_body(this: *mut CDefView, uMsg: UINT, wP
 }
 
 pub unsafe fn CDefView_OnGetShellBrowser_body(this: *mut CDefView, uMsg: UINT, wParam: WPARAM, lParam: LPARAM, bHandled: &mut BOOL) -> LRESULT {
-    ((*this).m_pShellBrowser.p) as LRESULT
+    ((*this).m_pShellBrowser) as LRESULT
 }
 
 pub unsafe fn CDefView_OnNCCreate_body(this: *mut CDefView, uMsg: UINT, wParam: WPARAM, lParam: LPARAM, bHandled: &mut BOOL) -> LRESULT {
@@ -4425,7 +4251,7 @@ pub unsafe fn CDefView_OnNCCreate_body(this: *mut CDefView, uMsg: UINT, wParam: 
 }
 
 pub unsafe fn CDefView_OnFinalMessage_body(this: *mut CDefView, arg0: HWND) -> () {
-    (*(*(this as *mut IUnknown)).lpVtbl).Release(this as *mut IUnknown);
+    ((*(*(this as *mut IUnknown)).lpVtbl).Release)(this as *mut IUnknown);
 }
 
 pub unsafe fn CDefView_OnCreate_body(this: *mut CDefView, uMsg: UINT, wParam: WPARAM, lParam: LPARAM, bHandled: &mut BOOL) -> LRESULT {
@@ -4440,7 +4266,7 @@ pub unsafe fn CDefView_OnCreate_body(this: *mut CDefView, uMsg: UINT, wParam: WP
         ((core::ptr::addr_of!(IID_IDropTarget)) as _), core::ptr::addr_of_mut!(pdt).cast(),
     ) >= 0
     {
-        if RegisterDragDrop((*this).m_hWnd, pdt) < 0 {
+        if RegisterDragDrop((*this).m_hWnd.cast(), pdt.cast()) < 0 {
         }
     }
 
@@ -4545,11 +4371,7 @@ pub unsafe fn CDefView_OnCreate_body(this: *mut CDefView, uMsg: UINT, wParam: WP
         }
     }
 
-    (*this).m_isFullStatusBar = if bIsFileSystem != 0 || bForceFullStatusBar != 0 {
-        1
-    } else {
-        0
-    };
+    (*this).m_isFullStatusBar = bIsFileSystem != 0 || bForceFullStatusBar != 0;
 
     CDefView__ForceStatusBarResize_body(this);
     CDefView_UpdateStatusbar_body(this);
@@ -4580,8 +4402,8 @@ pub unsafe fn CDefView_FillFileMenu_body(this: *mut CDefView) -> HRESULT {
         i -= 1;
     }
 
-    if !(*this).m_pFileMenu.as_ptr().is_null() {
-        IUnknown_SetSite((*this).m_pFileMenu.as_ptr() as *mut IUnknown, core::ptr::null_mut());
+    if !(*this).m_pFileMenu.is_null() {
+        IUnknown_SetSite((*this).m_pFileMenu as *mut IUnknown, core::ptr::null_mut());
         if !(*this).m_pFileMenu.is_null() {
         let value = (*this).m_pFileMenu as *mut IUnknown;
         ((*(*value).lpVtbl).Release)(value);
@@ -4603,7 +4425,7 @@ pub unsafe fn CDefView_FillFileMenu_body(this: *mut CDefView) -> HRESULT {
 
     let cmf: u32 = GetContextMenuFlags_body((*this).m_pShellBrowser, CDefView_GetSelectionAttributes_body(this, SFGAO_CANRENAME));
 
-    let pFileMenu: *mut IContextMenu = (*this).m_pFileMenu.as_ptr();
+    let pFileMenu: *mut IContextMenu = (*this).m_pFileMenu;
     hr = ((*(*pFileMenu).lpVtbl).QueryContextMenu)(
         pFileMenu,
         hmenu,
@@ -4623,8 +4445,8 @@ pub unsafe fn CDefView_FillFileMenu_body(this: *mut CDefView) -> HRESULT {
     }
 
     _ = Shell_MergeMenus(
-        hFileMenu,
-        hmenu,
+        hFileMenu.cast(),
+        hmenu.cast(),
         0,
         0,
         0xFFFF,
@@ -4647,8 +4469,8 @@ pub unsafe fn CDefView_FillEditMenu_body(this: *mut CDefView) -> HRESULT {
     }
 
     Shell_MergeMenus(
-        hEditMenu,
-        hmenuContents,
+        hEditMenu.cast(),
+        hmenuContents.cast(),
         0,
         0,
         0xFFFF,
@@ -4673,8 +4495,8 @@ pub unsafe fn CDefView_FillViewMenu_body(this: *mut CDefView) -> HRESULT {
 
     let i = SHMenuIndexFromID(hViewMenu, FCIDM_MENU_VIEW_SEP_OPTIONS);
     Shell_MergeMenus(
-        hViewMenu,
-        (*this).m_hMenuViewModes,
+        hViewMenu.cast(),
+        (*this).m_hMenuViewModes.cast(),
         i,
         0,
         0xFFFF,
@@ -4705,7 +4527,7 @@ pub unsafe fn CDefView_FillArrangeAsMenu_body(this: *mut CDefView, hmenuArrange:
         }
 
         if GetMenuItemID(hmenuArrange, 0) == FCIDM_SHVIEW_AUTOARRANGE || forceMerge {
-            Shell_MergeMenus(hmenuArrange, (*this).m_hMenuArrangeModes, 0, 0, 0xFFFF, MM_ADDSEPARATOR);
+            Shell_MergeMenus(hmenuArrange.cast(), (*this).m_hMenuArrangeModes.cast(), 0, 0, 0xFFFF, MM_ADDSEPARATOR);
         }
 
         CheckMenuRadioItem(hmenuArrange,
@@ -4773,11 +4595,11 @@ pub unsafe fn CDefView_DoColumnContextMenu_body(this: *mut CDefView, lParam: LPA
     loop {
         let mut buf: [WCHAR; MAX_PATH as usize] = [0; MAX_PATH as usize];
         let mut sd: SHELLDETAILS = core::mem::zeroed();
-        sd.str.uType = (STRRET_WSTR as UINT == 0) as UINT;
+        sd.str_.uType = (STRRET_WSTR as UINT == 0) as UINT;
         if CDefView_GetDetailsByFolderColumn_body(this, core::ptr::null(), foldCol, &mut sd) < (0 as HRESULT) {
             break;
         }
-        if StrRetToStrNW(buf.as_mut_ptr(), buf.len() as UINT, &mut sd.str, core::ptr::null()) < (0 as HRESULT) {
+        if StrRetToStrNW(buf.as_mut_ptr(), buf.len() as UINT, core::ptr::addr_of_mut!(sd.str_), core::ptr::null()) < (0 as HRESULT) {
             break;
         }
 
@@ -4851,7 +4673,7 @@ pub unsafe fn CDefView_GetSelections_body(this: *mut CDefView) -> UINT {
     let count: UINT = ((*this).m_ListView).GetSelectedCount() as UINT;
     if count > (*this).m_cidl || count == 0 || (*this).m_apidl.is_null() {
         SHFree((*this).m_apidl as *mut core::ffi::c_void);
-        (*this).m_apidl = SHAlloc((count as usize).wrapping_mul(core::mem::size_of::<PCUITEMID_CHILD>())) as *mut PCUITEMID_CHILD;
+        (*this).m_apidl = SHAlloc((count as usize).wrapping_mul(core::mem::size_of::<PCUITEMID_CHILD>()) as SIZE_T) as *mut PCUITEMID_CHILD;
         if (*this).m_apidl.is_null() {
             (*this).m_cidl = 0;
             return 0;
@@ -4912,7 +4734,7 @@ pub unsafe fn CDefView_InvokeContextMenuCommand_body(this: *mut CDefView, pCM: &
         ((FCIDM_SHVIEW_DELETE) as u16),
         ((FCIDM_SHVIEW_RENAME) as u16),
         ((FCIDM_SHVIEW_PROPERTIES) as u16),
-        FCIDM_SHVIEW_CREATELINK,
+        ((FCIDM_SHVIEW_CREATELINK) as u16),
         FCIDM_SHVIEW_CUT,
         FCIDM_SHVIEW_COPY,
         FCIDM_SHVIEW_INSERT,
@@ -4952,7 +4774,7 @@ pub unsafe fn CDefView_InvokeContextMenuCommand_body(this: *mut CDefView, pCM: &
     if CDefView__DoFolderViewCB_body(
         this,
         SFVM_GETCOMMANDDIR,
-        (szDirW).len(),
+        (szDirW).len() as WPARAM,
         szDirW.as_mut_ptr() as LPARAM,
     ) >= 0
         && szDirW[0] != UNICODE_NULL
@@ -5001,7 +4823,7 @@ pub unsafe fn CDefView_OpenSelectedItems_body(this: *mut CDefView, pszVerb: PCST
     let (riid, ppv): (REFIID, *mut *mut core::ffi::c_void) =
         IID_IContextMenu::<IContextMenu>(&mut pCM as *mut _ as *mut *mut core::ffi::c_void);
     hResult = CDefView_GetItemObject_body(this, SVGIO_SELECTION, riid, ppv);
-    let _menu_cleanup = MenuCleanup::new(&mut pCM, &mut hMenu);
+    let _menu_cleanup = MenuCleanup::new(&mut pCM as *mut _, &mut hMenu);
     if ((hResult) < 0) {
         return hResult;
     }
@@ -5089,17 +4911,17 @@ pub unsafe fn CDefView_OnContextMenu_body(this: *mut CDefView, uMsg: UINT, wPara
         core::ptr::addr_of!(IID_IContextMenu),
         core::ptr::addr_of_mut!((*this).m_pCM).cast(),
     );
-    let mut _menu_cleanup = MenuCleanup::new(&mut (*this).m_pCM, &mut (*this).m_hContextMenu);
+    let mut _menu_cleanup = MenuCleanup::new(&mut (*this).m_pCM as *mut _, &mut (*this).m_hContextMenu);
     if ((hResult) < 0) as i32 != 0 {
         return 0;
     }
 
     let cmf = GetContextMenuFlags_body(
-        (*this).m_pShellBrowser.as_ptr(),
+        (*this).m_pShellBrowser,
         CDefView_GetSelectionAttributes_body(this, SFGAO_CANRENAME),
     );
 
-    let pContextMenu = (*this).m_pCM.as_ptr();
+    let pContextMenu = (*this).m_pCM;
     hResult = ((*(*pContextMenu).lpVtbl).QueryContextMenu)(
         pContextMenu,
         (*this).m_hContextMenu,
@@ -5120,8 +4942,8 @@ pub unsafe fn CDefView_OnContextMenu_body(this: *mut CDefView, uMsg: UINT, wPara
             MAKEINTRESOURCEW(IDM_DVSELECT),
         );
         Shell_MergeMenus(
-            (*this).m_hContextMenu,
-            GetSubMenu(hMenuSource, 0),
+            (*this).m_hContextMenu.cast(),
+            GetSubMenu(hMenuSource, 0).cast(),
             0,
             DVIDM_COMMDLG_SELECT,
             0xffff,
@@ -5158,7 +4980,7 @@ pub unsafe fn CDefView_OnContextMenu_body(this: *mut CDefView, uMsg: UINT, wPara
             SendMessage(
                 (*this).m_ListView.m_hWnd,
                 LVM_GETITEMRECT,
-                lvIndex,
+                lvIndex as WPARAM,
                 &mut rc as *mut RECT as LPARAM,
             );
             pt.x = (rc.right + rc.left) / 2;
@@ -5174,7 +4996,7 @@ pub unsafe fn CDefView_OnContextMenu_body(this: *mut CDefView, uMsg: UINT, wPara
     let mut pcdb2: *mut ICommDlgBrowser2 = core::ptr::null_mut();
     let _pcdb2_cpp_com_guard = CppComPtrGuard::new(core::ptr::addr_of_mut!(pcdb2));
     if !(*this).m_pCommDlgBrowser.is_null() {
-        let pCommDlgBrowser = (*this).m_pCommDlgBrowser.as_ptr();
+        let pCommDlgBrowser = (*this).m_pCommDlgBrowser;
         let hr_qi = ((*(*pCommDlgBrowser).lpVtbl).QueryInterface)(
             pCommDlgBrowser,
             core::ptr::addr_of!(IID_ICommDlgBrowser2),
@@ -5247,7 +5069,7 @@ pub unsafe fn CDefView_OnExplorerCommand_body(this: *mut CDefView, uCommand: UIN
         return 0;
     }
 
-    let mut _cleanup = MenuCleanup::new(&mut pCM, &mut hMenu);
+    let mut _cleanup = MenuCleanup::new(&mut pCM as *mut _, &mut hMenu);
 
     if uCommand != FCIDM_SHVIEW_DELETE && uCommand != FCIDM_SHVIEW_RENAME {
         hMenu = CreatePopupMenu();
@@ -5323,7 +5145,7 @@ pub unsafe fn CDefView_OnSize_body(this: *mut CDefView, uMsg: UINT, wParam: WPAR
     let mut wHeight: u16;
 
     wWidth = LOWORD!(lParam);
-    wHeight = HIWORD(lParam);
+    wHeight = HIWORD(lParam as DWORD);
 
     if ((*this).m_ListView as usize) == 0 {
         return 0;
@@ -5402,7 +5224,7 @@ pub unsafe fn CDefView__DoCopyToMoveToFolder_body(this: *mut CDefView, bCopy: BO
     let _pCM_cpp_com_guard = CppComPtrGuard::new(core::ptr::addr_of_mut!(pCM));
     hr = ((*(*parent).lpVtbl).GetUIObjectOf)(
         parent,
-        (*this).m_hWnd,
+        (*this).m_hWnd.cast(),
         (*this).m_cidl,
         (*this).m_apidl,
         &IID_IContextMenu,
@@ -5497,7 +5319,7 @@ pub unsafe fn CDefView_OnCommand_body(this: *mut CDefView, uMsg: UINT, wParam: W
         }
         FCIDM_SHVIEW_AUTOARRANGE => {
             if CDefView_GetAutoArrange_body(this) == S_OK {
-                (*this).m_ListView.ModifyStyle(LVS_AUTOARRANGE, 0);
+                (*this).m_ListView.ModifyStyle(LVS_AUTOARRANGE, 0, 0); // atlwin.h:1041 `nFlags = 0`
             } else {
                 CDefView_AutoArrange_body(this);
             }
@@ -5544,7 +5366,7 @@ pub unsafe fn CDefView_OnCommand_body(this: *mut CDefView, uMsg: UINT, wParam: W
             if !((*this).m_pFileMenu).is_null() && dwCmd == 0 {
                 let mut Dummy: HMENU = core::ptr::null_mut();
                 let mut _guard = MenuCleanup::new(((core::ptr::addr_of_mut!((*this).m_pFileMenu)) as _), core::ptr::addr_of_mut!(Dummy));
-                CDefView_InvokeContextMenuCommand_body(this, (*this).m_pFileMenu, MAKEINTRESOURCEA(((dwCmdID) as u32)), core::ptr::null_mut());
+                CDefView_InvokeContextMenuCommand_body(this, (*this).m_pFileMenu, MAKEINTRESOURCEA(((dwCmdID) as u32)), core::ptr::null_mut(), false); // CDefView.cpp:361 `TryMapVerb = false`
             }
         }
     }
@@ -5560,7 +5382,7 @@ pub unsafe fn SelectExtOnRename_body() -> BOOL {
 
         let error: LONG = RegOpenKeyExW(
             HKEY_CURRENT_USER,
-            REGSTR_PATH_EXPLORER,
+            REGSTR_PATH_EXPLORER.as_ptr(),
             0,
             KEY_READ,
             &mut hKey,
@@ -5601,7 +5423,7 @@ pub unsafe fn CDefView_OnNotify_body(this: *mut CDefView, uMsg: UINT, wParam: WP
             CDefView_OnStateChange_body(this, CDBOSC_KILLFOCUS);
         }
         NM_CUSTOMDRAW => {
-            return CDRF_DODEFAULT;
+            return CDRF_DODEFAULT as LRESULT;
         }
         NM_RELEASEDCAPTURE => {}
         NM_CLICK => {}
@@ -5651,20 +5473,20 @@ pub unsafe fn CDefView_OnNotify_body(this: *mut CDefView, uMsg: UINT, wParam: WP
                     StrRetToStrNA(
                         (*lpdi_a).item.pszText,
                         (((*lpdi_a).item.cchTextMax) as u32),
-                        &mut sd.str,
+                        core::ptr::addr_of_mut!(sd.str_),
                         core::ptr::null_mut(),
                     );
                 } else {
                     StrRetToStrNW(
                         (*lpdi).item.pszText,
                         (((*lpdi).item.cchTextMax) as u32),
-                        &mut sd.str,
+                        core::ptr::addr_of_mut!(sd.str_),
                         core::ptr::null_mut(),
                     );
                 }
             }
             if (*lpdi).item.mask & LVIF_IMAGE != 0 {
-                (*lpdi).item.iImage = SHMapPIDLToSystemImageListIndex((*this).m_pSFParent, pidl, 0) as i32;
+                (*lpdi).item.iImage = SHMapPIDLToSystemImageListIndex((*this).m_pSFParent, pidl, core::ptr::null_mut()) as i32;
             }
             if (*lpdi).item.mask & LVIF_STATE != 0 {
                 if ((*lpdi).item.stateMask & LVIS_CUT != 0)
@@ -5680,10 +5502,12 @@ pub unsafe fn CDefView_OnNotify_body(this: *mut CDefView, uMsg: UINT, wParam: WP
                 CDefView_OnStateChange_body(this, CDBOSC_SELCHANGE);
                 if !(*this).m_ScheduledStatusbarUpdate
                     && ((*this).m_iDragOverItem == -(1 as i32)
-                        || CDefView_cpp_com_assign_m_pCurDropTarget(this, (*this).m_iDragOverItem).is_null())
+                        // CDefView.cpp:2791 `m_pCurDropTarget == NULL` -- a null TEST, which
+                        // came back as a call to the CComPtr ASSIGNMENT helper.
+                        || (*this).m_pCurDropTarget.is_null())
                 {
                     (*this).m_ScheduledStatusbarUpdate = true;
-                    PostMessage(SHV_UPDATESTATUSBAR, 0, 0);
+                    PostMessageW((*this).m_hWnd, SHV_UPDATESTATUSBAR, 0, 0);
                 }
                 CDefView__DoFolderViewCB_body(this, SFVM_SELECTIONCHANGED, 0, 0);
             }
@@ -5697,7 +5521,7 @@ pub unsafe fn CDefView_OnNotify_body(this: *mut CDefView, uMsg: UINT, wParam: WP
 
                 let hr_ui = ((*(*(*this).m_pSFParent).lpVtbl).GetUIObjectOf)(
                     (*this).m_pSFParent,
-                    (*this).m_hWnd,
+                    (*this).m_hWnd.cast(),
                     (*this).m_cidl,
                     (*this).m_apidl,
                     core::ptr::addr_of!(IID_IDataObject), core::ptr::null_mut(), core::ptr::addr_of_mut!(pda).cast(),
@@ -5725,14 +5549,14 @@ pub unsafe fn CDefView_OnNotify_body(this: *mut CDefView, uMsg: UINT, wParam: WP
                     let mut dwEffect2: DWORD = 0;
                     CDefView_cpp_com_assign_m_pSourceDataObject(this, pda);
                     (*this).m_ptFirstMousePos = (*params).ptAction;
-                    ClientToScreen(&mut (*this).m_ptFirstMousePos);
+                    ClientToScreen((*this).m_hWnd, &mut (*this).m_ptFirstMousePos);
                     ClientToListView_body((*this).m_ListView.m_hWnd, &mut (*this).m_ptFirstMousePos);
 
                     let mut big_icons: HIMAGELIST = core::ptr::null_mut();
                     let mut small_icons: HIMAGELIST = core::ptr::null_mut();
                     Shell_GetImageLists(&mut big_icons, &mut small_icons);
                     let pidl_drag = CDefView__PidlByItem_body(this, (*params).iItem);
-                    let iIcon = SHMapPIDLToSystemImageListIndex((*this).m_pSFParent, pidl_drag, 0) as i32;
+                    let iIcon = SHMapPIDLToSystemImageListIndex((*this).m_pSFParent, pidl_drag, core::ptr::null_mut()) as i32;
                     let mut ptItem: POINT = core::mem::zeroed();
                     (*this).m_ListView.GetItemPosition((*params).iItem, &mut ptItem);
 
@@ -5742,7 +5566,7 @@ pub unsafe fn CDefView_OnNotify_body(this: *mut CDefView, uMsg: UINT, wParam: WP
                         (*params).ptAction.x - ptItem.x,
                         (*params).ptAction.y - ptItem.y,
                     );
-                    DoDragDrop(pda, this, dwEffect, &mut dwEffect2);
+                    DoDragDrop(pda.cast(), this.cast(), dwEffect, &mut dwEffect2);
 
                     if !(*this).m_pSourceDataObject.is_null() {
                         ((*(*(*this).m_pSourceDataObject).lpVtbl).Release)((*this).m_pSourceDataObject);
@@ -5793,7 +5617,7 @@ pub unsafe fn CDefView_OnNotify_body(this: *mut CDefView, uMsg: UINT, wParam: WP
             if (fAttr & SFGAO_FOLDER) == 0
                 && (fAttr & SFGAO_FILESYSTEM) != 0
                 && (*lpdi).item.mask & LVIF_TEXT != 0
-                && !SelectExtOnRename_body()
+                && SelectExtOnRename_body() == 0
             {
                 let mut pidl_full: *mut ITEMIDLIST_RELATIVE = ILCombine((*this).m_pidlParent, pidl);
                 let mut szFullPath: [u16; MAX_PATH as usize] = [0; MAX_PATH as usize];
@@ -5805,7 +5629,7 @@ pub unsafe fn CDefView_OnNotify_body(this: *mut CDefView, uMsg: UINT, wParam: WP
                         hEdit,
                         EM_SETSEL,
                         0,
-                        pchDotExt.offset_from(pszText) as usize,
+                        pchDotExt.offset_from(pszText) as WPARAM,
                     );
                     PostMessageW(
                         hEdit,
@@ -5822,7 +5646,7 @@ pub unsafe fn CDefView_OnNotify_body(this: *mut CDefView, uMsg: UINT, wParam: WP
             let mut cchLimit: INT = 0;
             CDefView__DoFolderViewCB_body(this, SFVM_GETNAMELENGTH, pidl as WPARAM, &mut cchLimit as *mut INT as LPARAM);
             if cchLimit != 0 {
-                SendMessageW(hEdit, EM_SETLIMITTEXT, cchLimit, 0);
+                SendMessageW(hEdit, EM_SETLIMITTEXT, cchLimit as WPARAM, 0);
             }
             SHLimitInputEdit(((hEdit) as _), (*this).m_pSFParent);
             (*this).m_isEditing = TRUE;
@@ -5837,7 +5661,7 @@ pub unsafe fn CDefView_OnNotify_body(this: *mut CDefView, uMsg: UINT, wParam: WP
             pidl = CDefView__PidlByItem_2_body(this, &mut (*lpdi).item);
             let mut pidl_old: *mut ITEMIDLIST_ABSOLUTE = ILClone(pidl);
             if pidl_old.is_null() {
-                SHELL_ErrorBox((*lpdi).hdr.hwndFrom, E_OUTOFMEMORY);
+                SHELL_ErrorBox((*lpdi).hdr.hwndFrom.cast(), E_OUTOFMEMORY as UINT);
                 return FALSE;
             }
 
@@ -5863,7 +5687,7 @@ pub unsafe fn CDefView_OnNotify_body(this: *mut CDefView, uMsg: UINT, wParam: WP
                 PostMessageW(
                     (*this).m_ListView.m_hWnd,
                     LVM_EDITLABEL,
-                    (*lpdi).item.iItem,
+                    (*lpdi).item.iItem as WPARAM,
                     0,
                 );
             }
@@ -5910,7 +5734,7 @@ pub unsafe fn CDefView_OnChangeNotify_body(this: *mut CDefView, uMsg: UINT, wPar
         return FALSE;
     }
 
-    l_event &= !SHCNE_INTERRUPT;
+    l_event &= !(SHCNE_INTERRUPT as LONG);
 
     if CDefView__DoFolderViewCB_body(this, SFVM_FSNOTIFY, pidls as usize as WPARAM, l_event) == S_FALSE {
         SHChangeNotification_Unlock(h_lock);
@@ -6020,10 +5844,10 @@ pub unsafe fn CDefView_OnSettingChange_body(this: *mut CDefView, uMsg: UINT, wPa
 
     if wParam == SPI_GETICONTITLELOGFONT
         || (lParam != 0
-            && !lstrcmpiW(
+            && lstrcmpiW(
                 lParam as PWSTR,
-                REGSTR_PATH_EXPLORER::CPP_COM_WSTR_9F585864DA1D.as_ptr(),
-            ))
+                REGSTR_PATH_EXPLORER_ICONUNDERLINE.as_ptr(),
+            ) == 0)
     {
         ListExMask |= LVS_EX_UNDERLINEHOT | LVS_EX_UNDERLINECOLD;
         ListExBits |= SHELL_GetIconUnderlineFlags();
@@ -6100,11 +5924,11 @@ pub unsafe fn CDefView_OnDrawClipboard_body(this: *mut CDefView, uMsg: UINT, wPa
     let _ = uMsg;
     *bHandled = TRUE;
     let res: LRESULT = (*this).m_ClipboardChain.HandleDrawClipboard(wParam, lParam);
-    if (*this).m_HasCutItems != 0 {
+    if (*this).m_HasCutItems {
         (*this).m_ClipboardChain.Unhook((*this).m_hWnd);
         (*this).m_HasCutItems = false as _;
         (*this).m_ListView.SetItemState(-1, 0, LVIS_CUT);
-        (*this).m_ListView.SendMessageW(LVM_SETCALLBACKMASK, (*this).m_ListView.SendMessageW(LVM_GETCALLBACKMASK, 0, 0) | LVIS_CUT, 0);
+        (*this).m_ListView.SendMessageW(LVM_SETCALLBACKMASK, ((*this).m_ListView.SendMessageW(LVM_GETCALLBACKMASK, 0, 0) | (LVIS_CUT as LRESULT)) as WPARAM, 0);
     }
     res
 }
@@ -6164,10 +5988,10 @@ pub unsafe fn CDefView_UIActivate_body(this: *mut CDefView, uState: UINT) -> HRE
 }
 
 pub unsafe fn CDefView_Refresh_body(this: *mut CDefView) -> HRESULT {
-    CDefView__DoFolderViewCB_body(this, SFVM_LISTREFRESHED, TRUE, 0);
+    CDefView__DoFolderViewCB_body(this, SFVM_LISTREFRESHED, TRUE as WPARAM, 0);
 
     (*this).m_ListView.DeleteAllItems();
-    CDefView_FillList_body(this);
+    CDefView_FillList_body(this, TRUE); // CDefView.cpp:347 `IsRefreshCommand = TRUE`
 
     return S_OK;
 }
@@ -6273,7 +6097,7 @@ pub unsafe fn CDefView_GetDefaultViewStream_body(this: *mut CDefView, Stgm: DWOR
         let path_ptr = core::ptr::addr_of_mut!(path).cast::<u16>();
         let mut name: [u16; 39 as usize];
         let name_ptr = core::ptr::addr_of_mut!(name).cast::<u16>();
-        wsprintfW(path_ptr, CPP_COM_WSTR_BA2342D760A2.as_ptr(), REGSTR_PATH_EXPLORER, CPP_COM_WSTR_A7D0FE10F8A8.as_ptr());
+        wsprintfW(path_ptr, CPP_COM_WSTR_BA2342D760A2.as_ptr(), REGSTR_PATH_EXPLORER.as_ptr(), CPP_COM_WSTR_A7D0FE10F8A8.as_ptr());
         StringFromGUID2(clsid_ptr as *const CLSID, name_ptr, 39);
         *ppStream = SHOpenRegStream2W(HKEY_CURRENT_USER, path_ptr as *const u16, name_ptr as *const u16, Stgm);
         hr = if !(*ppStream).is_null() { S_OK } else { E_FAIL };
@@ -6291,7 +6115,7 @@ pub unsafe fn LoadColumnsStream_body(cols: &mut PERSISTCOLUMNS, pS: *mut IStream
         return hr;
     }
     if cols.Signature != PERSISTCOLUMNS::SIG
-        || cols.Count > cols.MAXCOUNT
+        || cols.Count > PERSISTCOLUMNS::MAXCOUNT
     {
         return HResultFromWin32(ERROR_INVALID_DATA);
     }
@@ -6323,7 +6147,7 @@ pub unsafe fn CDefView_LoadViewState_body(this: *mut CDefView) -> HRESULT {
         let mut data: DWORD = 0;
         hr = SHPropertyBag_ReadDWORD(pPB, CPP_COM_WSTR_C47C37CF2996.as_ptr(), &mut data);
         if hr < 0 {
-            hr = CDefView_GetDefaultViewStream_body(this, STGM_READ, pS.as_mut_ptr());
+            hr = CDefView_GetDefaultViewStream_body(this, STGM_READ, &mut pS);
             fallback = true;
 
             if hr < 0 || {
@@ -6368,7 +6192,7 @@ pub unsafe fn CDefView_LoadViewState_body(this: *mut CDefView) -> HRESULT {
             hrColumns = SHPropertyBag_ReadStream(
                 pPB,
                 CPP_COM_WSTR_98BD7125CFE5.as_ptr(),
-                pS.as_mut_ptr()
+                &mut pS
             );
             if hrColumns >= 0 {
                 hrColumns = LoadColumnsStream_body(&mut cols, pS);
@@ -6380,14 +6204,14 @@ pub unsafe fn CDefView_LoadViewState_body(this: *mut CDefView) -> HRESULT {
             ((*(*pBrowser).lpVtbl).GetViewStateStream)(
                 pBrowser,
                 STGM_READ,
-                pS.as_mut_ptr()
+                &mut pS
             )
         } else {
             E_UNEXPECTED
         };
 
         if hr < 0 {
-            hr = CDefView_GetDefaultViewStream_body(this, STGM_READ, pS.as_mut_ptr());
+            hr = CDefView_GetDefaultViewStream_body(this, STGM_READ, &mut pS);
             fallback = true;
         }
 
@@ -6551,9 +6375,9 @@ pub unsafe fn CDefView_SaveViewState_body(this: *mut CDefView) -> HRESULT {
 }
 
 pub unsafe fn CDefView_UpdateFolderViewFlags_body(this: *mut CDefView) -> () {
-    UPDATEFOLDERVIEWFLAGS((*this).m_FolderSettings.fFlags, FWF_AUTOARRANGE, CDefView_GetAutoArrange_body(this) == S_OK);
-    UPDATEFOLDERVIEWFLAGS((*this).m_FolderSettings.fFlags, FWF_SNAPTOGRID, CDefView__GetSnapToGrid_body(this) == S_OK);
-    UPDATEFOLDERVIEWFLAGS((*this).m_FolderSettings.fFlags, FWF_NOGROUPING, ListView_IsGroupViewEnabled((*this).m_ListView.m_hWnd) == 0);
+    UPDATEFOLDERVIEWFLAGS!((*this).m_FolderSettings.fFlags, FWF_AUTOARRANGE, CDefView_GetAutoArrange_body(this) == S_OK);
+    UPDATEFOLDERVIEWFLAGS!((*this).m_FolderSettings.fFlags, FWF_SNAPTOGRID, CDefView__GetSnapToGrid_body(this) == S_OK);
+    UPDATEFOLDERVIEWFLAGS!((*this).m_FolderSettings.fFlags, FWF_NOGROUPING, ListView_IsGroupViewEnabled((*this).m_ListView.m_hWnd) == 0);
 }
 
 pub unsafe fn CDefView_GetItemActivateFlags_body(this: *mut CDefView) -> UINT {
@@ -6565,7 +6389,7 @@ pub unsafe fn CDefView_GetItemActivateFlags_body(this: *mut CDefView) -> UINT {
     );
 
     if ((*this).m_FolderSettings.fFlags & FWF_SINGLECLICKACTIVATE) != 0
-        || (!ss.fDoubleClickInWebView && !ss.fWin95Classic)
+        || (ss.fDoubleClickInWebView() == 0 && ss.fWin95Classic() == 0)
     {
         LVS_EX_TRACKSELECT | LVS_EX_ONECLICKACTIVATE
     } else {
@@ -6635,15 +6459,18 @@ pub unsafe fn CDefView_GetItemObject_body(this: *mut CDefView, uItem: UINT, riid
 
     match uItem {
         SVGIO_BACKGROUND => {
-            if cpp_com_iid_equal(riid, IID_IContextMenu) {
+            if cpp_com_iid_equal(riid, &IID_IContextMenu as *const _) {
                 hr = CDefViewBckgrndMenu_CreateInstance((*this).m_pSF2Parent, riid, ppvOut);
                 if ((hr) < 0) {
                     return hr;
                 }
 
                 IUnknown_SetSite((*ppvOut) as *mut IUnknown, this as *mut _);
-            } else if cpp_com_iid_equal(riid, IID_IDispatch) {
-                if CDefView_cpp_com_assign_m_pShellFolderViewDual(this, ((&mut (*this).m_pShellFolderViewDual as *mut _ as *mut *mut core::ffi::c_void) as _)).is_null() {
+            } else if cpp_com_iid_equal(riid, &IID_IDispatch as *const _) {
+                // CDefView.cpp:3586 `m_pShellFolderViewDual == NULL` -- same null-test-as-
+                // assignment confusion; here it would have stored the ADDRESS OF THE FIELD
+                // into the field.
+                if (*this).m_pShellFolderViewDual.is_null() {
                     hr = CDefViewDual_Constructor(riid, &mut (*this).m_pShellFolderViewDual as *mut _ as *mut *mut core::ffi::c_void);
                     if ((hr) < 0) {
                         return hr;
@@ -6654,12 +6481,12 @@ pub unsafe fn CDefView_GetItemObject_body(this: *mut CDefView, uItem: UINT, riid
         }
         SVGIO_SELECTION => {
             CDefView_GetSelections_body(this);
-            hr = ((*(*(*this).m_pSFParent).lpVtbl).GetUIObjectOf)((*this).m_pSFParent, (*this).m_hWnd, (*this).m_cidl, (*this).m_apidl, riid, 0, ppvOut);
+            hr = ((*(*(*this).m_pSFParent).lpVtbl).GetUIObjectOf)((*this).m_pSFParent, (*this).m_hWnd.cast(), (*this).m_cidl, (*this).m_apidl, riid, 0, ppvOut);
             if ((hr) < 0) {
                 return hr;
             }
 
-            if cpp_com_iid_equal(riid, IID_IContextMenu) {
+            if cpp_com_iid_equal(riid, &IID_IContextMenu as *const _) {
                 IUnknown_SetSite((*ppvOut) as *mut IUnknown, this as *mut _);
             }
         }
@@ -6670,7 +6497,7 @@ pub unsafe fn CDefView_GetItemObject_body(this: *mut CDefView, uItem: UINT, riid
 }
 
 pub unsafe fn CDefView_GetDefaultViewMode_body(this: *mut CDefView) -> FOLDERVIEWMODE {
-    let mut mode: FOLDERVIEWMODE = if ((*this).m_FolderSettings.fFlags & FWF_DESKTOP) != 0 || !IsOS(OS_SERVERADMINUI) {
+    let mut mode: FOLDERVIEWMODE = if ((*this).m_FolderSettings.fFlags & FWF_DESKTOP) != 0 || IsOS(OS_SERVERADMINUI) == 0 {
         ((FVM_ICON) as i32)
     } else {
         ((FVM_DETAILS) as i32)
@@ -6716,7 +6543,7 @@ pub unsafe fn CDefView_SetCurrentViewMode_body(this: *mut CDefView, ViewMode: UI
         }
     };
 
-    ((*this).m_ListView).ModifyStyle(LVS_TYPEMASK, dwStyle);
+    ((*this).m_ListView).ModifyStyle(LVS_TYPEMASK, dwStyle, 0);
 
     (*this).m_FolderSettings.ViewMode = ViewMode;
     CDefView_CheckToolbar_body(this);
@@ -6725,7 +6552,10 @@ pub unsafe fn CDefView_SetCurrentViewMode_body(this: *mut CDefView, ViewMode: UI
 }
 
 pub unsafe fn CDefView_GetFolder_body(this: *mut CDefView, riid: REFIID, ppv: *mut *mut core::ffi::c_void) -> HRESULT {
-    if CDefView_cpp_com_assign_m_pSFParent(this, core::ptr::null_mut()) {
+    // CDefView.cpp:3668 `if (m_pSFParent == NULL) return E_FAIL;` -- a NULL TEST. The
+    // translation turned it into a call to the CComPtr ASSIGNMENT helper, which would have
+    // released the parent folder and then queried through the null it just stored.
+    if (*this).m_pSFParent.is_null() {
         return E_FAIL;
     }
     ((*(*(*this).m_pSFParent).lpVtbl).QueryInterface)((*this).m_pSFParent, ((riid) as _), ppv)
@@ -6789,7 +6619,7 @@ pub unsafe fn CDefView_GetSpacing_body(this: *mut CDefView, ppt: *mut POINT) -> 
 
     if !ppt.is_null() {
         let mut spacing: SIZE = core::mem::zeroed();
-        (*this).m_ListView.GetItemSpacing(&mut spacing);
+        (*this).m_ListView.GetItemSpacing(&mut spacing, FALSE); // rosctrls.h:166 `bSmallIconView = FALSE`
 
         (*ppt).x = spacing.cx;
         (*ppt).y = spacing.cy;
@@ -6871,7 +6701,7 @@ pub unsafe fn CDefView_SelectAndPositionItems_body(this: *mut CDefView, cidl: UI
         if lvIndex != -1 {
             _ = CDefView_SelectAndPositionItem_helper_body(
                 this,
-                lvIndex,
+                lvIndex as WPARAM,
                 dwFlags,
                 if !apt.is_null() { apt.add(i as usize) } else { core::ptr::null_mut() }
             );
@@ -6963,11 +6793,11 @@ pub unsafe fn CDefView_CreateViewWindow3_body(this: *mut CDefView, psb: *mut ISh
 
     let requestedViewMode: UINT = (*this).m_FolderSettings.ViewMode as UINT;
 
-    (*(*(*this).m_pShellBrowser).lpVtbl).GetWindow((*this).m_pShellBrowser, &mut (*this).m_hWndParent as *mut HWND);
+    ((*(*(*this).m_pShellBrowser).lpVtbl).GetWindow)((*this).m_pShellBrowser, &mut (*this).m_hWndParent as *mut HWND);
     CDefView__DoFolderViewCB_body(this, SFVM_HWNDMAIN, 0, (*this).m_hWndParent as LPARAM);
 
     CDefView_cpp_com_assign_m_pCommDlgBrowser(this, core::ptr::null_mut());
-    if ((*(*(*this).m_pShellBrowser).lpVtbl).QueryInterface(
+    if (((*(*(*this).m_pShellBrowser).lpVtbl).QueryInterface)(
             (*this).m_pShellBrowser,
             core::ptr::addr_of!(IID_ICommDlgBrowser), core::ptr::addr_of_mut!((*this).m_pCommDlgBrowser).cast()
         )) >= 0 {
@@ -6999,12 +6829,12 @@ pub unsafe fn CDefView_CreateViewWindow3_body(this: *mut CDefView, psb: *mut ISh
 
     CDefView__DoFolderViewCB_body(this, SFVM_WINDOWCREATED, (*this).m_hWnd as WPARAM, 0);
 
-    SetWindowPos(HWND_TOP, 0, 0, 0, 0, SWP_NOMOVE | SWP_NOSIZE | SWP_SHOWWINDOW);
-    UpdateWindow();
+    SetWindowPos((*this).m_hWnd, HWND_TOP, 0, 0, 0, 0, SWP_NOMOVE | SWP_NOSIZE | SWP_SHOWWINDOW);
+    UpdateWindow((*this).m_hWnd);
 
     if (*this).m_hMenu.is_null() {
         (*this).m_hMenu = CreateMenu();
-        (*(*(*this).m_pShellBrowser).lpVtbl).InsertMenusSB((*this).m_pShellBrowser, (*this).m_hMenu, &mut omw as *mut OLEMENUGROUPWIDTHS);
+        ((*(*(*this).m_pShellBrowser).lpVtbl).InsertMenusSB)((*this).m_pShellBrowser, (*this).m_hMenu, &mut omw as *mut OLEMENUGROUPWIDTHS);
     }
 
     CDefView__MergeToolbar_body(this);
@@ -7021,7 +6851,7 @@ pub unsafe fn CDefView_HandleRename_body(this: *mut CDefView, pidl: PCUITEMID_CH
         }
         pidl = CDefView__PidlByItem_body(this, idx);
     }
-    if ILFindLastID(pidl) != pidl {
+    if ILFindLastID(pidl) != pidl as *mut _ {
         return E_INVALIDARG;
     }
     return CDefView_SelectItem_v1_body(this, pidl, SVSI_EDIT | SVSI_ENSUREVISIBLE | SVSI_FOCUSED | SVSI_SELECT);
@@ -7054,7 +6884,7 @@ pub unsafe fn CDefView_SelectAndPositionItem_body(this: *mut CDefView, item: PCU
 }
 
 pub unsafe fn CDefView_Rearrange_body(this: *mut CDefView, sort: LPARAM) -> HRESULT {
-    CDefView__Sort_body(this, ((LOWORD!(sort & SHCIDS_COLUMNMASK)) as i32));
+    CDefView__Sort_body(this, ((LOWORD!(sort & (SHCIDS_COLUMNMASK as LPARAM))) as i32));
     return S_OK;
 }
 
@@ -7078,7 +6908,7 @@ pub unsafe fn CDefView_ArrangeGrid_body(this: *mut CDefView) -> HRESULT {
 }
 
 pub unsafe fn CDefView_AutoArrange_body(this: *mut CDefView) -> HRESULT {
-    let _ = (*this).m_ListView.ModifyStyle(0, LVS_AUTOARRANGE);
+    let _ = (*this).m_ListView.ModifyStyle(0, LVS_AUTOARRANGE, 0);
     let _ = (*this).m_ListView.Arrange(LVA_DEFAULT);
     S_OK
 }
@@ -7146,7 +6976,7 @@ pub unsafe fn CDefView_GetSelectedObjects_body(this: *mut CDefView, pidl: *mut *
     if *items != 0 {
         *pidl = LocalAlloc(
             0,
-            (*items as usize) * ::core::mem::size_of::<PCUITEMID_CHILD>(),
+            ((*items as usize) * ::core::mem::size_of::<PCUITEMID_CHILD>()) as SIZE_T,
         ) as *mut PCUITEMID_CHILD;
 
         if (*pidl).is_null() {
@@ -7156,7 +6986,7 @@ pub unsafe fn CDefView_GetSelectedObjects_body(this: *mut CDefView, pidl: *mut *
         memcpy(
             *pidl as *mut _,
             (*this).m_apidl as *const _,
-            (*items as usize) * ::core::mem::size_of::<PCUITEMID_CHILD>(),
+            ((*items as usize) * ::core::mem::size_of::<PCUITEMID_CHILD>()) as SIZE_T,
         );
     }
 
@@ -7164,7 +6994,7 @@ pub unsafe fn CDefView_GetSelectedObjects_body(this: *mut CDefView, pidl: *mut *
 }
 
 pub unsafe fn CDefView_IsDropOnSource_body(this: *mut CDefView, drop_target: *mut IDropTarget) -> HRESULT {
-    if (*this).m_iDragOverItem == -1 || (CDefView_cpp_com_assign_m_pCurDropTarget(this, drop_target) as usize != 0 && (((*this).m_pSourceDataObject.p) as usize) != 0) {
+    if (*this).m_iDragOverItem == -1 || (CDefView_cpp_com_assign_m_pCurDropTarget(this, drop_target) as usize != 0 && (((*this).m_pSourceDataObject) as usize) != 0) {
         return S_OK;
     }
 
@@ -7209,11 +7039,11 @@ pub unsafe fn CDefView_SetClipboard_body(this: *mut CDefView, r#move: BOOL) -> H
             if was_zero {
                 (*this).m_ListView.SendMessageW(
                     LVM_SETCALLBACKMASK,
-                    (*this).m_ListView.SendMessageW(
+                    ((*this).m_ListView.SendMessageW(
                         LVM_GETCALLBACKMASK,
                         0,
                         0,
-                    ) & !LVIS_CUT,
+                    ) & !(LVIS_CUT as LRESULT)) as WPARAM,
                     0,
                 );
                 CDefView_RefreshGhostedState_body(this);
@@ -7278,7 +7108,7 @@ pub unsafe fn CDefView_Exec_body(this: *mut CDefView, pguidCmdGroup: *const GUID
         return OLECMDERR_E_UNKNOWNGROUP;
     }
 
-    if IsEqualCLSID(pguidCmdGroup, &(*this).m_Category) != 0 {
+    if IsEqualCLSID(pguidCmdGroup, &(*this).m_Category as *const _) != 0 {
         if nCmdID == FCIDM_SHVIEW_AUTOARRANGE {
             if *V_VT!(pvaIn) != VT_INT_PTR {
                 return OLECMDERR_E_NOTSUPPORTED;
@@ -7291,8 +7121,8 @@ pub unsafe fn CDefView_Exec_body(this: *mut CDefView, pguidCmdGroup: *const GUID
             if (*this).m_hMenuViewModes as usize != 0 {
                 let hmenuViewPopup: HMENU = CreatePopupMenu();
                 Shell_MergeMenus(
-                    hmenuViewPopup,
-                    (*this).m_hMenuViewModes,
+                    hmenuViewPopup.cast(),
+                    (*this).m_hMenuViewModes.cast(),
                     0,
                     0,
                     0xFFFF,
@@ -7315,7 +7145,7 @@ pub unsafe fn CDefView_Exec_body(this: *mut CDefView, pguidCmdGroup: *const GUID
                     params.rcExclude.left,
                     params.rcExclude.bottom,
                     (*this).m_hWndParent,
-                    &mut params,
+                    &mut params as *mut _,
                 );
                 DestroyMenu(hmenuViewPopup);
             }
@@ -7325,7 +7155,7 @@ pub unsafe fn CDefView_Exec_body(this: *mut CDefView, pguidCmdGroup: *const GUID
         }
     }
 
-    if cpp_com_iid_equal(pguidCmdGroup, &CGID_Explorer)
+    if cpp_com_iid_equal(pguidCmdGroup, &CGID_Explorer as *const _)
         && nCmdID == 0x29
         && nCmdexecopt == 4
         && !pvaOut.is_null()
@@ -7333,14 +7163,14 @@ pub unsafe fn CDefView_Exec_body(this: *mut CDefView, pguidCmdGroup: *const GUID
         return S_OK;
     }
 
-    if cpp_com_iid_equal(pguidCmdGroup, &CGID_ShellDocView)
+    if cpp_com_iid_equal(pguidCmdGroup, &CGID_ShellDocView as *const _)
         && nCmdID == 9
         && nCmdexecopt == 0
     {
         return 1;
     }
 
-    if cpp_com_iid_equal(pguidCmdGroup, &CGID_DefView) {
+    if cpp_com_iid_equal(pguidCmdGroup, &CGID_DefView as *const _) {
         let mut pStream: *mut IStream = core::ptr::null_mut();
         let _pStream_cpp_com_guard = CppComPtrGuard::new(core::ptr::addr_of_mut!(pStream));
         let mut SubKey = [0u16; ((MAX_PATH) as usize)];
@@ -7365,7 +7195,7 @@ pub unsafe fn CDefView_Exec_body(this: *mut CDefView, pguidCmdGroup: *const GUID
             DVCMDID_RESET_DEFAULTFOLDER_SETTINGS => {
                 PathCombineW(
                     SubKey.as_mut_ptr(),
-                    REGSTR_PATH_EXPLORER,
+                    REGSTR_PATH_EXPLORER.as_ptr(),
                     CPP_COM_WSTR_A7D0FE10F8A8.as_ptr(),
                 );
                 SHDeleteKeyW(HKEY_CURRENT_USER, SubKey.as_ptr());
@@ -7426,7 +7256,7 @@ pub unsafe fn CDefView_drag_notify_subitem_body(this: *mut CDefView, grfKeyState
     (*this).m_ptLastMousePos = htinfo.pt;
     ClientToListView_body((*this).m_ListView.m_hWnd, &mut (*this).m_ptLastMousePos);
 
-    if lResult != -1 && !((*this).m_pSourceDataObject.p).is_null() {
+    if lResult != -1 && !((*this).m_pSourceDataObject).is_null() {
         let pidl: PCUITEMID_CHILD = CDefView__PidlByItem_body(this, lResult);
 
         for i in 0..(*this).m_cidl {
@@ -7459,7 +7289,7 @@ pub unsafe fn CDefView_drag_notify_subitem_body(this: *mut CDefView, grfKeyState
     } else {
         let mut pidl: PCUITEMID_CHILD = CDefView__PidlByItem_body(this, lResult);
 
-        hr = ((*(*(*this).m_pSFParent).lpVtbl).GetUIObjectOf)((*this).m_pSFParent, (*this).m_ListView.m_hWnd, 1, &mut pidl, core::ptr::addr_of!(IID_IDropTarget), core::ptr::null_mut(), core::ptr::addr_of_mut!((*this).m_pCurDropTarget).cast());
+        hr = ((*(*(*this).m_pSFParent).lpVtbl).GetUIObjectOf)((*this).m_pSFParent, (*this).m_ListView.m_hWnd.cast(), 1, &mut pidl, core::ptr::addr_of!(IID_IDropTarget), core::ptr::null_mut(), core::ptr::addr_of_mut!((*this).m_pCurDropTarget).cast());
     }
 
     IUnknown_SetSite((*this).m_pCurDropTarget as *mut IUnknown, this as *mut IUnknown);
@@ -7486,7 +7316,7 @@ pub unsafe fn CDefView_DragEnter_body(this: *mut CDefView, pDataObject: *mut IDa
     let hr: HRESULT = CDefView_drag_notify_subitem_body(this, grfKeyState, pt, pdwEffect);
     if hr >= 0 {
         let mut ptClient = POINT { x: pt.x, y: pt.y };
-        ScreenToClient(&mut ptClient);
+        ScreenToClient((*this).m_hWnd, &mut ptClient);
         ImageList_DragEnter((*this).m_hWnd, ptClient.x, ptClient.y);
     }
 
@@ -7495,7 +7325,7 @@ pub unsafe fn CDefView_DragEnter_body(this: *mut CDefView, pDataObject: *mut IDa
 
 pub unsafe fn CDefView_DragOver_body(this: *mut CDefView, grfKeyState: DWORD, pt: POINTL, pdwEffect: *mut DWORD) -> HRESULT {
     let mut ptClient = POINT { x: pt.x, y: pt.y };
-    ScreenToClient(&mut ptClient);
+    ScreenToClient((*this).m_hWnd, &mut ptClient);
     ImageList_DragMove(ptClient.x, ptClient.y);
     return CDefView_drag_notify_subitem_body(this, grfKeyState, pt, pdwEffect);
 }
@@ -7587,7 +7417,7 @@ pub unsafe fn CDefView__FindInsertableIndexFromPoint_body(this: *mut CDefView, m
 }
 
 pub unsafe fn CDefView__HandleStatusBarResize_body(this: *mut CDefView, nWidth: i32) -> () {
-    let mut lResult = core::mem::MaybeUninit::<isize>::uninit();
+    let mut lResult = core::mem::MaybeUninit::<LRESULT>::uninit();
 
     if !(*this).m_isFullStatusBar {
         let mut nPartArray: [i32; 1] = [-1];
@@ -7676,17 +7506,17 @@ pub unsafe fn CDefView__MoveSelectionOnAutoArrange_body(this: *mut CDefView, pt:
         if iFrom < iTo {
             let mut i: INT = iFrom;
             while i < iTo {
-                let tmp: INT = array[i];
-                array[i] = array[i + 1];
-                array[i + 1] = tmp;
+                let tmp: INT = *array.GetAt(i);
+                *array.GetAt(i) = *array.GetAt(i + 1);
+                *array.GetAt(i + 1) = tmp;
                 i += 1;
             }
         } else {
             let mut i: INT = iFrom;
             while i > iTo {
-                let tmp: INT = array[i];
-                array[i] = array[i - 1];
-                array[i - 1] = tmp;
+                let tmp: INT = *array.GetAt(i);
+                *array.GetAt(i) = *array.GetAt(i - 1);
+                *array.GetAt(i - 1) = tmp;
                 i -= 1;
             }
         }
@@ -7695,7 +7525,7 @@ pub unsafe fn CDefView__MoveSelectionOnAutoArrange_body(this: *mut CDefView, pt:
     let mut map = CLParamIndexMap::new();
     let mut i: INT = 0;
     while i < nCount {
-        let lParam: LPARAM = ((*this).m_ListView).GetItemData(array[i]);
+        let lParam: LPARAM = ((*this).m_ListView).GetItemData(*array.GetAt(i)) as LPARAM;
         map.Add(lParam, i);
         i += 1;
     }
@@ -7824,7 +7654,7 @@ pub unsafe fn CDefView__MergeToolbar_body(this: *mut CDefView) -> HRESULT {
 
     hr = IUnknown_QueryService(
         (*this).m_pShellBrowser as *mut IUnknown,
-        &IID_IExplorerToolbar,
+        &IID_IExplorerToolbar as *const _,
         core::ptr::addr_of!(IID_IExplorerToolbar), core::ptr::addr_of_mut!(ptb).cast(),
     );
     if hr < 0 {
@@ -8047,7 +7877,7 @@ pub unsafe extern "system" fn SHCreateShellFolderView(
 //     mii.fType = MF & ~mii.fState;
 //     mii.wID = Id;
 //     mii.dwTypeData = const_cast<LPWSTR>(String);
-//     mii.dwItemData = Data;
+//     mii.dwItemData = Data as ULONG_PTR;
 //     return InsertMenuItemW(hMenu, -1, TRUE, &mii);
 // }
 // static SIZE_T GetMenuItemDataById(HMENU hMenu, UINT Id)
@@ -8056,7 +7886,7 @@ pub unsafe extern "system" fn SHCreateShellFolderView(
 //     mii.cbSize = FIELD_OFFSET(MENUITEMINFOW, hbmpItem);
 //     mii.fMask = MIIM_DATA;
 //     if (GetMenuItemInfoW(hMenu, Id, FALSE, &mii))
-//         return mii.dwItemData;
+//         return mii.dwItemData as SIZE_T;
 //     else
 //         return 0;
 // }
@@ -8526,7 +8356,7 @@ pub unsafe extern "system" fn SHCreateShellFolderView(
 //     SHELLDETAILS sd;
 //     HRESULT hr;
 //
-//     sd.str.uType = !STRRET_WSTR; // Make sure "uninitialized" uType is not WSTR
+//     sd.str_.uType = !STRRET_WSTR; // Make sure "uninitialized" uType is not WSTR
 //     hr = GetDetailsByFolderColumn(NULL, FoldCol, sd);
 //     if (FAILED(hr))
 //         return hr;
@@ -9075,7 +8905,7 @@ pub unsafe extern "system" fn SHCreateShellFolderView(
 // {
 //     /* redirect to parent */
 //     if (m_FolderSettings.fFlags & (FWF_DESKTOP | FWF_TRANSPARENT))
-//         return SendMessageW(GetParent(), WM_ERASEBKGND, wParam, lParam);
+//         return SendMessageW(GetParent((*this).m_hWnd), WM_ERASEBKGND, wParam, lParam);
 //
 //     bHandled = FALSE;
 //     return 0;
@@ -9401,7 +9231,7 @@ pub unsafe extern "system" fn SHCreateShellFolderView(
 //     {
 //         WCHAR buf[MAX_PATH];
 //         SHELLDETAILS sd;
-//         sd.str.uType = !STRRET_WSTR;
+//         sd.str_.uType = !STRRET_WSTR;
 //         if (FAILED(GetDetailsByFolderColumn(NULL, foldCol, sd)))
 //             break;
 //         if (FAILED(StrRetToStrNW(buf, _countof(buf), &sd.str, NULL)))
@@ -9778,7 +9608,7 @@ pub unsafe extern "system" fn SHCreateShellFolderView(
 //     WORD wWidth, wHeight;
 //
 //     wWidth  = LOWORD(lParam);
-//     wHeight = HIWORD(lParam);
+//     wHeight = HIWORD(lParam as DWORD);
 //
 //     TRACE("%p width=%u height=%u\n", this, wWidth, wHeight);
 //
@@ -10032,7 +9862,7 @@ pub unsafe extern "system" fn SHCreateShellFolderView(
 //             break;
 //         case NM_CUSTOMDRAW:
 //             TRACE("-- NM_CUSTOMDRAW %p\n", this);
-//             return CDRF_DODEFAULT;
+//             return CDRF_DODEFAULT as LRESULT;
 //         case NM_RELEASEDCAPTURE:
 //             TRACE("-- NM_RELEASEDCAPTURE %p\n", this);
 //             break;
@@ -10124,7 +9954,7 @@ pub unsafe extern "system" fn SHCreateShellFolderView(
 //                 if (!m_ScheduledStatusbarUpdate && (m_iDragOverItem == -1 || m_pCurDropTarget == NULL))
 //                 {
 //                     m_ScheduledStatusbarUpdate = true;
-//                     PostMessage(SHV_UPDATESTATUSBAR, 0, 0);
+//                     PostMessageW((*this).m_hWnd, SHV_UPDATESTATUSBAR, 0, 0);
 //                 }
 //                 _DoFolderViewCB(SFVM_SELECTIONCHANGED, NULL/* FIXME */, NULL/* FIXME */);
 //             }
@@ -10206,7 +10036,7 @@ pub unsafe extern "system" fn SHCreateShellFolderView(
 //             INT cchLimit = 0;
 //             _DoFolderViewCB(SFVM_GETNAMELENGTH, (WPARAM)pidl, (LPARAM)&cchLimit);
 //             if (cchLimit)
-//                 ::SendMessageW(hEdit, EM_SETLIMITTEXT, cchLimit, 0);
+//                 ::SendMessageW(hEdit, EM_SETLIMITTEXT, cchLimit as WPARAM, 0);
 //             SHLimitInputEdit(hEdit, m_pSFParent);
 //             m_isEditing = TRUE;
 //             return FALSE;
@@ -10644,7 +10474,7 @@ pub unsafe extern "system" fn SHCreateShellFolderView(
 //     HRESULT hr = Read(pS, &cols, FIELD_OFFSET(PERSISTCOLUMNS, Columns));
 //     if (FAILED(hr))
 //         return hr;
-//     if (cols.Signature != PERSISTCOLUMNS::SIG || cols.Count > cols.MAXCOUNT)
+//     if (cols.Signature != PERSISTCOLUMNS::SIG || cols.Count > PERSISTCOLUMNS::MAXCOUNT)
 //         return HResultFromWin32(ERROR_INVALID_DATA);
 //     return Read(pS, &cols.Columns, sizeof(*cols.Columns) * cols.Count);
 // }
@@ -10786,7 +10616,7 @@ pub unsafe extern "system" fn SHCreateShellFolderView(
 // {
 //     SHELLSTATE ss;
 //     SHGetSetSettings(&ss, SSF_DOUBLECLICKINWEBVIEW | SSF_WIN95CLASSIC, FALSE);
-//     return ((m_FolderSettings.fFlags & FWF_SINGLECLICKACTIVATE) || (!ss.fDoubleClickInWebView && !ss.fWin95Classic))
+//     return ((m_FolderSettings.fFlags & FWF_SINGLECLICKACTIVATE) || (ss.fDoubleClickInWebView() == 0 && ss.fWin95Classic() == 0))
 //             ? (LVS_EX_TRACKSELECT | LVS_EX_ONECLICKACTIVATE) : 0;
 // }
 // HRESULT WINAPI CDefView::GetItemObject(UINT uItem, REFIID riid, LPVOID *ppvOut)
@@ -11100,8 +10930,8 @@ pub unsafe extern "system" fn SHCreateShellFolderView(
 //
 //     _DoFolderViewCB(SFVM_WINDOWCREATED, (WPARAM)m_hWnd, 0);
 //
-//     SetWindowPos(HWND_TOP, 0, 0, 0, 0, SWP_NOMOVE | SWP_NOSIZE | SWP_SHOWWINDOW);
-//     UpdateWindow();
+//     SetWindowPos((*this).m_hWnd, HWND_TOP, 0, 0, 0, 0, SWP_NOMOVE | SWP_NOSIZE | SWP_SHOWWINDOW);
+//     UpdateWindow((*this).m_hWnd);
 //
 //     if (!m_hMenu)
 //     {
@@ -11750,7 +11580,7 @@ pub unsafe extern "system" fn SHCreateShellFolderView(
 //     CLParamIndexMap map;
 //     for (INT i = 0; i < nCount; ++i)
 //     {
-//         LPARAM lParam = m_ListView.GetItemData(array[i]);
+//         LPARAM lParam = m_ListView.GetItemData(*array.GetAt(i));
 //         map.Add(lParam, i);
 //     }
 //

@@ -142,7 +142,7 @@ extern "C" {
 // win32k_sys glob (already declared there).
 
 // TAG_STRING ' RTS' (tags.h) -> little-endian bytes 'S','T','R',' '.
-const TAG_STRING: u32 = u32::from_le_bytes(*b"STR ");
+const TAG_STRING: u32 = u32::from_le_bytes(*b"STR "); // nolint: const-contradiction (' RTS' -- win32ss/user/ntuser/tags.h:3; freeldr's TAG_STRING is ' rtS')
 
 // ---- exported globals defined by keyboard.c (non-static -> #[no_mangle]) ----
 // gafAsyncKeyState/gKeyboardInfo are the sole definitions (keyboard.c.obj `B`).

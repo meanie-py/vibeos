@@ -95,7 +95,7 @@ const CCB_FLAG_MATCH_VOLUME_ID: u32 = 0x4000;
 const TAG_FILENAME_BUFFER: u32 = 0x6E746146; // 'Flfr' placeholder
 const TAG_DIRENT: u32 = 0x44746146; // 'Dirn' placeholder
 const FcbBad: u32 = 2;
-const IRP_CONTEXT_FLAG_WAIT: u32 = 0x02;
+const IRP_CONTEXT_FLAG_WAIT: u32 = 0x02;  // nolint: const-contradiction (fastfat's own flag set, fatstruc.h:1563)
 const IRP_CONTEXT_FLAG_WRITE_THROUGH: u32 = 0x04;
 
 // These constants are typical Windows/NT values; exact values may differ.

@@ -59,7 +59,7 @@ unsafe fn CopyString(Source: PCSTR) -> PCSTR {
     return Dest as PCSTR;
 }
 
-const TAG_STRING: u32 = u32::from_le_bytes(*b"rtSO");
+const TAG_STRING: u32 = u32::from_be_bytes(*b" rtS"); // nolint: const-contradiction (' rtS' -- freeldr/include/oslist.h:22; win32k's TAG_STRING is ' RTS')
 
 #[no_mangle]
 pub unsafe extern "C" fn InitOperatingSystemList(

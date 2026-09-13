@@ -3253,3 +3253,39 @@ The `BASE_STATIC_SERVER_DATA` shadow is a **snapshot** taken at connect, because
 to re-narrow on change. csrss fills it during server-DLL registration, before any client
 connects, so what the guest reads at startup is stable — but `NlsUserInfo.ulCacheUpdateCount` is
 one field csrss may bump later, and a 32-bit client will not see that bump.
+
+## Third-party stress guests
+
+The nine ladder guests each probe ONE mechanism on purpose, which is what makes them good
+regression detectors and bad discovery tools: they only look where we already knew to look.
+The stress guests are the opposite — large third-party C programs that never heard of us,
+doing what they normally do. Both are built on demand (they fetch their own source, nothing
+is vendored), so they are absent from a normal tree; that is why they live in `ladder.py`'s
+`OPTIONAL` table rather than `LADDER`, and why `media_optional_staged()` asks the MEDIA
+whether they are present instead of inferring it from serial.
+
+| guest | source | axis it stresses |
+|---|---|---|
+| `sqlite32` | `tools/stress/sqlite/build.sh` (SQLite 3.45) | DATA path: allocator churn under a real pager, Win32 file I/O with locking and truncation, long compute between syscalls |
+| `lua32` | `tools/stress/lua/build.sh` (Lua 5.4.7) | CONTROL path: `setjmp`/`longjmp` through error propagation, deep recursion after value-stack reallocation, and coroutine switching |
+
+**Why Lua specifically.** `fault32` already covers SEH, and it is easy to assume that covers
+non-local control flow — it does not. SEH unwinding and C `setjmp`/`longjmp` are different
+machinery, and only the latter is what an emulator's block cache has to invalidate correctly.
+Lua drives it constantly: `pcall`/`error` is a longjmp out of an arbitrarily deep interpreter
+frame, coroutine resume/yield switches between independent stacks, and rung 4 raises from a
+frame whose value stack has MOVED since it was entered. Nothing else in the ladder reaches any
+of that.
+
+**Ordering rule: the guest that can BUGCHECK goes LAST.** `sqlite32` is the registered arm64
+on-disk instability (roadmap: 0x1E / `RtlRaiseStatus+68`), and a guest that takes the machine
+down costs every guest launched after it its verdict — silently, because the harness sees a
+clean 9/9 parity pass and simply no line about the others. That is not hypothetical: it is what
+happened on lua32's first arm64 run. While that bug is open, `sqlite32` stays last in
+`winlogon.rs`.
+
+**Verdict contract**, same as every other guest: `0x600D` on PASS, a distinct `0xBADn` per rung
+so a red run names the rung on serial rather than just "it died". Verify a new guest's rung
+arithmetic on the HOST first — build the same third-party sources natively against a few lines
+of Win32 shim and run it. lua32's rung 1 shipped a hand-computed expected value that was off by
+one; a 17ms host run caught it, where a boot would have cost minutes and blamed the emulator.

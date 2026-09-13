@@ -69,8 +69,8 @@ const RTL_DUP_ALLOCATE_NULL_STRING: u32 = 2;
 // C: tag.h `#define TAG_USTR 'RTSU'`. from_le_bytes(*b"RTSU") is the REVERSE of
 // that literal -- the byte string and the fn must be chosen as a PAIR.
 const TAG_USTR: u32 = u32::from_be_bytes(*b"RTSU");
-const TAG_ASTR: u32 = u32::from_le_bytes(*b"RTSA");
-const TAG_OSTR: u32 = u32::from_le_bytes(*b"RTSO");
+const TAG_ASTR: u32 = u32::from_be_bytes(*b"RTSA"); // C literal 'RTSA' -- ntoskrnl/include/internal/tag.h
+const TAG_OSTR: u32 = u32::from_be_bytes(*b"RTSO"); // C literal 'RTSO' -- sdk/lib/rtl/rtlp.h
 
 // Allocator routing — three distinct link contexts, selected by the
 // `kernel` feature + `target_os`:
@@ -2343,7 +2343,7 @@ pub unsafe extern "system" fn RtlCopySidAndAttributesArray(
 ///
 /// SID layout (winnt.h SID): 1 byte Revision + 1 byte SubAuthorityCount
 /// + 6 bytes IdentifierAuthority + N×4 SubAuthorities = 8 + N*4 bytes.
-const TAG_SID: u32 = u32::from_le_bytes(*b"pSid"); // 'diSp' (sdk/lib/rtl/sid.c:15)
+const TAG_SID: u32 = u32::from_le_bytes(*b"pSid"); // nolint: const-contradiction ('diSp' -- sdk/lib/rtl/sid.c:15; ntoskrnl's TAG_SID is 'iSeS')
 #[no_mangle]
 pub unsafe extern "system" fn RtlAllocateAndInitializeSid(
     id_auth: *const u8,

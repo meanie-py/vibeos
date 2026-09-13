@@ -618,7 +618,7 @@ const STATUS_NO_MEDIA_IN_DEVICE: NTSTATUS = 0xC0000013u32 as i32 ;
 // ddk/srb.h:55 `#define SP_UNTAGGED ((UCHAR) ~0)` == 0xFF. Not ULONG_MAX: the
 // neighbouring SP_UNINITIALIZED_VALUE is the ((ULONG) ~0) one.
 const SP_UNTAGGED: u32 = 0xFF;
-const SRB_SIMPLE_TAG_REQUEST: u16 = 0x08;
+const SRB_SIMPLE_TAG_REQUEST: u16 = 0x20; // srb.h
 const CLASS_SRBEX_NO_SRBEX_DATA_BUFFER_SIZE: u32 = 0x60;
 const DEV_POWER_PROTECTED: i32 = 0x10;
 const SCSIOP_SYNCHRONIZE_CACHE: u8 = 0x35;
@@ -2247,7 +2247,7 @@ pub unsafe extern "C" fn DiskModeSelect(
     // ddk/srb.h:108 == 0x28. 0xF0 was an INVENTED value labelled "placeholder";
     // it is not any SRB_FUNCTION_* and compiled perfectly happily.
     const SRB_FUNCTION_STORAGE_REQUEST_BLOCK: u8 = 0x28;
-    const SRB_SIGNATURE: u32 = 0x53524254;              // 'SRBT'
+    const SRB_SIGNATURE: u32 = 0x53524258; // 'SRBX', ddk/srb.h:616
     const STORAGE_REQUEST_BLOCK_VERSION_1: u32 = 1;
     const SRB_FUNCTION_EXECUTE_SCSI: u32 = 0x00;        // placeholder
     const STOR_ADDRESS_TYPE_BTL8: u16 = 1;              // scsi.h:3571

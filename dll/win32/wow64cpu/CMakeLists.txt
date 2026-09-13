@@ -51,7 +51,8 @@ set(_wow64_ladder
     ${REACTOS_SOURCE_DIR}/build-fex-hello/marshal32.exe
     ${REACTOS_SOURCE_DIR}/build-fex-hello/fault32.exe
     ${REACTOS_SOURCE_DIR}/build-fex-hello/thread32.exe
-    ${REACTOS_SOURCE_DIR}/build-fex-hello/selfmod32.exe)
+    ${REACTOS_SOURCE_DIR}/build-fex-hello/selfmod32.exe
+    ${REACTOS_SOURCE_DIR}/build-fex-hello/reg32.exe)
 
 # Best-effort robustness extras. Their pass criterion is "still running after
 # 8-10s", which ladder.py explicitly does NOT check, so a missing one must not
@@ -87,6 +88,10 @@ set(_wow64_extras
     # this one legitimately does not exist most of the time; ladder.py grades it
     # from its OPTIONAL table instead.
     ${REACTOS_SOURCE_DIR}/tools/stress/sqlite/sqlite32.exe
+    # lua32: the second third-party STRESS guest (real Lua 5.4,
+    # tools/stress/lua/build.sh). Same deal as sqlite32 -- built on demand,
+    # machine-verdicted (0x600D), graded from ladder.py's OPTIONAL table.
+    ${REACTOS_SOURCE_DIR}/tools/stress/lua/lua32.exe
     )
 
 set(_wow64_guest_ok TRUE)

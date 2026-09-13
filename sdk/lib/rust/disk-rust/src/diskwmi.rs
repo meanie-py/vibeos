@@ -283,13 +283,15 @@ const IOCTL_SCSI_MINIPORT_EXECUTE_OFFLINE_DIAGS: u32 = 0x05001C;
 const IOCTL_SCSI_MINIPORT_READ_SMART_ATTRIBS: u32 = 0x050020;
 const IOCTL_SCSI_MINIPORT_READ_SMART_THRESHOLDS: u32 = 0x050024;
 const IOCTL_SCSI_MINIPORT_READ_SMART_LOG: u32 = 0x050028;
-const IOCTL_SCSI_MINIPORT_WRITE_SMART_LOG: u32 = 0x05002C;
+const IOCTL_SCSI_MINIPORT_WRITE_SMART_LOG: u32 = 0x1B050C; // scsi.h ((FILE_DEVICE_SCSI<<16)+0x050c)
 const IOCTL_SCSI_MINIPORT_IDENTIFY: u32 = 0x050030;
 const SRB_TYPE_STORAGE_REQUEST_BLOCK: u8 = 1; // srb.h:664
 // ddk/srb.h:108 == 0x28. This constant is WRITTEN into srbEx.Function here and TESTED
 // against a second, differently-wrong copy below -- the test could never match.
 const SRB_FUNCTION_STORAGE_REQUEST_BLOCK: u8 = 0x28;
-const SRB_SIGNATURE: u32 = 0x53524253;
+// 0x53524258 ('SRBX'), ddk/srb.h:616 -- storport validates this field, and NEITHER of
+// the two values this crate invented ('SRBS' here, 'SRBT' in disk.rs) matches it.
+const SRB_SIGNATURE: u32 = 0x53524258;
 const STORAGE_REQUEST_BLOCK_VERSION_1: u32 = 1;
 const SRB_FUNCTION_IO_CONTROL: u32 = 2;
 const SRB_FLAGS_DATA_IN: u32 = 0x40;
@@ -539,7 +541,7 @@ pub unsafe extern "system" fn DiskWriteSmartLog(
     const SMART_LOG_SECTOR_SIZE: u32 = 512;
     const DISK_TAG_SMART: u32 = 0x61446353; // 'aDcS' (disk.h)
     const NonPagedPool: u32 = 0;
-    const IOCTL_SCSI_MINIPORT_WRITE_SMART_LOG: u32 = 0x001BD00C;
+    const IOCTL_SCSI_MINIPORT_WRITE_SMART_LOG: u32 = 0x1B050C; // scsi.h ((FILE_DEVICE_SCSI<<16)+0x050c)
     const SMART_CMD: u8 = 0xB0;
     const SMART_WRITE_LOG: u8 = 0xD6;
     const APC_LEVEL: u32 = 1;

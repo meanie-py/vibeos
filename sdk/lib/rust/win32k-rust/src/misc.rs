@@ -327,7 +327,7 @@ pub unsafe extern "C" fn UserGetLanguageID() -> USHORT {
 }
 
 unsafe fn user_get_language_id_impl() -> USHORT {
-    const TAG_STRING: ULONG = 0x6e727453;
+    const TAG_STRING: ULONG = u32::from_be_bytes(*b" RTS"); // nolint: const-contradiction (' RTS' -- win32ss/user/ntuser/tags.h:3; freeldr's TAG_STRING is ' rtS')
 
     let mut KeyHandle: HANDLE = core::ptr::null_mut();
     let mut ObAttr: ntkrnl_sys::ddk::_OBJECT_ATTRIBUTES = core::mem::zeroed();
@@ -932,7 +932,7 @@ unsafe fn IntSafeCopyUnicodeString_impl(
     Source: PUNICODE_STRING,
 ) -> NTSTATUS {
 
-    const TAG_STRING: u32 = 0x6d727473; // 'strm'
+    const TAG_STRING: u32 = u32::from_be_bytes(*b" RTS"); // nolint: const-contradiction (' RTS' -- win32ss/user/ntuser/tags.h:3; freeldr's TAG_STRING is ' rtS')
 
     let mut Status: NTSTATUS;
     let Src: PWSTR;
@@ -1004,7 +1004,7 @@ unsafe fn IntSafeCopyUnicodeStringTerminateNULL_impl(
     Source: PUNICODE_STRING,
 ) -> NTSTATUS {
 
-    const TAG_STRING: u32 = u32::from_le_bytes(*b"RTSU");
+    const TAG_STRING: u32 = u32::from_be_bytes(*b" RTS"); // nolint: const-contradiction (' RTS' -- win32ss/user/ntuser/tags.h:3; freeldr's TAG_STRING is ' rtS')
 
     let mut Status: NTSTATUS;
     let mut Src: PWSTR;

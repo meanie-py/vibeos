@@ -17,7 +17,7 @@ extern "C" {
     static ValidKernelPteLocal: MMPTE;
 }
 
-const MI_HYPERSPACE_PTES: PFN_NUMBER = 256;
+const MI_HYPERSPACE_PTES: PFN_NUMBER = 0xFF; // internal/<arch>/mm.h (256 - 1)
 
 #[no_mangle]
 pub static mut MmFirstReservedMappingPte: PMMPTE = core::ptr::null_mut();

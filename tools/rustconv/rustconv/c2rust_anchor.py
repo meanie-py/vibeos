@@ -75,6 +75,33 @@ def _find_db_entry(c_file: Path, arch: str | None = None) -> tuple[dict, Path] |
     return None
 
 
+#: Function ATTRIBUTES that c2rust 0.22.1's Clang AST exporter cannot map. Each one
+#: makes the exporter drop the TYPE of the declaration it sits on -- "Missing type
+#: <id> for node: AstNode { tag: TagFunctionDecl ... }" followed by "Exported Clang
+#: AST was invalid" -- and one such decl anywhere in the include closure kills the
+#: whole transpile. They come from msvcrt's PRIVATE headers, so every msvcrt TU
+#: inherits them and the failure looked like "c2rust refuses the SDK include
+#: closure". It is not the closure: it is exactly these three macros.
+#:
+#: Measured 2026-09-13 on dll/win32/msvcrt: 32 invalid-AST sites -> 26 with
+#: __WINE_MALLOC neutralised -> 0 with the two format attrs as well, and the TU
+#: transpiled. Across the module: 2/37 before, 35/37 after. The two stragglers
+#: (except.c, cpp.c) fail on the SEPARATE, already-documented `__label__` class --
+#: they use wine's __TRY/__EXCEPT_CTX, which under _USE_DUMMY_PSEH=1 opens a block
+#: with a GCC local-label declaration that c2rust does not support.
+#:
+#: Neutralising them is safe for the ANCHOR because they carry no semantics we
+#: translate: `malloc` and `format(printf/scanf)` are optimiser and -Wformat hints,
+#: not part of the ABI or the body. The real build is untouched -- these -D only
+#: reach c2rust. They work because the macros are `#ifndef`-guarded in
+#: dll/win32/msvcrt/include/corecrt.h (that guard is the one C change this needed).
+_ATTR_NEUTRALIZERS = (
+    "-D__WINE_MALLOC=",
+    "-D__WINE_CRT_PRINTF_ATTR(a,b)=",
+    "-D__WINE_CRT_SCANF_ATTR(a,b)=",
+)
+
+
 def _extract_clang_flags(entry: dict) -> list[str]:
     """Pull --target, -D, -I, -isystem/-include from the db command; drop the
     multi-job triggers (-o/-c/-M*) that make clang tooling reject the command."""
@@ -242,6 +269,8 @@ def _transpile_text(
             str(out_dir),
             str(c_file.resolve()),
             "--",
+            # BEFORE the db flags, so a -D of the same name in the db still wins.
+            *_ATTR_NEUTRALIZERS,
             *flags,
         ]
         try:

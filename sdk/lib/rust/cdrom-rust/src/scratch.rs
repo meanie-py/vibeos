@@ -82,7 +82,7 @@ const TRACE_LEVEL_ERROR: u32 = 2; // storswtr.h:26-30
 const TRACE_FLAG_GENERAL: u32 = 0; // storswtr.h:80-98 (an ORDINAL enum, not a bitmask)
 
 const DPFLTR_ERROR_LEVEL: u32 = 0;
-const DPFLTR_CDROM_ID: u32 = 0x52; // DPFLTR component id for cdrom
+const DPFLTR_CDROM_ID: u32 = 7; // DPFLTR component id for cdrom
 
 const IRP_MJ_SCSI: u32 = 0x0F;
 const IOCTL_SCSI_EXECUTE_IN: u32 = 0x1b0011;  // was 0x0001D004 (LLM-invented); bindgen-correct

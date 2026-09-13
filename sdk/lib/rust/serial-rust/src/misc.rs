@@ -51,7 +51,7 @@ pub unsafe extern "system" fn SerialReceiveByte(
 
     const SR_LSR_DATA_RECEIVED: ::core::ffi::c_int = 0x01;
     const SR_IER_DATA_RECEIVED: ::core::ffi::c_int = 0x01;
-    const DPFLTR_SERIAL_ID: ::core::ffi::c_int = 53; // DPFLTR_SERIAL_ID
+    const DPFLTR_SERIAL_ID: ::core::ffi::c_int = 39; // DPFLTR_SERIAL_ID
     const DPFLTR_INFO_LEVEL: ULONG = 3; // DPFLTR_INFO_LEVEL
 
     let mut DeviceExtension: PSERIAL_DEVICE_EXTENSION =
@@ -123,7 +123,7 @@ pub unsafe extern "system" fn SerialSendByte(
 ) {
     const SR_LSR_THR_EMPTY: ::core::ffi::c_int = 0x20;
     const SR_IER_THR_EMPTY: ::core::ffi::c_int = 0x02;
-    const DPFLTR_SERIAL_ID: ::core::ffi::c_int = 81;
+    const DPFLTR_SERIAL_ID: ::core::ffi::c_int = 39;
     const DPFLTR_INFO_LEVEL: ULONG = 3;
 
     let mut DeviceExtension: PSERIAL_DEVICE_EXTENSION = core::ptr::null_mut();

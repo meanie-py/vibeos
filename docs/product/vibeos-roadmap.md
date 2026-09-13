@@ -544,6 +544,67 @@ land; date every addition.** Source docs live in `docs/engineering/archive/`.
   the pin should re-run `rustc --target i686-pc-windows-gnu -C target-feature=-sse,-sse2` first;
   it is a one-command check.
 
+- **arm64 WoW64 guests fault INSIDE FEX's code cache — OPEN, and it is the best candidate
+  yet for the "unstable class" below** (2026-09-13). Found by `lua32.exe`, the second
+  third-party stress guest (`tools/stress/lua/build.sh`), on its first arm64 ladder run.
+  Two different guests in the SAME boot died with `c0000005`, and both faulting PCs resolve
+  into the same FEXCore subsystem:
+
+        lua32.exe   PC=0x0048FB88  base=0x480000  RVA 0xFB88
+                    -> FEXCore::LookupCache::FindBlock
+                       ESR=0x92000006 (data abort, translation fault), addr 0x7FFFBEFB7858
+        file32.exe  PC=0x00420FD0  base=0x410000  RVA 0x10FD0
+                    -> FEXCore::Context::ContextImpl::InvalidateThreadCachedCodeRange
+                       ESR=0x92000004, then 0x56000000
+
+  One looks a block up in the cache; the other invalidates a cached code range. That is one
+  subsystem, approached from its two opposite sides, which is what a corrupted or raced code
+  cache looks like -- and a racy code cache produces exactly the *variety* of nondeterministic
+  outcomes recorded in the entry below (lock conflict / execute-at-NULL / BUGCHECK / hang)
+  rather than one clean repro. Treat those two entries as possibly the same root.
+
+  **Why the symbolication is trustworthy here** (it is the whole finding, so it was checked
+  rather than assumed): the two processes loaded `libwow64fex.dll` at DIFFERENT bases --
+  0x480000 and 0x410000, read off each process's own `CPU layer libwow64fex.dll loaded @` line,
+  not guessed -- and two independent base subtractions both landing in FEXCore's cache code is
+  not something a wrong base produces; a wrong base yields unrelated symbols. Resolved against
+  `build-fex-arm64/Bin/libwow64fex.dll`, which is the exact binary `mkramdisk.sh` stages
+  (PE ImageBase 0x180000000). **Do not symbolicate this against a rebuilt FEX**: a fresh
+  `tools/fex/build-fex.sh` of the same vendored source produces a DIFFERENT binary
+  (md5 differs), so its addresses do not transfer.
+
+  `file32.exe` is a PARITY guest that passes normally, so this is not a stress-guest-only
+  problem and not a lua32 defect -- lua32 merely reached it first and made it legible. It also
+  means a red `file32` on arm64 should be read as a suspected code-cache fault before anything
+  file-related.
+
+  **Size correlation, and it reframes the hypothesis.** lua32 was added expecting its
+  `setjmp`/`longjmp` rungs to stress the block cache -- but it faults BEFORE printing
+  `[lua32] start`, so it never reached `main` and no rung ran. What the two failing guests
+  actually have in common is SIZE: `lua32` 509K and `sqlite32` 1.1M, against <=19K for every
+  parity guest that passes (hello32 3K ... marshal32 19K). That is a 25-55x gap with nothing in
+  between, which makes code-cache capacity/eviction on a large image a better candidate than any
+  control-flow pattern. Cheap disconfirming test for whoever picks this up: build a guest that
+  is LARGE but control-flow trivial (pad hello32 to ~1M of never-executed code, or link Lua and
+  call nothing). If it faults, this is about image size and cache pressure; if it passes, size is
+  a red herring and the trigger is what the big guests DO. Note the one exception that keeps this
+  honest: `file32` is 8K and faulted too -- but at a different site
+  (`InvalidateThreadCachedCodeRange`), earlier in the same boot, and it passes in other boots, so
+  it may be the first corruption rather than a counterexample to the size pattern.
+
+  **Next step**: the fault is INSIDE vendored FEXCore -- but that locates the faulting code, not
+  the cause, and the two must not be conflated. "We did not patch the file, so the bug is
+  upstream's" is an unwarranted inference, and this tree has just produced the counterexample:
+  every blocker on running x64 guests turned out to be OURS, in a tree where FEX is equally
+  unmodified (`docs/engineering/wow64-x64-guest-design.md`). So "what do we HAND FEXCore" is as
+  live a hypothesis as "FEXCore has a bug" -- the guest binaries we build, the memory layout we
+  give them, how our loader stages them, our threading. Keep both doors open. Either way the
+  useful work is to characterise the trigger from our side -- lua32's rungs are ordered by control-flow violence (`pcall`/`error` longjmp, then
+  deep recursion after stack reallocation, then coroutine switching), so bisecting which rung
+  first faults localises it to a specific invalidation pattern. lua32 currently faults before
+  printing `[lua32] start` at all, which points at process/thread startup rather than at any
+  rung, so start there.
+
 - **A 32-bit guest doing real file I/O BUGCHECKs the arm64 kernel — OPEN** (2026-09-13).
   Found on the first writable-volume run of `sqlite32.exe`, the third-party stress guest
   (`tools/stress/sqlite/build.sh`). Real SQLite creating and writing a database on arm64:
@@ -578,6 +639,36 @@ land; date every addition.** Source docs live in `docs/engineering/archive/`.
   determinism has NOT been established either way -- re-run this on a quiet host before
   drawing conclusions. What IS solid: on-disk SQLite on arm64 does not survive, and one of
   the ways it fails takes the kernel down.
+  **REPRODUCED (2026-09-13, later): the BUGCHECK arm is not a one-off.** A separate arm64
+  ladder boot on a different build hit the SAME stop with the SAME parameters -- 0x1E,
+  P1 `0xC0000098` STATUS_FILE_INVALID, P2 resolving to `RtlRaiseStatus+68` at
+  `sdk/lib/rust/rtl-diag/src/exception.rs:48` -- again immediately after `NtOpenFile` on
+  `sqlite32.db` returned `00000000`. So of the four outcomes, this one at least recurs
+  identically, which makes it the arm to chase first. Two caveats that keep this honest:
+  the host was again NOT quiet (load 45-50 on 24 cores), so this does not settle the
+  starvation question; and two samples is a recurrence, not a determinism claim -- the owed
+  measurement is still a quiet-host run.
+  **Lead: the raiser is almost certainly `fastfat-rust`, and the stop is SECOND-ORDER.**
+  `STATUS_FILE_INVALID` is not a status the kernel raises casually -- grepping every raiser in
+  the tree, the reachable ones on this path are `FatVerifyFcb` (`FcbBad`, and
+  `FcbNeedsToBeVerified` that fails to re-verify) and `FatVerifyVcb` (`VcbBad`) in
+  `sdk/lib/rust/fastfat-rust/src/verfysup.rs`, plus the cdfs equivalents. arm64 boots a FAT
+  ramdisk (`mkramdisk.sh` stages with mtools) so fastfat is the live filesystem; amd64's livecd
+  is ISO/cdfs AND read-only, which is the same reason the guest takes its in-memory fallback
+  there. **Every one of those raisers fires because the Fcb/Vcb was ALREADY marked bad**, so
+  the BUGCHECK is the symptom of an earlier I/O failure, not the failure itself -- which means
+  a GDB break on `RtlRaiseStatus` lands one whole event too late and will show a stack that
+  merely reports the damage. Break instead on the FIRST transition to `FcbBad`/`VcbBad`
+  (`FatDetermineAndMarkFcbCondition`, `FatMarkFcbCondition`), the same "instrument the first
+  event, not the loudest one" shape the stock-app NULL cascade below needs. This is a LEAD from
+  reading raisers, NOT an observed stack: nothing has yet confirmed the fault goes through
+  fastfat at all.
+
+  **Ordering consequence, now fixed:** this guest can take the whole boot down, so anything
+  winlogon launches after it loses its verdict silently. That is exactly what happened when
+  `lua32` was added behind it -- the run graded 9/9 parity PASS and said nothing about lua32,
+  because the machine was gone. `sqlite32` is now LAST among the optional guests
+  (`winlogon.rs`); keep it there while this bug is open.
 
 - **Stock 32-bit GUI apps cascade into an execute-at-NULL fault under WoW64 — OPEN**
   (2026-09-13). Found while attributing a guest-fault count in a `smoke --arch amd64 --ladder`

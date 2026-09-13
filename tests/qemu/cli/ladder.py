@@ -28,14 +28,14 @@ survival) and report a machine-readable verdict, so all this has to do is
 collect them and insist every one is present and passing.
 
 WHAT THIS DOES **NOT** COVER, stated so the flag is not read as more than it is.
-winlogon runs the nine self-verifying guests FIRST and then a longer robustness
+winlogon runs the self-verifying guests FIRST and then a longer robustness
 ladder — winmine, doom, and ~15 stock i386 applets. The watch below stops the
-moment the ninth guest reports, so none of that is checked here. That is
+moment the last parity guest reports, so none of that is checked here. That is
 deliberate rather than an oversight: those launches are "silent no-op unless
 staged" and their pass criterion is "still running after 8-10s", which is not a
 machine-checkable verdict in the sense this file means. Covering them properly
 needs them to grow real verdicts first. Until then, a green `--ladder` says the
-nine guests passed, not that the stock applets did.
+parity guests passed, not that the stock applets did.
 """
 
 from __future__ import annotations
@@ -47,7 +47,7 @@ from pathlib import Path
 
 # guest -> the exit code that means PASS. gui32 reports 0x600e (it is the
 # GDI/draw rung and has its own verdict code); everything else uses 0x600d.
-# These 9 are the arches' SHARED ladder — the parity claim is that the same
+# These are the arches' SHARED ladder — the parity claim is that the same
 # guest passes on a JIT host and on a native compat-mode host, whose arrival
 # paths share nothing below wow64.dll. arm64-only extras (fexprobe,
 # wow64probe) are reported when seen but are not required, so this table stays
@@ -62,6 +62,7 @@ LADDER: dict[str, int] = {
     "thread32": 0x600D,
     "fault32": 0x600D,
     "selfmod32": 0x600D,
+    "reg32": 0x600D,
 }
 
 # Optional guests: reported when seen, never required. This table is the PARITY
@@ -72,6 +73,7 @@ LADDER: dict[str, int] = {
 # fail for a guest nobody built.
 OPTIONAL: dict[str, int] = {
     "sqlite32": 0x600D,
+    "lua32": 0x600D,
 }
 
 # [WINLOGON] selfmod32.exe exit = 0x600d (0x600D = PASS)
@@ -84,8 +86,16 @@ _VERDICT = re.compile(r"\[WINLOGON\] ([A-Za-z0-9_]+)\.exe exit = 0x([0-9a-fA-F]+
 # the exact class of false signal this file exists to remove.
 LADDER_TIMEOUT_SECONDS = 420.0
 
-# Extra drain granted once an optional guest is seen to launch. Matches the
-# winlogon watch window for the slowest one (sqlite32: 300s) plus slack.
+# Extra drain granted per optional guest seen to launch. Matches the winlogon
+# watch window each of them gets (300s) plus slack.
+#
+# PER GUEST, and granted once each -- not one flat extension for the whole set.
+# It was a single one-shot bool while sqlite32 was the only optional guest, which
+# was correct for a set of one and silently wrong the moment lua32 joined: two
+# guests budgeted 300s apiece in winlogon would have shared a single 360s
+# extension, so a slow second guest gets cut off mid-run and reads as "staged but
+# never reported" -- a false RED, and the most expensive kind, because the guest
+# it accuses did nothing wrong.
 OPTIONAL_EXTRA_SECONDS = 360.0
 
 
@@ -227,7 +237,7 @@ def media_optional_staged(repo: Path, arch: str) -> list[str]:
     it added this: the serial is not a reliable source here. An optional guest runs
     AFTER the parity set, so the drain can finish before its launch line is even
     emitted, and a hung guest then reads as absent — that silently passed a run as
-    "9/9 guests PASS" while sqlite32 was wedged. The media knows before the boot
+    "N/N guests PASS" while sqlite32 was wedged. The media knows before the boot
     starts.
 
     Its original form read only `<stem>.cmake.lst` and documented that it could not
@@ -273,6 +283,20 @@ def gate_decision(repo: Path, arch: str) -> tuple[list[str], bool, str]:
     # silently. That cost 45 minutes tonight. The remedy differs by mechanism, so
     # name the one that matches this media rather than the x86 one everywhere.
     built = sorted(g for g in LADDER if (repo / "build-fex-hello" / f"{g}.exe").is_file())
+    # Partially built is its own state, and restaging cannot fix it. The CMake
+    # ladder list is all-or-nothing (`_wow64_guest_ok`), so ONE missing guest
+    # keeps every other one off the media -- the same failure doom caused once
+    # by being absent. A tree that predates a newly added guest lands here, and
+    # telling it to restage would send it round a build that changes nothing.
+    if built and len(built) < len(LADDER):
+        absent = ", ".join(f"{g}.exe" for g in LADDER if g not in built)
+        return (
+            [],
+            False,
+            f"{len(built)}/{len(LADDER)} ladder guests built — {absent} missing, and "
+            f"staging is all-or-nothing, so NOTHING is staged; build the guests with: "
+            f"tools/fex/build-hello-compute.sh",
+        )
     if built:
         fix = (
             "VIBEOS_FEX=1 ./vibeos-cli build --arch arm64"
@@ -333,15 +357,16 @@ def watch(vm, seconds: float = LADDER_TIMEOUT_SECONDS, seen: str = "") -> str:
     # budget: it is third-party code doing real work under emulation, so it is
     # slow by nature, and charging it to the parity budget is what turned a
     # green ladder into a fake selfmod32 failure the first time one was added.
-    extended = False
+    extended: set[str] = set()
     while time.monotonic() < deadline:
         buf += vm.serial.read_available(timeout=0.5) or ""
         pending = _optional_in_flight(buf)
         if all(m in buf for m in need) and not pending:
             break
-        if pending and not extended:
-            deadline += OPTIONAL_EXTRA_SECONDS
-            extended = True
+        for g in pending:
+            if g not in extended:
+                deadline += OPTIONAL_EXTRA_SECONDS
+                extended.add(g)
     return buf
 
 

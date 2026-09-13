@@ -24,10 +24,14 @@ pub unsafe extern "C" fn SampCreateServerSD(
     let mut RelSDSize: ULONG = 0;
     let mut Status: NTSTATUS = STATUS_SUCCESS;
 
-    const SAM_SERVER_READ: u32 = 0x00020001;
-    const SAM_SERVER_EXECUTE: u32 = 0x00020008;
+    // ntsam.h:99-117. SAM_SERVER_CREATE_DOMAIN is 0x0008, not 0x0004 -- at 0x0004
+    // it COLLIDED with SAM_SERVER_INITIALIZE below, so every
+    // `SAM_SERVER_CREATE_DOMAIN | SAM_SERVER_INITIALIZE` in this file collapsed
+    // to a single bit and the ACE granted one right where two were intended.
+    const SAM_SERVER_READ: u32 = 0x00020010; // STANDARD_RIGHTS_READ | ENUMERATE_DOMAINS
+    const SAM_SERVER_EXECUTE: u32 = 0x00020021; // STANDARD_RIGHTS_EXECUTE | CONNECT | LOOKUP_DOMAIN
     const SAM_SERVER_ALL_ACCESS: u32 = 0x000F003F;
-    const SAM_SERVER_CREATE_DOMAIN: u32 = 0x0004;
+    const SAM_SERVER_CREATE_DOMAIN: u32 = 0x0008;
     // ddk/ntsam.h:100-101. Both were shifted one bit left of the real values.
     const SAM_SERVER_INITIALIZE: u32 = 0x0004;
     const SAM_SERVER_SHUTDOWN: u32 = 0x0002;
@@ -477,13 +481,15 @@ pub unsafe extern "C" fn SampCreateAccountDomainSD(ServerSd: *mut PSECURITY_DESC
     let mut RelSDSize: ULONG = 0;
     let mut Status: NTSTATUS = STATUS_SUCCESS;
 
+    // ntsam.h:33-72. CREATE_USER (0x10) and CREATE_GROUP (0x20) were SWAPPED,
+    // so every ACE naming one granted the other.
     const DOMAIN_READ: ULONG = 0x00020084;
-    const DOMAIN_EXECUTE: ULONG = 0x00020005;
+    const DOMAIN_EXECUTE: ULONG = 0x00020301; // STANDARD_RIGHTS_EXECUTE | READ_PASSWORD_PARAMETERS | LIST_ACCOUNTS | LOOKUP
     const DOMAIN_ALL_ACCESS: ULONG = 0x000F07FF;
-    const DOMAIN_CREATE_GROUP: ULONG = 0x0010;
-    const DOMAIN_CREATE_USER: ULONG = 0x0020;
+    const DOMAIN_CREATE_USER: ULONG = 0x0010;
+    const DOMAIN_CREATE_GROUP: ULONG = 0x0020;
     const DOMAIN_CREATE_ALIAS: ULONG = 0x0040;
-    const SAM_SERVER_CREATE_DOMAIN: ULONG = 0x0004;
+    const SAM_SERVER_CREATE_DOMAIN: ULONG = 0x0008;
     // ddk/ntsam.h:101 -- INITIALIZE is 0x04 (0x01 is SAM_SERVER_CONNECT).
     const SAM_SERVER_INITIALIZE: ULONG = 0x0004;
     const SAM_SERVER_SHUTDOWN: ULONG = 0x0002;
@@ -990,12 +996,17 @@ pub unsafe extern "C" fn SampCreateGroupSD(
     let mut RelSDSize: ULONG = 0;
     let mut Status: NTSTATUS = STATUS_SUCCESS;
 
-    const GROUP_LIST_MEMBERS: ULONG = 0x0004;
-    const GROUP_READ_INFORMATION: ULONG = 0x0008;
+    // ntsam.h:75-97. This family had been PERMUTED into the ALIAS_* numbering
+    // (ntsam.h:9-13), which is a different set of rights on a different object
+    // type. GROUP_ALL_ACCESS happened to come out right because it is the OR of
+    // all five bits and a permutation preserves that -- which is exactly why a
+    // whole-mask check cannot detect this class.
+    const GROUP_READ_INFORMATION: ULONG = 0x0001;
+    const GROUP_WRITE_ACCOUNT: ULONG = 0x0002;
+    const GROUP_ADD_MEMBER: ULONG = 0x0004;
+    const GROUP_REMOVE_MEMBER: ULONG = 0x0008;
+    const GROUP_LIST_MEMBERS: ULONG = 0x0010;
     const GROUP_ALL_ACCESS: ULONG = 0x000F0000 | 0x0001 | 0x0002 | 0x0004 | 0x0008 | 0x0010;
-    const GROUP_REMOVE_MEMBER: ULONG = 0x0010;
-    const GROUP_ADD_MEMBER: ULONG = 0x0002;
-    const GROUP_WRITE_ACCOUNT: ULONG = 0x0001;
 
     'done: loop {
         Status = RtlAllocateAndInitializeSid(
