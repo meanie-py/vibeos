@@ -5320,6 +5320,16 @@ the opposite of harmless — `INCONCLUSIVE` does not excuse one lane, it raises 
 at `queue.py:901` and leaves **every** queued submission queued, stalling the whole train
 (the DISK_ADMISSION_FAIL tarpit, fixed in `4a19a7f7ad4`). Trading "1 lane in 8 wrongly
 rejected" for "the drain stalls every time it fires" is a worse deal, not a safer one.
+And the set is not merely the wrong lever, it is an inoperable one: `gate.py:319` assigns
+`"classification": "" if ok else "CONFORMANCE_FLAKE"` — a **constant**, with
+`"retryable": not ok` beside it. A regression that reproduces identically 3/3 carries the same
+string as a coin flip, so the queue cannot distinguish them by classification at all and no
+membership change can recover a signal that was never in the field. The discriminator that
+does exist is thrown away: the retry loop stops at the first GREEN (`gate.py:1146-1148`), so
+it only ever asks "was this attempt red", never "red the same way" — which is why independent
+intermittents COMPOSE (one real gate burned its budget on ExPools, then NpfsConnect, then
+ExPools, and the final verdict shows none of that disagreement). Per-attempt `salient` is
+already captured at `gate.py:314`.
 
 **The generalisation, and it is not "be careful with greps":** `probes_missing_from_media` was
 the RIGHT tool for its own question — *is this string compiled in* (`--require-probe`), where a
