@@ -98,6 +98,30 @@ OURS_ON_LINK_LINE = {
     "wine": Path("sdk/lib/3rdparty/libwine/CMakeFiles/wine.dir"),
 }
 
+#: ucrtbase's OWN C -- printf.c, stubs.c and the generated ucrtbase_stubs.c. Kept
+#: SEPARATE from OURS_ON_LINK_LINE because that set must stay exactly ucrtbase's
+#: link libraries (test_the_authority_set_is_the_whole_link_line_except_ucrt pins
+#: it against the CMake, so drift is caught); the DLL's own translation units are
+#: not a library and would break that invariant.
+#:
+#: But they ARE ours, and the assertion is "the Rust surface is a subset of OUR C's
+#: surface", so leaving them out under-models the C. They define 12 symbols and
+#: ucrtbase EXPORTS six: fma, fmaf, log2, log2f, lrint, lrintf -- stubs.c's
+#: placeholders for things spec2def cannot stub because they are intrinsics. Omitted,
+#: a Rust twin of any of those six reads as displacing a genuine Microsoft UCRT body
+#: when it would be displacing ReactOS's own.
+#:
+#: This is the same defect the link-line test's docstring records, one target over:
+#: modelling the authority as too small turned a correct ucrtbase math flip into 60
+#: findings. Found by asking what blocks translating those 132 lines.
+OURS_OWN_TUS = {
+    "ucrtbase-own": Path("dll/win32/ucrtbase/CMakeFiles/ucrtbase.dir"),
+}
+
+#: Everything of OURS that contributes symbols to ucrtbase.dll, which is what the
+#: subset assertion must be taken against.
+OURS_C_AUTHORITY = {**OURS_ON_LINK_LINE, **OURS_OWN_TUS}
+
 ARCHES = {
     "i386": "i686-pc-windows-gnu",
     "amd64": "x86_64-pc-windows-gnu",
@@ -409,7 +433,7 @@ def check_archive() -> list[str]:
 
         objs: list[Path] = []
         missing: list[str] = []
-        for target, obj_dir in OURS_ON_LINK_LINE.items():
+        for target, obj_dir in OURS_C_AUTHORITY.items():
             d = build / obj_dir
             found = sorted(d.rglob("*.obj")) + sorted(d.rglob("*.o"))
             if found:
