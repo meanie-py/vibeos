@@ -1323,3 +1323,52 @@ def test_arm_replay_break_refuses_an_icount_past_the_end(tmp_path, monkeypatch):
     vm.on_qmp_ready = None
     with pytest.raises(rr.RecordReplayError, match="past the end"):
         vm._arm_replay_break(rr, trace)
+
+
+def _shutdown(eid: int = 14) -> bytes:
+    return bytes([eid])
+
+
+def test_a_log_that_reaches_a_shutdown_event_is_provably_complete(tmp_path):
+    trace = _replay_log(tmp_path, _insn(10) + _shutdown())
+    assert rr.trace_is_provably_complete(trace)
+
+
+def test_completeness_ignores_bytes_after_the_shutdown_event(tmp_path):
+    """Replay stops at shutdown and never reads further. Real traces carry a
+    trailing byte past it (clean1 has a 0x27), and QEMU's own replay-dump.py
+    stops at the same place — so requiring EOF would fail a whole trace."""
+    trace = _replay_log(tmp_path, _insn(10) + _shutdown() + b"\x27")
+    assert rr.trace_is_provably_complete(trace)
+
+
+def test_a_log_that_just_stops_is_not_complete(tmp_path):
+    """The truncation case: events all the way to EOF, no shutdown."""
+    trace = _replay_log(tmp_path, _insn(10) + _insn(10))
+    assert not rr.trace_is_provably_complete(trace)
+
+
+def test_a_log_cut_mid_event_is_not_complete(tmp_path):
+    trace = _replay_log(tmp_path, _insn(10) + b"\x00\x00\x01")
+    assert not rr.trace_is_provably_complete(trace)
+
+
+def test_completeness_withholds_judgement_on_an_unknown_version(tmp_path):
+    """An unknown version is a reason not to UPGRADE confidence, not a reason to
+    refuse — so it returns False and the marker check stands on its own."""
+    trace = _replay_log(tmp_path, _insn(10) + _shutdown(), version=0xE02007)
+    assert not rr.trace_is_provably_complete(trace)
+
+
+def test_an_unfinalised_but_provably_complete_trace_is_not_refused(tmp_path):
+    """The point of the prover: the marker only covers traces recorded after it
+    existed, so its absence is missing evidence, not evidence of truncation."""
+    trace = _replay_log(tmp_path, _insn(10) + _shutdown())
+    rr.write_manifest(trace, arch="arm64", argv=[], media={})  # no finalised key
+    assert not any("finalised" in w for w in rr.check_trace(trace))
+
+    other = tmp_path / "other"
+    other.mkdir()
+    stump = _replay_log(other, _insn(10) + _insn(10))
+    rr.write_manifest(stump, arch="arm64", argv=[], media={})
+    assert any("finalised" in w for w in rr.check_trace(stump))
