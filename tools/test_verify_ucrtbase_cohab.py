@@ -439,3 +439,24 @@ def test_a_real_local_edit_IS_stale(tmp_path: Path, monkeypatch):
 
     monkeypatch.setattr(vuc, "REPO", tmp_path)
     assert vuc._stale_against_sources(archive) == "sdk/lib/rust/cnt-rust/src/lib.rs"
+
+
+def test_the_authority_includes_ucrtbases_own_C_not_just_its_libraries():
+    """The subset assertion is against OUR C — and ucrtbase's own TUs are ours.
+
+    OURS_ON_LINK_LINE must stay exactly the link LIBRARIES (the test above pins it
+    against the CMake). But ucrtbase.dll also gets symbols from its own 132 lines —
+    printf.c and stubs.c — and six of those are EXPORTED: the intrinsic placeholders
+    spec2def cannot stub. Left out of the authority, a Rust twin of any of them reads
+    as displacing a genuine Microsoft UCRT body when it would be displacing ReactOS's
+    own. That is the defect the link-line test's docstring records (a correct ucrtbase
+    math flip coming back as 60 findings), one target over.
+    """
+    assert set(vuc.OURS_C_AUTHORITY) == set(vuc.OURS_ON_LINK_LINE) | set(vuc.OURS_OWN_TUS)
+    assert set(vuc.OURS_ON_LINK_LINE) & set(vuc.OURS_OWN_TUS) == set(), "the two must be disjoint"
+    # The symbols that motivated this. If stubs.c stops defining them the entry is
+    # stale, and a stale authority entry is exactly what this file must not carry.
+    stubs = REPO / "dll" / "win32" / "ucrtbase" / "stubs.c"
+    text = stubs.read_text(errors="replace")
+    for sym in ("fma", "fmaf", "log2", "log2f", "lrint", "lrintf"):
+        assert f"{sym}(" in text, f"{sym} no longer in ucrtbase/stubs.c — re-derive OURS_OWN_TUS"

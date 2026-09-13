@@ -5916,7 +5916,15 @@ test to fail three times, only SOME regression each time — and independent int
 therefore COMPOSE. A 2026-09-13 drain burned its whole retry budget on two unrelated arm64
 bistables (`ExPools: pass 14 -> 13` on two attempts, `NpfsConnect: pass 679 -> 678` on the
 third), and the final verdict records none of that disagreement: it reads as one reproducing
-regression, and the train rejects the lane whose diff happened to be in the batch. Two lessons,
+regression, and the train rejects the lane whose diff happened to be in the batch. **A 9-sweep
+soak on identical media then measured the shape directly, and the measurement is the entry's
+real content:** the LANE went red 3/9 = 33% from THREE independent causes (`ExPools` 2/9,
+explained as a kmtest POOL_HEADER arch-gate mismatch; `Example` 1/9, unexplained; `NpfsConnect`
+0/9, i.e. it did not recur at all). **The lane rate necessarily exceeds any single test's rate,
+and that gap IS the composition** — which is why three attempts absorb far less than three
+attempts appear to. Note also what the soak cost to get right: an earlier ~50% was quoted from
+four samples and withdrawn, and the argument came out stronger for being re-grounded, because
+the lane rate is the quantity the retry floor actually faces. Two lessons,
 and the second is the reusable one. **Recognise it from the artifacts, not the verdict** — read
 each attempt's own conformance log and check the identities MATCH before believing a
 reproduction; a lane that checks only whether its own signature is `ExPools` will wrongly decide
@@ -6906,6 +6914,20 @@ serial log is worst at reporting: nothing distinguishes "did not happen" from "h
 not traced on this path". Three separate near-misses in one night were all this shape, which is
 not luck — comparing against the control is the only technique that works when the evidence is
 an absence.
+
+**A PERSON can be the misread artifact, and that variant routes rather than misreports.**
+One lane told another that a standing no-soaks directive "does not appear to apply to you,
+since you ran a soak tonight without objection". The owner was asleep. Absence of objection
+from someone who is not present is not a weaker form of permission — it is not evidence at
+all: silence answers *"was anyone awake"*, not *"is this allowed"*, which is the same
+slightly-different-question shape as every instance above, with a person in place of a file.
+What makes it the dangerous member of the class is the consequence. A technical proxy error
+produces a wrong finding, which the next check catches; this one produces **a lane acting
+outside a directive, with the inference as its stated justification** — the error executes
+before anything can contradict it. The sound basis was available and did not depend on anyone's
+silence: bounded soaks are sanctioned tooling here (`farm`, `conformance --repeat`) and the
+soak was bounded. **Never use one lane's latitude as an argument for another lane's**, and when
+a justification reduces to "nobody objected", check whether anybody was in a position to.
 
 **It does not exempt the person who wrote it.** Within an hour of this entry being filed, both
 its authors nearly hit it again on the very measurement it was written about: one scraping a

@@ -1708,10 +1708,37 @@ Field-manual § pointers hold the full writeups. **Update on state change.**
     -> UserBuffer, length from `Irp->IoStatus.Information`), intermittent on arm64, with
     `DeviceIoControl` returning ERROR_SUCCESS throughout — `:36`/`:37`/`:38` all still pass, so
     every caller believes it worked. n=1, so no rate; the localisation is what is solid.
+    **Narrowed further by source inspection (no new run needed).** The copy-back is
+    `iomgr-rust/src/irp.rs:555-577`: under `IRP_BUFFERED_IO | IRP_INPUT_OPERATION` and a
+    non-error status it does `safe_copy_raw(UserBuffer, SystemBuffer, IoStatus.Information)`
+    and, **on failure, sets `STATUS_ACCESS_VIOLATION`**. `Example_user.c:38` asserts the
+    `DeviceIoControl` returned `ERROR_SUCCESS` and it PASSES in the failing round — so the copy
+    did not fault, and the fault-handling branch is not involved. That leaves exactly two
+    shapes, both of which are silent and both of which match zeros in the user buffer:
+    (a) `IoStatus.Information` was **0** at completion, so a zero-byte copy "succeeded" and the
+    user buffer was never touched — note the driver sets `*OutLength = 2 * sizeof` at
+    `Example_drv.c:184`, so this would mean that value failed to reach `Information`; or
+    (b) the copy wrote to a **valid but wrong address** — the buffered copy-back runs in a
+    special-kernel APC, and in the wrong process context the same user VA can be mapped and
+    writable, so the write silently lands in another address space rather than faulting.
+    **One datum separates them**: `IoStatus.Information` and the current process at the moment
+    of the copy. Neither a record/replay capture (replay is wedged, so a trace is a capture and
+    not a session) nor the serial log can supply it; a breakpoint at `irp.rs:568` on a live
+    soak can, at the observed ~1-in-9 rate — once `0280df67353` lands, per the trap below.
     **Two traps for whoever picks this up, both of them absences that mean nothing.** First,
     `Example_drv.c:227`'s `IRP!` trace does NOT print for these device-control IRPs in either
     round, so its absence is not evidence the IOCTL never arrived — the clean round looks
-    identical there and passes. Second, **every kernel symbol resolution on this
+    identical there and passes. Two independent reasons, both worth knowing before re-digging
+    it: it is a `DPRINT` (debug-only, unlike the `trace()` calls beside it that DO print), and
+    `TestIrpHandler` only ever sees the Example device's CREATE/CLOSE anyway — the three IOCTLs
+    go to **kmtest_drv's** device, whose `DriverIoControl` sets `Information = Length` at
+    `kmtest_drv.c:541` and completes. That is the `Information` in shape (a).
+    **Instrument note, because the obvious one does not fit:** a breakpoint at `irp.rs:568`
+    fires on EVERY buffered IRP completion — thousands per boot — so `run-until.sh --break` is
+    not usable there without a condition, and the ~1-in-9 rate means a lot of boots. The
+    instrument that fits is a filtered debug print in the copy-back (log `Information` and the
+    current process when the completing device is kmtest's), which is a kernel change plus a
+    soak rather than a debugger session. Second, **every kernel symbol resolution on this
     path is against the wrong image unless you name `ntkrnlmp.exe` explicitly** — by hand as
     much as by tool. Since the 2026-09-12 MP promotion the media boots `ntkrnlmp.exe` +
     `halmp.dll` (`qemu/freeldr.ini:2`/`:51`), but `build-arm64/ntoskrnl/*.exe` contains ONLY
