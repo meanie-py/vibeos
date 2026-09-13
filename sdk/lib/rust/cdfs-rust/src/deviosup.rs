@@ -157,7 +157,7 @@ extern "C" {
 
 // ---- file-scope preamble (translated) ----
 pub const MAX_PARALLEL_IOS: u32 = 5;
-pub const BugCheckFileId: u32 = 0; // CDFS_BUG_CHECK_DEVIOSUP value unknown
+pub const BugCheckFileId: u32 = 0x000a0000; // CDFS_BUG_CHECK_DEVIOSUP (nodetype.h:80)
 
 #[repr(C)]
 pub struct IO_RUN {
