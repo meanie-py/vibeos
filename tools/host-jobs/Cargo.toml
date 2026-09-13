@@ -1,0 +1,11 @@
+[package]
+name = "vibeos-host-jobs"
+version = "0.1.0"
+edition = "2021"
+publish = false
+
+[[bin]]
+name = "host-jobs"
+path = "src/main.rs"
+
+[workspace]

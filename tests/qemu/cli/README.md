@@ -202,7 +202,7 @@ ordinary `check --strict --arch X` still runs both partitions.
 
 **The parallel pre-land verdict** — the North Star "gate ×3 (all arches green)"
 done concurrently instead of by a serial human loop. It submits every arch's build
-to the shared host CPU broker (`--no-build` to skip), then launches each arch's
+concurrently (`--no-build` to skip), sharing compiler/linker execution slots, then launches each arch's
 smoke as soon as its own build finishes. For any arch
 that fails retryably launches up to `--retries` (default 2) concurrent fresh
 attempts and passes the arch on the first green. Retry-eligible: a *documented*
@@ -354,17 +354,17 @@ remain unaccounted for. Automatic retention is not enabled.
 
 ### `host-status [--json]`
 
-Shows current permits, holders, and FIFO waiters across worktrees. Updated builds
-record their job class and permit wait time. Queue/direct-land gates tag their
-children `integration`; other commands default to `interactive`.
+Shows active and waiting compiler/linker jobs across worktrees, plus legacy
+reservations, boot slots and build-directory owners. New builds reserve no CPU
+capacity while waiting for their directory. Individual tools share the host's
+execution slots, preferring interactive work with 120-second aging. Queue and
+direct-land gates identify their children as integration work.
 
-`admission_shadow` compares FIFO with a proposed bounded 120-second integration
-head start. **FIFO remains active; the proposal is not enforced.** Unknown or
-legacy waiter metadata suppresses the proposal. The shared file
-`<HOSTLOCK_DIR>/admission-shadow.disabled` disables proposals without changing
-locks (default root `/tmp/vibeos-qemu-locks/host`). Build `summary.json` records
-separate `admission.cpu_wait_s` and `admission.builddir_wait_s` timings.
-See `docs/engineering/fleet-verification-migration-plan.md` for rollout boundaries.
+`--json` includes commands, job class, owning build PID, artifact directory and
+submitting launcher. Detached integration work stays visible after its agent
+pauses. The old FIFO/shadow display applies only to legacy reservations, not the
+new enforced job priorities. See
+[host job scheduling](../../../docs/engineering/host-job-scheduling.md).
 
 ### `boot --arch X --until M [--fail-on RE]`
 Raw fast boot, **no staleness gate**, but reuses smoke's *exact* arch-config so
@@ -393,20 +393,11 @@ binaries and is caught at source by `lint_kernel` instead — the arm64 binary s
 only catches a function that regressed into an infinite loop, the "idle hang"
 signature).
 
-`--strict` additionally runs the **`cargo_link`** guard: it re-runs the
-cargo-driven link PoCs (`sdk/lib/rust/{ntoskrnl,ntdll,ntdll_vista}-cargo` via
-the shared `reactos-link` engine — the long-term replacement for the cmake
-links) and asserts each still produces a valid PE. These live off the default
-build path, so this is what keeps them from silently bit-rotting. Defaults to
-i386 (the only arch all three share — `ntoskrnl-cargo` is i386-only); pass
-`--arch amd64`/`arm64` to guard ntdll/ntdll_vista there. Each link self-skips
-if its target json, `build-<arch>`, or nightly+rust-src is absent. Gated to
-`--strict` (not every `build`) because each relink re-compiles a Rust staticlib
-(~20s) and would tax the hot loop.
-
-The `cargo_link` guard is the **LINK** half of the cargo-drive gate (PE-valid,
-fast, no boot). Its **RUNTIME** half is `cargo-swap` (below) — a link can relink
-clean yet boot broken, and only a boot catches that.
+The old strict-check `cargo_link` PoC rebuilds have been retired: ntoskrnl,
+ntdll and ntdll_vista are now normal Cargo-linked shipping targets. The regular
+build, binary checks and three-architecture smoke gate exercise those links.
+Strict lint retains committed-artifact drift checks and does not rebuild those
+modules in a competing Cargo target directory.
 
 ### `cargo-swap --arch X [--module all|ntdll|ntdll_vista|ntoskrnl]`
 **The runtime gate for the cargo-driven modules.** Boot-swaps each cargo-built
@@ -701,7 +692,7 @@ RUN=$(./vibeos-cli debug start amd64 --gdb | tail -1)
 | A pass/fail verdict that won't lie about stale media | `vibeos-cli smoke` |
 | Build the right media for an arch (warm/cold, classified failures) | `vibeos-cli build` |
 | Watch a specific boot marker fast | `vibeos-cli boot` |
-| Lint gate (NEW-vs-baseline) + cargo-link rot guard | `vibeos-cli check [--strict]` |
+| Lint gate (NEW-vs-baseline) + binary checks | `vibeos-cli check [--strict]` |
 | Prove a cargo-driven module boots (ntdll DLLs / ntoskrnl) | `vibeos-cli cargo-swap` |
 | Interactive/ad-hoc single GDB op on a live run-id | `qemu/inspect.sh` (or `vibeos-cli debug inspect`) |
 | Raw interactive launcher (serial/GUI/`--debug`) | `qemu/run.sh` |

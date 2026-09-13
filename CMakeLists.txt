@@ -147,6 +147,7 @@ if(MSVC_IDE)
 endif()
 
 if(NOT CMAKE_CROSSCOMPILING)
+    include(sdk/cmake/host-jobs.cmake)
     set(TOOLS_FOLDER ${CMAKE_CURRENT_BINARY_DIR})
     add_definitions(-DTARGET_${ARCH})
 
@@ -245,6 +246,8 @@ Enable this if the module uses typeid or dynamic_cast. You will probably need to
     else()
         option(PCH "Whether to use precompiled headers" ON)
     endif()
+
+    include(sdk/cmake/host-jobs.cmake)
 
     # Version Options
     add_definitions(-DWINVER=0x502

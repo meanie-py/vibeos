@@ -132,7 +132,7 @@ trait TracedStatus {
 impl TracedStatus for Command {
     fn traced_status(&mut self) -> std::io::Result<ExitStatus> {
         trace_command(self);
-        self.status()
+        native_deps::scheduled_status(self)
     }
     fn native_status(&mut self, source: &Path) -> std::io::Result<ExitStatus> {
         native_deps::run(self, source, |cmd| cmd.traced_status())
@@ -1533,7 +1533,7 @@ impl Linker {
                 let st = Command::new(&ar)
                     .arg("rcs")
                     .arg(&a)
-                    .status()
+                    .traced_status()
                     .unwrap_or_else(|e| panic!("crt-stub: cannot run {}: {e}", ar.display()));
                 assert!(st.success(), "crt-stub: {} rcs {} failed", ar.display(), a.display());
             }

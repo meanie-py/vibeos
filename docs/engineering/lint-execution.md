@@ -73,13 +73,14 @@ shared `target/`, whose Cargo lock serialized Ninja's apparently parallel jobs.
 The existing inner Rust library directories and package features are unchanged.
 The new directories are included in the architecture-specific clean operation.
 
-Ninja's `vibeos_cargo_links` pool controls fan-out; each Cargo invocation uses one
-job so nested Cargo work does not multiply the scheduler budget. On 24 visible
-CPUs the default permits six concurrent links per build and four concurrent
-builds in the host's existing four-permit pool. All three architectures can start
-together. Explicit host policy still takes precedence over default admission.
-`VIBEOS_CARGO_LINK_JOBS` overrides the Ninja pool at configure time, and
-`VIBEOS_MAX_CONCURRENT_BUILDS` overrides default host admission.
+Ninja's `vibeos_cargo_links` pool exposes the visible CPU count; these outer
+Cargo processes are coordinators. Actual compiler/linker execution shares the
+host-wide Rust job scheduler. A single build can use idle capacity, while
+competing worktrees share the same execution slots with priority and aging.
+Each Cargo invocation uses one job to avoid multiplying nested parallelism.
+See [host job scheduling](host-job-scheduling.md) for admission, ownership and
+legacy-client migration. `VIBEOS_CARGO_LINK_JOBS` remains an explicit outer
+coordinator cap at configure time.
 
 The CMake/Cargo test uses two real build scripts with a mutual-start barrier:
 sharing one Cargo output lock fails; the shipping directory/pool setup passes.
