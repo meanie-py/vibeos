@@ -7903,6 +7903,17 @@ symbols one way and undefined the other. That pair *is* the diagnostic.
   follow the call sites, not the stub. Symbols nothing references cannot drag the C object in,
   so they need no Rust definition; check with `llvm-nm --undefined-only` across the module's
   objects plus the `.spec` rather than assuming.
+- **And the OBJECT DIRECTORY is the authority on what a TARGET compiles — the cmake source
+  list is not.** `build-<arch>/**/CMakeFiles/<target>.dir/` holds exactly the TUs that were
+  built; a `list(APPEND …)`/`REMOVE_ITEM` parse of the `.cmake` does not, because arch `if()`
+  guards and source vars shared with a sibling target are invisible to it. Parsing
+  `libcntpr.cmake` reported **107** live `.c`; the object dirs said **21/20/28**
+  (amd64/arm64/i386). Worse than the count: pairing those 107 against the crate's 216
+  `#[no_mangle]` exports *by filename* produced **37 apparent double-definitions — all
+  phantoms**, none of them compiled on any arch. Same shape as the `-D<name>=` trap above:
+  filename is not symbol, and source-list membership is not compilation. Confirm both against
+  built artifacts before costing a translation or declaring a cohab collision.
+
 - **`#[export_name]` STACKS with i386 stdcall decoration, it does not replace it.** Give the
   UNDECORATED C name and declare the fn `extern "stdcall"`; rustc prepends the `_` and appends
   the `@<arg bytes>` itself. Writing the decorated name is the intuitive move and produces

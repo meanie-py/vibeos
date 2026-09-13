@@ -1883,6 +1883,35 @@ flight is marked; in-flight lanes live in [`active-lanes/`](active-lanes/).*
   `libcntpr` (kernel, Rust via cnt-rust), `crtmath` (done 2026-09-13), `msvcrtex`, and the
   `msvcrt_static` set.
 
+  **Object-level measurement of the three shipping static libs (2026-09-13, all three
+  arches).** Read the `CMakeFiles/<target>.dir` object list, not the `list(APPEND …)` source
+  vars: parsing the cmake source lists says `libcntpr` has **107** live `.c`, and the truth is
+  **21** (amd64) / **20** (arm64) / **28** (i386). The 4.6x over-count is arch `if()` guards the
+  parse ignores — the `LIBCNTPR_*_SOURCE` families are shared with the user-mode `CRT_*` vars.
+  Pairing those 107 against `cnt-rust`'s 216 `#[no_mangle]` exports by filename produced **37
+  apparent double-definitions (`sinf`, `frexp`, `ldiv`, `strtod`, …) and every one was a
+  phantom** — none of those `.c` compiles into `libcntpr` on any arch. Pair by compiled object,
+  never by filename.
+
+  What actually remains, and why each is not a translation target:
+  - `libcntpr` — 12 C-variadic `printf/` wrappers (irreducible), plus the documented kept-C
+    (`wctype.c` dead data table, `winesup.c`, `atol.c`, `mbstrlen.c`, `fltused.c`, `exp2f.c`,
+    `_invoke_matherr.c`, `scanf_trampoline.c`) and `except/` SEH. **i386 carries 8 more, all
+    structurally blocked:** `i386/ci.c` + `ci{cos,log,pow,sin,sqrt}.c` are x87-stack-argument
+    thunks (`FPU_DOUBLE` = `fstpl`) whose math is *already* Rust — the thunk is inline asm glue,
+    and `cisin`/`cisqrt` were already settled as headerless cc-rs shims; `i386/libm_sse2.c` is 32
+    `__m128d`/`__m128` by-value functions needing `target("sse2")`, which cannot exist in
+    `cnt-rust` because i386 builds `-sse,-sse2` (the same ABI-required-target-feature error that
+    forced every `cabi/math.rs` helper to `extern "C"`); `nexttowardf.c` takes an x87 80-bit
+    `long double`, which Rust has no type for. So `libcntpr` is done.
+  - `msvcrtex` — **translated** (`crt-startup-rust` + `crt0-rust` + `crt-dllmain-rust`, ~190
+    symbols, commit `94f2d421748`) but wired through **`reactos-link`'s `.msvcrtex_crt()`**, not
+    CMake — so grepping CMakeLists for the crate name finds nothing and it looks orphaned. It
+    ships into *cargo* modules; the 44-TU C archive still ships into every module that links
+    `libmsvcrt` the C way (`dll/win32/msvcrt/CMakeLists.txt:311`). Retiring the C archive is an
+    architectural call, not a transcription.
+  - `user32_wsprintf` — 12 TUs, the `wsprintf`/`streamout` family, still C.
+
   Recorded because the obvious check misleads: `grep -rl '\bcrt\b' --include=CMakeLists.txt`
   "finds" msvcrt, ucrtbase, ntdll and services, every one of them a substring match on
   `msvcrt`/`crtmath`/`_crt`. File-mentions-it is not links-it, and I asserted the wrong version
