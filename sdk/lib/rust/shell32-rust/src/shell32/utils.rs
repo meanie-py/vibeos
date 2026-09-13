@@ -1048,6 +1048,7 @@ pub unsafe extern "system" fn IsSuspendAllowed() -> BOOL {
 
 #[no_mangle]
 pub unsafe extern "system" fn SHGetShellStyleHInstance() -> HINSTANCE {
+    TRACE!("SHGetShellStyleHInstance called\n");
     let mut hInst: HINSTANCE = core::ptr::null_mut();
     let mut szPath: [u16; MAX_PATH] = [0u16; MAX_PATH];
     let mut szColorName: [u16; 100] = [0u16; 100];
@@ -1531,6 +1532,8 @@ pub unsafe extern "system" fn SHEnumerateUnreadMailAccountsW(
 pub unsafe extern "system" fn SHFindComputer(pidlRoot: LPCITEMIDLIST, pidlSavedSearch: LPCITEMIDLIST) -> i32 {
     UNREFERENCED_PARAMETER(pidlRoot);
     UNREFERENCED_PARAMETER(pidlSavedSearch);
+
+    TRACE!("%p %p\n", pidlRoot, pidlSavedSearch);
 
     let mut pCM: *mut IContextMenu = core::ptr::null_mut();
     let mut hr: i32 = CoCreateInstance(
