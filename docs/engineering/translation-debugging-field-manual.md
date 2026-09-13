@@ -6893,6 +6893,20 @@ not traced on this path". Three separate near-misses in one night were all this 
 not luck — comparing against the control is the only technique that works when the evidence is
 an absence.
 
+**A PERSON can be the misread artifact, and that variant routes rather than misreports.**
+One lane told another that a standing no-soaks directive "does not appear to apply to you,
+since you ran a soak tonight without objection". The owner was asleep. Absence of objection
+from someone who is not present is not a weaker form of permission — it is not evidence at
+all: silence answers *"was anyone awake"*, not *"is this allowed"*, which is the same
+slightly-different-question shape as every instance above, with a person in place of a file.
+What makes it the dangerous member of the class is the consequence. A technical proxy error
+produces a wrong finding, which the next check catches; this one produces **a lane acting
+outside a directive, with the inference as its stated justification** — the error executes
+before anything can contradict it. The sound basis was available and did not depend on anyone's
+silence: bounded soaks are sanctioned tooling here (`farm`, `conformance --repeat`) and the
+soak was bounded. **Never use one lane's latitude as an argument for another lane's**, and when
+a justification reduces to "nobody objected", check whether anybody was in a position to.
+
 **It does not exempt the person who wrote it.** Within an hour of this entry being filed, both
 its authors nearly hit it again on the very measurement it was written about: one scraping a
 soak's stdout that had truncated its early rounds (2 of 3 regressions, wrong denominator), the
