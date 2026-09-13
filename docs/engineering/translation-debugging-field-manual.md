@@ -4864,6 +4864,28 @@ passing direction.
 lint whose input predates your change is not evidence. Worth the wall-clock: one cold build
 beats a merge-queue round trip, and the queue can cost hours per attempt.
 
+**The MIRROR IMAGE bites the same check, and "did you build?" is the wrong question for it:
+an input can be too NEW to read, because the build is still making it.** `vibeos-cli gate`
+runs its tooling stage CONCURRENTLY with its three builds, so any build-dependent oracle in
+that stage observes a half-made build dir. Two independent instances, one day apart:
+`needs_generated_psdk_amd64` read widl-generated headers that did not exist until 42 minutes
+after tooling ran, and `test_every_modelled_target_has_a_real_object_directory` read an object
+directory that cmake creates in the build's first seconds and ninja fills about forty later.
+The second failed a gate whose every build, lint, smoke and conformance lane was green, and the
+directory it called missing was on disk when the gate ended, timestamped INSIDE that same gate's
+run — which is also how you tell this apart from a stale path model, which would leave no
+directory at all. **Symptom:** a build-dependent check that fails in the gate and passes when
+you re-run it by hand on the identical tree, with the thing it named present. **Cause:** the
+guard was `if the build dir exists`, and a build dir exists from the moment cmake configures it.
+**Fix:** gate on `.vibeos-build-stamp.json`, which `vibeos-cli build` writes at the very END of
+a successful build (`cli/provenance.py` `STAMP_NAME`) — the difference between "cmake configured
+a directory" and "ninja produced the objects in it". Verify BOTH directions when you change one
+of these: with the stamps present the check must run, and with them hidden it must skip; a
+skip-guard that never fires and one that always fires look identical in a green run. The
+general rule is the same one as above with the sign flipped — **staleness answers in the
+passing direction, prematurity answers in the failing direction**, and a check that reads build
+output needs to know not just how old its input is but whether it is finished.
+
 **A fourth member of "a verdict that depends on state outside the diff is not a gate"** (see
 "A gate can be RED for reasons that are not in the tree at all"), and distinct from that entry's
 third: a warm gate declining to rebuild is a verdict on a *skipped* recompile, while this is a

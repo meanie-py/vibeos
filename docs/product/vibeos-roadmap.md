@@ -1562,6 +1562,29 @@ Field-manual § pointers hold the full writeups. **Update on state change.**
     idiom and adjacency at the top of the intermittent list: tested, they fire independently,
     and their `KmtGetPoolTag` returns `0x0062005c` / `0x0073006f` — UTF-16 `\b` and `os`, i.e.
     those Buffers point into the middle of an allocation rather than at its start.
+  - **`NpfsConnect` on arm64 — an UNDOCUMENTED intermittent, found 2026-09-13.** One
+    occurrence, so no rate: `pass 679 -> 678, fail 0 -> 1` on
+    `20260913-022245-fw6sw4_g-conformance-arm64`. `NpfsConnect` is **679/0 on all three
+    floors with no `assert?` anywhere**, so this is exactly the case the ratchet quest warned
+    about — an intermittent that never fired during the 15 seeding boots is indistinguishable
+    from a regression on any single sweep.
+    **Why it matters more than one more flaky row: arm64 conformance intermittents COMPOSE,
+    and the retry budget is sized for one.** Gate `20260913-021807-fbitjxpy` burned all three
+    arm64 attempts on TWO different bugs — `ExPools` (a1), `NpfsConnect` (r1, clean on
+    ExPools), `ExPools` (r2). The retry does not need the same test to fail three times, only
+    SOME regression each time, so independent intermittents multiply the all-attempts-fail
+    probability well past what a 3-attempt budget was designed to absorb. Nothing in the final
+    verdict shows that the three attempts disagreed, which is the information that would
+    distinguish this from a real regression: **a lane's diff reproduces the SAME regression
+    every attempt; independent intermittents produce a different one each time.** That
+    distinction is computable from the per-attempt `salient` lines the gate already captures,
+    and is the discriminator `CONFORMANCE_FLAKE` currently throws away — `gate.py:319` assigns
+    that classification as a CONSTANT to every ratchet failure, so a regression reproducing
+    3/3 carries the same label as a coin flip, and `queue.py`'s `INCONCLUSIVE` set (which does
+    not contain it) therefore rejects the lane and blames its diff either way. Open gating-policy
+    question for the owner; do not "fix" it by adding `CONFORMANCE_FLAKE` to `INCONCLUSIVE`,
+    which would make every genuine conformance regression halt the drain as infrastructure and
+    leave the ratchet unenforceable through the queue.
   - **`ZwAllocateVirtualMemory` 843 → 839 — a real UP-vs-MP DIFFERENCE, not a regression, and
     its baseline is a 1-in-101 sample.** Correlating pass count against `smp` over every banked
     i386 run dir: **smp1 scores 843 in 4/4 runs; smp2 scores 839 in 100 runs and 843 in exactly
