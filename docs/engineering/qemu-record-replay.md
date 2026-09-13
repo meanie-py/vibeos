@@ -518,6 +518,13 @@ kmtest, the payload this lane exists for, did.
   partway through at a point that varies between runs of the same trace**.
   Record freely; treat each replay as an experiment whose reach you confirm
   rather than assume. Neither is a soak.
+- **Traces are big and nothing else reclaims them.** A kmtest capture is ~1.4GB
+  (489MB of trace, plus its media twice counting `pristine/`); seven experiment
+  traces took this box from comfortable to 89% full in a night. `vibeos-cli
+  prune` reclaims build and boot artifacts and does not know `~/vibeos-rr`
+  exists, so use `./vibeos-cli rr prune --keep 3` (dry-run; `--apply` to act).
+  `--name <trace>` deletes a specific one regardless of age — which is what you
+  want for a known-bad capture, since those tend to be the newest.
 - A trace directory is the trace plus the qcow2 overlays, twice (counting
   `pristine/`) — tens of MB for arm64, since the big media are overlays over the
   originals rather than copies.

@@ -507,6 +507,10 @@ Record/replay refuses rather than producing a trace that silently diverges:
 no KVM, no `-smp N>1`, no NIC, no pre-existing `-icount`, native backend only.
 `--smp 1` IS accepted and is the interesting case (the MP kernel on one CPU).
 
+`rr prune --keep N` is the only thing that reclaims traces — a kmtest capture is
+~1.4GB and `vibeos-cli prune` does not know the trace root exists. Dry-run by
+default; `--apply` to act; `--name <trace>` to drop a specific known-bad one.
+
 Design, gdb recipe and the divergence log: `docs/engineering/qemu-record-replay.md`.
 
 ### `ps [--json]`
