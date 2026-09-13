@@ -6809,6 +6809,20 @@ That is also why it survives review — a reader asking "did you check?" gets a 
   sweeps THIS soak produced" — the window silently mixed in two other shas and dropped one of
   the real rows, turning a reproduced 33% into a 22% that did not match.
 
+**The inverse: a missing log line is evidence ONLY if you have seen the passing case emit
+it.** Reading the wrong artifact is one half; the other is reading the ABSENCE of an artifact
+as a signal it was never able to carry. `Example_drv.c:227`'s `IRP!` trace is not emitted for
+device-control IRPs, so a serial log showing nothing between `IRP_MJ_CREATE` and
+`IRP_MJ_CLOSE` looks exactly like three IOCTLs that never reached the driver — and since the
+user-mode `DeviceIoControl` calls all returned `ERROR_SUCCESS`, that reads as the kernel
+returning success without dispatching, which would be spectacular and is false. The CLEAN
+round's serial is identical in that window and passes. **The cheap universal remedy is to diff
+against the passing case before believing any absence**, because absences are precisely what a
+serial log is worst at reporting: nothing distinguishes "did not happen" from "happened and is
+not traced on this path". Three separate near-misses in one night were all this shape, which is
+not luck — comparing against the control is the only technique that works when the evidence is
+an absence.
+
 **It does not exempt the person who wrote it.** Within an hour of this entry being filed, both
 its authors nearly hit it again on the very measurement it was written about: one scraping a
 soak's stdout that had truncated its early rounds (2 of 3 regressions, wrong denominator), the
@@ -7365,6 +7379,14 @@ language rules) over loosening what it reports.
   68/68, arm64 alone unstable — and it was filed as an arm64 kernel lead the whole time. When
   a row says a test is deterministic everywhere except one arch, diff the ARCH GATES in every
   header both sides compile before theorising about that arch's kernel.
+  **The same discriminator splits a bucket that looks like one task.** `ExPools` and `Example`
+  both arrived as "the arm64 conformance flake" and are not the same kind of thing at all:
+  ExPools fails STABLY on one arch with a harness-side struct mismatch, while `Example` is
+  genuinely intermittent with the driver's own diagnostics clean, which is a real kernel
+  data-path defect (see the roadmap's `Example` entry). Anyone taking "fix the arm64
+  conformance flakes" as a single task would have gotten one of the two wrong — so sort a
+  flake bucket by determinism and by whether the failing side's OWN assertions are quiet,
+  before deciding what kind of bug any of them are.
 - **Half-disabling a debug facility leaves its two halves disagreeing — and the disagreement
   outlives the reason.** A checked build does two separable things to a spinlock: it STAMPS
   `KeGetCurrentThread() | 1` into the lock while held (observable behaviour — `KeTestSpinLock`
