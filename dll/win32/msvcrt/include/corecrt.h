@@ -314,12 +314,23 @@ typedef struct threadlocaleinfostruct {
 #define _THREADLOCALEINFO
 #endif
 
+/* The #ifndef guards on __WINE_CRT_PRINTF_ATTR and __WINE_MALLOC below exist so the
+   c2rust ANCHOR can neutralise them with -D. c2rust 0.22.1's Clang AST exporter cannot
+   map __attribute__((malloc)) or __attribute__((format(printf|scanf,...))): each drops
+   the TYPE of the decl it sits on, and one such decl anywhere in the include closure
+   kills the whole transpile. Because these are msvcrt's private headers, that blocked
+   every msvcrt TU and read as "c2rust refuses the SDK include closure". It is not the
+   closure. Neutralising them costs the anchor nothing -- they are optimiser and
+   -Wformat hints, not ABI and not body -- and no normal build defines the names, so
+   the guards change nothing. 2/37 TUs anchored before this, 35/37 after. */
+#ifndef __WINE_CRT_PRINTF_ATTR
 #if defined(__MINGW32__) || (defined(_MSC_VER) && defined(__clang__))
 #define __WINE_CRT_PRINTF_ATTR(fmt,args) __attribute__((format (printf,fmt,args)))
 #define __WINE_CRT_SCANF_ATTR(fmt,args)  __attribute__((format (scanf,fmt,args)))
 #else
 #define __WINE_CRT_PRINTF_ATTR(fmt,args)
 #define __WINE_CRT_SCANF_ATTR(fmt,args)
+#endif
 #endif
 
 #if defined(__GNUC__) && ((__GNUC__ > 4) || ((__GNUC__ == 4) && (__GNUC_MINOR__ >= 3)))
@@ -334,10 +345,12 @@ typedef struct threadlocaleinfostruct {
 #define __WINE_DEALLOC(...)
 #endif
 
+#ifndef __WINE_MALLOC
 #if defined(__GNUC__) && (__GNUC__ > 2)
 #define __WINE_MALLOC __attribute__((malloc))
 #else
 #define __WINE_MALLOC
+#endif
 #endif
 
 #endif /* __WINE_CORECRT_H */
