@@ -7150,6 +7150,17 @@ Three things make this the sharpest instance in this section:
   byte-identical across both trees (`1a8194b5a194010e5ec350a6402c99ed`) — so the DLL it died in
   was never the variable. Hours of winsock debugging were one mtime comparison away.
 
+**Ask a disagreeing lane for its HASHES, not its diff.** (Research lane's corollary, and it is
+the actionable form of the rule above.) When two lanes report opposite results for the same named
+test, the instinct is to compare commits — but here the diffs were identical and the *binaries*
+were not, so a diff comparison could only ever have come back "no difference" and sent both
+parties looking at the tree. Hashes separate the versioned inputs from the unversioned ones in a
+single round trip, and they are cheap to send.
+
+**Corollary to the corollary: hash comparison only means something once builds are reproducible.**
+See the note at the end of this entry — before `5a322b1c9be` these PEs stamped wall-clock into the
+header, so identical source gave different bytes and the comparison would have been noise.
+
 **Detect it by source-vs-binary mtime, never by absolute age.** A six-day-old binary passes any
 "is it older than N hours" threshold loose enough to not be annoying; what makes it detectably
 wrong is that `Marshal32.c` is NEWER than `marshal32.exe`. And prefer a loud SKIP to a RED: a
