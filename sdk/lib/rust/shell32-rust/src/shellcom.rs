@@ -10,7 +10,7 @@
 #![allow(dead_code)]
 
 use crate::types::*;
-use core::ffi::c_void;
+use core::ffi::{c_int, c_void};
 
 // ── scalar aliases not in crate::types ──────────────────────────────────────────────────
 pub type ULONG = u32; // winnt.h
@@ -722,26 +722,30 @@ pub struct IFolderViewVtbl {
         unsafe extern "system" fn(*mut IFolderView, REFIID, *mut *mut c_void) -> HRESULT,
     pub AddRef: unsafe extern "system" fn(*mut IFolderView) -> ULONG,
     pub Release: unsafe extern "system" fn(*mut IFolderView) -> ULONG,
-    pub GetCurrentViewMode: usize,
-    pub SetCurrentViewMode: usize,
+    pub GetCurrentViewMode:
+        unsafe extern "system" fn(*mut IFolderView, *mut UINT) -> HRESULT,
+    pub SetCurrentViewMode: unsafe extern "system" fn(*mut IFolderView, UINT) -> HRESULT,
     pub GetFolder:
         unsafe extern "system" fn(*mut IFolderView, REFIID, *mut *mut c_void) -> HRESULT,
-    // This vtable used to STOP at GetFolder. It is truncated, not partial-by-design, so the
-    // eleven slots below (shobjidl.idl:866) are additive: nothing constructs an
-    // IFolderViewVtbl literal — it is only ever read through a `*mut` handed over by C++ —
-    // so growing the tail moves no existing slot. Untyped ones stay `usize`, which is the
-    // same size as a fn pointer and cannot be called by accident.
-    pub Item: usize,
-    pub ItemCount: usize,
-    pub Items: usize,
-    pub GetSelectionMarkedItem: usize,
-    pub GetFocusedItem: usize,
+    // This vtable used to STOP at GetFolder, and every slot after it was `usize` because the
+    // vtable was only ever READ through a `*mut` handed over by C++. That is no longer true:
+    // CDefView implements IFolderView and CONSTRUCTS this literal, and a `usize` slot rejects
+    // the fn item rather than accepting it silently. So every slot now carries its real
+    // signature, transcribed from shobjidl.idl's `interface IFolderView` — the declaration
+    // order there IS the ABI, and it is the only authority for it.
+    pub Item: unsafe extern "system" fn(*mut IFolderView, c_int, *mut PITEMID_CHILD) -> HRESULT,
+    pub ItemCount: unsafe extern "system" fn(*mut IFolderView, UINT, *mut c_int) -> HRESULT,
+    pub Items:
+        unsafe extern "system" fn(*mut IFolderView, UINT, REFIID, *mut *mut c_void) -> HRESULT,
+    pub GetSelectionMarkedItem:
+        unsafe extern "system" fn(*mut IFolderView, *mut c_int) -> HRESULT,
+    pub GetFocusedItem: unsafe extern "system" fn(*mut IFolderView, *mut c_int) -> HRESULT,
     pub GetItemPosition:
         unsafe extern "system" fn(*mut IFolderView, PCUITEMID_CHILD, *mut POINT) -> HRESULT,
-    pub GetSpacing: usize,
-    pub GetDefaultSpacing: usize,
-    pub GetAutoArrange: usize,
-    pub SelectItem: usize,
+    pub GetSpacing: unsafe extern "system" fn(*mut IFolderView, *mut POINT) -> HRESULT,
+    pub GetDefaultSpacing: unsafe extern "system" fn(*mut IFolderView, *mut POINT) -> HRESULT,
+    pub GetAutoArrange: unsafe extern "system" fn(*mut IFolderView) -> HRESULT,
+    pub SelectItem: unsafe extern "system" fn(*mut IFolderView, c_int, DWORD) -> HRESULT,
     pub SelectAndPositionItems: unsafe extern "system" fn(
         *mut IFolderView,
         UINT,

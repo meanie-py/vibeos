@@ -32,7 +32,7 @@
 //! 2. The BEGIN_MSG_MAP table was not translated AT ALL. All 25 handlers are here as
 //!    `CDefView_On*_body` with ATL's exact `(uMsg, wParam, lParam, &mut bHandled)` shape, but
 //!    no ProcessWindowMessage exists to reach them, so today not one is reachable.
-//! 3. 268 remaining rustc errors (from 799). The mechanical seam is worked out: casts were
+//! 3. 261 remaining rustc errors (from 799). The mechanical seam is worked out: casts were
 //!    applied ONLY where all three of i386/amd64/arm64 reported the same expected/found pair
 //!    at the same rustc byte span, because a cast inferred from one target bakes that
 //!    target's pointer width -- the bug `crate-repair`'s three-arch rule exists to stop, and
@@ -41,8 +41,30 @@
 //!    repair belongs on the scrutinee, and three of those settled 52 arm errors at once); a
 //!    leading `!` is C's logical-not but Rust's BITWISE not, so appending `!= 0` would make
 //!    the wrong reading permanent (scan_bitwise_not_bool's class); and `CComPtr` vs raw
-//!    pointer is an ownership question, not a spelling one. What is left is mostly those,
-//!    plus reference-to-pointer coercions and the E0599/E0609 tail.
+//!    pointer is an ownership question, not a spelling one.
+//!
+//!    READ THAT COUNT CAREFULLY: 268 -> 261 is not seven errors of progress. The paid output
+//!    carried its OWN private copy of 27 substrate types -- 15 SDK layouts the bindgen island
+//!    already owns, and 12 COM interfaces `shellcom` already owns -- and those copies made the
+//!    file typecheck against ITSELF. Deleting them fixed ~40 errors and SURFACED ~35 that the
+//!    private copies had been hiding, which is why the total barely moved. The count was the
+//!    less informative number the whole time; the file now compiles against the same substrate
+//!    as the rest of the crate, which is the thing that actually changed.
+//!
+//!    What is left is dominated by ONE unanswered question, not by a grind -- see item 4.
+//!
+//! 4. THE SUBSTRATE BOUNDARY, which is a decision and not a repair. prelude.rs states it:
+//!    "the island owns DATA LAYOUTS; `shellcom` owns VTABLE ABI". `shellcom` does not hold to
+//!    its own half -- it declares its own `ITEMIDLIST`, `GUID`, `SHELLDETAILS` and `LRESULT`
+//!    rather than taking them from the island -- so an island-first TU that calls a `shellcom`
+//!    vtable slot gets a nominal split at every PIDL and every GUID. Measured here:
+//!    `*const shellcom::ITEMIDLIST` vs `*const _ITEMIDLIST` 14 times, `*const shellcom::GUID`
+//!    vs `*const com_sys::_GUID` 6, and `*mut i64` vs `&mut isize` (LRESULT) 8. All three
+//!    pairs are ABI-identical, so a `.cast()` compiles at every one of those ~28 sites. That
+//!    is exactly why they are still red: 28 casts would make the question unaskable rather
+//!    than answer it. CDefView is the FIRST module to sit on both sides of the line -- the 40
+//!    landed COM-class modules compile against the hand-written types.rs/shellcom.rs, and this
+//!    one is island-first per prelude.rs -- which is why it is the module that found this.
 //!
 //! Real bugs already fixed in here, recorded because each is a CLASS the next TU will hit:
 //! `Draw`'s C++ function-pointer parameter sat in three places as raw C text; the static
@@ -60,6 +82,15 @@ use crate::atl::CSimpleMap;
 // modules each carry this same no-op copy.
 macro_rules! ASSERT { ($($arg:tt)*) => {{}}; }
 use crate::shellcom::REFGUID;
+// The COM interfaces come from `shellcom`, which owns VTABLE ABI (see prelude.rs's
+// BOUNDARY note): the island renders these as bindgen C++ classes with `Option<fn>`
+// slots, and a call through an `Option` slot is E0618. Slot order and arity were
+// compared against the local copies these replace before deleting them.
+use crate::shellcom::{IFolderView, IFolderViewVtbl, IDropTarget, IDropTargetVtbl,
+                      IDataObject, IDataObjectVtbl, IStream, IStreamVtbl,
+                      IUnknown, IUnknownVtbl, IBindCtx, IBindCtxVtbl,
+                      IContextMenu, IEnumIDList, IPersistFolder2,
+                      IShellFolder, IShellFolder2};
 use crate::drv_def_ext::RGB;
 use crate::drives_folder::HResultFromWin32;
 use crate::drives_folder_tu::UlongToPtr;
@@ -184,31 +215,6 @@ extern "C" {
     pub static IID_IShellView3: IID;
 }
 
-// Deterministic from shobjidl.h
-#[repr(C)]
-pub struct IFolderView {
-    pub lpVtbl: *const IFolderViewVtbl,
-}
-#[repr(C)]
-pub struct IFolderViewVtbl {
-    pub QueryInterface: unsafe extern "system" fn(This: *mut IFolderView, riid: REFIID, ppvObject: *mut *mut core::ffi::c_void) -> HRESULT,
-    pub AddRef: unsafe extern "system" fn(This: *mut IFolderView) -> ULONG,
-    pub Release: unsafe extern "system" fn(This: *mut IFolderView) -> ULONG,
-    pub GetCurrentViewMode: unsafe extern "system" fn(This: *mut IFolderView, mode: *mut UINT) -> HRESULT,
-    pub SetCurrentViewMode: unsafe extern "system" fn(This: *mut IFolderView, mode: UINT) -> HRESULT,
-    pub GetFolder: unsafe extern "system" fn(This: *mut IFolderView, riid: REFIID, ppv: *mut *mut core::ffi::c_void) -> HRESULT,
-    pub Item: unsafe extern "system" fn(This: *mut IFolderView, index: i32, ppidl: *mut PITEMID_CHILD) -> HRESULT,
-    pub ItemCount: unsafe extern "system" fn(This: *mut IFolderView, flags: UINT, items: *mut i32) -> HRESULT,
-    pub Items: unsafe extern "system" fn(This: *mut IFolderView, flags: UINT, riid: REFIID, ppv: *mut *mut core::ffi::c_void) -> HRESULT,
-    pub GetSelectionMarkedItem: unsafe extern "system" fn(This: *mut IFolderView, item: *mut i32) -> HRESULT,
-    pub GetFocusedItem: unsafe extern "system" fn(This: *mut IFolderView, item: *mut i32) -> HRESULT,
-    pub GetItemPosition: unsafe extern "system" fn(This: *mut IFolderView, pidl: PCUITEMID_CHILD, ppt: *mut POINT) -> HRESULT,
-    pub GetSpacing: unsafe extern "system" fn(This: *mut IFolderView, pt: *mut POINT) -> HRESULT,
-    pub GetDefaultSpacing: unsafe extern "system" fn(This: *mut IFolderView, pt: *mut POINT) -> HRESULT,
-    pub GetAutoArrange: unsafe extern "system" fn(This: *mut IFolderView) -> HRESULT,
-    pub SelectItem: unsafe extern "system" fn(This: *mut IFolderView, item: i32, flags: DWORD) -> HRESULT,
-    pub SelectAndPositionItems: unsafe extern "system" fn(This: *mut IFolderView, cidl: UINT, apidl: PCUITEMID_CHILD_ARRAY, apt: *mut POINT, flags: DWORD) -> HRESULT,
-}
 extern "C" {
     pub static IID_IFolderView: IID;
 }
@@ -273,21 +279,6 @@ extern "C" {
     pub static IID_IOleCommandTarget: IID;
 }
 
-// Deterministic from oleidl.h
-#[repr(C)]
-pub struct IDropTarget {
-    pub lpVtbl: *const IDropTargetVtbl,
-}
-#[repr(C)]
-pub struct IDropTargetVtbl {
-    pub QueryInterface: unsafe extern "system" fn(This: *mut IDropTarget, riid: REFIID, ppvObject: *mut *mut core::ffi::c_void) -> HRESULT,
-    pub AddRef: unsafe extern "system" fn(This: *mut IDropTarget) -> ULONG,
-    pub Release: unsafe extern "system" fn(This: *mut IDropTarget) -> ULONG,
-    pub DragEnter: unsafe extern "system" fn(This: *mut IDropTarget, pDataObj: *mut IDataObject, grfKeyState: DWORD, pt: POINTL, pdwEffect: *mut DWORD) -> HRESULT,
-    pub DragOver: unsafe extern "system" fn(This: *mut IDropTarget, grfKeyState: DWORD, pt: POINTL, pdwEffect: *mut DWORD) -> HRESULT,
-    pub DragLeave: unsafe extern "system" fn(This: *mut IDropTarget) -> HRESULT,
-    pub Drop: unsafe extern "system" fn(This: *mut IDropTarget, pDataObj: *mut IDataObject, grfKeyState: DWORD, pt: POINTL, pdwEffect: *mut DWORD) -> HRESULT,
-}
 extern "C" {
     pub static IID_IDropTarget: IID;
 }
@@ -382,26 +373,6 @@ extern "C" {
     pub static IID_IShellBrowser: IID;
 }
 
-// Deterministic from objidl.h
-#[repr(C)]
-pub struct IDataObject {
-    pub lpVtbl: *const IDataObjectVtbl,
-}
-#[repr(C)]
-pub struct IDataObjectVtbl {
-    pub QueryInterface: unsafe extern "system" fn(This: *mut IDataObject, riid: REFIID, ppvObject: *mut *mut core::ffi::c_void) -> HRESULT,
-    pub AddRef: unsafe extern "system" fn(This: *mut IDataObject) -> ULONG,
-    pub Release: unsafe extern "system" fn(This: *mut IDataObject) -> ULONG,
-    pub GetData: unsafe extern "system" fn(This: *mut IDataObject, pformatetcIn: *mut FORMATETC, pmedium: *mut STGMEDIUM) -> HRESULT,
-    pub GetDataHere: unsafe extern "system" fn(This: *mut IDataObject, pformatetc: *mut FORMATETC, pmedium: *mut STGMEDIUM) -> HRESULT,
-    pub QueryGetData: unsafe extern "system" fn(This: *mut IDataObject, pformatetc: *mut FORMATETC) -> HRESULT,
-    pub GetCanonicalFormatEtc: unsafe extern "system" fn(This: *mut IDataObject, pformatectIn: *mut FORMATETC, pformatetcOut: *mut FORMATETC) -> HRESULT,
-    pub SetData: unsafe extern "system" fn(This: *mut IDataObject, pformatetc: *mut FORMATETC, pmedium: *mut STGMEDIUM, fRelease: BOOL) -> HRESULT,
-    pub EnumFormatEtc: unsafe extern "system" fn(This: *mut IDataObject, dwDirection: DWORD, ppenumFormatEtc: *mut *mut IEnumFORMATETC) -> HRESULT,
-    pub DAdvise: unsafe extern "system" fn(This: *mut IDataObject, pformatetc: *mut FORMATETC, advf: DWORD, pAdvSink: *mut IAdviseSink, pdwConnection: *mut DWORD) -> HRESULT,
-    pub DUnadvise: unsafe extern "system" fn(This: *mut IDataObject, dwConnection: DWORD) -> HRESULT,
-    pub EnumDAdvise: unsafe extern "system" fn(This: *mut IDataObject, ppenumAdvise: *mut *mut IEnumSTATDATA) -> HRESULT,
-}
 extern "C" {
     pub static IID_IDataObject: IID;
 }
@@ -461,28 +432,6 @@ extern "C" {
     pub static IID_IAdviseSink: IID;
 }
 
-// Deterministic from objidl.h
-#[repr(C)]
-pub struct IStream {
-    pub lpVtbl: *const IStreamVtbl,
-}
-#[repr(C)]
-pub struct IStreamVtbl {
-    pub QueryInterface: unsafe extern "system" fn(This: *mut IStream, riid: REFIID, ppvObject: *mut *mut core::ffi::c_void) -> HRESULT,
-    pub AddRef: unsafe extern "system" fn(This: *mut IStream) -> ULONG,
-    pub Release: unsafe extern "system" fn(This: *mut IStream) -> ULONG,
-    pub Read: unsafe extern "system" fn(This: *mut IStream, pv: *mut core::ffi::c_void, cb: ULONG, pcbRead: *mut ULONG) -> HRESULT,
-    pub Write: unsafe extern "system" fn(This: *mut IStream, pv: *const core::ffi::c_void, cb: ULONG, pcbWritten: *mut ULONG) -> HRESULT,
-    pub Seek: unsafe extern "system" fn(This: *mut IStream, dlibMove: LARGE_INTEGER, dwOrigin: DWORD, plibNewPosition: *mut ULARGE_INTEGER) -> HRESULT,
-    pub SetSize: unsafe extern "system" fn(This: *mut IStream, libNewSize: ULARGE_INTEGER) -> HRESULT,
-    pub CopyTo: unsafe extern "system" fn(This: *mut IStream, pstm: *mut IStream, cb: ULARGE_INTEGER, pcbRead: *mut ULARGE_INTEGER, pcbWritten: *mut ULARGE_INTEGER) -> HRESULT,
-    pub Commit: unsafe extern "system" fn(This: *mut IStream, grfCommitFlags: DWORD) -> HRESULT,
-    pub Revert: unsafe extern "system" fn(This: *mut IStream) -> HRESULT,
-    pub LockRegion: unsafe extern "system" fn(This: *mut IStream, libOffset: ULARGE_INTEGER, cb: ULARGE_INTEGER, dwLockType: DWORD) -> HRESULT,
-    pub UnlockRegion: unsafe extern "system" fn(This: *mut IStream, libOffset: ULARGE_INTEGER, cb: ULARGE_INTEGER, dwLockType: DWORD) -> HRESULT,
-    pub Stat: unsafe extern "system" fn(This: *mut IStream, pstatstg: *mut STATSTG, grfStatFlag: DWORD) -> HRESULT,
-    pub Clone: unsafe extern "system" fn(This: *mut IStream, ppstm: *mut *mut IStream) -> HRESULT,
-}
 extern "C" {
     pub static IID_IStream: IID;
 }
@@ -636,42 +585,10 @@ extern "C" {
     pub static IID_ITypeLib: IID;
 }
 
-// Deterministic from unknwn.h
-#[repr(C)]
-pub struct IUnknown {
-    pub lpVtbl: *const IUnknownVtbl,
-}
-#[repr(C)]
-pub struct IUnknownVtbl {
-    pub QueryInterface: unsafe extern "system" fn(This: *mut IUnknown, riid: REFIID, ppvObject: *mut *mut core::ffi::c_void) -> HRESULT,
-    pub AddRef: unsafe extern "system" fn(This: *mut IUnknown) -> ULONG,
-    pub Release: unsafe extern "system" fn(This: *mut IUnknown) -> ULONG,
-}
 extern "C" {
     pub static IID_IUnknown: IID;
 }
 
-// Deterministic from objidl.h
-#[repr(C)]
-pub struct IBindCtx {
-    pub lpVtbl: *const IBindCtxVtbl,
-}
-#[repr(C)]
-pub struct IBindCtxVtbl {
-    pub QueryInterface: unsafe extern "system" fn(This: *mut IBindCtx, riid: REFIID, ppvObject: *mut *mut core::ffi::c_void) -> HRESULT,
-    pub AddRef: unsafe extern "system" fn(This: *mut IBindCtx) -> ULONG,
-    pub Release: unsafe extern "system" fn(This: *mut IBindCtx) -> ULONG,
-    pub RegisterObjectBound: unsafe extern "system" fn(This: *mut IBindCtx, punk: *mut IUnknown) -> HRESULT,
-    pub RevokeObjectBound: unsafe extern "system" fn(This: *mut IBindCtx, punk: *mut IUnknown) -> HRESULT,
-    pub ReleaseBoundObjects: unsafe extern "system" fn(This: *mut IBindCtx) -> HRESULT,
-    pub SetBindOptions: unsafe extern "system" fn(This: *mut IBindCtx, pbindopts: *mut BIND_OPTS) -> HRESULT,
-    pub GetBindOptions: unsafe extern "system" fn(This: *mut IBindCtx, pbindopts: *mut BIND_OPTS) -> HRESULT,
-    pub GetRunningObjectTable: unsafe extern "system" fn(This: *mut IBindCtx, pprot: *mut *mut IRunningObjectTable) -> HRESULT,
-    pub RegisterObjectParam: unsafe extern "system" fn(This: *mut IBindCtx, pszKey: LPOLESTR, punk: *mut IUnknown) -> HRESULT,
-    pub GetObjectParam: unsafe extern "system" fn(This: *mut IBindCtx, pszKey: LPOLESTR, ppunk: *mut *mut IUnknown) -> HRESULT,
-    pub EnumObjectParam: unsafe extern "system" fn(This: *mut IBindCtx, ppenum: *mut *mut IEnumString) -> HRESULT,
-    pub RevokeObjectParam: unsafe extern "system" fn(This: *mut IBindCtx, pszKey: LPOLESTR) -> HRESULT,
-}
 extern "C" {
     pub static IID_IBindCtx: IID;
 }
@@ -2387,35 +2304,7 @@ pub struct BIND_OPTS {
     pub dwTickCountDeadline: DWORD,
 }
 
-#[repr(C)]
-pub struct BITMAP {
-    pub bmType: LONG,
-    pub bmWidth: LONG,
-    pub bmHeight: LONG,
-    pub bmWidthBytes: LONG,
-    pub bmPlanes: WORD,
-    pub bmBitsPixel: WORD,
-    pub bmBits: LPVOID,
-}
 
-#[repr(C)]
-pub struct CMINVOKECOMMANDINFOEX {
-    pub cbSize: DWORD,
-    pub fMask: DWORD,
-    pub hwnd: HWND,
-    pub lpVerb: LPCSTR,
-    pub lpParameters: LPCSTR,
-    pub lpDirectory: LPCSTR,
-    pub nShow: INT,
-    pub dwHotKey: DWORD,
-    pub hIcon: HANDLE,
-    pub lpTitle: LPCSTR,
-    pub lpVerbW: LPCWSTR,
-    pub lpParametersW: LPCWSTR,
-    pub lpDirectoryW: LPCWSTR,
-    pub lpTitleW: LPCWSTR,
-    pub ptInvoke: POINT,
-}
 
 #[repr(C)]
 pub struct DISPPARAMS {
@@ -2441,69 +2330,11 @@ pub struct IDLDESC {
     pub wIDLFlags: USHORT,
 }
 
-#[repr(C)]
-pub struct ITEMSPACING {
-    pub cxSmall: i32,
-    pub cySmall: i32,
-    pub cxLarge: i32,
-    pub cyLarge: i32,
-}
 
-#[repr(C)]
-pub struct LVHITTESTINFO {
-    pub pt: POINT,
-    pub flags: UINT,
-    pub iItem: i32,
-    pub iSubItem: i32,
-}
 
-#[repr(C)]
-pub struct LVITEMA {
-    pub mask: UINT,
-    pub iItem: i32,
-    pub iSubItem: i32,
-    pub state: UINT,
-    pub stateMask: UINT,
-    pub pszText: LPSTR,
-    pub cchTextMax: i32,
-    pub iImage: i32,
-    pub lParam: LPARAM,
-    pub iIndent: i32,
-    pub iGroupId: i32,
-    pub cColumns: UINT,
-    pub puColumns: PUINT,
-}
 
-#[repr(C)]
-pub struct LVITEMW {
-    pub mask: UINT,
-    pub iItem: i32,
-    pub iSubItem: i32,
-    pub state: UINT,
-    pub stateMask: UINT,
-    pub pszText: LPWSTR,
-    pub cchTextMax: i32,
-    pub iImage: i32,
-    pub lParam: LPARAM,
-    pub iIndent: i32,
-    pub iGroupId: i32,
-    pub cColumns: UINT,
-    pub puColumns: PUINT,
-}
 
-#[repr(C)]
-pub struct OLECMD {
-    pub cmdID: ULONG,
-    pub cmdf: DWORD,
-}
 
-#[repr(C)]
-pub struct OLECMDTEXT {
-    pub cmdtextf: DWORD,
-    pub cwActual: ULONG,
-    pub cwBuf: ULONG,
-    pub rgwz: [WCHAR; 1],
-}
 
 #[repr(C)]
 pub struct OLEMENUGROUPWIDTHS {
@@ -2516,18 +2347,7 @@ pub struct PARAMDESC {
     pub wParamFlags: USHORT,
 }
 
-#[repr(C)]
-pub struct SFVM_PROPPAGE_DATA {
-    pub dwReserved: DWORD,
-    pub pfn: LPFNADDPROPSHEETPAGE,
-    pub lParam: LPARAM,
-}
 
-#[repr(C)]
-pub struct SHChangeNotifyEntry {
-    pub pidl: PCIDLIST_ABSOLUTE,
-    pub fRecursive: BOOL,
-}
 
 #[repr(C)]
 pub struct STATDATA {
@@ -2705,31 +2525,16 @@ extern "C" {
     pub static IID_IShellFolderViewDual: IID;
 }
 
-#[repr(C)]
-pub struct TBADDBITMAP {
-    pub hInst: HINSTANCE,
-    pub nID: UINT_PTR,
-}
 
-#[repr(C)]
-pub struct SFV_CREATE {
-    pub cbSize: UINT,
-    pub pshf: *mut IShellFolder,
-    pub psvOuter: *mut core::ffi::c_void,
-    pub psfvcb: *mut core::ffi::c_void,
-}
 
 macro_rules! ASSERT { ($($arg:tt)*) => {{}}; }
 
-pub type SVSIF = UINT;
 
-pub type LPTBBUTTONSB = *mut core::ffi::c_void;
 
 macro_rules! LOWORD { ($value:expr) => { (((($value as usize) & 0xffff) as UINT) as u16) }; }
 
 pub type LPFNSVADDPROPSHEETPAGE = Option<unsafe extern "system" fn(HPROPSHEETPAGE, LPARAM) -> BOOL>;
 
-pub type ITEMIDLIST_ABSOLUTE = ITEMIDLIST;
 
 pub const DROPEFFECT_NONE: DWORD = 0;
 pub const DROPEFFECT_MOVE: DWORD = 2;
@@ -3283,7 +3088,7 @@ pub unsafe fn CDefView_UpdateStatusbar_body(this: *mut CDefView) -> () {
         SB_SETTEXT,
         0,
         szPartText.as_mut_ptr() as LPARAM,
-        &mut lResult,
+        &mut lResult as *mut _,
     );
 
     if (*this).m_isFullStatusBar != 0 {
@@ -3321,7 +3126,7 @@ pub unsafe fn CDefView_UpdateStatusbar_body(this: *mut CDefView) -> () {
             SB_SETTEXT,
             1,
             szPartText.as_mut_ptr() as LPARAM,
-            &mut lResult,
+            &mut lResult as *mut _,
         );
     }
 
@@ -3919,7 +3724,7 @@ pub unsafe fn CDefView__Sort_body(this: *mut CDefView, Col: i32) -> BOOL {
 
 pub unsafe fn CDefView_GetItemAttributes_body(this: *mut CDefView, pidl: PCUITEMID_CHILD, Query: UINT) -> SFGAOF {
     let mut Attr: SFGAOF = Query as SFGAOF;
-    return if ((*(*(*this).m_pSFParent).lpVtbl).GetAttributesOf)((*this).m_pSFParent, 1, &pidl, &mut Attr) >= 0 {
+    return if ((*(*(*this).m_pSFParent).lpVtbl).GetAttributesOf)((*this).m_pSFParent, 1, &pidl as *const _, &mut Attr) >= 0 {
         Attr & Query
     } else {
         0
@@ -4200,7 +4005,7 @@ pub unsafe fn CDefView_FillList_body(this: *mut CDefView, IsRefreshCommand: BOOL
     );
     if hRes != S_OK {
         if !pEnumIDList.is_null() {
-            (*(*pEnumIDList).lpVtbl).Release(pEnumIDList);
+            ((*(*pEnumIDList).lpVtbl).Release)(pEnumIDList);
         }
         if hRes == S_FALSE {
             return NOERROR;
@@ -4211,7 +4016,7 @@ pub unsafe fn CDefView_FillList_body(this: *mut CDefView, IsRefreshCommand: BOOL
     hdpa = DPA_Create(16);
     if hdpa.is_null() {
         if !pEnumIDList.is_null() {
-            (*(*pEnumIDList).lpVtbl).Release(pEnumIDList);
+            ((*(*pEnumIDList).lpVtbl).Release)(pEnumIDList);
         }
         return E_OUTOFMEMORY;
     }
@@ -4220,7 +4025,7 @@ pub unsafe fn CDefView_FillList_body(this: *mut CDefView, IsRefreshCommand: BOOL
         == ((*(*pEnumIDList).lpVtbl).Next)(
             pEnumIDList,
             1,
-            &mut pidl,
+            &mut pidl as *mut _,
             &mut dwFetched,
         ))
         && dwFetched != 0
@@ -4288,7 +4093,7 @@ pub unsafe fn CDefView_FillList_body(this: *mut CDefView, IsRefreshCommand: BOOL
     );
 
     if !pEnumIDList.is_null() {
-        (*(*pEnumIDList).lpVtbl).Release(pEnumIDList);
+        ((*(*pEnumIDList).lpVtbl).Release)(pEnumIDList);
     }
 
     return S_OK;
@@ -4425,7 +4230,7 @@ pub unsafe fn CDefView_OnNCCreate_body(this: *mut CDefView, uMsg: UINT, wParam: 
 }
 
 pub unsafe fn CDefView_OnFinalMessage_body(this: *mut CDefView, arg0: HWND) -> () {
-    (*(*(this as *mut IUnknown)).lpVtbl).Release(this as *mut IUnknown);
+    ((*(*(this as *mut IUnknown)).lpVtbl).Release)(this as *mut IUnknown);
 }
 
 pub unsafe fn CDefView_OnCreate_body(this: *mut CDefView, uMsg: UINT, wParam: WPARAM, lParam: LPARAM, bHandled: &mut BOOL) -> LRESULT {
@@ -4440,7 +4245,7 @@ pub unsafe fn CDefView_OnCreate_body(this: *mut CDefView, uMsg: UINT, wParam: WP
         ((core::ptr::addr_of!(IID_IDropTarget)) as _), core::ptr::addr_of_mut!(pdt).cast(),
     ) >= 0
     {
-        if RegisterDragDrop((*this).m_hWnd, pdt) < 0 {
+        if RegisterDragDrop((*this).m_hWnd.cast(), pdt.cast()) < 0 {
         }
     }
 
@@ -4623,8 +4428,8 @@ pub unsafe fn CDefView_FillFileMenu_body(this: *mut CDefView) -> HRESULT {
     }
 
     _ = Shell_MergeMenus(
-        hFileMenu,
-        hmenu,
+        hFileMenu.cast(),
+        hmenu.cast(),
         0,
         0,
         0xFFFF,
@@ -4647,8 +4452,8 @@ pub unsafe fn CDefView_FillEditMenu_body(this: *mut CDefView) -> HRESULT {
     }
 
     Shell_MergeMenus(
-        hEditMenu,
-        hmenuContents,
+        hEditMenu.cast(),
+        hmenuContents.cast(),
         0,
         0,
         0xFFFF,
@@ -4673,8 +4478,8 @@ pub unsafe fn CDefView_FillViewMenu_body(this: *mut CDefView) -> HRESULT {
 
     let i = SHMenuIndexFromID(hViewMenu, FCIDM_MENU_VIEW_SEP_OPTIONS);
     Shell_MergeMenus(
-        hViewMenu,
-        (*this).m_hMenuViewModes,
+        hViewMenu.cast(),
+        (*this).m_hMenuViewModes.cast(),
         i,
         0,
         0xFFFF,
@@ -4705,7 +4510,7 @@ pub unsafe fn CDefView_FillArrangeAsMenu_body(this: *mut CDefView, hmenuArrange:
         }
 
         if GetMenuItemID(hmenuArrange, 0) == FCIDM_SHVIEW_AUTOARRANGE || forceMerge {
-            Shell_MergeMenus(hmenuArrange, (*this).m_hMenuArrangeModes, 0, 0, 0xFFFF, MM_ADDSEPARATOR);
+            Shell_MergeMenus(hmenuArrange.cast(), (*this).m_hMenuArrangeModes.cast(), 0, 0, 0xFFFF, MM_ADDSEPARATOR);
         }
 
         CheckMenuRadioItem(hmenuArrange,
@@ -5001,7 +4806,7 @@ pub unsafe fn CDefView_OpenSelectedItems_body(this: *mut CDefView, pszVerb: PCST
     let (riid, ppv): (REFIID, *mut *mut core::ffi::c_void) =
         IID_IContextMenu::<IContextMenu>(&mut pCM as *mut _ as *mut *mut core::ffi::c_void);
     hResult = CDefView_GetItemObject_body(this, SVGIO_SELECTION, riid, ppv);
-    let _menu_cleanup = MenuCleanup::new(&mut pCM, &mut hMenu);
+    let _menu_cleanup = MenuCleanup::new(&mut pCM as *mut _, &mut hMenu);
     if ((hResult) < 0) {
         return hResult;
     }
@@ -5089,7 +4894,7 @@ pub unsafe fn CDefView_OnContextMenu_body(this: *mut CDefView, uMsg: UINT, wPara
         core::ptr::addr_of!(IID_IContextMenu),
         core::ptr::addr_of_mut!((*this).m_pCM).cast(),
     );
-    let mut _menu_cleanup = MenuCleanup::new(&mut (*this).m_pCM, &mut (*this).m_hContextMenu);
+    let mut _menu_cleanup = MenuCleanup::new(&mut (*this).m_pCM as *mut _, &mut (*this).m_hContextMenu);
     if ((hResult) < 0) as i32 != 0 {
         return 0;
     }
@@ -5120,8 +4925,8 @@ pub unsafe fn CDefView_OnContextMenu_body(this: *mut CDefView, uMsg: UINT, wPara
             MAKEINTRESOURCEW(IDM_DVSELECT),
         );
         Shell_MergeMenus(
-            (*this).m_hContextMenu,
-            GetSubMenu(hMenuSource, 0),
+            (*this).m_hContextMenu.cast(),
+            GetSubMenu(hMenuSource, 0).cast(),
             0,
             DVIDM_COMMDLG_SELECT,
             0xffff,
@@ -5247,7 +5052,7 @@ pub unsafe fn CDefView_OnExplorerCommand_body(this: *mut CDefView, uCommand: UIN
         return 0;
     }
 
-    let mut _cleanup = MenuCleanup::new(&mut pCM, &mut hMenu);
+    let mut _cleanup = MenuCleanup::new(&mut pCM as *mut _, &mut hMenu);
 
     if uCommand != FCIDM_SHVIEW_DELETE && uCommand != FCIDM_SHVIEW_RENAME {
         hMenu = CreatePopupMenu();
@@ -5402,7 +5207,7 @@ pub unsafe fn CDefView__DoCopyToMoveToFolder_body(this: *mut CDefView, bCopy: BO
     let _pCM_cpp_com_guard = CppComPtrGuard::new(core::ptr::addr_of_mut!(pCM));
     hr = ((*(*parent).lpVtbl).GetUIObjectOf)(
         parent,
-        (*this).m_hWnd,
+        (*this).m_hWnd.cast(),
         (*this).m_cidl,
         (*this).m_apidl,
         &IID_IContextMenu,
@@ -5560,7 +5365,7 @@ pub unsafe fn SelectExtOnRename_body() -> BOOL {
 
         let error: LONG = RegOpenKeyExW(
             HKEY_CURRENT_USER,
-            REGSTR_PATH_EXPLORER,
+            REGSTR_PATH_EXPLORER.as_ptr(),
             0,
             KEY_READ,
             &mut hKey,
@@ -5697,7 +5502,7 @@ pub unsafe fn CDefView_OnNotify_body(this: *mut CDefView, uMsg: UINT, wParam: WP
 
                 let hr_ui = ((*(*(*this).m_pSFParent).lpVtbl).GetUIObjectOf)(
                     (*this).m_pSFParent,
-                    (*this).m_hWnd,
+                    (*this).m_hWnd.cast(),
                     (*this).m_cidl,
                     (*this).m_apidl,
                     core::ptr::addr_of!(IID_IDataObject), core::ptr::null_mut(), core::ptr::addr_of_mut!(pda).cast(),
@@ -5742,7 +5547,7 @@ pub unsafe fn CDefView_OnNotify_body(this: *mut CDefView, uMsg: UINT, wParam: WP
                         (*params).ptAction.x - ptItem.x,
                         (*params).ptAction.y - ptItem.y,
                     );
-                    DoDragDrop(pda, this, dwEffect, &mut dwEffect2);
+                    DoDragDrop(pda.cast(), this.cast(), dwEffect, &mut dwEffect2);
 
                     if !(*this).m_pSourceDataObject.is_null() {
                         ((*(*(*this).m_pSourceDataObject).lpVtbl).Release)((*this).m_pSourceDataObject);
@@ -5837,7 +5642,7 @@ pub unsafe fn CDefView_OnNotify_body(this: *mut CDefView, uMsg: UINT, wParam: WP
             pidl = CDefView__PidlByItem_2_body(this, &mut (*lpdi).item);
             let mut pidl_old: *mut ITEMIDLIST_ABSOLUTE = ILClone(pidl);
             if pidl_old.is_null() {
-                SHELL_ErrorBox((*lpdi).hdr.hwndFrom, E_OUTOFMEMORY);
+                SHELL_ErrorBox((*lpdi).hdr.hwndFrom.cast(), E_OUTOFMEMORY);
                 return FALSE;
             }
 
@@ -6022,7 +5827,7 @@ pub unsafe fn CDefView_OnSettingChange_body(this: *mut CDefView, uMsg: UINT, wPa
         || (lParam != 0
             && !lstrcmpiW(
                 lParam as PWSTR,
-                REGSTR_PATH_EXPLORER::CPP_COM_WSTR_9F585864DA1D.as_ptr(),
+                REGSTR_PATH_EXPLORER_ICONUNDERLINE.as_ptr(),
             ))
     {
         ListExMask |= LVS_EX_UNDERLINEHOT | LVS_EX_UNDERLINECOLD;
@@ -6273,7 +6078,7 @@ pub unsafe fn CDefView_GetDefaultViewStream_body(this: *mut CDefView, Stgm: DWOR
         let path_ptr = core::ptr::addr_of_mut!(path).cast::<u16>();
         let mut name: [u16; 39 as usize];
         let name_ptr = core::ptr::addr_of_mut!(name).cast::<u16>();
-        wsprintfW(path_ptr, CPP_COM_WSTR_BA2342D760A2.as_ptr(), REGSTR_PATH_EXPLORER, CPP_COM_WSTR_A7D0FE10F8A8.as_ptr());
+        wsprintfW(path_ptr, CPP_COM_WSTR_BA2342D760A2.as_ptr(), REGSTR_PATH_EXPLORER.as_ptr(), CPP_COM_WSTR_A7D0FE10F8A8.as_ptr());
         StringFromGUID2(clsid_ptr as *const CLSID, name_ptr, 39);
         *ppStream = SHOpenRegStream2W(HKEY_CURRENT_USER, path_ptr as *const u16, name_ptr as *const u16, Stgm);
         hr = if !(*ppStream).is_null() { S_OK } else { E_FAIL };
@@ -6654,7 +6459,7 @@ pub unsafe fn CDefView_GetItemObject_body(this: *mut CDefView, uItem: UINT, riid
         }
         SVGIO_SELECTION => {
             CDefView_GetSelections_body(this);
-            hr = ((*(*(*this).m_pSFParent).lpVtbl).GetUIObjectOf)((*this).m_pSFParent, (*this).m_hWnd, (*this).m_cidl, (*this).m_apidl, riid, 0, ppvOut);
+            hr = ((*(*(*this).m_pSFParent).lpVtbl).GetUIObjectOf)((*this).m_pSFParent, (*this).m_hWnd.cast(), (*this).m_cidl, (*this).m_apidl, riid, 0, ppvOut);
             if ((hr) < 0) {
                 return hr;
             }
@@ -6963,11 +6768,11 @@ pub unsafe fn CDefView_CreateViewWindow3_body(this: *mut CDefView, psb: *mut ISh
 
     let requestedViewMode: UINT = (*this).m_FolderSettings.ViewMode as UINT;
 
-    (*(*(*this).m_pShellBrowser).lpVtbl).GetWindow((*this).m_pShellBrowser, &mut (*this).m_hWndParent as *mut HWND);
+    ((*(*(*this).m_pShellBrowser).lpVtbl).GetWindow)((*this).m_pShellBrowser, &mut (*this).m_hWndParent as *mut HWND);
     CDefView__DoFolderViewCB_body(this, SFVM_HWNDMAIN, 0, (*this).m_hWndParent as LPARAM);
 
     CDefView_cpp_com_assign_m_pCommDlgBrowser(this, core::ptr::null_mut());
-    if ((*(*(*this).m_pShellBrowser).lpVtbl).QueryInterface(
+    if (((*(*(*this).m_pShellBrowser).lpVtbl).QueryInterface)(
             (*this).m_pShellBrowser,
             core::ptr::addr_of!(IID_ICommDlgBrowser), core::ptr::addr_of_mut!((*this).m_pCommDlgBrowser).cast()
         )) >= 0 {
@@ -7004,7 +6809,7 @@ pub unsafe fn CDefView_CreateViewWindow3_body(this: *mut CDefView, psb: *mut ISh
 
     if (*this).m_hMenu.is_null() {
         (*this).m_hMenu = CreateMenu();
-        (*(*(*this).m_pShellBrowser).lpVtbl).InsertMenusSB((*this).m_pShellBrowser, (*this).m_hMenu, &mut omw as *mut OLEMENUGROUPWIDTHS);
+        ((*(*(*this).m_pShellBrowser).lpVtbl).InsertMenusSB)((*this).m_pShellBrowser, (*this).m_hMenu, &mut omw as *mut OLEMENUGROUPWIDTHS);
     }
 
     CDefView__MergeToolbar_body(this);
@@ -7278,7 +7083,7 @@ pub unsafe fn CDefView_Exec_body(this: *mut CDefView, pguidCmdGroup: *const GUID
         return OLECMDERR_E_UNKNOWNGROUP;
     }
 
-    if IsEqualCLSID(pguidCmdGroup, &(*this).m_Category) != 0 {
+    if IsEqualCLSID(pguidCmdGroup, &(*this).m_Category as *const _) != 0 {
         if nCmdID == FCIDM_SHVIEW_AUTOARRANGE {
             if *V_VT!(pvaIn) != VT_INT_PTR {
                 return OLECMDERR_E_NOTSUPPORTED;
@@ -7291,8 +7096,8 @@ pub unsafe fn CDefView_Exec_body(this: *mut CDefView, pguidCmdGroup: *const GUID
             if (*this).m_hMenuViewModes as usize != 0 {
                 let hmenuViewPopup: HMENU = CreatePopupMenu();
                 Shell_MergeMenus(
-                    hmenuViewPopup,
-                    (*this).m_hMenuViewModes,
+                    hmenuViewPopup.cast(),
+                    (*this).m_hMenuViewModes.cast(),
                     0,
                     0,
                     0xFFFF,
@@ -7315,7 +7120,7 @@ pub unsafe fn CDefView_Exec_body(this: *mut CDefView, pguidCmdGroup: *const GUID
                     params.rcExclude.left,
                     params.rcExclude.bottom,
                     (*this).m_hWndParent,
-                    &mut params,
+                    &mut params as *mut _,
                 );
                 DestroyMenu(hmenuViewPopup);
             }
@@ -7325,7 +7130,7 @@ pub unsafe fn CDefView_Exec_body(this: *mut CDefView, pguidCmdGroup: *const GUID
         }
     }
 
-    if cpp_com_iid_equal(pguidCmdGroup, &CGID_Explorer)
+    if cpp_com_iid_equal(pguidCmdGroup, &CGID_Explorer as *const _)
         && nCmdID == 0x29
         && nCmdexecopt == 4
         && !pvaOut.is_null()
@@ -7333,14 +7138,14 @@ pub unsafe fn CDefView_Exec_body(this: *mut CDefView, pguidCmdGroup: *const GUID
         return S_OK;
     }
 
-    if cpp_com_iid_equal(pguidCmdGroup, &CGID_ShellDocView)
+    if cpp_com_iid_equal(pguidCmdGroup, &CGID_ShellDocView as *const _)
         && nCmdID == 9
         && nCmdexecopt == 0
     {
         return 1;
     }
 
-    if cpp_com_iid_equal(pguidCmdGroup, &CGID_DefView) {
+    if cpp_com_iid_equal(pguidCmdGroup, &CGID_DefView as *const _) {
         let mut pStream: *mut IStream = core::ptr::null_mut();
         let _pStream_cpp_com_guard = CppComPtrGuard::new(core::ptr::addr_of_mut!(pStream));
         let mut SubKey = [0u16; ((MAX_PATH) as usize)];
@@ -7365,7 +7170,7 @@ pub unsafe fn CDefView_Exec_body(this: *mut CDefView, pguidCmdGroup: *const GUID
             DVCMDID_RESET_DEFAULTFOLDER_SETTINGS => {
                 PathCombineW(
                     SubKey.as_mut_ptr(),
-                    REGSTR_PATH_EXPLORER,
+                    REGSTR_PATH_EXPLORER.as_ptr(),
                     CPP_COM_WSTR_A7D0FE10F8A8.as_ptr(),
                 );
                 SHDeleteKeyW(HKEY_CURRENT_USER, SubKey.as_ptr());
@@ -7459,7 +7264,7 @@ pub unsafe fn CDefView_drag_notify_subitem_body(this: *mut CDefView, grfKeyState
     } else {
         let mut pidl: PCUITEMID_CHILD = CDefView__PidlByItem_body(this, lResult);
 
-        hr = ((*(*(*this).m_pSFParent).lpVtbl).GetUIObjectOf)((*this).m_pSFParent, (*this).m_ListView.m_hWnd, 1, &mut pidl, core::ptr::addr_of!(IID_IDropTarget), core::ptr::null_mut(), core::ptr::addr_of_mut!((*this).m_pCurDropTarget).cast());
+        hr = ((*(*(*this).m_pSFParent).lpVtbl).GetUIObjectOf)((*this).m_pSFParent, (*this).m_ListView.m_hWnd.cast(), 1, &mut pidl, core::ptr::addr_of!(IID_IDropTarget), core::ptr::null_mut(), core::ptr::addr_of_mut!((*this).m_pCurDropTarget).cast());
     }
 
     IUnknown_SetSite((*this).m_pCurDropTarget as *mut IUnknown, this as *mut IUnknown);
@@ -7824,7 +7629,7 @@ pub unsafe fn CDefView__MergeToolbar_body(this: *mut CDefView) -> HRESULT {
 
     hr = IUnknown_QueryService(
         (*this).m_pShellBrowser as *mut IUnknown,
-        &IID_IExplorerToolbar,
+        &IID_IExplorerToolbar as *const _,
         core::ptr::addr_of!(IID_IExplorerToolbar), core::ptr::addr_of_mut!(ptb).cast(),
     );
     if hr < 0 {
