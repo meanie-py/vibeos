@@ -1870,6 +1870,23 @@ flight is marked; in-flight lanes live in [`active-lanes/`](active-lanes/).*
 - **CRT floor — ~0–5%.** `sdk/lib/crt/` = 581 `.c` (printf/scanf/string/math/locale/
   mbstring/wine) still compiled; only `crt-startup/dllmain/crt0` entry-glue + the
   `libcntpr` kernel subset (`cnt-rust`) are Rust. Largely irreducible variadic.
+  **But read that 581 carefully before costing any of it: much of the tree belongs to the
+  `crt` TARGET, and nothing that ships links `crt`.** Measured 2026-09-13 — the only
+  `target_link_libraries` naming it is `modules/rostests/apitests/crt/static_crt_apitest.cmake:52`,
+  and `sdk/lib/crt/libcrt.a` is not even produced by a normal build (it is a ninja target with
+  no built artifact in `build-amd64`). crtdll, which is the plausible consumer, links
+  `msvcrt_static crtmath vcruntime chkstk wine` instead. Concretely for the two directories
+  that look biggest: `CRT_MBSTRING_SOURCE` and `CRT_MISC_SOURCE` feed `crt.cmake` ALONE, while
+  shipping gets exactly `mbstring/mbstrlen.c` and `misc/fltused.c` through `libcntpr` — so
+  translating the other ~55 mbstring and ~16 misc files would improve one apitest and nothing
+  in the OS. The parts of `sdk/lib/crt` that DO ship are the ones already named elsewhere:
+  `libcntpr` (kernel, Rust via cnt-rust), `crtmath` (done 2026-09-13), `msvcrtex`, and the
+  `msvcrt_static` set.
+
+  Recorded because the obvious check misleads: `grep -rl '\bcrt\b' --include=CMakeLists.txt`
+  "finds" msvcrt, ucrtbase, ntdll and services, every one of them a substring match on
+  `msvcrt`/`crtmath`/`_crt`. File-mentions-it is not links-it, and I asserted the wrong version
+  of this before checking the link graph.
 - **LSA/SAM server lane — in flight.** samsrv (~90%, `samsrv-rust` 16 `.rs`) and lsasrv
   (~50%+, `lsasrv-rust` 20 `.rs`) are the active server-side frontier.
 - **kernel32/advapi32 tails.** kernel32 NLS `locale.c` + resources; advapi32 `wine/
