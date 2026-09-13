@@ -269,6 +269,50 @@ def test_check_trace_flags_an_empty_replay_log(tmp_path):
     assert any("did not complete" in w for w in rr.check_trace(trace))
 
 
+def test_a_qemu_version_change_warns_but_does_not_refuse(tmp_path, monkeypatch):
+    """The distinction the marker exists for. A newer QEMU MIGHT still replay the
+    trace, so that is advice; media the guest cannot read back is not."""
+    trace = tmp_path / "t"
+    trace.mkdir()
+    rr.write_manifest(trace, arch="arm64", argv=[], media={})
+    m = json.loads((trace / "manifest.json").read_text())
+    m["qemu_version"] = "QEMU emulator version 1.0.0"
+    (trace / "manifest.json").write_text(json.dumps(m))
+    (trace / "replay.bin").write_bytes(b"x")
+    warnings = rr.check_trace(trace)
+    assert warnings
+    assert not any(rr.FATAL_MARKER in w for w in warnings)
+
+
+def test_replay_refuses_a_trace_whose_media_moved_on(tmp_path, monkeypatch):
+    """The run this prevents actually happened: a replay of a trace whose overlay
+    source had been rebuilt printed the warning, carried on, opened the gdbstub,
+    and then dropped the connection. A warning nobody can act on mid-run is not a
+    warning."""
+    from . import rrcmd
+
+    src = tmp_path / "boot.img"
+    src.write_bytes(b"as recorded")
+    trace = tmp_path / "t"
+    cmd = ["qemu-system-aarch64", "-drive", f"file={src},format=raw,if=virtio"]
+    _out, media = rr.transform(cmd, mode="record", trace_dir=trace, stage=True)
+    rr.write_manifest(trace, arch="arm64", argv=[], media=media)
+    (trace / "replay.bin").write_bytes(b"x")
+    rr.snapshot_pristine(trace)
+    src.write_bytes(b"rebuilt since")
+
+    called = []
+    monkeypatch.setattr(rr, "prepare_replay", lambda t: called.append(t))
+
+    class _Args:
+        trace = str(tmp_path / "t")
+        root = None
+        gdb = False
+
+    assert rrcmd.cmd_replay(_Args(), tmp_path) == 2
+    assert not called, "refused replays must not even reset the media"
+
+
 def test_check_trace_flags_a_qemu_version_change(tmp_path):
     """Device models change between QEMU releases; the trace does not. This is the
     most likely reason an old trace stops replaying, and it is invisible otherwise."""
@@ -384,10 +428,16 @@ def test_a_rebuilt_source_image_is_flagged_not_silently_replayed(tmp_path):
     assert rr.check_trace(trace) == []
 
     src.write_bytes(b"the media after somebody rebuilt")
-    assert any("has CHANGED" in w for w in rr.check_trace(trace))
+    changed = rr.check_trace(trace)
+    assert any("has CHANGED" in w for w in changed)
+    # FATAL, not advisory: the guest would read bytes the recording never saw, so
+    # the replay is pointless and `rr replay` must refuse rather than burn a run.
+    assert all(rr.FATAL_MARKER in w for w in changed)
 
     src.unlink()
-    assert any("is GONE" in w for w in rr.check_trace(trace))
+    gone = rr.check_trace(trace)
+    assert any("is GONE" in w for w in gone)
+    assert all(rr.FATAL_MARKER in w for w in gone)
 
 
 def test_a_copied_image_does_not_depend_on_its_source(tmp_path):
@@ -811,3 +861,42 @@ def test_scsi_cd_is_refused_too(tmp_path):
     (tmp_path / "iso").write_bytes(b"\0" * 64)
     with pytest.raises(rr.RecordReplayError, match="ATAPI"):
         rr.transform(cmd, mode="record", trace_dir=tmp_path / "t", stage=False)
+
+
+def test_the_gdb_flag_warns_that_stopping_a_replay_aborts_qemu(tmp_path, monkeypatch, capsys):
+    """`--gdb` was documented as giving reverse execution and never tested; the first
+    real test aborted QEMU with `Playback shouldn't have to iowait`. The flag is kept
+    so the recipe can be re-tried on a newer QEMU, but it must not hand anyone a stub
+    while implying the thing they want from it works."""
+    from . import rrcmd
+
+    trace = tmp_path / "t"
+    trace.mkdir()
+    rr.write_manifest(trace, arch="arm64", argv=[], media={}, boot_cmd=["true"])
+    (trace / "replay.bin").write_bytes(b"x")
+    (trace / "media").mkdir()
+    rr.snapshot_pristine(trace)
+    # check_trace() shells out for the QEMU version; the boot itself is not under
+    # test, so stub both with something that satisfies each caller.
+    monkeypatch.setattr(
+        rrcmd.subprocess,
+        "run",
+        lambda *a, **k: type("R", (), {"returncode": 0, "stdout": "", "stderr": ""})(),
+    )
+    monkeypatch.setattr(
+        rr.subprocess,
+        "run",
+        lambda *a, **k: type("R", (), {"returncode": 0, "stdout": "", "stderr": ""})(),
+    )
+
+    class _Args:
+        root = None
+        gdb = True
+
+        def __init__(self, where: Path) -> None:
+            self.trace = str(where)
+
+    rrcmd.cmd_replay(_Args(trace), tmp_path)
+    err = capsys.readouterr().err
+    assert "Playback shouldn't have to iowait" in err
+    assert "9.0.2" in err

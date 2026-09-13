@@ -124,31 +124,63 @@ it gives up hardware virtualization as well.
 the UP:=smp1 collapse case the arm64 bug lives in. Refusing all `-smp` would
 have refused the only interesting boot.
 
-## Replaying with gdb
+## Replaying with gdb — BROKEN on QEMU 9.0.2 (2026-09-13)
+
+**Read this before planning any debugging session on a replay.** The gdbstub
+does not work against a replay on the QEMU we have. Stopping the guest — by
+single-stepping, or simply by attaching to a running replay — aborts QEMU:
+
+```
+qemu-system-aarch64: Playback shouldn't have to iowait
+  (insn total 1/336313 left, event 5 is EVENT_INSTRUCTION)
+```
+
+Reproduced three ways on aarch64 QEMU 9.0.2, twice on a fresh warning-free trace
+and once outside the harness so QEMU's stderr was visible:
+
+| what | result |
+|---|---|
+| `--gdb` (halted at instruction 0), connect, read `$pc` | works |
+| ... then `stepi` | QEMU **aborts** with the message above (rc -6) |
+| ... reconnect afterwards | stub does not answer |
+| stub without `-S`, attach to a running replay | QEMU **aborts** |
+
+So `continue`, `reverse-continue`, `reverse-stepi` and reverse watchpoints are
+all out of reach: every one of them needs the guest to stop.
+
+This matters more than any other limitation here, because reverse execution was
+the *point*. For the `PC=0` fault the question is not where it faulted — we know
+that — but who zeroed the return address, and a reverse watchpoint would answer
+it directly. Today it cannot.
+
+**This section previously described that recipe as working. It was never
+tested.** The same error was in the divergence log below, attributed to a
+degenerate bare VM and explicitly marked "not reproduced on a real vibeos boot";
+that attribution was wrong, and the first real test reproduced it immediately.
+
+`rr replay --gdb` still opens the stub, and prints a warning saying all of the
+above, because the path should stay available for a newer QEMU — this reads like
+a bug rather than a design constraint, and it is the single highest-value thing
+to re-test on a QEMU upgrade.
+
+**What a trace is still good for meanwhile:** a deterministic, re-runnable
+capture of one specific boot, including a crashing one — serial, screenshots and
+the harness's own triage all work on a replay. It is the debugger attach that
+does not.
+
+### To re-test after a QEMU upgrade
 
 ```bash
-./vibeos-cli rr replay latest --gdb
+./vibeos-cli rr record --arch arm64 --payload none --name gdbcheck
+./vibeos-cli rr replay gdbcheck --gdb     # note the port it prints
+gdb-multiarch -batch \
+  -ex 'set architecture aarch64' \
+  -ex 'target remote 127.0.0.1:<port>' \
+  -ex 'stepi' -ex 'output/x $pc'
 ```
 
-This halts at instruction 0 with the stub open (the port is printed by the boot
-harness; it is auto-allocated per run — never hardcode 12001). Inside gdb:
-
-```
-target remote 127.0.0.1:<port>
-add-symbol-file build-arm64/.../ntkrnlmp.exe <kbase+0x1000>
-continue                 # runs to the fault
-reverse-continue         # runs BACKWARDS to the previous stop
-watch -l *(long*)&thing
-reverse-continue         # -> lands on whoever wrote it
-```
-
-Reverse execution is the whole point. For the `PC=0` fault, the question is not
-where it faulted (we know: instruction fetch from address 0) but *who zeroed the
-return address*, and a reverse watchpoint answers that directly.
-
-`--gdb` works through the harness's own gdbstub plumbing (`VIBEOS_QEMU_GDB=wait`),
-not a second implementation, so everything that is true of `debug start --gdb` is
-true here.
+If that prints a PC instead of `Remote connection closed`, the recipe above is
+live again.
 
 ## The icount shift is the one setting that can break a healthy guest
 
@@ -227,6 +259,37 @@ Record it here and keep going; only chase one when it looks load-bearing.
   guest sees, so it is a deliberate choice rather than something to do silently,
   and it is not needed for the bug this tool was built for (#39 is arm64).
   A test asserts a virtio-backed CD is allowed, so the path stays open.
+
+- **Does the arm64 wedge track the ramdisk drive? UNRESOLVED — and the
+  experiment that would answer it needs `rr record`, not a hand-rolled one
+  (2026-09-13).**
+
+  The ATAPI result above came from wrapping one drive at a time, so the obvious
+  next move was the same A/B on arm64: record and replay with only the scratch
+  drive wrapped, then only the boot/ramdisk drive. One run did show the wedge
+  reproducing with **only the ramdisk drive wrapped** (record 8,933 lines, replay
+  21). But the comparison variants are not trustworthy and the numbers are
+  deliberately not quoted here, for two reasons worth knowing before anyone
+  repeats this:
+
+  * **The hand-rolled record leg could not finalise a trace.** A recording must
+    exit cleanly or QEMU never flushes the rr log. Driving QMP `quit` on a timer
+    did not terminate QEMU within 240s in any of three attempts; every resulting
+    trace was truncated and replayed as
+    `Replay: invalid input log file version`. `rr record` gets this right — it
+    shuts down at the boot marker through the harness — so vary the CONFIG and
+    let the tool own the recording, rather than reimplementing the record leg.
+  * **Unwrapping a drive means restoring its `if=`, not just its id.** arm64's
+    boot drive is `if=virtio` with no explicit `-device`: the transform moves
+    `if=virtio` onto the filter and leaves the backend `if=none`. Drop the filter
+    without putting `if=virtio` back and the guest boots with no disk and stalls
+    early — which reads exactly like the wedge under investigation. (x86's drives
+    have an explicit `-device`, so the id alone sufficed there and the bug did
+    not show.) That silently invalidated a whole variant.
+
+  Because run durations then diverged, the record-throughput comparison between
+  variants was measuring different amounts of wall clock and has been discarded
+  rather than reported.
 
 - **Replay reproduces CONTENT faithfully but does not reliably run to
   completion: it WEDGES, at a point that differs between runs of the same trace
@@ -325,12 +388,15 @@ Record it here and keep going; only chase one when it looks load-bearing.
   cheap check that settled it — reading `hang-cpustate.txt` for whether the VM
   was actually stopped — cost nothing.
 
-- **`Playback shouldn't have to iowait (insn total 1/1 left, event 7 is
-  EVENT_INSTRUCTION)`** — seen on a degenerate bare VM (no firmware, no media)
-  under `-S` + gdb during the initial spike. On a machine with nothing to
-  execute, the replay's first scheduled event is already past the end of the
-  instruction stream. Not reproduced on a real vibeos boot; if it reappears
-  there, it is a genuine divergence and belongs in a bug entry, not this list.
+- **`Playback shouldn't have to iowait` — RESOLVED as the gdbstub limitation
+  above, and the earlier entry here was wrong.** This was first seen during the
+  initial spike on a degenerate bare VM (no firmware, no media) under `-S` +
+  gdb, and written up as an artefact of that degenerate setup with the note
+  "not reproduced on a real vibeos boot". That note was an untested assumption:
+  the first time anyone drove gdb against a real trace, it reproduced
+  immediately (`insn total 1/336313 left, event 5`). It is not about having
+  nothing to execute; it is what happens whenever a replay's guest is stopped by
+  the debugger. See "Replaying with gdb" above.
 
 ## Costs and limits
 
