@@ -1055,7 +1055,11 @@ pub unsafe extern "C" fn CompressSrbHistoryData(RequestHistory: *mut SRB_HISTORY
 
     i = 0;
     while i < (*RequestHistory).UsedHistoryCount {
-        let toMatch: *mut SRB_HISTORY_ITEM = core::ptr::addr_of_mut!((*RequestHistory).History[i as usize]);
+        // History is a FLEXIBLE array -- classpnp.h declares it
+        // `_Field_size_part_(TotalHistoryCount, UsedHistoryCount) History[1]` and the
+        // allocator adds 20 * sizeof(SRB_HISTORY_ITEM), so bindgen's `[T; 1]` makes
+        // every index >= 1 a panic. Walk it by pointer.
+        let toMatch: *mut SRB_HISTORY_ITEM = (&raw mut (*RequestHistory).History).cast::<SRB_HISTORY_ITEM>().add(i as usize);
         let srbStatus: u8 = (*toMatch).SrbStatus;
         let sense: u8 = (*toMatch).NormalizedSenseData.SenseKey();
         let asc: u8 = (*toMatch).NormalizedSenseData.AdditionalSenseCode;
@@ -1064,7 +1068,7 @@ pub unsafe extern "C" fn CompressSrbHistoryData(RequestHistory: *mut SRB_HISTORY
 
         j = i + 1;
         while ((*toMatch).ClassDriverUse != 0xFF) && j < (*RequestHistory).UsedHistoryCount {
-            let found: *mut SRB_HISTORY_ITEM = core::ptr::addr_of_mut!((*RequestHistory).History[j as usize]);
+            let found: *mut SRB_HISTORY_ITEM = (&raw mut (*RequestHistory).History).cast::<SRB_HISTORY_ITEM>().add(j as usize);
             if (srbStatus == (*found).SrbStatus) &&
                 (sense == (*found).NormalizedSenseData.SenseKey()) &&
                 (asc == (*found).NormalizedSenseData.AdditionalSenseCode) &&
@@ -1097,7 +1101,8 @@ pub unsafe extern "C" fn CompressSrbHistoryData(RequestHistory: *mut SRB_HISTORY
     }
 
     if (*RequestHistory).UsedHistoryCount == (*RequestHistory).TotalHistoryCount {
-        let item: *mut SRB_HISTORY_ITEM = core::ptr::addr_of_mut!((*RequestHistory).History[((*RequestHistory).TotalHistoryCount as usize) - 1]);
+        let item: *mut SRB_HISTORY_ITEM =
+            (&raw mut (*RequestHistory).History).cast::<SRB_HISTORY_ITEM>().add((*RequestHistory).TotalHistoryCount as usize - 1);
         (*RequestHistory).ClassDriverUse[0] = ((*RequestHistory).ClassDriverUse[0]).wrapping_add((*item).ClassDriverUse as _);
         (*RequestHistory).UsedHistoryCount -= 1;
     }
@@ -1107,7 +1112,8 @@ pub unsafe extern "C" fn CompressSrbHistoryData(RequestHistory: *mut SRB_HISTORY
         let mut bytesToZero: usize;
         bytesToZero = ((*RequestHistory).TotalHistoryCount as usize).wrapping_sub((*RequestHistory).UsedHistoryCount as usize);
         bytesToZero = bytesToZero.wrapping_mul(core::mem::size_of::<SRB_HISTORY_ITEM>());
-        let start_ptr: *mut SRB_HISTORY_ITEM = core::ptr::addr_of_mut!((*RequestHistory).History[(*RequestHistory).UsedHistoryCount as usize]);
+        let start_ptr: *mut SRB_HISTORY_ITEM =
+            (&raw mut (*RequestHistory).History).cast::<SRB_HISTORY_ITEM>().add((*RequestHistory).UsedHistoryCount as usize);
         core::ptr::write_bytes(start_ptr as *mut u8, 0u8, bytesToZero);
     }
 

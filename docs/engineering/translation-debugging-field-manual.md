@@ -5868,6 +5868,24 @@ without headroom (`host-disk` stage), and an ENOSPC during a build classifies as
 ahead of the generic matchers instead of being filed as a defect in the diff. Both always print
 free bytes and the threshold missed, because the number is what ends the investigation.
 
+**A seventh member, and the subtlest: a RETRY policy keyed on CLASSIFICATION rather than
+IDENTITY.** `CONFORMANCE_FLAKE` retries for an explicitly stated reason — *"a real regression
+reproduces on the retry; a coin-flip does not"* (`gate.py`, `RETRYABLE`). That premise is sound
+and the code does not implement it: `_retryable()` is handed a classification and a summary and
+never compares WHICH assertion regressed across attempts. So the floor does not require the same
+test to fail three times, only SOME regression each time — and independent intermittents
+therefore COMPOSE. A 2026-09-13 drain burned its whole retry budget on two unrelated arm64
+bistables (`ExPools: pass 14 -> 13` on two attempts, `NpfsConnect: pass 679 -> 678` on the
+third), and the final verdict records none of that disagreement: it reads as one reproducing
+regression, and the train rejects the lane whose diff happened to be in the batch. Two lessons,
+and the second is the reusable one. **Recognise it from the artifacts, not the verdict** — read
+each attempt's own conformance log and check the identities MATCH before believing a
+reproduction; a lane that checks only whether its own signature is `ExPools` will wrongly decide
+it is exempt when attempt two says `NpfsConnect`. And generally: **"it failed N times" is
+evidence of a real regression only if it failed the SAME way N times.** Retry-until-it-agrees
+without comparing identities converts a population of rare independent flakes into a reliable
+red, and the rarer they each are the more convincing the red looks.
+
 
 ### A difftest oracle that is the source the port was MADE from grades nothing
 

@@ -1531,7 +1531,15 @@ pub unsafe extern "system" fn PciIsSlotPresentInParentMethod(
         if NT_SUCCESS(Status) {
             let mut i: ULONG = 0;
             while i < (*OutputBuffer).Count {
-                Argument = &mut (*OutputBuffer).Argument[i as usize] as PACPI_METHOD_ARGUMENT;
+                // NOT `Argument[i]`: the C over-allocates this buffer (Length =
+                // sizeof(hdr) + 2048) and the header declares
+                // `_Field_size_bytes_(Length) ACPI_METHOD_ARGUMENT Argument[ANYSIZE_ARRAY]`,
+                // which bindgen models as `[T; 1]`. Indexing it bounds-checks and
+                // PANICS for every i >= 1 -- i.e. any ACPI _PRT returning more than
+                // one slot. Walk the flexible array by pointer instead.
+                Argument = (&raw mut (*OutputBuffer).Argument)
+                    .cast::<ACPI_METHOD_ARGUMENT>()
+                    .add(i as usize) as PACPI_METHOD_ARGUMENT;
                 if (*Argument).Type != ACPI_METHOD_ARGUMENT_INTEGER {
                     i = i.wrapping_add(1);
                     continue;
