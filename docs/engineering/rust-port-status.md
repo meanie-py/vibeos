@@ -1306,6 +1306,17 @@ arch-specific inline asm and no behaviour. `_vsnprintf` IS translatable (it take
 `va_list`), but it is not a ucrtbase export; it exists because the legacy CRT references it,
 and it needs the ucrt header's `_CRT_INTERNAL_*` printf option constants as substrate.
 
+**And dbgrpt, the other half of that "shared-library lane", does NOT share this blocker —
+the two are grouped by ownership, not by mechanics.** `add_library(dbgrpt misc/dbgrpt.cpp)`
+produces a static `libdbgrpt.a` and msvcrt links it as a LIBRARY
+(`msvcrt_static crtmath dbgrpt vcruntime wine chkstk`), so its six `_Crt*Report*` exports are
+shadowable by the existing `--whole-archive` cohab rail exactly as crtmath's were — no CMake
+surgery, no new rail. What blocks it is the translation itself: 500 lines of genuine C++,
+`template <typename char_t>` with `char`/`wchar_t` specialisations feeding a traits-based
+narrow/wide dual instantiation, plus MessageBox UI and OutputDebugString paths. c2rust cannot
+anchor C++, so it is pure-LLM or hand, and it belongs to the C++ substrate lane rather than
+here. Do not assume the ucrtbase link-order finding above applies to it.
+
 
 #### crtmath sized, and the island question answered — 2026-09-06
 
