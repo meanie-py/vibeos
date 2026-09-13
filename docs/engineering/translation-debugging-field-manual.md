@@ -3154,6 +3154,22 @@ for by passing `--no-seal-wide`. Fix: when the bank directory's name lacks a tok
 defaults emit, pass the `--no-seal-*` matching how it was bought, or migrate the bank
 deliberately. Never `--no-resume`: that is an explicit PAID regeneration.
 
+**And before you ever conclude your paid work VANISHED, run the second test.** A commit can be
+absent from the merge queue, in neither the landed nor the rejected list, AND not an ancestor
+of `origin/master`, and still be perfectly fine — the queue tracks lane TIPS, so your own newer
+submission subsumes the older commit. Every signal reads "reaped, resubmit":
+
+    git merge-base --is-ancestor <missing> origin/master   # "has it LANDED?"
+    git merge-base --is-ancestor <missing> <my-lane-tip>   # "is it still TRAVELLING?"
+                                                           #   true  -> superseded, fine
+                                                           #   false -> genuinely lost
+
+Neither predicate alone answers "is it lost", and the first is the one nearest to hand. Cheap
+to get wrong elsewhere, expensive here: a translation lane that believes its work disappeared
+goes looking for what it did wrong, and that road ends at `--no-resume` and re-buying bodies
+that were sitting in the queue the whole time. It is the one failure of this class that spends
+money rather than time.
+
 This bit when the seal flags became default-ON: 24 of msvcrt's 26 banks stopped at
 `__callseal_v1`, leaving 2 reachable. **Settle it by constructing the path, never by counting**
 — three counts were offered that night and only the third answered the question asked:
