@@ -8,7 +8,11 @@ the bug -- one is a regression, the other is a lane that was never staged.
 
 from __future__ import annotations
 
+import shutil
+import subprocess
 from pathlib import Path
+
+import pytest
 
 from tests.qemu.cli import ladder
 
@@ -83,10 +87,14 @@ def test_non_parity_guests_are_reported_but_not_required():
 # --- gate policy ---------------------------------------------------------
 
 
-def _manifest(tmp_path: Path, lines: list[str], arch: str = "amd64") -> Path:
+def _manifest(
+    tmp_path: Path, lines: list[str], arch: str = "amd64", cpu_layer: bool = True
+) -> Path:
     """A repo whose build-<arch>/boot/livecd.cmake.lst holds these entries."""
     lst = tmp_path / f"build-{arch}" / "boot" / "livecd.cmake.lst"
     lst.parent.mkdir(parents=True, exist_ok=True)
+    if cpu_layer:
+        lines = [*lines, "reactos/system32/wow64cpu.dll=/tmp/vibeos/x/wow64cpu.dll"]
     lst.write_text("\n".join(lines) + "\n")
     return tmp_path
 
@@ -150,6 +158,7 @@ def test_native_x86_needs_no_special_case(tmp_path):
         tmp_path,
         ["reactos/system32/ntoskrnl.exe=/tmp/vibeos/build-i386/ntoskrnl/ntoskrnl.exe"],
         arch="i386",
+        cpu_layer=False,
     )
     assert ladder.gate_decision(repo, "i386")[1] is False
 
@@ -209,7 +218,8 @@ def test_built_but_unstaged_says_so_and_names_the_fix(tmp_path):
     extra, staged, why = ladder.gate_decision(repo, "amd64")
     assert extra == [] and not staged
     assert "BUILT but none is staged" in why
-    assert "reconfigure" in why or "re-run the configure" in why
+    # The remedy must match THIS media's staging mechanism, not the other arch's.
+    assert "wow64cpu/CMakeLists.txt" in why and "VIBEOS_FEX" not in why
 
 
 def test_never_built_keeps_the_plain_reason(tmp_path):
@@ -219,3 +229,73 @@ def test_never_built_keeps_the_plain_reason(tmp_path):
     _, staged, why = ladder.gate_decision(repo, "amd64")
     assert not staged
     assert "BUILT but" not in why
+
+
+# --- arm64: a ramdisk, not a cmake manifest -------------------------------
+
+
+def _ramdisk(tmp_path: Path, guests: list[str], cpu_layer: bool = True) -> Path:
+    """A real FAT image with real mcopy'd guests — the arm64 media shape."""
+    img = tmp_path / "qemu" / "ramdisk.img"
+    img.parent.mkdir(parents=True, exist_ok=True)
+    subprocess.run(
+        ["dd", "if=/dev/zero", f"of={img}", "bs=1M", "count=64", "status=none"], check=True
+    )
+    subprocess.run(["mformat", "-i", str(img), "::"], check=True)
+    stub = tmp_path / "stub.bin"
+    stub.write_bytes(b"MZ")
+
+    def _put(dirname: str, name: str) -> None:
+        subprocess.run(["mmd", "-i", str(img), "::/reactos"], check=False)
+        subprocess.run(["mmd", "-i", str(img), f"::/reactos/{dirname}"], check=False)
+        subprocess.run(
+            ["mcopy", "-o", "-i", str(img), str(stub), f"::/reactos/{dirname}/{name}"], check=True
+        )
+
+    if cpu_layer:
+        _put("system32", "libwow64fex.dll")
+    for g in guests:
+        _put("syswow64", f"{g}.exe")
+    return tmp_path
+
+
+mtools = pytest.mark.skipif(
+    shutil.which("mdir") is None or shutil.which("mformat") is None, reason="mtools absent"
+)
+
+
+@mtools
+def test_arm64_reads_the_ramdisk_because_it_has_no_manifest(tmp_path):
+    """The reported defect: arm64 stages via mcopy and leaves no cmake manifest,
+    so a manifest-only probe answered False while the guests were aboard —
+    silently withholding ladder coverage from the FEX host."""
+    repo = _ramdisk(tmp_path, list(ladder.LADDER))
+    assert ladder.media_has_guests(repo, "arm64") is True
+    assert ladder.gate_decision(repo, "arm64")[0] == ["--ladder"]
+
+
+@mtools
+def test_an_arm64_ramdisk_without_guests_is_a_real_negative(tmp_path):
+    """mdir exits 0 on 'File not found', so this must come from stdout, not $?."""
+    repo = _ramdisk(tmp_path, [], cpu_layer=True)
+    assert ladder.media_has_guests(repo, "arm64") is False
+
+
+def test_no_image_and_no_manifest_is_still_a_decline(tmp_path):
+    """Neither mechanism can answer — decline rather than guess either way."""
+    assert ladder.media_has_guests(tmp_path, "arm64") is False
+
+
+@mtools
+def test_the_restage_remedy_matches_the_arm64_mechanism(tmp_path):
+    """arm64 restages with VIBEOS_FEX=1, not the x86 configure touch. Naming the
+    wrong one is worse than naming none — it sends the reader to a command that
+    cannot help on their arch."""
+    repo = _ramdisk(tmp_path, [], cpu_layer=True)
+    guests = repo / "build-fex-hello"
+    guests.mkdir(exist_ok=True)
+    for g in ladder.LADDER:
+        (guests / f"{g}.exe").write_bytes(b"MZ")
+    _, staged, why = ladder.gate_decision(repo, "arm64")
+    assert not staged
+    assert "VIBEOS_FEX" in why and "wow64cpu/CMakeLists.txt" not in why
