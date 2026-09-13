@@ -858,6 +858,20 @@ impl CStringW {
         self.m_nLength = nLength;
     }
 
+    /// `Empty()` — atlsimpstr.h:253.
+    ///
+    /// ATL takes one of two branches: SetLength(0) when the buffer is LOCKED, or release the
+    /// CStringData and attach the manager's nil string. This port has no refcount, no lock and
+    /// no string manager, and its `Reserve` never shrinks by design (GetBuffer hands out a raw
+    /// pointer that must stay valid) -- so the locked branch is the one consistent with the
+    /// model here: length to zero, terminator written, allocation kept.
+    pub unsafe fn Empty(&mut self) {
+        self.m_nLength = 0;
+        if !self.m_pszData.is_null() {
+            *self.m_pszData = 0;
+        }
+    }
+
     /// `GetBuffer(int nMinBufferLength)` — cstringt.h. Returns a writable buffer of at least
     /// that many characters. Must be paired with `ReleaseBuffer`.
     pub unsafe fn GetBuffer(&mut self, nMinBufferLength: i32) -> *mut WCHAR {

@@ -55,7 +55,8 @@
 //! perfectly. Anyone extending those vtables transcribes from the IDL, in order, and does not
 //! infer from call sites.
 //!
-//! 68 errors remain. `shellcom::IBindCtxVtbl` is now its full THIRTEEN slots in objidl.idl
+//! 66 errors remain, and they are a LONG TAIL rather than roots: many distinct one- and
+//! two-instance classes, no single fix worth ten. The mechanical seam is worked out. `shellcom::IBindCtxVtbl` is now its full THIRTEEN slots in objidl.idl
 //! order, and IStream's Seek/CopyTo/Stat placeholders are typed -- this TU was their first
 //! caller, which is how the placeholder convention surfaces when a new consumer arrives.
 //!
