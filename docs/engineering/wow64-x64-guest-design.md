@@ -177,6 +177,46 @@ measurement in this document. **Benefit:** no hybrid-PE loader, no ARM64X dispat
 context format; reuses the BTCpu-shaped wiring in `dll/win32/wow64/wow64.c` that we have already
 debugged.
 
+## First-pass pricing of Fork B's plugin option (including CONTEXT, as it must be)
+
+Asked for after the correction above, on the principle that pricing the plugin without CONTEXT
+conversion and exception entry understates Fork B exactly as quoting 13,678 alone overstates it.
+This is a FIRST PASS from reading upstream, not an estimate anybody should schedule against.
+
+**Shape of the thing to build.** The two existing Windows plugins are ~1,050 lines each
+(`WOW64/Module.cpp` 1,066; `ARM64EC/Module.cpp` 1,041 + 155 of `Module.S`) over ~1,290 lines of
+shared `Source/Windows/Common/` (allocator hooks, CPU features, image and invalidation trackers,
+logging). So a third plugin is a ~1,000-line module that reuses Common — not a subsystem.
+
+**The CONTEXT conversion is already written, and is NOT ARM64EC-specific.** This is the
+load-bearing finding of the pricing pass, and it is checkable in one function:
+`ARM64EC/Module.cpp:317` `LoadStateFromECContext` maps a standard x64 `CONTEXT` straight into
+FEXCore state — `State.gregs[REG_RAX] = Context.Rax;` and so on. There is nothing hybrid-PE
+about it. It is "x86-64 `CONTEXT` <-> FEXCore state", which is precisely what ANY x64 guest
+contract needs, EC or not. What is EC-specific is how the context is *delivered* (the
+`ARM64EC_NT_CONTEXT` overlay on the native frame), not the mapping itself.
+
+Measured surface in the x64 plugin:
+
+| piece | lines | reusable outside ARM64EC? |
+|---|---|---|
+| state <-> x64 `CONTEXT` (`LoadStateFromECContext`, `ReconstructThreadState`) | 162 | **yes, in substance** — plain register mapping |
+| exception path (`RethrowGuestException`, `ResetToConsistentState*`) | 267 | partly — entangled with EC delivery and `ARM64_NT_CONTEXT` |
+| *(for contrast)* the 32-bit equivalents we already drive today | 97 | — |
+
+So the CONTEXT half of "the unpriced cost on the CPU-layer side" is ~162 lines whose logic
+already exists upstream and is not EC-shaped; the exception half is ~267 lines that genuinely is
+entangled and is the part to scope properly. **That is materially cheaper than "someone still
+has to produce an x86-64 CONTEXT from an AArch64 one" sounds** — that someone already did, for
+the x64 case, in the plugin we are not building.
+
+**What this does NOT price**, and the gap is the whole remaining risk: whether a plugin in our
+tree can link vendored FEXCore and reuse `Source/Windows/Common/` *without* modifying
+`external/fex`. Both existing plugins are built by FEX's own CMake, inside the vendored tree. A
+third one built by OUR CMake against FEXCore-as-a-library is the option to prove, and nobody has
+tried it. If that turns out to require touching the vendored tree, Fork B's cost changes
+category, not degree.
+
 ## What is NOT established here
 
 Listed because a scoping doc that reads as confident is worse than useless:
@@ -189,8 +229,10 @@ Listed because a scoping doc that reads as confident is worse than useless:
   and the table above shows only four init differences — but "four differences" is not the same
   as "no other runtime assumptions", and the syscall-handler difference in particular hides
   unmeasured work.
-- **Sub-option B1's real cost.** Asserted as plausible from the fact that FEXCore is already
-  linked as a library twice. Not priced.
+- **Sub-option B1's real cost.** First-pass priced above for the CONTEXT and exception surface.
+  The UNPRICED part is now narrower and sharper: whether our CMake can link vendored FEXCore and
+  reuse `Source/Windows/Common/` without modifying `external/fex`. Nobody has tried it, and it is
+  the one question that could change Fork B's cost by category rather than degree.
 - **Anything about performance.** A 64-bit guest recompiles more code, and our current 32-bit
   path already faults inside FEX's code cache on images >500K (roadmap: `LookupCache::FindBlock`).
   That bug is bitness-independent and would follow us to either fork. **Fix it before pricing
