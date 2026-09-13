@@ -60,6 +60,16 @@ LADDER: dict[str, int] = {
     "selfmod32": 0x600D,
 }
 
+# Optional guests: reported when seen, never required. This table is the PARITY
+# set -- every entry must report or the ladder fails -- so a guest that is built
+# on demand does not belong in it. sqlite32 is the third-party stress guest
+# (tools/stress/sqlite/build.sh); it is absent from a normal image, and putting
+# it above would make every ladder run wait out LADDER_TIMEOUT_SECONDS and then
+# fail for a guest nobody built.
+OPTIONAL: dict[str, int] = {
+    "sqlite32": 0x600D,
+}
+
 # [WINLOGON] selfmod32.exe exit = 0x600d (0x600D = PASS)
 _VERDICT = re.compile(r"\[WINLOGON\] ([A-Za-z0-9_]+)\.exe exit = 0x([0-9a-fA-F]+)")
 
@@ -70,10 +80,25 @@ _VERDICT = re.compile(r"\[WINLOGON\] ([A-Za-z0-9_]+)\.exe exit = 0x([0-9a-fA-F]+
 # the exact class of false signal this file exists to remove.
 LADDER_TIMEOUT_SECONDS = 420.0
 
+# Extra drain granted once an optional guest is seen to launch. Matches the
+# winlogon watch window for the slowest one (sqlite32: 300s) plus slack.
+OPTIONAL_EXTRA_SECONDS = 360.0
+
 
 def markers() -> list[str]:
     """Serial substrings that must all appear before the ladder is complete."""
     return [f"{g}.exe exit = " for g in LADDER]
+
+
+def _optional_in_flight(buf: str) -> list[str]:
+    """Optional guests winlogon has LAUNCHED but that have not reported yet.
+
+    An optional guest is absent from most images, so it cannot be a required
+    marker -- but once serial shows winlogon created it, its verdict is exactly
+    what the run is for, and stopping the drain before it reports throws the
+    answer away. Detected from the launch line rather than from staging state,
+    because the harness cannot see inside the media."""
+    return [g for g in OPTIONAL if f"{g}.exe (" in buf and f"{g}.exe exit = " not in buf]
 
 
 def watch(vm, seconds: float = LADDER_TIMEOUT_SECONDS) -> str:
@@ -84,10 +109,19 @@ def watch(vm, seconds: float = LADDER_TIMEOUT_SECONDS) -> str:
     need = markers()
     buf = ""
     deadline = time.monotonic() + seconds
+    # A launched optional guest gets its own extension on top of the parity
+    # budget: it is third-party code doing real work under emulation, so it is
+    # slow by nature, and charging it to the parity budget is what turned a
+    # green ladder into a fake selfmod32 failure the first time one was added.
+    extended = False
     while time.monotonic() < deadline:
         buf += vm.serial.read_available(timeout=0.5) or ""
-        if all(m in buf for m in need):
+        pending = _optional_in_flight(buf)
+        if all(m in buf for m in need) and not pending:
             break
+        if pending and not extended:
+            deadline += OPTIONAL_EXTRA_SECONDS
+            extended = True
     return buf
 
 
@@ -106,6 +140,10 @@ def check(text: str) -> dict | None:
     seen = verdicts(text)
     missing = [g for g in LADDER if g not in seen]
     wrong = [(g, seen[g], want) for g, want in LADDER.items() if g in seen and seen[g] != want]
+    # An optional guest is ignored when absent and enforced when present: the
+    # reason to build one is to find out whether it passes, so a red one that
+    # got staged must not be silently tolerated.
+    wrong += [(g, seen[g], want) for g, want in OPTIONAL.items() if g in seen and seen[g] != want]
 
     if not missing and not wrong:
         return None

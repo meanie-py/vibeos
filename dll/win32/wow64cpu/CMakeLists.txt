@@ -69,6 +69,14 @@ set(_wow64_guests
     ${REACTOS_SOURCE_DIR}/build-i386/base/applications/sndrec32/sndrec32.exe
     ${REACTOS_SOURCE_DIR}/build-i386/base/applications/kbswitch/kbswitch.exe
     ${REACTOS_SOURCE_DIR}/tools/doom/doom-i386.exe)
+# OPTIONAL guests are kept OUT of _wow64_guests on purpose: a single missing
+# entry there sets _wow64_guest_ok FALSE and skips the whole syswow64 staging,
+# so listing a build-on-demand binary would silently disable every WoW64 probe
+# for anyone who had not built it. Listed here instead, and only when present.
+set(_wow64_optional_guests)
+if(EXISTS ${REACTOS_SOURCE_DIR}/tools/stress/sqlite/sqlite32.exe)
+    list(APPEND _wow64_optional_guests ${REACTOS_SOURCE_DIR}/tools/stress/sqlite/sqlite32.exe)
+endif()
 set(_wow64_guest_ok TRUE)
 foreach(_f ${_wow64_guests})
     if(NOT EXISTS ${_f})
@@ -97,6 +105,7 @@ if(_wow64_guest_ok)
                 # is currently a no-op (measured: same 64 modules), which is the point
                 # — it costs nothing and stops depending on luck.
                 ${_wow64_guests}
+                ${_wow64_optional_guests}
                 ${REACTOS_SOURCE_DIR}/build-i386/base/applications/testgui/testgui.exe
                 ${REACTOS_SOURCE_DIR}/tools/doom/doom-i386.exe
                 ${REACTOS_SOURCE_DIR}/build-fex-hello/gui32.exe
@@ -143,6 +152,9 @@ if(_wow64_guest_ok)
     add_cd_file(FILE ${REACTOS_SOURCE_DIR}/build-fex-hello/fault32.exe DESTINATION reactos/syswow64 FOR livecd)
     add_cd_file(FILE ${REACTOS_SOURCE_DIR}/build-fex-hello/thread32.exe DESTINATION reactos/syswow64 FOR livecd)
     add_cd_file(FILE ${REACTOS_SOURCE_DIR}/build-fex-hello/selfmod32.exe DESTINATION reactos/syswow64 FOR livecd)
+    if(EXISTS ${REACTOS_SOURCE_DIR}/tools/stress/sqlite/sqlite32.exe)
+        add_cd_file(FILE ${REACTOS_SOURCE_DIR}/tools/stress/sqlite/sqlite32.exe DESTINATION reactos/syswow64 FOR livecd)
+    endif()
     add_cd_file(FILE ${REACTOS_SOURCE_DIR}/build-i386/base/applications/testgui/testgui.exe DESTINATION reactos/syswow64 FOR livecd)
     add_cd_file(FILE ${REACTOS_SOURCE_DIR}/build-i386/base/applications/games/winmine/winmine.exe DESTINATION reactos/syswow64 FOR livecd)
     add_cd_file(FILE ${REACTOS_SOURCE_DIR}/build-i386/base/applications/calc/calc.exe DESTINATION reactos/syswow64 FOR livecd)

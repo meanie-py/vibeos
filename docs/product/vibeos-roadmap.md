@@ -488,9 +488,41 @@ land; date every addition.** Source docs live in `docs/engineering/archive/`.
 
 ## Known bugs & flakes (live registry)
 
+- **A 32-bit guest doing real file I/O BUGCHECKs the arm64 kernel — OPEN** (2026-09-13).
+  Found on the first writable-volume run of `sqlite32.exe`, the third-party stress guest
+  (`tools/stress/sqlite/build.sh`). Real SQLite creating and writing a database on arm64:
+
+        *** BUGCHECK: 0x0000001E (0xffffffffc0000098, 0xfffff800421cbba4, ...)
+        P1 = 0xC0000098 STATUS_FILE_INVALID
+        P2 = ntkrnlmp.exe+0x3BBA4 = RtlRaiseStatus+0x44
+
+  KMODE_EXCEPTION_NOT_HANDLED: a kernel path raised `STATUS_FILE_INVALID` with nothing to
+  catch it. `NtCreateFile` had already returned SUCCESS on
+  `\??\X:\reactos\syswow64\sqlite32.db`, so the file was created and the fault is in what
+  follows, not in the open.
+  **Symbolicate against `ntkrnlmp.exe`, not `ntoskrnl.exe`** — the MP kernel is the default
+  boot on all three arches since 2026-09-12, and the UP image resolves the same RVA to
+  `KeSetIdealProcessorThread`, which is nonsense that fits nothing. The deeper stack frames
+  do NOT symbolicate reliably from the export table (they land past the last symbol and come
+  back as `HalAdjustResourceList +0x24d4d8`), so the caller is UNIDENTIFIED — a GDB break on
+  `RtlRaiseStatus` with the guest running is the next step, not more log reading.
+  **amd64 does not show it, and that is not evidence of an arch difference**: the amd64
+  livecd volume is read-only, so the guest takes its in-memory fallback there and never
+  exercises the file path at all. An earlier build of the same guest, writing to a different
+  path, got as far as `NtLockFile => c0000054` (FILE_LOCK_CONFLICT) and
+  `NtUnlockFile => c000007e` (RANGE_NOT_FOUND) on ranges SQLite picks not to overlap — the
+  wow64 marshaller for both looks correct (`ByteOffset`/`Length` are layout-identical
+  `LARGE_INTEGER*`), so FsRtl byte-range locking is a second, separate lead.
+
 - **Stock 32-bit GUI apps cascade into an execute-at-NULL fault under WoW64 — OPEN**
   (2026-09-13). Found while attributing a guest-fault count in a `smoke --arch amd64 --ladder`
-  run, so it is NOT on the probe-guest ladder and does not fail it. `notepad.exe`,
+  run, so it is NOT on the probe-guest ladder and does not fail it.
+  **CORRECTION (same night): do not read this as amd64-only.** `sqlite32.exe` took the same
+  signature once on arm64 -- `eip=00000000` with `rw=8` (instruction fetch), crashing before
+  its first print -- and did NOT reproduce on an immediate re-run, where it printed normally
+  and got all the way into file I/O. So the arch split is unestablished and the arm64
+  instance is a single non-reproducing sample; the reason arm64 does not show the *stock-app*
+  cascade is simply that it never launches notepad/mspaint/wordpad. `notepad.exe`,
   `mspaint.exe` and `wordpad.exe` (each logged as `STOCK i386 app`) take **58 faults apiece**;
   every other image in the same boot takes 0 or 1, and `fault32.exe`'s single fault at
   `eip=00401012` is the deliberate one its own test raises. So this is specific to the stock
