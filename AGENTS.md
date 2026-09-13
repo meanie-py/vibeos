@@ -301,8 +301,11 @@ wasted >$100 here.
 New code must compile on stable. **Do not add `#![feature(...)]`, and do not add
 `RUSTC_BOOTSTRAP=1` to a CMakeLists** — that env var silently unlocks nightly and is how nightly
 crept back in the same day it was removed. Both are hard-gated by `scan_nightly_surface`
-(`vibeos-cli check`). The one sanctioned nightly user is the **i386 kernel** `*-cargo` cell
-(`-Z build-std` for a no-SSE `core`); it retires with the wow64 lane. If you think you need a
+(`vibeos-cli check`). The one sanctioned nightly user is the i386 `*-cargo` cell (`-Z build-std`
+for a no-SSE `core`) — and `add_cargo_module` gates on ARCH alone, so that is **every** i386
+cargo module: `KIND win32dll` ones like ntdll build user-mode code against the *kernel*
+softfloat json too. Retiring the i386 kernel does not retire the cell on its own, because
+SysWOW64 stages i386 user-mode PEs and they outlive it. If you think you need a
 nightly feature, you almost certainly don't — see the reference doc for the `c_variadic` and
 `linkage` workarounds.
 

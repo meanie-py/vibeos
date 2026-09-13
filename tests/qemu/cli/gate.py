@@ -66,6 +66,7 @@ import time
 from pathlib import Path
 
 from . import archcfg, hostdisk, hostlock, lints
+from . import ladder as ladder_mod
 from .artifacts import Run, Stage
 
 # A failure with one of these classifications is a *documented* flake or an
@@ -877,12 +878,46 @@ def gate(args, repo: Path) -> int:
     difftest_ok = True
     dfut: dict = {}
 
+    # --ladder for the arches whose media actually carries the WoW64 guests.
+    #
+    # WHY THE GATE NEEDS THIS AT ALL. The nine probe guests are spawned by
+    # winlogon AFTER explorer, and the smoke's success condition IS the desktop
+    # marker -- so an ordinary gate stops watching before the ladder starts, and a
+    # guest can be RED indefinitely with every gate green. That is not
+    # hypothetical: selfmod32 exited 0xBAD9 on amd64 from the day E17 landed it,
+    # and thread32 sat dead on rung 1 until a154628337b. ladder.py turned "remember
+    # to run --until on both arches" into a flag; this turns the flag into policy.
+    #
+    # WHY IT IS CONDITIONAL. The guests stage from sibling trees (build-i386,
+    # build-fex-hello) and arm64 stages them only under VIBEOS_FEX=1, so a lane
+    # that never staged one would otherwise burn the full ladder drain per boot and
+    # then report LADDER_NOT_STAGED as though something regressed. The probe reads
+    # the MEDIA, not those trees -- see ladder.media_has_guests.
+    #
+    # WHY THE SKIP IS LOUD. A gate that quietly stops checking the thing it was
+    # asked to check is the exact failure this lane exists to remove, so the
+    # decision is recorded per arch either way. Nothing here is retryable on
+    # purpose: with staging VERIFIED on the media, a LADDER_NOT_STAGED verdict
+    # means the image and this probe disagree, which is a real finding, and a red
+    # rung is a regression. Both fall through RETRYABLE and fail the arch at once.
+    # Memoized per lane: decided once on the media this gate built, then reused by
+    # every retry attempt. A retry must not re-decide -- rescanning the image would
+    # both repeat the scan and let an arch silently change policy mid-gate.
+    ladder_decided: dict[str, list[str]] = {}
+
+    def _ladder_extra(lane: str) -> list[str]:
+        if lane not in ladder_decided:
+            extra, staged, why = ladder_mod.gate_decision(repo, lane)
+            ladder_decided[lane] = extra
+            run.add(Stage(f"ladder:{lane}", status="ok" if staged else "skip", detail=why))
+        return ladder_decided[lane]
+
     def _lane_once(lane: str, root: Path) -> dict:
         if lane == "net":
             return _net_once(repo, root)
         if lane.startswith("conf:"):
             return _conformance_once(repo, lane.split(":", 1)[1], root)
-        return _smoke_once(repo, lane, root, smoke_extra)
+        return _smoke_once(repo, lane, root, smoke_extra + _ladder_extra(lane))
 
     # Workers: every lane's first pass can be in flight while retries queue, plus
     # the (cheap, thread-blocking) lint runs and the concurrent builds share the same

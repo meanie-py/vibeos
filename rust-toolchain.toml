@@ -6,7 +6,7 @@
 # The 42 `*-cargo` LINK cells are the exception: sdk/cmake/gcc.cmake sets
 # RUSTUP_TOOLCHAIN from `.rust-nightly` (env beats this file), because they still
 # need `-Z build-std` + the custom kernel target JSONs. Retiring that is the
-# stable-toolchain lane (docs/engineering/active-lanes/stable-toolchain-plan.md).
+# stable-toolchain lane (docs/engineering/stable-toolchain-plan.md).
 #
 # WHY AN EXACT VERSION, NOT "stable": until 2026-07-12 nothing pinned the toolchain
 # at all, so `nightly` floated to whatever rustup last installed and the build was
