@@ -2098,9 +2098,21 @@ def resolve_sys_crate(repo_root: Path, module_name: str, usermode: bool) -> str:
 
     Resolution is by EXISTENCE on disk, in the same order rustconv's own `--target` proves
     an output crate: `<module>-sys` if there is one, else the mode default.
+
+    `module_name` may be a CMake TARGET rather than the directory, and a target routinely
+    carries a role suffix the crate does not: msvcrt's `.c` are split across `msvcrt_shared`
+    and `msvcrt_static`, both of which import `msvcrt-sys`. So strip trailing `_<role>`
+    segments one at a time and try each stem. The first version of this special-cased
+    `_static` alone, which left `--target msvcrt_shared` resolving to `ntdll-sys` and
+    re-emitting the six BLOCKING findings this function exists to prevent -- with all six
+    constants already present in `msvcrt-sys` and correct. A partial fix here reads exactly
+    like no fix at all, because the symptom is identical.
     """
     stem = Path(module_name).name
-    for cand in (f"{stem}-sys", f"{stem.replace('_static', '')}-sys"):
+    stems = [stem]
+    while "_" in stems[-1]:
+        stems.append(stems[-1].rsplit("_", 1)[0])
+    for cand in (f"{st}-sys" for st in stems):
         if (repo_root / "sdk/lib/rust" / cand / "src").is_dir():
             return cand
     return "ntdll-sys" if usermode else "ntkrnl-sys"
