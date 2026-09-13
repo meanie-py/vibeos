@@ -120,6 +120,35 @@ After modifying a `CMakeLists.txt` or `.cmake` file, re-run cmake before buildin
 bash ../tools/canon-run.sh cmake .          # Re-configure (from any build-*/ dir)
 ```
 
+### Long work gets DETACHED; the watcher is expendable
+
+Agent background tasks on this box are killed, often within minutes, with
+`system is running low on memory` — observed repeatedly at **40+ GiB MemAvailable, over
+100 GiB free disk, and no OOM kill in `dmesg`**. (This is unrelated to the QEMU lifetime
+reaper, `VIBEOS_QEMU_MAX_LIFETIME`; don't conflate them.) **Don't theorise about the
+trigger** — "it only kills tasks that produce output" looked decisive after one 36-minute
+survivor and was falsified by the next identical watcher dying at 12 minutes. What holds up
+across many samples is only which *shapes* survive:
+
+| shape | outcome |
+|---|---|
+| `setsid nohup bash -c '…' < /dev/null > log 2>&1 &` | survives |
+| a foreground Bash call the harness auto-backgrounds at its timeout | survives |
+| a harness `run_in_background` watcher | killed routinely |
+
+So **put the WORK in a detached process that writes to a log file, and let any watcher be
+expendable.** A killed watcher then costs a re-poll; a killed build costs 25 minutes.
+
+```bash
+setsid nohup bash -c './vibeos-cli build --arch arm64 > /tmp/.../build.log 2>&1; \
+    echo "rc=$?" >> /tmp/.../build.log' < /dev/null > /dev/null 2>&1 &
+```
+
+Write a terminal marker (`rc=$?`) into the log, because `vibeos-cli` buffers its summary
+until the end: an empty log means "still running", not "hung". Judge the result by the
+artifact and that marker, never by a watcher's exit code — and when a watcher dies, check
+`ps` before assuming the work died with it.
+
 ## Toolchain
 
 - **Compiler:** llvm-mingw (clang 19, lld 19.1.7)

@@ -64,6 +64,7 @@ from collections import defaultdict
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
+from tools.lint_facts import source_facts
 from tools.source_walk import source_files
 
 REPO = Path(__file__).resolve().parent.parent
@@ -192,6 +193,65 @@ def width_of(rhs: str, aliases: dict[str, str], arch: str, depth: int = 0) -> in
     return None
 
 
+@source_facts()
+def alias_facts(text: str):
+    decls, aliases = [], {}
+    lines = text.splitlines()
+    # Brace stack recording, for each open block, whether it is an impl/trait
+    # body. An ASSOCIATED type is not an alias: `impl Width for Narrow { type
+    # Ch = i8 }` and `impl Width for Wide { type Ch = u16 }` are msvcrt's
+    # narrow/wide scanf engines, and differing per impl is the entire point of
+    # an associated type. Without this every trait in the tree is a false hit,
+    # and a lint people learn to ignore is worse than no lint.
+    block_is_impl: list[bool] = []
+    pending_impl = False
+    for idx, line in enumerate(lines):
+        m = TYPE_RE.match(line)
+        in_impl = any(block_is_impl)
+        if IMPL_RE.match(line):
+            pending_impl = True
+        for brace in re.finditer(r"[{}]", line):
+            ch = brace.group()
+            if ch == "{":
+                block_is_impl.append(pending_impl)
+                pending_impl = False
+            elif ch == "}" and block_is_impl:
+                block_is_impl.pop()
+        if not m:
+            continue
+        if in_impl:
+            continue
+        name, rhs = m.group(1), normalize(m.group(2))
+        # `#[cfg(...)]`-gated aliases legitimately come in mutually exclusive
+        # pairs — freeldr's UINTN is u64/u32 by target_pointer_width, and only
+        # one is ever compiled. The arch-path bucketing cannot see these
+        # because both live in one file. Look back past doc comments and
+        # other attributes for a cfg. (Same rule as scan_const_contradictions;
+        # without it, every pointer-width pair in the tree is a false hit.)
+        gated = False
+        for back in range(1, 4):
+            if idx - back < 0:
+                break
+            prev = lines[idx - back].strip()
+            if prev.startswith("#[cfg("):
+                gated = True
+                break
+            if not (prev.startswith("//") or prev.startswith("#[")):
+                break
+        if gated:
+            aliases.setdefault(name, rhs)
+            continue
+        # Resolution table takes every declaration, including nolint'd and
+        # generic ones — it is only used to follow chains.
+        aliases.setdefault(name, rhs)
+        if NOLINT_RE.search(line):
+            continue
+        if "<" in rhs or "dyn " in rhs or "impl " in rhs or "fn(" in rhs:
+            continue
+        decls.append((name, rhs))
+    return decls, aliases
+
+
 def collect(root: Path):
     """-> (decls: name -> [(rel, rhs, arch)], aliases_by_arch: arch -> {name: rhs})"""
     rust_root = root / "sdk" / "lib" / "rust"
@@ -215,57 +275,10 @@ def collect(root: Path):
         else:
             rel = str(path)
         arch = arch_of(rel)
-        lines = text.splitlines()
-        # Brace stack recording, for each open block, whether it is an impl/trait
-        # body. An ASSOCIATED type is not an alias: `impl Width for Narrow { type
-        # Ch = i8 }` and `impl Width for Wide { type Ch = u16 }` are msvcrt's
-        # narrow/wide scanf engines, and differing per impl is the entire point of
-        # an associated type. Without this every trait in the tree is a false hit,
-        # and a lint people learn to ignore is worse than no lint.
-        block_is_impl: list[bool] = []
-        pending_impl = False
-        for idx, line in enumerate(lines):
-            m = TYPE_RE.match(line)
-            in_impl = any(block_is_impl)
-            if IMPL_RE.match(line):
-                pending_impl = True
-            for ch in line:
-                if ch == "{":
-                    block_is_impl.append(pending_impl)
-                    pending_impl = False
-                elif ch == "}" and block_is_impl:
-                    block_is_impl.pop()
-            if not m:
-                continue
-            if in_impl:
-                continue
-            name, rhs = m.group(1), normalize(m.group(2))
-            # `#[cfg(...)]`-gated aliases legitimately come in mutually exclusive
-            # pairs — freeldr's UINTN is u64/u32 by target_pointer_width, and only
-            # one is ever compiled. The arch-path bucketing cannot see these
-            # because both live in one file. Look back past doc comments and
-            # other attributes for a cfg. (Same rule as scan_const_contradictions;
-            # without it, every pointer-width pair in the tree is a false hit.)
-            gated = False
-            for back in range(1, 4):
-                if idx - back < 0:
-                    break
-                prev = lines[idx - back].strip()
-                if prev.startswith("#[cfg("):
-                    gated = True
-                    break
-                if not (prev.startswith("//") or prev.startswith("#[")):
-                    break
-            if gated:
-                aliases_by_arch[arch].setdefault(name, rhs)
-                continue
-            # Resolution table takes every declaration, including nolint'd and
-            # generic ones — it is only used to follow chains.
+        local_decls, aliases = alias_facts(text)
+        for name, rhs in aliases.items():
             aliases_by_arch[arch].setdefault(name, rhs)
-            if NOLINT_RE.search(line):
-                continue
-            if "<" in rhs or "dyn " in rhs or "impl " in rhs or "fn(" in rhs:
-                continue
+        for name, rhs in local_decls:
             decls[name].append((rel, rhs, arch))
     return decls, aliases_by_arch
 
@@ -273,6 +286,8 @@ def collect(root: Path):
 def contradictions(decls, aliases_by_arch):
     """[(name, rel, rhs, width)] where one arch bucket holds two known widths."""
     out = []
+    common = aliases_by_arch.get("common", {})
+    tables = {arch: {**common, **aliases} for arch, aliases in aliases_by_arch.items()}
     for name, sites in decls.items():
         if len(sites) < 2:
             continue
@@ -282,8 +297,7 @@ def contradictions(decls, aliases_by_arch):
             # An alias chain is resolved within its own arch bucket, falling back
             # to "common" — that is how a per-arch island's ULONG32 resolves for
             # a hand-written file that carries no arch in its path.
-            table = dict(aliases_by_arch.get("common", {}))
-            table.update(aliases_by_arch.get(arch, {}))
+            table = tables.get(arch, common)
             w = width_of(rhs, table, arch if arch != "common" else "common")
             if w is None:
                 continue

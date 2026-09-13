@@ -15,7 +15,7 @@ import subprocess
 import time
 from pathlib import Path
 
-from . import archcfg, cachecfg, canon, diskspace, hostdisk, hostlock, lints, provenance
+from . import archcfg, cachecfg, canon, diskspace, hostdisk, hostjobs, hostlock, lints, provenance
 from .artifacts import Run, Stage
 
 _UNDEF = re.compile(r"undefined (?:symbol|reference)[^\w]*[`']?([@\w]+)", re.I)
@@ -335,18 +335,18 @@ def build(args, repo: Path) -> int:
         )
         return run.finalize(repo)
 
-    # Host CPU broker: a build grabs a ceil(K/max_builds) SHARE of the cpuheavy pool
-    # (default 2 of 4 → two builds may run concurrently host-wide; two running builds
-    # exhaust the pool so native-TCG boots keep their starvation protection) AND the
-    # per-build-dir lock (so two builds never corrupt the same dir, the
-    # determinism-verify-vs-gate incident). Held around the whole build; on a stuck
-    # holder it warns + proceeds unlocked, and it's a no-op when the broker is disabled.
-    # Disk is claimed HERE, not at process start: only two builds can hold cpuheavy
-    # permits at once, so reserving before the broker admits us bills for concurrency
-    # that cannot happen and refuses builds for space nothing will use. reserve() never
-    # blocks -- it admits or raises -- so holding the CPU permit across it is safe.
+    # Directory serialization is a correctness lock. CPU admission belongs to the
+    # compiler/linker processes, after Cargo and Ninja have resolved their own waits.
+    #
+    # Disk is claimed HERE rather than at process start, so a build that never runs is
+    # never billed. That began as protection against the cpuheavy pool -- three arches
+    # launched, two permits, and the third refused for space the broker would never let
+    # it use -- and the per-job broker above has retired that particular shape. What is
+    # left is the narrower guarantee that the claim tracks the build, not the process.
+    # Safe here only because reserve() never BLOCKS: it admits or raises at once.
     try:
         with hostlock.build_lock(build_dir, arch) as admission:
+            hostjobs.ensure(repo)
             run.extra["admission"] = admission
             with diskspace.reserve(repo, "build"):
                 return _build_locked(args, repo, run, arch, cfg, build_dir, cold)
@@ -404,7 +404,8 @@ def _maybe_canonize(
         # which is cached and harmless, and that is worth more than teaching this
         # generic mechanism which cmake options imply which others.
         stale.update({f: True for f in sticky_on if not _flag_in_cache(build_dir, f)})
-        if stale:
+        incomplete = not (build_dir / "build.ninja").is_file()
+        if stale or incomplete:
             defs = [f"-D{flag}={'ON' if on else 'OFF'}" for flag, on in stale.items()]
             cp = run.run(
                 canon.wrap(repo, ["cmake", *defs, "."]),
@@ -428,7 +429,19 @@ def _maybe_canonize(
                     )
                 )
                 return None
-            run.add(Stage("instr-config", status="ok", detail=" ".join(defs)))
+            if not (build_dir / "build.ninja").is_file():
+                run.classification = "CMAKE_CONFIGURE_FAIL"
+                run.add(
+                    Stage("instr-config", status="fail", detail="cmake produced no build.ninja")
+                )
+                return None
+            run.add(
+                Stage(
+                    "instr-config",
+                    status="ok",
+                    detail=" ".join(defs) or "recovered incomplete configure",
+                )
+            )
         return True
     if not canon.available():
         run.add(
@@ -723,7 +736,7 @@ def _build_locked(args, repo: Path, run, arch: str, cfg, build_dir: Path, cold: 
             # regardless, so flipping it no longer relinks the HAL (it used to
             # cost 9m25s i386 / 12m22s amd64 warm, which is why there has never
             # been an MP gate leg).
-            "VIBEOS_SMP_DEFAULT_BOOT": bool(getattr(args, "smp_kernel", False)),
+            "VIBEOS_UP_DEFAULT_BOOT": bool(getattr(args, "up_kernel", False)),
             # i386 HAL flavor: APIC (LAPIC/IOAPIC/TPR) is the DEFAULT as of the
             # i386-apic-hal lane landing. The legacy 8259 PIC is the opt-out
             # escape hatch (`--hal-pic` → -DVIBEOS_PIC_HAL=ON); reconciled every
@@ -812,6 +825,10 @@ def _build_locked(args, repo: Path, run, arch: str, cfg, build_dir: Path, cold: 
                 detail="rustc INCREMENTAL on, Rust sccache OFF (fast-iterate; non-reproducible)",
             )
         )
+
+    build_env = hostjobs.environment(
+        repo, build_env, canonical=canon.is_canonical(build_dir), run_dir=run.dir
+    )
 
     # --- generated-header barrier ---
     # On a FRESH tree (canonize/provision) some RC + cc-rs compiles race ahead of
@@ -998,14 +1015,13 @@ def _build_locked(args, repo: Path, run, arch: str, cfg, build_dir: Path, cold: 
         ramdisk = repo / "qemu" / "ramdisk.img"
         flag = "--refresh" if ramdisk.is_file() else ""
         cmd = ["bash", str(mk)] + ([flag] if flag else [])
-        # The MP PAIR (ntkrnlmp.exe + halmp.dll) is staged unconditionally now, and
-        # freeldr.ini ships both a UP and an MP entry, so --smp here only moves
-        # `DefaultOS=` to the MP one at BUILD time. That is rarely what you want:
-        # vm.smp_selected_iso makes the same one-byte edit in a copy of the media at
-        # BOOT time, which lets one build serve both a UP and an MP run. Keep
-        # --smp-kernel for media that must default to MP with no harness in the loop.
-        if getattr(args, "smp_kernel", False):
-            cmd.append("--smp")
+        # Both pairs are staged unconditionally and freeldr.ini ships both entries;
+        # the MP one is the DEFAULT since 2026-09-12. `--up` here moves `DefaultOS=`
+        # back to the UP entry at BUILD time, which is the only way to get UP media.
+        # Nothing automated passes it -- gate, smoke and conformance all test the MP
+        # pair, because UP is a dead branch we are not shipping.
+        if getattr(args, "up_kernel", False):
+            cmd.append("--up")
         cp = run.run(cmd, cwd=repo, stage="mkramdisk", timeout=900)
         if cp.returncode != 0:
             run.classification = "RESTAGE_FAIL"
@@ -1032,8 +1048,8 @@ def _build_locked(args, repo: Path, run, arch: str, cfg, build_dir: Path, cold: 
             Stage("build-index", exit=cp.returncode, status="ok" if cp.returncode == 0 else "warn")
         )
 
-    # --- auto-check (advisory) unless --no-check ---
-    if not getattr(args, "no_check", False):
+    # Source analysis belongs to check/gate; local build opts in explicitly.
+    if getattr(args, "check", False):
         lints.run_source_lints(run, repo, strict=False)
 
     # --- write provenance stamp ---

@@ -198,8 +198,14 @@ def test_admission_reports_headroom_and_the_request(monkeypatch, tmp_path):
 def test_admission_marks_the_case_that_stalled_six_lanes(monkeypatch, tmp_path):
     """The real numbers: 109G free, 88% used, df perfectly healthy — and no gate
     could be admitted, because a 3-arch run then requested 3x32+4 = 100G against
-    89G of headroom. (32G was the build reservation at the time; it was lowered to
-    25 afterwards as a stopgap, which is why the same free space passes today.)"""
+    89G of headroom.
+
+    `build=32` is passed EXPLICITLY rather than read from policy, and that is the
+    point of the test: 32 was never measured, and measuring it later put the real
+    peak at 7.44 GiB, so the policy default is now 12. Pinning the historical value
+    keeps this case reproducible across a re-measurement instead of quietly going
+    green because the constant moved out from under it.
+    """
     _patch_status(monkeypatch, _fake_status(free_gib=109, build=32))
     (line,) = hostdisk.admission_lines(tmp_path, ["i386", "amd64", "arm64"])
     assert "<< SHORT" in line, line

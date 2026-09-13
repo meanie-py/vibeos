@@ -16,7 +16,7 @@
 #include <winnt.h>
 #include <ndk/ntndk.h>
 
-#define WOW64_MANUAL_UNIMPL ((NTSTATUS)0xC0BBBBBB)
+#include "wow64_status.h"
 
 static void WowAmCpy(unsigned char *d, const unsigned char *s, unsigned n)
 {
@@ -251,7 +251,7 @@ NTSTATUS Wow64AutoMarshalDispatch(const char *Name, ULONG *Arguments)
         return WowAmThunk_NtUserGetGUIThreadInfo(Arguments);
     if (WowAmStrEq(Name, "NtUserTrackMouseEvent"))
         return WowAmThunk_NtUserTrackMouseEvent(Arguments);
-    return WOW64_MANUAL_UNIMPL;
+    return WOW64_AUTOMARSHAL_UNIMPL;
 }
 
 /* NOT generated (still loud NEEDS_MANUAL stubs):

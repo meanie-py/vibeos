@@ -1005,7 +1005,7 @@ def cmd_audit(args) -> int:
             "whose real prototype takes a payload that provably differs between "
             "32- and 64-bit. The guest's struct reaches the 64-bit kernel unmarshalled.\n"
             "Fix: add the name to tools/wow64gen/manual{,-win32k}.txt (which turns it "
-            "into a loud WOW64_MANUAL_UNIMPL stub — a clean error, never a bugcheck), "
+            "into a loud WOW64_AUTOMARSHAL_UNIMPL stub — a clean error, never a bugcheck), "
             "then write the marshaller in dll/win32/wow64/wow64_manual.c or let "
             "`marshalgen gen` emit one.",
             file=sys.stderr,
@@ -1253,7 +1253,7 @@ _GEN_PRELUDE = """\
 #include <winnt.h>
 #include <ndk/ntndk.h>
 
-#define WOW64_MANUAL_UNIMPL ((NTSTATUS)0xC0BBBBBB)
+#include "wow64_status.h"
 
 static void WowAmCpy(unsigned char *d, const unsigned char *s, unsigned n)
 {
@@ -1732,7 +1732,7 @@ def cmd_gen(args) -> int:
     parts.extend(thunks)
     parts.append(
         "\nNTSTATUS Wow64AutoMarshalDispatch(const char *Name, ULONG *Arguments)\n"
-        "{\n" + "\n".join(dispatch) + "\n    return WOW64_MANUAL_UNIMPL;\n}\n"
+        "{\n" + "\n".join(dispatch) + "\n    return WOW64_AUTOMARSHAL_UNIMPL;\n}\n"
     )
     if skipped:
         parts.append(

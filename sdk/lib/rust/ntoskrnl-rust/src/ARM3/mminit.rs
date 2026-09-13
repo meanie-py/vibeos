@@ -1620,8 +1620,30 @@ pub unsafe extern "system" fn MmArmInitSystem(
 
         MiInitializeSessionSpaceLayout();
 
-        MmHighSectionBase =
-            ((MmHighestUserAddress as ULONG_PTR) - 0x800000) as PVOID;
+        /* SEC_BASED means EVERY mapping of the section lands on one system-wide
+         * address, and MiFindEmptyAddressRangeDownBasedTree picks it by
+         * searching downward from here. On a 64-bit kernel the user ceiling is
+         * ~8 TB, so a based section lands far above 4 GB -- and csrss's shared
+         * section is SEC_BASED. A WoW64 guest is then handed a base it cannot
+         * hold: CSR_API_CONNECTINFO's SharedSectionBase narrows to (ULONG) in
+         * wow64, 0x7fffebf0000 truncates to 0xfebf0000, and kernel32
+         * dereferences that and takes 0xc0000005. (wow64 has been printing
+         * "shared section ABOVE 4GB -- guest-invisible!" on every guest connect.)
+         *
+         * A based address must therefore be nameable by every client the section
+         * can reach, 32-bit ones included, so cap the ceiling at the 32-bit user
+         * ceiling. On i386 that is what this already computed, so the cap is a
+         * no-op there and only bites on 64-bit. csrss is the only SEC_BASED
+         * creator in the tree, so the address space this gives up is unused. */
+        const MI_BASED_CEILING_WOW64: ULONG_PTR = 0x7F7E_FFFF;
+        {
+            let ceiling = (MmHighestUserAddress as ULONG_PTR) - 0x800000;
+            MmHighSectionBase = (if ceiling > MI_BASED_CEILING_WOW64 {
+                MI_BASED_CEILING_WOW64
+            } else {
+                ceiling
+            }) as PVOID;
+        }
 
         for i in 0..8 {
             MmStandbyPageListByPriority[i as usize].Total = 0;

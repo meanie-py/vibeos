@@ -104,15 +104,23 @@ from dataclasses import dataclass, field
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
+from tools.lint_facts import source_facts
 from tools.source_walk import source_files
 
 REPO = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(REPO / "tools" / "rustconv"))
 import tree_sitter_rust as tsr  # noqa: E402
-from tree_sitter import Language, Parser  # noqa: E402
+from tree_sitter import Language, Parser, Query, QueryCursor  # noqa: E402
 
 _LANG = Language(tsr.language())
 _PARSER = Parser(_LANG)
+_FACT_NODES = Query(
+    _LANG,
+    """[
+    (call_expression) (function_signature_item) (function_item)
+    (type_item) (use_as_clause) (struct_item) (enum_item) (union_item)
+] @fact""",
+)
 RUST_WS = REPO / "sdk" / "lib" / "rust"
 
 _IDENT_ONLY = re.compile(r"[A-Za-z_]\w*")
@@ -402,75 +410,93 @@ def _owning_crate(rf: Path, crates: frozenset[Path]) -> Path | None:
     return None
 
 
-def sweep(root_dir: Path, crate_dirs: list[Path]):
-    """One parse per file, feeding BOTH the type map and the per-crate index.
+def _in_foreign(node):
+    parent = node.parent
+    while parent is not None:
+        if parent.type == "foreign_mod_item":
+            return True
+        parent = parent.parent
+    return False
 
-    Parsing the workspace for aliases and then re-parsing each crate for
-    decls/defs doubled a 75-second lint. Every fact here comes from the same
-    AST walk.
-    """
-    seen: dict[str, set[str]] = defaultdict(set)
-    aggregates: set[str] = set()
-    crates = frozenset(crate_dirs)
-    per: dict[Path, tuple] = {c: ({}, defaultdict(list), defaultdict(set)) for c in crate_dirs}
-    for rf in sorted(source_files(root_dir)):
-        src = rf.read_bytes()
-        crate = _owning_crate(rf, crates)
-        defs, decls, called = per[crate] if crate is not None else (None, None, None)
-        lines = src.decode(errors="replace").splitlines() if crate is not None else []
 
-        def walk(
-            n, in_foreign=False, src=src, rf=rf, lines=lines, defs=defs, decls=decls, called=called
-        ):
-            if defs is not None:
-                if n.type == "call_expression":
-                    fn = n.child_by_field_name("function")
-                    if fn is not None and fn.type == "identifier":
-                        called[rf].add(_txt(fn, src))
-                if n.type == "function_signature_item" and in_foreign:
-                    nm = n.child_by_field_name("name")
-                    if nm is not None:
-                        ln = n.start_point[0]
-                        if not (ln < len(lines) and _nolint(lines[ln])):
-                            ident = _txt(nm, src)
-                            decls[_symbol(n, src, ident)].append((rf, ln + 1, _sig(n, src), ident))
-                if n.type == "function_item":
-                    prev, attrs = n.prev_sibling, []
-                    while prev is not None and prev.type == "attribute_item":
-                        attrs.append(_txt(prev, src))
-                        prev = prev.prev_sibling
-                    if any("no_mangle" in a or "export_name" in a for a in attrs):
-                        nm = n.child_by_field_name("name")
-                        if nm is not None:
-                            defs[_symbol(n, src, _txt(nm, src))] = (rf, _sig(n, src))
-            if n.type == "type_item":
-                nm = n.child_by_field_name("name")
-                ty = n.child_by_field_name("type")
-                if nm is not None and ty is not None:
-                    name, rhs = _txt(nm, src), norm(_txt(ty, src))
-                    # `pub type c_void = core::ffi::c_void;` is a RE-EXPORT, and
-                    # norm() strips the path, so it lands here as `c_void ->
-                    # c_void`. Recorded as an alias it is a cycle, and a cycle
-                    # resolves to None — which silently made `*mut c_void`
-                    # undecidable, and with it PVOID and every one of the ~60
-                    # types spelled through it. Coverage vanishes with no error.
-                    if rhs != name:
-                        seen[name].add(rhs)
-            # `use ntkrnl_sys::ddk::PKSPIN_LOCK as DdkPKSPIN_LOCK;` is an alias too.
-            # Missing it left the rename unresolvable at depth 0 and reported every
-            # use of it as drift against the very type it renames.
-            if n.type == "use_as_clause":
-                path, alias = n.child_by_field_name("path"), n.child_by_field_name("alias")
-                if path is not None and alias is not None:
-                    seen[_txt(alias, src)].add(norm(_txt(path, src)))
-            if n.type in ("struct_item", "enum_item", "union_item"):
+@source_facts()
+def file_facts(src: bytes, include_functions: bool):
+    seen = defaultdict(set)
+    aggregates = set()
+    defs, decls, called = {}, defaultdict(list), set()
+    lines = src.decode(errors="replace").splitlines() if include_functions else []
+    tree = _PARSER.parse(src)
+    nodes = QueryCursor(_FACT_NODES).captures(tree.root_node).get("fact", [])
+    for n in sorted(nodes, key=lambda node: node.start_byte):
+        if include_functions:
+            if n.type == "call_expression":
+                fn = n.child_by_field_name("function")
+                if fn is not None and fn.type == "identifier":
+                    called.add(_txt(fn, src))
+            if n.type == "function_signature_item" and _in_foreign(n):
                 nm = n.child_by_field_name("name")
                 if nm is not None:
-                    aggregates.add(_txt(nm, src))
-            for c in n.children:
-                walk(c, in_foreign or n.type == "foreign_mod_item")
+                    ln = n.start_point[0]
+                    if not (ln < len(lines) and _nolint(lines[ln])):
+                        ident = _txt(nm, src)
+                        decls[_symbol(n, src, ident)].append((ln + 1, _sig(n, src), ident))
+            if n.type == "function_item":
+                prev, attrs = n.prev_sibling, []
+                while prev is not None and prev.type == "attribute_item":
+                    attrs.append(_txt(prev, src))
+                    prev = prev.prev_sibling
+                if any("no_mangle" in a or "export_name" in a for a in attrs):
+                    nm = n.child_by_field_name("name")
+                    if nm is not None:
+                        defs[_symbol(n, src, _txt(nm, src))] = _sig(n, src)
+        if n.type == "type_item":
+            nm = n.child_by_field_name("name")
+            ty = n.child_by_field_name("type")
+            if nm is not None and ty is not None:
+                name, rhs = _txt(nm, src), norm(_txt(ty, src))
+                # `pub type c_void = core::ffi::c_void;` is a RE-EXPORT, and
+                # norm() strips the path, so it lands here as `c_void ->
+                # c_void`. Recorded as an alias it is a cycle, and a cycle
+                # resolves to None — which silently made `*mut c_void`
+                # undecidable, and with it PVOID and every one of the ~60
+                # types spelled through it. Coverage vanishes with no error.
+                if rhs != name:
+                    seen[name].add(rhs)
+        # `use ntkrnl_sys::ddk::PKSPIN_LOCK as DdkPKSPIN_LOCK;` is an alias too.
+        # Missing it left the rename unresolvable at depth 0 and reported every
+        # use of it as drift against the very type it renames.
+        if n.type == "use_as_clause":
+            path, alias = n.child_by_field_name("path"), n.child_by_field_name("alias")
+            if path is not None and alias is not None:
+                seen[_txt(alias, src)].add(norm(_txt(path, src)))
+        if n.type in ("struct_item", "enum_item", "union_item"):
+            nm = n.child_by_field_name("name")
+            if nm is not None:
+                aggregates.add(_txt(nm, src))
+    return dict(seen), aggregates, defs, dict(decls), called
 
-        walk(_PARSER.parse(src).root_node)
+
+def sweep(root_dir: Path, crate_dirs: list[Path]):
+    """Rebuild global relations from content-addressed per-file facts."""
+    seen = defaultdict(set)
+    aggregates = set()
+    crates = frozenset(crate_dirs)
+    per = {c: ({}, defaultdict(list), defaultdict(set)) for c in crate_dirs}
+    for rf in sorted(source_files(root_dir)):
+        crate = _owning_crate(rf, crates)
+        aliases, structs, definitions, declarations, calls = file_facts(
+            rf.read_bytes(), crate is not None
+        )
+        for name, values in aliases.items():
+            seen[name].update(values)
+        aggregates.update(structs)
+        if crate is not None:
+            defs, decls, called = per[crate]
+            for name, sig in definitions.items():
+                defs[name] = (rf, sig)
+            for name, sites in declarations.items():
+                decls[name].extend((rf, *site) for site in sites)
+            called[rf].update(calls)
     return Types(aliases=seen, aggregates=frozenset(aggregates)), per
 
 

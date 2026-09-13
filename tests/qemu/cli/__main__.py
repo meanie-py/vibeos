@@ -61,7 +61,9 @@ def build_parser() -> argparse.ArgumentParser:
         action="store_true",
         help="fast-iterate: rustc incremental (Rust sccache OFF; non-reproducible, not for gate)",
     )
-    b.add_argument("--no-check", action="store_true", help="skip auto source-lints")
+    checks = b.add_mutually_exclusive_group()
+    checks.add_argument("--check", action="store_true", help="also run advisory source lints")
+    checks.add_argument("--no-check", action="store_true", help=argparse.SUPPRESS)
     b.add_argument(
         "--keep-going",
         action="store_true",
@@ -81,12 +83,15 @@ def build_parser() -> argparse.ArgumentParser:
         "Debug/repro only; off by default",
     )
     b.add_argument(
-        "--smp-kernel",
+        "--up-kernel",
         action="store_true",
-        help="SMP bring-up (docs/engineering/smp-bringup-quest.md): build livecd "
-        "media whose freeldr default entry boots the MP kernel (ntkrnlmp.exe, "
-        "-DVIBEOS_SMP_DEFAULT_BOOT=ON). Opt-in only; default media stays UP. "
-        "Pair with `smoke --smp N` to boot it with N vCPUs",
+        help="OPT OUT to the UP kernel: build media whose freeldr default entry "
+        "boots ntoskrnl.exe + hal.dll (-DVIBEOS_UP_DEFAULT_BOOT=ON). The DEFAULT "
+        "is the MP pair (ntkrnlmp.exe + halmp.dll) since 2026-09-12, and nothing "
+        "automated should pass this -- UP is a dead branch, so a green UP run "
+        "tells us nothing about what we ship. Note this selects the KERNEL "
+        "FLAVOR, which is now independent of vCPU count: `--smp N` sets how many "
+        "CPUs the MP kernel runs on",
     )
     b.add_argument(
         "--kmtests",
@@ -391,6 +396,17 @@ def build_parser() -> argparse.ArgumentParser:
     gst.add_argument("arch", choices=ACCEPTED_ARCHES)
     gst.add_argument("--wait", action="store_true", help="halt at reset (-S) for boot-from-zero")
     gst.set_defaults(fn=gdb_mod.cmd_start)
+
+    gp = gdbsub.add_parser(
+        "probe", help="repeat a Python GDB probe on fresh boots; stop on hit/error"
+    )
+    gp.add_argument("arch", choices=ACCEPTED_ARCHES)
+    gp.add_argument("--script", required=True, help="GDB Python script setting VIBEOS_PROBE_RESULT")
+    gp.add_argument("--repeat", type=int, default=1)
+    gp.add_argument(
+        "--timeout", type=float, default=180.0, help="probe budget plus 30s cleanup margin"
+    )
+    gp.set_defaults(fn=gdb_mod.cmd_probe)
 
     gstat = gdbsub.add_parser("status", help="gdbstub reachability + serial size for a run")
     gstat.add_argument("run_id")

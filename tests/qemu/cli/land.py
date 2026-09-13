@@ -508,6 +508,7 @@ def _spawn_detached(argv: list[str], cwd: Path, log_path: Path) -> None:
             stdout=fh,
             stderr=subprocess.STDOUT,
             start_new_session=True,  # outlives this agent's turn
+            env=dict(os.environ, VIBEOS_JOB_LAUNCHER_PID=str(os.getpid())),
         )
 
 

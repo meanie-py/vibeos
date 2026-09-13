@@ -1063,6 +1063,51 @@ pub unsafe fn NtSetValueKey(Data: PVOID, DataSize: ULONG) -> NTSTATUS {
 // }
 """
 
+# scan_dropped_asserts. Seeded from task #39, 2026-09-06: MI_MAKE_HARDWARE_PTE_USER
+# is a FORCEINLINE in miarm.h whose first four statements are asserts ("check that
+# we are not setting valid a page that should not be"), and BOTH hand-written Rust
+# bridges shipped zero of them. On x86 the missing precondition is invisible; on
+# arm64 MmProtectToPteMask is the only source of the L3 descriptor-type bit, so a
+# no-access mask yields Valid=1 on a descriptor the MMU rejects and the machine
+# stops with no bugcheck. The GOOD case pins the two ways this scanner could go
+# noisy: an assert QUOTED in a trailing C comment is not one that runs (rustconv
+# parks the original C there, so counting it would certify the whole translated
+# population), and a cfg-split twin that legitimately checks less must not report
+# while its sibling still carries the assert.
+_DROPPED_ASSERT_H = """
+FORCEINLINE
+VOID
+MI_MAKE_HARDWARE_PTE_USER(IN PMMPTE NewPte, IN ULONG_PTR ProtectionMask)
+{
+    /* Check that we are not setting valid a page that should not be */
+    ASSERT(ProtectionMask & MM_PROTECT_ACCESS);
+    ASSERT((ProtectionMask & MM_PROTECT_SPECIAL) != MM_GUARDPAGE);
+    NewPte->u.Hard.Valid = TRUE;
+}
+"""
+
+_DROPPED_ASSERT_BAD = """
+pub unsafe fn MI_MAKE_HARDWARE_PTE_USER(new_pte: *mut MMPTE, mask: usize) {
+    // ASSERT(ProtectionMask & MM_PROTECT_ACCESS);
+    (*new_pte).set_valid(true);
+}
+"""
+
+_DROPPED_ASSERT_GOOD = """
+#[cfg(target_arch = "aarch64")]
+pub unsafe fn MI_MAKE_HARDWARE_PTE_USER(new_pte: *mut MMPTE, mask: usize) {
+    ASSERT!(mask & MM_PROTECT_ACCESS != 0);
+    ASSERT!(mask & MM_PROTECT_SPECIAL != MM_GUARDPAGE);
+    (*new_pte).set_valid(true);
+}
+
+#[cfg(not(target_arch = "aarch64"))]
+pub unsafe fn MI_MAKE_HARDWARE_PTE_USER(new_pte: *mut MMPTE, mask: usize) {
+    (*new_pte).set_valid(true);
+}
+"""
+
+
 # scan_unpruned_walk. Seeded from the `source-early` move (2026-09-06): six audited
 # scanners enumerated Rust sources with `rglob("*.rs")` and dropped build output with a
 # post-filter, which is too late by construction — rglob has already descended into
@@ -1106,8 +1151,14 @@ def collect_pyfiles(root: Path):
 def deliberate_control(root: Path):
     return root.rglob("*.rs")  # unpruned-walk: intentional
 """
-
 CONTROLS: list[Control] = [
+    Control(
+        name="scan_dropped_asserts",
+        script="tools/scan_dropped_asserts.py",
+        argv=["--root"],
+        bad={"miarm.h": _DROPPED_ASSERT_H, "bridge.rs": _DROPPED_ASSERT_BAD},
+        good={"miarm.h": _DROPPED_ASSERT_H, "bridge.rs": _DROPPED_ASSERT_GOOD},
+    ),
     Control(
         name="scan_rawdylib_linkname",
         script="tools/scan_rawdylib_linkname.py",

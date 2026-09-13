@@ -10,12 +10,22 @@
 #define NDEBUG
 #include <debug.h>
 
+/* Checked FIRST, because a build can be both. On DBG the kernel stamps
+ * `KeGetCurrentThread() | 1` into a held lock (KI_TRACK_SPINLOCK_OWNER in
+ * ntoskrnl/include/internal/spinlock.h, mirrored in ntkrnl-sys inline/ke.rs),
+ * and that stamp is documented there as OBSERVABLE BEHAVIOUR -- KeTestSpinLock
+ * and DDK callers read it. Testing MP first demanded the lock equal exactly 1,
+ * which only holds on an MP build that is NOT checked; ours are both, so this
+ * failed 306x/round on i386 and 156x on amd64 while the UP kernel -- taking the
+ * checked branch -- passed. That asymmetry read as an MP regression and blocked
+ * the UP:=smp1 collapse. Nothing is weakened: release builds keep the exact
+ * comparisons below. */
 #define CheckSpinLock(Lock, Locked) do                  \
 {                                                       \
-    if (KmtIsMultiProcessorBuild)                       \
-        ok_eq_ulongptr(*(Lock), (Locked) != 0);         \
-    else if (KmtIsCheckedBuild)                         \
+    if (KmtIsCheckedBuild)                              \
         ok_eq_bool(*(Lock) != 0, (Locked) != 0);        \
+    else if (KmtIsMultiProcessorBuild)                  \
+        ok_eq_ulongptr(*(Lock), (Locked) != 0);         \
     else                                                \
         ok_eq_ulongptr(*(Lock), 0);                     \
 } while (0)

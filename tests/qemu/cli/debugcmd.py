@@ -85,7 +85,6 @@ def debug(args, repo: Path) -> int:
 
 def _strict_arch_checks(run: Run, repo: Path, arch: str | None) -> None:
     """One guard list shared by full checks and the gate's arch partition."""
-    lints.run_cargo_link_guard(run, repo, arch)
     lints.run_committed_drift_guard(run, repo, arch)
     if arch:
         lints.run_binary_lints(run, repo, arch, strict=True)

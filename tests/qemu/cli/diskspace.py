@@ -43,18 +43,18 @@ GIB = 1024**3
 REQUESTS = {"build": 12, "check-tooling": 4, "gate": 0, "land": 0}
 FAILURE = "DISK_ADMISSION_FAIL"
 
-# Kinds that claim their budget THEMSELVES, after the CPU broker admits them, instead of
-# at process start. A gate launches one build per arch at once, but the cpuheavy pool is
-# 4 permits at 2 per build, so at most TWO ever build -- reserving at start billed three
-# and refused the third for space the broker was never going to let it use. Back when the
-# estimate was 32 GiB that wedged the whole merge queue with 109 GiB free: 3x32 + 4 + 20 =
-# 120 needed, no lane at fault, and the conductor bisected for a culprit that did not
-# exist. The measured 12 above shrinks that window; it does not close it, because the
-# refusal is INCONCLUSIVE and one of them halts the drain for every queued lane. Reserve
-# for what can actually run concurrently, not for what was launched.
+# Kinds that claim their budget inside the command rather than at process start, so a
+# build that never runs is never billed. The original wedge: a gate launched one build
+# per arch, the cpuheavy pool admitted two, and the third took an instant refusal for
+# space nothing would ever use -- 3x32 + 4 + 20 = 120 GiB needed against 109 free, no
+# lane at fault, and because DISK_ADMISSION_FAIL is INCONCLUSIVE the conductor bisected
+# for a culprit that did not exist while the drain stalled for every queued lane.
 #
-# Safe to take the disk claim while holding a CPU permit only because reserve() never
-# BLOCKS -- it admits or raises immediately, so this cannot deadlock the broker.
+# Two later fixes ate most of that: the estimate is a measured 12 now, not 32, and CPU
+# admission moved to the per-compiler-job broker, so whole builds are no longer gated on
+# a pool of two. What survives is the invariant, which is worth keeping on its own terms:
+# reserve for what actually runs, not for what was launched. Safe to claim under a lock
+# only because reserve() never BLOCKS -- it admits or raises immediately.
 DEFERRED = frozenset({"build"})
 
 

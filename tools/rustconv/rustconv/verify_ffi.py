@@ -18,6 +18,9 @@ from pathlib import Path
 
 from rustconv.config import REACTOS_ROOT as _RUSTCONV_REACTOS_ROOT  # invoked tree root
 
+sys.path.insert(0, str(Path(__file__).resolve().parents[3]))
+from tools.lint_facts import source_facts
+
 # ── Known C macros that should NOT be declared as extern fn ──────────
 
 C_MACROS = {
@@ -272,9 +275,15 @@ def scan_extern_blocks(rs_path: Path, spec: dict, bindgen: dict) -> list[dict]:
     - a name the crate DEFINES with #[no_mangle] links in-crate, so ntoskrnl.spec is not
       the authority for its call sites (2026-07-25: that was all 6 [ABI] findings).
     """
-    issues = []
     crate = crate_dir_of(rs_path)
     local_defs = crate_local_definitions(crate) if crate else frozenset()
+    return extern_facts(str(rs_path), rs_path.read_text(), spec, bindgen, sorted(local_defs))
+
+
+@source_facts()
+def extern_facts(path: str, text: str, spec: dict, bindgen: dict, local_defs) -> list[dict]:
+    rs_path = Path(path)
+    issues = []
 
     # kernel-rust/src/lib.rs is the symbol-force umbrella: zero-arg extern "C"
     # placeholder decls feeding `unsafe extern "C" fn()` arrays that pin symbols
@@ -283,7 +292,7 @@ def scan_extern_blocks(rs_path: Path, spec: dict, bindgen: dict) -> list[dict]:
     if rs_path.as_posix().endswith("kernel-rust/src/lib.rs"):
         return issues
 
-    lines = rs_path.read_text().splitlines()
+    lines = text.splitlines()
 
     # File-level arch gating: a file only compiled on non-x86 arches (by naming
     # convention: *_amd64.rs / *_arm64.rs, or an amd64/ / arm64/ path segment)
@@ -561,8 +570,14 @@ def _check_fn(
 
 def scan_flexible_arrays(rs_path: Path) -> list[dict]:
     """Scan for direct indexing of known flexible array fields."""
+    return flexible_facts(str(rs_path), rs_path.read_text())
+
+
+@source_facts()
+def flexible_facts(path: str, text: str) -> list[dict]:
+    rs_path = Path(path)
     issues = []
-    lines = rs_path.read_text().splitlines()
+    lines = text.splitlines()
 
     for lineno, line in enumerate(lines, 1):
         for struct_name, field_name in FLEXIBLE_ARRAYS.items():
