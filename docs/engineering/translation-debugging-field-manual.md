@@ -3049,7 +3049,25 @@ of them were **ours**, not the model's:
   re-labels dead arms as live: auditing this exact ladder that way reported `43200` and
   `1605600` as live-but-missing from the Rust, i.e. a fabricated finding pointing straight at
   the constant that HAD genuinely been wrong. Read the source before believing your own
-  scanner — all six of that sweep's "only in C" literals were in untaken arms.
+  scanner — all six of that sweep's "only in C" literals were in untaken arms. And before
+  writing that scanner at all: `verify_translation_literals.py:strip_untaken_arms` already
+  implements the arm logic CORRECTLY (a `(decided, keeping)` stack that handles `#elif`), and
+  it is already in the gate. Reuse it.
+
+  **What that gate does NOT cover is NUMERIC literals — it is string-literal parity only**, by
+  its own docstring, and the numeric-table exclusion there is about telling wide strings apart
+  from tables rather than a judgement that numbers are safe. They are not: the `_EXIT_LOCK1`
+  as `8` case above is exactly a numeric permutation. Swept msvcrt by hand 2026-09-13 —
+  ctype, locale, errno, dir, environ, exit, heap, lock, main, console, data, process, thread,
+  time — and all fourteen are CLEAN on live-arm numeric literals, so this is a recorded result
+  rather than an open worry.
+
+  It is not gated because the noise is real and adjudication is manual: `255` in the C against
+  `0xff` in the Rust is a false positive, and so is every index, shift and mask that
+  legitimately changes idiom. A gate that fires on those "trains you to ignore it", which is
+  the failure this very entry warns about one paragraph up. Mechanising it needs
+  decimal/hex normalisation AND symbol-level pairing (`ctype.c`'s bodies live in `cnt-ctype`,
+  not `msvcrt/ctype.rs` — pairing by filename reported three phantom drops).
 
   **The cheapest defence that catches this class wholesale: diff every translated constant
   against its header, mechanically, and do not wait for the audit to nominate one.** msvcrt's
