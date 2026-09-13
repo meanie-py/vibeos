@@ -1364,6 +1364,17 @@ class QemuVM:
                 "and runs QEMU.exe, so the trace and its media would straddle two "
                 "filesystems with two path namespaces."
             )
+        # x86 boots KVM by default, which has no instruction counter, so rr would
+        # refuse every amd64/i386 recording. Demote to TCG here rather than making
+        # the operator find the knob: `rewrite_accel` is the tree's existing
+        # mechanism for it and also drops the paired `-cpu host`, which is a KVM
+        # host-passthrough concept that TCG cannot honour. NOT for arm64 — it
+        # already runs TCG with a real `-cpu cortex-a72` model that rewrite_accel
+        # would strip (same carve-out as _build_windows_cmd).
+        if not self.config.arch.startswith("arm64"):
+            from . import backend as be
+
+            cmd = be.rewrite_accel(cmd, "tcg", self.config.arch)
         # stage on record (copy media into the trace); on replay the media are
         # already there, restored from pristine/ by the rr CLI verb.
         new_cmd, media = rr.transform(

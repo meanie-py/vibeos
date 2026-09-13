@@ -10,6 +10,7 @@ job is to REFUSE, and these tests hold it to that.
 from __future__ import annotations
 
 import json
+import subprocess
 from pathlib import Path
 
 import pytest
@@ -552,3 +553,145 @@ def test_a_short_replay_is_not_reported_as_a_pass(tmp_path, monkeypatch):
     # the boot itself is not under test; monkeypatch so the stub cannot leak
     monkeypatch.setattr(rrcmd, "cmd_replay", lambda args, repo: 0)
     assert rrcmd.cmd_verify(_Args(), tmp_path) != 0
+
+
+# --- the REAL per-arch command lines -------------------------------------
+#
+# The fixtures above are hand-written and can drift from what the arch configs
+# actually emit. These drive the transform with the genuine output of
+# ArchConfig.qemu_args, so a config change that rr cannot handle fails here
+# instead of halfway through someone's recording.
+
+
+def _real_arch_args(name: str, work: Path) -> list[str] | None:
+    """The real qemu_args for one arch config, or None if its media are absent.
+
+    Skipping is correct rather than lazy: qemu_args copies firmware images that a
+    fresh worktree does not have until it has built, and a missing OVMF is not
+    an rr defect.
+    """
+    from .. import vm as vm_mod
+
+    cfg = getattr(vm_mod, name)()
+    work.mkdir(parents=True, exist_ok=True)  # qemu_args writes its firmware copies here
+    try:
+        return cfg.qemu_args(work)
+    except (FileNotFoundError, OSError, subprocess.CalledProcessError):
+        return None
+
+
+def _demoted(name: str, args: list[str] | None) -> list[str] | None:
+    """What the vm.py hook hands the transform: x86 demoted from KVM to TCG.
+
+    Not a test convenience — it is the step that makes rr possible on x86 at all,
+    and this test found that it was missing.
+    """
+    if args is None or name.startswith("Arm64"):
+        return args
+    from .. import backend as be
+
+    return be.rewrite_accel(args, "tcg", "amd64" if "Amd64" in name else "i386")
+
+
+@pytest.mark.parametrize("config", ["Arm64Config", "Amd64UefiConfig", "I386UefiConfig"])
+def test_every_arch_config_transforms_coherently(config, tmp_path):
+    """For each arch as it is actually configured: every drive a DEVICE points at
+    must end up as a blkreplay filter, and no guest-visible drive may go unwrapped.
+
+    The i386/amd64 shape is the one worth having a test for — their boot media is
+    an `if=none,id=cd0` ISO with a separate `-device ide-cd,drive=cd0`, so the
+    filter has to inherit `cd0` and the raw image has to become `cd0-img`. Get
+    that backwards and QEMU starts happily with the CD attached to the UNWRAPPED
+    image, which records a trace that cannot replay.
+    """
+    args = _demoted(config, _real_arch_args(config, tmp_path / "work"))
+    if args is None:
+        pytest.skip(f"{config} media not present in this worktree")
+    out, media = rr.transform(args, mode="record", trace_dir=tmp_path / "t", stage=False)
+
+    drives = [rr.parse_drive(d) for d in _drives(out)]
+    by_id = {d["id"]: d for d in drives if "id" in d}
+    for arg in out:
+        for tok in arg.split(","):
+            if tok.startswith("drive="):
+                ref = tok.split("=", 1)[1]
+                assert ref in by_id, f"-device references drive={ref}, which no -drive defines"
+                assert by_id[ref].get("driver") == "blkreplay", (
+                    f"device is attached to {ref}, which is NOT the blkreplay filter — "
+                    "the recording would capture nothing for that drive"
+                )
+    for d in drives:
+        if d.get("if") == "pflash" or d.get("driver") == "blkreplay":
+            continue
+        assert d.get("id", "").endswith("-img"), f"unwrapped guest drive: {d}"
+    assert media, "no media staged"
+
+
+@pytest.mark.parametrize("config", ["Arm64Config", "Amd64UefiConfig", "I386UefiConfig"])
+def test_no_arch_config_smuggles_in_a_host_path_we_cannot_pin(config, tmp_path):
+    """Firmware from a distro package (amd64 boots /usr/share/OVMF/OVMF_CODE_4M.fd)
+    is outside the repo and outside our control. rr keeps it as an overlay, so the
+    trace depends on that file — which is fine, but only because the manifest
+    digests it and `rr info` warns when it changes. This asserts the digest is
+    actually taken for every non-qcow2 source."""
+    args = _demoted(config, _real_arch_args(config, tmp_path / "work"))
+    if args is None:
+        pytest.skip(f"{config} media not present in this worktree")
+    _out, media = rr.transform(args, mode="record", trace_dir=tmp_path / "t", stage=True)
+    for name, info in media.items():
+        if info["copied"]:
+            continue
+        assert info["sha256"], f"{name} is an overlay with no source digest — it can rot silently"
+
+
+def test_the_hook_demotes_x86_to_tcg_itself(tmp_path, monkeypatch):
+    """x86 boots `-accel kvm -cpu host` by default, and KVM has no instruction
+    counter. If the hook did not demote, every `rr record --arch amd64` would die
+    on the transform's refusal and the operator would be left to find the knob.
+    `-cpu host` has to go with it — it is a KVM host-passthrough concept.
+    """
+    from ..vm import Amd64UefiConfig, QemuVM
+
+    trace = tmp_path / "t"
+    trace.mkdir()
+    vm = object.__new__(QemuVM)
+    vm._backend = "native"
+    vm.live_log_path = tmp_path / "serial.log"
+    vm.config = Amd64UefiConfig()
+
+    cmd = [
+        "qemu-system-x86_64",
+        "-accel",
+        "kvm",
+        "-cpu",
+        "host",
+        "-drive",
+        f"id=cd0,if=none,format=raw,file={tmp_path}/livecd.iso,readonly=on",
+        "-device",
+        "ide-cd,drive=cd0,bootindex=0",
+    ]
+    (tmp_path / "livecd.iso").write_bytes(b"\0" * 64)
+    monkeypatch.setenv(rr.ENV_VAR, f"record:{trace}")
+    out = vm._apply_record_replay(cmd)
+    assert "kvm" not in out
+    assert "tcg" in " ".join(out)
+    assert "host" not in out, "-cpu host survived the demotion; TCG cannot honour it"
+
+
+def test_arm64_keeps_its_cpu_model_through_the_hook(tmp_path, monkeypatch):
+    """The demotion is an x86 rewrite. Applied to arm64 it would strip
+    `-cpu cortex-a72`, leaving the guest on QEMU's default model — the same
+    carve-out _build_windows_cmd already makes."""
+    from ..vm import Arm64Config, QemuVM
+
+    trace = tmp_path / "t"
+    trace.mkdir()
+    vm = object.__new__(QemuVM)
+    vm._backend = "native"
+    vm.live_log_path = tmp_path / "serial.log"
+    vm.config = Arm64Config()
+
+    cmd = _base_cmd(tmp_path)
+    monkeypatch.setenv(rr.ENV_VAR, f"record:{trace}")
+    out = vm._apply_record_replay(cmd)
+    assert "cortex-a72" in out

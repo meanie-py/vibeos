@@ -227,7 +227,10 @@ def transform(
                 raise RecordReplayError(
                     f"record/replay needs TCG (instruction counting); got -accel {accel}. "
                     "Hardware virtualization has no instruction counter to anchor the "
-                    "trace to."
+                    "trace to. The vm.py hook demotes x86 to TCG before it gets here "
+                    "(backend.rewrite_accel), so seeing this means a hand-built command "
+                    "line — swap the accelerator yourself, and drop any paired "
+                    "`-cpu host` with it."
                 )
             # MTTCG interleaves vCPU threads with no recorded global order.  We
             # already refuse -smp >1, but thread=multi must go too: it is the

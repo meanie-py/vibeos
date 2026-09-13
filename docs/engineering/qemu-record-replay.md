@@ -95,6 +95,16 @@ the config that caused it. So the transform refuses up front:
 | no `-drive` at all | `rrsnapshot=` needs a snapshot-capable image |
 | the `windows-host` backend | media stage into a Windows path; the trace would straddle two path namespaces |
 
+One refusal it does NOT make is x86's default accelerator. `amd64` and `i386`
+boot `-accel kvm -cpu host`, which would fail the first row of that table on
+every recording — so the launch hook **demotes them to TCG itself**
+(`backend.rewrite_accel`, which also drops the paired `-cpu host`, a KVM
+host-passthrough concept TCG cannot honour) rather than handing the operator an
+error to decode. arm64 is carved out: it already runs TCG with a real
+`-cpu cortex-a72` that the rewrite would strip. Recording x86 is therefore
+slower than an ordinary x86 boot by more than the icount overhead alone, since
+it gives up hardware virtualization as well.
+
 `--smp 1` **is** accepted, and that matters: on the MP kernel one vCPU is exactly
 the UP:=smp1 collapse case the arm64 bug lives in. Refusing all `-smp` would
 have refused the only interesting boot.
@@ -276,6 +286,16 @@ Record it here and keep going; only chase one when it looks load-bearing.
 | the `rr` verbs | `tests/qemu/cli/rrcmd.py` |
 | the launch-path hook (`VIBEOS_QEMU_RR=<mode>:<dir>`) | `tests/qemu/vm.py:_apply_record_replay` |
 | guards | `tests/qemu/cli/test_recordreplay.py` |
+
+The guards include three that drive the transform with the **real** output of
+each `ArchConfig.qemu_args` rather than a hand-written fixture, and assert that
+every `-device ...,drive=X` resolves to a blkreplay filter. That is the check
+that found the x86 KVM default above, and it is the one that will catch the next
+arch-config change rr cannot handle — at test time rather than halfway through
+somebody's recording. The x86 media shape is the reason it matters: their boot
+media is an `if=none,id=cd0` ISO with a separate `-device ide-cd,drive=cd0`, so
+the filter must inherit `cd0` and the raw image become `cd0-img`. Get that
+backwards and QEMU starts happily with the CD attached to the unwrapped image.
 
 The hook is opt-in and nothing sets it by default, so every existing boot path
 is byte-for-byte unchanged when rr is not requested.
