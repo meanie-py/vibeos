@@ -355,12 +355,13 @@ def cmd_replay(args, repo: Path) -> int:
         # you cannot reverse-continue from, which is the point of having it.
         env["VIBEOS_QEMU_GDB"] = "wait"
         print(
-            "[rr] NOTE: on QEMU 9.0.2 the gdbstub is only PARTLY usable against a\n"
-            "     replay. Connecting, reading registers and `continue` all work;\n"
-            "     `stepi` aborts QEMU (`Playback shouldn't have to iowait`) — that one\n"
-            "     IS replay-specific. Nobody has yet stopped a replay at a point of\n"
-            "     interest, so reverse-continue/reverse-stepi stay untested rather than\n"
-            "     known-broken. See docs/engineering/qemu-record-replay.md.",
+            "[rr] NOTE: on QEMU 9.0.2 a replay CANNOT BE STOPPED, so it cannot be\n"
+            "     debugged. Attaching at -S and `continue` work; every later stop —\n"
+            "     stepi, attaching mid-run, and a BREAKPOINT HIT — aborts QEMU with\n"
+            "     `Playback shouldn't have to iowait`. Reverse execution is therefore\n"
+            "     unreachable. A trace is a deterministic CAPTURE (serial, screenshots,\n"
+            "     triage all work), not a debugging session.\n"
+            "     See docs/engineering/qemu-record-replay.md.",
             file=sys.stderr,
         )
 
