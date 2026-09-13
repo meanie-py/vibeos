@@ -123,7 +123,13 @@ def _staged_per_manifest(repo: Path, arch: str, subdir: str, names: set[str]) ->
         # correctly for half the entries and silently wrongly for the other half --
         # which is the same mistake as reading a manifest that does not describe
         # this media at all.
-        lsts = sorted((repo / f"build-{base}" / "boot").glob(f"{stem}*.lst"))
+        # `{stem}.*.lst`, NOT `{stem}*.lst`: arm64's media is boot.img, so the stem
+        # is "boot" and the loose glob matches bootcd.*.lst / bootcdregtest.*.lst —
+        # a DIFFERENT medium's manifest. That returned a non-empty text, so this
+        # probe concluded it owned the question and answered "no guests found",
+        # shadowing the ramdisk probe that had the right answer. It broke this
+        # function's own contract: a missing manifest masqueraded as a missing file.
+        lsts = sorted((repo / f"build-{base}" / "boot").glob(f"{stem}.*.lst"))
         text = "\n".join(f.read_text(errors="ignore") for f in lsts)
     except (OSError, KeyError, AttributeError):
         return None

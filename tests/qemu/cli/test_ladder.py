@@ -322,3 +322,18 @@ def test_optional_guests_are_visible_on_arm64_too(tmp_path):
 def test_optional_guests_absent_is_an_empty_list(tmp_path):
     repo = _manifest(tmp_path, ["reactos/syswow64/hello32.exe=/tmp/vibeos/x"])
     assert ladder.media_optional_staged(repo, "amd64") == []
+
+
+def test_a_sibling_medium_manifest_must_not_answer_for_this_one(tmp_path):
+    """arm64's media is boot.img, so its stem is "boot" — and a loose `{stem}*.lst`
+    glob matches bootcd.*.lst, a DIFFERENT medium. That made the manifest probe
+    answer "no guests" for arm64 and shadow the ramdisk probe that had the right
+    answer, breaking the None contract this function documents. Caught on real
+    staged media by the wow64-amd64 lane."""
+    boot = tmp_path / "build-arm64" / "boot"
+    boot.mkdir(parents=True)
+    # A populated sibling manifest, of the kind that fooled the loose glob.
+    (boot / "bootcd.cmake.lst").write_text("reactos/system32/ntoskrnl.exe=/tmp/vibeos/x\n")
+    (boot / "bootcdregtest.Debug.lst").write_text("reactos/system32/hal.dll=/tmp/vibeos/y\n")
+    # No boot.*.lst exists, so the manifest probe must DECLINE (None), not answer.
+    assert ladder._staged_per_manifest(tmp_path, "arm64", "syswow64", {"hello32.exe"}) is None
