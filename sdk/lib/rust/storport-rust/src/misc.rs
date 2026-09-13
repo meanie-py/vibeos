@@ -182,7 +182,7 @@ pub unsafe extern "C" fn CopyResourceList(
     mut PoolType: POOL_TYPE,
     mut Source: PCM_RESOURCE_LIST,
 ) -> PCM_RESOURCE_LIST {
-    const TAG_RESOURCE_LIST: u32 = 0x4C725053; // 'SPrL'
+    const TAG_RESOURCE_LIST: u32 = 0x4C527453; // 'LRtS' drivers/storage/port/storport/precomp.h
     let mut Destination: PCM_RESOURCE_LIST;
     let mut Size: ULONG;
     if DbgPrint(

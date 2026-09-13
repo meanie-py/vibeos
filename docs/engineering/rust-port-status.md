@@ -1867,7 +1867,10 @@ flight is marked; in-flight lanes live in [`active-lanes/`](active-lanes/).*
   queue (Winsock/net, setup/PnP/device, ~15 control panels, services, security/auth, shell
   exts, audio/ACM). Batched in the roadmap Phase 0 Tier 3. *(`explorer.exe` is DONE — ~99%
   Rust, `explorer-rust`; only 2 glue `.cpp` remain.)*
-- **CRT floor — ~0–5%.** `sdk/lib/crt/` = 581 `.c` (printf/scanf/string/math/locale/
+- **CRT floor — ~0–5%.** *(`sdk/lib/crt/mbstring` + `misc`: **CLOSED PERMANENTLY**, owner
+  decision 2026-09-13, on the measurement below. Nothing that ships links the `crt` target and
+  `libcrt.a` is not produced by a normal build, so translating them improves exactly one
+  apitest. Do not re-cost this; if you are about to, read the paragraph after this one first.)* `sdk/lib/crt/` = 581 `.c` (printf/scanf/string/math/locale/
   mbstring/wine) still compiled; only `crt-startup/dllmain/crt0` entry-glue + the
   `libcntpr` kernel subset (`cnt-rust`) are Rust. Largely irreducible variadic.
   **But read that 581 carefully before costing any of it: much of the tree belongs to the
@@ -1882,6 +1885,72 @@ flight is marked; in-flight lanes live in [`active-lanes/`](active-lanes/).*
   in the OS. The parts of `sdk/lib/crt` that DO ship are the ones already named elsewhere:
   `libcntpr` (kernel, Rust via cnt-rust), `crtmath` (done 2026-09-13), `msvcrtex`, and the
   `msvcrt_static` set.
+
+  **Object-level measurement of the three shipping static libs (2026-09-13, all three
+  arches).** Read the `CMakeFiles/<target>.dir` object list, not the `list(APPEND …)` source
+  vars: parsing the cmake source lists says `libcntpr` has **107** live `.c`, and the truth is
+  **21** (amd64) / **20** (arm64) / **28** (i386). The 4.6x over-count is arch `if()` guards the
+  parse ignores — the `LIBCNTPR_*_SOURCE` families are shared with the user-mode `CRT_*` vars.
+  Pairing those 107 against `cnt-rust`'s 216 `#[no_mangle]` exports by filename produced **37
+  apparent double-definitions (`sinf`, `frexp`, `ldiv`, `strtod`, …) and every one was a
+  phantom** — none of those `.c` compiles into `libcntpr` on any arch. Pair by compiled object,
+  never by filename.
+
+  What actually remains, and why each is not a translation target:
+  - `libcntpr` — 12 C-variadic `printf/` wrappers (irreducible), plus the documented kept-C
+    (`wctype.c` dead data table, `winesup.c`, `atol.c`, `mbstrlen.c`, `fltused.c`, `exp2f.c`,
+    `_invoke_matherr.c`, `scanf_trampoline.c`) and `except/` SEH. **i386 carries 8 more, all
+    structurally blocked:** `i386/ci.c` + `ci{cos,log,pow,sin,sqrt}.c` are x87-stack-argument
+    thunks (`FPU_DOUBLE` = `fstpl`) whose math is *already* Rust — the thunk is inline asm glue,
+    and `cisin`/`cisqrt` were already settled as headerless cc-rs shims; `i386/libm_sse2.c` is 32
+    `__m128d`/`__m128` by-value functions needing `target("sse2")`, which cannot exist in
+    `cnt-rust` because i386 builds `-sse,-sse2` (the same ABI-required-target-feature error that
+    forced every `cabi/math.rs` helper to `extern "C"`); `nexttowardf.c` takes an x87 80-bit
+    `long double`, which Rust has no type for. So `libcntpr` is done.
+  - `msvcrtex` — **translated** (`crt-startup-rust` + `crt0-rust` + `crt-dllmain-rust`, ~190
+    symbols, commit `94f2d421748`) but wired through **`reactos-link`'s `.msvcrtex_crt()`**, not
+    CMake — so grepping CMakeLists for the crate name finds nothing and it looks orphaned. It
+    ships into *cargo* modules; the 44-TU C archive still ships into every module that links
+    `libmsvcrt` the C way (`dll/win32/msvcrt/CMakeLists.txt:311`). Retiring the C archive is an
+    architectural call, not a transcription.
+  - **`user32_wsprintf` — 12 TUs, and the one genuine unclaimed CRT frontier left.**
+    It is the LAST target in the tree still compiling `printf/streamout.c` +
+    `wstreamout.c` as C: the 708-line engine is already Rust in `cnt-rust`
+    (`cabi/streamout.rs`) and flipped for `libcntpr` (`libcntpr.cmake:125`). The other
+    10 TUs are 4 trivial leaves (`strnlen` 5 lines, `wcsnlen` 6, `mbstowcs_nt` 66,
+    `wcstombs_nt` 57) and 8 irreducible variadic shells.
+
+    **It is not free wiring, because `-D_USER32_WSPRINTF` (`sdk/lib/crt/CMakeLists.txt:47`)
+    is a different CONFIGURATION of that engine**, and `cabi/streamout.rs:294` says those
+    paths are deliberately not compiled. The delta is bounded and fully enumerable — six
+    points, mostly subtractive:
+      1. no `_IOSTRG`/`_base == NULL` early-return in `streamout_char`/`_astring`/`_wstring`
+         (3 sites, `streamout.c:231/257/285`);
+      2. the buffer path is `defined(_USER32_WSPRINTF) || defined(_LIBCNT_)` — ALREADY
+         what the Rust implements, so this one costs nothing;
+      3. `USE_MULTISIZE 0` (`:318`) — no size modifiers;
+      4. `*` field width and precision emit the literal `*` instead of consuming a
+         `va_arg` (`:376`, `:407`);
+      5. no float conversions — the `G/E/A/g/e/a/f` cases are `#ifndef`-ed out (`:548`);
+      6. `fieldwidth += 2` for the `FLAG_SPECIAL` `0x` prefix (`:608`).
+
+    **Do NOT implement this as a cargo feature on `cnt-rust`.** Cargo features are an
+    additive UNION and this one is not additive: it changes the behaviour of symbols that
+    already exist rather than adding new ones. `cnt-rust` has 10 dependents and is one
+    codegen unit, so unification would hand `libcntpr` — the KERNEL's printf — the user32
+    variant, silently and with no diagnostic. Its own Cargo.toml already documents this
+    hazard for `cabi`/`cabi-math` ("The msvcrt DIFFTEST must NOT see this feature").
+    The right shape is a separate crate, exactly the precedent `crt-shared-rust` set when
+    ucrtbase needed its own configuration of the shared TUs.
+
+    Link mechanics, checked: there is no `--whole-archive` rail in `sdk/cmake`, and
+    `win32ss/user/user32/CMakeLists.txt:126` lists `user32_wsprintf` BEFORE
+    `${USER32_RUST_LIB}`, so a Rust twin loses to the C by lld first-match. Unlike
+    ucrtbase this is fixable: `user32_wsprintf` is a plain static lib whose source list
+    can be edited, which is the ordinary cohab pattern. Scoped 2026-09-13, not started —
+    user32 is on the boot path, so this wants its own session with a 3-arch smoke, not
+    the tail of one.
+
 
   Recorded because the obvious check misleads: `grep -rl '\bcrt\b' --include=CMakeLists.txt`
   "finds" msvcrt, ucrtbase, ntdll and services, every one of them a substring match on

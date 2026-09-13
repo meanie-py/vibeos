@@ -22,8 +22,8 @@ pub unsafe extern "system" fn SerialQueryInformation(
     Irp: PIRP,
 ) -> NTSTATUS {
 
-    const DPFLTR_SERIAL_ID: u32 = 0;
-    const DPFLTR_TRACE_LEVEL: u32 = 3;
+    const DPFLTR_SERIAL_ID: u32 = 39;
+    const DPFLTR_TRACE_LEVEL: u32 = 2;
 
     let mut Stack: PIO_STACK_LOCATION;
     let mut SystemBuffer: *mut core::ffi::c_void;

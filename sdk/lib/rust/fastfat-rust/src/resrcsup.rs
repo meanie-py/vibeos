@@ -29,7 +29,7 @@ extern "system" {
 // Forward declarations for symbols not imported
 
 // Placeholder constant (value not provided by imports)
-const IRP_CONTEXT_FLAG_WAIT: u32 = 0x02;
+const IRP_CONTEXT_FLAG_WAIT: u32 = 0x02;  // nolint: const-contradiction (fastfat's own flag set, fatstruc.h:1563)
 
 
 unsafe extern "system" {

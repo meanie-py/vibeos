@@ -117,7 +117,7 @@ const IRP_CONTEXT_FLAG_VERIFY_READ: u32 = 0x80; // placeholder
 // Forward declarations for unknown functions/macros
 
 // Constants with placeholder values (exact definitions expected to be provided elsewhere)
-const IRP_CONTEXT_FLAG_WAIT: u32 = 0x02;
+const IRP_CONTEXT_FLAG_WAIT: u32 = 0x02;  // nolint: const-contradiction (fastfat's own flag set, fatstruc.h:1563)
 const IRP_CONTEXT_FLAG_USER_IO: u32 = 0x0400;
 const IRP_CONTEXT_STACK_IO_CONTEXT: u32 = 0x0100;
 const CCB_FLAG_COMPLETE_DISMOUNT: u32 = 0x00010000;
@@ -235,7 +235,7 @@ pub unsafe extern "system" fn FatStackOverflowRead(
     let mut SavedVerifyThread: PKTHREAD = core::ptr::null_mut();
     let mut Vcb: PVCB = core::ptr::null_mut();
 
-    const IRP_CONTEXT_FLAG_WAIT: u32 = 0x02; // placeholder
+    const IRP_CONTEXT_FLAG_WAIT: u32 = 0x02; // placeholder  // nolint: const-contradiction (fastfat's own flag set, fatstruc.h:1563)
     const IRP_CONTEXT_FLAG_VERIFY_READ: u32 = 0x80; // placeholder
     const FAT_NTC_VCB: u32 = 0x0501; // placeholder
     const STATUS_FILE_DELETED: i32 = 0xC0000123_u32 as i32;
@@ -366,7 +366,7 @@ pub unsafe extern "system" fn FatPostStackOverflowRead(
 // ==== re-stitched from bank (dropped by _merge_extern_blocks) ====
 #[no_mangle]
 pub unsafe extern "system" fn FatCommonRead(IrpContext: *mut IRP_CONTEXT, Irp: *mut IRP) -> NTSTATUS {
-    const IRP_CONTEXT_FLAG_WAIT: u32 = 0x02;
+    const IRP_CONTEXT_FLAG_WAIT: u32 = 0x02;  // nolint: const-contradiction (fastfat's own flag set, fatstruc.h:1563)
     const IRP_CONTEXT_FLAG_USER_IO: u32 = 0x0400;
     const IRP_CONTEXT_STACK_IO_CONTEXT: u32 = 0x0100;
     const CCB_FLAG_COMPLETE_DISMOUNT: u32 = 0x00010000;

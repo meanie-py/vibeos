@@ -18,7 +18,7 @@ use ntkrnl_sys::driver_ddk::{
 
 // #define CLASS_TAG 'CdbK'  (kbdclass.h) — pool tag. C multi-char char
 // constant is big-endian, so the bytes are 'C','d','b','K'.
-pub const CLASS_TAG: u32 = u32::from_be_bytes(*b"CdbK");
+pub const CLASS_TAG: u32 = u32::from_be_bytes(*b"CdbK"); // nolint: const-contradiction ('CdbK' -- kbdclass' own pool tag; mouclass' CLASS_TAG is 'CuoM')
 
 // Keyboard IOCTLs (ntddkbd.h / kbdmou.h) — CTL_CODE values via driver_ddk's
 // const-fn composer. Function codes + methods are header-authoritative.

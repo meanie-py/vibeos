@@ -2,8 +2,16 @@
 
 **Goal: when someone downloads an ISO to try vibeos, it is the amd64 one, and x86
 applications run well on it.** Deprecating i386 as a *shipped* arch is the
-follow-on prize (a real pile of tech debt retires with it), but it is not the
-near-term ask and nothing here proposes dropping it soon.
+follow-on prize (a real pile of tech debt retires with it).
+
+**DIRECTION SET 2026-09-13: the 32-bit KERNEL is approved for deprecation.** The
+owner's framing, relayed through `control-plane`: *"regarding i386, yeah we'll
+need the DLLs and stuff, but we can drop the 32-bit kernel."* That is precisely
+the split this document is built around and which the next section derives, so
+the reframe below is no longer a finding awaiting a decision — it is the
+direction. What retires is the i386 kernel, HAL and boot path; what stays is the
+i386 user-mode PE set, for as long as we run x86 apps at all. No date attaches to
+it and nothing here proposes ripping it out in one go; see **Sequencing**.
 
 Opened 2026-09-13 by the `research` lane, as a survey. The depth work below is
 mostly owned by `wow64-amd64`; see **Ownership** before starting anything.
@@ -93,14 +101,54 @@ verified **on amd64**, against the native heaven's-gate path; arm64 followed as 
 Both now report 9/9 on `smoke --ladder`. So treat that work as **verified on the host this plan
 cares about** — do not re-derive it as though it were arm64 results of uncertain transfer.
 
+**The arm64 half of that 9/9 is softer than it reads, as of 2026-09-13.** fex relays two guests
+faulting `c0000005` inside FEXCore's code cache on one arm64 boot — `lua32.exe` in
+`LookupCache::FindBlock` (ESR 0x92000006) and `file32.exe`, one of OUR nine ladder guests, in
+`ContextImpl::InvalidateThreadCachedCodeRange` (ESR 0x92000004). They checked the two things
+that would make it an artifact: the processes loaded `libwow64fex.dll` at different bases, each
+read from that process's own load line, and `file32` is a parity guest that normally passes.
+**One boot, two guests — a strong lead, NOT a repro**, and a second sample was running when this
+was relayed; it is recorded here with that caveat attached and must not be quoted without it.
+`external/fex` is vendored unmodified — but note that "unmodified" locates the
+faulting CODE, not the CAUSE: how we configure, build and wire FEXCore is ours, so an upstream
+source file faulting under our workload does not establish an upstream defect. That inference
+is the same one being unwound over the x64 question below, and it should not be made twice. Consequence for this plan: nothing in it leans on arm64 WoW64
+being solid — amd64's CPU layer is our own `wow64cpu`, no emulator in the picture — but an
+arm64 `--ladder` green is a weaker signal than an amd64 one until this is settled, so do not
+read the two as interchangeable evidence.
+
 *(This section previously said the opposite, on a control-plane summary that lane has since
 retracted and that I recorded under its attribution. The `wow64.c` quote above is checked in
 this tree; the amd64-first provenance is fex's, relayed.)*
 
-## What "primary" means — a decision, not an investigation
+## The x64-on-arm64 question is NOT this lane's — and nothing here turns on it
 
-Nobody has defined this, and it should be settled before the work is sequenced,
-because it determines what counts as done:
+Recorded so it is not re-derived, and because a premise briefly travelled through this
+document's neighbourhood. It was relayed on 2026-09-13 that there is no x64-on-arm64 path in
+the tree — true as an observation: `libwow64fex.dll` is built as the *x86-guest* BTCpu plugin
+and there is zero ARM64EC in our own source. The owner challenged the step that was then taken
+from it: *"we've messed up if arm64 can't run x64 ... FEX is capable of x64 — it's the only
+reason we picked this instead of box64."* He is right that the observation describes **how we
+build and wire FEX**, not what FEX can do; nobody had checked which of the two it was before it
+was passed on as a limit. The fex lane is auditing `build-fex.sh`, the FEXCore flags and the
+BTCpu wiring to separate ours from upstream's.
+
+**This lane does not wait on that answer and is not contingent on it.** The work here is the
+marshalling/WoW64 layer, which sits ABOVE the `BTCpu*` contract — the separation this document
+and the fex lane drew independently (see the transfer section). Whether arm64 gains an x64
+guest path changes what runs on top of the marshaller; it does not change the marshaller. In
+the owner's words: *"the research lane is on deprecating the 32-bit kernel by improving WoW64.
+It doesn't (shouldn't) rely on FEX, which is the instruction side."* Checked against the ranked
+gaps below: none of them names a guest architecture, and none would be written differently
+under either answer.
+
+---
+
+## What "primary" means — partly decided 2026-09-13
+
+The headline question is answered: **the 32-bit kernel goes.** See the goal
+section for the owner's wording. What that does *not* settle is the gate policy,
+which is a separate set of questions and still open:
 
 - Which arch's red blocks a land? (Today all three are peers.)
 - What is the default `--arch`? There is deliberately none, and that rule has
@@ -108,7 +156,8 @@ because it determines what counts as done:
 - Which ISO is *the* download, and does the other two staying green remain a
   gate requirement or become a best-effort?
 
-This is the user's call. The engineering below is orthogonal to it.
+These remain the user's call, and the engineering below is orthogonal to them:
+nothing in the ranked gaps changes depending on how they are answered.
 
 ---
 
@@ -259,6 +308,19 @@ a ladder to watch", and neither was visible from reading.
    question** — whether default arm64 media should stage the FEX CPU layer — with a real cost
    attached, and it is not answered here. **It is a USER decision, not a lane's.**
 
+   **ANSWERED 2026-09-13: default-on.** The owner, relayed through
+   `control-plane`: *"Yes, obviously, this was not even a question that we should
+   have paused on"*, and on the `VIBEOS_FEX=1` gate itself — *"if even the fex
+   lane is forgetting to stage and smoke fex then the build env-var is just a way
+   for us to embarrass ourselves."* So the env-var gate in `qemu/mkramdisk.sh`
+   comes out and default arm64 media stages the CPU layer. **This lane
+   recommended the opposite** (keep it opt-in, on the fleet-wide cost) and was
+   overruled on judgment rather than on numbers — the 84.7s drain and the ~+55%
+   arm64 gate wall-clock below are what made it a real decision instead of a
+   guess, and they are still the cost being accepted. Implementation is not
+   assumed to be this lane's; `mkramdisk.sh` and `build-fex.sh` are the fex
+   lane's files and that lane is auditing them right now.
+
    What is known, so it can be decided without re-deriving it: FEX source is **vendored
    in-tree** (`external/fex`, 58M), so this is not a fetch, licensing or availability problem —
    it is a per-worktree *build* cost. Exactly **one** worktree carries a `build-fex-arm64`
@@ -348,15 +410,24 @@ doing.
 
 ## Sequencing
 
-1. **Ladder into the gate.** Cheap, and it is the measuring instrument for
-   everything below it. `gate._smoke_once` already forwards an `extra` list and
+0. **Retiring the i386 kernel is now the direction, not a proposal** (2026-09-13).
+   It does not reorder the list below: the ladder is still what tells you whether
+   WoW64 held, and WoW64 holding is the precondition for the i386 kernel being
+   safe to drop. Sequence the retirement *behind* the gaps, not ahead of them —
+   the i386 kernel is the fallback that makes a WoW64 regression survivable today.
+1. **Ladder into the gate — DONE 2026-09-13, all three arches.** Cheap, and it is
+   the measuring instrument for everything below it. `gate._smoke_once` already forwards an `extra` list and
    `gate.py:803` already builds a `smoke_extra`, so the wiring is small. The real
    work is the staging policy, not the flag: guests stage only when the sibling
    `build-i386` / `build-fex-hello` trees exist, so a gate that demands the ladder
    unconditionally will report `LADDER_NOT_STAGED` on any lane without them. It
    has to distinguish "the ladder regressed" from "this worktree never staged a
    guest" and stay silent on the latter — the same discipline `ladder.py` already
-   applies inside a single run, lifted to gate policy.
+   applies inside a single run, lifted to gate policy. That is what shipped:
+   `ladder.gate_decision` opts each arch in from its own media and records a loud
+   `skip` with a reason when it declines, so an unstaged tree is silent rather
+   than red. With FEX staging going default-on (above), arm64 stops being the
+   conditional case.
 2. **Measure guest `CreateProcess`** on today's tree. Gate item between "runs
    applets" and "runs an installer".
 3. **Registry redirection.** A silent wrong answer outranks a missing feature.

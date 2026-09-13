@@ -60,7 +60,8 @@ const PRCB_MINOR_VERSION: USHORT = 1;
 // legitimately call `…AtDpcLevel` at PASSIVE, where our assert fires.
 const PRCB_BUILD_DEBUG: USHORT = 1;
 const PRCB_BUILD_UNIPROCESSOR: USHORT = 2;
-const KERNEL_STACK_SIZE: usize = 0x6000;
+// 0xC000, xdk/arm64/ke.h:49 ("48KB, matches amd64").
+const KERNEL_STACK_SIZE: usize = 0xC000;
 const TIMER_TABLE_SIZE: usize = 512;
 
 #[no_mangle]

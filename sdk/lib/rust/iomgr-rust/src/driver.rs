@@ -198,7 +198,7 @@ extern "system" {
 const TAG_IO: ULONG = 0x20206F49;
 const TAG_REINIT: ULONG = 0x69526F49;
 const TAG_DRIVER_EXTENSION: ULONG = 0x45565244;
-const TAG_LDR_WSTR: ULONG = u32::from_le_bytes(*b"swdL");
+const TAG_LDR_WSTR: ULONG = u32::from_be_bytes(*b"swlk"); // C literal 'swlk' -- ntoskrnl/include/internal/tag.h
 const TAG_RTLREGISTRY: ULONG = 0x76727152;
 const UNICODE_STRING_MAX_BYTES: ULONG = 65534;
 const STATUS_ILL_FORMED_SERVICE_ENTRY: NTSTATUS = 0xC0000160_u32 as i32;

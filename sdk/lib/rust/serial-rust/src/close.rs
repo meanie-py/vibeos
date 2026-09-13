@@ -16,7 +16,7 @@ pub unsafe extern "system" fn SerialClose(
     DeviceObject: PDEVICE_OBJECT,
     Irp: PIRP,
 ) -> NTSTATUS {
-    const DPFLTR_SERIAL_ID: ULONG = 0;
+    const DPFLTR_SERIAL_ID: ULONG = 39;
     const DPFLTR_TRACE_LEVEL: ULONG = 2;
 
     let mut pDeviceExtension: PSERIAL_DEVICE_EXTENSION =

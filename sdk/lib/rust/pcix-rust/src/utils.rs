@@ -55,7 +55,7 @@ extern "system" {
 }
 
 // ---- ACPI eval-method types (from sdk/include/ddk/acpiioct.h; not in ntkrnl_sys) ----
-pub const ACPI_EVAL_INPUT_BUFFER_SIGNATURE: ULONG = 0x41656942; // 'BieA'
+pub const ACPI_EVAL_INPUT_BUFFER_SIGNATURE: ULONG = 0x42696541; // 'BieA' (acpiioct.h:7)
 pub const ACPI_METHOD_ARGUMENT_INTEGER: USHORT = 0x0;
 // IOCTL_ACPI_EVAL_METHOD = CTL_CODE(FILE_DEVICE_ACPI=0x32, 1, METHOD_BUFFERED=0, FILE_READ|WRITE=3)
 pub const IOCTL_ACPI_EVAL_METHOD: ULONG = (0x32 << 16) | (3 << 14) | (1 << 2) | 0;
