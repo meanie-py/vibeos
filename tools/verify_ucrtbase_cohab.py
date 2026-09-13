@@ -319,19 +319,27 @@ def check_archive() -> list[str]:
 
         stale = _stale_against_sources(archive)
         if stale:
-            # Same principle the `missing` branch below states, one step earlier:
-            # grading an archive OLDER than the Rust that produced it is not a
-            # weaker verdict, it is a verdict about a different tree. This check
-            # is usually run right after a fix, so a stale read reports the
-            # symbol you just removed and looks exactly like the fix not working
-            # -- which is how it actually presented, twice, before this existed.
-            # `vibeos-cli build` is warm by default and will happily leave a
-            # cargo target untouched (its own `warm-build` warning says so), so
-            # "I rebuilt" is not evidence the archive moved.
-            findings.append(
-                f"build-{arch}: {archive.name} is OLDER than {stale} -- this check would "
-                f"be grading a stale archive, not the tree. fix: rm "
-                f"{archive.relative_to(REPO)} && ./vibeos-cli build --arch {arch}"
+            # CANNOT RENDER A VERDICT -- and that is NOT the lane's fault, so it
+            # must not be a finding. mtime is the only staleness signal available
+            # here and it is not sound: `git merge` rewrites a source file's mtime
+            # WITHOUT changing its content, while cargo legitimately declines to
+            # relink an archive whose inputs are unchanged. The conductor merges
+            # every queued lane at batch start, so in the integration tree those
+            # two facts combine on every drain and the archive reads "older than
+            # its sources" while being perfectly current.
+            #
+            # Emitted as a finding, this rejected a lane for a merge it did not
+            # make -- and had it landed it would have done so to every lane, since
+            # this check runs in the SOURCE-lint phase where build state is
+            # whatever the last batch left behind. Printed instead: still loud for
+            # the human who runs this directly (which is what caught two genuinely
+            # stale archives when the guard was written), never a verdict.
+            print(
+                f"note: build-{arch}: {archive.name} is older than {stale}; skipping the "
+                f"subset assertion for this arch rather than grading a possibly-stale "
+                f"archive. If you are debugging this locally: rm "
+                f"{archive.relative_to(REPO)} && ./vibeos-cli build --arch {arch}",
+                file=sys.stderr,
             )
             continue
 

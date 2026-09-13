@@ -321,3 +321,41 @@ def test_unrelated_crate_does_not_trigger_staleness(tmp_path: Path, monkeypatch)
     monkeypatch.setattr(vuc, "REPO", tmp_path)
     assert "shell32-rust" not in vuc._ARCHIVE_SOURCE_CRATES
     assert vuc._stale_against_sources(archive) is None
+
+
+def test_a_stale_archive_is_a_NOTE_not_a_finding(tmp_path: Path, monkeypatch, capsys):
+    """Staleness must never reject a lane — it is not the lane's fault.
+
+    mtime is the only staleness signal available here and it is NOT sound: `git
+    merge` rewrites a source file's mtime without changing its content, while
+    cargo correctly declines to relink an archive whose inputs are unchanged. The
+    conductor merges every queued lane at the start of a drain, so in the
+    integration tree those two facts coincide on EVERY batch.
+
+    Emitted as a finding (which is how this first shipped) it rejected a lane for
+    a merge that lane did not make, with `libcrt_shared_cargo.a is OLDER than
+    cabi/math.rs` on all three arches — and had it landed it would have done that
+    to every lane, because this check runs in the SOURCE-lint phase where build
+    state is whatever the previous batch happened to leave behind.
+    """
+    import os
+
+    build = tmp_path / "build-amd64" / "dll" / "win32" / "ucrtbase"
+    build.mkdir(parents=True)
+    archive = build / "libcrt_shared_cargo.a"
+    archive.write_bytes(b"")
+
+    src = tmp_path / "sdk" / "lib" / "rust" / "cnt-rust" / "src"
+    src.mkdir(parents=True)
+    (src / "lib.rs").write_text("// merged: newer mtime, identical content\n")
+
+    os.utime(archive, (1_000_000, 1_000_000))
+    os.utime(src / "lib.rs", (2_000_000, 2_000_000))
+
+    monkeypatch.setattr(vuc, "REPO", tmp_path)
+    findings = vuc.check_archive()
+
+    # The staleness branch must short-circuit BEFORE the missing-objects branch,
+    # or this arch would be blamed for absent .obj files instead.
+    assert findings == [], f"staleness must not produce findings, got: {findings}"
+    assert "older than" in capsys.readouterr().err, "but it must still SAY so"
