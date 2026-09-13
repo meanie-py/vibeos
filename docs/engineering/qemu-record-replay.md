@@ -310,11 +310,19 @@ does not work: this paused-or-wedged QEMU sat at 87% CPU in `R` state, so
 Confirming a pause needs `query-status`, and the harness owns the QMP socket —
 the same reason `--break-at` had to be a hook in the first place.
 
-So the next increment on this is small and clear: have the hook watch for the
-stop and print `paused at icount N`, rather than leaving the caller to infer it
-from where the serial log stopped. Until then `--break-at` is verified to ARM
-correctly and not verified to STOP through this path — the stop itself is
-verified separately, by the prospective test above.
+**Closed.** QEMU does announce the stop — a QMP `STOP` event — and the harness's
+client was throwing it away: `_recv_json` has to skip events while scanning for a
+command's reply, and it discarded them on the way past. They are retained now
+(bounded tail), `QmpClient.saw_event("STOP")` asks the question, and a replay run
+with `--break-at` reports on the timeout path:
+
+```
+[rr] replay-break FIRED: guest stopped at icount 8139927533
+```
+
+or, when it did not, says so and names the next thing to check. That is the
+timeout path on purpose: a break that fires IS a quiet serial log followed by the
+harness waiting out its boot timeout, so that is where the answer is needed.
 
 A control run of the same trace with no break wedged at a different, later point
 (724,992 trace bytes / 36,965 serial bytes, against 229,376 / 5,789 with the

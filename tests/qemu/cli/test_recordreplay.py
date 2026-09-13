@@ -1372,3 +1372,25 @@ def test_an_unfinalised_but_provably_complete_trace_is_not_refused(tmp_path):
     stump = _replay_log(other, _insn(10) + _insn(10))
     rr.write_manifest(stump, arch="arm64", argv=[], media={})
     assert any("finalised" in w for w in rr.check_trace(stump))
+
+
+def test_report_replay_break_says_whether_it_fired(tmp_path, monkeypatch):
+    """A paused replay and a wedged one look identical from outside — frozen
+    serial, busy QEMU — so the STOP event is the only thing that tells them
+    apart."""
+    from tests.qemu.qmp_client import QmpClient
+    from tests.qemu.vm import QemuVM
+
+    trace = _replay_log(tmp_path, _insn(100) + _insn(100))
+    monkeypatch.setenv(rr.BREAK_ENV_VAR, "200")
+
+    vm = QemuVM.__new__(QemuVM)
+    vm.on_qmp_ready = None
+    assert vm.report_replay_break() == ""  # nothing armed: silent
+
+    vm._arm_replay_break(rr, trace)
+    vm.qmp = QmpClient()
+    assert "did NOT fire" in vm.report_replay_break()
+
+    vm.qmp.events.append({"event": "STOP"})
+    assert vm.report_replay_break() == "[rr] replay-break FIRED: guest stopped at icount 200"
