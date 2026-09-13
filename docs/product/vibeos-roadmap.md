@@ -513,6 +513,15 @@ land; date every addition.** Source docs live in `docs/engineering/archive/`.
   `NtUnlockFile => c000007e` (RANGE_NOT_FOUND) on ranges SQLite picks not to overlap — the
   wow64 marshaller for both looks correct (`ByteOffset`/`Length` are layout-identical
   `LARGE_INTEGER*`), so FsRtl byte-range locking is a second, separate lead.
+  **The BUGCHECK is one sample of an UNSTABLE path, not a reproducible failure.** Four
+  consecutive arm64 runs of the same guest produced four different outcomes: the lock
+  conflict above, an execute-at-NULL before `main()`, this BUGCHECK, and a hang at guest
+  thread startup. Do not tune a fix to any single one of them. The last runs were also made
+  while the fleet saturated the host (a conducting 3-arch gate plus conformance on two
+  arches, all TCG), which is exactly the condition under which a slow TCG boot starves, so
+  determinism has NOT been established either way -- re-run this on a quiet host before
+  drawing conclusions. What IS solid: on-disk SQLite on arm64 does not survive, and one of
+  the ways it fails takes the kernel down.
 
 - **Stock 32-bit GUI apps cascade into an execute-at-NULL fault under WoW64 — OPEN**
   (2026-09-13). Found while attributing a guest-fault count in a `smoke --arch amd64 --ladder`
