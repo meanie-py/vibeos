@@ -44,14 +44,21 @@ a trace costs a full boot to make and is worth more than the boot that made it.
 So anything the gate adds to a boot is outside what a trace captures unless
 somebody wires it in on purpose.
 
-This is worth stating because the wrong inference is a short one and both of its
-premises are true. When the WoW64 ladder started running on arm64 gates
-(`9f73d184fea1`), the natural reading was "arm64 gates run the ladder" + "rr
-records arm64 boots" therefore "traces now contain nine WoW64 guests that were
-not there before" — which would make a trace recorded today incomparable with
-one recorded yesterday, and send someone hunting a difference that does not
-exist. It is false: `want_ladder` is referenced only inside `smoke.py`, the gate
-opts in explicitly (`gate.py`), and neither rr path passes `--ladder`.
+This is worth stating because the wrong inference is a short one and its premises
+look true. When `9f73d184fea1` made arm64 gates ASK for the WoW64 ladder, the
+natural reading was "arm64 gates run the ladder" + "rr records arm64 boots"
+therefore "traces now contain nine WoW64 guests that were not there before" —
+which would make a trace recorded today incomparable with one recorded
+yesterday, and send someone hunting a difference that does not exist.
+
+It is false twice over, and both refutations came from checking rather than
+reasoning. A recording is not a gate boot: `want_ladder` is referenced only
+inside `smoke.py`, the gate opts in explicitly (`gate.py`), and neither rr path
+passes `--ladder`. And the ladder does not actually run on default arm64 media
+anyway — it declines in `0.0s` on all three arches, because arm64's WoW64 CPU
+layer is the `VIBEOS_FEX=1` opt-in (`mkramdisk.sh`) that default media does not
+stage. The 84.7s drain quoted at the time was measured on the one tree in the
+fleet with that opt-in enabled.
 
 Adding a gate-only behaviour to recordings is a one-line change to
 `_boot_cmd` in `rrcmd.py`. It should stay a deliberate choice rather than
@@ -408,17 +415,57 @@ Record it here and keep going; only chase one when it looks load-bearing.
   variants was measuring different amounts of wall clock and has been discarded
   rather than reported.
 
-- **Replay reproduces CONTENT faithfully but does not reliably run to
-  completion: it WEDGES, at a point that differs between runs of the same trace
-  (2026-09-13, trace `rec5`). OPEN — this is the headline limitation.**
+- **RETRACTED 2026-09-13: replays do not wedge. Every trace that "wedged" was
+  TRUNCATED by the record-finalisation bug, and the varying stop points were
+  wall-clock budgets, not the replay.**
 
-  The good half, and it is real: over the 968 lines one replay produced, **every
-  line matched the recording exactly**. Where a replay progresses, it progresses
-  correctly.
+  This entry stood as the headline limitation for most of a night and was wrong.
+  What settled it: replay the same trace twice, sequentially and ALONE — every
+  earlier observation had been taken while a gate batch hammered the box, which
+  is the confound that produced "varies between runs".
 
-  The bad half: a second replay of that same trace stopped at **25 lines**, at
-  `[FLDR] load ramdisk(0)\reactos\system32\config\SYSTEM` — the first large
-  ramdisk read. Two runs, one trace, two different stopping points.
+  On a trace recorded BEFORE the finalisation fix, both runs stopped at exactly
+  the same place — identical 56-line transcripts and the same abort at the same
+  instruction:
+
+  ```
+  Missing character write event in the replay log
+    (insn total 6497080561/345 left, event 55969 is EVENT_INSTRUCTION)
+  ```
+
+  That is a truncated log, not a wedge, and it is perfectly deterministic. On a
+  trace recorded AFTER the fix, two sequential replays gave 1802 and 1773 lines,
+  `rc=-9` from the harness budget in both cases, **`err=(none)`** — no abort at
+  all — and the shorter run's transcript is an exact PREFIX of the longer's
+  (common prefix 1773, zero divergence). The 29-line difference is how far each
+  got in 900 seconds, nothing more.
+
+  A third run, through `rr verify`, gives the same shape from the artifacts:
+  `record=3149 replay=2070 common_prefix=2070` — the replay's transcript is an
+  exact prefix of the recording's, zero divergence, and it stopped only because
+  its process was killed (that run was reaped; the verdict above is computed from
+  the transcripts on disk, not from the wrapper's output, which the reaper took).
+
+  So: a correctly finalised trace replays deterministically, reproduces content
+  exactly as far as it runs, and does not abort. It is simply slow — see the
+  throughput entry below. The `rr replay` WEDGED detector keeps its value, but
+  what it actually diagnoses is a **truncated trace**, which `rr record` no
+  longer produces.
+
+  **Still unproven: whether a replay ever terminates naturally.** Every run so
+  far — three of them — was ended by an external budget or by the harness reaper,
+  never by the guest reaching the end of the trace. So "replays do not wedge" is
+  established; "replays complete" is not. The way to settle it is one replay with
+  a budget comfortably past the extrapolated finish (~1600s for a 90s smoke
+  recording) on a quiet box, watching for a natural exit rather than a kill.
+
+  The measurement that had seemed decisive — read position frozen at 1.6% across
+  200s at 111% CPU — was taken on `rec5`, also recorded before the fix. A QEMU
+  that has run out of replay log spins exactly like that.
+
+  (The original observations — 968 lines one run, 25 the next — were two
+  different pre-fix traces under different box load, which is precisely the
+  comparison that cannot be made.)
 
   It is a wedge, not slowness, and one measurement settles that. The replaying
   QEMU's read position in `replay.bin` sat frozen at **167,936 bytes of

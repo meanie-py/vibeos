@@ -43,11 +43,38 @@
 //! already existed and are exercised by their own modules, so importing carries no ordering
 //! risk at all. Authoring them would have been six chances to get a slot wrong.
 //!
-//! THREE still need authoring, and they are the careful ones: IFileSystemBindData,
-//! IInitializeCommand, IObjectWithSelection. Do it against the IDL, one method at a time. A
-//! vtable is ORDER DEPENDENT -- a slot in the wrong position calls the wrong method with the
-//! wrong arguments and COMPILES PERFECTLY doing it, because call sites resolve by name. The
-//! compiler cannot catch this class, so nothing but careful reading will.
+//! The remaining THREE are now authored in shellcom.rs from shobjidl.idl --
+//! IFileSystemBindData, IInitializeCommand, IObjectWithSelection. They turned out to be one or
+//! two methods each after the inherited IUnknown triple, with the order explicit in the IDL,
+//! so the ambiguity that made this look risky was not actually present. Reading the IDL before
+//! estimating would have said so; "six vtables to write" was a guess that survived two
+//! deferrals unexamined.
+//!
+//! Slot ORDER remains the whole ABI contract and nothing checks it -- call sites resolve by
+//! NAME, so a misplaced slot calls the wrong method with the wrong arguments and compiles
+//! perfectly. Anyone extending those vtables transcribes from the IDL, in order, and does not
+//! infer from call sites.
+//!
+//! 76 errors remain. `shellcom::IBindCtxVtbl` is now its full THIRTEEN slots in objidl.idl
+//! order, and IStream's Seek/CopyTo/Stat placeholders are typed -- this TU was their first
+//! caller, which is how the placeholder convention surfaces when a new consumer arrives.
+//!
+//! The `call_as` trap is recorded at the struct itself and is worth repeating: objidl.idl
+//! declares RemoteSetBindOptions and RemoteGetBindOptions as `[call_as(...)]` RPC proxy
+//! SUBSTITUTES, not extra slots. Counting them gives 15 and shifts everything after
+//! SetBindOptions by two, which compiles perfectly and calls the wrong method forever.
+//!
+//! I recorded this as "blocked on substrate: BIND_OPTS / STATSTG / LARGE_INTEGER /
+//! ULARGE_INTEGER are in neither shellcom nor the island". That was WRONG and the fix was an
+//! import: all four already existed in recycle_bin.rs, open_with_menu.rs, types.rs and
+//! new_menu.rs. The search that produced the claim looked in two modules and concluded
+//! "absent from the crate" -- the same too-narrow predicate that made ERROR_INSUFFICIENT_BUFFER
+//! an ambiguity error earlier. Search the CRATE, not the two places you expect.
+//!
+//! What is left: IUnknown/IBindCtx identity across com_sys vs shellcom, SHELLSTATE's bitfield
+//! accessors (island renders them as methods, the C reads them as fields), CStringW/RAII
+//! constructors written as tuple-struct calls, and residual pointer casts. Settle casts on
+//! three-target agreement of EXPECTED.
 //!
 //! The integer/pointer cast pass is DONE (162 -> 108): 54 edits, every one applied only where
 //! all three targets named the same EXPECTED type at the same rustc byte span.
@@ -72,6 +99,9 @@ use crate::control_panel_folder::{IDefaultExtractIconInit, IDefaultExtractIconIn
 use crate::shell32::shlfileop::{IProgressDialog, IProgressDialogVtbl};
 use crate::shellcom::{IContextMenu, IContextMenuVtbl, IStream, IStreamVtbl};
 use crate::net_folder::{IShellBrowser, IShellBrowserVtbl};
+use crate::shellcom::{IFileSystemBindData, IFileSystemBindDataVtbl,
+                      IInitializeCommand, IInitializeCommandVtbl,
+                      IObjectWithSelection, IObjectWithSelectionVtbl};
 use crate::shell32::utils_support::LOWORD;
 use crate::net_folder::CppComPtrGuard;
 use crate::fs_drop_target::{IShellLinkW as IShellLink, IID_IShellLinkW as IID_IShellLink};
@@ -1566,8 +1596,8 @@ pub unsafe extern "system" fn SHEnumerateUnreadMailAccountsW(
 
 #[no_mangle]
 pub unsafe extern "system" fn SHFindComputer(pidlRoot: LPCITEMIDLIST, pidlSavedSearch: LPCITEMIDLIST) -> i32 {
-    UNREFERENCED_PARAMETER(pidlRoot);
-    UNREFERENCED_PARAMETER(pidlSavedSearch);
+    UNREFERENCED_PARAMETER!(pidlRoot);
+    UNREFERENCED_PARAMETER!(pidlSavedSearch);
 
     TRACE!("%p %p\n", pidlRoot, pidlSavedSearch);
 
@@ -1903,10 +1933,10 @@ pub unsafe extern "system" fn Activate_RunDLL(
 ) -> BOOL {
     let mut dwProcessID: DWORD = 0;
 
-    UNREFERENCED_PARAMETER(hwnd);
-    UNREFERENCED_PARAMETER(hinst);
-    UNREFERENCED_PARAMETER(cmdline);
-    UNREFERENCED_PARAMETER(cmdshow);
+    UNREFERENCED_PARAMETER!(hwnd);
+    UNREFERENCED_PARAMETER!(hinst);
+    UNREFERENCED_PARAMETER!(cmdline);
+    UNREFERENCED_PARAMETER!(cmdshow);
 
     GetWindowThreadProcessId(GetShellWindow(), &mut dwProcessID);
     AllowSetForegroundWindow(dwProcessID)
