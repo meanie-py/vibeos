@@ -182,9 +182,12 @@ _CFGS = {
         # ntkrnlmp + halmp = the arm64 SMP PAIR (smp-bringup-quest.md M5): the MP
         # kernel and its matching HAL (hal-rust `smp` feature). mkramdisk stages
         # BOTH on every build and the shipped freeldr.ini offers both a
-        # [ReactOS_Arm64_UP] and a [ReactOS_Arm64_MP] entry, so the default stays
-        # UP but an --smp run can boot-select the MP pair by repointing DefaultOS=
-        # in a copy of boot.img — no rebuild, exactly like x86. They are listed as
+        # [ReactOS_Arm64_UP] and a [ReactOS_Arm64_MP] entry, so which kernel boots
+        # is a DefaultOS= pick against fixed media — no rebuild, exactly like x86.
+        # Since 2026-09-12 the MP pair is the DEFAULT (qemu/freeldr.ini line 2 says
+        # DefaultOS=ReactOS_Arm64_MP) and `--up-kernel` is the opt-out; nothing
+        # automated opts in. Do not read "MP" as "several cpus": the default boot
+        # is the MP KERNEL on ONE vcpu, which is a different thing from --smp N. They are listed as
         # best-effort ninja targets but mkramdisk REQUIRES the outputs, so a build
         # that cannot produce them fails there rather than shipping media whose MP
         # entry names files that are not on it.
