@@ -85,7 +85,15 @@ def _head_sha(repo: Path) -> str:
 
 
 def _boot_cmd(repo: Path, arch: str, payload: str, smp: int, build: bool, timeout: int):
-    """The vibeos-cli invocation whose boot we are recording."""
+    """The vibeos-cli invocation whose boot we are recording.
+
+    A `conformance` or `smoke` boot — never a `gate` boot. Anything the gate adds
+    is therefore outside what a trace captures, and adding it here would be a
+    deliberate choice rather than something inherited: two traces are comparable
+    only while what gets recorded is pinned. (The WoW64 ladder is the live
+    example — it runs on arm64 gates but not here, because nothing in this
+    function passes --ladder.) See docs/engineering/qemu-record-replay.md.
+    """
     cli = str(repo / "vibeos-cli")
     if payload == "kmtest":
         cmd = [cli, "conformance", "--arch", arch, "--smp", str(smp), "--timeout", str(timeout)]
