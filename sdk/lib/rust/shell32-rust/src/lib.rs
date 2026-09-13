@@ -40,6 +40,10 @@ pub mod types;
 // invariants the translated call sites depend on.
 pub mod atl;
 
+/// `ui/rosctrls.h`'s CListView + the CWindow methods it inherits — header-only C++ classes, so
+/// the island renders the struct and none of the methods. Any TU driving a list view needs this.
+pub mod rosctrls;
+
 // The C++ header inlines from shellutils.h / utils.h. They live in HEADERS, so no translated
 // TU carries their bodies, yet several TUs call them.
 /// `ui/layout.h`'s resizable-dialog inlines — see that module's header for why they are here.
@@ -177,6 +181,15 @@ pub mod def_view_dual;
 // because it is a COM class and not one of that module's free-function TUs.
 #[path = "shell32/CDefViewBckgrndMenu.rs"]
 pub mod def_view_bckgrnd_menu;
+
+// CDefView — the shell's default folder view (IShellView3 + 7 more interfaces). The support
+// module IS wired: it is finished, and its constants are worth compiling (and worth having
+// their C_ASSERTs checked) whether or not the view itself builds yet. CDefView.rs itself is
+// still ORPHAN and its own header records exactly what is left to wire it.
+#[path = "shell32/cdefview_support.rs"]
+pub mod def_view_support;
+// #[path = "shell32/CDefView.rs"]
+// pub mod def_view;
 
 // CDefaultContextMenu — the shell's default item context menu. Two rustconv runs, because
 // `--cpp-com --class` translates the class only and the TU also carries 22 free functions

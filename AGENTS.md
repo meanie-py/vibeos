@@ -159,6 +159,16 @@ acting on it — `land-status`, `summary.json`, the artifact dir. This cuts both
 summaries, which are the same channel: a status line you carry forward without its evidence is
 a claim you can no longer support.
 
+**An alarming inference deserves its cheapest disconfirming check BEFORE you relay it.**
+Relaying converts your uncertainty into someone else's fact, and from there it gets acted on. I
+had "someone forced a double drain on the merge queue" written and addressed, having seen five
+concurrent `land --drain --foreground` processes; their elapsed times were 64m/61m/43m/36m/6m,
+matching the five queue ages exactly — one blocked waiter per queued lane, which is the design.
+One `ps` killed it. Note also what that host-status could NOT tell me: one of the two lanes
+holding build permits was the user's own, deliberately taking over a tarpitted lane. A position
+is a measurement, not a property — timestamp it or don't send it, and say which parts you
+observed and which you inferred.
+
 **Written deliverables.** Match the length of docs you write to what the task needs: cover the
 substance, don't pad with filler sections, redundant summaries, or boilerplate.
 
@@ -291,8 +301,11 @@ wasted >$100 here.
 New code must compile on stable. **Do not add `#![feature(...)]`, and do not add
 `RUSTC_BOOTSTRAP=1` to a CMakeLists** — that env var silently unlocks nightly and is how nightly
 crept back in the same day it was removed. Both are hard-gated by `scan_nightly_surface`
-(`vibeos-cli check`). The one sanctioned nightly user is the **i386 kernel** `*-cargo` cell
-(`-Z build-std` for a no-SSE `core`); it retires with the wow64 lane. If you think you need a
+(`vibeos-cli check`). The one sanctioned nightly user is the i386 `*-cargo` cell (`-Z build-std`
+for a no-SSE `core`) — and `add_cargo_module` gates on ARCH alone, so that is **every** i386
+cargo module: `KIND win32dll` ones like ntdll build user-mode code against the *kernel*
+softfloat json too. Retiring the i386 kernel does not retire the cell on its own, because
+SysWOW64 stages i386 user-mode PEs and they outlive it. If you think you need a
 nightly feature, you almost certainly don't — see the reference doc for the `c_variadic` and
 `linkage` workarounds.
 

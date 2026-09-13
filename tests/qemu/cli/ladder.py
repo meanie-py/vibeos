@@ -1,10 +1,10 @@
-"""WoW64 probe-ladder verdict check (`smoke --ladder`).
+"""WoW64 probe-ladder verdict check (`smoke --ladder`, and `gate` automatically).
 
 WHY THIS EXISTS. The ladder guests are spawned by winlogon *after* explorer,
-and the smoke's success condition IS the desktop marker — so the ordinary
-`smoke`/`gate` stops watching before a single guest has run. A ladder guest can
-therefore be RED on one arch indefinitely and every gate stays green. That is
-not hypothetical: it happened twice.
+and the smoke's success condition IS the desktop marker — so a plain boot stops
+watching before a single guest has run. A ladder guest could therefore be RED on
+one arch indefinitely while every gate stayed green. That is not hypothetical:
+it happened twice, and both are why `gate` now opts in on its own.
 
   * 2026-07-25 (roadmap, the `_MmCopyFromCaller` entry) noted in passing that
     "the smoke gate stays GREEN through this: the boot marker fires long before
@@ -17,7 +17,9 @@ not hypothetical: it happened twice.
 
 Per AGENTS.md, a rule with no command behind it is a rule you will break, so
 "remember to run --until on both arches after touching a guest" becomes this
-flag instead.
+flag instead -- and since a flag nobody passes is the same rule again, `gate`
+now passes it itself, for each arch whose media actually carries the guests
+(`gate_decision` below).
 
 SHAPE. This is a bounded EXTRA watch after the normal boot marker, not a change
 to the boot path: with `--ladder` off, nothing here runs and the boot is
@@ -40,6 +42,7 @@ from __future__ import annotations
 
 import re
 import time
+from pathlib import Path
 
 # guest -> the exit code that means PASS. gui32 reports 0x600e (it is the
 # GDI/draw rung and has its own verdict code); everything else uses 0x600d.
@@ -71,17 +74,103 @@ _VERDICT = re.compile(r"\[WINLOGON\] ([A-Za-z0-9_]+)\.exe exit = 0x([0-9a-fA-F]+
 LADDER_TIMEOUT_SECONDS = 420.0
 
 
+# Where add_cd_file stages the guests (dll/win32/wow64cpu/CMakeLists.txt on
+# amd64, qemu/mkramdisk.sh on arm64). Matched on the CD path, not the source
+# path: the guests come from sibling trees (build-fex-hello, build-i386) that sit
+# outside the build dir every other manifest entry points into.
+STAGED_DIR = "syswow64"
+
+
+def media_has_guests(repo: Path, arch: str) -> bool:
+    """Does the media this arch's boot would OPEN actually carry the guests?
+
+    Read from the generated `boot/<media>.cmake.lst` staging manifest, which is
+    what `add_cd_file` wrote and therefore what the image contains.
+
+    NOT a byte-scan of the image, and this is the whole point. A scan for
+    "hello32.exe" returns a hit on EVERY amd64 image, staged or not, because
+    winlogon's own diagnostic carries the name in its string table
+    ("[WINLOGON] CreateProcessW(hello32.exe) FAILED (error %lu)") in plain ASCII.
+    That false positive was measured, not imagined: it passed a boot with zero
+    staged guests as ready for the ladder, which would have burned the full
+    420s drain and then reported LADDER_NOT_STAGED -- the exact outcome this
+    check exists to prevent. provenance.probes_missing_from_media is right for
+    what it was built for (is this string COMPILED IN); "is this file staged at
+    this path" is a different question and needs the manifest.
+
+    False for every native-x86 boot without special-casing it -- an i386 livecd
+    has no SysWOW64 to stage into -- so the arch list stays out of here.
+    """
+    from . import archcfg
+
+    try:
+        base = archcfg.base_arch(arch)
+        stem = Path(archcfg.arch_build(arch).boot_media_rel).stem
+        text = (repo / f"build-{base}" / "boot" / f"{stem}.cmake.lst").read_text(errors="ignore")
+    except (OSError, KeyError, AttributeError):
+        # No manifest (never configured) or an arch with no CD media. Absence of
+        # evidence, so decline rather than demand -- the media checks report a
+        # missing build far better than a boolean here could.
+        return False
+
+    guests = {f"{g}.exe" for g in LADDER}
+    for line in text.splitlines():
+        cd_path = line.split("=", 1)[0].strip().replace("\\", "/").lower()
+        parts = cd_path.split("/")
+        if len(parts) >= 2 and parts[-2] == STAGED_DIR and parts[-1] in guests:
+            # Any staged guest opts in: winlogon can then run something, and a
+            # PARTIAL set surfaces through check() as a LADDER_FAIL naming the
+            # guests that never reported -- which is the right answer, since a
+            # partial stage is itself a defect and must not pass quietly.
+            return True
+    return False
+
+
+def gate_decision(repo: Path, arch: str) -> tuple[list[str], bool, str]:
+    """What a gate should do about the ladder for one arch.
+
+    Returns (extra smoke argv, staged?, one-line reason). Kept here rather than
+    in gate.py so the policy is testable without standing up a gate run, and so
+    the reason a gate gives for NOT checking the guests is written next to the
+    check it is declining to run.
+    """
+    staged = media_has_guests(repo, arch)
+    if staged:
+        return (
+            ["--ladder"],
+            True,
+            f"{len(LADDER)} WoW64 guests staged — boot watched past the desktop marker",
+        )
+    return (
+        [],
+        False,
+        f"no staged {STAGED_DIR}/ guest in this arch's media manifest — "
+        f"WoW64 guests NOT checked by this gate",
+    )
+
+
 def markers() -> list[str]:
     """Serial substrings that must all appear before the ladder is complete."""
     return [f"{g}.exe exit = " for g in LADDER]
 
 
-def watch(vm, seconds: float = LADDER_TIMEOUT_SECONDS) -> str:
+def watch(vm, seconds: float = LADDER_TIMEOUT_SECONDS, seen: str = "") -> str:
     """Drain serial until every ladder guest has reported, or `seconds` elapse.
 
-    Returns the drained text (the caller appends it to the boot serial, so a
-    BUGCHECK during the ladder still lands in full.log)."""
-    need = markers()
+    `seen` is the serial the caller has ALREADY consumed. Without it this waits
+    for markers that have gone past: the boot's own settle phase routinely reads
+    a guest's verdict before this is called, and that one line is enough to make
+    the loop sit out the entire ceiling. MEASURED -- a 9/9 PASS run drained
+    420.2s of a 420s budget because `gui32.exe exit = 0x600e` landed in the settle
+    read, so the verdict was correct and the wait was pure waste. The caller's
+    `check()` sees both halves and never noticed.
+
+    Returns only the NEWLY drained text; the caller appends it to the boot serial,
+    so a BUGCHECK during the ladder still lands in full.log.
+    """
+    need = [m for m in markers() if m not in seen]
+    if not need:
+        return ""  # every guest already reported before we were called
     buf = ""
     deadline = time.monotonic() + seconds
     while time.monotonic() < deadline:

@@ -3238,6 +3238,18 @@ extern "C" {
     fn ref_frexp(x: f64, e: *mut i32) -> f64;
     fn ref_ldiv(num: i32, denom: i32) -> RDivT;
     fn ref_fpclass(d: f64) -> i32;
+    // The Bessel wrappers. Both sides call the SAME vendored FDLIBM
+    // `__ieee754_*` underneath (build.rs), so a divergence here is in the
+    // 102 lines of errno/_fpclass shell that are ours.
+    fn ref__j0(num: f64) -> f64;
+    fn ref__j1(num: f64) -> f64;
+    fn ref__jn(n: i32, num: f64) -> f64;
+    fn ref__y0(num: f64) -> f64;
+    fn ref__y1(num: f64) -> f64;
+    fn ref__yn(order: i32, num: f64) -> f64;
+    /// The one errno slot, shared by both sides (build.rs's `cnt_errno_v`).
+    /// Rows therefore clear it before each call and read it after.
+    fn _errno() -> *mut i32;
 }
 
 /// Mirror of the C `div_t` for the struct-return ABI (SysV: {i32,i32}
@@ -3431,6 +3443,108 @@ fn diff_math_lastmile() {
             let a = cabi::ldiv(n, d);
             let e = ref_ldiv(n, d);
             assert_eq!((a.quot, a.rem), (e.quot, e.rem), "ldiv {n} {d}");
+        }
+    }
+}
+
+/// `_j0` `_j1` `_jn` `_y0` `_y1` `_yn` — `math/{j0_y0,j1_y1,jn_yn}.c`.
+///
+/// The numerics are vendored Sun FDLIBM and identical on both sides by
+/// construction, so what these rows actually grade is the shell: WHICH
+/// arguments set `EDOM`, and the `-inf -> sqrt(-1)` epilogue. Both are easy
+/// to get subtly wrong and invisible to a value-only comparison, so errno is
+/// part of the compared image, not an afterthought.
+///
+/// NEGATIVE-TESTED, and the result is worth writing down. Deleting the
+/// `_FPCLASS_NN` arm from `_y0` fails here at `-1.0`. Deleting the
+/// `_FPCLASS_NZ` arm does NOT fail, and that is not a gap in the corpus: for
+/// `-0.0` the FDLIBM body returns -inf, so the `-inf -> sqrt(-1)` epilogue
+/// sets EDOM anyway and the prologue's negative-zero test cannot be observed
+/// through errno at all. So these rows pin `_y0`/`_y1`'s NN and ND arms but
+/// are structurally unable to pin NZ. Don't read a green run as covering it.
+fn diff_math_bessel() {
+    let mut rng = Rng(0xbe55_e100_d00d_f00d);
+
+    // The corpus has to reach each errno arm on purpose:
+    //   * non-finite (both infinities and a NaN) -- every one of the six,
+    //   * NEGATIVE normal / denormal / zero -- _y0 and _y1 only,
+    //   * small positive values, where y0/y1 go to -inf and fire the epilogue.
+    let mut xs: Vec<f64> = vec![
+        f64::INFINITY,
+        f64::NEG_INFINITY,
+        f64::NAN,
+        -0.0,
+        0.0,
+        -1.0,
+        -1e-320,      // negative denormal -> _FPCLASS_ND
+        1e-320,       // positive denormal
+        -f64::MAX,
+        f64::MIN_POSITIVE,
+        1e-300,       // y0/y1 -> -inf here: the sqrt(-1) epilogue
+        1e-30,
+        1.0,
+        2.0,
+        3.0,
+        10.0,
+        1e3,
+        1e10,
+    ];
+    xs.extend(f64_edge_bits().into_iter().map(f64::from_bits));
+    for _ in 0..2000 {
+        xs.push(f64::from_bits(rng.next()));
+        // Ordinary-magnitude arguments too -- a corpus of pure bit noise is
+        // almost entirely NaN and huge exponents, and would never exercise
+        // the arms that matter.
+        xs.push((rng.next() as i64 as f64) / 1e6);
+    }
+
+    // Drive one function, returning (value bits, errno). errno is cleared
+    // first BECAUSE THE SLOT IS SHARED: without the reset a row would read
+    // whatever the previous call left, and every row after the first domain
+    // error would trivially agree.
+    unsafe fn call(f: impl Fn() -> f64) -> (f64, i32) {
+        *_errno() = 0;
+        let v = f();
+        (v, *_errno())
+    }
+
+    for &x in &xs {
+        let b = x.to_bits();
+        unsafe {
+            let (sv, se) = call(|| cabi::_j0(x));
+            let (rv, re) = call(|| ref__j0(x));
+            assert!(same_f64(sv, rv), "_j0 value {b:#018x}");
+            assert_eq!(se, re, "_j0 errno {b:#018x}");
+
+            let (sv, se) = call(|| cabi::_j1(x));
+            let (rv, re) = call(|| ref__j1(x));
+            assert!(same_f64(sv, rv), "_j1 value {b:#018x}");
+            assert_eq!(se, re, "_j1 errno {b:#018x}");
+
+            let (sv, se) = call(|| cabi::_y0(x));
+            let (rv, re) = call(|| ref__y0(x));
+            assert!(same_f64(sv, rv), "_y0 value {b:#018x}");
+            assert_eq!(se, re, "_y0 errno {b:#018x}");
+
+            let (sv, se) = call(|| cabi::_y1(x));
+            let (rv, re) = call(|| ref__y1(x));
+            assert!(same_f64(sv, rv), "_y1 value {b:#018x}");
+            assert_eq!(se, re, "_y1 errno {b:#018x}");
+
+            // _jn/_yn take an order. 0 and 1 overlap the dedicated bodies,
+            // negative orders are a distinct branch in FDLIBM, and the shell
+            // must be transparent to all of them.
+            for n in [-3i32, -1, 0, 1, 2, 7] {
+                let (sv, se) = call(|| cabi::_jn(n, x));
+                let (rv, re) = call(|| ref__jn(n, x));
+                assert!(same_f64(sv, rv), "_jn({n}) value {b:#018x}");
+                assert_eq!(se, re, "_jn({n}) errno {b:#018x}");
+
+                let (sv, se) = call(|| cabi::_yn(n, x));
+                let (rv, re) = call(|| ref__yn(n, x));
+                assert!(same_f64(sv, rv), "_yn({n}) value {b:#018x}");
+                assert_eq!(se, re, "_yn({n}) errno {b:#018x}");
+            }
         }
     }
 }
@@ -4741,6 +4855,7 @@ fn main() {
         diff_math_class_f64,
         diff_math_class_f32,
         diff_math_lastmile,
+        diff_math_bessel,
         diff_math_div,
         diff_math_chgsignf,
         diff_math_scalbn,

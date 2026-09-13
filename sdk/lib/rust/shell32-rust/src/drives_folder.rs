@@ -1470,7 +1470,7 @@ fn HRESULT_CODE(hr: HRESULT) -> HRESULT { hr & 0xFFFF }
 
 /// sdk/include/reactos/shellutils.h:70
 #[inline]
-fn HResultFromWin32(err: DWORD) -> HRESULT { HRESULT_FROM_WIN32(err as LONG) }
+pub fn HResultFromWin32(err: DWORD) -> HRESULT { HRESULT_FROM_WIN32(err as LONG) }
 
 /// sdk/include/reactos/shellutils.h:675-678
 pub const S_LESSTHAN: HRESULT = 0xffff;

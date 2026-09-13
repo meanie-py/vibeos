@@ -346,7 +346,18 @@ def _boot_vm(
                 f"draining up to {ladder_mod.LADDER_TIMEOUT_SECONDS:.0f}s for the WoW64 ladder",
                 header=label,
             )
-            ladder_txt = ladder_mod.watch(vm)
+            _lad_t0 = time.monotonic()
+            ladder_txt = ladder_mod.watch(vm, seen=text)
+            # Record what the drain actually COST, not just its ceiling. This is
+            # additive wall-clock on every gate that stages guests, and the ceiling
+            # (420s) is ~2x the whole gate's modelled warm runtime -- so the real
+            # number has to be visible in the artifact, or nobody can tell a healthy
+            # ladder from one that sat waiting for a guest that never reported.
+            run.log(
+                f"ladder drain: {time.monotonic() - _lad_t0:.1f}s "
+                f"(ceiling {ladder_mod.LADDER_TIMEOUT_SECONDS:.0f}s)",
+                header=label,
+            )
             if ladder_txt:
                 text += ladder_txt
                 run.log(ladder_txt[-8000:], header=f"{label} ladder serial")
