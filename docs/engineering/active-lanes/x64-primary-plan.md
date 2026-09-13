@@ -152,7 +152,9 @@ a ladder to watch", and neither was visible from reading.
   buffer, so a guest reporting during the boot's settle read was waited for until timeout.
   Correct verdict, seven minutes of waste, invisible to every correctness check because the
   two halves of the serial are rejoined before grading. Found only because a duration log line
-  existed. Filed in the field manual as "A watcher that starts from an empty buffer waits for
+  existed. **Fixed and MEASURED: 420.2s -> 94.3s on the same boot with the same 9/9 verdict**
+  (total smoke 554s -> 154s), so the standing cost of the ladder in a gate is ~94s on top of a
+  ~60s amd64 boot, not the 420s ceiling. Filed in the field manual as "A watcher that starts from an empty buffer waits for
   what already went past".
 
 ---

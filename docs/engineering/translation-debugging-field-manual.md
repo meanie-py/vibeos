@@ -5262,8 +5262,10 @@ so it waits forever for a marker that has gone by. Measured: `smoke --ladder` re
 drain. The grading function saw both halves of the serial and was right; the waiter saw only
 its own half and was stuck.
 
-**Fix:** pass what the caller has already seen (`watch(vm, seen=text)`) and wait only on the
-markers still outstanding — including the case where NOTHING is outstanding, which must read
+**Fix, and it is worth the measurement:** pass what the caller has already seen
+(`watch(vm, seen=text)`) and wait only on the markers still outstanding. Same boot, same 9/9
+verdict, **420.2s -> 94.3s** — total smoke 554s -> 154s. The drain is now bounded by the last
+guest to report rather than by the clock; wait only on the markers still outstanding — including the case where NOTHING is outstanding, which must read
 zero bytes rather than block. Keep the ceiling a real ceiling: a guest that never reports still
 has to spend the budget, or the fix trades a slow pass for a fast false failure.
 
