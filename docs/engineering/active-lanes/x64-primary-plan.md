@@ -224,7 +224,17 @@ a ladder to watch", and neither was visible from reading.
    well" false in a way a probe ladder cannot show, because the ladder does not
    look at the hive. Task #66.
 
-3. **The instrument is not in CI — DONE 2026-09-13, and it works.**
+3. **The instrument is not in CI — DONE 2026-09-13 on ALL THREE arches, and it works.**
+   arm64 joined 2026-09-13 05:40: a prefix collision in the manifest glob (`{stem}*.lst` with
+   stem `boot` matching `bootcd.*.lst`, a different medium) had the manifest probe answering
+   "no guests" and shadowing the ramdisk probe that had the right answer, so the opt-in never
+   fired there. With that fixed, every arm64 gate runs the ladder — `gate_argv=['--ladder']`
+   where it was `[]` — at a **measured 84.7s drain**, consistent with the 94.3s seen on amd64
+   and nowhere near the 420s ceiling. So both "does amd64's WoW64 story hold up" and "does
+   arm64's" are now answered continuously instead of by whoever remembers to pass `--ladder`.
+   **Expect a first-ever arm64 `LADDER_FAIL` to be visibility, not new breakage** — that arch
+   simply was never asked before.
+
    `gate` now opts each arch in on its own media (`ladder.gate_decision`), and the amd64
    ladder is **GREEN end to end: 9/9 guests PASS**, correct codes throughout. Getting there
    took three fixes beyond the wiring, all listed under "Found by running it" above. What
