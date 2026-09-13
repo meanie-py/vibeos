@@ -562,7 +562,11 @@ land; date every addition.** Source docs live in `docs/engineering/archive/`.
   the bridge modules deliberately mirror C names. Closest model: `scan_invented_constants`.
 
 - **Every 32-bit guest is refused by CSR — the shared section can't map into a WoW64 process**
-  (2026-09-11, wow64-amd64 lane, OPEN). A trace probe on a passing `smoke:amd64` boot
+  (2026-09-11, wow64-amd64 lane, **CLOSED 2026-09-13**). Closed by `c277b0000d4` (M19 — CSR/LPC
+  works and a 32-bit binary reaches PASS) and `a154628337b` (`BasepCreateThread` marshalled;
+  **all nine WoW64 probe guests PASS on amd64**). The diagnosis below is kept because it is the
+  reasoning that found the bug, and because the "fixing the downstream marshallers first would
+  change nothing" sequencing argument is the reusable part. Read it as history, not as state. A trace probe on a passing `smoke:amd64` boot
   (`/tmp/vibeos-cli/20260911-234915-smoke-amd64/serial.log`) shows the real CSR/LPC blocker, and
   it is **not** a marshalling bug. Per 32-bit guest process, in order:
   `NtSecureConnectPort '\Windows\ApiPort' => c0000041` (PORT_CONNECTION_REFUSED, handle NULL),

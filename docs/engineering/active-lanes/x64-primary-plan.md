@@ -1,0 +1,179 @@
+# Promoting amd64 to the primary x86 arch
+
+**Goal: when someone downloads an ISO to try vibeos, it is the amd64 one, and x86
+applications run well on it.** Deprecating i386 as a *shipped* arch is the
+follow-on prize (a real pile of tech debt retires with it), but it is not the
+near-term ask and nothing here proposes dropping it soon.
+
+Opened 2026-09-13 by the `research` lane, as a survey. The depth work below is
+mostly owned by `wow64-amd64`; see **Ownership** before starting anything.
+
+---
+
+## The finding that reframes the goal
+
+**i386 does not go away when the i386 kernel does.** SysWOW64 on an amd64 livecd
+is populated *from a sibling `build-i386` tree* — `dll/win32/wow64cpu/CMakeLists.txt`
+stages the full transitive import closure of the stock guests (computed by
+`wow64-closure.py`, all-or-nothing, `FATAL_ERROR` on a partial set) out of
+`${REACTOS_SOURCE_DIR}/build-i386/...`, plus the nine probe guests from
+`build-fex-hello/` and ~15 stock applets. A WoW64-capable amd64 ISO literally
+contains i386-built binaries, because that is what a 32-bit process loads.
+
+So the thing that can retire is the i386 **kernel, HAL and boot path**. The i386
+**user-mode build** has to survive for as long as we support running x86 apps —
+which is the whole point of the promotion. Worth stating plainly because the
+tree currently implies otherwise: `sdk/cmake/gcc.cmake:638` says *"That cell is
+retired by the wow64 lane (i386 kernel goes away), not fixed here."*
+
+That is optimistic as written, and the reason is one line up. `add_cargo_module`
+gates on `ARCH STREQUAL "i386"` alone (`gcc.cmake:638-645`, `:803-807`), so
+**every** i386 `*-cargo` cell gets nightly + `-Z build-std` + the custom
+`i686-kernel.json`, user-mode ones included — `dll/ntdll`, `base/system/smss`,
+`winlogon`, `lsass`, `services`, `csrss`, `basesrv`, `mlang`, `cabinet`. But the
+reason for that cell is `rustc-abi: x86-softfloat`, which is a *kernel-mode*
+constraint (no SSE at kernel IRQL). User-mode i386 has no such problem and
+`i686-pc-windows-gnu` is a builtin stable triple.
+
+**Hypothesis worth one experiment, not yet tested:** split the i386 cargo cell by
+`KIND` — kernel cells keep the softfloat json and nightly, user-mode cells move
+to the builtin triple on pinned stable. If it holds, the nightly surface shrinks
+to the i386 kernel today and reaches zero the day that kernel retires, *without*
+waiting for SysWOW64 to stop needing an i386 ntdll. If it does not hold, we learn
+why, and the "last nightly cell" item gets an honest blocker instead of an
+assumption. Do not quote the payoff until someone has run it.
+
+## What "primary" means — a decision, not an investigation
+
+Nobody has defined this, and it should be settled before the work is sequenced,
+because it determines what counts as done:
+
+- Which arch's red blocks a land? (Today all three are peers.)
+- What is the default `--arch`? There is deliberately none, and that rule has
+  paid for itself. "Primary" must not quietly reintroduce one.
+- Which ISO is *the* download, and does the other two staying green remain a
+  gate requirement or become a best-effort?
+
+This is the user's call. The engineering below is orthogonal to it.
+
+---
+
+## Cleared — checked, and not blockers
+
+Recorded because each is a plausible-sounding blocker that costs an afternoon to
+re-derive, and all three came back negative.
+
+1. **SEH parity.** i386 does *not* hold real `fs:[0]` PSEH while the 64-bit
+   arches make do. `sdk/cmake/gcc.cmake:42-47` sets `USE_DUMMY_PSEH 1` for i386
+   under llvm-mingw too, with `USE_PSEH_CLANG` commented out as a TODO. All three
+   arches are on DUMMY_PSEH; the direction of travel is
+   `docs/engineering/dummy-pseh-verdict.md` (Rust semantics, not a C mechanism)
+   and it is arch-neutral. Demoting i386 costs nothing here.
+
+2. **Component coverage.** ~40 `if(ARCH STREQUAL "i386")` gates in `drivers/`
+   read like i386-exclusive builds — the whole USB stack, fastfat, hidusb, the
+   audio stack. Every one opened is Rust target-triple selection
+   (`i686-pc-windows-gnu` + `-C target-feature=-sse,-sse2`), not an exclusion.
+   Same component set on all three arches. (Separately: that identical 12-line
+   block is copy-pasted into 40+ CMakeLists. Real debt, arch-neutral, and a
+   candidate for the "a wrapper script is a bug report against the tool" rule.)
+
+3. **HAL and SMP.** amd64 is the strong arch here, not the weak one — it was
+   already APIC before the `i386-apic-hal` lane brought i386 up to parity. The
+   2026-07-12 "amd64 AP-start caps at ONE AP" finding is fixed: the SMP quest
+   records amd64 `-smp 2` 2/2 and `-smp 4` 2/2 post-change. And BIOS
+   `freeldr.sys` was pruned, so uefildr is the only loader — amd64 boots UEFI
+   like the others.
+
+**Also stale: the roadmap's headline WoW64 blocker.** "Every 32-bit guest is
+refused by CSR — the shared section can't map into a WoW64 process (OPEN)" was
+closed 2026-09-12/13 by `c277b0000d4` (M19: CSR/LPC works, a 32-bit binary
+reaches PASS) and `a154628337b` (`BasepCreateThread` marshalled; **all nine probe
+guests PASS on amd64**). The registry entry is corrected in the same commit as
+this doc.
+
+---
+
+## Real gaps, ranked by what a user hits
+
+1. **Guest processes.** `CreateProcess` from a 32-bit guest, and cross-process
+   `CreateRemoteThread`. Every installer and every app that shells out hits this.
+   `wow64-plan.md` calls it "the largest remaining hole" and names the CSR-LPC-32
+   layer as its prerequisite — which just landed. Its status is therefore
+   genuinely **unknown**, not known-broken, and measuring it on today's tree is
+   the first move rather than a design question.
+
+2. **Registry redirection — a silent wrong answer, not a missing feature.**
+   `sdk/lib/rust/advapi32-rust/src/reg/reg.rs:1073-1079` prints
+   `ERR!("Wow64 not yet supported!")` and then proceeds into the native hive. No
+   `Wow6432Node`; `KEY_WOW64_32KEY` / `KEY_WOW64_64KEY` are logged and ignored. A
+   32-bit app writes its configuration into the 64-bit view and the next one
+   reads someone else's. This is exactly the class that makes "runs x86 apps
+   well" false in a way a probe ladder cannot show, because the ladder does not
+   look at the hive. Task #66.
+
+3. **The instrument is not in CI.** The nine probe guests are spawned by winlogon
+   *after* explorer, and the smoke's success condition IS the desktop marker — so
+   `smoke`/`gate` stop watching before the ladder starts. `tests/qemu/cli/ladder.py`
+   exists and is good (per-guest expected exit codes, `LADDER_NOT_STAGED` vs
+   `LADDER_FAIL`, a generous drain window so a slow host is not a fake failure),
+   but it is reachable only as `smoke --ladder`. `gate` never passes the flag.
+   This has already cost twice: `selfmod32` exited `0xBAD9` on amd64 from the day
+   E17 landed it, and `thread32` sat dead on rung 1 until `a154628337b`. If amd64
+   is promoted *for* x86 compatibility, the gate has to watch the thing it was
+   promoted for.
+
+4. Lower, and latent rather than urgent: the 209 audit-baseline entries
+   (dominated by win32k's kernel-graphics-driver surface — `SURFOBJ`/`BRUSHOBJ`/
+   `XLATEOBJ`, ~81 entries, unreachable from a user-mode guest — plus
+   `PORT_MESSAGE` and `TOKEN_GROUPS`); IOCTL embedded-pointer buffers (task #42);
+   guest `int3` dispatch.
+
+---
+
+## What deprecating the i386 kernel retires
+
+Stated with the caveat above: the i386 *user-mode* build stays.
+
+- **The last nightly cell** (subject to the kernel/user split experiment).
+  `gcc.cmake:638` — i386 is the only arch on `-Z build-std` plus a custom
+  `i686-kernel.json`, because `rustc-abi: x86-softfloat` has no builtin triple.
+- The `-C target-feature=-sse,-sse2` softfloat dance repeated across 40+ driver
+  CMakeLists.
+- The x87 / FDIV-errata debt in the CRT: 18 i386 FDIV fixups in asm, 16 `_CI*`
+  x87 shims, 17 SEH/setjmp asm plus `except_i386`, 6 `i386/inout.s` port I/O.
+  `rust-port-status.md` counts 13 i386-only files / 772 lines existing solely to
+  serve x86-32.
+- `__stdcall` name decoration — the ABI class `#[no_mangle]` structurally cannot
+  spell (`rust-port-status.md:314`) — and the thiscall-in-`ECX` / `retl $N` C++
+  ABI arm, which is x86-only.
+
+Note how much of that list is *kernel* debt and how little is user-mode. That is
+the same split as the finding at the top, and it is the main reason this is worth
+doing.
+
+---
+
+## Sequencing
+
+1. **Ladder into the gate.** Cheap, and it is the measuring instrument for
+   everything below it. `gate._smoke_once` already forwards an `extra` list and
+   `gate.py:803` already builds a `smoke_extra`, so the wiring is small. The real
+   work is the staging policy, not the flag: guests stage only when the sibling
+   `build-i386` / `build-fex-hello` trees exist, so a gate that demands the ladder
+   unconditionally will report `LADDER_NOT_STAGED` on any lane without them. It
+   has to distinguish "the ladder regressed" from "this worktree never staged a
+   guest" and stay silent on the latter — the same discipline `ladder.py` already
+   applies inside a single run, lifted to gate policy.
+2. **Measure guest `CreateProcess`** on today's tree. Gate item between "runs
+   applets" and "runs an installer".
+3. **Registry redirection.** A silent wrong answer outranks a missing feature.
+4. The kernel/user cargo-cell split experiment — independent of the above, and
+   the only item here that touches the toolchain.
+
+## Ownership
+
+Items 2 and 3 are `wow64-amd64` territory and that lane is moving fast (five
+commits in two days). `research` takes item 1, which is gate/verdict
+instrumentation and its natural shape. Item 4 should be offered to whoever owns
+`stable-toolchain-plan.md` rather than grabbed. Coordinate before starting 2 or 3.
