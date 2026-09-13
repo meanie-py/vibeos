@@ -7028,12 +7028,49 @@ language rules) over loosening what it reports.
   move on: only the first assertion in such a chain carries signal, and marking the downstream
   ones records consequences as independent debt. And an assertion that PASSES in the bad mode
   is worse than one that fails, because nothing anywhere reports it — the quota bit was never
-  tested on any run that took the sentinel path. **The shared spelling is not shared
-  causation:** `IoDeviceObject_drv.c:198/206` use the identical `KmtGetPoolType(x) - 1` idiom
-  and sit beside ExPools at the top of the same intermittent list, but they fire independently,
-  and their `KmtGetPoolTag` returns `0x0062005c` / `0x0073006f` — UTF-16 `\b` and `os`. Those
-  Buffers point into the middle of an allocation rather than at its start, which is a different
-  defect wearing the same idiom. Checking that cost one grep and refuted the tidier story.
+  tested on any run that took the sentinel path. **CORRECTED — the trigger was in the HARNESS, and the
+  "different defect" reading below was wrong.** `kmt_test_kernel.h` keeps its own copy of
+  `POOL_HEADER` and gates the 64-bit layout on **`_M_AMD64`**, while the kernel
+  (`ntoskrnl/mm/ARM3/miarm.h`) gates the real one on **`_WIN64`**. arm64 is `_WIN64` and is not
+  `_M_AMD64`, so the kernel writes a 16-byte header (`C_ASSERT(sizeof(POOL_HEADER) ==
+  POOL_BLOCK_SIZE == sizeof(LIST_ENTRY))` compiles there) and kmtest reads an 8-byte one.
+  `Header = Memory; Header--` therefore steps back **half a header** and reads
+  `PoolTag`/`ProcessBilled` as `Ulong1`. `PoolType` is bits of the quota slot, which
+  `ExAllocatePoolWithQuotaTag` sets to the process or to NULL — so the "intermittency" is
+  which, `:178`'s STABLE failure is the quota bit never being where kmtest looks, and
+  `KmtGetPoolTag` returning `0xfffffa00` / `0xfffff800` is the high half of a kernel pointer.
+  **The registry had already recorded the tell and nobody read it as one:** i386 144/144 and
+  amd64 68/68 perfectly deterministic, arm64 alone unstable. An arch-selective macro produces
+  exactly that shape, and it was read as an arm64 KERNEL lead for six weeks.
+  **The lesson is the wrong turn, not the answer.** `IoDeviceObject_drv.c:198/206` use the same
+  `KmtGetPoolType(x) - 1` idiom, and I refuted "same root cause" by observing that their
+  `KmtGetPoolTag` returns `0x0062005c` / `0x0073006f` — UTF-16 `\b` and `os` — and concluding
+  those Buffers point into the middle of an allocation. Reading text rather than a header is
+  equally well explained by **the right pointer at the wrong offset**, which also explains the
+  stable `:178` and the pointer halves, and the half-size header predicts landing inside the
+  previous block's payload exactly. Testing the resemblance was right; accepting the first
+  explanation that fit the refutation was not. **The discriminator was never the tag values —
+  both stories fit those. It was which story also accounted for the evidence I was not
+  looking at:** only "wrong offset" explained the stable `:178` and the arm64-only pattern,
+  and I had both in hand while weighing the two. So when a "these are unrelated" verdict rests
+  on data merely looking WRONG, do not stop at an explanation that fits the wrong data — take
+  the one that also covers the findings you had already set aside. This nearly shipped the
+  opposite conclusion: the chain had reached "a live allocation whose header reads FREE",
+  which with `expool.rs`'s coalescer (`PoolType() == 0` is its absorb-this-neighbour test)
+  would have been reported as a memory-corruption vector in a kernel that is writing a
+  perfectly correct header.
+- **A genuine kernel fault does not fail an assertion STABLY, so determinism is evidence
+  AGAINST a kernel bug.** The inversion is worth having explicitly, because the instinct runs
+  the other way — a reliably failing assertion feels like the solid one to chase and the
+  intermittent neighbour like noise. In the `_M_AMD64`/`_WIN64` header mismatch above,
+  `ExPools.c:178` failed on EVERY arm64 run for six weeks, and that reliability is precisely
+  what a misread struct offset produces and what a racing allocator does not. Pair it with the
+  per-arch shape: **"broken on one arch, perfectly deterministic on the others" is the
+  signature of an arch-selective macro, not of an arch-specific kernel defect.** The bug
+  registry had been saying exactly that about ExPools in those words — i386 144/144, amd64
+  68/68, arm64 alone unstable — and it was filed as an arm64 kernel lead the whole time. When
+  a row says a test is deterministic everywhere except one arch, diff the ARCH GATES in every
+  header both sides compile before theorising about that arch's kernel.
 - **Half-disabling a debug facility leaves its two halves disagreeing — and the disagreement
   outlives the reason.** A checked build does two separable things to a spinlock: it STAMPS
   `KeGetCurrentThread() | 1` into the lock while held (observable behaviour — `KeTestSpinLock`

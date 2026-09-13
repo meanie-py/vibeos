@@ -1566,6 +1566,43 @@ Field-manual § pointers hold the full writeups. **Update on state change.**
     idiom and adjacency at the top of the intermittent list: tested, they fire independently,
     and their `KmtGetPoolTag` returns `0x0062005c` / `0x0073006f` — UTF-16 `\b` and `os`, i.e.
     those Buffers point into the middle of an allocation rather than at its start.
+    **SUPERSEDED SAME NIGHT — it IS the same bug, and it is in the HARNESS, not the pool.**
+    `modules/rostests/kmtests/include/kmt_test_kernel.h` keeps a private `POOL_HEADER` whose
+    64-bit layout is gated on **`_M_AMD64`**; the kernel's (`ntoskrnl/mm/ARM3/miarm.h:372`)
+    is gated on **`_WIN64`**. arm64 is `_WIN64` and not `_M_AMD64`, so the kernel writes a
+    16-byte header (its own `C_ASSERT(sizeof(POOL_HEADER) == POOL_BLOCK_SIZE ==
+    sizeof(LIST_ENTRY))` compiles on arm64) while kmtest's copy is 8 bytes. `KmtGetPoolType`
+    and `KmtGetPoolTag` do `Header = Memory; Header--`, so on arm64 they step back HALF a
+    header and read `PoolTag`/`ProcessBilled` as `Ulong1`. That predicts every observation:
+    `PoolType` is bits of the quota slot that `ExAllocatePoolWithQuotaTag` sets to the process
+    or NULL (hence the two modes), `:178` fails stably because the quota bit is never where
+    kmtest looks, `KmtGetPoolTag` returning `0xfffffa00`/`0xfffff800` is the high half of a
+    kernel pointer, and IoDeviceObject's `0x0062005c`/`0x0073006f` is the previous block's
+    payload. **There is no pool corruption and no arm64 kernel defect here.** The arm64-only
+    pattern recorded above — i386 144/144, amd64 68/68, arm64 alone unstable — was the tell:
+    an arch-selective macro produces exactly it. Fix is `_M_AMD64` -> `_WIN64` in that header,
+    affecting three call sites (ExPools.c:175, IoDeviceObject_drv.c:198/206), but it is a
+    CONFORMANCE TEST change that will move many arm64 assertions at once and wants a
+    deliberate arm64 re-seed — owner's call, not a drive-by.
+    **Confirmed against the toolchain, not just read out of the headers.** `_WIN64` IS a
+    clang builtin: `.build-tools/llvm-mingw/bin/clang -target <t> -dM -E </dev/null` gives it
+    for both `aarch64-w64-mingw32` and `x86_64-w64-mingw32` and not for `i686-w64-mingw32`.
+    **`_M_AMD64` is NOT a clang builtin on any mingw target** — a bare `-dM -E` reports it
+    absent even for x86_64, so read the `_M_AMD64` column below as "in a real TU that includes
+    the SDK", not as something `-dM -E` will show you.
+    It cannot reach arm64 by any path, structurally rather than incidentally: both definition
+    sites are gated on x86_64 — `sdk/include/reactos/msvctarget.h` defines it at :16 inside an
+    `#elif defined(__x86_64__)` arm of a mutually exclusive chain whose `#elif
+    defined(__arm64__)` arm (:28) is the one arm64 takes, and `sdk/include/vcruntime/
+    _mingw_mac.h:85` gates its copy on `defined(__x86_64)`. `CMakeLists.txt:279` passes
+    `-D_ARM64_ -D_M_ARM64 -D__arm64__ -D__aarch64__ -D_WIN64` for arm64.
+    | arch | `_WIN64` (compiler) | `_M_AMD64` (with SDK) | kmtest | kernel | agree |
+    | i386 | no | no | 32-bit | 32-bit | yes |
+    | amd64 | yes | yes | 64-bit | 64-bit | yes |
+    | arm64 | yes | **no** | **32-bit** | **64-bit** | **NO** |
+    That is exactly the i386-144/144, amd64-68/68, arm64-only-unstable shape recorded above,
+    and the amd64 row is the one to confirm before touching the header: it is why the fix is
+    demonstrably arm64-only across the three call sites.
   - **`NpfsConnect` on arm64 — an UNDOCUMENTED intermittent, found 2026-09-13.** One
     occurrence, so no rate: `pass 679 -> 678, fail 0 -> 1` on
     `20260913-022245-fw6sw4_g-conformance-arm64`. `NpfsConnect` is **679/0 on all three
