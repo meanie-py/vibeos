@@ -33,16 +33,21 @@
 //! and a vtable slot is a fn-POINTER FIELD, so it needs its own parens -- `(x.f)(a)`, never
 //! `x.f(a)`. Both forms were already used correctly at 13 sites in this file.
 //!
-//! NEXT ROOT, and it is substrate rather than repair: the bindgen island renders six of the
-//! interfaces this TU drives as OPAQUE C++ classes with no `lpVtbl` field at all --
-//! IExecuteCommand, IDefaultExtractIconInit, IProgressDialog, IFileSystemBindData,
-//! IObjectWithSelection, IInitializeCommand. `crate::shellcom` is the module that exists to
-//! give such interfaces their lpVtbl shape, and it already covers IContextMenu and IStream;
-//! these six need adding there.
+//! OPAQUE INTERFACES, mostly resolved. The island renders the COM interfaces this TU drives as
+//! opaque C++ classes with no `lpVtbl` field. SIX of the nine already had a full vtable
+//! elsewhere in the crate and were IMPORTED rather than re-authored -- IExecuteCommand
+//! (CDefaultContextMenu.rs), IDefaultExtractIconInit (control_panel_folder.rs), IProgressDialog
+//! (shlfileop.rs), IContextMenu + IStream (shellcom.rs), IShellBrowser (net_folder.rs).
 //!
-//! Do that against the IDL, one method at a time, and do NOT rush it: a vtable is ORDER
-//! DEPENDENT, so a slot in the wrong position calls the wrong method with the wrong arguments
-//! and compiles perfectly while doing it. That is why it is left here rather than guessed at.
+//! Checking first mattered here: the estimate was "six vtables to write", and six of the nine
+//! already existed and are exercised by their own modules, so importing carries no ordering
+//! risk at all. Authoring them would have been six chances to get a slot wrong.
+//!
+//! THREE still need authoring, and they are the careful ones: IFileSystemBindData,
+//! IInitializeCommand, IObjectWithSelection. Do it against the IDL, one method at a time. A
+//! vtable is ORDER DEPENDENT -- a slot in the wrong position calls the wrong method with the
+//! wrong arguments and COMPILES PERFECTLY doing it, because call sites resolve by name. The
+//! compiler cannot catch this class, so nothing but careful reading will.
 //!
 //! The integer/pointer cast pass is DONE (162 -> 108): 54 edits, every one applied only where
 //! all three targets named the same EXPECTED type at the same rustc byte span.
@@ -62,6 +67,11 @@ use crate::prelude::*;
 use crate::atl::CStringW;
 use crate::shell32::utils_support::*;
 use crate::shellutils::IsUnicode;
+use crate::default_context_menu::{IExecuteCommand, IExecuteCommandVtbl};
+use crate::control_panel_folder::{IDefaultExtractIconInit, IDefaultExtractIconInitVtbl};
+use crate::shell32::shlfileop::{IProgressDialog, IProgressDialogVtbl};
+use crate::shellcom::{IContextMenu, IContextMenuVtbl, IStream, IStreamVtbl};
+use crate::net_folder::{IShellBrowser, IShellBrowserVtbl};
 use crate::shell32::utils_support::LOWORD;
 use crate::net_folder::CppComPtrGuard;
 use crate::fs_drop_target::{IShellLinkW as IShellLink, IID_IShellLinkW as IID_IShellLink};
