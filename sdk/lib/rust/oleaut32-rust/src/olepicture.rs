@@ -4153,7 +4153,11 @@ unsafe extern "C" fn OLEPictureImpl_LoadIcon(
     if (*cifd).idCount != 1 {
         i = 0;
         while i < (*cifd).idCount as i32 {
-            if (*cifd).idEntries[i as usize].bWidth as i32 == 32 {
+            // olepicture.c: `CURSORICONFILEDIRENTRY idEntries[1];` with `WORD idCount`
+            // -- a flexible array, and this very loop only runs when idCount != 1, so
+            // the multi-entry path IS the panicking path. Any .ico carrying more than
+            // one size (most of them) hit it.
+            if (*(&raw mut (*cifd).idEntries[0]).add(i as usize)).bWidth as i32 == 32 {
                 break;
             }
             i += 1;
@@ -4163,10 +4167,10 @@ unsafe extern "C" fn OLEPictureImpl_LoadIcon(
         }
     }
 
-    if xread < (*cifd).idEntries[i as usize].dwDIBOffset + (*cifd).idEntries[i as usize].dwDIBSize {
+    if xread < (*(&raw mut (*cifd).idEntries[0]).add(i as usize)).dwDIBOffset + (*(&raw mut (*cifd).idEntries[0]).add(i as usize)).dwDIBSize {
         ERR!(
             b"Icon data address %u is over %u bytes available.\n\0".as_ptr() as *const i8,
-            (*cifd).idEntries[i as usize].dwDIBOffset + (*cifd).idEntries[i as usize].dwDIBSize,
+            (*(&raw mut (*cifd).idEntries[0]).add(i as usize)).dwDIBOffset + (*(&raw mut (*cifd).idEntries[0]).add(i as usize)).dwDIBSize,
             xread,
         );
         return E_FAIL;
@@ -4176,36 +4180,36 @@ unsafe extern "C" fn OLEPictureImpl_LoadIcon(
         let buf: LPBYTE = HeapAlloc(
             GetProcessHeap(),
             0,
-            ((*cifd).idEntries[i as usize].dwDIBSize + 4) as SIZE_T,
+            ((*(&raw mut (*cifd).idEntries[0]).add(i as usize)).dwDIBSize + 4) as SIZE_T,
         ) as LPBYTE;
         memcpy(
             buf as *mut core::ffi::c_void,
-            core::ptr::addr_of!((*cifd).idEntries[i as usize].xHotspot) as *const core::ffi::c_void,
+            core::ptr::addr_of!((*(&raw mut (*cifd).idEntries[0]).add(i as usize)).xHotspot) as *const core::ffi::c_void,
             4,
         );
         memcpy(
             buf.offset(4) as *mut core::ffi::c_void,
-            xbuf.offset((*cifd).idEntries[i as usize].dwDIBOffset as isize) as *const core::ffi::c_void,
-            (*cifd).idEntries[i as usize].dwDIBSize as usize,
+            xbuf.offset((*(&raw mut (*cifd).idEntries[0]).add(i as usize)).dwDIBOffset as isize) as *const core::ffi::c_void,
+            (*(&raw mut (*cifd).idEntries[0]).add(i as usize)).dwDIBSize as usize,
         );
         hicon = CreateIconFromResourceEx(
             buf,
-            (*cifd).idEntries[i as usize].dwDIBSize + 4,
+            (*(&raw mut (*cifd).idEntries[0]).add(i as usize)).dwDIBSize + 4,
             FALSE,
             0x00030000,
-            (*cifd).idEntries[i as usize].bWidth as i32,
-            (*cifd).idEntries[i as usize].bHeight as i32,
+            (*(&raw mut (*cifd).idEntries[0]).add(i as usize)).bWidth as i32,
+            (*(&raw mut (*cifd).idEntries[0]).add(i as usize)).bHeight as i32,
             0,
         );
         HeapFree(GetProcessHeap(), 0, buf as *mut core::ffi::c_void);
     } else {
         hicon = CreateIconFromResourceEx(
-            xbuf.offset((*cifd).idEntries[i as usize].dwDIBOffset as isize),
-            (*cifd).idEntries[i as usize].dwDIBSize,
+            xbuf.offset((*(&raw mut (*cifd).idEntries[0]).add(i as usize)).dwDIBOffset as isize),
+            (*(&raw mut (*cifd).idEntries[0]).add(i as usize)).dwDIBSize,
             TRUE,
             0x00030000,
-            (*cifd).idEntries[i as usize].bWidth as i32,
-            (*cifd).idEntries[i as usize].bHeight as i32,
+            (*(&raw mut (*cifd).idEntries[0]).add(i as usize)).bWidth as i32,
+            (*(&raw mut (*cifd).idEntries[0]).add(i as usize)).bHeight as i32,
             0,
         );
     }
@@ -4216,15 +4220,15 @@ unsafe extern "C" fn OLEPictureImpl_LoadIcon(
     } else {
         (*This).desc.picType = PICTYPE_ICON;
         (*This).desc.__bindgen_anon_1.icon.as_mut().hicon = hicon;
-        (*This).origWidth = (*cifd).idEntries[i as usize].bWidth as DWORD;
-        (*This).origHeight = (*cifd).idEntries[i as usize].bHeight as DWORD;
+        (*This).origWidth = (*(&raw mut (*cifd).idEntries[0]).add(i as usize)).bWidth as DWORD;
+        (*This).origHeight = (*(&raw mut (*cifd).idEntries[0]).add(i as usize)).bHeight as DWORD;
         hdcRef = CreateCompatibleDC(core::ptr::null_mut());
         (*This).himetricWidth = xpixels_to_himetric(
-            (*cifd).idEntries[i as usize].bWidth as i32,
+            (*(&raw mut (*cifd).idEntries[0]).add(i as usize)).bWidth as i32,
             hdcRef,
         );
         (*This).himetricHeight = ypixels_to_himetric(
-            (*cifd).idEntries[i as usize].bHeight as i32,
+            (*(&raw mut (*cifd).idEntries[0]).add(i as usize)).bHeight as i32,
             hdcRef,
         );
         DeleteDC(hdcRef);
