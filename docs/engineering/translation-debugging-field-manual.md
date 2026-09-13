@@ -5877,7 +5877,15 @@ test to fail three times, only SOME regression each time — and independent int
 therefore COMPOSE. A 2026-09-13 drain burned its whole retry budget on two unrelated arm64
 bistables (`ExPools: pass 14 -> 13` on two attempts, `NpfsConnect: pass 679 -> 678` on the
 third), and the final verdict records none of that disagreement: it reads as one reproducing
-regression, and the train rejects the lane whose diff happened to be in the batch. Two lessons,
+regression, and the train rejects the lane whose diff happened to be in the batch. **A 9-sweep
+soak on identical media then measured the shape directly, and the measurement is the entry's
+real content:** the LANE went red 3/9 = 33% from THREE independent causes (`ExPools` 2/9,
+explained as a kmtest POOL_HEADER arch-gate mismatch; `Example` 1/9, unexplained; `NpfsConnect`
+0/9, i.e. it did not recur at all). **The lane rate necessarily exceeds any single test's rate,
+and that gap IS the composition** — which is why three attempts absorb far less than three
+attempts appear to. Note also what the soak cost to get right: an earlier ~50% was quoted from
+four samples and withdrawn, and the argument came out stronger for being re-grounded, because
+the lane rate is the quantity the retry floor actually faces. Two lessons,
 and the second is the reusable one. **Recognise it from the artifacts, not the verdict** — read
 each attempt's own conformance log and check the identities MATCH before believing a
 reproduction; a lane that checks only whether its own signature is `ExPools` will wrongly decide
