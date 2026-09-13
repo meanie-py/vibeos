@@ -118,6 +118,24 @@ def cmd_record(args, repo: Path) -> int:
     env = dict(os.environ)
     env[rr.ENV_VAR] = f"record:{trace}"
     env[rr.SHIFT_ENV_VAR] = str(args.shift)
+    if args.shift != rr.DEFAULT_ICOUNT_SHIFT:
+        # Measured on arm64, same boot, three shifts: only the default replays.
+        #   shift 1  33,571,609 byte trace -> replay stalls at 4,096 (271 serial bytes)
+        #   shift 3  10,666,166            -> reaches 2,342,912 (124,212, desktop bringup)
+        #   shift 5   5,999,935            -> replay stalls at 4,096 (271 serial bytes)
+        # 4,096 is the first read buffer: at 1 and 5 the replay never gets going.
+        # The recording still succeeds, so the failure is invisible until someone
+        # tries to replay -- which is exactly when the recording is expensive to
+        # redo. Say it up front.
+        print(
+            f"[rr] WARNING: --shift {args.shift} is not the default "
+            f"({rr.DEFAULT_ICOUNT_SHIFT}). Recording will work; REPLAY PROBABLY WILL "
+            "NOT. Measured on arm64: shift 1 and shift 5 both stall at the first "
+            "4,096-byte buffer having produced 271 bytes of guest serial, while "
+            "shift 3 reaches desktop bringup. See "
+            "docs/engineering/qemu-record-replay.md.",
+            file=sys.stderr,
+        )
     env["VIBEOS_QEMU_SMP"] = str(args.smp)
     # The trace has to come off the native stack; see recordreplay's module
     # docstring. Say so up front rather than letting the VM raise mid-launch.
