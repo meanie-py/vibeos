@@ -3154,6 +3154,22 @@ for by passing `--no-seal-wide`. Fix: when the bank directory's name lacks a tok
 defaults emit, pass the `--no-seal-*` matching how it was bought, or migrate the bank
 deliberately. Never `--no-resume`: that is an explicit PAID regeneration.
 
+**And before you ever conclude your paid work VANISHED, run the second test.** A commit can be
+absent from the merge queue, in neither the landed nor the rejected list, AND not an ancestor
+of `origin/master`, and still be perfectly fine — the queue tracks lane TIPS, so your own newer
+submission subsumes the older commit. Every signal reads "reaped, resubmit":
+
+    git merge-base --is-ancestor <missing> origin/master   # "has it LANDED?"
+    git merge-base --is-ancestor <missing> <my-lane-tip>   # "is it still TRAVELLING?"
+                                                           #   true  -> superseded, fine
+                                                           #   false -> genuinely lost
+
+Neither predicate alone answers "is it lost", and the first is the one nearest to hand. Cheap
+to get wrong elsewhere, expensive here: a translation lane that believes its work disappeared
+goes looking for what it did wrong, and that road ends at `--no-resume` and re-buying bodies
+that were sitting in the queue the whole time. It is the one failure of this class that spends
+money rather than time.
+
 This bit when the seal flags became default-ON: 24 of msvcrt's 26 banks stopped at
 `__callseal_v1`, leaving 2 reachable. **Settle it by constructing the path, never by counting**
 — three counts were offered that night and only the third answered the question asked:
@@ -3188,6 +3204,23 @@ Three distinct shapes, so you can recognise the next one:
   reproduce". The thing that decides is "the 9 runs THIS soak produced, identified by sha";
   "the last 9 by arch" merely correlates with it. A window is the easiest of the three to miss
   because the arithmetic over it is impeccable.
+
+**And a fourth, which is not "we consulted the wrong artifact" but "we held the RIGHT one and
+used it as an INSTRUCTION instead of as EVIDENCE".** A stale `ntdll_vista.dll` failed its
+provenance check; the check's remedy said "run `build`", which demonstrably could not clear
+it; the thing that DID work was `rm <the dll> && build`, and that command was passed between
+five lanes as a recipe. Nobody asked **why deleting an output would fix a staleness check** —
+and the answer to that question was the bug. `rm` works *precisely because* ninja has no edge
+from the crate's sources to the DLL: removing the output is the only way to make ninja rebuild
+something it otherwise has no reason to touch. The workaround was a complete description of
+the defect for as long as it was treated as a procedure. One line of CMake
+(`BODY_CRATES ntdll-rust smss-csrss-rust`, which the sibling target already declared) fixed it.
+
+The tell is specific and worth memorising: **a remedy whose mechanism you cannot state.** If
+you cannot say why the fix works, you are holding a diagnosis you have not read. And note the
+multiplier — a wrong remedy string is worse than no remedy at all, because every lane that
+hits it learns to distrust the message and memorise a recipe instead, which is exactly the
+"a remembered recipe IS the bug report" rule in AGENTS.md arriving from the tool's side.
 
 **The nastiest variant of it is a CITATION.** Same night, a different lane argued that a
 "flake" classification could not also reject a lane, and cited `queue.py:901` as its support.
