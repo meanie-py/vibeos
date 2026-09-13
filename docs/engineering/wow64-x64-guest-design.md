@@ -44,11 +44,20 @@ modules' core-init sequences are otherwise near-identical; they differ in exactl
 **So the recompiler half of "run x64 guests" is a config flag and a syscall handler.** Everything
 expensive about ARM64EC lives *outside* this init, in the ABI plumbing.
 
-## Why a 64-bit guest is structurally CHEAPER than the 32-bit one we already ship
+## Why the MARSHALLER side gets cheaper — and why that is only half the ledger
 
-This is the part that is easy to get backwards, so state it plainly: **x86-64 Windows and ARM64
-Windows are both LLP64.** Same 8-byte pointers, same `long` = 32 bits, same struct alignment
-rules. A 64-bit x86 guest running on a 64-bit ARM host is not a *bitness* transition at all.
+**Read this section and the next one together. Quoting either alone decides the fork by
+itself, and neither is the whole comparison.**
+
+**x86-64 Windows and ARM64 Windows are both LLP64.** Same 8-byte pointers, same `long` = 32
+bits, same struct alignment rules. So a 64-bit x86 guest on a 64-bit ARM host has no *width*
+transition.
+
+It does still have an **arch** transition. That transition does not disappear; it MOVES, out of
+the marshaller and entirely into the CPU layer — see "What moves onto the CPU-layer side" below.
+The correct claim is that **the WIDTH class closes**, not that the bug class closes. The parent
+class is "a structure whose layout depends on the guest's ARCH", and width is only one way a
+layout can so depend.
 
 WoW64 is hard because it is 32-on-64: every pointer, handle and struct crossing the boundary has
 to be narrowed or widened, and every one of those is a chance to get a field offset wrong. That
@@ -67,15 +76,52 @@ every other layout that cost this lane a boot apiece are byte-identical between 
 The five width bugs that took the ladder from 0/9 to 9/9 are, for a 64-bit guest, not bugs that
 can exist.
 
-What remains is genuinely smaller and uniform:
+**A second class closes too, and it is not width either: address-space CONFINEMENT.** A 32-bit
+guest must be kept inside the low 4GB, so the marshaller forces
+`ZeroBits = WOW64_ZEROBITS_BELOW_2G` on `NtAllocateVirtualMemory` and `NtMapViewOfSection`,
+clamps to `WOW64_USER_CEILING32`, and checks that csrss's shared section, `StaticServerData` and
+heap pointers actually landed below 4GB — one of which asserted and dereferenced NULL when they
+did not. Measured in `wow64_manual.c`: **4 enforcement statements** (2 forced-`ZeroBits`, 2
+ceiling clamps) against **~25 references** across code and the comments explaining them. A
+64-bit guest has the host's own address space and none of this applies. (Credit to the research
+lane for spotting this class; they put it at 36 sites, I count ~25 references / 4 enforcement
+statements — same substantive point, and I am quoting the number I can defend from the file.)
+
+What remains on the marshaller side is genuinely smaller and uniform:
 
 - **Register-ABI mapping.** Win64 x86-64 passes args in `rcx, rdx, r8, r9` + stack; ARM64 uses
-  `x0-x7`. This is a mechanical, *per-arity* shuffle, not a per-struct rewrite — one generic
-  dispatcher, not 13,678 lines.
-- **Guest context save/restore** in whatever format we choose to define.
+  `x0-x7`. A mechanical, *per-arity* shuffle, not a per-struct rewrite.
 - **Memory/invalidation notifications** — the `BTCpuNotifyMemory*` family, which we already
   implement for the 32-bit plugin and which is bitness-independent.
-- **Exception dispatch** from guest faults back into guest-visible SEH.
+
+## What MOVES onto the CPU-layer side — the other half of the ledger
+
+The marshaller gets to be pure width work only because it already **delegates** everything
+arch-shaped. Verified in our own tree: `wow64.c` resolves and calls `BTCpuGetContext` /
+`BTCpuSetContext` (`wow64.c:294-297`, `763-764`) rather than thunking `CONTEXT` itself, because
+a guest `CONTEXT` is arch-shaped, not width-shaped. `NtGetContextThread`, `NtSetContextThread`,
+`NtContinue` and the exception path all take that route.
+
+So a 64-bit guest does not make that work vanish — it inherits it, unreduced and in a harder
+form:
+
+- **CONTEXT conversion.** Someone must still produce an x86-64 `CONTEXT` from an AArch64 one and
+  back. x64's context is materially larger and more complex than i386's, so this gets *bigger*,
+  not smaller.
+- **Exception ENTRY is a different mechanism, not a narrower one.** i386 guests use the `fs:[0]`
+  SEH chain that the 32-bit dispatcher walks. x64 guests use table-based `.pdata` unwind.
+  Neither is saved by LLP64, and the second is not a simplification of the first.
+
+**The load-bearing point for choosing a fork: the saving and the new cost land on OPPOSITE SIDES
+of the BTCpu contract.** ~13,678 lines plus the confinement class come OFF the marshaller side;
+an unpriced amount goes ON to the CPU-layer side — the same side whose "plugin in our tree
+linking vendored FEXCore" option is flagged below as not yet priced. **The comparison must be
+made across the contract, not on one side of it.**
+
+This does not weaken Fork B: the saving is large and real, and **Fork A needs the same CONTEXT
+and unwind work anyway**, on top of the hybrid-PE ABI. It means the CONTEXT conversion and
+exception-entry mechanism must be priced WITH the plugin, not treated as extras — they are
+precisely the part the marshaller structurally refuses to do.
 
 ## The two forks
 
@@ -137,7 +183,8 @@ Listed because a scoping doc that reads as confident is worse than useless:
 
 - **Whether `BTCpuSimulate`'s entry protocol generalises to a 64-bit guest.** Our
   `wow64.c` drives it through 32-bit-shaped context structures. Fork B needs a context format
-  decision that nobody has made.
+  decision that nobody has made — and per the section above, that decision is not a detail, it
+  is where the arch transition now lives.
 - **Whether `Is64BitMode` alone is sufficient at the FEXCore level.** It is clearly *the* knob,
   and the table above shows only four init differences — but "four differences" is not the same
   as "no other runtime assumptions", and the syscall-handler difference in particular hides
