@@ -58,7 +58,12 @@ const FILE_WRITE_DATA: u32 = 0x0002;
 const GENERIC_READ: u32 = 0x80000000;
 const GENERIC_WRITE: u32 = 0x40000000;
 const KEY_READ: u32 = 0x20019;
-const THREAD_ALL_ACCESS: u32 = 0x1FFFFF;
+// 0x1F03FF = STANDARD_RIGHTS_REQUIRED|SYNCHRONIZE|0x3FF. xdk/pstypes.h picks this
+// under `#if (NTDDI_VERSION >= NTDDI_VISTA) ... #else`, and this tree builds
+// -D_WIN32_WINNT=0x502 (Server 2003), so the PRE-Vista branch is the live one. The
+// Vista value 0x1FFFFF asks for 0xFC00 of thread rights the object's GENERIC_MAPPING
+// does not grant, which an open would refuse rather than silently narrow.
+const THREAD_ALL_ACCESS: u32 = 0x1F03FF;
 const IO_NO_INCREMENT: i32 = 0;
 
 const PowerSystemUnspecified: ULONG = 0;

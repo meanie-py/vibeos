@@ -206,7 +206,12 @@ const TOKEN_QUERY: ACCESS_MASK = 0x8;
 const TOKEN_IMPERSONATE: ACCESS_MASK = 0x4;
 const THREAD_QUERY_INFORMATION: ACCESS_MASK = 0x40;
 const THREAD_IMPERSONATE: ACCESS_MASK = 0x100;
-const THREAD_ALL_ACCESS: ACCESS_MASK = 0x1fffff;
+// 0x1F03FF = STANDARD_RIGHTS_REQUIRED|SYNCHRONIZE|0x3FF. xdk/pstypes.h picks this
+// under `#if (NTDDI_VERSION >= NTDDI_VISTA) ... #else`, and this tree builds
+// -D_WIN32_WINNT=0x502 (Server 2003), so the PRE-Vista branch is the live one. The
+// Vista value 0x1FFFFF asks for 0xFC00 of thread rights the object's GENERIC_MAPPING
+// does not grant, which an open would refuse rather than silently narrow.
+const THREAD_ALL_ACCESS: ACCESS_MASK = 0x1F03FF;
 const SECURITY_DESCRIPTOR_REVISION: ULONG = 1;
 
 const TOKEN_HAS_TRAVERSE_PRIVILEGE: ULONG = 0x1;
