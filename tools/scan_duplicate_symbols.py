@@ -57,6 +57,9 @@ import re
 import sys
 from pathlib import Path
 
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
+from tools.source_walk import source_files
+
 REPO = Path(__file__).resolve().parent.parent
 
 # The crates whose object code is linked into the kernel PE (ntoskrnl-cargo /
@@ -118,7 +121,7 @@ def symbols_in_crate(crate: str) -> set[str]:
     if not src.is_dir():
         return set()
     found: set[str] = set()
-    for rs in src.rglob("*.rs"):
+    for rs in source_files(src):
         try:
             lines = rs.read_text(errors="replace").splitlines()
         except OSError:

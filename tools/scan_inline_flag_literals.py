@@ -50,6 +50,9 @@ import tree_sitter_rust as tsr  # noqa: E402
 from rustconv.verify_constants import build_c_catalog, parse_c_hex  # noqa: E402
 from tree_sitter import Language, Parser, Query, QueryCursor  # noqa: E402
 
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
+from tools.source_walk import source_files  # noqa: E402
+
 DEFINE_RE = re.compile(r"^#define\s+([A-Z_][A-Z0-9_]*)\s+(.+?)(?:\s*//.*)?$")
 _SUFFIX_RE = re.compile(r"(u8|u16|u32|u64|usize|i8|i16|i32|i64|isize)$")
 # A comment segment that "looks like a flag annotation": just an UPPER_CASE name,
@@ -338,7 +341,7 @@ def main():
     if not files:
         # No paths given → sweep the whole Rust workspace (broad catalog, no
         # driver --headers). This is how the CLI lint gate invokes it.
-        files = [str(p) for p in (REPO / "sdk" / "lib" / "rust").rglob("*.rs")]
+        files = [str(p) for p in source_files(REPO / "sdk" / "lib" / "rust")]
 
     catalog = build_c_catalog(REPO, include_enums=True)
     for d in (

@@ -58,6 +58,9 @@ import sys
 import tempfile
 from pathlib import Path
 
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
+from tools.source_walk import source_files
+
 # ── Paths ────────────────────────────────────────────────────────────
 # The worktree may not carry .build-tools/ or build-<arch>/ (gitignored, large).
 # Fall back to a sibling vibeos checkout that does — these are shared, read-only
@@ -598,7 +601,7 @@ def scan_rust_crate(src: Path) -> list[dict]:
     De-dups dual-cfg twins (same name+arity) keeping the first occurrence."""
     results = []
     seen = set()
-    for rs in sorted(src.rglob("*.rs")):
+    for rs in sorted(source_files(src)):
         text = rs.read_text(errors="replace")
         # find export attributes, then the next fn sig within a small window
         for m in EXPORT_ATTR.finditer(text):

@@ -83,6 +83,9 @@ import re
 import sys
 from pathlib import Path
 
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
+from tools.source_walk import source_files
+
 REPO = Path(__file__).resolve().parent.parent
 
 
@@ -177,7 +180,7 @@ def rust_declared(
     found: dict[str, str] = {}
     calls: dict[str, int] = dict.fromkeys(names, 0)
     for root in roots:
-        for rs in root.rglob("*.rs"):
+        for rs in source_files(root):
             try:
                 text = rs.read_text(errors="replace")
             except OSError:
