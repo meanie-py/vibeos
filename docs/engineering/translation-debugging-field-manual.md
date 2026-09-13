@@ -7446,6 +7446,15 @@ testing the formulation against the instance list rather than against the cases 
 it — the same discipline that killed an earlier two-property generalisation here, which
 explained two of ten.)*
 
+**And it caught this entry's own author, in the test written to demonstrate it.** The
+regression test for `land`'s submit verification identified its two run dirs with
+`sorted(glob("*-land-queue"))[-1]`. Run dirs are `<ts>-<random>-land-queue`; both runs land in
+the same second, so the RANDOM SUFFIX decides lexicographic order, and the sort is a handle
+standing in for "the newer run". It passed locally and failed in the real `check-tooling`
+preflight, having picked the wrong dir. Sorting by name is the cheapest instance of this class
+there is, and knowing the class an hour earlier did not prevent writing it. Use set difference
+against the dirs that existed before the call, not an ordering over their names.
+
 **Corollary, from the same incident: fixing a SILENT failure by making it LOUD converts a cost
 you were not paying into one you pay immediately.** Both halves lived in the same function, and
 the loud half was introduced while fixing the silent one. `kill` had been reporting

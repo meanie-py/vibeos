@@ -6525,12 +6525,25 @@ def test_land_submit_verifies_the_queue_actually_holds_it(lane_repo, tmp_path, m
         q_mod.resolve(repo, sub, outcome="rejected", reason="simulated non-persistence")
         return sub
 
+    # Identify each run by SET DIFFERENCE, never by sorting the names. Run dirs are
+    # `<ts>-<random>-land-queue` and both of these land in the same second, so the random
+    # suffix decides the lexicographic order — `sorted(...)[-1]` is a handle standing in for
+    # "the newer run", and it picked the wrong dir the moment the suffixes landed the other
+    # way. (Same class as the entry this commit adds to the field manual; caught by the real
+    # check-tooling preflight after passing locally.)
+    art = tmp_path / "art"
+
+    def _only_new(before: set[Path]) -> dict:
+        new_dirs = set(art.glob("*-land-queue")) - before
+        assert len(new_dirs) == 1, f"expected exactly one new run dir, got {new_dirs}"
+        return json.loads((new_dirs.pop() / "summary.json").read_text())
+
     monkeypatch.setattr(land_mod.queue, "submit", vanishing)
+    before = set(art.glob("*-land-queue")) if art.exists() else set()
     rc = land_mod.land(_Args(direct=False, foreground=True), lane)
     assert rc == 1, "a submission that did not persist must not exit 0"
 
-    run_dir = sorted((tmp_path / "art").glob("*-land-queue"))[-1]
-    summary = json.loads((run_dir / "summary.json").read_text())
+    summary = _only_new(before)
     assert summary["verdict"] == "FAIL"
     assert summary["classification"] == "LAND_ABORT"
     detail = " ".join(s.get("detail", "") for s in summary["stages"])
@@ -6539,9 +6552,9 @@ def test_land_submit_verifies_the_queue_actually_holds_it(lane_repo, tmp_path, m
     # The control: with submit left alone the SAME path reports a verified position, so the
     # assertion above cannot be passing because land() fails in this fixture regardless.
     monkeypatch.setattr(land_mod.queue, "submit", real_submit)
+    before = set(art.glob("*-land-queue"))
     assert land_mod.land(_Args(direct=False, foreground=True), lane) == 0
-    ok_dir = sorted((tmp_path / "art").glob("*-land-queue"))[-1]
-    ok_summary = json.loads((ok_dir / "summary.json").read_text())
+    ok_summary = _only_new(before)
     # WARN, not OK: this fixture has no `vibeos-cli` on disk so the lint stage warns, and the
     # prior stage reports the rejection the first half simulated. Neither is the submit.
     assert ok_summary["verdict"] == "WARN" and not ok_summary["classification"]
