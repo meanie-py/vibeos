@@ -20,6 +20,9 @@ from pathlib import Path
 
 from rustconv.config import REACTOS_ROOT as _RUSTCONV_REACTOS_ROOT  # invoked tree root
 
+sys.path.insert(0, str(Path(__file__).resolve().parents[3]))
+from tools.source_walk import source_files
+
 # ── Spec Parser ──────────────────────────────────────────────────────
 
 
@@ -223,7 +226,7 @@ def main():
     if args.files:
         rs_files = [Path(f) for f in args.files]
     else:
-        rs_files = sorted((reactos_root / "sdk/lib/rust/ntoskrnl-rust/src").rglob("*.rs"))
+        rs_files = sorted(source_files(reactos_root / "sdk/lib/rust/ntoskrnl-rust/src"))
 
     total_issues = 0
     for rs_file in rs_files:

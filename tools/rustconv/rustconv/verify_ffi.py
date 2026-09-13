@@ -21,6 +21,9 @@ from rustconv.config import REACTOS_ROOT as _RUSTCONV_REACTOS_ROOT  # invoked tr
 sys.path.insert(0, str(Path(__file__).resolve().parents[3]))
 from tools.lint_facts import source_facts
 
+sys.path.insert(0, str(Path(__file__).resolve().parents[3]))
+from tools.source_walk import source_files
+
 # ── Known C macros that should NOT be declared as extern fn ──────────
 
 C_MACROS = {
@@ -243,7 +246,7 @@ def crate_local_definitions(crate_dir: Path, _cache={}) -> frozenset:  # noqa: B
     names = set()
     src = crate_dir / "src"
     if src.is_dir():
-        for f in src.rglob("*.rs"):
+        for f in source_files(src):
             try:
                 names.update(_LOCAL_DEF_RE.findall(f.read_text(encoding="utf-8", errors="replace")))
             except OSError:
@@ -637,7 +640,7 @@ def main():
         rs_files = sorted(
             f
             for src_dir in rust_root.glob("*/src")
-            for f in src_dir.rglob("*.rs")
+            for f in source_files(src_dir)
             if not (
                 f.name.startswith("bindgen_")
                 or f.name.startswith("size_check_")

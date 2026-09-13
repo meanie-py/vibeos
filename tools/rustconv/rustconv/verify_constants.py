@@ -17,6 +17,9 @@ from pathlib import Path
 
 from rustconv.config import REACTOS_ROOT as _RUSTCONV_REACTOS_ROOT  # invoked tree root
 
+sys.path.insert(0, str(Path(__file__).resolve().parents[3]))
+from tools.source_walk import source_files
+
 # ── C Header Catalog Builder ──────────────────────────────────────────
 
 
@@ -761,7 +764,7 @@ def main():
         # would corrupt generated code (the PsQuotaTypes lesson, generalized).
         rs_files = sorted(
             p
-            for p in (reactos_root / "sdk/lib/rust").rglob("*.rs")
+            for p in source_files(reactos_root / "sdk/lib/rust")
             if "/target/" not in p.as_posix()
             and not p.name.startswith(("bindgen_", "hal_bindgen_"))
         )
