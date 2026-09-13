@@ -7,7 +7,7 @@
 # the bar is link-clean x3 + no smoke regression.
 
 set(KBDHID_RUST_WORKSPACE_DIR "${CMAKE_SOURCE_DIR}/sdk/lib/rust")
-set(KBDHID_RUST_TARGET_DIR "${CMAKE_CURRENT_BINARY_DIR}/rust-kbdhid-target")
+rust_storage_target(KBDHID_RUST_TARGET_DIR "${CMAKE_CURRENT_BINARY_DIR}/rust-kbdhid-target" kbdhid-rust)
 set(KBDHID_RUST_LIB "${CMAKE_CURRENT_BINARY_DIR}/libkbdhid_rust.a")
 
 if(ARCH STREQUAL "i386")

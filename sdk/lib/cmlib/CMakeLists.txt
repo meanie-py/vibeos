@@ -63,7 +63,7 @@ if(CMAKE_CROSSCOMPILING)
 
     # ── Rust integration: cmlib-rust → kernel cmlib cohabitation ──────────
     set(RUST_WORKSPACE_DIR "${CMAKE_SOURCE_DIR}/sdk/lib/rust")
-    set(RUST_TARGET_DIR "${CMAKE_CURRENT_BINARY_DIR}/cmlib-rust-target")
+    rust_storage_target(RUST_TARGET_DIR "${CMAKE_CURRENT_BINARY_DIR}/cmlib-rust-target" cmlib-rust)
     # NOTE: unlike libcntpr's cohab hook, cmlib-rust does NOT use
     # `-C no-prepopulate-passes`. That flag leaves trivial code unoptimized, so an
     # iterator/`.offset()` loop emits external `call`s into precompiled-core

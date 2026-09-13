@@ -58,7 +58,7 @@ list(APPEND SOURCE
 # eh_personality coexist with the C++ side. Plan:
 # docs/engineering/explorer-rust-translation-plan.md.
 set(EXPLORER_RUST_WORKSPACE_DIR "${CMAKE_SOURCE_DIR}/sdk/lib/rust")
-set(EXPLORER_RUST_TARGET_DIR "${CMAKE_CURRENT_BINARY_DIR}/rust-explorer-target")
+rust_storage_target(EXPLORER_RUST_TARGET_DIR "${CMAKE_CURRENT_BINARY_DIR}/rust-explorer-target" explorer-rust)
 set(EXPLORER_RUST_LIB "${CMAKE_CURRENT_BINARY_DIR}/libexplorer_rust.a")
 if(ARCH STREQUAL "i386")
     set(EXPLORER_RUST_TARGET "i686-pc-windows-gnu")

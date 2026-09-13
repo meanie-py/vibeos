@@ -10,7 +10,7 @@ spec2def(wmilib.sys wmilib.spec ADD_IMPORTLIB)
 # (set_module_type ... ENTRYPOINT 0 + spec2def .def + add_importlibs(ntoskrnl)).
 # Mirrors cportlib's static-lib custom_command + bootvid's export-DLL cohab.
 set(WMILIB_RUST_WORKSPACE_DIR "${CMAKE_SOURCE_DIR}/sdk/lib/rust")
-set(WMILIB_RUST_TARGET_DIR "${CMAKE_CURRENT_BINARY_DIR}/rust-wmilib-target")
+rust_storage_target(WMILIB_RUST_TARGET_DIR "${CMAKE_CURRENT_BINARY_DIR}/rust-wmilib-target" wmilib-rust)
 set(WMILIB_RUST_LIB "${CMAKE_CURRENT_BINARY_DIR}/libwmilib_rust.a")
 if(ARCH STREQUAL "i386")
     set(WMILIB_RUST_TARGET "i686-pc-windows-gnu")

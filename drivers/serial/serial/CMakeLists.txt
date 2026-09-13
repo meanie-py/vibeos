@@ -4,7 +4,7 @@
 # (kernel owns the KD COM port) -> link-clean x3 bar.
 
 set(SERIAL_RUST_WORKSPACE_DIR "${CMAKE_SOURCE_DIR}/sdk/lib/rust")
-set(SERIAL_RUST_TARGET_DIR "${CMAKE_CURRENT_BINARY_DIR}/rust-serial-target")
+rust_storage_target(SERIAL_RUST_TARGET_DIR "${CMAKE_CURRENT_BINARY_DIR}/rust-serial-target" serial-rust)
 set(SERIAL_RUST_LIB "${CMAKE_CURRENT_BINARY_DIR}/libserial_rust.a")
 if(ARCH STREQUAL "i386")
     set(SERIAL_RUST_TARGET "i686-pc-windows-gnu")

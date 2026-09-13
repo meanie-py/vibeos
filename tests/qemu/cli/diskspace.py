@@ -209,13 +209,25 @@ def status(repo: Path, *, sizes: bool = False) -> dict:
         volume["unreserved_above_floor_bytes"] = max(
             0, volume["free_bytes"] - volume["reserved_bytes"] - int(config["min_free_gib"] * GIB)
         )
+    retention_policy = hostlock.HOSTLOCK_DIR / "retention.json"
+    timer_active = False
+    if retention_policy.exists() and not (hostlock.HOSTLOCK_DIR / "maintenance-disabled").exists():
+        timer_active = (
+            subprocess.run(
+                ["systemctl", "--user", "is-active", "--quiet", "vibeos-retention.timer"],
+                capture_output=True,
+                timeout=5,
+            ).returncode
+            == 0
+        )
     result = {
         "policy_path": str(root() / "policy.json"),
         "policy": config,
         "filesystems": volumes,
         "leases": live,
         "coverage": "cooperating CLI build/tooling jobs only; not a physical quota",
-        "automatic_retention": False,
+        "automatic_retention": timer_active,
+        "retention_policy_path": str(retention_policy),
     }
     if sizes:
         cache = cachecfg.make(repo)

@@ -9,7 +9,7 @@
 add_definitions(-D_NTSYSTEM_)
 
 set(ARBITER_RUST_WORKSPACE_DIR "${CMAKE_SOURCE_DIR}/sdk/lib/rust")
-set(ARBITER_RUST_TARGET_DIR "${CMAKE_CURRENT_BINARY_DIR}/rust-arbiter-target")
+rust_storage_target(ARBITER_RUST_TARGET_DIR "${CMAKE_CURRENT_BINARY_DIR}/rust-arbiter-target" arbiter-rust)
 set(ARBITER_RUST_LIB "${CMAKE_CURRENT_BINARY_DIR}/libarbiter_rust.a")
 if(ARCH STREQUAL "i386")
     set(ARBITER_RUST_TARGET "i686-pc-windows-gnu")

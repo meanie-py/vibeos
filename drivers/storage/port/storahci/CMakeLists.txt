@@ -4,7 +4,7 @@ add_definitions(-DDEBUG)
 # Stays DISABLED from shipping (re-enable when AHCI is wired) -> built + link-clean x3 only.
 
 set(STORAHCI_RUST_WORKSPACE_DIR "${CMAKE_SOURCE_DIR}/sdk/lib/rust")
-set(STORAHCI_RUST_TARGET_DIR "${CMAKE_CURRENT_BINARY_DIR}/rust-storahci-target")
+rust_storage_target(STORAHCI_RUST_TARGET_DIR "${CMAKE_CURRENT_BINARY_DIR}/rust-storahci-target" storahci-rust)
 set(STORAHCI_RUST_LIB "${CMAKE_CURRENT_BINARY_DIR}/libstorahci_rust.a")
 if(ARCH STREQUAL "i386")
     set(STORAHCI_RUST_TARGET "i686-pc-windows-gnu")

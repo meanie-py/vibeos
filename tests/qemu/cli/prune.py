@@ -24,7 +24,7 @@ import subprocess
 from dataclasses import dataclass
 from pathlib import Path
 
-from . import canon, maintenance, queue  # integration tree stays warm
+from . import canon, maintenance, queue
 
 # Same global lock dir vm.py / qemu/start.sh / qemu/ps use.
 LOCK_DIR = Path("/tmp/vibeos-qemu-locks")
@@ -186,6 +186,7 @@ def classify(
     min_age_hours: float,
     now: float,
     newest_mtime: float | None,
+    include_integration: bool = False,
 ) -> str | None:
     """Pure eligibility decision → skip reason string, or None if prunable. All
     state (live sets, `now`, the tree's `newest_mtime`) is injected so this is
@@ -193,11 +194,9 @@ def classify(
     wtr = worktree.resolve()
     if wtr == current.resolve() and not allow_self:
         return "current worktree (use --self)"
-    # The merge queue's integration tree is idle BY DESIGN between batches, which is exactly
-    # the shape this command hunts — but its warm build dirs + cargo target are the reason a
-    # batch gates in minutes instead of an hour, and every landing in the fleet pays for a
-    # cold one. Never reclaim it automatically; `--self` from inside it still can.
-    if wtr.name == queue.INTEGRATION_DIRNAME and not allow_self:
+    # Preserve conductor scratch for ordinary manual pruning. Scheduled retention
+    # explicitly includes it, subject to the same idle window and activity lock.
+    if wtr.name == queue.INTEGRATION_DIRNAME and not allow_self and not include_integration:
         return "merge-queue integration tree (its warm caches gate every batch)"
     if wtr in live_qemu:
         return "live QEMU running"
@@ -298,7 +297,10 @@ def _prune(args, repo: Path) -> int:
     active = active_build_worktrees(worktrees)
     now = time.time()
     min_age = float(getattr(args, "idle_hours", 0) or 0)
-    if getattr(args, "retain_gib", None) is not None and min_age == 0:
+    if (
+        getattr(args, "retain_gib", None) is not None
+        or getattr(args, "min_free_gib", None) is not None
+    ) and min_age == 0:
         min_age = 24  # bounded fleet retention must not reclaim newly completed work
     if not math.isfinite(min_age) or min_age < 0:
         raise maintenance.MaintenanceError("--idle-hours must be finite and nonnegative")
@@ -314,14 +316,29 @@ def _prune(args, repo: Path) -> int:
             live_qemu=live,
             active_build=active,
             allow_self=getattr(args, "self", False),
+            include_integration=getattr(args, "include_integration", False),
             min_age_hours=min_age,
             now=now,
             newest_mtime=_newest_mtime(wt) if min_age > 0 else None,
         )
         candidates.append(Candidate(wt, dirs, eligible=reason is None, skip_reason=reason))
 
+    budget = getattr(args, "retain_gib", None)
+    min_free = getattr(args, "min_free_gib", None)
+    if min_free is not None:
+        if not math.isfinite(min_free) or min_free < 0:
+            raise maintenance.MaintenanceError("--min-free-gib must be finite and nonnegative")
+        device = repo.stat().st_dev
+        if any(d.stat().st_dev != device for c in candidates for d, _ in c.dirs):
+            raise maintenance.MaintenanceError(
+                "headroom retention requires outputs on one filesystem"
+            )
+        shortfall = max(0, min_free * 1024**3 - shutil.disk_usage(repo).free)
+        headroom_budget = max(0, sum(c.total for c in candidates) - shortfall) / 1024**3
+        budget = min(budget, headroom_budget) if budget is not None else headroom_budget
+
     try:
-        candidates = select_budget(candidates, getattr(args, "retain_gib", None))
+        candidates = select_budget(candidates, budget)
     except ValueError as exc:
         print(f"PRUNE_REFUSED: {exc}")
         return 2
@@ -338,7 +355,6 @@ def _prune(args, repo: Path) -> int:
         print(f"  {mark} {_fmt(c.total)}  {c.worktree.name}{note}")
     print()
     print(f"  reclaimable: {_fmt(reclaim)}   held (in use/recent): {_fmt(held)}")
-    budget = getattr(args, "retain_gib", None)
     if budget is not None and held > budget * 1024**3:
         print("  budget cannot be met: protected outputs exceed it; protection takes precedence")
 

@@ -4,7 +4,7 @@ include_directories(..)
 # ramdisk.c replaced by Rust (ramdisk-rust). Pure WDM RAM-disk class driver -- no miniport /
 # no ISR / no DPC / no HW register I/O. ramdisk.c kept on disk (never-delete). Bar: link-clean x3.
 set(RAMDISK_RUST_WORKSPACE_DIR "${CMAKE_SOURCE_DIR}/sdk/lib/rust")
-set(RAMDISK_RUST_TARGET_DIR "${CMAKE_CURRENT_BINARY_DIR}/rust-ramdisk-target")
+rust_storage_target(RAMDISK_RUST_TARGET_DIR "${CMAKE_CURRENT_BINARY_DIR}/rust-ramdisk-target" ramdisk-rust)
 set(RAMDISK_RUST_LIB "${CMAKE_CURRENT_BINARY_DIR}/libramdisk_rust.a")
 if(ARCH STREQUAL "i386")
     set(RAMDISK_RUST_TARGET "i686-pc-windows-gnu")

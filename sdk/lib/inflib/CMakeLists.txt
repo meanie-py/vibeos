@@ -9,7 +9,7 @@ if(CMAKE_CROSSCOMPILING)
     add_dependencies(inflib psdk)
 
     set(RUST_WORKSPACE_DIR "${CMAKE_SOURCE_DIR}/sdk/lib/rust")
-    set(RUST_TARGET_DIR "${CMAKE_CURRENT_BINARY_DIR}/inflib-rust-target")
+    rust_storage_target(RUST_TARGET_DIR "${CMAKE_CURRENT_BINARY_DIR}/inflib-rust-target" inflib-rust)
     if(ARCH STREQUAL "i386")
         set(RUST_TARGET "i686-pc-windows-gnu")
         # i386 kernel runs no-SSE (CR4.OSFXSR unset in Phase 0).

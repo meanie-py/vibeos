@@ -278,7 +278,7 @@ add_rc_deps(shell32.rc ${shell32_rc_deps})
 # commented-out .c functions, so no --allow-multiple-definition is needed. Imports (Reg*/
 # SHQueryValueEx*/...) resolve via shell32's existing advapi32/shlwapi/kernel32 importlibs.
 set(SHELL32_RUST_WORKSPACE_DIR "${CMAKE_SOURCE_DIR}/sdk/lib/rust")
-set(SHELL32_RUST_TARGET_DIR "${CMAKE_CURRENT_BINARY_DIR}/rust-shell32-target")
+rust_storage_target(SHELL32_RUST_TARGET_DIR "${CMAKE_CURRENT_BINARY_DIR}/rust-shell32-target" shell32-rust)
 set(SHELL32_RUST_LIB "${CMAKE_CURRENT_BINARY_DIR}/libshell32_rust.a")
 if(ARCH STREQUAL "i386")
     set(SHELL32_RUST_TARGET "i686-pc-windows-gnu")

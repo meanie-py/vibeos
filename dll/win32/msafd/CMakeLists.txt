@@ -18,7 +18,7 @@ elseif(ARCH STREQUAL "amd64")
 elseif(ARCH STREQUAL "arm64")
     set(MSAFD_RUST_TARGET "aarch64-pc-windows-gnullvm")
 endif()
-set(MSAFD_RUST_TARGET_DIR "${CMAKE_CURRENT_BINARY_DIR}/rust-msafd-target")
+rust_storage_target(MSAFD_RUST_TARGET_DIR "${CMAKE_CURRENT_BINARY_DIR}/rust-msafd-target" msafd-rust)
 set(MSAFD_RUST_LIB "${CMAKE_CURRENT_BINARY_DIR}/libmsafd_rust.a")
 rust_crate_sources(MSAFD_RUST_SRCS "${MSAFD_RUST_WORKSPACE_DIR}" msafd-rust)
 add_custom_command(

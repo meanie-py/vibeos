@@ -10,7 +10,7 @@ add_definitions(-D_NTSYSTEM_)
 # target so every USB consumer picks up the Rust impl. Mirrors cportlib's
 # static-lib cohabitation.
 set(USBDEX_RUST_WORKSPACE_DIR "${CMAKE_SOURCE_DIR}/sdk/lib/rust")
-set(USBDEX_RUST_TARGET_DIR "${CMAKE_CURRENT_BINARY_DIR}/rust-usbdex-target")
+rust_storage_target(USBDEX_RUST_TARGET_DIR "${CMAKE_CURRENT_BINARY_DIR}/rust-usbdex-target" usbdex-rust)
 set(USBDEX_RUST_LIB "${CMAKE_CURRENT_BINARY_DIR}/libusbdex_rust.a")
 if(ARCH STREQUAL "i386")
     set(USBDEX_RUST_TARGET "i686-pc-windows-gnu")

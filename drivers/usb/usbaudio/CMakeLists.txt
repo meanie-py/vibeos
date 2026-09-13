@@ -14,7 +14,7 @@ add_definitions(-D_WIN32_WINNT=0x600)
 # previously EXCLUDED from the build (drivers/usb/CMakeLists.txt) and is re-enabled by this flip;
 # NOT boot-loaded in smoke -> link-clean x3 is the verification bar. NTDDI Vista (0x600) preserved.
 set(USBAUDIO_RUST_WORKSPACE_DIR "${CMAKE_SOURCE_DIR}/sdk/lib/rust")
-set(USBAUDIO_RUST_TARGET_DIR "${CMAKE_CURRENT_BINARY_DIR}/rust-usbaudio-target")
+rust_storage_target(USBAUDIO_RUST_TARGET_DIR "${CMAKE_CURRENT_BINARY_DIR}/rust-usbaudio-target" usbaudio-rust)
 set(USBAUDIO_RUST_LIB "${CMAKE_CURRENT_BINARY_DIR}/libusbaudio_rust.a")
 if(ARCH STREQUAL "i386")
     set(USBAUDIO_RUST_TARGET "i686-pc-windows-gnu")

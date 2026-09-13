@@ -87,7 +87,7 @@ endif()
 # #[no_mangle] symbols are the sole providers of the commented-out .c functions, so no
 # --allow-multiple-definition is needed. NtUser* imports resolve via the win32ksys importlib.
 set(USER32_RUST_WORKSPACE_DIR "${CMAKE_SOURCE_DIR}/sdk/lib/rust")
-set(USER32_RUST_TARGET_DIR "${CMAKE_CURRENT_BINARY_DIR}/rust-user32-target")
+rust_storage_target(USER32_RUST_TARGET_DIR "${CMAKE_CURRENT_BINARY_DIR}/rust-user32-target" user32-rust)
 set(USER32_RUST_LIB "${CMAKE_CURRENT_BINARY_DIR}/libuser32_rust.a")
 if(ARCH STREQUAL "i386")
     set(USER32_RUST_TARGET "i686-pc-windows-gnu")

@@ -7,7 +7,7 @@
 # the bar is link-clean x3 + no smoke regression.
 
 set(MOUHID_RUST_WORKSPACE_DIR "${CMAKE_SOURCE_DIR}/sdk/lib/rust")
-set(MOUHID_RUST_TARGET_DIR "${CMAKE_CURRENT_BINARY_DIR}/rust-mouhid-target")
+rust_storage_target(MOUHID_RUST_TARGET_DIR "${CMAKE_CURRENT_BINARY_DIR}/rust-mouhid-target" mouhid-rust)
 set(MOUHID_RUST_LIB "${CMAKE_CURRENT_BINARY_DIR}/libmouhid_rust.a")
 
 if(ARCH STREQUAL "i386")

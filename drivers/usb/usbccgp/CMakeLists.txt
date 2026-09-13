@@ -4,7 +4,7 @@ include_directories(${REACTOS_SOURCE_DIR}/ntoskrnl/include)
 # The usbccgp .c bodies are replaced by Rust (usbccgp-rust). .c files kept on disk (never-delete).
 # Bar: link-clean x3 (NOT boot-loaded in smoke -- boots from CD/ramdisk, not USB).
 set(USBCCGP_RUST_WORKSPACE_DIR "${CMAKE_SOURCE_DIR}/sdk/lib/rust")
-set(USBCCGP_RUST_TARGET_DIR "${CMAKE_CURRENT_BINARY_DIR}/rust-usbccgp-target")
+rust_storage_target(USBCCGP_RUST_TARGET_DIR "${CMAKE_CURRENT_BINARY_DIR}/rust-usbccgp-target" usbccgp-rust)
 set(USBCCGP_RUST_LIB "${CMAKE_CURRENT_BINARY_DIR}/libusbccgp_rust.a")
 if(ARCH STREQUAL "i386")
     set(USBCCGP_RUST_TARGET "i686-pc-windows-gnu")

@@ -4,7 +4,7 @@ include_directories(${REACTOS_SOURCE_DIR}/ntoskrnl/include)
 # The usbhub .c bodies are replaced by Rust (usbhub-rust). .c files kept on disk (never-delete).
 # Bar: link-clean x3 (NOT boot-loaded in smoke -- boots from CD/ramdisk, not USB).
 set(USBHUB_RUST_WORKSPACE_DIR "${CMAKE_SOURCE_DIR}/sdk/lib/rust")
-set(USBHUB_RUST_TARGET_DIR "${CMAKE_CURRENT_BINARY_DIR}/rust-usbhub-target")
+rust_storage_target(USBHUB_RUST_TARGET_DIR "${CMAKE_CURRENT_BINARY_DIR}/rust-usbhub-target" usbhub-rust)
 set(USBHUB_RUST_LIB "${CMAKE_CURRENT_BINARY_DIR}/libusbhub_rust.a")
 if(ARCH STREQUAL "i386")
     set(USBHUB_RUST_TARGET "i686-pc-windows-gnu")

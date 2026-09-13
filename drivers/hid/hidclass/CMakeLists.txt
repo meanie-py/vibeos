@@ -11,7 +11,7 @@
 spec2def(hidclass.sys hidclass.spec ADD_IMPORTLIB)
 
 set(HIDCLASS_RUST_WORKSPACE_DIR "${CMAKE_SOURCE_DIR}/sdk/lib/rust")
-set(HIDCLASS_RUST_TARGET_DIR "${CMAKE_CURRENT_BINARY_DIR}/rust-hidclass-target")
+rust_storage_target(HIDCLASS_RUST_TARGET_DIR "${CMAKE_CURRENT_BINARY_DIR}/rust-hidclass-target" hidclass-rust)
 set(HIDCLASS_RUST_LIB "${CMAKE_CURRENT_BINARY_DIR}/libhidclass_rust.a")
 
 if(ARCH STREQUAL "i386")

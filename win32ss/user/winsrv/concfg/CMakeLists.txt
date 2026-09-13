@@ -7,7 +7,7 @@
 # concfg-rust as an rlib for consrv's direct (`use crate::concfg::...`) calls.
 # Keep the .c on disk (never delete the C — translation philosophy).
 set(CONCFG_RUST_WORKSPACE_DIR "${CMAKE_SOURCE_DIR}/sdk/lib/rust")
-set(CONCFG_RUST_TARGET_DIR "${CMAKE_CURRENT_BINARY_DIR}/rust-target")
+rust_storage_target(CONCFG_RUST_TARGET_DIR "${CMAKE_CURRENT_BINARY_DIR}/rust-target" concfg-rust)
 if(ARCH STREQUAL "i386")
     set(CONCFG_RUST_TARGET "i686-pc-windows-gnu")
     set(CONCFG_RUST_EXTRA_ENV "RUSTFLAGS=-C target-feature=-sse,-sse2 -C no-prepopulate-passes")

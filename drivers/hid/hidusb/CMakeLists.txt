@@ -8,7 +8,7 @@
 # Not boot-loaded in the QEMU smoke path (no USB HID) — bar is link-clean x3 + no regression.
 
 set(HIDUSB_RUST_WORKSPACE_DIR "${CMAKE_SOURCE_DIR}/sdk/lib/rust")
-set(HIDUSB_RUST_TARGET_DIR "${CMAKE_CURRENT_BINARY_DIR}/rust-hidusb-target")
+rust_storage_target(HIDUSB_RUST_TARGET_DIR "${CMAKE_CURRENT_BINARY_DIR}/rust-hidusb-target" hidusb-rust)
 set(HIDUSB_RUST_LIB "${CMAKE_CURRENT_BINARY_DIR}/libhidusb_rust.a")
 
 if(ARCH STREQUAL "i386")

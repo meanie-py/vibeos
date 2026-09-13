@@ -9,7 +9,7 @@
 add_definitions(-D_NTOSKRNL_)
 
 set(CSQ_RUST_WORKSPACE_DIR "${CMAKE_SOURCE_DIR}/sdk/lib/rust")
-set(CSQ_RUST_TARGET_DIR "${CMAKE_CURRENT_BINARY_DIR}/rust-csq-target")
+rust_storage_target(CSQ_RUST_TARGET_DIR "${CMAKE_CURRENT_BINARY_DIR}/rust-csq-target" csq-rust)
 set(CSQ_RUST_LIB "${CMAKE_CURRENT_BINARY_DIR}/libcsq_rust.a")
 if(ARCH STREQUAL "i386")
     set(CSQ_RUST_TARGET "i686-pc-windows-gnu")

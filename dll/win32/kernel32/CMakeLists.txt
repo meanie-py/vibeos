@@ -16,7 +16,7 @@ elseif(ARCH STREQUAL "amd64")
 elseif(ARCH STREQUAL "arm64")
     set(KERNEL32_RUST_TARGET "aarch64-pc-windows-gnullvm")
 endif()
-set(KERNEL32_SHARED_RUST_TARGET_DIR "${CMAKE_CURRENT_BINARY_DIR}/rust-kernel32-shared-target")
+rust_storage_target(KERNEL32_SHARED_RUST_TARGET_DIR "${CMAKE_CURRENT_BINARY_DIR}/rust-kernel32-shared-target" kernel32-shared-rust)
 set(KERNEL32_SHARED_RUST_LIB "${CMAKE_CURRENT_BINARY_DIR}/libkernel32_shared_rust.a")
 rust_crate_sources(KERNEL32_SHARED_RUST_SRCS "${KERNEL32_RUST_WORKSPACE_DIR}" kernel32-shared-rust)
 add_custom_command(
@@ -41,7 +41,7 @@ add_custom_target(rust_kernel32_shared DEPENDS ${KERNEL32_SHARED_RUST_LIB})
 # kernel32_vista.dll (the C kernel32_vista_static target is dropped; .c kept on disk).
 # kernel32_vista/DllMain.c stays C (a #[no_mangle] DllMain here would collide with
 # kernel32-rust's DllMain in kernel32.dll, which this .a also links into).
-set(KERNEL32_VISTA_RUST_TARGET_DIR "${CMAKE_CURRENT_BINARY_DIR}/rust-kernel32-vista-target")
+rust_storage_target(KERNEL32_VISTA_RUST_TARGET_DIR "${CMAKE_CURRENT_BINARY_DIR}/rust-kernel32-vista-target" kernel32-vista-rust)
 set(KERNEL32_VISTA_RUST_LIB "${CMAKE_CURRENT_BINARY_DIR}/libkernel32_vista_rust.a")
 rust_crate_sources(KERNEL32_VISTA_RUST_SRCS "${KERNEL32_RUST_WORKSPACE_DIR}" kernel32-vista-rust)
 add_custom_command(
@@ -159,7 +159,7 @@ endif()
 # --allow-multiple-definition needed since every proc.c symbol was removed).
 #
 set(KERNEL32_RUST_WORKSPACE_DIR "${CMAKE_SOURCE_DIR}/sdk/lib/rust")
-set(KERNEL32_RUST_TARGET_DIR "${CMAKE_CURRENT_BINARY_DIR}/rust-kernel32-target")
+rust_storage_target(KERNEL32_RUST_TARGET_DIR "${CMAKE_CURRENT_BINARY_DIR}/rust-kernel32-target" kernel32-rust)
 set(KERNEL32_RUST_LIB "${CMAKE_CURRENT_BINARY_DIR}/libkernel32_rust.a")
 if(ARCH STREQUAL "i386")
     set(KERNEL32_RUST_TARGET "i686-pc-windows-gnu")

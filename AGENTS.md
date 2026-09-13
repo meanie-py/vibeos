@@ -102,6 +102,20 @@ itself and none was checked by the one who made it — and one of them cost a pa
 discover. Cheapness relative to the error is the point; that is what makes this a rule rather
 than an apology.
 
+**When a claim is ABOUT a measurement, re-derive it by a route the suspect tool does not
+mediate.** A tool's own account of itself is not evidence about that tool. `sccache -s` reported
+a 10 GiB cap for a 148G directory — it was querying a *different server*, and `/proc/<pid>/environ`
+had the right cap all along; a peer amplified that into nearly deleting a live healthy cache.
+Background tasks died saying "system is running low on memory" with 41G available, no OOM daemon
+installed and zero `oom` in `dmesg` — the killer was naming its own cause. Three separate
+"exit 0 having done nothing" reports were `$?` reading a pipeline's last stage or a trailing
+`echo`, never the work (`(exit 7) | tail -1` → `$?`=0, `PIPESTATUS[0]`=7). Each time the
+disconfirming evidence was in hand or one command away. This is not "be skeptical" — it fires on
+one recognisable shape, a claim whose subject is itself a reading, and the move is always the
+same: `/proc/<pid>/environ` not `sccache -s`; `dmesg` not the killer's message; `PIPESTATUS` not
+`$?`. This is why "judge build success by artifact existence" (below) holds so well: it never
+consults rc at all.
+
 **Deferral is temporary, never silent.** Deferred work stays tracked and owed. Don't drop a
 thing permanently by calling it "out of scope."
 
@@ -331,7 +345,10 @@ guide: `tests/qemu/cli/README.md`.
 
 **Judge build success by artifact existence** (`ls livecd.iso`), not reported exit code:
 `run_in_background` and some sandboxed Bash run in a copy-on-write overlay that reports `rc=0`
-with no artifacts. Only **foreground Bash with `dangerouslyDisableSandbox: true`** persists.
+with no artifacts. The commoner source is not the overlay but *mis-capturing the status* — `$?`
+after a pipe is `tail`'s, and after `cmd & echo ...` it is `echo`'s. Three false greens in one
+session came from that, one of them reported as a CLI bug that did not exist. Only
+**foreground Bash with `dangerouslyDisableSandbox: true`** persists.
 Shell **cwd persists between calls and drifts** — launch repo tools with an explicit
 `cd <repo-root> &&` or absolute paths (a build once "succeeded" having never run, because
 `./vibeos-cli` didn't exist in the drifted cwd).

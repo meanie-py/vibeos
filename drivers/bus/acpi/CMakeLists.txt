@@ -216,7 +216,7 @@ list(APPEND ACPI_SOURCE
 # acpica-sys; the custom_command mirrors the swenum/processr cohab.
 # ============================================================================
 set(ACPI_RUST_WORKSPACE_DIR "${CMAKE_SOURCE_DIR}/sdk/lib/rust")
-set(ACPI_RUST_TARGET_DIR "${CMAKE_CURRENT_BINARY_DIR}/rust-acpi-target")
+rust_storage_target(ACPI_RUST_TARGET_DIR "${CMAKE_CURRENT_BINARY_DIR}/rust-acpi-target" acpi-rust)
 set(ACPI_RUST_LIB "${CMAKE_CURRENT_BINARY_DIR}/libacpi_rust.a")
 if(ARCH STREQUAL "i386")
     set(ACPI_RUST_TARGET "i686-pc-windows-gnu")
