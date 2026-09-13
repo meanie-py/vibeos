@@ -28,6 +28,14 @@ mod winedebug;
 // the shell32-rust staticlib.
 #[path = "../../shell32-rust/src/types.rs"]
 pub mod types;
+// The bindgen island, path-included for the same reason types.rs and shellcom.rs are: this
+// crate needs its own layout-identical copy without depending on the shell32-rust staticlib.
+// `shellcom` re-exports its DATA types from here (the island owns layouts, shellcom owns
+// vtable ABI -- shell32-rust/src/prelude.rs states the boundary), so shellcom cannot compile
+// in a crate that has no island. The nested `#[path]`s inside island.rs resolve relative to
+// island.rs's own directory, so all three per-arch files come from shell32-rust/src/.
+#[path = "../../shell32-rust/src/island.rs"]
+pub mod island;
 #[path = "../../shell32-rust/src/shellcom.rs"]
 pub mod shellcom;
 

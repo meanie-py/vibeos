@@ -1,0 +1,4 @@
+# Fetched third-party source and build output — never vendored, same policy as
+# tools/doom/.gitignore and tools/stress/sqlite/.gitignore. build.sh re-fetches.
+src/
+lua32.exe
