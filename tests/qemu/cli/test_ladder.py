@@ -195,3 +195,27 @@ def test_a_guest_that_never_reports_still_uses_the_budget():
     vm = _FakeVM([_serial(hello32=0x600D)])
     out = ladder.watch(vm, seconds=1.0, seen="")
     assert _red(out)["classification"] == "LADDER_FAIL"
+
+
+def test_built_but_unstaged_says_so_and_names_the_fix(tmp_path):
+    """The 45-minute case: guests on disk, none on the media, because staging is
+    snapshotted at configure time and a warm build does not reconfigure. A bare
+    "not staged" sends the reader looking for a build that already happened."""
+    repo = _manifest(tmp_path, ["reactos/system32/winlogon.exe=/tmp/vibeos/x"])
+    guests = repo / "build-fex-hello"
+    guests.mkdir()
+    for g in ladder.LADDER:
+        (guests / f"{g}.exe").write_bytes(b"MZ")
+    extra, staged, why = ladder.gate_decision(repo, "amd64")
+    assert extra == [] and not staged
+    assert "BUILT but none is staged" in why
+    assert "reconfigure" in why or "re-run the configure" in why
+
+
+def test_never_built_keeps_the_plain_reason(tmp_path):
+    """No guests on disk is the ordinary case — most worktrees — and must not be
+    dressed up as a staging fault."""
+    repo = _manifest(tmp_path, ["reactos/system32/winlogon.exe=/tmp/vibeos/x"])
+    _, staged, why = ladder.gate_decision(repo, "amd64")
+    assert not staged
+    assert "BUILT but" not in why

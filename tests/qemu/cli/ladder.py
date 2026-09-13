@@ -141,6 +141,23 @@ def gate_decision(repo: Path, arch: str) -> tuple[list[str], bool, str]:
             True,
             f"{len(LADDER)} WoW64 guests staged — boot watched past the desktop marker",
         )
+    # Built-but-unstaged is a DIFFERENT situation from never-built, and the
+    # difference is one command. Staging is snapshotted at CONFIGURE time, and a
+    # warm build does not reconfigure, so guests built after the last configure sit
+    # on disk while the media has none -- silently. That cost 45 minutes tonight.
+    # CMAKE_CONFIGURE_DEPENDS cannot close it: measured, it fires when a dependency
+    # CHANGES but not when one first APPEARS, which is precisely this case. So say
+    # it instead.
+    built = sorted(g for g in LADDER if (repo / "build-fex-hello" / f"{g}.exe").is_file())
+    if built:
+        return (
+            [],
+            False,
+            f"{len(built)}/{len(LADDER)} guests are BUILT but none is staged on this "
+            f"arch's media — staging is snapshotted at configure time and a warm build "
+            f"does not reconfigure; re-run the configure "
+            f"(touch dll/win32/wow64cpu/CMakeLists.txt && vibeos-cli build --arch <a>)",
+        )
     return (
         [],
         False,
