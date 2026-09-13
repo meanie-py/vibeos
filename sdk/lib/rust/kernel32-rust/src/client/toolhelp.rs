@@ -444,8 +444,12 @@ unsafe fn TH32CreateSnapshotSectionInitialize(
         while i < nHeaps {
             (*HeapListEntry).dwSize = core::mem::size_of::<HEAPLIST32>() as DWORD;
             (*HeapListEntry).th32ProcessID = th32ProcessID;
-            (*HeapListEntry).th32HeapID = (*hi).Heaps[i as usize].BaseAddress as ULONG_PTR as DWORD;
-            (*HeapListEntry).dwFlags = (*hi).Heaps[i as usize].Flags;
+            // RTL_PROCESS_MODULES.Modules is `Modules[1]  /* FIXME: should be
+            // Modules[0] */` and RTL_HEAP_INFORMATION_LIST.Heaps is the same shape:
+            // flexible arrays bounded by ModulesCount / NumberOfHeaps. `[0]` keeps the
+            // element type derived rather than named.
+            (*HeapListEntry).th32HeapID = (*(&raw mut (*hi).Heaps[0]).add(i as usize)).BaseAddress as ULONG_PTR as DWORD;
+            (*HeapListEntry).dwFlags = (*(&raw mut (*hi).Heaps[0]).add(i as usize)).Flags;
 
             HeapListEntry = HeapListEntry.offset(1);
             i = i.wrapping_add(1);
@@ -466,16 +470,16 @@ unsafe fn TH32CreateSnapshotSectionInitialize(
             (*ModuleListEntry).dwSize = core::mem::size_of::<MODULEENTRY32W>() as DWORD;
             (*ModuleListEntry).th32ModuleID = 1;
             (*ModuleListEntry).th32ProcessID = th32ProcessID;
-            (*ModuleListEntry).GlblcntUsage = (*mi).Modules[i as usize].LoadCount as DWORD;
-            (*ModuleListEntry).ProccntUsage = (*mi).Modules[i as usize].LoadCount as DWORD;
-            (*ModuleListEntry).modBaseAddr = (*mi).Modules[i as usize].ImageBase as *mut BYTE;
-            (*ModuleListEntry).modBaseSize = (*mi).Modules[i as usize].ImageSize;
-            (*ModuleListEntry).hModule = (*mi).Modules[i as usize].ImageBase as HMODULE;
+            (*ModuleListEntry).GlblcntUsage = (*(&raw mut (*mi).Modules[0]).add(i as usize)).LoadCount as DWORD;
+            (*ModuleListEntry).ProccntUsage = (*(&raw mut (*mi).Modules[0]).add(i as usize)).LoadCount as DWORD;
+            (*ModuleListEntry).modBaseAddr = (*(&raw mut (*mi).Modules[0]).add(i as usize)).ImageBase as *mut BYTE;
+            (*ModuleListEntry).modBaseSize = (*(&raw mut (*mi).Modules[0]).add(i as usize)).ImageSize;
+            (*ModuleListEntry).hModule = (*(&raw mut (*mi).Modules[0]).add(i as usize)).ImageBase as HMODULE;
 
             MultiByteToWideChar(
                 CP_ACP,
                 0,
-                &(*mi).Modules[i as usize].FullPathName[(*mi).Modules[i as usize].OffsetToFileName as usize] as *const CHAR,
+                &(*(&raw mut (*mi).Modules[0]).add(i as usize)).FullPathName[(*(&raw mut (*mi).Modules[0]).add(i as usize)).OffsetToFileName as usize] as *const CHAR,
                 -1,
                 &mut (*ModuleListEntry).szModule as *mut WCHAR,
                 (core::mem::size_of::<[WCHAR; 256]>() / core::mem::size_of::<WCHAR>()) as i32,
@@ -484,7 +488,7 @@ unsafe fn TH32CreateSnapshotSectionInitialize(
             MultiByteToWideChar(
                 CP_ACP,
                 0,
-                &(*mi).Modules[i as usize].FullPathName as *const CHAR,
+                &(*(&raw mut (*mi).Modules[0]).add(i as usize)).FullPathName as *const CHAR,
                 -1,
                 &mut (*ModuleListEntry).szExePath as *mut WCHAR,
                 (core::mem::size_of::<[WCHAR; 260]>() / core::mem::size_of::<WCHAR>()) as i32,
@@ -636,7 +640,7 @@ pub unsafe extern "system" fn Heap32First(
         Status = STATUS_NO_MORE_FILES;
         i = 0;
         while i != (*((*DebugInfo).Heaps)).NumberOfHeaps {
-            Heap = &mut (*((*DebugInfo).Heaps)).Heaps[i as usize] as *mut RTL_HEAP_INFORMATION as PRTL_HEAP_INFORMATION;
+            Heap = &mut (*(&raw mut (*((*DebugInfo).Heaps)).Heaps[0]).add(i as usize)) as *mut RTL_HEAP_INFORMATION as PRTL_HEAP_INFORMATION;
 
             if (*Heap).BaseAddress as ULONG_PTR == th32HeapID as ULONG_PTR {
                 (*lphe).hHandle = (*Heap).BaseAddress;
@@ -720,7 +724,7 @@ pub unsafe extern "system" fn Heap32Next(lphe: LPHEAPENTRY32) -> BOOL {
         Status = STATUS_NO_MORE_FILES;
         i = 0;
         while i != (*(*DebugInfo).Heaps).NumberOfHeaps {
-            Heap = &mut (*(*DebugInfo).Heaps).Heaps[i as usize] as *mut RTL_HEAP_INFORMATION as PRTL_HEAP_INFORMATION;
+            Heap = (&raw mut (*(*DebugInfo).Heaps).Heaps[0]).add(i as usize) as PRTL_HEAP_INFORMATION;
 
             if (*Heap).BaseAddress as ULONG_PTR == (*lphe).th32HeapID as ULONG_PTR {
                 (*lphe).dwResvd = (*lphe).dwResvd.wrapping_add(1);
