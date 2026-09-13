@@ -6814,7 +6814,21 @@ That is also why it survives review — a reader asking "did you check?" gets a 
   that three failed attempts had failed for two DIFFERENT reasons, the fact that mattered;
 - two `#ifdef`s read correctly, in the right headers, instead of asking the compiler — which
   is how an `_M_AMD64`/`_WIN64` arch-gate mismatch stood as "conclusive" until someone ran
-  `clang -dM -E` (see "When the bug is in the TEST, not the kernel").
+  `clang -dM -E` (see "When the bug is in the TEST, not the kernel");
+- banked soak records sorted by arch with the last nine taken, when the question was "the nine
+  sweeps THIS soak produced" — the window silently mixed in two other shas and dropped one of
+  the real rows, turning a reproduced 33% into a 22% that did not match.
+
+**It does not exempt the person who wrote it.** Within an hour of this entry being filed, both
+its authors nearly hit it again on the very measurement it was written about: one scraping a
+soak's stdout that had truncated its early rounds (2 of 3 regressions, wrong denominator), the
+other taking "the last nine by arch" instead of filtering on the soak's sha. The second would
+have surfaced as *telling the other lane its measurement was wrong* — a false contradiction of
+correct work, which is the expensive direction for this error to travel, because it spends
+someone else's credibility rather than your own time. **The failure is structural, not
+careless:** the proxy is always the more available artifact, and availability is what makes it
+the one you reach for. Knowing the rule changes nothing about which artifact is closer to hand,
+so the defence has to be the question, asked out loud, every time — not vigilance.
 
 **The corollary, from the same incident:** when you have strengthened a claim — "the chain I
 read says no" becoming "this can never happen structurally" — go looking for the thing that

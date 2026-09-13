@@ -1648,8 +1648,23 @@ Field-manual § pointers hold the full writeups. **Update on state change.**
     That is exactly the i386-144/144, amd64-68/68, arm64-only-unstable shape recorded above,
     and the amd64 row is the one to confirm before touching the header: it is why the fix is
     demonstrably arm64-only across the three call sites.
-  - **`NpfsConnect` on arm64 — an UNDOCUMENTED intermittent, found 2026-09-13.** One
-    occurrence, so no rate: `pass 679 -> 678, fail 0 -> 1` on
+  - **MEASURED 2026-09-13: an arm64 conformance sweep goes RED 3 times in 9, from THREE
+    distinct causes.** 9 sweeps of the same media at `11669999159` (arm64, smp=0, i.e. the MP
+    kernel on one vcpu), banked in `~/vibeos-flake-farm/conformance.jsonl`: **6 clean, 2
+    `ExPools`, 1 `Example`**. Per-sweep red rate **33%**. That is the number the retry budget
+    and the `CONFORMANCE_FLAKE` gating question below turn on, and it had never been measured —
+    the ~29% figure in the ExPools entry is the rate for ONE test, not for the lane.
+    **Correcting a claim made earlier the same night from n=4:** ExPools was reported at ~50%;
+    over 9 sweeps it is **2/9 = 22%**, so the banked ~29% stands and the 50% was small-sample
+    noise. The lane-level 33% is higher than any single test's rate precisely because the
+    causes are independent and compose — which is the real finding, and it survives the
+    correction that prompted it.
+  - **`Example` on arm64 — a THIRD undocumented intermittent, found 2026-09-13.** One
+    occurrence in 9: `pass 31 -> 29`, NEW failing `Example_user.c:39` and `:40`. `Example` is
+    **31/15 on all three floors** and neither line is marked `assert?` anywhere. Unrelated to
+    the ExPools POOL_HEADER mismatch — `Example_user.c` does not touch `KmtGetPoolType`.
+  - **`NpfsConnect` on arm64 — an UNDOCUMENTED intermittent, found 2026-09-13.** Did not recur
+    in the 9-sweep soak, so it is rarer than the other two. One occurrence, so no rate: `pass 679 -> 678, fail 0 -> 1` on
     `20260913-022245-fw6sw4_g-conformance-arm64`. `NpfsConnect` is **679/0 on all three
     floors with no `assert?` anywhere**, so this is exactly the case the ratchet quest warned
     about — an intermittent that never fired during the 15 seeding boots is indistinguishable
