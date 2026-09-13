@@ -32,7 +32,7 @@
 //! 2. The BEGIN_MSG_MAP table was not translated AT ALL. All 25 handlers are here as
 //!    `CDefView_On*_body` with ATL's exact `(uMsg, wParam, lParam, &mut bHandled)` shape, but
 //!    no ProcessWindowMessage exists to reach them, so today not one is reachable.
-//! 3. 155 remaining rustc errors (from 799). The mechanical seam is worked out: casts were
+//! 3. 145 remaining rustc errors (from 799). The mechanical seam is worked out: casts were
 //!    applied ONLY where all three of i386/amd64/arm64 reported the same expected/found pair
 //!    at the same rustc byte span, because a cast inferred from one target bakes that
 //!    target's pointer width -- the bug `crate-repair`'s three-arch rule exists to stop, and
@@ -51,7 +51,10 @@
 //!    less informative number the whole time; the file now compiles against the same substrate
 //!    as the rest of the crate, which is the thing that actually changed.
 //!
-//!    What is left is dominated by ONE unanswered question, not by a grind -- see item 4.
+//!    What is left is dominated by ONE unanswered question, not by a grind: roughly 50 of
+//!    the 145 are the type-identity split described in item 4, and four more were tried as
+//!    reference-to-pointer coercions and REVERTED, because `as *mut _` cannot bridge two
+//!    distinct structs -- it just splits one error into two and hides which question it was.
 //!
 //! 4. THE SUBSTRATE BOUNDARY, which is a decision and not a repair. prelude.rs states it:
 //!    "the island owns DATA LAYOUTS; `shellcom` owns VTABLE ABI". `shellcom` does not hold to
@@ -3034,47 +3037,47 @@ pub unsafe fn CDefView_OnStateChange_body(this: *mut CDefView, uFlags: UINT) -> 
 
 pub unsafe fn CDefView_CheckToolbar_body(this: *mut CDefView) -> () {
     unsafe {
-        let mut result: isize = 0;
+        let mut result: LRESULT = 0;
 
         if !((*this).m_pCommDlgBrowser).is_null() {
             ((*(*(*this).m_pShellBrowser).lpVtbl).SendControlMsg)(
                 (*this).m_pShellBrowser,
                 FCW_TOOLBAR,
                 TB_CHECKBUTTON,
-                FCIDM_TB_SMALLICON,
-                if (*this).m_FolderSettings.ViewMode == FVM_LIST {
+                FCIDM_TB_SMALLICON as WPARAM,
+                (if (*this).m_FolderSettings.ViewMode == FVM_LIST {
                     TRUE
                 } else {
                     FALSE
-                },
+                }) as LPARAM,
                 &mut result,
             );
             ((*(*(*this).m_pShellBrowser).lpVtbl).SendControlMsg)(
                 (*this).m_pShellBrowser,
                 FCW_TOOLBAR,
                 TB_CHECKBUTTON,
-                FCIDM_TB_REPORTVIEW,
-                if (*this).m_FolderSettings.ViewMode == FVM_DETAILS {
+                FCIDM_TB_REPORTVIEW as WPARAM,
+                (if (*this).m_FolderSettings.ViewMode == FVM_DETAILS {
                     TRUE
                 } else {
                     FALSE
-                },
+                }) as LPARAM,
                 &mut result,
             );
             ((*(*(*this).m_pShellBrowser).lpVtbl).SendControlMsg)(
                 (*this).m_pShellBrowser,
                 FCW_TOOLBAR,
                 TB_ENABLEBUTTON,
-                FCIDM_TB_SMALLICON,
-                TRUE,
+                FCIDM_TB_SMALLICON as WPARAM,
+                TRUE as LPARAM,
                 &mut result,
             );
             ((*(*(*this).m_pShellBrowser).lpVtbl).SendControlMsg)(
                 (*this).m_pShellBrowser,
                 FCW_TOOLBAR,
                 TB_ENABLEBUTTON,
-                FCIDM_TB_REPORTVIEW,
-                TRUE,
+                FCIDM_TB_REPORTVIEW as WPARAM,
+                TRUE as LPARAM,
                 &mut result,
             );
         }
@@ -3098,7 +3101,7 @@ pub unsafe fn CDefView_UpdateStatusbar_body(this: *mut CDefView) -> () {
         StringCchPrintfW(szPartText.as_mut_ptr(), szPartText.len(), szFormat.as_ptr(), (*this).m_ListView.GetItemCount());
     }
 
-    let mut lResult: isize = 0;
+    let mut lResult: LRESULT = 0;
     ((*(*(*this).m_pShellBrowser).lpVtbl).SendControlMsg)(
         (*this).m_pShellBrowser,
         FCW_STATUS,
@@ -7414,7 +7417,7 @@ pub unsafe fn CDefView__FindInsertableIndexFromPoint_body(this: *mut CDefView, m
 }
 
 pub unsafe fn CDefView__HandleStatusBarResize_body(this: *mut CDefView, nWidth: i32) -> () {
-    let mut lResult = core::mem::MaybeUninit::<isize>::uninit();
+    let mut lResult = core::mem::MaybeUninit::<LRESULT>::uninit();
 
     if !(*this).m_isFullStatusBar {
         let mut nPartArray: [i32; 1] = [-1];
