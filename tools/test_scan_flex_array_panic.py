@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import os
 import sys
 from pathlib import Path
 
@@ -77,3 +78,36 @@ def test_a_crate_target_dir_is_not_mistaken_for_the_artifact(tmp_path):
         p.parent.mkdir(parents=True, exist_ok=True)
         p.write_bytes(b"")
     assert s.find_artifact(tmp_path, "cmlib-rust") == real
+
+
+def test_the_crate_target_dir_is_PRUNED_not_filtered_afterwards(tmp_path, monkeypatch):
+    """Selecting the right artifact is not the same as never entering the wrong tree.
+
+    The old spelling was a recursive `rglob(want)` rooted at the build dir, with an
+    `if "-target/" not in str(p)` filter after it — which passes the test above while
+    still walking every file under the one
+    directory a concurrent build is rewriting — and pathlib's recursive glob lets a
+    FileNotFoundError out of the generator, so the scanner dies with a traceback that
+    names no source defect. Assert the descent, not just the answer.
+    """
+    real = tmp_path / "sdk" / "lib" / "cmlib" / "libcmlib_rust.a"
+    target = tmp_path / "sdk" / "lib" / "cmlib" / "cmlib-rust-target" / "deep" / "deeper"
+    real.parent.mkdir(parents=True, exist_ok=True)
+    real.write_bytes(b"")
+    target.mkdir(parents=True)
+    (target / "libcmlib_rust.a").write_bytes(b"")
+
+    seen: list[str] = []
+    real_walk = os.walk
+
+    def spy(top, *a, **kw):
+        for dirpath, dirnames, filenames in real_walk(top, *a, **kw):
+            seen.append(dirpath)
+            yield dirpath, dirnames, filenames
+
+    monkeypatch.setattr(s.os, "walk", spy)
+    assert s.find_artifact(tmp_path, "cmlib-rust") == real
+    # The spy must have run: an rglob implementation calls os.walk zero times, and
+    # "no -target in an empty list" would then be true for the wrong reason.
+    assert seen, "os.walk was never called — this assertion would pass vacuously"
+    assert not any("-target" in p for p in seen), f"descended into a pruned tree: {seen}"

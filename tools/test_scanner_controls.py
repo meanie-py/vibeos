@@ -1114,10 +1114,15 @@ pub unsafe fn MI_MAKE_HARDWARE_PTE_USER(new_pte: *mut MMPTE, mask: usize) {
 # sdk/lib/rust/target. Run beside the builds instead of after them, cargo deleting a
 # directory underneath raised FileNotFoundError out of the generator and the gate
 # reported `lint:source-early: NEW lint findings (exit 1)` with no findings in it.
-# The GOOD case pins the three ways this scanner must NOT fire, all of which a first
-# draft got wrong: the source_files() spelling that is the fix, a non-Rust rglob (only
-# the Rust walks cross a live cargo target dir), and a line carrying the explicit
-# opt-out marker that the discriminating control test needs.
+# The GOOD case pins the ways this scanner must NOT fire, all of which a first draft got
+# wrong: the source_files() spelling that is the fix, a recursive walk that crosses no
+# mutable tree, a line carrying the explicit opt-out marker that the discriminating
+# control test needs, and the pruned build-dir walk.
+# The BUILD-dir half was added 2026-09-13 after three tools were found walking a build
+# tree with a post-filter (scan_ud2, scan_self_recursive, scan_flex_array_panic) — none
+# of them a Rust walk, so the original rule could not see any of them. Note the two
+# halves of the GOOD non-firing case: the pattern alone is not the finding, the pattern
+# rooted at a mutable tree is.
 _UNPRUNED_BAD = """\
 from pathlib import Path
 
@@ -1132,8 +1137,18 @@ def collect(root: Path):
 def collect_other(root: Path):
     for p in root.glob("**/*.rs"):
         yield p
+
+
+def find_lib(build: Path, want: str):
+    # The BUILD-dir half of the class: not a Rust walk at all, and the post-filter
+    # names the very tree the descent must not enter.
+    for p in build.rglob(want):
+        if "-target/" not in str(p):
+            return p
+    return None
 """
 _UNPRUNED_GOOD = """\
+import os
 from pathlib import Path
 
 from source_walk import source_files
@@ -1144,8 +1159,19 @@ def collect(root: Path):
 
 
 def collect_pyfiles(root: Path):
-    # Not a Rust walk: cannot cross a cargo target dir, so not this lint's business.
+    # Not a Rust walk and not rooted at a build dir, so it crosses no mutable tree
+    # and is not this lint's business. Both halves of that matter: the same spelling
+    # rooted at a BUILD dir is a finding (see find_lib in the bad fixture).
     yield from root.rglob("*.py")
+
+
+def find_lib(build: Path, want: str):
+    # Pruned during the descent, so the churning tree is never entered.
+    for dirpath, dirnames, filenames in os.walk(build):
+        dirnames[:] = [d for d in dirnames if not d.endswith("-target")]
+        if want in filenames:
+            return Path(dirpath) / want
+    return None
 
 
 def deliberate_control(root: Path):
