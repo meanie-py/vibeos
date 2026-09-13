@@ -527,6 +527,7 @@ pub unsafe fn MI_MAKE_HARDWARE_PTE_KERNEL(
 
 /// MI_MAKE_HARDWARE_PTE_USER — create user hardware PTE.
 #[inline]
+#[track_caller]
 pub unsafe fn MI_MAKE_HARDWARE_PTE_USER(
     new_pte: ddk::PMMPTE,
     _mapping_pte: ddk::PMMPTE,
@@ -535,6 +536,11 @@ pub unsafe fn MI_MAKE_HARDWARE_PTE_USER(
 ) {
     let pte_word = new_pte as *mut ULONG_PTR;
     *pte_word = 0;
+    // The C original's three ASSERTs, restored: a mask granting no access must
+    // never be made valid. See mi_user_pte_may_be_valid.
+    if !crate::mm::mi_user_pte_may_be_valid(protection_mask as usize) {
+        return;
+    }
     (*new_pte).u.Hard.set_Valid(1);
     (*new_pte).u.Hard.set_Owner(1);
     (*new_pte).u.Hard.set_PageFrameNumber(page_frame_number as _);

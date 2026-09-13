@@ -5,6 +5,51 @@ use std::hash::{Hash, Hasher};
 use std::path::{Path, PathBuf};
 use std::process::{Command, ExitStatus};
 
+/// Admit native execution at the subprocess boundary. Cargo coordinators must
+/// never hold a slot while waiting for their nested compilers.
+pub fn scheduled_status(command: &mut Command) -> std::io::Result<ExitStatus> {
+    let Some(runner) = std::env::var_os("VIBEOS_HOST_JOBS") else {
+        return command.status();
+    };
+    let name = Path::new(command.get_program())
+        .file_name()
+        .unwrap_or_default();
+    if name == "cargo" || command.get_program() == runner {
+        return command.status();
+    }
+    let name = name.to_string_lossy();
+    let compiling = command
+        .get_args()
+        .any(|a| a == "-c" || a == "-E" || a == "-S");
+    let kind = if !compiling
+        && (name.contains("clang")
+            || name.contains("gcc")
+            || name.contains("lld")
+            || name == "ar"
+            || name.ends_with("-ar"))
+    {
+        "link"
+    } else {
+        "compile"
+    };
+    let mut scheduled = Command::new(runner);
+    scheduled
+        .args(["--kind", kind, "--"])
+        .arg(command.get_program())
+        .args(command.get_args());
+    if let Some(cwd) = command.get_current_dir() {
+        scheduled.current_dir(cwd);
+    }
+    for (key, value) in command.get_envs() {
+        if let Some(value) = value {
+            scheduled.env(key, value);
+        } else {
+            scheduled.env_remove(key);
+        }
+    }
+    scheduled.status()
+}
+
 /// Reuse generator output only within this build-script invocation. A persisted
 /// output file is not evidence that it reflects the current inputs.
 #[derive(Default)]
@@ -70,7 +115,27 @@ pub fn compile(build: &cc::Build, source: &Path) -> Vec<PathBuf> {
         .flag(depfile.to_str().expect("native depfile path must be UTF-8"))
         .flag("-MT")
         .flag("vibeos-native");
-    let objects = tracked.compile_intermediates();
+    let objects = if std::env::var_os("VIBEOS_HOST_JOBS").is_some() {
+        // This engine configures exactly one GCC/Clang source per Build. Use
+        // cc-rs's resolved compiler and flags, admitting only the actual command.
+        let object = depfile.with_extension("o");
+        let tool = tracked.get_compiler();
+        assert!(
+            !tool.is_like_msvc(),
+            "host-jobs native path requires GCC/Clang"
+        );
+        let mut command = tool.to_command();
+        command.arg("-c").arg(source).arg("-o").arg(&object);
+        let status = scheduled_status(&mut command).expect("run admitted native compiler");
+        assert!(
+            status.success(),
+            "native compiler failed for {}",
+            source.display()
+        );
+        vec![object]
+    } else {
+        tracked.compile_intermediates()
+    };
     assert_eq!(
         objects.len(),
         1,

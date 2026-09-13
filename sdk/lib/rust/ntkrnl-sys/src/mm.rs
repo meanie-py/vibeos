@@ -833,14 +833,127 @@ pub fn MI_SET_PROCESS2(_name: &str) {}
 // MI_USAGE_PAGED_POOL / MI_USAGE_NONPAGED_POOL — see MI_PFN_USAGES enum below
 
 // PTE write helpers
+/// Make a just-written translation-table entry visible to the HARDWARE page
+/// table walker.
+///
+/// On x86 this is free: a store to a page table is guaranteed visible to the
+/// walker, so making an invalid entry valid needs nothing but the store. On
+/// AArch64 the walker is a SEPARATE OBSERVER — the store may still be sitting
+/// in the store buffer, where this core's own loads see it and the walker does
+/// not. Software then walks the table, reads "valid", and reports the fault
+/// resolved, while the MMU keeps taking a translation fault on the same
+/// address. Both are telling the truth about different copies.
+///
+/// `dsb ishst` is the architecturally required publish (inner-shareable, stores
+/// only — the minimum that orders the entry write ahead of any subsequent
+/// walk). No TLBI: invalid -> valid needs no invalidate, and the callers that
+/// change a LIVE mapping already do their own break-before-make. No `isb`
+/// either — the return to the faulting instruction is context-synchronising.
+///
+/// This lives in the shared helper rather than at the call sites because the
+/// arch-neutral fault path (`ARM3/pagfault.rs`) writes valid entries at ~15
+/// places and had the barrier at none of them; `arm64/page.rs` paired it by
+/// hand at exactly two (its `dsb ish`/`isb` pairs are now redundant, and
+/// harmless). Centralising it is the only way the next new call site is right
+/// by default.
+/// Refuse to build a VALID user PTE for a protection that grants no access.
+///
+/// The C original opens with three ASSERTs whose entire job is this check —
+/// "check that we are not setting valid a page that should not be":
+///
+/// ```c
+/// ASSERT(ProtectionMask & MM_PROTECT_ACCESS);
+/// ASSERT((ProtectionMask & MM_PROTECT_SPECIAL) != MM_GUARDPAGE);
+/// ASSERT(ProtectionMask != MM_OUTSWAPPED_KSTACK && ...);
+/// ```
+///
+/// The translation dropped all three. On x86 that loss is survivable: the mask
+/// contributes nothing, so the PTE comes out Valid|User|PFN — a wrongly
+/// READABLE page, but a page the hardware can translate. On arm64 it freezes
+/// the machine, because `MmProtectToPteMask` is the only source of bit 1
+/// (NotLargePage) and bit 10 (AF) there. A no-access mask therefore yields
+/// Valid=1 with descriptor type 0b01, which is RESERVED at level 3: the MMU
+/// raises a translation fault (DFSC 0x07) that software cannot see, because
+/// `MmAccessFault` reads Valid=1 and reports STATUS_SUCCESS. The faulting
+/// instruction retries forever with DAIF masked — no timer, no IPI, no
+/// bugcheck, a dead machine whose PC never moves.
+///
+/// So this is not a lost debug assert; it is the difference between a wrong
+/// page and an unkillable fault loop. Returning `false` leaves the entry
+/// not-present, which is what the caller's own protection mask asked for: the
+/// fault then takes the invalid path and the thread gets a clean access
+/// violation instead of taking the box down with it.
+#[inline]
+#[track_caller]
+pub unsafe fn mi_user_pte_may_be_valid(protection_mask: usize) -> bool {
+    // MM_PROTECT_ACCESS is the three access bits; a mask with none of them set
+    // names MM_ZERO_ACCESS (0), MM_NOACCESS (8), MM_GUARDPAGE/MM_DECOMMIT (0x10)
+    // or 0x18 — exactly the four zero rows of MmProtectToPteMask.
+    if protection_mask & MM_PROTECT_ACCESS as usize != 0 {
+        return true;
+    }
+    let loc = core::panic::Location::caller();
+    mi_report_no_access_valid_pte(protection_mask, loc.file(), loc.line());
+    false
+}
+
+/// One line per distinct offending mask per boot — enough to name the caller's
+/// protection without turning a hot fault path into a serial-console flood.
+///
+/// The call site comes from `#[track_caller]` rather than a read of x30 or a tag
+/// threaded through every caller: it is stable Rust, exact, and costs nothing at
+/// the sites. It only reaches the real ARM3 caller because
+/// `MI_MAKE_HARDWARE_PTE_USER` is `#[track_caller]` too — without that the
+/// location stops at the helper and names itself.
+#[inline(never)]
+unsafe fn mi_report_no_access_valid_pte(protection_mask: usize, file: &str, line: u32) {
+    static mut REPORTED: u32 = 0;
+    let bit = 1u32 << (protection_mask & 31);
+    if REPORTED & bit != 0 {
+        return;
+    }
+    REPORTED |= bit;
+
+    // Location::file() is a plain &str, not NUL-terminated, so it cannot be
+    // handed to DbgPrint's %s directly. Copy the TAIL (the interesting half:
+    // ".../ARM3/pagfault.rs") into a NUL-terminated stack buffer.
+    let mut buf = [0u8; 64];
+    let src = file.as_bytes();
+    let take = if src.len() > 63 { 63 } else { src.len() };
+    let start = src.len() - take;
+    let mut i = 0;
+    while i < take {
+        buf[i] = src[start + i];
+        i += 1;
+    }
+    buf[take] = 0;
+
+    crate::driver_ddk::DbgPrint(
+        b"[NOACCESSPTE] refused a VALID user PTE for protection mask %u at %s:%u \
+          (grants no access; would be a hardware-invalid L3 descriptor on arm64)\n\0"
+            .as_ptr() as *const i8,
+        protection_mask as u32,
+        buf.as_ptr() as *const i8,
+        line,
+    );
+}
+
+#[inline(always)]
+unsafe fn mi_publish_pte() {
+    #[cfg(target_arch = "aarch64")]
+    core::arch::asm!("dsb ishst", options(nostack, preserves_flags));
+}
+
 #[inline]
 pub unsafe fn MI_WRITE_VALID_PTE(pte: PMMPTE, value: MMPTE) {
     core::ptr::write_volatile(pte, value);
+    mi_publish_pte();
 }
 
 #[inline]
 pub unsafe fn MI_WRITE_VALID_PDE(pde: PMMPDE, value: MMPTE) {
     core::ptr::write_volatile(pde, value);
+    mi_publish_pte();
 }
 
 #[inline]

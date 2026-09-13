@@ -50,6 +50,9 @@ import re
 import sys
 from pathlib import Path
 
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
+from tools.lint_facts import source_facts
+
 REPO = Path(__file__).resolve().parent.parent
 RUST_ROOT = REPO / "sdk" / "lib" / "rust"
 SKIP_FILE_RE = re.compile(r"(bindgen_[a-z0-9_]+\.rs$|/target/|/\.responses/)")
@@ -76,6 +79,7 @@ def crate_of(path: Path) -> Path:
     return path.parent
 
 
+@source_facts()
 def empty_body_fns(src: bytes) -> list[tuple[str, int]]:
     """(name, 1-based line) for every `fn NAME(..) {}` whose body has no statements.
 
@@ -86,16 +90,17 @@ def empty_body_fns(src: bytes) -> list[tuple[str, int]]:
     comment as content because tree-sitter makes it a named node.
     """
     import tree_sitter_rust as tsr
-    from tree_sitter import Language, Parser
+    from tree_sitter import Language, Parser, Query, QueryCursor
 
     global _PARSER
     if _PARSER is None:
         _PARSER = Parser(Language(tsr.language()))
 
     out = []
-    for node in _walk(_PARSER.parse(src).root_node):
-        if node.type != "function_item":
-            continue
+    tree = _PARSER.parse(src)
+    query = Query(_PARSER.language, "(function_item) @fn")
+    nodes = QueryCursor(query).captures(tree.root_node).get("fn", [])
+    for node in sorted(nodes, key=lambda n: n.start_byte):
         name_node = node.child_by_field_name("name")
         body = node.child_by_field_name("body")
         if name_node is None or body is None:

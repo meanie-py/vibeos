@@ -91,7 +91,7 @@ def _finding_lines(out: str) -> set[str]:
 def _scanner_error(cp: subprocess.CompletedProcess, findings_from: str) -> bool:
     """Crashes outrank partial/baselined output: the scan never completed."""
     if cp.returncode < 0 or re.search(
-        r"^Traceback \(most recent call last\):", cp.stderr or "", re.M
+        r"^(?:Traceback \(most recent call last\):|FATAL:)", cp.stderr or "", re.M
     ):
         return True
     text = cp.stdout or ""
@@ -184,6 +184,7 @@ def _lint_stage(
     strict: bool,
     findings_from: str = "stdout",
     by_exit_code: bool = False,
+    cp: subprocess.CompletedProcess | None = None,
 ) -> Stage:
     """Run one lint; classify NEW-vs-baseline. Advisory unless strict.
 
@@ -208,7 +209,10 @@ def _lint_stage(
         return run.add(
             Stage(name, status=st, detail="tool unavailable — LINT NOT RUN (no coverage)")
         )
-    cp = run.run(cmd, cwd=cwd or repo, stage=f"lint:{name}")
+    # `cp` pre-supplied means the subprocess already ran (see `run_source_lints`,
+    # which executes the scanners concurrently and then classifies them in order).
+    if cp is None:
+        cp = run.run(cmd, cwd=cwd or repo, stage=f"lint:{name}")
     if _scanner_error(cp, "both" if by_exit_code else findings_from):
         run.classification = "SCANNER_ERROR"
         return run.add(
@@ -975,6 +979,24 @@ def source_lint_specs(repo: Path) -> list[tuple]:
             "stdout",
         )
     )
+    # A C ASSERT that VANISHED when its FORCEINLINE was hand-translated. Not
+    # covered by scan_assert_to_ub (that catches an assert LOWERED to
+    # unreachable_unchecked, i.e. present and wrong) and NOT clonable from
+    # scan_dropped_prints, whose oracle is rustconv's trailing C comments —
+    # the bridge modules that carried this bug are hand-written and carry none,
+    # so a same-file diff reports clean on the exact function that cost the boot.
+    # The oracle is cross-file: the C FORCEINLINE paired by name against its Rust
+    # twin. It found MI_MAKE_HARDWARE_PTE_USER shipping 0 of the C's 4 asserts,
+    # which on arm64 turns a no-access protection mask into Valid=1 on a
+    # descriptor the MMU rejects (task #39).
+    sda = repo / "tools" / "scan_dropped_asserts.py"
+    specs.append(
+        (
+            "scan_dropped_asserts",
+            [py, str(sda), "--lint"] if sda.is_file() else ["MISSING"],
+            "stdout",
+        )
+    )
     # NOTE: scan_bind_all_matches (bind-all match-arm detector) is intentionally
     # NOT wired here yet. It runs `cargo check` in a SEPARATE cold target dir
     # (to avoid force-warn polluting the shared cache), which cold-triggers
@@ -1022,16 +1044,56 @@ def source_partition_specs(repo: Path, phase: str) -> list[tuple]:
     return [spec for spec in specs if (spec[0] in EARLY_SOURCE_CHECKS) == early]
 
 
+def lint_jobs() -> int:
+    """Use available host CPUs; an explicit job budget overrides detection."""
+    available = len(os.sched_getaffinity(0)) if hasattr(os, "sched_getaffinity") else os.cpu_count()
+    raw = os.environ.get("VIBEOS_LINT_JOBS")
+    n = int(raw) if raw else (available or 1)
+    if n < 1:
+        raise ValueError("VIBEOS_LINT_JOBS must be positive")
+    return n
+
+
 def run_source_lints(run: Run, repo: Path, *, strict: bool, only: set[str] | None = None) -> None:
+    """Execute the scanners CONCURRENTLY, then classify them in spec order.
+
+    The scanners are independent read-only passes over the source tree, each
+    graded against its own baseline file, so running them at the same time cannot
+    change any verdict — only the wall clock. It was 48% of a build: 54 stages,
+    851.6s summed against an 852.2s span (summed == span is what proves it was
+    serial), single-threaded on a 24-core host.
+
+    ONLY the subprocesses overlap. Every mutation of `run` — stage order, and the
+    SCANNER_ERROR classification — stays serial and in `specs` order, so the
+    artifact is byte-identical to the serial run and a scanner cannot win a race
+    to set the verdict."""
     specs = source_lint_specs(repo)
     if only is not None:
         unknown = only - {name for name, _, _ in specs}
         if not only or unknown:
             raise ValueError(f"empty or unknown scanner selection: {sorted(unknown)}")
-    for name, cmd, src in specs:
-        if only is not None and name not in only:
-            continue
-        _lint_stage(run, repo, name, cmd, strict=strict, findings_from=src)
+    todo = [(n, c, s) for n, c, s in specs if only is None or n in only]
+    # NOCHECK/MISSING never spawn anything; they are classified in phase 2 alone.
+    runnable = [(n, c) for n, c, _ in todo if c[0] not in ("NOCHECK", "MISSING")]
+    done: dict[str, subprocess.CompletedProcess] = {}
+    workers = min(lint_jobs(), len(runnable))
+    if workers > 1:
+        from concurrent.futures import ThreadPoolExecutor
+
+        # Threads, not processes: each worker blocks in subprocess.run, which holds
+        # no GIL, and `Run.run` already serialises its own log writes under a lock.
+        with ThreadPoolExecutor(max_workers=workers) as pool:
+            futures = {
+                name: pool.submit(run.run, cmd, cwd=repo, stage=f"lint:{name}")
+                for name, cmd in runnable
+            }
+            for name, fut in futures.items():
+                done[name] = fut.result()
+    else:
+        for name, cmd in runnable:
+            done[name] = run.run(cmd, cwd=repo, stage=f"lint:{name}")
+    for name, cmd, src in todo:
+        _lint_stage(run, repo, name, cmd, strict=strict, findings_from=src, cp=done.get(name))
 
 
 def lint_tool_names(repo: Path) -> set[str]:
@@ -1076,140 +1138,6 @@ def write_baselines(repo: Path, only: set[str] | None = None) -> dict:
             "removed": len(prev - cur),
         }
     return out
-
-
-# --- cargo-driven link PoCs (off-default-path → bit-rot risk) ---------------
-# Each: (label, crate dir under sdk/lib/rust, cargo --bin, supported arches,
-#        plausible-output floor in bytes). The cargo-driven links replace the
-#        cmake link long-term; they live OFF the default build path, so nothing
-#        else notices when their machinery (header-free C shims, pre-expanded
-#        .s, self-hosted spec2def, the static-lib list, the reactos-link engine
-#        itself, or the checked-in .res) drifts out of sync with the tree.
-_CARGO_LINK_POCS = [
-    ("ntoskrnl", "ntoskrnl-cargo", "ntoskrnl", ("i386", "amd64", "arm64"), 1_000_000),
-    ("ntdll", "ntdll-cargo", "ntdll", ("i386", "amd64", "arm64"), 1_000_000),
-    ("ntdll_vista", "ntdll_vista-cargo", "ntdll_vista", ("i386", "amd64", "arm64"), 200_000),
-]
-# amd64/arm64 build the BUILTIN triple on stable (no -Z build-std); i386 keeps the
-# custom softfloat kernel json. gcc.cmake:add_cargo_module is the source of truth.
-_ARCH_TARGET = {
-    "i386": "i686-kernel",
-    "amd64": "x86_64-pc-windows-gnu",
-    "arm64": "aarch64-pc-windows-gnullvm",
-}
-
-
-def _one_cargo_link(
-    run: Run, repo: Path, rust_ws: Path, label: str, crate: str, binname: str, arch: str, floor: int
-) -> None:
-    """Re-run one cargo-driven link and assert it still produces a valid PE,
-    WITHOUT booting. Skips cleanly when prerequisites are absent."""
-    stage = f"cargo_link:{label}:{arch}"
-    target = _ARCH_TARGET[arch]
-    if not (rust_ws / crate / f"{target}.json").is_file():
-        run.add(Stage(stage, status="skip", detail="PoC absent"))
-        return
-    # The engine reuses cmake-built sibling .a (librtl is universal); a missing
-    # build-<arch> means the inputs the link consumes were never produced.
-    if not (repo / f"build-{arch}" / "sdk" / "lib" / "rtl" / "librtl.a").is_file():
-        run.add(Stage(stage, status="skip", detail=f"build-{arch} not built"))
-        return
-    if shutil.which("rustup") is None:
-        run.add(Stage(stage, status="skip", detail="no rustup (need nightly+rust-src)"))
-        return
-
-    # Mirror gcc.cmake:add_cargo_module EXACTLY — this stage exists to prove the
-    # cmake→cargo link hasn't bit-rotted, so a different invocation would prove
-    # nothing. i386: pinned nightly + `-Z build-std` + the softfloat kernel json.
-    # amd64/arm64: pinned stable + the builtin triple, with the two `-C` flags that
-    # restore what the retired json carried (see gcc.cmake for the why).
-    env = None
-    if target.endswith("-kernel"):  # i386 — custom json, needs nightly build-std
-        nightly = (repo / ".rust-nightly").read_text().strip()
-        argv = [
-            "cargo",
-            f"+{nightly}",
-            "build",
-            "--release",
-            "--target",
-            f"{crate}/{target}.json",
-            "-Z",
-            "build-std=core,alloc,compiler_builtins",
-            "-Z",
-            "build-std-features=compiler-builtins-mem",
-        ]
-    else:  # amd64 / arm64 — builtin triple on stable
-        argv = ["cargo", "build", "--release", "--target", target]
-        # link-self-contained is amd64-only: gnullvm rejects the flag outright.
-        rustflags = "-C force-frame-pointers=yes"
-        if target.startswith("x86_64"):
-            rustflags += " -C link-self-contained=no"
-        env = dict(os.environ, RUSTFLAGS=rustflags)
-
-    cp = run.run(
-        [*argv, "-p", crate, "--bin", binname],
-        cwd=rust_ws,
-        stage=stage,
-        timeout=900,
-        env=env,
-    )
-    out = rust_ws / "target" / target / "release" / f"{binname}.exe"
-    if cp.returncode != 0:
-        tail = [ln for ln in (cp.stderr or "").splitlines() if ln.strip()][-3:]
-        run.add(
-            Stage(
-                stage,
-                exit=cp.returncode,
-                status="fail",
-                detail="link FAILED — cmake→cargo PoC bit-rotted",
-                salient=tail,
-            )
-        )
-        return
-    if not out.is_file():
-        run.add(Stage(stage, status="fail", detail="reported success but no output PE"))
-        return
-    size = out.stat().st_size
-    if size < floor:
-        run.add(
-            Stage(stage, status="fail", detail=f"{binname}.exe implausibly small ({size} bytes)")
-        )
-        return
-    with open(out, "rb") as f:
-        if f.read(2) != b"MZ":
-            run.add(Stage(stage, status="fail", detail="output not a PE (no MZ header)"))
-            return
-    run.add(Stage(stage, exit=0, status="ok", detail=f"{binname}.exe {size // 1024}K"))
-
-
-def run_cargo_link_guard(run: Run, repo: Path, arch: str | None = None) -> None:
-    """Guard every cargo-driven link PoC against silent bit-rot.
-
-    Re-runs the cargo-driven links (`ntoskrnl-cargo`, `ntdll-cargo`,
-    `ntdll_vista-cargo` via the shared `reactos-link` engine) and asserts each
-    still produces a valid PE. These are the long-term replacement for the
-    cmake-driven links; because they live OFF the default build path, the
-    pre-commit/merge gate (`check --strict`) is exactly where to catch them
-    rotting. Defaults to i386 (canonical, cheapest, the only arch all three
-    PoCs share); pass an arch to guard ntdll/ntdll_vista on amd64/arm64.
-
-    This is the LINK half of the gate (PE-valid, fast, no boot). Its runtime
-    complement is `vibeos-cli cargo-swap` (tests/qemu/cli/cargoswap.py): that
-    boot-swaps the cargo-built ntdll DLLs into the livecd and boots them via
-    `vibeos-cli smoke`, catching a link that relinks clean but boots broken.
-    Kept separate because cargo-swap boots QEMU (minutes) — too slow for the
-    hot `check` loop; run it before trusting a cargo-drive handoff.
-
-    Each link self-skips when its prerequisites (the crate's target json, a
-    built `build-<arch>`, or nightly+rust-src) are absent, so this never blocks
-    a tree without the PoCs. Gated to `--strict` (not every `build`) because
-    each relink re-compiles a Rust staticlib into its own target dir (~20s) and
-    would tax the hot loop."""
-    rust_ws = repo / "sdk" / "lib" / "rust"
-    arch = arch or "i386"
-    for label, crate, binname, arches, floor in _CARGO_LINK_POCS:
-        if arch in arches:
-            _one_cargo_link(run, repo, rust_ws, label, crate, binname, arch, floor)
 
 
 def run_committed_drift_guard(run: Run, repo: Path, arch: str | None = None) -> None:

@@ -33,7 +33,8 @@ BOOT_SIZE_MB=280
 # populate call idempotent (harmless on a fresh image, overwrite on refresh)
 # — zero list drift vs the full build path (same calls run either way).
 REFRESH=""
-SMP=""   # --smp: stage ntkrnlmp.exe + boot-select it (smp-bringup-quest.md M5)
+UP=""    # --up: boot-select the UP entry. The MP pair is the DEFAULT (2026-09-12);
+         # this is the only way to get a UP boot, and nothing automated should use it.
 
 # Stage debug-stripped PE twins into the ramdisk (same rationale as the livecd
 # strip pass in boot/boot_images.cmake): DWARF sections are never mapped, and
@@ -57,8 +58,8 @@ for arg in "$@"; do
             echo "[*] Rebuilding kernel..."
             ninja -C "$BUILD_DIR" ntoskrnl hal uefildr ramdisk fastfat
             ;;
-        --smp)
-            SMP=1
+        --up)
+            UP=1
             ;;
         --refresh)
             REFRESH=1
@@ -795,25 +796,25 @@ mmd -i "$BOOT_IMG" ::/EFI/BOOT
 # Copy bootloader
 mcopy -i "$BOOT_IMG" "$UEFILDR" ::/EFI/BOOT/BOOTAA64.EFI
 
-# Copy freeldr.ini. BOTH boot entries always ship (see the file itself); --smp
-# only moves DefaultOS= from the UP entry to the MP one, which is the same thing
-# -DVIBEOS_SMP_DEFAULT_BOOT=ON does to the x86 livecd.ini. The Options= lines are
+# Copy freeldr.ini. BOTH boot entries always ship (see the file itself); the MP
+# entry is the DEFAULT, and --up moves DefaultOS= back to the UP one, which is
+# the same thing -DVIBEOS_UP_DEFAULT_BOOT=ON does to the x86 livecd.ini. The Options= lines are
 # never rewritten here any more — the MP entry carries its own
 # /KERNEL=ntkrnlmp.exe /HAL=halmp.dll, so the media is identical either way apart
 # from that one selector.
-if [ -n "$SMP" ]; then
-    SMP_INI="$(mktemp)"
-    sed 's#^DefaultOS=ReactOS_Arm64_UP$#DefaultOS=ReactOS_Arm64_MP#' "$FREELDR_INI" > "$SMP_INI"
+if [ -n "$UP" ]; then
+    UP_INI="$(mktemp)"
+    sed 's#^DefaultOS=ReactOS_Arm64_MP$#DefaultOS=ReactOS_Arm64_UP#' "$FREELDR_INI" > "$UP_INI"
     # Fail loud rather than shipping UP-defaulted media from an --smp build: that
     # is a false-green (the boot looks fine and runs the wrong kernel).
-    if ! grep -q '^DefaultOS=ReactOS_Arm64_MP$' "$SMP_INI"; then
-        echo "[!] freeldr.ini: no 'DefaultOS=ReactOS_Arm64_UP' line to flip — entry names drifted"
-        rm -f "$SMP_INI"
+    if ! grep -q '^DefaultOS=ReactOS_Arm64_UP$' "$UP_INI"; then
+        echo "[!] freeldr.ini: no 'DefaultOS=ReactOS_Arm64_MP' line to flip — entry names drifted"
+        rm -f "$UP_INI"
         exit 1
     fi
-    echo "[*] SMP: freeldr.ini DefaultOS -> ReactOS_Arm64_MP (ntkrnlmp.exe + halmp.dll)"
-    mcopy -o -i "$BOOT_IMG" "$SMP_INI" ::/freeldr.ini
-    rm -f "$SMP_INI"
+    echo "[*] UP: freeldr.ini DefaultOS -> ReactOS_Arm64_UP (ntoskrnl.exe + hal.dll) — OPT-OUT"
+    mcopy -o -i "$BOOT_IMG" "$UP_INI" ::/freeldr.ini
+    rm -f "$UP_INI"
 else
     mcopy -i "$BOOT_IMG" "$FREELDR_INI" ::/freeldr.ini
 fi

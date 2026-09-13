@@ -927,7 +927,19 @@ and both fast-IO direct writes emit the 8-byte `{Status, Information}` layout
 when marked — sync AND async. The thunks now pass the guest IOSB straight
 through (no host stack IOSB → the dead-frame hazard is gone by construction)
 and accept Event-based/polled overlapped I/O; only a guest APC routine still
-refuses loudly (no 64→32 user-APC dispatch yet). 64-bit host code in the same
+refuses loudly.
+
+*What the APC refusal actually needs — the old note here said "no 64→32
+user-APC dispatch yet" and that was wrong.* The guest-entry half exists and is
+load-bearing: `Wow64pBuildLoaderApcFrame` builds a `KiUserApcDispatcher`-ABI
+frame, `Wow64pKiUserApcDispatcher32` is resolved from ntdll32 at startup, and
+the pair runs on every guest thread start. Missing is (a) INTERCEPTION — the
+kernel's `KiInitializeUserApc` builds a 64-bit `UAPC_FRAME` targeting the 64-bit
+dispatcher, so a guest's 32-bit routine passed through would be `call`ed as
+native x64; wow64.dll must substitute a host thunk as the `NormalRoutine` and
+carry the guest routine/context as arguments — and (b) the frame builder taking
+its routine as a parameter instead of hardcoding the loader thunk. Nothing on
+the ladder needs it (msafd uses Events), so it stays refused by choice. 64-bit host code in the same
 process is unaffected: its calls never latch. i386 kernels compile the capture
 out (no WoW64-of-32-bit; its bindgen EPROCESS has no Wow64Process).
 **M15c (2026-09-06) extends the same mechanism to the IOCTL family**
@@ -948,6 +960,24 @@ for — missing that is a silent guest hang), then copies back and frees. The
 unmarshalled path carries no shadow and is genuinely async. Oracle:
 **`marshal32.exe`**'s select rung, `0xbb04` -> `0x600d`, 9/9 guests PASS on
 ladder `20260906-132106-smoke-amd64`.
+
+**M15c addendum (2026-09-06): `IOCTL_AFD_SEND_DATAGRAM` is marshalled**, which
+retires the last refusal in the AFD family. `AFD_SEND_INFO_UDP` is 56 → 104 and
+audited SEMANTIC for its nested `TDI_REQUEST_SEND_DATAGRAM` /
+`TDI_CONNECTION_INFORMATION`, but reading both ends collapses most of that:
+`AfdPacketSocketWriteData` consumes only `BufferArray`, `BufferCount` and
+`TdiConnection.RemoteAddress`; `WSPSendTo` fills only those plus `AfdFlags` and
+`RemoteAddressLength`. `TdiRequest` is touched by neither, so it is carried as
+opaque zero padding rather than translated — writing a host-shaped
+`TDI_REQUEST` there would manufacture content no one supplies. `RemoteAddress`'
+pointee is pointer-free and width-identical, so the pointer widening is the
+whole job (same shape as `RECV_DATAGRAM`'s `Address`). **The rung's assertion is
+the implicit bind, not the send.** A successful `sendto` proves little; AFD only
+reaches `WarmSocketForBind` by dereferencing `RemoteAddress` for
+`Address[0].AddressType`, so a socket that comes back bound AF_INET with a real
+port is evidence the driver read the family through the widened pointer. The
+byte count covers the WSABUF stride separately, and the rung sends UNBOUND on
+purpose — binding first would skip the very dereference under test.
 
 Oracle: **`async32.exe`** (`Async32.c`, winlogon `TryStartWow64Async`) —
 overlapped ReadFile with event: `OVERLAPPED.Internal/InternalHigh` (the IOSB32)
@@ -3103,3 +3133,74 @@ redirect builder runs BEFORE `CmpParseKey`'s own locking
 acquires and drops its own. Calling the inner parse twice for the fallback is
 safe for the same reason: each invocation is lock-balanced, acquiring in the
 cache lookup and releasing on every exit.
+
+## M19 — CSR/LPC scoping (2026-09-11): measured, and two of my own claims corrected
+
+The LPC family (`NtRequestWaitReplyPort`, `NtReplyPort`, `NtReplyWaitReceivePort`,
+`NtRequestPort`, `NtReplyWaitReplyPort`) is the last big refusal in the lane. This is the
+scoping pass, re-derived from the tree rather than from carried-over notes — which is how two
+of the carried-over claims turned out to be wrong.
+
+**The failure is real and deterministic.** `lpc-rust/src/send.rs:413` rejects a request when
+`DataLength + sizeof(PORT_MESSAGE) > TotalLength`. A 32-bit guest sets
+`TotalLength = DataLength + 24`; the amd64 kernel wants `+ 40`. Always true, so every call
+fails `STATUS_INVALID_PARAMETER` before it reaches a port.
+
+**Correction 1 — "there is no marshaller" was wrong.** There is one: a *generated flat thunk*.
+The name is absent from `manual.txt` and from the automarshal table, so wow64gen derived a
+thunk from the `.spec` that widens each pointer ARGUMENT and passes the 24-byte struct through
+untouched. The bug is not an absent marshaller, it is a thunk that marshals the pointer but not
+what it points at — the same shape as the `NtCreateIoCompletion` PHANDLE bug (M18).
+
+**Correction 2 — `USE_LPC6432` does not solve this,** though it looks purpose-built to.
+`ndk/lpctypes.h:106` carries an unused switch that swaps `LPC_CLIENT_ID`/`LPC_SIZE_T`/
+`LPC_PVOID` for their 64-bit forms, exactly to make a 32-bit and 64-bit side agree. Measured on
+the host rather than reasoned about:
+
+| build | `sizeof` | `ClientId` | `MessageId` | `ClientViewSize` |
+|---|---|---|---|---|
+| i386, plain | 24 | 8 | 16 | 20 |
+| i386, `USE_LPC6432` | **32** | 8 | 24 | 28 |
+| amd64 (either) | **40** | 8 | 24 | 32 |
+
+It narrows the gap and does not close it: the i386 ABI aligns `long long` to 4 where amd64
+aligns to 8, so the trailing `ULONGLONG` lands at 28 instead of 32. The header needs a real
+marshaller. (Had this not been measured it would have shipped as "ReactOS already has a switch
+for this.")
+
+**The payload is much smaller than "~100 per-API layouts".** `CSR_API_MESSAGE` is a
+`PORT_MESSAGE` header plus a `ULONG_PTR ApiMessageData[39]` union blob that each subsystem
+server casts to its own struct — nominally ~20 BASE + ~9 USER + ~74 CONSOLE layouts. But:
+
+- **13 of the 20 BASE APIs contain no pointer at all**, and the pointer-heavy ones
+  (`BASE_CHECK_VDM`, `BASE_GET_NEXT_VDM_COMMAND`, `BASE_GETSET_VDM_CURDIRS`) are 16-bit
+  DOS/Win16 support a WoW64 guest never reaches. The realistic pointer-bearing set is
+  `BASE_CREATE_PROCESS` (`PebAddressNative`), `BASE_SXS_CREATEPROCESS_MSG` and
+  `BASE_NLS_GET_USER_INFO` — one pointer each.
+- A pointer-free struct that only needs field-copy under a layout diff is precisely what
+  **marshalgen already generates**, from real clang i686-vs-aarch64 record layouts (M17).
+- `CSR_CAPTURE_BUFFER` carries a `PointerOffsetsArray`: CSR already enumerates its own pointers
+  because it already relocates them between client and server address space
+  (`csrsrv/api.rs:768`, `+= BufferDistance`). The offsets are validated to lie inside
+  `ApiMessageData`, so they are a ready-made table of where the pointers are — in 32-bit
+  coordinates, which is the part that still needs translating.
+
+So the job is: hand-write the PORT_MESSAGE header widen, hand-write the capture-buffer
+relocation, and point existing generation machinery at the message structs. There is precedent
+in the lane already — `Wow64pConnectPort` (`wow64_manual.c:1880`) widens the 0x24-byte
+`CSR_API_CONNECTINFO` today, discriminated by sniffing a port name ending in `ApiPort`. For the
+message APIs the discriminator is cleaner: `ApiNumber` is in the message.
+
+**Blocked on a diagnostic that is itself broken — fix this first.** `WOW64_MANUAL_UNIMPL` is
+`#define`d FOUR times, once per file, with no shared header anywhere in the module:
+`0x7FFFFFFF` in `wow64_manual.c`, `wow64_thunks.c` and `wow64_win32k.c`, but **`0xC0BBBBBB`**
+in generated `wow64_automarshal.c`. `Wow64ManualDispatch` tails unconditionally into
+`Wow64AutoMarshalDispatch`, so the value that actually comes back is `0xC0BBBBBB` — and both
+callers test `Status == WOW64_MANUAL_UNIMPL` against `0x7FFFFFFF`. **Both of those branches are
+dead.** An unhandled syscall returns `0xC0BBBBBB` to the guest instead of printing the
+`NEEDS MANUAL MARSHALLER` line that names it, and two comments still promise the old contract
+(`wow64_thunks.c:25`, `wow64_manual.c:4550`). That line is exactly the instrument needed to
+learn which LPC calls a guest actually makes, so it gets fixed before the probe: one shared
+header, two distinctly-named sentinels (a hand marshaller declining is genuinely different from
+no thunk existing anywhere), and `marshalgen.py` emitting the include instead of its own
+`#define` so the drift cannot recur.

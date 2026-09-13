@@ -98,15 +98,10 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 # differently would disagree about which decls exist, and the pair is meant to partition
 # the same population: it takes the decls WITH an in-crate def, this one takes the rest.
 from scan_cc_mismatch import (  # noqa: E402
-    DECL_BLOCK_RE,
-    DECL_FN_RE,
     ISLAND_RE,
     NORM_I386,
-    cfg_excludes_i386,
+    convention_facts,
     crate_def_conventions,
-    decl_symbol,
-    excluded_spans,
-    in_spans,
     walk_i386_sources,
 )
 
@@ -317,52 +312,37 @@ def scan_crate(
     findings = []
     local: dict[str, str | None] = {}
     for path, src in walk_i386_sources(crate_src):
-        spans = excluded_spans(src)
-        src_lines = src.splitlines()
-        for m in DECL_BLOCK_RE.finditer(src):
-            cfg, cc, body = m.group("cfg"), m.group("cc"), m.group("body")
-            if cfg_excludes_i386(cfg) or in_spans(m.start(), spans):
+        for name, cc, _line, text in convention_facts(src)[1]:
+            if name in defs or NOLINT_RE.search(text):
                 continue
-            block_line = src.count("\n", 0, m.start())
-            for d in DECL_FN_RE.finditer(body):
-                name = decl_symbol(d)
-                if name in defs:  # same-crate pair — scan_cc_mismatch owns it
-                    continue
-                line = block_line + body.count("\n", 0, d.start()) + 1
-                if NOLINT_RE.search(src_lines[line - 1] if line - 1 < len(src_lines) else ""):
-                    continue
-                owners = {lib: c[name] for lib, c in oracle.items() if name in c}
-                conventions = {v for s in owners.values() for v in s}
-                # No exporter, or exporters that disagree with each other: no evidence.
-                if len(conventions) != 1:
-                    continue
-                want = conventions.pop()
-                got = NORM_I386.get(cc, cc)
-                if got == want:
-                    continue
-                if name not in local:
-                    local[name] = c_defines(module_dirs, name)
-                if local[name]:
-                    continue
-                # A generated bindgen island is not our description of a symbol, it is
-                # bindgen's transcript of the C prototype — so a disagreement with the spec
-                # is the HEADER against the SPEC, and editing the island destroys the only
-                # evidence that could settle it (scan_cc_mismatch pays for that lesson at
-                # length: e33a810c9ad rewrote 8 island blocks and silenced 8 real bugs).
-                # ntdll's NtCurrentTeb is exactly this: psfuncs.h declares it with no NTAPI
-                # while ntdll.spec exports it `@ stdcall -arch=win32`. Reported, tagged,
-                # never auto-fixed.
-                tag = (
-                    "IMPORT_CC_ISLAND"
-                    if ISLAND_RE.search(path.replace(os.sep, "/"))
-                    else "IMPORT_CC"
-                )
-                findings.append(
-                    f"{os.path.relpath(path, REPO)}: [{tag}] {name} declared "
-                    f'extern "{cc}" but {"/".join(sorted(owners))}.spec exports it '
-                    f"{want} (i386 link wants {DECORATION.get(want, want)}, "
-                    f"we emit {DECORATION.get(got, got)})"
-                )
+            owners = {lib: c[name] for lib, c in oracle.items() if name in c}
+            conventions = {v for s in owners.values() for v in s}
+            # No exporter, or exporters that disagree with each other: no evidence.
+            if len(conventions) != 1:
+                continue
+            want = conventions.pop()
+            got = NORM_I386.get(cc, cc)
+            if got == want:
+                continue
+            if name not in local:
+                local[name] = c_defines(module_dirs, name)
+            if local[name]:
+                continue
+            # A generated bindgen island is not our description of a symbol, it is
+            # bindgen's transcript of the C prototype — so a disagreement with the spec
+            # is the HEADER against the SPEC, and editing the island destroys the only
+            # evidence that could settle it (scan_cc_mismatch pays for that lesson at
+            # length: e33a810c9ad rewrote 8 island blocks and silenced 8 real bugs).
+            # ntdll's NtCurrentTeb is exactly this: psfuncs.h declares it with no NTAPI
+            # while ntdll.spec exports it `@ stdcall -arch=win32`. Reported, tagged,
+            # never auto-fixed.
+            tag = "IMPORT_CC_ISLAND" if ISLAND_RE.search(path.replace(os.sep, "/")) else "IMPORT_CC"
+            findings.append(
+                f"{os.path.relpath(path, REPO)}: [{tag}] {name} declared "
+                f'extern "{cc}" but {"/".join(sorted(owners))}.spec exports it '
+                f"{want} (i386 link wants {DECORATION.get(want, want)}, "
+                f"we emit {DECORATION.get(got, got)})"
+            )
     return findings
 
 

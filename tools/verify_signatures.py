@@ -809,7 +809,7 @@ def main():
 
     arch = ARCHS[args.arch]
     print(f"=== verify_signatures — arch={args.arch} ===")
-    print(f"clang:  {CLANG}")
+    print(f"clang:  {CLANG}", file=sys.stderr)
     print(f"headers: {resolve_build_repo(args.arch)}/build-{args.arch}")
     print(f"crates: {', '.join(str(c) for c in crate_dirs)}")
     print()

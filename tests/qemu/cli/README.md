@@ -49,15 +49,13 @@ layer fits — see "Relationship to `qemu/`" below.
 
 ## Subcommands — what each is for, and the strategy
 
-### `build --arch X [--clean] [--incremental] [--no-check] [--strict] [--no-cache]`
+### `build --arch X [--clean] [--incremental] [--check] [--strict] [--no-cache]`
 Compile the boot media for one arch, lint the binary, index symbols, and write a
 provenance stamp.
 
-- **Fast local iteration:** `--incremental --no-check` is the inner-loop combo.
-  A warm build is dominated by two things that neither caching nor the compiler
-  touch: the **source-lint suite** (~53s, led by `scan_inline_flag_literals`
-  AST-walking every `.rs`) and **linking**. `--no-check` skips the source lints
-  (they're a gate concern, not an every-edit one); `--incremental` turns on rustc
+- **Fast local iteration:** source lint is no longer part of a normal build.
+  Use `check` for source analysis or opt into advisory lint with `build --check`.
+  The gate runs the complete source inventory separately. `--incremental` turns on rustc
   incremental (a kernel `.rs` edit recompiles the ~13s `ntoskrnl-rust` crate in
   ~5s instead), trading the Rust sccache wrapper (sccache + incremental are
   mutually exclusive) — ccache for C/C++ stays on. **Both are LOCAL-only:**
@@ -88,9 +86,9 @@ provenance stamp.
   result or hand off. The clean build is the only one that proves a cold-link
   state. (The smoke harness's clean-build does the same nuke for the same
   reason.)
-- Auto-runs the binary lints (`scan_ud2`, sacred primitives) and source lints
-  (advisory) so you can't forget them. `--no-check` skips source lints;
-  `--strict` turns NEW lint findings into failures.
+- Runs binary lints (`scan_ud2`, sacred primitives, self-recursion).
+  Source lints are opt-in (`--check`); `--no-check` remains a compatibility alias
+  for the default. Strict source verification runs through `check --strict` / `gate`.
 - Build failures are **classified**: `CMAKE_CONFIGURE_FAIL` /
   `CARGO_CHECK_FAIL` / `LINK_FAIL` (with i386 PE-decoration hints on undefined
   symbols — `_Foo@N` = stdcall, `@Foo@N` = fastcall, `_Foo` = cdecl) /
@@ -204,7 +202,7 @@ ordinary `check --strict --arch X` still runs both partitions.
 
 **The parallel pre-land verdict** — the North Star "gate ×3 (all arches green)"
 done concurrently instead of by a serial human loop. It submits every arch's build
-to the shared host CPU broker (`--no-build` to skip), then launches each arch's
+concurrently (`--no-build` to skip), sharing compiler/linker execution slots, then launches each arch's
 smoke as soon as its own build finishes. For any arch
 that fails retryably launches up to `--retries` (default 2) concurrent fresh
 attempts and passes the arch on the first green. Retry-eligible: a *documented*
@@ -356,17 +354,17 @@ remain unaccounted for. Automatic retention is not enabled.
 
 ### `host-status [--json]`
 
-Shows current permits, holders, and FIFO waiters across worktrees. Updated builds
-record their job class and permit wait time. Queue/direct-land gates tag their
-children `integration`; other commands default to `interactive`.
+Shows active and waiting compiler/linker jobs across worktrees, plus legacy
+reservations, boot slots and build-directory owners. New builds reserve no CPU
+capacity while waiting for their directory. Individual tools share the host's
+execution slots, preferring interactive work with 120-second aging. Queue and
+direct-land gates identify their children as integration work.
 
-`admission_shadow` compares FIFO with a proposed bounded 120-second integration
-head start. **FIFO remains active; the proposal is not enforced.** Unknown or
-legacy waiter metadata suppresses the proposal. The shared file
-`<HOSTLOCK_DIR>/admission-shadow.disabled` disables proposals without changing
-locks (default root `/tmp/vibeos-qemu-locks/host`). Build `summary.json` records
-separate `admission.cpu_wait_s` and `admission.builddir_wait_s` timings.
-See `docs/engineering/fleet-verification-migration-plan.md` for rollout boundaries.
+`--json` includes commands, job class, owning build PID, artifact directory and
+submitting launcher. Detached integration work stays visible after its agent
+pauses. The old FIFO/shadow display applies only to legacy reservations, not the
+new enforced job priorities. See
+[host job scheduling](../../../docs/engineering/host-job-scheduling.md).
 
 ### `boot --arch X --until M [--fail-on RE]`
 Raw fast boot, **no staleness gate**, but reuses smoke's *exact* arch-config so
@@ -395,20 +393,11 @@ binaries and is caught at source by `lint_kernel` instead — the arm64 binary s
 only catches a function that regressed into an infinite loop, the "idle hang"
 signature).
 
-`--strict` additionally runs the **`cargo_link`** guard: it re-runs the
-cargo-driven link PoCs (`sdk/lib/rust/{ntoskrnl,ntdll,ntdll_vista}-cargo` via
-the shared `reactos-link` engine — the long-term replacement for the cmake
-links) and asserts each still produces a valid PE. These live off the default
-build path, so this is what keeps them from silently bit-rotting. Defaults to
-i386 (the only arch all three share — `ntoskrnl-cargo` is i386-only); pass
-`--arch amd64`/`arm64` to guard ntdll/ntdll_vista there. Each link self-skips
-if its target json, `build-<arch>`, or nightly+rust-src is absent. Gated to
-`--strict` (not every `build`) because each relink re-compiles a Rust staticlib
-(~20s) and would tax the hot loop.
-
-The `cargo_link` guard is the **LINK** half of the cargo-drive gate (PE-valid,
-fast, no boot). Its **RUNTIME** half is `cargo-swap` (below) — a link can relink
-clean yet boot broken, and only a boot catches that.
+The old strict-check `cargo_link` PoC rebuilds have been retired: ntoskrnl,
+ntdll and ntdll_vista are now normal Cargo-linked shipping targets. The regular
+build, binary checks and three-architecture smoke gate exercise those links.
+Strict lint retains committed-artifact drift checks and does not rebuild those
+modules in a competing Cargo target directory.
 
 ### `cargo-swap --arch X [--module all|ntdll|ntdll_vista|ntoskrnl]`
 **The runtime gate for the cargo-driven modules.** Boot-swaps each cargo-built
@@ -461,6 +450,20 @@ RUN=$(./vibeos-cli gdb start amd64 | grep run-id | awk '{print $3}')
 ./vibeos-cli gdb ps                      # list debug runs + liveness
 ./vibeos-cli gdb stop $RUN
 ```
+
+For MP debugging, prefix `gdb start` with `VIBEOS_QEMU_SMP=1` (or the desired
+vCPU count). The launcher selects MP media, passes `-smp`, and records
+`ntkrnlmp.exe` as the symbol image. One vCPU still selects the MP kernel.
+
+For rare faults, `VIBEOS_QEMU_SMP=1 ./vibeos-cli gdb probe arm64 --script probe.py
+--repeat 80 --timeout 150` starts a fresh VM at reset for each probe. The GDB Python
+script gets `VIBEOS_PROBE_TIMEOUT` and `VIBEOS_PROBE_DIR`; it must use a bounded
+continue and set `VIBEOS_PROBE_RESULT = {"hit": bool, "checks": positive_int}`.
+Count actual probe coverage, not boots. Missing coverage or a script error stops
+the soak with exit 2; a hit stops with exit 0; exhausted no-hit runs exit 1.
+Each run retains the script, GDB output, kernel hash, result, and serial log under
+`qemu/runs/<run-id>/`. Kernel or media changes stop the soak. `gdb stop` also
+archives serial before removing VM staging.
 
 **CRITICAL gotcha (baked into the engine):** connecting to QEMU's gdbstub *halts
 the vCPUs*. So liveness (`status`/`ps`) checks the **Windows process + serial-file
@@ -631,12 +634,15 @@ Every run prints a bounded summary and writes a durable dir. **Read
 scrape stdout for the result — stdout is intentionally lossy.
 
 ```
-/tmp/vibeos-cli/<ts>-<cmd>-<arch>/
+/tmp/vibeos-cli/<ts>-<unique>-<cmd>-<arch>/
   summary.json     verdict, classification, per-stage status, salient lines, artifact paths
   full.log         raw stage output under === headers ===
   commands.jsonl   every subprocess invoked (cmd, cwd, exit, seconds)
   boot*/screen.ppm, serial tails, debugcon — on failure
 ```
+
+The unique component prevents concurrent runs from sharing an artifact directory,
+even when they start in the same second in different worktrees.
 
 Exit code: `0` for OK/WARN, `1` for FAIL. Stdout glyphs: `✓` ok, `⚠` warn,
 `✗` fail, `·` skip.
@@ -686,7 +692,7 @@ RUN=$(./vibeos-cli debug start amd64 --gdb | tail -1)
 | A pass/fail verdict that won't lie about stale media | `vibeos-cli smoke` |
 | Build the right media for an arch (warm/cold, classified failures) | `vibeos-cli build` |
 | Watch a specific boot marker fast | `vibeos-cli boot` |
-| Lint gate (NEW-vs-baseline) + cargo-link rot guard | `vibeos-cli check [--strict]` |
+| Lint gate (NEW-vs-baseline) + binary checks | `vibeos-cli check [--strict]` |
 | Prove a cargo-driven module boots (ntdll DLLs / ntoskrnl) | `vibeos-cli cargo-swap` |
 | Interactive/ad-hoc single GDB op on a live run-id | `qemu/inspect.sh` (or `vibeos-cli debug inspect`) |
 | Raw interactive launcher (serial/GUI/`--debug`) | `qemu/run.sh` |

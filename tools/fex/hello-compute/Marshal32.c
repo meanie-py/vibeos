@@ -117,6 +117,9 @@
 #define M32_FAIL_SELECT_READY 0xBB04 /* select() claimed a fresh socket was ready */
 #define M32_FAIL_SELECT_GUARD 0xBB05 /* something wrote past the guest's fd_set */
 #define M32_FAIL_SELECT_COUNT 0xBB06 /* fd_count came back altered */
+#define M32_FAIL_SENDTO_COUNT 0xBB08 /* ...succeeded but sent the wrong length */
+#define M32_FAIL_SENDTO_BIND  0xBB09 /* the implicit bind never happened */
+#define M32_FAIL_SENDTO_GUARD 0xBB0A /* something wrote past the guest's sockaddr */
 #define M32_PASS              0x600D
 
 static void Report(const char *msg)
@@ -1140,6 +1143,150 @@ static int CheckSocketSelect(void)
     return 0;
 }
 
+/* --------------------------------------------------------------------------
+ * sendto() on a fresh UDP socket — the deep-marshaller rung.
+ *
+ * IOCTL_AFD_SEND_DATAGRAM carries AFD_SEND_INFO_UDP, 56 -> 104, the only AFD
+ * payload with nested structs. Two independent things can be marshalled wrong
+ * and this rung separates them:
+ *
+ *   BufferArray/BufferCount — the WSABUF array widens 8 -> 16 per element, so
+ *   a wrong stride sends the wrong bytes or the wrong length. The byte count
+ *   check below catches it, because IOSB.Information IS that length.
+ *
+ *   TdiConnection.RemoteAddress — a guest pointer to a TRANSPORT_ADDRESS.
+ *   Checking that sendto merely succeeded would NOT prove this one: the strong
+ *   evidence is that the socket comes back IMPLICITLY BOUND. AFD only reaches
+ *   WarmSocketForBind by dereferencing RemoteAddress for Address[0].
+ *   AddressType, so a bound AF_INET socket with a real port means the driver
+ *   read our address family through the pointer we widened. A mis-widened
+ *   pointer yields garbage there and the bind fails or binds the wrong family.
+ *
+ * The datagram goes to the discard port on loopback, so nothing has to be
+ * listening and no peer is involved; a send that the stack itself declines is
+ * reported with its WSA error so it reads as an environment failure rather
+ * than a marshalling one. (The select rung above stays network-free on
+ * purpose; this one cannot be — sending IS the thing under test.)
+ * ------------------------------------------------------------------------ */
+static int CheckSocketSendTo(void)
+{
+    WSADATA wsa;
+    SOCKET s;
+    /* Same canary discipline as the select rung: the sockaddr the driver reads
+     * through our widened pointer is followed by a guard in the same object, so
+     * an over-read that turns into an over-write lands here. */
+    struct
+    {
+        struct sockaddr_in addr;
+        DWORD              guard;
+    } to;
+    struct sockaddr_in local;
+    int locallen;
+    static const char Payload[] = "marshal32-udp";
+    const int PayloadLen = (int)(sizeof(Payload) - 1);
+    int rc;
+
+    Report("[marshal32] sendto: calling WSAStartup\n");
+    if (WSAStartup(0x0202, &wsa) != 0)
+    {
+        Report("[marshal32] FAIL: WSAStartup\n");
+        return M32_FAIL_WSA_STARTUP;
+    }
+
+    Report("[marshal32] sendto: calling socket()\n");
+    s = socket(AF_INET, SOCK_DGRAM, IPPROTO_UDP);
+    if (s == INVALID_SOCKET)
+    {
+        ReportHex("[marshal32] FAIL: socket() failed, WSAGetLastError =",
+                  (DWORD)WSAGetLastError());
+        WSACleanup();
+        return M32_FAIL_WSA_SOCKET;
+    }
+
+    /* No CRT, so the sockaddr is filled field by field. 0x0100007F is
+     * 127.0.0.1 already in network order on a little-endian guest; port 9 is
+     * discard, which needs no listener. */
+    to.guard                 = 0x5A5AA5A5;
+    to.addr.sin_family       = AF_INET;
+    to.addr.sin_port         = htons(9);
+    to.addr.sin_addr.s_addr  = 0x0100007F;
+
+    /* Deliberately NOT bound first: an unbound socket is SOCKET_STATE_CREATED,
+     * which is the state that forces AfdPacketSocketWriteData down the
+     * TaBuildNullTransportAddress(RemoteAddress->Address[0].AddressType) path.
+     * Binding first would skip the very dereference this rung exists to prove. */
+    Report("[marshal32] sendto: calling sendto()\n");
+    rc = sendto(s, Payload, PayloadLen, 0,
+                (const struct sockaddr *)&to.addr, (int)sizeof(to.addr));
+    Report("[marshal32] sendto: sendto() returned\n");
+
+    if (to.guard != 0x5A5AA5A5)
+    {
+        ReportHex("[marshal32] FAIL: sendto() overwrote past the sockaddr, guard =",
+                  to.guard);
+        closesocket(s);
+        WSACleanup();
+        return M32_FAIL_SENDTO_GUARD;
+    }
+
+    /* A send that the TRANSPORT declined is not a marshalling failure, and this
+     * rung must not turn one into a red ladder. The plain amd64/arm64 smoke
+     * boots carry no NIC — the NIC lives in the separate net config — and the
+     * netstack has no loopback path, so "no route" is the EXPECTED environment
+     * here rather than a defect. The datagram leaving the box was never the
+     * claim; what is being tested is whether AFD could read the payload we
+     * widened. So the error is reported and execution continues to the bind
+     * check, which is the assertion that actually distinguishes the two. */
+    if (rc == SOCKET_ERROR)
+        ReportHex("[marshal32] sendto: transport declined the datagram (not fatal), "
+                  "WSAGetLastError =", (DWORD)WSAGetLastError());
+    else if (rc != PayloadLen)
+    {
+        /* It DID go through, so the byte count is meaningful and exact: this is
+         * IOSB.Information, which catches a wrong WSABUF stride directly. */
+        ReportHex("[marshal32] FAIL: sendto() sent the wrong length, sent =", (DWORD)rc);
+        closesocket(s);
+        WSACleanup();
+        return M32_FAIL_SENDTO_COUNT;
+    }
+
+    /* The teeth, and they need no network. AfdPacketSocketWriteData reaches
+     * WarmSocketForBind only by dereferencing RemoteAddress for
+     * Address[0].AddressType, and that happens BEFORE the datagram is handed to
+     * the transport. So the FAMILY coming back AF_INET is the proof: it is
+     * copied straight from the address we pointed at, through the pointer this
+     * marshaller widened. A mis-widened pointer yields a garbage AddressType,
+     * TaLengthOfTransportAddressByType returns 0, TaBuildNullTransportAddress
+     * returns NULL, and the send bails STATUS_NO_MEMORY with the socket still
+     * unbound — which lands here, red, network or no network.
+     *
+     * The PORT is deliberately not checked, and the first cut of this rung was
+     * wrong to check it. The implicit bind is to a NULL transport address by
+     * construction: TdiBuildNullTransportAddressInPlace (tdiconn.c) sets
+     * AddressType and then RtlZeroMemory's the address bytes, port included. So
+     * port 0 is the correct and only possible answer here, and asserting a
+     * non-zero one demanded something the driver never produces — it failed the
+     * rung while every marshalling property under test had actually passed. */
+    local.sin_family = 0;
+    local.sin_port   = 0;
+    locallen = (int)sizeof(local);
+    if (getsockname(s, (struct sockaddr *)&local, &locallen) == SOCKET_ERROR ||
+        local.sin_family != AF_INET)
+    {
+        ReportHex("[marshal32] FAIL: no implicit bind after sendto, family =",
+                  (DWORD)local.sin_family);
+        closesocket(s);
+        WSACleanup();
+        return M32_FAIL_SENDTO_BIND;
+    }
+
+    closesocket(s);
+    WSACleanup();
+    Report("[marshal32] sendto: AFD_SEND_INFO_UDP marshalled, "
+           "socket implicitly bound through the widened RemoteAddress\n");
+    return 0;
+}
+
 int start(void) /* cdecl: i386 symbol is _start, matching -Wl,-e,_start */
 {
     int rc;
@@ -1176,9 +1323,12 @@ int start(void) /* cdecl: i386 symbol is _start, matching -Wl,-e,_start */
     rc = CheckSocketSelect();
     if (rc) ExitProcess(rc);
 
+    rc = CheckSocketSendTo();
+    if (rc) ExitProcess(rc);
+
     Report("[marshal32] PASS: TBI + IOCP + monitors + out-cells + reg-names "
            "+ wow64-flags + cbSize + last-error + reg-redirect + select "
-           "all verified\n");
+           "+ sendto all verified\n");
     ExitProcess(M32_PASS);
     return 0;
 }

@@ -75,17 +75,20 @@ import sys
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
+from tools.lint_facts import source_facts
 from tools.source_walk import source_files
 
 REPO = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(REPO / "tools" / "rustconv"))
 import tree_sitter_rust as tsr  # noqa: E402
-from tree_sitter import Language, Parser  # noqa: E402
+from tree_sitter import Language, Parser, Query, QueryCursor  # noqa: E402
 
 RUST_WS = REPO / "sdk" / "lib" / "rust"
 
 _LANG = Language(tsr.language())
 _PARSER = Parser(_LANG)
+_FUNCTIONS = Query(_LANG, "(function_item) @fn")
+_SUMMARY_NODES = Query(_LANG, "[(return_expression) (call_expression)] @item")
 
 # Raise builtins that PRODUCE an OldIrql (either into a `&mut var` out-param or
 # as the return value bound to a local).
@@ -188,18 +191,13 @@ def _arg_idents(args_node, src: bytes, idx: int):
 def _find_functions(root, src: bytes):
     """Yield (name, params, body) for every function_item under root."""
     out = []
-
-    def rec(n):
-        if n.type == "function_item":
-            body = n.child_by_field_name("body")
-            name_node = n.child_by_field_name("name")
-            if body is not None and name_node is not None:
-                name = src[name_node.start_byte : name_node.end_byte].decode(errors="replace")
-                out.append((name, _param_names(n, src), body))
-        for c in n.children:
-            rec(c)
-
-    rec(root)
+    nodes = QueryCursor(_FUNCTIONS).captures(root).get("fn", [])
+    for n in sorted(nodes, key=lambda node: node.start_byte):
+        body = n.child_by_field_name("body")
+        name_node = n.child_by_field_name("name")
+        if body is not None and name_node is not None:
+            name = src[name_node.start_byte : name_node.end_byte].decode(errors="replace")
+            out.append((name, _param_names(n, src), body))
     return out
 
 
@@ -272,10 +270,10 @@ def _summarize_function(name, params, body, src: bytes):
                 ids = _arg_idents(args, src, 1)
                 held.difference_update(ids)
                 lowered.update(ids)
-        for c in node.children:
-            visit(c)
 
-    visit(body)
+    nodes = QueryCursor(_SUMMARY_NODES).captures(body).get("item", [])
+    for node in sorted(nodes, key=lambda node: (node.start_byte, -node.end_byte)):
+        visit(node)
 
     # Tail expression of the body counts as a return.
     real_tail = [c for c in body.children if c.type not in ("{", "}")]
@@ -315,32 +313,55 @@ def _name_call_re(names):
     )
 
 
+_CALL_TOKEN = re.compile(rb"\b([A-Za-z_]\w*)\s*\(")
+
+
+@source_facts()
+def call_tokens(src: bytes):
+    # Same textual edges as _name_call_re, but index ONCE rather than matching
+    # a growing alternation of thousands of names against every byte each ring.
+    return frozenset(m.group(1).decode() for m in _CALL_TOKEN.finditer(src))
+
+
+@source_facts()
+def summary_facts(src: bytes):
+    tree = _PARSER.parse(src)
+    wrappers = bool(_RAISE_LOWER_TOKEN.search(src))
+    out = []
+    for name, params, body in _find_functions(tree.root_node, src):
+        summary = _summarize_function(name, params, body, src) if wrappers else FnSummary()
+        out.append(
+            (
+                name,
+                call_tokens(src[body.start_byte : body.end_byte]),
+                summary.ret_raise,
+                summary.lower_params,
+            )
+        )
+    return out
+
+
 def build_summaries(files, tree_cache, sleep_depth=None):
     """files: [Path]. Returns (may_sleep, ret_raise, lower_params), name-keyed;
-    collisions merge conservatively (union). Textual prefilters keep the AST
-    work to the files that can matter; parsed trees land in tree_cache
-    (path -> (src, tree)) for reuse by the findings pass."""
+    collisions merge conservatively (union). The textual call index and wrapper
+    facts are content-addressed; global propagation always reruns. tree_cache is
+    retained as a compatibility argument for existing callers."""
     if sleep_depth is None:
         sleep_depth = SLEEP_DEPTH
     srcs = {f: f.read_bytes() for f in files}
-
-    def tree_of(f):
-        if f not in tree_cache:
-            tree_cache[f] = (srcs[f], _PARSER.parse(srcs[f]))
-        return tree_cache[f][1]
+    calls = {f: call_tokens(src) for f, src in srcs.items()}
 
     # Wrapper facts: only files that textually touch a raise/lower builtin.
     ret_raise: set[str] = set()
     lower_params: dict[str, set[int]] = {}
-    for f, src in srcs.items():
+    for src in srcs.values():
         if not _RAISE_LOWER_TOKEN.search(src):
             continue
-        for name, params, body in _find_functions(tree_of(f).root_node, src):
-            s = _summarize_function(name, params, body, src)
-            if s.ret_raise:
+        for name, _body, raises, lowers in summary_facts(src):
+            if raises:
                 ret_raise.add(name)
-            if s.lower_params:
-                lower_params.setdefault(name, set()).update(s.lower_params)
+            if lowers:
+                lower_params.setdefault(name, set()).update(lowers)
     ret_raise -= RAISE_RETURN
     for n in LOWER_ARG | RELEASE_ARG2:
         lower_params.pop(n, None)
@@ -352,15 +373,15 @@ def build_summaries(files, tree_cache, sleep_depth=None):
     for _depth in range(sleep_depth):
         if not frontier:
             break
-        pat = _name_call_re(frontier)
+        previous = frontier
         frontier = set()
         for f, src in srcs.items():
-            if not pat.search(src):
+            if not (previous & calls[f]):
                 continue
-            for name, _params, body in _find_functions(tree_of(f).root_node, src):
+            for name, body, _raises, _lowers in summary_facts(src):
                 if name in may_sleep:
                     continue
-                if pat.search(src[body.start_byte : body.end_byte]):
+                if previous & body:
                     may_sleep.add(name)
                     frontier.add(name)
 
@@ -562,6 +583,18 @@ def _bound_var(call_node, src: bytes):
 
 
 def scan_source(src: bytes, summaries=None):
+    may_sleep, ret_raise, lower = summaries or (set(), set(), {})
+    return scan_facts(
+        src,
+        tuple(sorted(may_sleep)),
+        tuple(sorted(ret_raise)),
+        tuple((name, tuple(sorted(indices))) for name, indices in sorted(lower.items())),
+    )
+
+
+@source_facts()
+def scan_facts(src, may_sleep, ret_raise, lower):
+    summaries = (set(may_sleep), set(ret_raise), {name: set(indices) for name, indices in lower})
     tree = _PARSER.parse(src)
     lines = src.decode(errors="replace").splitlines()
     findings = []
@@ -619,20 +652,10 @@ def main(argv, *, summary_root=None):
     total = 0
     for f in sorted(set(_iter_files(roots))):
         try:
-            if f in tree_cache:
-                src, tree = tree_cache[f]
-            else:
-                src = f.read_bytes()
-                if not (
-                    _RAISE_LOWER_TOKEN.search(src) or (wrapper_pat and wrapper_pat.search(src))
-                ):
-                    continue
-                tree = _PARSER.parse(src)
-            lines = src.decode(errors="replace").splitlines()
-            findings = []
-            for _name, _params, body in _find_functions(tree.root_node, src):
-                findings.extend(_scan_function(body, src, lines, summaries))
-            findings.sort()
+            src = f.read_bytes()
+            if not (_RAISE_LOWER_TOKEN.search(src) or (wrapper_pat and wrapper_pat.search(src))):
+                continue
+            findings = scan_source(src, summaries)
         except Exception as e:
             raise RuntimeError(f"cannot analyze {f}: {e}") from e
         try:

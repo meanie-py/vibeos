@@ -411,6 +411,7 @@ unsafe fn MiCopyPfn(DestPage: PFN_NUMBER, SrcPage: PFN_NUMBER) {
     MiReleaseSystemPtes(SysPtes, 2, SystemPteSpace);
 }
 
+#[track_caller]
 unsafe fn MiResolveDemandZeroFault(
     Address: PVOID,
     PointerPte: PMMPTE,
@@ -418,6 +419,39 @@ unsafe fn MiResolveDemandZeroFault(
     Process: PEPROCESS,
     mut OldIrql: KIRQL,
 ) -> NTSTATUS {
+    // #39: a Protection with no access bits reaching here becomes a PTE the
+    // arm64 MMU rejects while software reads it valid (see
+    // ntkrnl_sys::mm::mi_user_pte_may_be_valid). The guard downstream refuses
+    // it, but the interesting question is who asked. Of the six live callers
+    // only two pass a value that can be zero -- both pass
+    // TempPte.soft_protection() -- so name the caller and dump the software PTE
+    // it read it out of. One line per boot; this is a hot path.
+    if Protection & (ntkrnl_sys::mm::MM_PROTECT_ACCESS as ULONG) == 0 {
+        static mut DZ_REPORTED: bool = false;
+        if !DZ_REPORTED {
+            DZ_REPORTED = true;
+            let loc = core::panic::Location::caller();
+            let mut buf = [0u8; 64];
+            let src = loc.file().as_bytes();
+            let take = if src.len() > 63 { 63 } else { src.len() };
+            let start = src.len() - take;
+            let mut i = 0;
+            while i < take {
+                buf[i] = src[start + i];
+                i += 1;
+            }
+            buf[take] = 0;
+            ntkrnl_sys::driver_ddk::DbgPrint(
+                b"[DZPROT] demand-zero with no-access Protection=%u from %s:%u                   Address=%p Pte=%p PteLong=0x%016llX\n\0".as_ptr() as *const i8,
+                Protection,
+                buf.as_ptr() as *const i8,
+                loc.line(),
+                Address,
+                PointerPte,
+                (*PointerPte).Long as u64,
+            );
+        }
+    }
     let mut PageFrameNumber: PFN_NUMBER = 0;
     let mut TempPte: MMPTE = MMPTE { Long: 0 };
     let mut NeedZero = false;
@@ -1270,6 +1304,33 @@ unsafe fn MiDispatchFault(
     ASSERT!((TempPte.transition() as usize) == 0);
     ASSERT!(TempPte.soft_page_file_high() == 0);
     ASSERT!(TempPte.Long != 0);
+
+    // #39: the decision above is made on TempPte, a SNAPSHOT, while the PTE the
+    // resolver then writes is read live. On the wedge boot those disagreed --
+    // the snapshot's Prototype was clear (its ASSERT did not fire, and that
+    // mechanism demonstrably works: 86 boots print ASSERT FAILED) yet the live
+    // entry read 0x400, Prototype set and nothing else. Print both side by side
+    // so the disagreement is measured rather than inferred. One line per boot.
+    if TempPte.soft_protection() & (ntkrnl_sys::mm::MM_PROTECT_ACCESS as ULONG) == 0
+        || TempPte.Long != (*PointerPte).Long
+    {
+        static mut SNAP_REPORTED: bool = false;
+        if !SNAP_REPORTED {
+            SNAP_REPORTED = true;
+            ntkrnl_sys::driver_ddk::DbgPrint(
+                b"[DZSNAP] Address=%p Pte=%p snapshot=0x%016llX live=0x%016llX                   snap_prot=%u live_prot=%u snap_proto=%u live_proto=%u\n\0"
+                    .as_ptr() as *const i8,
+                Address,
+                PointerPte,
+                TempPte.Long as u64,
+                (*PointerPte).Long as u64,
+                TempPte.soft_protection(),
+                (*PointerPte).soft_protection(),
+                TempPte.prototype() as u32,
+                (*PointerPte).prototype() as u32,
+            );
+        }
+    }
 
     Status = MiResolveDemandZeroFault(
         Address,

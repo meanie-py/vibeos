@@ -114,6 +114,37 @@ KNOWN_FLAKES = [
         "any": ["0x0000000000000000, 0x0000000000000003)"],
         "note": "known arm64 ERESOURCE release-not-owned flake (roadmap; retry)",
     },
+    # MP-default beta (2026-09-12, user's call): the fleet now boots the MP
+    # kernel by default and eats these two while they are hunted in the open.
+    # Both signatures are DELIBERATELY narrow. The retired
+    # `arm64_lpcexitthread_race` entry above is the warning: a broad signature
+    # masked real bugs for months. Retire each of these the moment its root fix
+    # lands and a re-gate shows the signature gone.
+    {
+        "name": "arm64_smp39_zero_pc_fetch_abort",
+        "when": "bugcheck",
+        "code": "0x0000001E",
+        # The whole shape, not any one part: an EL1 instruction abort (ESR EC
+        # 0x21 / IFSC 0x07) taken at a ZERO PC, which is the `ldp x29,x30,[sp]`
+        # of a frame that was zeroed underneath its callee. ESR alone would be
+        # wrong -- the SEH tests print [UEXC] ESR=0x92000047 on PURPOSE and pass.
+        "any": [
+            "[KEXC]",
+            "PC=0x0000000000000000",
+            "ESR=0x0000000086000007",
+            "Spsr=0x0000000020000345",
+        ],
+        "note": "task #39 arm64 MP boot: zero-PC instruction abort (18/1375=1.3%); retry",
+    },
+    {
+        "name": "i386_mp_win32k_av_0x1e",
+        "when": "bugcheck",
+        "code": "0x0000001E",
+        # Pinned to the faulting RVA the banner resolves, so a DIFFERENT win32k
+        # fault still blocks. Found 1-in-200 on the first real i386 MP soak.
+        "any": ["win32k.sys+0x65EE1"],
+        "note": "i386 MP boot: win32k AV at winlogon desktop bringup (1/204=0.49%); retry",
+    },
 ]
 
 
@@ -331,8 +362,8 @@ _SYM_OFFSET = re.compile(r"\+(\d+)\b")
 # 2026-07-12 and three fresh crashes from 2026-07-25 all agree on it exactly,
 # across 13 days of rebuilds.
 #
-# arm64/amd64: unknown. Their runtime base is never printed on serial and cannot
-# be recovered from a saved log, so they get no reloc and will simply decline.
+# Logs with [KRNLBASE] use the runtime base from the loader list. Logs without
+# that marker still have no known ARM64/amd64 relocation and must decline.
 #
 # A stale hardcoded value CANNOT produce a wrong answer here: it would push every
 # lookup outside the index, the offset guard above fires, and the result is "no
@@ -350,6 +381,16 @@ _RELOC_BY_ARCH = {"i386": "0x800c3000", "i386-uefi": "0x800c3000"}
 # needed hand-computing to reach `KiSynchronousExceptionEntry+4`.
 _MODULE_OFFSET = re.compile(r"^\*\*\*\s+P\d\s*=\s*(\S+?)\+0x([0-9a-fA-F]+)\s*$", re.MULTILINE)
 _PE_IMAGE_BASE = 0x400000
+
+_KERNEL_BASE = re.compile(r"\[KRNLBASE\] ntoskrnl runtime base=(?:0x)?([0-9a-fA-F]+)")
+
+
+def kernel_relocation(arch: str, serial: str) -> str | None:
+    """Use this boot's loader-reported base when available."""
+    matches = _KERNEL_BASE.findall(serial)
+    if matches:
+        return hex(int(matches[-1], 16) - _PE_IMAGE_BASE)
+    return _RELOC_BY_ARCH.get(arch)
 
 
 def faulting_module_offset(serial: str) -> tuple[str, int] | None:
@@ -438,7 +479,7 @@ def symbolicate_pc(repo: Path, arch: str, serial: str) -> str | None:
     # Prefer the banner's own module+RVA over a guessed reloc: it is exact, needs
     # no runtime base, and works on the arches that have no reloc entry at all.
     mod_off = faulting_module_offset(serial)
-    reloc = None if mod_off else _RELOC_BY_ARCH.get(arch)
+    reloc = None if mod_off else kernel_relocation(arch, serial)
     if mod_off:
         pc = hex(_PE_IMAGE_BASE + mod_off[1])
     # freeldr announces which kernel it loaded, so read it off the serial.
@@ -451,6 +492,7 @@ def symbolicate_pc(repo: Path, arch: str, serial: str) -> str | None:
 # requires an `0x` prefix, which the monitor never emits.
 _CPU_BANNER = re.compile(r"^CPU#(\d+)\b", re.MULTILINE)
 _CPU_PC = re.compile(r"\b(?:PC|RIP|EIP)=([0-9A-Fa-f]{8,16})\b")
+_CPU_SP = re.compile(r"\b(?:SP|RSP|ESP)=([0-9A-Fa-f]{8,16})\b")
 
 
 def cpu_pcs(state: str) -> list[tuple[int, str]]:
@@ -476,6 +518,23 @@ _CPU_PSTATE = re.compile(r"\bPSTATE=([0-9A-Fa-f]{8,16})\b")
 
 # Below this, an arm64 VA is in the low (user) half of the address space.
 _ARM64_USER_LIMIT = 0x0000_8000_0000_0000
+
+
+def cpu_sps(state: str) -> list[tuple[int, str]]:
+    """[(cpu_index, sp_hex)] parsed out of a `capture_cpu_state()` blob.
+
+    Same slicing rule as cpu_pcs: a vCPU is credited only with its own block.
+    `info registers` prints the stack pointer as `SP=` on arm64 (padded, hence
+    the loose left boundary), `RSP=` on amd64 and `ESP=` on i386.
+    """
+    banners = list(_CPU_BANNER.finditer(state))
+    found = []
+    for i, m in enumerate(banners):
+        end = banners[i + 1].start() if i + 1 < len(banners) else len(state)
+        sp = _CPU_SP.search(state, m.end(), end)
+        if sp:
+            found.append((int(m.group(1)), sp.group(1)))
+    return found
 
 
 def cpu_kernel_at_user_pc(state: str) -> list[tuple[int, str]]:
@@ -504,7 +563,9 @@ def cpu_kernel_at_user_pc(state: str) -> list[tuple[int, str]]:
     return found
 
 
-def symbolicate_cpu_state(repo: Path, arch: str, state: str, *, mp: bool = False) -> list[str]:
+def symbolicate_cpu_state(
+    repo: Path, arch: str, state: str, *, mp: bool = False, serial: str = ""
+) -> list[str]:
     """One "CPU#n 0xADDR -> symbol" line per vCPU we could locate.
 
     This is the payoff of capturing the state at all: on a silent wedge the
@@ -512,6 +573,6 @@ def symbolicate_cpu_state(repo: Path, arch: str, state: str, *, mp: bool = False
     """
     lines = []
     for idx, pc in cpu_pcs(state):
-        sym = _resolve_addr(repo, arch, f"0x{pc}", mp=mp, reloc=_RELOC_BY_ARCH.get(arch))
+        sym = _resolve_addr(repo, arch, f"0x{pc}", mp=mp, reloc=kernel_relocation(arch, serial))
         lines.append(f"CPU#{idx} {sym or f'0x{pc} -> (unresolved)'}")
     return lines

@@ -70,7 +70,13 @@
 #define MI_MAX_ALLOCATION_FRAGMENT              (2  * _1MB)
 
 /* Misc constants */
-#define MM_PTE_SOFTWARE_PROTECTION_BITS         6
+/* MMPTE_SOFTWARE on arm64 is Valid:1, Protection:5, PageFileLow:4, Prototype:1
+ * (sdk/include/ndk/arm64/mmtypes.h), so Protection starts at bit 1. This said 6,
+ * which would run the 5-bit field across bits 6..10 — over PageFileLow and into
+ * Prototype. That is what made MmDecommittedPte (MM_DECOMMIT << bits, 0x10 << 6)
+ * come out as 0x400, the Prototype bit, and wedge arm64 boots at the first
+ * user-mode service start. See task #39 and ARM3/helpers.rs. */
+#define MM_PTE_SOFTWARE_PROTECTION_BITS         1
 #define MI_MIN_SECONDARY_COLORS                 8
 #define MI_SECONDARY_COLORS                     64
 #define MI_MAX_SECONDARY_COLORS                 1024

@@ -221,6 +221,74 @@ def smp_count() -> int | None:
     return int(n)
 
 
+def testkernel_boot_img(src: Path, work_dir: Path) -> Path:
+    """The /TESTKERNEL variant of arm64 boot.img, built ONCE and shared read-only.
+
+    This used to be a 280 MiB `copy2` plus an mcopy poke on every boot, i.e. on
+    every construction of this config.
+
+    Sizing it honestly, because the first version of this comment did not: the
+    /TESTKERNEL config is driven by tests/qemu/test_kernel.py, whose `vm`
+    fixture is scope="session", so its 28 tests share ONE boot and cost one
+    copy per pytest session rather than 28. The waste shows up wherever
+    qemu_args is called repeatedly instead -- `smoke --arch arm64-test
+    --repeat N` pays it N times -- and it is pure waste in every case, since
+    the transform is deterministic and every copy held identical bytes. (Do not
+    confuse this with the conformance/kmtest sweep, which maps arm64 to plain
+    Arm64Config and never went through this path at all.)
+
+    Sharing is safe here, and it is not a new practice: `Arm64Config` already
+    hands every parallel arm64 boot the SAME `qemu/boot.img`, and the drive is
+    attached `readonly=on,file.locking=off`. The per-boot copy was the anomaly —
+    the transform is deterministic (extract freeldr.ini, add /TESTKERNEL if
+    absent, write it back), so every copy held identical bytes.
+
+    The recorded hazard this must not repeat is SIGBUS on a shared inode, which
+    happened when a tool rewrote a file IN PLACE while a sibling had it mapped.
+    So this never writes the shared file in place: it builds a private temp copy
+    and `os.replace`s it into position. Replace is atomic and gives the new
+    content a NEW inode, so a boot that already opened the old one keeps reading
+    valid bytes until it exits. Two sweeps racing both build and one replace
+    wins; the bytes are identical either way.
+
+    The cache key is the source's (mtime_ns, size), so a rebuild that re-stages
+    boot.img produces a new key and the stale variant is ignored, then pruned.
+    Unlinking a stale key is safe even if a boot still has it open — the inode
+    outlives the name.
+    """
+    st = src.stat()
+    key = f"{st.st_mtime_ns:x}-{st.st_size:x}"
+    cached = src.parent / f"boot-test.{key}.img"
+
+    if not cached.exists():
+        staging = work_dir / "boot-test.staging.img"
+        shutil.copy2(src, staging)
+        ini_path = work_dir / "freeldr.ini"
+        subprocess.run(
+            ["mcopy", "-o", "-i", str(staging), "::/freeldr.ini", str(ini_path)],
+            check=True,
+            capture_output=True,
+        )
+        ini_text = ini_path.read_text()
+        if "/TESTKERNEL" not in ini_text:
+            ini_text = ini_text.replace("/SOS /RDPATH=", "/SOS /TESTKERNEL /RDPATH=")
+            ini_path.write_text(ini_text)
+        subprocess.run(
+            ["mcopy", "-o", "-i", str(staging), str(ini_path), "::/freeldr.ini"],
+            check=True,
+            capture_output=True,
+        )
+        # Same filesystem as `cached`, so this is an atomic rename rather than a
+        # copy — no window where a boot could open a half-written image.
+        os.replace(staging, cached)
+
+    for stale in src.parent.glob("boot-test.*.img"):
+        if stale != cached:
+            stale.unlink(missing_ok=True)
+
+    return cached
+
+
 def _maybe_smp_iso(iso: Path, work_dir: Path) -> Path:
     """`smp_selected_iso` when this run asked for SMP, else the media untouched."""
     return smp_selected_iso(iso, work_dir) if smp_count() else iso
@@ -911,32 +979,10 @@ class Arm64TestKernelConfig(Arm64Config):
     desktop_settle_seconds: float = 0.0
 
     def qemu_args(self, work_dir: Path) -> list[str]:
-        boot_img_src = QEMU_DIR / "boot.img"
-        boot_img = work_dir / "boot-test.img"
+        boot_img = testkernel_boot_img(QEMU_DIR / "boot.img", work_dir)
         uefi_fw = QEMU_DIR / "QEMU_EFI.fd"
         efivars_raw = work_dir / "efivars.fd"
         efivars = work_dir / "efivars.qcow2"
-
-        shutil.copy2(boot_img_src, boot_img)
-
-        ini_path = work_dir / "freeldr.ini"
-        subprocess.run(
-            ["mcopy", "-o", "-i", str(boot_img), "::/freeldr.ini", str(ini_path)],
-            check=True,
-            capture_output=True,
-        )
-        ini_text = ini_path.read_text()
-        if "/TESTKERNEL" not in ini_text:
-            ini_text = ini_text.replace(
-                "/SOS /RDPATH=",
-                "/SOS /TESTKERNEL /RDPATH=",
-            )
-            ini_path.write_text(ini_text)
-        subprocess.run(
-            ["mcopy", "-o", "-i", str(boot_img), str(ini_path), "::/freeldr.ini"],
-            check=True,
-            capture_output=True,
-        )
 
         shutil.copy2(QEMU_DIR / "efivars.fd", efivars_raw)
         subprocess.run(
@@ -1733,6 +1779,30 @@ class QemuVM:
             except Exception as exc:
                 body = f"<unavailable: {exc!r}>"
             chunks.append(f"=== CPU#{idx} {cmd} ===\n{body}")
+        # The memory under each stack pointer, read through the guest's OWN
+        # translation. This is the decisive test for a wedge parked on a stack
+        # access: if the monitor cannot read it, the page is GONE and the guest
+        # is re-faulting on it forever; if the words come back, the page is
+        # mapped and the fault is not a translation fault, so look at
+        # permissions or at something other than paging. That fork cannot be
+        # answered after teardown, and no in-guest probe can answer it at all —
+        # the guest is the thing that is stuck.
+        # 0xB8 bytes covers an arm64 KTRAP_FRAME through TfX0 (trap.S: TfSpsr
+        # 0xA0, TfEsr 0xA4, TfSp 0xA8, TfX0 0xB0), so a frame-restore wedge
+        # shows the exact words the restore sequence was reading.
+        try:
+            from .cli.triage import cpu_sps
+
+            sps = cpu_sps("\n".join(chunks))
+        except Exception:
+            sps = []
+        for idx, sp in sps:
+            cmd = f"x /23gx 0x{sp}"
+            try:
+                body = self.qmp.hmp(cmd).strip()
+            except Exception as exc:
+                body = f"<unavailable: {exc!r}>"
+            chunks.append(f"=== CPU#{idx} stack {cmd} ===\n{body}")
         return "\n\n".join(chunks) + "\n"
 
     def save_hang_state(self, phase: str) -> str:

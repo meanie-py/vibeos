@@ -58,4 +58,4 @@ add_cargo_module(ntkrnlmp ntkrnlmp-cargo ntkrnlmp.exe
         # the implib custom targets so a cold `ninja -t clean` build can't race
         # a missing lib*.a ("missing static lib … run ninja first").
         libkdcom_implib_target libbootvid_implib_target
-        psdk asm rust_kernel)
+        psdk asm)
