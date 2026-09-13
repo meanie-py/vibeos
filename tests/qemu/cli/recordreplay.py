@@ -587,6 +587,38 @@ def check_trace(trace_dir: Path) -> list[str]:
     return warnings
 
 
+# Option groups whose SHAPE a replay must match, beyond the drives. Paths and
+# ports change legitimately between runs, so only the backend kind is compared.
+_SHAPE_OPTS = ("-serial", "-qmp", "-monitor", "-chardev", "-display")
+
+
+def _host_shape(argv: list[str]) -> list[str]:
+    """The host-side device shape, with per-run detail stripped.
+
+    Replay reach turns out to depend on backends the GUEST cannot observe.
+    Measured, same trace, three configurations:
+
+        serial=file:      no QMP   ->  1773 guest lines
+        serial=file:      QMP      ->    23 guest lines
+        serial=chardev    QMP      ->  1693 guest lines   (the harness; how it was recorded)
+
+    So a replay that does not reproduce the recording's host-side shape can
+    under-reach by two orders of magnitude and report nothing unusual. That is
+    worse than a crash: it looks like a finding about the guest.
+    """
+    out, i = [], 0
+    while i < len(argv):
+        a = argv[i]
+        if a in _SHAPE_OPTS:
+            val = argv[i + 1] if i + 1 < len(argv) else ""
+            kind = val.split(":", 1)[0].split(",", 1)[0]
+            out.append(f"{a}={kind}")
+            i += 2
+            continue
+        i += 1
+    return out
+
+
 def assert_same_shape(trace_dir: Path, argv: list[str]) -> None:
     """Refuse a replay whose device set differs from the recording's.
 
@@ -605,6 +637,20 @@ def assert_same_shape(trace_dir: Path, argv: list[str]) -> None:
             f"  recorded: {recorded}\n"
             f"  now:      {current}\n"
             "Something changed the boot command line since the recording. Re-record."
+        )
+
+    rec_shape = _host_shape(m.get("argv", []))
+    cur_shape = _host_shape(argv)
+    if rec_shape != cur_shape:
+        raise RecordReplayError(
+            "replay HOST-SIDE shape does not match the recording:\n"
+            f"  recorded: {rec_shape}\n"
+            f"  now:      {cur_shape}\n"
+            "These are backends the guest cannot see, and they still change how far "
+            "a replay gets — measured, same trace: file-serial without QMP reached "
+            "1773 guest lines, file-serial WITH QMP reached 23, and the recording's "
+            "own chardev+QMP shape reached 1693. Replay through the same harness "
+            "that recorded, rather than a hand-built command line."
         )
 
 
