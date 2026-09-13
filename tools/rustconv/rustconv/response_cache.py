@@ -81,6 +81,33 @@ RESPONSES_DIR = _resolve_responses_dir()
 PREAMBLE_KEY = "__preamble__"
 
 
+def require_no_namespace_rebuy(base_key: str, selected_key: str) -> None:
+    """Changing protection defaults may strand purchases; never silently buy them again.
+
+    Deliberately conservative: even a partial/rejected bank requires explicit recovery.
+    This does not copy unprotected bodies into a protected namespace or claim that an
+    old body passed a new audit. Replay with the original flags, or migrate/review it.
+    """
+    conflicts = []
+    for directory in RESPONSES_DIR.glob(_safe_filename(base_key) + "*"):
+        if not directory.is_dir() or directory.name == _safe_filename(selected_key):
+            continue
+        if directory.name != base_key and not directory.name.startswith(base_key + "__"):
+            continue
+        if (
+            any(directory.glob("*.rs"))
+            or any(directory.glob("*.partial"))
+            or any((directory / "__rejected__").glob("*.rs"))
+        ):
+            conflicts.append(str(directory))
+    if conflicts:
+        raise ValueError(
+            "Protection/cache namespace changed while previously purchased output exists. "
+            "Refusing automatic re-purchase. Replay using its original seal/cache flags "
+            "or review and migrate the bank first:\n  " + "\n  ".join(sorted(conflicts))
+        )
+
+
 def _hash(text: str) -> str:
     return hashlib.sha256(text.encode("utf-8", "replace")).hexdigest()[:16]
 
@@ -256,6 +283,19 @@ class ResponseCache:
         if _SEAL_TOKEN_RE.search(text):
             return None  # poisoned by a pre-fix run: re-translate instead of replaying
         return text
+
+    def refuse_repurchase(self, name: str) -> None:
+        """A rejected or incompatible purchase is a repair task, not a fresh cache miss."""
+        if (
+            name in self._manifest
+            or (self.dir / (_safe_filename(name) + ".rs")).exists()
+            or self.get_rejected(name) is not None
+        ):
+            raise ValueError(
+                f"{self.dir}: {name} already has purchased output which did not replay. "
+                "Refusing to buy it again automatically; inspect/repair the banked body "
+                "and its audit first. --no-resume is an explicit paid regeneration."
+            )
 
     def put(
         self,

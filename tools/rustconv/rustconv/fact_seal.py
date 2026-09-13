@@ -69,6 +69,7 @@ _INTEGER_RE = re.compile(
     r"(?:[uUlL]{0,3})(?![A-Za-z0-9_])"
 )
 _SYMBOL_RE = re.compile(r"\b[A-Z][A-Z0-9_]+\b")
+_C_SYMBOL_RE = re.compile(r"\b_*[A-Z][A-Z0-9_]+\b")
 
 # Any capitalised identifier; only those present in DDK_ENUM_CONSTANTS are sealed,
 # so this pattern is a candidate filter, never an authority.  Disjoint from
@@ -336,9 +337,9 @@ def seal_facts(text: str, *, dialect: str = "cpp") -> SealedSource:
             continue
         spans.append((match.start(), match.end(), "integer"))
 
-    for match in _SYMBOL_RE.finditer(masked):
+    for match in (_C_SYMBOL_RE if dialect == "c" else _SYMBOL_RE).finditer(masked):
         word = match.group(0)
-        if word in _NON_FACT_WORDS:
+        if word in _NON_FACT_WORDS or word.startswith("__RUSTCONV_"):
             continue
         tail = masked[match.end() :]
         if tail.lstrip().startswith("("):

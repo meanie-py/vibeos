@@ -33,7 +33,8 @@ import sys
 # The C-definition scanner lives in the package so export_audit can use the same oracle:
 # an export with no Rust definition is only a defect if the C that defined it is no longer
 # compiled. `_inside_if_dbg` is re-exported because the DBG bucket below is this tool's own.
-from rustconv.c_defs import _inside_if_dbg, c_functions  # noqa: E402
+from rustconv.c_defs import _inside_if_dbg, c_functions
+from rustconv.function_coverage import rust_definitions
 
 # A C name the linker never actually sees, because a macro renamed it. Each maps to the Rust
 # name(s) that DO cover it; defining any one of them is enough.
@@ -53,39 +54,13 @@ _C_ALIASES = {
     "GetEnvironmentStringsA": ("GetEnvironmentStrings",),
 }
 
-# The attribute may share the line with the signature — `#[no_mangle] pub unsafe extern "C" fn
-# Foo(` is how the assembler emits every export. Anchoring at `pub` without allowing it made
-# EVERY exported function invisible on the Rust side and reported it as dropped: that is how
-# cabinet's FDIIsCabinet and dnsrslvr's CRrReadCache read as missing while sitting in the file.
-# Non-greedy to the first `]` so a `[u8; 4]` later in the signature cannot swallow the match.
-_RS_FN = re.compile(
-    r"^[ \t]*(?:#\[[^\n]*?\][ \t]*)*"
-    # `extern $abi` — the ABI is a macro parameter in the per-arch `macro_rules!` twins that
-    # emit one body under both conventions (kernel32's BasepUnicodeStringToAnsiSize).
-    r"(?:pub(?:\([^)]*\))?[ \t]+)?(?:unsafe[ \t]+)?(?:extern[ \t]+(?:\"\w+\"|\$\w+)[ \t]+)?fn[ \t]+(\w+)",
-    re.M,
-)
-_RS_MACRO = re.compile(r"^[ \t]*macro_rules![ \t]+(\w+)", re.M)
-# A function DEFINED by invoking a macro that takes `fn NAME(..)` as its argument. ole32 and
-# oleaut32 emit every COM vtbl thunk this way (`stdmethod! { fn IErrorInfoImpl_AddRef(..) }`),
-# which is how all 20 of errorinfo.rs's methods read as dropped while the file implements them.
-_RS_MACRO_FN = re.compile(r"\w+!\s*[{(\[]\s*(?:#\[[^\n]*?\]\s*)*fn[ \t]+(\w+)")
-# An EXPLICIT provenance claim: `/// GdiEntry1 — C source name DdCreateDirectDrawObject`.
-# A header `#define` can rename a function between the C source and the symbol, and only the
-# translator knows which way (gdi32's whole DirectDraw entry surface is DdXxx in the .c and
-# GdiEntryN in the object file). This is deliberately not a fuzzy match on the file text: the
-# name counts as covered only because someone wrote down that it is.
-_RS_PROVENANCE = re.compile(r"C source name[ \t]+(\w+)")
 
-
+# Only parsed Rust definitions count; foreign declarations and comments do not.
 def rust_functions(paths: list[pathlib.Path]) -> set[str]:
     names: set[str] = set()
     for p in paths:
         t = p.read_text(encoding="utf-8", errors="replace")
-        names |= {m.group(1) for m in _RS_FN.finditer(t)}
-        names |= {m.group(1) for m in _RS_MACRO.finditer(t)}
-        names |= {m.group(1) for m in _RS_MACRO_FN.finditer(t)}
-        names |= {m.group(1) for m in _RS_PROVENANCE.finditer(t)}
+        names |= rust_definitions(t)
     return names
 
 
@@ -168,16 +143,15 @@ def audit(c_dir: pathlib.Path, crate: pathlib.Path) -> tuple[int, list[str]]:
     missing_total = 0
     invented: set[str] = set()
     still_c: list[str] = []
-    for rs in rs_files:
-        c = _pair(c_dir, rs)
-        if c is None:
-            continue
+    # Start at C, not existing Rust files: a whole missing translation must fail.
+    for c in sorted(c_dir.rglob("*.c")):
         if active is not None and c.name in active:
             still_c.append(c.name)  # cohabitation: the C is still compiled and still provides it
             continue
+        paired = [rs for rs in rs_files if _pair(c_dir, rs) == c]
         ctext = c.read_text(encoding="utf-8", errors="replace")
         cfns = c_functions(ctext)
-        own = rust_functions([rs])
+        own = rust_functions(paired)
         # For the reverse direction, "no C DEFINITION" is far too loose: a header macro lowered
         # to a fn (ARGUMENT_PRESENT, Add2Ptr) has no definition here either, and on a big driver
         # that is hundreds of rows of noise. What actually indicates an INVENTED callee is a name
@@ -198,12 +172,14 @@ def audit(c_dir: pathlib.Path, crate: pathlib.Path) -> tuple[int, list[str]]:
         missing = [n for n in missing if n not in dbg_only]
         if missing:
             missing_total += len(missing)
-            out.append(f"  MISSING from {rs.relative_to(crate)} (defined in {c.name}):")
+            out.append(f"  MISSING from {crate.name} (defined in {c.relative_to(c_dir)}):")
             out += [f"    {n}" for n in missing]
         if dbg:
             out.append(f"  #if DBG only in {c.name} (not in the shipping build): {', '.join(dbg)}")
     if still_c:
-        out.append(f"  ({len(still_c)} TU(s) still compiled as C, not audited: {', '.join(still_c)})")
+        out.append(
+            f"  ({len(still_c)} TU(s) still compiled as C, not audited: {', '.join(still_c)})"
+        )
     extra = sorted(n for n in invented if not n.endswith("_v"))
     if extra:
         out.append(f"  Rust fns with no C counterpart ({len(extra)}) — helper or INVENTED, review:")
@@ -212,7 +188,9 @@ def audit(c_dir: pathlib.Path, crate: pathlib.Path) -> tuple[int, list[str]]:
 
 
 def main(argv: list[str]) -> int:
-    ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
+    ap = argparse.ArgumentParser(
+        description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter
+    )
     ap.add_argument("module", nargs="?", help="module name, e.g. aclui (implies the usual paths)")
     ap.add_argument("--c-dir", help="directory holding the module's .c files")
     ap.add_argument("--crate", help="the -rust crate directory")
@@ -222,7 +200,10 @@ def main(argv: list[str]) -> int:
     if args.module and not (args.c_dir or args.crate):
         hits = [p.parent for p in repo.glob(f"*/*/{args.module}/CMakeLists.txt")]
         if not hits:
-            print(f"cannot locate a source dir for '{args.module}'; pass --c-dir/--crate", file=sys.stderr)
+            print(
+                f"cannot locate a source dir for '{args.module}'; pass --c-dir/--crate",
+                file=sys.stderr,
+            )
             return 2
         c_dir, crate = hits[0], repo / "sdk" / "lib" / "rust" / f"{args.module}-rust"
     elif args.c_dir and args.crate:

@@ -13,6 +13,7 @@ import os
 import re
 import shutil
 import subprocess
+import tempfile
 from pathlib import Path
 
 # A token like `file=/home/.../livecd.iso` inside a -drive arg value.
@@ -37,7 +38,26 @@ def stage_file(src: Path, staging: Path) -> str:
     staging.mkdir(parents=True, exist_ok=True)
     dst = staging / src.name
     if src.resolve() != dst.resolve():
-        shutil.copy2(src, dst)
+        # DrvFS/9p sendfile failed with ENOMEM under concurrent gate load even
+        # with ample reclaimable RAM (order-4 kernel allocation). Small writes
+        # avoid that bulk path. Publish only a complete, unchanged input.
+        before = src.stat()
+        fd, temporary = tempfile.mkstemp(prefix=f".{src.name}-", dir=staging)
+        temp = Path(temporary)
+        try:
+            with os.fdopen(fd, "wb", buffering=16 * 1024) as output, src.open("rb") as source:
+                shutil.copyfileobj(source, output, length=16 * 1024)
+            after = src.stat()
+
+            def identity(s):
+                return s.st_dev, s.st_ino, s.st_size, s.st_mtime_ns, s.st_ctime_ns
+
+            if identity(before) != identity(after) or temp.stat().st_size != before.st_size:
+                raise RuntimeError(f"QEMU staging input changed while copying: {src}")
+            shutil.copystat(src, temp)
+            os.replace(temp, dst)
+        finally:
+            temp.unlink(missing_ok=True)
     return win_path(dst)
 
 

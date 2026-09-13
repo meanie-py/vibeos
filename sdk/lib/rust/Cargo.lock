@@ -1712,6 +1712,23 @@ dependencies = [
 ]
 
 [[package]]
+name = "portcls-difftest"
+version = "0.1.0"
+dependencies = [
+ "cc",
+ "quote",
+ "syn",
+]
+
+[[package]]
+name = "portcls-rust"
+version = "0.1.0"
+dependencies = [
+ "ntkrnl-sys",
+ "panic-common",
+]
+
+[[package]]
 name = "prefix"
 version = "0.1.0"
 
@@ -2328,6 +2345,23 @@ dependencies = [
  "proc-macro2",
  "quote",
  "unicode-ident",
+]
+
+[[package]]
+name = "sysaudio-difftest"
+version = "0.1.0"
+dependencies = [
+ "cc",
+ "quote",
+ "syn",
+]
+
+[[package]]
+name = "sysaudio-rust"
+version = "0.1.0"
+dependencies = [
+ "ntkrnl-sys",
+ "panic-common",
 ]
 
 [[package]]

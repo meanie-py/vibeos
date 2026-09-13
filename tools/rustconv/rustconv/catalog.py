@@ -206,7 +206,7 @@ def build_catalog(arch: str = "arm64", target: Target | None = None) -> Catalog:
         path = NTKRNL_SYS_DIR / filename
         if not path.exists():
             continue
-        module_name = filename.replace(".rs", "")
+        module_name = filename.removesuffix(".rs").replace("/", "::")
         types, functions, constants = _scan_hand_written(path, module_name)
         for s in types:
             catalog.types[s.name] = s

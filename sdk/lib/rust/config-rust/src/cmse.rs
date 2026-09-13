@@ -49,8 +49,8 @@ const KEY_ALL_ACCESS: ULONG = 0x000F_003F;
 #[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
 const _: () = assert!(KEY_ALL_ACCESS == ntkrnl_sys::hal_ddk::KEY_ALL_ACCESS as ULONG);
 
-/// A cell index that names no cell. Cached descriptors are not yet backed by a hive
-/// `sk` cell of their own, so every block we build carries this.
+/// A cell index that names no cell. Cached descriptors do not own the hive
+/// `sk` cell identity in the private cache; hive persistence owns that separately.
 const HCELL_NIL: u32 = 0xFFFF_FFFF;
 
 /// "sk" / "nk" — the signatures a CM_KEY_SECURITY and a CM_KEY_NODE cell carry
@@ -151,6 +151,14 @@ unsafe fn CmpStoreCachedSecurity(
     (*Block).ConvKey = (*Kcb).__bindgen_anon_2.__bindgen_anon_1.ConvKey;
     (*Block).DescriptorLength = Length;
     InitializeListHead(&mut (*Block).List);
+
+    // Commit hive storage before replacing the cache. Cache eviction must never
+    // discard the only descriptor, and allocation failure keeps the old state.
+    let Status = crate::cmsecurity_persist::persist(Kcb, Target.cast::<u8>(), Length);
+    if !NT_SUCCESS(Status) {
+        ExFreePoolWithTag(Block as *mut core::ffi::c_void, TAG_CM_SECURITY_CACHE);
+        return Status;
+    }
 
     CmpFreeKcbCachedSecurity(Kcb);
     (*Kcb).CachedSecurity = Block;

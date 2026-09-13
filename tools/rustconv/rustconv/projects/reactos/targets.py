@@ -796,6 +796,34 @@ TARGETS = {
         cmake_source_files=[],
         arches=("i386", "amd64", "arm64"),
     ),
+    "sysaudio": Target(
+        name="sysaudio",
+        source_dir=REACTOS_ROOT / "drivers/wdm/audio/sysaudio",
+        output_crate=RUST_DIR / "sysaudio-rust",
+        bindgen_files=BINDGEN_FILES,
+        hal_bindgen_files={},
+        spec_file=None,
+        system_prompt=TEMPLATES_DIR / "system_prompt.md",
+        src_subdir=Path("src"),
+        cmake_deps_file=None,
+        crate_bindgen_files={
+            a: RUST_DIR / f"sysaudio-rust/src/types_{a}.rs" for a in ("i386", "amd64", "arm64")
+        },
+    ),
+    "portcls": Target(
+        name="portcls",
+        source_dir=REACTOS_ROOT / "drivers/wdm/audio/backpln/portcls",
+        output_crate=RUST_DIR / "portcls-rust",
+        bindgen_files=BINDGEN_FILES,
+        hal_bindgen_files={},
+        spec_file=REACTOS_ROOT / "drivers/wdm/audio/backpln/portcls/portcls.spec",
+        system_prompt=TEMPLATES_DIR / "system_prompt.md",
+        src_subdir=Path("src"),
+        cmake_deps_file=None,
+        crate_bindgen_files={
+            a: RUST_DIR / "portcls-rust/src" / f"types_{a}.rs" for a in ("i386", "amd64", "arm64")
+        },
+    ),
     # ── driver residue (Batch 2): standalone kernel-mode drivers on the
     # ntkrnl-sys/ddk substrate, same shape as i8042prt. ──────────────────
     # acpi.sys — ACPI driver glue (ACPICA FFI-to-blob Phase 3). OSL already Rust
@@ -1221,6 +1249,9 @@ def detect_target(
     explicit --target branch read it."""
     p = c_path.resolve()
     posix = p.as_posix()
+    for name in ("sysaudio", "portcls"):
+        if p == TARGETS[name].source_dir or TARGETS[name].source_dir in p.parents:
+            return TARGETS[name]
     if "/drivers/base/kdrosdbg" in posix:
         return TARGETS["kdcom"]
     if "/drivers/base/kdgdb" in posix:

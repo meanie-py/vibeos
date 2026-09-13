@@ -26,6 +26,7 @@ from . import (
     file_splitter,
     gdi_lock_inventory,
     hybrid_closure,
+    profile_derive,
     seh_belt,
     seh_inventory,
     seh_llm_lower,
@@ -39,6 +40,7 @@ from . import (
     typedefs,
     user_lock_inventory,
 )
+from .argument_facts import require_argument_facts
 from .assembler import AssemblyClobberError, assemble_file, generate_lib_rs, generate_mod_rs
 from .bank_audit import audit as bank_audit
 from .bank_audit import format_report as format_bank_report
@@ -72,6 +74,7 @@ from .config import (
     get_backend,
     make_user_dll_target,
 )
+from .cpp_bridge import validate_reference, write_bridge
 from .cpp_com import (
     CppComError,
     analyze_class,
@@ -108,6 +111,7 @@ from .fact_seal import (
     prepare_sealed_source,
     unseal_facts,
 )
+from .function_coverage import require_c_plan, require_rust_definitions
 from .function_prompt import (
     build_file_context,
     build_function_prompt,
@@ -115,6 +119,8 @@ from .function_prompt import (
     load_function_system_prompt,
 )
 from .function_resolver import resolve_function
+from .kernel_com import generate_owner
+from .kernel_preamble import derive_kernel_preamble
 from .macro_authority import function_like_macros
 from .objdiff import run_objdiff
 from .outcome_ledger import OutcomeLedger
@@ -135,7 +141,13 @@ from .prompt_builder import (
 )
 from .resolver import print_resolve_result, resolve
 from .resolver import resolve as file_resolve
-from .response_cache import PREAMBLE_KEY, RESPONSES_DIR, ExactBodyTranslationMemory, ResponseCache
+from .response_cache import (
+    PREAMBLE_KEY,
+    RESPONSES_DIR,
+    ExactBodyTranslationMemory,
+    ResponseCache,
+    require_no_namespace_rebuy,
+)
 from .scanner import print_scan_result, scan_file
 from .seh_classifier import classify_directory, classify_file, print_classification, to_json
 from .shim_generator import check_shims, generate_shims
@@ -685,7 +697,10 @@ def _open_response_cache(
     `--no-resume` forces fresh.
     """
     suffix = _cache_suffix(args, fact_seal_enabled, call_seal_enabled, wide_seal_enabled)
-    return ResponseCache(f"{subsystem}__{c_file.stem}{suffix}")
+    base = f"{subsystem}__{c_file.stem}"
+    if not getattr(args, "dry_run", False):
+        require_no_namespace_rebuy(base, base + suffix)
+    return ResponseCache(base + suffix)
 
 
 # Bodies accepted on a LAST attempt despite ignoring the fact envelope. Drained into
@@ -844,6 +859,7 @@ def _unseal_worker(
     try:
         calls = call_seals.get(dep.name)
         if calls is not None:
+            require_argument_facts(rust, calls)
             rust = unseal_calls(rust, calls, dead_omissions=dead_omissions)
         facts = fact_seals.get(dep.name)
         if facts is not None:
@@ -1058,6 +1074,47 @@ def cmd_cpp_com(args):
             + "\n  - ".join(scan.unextracted)
         )
 
+    if getattr(args, "kernel_owned", False):
+        if args.compiler_owned or not args.kernel_base or not args.kernel_bridge or not args.output:
+            raise CppComError(
+                "--kernel-owned requires --kernel-base, --kernel-bridge and -o; "
+                "mutually exclusive with --compiler-owned"
+            )
+        reference = Path(args.kernel_bridge).with_name(
+            Path(args.kernel_bridge).name.removesuffix("_bridge.h") + "_reference.c"
+        )
+        if not reference.is_file():
+            raise CppComError(
+                "kernel owner requires the compiler-validated reference beside its header"
+            )
+        manifest = validate_reference(reference, required=True)
+        assert manifest is not None
+        base_path = Path(args.kernel_base).resolve().relative_to(REACTOS_ROOT.resolve())
+        if (
+            (REACTOS_ROOT / manifest["source"]).resolve() != source.resolve()
+            or (REACTOS_ROOT / manifest["header"]).resolve() != Path(args.kernel_bridge).resolve()
+            or manifest["class"] != args.class_name
+            or str(base_path) not in manifest["sha256"]
+        ):
+            raise CppComError("kernel owner inputs do not match the compiler-validated bridge")
+        generated = generate_owner(
+            source.read_text(),
+            Path(args.kernel_base).read_text(),
+            scan,
+            args.class_name,
+            Path(args.kernel_bridge).read_text(),
+        )
+        Path(args.output).write_text(generated)
+        print(
+            f"Rust kernel owner written to {args.output}; "
+            "QI/factory/platform hooks must compile before activation"
+        )
+        return
+
+    if getattr(args, "compiler_owned", False):
+        write_bridge(source, scan, args)
+        return
+
     object_map = Path(args.object_map) if args.object_map else source.parents[0] / "shell32.cpp"
     if not object_map.is_absolute():
         object_map = REACTOS_ROOT / object_map
@@ -1201,7 +1258,11 @@ def cmd_prompt(args):
 
 
 def cmd_submit(args):
-
+    if not getattr(args, "unsafe_unprotected", False):
+        raise ValueError(
+            "submit bypasses per-function seals and anchors. Use translate, or explicitly "
+            "pass --unsafe-unprotected for the legacy whole-file paid path."
+        )
     path = resolve_c_path(args.file)
     target = resolve_target(args, path)
     catalog = build_catalog(arch=args.arch, target=target)
@@ -1298,6 +1359,11 @@ def cmd_submit(args):
 
 
 def cmd_batch(args):
+    if not getattr(args, "dry_run", False) and not getattr(args, "unsafe_unprotected", False):
+        raise ValueError(
+            "batch bypasses per-function seals and anchors. Use translate <directory>, or "
+            "explicitly pass --unsafe-unprotected for the legacy whole-file paid path."
+        )
 
     dir_path = Path(args.directory)
     if not dir_path.is_absolute():
@@ -2008,8 +2074,10 @@ def cmd_translate(args):
     # else: `cpp_com_mode` was False for e.g. shellrecyclebin, and with it went the class
     # scaffold, the interface rendering and EVERY audit_worker_body call. Nothing said so.
     # The module still produced bodies, so it looked like it had worked.
-    cpp_class_target = rustconv_target.name == "shell32" or bool(
-        getattr(args, "cpp_com", False) or free_functions
+    cpp_class_target = (
+        is_cpp_source
+        or rustconv_target.name == "shell32"
+        or bool(getattr(args, "cpp_com", False) or free_functions)
     )
     # `--plain` is a MODIFIER of the class path (it drops the three COM preflight requirements
     # for a file-local helper), not a mode of its own. Alone it silently fell through to the
@@ -2318,6 +2386,19 @@ def cmd_translate(args):
 
         capped = False  # set if --cost-cap is hit mid-file
         scan = scan_file(c_file)
+        if c_file.suffix.lower() == ".c":
+            validate_reference(c_file)
+        if c_file.suffix.lower() == ".c" and not getattr(args, "deterministic_only", False):
+            derived = profile_derive.derive_source(
+                c_file,
+                REACTOS_ROOT,
+                arch=args.arch,
+                preferred_target=rustconv_target.name,
+                usermode=rustconv_target.sys_crate != "ntkrnl_sys",
+            )
+            if derived.errors:
+                raise ValueError(profile_derive.emit_report(derived))
+            print(f"  [substrate] {derived.module.name}: profile audit passed", file=sys.stderr)
         if cpp_com_mode:
             scan = _extend_cpp_class_scan(
                 scan,
@@ -2391,6 +2472,18 @@ def cmd_translate(args):
                 cpp_com_cls.sdk_type_aliases if cpp_com_cls is not None else None,
             )
         sorted_deps = topological_sort(deps)
+        if c_file.suffix.lower() == ".c":
+            # Independent textual inventory, before selectors or any paid work.
+            # Scanner diagnostics alone cannot account for a function it never saw.
+            original_source = c_file.read_text(errors="replace")
+            original_dead = never_compiled_lines(
+                original_source, _module_pinned_macros(c_file, args)
+            )
+            live_source = "\n".join(
+                "" if line_no in original_dead else line
+                for line_no, line in enumerate(original_source.splitlines(), 1)
+            )
+            require_c_plan(live_source, (dep.name for dep in sorted_deps))
         cpp_com_wide_statics = ""
 
         if cpp_class_target and free_functions:
@@ -2693,9 +2786,7 @@ def cmd_translate(args):
         # `#if _MSVCR_VER >= 80/100/110/120/140` directives — concurrency.c is 3,839 lines
         # wholly inside one. `_module_pinned_macros` reads those off the CMakeLists, and
         # only where every target and every arch agrees on the value.
-        dead_lines = never_compiled_lines(
-            c_file.read_text(errors="replace"), _module_pinned_macros(c_file, args)
-        )
+        dead_lines = never_compiled_lines(scan.raw_source, _module_pinned_macros(c_file, args))
         skipped_dead = sorted(d.name for d in sorted_deps if d.line_start in dead_lines)
         if skipped_dead:
             sorted_deps = [d for d in sorted_deps if d.name not in set(skipped_dead)]
@@ -2729,20 +2820,30 @@ def cmd_translate(args):
         # to the model so it can't silently stub/drop logic. Built once per file.
         c2rust_anchors: dict[str, str] = {}
         c2rust_preamble = ""
-        if getattr(args, "c2rust", False):
-            # --c2rust is an explicit opt-in: if c2rust can't anchor the file, HARD FAIL
+        anchor_enabled = getattr(args, "c2rust", None)
+        if anchor_enabled is None:
+            anchor_enabled = c_file.suffix.lower() == ".c" and not getattr(
+                args, "deterministic_only", False
+            )
+        if anchor_enabled:
+            # C anchoring is on by default: missing anchors are a HARD FAIL
             # (strict=True) instead of silently degrading to a worse pure-LLM translation.
             # Fails before any paid API call, so no money is wasted on unanchored output.
             try:
-                c2rust_anchors = build_anchor_map(c_file, strict=True)
+                c2rust_anchors = build_anchor_map(
+                    c_file,
+                    strict=True,
+                    required_names={dep.name for dep in sorted_deps},
+                    arch=args.arch,
+                )
                 # File-scope static/const DATA (tables/S-boxes) compiler-exact — prepended
                 # to the preamble so the LLM never has to (mis)transcribe a lookup table.
-                c2rust_preamble = build_preamble(c_file, strict=True)
+                c2rust_preamble = build_preamble(c_file, strict=True, arch=args.arch)
             except C2RustError as e:
                 print(
                     f"\n  ✗ FATAL: --c2rust requested but c2rust failed: {e}\n"
                     "    Refusing to fall back to a pure-LLM translation (no dumb fallbacks).\n"
-                    "    Fix the cause above, or re-run WITHOUT --c2rust to opt into pure-LLM.\n",
+                    "    Fix the cause above, or explicitly pass --no-c2rust for pure-LLM.\n",
                     file=sys.stderr,
                 )
                 sys.exit(2)
@@ -3206,6 +3307,10 @@ def cmd_translate(args):
                             cache_key=cache.dir.name,
                         )
                         continue
+                if not no_resume:
+                    cache.refuse_repurchase(dep.name)
+                if getattr(args, "replay_only", False):
+                    raise ValueError(f"--replay-only: no accepted cached body for {dep.name}")
                 todo.append((func_idx, dep))
             ctx = dict(translated)  # static callee context (mechanical fns are independent)
             stop = threading.Event()
@@ -3469,6 +3574,10 @@ def cmd_translate(args):
                     continue
 
             # Per-function resolve
+            if not no_resume:
+                cache.refuse_repurchase(dep.name)
+            if getattr(args, "replay_only", False):
+                raise ValueError(f"--replay-only: no accepted cached body for {dep.name}")
             func_res = resolve_function(dep, catalog, file_res.exports, scan.defines)
 
             # Build the function-specific prompt only — the shared import/gap/
@@ -3618,6 +3727,7 @@ def cmd_translate(args):
                     **_result_fields(result, elapsed_ms),
                 )
             else:
+                sequential_errors.append(f"{dep.name}: API failed: {result.error}")
                 _record_outcome(
                     dep,
                     "api_error",
@@ -3669,6 +3779,17 @@ def cmd_translate(args):
         preamble_src = (
             "" if cpp_com_mode else (scan.preamble_text or scan.globals_text or "").strip()
         )
+        derived_preamble = (
+            derive_kernel_preamble(preamble_src)
+            if preamble_src and rustconv_target.sys_crate == "ntkrnl_sys"
+            else None
+        )
+        if derived_preamble is not None:
+            preamble_rust = derived_preamble
+            _record_preamble(preamble_src, "derived", stage="deterministic")
+            print("  [preamble] source-derived kernel assertions ($0)", file=sys.stderr)
+            preamble_src = ""
+
         # A preamble that is nothing but #include / comments / #pragma once carries no
         # file-scope C at all, so its CORRECT Rust translation is the empty string — the
         # includes are resolved by the crate prelude, not per-file. Sending it costs a call
@@ -3720,6 +3841,10 @@ def cmd_translate(args):
                 ),
             )
             pre_sink = None
+            if not no_resume:
+                cache.refuse_repurchase(PREAMBLE_KEY)
+            if getattr(args, "replay_only", False):
+                raise ValueError("--replay-only: no accepted cached preamble")
             if archive is not None:
                 pre_sink = ResponseSink(archive.stream_path(0, "preamble"))
             pre_started = time.monotonic()
@@ -4097,6 +4222,15 @@ def cmd_translate(args):
             for f in file_findings[:10]:
                 print(f"      {f}", file=sys.stderr)
 
+        expected_names = {
+            dep.name
+            for dep in sorted_deps
+            if not deterministic_only or dep.name in deterministic_workers
+        }
+        require_rust_definitions(
+            {f"{name}_body" for name in expected_names} if cpp_com_mode else expected_names,
+            code,
+        )
         if args.output and total_files == 1:
             output_path = Path(args.output)
             output_path.parent.mkdir(parents=True, exist_ok=True)
@@ -4132,6 +4266,11 @@ def cmd_translate(args):
                     selector=selector,
                     assembled_fns={dep.name for dep in sorted_deps},
                     reassemble=getattr(args, "reassemble", False),
+                    expected_definitions=(
+                        {f"{name}_body" for name in expected_names}
+                        if cpp_com_mode
+                        else expected_names
+                    ),
                 )
             except AssemblyClobberError as exc:
                 print(f"\n\u26d4 {exc}", file=sys.stderr)
@@ -4567,6 +4706,33 @@ def main():
     p.add_argument("-o", "--output", help="Write combined deterministic Rust scaffold")
     p.add_argument("--adapter-output", help="Write the deterministic C++ object-map adapter")
     p.add_argument(
+        "--kernel-owned",
+        action="store_true",
+        help="Emit Rust storage/lifetime ownership for one CUnknownImpl interface",
+    )
+    p.add_argument("--kernel-base", help="Source header defining the atomic CUnknownImpl base")
+    p.add_argument(
+        "--kernel-bridge", help="Compiler-validated bridge header for retained method workers"
+    )
+    p.add_argument(
+        "--compiler-owned",
+        action="store_true",
+        help="Keep C++ object mechanics; emit C reference workers and compiler thunks",
+    )
+    p.add_argument(
+        "--bridge-methods", help="Comma-separated ordinary methods for compiler-owned glue"
+    )
+    p.add_argument(
+        "--bridge-include",
+        action="append",
+        help="Real C-compatible SDK header for bridge declarations",
+    )
+    p.add_argument("--bridge-macro-header", help="Source header containing exact reference macros")
+    p.add_argument(
+        "--bridge-macro", action="append", help="Macro to copy verbatim from --bridge-macro-header"
+    )
+
+    p.add_argument(
         "--internal",
         action="store_true",
         help="Allow exact internal ShellObjectCreator<T> activation; never emits an adapter",
@@ -4608,6 +4774,11 @@ def main():
 
     # submit
     p = sub.add_parser("submit", help="Submit single file for translation")
+    p.add_argument(
+        "--unsafe-unprotected",
+        action="store_true",
+        help="Explicitly use the legacy paid path without per-function protection",
+    )
     p.add_argument("file", help="C source file")
     p.add_argument("-o", "--output", help="Write Rust output to file")
     p.add_argument("--assemble", action="store_true", help="Assemble into crate structure")
@@ -4626,6 +4797,11 @@ def main():
         help="Proceed when C++ bodies are unextractable (free-function subset only)",
     )
     p = sub.add_parser("batch", help="Batch-submit entire subsystem directory")
+    p.add_argument(
+        "--unsafe-unprotected",
+        action="store_true",
+        help="Explicitly use the legacy paid path without per-function protection",
+    )
     p.add_argument("directory", help="Subsystem directory (relative to ntoskrnl/ or absolute)")
     p.add_argument(
         "-m", "--model", help="Model: sonnet, haiku, opus, gemini-pro, gemini-flash, or full ID"
@@ -4942,7 +5118,8 @@ def main():
     p.add_argument(
         "--seal-facts",
         dest="seal_facts",
-        action="store_true",
+        action=argparse.BooleanOptionalAction,
+        default=True,
         help="Replace each constant occurrence with an audited opaque token during the "
         "paid call, so the model never copies a value (and lower HRESULT predicates). "
         "Works for plain C and for shell32 --cpp-com; the C dialect additionally protects "
@@ -4952,7 +5129,8 @@ def main():
     p.add_argument(
         "--seal-calls",
         dest="seal_calls",
-        action="store_true",
+        action=argparse.BooleanOptionalAction,
+        default=True,
         help="Replace each known runtime callee occurrence with an audited opaque token "
         "during the paid call, so a dropped, duplicated, or invented call fails loudly "
         "instead of silently. Works for plain C and for shell32 --cpp-com.",
@@ -4960,7 +5138,8 @@ def main():
     p.add_argument(
         "--seal-wide",
         dest="seal_wide",
-        action="store_true",
+        action=argparse.BooleanOptionalAction,
+        default=True,
         help="Replace each `L\"...\"` / `L'x'` occurrence with an audited opaque token during "
         "the paid call, and substitute deterministic UTF-16 afterward. Rust has no wide "
         "literal, so a model asked for one INVENTS an encoding — a byte string behind a wide "
@@ -5066,6 +5245,11 @@ def main():
         "unchanged-body functions for $0.",
     )
     p.add_argument(
+        "--replay-only",
+        action="store_true",
+        help="Reassemble cached/recoverable workers for $0; fail before any new paid call",
+    )
+    p.add_argument(
         "--cache-tag",
         default=None,
         help="Append an isolated namespace tag to the response-cache key. Intended for "
@@ -5073,12 +5257,12 @@ def main():
     )
     p.add_argument(
         "--c2rust",
-        action="store_true",
-        help="Anchor each function on its c2rust transpilation (compiler-exact, "
-        "behavior-preserving) so the model can't silently stub/drop logic. "
-        "Best-effort: needs the c2rust binary + a build-*/compile_commands.json; "
-        "falls back to anchor-less translation if unavailable. Pairs with "
-        "--mode mechanical.",
+        action=argparse.BooleanOptionalAction,
+        default=None,
+        help="Require c2rust anchors for every selected function (default on for C). "
+        "Missing tools, build inputs or function anchors fail before payment. "
+        "C++ uses its separate class preflight; c2rust cannot anchor C++. "
+        "--no-c2rust explicitly opts out of C anchoring.",
     )
 
     # probe-migrate
@@ -5198,7 +5382,7 @@ def main():
 
     try:
         commands[args.command](args)
-    except (ValueError, CppComError, crate_repair.RepairError) as e:
+    except (ValueError, CppComError, ProfileDeriveError, crate_repair.RepairError) as e:
         # target auto-detect failure (unrecognized path) surfaces here as a clean
         # message instead of a traceback — tells the user to pass --target.
         print(str(e), file=sys.stderr)

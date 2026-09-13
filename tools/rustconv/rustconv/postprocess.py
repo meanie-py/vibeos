@@ -19,6 +19,7 @@ from typing import TYPE_CHECKING
 
 from .abi_enforce import enforce_abi_from_c
 from .abi_map import build_win32k_abi_map
+from .foreign_abi import split_variadic_system_blocks
 
 if TYPE_CHECKING:
     from collections.abc import Callable
@@ -227,8 +228,9 @@ KNOWN_BOGUS_DDK_IMPORTS = {
 def fix_debug_macros(code: str) -> str:
     """Replace C debug macros with Rust equivalents.
 
-    DPRINT/DPRINT1/DbgPrint → no-op (ReactOS kernel debug print; no channel infra
-      on the usermode-DLL Rust side, so stripped).
+    DPRINT/DPRINT1 → preserved macro invocations. The crate must provide their
+      source-appropriate implementation; deleting a diagnostic also drops argument
+      side effects and line-based deletion can swallow following definitions.
     Wine ERR/WARN/TRACE/FIXME/MESSAGE → KEPT, rewritten to the Rust macro form
       (`ERR(` → `ERR!(`). The crate provides `macro_rules!` ERR/WARN/TRACE/FIXME
       that expand to a channel-flag-gated `ros_dbg_log` call (libwine logger),
@@ -238,44 +240,14 @@ def fix_debug_macros(code: str) -> str:
       emits the gated `if (flags & class) { ros_dbg_log(...) }` expansion; both are
       now driven by the same default flags. Predicate forms (TRACE_ON/ERR_ON) and
       channel-qualified TRACE_/ERR_ forms are NOT matched (require `(` after name).
-    UNIMPLEMENTED → unimplemented!() (already a Rust macro, just needs ! suffix).
+    UNIMPLEMENTED remains a source diagnostic macro; never turn it into a panic.
     offset_of → core::mem::offset_of (requires Rust 1.77+).
     """
-    # Strip ReactOS DPRINT/DPRINT1 statements (single- or multi-line).
-    _dprint_call = re.compile(r"^DPRINT1?\!?\(")
-    # Keep wine ERR/WARN/TRACE/FIXME/MESSAGE: rewrite `NAME(` → `NAME!(` so it
-    # invokes the crate's gated logging macro. `(` directly after the name keeps
-    # TRACE_ON(/ERR_ON(/TRACE_( predicates from matching.
-    _wine_call = re.compile(r"^(ERR|WARN|TRACE|FIXME|MESSAGE)\(")
-    lines = code.split("\n")
-    result_lines = []
-    skip_until_semicolon = False
-    for line in lines:
-        stripped = line.strip()
-        if skip_until_semicolon:
-            if stripped.endswith(";") or stripped.endswith(");"):
-                skip_until_semicolon = False
-            continue
+    # Preserve calls and every source line. Substrate closure owns debug macro
+    # implementations, including whether DPRINT is disabled by this TU's NDEBUG.
+    from .debug_macros import preserve_debug_macros
 
-        if _dprint_call.match(stripped):
-            indent = line[: len(line) - len(line.lstrip())]
-            result_lines.append(f"{indent}// DPRINT removed")
-            if not (stripped.endswith(";") or stripped.endswith(");")):
-                skip_until_semicolon = True
-        elif _wine_call.match(stripped):
-            # Keep the trace: insert `!` after the macro name (first occurrence).
-            indent = line[: len(line) - len(line.lstrip())]
-            result_lines.append(indent + _wine_call.sub(r"\1!(", stripped, count=1))
-        elif "/* DPRINT1 */" in stripped or "/* DPRINT */" in stripped:
-            if stripped == "/* DPRINT1 */" or stripped == "/* DPRINT */":
-                result_lines.append(line)
-            else:
-                indent = line[: len(line) - len(line.lstrip())]
-                result_lines.append(f"{indent}// DPRINT removed")
-        else:
-            result_lines.append(line)
-
-    code = "\n".join(result_lines)
+    code = preserve_debug_macros(code)
 
     # Tame c2rust's wine-channel preamble: it hardcodes `flags: !(0) as c_uchar`
     # (0xFF = every class on → serial spam). Route it through the crate's
@@ -289,11 +261,6 @@ def fix_debug_macros(code: str) -> str:
             "flags: WINE_DBG_DEFAULT_FLAGS",
             code,
         )
-
-    # UNIMPLEMENTED! → unimplemented!()
-    code = code.replace("UNIMPLEMENTED!();", "unimplemented!();")
-    code = code.replace("UNIMPLEMENTED!()", "unimplemented!()")
-    code = code.replace("UNIMPLEMENTED!", "unimplemented!()")
 
     # offset_of! → core::mem::offset_of! (stabilized in Rust 1.77)
     code = code.replace("offset_of!(", "core::mem::offset_of!(")
@@ -1594,45 +1561,8 @@ def fix_extern_const(code: str) -> str:
 
 
 def fix_variadic_extern_system(code: str) -> str:
-    """Change variadic extern "system" declarations to extern "C".
-
-    C-variadic functions with "system" calling convention are unstable in Rust.
-    Variadic functions must use extern "C".
-    """
-    # Find extern "system" blocks containing variadic declarations (...)
-    lines = code.split("\n")
-    result = []
-    i = 0
-    while i < len(lines):
-        line = lines[i]
-        stripped = line.strip()
-
-        # Detect extern "system" block start
-        if re.match(r'extern\s+"system"\s*\{', stripped):
-            # Collect the entire block
-            block_lines = [line]
-            brace_count = stripped.count("{") - stripped.count("}")
-            i += 1
-            while i < len(lines) and brace_count > 0:
-                block_lines.append(lines[i])
-                brace_count += lines[i].count("{") - lines[i].count("}")
-                i += 1
-
-            block_text = "\n".join(block_lines)
-            # If block contains variadic fn (...), change to extern "C"
-            if "..." in block_text:
-                block_text = re.sub(
-                    r'extern\s+"system"\s*\{',
-                    'extern "C" {',
-                    block_text,
-                    count=1,
-                )
-            result.append(block_text)
-        else:
-            result.append(line)
-            i += 1
-
-    return "\n".join(result)
+    """Only variadic declarations move to C; fixed declarations keep their system ABI."""
+    return split_variadic_system_blocks(code)
 
 
 _GDIOBJ_MACRO_FAMILIES = (

@@ -1587,7 +1587,12 @@ pub unsafe extern "system" fn CmDeleteKey(KeyBody: PCM_KEY_BODY) -> NTSTATUS {
         CmpReportNotify(Kcb, Hive, Cell, REG_NOTIFY_CHANGE_NAME);
 
         ParentCell = (*Node).Parent;
+        // Deletion shares sk reference counts with security replacement.
+        ntkrnl_sys::ddk::KeEnterCriticalRegion();
+        ExAcquirePushLockExclusive(core::ptr::addr_of_mut!((*(Hive as PCMHIVE)).SecurityLock));
         Status = CmpFreeKeyByCell(Hive, Cell, 1u8);
+        ExReleasePushLockExclusive(core::ptr::addr_of_mut!((*(Hive as PCMHIVE)).SecurityLock));
+        ntkrnl_sys::ddk::KeLeaveCriticalRegion();
         if NT_SUCCESS(Status) {
             CmpFlushNotifiesOnKeyBodyList(Kcb, 0u8);
 
@@ -2126,7 +2131,12 @@ unsafe fn CmpDeepCopyKeyInternal(
 
     if (*SrcNode).Security != HCELL_NIL {
         NewSecCell = CmpCopyCell(SourceHive, (*SrcNode).Security, DestinationHive, StorageType);
-        if NewSecCell == HCELL_NIL {
+        let copied_security = if NewSecCell == HCELL_NIL {
+            core::ptr::null_mut()
+        } else {
+            HvGetCell(DestinationHive, NewSecCell) as ntkrnl_sys::ddk::PCM_KEY_SECURITY
+        };
+        if copied_security.is_null() {
             Status = STATUS_INSUFFICIENT_RESOURCES;
             'Cleanup: loop {
                 if !DestNode.is_null() {
@@ -2158,6 +2168,11 @@ unsafe fn CmpDeepCopyKeyInternal(
                 return Status;
             }
         }
+        // Links and references from the source hive do not belong to this copy.
+        (*copied_security).Flink = NewSecCell;
+        (*copied_security).Blink = NewSecCell;
+        (*copied_security).ReferenceCount = 1;
+        HvReleaseCell(DestinationHive, NewSecCell);
     }
     (*DestNode).Security = NewSecCell;
 
