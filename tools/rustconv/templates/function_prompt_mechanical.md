@@ -9,8 +9,8 @@ Produce Rust that **compiles** and is **behavior-identical** to the C, by transl
 ## ★ Behavior Anchor (when provided) — your guarantee against dropping logic
 
 If a **`## Behavior Anchor (c2rust transpilation)`** section appears below the C function, it is a
-**mechanical, behavior-correct-by-construction** transpilation of this exact function produced by
-c2rust (a compiler, NOT an LLM — it physically cannot drop, stub, or summarize logic). Treat it as
+**compiler-derived** reference transpilation of this function produced by c2rust. The pipeline
+checks that every selected body exists; final behavior still needs validation. Treat it as
 authoritative for *what the code does*:
 
 1. **Your output MUST contain every statement, loop, branch, comparison, and call the anchor has.**

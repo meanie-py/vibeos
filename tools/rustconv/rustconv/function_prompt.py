@@ -149,7 +149,7 @@ def _format_import_context(resolve: ResolveResult, target: Target | None = None)
             "Use them directly; keep unresolved constants symbolic:\n"
         )
     else:
-        parts.append("These types/functions are available from ntkrnl_sys. Use them directly:\n")
+        parts.append("These types/functions are available at the paths below. Use them directly:\n")
 
     is_hal = target is not None and target.name == "hal"
     # Hand-written module names that should be folded into `ddk` for HAL.
@@ -176,7 +176,10 @@ def _format_import_context(resolve: ResolveResult, target: Target | None = None)
 
     for module in sorted(merged):
         names = sorted(merged[module])
-        if target is not None and target.name == "shell32":
+        if target is not None and (
+            target.name == "shell32"
+            or (target.crate_bindgen_files and module == target.crate_module)
+        ):
             parts.append(f"From `crate::{module}`: {', '.join(f'`{n}`' for n in names)}")
             continue
         if module in ("ddk", "hal_ddk"):
@@ -417,7 +420,7 @@ def _format_callee_context(
 
         elif callee_name in catalog_fns:
             # Extern function from catalog
-            parts.append(f"- `{callee_name}` — extern function (available from ntkrnl_sys)")
+            parts.append(f"- `{callee_name}` — extern function (see the resolved imports)")
 
         elif getattr(func, "cpp_class", None) and callee_name.startswith(
             f"{func.cpp_class}_cpp_com_"
@@ -804,16 +807,16 @@ def build_function_prompt(
     parts.append(func.body_text)
     parts.append("```")
 
-    # Behavior anchor: c2rust's mechanical (behavior-correct-by-construction)
+    # Behavior anchor: c2rust's mechanical, independently inventoried
     # transpilation of THIS function. The mechanical-mode system prompt tells the
     # model to preserve every operation it contains — the structural defense
     # against silently stubbing/truncating hard functions.
     if c2rust_anchor:
         parts.append(
             "\n## Behavior Anchor (c2rust transpilation)\n"
-            "This is c2rust's exact transpilation of the function above — raw/unsafe/ugly but it\n"
-            "contains ALL the logic (c2rust is a compiler, it cannot drop or stub anything). Your\n"
-            "Rust MUST preserve every statement/loop/branch/call it has; clean up its surface\n"
+            "This is a compiler-derived structural anchor for the C function above. Check both\n"
+            "the C source and this anchor: compiler output is not a proof of equivalence. Your\n"
+            "Rust MUST preserve every statement/loop/branch/call; clean up its surface\n"
             "(types, imports, names) but NEVER omit logic it contains.\n"
         )
         parts.append("```rust")

@@ -16,6 +16,7 @@ import tree_sitter_cpp as tscpp
 from tree_sitter import Language, Parser
 
 from .conventions import KW_EXPANSION, KW_EXPANSION_FN, KW_TO_CONV
+from .lex_mask import mask_code
 
 C_LANG = Language(tsc.language())
 CPP_LANG = Language(tscpp.language())
@@ -74,7 +75,7 @@ def _expand_csr_api(text: str) -> str:
 # static analysis, so stripping them is semantically identical to what the C
 # compiler sees and can only REDUCE parse errors (differential-oracle safe).
 # Token grammar: `_<Word>[_<word>...]_` (starts `_` + a SAL keyword, ends `_`),
-# optionally followed by a (balanced-once) argument list.
+# optionally followed by a nested, balanced annotation argument list.
 _SAL_KEYWORDS = (
     "In",
     "Out",
@@ -109,7 +110,6 @@ RE_SAL = re.compile(
     r"(?<![A-Za-z0-9_])"
     r"_(?:" + "|".join(_SAL_KEYWORDS) + r")"
     r"[A-Za-z0-9_]*_"  # rest of the SAL token, ending in '_'
-    r"(?:\s*\([^()]*\))?"  # optional ( args ) — SAL args have no nesting
 )
 RE_LEGACY_SAL = re.compile(r"(?<![A-Za-z0-9_])(?:IN|OUT|OPTIONAL)(?![A-Za-z0-9_])")
 
@@ -117,7 +117,33 @@ RE_LEGACY_SAL = re.compile(r"(?<![A-Za-z0-9_])(?:IN|OUT|OPTIONAL)(?![A-Za-z0-9_]
 def _strip_sal(text: str) -> str:
     """Remove SAL annotations (no-op macros) so tree-sitter parses the function
     signatures of annotated Windows headers. Safe: only removes annotations."""
-    return RE_LEGACY_SAL.sub("", RE_SAL.sub("", text))
+    masked = mask_code(text)
+    spans = []
+    consumed = 0
+    for match in RE_SAL.finditer(masked):
+        if match.start() < consumed:
+            continue
+        end = match.end()
+        opening = end
+        while opening < len(masked) and masked[opening].isspace():
+            opening += 1
+        if opening < len(masked) and masked[opening] == "(":
+            depth = 1
+            end = opening + 1
+            while end < len(masked) and depth:
+                depth += (masked[end] == "(") - (masked[end] == ")")
+                end += 1
+            if depth:
+                raise ValueError(f"unbalanced SAL annotation {match.group()}")
+        spans.append((match.start(), end))
+        consumed = end
+    spans.extend((m.start(), m.end()) for m in RE_LEGACY_SAL.finditer(masked))
+    result = list(text)
+    for start, end in spans:
+        for index in range(start, end):
+            if result[index] != "\n":
+                result[index] = " "
+    return "".join(result)
 
 
 # Win32 calling-convention macros that tree-sitter-c CANNOT parse between the
@@ -858,6 +884,19 @@ def _parse_function(node, source: bytes, source_text: str) -> CFunction | None:
 
     # Count SEH blocks in body
     body_text = _extract_text(node, source)
+    if calling_convention is None:
+        # C++ recovery can put NTAPI inside the declarator's ERROR node instead
+        # of the top-level children. Read only the prefix before the function
+        # name; callback conventions inside parameters are unrelated.
+        signature_name = re.search(rf"\b{re.escape(name)}\s*\(", body_text)
+        if signature_name is not None:
+            conventions = [
+                word
+                for word in re.findall(r"\b\w+\b", body_text[: signature_name.start()])
+                if word in CALLING_CONVENTIONS
+            ]
+            if conventions:
+                calling_convention = conventions[-1]
     seh_count = body_text.count("_SEH2_TRY")
 
     return CFunction(
@@ -1447,6 +1486,18 @@ def _resolve_pp_conditionals(path: Path, text: str) -> str:
 def scan_file(path: Path, *, force_cpp: bool = False) -> ScanResult:
     """Parse a C/C++ source file and extract structural information."""
     raw = _expand_split_includes(path, path.read_text(errors="replace"))
+    # portcls.h defines PORTCLASSAPI solely as DECLSPEC_IMPORT/DECLSPEC_EXPORT.
+    # It is a linkage annotation, not the following function's return type.
+    # Keep NTAPI and the real return type intact; preserve line coordinates.
+    raw = re.sub(r"(?m)^[ \t]*PORTCLASSAPI[ \t]*$", lambda m: " " * len(m.group()), raw)
+    # wine/asm.h: this emits an import-symbol assembler directive (or nothing),
+    # never a C body. Without a semicolon tree-sitter absorbs the next function
+    # as its declarator: mathf.c's powf was extracted under the name `float`.
+    raw = re.sub(
+        r"(?m)^[ \t]*__ASM_GLOBAL_IMPORT\s*\(\s*\w+\s*\)[ \t]*$",
+        lambda m: " " * len(m.group()),
+        raw,
+    )
     is_cpp = force_cpp or path.suffix.lower() in _CPP_SUFFIXES
     if is_cpp:
         # Resolve preprocessor conditionals so #ifdef-spanning constructs don't

@@ -11,6 +11,7 @@ from typing import TYPE_CHECKING
 from .batch_runner import TranslationResult
 from .config import OUTPUT_CRATE, TARGETS, Target, hal_cmake_for_c
 from .crate_integrate import integrate
+from .function_coverage import require_rust_definitions
 from .postprocess import postprocess
 from .signature_fidelity import repair_signatures
 from .table_fidelity import repair_tables
@@ -174,6 +175,7 @@ def assemble_file(
     selector: str = "",
     assembled_fns: set[str] | None = None,
     reassemble: bool = False,
+    expected_definitions: set[str] | None = None,
 ) -> Path:
     """Write a single translation result into the crate structure.
 
@@ -302,6 +304,8 @@ def assemble_file(
     # a $0 cache replay, so it happens often) puts it straight back. The generator owns its
     # own whitespace. Only trailing blanks go; indentation and blank lines are untouched.
     text = "\n".join(line.rstrip() for line in "\n".join(content_parts).split("\n"))
+    if expected_definitions is not None:
+        require_rust_definitions(expected_definitions, text)
     out_path.write_text(text)
 
     # HAL-specific output routing: append to mod.rs, CMakeLists.txt DEPENDS,

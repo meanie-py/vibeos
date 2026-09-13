@@ -79,6 +79,32 @@ BLOCKLIST_FUNCS=0
 # crate::shellcom so they keep the `lpVtbl` shape the translation calls through).
 EXTRA_RAW_LINES=()
 case "$DRIVER" in
+  portcls)
+    DRIVER_DIR="${SRC}/drivers/wdm/audio/backpln/portcls"
+    PORTCLS_TAG=$(sed -n '/^#define TAG_PORTCLASS /p' "${DRIVER_DIR}/private.hpp")
+    [[ $(printf '%s\n' "$PORTCLS_TAG" | wc -l) == 1 && -n "$PORTCLS_TAG" ]] || { echo 'ambiguous TAG_PORTCLASS' >&2; exit 1; }
+    WRAPPER_INC=$'#include "resource_rust_bridge.h"\n'"${PORTCLS_TAG}"$'\nstatic const unsigned int RUSTOWNED_TAG_PORTCLASS = TAG_PORTCLASS;'
+    ALLOW_FILES=( --allowlist-var RUSTOWNED_TAG_PORTCLASS
+                  --allowlist-file '.*resource_rust_bridge\.h'
+                  --allowlist-file '.*[/\\]portcls\.h' )
+    EXTRA_INC=( -I"${DRIVER_DIR}" )
+    VER_DEFS=( -DWINVER=0x502 -D_WIN32_WINNT=0x600 -DNTDDI_VERSION=0x06000000
+               -DPC_IMPLEMENTATION -DCOM_STDMETHOD_CAN_THROW -DPC_NO_IMPORTS )
+    ;;
+  sysaudio)
+    # Derived from the real sysaudio include closure; KS declarations are direct
+    # behavior dependencies of pin.c as well as nested types of portcls.h.
+    DRIVER_DIR="${SRC}/drivers/wdm/audio/sysaudio"
+    WRAPPER_INC=$'#include "sysaudio.h"\nstatic const unsigned int SYSAUDIO_IOCTL_KS_PROPERTY = IOCTL_KS_PROPERTY;'
+    ALLOW_FILES=( --allowlist-file '.*sysaudio[/\\].*\.h'
+                  --allowlist-file '.*[/\\]portcls\.h'
+                  --allowlist-file '.*[/\\]ks\.h'
+                  --allowlist-file '.*[/\\]ksmedia\.h'
+                  --allowlist-var SYSAUDIO_IOCTL_KS_PROPERTY )
+    EXTRA_INC=( -I"${DRIVER_DIR}" )
+    VER_DEFS=( -DWINVER=0x502 -D_WIN32_WINNT=0x502 -DNTDDI_VERSION=0x05020400
+               -D_COMDDK_ )
+    ;;
   acpi)
     # ACPI bus driver glue (buspdo.c/bus.c). Private structs live in acpisys.h
     # (device extensions, DEVICE_PNP_STATE) + acpi_bus.h (Linux-style acpi_device*

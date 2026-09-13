@@ -41,11 +41,13 @@ from dataclasses import dataclass, field, replace
 from pathlib import Path
 from typing import Any
 
+from .c_integer_promotions import comparison_operands, promoted_type
 from .config import RUST_TARGETS
 
 # --- rules ------------------------------------------------------------------------------------
 
 RULE_NUMERIC_CAST = "truncating_numeric_cast"
+RULE_COMPARISON = "c_integer_comparison"
 RULE_WIDTH_ALIAS = "width_alias_cast"
 RULE_NO_STD_PATH = "no_std_path"
 RULE_POINTER_CAST = "raw_pointer_cast"
@@ -64,6 +66,7 @@ RULE_ARRAY_DECAY = "array_decay"
 #: answer wherever it is available, so it claims the span and the numeric rule stands down.
 DIAGNOSTIC_RULES: tuple[str, ...] = (
     RULE_WIDTH_ALIAS,
+    RULE_COMPARISON,
     RULE_NUMERIC_CAST,
     RULE_MATCH_SCRUTINEE,
     RULE_NO_STD_PATH,
@@ -1014,6 +1017,15 @@ def _width_alias_rule(
                 "scope is not proven",
             )
             continue
+        if re.search(r"\bas\s+" + re.escape(target) + r"\s*$", text):
+            # An existing cast to this spelling still errors: caller and callee resolve
+            # different aliases. Repeating it cannot fix the mismatch (SysAudio SIZE_T).
+            ctx.claimed.add((file_name, start, end))
+            decline(
+                "alias_scope_mismatch",
+                f"`{text}` already casts to `{target}`; resolve the caller's import",
+            )
+            continue
         # Strip a width the translation already baked (`(x) as u64`) rather than stacking a
         # second cast on top of it — the value is unchanged and the source stays readable.
         inner = _RE_TRAILING_CAST.sub("", text)
@@ -1049,6 +1061,59 @@ def _width_alias_rule(
                 targets=(ctx.target,),
             )
         )
+    return edits, skipped, bool(edits)
+
+
+def _comparison_rule(diagnostic: Mapping[str, Any], load: FileReader, ctx: _Ctx):
+    edits = []
+    skipped = []
+    for span, expected, found in _mismatch_sites(diagnostic):
+        if expected not in INT_PRIMITIVES or found not in INT_PRIMITIVES:
+            continue
+        file_name = str(span.get("file_name") or "")
+        start, end = int(span.get("byte_start") or 0), int(span.get("byte_end") or 0)
+        data = load(file_name)
+        if data is None or end <= start or (file_name, start, end) in ctx.claimed:
+            continue
+        operands = comparison_operands(data, start, end)
+        if operands is None:
+            continue
+        # Prevent the assignment-cast rule from narrowing a comparison operand.
+        ctx.claimed.add((file_name, start, end))
+        target = promoted_type(expected, found)
+        if operands[1] != (start, end) or target is None:
+            skipped.append(
+                Skipped(
+                    RULE_COMPARISON,
+                    "promotion_not_proven",
+                    file_name,
+                    int(span.get("line_start") or 0),
+                    "comparison requires source integer-promotion review",
+                )
+            )
+            continue
+        for (lo, hi), original_type in zip(operands, (expected, found), strict=True):
+            if original_type == target:
+                continue
+            text = data[lo:hi].decode()
+            edits.append(
+                Edit(
+                    file_name=file_name,
+                    byte_start=lo,
+                    byte_end=hi,
+                    replacement=f"({text}) as {target}",
+                    original=text,
+                    rule=RULE_COMPARISON,
+                    authority=(
+                        f"C integer promotions: compare {expected} and {found} as {target}; "
+                        "never truncate the other operand to a byte (PortCls resource types)"
+                    ),
+                    line=int(span.get("line_start") or 0),
+                    column=int(span.get("column_start") or 0),
+                    requires_target_agreement=False,
+                    targets=(ctx.target,),
+                )
+            )
     return edits, skipped, bool(edits)
 
 
@@ -1091,6 +1156,9 @@ def _numeric_cast_rule(
         data = load(file_name)
         if data is None:
             decline("unreadable_file")
+            continue
+        if comparison_operands(data, start, end) is not None:
+            decline("comparison_requires_promotion", "enable c_integer_comparison or review source")
             continue
         masked = _mask_lexical(data)
         if _next_code_byte(masked, end) == b"(":
@@ -2052,6 +2120,7 @@ _RULE_TABLE: dict[
 ] = {
     RULE_WIDTH_ALIAS: _width_alias_rule,
     RULE_NUMERIC_CAST: _numeric_cast_rule,
+    RULE_COMPARISON: _comparison_rule,
     RULE_MATCH_SCRUTINEE: _match_scrutinee_rule,
     RULE_NO_STD_PATH: _no_std_path_rule,
     RULE_ARRAY_DECAY: _array_decay_rule,
