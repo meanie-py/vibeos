@@ -152,3 +152,46 @@ def test_native_x86_needs_no_special_case(tmp_path):
         arch="i386",
     )
     assert ladder.gate_decision(repo, "i386")[1] is False
+
+
+# --- the drain ------------------------------------------------------------
+
+
+class _FakeSerial:
+    """Yields one chunk per read, then nothing."""
+
+    def __init__(self, chunks: list[str]):
+        self.chunks = list(chunks)
+        self.reads = 0
+
+    def read_available(self, timeout: float = 0.5) -> str:
+        self.reads += 1
+        return self.chunks.pop(0) if self.chunks else ""
+
+
+class _FakeVM:
+    def __init__(self, chunks: list[str]):
+        self.serial = _FakeSerial(chunks)
+
+
+def test_a_guest_already_seen_is_not_waited_for_again():
+    """The measured bug: the boot's settle read consumed gui32's verdict, so the
+    drain sat out its whole 420s budget waiting for a marker that had gone past
+    — on a run where all nine PASSED. `seen` is what stops that."""
+    vm = _FakeVM([_serial(**{g: c for g, c in ladder.LADDER.items() if g != "gui32"})])
+    out = ladder.watch(vm, seconds=5, seen=_serial(gui32=0x600E))
+    assert ladder.check(out + _serial(gui32=0x600E)) is None
+    assert vm.serial.reads == 1, "should stop the moment the remaining guests report"
+
+
+def test_all_guests_already_seen_drains_nothing_at_all():
+    vm = _FakeVM([])
+    assert ladder.watch(vm, seconds=5, seen=_all_pass()) == ""
+    assert vm.serial.reads == 0, "no read at all when nothing is outstanding"
+
+
+def test_a_guest_that_never_reports_still_uses_the_budget():
+    """The ceiling must stay a real ceiling — a silent guest is what it is for."""
+    vm = _FakeVM([_serial(hello32=0x600D)])
+    out = ladder.watch(vm, seconds=1.0, seen="")
+    assert _red(out)["classification"] == "LADDER_FAIL"

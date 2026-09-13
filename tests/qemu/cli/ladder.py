@@ -154,12 +154,23 @@ def markers() -> list[str]:
     return [f"{g}.exe exit = " for g in LADDER]
 
 
-def watch(vm, seconds: float = LADDER_TIMEOUT_SECONDS) -> str:
+def watch(vm, seconds: float = LADDER_TIMEOUT_SECONDS, seen: str = "") -> str:
     """Drain serial until every ladder guest has reported, or `seconds` elapse.
 
-    Returns the drained text (the caller appends it to the boot serial, so a
-    BUGCHECK during the ladder still lands in full.log)."""
-    need = markers()
+    `seen` is the serial the caller has ALREADY consumed. Without it this waits
+    for markers that have gone past: the boot's own settle phase routinely reads
+    a guest's verdict before this is called, and that one line is enough to make
+    the loop sit out the entire ceiling. MEASURED -- a 9/9 PASS run drained
+    420.2s of a 420s budget because `gui32.exe exit = 0x600e` landed in the settle
+    read, so the verdict was correct and the wait was pure waste. The caller's
+    `check()` sees both halves and never noticed.
+
+    Returns only the NEWLY drained text; the caller appends it to the boot serial,
+    so a BUGCHECK during the ladder still lands in full.log.
+    """
+    need = [m for m in markers() if m not in seen]
+    if not need:
+        return ""  # every guest already reported before we were called
     buf = ""
     deadline = time.monotonic() + seconds
     while time.monotonic() < deadline:

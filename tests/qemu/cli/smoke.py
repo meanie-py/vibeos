@@ -347,7 +347,7 @@ def _boot_vm(
                 header=label,
             )
             _lad_t0 = time.monotonic()
-            ladder_txt = ladder_mod.watch(vm)
+            ladder_txt = ladder_mod.watch(vm, seen=text)
             # Record what the drain actually COST, not just its ceiling. This is
             # additive wall-clock on every gate that stages guests, and the ceiling
             # (420s) is ~2x the whole gate's modelled warm runtime -- so the real
