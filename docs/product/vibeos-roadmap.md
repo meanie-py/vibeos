@@ -518,6 +518,23 @@ land; date every addition.** Source docs live in `docs/engineering/archive/`.
   `ntoskrnl/ntkrnlmp/ntkrnlmp.exe`, and confirm against what the boot actually loaded
   (`ramdisk(0)\reactos\system32\ntkrnlmp.exe` appears in the serial).
 
+- **55 i386 crates build on an SSE/ABI combination rustc is phasing out — OPEN, latent**
+  (2026-09-13, research lane). They pass `-C target-feature=-sse,-sse2` while targeting the
+  BUILTIN `i686-pc-windows-gnu`, whose spec declares `rustc-abi: x86-sse2`. Both the pinned
+  stable (1.92.0) and the pinned nightly (2025-12-14) emit: *"target feature `sse2` must be
+  enabled to ensure that the ABI of the current target can be implemented correctly … this was
+  previously accepted by the compiler but is being phased out; **it will become a hard error in
+  a future release**"* (rust-lang#116344). **Not broken today and not urgent — the trigger is a
+  toolchain bump**, which is exactly when it will fire, and the pin exists so bumps are
+  deliberate. Verified: 55 CMakeLists carry the flag and **all 55** use the builtin triple, none
+  the custom `i686-kernel.json`. The fix already exists in-tree: that json sets
+  `rustc-abi: x86-softfloat`, which is the sanctioned way to disable SSE on i386, and the kernel
+  `*-cargo` cells are on it. **Unverified, and worth checking before anyone acts:** whether a
+  newer rustc actually hard-errors (this is rustc's own claim, not a test), and whether all 55
+  genuinely need SSE off — a user-mode crate might simply drop the flag instead. Whoever bumps
+  the pin should re-run `rustc --target i686-pc-windows-gnu -C target-feature=-sse,-sse2` first;
+  it is a one-command check.
+
 - **A 32-bit guest doing real file I/O BUGCHECKs the arm64 kernel — OPEN** (2026-09-13).
   Found on the first writable-volume run of `sqlite32.exe`, the third-party stress guest
   (`tools/stress/sqlite/build.sh`). Real SQLite creating and writing a database on arm64:
@@ -972,9 +989,10 @@ Field-manual § pointers hold the full writeups. **Update on state change.**
   CPU — precisely this bug's configuration): boot to desktop in ~90s vs ~40s normally, 10MB
   trace, and a replay whose guest serial matched the recording line for line as far as it ran.
   **But the two things that would close #39 with it do not work yet**: under gdb a replay can be
-  run but not STOPPED where you want it (`stepi` aborts QEMU 9.0.2 with `Playback shouldn't
-  have to iowait`), so `reverse-continue` from the zeroed frame has not been reached; and
-  replays wedge partway at a point that varies between runs. So this is not yet a route to "who set PC to 0" — it is a
+  run but never STOPPED — stepping, attaching mid-run and even a breakpoint HIT all abort
+  QEMU 9.0.2 with `Playback shouldn't have to iowait` — so `reverse-continue` from the zeroed
+  frame is unreachable, not merely unattempted; and replays wedge partway at a point that
+  varies between runs. So this is not yet a route to "who set PC to 0" — it is a
   deterministic capture of a crashing boot, which is still more than a soak ever gave us.
   Both limitations, their measurements, and what to re-test on a QEMU upgrade are in
   `docs/engineering/qemu-record-replay.md`.

@@ -53,6 +53,9 @@ import re
 import sys
 from pathlib import Path
 
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
+from tools.source_walk import source_files
+
 REPO = Path(__file__).resolve().parent.parent
 RUST_ROOT = REPO / "sdk" / "lib" / "rust"
 
@@ -105,7 +108,7 @@ def iter_rust_files(paths: list[str]):
         if root.is_file() and root.suffix == ".rs":
             yield root
         elif root.is_dir():
-            for f in root.rglob("*.rs"):
+            for f in source_files(root):
                 if not SKIP_FILE_RE.search(str(f)):
                     yield f
 
