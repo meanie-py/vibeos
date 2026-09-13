@@ -59,6 +59,9 @@ REPO = Path(__file__).resolve().parent.parent
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
+# After the sys.path.insert above -- tools/ is not a package on the default path.
+from source_walk import source_files  # noqa: E402
+
 
 def _spec_exports(spec: Path, arch: str) -> set[str]:
     """Export NAMES ucrtbase.spec declares for one arch, `-arch=` filters honoured.
@@ -213,6 +216,52 @@ def check_structure(ws: Path | None = None) -> list[str]:
     return findings
 
 
+#: The crates whose Rust actually ends up in `libcrt_shared_cargo.a`, closed over
+#: path dependencies (crt-shared-cargo -> crt-shared-rust/panic-common/cnt-rust,
+#: and crt-shared-rust -> msvcrt-sys). Deliberately NOT "every crate in
+#: sdk/lib/rust": a staleness warning that fires whenever any unrelated lane
+#: edits any .rs is noise, and noise is what gets a check ignored.
+_ARCHIVE_SOURCE_CRATES = (
+    "crt-shared-cargo",
+    "crt-shared-rust",
+    "panic-common",
+    "cnt-rust",
+    "msvcrt-sys",
+)
+
+
+def _stale_against_sources(archive: Path) -> str | None:
+    """Name of a source file newer than `archive`, or None if it is up to date.
+
+    Returns the FIRST offender rather than a count -- naming the file is what
+    makes the message actionable.
+    """
+    try:
+        archive_mtime = archive.stat().st_mtime
+    except OSError:
+        return None
+    for crate in _ARCHIVE_SOURCE_CRATES:
+        src = REPO / "sdk" / "lib" / "rust" / crate
+        if not src.is_dir():
+            continue
+        # `source_files` and not `rglob`: no `target/` lives under a crate's `src/`
+        # TODAY, but that is a fact about the current tree, not an invariant, and
+        # `rglob` has already descended before any filter could exclude one.
+        # tools/scan_unpruned_walk.py gates exactly this and caught the rglob here.
+        candidates = [
+            *source_files(src / "src", "*.rs"),
+            src / "Cargo.toml",
+            src / "build.rs",
+        ]
+        for f in candidates:
+            try:
+                if f.is_file() and f.stat().st_mtime > archive_mtime:
+                    return str(f.relative_to(REPO))
+            except OSError:
+                continue
+    return None
+
+
 def _nm_defined(path: Path | list[Path]) -> set[str] | None:
     """Globally-defined symbol names in an archive or object, or None if nm cannot read it."""
     paths = [path] if isinstance(path, Path) else path
@@ -267,6 +316,24 @@ def check_archive() -> list[str]:
             archive = build / "dll" / "win32" / "ucrtbase" / "libcrt_shared_cargo.a"
         if not archive.is_file():
             continue  # ucrtbase cohab not wired into this build dir yet
+
+        stale = _stale_against_sources(archive)
+        if stale:
+            # Same principle the `missing` branch below states, one step earlier:
+            # grading an archive OLDER than the Rust that produced it is not a
+            # weaker verdict, it is a verdict about a different tree. This check
+            # is usually run right after a fix, so a stale read reports the
+            # symbol you just removed and looks exactly like the fix not working
+            # -- which is how it actually presented, twice, before this existed.
+            # `vibeos-cli build` is warm by default and will happily leave a
+            # cargo target untouched (its own `warm-build` warning says so), so
+            # "I rebuilt" is not evidence the archive moved.
+            findings.append(
+                f"build-{arch}: {archive.name} is OLDER than {stale} -- this check would "
+                f"be grading a stale archive, not the tree. fix: rm "
+                f"{archive.relative_to(REPO)} && ./vibeos-cli build --arch {arch}"
+            )
+            continue
 
         objs: list[Path] = []
         missing: list[str] = []

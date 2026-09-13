@@ -158,7 +158,7 @@ def test_the_authority_set_is_the_whole_link_line_except_ucrt():
 
 
 def test_export_set_honours_the_specs_arch_filter():
-    """An export exists only on the arches its spec line names, and (b) depends on that.
+    r"""An export exists only on the arches its spec line names, and (b) depends on that.
 
     This one shipped and bounced a correct lane. The parse skipped `-arch=` with
     `(?:-\S+\s+)*`, so the export set was arch-blind, and the 11 float bodies ucrtbase
@@ -255,3 +255,69 @@ def test_panic_common_needs_no_extern_crate(tmp_path: Path):
 def test_the_real_crate_references_everything_it_depends_on(tmp_path: Path):
     """The shipping crate. Red here means a cohab is wired up but not actually linked."""
     assert vuc.check_extern_crates() == []
+
+
+# ---------------------------------------------------------------------------
+# A stale archive is not a weaker verdict — it is a verdict about another tree
+# ---------------------------------------------------------------------------
+#
+# `vibeos-cli build` is warm by default and will leave a cargo target untouched
+# (its own `warm-build` warning says exactly that), so an archive can sit on
+# disk older than the Rust that produced it. This check is usually run right
+# after a fix, which makes a stale read report the symbol you just removed --
+# indistinguishable from the fix not working. That happened twice before this
+# guard existed, and on two of three arches the archive was silently stale.
+
+
+def test_stale_archive_is_detected(tmp_path: Path, monkeypatch):
+    crate = tmp_path / "sdk" / "lib" / "rust" / "cnt-rust" / "src"
+    crate.mkdir(parents=True)
+    archive = tmp_path / "libcrt_shared_cargo.a"
+    archive.write_bytes(b"")
+    src = crate / "lib.rs"
+    src.write_text("// newer than the archive\n")
+    import os
+
+    os.utime(archive, (1_000_000, 1_000_000))
+    os.utime(src, (2_000_000, 2_000_000))
+
+    monkeypatch.setattr(vuc, "REPO", tmp_path)
+    assert vuc._stale_against_sources(archive) == "sdk/lib/rust/cnt-rust/src/lib.rs"
+
+
+def test_fresh_archive_is_not_flagged(tmp_path: Path, monkeypatch):
+    crate = tmp_path / "sdk" / "lib" / "rust" / "cnt-rust" / "src"
+    crate.mkdir(parents=True)
+    archive = tmp_path / "libcrt_shared_cargo.a"
+    archive.write_bytes(b"")
+    src = crate / "lib.rs"
+    src.write_text("// older than the archive\n")
+    import os
+
+    os.utime(src, (1_000_000, 1_000_000))
+    os.utime(archive, (2_000_000, 2_000_000))
+
+    monkeypatch.setattr(vuc, "REPO", tmp_path)
+    assert vuc._stale_against_sources(archive) is None
+
+
+def test_unrelated_crate_does_not_trigger_staleness(tmp_path: Path, monkeypatch):
+    """The watch list is the archive's own dependency closure, deliberately.
+
+    A staleness warning that fires whenever any lane touches any .rs anywhere in
+    sdk/lib/rust would be noise, and noise is what gets a check ignored.
+    """
+    other = tmp_path / "sdk" / "lib" / "rust" / "shell32-rust" / "src"
+    other.mkdir(parents=True)
+    archive = tmp_path / "libcrt_shared_cargo.a"
+    archive.write_bytes(b"")
+    src = other / "lib.rs"
+    src.write_text("// a different lane's crate\n")
+    import os
+
+    os.utime(archive, (1_000_000, 1_000_000))
+    os.utime(src, (2_000_000, 2_000_000))
+
+    monkeypatch.setattr(vuc, "REPO", tmp_path)
+    assert "shell32-rust" not in vuc._ARCHIVE_SOURCE_CRATES
+    assert vuc._stale_against_sources(archive) is None
