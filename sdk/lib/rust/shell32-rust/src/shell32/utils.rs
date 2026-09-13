@@ -55,9 +55,33 @@
 //! perfectly. Anyone extending those vtables transcribes from the IDL, in order, and does not
 //! infer from call sites.
 //!
-//! 85 errors remain: IUnknown/IBindCtx identity across com_sys vs shellcom, SHELLSTATE's
-//! bitfield accessors (island renders them as methods, the C reads them as fields), and the
-//! residual pointer casts. Settle casts on three-target agreement of EXPECTED.
+//! 85 errors remain. The next one is NOT more repair -- it is a truncated vtable, and the
+//! analysis is here so nobody has to redo it:
+//!
+//! `shellcom::IBindCtxVtbl` stops after Release, at THREE slots. IBindCtx has THIRTEEN. This
+//! TU calls GetBindOptions / RegisterObjectParam / GetObjectParam, which simply are not in the
+//! struct, so they surface as "no field" rather than as anything that looks like a vtable
+//! problem. `IStreamVtbl` is full-length but carries `usize` placeholders at Seek / CopyTo /
+//! Stat, which this TU is the first caller to need -- those present as "expected function,
+//! found usize".
+//!
+//! The IDL order (objidl.idl), which is what any fix must transcribe:
+//!   QueryInterface, AddRef, Release, RegisterObjectBound, RevokeObjectBound,
+//!   ReleaseBoundObjects, SetBindOptions, GetBindOptions, GetRunningObjectTable,
+//!   RegisterObjectParam, GetObjectParam, EnumObjectParam, RevokeObjectParam
+//!
+//! WATCH THE `call_as` TRAP: objidl.idl also declares RemoteSetBindOptions and
+//! RemoteGetBindOptions, each marked `[call_as(...)]`. Those are RPC proxy SUBSTITUTES, not
+//! additional slots -- counting them gives 15 and shifts every slot after SetBindOptions by
+//! two, which compiles perfectly and calls the wrong method forever.
+//!
+//! Blocked on substrate, not on judgement: BIND_OPTS, STATSTG, LARGE_INTEGER and
+//! ULARGE_INTEGER are in neither shellcom nor the island and need defining first.
+//!
+//! The rest after that: IUnknown/IBindCtx identity across com_sys vs shellcom, SHELLSTATE's
+//! bitfield accessors (island renders them as methods, the C reads them as fields),
+//! UNREFERENCED_PARAMETER called as a fn when it is a macro, and residual pointer casts.
+//! Settle casts on three-target agreement of EXPECTED.
 //!
 //! The integer/pointer cast pass is DONE (162 -> 108): 54 edits, every one applied only where
 //! all three targets named the same EXPECTED type at the same rustc byte span.
