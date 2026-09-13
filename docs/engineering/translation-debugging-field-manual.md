@@ -6809,6 +6809,21 @@ That is also why it survives review — a reader asking "did you check?" gets a 
   sweeps THIS soak produced" — the window silently mixed in two other shas and dropped one of
   the real rows, turning a reproduced 33% into a 22% that did not match.
 
+**The two halves compose, and then the wrong conclusion is unfalsifiable.** The clinching
+instance is fleet-wide and lasted a day: `qemu/gdb-helpers/find-kbase.py` relocates symbols to
+"the image whose export Name matches the basename of `VIBEOS_KERNEL`", which names the **UP**
+kernel — and since the MP-default promotion every medium carries both images and boots the
+**MP** one. So the scan succeeded, against a real, valid, correctly-parsed `ntoskrnl` PE that
+was loaded and **not executing**; the artifact consulted was literally not the artifact
+consulted at runtime. Then the second half: every breakpoint was set on an address the guest
+never runs, and `run-until.sh --break <symbol>` simply timed out with no message. **A dead
+breakpoint is an absence that carries no information**, and it reads exactly like "this code
+path is not reached" — which is the conclusion you were using it to test. Note what makes this
+class dangerous rather than merely annoying: the failure is not "no match found", it is
+"matched the wrong one of two valid candidates", so nothing anywhere reports a problem. If you
+are about to conclude a path is not reached because a breakpoint did not fire, first break on
+something you KNOW executes.
+
 **The inverse: a missing log line is evidence ONLY if you have seen the passing case emit
 it.** Reading the wrong artifact is one half; the other is reading the ABSENCE of an artifact
 as a signal it was never able to carry. `Example_drv.c:227`'s `IRP!` trace is not emitted for

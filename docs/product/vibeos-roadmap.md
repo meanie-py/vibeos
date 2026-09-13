@@ -1678,9 +1678,16 @@ Field-manual § pointers hold the full writeups. **Update on state change.**
     -> UserBuffer, length from `Irp->IoStatus.Information`), intermittent on arm64, with
     `DeviceIoControl` returning ERROR_SUCCESS throughout — `:36`/`:37`/`:38` all still pass, so
     every caller believes it worked. n=1, so no rate; the localisation is what is solid.
-    **Trap for whoever picks this up:** `Example_drv.c:227`'s `IRP!` trace does NOT print for
-    these device-control IRPs in either round, so its absence is not evidence the IOCTL never
-    arrived — the clean round looks identical there and passes.
+    **Two traps for whoever picks this up, both of them absences that mean nothing.** First,
+    `Example_drv.c:227`'s `IRP!` trace does NOT print for these device-control IRPs in either
+    round, so its absence is not evidence the IOCTL never arrived — the clean round looks
+    identical there and passes. Second, **do not trust a kernel breakpoint on the completion
+    path until `0280df67353` lands**: `find-kbase.py` relocates symbols to the image whose
+    export name matches `VIBEOS_KERNEL` (the **UP** kernel) while every medium has booted
+    **MP** since 2026-09-12, so breakpoints land on an address the guest never executes and
+    `run-until.sh --break` times out silently. Following this lead with gdb before that fix
+    lands will look exactly like "the copy-back path is never reached", which is the wrong
+    conclusion. Verify by breaking on something you know executes first.
   - **`NpfsConnect` on arm64 — an UNDOCUMENTED intermittent, found 2026-09-13.** Did not recur
     in the 9-sweep soak, so it is rarer than the other two. One occurrence, so no rate: `pass 679 -> 678, fail 0 -> 1` on
     `20260913-022245-fw6sw4_g-conformance-arm64`. `NpfsConnect` is **679/0 on all three
