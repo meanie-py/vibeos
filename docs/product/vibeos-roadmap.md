@@ -529,9 +529,18 @@ land; date every addition.** Source docs live in `docs/engineering/archive/`.
   deliberate. Verified: 55 CMakeLists carry the flag and **all 55** use the builtin triple, none
   the custom `i686-kernel.json`. The fix already exists in-tree: that json sets
   `rustc-abi: x86-softfloat`, which is the sanctioned way to disable SSE on i386, and the kernel
-  `*-cargo` cells are on it. **Unverified, and worth checking before anyone acts:** whether a
-  newer rustc actually hard-errors (this is rustc's own claim, not a test), and whether all 55
-  genuinely need SSE off — a user-mode crate might simply drop the flag instead. Whoever bumps
+  `*-cargo` cells are on it. **Answered 2026-09-13 by reading the link graph, which kills the
+  obvious remedy:** at least 52 of the 55 genuinely need SSE off, so "split by KIND and let
+  user-mode drop the flag" buys almost nothing. 42 are plainly kernel-side
+  (`drivers/`, `hal/`, `ntoskrnl/`, `win32ss/drivers|reactx`). Ten more are `sdk/lib/*` STATIC
+  LIBRARIES whose kind is decided by their consumers, not their path — `ntoskrnl/CMakeLists.txt:89`
+  links `csq arbiter cmlib ntlsalib rtl`, so those land inside the kernel image and must be
+  no-SSE however user-ish `sdk/lib/rtl` looks. **Classifying these by directory is the wrong
+  oracle**; the question is link-graph reachability into a kernel PE. Only `concfg`, `msvcrt`
+  and `ucrtbase` are candidates for simply dropping the flag (no kernel-side consumer found).
+  So the fix for the other 52 is the softfloat ABI the kernel json already carries, not a KIND
+  split. **Still unverified:** whether a newer rustc actually hard-errors — that is rustc's own
+  claim, not a test of mine. Whoever bumps
   the pin should re-run `rustc --target i686-pc-windows-gnu -C target-feature=-sse,-sse2` first;
   it is a one-command check.
 
