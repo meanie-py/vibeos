@@ -605,7 +605,11 @@ pub unsafe extern "system" fn SafeArrayGetUBound(
     }
 
     let idx = ((*psa).cDims as UINT - nDim) as usize;
-    *plUbound = (*psa).rgsabound[idx].lLbound + (*psa).rgsabound[idx].cElements as LONG - 1;
+    // oaidl.idl: `[size_is(cDims)] SAFEARRAYBOUND rgsabound[];` -- a true flexible
+    // array. bindgen's `[T; 1]` panicked for every dimension past the first, so any
+    // multi-dimensional SAFEARRAY faulted here.
+    let bound = (&raw const (*psa).rgsabound[0]).add(idx);
+    *plUbound = (*bound).lLbound + (*bound).cElements as LONG - 1;
 
     S_OK
 }
@@ -626,7 +630,7 @@ pub unsafe extern "system" fn SafeArrayGetLBound(
         return DISP_E_BADINDEX;
     }
 
-    *plLbound = (*psa).rgsabound[((*psa).cDims as UINT - nDim) as usize].lLbound;
+    *plLbound = (*(&raw const (*psa).rgsabound[0]).add(((*psa).cDims as UINT - nDim) as usize)).lLbound;
     S_OK
 }
 
@@ -786,8 +790,8 @@ pub unsafe extern "system" fn SafeArrayCopyData(
 
     dim = (*psaSource).cDims as i32 - 1;
     while dim >= 0 {
-        if (*psaSource).rgsabound[dim as usize].cElements
-            != (*psaTarget).rgsabound[dim as usize].cElements
+        if (*(&raw const (*psaSource).rgsabound[0]).add(dim as usize)).cElements
+            != (*(&raw const (*psaTarget).rgsabound[0]).add(dim as usize)).cElements
         {
             return E_INVALIDARG;
         }
