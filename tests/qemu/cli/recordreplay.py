@@ -61,9 +61,11 @@ See docs/engineering/qemu-record-replay.md.
 
 from __future__ import annotations
 
+import bisect
 import json
 import os
 import shutil
+import struct
 import subprocess
 import time
 from pathlib import Path
@@ -652,6 +654,138 @@ def assert_same_shape(trace_dir: Path, argv: list[str]) -> None:
             "own chardev+QMP shape reached 1693. Replay through the same harness "
             "that recorded, rather than a hand-built command line."
         )
+
+
+# --------------------------------------------------------------------------
+# where a replay can legally be stopped
+# --------------------------------------------------------------------------
+
+# Fixed-size payloads for the v12 (REPLAY_VERSION 0xe0200c) event ids, keyed by
+# id.  Only the LENGTH matters here — we are skipping, not interpreting — so the
+# table carries no names and no semantics beyond "how many bytes follow".
+#
+# Ids absent from the table are zero-payload events.  EVENT_ASYNC (3..10) and
+# EVENT_RANDOM (27) are variable-length and handled in the walk itself.
+_V12_PAYLOAD = {
+    0: 4,  # EVENT_INSTRUCTION: u32 instruction delta
+    22: 8,  # EVENT_CHAR_WRITE: u32 res + u32 offset
+    26: 4,  # EVENT_AUDIO_OUT
+    28: 8,  # EVENT_CLOCK_HOST
+    29: 8,  # EVENT_CLOCK_VIRTUAL_RT
+}
+_V12_ASYNC_IDS = frozenset(range(3, 11))
+_V12_RANDOM_ID = 27
+# REPLAY_ASYNC_EVENT_BH carries a u64 step id; the other async kinds we have
+# never seen in an arm64 trace, and guessing their width would silently
+# desynchronise the whole walk, so they stop it instead.
+_V12_ASYNC_PAYLOAD = {0: 8}
+_SUPPORTED_REPLAY_VERSION = 0xE0200C
+
+
+def instruction_boundaries(trace_dir: Path) -> list[int]:
+    """Every icount at which `replay.bin` records an instruction-chunk boundary.
+
+    These are the only icounts a replay can be stopped at. A replay executes the
+    guest in the chunks the recording wrote down — `EVENT_INSTRUCTION + N` means
+    "run N more instructions before looking at the log again" — and asking it to
+    stop PART WAY through a chunk kills it outright:
+
+        qemu-system-aarch64: Playback shouldn't have to iowait
+          (insn total 1024013292/750000 left, event 17661 is EVENT_INSTRUCTION)
+
+    The two numbers in that message are the request and the remainder of the
+    chunk it landed inside, which is how the rule was found: three `replay-break`
+    attempts on the same trace, the two that survived sat exactly on a boundary
+    in this list and the one that aborted sat 499,347 instructions into a
+    1,249,347-instruction chunk.
+
+    Chunk sizes are wildly uneven — in one arm64 boot, 1.07M chunks of 18
+    instructions apiece during real execution and 1.25M-instruction chunks while
+    the guest idles in WFI — so there is no arithmetic shortcut and no safe
+    rounding rule. The set has to come from the trace, which is why this walks
+    it. Cost is a few seconds for a 10MB log.
+
+    Raises RecordReplayError on a log this decoder does not understand, rather
+    than returning a short list: a truncated boundary set would silently make
+    `snap_break_icount` recommend an icount that aborts the replay.
+    """
+    path = Path(trace_dir) / "replay.bin"
+    if not path.is_file():
+        raise RecordReplayError(f"{path} does not exist — nothing was recorded here")
+    out: list[int] = []
+    total = 0
+    with path.open("rb") as fh:
+        head = fh.read(12)  # u32 version + u64 of header junk
+        if len(head) < 12:
+            raise RecordReplayError(f"{path} is truncated: {len(head)} bytes, no header")
+        version = struct.unpack(">I", head[:4])[0]
+        if version != _SUPPORTED_REPLAY_VERSION:
+            raise RecordReplayError(
+                f"{path} is replay version 0x{version:x}; this decoder only knows "
+                f"0x{_SUPPORTED_REPLAY_VERSION:x}. Refusing to guess at event sizes — "
+                "a mis-sized event desynchronises the walk and yields plausible "
+                "nonsense rather than an error."
+            )
+        while True:
+            b = fh.read(1)
+            if not b:
+                break
+            eid = b[0]
+            if eid == 0:
+                raw = fh.read(4)
+                if len(raw) < 4:
+                    break  # trailing partial event: the recording was cut short
+                total += struct.unpack(">I", raw)[0]
+                out.append(total)
+                continue
+            if eid in _V12_ASYNC_IDS:
+                kind = fh.read(1)
+                fh.read(1)  # checkpoint id, only used to cross-check
+                if not kind:
+                    break
+                width = _V12_ASYNC_PAYLOAD.get(kind[0])
+                if width is None:
+                    raise RecordReplayError(
+                        f"{path}: async event kind {kind[0]} at offset {fh.tell()} has "
+                        "no known payload width, so the rest of the log cannot be "
+                        "walked. Boundary list would be silently short."
+                    )
+                fh.read(width)
+                continue
+            if eid == _V12_RANDOM_ID:
+                fh.read(4)  # ret
+                size_raw = fh.read(4)
+                if len(size_raw) < 4:
+                    break
+                fh.read(struct.unpack(">I", size_raw)[0])
+                continue
+            fh.read(_V12_PAYLOAD.get(eid, 0))
+    return out
+
+
+def snap_break_icount(trace_dir: Path, want: int) -> int:
+    """The first legal break icount at or after `want`.
+
+    Snapping FORWARD rather than to the nearest is deliberate: a caller asking to
+    stop at N wants to have seen everything up to N, and a backward snap would
+    silently stop short of it.
+
+    Raises if `want` is past the end of the recording — there is no later
+    boundary to offer, and a replay asked to break past its own end simply runs
+    to completion, which looks identical to the break never having been set.
+    """
+    bounds = instruction_boundaries(trace_dir)
+    if not bounds:
+        raise RecordReplayError(
+            f"{trace_dir} records no instruction chunks at all — there is nowhere to break"
+        )
+    i = bisect.bisect_left(bounds, want)
+    if i == len(bounds):
+        raise RecordReplayError(
+            f"icount {want} is past the end of this recording (last boundary "
+            f"{bounds[-1]}); a break there would never fire"
+        )
+    return bounds[i]
 
 
 # --------------------------------------------------------------------------

@@ -198,16 +198,57 @@ replay-break at cur + 3,000,000   -> qemu-system-aarch64: Playback shouldn't
                                      left, event 17661 is EVENT_INSTRUCTION)
 ```
 
-So `replay-break` is a **better** mechanism than interrupting from the debugger,
-not a safe one: where the target icount lands appears to decide whether the stop
-survives, and a break that falls somewhere needing an I/O wait aborts exactly as
-gdb's does. Two samples of success is not a guarantee, and the failure costs the
-whole replay.
+### The rule: a break must land on an instruction-chunk boundary
 
-Treat it as: the only mechanism known to stop a replay at all, worth using, and
-worth retrying at a different icount when it aborts. Whether some icounts are
-inherently safe — checkpoint boundaries, say, which the trace marks explicitly
-with `EVENT_CHECKPOINT` — is the obvious next question and is untested.
+Where the target icount lands is not *approximately* the reason — it is the whole
+reason, and the abort message says so if you read the two numbers in it.
+
+A replay executes the guest in the chunks the recording wrote down:
+`EVENT_INSTRUCTION + N` means "run N more instructions, then look at the log
+again". The failing target above, 1024013292, sits **499,347 instructions into a
+1,249,347-instruction chunk** that runs 1023513945 → 1024763292. `1249347 -
+499347 = 750000`, which is exactly the `/750000 left` QEMU reported. The two
+successes were at 1967263945 and 1972263945, and both are chunk boundaries
+exactly. Stopping part-way through a chunk leaves the replay owing instructions
+it cannot run without advancing the log, and it dies rather than iowait.
+
+So the set of legal break icounts is a property of the trace, readable offline,
+and `./vibeos-cli rr breaks <trace>` prints it:
+
+```
+$ ./vibeos-cli rr breaks clean1 --near 1024013292
+  1023513292
+  1023513945
+  1024763292   <- snaps here
+  ...
+1024013292 is NOT legal: it sits 499347 instructions into a 1249347-instruction
+chunk, leaving 750000. Breaking there aborts the replay. Use 1024763292.
+```
+
+That is QEMU's own abort arithmetic, derived from the log before anything runs.
+
+**The checkpoint hypothesis was wrong and is worth recording as wrong.** The
+obvious guess was that `EVENT_CHECKPOINT` records mark the safe stops. They do
+not discriminate anything: a single arm64 boot contains 1,178,159
+`EVENT_CP_CLOCK_WARP_ACCOUNT` records alone, so nearly every icount is beside a
+checkpoint and being beside one predicts nothing. The variable is the chunk
+boundary.
+
+**There is no arithmetic shortcut, so don't invent one.** Chunk sizes in that
+same boot run from 1 instruction to 2^28, with a median of 18: 1.07M chunks of
+exactly 18 instructions during real execution, and 1.25M-instruction chunks while
+the guest idles in WFI. A break picked as "current + a round number" is nearly
+always safe during execution and nearly always fatal during an idle stretch —
+which is precisely the pattern the three samples showed, and why two successes
+looked like a working mechanism. Snap against the trace instead.
+
+**Status of the rule:** it explains all three observations exactly, including a
+number QEMU printed that nothing else accounts for, and `rr breaks` reproduces
+QEMU's decode of the log independently (same 1,445,912 boundaries, same final
+icount as `replay-dump.py`). It has not yet been tested *prospectively* — a
+deliberate boundary break and a deliberate mid-chunk break on a fresh replay.
+Until it has, treat a snapped icount as much better odds rather than a guarantee,
+and note the failure still costs the whole replay.
 
 `query-replay` is also the best available read of replay progress — a live
 icount, better than inferring position from the rrfile read offset.
@@ -216,7 +257,13 @@ icount, better than inferring position from the rrfile read offset.
 
 * Whether `replay-seek` to an EARLIER icount works. If it does, that is reverse
   execution by its real name — QEMU implements `reverse-continue` as
-  snapshot-plus-replay-forward, which is exactly what seek does.
+  snapshot-plus-replay-forward, which is exactly what seek does. Give it a
+  boundary icount from `rr breaks`; the seek target is presumably subject to the
+  same chunk rule as a break, though that is an assumption and not a measurement.
+* Whether the boundary rule holds PROSPECTIVELY — one deliberate boundary break
+  and one deliberate mid-chunk break. The rule is retrospective on three samples
+  plus an exact arithmetic match; that is strong but it is not a prediction that
+  has been made and then checked.
 * Whether `continue` after a `replay-break` pause resumes safely, or whether the
   replay may only be stopped once.
 * Whether a gdb breakpoint set while paused survives a resume.

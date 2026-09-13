@@ -624,6 +624,23 @@ def build_parser() -> argparse.ArgumentParser:
     rif.add_argument("--root", help=f"trace root (default {rr_mod.DEFAULT_ROOT})")
     rif.set_defaults(fn=rr_mod.rr_cmd, rr_verb="info")
 
+    rbk = rrsub.add_parser(
+        "breaks",
+        help="icounts a replay of this trace can legally be stopped at (see `--near`)",
+    )
+    rbk.add_argument("trace", help="trace name, path, or `latest`")
+    rbk.add_argument("--root", help=f"trace root (default {rr_mod.DEFAULT_ROOT})")
+    rbk.add_argument(
+        "--near",
+        type=int,
+        help="show the boundaries around this icount and the one it would snap to; "
+        "without it, print a summary of the whole set",
+    )
+    rbk.add_argument(
+        "--count", type=int, default=5, help="how many boundaries either side of --near (default 5)"
+    )
+    rbk.set_defaults(fn=rr_mod.rr_cmd, rr_verb="breaks")
+
     kl = sub.add_parser(
         "kill",
         help="stop a QEMU SAFELY (uid/pid-scoped; refuses to kill our own ancestors)",
