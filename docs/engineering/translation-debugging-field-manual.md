@@ -3217,7 +3217,27 @@ the defect for as long as it was treated as a procedure. One line of CMake
 (`BODY_CRATES ntdll-rust smss-csrss-rust`, which the sibling target already declared) fixed it.
 
 The tell is specific and worth memorising: **a remedy whose mechanism you cannot state.** If
-you cannot say why the fix works, you are holding a diagnosis you have not read. And note the
+you cannot say why the fix works, you are holding a diagnosis you have not read.
+
+**How you come to be holding one is a composition of three traps already in these docs**, and
+the author of the paragraph above walked into it within the hour, which is the point of
+recording the route rather than only the tell. A `land` preflight failed; I reported it twice
+as an intermittent `check-tooling` flake; there was no flake.
+
+1. **A pipe swallowed the diagnostic.** `./vibeos-cli land 2>&1 | grep -E "..."` kept the
+   summary line and discarded the cause. Same family as the `| tail` trap AGENTS.md already
+   names for swallowing the exit code — it swallows the *diagnosis* just as readily.
+2. **Absence was read as evidence.** With the reason filtered out, "no cause shown" became
+   "no cause exists" became "intermittent". I had never seen what the passing case prints, so
+   I had no baseline that made the silence meaningful.
+3. **The tool had said it in plain text the whole time** — *"Tooling inputs changed during
+   checks … run `land`/`check-tooling` in the foreground and make no edits until it returns."*
+   I had been backgrounding `land` with `setsid` and committing while it ran.
+
+So the tool was not flaky and was not even quiet: it was explicit, and my own pipeline removed
+what it said. **When a tool "fails intermittently", suspect your filter before the tool** —
+re-run it unfiltered once before the word "flake" enters a report, because that word ends
+investigation and travels to other lanes. And note the
 multiplier — a wrong remedy string is worse than no remedy at all, because every lane that
 hits it learns to distrust the message and memorise a recipe instead, which is exactly the
 "a remembered recipe IS the bug report" rule in AGENTS.md arriving from the tool's side.
