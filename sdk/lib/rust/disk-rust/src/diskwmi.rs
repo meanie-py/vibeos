@@ -14,8 +14,8 @@ use ntkrnl_sys::ddk::{DISK_GEOMETRY, _KWAIT_REASON_Executive, GUID, IDEREGS, _IO
 use core::ffi::c_void;
 // ExInterlockedPopEntryList / ExInterlockedPushEntryList: not in i386 bindgen — declare for all arches.
 extern "system" {
-    fn ExInterlockedPopEntryList(ListHead: *mut ntkrnl_sys::ddk::_SINGLE_LIST_ENTRY, Lock: *mut u64) -> *mut ntkrnl_sys::ddk::_SINGLE_LIST_ENTRY;
-    fn ExInterlockedPushEntryList(ListHead: *mut ntkrnl_sys::ddk::_SINGLE_LIST_ENTRY, ListEntry: *mut ntkrnl_sys::ddk::_SINGLE_LIST_ENTRY, Lock: *mut u64) -> *mut ntkrnl_sys::ddk::_SINGLE_LIST_ENTRY;
+    fn ExInterlockedPopEntryList(ListHead: *mut ntkrnl_sys::ddk::_SINGLE_LIST_ENTRY, Lock: ntkrnl_sys::ddk::PKSPIN_LOCK) -> *mut ntkrnl_sys::ddk::_SINGLE_LIST_ENTRY;
+    fn ExInterlockedPushEntryList(ListHead: *mut ntkrnl_sys::ddk::_SINGLE_LIST_ENTRY, ListEntry: *mut ntkrnl_sys::ddk::_SINGLE_LIST_ENTRY, Lock: ntkrnl_sys::ddk::PKSPIN_LOCK) -> *mut ntkrnl_sys::ddk::_SINGLE_LIST_ENTRY;
 }
 
 // variadic — cdecl on all arches (never stdcall)
@@ -1624,7 +1624,11 @@ pub unsafe extern "system" fn DiskReregWorker(
     loop {
         reregRequest = ExInterlockedPopEntryList(
             &raw mut DiskReregHead as *mut _,
-            &raw mut DiskReregSpinlock as *mut u64,
+            // `as PKSPIN_LOCK`, not `as *mut u64`: the substrate spells a KSPIN_LOCK
+            // ULONG-wide per arch (u32 on i386), while this crate's static is the
+            // ULONG_PTR spelling. Same object and same width; cast to the type the
+            // declaration actually names rather than to a fixed 64 bits.
+            &raw mut DiskReregSpinlock as ntkrnl_sys::ddk::PKSPIN_LOCK,
         ) as *mut DISKREREGREQUEST;
 
         if !reregRequest.is_null() {
@@ -1723,7 +1727,7 @@ pub unsafe extern "system" fn DiskPostReregisterRequest(
         ExInterlockedPushEntryList(
             &raw mut DiskReregHead as *mut _,
             &raw mut (*reregRequest).Next as *mut _,
-            &raw mut DiskReregSpinlock as *mut u64,
+            &raw mut DiskReregSpinlock as ntkrnl_sys::ddk::PKSPIN_LOCK,
         );
         if InterlockedIncrement(&raw mut DiskReregWorkItems) == 1 {
             IoQueueWorkItem(
