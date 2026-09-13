@@ -1698,7 +1698,17 @@ Field-manual § pointers hold the full writeups. **Update on state change.**
     **Two traps for whoever picks this up, both of them absences that mean nothing.** First,
     `Example_drv.c:227`'s `IRP!` trace does NOT print for these device-control IRPs in either
     round, so its absence is not evidence the IOCTL never arrived — the clean round looks
-    identical there and passes. Second, **every kernel symbol resolution on this
+    identical there and passes. Two independent reasons, both worth knowing before re-digging
+    it: it is a `DPRINT` (debug-only, unlike the `trace()` calls beside it that DO print), and
+    `TestIrpHandler` only ever sees the Example device's CREATE/CLOSE anyway — the three IOCTLs
+    go to **kmtest_drv's** device, whose `DriverIoControl` sets `Information = Length` at
+    `kmtest_drv.c:541` and completes. That is the `Information` in shape (a).
+    **Instrument note, because the obvious one does not fit:** a breakpoint at `irp.rs:568`
+    fires on EVERY buffered IRP completion — thousands per boot — so `run-until.sh --break` is
+    not usable there without a condition, and the ~1-in-9 rate means a lot of boots. The
+    instrument that fits is a filtered debug print in the copy-back (log `Information` and the
+    current process when the completing device is kmtest's), which is a kernel change plus a
+    soak rather than a debugger session. Second, **every kernel symbol resolution on this
     path is against the wrong image unless you name `ntkrnlmp.exe` explicitly** — by hand as
     much as by tool. Since the 2026-09-12 MP promotion the media boots `ntkrnlmp.exe` +
     `halmp.dll` (`qemu/freeldr.ini:2`/`:51`), but `build-arm64/ntoskrnl/*.exe` contains ONLY
