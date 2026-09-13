@@ -3320,43 +3320,62 @@ citation feels already-verified, which is exactly what makes it worse. **Quoting
 not reading it** — when a quote is doing load-bearing work in an argument, re-read what it
 says as if it argued the other way.
 
-**c2rust refuses EVERY file in a module, all at one panic site — suspect the include
-closure, and prove it with a headers-only TU.** Symptom: with `--c2rust` default-on, every
-`.c` in a module dies before payment with
+**c2rust refuses EVERY file in a module, all at one panic site. SOLVED 2026-09-13: it is
+three function ATTRIBUTES in the module's own headers — not the include closure, not LLVM.**
+Symptom: with `--c2rust` default-on, every `.c` in a module dies before payment with
 
     c2rust-transpile-0.22.1/src/c_ast/mod.rs:682:29
       Could not find CTypeId(<n>) in TypedAstContext
 
-the id differing per file and nothing else differing. Cause: not N separate bugs and not the
-module's own code — ONE construct somewhere in the shared SDK include closure that the
-ast-exporter cannot represent, so every TU that pulls that closure fails identically. msvcrt:
-18 of 18 plain-C TUs, one call site.
+the id differing per file and nothing else differing. msvcrt: 35 of 37 TUs, one call site.
 
-Diagnose in seconds, for $0, before anyone touches a flag: build a TU containing ONLY the
-file's `#include` lines and no code, compiled with the REAL flags from
-`build-<arch>/compile_commands.json`, and run c2rust on it. If it panics the same way, the
-closure is the trigger and the module's source is irrelevant. For msvcrt it reproduces with
-five `#include`s and an empty body, fingering `stdio.h`.
+**Cause.** c2rust 0.22.1's Clang AST exporter cannot map `__attribute__((malloc))` or
+`__attribute__((format(printf|scanf,…)))`. Each one makes the exporter drop the TYPE of the
+declaration it sits on, and a single such decl anywhere in the closure kills the whole
+transpile. In msvcrt they arrive via its PRIVATE headers as `__WINE_MALLOC`,
+`__WINE_CRT_PRINTF_ATTR` and `__WINE_CRT_SCANF_ATTR`, so every TU inherited them — which is
+exactly why a headers-only TU reproduced it and why it read as "the closure".
 
-Three dead ends already paid for, so nobody re-walks them:
+**Fix.** Neutralise them with `-D` for the ANCHOR only: `rustconv` does this automatically
+now (`c2rust_anchor._ATTR_NEUTRALIZERS`), passed ahead of the db flags so a real `-D` of the
+same name still wins. Safe because none of the three carries semantics we translate — they
+are optimiser and `-Wformat` hints, not ABI and not body — and the real build never sees the
+`-D`. Requires the macros to be `#ifndef`-guarded so the command line can override them.
+Measured: 32 invalid-AST sites → 26 → **0**, one attribute at a time; module-wide 2/37 → 35/37.
 
-* **It is NOT "c2rust is broken".** Trivial C (`int add(int a,int b){return a+b;}`) transpiles
-  clean through the same binary. Whatever it is, it is specific to what the closure contains.
-* **It is NOT an include-PATH problem.** The warning fingers the distro header
-  (`/usr/share/mingw-w64/include/stdio.h`) and our pinned llvm-mingw ships its own, so forcing
-  the pinned sysroot first looks like a cheap fix. It is not: the pinned `stdio.h` trips the
-  same thing. Both header sets contain it, so no `-isystem` reordering helps.
-* **The warning names where the NODE is, not the construct.** The obvious minimal reproducer
-  built from the cited line (`__builtin_va_list` in an inline parameter) does NOT reproduce.
-  Do not treat the cited line as the culprit.
+**Diagnose this class from the `-->` line, never from the panic.** The panic names neither
+file nor construct. Each `Exported Clang AST was invalid` carries a `--> <header>:<line>`
+under it — that is the actionable location. Then run the pinned clang with `-E` and read what
+the macro ACTUALLY expanded to before theorising.
 
-Leading unproven candidate: **c2rust is linked against a different LLVM than the toolchain
-that compiled the sources** — `ldd $(command -v c2rust-transpile)` showed `libLLVM-14.so.1`
-against our pinned `clang 19.1.7`, and upstream's own changelog looks for `llvm-config-20/21`.
-`0.22.1` is the latest release, so there is no upgrade lever; rebuilding c2rust against the
-matching LLVM is the untested move. The headers-only TU above is the regression test for it.
+Traps, each of which cost a probe:
 
-**And the reason this matters more than it looks:** `--no-c2rust` is not a formality. The
+* **Two copies of the same macro names, one guarded and one not.** `__WINE_MALLOC` and
+  friends exist in BOTH `sdk/include/xdk/winnt_old.h` (guarded `!defined(malloc)`, so a
+  `-Dmalloc=malloc` neutralises it) and `dll/win32/msvcrt/include/corecrt.h` (unguarded until
+  this fix). Killing the SDK copy changes the count by one and looks like a failed theory.
+* **`__WINE_DEALLOC` and `__WINE_ALLOC_SIZE` look like the obvious culprits and are already
+  empty.** Their guard is `__GNUC__ > 10`, and clang reports `__GNUC__` 4, so it never fires.
+  The preprocessed output says so in one line; the source reads the opposite way.
+* **A partial fix here is indistinguishable from no fix.** `profile_derive.resolve_sys_crate`
+  special-cased the `_static` suffix, so `--target msvcrt_shared` still resolved to
+  `ntdll-sys` and re-emitted six BLOCKING `SWITCH_CONST_IN_BASE_HEADER` findings for
+  constants already present and correct in `msvcrt-sys`. A blocking gate that cannot be
+  satisfied sends someone transcribing constants that exist. Strip every trailing `_<role>`.
+
+**Still genuinely blocked: the `__label__` class**, and the grep the docs told you to use for
+it was wrong. Under `_USE_DUMMY_PSEH=1` the PSEH macros open a block with a GCC local-label
+declaration (`__label__ __pseh_try_end;`) that c2rust does not support — one
+`Missing child … TagDeclStmt` per label. But that is **not** only `_SEH2_TRY`: wine's
+`__TRY`/`__EXCEPT`/`__EXCEPT_CTX` expand the same way, and msvcrt's `except.c` and `cpp.c` —
+the only 2 of 37 that still refuse — contain **zero** `_SEH2_TRY` between them. Deciding
+"can this file be anchored" by grepping `_SEH2_TRY` gives a wrong answer in both directions.
+
+Rebuilding c2rust against a matching LLVM (`ldd $(command -v c2rust-transpile)` shows
+`libLLVM-14.so.1` against our pinned clang 19.1.7) is **no longer needed for the attribute
+class** and should not be closed wholesale on that basis — it remains the untested lever for
+the `__label__` class ONLY.
+
 anchor is what stops the model silently stubbing a hard body or turning a function-like macro
 into a phantom extern, so trading it away to get past this is a real cost on the other side —
 a decision to take deliberately, not to reach for because a module will not translate.
