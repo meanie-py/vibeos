@@ -6652,6 +6652,40 @@ recovered from a saved log" — it was on the next line. Until that was used, ev
 declined, and the one that mattered needed hand-computing to reach
 `KiSynchronousExceptionEntry+4`.
 
+### A COUNT can answer a different question than the one you asked
+
+**Symptom:** a number is quoted as a hazard — "you have 660 banked `.responses` dirs, all bought
+unsealed, so expect a re-purchase refusal when you touch one" — and every downstream decision is
+made against it. Nobody doubts the number, because the number is *correct*. It is the QUESTION
+that was substituted.
+
+**Cause:** `ls .responses | wc -l` answers **"how many directories"**. The question everyone
+believed it answered was **"how many replay namespaces"**, and those are not the same set.
+`.responses/` holds two unrelated kinds of directory:
+
+- a **resume bank** — has a `manifest.json`, and IS a replay namespace;
+- a **per-run artifact dir** — `<ts>-<file>/` holding `NN_name.rs` streaming output, the durable
+  copy of one paid run. Nothing ever consults it for a cache hit.
+
+Split by `test -f manifest.json`, shell32-com's 664 dirs are **82 banks and 582 stream dirs**,
+and msvcrt-homebrew's 84 are **26 banks and 58 stream dirs** — every one of the 26 sealed, so its
+re-purchase exposure was ZERO where a lane-wide warning had been issued. The scary figure was
+built almost entirely out of objects the guard does not look at.
+
+**Fix:** when a count is load-bearing, state the PREDICATE that defines the set before quoting
+the number, and make the command test that predicate. Here the real exposure is short and
+enumerable — ~31 entries across five named legacy banks, one of which says `unsealed` in its own
+directory name — which is a list you check once, not a tax on every touch. Note also that a
+single entry can dominate a count and mislead on its own: `translation-memory-exact-v1` holds 449
+entries but is translation MEMORY, a different mechanism, so it needs its parenthetical every
+time it appears beside per-class banks.
+
+Same family as the symbolicator and `sccache -s` cases: the tool answered honestly and was not
+lying. It was answering a neighbouring question, and the gap between that question and yours is
+invisible in the output. The tell is a claim whose subject is itself a reading — a count, a
+status line, an exit code — where the cheap disconfirming move is to re-derive it through the
+predicate that actually defines the set.
+
 ### An oracle needs an oracle `[§9.122]`
 A scanner printing `0 findings` is asserting one of two very different things: "I looked and the
 tree is clean" or "I did not look." **This is not a fail-loud problem** — the scanner ran fine.
