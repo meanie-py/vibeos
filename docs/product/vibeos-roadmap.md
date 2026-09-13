@@ -941,10 +941,10 @@ Field-manual § pointers hold the full writeups. **Update on state change.**
   instruction-for-instruction. Recording is verified on arm64 `--smp 1` (the MP kernel on one
   CPU — precisely this bug's configuration): boot to desktop in ~90s vs ~40s normally, 10MB
   trace, and a replay whose guest serial matched the recording line for line as far as it ran.
-  **But the two things that would close #39 with it do not work yet**: the gdbstub aborts QEMU
-  9.0.2 whenever a replay is stopped (`Playback shouldn't have to iowait`), so
-  `reverse-continue` from the zeroed frame is unreachable; and replays wedge partway at a point
-  that varies between runs. So this is not yet a route to "who set PC to 0" — it is a
+  **But the two things that would close #39 with it do not work yet**: under gdb a replay can be
+  run but not STOPPED where you want it (`stepi` aborts QEMU 9.0.2 with `Playback shouldn't
+  have to iowait`; `interrupt` does not land), so `reverse-continue` from the zeroed frame
+  cannot be reached; and replays wedge partway at a point that varies between runs. So this is not yet a route to "who set PC to 0" — it is a
   deterministic capture of a crashing boot, which is still more than a soak ever gave us.
   Both limitations, their measurements, and what to re-test on a QEMU upgrade are in
   `docs/engineering/qemu-record-replay.md`.

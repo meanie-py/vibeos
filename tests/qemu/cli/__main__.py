@@ -586,10 +586,10 @@ def build_parser() -> argparse.ArgumentParser:
     rrep.add_argument(
         "--gdb",
         action="store_true",
-        help="open the gdbstub halted at instruction 0. CAVEAT: stopping a replay "
-        "aborts QEMU 9.0.2 (`Playback shouldn't have to iowait`), so stepping and "
-        "reverse execution do not work today — the flag is kept to re-test on a "
-        "newer QEMU",
+        help="open the gdbstub halted at instruction 0. CAVEAT on QEMU 9.0.2: "
+        "connect/read-registers/continue work, but `stepi` aborts QEMU and "
+        "`interrupt` does not stop a running replay, so reverse execution cannot "
+        "be reached. See docs/engineering/qemu-record-replay.md",
     )
     rrep.add_argument("--root", help=f"trace root (default {rr_mod.DEFAULT_ROOT})")
     rrep.set_defaults(fn=rr_mod.rr_cmd, rr_verb="replay")
