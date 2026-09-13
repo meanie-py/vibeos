@@ -158,7 +158,7 @@ def test_the_authority_set_is_the_whole_link_line_except_ucrt():
 
 
 def test_export_set_honours_the_specs_arch_filter():
-    """An export exists only on the arches its spec line names, and (b) depends on that.
+    r"""An export exists only on the arches its spec line names, and (b) depends on that.
 
     This one shipped and bounced a correct lane. The parse skipped `-arch=` with
     `(?:-\S+\s+)*`, so the export set was arch-blind, and the 11 float bodies ucrtbase
@@ -270,3 +270,172 @@ def test_panic_common_needs_no_extern_crate(tmp_path: Path):
 def test_the_real_crate_references_everything_it_depends_on(tmp_path: Path):
     """The shipping crate. Red here means a cohab is wired up but not actually linked."""
     assert vuc.check_extern_crates() == []
+
+
+# ---------------------------------------------------------------------------
+# A stale archive is not a weaker verdict — it is a verdict about another tree
+# ---------------------------------------------------------------------------
+#
+# `vibeos-cli build` is warm by default and will leave a cargo target untouched
+# (its own `warm-build` warning says exactly that), so an archive can sit on
+# disk older than the Rust that produced it. This check is usually run right
+# after a fix, which makes a stale read report the symbol you just removed --
+# indistinguishable from the fix not working. That happened twice before this
+# guard existed, and on two of three arches the archive was silently stale.
+
+
+def test_stale_archive_is_detected(tmp_path: Path, monkeypatch):
+    crate = tmp_path / "sdk" / "lib" / "rust" / "cnt-rust" / "src"
+    crate.mkdir(parents=True)
+    archive = tmp_path / "libcrt_shared_cargo.a"
+    archive.write_bytes(b"")
+    src = crate / "lib.rs"
+    src.write_text("// newer than the archive\n")
+    import os
+
+    os.utime(archive, (1_000_000, 1_000_000))
+    os.utime(src, (2_000_000, 2_000_000))
+
+    monkeypatch.setattr(vuc, "REPO", tmp_path)
+    assert vuc._stale_against_sources(archive) == "sdk/lib/rust/cnt-rust/src/lib.rs"
+
+
+def test_fresh_archive_is_not_flagged(tmp_path: Path, monkeypatch):
+    crate = tmp_path / "sdk" / "lib" / "rust" / "cnt-rust" / "src"
+    crate.mkdir(parents=True)
+    archive = tmp_path / "libcrt_shared_cargo.a"
+    archive.write_bytes(b"")
+    src = crate / "lib.rs"
+    src.write_text("// older than the archive\n")
+    import os
+
+    os.utime(src, (1_000_000, 1_000_000))
+    os.utime(archive, (2_000_000, 2_000_000))
+
+    monkeypatch.setattr(vuc, "REPO", tmp_path)
+    assert vuc._stale_against_sources(archive) is None
+
+
+def test_unrelated_crate_does_not_trigger_staleness(tmp_path: Path, monkeypatch):
+    """The watch list is the archive's own dependency closure, deliberately.
+
+    A staleness warning that fires whenever any lane touches any .rs anywhere in
+    sdk/lib/rust would be noise, and noise is what gets a check ignored.
+    """
+    other = tmp_path / "sdk" / "lib" / "rust" / "shell32-rust" / "src"
+    other.mkdir(parents=True)
+    archive = tmp_path / "libcrt_shared_cargo.a"
+    archive.write_bytes(b"")
+    src = other / "lib.rs"
+    src.write_text("// a different lane's crate\n")
+    import os
+
+    os.utime(archive, (1_000_000, 1_000_000))
+    os.utime(src, (2_000_000, 2_000_000))
+
+    monkeypatch.setattr(vuc, "REPO", tmp_path)
+    assert "shell32-rust" not in vuc._ARCHIVE_SOURCE_CRATES
+    assert vuc._stale_against_sources(archive) is None
+
+
+def test_a_stale_archive_is_a_NOTE_not_a_finding(tmp_path: Path, monkeypatch, capsys):
+    """Staleness must never reject a lane — it is not the lane's fault.
+
+    mtime is the only staleness signal available here and it is NOT sound: `git
+    merge` rewrites a source file's mtime without changing its content, while
+    cargo correctly declines to relink an archive whose inputs are unchanged. The
+    conductor merges every queued lane at the start of a drain, so in the
+    integration tree those two facts coincide on EVERY batch.
+
+    Emitted as a finding (which is how this first shipped) it rejected a lane for
+    a merge that lane did not make, with `libcrt_shared_cargo.a is OLDER than
+    cabi/math.rs` on all three arches — and had it landed it would have done that
+    to every lane, because this check runs in the SOURCE-lint phase where build
+    state is whatever the previous batch happened to leave behind.
+    """
+    import os
+
+    build = tmp_path / "build-amd64" / "dll" / "win32" / "ucrtbase"
+    build.mkdir(parents=True)
+    archive = build / "libcrt_shared_cargo.a"
+    archive.write_bytes(b"")
+
+    src = tmp_path / "sdk" / "lib" / "rust" / "cnt-rust" / "src"
+    src.mkdir(parents=True)
+    (src / "lib.rs").write_text("// merged: newer mtime, identical content\n")
+
+    os.utime(archive, (1_000_000, 1_000_000))
+    os.utime(src / "lib.rs", (2_000_000, 2_000_000))
+
+    monkeypatch.setattr(vuc, "REPO", tmp_path)
+    findings = vuc.check_archive()
+
+    # The staleness branch must short-circuit BEFORE the missing-objects branch,
+    # or this arch would be blamed for absent .obj files instead.
+    assert findings == [], f"staleness must not produce findings, got: {findings}"
+    assert "older than" in capsys.readouterr().err, "but it must still SAY so"
+
+
+def _git(repo: Path, *args: str, when: str | None = None) -> None:
+    import subprocess
+
+    env = dict(os.environ, GIT_CONFIG_GLOBAL="/dev/null", GIT_CONFIG_SYSTEM="/dev/null")
+    if when:
+        env |= {"GIT_AUTHOR_DATE": when, "GIT_COMMITTER_DATE": when}
+    subprocess.run(["git", "-C", str(repo), *args], check=True, capture_output=True, env=env)
+
+
+import os  # noqa: E402  (used by _git above and the tests below)
+
+
+def test_a_merge_touching_mtime_is_NOT_stale(tmp_path: Path, monkeypatch):
+    """The case that rejected a lane: mtime moved, content did not.
+
+    `git merge` and `git checkout` rewrite mtimes without changing bytes, and the
+    conductor merges every queued lane at the start of every drain. A pure-mtime
+    check therefore calls a perfectly current archive stale on EVERY batch — which
+    is exactly what happened, three arches at once. Git knows the file's content is
+    unchanged since its last commit, so this must come back clean.
+    """
+    _git(tmp_path, "init", "-q", "-b", "main")
+    _git(tmp_path, "config", "user.email", "t@t")
+    _git(tmp_path, "config", "user.name", "t")
+    src = tmp_path / "sdk" / "lib" / "rust" / "cnt-rust" / "src"
+    src.mkdir(parents=True)
+    (src / "lib.rs").write_text("// committed long ago\n")
+    _git(tmp_path, "add", "-A")
+    _git(tmp_path, "commit", "-qm", "seed", when="2001-01-01T00:00:00 +0000")
+
+    archive = tmp_path / "libcrt_shared_cargo.a"
+    archive.write_bytes(b"")
+    os.utime(archive, (1_500_000_000, 1_500_000_000))  # built after that commit
+    os.utime(src / "lib.rs", (2_000_000_000, 2_000_000_000))  # "merged" just now
+
+    monkeypatch.setattr(vuc, "REPO", tmp_path)
+    assert vuc._stale_against_sources(archive) is None
+
+
+def test_a_real_local_edit_IS_stale(tmp_path: Path, monkeypatch):
+    """The other half: a DIRTY file's mtime is the content clock, and must win.
+
+    Without this the git-based check would wave through the case the guard exists
+    for — you edited cabi/math.rs, did not rebuild, and the archive predates it.
+    """
+    _git(tmp_path, "init", "-q", "-b", "main")
+    _git(tmp_path, "config", "user.email", "t@t")
+    _git(tmp_path, "config", "user.name", "t")
+    src = tmp_path / "sdk" / "lib" / "rust" / "cnt-rust" / "src"
+    src.mkdir(parents=True)
+    (src / "lib.rs").write_text("// committed long ago\n")
+    _git(tmp_path, "add", "-A")
+    _git(tmp_path, "commit", "-qm", "seed", when="2001-01-01T00:00:00 +0000")
+
+    archive = tmp_path / "libcrt_shared_cargo.a"
+    archive.write_bytes(b"")
+    os.utime(archive, (1_500_000_000, 1_500_000_000))
+
+    (src / "lib.rs").write_text("// edited, NOT rebuilt\n")  # now dirty
+    os.utime(src / "lib.rs", (2_000_000_000, 2_000_000_000))
+
+    monkeypatch.setattr(vuc, "REPO", tmp_path)
+    assert vuc._stale_against_sources(archive) == "sdk/lib/rust/cnt-rust/src/lib.rs"

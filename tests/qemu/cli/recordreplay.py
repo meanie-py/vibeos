@@ -6,8 +6,13 @@ Our hardest bugs are heisenbugs: an arm64 MP boot faults at PC=0 roughly 1 in 60
 boots, and every attempt to look at it changes it.  Soaking found the RATE and
 nothing else in months.  QEMU's record/replay makes one *particular* boot — the
 one that crashed — into an artifact you can run again, identically, as many
-times as you like, with gdb attached and reverse-execution available.  That
-turns "reproduce it again and hope" into "open the recording".
+times as you like.  That turns "reproduce it again and hope" into "open the
+recording".
+
+Caveat worth knowing before you plan around this: on QEMU 9.0.2 the gdbstub
+cannot be used against a replay — stopping the guest aborts QEMU — so reverse
+execution, which was the original motivation, is not reachable today.  See
+docs/engineering/qemu-record-replay.md.
 
 The tool is the deliverable.  Catching any specific bug with it is a bonus.
 
@@ -84,6 +89,10 @@ DEFAULT_ICOUNT_SHIFT = 3
 # valid pflash backend).  We still copy the image into the trace so replay sees
 # the same bytes.
 _FIRMWARE_IFS = {"pflash"}
+
+# Device models whose backend blkreplay cannot drive (see the refusal in
+# transform() for the measurement). ATAPI only so far; virtio-blk is fine.
+_ATAPI_MODELS = {"ide-cd", "scsi-cd"}
 
 
 class RecordReplayError(RuntimeError):
@@ -211,6 +220,9 @@ def transform(
         raise RecordReplayError(f"mode must be 'record' or 'replay', got {mode!r}")
 
     trace_dir = Path(trace_dir)
+    # drive ids referenced by an `ide-cd` device, collected as we walk so the
+    # ATAPI check below can name the actual drive rather than guess.
+    wrapped_by_device: set[str] = set()
     # name -> {source, format, copied, sha256}; see the write site for why the
     # digest is part of it.
     media: dict[str, dict[str, object]] = {}
@@ -227,7 +239,10 @@ def transform(
                 raise RecordReplayError(
                     f"record/replay needs TCG (instruction counting); got -accel {accel}. "
                     "Hardware virtualization has no instruction counter to anchor the "
-                    "trace to."
+                    "trace to. The vm.py hook demotes x86 to TCG before it gets here "
+                    "(backend.rewrite_accel), so seeing this means a hand-built command "
+                    "line — swap the accelerator yourself, and drop any paired "
+                    "`-cpu host` with it."
                 )
             # MTTCG interleaves vCPU threads with no recorded global order.  We
             # already refuse -smp >1, but thread=multi must go too: it is the
@@ -320,8 +335,36 @@ def transform(
             i += 2
             continue
 
+        if arg == "-device":
+            spec = argv[i + 1] if i + 1 < len(argv) else ""
+            model = spec.split(",", 1)[0]
+            if model in _ATAPI_MODELS:
+                for tok in spec.split(","):
+                    if tok.startswith("drive="):
+                        wrapped_by_device.add(tok.split("=", 1)[1])
+
         out.append(arg)
         i += 1
+
+    # blkreplay cannot drive an ATAPI CD on QEMU 9.0.2. Measured by wrapping one
+    # drive at a time on an amd64 boot: scratch behind virtio-blk-pci wrapped
+    # gives 2050 serial lines in 100s (unwrapped: 1975), while cd0 behind ide-cd
+    # wrapped gives ONE — the guest never leaves the OVMF screen clear. Neither
+    # icount alone nor rrsnapshot is implicated; both are fine on their own.
+    #
+    # Refusing is the whole point. Leaving that one drive unwrapped would record
+    # a trace whose boot media replays non-deterministically, which is the silent
+    # failure every other refusal in this function exists to prevent — and here it
+    # would be the BOOT media, so nothing downstream could be trusted.
+    atapi = sorted(wrapped_by_device)
+    if atapi:
+        raise RecordReplayError(
+            f"cannot record: {', '.join(atapi)} sits behind an ATAPI CD device "
+            "(`ide-cd`), and QEMU 9.0.2's blkreplay filter stalls that path — the "
+            "guest never leaves firmware. This is why amd64/i386 cannot be recorded "
+            "yet: their boot media is an ISO on ide-cd. arm64 is unaffected (virtio "
+            "throughout). See docs/engineering/qemu-record-replay.md."
+        )
 
     if drive_n == 0:
         raise RecordReplayError(
@@ -374,6 +417,47 @@ def write_manifest(trace_dir: Path, *, arch: str, argv: list[str], media: dict, 
     p = trace_dir / "manifest.json"
     p.write_text(json.dumps(manifest, indent=2) + "\n")
     return p
+
+
+def trace_read_position(trace_dir: Path) -> int | None:
+    """How far into `replay.bin` the replaying QEMU has read, or None if nobody
+    has it open.
+
+    This is the measurement that separates a replay that is merely SLOW from one
+    that is WEDGED, and nothing else we have distinguishes them: both look like
+    a quiet serial log and a busy CPU. A frozen position means QEMU is executing
+    without consuming any further recorded event — it is not going to finish, and
+    waiting longer is wasted.
+
+    The value is the KERNEL file offset, so it advances in buffered chunks rather
+    than byte by byte. That is fine for the only question asked of it — is it
+    moving at all, over minutes — but do not read it as a byte-accurate cursor.
+
+    Read from /proc, so Linux-only; returns None anywhere it cannot look, and
+    callers treat that as "no information" rather than as a verdict.
+    """
+    rrfile = (Path(trace_dir) / "replay.bin").resolve()
+    proc = Path("/proc")
+    if not proc.is_dir():
+        return None
+    for pid_dir in proc.iterdir():
+        if not pid_dir.name.isdigit():
+            continue
+        fd_dir = pid_dir / "fd"
+        try:
+            fds = list(fd_dir.iterdir())
+        except OSError:
+            continue  # not ours, or exited between listing and opening
+        for fd in fds:
+            try:
+                if fd.resolve() != rrfile:
+                    continue
+                for line in (pid_dir / "fdinfo" / fd.name).read_text().splitlines():
+                    if line.startswith("pos:"):
+                        return int(line.split()[1])
+            except (OSError, ValueError):
+                continue
+    return None
 
 
 def note_run(trace_dir: Path, *, mode: str, serial_log: str) -> Path:
@@ -442,8 +526,22 @@ def load_manifest(trace_dir: Path) -> dict:
     return json.loads(p.read_text())
 
 
+# Marks a check_trace() line that means the replay CANNOT work, as opposed to
+# might not. Kept as a marker inside the message so there is one place to look,
+# rather than a parallel classification that can drift out of step with the text.
+FATAL_MARKER = "[fatal]"
+
+
 def check_trace(trace_dir: Path) -> list[str]:
-    """Warnings (not errors) about a trace that may not replay faithfully."""
+    """Problems with a trace that may — or may not — replay faithfully.
+
+    A line containing FATAL_MARKER means the replay is pointless, not merely
+    suspect, and `rr replay` refuses on those instead of burning a long run: a
+    replay of a trace whose overlay source had been rebuilt got as far as opening
+    the gdbstub and then dropped the connection, having printed exactly that
+    warning and carried on regardless. A warning nobody can act on mid-run is not
+    a warning.
+    """
     warnings: list[str] = []
     m = load_manifest(trace_dir)
     cur = subprocess.run(
@@ -463,12 +561,14 @@ def check_trace(trace_dir: Path) -> list[str]:
             continue  # a full copy inside the trace; the source cannot matter
         if not sp.exists():
             warnings.append(
-                f"{name} is an overlay over {src}, which is GONE — this trace cannot be replayed"
+                f"{FATAL_MARKER} {name} is an overlay over {src}, which is GONE — "
+                "this trace cannot be replayed. Re-record."
             )
         elif info.get("sha256") and _sha256(sp) != info["sha256"]:
             warnings.append(
-                f"{name} is an overlay over {src}, which has CHANGED since the "
-                "recording (rebuilt media) — the replay will diverge"
+                f"{FATAL_MARKER} {name} is an overlay over {src}, which has CHANGED "
+                "since the recording (rebuilt media) — the guest would read different "
+                "bytes than were recorded. Re-record."
             )
     rr = Path(trace_dir) / "replay.bin"
     if not rr.is_file() or rr.stat().st_size == 0:

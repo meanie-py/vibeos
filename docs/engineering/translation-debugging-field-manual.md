@@ -2933,6 +2933,23 @@ of them were **ours**, not the model's:
   fix is to anchor each fact token to its `(callee, argument index)` at seal time so a
   permutation cannot satisfy the envelope at all — tracked, not yet built.
 
+  **Running the table check module-wide instead of per-function needs three false-positive
+  filters, or it buries the real thing.** Re-run across msvcrt 2026-09-13: `math_error` came
+  back 11/11 identical on type, name AND all three value arguments (so the `MSVCRT_exp` fix
+  holds), but a naive per-file call count over the other shared helpers reported four
+  divergences and every one was an artifact of the counting, not the port:
+  * **Dead preprocessor arms inflate the C side.** `process.c`'s sixth `msvcrt_set_errno` is
+    inside `#ifndef __REACTOS__` and does not compile here, so the Rust is right to omit it.
+    Count only what the arch actually builds.
+  * **A factored helper deflates the Rust side.** `printf_shells.rs` spells the pair as
+    `invalid_param_then_einval()`, so grepping the callee name finds zero where the C has
+    five. Grep the helper's own definition too, then its call sites.
+  * **The twin often lives in another crate.** `wcs.c`'s `_wcsnset_s` is `core_rs`, not
+    `msvcrt/wcs.rs`; per-FILE pairing assumes an organisation the Rust does not have. Pair by
+    SYMBOL, not by filename.
+  Net: the table check is worth running whole-module, but only after those three filters —
+  otherwise the signal is a handful of real sites inside a wall of bookkeeping noise.
+
   **CALL tokens permute too, and there the envelope DOES catch it — because arity is a
   second, independent witness.** Same disease as the constant permutation above, seen on
   DeepSeek v4-pro translating `COpenWithList::LoadInfo` (2026-08-06). The C is
@@ -3123,6 +3140,98 @@ StringCchPrintfW's six arguments. Neither is a near miss, and nothing except the
 caught either. The rejected body is kept under `.responses/<run>/__rejected__/` as a forensic
 copy; assemble around it with `--fn <comma-separated accepted set>` for $0 and hand-write the
 one function.
+
+**Turning a NEW seal on makes every already-banked body unreachable, and the miss is a
+re-BUY.** Symptom: a file you paid for last month reports its functions as "to buy" again,
+with no refusal and no warning — the bank is right there on disk. Cause: `_cache_suffix`
+(`__main__.py:669-687`) appends one independent token per seal that is ENABLED
+(`__factseal_v1__callseal_v1__wideseal_v1`) and never consults whether that seal found
+anything. A bank filled before `--seal-wide` existed is named `__factseal_v1__callseal_v1`,
+a DIFFERENT directory, so it is not found — and the docstring states the consequence outright:
+"a `--seal-wide` run misses the cache and PAYS, while every `__factseal_v1__callseal_v1` body
+already banked stays addressable under its own name." Under its own name — which you only ask
+for by passing `--no-seal-wide`. Fix: when the bank directory's name lacks a token the current
+defaults emit, pass the `--no-seal-*` matching how it was bought, or migrate the bank
+deliberately. Never `--no-resume`: that is an explicit PAID regeneration.
+
+This bit when the seal flags became default-ON: 24 of msvcrt's 26 banks stopped at
+`__callseal_v1`, leaving 2 reachable. **Settle it by constructing the path, never by counting**
+— three counts were offered that night and only the third answered the question asked:
+
+    ls | wc -l                  -> 83   how many DIRECTORIES
+    test -f manifest.json       -> 26   how many are REPLAY BANKS at all
+    does the EXACT path exist?  ->  2   how many are REACHABLE under today's flags
+
+`.responses/` holds two kinds of directory and only one is a replay namespace: a **bank** has a
+`manifest.json`; a `<ts>-<file>` dir is one paid run's streaming artifact — canonical output,
+but never consulted for a cache hit. Counting directories overstated exposure 3x; counting
+banks still overstated it by ignoring the suffix.
+
+**Do not generalise another lane's clean replay to yours.** shell32's bank stays reachable
+whatever the defaults do, because `wide_seal_enabled` is force-disabled for `cpp_com_mode or
+free_functions` (`__main__.py:2373-2381`) — its C++ literals are already lowered by
+`cpp_com.rewrite_wide_literals`, so its namespace structurally cannot grow the wideseal token.
+That is evidence about the COM path, not about the flip. Plain-C lanes get no such exemption.
+
+The generalisation, which recurred three times in one night across different tools (an sccache
+server query, an ISO-string probe, this): **a proxy that is easy to measure stood in for the
+thing that decides, and the tool answered its own question honestly while we asked a different
+one.** When a count keeps coming out differently, stop recounting and construct the exact thing
+the code looks up.
+
+**The nastiest variant of it is a CITATION.** Same night, a different lane argued that a
+"flake" classification could not also reject a lane, and cited `queue.py:901` as its support.
+The words it pasted were *"N submission(s) stay QUEUED; nothing was rejected"* — which says
+the drain HALTS FOR EVERYONE, not that the accused lane is spared. It had even written the
+same mechanism into this file hours earlier ("halts the drain for every queued lane, not just
+the one that tripped it"). The disconfirming evidence was inside its own quotation, correct
+and in hand, and was read in the direction of the hypothesis. A count you can re-run; a
+citation feels already-verified, which is exactly what makes it worse. **Quoting evidence is
+not reading it** — when a quote is doing load-bearing work in an argument, re-read what it
+says as if it argued the other way.
+
+**c2rust refuses EVERY file in a module, all at one panic site — suspect the include
+closure, and prove it with a headers-only TU.** Symptom: with `--c2rust` default-on, every
+`.c` in a module dies before payment with
+
+    c2rust-transpile-0.22.1/src/c_ast/mod.rs:682:29
+      Could not find CTypeId(<n>) in TypedAstContext
+
+the id differing per file and nothing else differing. Cause: not N separate bugs and not the
+module's own code — ONE construct somewhere in the shared SDK include closure that the
+ast-exporter cannot represent, so every TU that pulls that closure fails identically. msvcrt:
+18 of 18 plain-C TUs, one call site.
+
+Diagnose in seconds, for $0, before anyone touches a flag: build a TU containing ONLY the
+file's `#include` lines and no code, compiled with the REAL flags from
+`build-<arch>/compile_commands.json`, and run c2rust on it. If it panics the same way, the
+closure is the trigger and the module's source is irrelevant. For msvcrt it reproduces with
+five `#include`s and an empty body, fingering `stdio.h`.
+
+Three dead ends already paid for, so nobody re-walks them:
+
+* **It is NOT "c2rust is broken".** Trivial C (`int add(int a,int b){return a+b;}`) transpiles
+  clean through the same binary. Whatever it is, it is specific to what the closure contains.
+* **It is NOT an include-PATH problem.** The warning fingers the distro header
+  (`/usr/share/mingw-w64/include/stdio.h`) and our pinned llvm-mingw ships its own, so forcing
+  the pinned sysroot first looks like a cheap fix. It is not: the pinned `stdio.h` trips the
+  same thing. Both header sets contain it, so no `-isystem` reordering helps.
+* **The warning names where the NODE is, not the construct.** The obvious minimal reproducer
+  built from the cited line (`__builtin_va_list` in an inline parameter) does NOT reproduce.
+  Do not treat the cited line as the culprit.
+
+Leading unproven candidate: **c2rust is linked against a different LLVM than the toolchain
+that compiled the sources** — `ldd $(command -v c2rust-transpile)` showed `libLLVM-14.so.1`
+against our pinned `clang 19.1.7`, and upstream's own changelog looks for `llvm-config-20/21`.
+`0.22.1` is the latest release, so there is no upgrade lever; rebuilding c2rust against the
+matching LLVM is the untested move. The headers-only TU above is the regression test for it.
+
+**And the reason this matters more than it looks:** `--no-c2rust` is not a formality. The
+anchor is what stops the model silently stubbing a hard body or turning a function-like macro
+into a phantom extern, so trading it away to get past this is a real cost on the other side —
+a decision to take deliberately, not to reach for because a module will not translate.
+
+
 
 ---
 
@@ -5327,8 +5436,10 @@ so it waits forever for a marker that has gone by. Measured: `smoke --ladder` re
 drain. The grading function saw both halves of the serial and was right; the waiter saw only
 its own half and was stuck.
 
-**Fix:** pass what the caller has already seen (`watch(vm, seen=text)`) and wait only on the
-markers still outstanding — including the case where NOTHING is outstanding, which must read
+**Fix, and it is worth the measurement:** pass what the caller has already seen
+(`watch(vm, seen=text)`) and wait only on the markers still outstanding. Same boot, same 9/9
+verdict, **420.2s -> 94.3s** — total smoke 554s -> 154s. The drain is now bounded by the last
+guest to report rather than by the clock; wait only on the markers still outstanding — including the case where NOTHING is outstanding, which must read
 zero bytes rather than block. Keep the ceiling a real ceiling: a guest that never reports still
 has to spend the budget, or the fix trades a slow pass for a fast false failure.
 
@@ -5357,6 +5468,42 @@ which is exactly what the probe existed to avoid.
 is useless for anything staged from a sibling tree (`build-fex-hello`, `build-i386` — outside
 the build dir every other entry points into), and matching a bare basename re-admits the same
 error, so match the directory too (`*/syswow64/<guest>.exe`).
+
+**When the probe feeds a GATE, a false positive is not a false green — it is a false RED for
+everyone else.** This one shipped into the merge queue before it was fixed, and the damage was
+not the bug it failed to catch. `gate` demanded a ladder from boots that had none, so
+`smoke:amd64` and `smoke:arm64` failed and the whole batch went red: **two batches, four
+innocent lanes, ~45 minutes.** i386 passing throughout is the tell — it has no SysWOW64 to
+stage into, so its probe correctly declined. A false green costs its author the bug they
+missed; a false red costs every lane in the batch, and it does so *silently from their side*,
+because a bounced lane cannot see what blamed it. Only the queue's recursive split made it
+recoverable: it isolated the culprit tip (`REJECTED ... LADDER_NOT_STAGED`) and let the
+innocents through. **So weight an admission check by what consumes it. A probe that only
+decides whether YOU look harder can be sloppy in the optimistic direction; one that decides
+whether OTHER PEOPLE'S work is allowed to land cannot.**
+
+**What that rule does NOT license, because I got this wrong within the hour:** it is not
+"a verdict named FLAKE must never reject a lane". Weighing the consumer means weighing a false
+PASS against a false REJECT *per classification*, and that arithmetic legitimately lands on
+either side — `gate.py` runs it in both directions and is right twice, retrying
+`CONFORMANCE_FLAKE`/`NET_FLAKE` while refusing to make `HANG_TIMEOUT` a blanket member ("a ~50%
+wedge passed a 3-attempt gate ~87% of the time"). Retries ARE the discriminator: a classification
+that survives them is meant to count as evidence, and widening `INCONCLUSIVE` to spare the
+accused would mean a genuine regression in that suite could never reject anyone. It is also
+the opposite of harmless — `INCONCLUSIVE` does not excuse one lane, it raises `Inconclusive`
+at `queue.py:901` and leaves **every** queued submission queued, stalling the whole train
+(the DISK_ADMISSION_FAIL tarpit, fixed in `4a19a7f7ad4`). Trading "1 lane in 8 wrongly
+rejected" for "the drain stalls every time it fires" is a worse deal, not a safer one.
+And the set is not merely the wrong lever, it is an inoperable one: `gate.py:319` assigns
+`"classification": "" if ok else "CONFORMANCE_FLAKE"` — a **constant**, with
+`"retryable": not ok` beside it. A regression that reproduces identically 3/3 carries the same
+string as a coin flip, so the queue cannot distinguish them by classification at all and no
+membership change can recover a signal that was never in the field. The discriminator that
+does exist is thrown away: the retry loop stops at the first GREEN (`gate.py:1146-1148`), so
+it only ever asks "was this attempt red", never "red the same way" — which is why independent
+intermittents COMPOSE (one real gate burned its budget on ExPools, then NpfsConnect, then
+ExPools, and the final verdict shows none of that disagreement). Per-attempt `salient` is
+already captured at `gate.py:314`.
 
 **The generalisation, and it is not "be careful with greps":** `probes_missing_from_media` was
 the RIGHT tool for its own question — *is this string compiled in* (`--require-probe`), where a

@@ -80,6 +80,13 @@ set(_wow64_extras
     ${REACTOS_SOURCE_DIR}/build-i386/base/applications/sndrec32/sndrec32.exe
     ${REACTOS_SOURCE_DIR}/build-i386/base/applications/kbswitch/kbswitch.exe
     ${REACTOS_SOURCE_DIR}/tools/doom/doom-i386.exe
+    # sqlite32: a third-party STRESS guest (real SQLite, tools/stress/sqlite/build.sh).
+    # Built on demand, so absent from a normal tree -- which is exactly what this
+    # list is for. It IS machine-verdicted (0x600D), but it belongs here rather
+    # than in _wow64_ladder because the ladder set must stage unconditionally and
+    # this one legitimately does not exist most of the time; ladder.py grades it
+    # from its OPTIONAL table instead.
+    ${REACTOS_SOURCE_DIR}/tools/stress/sqlite/sqlite32.exe
     )
 
 set(_wow64_guest_ok TRUE)

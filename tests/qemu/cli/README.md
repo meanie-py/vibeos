@@ -476,10 +476,15 @@ invocations (a separate Windows process); address it by run-id, kill by uid tag.
 ### `rr {record|replay|verify|list|info}` — deterministic re-execution of one boot
 
 `rr record --arch arm64` boots once under QEMU's instruction-counted record mode
-and keeps a self-contained trace under `~/vibeos-rr/`; `rr replay latest --gdb`
-re-runs that exact boot instruction-for-instruction, halted at instruction 0
-with the stub open, so `reverse-continue` and reverse watchpoints work. A
-1-in-60 crash you have recorded reproduces every time.
+and keeps a self-contained trace under `~/vibeos-rr/`; `rr replay latest` re-runs
+that exact boot instruction-for-instruction. A 1-in-60 crash you have recorded
+reproduces every time.
+
+**`--gdb` does not currently give you reverse execution.** Stopping a replay —
+stepping, or attaching to a running one — aborts QEMU 9.0.2 with
+`Playback shouldn't have to iowait`. The flag stays so the recipe can be
+re-tested on a newer QEMU. Read the "Replaying with gdb" section of
+`docs/engineering/qemu-record-replay.md` before planning a debugging session.
 
 `rr verify <trace>` is the tool's own oracle: it replays and diffs the replay's
 serial against the recording's, so you learn that the guest ran *the same boot* —

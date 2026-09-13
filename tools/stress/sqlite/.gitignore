@@ -1,0 +1,4 @@
+# Fetched third-party source and build output — never vendored, same policy as
+# tools/doom/.gitignore. build.sh re-fetches on demand.
+amalg/
+sqlite32.exe

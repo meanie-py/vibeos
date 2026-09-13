@@ -2396,8 +2396,24 @@ def cmd_translate(args):
                 preferred_target=rustconv_target.name,
                 usermode=rustconv_target.sys_crate != "ntkrnl_sys",
             )
-            if derived.errors:
+            # Scope the gate to the file actually being translated. `derive_source`
+            # is MODULE-scoped, so an ERROR about a different TU used to block this
+            # one: msvcrt's handler4.c and concurrency.c are permanently ~98% dead,
+            # their DEAD_TU findings are correct and say "DO NOT PAY TO TRANSLATE
+            # IT" about THEMSELVES, and with no waiver flag they made every other
+            # file in msvcrt unpayable too.
+            # Same spelling profile_derive uses for a Finding's `subject`, so the
+            # two strings compare equal.
+            rel_c = profile_derive._rel(c_file, REACTOS_ROOT)
+            if derived.blocking_errors(rel_c):
                 raise ValueError(profile_derive.emit_report(derived))
+            # Not blocking is not the same as not true — say them anyway.
+            for finding in derived.deferred_errors(rel_c):
+                print(
+                    f"  [substrate] NOT BLOCKING {c_file.name} (it is about another "
+                    f"TU), but still true: {finding.code}: {finding.detail}",
+                    file=sys.stderr,
+                )
             print(f"  [substrate] {derived.module.name}: profile audit passed", file=sys.stderr)
         if cpp_com_mode:
             scan = _extend_cpp_class_scan(
