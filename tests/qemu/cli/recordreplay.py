@@ -572,6 +572,12 @@ def check_trace(trace_dir: Path) -> list[str]:
                 "since the recording (rebuilt media) — the guest would read different "
                 "bytes than were recorded. Re-record."
             )
+    if not m.get("finalised"):
+        warnings.append(
+            f"{FATAL_MARKER} recorded before `rr record` waited for the trace to stop "
+            "growing, so it is probably TRUNCATED — replaying one aborts with "
+            '"Missing character write event in the replay log". Re-record.'
+        )
     rr = Path(trace_dir) / "replay.bin"
     if not rr.is_file() or rr.stat().st_size == 0:
         warnings.append("replay.bin is missing or empty — the recording did not complete")

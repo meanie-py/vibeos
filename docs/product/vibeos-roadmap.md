@@ -1000,9 +1000,13 @@ Field-manual § pointers hold the full writeups. **Update on state change.**
   **But the two things that would close #39 with it do not work yet**: under gdb a replay can be
   run but never STOPPED — stepping, attaching mid-run and even a breakpoint HIT all abort
   QEMU 9.0.2 with `Playback shouldn't have to iowait` — so `reverse-continue` from the zeroed
-  frame is unreachable, not merely unattempted. (Replays were also believed to WEDGE partway;
-  that is RETRACTED — those traces had been truncated by a record-finalisation bug, and a
-  correctly finalised trace replays deterministically without aborting, just slowly.)
+  frame is unreachable, not merely unattempted; and replays WEDGE — they stop consuming the
+  trace about two thirds through, at a near-deterministic point, while burning CPU (verified on
+  a correctly finalised trace: read position frozen at byte 2,342,912 of 10,666,166 for ten
+  minutes, and at the IDENTICAL offset through two different harnesses -- so it is one specific
+  recorded event that replay cannot pass, not a race). A separate,
+  now-fixed record-finalisation bug produced TRUNCATED traces that abort rather than wedge;
+  the two were conflated for a while.
   So this is not yet a route to "who set PC to 0" — it is a deterministic capture of a
   crashing boot, which is still more than a soak ever gave us.
   Both limitations, their measurements, and what to re-test on a QEMU upgrade are in
@@ -1789,13 +1793,18 @@ Field-manual § pointers hold the full writeups. **Update on state change.**
     about — an intermittent that never fired during the 15 seeding boots is indistinguishable
     from a regression on any single sweep.
     **Scope, so this table is not misread:** the 3-in-9 is the rate for a **conformance sweep**
-    (`conformance:<arch>`), not for a gate. Since `9f73d184fea1` an arm64 gate also runs the
-    WoW64 ladder for the first time — previously `gate_argv` was silently empty on arm64 — so
-    arm64 gate redness now has a FOURTH possible source, `LADDER_FAIL`, which is **not** one of
-    these intermittents and not a new defect: it is a real check newly switched on, at a
-    measured ~+85s per arm64 gate (`ladder drain: 84.7s`, ceiling 420s, exits when all nine
-    guests report). A first-ever arm64 `LADDER_FAIL` is that check becoming visible, and its
-    salient lines name the guest. Do not attribute one to ExPools/Example/NpfsConnect.
+    (`conformance:<arch>`), not for a gate. Since `9f73d184fea1` an arm64 gate ASKS for the
+    WoW64 ladder (`gate_argv=['--ladder']`, previously silently empty), so `LADDER_FAIL` is a
+    fourth possible source of arm64 gate redness that is **not** one of these intermittents and
+    not a new defect — a real check newly switched on, whose salient lines name the guest.
+    **But it does not run on default media, and the measured cost is zero there.** Verified on
+    a full 3-arch gate with `9f73d184fea1` in HEAD: all three arches SKIPPED at 0.0s —
+    `ladder:arm64` and `ladder:i386` for *"no WoW64 CPU layer on this arch's media"*, and
+    `ladder:amd64` for *"no staged syswow64/ guest in this arch's media manifest"*. arm64's
+    WoW64 layer is the `VIBEOS_FEX=1` opt-in, so a default arm64 gate declines the ladder and
+    pays nothing. The `ladder drain: 84.7s` figure is from a tree built WITH that opt-in — real,
+    and not the default case. So expect the fourth red surface only on a FEX-staged tree; on
+    default media the stage is a skip with a reason string.
     **Why it matters more than one more flaky row: arm64 conformance intermittents COMPOSE,
     and the retry budget is sized for one.** Gate `20260913-021807-fbitjxpy` burned all three
     arm64 attempts on TWO different bugs — `ExPools` (a1), `NpfsConnect` (r1, clean on

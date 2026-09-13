@@ -28,6 +28,7 @@ import json
 import os
 import re
 import signal
+import time
 from pathlib import Path
 
 from tests.qemu import backend as be
@@ -151,13 +152,58 @@ def kill_one(info: dict, *, dry_run: bool = False) -> str:
         return f"already gone {what}"
     except OSError as e:
         return f"FAILED {what}: {e}"
-    return f"SIGTERM {what}"
+
+    # SIGTERM is a REQUEST, and a QEMU can decline it. One under `-icount` with a
+    # wedged replay does exactly that: measured, a VM survived two `vibeos-cli
+    # kill` calls 29 minutes apart, each of which reported success, while holding
+    # a concurrency slot and 94% of a core. Reporting "SIGTERM sent" as if it were
+    # "stopped" is the same trap as trusting a tool's OK over the artifact.
+    #
+    # So: confirm, and escalate if it declines. start.sh's own watchdog has always
+    # done TERM -> sleep -> KILL; the interactive path never did.
+    for _ in range(25):  # ~5s
+        time.sleep(0.2)
+        try:
+            os.kill(qpid, 0)
+        except ProcessLookupError:
+            return f"SIGTERM {what}"
+    try:
+        os.kill(qpid, signal.SIGKILL)
+    except ProcessLookupError:
+        return f"SIGTERM {what}"
+    except OSError as e:
+        return f"SIGTERM ignored, SIGKILL FAILED {what}: {e}"
+    for _ in range(25):
+        time.sleep(0.2)
+        try:
+            os.kill(qpid, 0)
+        except ProcessLookupError:
+            return f"SIGKILL {what} (declined SIGTERM)"
+    return f"STILL ALIVE after SIGTERM+SIGKILL {what} — unkillable (D state?)"
 
 
 def cmd_kill(args, repo: Path) -> int:
     run = Run("kill", getattr(args, "arch", None) or "vms")
     vms = [v for v in running_vms() if v["alive"]]
     if not vms:
+        # Same distinction as the `not chosen` branch below, one level earlier:
+        # "no QEMUs running" is a fine answer to a sweep and a WRONG answer to
+        # "kill these pids", which is a request that then silently did nothing.
+        if getattr(args, "pids", None):
+            run.add(
+                Stage(
+                    "select",
+                    status="fail",
+                    detail="no tracked QEMUs at all; pid(s) "
+                    f"{', '.join(map(str, args.pids))} were NOT killed",
+                    salient=[
+                        "a QEMU started outside qemu/start.sh or tests/qemu/vm.py has no "
+                        "lockfile and is invisible here",
+                        "confirm it is yours, then stop it by pid directly",
+                    ],
+                )
+            )
+            return run.finalize(repo)
         run.add(Stage("select", status="ok", detail="no QEMUs running"))
         return run.finalize(repo)
     chosen, how = select(vms, args)
@@ -172,6 +218,30 @@ def cmd_kill(args, repo: Path) -> int:
         )
         return run.finalize(repo)
     if not chosen:
+        # A SWEEP matching nothing is success -- `--stale` with no orphans is the
+        # normal case. Explicit PIDS matching nothing is not: the caller named
+        # processes they wanted stopped and none were, and reporting `ok` there
+        # sends them away believing it worked. Measured: a QEMU launched outside
+        # start.sh/vm.py has no lockfile, so it is invisible to `running_vms()`,
+        # and `vibeos-cli kill <its pid>` reported OK twice, 29 minutes apart,
+        # while it held 94% of a core.
+        explicit = list(getattr(args, "pids", None) or [])
+        if explicit:
+            run.add(
+                Stage(
+                    "select",
+                    status="fail",
+                    detail=f"no tracked VM for pid(s) {', '.join(map(str, explicit))}",
+                    salient=[
+                        "these pids are not in the QEMU lockfile registry, so nothing was "
+                        "signalled — they were NOT killed",
+                        "a QEMU started outside qemu/start.sh or tests/qemu/vm.py is not "
+                        "tracked; stop it by pid yourself after confirming it is yours",
+                        "`vibeos-cli ps` lists exactly what this command can see",
+                    ],
+                )
+            )
+            return run.finalize(repo)
         run.add(Stage("select", status="ok", detail=f"nothing matched {how}"))
         return run.finalize(repo)
 

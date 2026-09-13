@@ -265,7 +265,7 @@ def test_check_trace_flags_an_empty_replay_log(tmp_path):
     that looks like a trace until you try to replay it."""
     trace = tmp_path / "t"
     trace.mkdir()
-    rr.write_manifest(trace, arch="arm64", argv=[], media={})
+    rr.write_manifest(trace, arch="arm64", argv=[], media={}, finalised=True)
     (trace / "replay.bin").write_bytes(b"")
     assert any("did not complete" in w for w in rr.check_trace(trace))
 
@@ -275,7 +275,7 @@ def test_a_qemu_version_change_warns_but_does_not_refuse(tmp_path, monkeypatch):
     trace, so that is advice; media the guest cannot read back is not."""
     trace = tmp_path / "t"
     trace.mkdir()
-    rr.write_manifest(trace, arch="arm64", argv=[], media={})
+    rr.write_manifest(trace, arch="arm64", argv=[], media={}, finalised=True)
     m = json.loads((trace / "manifest.json").read_text())
     m["qemu_version"] = "QEMU emulator version 1.0.0"
     (trace / "manifest.json").write_text(json.dumps(m))
@@ -297,7 +297,7 @@ def test_replay_refuses_a_trace_whose_media_moved_on(tmp_path, monkeypatch):
     trace = tmp_path / "t"
     cmd = ["qemu-system-aarch64", "-drive", f"file={src},format=raw,if=virtio"]
     _out, media = rr.transform(cmd, mode="record", trace_dir=trace, stage=True)
-    rr.write_manifest(trace, arch="arm64", argv=[], media=media)
+    rr.write_manifest(trace, arch="arm64", argv=[], media=media, finalised=True)
     (trace / "replay.bin").write_bytes(b"x")
     rr.snapshot_pristine(trace)
     src.write_bytes(b"rebuilt since")
@@ -319,7 +319,7 @@ def test_check_trace_flags_a_qemu_version_change(tmp_path):
     most likely reason an old trace stops replaying, and it is invisible otherwise."""
     trace = tmp_path / "t"
     trace.mkdir()
-    rr.write_manifest(trace, arch="arm64", argv=[], media={})
+    rr.write_manifest(trace, arch="arm64", argv=[], media={}, finalised=True)
     m = json.loads((trace / "manifest.json").read_text())
     m["qemu_version"] = "QEMU emulator version 1.0.0"
     (trace / "manifest.json").write_text(json.dumps(m))
@@ -424,7 +424,7 @@ def test_a_rebuilt_source_image_is_flagged_not_silently_replayed(tmp_path):
         f"file={src},format=raw,if=virtio",
     ]
     _out, media = rr.transform(cmd, mode="record", trace_dir=trace, stage=True)
-    rr.write_manifest(trace, arch="arm64", argv=[], media=media)
+    rr.write_manifest(trace, arch="arm64", argv=[], media=media, finalised=True)
     (trace / "replay.bin").write_bytes(b"x")
     assert rr.check_trace(trace) == []
 
@@ -453,7 +453,7 @@ def test_a_copied_image_does_not_depend_on_its_source(tmp_path):
     trace = tmp_path / "t"
     cmd = ["qemu-system-aarch64", "-drive", f"if=pflash,format=qcow2,file={src}"]
     _out, media = rr.transform(cmd, mode="record", trace_dir=trace, stage=True)
-    rr.write_manifest(trace, arch="arm64", argv=[], media=media)
+    rr.write_manifest(trace, arch="arm64", argv=[], media=media, finalised=True)
     (trace / "replay.bin").write_bytes(b"x")
     src.unlink()
     assert rr.check_trace(trace) == []
@@ -873,7 +873,7 @@ def test_the_gdb_flag_warns_that_stopping_a_replay_aborts_qemu(tmp_path, monkeyp
 
     trace = tmp_path / "t"
     trace.mkdir()
-    rr.write_manifest(trace, arch="arm64", argv=[], media={}, boot_cmd=["true"])
+    rr.write_manifest(trace, arch="arm64", argv=[], media={}, boot_cmd=["true"], finalised=True)
     (trace / "replay.bin").write_bytes(b"x")
     (trace / "media").mkdir()
     rr.snapshot_pristine(trace)
@@ -974,7 +974,7 @@ def _fake_trace(root: Path, name: str, size: int, age: float) -> Path:
 
     d = root / name
     (d / "media").mkdir(parents=True)
-    rr.write_manifest(d, arch="arm64", argv=[], media={})
+    rr.write_manifest(d, arch="arm64", argv=[], media={}, finalised=True)
     (d / "replay.bin").write_bytes(b"x" * size)
     os.utime(d, (age, age))
     return d
@@ -1060,3 +1060,34 @@ def test_a_recording_is_never_a_gate_boot(tmp_path):
         assert "gate" not in cmd
         assert "--ladder" not in cmd
         assert cmd[1] in ("conformance", "smoke")
+
+
+def test_a_trace_from_before_the_finalisation_fix_is_refused(tmp_path):
+    """Traces recorded before `rr record` waited for the trace to stop growing are
+    TRUNCATED and look identical from the outside — same manifest, media, pristine,
+    a plausible replay.bin. Replaying one aborts with "Missing character write
+    event in the replay log", deterministically, having produced 56 of 3149 lines.
+
+    The absence of the flag is the only way to recognise that generation, so it is
+    fatal rather than advisory: there is nothing a replay of one can tell you.
+    """
+    trace = tmp_path / "t"
+    trace.mkdir()
+    rr.write_manifest(trace, arch="arm64", argv=[], media={})  # no finalised=
+    (trace / "replay.bin").write_bytes(b"x")
+    problems = rr.check_trace(trace)
+    assert any("TRUNCATED" in w for w in problems)
+    assert all(rr.FATAL_MARKER in w for w in problems if "TRUNCATED" in w)
+
+
+def test_record_stamps_finalised_only_after_the_trace_settles(tmp_path):
+    """The flag must be written by the same code path that waits, or it becomes a
+    label rather than evidence."""
+    import inspect
+
+    from . import rrcmd
+
+    src = inspect.getsource(rrcmd.cmd_record)
+    wait_at = src.index("await_trace_quiescence")
+    stamp_at = src.index("finalised = True")
+    assert wait_at < stamp_at, "the flag is set before the wait — it would mean nothing"
