@@ -41,6 +41,7 @@ nine guests passed, not that the stock applets did.
 from __future__ import annotations
 
 import re
+import subprocess
 import time
 from pathlib import Path
 
@@ -95,49 +96,142 @@ OPTIONAL_EXTRA_SECONDS = 360.0
 STAGED_DIR = "syswow64"
 
 
-def media_has_guests(repo: Path, arch: str) -> bool:
-    """Does the media this arch's boot would OPEN actually carry the guests?
+# arm64's media is not built by `add_cd_file` at all: `qemu/mkramdisk.sh` fills a
+# FAT ramdisk with ~36 `mcopy` calls, into the same `reactos/syswow64` path shape.
+# `qemu/ramdisk.img` is what it writes (boot.img then embeds it), so it is the
+# arm64 analogue of the cmake manifest: the record of what was staged.
+RAMDISK_REL = "qemu/ramdisk.img"
 
-    Read from the generated `boot/<media>.cmake.lst` staging manifest, which is
-    what `add_cd_file` wrote and therefore what the image contains.
 
-    NOT a byte-scan of the image, and this is the whole point. A scan for
-    "hello32.exe" returns a hit on EVERY amd64 image, staged or not, because
-    winlogon's own diagnostic carries the name in its string table
-    ("[WINLOGON] CreateProcessW(hello32.exe) FAILED (error %lu)") in plain ASCII.
-    That false positive was measured, not imagined: it passed a boot with zero
-    staged guests as ready for the ladder, which would have burned the full
-    420s drain and then reported LADDER_NOT_STAGED -- the exact outcome this
-    check exists to prevent. provenance.probes_missing_from_media is right for
-    what it was built for (is this string COMPILED IN); "is this file staged at
-    this path" is a different question and needs the manifest.
+def _guest_names() -> set[str]:
+    return {f"{g}.exe".lower() for g in LADDER}
 
-    False for every native-x86 boot without special-casing it -- an i386 livecd
-    has no SysWOW64 to stage into -- so the arch list stays out of here.
-    """
+
+def _staged_per_manifest(repo: Path, arch: str, subdir: str, names: set[str]) -> set[str] | None:
+    """x86 media, written by `add_cd_file`. None = this media has no manifest,
+    which is not the same as 'no guests' — see `_staged_per_ramdisk`."""
     from . import archcfg
 
     try:
         base = archcfg.base_arch(arch)
         stem = Path(archcfg.arch_build(arch).boot_media_rel).stem
-        text = (repo / f"build-{base}" / "boot" / f"{stem}.cmake.lst").read_text(errors="ignore")
+        # Read EVERY <stem>*.lst, not just <stem>.cmake.lst. add_cd_file(TARGET ...)
+        # lands in the cmake one as an UNEXPANDED generator expression
+        # ("reactos/system32/$<TARGET_FILE_NAME:wow64cpu>"); only add_cd_file(FILE ...)
+        # is literal there. The expanded twin (<stem>.<CONFIG>.lst, written by
+        # file(GENERATE)) carries the real names. Reading one of them answers
+        # correctly for half the entries and silently wrongly for the other half --
+        # which is the same mistake as reading a manifest that does not describe
+        # this media at all.
+        lsts = sorted((repo / f"build-{base}" / "boot").glob(f"{stem}*.lst"))
+        text = "\n".join(f.read_text(errors="ignore") for f in lsts)
     except (OSError, KeyError, AttributeError):
-        # No manifest (never configured) or an arch with no CD media. Absence of
-        # evidence, so decline rather than demand -- the media checks report a
-        # missing build far better than a boolean here could.
-        return False
+        return None
+    if not text:
+        return None
 
-    guests = {f"{g}.exe" for g in LADDER}
+    found: set[str] = set()
     for line in text.splitlines():
         cd_path = line.split("=", 1)[0].strip().replace("\\", "/").lower()
         parts = cd_path.split("/")
-        if len(parts) >= 2 and parts[-2] == STAGED_DIR and parts[-1] in guests:
-            # Any staged guest opts in: winlogon can then run something, and a
-            # PARTIAL set surfaces through check() as a LADDER_FAIL naming the
-            # guests that never reported -- which is the right answer, since a
-            # partial stage is itself a defect and must not pass quietly.
-            return True
-    return False
+        if len(parts) >= 2 and parts[-2] == subdir and parts[-1] in names:
+            found.add(parts[-1])
+    return found
+
+
+def _staged_per_ramdisk(repo: Path, arch: str, subdir: str, names: set[str]) -> set[str] | None:
+    """arm64 media, filled by mcopy. None = cannot tell (no image, no mtools).
+
+    Reads stdout, never the exit code: `mdir` exits 0 on "File not found", which
+    is the same $?-is-not-the-answer trap AGENTS.md names twice.
+    """
+    img = repo / RAMDISK_REL
+    if not img.is_file():
+        return None
+    try:
+        cp = subprocess.run(
+            ["mdir", "-b", "-i", str(img), f"::/reactos/{subdir}"],
+            capture_output=True,
+            text=True,
+            timeout=60,
+        )
+    except (OSError, subprocess.SubprocessError):
+        return None  # mtools absent — no verdict, not a negative one
+    return {
+        base
+        for line in cp.stdout.splitlines()
+        if (base := line.strip().rsplit("/", 1)[-1].lower()) in names
+    }
+
+
+# The per-arch WoW64 CPU layer. winlogon gates every guest spawn on exactly this
+# (`Wow64SupportStaged()`), so it is the honest test for "can this media run a
+# 32-bit guest at all" — and using the launcher's own signal keeps an arch list
+# out of here.
+CPU_LAYERS = {"wow64cpu.dll", "libwow64fex.dll"}
+
+
+def _read_media(repo: Path, arch: str, subdir: str, names: set[str]) -> set[str] | None:
+    """True/False from whichever staging mechanism this media uses; None if
+    neither can answer. Each probe returns None for 'not my mechanism', so a
+    missing manifest can never masquerade as a missing file."""
+    for probe in (_staged_per_manifest, _staged_per_ramdisk):
+        answer = probe(repo, arch, subdir, names)
+        if answer is not None:
+            return answer
+    return None
+
+
+def supports_wow64(repo: Path, arch: str) -> bool:
+    """Is a WoW64 CPU layer on this media? False on a native-x86 livecd, which is
+    why 'no guests staged' is the final answer there rather than a fixable state."""
+    return bool(_read_media(repo, arch, "system32", CPU_LAYERS))
+
+
+def media_has_guests(repo: Path, arch: str) -> bool:
+    """Does the media this arch's boot would OPEN actually carry the guests?
+
+    Two mechanisms, because the tree has two. x86 media is assembled by
+    `add_cd_file` and leaves a `boot/<media>.cmake.lst` manifest; arm64's is a FAT
+    ramdisk filled by `mcopy` and leaves none. Asking only the manifest made arm64
+    answer False WHILE THE GUESTS WERE ABOARD — a false negative that silently
+    withheld ladder coverage from the FEX host, the arch it matters most on. The
+    bug was conflating "no manifest" with "no guests"; each probe now returns None
+    for "not my mechanism" and only a real reading returns False.
+
+    NOT a byte-scan of the image, and that is the point. Scanning for
+    "hello32.exe" hits on EVERY amd64 image staged or not, because winlogon's own
+    diagnostic carries the name in plain ASCII
+    ("[WINLOGON] CreateProcessW(hello32.exe) FAILED (error %lu)"). That false
+    positive was measured, and it made `gate` demand a ladder of boots that had
+    none — 420s burned, then innocent lanes blamed.
+
+    False for i386 without special-casing it: its livecd has a manifest and no
+    SysWOW64 to stage into, so the first probe answers honestly.
+    """
+    return bool(_read_media(repo, arch, STAGED_DIR, _guest_names()))
+
+
+def media_optional_staged(repo: Path, arch: str) -> list[str]:
+    """Which OPTIONAL guests this arch's media actually carries.
+
+    Same read as `media_has_guests`, for the reason the wow64-amd64 lane gave when
+    it added this: the serial is not a reliable source here. An optional guest runs
+    AFTER the parity set, so the drain can finish before its launch line is even
+    emitted, and a hung guest then reads as absent — that silently passed a run as
+    "9/9 guests PASS" while sqlite32 was wedged. The media knows before the boot
+    starts.
+
+    Its original form read only `<stem>.cmake.lst` and documented that it could not
+    answer on arm64, recommending a manifest from mkramdisk.sh. That is no longer
+    needed: `_read_media` answers on both media types and reads every `<stem>*.lst`,
+    so this inherits the ramdisk path and the generator-expression fix instead of
+    carrying a second reader with its own blind spots.
+    """
+    found = _read_media(repo, arch, STAGED_DIR, {f"{g}.exe" for g in OPTIONAL})
+    if not found:
+        return []
+    return sorted(g for g in OPTIONAL if f"{g}.exe".lower() in found)
 
 
 def gate_decision(repo: Path, arch: str) -> tuple[list[str], bool, str]:
@@ -154,6 +248,35 @@ def gate_decision(repo: Path, arch: str) -> tuple[list[str], bool, str]:
             ["--ladder"],
             True,
             f"{len(LADDER)} WoW64 guests staged — boot watched past the desktop marker",
+        )
+    # A native-x86 boot has no CPU layer, so it has no SysWOW64 to stage into and
+    # "not staged" is the final answer, not a fixable state. Checked by asking the
+    # media for the layer winlogon itself gates on, so no arch list appears here.
+    if not supports_wow64(repo, arch):
+        return (
+            [],
+            False,
+            "no WoW64 CPU layer on this arch's media — 32-bit guests cannot run here, "
+            "so the ladder does not apply",
+        )
+    # Built-but-unstaged is a DIFFERENT situation from never-built, and the
+    # difference is one command. Staging is snapshotted when the media is
+    # assembled, so guests built afterwards sit on disk while the media has none --
+    # silently. That cost 45 minutes tonight. The remedy differs by mechanism, so
+    # name the one that matches this media rather than the x86 one everywhere.
+    built = sorted(g for g in LADDER if (repo / "build-fex-hello" / f"{g}.exe").is_file())
+    if built:
+        fix = (
+            "VIBEOS_FEX=1 ./vibeos-cli build --arch arm64"
+            if (repo / RAMDISK_REL).is_file()
+            else "touch dll/win32/wow64cpu/CMakeLists.txt && ./vibeos-cli build --arch <a>"
+        )
+        return (
+            [],
+            False,
+            f"{len(built)}/{len(LADDER)} guests are BUILT but none is staged on this "
+            f"arch's media — staging is snapshotted when the media is assembled; "
+            f"restage with: {fix}",
         )
     return (
         [],
@@ -223,9 +346,14 @@ def verdicts(text: str) -> dict[str, int]:
     return out
 
 
-def check(text: str) -> dict | None:
+def check(text: str, optional_staged: list[str] | None = None) -> dict | None:
     """None if every ladder guest reported PASS; else a failure dict with the
-    same {classification, salient} shape the smoke triage stages use."""
+    same {classification, salient} shape the smoke triage stages use.
+
+    `optional_staged` names OPTIONAL guests the MEDIA carries (see
+    media_optional_staged). Those are then required to report, because a staged
+    guest that never reports has hung -- which is exactly what a stress guest is
+    for and must not read as absent."""
     seen = verdicts(text)
     missing = [g for g in LADDER if g not in seen]
     wrong = [(g, seen[g], want) for g, want in LADDER.items() if g in seen and seen[g] != want]
@@ -233,10 +361,14 @@ def check(text: str) -> dict | None:
     # reason to build one is to find out whether it passes, so a red one that
     # got staged must not be silently tolerated.
     wrong += [(g, seen[g], want) for g, want in OPTIONAL.items() if g in seen and seen[g] != want]
-    # LAUNCHED but never reported is NOT the same as absent. Treating it as
-    # absent renders a hung guest as a green ladder -- observed: sqlite32 wedged
-    # at guest thread startup and the run still printed "9/9 guests PASS".
-    missing += _optional_in_flight(text)
+    # Staged but never reported is NOT the same as absent, and the serial cannot
+    # settle it: an optional guest runs after the parity set, so the drain can
+    # end before its launch line appears. Ask the media instead. (The in-flight
+    # check still catches one that launched inside the drained window.)
+    for g in optional_staged or []:
+        if g not in seen and g not in missing:
+            missing.append(g)
+    missing += [g for g in _optional_in_flight(text) if g not in missing]
 
     if not missing and not wrong:
         return None

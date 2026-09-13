@@ -1648,8 +1648,79 @@ Field-manual § pointers hold the full writeups. **Update on state change.**
     That is exactly the i386-144/144, amd64-68/68, arm64-only-unstable shape recorded above,
     and the amd64 row is the one to confirm before touching the header: it is why the fix is
     demonstrably arm64-only across the three call sites.
-  - **`NpfsConnect` on arm64 — an UNDOCUMENTED intermittent, found 2026-09-13.** One
-    occurrence, so no rate: `pass 679 -> 678, fail 0 -> 1` on
+  - **MEASURED 2026-09-13: an arm64 conformance sweep goes RED 3 times in 9, from THREE
+    distinct causes.** 9 sweeps of the same media at `11669999159` (arm64, smp=0, i.e. the MP
+    kernel on one vcpu), banked in `~/vibeos-flake-farm/conformance.jsonl`: **6 clean, 2
+    `ExPools`, 1 `Example`**. Per-sweep red rate **33%**. That is the number the retry budget
+    and the `CONFORMANCE_FLAKE` gating question below turn on, and it had never been measured —
+    the ~29% figure in the ExPools entry is the rate for ONE test, not for the lane.
+    **Correcting a claim made earlier the same night from n=4:** ExPools was reported at ~50%;
+    over 9 sweeps it is **2/9 = 22%**, so the banked ~29% stands and the 50% was small-sample
+    noise. The lane-level 33% is higher than any single test's rate precisely because the
+    causes are independent and compose — which is the real finding, and it survives the
+    correction that prompted it.
+  - **`Example` on arm64 — a THIRD undocumented intermittent, found 2026-09-13.** One
+    occurrence in 9: `pass 31 -> 29`, NEW failing `Example_user.c:39` and `:40`. `Example` is
+    **31/15 on all three floors** and neither line is marked `assert?` anywhere. Unrelated to
+    the ExPools POOL_HEADER mismatch — `Example_user.c` does not touch `KmtGetPoolType`.
+    **LOCALISED, and unlike ExPools this one is a REAL KERNEL DEFECT, not a harness artifact.**
+    `:39`/`:40` check that an `IOCTL_SEND_MYSTRUCT` round-trip came back MODIFIED — the driver
+    writes `{456, "!!!"}` into the second half of the buffer and sets `*OutLength`
+    (`Example_drv.c:181-185`). In the failing round user mode read `MyStruct[1] = {0, ""}`.
+    The driver side was entirely healthy: **both rounds executed exactly 46 assertions**
+    (`Example: 46 tests executed`, 17 failures vs 15), and none of the handler's own
+    diagnostics printed in either — not `ok_eq_ulong(*OutLength, 2 * sizeof)` at `:177`, not
+    the `skip("Cannot write to buffer!")` guard at `:181`. Equal assertion counts are what
+    rules out the competing explanation: had the handler not run, its `ok_*` calls would be
+    missing from the total. So the handler ran, saw correct lengths, and performed the
+    `RtlCopyMemory` write-back — and the data still did not reach the user buffer. That
+    localises it to the **METHOD_BUFFERED output copy-back on IRP completion** (SystemBuffer
+    -> UserBuffer, length from `Irp->IoStatus.Information`), intermittent on arm64, with
+    `DeviceIoControl` returning ERROR_SUCCESS throughout — `:36`/`:37`/`:38` all still pass, so
+    every caller believes it worked. n=1, so no rate; the localisation is what is solid.
+    **Narrowed further by source inspection (no new run needed).** The copy-back is
+    `iomgr-rust/src/irp.rs:555-577`: under `IRP_BUFFERED_IO | IRP_INPUT_OPERATION` and a
+    non-error status it does `safe_copy_raw(UserBuffer, SystemBuffer, IoStatus.Information)`
+    and, **on failure, sets `STATUS_ACCESS_VIOLATION`**. `Example_user.c:38` asserts the
+    `DeviceIoControl` returned `ERROR_SUCCESS` and it PASSES in the failing round — so the copy
+    did not fault, and the fault-handling branch is not involved. That leaves exactly two
+    shapes, both of which are silent and both of which match zeros in the user buffer:
+    (a) `IoStatus.Information` was **0** at completion, so a zero-byte copy "succeeded" and the
+    user buffer was never touched — note the driver sets `*OutLength = 2 * sizeof` at
+    `Example_drv.c:184`, so this would mean that value failed to reach `Information`; or
+    (b) the copy wrote to a **valid but wrong address** — the buffered copy-back runs in a
+    special-kernel APC, and in the wrong process context the same user VA can be mapped and
+    writable, so the write silently lands in another address space rather than faulting.
+    **One datum separates them**: `IoStatus.Information` and the current process at the moment
+    of the copy. Neither a record/replay capture (replay is wedged, so a trace is a capture and
+    not a session) nor the serial log can supply it; a breakpoint at `irp.rs:568` on a live
+    soak can, at the observed ~1-in-9 rate — once `0280df67353` lands, per the trap below.
+    **Two traps for whoever picks this up, both of them absences that mean nothing.** First,
+    `Example_drv.c:227`'s `IRP!` trace does NOT print for these device-control IRPs in either
+    round, so its absence is not evidence the IOCTL never arrived — the clean round looks
+    identical there and passes. Two independent reasons, both worth knowing before re-digging
+    it: it is a `DPRINT` (debug-only, unlike the `trace()` calls beside it that DO print), and
+    `TestIrpHandler` only ever sees the Example device's CREATE/CLOSE anyway — the three IOCTLs
+    go to **kmtest_drv's** device, whose `DriverIoControl` sets `Information = Length` at
+    `kmtest_drv.c:541` and completes. That is the `Information` in shape (a).
+    **Instrument note, because the obvious one does not fit:** a breakpoint at `irp.rs:568`
+    fires on EVERY buffered IRP completion — thousands per boot — so `run-until.sh --break` is
+    not usable there without a condition, and the ~1-in-9 rate means a lot of boots. The
+    instrument that fits is a filtered debug print in the copy-back (log `Information` and the
+    current process when the completing device is kmtest's), which is a kernel change plus a
+    soak rather than a debugger session. Second, **every kernel symbol resolution on this
+    path is against the wrong image unless you name `ntkrnlmp.exe` explicitly** — by hand as
+    much as by tool. Since the 2026-09-12 MP promotion the media boots `ntkrnlmp.exe` +
+    `halmp.dll` (`qemu/freeldr.ini:2`/`:51`), but `build-arm64/ntoskrnl/*.exe` contains ONLY
+    the UP `ntoskrnl.exe`; the MP image is one directory deeper at
+    `build-arm64/ntoskrnl/ntkrnlmp/ntkrnlmp.exe`. A glob or a tab-complete in the obvious
+    directory therefore hands you the wrong kernel, and **it answers instead of erroring**.
+    `0280df67353` fixes `find-kbase.py` only, so gdb breakpoints will time out silently until
+    it lands — looking exactly like "the copy-back path is never reached", the wrong
+    conclusion — but hand symbolication stays exposed afterwards. Break on something you know
+    executes before believing any silence, and pass the MP binary by name.
+  - **`NpfsConnect` on arm64 — an UNDOCUMENTED intermittent, found 2026-09-13.** Did not recur
+    in the 9-sweep soak, so it is rarer than the other two. One occurrence, so no rate: `pass 679 -> 678, fail 0 -> 1` on
     `20260913-022245-fw6sw4_g-conformance-arm64`. `NpfsConnect` is **679/0 on all three
     floors with no `assert?` anywhere**, so this is exactly the case the ratchet quest warned
     about — an intermittent that never fired during the 15 seeding boots is indistinguishable

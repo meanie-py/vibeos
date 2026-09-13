@@ -119,3 +119,14 @@ pub mod changenotify;
 pub mod CIDLDataObj;
 pub mod IEnumFORMATETCImpl;
 pub mod cidldataobj_free;
+
+/// `utils.cpp`, translated through `--free-functions`: 95 shell helpers with no COM class of
+/// their own — PIDL/path helpers, the Net* computer-description lookups, token-privilege
+/// probes, the DFM verb map, and the `*_RustBridge` entry points C++ callers still reach.
+///
+/// It needs no ATL window substrate: the file's one `CWindowImpl` mention is a COMMENT
+/// explaining why `CStubWindow32` is BRIDGED rather than reimplemented (its thunk and
+/// registered class must have exactly one owner, and two C++ TUs still use it).
+/// Hand-written substrate for utils.cpp: SDK constants outside the island's closure.
+pub mod utils_support;
+// pub mod utils;   // ORPHAN-BY-DESIGN -- see the banner in shell32/utils.rs
