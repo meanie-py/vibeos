@@ -107,7 +107,7 @@ def _guest_names() -> set[str]:
     return {f"{g}.exe".lower() for g in LADDER}
 
 
-def _staged_per_manifest(repo: Path, arch: str, subdir: str, names: set[str]) -> bool | None:
+def _staged_per_manifest(repo: Path, arch: str, subdir: str, names: set[str]) -> set[str] | None:
     """x86 media, written by `add_cd_file`. None = this media has no manifest,
     which is not the same as 'no guests' — see `_staged_per_ramdisk`."""
     from . import archcfg
@@ -130,15 +130,16 @@ def _staged_per_manifest(repo: Path, arch: str, subdir: str, names: set[str]) ->
     if not text:
         return None
 
+    found: set[str] = set()
     for line in text.splitlines():
         cd_path = line.split("=", 1)[0].strip().replace("\\", "/").lower()
         parts = cd_path.split("/")
         if len(parts) >= 2 and parts[-2] == subdir and parts[-1] in names:
-            return True
-    return False
+            found.add(parts[-1])
+    return found
 
 
-def _staged_per_ramdisk(repo: Path, arch: str, subdir: str, names: set[str]) -> bool | None:
+def _staged_per_ramdisk(repo: Path, arch: str, subdir: str, names: set[str]) -> set[str] | None:
     """arm64 media, filled by mcopy. None = cannot tell (no image, no mtools).
 
     Reads stdout, never the exit code: `mdir` exits 0 on "File not found", which
@@ -156,7 +157,11 @@ def _staged_per_ramdisk(repo: Path, arch: str, subdir: str, names: set[str]) -> 
         )
     except (OSError, subprocess.SubprocessError):
         return None  # mtools absent — no verdict, not a negative one
-    return any(line.strip().rsplit("/", 1)[-1].lower() in names for line in cp.stdout.splitlines())
+    return {
+        base
+        for line in cp.stdout.splitlines()
+        if (base := line.strip().rsplit("/", 1)[-1].lower()) in names
+    }
 
 
 # The per-arch WoW64 CPU layer. winlogon gates every guest spawn on exactly this
@@ -166,7 +171,7 @@ def _staged_per_ramdisk(repo: Path, arch: str, subdir: str, names: set[str]) -> 
 CPU_LAYERS = {"wow64cpu.dll", "libwow64fex.dll"}
 
 
-def _read_media(repo: Path, arch: str, subdir: str, names: set[str]) -> bool | None:
+def _read_media(repo: Path, arch: str, subdir: str, names: set[str]) -> set[str] | None:
     """True/False from whichever staging mechanism this media uses; None if
     neither can answer. Each probe returns None for 'not my mechanism', so a
     missing manifest can never masquerade as a missing file."""
@@ -180,7 +185,7 @@ def _read_media(repo: Path, arch: str, subdir: str, names: set[str]) -> bool | N
 def supports_wow64(repo: Path, arch: str) -> bool:
     """Is a WoW64 CPU layer on this media? False on a native-x86 livecd, which is
     why 'no guests staged' is the final answer there rather than a fixable state."""
-    return _read_media(repo, arch, "system32", CPU_LAYERS) is True
+    return bool(_read_media(repo, arch, "system32", CPU_LAYERS))
 
 
 def media_has_guests(repo: Path, arch: str) -> bool:
@@ -204,7 +209,29 @@ def media_has_guests(repo: Path, arch: str) -> bool:
     False for i386 without special-casing it: its livecd has a manifest and no
     SysWOW64 to stage into, so the first probe answers honestly.
     """
-    return _read_media(repo, arch, STAGED_DIR, _guest_names()) is True
+    return bool(_read_media(repo, arch, STAGED_DIR, _guest_names()))
+
+
+def media_optional_staged(repo: Path, arch: str) -> list[str]:
+    """Which OPTIONAL guests this arch's media actually carries.
+
+    Same read as `media_has_guests`, for the reason the wow64-amd64 lane gave when
+    it added this: the serial is not a reliable source here. An optional guest runs
+    AFTER the parity set, so the drain can finish before its launch line is even
+    emitted, and a hung guest then reads as absent — that silently passed a run as
+    "9/9 guests PASS" while sqlite32 was wedged. The media knows before the boot
+    starts.
+
+    Its original form read only `<stem>.cmake.lst` and documented that it could not
+    answer on arm64, recommending a manifest from mkramdisk.sh. That is no longer
+    needed: `_read_media` answers on both media types and reads every `<stem>*.lst`,
+    so this inherits the ramdisk path and the generator-expression fix instead of
+    carrying a second reader with its own blind spots.
+    """
+    found = _read_media(repo, arch, STAGED_DIR, {f"{g}.exe" for g in OPTIONAL})
+    if not found:
+        return []
+    return sorted(g for g in OPTIONAL if f"{g}.exe".lower() in found)
 
 
 def gate_decision(repo: Path, arch: str) -> tuple[list[str], bool, str]:
@@ -319,9 +346,14 @@ def verdicts(text: str) -> dict[str, int]:
     return out
 
 
-def check(text: str) -> dict | None:
+def check(text: str, optional_staged: list[str] | None = None) -> dict | None:
     """None if every ladder guest reported PASS; else a failure dict with the
-    same {classification, salient} shape the smoke triage stages use."""
+    same {classification, salient} shape the smoke triage stages use.
+
+    `optional_staged` names OPTIONAL guests the MEDIA carries (see
+    media_optional_staged). Those are then required to report, because a staged
+    guest that never reports has hung -- which is exactly what a stress guest is
+    for and must not read as absent."""
     seen = verdicts(text)
     missing = [g for g in LADDER if g not in seen]
     wrong = [(g, seen[g], want) for g, want in LADDER.items() if g in seen and seen[g] != want]
@@ -329,10 +361,14 @@ def check(text: str) -> dict | None:
     # reason to build one is to find out whether it passes, so a red one that
     # got staged must not be silently tolerated.
     wrong += [(g, seen[g], want) for g, want in OPTIONAL.items() if g in seen and seen[g] != want]
-    # LAUNCHED but never reported is NOT the same as absent. Treating it as
-    # absent renders a hung guest as a green ladder -- observed: sqlite32 wedged
-    # at guest thread startup and the run still printed "9/9 guests PASS".
-    missing += _optional_in_flight(text)
+    # Staged but never reported is NOT the same as absent, and the serial cannot
+    # settle it: an optional guest runs after the parity set, so the drain can
+    # end before its launch line appears. Ask the media instead. (The in-flight
+    # check still catches one that launched inside the drained window.)
+    for g in optional_staged or []:
+        if g not in seen and g not in missing:
+            missing.append(g)
+    missing += [g for g in _optional_in_flight(text) if g not in missing]
 
     if not missing and not wrong:
         return None

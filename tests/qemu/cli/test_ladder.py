@@ -299,3 +299,26 @@ def test_the_restage_remedy_matches_the_arm64_mechanism(tmp_path):
     _, staged, why = ladder.gate_decision(repo, "arm64")
     assert not staged
     assert "VIBEOS_FEX" in why and "wow64cpu/CMakeLists.txt" not in why
+
+
+@mtools
+def test_optional_guests_are_visible_on_arm64_too(tmp_path):
+    """media_optional_staged arrived from the wow64-amd64 lane reading only
+    <stem>.cmake.lst, with a docstring saying it could not answer on arm64. Now
+    that both readers are one, it inherits the ramdisk path — so this asserts the
+    capability that version documented as impossible."""
+    repo = _ramdisk(tmp_path, [], cpu_layer=True)
+    img = repo / ladder.RAMDISK_REL
+    stub = tmp_path / "s.bin"
+    stub.write_bytes(b"MZ")
+    subprocess.run(["mmd", "-i", str(img), "::/reactos/syswow64"], check=False)
+    for g in ladder.OPTIONAL:
+        subprocess.run(
+            ["mcopy", "-o", "-i", str(img), str(stub), f"::/reactos/syswow64/{g}.exe"], check=True
+        )
+    assert ladder.media_optional_staged(repo, "arm64") == sorted(ladder.OPTIONAL)
+
+
+def test_optional_guests_absent_is_an_empty_list(tmp_path):
+    repo = _manifest(tmp_path, ["reactos/syswow64/hello32.exe=/tmp/vibeos/x"])
+    assert ladder.media_optional_staged(repo, "amd64") == []
