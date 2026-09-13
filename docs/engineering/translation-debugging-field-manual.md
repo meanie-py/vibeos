@@ -2890,6 +2890,23 @@ of them were **ours**, not the model's:
   fix is to anchor each fact token to its `(callee, argument index)` at seal time so a
   permutation cannot satisfy the envelope at all — tracked, not yet built.
 
+  **Running the table check module-wide instead of per-function needs three false-positive
+  filters, or it buries the real thing.** Re-run across msvcrt 2026-09-13: `math_error` came
+  back 11/11 identical on type, name AND all three value arguments (so the `MSVCRT_exp` fix
+  holds), but a naive per-file call count over the other shared helpers reported four
+  divergences and every one was an artifact of the counting, not the port:
+  * **Dead preprocessor arms inflate the C side.** `process.c`'s sixth `msvcrt_set_errno` is
+    inside `#ifndef __REACTOS__` and does not compile here, so the Rust is right to omit it.
+    Count only what the arch actually builds.
+  * **A factored helper deflates the Rust side.** `printf_shells.rs` spells the pair as
+    `invalid_param_then_einval()`, so grepping the callee name finds zero where the C has
+    five. Grep the helper's own definition too, then its call sites.
+  * **The twin often lives in another crate.** `wcs.c`'s `_wcsnset_s` is `core_rs`, not
+    `msvcrt/wcs.rs`; per-FILE pairing assumes an organisation the Rust does not have. Pair by
+    SYMBOL, not by filename.
+  Net: the table check is worth running whole-module, but only after those three filters —
+  otherwise the signal is a handful of real sites inside a wall of bookkeeping noise.
+
   **CALL tokens permute too, and there the envelope DOES catch it — because arity is a
   second, independent witness.** Same disease as the constant permutation above, seen on
   DeepSeek v4-pro translating `COpenWithList::LoadInfo` (2026-08-06). The C is
