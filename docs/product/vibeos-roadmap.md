@@ -1777,6 +1777,14 @@ Field-manual § pointers hold the full writeups. **Update on state change.**
     floors with no `assert?` anywhere**, so this is exactly the case the ratchet quest warned
     about — an intermittent that never fired during the 15 seeding boots is indistinguishable
     from a regression on any single sweep.
+    **Scope, so this table is not misread:** the 3-in-9 is the rate for a **conformance sweep**
+    (`conformance:<arch>`), not for a gate. Since `9f73d184fea1` an arm64 gate also runs the
+    WoW64 ladder for the first time — previously `gate_argv` was silently empty on arm64 — so
+    arm64 gate redness now has a FOURTH possible source, `LADDER_FAIL`, which is **not** one of
+    these intermittents and not a new defect: it is a real check newly switched on, at a
+    measured ~+85s per arm64 gate (`ladder drain: 84.7s`, ceiling 420s, exits when all nine
+    guests report). A first-ever arm64 `LADDER_FAIL` is that check becoming visible, and its
+    salient lines name the guest. Do not attribute one to ExPools/Example/NpfsConnect.
     **Why it matters more than one more flaky row: arm64 conformance intermittents COMPOSE,
     and the retry budget is sized for one.** Gate `20260913-021807-fbitjxpy` burned all three
     arm64 attempts on TWO different bugs — `ExPools` (a1), `NpfsConnect` (r1, clean on
