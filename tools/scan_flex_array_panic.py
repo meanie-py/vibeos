@@ -85,6 +85,7 @@ from __future__ import annotations
 import argparse
 import os
 import re
+import struct
 import subprocess
 import sys
 from pathlib import Path
@@ -96,7 +97,28 @@ OBJDUMP = REPO / ".build-tools" / "llvm-mingw" / "bin" / "llvm-objdump"
 # The immediate pushed just before the call is the array length. i386 pushes it;
 # on other arches the length lands in an argument register, so this reader is
 # i386-only by construction and says so rather than silently grading nothing.
-_LEN_PUSH = re.compile(r"pushl\s+\$0x([0-9a-f]+)$")
+# ARGUMENT ORDER, and getting it wrong is why this reader over-reported. The callee is
+# `core::panicking::panic_bounds_check(index, len, &Location)`, and cdecl pushes
+# right-to-left, so the emission order is `push loc; push len; push index` and the LAST
+# push is the INDEX. Keying on the last push therefore selected `index == 1`, not
+# `len == 1`, while the docstring claimed the latter. Measured over the whole i386
+# corpus: index==1 matched 10 sites, len==1 matched 5, and NOTHING had len==1 with a
+# different index -- so the old criterion missed nothing and over-reported by five.
+#
+# The five it added were not near-misses. Each had its length in a REGISTER rather than
+# an immediate, i.e. a runtime-length slice -- which fails the grading protocol's second
+# test ("is the declared length a LITERAL 1") by construction. A `[T; 1]` cannot have a
+# dynamic length. Reporting them sent graders to `rtl_strings` functions that index a
+# plain slice and declare no array at all.
+#
+# objdump appends `# imm = 0x570` to the 5-byte push form, so anchoring on end-of-line
+# also skipped every LARGE immediate -- precisely the &Location argument.
+_PUSH_CONST = re.compile(r"pushl\s+\$0x([0-9a-f]+)\s*(?:#.*)?$")
+_PUSH_ANY = re.compile(r"\bpushl\s")
+# `\t\t\t00000414:  IMAGE_REL_I386_DIR32\t.rdata` — the Location argument pushed just
+# before a bounds check is a &core::panic::Location, and it lives at this offset into
+# the object's .rdata.
+_RDATA_RELOC = re.compile(r"^\s*([0-9a-f]+):\s+IMAGE_REL_I386_DIR32\s+\.rdata\s*$")
 _SYMBOL = re.compile(r"^[0-9a-f]+ <(.+)>:$")
 _CARRY = re.compile(r"pushl|calll|IMAGE_REL|movl|leal")
 _PANIC = "panic_bounds_check"
@@ -129,33 +151,156 @@ def find_artifact(build: Path, crate: str) -> Path | None:
     return None
 
 
-def scan_object(path: Path) -> list[tuple[str, int]]:
-    """[(symbol, array_len)] for every bounds check whose array length is 1."""
+_MEMBER = re.compile(r"^(?:\S*\((?P<mem>[^)]+)\)|(?P<obj>\S+)):\s+file format ")
+
+
+def _section_by_member(path: Path, section: str) -> dict[str, bytes]:
+    """{archive member -> raw bytes of `section`}.
+
+    PER MEMBER, and that is the whole point. The first version dumped the ARCHIVE and
+    concatenated every member's .rdata into one buffer, then indexed it with an offset
+    that is section-relative WITHIN ONE MEMBER. ks-rust alone carries five 21-byte source
+    paths across its members, so the wrong-base buffer decoded to a real-looking answer
+    every time -- the failure was invisible precisely because the result stayed plausible."""
+    proc = subprocess.run(
+        [str(OBJDUMP), "-s", "-j", section, str(path)],
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    if proc.returncode != 0:
+        return {}
+    out: dict[str, bytearray] = {}
+    cur: bytearray | None = None
+    for line in proc.stdout.splitlines():
+        m = _MEMBER.match(line)
+        if m:
+            cur = out.setdefault(m.group("mem") or m.group("obj"), bytearray())
+            continue
+        if cur is None:
+            continue
+        m = re.match(r"^\s*([0-9a-f]+)\s((?:[0-9a-f]{2,8}\s){1,4})\s", line)
+        if m:
+            cur.extend(bytes.fromhex(m.group(2).replace(" ", "")))
+    return {k: bytes(v) for k, v in out.items()}
+
+
+def _path_candidates(rdata: bytes, slen: int) -> list[str]:
+    """Every NUL-delimited .rdata string of exactly `slen` bytes that looks like one of
+    our source paths."""
+    out, seen = [], set()
+    for m in re.finditer(rb"[ -~]{4,}", rdata):
+        blob, base = m.group(), m.start()
+        for piece_off, piece in _split_pieces(blob, base):
+            if len(piece) == slen and b"-rust/src/" in piece and piece not in seen:
+                seen.add(piece)
+                out.append(piece.decode())
+            del piece_off
+    return out
+
+
+def _split_pieces(blob: bytes, base: int):
+    off = 0
+    for piece in blob.split(b"\x00"):
+        yield base + off, piece
+        off += len(piece) + 1
+
+
+def resolve_location(rdata: bytes, off: int, addend: int | None = None) -> str:
+    """`file:line:col` for the &core::panic::Location at `off` into .rdata.
+
+    The struct is {ptr, len, line, col}. In an unlinked object the ptr is relocated, so
+    the filename must be recovered from .rdata itself.
+
+    NEVER GUESS BETWEEN EQUALS. The first version of this searched for the first string
+    whose length matched `len` and returned it -- and ks-rust has BOTH `ks-rust/src/
+    filter.rs` and `ks-rust/src/swenum.rs` in one object, each exactly 21 bytes, so it
+    confidently named the wrong file and sent the grader to a function containing no
+    array index at all. A tool that points at the wrong source is worse than one that
+    declines, because the reader has no way to tell. So: prefer the relocation addend
+    when it lands on a plausible string, else accept a unique candidate, else say the
+    answer is ambiguous and list them."""
+    if len(rdata) < off + 16:
+        return ""
+    _, slen, line, col = struct.unpack_from("<IIII", rdata, off)
+    if not 1 <= slen <= 512 or not 1 <= line < 1_000_000:
+        return ""
+    if addend is not None and addend >= 0 and addend + slen <= len(rdata):
+        cand = rdata[addend : addend + slen]
+        if b"-rust/src/" in cand and cand.isascii() and b"\x00" not in cand:
+            return f"{cand.decode()}:{line}:{col}"
+    names = _path_candidates(rdata, slen)
+    if len(names) == 1:
+        return f"{names[0]}:{line}:{col}"
+    if names:
+        return f"AMBIGUOUS among {', '.join(sorted(names))} — at :{line}:{col}"
+    return f"<unresolved file>:{line}:{col}"
+
+
+# How many instructions of lead-up to keep for --explain. The useful signal is the
+# address computation feeding the check plus any relocation naming a global, and
+# those sit within a few instructions of the push.
+_EXPLAIN_WINDOW = 14
+
+
+def scan_object(path: Path, *, explain: bool = False) -> list[tuple[str, int, list[str]]]:
+    """[(symbol, array_len, context)] for every bounds check whose array length is 1.
+
+    `context` is empty unless `explain`. WHY IT EXISTS: the object scanner attributes a
+    check to the symbol it was INLINED INTO, so a flagged symbol routinely contains no
+    index at all -- `rtl_strings::determine_dos_path_name_type_ustr` indexes a SLICE and
+    declares no `[T; 1]` anywhere. Grading those from source is not slow, it is
+    impossible: the source of the flagged symbol is the wrong source. The disassembly
+    around the check is the only place the real array is named, so the reader that found
+    the site is the right thing to ask, rather than a hand-run objdump recipe."""
     proc = subprocess.run(
         [str(OBJDUMP), "-dr", str(path)], capture_output=True, text=True, check=False
     )
     if proc.returncode != 0:
         raise RuntimeError(f"{OBJDUMP} failed on {path}: {proc.stderr.strip()[:200]}")
+    by_member = _section_by_member(path, ".rdata") if explain else {}
+    rdata = b""
     sym = "?"
-    pending: int | None = None
+    # The last three pushes, newest last, as (constant value or None).
+    pushes: list[int | None] = []
+    window: list[str] = []
     hits = []
     for line in proc.stdout.splitlines():
+        m = _MEMBER.match(line)
+        if m:
+            rdata = by_member.get(m.group("mem") or m.group("obj"), b"")
+            sym, pushes, window = "?", [], []
+            continue
         m = _SYMBOL.match(line)
         if m:
             sym = m.group(1)
-            pending = None
+            pushes = []
+            window = []
             continue
-        m = _LEN_PUSH.search(line)
-        if m:
-            pending = int(m.group(1), 16)
+        window.append(line.rstrip())
+        del window[:-_EXPLAIN_WINDOW]
+        if _PUSH_ANY.search(line):
+            m = _PUSH_CONST.search(line.rstrip())
+            pushes.append(int(m.group(1), 16) if m else None)
+            del pushes[:-3]
             continue
         if _PANIC in line:
-            if pending == 1:
-                hits.append((sym, pending))
-            pending = None
+            # pushes == [loc, len, index]; only a CONSTANT len of 1 is a [T; 1].
+            if len(pushes) == 3 and pushes[1] == 1:
+                loc_off = pushes[0]
+                where = (
+                    resolve_location(rdata, loc_off, struct.unpack_from("<I", rdata, loc_off)[0])
+                    if (explain and loc_off is not None and len(rdata) >= loc_off + 16)
+                    else ""
+                )
+                ctx = list(window) if explain else []
+                if where:
+                    ctx = [f"    -> {where}   (from the panic Location)", *ctx]
+                hits.append((sym, 1, ctx))
+            pushes = []
             continue
         if not _CARRY.search(line):
-            pending = None
+            pushes = []
     return hits
 
 
@@ -163,6 +308,13 @@ def main(argv: list[str]) -> int:
     ap = argparse.ArgumentParser(description=__doc__)
     ap.add_argument("--arch", default="i386", help="only i386 encodes the length as a push")
     ap.add_argument("--lint", action="store_true", help="exit 1 when any site is found")
+    ap.add_argument(
+        "--explain",
+        metavar="SUBSTR",
+        help="dump the disassembly around each hit whose crate or symbol contains SUBSTR "
+        "-- the flagged symbol is where the check was INLINED TO, so this is where the "
+        "real array is named",
+    )
     args = ap.parse_args(argv)
 
     if args.arch != "i386":
@@ -189,10 +341,14 @@ def main(argv: list[str]) -> int:
         if art is None:
             missing.append(crate)
             continue
-        for sym, _ in scan_object(art):
+        for sym, _, ctx in scan_object(art, explain=bool(args.explain)):
             findings.append((crate, sym))
+            if args.explain and (args.explain in crate or args.explain in sym):
+                print(f"\n=== {crate}: {sym}")
+                for line in ctx:
+                    print(f"    {line}")
 
-    for crate, sym in sorted(set(findings)):
+    for crate, sym in sorted({(c, s) for c, s in findings}):
         print(f"{crate}: {sym}: bounds check on a 1-element array (bindgen flexible array?)")
     print(
         f"\n{len(set(findings))} site(s) in {len({c for c, _ in findings})} module(s); "
