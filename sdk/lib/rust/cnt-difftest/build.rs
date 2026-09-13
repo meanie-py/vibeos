@@ -29,6 +29,26 @@ fn main() {
     // to ref_<name> and includes the genuine ReactOS logic.
     let inc = |p: PathBuf| format!("#include \"{}\"\n", p.display());
     let s = |p: &str| crt.join(p);
+    // The `_FPCLASS_*` values, read out of the genuine SDK header. If the
+    // header ever stops carrying them, fail here rather than compile a
+    // reference whose classifier silently returns 0 for everything.
+    let fpclass_consts = {
+        let h = repo.join("sdk/include/ucrt/float.h");
+        let text = fs::read_to_string(&h)
+            .unwrap_or_else(|e| panic!("cannot read {}: {e}", h.display()));
+        let lines: Vec<&str> = text
+            .lines()
+            .filter(|l| l.trim_start().starts_with("#define _FPCLASS_"))
+            .collect();
+        assert!(
+            lines.len() >= 10,
+            "expected the 10 _FPCLASS_* defines in {}, found {} -- the header moved",
+            h.display(),
+            lines.len()
+        );
+        format!("{}\n", lines.join("\n"))
+    };
+
     let mut units: Vec<(&str, String)> = vec![
         ("strlen", format!("typedef char _TCHAR;\n#define _tcslen ref_strlen\n#include <stddef.h>\n{}", inc(s("string/tcslen.h")))),
         ("strncpy", format!("typedef char _TCHAR;\n#define _tcsncpy ref_strncpy\n#include <stddef.h>\n{}", inc(s("string/tcsncpy.h")))),
@@ -596,6 +616,46 @@ fn main() {
         ("scalbnf", format!("#define scalbnf ref_scalbnf\n{}", inc(s("math/scalbnf.c")))),
         ("round", format!("#define round ref_round\n{}", inc(s("math/round.c")))),
         ("roundf", format!("#define roundf ref_roundf\n{}", inc(s("math/roundf.c")))),
+
+        // ── the last of crtmath's plain-C float/misc surface ──────────────
+        //
+        // The seven f32 transcendental wrappers (`sinf`/`cosf`/`expf`/`logf`/
+        // `log10f`/`powf`/`fmodf`) are deliberately NOT graded here, and the
+        // reason is the oracle, not the effort. Each is `return (float)sin(
+        // (double)x);` — so a reference TU's `sin` binds the HOST's libm, and
+        // the row would compare "glibc sin, narrowed" against "our Rust sin,
+        // narrowed". That grades `sin`, which tests/diff.rs already grades
+        // directly and bit-exactly, and it would fail on a libm difference
+        // that says nothing about the wrapper. There is no third
+        // implementation to be the oracle, so a green row would be
+        // reassurance rather than evidence.
+        //
+        // The five below are the opposite case: self-contained bit and
+        // integer logic, each with a genuine standalone C body, and each with
+        // real transcription risk (a bitfield's width, a truncation fixup's
+        // sign condition, a NaN's quiet bit).
+        ("copysign", format!("#define _copysign ref_copysign\n{}", inc(s("float/copysign.c")))),
+        ("copysignf", format!("#define _In_\n#define _Check_return_\n#define __cdecl\n#define _copysign ref_copysign_priv\n{}#define _copysignf ref_copysignf\n{}",
+            inc(s("float/copysign.c")), inc(s("math/_copysignf.c")))),
+        ("frexp", format!("#define frexp ref_frexp\n{}", inc(s("math/frexp.c")))),
+        // ldiv is LP32-vs-LP64, the same trap strtoul above documents: Windows
+        // `long` is 32-bit on all three of our arches, the host's is 64. Left
+        // alone, the reference returns a 16-byte {long,long} in RAX:RDX while
+        // the Rust side reads an 8-byte {i32,i32} out of RAX, and the rows
+        // compare a correct answer against register debris. (Found by this
+        // suite on its first run, reading quot=1/rem=-1 as 0/0.) precomp.h is
+        // pre-included so ldiv.c's own guarded `#include <precomp.h>` is a
+        // no-op and `#define long int` cannot reach its `__int64` macro.
+        ("ldiv", format!("#include <precomp.h>\ntypedef struct {{ int quot; int rem; }} ldiv_t;\n#define long int\n#define ldiv ref_ldiv\n{}", inc(s("math/ldiv.c")))),
+        // fpclass.c needs float.h's `_FPCLASS_*`, which the host's <float.h>
+        // does not have. Including the SDK's ucrt/float.h whole is not an
+        // option (it pulls corecrt.h and the rest of the ucrt chain), so the
+        // ten `#define _FPCLASS_*` lines are LIFTED FROM THAT HEADER at build
+        // time rather than retyped here. The difference matters: a hand copy
+        // is a second source of truth that goes stale silently, and these are
+        // precisely the constants the function is made of.
+        ("fpclass", format!("{}#define _fpclass ref_fpclass\n{}",
+            fpclass_consts, inc(s("float/fpclass.c")))),
         ("nextafter", "#include <stdint.h>\ndouble ref_nextafter(double x,double y){union{double f;uint64_t i;}ux={x},uy={y};uint64_t ax,ay;if(x!=x||y!=y)return x+y;if(ux.i==uy.i)return y;ax=ux.i&0x7fffffffffffffffULL;ay=uy.i&0x7fffffffffffffffULL;if(ax==0){if(ay==0)return y;ux.i=(uy.i&(1ULL<<63))|1;}else if(ax>ay||((ux.i^uy.i)&(1ULL<<63)))ux.i--;else ux.i++;return ux.f;}".to_string()),
         ("nextafterf", "#include <stdint.h>\nfloat ref_nextafterf(float x,float y){union{float f;uint32_t i;}ux={x},uy={y};uint32_t ax,ay;if(x!=x||y!=y)return x+y;if(ux.i==uy.i)return y;ax=ux.i&0x7fffffffu;ay=uy.i&0x7fffffffu;if(ax==0){if(ay==0)return y;ux.i=(uy.i&0x80000000u)|1;}else if(ax>ay||((ux.i^uy.i)&0x80000000u))ux.i--;else ux.i++;return ux.f;}".to_string()),
         // Wave MATH-TIERC sub-wave 1: sqrt/sqrtf = libm (correctly rounded),
@@ -787,6 +847,12 @@ fn main() {
     let mut build = cc::Build::new();
     build
         .include(&refstub)
+        // The genuine `internal/ieee.h` — `float/copysign.c` and
+        // `float/fpclass.c` read a double through its `double_s` bitfield,
+        // and the whole point of grading them is that THAT header's field
+        // widths are the contract. Hand-copying the struct into refstub/
+        // would be the difftest grading a copy of itself.
+        .include(crt.join("include"))
         .warnings(false)
         .flag("-w")
         // Wave MATH-TIERC: no FMA contraction, so the FP reference matches

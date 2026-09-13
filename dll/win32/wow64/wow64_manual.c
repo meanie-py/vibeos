@@ -1877,6 +1877,8 @@ static VOID Wow64pCsrPut32(unsigned char *P, ULONG Off, ULONG V);
 
 #define WOW64_CSR_SERVER_DLL_MAX 4   /* subsystems/csr/csrsrv/api.h:34 */
 #define WOW64_BASESRV_SERVERDLL_INDEX 1 /* reactos/subsys/win/basemsg.h:15 */
+/* CSR_MAKE_API_NUMBER(BASESRV_SERVERDLL_INDEX, BasepCreateThread) */
+#define WOW64_CSRAPI_BASEP_CREATETHREAD 0x00010001
 
 /* BASE_STATIC_SERVER_DATA is the struct entry[BASESRV_SERVERDLL_INDEX] points
  * at, and it is no more width-safe than the array around it: it opens with
@@ -4378,6 +4380,7 @@ static NTSTATUS Wow64Manual_NtRequestWaitReplyPort(ULONG *a)
     unsigned char *CapBackTo = NULL, *CapBackFrom = NULL;
     ULONG CapBackLen = 0;
     ULONG Cap32Orig = 0, Info32Orig = 0;
+    int IsCreateThread = 0;
     ULONG DataLength, RepData;
     NTSTATUS St;
 
@@ -4471,10 +4474,37 @@ static NTSTATUS Wow64Manual_NtRequestWaitReplyPort(ULONG *a)
                             (ULONGLONG)Info32);
             }
         }
+        else if (Api == WOW64_CSRAPI_BASEP_CREATETHREAD && Data32Len >= 12)
+        {
+            /* BASE_CREATE_THREAD { HANDLE ThreadHandle; CLIENT_ID ClientId; } --
+             * three pointer-width fields in a row, so the verbatim copy handed
+             * csrss a ClientId built from the wrong words and it answered
+             * c0000001; the guest reported CreateThread err 0x1f. MEASURED:
+             *   i386   ThreadHandle=0 UniqueProcess=4  UniqueThread=8  sizeof=12
+             *   amd64  ThreadHandle=0 UniqueProcess=8  UniqueThread=16 sizeof=24
+             * These are handle/id VALUES, not guest pointers, so zero-extending
+             * is the whole conversion. */
+            IsCreateThread = 1;
+            Wow64pCsrPut64(B64, WOW64_CSRMSG_BODY64_DATA + 0,
+                        (ULONGLONG)Wow64pCsrGet32(B32, WOW64_CSRMSG_BODY32_DATA + 0));
+            Wow64pCsrPut64(B64, WOW64_CSRMSG_BODY64_DATA + 8,
+                        (ULONGLONG)Wow64pCsrGet32(B32, WOW64_CSRMSG_BODY32_DATA + 4));
+            Wow64pCsrPut64(B64, WOW64_CSRMSG_BODY64_DATA + 16,
+                        (ULONGLONG)Wow64pCsrGet32(B32, WOW64_CSRMSG_BODY32_DATA + 8));
+            Req64->u1.s1.DataLength = (SHORT)(WOW64_CSRMSG_BODY64_DATA + 24);
+        }
         else
         {
-            DbgPrint("[WOW64] LPC: api %08lx has NO payload marshaller — body copied verbatim, "
-                     "fields past CsrCaptureData may be wrong\n", Api);
+            /* A verbatim body copy is CORRECT when the payload holds no
+             * pointer-width field, and shouting about those trains the reader
+             * to ignore the line that matters. Each entry here was read against
+             * its struct, not assumed:
+             *   0x00010003 BasepExitProcess            { UINT uExitCode; }
+             *   0x0001000c BasepSetProcessShutdownParam{ ULONG Level, Flags; }
+             * (reactos/subsys/win/basemsg.h:113, :219) */
+            if (Api != 0x00010003 && Api != 0x0001000C)
+                DbgPrint("[WOW64] LPC: api %08lx has NO payload marshaller — body copied verbatim, "
+                         "fields past CsrCaptureData may be wrong\n", Api);
             Wow64pCpy(B64 + WOW64_CSRMSG_BODY64_DATA,
                       B32 + WOW64_CSRMSG_BODY32_DATA, Data32Len);
             Req64->u1.s1.DataLength = (SHORT)(WOW64_CSRMSG_BODY64_DATA + Data32Len);
@@ -4530,6 +4560,16 @@ static NTSTATUS Wow64Manual_NtRequestWaitReplyPort(ULONG *a)
             Wow64pCpy(R32 + WOW64_CSRMSG_BODY32_DATA,
                       R64 + WOW64_CSRMSG_BODY64_DATA,
                       RepData - WOW64_CSRMSG_BODY64_DATA);
+
+        if (IsCreateThread)
+        {
+            Wow64pCsrPut32(R32, WOW64_CSRMSG_BODY32_DATA + 0,
+                        Wow64pCsrGet32(R64, WOW64_CSRMSG_BODY64_DATA + 0));
+            Wow64pCsrPut32(R32, WOW64_CSRMSG_BODY32_DATA + 4,
+                        Wow64pCsrGet32(R64, WOW64_CSRMSG_BODY64_DATA + 8));
+            Wow64pCsrPut32(R32, WOW64_CSRMSG_BODY32_DATA + 8,
+                        Wow64pCsrGet32(R64, WOW64_CSRMSG_BODY64_DATA + 16));
+        }
 
         if (Cap32Orig)
         {
