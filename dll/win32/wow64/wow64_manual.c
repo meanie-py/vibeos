@@ -1848,6 +1848,228 @@ typedef struct _WOW64_CSR_CONNECTINFO64_M {
     ULONGLONG ServerProcessId;
 } WOW64_CSR_CONNECTINFO64_M; /* 0x38 */
 
+/* The CSR client port view is the ONLY memory csrss and the guest share, and
+ * csrss dereferences CsrCaptureData directly in its own address space
+ * (CsrValidateMessageBuffer reads CaptureBuffer->Size). A host-layout capture
+ * buffer must therefore live inside that view. So we ask the kernel for one
+ * page more than the guest wanted and keep the tail as wow64 scratch; the guest
+ * is told its original ViewSize and never sees it.
+ *
+ * Pointers inside a CSR message are SERVER-side: csrlib stores
+ * CsrCaptureData = local + (ViewRemoteBase - ViewBase). Dereferencing one
+ * locally faults -- that is what killed every 32-bit process at
+ * Wow64pCsrWidenCaptureBuffer+0x1b. */
+#define WOW64_CSR_SCRATCH_SIZE 0x1000
+
+/* csrss publishes ReadOnlyStaticServerData as an array of PVOID and hands every
+ * client its address. Those entries are 8 bytes wide in a 64-bit csrss, but a
+ * 32-bit client indexes the same memory with a 4-byte stride -- so kernel32
+ * reading [BASESRV_SERVERDLL_INDEX] got the HIGH half of entry 0, which is zero
+ * for any pointer below 4GB. It then asserted and dereferenced NULL.
+ *
+ * Give the guest a narrowed copy instead. csrss fills the array while its
+ * server DLLs register, which is complete long before any client connects, so a
+ * snapshot taken at connect time is not racing a later write. */
+/* Byte accessors, defined with the CSR message marshalling further down. */
+static void Wow64pCpy(unsigned char *d, const unsigned char *s, unsigned n);
+static ULONG Wow64pCsrGet32(const unsigned char *P, ULONG Off);
+static VOID Wow64pCsrPut32(unsigned char *P, ULONG Off, ULONG V);
+
+#define WOW64_CSR_SERVER_DLL_MAX 4   /* subsystems/csr/csrsrv/api.h:34 */
+#define WOW64_BASESRV_SERVERDLL_INDEX 1 /* reactos/subsys/win/basemsg.h:15 */
+
+/* BASE_STATIC_SERVER_DATA is the struct entry[BASESRV_SERVERDLL_INDEX] points
+ * at, and it is no more width-safe than the array around it: it opens with
+ * three UNICODE_STRINGs, 8 bytes here and 16 there, so a 32-bit reader takes
+ * WindowsDirectory.Buffer out of the 64-bit struct's PADDING -- reads NULL, and
+ * memmoves MaximumLength bytes from it. That was the last access violation.
+ *
+ * Offsets MEASURED with a host program on both widths, not derived; the replica
+ * it measured reproduces the real headers' own C_ASSERTs (NLS_USER_INFO 0x1870,
+ * BASE_STATIC_SERVER_DATA 0x1AC8 on i386) which is what makes the 64-bit
+ * numbers trustworthy. sdk/include/reactos/subsys/win/base.h:119. */
+#define WOW64_BSSD32_SIZE        0x1AC8
+#define WOW64_BSSD_WINDIR32           0
+#define WOW64_BSSD_WINDIR64           0
+#define WOW64_BSSD_SYSDIR32           8
+#define WOW64_BSSD_SYSDIR64          16
+#define WOW64_BSSD_OBJDIR32          16
+#define WOW64_BSSD_OBJDIR64          32
+#define WOW64_BSSD_VERBLK32          24   /* MajorVersion .. CSDVersion[128] */
+#define WOW64_BSSD_VERBLK64          48
+#define WOW64_BSSD_VERBLK_LEN       268
+#define WOW64_BSSD_SYSINFO32        292
+#define WOW64_BSSD_SYSINFO64        320
+#define WOW64_BSSD_TIMEOFDAY32      336
+#define WOW64_BSSD_TIMEOFDAY64      384
+#define WOW64_BSSD_TIMEOFDAY_LEN     48
+#define WOW64_BSSD_INIMAP32         384
+#define WOW64_BSSD_INIMAP64         432
+#define WOW64_BSSD_NLS32            388
+#define WOW64_BSSD_NLS64            440
+#define WOW64_BSSD_NLS_LEN       0x1870
+#define WOW64_BSSD_VDMFLAGS32      6644   /* DefaultSeparateVDM, IsWowTaskReady */
+#define WOW64_BSSD_VDMFLAGS64      6696
+#define WOW64_BSSD_SYS32X86_32     6648
+#define WOW64_BSSD_SYS32X86_64     6704
+#define WOW64_BSSD_TSTAIL32        6656   /* fTermsrvAppInstallMode .. end */
+#define WOW64_BSSD_TSTAIL64        6720
+#define WOW64_BSSD_TSTAIL_LEN       200
+
+static unsigned char Wow64pCsrBssd32[WOW64_BSSD32_SIZE];
+
+/* SYSTEM_BASIC_INFORMATION: 7 ULONGs, then 3 ULONG_PTRs, then a CCHAR
+ * (ndk/extypes.h:909) -- the three pointer-width fields are the whole reason
+ * this struct needs a hand conversion.
+ *
+ * The 64-bit pointer block starts at 32, NOT at 28: the 7 ULONGs end at 28 and
+ * a ULONG_PTR wants 8-byte alignment there. Deriving 28 instead of measuring it
+ * shifted every field by four bytes and produced a MinimumUserModeAddress of
+ * 0x1000000000000. MEASURED both ways:
+ *      i386   Min=28 Max=32 Aff=36 NumProc=40 sizeof=44
+ *      amd64  Min=32 Max=40 Aff=48 NumProc=56 sizeof=64 */
+#define WOW64_USER_CEILING32 0x7FFEFFFFULL /* i386 MM_HIGHEST_USER_ADDRESS */
+#define WOW64_SBI_PTRBLK32 28
+#define WOW64_SBI_PTRBLK64 32
+#define WOW64_SBI_NUMPROC32 40
+#define WOW64_SBI_NUMPROC64 56
+
+static void Wow64pCsrNarrowSysInfo(unsigned char *D32, const unsigned char *S64)
+{
+    ULONG i;
+    for (i = 0; i < 7; i++)
+        Wow64pCsrPut32(D32, i * 4, Wow64pCsrGet32(S64, i * 4));
+    {
+        ULONGLONG Min = *(const ULONGLONG *)(S64 + WOW64_SBI_PTRBLK64 + 0);
+        ULONGLONG Max = *(const ULONGLONG *)(S64 + WOW64_SBI_PTRBLK64 + 8);
+        ULONGLONG Aff = *(const ULONGLONG *)(S64 + WOW64_SBI_PTRBLK64 + 16);
+
+        /* MaximumUserModeAddress is the host's ceiling (0x7FFFFFFEFFFF on
+         * amd64). Truncating it hands the guest 0xFFFEFFFF, which reads as a
+         * KERNEL address -- clamp to the 32-bit user ceiling instead. */
+        if (Max > WOW64_USER_CEILING32)
+            Max = WOW64_USER_CEILING32;
+        if (Min >> 32)
+        {
+            DbgPrint("[WOW64]   BSSD MinimumUserModeAddress %I64x is above 4GB\n", Min);
+            Min = 0x10000;
+        }
+        if (Aff >> 32)
+            DbgPrint("[WOW64]   BSSD affinity mask %I64x has processors a 32-bit "
+                     "client cannot address\n", Aff);
+
+        Wow64pCsrPut32(D32, WOW64_SBI_PTRBLK32 + 0, (ULONG)Min);
+        Wow64pCsrPut32(D32, WOW64_SBI_PTRBLK32 + 4, (ULONG)Max);
+        Wow64pCsrPut32(D32, WOW64_SBI_PTRBLK32 + 8, (ULONG)Aff);
+    }
+    D32[WOW64_SBI_NUMPROC32] = S64[WOW64_SBI_NUMPROC64];
+}
+
+static void Wow64pCsrNarrowUniStr(unsigned char *D32, ULONG O32,
+                                  const unsigned char *S64, ULONG O64,
+                                  const char *Name)
+{
+    ULONGLONG Buf = *(const ULONGLONG *)(S64 + O64 + 8);
+    D32[O32 + 0] = S64[O64 + 0];
+    D32[O32 + 1] = S64[O64 + 1];
+    D32[O32 + 2] = S64[O64 + 2];
+    D32[O32 + 3] = S64[O64 + 3];
+    if (Buf >> 32)
+    {
+        DbgPrint("[WOW64]   BSSD %s buffer %I64x is above 4GB — guest-invisible\n",
+                 Name, Buf);
+        Wow64pCsrPut32(D32, O32 + 4, 0);
+    }
+    else
+    {
+        Wow64pCsrPut32(D32, O32 + 4, (ULONG)Buf);
+    }
+}
+
+/* Snapshot, because there is no hook to re-narrow on change. csrss fills this
+ * during server-DLL registration, before any client connects, so the fields the
+ * guest reads at startup are stable; NlsUserInfo.ulCacheUpdateCount is the one
+ * field csrss may bump later, and a 32-bit client will not see that bump. */
+static ULONG Wow64pCsrNarrowBssd(ULONGLONG Wide)
+{
+    const unsigned char *S = (const unsigned char *)(ULONG_PTR)Wide;
+    unsigned char *D = Wow64pCsrBssd32;
+    ULONGLONG Ini;
+
+    if (!Wide)
+        return 0;
+    if ((ULONGLONG)(ULONG_PTR)D >> 32)
+    {
+        DbgPrint("[WOW64]   BSSD shadow above 4GB — leaving the 64-bit struct\n");
+        return (ULONG)Wide;
+    }
+
+    Wow64pCsrNarrowUniStr(D, WOW64_BSSD_WINDIR32, S, WOW64_BSSD_WINDIR64, "WindowsDirectory");
+    Wow64pCsrNarrowUniStr(D, WOW64_BSSD_SYSDIR32, S, WOW64_BSSD_SYSDIR64, "WindowsSystemDirectory");
+    Wow64pCsrNarrowUniStr(D, WOW64_BSSD_OBJDIR32, S, WOW64_BSSD_OBJDIR64, "NamedObjectDirectory");
+    Wow64pCpy(D + WOW64_BSSD_VERBLK32, S + WOW64_BSSD_VERBLK64, WOW64_BSSD_VERBLK_LEN);
+    Wow64pCsrNarrowSysInfo(D + WOW64_BSSD_SYSINFO32, S + WOW64_BSSD_SYSINFO64);
+    Wow64pCpy(D + WOW64_BSSD_TIMEOFDAY32, S + WOW64_BSSD_TIMEOFDAY64, WOW64_BSSD_TIMEOFDAY_LEN);
+
+    Ini = *(const ULONGLONG *)(S + WOW64_BSSD_INIMAP64);
+    Wow64pCsrPut32(D, WOW64_BSSD_INIMAP32, (Ini >> 32) ? 0 : (ULONG)Ini);
+
+    Wow64pCpy(D + WOW64_BSSD_NLS32, S + WOW64_BSSD_NLS64, WOW64_BSSD_NLS_LEN);
+    D[WOW64_BSSD_VDMFLAGS32 + 0] = S[WOW64_BSSD_VDMFLAGS64 + 0];
+    D[WOW64_BSSD_VDMFLAGS32 + 1] = S[WOW64_BSSD_VDMFLAGS64 + 1];
+    Wow64pCsrNarrowUniStr(D, WOW64_BSSD_SYS32X86_32, S, WOW64_BSSD_SYS32X86_64,
+                          "WindowsSys32x86Directory");
+    Wow64pCpy(D + WOW64_BSSD_TSTAIL32, S + WOW64_BSSD_TSTAIL64, WOW64_BSSD_TSTAIL_LEN);
+
+    return (ULONG)(ULONG_PTR)D;
+}
+static ULONG Wow64pCsrStaticServerData32[WOW64_CSR_SERVER_DLL_MAX];
+
+static ULONG Wow64pCsrNarrowStaticServerData(ULONGLONG Wide)
+{
+    const ULONGLONG *Src = (const ULONGLONG *)(ULONG_PTR)Wide;
+    ULONG_PTR Self = (ULONG_PTR)&Wow64pCsrStaticServerData32[0];
+    ULONG i;
+
+    if (!Wide)
+        return 0;
+
+    /* The narrowed array itself has to be reachable from 32-bit code. */
+    if ((ULONGLONG)Self >> 32)
+    {
+        DbgPrint("[WOW64]   CSR static-server-data shadow at %p is above 4GB — "
+                 "guest-invisible, leaving the 64-bit array in place\n", (PVOID)Self);
+        return (ULONG)Wide;
+    }
+
+    for (i = 0; i < WOW64_CSR_SERVER_DLL_MAX; i++)
+    {
+        ULONGLONG E = Src[i];
+        if (i == WOW64_BASESRV_SERVERDLL_INDEX)
+        {
+            /* The struct behind this entry needs narrowing too. */
+            Wow64pCsrStaticServerData32[i] = Wow64pCsrNarrowBssd(E);
+        }
+        else if (E >> 32)
+        {
+            DbgPrint("[WOW64]   CSR static server data[%lu]=%I64x is above 4GB — "
+                     "guest-invisible\n", i, E);
+            Wow64pCsrStaticServerData32[i] = 0;
+        }
+        else
+        {
+            Wow64pCsrStaticServerData32[i] = (ULONG)E;
+        }
+    }
+    return (ULONG)Self;
+}
+
+static ULONG_PTR Wow64pCsrPortDelta;     /* server address - local address */
+static ULONG_PTR Wow64pCsrViewLocal;     /* the guest-visible view */
+static ULONG     Wow64pCsrViewSize;
+static ULONG_PTR Wow64pCsrScratchLocal;  /* our tail page, local address */
+static ULONG     Wow64pCsrScratchSize;
+
 static NTSTATUS Wow64pConnectPort(ULONG *a, int Secure)
 {
     ULONG *Handle32 = (ULONG *)(ULONG_PTR)a[0];
@@ -1865,7 +2087,7 @@ static NTSTATUS Wow64pConnectPort(ULONG *a, int Secure)
     WOW64_REMOTE_PORT_VIEW64_M Sv64, *Sv64Ptr = NULL;
     WOW64_CSR_CONNECTINFO64_M Csr64;
     WOW64_CSR_CONNECTINFO32_M *Csr32 = NULL;
-    ULONG MaxLen = 0, ConnLen = 0;
+    ULONG MaxLen = 0, ConnLen = 0, CvReq = 0;
     HANDLE Handle = NULL;
     NTSTATUS St;
 
@@ -1909,7 +2131,8 @@ static NTSTATUS Wow64pConnectPort(ULONG *a, int Secure)
         Cv64.__pad0 = Cv64.__pad1 = 0;
         Cv64.SectionHandle = (LONG_PTR)(LONG)Cv32->SectionHandle;
         Cv64.SectionOffset = Cv32->SectionOffset;
-        Cv64.ViewSize = Cv32->ViewSize;
+        CvReq = Cv32->ViewSize;
+        Cv64.ViewSize = CvReq;
         Cv64.ViewBase = Cv32->ViewBase;
         Cv64.ViewRemoteBase = Cv32->ViewRemoteBase;
         Cv64Ptr = &Cv64;
@@ -1937,6 +2160,15 @@ static NTSTATUS Wow64pConnectPort(ULONG *a, int Secure)
     DbgPrint("[WOW64]   Nt%sConnectPort '%.*S' => %08lx (handle=%p maxlen=%lu)\n",
              Secure ? "Secure" : "", (int)(Name64.Length / sizeof(WCHAR)),
              (PCWSTR)(ULONG_PTR)Name64.Buffer, St, Handle, MaxLen);
+    /* The client view is where csrlib builds CsrPortHeap, so every capture
+     * buffer the guest ever allocates lives inside it. A base above 4GB is
+     * invisible to the guest and silently truncates below. */
+    if (Cv32)
+        DbgPrint("[WOW64]   ClientView: base=%I64x size=%I64x remote=%I64x\n",
+                 Cv64.ViewBase, Cv64.ViewSize, Cv64.ViewRemoteBase);
+    if (Sv32)
+        DbgPrint("[WOW64]   ServerView: base=%I64x size=%I64x\n",
+                 Sv64.ViewBase, Sv64.ViewSize);
 
     if (St >= 0)
     {
@@ -1946,6 +2178,47 @@ static NTSTATUS Wow64pConnectPort(ULONG *a, int Secure)
             Cv32->ViewSize = (ULONG)Cv64.ViewSize;
             Cv32->ViewBase = (ULONG)Cv64.ViewBase;
             Cv32->ViewRemoteBase = (ULONG)Cv64.ViewRemoteBase;
+        }
+        if (Csr32 && Cv32)
+        {
+            Wow64pCsrPortDelta = (ULONG_PTR)(Cv64.ViewRemoteBase - Cv64.ViewBase);
+            Wow64pCsrViewLocal = (ULONG_PTR)Cv64.ViewBase;
+            if (Cv64.ViewSize > 2 * WOW64_CSR_SCRATCH_SIZE)
+            {
+                Wow64pCsrViewSize     = (ULONG)Cv64.ViewSize - WOW64_CSR_SCRATCH_SIZE;
+                Wow64pCsrScratchLocal = (ULONG_PTR)Cv64.ViewBase + Wow64pCsrViewSize;
+                Wow64pCsrScratchSize  = WOW64_CSR_SCRATCH_SIZE;
+                /* The guest's heap must stop short of the tail we keep. */
+                Cv32->ViewSize = Wow64pCsrViewSize;
+                {
+                    /* The port view is a RESERVE section -- its pages commit on
+                     * demand, so the tail we just claimed is reserved only and
+                     * writing it faults. Commit it before anyone uses it. */
+                    PVOID Sc = (PVOID)Wow64pCsrScratchLocal;
+                    SIZE_T ScSize = WOW64_CSR_SCRATCH_SIZE;
+                    NTSTATUS CSt = NtAllocateVirtualMemory((HANDLE)(LONG_PTR)-1, &Sc, 0,
+                                                           &ScSize, 0x1000 /* MEM_COMMIT */,
+                                                           0x04 /* PAGE_READWRITE */);
+                    if (CSt < 0)
+                    {
+                        Wow64pCsrScratchLocal = 0;
+                        Wow64pCsrScratchSize = 0;
+                        Cv32->ViewSize = (ULONG)Cv64.ViewSize;
+                        DbgPrint("[WOW64]   CSR scratch commit FAILED %08lx — "
+                                 "capture buffers cannot be widened\n", CSt);
+                    }
+                }
+            }
+            else
+            {
+                /* Too small to share. Say so rather than silently handing the
+                 * guest a capture buffer csrss cannot read. */
+                Wow64pCsrViewSize = (ULONG)Cv64.ViewSize;
+                Wow64pCsrScratchLocal = 0;
+                Wow64pCsrScratchSize = 0;
+                DbgPrint("[WOW64]   CSR port view %I64x too small to reserve scratch — "
+                         "capture buffers cannot be widened\n", Cv64.ViewSize);
+            }
         }
         if (Sv32)
         {
@@ -1965,9 +2238,15 @@ static NTSTATUS Wow64pConnectPort(ULONG *a, int Secure)
                          "(base=%I64x static=%I64x heap=%I64x) — guest-invisible!\n",
                          Csr64.SharedSectionBase, Csr64.SharedStaticServerData,
                          Csr64.SharedSectionHeap);
+            DbgPrint("[WOW64]   CSR connectinfo: base=%I64x static=%I64x heap=%I64x "
+                     "pid=%I64x ndlls=%lx\n",
+                     Csr64.SharedSectionBase, Csr64.SharedStaticServerData,
+                     Csr64.SharedSectionHeap, Csr64.ServerProcessId,
+                     Csr64.NumberOfServerDllNames);
             Csr32->ObjectDirectory = (ULONG)Csr64.ObjectDirectory;
             Csr32->SharedSectionBase = (ULONG)Csr64.SharedSectionBase;
-            Csr32->SharedStaticServerData = (ULONG)Csr64.SharedStaticServerData;
+            Csr32->SharedStaticServerData =
+                Wow64pCsrNarrowStaticServerData(Csr64.SharedStaticServerData);
             Csr32->SharedSectionHeap = (ULONG)Csr64.SharedSectionHeap;
             Csr32->DebugFlags = Csr64.DebugFlags;
             Csr32->SizeOfPebData = Csr64.SizeOfPebData;
@@ -1990,6 +2269,7 @@ static NTSTATUS Wow64Manual_NtConnectPort(ULONG *a)
 {
     return Wow64pConnectPort(a, 0);
 }
+
 
 /* ---- NtCreateKeyedEvent --------------------------------------------------- *
  * PHANDLE out-cell (4 bytes guest vs 8 host — the kernel's 8-byte-aligned
@@ -3813,6 +4093,478 @@ static VOID Wow64pIoctlFree(PVOID P)
         RtlFreeHeap(Wow64pProcessHeap(), 0, P);
 }
 
+/* ---- M19: LPC — the PORT_MESSAGE header ---------------------------------- *
+ * PORT_MESSAGE is 24 bytes to a 32-bit guest and 40 to the host: CLIENT_ID
+ * carries two pointers (8 vs 16) and ClientViewSize is a SIZE_T (4 vs 8).
+ * Measured, not derived -- i386 24 {ClientId@8 MessageId@16 ViewSize@20},
+ * amd64 40 {ClientId@8 MessageId@24 ViewSize@32}.
+ *
+ * That divergence alone fails EVERY call. ntoskrnl checks
+ * `DataLength + sizeof(PORT_MESSAGE) > TotalLength` (lpc-rust/send.rs:413)
+ * before it even looks at the handle, and a guest sets TotalLength to
+ * DataLength + 24 while the host kernel wants + 40 -- so the test is true every
+ * time and the syscall returns STATUS_INVALID_PARAMETER without touching a port.
+ * That is the c000000d this lane has been staring at.
+ *
+ * ndk's USE_LPC6432 looks purpose-built to make the two agree and does NOT:
+ * measured, it takes i386 to 32, not 40, because the i386 ABI aligns a 64-bit
+ * field to 4 where amd64 aligns to 8. There is no way around marshalling it.
+ *
+ * NOTE the payload is a SEPARATE problem, deliberately not solved here. The body
+ * after the header is a per-server union discriminated by CSR_API_MESSAGE's
+ * ApiNumber (Data sits at 40 on i386 and 64 on the host, and is ULONG_PTR[39],
+ * so it is 156 bytes of guest data against 312 of host). Widening that blindly
+ * would corrupt every message. This rung fixes the HEADER so calls stop failing
+ * before they start, and LOGS ApiNumber so the APIs a guest actually uses can be
+ * counted instead of guessed at -- ~100 message layouts exist; the set a guest
+ * touches is much smaller. */
+#include <pshpack4.h>
+typedef struct {
+    union { struct { SHORT DataLength, TotalLength; } s1; ULONG Length;   } u1;
+    union { struct { SHORT Type, DataInfoOffset;   } s2; ULONG ZeroInit;  } u2;
+    ULONG  ClientIdProcess, ClientIdThread;
+    ULONG  MessageId;
+    ULONG  ClientViewSize;
+} WOW64_PORT_MESSAGE32;
+#include <poppack.h>
+C_ASSERT(sizeof(WOW64_PORT_MESSAGE32) == 24);
+
+typedef struct {
+    union { struct { SHORT DataLength, TotalLength; } s1; ULONG Length;   } u1;
+    union { struct { SHORT Type, DataInfoOffset;   } s2; ULONG ZeroInit;  } u2;
+    ULONGLONG ClientIdProcess, ClientIdThread;
+    ULONG     MessageId;
+    ULONG     __pad0;
+    ULONGLONG ClientViewSize;
+} WOW64_PORT_MESSAGE64;
+C_ASSERT(sizeof(WOW64_PORT_MESSAGE64) == 40);
+
+/* CSR_API_MESSAGE's ApiNumber sits right after the header on both sides
+ * (guest +4 past the 24-byte header, host +8 past the 40-byte one); it encodes
+ * the server index and the API within it. Only read for the census below. */
+#define WOW64_CSR_APINUMBER_OFF32 (24 + 4)
+
+static VOID Wow64pLpcHeader32To64(const WOW64_PORT_MESSAGE32 *In32,
+                                  WOW64_PORT_MESSAGE64 *Out64, ULONG DataLength)
+{
+    Out64->u1.s1.DataLength     = In32->u1.s1.DataLength;
+    Out64->u1.s1.TotalLength    = (SHORT)(sizeof(WOW64_PORT_MESSAGE64) + DataLength);
+    Out64->u2.s2.Type           = In32->u2.s2.Type;
+    Out64->u2.s2.DataInfoOffset = In32->u2.s2.DataInfoOffset;
+    Out64->ClientIdProcess      = In32->ClientIdProcess;
+    Out64->ClientIdThread       = In32->ClientIdThread;
+    Out64->MessageId            = In32->MessageId;
+    Out64->__pad0               = 0;
+    Out64->ClientViewSize       = In32->ClientViewSize;
+}
+
+static VOID Wow64pLpcHeader64To32(const WOW64_PORT_MESSAGE64 *In64,
+                                  WOW64_PORT_MESSAGE32 *Out32, ULONG DataLength)
+{
+    Out32->u1.s1.DataLength     = In64->u1.s1.DataLength;
+    Out32->u1.s1.TotalLength    = (SHORT)(sizeof(WOW64_PORT_MESSAGE32) + DataLength);
+    Out32->u2.s2.Type           = In64->u2.s2.Type;
+    Out32->u2.s2.DataInfoOffset = In64->u2.s2.DataInfoOffset;
+    Out32->ClientIdProcess      = (ULONG)In64->ClientIdProcess;
+    Out32->ClientIdThread       = (ULONG)In64->ClientIdThread;
+    Out32->MessageId            = In64->MessageId;
+    Out32->ClientViewSize       = (ULONG)In64->ClientViewSize;
+}
+
+/* A guest's own ceiling is PORT_MAXIMUM_MESSAGE_LENGTH, which is itself
+ * divergent: 256 for a 32-bit caller, 512 for the host. A guest message
+ * therefore always fits after widening (256 + 16 of header growth = 272 < 512),
+ * and anything past the guest ceiling is a bad message, not a big one --
+ * refuse it loudly rather than truncate into a host allocation. */
+#define WOW64_LPC_MAX_DATA32 256
+
+/* Byte copy in the shape wow64_automarshal.c's WowAmCpy already uses and links
+ * with in this module -- the marshallers here move small, possibly unaligned
+ * guest payloads, and this keeps the dependency surface identical to the
+ * generated sibling rather than introducing a new CRT import. */
+static void Wow64pCpy(unsigned char *d, const unsigned char *s, unsigned n)
+{
+    while (n--) *d++ = *s++;
+}
+
+static NTSTATUS Wow64pLpcBadArg(const char *Who, const char *Why)
+{
+    DbgPrint("[WOW64] %s REFUSED: %s\n", Who, Why);
+    return WOW64_STATUS_INVALID_PARAMETER;
+}
+
+/* The CSR_API_MESSAGE body does NOT survive a verbatim copy. Its first member
+ * is PCSR_CAPTURE_BUFFER -- a pointer -- so everything after it shifts by four:
+ * body-relative, a guest has ApiNumber@4 Status@8 Reserved@12 Data@16 while the
+ * host has 8 / 12 / 16 / 24. Copying the body straight through therefore feeds
+ * csrss an ApiNumber read from the wrong half of a pointer, and reads the reply
+ * Status from the wrong word. Marshal the prologue explicitly; it is identical
+ * for EVERY api, so this part is universal rather than per-API. */
+#define WOW64_CSRMSG_BODY32_APINUMBER   4
+#define WOW64_CSRMSG_BODY32_STATUS      8
+#define WOW64_CSRMSG_BODY32_RESERVED   12
+#define WOW64_CSRMSG_BODY32_DATA       16
+#define WOW64_CSRMSG_BODY64_APINUMBER   8
+#define WOW64_CSRMSG_BODY64_STATUS     12
+#define WOW64_CSRMSG_BODY64_RESERVED   16
+#define WOW64_CSRMSG_BODY64_DATA       24
+
+static ULONG Wow64pCsrGet32(const unsigned char *P, ULONG Off)
+{
+    ULONG V; Wow64pCpy((unsigned char *)&V, P + Off, 4); return V;
+}
+static VOID Wow64pCsrPut32(unsigned char *P, ULONG Off, ULONG V)
+{
+    Wow64pCpy(P + Off, (const unsigned char *)&V, 4);
+}
+static VOID Wow64pCsrPut64(unsigned char *P, ULONG Off, ULONGLONG V)
+{
+    Wow64pCpy(P + Off, (const unsigned char *)&V, 8);
+}
+
+/* CSR_CAPTURE_BUFFER, measured both ways: the header is 16 bytes to a guest and
+ * 32 to the host (PreviousCaptureBuffer and BufferEnd are pointers, PointerCount
+ * gets padded), and every PointerOffsetsArray entry is a ULONG_PTR -- 4 bytes
+ * against 8. csrss reads this structure out of the CLIENT's address space with
+ * host field offsets, so a guest-built one fails CsrValidateMessageBuffer's
+ * bounds arithmetic and the api returns c000000d. wow64.dll runs INSIDE the
+ * guest process, so a host-layout copy allocated from our own heap lands in the
+ * very address space csrss reads from -- no cross-process work needed.
+ *
+ * The entries are message-relative offsets of pointer FIELDS, so they have to be
+ * restated in host coordinates too. That mapping is per-api in general; only the
+ * one api a guest actually sends is mapped here, and anything else is refused
+ * loudly rather than relocated to a guessed offset. */
+#define WOW64_CAPBUF32_HDR            16
+#define WOW64_CAPBUF64_HDR            32
+#define WOW64_CAPBUF32_SIZE            0
+#define WOW64_CAPBUF32_POINTERCOUNT    8
+#define WOW64_CAPBUF64_SIZE            0
+#define WOW64_CAPBUF64_PREV            8
+#define WOW64_CAPBUF64_POINTERCOUNT   16
+#define WOW64_CAPBUF64_BUFFEREND      24
+
+/* CSR_CLIENT_CONNECT's ConnectionInfo pointer, message-relative:
+ *   guest 24(hdr) + 16(Data) + 4(ServerId)      = 44
+ *   host  40(hdr) + 24(Data) + 8(ServerId+pad)  = 72  */
+#define WOW64_CSR_CLIENTCONNECT_PTR32 44
+#define WOW64_CSR_CLIENTCONNECT_PTR64 72
+
+static ULONG Wow64pCsrMapMsgOffset(ULONG Api, ULONG Off32, const char **Why)
+{
+    if (Api == 0 && Off32 == WOW64_CSR_CLIENTCONNECT_PTR32)
+        return WOW64_CSR_CLIENTCONNECT_PTR64;
+    *Why = "no host offset known for this api's pointer slot";
+    return 0;
+}
+
+/* Build a host-layout capture buffer from the guest's. Returns the host buffer
+ * (caller frees) or NULL with *Why set. *InfoOut receives the relocated value
+ * for the api's data pointer. */
+static unsigned char *Wow64pCsrWidenCaptureBuffer(ULONG Api, ULONG Cap32,
+                                                  ULONG Info32,
+                                                  ULONGLONG *InfoOut,
+                                                  ULONG *Off64Out,
+                                                  unsigned char **BackTo,
+                                                  unsigned char **BackFrom,
+                                                  ULONG *BackLen,
+                                                  const char **Why)
+{
+    const unsigned char *C32;
+    unsigned char *C64;
+    ULONG_PTR Local;
+    ULONG Size32, Count, Data32Off, DataLen, Total64, i;
+
+    if (!Wow64pCsrScratchSize)
+    {
+        *Why = "no scratch reserved in the CSR port view";
+        return NULL;
+    }
+
+    /* Cap32 is a SERVER address. Bring it back into our own view before any
+     * dereference, and refuse anything that does not land inside the view the
+     * guest actually shares with csrss. */
+    Local = (ULONG_PTR)Cap32 - Wow64pCsrPortDelta;
+    if (Local < Wow64pCsrViewLocal ||
+        Local >= Wow64pCsrViewLocal + Wow64pCsrViewSize)
+    {
+        DbgPrint("[WOW64] LPC: capture buffer %08lx (local %p) is outside the port view\n",
+                 Cap32, (PVOID)Local);
+        *Why = "capture buffer is outside the CSR port view";
+        return NULL;
+    }
+    C32 = (const unsigned char *)Local;
+
+    Size32 = Wow64pCsrGet32(C32, WOW64_CAPBUF32_SIZE);
+    Count  = Wow64pCsrGet32(C32, WOW64_CAPBUF32_POINTERCOUNT);
+
+    /* Guest-supplied sizes bound a host write: refuse absurd ones loudly rather
+     * than trusting a count a broken guest computed. */
+    if (Count > 64 || Size32 < WOW64_CAPBUF32_HDR + Count * 4 || Size32 > 0x10000 ||
+        Local + Size32 > Wow64pCsrViewLocal + Wow64pCsrViewSize)
+    {
+        *Why = "capture buffer Size/PointerCount out of range";
+        return NULL;
+    }
+
+    Data32Off = WOW64_CAPBUF32_HDR + Count * 4;
+    DataLen   = Size32 - Data32Off;
+    Total64   = WOW64_CAPBUF64_HDR + Count * 8 + DataLen;
+
+    if (Total64 > Wow64pCsrScratchSize)
+    {
+        *Why = "widened capture buffer does not fit the port-view scratch";
+        return NULL;
+    }
+
+    if (Info32 < Cap32 + Data32Off || Info32 >= Cap32 + Size32)
+    {
+        *Why = "api data pointer is outside the capture buffer";
+        return NULL;
+    }
+
+    /* The widened buffer goes in the view tail we reserved at connect time, so
+     * csrss can reach it at its own address. */
+    C64 = (unsigned char *)Wow64pCsrScratchLocal;
+
+    Wow64pCsrPut32(C64, WOW64_CAPBUF64_SIZE, Total64);
+    Wow64pCsrPut64(C64, WOW64_CAPBUF64_PREV, 0);
+    Wow64pCsrPut32(C64, WOW64_CAPBUF64_POINTERCOUNT, Count);
+    Wow64pCsrPut64(C64, WOW64_CAPBUF64_BUFFEREND,
+                (ULONGLONG)(Wow64pCsrScratchLocal + Wow64pCsrPortDelta + Total64));
+
+    for (i = 0; i < Count; i++)
+    {
+        ULONG Off32 = Wow64pCsrGet32(C32, WOW64_CAPBUF32_HDR + i * 4);
+        ULONG Off64;
+        if (Off32 == 0)
+        {
+            Wow64pCsrPut64(C64, WOW64_CAPBUF64_HDR + i * 8, 0);
+            continue;
+        }
+        Off64 = Wow64pCsrMapMsgOffset(Api, Off32, Why);
+        if (Off64 == 0)
+            return NULL;
+        Wow64pCsrPut64(C64, WOW64_CAPBUF64_HDR + i * 8, Off64);
+        *Off64Out = Off64;
+    }
+
+    Wow64pCpy(C64 + WOW64_CAPBUF64_HDR + Count * 8, C32 + Data32Off, DataLen);
+
+    /* csrss writes its answer INTO the buffer, so the reply path has to copy
+     * the data area back where the guest will look for it. */
+    *BackTo   = (unsigned char *)(Local + Data32Off);
+    *BackFrom = C64 + WOW64_CAPBUF64_HDR + Count * 8;
+    *BackLen  = DataLen;
+
+    /* Every pointer the message hands csrss is a server address too. */
+    *InfoOut = (ULONGLONG)(Wow64pCsrScratchLocal + Wow64pCsrPortDelta
+                           + WOW64_CAPBUF64_HDR + Count * 8
+                           + (Info32 - (Cap32 + Data32Off)));
+    return C64;
+}
+
+/* NtRequestWaitReplyPort(PortHandle, LpcRequest, LpcReply) — the call every CSR
+ * API rides on. Header-only for now; see the block comment above on why the
+ * payload is a separate job. */
+static NTSTATUS Wow64Manual_NtRequestWaitReplyPort(ULONG *a)
+{
+    extern NTSTATUS WINAPI NtRequestWaitReplyPort(HANDLE, PVOID, PVOID);
+    const WOW64_PORT_MESSAGE32 *Req32 = (const WOW64_PORT_MESSAGE32 *)(ULONG_PTR)a[1];
+    WOW64_PORT_MESSAGE32 *Rep32 = (WOW64_PORT_MESSAGE32 *)(ULONG_PTR)a[2];
+    HANDLE Port = (HANDLE)(LONG_PTR)(LONG)a[0];
+    WOW64_PORT_MESSAGE64 *Req64 = NULL, *Rep64 = NULL;
+    unsigned char *Cap64 = NULL;
+    unsigned char *CapBackTo = NULL, *CapBackFrom = NULL;
+    ULONG CapBackLen = 0;
+    ULONG Cap32Orig = 0, Info32Orig = 0;
+    ULONG DataLength, RepData;
+    NTSTATUS St;
+
+
+    if (!Req32 || !Rep32)
+        return Wow64pLpcBadArg("NtRequestWaitReplyPort", "NULL request or reply buffer");
+
+    /* DataLength is a CSHORT: a negative value would widen into a huge ULONG. */
+    if (Req32->u1.s1.DataLength < 0 || Req32->u1.s1.TotalLength < 0)
+        return Wow64pLpcBadArg("NtRequestWaitReplyPort", "negative DataLength/TotalLength");
+
+    DataLength = (ULONG)Req32->u1.s1.DataLength;
+    if (DataLength > WOW64_LPC_MAX_DATA32)
+        return Wow64pLpcBadArg("NtRequestWaitReplyPort", "DataLength past the guest's own ceiling");
+
+    /* The guest's own TotalLength must at least cover its header + data, or the
+     * message was malformed before we ever touched it. */
+    if ((ULONG)Req32->u1.s1.TotalLength < sizeof(WOW64_PORT_MESSAGE32) + DataLength)
+        return Wow64pLpcBadArg("NtRequestWaitReplyPort", "TotalLength shorter than header + DataLength");
+
+    Req64 = (WOW64_PORT_MESSAGE64 *)Wow64pIoctlAlloc(sizeof(*Req64) + WOW64_LPC_MAX_DATA32);
+    Rep64 = (WOW64_PORT_MESSAGE64 *)Wow64pIoctlAlloc(sizeof(*Rep64) + WOW64_LPC_MAX_DATA32);
+    if (!Req64 || !Rep64)
+    {
+        Wow64pIoctlFree(Req64);
+        Wow64pIoctlFree(Rep64);
+        return WOW64_STATUS_NO_MEMORY;
+    }
+
+    {
+        const unsigned char *B32 = (const unsigned char *)Req32 + sizeof(*Req32);
+        unsigned char *B64 = (unsigned char *)Req64 + sizeof(*Req64);
+        ULONG Api = Wow64pCsrGet32(B32, WOW64_CSRMSG_BODY32_APINUMBER);
+        ULONG Data32Len = (DataLength > WOW64_CSRMSG_BODY32_DATA)
+                        ? DataLength - WOW64_CSRMSG_BODY32_DATA : 0;
+
+        /* Prologue, explicit and universal across every api. */
+        Wow64pCsrPut64(B64, 0, (ULONGLONG)Wow64pCsrGet32(B32, 0)); /* CsrCaptureData */
+        Wow64pCsrPut32(B64, WOW64_CSRMSG_BODY64_APINUMBER, Api);
+        Wow64pCsrPut32(B64, WOW64_CSRMSG_BODY64_STATUS,
+                    Wow64pCsrGet32(B32, WOW64_CSRMSG_BODY32_STATUS));
+        Wow64pCsrPut32(B64, WOW64_CSRMSG_BODY64_RESERVED,
+                    Wow64pCsrGet32(B32, WOW64_CSRMSG_BODY32_RESERVED));
+
+        /* The per-api Data union is NOT width-safe in general. Measured on a
+         * real boot, the only api a guest sends here is 0 (CsrSrvClientConnect),
+         * whose CSR_CLIENT_CONNECT is {ULONG ServerId, PVOID ConnectionInfo,
+         * ULONG ConnectionInfoSize} -- one pointer to widen. Anything else is
+         * copied verbatim AND named on serial, so a new api shows up as a loud
+         * line rather than as silent corruption. */
+        if (Api == 0 && Data32Len >= 12)
+        {
+            ULONG Cap32  = Wow64pCsrGet32(B32, 0);
+            Cap32Orig = Cap32;
+            ULONG Info32 = Wow64pCsrGet32(B32, WOW64_CSRMSG_BODY32_DATA + 4);
+
+            ULONGLONG Info64 = 0;
+            ULONG Off64Unused = 0;
+            const char *Why = "unknown";
+
+            Wow64pCsrPut32(B64, WOW64_CSRMSG_BODY64_DATA + 0,
+                        Wow64pCsrGet32(B32, WOW64_CSRMSG_BODY32_DATA + 0));   /* ServerId */
+            Wow64pCsrPut32(B64, WOW64_CSRMSG_BODY64_DATA + 16,
+                        Wow64pCsrGet32(B32, WOW64_CSRMSG_BODY32_DATA + 8));   /* ConnectionInfoSize */
+            Req64->u1.s1.DataLength = (SHORT)(WOW64_CSRMSG_BODY64_DATA + 20);
+
+            /* csrss reads the capture buffer out of THIS process with host field
+             * offsets, so the guest's 16-byte-header copy fails its bounds check
+             * and the api answers c000000d. Hand it a host-layout one. */
+            if (Cap32)
+            {
+                Info32Orig = Info32;
+                Cap64 = Wow64pCsrWidenCaptureBuffer(Api, Cap32, Info32,
+                                                    &Info64, &Off64Unused,
+                                                    &CapBackTo, &CapBackFrom,
+                                                    &CapBackLen, &Why);
+                if (!Cap64)
+                {
+                    Wow64pIoctlFree(Req64);
+                    Wow64pIoctlFree(Rep64);
+                    return Wow64pLpcBadArg("NtRequestWaitReplyPort", Why);
+                }
+                /* csrss dereferences this in ITS address space. */
+                Wow64pCsrPut64(B64, 0,
+                            (ULONGLONG)((ULONG_PTR)Cap64 + Wow64pCsrPortDelta));
+                Wow64pCsrPut64(B64, WOW64_CSRMSG_BODY64_DATA + 8, Info64);
+            }
+            else
+            {
+                Wow64pCsrPut64(B64, WOW64_CSRMSG_BODY64_DATA + 8,
+                            (ULONGLONG)Info32);
+            }
+        }
+        else
+        {
+            DbgPrint("[WOW64] LPC: api %08lx has NO payload marshaller — body copied verbatim, "
+                     "fields past CsrCaptureData may be wrong\n", Api);
+            Wow64pCpy(B64 + WOW64_CSRMSG_BODY64_DATA,
+                      B32 + WOW64_CSRMSG_BODY32_DATA, Data32Len);
+            Req64->u1.s1.DataLength = (SHORT)(WOW64_CSRMSG_BODY64_DATA + Data32Len);
+        }
+        Req64->u1.s1.TotalLength = (SHORT)(sizeof(*Req64) + Req64->u1.s1.DataLength);
+    }
+
+    /* The census this rung exists for: which CSR APIs does a guest actually
+     * send? ApiNumber encodes server index + API. Counting beats guessing —
+     * ~100 message layouts exist and the reachable set is far smaller. */
+    if (DataLength >= 8)
+    {
+        const unsigned char *Bl = (const unsigned char *)Req32 + sizeof(*Req32);
+        /* CsrCaptureData decides which arm of CsrValidateMessageBuffer runs:
+         * NULL means "same-process only", and a cross-process client is then
+         * rejected -- which is the c000000d the api is returning. Print it with
+         * the connect args instead of inferring which case this is. */
+        DbgPrint("[WOW64] LPC request: Api=%08lx DataLen=%lu Capture=%08lx "
+                 "ServerId=%08lx Info=%08lx InfoSize=%08lx\n",
+                 Wow64pCsrGet32(Bl, WOW64_CSRMSG_BODY32_APINUMBER), DataLength,
+                 Wow64pCsrGet32(Bl, 0),
+                 Wow64pCsrGet32(Bl, WOW64_CSRMSG_BODY32_DATA + 0),
+                 Wow64pCsrGet32(Bl, WOW64_CSRMSG_BODY32_DATA + 4),
+                 Wow64pCsrGet32(Bl, WOW64_CSRMSG_BODY32_DATA + 8));
+    }
+
+    St = NtRequestWaitReplyPort(Port, Req64, Rep64);
+
+    if (St >= 0)
+    {
+        const unsigned char *R64 = (const unsigned char *)Rep64 + sizeof(*Rep64);
+        unsigned char *R32 = (unsigned char *)Rep32 + sizeof(*Rep32);
+        ULONG ApiStatus;
+
+        RepData = (Rep64->u1.s1.DataLength < 0) ? 0 : (ULONG)Rep64->u1.s1.DataLength;
+        if (RepData > WOW64_LPC_MAX_DATA32)
+            RepData = WOW64_LPC_MAX_DATA32;
+
+        /* Narrow the prologue the same way, or the guest reads its Status out of
+         * the wrong word -- the transport status below is NOT the api's answer. */
+        /* csrss echoes the message back, so CsrCaptureData in the reply is the
+         * SCRATCH buffer we substituted, not the guest's. Handing that back
+         * makes the guest compute scratch = reply - CsrPortMemoryDelta and
+         * RtlFreeHeap a block its heap never owned. Give it its own pointer. */
+        Wow64pCsrPut32(R32, 0, Cap32Orig ? Cap32Orig : Wow64pCsrGet32(R64, 0));
+        Wow64pCsrPut32(R32, WOW64_CSRMSG_BODY32_APINUMBER,
+                    Wow64pCsrGet32(R64, WOW64_CSRMSG_BODY64_APINUMBER));
+        ApiStatus = Wow64pCsrGet32(R64, WOW64_CSRMSG_BODY64_STATUS);
+        Wow64pCsrPut32(R32, WOW64_CSRMSG_BODY32_STATUS, ApiStatus);
+        Wow64pCsrPut32(R32, WOW64_CSRMSG_BODY32_RESERVED,
+                    Wow64pCsrGet32(R64, WOW64_CSRMSG_BODY64_RESERVED));
+        if (RepData > WOW64_CSRMSG_BODY64_DATA)
+            Wow64pCpy(R32 + WOW64_CSRMSG_BODY32_DATA,
+                      R64 + WOW64_CSRMSG_BODY64_DATA,
+                      RepData - WOW64_CSRMSG_BODY64_DATA);
+
+        if (Cap32Orig)
+        {
+            /* The Data union is NOT width-safe, so the verbatim copy above put
+             * the 64-bit padding word where the guest reads ConnectionInfo --
+             * it then computed NULL - CsrPortMemoryDelta and faulted reading
+             * there. Narrow the three fields by hand, the way the request did,
+             * and give the guest back its OWN pointers rather than our scratch. */
+            Wow64pCsrPut32(R32, WOW64_CSRMSG_BODY32_DATA + 0,
+                        Wow64pCsrGet32(R64, WOW64_CSRMSG_BODY64_DATA + 0)); /* ServerId */
+            Wow64pCsrPut32(R32, WOW64_CSRMSG_BODY32_DATA + 4, Info32Orig);
+            Wow64pCsrPut32(R32, WOW64_CSRMSG_BODY32_DATA + 8,
+                        Wow64pCsrGet32(R64, WOW64_CSRMSG_BODY64_DATA + 16)); /* InfoSize */
+
+            if (CapBackLen)
+                Wow64pCpy(CapBackTo, CapBackFrom, CapBackLen);
+        }
+
+        Wow64pLpcHeader64To32(Rep64, Rep32,
+                              WOW64_CSRMSG_BODY32_DATA +
+                              ((RepData > WOW64_CSRMSG_BODY64_DATA)
+                                   ? RepData - WOW64_CSRMSG_BODY64_DATA : 0));
+
+        /* The api's OWN result. A green transport status over a rejected api is
+         * exactly the false-green this rung must not report as working. */
+        DbgPrint("[WOW64] LPC reply: api Status=%08lx\n", ApiStatus);
+    }
+
+    DbgPrint("[WOW64] NtRequestWaitReplyPort => %08lx\n", St);
+    /* Cap64 lives in the port-view scratch, not the ioctl heap — nothing to free. */
+    Wow64pIoctlFree(Req64);
+    Wow64pIoctlFree(Rep64);
+    return St;
+}
+
 static NTSTATUS Wow64pIoctlBadArg(const char *Who, const char *Why)
 {
     DbgPrint("[WOW64]   %s: malformed 32-bit IOCTL payload: %s\n", Who, Why);
@@ -5552,6 +6304,8 @@ NTSTATUS Wow64ManualDispatch(const char *Name, ULONG *Arguments)
         return Wow64Manual_NtCreateKeyedEvent(Arguments);
     if (WOW64_IS("NtSecureConnectPort"))
         return Wow64Manual_NtSecureConnectPort(Arguments);
+    if (WOW64_IS("NtRequestWaitReplyPort"))
+        return Wow64Manual_NtRequestWaitReplyPort(Arguments);
     if (WOW64_IS("NtConnectPort"))
         return Wow64Manual_NtConnectPort(Arguments);
     if (WOW64_IS("NtContinue"))

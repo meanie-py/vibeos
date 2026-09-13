@@ -17,7 +17,7 @@ folder + `kmtest-tests.txt` next to the binaries; the sweep runs one
 `launch_marker: "[KMTEST-SWEEP] done"` + `launch_drain_secs`, so
 `test_payload.py::test_payload_launched` holds the boot open and drains serial
 until the sweep completes (or BUGCHECKs). We then parse
-`qemu/<pytest_arch>_smoke_live.log`.
+the private `<run_dir>/<pytest_arch>_serial.log`.
 
 Design: docs/engineering/conformance-ratchet-quest.md (M3/M4).
 """
@@ -621,7 +621,7 @@ def _conformance_once(args, repo: Path) -> int:
     elapsed = time.time() - t0
 
     # --- 3. parse the serial log ---------------------------------------------
-    log_path = repo / "qemu" / f"{pytest_arch}_smoke_live.log"
+    log_path = run_dir / f"{pytest_arch}_serial.log"
     if not log_path.is_file():
         print(f"[conformance] no serial log at {log_path} — did the guest boot?", file=sys.stderr)
         return 2
@@ -633,20 +633,8 @@ def _conformance_once(args, repo: Path) -> int:
     bad = sum(1 for r in results if r["status"] in parser.BAD)
     results_path = run_dir / f"{SUITE}-results.txt"
     results_path.write_text("\n".join(lines) + "\n")
-    # SAVE the serial into the run dir, and report the COPY. qemu/<arch>_smoke_live.log
-    # is the LIVE per-arch file: the next sweep of the same arch truncates it, so a
-    # summary.json pointing there hands you the *next* run's serial — or nothing.
-    # This destroyed the evidence for an arm64 -smp 1 BUGCHECK 0x1E that a following
-    # -smp 2 sweep overwrote seconds later, leaving only the stop code. The results
-    # file alone is not enough: a mid-sweep crash needs the faulting context, and the
-    # crash is exactly the case where you cannot just re-run and expect it back.
-    # Found independently a second time on the conformance-ratchet lane: an
-    # IoFilesystem BUGCHECK 0x19 printed a full [POOL] page dump + free ring, and a
-    # later boot of that arch had overwritten every byte before anyone read the run
-    # dir — the crash had to be re-collected with a fresh build+boot. Two lanes
-    # paying for the same lost evidence is what makes this worth a comment.
-    saved_serial = run_dir / f"{pytest_arch}_serial.log"
-    saved_serial.write_text(serial_text)
+    # The VM writes directly into this run, including while it is still alive.
+    saved_serial = log_path
 
     # --- 3b. a wedged sweep: symbolicate the vCPU PCs ------------------------
     # The raw capture is written by the VM (VIBEOS_ARTIFACT_DIR above); resolving
@@ -828,7 +816,7 @@ def _conformance_once(args, repo: Path) -> int:
         "new_passes": new_passes,
         "results_file": str(results_path),
         "serial_log": str(saved_serial),
-        "serial_log_live": str(log_path),  # truncated by the next same-arch sweep
+        "serial_log_live": str(log_path),  # owned by this sweep
         # Present only when the guest wedged. `hang_pcs` is the payload: on a
         # stall that prints nothing, this is the ONLY statement of where the box
         # actually was, and summary.json is what gets read.

@@ -54,6 +54,7 @@ pub mod cmnotify;
 pub mod cmparse;
 pub mod cmquota;
 pub mod cmse;
+mod cmsecurity_persist;
 pub mod cmsecach;
 pub mod cmsysini;
 pub mod cmvalche;

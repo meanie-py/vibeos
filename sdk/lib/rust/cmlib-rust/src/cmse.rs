@@ -62,20 +62,24 @@ pub unsafe extern "system" fn CmpFreeSecurityDescriptor(Hive: PHHIVE, Cell: HCEL
         return;
     }
 
-    let SecurityData = HvGetCell(Hive, (*CellData).Security) as PCM_KEY_SECURITY;
+    let SecurityCell = (*CellData).Security;
+    let SecurityData = HvGetCell(Hive, SecurityCell) as PCM_KEY_SECURITY;
     if SecurityData.is_null() {
         HvReleaseCell(Hive, Cell);
         return;
     }
 
-    if (*SecurityData).ReferenceCount > 1 {
+    let FreeSecurityCell = (*SecurityData).ReferenceCount <= 1;
+    if !FreeSecurityCell {
         (*SecurityData).ReferenceCount -= 1;
     } else {
-        CmpRemoveSecurityCellList(Hive, (*CellData).Security);
-        HvFreeCell(Hive, (*CellData).Security);
+        CmpRemoveSecurityCellList(Hive, SecurityCell);
     }
 
     (*CellData).Security = HCELL_NIL;
-    HvReleaseCell(Hive, (*CellData).Security);
+    HvReleaseCell(Hive, SecurityCell);
+    if FreeSecurityCell {
+        HvFreeCell(Hive, SecurityCell);
+    }
     HvReleaseCell(Hive, Cell);
 }

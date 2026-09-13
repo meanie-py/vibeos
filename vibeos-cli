@@ -35,5 +35,18 @@ pick_python() {
 PY="$(pick_python)"
 [ -n "$PY" ] || { echo "vibeos-cli: no python found (set VIBEOS_PYTHON)" >&2; exit 127; }
 
-# PYTHONPATH=repo so `tests.qemu.cli` imports regardless of cwd.
-exec env PYTHONPATH="$REPO${PYTHONPATH:+:$PYTHONPATH}" "$PY" -m tests.qemu.cli "$@"
+# Replace the prefix owned by a parent CLI before entering another command or
+# worktree. Repeatedly prepending it made identical tooling inputs look different
+# in gate/preflight, and left sibling source trees on nested commands' import path.
+CLI_PATH="${PYTHONPATH:-}"
+if [ -n "${VIBEOS_CLI_PYTHONPATH_ROOT:-}" ]; then
+    case "$CLI_PATH" in
+        "$VIBEOS_CLI_PYTHONPATH_ROOT") CLI_PATH="" ;;
+        "$VIBEOS_CLI_PYTHONPATH_ROOT":*) CLI_PATH="${CLI_PATH#"$VIBEOS_CLI_PYTHONPATH_ROOT":}" ;;
+    esac
+fi
+case "$CLI_PATH" in
+    "$REPO"|"$REPO":*) ;;
+    *) CLI_PATH="$REPO${CLI_PATH:+:$CLI_PATH}" ;;
+esac
+exec env PYTHONPATH="$CLI_PATH" VIBEOS_CLI_PYTHONPATH_ROOT="$REPO" "$PY" -m tests.qemu.cli "$@"

@@ -18,6 +18,7 @@ from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 
 from .lints import lint_jobs
+from .tooling_receipts import ReceiptSession
 
 # venv that launched us (vibeos-cli picks the main checkout's .venv); its bin/
 # holds ruff + pyright, and sys.executable is the matching interpreter.
@@ -37,6 +38,7 @@ _PYRIGHT_ROOTS = ["tools/rustconv/rustconv", "tests/qemu/cli"]
 _PYTEST_SUITES = [
     ("tools/rustconv", "tools/rustconv", "tests"),
     (".", ".", "tests/qemu/cli"),
+    (".", ".", "tests/qemu/cli/test_portlease.py"),
     (".", ".", "tools/wow64gen/test_wow64gen.py"),
     # The SysWOW64 closure decides which DLLs a 32-bit guest can load at all, and
     # its DYNAMIC half has no other oracle: a provider reached only through the
@@ -60,6 +62,10 @@ _PYTEST_SUITES = [
     (".", ".", "tools/test_lint_facts.py"),
     (".", ".", "tools/test_cargo_link_context.py"),
     (".", ".", "tools/test_host_jobs.py"),
+    (".", ".", "tools/test_binary_facts.py"),
+    (".", ".", "tools/test_binary_scanner_cache.py"),
+    (".", ".", "tools/test_tooling_receipts.py"),
+    (".", ".", "tools/test_registry_security_persistence.py"),
     (".", ".", "tools/test_nested_cargo_deps.py"),
     (".", ".", "tools/test_scan_invented_constants.py"),
     # These six existed and were collected by NOTHING — the same defect the two comments
@@ -155,16 +161,50 @@ def check_tooling(args, repo: Path) -> int:
             checks.append(
                 (
                     f"pytest:{label_target}",
-                    [sys.executable, "-m", "pytest", target, "-q"],
+                    [sys.executable, "-m", "pytest", target, "-q"]
+                    # Each invalidation case builds its own tmp_path project.
+                    # Keep these live, but distribute cases across the host.
+                    + (
+                        ["-n", str(min(8, lint_jobs()))]
+                        if target == "tools/test_build_invalidation.py"
+                        else []
+                    )
+                    + (
+                        ["--ignore=tests/qemu/cli/test_portlease.py"]
+                        if target == "tests/qemu/cli"
+                        else []
+                    ),
                     {"cwd": repo / pkg, "env_pp": pp},
                 )
             )
 
-    with ThreadPoolExecutor(max_workers=min(lint_jobs(), len(checks))) as pool:
-        futures = [pool.submit(_run, label, cmd, repo, **kw) for label, cmd, kw in checks]
-        results = [future.result() for future in futures]
+    from contextlib import nullcontext
+
+    context = (
+        ReceiptSession(repo) if os.environ.get("VIBEOS_TOOLING_CACHE") != "0" else nullcontext()
+    )
+    receipt_error = None
+    with context as receipts:
+
+        def execute(label, cmd, kw):
+            def compute():
+                return _run(label, cmd, repo, **kw)
+
+            return receipts.run(label, cmd, compute, **kw) if receipts else compute()
+
+        with ThreadPoolExecutor(max_workers=min(lint_jobs(), len(checks))) as pool:
+            futures = [pool.submit(execute, label, cmd, kw) for label, cmd, kw in checks]
+            results = [future.result() for future in futures]
+        if receipts:
+            try:
+                receipts.finish()
+            except (OSError, RuntimeError) as error:
+                receipt_error = str(error)
+            print(f"Reused {len(receipts.hits)}/{len(checks)} tooling checks with matching inputs.")
 
     failed = [(lbl, tail) for lbl, ok, tail in results if not ok]
+    if receipt_error:
+        failed.append(("receipt-validation", receipt_error))
     width = max(len(lbl) for lbl, _, _ in results)
     for lbl, ok, _ in results:
         print(f"  {'✓' if ok else '✗'} {lbl.ljust(width)}")
