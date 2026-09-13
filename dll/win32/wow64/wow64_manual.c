@@ -1870,7 +1870,159 @@ typedef struct _WOW64_CSR_CONNECTINFO64_M {
  * Give the guest a narrowed copy instead. csrss fills the array while its
  * server DLLs register, which is complete long before any client connects, so a
  * snapshot taken at connect time is not racing a later write. */
+/* Byte accessors, defined with the CSR message marshalling further down. */
+static void Wow64pCpy(unsigned char *d, const unsigned char *s, unsigned n);
+static ULONG Wow64pCsrGet32(const unsigned char *P, ULONG Off);
+static VOID Wow64pCsrPut32(unsigned char *P, ULONG Off, ULONG V);
+
 #define WOW64_CSR_SERVER_DLL_MAX 4   /* subsystems/csr/csrsrv/api.h:34 */
+#define WOW64_BASESRV_SERVERDLL_INDEX 1 /* reactos/subsys/win/basemsg.h:15 */
+
+/* BASE_STATIC_SERVER_DATA is the struct entry[BASESRV_SERVERDLL_INDEX] points
+ * at, and it is no more width-safe than the array around it: it opens with
+ * three UNICODE_STRINGs, 8 bytes here and 16 there, so a 32-bit reader takes
+ * WindowsDirectory.Buffer out of the 64-bit struct's PADDING -- reads NULL, and
+ * memmoves MaximumLength bytes from it. That was the last access violation.
+ *
+ * Offsets MEASURED with a host program on both widths, not derived; the replica
+ * it measured reproduces the real headers' own C_ASSERTs (NLS_USER_INFO 0x1870,
+ * BASE_STATIC_SERVER_DATA 0x1AC8 on i386) which is what makes the 64-bit
+ * numbers trustworthy. sdk/include/reactos/subsys/win/base.h:119. */
+#define WOW64_BSSD32_SIZE        0x1AC8
+#define WOW64_BSSD_WINDIR32           0
+#define WOW64_BSSD_WINDIR64           0
+#define WOW64_BSSD_SYSDIR32           8
+#define WOW64_BSSD_SYSDIR64          16
+#define WOW64_BSSD_OBJDIR32          16
+#define WOW64_BSSD_OBJDIR64          32
+#define WOW64_BSSD_VERBLK32          24   /* MajorVersion .. CSDVersion[128] */
+#define WOW64_BSSD_VERBLK64          48
+#define WOW64_BSSD_VERBLK_LEN       268
+#define WOW64_BSSD_SYSINFO32        292
+#define WOW64_BSSD_SYSINFO64        320
+#define WOW64_BSSD_TIMEOFDAY32      336
+#define WOW64_BSSD_TIMEOFDAY64      384
+#define WOW64_BSSD_TIMEOFDAY_LEN     48
+#define WOW64_BSSD_INIMAP32         384
+#define WOW64_BSSD_INIMAP64         432
+#define WOW64_BSSD_NLS32            388
+#define WOW64_BSSD_NLS64            440
+#define WOW64_BSSD_NLS_LEN       0x1870
+#define WOW64_BSSD_VDMFLAGS32      6644   /* DefaultSeparateVDM, IsWowTaskReady */
+#define WOW64_BSSD_VDMFLAGS64      6696
+#define WOW64_BSSD_SYS32X86_32     6648
+#define WOW64_BSSD_SYS32X86_64     6704
+#define WOW64_BSSD_TSTAIL32        6656   /* fTermsrvAppInstallMode .. end */
+#define WOW64_BSSD_TSTAIL64        6720
+#define WOW64_BSSD_TSTAIL_LEN       200
+
+static unsigned char Wow64pCsrBssd32[WOW64_BSSD32_SIZE];
+
+/* SYSTEM_BASIC_INFORMATION: 7 ULONGs, then 3 ULONG_PTRs, then a CCHAR
+ * (ndk/extypes.h:909) -- the three pointer-width fields are the whole reason
+ * this struct needs a hand conversion.
+ *
+ * The 64-bit pointer block starts at 32, NOT at 28: the 7 ULONGs end at 28 and
+ * a ULONG_PTR wants 8-byte alignment there. Deriving 28 instead of measuring it
+ * shifted every field by four bytes and produced a MinimumUserModeAddress of
+ * 0x1000000000000. MEASURED both ways:
+ *      i386   Min=28 Max=32 Aff=36 NumProc=40 sizeof=44
+ *      amd64  Min=32 Max=40 Aff=48 NumProc=56 sizeof=64 */
+#define WOW64_USER_CEILING32 0x7FFEFFFFULL /* i386 MM_HIGHEST_USER_ADDRESS */
+#define WOW64_SBI_PTRBLK32 28
+#define WOW64_SBI_PTRBLK64 32
+#define WOW64_SBI_NUMPROC32 40
+#define WOW64_SBI_NUMPROC64 56
+
+static void Wow64pCsrNarrowSysInfo(unsigned char *D32, const unsigned char *S64)
+{
+    ULONG i;
+    for (i = 0; i < 7; i++)
+        Wow64pCsrPut32(D32, i * 4, Wow64pCsrGet32(S64, i * 4));
+    {
+        ULONGLONG Min = *(const ULONGLONG *)(S64 + WOW64_SBI_PTRBLK64 + 0);
+        ULONGLONG Max = *(const ULONGLONG *)(S64 + WOW64_SBI_PTRBLK64 + 8);
+        ULONGLONG Aff = *(const ULONGLONG *)(S64 + WOW64_SBI_PTRBLK64 + 16);
+
+        /* MaximumUserModeAddress is the host's ceiling (0x7FFFFFFEFFFF on
+         * amd64). Truncating it hands the guest 0xFFFEFFFF, which reads as a
+         * KERNEL address -- clamp to the 32-bit user ceiling instead. */
+        if (Max > WOW64_USER_CEILING32)
+            Max = WOW64_USER_CEILING32;
+        if (Min >> 32)
+        {
+            DbgPrint("[WOW64]   BSSD MinimumUserModeAddress %I64x is above 4GB\n", Min);
+            Min = 0x10000;
+        }
+        if (Aff >> 32)
+            DbgPrint("[WOW64]   BSSD affinity mask %I64x has processors a 32-bit "
+                     "client cannot address\n", Aff);
+
+        Wow64pCsrPut32(D32, WOW64_SBI_PTRBLK32 + 0, (ULONG)Min);
+        Wow64pCsrPut32(D32, WOW64_SBI_PTRBLK32 + 4, (ULONG)Max);
+        Wow64pCsrPut32(D32, WOW64_SBI_PTRBLK32 + 8, (ULONG)Aff);
+    }
+    D32[WOW64_SBI_NUMPROC32] = S64[WOW64_SBI_NUMPROC64];
+}
+
+static void Wow64pCsrNarrowUniStr(unsigned char *D32, ULONG O32,
+                                  const unsigned char *S64, ULONG O64,
+                                  const char *Name)
+{
+    ULONGLONG Buf = *(const ULONGLONG *)(S64 + O64 + 8);
+    D32[O32 + 0] = S64[O64 + 0];
+    D32[O32 + 1] = S64[O64 + 1];
+    D32[O32 + 2] = S64[O64 + 2];
+    D32[O32 + 3] = S64[O64 + 3];
+    if (Buf >> 32)
+    {
+        DbgPrint("[WOW64]   BSSD %s buffer %I64x is above 4GB — guest-invisible\n",
+                 Name, Buf);
+        Wow64pCsrPut32(D32, O32 + 4, 0);
+    }
+    else
+    {
+        Wow64pCsrPut32(D32, O32 + 4, (ULONG)Buf);
+    }
+}
+
+/* Snapshot, because there is no hook to re-narrow on change. csrss fills this
+ * during server-DLL registration, before any client connects, so the fields the
+ * guest reads at startup are stable; NlsUserInfo.ulCacheUpdateCount is the one
+ * field csrss may bump later, and a 32-bit client will not see that bump. */
+static ULONG Wow64pCsrNarrowBssd(ULONGLONG Wide)
+{
+    const unsigned char *S = (const unsigned char *)(ULONG_PTR)Wide;
+    unsigned char *D = Wow64pCsrBssd32;
+    ULONGLONG Ini;
+
+    if (!Wide)
+        return 0;
+    if ((ULONGLONG)(ULONG_PTR)D >> 32)
+    {
+        DbgPrint("[WOW64]   BSSD shadow above 4GB — leaving the 64-bit struct\n");
+        return (ULONG)Wide;
+    }
+
+    Wow64pCsrNarrowUniStr(D, WOW64_BSSD_WINDIR32, S, WOW64_BSSD_WINDIR64, "WindowsDirectory");
+    Wow64pCsrNarrowUniStr(D, WOW64_BSSD_SYSDIR32, S, WOW64_BSSD_SYSDIR64, "WindowsSystemDirectory");
+    Wow64pCsrNarrowUniStr(D, WOW64_BSSD_OBJDIR32, S, WOW64_BSSD_OBJDIR64, "NamedObjectDirectory");
+    Wow64pCpy(D + WOW64_BSSD_VERBLK32, S + WOW64_BSSD_VERBLK64, WOW64_BSSD_VERBLK_LEN);
+    Wow64pCsrNarrowSysInfo(D + WOW64_BSSD_SYSINFO32, S + WOW64_BSSD_SYSINFO64);
+    Wow64pCpy(D + WOW64_BSSD_TIMEOFDAY32, S + WOW64_BSSD_TIMEOFDAY64, WOW64_BSSD_TIMEOFDAY_LEN);
+
+    Ini = *(const ULONGLONG *)(S + WOW64_BSSD_INIMAP64);
+    Wow64pCsrPut32(D, WOW64_BSSD_INIMAP32, (Ini >> 32) ? 0 : (ULONG)Ini);
+
+    Wow64pCpy(D + WOW64_BSSD_NLS32, S + WOW64_BSSD_NLS64, WOW64_BSSD_NLS_LEN);
+    D[WOW64_BSSD_VDMFLAGS32 + 0] = S[WOW64_BSSD_VDMFLAGS64 + 0];
+    D[WOW64_BSSD_VDMFLAGS32 + 1] = S[WOW64_BSSD_VDMFLAGS64 + 1];
+    Wow64pCsrNarrowUniStr(D, WOW64_BSSD_SYS32X86_32, S, WOW64_BSSD_SYS32X86_64,
+                          "WindowsSys32x86Directory");
+    Wow64pCpy(D + WOW64_BSSD_TSTAIL32, S + WOW64_BSSD_TSTAIL64, WOW64_BSSD_TSTAIL_LEN);
+
+    return (ULONG)(ULONG_PTR)D;
+}
 static ULONG Wow64pCsrStaticServerData32[WOW64_CSR_SERVER_DLL_MAX];
 
 static ULONG Wow64pCsrNarrowStaticServerData(ULONGLONG Wide)
@@ -1893,7 +2045,12 @@ static ULONG Wow64pCsrNarrowStaticServerData(ULONGLONG Wide)
     for (i = 0; i < WOW64_CSR_SERVER_DLL_MAX; i++)
     {
         ULONGLONG E = Src[i];
-        if (E >> 32)
+        if (i == WOW64_BASESRV_SERVERDLL_INDEX)
+        {
+            /* The struct behind this entry needs narrowing too. */
+            Wow64pCsrStaticServerData32[i] = Wow64pCsrNarrowBssd(E);
+        }
+        else if (E >> 32)
         {
             DbgPrint("[WOW64]   CSR static server data[%lu]=%I64x is above 4GB — "
                      "guest-invisible\n", i, E);
