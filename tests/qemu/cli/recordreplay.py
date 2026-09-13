@@ -10,10 +10,11 @@ times as you like.  That turns "reproduce it again and hope" into "open the
 recording".
 
 Caveat worth knowing before you plan around this: on QEMU 9.0.2 the gdbstub is
-only partly usable against a replay.  Connect, read registers and `continue`
-work; `stepi` aborts QEMU, and nobody has yet stopped a replay at a point of
-interest, so reverse execution -- the original motivation -- is still out of
-reach.  See docs/engineering/qemu-record-replay.md.
+unusable against a replay for DEBUGGING.  Attaching at -S and `continue` work,
+but every later stop -- stepi, attaching mid-run, and a breakpoint hit -- aborts
+QEMU.  A replay cannot be stopped, so reverse execution (the original
+motivation) is unreachable and a trace is a deterministic CAPTURE rather than a
+debugging session.  See docs/engineering/qemu-record-replay.md.
 
 The tool is the deliverable.  Catching any specific bug with it is a bonus.
 

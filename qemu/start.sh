@@ -246,7 +246,13 @@ case "$ARCH" in
             qemu-system-aarch64 -M virt -cpu cortex-a72 -m 1G
             -drive "if=pflash,format=raw,file=$UEFI_FW,readonly=on"
             -drive "if=pflash,format=raw,file=$EFIVARS"
-            -drive "file=$BOOT_IMG,format=raw,if=virtio"
+            # readonly + locking off, matching tests/qemu/vm.py. boot.img is a
+            # SHARED build artifact: opening it read-write let a debug boot both
+            # take a write lock on it — a second arm64 boot then dies with
+            # `Failed to get "write" lock` before it prints anything — and, worse,
+            # let the guest write to the ramdisk every other boot on the box
+            # reads. vm.py has always done this correctly; start.sh had not.
+            -drive "file=$BOOT_IMG,format=raw,if=virtio,readonly=on,file.locking=off"
             -device ramfb
             # virtio-mmio kbd+mouse — the devices arm64input.sys binds to. Mirror
             # vm.py/smoke so manual & agent-driven boots are interactive by default
