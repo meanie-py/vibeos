@@ -11,10 +11,9 @@ recording".
 
 Caveat worth knowing before you plan around this: on QEMU 9.0.2 the gdbstub is
 only partly usable against a replay.  Connect, read registers and `continue`
-work; `stepi` aborts QEMU and `interrupt` will not stop a running replay, so
-there is no way to reach a point of interest and reverse execution -- the
-original motivation -- is out of reach.  See
-docs/engineering/qemu-record-replay.md.
+work; `stepi` aborts QEMU, and nobody has yet stopped a replay at a point of
+interest, so reverse execution -- the original motivation -- is still out of
+reach.  See docs/engineering/qemu-record-replay.md.
 
 The tool is the deliverable.  Catching any specific bug with it is a bonus.
 
