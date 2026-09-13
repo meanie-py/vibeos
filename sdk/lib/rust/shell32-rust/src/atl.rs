@@ -50,8 +50,8 @@ use core::marker::PhantomData;
 
 use crate::island::{
     CoTaskMemAlloc, CoTaskMemFree, CoTaskMemRealloc, LocalAlloc, LocalFree, LocalReAlloc,
-    RegCloseKey, RegOpenKeyExW, BOOL, HKEY, HLOCAL, INT, LONG, LPCWSTR, POSITION, REGSAM, SIZE_T,
-    UINT, WCHAR,
+    MultiByteToWideChar, RegCloseKey, RegOpenKeyExW, BOOL, CP_THREAD_ACP, HKEY, HLOCAL, INT,
+    LONG, LPCSTR, LPCWSTR, POSITION, REGSAM, SIZE_T, UINT, WCHAR,
 };
 use crate::shellcom::IUnknown;
 
@@ -856,6 +856,36 @@ impl CStringW {
         core::ptr::copy_nonoverlapping(pszSrc, self.m_pszData, nLength as usize);
         *self.m_pszData.add(nLength as usize) = 0;
         self.m_nLength = nLength;
+    }
+
+    /// `CStringT(const char *pszSrc)` — cstringt.h's CONVERTING constructor, the one behind
+    /// `CStringW strPathW(pszPath)` where pszPath is an LPCSTR.
+    ///
+    /// This is a real code-page conversion, not a cast. The page is `_AtlGetConversionACP()`
+    /// (cstringt.h:14), which is CP_THREAD_ACP unless `_CONVERSION_DONT_USE_THREAD_LOCALE` is
+    /// defined — and nothing in this build defines it. Using CP_ACP instead would agree with
+    /// CP_THREAD_ACP on ASCII and silently produce different characters for everything else,
+    /// which is the kind of difference that shows up as a corrupted path much later.
+    ///
+    /// ATL sizes with `MultiByteToWideChar(acp, 0, src, -1, NULL, 0) - 1` (the `-1` drops the
+    /// terminator from the COUNT, which SetString then re-adds), so the same shape is kept.
+    pub unsafe fn from_ansi(pszSrc: LPCSTR) -> Self {
+        let mut s = Self::new();
+        if pszSrc.is_null() {
+            return s;
+        }
+        let n = MultiByteToWideChar(CP_THREAD_ACP, 0, pszSrc, -1, core::ptr::null_mut(), 0) - 1;
+        if n <= 0 {
+            return s;
+        }
+        s.Reserve(n);
+        if s.m_pszData.is_null() {
+            return s;
+        }
+        MultiByteToWideChar(CP_THREAD_ACP, 0, pszSrc, -1, s.m_pszData, n + 1);
+        *s.m_pszData.add(n as usize) = 0;
+        s.m_nLength = n;
+        s
     }
 
     /// `Empty()` — atlsimpstr.h:253.

@@ -55,7 +55,7 @@
 //! perfectly. Anyone extending those vtables transcribes from the IDL, in order, and does not
 //! infer from call sites.
 //!
-//! 66 errors remain, and they are a LONG TAIL rather than roots: many distinct one- and
+//! 63 errors remain, and they are a LONG TAIL rather than roots: many distinct one- and
 //! two-instance classes, no single fix worth ten. The mechanical seam is worked out. `shellcom::IBindCtxVtbl` is now its full THIRTEEN slots in objidl.idl
 //! order, and IStream's Seek/CopyTo/Stat placeholders are typed -- this TU was their first
 //! caller, which is how the placeholder convention surfaces when a new consumer arrives.
@@ -911,7 +911,7 @@ pub unsafe extern "system" fn SHSetFolderPathA(
     dwFlags: DWORD,
     pszPath: LPCSTR,
 ) -> HRESULT {
-    let strPathW = CStringW(pszPath);
+    let strPathW = CStringW::from_ansi(pszPath);
     SHSetFolderPathW(csidl, hToken, dwFlags, strPathW)
 }
 
@@ -936,7 +936,7 @@ pub unsafe extern "system" fn ExtractIconResInfoA(
         return 0;
     }
 
-    let strFileNameW = CStringW(lpFileName);
+    let strFileNameW = CStringW::from_ansi(lpFileName);
     ExtractIconResInfoW(hHandle, strFileNameW, wIndex, lpSize, lpIcon)
 }
 
@@ -1084,8 +1084,8 @@ pub unsafe extern "system" fn SHTestTokenPrivilegeW(
             let mut iPriv: UINT = 0;
             let cPrivs: UINT = (*pTokenPriv).PrivilegeCount;
             while ret == 0 && iPriv < cPrivs {
-                ret = ((Luid.__bindgen_anon_1.LowPart == (*pTokenPriv).Privileges[iPriv as usize].Luid.__bindgen_anon_1.LowPart) &&
-                       (Luid.__bindgen_anon_1.HighPart == (*pTokenPriv).Privileges[iPriv as usize].Luid.__bindgen_anon_1.HighPart)) as BOOL;
+                ret = ((Luid.LowPart == (*pTokenPriv).Privileges[iPriv as usize].Luid.LowPart) &&
+                       (Luid.HighPart == (*pTokenPriv).Privileges[iPriv as usize].Luid.HighPart)) as BOOL;
                 iPriv += 1;
             }
         }
@@ -1846,8 +1846,8 @@ pub unsafe extern "system" fn CopyStreamUI(
         if dwlSize > 0 {
             uliSize.QuadPart = dwlSize;
         } else {
-            uliSize.__bindgen_anon_1.HighPart = INVALID_FILE_SIZE;
-            uliSize.__bindgen_anon_1.LowPart = INVALID_FILE_SIZE;
+            uliSize.HighPart = INVALID_FILE_SIZE;
+            uliSize.LowPart = INVALID_FILE_SIZE;
         }
         return ((*(*pSrc).lpVtbl).CopyTo)(
             pSrc,
