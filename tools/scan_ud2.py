@@ -36,8 +36,10 @@ import sys
 from pathlib import Path
 
 if __package__:
+    from .binary_corpus import governed_binaries
     from .binary_facts import BinaryFacts
 else:
+    from binary_corpus import governed_binaries
     from binary_facts import BinaryFacts
 
 # Functions where ud2 is expected (unreachable panic/abort paths)
@@ -216,20 +218,22 @@ def _is_mangled(fn: str) -> bool:
     return base.startswith("ZN") or (base.startswith("R") and not base.startswith("Rtl"))
 
 
-def find_rust_binaries(build_dir: Path, nm: str, cache=None) -> list[Path]:
-    """Every .sys/.dll/.exe under the build dir that links Rust code.
+def find_rust_binaries(build_dir: Path, nm: str, cache=None, repo: Path | None = None):
+    """Every PE in the build dir's GOVERNED corpus that links Rust code.
 
-    Excludes staging copies (livecd/bootcd/boot/stripped), host tooling, and
-    ntoskrnl.exe (scanned separately with its own kernel baselines). The
-    llvm-nm `rust_begin_unwind` probe keeps this fast (~6s over ~1000 files).
+    The corpus comes from tools/binary_corpus.py, not from a directory listing:
+    on arm64 there is no livecd DAG, so most of what sits in `build-arm64/` is
+    whatever an older ninja left there and a verdict over it is a verdict about
+    the directory rather than the tree. ntoskrnl.exe is dropped here because
+    main() scans it separately against its own kernel baselines. The llvm-nm
+    `rust_begin_unwind` probe keeps this fast (~6s over ~1000 files).
+
+    Returns (paths, corpus) so the caller can report what it actually judged.
     """
-    exclude = ("boot/stripped", "livecd", "bootcd", "CMakeFiles", "host-tools")
+    corpus = governed_binaries(build_dir, repo)
     out: list[Path] = []
-    for p in build_dir.rglob("*"):
-        if p.suffix.lower() not in (".sys", ".dll", ".exe"):
-            continue
-        rel = str(p.relative_to(build_dir))
-        if any(e in rel for e in exclude) or p.name == "ntoskrnl.exe":
+    for p in corpus.paths:
+        if p.name == "ntoskrnl.exe":
             continue
 
         def contains_rust(p=p):
@@ -238,7 +242,7 @@ def find_rust_binaries(build_dir: Path, nm: str, cache=None) -> list[Path]:
 
         if cache.get(p, contains_rust) if cache else contains_rust():
             out.append(p)
-    return sorted(out)
+    return sorted(out), corpus
 
 
 def scan_driver_binary(path: Path, objdump: str, arch: str) -> list[dict]:
@@ -297,9 +301,10 @@ def scan_driver_binary(path: Path, objdump: str, arch: str) -> list[dict]:
     return findings
 
 
-def scan_drivers(build_dir: Path, objdump: str, nm: str, arch: str) -> tuple[int, list[dict]]:
-    """Sweep all Rust-containing driver/DLL binaries; returns (n_binaries,
-    unexpected+known findings) — expected ones are dropped here (volume)."""
+def scan_drivers(build_dir: Path, objdump: str, nm: str, arch: str):
+    """Sweep the governed Rust-containing driver/DLL binaries; returns
+    (binaries, corpus, unexpected+known findings) — expected ones are dropped
+    here (volume)."""
     from concurrent.futures import ThreadPoolExecutor
 
     repo = build_dir.resolve().parent
@@ -313,14 +318,14 @@ def scan_drivers(build_dir: Path, objdump: str, nm: str, arch: str) -> tuple[int
         tools=[objdump],
         options={"arch": arch},
     )
-    binaries = find_rust_binaries(build_dir, nm, symbols)
+    binaries, corpus = find_rust_binaries(build_dir, nm, symbols, repo)
     keep: list[dict] = []
     with ThreadPoolExecutor(max_workers=8) as pool:
         for findings in pool.map(
             lambda p: facts.get(p, lambda: scan_driver_binary(p, objdump, arch)), binaries
         ):
             keep.extend(f for f in findings if not f["expected"])
-    return len(binaries), keep
+    return binaries, corpus, keep
 
 
 def find_objdump(arch: str) -> str | None:
@@ -517,11 +522,21 @@ def main():
         if not nm:
             raise RuntimeError("no nm found — driver sweep cannot run")
         else:
-            n_bins, flagged = scan_drivers(build_dir, objdump, nm, arch)
+            bins, corpus, flagged = scan_drivers(build_dir, objdump, nm, arch)
             known = [f for f in flagged if f["known_cgu"]]
             driver_bad = [f for f in flagged if not f["known_cgu"]]
             noun = "spins" if arch == "arm64" else "ud2"
-            print(f"\nDriver sweep: {n_bins} Rust-containing binaries scanned")
+            # Print the corpus and its BASIS, not just a count: this sweep used
+            # to grade whatever binaries happened to sit in the build dir, so a
+            # silent corpus change read as a code change. Say what was judged.
+            print(
+                f"\nDriver sweep: {len(bins)} Rust-containing binaries scanned "
+                f"of {len(corpus.paths)} in corpus\n  corpus basis: {corpus.basis}"
+            )
+            if corpus.missing:
+                print(f"  declared but absent from the build dir ({len(corpus.missing)}):")
+                for rel in corpus.missing:
+                    print(f"    {rel}")
             if known:
                 print(f"  Known residuals ({len(known)}):")
                 for f in known:
@@ -534,6 +549,15 @@ def main():
                     print(f"    {f['binary']}: 0x{f['address']}: {f['function']}  *** BUG ***")
             if not flagged:
                 print(f"  No unexpected driver {noun}.")
+            if not corpus.paths:
+                # An empty corpus is not a clean sweep, it is no sweep. The whole
+                # point of declaring the corpus is that it can now be declared
+                # EMPTY by a refactor of mkramdisk.sh, and a gate that silently
+                # grades nothing is worse than the directory listing it replaced.
+                raise RuntimeError(
+                    f"empty binary corpus for {build_dir} — nothing was swept.\n"
+                    f"  corpus basis: {corpus.basis}"
+                )
 
     if check_mode and (unexpected or driver_bad):
         noun = "branch-to-self spin" if arch == "arm64" else "ud2"
