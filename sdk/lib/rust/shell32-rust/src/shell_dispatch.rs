@@ -1100,7 +1100,7 @@ extern "system" {
 }
 
 #[inline] unsafe fn V_VT(value: *const VARIANT) -> VARTYPE { (*value).vt }
-#[inline] unsafe fn V_I4(value: *const VARIANT) -> LONG { (*value).val.lVal }
+#[inline] pub unsafe fn V_I4(value: *const VARIANT) -> LONG { (*value).val.lVal }
 #[inline] unsafe fn V_UI4(value: *const VARIANT) -> ULONG { (*value).val.lVal as ULONG }
 #[inline] unsafe fn V_ERROR(value: *const VARIANT) -> HRESULT { (*value).val.lVal }
 #[inline] unsafe fn V_BOOL(value: *const VARIANT) -> VARIANT_BOOL { (*value).val.iVal }

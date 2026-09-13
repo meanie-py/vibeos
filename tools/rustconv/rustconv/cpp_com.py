@@ -664,6 +664,22 @@ def _class_bases(header: Path, class_name: str) -> list[str]:
     raise CppComError(f"{class_name}: class definition not found in {header}")
 
 
+def _header_files(root: Path, pattern: str = "*.h") -> list[Path]:
+    """Retry directory enumeration if concurrent tooling removes a scratch directory.
+
+    Materialize the entire walk before returning: a partial corpus must never
+    escape. Missing roots and persistent directory churn still fail.
+    """
+    for attempt in range(3):
+        root.stat()
+        try:
+            return list(root.rglob(pattern))
+        except FileNotFoundError:
+            if attempt == 2:
+                raise
+    raise AssertionError("unreachable")
+
+
 def find_class_header(source: Path, class_name: str) -> Path:
     """Find the source/header containing the actual class definition.
 
@@ -683,7 +699,7 @@ def find_class_header(source: Path, class_name: str) -> Path:
     if not hits:
         shell32_root = next((p for p in source.parents if p.name == "shell32"), None)
         if shell32_root is not None and shell32_root != source.parent:
-            hits = [header for header in sorted(shell32_root.rglob("*.h")) if defines(header)]
+            hits = [header for header in sorted(_header_files(shell32_root)) if defines(header)]
     if not hits:
         repo_root = next(
             (parent for parent in source.parents if (parent / "sdk" / "include").is_dir()),
@@ -691,10 +707,11 @@ def find_class_header(source: Path, class_name: str) -> Path:
         )
         if repo_root is not None:
             include_root = repo_root / "sdk" / "include"
-            hits = [header for header in sorted(include_root.rglob("*.h")) if defines(header)]
+            hits = [header for header in sorted(_header_files(include_root)) if defines(header)]
             if not hits:
                 atl_root = repo_root / "sdk" / "lib" / "atl"
-                hits = [header for header in sorted(atl_root.rglob("*.h")) if defines(header)]
+                if atl_root.is_dir():
+                    hits = [header for header in sorted(_header_files(atl_root)) if defines(header)]
     if not hits:
         raise CppComError(f"{class_name}: no defining C++ source/header found from {source}")
     if len(hits) > 1:
@@ -1589,7 +1606,7 @@ def _discover_pod_state_types(
             None,
         )
         if definition is None and repo_root is not None:
-            for candidate in (repo_root / "sdk" / "include").rglob("*.[hi]"):
+            for candidate in _header_files(repo_root / "sdk" / "include", "*.[hi]"):
                 text = candidate.read_text(encoding="utf-8", errors="replace")
                 if not re.search(rf"\b{re.escape(name)}\b", text):
                     continue
@@ -1706,7 +1723,7 @@ def _base_is_declared_interface(source: Path, base: str) -> bool:
     if repo_root is not None:
         roots.append(repo_root / "sdk" / "include")
     for root in roots:
-        for header in root.rglob("*.h"):
+        for header in _header_files(root):
             try:
                 if pattern.search(header.read_text(encoding="utf-8", errors="replace")):
                     return True
@@ -1781,7 +1798,7 @@ def sdk_type_macro_aliases(repo_root: Path, unicode: bool | None = None) -> dict
     for root in header_roots:
         if not root.is_dir():
             continue
-        for header in sorted(root.rglob("*.h")):
+        for header in sorted(_header_files(root)):
             try:
                 text = header.read_text(encoding="utf-8", errors="replace")
             except OSError:
@@ -4294,7 +4311,7 @@ def _sdk_pod_support(source_path: Path, used_words: set[str]) -> str:
         repo_root / f"build-{arch}" / "sdk" / "include" / "psdk"
         for arch in ("i386", "amd64", "arm64")
     ]
-    headers = sorted(path for root in header_roots if root.is_dir() for path in root.rglob("*.h"))
+    headers = sorted(path for root in header_roots if root.is_dir() for path in _header_files(root))
     for header in headers:
         text = header.read_text(encoding="utf-8", errors="replace")
         for match in typedef.finditer(text):

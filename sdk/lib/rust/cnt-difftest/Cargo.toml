@@ -11,7 +11,11 @@ edition = "2021"
 publish = false
 
 [dependencies]
-cnt-rust = { path = "../cnt-rust", features = ["cabi"] }
+# BOTH features: `cabi` is the kernel surface this harness exists to grade,
+# and `cabi-math` adds the six Bessel wrappers, which are gated off the
+# kernel because they need `_errno`. Without cabi-math here they would be
+# the one part of cabi/math.rs that nothing grades.
+cnt-rust = { path = "../cnt-rust", features = ["cabi", "cabi-math"] }
 cnt-ctype = { path = "../cnt-ctype" }
 
 [build-dependencies]

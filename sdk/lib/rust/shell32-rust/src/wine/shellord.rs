@@ -706,7 +706,7 @@ extern "system" {
     fn DefWindowProcW(h: HWND, m: UINT, w: WPARAM, l: LPARAM) -> LRESULT;
     fn DeleteFileW(name: LPCWSTR) -> BOOL;
     fn DeregisterShellHookWindow(hwnd: HWND) -> BOOL;
-    fn DoDragDrop(
+    pub fn DoDragDrop(
         pDataObj: *mut c_void,
         pDropSource: *mut c_void,
         dwOKEffects: DWORD,
@@ -816,10 +816,10 @@ extern "system" {
         data: *const BYTE,
         cb: DWORD,
     ) -> LONG;
-    fn RegisterDragDrop(h: HWND, pDropTarget: *mut c_void) -> HRESULT;
+    pub fn RegisterDragDrop(h: HWND, pDropTarget: *mut c_void) -> HRESULT;
     fn RegisterShellHookWindow(h: HWND) -> BOOL;
     fn RemovePropW(h: HWND, name: LPCWSTR) -> HANDLE;
-    fn RevokeDragDrop(h: HWND) -> HRESULT;
+    pub fn RevokeDragDrop(h: HWND) -> HRESULT;
     fn SHAnsiToUnicode(src: LPCSTR, dst: LPWSTR, cch: c_int) -> DWORD;
     fn SHCLSIDFromStringW(s: LPCWSTR, clsid: *mut CLSID) -> HRESULT;
     fn SHDeleteKeyW(key: HKEY, sub: LPCWSTR) -> DWORD;

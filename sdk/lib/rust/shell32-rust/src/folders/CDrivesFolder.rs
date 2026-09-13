@@ -94,7 +94,7 @@ fn PtrToUlong(p: *const c_void) -> ULONG {
     p as usize as ULONG
 }
 #[inline]
-fn UlongToPtr(v: ULONG) -> *mut c_void {
+pub fn UlongToPtr(v: ULONG) -> *mut c_void {
     v as usize as *mut c_void
 }
 
