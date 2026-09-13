@@ -68,12 +68,12 @@ pub const STATUS_DISK_FULL: i32 = 0xC000007F_u32 as i32;
 pub const STATUS_FILE_CORRUPT_ERROR: i32 = 0xC0000102_u32 as i32;
 pub const STATUS_MORE_PROCESSING_REQUIRED: i32 = 0xC0000016_u32 as i32;
 pub const STATUS_UNMAPPABLE_CHARACTER: i32 = 0xC0000162_u32 as i32;
-pub const TAG_CCB: u32 = 0x43746146;  // 'CtaF'
+pub const TAG_CCB: u32 = 0x43746146; // nolint: const-contradiction ('CtaF' -- fastfat/nodetype.h:151; cdfs' is 'ccdC')
 pub const TAG_EA_DATA: u32 = 0x64746146;  // 'dtaF'
 pub const TAG_ERESOURCE: u32 = 0x45746146;  // 'EtaF'
-pub const TAG_FCB_NONPAGED: u32 = 0x4e746146;  // 'NtaF'
+pub const TAG_FCB_NONPAGED: u32 = 0x4e746146; // nolint: const-contradiction ('NtaF' -- fastfat/nodetype.h; cdfs' is 'nfdC')
 pub const TAG_FILENAME_BUFFER: u32 = 0x6e746146;  // 'ntaF'
-pub const TAG_IRP_CONTEXT: u32 = 0x49746146;  // 'ItaF'
+pub const TAG_IRP_CONTEXT: u32 = 0x49746146; // nolint: const-contradiction ('ItaF' -- fastfat/nodetype.h; cdfs' is 'cidC')
 pub const VPB_DIRECT_WRITES_ALLOWED: u32 = 0x0020;
 pub const VPB_LOCKED: u32 = 0x0002;
 

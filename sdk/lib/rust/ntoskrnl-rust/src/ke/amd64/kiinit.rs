@@ -159,7 +159,9 @@ const REQUIRED_FEATURE_BITS: u64 = KF_RDTSC | KF_CR4 | KF_CMPXCHG8B | KF_XMMI | 
                                     KF_LARGE_PAGE | KF_FAST_SYSCALL | KF_GLOBAL_PAGE |
                                     KF_CMOV | KF_PAT | KF_MMX | KF_FXSR | KF_NX_BIT | KF_MTRR;
 
-const KERNEL_STACK_SIZE: usize = 0x6000;
+// 0xC000, xdk/amd64/ke.h:182. usercall.rs in this same crate already had it right;
+// 0x6000 is half a kernel stack, and this constant sizes the allocation.
+const KERNEL_STACK_SIZE: usize = 0xC000;
 const PCR_MAJOR_VERSION: u32 = 1;
 const PCR_MINOR_VERSION: u32 = 1;
 const PRCB_MAJOR_VERSION: u16 = 1;
@@ -187,7 +189,7 @@ const CR0_MP: u64 = 0x02;
 const CR0_NE: u64 = 0x20;
 
 const KGDT64_R0_CODE: u64 = 0x10;
-const KGDT64_R3_CMCODE: u64 = 0x23;
+const KGDT64_R3_CMCODE: u64 = 0x20; // ndk/amd64/ketypes.h
 const KGDT64_SYS_TSS: u16 = 0x40;
 const RPL_MASK: u64 = 0x03;
 

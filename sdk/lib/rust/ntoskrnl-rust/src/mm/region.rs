@@ -8,7 +8,7 @@ use ntkrnl_sys::ddk::{
 };
 use ntkrnl_sys::{opaque_ptr, opaque_ptr_const};
 
-const TAG_MM_REGION: u32 = u32::from_be_bytes(*b"RMmM");
+const TAG_MM_REGION: u32 = u32::from_be_bytes(*b"NGRM"); // C literal 'NGRM' -- ntoskrnl/include/internal/tag.h
 
 /// CONTAINING_RECORD equivalent for MM_REGION
 #[inline]

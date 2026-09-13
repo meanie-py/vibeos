@@ -17,9 +17,13 @@ const RPL_MASK: u16 = 3;
 const CONTEXT_AMD64: u32 = 0x00100000;
 const CONTEXT_INTEGER: u32 = 0x00000002;
 const CONTEXT_FLOATING_POINT: u32 = 0x00000008;
-const CONTEXT_CONTROL: u32 = 0x00000001;
+// CONTEXT_AMD64 (0x100000) | flag bits -- winnt_old.h:1351-1363. Dropping the arch
+// base leaves a mask that still matches well-formed same-arch ContextFlags by luck
+// (the discriminating bits are the low ones), but accepts a context record carrying
+// a DIFFERENT arch base, which is exactly what WoW64 hands the 64-bit side.
+const CONTEXT_CONTROL: u32 = 0x00100001;
 const CONTEXT_SEGMENTS: u32 = 0x00000004;
-const CONTEXT_DEBUG_REGISTERS: u32 = 0x00000010;
+const CONTEXT_DEBUG_REGISTERS: u32 = 0x00100010;
 
 const EFLAGS_USER_SANITIZE: u32 = 0x003F4DD7;
 const EFLAGS_INTERRUPT_MASK: u32 = 0x00000200;

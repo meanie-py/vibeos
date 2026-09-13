@@ -1761,7 +1761,7 @@ pub unsafe extern "C" fn AhciATAPICommand(
     Cdb: PCDB,
 ) -> UCHAR {
 
-    const ATA_FUNCTION_ATAPI_COMMAND: ULONG = 0x40;
+    const ATA_FUNCTION_ATAPI_COMMAND: ULONG = 0x200; // drivers/storage/port/storahci/storahci.h
     const AHCI_DEVICE_TYPE_ATAPI: UCHAR = 2;
     const SRB_FLAGS_DATA_IN: ULONG = 0x00000040;
     const SRB_FLAGS_DATA_OUT: ULONG = 0x00000080;

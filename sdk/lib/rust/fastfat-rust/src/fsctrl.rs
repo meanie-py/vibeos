@@ -201,7 +201,7 @@ const REQUEST_OPLOCK_INPUT_FLAG_REQUEST: u32 = 0x1;
 const REQUEST_OPLOCK_INPUT_FLAG_ACK: u32 = 0x2;
 const OPLOCK_LEVEL_CACHE_HANDLE: u32 = 0x2;
 
-const IRP_CONTEXT_FLAG_WAIT: u32 = 0x00000002;
+const IRP_CONTEXT_FLAG_WAIT: u32 = 0x00000002;  // nolint: const-contradiction (fastfat's own flag set, fatstruc.h:1563)
 
 // Missing types — defined locally from Windows SDK headers
 type FAT_FLUSH_TYPE = i32;
@@ -1202,7 +1202,7 @@ pub unsafe extern "system" fn FatMoveFile(
     // Forward declarations for unknown symbols (types assumed from ntkrnl_sys)
 
     // Constants used in this function
-    const IRP_CONTEXT_FLAG_WAIT: u32 = 0x02;
+    const IRP_CONTEXT_FLAG_WAIT: u32 = 0x02;  // nolint: const-contradiction (fastfat's own flag set, fatstruc.h:1563)
     const IRP_CONTEXT_FLAG_PARENT_BY_CHILD: u32 = 0x80000000_u32;
     const IRP_CONTEXT_FLAG_WRITE_THROUGH: u32 = 0x04;
     const IRP_CONTEXT_FLAG_DISABLE_WRITE_THROUGH: u32 = 0x08;
@@ -2251,7 +2251,7 @@ pub unsafe extern "system" fn FatSetPurgeFailureMode(
     Irp: *mut IRP,
 ) -> NTSTATUS {
     // Forward declarations for functions and constants not in ntkrnl_sys list
-    const IRP_CONTEXT_FLAG_WAIT: u32 = 0x02;               // placeholder
+    const IRP_CONTEXT_FLAG_WAIT: u32 = 0x02;               // placeholder  // nolint: const-contradiction (fastfat's own flag set, fatstruc.h:1563)
     const SET_PURGE_FAILURE_MODE_ENABLED: u32 = 0x1;      // placeholder
     const SET_PURGE_FAILURE_MODE_DISABLED: u32 = 0x2;     // placeholder
     const STATUS_FILE_IS_A_DIRECTORY: NTSTATUS = 0xC00000BA_u32 as i32;
@@ -2536,7 +2536,7 @@ pub unsafe extern "system" fn FatSetZeroOnDeallocate(
     Irp: *mut IRP,
 ) -> NTSTATUS {
     // Constants that would normally come from headers
-    const IRP_CONTEXT_FLAG_WAIT: u32 = 0x02; // placeholder
+    const IRP_CONTEXT_FLAG_WAIT: u32 = 0x02; // placeholder  // nolint: const-contradiction (fastfat's own flag set, fatstruc.h:1563)
     const VCB_STATE_FLAG_WRITE_PROTECTED: u32 = 0x4000; // placeholder
     const FCB_STATE_ZERO_ON_DEALLOCATION: u32 = 0x00080000; // placeholder
     // UserFileOpen imported from crate::types (_TYPE_OF_OPEN_UserFileOpen = 2)

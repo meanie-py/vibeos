@@ -64,7 +64,7 @@ const STATUS_CANT_WAIT: i32 = 0xC00000D8_u32 as i32; // 0xC0000258
 const VCB_STATE_FLAG_LOCKED: u32 = 0x01; // FIXME: unknown value
 const VCB_STATE_FLAG_DELETED_FCB: u32 = 0x0100; // FIXME: unknown value
 const FCB_STATE_FORCE_MISS_IN_PROGRESS: u32 = 0x08; // FIXME: unknown value
-const IRP_CONTEXT_FLAG_WAIT: u32 = 0x02; // FIXME: unknown value
+const IRP_CONTEXT_FLAG_WAIT: u32 = 0x02; // FIXME: unknown value  // nolint: const-contradiction (fastfat's own flag set, fatstruc.h:1563)
 const MmFlushForWrite: u32 = 0x00000002;
 
 // FAT_FLUSH_TYPE enum from fatprocs.h

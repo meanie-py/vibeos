@@ -212,11 +212,15 @@ const CR0_EM: ULONG = 0x00000004;
 const CR0_MP: ULONG = 0x00000002;
 const CR0_TS: ULONG = 0x00000008;
 
-const CONTEXT_CONTROL: ULONG = 0x00000001;
+// CONTEXT_i386 (0x10000) | flag bits -- winnt_old.h:1291-1303. Dropping the arch
+// base leaves a mask that still matches well-formed same-arch ContextFlags by luck
+// (the discriminating bits are the low ones), but accepts a context record carrying
+// a DIFFERENT arch base, which is exactly what WoW64 hands the 64-bit side.
+const CONTEXT_CONTROL: ULONG = 0x00010001;
 const CONTEXT_INTEGER: ULONG = 0x00000002;
 const CONTEXT_SEGMENTS: ULONG = 0x00000004;
 const CONTEXT_FLOATING_POINT: ULONG = 0x00000008;
-const CONTEXT_DEBUG_REGISTERS: ULONG = 0x00000010;
+const CONTEXT_DEBUG_REGISTERS: ULONG = 0x00010010;
 const CONTEXT_EXTENDED_REGISTERS: ULONG = 0x00000020;
 const CONTEXT_FULL: ULONG = CONTEXT_CONTROL | CONTEXT_INTEGER | CONTEXT_SEGMENTS;
 

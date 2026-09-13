@@ -167,7 +167,7 @@ pub const OBJ_VALID_ATTRIBUTES: ULONG = 0x000007F2;
 
 pub const OB_NAME_TAG: ULONG = u32::from_le_bytes(*b"ObNm");
 pub const OB_DIR_TAG: ULONG = u32::from_le_bytes(*b"ObDi");
-pub const TAG_SD: ULONG = u32::from_le_bytes(*b"ObSd");
+pub const TAG_SD: ULONG = u32::from_be_bytes(*b"dSeS"); // C literal 'dSeS' -- ntoskrnl/include/internal/tag.h
 pub const TAG_SEC_QUERY: ULONG = u32::from_le_bytes(*b"ObSq");
 pub const TAG_DACL: ULONG = u32::from_le_bytes(*b"SeAc");
 pub const OB_LINK_TAG: ULONG = u32::from_le_bytes(*b"ObSy");
@@ -426,9 +426,9 @@ pub const SEF_AVOID_OWNER_RESTRICTION: ULONG = 0x1000;
 // SE pool tags (from se.h / sepg.h)
 // ============================================================================
 
-pub const TAG_SID: ULONG = u32::from_le_bytes(*b"Sid ");
+pub const TAG_SID: ULONG = u32::from_be_bytes(*b"iSeS"); // nolint: const-contradiction ('iSeS' -- ntoskrnl/include/internal/tag.h:151; rtl's TAG_SID is 'diSp')
 pub const TAG_SID_AND_ATTRIBUTES: ULONG = u32::from_le_bytes(*b"SidA");
-pub const TAG_PRIVILEGE_SET: ULONG = u32::from_le_bytes(*b"Priv");
+pub const TAG_PRIVILEGE_SET: ULONG = u32::from_be_bytes(*b"rPeS"); // C literal 'rPeS' -- ntoskrnl/include/internal/tag.h
 pub const TAG_QOS: ULONG = u32::from_le_bytes(*b"SeQs");
 pub const TAG_LUID: ULONG = u32::from_le_bytes(*b"SeLu");
 pub const TAG_SE_HANDLES_TAB: ULONG = u32::from_le_bytes(*b"SeHt");
@@ -438,7 +438,7 @@ pub const TAG_SID_VALIDATE: ULONG = u32::from_le_bytes(*b"SeSv");
 pub const TAG_LOGON_NOTIFICATION: ULONG = u32::from_le_bytes(*b"SeLn");
 pub const TAG_SEPA: ULONG = u32::from_le_bytes(*b"SePa");
 pub const TAG_TOKEN: ULONG = u32::from_le_bytes(*b"Toke");
-pub const TAG_ACL: ULONG = u32::from_le_bytes(*b"SeAl");
+pub const TAG_ACL: ULONG = u32::from_be_bytes(*b"cAeS"); // C literal 'cAeS' -- ntoskrnl/include/internal/tag.h
 
 // ============================================================================
 // SE internal constants (from se.h)

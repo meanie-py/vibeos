@@ -130,7 +130,7 @@ const IO_TYPE_VPB: u16 = 0x0A;
 const IRP_MJ_FILE_SYSTEM_CONTROL: u32 = 13;
 const IRP_MN_MOUNT_VOLUME: u32 = 1;
 
-const TAG_IO_BUFFER: u32 = 0x4F746146; // placeholder
+const TAG_IO_BUFFER: u32 = 0x4F746146; // nolint: const-contradiction ('OtaF' -- fastfat/nodetype.h; cdfs' is 'fbdC')
 const IOCTL_CDROM_READ_TOC: u32 = 0x0024000; // placeholder
 const STATUS_IO_DEVICE_ERROR: i32 = 0xC0000185_u32 as i32; // placeholder
 const STATUS_INVALID_DEVICE_REQUEST: i32 = 0xC0000010_u32 as i32; // placeholder
@@ -148,7 +148,7 @@ const FAT_NTC_IRP_CONTEXT: u32 = 0x0508;
 const IRP_NOCACHE: u32 = 0x00000001;
 const SL_WRITE_THROUGH: u32 = 0x04;
 const IRP_CONTEXT_FLAG_WRITE_THROUGH: u32 = 0x04;
-const IRP_CONTEXT_FLAG_WAIT: u32 = 0x0002;
+const IRP_CONTEXT_FLAG_WAIT: u32 = 0x0002;  // nolint: const-contradiction (fastfat's own flag set, fatstruc.h:1563)
 const IRP_CONTEXT_FLAG_RECURSIVE_CALL: u32 = 0x10;
 const IRP_MN_USER_FS_REQUEST: u8 = 0x00;
 const FSCTL_INVALIDATE_VOLUMES: u32 = 0x00090054;
@@ -233,8 +233,8 @@ const VPB_MOUNTED: u32 = 0x01;
 const VPB_LOCKED: u32 = 0x02;
 const VPB_DIRECT_WRITES_ALLOWED: u32 = 0x0020;
 const VCB_STATE_FLAG_DISMOUNT_IN_PROGRESS: u32 = 0x00080000;
-const DPFLTR_FASTFAT_ID: u32 = 0x6000;
-const DPFLTR_INFO_LEVEL: u32 = 0x00000020;
+const DPFLTR_FASTFAT_ID: u32 = 33;
+const DPFLTR_INFO_LEVEL: u32 = 3;
 const MAXIMUM_VOLUME_LABEL_LENGTH: u16 = 64; // in bytes, assuming 32 WCHARs
 #[no_mangle]
 pub unsafe extern "system" fn FatAllocateCcb() -> *mut CCB {
@@ -1162,7 +1162,7 @@ pub unsafe extern "system" fn FatCreateDcb(
     Dirent: *mut DIRENT,
     Lfn: *mut _UNICODE_STRING,
 ) -> *mut DCB {
-    const IRP_CONTEXT_FLAG_WAIT: u32 = 0x02;
+    const IRP_CONTEXT_FLAG_WAIT: u32 = 0x02;  // nolint: const-contradiction (fastfat's own flag set, fatstruc.h:1563)
     const FAT_NTC_DCB: u32 = 0x0503;
     const FcbGood: u32 = 1;
     const FCB_LOOKUP_ALLOCATIONSIZE_HINT: i64 = -1;

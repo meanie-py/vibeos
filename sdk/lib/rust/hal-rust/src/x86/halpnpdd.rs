@@ -85,7 +85,7 @@ struct PDO_EXTENSION {
 // Constants the bindgen catalog doesn't surface usefully for us
 // ---------------------------------------------------------------------------
 
-const TAG_HAL: u32 = u32::from_le_bytes(*b"laH ");
+const TAG_HAL: u32 = u32::from_be_bytes(*b" laH"); // C literal ' laH' -- hal/halx86/include/hal.h
 const PAGED_POOL: i32 = 1; // POOL_TYPE::PagedPool
 const STATUS_SUCCESS: NTSTATUS = 0;
 const STATUS_UNSUCCESSFUL: NTSTATUS = 0xC0000001u32 as NTSTATUS;

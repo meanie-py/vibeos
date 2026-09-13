@@ -458,7 +458,7 @@ pub unsafe extern "system" fn NtGdiGetTextExtentExW(
     let Dx: PINT;
     let TextObj: PTEXTOBJ;
 
-    const GDITAG_TEXT: u32 = 0x74786554;
+    const GDITAG_TEXT: u32 = u32::from_be_bytes(*b"txtG"); // C literal 'txtG' -- win32ss/user/ntuser/tags.h:172
 
     if (Count as i32) < 0 {
         EngSetLastError(ERROR_INVALID_PARAMETER);

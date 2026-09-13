@@ -72,7 +72,7 @@ extern "C" {
 }
 
 // ---- file-scope preamble (translated) ----
-pub const CLASS_INIT_GUID: i32 = 0;
+pub const CLASS_INIT_GUID: i32 = 0; // nolint: const-contradiction (create.c:24 defines it to 0 so classp.h only DECLARES the GUIDs here)
 pub static mut BreakOnClose: ULONG = 0;
 // LockTypeStrings: raw pointer array. Wrapping in a Sync newtype to satisfy static requirements.
 struct SyncPcszArr([PCSZ; 3]);
