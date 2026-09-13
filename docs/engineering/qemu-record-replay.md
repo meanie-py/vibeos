@@ -466,11 +466,28 @@ Record it here and keep going; only chase one when it looks load-bearing.
     box and 120s on a quiet one — which is what made a fixed wedge point look
     like a moving one.
 
-  So the honest statement is narrower than either previous version: a replay
-  reproduces content exactly, reaches a near-deterministic point — about two
-  thirds through this boot — then stops consuming the trace while burning CPU.
-  Cause unknown. The `rr replay` WEDGED detector reports exactly this, and also
-  catches the truncated-trace abort.
+  **The wedge is at a FIXED TRACE OFFSET, which makes it findable.** Two runs of
+  trace `clean1` — one hand-rolled, one through `rr replay` — both froze with the
+  read position at **byte 2,342,912 of 10,666,166 (22%)**. The same offset, to
+  the byte, through two different harnesses. Guest serial differs slightly
+  between them (1773 vs 1693 lines, a capture/flush difference), but the trace
+  offset does not move.
+
+  That is a much better handle than "wedges partway". It is not a race and not a
+  timeout: replay cannot get past one specific point in the recorded event
+  stream. The next step is to find out what event sits at that offset — the
+  `replay.bin` format is a sequence of typed events, so decoding forward to
+  2,342,912 should name it.
+
+  It also retires a confound worth recording: my hand-rolled replays stripped
+  `-qmp`/`-chardev` and substituted a file-backed serial for the recording's
+  socket-backed one, so they ran a different device set than the recording. That
+  was a real methodological hole — `assert_same_shape` only compares DRIVES — but
+  it did not cause this: the harness, which reproduces the shape faithfully,
+  wedges at the identical offset.
+
+  The `rr replay` WEDGED detector reports exactly this, and also catches the
+  truncated-trace abort.
 
   **Method note, because it is why the bad retraction happened:** "did not
   abort" is not "made progress". The distinguishing measurement is whether the
