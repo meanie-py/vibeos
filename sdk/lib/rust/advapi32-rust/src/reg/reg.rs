@@ -1070,13 +1070,15 @@ pub unsafe extern "system" fn RegDeleteKeyExW(
         return ErrorCode;
     }
 
-    if samDesired & KEY_WOW64_32KEY != 0 {
-        ERR!("Wow64 not yet supported!\n");
-    }
-
-    if samDesired & KEY_WOW64_64KEY != 0 {
-        ERR!("Wow64 not yet supported!\n");
-    }
+    /* KEY_WOW64_32KEY / KEY_WOW64_64KEY are VIEW SELECTORS, not access bits, and
+     * they are honoured in the CM parse (config-rust/src/cmwow64.rs): a native
+     * process naming KEY_WOW64_32KEY gets the 32-bit view, and CM clears both
+     * before the access check so they never reach a DACL. NtOpenKey stopped
+     * refusing them in E21 (911b1e1d82b). So the only thing left to do here is
+     * pass them through -- this used to log "Wow64 not yet supported" and drop
+     * them, which silently deleted from the NATIVE hive when the caller had
+     * explicitly asked for the other view. */
+    let Wow64View = samDesired & (KEY_WOW64_32KEY | KEY_WOW64_64KEY);
 
     RtlInitUnicodeString(&mut SubKeyName, lpSubKey);
     InitializeObjectAttributes(
@@ -1086,7 +1088,7 @@ pub unsafe extern "system" fn RegDeleteKeyExW(
         ParentKey,
         core::ptr::null_mut(),
     );
-    Status = NtOpenKey(&mut TargetKey, DELETE, &mut ObjectAttributes);
+    Status = NtOpenKey(&mut TargetKey, DELETE | Wow64View, &mut ObjectAttributes);
 
     'cleanup: {
         if !NT_SUCCESS(Status) {
