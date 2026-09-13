@@ -350,7 +350,8 @@ their children reserve independently. Host-wide policy lives at
 `<HOSTLOCK_DIR>/disk/policy.json`; see the fleet migration plan for its schema.
 Admission refusals are infrastructure failures, not code regressions. These are
 cooperative estimates, not filesystem quotas: legacy lanes and other writers
-remain unaccounted for. Automatic retention is not enabled.
+remain unaccounted for. `retention --enable` can install bounded hourly cleanup
+after a quiet-fleet compatibility check; `disk-status` reports timer activity.
 
 ### `host-status [--json]`
 
@@ -472,6 +473,35 @@ mid-boot (serial stuck at 0, PC parked in OVMF). Only `run-until`/`inspect` conn
 (they intend to halt, then `detach` resumes). The detached QEMU persists across CLI
 invocations (a separate Windows process); address it by run-id, kill by uid tag.
 
+### `rr {record|replay|verify|list|info}` — deterministic re-execution of one boot
+
+`rr record --arch arm64` boots once under QEMU's instruction-counted record mode
+and keeps a self-contained trace under `~/vibeos-rr/`; `rr replay latest --gdb`
+re-runs that exact boot instruction-for-instruction, halted at instruction 0
+with the stub open, so `reverse-continue` and reverse watchpoints work. A
+1-in-60 crash you have recorded reproduces every time.
+
+`rr verify <trace>` is the tool's own oracle: it replays and diffs the replay's
+serial against the recording's, so you learn that the guest ran *the same boot* —
+not merely that a VM ran. Reach for it whenever you doubt a trace. Note the
+asymmetry in cost: recording adds about 2x to a boot, but a replay waits out the
+guest's idle intervals in real time and runs minutes to tens of minutes. Record
+freely; spend replays deliberately.
+
+The interesting flag is `--shift` (icount shift). It is not a tuning preference:
+the virtual clock costs `2**N` ns per instruction, which fixes the guest's
+apparent CPU at `2**-N` GHz, and firmware/bootloader watchdogs are denominated
+in that same virtual time. Too large and a healthy guest times out; too small
+and every firmware delay loop costs 16x the real seconds. `rr info` reports the
+value a trace was recorded at, and replay re-uses it — replaying at a different
+shift feeds the recorded input stream to a differently-clocked guest.
+
+Record/replay refuses rather than producing a trace that silently diverges:
+no KVM, no `-smp N>1`, no NIC, no pre-existing `-icount`, native backend only.
+`--smp 1` IS accepted and is the interesting case (the MP kernel on one CPU).
+
+Design, gdb recipe and the divergence log: `docs/engineering/qemu-record-replay.md`.
+
 ### `ps [--json]`
 Every QEMU running **across all worktrees** + slot-pool usage. Run it first when
 you're unsure what's live or why KVM is contended.
@@ -501,6 +531,17 @@ Updated artifact-consuming CLI commands hold shared leases on that lock.
 **Do not enable the owner until every lane is updated and older/raw jobs are
 drained**; they do not honor the lock. No owner is enabled automatically.
 See [storage/retention rollout](../../../docs/engineering/rust-output-retention-plan.md).
+
+### `retention [--enable | --disable | --run]`
+
+Install or run hourly generated-output retention from one pinned checkout.
+Defaults: 100 GiB fleet-output budget, 150 GiB filesystem headroom, 24 idle hours.
+`--enable` accepts `--retain-gib`, `--min-free-gib`, and `--idle-hours` and requires
+an idle fleet with compatible maintenance admission in every registered worktree.
+It includes idle integration scratch. Active and recent outputs remain protected,
+so budgets may remain unmet. `--disable` stops scheduling and sets the global
+maintenance kill switch. Plain `retention` prints its configured policy.
+See [measurement and rollout](../../../docs/engineering/disk-optimization.md).
 
 ### `repro {report <pe>… | compare <a> <b> | diff-dirs <buildA> <buildB>}`
 The reproducible-builds gauge (determinism lane, rung 0 —

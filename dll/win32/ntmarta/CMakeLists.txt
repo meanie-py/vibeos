@@ -19,7 +19,7 @@ elseif(ARCH STREQUAL "amd64")
 elseif(ARCH STREQUAL "arm64")
     set(NTMARTA_RUST_TARGET "aarch64-pc-windows-gnullvm")
 endif()
-set(NTMARTA_RUST_TARGET_DIR "${CMAKE_CURRENT_BINARY_DIR}/rust-ntmarta-target")
+rust_storage_target(NTMARTA_RUST_TARGET_DIR "${CMAKE_CURRENT_BINARY_DIR}/rust-ntmarta-target" ntmarta-rust)
 set(NTMARTA_RUST_LIB "${CMAKE_CURRENT_BINARY_DIR}/libntmarta_rust.a")
 rust_crate_sources(NTMARTA_RUST_SRCS "${NTMARTA_RUST_WORKSPACE_DIR}" ntmarta-rust)
 add_custom_command(

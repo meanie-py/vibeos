@@ -193,7 +193,7 @@ trees:
     name: Microsoft UCRT
     upstream: Windows SDK "Source/ucrt" drop (exact SDK version UNKNOWN — see note)
     license: Microsoft (see the Windows SDK licence terms)
-    modified: unknown
+    modified: yes
     headers:
       - sdk/include/ucrt
     reason: >
@@ -212,10 +212,34 @@ trees:
       sayable — everything in ucrtbase that is ours is Rust. See task #55.
     review: >
       No version probe: there is no version macro, no stamp, and no manifest anywhere
-      in sdk/lib/ucrt or sdk/include/ucrt, so nobody can say which SDK this came from
-      or diff it against upstream. `grep -rl ReactOS sdk/lib/ucrt` is empty across all
-      459 TUs, which is consistent with an unmodified drop but does not prove one.
-      Identifying the SDK version is owed.
+      in sdk/lib/ucrt or sdk/include/ucrt, so nobody can say which SDK this came from.
+      Re-searched 2026-09-13 and the absence is total: no `10.0.NNNNN` string, no build
+      number, no .rc, no README, no manifest, in either tree. Identifying the SDK
+      version is still owed and cannot be done from this tree alone — it needs a real
+      SDK drop to diff against.
+
+      What the tree DOES date: `_M_ARM64EC` appears in 7 files, headers and sources
+      both (corecrt.h, corecrt_math.h, corecrt_internal_simd.h, strnlen.cpp,
+      string/arm64/{strlen,wcslen}.s, startup/abort.cpp). ARM64EC arrived with the
+      Windows 11 SDK, so that is an evidence-backed FLOOR of 10.0.22000. `AVX512`
+      appears nowhere, `_CRT_HAS_CXX17` does. Treat these as brackets, not an answer.
+
+      `modified:` WAS `unknown`, on the argument that `grep -rl ReactOS sdk/lib/ucrt`
+      is empty across all 459 TUs. That argument is wrong, and the field is now `yes`:
+      the drop carries 23 clang/GCC adaptation sites across 8 files, none of which
+      Microsoft would ship. `string/strnlen-sse2.cpp:9` and `strnlen-avx2.cpp:9` are
+      `#pragma GCC target(...)`, which MSVC does not have at all; corecrt_internal_simd.h
+      gives `_UCRT_ENABLE_SSE2`/`_UCRT_ENABLE_AVX2` separate clang and GCC spellings;
+      and `strnlen.cpp:90` turns `common_strnlen_simd` from a DEFINITION into a bare
+      DECLARATION under clang, which is a behavioural change, not a portability shim.
+      The others are inc/corecrt_internal_{stdio_output,traits}.h,
+      internal/winapi_thunks.cpp and misc/invalid_parameter.cpp.
+
+      The lesson generalises past this entry: ABSENCE OF A `__REACTOS__` MARKER IS NOT
+      EVIDENCE OF AN UNMODIFIED DROP. These edits carry no marker of any kind. So a
+      re-vendor here is a MERGE, not a copy — the same trap the FDLIBM entry above
+      records for its 1997 Shimizu patch, and the reason `modified` is worth getting
+      right rather than leaving at `unknown`.
 
   # ── x86 emulation for wow64 / arm64ec ───────────────────────────────────
   - path: external/fex

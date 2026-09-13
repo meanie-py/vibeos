@@ -12,7 +12,7 @@
 # FCB/CCB/MESSAGE/DPC_CTX) are defined in-crate (msfs-rust/src/types.rs); kernel/Io/Ke/Rtl
 # types resolve to the single ntkrnl-sys ddk identity. Mirrors the mup-rust / fs_rec-rust cohab.
 set(MSFS_RUST_WORKSPACE_DIR "${CMAKE_SOURCE_DIR}/sdk/lib/rust")
-set(MSFS_RUST_TARGET_DIR "${CMAKE_CURRENT_BINARY_DIR}/rust-msfs-target")
+rust_storage_target(MSFS_RUST_TARGET_DIR "${CMAKE_CURRENT_BINARY_DIR}/rust-msfs-target" msfs-rust)
 set(MSFS_RUST_LIB "${CMAKE_CURRENT_BINARY_DIR}/libmsfs_rust.a")
 if(ARCH STREQUAL "i386")
     set(MSFS_RUST_TARGET "i686-pc-windows-gnu")

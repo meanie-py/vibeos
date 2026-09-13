@@ -18,7 +18,7 @@ elseif(ARCH STREQUAL "amd64")
 elseif(ARCH STREQUAL "arm64")
     set(AUTHZ_RUST_TARGET "aarch64-pc-windows-gnullvm")
 endif()
-set(AUTHZ_RUST_TARGET_DIR "${CMAKE_CURRENT_BINARY_DIR}/rust-authz-target")
+rust_storage_target(AUTHZ_RUST_TARGET_DIR "${CMAKE_CURRENT_BINARY_DIR}/rust-authz-target" authz-rust)
 set(AUTHZ_RUST_LIB "${CMAKE_CURRENT_BINARY_DIR}/libauthz_rust.a")
 rust_crate_sources(AUTHZ_RUST_SRCS "${AUTHZ_RUST_WORKSPACE_DIR}" authz-rust)
 add_custom_command(

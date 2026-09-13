@@ -14,7 +14,7 @@ elseif(ARCH STREQUAL "amd64")
 elseif(ARCH STREQUAL "arm64")
     set(RASAPI32_RUST_TARGET "aarch64-pc-windows-gnullvm")
 endif()
-set(RASAPI32_RUST_TARGET_DIR "${CMAKE_CURRENT_BINARY_DIR}/rust-rasapi32-target")
+rust_storage_target(RASAPI32_RUST_TARGET_DIR "${CMAKE_CURRENT_BINARY_DIR}/rust-rasapi32-target" rasapi32-rust)
 set(RASAPI32_RUST_LIB "${CMAKE_CURRENT_BINARY_DIR}/librasapi32_rust.a")
 rust_crate_sources(RASAPI32_RUST_SRCS "${RASAPI32_RUST_WORKSPACE_DIR}" rasapi32-rust)
 add_custom_command(

@@ -29,6 +29,26 @@ fn main() {
     // to ref_<name> and includes the genuine ReactOS logic.
     let inc = |p: PathBuf| format!("#include \"{}\"\n", p.display());
     let s = |p: &str| crt.join(p);
+    // The `_FPCLASS_*` values, read out of the genuine SDK header. If the
+    // header ever stops carrying them, fail here rather than compile a
+    // reference whose classifier silently returns 0 for everything.
+    let fpclass_consts = {
+        let h = repo.join("sdk/include/ucrt/float.h");
+        let text = fs::read_to_string(&h)
+            .unwrap_or_else(|e| panic!("cannot read {}: {e}", h.display()));
+        let lines: Vec<&str> = text
+            .lines()
+            .filter(|l| l.trim_start().starts_with("#define _FPCLASS_"))
+            .collect();
+        assert!(
+            lines.len() >= 10,
+            "expected the 10 _FPCLASS_* defines in {}, found {} -- the header moved",
+            h.display(),
+            lines.len()
+        );
+        format!("{}\n", lines.join("\n"))
+    };
+
     let mut units: Vec<(&str, String)> = vec![
         ("strlen", format!("typedef char _TCHAR;\n#define _tcslen ref_strlen\n#include <stddef.h>\n{}", inc(s("string/tcslen.h")))),
         ("strncpy", format!("typedef char _TCHAR;\n#define _tcsncpy ref_strncpy\n#include <stddef.h>\n{}", inc(s("string/tcsncpy.h")))),
@@ -596,6 +616,46 @@ fn main() {
         ("scalbnf", format!("#define scalbnf ref_scalbnf\n{}", inc(s("math/scalbnf.c")))),
         ("round", format!("#define round ref_round\n{}", inc(s("math/round.c")))),
         ("roundf", format!("#define roundf ref_roundf\n{}", inc(s("math/roundf.c")))),
+
+        // ── the last of crtmath's plain-C float/misc surface ──────────────
+        //
+        // The seven f32 transcendental wrappers (`sinf`/`cosf`/`expf`/`logf`/
+        // `log10f`/`powf`/`fmodf`) are deliberately NOT graded here, and the
+        // reason is the oracle, not the effort. Each is `return (float)sin(
+        // (double)x);` — so a reference TU's `sin` binds the HOST's libm, and
+        // the row would compare "glibc sin, narrowed" against "our Rust sin,
+        // narrowed". That grades `sin`, which tests/diff.rs already grades
+        // directly and bit-exactly, and it would fail on a libm difference
+        // that says nothing about the wrapper. There is no third
+        // implementation to be the oracle, so a green row would be
+        // reassurance rather than evidence.
+        //
+        // The five below are the opposite case: self-contained bit and
+        // integer logic, each with a genuine standalone C body, and each with
+        // real transcription risk (a bitfield's width, a truncation fixup's
+        // sign condition, a NaN's quiet bit).
+        ("copysign", format!("#define _copysign ref_copysign\n{}", inc(s("float/copysign.c")))),
+        ("copysignf", format!("#define _In_\n#define _Check_return_\n#define __cdecl\n#define _copysign ref_copysign_priv\n{}#define _copysignf ref_copysignf\n{}",
+            inc(s("float/copysign.c")), inc(s("math/_copysignf.c")))),
+        ("frexp", format!("#define frexp ref_frexp\n{}", inc(s("math/frexp.c")))),
+        // ldiv is LP32-vs-LP64, the same trap strtoul above documents: Windows
+        // `long` is 32-bit on all three of our arches, the host's is 64. Left
+        // alone, the reference returns a 16-byte {long,long} in RAX:RDX while
+        // the Rust side reads an 8-byte {i32,i32} out of RAX, and the rows
+        // compare a correct answer against register debris. (Found by this
+        // suite on its first run, reading quot=1/rem=-1 as 0/0.) precomp.h is
+        // pre-included so ldiv.c's own guarded `#include <precomp.h>` is a
+        // no-op and `#define long int` cannot reach its `__int64` macro.
+        ("ldiv", format!("#include <precomp.h>\ntypedef struct {{ int quot; int rem; }} ldiv_t;\n#define long int\n#define ldiv ref_ldiv\n{}", inc(s("math/ldiv.c")))),
+        // fpclass.c needs float.h's `_FPCLASS_*`, which the host's <float.h>
+        // does not have. Including the SDK's ucrt/float.h whole is not an
+        // option (it pulls corecrt.h and the rest of the ucrt chain), so the
+        // ten `#define _FPCLASS_*` lines are LIFTED FROM THAT HEADER at build
+        // time rather than retyped here. The difference matters: a hand copy
+        // is a second source of truth that goes stale silently, and these are
+        // precisely the constants the function is made of.
+        ("fpclass", format!("{}#define _fpclass ref_fpclass\n{}",
+            fpclass_consts, inc(s("float/fpclass.c")))),
         ("nextafter", "#include <stdint.h>\ndouble ref_nextafter(double x,double y){union{double f;uint64_t i;}ux={x},uy={y};uint64_t ax,ay;if(x!=x||y!=y)return x+y;if(ux.i==uy.i)return y;ax=ux.i&0x7fffffffffffffffULL;ay=uy.i&0x7fffffffffffffffULL;if(ax==0){if(ay==0)return y;ux.i=(uy.i&(1ULL<<63))|1;}else if(ax>ay||((ux.i^uy.i)&(1ULL<<63)))ux.i--;else ux.i++;return ux.f;}".to_string()),
         ("nextafterf", "#include <stdint.h>\nfloat ref_nextafterf(float x,float y){union{float f;uint32_t i;}ux={x},uy={y};uint32_t ax,ay;if(x!=x||y!=y)return x+y;if(ux.i==uy.i)return y;ax=ux.i&0x7fffffffu;ay=uy.i&0x7fffffffu;if(ax==0){if(ay==0)return y;ux.i=(uy.i&0x80000000u)|1;}else if(ax>ay||((ux.i^uy.i)&0x80000000u))ux.i--;else ux.i++;return ux.f;}".to_string()),
         // Wave MATH-TIERC sub-wave 1: sqrt/sqrtf = libm (correctly rounded),
@@ -787,6 +847,12 @@ fn main() {
     let mut build = cc::Build::new();
     build
         .include(&refstub)
+        // The genuine `internal/ieee.h` — `float/copysign.c` and
+        // `float/fpclass.c` read a double through its `double_s` bitfield,
+        // and the whole point of grading them is that THAT header's field
+        // widths are the contract. Hand-copying the struct into refstub/
+        // would be the difftest grading a copy of itself.
+        .include(crt.join("include"))
         .warnings(false)
         .flag("-w")
         // Wave MATH-TIERC: no FMA contraction, so the FP reference matches
@@ -933,6 +999,71 @@ fn main() {
         libm_build.file(&w);
     }
     for obj in libm_build.compile_intermediates() {
+        println!("cargo:rustc-link-arg={}", obj.display());
+    }
+
+    // ── the Bessel wrappers ──────────────────────────────────────────────
+    //
+    // What is graded here is ONLY the 102 lines of ours: the errno and
+    // _fpclass shell in math/{j0_y0,j1_y1,jn_yn}.c. The `__ieee754_*` bodies
+    // underneath are VENDORED Sun FDLIBM (vendor.yaml; there is a VENDORED
+    // stamp in that directory) and are deliberately not a translation target,
+    // so they are compiled ONCE under their real names and BOTH SIDES CALL
+    // THE SAME CODE. That is the point: with the 1,346 lines of numerics held
+    // identical, any divergence a row reports is in the shell, which is the
+    // only part anybody ported.
+    //
+    // `_finite`/`_fpclass`/`sqrt` are likewise left to bind cnt-rust's own
+    // shims on both sides. They have their own rows already
+    // (diff_math_class_f64), and pinning them here too would blur which of
+    // the two layers a failure lives in.
+    let ieee_dir = crt.join("math/ieee754");
+    // glibc's <math.h> declares `__cos` and `__sincos` as ordinary extern
+    // functions; ieee754.h defines both `static __inline`, which is a hard
+    // error on the host. They are private helpers of that header, so renaming
+    // them out of the way changes nothing anyone calls.
+    // <math.h> comes FIRST (the same ordering the exp2 unit above documents):
+    // the rename must hit ieee754.h's `static __inline` DEFINITIONS and not
+    // glibc's prior extern declarations of the same two names, or the static
+    // and the extern collide under the new name instead of the old one.
+    let ieee_shim: &str =
+        "#include <math.h>\n#define __cos cnt_fdlibm_cos\n#define __sincos cnt_fdlibm_sincos\n";
+
+    let bessel_units: Vec<(&str, String)> = vec![
+        // The vendored numerics, verbatim. `__int32` is the one MSVC-ism in
+        // ieee754.h; everything else in that header is plain C.
+        ("fdlibm_j0_y0", format!("#define __int32 int\n{ieee_shim}{}", inc(ieee_dir.join("j0_y0.c")))),
+        ("fdlibm_j1_y1", format!("#define __int32 int\n{ieee_shim}{}", inc(ieee_dir.join("j1_y1.c")))),
+        ("fdlibm_jn_yn", format!("#define __int32 int\n{ieee_shim}{}", inc(ieee_dir.join("jn_yn.c")))),
+        // Our shell, renamed. The wrappers declare `int *_errno(void);`
+        // themselves; <errno.h> is for EDOM, and the _FPCLASS_* values come
+        // from the SDK header the same way the fpclass unit above gets them.
+        ("bessel_j0_y0", format!("#define __int32 int\n{ieee_shim}#include <errno.h>\nint _finite(double);\nint _fpclass(double);\n{}#define _j0 ref__j0\n#define _y0 ref__y0\n{}",
+            fpclass_consts, inc(crt.join("math/j0_y0.c")))),
+        ("bessel_j1_y1", format!("#define __int32 int\n{ieee_shim}#include <errno.h>\nint _finite(double);\nint _fpclass(double);\n{}#define _j1 ref__j1\n#define _y1 ref__y1\n{}",
+            fpclass_consts, inc(crt.join("math/j1_y1.c")))),
+        // jn_yn.c declares _fpclass itself (via a `fpclass_t` typedef), so it
+        // must NOT get a second declaration.
+        ("bessel_jn_yn", format!("#define __int32 int\n{ieee_shim}#include <errno.h>\nint _finite(double);\n{}#define _jn ref__jn\n#define _yn ref__yn\n{}",
+            fpclass_consts, inc(crt.join("math/jn_yn.c")))),
+    ];
+    let mut bessel_build = cc::Build::new();
+    bessel_build
+        .include(&refstub)
+        // so the wrappers' `#include "ieee754/ieee754.h"` resolves
+        .include(crt.join("math"))
+        .include(&ieee_dir)
+        .warnings(false)
+        .flag("-w")
+        .flag("-ffp-contract=off")
+        .opt_level(2)
+        .cargo_metadata(false);
+    for (sym, body) in &bessel_units {
+        let w = out.join(format!("ref_{sym}.c"));
+        fs::write(&w, body).unwrap();
+        bessel_build.file(&w);
+    }
+    for obj in bessel_build.compile_intermediates() {
         println!("cargo:rustc-link-arg={}", obj.display());
     }
 

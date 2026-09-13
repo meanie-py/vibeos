@@ -18,7 +18,7 @@ elseif(ARCH STREQUAL "amd64")
 elseif(ARCH STREQUAL "arm64")
     set(MSWSOCK_RUST_TARGET "aarch64-pc-windows-gnullvm")
 endif()
-set(MSWSOCK_RUST_TARGET_DIR "${CMAKE_CURRENT_BINARY_DIR}/rust-mswsock-target")
+rust_storage_target(MSWSOCK_RUST_TARGET_DIR "${CMAKE_CURRENT_BINARY_DIR}/rust-mswsock-target" mswsock-rust)
 set(MSWSOCK_RUST_LIB "${CMAKE_CURRENT_BINARY_DIR}/libmswsock_rust.a")
 rust_crate_sources(MSWSOCK_RUST_SRCS "${MSWSOCK_RUST_WORKSPACE_DIR}" mswsock-rust)
 add_custom_command(

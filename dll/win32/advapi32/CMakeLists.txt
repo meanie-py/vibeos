@@ -78,7 +78,7 @@ endif()
 # (--allow-multiple-definition) lets the Rust staticlib's panic_handler/
 # eh_personality coexist with whatever the C cohab pulls in.
 set(ADVAPI32_RUST_WORKSPACE_DIR "${CMAKE_SOURCE_DIR}/sdk/lib/rust")
-set(ADVAPI32_RUST_TARGET_DIR "${CMAKE_CURRENT_BINARY_DIR}/rust-advapi32-target")
+rust_storage_target(ADVAPI32_RUST_TARGET_DIR "${CMAKE_CURRENT_BINARY_DIR}/rust-advapi32-target" advapi32-rust)
 set(ADVAPI32_RUST_LIB "${CMAKE_CURRENT_BINARY_DIR}/libadvapi32_rust.a")
 if(ARCH STREQUAL "i386")
     set(ADVAPI32_RUST_TARGET "i686-pc-windows-gnu")

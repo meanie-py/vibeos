@@ -3465,3 +3465,46 @@ class TestDeleteThisLowering:
         out = normalize_worker_semantics(source, rust)
         assert "RecycleBin5_delete(this);" in out
         assert "__rustconv_delete" not in out
+
+
+def test_header_discovery_retries_disappearing_directory(tmp_path, monkeypatch):
+    import os
+
+    from rustconv.cpp_com import _header_files
+
+    scratch = tmp_path / "scratch"
+    scratch.mkdir()
+    header = tmp_path / "real.h"
+    header.write_text("struct ActualState { int value; };\n")
+    accessor = getattr(Path, "_accessor", os)
+    scanned = accessor.scandir
+    raced = []
+
+    def disappear(path):
+        if Path(path) == scratch and not raced:
+            raced.append(True)
+            scratch.rmdir()
+        return scanned(path)
+
+    monkeypatch.setattr(accessor, "scandir", disappear)
+    assert _header_files(tmp_path) == [header]
+    assert raced
+
+
+def test_header_discovery_never_returns_partial_corpus(tmp_path, monkeypatch):
+    from rustconv.cpp_com import _header_files
+
+    attempts = []
+
+    def interrupted(root, pattern):
+        attempts.append(root)
+        yield root / "partial.h"
+        raise FileNotFoundError("directory churn")
+
+    monkeypatch.setattr(Path, "rglob", interrupted)
+    with pytest.raises(FileNotFoundError, match="directory churn"):
+        _header_files(tmp_path)
+    assert len(attempts) == 3
+    with pytest.raises(FileNotFoundError):
+        _header_files(tmp_path / "missing")
+    assert len(attempts) == 3

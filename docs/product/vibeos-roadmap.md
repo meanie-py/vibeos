@@ -488,6 +488,24 @@ land; date every addition.** Source docs live in `docs/engineering/archive/`.
 
 ## Known bugs & flakes (live registry)
 
+- **Stock 32-bit GUI apps cascade into an execute-at-NULL fault under WoW64 — OPEN**
+  (2026-09-13). Found while attributing a guest-fault count in a `smoke --arch amd64 --ladder`
+  run, so it is NOT on the probe-guest ladder and does not fail it. `notepad.exe`,
+  `mspaint.exe` and `wordpad.exe` (each logged as `STOCK i386 app`) take **58 faults apiece**;
+  every other image in the same boot takes 0 or 1, and `fault32.exe`'s single fault at
+  `eip=00401012` is the deliberate one its own test raises. So this is specific to the stock
+  GUI apps, not general WoW64 breakage — the CSR/LPC ladder is green in the same boot and
+  `[WOW64CB] WINDOWPROC` callbacks dispatch into the guest and return correctly.
+  The shape: one fault executing from a STACK address (`eip=001ff49b`, `addr=2c850157`),
+  then 57 at `eip=00000000` with `rw=8` (instruction fetch, not a data deref) and every GPR
+  zeroed, each dispatched to 32-bit SEH at a deeper `esp` (`001fec98`, `001fe878`, ...) — a
+  re-faulting cascade that consumes stack rather than a single bad call. An indirect call
+  through a NULL or unrelocated function pointer is the obvious candidate (an unfilled import
+  thunk or callback-table slot), but WHICH pointer is unmeasured: nothing here identifies the
+  call site, and the cascade destroys the registers that would name it. Next step is a
+  tripwire or a GDB break on the first fault, not more log reading — by the second fault the
+  evidence is gone.
+
 - **Nothing caps `/tmp/vibeos-cli` retention — OPEN tooling gap** (2026-09-06). A long soak
   writes one artifact dir per round with a ~7MB `serial.log` in it, forever; `pytest`'s
   `tmp_path_factory` keeps its last 3 runs but the CLI keeps everything. Found while the host
@@ -877,6 +895,14 @@ Field-manual § pointers hold the full writeups. **Update on state change.**
   capture time. A per-thread flight-recorder dump (`flightrec_dump_thread`, wired into the
   bugcheck sidecar) is in the tree to answer whether the crashing thread took an EARLIER
   kernel fault it recovered from -- the last-32 tail window can neither show nor exclude that.
+  **Update 2026-09-13 — the hunt has a tool now.** `./vibeos-cli rr` records one boot under
+  QEMU's instruction-counted record mode and replays it instruction-for-instruction, with gdb
+  and reverse execution. That changes what "1 in 60" costs: a crash you have RECORDED
+  reproduces every time, at the same instruction, so `reverse-continue` from the zeroed frame
+  answers "who set PC to 0" directly instead of requiring another soak. Verified on arm64
+  `--smp 1` (the MP kernel on one CPU — precisely this bug's configuration): boot to desktop in
+  82s under record vs ~40s normally, 10MB trace. No soak required to use it; record until one
+  boot crashes and keep that trace. `docs/engineering/qemu-record-replay.md`.
 - **FIXED (2026-09-06): system cursors load, and the residual NULLs are correct behaviour
   wearing an alarming message.** `SYSTEMCUR(ARROW) == NULL, should not happen!!` was firing **78x** per boot (6 system  classes x 13 GUI processes) and kept firing to within 300 lines of `shell ready` —
   `gasyscur[ROCR_ARROW].handle` was NULL for the *entire* boot, so every server-side class

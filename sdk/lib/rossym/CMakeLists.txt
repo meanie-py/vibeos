@@ -24,7 +24,7 @@ if(CMAKE_CROSSCOMPILING)
     target_compile_definitions(rossym INTERFACE __ROS_ROSSYM__)
 
     set(RUST_WORKSPACE_DIR "${CMAKE_SOURCE_DIR}/sdk/lib/rust")
-    set(RUST_TARGET_DIR "${CMAKE_CURRENT_BINARY_DIR}/rossym-rust-target")
+    rust_storage_target(RUST_TARGET_DIR "${CMAKE_CURRENT_BINARY_DIR}/rossym-rust-target" rossym-rust)
     # Like cmlib-rust (and unlike libcntpr), do NOT pass `-C no-prepopulate-passes`:
     # normal optimization collapses each RosSym* helper to a self-contained body
     # with no precompiled-core deps, which is what keeps the cohab archive safe.

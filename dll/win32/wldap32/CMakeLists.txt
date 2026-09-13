@@ -21,7 +21,7 @@ elseif(ARCH STREQUAL "amd64")
 elseif(ARCH STREQUAL "arm64")
     set(WLDAP32_RUST_TARGET "aarch64-pc-windows-gnullvm")
 endif()
-set(WLDAP32_RUST_TARGET_DIR "${CMAKE_CURRENT_BINARY_DIR}/rust-wldap32-target")
+rust_storage_target(WLDAP32_RUST_TARGET_DIR "${CMAKE_CURRENT_BINARY_DIR}/rust-wldap32-target" wldap32-rust)
 set(WLDAP32_RUST_LIB "${CMAKE_CURRENT_BINARY_DIR}/libwldap32_rust.a")
 rust_crate_sources(WLDAP32_RUST_SRCS "${WLDAP32_RUST_WORKSPACE_DIR}" wldap32-rust)
 add_custom_command(

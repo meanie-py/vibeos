@@ -18,7 +18,7 @@ elseif(ARCH STREQUAL "amd64")
 elseif(ARCH STREQUAL "arm64")
     set(USERENV_RUST_TARGET "aarch64-pc-windows-gnullvm")
 endif()
-set(USERENV_RUST_TARGET_DIR "${CMAKE_CURRENT_BINARY_DIR}/rust-userenv-target")
+rust_storage_target(USERENV_RUST_TARGET_DIR "${CMAKE_CURRENT_BINARY_DIR}/rust-userenv-target" userenv-rust)
 set(USERENV_RUST_LIB "${CMAKE_CURRENT_BINARY_DIR}/libuserenv_rust.a")
 rust_crate_sources(USERENV_RUST_SRCS "${USERENV_RUST_WORKSPACE_DIR}" userenv-rust)
 add_custom_command(

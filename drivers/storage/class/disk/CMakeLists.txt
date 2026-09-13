@@ -11,7 +11,7 @@ remove_definitions(-D_WIN32_WINNT=0x502)
 # nothing but DriverEntry (no .spec), so this is simpler than classpnp's
 # kerneldll cohab. Built on classpnp's Class* exports. Mirrors classpnp-rust.
 set(DISK_RUST_WORKSPACE_DIR "${CMAKE_SOURCE_DIR}/sdk/lib/rust")
-set(DISK_RUST_TARGET_DIR "${CMAKE_CURRENT_BINARY_DIR}/rust-disk-target")
+rust_storage_target(DISK_RUST_TARGET_DIR "${CMAKE_CURRENT_BINARY_DIR}/rust-disk-target" disk-rust)
 set(DISK_RUST_LIB "${CMAKE_CURRENT_BINARY_DIR}/libdisk_rust.a")
 if(ARCH STREQUAL "i386")
     set(DISK_RUST_TARGET "i686-pc-windows-gnu")

@@ -1158,8 +1158,13 @@ class QemuVM:
         # boot-from-zero debugging). Under the windows-host TCG backend software
         # breakpoints fire reliably — the reason this path exists (they DON'T under
         # native KVM; see qemu/start.sh). gdb_port is filled in at launch.
-        self._gdb = gdb
-        self._gdb_wait = gdb_wait
+        # VIBEOS_QEMU_GDB=1 (stub) / =wait (stub + -S) turns the stub on for boot
+        # paths that have no --gdb of their own -- notably the pytest-driven
+        # conformance sweep, which is the boot `rr replay --gdb` re-runs. It only
+        # ever ADDS the stub; a caller that already asked for it keeps what it asked.
+        _env_gdb = os.environ.get("VIBEOS_QEMU_GDB", "").strip().lower()
+        self._gdb = gdb or _env_gdb in ("1", "true", "yes", "wait")
+        self._gdb_wait = gdb_wait or _env_gdb == "wait"
         self.gdb_port: int | None = None
 
         # Launch backend: "native" (local qemu + Unix sockets + KVM/TCG — unchanged) or
@@ -1332,6 +1337,77 @@ class QemuVM:
             f"pid(launcher)={os.getpid()} -- started {time.ctime()}\n"
             f"# tail -f {self.live_log_path}\n",
         )
+
+    def _apply_record_replay(self, cmd: list[str]) -> list[str]:
+        """Rewrite the launch command for QEMU record/replay when asked.
+
+        Opt-in via VIBEOS_QEMU_RR=<record|replay>:<trace-dir>, set by
+        `vibeos-cli rr`. Nothing sets it by default, so every existing boot path
+        is byte-for-byte unchanged when it is absent.
+
+        The rewrite has to happen HERE rather than in the arch configs because it
+        spans the whole command line: it wraps drives contributed by the arch
+        config AND by the harness (scratch, usb), and it overrides accel/smp that
+        the arch config chose. Doing it per-config would mean four copies that
+        drift. See docs/engineering/qemu-record-replay.md.
+        """
+        from .cli import recordreplay as rr
+
+        req = rr.env_request()
+        if req is None:
+            return cmd
+        mode, trace_dir = req
+        if self._backend != "native":
+            raise rr.RecordReplayError(
+                f"record/replay needs the native backend; this VM is on {self._backend!r}. "
+                "The windows-host backend stages media into a Windows-visible directory "
+                "and runs QEMU.exe, so the trace and its media would straddle two "
+                "filesystems with two path namespaces."
+            )
+        # stage on record (copy media into the trace); on replay the media are
+        # already there, restored from pristine/ by the rr CLI verb.
+        new_cmd, media = rr.transform(
+            cmd,
+            mode=mode,
+            trace_dir=trace_dir,
+            icount_shift=rr.env_shift(),
+            stage=(mode == "record"),
+        )
+        if mode == "record":
+            rr.write_manifest(
+                trace_dir,
+                arch=self.config.arch,
+                argv=new_cmd,
+                media=media,
+                smp=os.environ.get("VIBEOS_QEMU_SMP", "1"),
+            )
+            # NB: pristine/ is frozen by the rr CLI verb once the recording
+            # EXITS, not here — the vmstate snapshot rrsnapshot= writes only
+            # exists after the run.
+        else:
+            rr.assert_same_shape(trace_dir, new_cmd)
+        # Give the boot watchdogs room. icount + blkreplay is several times
+        # slower than plain TCG, and a REPLAY is slower still — it must wait out
+        # each recorded I/O completion rather than take the host's. The x86
+        # configs' 120s silence watchdog is tuned for TCG's pace and abuts a
+        # healthy rr run: a replay of an arm64 smoke was aborted HANG_TIMEOUT
+        # with `VM status: running` and the vCPU advancing through an EL0 user
+        # PC — executing fine, just quiet for longer than the watchdog allows.
+        # Same shape as the whpx scaling in _build_windows_cmd, and it applies
+        # only when rr was explicitly asked for.
+        self.config.boot_timeout = max(self.config.boot_timeout, 1800.0)
+        if self.config.hang_silence_seconds:
+            self.config.hang_silence_seconds = max(self.config.hang_silence_seconds, 600.0)
+        # Where THIS run's serial lands, rewritten every run. The rr CLI verb
+        # copies it into the trace afterwards so `rr verify` can diff a replay
+        # against the recording. It must not live in the manifest: the manifest
+        # is the RECORD's pin and a replay never rewrites it, so reading the
+        # path from there hands a replay the record's own transcript and the
+        # comparison trivially passes. (It did. The oracle reported VERIFIED on
+        # a replay that had hung at a fifth of the recording's output.)
+        rr.note_run(trace_dir, mode=mode, serial_log=str(self.live_log_path))
+        print(f"[QemuVM] record/replay: {mode} -> {trace_dir}")
+        return new_cmd
 
     def _build_native_cmd(self) -> list[str]:
         """Native backend: local qemu, Unix-socket QMP/serial, KVM/TCG. Unchanged."""
@@ -1509,6 +1585,7 @@ class QemuVM:
                     cmd = self._build_windows_cmd()
                 else:
                     cmd = self._build_native_cmd()
+                cmd = self._apply_record_replay(cmd)
             finally:
                 _selected_launch_ports = None
             print(f"[QemuVM] {' '.join(cmd)}")

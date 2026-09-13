@@ -398,13 +398,21 @@ pub struct div_t {
     pub rem: i32,
 }
 
+// NOTE on the two negations below: `-denom` OVERFLOWS when `denom` is
+// `i32::MIN`, which C leaves undefined and every compiler we ship wraps
+// back to `i32::MIN`. Rust's unary `-` instead PANICS in a debug build,
+// so a plain transcription turns a quiet C edge into a CRT panic on an
+// ordinary call like `div(7, i32::MIN)`. `wrapping_neg` is the operation
+// the C actually performs. Found by cnt-difftest's `diff_math_lastmile`
+// rows the day they were written; `div` had shipped with it because no
+// row had ever driven `i32::MIN` through the denominator.
 /// `div_t div(int num, int denom)` — DJ Delorie's C-truncation-toward-zero
 /// implementation (matches MSVCRT `div`).
 #[no_mangle]
 pub extern "C" fn div(mut num: i32, mut denom: i32) -> div_t {
     if num > 0 && denom < 0 {
-        num = -num;
-        denom = -denom;
+        num = num.wrapping_neg();
+        denom = denom.wrapping_neg();
     }
     let mut r = div_t {
         quot: num / denom,
@@ -3593,4 +3601,386 @@ pub extern "C" fn atan2f(fy: f32, fx: f32) -> f32 {
         q = -q;
     }
     q as f32
+}
+
+// ══════════════════════════════════════════════════════════════════════
+// The last of crtmath's plain-C float/misc surface
+//
+// `tools/msvcrt_export_coverage.py` groups the still-C remainder into
+// "crtmath: float/bessel/misc libm". These are that group minus the six
+// Bessel entry points; every one is compiled from ORDINARY C in this
+// tree on every arch, which is worth stating because the file names
+// suggest otherwise. `math.cmake` lists `libm_sse2/sinf.asm` &c. for
+// x86, but that arm sits in the `else()` of `if(USE_LLVM_MINGW)` — and
+// we build WITH llvm-mingw, whose clang cannot assemble MASM. The arm
+// that actually compiles (math.cmake:161-166) names `math/sinf.c`.
+// So the genuine source for all of these is the plain C ported below,
+// on all three arches, and no hand-written assembly is being displaced.
+// (The one exception is i386's `math/i386/fmodf_asm.s`; `fmod` itself is
+// already Rust here, so leaving `fmodf` as the odd x87 holdout would be
+// the inconsistency, not fixing it.)
+// ══════════════════════════════════════════════════════════════════════
+
+// ---- the f32 transcendentals: compute in f64, round once -------------
+//
+// Each is `return (float)f((double)x);` verbatim from its `.c` — a
+// single rounding, at the end. That is not a shortcut for a "real" f32
+// kernel: f64 carries 29 more significand bits than f32, so the double
+// result is exact far beyond f32's needs and the one narrowing rounding
+// is correct. `f` resolves to this module's own Rust `sin`/`cos`/… ,
+// which cnt-difftest already pins against the same sources.
+
+/// `float sinf(float)` — `math/sinf.c`.
+#[no_mangle]
+pub extern "C" fn sinf(x: f32) -> f32 {
+    sin(x as f64) as f32
+}
+
+/// `float cosf(float)` — `math/cosf.c`.
+#[no_mangle]
+pub extern "C" fn cosf(x: f32) -> f32 {
+    cos(x as f64) as f32
+}
+
+/// `float expf(float)` — `math/expf.c`.
+#[no_mangle]
+pub extern "C" fn expf(x: f32) -> f32 {
+    exp(x as f64) as f32
+}
+
+/// `float logf(float)` — `math/logf.c`.
+#[no_mangle]
+pub extern "C" fn logf(x: f32) -> f32 {
+    log(x as f64) as f32
+}
+
+/// `float log10f(float)` — `math/log10f.c`.
+// NOT on i386. `math.cmake:230-236` wraps `math/_copysignf.c` and
+// `math/log10f.c` in `if(NOT ARCH STREQUAL "i386")`, so on i386 neither
+// symbol is ours — ucrtbase exports the genuine Microsoft bodies and
+// nothing on our link line defines them. Defining them here anyway
+// SILENTLY replaces those bodies (`--allow-multiple-definition` raises
+// nothing), which is precisely what `tools/verify_ucrtbase_cohab.py`
+// exists to catch — and did catch, on this change, at `__copysignf`
+// (i386 decorates cdecl exports with a leading underscore).
+#[cfg(not(target_arch = "x86"))]
+#[no_mangle]
+pub extern "C" fn log10f(x: f32) -> f32 {
+    log10(x as f64) as f32
+}
+
+/// `float powf(float, float)` — `math/powf.c`.
+#[no_mangle]
+pub extern "C" fn powf(x: f32, y: f32) -> f32 {
+    pow(x as f64, y as f64) as f32
+}
+
+/// `float fmodf(float, float)` — `math/fmodf.c`.
+#[no_mangle]
+pub extern "C" fn fmodf(x: f32, y: f32) -> f32 {
+    fmod(x as f64, y as f64) as f32
+}
+
+// ---- the sign-copy pair ----------------------------------------------
+//
+// `float/copysign.c` aliases the double through a `double_s` bitfield and
+// assigns `d.d->sign = s.s->sign`. That writes ONLY bit 63 and leaves
+// every other bit — including a NaN payload, and including a signalling
+// NaN's quiet bit — exactly as it found them. `f64::copysign` is the same
+// operation, but going through the bits keeps it visibly a bit splice and
+// keeps the no-SSE promise in the module header (no Rust-ABI f64 return).
+
+/// `double _copysign(double, double)` — `float/copysign.c`.
+#[no_mangle]
+pub extern "C" fn _copysign(d: f64, s: f64) -> f64 {
+    fb64((d.to_bits() & 0x7fff_ffff_ffff_ffff) | (s.to_bits() & 0x8000_0000_0000_0000))
+}
+
+/// `float _copysignf(float, float)` — `math/_copysignf.c`, which is
+/// `(float)_copysign((double)x, (double)y)`. Widening and narrowing both
+/// preserve the sign bit exactly, so this is the f32 splice directly.
+/// Not on i386 — see the note on [`log10f`].
+#[cfg(not(target_arch = "x86"))]
+#[no_mangle]
+pub extern "C" fn _copysignf(x: f32, y: f32) -> f32 {
+    fb32((x.to_bits() & 0x7fff_ffff) | (y.to_bits() & 0x8000_0000))
+}
+
+/// `double frexp(double, int *)` — `math/frexp.c`, imported from musl.
+///
+/// The C recurses once for a subnormal, scaling by `0x1p64` to normalise
+/// it and then subtracting 64 from the exponent. Written as a loop-free
+/// two-step here: the recursion can only ever go one level deep, because
+/// `x * 2^64` of a subnormal is always normal.
+///
+/// # Safety
+/// `e` must be a valid, writable `*mut i32` — the C contract.
+#[no_mangle]
+pub unsafe extern "C" fn frexp(x: f64, e: *mut i32) -> f64 {
+    let mut y = x.to_bits();
+    let mut ee = (y >> 52) as i32 & 0x7ff;
+    let mut bias = 0i32;
+
+    if ee == 0 {
+        if x == 0.0 {
+            // ±0 returns itself with *e = 0 (and keeps its sign).
+            *e = 0;
+            return x;
+        }
+        // Subnormal: normalise by 2^64, then charge the exponent for it.
+        y = (x * fb64(0x43f0_0000_0000_0000)).to_bits();
+        ee = (y >> 52) as i32 & 0x7ff;
+        bias = -64;
+    } else if ee == 0x7ff {
+        // ±inf and NaN pass through untouched, *e UNWRITTEN — the C
+        // returns before assigning, and a caller that reads `e` after an
+        // inf gets whatever it already held.
+        return x;
+    }
+
+    *e = ee - 0x3fe + bias;
+    fb64((y & 0x800f_ffff_ffff_ffff) | 0x3fe0_0000_0000_0000)
+}
+
+/// `ldiv_t ldiv(long, long)` — `math/ldiv.c` (DJ Delorie).
+///
+/// `ldiv_t` is `{ long quot; long rem; }` (crt/stdlib.h:43-46), i.e. two
+/// 32-bit fields on Windows for every arch we build — `long` is 32-bit in
+/// the Windows data model, including on amd64 and arm64. Returned by value
+/// as a `#[repr(C)]` struct so the ABI matches the C exactly.
+///
+/// The body looks like it is implementing C99 truncation-toward-zero, and
+/// it is — but note it does so for the `num < 0 && denom > 0` case ONLY.
+/// The `num > 0 && denom < 0` case is handled by negating BOTH operands up
+/// front, which makes the division `(-num)/(-denom)` with both negative,
+/// and that already truncates the way the function wants. Ported as-is:
+/// this is division-semantics code where a "simplification" is a bug.
+#[repr(C)]
+pub struct ldiv_t {
+    pub quot: i32,
+    pub rem: i32,
+}
+
+/// See [`ldiv_t`]. Deliberately identical in shape to [`div`] above — same
+/// DJ Delorie body, same truncation fixup, widened only in the type name.
+#[no_mangle]
+pub extern "C" fn ldiv(mut num: i32, mut denom: i32) -> ldiv_t {
+    if num > 0 && denom < 0 {
+        // See the overflow note on `div` above.
+        num = num.wrapping_neg();
+        denom = denom.wrapping_neg();
+    }
+    let mut r = ldiv_t {
+        quot: num / denom,
+        rem: num % denom,
+    };
+    if num < 0 && denom > 0 && r.rem > 0 {
+        r.quot += 1;
+        r.rem -= denom;
+    }
+    r
+}
+
+/// `int _fpclass(double)` — `float/fpclass.c`.
+///
+/// The C reads a `double_s` bitfield (`crt/include/internal/ieee.h:10-15`:
+/// `mantissal:32`, `mantissah:20`, `exponent:11`, `sign:1`, little-endian)
+/// — which is just the IEEE-754 double layout, so the fields are read out
+/// of the raw bits here. `mantissah == 0 && mantissal == 0` is the whole
+/// 52-bit significand being zero.
+///
+/// Note the comment the C carries and this must keep: **Windows never
+/// returns `_FPCLASS_SNAN`**. Every NaN, signalling or quiet, is reported
+/// as `_FPCLASS_QNAN`. That is a deliberate platform behaviour, not an
+/// omission — a port that "fixed" it would diverge from msvcrt.
+// ucrt/float.h:197-206. Module-level because the Bessel wrappers below
+// compare against them too; `_FPCLASS_SNAN` (0x0001) is deliberately absent
+// — nothing in this tree may return it (see `_fpclass`).
+const _FPCLASS_QNAN: i32 = 0x0002;
+const _FPCLASS_NINF: i32 = 0x0004;
+const _FPCLASS_NN: i32 = 0x0008;
+const _FPCLASS_ND: i32 = 0x0010;
+const _FPCLASS_NZ: i32 = 0x0020;
+const _FPCLASS_PZ: i32 = 0x0040;
+const _FPCLASS_PD: i32 = 0x0080;
+const _FPCLASS_PN: i32 = 0x0100;
+const _FPCLASS_PINF: i32 = 0x0200;
+
+#[no_mangle]
+pub extern "C" fn _fpclass(d: f64) -> i32 {
+    let bits = d.to_bits();
+    let exponent = (bits >> 52) & 0x7ff;
+    let mantissa_zero = (bits & 0x000f_ffff_ffff_ffff) == 0;
+    let positive = (bits >> 63) == 0;
+
+    if exponent == 0x7ff {
+        if mantissa_zero {
+            if positive { _FPCLASS_PINF } else { _FPCLASS_NINF }
+        } else {
+            _FPCLASS_QNAN
+        }
+    } else if exponent == 0 {
+        if mantissa_zero {
+            if positive { _FPCLASS_PZ } else { _FPCLASS_NZ }
+        } else if positive {
+            _FPCLASS_PD
+        } else {
+            _FPCLASS_ND
+        }
+    } else if positive {
+        _FPCLASS_PN
+    } else {
+        _FPCLASS_NN
+    }
+}
+
+// ══════════════════════════════════════════════════════════════════════
+// The Bessel wrappers — `math/{j0_y0,j1_y1,jn_yn}.c`
+//
+// 102 lines of ours sitting on 1,346 lines that are NOT ours: the
+// `__ieee754_*` bodies under `math/ieee754/` are vendored Sun FDLIBM
+// (vendor.yaml, plus a VENDORED stamp in that directory) and are
+// deliberately outside the translation effort. So these stay `extern`
+// and only the errno/classification shell around them is ported — which
+// is the entire difference between the two files.
+//
+// WHY THESE ARE `cabi-math` AND NOT PLAIN `cabi`: they call `_errno`,
+// which the kernel does not have (it is not in ntoskrnl.spec, and
+// cnt-rust's own convention is that errno is a kernel no-op). cnt-rust
+// is one codegen unit, so an ungated reference to `_errno` from this
+// module would make the WHOLE math object undefined-symbol at the kernel
+// link. `cabi-math` is the usermode-CRT feature (msvcrt-crt-cargo,
+// crt-shared-cargo), where both `_errno` and the FDLIBM bodies resolve.
+// cnt-difftest therefore enables cabi AND cabi-math, so these are graded.
+// ══════════════════════════════════════════════════════════════════════
+
+#[cfg(feature = "cabi-math")]
+extern "C" {
+    // Vendored FDLIBM — see the note above. Never translate these.
+    fn __ieee754_j0(x: f64) -> f64;
+    fn __ieee754_j1(x: f64) -> f64;
+    fn __ieee754_jn(n: i32, x: f64) -> f64;
+    fn __ieee754_y0(x: f64) -> f64;
+    fn __ieee754_y1(x: f64) -> f64;
+    fn __ieee754_yn(n: i32, x: f64) -> f64;
+    /// The CRT's per-thread errno slot. Declared exactly as the C does
+    /// (`int *_errno(void);` at the top of each of the three wrappers).
+    fn _errno() -> *mut i32;
+}
+
+/// `EDOM` — crt/errno.h:53. The only errno value these set.
+#[cfg(feature = "cabi-math")]
+const EDOM: i32 = 33;
+
+/// The `_y0`/`_y1`/`_yn` epilogue, which is byte-identical in all three:
+/// if the FDLIBM body returned -inf, that is a domain error, and the
+/// value handed back is `sqrt(-1)` rather than the -inf itself.
+///
+/// `sqrt(-1.0)` is kept as a CALL to this module's own `sqrt` and not
+/// folded to `f64::NAN`: the C says `sqrt(-1)`, and which NaN that is —
+/// payload and sign — is whatever the platform's sqrt produces. Writing
+/// a literal NaN here would be choosing a different one.
+///
+/// `extern "C"` like every other helper in this module, public or private —
+/// a Rust-ABI `-> f64` routes the return through xmm0 and rustc hard-errors
+/// under the i386 kernel's `-sse,-sse2` (the module header says so; this
+/// function proved it, and only the real i386 build could).
+#[cfg(feature = "cabi-math")]
+unsafe extern "C" fn y_domain_epilogue(retval: f64) -> f64 {
+    if _fpclass(retval) == _FPCLASS_NINF {
+        *_errno() = EDOM;
+        return sqrt(-1.0);
+    }
+    retval
+}
+
+/// `double _j0(double)` — `math/j0_y0.c`.
+#[cfg(feature = "cabi-math")]
+#[no_mangle]
+pub extern "C" fn _j0(num: f64) -> f64 {
+    unsafe {
+        if _finite(num) == 0 {
+            *_errno() = EDOM;
+        }
+        __ieee754_j0(num)
+    }
+}
+
+/// `double _j1(double)` — `math/j1_y1.c`.
+#[cfg(feature = "cabi-math")]
+#[no_mangle]
+pub extern "C" fn _j1(num: f64) -> f64 {
+    unsafe {
+        if _finite(num) == 0 {
+            *_errno() = EDOM;
+        }
+        __ieee754_j1(num)
+    }
+}
+
+/// `double _jn(int, double)` — `math/jn_yn.c`.
+///
+/// Sets no errno at all. That is NOT an omission in the port: the C body
+/// is two lines, one of which is the comment `/* FIXME: errno handling */`
+/// right where `_j0`/`_j1` set EDOM. Adding the missing check here would
+/// make msvcrt's `_jn` disagree with the C this tree ships.
+#[cfg(feature = "cabi-math")]
+#[no_mangle]
+pub extern "C" fn _jn(n: i32, num: f64) -> f64 {
+    unsafe { __ieee754_jn(n, num) }
+}
+
+/// `double _y0(double)` — `math/j0_y0.c`.
+///
+/// Note the argument test is wider than `_j0`'s: a NEGATIVE argument of
+/// any kind is a domain error too, including negative zero, because y0 is
+/// undefined there. `_fpclass` is what the C uses to say so, and the three
+/// negative classes it tests are exactly NN / ND / NZ.
+#[cfg(feature = "cabi-math")]
+#[no_mangle]
+pub extern "C" fn _y0(num: f64) -> f64 {
+    unsafe {
+        let fpclass = _fpclass(num);
+        if _finite(num) == 0
+            || fpclass == _FPCLASS_NN
+            || fpclass == _FPCLASS_ND
+            || fpclass == _FPCLASS_NZ
+        {
+            *_errno() = EDOM;
+        }
+        y_domain_epilogue(__ieee754_y0(num))
+    }
+}
+
+/// `double _y1(double)` — `math/j1_y1.c`. Same shape as [`_y0`].
+#[cfg(feature = "cabi-math")]
+#[no_mangle]
+pub extern "C" fn _y1(num: f64) -> f64 {
+    unsafe {
+        let fpclass = _fpclass(num);
+        if _finite(num) == 0
+            || fpclass == _FPCLASS_NN
+            || fpclass == _FPCLASS_ND
+            || fpclass == _FPCLASS_NZ
+        {
+            *_errno() = EDOM;
+        }
+        y_domain_epilogue(__ieee754_y1(num))
+    }
+}
+
+/// `double _yn(int, double)` — `math/jn_yn.c`.
+///
+/// Unlike `_y0`/`_y1` this checks only `_finite`, with no negative-class
+/// test — so `_yn(1, -1.0)` sets no errno where `_y1(-1.0)` does. That
+/// asymmetry is in the C and is preserved.
+#[cfg(feature = "cabi-math")]
+#[no_mangle]
+pub extern "C" fn _yn(order: i32, num: f64) -> f64 {
+    unsafe {
+        if _finite(num) == 0 {
+            *_errno() = EDOM;
+        }
+        y_domain_epilogue(__ieee754_yn(order, num))
+    }
 }

@@ -10,7 +10,7 @@ include_directories(${REACTOS_SOURCE_DIR}/ntoskrnl/include)
 spec2def(usbport.sys usbport.spec ADD_IMPORTLIB)
 
 set(USBPORT_RUST_WORKSPACE_DIR "${CMAKE_SOURCE_DIR}/sdk/lib/rust")
-set(USBPORT_RUST_TARGET_DIR "${CMAKE_CURRENT_BINARY_DIR}/rust-usbport-target")
+rust_storage_target(USBPORT_RUST_TARGET_DIR "${CMAKE_CURRENT_BINARY_DIR}/rust-usbport-target" usbport-rust)
 set(USBPORT_RUST_LIB "${CMAKE_CURRENT_BINARY_DIR}/libusbport_rust.a")
 if(ARCH STREQUAL "i386")
     set(USBPORT_RUST_TARGET "i686-pc-windows-gnu")

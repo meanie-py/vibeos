@@ -11,7 +11,7 @@ list(APPEND SOURCE
 
 # pin.c is retained on disk; its eight definitions are linked from Rust.
 set(SYSAUDIO_RUST_WORKSPACE_DIR "${CMAKE_SOURCE_DIR}/sdk/lib/rust")
-set(SYSAUDIO_RUST_TARGET_DIR "${CMAKE_CURRENT_BINARY_DIR}/rust-sysaudio-target")
+rust_storage_target(SYSAUDIO_RUST_TARGET_DIR "${CMAKE_CURRENT_BINARY_DIR}/rust-sysaudio-target" sysaudio-rust)
 set(SYSAUDIO_RUST_LIB "${CMAKE_CURRENT_BINARY_DIR}/libsysaudio_rust.a")
 if(ARCH STREQUAL "i386")
     set(SYSAUDIO_RUST_TARGET "i686-pc-windows-gnu")

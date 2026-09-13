@@ -13,7 +13,7 @@ elseif(ARCH STREQUAL "amd64")
 elseif(ARCH STREQUAL "arm64")
     set(RASDLG_RUST_TARGET "aarch64-pc-windows-gnullvm")
 endif()
-set(RASDLG_RUST_TARGET_DIR "${CMAKE_CURRENT_BINARY_DIR}/rust-rasdlg-target")
+rust_storage_target(RASDLG_RUST_TARGET_DIR "${CMAKE_CURRENT_BINARY_DIR}/rust-rasdlg-target" rasdlg-rust)
 set(RASDLG_RUST_LIB "${CMAKE_CURRENT_BINARY_DIR}/librasdlg_rust.a")
 rust_crate_sources(RASDLG_RUST_SRCS "${RASDLG_RUST_WORKSPACE_DIR}" rasdlg-rust)
 add_custom_command(

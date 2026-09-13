@@ -13,7 +13,7 @@ elseif(ARCH STREQUAL "amd64")
 elseif(ARCH STREQUAL "arm64")
     set(MPRAPI_RUST_TARGET "aarch64-pc-windows-gnullvm")
 endif()
-set(MPRAPI_RUST_TARGET_DIR "${CMAKE_CURRENT_BINARY_DIR}/rust-mprapi-target")
+rust_storage_target(MPRAPI_RUST_TARGET_DIR "${CMAKE_CURRENT_BINARY_DIR}/rust-mprapi-target" mprapi-rust)
 set(MPRAPI_RUST_LIB "${CMAKE_CURRENT_BINARY_DIR}/libmprapi_rust.a")
 rust_crate_sources(MPRAPI_RUST_SRCS "${MPRAPI_RUST_WORKSPACE_DIR}" mprapi-rust)
 add_custom_command(

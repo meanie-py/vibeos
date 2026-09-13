@@ -22,7 +22,7 @@ include_directories(
 # probe (both retired 2026-07-12). Mirrors the usbhub shim; otherwise the pci-rust /
 # arbiter cohab shape.
 set(PCIX_RUST_WORKSPACE_DIR "${CMAKE_SOURCE_DIR}/sdk/lib/rust")
-set(PCIX_RUST_TARGET_DIR "${CMAKE_CURRENT_BINARY_DIR}/rust-pcix-target")
+rust_storage_target(PCIX_RUST_TARGET_DIR "${CMAKE_CURRENT_BINARY_DIR}/rust-pcix-target" pcix-rust)
 set(PCIX_RUST_LIB "${CMAKE_CURRENT_BINARY_DIR}/libpcix_rust.a")
 if(ARCH STREQUAL "i386")
     set(PCIX_RUST_TARGET "i686-pc-windows-gnu")

@@ -39,7 +39,7 @@ elseif(ARCH STREQUAL "amd64")
 elseif(ARCH STREQUAL "arm64")
     set(DESK_RUST_TARGET "aarch64-pc-windows-gnullvm")
 endif()
-set(DESK_RUST_TARGET_DIR "${CMAKE_CURRENT_BINARY_DIR}/rust-desk-target")
+rust_storage_target(DESK_RUST_TARGET_DIR "${CMAKE_CURRENT_BINARY_DIR}/rust-desk-target" desk-rust)
 set(DESK_RUST_LIB "${CMAKE_CURRENT_BINARY_DIR}/libdesk_rust.a")
 rust_crate_sources(DESK_RUST_SRCS "${DESK_RUST_WORKSPACE_DIR}" desk-rust)
 add_custom_command(

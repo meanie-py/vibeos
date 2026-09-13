@@ -43,6 +43,20 @@ GIB = 1024**3
 REQUESTS = {"build": 12, "check-tooling": 4, "gate": 0, "land": 0}
 FAILURE = "DISK_ADMISSION_FAIL"
 
+# Kinds that claim their budget inside the command rather than at process start, so a
+# build that never runs is never billed. The original wedge: a gate launched one build
+# per arch, the cpuheavy pool admitted two, and the third took an instant refusal for
+# space nothing would ever use -- 3x32 + 4 + 20 = 120 GiB needed against 109 free, no
+# lane at fault, and because DISK_ADMISSION_FAIL is INCONCLUSIVE the conductor bisected
+# for a culprit that did not exist while the drain stalled for every queued lane.
+#
+# Two later fixes ate most of that: the estimate is a measured 12 now, not 32, and CPU
+# admission moved to the per-compiler-job broker, so whole builds are no longer gated on
+# a pool of two. What survives is the invariant, which is worth keeping on its own terms:
+# reserve for what actually runs, not for what was launched. Safe to claim under a lock
+# only because reserve() never BLOCKS -- it admits or raises immediately.
+DEFERRED = frozenset({"build"})
+
 
 class AdmissionError(RuntimeError):
     pass
@@ -145,6 +159,31 @@ def _live(*, reap: bool) -> list[dict]:
     return leases
 
 
+def refuse_if_hopeless(repo: Path, kind: str) -> None:
+    """Fail-fast half of a DEFERRED kind's admission: is the host too full for this at ALL?
+
+    Deliberately ignores other lanes' live reservations, which is what makes it different
+    from reserve(): contention is settled later, once the CPU broker says this build may
+    actually run. Counting contention here is precisely the bug -- it refuses a build for
+    space that a concurrent build is merely holding a claim on.
+
+    Without this, deferring the reservation would mean a genuinely full host queues every
+    build for a CPU permit just to refuse it after, turning an instant honest error into a
+    slow one. The ENOSPC afternoon is why the floor exists; keep failing fast on it.
+    """
+    config = policy()
+    budget = int(config["requests_gib"][kind] * GIB)
+    floor = int(config["min_free_gib"] * GIB)
+    for volume in filesystems(repo):
+        if volume["free_bytes"] < floor + budget:
+            raise AdmissionError(
+                f"{kind}: {volume['path']} has {volume['free_bytes'] / GIB:.1f} GiB free; "
+                f"need {floor / GIB:.1f} headroom + {budget / GIB:.1f} requested, before any "
+                "other lane is counted. Use vibeos-cli disk-status; reclaim completed "
+                "disposable outputs."
+            )
+
+
 @contextlib.contextmanager
 def reserve(repo: Path, kind: str) -> Iterator[dict]:
     """Check + claim under one host lock. No CPU permits held while doing this.
@@ -209,13 +248,25 @@ def status(repo: Path, *, sizes: bool = False) -> dict:
         volume["unreserved_above_floor_bytes"] = max(
             0, volume["free_bytes"] - volume["reserved_bytes"] - int(config["min_free_gib"] * GIB)
         )
+    retention_policy = hostlock.HOSTLOCK_DIR / "retention.json"
+    timer_active = False
+    if retention_policy.exists() and not (hostlock.HOSTLOCK_DIR / "maintenance-disabled").exists():
+        timer_active = (
+            subprocess.run(
+                ["systemctl", "--user", "is-active", "--quiet", "vibeos-retention.timer"],
+                capture_output=True,
+                timeout=5,
+            ).returncode
+            == 0
+        )
     result = {
         "policy_path": str(root() / "policy.json"),
         "policy": config,
         "filesystems": volumes,
         "leases": live,
         "coverage": "cooperating CLI build/tooling jobs only; not a physical quota",
-        "automatic_retention": False,
+        "automatic_retention": timer_active,
+        "retention_policy_path": str(retention_policy),
     }
     if sizes:
         cache = cachecfg.make(repo)

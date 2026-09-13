@@ -33,7 +33,7 @@ elseif(ARCH STREQUAL "amd64")
 elseif(ARCH STREQUAL "arm64")
     set(INTL_RUST_TARGET "aarch64-pc-windows-gnullvm")
 endif()
-set(INTL_RUST_TARGET_DIR "${CMAKE_CURRENT_BINARY_DIR}/rust-intl-target")
+rust_storage_target(INTL_RUST_TARGET_DIR "${CMAKE_CURRENT_BINARY_DIR}/rust-intl-target" intl-rust)
 set(INTL_RUST_LIB "${CMAKE_CURRENT_BINARY_DIR}/libintl_rust.a")
 rust_crate_sources(INTL_RUST_SRCS "${INTL_RUST_WORKSPACE_DIR}" intl-rust)
 add_custom_command(

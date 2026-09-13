@@ -23,6 +23,7 @@ from . import killvm as kill_mod
 from . import land as land_mod
 from . import prune as prune_mod
 from . import repro as repro_mod
+from . import rrcmd as rr_mod
 from . import smoke as smoke_mod
 from .archcfg import ACCEPTED_ARCHES
 
@@ -56,6 +57,12 @@ def build_parser() -> argparse.ArgumentParser:
     b = sub.add_parser("build", help="ninja + binary-lints + build-index + stamp")
     arch_arg(b)
     b.add_argument("--clean", action="store_true", help="cold: nuke all rust targets")
+    b.add_argument(
+        "--rust-storage-shards",
+        type=int,
+        choices=range(17),
+        help="persist direct staticlib storage layout: 0 private, 1-16 local Cargo shards",
+    )
     b.add_argument(
         "--incremental",
         action="store_true",
@@ -528,6 +535,78 @@ def build_parser() -> argparse.ArgumentParser:
     )
     cf.set_defaults(fn=conformance_mod.conformance)
 
+    rrp = sub.add_parser(
+        "rr",
+        help="QEMU record/replay: capture one boot, then re-run it deterministically",
+        description="Record a boot (kmtest sweep by default) into a self-contained "
+        "trace, then replay that exact boot as often as you like — with gdb, and "
+        "with reverse-execution available. Built for heisenbugs: a 1-in-60 crash "
+        "you have recorded is a crash you can open, not one you have to catch again.",
+    )
+    rrsub = rrp.add_subparsers(dest="rr_verb", required=True)
+
+    rrec = rrsub.add_parser("record", help="boot once under -icount rr=record and keep the trace")
+    rrec.add_argument("--arch", required=True, choices=ACCEPTED_ARCHES)
+    rrec.add_argument(
+        "--payload",
+        default="kmtest",
+        choices=("kmtest", "none"),
+        help="kmtest: record the conformance sweep (default — the most guest work "
+        "per trace). none: record a plain smoke boot",
+    )
+    rrec.add_argument(
+        "--smp",
+        type=int,
+        default=1,
+        help="vCPUs (default 1). Record/replay is single-vCPU only; on the MP "
+        "kernel --smp 1 IS the UP:=smp1 collapse case",
+    )
+    rrec.add_argument("--name", help="trace directory name (default <ts>-<arch>-<payload>)")
+    rrec.add_argument(
+        "--build", action="store_true", help="build the media first (default: use what is there)"
+    )
+    rrec.add_argument("--timeout", type=int, default=6000, help="serial-drain budget (seconds)")
+    rrec.add_argument(
+        "--shift",
+        type=int,
+        default=rr_mod.rr.DEFAULT_ICOUNT_SHIFT,
+        help="icount shift: the virtual clock costs 2**N ns per instruction, so "
+        "this fixes the guest's apparent CPU at 2**-N GHz. Firmware and "
+        "bootloader watchdogs are denominated in that same virtual time, so too "
+        "LARGE a value makes a healthy guest time out. Lower = faster virtual "
+        f"CPU, bigger trace (default {rr_mod.rr.DEFAULT_ICOUNT_SHIFT})",
+    )
+    rrec.add_argument("--root", help=f"trace root (default {rr_mod.DEFAULT_ROOT})")
+    rrec.set_defaults(fn=rr_mod.rr_cmd, rr_verb="record")
+
+    rrep = rrsub.add_parser("replay", help="re-run a recorded boot, instruction-for-instruction")
+    rrep.add_argument("trace", help="trace name, path, or `latest`")
+    rrep.add_argument(
+        "--gdb",
+        action="store_true",
+        help="open the gdbstub halted at instruction 0 (reverse-continue works here)",
+    )
+    rrep.add_argument("--root", help=f"trace root (default {rr_mod.DEFAULT_ROOT})")
+    rrep.set_defaults(fn=rr_mod.rr_cmd, rr_verb="replay")
+
+    rvf = rrsub.add_parser(
+        "verify",
+        help="replay a trace and PROVE the guest re-executed identically (serial diff)",
+    )
+    rvf.add_argument("trace", help="trace name, path, or `latest`")
+    rvf.add_argument("--gdb", action="store_true", help=argparse.SUPPRESS)
+    rvf.add_argument("--root", help=f"trace root (default {rr_mod.DEFAULT_ROOT})")
+    rvf.set_defaults(fn=rr_mod.rr_cmd, rr_verb="verify")
+
+    rls = rrsub.add_parser("list", help="list recorded traces")
+    rls.add_argument("--root", help=f"trace root (default {rr_mod.DEFAULT_ROOT})")
+    rls.set_defaults(fn=rr_mod.rr_cmd, rr_verb="list")
+
+    rif = rrsub.add_parser("info", help="describe a trace and flag anything that would diverge")
+    rif.add_argument("trace", help="trace name, path, or `latest`")
+    rif.add_argument("--root", help=f"trace root (default {rr_mod.DEFAULT_ROOT})")
+    rif.set_defaults(fn=rr_mod.rr_cmd, rr_verb="info")
+
     kl = sub.add_parser(
         "kill",
         help="stop a QEMU SAFELY (uid/pid-scoped; refuses to kill our own ancestors)",
@@ -617,7 +696,29 @@ def build_parser() -> argparse.ArgumentParser:
         default=0,
         help="only prune trees untouched for N hours (default 24 with --retain-gib, otherwise 0)",
     )
+    pr.add_argument(
+        "--include-integration",
+        action="store_true",
+        help="allow idle conductor scratch to participate in retention",
+    )
+    pr.add_argument(
+        "--min-free-gib",
+        type=float,
+        help="also reclaim eligible outputs toward this filesystem headroom",
+    )
     pr.set_defaults(fn=prune_mod.prune)
+
+    from . import retention
+
+    rt = sub.add_parser("retention", help="configure or run hourly idle-output retention")
+    modes = rt.add_mutually_exclusive_group()
+    modes.add_argument("--enable", action="store_true")
+    modes.add_argument("--disable", action="store_true")
+    modes.add_argument("--run", action="store_true")
+    rt.add_argument("--retain-gib", type=float, default=100)
+    rt.add_argument("--min-free-gib", type=float, default=150)
+    rt.add_argument("--idle-hours", type=float, default=24)
+    rt.set_defaults(fn=retention.command)
 
     # repro — determinism/reproducibility measurement (det-plan rung 0/5)
     rp = sub.add_parser(
@@ -654,7 +755,7 @@ def build_parser() -> argparse.ArgumentParser:
 
 def main(argv: list[str] | None = None) -> int:
     args = build_parser().parse_args(argv)
-    if args.cmd not in maintenance.UNLOCKED:
+    if args.cmd not in maintenance.UNLOCKED and args.cmd != "retention":
         try:
             with maintenance.activity(REPO):
                 return _dispatch(args)
@@ -667,17 +768,68 @@ def main(argv: list[str] | None = None) -> int:
 
 
 def _dispatch(args) -> int:
-    if args.cmd in diskspace.REQUESTS:
-        try:
+    # The except must stay OUTSIDE the `in REQUESTS` test: a DEFERRED kind takes its own
+    # reservation deep inside the command (build, once the CPU broker admits it), and that
+    # AdmissionError has to reach the same stdout line and exit 2 as one raised here, or the
+    # conductor would classify an infrastructure refusal as a source regression.
+    try:
+        if args.cmd in diskspace.DEFERRED:
+            # Fail fast if the host is hopeless, then let the command claim its real
+            # budget once the CPU broker admits it.
+            diskspace.refuse_if_hopeless(REPO, args.cmd)
+        elif args.cmd in diskspace.REQUESTS:
             with diskspace.reserve(REPO, args.cmd):
                 return args.fn(args, REPO)
-        except diskspace.AdmissionError as exc:
-            # stdout is the durable fallback when even summary.json cannot be
-            # created. The conductor classifies this as infrastructure, not code.
-            print(f"{diskspace.FAILURE}: {exc}", flush=True)
-            return 2
-    return args.fn(args, REPO)
+        return args.fn(args, REPO)
+    except diskspace.AdmissionError as exc:
+        # stdout is the durable fallback when even summary.json cannot be
+        # created. The conductor classifies this as infrastructure, not code.
+        print(f"{diskspace.FAILURE}: {exc}", flush=True)
+        return 2
+
+
+def _cli_exit_code(argv: list[str] | None = None) -> int:
+    """main(), but argparse's own usage exits come back as a value like any other."""
+    try:
+        return main(argv)
+    except SystemExit as exc:  # argparse usage errors exit(2) from inside parse_args
+        code = exc.code
+        if code is None:
+            return 0
+        return code if isinstance(code, int) else 1
+
+
+def cli_main(argv: list[str] | None = None) -> int:
+    """Entry point that puts the exit code in the OUTPUT, not just the status.
+
+    A pipeline reports the exit status of its LAST stage, so `vibeos-cli ... | tail`
+    yields 0 no matter how the CLI exited -- agents have three times in one night
+    reported a finding manufactured by reading a green pipeline off a red command.
+    A rule against piping has not stopped it (it is in the always-loaded push channel,
+    and one report quoted the rule while breaking it), so the number is emitted into
+    the stream the reader is actually looking at. It survives `| tail`, `| tail -1`
+    and a redirect alike, and unlike a not-a-tty warning it has no false positives:
+    it is not a warning, it is the missing datum.
+
+    Nothing parses our stdout tail today -- the last-line consumers in gate.py and
+    land.py read `bash build.sh`, pytest and `git push`, never a vibeos-cli child.
+    But this line is now RESERVED: it is always last, so a consumer that shells out
+    to vibeos-cli and wants the salient diagnostic must reverse-SEARCH for it the way
+    gate.py:392 finds its pytest summary, never take `.splitlines()[-1]`. Blind-tailing
+    a vibeos-cli child gets `exit=N` and looks like the CLI stopped reporting failures.
+    (land.py:287 and gate.py:258 do blind-tail, and are safe only because of what they
+    happen to read -- copy gate.py:392's idiom instead, not theirs.)
+
+    `main()` stays free of this on purpose: unit tests call it directly, and a plain
+    return value is easier to assert than captured stdout. Don't tidy the two together.
+    """
+    rc = 1
+    try:
+        rc = _cli_exit_code(argv)
+    finally:
+        print(f"vibeos-cli: exit={rc}", flush=True)
+    return rc
 
 
 if __name__ == "__main__":
-    sys.exit(main())
+    sys.exit(cli_main())

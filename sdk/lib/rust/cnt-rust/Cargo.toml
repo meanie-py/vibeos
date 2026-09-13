@@ -39,6 +39,12 @@ cabi = []
 # both == `cabi`). The msvcrt DIFFTEST must NOT see this feature: it
 # links msvcrt-crt-rust (the rlib), not msvcrt-crt-cargo, precisely so
 # these 66 symbols never shadow host libm under the reference TUs.
+#
+# NO LONGER a strict subset of `cabi`: the six Bessel wrappers (_j0/_j1/_jn/
+# _y0/_y1/_yn) are cabi-math ONLY, because they call `_errno`, which the
+# kernel does not have and does not want. cnt-rust is one codegen unit, so an
+# ungated `_errno` reference would make the whole math object fail the kernel
+# link. cnt-difftest enables BOTH features so those six are still graded.
 cabi-math = []
 # The `core_rs` forbid-unsafe float surface: `core_rs::{floatcvt,scanf}`
 # + the matching `cabi/manual.rs` shims (_fcvt/_ecvt/_gcvt/_gcvt_s +

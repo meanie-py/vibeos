@@ -7624,6 +7624,33 @@ def test_kmtest_payload_already_present_runs_nothing(tmp_path, monkeypatch):
     assert gate_mod._ensure_kmtest_payload(tmp_path, ["arm64"]) == (True, "")
 
 
+def test_cli_main_prints_the_exit_code_even_when_a_pipeline_swallows_it(capsys):
+    """The number a `| tail` hides must still be IN the output it shows."""
+    from tests.qemu.cli.__main__ import cli_main
+
+    rc = cli_main(["nosuchcommand"])
+    out = capsys.readouterr().out
+    assert rc == 2, "argparse usage errors must come back as a value, not escape as SystemExit"
+    assert out.strip().splitlines()[-1] == "vibeos-cli: exit=2"
+
+
+def test_cli_main_reports_a_crash_rather_than_leaving_the_reader_a_clean_tail(capsys):
+    """A traceback goes to stderr; a pipe reading stdout must still see a nonzero code."""
+    import tests.qemu.cli.__main__ as cli
+
+    def boom(_argv=None):
+        raise RuntimeError("kaboom")
+
+    original = cli._cli_exit_code
+    cli._cli_exit_code = boom
+    try:
+        with pytest.raises(RuntimeError):
+            cli.cli_main([])
+    finally:
+        cli._cli_exit_code = original
+    assert capsys.readouterr().out.strip().splitlines()[-1] == "vibeos-cli: exit=1"
+
+
 def test_every_tools_test_file_is_actually_collected_by_something() -> None:
     """A test suite nobody runs is worse than no suite: it reads as coverage.
 

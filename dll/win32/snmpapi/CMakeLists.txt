@@ -19,7 +19,7 @@ elseif(ARCH STREQUAL "amd64")
 elseif(ARCH STREQUAL "arm64")
     set(SNMPAPI_RUST_TARGET "aarch64-pc-windows-gnullvm")
 endif()
-set(SNMPAPI_RUST_TARGET_DIR "${CMAKE_CURRENT_BINARY_DIR}/rust-snmpapi-target")
+rust_storage_target(SNMPAPI_RUST_TARGET_DIR "${CMAKE_CURRENT_BINARY_DIR}/rust-snmpapi-target" snmpapi-rust)
 set(SNMPAPI_RUST_LIB "${CMAKE_CURRENT_BINARY_DIR}/libsnmpapi_rust.a")
 rust_crate_sources(SNMPAPI_RUST_SRCS "${SNMPAPI_RUST_WORKSPACE_DIR}" snmpapi-rust)
 add_custom_command(
