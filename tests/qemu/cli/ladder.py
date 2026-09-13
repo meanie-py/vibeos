@@ -144,6 +144,10 @@ def check(text: str) -> dict | None:
     # reason to build one is to find out whether it passes, so a red one that
     # got staged must not be silently tolerated.
     wrong += [(g, seen[g], want) for g, want in OPTIONAL.items() if g in seen and seen[g] != want]
+    # LAUNCHED but never reported is NOT the same as absent. Treating it as
+    # absent renders a hung guest as a green ladder -- observed: sqlite32 wedged
+    # at guest thread startup and the run still printed "9/9 guests PASS".
+    missing += _optional_in_flight(text)
 
     if not missing and not wrong:
         return None
