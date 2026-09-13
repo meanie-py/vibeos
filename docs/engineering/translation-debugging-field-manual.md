@@ -5459,6 +5459,28 @@ caught by a log line added for an unrelated reason — to answer "is the 420s ce
 generous?" — which then showed the ceiling being hit unconditionally. **If a bounded wait has
 no recorded elapsed time, it has no evidence it is bounded.**
 
+### An edit that matched nothing reports success
+**Symptom:** a fix is "applied", the tests pass, and the behaviour is unchanged — or changed
+only in the one place no test looks.
+
+**Cause:** a scripted string replacement whose target no longer exists verbatim. `str.replace`
+returns the string unmodified when nothing matches and raises nothing; the script prints its
+success line and exits 0. The usual reason the target drifted is a formatter: `ruff format` had
+collapsed a two-line expression onto one line between the edit that wrote it and the edit that
+tried to rewrite it.
+
+**Concrete:** a batch of replacements generalising a probe over a `names` argument. One
+silently no-op'd, leaving `_staged_per_ramdisk` ignoring its parameter and always testing for
+the guest set. Every guest test passed — the sets were equal — and only the one test exercising
+a DIFFERENT name set failed. Had that test not existed, the function would have shipped
+answering the wrong question in the one case it was written for.
+
+**Fix:** `assert s.count(old) == 1` before every replace, and re-read the file after. The
+realistic failure is not forgetting the guard, it is **applying it unevenly across a batch** and
+keeping no record of which replacements were guarded — so make it unconditional rather than
+remembered. Same family as judging a build by rc instead of artifact existence: the command's
+report is not the artifact, and here the artifact is the resulting file.
+
 ### A NAME inside an image does not prove the FILE is in it
 **Symptom:** a preflight reports a file is staged on the boot media, on a media where it is
 not staged at all — and the check is reading a freshly built, entirely correct artifact, so
@@ -5473,8 +5495,15 @@ offset `0x9c2ffe4`). So the probe returned PRESENT unconditionally, and the gate
 ladder from boots that had none — costing the full 420s drain to conclude `LADDER_NOT_STAGED`,
 which is exactly what the probe existed to avoid.
 
-**Fix:** ask the STAGING MANIFEST (`build-<arch>/boot/<media>.cmake.lst`), which is what
-`add_cd_file` wrote, and match the **CD-path** side. Two traps in doing that: the source side
+**Fix:** ask the STAGING MANIFEST (`build-<arch>/boot/<media>*.lst`), which is what
+`add_cd_file` wrote, and match the **CD-path** side. **Read every `<stem>*.lst`, not just
+`<stem>.cmake.lst`** — `add_cd_file(TARGET ...)` lands there as an UNEXPANDED generator
+expression (`reactos/system32/$<TARGET_FILE_NAME:wow64cpu>`) and only `add_cd_file(FILE ...)`
+is literal; the expanded twin `<stem>.<CONFIG>.lst` carries the real names. Measured on one
+amd64 livecd: **674 genex lines against 356 literal**, so two thirds of the base manifest
+answers nothing. A probe reading only the base file is correct for `FILE` entries and silently
+wrong for `TARGET` ones — the same error as reading a record that does not describe the
+artifact, one level down. Two traps in doing that: the source side
 is useless for anything staged from a sibling tree (`build-fex-hello`, `build-i386` — outside
 the build dir every other entry points into), and matching a bare basename re-admits the same
 error, so match the directory too (`*/syswow64/<guest>.exe`).
