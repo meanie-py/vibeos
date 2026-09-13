@@ -209,6 +209,15 @@ _CFGS = {
         # (Both are best-effort and INDEPENDENT: build.py runs one ninja per
         # optional target, so an absent kmtest_all can't take ntkrnlmp down with
         # it — which the old single batched `ninja a b c` would have done.)
+        # That isolation is about the BUILD and does not extend to the BOOT.
+        # Once staged, the kmtests RUN in every arm64 boot — [KMTEST:BEGIN ...]
+        # is in any arm64 smoke serial — while `smoke` never grades them (zero
+        # kmtest references in smoke.py; `conformance` is the subcommand that
+        # parses and compares). So a kmtest that merely FAILS runs past unread,
+        # but one that BUGCHECKS takes the smoke down and presents as a boot
+        # failure with no visible connection to conformance. Check the serial for
+        # KMTEST markers before attributing an arm64 boot failure to whatever you
+        # were actually changing.
         ninja_targets_optional=("arm64input", "arm64vid", "ntkrnlmp", "halmp", "kmtest_all"),
         needs_mkramdisk=True,
         boot_media_rel="qemu/boot.img",

@@ -143,13 +143,22 @@ QEMU's own stderr was visible:
 were attributed to replay in an earlier draft of this document and that was
 wrong: running the same commands against a *non-replay* boot of the same media
 reproduced both. `interrupt` not landing is a limitation of driving gdb from a
-batch script; the breakpoints never firing is unexplained but happens with or
-without rr (the address arithmetic is right — the control boot reported
-`KRNLBASE=0xFFFFF80042190000`, matching what the breakpoint was computed from —
-so either that symbol is never executed, or a breakpoint set before the kernel
-is mapped does not take). The repo's own `qemu/run-until.sh --break <symbol>`
-does breakpoints correctly on the normal debug path; that is where to start
-rather than hand-rolling, as was done here.
+batch script.
+
+The breakpoints are now **explained and fixed**, and the cause had nothing to do
+with record/replay: `qemu/gdb-helpers/find-kbase.py` was relocating symbols to
+the wrong kernel image. Every media carries BOTH kernels and boots MP by default
+since the 2026-09-12 promotion, but `VIBEOS_KERNEL` still names the UP image, so
+the scan matched `ntoskrnl` at `0xfffff800505e4000` while `ntkrnlmp` was actually
+executing at `0xfffff80042190000`. Breakpoints therefore landed at addresses the
+guest never executes and silently never fired — which looked exactly like
+"breakpoints don't work on arm64". Fixed by preferring the image containing
+`$pc`, and failing that the MP image; verified end to end
+(`run-until.sh --break ExAllocatePoolWithTag` now reports `=== BREAKPOINT HIT ===`
+at `<ExAllocatePoolWithTag+44>`).
+
+So a way to reach a point of interest DOES exist on a normal boot. Pointing it at
+a replay is the next experiment, and it is now a one-variable one.
 
 The abort is:
 
