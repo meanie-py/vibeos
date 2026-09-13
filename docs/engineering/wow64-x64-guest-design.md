@@ -210,12 +210,45 @@ entangled and is the part to scope properly. **That is materially cheaper than "
 has to produce an x86-64 CONTEXT from an AArch64 one" sounds** — that someone already did, for
 the x64 case, in the plugin we are not building.
 
-**What this does NOT price**, and the gap is the whole remaining risk: whether a plugin in our
-tree can link vendored FEXCore and reuse `Source/Windows/Common/` *without* modifying
-`external/fex`. Both existing plugins are built by FEX's own CMake, inside the vendored tree. A
-third one built by OUR CMake against FEXCore-as-a-library is the option to prove, and nobody has
-tried it. If that turns out to require touching the vendored tree, Fork B's cost changes
-category, not degree.
+### The category question is ANSWERED: yes, with `external/fex` untouched
+
+This was the one yes/no that could have taken Fork B off the table. It does not. **Measured
+2026-09-13** by building a probe module outside the vendored tree:
+
+    forkbfex.dll   4,320,768 bytes
+    exports:       ForkBProbeInit
+    FEXCore symbols linked in: 3,715
+    git status --porcelain external/fex:  (empty -- UNMODIFIED)
+
+The probe calls the same entry points both real plugins use —
+`FEXCore::Config::Set(CONFIG_IS64BIT_MODE, "1")`, `Context::CreateNewContext(HostFeatures)` —
+compiled with our own `aarch64-w64-mingw32-clang++` and linked against the static libraries a
+standalone `tools/fex/build-fex.sh` already produces (`libFEXCore.a`, `libFEXCore_Base.a`,
+`libCommonWindows.a`, `libCommonWindowsRuntime.a`, `libCommon.a`, `libCommonTools.a`,
+`libwow64_ex.a`, `libntdll_ex.a`, plus the External deps and compiler-rt builtins). 3,715 FEXCore
+symbols is the real recompiler, not an empty shell.
+
+**Four practical constraints found while doing it**, all surmountable, all worth knowing before
+anyone wires this into our CMake for real:
+
+1. **Do NOT embed FEX with `add_subdirectory`.** 25 references to `${CMAKE_SOURCE_DIR}` inside
+   the vendored tree would rebind to OUR project root and break. The working arrangement is the
+   one we already have: configure and build FEX standalone, then link its artifacts.
+2. **FEX exports nothing for consumers** — no `install(TARGETS)` for FEXCore, no `export()`. So
+   there is no `find_package` route; paths to the build tree are explicit and ours to maintain.
+3. **FEXCore's public headers need GENERATED headers**, so a consumer needs the FEX *build* tree
+   and not just the source: `<build>/include/FEXCore/Config/ConfigValues.inl` and
+   `ConfigOptions.inl`. Our build therefore depends on a FEX build having run — which is already
+   true today for staging `libwow64fex.dll`, so this adds no new ordering constraint.
+4. **`$<TARGET_OBJECTS:FEXCore_object>` cannot cross projects.** The real plugins link FEXCore as
+   an object library; from outside, link `libFEXCore.a` instead, and wrap the archives in
+   `-Wl,--start-group ... --end-group` — without the group, static-archive ordering leaves
+   `strlen`/`memcpy`/`memmove` undefined even though FEX's own CRT provides them.
+
+**What this does NOT establish**: that such a plugin WORKS. It links and it contains the
+recompiler; it has never been loaded, entered, or run a single guest instruction. The experiment
+was scoped to the category question — can this exist without touching vendored FEX — and that is
+all it answers. The exception path (267 lines, EC-entangled) remains the real unpriced work.
 
 ## What is NOT established here
 
