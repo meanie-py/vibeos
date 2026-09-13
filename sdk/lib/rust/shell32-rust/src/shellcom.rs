@@ -553,14 +553,25 @@ pub struct IStreamVtbl {
     pub Release: unsafe extern "system" fn(*mut IStream) -> ULONG,
     pub Read: unsafe extern "system" fn(*mut IStream, *mut c_void, ULONG, *mut ULONG) -> HRESULT,
     pub Write: unsafe extern "system" fn(*mut IStream, *const c_void, ULONG, *mut ULONG) -> HRESULT,
-    pub Seek: usize,
+    pub Seek: unsafe extern "system" fn(
+        *mut IStream,
+        LARGE_INTEGER,
+        DWORD,
+        *mut ULARGE_INTEGER,
+    ) -> HRESULT,
     pub SetSize: usize,
-    pub CopyTo: usize,
+    pub CopyTo: unsafe extern "system" fn(
+        *mut IStream,
+        *mut IStream,
+        ULARGE_INTEGER,
+        *mut ULARGE_INTEGER,
+        *mut ULARGE_INTEGER,
+    ) -> HRESULT,
     pub Commit: usize,
     pub Revert: usize,
     pub LockRegion: usize,
     pub UnlockRegion: usize,
-    pub Stat: usize,
+    pub Stat: unsafe extern "system" fn(*mut IStream, *mut STATSTG, DWORD) -> HRESULT,
     pub Clone: usize,
 }
 
@@ -797,8 +808,157 @@ pub struct IBindCtx {
 }
 #[repr(C)]
 pub struct IBindCtxVtbl {
+    // THIRTEEN slots, in objidl.idl order. This struct previously stopped after Release, so a
+    // caller needing GetObjectParam got "no field" -- which looks nothing like a vtable
+    // problem and is why it hid.
+    //
+    // objidl.idl also declares RemoteSetBindOptions and RemoteGetBindOptions, each marked
+    // `[call_as(...)]`. Those are RPC proxy SUBSTITUTES for the local methods, NOT additional
+    // slots. Counting them gives 15 and shifts everything after SetBindOptions by two, which
+    // compiles perfectly and calls the wrong method forever.
     pub QueryInterface: usize,
-    pub AddRef: usize,
+    pub AddRef: unsafe extern "system" fn(*mut IBindCtx) -> ULONG,
     pub Release: unsafe extern "system" fn(*mut IBindCtx) -> ULONG,
+    pub RegisterObjectBound: usize,
+    pub RevokeObjectBound: usize,
+    pub ReleaseBoundObjects: usize,
+    pub SetBindOptions: usize,
+    pub GetBindOptions:
+        unsafe extern "system" fn(*mut IBindCtx, *mut BIND_OPTS) -> HRESULT,
+    pub GetRunningObjectTable: usize,
+    pub RegisterObjectParam:
+        unsafe extern "system" fn(*mut IBindCtx, LPOLESTR, *mut IUnknown) -> HRESULT,
+    pub GetObjectParam:
+        unsafe extern "system" fn(*mut IBindCtx, LPOLESTR, *mut *mut IUnknown) -> HRESULT,
+    pub EnumObjectParam: usize,
+    pub RevokeObjectParam: usize,
 }
 pub type LPBC = *mut IBindCtx;
+
+// ---------------------------------------------------------------------------------------------
+// Interfaces the bindgen island renders OPAQUE (no lpVtbl), needed by utils.cpp's translation
+// ---------------------------------------------------------------------------------------------
+//
+// Slot ORDER is the entire ABI contract here and nothing checks it: call sites resolve by NAME,
+// so a slot in the wrong position calls the wrong method with the wrong arguments and compiles
+// perfectly. Each layout below is the IDL's own order from sdk/include/psdk/shobjidl.idl,
+// transcribed method by method, with the three inherited IUnknown slots first.
+//
+// Following this module's existing convention, a slot nothing calls is a `usize` placeholder:
+// it must occupy its position, but giving it a signature no caller uses would be inventing an
+// ABI detail rather than recording one.
+
+use crate::types::LARGE_INTEGER;
+
+// These four DUPLICATE definitions that also live in recycle_bin.rs / open_with_menu.rs /
+// new_menu.rs, for exactly the reason the PIDL block above gives: this file is `#[path]`-included
+// into menuband-rust, which has none of those modules. `use crate::recycle_bin::...` here
+// compiles in shell32-rust and breaks menuband-rust with E0432 -- and only the arm64 gate
+// surfaces it, so a green local `cargo check -p shell32-rust` on all three targets says nothing.
+// I did exactly that and had two submissions rejected before reading the note above.
+//
+// Layout-identical copies, transcribed from those modules. Do not "collapse" them to a
+// `use`; the whole point is that this file depends on `crate::types` and nothing else.
+//
+// Deliberately NOT `pub`: they exist only to type the vtable slots below. Publishing them
+// would collide by glob with the copies in those modules and make the NAME ambiguous in every
+// consumer that globs both -- six E0659s the first time I tried it.
+
+/// `BIND_OPTS` (objidl.h).
+#[repr(C)]
+struct BIND_OPTS {
+    pub cbStruct: DWORD,
+    pub grfFlags: DWORD,
+    pub grfMode: DWORD,
+    pub dwTickCountDeadline: DWORD,
+}
+
+/// `ULARGE_INTEGER` (winnt.h) — the QuadPart view; the anonymous Low/High struct is a union
+/// arm nothing in these signatures reads.
+#[repr(C)]
+#[derive(Clone, Copy)]
+struct ULARGE_INTEGER {
+    pub QuadPart: ULONGLONG,
+}
+
+/// `WIN32_FIND_DATAW` (minwinbase.h).
+#[repr(C)]
+struct WIN32_FIND_DATAW {
+    pub dwFileAttributes: DWORD,
+    pub ftCreationTime: FILETIME,
+    pub ftLastAccessTime: FILETIME,
+    pub ftLastWriteTime: FILETIME,
+    pub nFileSizeHigh: DWORD,
+    pub nFileSizeLow: DWORD,
+    pub dwReserved0: DWORD,
+    pub dwReserved1: DWORD,
+    pub cFileName: [WCHAR; 260],
+    pub cAlternateFileName: [WCHAR; 14],
+}
+
+/// `STATSTG` (objidl.h).
+#[repr(C)]
+struct STATSTG {
+    pub pwcsName: LPOLESTR,
+    pub r#type: DWORD,
+    pub cbSize: ULARGE_INTEGER,
+    pub mtime: FILETIME,
+    pub ctime: FILETIME,
+    pub atime: FILETIME,
+    pub grfMode: DWORD,
+    pub grfLocksSupported: DWORD,
+    pub clsid: CLSID,
+    pub grfStateBits: DWORD,
+    pub reserved: DWORD,
+}
+
+/// `interface IFileSystemBindData : IUnknown` — SetFindData, GetFindData (in that order).
+#[repr(C)]
+pub struct IFileSystemBindData {
+    pub lpVtbl: *const IFileSystemBindDataVtbl,
+}
+
+#[repr(C)]
+pub struct IFileSystemBindDataVtbl {
+    pub QueryInterface: usize,
+    pub AddRef: usize,
+    pub Release: unsafe extern "system" fn(*mut IFileSystemBindData) -> ULONG,
+    pub SetFindData: usize,
+    pub GetFindData:
+        unsafe extern "system" fn(*mut IFileSystemBindData, *mut WIN32_FIND_DATAW) -> HRESULT,
+}
+
+/// `interface IInitializeCommand : IUnknown` — one method, Initialize.
+#[repr(C)]
+pub struct IInitializeCommand {
+    pub lpVtbl: *const IInitializeCommandVtbl,
+}
+
+#[repr(C)]
+pub struct IInitializeCommandVtbl {
+    pub QueryInterface: usize,
+    pub AddRef: usize,
+    pub Release: unsafe extern "system" fn(*mut IInitializeCommand) -> ULONG,
+    /// `HRESULT Initialize([in, string] LPCWSTR pszCommandName, [in, optional] IPropertyBag *ppb)`
+    pub Initialize: unsafe extern "system" fn(
+        *mut IInitializeCommand,
+        LPCWSTR,
+        *mut c_void,
+    ) -> HRESULT,
+}
+
+/// `interface IObjectWithSelection : IUnknown` — SetSelection, GetSelection (in that order).
+#[repr(C)]
+pub struct IObjectWithSelection {
+    pub lpVtbl: *const IObjectWithSelectionVtbl,
+}
+
+#[repr(C)]
+pub struct IObjectWithSelectionVtbl {
+    pub QueryInterface: usize,
+    pub AddRef: usize,
+    pub Release: unsafe extern "system" fn(*mut IObjectWithSelection) -> ULONG,
+    pub SetSelection:
+        unsafe extern "system" fn(*mut IObjectWithSelection, *mut IShellItemArray) -> HRESULT,
+    pub GetSelection: usize,
+}
