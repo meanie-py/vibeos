@@ -10,6 +10,7 @@ job is to REFUSE, and these tests hold it to that.
 from __future__ import annotations
 
 import json
+import struct
 import subprocess
 import time
 from pathlib import Path
@@ -1163,3 +1164,97 @@ def test_host_shape_ignores_per_run_paths_and_ports(tmp_path):
     assert rr._host_shape(a) == rr._host_shape(b)
     c = ["-qmp", "unix:/tmp/ros-aaa/qmp.sock,server,nowait", "-serial", "file:/tmp/o.log"]
     assert rr._host_shape(a) != rr._host_shape(c)
+
+
+# --------------------------------------------------------------------------
+# legal break icounts
+# --------------------------------------------------------------------------
+
+
+def _replay_log(tmp_path, events: bytes, version=rr._SUPPORTED_REPLAY_VERSION) -> Path:
+    """A minimal replay.bin: the 12-byte header, then raw event bytes."""
+    trace = tmp_path / "t"
+    trace.mkdir()
+    (trace / "replay.bin").write_bytes(struct.pack(">IQ", version, 0) + events)
+    return trace
+
+
+def _insn(n: int) -> bytes:
+    return struct.pack(">BI", 0, n)
+
+
+def test_boundaries_accumulate_instruction_chunks(tmp_path):
+    trace = _replay_log(tmp_path, _insn(100) + _insn(50) + _insn(1))
+    assert rr.instruction_boundaries(trace) == [100, 150, 151]
+
+
+def test_boundaries_skip_over_the_other_event_types(tmp_path):
+    """A mis-sized event desynchronises the walk, so every event we skip has to
+    be skipped by exactly the right width. EVENT_CHAR_WRITE is the common one:
+    235,577 of them in a single arm64 boot."""
+    body = (
+        _insn(10)
+        + struct.pack(">BII", 22, 1, 2)  # EVENT_CHAR_WRITE
+        + struct.pack(">BQ", 28, 0)  # EVENT_CLOCK_HOST
+        + bytes([31])  # EVENT_CP_CLOCK_WARP_ACCOUNT, no payload
+        + struct.pack(">BQ", 29, 0)  # EVENT_CLOCK_VIRTUAL_RT
+        + _insn(7)
+    )
+    assert rr.instruction_boundaries(_replay_log(tmp_path, body)) == [10, 17]
+
+
+def test_boundaries_handle_a_variable_length_random_event(tmp_path):
+    body = _insn(3) + struct.pack(">BII", 27, 0, 5) + b"abcde" + _insn(4)
+    assert rr.instruction_boundaries(_replay_log(tmp_path, body)) == [3, 7]
+
+
+def test_boundaries_handle_an_async_bh_event(tmp_path):
+    body = _insn(3) + struct.pack(">BBBQ", 8, 0, 1, 999) + _insn(4)
+    assert rr.instruction_boundaries(_replay_log(tmp_path, body)) == [3, 7]
+
+
+def test_boundaries_refuse_an_unknown_async_kind_rather_than_going_short(tmp_path):
+    """The failure mode this guards is not a crash but a SHORT list: a walk that
+    loses sync still returns plausible numbers, and a caller would then snap a
+    break to an icount that aborts the replay."""
+    body = _insn(3) + struct.pack(">BBB", 8, 4, 1) + _insn(4)
+    with pytest.raises(rr.RecordReplayError, match="no known payload width"):
+        rr.instruction_boundaries(_replay_log(tmp_path, body))
+
+
+def test_boundaries_refuse_an_unknown_replay_version(tmp_path):
+    trace = _replay_log(tmp_path, _insn(5), version=0xE02007)
+    with pytest.raises(rr.RecordReplayError, match="only knows"):
+        rr.instruction_boundaries(trace)
+
+
+def test_a_truncated_trailing_event_ends_the_walk_without_inventing_a_boundary(tmp_path):
+    """A recording killed mid-write leaves a partial event. Everything before it
+    is still true, so the walk keeps those boundaries and stops."""
+    trace = _replay_log(tmp_path, _insn(10) + b"\x00\x00\x01")
+    assert rr.instruction_boundaries(trace) == [10]
+
+
+def test_snap_goes_FORWARD_to_the_next_legal_icount(tmp_path):
+    """Forward, never nearest: a caller asking to stop at N wants to have seen
+    everything up to N, and a backward snap silently stops short of it."""
+    trace = _replay_log(tmp_path, _insn(100) + _insn(100) + _insn(100))
+    assert rr.snap_break_icount(trace, 100) == 100  # already legal
+    assert rr.snap_break_icount(trace, 101) == 200
+    assert rr.snap_break_icount(trace, 199) == 200
+    assert rr.snap_break_icount(trace, 1) == 100
+
+
+def test_snap_refuses_an_icount_past_the_end_of_the_recording(tmp_path):
+    """A break past the end never fires, which looks exactly like a break that
+    was never set — so it fails here instead."""
+    trace = _replay_log(tmp_path, _insn(100))
+    with pytest.raises(rr.RecordReplayError, match="past the end"):
+        rr.snap_break_icount(trace, 101)
+
+
+def test_boundaries_refuse_a_trace_with_no_recording(tmp_path):
+    trace = tmp_path / "empty"
+    trace.mkdir()
+    with pytest.raises(rr.RecordReplayError, match="nothing was recorded"):
+        rr.instruction_boundaries(trace)

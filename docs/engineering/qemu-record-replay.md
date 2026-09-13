@@ -198,16 +198,57 @@ replay-break at cur + 3,000,000   -> qemu-system-aarch64: Playback shouldn't
                                      left, event 17661 is EVENT_INSTRUCTION)
 ```
 
-So `replay-break` is a **better** mechanism than interrupting from the debugger,
-not a safe one: where the target icount lands appears to decide whether the stop
-survives, and a break that falls somewhere needing an I/O wait aborts exactly as
-gdb's does. Two samples of success is not a guarantee, and the failure costs the
-whole replay.
+### The rule: a break must land on an instruction-chunk boundary
 
-Treat it as: the only mechanism known to stop a replay at all, worth using, and
-worth retrying at a different icount when it aborts. Whether some icounts are
-inherently safe — checkpoint boundaries, say, which the trace marks explicitly
-with `EVENT_CHECKPOINT` — is the obvious next question and is untested.
+Where the target icount lands is not *approximately* the reason — it is the whole
+reason, and the abort message says so if you read the two numbers in it.
+
+A replay executes the guest in the chunks the recording wrote down:
+`EVENT_INSTRUCTION + N` means "run N more instructions, then look at the log
+again". The failing target above, 1024013292, sits **499,347 instructions into a
+1,249,347-instruction chunk** that runs 1023513945 → 1024763292. `1249347 -
+499347 = 750000`, which is exactly the `/750000 left` QEMU reported. The two
+successes were at 1967263945 and 1972263945, and both are chunk boundaries
+exactly. Stopping part-way through a chunk leaves the replay owing instructions
+it cannot run without advancing the log, and it dies rather than iowait.
+
+So the set of legal break icounts is a property of the trace, readable offline,
+and `./vibeos-cli rr breaks <trace>` prints it:
+
+```
+$ ./vibeos-cli rr breaks clean1 --near 1024013292
+  1023513292
+  1023513945
+  1024763292   <- snaps here
+  ...
+1024013292 is NOT legal: it sits 499347 instructions into a 1249347-instruction
+chunk, leaving 750000. Breaking there aborts the replay. Use 1024763292.
+```
+
+That is QEMU's own abort arithmetic, derived from the log before anything runs.
+
+**The checkpoint hypothesis was wrong and is worth recording as wrong.** The
+obvious guess was that `EVENT_CHECKPOINT` records mark the safe stops. They do
+not discriminate anything: a single arm64 boot contains 1,178,159
+`EVENT_CP_CLOCK_WARP_ACCOUNT` records alone, so nearly every icount is beside a
+checkpoint and being beside one predicts nothing. The variable is the chunk
+boundary.
+
+**There is no arithmetic shortcut, so don't invent one.** Chunk sizes in that
+same boot run from 1 instruction to 2^28, with a median of 18: 1.07M chunks of
+exactly 18 instructions during real execution, and 1.25M-instruction chunks while
+the guest idles in WFI. A break picked as "current + a round number" is nearly
+always safe during execution and nearly always fatal during an idle stretch —
+which is precisely the pattern the three samples showed, and why two successes
+looked like a working mechanism. Snap against the trace instead.
+
+**Status of the rule:** it explains all three observations exactly, including a
+number QEMU printed that nothing else accounts for, and `rr breaks` reproduces
+QEMU's decode of the log independently (same 1,445,912 boundaries, same final
+icount as `replay-dump.py`). It has not yet been tested *prospectively* — a
+deliberate boundary break and a deliberate mid-chunk break on a fresh replay.
+Until it has, treat a snapped icount as much better odds rather than a guarantee,
+and note the failure still costs the whole replay.
 
 `query-replay` is also the best available read of replay progress — a live
 icount, better than inferring position from the rrfile read offset.
@@ -216,7 +257,13 @@ icount, better than inferring position from the rrfile read offset.
 
 * Whether `replay-seek` to an EARLIER icount works. If it does, that is reverse
   execution by its real name — QEMU implements `reverse-continue` as
-  snapshot-plus-replay-forward, which is exactly what seek does.
+  snapshot-plus-replay-forward, which is exactly what seek does. Give it a
+  boundary icount from `rr breaks`; the seek target is presumably subject to the
+  same chunk rule as a break, though that is an assumption and not a measurement.
+* Whether the boundary rule holds PROSPECTIVELY — one deliberate boundary break
+  and one deliberate mid-chunk break. The rule is retrospective on three samples
+  plus an exact arithmetic match; that is strong but it is not a prediction that
+  has been made and then checked.
 * Whether `continue` after a `replay-break` pause resumes safely, or whether the
   replay may only be stopped once.
 * Whether a gdb breakpoint set while paused survives a resume.
@@ -603,6 +650,97 @@ Record it here and keep going; only chase one when it looks load-bearing.
   Two traces that share a boot prefix cannot cleanly separate those — equal guest
   progress implies equal trace bytes while the content is the same, so both
   hypotheses predict the same observation.
+
+  **ANSWERED: the two traces do NOT share a boot prefix that far, and the
+  same-guest-point hypothesis loses.** Comparing the two RECORDS line by line,
+  they diverge at guest line **1,120** — 900+ lines before either replay stalls:
+
+  | | clean1 | kmt3 |
+  |---|---|---|
+  | records diverge from each other | line 1,120 | line 1,120 |
+  | replay stalls at | line 2,070 | line 2,045 |
+  | last line replayed | `user32 ... hIconSmWindows` | `[SERVICES] Initialized, starting auto-start services` |
+  | where that line sits in the OTHER record | 1,974 | 1,956 |
+
+  Read the last row: each replay ran PAST the guest point where the other one
+  stopped. They stall at different guest work, in different order, having
+  diverged 900 lines earlier — and still land within ~1% of each other on every
+  measure (2,070 vs 2,045 lines, 122,374 vs 120,380 serial bytes, trace offset
+  2,145,086 vs 2,163,558). That is the signature of a structural limit, not of a
+  guest instruction sequence replay cannot execute.
+
+  Note the trace offsets are ~2.15MB in both, on traces of 10.7MB and 494MB —
+  0.86% apart on files 46x different in size.
+
+  **Which quantity is actually invariant — and icount is the odd one out.**
+  Ranked by how close the two runs are:
+
+  | measure | clean1 | kmt3 | spread |
+  |---|---|---|---|
+  | trace offset | 2,145,086 | 2,163,558 | 0.86% |
+  | guest lines | 2,070 | 2,045 | 1.2% |
+  | serial bytes | 122,374 | 120,380 | 1.6% |
+  | **icount** | **10,513,077,852** | **11,267,275,810** | **7.2%** |
+
+  icount is ~8x looser than the other three. Two samples cannot separate 0.86%
+  from 1.6%, so trace bytes / lines / serial bytes remain indistinguishable — but
+  the icount spread is different enough to argue AGAINST a virtual-time or
+  instruction-budget limit, and in favour of something counted in log bytes or
+  output volume. That matters because "clock machinery" was the standing guess
+  (`EVENT_CP_CLOCK_WARP_ACCOUNT` being the second most common record), and this
+  is the first evidence pointing away from it.
+
+  **Also disconfirmed: it is not block I/O.** The appealing story was that a new
+  process image load parks a `blkreplay` completion that never gets released —
+  it fits "burning CPU while consuming nothing", and both replays stop right as
+  user-mode processes begin spawning. It is wrong. All 2,277 `EVENT_ASYNC`
+  records in clean1 sit **before trace offset 162,166**, the first 1.5% of the
+  log, and there are none at all after it. This is a ramdisk boot: after the
+  initial load the guest does no further block I/O, so there is no parked
+  completion to deadlock on. (Checked before writing it down, which is the only
+  reason it is here as a disconfirmation rather than as a finding.)
+
+  **What the wedge does correlate with.** Binning both traces by event type at
+  200KB granularity puts the stall at the onset of the densest exception and
+  interrupt stretch in each — and the structure is the same in both despite the
+  guest divergence:
+
+  ```
+  offset           INTR   EXCEPT     WARP    CHARW     INSN
+  1800000            15      655      318    13871    14830      clean1
+  2000000           582     4550     5039    10300    19310   <- wedge
+  2200000           583     9410     8573     6703    24105      (exception peak)
+
+  1800000            87     2055     1821    12643    16433      kmt3
+  2000000           705     6768     5895     9008    20970   <- wedge
+  2200000           542     9385     6796     7467    23107      (exception peak)
+  ```
+
+  Exceptions rise 3-7x and interrupts 8-40x in the wedge bin, and both replays
+  stop just before the peak. Mechanistically that is the guest's first sustained
+  user-mode multitasking: demand-paging faults plus timer preemption. In clean1
+  `EVENT_INTERRUPT` and `EVENT_CP_CLOCK_VIRTUAL` are equal to the record (902
+  each), i.e. one virtual-clock checkpoint per timer interrupt — which is where
+  a clock/interrupt replay bug would live, and `EVENT_CP_CLOCK_WARP_ACCOUNT` is
+  the second most common record in the whole log.
+
+  This is a correlation with a plausible mechanism on two samples, not a cause.
+  It is, however, a much narrower place to look than "somewhere in the trace".
+
+  **The replay gets FURTHER than the earlier framing suggests.** "22% of the
+  trace" is a byte fraction of a file dominated by idle-time clock records, and
+  it undersells the result badly. By guest progress, clean1's replay reproduces
+  **2,070 of 2,070 lines identical to the record, zero divergence — 65.7% of the
+  recorded boot — and it reaches `[WIN32K] shell ready`**, the win32k half of the
+  desktop marker. Quote guest lines, not trace bytes, when describing how far a
+  replay got.
+
+  Caveat on the byte figures: the frozen read position (2,342,912 = 572 x 4096)
+  is a page-aligned READ-AHEAD boundary and runs ahead of execution. The
+  execution point, recovered by mapping emitted serial bytes back to their
+  `EVENT_CHAR_WRITE` index, is 2,145,086 — ~198KB behind it. Use the read
+  position to decide whether a replay is moving; use the char-write mapping when
+  you want to know where it actually is.
 
   **SETTLED by varying the icount shift, and the answer rules out BOTH.** The
   clean discriminator is to record the same guest boot with a different encoding
