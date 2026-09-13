@@ -85,6 +85,10 @@ DEFAULT_ICOUNT_SHIFT = 3
 # the same bytes.
 _FIRMWARE_IFS = {"pflash"}
 
+# Device models whose backend blkreplay cannot drive (see the refusal in
+# transform() for the measurement). ATAPI only so far; virtio-blk is fine.
+_ATAPI_MODELS = {"ide-cd", "scsi-cd"}
+
 
 class RecordReplayError(RuntimeError):
     """A configuration that cannot produce a deterministic trace.
@@ -211,6 +215,9 @@ def transform(
         raise RecordReplayError(f"mode must be 'record' or 'replay', got {mode!r}")
 
     trace_dir = Path(trace_dir)
+    # drive ids referenced by an `ide-cd` device, collected as we walk so the
+    # ATAPI check below can name the actual drive rather than guess.
+    wrapped_by_device: set[str] = set()
     # name -> {source, format, copied, sha256}; see the write site for why the
     # digest is part of it.
     media: dict[str, dict[str, object]] = {}
@@ -323,8 +330,36 @@ def transform(
             i += 2
             continue
 
+        if arg == "-device":
+            spec = argv[i + 1] if i + 1 < len(argv) else ""
+            model = spec.split(",", 1)[0]
+            if model in _ATAPI_MODELS:
+                for tok in spec.split(","):
+                    if tok.startswith("drive="):
+                        wrapped_by_device.add(tok.split("=", 1)[1])
+
         out.append(arg)
         i += 1
+
+    # blkreplay cannot drive an ATAPI CD on QEMU 9.0.2. Measured by wrapping one
+    # drive at a time on an amd64 boot: scratch behind virtio-blk-pci wrapped
+    # gives 2050 serial lines in 100s (unwrapped: 1975), while cd0 behind ide-cd
+    # wrapped gives ONE — the guest never leaves the OVMF screen clear. Neither
+    # icount alone nor rrsnapshot is implicated; both are fine on their own.
+    #
+    # Refusing is the whole point. Leaving that one drive unwrapped would record
+    # a trace whose boot media replays non-deterministically, which is the silent
+    # failure every other refusal in this function exists to prevent — and here it
+    # would be the BOOT media, so nothing downstream could be trusted.
+    atapi = sorted(wrapped_by_device)
+    if atapi:
+        raise RecordReplayError(
+            f"cannot record: {', '.join(atapi)} sits behind an ATAPI CD device "
+            "(`ide-cd`), and QEMU 9.0.2's blkreplay filter stalls that path — the "
+            "guest never leaves firmware. This is why amd64/i386 cannot be recorded "
+            "yet: their boot media is an ISO on ide-cd. arm64 is unaffected (virtio "
+            "throughout). See docs/engineering/qemu-record-replay.md."
+        )
 
     if drive_n == 0:
         raise RecordReplayError(

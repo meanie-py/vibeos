@@ -593,16 +593,34 @@ def _demoted(name: str, args: list[str] | None) -> list[str] | None:
     return be.rewrite_accel(args, "tcg", "amd64" if "Amd64" in name else "i386")
 
 
-@pytest.mark.parametrize("config", ["Arm64Config", "Amd64UefiConfig", "I386UefiConfig"])
-def test_every_arch_config_transforms_coherently(config, tmp_path):
-    """For each arch as it is actually configured: every drive a DEVICE points at
-    must end up as a blkreplay filter, and no guest-visible drive may go unwrapped.
+@pytest.mark.parametrize("config", ["Amd64UefiConfig", "I386UefiConfig"])
+def test_x86_configs_are_refused_for_ATAPI_rather_than_recorded_dead(config, tmp_path):
+    """x86 boots its ISO from `ide-cd`, and QEMU 9.0.2's blkreplay stalls that path
+    — the guest never leaves the OVMF screen clear. Measured by wrapping one drive
+    at a time on amd64: scratch behind virtio-blk-pci wrapped gives 2050 serial
+    lines in 100s (unwrapped: 1975); cd0 behind ide-cd wrapped gives ONE.
 
-    The i386/amd64 shape is the one worth having a test for — their boot media is
-    an `if=none,id=cd0` ISO with a separate `-device ide-cd,drive=cd0`, so the
-    filter has to inherit `cd0` and the raw image has to become `cd0-img`. Get
-    that backwards and QEMU starts happily with the CD attached to the UNWRAPPED
-    image, which records a trace that cannot replay.
+    So the refusal is the correct behaviour and this test pins it. The failure it
+    prevents is the worst kind: leaving cd0 unwrapped would record a trace whose
+    BOOT media replays non-deterministically, and nothing downstream of that could
+    be trusted. When a QEMU that fixes blkreplay-over-ATAPI arrives, this test is
+    the thing that should fail.
+    """
+    args = _demoted(config, _real_arch_args(config, tmp_path / "work"))
+    if args is None:
+        pytest.skip(f"{config} media not present in this worktree")
+    with pytest.raises(rr.RecordReplayError, match="ATAPI"):
+        rr.transform(args, mode="record", trace_dir=tmp_path / "t", stage=False)
+
+
+@pytest.mark.parametrize("config", ["Arm64Config"])
+def test_every_arch_config_transforms_coherently(config, tmp_path):
+    """For each arch rr can actually record: every drive a DEVICE points at must end
+    up as a blkreplay filter, and no guest-visible drive may go unwrapped.
+
+    Attach a device to the raw backend instead of the filter and QEMU starts
+    happily with that drive UNRECORDED — no error anywhere, and a trace that
+    cannot replay.
     """
     args = _demoted(config, _real_arch_args(config, tmp_path / "work"))
     if args is None:
@@ -627,7 +645,7 @@ def test_every_arch_config_transforms_coherently(config, tmp_path):
     assert media, "no media staged"
 
 
-@pytest.mark.parametrize("config", ["Arm64Config", "Amd64UefiConfig", "I386UefiConfig"])
+@pytest.mark.parametrize("config", ["Arm64Config"])
 def test_no_arch_config_smuggles_in_a_host_path_we_cannot_pin(config, tmp_path):
     """Firmware from a distro package (amd64 boots /usr/share/OVMF/OVMF_CODE_4M.fd)
     is outside the repo and outside our control. rr keeps it as an overlay, so the
@@ -666,11 +684,13 @@ def test_the_hook_demotes_x86_to_tcg_itself(tmp_path, monkeypatch):
         "-cpu",
         "host",
         "-drive",
-        f"id=cd0,if=none,format=raw,file={tmp_path}/livecd.iso,readonly=on",
+        f"id=scratch,if=none,format=qcow2,file={tmp_path}/scratch.qcow2",
+        # virtio, not the real config's ide-cd: this test is about the ACCELERATOR,
+        # and an ide-cd would (correctly) be refused before the accel is visible.
         "-device",
-        "ide-cd,drive=cd0,bootindex=0",
+        "virtio-blk-pci,drive=scratch",
     ]
-    (tmp_path / "livecd.iso").write_bytes(b"\0" * 64)
+    (tmp_path / "scratch.qcow2").write_bytes(b"\0" * 64)
     monkeypatch.setenv(rr.ENV_VAR, f"record:{trace}")
     out = vm._apply_record_replay(cmd)
     assert "kvm" not in out
@@ -760,3 +780,34 @@ def test_no_progress_information_produces_no_claim(tmp_path):
     trace.mkdir()
     (trace / "replay.bin").write_bytes(b"x" * 1000)
     assert _TraceProgress(trace, period=0.01).report() is None
+
+
+def test_a_virtio_backed_cd_would_be_allowed(tmp_path):
+    """The refusal is on the DEVICE MODEL, not on "it is a CD". If the boot ISO is
+    ever attached through virtio-blk, rr can record it — that is the measured
+    difference, and it is the shape of the eventual x86 fix."""
+    cmd = [
+        "qemu-system-x86_64",
+        "-drive",
+        f"id=cd0,if=none,format=raw,file={tmp_path}/iso",
+        "-device",
+        "virtio-blk-pci,drive=cd0",
+    ]
+    (tmp_path / "iso").write_bytes(b"\0" * 64)
+    out, _ = rr.transform(cmd, mode="record", trace_dir=tmp_path / "t", stage=False)
+    assert any("driver=blkreplay" in a for a in out)
+
+
+def test_scsi_cd_is_refused_too(tmp_path):
+    """Same ATAPI command set, same block path. Listing only `ide-cd` would let the
+    identical failure through the moment somebody changed the controller."""
+    cmd = [
+        "qemu-system-x86_64",
+        "-drive",
+        f"id=cd0,if=none,format=raw,file={tmp_path}/iso",
+        "-device",
+        "scsi-cd,drive=cd0",
+    ]
+    (tmp_path / "iso").write_bytes(b"\0" * 64)
+    with pytest.raises(rr.RecordReplayError, match="ATAPI"):
+        rr.transform(cmd, mode="record", trace_dir=tmp_path / "t", stage=False)

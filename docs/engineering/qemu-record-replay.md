@@ -103,10 +103,16 @@ the config that caused it. So the transform refuses up front:
 | an existing `-icount` | we will not record on top of someone else's counting config |
 | no `-drive` at all | `rrsnapshot=` needs a snapshot-capable image |
 | the `windows-host` backend | media stage into a Windows path; the trace would straddle two path namespaces |
+| a drive behind `ide-cd` / `scsi-cd` | QEMU 9.0.2's `blkreplay` stalls the ATAPI path outright — see below. This is why **x86 cannot be recorded yet** |
 
-One refusal it does NOT make is x86's default accelerator. `amd64` and `i386`
-boot `-accel kvm -cpu host`, which would fail the first row of that table on
-every recording — so the launch hook **demotes them to TCG itself**
+x86 is wired end to end — the transform, the media staging and the accelerator
+demotion below are all tested against the real configs — but it **cannot
+actually record today**, because its boot ISO sits behind `ide-cd`. arm64 is the
+only arch proven on real media.
+
+One refusal the transform does NOT make is x86's default accelerator. `amd64`
+and `i386` boot `-accel kvm -cpu host`, which would fail the first row of that
+table on every recording — so the launch hook **demotes them to TCG itself**
 (`backend.rewrite_accel`, which also drops the paired `-cpu host`, a KVM
 host-passthrough concept TCG cannot honour) rather than handing the operator an
 error to decode. arm64 is carved out: it already runs TCG with a real
@@ -179,6 +185,48 @@ record and replay would be different machines.
 
 Divergence on replay is a **finding about our own system**, not an obstruction.
 Record it here and keep going; only chase one when it looks load-bearing.
+
+- **`blkreplay` cannot drive an ATAPI CD, which is why x86 cannot be recorded
+  (2026-09-13). MEASURED, root-caused, and now refused up front.**
+
+  An amd64 recording never leaves the OVMF screen clear — one line of serial,
+  QEMU idle at ~0% CPU (4m42s elapsed, 11s of CPU), no trace growth. Two rounds
+  of one-variable A/B, 100s each, same media:
+
+  | config | serial lines |
+  |---|---|
+  | plain TCG | 3327 |
+  | `-icount shift=3` alone (no rr, no blkreplay) | 2124 |
+  | rr + blkreplay, `rrsnapshot` removed | **1** |
+  | full rr | **1** |
+
+  So neither icount nor `rrsnapshot` is implicated. Wrapping one drive at a time
+  then pins the device:
+
+  | wrapped in blkreplay | serial lines |
+  |---|---|
+  | nothing | 1975 |
+  | scratch only (`virtio-blk-pci`) | 2050 |
+  | **cd0 only (`ide-cd`)** | **1** |
+  | both | 1 |
+
+  `blkreplay` over `virtio-blk` is fine; over `ide-cd` the guest never boots.
+  That explains the whole arch split: arm64 is virtio throughout and records
+  cleanly, while amd64 and i386 boot their ISO from ATAPI.
+
+  `transform()` now **refuses** a drive referenced by an `ide-cd` or `scsi-cd`
+  device rather than recording a dead trace. Leaving that one drive unwrapped
+  would have been worse than refusing: it is the BOOT media, so its
+  non-determinism would poison everything downstream, silently. `scsi-cd` is
+  listed alongside `ide-cd` because it is the same command set on the same block
+  path — naming only one would let the identical failure back in the moment
+  somebody changed the controller.
+
+  **The shape of the fix** is to attach x86 boot media through virtio-blk under
+  rr, which the measurement says would work. That changes the device set the
+  guest sees, so it is a deliberate choice rather than something to do silently,
+  and it is not needed for the bug this tool was built for (#39 is arm64).
+  A test asserts a virtio-backed CD is allowed, so the path stays open.
 
 - **Replay reproduces CONTENT faithfully but does not reliably run to
   completion: it WEDGES, at a point that differs between runs of the same trace
