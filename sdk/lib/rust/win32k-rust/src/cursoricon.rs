@@ -14,7 +14,7 @@ use core::ffi::c_void;
 // Pool tags (tags.h): USERTAG_CURSOR = 'ucsU', TAG_STRING = ' RTS'.
 // C multi-char constants are big-endian; reverse for little-endian bytes.
 const USERTAG_CURSOR: u32 = u32::from_le_bytes(*b"Uscu");
-const TAG_STRING: u32 = u32::from_le_bytes(*b"STR ");
+const TAG_STRING: u32 = u32::from_le_bytes(*b"STR "); // nolint: const-contradiction (' RTS' -- win32ss/user/ntuser/tags.h:3; freeldr's TAG_STRING is ' rtS')
 
 // RT_ICON resource type (winuser.h MAKEINTRESOURCE(3)).
 const RT_ICON: usize = 3;

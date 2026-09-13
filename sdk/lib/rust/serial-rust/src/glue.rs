@@ -123,8 +123,8 @@ pub const SERIAL: ULONG = 53; // DPFLTR_SERIAL_ID
 // ---------------------------------------------------------------------------
 // DPFLTR constants used module-scope in cleanup.rs / misc.rs.
 // ---------------------------------------------------------------------------
-pub const DPFLTR_SERIAL_ID:    ULONG = 53;
-pub const DPFLTR_TRACE_LEVEL:  ULONG = 3;
+pub const DPFLTR_SERIAL_ID:    ULONG = 39;
+pub const DPFLTR_TRACE_LEVEL:  ULONG = 2;
 
 // ---------------------------------------------------------------------------
 // TRACE_ / WARN_ / ERR_ — ReactOS debug.h macros that expand to DbgPrintEx in

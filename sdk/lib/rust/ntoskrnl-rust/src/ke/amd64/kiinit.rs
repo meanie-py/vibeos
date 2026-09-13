@@ -189,7 +189,7 @@ const CR0_MP: u64 = 0x02;
 const CR0_NE: u64 = 0x20;
 
 const KGDT64_R0_CODE: u64 = 0x10;
-const KGDT64_R3_CMCODE: u64 = 0x23;
+const KGDT64_R3_CMCODE: u64 = 0x20; // ndk/amd64/ketypes.h
 const KGDT64_SYS_TSS: u16 = 0x40;
 const RPL_MASK: u64 = 0x03;
 

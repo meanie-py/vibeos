@@ -53,7 +53,7 @@ extern "C" {
     fn ExAllocateFromNPagedLookasideList(list: *mut _NPAGED_LOOKASIDE_LIST) -> PVOID;
 }
 
-const DPFLTR_PREFETCHER_ID: ULONG = 0x5E;
+const DPFLTR_PREFETCHER_ID: ULONG = 63;
 const DPFLTR_TRACE_LEVEL: ULONG = 0x2;
 
 const READAHEAD_DISABLED: ULONG = 0x0001;

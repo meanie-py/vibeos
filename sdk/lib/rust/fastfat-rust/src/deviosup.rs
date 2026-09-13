@@ -540,7 +540,7 @@ const IoWriteAccess: u32 = 1; // LOCK_OPERATION: _LOCK_OPERATION_IoWriteAccess
 // Windows value (0x200/0x204) is not what any TU here compiles.
 const NonPagedPoolNxCacheAligned: u32 = 4;
                                            // NonPagedPoolCacheAligned` (= 4, pooltype.h)
-const TAG_IO_BUFFER: u32 = 0x4F746146; /* placeholder */
+const TAG_IO_BUFFER: u32 = 0x4F746146; // nolint: const-contradiction ('OtaF' -- fastfat/nodetype.h; cdfs' is 'fbdC')
 #[no_mangle]
 pub unsafe extern "system" fn FatPagingFileIo(Irp: PIRP, Fcb: PFCB) {
 

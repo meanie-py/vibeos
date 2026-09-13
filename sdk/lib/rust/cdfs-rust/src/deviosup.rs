@@ -190,7 +190,7 @@ const STATUS_INVALID_USER_BUFFER: NTSTATUS = 0xC00000E8u32 as i32; // ntstatus.h
 const RAW_SECTOR_SIZE: u32 = 2352; // placeholder, must match CDFS
 const SECTOR_SHIFT: u32 = 11;      // log2 of SECTOR_SIZE
 const SECTOR_SIZE: u32 = 2048;
-const TAG_IO_BUFFER: u32 = 0x66626443; // 'fbdC' (cdprocs.h TAG_IO_BUFFER)
+const TAG_IO_BUFFER: u32 = 0x66626443; // nolint: const-contradiction ('fbdC' -- cdfs/cdprocs.h; fastfat's is 'OtaF')
 const CdNonPagedPool: u32 = 0; // NonPagedPool value
 
 const CD_SEC_CACHE_CHUNKS: u32 = 0x04;

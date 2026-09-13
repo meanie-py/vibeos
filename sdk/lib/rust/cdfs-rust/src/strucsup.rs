@@ -343,13 +343,13 @@ union BiasedTocLength {
 }
 
 // Pool tags: cdprocs.h multichar constants, used directly as their u32 value.
-const TAG_FCB_NONPAGED: u32 = 0x6e666443; // 'nfdC'  (TAG_FCB_NONPAGED)
+const TAG_FCB_NONPAGED: u32 = 0x6e666443; // nolint: const-contradiction ('nfdC' -- cdfs/cdprocs.h; fastfat's is 'NtaF')
 
 const CdPagedPool: u32 = 1; // PagedPool
 const TAG_FCB_TABLE: u32 = 0x74666443; // 'tfdC'  (TAG_FCB_TABLE)
 
 // cdprocs.h: TAG_IRP_CONTEXT = 'cidC' = 0x63696443 (same multichar scheme as TAG_VPB).
-const TAG_IRP_CONTEXT: u32 = 0x63696443;
+const TAG_IRP_CONTEXT: u32 = 0x63696443; // nolint: const-contradiction ('cidC' -- cdfs/cdprocs.h; fastfat's is 'ItaF')
 // cdstruc.h IRP_CONTEXT_FLAG_FORCE_POST = 0x00000008 (types_i386.rs).
 const IRP_CONTEXT_FLAG_FORCE_POST: u32 = 0x00000008;
 // nodetype.h CDFS_NTC_IRP_CONTEXT (also in glue.rs).

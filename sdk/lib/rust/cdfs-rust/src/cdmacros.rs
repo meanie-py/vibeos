@@ -530,7 +530,7 @@ const CD_PAGED_POOL: u32 = 1; // PagedPool
 // cd.h's CdNonPagedPool nominally maps to NonPagedPoolNx but ReactOS lowers it to
 // NonPagedPool at the 0x502 profile (see glue.rs CdNonPagedPool=_POOL_TYPE_NonPagedPool).
 const CD_NONPAGED_POOL: u32 = 0; // NonPagedPool
-const TAG_CCB: u32 = 0x63636443; // 'ccdC'
+const TAG_CCB: u32 = 0x63636443; // nolint: const-contradiction ('ccdC' -- cdfs/cdprocs.h:85; fastfat's is 'CtaF')
 const TAG_FCB_DATA: u32 = 0x64666443; // 'dfdC'
 const TAG_FCB_INDEX: u32 = 0x69666443; // 'ifdC'
 const TAG_FCB_NONPAGED_LOCAL: u32 = 0x6e666443; // 'nfdC'

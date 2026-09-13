@@ -119,7 +119,7 @@ unsafe fn GDI_HANDLE_GET_INDEX(h: HGDIOBJ) -> ULONG_PTR {
 pub const UNICODE_NULL: u16 = 0;
 
 // Pool tags — C multi-char literals are big-endian (e.g. 'ETNF' -> from_be_bytes).
-pub const TAG_STRING: u32 = u32::from_be_bytes(*b" RTS");
+pub const TAG_STRING: u32 = u32::from_be_bytes(*b" RTS"); // nolint: const-contradiction (' RTS' -- win32ss/user/ntuser/tags.h:3; freeldr's TAG_STRING is ' rtS')
 pub const TAG_USTR: u32 = u32::from_be_bytes(*b"RTSU");
 pub const TAG_FONT: u32 = u32::from_be_bytes(*b"ETNF");
 pub const TAG_FINF: u32 = u32::from_be_bytes(*b"FNIF");

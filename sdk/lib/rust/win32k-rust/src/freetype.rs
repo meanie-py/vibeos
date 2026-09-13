@@ -89,7 +89,7 @@ pub const STATUS_INVALID_HANDLE: NTSTATUS = 0xC0000008u32 as NTSTATUS;
 pub const STATUS_INTERNAL_ERROR: NTSTATUS = 0xC00000E5u32 as NTSTATUS;
 pub const GDITAG_PFF: u32 = u32::from_be_bytes(*b"Gpff");   // 'ffpG'
 pub const GDITAG_RFONT: u32 = u32::from_be_bytes(*b"Gfnt"); // 'tnfG'
-pub const TAG_INTERNAL_SYNC: u32 = u32::from_be_bytes(*b"sync"); // 'cnys'
+pub const TAG_INTERNAL_SYNC: u32 = u32::from_be_bytes(*b"cnys"); // C literal 'cnys' -- win32ss/user/ntuser/tags.h
 pub const TTAG_CFF: FT_ULong = u32::from_be_bytes(*b"CFF ") as FT_ULong;
 type LONG_MAX_TYPE = i64;
 // FT_Sfnt_Tag enum-value aliases (FreeType has UPPER + lower spellings; bindgen prefixes).

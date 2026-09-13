@@ -11,7 +11,7 @@ extern "system" {
 }
 
 // ---- file-scope preamble (translated) ----
-pub const APCH: HANDLE = 0x20534F52u32 as HANDLE;
+pub const APCH: HANDLE = 0x534F5220u32 as HANDLE; // (HANDLE)'SOR ' -- ws2help/apc.c
 
 #[no_mangle]
 pub unsafe extern "system" fn WahOpenApcHelper(ApcHelperHandle: PHANDLE) -> DWORD {

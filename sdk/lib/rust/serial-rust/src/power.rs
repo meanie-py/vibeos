@@ -17,7 +17,7 @@ pub unsafe extern "system" fn SerialPower(
     mut DeviceObject: PDEVICE_OBJECT,
     mut Irp: PIRP,
 ) -> NTSTATUS {
-    const DPFLTR_SERIAL_ID: ULONG = 0;
+    const DPFLTR_SERIAL_ID: ULONG = 39;
     const DPFLTR_TRACE_LEVEL: ULONG = 2;
 
     let mut DeviceExtension: PSERIAL_DEVICE_EXTENSION =

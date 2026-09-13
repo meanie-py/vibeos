@@ -20,7 +20,7 @@ use ntkrnl_sys::driver_ddk::{
 
 // #define CLASS_TAG 'CuoM'  (mouclass.h) — pool tag. C multi-char char
 // constant is big-endian, so the bytes are 'C','u','o','M'.
-pub const CLASS_TAG: u32 = u32::from_be_bytes(*b"CuoM");
+pub const CLASS_TAG: u32 = u32::from_be_bytes(*b"CuoM"); // nolint: const-contradiction ('CuoM' -- mouclass' own pool tag; kbdclass' CLASS_TAG is 'CdbK')
 
 // Mouse IOCTLs (ntddmou.h / kbdmou.h) — CTL_CODE values via driver_ddk's
 // const-fn composer. Function codes + methods are header-authoritative.

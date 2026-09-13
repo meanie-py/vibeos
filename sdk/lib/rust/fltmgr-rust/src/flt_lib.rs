@@ -24,7 +24,7 @@ pub unsafe extern "C" fn FltpFreeUnicodeString(String: PUNICODE_STRING) {
     (*String).MaximumLength = 0 as USHORT;
 }
 
-const FM_TAG_UNICODE_STRING: u32 = 0x6d754d46; // 'FMum'
+const FM_TAG_UNICODE_STRING: u32 = 0x73754D46; // 'suMF' drivers/filters/fltmgr/fltmgr.h
 #[no_mangle]
 pub unsafe extern "C" fn FltpReallocateUnicodeString(
     mut String: PUNICODE_STRING,
