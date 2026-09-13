@@ -123,12 +123,14 @@ def _staged_per_manifest(repo: Path, arch: str, subdir: str, names: set[str]) ->
         # correctly for half the entries and silently wrongly for the other half --
         # which is the same mistake as reading a manifest that does not describe
         # this media at all.
-        # `{stem}.*.lst`, NOT `{stem}*.lst`: arm64's media is boot.img, so the stem
-        # is "boot" and the loose glob matches bootcd.*.lst / bootcdregtest.*.lst —
-        # a DIFFERENT medium's manifest. That returned a non-empty text, so this
-        # probe concluded it owned the question and answered "no guests found",
-        # shadowing the ramdisk probe that had the right answer. It broke this
-        # function's own contract: a missing manifest masqueraded as a missing file.
+        # `{stem}.*.lst`, NOT `{stem}*.lst`. arm64's media is qemu/boot.img, so
+        # stem is "boot", and the loose glob matches bootcd.cmake.lst and
+        # bootcdregtest.cmake.lst — manifests for a DIFFERENT medium that merely
+        # share the prefix. `text` was then non-empty, so this probe believed it
+        # could answer, returned an empty set, and _read_media took that as the
+        # verdict without ever consulting _staged_per_ramdisk (which finds the
+        # guests correctly). A missing manifest masqueraded as a missing file,
+        # which is exactly what the None contract here exists to prevent.
         lsts = sorted((repo / f"build-{base}" / "boot").glob(f"{stem}.*.lst"))
         text = "\n".join(f.read_text(errors="ignore") for f in lsts)
     except (OSError, KeyError, AttributeError):

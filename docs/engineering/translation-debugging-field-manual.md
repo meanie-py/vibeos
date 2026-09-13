@@ -3154,6 +3154,22 @@ for by passing `--no-seal-wide`. Fix: when the bank directory's name lacks a tok
 defaults emit, pass the `--no-seal-*` matching how it was bought, or migrate the bank
 deliberately. Never `--no-resume`: that is an explicit PAID regeneration.
 
+**And before you ever conclude your paid work VANISHED, run the second test.** A commit can be
+absent from the merge queue, in neither the landed nor the rejected list, AND not an ancestor
+of `origin/master`, and still be perfectly fine — the queue tracks lane TIPS, so your own newer
+submission subsumes the older commit. Every signal reads "reaped, resubmit":
+
+    git merge-base --is-ancestor <missing> origin/master   # "has it LANDED?"
+    git merge-base --is-ancestor <missing> <my-lane-tip>   # "is it still TRAVELLING?"
+                                                           #   true  -> superseded, fine
+                                                           #   false -> genuinely lost
+
+Neither predicate alone answers "is it lost", and the first is the one nearest to hand. Cheap
+to get wrong elsewhere, expensive here: a translation lane that believes its work disappeared
+goes looking for what it did wrong, and that road ends at `--no-resume` and re-buying bodies
+that were sitting in the queue the whole time. It is the one failure of this class that spends
+money rather than time.
+
 This bit when the seal flags became default-ON: 24 of msvcrt's 26 banks stopped at
 `__callseal_v1`, leaving 2 reachable. **Settle it by constructing the path, never by counting**
 — three counts were offered that night and only the third answered the question asked:
@@ -3188,6 +3204,23 @@ Three distinct shapes, so you can recognise the next one:
   reproduce". The thing that decides is "the 9 runs THIS soak produced, identified by sha";
   "the last 9 by arch" merely correlates with it. A window is the easiest of the three to miss
   because the arithmetic over it is impeccable.
+
+**And a fourth, which is not "we consulted the wrong artifact" but "we held the RIGHT one and
+used it as an INSTRUCTION instead of as EVIDENCE".** A stale `ntdll_vista.dll` failed its
+provenance check; the check's remedy said "run `build`", which demonstrably could not clear
+it; the thing that DID work was `rm <the dll> && build`, and that command was passed between
+five lanes as a recipe. Nobody asked **why deleting an output would fix a staleness check** —
+and the answer to that question was the bug. `rm` works *precisely because* ninja has no edge
+from the crate's sources to the DLL: removing the output is the only way to make ninja rebuild
+something it otherwise has no reason to touch. The workaround was a complete description of
+the defect for as long as it was treated as a procedure. One line of CMake
+(`BODY_CRATES ntdll-rust smss-csrss-rust`, which the sibling target already declared) fixed it.
+
+The tell is specific and worth memorising: **a remedy whose mechanism you cannot state.** If
+you cannot say why the fix works, you are holding a diagnosis you have not read. And note the
+multiplier — a wrong remedy string is worse than no remedy at all, because every lane that
+hits it learns to distrust the message and memorise a recipe instead, which is exactly the
+"a remembered recipe IS the bug report" rule in AGENTS.md arriving from the tool's side.
 
 **The nastiest variant of it is a CITATION.** Same night, a different lane argued that a
 "flake" classification could not also reject a lane, and cited `queue.py:901` as its support.
@@ -7074,7 +7107,7 @@ recovered from a saved log" — it was on the next line. Until that was used, ev
 declined, and the one that mattered needed hand-computing to reach
 `KiSynchronousExceptionEntry+4`.
 
-### A COUNT can answer a different question than the one you asked
+### A tool can answer a NEIGHBOURING question, honestly, and you will not see the gap
 
 **Symptom:** a number is quoted as a hazard — "you have 660 banked `.responses` dirs, all bought
 unsealed, so expect a re-purchase refusal when you touch one" — and every downstream decision is
@@ -7107,6 +7140,20 @@ lying. It was answering a neighbouring question, and the gap between that questi
 invisible in the output. The tell is a claim whose subject is itself a reading — a count, a
 status line, an exit code — where the cheap disconfirming move is to re-derive it through the
 predicate that actually defines the set.
+
+**`ninja` reporting "no work to do" is the same shape, and it makes a build failure
+unfixable by its own printed remedy.** `provenance.py` refused an arm64 build as
+BUILD_INCOMPLETE — `ntdll_vista.dll` stale against `smss-csrss-rust/src/basesrv`, with
+`dll/ntdll/CMakeLists.txt` declaring `BODY_CRATES ntdll-rust smss-csrss-rust` — and told the
+operator to "run `build`". Running it changed nothing, twice, because ninja answers **"is my
+graph satisfied"**, not **"is this output current with respect to its real inputs"**. The edge
+was missing from the graph, so ninja's answer was honest and useless, and `build` just re-asked
+the same wrong question. The staleness was real: source touched today against a binary from
+nine days earlier. Deleting the OUTPUT is what works, because it changes the question ninja is
+being asked rather than arguing with the answer. Note also the queue consequence, since the
+symptom is misleading: BUILD_INCOMPLETE is INCONCLUSIVE (`queue.py:726`), so a conductor that
+hits this stalls the whole drain with nothing rejected — it reads as a wedged conductor, and
+the fix is in an integration worktree that is nobody's lane.
 
 ### An oracle needs an oracle `[§9.122]`
 A scanner printing `0 findings` is asserting one of two very different things: "I looked and the

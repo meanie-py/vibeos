@@ -49,6 +49,9 @@ from pathlib import Path
 
 from lint_facts import source_facts
 
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
+from tools.source_walk import source_files
+
 REPO = Path(__file__).resolve().parent.parent
 
 RUST_ROOT = REPO / "sdk" / "lib" / "rust"
@@ -144,7 +147,7 @@ def main() -> int:
         if root.is_file():
             files.append(root)
         elif root.is_dir():
-            files.extend(root.rglob("*.rs"))
+            files.extend(source_files(root))
 
     findings = []
     for f in sorted(set(files)):
