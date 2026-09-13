@@ -18,6 +18,15 @@
 #
 # Cached in $kbase convenience variable; inspect.sh reads it back into the
 # manifest so subsequent calls skip the scan.
+#
+# THE SAME TRAP EXISTS OUTSIDE THIS FILE. Fixing the scan does not help anyone
+# resolving a kernel symbol by other means: `build-<arch>/ntoskrnl/*.exe` matches
+# only the UP `ntoskrnl.exe`, while the media boots `ntkrnlmp.exe` from one
+# directory deeper (`ntoskrnl/ntkrnlmp/`). A glob or tab-complete in the obvious
+# place hands you the wrong kernel and it ANSWERS rather than erroring — measured:
+# `ntoskrnl.exe+0x3BBA4` is `KeSetIdealProcessorThread+0x1c` in the UP image and
+# `RtlRaiseStatus+0x44` in the MP one, and only the latter fits the bugcheck it
+# came from. See docs/engineering/agent-reference.md.
 
 import gdb
 import os
@@ -102,14 +111,46 @@ def _pe_info(inferior, base: int) -> tuple[str | None, int | None]:
         return None, size
 
 
+# The multiprocessor kernel's image stem. Every media carries both kernels and
+# boots this one by default, so it outranks the UP image when both are mapped.
+MP_KERNEL_STEM = "ntkrnlmp"
+
+
+def _current_pc() -> int | None:
+    """$pc, or None if the target has none right now."""
+    try:
+        return int(gdb.parse_and_eval("$pc")) & 0xFFFFFFFFFFFFFFFF
+    except (gdb.error, ValueError):
+        return None
+
+
 def _scan(start: int, end: int, want: str, step: int = 0x1000):
     """Scan [start,end) for a PE whose export name matches `want`.
 
     Returns (base, name) of the match, or (None, None). We keep scanning past
     the first MZ — the first image found is usually HAL, not ntoskrnl.
+
+    More than one image can match `want`, and taking the first one is wrong.
+    Measured on arm64 (2026-09-13): the RUNNING kernel sits at 0xfffff80042190000
+    (what the guest itself prints as [KRNLBASE], and where $pc was), but the scan
+    returned a second ntoskrnl image at 0xfffff800505e4000 — 0xe million bytes
+    higher, and not the one executing. Every symbol then relocates to that image,
+    so `run-until.sh --break <symbol>` sets breakpoints at addresses the guest
+    never executes and they SILENTLY never fire; `bt` resolves to garbage the
+    same way. It looks like "breakpoints don't work on arm64".
+
+    The likely mechanism is that the real image is skipped rather than rejected:
+    `_pe_info` gives up when it cannot READ the export directory, and a paged-out
+    export table in the live image is enough for that, while a fully-resident
+    second copy parses fine.
+
+    So $pc decides when it can. If we are stopped inside one of the candidate
+    images, that image is the one executing — which is the question being asked —
+    and no amount of export-name matching outranks it.
     """
     inferior = gdb.selected_inferior()
     pe_candidates = []
+    name_matches = []
     for addr in range(start, end, step):
         mz = _rd(inferior, addr, 2)
         if mz != b"MZ":
@@ -119,7 +160,47 @@ def _scan(start: int, end: int, want: str, step: int = 0x1000):
             continue
         pe_candidates.append((addr, name, size))
         if name is not None and want in name:
-            return addr, name
+            name_matches.append((addr, name, size))
+
+    pc = _current_pc()
+    if pc is not None:
+        containing = [c for c in pe_candidates if c[0] <= pc < c[0] + c[2]]
+        if containing:
+            # Innermost/highest base wins if images somehow nest.
+            addr, name, _size = max(containing, key=lambda c: c[0])
+            if name_matches and addr != name_matches[0][0]:
+                gdb.write(
+                    f"[find-kbase] $pc {pc:#x} is inside {addr:#x} "
+                    f"('{name or '<no-export-name>'}'), NOT the first export-name "
+                    f"match {name_matches[0][0]:#x} ('{name_matches[0][1]}') — "
+                    "trusting $pc. Symbols relocated to the wrong image resolve to "
+                    "garbage and breakpoints silently never fire.\n",
+                    gdb.STDERR,
+                )
+            return addr, name or "<no-export-name>"
+
+    # $pc is only decisive when it happens to be inside one of the images, and it
+    # often is not (an EL1 vector, HAL, a driver). Fall back to the name — but
+    # the MP kernel outranks the UP one, because EVERY media now carries BOTH and
+    # boots MP by default (DefaultOS=LiveCD_SMP / ReactOS_Arm64_MP, 2026-09-12).
+    # VIBEOS_KERNEL still names the UP image, so `want` is "ntoskrnl" and a naive
+    # first-match lands on a kernel the guest is not running. Measured on arm64:
+    # picked ntoskrnl at 0xfffff800505e4000 while ntkrnlmp was executing at
+    # 0xfffff80042190000 — so every relocated symbol was wrong and every
+    # breakpoint silently never fired.
+    mp_matches = [c for c in pe_candidates if c[1] and MP_KERNEL_STEM in c[1]]
+    if mp_matches and name_matches and mp_matches[0][0] != name_matches[0][0]:
+        gdb.write(
+            f"[find-kbase] both kernels are loaded; preferring MP "
+            f"'{mp_matches[0][1]}' at {mp_matches[0][0]:#x} over "
+            f"'{name_matches[0][1]}' at {name_matches[0][0]:#x} (media boots MP by "
+            "default). Override with VIBEOS_KERNEL if this boot is UP.\n",
+            gdb.STDERR,
+        )
+    if mp_matches and MP_KERNEL_STEM not in want:
+        return mp_matches[0][0], mp_matches[0][1]
+    if name_matches:
+        return name_matches[0][0], name_matches[0][1]
     # No name match (stripped/rewritten export table?): fall back to the
     # largest valid PE image, not the first MZ. On i386 the first PE is commonly
     # kdcom/HAL below ntoskrnl, and relocating kernel symbols there makes every

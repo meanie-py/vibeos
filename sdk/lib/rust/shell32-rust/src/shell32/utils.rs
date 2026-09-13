@@ -28,10 +28,36 @@
 //! - A parameter named `fn` (legal C, reserved in Rust): the signature was renamed to `fn_`
 //!   but one call site kept the C spelling.
 //!
-//! What is left is the COM-shape tail: vtable calls written as Rust methods
-//! (`(*p).Release()` for `((*(*p).lpVtbl).Release)(p)`), field-vs-method access on island
-//! structs, and integer/pointer mismatches. Settle the casts on three-target AGREEMENT, as
-//! CDefView's were -- never from one target's error list.
+//! The COM call shape is now FIXED (46 sites, 211 -> 162): the ABI passes the interface
+//! pointer as the first argument, so `(*p).Release()` becomes `((*(*p).lpVtbl).Release)(p)`,
+//! and a vtable slot is a fn-POINTER FIELD, so it needs its own parens -- `(x.f)(a)`, never
+//! `x.f(a)`. Both forms were already used correctly at 13 sites in this file.
+//!
+//! NEXT ROOT, and it is substrate rather than repair: the bindgen island renders six of the
+//! interfaces this TU drives as OPAQUE C++ classes with no `lpVtbl` field at all --
+//! IExecuteCommand, IDefaultExtractIconInit, IProgressDialog, IFileSystemBindData,
+//! IObjectWithSelection, IInitializeCommand. `crate::shellcom` is the module that exists to
+//! give such interfaces their lpVtbl shape, and it already covers IContextMenu and IStream;
+//! these six need adding there.
+//!
+//! Do that against the IDL, one method at a time, and do NOT rush it: a vtable is ORDER
+//! DEPENDENT, so a slot in the wrong position calls the wrong method with the wrong arguments
+//! and compiles perfectly while doing it. That is why it is left here rather than guessed at.
+//!
+//! The integer/pointer cast pass is DONE (162 -> 108): 54 edits, every one applied only where
+//! all three targets named the same EXPECTED type at the same rustc byte span.
+//!
+//! Agreement is on `expected` ALONE, and that distinction is load-bearing. `found` is what the
+//! expression currently IS, which legitimately differs by target -- a usize-typed local is u64
+//! on 64-bit and u32 on 32-bit -- without the repair differing at all, because the cast target
+//! is `expected`. Comparing the whole (expected, found) pair wrongly quarantined 5 sites whose
+//! fix was identical everywhere.
+//!
+//! Four sites remained where `expected` ITSELF differed by target (u64 vs u32). Those took the
+//! callee's declared TYPE NAME -- `CoTaskMemAlloc(cbBuff as SIZE_T)`,
+//! `IsBadReadPtr(.., size_of::<..>() as UINT_PTR)` -- which is width-correct on all three by
+//! construction. A width cast inferred from amd64 would have compiled there and broken i686,
+//! which is precisely what crate-repair's three-arch rule exists to prevent.
 use crate::prelude::*;
 use crate::atl::CStringW;
 use crate::shell32::utils_support::*;
@@ -292,7 +318,7 @@ pub unsafe extern "C" fn PathIsValidElement(pszPath: PCWSTR) -> i32 {
 }
 #[no_mangle]
 pub unsafe extern "C" fn PathIsDosDevice(pszName: PCWSTR) -> BOOL {
-    let mut szPath = [0u16; MAX_PATH];
+    let mut szPath = [0u16; ((MAX_PATH) as usize)];
 
     StringCchCopyW(szPath.as_mut_ptr(), szPath.len(), pszName);
     PathRemoveExtensionW(szPath.as_mut_ptr());
@@ -363,7 +389,7 @@ pub unsafe extern "system" fn SHShouldShowWizards(
         hr = S_FALSE;
     }
 
-    (*pBrowser).Release();
+    ((*(*pBrowser).lpVtbl).Release)(pBrowser);
     return hr;
 }
 unsafe extern "C" fn OpenEffectiveToken(DesiredAccess: DWORD, phToken: *mut HANDLE) -> BOOL {
@@ -397,7 +423,7 @@ pub unsafe extern "C" fn BindCtx_ContainsObject(pBindCtx: *mut IBindCtx, pszName
     let hr = if pBindCtx.is_null() {
         -1
     } else {
-        (*pBindCtx).GetObjectParam(pszName as LPOLESTR, &mut punk)
+        ((*(*pBindCtx).lpVtbl).GetObjectParam)(pBindCtx, pszName as LPOLESTR, &mut punk)
     };
     let result = if pBindCtx.is_null() || hr < 0 {
         FALSE
@@ -405,7 +431,7 @@ pub unsafe extern "C" fn BindCtx_ContainsObject(pBindCtx: *mut IBindCtx, pszName
         TRUE
     };
     if !punk.is_null() {
-        (*punk).Release();
+        ((*(*punk).lpVtbl).Release)(punk);
     }
     result
 }
@@ -417,7 +443,7 @@ pub unsafe extern "C" fn BindCtx_GetMode(pbc: *mut IBindCtx, dwDefault: u32) -> 
 
     let mut BindOpts = core::mem::zeroed::<BIND_OPTS>();
     BindOpts.cbSize = core::mem::size_of::<BIND_OPTS>() as u32;
-    let hr = (*(*pbc).lpVtbl).GetBindOptions(pbc, &mut BindOpts);
+    let hr = ((*(*pbc).lpVtbl).GetBindOptions)(pbc, &mut BindOpts);
     if hr < 0 {
         return dwDefault;
     }
@@ -433,7 +459,7 @@ pub unsafe extern "C" fn SHSkipJunctionBinding(pbc: *mut IBindCtx, pclsid: *mut 
     let mut BindOps: BIND_OPTS = core::mem::zeroed();
     BindOps.cbStruct = core::mem::size_of::<BIND_OPTS>() as u32;
 
-    if ((*pbc).GetBindOptions(core::ptr::addr_of_mut!(BindOps)) >= 0) &&
+    if (((*(*pbc).lpVtbl).GetBindOptions)(pbc, core::ptr::addr_of_mut!(BindOps)) >= 0) &&
         BindOps.grfFlags == OLECONTF_LINKS
     {
         return TRUE;
@@ -455,35 +481,35 @@ pub unsafe extern "C" fn SHIsFileSysBindCtx(
     let _pBindData_cpp_com_guard = CppComPtrGuard::new(core::ptr::addr_of_mut!(pBindData));
 
     if pBindCtx.is_null()
-        || (*pBindCtx).GetObjectParam(
+        || ((*(*pBindCtx).lpVtbl).GetObjectParam)(pBindCtx,
             STR_FILE_SYS_BIND_DATA as PWSTR,
             core::ptr::addr_of_mut!(punk),
         ) < 0
     {
         if !punk.is_null() {
-            (*punk).Release();
+            ((*(*punk).lpVtbl).Release)(punk);
         }
         return S_FALSE;
     }
 
-    if (*punk).QueryInterface(core::ptr::addr_of!(IID_IFileSystemBindData), core::ptr::addr_of!(pBindData).cast())
+    if ((*(*punk).lpVtbl).QueryInterface)(punk, core::ptr::addr_of!(IID_IFileSystemBindData), core::ptr::addr_of!(pBindData).cast())
         < 0
     {
         if !pBindData.is_null() {
-            (*pBindData).Release();
+            ((*(*pBindData).lpVtbl).Release)(pBindData);
         }
         if !punk.is_null() {
-            (*punk).Release();
+            ((*(*punk).lpVtbl).Release)(punk);
         }
         return S_FALSE;
     }
 
     if !pFindData.is_null() {
-        (*pBindData).GetFindData(pFindData);
+        ((*(*pBindData).lpVtbl).GetFindData)(pBindData, pFindData);
     }
 
-    (*pBindData).Release();
-    (*punk).Release();
+    ((*(*pBindData).lpVtbl).Release)(pBindData);
+    ((*(*punk).lpVtbl).Release)(punk);
     return S_OK;
 }
 #[no_mangle]
@@ -521,9 +547,9 @@ pub unsafe extern "C" fn SHBindToObjectEx(
 
         let mut hr: i32;
         if _ILIsDesktop(pidl) != 0 {
-            hr = (*pShellFolder).QueryInterface(riid, ppvObj);
+            hr = ((*(*pShellFolder).lpVtbl).QueryInterface)(pShellFolder, ((riid) as _), ppvObj);
         } else {
-            hr = (*pShellFolder).BindToObject(pidl, pBindCtx, riid, ppvObj);
+            hr = ((*(*pShellFolder).lpVtbl).BindToObject)(pShellFolder, pidl, pBindCtx, riid, ppvObj);
         }
 
         if hr >= 0 && (*ppvObj).is_null() {
@@ -531,7 +557,7 @@ pub unsafe extern "C" fn SHBindToObjectEx(
         }
 
         if !psfDesktop.is_null() {
-            (*psfDesktop).Release();
+            ((*(*psfDesktop).lpVtbl).Release)(psfDesktop);
         }
 
         hr
@@ -571,7 +597,7 @@ pub unsafe extern "C" fn SHELL_GetUIObjectOfAbsoluteItem(
     );
 
     if hr >= 0 {
-        hr = (*psf).GetUIObjectOf(
+        hr = ((*(*psf).lpVtbl).GetUIObjectOf)(psf,
             hWnd,
             1,
             &pidlChild,
@@ -579,7 +605,7 @@ pub unsafe extern "C" fn SHELL_GetUIObjectOfAbsoluteItem(
             core::ptr::null_mut(),
             ppvObj,
         );
-        (*psf).Release();
+        ((*(*psf).lpVtbl).Release)(psf);
 
         if hr >= 0 {
             if !(*ppvObj).is_null() {
@@ -607,7 +633,7 @@ pub unsafe extern "C" fn SHELL_DisplayNameOf(
         hr = SHBindToParent(pidl, core::ptr::addr_of!(IID_IShellFolder), core::ptr::addr_of_mut!(psfRoot).cast(), core::ptr::addr_of_mut!(pidlChild));
         if hr < 0 {
             if !psfRoot.is_null() {
-                let _ = (*psfRoot).Release();
+                let _ = ((*(*psfRoot).lpVtbl).Release)(psfRoot);
             }
             return hr;
         }
@@ -615,14 +641,14 @@ pub unsafe extern "C" fn SHELL_DisplayNameOf(
         pidl = pidlChild;
     }
     let mut sr: STRRET = core::mem::zeroed();
-    hr = (*psf).GetDisplayNameOf(pidl as PCUITEMID_CHILD, Flags, core::ptr::addr_of_mut!(sr));
+    hr = ((*(*psf).lpVtbl).GetDisplayNameOf)(psf, pidl as PCUITEMID_CHILD, Flags, core::ptr::addr_of_mut!(sr));
     let result = if hr >= 0 {
         StrRetToStrW(core::ptr::addr_of_mut!(sr), pidl, ppStr)
     } else {
         hr
     };
     if !psfRoot.is_null() {
-        let _ = (*psfRoot).Release();
+        let _ = ((*(*psfRoot).lpVtbl).Release)(psfRoot);
     }
     result
 }
@@ -666,10 +692,10 @@ pub unsafe extern "C" fn SHGetAttributes(
     }
 
     let oldAttrs = dwAttributes;
-    if ((*(*psf).lpVtbl).GetAttributesOf(
+    if (((*(*psf).lpVtbl).GetAttributesOf)(
         psf,
         1,
-        core::ptr::addr_of_mut!(pidlLast),
+        ((core::ptr::addr_of_mut!(pidlLast)) as _),
         core::ptr::addr_of_mut!(dwAttributes)
     ) < 0) {
         dwAttributes = 0;
@@ -703,13 +729,13 @@ pub unsafe extern "C" fn SHELL_GetIDListTarget(
         SHBindToObject(
             core::ptr::null_mut(),
             pidl,
-            core::ptr::addr_of!(IID_IShellLink), core::ptr::addr_of_mut!(pSL).cast(),
+            ((core::ptr::addr_of!(IID_IShellLink)) as _), core::ptr::addr_of_mut!(pSL).cast(),
         )
     };
     if hr >= 0 {
         unsafe {
-            hr = (*pSL).GetIDList(ppidl);
-            (*pSL).Release();
+            hr = ((*(*pSL).lpVtbl).GetIDList)(pSL, ppidl);
+            ((*(*pSL).lpVtbl).Release)(pSL);
         }
     }
     hr
@@ -810,7 +836,7 @@ pub unsafe extern "C" fn BindCtx_RegisterObjectParam(
     *ppbc = pBindCtx;
 
     if !pBindCtx.is_null() {
-        (*pBindCtx).AddRef();
+        ((*(*pBindCtx).lpVtbl).AddRef)(pBindCtx);
     } else {
         hr = CreateBindCtx(0, ppbc);
         if hr < 0 {
@@ -826,7 +852,7 @@ pub unsafe extern "C" fn BindCtx_RegisterObjectParam(
     hr = (*(*ppbc)).RegisterObjectParam(pszKey, punk);
 
     if !p_unknown.is_null() {
-        (*p_unknown).Release();
+        ((*(*p_unknown).lpVtbl).Release)(p_unknown);
     }
 
     if hr < 0 {
@@ -854,7 +880,7 @@ pub unsafe extern "system" fn PathIsSlowA(
     dwAttr: u32,
 ) -> i32 {
     let strFileW = CStringW::new(pszFile);
-    PathIsSlowW(strFileW.as_ptr(), dwAttr)
+    ((PathIsSlowW(strFileW.as_ptr(), dwAttr)) as i32)
 }
 
 #[no_mangle]
@@ -878,7 +904,7 @@ pub unsafe extern "system" fn ShortSizeFormatW(
     dwNumber: u32,
     pszBuffer: PWSTR,
 ) -> PWSTR {
-    StrFormatByteSizeW(dwNumber, pszBuffer, 0x8FFF)
+    StrFormatByteSizeW(((dwNumber) as i64), pszBuffer, 0x8FFF)
 }
 #[no_mangle] #[no_mangle]
 #[no_mangle] pub unsafe extern "system" fn SHOpenEffectiveToken(phToken: *mut HANDLE) -> BOOL {
@@ -899,7 +925,7 @@ pub unsafe extern "system" fn SHGetUserSessionId(mut hToken: HANDLE) -> DWORD {
         || GetTokenInformation(
             hToken,
             TokenSessionId,
-            core::ptr::addr_of_mut!(dwSessionId),
+            ((core::ptr::addr_of_mut!(dwSessionId)) as _),
             core::mem::size_of::<DWORD>() as DWORD,
             core::ptr::addr_of_mut!(dwLength),
         ) == 0
@@ -1013,7 +1039,7 @@ pub unsafe extern "system" fn SHTestTokenPrivilegeW(
             break 'quit;
         }
 
-        if GetTokenInformation(hToken, TokenPrivileges, pTokenPriv, dwLength, core::ptr::addr_of_mut!(dwLength)) != 0 {
+        if GetTokenInformation(hToken, TokenPrivileges, ((pTokenPriv) as _), dwLength, core::ptr::addr_of_mut!(dwLength)) != 0 {
             let mut iPriv: UINT = 0;
             let cPrivs: UINT = (*pTokenPriv).PrivilegeCount;
             while ret == 0 && iPriv < cPrivs {
@@ -1023,7 +1049,7 @@ pub unsafe extern "system" fn SHTestTokenPrivilegeW(
             }
         }
 
-        LocalFree(pTokenPriv);
+        LocalFree(((pTokenPriv) as _));
     }
 
     if hToken == hNewToken {
@@ -1050,10 +1076,10 @@ pub unsafe extern "system" fn IsSuspendAllowed() -> BOOL {
 pub unsafe extern "system" fn SHGetShellStyleHInstance() -> HINSTANCE {
     TRACE!("SHGetShellStyleHInstance called\n");
     let mut hInst: HINSTANCE = core::ptr::null_mut();
-    let mut szPath: [u16; MAX_PATH] = [0u16; MAX_PATH];
+    let mut szPath: [u16; ((MAX_PATH) as usize)] = [0u16; ((MAX_PATH) as usize)];
     let mut szColorName: [u16; 100] = [0u16; 100];
-    let mut strShellStyle: [u16; MAX_PATH + 100 + 64] =
-        [0u16; MAX_PATH + 100 + 64];
+    let mut strShellStyle: [u16; ((MAX_PATH + 100 + 64) as usize)] =
+        [0u16; ((MAX_PATH + 100 + 64) as usize)];
     let mut strShellStyleLen: usize = 0;
 
     unsafe fn copy_wz(src: *const u16, dst: *mut u16) -> usize {
@@ -1077,7 +1103,7 @@ pub unsafe extern "system" fn SHGetShellStyleHInstance() -> HINSTANCE {
         szPath.as_mut_ptr(),
         szPath.len(),
         szColorName.as_mut_ptr(),
-        szColorName.len(),
+        ((szColorName.len()) as i32),
         core::ptr::null_mut(),
         0,
     );
@@ -1322,7 +1348,7 @@ pub unsafe extern "system" fn SHGetUnreadMailCountW(
                 && (pFileTime.is_null()
                     || CompareFileTime(
                         &FileTime as *const FILETIME,
-                        pFileTime,
+                        ((pFileTime) as _),
                     ) >= 0)
             {
                 *pdwCount += dwCount;
@@ -1550,9 +1576,9 @@ pub unsafe extern "system" fn SHFindComputer(pidlRoot: LPCITEMIDLIST, pidlSavedS
     let mut InvokeInfo: CMINVOKECOMMANDINFO = core::mem::zeroed();
     InvokeInfo.cbSize = core::mem::size_of::<CMINVOKECOMMANDINFO>() as u32;
     InvokeInfo.lpParameters = b"{996E1EB1-B524-11D1-9120-00A0C98BA67D}\0".as_ptr() as *const i8;
-    InvokeInfo.nShow = SW_SHOWNORMAL;
-    hr = (*pCM).InvokeCommand(&InvokeInfo);
-    (*pCM).Release();
+    InvokeInfo.nShow = ((SW_SHOWNORMAL) as i32);
+    hr = ((*(*pCM).lpVtbl).InvokeCommand)(pCM, &InvokeInfo);
+    ((*(*pCM).lpVtbl).Release)(pCM);
 
     (hr >= 0) as i32
 }
@@ -1796,7 +1822,7 @@ pub unsafe extern "system" fn CopyStreamUI(
         pBuff = abBuff.as_mut_ptr() as *mut core::ffi::c_void;
     } else {
         cbBuff = COPY_STREAM_DEFAULT_BUFFER_SIZE;
-        let alloc_ptr = CoTaskMemAlloc(cbBuff as usize) as *mut u8;
+        let alloc_ptr = CoTaskMemAlloc(cbBuff as SIZE_T) as *mut u8;
         if !alloc_ptr.is_null() {
             pBuff = alloc_ptr as *mut core::ffi::c_void;
             pHeapPtr = alloc_ptr;
@@ -1853,7 +1879,7 @@ pub unsafe extern "system" fn CopyStreamUI(
     }
 
     if heap_allocated {
-        CoTaskMemFree(pHeapPtr);
+        CoTaskMemFree(((pHeapPtr) as _));
     }
     hr
 }
@@ -1916,7 +1942,7 @@ unsafe extern "C" fn DynamicSHGetPathFromIDListW(
             return E_OUTOFMEMORY;
         }
 
-        hr = SHGetPathCchFromIDListW(pidl, lpszPath, cchPath as usize);
+        hr = SHGetPathCchFromIDListW(((pidl) as _), lpszPath, cchPath as usize);
         strPath.ReleaseBuffer();
 
         if hr != E_NOT_SUFFICIENT_BUFFER {
@@ -1947,7 +1973,7 @@ unsafe extern "C" fn DynamicSHGetSpecialFolderPathW(
     let mut hr: HRESULT = SHGetSpecialFolderLocation(hwndOwner, nCSIDL, core::ptr::addr_of_mut!(pidl));
     if hr >= 0 {
         hr = DynamicSHGetPathFromIDListW(pidl, &mut *strPath);
-        CoTaskMemFree(pidl);
+        CoTaskMemFree(((pidl) as _));
     }
     if hr < 0 {
         strPath.Empty();
@@ -1975,7 +2001,7 @@ pub unsafe extern "system" fn PathIsEqualOrSubFolder(
         DynamicSHGetSpecialFolderPathW(
             core::ptr::null_mut(),
             &mut strPath1,
-            (LOWORD!(pszPath1OrCSIDL) as i32) | CSIDL_FLAG_DONT_VERIFY,
+            (LOWORD!(pszPath1OrCSIDL) as i32) | ((CSIDL_FLAG_DONT_VERIFY) as i32),
             FALSE,
         );
     } else {
@@ -1999,7 +2025,7 @@ pub unsafe extern "system" fn SHGetRealIDL(
 ) -> HRESULT {
     let mut hr: HRESULT;
     let mut strret: STRRET = core::mem::zeroed();
-    let mut szPath = [0u16; MAX_PATH];
+    let mut szPath = [0u16; ((MAX_PATH) as usize)];
     let mut attrs: SFGAOF = SFGAO_FILESYSTEM;
 
     *ppidlReal = core::ptr::null_mut();
@@ -2025,9 +2051,9 @@ pub unsafe extern "system" fn SHGetRealIDL(
         return hr;
     }
 
-    hr = (*psf).GetAttributesOf(
+    hr = ((*(*psf).lpVtbl).GetAttributesOf)(psf,
         1,
-        core::ptr::addr_of!(pidlSimple),
+        ((core::ptr::addr_of!(pidlSimple)) as _),
         core::ptr::addr_of_mut!(attrs)
     );
     if hr >= 0 && (attrs & SFGAO_FILESYSTEM) == 0 {
@@ -2060,13 +2086,13 @@ pub unsafe extern "C" fn IUnknown_InitializeCommand(
     let mut pIC: *mut IInitializeCommand = core::ptr::null_mut();
     let _pIC_cpp_com_guard = CppComPtrGuard::new(core::ptr::addr_of_mut!(pIC));
     if {
-        hr = (*pUnk).QueryInterface(core::ptr::addr_of!(IID_IInitializeCommand), core::ptr::addr_of_mut!(pIC).cast());
+        hr = ((*(*pUnk).lpVtbl).QueryInterface)(pUnk, ((core::ptr::addr_of!(IID_IInitializeCommand)) as _), core::ptr::addr_of_mut!(pIC).cast());
         hr >= 0
     } {
-        hr = (*pIC).Initialize(pszCommandName, pPB);
+        hr = ((*(*pIC).lpVtbl).Initialize)(pIC, pszCommandName, pPB);
     }
     if !pIC.is_null() {
-        (*pIC).Release();
+        ((*(*pIC).lpVtbl).Release)(pIC);
     }
     hr
 }
@@ -2084,17 +2110,17 @@ pub unsafe extern "C" fn InvokeIExecuteCommand(
     }
 
     let _site = CScopedSetObjectWithSite(pEC, pSite);
-    IUnknown_InitializeCommand(pEC, pszCommandName, pPB);
+    IUnknown_InitializeCommand(((pEC) as _), pszCommandName, pPB);
 
     let mut pOWS: *mut IObjectWithSelection = core::ptr::null_mut();
     let _pOWS_cpp_com_guard = CppComPtrGuard::new(core::ptr::addr_of_mut!(pOWS));
     if !pSIA.is_null() {
-        let hr = (*pEC).QueryInterface(
+        let hr = ((*(*pEC).lpVtbl).QueryInterface)(pEC,
             IID_IObjectWithSelection,
             core::ptr::addr_of_mut!(pOWS) as *mut *mut core::ffi::c_void,
         );
         if hr >= 0 && !pOWS.is_null() {
-            (*pOWS).SetSelection(pSIA);
+            ((*(*pOWS).lpVtbl).SetSelection)(pOWS, pSIA);
         }
     }
 
@@ -2105,15 +2131,15 @@ pub unsafe extern "C" fn InvokeIExecuteCommand(
         0
     };
 
-    (*pEC).SetNoShowUI(if (fMask & CMIC_MASK_FLAG_NO_UI) != 0 {
+    ((*(*pEC).lpVtbl).SetNoShowUI)(pEC, if (fMask & CMIC_MASK_FLAG_NO_UI) != 0 {
         1
     } else {
         0
     });
-    (*pEC).SetShowWindow(if !pICI.is_null() {
+    ((*(*pEC).lpVtbl).SetShowWindow)(pEC, if !pICI.is_null() {
         (*pICI).nShow
     } else {
-        SW_SHOW
+        ((SW_SHOW) as i32)
     });
 
     if (fMask & CMIC_MASK_SHIFT_DOWN) != 0 {
@@ -2122,27 +2148,27 @@ pub unsafe extern "C" fn InvokeIExecuteCommand(
     if (fMask & CMIC_MASK_CONTROL_DOWN) != 0 {
         dwKeyState |= MK_CONTROL;
     }
-    (*pEC).SetKeyState(dwKeyState);
+    ((*(*pEC).lpVtbl).SetKeyState)(pEC, dwKeyState);
 
     if !pICI.is_null()
         && (fMask & CMIC_MASK_UNICODE) != 0
         && !(*pICI).lpDirectoryW.is_null()
     {
-        (*pEC).SetDirectory((*pICI).lpDirectoryW);
+        ((*(*pEC).lpVtbl).SetDirectory)(pEC, (*pICI).lpDirectoryW);
     }
     if !pICI.is_null()
         && (fMask & CMIC_MASK_UNICODE) != 0
         && !(*pICI).lpParametersW.is_null()
     {
-        (*pEC).SetParameters((*pICI).lpParametersW);
+        ((*(*pEC).lpVtbl).SetParameters)(pEC, (*pICI).lpParametersW);
     }
     if !pICI.is_null() && (fMask & CMIC_MASK_PTINVOKE) != 0 {
-        (*pEC).SetPosition((*pICI).ptInvoke);
+        ((*(*pEC).lpVtbl).SetPosition)(pEC, (*pICI).ptInvoke);
     }
 
-    let result = (*pEC).Execute();
+    let result = ((*(*pEC).lpVtbl).Execute)(pEC);
     if !pOWS.is_null() {
-        (*pOWS).Release();
+        ((*(*pOWS).lpVtbl).Release)(pOWS);
     }
     result
 }
@@ -2159,7 +2185,7 @@ pub unsafe extern "C" fn InvokeIExecuteCommandWithDataObject(
     let _pSIA_cpp_com_guard = CppComPtrGuard::new(core::ptr::addr_of_mut!(pSIA));
     let hr: HRESULT = SHCreateShellItemArrayFromDataObject(
         pDO,
-        core::ptr::addr_of!(IID_IShellItemArray), core::ptr::addr_of_mut!(pSIA).cast(),
+        ((core::ptr::addr_of!(IID_IShellItemArray)) as _), core::ptr::addr_of_mut!(pSIA).cast(),
     );
 
     let result = if hr >= 0 {
@@ -2190,7 +2216,7 @@ unsafe extern "C" fn GetCommandStringA(
         cchMax
     );
     if hr < 0 {
-        let mut buf = [0u16; MAX_PATH];
+        let mut buf = [0u16; ((MAX_PATH) as usize)];
         hr = ((*(*pCM).lpVtbl).GetCommandString)(
             pCM,
             Id,
@@ -2200,7 +2226,7 @@ unsafe extern "C" fn GetCommandStringA(
             buf.len() as u32
         );
         if hr >= 0 {
-            hr = if SHUnicodeToAnsi(buf.as_ptr(), Buf, cchMax) > 0 {
+            hr = if SHUnicodeToAnsi(buf.as_ptr(), Buf, ((cchMax) as i32)) > 0 {
                 S_OK
             } else {
                 E_FAIL
@@ -2212,7 +2238,7 @@ unsafe extern "C" fn GetCommandStringA(
 #[no_mangle]
 pub unsafe extern "C" fn GetDfmCmd(pCM: *mut IContextMenu, mut verba: *const i8) -> u32 {
     unsafe {
-        let mut buf: [i8; MAX_PATH] = [0; MAX_PATH];
+        let mut buf: [i8; ((MAX_PATH) as usize)] = [0; ((MAX_PATH) as usize)];
         if IS_INTRESOURCE(verba) as u32 != 0 {
             if GetCommandStringA(
                 pCM,
@@ -2234,7 +2260,7 @@ pub unsafe extern "C" fn SHELL_MapContextMenuVerbToCmdId(
     pMap: *const CMVERBMAP,
 ) -> HRESULT {
     let mut pVerbA: LPCSTR = (*pICI).lpVerb;
-    let mut buf: [CHAR; MAX_PATH] = [0; MAX_PATH];
+    let mut buf: [CHAR; ((MAX_PATH) as usize)] = [0; ((MAX_PATH) as usize)];
     let pICIX = pICI as LPCMINVOKECOMMANDINFOEX;
 
     if IsUnicode(*pICIX) != 0 && !IS_INTRESOURCE((*pICIX).lpVerbW) {
@@ -2248,12 +2274,12 @@ pub unsafe extern "C" fn SHELL_MapContextMenuVerbToCmdId(
     }
 
     let mut i: SIZE_T = 0;
-    while !(*pMap.add(i)).Verb.is_null() {
-        assert!(((*pMap.add(i)).CmdId as i32) >= 0);
-        if lstrcmpiA((*pMap.add(i)).Verb, pVerbA) == 0
+    while !(*pMap.add(((i) as usize))).Verb.is_null() {
+        assert!(((*pMap.add(((i) as usize))).CmdId as i32) >= 0);
+        if lstrcmpiA((*pMap.add(((i) as usize))).Verb, pVerbA) == 0
             && *pVerbA.add(0) != 0
         {
-            return (*pMap.add(i)).CmdId as HRESULT;
+            return (*pMap.add(((i) as usize))).CmdId as HRESULT;
         }
         i += 1;
     }
@@ -2266,7 +2292,7 @@ unsafe extern "C" fn FindVerbMapEntry(CmdId: usize, pMap: *const CMVERBMAP) -> *
         if (*pMap.add(i)).Verb.is_null() {
             break;
         }
-        if (*pMap.add(i)).CmdId == CmdId {
+        if (*pMap.add(i)).CmdId == ((CmdId) as u16) {
             return pMap.add(i) as *const CMVERBMAP;
         }
         i += 1;
@@ -2330,14 +2356,14 @@ pub unsafe extern "C" fn SHELL_CreateShell32DefaultExtractIcon(
     );
     if ((hr) < 0) {
         if !initIcon.is_null() {
-            (*(*initIcon).lpVtbl).Release(initIcon);
+            ((*(*initIcon).lpVtbl).Release)(initIcon);
         }
         return hr;
     }
     (*(*initIcon).lpVtbl).SetNormalIcon(initIcon, swShell32Name.as_ptr(), IconIndex);
-    let result = (*(*initIcon).lpVtbl).QueryInterface(initIcon, riid, ppvOut);
+    let result = ((*(*initIcon).lpVtbl).QueryInterface)(initIcon, riid, ppvOut);
     if !initIcon.is_null() {
-        (*(*initIcon).lpVtbl).Release(initIcon);
+        ((*(*initIcon).lpVtbl).Release)(initIcon);
     }
     result
 }
@@ -2345,7 +2371,7 @@ pub unsafe extern "C" fn SHELL_CreateShell32DefaultExtractIcon(
 pub unsafe extern "C" fn DCIA_AddEntry(hDCIA: HDCIA, rClsId: REFCLSID) -> i32 {
     let mut i: u32 = 0;
     loop {
-        let pClsId = DCIA_GetEntry(hDCIA, i);
+        let pClsId = DCIA_GetEntry(hDCIA, ((i) as i32));
         if pClsId.is_null() {
             break;
         }
@@ -2367,15 +2393,15 @@ pub unsafe extern "C" fn DCIA_AddShellExSubkey(hDCIA: HDCIA, hProgId: HKEY, pszS
         0,
         KEY_READ,
         core::ptr::addr_of_mut!(hEnum),
-    ) != ERROR_SUCCESS
+    ) != ((ERROR_SUCCESS) as i32)
     {
         return;
     }
     let mut i: u32 = 0;
     loop {
-        let reg_result = RegEnumKeyW(hEnum, i, szKey.as_mut_ptr(), szKey.len());
+        let reg_result = RegEnumKeyW(hEnum, i, szKey.as_mut_ptr(), ((szKey.len()) as u32));
         i = i.wrapping_add(1);
-        if reg_result != ERROR_SUCCESS {
+        if reg_result != ((ERROR_SUCCESS) as i32) {
             break;
         }
         let mut clsid: CLSID = core::mem::zeroed();
@@ -2407,7 +2433,7 @@ pub unsafe extern "system" fn SHIsBadInterfacePtr(
 
     if IsBadReadPtr(
         punk as *const core::ffi::c_void,
-        core::mem::size_of::<*const CUnknownVtbl>(),
+        core::mem::size_of::<*const CUnknownVtbl>() as UINT_PTR,
     ) != 0
     {
         return 1;
@@ -2440,7 +2466,7 @@ pub unsafe extern "system" fn SHGetUserDisplayName(
         return E_INVALIDARG;
     }
 
-    if GetUserNameExW(NameDisplay, pName, puSize) != 0 {
+    if GetUserNameExW(((NameDisplay) as u32), pName, puSize) != 0 {
         return S_OK;
     }
 
@@ -2448,10 +2474,10 @@ pub unsafe extern "system" fn SHGetUserDisplayName(
     let mut hr: HRESULT = HRESULT_FROM_WIN32(error as LONG);
 
     let mut UserName = [0u16; MAX_PATH as usize];
-    let mut cchUserName: u32 = UserName.len();
+    let mut cchUserName: u32 = ((UserName.len()) as u32);
 
     if GetUserNameW(UserName.as_mut_ptr(), &mut cchUserName) == 0 {
-        return HRESULT_FROM_WIN32(GetLastError());
+        return HRESULT_FROM_WIN32(((GetLastError()) as i32));
     }
 
     if error == ERROR_NONE_MAPPED {
@@ -2479,7 +2505,7 @@ pub unsafe extern "system" fn SHGetUserDisplayName(
                 }
             }
 
-            NetApiBufferFree(UserInfo);
+            NetApiBufferFree(((UserInfo) as _));
         }
     }
 
@@ -2515,7 +2541,7 @@ unsafe extern "C" fn SHELL_GetCachedComputerDescription(
         COMPUTER_DESCRIPTIONS_KEY(),
         SHELL_SkipServerSlashes(pszServerName),
         core::ptr::null_mut(),
-        pszDesc,
+        ((pszDesc) as _),
         core::ptr::addr_of_mut!(cchDescMax),
     ) as u32;
     HRESULT_FROM_WIN32(error as LONG)
@@ -2532,7 +2558,7 @@ unsafe extern "C" fn SHELL_CacheComputerDescription(pszServerName: PCWSTR, pszDe
         COMPUTER_DESCRIPTIONS_KEY(),
         SHELL_SkipServerSlashes(pszServerName),
         REG_SZ,
-        pszDesc,
+        ((pszDesc) as _),
         cbDesc as u32,
     );
 }
@@ -2558,12 +2584,12 @@ unsafe extern "C" fn SHELL_GetComputerDescription(
 
     let comment: PCWSTR = (*bufptr).sv101_comment;
     if !comment.is_null() && *comment.add(0 as usize) != 0 {
-        StringCchCopyW(pszDesc, cchDescMax, comment);
+        StringCchCopyW(pszDesc, ((cchDescMax) as usize), comment);
     } else {
         hr = E_FAIL;
     }
 
-    NetApiBufferFree(bufptr);
+    NetApiBufferFree(((bufptr) as _));
     hr
 }
 unsafe extern "C" fn SHELL_BuildDisplayMachineName(
@@ -2586,7 +2612,7 @@ unsafe extern "C" fn SHELL_BuildDisplayMachineName(
 
     if FormatMessageW(
         FORMAT_MESSAGE_ARGUMENT_ARRAY | FORMAT_MESSAGE_FROM_STRING,
-        pszFormat,
+        ((pszFormat) as _),
         0,
         0,
         pszName,
@@ -2689,7 +2715,7 @@ pub unsafe extern "C" fn SHELL32_ReparentAsAliasPidl(
         let mut pidlSrcRoot: LPITEMIDLIST = core::ptr::null_mut();
         let mut hr = SHGetFolderLocation(
             hwnd,
-            (*pEntry).nCsidlSrc,
+            (((*pEntry).nCsidlSrc) as i32),
             hToken,
             0,
             core::ptr::addr_of_mut!(pidlSrcRoot),
@@ -2699,7 +2725,7 @@ pub unsafe extern "C" fn SHELL32_ReparentAsAliasPidl(
             continue;
         }
 
-        let pidlRelative: LPCITEMIDLIST = ILFindChild(pidlSrcRoot, pidlTarget);
+        let pidlRelative: LPCITEMIDLIST = ((ILFindChild(pidlSrcRoot, pidlTarget)) as _);
         if pidlRelative.is_null() {
             ILFree(pidlSrcRoot);
             iEntry += 1;
@@ -2709,7 +2735,7 @@ pub unsafe extern "C" fn SHELL32_ReparentAsAliasPidl(
         let mut pidlDestRoot: LPITEMIDLIST = core::ptr::null_mut();
         hr = SHGetFolderLocation(
             hwnd,
-            (*pEntry).nCsidlDest,
+            (((*pEntry).nCsidlDest) as i32),
             hToken,
             0,
             core::ptr::addr_of_mut!(pidlDestRoot),
@@ -2718,7 +2744,7 @@ pub unsafe extern "C" fn SHELL32_ReparentAsAliasPidl(
             (*ppidlNew) = ILCombine(pidlDestRoot, pidlRelative);
             if !(*ppidlNew).is_null() {
                 if (*pEntry).bCommonDesktop != 0 && (**ppidlNew).mkid.cb >= 3 {
-                    (**ppidlNew).mkid.abID[0] |= PT_FS | PT_FS_COMMON_FLAG;
+                    (**ppidlNew).mkid.abID[0] |= ((PT_FS | PT_FS_COMMON_FLAG) as u8);
                 }
             }
             ILFree(pidlDestRoot);

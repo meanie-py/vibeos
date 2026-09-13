@@ -5916,7 +5916,15 @@ test to fail three times, only SOME regression each time — and independent int
 therefore COMPOSE. A 2026-09-13 drain burned its whole retry budget on two unrelated arm64
 bistables (`ExPools: pass 14 -> 13` on two attempts, `NpfsConnect: pass 679 -> 678` on the
 third), and the final verdict records none of that disagreement: it reads as one reproducing
-regression, and the train rejects the lane whose diff happened to be in the batch. Two lessons,
+regression, and the train rejects the lane whose diff happened to be in the batch. **A 9-sweep
+soak on identical media then measured the shape directly, and the measurement is the entry's
+real content:** the LANE went red 3/9 = 33% from THREE independent causes (`ExPools` 2/9,
+explained as a kmtest POOL_HEADER arch-gate mismatch; `Example` 1/9, unexplained; `NpfsConnect`
+0/9, i.e. it did not recur at all). **The lane rate necessarily exceeds any single test's rate,
+and that gap IS the composition** — which is why three attempts absorb far less than three
+attempts appear to. Note also what the soak cost to get right: an earlier ~50% was quoted from
+four samples and withdrawn, and the argument came out stronger for being re-grounded, because
+the lane rate is the quantity the retry floor actually faces. Two lessons,
 and the second is the reusable one. **Recognise it from the artifacts, not the verdict** — read
 each attempt's own conformance log and check the identities MATCH before believing a
 reproduction; a lane that checks only whether its own signature is `ExPools` will wrongly decide
@@ -6833,7 +6841,7 @@ From the inside, "I verified the two `#ifdef`s" is indistinguishable from "I tes
 feel like checking, both cite a real artifact, and only one of them consulted the authority.
 That is also why it survives review — a reader asking "did you check?" gets a true yes.
 
-**Six instances, five unrelated tools, one night (2026-09-13):**
+**Nine instances, eight unrelated tools, one night (2026-09-13):**
 - an sccache stats query that answered for a *different server* than the build used;
 - an ISO byte-scan whose hit was **winlogon's own diagnostic string**, not the data sought;
 - `ls | wc -l` answering "how many directories" when the question was "how many replay
@@ -6843,7 +6851,94 @@ That is also why it survives review — a reader asking "did you check?" gets a 
   that three failed attempts had failed for two DIFFERENT reasons, the fact that mattered;
 - two `#ifdef`s read correctly, in the right headers, instead of asking the compiler — which
   is how an `_M_AMD64`/`_WIN64` arch-gate mismatch stood as "conclusive" until someone ran
-  `clang -dM -E` (see "When the bug is in the TEST, not the kernel").
+  `clang -dM -E` (see "When the bug is in the TEST, not the kernel");
+- the **serial log** consulted for "did this guest launch". It answers "did the DRAINED
+  WINDOW contain a launch line", which is a different question: the WoW64 ladder stops
+  draining when the required guests report, and an optional guest runs after them, so a guest
+  that launched and HUNG left its line in the serial file and not in the text the check read.
+  It passed as `ladder: 9/9 guests PASS`. The first fix — scan the serial for the launch line
+  — was the same mistake one layer down, because it still assumed the launch fell inside the
+  drained window;
+- the **`add_cd_file` staging manifest** consulted for "is this guest on the media". Correct
+  on x86, where `boot/livecd.cmake.lst` is exactly what was staged — and answering for a
+  premise that does not exist on arm64, which fills a ramdisk with `mcopy` from
+  `mkramdisk.sh` and writes no manifest at all. The read returns "not staged" for media whose
+  guests demonstrably run. Note this one REPLACED the ISO byte-scan above: a false positive
+  was swapped for a false negative, both from consulting an artifact one step off the
+  authority.
+- banked soak records sorted by arch with the last nine taken, when the question was "the nine
+  sweeps THIS soak produced" — the window silently mixed in two other shas and dropped one of
+  the real rows, turning a reproduced 33% into a 22% that did not match.
+
+**The two halves compose, and then the wrong conclusion is unfalsifiable.** The clinching
+instance is fleet-wide and lasted a day: `qemu/gdb-helpers/find-kbase.py` relocates symbols to
+"the image whose export Name matches the basename of `VIBEOS_KERNEL`", which names the **UP**
+kernel — and since the MP-default promotion every medium carries both images and boots the
+**MP** one. So the scan succeeded, against a real, valid, correctly-parsed `ntoskrnl` PE that
+was loaded and **not executing**; the artifact consulted was literally not the artifact
+consulted at runtime. Then the second half: every breakpoint was set on an address the guest
+never runs, and `run-until.sh --break <symbol>` simply timed out with no message. **A dead
+breakpoint is an absence that carries no information**, and it reads exactly like "this code
+path is not reached" — which is the conclusion you were using it to test. Note what makes this
+class dangerous rather than merely annoying: the failure is not "no match found", it is
+"matched the wrong one of two valid candidates", so nothing anywhere reports a problem. If you
+are about to conclude a path is not reached because a breakpoint did not fire, first break on
+something you KNOW executes.
+
+**And the wrong artifact usually answers PLAUSIBLY, which is the whole difficulty.** The same
+two-kernel split bites hand symbolication, with no script involved and no fix pending — the
+build tree puts only the UP image in `build-<arch>/ntoskrnl/`, with the booting MP kernel a
+directory deeper in `ntkrnlmp/`, so a glob or a tab-complete resolves against the image the
+machine is not running. An arm64 `BUGCHECK 0x1E` at `ntoskrnl.exe+0x3BBA4` symbolicated to
+`KeSetIdealProcessorThread+0x1c` against the UP binary and `RtlRaiseStatus+0x44` against the
+MP one. Both are real kernel symbols; only the second is true. **When a wrong artifact answers
+with something syntactically valid and semantically plausible, the only remaining discriminator
+is whether it COHERES with the evidence you did not use to get it** — 0x1E is
+KMODE_EXCEPTION_NOT_HANDLED with P1 = `STATUS_FILE_INVALID`, and an ideal-processor setter
+raising a file-status exception fits nothing, while a raise-status helper fits exactly. Had the
+fault been anywhere near scheduling, the wrong answer would have been believed. This is the
+same discriminator as "which story explains the evidence you were not looking at" above,
+arriving from the opposite direction: there it separated two causes, here it separates two
+artifacts.
+
+**The inverse: a missing log line is evidence ONLY if you have seen the passing case emit
+it.** Reading the wrong artifact is one half; the other is reading the ABSENCE of an artifact
+as a signal it was never able to carry. `Example_drv.c:227`'s `IRP!` trace is not emitted for
+device-control IRPs, so a serial log showing nothing between `IRP_MJ_CREATE` and
+`IRP_MJ_CLOSE` looks exactly like three IOCTLs that never reached the driver — and since the
+user-mode `DeviceIoControl` calls all returned `ERROR_SUCCESS`, that reads as the kernel
+returning success without dispatching, which would be spectacular and is false. The CLEAN
+round's serial is identical in that window and passes. **The cheap universal remedy is to diff
+against the passing case before believing any absence**, because absences are precisely what a
+serial log is worst at reporting: nothing distinguishes "did not happen" from "happened and is
+not traced on this path". Three separate near-misses in one night were all this shape, which is
+not luck — comparing against the control is the only technique that works when the evidence is
+an absence.
+
+**A PERSON can be the misread artifact, and that variant routes rather than misreports.**
+One lane told another that a standing no-soaks directive "does not appear to apply to you,
+since you ran a soak tonight without objection". The owner was asleep. Absence of objection
+from someone who is not present is not a weaker form of permission — it is not evidence at
+all: silence answers *"was anyone awake"*, not *"is this allowed"*, which is the same
+slightly-different-question shape as every instance above, with a person in place of a file.
+What makes it the dangerous member of the class is the consequence. A technical proxy error
+produces a wrong finding, which the next check catches; this one produces **a lane acting
+outside a directive, with the inference as its stated justification** — the error executes
+before anything can contradict it. The sound basis was available and did not depend on anyone's
+silence: bounded soaks are sanctioned tooling here (`farm`, `conformance --repeat`) and the
+soak was bounded. **Never use one lane's latitude as an argument for another lane's**, and when
+a justification reduces to "nobody objected", check whether anybody was in a position to.
+
+**It does not exempt the person who wrote it.** Within an hour of this entry being filed, both
+its authors nearly hit it again on the very measurement it was written about: one scraping a
+soak's stdout that had truncated its early rounds (2 of 3 regressions, wrong denominator), the
+other taking "the last nine by arch" instead of filtering on the soak's sha. The second would
+have surfaced as *telling the other lane its measurement was wrong* — a false contradiction of
+correct work, which is the expensive direction for this error to travel, because it spends
+someone else's credibility rather than your own time. **The failure is structural, not
+careless:** the proxy is always the more available artifact, and availability is what makes it
+the one you reach for. Knowing the rule changes nothing about which artifact is closer to hand,
+so the defence has to be the question, asked out loud, every time — not vigilance.
 
 **The corollary, from the same incident:** when you have strengthened a claim — "the chain I
 read says no" becoming "this can never happen structurally" — go looking for the thing that
@@ -6853,6 +6948,44 @@ chain never mentioned; it is x86_64-gated too, so the claim survived — but it 
 been attacked rather than merely restated. A conclusion that feels settled is exactly when
 nobody re-derives it. *(Found jointly with the control-plane lane; the instances are drawn
 from both of our sessions.)*
+
+### A MISSING line is evidence only if you have seen the passing case emit it
+
+**The check:** before a silence becomes a finding, produce a run where the thing you are
+looking for DOES appear, and diff. Absence has no provenance on its own — a line can be
+missing because the event did not happen, or because nothing ever prints it here, or because
+whoever was reading had already stopped.
+
+**Sibling to "The artifact you consulted is not the one consulted at RUNTIME", not a case of
+it — the remedy is what separates them.** There, the fix is to identify what actually decides
+and go read that instead; the right artifact exists and you were looking at the wrong one.
+Here there is no better artifact to find. The log you have simply cannot answer a negative by
+itself, and the only move that works is to obtain a control that emits the line and compare.
+A reader who arrives at the wrong one of these two is pointed at a remedy that cannot help.
+
+**Two instances, one night (2026-09-13), running in OPPOSITE directions:**
+- absence read as absence of the EVENT. A WoW64 optional guest reported no verdict, so the
+  ladder treated it as never staged and passed the run as `9/9 guests PASS`. The guest had
+  launched and HUNG; the drain stops when the *required* guests report, and an optional one
+  runs after them, so its line was in the serial FILE and never in the text the check read.
+- absence read as evidence of a MISSING DISPATCH. `Example_drv.c:227`'s `IRP!` trace did not
+  print for a device-control IRP, which looked like `DeviceIoControl` returning success
+  without dispatching — a dramatic finding, nearly reported. That trace never prints for that
+  IRP type at all: the CLEAN round's serial is identical in that window, and only diffing
+  against it caught the error.
+
+Both would have shipped a confident wrong conclusion, and the same one-line move — get a
+control that emits it, diff — kills both.
+
+**The two directions are asymmetric and need different vigilance, which is why the pair is
+worth more than either instance.** The second is a false RED that would have been a
+spectacular finding — `DeviceIoControl` succeeding without dispatching is the kind of result
+that gets written up, and *a silence that contradicts you gets investigated; a silence that
+confirms you gets published*. The first is a false GREEN, which nobody looks at by definition:
+the run said 9/9 and there was no reason to open it. Reading this entry as "you nearly
+published something wrong" gets you half of it, and misses the half where you publish nothing
+because everything appeared fine. *(First case found in the wow64 lane, second by
+conformance-ratchet; the published/investigated line is the control-plane lane's.)*
 
 ### A TEXT-SHAPED match is not a PROOF `[§9.119]`
 The same regex measured **146** lowerable CRT forwarders; the sound implementation lowered
@@ -7390,6 +7523,14 @@ language rules) over loosening what it reports.
   68/68, arm64 alone unstable — and it was filed as an arm64 kernel lead the whole time. When
   a row says a test is deterministic everywhere except one arch, diff the ARCH GATES in every
   header both sides compile before theorising about that arch's kernel.
+  **The same discriminator splits a bucket that looks like one task.** `ExPools` and `Example`
+  both arrived as "the arm64 conformance flake" and are not the same kind of thing at all:
+  ExPools fails STABLY on one arch with a harness-side struct mismatch, while `Example` is
+  genuinely intermittent with the driver's own diagnostics clean, which is a real kernel
+  data-path defect (see the roadmap's `Example` entry). Anyone taking "fix the arm64
+  conformance flakes" as a single task would have gotten one of the two wrong — so sort a
+  flake bucket by determinism and by whether the failing side's OWN assertions are quiet,
+  before deciding what kind of bug any of them are.
 - **Half-disabling a debug facility leaves its two halves disagreeing — and the disagreement
   outlives the reason.** A checked build does two separable things to a spinlock: it STAMPS
   `KeGetCurrentThread() | 1` into the lock while held (observable behaviour — `KeTestSpinLock`

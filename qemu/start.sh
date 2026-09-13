@@ -231,7 +231,14 @@ case "$ARCH" in
         ;;
     arm64)
         UEFI_FW="$QEMU_DIR/QEMU_EFI.fd"
-        EFIVARS="$QEMU_DIR/efivars.fd"
+        # Per-run writable copy, exactly like the x86 branches do with OVMF_VARS.
+        # Pointing pflash at $QEMU_DIR/efivars.fd directly made every arm64 debug
+        # boot WRITE to a tracked file: `git status` came back dirty after a
+        # debugging session, and `vibeos-cli land` then refused ("the gate stamp
+        # must hash the exact content being pushed"). tests/qemu/vm.py already
+        # copies it per run; start.sh was the odd one out.
+        EFIVARS="$RUN_DIR/efivars.fd"
+        cp "$QEMU_DIR/efivars.fd" "$EFIVARS"
         BOOT_IMG="$QEMU_DIR/boot.img"
         [ -f "$BOOT_IMG" ] || die "missing $BOOT_IMG — run: bash $QEMU_DIR/mkramdisk.sh"
         [ -f "$UEFI_FW" ] || die "missing $UEFI_FW (UEFI firmware)"
