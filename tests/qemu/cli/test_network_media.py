@@ -6,6 +6,7 @@ from typing import cast
 
 import pytest
 
+from .. import backend
 from ..vm import QemuVM, get_arch_config
 from . import smoke
 from .artifacts import Run
@@ -65,3 +66,38 @@ def test_dead_qemu_does_not_drain_serial_for_another_hour():
     )
     with pytest.raises(ConnectionError, match="QEMU exited with code 1"):
         QemuVM.serial_output(vm)
+
+
+def test_staging_avoids_sendfile_and_publishes_complete_media(tmp_path, monkeypatch):
+    monkeypatch.setattr(backend, "win_path", str)
+    monkeypatch.setattr(backend.os, "sendfile", lambda *a: pytest.fail("bulk sendfile used"))
+    source = tmp_path / "boot.img"
+    source.write_bytes(bytes(range(256)) * 1024)
+    staging = tmp_path / "staging"
+    destination = backend.stage_file(source, staging)
+    assert (staging / "boot.img").read_bytes() == source.read_bytes()
+    assert destination == str(staging / "boot.img")
+    assert list(staging.iterdir()) == [staging / "boot.img"]
+
+
+@pytest.mark.parametrize("failure", ["write", "changed-source"])
+def test_staging_never_publishes_partial_or_mutating_media(tmp_path, monkeypatch, failure):
+    monkeypatch.setattr(backend, "win_path", str)
+    source = tmp_path / "boot.img"
+    source.write_bytes(b"new complete media")
+    staging = tmp_path / "staging"
+    staging.mkdir()
+    destination = staging / "boot.img"
+    destination.write_bytes(b"previous complete media")
+
+    def broken_copy(reader, writer, **kwargs):
+        writer.write(reader.read(3))
+        if failure == "write":
+            raise OSError("injected write failure")
+        source.write_bytes(b"changed during copy")
+
+    monkeypatch.setattr(backend.shutil, "copyfileobj", broken_copy)
+    with pytest.raises((OSError, RuntimeError)):
+        backend.stage_file(source, staging)
+    assert destination.read_bytes() == b"previous complete media"
+    assert list(staging.iterdir()) == [destination]

@@ -24,6 +24,11 @@ Pytest boots write serial into their own work or artifact directory. Conformance
 and networking pass a durable run directory before launching pytest; they never
 parse the legacy per-architecture log. Serial draining fails immediately when
 QEMU has exited instead of spending the remaining conformance timeout on a dead VM.
+Windows staging uses 16 KiB buffered writes to a private temporary file, checks
+the source identity and copied size, then atomically publishes it. The previous
+`shutil.copy2`/`sendfile` path failed with ENOMEM in the 9p client under gate load;
+the kernel reported order-4 allocation failures despite abundant reclaimable
+memory. Failed or changing copies leave the previous destination intact.
 
 The UD2 and self-recursion scanners cache per-binary analysis facts under this
 checkout's `.cache/binary-facts`. Keys include binary contents and pathname,
