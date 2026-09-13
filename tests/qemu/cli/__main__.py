@@ -592,6 +592,14 @@ def build_parser() -> argparse.ArgumentParser:
         "be reached. See docs/engineering/qemu-record-replay.md",
     )
     rrep.add_argument("--root", help=f"trace root (default {rr_mod.DEFAULT_ROOT})")
+    rrep.add_argument(
+        "--break-at",
+        type=int,
+        metavar="ICOUNT",
+        help="stop the replay at this icount via QMP replay-break, snapped forward "
+        "to a legal instruction-chunk boundary (see `rr breaks`); pair with --gdb "
+        "to inspect the paused guest",
+    )
     rrep.set_defaults(fn=rr_mod.rr_cmd, rr_verb="replay")
 
     rvf = rrsub.add_parser(

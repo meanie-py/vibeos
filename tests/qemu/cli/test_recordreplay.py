@@ -1258,3 +1258,21 @@ def test_boundaries_refuse_a_trace_with_no_recording(tmp_path):
     trace.mkdir()
     with pytest.raises(rr.RecordReplayError, match="nothing was recorded"):
         rr.instruction_boundaries(trace)
+
+
+def test_env_break_reads_the_requested_icount(monkeypatch):
+    monkeypatch.delenv(rr.BREAK_ENV_VAR, raising=False)
+    assert rr.env_break() is None
+    monkeypatch.setenv(rr.BREAK_ENV_VAR, "12345")
+    assert rr.env_break() == 12345
+
+
+def test_env_break_refuses_junk_rather_than_silently_not_breaking(monkeypatch):
+    """A replay that quietly failed to arm its break looks exactly like a break
+    that fired and was missed."""
+    monkeypatch.setenv(rr.BREAK_ENV_VAR, "not-a-number")
+    with pytest.raises(rr.RecordReplayError, match="must be an integer"):
+        rr.env_break()
+    monkeypatch.setenv(rr.BREAK_ENV_VAR, "-1")
+    with pytest.raises(rr.RecordReplayError, match="must not be negative"):
+        rr.env_break()
