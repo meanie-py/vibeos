@@ -333,9 +333,17 @@ class ReceiptSession:
     def finish(self) -> None:
         try:
             if self._identity() != self.before:
+                # Name the usual cause, because the message alone reads as a
+                # mysterious infrastructure failure and is not one. It fires
+                # ~always for the same reason: the checks were started in the
+                # BACKGROUND and their caller kept editing (or committing) while
+                # they ran. Three aborted land submissions in one session, same
+                # cause each time, before anyone wrote this sentence down.
                 raise RuntimeError(
                     "Tooling inputs changed during checks; no receipts published. "
-                    "Rerun check-tooling."
+                    "Rerun check-tooling. Usual cause: files were edited or "
+                    "committed WHILE these checks ran — run `land`/`check-tooling` "
+                    "in the foreground and make no edits until it returns."
                 )
             generated_changed = generated_identity(self.repo) != self.generated_before
             if generated_changed and "pytest:tools/rustconv/tests" in self.hits:

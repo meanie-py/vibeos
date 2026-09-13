@@ -5305,8 +5305,10 @@ so it waits forever for a marker that has gone by. Measured: `smoke --ladder` re
 drain. The grading function saw both halves of the serial and was right; the waiter saw only
 its own half and was stuck.
 
-**Fix:** pass what the caller has already seen (`watch(vm, seen=text)`) and wait only on the
-markers still outstanding — including the case where NOTHING is outstanding, which must read
+**Fix, and it is worth the measurement:** pass what the caller has already seen
+(`watch(vm, seen=text)`) and wait only on the markers still outstanding. Same boot, same 9/9
+verdict, **420.2s -> 94.3s** — total smoke 554s -> 154s. The drain is now bounded by the last
+guest to report rather than by the clock; wait only on the markers still outstanding — including the case where NOTHING is outstanding, which must read
 zero bytes rather than block. Keep the ceiling a real ceiling: a guest that never reports still
 has to spend the budget, or the fix trades a slow pass for a fast false failure.
 
@@ -5335,6 +5337,42 @@ which is exactly what the probe existed to avoid.
 is useless for anything staged from a sibling tree (`build-fex-hello`, `build-i386` — outside
 the build dir every other entry points into), and matching a bare basename re-admits the same
 error, so match the directory too (`*/syswow64/<guest>.exe`).
+
+**When the probe feeds a GATE, a false positive is not a false green — it is a false RED for
+everyone else.** This one shipped into the merge queue before it was fixed, and the damage was
+not the bug it failed to catch. `gate` demanded a ladder from boots that had none, so
+`smoke:amd64` and `smoke:arm64` failed and the whole batch went red: **two batches, four
+innocent lanes, ~45 minutes.** i386 passing throughout is the tell — it has no SysWOW64 to
+stage into, so its probe correctly declined. A false green costs its author the bug they
+missed; a false red costs every lane in the batch, and it does so *silently from their side*,
+because a bounced lane cannot see what blamed it. Only the queue's recursive split made it
+recoverable: it isolated the culprit tip (`REJECTED ... LADDER_NOT_STAGED`) and let the
+innocents through. **So weight an admission check by what consumes it. A probe that only
+decides whether YOU look harder can be sloppy in the optimistic direction; one that decides
+whether OTHER PEOPLE'S work is allowed to land cannot.**
+
+**What that rule does NOT license, because I got this wrong within the hour:** it is not
+"a verdict named FLAKE must never reject a lane". Weighing the consumer means weighing a false
+PASS against a false REJECT *per classification*, and that arithmetic legitimately lands on
+either side — `gate.py` runs it in both directions and is right twice, retrying
+`CONFORMANCE_FLAKE`/`NET_FLAKE` while refusing to make `HANG_TIMEOUT` a blanket member ("a ~50%
+wedge passed a 3-attempt gate ~87% of the time"). Retries ARE the discriminator: a classification
+that survives them is meant to count as evidence, and widening `INCONCLUSIVE` to spare the
+accused would mean a genuine regression in that suite could never reject anyone. It is also
+the opposite of harmless — `INCONCLUSIVE` does not excuse one lane, it raises `Inconclusive`
+at `queue.py:901` and leaves **every** queued submission queued, stalling the whole train
+(the DISK_ADMISSION_FAIL tarpit, fixed in `4a19a7f7ad4`). Trading "1 lane in 8 wrongly
+rejected" for "the drain stalls every time it fires" is a worse deal, not a safer one.
+And the set is not merely the wrong lever, it is an inoperable one: `gate.py:319` assigns
+`"classification": "" if ok else "CONFORMANCE_FLAKE"` — a **constant**, with
+`"retryable": not ok` beside it. A regression that reproduces identically 3/3 carries the same
+string as a coin flip, so the queue cannot distinguish them by classification at all and no
+membership change can recover a signal that was never in the field. The discriminator that
+does exist is thrown away: the retry loop stops at the first GREEN (`gate.py:1146-1148`), so
+it only ever asks "was this attempt red", never "red the same way" — which is why independent
+intermittents COMPOSE (one real gate burned its budget on ExPools, then NpfsConnect, then
+ExPools, and the final verdict shows none of that disagreement). Per-attempt `salient` is
+already captured at `gate.py:314`.
 
 **The generalisation, and it is not "be careful with greps":** `probes_missing_from_media` was
 the RIGHT tool for its own question — *is this string compiled in* (`--require-probe`), where a
