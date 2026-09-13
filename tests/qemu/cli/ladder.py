@@ -140,6 +140,46 @@ def media_has_guests(repo: Path, arch: str) -> bool:
     return False
 
 
+def media_optional_staged(repo: Path, arch: str) -> list[str]:
+    """Which OPTIONAL guests this arch's media actually carries.
+
+    Same manifest read as media_has_guests, for the same reason: the serial is
+    not a reliable source for this. An optional guest runs AFTER the parity set,
+    so the drain can finish before its launch line is even emitted -- the text
+    check() sees then has no trace of it and a hung guest reads as absent. That
+    is not hypothetical: it silently passed a run as "9/9 guests PASS" while
+    sqlite32 was wedged. The manifest knows before the boot starts.
+
+    LIMITATION, arm64: it does not answer there and cannot. arm64 boots
+    `qemu/boot.img`, a ramdisk mkramdisk.sh fills with `mcopy`, so no
+    `boot.cmake.lst` is ever written and this returns [] even though the guests
+    ARE staged. The serial in-flight check in check() is the only cover on that
+    arch and it still races a guest launching after the drain ends. The same
+    blind spot applies to media_has_guests -- so the gate's ladder opt-in does
+    not fire on arm64 either, which is worth fixing at the source by having
+    mkramdisk.sh emit a manifest, not by widening this read.
+    """
+    from . import archcfg
+
+    try:
+        base = archcfg.base_arch(arch)
+        stem = Path(archcfg.arch_build(arch).boot_media_rel).stem
+        text = (repo / f"build-{base}" / "boot" / f"{stem}.cmake.lst").read_text(errors="ignore")
+    except (OSError, KeyError, AttributeError):
+        return []
+
+    want = {f"{g}.exe": g for g in OPTIONAL}
+    found: list[str] = []
+    for line in text.splitlines():
+        cd_path = line.split("=", 1)[0].strip().replace("\\", "/").lower()
+        parts = cd_path.split("/")
+        if len(parts) >= 2 and parts[-2] == STAGED_DIR and parts[-1] in want:
+            g = want[parts[-1]]
+            if g not in found:
+                found.append(g)
+    return found
+
+
 def gate_decision(repo: Path, arch: str) -> tuple[list[str], bool, str]:
     """What a gate should do about the ladder for one arch.
 
@@ -223,9 +263,14 @@ def verdicts(text: str) -> dict[str, int]:
     return out
 
 
-def check(text: str) -> dict | None:
+def check(text: str, optional_staged: list[str] | None = None) -> dict | None:
     """None if every ladder guest reported PASS; else a failure dict with the
-    same {classification, salient} shape the smoke triage stages use."""
+    same {classification, salient} shape the smoke triage stages use.
+
+    `optional_staged` names OPTIONAL guests the MEDIA carries (see
+    media_optional_staged). Those are then required to report, because a staged
+    guest that never reports has hung -- which is exactly what a stress guest is
+    for and must not read as absent."""
     seen = verdicts(text)
     missing = [g for g in LADDER if g not in seen]
     wrong = [(g, seen[g], want) for g, want in LADDER.items() if g in seen and seen[g] != want]
@@ -233,10 +278,14 @@ def check(text: str) -> dict | None:
     # reason to build one is to find out whether it passes, so a red one that
     # got staged must not be silently tolerated.
     wrong += [(g, seen[g], want) for g, want in OPTIONAL.items() if g in seen and seen[g] != want]
-    # LAUNCHED but never reported is NOT the same as absent. Treating it as
-    # absent renders a hung guest as a green ladder -- observed: sqlite32 wedged
-    # at guest thread startup and the run still printed "9/9 guests PASS".
-    missing += _optional_in_flight(text)
+    # Staged but never reported is NOT the same as absent, and the serial cannot
+    # settle it: an optional guest runs after the parity set, so the drain can
+    # end before its launch line appears. Ask the media instead. (The in-flight
+    # check still catches one that launched inside the drained window.)
+    for g in optional_staged or []:
+        if g not in seen and g not in missing:
+            missing.append(g)
+    missing += [g for g in _optional_in_flight(text) if g not in missing]
 
     if not missing and not wrong:
         return None

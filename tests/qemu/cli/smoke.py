@@ -400,7 +400,14 @@ def _boot_vm(
             # whole point of --ladder: fail the boot on a red rung instead of
             # letting it pass because explorer came up.
             if want_ladder:
-                lad = ladder_mod.check(text)
+                # Ask the MEDIA which optional guests are aboard, not the
+                # serial: an optional guest runs after the parity set, so the
+                # drain can end before its launch line is even emitted, and a
+                # hung one then reads as absent (observed: a wedged sqlite32
+                # passed as "9/9 guests PASS").
+                lad = ladder_mod.check(
+                    text, optional_staged=ladder_mod.media_optional_staged(repo, arch)
+                )
                 if lad is not None:
                     if shot:
                         lad["screenshot"] = shot
