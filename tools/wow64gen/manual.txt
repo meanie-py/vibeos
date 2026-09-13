@@ -58,6 +58,11 @@ NtCreateKeyedEvent
 NtOpenKeyedEvent
 NtConnectPort
 NtSecureConnectPort
+# M19: PORT_MESSAGE is 24 bytes to a 32-bit guest and 40 to the host, so the
+# flat thunk handed the kernel a header whose TotalLength was 16 short of what
+# `DataLength + sizeof(PORT_MESSAGE) > TotalLength` demands -- every call
+# returned c000000d before it reached a port.
+NtRequestWaitReplyPort
 NtContinue
 # E5: EXCEPTION_RECORD32 + CONTEXT32 — the flat thunk fed both to the 64-bit
 # kernel at 64-bit layout. Dispatched directly into the guest's own SEH.
