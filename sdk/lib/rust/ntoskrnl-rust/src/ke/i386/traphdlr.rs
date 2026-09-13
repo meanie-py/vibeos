@@ -143,7 +143,11 @@ const KGDT_NMI_TSS: USHORT = 0x58;
 const KGDT_DF_TSS: USHORT = 0x50;
 const KGDT_LDT: USHORT = 0x48;
 const KGDT_R0_CODE: USHORT = 0x8;
-const KGDT_R3_DATA: USHORT = 0x23;
+// 0x20 (ndk/i386/ketypes.h:126). Was 0x23, i.e. KGDT_R3_DATA|RPL_MASK folded into the
+// constant. Every use site here spells `KGDT_R3_DATA | RPL_MASK` anyway, so OR-ing 3
+// onto 0x23 was idempotent and the value landed right BY LUCK -- latent, not live.
+// Any site that did not OR, or that compared against the bare selector, would differ.
+const KGDT_R3_DATA: USHORT = 0x20;
 const I386_TSS: UCHAR = 0x9;
 const I386_ACTIVE_TSS: UCHAR = 0xB;
 const EXCEPTION_CHAIN_END: PVOID = core::ptr::null_mut::<core::ffi::c_void>().wrapping_sub(1);

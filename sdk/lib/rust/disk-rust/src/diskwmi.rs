@@ -1770,7 +1770,11 @@ pub unsafe extern "system" fn DiskInfoExceptionComplete(
     // Constants not provided
     const SRB_STATUS_AUTOSENSE_VALID: i32 = 0x80;
     const SRB_STATUS_QUEUE_FROZEN: i32 = 0x40;
-    const SRB_STATUS_SUCCESS: u32 = 0x00;
+    // 0x01, ddk/srb.h:115 -- NOT 0. This was fabricated as 0 under the "Constants not
+    // provided" comment above, and it is used as `if srbStatus != SRB_STATUS_SUCCESS`,
+    // so the error path ran on every SUCCESSFUL request and SRB_STATUS_PENDING (0) was
+    // read as success. The eleven other files that define this name all say 0x1.
+    const SRB_STATUS_SUCCESS: u32 = 0x01;
     const SRB_STATUS_DATA_OVERRUN: u32 = 0x12;
     // ddk/srb.h:108 == 0x28 (see the write site above).
     const SRB_FUNCTION_STORAGE_REQUEST_BLOCK: i32 = 0x28;
