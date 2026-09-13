@@ -3136,6 +3136,17 @@ thing that decides, and the tool answered its own question honestly while we ask
 one.** When a count keeps coming out differently, stop recounting and construct the exact thing
 the code looks up.
 
+**The nastiest variant of it is a CITATION.** Same night, a different lane argued that a
+"flake" classification could not also reject a lane, and cited `queue.py:901` as its support.
+The words it pasted were *"N submission(s) stay QUEUED; nothing was rejected"* — which says
+the drain HALTS FOR EVERYONE, not that the accused lane is spared. It had even written the
+same mechanism into this file hours earlier ("halts the drain for every queued lane, not just
+the one that tripped it"). The disconfirming evidence was inside its own quotation, correct
+and in hand, and was read in the direction of the hypothesis. A count you can re-run; a
+citation feels already-verified, which is exactly what makes it worse. **Quoting evidence is
+not reading it** — when a quote is doing load-bearing work in an argument, re-read what it
+says as if it argued the other way.
+
 **c2rust refuses EVERY file in a module, all at one panic site — suspect the include
 closure, and prove it with a headers-only TU.** Symptom: with `--c2rust` default-on, every
 `.c` in a module dies before payment with
