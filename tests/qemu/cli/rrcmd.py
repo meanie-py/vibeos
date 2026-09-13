@@ -143,8 +143,10 @@ def cmd_record(args, repo: Path) -> int:
         # would not have it. See recordreplay.snapshot_pristine.
         rr.snapshot_pristine(trace)
         _keep_serial(trace, "record-serial.log", expect_mode="record")
+        finalised = True
     meta = {}
     mpath = trace / "manifest.json"
+    finalised = locals().get("finalised", False)
     if mpath.is_file():
         meta = json.loads(mpath.read_text())
     meta.update(
@@ -154,6 +156,12 @@ def cmd_record(args, repo: Path) -> int:
             "record_seconds": round(elapsed, 1),
             "payload": args.payload,
             "commit": _head_sha(repo),
+            # Set only after await_trace_quiescence() confirmed the recording had
+            # stopped growing. Traces made before that existed are truncated and
+            # look identical from the outside — their replays abort with
+            # "Missing character write event in the replay log". The absence of
+            # this flag is the only way to recognise that generation.
+            "finalised": finalised,
             "env": {k: os.environ.get(k, "") for k in _PINNED_ENV if os.environ.get(k)},
         }
     )
