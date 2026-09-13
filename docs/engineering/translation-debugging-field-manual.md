@@ -6794,7 +6794,7 @@ From the inside, "I verified the two `#ifdef`s" is indistinguishable from "I tes
 feel like checking, both cite a real artifact, and only one of them consulted the authority.
 That is also why it survives review — a reader asking "did you check?" gets a true yes.
 
-**Six instances, five unrelated tools, one night (2026-09-13):**
+**Eight instances, seven unrelated tools, one night (2026-09-13):**
 - an sccache stats query that answered for a *different server* than the build used;
 - an ISO byte-scan whose hit was **winlogon's own diagnostic string**, not the data sought;
 - `ls | wc -l` answering "how many directories" when the question was "how many replay
@@ -6804,7 +6804,21 @@ That is also why it survives review — a reader asking "did you check?" gets a 
   that three failed attempts had failed for two DIFFERENT reasons, the fact that mattered;
 - two `#ifdef`s read correctly, in the right headers, instead of asking the compiler — which
   is how an `_M_AMD64`/`_WIN64` arch-gate mismatch stood as "conclusive" until someone ran
-  `clang -dM -E` (see "When the bug is in the TEST, not the kernel").
+  `clang -dM -E` (see "When the bug is in the TEST, not the kernel");
+- the **serial log** consulted for "did this guest launch". It answers "did the DRAINED
+  WINDOW contain a launch line", which is a different question: the WoW64 ladder stops
+  draining when the required guests report, and an optional guest runs after them, so a guest
+  that launched and HUNG left its line in the serial file and not in the text the check read.
+  It passed as `ladder: 9/9 guests PASS`. The first fix — scan the serial for the launch line
+  — was the same mistake one layer down, because it still assumed the launch fell inside the
+  drained window;
+- the **`add_cd_file` staging manifest** consulted for "is this guest on the media". Correct
+  on x86, where `boot/livecd.cmake.lst` is exactly what was staged — and answering for a
+  premise that does not exist on arm64, which fills a ramdisk with `mcopy` from
+  `mkramdisk.sh` and writes no manifest at all. The read returns "not staged" for media whose
+  guests demonstrably run. Note this one REPLACED the ISO byte-scan above: a false positive
+  was swapped for a false negative, both from consulting an artifact one step off the
+  authority.
 
 **The corollary, from the same incident:** when you have strengthened a claim — "the chain I
 read says no" becoming "this can never happen structurally" — go looking for the thing that
