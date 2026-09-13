@@ -553,14 +553,25 @@ pub struct IStreamVtbl {
     pub Release: unsafe extern "system" fn(*mut IStream) -> ULONG,
     pub Read: unsafe extern "system" fn(*mut IStream, *mut c_void, ULONG, *mut ULONG) -> HRESULT,
     pub Write: unsafe extern "system" fn(*mut IStream, *const c_void, ULONG, *mut ULONG) -> HRESULT,
-    pub Seek: usize,
+    pub Seek: unsafe extern "system" fn(
+        *mut IStream,
+        LARGE_INTEGER,
+        DWORD,
+        *mut ULARGE_INTEGER,
+    ) -> HRESULT,
     pub SetSize: usize,
-    pub CopyTo: usize,
+    pub CopyTo: unsafe extern "system" fn(
+        *mut IStream,
+        *mut IStream,
+        ULARGE_INTEGER,
+        *mut ULARGE_INTEGER,
+        *mut ULARGE_INTEGER,
+    ) -> HRESULT,
     pub Commit: usize,
     pub Revert: usize,
     pub LockRegion: usize,
     pub UnlockRegion: usize,
-    pub Stat: usize,
+    pub Stat: unsafe extern "system" fn(*mut IStream, *mut STATSTG, DWORD) -> HRESULT,
     pub Clone: usize,
 }
 
@@ -797,9 +808,30 @@ pub struct IBindCtx {
 }
 #[repr(C)]
 pub struct IBindCtxVtbl {
+    // THIRTEEN slots, in objidl.idl order. This struct previously stopped after Release, so a
+    // caller needing GetObjectParam got "no field" -- which looks nothing like a vtable
+    // problem and is why it hid.
+    //
+    // objidl.idl also declares RemoteSetBindOptions and RemoteGetBindOptions, each marked
+    // `[call_as(...)]`. Those are RPC proxy SUBSTITUTES for the local methods, NOT additional
+    // slots. Counting them gives 15 and shifts everything after SetBindOptions by two, which
+    // compiles perfectly and calls the wrong method forever.
     pub QueryInterface: usize,
-    pub AddRef: usize,
+    pub AddRef: unsafe extern "system" fn(*mut IBindCtx) -> ULONG,
     pub Release: unsafe extern "system" fn(*mut IBindCtx) -> ULONG,
+    pub RegisterObjectBound: usize,
+    pub RevokeObjectBound: usize,
+    pub ReleaseBoundObjects: usize,
+    pub SetBindOptions: usize,
+    pub GetBindOptions:
+        unsafe extern "system" fn(*mut IBindCtx, *mut BIND_OPTS) -> HRESULT,
+    pub GetRunningObjectTable: usize,
+    pub RegisterObjectParam:
+        unsafe extern "system" fn(*mut IBindCtx, LPOLESTR, *mut IUnknown) -> HRESULT,
+    pub GetObjectParam:
+        unsafe extern "system" fn(*mut IBindCtx, LPOLESTR, *mut *mut IUnknown) -> HRESULT,
+    pub EnumObjectParam: usize,
+    pub RevokeObjectParam: usize,
 }
 pub type LPBC = *mut IBindCtx;
 
@@ -816,7 +848,10 @@ pub type LPBC = *mut IBindCtx;
 // it must occupy its position, but giving it a signature no caller uses would be inventing an
 // ABI detail rather than recording one.
 
-use crate::recycle_bin::WIN32_FIND_DATAW;
+use crate::recycle_bin::{BIND_OPTS, WIN32_FIND_DATAW};
+use crate::open_with_menu::STATSTG;
+use crate::types::LARGE_INTEGER;
+use crate::new_menu::ULARGE_INTEGER;
 
 /// `interface IFileSystemBindData : IUnknown` — SetFindData, GetFindData (in that order).
 #[repr(C)]
