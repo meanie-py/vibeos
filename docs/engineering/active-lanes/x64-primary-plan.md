@@ -37,7 +37,26 @@ constraint (no SSE at kernel IRQL). User-mode i386 has no such problem and
 
 **Hypothesis worth one experiment, not yet tested:** split the i386 cargo cell by
 `KIND` — kernel cells keep the softfloat json and nightly, user-mode cells move
-to the builtin triple on pinned stable. If it holds, the nightly surface shrinks
+to the builtin triple on pinned stable.
+
+*Scoped 2026-09-13 by reading only, no experiment run, because "flip the branch"
+understates it.* `i686-kernel.json` carries ~10 non-default fields. Most are **link
+plumbing the amd64/arm64 migration already proved neutralisable** — their old jsons
+were "the builtin spec minus the user-mode CRT link plumbing", which moved to link
+time (`reactos-link` stub archives + `-C link-self-contained=no`), with
+`frame-pointer: always` restored as `-C force-frame-pointers=yes` and
+`panic-strategy: abort` living in the workspace `Cargo.toml` profile. So
+`dynamic-linking`, `allows-weak-linkage`, `eh-frame-header` and `requires-uwtable`
+are covered by precedent. **Two fields are not, and they are the whole task:**
+`rustc-abi: x86-softfloat`, the stated reason the cell exists and a kernel-IRQL
+constraint the split assumes user-mode does not share; and
+`abi-return-struct-as-int: true`, which gcc.cmake's own note calls "read solely by
+the 32-bit x86 callconv, so it is inert **here**" — *here* being the 64-bit
+targets. On i386 it is live, so **the amd64/arm64 ABI-identical proof does not
+transfer at all**: it held precisely because the only flipping field was inert
+there. Get that one wrong and the symptom is a silently wrong struct return, not a
+build error. `cpu: pentium` also needs carrying across as `-C target-cpu=pentium`.
+A scoped ABI task with one real unknown, then — still worth doing, still unowned. If it holds, the nightly surface shrinks
 to the i386 kernel today and reaches zero the day that kernel retires, *without*
 waiting for SysWOW64 to stop needing an i386 ntdll. If it does not hold, we learn
 why, and the "last nightly cell" item gets an honest blocker instead of an

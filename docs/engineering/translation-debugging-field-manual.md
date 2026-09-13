@@ -5308,6 +5308,19 @@ innocents through. **So weight an admission check by what consumes it. A probe t
 decides whether YOU look harder can be sloppy in the optimistic direction; one that decides
 whether OTHER PEOPLE'S work is allowed to land cannot.**
 
+**What that rule does NOT license, because I got this wrong within the hour:** it is not
+"a verdict named FLAKE must never reject a lane". Weighing the consumer means weighing a false
+PASS against a false REJECT *per classification*, and that arithmetic legitimately lands on
+either side — `gate.py` runs it in both directions and is right twice, retrying
+`CONFORMANCE_FLAKE`/`NET_FLAKE` while refusing to make `HANG_TIMEOUT` a blanket member ("a ~50%
+wedge passed a 3-attempt gate ~87% of the time"). Retries ARE the discriminator: a classification
+that survives them is meant to count as evidence, and widening `INCONCLUSIVE` to spare the
+accused would mean a genuine regression in that suite could never reject anyone. It is also
+the opposite of harmless — `INCONCLUSIVE` does not excuse one lane, it raises `Inconclusive`
+at `queue.py:901` and leaves **every** queued submission queued, stalling the whole train
+(the DISK_ADMISSION_FAIL tarpit, fixed in `4a19a7f7ad4`). Trading "1 lane in 8 wrongly
+rejected" for "the drain stalls every time it fires" is a worse deal, not a safer one.
+
 **The generalisation, and it is not "be careful with greps":** `probes_missing_from_media` was
 the RIGHT tool for its own question — *is this string compiled in* (`--require-probe`), where a
 substring hit is exactly the semantics wanted. *Is this file staged at this path* is a
