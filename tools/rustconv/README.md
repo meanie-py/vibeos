@@ -13,6 +13,19 @@ export PYTHONPATH="$PWD/tools/rustconv${PYTHONPATH:+:$PYTHONPATH}"
 python -c 'import rustconv.__main__ as m; print(m.__file__)'
 ```
 
+`translate` now enables fact, call and wide-string sealing by default. Paid C
+translation also requires c2rust anchors for every selected function and runs the
+source-owning CMake target's profile audit before payment. Missing planned/output
+functions fail before assembly. These are bounded checks, not semantic equivalence:
+constant/call argument checks currently cover direct sealed constant arguments.
+
+Use `--replay-only` to assemble existing responses with no API fallback. A changed
+body or seal namespace with purchased output refuses a cache-miss purchase; recover
+or repair the existing artifact. `--no-resume` is explicit regeneration and requires
+the owner's approval. Protection opt-outs are named `--no-c2rust`, `--no-seal-facts`,
+`--no-seal-calls` and `--no-seal-wide`. Legacy paid `submit`/`batch` paths require
+`--unsafe-unprotected`; use `translate` for the guarded pipeline.
+
 The production-shaped **plain-C module** loop (driver / Win32 DLL / service) is:
 
 ```bash
@@ -22,10 +35,10 @@ python -m rustconv.profile_derive drivers/network/dd/rtl8139 --emit report
 python -m rustconv.profile_derive drivers/network/dd/rtl8139 --emit profile   # paste into gen_driver_types.sh
 python -m rustconv.profile_derive drivers/network/dd/rtl8139 --scaffold-dir sdk/lib/rust/rtl8139-rust
 
-# 2. Translate with BOTH envelopes. Constants/calls never go through the model; trivial
+# 2. All three envelopes and C anchors are on by default; trivial
 #    bodies are lowered deterministically for $0 in the same run. Preview free first.
-python -m rustconv translate drivers/network/dd/rtl8139/ndis.c --seal-facts --seal-calls --dry-run --prompt
-python -m rustconv translate drivers/network/dd/rtl8139/ndis.c --seal-facts --seal-calls
+python -m rustconv translate drivers/network/dd/rtl8139/ndis.c --dry-run --prompt
+python -m rustconv translate drivers/network/dd/rtl8139/ndis.c
 
 # 3. Close the mechanical rustc roots for $0 BEFORE paying for any repair. All three arches:
 #    a numeric cast inferred from one bakes that arch's pointer width.
@@ -69,3 +82,12 @@ Assembly re-normalizes every cache hit and must be replay-idempotent: a second n
 cannot duplicate `CComPtr` guards or release-paired null assignments. The scanner recovers
 same-line return/calling-convention prefixes that tree-sitter leaves outside a qualified C++
 method node, so `HRESULT WINAPI CClass::FinalConstruct()` retains its HRESULT contract.
+
+The kernel `CUnknownImpl<Interface>` model has a separate `cpp-com --kernel-owned`
+mode. It derives private Rust storage, constructor initialization, the SDK-typed
+vtable, atomic reference counting and destructor frees, then dispatches through
+retained C-compatible method workers. Unsupported inheritance/lifetime shapes fail.
+The PortCls pilot's object is entirely Rust-owned; its C++ bridge remains an unlinked
+compiler oracle. QueryInterface, factories and platform hooks are explicit Rust
+implementations, not assumed complete by generation alone. Commands and measured
+coverage are in [the pilot report](../../docs/engineering/rustconv-overhaul-pilots.md).

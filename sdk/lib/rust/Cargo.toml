@@ -1,5 +1,9 @@
 [workspace]
 members = [
+    "portcls-rust",
+    "sysaudio-rust",
+    "sysaudio-difftest",
+    "portcls-difftest",
     "varargs-rust",
     "drvtrace-shim",
     "winetrace-shim",

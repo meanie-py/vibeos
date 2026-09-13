@@ -1,0 +1,34 @@
+{
+  "source": "drivers/wdm/audio/backpln/portcls/resource.cpp",
+  "class": "CResourceList",
+  "workers": [
+    "RustBridge_CResourceList_NumberOfEntries",
+    "RustBridge_CResourceList_NumberOfEntriesOfType",
+    "RustBridge_CResourceList_FindTranslatedEntry",
+    "RustBridge_CResourceList_FindUntranslatedEntry",
+    "RustBridge_CResourceList_AddEntry",
+    "RustBridge_CResourceList_AddEntryFromParent",
+    "RustBridge_CResourceList_TranslatedList",
+    "RustBridge_CResourceList_UntranslatedList"
+  ],
+  "retained_cpp": [
+    "CResourceList",
+    "CResourceList",
+    "QueryInterface"
+  ],
+  "retained_free_functions": [
+    "PcNewResourceList",
+    "PcNewResourceSublist"
+  ],
+  "header": "drivers/wdm/audio/backpln/portcls/resource_rust_bridge.h",
+  "reference": "drivers/wdm/audio/backpln/portcls/resource_rust_reference.c",
+  "bridge": "drivers/wdm/audio/backpln/portcls/resource_rust_bridge.cpp",
+  "sha256": {
+    "drivers/wdm/audio/backpln/portcls/resource.cpp": "e9b12fdc6ae08cd17e6af88f85f7e2b9747eff6072c74623e3e2f8028cd3b574",
+    "drivers/wdm/audio/backpln/portcls/resource_rust_bridge.h": "7543a6afe49597a1a68e2a2e3b2507d0d421e840ae93e3ddc0ae4b59875c1101",
+    "drivers/wdm/audio/backpln/portcls/resource_rust_reference.c": "bff7cca1cb5efc23fee7a4bebeb3389cf3b94e774155ba001c2a337c9e92db29",
+    "drivers/wdm/audio/backpln/portcls/resource_rust_bridge.cpp": "b6a7d9e15aa297e0fdcc9f604a4865560d957caaa905cb60f3ee4c7882f257a2",
+    "drivers/wdm/audio/backpln/portcls/private.hpp": "637e4ae3034793b98592740779a50267e72fd48d99bc798dc8f819a6515f8c39"
+  },
+  "status": "generated; translate recompiles both C and C++ on all three arches before payment"
+}

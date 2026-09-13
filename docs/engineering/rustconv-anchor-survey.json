@@ -1,0 +1,359 @@
+{
+  "paid_calls": 0,
+  "results": [
+    {
+      "source": "drivers/wdm/audio/backpln/portcls/resource_rust_reference.c",
+      "arch": "i386",
+      "source_sha256": "bff7cca1cb5efc23fee7a4bebeb3389cf3b94e774155ba001c2a337c9e92db29",
+      "raw_source_functions": [
+        "RustBridge_CResourceList_AddEntry",
+        "RustBridge_CResourceList_AddEntryFromParent",
+        "RustBridge_CResourceList_FindTranslatedEntry",
+        "RustBridge_CResourceList_FindUntranslatedEntry",
+        "RustBridge_CResourceList_NumberOfEntries",
+        "RustBridge_CResourceList_NumberOfEntriesOfType",
+        "RustBridge_CResourceList_TranslatedList",
+        "RustBridge_CResourceList_UntranslatedList"
+      ],
+      "unextracted": [],
+      "status": "anchored",
+      "source_names_anchored": [
+        "RustBridge_CResourceList_AddEntry",
+        "RustBridge_CResourceList_AddEntryFromParent",
+        "RustBridge_CResourceList_FindTranslatedEntry",
+        "RustBridge_CResourceList_FindUntranslatedEntry",
+        "RustBridge_CResourceList_NumberOfEntries",
+        "RustBridge_CResourceList_NumberOfEntriesOfType",
+        "RustBridge_CResourceList_TranslatedList",
+        "RustBridge_CResourceList_UntranslatedList"
+      ],
+      "missing_raw_names": []
+    },
+    {
+      "source": "drivers/wdm/audio/backpln/portcls/resource_rust_reference.c",
+      "arch": "amd64",
+      "source_sha256": "bff7cca1cb5efc23fee7a4bebeb3389cf3b94e774155ba001c2a337c9e92db29",
+      "raw_source_functions": [
+        "RustBridge_CResourceList_AddEntry",
+        "RustBridge_CResourceList_AddEntryFromParent",
+        "RustBridge_CResourceList_FindTranslatedEntry",
+        "RustBridge_CResourceList_FindUntranslatedEntry",
+        "RustBridge_CResourceList_NumberOfEntries",
+        "RustBridge_CResourceList_NumberOfEntriesOfType",
+        "RustBridge_CResourceList_TranslatedList",
+        "RustBridge_CResourceList_UntranslatedList"
+      ],
+      "unextracted": [],
+      "status": "anchored",
+      "source_names_anchored": [
+        "RustBridge_CResourceList_AddEntry",
+        "RustBridge_CResourceList_AddEntryFromParent",
+        "RustBridge_CResourceList_FindTranslatedEntry",
+        "RustBridge_CResourceList_FindUntranslatedEntry",
+        "RustBridge_CResourceList_NumberOfEntries",
+        "RustBridge_CResourceList_NumberOfEntriesOfType",
+        "RustBridge_CResourceList_TranslatedList",
+        "RustBridge_CResourceList_UntranslatedList"
+      ],
+      "missing_raw_names": []
+    },
+    {
+      "source": "drivers/wdm/audio/backpln/portcls/resource_rust_reference.c",
+      "arch": "arm64",
+      "source_sha256": "bff7cca1cb5efc23fee7a4bebeb3389cf3b94e774155ba001c2a337c9e92db29",
+      "raw_source_functions": [
+        "RustBridge_CResourceList_AddEntry",
+        "RustBridge_CResourceList_AddEntryFromParent",
+        "RustBridge_CResourceList_FindTranslatedEntry",
+        "RustBridge_CResourceList_FindUntranslatedEntry",
+        "RustBridge_CResourceList_NumberOfEntries",
+        "RustBridge_CResourceList_NumberOfEntriesOfType",
+        "RustBridge_CResourceList_TranslatedList",
+        "RustBridge_CResourceList_UntranslatedList"
+      ],
+      "unextracted": [],
+      "status": "anchored",
+      "source_names_anchored": [
+        "RustBridge_CResourceList_AddEntry",
+        "RustBridge_CResourceList_AddEntryFromParent",
+        "RustBridge_CResourceList_FindTranslatedEntry",
+        "RustBridge_CResourceList_FindUntranslatedEntry",
+        "RustBridge_CResourceList_NumberOfEntries",
+        "RustBridge_CResourceList_NumberOfEntriesOfType",
+        "RustBridge_CResourceList_TranslatedList",
+        "RustBridge_CResourceList_UntranslatedList"
+      ],
+      "missing_raw_names": []
+    },
+    {
+      "source": "drivers/wdm/audio/sysaudio/main.c",
+      "arch": "i386",
+      "source_sha256": "11430def906b7cf2ca0500cdc7f930a69935152dc13e75ce9bec6218e8fe0982",
+      "raw_source_functions": [
+        "AllocateItem",
+        "DriverEntry",
+        "FreeItem",
+        "SysAudio_AddDevice",
+        "SysAudio_Pnp",
+        "SysAudio_Shutdown",
+        "SysAudio_Unload"
+      ],
+      "unextracted": [],
+      "status": "refused",
+      "reason": "c2rust failed for main.c (exit 101): thread 'main' (4123359) panicked at /home/curi/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/c2rust-transpile-0.22.1/src/convert_type.rs:518:25: ctype parameter must be a function instead of Attributed(CQualTypeId { qualifiers: Qualifiers { is_const: false, is_restrict: false, is_volatile: false }, ctype: CTypeId(30239) }, None)"
+    },
+    {
+      "source": "drivers/wdm/audio/sysaudio/main.c",
+      "arch": "amd64",
+      "source_sha256": "11430def906b7cf2ca0500cdc7f930a69935152dc13e75ce9bec6218e8fe0982",
+      "raw_source_functions": [
+        "AllocateItem",
+        "DriverEntry",
+        "FreeItem",
+        "SysAudio_AddDevice",
+        "SysAudio_Pnp",
+        "SysAudio_Shutdown",
+        "SysAudio_Unload"
+      ],
+      "unextracted": [],
+      "status": "anchored",
+      "source_names_anchored": [
+        "AllocateItem",
+        "DriverEntry",
+        "FreeItem",
+        "SysAudio_AddDevice",
+        "SysAudio_Pnp",
+        "SysAudio_Shutdown",
+        "SysAudio_Unload"
+      ],
+      "missing_raw_names": []
+    },
+    {
+      "source": "drivers/wdm/audio/sysaudio/main.c",
+      "arch": "arm64",
+      "source_sha256": "11430def906b7cf2ca0500cdc7f930a69935152dc13e75ce9bec6218e8fe0982",
+      "raw_source_functions": [
+        "AllocateItem",
+        "DriverEntry",
+        "FreeItem",
+        "SysAudio_AddDevice",
+        "SysAudio_Pnp",
+        "SysAudio_Shutdown",
+        "SysAudio_Unload"
+      ],
+      "unextracted": [],
+      "status": "anchored",
+      "source_names_anchored": [
+        "AllocateItem",
+        "DriverEntry",
+        "FreeItem",
+        "SysAudio_AddDevice",
+        "SysAudio_Pnp",
+        "SysAudio_Shutdown",
+        "SysAudio_Unload"
+      ],
+      "missing_raw_names": []
+    },
+    {
+      "source": "drivers/network/dd/e1000/send.c",
+      "arch": "i386",
+      "source_sha256": "9d95c2348198c00353f8b01261be05522bb58f8c4cec1258e3c5a21a3d3c9baf",
+      "raw_source_functions": [
+        "MiniportSend",
+        "NICTransmitPacket"
+      ],
+      "unextracted": [],
+      "status": "anchored",
+      "source_names_anchored": [
+        "MiniportSend",
+        "NICTransmitPacket"
+      ],
+      "missing_raw_names": []
+    },
+    {
+      "source": "drivers/network/dd/e1000/send.c",
+      "arch": "amd64",
+      "source_sha256": "9d95c2348198c00353f8b01261be05522bb58f8c4cec1258e3c5a21a3d3c9baf",
+      "raw_source_functions": [
+        "MiniportSend",
+        "NICTransmitPacket"
+      ],
+      "unextracted": [],
+      "status": "anchored",
+      "source_names_anchored": [
+        "MiniportSend",
+        "NICTransmitPacket"
+      ],
+      "missing_raw_names": []
+    },
+    {
+      "source": "drivers/network/dd/e1000/send.c",
+      "arch": "arm64",
+      "source_sha256": "9d95c2348198c00353f8b01261be05522bb58f8c4cec1258e3c5a21a3d3c9baf",
+      "raw_source_functions": [
+        "MiniportSend",
+        "NICTransmitPacket"
+      ],
+      "unextracted": [],
+      "status": "anchored",
+      "source_names_anchored": [
+        "MiniportSend",
+        "NICTransmitPacket"
+      ],
+      "missing_raw_names": []
+    },
+    {
+      "source": "drivers/filesystems/cdfs/filobsup.c",
+      "arch": "i386",
+      "source_sha256": "b3e6c3a72bf104f45fae8c33f5d82812cfe0d9460a8c0d1c7c799d26847bd062",
+      "raw_source_functions": [
+        "CdDecodeFileObject",
+        "CdFastDecodeFileObject",
+        "CdSetFileObject"
+      ],
+      "unextracted": [],
+      "status": "partial",
+      "source_names_anchored": [
+        "CdDecodeFileObject",
+        "CdFastDecodeFileObject"
+      ],
+      "missing_raw_names": [
+        "CdSetFileObject"
+      ]
+    },
+    {
+      "source": "drivers/filesystems/cdfs/filobsup.c",
+      "arch": "amd64",
+      "source_sha256": "b3e6c3a72bf104f45fae8c33f5d82812cfe0d9460a8c0d1c7c799d26847bd062",
+      "raw_source_functions": [
+        "CdDecodeFileObject",
+        "CdFastDecodeFileObject",
+        "CdSetFileObject"
+      ],
+      "unextracted": [],
+      "status": "partial",
+      "source_names_anchored": [
+        "CdDecodeFileObject",
+        "CdFastDecodeFileObject"
+      ],
+      "missing_raw_names": [
+        "CdSetFileObject"
+      ]
+    },
+    {
+      "source": "drivers/filesystems/cdfs/filobsup.c",
+      "arch": "arm64",
+      "source_sha256": "b3e6c3a72bf104f45fae8c33f5d82812cfe0d9460a8c0d1c7c799d26847bd062",
+      "raw_source_functions": [
+        "CdDecodeFileObject",
+        "CdFastDecodeFileObject",
+        "CdSetFileObject"
+      ],
+      "unextracted": [],
+      "status": "anchored",
+      "source_names_anchored": [
+        "CdDecodeFileObject",
+        "CdFastDecodeFileObject",
+        "CdSetFileObject"
+      ],
+      "missing_raw_names": []
+    },
+    {
+      "source": "base/services/audiosrv/main.c",
+      "arch": "i386",
+      "source_sha256": "b2b85d0cc002f8993e93bb16891067a25fcbe8435c25ee39f98d44e9bccfc372",
+      "raw_source_functions": [
+        "InitializeFakeDevice",
+        "ServiceControlHandler",
+        "ServiceMain",
+        "wmain"
+      ],
+      "unextracted": [],
+      "status": "refused",
+      "reason": "c2rust failed for main.c (exit 101): thread 'main' (4123503) panicked at /home/curi/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/c2rust-transpile-0.22.1/src/convert_type.rs:518:25: ctype parameter must be a function instead of Attributed(CQualTypeId { qualifiers: Qualifiers { is_const: false, is_restrict: false, is_volatile: false }, ctype: CTypeId(29007) }, None)"
+    },
+    {
+      "source": "base/services/audiosrv/main.c",
+      "arch": "amd64",
+      "source_sha256": "b2b85d0cc002f8993e93bb16891067a25fcbe8435c25ee39f98d44e9bccfc372",
+      "raw_source_functions": [
+        "InitializeFakeDevice",
+        "ServiceControlHandler",
+        "ServiceMain",
+        "wmain"
+      ],
+      "unextracted": [],
+      "status": "anchored",
+      "source_names_anchored": [
+        "InitializeFakeDevice",
+        "ServiceControlHandler",
+        "ServiceMain",
+        "wmain"
+      ],
+      "missing_raw_names": []
+    },
+    {
+      "source": "base/services/audiosrv/main.c",
+      "arch": "arm64",
+      "source_sha256": "b2b85d0cc002f8993e93bb16891067a25fcbe8435c25ee39f98d44e9bccfc372",
+      "raw_source_functions": [
+        "InitializeFakeDevice",
+        "ServiceControlHandler",
+        "ServiceMain",
+        "wmain"
+      ],
+      "unextracted": [],
+      "status": "anchored",
+      "source_names_anchored": [
+        "InitializeFakeDevice",
+        "ServiceControlHandler",
+        "ServiceMain",
+        "wmain"
+      ],
+      "missing_raw_names": []
+    },
+    {
+      "source": "dll/win32/acledit/acledit.c",
+      "arch": "i386",
+      "source_sha256": "aadf61c6f12315e6c4cec9458df880b2fb4fd7b322523da8c3a4d109575ae86a",
+      "raw_source_functions": [
+        "DllMain"
+      ],
+      "unextracted": [],
+      "status": "anchored",
+      "source_names_anchored": [
+        "DllMain"
+      ],
+      "missing_raw_names": []
+    },
+    {
+      "source": "dll/win32/acledit/acledit.c",
+      "arch": "amd64",
+      "source_sha256": "aadf61c6f12315e6c4cec9458df880b2fb4fd7b322523da8c3a4d109575ae86a",
+      "raw_source_functions": [
+        "DllMain"
+      ],
+      "unextracted": [],
+      "status": "anchored",
+      "source_names_anchored": [
+        "DllMain"
+      ],
+      "missing_raw_names": []
+    },
+    {
+      "source": "dll/win32/acledit/acledit.c",
+      "arch": "arm64",
+      "source_sha256": "aadf61c6f12315e6c4cec9458df880b2fb4fd7b322523da8c3a4d109575ae86a",
+      "raw_source_functions": [
+        "DllMain"
+      ],
+      "unextracted": [],
+      "status": "anchored",
+      "source_names_anchored": [
+        "DllMain"
+      ],
+      "missing_raw_names": []
+    }
+  ],
+  "scope": "Six explicit active C translation units; not a statistical corpus sample."
+}

@@ -14,3 +14,15 @@ depends on them; do not wire them back into `rustconv` without review.
 
 Retired in: `docs/engineering/archive/tooling-consolidation-plan.md` (T0). Restore any
 one with `git mv tools/rustconv/archive/<name>.py tools/rustconv/<name>.py`.
+
+The 2026-09-12 overhaul also retired `reinject_dropped`, `preseed_cache`,
+`reassemble_from_cache`, `restitch_decls`, and the paid `repair_pass`. Their only
+remaining references were self-documentation or historical plans. These scripts
+bypass current coverage, provenance, or payment guards. Use `translate --replay-only`
+for accepted banked workers and `crate-repair` for deterministic compile repairs.
+Keep rejected artifacts for inspection; replay does not certify a rejected body.
+
+The remaining top-level scripts were retained where they have tests, a live caller,
+or a documented specialized repair: ABI normalization, bindgen generation, constant
+harvesting, field/bitfield repairs and wide-literal recovery. In particular,
+`strip_cpp_mangled_externs` is invoked by `gen_driver_types.sh`; it is not an orphan.

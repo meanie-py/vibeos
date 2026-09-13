@@ -336,6 +336,8 @@ HAND_WRITTEN_MODULES = [
     # Scanning them here lets resolve() route those symbols to the right glob.
     "constants.rs",
     "driver_ddk.rs",
+    # Real inline bodies outrank bindgen's un-linkable FORCEINLINE declarations.
+    "inline/tier1.rs",
 ]
 
 # ntoskrnl.spec
