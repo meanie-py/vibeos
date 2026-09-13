@@ -873,6 +873,14 @@ Field-manual § pointers hold the full writeups. **Update on state change.**
   capture time. A per-thread flight-recorder dump (`flightrec_dump_thread`, wired into the
   bugcheck sidecar) is in the tree to answer whether the crashing thread took an EARLIER
   kernel fault it recovered from -- the last-32 tail window can neither show nor exclude that.
+  **Update 2026-09-13 — the hunt has a tool now.** `./vibeos-cli rr` records one boot under
+  QEMU's instruction-counted record mode and replays it instruction-for-instruction, with gdb
+  and reverse execution. That changes what "1 in 60" costs: a crash you have RECORDED
+  reproduces every time, at the same instruction, so `reverse-continue` from the zeroed frame
+  answers "who set PC to 0" directly instead of requiring another soak. Verified on arm64
+  `--smp 1` (the MP kernel on one CPU — precisely this bug's configuration): boot to desktop in
+  82s under record vs ~40s normally, 10MB trace. No soak required to use it; record until one
+  boot crashes and keep that trace. `docs/engineering/qemu-record-replay.md`.
 - **FIXED (2026-09-06): system cursors load, and the residual NULLs are correct behaviour
   wearing an alarming message.** `SYSTEMCUR(ARROW) == NULL, should not happen!!` was firing **78x** per boot (6 system  classes x 13 GUI processes) and kept firing to within 300 lines of `shell ready` —
   `gasyscur[ROCR_ARROW].handle` was NULL for the *entire* boot, so every server-side class
