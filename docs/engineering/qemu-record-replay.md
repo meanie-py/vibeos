@@ -188,6 +188,27 @@ gdb-multiarch -batch -ex 'set architecture aarch64' \
 Measured result: `pc=0x7fd1d04c`, registers read, gdb detached, **QEMU still
 alive with empty stderr**. No `Playback shouldn't have to iowait`.
 
+**But it is not reliable.** Three attempts, two clean stops and one abort — with
+the same error the gdbstub produces:
+
+```
+replay-break at cur + 5,000,000   -> paused cleanly, gdb read registers   (x2)
+replay-break at cur + 3,000,000   -> qemu-system-aarch64: Playback shouldn't
+                                     have to iowait (insn total 1024013292/750000
+                                     left, event 17661 is EVENT_INSTRUCTION)
+```
+
+So `replay-break` is a **better** mechanism than interrupting from the debugger,
+not a safe one: where the target icount lands appears to decide whether the stop
+survives, and a break that falls somewhere needing an I/O wait aborts exactly as
+gdb's does. Two samples of success is not a guarantee, and the failure costs the
+whole replay.
+
+Treat it as: the only mechanism known to stop a replay at all, worth using, and
+worth retrying at a different icount when it aborts. Whether some icounts are
+inherently safe — checkpoint boundaries, say, which the trace marks explicitly
+with `EVENT_CHECKPOINT` — is the obvious next question and is untested.
+
 `query-replay` is also the best available read of replay progress — a live
 icount, better than inferring position from the rrfile read offset.
 
