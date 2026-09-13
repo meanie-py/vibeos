@@ -482,9 +482,9 @@ reproduces every time.
 
 **`--gdb` does not currently get you to reverse execution.** On QEMU 9.0.2 you
 can connect, read registers and `continue`, but `stepi` aborts QEMU
-(`Playback shouldn't have to iowait`) and `interrupt` will not stop a running
-replay — so there is no way to reach a point of interest. Read the "Replaying
-with gdb" section of `docs/engineering/qemu-record-replay.md` before planning a
+(`Playback shouldn't have to iowait`), and nobody has yet stopped a replay at a
+point of interest to issue `reverse-continue` from. Read the "Replaying with
+gdb" section of `docs/engineering/qemu-record-replay.md` before planning a
 debugging session.
 
 `rr verify <trace>` is the tool's own oracle: it replays and diffs the replay's

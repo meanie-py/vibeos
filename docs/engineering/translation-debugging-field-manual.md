@@ -3173,11 +3173,21 @@ free_functions` (`__main__.py:2373-2381`) — its C++ literals are already lower
 `cpp_com.rewrite_wide_literals`, so its namespace structurally cannot grow the wideseal token.
 That is evidence about the COM path, not about the flip. Plain-C lanes get no such exemption.
 
-The generalisation, which recurred three times in one night across different tools (an sccache
-server query, an ISO-string probe, this): **a proxy that is easy to measure stood in for the
-thing that decides, and the tool answered its own question honestly while we asked a different
-one.** When a count keeps coming out differently, stop recounting and construct the exact thing
-the code looks up.
+The generalisation, which recurred SEVEN times in one night across unrelated tools (an sccache
+server query, an ISO-string probe, this, and four more below): **a proxy that is easy to
+measure stood in for the thing that decides, and the tool answered its own question honestly
+while we asked a different one.** When a count keeps coming out differently, stop recounting
+and construct the exact thing the code looks up.
+
+Three distinct shapes, so you can recognise the next one:
+* **A COUNT.** `ls | wc -l` vs `test -f manifest.json` vs "does the exact path exist" — above.
+* **A CITATION.** Below: the quote said the opposite of what it was cited for.
+* **A SAMPLING WINDOW.** "The last 9 arm64 sweeps" silently mixed runs from three different
+  shas and produced 22% where the real figure for *that* soak was 33% — near enough to look
+  like a measurement, and it was one keystroke from being relayed as "your number does not
+  reproduce". The thing that decides is "the 9 runs THIS soak produced, identified by sha";
+  "the last 9 by arch" merely correlates with it. A window is the easiest of the three to miss
+  because the arithmetic over it is impeccable.
 
 **The nastiest variant of it is a CITATION.** Same night, a different lane argued that a
 "flake" classification could not also reject a lane, and cited `queue.py:901` as its support.
@@ -6794,7 +6804,7 @@ From the inside, "I verified the two `#ifdef`s" is indistinguishable from "I tes
 feel like checking, both cite a real artifact, and only one of them consulted the authority.
 That is also why it survives review — a reader asking "did you check?" gets a true yes.
 
-**Eight instances, seven unrelated tools, one night (2026-09-13):**
+**Nine instances, eight unrelated tools, one night (2026-09-13):**
 - an sccache stats query that answered for a *different server* than the build used;
 - an ISO byte-scan whose hit was **winlogon's own diagnostic string**, not the data sought;
 - `ls | wc -l` answering "how many directories" when the question was "how many replay
@@ -6819,6 +6829,20 @@ That is also why it survives review — a reader asking "did you check?" gets a 
   guests demonstrably run. Note this one REPLACED the ISO byte-scan above: a false positive
   was swapped for a false negative, both from consulting an artifact one step off the
   authority.
+- banked soak records sorted by arch with the last nine taken, when the question was "the nine
+  sweeps THIS soak produced" — the window silently mixed in two other shas and dropped one of
+  the real rows, turning a reproduced 33% into a 22% that did not match.
+
+**It does not exempt the person who wrote it.** Within an hour of this entry being filed, both
+its authors nearly hit it again on the very measurement it was written about: one scraping a
+soak's stdout that had truncated its early rounds (2 of 3 regressions, wrong denominator), the
+other taking "the last nine by arch" instead of filtering on the soak's sha. The second would
+have surfaced as *telling the other lane its measurement was wrong* — a false contradiction of
+correct work, which is the expensive direction for this error to travel, because it spends
+someone else's credibility rather than your own time. **The failure is structural, not
+careless:** the proxy is always the more available artifact, and availability is what makes it
+the one you reach for. Knowing the rule changes nothing about which artifact is closer to hand,
+so the defence has to be the question, asked out loud, every time — not vigilance.
 
 **The corollary, from the same incident:** when you have strengthened a claim — "the chain I
 read says no" becoming "this can never happen structurally" — go looking for the thing that

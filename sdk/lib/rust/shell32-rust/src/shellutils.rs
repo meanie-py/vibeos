@@ -540,3 +540,16 @@ impl Drop for CScopedSetObjectWithSite {
         }
     }
 }
+
+use crate::shell_link::CMINVOKECOMMANDINFOEX;
+
+/// `shellutils.h:722` — `IsUnicode(const CMINVOKECOMMANDINFOEX &ici)`.
+///
+/// Both halves matter: the caller may hand us a plain CMINVOKECOMMANDINFO, so the flag alone
+/// is not enough — `cbSize` must also reach `ptInvoke`, the first field past the ANSI-only
+/// prefix, before `lpVerbW` is real storage rather than someone else's memory.
+#[inline]
+pub unsafe fn IsUnicode(ici: *const CMINVOKECOMMANDINFOEX) -> bool {
+    let minsize = core::mem::offset_of!(CMINVOKECOMMANDINFOEX, ptInvoke) as UINT;
+    ((*ici).fMask & crate::shell32::utils_support::CMIC_MASK_UNICODE) != 0 && (*ici).cbSize >= minsize
+}
