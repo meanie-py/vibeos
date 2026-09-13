@@ -6431,6 +6431,140 @@ def test_queue_submit_keeps_a_DIVERGENT_tip_from_the_same_lane(queue_repo):
     assert {s.seq for s in q_mod.pending(repo)} == {first.seq, second.seq}
 
 
+def test_land_status_tip_distinguishes_SUPERSEDED_from_lost(queue_repo, capsys):
+    """The question an agent actually has is "is my work lost", and `land` cannot answer it:
+    it is honest in all four failure shapes. Supersession and genuine loss both present as
+    "my tip is not in the queue", and they need opposite responses."""
+    from . import land as l_mod
+
+    repo, _ = queue_repo
+    old_tip = _commit(repo, "one.txt")
+    q_mod.submit(repo, lane="lane-s")
+    new_tip = _commit(repo, "two.txt")
+    q_mod.submit(repo, lane="lane-s")
+
+    assert l_mod._explain_tip(repo, old_tip) == 0
+    out = capsys.readouterr().out
+    assert "SUPERSEDED" in out and new_tip[:12] in out
+    assert "Nothing is wrong" in out
+
+    # The queued descendant itself is a different answer, not the same one.
+    assert l_mod._explain_tip(repo, new_tip) == 0
+    assert "QUEUED" in capsys.readouterr().out
+
+
+def test_land_status_tip_reports_a_genuinely_unsubmitted_commit_as_LOST(queue_repo, capsys):
+    """...and this is the case that must NOT be reported as fine. A commit that is not on
+    master, not queued, not contained in anything queued, and carries no record at all was
+    either never submitted or did not persist — the exit code is nonzero so a script can
+    branch on it."""
+    from . import land as l_mod
+
+    repo, _ = queue_repo
+    orphan = _commit(repo, "orphan.txt")
+    assert l_mod._explain_tip(repo, orphan) == 1
+    assert "LOST" in capsys.readouterr().out
+
+
+def test_land_status_tip_answers_about_THIS_commit_not_this_lane(queue_repo, capsys):
+    """`research`'s corollary: never "did this lane land anything recently" — that is the
+    question BOTH failure modes answer yes to. A lane with a landed tip and a separate lost
+    tip must get two different answers."""
+    from . import land as l_mod
+
+    repo, _ = queue_repo
+    _commit(repo, "shipped.txt")
+    subprocess.run(["git", "push", "-q", "origin", "HEAD:master"], cwd=repo, check=True)
+    shipped = subprocess.run(
+        ["git", "rev-parse", "HEAD"], cwd=repo, capture_output=True, text=True
+    ).stdout.strip()
+    lost = _commit(repo, "lost.txt")
+
+    assert l_mod._explain_tip(repo, shipped) == 0
+    assert "LANDED" in capsys.readouterr().out
+    assert l_mod._explain_tip(repo, lost) == 1
+    assert "LOST" in capsys.readouterr().out
+
+
+def test_a_SUPERSEDED_tip_is_not_reported_as_merely_TRAVELLING(queue_repo, capsys):
+    """Both statements are true of a superseded tip — it IS contained in the descendant that
+    superseded it — and only one of them explains why it is not listed on its own. The first
+    spelling of this answered TRAVELLING and buried the supersession, which is the reading
+    that sent a lane hunting for lost work that was never lost."""
+    from . import land as l_mod
+
+    repo, _ = queue_repo
+    old_tip = _commit(repo, "a.txt")
+    q_mod.submit(repo, lane="lane-u")
+    _commit(repo, "b.txt")
+    q_mod.submit(repo, lane="lane-u")
+    assert l_mod._explain_tip(repo, old_tip) == 0
+    out = capsys.readouterr().out
+    assert "SUPERSEDED" in out
+    assert "Carried by lane-u" in out, "the containment fact is still worth printing"
+
+
+def test_land_submit_verifies_the_queue_actually_holds_it(lane_repo, tmp_path, monkeypatch):
+    """Ask 1: `queue.submit` returning a Submission means its writes did not raise. That is
+    NOT the same claim as "a later reader will find this record", and the two diverge on a
+    full disk, a partial write, or a concurrent resolve — after which an agent reports a
+    landing on the strength of an OK line. So the stage re-reads the queue from disk.
+
+    Driven through `land()` rather than asserting on the fixture, because the thing under
+    test is the STAGE's behaviour: it must produce a FAIL verdict, not a position.
+    """
+    lane, _ = lane_repo
+    monkeypatch.setattr("tests.qemu.cli.artifacts.ARTIFACT_ROOT", tmp_path / "art")
+    monkeypatch.setattr(hl_mod, "HOSTLOCK_DIR", tmp_path / "locks")
+    monkeypatch.setattr(q_mod, "try_become_conductor", lambda *a, **k: False)
+
+    real_submit = q_mod.submit
+
+    def vanishing(repo, **kw):
+        sub = real_submit(repo, **kw)
+        q_mod.resolve(repo, sub, outcome="rejected", reason="simulated non-persistence")
+        return sub
+
+    monkeypatch.setattr(land_mod.queue, "submit", vanishing)
+    rc = land_mod.land(_Args(direct=False, foreground=True), lane)
+    assert rc == 1, "a submission that did not persist must not exit 0"
+
+    run_dir = sorted((tmp_path / "art").glob("*-land-queue"))[-1]
+    summary = json.loads((run_dir / "summary.json").read_text())
+    assert summary["verdict"] == "FAIL"
+    assert summary["classification"] == "LAND_ABORT"
+    detail = " ".join(s.get("detail", "") for s in summary["stages"])
+    assert "did NOT persist" in detail
+
+    # The control: with submit left alone the SAME path reports a verified position, so the
+    # assertion above cannot be passing because land() fails in this fixture regardless.
+    monkeypatch.setattr(land_mod.queue, "submit", real_submit)
+    assert land_mod.land(_Args(direct=False, foreground=True), lane) == 0
+    ok_dir = sorted((tmp_path / "art").glob("*-land-queue"))[-1]
+    ok_summary = json.loads((ok_dir / "summary.json").read_text())
+    # WARN, not OK: this fixture has no `vibeos-cli` on disk so the lint stage warns, and the
+    # prior stage reports the rejection the first half simulated. Neither is the submit.
+    assert ok_summary["verdict"] == "WARN" and not ok_summary["classification"]
+    submit = next(s for s in ok_summary["stages"] if s["name"] == "submit")
+    assert submit["status"] == "ok" and "verified" in submit["detail"]
+
+
+def test_land_status_tip_calls_a_contained_commit_TRAVELLING_not_lost(queue_repo, capsys):
+    """A commit can be neither on master nor queued BY ITSELF and still be perfectly fine,
+    because a queued descendant carries it. Reporting that as lost would send an agent to
+    re-submit work already in the train — which is how the ancestor/descendant pair that
+    supersession exists to prevent gets recreated by hand."""
+    from . import land as l_mod
+
+    repo, _ = queue_repo
+    parent = _commit(repo, "parent.txt")
+    _commit(repo, "child.txt")
+    q_mod.submit(repo, lane="lane-t")
+    assert l_mod._explain_tip(repo, parent) == 0
+    out = capsys.readouterr().out
+    assert "TRAVELLING" in out and "lane-t" in out
+
+
 def test_queue_conductor_can_wait_for_its_turn(queue_repo, monkeypatch):
     """The orphan window: a conductor that gives up instantly leaves a submission with nobody
     to drain it (seen within minutes of shipping — a pre-queue lane held the lock via the direct

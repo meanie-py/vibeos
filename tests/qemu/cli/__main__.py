@@ -318,6 +318,15 @@ def build_parser() -> argparse.ArgumentParser:
     ls.add_argument("--json", action="store_true")
     ls.add_argument("--mine", action="store_true", help="only this lane's verdicts")
     ls.add_argument("--limit", type=int, default=8, help="recent verdicts to show (default 8)")
+    ls.add_argument(
+        "--tip",
+        metavar="COMMIT",
+        help="answer about ONE commit instead of the queue: landed / queued / travelling "
+        "inside a queued descendant / superseded / rejected / never queued / LOST. Use "
+        "this to check a submission rather than reading a `land` OK line — `land` is "
+        "honest in every failure shape, so its output cannot tell you (see "
+        "land-verification-asks.md)",
+    )
     ls.set_defaults(fn=land_mod.cmd_land_status)
 
     f = sub.add_parser(
