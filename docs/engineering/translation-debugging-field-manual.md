@@ -1169,6 +1169,24 @@ size-verified. Real damage:
   pointer, and `StaticShellEntry` is `#[repr(C)]` with a `CStringW Verb` field, so the shadow
   silently re-laid-out a struct that has to match C++. Delete the fallbacks after every
   re-assembly; the missing-method errors are the *symptom*, not the bug.
+- **A whole PRIVATE SUBSTRATE, not one struct — and a FALLING error count hides it.** shell32's
+  CDefView came back carrying 27 of its own substrate types: 15 SDK layouts the bindgen island
+  already owns (`LVITEMW`, `LVHITTESTINFO`, `CMINVOKECOMMANDINFOEX`, `SFV_CREATE`, …) and 12 COM
+  interfaces `shellcom` owns (`IUnknown`, `IStream`, `IDataObject`, `IBindCtx`, `IFolderView`
+  and their vtables). Every call site in the file typechecked — against the file's OWN copies —
+  so the module looked further along than it was, and only errors at its boundary with the rest
+  of the crate were visible at all. Deleting them fixed ~40 errors and SURFACED ~35 the copies
+  had been hiding, so the total barely moved: **the error count was the misleading number the
+  whole time, and a translated TU that compiles suspiciously well is the symptom.** This is the
+  whole-substrate form of the single-struct rule above, and of AGENTS.md's rule that an
+  unresolved substrate name makes the model invent a forward declaration that compiles and is
+  silently wrong. Detection is cheap and worth running on every fresh `--cpp-com` output: list
+  the TU's top-level `pub struct`/`pub type` and intersect with the island's and with the
+  crate's shared COM module. Diff each hit field-by-field before deleting — here every
+  difference was spelling (`i32` vs `c_int`, `[T; 1]` vs `[T; 1usize]`) or the island being
+  STRONGER (`SFV_CREATE.psvOuter` is `*mut IShellView` there and `*mut c_void` in the copy) —
+  and for a vtable compare slot ORDER and ARITY first, because a slot resolves by NAME at the
+  call site, so a misplaced one compiles perfectly and calls the wrong method.
 - **Pin every mirror you must keep** with an arch-gated `const _: () = assert!(size_of::<T>()
   == 0xNNNN);` matching the C's `C_ASSERT` (basesrv `BASE_STATIC_SERVER_DATA` == 0x1AC8 on
   i386). Never feed a helper a pointer to a private mirror — pass
@@ -4522,6 +4540,23 @@ N+1 as evidence that the fix for bug N was wrong.**
   so it reads like a syntax slip; the semantic flip sits on the SAME line and passes unremarked
   once you fix the syntax. When a condition fails to parse, re-read the whole condition against
   the C rather than repairing the fragment rustc pointed at.
+- **A COMPARISON against a smart pointer became an ASSIGNMENT to it.** C++ `if (m_pSFParent ==
+  NULL)` came back as `if CDefView_cpp_com_assign_m_pSFParent(this, NULL)` — a call to the
+  generated CComPtr assignment helper. Had it run, it would have Released the parent folder,
+  stored null, and then called QueryInterface through the null it had just written; the same
+  file had `m_pCurDropTarget == NULL` rendered the same way, and `m_pShellFolderViewDual ==
+  NULL` rendered as an assignment that passed the ADDRESS OF THE FIELD as the value to store
+  into the field. Three in one TU. The root is that `CComPtr` overloads both `operator=` and
+  `operator==`, and the C++ COM path has a lowering for the assignment but reads the comparison
+  as one too — so a READ of a member becomes a WRITE of it, which is the largest possible
+  semantic distance for the smallest possible textual one. **Do not read "it failed to compile"
+  as a guard**: these were caught only because the generated helper returns `()`, so the `if`
+  had no condition. A helper that returns the assigned pointer, or `HRESULT`, or `bool` —
+  which is a perfectly ordinary shape — compiles clean and ships. Greps that find it:
+  `grep -n 'assign_m_[A-Za-z0-9_]*(' <file>` and read every hit that is NOT a statement on its
+  own line (in a condition, an operand, an argument, or with `.is_null()` chained onto it);
+  and on the C side `grep -n 'm_p[A-Za-z0-9_]* == NULL\|== m_p'` to enumerate what SHOULD have
+  become a null test. The fix is always the same and is not a cast: `(*this).m_field.is_null()`.
 - **`SUCCEEDED(hr)` → `(hr as u32) >= 0`** — unconditionally true, so the FAILURE branch is
   unreachable. `SUCCEEDED` is `hr >= 0` on the SIGNED HRESULT; cast to unsigned first and every
   error becomes a success. Sibling of the `!`-on-an-integer bug below and just as silent: it
