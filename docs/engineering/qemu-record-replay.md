@@ -480,6 +480,35 @@ Record it here and keep going; only chase one when it looks load-bearing.
   nothing to execute; it is what happens whenever a replay's guest is stopped by
   the debugger. See "Replaying with gdb" above.
 
+## Recording the kmtest sweep
+
+The chartered case — an arm64 `--smp 1` kmtest sweep, i.e. the MP kernel on one
+CPU — records cleanly:
+
+```bash
+./vibeos-cli rr record --arch arm64 --payload kmtest --smp 1
+```
+
+Measured: 164s wall clock, `launched=91 ok=88 bad=3`, `sweep_done total=91
+launched=91 failstart=0 timeouts=0`, `mp_kernel=True`, no bugcheck — and a
+**489MB** trace with a 1.3MB serial transcript. It is a much heavier capture than
+a plain boot (11MB), because a sweep does far more guest I/O.
+
+**A recording is not over when the boot command returns.** `vibeos-cli
+conformance` hands back as soon as its sweep is parsed, while the VM is still
+shutting down. Measured on the first attempt at the above: the command returned
+at 05:28:38, the guest's serial finished at 05:29:23, and the trace finished at
+05:29:39. Finalising at the first of those three froze `pristine/` mid-record,
+kept a 1,456-byte transcript of what became a 240,750-byte boot, and reported
+"trace 0MB" for what became 10.6MB — three silent corruptions from one early
+return, and every one of them poisons something different (a mid-record
+`pristine/` may not carry the `init` snapshot every replay loads; a truncated
+`record-serial.log` is what `rr verify` diffs against).
+
+`rr record` now waits for `replay.bin` to stop growing before finalising
+anything. Smoke never exposed this because its harness waits for its own VM;
+kmtest, the payload this lane exists for, did.
+
 ## Costs and limits
 
 - **Recording is cheap and reliable. Replaying is neither.** Recording is
