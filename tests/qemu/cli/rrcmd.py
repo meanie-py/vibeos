@@ -125,8 +125,9 @@ def cmd_record(args, repo: Path) -> int:
     # is the most valuable recording we can hold, and reporting it as a failure
     # would make the tool useless for exactly its purpose. Judge the trace by
     # whether it replays.
-    rrbin = trace / "replay.bin"
-    size = rrbin.stat().st_size if rrbin.is_file() else 0
+    # The boot command returning is not the recording ending; wait for the trace
+    # to stop growing before finalising anything. See await_trace_quiescence.
+    size = await_trace_quiescence(trace)
     if size:
         # Freeze the media now: they carry the `init` vmstate snapshot the
         # recording just wrote, which every replay loads. Before the boot they
@@ -161,6 +162,43 @@ def cmd_record(args, repo: Path) -> int:
         return 1
     print(f"[rr] replay it:  ./vibeos-cli rr replay {trace.name}")
     return 0
+
+
+def await_trace_quiescence(trace: Path, *, settle: float = 6.0, limit: float = 420.0) -> int:
+    """Block until the recording has actually finished, and return the final size.
+
+    The boot command returning does NOT mean QEMU has exited. `vibeos-cli
+    conformance` hands back as soon as its sweep is parsed, while the VM is still
+    shutting down — measured on a kmtest recording: the command returned at
+    05:28:38, the guest's serial finished at 05:29:23, and the trace finished at
+    05:29:39. Finalising at the first of those three froze pristine/ mid-record,
+    copied a 1,456-byte transcript for what became a 240,750-byte boot, and
+    reported "trace 0MB" for what became 10.6MB.
+
+    Every one of those is silent and each poisons something different: a
+    mid-record pristine/ may not carry the `init` snapshot every replay loads, and
+    a truncated record-serial.log is what `rr verify` diffs against — the same
+    false-green class as reading the serial path from the manifest.
+
+    Smoke never showed it because its harness waits for its own VM. kmtest is the
+    payload this lane is actually chartered for, so this mattered.
+    """
+    rrbin = trace / "replay.bin"
+    last, stable_since = -1, time.time()
+    deadline = time.time() + limit
+    while time.time() < deadline:
+        size = rrbin.stat().st_size if rrbin.is_file() else 0
+        if size != last:
+            last, stable_since = size, time.time()
+        elif time.time() - stable_since >= settle:
+            return size
+        time.sleep(2.0)
+    print(
+        f"[rr] WARNING: trace still growing after {limit:.0f}s; finalising anyway "
+        f"at {last:,} bytes — it may be truncated.",
+        file=sys.stderr,
+    )
+    return last
 
 
 def _keep_serial(trace: Path, name: str, *, expect_mode: str) -> Path | None:
