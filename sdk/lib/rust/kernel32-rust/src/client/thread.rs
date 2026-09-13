@@ -17,7 +17,12 @@ extern "system" {
 type PCSR_CREATE_REMOTE_THREAD =
     Option<unsafe extern "system" fn(HANDLE, PCLIENT_ID) -> NTSTATUS>;
 
-const THREAD_ALL_ACCESS: ACCESS_MASK = 0x1FFFFF;
+// 0x1F03FF = STANDARD_RIGHTS_REQUIRED|SYNCHRONIZE|0x3FF. xdk/pstypes.h picks this
+// under `#if (NTDDI_VERSION >= NTDDI_VISTA) ... #else`, and this tree builds
+// -D_WIN32_WINNT=0x502 (Server 2003), so the PRE-Vista branch is the live one. The
+// Vista value 0x1FFFFF asks for 0xFC00 of thread rights the object's GENERIC_MAPPING
+// does not grant, which an open would refuse rather than silently narrow.
+const THREAD_ALL_ACCESS: ACCESS_MASK = 0x1F03FF;
 const STATUS_NO_YIELD_PERFORMED: NTSTATUS = 0x40000024u32 as NTSTATUS;
 const INVALID_ACTIVATION_CONTEXT: PACTIVATION_CONTEXT = -1isize as PACTIVATION_CONTEXT;
 
