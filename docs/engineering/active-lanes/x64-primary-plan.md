@@ -92,6 +92,29 @@ reaches PASS) and `a154628337b` (`BasepCreateThread` marshalled; **all nine prob
 guests PASS on amd64**). The registry entry is corrected in the same commit as
 this doc.
 
+## Found by running it, 2026-09-13
+
+Both of these sat between "the gate can watch the ladder" and "an amd64 tree has
+a ladder to watch", and neither was visible from reading.
+
+- **An amd64-only tree could not build its own WoW64 test guests.**
+  `tools/fex/build-hello-compute.sh` opened with a hard `exit 1` when the FEX
+  vendor build was missing, then built eleven things: two arm64 probes that
+  genuinely need FEXCore, and the nine i386 guests that do not. On amd64 the CPU
+  layer is our own `wow64cpu.dll` — no emulation — so FEX is not in that picture
+  at all. Fixed (`aaaddafa1f4`): the guard now scopes to the step that needs it.
+  Relevant beyond the script, because "amd64 is primary" means an amd64 tree must
+  be self-sufficient for its own x86 coverage.
+- **The nine guests were the last PE family stamping wall-clock.** Those direct
+  clang links bypass `toolchain-llvm-mingw.cmake`, and with it the
+  `--no-insert-timestamp` that `_VIBEOS_LLD_COMMON` gives everything CMake builds
+  (deterministic-builds rung 2). Two links of `Hello32.c` two seconds apart
+  differed in exactly 2 bytes tracking the clock — and hello32 links nothing, so
+  it could not have been the importlibs. It matters because the guests are staged
+  onto the livecd, so a rebuild changing nothing still moved the media, and media
+  identity is what `smoke` staleness and the gate stamp key on. Fixed
+  (`5a322b1c9be`); `vibeos-cli repro report` now reads `TimeDateStamp 0`.
+
 ---
 
 ## Real gaps, ranked by what a user hits
