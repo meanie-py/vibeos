@@ -1,6 +1,7 @@
 """`vibeos-cli rr ...` — record a boot, then replay it deterministically.
 
     rr record --arch arm64 --payload kmtest     # boot once, keep the recording
+    rr prune --keep 3 [--apply]                  # traces are big; nothing else reclaims them
     rr list                                      # what traces exist
     rr info <trace>                              # what it is, and will it still replay
     rr replay <trace> [--gdb]                    # run that exact boot again
@@ -463,6 +464,49 @@ def cmd_list(args, repo: Path) -> int:
     return 0
 
 
+def cmd_prune(args, repo: Path) -> int:
+    """Delete old traces, newest-first retention. DRY-RUN by default.
+
+    Traces are big and nothing was reclaiming them: a kmtest capture is ~1.4GB
+    (489MB of trace plus its media, twice, counting pristine/), and a handful of
+    experiment traces had the disk at 89% within a night. `vibeos-cli prune`
+    reclaims build and boot artifacts and does not know about ~/vibeos-rr at all,
+    so this is the only thing that will.
+
+    Dry-run by default and `--apply` to act, matching `vibeos-cli prune` — a
+    trace costs a full boot to make, so deleting one should take the same
+    deliberate second keystroke.
+    """
+    root = _root(args)
+    if not root.is_dir():
+        print(f"no traces (root {root} does not exist)")
+        return 0
+    traces = sorted(
+        (d for d in root.iterdir() if (d / "manifest.json").is_file()),
+        key=lambda d: d.stat().st_mtime,
+        reverse=True,
+    )
+    keep = max(0, int(args.keep))
+    doomed = traces[keep:]
+    if args.name:
+        doomed = [d for d in traces if d.name in set(args.name)]
+    if not doomed:
+        print(f"{len(traces)} trace(s), keeping {keep} — nothing to prune")
+        return 0
+    total = 0
+    for d in doomed:
+        size = sum(f.stat().st_size for f in d.rglob("*") if f.is_file())
+        total += size
+        print(f"{'DELETE' if args.apply else 'would delete'} {d.name:<34} {size / 1e6:8.0f}MB")
+        if args.apply:
+            shutil.rmtree(d, ignore_errors=True)
+    verb = "freed" if args.apply else "would free"
+    print(f"{verb} {total / 1e9:.2f}GB across {len(doomed)} trace(s)")
+    if not args.apply:
+        print("re-run with --apply to actually delete")
+    return 0
+
+
 def cmd_info(args, repo: Path) -> int:
     trace = _resolve_trace(args)
     m = rr.load_manifest(trace)
@@ -504,6 +548,7 @@ def rr_cmd(args, repo: Path) -> int:
         "list": cmd_list,
         "info": cmd_info,
         "verify": cmd_verify,
+        "prune": cmd_prune,
     }.get(verb)
     if fn is None:
         print(f"unknown rr verb: {verb}", file=sys.stderr)

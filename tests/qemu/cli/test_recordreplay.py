@@ -964,3 +964,80 @@ def test_quiescence_gives_up_loudly_rather_than_hanging(tmp_path, capsys):
     rrcmd.await_trace_quiescence(trace, settle=5.0, limit=1.0)
     stop = True
     assert "still growing" in capsys.readouterr().err
+
+
+# --- reclaiming disk ------------------------------------------------------
+
+
+def _fake_trace(root: Path, name: str, size: int, age: float) -> Path:
+    import os
+
+    d = root / name
+    (d / "media").mkdir(parents=True)
+    rr.write_manifest(d, arch="arm64", argv=[], media={})
+    (d / "replay.bin").write_bytes(b"x" * size)
+    os.utime(d, (age, age))
+    return d
+
+
+class _PruneArgs:
+    root = None
+    keep = 2
+    name = None
+    apply = False
+
+    def __init__(self, root, **kw):
+        self.root = str(root)
+        for k, v in kw.items():
+            setattr(self, k, v)
+
+
+def test_prune_is_dry_run_unless_asked(tmp_path):
+    """A trace costs a full boot to make. Deleting one should take the same
+    deliberate second keystroke `vibeos-cli prune` asks for."""
+    from . import rrcmd
+
+    root = tmp_path / "traces"
+    root.mkdir()
+    for n, age in (("old", 1000), ("mid", 2000), ("new", 3000)):
+        _fake_trace(root, n, 100, age)
+    rrcmd.cmd_prune(_PruneArgs(root, keep=1), tmp_path)
+    assert {d.name for d in root.iterdir()} == {"old", "mid", "new"}, "dry run deleted something"
+
+
+def test_prune_keeps_the_NEWEST_n(tmp_path):
+    """Newest-first: the trace you just made is the one you are about to replay."""
+    from . import rrcmd
+
+    root = tmp_path / "traces"
+    root.mkdir()
+    for n, age in (("old", 1000), ("mid", 2000), ("new", 3000)):
+        _fake_trace(root, n, 100, age)
+    rrcmd.cmd_prune(_PruneArgs(root, keep=2, apply=True), tmp_path)
+    assert {d.name for d in root.iterdir()} == {"mid", "new"}
+
+
+def test_prune_by_name_ignores_the_keep_count(tmp_path):
+    """Deleting a KNOWN-BAD trace by name must work even when it is the newest —
+    e.g. a recording finalised mid-write, which looks valid and is not."""
+    from . import rrcmd
+
+    root = tmp_path / "traces"
+    root.mkdir()
+    for n, age in (("good", 1000), ("truncated", 3000)):
+        _fake_trace(root, n, 100, age)
+    rrcmd.cmd_prune(_PruneArgs(root, keep=5, name=["truncated"], apply=True), tmp_path)
+    assert {d.name for d in root.iterdir()} == {"good"}
+
+
+def test_prune_never_touches_a_directory_that_is_not_a_trace(tmp_path):
+    """The root is under the user's home. Anything without a manifest is not ours."""
+    from . import rrcmd
+
+    root = tmp_path / "traces"
+    root.mkdir()
+    _fake_trace(root, "atrace", 100, 1000)
+    (root / "someone-elses-data").mkdir()
+    rrcmd.cmd_prune(_PruneArgs(root, keep=0, apply=True), tmp_path)
+    assert (root / "someone-elses-data").is_dir()
+    assert not (root / "atrace").exists()
