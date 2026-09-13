@@ -938,12 +938,16 @@ Field-manual § pointers hold the full writeups. **Update on state change.**
   kernel fault it recovered from -- the last-32 tail window can neither show nor exclude that.
   **Update 2026-09-13 — the hunt has a tool now.** `./vibeos-cli rr` records one boot under
   QEMU's instruction-counted record mode and replays it instruction-for-instruction, with gdb
-  and reverse execution. That changes what "1 in 60" costs: a crash you have RECORDED
-  reproduces every time, at the same instruction, so `reverse-continue` from the zeroed frame
-  answers "who set PC to 0" directly instead of requiring another soak. Verified on arm64
-  `--smp 1` (the MP kernel on one CPU — precisely this bug's configuration): boot to desktop in
-  82s under record vs ~40s normally, 10MB trace. No soak required to use it; record until one
-  boot crashes and keep that trace. `docs/engineering/qemu-record-replay.md`.
+  instruction-for-instruction. Recording is verified on arm64 `--smp 1` (the MP kernel on one
+  CPU — precisely this bug's configuration): boot to desktop in ~90s vs ~40s normally, 10MB
+  trace, and a replay whose guest serial matched the recording line for line as far as it ran.
+  **But the two things that would close #39 with it do not work yet**: the gdbstub aborts QEMU
+  9.0.2 whenever a replay is stopped (`Playback shouldn't have to iowait`), so
+  `reverse-continue` from the zeroed frame is unreachable; and replays wedge partway at a point
+  that varies between runs. So this is not yet a route to "who set PC to 0" — it is a
+  deterministic capture of a crashing boot, which is still more than a soak ever gave us.
+  Both limitations, their measurements, and what to re-test on a QEMU upgrade are in
+  `docs/engineering/qemu-record-replay.md`.
 - **FIXED (2026-09-06): system cursors load, and the residual NULLs are correct behaviour
   wearing an alarming message.** `SYSTEMCUR(ARROW) == NULL, should not happen!!` was firing **78x** per boot (6 system  classes x 13 GUI processes) and kept firing to within 300 lines of `shell ready` —
   `gasyscur[ROCR_ARROW].handle` was NULL for the *entire* boot, so every server-side class

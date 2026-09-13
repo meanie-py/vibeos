@@ -328,8 +328,16 @@ class _TraceProgress:
 def cmd_replay(args, repo: Path) -> int:
     trace = _resolve_trace(args)
     m = rr.load_manifest(trace)
-    for w in rr.check_trace(trace):
-        print(f"[rr] WARNING: {w}", file=sys.stderr)
+    problems = rr.check_trace(trace)
+    fatal = [w for w in problems if rr.FATAL_MARKER in w]
+    for w in problems:
+        print(f"[rr] {'REFUSING' if w in fatal else 'WARNING'}: {w}", file=sys.stderr)
+    if fatal:
+        # Do not burn a replay that cannot work. Not hypothetical: a replay whose
+        # media source had been rebuilt ran long enough to open the gdbstub before
+        # dropping the connection, having printed this exact warning first.
+        print("[rr] not replaying — re-record with `./vibeos-cli rr record`.", file=sys.stderr)
+        return 2
 
     rr.prepare_replay(trace)
 
@@ -346,6 +354,15 @@ def cmd_replay(args, repo: Path) -> int:
         # -S as well: a replay you cannot stop before instruction 0 is a replay
         # you cannot reverse-continue from, which is the point of having it.
         env["VIBEOS_QEMU_GDB"] = "wait"
+        print(
+            "[rr] WARNING: the gdbstub does not work against a replay on QEMU 9.0.2.\n"
+            "     Connecting and reading registers is fine, but STOPPING the guest —\n"
+            "     `stepi`, `continue`, or simply attaching to a running replay — aborts\n"
+            "     QEMU with `Playback shouldn't have to iowait`. Reverse execution is\n"
+            "     therefore unreachable today. The flag is kept so this can be re-tested\n"
+            "     on a newer QEMU; see docs/engineering/qemu-record-replay.md.",
+            file=sys.stderr,
+        )
 
     cmd = m.get("boot_cmd") or _boot_cmd(
         repo, m["arch"], m.get("payload", "kmtest"), 1, False, 6000

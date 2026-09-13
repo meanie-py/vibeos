@@ -6,8 +6,13 @@ Our hardest bugs are heisenbugs: an arm64 MP boot faults at PC=0 roughly 1 in 60
 boots, and every attempt to look at it changes it.  Soaking found the RATE and
 nothing else in months.  QEMU's record/replay makes one *particular* boot — the
 one that crashed — into an artifact you can run again, identically, as many
-times as you like, with gdb attached and reverse-execution available.  That
-turns "reproduce it again and hope" into "open the recording".
+times as you like.  That turns "reproduce it again and hope" into "open the
+recording".
+
+Caveat worth knowing before you plan around this: on QEMU 9.0.2 the gdbstub
+cannot be used against a replay — stopping the guest aborts QEMU — so reverse
+execution, which was the original motivation, is not reachable today.  See
+docs/engineering/qemu-record-replay.md.
 
 The tool is the deliverable.  Catching any specific bug with it is a bonus.
 
@@ -521,8 +526,22 @@ def load_manifest(trace_dir: Path) -> dict:
     return json.loads(p.read_text())
 
 
+# Marks a check_trace() line that means the replay CANNOT work, as opposed to
+# might not. Kept as a marker inside the message so there is one place to look,
+# rather than a parallel classification that can drift out of step with the text.
+FATAL_MARKER = "[fatal]"
+
+
 def check_trace(trace_dir: Path) -> list[str]:
-    """Warnings (not errors) about a trace that may not replay faithfully."""
+    """Problems with a trace that may — or may not — replay faithfully.
+
+    A line containing FATAL_MARKER means the replay is pointless, not merely
+    suspect, and `rr replay` refuses on those instead of burning a long run: a
+    replay of a trace whose overlay source had been rebuilt got as far as opening
+    the gdbstub and then dropped the connection, having printed exactly that
+    warning and carried on regardless. A warning nobody can act on mid-run is not
+    a warning.
+    """
     warnings: list[str] = []
     m = load_manifest(trace_dir)
     cur = subprocess.run(
@@ -542,12 +561,14 @@ def check_trace(trace_dir: Path) -> list[str]:
             continue  # a full copy inside the trace; the source cannot matter
         if not sp.exists():
             warnings.append(
-                f"{name} is an overlay over {src}, which is GONE — this trace cannot be replayed"
+                f"{FATAL_MARKER} {name} is an overlay over {src}, which is GONE — "
+                "this trace cannot be replayed. Re-record."
             )
         elif info.get("sha256") and _sha256(sp) != info["sha256"]:
             warnings.append(
-                f"{name} is an overlay over {src}, which has CHANGED since the "
-                "recording (rebuilt media) — the replay will diverge"
+                f"{FATAL_MARKER} {name} is an overlay over {src}, which has CHANGED "
+                "since the recording (rebuilt media) — the guest would read different "
+                "bytes than were recorded. Re-record."
             )
     rr = Path(trace_dir) / "replay.bin"
     if not rr.is_file() or rr.stat().st_size == 0:
