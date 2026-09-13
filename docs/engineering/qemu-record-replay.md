@@ -152,7 +152,64 @@ it gives up hardware virtualization as well.
 the UP:=smp1 collapse case the arm64 bug lives in. Refusing all `-smp` would
 have refused the only interesting boot.
 
-## Replaying with gdb — a replay cannot be stopped, so it cannot be debugged
+## Replaying with gdb — stop it with `replay-break`, NOT from the debugger
+
+**A replay CAN be stopped and inspected. It just cannot be stopped from
+outside.** This section previously concluded the opposite and said rr was "a
+camera, not a debugger"; that was wrong, and the fix is a different stop
+mechanism rather than a different QEMU.
+
+The distinction is that the gdbstub interrupts the vCPU from outside the replay,
+which aborts it, whereas QMP's `replay-break` names an **icount** — a position
+in the recorded timeline — and lets the replay arrive there itself.
+
+### The working recipe (verified end to end)
+
+Start the replay with both a QMP socket and a gdbstub, then:
+
+```bash
+# 1. where is it now?
+{"execute": "query-replay"}
+    -> {"icount": 2288513945, "mode": "play", "filename": ".../replay.bin"}
+
+# 2. stop it at a point of your choosing
+{"execute": "replay-break", "arguments": {"icount": 2293513945}}
+    -> {"return": {}}
+
+# 3. confirm
+{"execute": "query-status"}
+    -> {"status": "paused", "running": false}
+
+# 4. NOW attach gdb — the guest is already stopped, so nothing interrupts it
+gdb-multiarch -batch -ex 'set architecture aarch64' \
+  -ex 'target remote 127.0.0.1:<port>' -ex 'output/x $pc' -ex 'info registers'
+```
+
+Measured result: `pc=0x7fd1d04c`, registers read, gdb detached, **QEMU still
+alive with empty stderr**. No `Playback shouldn't have to iowait`.
+
+`query-replay` is also the best available read of replay progress — a live
+icount, better than inferring position from the rrfile read offset.
+
+### What is still unknown
+
+* Whether `replay-seek` to an EARLIER icount works. If it does, that is reverse
+  execution by its real name — QEMU implements `reverse-continue` as
+  snapshot-plus-replay-forward, which is exactly what seek does.
+* Whether `continue` after a `replay-break` pause resumes safely, or whether the
+  replay may only be stopped once.
+* Whether a gdb breakpoint set while paused survives a resume.
+
+### Caveat on reach
+
+The verification above ran in a hand-built configuration that reaches only ~23
+guest lines (see the host-shape entry in the divergence log). The STOP mechanism
+is what was under test and it works; using it at a point deep in a boot needs
+the harness's own host shape, and `rr replay` does not yet expose
+`replay-break`. **Wiring that into the tool is the next step**, and it is what
+would make this first-class rather than a recipe.
+
+## Superseded: the earlier conclusion that a replay cannot be stopped
 
 **Read this before planning any debugging session on a replay.** Measured on
 aarch64 QEMU 9.0.2, on a fresh warning-free trace, outside the harness so

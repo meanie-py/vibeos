@@ -864,11 +864,14 @@ def test_scsi_cd_is_refused_too(tmp_path):
         rr.transform(cmd, mode="record", trace_dir=tmp_path / "t", stage=False)
 
 
-def test_the_gdb_flag_warns_that_stopping_a_replay_aborts_qemu(tmp_path, monkeypatch, capsys):
+def test_the_gdb_flag_warns_how_to_stop_a_replay_correctly(tmp_path, monkeypatch, capsys):
     """`--gdb` was documented as giving reverse execution and never tested; the first
-    real test aborted QEMU with `Playback shouldn't have to iowait`. The flag is kept
-    so the recipe can be re-tried on a newer QEMU, but it must not hand anyone a stub
-    while implying the thing they want from it works."""
+    real test aborted QEMU with `Playback shouldn't have to iowait`.
+
+    The warning must name BOTH halves. Saying only "stopping aborts it" is what led
+    to declaring the tool a camera rather than a debugger — replay-break stops a
+    replay cleanly and gdb can then inspect the paused guest, verified. A warning
+    that omits the working mechanism sends people away from it."""
     from . import rrcmd
 
     trace = tmp_path / "t"
@@ -900,16 +903,13 @@ def test_the_gdb_flag_warns_that_stopping_a_replay_aborts_qemu(tmp_path, monkeyp
     rrcmd.cmd_replay(_Args(trace), tmp_path)
     err = capsys.readouterr().err
     assert "Playback shouldn't have to iowait" in err
-    assert "9.0.2" in err
-    # and it must not overstate: `continue` DOES work, so a blanket "gdb is
-    # broken" would send people away from the half that is usable.
-    assert "continue" in err
-    # and it must say the conclusion that was actually reached: a breakpoint HIT
-    # aborts too, so there is no stopping mechanism left and a trace is a capture
-    # rather than a debugging session. Softer wording would leave someone
-    # planning a session that cannot work.
-    assert "BREAKPOINT HIT" in err
-    assert "CAPTURE" in err
+    # It must name the failing operations specifically -- a breakpoint HIT aborts
+    # too, which is the least obvious of them and the one that decides whether a
+    # planned debugging session can work at all.
+    assert "breakpoint hit" in err.lower()
+    # and it must point at the mechanism that DOES work, not just the one that
+    # does not: replay-break stops a replay cleanly and gdb can then inspect it.
+    assert "replay-break" in err
 
 
 def test_record_waits_for_the_trace_to_stop_growing(tmp_path):
