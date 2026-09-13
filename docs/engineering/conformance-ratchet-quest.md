@@ -1873,7 +1873,10 @@ one, and `:178` is anti-correlated with `:176` by construction rather than inter
 guess above ("one intermittent defect in arm64 pool allocation") was right; the framing that
 there were three neighbouring flaky assertions was not. Full root cause, with the serial values
 that prove the `USHORT` underflow, in the roadmap's `ExPools` registry entry and in the field
-manual under "When the bug is in the TEST, not the kernel". **What it leaves owed is narrower
+manual under "When the bug is in the TEST, not the kernel". **Superseded within the hour by the actual root cause — kmtest's private `POOL_HEADER`
+gates its 64-bit layout on `_M_AMD64` while the kernel gates on `_WIN64`, so on arm64 the test
+reads half a header. See the roadmap's ExPools entry. Nothing below about the kernel stands;
+the floor question does.** **What it leaves owed is narrower
 and is a FLOOR question, not a kernel one:** `:178` and `:181` carry `assert?` marks that record
 consequences of `:176` as independent debt, and `:178` in particular passes *spuriously* in the
 bad mode, so the quota bit is untested on every run that takes it. Un-marking them makes arm64

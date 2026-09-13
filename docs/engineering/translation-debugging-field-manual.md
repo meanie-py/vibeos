@@ -5016,6 +5016,28 @@ passing direction.
 lint whose input predates your change is not evidence. Worth the wall-clock: one cold build
 beats a merge-queue round trip, and the queue can cost hours per attempt.
 
+**The MIRROR IMAGE bites the same check, and "did you build?" is the wrong question for it:
+an input can be too NEW to read, because the build is still making it.** `vibeos-cli gate`
+runs its tooling stage CONCURRENTLY with its three builds, so any build-dependent oracle in
+that stage observes a half-made build dir. Two independent instances, one day apart:
+`needs_generated_psdk_amd64` read widl-generated headers that did not exist until 42 minutes
+after tooling ran, and `test_every_modelled_target_has_a_real_object_directory` read an object
+directory that cmake creates in the build's first seconds and ninja fills about forty later.
+The second failed a gate whose every build, lint, smoke and conformance lane was green, and the
+directory it called missing was on disk when the gate ended, timestamped INSIDE that same gate's
+run — which is also how you tell this apart from a stale path model, which would leave no
+directory at all. **Symptom:** a build-dependent check that fails in the gate and passes when
+you re-run it by hand on the identical tree, with the thing it named present. **Cause:** the
+guard was `if the build dir exists`, and a build dir exists from the moment cmake configures it.
+**Fix:** gate on `.vibeos-build-stamp.json`, which `vibeos-cli build` writes at the very END of
+a successful build (`cli/provenance.py` `STAMP_NAME`) — the difference between "cmake configured
+a directory" and "ninja produced the objects in it". Verify BOTH directions when you change one
+of these: with the stamps present the check must run, and with them hidden it must skip; a
+skip-guard that never fires and one that always fires look identical in a green run. The
+general rule is the same one as above with the sign flipped — **staleness answers in the
+passing direction, prematurity answers in the failing direction**, and a check that reads build
+output needs to know not just how old its input is but whether it is finished.
+
 **A fourth member of "a verdict that depends on state outside the diff is not a gate"** (see
 "A gate can be RED for reasons that are not in the tree at all"), and distinct from that entry's
 third: a warm gate declining to rebuild is a verdict on a *skipped* recompile, while this is a
@@ -6784,6 +6806,44 @@ case cleared on pass 2 and the run passed, and a deliberately-slowed body (four 
 in `strchr`) failed all three passes at all three sizes. **A gate that has only ever been proven
 to pass is half-tested** — perturb something and watch it fail before you trust it.
 
+### The artifact you consulted is not the one consulted at RUNTIME
+
+**The check:** before believing a verification, ask whether the thing you read is the thing
+that will actually be read when it matters. The compiler, not the header. The per-attempt log,
+not the final classification. The printed value, not the assertion name. The exact cache path,
+not the directory count. Every instance below is a case where the answer was *sound about the
+artifact consulted* and the artifact was one step off the one that governs.
+
+**Why it needs its own entry rather than folding into the verification rules above: it is the
+failure shape that does not announce itself.** A wrong denominator or a stale inherited fact
+decays loudly — someone recounts, or the number stops agreeing with itself, and it surfaces
+within the hour. This one is a CORRECT reading of the RIGHT file that answers a slightly
+different question than the one being asked, and nothing downstream ever contradicts it.
+From the inside, "I verified the two `#ifdef`s" is indistinguishable from "I tested it": both
+feel like checking, both cite a real artifact, and only one of them consulted the authority.
+That is also why it survives review — a reader asking "did you check?" gets a true yes.
+
+**Six instances, five unrelated tools, one night (2026-09-13):**
+- an sccache stats query that answered for a *different server* than the build used;
+- an ISO byte-scan whose hit was **winlogon's own diagnostic string**, not the data sought;
+- `ls | wc -l` answering "how many directories" when the question was "how many replay
+  namespaces";
+- `smoke-console.log` read in place of `full.log`;
+- a gate's **final classification** read in place of its per-attempt salient lines — which hid
+  that three failed attempts had failed for two DIFFERENT reasons, the fact that mattered;
+- two `#ifdef`s read correctly, in the right headers, instead of asking the compiler — which
+  is how an `_M_AMD64`/`_WIN64` arch-gate mismatch stood as "conclusive" until someone ran
+  `clang -dM -E` (see "When the bug is in the TEST, not the kernel").
+
+**The corollary, from the same incident:** when you have strengthened a claim — "the chain I
+read says no" becoming "this can never happen structurally" — go looking for the thing that
+would falsify the STRONGER version, because the evidence for the weaker one does not carry
+over. `_M_AMD64` was reachable from a second definition site (`_mingw_mac.h`) that the first
+chain never mentioned; it is x86_64-gated too, so the claim survived — but it survived having
+been attacked rather than merely restated. A conclusion that feels settled is exactly when
+nobody re-derives it. *(Found jointly with the control-plane lane; the instances are drawn
+from both of our sessions.)*
+
 ### A TEXT-SHAPED match is not a PROOF `[§9.119]`
 The same regex measured **146** lowerable CRT forwarders; the sound implementation lowered
 **11**. Measuring a shape by its syntax measures an **upper bound, not a yield**, and the
@@ -7277,12 +7337,49 @@ language rules) over loosening what it reports.
   move on: only the first assertion in such a chain carries signal, and marking the downstream
   ones records consequences as independent debt. And an assertion that PASSES in the bad mode
   is worse than one that fails, because nothing anywhere reports it — the quota bit was never
-  tested on any run that took the sentinel path. **The shared spelling is not shared
-  causation:** `IoDeviceObject_drv.c:198/206` use the identical `KmtGetPoolType(x) - 1` idiom
-  and sit beside ExPools at the top of the same intermittent list, but they fire independently,
-  and their `KmtGetPoolTag` returns `0x0062005c` / `0x0073006f` — UTF-16 `\b` and `os`. Those
-  Buffers point into the middle of an allocation rather than at its start, which is a different
-  defect wearing the same idiom. Checking that cost one grep and refuted the tidier story.
+  tested on any run that took the sentinel path. **CORRECTED — the trigger was in the HARNESS, and the
+  "different defect" reading below was wrong.** `kmt_test_kernel.h` keeps its own copy of
+  `POOL_HEADER` and gates the 64-bit layout on **`_M_AMD64`**, while the kernel
+  (`ntoskrnl/mm/ARM3/miarm.h`) gates the real one on **`_WIN64`**. arm64 is `_WIN64` and is not
+  `_M_AMD64`, so the kernel writes a 16-byte header (`C_ASSERT(sizeof(POOL_HEADER) ==
+  POOL_BLOCK_SIZE == sizeof(LIST_ENTRY))` compiles there) and kmtest reads an 8-byte one.
+  `Header = Memory; Header--` therefore steps back **half a header** and reads
+  `PoolTag`/`ProcessBilled` as `Ulong1`. `PoolType` is bits of the quota slot, which
+  `ExAllocatePoolWithQuotaTag` sets to the process or to NULL — so the "intermittency" is
+  which, `:178`'s STABLE failure is the quota bit never being where kmtest looks, and
+  `KmtGetPoolTag` returning `0xfffffa00` / `0xfffff800` is the high half of a kernel pointer.
+  **The registry had already recorded the tell and nobody read it as one:** i386 144/144 and
+  amd64 68/68 perfectly deterministic, arm64 alone unstable. An arch-selective macro produces
+  exactly that shape, and it was read as an arm64 KERNEL lead for six weeks.
+  **The lesson is the wrong turn, not the answer.** `IoDeviceObject_drv.c:198/206` use the same
+  `KmtGetPoolType(x) - 1` idiom, and I refuted "same root cause" by observing that their
+  `KmtGetPoolTag` returns `0x0062005c` / `0x0073006f` — UTF-16 `\b` and `os` — and concluding
+  those Buffers point into the middle of an allocation. Reading text rather than a header is
+  equally well explained by **the right pointer at the wrong offset**, which also explains the
+  stable `:178` and the pointer halves, and the half-size header predicts landing inside the
+  previous block's payload exactly. Testing the resemblance was right; accepting the first
+  explanation that fit the refutation was not. **The discriminator was never the tag values —
+  both stories fit those. It was which story also accounted for the evidence I was not
+  looking at:** only "wrong offset" explained the stable `:178` and the arm64-only pattern,
+  and I had both in hand while weighing the two. So when a "these are unrelated" verdict rests
+  on data merely looking WRONG, do not stop at an explanation that fits the wrong data — take
+  the one that also covers the findings you had already set aside. This nearly shipped the
+  opposite conclusion: the chain had reached "a live allocation whose header reads FREE",
+  which with `expool.rs`'s coalescer (`PoolType() == 0` is its absorb-this-neighbour test)
+  would have been reported as a memory-corruption vector in a kernel that is writing a
+  perfectly correct header.
+- **A genuine kernel fault does not fail an assertion STABLY, so determinism is evidence
+  AGAINST a kernel bug.** The inversion is worth having explicitly, because the instinct runs
+  the other way — a reliably failing assertion feels like the solid one to chase and the
+  intermittent neighbour like noise. In the `_M_AMD64`/`_WIN64` header mismatch above,
+  `ExPools.c:178` failed on EVERY arm64 run for six weeks, and that reliability is precisely
+  what a misread struct offset produces and what a racing allocator does not. Pair it with the
+  per-arch shape: **"broken on one arch, perfectly deterministic on the others" is the
+  signature of an arch-selective macro, not of an arch-specific kernel defect.** The bug
+  registry had been saying exactly that about ExPools in those words — i386 144/144, amd64
+  68/68, arm64 alone unstable — and it was filed as an arm64 kernel lead the whole time. When
+  a row says a test is deterministic everywhere except one arch, diff the ARCH GATES in every
+  header both sides compile before theorising about that arch's kernel.
 - **Half-disabling a debug facility leaves its two halves disagreeing — and the disagreement
   outlives the reason.** A checked build does two separable things to a spinlock: it STAMPS
   `KeGetCurrentThread() | 1` into the lock while held (observable behaviour — `KeTestSpinLock`
