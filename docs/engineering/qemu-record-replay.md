@@ -475,9 +475,39 @@ Record it here and keep going; only chase one when it looks load-bearing.
 
   That is a much better handle than "wedges partway". It is not a race and not a
   timeout: replay cannot get past one specific point in the recorded event
-  stream. The next step is to find out what event sits at that offset — the
-  `replay.bin` format is a sequence of typed events, so decoding forward to
-  2,342,912 should name it.
+  stream.
+
+  **Decoded, with QEMU's own `scripts/replay-dump.py`** (fetched from the
+  matching stable-9.0 tag — do not hand-write a decoder for this format):
+
+  * **The trace is complete and well-formed.** The dumper reads 10,666,165 of
+    10,666,166 bytes without complaint, so the wedge is not corruption or
+    truncation. Its 235,577 `EVENT_CHAR_WRITE` records line up with the 235,754
+    bytes of recorded guest serial.
+  * **The stall is inside a long, uniform serial-output burst.** Around the
+    frozen offset the log is nothing but `EVENT_CHAR_WRITE(22) 1 -> 1` alternating
+    with `EVENT_INSTRUCTION(0) + 3`, for thousands of records either side — the
+    guest pushing one byte at a time into the UART. Nothing structurally unusual
+    sits at the boundary, so this is not "replay chokes on a weird event".
+  * **It stops just over halfway through the guest's output.** 128,789 of the
+    235,577 char-writes are consumed (~55%), matching the 124,212 serial bytes
+    the replay emitted. The 22% figure is of trace BYTES; char-writes are cheap
+    records and instruction records are not, which is why the two fractions
+    differ.
+  * Event census for scale: 1,445,912 `EVENT_INSTRUCTION`, 1,178,159
+    `EVENT_CP_CLOCK_WARP_ACCOUNT`, 235,577 `EVENT_CHAR_WRITE`, 43,747
+    `EVENT_EXCEPTION`, 13,920 `EVENT_INTERRUPT`.
+
+  Note that 2,342,912 is exactly 572 x 4096: it is a read-buffer boundary, so
+  the true stall is the last event inside that buffer rather than the byte
+  itself. QEMU stopped asking for more.
+
+  So the open question is narrower again: not "which event", but why replay
+  stops advancing in a region where every record is trivial. Serial output is
+  also where the earliest (and then retracted) sighting pointed — a vCPU caught
+  in `DebugService`, the guest's own serial primitive. That reading was
+  unsupported at the time and is now, independently, where the trace says the
+  replay stops.
 
   It also retires a confound worth recording: my hand-rolled replays stripped
   `-qmp`/`-chardev` and substituted a file-backed serial for the recording's
