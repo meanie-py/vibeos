@@ -275,14 +275,27 @@ a ladder to watch", and neither was visible from reading.
    is promoted *for* x86 compatibility, the gate has to watch the thing it was
    promoted for.
 
-4. **Stock 32-bit GUI apps fault on amd64 — 58 faults each, amd64-ONLY.** notepad, mspaint
-   and wordpad take execute-at-NULL faults (`rw=8`) with a re-faulting SEH cascade at
-   descending `esp`. arm64 never launches those, which is why it does not show there. This is
-   the most load-bearing open item on this plan after guest processes: "amd64 runs stock 32-bit
-   apps" is the promotion's whole claim, and this is the evidence against it.
-   **Status: relayed by fex via control-plane, NOT verified here** — I could not find it in
-   this tree's `vibeos-roadmap.md` registry, so it is either on the fex branch or unlanded.
-   Confirm against that lane's artifacts before planning around it.
+4. **Stock 32-bit GUI apps cascade into an execute-at-NULL fault — 58 faults each, and NOT
+   established as amd64-only.** notepad, mspaint and wordpad each take 58 faults where every
+   other image in the same boot takes 0 or 1: one fault executing from a STACK address, then 57
+   at `eip=00000000` with `rw=8` (instruction fetch, not a data deref) with every GPR zeroed,
+   each dispatched to 32-bit SEH at a deeper `esp` — a re-faulting cascade that consumes stack
+   rather than one bad call. Specific to the stock GUI apps, not general WoW64 breakage: the
+   CSR/LPC ladder is green in the same boot and `[WOW64CB] WINDOWPROC` callbacks dispatch and
+   return correctly.
+
+   **Now verified on master** (`06ec737b452`, registry entry), which upgrades this from the
+   relayed claim it was — and the registry carries a correction this plan had wrong. **I called
+   it amd64-ONLY; that is not established.** `sqlite32.exe` took the same signature once on
+   arm64 (`eip=00000000`, `rw=8`, crashing before its first print) and did NOT reproduce on an
+   immediate re-run. The reason arm64 does not show the *stock-app* cascade is simply that it
+   never launches those applets — absence of a trigger, not absence of the bug. So it is
+   weaker evidence against amd64-as-primary than I filed it as: a WoW64 defect this plan should
+   track, not an amd64 disqualifier.
+
+   *Worth noting as a pattern in this document: three claims filed here as amd64-specific have
+   since proved otherwise — the marshalling provenance, the nightly cell, and now this. An
+   "amd64 is primary" frame makes amd64-only the comfortable reading of any new finding.*
 
 5. **Two amd64 test traps that will masquerade as WoW64 bugs.** The amd64 livecd's system
    volume is a **read-only CD**, so any file-write test returns `ACCESS_DENIED` (0x5) — the

@@ -34,6 +34,45 @@ EXPRESSION before the length: a literal `1` is the bindgen flexible-array shape,
 named constant is an arch-sized real array. Three of the first six sites graded
 fell this way.
 
+THE SYMBOL IS WHERE THE CHECK ENDED UP, NOT WHERE IT WAS WRITTEN. A check is
+attributed to the function it was INLINED INTO, which can contain no index at all:
+`PathIsExeAW` is a four-line dispatcher (`if unicode { PathIsExeW(p) } else {
+PathIsExeA(p) }`) and its only reachable array is `static EXTS: [[WCHAR; 4]; 7]`,
+a genuine 7-element table. The flagged check came from a callee. So when a symbol
+names no length-1 candidate, that is EXPECTED and not a sign the finding is bogus
+-- read the disassembly's call context, or rebuild the crate with inlining
+suppressed to re-attribute it. Sites of this shape cost far more per site than the
+rest; 95 sites across 15 modules were graded by reading declarations, and the
+residue that resisted (`KspInstallInterface`, `WSPSelect`, `DoAdminUnlock`,
+`LsaApLogonUserEx2`, two `rtl_strings` symbols) all had exactly this shape.
+
+TWO GRADING AIDS AND WHAT EACH IS WORTH. Pairing bindgen's length-1 FIELD
+declarations against non-constant index expressions on those fields finds the
+source site the object code cannot name -- but it matches BY FIELD NAME, and a
+name is not one of the two tests. Twice that produced a confident false positive:
+kernel32's `cStreamName` is `[WCHAR; 296]` in WIN32_FIND_STREAM_DATA against a
+`[WCHAR; 1]` of the same name elsewhere, and `WellKnownSids[i].Sid.SubAuthority`
+is MAX_SID's real `[DWORD; 15]` sitting two lines from a genuine `SID.SubAuthority`
+in the same function. The aid narrows candidates; the struct still has to be
+identified and its C declaration read. The object scanner and the source aid are
+complementary, not redundant: the object side proves a check survived inlining,
+the source side says where it is, and neither alone was sufficient.
+
+A FLEXIBLE-ARRAY HELPER THAT ALREADY EXISTS IS A SEARCH PATTERN. Three files had
+the class recognised locally and the fix left half-applied: afd's `select.rs` used
+`AFD_HANDLES(x)` two lines from sites still spelled `Handles[i]`; shell32's
+`printers_enum.rs` had the correct walk four lines above the broken one in the same
+if/else; advapi32's `security.rs:3592` walked the DESTINATION correctly while the
+source expression on the next line still indexed. Where such a helper exists, grep
+for the siblings that did not get it.
+
+PREFER `(&raw mut (*X).Field[0]).add(i)` TO A CAST. A constant index 0 into a
+`[T; 1]` is checked at compile time, so it emits no panic branch, and it yields the
+element type WITHOUT naming it. The `.cast::<Elem>()` spelling names the type, and
+naming it is a semantic claim at every site: `Privileges` and `CurrentPrivileges`
+in lsasrv hold different `_LUID` types, the field access had been deriving the
+right one, and hardcoding one broke the build.
+
 CORPUS IS DECLARED, NOT DISCOVERED. Globbing `build-<arch>` would grade whatever
 binaries a worktree happens to carry -- a verdict that depends on state outside
 the diff (field manual, "A gate can be RED for reasons that are not in the tree
