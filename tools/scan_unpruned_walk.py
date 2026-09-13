@@ -48,6 +48,19 @@ than baselining it.
 Not every hit is a lint target: one-shot `fix_*`/`migrate_*` refactor tools are
 run by hand on a quiet tree. They are still listed, because "this tool is only
 ever run by hand" is a property of today's caller, not of the code.
+
+WHEN A ROW SHOULD *NOT* BE BURNED DOWN. A baseline row is debt, but migrating one
+is only an improvement if the walk can actually reach the mutable tree. Migration
+does two separable things: it prunes `target` before scandir, and it makes the walk
+FAIL LOUD on a vanishing directory (`source_walk`'s `onerror=_raise`). Where the root
+cannot contain `target` at all -- `<crate>/src`, a single crate's source dir -- the
+first buys nothing and only the second applies, which turns a tolerant walk into a
+raising one for no corpus gain. `tests/qemu/cli/provenance.py` is the worked example
+and the reason this paragraph exists: it walks `crate/src` for a newest-mtime, it runs
+on EVERY build for every lane, and it already tolerates per-file `OSError`. Migrating
+it would add a new raise to a hot path and change no corpus. It stays baselined
+deliberately. **Check the ROOT before migrating: if it cannot reach the mutable tree,
+the row is harmless and the migration is a regression dressed as a cleanup.**
 """
 
 from __future__ import annotations

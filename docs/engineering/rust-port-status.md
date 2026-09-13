@@ -1306,6 +1306,17 @@ arch-specific inline asm and no behaviour. `_vsnprintf` IS translatable (it take
 `va_list`), but it is not a ucrtbase export; it exists because the legacy CRT references it,
 and it needs the ucrt header's `_CRT_INTERNAL_*` printf option constants as substrate.
 
+**And dbgrpt, the other half of that "shared-library lane", does NOT share this blocker —
+the two are grouped by ownership, not by mechanics.** `add_library(dbgrpt misc/dbgrpt.cpp)`
+produces a static `libdbgrpt.a` and msvcrt links it as a LIBRARY
+(`msvcrt_static crtmath dbgrpt vcruntime wine chkstk`), so its six `_Crt*Report*` exports are
+shadowable by the existing `--whole-archive` cohab rail exactly as crtmath's were — no CMake
+surgery, no new rail. What blocks it is the translation itself: 500 lines of genuine C++,
+`template <typename char_t>` with `char`/`wchar_t` specialisations feeding a traits-based
+narrow/wide dual instantiation, plus MessageBox UI and OutputDebugString paths. c2rust cannot
+anchor C++, so it is pure-LLM or hand, and it belongs to the C++ substrate lane rather than
+here. Do not assume the ucrtbase link-order finding above applies to it.
+
 
 #### crtmath sized, and the island question answered — 2026-09-06
 
@@ -1859,6 +1870,23 @@ flight is marked; in-flight lanes live in [`active-lanes/`](active-lanes/).*
 - **CRT floor — ~0–5%.** `sdk/lib/crt/` = 581 `.c` (printf/scanf/string/math/locale/
   mbstring/wine) still compiled; only `crt-startup/dllmain/crt0` entry-glue + the
   `libcntpr` kernel subset (`cnt-rust`) are Rust. Largely irreducible variadic.
+  **But read that 581 carefully before costing any of it: much of the tree belongs to the
+  `crt` TARGET, and nothing that ships links `crt`.** Measured 2026-09-13 — the only
+  `target_link_libraries` naming it is `modules/rostests/apitests/crt/static_crt_apitest.cmake:52`,
+  and `sdk/lib/crt/libcrt.a` is not even produced by a normal build (it is a ninja target with
+  no built artifact in `build-amd64`). crtdll, which is the plausible consumer, links
+  `msvcrt_static crtmath vcruntime chkstk wine` instead. Concretely for the two directories
+  that look biggest: `CRT_MBSTRING_SOURCE` and `CRT_MISC_SOURCE` feed `crt.cmake` ALONE, while
+  shipping gets exactly `mbstring/mbstrlen.c` and `misc/fltused.c` through `libcntpr` — so
+  translating the other ~55 mbstring and ~16 misc files would improve one apitest and nothing
+  in the OS. The parts of `sdk/lib/crt` that DO ship are the ones already named elsewhere:
+  `libcntpr` (kernel, Rust via cnt-rust), `crtmath` (done 2026-09-13), `msvcrtex`, and the
+  `msvcrt_static` set.
+
+  Recorded because the obvious check misleads: `grep -rl '\bcrt\b' --include=CMakeLists.txt`
+  "finds" msvcrt, ucrtbase, ntdll and services, every one of them a substring match on
+  `msvcrt`/`crtmath`/`_crt`. File-mentions-it is not links-it, and I asserted the wrong version
+  of this before checking the link graph.
 - **LSA/SAM server lane — in flight.** samsrv (~90%, `samsrv-rust` 16 `.rs`) and lsasrv
   (~50%+, `lsasrv-rust` 20 `.rs`) are the active server-side frontier.
 - **kernel32/advapi32 tails.** kernel32 NLS `locale.c` + resources; advapi32 `wine/

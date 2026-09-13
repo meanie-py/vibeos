@@ -538,9 +538,77 @@ Record it here and keep going; only chase one when it looks load-bearing.
   | 5 | 5,999,935 | **4,096 (0.1%)** | **271** | still at the UEFI banner |
 
   Neither hypothesis survives: 4,096 is nowhere near 2,342,912, and 271 bytes is
-  nowhere near 124,212. **Replay reach is a function of the icount shift**, and
-  strongly so — shift=3 gets through the whole kernel boot to desktop bringup,
-  shift=5 barely leaves firmware. (That also reproduces an observation from the
+  nowhere near 124,212. **Replay reach is a function of the icount shift.**
+
+  And it is not monotonic — a third run settles that, and it is the practical
+  result of this whole investigation:
+
+  | shift | trace size | stalled at | guest serial | where |
+  |---|---|---|---|---|
+  | 1 | 33,571,609 | **4,096** | 271 | UEFI banner |
+  | 3 | 10,666,166 | 2,342,912 (22%) | 124,212 | desktop bringup |
+  | 5 | 5,999,935 | **4,096** | 271 | UEFI banner |
+
+  **Only the default shift replays at all.** 4,096 bytes is the first read
+  buffer: at shift 1 and shift 5 the replay never gets going. That also means the
+  stall at 2,342,912 is a *different* phenomenon from the immediate stall at 1
+  and 5 — one is a replay that ran most of a boot and stopped, the other is a
+  replay that never started.
+
+  **Replay reach also depends on backends the GUEST CANNOT OBSERVE, which
+  invalidates hand-built replay command lines.** Same trace, three
+  configurations:
+
+  | serial backend | QMP attached | guest lines reached |
+  |---|---|---|
+  | `file:` | no | 1773 |
+  | `file:` | yes | **23** |
+  | socket chardev (the recording's own) | yes | 1693 |
+
+  Two orders of magnitude, from a monitor socket and a chardev kind. Confirmed
+  with a control: the 23-line run reproduces with QMP attached and *never
+  queried*, so it is not the act of querying.
+
+  This is worse than a crash — a replay that quietly under-reaches looks like a
+  finding about the guest, and several observations earlier in this document were
+  taken from hand-built command lines for exactly that reason.
+  `assert_same_shape` now compares the host-side shape (`-serial`, `-qmp`,
+  `-monitor`, `-chardev`, `-display`) by backend KIND, ignoring per-run paths and
+  ports, and refuses a mismatch. **Replay through the harness that recorded;
+  do not hand-roll the command line.**
+
+  (QMP's replay API is worth knowing about regardless: `query-replay` returns the
+  live `icount`, which is a direct read of replay progress — better than
+  inferring it from the rrfile read position — and `replay-break` / `replay-seek`
+  exist, which may be the replay-native way to stop one, where the gdbstub
+  cannot.)
+
+  **The traces are identical at the head and diverge in CHARACTER within
+  4KB.** Decoding all three: the first thirteen events match structurally,
+  including `EVENT_INSTRUCTION(0) + 336314 -> 336314` at the same instruction
+  count; only host-clock values differ. But at comparable file offsets the event
+  mix has already parted:
+
+  ```
+  shift 5, @4000   982:EVENT_CHAR_WRITE(22) 1 -> 1
+                   983:EVENT_INSTRUCTION(0) + 25 -> 381953882      (unbroken run)
+
+  shift 3, @4000   784:EVENT_INSTRUCTION(0) + 1249581 -> 407930319
+                   785:EVENT_CP_CLOCK_WARP_ACCOUNT(31)
+                   786:EVENT_CP_CLOCK_VIRTUAL(34)
+                   788:EVENT_INTERRUPT(1)
+  ```
+
+  So at shift 3 the early trace carries periodic timer interrupts and clock
+  checkpoints separated by hundred-thousand-instruction runs, while at shift 5 it
+  is an uninterrupted char-write/`+25` sequence. Recorded as an observation, not
+  a mechanism — it says the shift changes what the stream is MADE OF that early,
+  which is a more specific fact than "reach depends on the shift" and is where
+  anyone chasing this should start.
+
+  The trap this creates is the reason `rr record` now warns on a non-default
+  `--shift`: RECORDING succeeds at every value, so the failure is invisible until
+  someone tries to replay, by which point the expensive part is already spent. (That also reproduces an observation from the
   first night of this work, when a shift=5 replay sat at the UEFI banner at 271
   bytes for eight minutes and was written off as contention.)
 
@@ -716,6 +784,32 @@ Record it here and keep going; only chase one when it looks load-bearing.
   immediately (`insn total 1/336313 left, event 5`). It is not about having
   nothing to execute; it is what happens whenever a replay's guest is stopped by
   the debugger. See "Replaying with gdb" above.
+
+## What this means for the chartered case (record a kmtest sweep, replay it)
+
+**Recording works. Replaying does not reach the sweep — it falls about 24KB of
+serial short.** Measured on trace `kmt3`, against its own recording:
+
+| marker | byte offset in the recorded serial |
+|---|---|
+| `[WIN32K] shell ready` | 74,173 |
+| `[EXPLORER] _tWinMain entered` | 118,113 |
+| **replay stalls** | **122,199** |
+| `[KMTEST-SWEEP]` begins | 146,694 |
+| first `Starting test ...` | 176,825 |
+
+So the replay gets through firmware, the whole kernel boot, `shell ready` and
+explorer's entry — and stops **24,495 bytes before the sweep launches**, out of
+1,348,868 bytes recorded. The sweep itself is never replayed at all.
+
+That is the honest bound on this tool for the job it was built for. It also
+makes fixing the wedge worth more than "replay is incomplete" suggests: the gap
+is small and quantified, not an unknown distance.
+
+Until then the chartered flow is **record-only**: a kmtest sweep IS captured
+deterministically and completely (`launched=91 ok=88 bad=3`, 489MB trace), and
+that capture is re-runnable up to desktop bringup. What it cannot yet do is
+re-run the sweep.
 
 ## Recording the kmtest sweep
 

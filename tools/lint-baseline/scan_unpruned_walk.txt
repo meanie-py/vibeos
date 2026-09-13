@@ -34,10 +34,6 @@ tools/rustconv/rustconv/function_prompt.py:463: unpruned rust walk: for rs_file 
 tools/rustconv/rustconv/migrate_guards.py:278: unpruned rust walk: rs_files = sorted((reactos_root / "sdk/lib/rust/ntoskrnl-rust/src").rglob("*.rs"))
 tools/rustconv/rustconv/migrate_guards_ts.py:351: unpruned rust walk: rs_files = sorted((root / "sdk/lib/rust/ntoskrnl-rust/src").rglob("*.rs"))
 tools/rustconv/rustconv/projects/reactos/targets.py:1453: unpruned rust walk: for f in src.rglob("*.rs"):
-tools/rustconv/rustconv/verify_abi.py:226: unpruned rust walk: rs_files = sorted((reactos_root / "sdk/lib/rust/ntoskrnl-rust/src").rglob("*.rs"))
-tools/rustconv/rustconv/verify_constants.py:764: unpruned rust walk: for p in (reactos_root / "sdk/lib/rust").rglob("*.rs")
-tools/rustconv/rustconv/verify_ffi.py:246: unpruned rust walk: for f in src.rglob("*.rs"):
-tools/rustconv/rustconv/verify_ffi.py:640: unpruned rust walk: for f in src_dir.rglob("*.rs")
 tools/rustconv/tests/test_export_audit.py:343: unpruned rust walk: fns = scan_rust_fns(sorted(OLE32_RUST.rglob("*.rs")))
 tools/scan_arch_cfg.py:95: unpruned rust walk: for path in root.rglob("*.rs"):
 tools/scan_bool_width.py:50: unpruned rust walk: for f in RUST_ROOT.rglob("*.rs"):

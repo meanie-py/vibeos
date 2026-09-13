@@ -1091,3 +1091,75 @@ def test_record_stamps_finalised_only_after_the_trace_settles(tmp_path):
     wait_at = src.index("await_trace_quiescence")
     stamp_at = src.index("finalised = True")
     assert wait_at < stamp_at, "the flag is set before the wait — it would mean nothing"
+
+
+def test_a_non_default_shift_warns_that_the_trace_will_not_replay(tmp_path, monkeypatch, capsys):
+    """Only the default icount shift has ever produced a replayable trace.
+
+    Measured on arm64, one boot, three shifts: 1 and 5 both stall at the first
+    4,096-byte read buffer with 271 bytes of guest serial; 3 reaches desktop
+    bringup. The RECORDING succeeds at all three, so the failure is invisible
+    until someone replays — by which time the expensive part is already spent.
+    """
+    from . import rrcmd
+
+    monkeypatch.setattr(
+        rrcmd.subprocess,
+        "run",
+        lambda *a, **k: type("R", (), {"returncode": 0, "stdout": "", "stderr": ""})(),
+    )
+    monkeypatch.setattr(rrcmd, "await_trace_quiescence", lambda t: 0)
+
+    class _Args:
+        arch = "arm64"
+        payload = "none"
+        smp = 1
+        name = "t"
+        build = False
+        timeout = 60
+        root = str(tmp_path)
+        shift = rr.DEFAULT_ICOUNT_SHIFT + 2
+
+    rrcmd.cmd_record(_Args(), tmp_path)
+    err = capsys.readouterr().err
+    assert "REPLAY PROBABLY WILL NOT" in err
+    assert "4,096" in err
+
+
+def test_replay_refuses_a_different_HOST_side_shape(tmp_path):
+    """Backends the guest cannot observe still change how far a replay gets.
+
+    Measured on one trace: file-backed serial without QMP reached 1773 guest
+    lines, the same with a QMP socket attached reached 23, and the recording's
+    own chardev+QMP shape reached 1693. A replay that silently under-reaches by
+    two orders of magnitude is worse than one that crashes — it reads as a
+    finding about the guest.
+    """
+    trace = tmp_path / "t"
+    trace.mkdir()
+    base = _base_cmd(tmp_path)
+    recorded = [
+        "-chardev",
+        "socket,id=ser0,path=/tmp/x/ser.sock,server=off,reconnect=1",
+        "-serial",
+        "chardev:ser0",
+        *base,
+    ]
+    rec, _ = rr.transform(recorded, mode="record", trace_dir=trace, stage=False)
+    rr.write_manifest(trace, arch="arm64", argv=rec, media={}, finalised=True)
+    rr.assert_same_shape(trace, rec)  # identical: fine
+
+    hand_rolled = ["-serial", f"file:{tmp_path}/out.log", *base]
+    now, _ = rr.transform(hand_rolled, mode="replay", trace_dir=trace, stage=False)
+    with pytest.raises(rr.RecordReplayError, match="HOST-SIDE shape"):
+        rr.assert_same_shape(trace, now)
+
+
+def test_host_shape_ignores_per_run_paths_and_ports(tmp_path):
+    """The harness picks a fresh socket path every run, so comparing paths would
+    refuse every legitimate replay. Only the backend KIND is compared."""
+    a = ["-qmp", "unix:/tmp/ros-aaa/qmp.sock,server,nowait", "-serial", "chardev:ser0"]
+    b = ["-qmp", "unix:/tmp/ros-zzz/qmp.sock,server,nowait", "-serial", "chardev:ser0"]
+    assert rr._host_shape(a) == rr._host_shape(b)
+    c = ["-qmp", "unix:/tmp/ros-aaa/qmp.sock,server,nowait", "-serial", "file:/tmp/o.log"]
+    assert rr._host_shape(a) != rr._host_shape(c)
