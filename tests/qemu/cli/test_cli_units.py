@@ -16,6 +16,7 @@ import subprocess
 import threading
 import time
 from pathlib import Path
+from typing import ClassVar
 
 import pytest
 
@@ -8034,3 +8035,38 @@ def test_clean_discovers_isolated_cargo_links_only_for_requested_arch(tmp_path):
     arm.mkdir(parents=True)
     assert provenance.workspace_cargo_targets(tmp_path, "amd64") == [x86]
     assert provenance.workspace_cargo_targets(tmp_path, "arm64") == [arm]
+
+
+def test_kill_fails_when_explicit_pids_match_no_tracked_vm(tmp_path, monkeypatch, capsys):
+    """`vibeos-cli kill <pid>` used to report OK when the pid matched nothing.
+
+    Measured: a QEMU launched outside start.sh/vm.py has no lockfile, so it is
+    invisible to running_vms(); two kill calls 29 minutes apart both reported
+    success while it held 94% of a core. A sweep matching nothing is fine --
+    `--stale` with no orphans is the normal case -- but a caller who NAMED
+    processes and had none stopped must not be told it worked.
+    """
+    from . import killvm
+
+    monkeypatch.setattr(killvm, "running_vms", lambda: [])
+
+    class _A:
+        pids: ClassVar[list[int]] = [4242]
+        arch = None
+
+    assert killvm.cmd_kill(_A(), tmp_path) != 0
+    assert "NOT killed" in capsys.readouterr().out
+
+
+def test_kill_still_succeeds_when_a_SWEEP_matches_nothing(tmp_path, monkeypatch):
+    """The other half of the distinction: `--stale` with no orphans is success."""
+    from . import killvm
+
+    monkeypatch.setattr(killvm, "running_vms", lambda: [])
+
+    class _A:
+        pids: ClassVar[list[int]] = []
+        arch = None
+        stale = True
+
+    assert killvm.cmd_kill(_A(), tmp_path) == 0
