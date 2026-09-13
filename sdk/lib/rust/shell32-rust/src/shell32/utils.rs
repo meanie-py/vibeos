@@ -28,10 +28,24 @@
 //! - A parameter named `fn` (legal C, reserved in Rust): the signature was renamed to `fn_`
 //!   but one call site kept the C spelling.
 //!
-//! What is left is the COM-shape tail: vtable calls written as Rust methods
-//! (`(*p).Release()` for `((*(*p).lpVtbl).Release)(p)`), field-vs-method access on island
-//! structs, and integer/pointer mismatches. Settle the casts on three-target AGREEMENT, as
-//! CDefView's were -- never from one target's error list.
+//! The COM call shape is now FIXED (46 sites, 211 -> 162): the ABI passes the interface
+//! pointer as the first argument, so `(*p).Release()` becomes `((*(*p).lpVtbl).Release)(p)`,
+//! and a vtable slot is a fn-POINTER FIELD, so it needs its own parens -- `(x.f)(a)`, never
+//! `x.f(a)`. Both forms were already used correctly at 13 sites in this file.
+//!
+//! NEXT ROOT, and it is substrate rather than repair: the bindgen island renders six of the
+//! interfaces this TU drives as OPAQUE C++ classes with no `lpVtbl` field at all --
+//! IExecuteCommand, IDefaultExtractIconInit, IProgressDialog, IFileSystemBindData,
+//! IObjectWithSelection, IInitializeCommand. `crate::shellcom` is the module that exists to
+//! give such interfaces their lpVtbl shape, and it already covers IContextMenu and IStream;
+//! these six need adding there.
+//!
+//! Do that against the IDL, one method at a time, and do NOT rush it: a vtable is ORDER
+//! DEPENDENT, so a slot in the wrong position calls the wrong method with the wrong arguments
+//! and compiles perfectly while doing it. That is why it is left here rather than guessed at.
+//!
+//! After that the remainder is integer/pointer mismatches. Settle those on three-target
+//! AGREEMENT as CDefView's were -- never from one target's error list.
 use crate::prelude::*;
 use crate::atl::CStringW;
 use crate::shell32::utils_support::*;
@@ -363,7 +377,7 @@ pub unsafe extern "system" fn SHShouldShowWizards(
         hr = S_FALSE;
     }
 
-    (*pBrowser).Release();
+    ((*(*pBrowser).lpVtbl).Release)(pBrowser);
     return hr;
 }
 unsafe extern "C" fn OpenEffectiveToken(DesiredAccess: DWORD, phToken: *mut HANDLE) -> BOOL {
@@ -397,7 +411,7 @@ pub unsafe extern "C" fn BindCtx_ContainsObject(pBindCtx: *mut IBindCtx, pszName
     let hr = if pBindCtx.is_null() {
         -1
     } else {
-        (*pBindCtx).GetObjectParam(pszName as LPOLESTR, &mut punk)
+        ((*(*pBindCtx).lpVtbl).GetObjectParam)(pBindCtx, pszName as LPOLESTR, &mut punk)
     };
     let result = if pBindCtx.is_null() || hr < 0 {
         FALSE
@@ -405,7 +419,7 @@ pub unsafe extern "C" fn BindCtx_ContainsObject(pBindCtx: *mut IBindCtx, pszName
         TRUE
     };
     if !punk.is_null() {
-        (*punk).Release();
+        ((*(*punk).lpVtbl).Release)(punk);
     }
     result
 }
@@ -417,7 +431,7 @@ pub unsafe extern "C" fn BindCtx_GetMode(pbc: *mut IBindCtx, dwDefault: u32) -> 
 
     let mut BindOpts = core::mem::zeroed::<BIND_OPTS>();
     BindOpts.cbSize = core::mem::size_of::<BIND_OPTS>() as u32;
-    let hr = (*(*pbc).lpVtbl).GetBindOptions(pbc, &mut BindOpts);
+    let hr = ((*(*pbc).lpVtbl).GetBindOptions)(pbc, &mut BindOpts);
     if hr < 0 {
         return dwDefault;
     }
@@ -433,7 +447,7 @@ pub unsafe extern "C" fn SHSkipJunctionBinding(pbc: *mut IBindCtx, pclsid: *mut 
     let mut BindOps: BIND_OPTS = core::mem::zeroed();
     BindOps.cbStruct = core::mem::size_of::<BIND_OPTS>() as u32;
 
-    if ((*pbc).GetBindOptions(core::ptr::addr_of_mut!(BindOps)) >= 0) &&
+    if (((*(*pbc).lpVtbl).GetBindOptions)(pbc, core::ptr::addr_of_mut!(BindOps)) >= 0) &&
         BindOps.grfFlags == OLECONTF_LINKS
     {
         return TRUE;
@@ -455,35 +469,35 @@ pub unsafe extern "C" fn SHIsFileSysBindCtx(
     let _pBindData_cpp_com_guard = CppComPtrGuard::new(core::ptr::addr_of_mut!(pBindData));
 
     if pBindCtx.is_null()
-        || (*pBindCtx).GetObjectParam(
+        || ((*(*pBindCtx).lpVtbl).GetObjectParam)(pBindCtx,
             STR_FILE_SYS_BIND_DATA as PWSTR,
             core::ptr::addr_of_mut!(punk),
         ) < 0
     {
         if !punk.is_null() {
-            (*punk).Release();
+            ((*(*punk).lpVtbl).Release)(punk);
         }
         return S_FALSE;
     }
 
-    if (*punk).QueryInterface(core::ptr::addr_of!(IID_IFileSystemBindData), core::ptr::addr_of!(pBindData).cast())
+    if ((*(*punk).lpVtbl).QueryInterface)(punk, core::ptr::addr_of!(IID_IFileSystemBindData), core::ptr::addr_of!(pBindData).cast())
         < 0
     {
         if !pBindData.is_null() {
-            (*pBindData).Release();
+            ((*(*pBindData).lpVtbl).Release)(pBindData);
         }
         if !punk.is_null() {
-            (*punk).Release();
+            ((*(*punk).lpVtbl).Release)(punk);
         }
         return S_FALSE;
     }
 
     if !pFindData.is_null() {
-        (*pBindData).GetFindData(pFindData);
+        ((*(*pBindData).lpVtbl).GetFindData)(pBindData, pFindData);
     }
 
-    (*pBindData).Release();
-    (*punk).Release();
+    ((*(*pBindData).lpVtbl).Release)(pBindData);
+    ((*(*punk).lpVtbl).Release)(punk);
     return S_OK;
 }
 #[no_mangle]
@@ -521,9 +535,9 @@ pub unsafe extern "C" fn SHBindToObjectEx(
 
         let mut hr: i32;
         if _ILIsDesktop(pidl) != 0 {
-            hr = (*pShellFolder).QueryInterface(riid, ppvObj);
+            hr = ((*(*pShellFolder).lpVtbl).QueryInterface)(pShellFolder, riid, ppvObj);
         } else {
-            hr = (*pShellFolder).BindToObject(pidl, pBindCtx, riid, ppvObj);
+            hr = ((*(*pShellFolder).lpVtbl).BindToObject)(pShellFolder, pidl, pBindCtx, riid, ppvObj);
         }
 
         if hr >= 0 && (*ppvObj).is_null() {
@@ -531,7 +545,7 @@ pub unsafe extern "C" fn SHBindToObjectEx(
         }
 
         if !psfDesktop.is_null() {
-            (*psfDesktop).Release();
+            ((*(*psfDesktop).lpVtbl).Release)(psfDesktop);
         }
 
         hr
@@ -571,7 +585,7 @@ pub unsafe extern "C" fn SHELL_GetUIObjectOfAbsoluteItem(
     );
 
     if hr >= 0 {
-        hr = (*psf).GetUIObjectOf(
+        hr = ((*(*psf).lpVtbl).GetUIObjectOf)(psf,
             hWnd,
             1,
             &pidlChild,
@@ -579,7 +593,7 @@ pub unsafe extern "C" fn SHELL_GetUIObjectOfAbsoluteItem(
             core::ptr::null_mut(),
             ppvObj,
         );
-        (*psf).Release();
+        ((*(*psf).lpVtbl).Release)(psf);
 
         if hr >= 0 {
             if !(*ppvObj).is_null() {
@@ -607,7 +621,7 @@ pub unsafe extern "C" fn SHELL_DisplayNameOf(
         hr = SHBindToParent(pidl, core::ptr::addr_of!(IID_IShellFolder), core::ptr::addr_of_mut!(psfRoot).cast(), core::ptr::addr_of_mut!(pidlChild));
         if hr < 0 {
             if !psfRoot.is_null() {
-                let _ = (*psfRoot).Release();
+                let _ = ((*(*psfRoot).lpVtbl).Release)(psfRoot);
             }
             return hr;
         }
@@ -615,14 +629,14 @@ pub unsafe extern "C" fn SHELL_DisplayNameOf(
         pidl = pidlChild;
     }
     let mut sr: STRRET = core::mem::zeroed();
-    hr = (*psf).GetDisplayNameOf(pidl as PCUITEMID_CHILD, Flags, core::ptr::addr_of_mut!(sr));
+    hr = ((*(*psf).lpVtbl).GetDisplayNameOf)(psf, pidl as PCUITEMID_CHILD, Flags, core::ptr::addr_of_mut!(sr));
     let result = if hr >= 0 {
         StrRetToStrW(core::ptr::addr_of_mut!(sr), pidl, ppStr)
     } else {
         hr
     };
     if !psfRoot.is_null() {
-        let _ = (*psfRoot).Release();
+        let _ = ((*(*psfRoot).lpVtbl).Release)(psfRoot);
     }
     result
 }
@@ -666,7 +680,7 @@ pub unsafe extern "C" fn SHGetAttributes(
     }
 
     let oldAttrs = dwAttributes;
-    if ((*(*psf).lpVtbl).GetAttributesOf(
+    if (((*(*psf).lpVtbl).GetAttributesOf)(
         psf,
         1,
         core::ptr::addr_of_mut!(pidlLast),
@@ -708,8 +722,8 @@ pub unsafe extern "C" fn SHELL_GetIDListTarget(
     };
     if hr >= 0 {
         unsafe {
-            hr = (*pSL).GetIDList(ppidl);
-            (*pSL).Release();
+            hr = ((*(*pSL).lpVtbl).GetIDList)(pSL, ppidl);
+            ((*(*pSL).lpVtbl).Release)(pSL);
         }
     }
     hr
@@ -810,7 +824,7 @@ pub unsafe extern "C" fn BindCtx_RegisterObjectParam(
     *ppbc = pBindCtx;
 
     if !pBindCtx.is_null() {
-        (*pBindCtx).AddRef();
+        ((*(*pBindCtx).lpVtbl).AddRef)(pBindCtx);
     } else {
         hr = CreateBindCtx(0, ppbc);
         if hr < 0 {
@@ -826,7 +840,7 @@ pub unsafe extern "C" fn BindCtx_RegisterObjectParam(
     hr = (*(*ppbc)).RegisterObjectParam(pszKey, punk);
 
     if !p_unknown.is_null() {
-        (*p_unknown).Release();
+        ((*(*p_unknown).lpVtbl).Release)(p_unknown);
     }
 
     if hr < 0 {
@@ -1551,8 +1565,8 @@ pub unsafe extern "system" fn SHFindComputer(pidlRoot: LPCITEMIDLIST, pidlSavedS
     InvokeInfo.cbSize = core::mem::size_of::<CMINVOKECOMMANDINFO>() as u32;
     InvokeInfo.lpParameters = b"{996E1EB1-B524-11D1-9120-00A0C98BA67D}\0".as_ptr() as *const i8;
     InvokeInfo.nShow = SW_SHOWNORMAL;
-    hr = (*pCM).InvokeCommand(&InvokeInfo);
-    (*pCM).Release();
+    hr = ((*(*pCM).lpVtbl).InvokeCommand)(pCM, &InvokeInfo);
+    ((*(*pCM).lpVtbl).Release)(pCM);
 
     (hr >= 0) as i32
 }
@@ -2025,7 +2039,7 @@ pub unsafe extern "system" fn SHGetRealIDL(
         return hr;
     }
 
-    hr = (*psf).GetAttributesOf(
+    hr = ((*(*psf).lpVtbl).GetAttributesOf)(psf,
         1,
         core::ptr::addr_of!(pidlSimple),
         core::ptr::addr_of_mut!(attrs)
@@ -2060,13 +2074,13 @@ pub unsafe extern "C" fn IUnknown_InitializeCommand(
     let mut pIC: *mut IInitializeCommand = core::ptr::null_mut();
     let _pIC_cpp_com_guard = CppComPtrGuard::new(core::ptr::addr_of_mut!(pIC));
     if {
-        hr = (*pUnk).QueryInterface(core::ptr::addr_of!(IID_IInitializeCommand), core::ptr::addr_of_mut!(pIC).cast());
+        hr = ((*(*pUnk).lpVtbl).QueryInterface)(pUnk, core::ptr::addr_of!(IID_IInitializeCommand), core::ptr::addr_of_mut!(pIC).cast());
         hr >= 0
     } {
-        hr = (*pIC).Initialize(pszCommandName, pPB);
+        hr = ((*(*pIC).lpVtbl).Initialize)(pIC, pszCommandName, pPB);
     }
     if !pIC.is_null() {
-        (*pIC).Release();
+        ((*(*pIC).lpVtbl).Release)(pIC);
     }
     hr
 }
@@ -2089,12 +2103,12 @@ pub unsafe extern "C" fn InvokeIExecuteCommand(
     let mut pOWS: *mut IObjectWithSelection = core::ptr::null_mut();
     let _pOWS_cpp_com_guard = CppComPtrGuard::new(core::ptr::addr_of_mut!(pOWS));
     if !pSIA.is_null() {
-        let hr = (*pEC).QueryInterface(
+        let hr = ((*(*pEC).lpVtbl).QueryInterface)(pEC,
             IID_IObjectWithSelection,
             core::ptr::addr_of_mut!(pOWS) as *mut *mut core::ffi::c_void,
         );
         if hr >= 0 && !pOWS.is_null() {
-            (*pOWS).SetSelection(pSIA);
+            ((*(*pOWS).lpVtbl).SetSelection)(pOWS, pSIA);
         }
     }
 
@@ -2105,12 +2119,12 @@ pub unsafe extern "C" fn InvokeIExecuteCommand(
         0
     };
 
-    (*pEC).SetNoShowUI(if (fMask & CMIC_MASK_FLAG_NO_UI) != 0 {
+    ((*(*pEC).lpVtbl).SetNoShowUI)(pEC, if (fMask & CMIC_MASK_FLAG_NO_UI) != 0 {
         1
     } else {
         0
     });
-    (*pEC).SetShowWindow(if !pICI.is_null() {
+    ((*(*pEC).lpVtbl).SetShowWindow)(pEC, if !pICI.is_null() {
         (*pICI).nShow
     } else {
         SW_SHOW
@@ -2122,27 +2136,27 @@ pub unsafe extern "C" fn InvokeIExecuteCommand(
     if (fMask & CMIC_MASK_CONTROL_DOWN) != 0 {
         dwKeyState |= MK_CONTROL;
     }
-    (*pEC).SetKeyState(dwKeyState);
+    ((*(*pEC).lpVtbl).SetKeyState)(pEC, dwKeyState);
 
     if !pICI.is_null()
         && (fMask & CMIC_MASK_UNICODE) != 0
         && !(*pICI).lpDirectoryW.is_null()
     {
-        (*pEC).SetDirectory((*pICI).lpDirectoryW);
+        ((*(*pEC).lpVtbl).SetDirectory)(pEC, (*pICI).lpDirectoryW);
     }
     if !pICI.is_null()
         && (fMask & CMIC_MASK_UNICODE) != 0
         && !(*pICI).lpParametersW.is_null()
     {
-        (*pEC).SetParameters((*pICI).lpParametersW);
+        ((*(*pEC).lpVtbl).SetParameters)(pEC, (*pICI).lpParametersW);
     }
     if !pICI.is_null() && (fMask & CMIC_MASK_PTINVOKE) != 0 {
-        (*pEC).SetPosition((*pICI).ptInvoke);
+        ((*(*pEC).lpVtbl).SetPosition)(pEC, (*pICI).ptInvoke);
     }
 
-    let result = (*pEC).Execute();
+    let result = ((*(*pEC).lpVtbl).Execute)(pEC);
     if !pOWS.is_null() {
-        (*pOWS).Release();
+        ((*(*pOWS).lpVtbl).Release)(pOWS);
     }
     result
 }
@@ -2330,14 +2344,14 @@ pub unsafe extern "C" fn SHELL_CreateShell32DefaultExtractIcon(
     );
     if ((hr) < 0) {
         if !initIcon.is_null() {
-            (*(*initIcon).lpVtbl).Release(initIcon);
+            ((*(*initIcon).lpVtbl).Release)(initIcon);
         }
         return hr;
     }
     (*(*initIcon).lpVtbl).SetNormalIcon(initIcon, swShell32Name.as_ptr(), IconIndex);
-    let result = (*(*initIcon).lpVtbl).QueryInterface(initIcon, riid, ppvOut);
+    let result = ((*(*initIcon).lpVtbl).QueryInterface)(initIcon, riid, ppvOut);
     if !initIcon.is_null() {
-        (*(*initIcon).lpVtbl).Release(initIcon);
+        ((*(*initIcon).lpVtbl).Release)(initIcon);
     }
     result
 }
