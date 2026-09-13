@@ -37,6 +37,27 @@ Read the first entry of the divergence log before planning around a replay.
 Traces live under `~/vibeos-rr/` (`$VIBEOS_RR_ROOT`). They are **not** in `/tmp`:
 a trace costs a full boot to make and is worth more than the boot that made it.
 
+## What a recording IS — a conformance or smoke boot, never a gate boot
+
+`rr record` drives `vibeos-cli conformance` (`--payload kmtest`) or
+`vibeos-cli smoke` (`--payload none`). It does **not** drive `vibeos-cli gate`.
+So anything the gate adds to a boot is outside what a trace captures unless
+somebody wires it in on purpose.
+
+This is worth stating because the wrong inference is a short one and both of its
+premises are true. When the WoW64 ladder started running on arm64 gates
+(`9f73d184fea1`), the natural reading was "arm64 gates run the ladder" + "rr
+records arm64 boots" therefore "traces now contain nine WoW64 guests that were
+not there before" — which would make a trace recorded today incomparable with
+one recorded yesterday, and send someone hunting a difference that does not
+exist. It is false: `want_ladder` is referenced only inside `smoke.py`, the gate
+opts in explicitly (`gate.py`), and neither rr path passes `--ladder`.
+
+Adding a gate-only behaviour to recordings is a one-line change to
+`_boot_cmd` in `rrcmd.py`. It should stay a deliberate choice rather than
+something that arrives by inheritance — a trace's value is that two of them are
+comparable, and that holds only while what gets recorded is pinned.
+
 ## What a trace is
 
 ```
