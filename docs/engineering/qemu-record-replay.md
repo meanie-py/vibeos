@@ -526,7 +526,37 @@ Record it here and keep going; only chase one when it looks load-bearing.
   progress implies equal trace bytes while the content is the same, so both
   hypotheses predict the same observation.
 
-  **There is a modest signal, in WHICH measure agrees better.** Both replays stop
+  **SETTLED by varying the icount shift, and the answer rules out BOTH.** The
+  clean discriminator is to record the same guest boot with a different encoding
+  density: `--shift 5` produced a 5,999,935-byte trace where `--shift 3` produced
+  10,666,166 for the same boot — 44% denser — so a fixed FILE offset and a fixed
+  GUEST point predict different stall locations.
+
+  | shift | trace size | stalled at | guest serial | where |
+  |---|---|---|---|---|
+  | 3 | 10,666,166 | 2,342,912 (22%) | 124,212 | desktop bringup |
+  | 5 | 5,999,935 | **4,096 (0.1%)** | **271** | still at the UEFI banner |
+
+  Neither hypothesis survives: 4,096 is nowhere near 2,342,912, and 271 bytes is
+  nowhere near 124,212. **Replay reach is a function of the icount shift**, and
+  strongly so — shift=3 gets through the whole kernel boot to desktop bringup,
+  shift=5 barely leaves firmware. (That also reproduces an observation from the
+  first night of this work, when a shift=5 replay sat at the UEFI banner at 271
+  bytes for eight minutes and was written off as contention.)
+
+  This points at the clock/timing machinery rather than at a byte limit or a
+  particular guest code path, which fits the event census: `EVENT_CP_CLOCK_WARP_
+  ACCOUNT` is the second most common record in the trace at 1,178,159. A larger
+  shift means coarser virtual time per instruction, so clock-warp accounting
+  changes character — and it is the one thing known to differ between these two
+  runs.
+
+  Within a single shift it stays reproducible: two different traces at shift=3
+  both stalled in desktop bringup, and the detector reports the position, so a
+  future fix has a cheap before/after.
+
+  **There is a modest signal, in WHICH measure agrees better** (among the
+  shift=3 traces only). Both replays stop
   in the same boot phase, desktop bringup:
 
   | trace | trace bytes | guest serial | last guest line |
