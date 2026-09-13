@@ -555,6 +555,29 @@ Record it here and keep going; only chase one when it looks load-bearing.
   and 5 — one is a replay that ran most of a boot and stopped, the other is a
   replay that never started.
 
+  **The traces are identical at the head and diverge in CHARACTER within
+  4KB.** Decoding all three: the first thirteen events match structurally,
+  including `EVENT_INSTRUCTION(0) + 336314 -> 336314` at the same instruction
+  count; only host-clock values differ. But at comparable file offsets the event
+  mix has already parted:
+
+  ```
+  shift 5, @4000   982:EVENT_CHAR_WRITE(22) 1 -> 1
+                   983:EVENT_INSTRUCTION(0) + 25 -> 381953882      (unbroken run)
+
+  shift 3, @4000   784:EVENT_INSTRUCTION(0) + 1249581 -> 407930319
+                   785:EVENT_CP_CLOCK_WARP_ACCOUNT(31)
+                   786:EVENT_CP_CLOCK_VIRTUAL(34)
+                   788:EVENT_INTERRUPT(1)
+  ```
+
+  So at shift 3 the early trace carries periodic timer interrupts and clock
+  checkpoints separated by hundred-thousand-instruction runs, while at shift 5 it
+  is an uninterrupted char-write/`+25` sequence. Recorded as an observation, not
+  a mechanism — it says the shift changes what the stream is MADE OF that early,
+  which is a more specific fact than "reach depends on the shift" and is where
+  anyone chasing this should start.
+
   The trap this creates is the reason `rr record` now warns on a non-default
   `--shift`: RECORDING succeeds at every value, so the failure is invisible until
   someone tries to replay, by which point the expensive part is already spent. (That also reproduces an observation from the
