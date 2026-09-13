@@ -18,6 +18,15 @@
 #
 # Cached in $kbase convenience variable; inspect.sh reads it back into the
 # manifest so subsequent calls skip the scan.
+#
+# THE SAME TRAP EXISTS OUTSIDE THIS FILE. Fixing the scan does not help anyone
+# resolving a kernel symbol by other means: `build-<arch>/ntoskrnl/*.exe` matches
+# only the UP `ntoskrnl.exe`, while the media boots `ntkrnlmp.exe` from one
+# directory deeper (`ntoskrnl/ntkrnlmp/`). A glob or tab-complete in the obvious
+# place hands you the wrong kernel and it ANSWERS rather than erroring — measured:
+# `ntoskrnl.exe+0x3BBA4` is `KeSetIdealProcessorThread+0x1c` in the UP image and
+# `RtlRaiseStatus+0x44` in the MP one, and only the latter fits the bugcheck it
+# came from. See docs/engineering/agent-reference.md.
 
 import gdb
 import os

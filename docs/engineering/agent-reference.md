@@ -260,6 +260,18 @@ qemu/run-until.sh $RUN --break KeBugCheckEx --timeout 180 --then triage-bugcheck
 ```
 On the amd64 KiUnwaitThread BUGCHECK flake, this returns the stop code, exception code, faulting PC + symbol, full KTRAP_FRAME, and `identify-object` on the bogus pointer — all in one tool call.
 
+**Since the MP-default promotion, `build-arm64/ntoskrnl/*.exe` is the WRONG
+kernel.** The media boots `/KERNEL=ntkrnlmp.exe` (`livecd.ini`), and the MP image
+lives one directory deeper at `build-<arch>/ntoskrnl/ntkrnlmp/ntkrnlmp.exe`. A
+glob or tab-complete in the obvious directory hands you the UP kernel, and it
+*answers* rather than erroring — so hand symbolication (`llvm-symbolizer`,
+`addr2line`, `add-symbol-file`) silently returns a plausible wrong symbol. A real
+case: `ntoskrnl.exe+0x3BBA4` resolved to `KeSetIdealProcessorThread+0x1c` against
+the UP image and `RtlRaiseStatus+0x44` against the MP one. Only the second fits a
+`BUGCHECK 0x1E` with `P1 = STATUS_FILE_INVALID`; had the fault been anywhere near
+scheduling, the wrong answer would have been believed. Check which image you fed
+it before trusting any symbol from this period.
+
 **If a breakpoint never fires on a symbol you know is hot, check which image
 `find-kbase` chose.** Every media now carries BOTH kernels and boots MP by
 default, while `VIBEOS_KERNEL` still names the UP image — so the scan could match
