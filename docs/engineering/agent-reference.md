@@ -289,10 +289,10 @@ Full toolkit reference + design: `docs/engineering/kernel-debugging-infra.md` an
 record mode and keeps a self-contained trace under `~/vibeos-rr/`;
 `./vibeos-cli rr replay latest` then re-runs that *exact* boot,
 instruction-for-instruction. A 1-in-60 crash you have recorded reproduces every
-time. **A replay cannot be STOPPED on QEMU 9.0.2** — stepping, attaching
-mid-run, and even a breakpoint hit all abort it — so a trace is a deterministic
-capture, not a debugging session, and reverse execution is unreachable. See the
-doc before planning a debugging session.
+time. **Never stop a replay from the debugger** — stepping, attaching mid-run
+and even a breakpoint hit all abort it. Stop it with QMP `replay-break` at an
+icount and then attach gdb to the already-paused guest; that is verified
+working. See the doc before planning a debugging session.
 
 It is single-vCPU, TCG-only, no-NIC, native-backend-only, and it *refuses*
 rather than producing a trace that silently diverges. `--smp 1` is accepted and
