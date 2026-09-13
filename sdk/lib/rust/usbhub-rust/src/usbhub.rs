@@ -2961,8 +2961,18 @@ pub unsafe extern "system" fn USBD_GetDeviceInformationEx(
         PipeNumber = 0;
         while PipeNumber < (*DeviceInfo).NumberOfOpenPipes {
             RtlCopyMemory(
-                core::ptr::addr_of_mut!((*NodeInfo).PipeList[PipeNumber as usize]) as *mut _,
-                core::ptr::addr_of!((*DeviceInfo).PipeList[PipeNumber as usize]) as *const _,
+                // `addr_of!(x.PipeList[n])` READS as address-taking but the index inside
+                // the place expression still bounds-checks, and both PipeLists are
+                // flexible arrays the caller over-allocates (`PipeList[ANYSIZE_ARRAY]`
+                // in usbioctl.h, `PipeList[1]` in hubbusif.h) that bindgen models as
+                // `[T; 1]`. The loop runs to NumberOfOpenPipes, so ANY device with more
+                // than one open pipe panicked here. Walk each array by its own stride.
+                (&raw mut (*NodeInfo).PipeList)
+                    .cast::<USB_PIPE_INFO>()
+                    .add(PipeNumber as usize) as *mut _,
+                (&raw const (*DeviceInfo).PipeList)
+                    .cast::<USB_PIPE_INFORMATION_0>()
+                    .add(PipeNumber as usize) as *const _,
                 core::mem::size_of::<USB_PIPE_INFO>() as SIZE_T,
             );
             PipeNumber += 1;

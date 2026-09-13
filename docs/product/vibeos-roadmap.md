@@ -941,10 +941,10 @@ Field-manual § pointers hold the full writeups. **Update on state change.**
   instruction-for-instruction. Recording is verified on arm64 `--smp 1` (the MP kernel on one
   CPU — precisely this bug's configuration): boot to desktop in ~90s vs ~40s normally, 10MB
   trace, and a replay whose guest serial matched the recording line for line as far as it ran.
-  **But the two things that would close #39 with it do not work yet**: the gdbstub aborts QEMU
-  9.0.2 whenever a replay is stopped (`Playback shouldn't have to iowait`), so
-  `reverse-continue` from the zeroed frame is unreachable; and replays wedge partway at a point
-  that varies between runs. So this is not yet a route to "who set PC to 0" — it is a
+  **But the two things that would close #39 with it do not work yet**: under gdb a replay can be
+  run but not STOPPED where you want it (`stepi` aborts QEMU 9.0.2 with `Playback shouldn't
+  have to iowait`), so `reverse-continue` from the zeroed frame has not been reached; and
+  replays wedge partway at a point that varies between runs. So this is not yet a route to "who set PC to 0" — it is a
   deterministic capture of a crashing boot, which is still more than a soak ever gave us.
   Both limitations, their measurements, and what to re-test on a QEMU upgrade are in
   `docs/engineering/qemu-record-replay.md`.
@@ -1611,6 +1611,66 @@ Field-manual § pointers hold the full writeups. **Update on state change.**
     idiom and adjacency at the top of the intermittent list: tested, they fire independently,
     and their `KmtGetPoolTag` returns `0x0062005c` / `0x0073006f` — UTF-16 `\b` and `os`, i.e.
     those Buffers point into the middle of an allocation rather than at its start.
+    **SUPERSEDED SAME NIGHT — it IS the same bug, and it is in the HARNESS, not the pool.**
+    `modules/rostests/kmtests/include/kmt_test_kernel.h` keeps a private `POOL_HEADER` whose
+    64-bit layout is gated on **`_M_AMD64`**; the kernel's (`ntoskrnl/mm/ARM3/miarm.h:372`)
+    is gated on **`_WIN64`**. arm64 is `_WIN64` and not `_M_AMD64`, so the kernel writes a
+    16-byte header (its own `C_ASSERT(sizeof(POOL_HEADER) == POOL_BLOCK_SIZE ==
+    sizeof(LIST_ENTRY))` compiles on arm64) while kmtest's copy is 8 bytes. `KmtGetPoolType`
+    and `KmtGetPoolTag` do `Header = Memory; Header--`, so on arm64 they step back HALF a
+    header and read `PoolTag`/`ProcessBilled` as `Ulong1`. That predicts every observation:
+    `PoolType` is bits of the quota slot that `ExAllocatePoolWithQuotaTag` sets to the process
+    or NULL (hence the two modes), `:178` fails stably because the quota bit is never where
+    kmtest looks, `KmtGetPoolTag` returning `0xfffffa00`/`0xfffff800` is the high half of a
+    kernel pointer, and IoDeviceObject's `0x0062005c`/`0x0073006f` is the previous block's
+    payload. **There is no pool corruption and no arm64 kernel defect here.** The arm64-only
+    pattern recorded above — i386 144/144, amd64 68/68, arm64 alone unstable — was the tell:
+    an arch-selective macro produces exactly it. Fix is `_M_AMD64` -> `_WIN64` in that header,
+    affecting three call sites (ExPools.c:175, IoDeviceObject_drv.c:198/206), but it is a
+    CONFORMANCE TEST change that will move many arm64 assertions at once and wants a
+    deliberate arm64 re-seed — owner's call, not a drive-by.
+    **Confirmed against the toolchain, not just read out of the headers.** `_WIN64` IS a
+    clang builtin: `.build-tools/llvm-mingw/bin/clang -target <t> -dM -E </dev/null` gives it
+    for both `aarch64-w64-mingw32` and `x86_64-w64-mingw32` and not for `i686-w64-mingw32`.
+    **`_M_AMD64` is NOT a clang builtin on any mingw target** — a bare `-dM -E` reports it
+    absent even for x86_64, so read the `_M_AMD64` column below as "in a real TU that includes
+    the SDK", not as something `-dM -E` will show you.
+    It cannot reach arm64 by any path, structurally rather than incidentally: both definition
+    sites are gated on x86_64 — `sdk/include/reactos/msvctarget.h` defines it at :16 inside an
+    `#elif defined(__x86_64__)` arm of a mutually exclusive chain whose `#elif
+    defined(__arm64__)` arm (:28) is the one arm64 takes, and `sdk/include/vcruntime/
+    _mingw_mac.h:85` gates its copy on `defined(__x86_64)`. `CMakeLists.txt:279` passes
+    `-D_ARM64_ -D_M_ARM64 -D__arm64__ -D__aarch64__ -D_WIN64` for arm64.
+    | arch | `_WIN64` (compiler) | `_M_AMD64` (with SDK) | kmtest | kernel | agree |
+    | i386 | no | no | 32-bit | 32-bit | yes |
+    | amd64 | yes | yes | 64-bit | 64-bit | yes |
+    | arm64 | yes | **no** | **32-bit** | **64-bit** | **NO** |
+    That is exactly the i386-144/144, amd64-68/68, arm64-only-unstable shape recorded above,
+    and the amd64 row is the one to confirm before touching the header: it is why the fix is
+    demonstrably arm64-only across the three call sites.
+  - **`NpfsConnect` on arm64 — an UNDOCUMENTED intermittent, found 2026-09-13.** One
+    occurrence, so no rate: `pass 679 -> 678, fail 0 -> 1` on
+    `20260913-022245-fw6sw4_g-conformance-arm64`. `NpfsConnect` is **679/0 on all three
+    floors with no `assert?` anywhere**, so this is exactly the case the ratchet quest warned
+    about — an intermittent that never fired during the 15 seeding boots is indistinguishable
+    from a regression on any single sweep.
+    **Why it matters more than one more flaky row: arm64 conformance intermittents COMPOSE,
+    and the retry budget is sized for one.** Gate `20260913-021807-fbitjxpy` burned all three
+    arm64 attempts on TWO different bugs — `ExPools` (a1), `NpfsConnect` (r1, clean on
+    ExPools), `ExPools` (r2). The retry does not need the same test to fail three times, only
+    SOME regression each time, so independent intermittents multiply the all-attempts-fail
+    probability well past what a 3-attempt budget was designed to absorb. Nothing in the final
+    verdict shows that the three attempts disagreed, which is the information that would
+    distinguish this from a real regression: **a lane's diff reproduces the SAME regression
+    every attempt; independent intermittents produce a different one each time.** That
+    distinction is computable from the per-attempt `salient` lines the gate already captures,
+    and is the discriminator `CONFORMANCE_FLAKE` currently throws away — `gate.py:319` assigns
+    that classification as a CONSTANT to every ratchet failure, so a regression reproducing
+    3/3 carries the same label as a coin flip, and `queue.py`'s `INCONCLUSIVE` set (which does
+    not contain it) therefore rejects the lane and blames its diff either way. Open gating-policy
+    question for the owner; do not "fix" it by adding `CONFORMANCE_FLAKE` to `INCONCLUSIVE`,
+    which would make every genuine conformance regression halt the drain as infrastructure and
+    leave the ratchet unenforceable through the queue.
   - **`ZwAllocateVirtualMemory` 843 → 839 — a real UP-vs-MP DIFFERENCE, not a regression, and
     its baseline is a 1-in-101 sample.** Correlating pass count against `smp` over every banked
     i386 run dir: **smp1 scores 843 in 4/4 runs; smp2 scores 839 in 100 runs and 843 in exactly

@@ -17,6 +17,18 @@ hunting a source defect that does not exist. Any future partition move re-arms
 whichever walks are still written this way, which is why the fix has to be a
 standing gate and not a one-time sweep.
 
+THE SECOND TREE. The rule started out as "Rust sources, because those are the walks
+that cross a live cargo target dir". That was too narrow: a BUILD dir is the most-written
+tree in the repo, and on 2026-09-13 three separate tools were found walking one with a
+post-filter — `scan_ud2`'s driver sweep, `scan_self_recursive`, and
+`scan_flex_array_panic.find_artifact`, which post-filtered on "-target/", the exact tell
+named above. None was a `*.rs` walk, so none of them tripped the original rule. The
+extension matches on the RECEIVER (`build`, `build_dir`, `self.build`) rather than on the
+glob pattern, which is what keeps it narrow enough to gate: 4 sites, where "every
+recursive walk in tools+tests" would be ~64 and mostly harmless single-level or
+source-tree walks. The root being a build dir IS the mutable-tree criterion, made
+greppable.
+
 THE FIX at each site is `tools/source_walk.py` — `source_files(root)`, or
 `source_walk(root)` when you need the dirnames. It excludes the mutable tree BEFORE
 scandir rather than after, so a concurrent `rm -rf` inside it cannot be observed.
@@ -53,6 +65,20 @@ BASELINE = REPO / "tools" / "lint-baseline" / "scan_unpruned_walk.txt"
 # Rust sources because those are the walks that cross a live cargo target dir.
 WALK_RE = re.compile(r"\.(?:rglob\(\s*[\"']\*\.rs[\"']|glob\(\s*[\"']\*\*/\*\.rs[\"'])")
 
+# The SECOND mutable tree, and the busier one. The rule above says "restricted to Rust
+# sources because those are the walks that cross a live cargo target dir" -- too narrow.
+# A BUILD dir is the most-written tree in the repo, and three separate tools walked one
+# with a post-filter: scan_ud2's driver sweep and scan_self_recursive (both fixed
+# 2026-09-13), and scan_flex_array_panic, whose `find_artifact` even post-filtered on
+# "-target/" -- the exact tell this file's docstring names. None was a `*.rs` walk, so
+# none of them tripped the rule above.
+#
+# Matching on the RECEIVER rather than the pattern is what makes this narrow enough to
+# be worth gating: `build`/`build_dir`/`self.build` recursive walks are 4 sites in the
+# tree, where "every recursive walk" would be ~64 and mostly harmless. The root being a
+# build dir IS the mutable-tree criterion, made concrete and greppable.
+BUILD_WALK_RE = re.compile(r"\b\w*build\w*\s*\.\s*(?:rglob\(|glob\(\s*[\"']\*\*/)")
+
 # Files that necessarily CONTAIN the bad spelling as data rather than executing it:
 # the module implementing the safe walk names the unsafe one in its docstring, this
 # scanner states the pattern it matches, and the control harness stores a known-BAD
@@ -86,8 +112,12 @@ def findings(roots: list[Path] | None = None) -> list[str]:
                 continue
             rel = py.relative_to(REPO) if py.is_relative_to(REPO) else py
             for i, line in enumerate(text.splitlines(), 1):
-                if WALK_RE.search(line) and NOLINT not in line:
+                if NOLINT in line:
+                    continue
+                if WALK_RE.search(line):
                     out.append(f"{rel}:{i}: unpruned rust walk: {line.strip()}")
+                elif BUILD_WALK_RE.search(line):
+                    out.append(f"{rel}:{i}: unpruned build walk: {line.strip()}")
     return out
 
 

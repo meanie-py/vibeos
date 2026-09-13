@@ -44,6 +44,7 @@ a member missing from the build dir is reported, never skipped silently.
 from __future__ import annotations
 
 import argparse
+import os
 import re
 import subprocess
 import sys
@@ -77,11 +78,15 @@ def declared_corpus() -> list[str]:
 
 def find_artifact(build: Path, crate: str) -> Path | None:
     want = "lib" + crate.replace("-", "_") + ".a"
-    for p in build.rglob(want):
+    for dirpath, dirnames, filenames in os.walk(build):
         # A crate's own cargo target dir under the build tree is intermediate
-        # output, not the artifact the link consumes.
-        if "-target/" not in str(p):
-            return p
+        # output, not the artifact the link consumes. PRUNE it rather than
+        # filtering its paths afterwards: a post-filter has already descended
+        # into the one tree a concurrent build is rewriting, so it can raise
+        # FileNotFoundError out of the walk before it ever inspects a path.
+        dirnames[:] = sorted(d for d in dirnames if not d.endswith("-target"))
+        if want in filenames:
+            return Path(dirpath) / want
     return None
 
 

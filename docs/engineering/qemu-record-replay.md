@@ -124,44 +124,73 @@ it gives up hardware virtualization as well.
 the UP:=smp1 collapse case the arm64 bug lives in. Refusing all `-smp` would
 have refused the only interesting boot.
 
-## Replaying with gdb — BROKEN on QEMU 9.0.2 (2026-09-13)
+## Replaying with gdb — partly usable, and reverse execution is out of reach
 
-**Read this before planning any debugging session on a replay.** The gdbstub
-does not work against a replay on the QEMU we have. Stopping the guest — by
-single-stepping, or simply by attaching to a running replay — aborts QEMU:
+**Read this before planning any debugging session on a replay.** Measured on
+aarch64 QEMU 9.0.2, on a fresh warning-free trace, outside the harness so
+QEMU's own stderr was visible:
+
+| what | result | replay-specific? |
+|---|---|---|
+| `--gdb` (halted at instruction 0), connect, read `$pc` | **works** | — |
+| `continue` from there | **works** — guest ran 45s, 1691 serial lines, QEMU healthy | — |
+| `stepi` | QEMU **aborts** (rc -6) | **yes** — replay-only error, see below |
+| `interrupt` while the guest is running | does not stop the target (15s) | **NO** — same on a non-replay control |
+| breakpoint (`break` or `hbreak`) at a kernel VA, set at `-S` | never fires | **NO** — same on a non-replay control |
+| attach to an already-running replay (stub without `-S`) | QEMU aborted in the one test of this | untested against a control |
+
+**Only the `stepi` row is established as a replay limitation.** The other two
+were attributed to replay in an earlier draft of this document and that was
+wrong: running the same commands against a *non-replay* boot of the same media
+reproduced both. `interrupt` not landing is a limitation of driving gdb from a
+batch script; the breakpoints never firing is unexplained but happens with or
+without rr (the address arithmetic is right — the control boot reported
+`KRNLBASE=0xFFFFF80042190000`, matching what the breakpoint was computed from —
+so either that symbol is never executed, or a breakpoint set before the kernel
+is mapped does not take). The repo's own `qemu/run-until.sh --break <symbol>`
+does breakpoints correctly on the normal debug path; that is where to start
+rather than hand-rolling, as was done here.
+
+The abort is:
 
 ```
 qemu-system-aarch64: Playback shouldn't have to iowait
   (insn total 1/336313 left, event 5 is EVENT_INSTRUCTION)
 ```
 
-Reproduced three ways on aarch64 QEMU 9.0.2, twice on a fresh warning-free trace
-and once outside the harness so QEMU's stderr was visible:
+Backtraced from the stripped binary: `replay_sync_error()`, on a **worker
+thread**, not the vCPU thread. That fits the numbers — a single-step gives the
+vCPU a budget of exactly one instruction, and the replay refuses to wait for
+in-flight block I/O when the log says the next event is an instruction. So the
+collision is between single-stepping and `blkreplay`, which is also the
+component that is outright fatal on ATAPI.
 
-| what | result |
-|---|---|
-| `--gdb` (halted at instruction 0), connect, read `$pc` | works |
-| ... then `stepi` | QEMU **aborts** with the message above (rc -6) |
-| ... reconnect afterwards | stub does not answer |
-| stub without `-S`, attach to a running replay | QEMU **aborts** |
+**Net effect: you can run a replay under gdb, but nobody has yet stopped one at
+a point of interest.** `reverse-continue` and `reverse-stepi` remain untested —
+QEMU implements them as snapshot-plus-replay-forward rather than backwards
+stepping, so they may well work — but issuing them needs the guest stopped
+somewhere useful, and the way to do that has not been established *even on a
+normal boot* with the ad-hoc gdb driving used here.
 
-So `continue`, `reverse-continue`, `reverse-stepi` and reverse watchpoints are
-all out of reach: every one of them needs the guest to stop.
+So the next step is not a replay experiment at all: get a breakpoint to fire on
+an ordinary arm64 boot first, using `qemu/run-until.sh` (which does this on the
+normal debug path), and only then point the same technique at a replay. Testing
+two unknowns at once is what produced two retracted findings above.
 
 This matters more than any other limitation here, because reverse execution was
 the *point*. For the `PC=0` fault the question is not where it faulted — we know
 that — but who zeroed the return address, and a reverse watchpoint would answer
-it directly. Today it cannot.
+it directly. Today there is no way to get there.
 
 **This section previously described that recipe as working. It was never
 tested.** The same error was in the divergence log below, attributed to a
 degenerate bare VM and explicitly marked "not reproduced on a real vibeos boot";
 that attribution was wrong, and the first real test reproduced it immediately.
 
-`rr replay --gdb` still opens the stub, and prints a warning saying all of the
-above, because the path should stay available for a newer QEMU — this reads like
-a bug rather than a design constraint, and it is the single highest-value thing
-to re-test on a QEMU upgrade.
+`rr replay --gdb` opens the stub and prints a warning saying all of the above,
+because the path is genuinely half-working and should stay available — this
+reads like a bug rather than a design constraint, and it is the highest-value
+thing to re-test on a QEMU upgrade.
 
 **What a trace is still good for meanwhile:** a deterministic, re-runnable
 capture of one specific boot, including a crashing one — serial, screenshots and
@@ -179,8 +208,10 @@ gdb-multiarch -batch \
   -ex 'stepi' -ex 'output/x $pc'
 ```
 
-If that prints a PC instead of `Remote connection closed`, the recipe above is
-live again.
+If that prints a PC instead of `Remote connection closed`, single-stepping works
+again and the rest of the recipe is worth retrying. Try breakpoints too — they
+are the untested way to reach a point of interest without stepping, and they may
+work on the QEMU we already have.
 
 ## The icount shift is the one setting that can break a healthy guest
 
