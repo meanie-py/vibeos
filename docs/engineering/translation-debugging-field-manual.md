@@ -5007,6 +5007,48 @@ nothing. It has false-greened arm64 six times in a row (fastfat → ramdisk → 
 user32 → advapi32). Rule: **`vibeos-cli smoke` hard-fails on stale media — never bypass it, and
 judge a build by artifact existence, not a reported exit code.**
 
+### A correct staleness oracle and a build graph that cannot act on it
+
+**Symptom:** `build` fails `BUILD_INCOMPLETE` naming a stale binary — e.g.
+`dll/ntdll/nt_0600/ntdll_vista.dll: stale — sdk/lib/rust/smss-csrss-rust/src/basesrv newer
+than the cargo-linked binary` — and **the remedy the message gives does not work**. Re-running
+`build` changes nothing and `ninja <target>` reports "no work to do".
+
+**Cause: two tools each hold half of the answer, and the half that is RIGHT cannot act.**
+`provenance.py` knows the relationship, because `dll/ntdll/CMakeLists.txt` declares
+`BODY_CRATES ntdll-rust smss-csrss-rust`, so it can see that a basesrv source postdates the
+linked binary. Ninja can relink, but its graph has no edge from those sources to the
+cargo-linked output, so it correctly believes there is nothing to do. **The checker is right
+and powerless; the executor is empowered and wrong.** Re-running the executor therefore
+re-confirms its own wrong answer as often as you like.
+
+**Fix:** delete the artifact so the executor's graph and the oracle agree, then build —
+`rm build-<arch>/dll/ntdll/nt_0600/ntdll_vista.dll && ./vibeos-cli build --arch <arch>`.
+**Do NOT bypass the check.** The staleness is real, so a bypass ships an old binary, which is
+the one outcome worse than a failing build. The durable fix is the missing graph edge, not a
+louder message.
+
+**It is a stale-INCREMENTAL hazard, not a broken mainline, and the fleet measurement settles
+that beyond argument.** Sampled across five worktrees at one moment, with every one of them on
+the same master: integration ok/ok, conformance ok/ok, smp arm64 ok + amd64 STALE, research
+arm64 STALE + amd64 ok, shell32-com amd64 STALE. **Mixed WITHIN a lane** — the same checkout
+affected on one arch and not the other, purely by when each build dir last relinked. No
+property of a commit can do that. A fresh build links once against current sources and is
+fine; a tree that happened to relink after the change never sees it. So before concluding
+mainline is red, check your own build dir's mtimes against the named sources — it is a
+5-second check and the answer is per-build-dir, not per-commit. (Note also that it is not
+arch-specific: it was first reported on arm64 and reproduces on amd64. Both the "it is
+mainline" and the "it is arm64" framings were wrong, in opposite directions, about the same
+bug.)
+
+**The general shape, worth recognising beyond this one target:** when a verifier and an
+executor disagree about whether work is needed, being right buys the verifier nothing unless
+it can cause the work. Look for the pairing wherever a check is derived from a DIFFERENT
+source of truth than the thing that does the building — here CMake metadata versus the ninja
+graph. Related in mechanism, opposite in direction, to the gate's tooling stage racing its own
+builds (see above): there the oracle read a build that had not finished, here the oracle reads
+a build that will never finish the work it needs.
+
 ### A lint that reads BUILD OUTPUT passes on an artifact predating the change under test
 
 **Symptom:** a source lint is green locally and fails in the gate, on the same commit. Not

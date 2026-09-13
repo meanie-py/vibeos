@@ -1733,6 +1733,10 @@ Field-manual § pointers hold the full writeups. **Update on state change.**
     `TestIrpHandler` only ever sees the Example device's CREATE/CLOSE anyway — the three IOCTLs
     go to **kmtest_drv's** device, whose `DriverIoControl` sets `Information = Length` at
     `kmtest_drv.c:541` and completes. That is the `Information` in shape (a).
+    **Third trap, if you go near `qemu/symbols-*.tsv`:** it holds **linked-image addresses
+    with preferred base 0x400000, not RVAs**, so treating an entry as an RVA breaks 4MB past
+    the function and the breakpoint never fires — another absence that means nothing. Found by
+    smp-bringup, which spent two rounds attributing it to replay before the arithmetic.
     **Instrument note, because the obvious one does not fit:** a breakpoint at `irp.rs:568`
     fires on EVERY buffered IRP completion — thousands per boot — so `run-until.sh --break` is
     not usable there without a condition, and the ~1-in-9 rate means a lot of boots. The
