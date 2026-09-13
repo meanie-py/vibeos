@@ -5124,6 +5124,16 @@ cargo-linked output, so it correctly believes there is nothing to do. **The chec
 and powerless; the executor is empowered and wrong.** Re-running the executor therefore
 re-confirms its own wrong answer as often as you like.
 
+**It is not one target, and the message can name a remedy that DOES NOT WORK.** Second
+instance, 2026-09-13 arm64: `ntoskrnl/ntoskrnl.exe: stale — ntoskrnl-rust has .rs newer than
+the built binary (cohab flip not rebuilt; `build` force-rebuilds it, or add to
+ninja_targets)`. It does not force-rebuild it: `./vibeos-cli build --arch arm64` exited 1 with
+the identical message and the binary's mtime unchanged. So the remedy printed in the failure
+is itself part of the trap, and following it costs a full build cycle per attempt to
+re-confirm the executor's wrong answer. Deleting the artifact fixed it in one build. **Treat
+any "re-run `build`" advice on a staleness failure as unverified** — if the graph had the edge,
+the staleness could not have arisen.
+
 **Fix:** delete the artifact so the executor's graph and the oracle agree, then build —
 `rm build-<arch>/dll/ntdll/nt_0600/ntdll_vista.dll && ./vibeos-cli build --arch <arch>`.
 **Do NOT bypass the check.** The staleness is real, so a bypass ships an old binary, which is
