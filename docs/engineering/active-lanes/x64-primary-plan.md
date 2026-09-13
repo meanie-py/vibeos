@@ -43,20 +43,25 @@ waiting for SysWOW64 to stop needing an i386 ntdll. If it does not hold, we lear
 why, and the "last nightly cell" item gets an honest blocker instead of an
 assumption. Do not quote the payoff until someone has run it.
 
-## Where the fex lane's work transfers, and where it does not
+## Where the fex lane's work transfers — the marshalling is ALREADY amd64-verified
 
-`dll/win32/wow64/CMakeLists.txt:5` builds the shared layer for `arm64 OR amd64`, and the CPU
-layer is the only thing that differs: a JIT on arm64 (FEX), a native heaven's-gate mode switch
-on amd64 (`wow64cpu`). So the marshalling investment is **arch-generic and transfers wholesale**
-— the CSR/LPC pointer-width family in particular (`ReadOnlyStaticServerData`'s 8-byte read at a
-4-byte stride, `BASE_STATIC_SERVER_DATA` narrowing, the CSR reply `Data` union,
-`BasepCreateThread`). Every one of those was found on one host and was already fixed on the
-other.
+`wow64.c:144-149` is explicit: the CPU layer differs by host — a JIT on arm64 (FEX), a native
+heaven's-gate mode switch on amd64 (`wow64cpu`) — but "both export the identical `BTCpu*`
+contract this file resolves by name, so only the DLL name and the `WOW64INFO`
+NativeMachineType change". The marshalling sits **above** that contract. A 32-bit guest talking
+to a 64-bit CSR server is a POINTER-WIDTH problem, not a CPU-layer problem, so the arm64/amd64
+split does not apply to it at all.
 
-**The amd64 `wow64cpu` heaven's-gate path is the part FEX's arm64 work says nothing about**, and
-it is therefore the piece that needs its own buttoning-up before amd64 can be called primary on
-x86 compatibility. (Reported by the control-plane lane, 2026-09-13; the CMake gate and the
-wow64.c comment check out.)
+**And the provenance runs amd64-first, not arm64-first.** The CSR/LPC family
+(`ReadOnlyStaticServerData`'s 8-byte read at a 4-byte stride, `BASE_STATIC_SERVER_DATA`
+narrowing, the CSR reply `Data` union, `BasepCreateThread`) was found, instrumented and
+verified **on amd64**, against the native heaven's-gate path; arm64 followed as confirmation.
+Both now report 9/9 on `smoke --ladder`. So treat that work as **verified on the host this plan
+cares about** — do not re-derive it as though it were arm64 results of uncertain transfer.
+
+*(This section previously said the opposite, on a control-plane summary that lane has since
+retracted and that I recorded under its attribution. The `wow64.c` quote above is checked in
+this tree; the amd64-first provenance is fex's, relayed.)*
 
 ## What "primary" means — a decision, not an investigation
 
@@ -187,7 +192,24 @@ a ladder to watch", and neither was visible from reading.
    is promoted *for* x86 compatibility, the gate has to watch the thing it was
    promoted for.
 
-4. Lower, and latent rather than urgent: the 209 audit-baseline entries
+4. **Stock 32-bit GUI apps fault on amd64 — 58 faults each, amd64-ONLY.** notepad, mspaint
+   and wordpad take execute-at-NULL faults (`rw=8`) with a re-faulting SEH cascade at
+   descending `esp`. arm64 never launches those, which is why it does not show there. This is
+   the most load-bearing open item on this plan after guest processes: "amd64 runs stock 32-bit
+   apps" is the promotion's whole claim, and this is the evidence against it.
+   **Status: relayed by fex via control-plane, NOT verified here** — I could not find it in
+   this tree's `vibeos-roadmap.md` registry, so it is either on the fex branch or unlanded.
+   Confirm against that lane's artifacts before planning around it.
+
+5. **Two amd64 test traps that will masquerade as WoW64 bugs.** The amd64 livecd's system
+   volume is a **read-only CD**, so any file-write test returns `ACCESS_DENIED` (0x5) — the
+   ladder's own `file32` guest skips its write rung for exactly this reason
+   (`tools/fex/hello-compute/File32.c:204-207`). And the system volume is `X:` on the amd64
+   livecd where arm64's ramdisk is `C:`, so a hardcoded drive letter passes on one and fails on
+   the other (`File32.c:33-34`). Both checked in this tree. Anyone writing amd64 32-bit app
+   tests should read that file first.
+
+6. Lower, and latent rather than urgent: the 209 audit-baseline entries
    (dominated by win32k's kernel-graphics-driver surface — `SURFOBJ`/`BRUSHOBJ`/
    `XLATEOBJ`, ~81 entries, unreachable from a user-mode guest — plus
    `PORT_MESSAGE` and `TOKEN_GROUPS`); IOCTL embedded-pointer buffers (task #42);
