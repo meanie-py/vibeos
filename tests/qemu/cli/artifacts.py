@@ -21,15 +21,81 @@ ARTIFACT_ROOT = Path(os.environ.get("VIBEOS_ARTIFACT_ROOT", "/tmp/vibeos-cli"))
 
 
 def create_run_dir(command: str, arch: str, ts: int | None = None) -> Path:
-    """Atomically allocate a private directory, including for same-second runs."""
+    """Atomically allocate a private directory, including for same-second runs.
+
+    Also seeds the INTERRUPTED MARKER (see `write_interrupted_marker`). Done here
+    because this is the one choke point every run dir passes through -- `Run`
+    takes it, and so do the commands that build their own summary by hand
+    (conformance).
+    """
     ts = ts if ts is not None else int(time.time())
     stamp = time.strftime("%Y%m%d-%H%M%S", time.localtime(ts))
     ARTIFACT_ROOT.mkdir(parents=True, exist_ok=True)
     # Keep the date prefix and command/arch suffix for existing artifact scans.
     # A random component also separates us from older lanes using bare seconds.
-    return Path(
+    run_dir = Path(
         tempfile.mkdtemp(prefix=f"{stamp}-", suffix=f"-{command}-{arch}", dir=ARTIFACT_ROOT)
     )
+    write_interrupted_marker(run_dir, command, arch)
+    return run_dir
+
+
+def write_interrupted_marker(run_dir: Path, command: str, arch: str) -> None:
+    """Write a summary.json that says INCOMPLETE, before the work starts.
+
+    A run that is SIGKILLed -- by the host's memory reaper, by a broad-kill, by
+    the machine going away -- never reaches finalize(), so it never writes a
+    verdict. Until now that left an artifact dir holding a full.log full of green
+    stage lines and NO summary.json, and a caller whose exit status is not the
+    work's (a pipeline's last stage, a backgrounded shell's `echo`) reads that as
+    a pass. A reaped process must not look successful to its caller.
+
+    Absence cannot carry that meaning, because absence is overloaded three ways:
+    the run is still going, the run was killed, or the directory was never a run
+    at all. So the claim is made POSITIVELY at creation and overwritten by
+    finalize(). Whatever is on disk is then always a true statement about the run:
+    INCOMPLETE until a verdict exists, and a verdict once one does.
+
+    This is the same shape as `.vibeos-build-stamp.json` (written at the END of a
+    successful build, so its presence means "finished") turned inside out: there
+    the positive claim is completion, here it is incompletion. Both exist so that
+    no consumer has to infer a run's state from an exit code it may not have.
+    """
+    try:
+        (run_dir / "summary.json").write_text(
+            json.dumps(
+                {
+                    "run_id": run_dir.name,
+                    "command": command,
+                    "arch": arch,
+                    "verdict": "INCOMPLETE",
+                    "classification": "RUN_INTERRUPTED",
+                    "incomplete": True,
+                    "pid": os.getpid(),
+                    "started_epoch": time.time(),
+                    "note": (
+                        "This run never reached finalize(): it was killed, or it is still "
+                        "running. Either way it has no verdict and must not be read as one."
+                    ),
+                },
+                indent=2,
+            )
+        )
+    except OSError:
+        # Never fail a run over its own bookkeeping. The pre-existing behaviour
+        # (no summary at all) is what callers already handle.
+        pass
+
+
+def is_incomplete(summary: dict) -> bool:
+    """True for an interrupted-run marker: a summary that carries no verdict.
+
+    Callers that already have a good "no verdict" path (gate's SMOKE_NO_SUMMARY,
+    which keeps the child's console and its exit code) should route markers into
+    it rather than treating INCOMPLETE as an ordinary red -- the marker says less
+    than that path already knows.
+    """
+    return bool(summary.get("incomplete"))
 
 
 FARM_DIR = Path.home() / "vibeos-flake-farm"

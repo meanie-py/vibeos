@@ -7262,6 +7262,31 @@ published something wrong" gets you half of it, and misses the half where you pu
 because everything appeared fine. *(First case found in the wow64 lane, second by
 conformance-ratchet; the published/investigated line is the control-plane lane's.)*
 
+**The structural remedy, where the absence is OUR OWN artifact: make the claim POSITIVELY, up
+front.** The two cases above are absences in someone else's output and can only be met with a
+control. But a missing `summary.json` in a `vibeos-cli` run dir was our absence, and it was
+overloaded three ways: the run is still going, the run was killed, or the directory was never
+a run at all. A SIGKILL -- the host's memory reaper, a broad-kill, the machine going away --
+left an artifact dir holding a `full.log` of green stage lines and no verdict, and a caller
+whose exit status is not the work's (a pipeline's last stage, a backgrounded shell's `echo`;
+see the `$?`/`PIPESTATUS` rule) read that as a pass. **A reaped process must not look
+successful to its caller.** Fix: `artifacts.create_run_dir` -- the one choke point every run
+dir passes through -- now seeds `summary.json` with `verdict: INCOMPLETE`,
+`classification: RUN_INTERRUPTED` BEFORE the work starts, and `finalize()` overwrites it. What
+is on disk is then always a true statement: incomplete until a verdict exists, a verdict once
+one does. This is `.vibeos-build-stamp.json` (written at the END, so presence means finished)
+turned inside out -- there the positive claim is completion, here it is incompletion, and both
+exist so no consumer has to infer a run's state from an exit code it may not have. **Two
+things this must not break, both of which are the general shape of adding a positive marker
+to a system that has been reading an absence.** `RUN_INTERRUPTED` had to be added to
+`queue.INCONCLUSIVE`: these runs previously arrived as `""` (nothing to read), which is
+already inconclusive, so gaining a marker would otherwise have silently moved them OUT of the
+set and started REJECTING lanes for being reaped by the host. And `gate._read_summary` routes
+a marker back to its existing no-summary branch, which keeps the child's exit code and last
+console words -- the marker says strictly less than that path already knows. So: when you
+replace an absence with a marker, find every consumer that was reading the absence and check
+whether the marker lands them somewhere worse.
+
 ### A TEXT-SHAPED match is not a PROOF `[§9.119]`
 The same regex measured **146** lowerable CRT forwarders; the sound implementation lowered
 **11**. Measuring a shape by its syntax measures an **upper bound, not a yield**, and the
@@ -7800,6 +7825,27 @@ language rules) over loosening what it reports.
   which with `expool.rs`'s coalescer (`PoolType() == 0` is its absorb-this-neighbour test)
   would have been reported as a memory-corruption vector in a kernel that is writing a
   perfectly correct header.
+  **FIXED (2026-09-13):** the three `#ifdef _M_AMD64` in `kmt_test_kernel.h`'s `POOL_HEADER`
+  are now `#ifdef _WIN64`, matching the kernel's. Real Windows' `POOL_HEADER` is 16 bytes on
+  every 64-bit target -- the union's `ProcessBilled` pointer forces it -- so `_WIN64` was
+  always the correct predicate and `_M_AMD64` was an amd64-shaped assumption that held only
+  while amd64 was our sole 64-bit arch. arm64 ExPools went `pass=14 fail=4`
+  (`{119,135,178,210}`) -> `pass=17 fail=1` (`{210}`), stable across four boots, which is
+  **exactly amd64's baseline row** -- the two 64-bit arches agreeing is the confirmation, not
+  merely fewer failures. `:210` is the shared 64-bit 2GB-quota case and is not this bug.
+  The three stale `assert?`/`assert` marks at `:176`/`:178`/`:181` came out of the ratchet
+  with it: they described the misread, so leaving them would have kept the floor tolerating a
+  failure that can no longer happen. **The guard is what keeps this fixed**, not the edit --
+  `C_ASSERT(sizeof(POOL_HEADER) == sizeof(LIST_ENTRY))` now sits under the struct, wired to
+  the same invariant the kernel asserts, so the two copies cannot drift apart silently again.
+  Verified as a discriminator, not assumed: restoring `_M_AMD64` fails that assert at compile
+  time on arm64 (`'c_assert' declared as an array with a negative size`).
+  **And note which rule this turned out NOT to need.** "Never change the conformance tests"
+  had held this for six weeks as an owner decision. The owner's scoping: a build-flag or
+  arch-gate correction that makes a test read a structure the same width the kernel writes it
+  is not a semantic change and needs no approval. What needs approval is changing what a test
+  MEANS in a direction that favours us -- anything that would pass here and fail on real
+  Windows. Fix the OS, baseline the test; never the reverse.
 - **A genuine kernel fault does not fail an assertion STABLY, so determinism is evidence
   AGAINST a kernel bug.** The inversion is worth having explicitly, because the instinct runs
   the other way — a reliably failing assertion feels like the solid one to chase and the

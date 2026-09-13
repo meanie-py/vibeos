@@ -1570,6 +1570,68 @@ def test_run_summary_json(tmp_path, monkeypatch):
     assert summary["arch"] == "i386"
 
 
+def test_a_run_dir_claims_INCOMPLETE_before_the_work_starts():
+    """A killed run must not read as a pass.
+
+    Nothing here reaches finalize(), which is the whole point: this is the state a
+    SIGKILL leaves behind. Before the marker the dir held a full.log of green stage
+    lines and no summary.json at all, and a caller whose exit status was not the
+    work's (a pipeline's last stage, a backgrounded shell's `echo`) read that as a
+    pass.
+    """
+    run = Run("build", "arm64", ts=1700000000)
+    summary = json.loads((run.dir / "summary.json").read_text())
+    assert summary["verdict"] == "INCOMPLETE"
+    assert summary["classification"] == "RUN_INTERRUPTED"
+    assert summary["arch"] == "arm64"
+    assert summary["command"] == "build"
+    assert summary["pid"] == os.getpid()
+
+
+def test_finalize_REPLACES_the_marker_rather_than_leaving_it():
+    """Otherwise the marker would be the bug it exists to prevent, inverted:
+    a finished green run permanently claiming it never finished."""
+    run = Run("smoke", "amd64", ts=1700000000)
+    run.add(Stage("boot", status="ok"))
+    assert run.finalize() == 0
+    summary = json.loads((run.dir / "summary.json").read_text())
+    assert summary["verdict"] == "OK"
+    assert "incomplete" not in summary
+    assert summary["classification"] == ""
+
+
+def test_a_marker_is_INCONCLUSIVE_so_a_reaped_lane_is_not_rejected():
+    """RUN_INTERRUPTED says the lane's code was never graded, not that it is bad.
+
+    These runs previously reached the queue as "" (no summary to read), which is
+    already inconclusive — so gaining a positive marker must not silently move them
+    OUT of that set and start rejecting lanes for being reaped by the host.
+    """
+    from .queue import INCONCLUSIVE
+
+    assert "RUN_INTERRUPTED" in INCONCLUSIVE
+
+
+def test_gate_routes_a_marker_into_its_no_verdict_path_not_an_ordinary_red(tmp_path):
+    """The marker says strictly LESS than gate's existing no-summary branch, which
+    keeps the child's exit code and its last console words. So gate must fall
+    through to that branch, not treat INCOMPLETE as a graded failure."""
+    from .artifacts import is_incomplete
+    from .gate import _read_summary
+
+    d = tmp_path / "20260913-000000-x-smoke-arm64"
+    d.mkdir()
+    marker = {"verdict": "INCOMPLETE", "classification": "RUN_INTERRUPTED", "incomplete": True}
+    (d / "summary.json").write_text(json.dumps(marker))
+    assert is_incomplete(marker)
+    assert _read_summary(tmp_path) == {}, "a marker must read as 'no verdict'"
+
+    # ...and a real verdict in the same shape still comes back whole, so the check
+    # above cannot be passing because _read_summary is broken for everything.
+    (d / "summary.json").write_text(json.dumps({"verdict": "FAIL", "classification": "BUGCHECK"}))
+    assert _read_summary(tmp_path)["classification"] == "BUGCHECK"
+
+
 # --- command timing and shipping Cargo target coverage ------------------
 
 
