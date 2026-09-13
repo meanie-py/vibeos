@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import shutil
 import subprocess
+import time
 from pathlib import Path
 
 import pytest
@@ -204,6 +205,30 @@ def test_a_guest_that_never_reports_still_uses_the_budget():
     vm = _FakeVM([_serial(hello32=0x600D)])
     out = ladder.watch(vm, seconds=1.0, seen="")
     assert _red(out)["classification"] == "LADDER_FAIL"
+
+
+def test_each_optional_guest_earns_its_own_drain_extension(monkeypatch):
+    """Two optional guests must not share ONE extension.
+
+    winlogon watches each optional guest for 300s independently, so a flat
+    one-shot extension covers the first and abandons the second -- which then
+    reads as "staged but never reported", i.e. a RED verdict against a guest
+    that was merely still running. Assert the deadline grows once PER launched
+    guest, not once in total."""
+    assert len(ladder.OPTIONAL) >= 2, "this invariant only bites with 2+ optional guests"
+    a, b = sorted(ladder.OPTIONAL)[:2]
+    # Both launch, neither reports: the loop must grant two extensions before
+    # giving up, so it outlives a budget sized for one.
+    launched = f"[WINLOGON] {a}.exe (x) created\n[WINLOGON] {b}.exe (x) created\n"
+    monkeypatch.setattr(ladder, "OPTIONAL_EXTRA_SECONDS", 0.25)
+    vm = _FakeVM([_all_pass() + launched])
+    started = time.monotonic()
+    ladder.watch(vm, seconds=0.05, seen="")
+    waited = time.monotonic() - started
+    assert waited >= 0.5, (
+        f"drained {waited:.2f}s — two launched optional guests must extend twice "
+        "(0.05 base + 2x0.25), not once"
+    )
 
 
 def test_built_but_unstaged_says_so_and_names_the_fix(tmp_path):

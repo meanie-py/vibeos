@@ -6567,6 +6567,29 @@ configurations could produce the same stored row, and whether either is one you 
 to compare against the other. Same family as the worktree ambiguity in the same corpus, where
 three trees' rounds are separable only by string-matching `run_dir`.
 
+### A budget sized for a set of ONE is silently wrong the day the set grows to two
+
+**Symptom.** A harness grants a timing allowance for "an optional/slow item", the allowance is
+correct for months, and then a second such item is added and the LAST one is cut off mid-run.
+It is reported as a failure of the newly-added item — which did nothing wrong and was merely
+still running.
+
+**Cause.** The allowance was written as a one-shot flag rather than a per-item grant, because
+with a single item the two are indistinguishable. `ladder.py`'s drain extended once by
+`OPTIONAL_EXTRA_SECONDS` the first time any optional guest was seen to launch
+(`extended = False` → `extended = True`), while winlogon watches each optional guest for 300s
+*independently*. With `OPTIONAL = {sqlite32}` that is exactly right. Adding `lua32` made two
+guests share one extension, so the second would have been abandoned and graded "staged but never
+reported" — a RED verdict naming the wrong guest.
+
+**Fix.** Grant the allowance PER ITEM (`extended: set[str]`, one grant each). The general shape:
+when a collection has exactly one member, a per-member rule and a whole-collection rule are the
+same code, so the distinction never gets made and nothing tests it. **Whenever you add the second
+member to a set that had one, re-read every budget, timeout, flag and "did we already do this"
+guard that mentions the set** — the bug is not introduced by the new member, it was already there
+and merely unreachable. A regression test for this class must assert with *two* members present
+(and be checked against the old code: the fixed and broken versions both pass a one-member test).
+
 ### A verdict that blocks other people must carry its evidence
 Sibling of "an oracle needs an oracle": that one asks *did the oracle look?*, this one asks
 *can anyone check what it saw?* One night's merge-train stall produced five instances, so treat

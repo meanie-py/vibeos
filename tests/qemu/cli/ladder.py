@@ -72,6 +72,7 @@ LADDER: dict[str, int] = {
 # fail for a guest nobody built.
 OPTIONAL: dict[str, int] = {
     "sqlite32": 0x600D,
+    "lua32": 0x600D,
 }
 
 # [WINLOGON] selfmod32.exe exit = 0x600d (0x600D = PASS)
@@ -84,8 +85,16 @@ _VERDICT = re.compile(r"\[WINLOGON\] ([A-Za-z0-9_]+)\.exe exit = 0x([0-9a-fA-F]+
 # the exact class of false signal this file exists to remove.
 LADDER_TIMEOUT_SECONDS = 420.0
 
-# Extra drain granted once an optional guest is seen to launch. Matches the
-# winlogon watch window for the slowest one (sqlite32: 300s) plus slack.
+# Extra drain granted per optional guest seen to launch. Matches the winlogon
+# watch window each of them gets (300s) plus slack.
+#
+# PER GUEST, and granted once each -- not one flat extension for the whole set.
+# It was a single one-shot bool while sqlite32 was the only optional guest, which
+# was correct for a set of one and silently wrong the moment lua32 joined: two
+# guests budgeted 300s apiece in winlogon would have shared a single 360s
+# extension, so a slow second guest gets cut off mid-run and reads as "staged but
+# never reported" -- a false RED, and the most expensive kind, because the guest
+# it accuses did nothing wrong.
 OPTIONAL_EXTRA_SECONDS = 360.0
 
 
@@ -333,15 +342,16 @@ def watch(vm, seconds: float = LADDER_TIMEOUT_SECONDS, seen: str = "") -> str:
     # budget: it is third-party code doing real work under emulation, so it is
     # slow by nature, and charging it to the parity budget is what turned a
     # green ladder into a fake selfmod32 failure the first time one was added.
-    extended = False
+    extended: set[str] = set()
     while time.monotonic() < deadline:
         buf += vm.serial.read_available(timeout=0.5) or ""
         pending = _optional_in_flight(buf)
         if all(m in buf for m in need) and not pending:
             break
-        if pending and not extended:
-            deadline += OPTIONAL_EXTRA_SECONDS
-            extended = True
+        for g in pending:
+            if g not in extended:
+                deadline += OPTIONAL_EXTRA_SECONDS
+                extended.add(g)
     return buf
 
 
