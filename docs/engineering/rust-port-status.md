@@ -1276,6 +1276,37 @@ Still owed here: the 5 BLOCKING `SWITCH_CONST_IN_BASE_HEADER` findings on
 `float/i386/cntrlfp.c` (below) are untouched — the FPU control word was deliberately left
 alone.
 
+#### ucrtbase's own 132 lines — what actually blocks them — 2026-09-13
+
+The goal above is "everything in ucrtbase that is ours is Rust", and `printf.c` +
+`stubs.c` are the remainder. Two things blocked them; one is now fixed and the other is a
+design decision, so nobody should treat this as a drive-by.
+
+**Fixed:** `verify_ucrtbase_cohab` modelled "our C" as ucrtbase's five link LIBRARIES and
+omitted the DLL's own TUs — 205 symbols on amd64, six of them exported (`fma`, `fmaf`,
+`log2`, `log2f`, `lrint`, `lrintf`, stubs.c's placeholders for intrinsics spec2def cannot
+stub). A Rust twin of any of those read as displacing a genuine Microsoft body. Now in the
+authority; verified that none of the 205 is also defined by vendored ucrt, so the assertion
+is not weakened.
+
+**NOT fixed, and it is the real cost: these cannot be flipped by lld first-match.** Every
+other cohab in this tree works because the C sits in a static ARCHIVE, so forcing the Rust
+in under `--whole-archive` makes the C copies ignored duplicates. `printf.c`/`stubs.c` are
+SOURCES of `add_library(ucrtbase SHARED …)`, so their objects are on the link line as
+`$in`, ahead of `LINK_LIBRARIES` — and with the tree-wide `--allow-multiple-definition`
+the FIRST definition wins, which is the C. A Rust `fma` added today would link, raise no
+diagnostic, and be dead. Flipping therefore means removing the C from SOURCES, and
+`stubs.c` bundles the six math stubs with `atexit`, `operator_new`, `operator_delete`,
+`__acrt_initialize_sse2` and `_chkesp_failed` — so it is port-all-twelve (including the C++
+operators) or split the file first. That is a deliberate change, not a translation.
+
+Also note what is NOT owed here: `sprintf` must stay C — stable Rust cannot define a
+C-variadic — and `lrint`/`lrintf` are `__debugbreak()` stubs, where a faithful port buys
+arch-specific inline asm and no behaviour. `_vsnprintf` IS translatable (it takes a
+`va_list`), but it is not a ucrtbase export; it exists because the legacy CRT references it,
+and it needs the ucrt header's `_CRT_INTERNAL_*` printf option constants as substrate.
+
+
 #### crtmath sized, and the island question answered — 2026-09-06
 
 `profile_derive sdk/lib/crt --target crtmath --usermode` derives cleanly (159 compiled TUs,
