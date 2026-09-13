@@ -7651,6 +7651,39 @@ def test_cli_main_reports_a_crash_rather_than_leaving_the_reader_a_clean_tail(ca
     assert capsys.readouterr().out.strip().splitlines()[-1] == "vibeos-cli: exit=1"
 
 
+def test_no_baselined_unpruned_walk_runs_in_the_early_partition() -> None:
+    """The property that matters is narrower than the one the ratchet gates, and nothing held it.
+
+    `scan_unpruned_walk` gates "no NEW unpruned walk anywhere" and carries the latent ones in a
+    baseline while they burn down. But an unpruned walk is only a live hazard when its scanner
+    runs CONCURRENTLY with the builds — that is the whole history: six audited scanners were
+    correct for years and became reachable the day `source-early` moved them to t=0, without a
+    line of their code changing. Today no baselined file is in EARLY_SOURCE_CHECKS, so the real
+    invariant holds — but it holds by accident of which sites happened to be migrated first.
+
+    The ratchet cannot protect it. Promoting an already-baselined scanner into the early
+    partition arms it and adds no NEW row, so the lint stays green through exactly the move
+    that re-creates the original incident. This is the guard for that move: migrate the walk to
+    tools/source_walk.py FIRST, then promote it.
+    """
+    from tests.qemu.cli.lints import EARLY_SOURCE_CHECKS
+
+    repo = Path(__file__).resolve().parents[3]
+    baseline = repo / "tools" / "lint-baseline" / "scan_unpruned_walk.txt"
+    if not baseline.is_file():
+        pytest.skip("no scan_unpruned_walk baseline in this worktree")
+    rows = [ln for ln in baseline.read_text().splitlines() if ln.strip() and not ln.startswith("#")]
+    assert rows, "empty baseline — this guard would be measuring nothing"
+    latent = {Path(ln.split(":", 1)[0]).stem for ln in rows}
+    armed = sorted(latent & set(EARLY_SOURCE_CHECKS))
+    assert not armed, (
+        "these scanners run beside the builds AND still have an unpruned walk on the "
+        f"baseline, so the walk is live: {armed}. Migrate to tools/source_walk.py "
+        "source_files() before promoting a scanner into EARLY_SOURCE_CHECKS — a baselined "
+        "row does not fire the ratchet, so this move is silent."
+    )
+
+
 def test_every_tools_test_file_is_actually_collected_by_something() -> None:
     """A test suite nobody runs is worse than no suite: it reads as coverage.
 

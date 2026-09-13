@@ -1693,6 +1693,35 @@ Field-manual § pointers hold the full writeups. **Update on state change.**
     occurrence in 9: `pass 31 -> 29`, NEW failing `Example_user.c:39` and `:40`. `Example` is
     **31/15 on all three floors** and neither line is marked `assert?` anywhere. Unrelated to
     the ExPools POOL_HEADER mismatch — `Example_user.c` does not touch `KmtGetPoolType`.
+    **LOCALISED, and unlike ExPools this one is a REAL KERNEL DEFECT, not a harness artifact.**
+    `:39`/`:40` check that an `IOCTL_SEND_MYSTRUCT` round-trip came back MODIFIED — the driver
+    writes `{456, "!!!"}` into the second half of the buffer and sets `*OutLength`
+    (`Example_drv.c:181-185`). In the failing round user mode read `MyStruct[1] = {0, ""}`.
+    The driver side was entirely healthy: **both rounds executed exactly 46 assertions**
+    (`Example: 46 tests executed`, 17 failures vs 15), and none of the handler's own
+    diagnostics printed in either — not `ok_eq_ulong(*OutLength, 2 * sizeof)` at `:177`, not
+    the `skip("Cannot write to buffer!")` guard at `:181`. Equal assertion counts are what
+    rules out the competing explanation: had the handler not run, its `ok_*` calls would be
+    missing from the total. So the handler ran, saw correct lengths, and performed the
+    `RtlCopyMemory` write-back — and the data still did not reach the user buffer. That
+    localises it to the **METHOD_BUFFERED output copy-back on IRP completion** (SystemBuffer
+    -> UserBuffer, length from `Irp->IoStatus.Information`), intermittent on arm64, with
+    `DeviceIoControl` returning ERROR_SUCCESS throughout — `:36`/`:37`/`:38` all still pass, so
+    every caller believes it worked. n=1, so no rate; the localisation is what is solid.
+    **Two traps for whoever picks this up, both of them absences that mean nothing.** First,
+    `Example_drv.c:227`'s `IRP!` trace does NOT print for these device-control IRPs in either
+    round, so its absence is not evidence the IOCTL never arrived — the clean round looks
+    identical there and passes. Second, **every kernel symbol resolution on this
+    path is against the wrong image unless you name `ntkrnlmp.exe` explicitly** — by hand as
+    much as by tool. Since the 2026-09-12 MP promotion the media boots `ntkrnlmp.exe` +
+    `halmp.dll` (`qemu/freeldr.ini:2`/`:51`), but `build-arm64/ntoskrnl/*.exe` contains ONLY
+    the UP `ntoskrnl.exe`; the MP image is one directory deeper at
+    `build-arm64/ntoskrnl/ntkrnlmp/ntkrnlmp.exe`. A glob or a tab-complete in the obvious
+    directory therefore hands you the wrong kernel, and **it answers instead of erroring**.
+    `0280df67353` fixes `find-kbase.py` only, so gdb breakpoints will time out silently until
+    it lands — looking exactly like "the copy-back path is never reached", the wrong
+    conclusion — but hand symbolication stays exposed afterwards. Break on something you know
+    executes before believing any silence, and pass the MP binary by name.
   - **`NpfsConnect` on arm64 — an UNDOCUMENTED intermittent, found 2026-09-13.** Did not recur
     in the 9-sweep soak, so it is rarer than the other two. One occurrence, so no rate: `pass 679 -> 678, fail 0 -> 1` on
     `20260913-022245-fw6sw4_g-conformance-arm64`. `NpfsConnect` is **679/0 on all three

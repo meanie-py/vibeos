@@ -153,6 +153,19 @@ a ladder to watch", and neither was visible from reading.
   onto the livecd, so a rebuild changing nothing still moved the media, and media
   identity is what `smoke` staleness and the gate stamp key on. Fixed
   (`5a322b1c9be`); `vibeos-cli repro report` now reads `TimeDateStamp 0`.
+- **A warm build silently ships the last configure's staging, and CMAKE_CONFIGURE_DEPENDS
+  cannot fix it.** Staging is snapshotted at configure time; a warm `vibeos-cli build` does not
+  reconfigure (`_maybe_canonize` early-returns at `build.py:437` for an already-canonical dir —
+  *not* `:464`, which governs the nuke-and-reconfigure branch a warm build never enters). The
+  obvious fix is this file's own idiom, since `wow64cpu/CMakeLists.txt` already lists
+  `wow64-closure.py` and `nettcpip.inf` in `CMAKE_CONFIGURE_DEPENDS`. **Measured with a
+  throwaway CMake project rather than assumed:** a listed path that does not exist causes no
+  reconfigure loop (safe), a listed file that CHANGES does re-run configure (positive control
+  passed), but a path that first APPEARS does **not** — which is exactly the case that bites.
+  So the idiom closes "guests rebuilt" and cannot close "guests staged for the first time".
+  Handled instead where it can be: `ladder.gate_decision` now distinguishes *built but
+  unstaged* from *never built* and names the re-configure, turning a silent skip into an
+  instruction.
 - **The staging probe I wrote to prevent wasted drains caused one.** `media_has_guests`
   byte-scanned the image for `hello32.exe`, which is in EVERY amd64 livecd regardless of
   staging — winlogon's own error path carries the name in plain ASCII. It returned

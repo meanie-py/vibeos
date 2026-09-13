@@ -143,13 +143,40 @@ QEMU's own stderr was visible:
 were attributed to replay in an earlier draft of this document and that was
 wrong: running the same commands against a *non-replay* boot of the same media
 reproduced both. `interrupt` not landing is a limitation of driving gdb from a
-batch script; the breakpoints never firing is unexplained but happens with or
-without rr (the address arithmetic is right — the control boot reported
-`KRNLBASE=0xFFFFF80042190000`, matching what the breakpoint was computed from —
-so either that symbol is never executed, or a breakpoint set before the kernel
-is mapped does not take). The repo's own `qemu/run-until.sh --break <symbol>`
-does breakpoints correctly on the normal debug path; that is where to start
-rather than hand-rolling, as was done here.
+batch script.
+
+The breakpoints are now **explained and fixed**, and the cause had nothing to do
+with record/replay: `qemu/gdb-helpers/find-kbase.py` was relocating symbols to
+the wrong kernel image. Every media carries BOTH kernels and boots MP by default
+since the 2026-09-12 promotion, but `VIBEOS_KERNEL` still names the UP image, so
+the scan matched `ntoskrnl` at `0xfffff800505e4000` while `ntkrnlmp` was actually
+executing at `0xfffff80042190000`. Breakpoints therefore landed at addresses the
+guest never executes and silently never fired — which looked exactly like
+"breakpoints don't work on arm64". Fixed by preferring the image containing
+`$pc`, and failing that the MP image; verified end to end
+(`run-until.sh --break ExAllocatePoolWithTag` now reports `=== BREAKPOINT HIT ===`
+at `<ExAllocatePoolWithTag+44>`).
+
+That unblocked the real question, which was then answered in the worst way:
+**attaching gdb to a RUNNING replay aborts QEMU**, with the same
+`Playback shouldn't have to iowait` (`insn total 9616974735/473 left, event
+157129`). The replay had booted to the kernel first — 724 lines, correct
+`[KRNLBASE]` — and connecting was enough to kill it. That is now two independent
+instances of the same rule, and it explains the whole picture:
+
+> **A replay can be started stopped, and run. It can never be stopped again.**
+> Attaching at `-S` before the replay runs is fine, and `continue` from there is
+> fine. Every later stop — `stepi`, attaching mid-run — aborts.
+
+Whether a BREAKPOINT HIT is also such a stop is **not yet known**, and the
+attempt to find out was inconclusive rather than negative: on a replay the
+breakpoint (at the verified-hot `ExAllocatePoolWithTag`, set at `-S`) did not
+fire within 400s while the guest reached 1,378 serial lines; but the `rr=record`
+control, differing by one flag, produced **zero** serial lines in the same 400s,
+so there is nothing to compare against. Breakpoint checking disables TCG block
+chaining, which on top of icount and blkreplay plausibly makes either mode far
+slower than the budget allowed. Re-run both legs with a much longer budget before
+concluding anything; do not read the replay leg on its own.
 
 The abort is:
 
