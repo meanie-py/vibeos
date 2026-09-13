@@ -242,13 +242,33 @@ always safe during execution and nearly always fatal during an idle stretch —
 which is precisely the pattern the three samples showed, and why two successes
 looked like a working mechanism. Snap against the trace instead.
 
-**Status of the rule:** it explains all three observations exactly, including a
-number QEMU printed that nothing else accounts for, and `rr breaks` reproduces
-QEMU's decode of the log independently (same 1,445,912 boundaries, same final
-icount as `replay-dump.py`). It has not yet been tested *prospectively* — a
-deliberate boundary break and a deliberate mid-chunk break on a fresh replay.
-Until it has, treat a snapped icount as much better odds rather than a guarantee,
-and note the failure still costs the whole replay.
+**Status of the rule: VERIFIED PROSPECTIVELY.** It was derived retrospectively
+from three samples, which is where most of our "rules" stop. This one was then
+made to predict. Two fresh replays of `clean1`, in separate QEMU instances so
+that an abort in one could not explain the other, with the prediction — including
+the exact remainder, computed from the trace before QEMU was started — written
+out first:
+
+```
+[boundary] icount=1674763945  target=1679763945
+[boundary] PREDICTION: 1679763945 IS a boundary -> replay pauses cleanly, QEMU survives
+[boundary] t+10s PAUSED cleanly, qemu alive, icount=1679763945
+
+[midchunk] icount=2094763292  target=2100388618
+[midchunk] PREDICTION: 2100388618 is 624673 into a 1249347-instruction chunk
+           (2099763945..2101013292) -> ABORTS with 'insn total 2100388618/624674 left'
+[midchunk] QEMU DIED rc=-6
+[midchunk] qemu-system-aarch64: Playback shouldn't have to iowait
+           (insn total 2100388618/624674 left, event 24118 is EVENT_INSTRUCTION)
+```
+
+Both predictions correct, the abort matching to the digit. `rr breaks` also
+reproduces QEMU's own decode of the log independently — same 1,445,912
+boundaries and same final icount as `replay-dump.py`, in 1.9s.
+
+So a snapped icount is a rule, not better odds. What remains unmeasured is
+whether anything ELSE can abort a break at a legal boundary; nothing has, in
+three boundary attempts across two harnesses.
 
 `query-replay` is also the best available read of replay progress — a live
 icount, better than inferring position from the rrfile read offset.
@@ -260,22 +280,35 @@ icount, better than inferring position from the rrfile read offset.
   snapshot-plus-replay-forward, which is exactly what seek does. Give it a
   boundary icount from `rr breaks`; the seek target is presumably subject to the
   same chunk rule as a break, though that is an assumption and not a measurement.
-* Whether the boundary rule holds PROSPECTIVELY — one deliberate boundary break
-  and one deliberate mid-chunk break. The rule is retrospective on three samples
-  plus an exact arithmetic match; that is strong but it is not a prediction that
-  has been made and then checked.
+* Whether anything other than a mid-chunk target can abort a break. Nothing has
+  in three boundary attempts across two harnesses, but that is a small n.
 * Whether `continue` after a `replay-break` pause resumes safely, or whether the
   replay may only be stopped once.
 * Whether a gdb breakpoint set while paused survives a resume.
 
-### Caveat on reach
+### Wired into the tool: `rr replay --break-at`
 
-The verification above ran in a hand-built configuration that reaches only ~23
-guest lines (see the host-shape entry in the divergence log). The STOP mechanism
-is what was under test and it works; using it at a point deep in a boot needs
-the harness's own host shape, and `rr replay` does not yet expose
-`replay-break`. **Wiring that into the tool is the next step**, and it is what
-would make this first-class rather than a recipe.
+`./vibeos-cli rr replay <trace> --break-at <icount> [--gdb]` arms the break
+through the harness's OWN QMP connection, snapping the requested icount forward
+to a legal boundary and saying so when it moves.
+
+The mechanism is a single hook on the VM, `on_qmp_ready`, called once with the
+live `QmpClient` the moment the handshake completes and before anything reads
+serial. `None` by default, so every other boot path is unchanged — the vm.py
+diff is a pure addition, no line removed.
+
+**Why a hook rather than a second QMP socket.** Opening our own monitor
+alongside the harness's would have been a much smaller change and it is the
+wrong one: replay reach is measurably sensitive to how many host-side backends
+are attached — the same trace reached 1773 guest lines with a file serial and no
+QMP, and 23 lines with a file serial and QMP (see the host-shape entry in the
+divergence log). Adding a second monitor to study replay would perturb the thing
+being studied, and the resulting numbers would look like findings.
+
+The hook is deliberately not wrapped in `try`/`except`. A swallowed failure
+would leave the caller believing a break was armed when it was not, and that
+presents as "the break never fired" — indistinguishable from a break landing at
+an illegal icount, which is a real and separate failure.
 
 ## Superseded: the earlier conclusion that a replay cannot be stopped
 
@@ -726,6 +759,42 @@ Record it here and keep going; only chase one when it looks load-bearing.
 
   This is a correlation with a plausible mechanism on two samples, not a cause.
   It is, however, a much narrower place to look than "somewhere in the trace".
+
+  **RETIRED: the exception correlation is the WORST fit of any measure, not the
+  best.** Counting every candidate quantity at both wedge points — the check that
+  should have been run before writing the paragraph above — ranks them:
+
+  | measure | clean1 | kmt3 | spread |
+  |---|---|---|---|
+  | trace bytes | 2,145,086 | 2,163,558 | **0.85%** |
+  | guest lines | 2,070 | 2,045 | 1.21% |
+  | serial bytes | 122,374 | 120,380 | 1.63% |
+  | EVENT_INSTRUCTION records | 180,516 | 185,952 | 2.92% |
+  | total events | 384,921 | 397,601 | 3.19% |
+  | icount | 10,513,077,852 | 11,267,275,810 | 6.69% |
+  | EVENT_CP_CLOCK_WARP_ACCOUNT | 47,548 | 51,247 | 7.22% |
+  | EVENT_INTERRUPT | 6,222 | 6,826 | 8.85% |
+  | **EVENT_EXCEPTION** | **14,492** | **18,823** | **23.01%** |
+
+  Exceptions differ by 23% between the two stalls. Whatever stops the replay, it
+  is not "after N exceptions" — the density spike is something both boots happen
+  to be doing at the point they stop, not the thing being counted. The
+  binned-histogram observation above stands as an observation; its suggested
+  mechanism does not.
+
+  **What the ranking does say.** The measures split cleanly in two. Log-position
+  quantities (trace bytes, lines, serial bytes) cluster at 0.85-1.63%;
+  guest-work quantities (events, icount, clock warps, interrupts, exceptions)
+  spread from 2.92% to 23%. The limit is positional in the LOG, not a count of
+  anything the guest did.
+
+  Two caveats worth keeping, because they bound how much the top row is worth.
+  The three tight measures are near-proportional to one another in this region —
+  the log here is a uniform `EVENT_CHAR_WRITE` / `EVENT_INSTRUCTION +3` pattern,
+  so trace bytes ~ 14x char-writes ~ 14x serial bytes — so 0.85% versus 1.63% is
+  not a real separation on two samples. And neither 2.15MB nor any of the other
+  numbers is a round figure or a power of two, so no obvious buffer or window
+  size explains it yet.
 
   **The replay gets FURTHER than the earlier framing suggests.** "22% of the
   trace" is a byte fraction of a file dominated by idle-time clock records, and

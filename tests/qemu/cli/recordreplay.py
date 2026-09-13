@@ -794,6 +794,7 @@ def snap_break_icount(trace_dir: Path, want: int) -> int:
 
 ENV_VAR = "VIBEOS_QEMU_RR"
 SHIFT_ENV_VAR = "VIBEOS_QEMU_RR_SHIFT"
+BREAK_ENV_VAR = "VIBEOS_QEMU_RR_BREAK"
 
 
 def env_shift() -> int:
@@ -816,6 +817,26 @@ def env_shift() -> int:
         raise RecordReplayError(f"{SHIFT_ENV_VAR} must be an integer, got {raw!r}") from exc
     if not 0 <= n <= 10:
         raise RecordReplayError(f"{SHIFT_ENV_VAR} must be 0..10, got {n}")
+    return n
+
+
+def env_break() -> int | None:
+    """Requested `replay-break` icount for this replay, or None.
+
+    The value is what the CALLER asked for, not necessarily where the break will
+    land: it is snapped forward to a legal boundary at the point the hook is
+    installed, because only there is the trace directory known. See
+    `snap_break_icount`.
+    """
+    raw = os.environ.get(BREAK_ENV_VAR, "").strip()
+    if not raw:
+        return None
+    try:
+        n = int(raw)
+    except ValueError as exc:
+        raise RecordReplayError(f"{BREAK_ENV_VAR} must be an integer, got {raw!r}") from exc
+    if n < 0:
+        raise RecordReplayError(f"{BREAK_ENV_VAR} must not be negative, got {n}")
     return n
 
 

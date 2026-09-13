@@ -1258,3 +1258,68 @@ def test_boundaries_refuse_a_trace_with_no_recording(tmp_path):
     trace.mkdir()
     with pytest.raises(rr.RecordReplayError, match="nothing was recorded"):
         rr.instruction_boundaries(trace)
+
+
+def test_env_break_reads_the_requested_icount(monkeypatch):
+    monkeypatch.delenv(rr.BREAK_ENV_VAR, raising=False)
+    assert rr.env_break() is None
+    monkeypatch.setenv(rr.BREAK_ENV_VAR, "12345")
+    assert rr.env_break() == 12345
+
+
+def test_env_break_refuses_junk_rather_than_silently_not_breaking(monkeypatch):
+    """A replay that quietly failed to arm its break looks exactly like a break
+    that fired and was missed."""
+    monkeypatch.setenv(rr.BREAK_ENV_VAR, "not-a-number")
+    with pytest.raises(rr.RecordReplayError, match="must be an integer"):
+        rr.env_break()
+    monkeypatch.setenv(rr.BREAK_ENV_VAR, "-1")
+    with pytest.raises(rr.RecordReplayError, match="must not be negative"):
+        rr.env_break()
+
+
+def test_arm_replay_break_snaps_and_arms_through_the_harness_qmp(tmp_path, monkeypatch, capsys):
+    """The vm.py hook: a mid-chunk request must be snapped forward before it ever
+    reaches QEMU, because arming it unsnapped aborts the whole replay."""
+    from tests.qemu.vm import QemuVM
+
+    trace = _replay_log(tmp_path, _insn(100) + _insn(100))
+    monkeypatch.setenv(rr.BREAK_ENV_VAR, "150")
+
+    armed = []
+
+    class FakeQmp:
+        def execute(self, name, **kw):
+            armed.append((name, kw))
+
+    vm = QemuVM.__new__(QemuVM)  # no QEMU, no sockets — only the hook logic under test
+    vm.on_qmp_ready = None
+    vm._arm_replay_break(rr, trace)
+    assert vm.on_qmp_ready is not None
+    vm.on_qmp_ready(FakeQmp())
+    assert armed == [("replay-break", {"icount": 200})]
+    assert "mid-chunk" in capsys.readouterr().err
+
+
+def test_arm_replay_break_is_a_no_op_when_nothing_asked_for_one(tmp_path, monkeypatch):
+    from tests.qemu.vm import QemuVM
+
+    trace = _replay_log(tmp_path, _insn(100))
+    monkeypatch.delenv(rr.BREAK_ENV_VAR, raising=False)
+    vm = QemuVM.__new__(QemuVM)
+    vm.on_qmp_ready = None
+    vm._arm_replay_break(rr, trace)
+    assert vm.on_qmp_ready is None
+
+
+def test_arm_replay_break_refuses_an_icount_past_the_end(tmp_path, monkeypatch):
+    """Better to fail at arming than to boot a whole replay whose break can never
+    fire and looks identical to one that was never set."""
+    from tests.qemu.vm import QemuVM
+
+    trace = _replay_log(tmp_path, _insn(100))
+    monkeypatch.setenv(rr.BREAK_ENV_VAR, "999999")
+    vm = QemuVM.__new__(QemuVM)
+    vm.on_qmp_ready = None
+    with pytest.raises(rr.RecordReplayError, match="past the end"):
+        vm._arm_replay_break(rr, trace)

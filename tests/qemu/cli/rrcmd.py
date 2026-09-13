@@ -426,6 +426,10 @@ def cmd_replay(args, repo: Path) -> int:
     env["VIBEOS_QEMU_BACKEND"] = "native"
     for k, v in (m.get("env") or {}).items():
         env[k] = v
+    if getattr(args, "break_at", None) is not None:
+        # Snapped in vm.py, where the trace is in hand; announced there too.
+        env[rr.BREAK_ENV_VAR] = str(args.break_at)
+
     if args.gdb:
         # -S as well: a replay you cannot stop before instruction 0 is a replay
         # you cannot reverse-continue from, which is the point of having it.
@@ -434,12 +438,10 @@ def cmd_replay(args, repo: Path) -> int:
             "[rr] NOTE: do NOT stop a replay from the debugger. stepi, attaching\n"
             "     mid-run and even a breakpoint HIT all abort QEMU with\n"
             "     `Playback shouldn't have to iowait`. Stop it with QMP\n"
-            "     `replay-break` at an icount instead, THEN attach gdb to the already\n"
-            "     -paused guest — that works (registers read, QEMU survives) but is\n"
-            "     NOT reliable: 2 of 3 breaks stopped cleanly and the third aborted\n"
-            "     with the same error. Retry at a different icount. `rr replay` does\n"
-            "     not wire replay-break up yet; see\n"
-            "     docs/engineering/qemu-record-replay.md.",
+            "     `replay-break` at an icount instead — `--break-at <icount>` does\n"
+            "     this for you, snapping to a legal instruction-chunk boundary —\n"
+            "     THEN attach gdb to the already-paused guest. That works:\n"
+            "     registers read, QEMU survives.",
             file=sys.stderr,
         )
 
