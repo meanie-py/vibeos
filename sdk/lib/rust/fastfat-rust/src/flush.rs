@@ -94,7 +94,7 @@ const STATUS_MORE_PROCESSING_REQUIRED: ntkrnl_sys::base::NTSTATUS = 0xC0000016u3
 
 // Constants (placeholder values — real values will be provided by the caller)
 const IRP_CONTEXT_FLAG_WRITE_THROUGH: u32 = 0x04; // TODO
-const IRP_CONTEXT_FLAG_WAIT: u32 = 0x02; // TODO
+const IRP_CONTEXT_FLAG_WAIT: u32 = 0x02; // TODO  // nolint: const-contradiction (fastfat's own flag set, fatstruc.h:1563)
 const FCB_STATE_TRUNCATE_ON_CLOSE: u32 = 0x02; // TODO
 const FAT_NTC_FCB: u32 = 0x0502; // TODO
 const FcbGood: u32 = 1; // TODO

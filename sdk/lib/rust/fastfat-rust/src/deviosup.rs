@@ -488,7 +488,7 @@ pub type PFAT_PAGING_FILE_CONTEXT = *mut FAT_PAGING_FILE_CONTEXT;
 
 // Unknown constants - placeholder values
 const IRP_CONTEXT_FLAG_OVERRIDE_VERIFY: u32 = 0x1000;
-const IRP_CONTEXT_FLAG_WAIT: u32 = 0x00000002;
+const IRP_CONTEXT_FLAG_WAIT: u32 = 0x00000002;  // nolint: const-contradiction (fastfat's own flag set, fatstruc.h:1563)
 const IRP_CONTEXT_FLAG_WRITE_THROUGH: u32 = 0x00000004;
 const SL_WRITE_THROUGH: u32 = 0x04;
 const SL_OVERRIDE_VERIFY_VOLUME: u32 = 0x00000002;

@@ -289,7 +289,9 @@ const SRB_TYPE_STORAGE_REQUEST_BLOCK: u8 = 1; // srb.h:664
 // ddk/srb.h:108 == 0x28. This constant is WRITTEN into srbEx.Function here and TESTED
 // against a second, differently-wrong copy below -- the test could never match.
 const SRB_FUNCTION_STORAGE_REQUEST_BLOCK: u8 = 0x28;
-const SRB_SIGNATURE: u32 = 0x53524253;
+// 0x53524258 ('SRBX'), ddk/srb.h:616 -- storport validates this field, and NEITHER of
+// the two values this crate invented ('SRBS' here, 'SRBT' in disk.rs) matches it.
+const SRB_SIGNATURE: u32 = 0x53524258;
 const STORAGE_REQUEST_BLOCK_VERSION_1: u32 = 1;
 const SRB_FUNCTION_IO_CONTROL: u32 = 2;
 const SRB_FLAGS_DATA_IN: u32 = 0x40;

@@ -2247,7 +2247,7 @@ pub unsafe extern "C" fn DiskModeSelect(
     // ddk/srb.h:108 == 0x28. 0xF0 was an INVENTED value labelled "placeholder";
     // it is not any SRB_FUNCTION_* and compiled perfectly happily.
     const SRB_FUNCTION_STORAGE_REQUEST_BLOCK: u8 = 0x28;
-    const SRB_SIGNATURE: u32 = 0x53524254;              // 'SRBT'
+    const SRB_SIGNATURE: u32 = 0x53524258; // 'SRBX', ddk/srb.h:616
     const STORAGE_REQUEST_BLOCK_VERSION_1: u32 = 1;
     const SRB_FUNCTION_EXECUTE_SCSI: u32 = 0x00;        // placeholder
     const STOR_ADDRESS_TYPE_BTL8: u16 = 1;              // scsi.h:3571

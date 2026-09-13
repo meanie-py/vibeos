@@ -148,7 +148,7 @@ const FAT_NTC_IRP_CONTEXT: u32 = 0x0508;
 const IRP_NOCACHE: u32 = 0x00000001;
 const SL_WRITE_THROUGH: u32 = 0x04;
 const IRP_CONTEXT_FLAG_WRITE_THROUGH: u32 = 0x04;
-const IRP_CONTEXT_FLAG_WAIT: u32 = 0x0002;
+const IRP_CONTEXT_FLAG_WAIT: u32 = 0x0002;  // nolint: const-contradiction (fastfat's own flag set, fatstruc.h:1563)
 const IRP_CONTEXT_FLAG_RECURSIVE_CALL: u32 = 0x10;
 const IRP_MN_USER_FS_REQUEST: u8 = 0x00;
 const FSCTL_INVALIDATE_VOLUMES: u32 = 0x00090054;
@@ -1162,7 +1162,7 @@ pub unsafe extern "system" fn FatCreateDcb(
     Dirent: *mut DIRENT,
     Lfn: *mut _UNICODE_STRING,
 ) -> *mut DCB {
-    const IRP_CONTEXT_FLAG_WAIT: u32 = 0x02;
+    const IRP_CONTEXT_FLAG_WAIT: u32 = 0x02;  // nolint: const-contradiction (fastfat's own flag set, fatstruc.h:1563)
     const FAT_NTC_DCB: u32 = 0x0503;
     const FcbGood: u32 = 1;
     const FCB_LOOKUP_ALLOCATIONSIZE_HINT: i64 = -1;

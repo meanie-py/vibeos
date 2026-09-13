@@ -216,7 +216,7 @@ const SYSTEM_XA_SIGNATURE: u8 = b'X';
 const STATUS_SUCCESS: i32 = 0;
 const CDFS_NTC_FCB_INDEX: u32 = 0x0304; // nodetype.h
 const VcbMounted: u32 = 2; // _VCB_CONDITION (cdstruc.h: NotMounted=0,MountInProgress=1,Mounted=2)
-const IRP_CONTEXT_FLAG_WAIT: u32 = 0x00000004; // FIXED 2026-07-06: cdfs flag mismatch (verified vs cdstruc.h); WAIT=0x02 collided w/ MORE_PROCESSING and != the 0x04 CdAcquireResource checks -> WAIT flag never took -> every cdfs resource acquire ran non-blocking -> CANT_WAIT raise -> 0x1E under DUMMY_PSEH // cdstruc.h
+const IRP_CONTEXT_FLAG_WAIT: u32 = 0x00000004; // FIXED 2026-07-06: cdfs flag mismatch (verified vs cdstruc.h); WAIT=0x02 collided w/ MORE_PROCESSING and != the 0x04 CdAcquireResource checks -> WAIT flag never took -> every cdfs resource acquire ran non-blocking -> CANT_WAIT raise -> 0x1E under DUMMY_PSEH // cdstruc.h  // nolint: const-contradiction (cdfs's own flag set, cdstruc.h:1215)
 const IRP_CONTEXT_FLAG_TOP_LEVEL: u32 = 0x00000010; // cdstruc.h
 
 // Constants (TODO: replace with correct numeric values)

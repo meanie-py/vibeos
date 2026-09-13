@@ -125,7 +125,9 @@ const RPL_MASK: USHORT = 3;
 const CR0_TS: ULONG = 0x8;
 const CR0_EM: ULONG = 0x4;
 const CR0_MP: ULONG = 0x2;
-const DR7_RESERVED_MASK: ULONG = 0x400;
+// 0xDC00, ndk/i386/asm.h:515 -- the DR7 bits the CPU requires fixed. exp.rs in this
+// same crate has it right; 0x400 masks one bit of the eleven.
+const DR7_RESERVED_MASK: ULONG = 0xDC00;
 const NPX_STATE_NOT_LOADED: ULONG = CR0_TS;
 const NPX_STATE_LOADED: UCHAR = 0;
 const FSW_INVALID_OPERATION: USHORT = 0x1;

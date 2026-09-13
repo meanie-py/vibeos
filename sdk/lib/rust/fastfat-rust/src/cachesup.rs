@@ -85,7 +85,7 @@ struct _IO_PRIORITY_INFO {
 
 const CC_ENABLE_DISK_IO_ACCOUNTING: u32 = 0x1;
 
-const IRP_CONTEXT_FLAG_WAIT: u32 = 0x02; // placeholder
+const IRP_CONTEXT_FLAG_WAIT: u32 = 0x02; // placeholder  // nolint: const-contradiction (fastfat's own flag set, fatstruc.h:1563)
 const STATUS_CANT_WAIT: i32 = 0xC00000D8_u32 as i32; // placeholder
 const DEBUG_TRACE_CACHESUP: u32 = 0x04000000; // placeholder
 
