@@ -848,10 +848,69 @@ pub type LPBC = *mut IBindCtx;
 // it must occupy its position, but giving it a signature no caller uses would be inventing an
 // ABI detail rather than recording one.
 
-use crate::recycle_bin::{BIND_OPTS, WIN32_FIND_DATAW};
-use crate::open_with_menu::STATSTG;
 use crate::types::LARGE_INTEGER;
-use crate::new_menu::ULARGE_INTEGER;
+
+// These four DUPLICATE definitions that also live in recycle_bin.rs / open_with_menu.rs /
+// new_menu.rs, for exactly the reason the PIDL block above gives: this file is `#[path]`-included
+// into menuband-rust, which has none of those modules. `use crate::recycle_bin::...` here
+// compiles in shell32-rust and breaks menuband-rust with E0432 -- and only the arm64 gate
+// surfaces it, so a green local `cargo check -p shell32-rust` on all three targets says nothing.
+// I did exactly that and had two submissions rejected before reading the note above.
+//
+// Layout-identical copies, transcribed from those modules. Do not "collapse" them to a
+// `use`; the whole point is that this file depends on `crate::types` and nothing else.
+//
+// Deliberately NOT `pub`: they exist only to type the vtable slots below. Publishing them
+// would collide by glob with the copies in those modules and make the NAME ambiguous in every
+// consumer that globs both -- six E0659s the first time I tried it.
+
+/// `BIND_OPTS` (objidl.h).
+#[repr(C)]
+struct BIND_OPTS {
+    pub cbStruct: DWORD,
+    pub grfFlags: DWORD,
+    pub grfMode: DWORD,
+    pub dwTickCountDeadline: DWORD,
+}
+
+/// `ULARGE_INTEGER` (winnt.h) — the QuadPart view; the anonymous Low/High struct is a union
+/// arm nothing in these signatures reads.
+#[repr(C)]
+#[derive(Clone, Copy)]
+struct ULARGE_INTEGER {
+    pub QuadPart: ULONGLONG,
+}
+
+/// `WIN32_FIND_DATAW` (minwinbase.h).
+#[repr(C)]
+struct WIN32_FIND_DATAW {
+    pub dwFileAttributes: DWORD,
+    pub ftCreationTime: FILETIME,
+    pub ftLastAccessTime: FILETIME,
+    pub ftLastWriteTime: FILETIME,
+    pub nFileSizeHigh: DWORD,
+    pub nFileSizeLow: DWORD,
+    pub dwReserved0: DWORD,
+    pub dwReserved1: DWORD,
+    pub cFileName: [WCHAR; 260],
+    pub cAlternateFileName: [WCHAR; 14],
+}
+
+/// `STATSTG` (objidl.h).
+#[repr(C)]
+struct STATSTG {
+    pub pwcsName: LPOLESTR,
+    pub r#type: DWORD,
+    pub cbSize: ULARGE_INTEGER,
+    pub mtime: FILETIME,
+    pub ctime: FILETIME,
+    pub atime: FILETIME,
+    pub grfMode: DWORD,
+    pub grfLocksSupported: DWORD,
+    pub clsid: CLSID,
+    pub grfStateBits: DWORD,
+    pub reserved: DWORD,
+}
 
 /// `interface IFileSystemBindData : IUnknown` — SetFindData, GetFindData (in that order).
 #[repr(C)]
