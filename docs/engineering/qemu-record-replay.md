@@ -760,6 +760,42 @@ Record it here and keep going; only chase one when it looks load-bearing.
   This is a correlation with a plausible mechanism on two samples, not a cause.
   It is, however, a much narrower place to look than "somewhere in the trace".
 
+  **RETIRED: the exception correlation is the WORST fit of any measure, not the
+  best.** Counting every candidate quantity at both wedge points — the check that
+  should have been run before writing the paragraph above — ranks them:
+
+  | measure | clean1 | kmt3 | spread |
+  |---|---|---|---|
+  | trace bytes | 2,145,086 | 2,163,558 | **0.85%** |
+  | guest lines | 2,070 | 2,045 | 1.21% |
+  | serial bytes | 122,374 | 120,380 | 1.63% |
+  | EVENT_INSTRUCTION records | 180,516 | 185,952 | 2.92% |
+  | total events | 384,921 | 397,601 | 3.19% |
+  | icount | 10,513,077,852 | 11,267,275,810 | 6.69% |
+  | EVENT_CP_CLOCK_WARP_ACCOUNT | 47,548 | 51,247 | 7.22% |
+  | EVENT_INTERRUPT | 6,222 | 6,826 | 8.85% |
+  | **EVENT_EXCEPTION** | **14,492** | **18,823** | **23.01%** |
+
+  Exceptions differ by 23% between the two stalls. Whatever stops the replay, it
+  is not "after N exceptions" — the density spike is something both boots happen
+  to be doing at the point they stop, not the thing being counted. The
+  binned-histogram observation above stands as an observation; its suggested
+  mechanism does not.
+
+  **What the ranking does say.** The measures split cleanly in two. Log-position
+  quantities (trace bytes, lines, serial bytes) cluster at 0.85-1.63%;
+  guest-work quantities (events, icount, clock warps, interrupts, exceptions)
+  spread from 2.92% to 23%. The limit is positional in the LOG, not a count of
+  anything the guest did.
+
+  Two caveats worth keeping, because they bound how much the top row is worth.
+  The three tight measures are near-proportional to one another in this region —
+  the log here is a uniform `EVENT_CHAR_WRITE` / `EVENT_INSTRUCTION +3` pattern,
+  so trace bytes ~ 14x char-writes ~ 14x serial bytes — so 0.85% versus 1.63% is
+  not a real separation on two samples. And neither 2.15MB nor any of the other
+  numbers is a round figure or a power of two, so no obvious buffer or window
+  size explains it yet.
+
   **The replay gets FURTHER than the earlier framing suggests.** "22% of the
   trace" is a byte fraction of a file dominated by idle-time clock records, and
   it undersells the result badly. By guest progress, clean1's replay reproduces
