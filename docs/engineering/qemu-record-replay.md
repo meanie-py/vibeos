@@ -757,6 +757,32 @@ Record it here and keep going; only chase one when it looks load-bearing.
   nothing to execute; it is what happens whenever a replay's guest is stopped by
   the debugger. See "Replaying with gdb" above.
 
+## What this means for the chartered case (record a kmtest sweep, replay it)
+
+**Recording works. Replaying does not reach the sweep — it falls about 24KB of
+serial short.** Measured on trace `kmt3`, against its own recording:
+
+| marker | byte offset in the recorded serial |
+|---|---|
+| `[WIN32K] shell ready` | 74,173 |
+| `[EXPLORER] _tWinMain entered` | 118,113 |
+| **replay stalls** | **122,199** |
+| `[KMTEST-SWEEP]` begins | 146,694 |
+| first `Starting test ...` | 176,825 |
+
+So the replay gets through firmware, the whole kernel boot, `shell ready` and
+explorer's entry — and stops **24,495 bytes before the sweep launches**, out of
+1,348,868 bytes recorded. The sweep itself is never replayed at all.
+
+That is the honest bound on this tool for the job it was built for. It also
+makes fixing the wedge worth more than "replay is incomplete" suggests: the gap
+is small and quantified, not an unknown distance.
+
+Until then the chartered flow is **record-only**: a kmtest sweep IS captured
+deterministically and completely (`launched=91 ok=88 bad=3`, 489MB trace), and
+that capture is re-runnable up to desktop bringup. What it cannot yet do is
+re-run the sweep.
+
 ## Recording the kmtest sweep
 
 The chartered case — an arm64 `--smp 1` kmtest sweep, i.e. the MP kernel on one
