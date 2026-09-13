@@ -718,6 +718,23 @@ unsafe extern "C" fn grab_locinfo(locinfo: pthreadlocinfo) {
     }
 }
 unsafe extern "C" fn ensure_cloc_static_init() {
+    // Fast path FIRST: the CAS below is a `lock cmpxchg` -- a shared-line
+    // read-modify-write and a full barrier -- and without this it ran on EVERY
+    // call, not just the first. `get_locinfo()` reaches here once per CHARACTER
+    // whenever no locale has been set (`MSVCRT_locale` NULL, so
+    // `update_thread_locale` returns at its first line and `data->locinfo` stays
+    // NULL), which put a per-character atomic on the `towlower`/`towupper` and
+    // `isw*` hot paths. `tolower` never shows it because it short-circuits on
+    // `initial_locale` and never calls `get_locinfo` at all.
+    //
+    // The flag is set once and never cleared, so a plain read settles it. This
+    // does not change the existing race window: a thread that LOSES the CAS
+    // already returned immediately while the winner was still writing the
+    // fields below, so reading the flag early observes exactly what losing the
+    // CAS observed before.
+    if core::ptr::read_volatile(core::ptr::addr_of!(cloc_static_initialized)) != 0 {
+        return;
+    }
     if InterlockedCompareExchange(
         core::ptr::addr_of_mut!(cloc_static_initialized),
         1,
