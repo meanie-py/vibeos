@@ -1860,6 +1860,53 @@ typedef struct _WOW64_CSR_CONNECTINFO64_M {
  * locally faults -- that is what killed every 32-bit process at
  * Wow64pCsrWidenCaptureBuffer+0x1b. */
 #define WOW64_CSR_SCRATCH_SIZE 0x1000
+
+/* csrss publishes ReadOnlyStaticServerData as an array of PVOID and hands every
+ * client its address. Those entries are 8 bytes wide in a 64-bit csrss, but a
+ * 32-bit client indexes the same memory with a 4-byte stride -- so kernel32
+ * reading [BASESRV_SERVERDLL_INDEX] got the HIGH half of entry 0, which is zero
+ * for any pointer below 4GB. It then asserted and dereferenced NULL.
+ *
+ * Give the guest a narrowed copy instead. csrss fills the array while its
+ * server DLLs register, which is complete long before any client connects, so a
+ * snapshot taken at connect time is not racing a later write. */
+#define WOW64_CSR_SERVER_DLL_MAX 4   /* subsystems/csr/csrsrv/api.h:34 */
+static ULONG Wow64pCsrStaticServerData32[WOW64_CSR_SERVER_DLL_MAX];
+
+static ULONG Wow64pCsrNarrowStaticServerData(ULONGLONG Wide)
+{
+    const ULONGLONG *Src = (const ULONGLONG *)(ULONG_PTR)Wide;
+    ULONG_PTR Self = (ULONG_PTR)&Wow64pCsrStaticServerData32[0];
+    ULONG i;
+
+    if (!Wide)
+        return 0;
+
+    /* The narrowed array itself has to be reachable from 32-bit code. */
+    if ((ULONGLONG)Self >> 32)
+    {
+        DbgPrint("[WOW64]   CSR static-server-data shadow at %p is above 4GB — "
+                 "guest-invisible, leaving the 64-bit array in place\n", (PVOID)Self);
+        return (ULONG)Wide;
+    }
+
+    for (i = 0; i < WOW64_CSR_SERVER_DLL_MAX; i++)
+    {
+        ULONGLONG E = Src[i];
+        if (E >> 32)
+        {
+            DbgPrint("[WOW64]   CSR static server data[%lu]=%I64x is above 4GB — "
+                     "guest-invisible\n", i, E);
+            Wow64pCsrStaticServerData32[i] = 0;
+        }
+        else
+        {
+            Wow64pCsrStaticServerData32[i] = (ULONG)E;
+        }
+    }
+    return (ULONG)Self;
+}
+
 static ULONG_PTR Wow64pCsrPortDelta;     /* server address - local address */
 static ULONG_PTR Wow64pCsrViewLocal;     /* the guest-visible view */
 static ULONG     Wow64pCsrViewSize;
@@ -2041,7 +2088,8 @@ static NTSTATUS Wow64pConnectPort(ULONG *a, int Secure)
                      Csr64.NumberOfServerDllNames);
             Csr32->ObjectDirectory = (ULONG)Csr64.ObjectDirectory;
             Csr32->SharedSectionBase = (ULONG)Csr64.SharedSectionBase;
-            Csr32->SharedStaticServerData = (ULONG)Csr64.SharedStaticServerData;
+            Csr32->SharedStaticServerData =
+                Wow64pCsrNarrowStaticServerData(Csr64.SharedStaticServerData);
             Csr32->SharedSectionHeap = (ULONG)Csr64.SharedSectionHeap;
             Csr32->DebugFlags = Csr64.DebugFlags;
             Csr32->SizeOfPebData = Csr64.SizeOfPebData;
