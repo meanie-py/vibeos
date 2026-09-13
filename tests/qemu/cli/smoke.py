@@ -477,6 +477,9 @@ def _net_stage(run: Run, repo: Path, arch: str) -> None:
         "-q",
         "-p",
         "no:cacheprovider",
+        # smoke already validated this media. A second clean-build fixture
+        # races other networking runs on the same build directory.
+        "--skip-clean-build",
     ]
     try:
         proc = subprocess.run(cmd, cwd=str(repo), capture_output=True, text=True, timeout=1200)
@@ -490,6 +493,7 @@ def _net_stage(run: Run, repo: Path, arch: str) -> None:
             )
         )
         return
+    run.log((proc.stdout or "") + (proc.stderr or ""), header="network pytest")
     tail = (proc.stdout or "").strip().splitlines()
     summary = next(
         (ln for ln in reversed(tail) if " passed" in ln or " failed" in ln or " error" in ln),

@@ -35,6 +35,11 @@ import subprocess
 import sys
 from pathlib import Path
 
+if __package__:
+    from .binary_facts import BinaryFacts
+else:
+    from binary_facts import BinaryFacts
+
 # Functions where ud2 is expected (unreachable panic/abort paths)
 EXPECTED_UD2 = {
     "unwrap_unchecked",
@@ -211,7 +216,7 @@ def _is_mangled(fn: str) -> bool:
     return base.startswith("ZN") or (base.startswith("R") and not base.startswith("Rtl"))
 
 
-def find_rust_binaries(build_dir: Path, nm: str) -> list[Path]:
+def find_rust_binaries(build_dir: Path, nm: str, cache=None) -> list[Path]:
     """Every .sys/.dll/.exe under the build dir that links Rust code.
 
     Excludes staging copies (livecd/bootcd/boot/stripped), host tooling, and
@@ -226,19 +231,22 @@ def find_rust_binaries(build_dir: Path, nm: str) -> list[Path]:
         rel = str(p.relative_to(build_dir))
         if any(e in rel for e in exclude) or p.name == "ntoskrnl.exe":
             continue
-        try:
-            r = subprocess.run([nm, str(p)], capture_output=True, text=True, timeout=60)
-            if "rust_begin_unwind" in r.stdout:
-                out.append(p)
-        except (subprocess.TimeoutExpired, OSError):
-            continue
+
+        def contains_rust(p=p):
+            r = subprocess.run([nm, str(p)], capture_output=True, text=True, timeout=60, check=True)
+            return "rust_begin_unwind" in r.stdout
+
+        if cache.get(p, contains_rust) if cache else contains_rust():
+            out.append(p)
     return sorted(out)
 
 
 def scan_driver_binary(path: Path, objdump: str, arch: str) -> list[dict]:
     """ud2 (x86) / branch-to-self (arm64) in named, unmangled functions of one
     driver/DLL binary, with the noreturn-tail heuristic applied."""
-    result = subprocess.run([objdump, "-d", str(path)], capture_output=True, text=True, timeout=300)
+    result = subprocess.run(
+        [objdump, "-d", str(path)], capture_output=True, text=True, timeout=300, check=True
+    )
     findings = []
     current_function = None
     prev_call_target = None
@@ -294,10 +302,23 @@ def scan_drivers(build_dir: Path, objdump: str, nm: str, arch: str) -> tuple[int
     unexpected+known findings) — expected ones are dropped here (volume)."""
     from concurrent.futures import ThreadPoolExecutor
 
-    binaries = find_rust_binaries(build_dir, nm)
+    repo = build_dir.resolve().parent
+    symbols = BinaryFacts(
+        repo, namespace="rust-symbols", implementation=[Path(__file__)], tools=[nm]
+    )
+    facts = BinaryFacts(
+        repo,
+        namespace="driver-ud2",
+        implementation=[Path(__file__)],
+        tools=[objdump],
+        options={"arch": arch},
+    )
+    binaries = find_rust_binaries(build_dir, nm, symbols)
     keep: list[dict] = []
     with ThreadPoolExecutor(max_workers=8) as pool:
-        for findings in pool.map(lambda p: scan_driver_binary(p, objdump, arch), binaries):
+        for findings in pool.map(
+            lambda p: facts.get(p, lambda: scan_driver_binary(p, objdump, arch)), binaries
+        ):
             keep.extend(f for f in findings if not f["expected"])
     return len(binaries), keep
 
@@ -360,6 +381,7 @@ def scan_ud2(ntoskrnl_path: Path, objdump: str, arch: str = "i386") -> list[dict
         capture_output=True,
         text=True,
         timeout=120,
+        check=True,
     )
 
     findings = []
@@ -442,7 +464,14 @@ def main():
         else "likely LLVM miscompilation"
     )
     print(f"Scanning {ntoskrnl} ({arch}) for {kind}...")
-    findings = scan_ud2(ntoskrnl, objdump, arch)
+    facts = BinaryFacts(
+        build_dir.resolve().parent,
+        namespace="kernel-ud2",
+        implementation=[Path(__file__)],
+        tools=[objdump],
+        options={"arch": arch},
+    )
+    findings = facts.get(ntoskrnl, lambda: scan_ud2(ntoskrnl, objdump, arch))
 
     expected = [f for f in findings if f["expected"]]
     known_cgu = [f for f in findings if not f["expected"] and f["known_cgu"]]
@@ -486,7 +515,7 @@ def main():
     if "--skip-drivers" not in sys.argv:
         nm = find_nm(arch)
         if not nm:
-            print("\nWARNING: no nm found — driver sweep SKIPPED (unverified!)")
+            raise RuntimeError("no nm found — driver sweep cannot run")
         else:
             n_bins, flagged = scan_drivers(build_dir, objdump, nm, arch)
             known = [f for f in flagged if f["known_cgu"]]

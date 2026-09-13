@@ -25,6 +25,7 @@ def test_disassembler_failure_is_not_clean(tmp_path, monkeypatch, failure, capsy
         raise subprocess.CalledProcessError(1, cmd, stderr="invalid PE")
 
     monkeypatch.setattr(scanner.subprocess, "run", execute)
+    monkeypatch.setattr(scanner, "objdump", lambda _: sys.executable)
     monkeypatch.setattr(sys, "argv", ["scan_self_recursive", str(tmp_path), "--check"])
     assert scanner.main() == 2
     captured = capsys.readouterr()

@@ -20,6 +20,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 
 from .cli import hostlock
+from .portlease import launch_lock
 from .qmp_client import QmpClient
 from .serial_client import SerialClient
 
@@ -811,6 +812,18 @@ def _start_echo_server(label: str = "gf") -> socketserver.BaseServer:
 # _free_tcp_port() delegates to this so hostfwd ports are picked on the Windows
 # TCP stack — where QEMU.exe actually binds them. None on the native backend.
 _windows_port_picker: Callable[[], int] | None = None
+_selected_launch_ports: set[int] | None = None
+
+
+def _unique_launch_port(picker: Callable[[], int]) -> int:
+    for _ in range(32):
+        port = picker()
+        if _selected_launch_ports is None:
+            return port
+        if port not in _selected_launch_ports:
+            _selected_launch_ports.add(port)
+            return port
+    raise RuntimeError("port allocator repeatedly returned a port already assigned to this QEMU")
 
 
 def _free_tcp_port() -> int:
@@ -826,12 +839,14 @@ def _free_tcp_port() -> int:
     is set, delegate to it to pick a Windows-side-free port instead.
     """
     if _windows_port_picker is not None:
-        return _windows_port_picker()
-    s = socket.socket()
-    s.bind(("127.0.0.1", 0))
-    port = s.getsockname()[1]
-    s.close()
-    return port
+        return _unique_launch_port(_windows_port_picker)
+
+    def native():
+        with socket.socket() as listener:
+            listener.bind(("127.0.0.1", 0))
+            return listener.getsockname()[1]
+
+    return _unique_launch_port(native)
 
 
 # Every INDEPENDENT guest-side consumer of the outbound slirp echo gets its OWN
@@ -1218,7 +1233,7 @@ class QemuVM:
         if win_stack:
             from . import backend as be
 
-            self.gdb_port = be.windows_free_tcp_port()
+            self.gdb_port = _unique_launch_port(be.windows_free_tcp_port)
             bind = f"tcp:0.0.0.0:{self.gdb_port}"  # 0.0.0.0 so WSL reaches it via gateway
         else:
             self.gdb_port = _free_tcp_port()
@@ -1482,11 +1497,16 @@ class QemuVM:
         latency)."""
         attempts = HOSTFWD_LAUNCH_RETRIES if self._backend == "windows-host" else 1
         last_stderr = ""
+        global _selected_launch_ports
         for attempt in range(attempts):
-            if self._backend == "windows-host":
-                cmd = self._build_windows_cmd()
-            else:
-                cmd = self._build_native_cmd()
+            _selected_launch_ports = set()
+            try:
+                if self._backend == "windows-host":
+                    cmd = self._build_windows_cmd()
+                else:
+                    cmd = self._build_native_cmd()
+            finally:
+                _selected_launch_ports = None
             print(f"[QemuVM] {' '.join(cmd)}")
             proc = subprocess.Popen(
                 cmd,
@@ -1579,6 +1599,17 @@ class QemuVM:
         # happens before `started` is recorded so it's excluded from the lifetime cap.
         self._acquire_cpu_lease()
 
+        # Coordinate selection through the successful QMP handshake. Merely
+        # surviving the early-exit poll does not prove hostfwd/GDB binds worked.
+        # All builders enter, protecting the scoped Windows port-picker too.
+        with launch_lock():
+            try:
+                self._start_with_ports()
+            except BaseException:
+                self.stop()
+                raise
+
+    def _start_with_ports(self) -> None:
         cmd = self._launch_qemu()
 
         # Drop a scoped lock so the reaper can safely kill THIS qemu iff our
