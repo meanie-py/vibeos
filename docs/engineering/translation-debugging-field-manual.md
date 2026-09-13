@@ -3173,11 +3173,21 @@ free_functions` (`__main__.py:2373-2381`) — its C++ literals are already lower
 `cpp_com.rewrite_wide_literals`, so its namespace structurally cannot grow the wideseal token.
 That is evidence about the COM path, not about the flip. Plain-C lanes get no such exemption.
 
-The generalisation, which recurred three times in one night across different tools (an sccache
-server query, an ISO-string probe, this): **a proxy that is easy to measure stood in for the
-thing that decides, and the tool answered its own question honestly while we asked a different
-one.** When a count keeps coming out differently, stop recounting and construct the exact thing
-the code looks up.
+The generalisation, which recurred SEVEN times in one night across unrelated tools (an sccache
+server query, an ISO-string probe, this, and four more below): **a proxy that is easy to
+measure stood in for the thing that decides, and the tool answered its own question honestly
+while we asked a different one.** When a count keeps coming out differently, stop recounting
+and construct the exact thing the code looks up.
+
+Three distinct shapes, so you can recognise the next one:
+* **A COUNT.** `ls | wc -l` vs `test -f manifest.json` vs "does the exact path exist" — above.
+* **A CITATION.** Below: the quote said the opposite of what it was cited for.
+* **A SAMPLING WINDOW.** "The last 9 arm64 sweeps" silently mixed runs from three different
+  shas and produced 22% where the real figure for *that* soak was 33% — near enough to look
+  like a measurement, and it was one keystroke from being relayed as "your number does not
+  reproduce". The thing that decides is "the 9 runs THIS soak produced, identified by sha";
+  "the last 9 by arch" merely correlates with it. A window is the easiest of the three to miss
+  because the arithmetic over it is impeccable.
 
 **The nastiest variant of it is a CITATION.** Same night, a different lane argued that a
 "flake" classification could not also reject a lane, and cited `queue.py:901` as its support.
