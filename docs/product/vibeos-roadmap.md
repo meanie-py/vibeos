@@ -488,6 +488,23 @@ land; date every addition.** Source docs live in `docs/engineering/archive/`.
 
 ## Known bugs & flakes (live registry)
 
+- **55 i386 crates build on an SSE/ABI combination rustc is phasing out — OPEN, latent**
+  (2026-09-13, research lane). They pass `-C target-feature=-sse,-sse2` while targeting the
+  BUILTIN `i686-pc-windows-gnu`, whose spec declares `rustc-abi: x86-sse2`. Both the pinned
+  stable (1.92.0) and the pinned nightly (2025-12-14) emit: *"target feature `sse2` must be
+  enabled to ensure that the ABI of the current target can be implemented correctly … this was
+  previously accepted by the compiler but is being phased out; **it will become a hard error in
+  a future release**"* (rust-lang#116344). **Not broken today and not urgent — the trigger is a
+  toolchain bump**, which is exactly when it will fire, and the pin exists so bumps are
+  deliberate. Verified: 55 CMakeLists carry the flag and **all 55** use the builtin triple, none
+  the custom `i686-kernel.json`. The fix already exists in-tree: that json sets
+  `rustc-abi: x86-softfloat`, which is the sanctioned way to disable SSE on i386, and the kernel
+  `*-cargo` cells are on it. **Unverified, and worth checking before anyone acts:** whether a
+  newer rustc actually hard-errors (this is rustc's own claim, not a test), and whether all 55
+  genuinely need SSE off — a user-mode crate might simply drop the flag instead. Whoever bumps
+  the pin should re-run `rustc --target i686-pc-windows-gnu -C target-feature=-sse,-sse2` first;
+  it is a one-command check.
+
 - **A 32-bit guest doing real file I/O BUGCHECKs the arm64 kernel — OPEN** (2026-09-13).
   Found on the first writable-volume run of `sqlite32.exe`, the third-party stress guest
   (`tools/stress/sqlite/build.sh`). Real SQLite creating and writing a database on arm64:
