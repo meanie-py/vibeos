@@ -279,9 +279,14 @@ unsafe fn GetVolumeNameForRoot(
             let mut SymbolicLink: _UNICODE_STRING = core::mem::zeroed();
 
             /* Make a string of it, to easy the checks */
-            SymbolicLink.Length = (*MountPoints).MountPoints[CurrentMntPt as usize].SymbolicLinkNameLength;
+            // MOUNTMGR_MOUNT_POINTS.MountPoints is `MountPoints[1]` bounded by
+            // NumberOfMountPoints -- a flexible array. bindgen's `[T; 1]` panicked past
+            // the first mount point, so FindFirstVolume/FindNextVolume faulted on any
+            // machine with more than one volume.
+            let mp = (&raw const (*MountPoints).MountPoints[0]).add(CurrentMntPt as usize);
+            SymbolicLink.Length = (*mp).SymbolicLinkNameLength;
             SymbolicLink.MaximumLength = SymbolicLink.Length;
-            SymbolicLink.Buffer = (MountPoints as usize + (*MountPoints).MountPoints[CurrentMntPt as usize].SymbolicLinkNameOffset as usize) as PWSTR;
+            SymbolicLink.Buffer = (MountPoints as usize + (*mp).SymbolicLinkNameOffset as usize) as PWSTR;
             /* If that's a NT volume name (GUID form), keep it! */
             if MOUNTMGR_IS_NT_VOLUME_NAME(&mut SymbolicLink) != 0 {
                 FoundVolume = SymbolicLink.Buffer;

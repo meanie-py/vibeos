@@ -529,9 +529,18 @@ land; date every addition.** Source docs live in `docs/engineering/archive/`.
   deliberate. Verified: 55 CMakeLists carry the flag and **all 55** use the builtin triple, none
   the custom `i686-kernel.json`. The fix already exists in-tree: that json sets
   `rustc-abi: x86-softfloat`, which is the sanctioned way to disable SSE on i386, and the kernel
-  `*-cargo` cells are on it. **Unverified, and worth checking before anyone acts:** whether a
-  newer rustc actually hard-errors (this is rustc's own claim, not a test), and whether all 55
-  genuinely need SSE off — a user-mode crate might simply drop the flag instead. Whoever bumps
+  `*-cargo` cells are on it. **Answered 2026-09-13 by reading the link graph, which kills the
+  obvious remedy:** at least 52 of the 55 genuinely need SSE off, so "split by KIND and let
+  user-mode drop the flag" buys almost nothing. 42 are plainly kernel-side
+  (`drivers/`, `hal/`, `ntoskrnl/`, `win32ss/drivers|reactx`). Ten more are `sdk/lib/*` STATIC
+  LIBRARIES whose kind is decided by their consumers, not their path — `ntoskrnl/CMakeLists.txt:89`
+  links `csq arbiter cmlib ntlsalib rtl`, so those land inside the kernel image and must be
+  no-SSE however user-ish `sdk/lib/rtl` looks. **Classifying these by directory is the wrong
+  oracle**; the question is link-graph reachability into a kernel PE. Only `concfg`, `msvcrt`
+  and `ucrtbase` are candidates for simply dropping the flag (no kernel-side consumer found).
+  So the fix for the other 52 is the softfloat ABI the kernel json already carries, not a KIND
+  split. **Still unverified:** whether a newer rustc actually hard-errors — that is rustc's own
+  claim, not a test of mine. Whoever bumps
   the pin should re-run `rustc --target i686-pc-windows-gnu -C target-feature=-sse,-sse2` first;
   it is a one-command check.
 
@@ -991,9 +1000,11 @@ Field-manual § pointers hold the full writeups. **Update on state change.**
   **But the two things that would close #39 with it do not work yet**: under gdb a replay can be
   run but never STOPPED — stepping, attaching mid-run and even a breakpoint HIT all abort
   QEMU 9.0.2 with `Playback shouldn't have to iowait` — so `reverse-continue` from the zeroed
-  frame is unreachable, not merely unattempted; and replays wedge partway at a point that
-  varies between runs. So this is not yet a route to "who set PC to 0" — it is a
-  deterministic capture of a crashing boot, which is still more than a soak ever gave us.
+  frame is unreachable, not merely unattempted. (Replays were also believed to WEDGE partway;
+  that is RETRACTED — those traces had been truncated by a record-finalisation bug, and a
+  correctly finalised trace replays deterministically without aborting, just slowly.)
+  So this is not yet a route to "who set PC to 0" — it is a deterministic capture of a
+  crashing boot, which is still more than a soak ever gave us.
   Both limitations, their measurements, and what to re-test on a QEMU upgrade are in
   `docs/engineering/qemu-record-replay.md`.
 - **FIXED (2026-09-06): system cursors load, and the residual NULLs are correct behaviour

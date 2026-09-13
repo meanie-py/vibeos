@@ -1832,7 +1832,11 @@ unsafe fn VersionInfo16_FindChild(
     let mut child: *const VS_VERSION_INFO_STRUCT16 = VersionInfo16_Children(info);
 
     while (child as *const u8) < (info as *const u8).add((*info).wLength as usize) {
-        if _strnicmp((*child).szKey.as_ptr(), szKey, cbKey as usize) == 0 && (*child).szKey[cbKey as usize] == 0 {
+        // version.c declares `CHAR szKey[1]` / `WCHAR szKey[1]` -- the key string runs
+        // past the struct, so bindgen's `[T; 1]` panicked reading its terminator for
+        // any key longer than one character, i.e. every real key.
+        if _strnicmp((*child).szKey.as_ptr(), szKey, cbKey as usize) == 0
+            && (&raw const (*child).szKey[0]).add(cbKey as usize).read() == 0 {
             return child;
         }
 
@@ -1852,7 +1856,8 @@ unsafe fn VersionInfo32_FindChild(
     let mut child: *const VS_VERSION_INFO_STRUCT32 = VersionInfo32_Children(info);
 
     while (child as *const u8) < (info as *const u8).add((*info).wLength as usize) {
-        if _wcsnicmp((*child).szKey.as_ptr(), szKey, cbKey as usize) == 0 && (*child).szKey[cbKey as usize] == 0 {
+        if _wcsnicmp((*child).szKey.as_ptr(), szKey, cbKey as usize) == 0
+            && (&raw const (*child).szKey[0]).add(cbKey as usize).read() == 0 {
             return child;
         }
 
