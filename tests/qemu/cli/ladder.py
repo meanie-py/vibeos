@@ -113,6 +113,74 @@ STAGED_DIR = "syswow64"
 RAMDISK_REL = "qemu/ramdisk.img"
 
 
+# guest -> the .c it is built from. Explicit rather than derived: win32 is built
+# from Win32App.c, so a name-mangling convention would silently check nothing for
+# it -- and a staleness check that quietly verifies nothing is worse than none,
+# because it reports "fresh".
+GUEST_SOURCE: dict[str, str] = {
+    "hello32": "tools/fex/hello-compute/Hello32.c",
+    "gui32": "tools/fex/hello-compute/Gui32.c",
+    "win32": "tools/fex/hello-compute/Win32App.c",
+    "file32": "tools/fex/hello-compute/File32.c",
+    "async32": "tools/fex/hello-compute/Async32.c",
+    "marshal32": "tools/fex/hello-compute/Marshal32.c",
+    "thread32": "tools/fex/hello-compute/Thread32.c",
+    "fault32": "tools/fex/hello-compute/Fault32.c",
+    "selfmod32": "tools/fex/hello-compute/Selfmod32.c",
+    "reg32": "tools/fex/hello-compute/Reg32.c",
+}
+
+# The script carries the link lines, so a change to it (a new flag, a different
+# importlib) invalidates every guest just as a source edit invalidates one.
+GUEST_BUILDER = "tools/fex/build-hello-compute.sh"
+
+
+def stale_guests(repo: Path) -> list[str]:
+    """Guests whose .exe is OLDER than the source it was built from.
+
+    The guests are NOT in git -- `.gitignore` excludes `build-fex-*`, and
+    `vibeos-cli build` does not rebuild them -- so the ladder's verdict depends
+    on three inputs of which only one is versioned: the commit, these binaries,
+    and the build-i386 import closure. Two lanes at the SAME commit can therefore
+    grade different guest code, and did: a marshal32.exe built 35 minutes before
+    a fix to its own socket rung hung there for a week, costing the four guests
+    that run after it their verdicts on every boot, while the lane that built it
+    saw nothing wrong -- every input it could see was internally consistent.
+
+    Keyed on source-vs-binary mtime, deliberately NOT on absolute age. That
+    binary was six days old; any age threshold loose enough not to nag would
+    have passed it. What makes it detectably wrong is only that Marshal32.c is
+    NEWER than marshal32.exe.
+
+    A guest with no binary is not stale -- it is unbuilt, which the
+    partially-built branch of `gate_decision` already reports with its own
+    remedy. Only guests present on disk are compared. A guest missing from
+    GUEST_SOURCE is reported as stale rather than skipped: an unmapped guest is
+    a gap in this check, and it must not read as freshness.
+    """
+    out: list[str] = []
+    builder = repo / GUEST_BUILDER
+    builder_mtime = builder.stat().st_mtime if builder.is_file() else 0.0
+    for guest in LADDER:
+        exe = repo / "build-fex-hello" / f"{guest}.exe"
+        if not exe.is_file():
+            continue
+        rel = GUEST_SOURCE.get(guest)
+        if rel is None:
+            out.append(f"{guest} (no source mapping)")
+            continue
+        src = repo / rel
+        if not src.is_file():
+            out.append(f"{guest} (source {rel} missing)")
+            continue
+        built = exe.stat().st_mtime
+        if src.stat().st_mtime > built:
+            out.append(f"{guest} ({rel} is newer)")
+        elif builder_mtime > built:
+            out.append(f"{guest} ({GUEST_BUILDER} is newer)")
+    return out
+
+
 def _guest_names() -> set[str]:
     return {f"{g}.exe".lower() for g in LADDER}
 
@@ -262,6 +330,21 @@ def gate_decision(repo: Path, arch: str) -> tuple[list[str], bool, str]:
     """
     staged = media_has_guests(repo, arch)
     if staged:
+        # Stale guests SKIP, they do not fail. A stale binary is our own
+        # bookkeeping error, not a regression in the OS, and grading it produces
+        # a RED that blames the guests running AFTER the stale one -- which is
+        # how one six-day-old marshal32.exe read as four broken guests. The
+        # remedy is one command and belongs in the message, not in a bisect.
+        stale = stale_guests(repo)
+        if stale:
+            return (
+                [],
+                False,
+                f"staged guest binaries are older than their sources "
+                f"({', '.join(stale)}) — the guests are NOT in git and a normal "
+                f"build does not rebuild them, so the ladder would grade stale "
+                f"code; rebuild with: {GUEST_BUILDER}",
+            )
         return (
             ["--ladder"],
             True,

@@ -8,6 +8,7 @@ the bug -- one is a regression, the other is a lane that was never staged.
 
 from __future__ import annotations
 
+import os
 import shutil
 import subprocess
 import time
@@ -265,6 +266,112 @@ def test_partially_built_names_the_missing_guest_not_a_restage(tmp_path):
     assert "build-hello-compute.sh" in why
     # Must NOT give the restage advice: the media is not the problem.
     assert "BUILT but none is staged" not in why
+
+
+# A fixed clock for the staleness fixtures. Every mtime below is an offset from
+# it, so the ordering under test is explicit rather than a race with the clock.
+_T0 = time.time()
+
+
+def _built_tree(tmp_path, *, sources=True):
+    """A repo with a staged manifest, every guest binary, and their sources."""
+    repo = _manifest(tmp_path, [f"reactos/syswow64/{g}.exe=/tmp/x" for g in ladder.LADDER])
+    guests = repo / "build-fex-hello"
+    guests.mkdir()
+    (repo / "tools" / "fex").mkdir(parents=True)
+    (repo / ladder.GUEST_BUILDER).write_text("#!/bin/sh\n")
+    if sources:
+        for rel in ladder.GUEST_SOURCE.values():
+            src = repo / rel
+            src.parent.mkdir(parents=True, exist_ok=True)
+            src.write_text("int start(void){return 0;}\n")
+    for g in ladder.LADDER:
+        (guests / f"{g}.exe").write_bytes(b"MZ")
+    # Every binary newer than every source -- the fresh state. Times are set
+    # EXPLICITLY and far apart rather than with utime(None): the real gap is
+    # days, and a test that relies on "now is later than a moment ago" turns
+    # filesystem mtime granularity into a flake.
+    for rel in ladder.GUEST_SOURCE.values():
+        os.utime(repo / rel, (_T0 - 1000, _T0 - 1000))
+    os.utime(repo / ladder.GUEST_BUILDER, (_T0 - 1000, _T0 - 1000))
+    for g in ladder.LADDER:
+        os.utime(guests / f"{g}.exe", (_T0 - 500, _T0 - 500))
+    return repo
+
+
+def test_fresh_guests_are_not_called_stale(tmp_path):
+    """The positive control's other half: a correctly built tree must still run
+    the ladder. A staleness check that fires on everything disables the gate."""
+    repo = _built_tree(tmp_path)
+    assert ladder.stale_guests(repo) == []
+    extra, staged, why = ladder.gate_decision(repo, "amd64")
+    assert extra == ["--ladder"] and staged
+    assert "older than their sources" not in why
+
+
+def test_a_guest_older_than_its_source_skips_loudly(tmp_path):
+    """THE incident: marshal32.exe built 35 minutes before a fix to its own
+    socket rung, hanging there for a week and costing the four guests that run
+    after it their verdicts -- while the lane that built it saw nothing wrong,
+    because every input it could see was internally consistent. It must SKIP,
+    not fail: a stale binary is our bookkeeping, not an OS regression, and a RED
+    here blames the innocent guests downstream of it."""
+    repo = _built_tree(tmp_path)
+    src = repo / ladder.GUEST_SOURCE["marshal32"]
+    os.utime(src, (_T0, _T0))  # source edited after the binary was built
+    src_rel = ladder.GUEST_SOURCE["marshal32"]
+    assert ladder.stale_guests(repo) == [f"marshal32 ({src_rel} is newer)"]
+    extra, staged, why = ladder.gate_decision(repo, "amd64")
+    assert extra == [] and not staged
+    assert "marshal32" in why and ladder.GUEST_BUILDER in why
+
+
+def test_absolute_age_would_not_have_caught_it(tmp_path):
+    """Guards the design choice rather than the code path. The stale binary was
+    SIX DAYS old and any age threshold loose enough not to nag would have passed
+    it; what makes it wrong is only that its source is newer. So an ancient
+    binary whose source is older still must read as FRESH."""
+    repo = _built_tree(tmp_path)
+    ancient = _T0 - 60 * 60 * 24 * 90
+    for rel in ladder.GUEST_SOURCE.values():
+        os.utime(repo / rel, (ancient - 100, ancient - 100))
+    os.utime(repo / ladder.GUEST_BUILDER, (ancient - 100, ancient - 100))
+    for g in ladder.LADDER:
+        os.utime(repo / "build-fex-hello" / f"{g}.exe", (ancient, ancient))
+    assert ladder.stale_guests(repo) == []
+
+
+def test_a_newer_build_script_invalidates_every_guest(tmp_path):
+    """The script carries the link lines. When --no-insert-timestamp was added
+    to all nine guests, nothing about any .c changed -- but every binary was out
+    of date with respect to how it is now built."""
+    repo = _built_tree(tmp_path)
+    os.utime(repo / ladder.GUEST_BUILDER, (_T0, _T0))
+    stale = ladder.stale_guests(repo)
+    assert len(stale) == len(ladder.LADDER)
+    assert all(ladder.GUEST_BUILDER in entry for entry in stale)
+
+
+def test_an_unmapped_guest_reads_as_stale_not_fresh(tmp_path):
+    """A guest added to LADDER without a GUEST_SOURCE entry is a HOLE in this
+    check. Silence there would report freshness it never verified, which is the
+    same failure shape the check exists to catch."""
+    repo = _built_tree(tmp_path)
+    (repo / "build-fex-hello" / "newguest32.exe").write_bytes(b"MZ")
+    ladder.LADDER["newguest32"] = 0x600D
+    try:
+        assert "newguest32 (no source mapping)" in ladder.stale_guests(repo)
+    finally:
+        del ladder.LADDER["newguest32"]
+
+
+def test_an_unbuilt_guest_is_not_stale(tmp_path):
+    """Missing is not stale -- that is the partially-built branch's job, and it
+    has a different remedy. Two diagnoses for one state is how a reader ends up
+    running the wrong command."""
+    repo = _built_tree(tmp_path)
+    (repo / "build-fex-hello" / "reg32.exe").unlink()
+    assert ladder.stale_guests(repo) == []
 
 
 def test_never_built_keeps_the_plain_reason(tmp_path):
