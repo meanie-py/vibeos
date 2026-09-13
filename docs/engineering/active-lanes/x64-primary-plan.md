@@ -257,7 +257,17 @@ a ladder to watch", and neither was visible from reading.
    and the standing ~85-94s cost applies only where the media is staged. So "the instrument is
    in CI" is true conditionally. **Making arm64 WoW64 coverage continuous is a separate
    question** — whether default arm64 media should stage the FEX CPU layer — with a real cost
-   attached, and it is not answered here.
+   attached, and it is not answered here. **It is a USER decision, not a lane's.**
+
+   What is known, so it can be decided without re-deriving it: FEX source is **vendored
+   in-tree** (`external/fex`, 58M), so this is not a fetch, licensing or availability problem —
+   it is a per-worktree *build* cost. Exactly **one** worktree carries a `build-fex-arm64`
+   today. The recurring cost once staged is the ~85s ladder drain per arm64 gate, already
+   measured. **Unmeasured, and deliberately not guessed here:** how long `tools/fex/build-fex.sh`
+   takes and how much disk `build-fex-arm64` occupies — the only tree that has one belongs to
+   another lane, and reading a sibling's generated artifacts is exactly what the fleet-isolation
+   rule forbids. Whoever decides this should get those two numbers from the fex lane rather than
+   from an estimate.
 
    `gate` now opts each arch in on its own media (`ladder.gate_decision`), and the amd64
    ladder is **GREEN end to end: 9/9 guests PASS**, correct codes throughout. Getting there
