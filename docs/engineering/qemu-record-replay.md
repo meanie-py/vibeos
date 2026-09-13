@@ -555,6 +555,34 @@ Record it here and keep going; only chase one when it looks load-bearing.
   and 5 — one is a replay that ran most of a boot and stopped, the other is a
   replay that never started.
 
+  **Replay reach also depends on backends the GUEST CANNOT OBSERVE, which
+  invalidates hand-built replay command lines.** Same trace, three
+  configurations:
+
+  | serial backend | QMP attached | guest lines reached |
+  |---|---|---|
+  | `file:` | no | 1773 |
+  | `file:` | yes | **23** |
+  | socket chardev (the recording's own) | yes | 1693 |
+
+  Two orders of magnitude, from a monitor socket and a chardev kind. Confirmed
+  with a control: the 23-line run reproduces with QMP attached and *never
+  queried*, so it is not the act of querying.
+
+  This is worse than a crash — a replay that quietly under-reaches looks like a
+  finding about the guest, and several observations earlier in this document were
+  taken from hand-built command lines for exactly that reason.
+  `assert_same_shape` now compares the host-side shape (`-serial`, `-qmp`,
+  `-monitor`, `-chardev`, `-display`) by backend KIND, ignoring per-run paths and
+  ports, and refuses a mismatch. **Replay through the harness that recorded;
+  do not hand-roll the command line.**
+
+  (QMP's replay API is worth knowing about regardless: `query-replay` returns the
+  live `icount`, which is a direct read of replay progress — better than
+  inferring it from the rrfile read position — and `replay-break` / `replay-seek`
+  exist, which may be the replay-native way to stop one, where the gdbstub
+  cannot.)
+
   **The traces are identical at the head and diverge in CHARACTER within
   4KB.** Decoding all three: the first thirteen events match structurally,
   including `EVENT_INSTRUCTION(0) + 336314 -> 336314` at the same instruction

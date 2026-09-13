@@ -1124,3 +1124,42 @@ def test_a_non_default_shift_warns_that_the_trace_will_not_replay(tmp_path, monk
     err = capsys.readouterr().err
     assert "REPLAY PROBABLY WILL NOT" in err
     assert "4,096" in err
+
+
+def test_replay_refuses_a_different_HOST_side_shape(tmp_path):
+    """Backends the guest cannot observe still change how far a replay gets.
+
+    Measured on one trace: file-backed serial without QMP reached 1773 guest
+    lines, the same with a QMP socket attached reached 23, and the recording's
+    own chardev+QMP shape reached 1693. A replay that silently under-reaches by
+    two orders of magnitude is worse than one that crashes — it reads as a
+    finding about the guest.
+    """
+    trace = tmp_path / "t"
+    trace.mkdir()
+    base = _base_cmd(tmp_path)
+    recorded = [
+        "-chardev",
+        "socket,id=ser0,path=/tmp/x/ser.sock,server=off,reconnect=1",
+        "-serial",
+        "chardev:ser0",
+        *base,
+    ]
+    rec, _ = rr.transform(recorded, mode="record", trace_dir=trace, stage=False)
+    rr.write_manifest(trace, arch="arm64", argv=rec, media={}, finalised=True)
+    rr.assert_same_shape(trace, rec)  # identical: fine
+
+    hand_rolled = ["-serial", f"file:{tmp_path}/out.log", *base]
+    now, _ = rr.transform(hand_rolled, mode="replay", trace_dir=trace, stage=False)
+    with pytest.raises(rr.RecordReplayError, match="HOST-SIDE shape"):
+        rr.assert_same_shape(trace, now)
+
+
+def test_host_shape_ignores_per_run_paths_and_ports(tmp_path):
+    """The harness picks a fresh socket path every run, so comparing paths would
+    refuse every legitimate replay. Only the backend KIND is compared."""
+    a = ["-qmp", "unix:/tmp/ros-aaa/qmp.sock,server,nowait", "-serial", "chardev:ser0"]
+    b = ["-qmp", "unix:/tmp/ros-zzz/qmp.sock,server,nowait", "-serial", "chardev:ser0"]
+    assert rr._host_shape(a) == rr._host_shape(b)
+    c = ["-qmp", "unix:/tmp/ros-aaa/qmp.sock,server,nowait", "-serial", "file:/tmp/o.log"]
+    assert rr._host_shape(a) != rr._host_shape(c)
