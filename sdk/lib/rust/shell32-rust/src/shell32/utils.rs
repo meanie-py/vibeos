@@ -55,7 +55,7 @@
 //! perfectly. Anyone extending those vtables transcribes from the IDL, in order, and does not
 //! infer from call sites.
 //!
-//! 76 errors remain. `shellcom::IBindCtxVtbl` is now its full THIRTEEN slots in objidl.idl
+//! 68 errors remain. `shellcom::IBindCtxVtbl` is now its full THIRTEEN slots in objidl.idl
 //! order, and IStream's Seek/CopyTo/Stat placeholders are typed -- this TU was their first
 //! caller, which is how the placeholder convention surfaces when a new consumer arrives.
 //!
@@ -499,7 +499,7 @@ pub unsafe extern "C" fn SHSkipJunctionBinding(pbc: *mut IBindCtx, pclsid: *mut 
     let mut BindOps: BIND_OPTS = core::mem::zeroed();
     BindOps.cbStruct = core::mem::size_of::<BIND_OPTS>() as u32;
 
-    if (((*(*pbc).lpVtbl).GetBindOptions)(pbc, core::ptr::addr_of_mut!(BindOps)) >= 0) &&
+    if (((*(*pbc).lpVtbl).GetBindOptions)(pbc, ((core::ptr::addr_of_mut!(BindOps)) as _)) >= 0) &&
         BindOps.grfFlags == OLECONTF_LINKS
     {
         return TRUE;
@@ -545,7 +545,7 @@ pub unsafe extern "C" fn SHIsFileSysBindCtx(
     }
 
     if !pFindData.is_null() {
-        ((*(*pBindData).lpVtbl).GetFindData)(pBindData, pFindData);
+        ((*(*pBindData).lpVtbl).GetFindData)(pBindData, ((pFindData) as _));
     }
 
     ((*(*pBindData).lpVtbl).Release)(pBindData);
@@ -1141,7 +1141,7 @@ pub unsafe extern "system" fn SHGetShellStyleHInstance() -> HINSTANCE {
 
     let hr: HRESULT = GetCurrentThemeName(
         szPath.as_mut_ptr(),
-        szPath.len(),
+        ((szPath.len()) as i32),
         szColorName.as_mut_ptr(),
         ((szColorName.len()) as i32),
         core::ptr::null_mut(),
@@ -1178,7 +1178,7 @@ pub unsafe extern "system" fn SHGetShellStyleHInstance() -> HINSTANCE {
     if ExpandEnvironmentStringsW(
         CPP_COM_WSTR_9105F5027482.as_ptr(),
         szPath.as_mut_ptr(),
-        szPath.len(),
+        ((szPath.len()) as u32),
     ) == 0
     {
         return core::ptr::null_mut();
@@ -2085,7 +2085,7 @@ pub unsafe extern "system" fn SHGetRealIDL(
         core::ptr::addr_of_mut!(strret),
         pidlSimple,
         szPath.as_mut_ptr(),
-        szPath.len()
+        ((szPath.len()) as u32)
     );
     if ((hr) < 0) {
         return hr;
@@ -2129,7 +2129,7 @@ pub unsafe extern "C" fn IUnknown_InitializeCommand(
         hr = ((*(*pUnk).lpVtbl).QueryInterface)(pUnk, ((core::ptr::addr_of!(IID_IInitializeCommand)) as _), core::ptr::addr_of_mut!(pIC).cast());
         hr >= 0
     } {
-        hr = ((*(*pIC).lpVtbl).Initialize)(pIC, pszCommandName, pPB);
+        hr = ((*(*pIC).lpVtbl).Initialize)(pIC, pszCommandName, ((pPB) as _));
     }
     if !pIC.is_null() {
         ((*(*pIC).lpVtbl).Release)(pIC);
@@ -2304,7 +2304,7 @@ pub unsafe extern "C" fn SHELL_MapContextMenuVerbToCmdId(
     let pICIX = pICI as LPCMINVOKECOMMANDINFOEX;
 
     if IsUnicode(*pICIX) != 0 && !IS_INTRESOURCE((*pICIX).lpVerbW) {
-        if SHUnicodeToAnsi((*pICIX).lpVerbW, buf.as_mut_ptr(), buf.len()) != 0 {
+        if SHUnicodeToAnsi((*pICIX).lpVerbW, buf.as_mut_ptr(), ((buf.len()) as i32)) != 0 {
             pVerbA = buf.as_ptr();
         }
     }
@@ -2401,7 +2401,7 @@ pub unsafe extern "C" fn SHELL_CreateShell32DefaultExtractIcon(
         return hr;
     }
     (*(*initIcon).lpVtbl).SetNormalIcon(initIcon, swShell32Name.as_ptr(), IconIndex);
-    let result = ((*(*initIcon).lpVtbl).QueryInterface)(initIcon, riid, ppvOut);
+    let result = ((*(*initIcon).lpVtbl).QueryInterface)(initIcon, ((riid) as _), ppvOut);
     if !initIcon.is_null() {
         ((*(*initIcon).lpVtbl).Release)(initIcon);
     }
