@@ -432,9 +432,11 @@ def cmd_replay(args, repo: Path) -> int:
             "     mid-run and even a breakpoint HIT all abort QEMU with\n"
             "     `Playback shouldn't have to iowait`. Stop it with QMP\n"
             "     `replay-break` at an icount instead, THEN attach gdb to the already\n"
-            "     -paused guest — that is verified working (registers read, QEMU\n"
-            "     survives). `rr replay` does not wire replay-break up yet; the\n"
-            "     recipe is in docs/engineering/qemu-record-replay.md.",
+            "     -paused guest — that works (registers read, QEMU survives) but is\n"
+            "     NOT reliable: 2 of 3 breaks stopped cleanly and the third aborted\n"
+            "     with the same error. Retry at a different icount. `rr replay` does\n"
+            "     not wire replay-break up yet; see\n"
+            "     docs/engineering/qemu-record-replay.md.",
             file=sys.stderr,
         )
 
