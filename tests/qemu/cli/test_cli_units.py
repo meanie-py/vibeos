@@ -8100,3 +8100,39 @@ def test_zombie_check_is_false_where_proc_is_absent(tmp_path, monkeypatch):
 
     monkeypatch.setattr(killvm, "Path", lambda p="": tmp_path / "nope")
     assert not killvm._pid_is_zombie(1)
+
+
+def test_qmp_client_keeps_events_instead_of_discarding_them():
+    """_recv_json must skip events to find a reply, and used to drop them on the
+    way past. That threw away STOP, which is the only notification QEMU sends when
+    a replay-break fires — leaving a paused replay indistinguishable from a wedged
+    one, since both show a frozen serial log and a busy CPU."""
+    from tests.qemu.qmp_client import QmpClient
+
+    c = QmpClient()
+    feed = [
+        {"event": "RESUME"},
+        {"return": {}},
+        {"event": "STOP", "timestamp": {"seconds": 7}},
+        {"return": {"icount": 42}},
+    ]
+    c._recv_one_json = lambda: feed.pop(0)  # type: ignore[method-assign]
+
+    assert c._recv_json() == {"return": {}}
+    assert c._recv_json() == {"return": {"icount": 42}}
+    assert [e["event"] for e in c.events] == ["RESUME", "STOP"]
+    assert c.saw_event("STOP") == {"event": "STOP", "timestamp": {"seconds": 7}}
+    assert c.saw_event("SHUTDOWN") is None
+
+
+def test_qmp_event_retention_is_bounded():
+    """A long boot emits plenty; this is a diagnostic tail, not a log."""
+    from tests.qemu.qmp_client import QmpClient
+
+    c = QmpClient()
+    feed = [{"event": f"E{i}"} for i in range(300)] + [{"return": {}}]
+    c._recv_one_json = lambda: feed.pop(0)  # type: ignore[method-assign]
+    c._recv_json()
+    assert len(c.events) == 256
+    assert c.saw_event("E299") is not None
+    assert c.saw_event("E0") is None  # fell off the tail

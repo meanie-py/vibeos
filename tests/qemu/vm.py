@@ -1394,6 +1394,35 @@ class QemuVM:
             print(f"[rr] replay-break armed at icount {target}", file=sys.stderr)
 
         self.on_qmp_ready = _arm
+        self._rr_break_icount = target
+
+    def report_replay_break(self) -> str:
+        """Say whether an armed `replay-break` actually fired.
+
+        Worth a method because the alternative is inference, and the inference is
+        unreliable: a replay paused at a break and a replay WEDGED present
+        identically from outside — frozen serial log, QEMU busy. The obvious
+        discriminator does not hold either; a stopped replay was measured sitting
+        at 87% CPU in R state, so "a pause idles and a wedge spins" is false.
+
+        QEMU does announce the stop, as a QMP STOP event. The harness's client
+        used to discard events while scanning for command replies, which is why
+        this could not be answered before.
+
+        Called on the timeout path because that is where an armed break LANDS: the
+        guest stops, serial goes quiet, and the harness waits out its boot timeout.
+        A break that fired is the expected outcome there, not a failure.
+        """
+        target = getattr(self, "_rr_break_icount", None)
+        if target is None:
+            return ""
+        if self.qmp.saw_event("STOP") is not None:
+            return f"[rr] replay-break FIRED: guest stopped at icount {target}"
+        return (
+            f"[rr] replay-break at icount {target} did NOT fire (no QMP STOP seen). "
+            "The replay stopped short of it, or wedged before reaching it — compare "
+            "the trace read position against `rr breaks` to tell which."
+        )
 
     def _apply_record_replay(self, cmd: list[str]) -> list[str]:
         """Rewrite the launch command for QEMU record/replay when asked.
@@ -1854,6 +1883,9 @@ class QemuVM:
         except TimeoutError:
             # Save whatever serial output was captured before the timeout
             self._boot_output = self.serial.partial_output
+            note = self.report_replay_break()
+            if note:
+                print(note, file=sys.stderr)
             # ...and, while the guest is still alive, where each vCPU is parked.
             # Done HERE rather than at the call sites because every consumer of a
             # hung boot reaches it through this one except: smoke's _one_boot, the
