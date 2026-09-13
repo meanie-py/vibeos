@@ -230,16 +230,80 @@ _ARCHIVE_SOURCE_CRATES = (
 )
 
 
-def _stale_against_sources(archive: Path) -> str | None:
-    """Name of a source file newer than `archive`, or None if it is up to date.
+def _content_changed_at() -> tuple[float, str] | None:
+    """`(timestamp, what)` of the last CONTENT change to the archive's sources.
 
-    Returns the FIRST offender rather than a count -- naming the file is what
-    makes the message actionable.
+    mtime alone cannot answer this. `git merge` and `git checkout` rewrite a
+    file's mtime WITHOUT changing a byte of it, and the conductor merges every
+    queued lane at the start of a drain — so in the integration tree every source
+    file looks "just modified" on every batch while cargo, correctly, relinks
+    nothing. Comparing the archive to mtimes there is comparing it to the clock.
+
+    Git knows the difference. For a tracked, unmodified file the content is
+    whatever the last commit touching it says, so the COMMIT time is the real
+    change time. Only a file that is dirty in the worktree has content mtime
+    cannot account for, and for those mtime is exactly right.
+
+    Returns None when git cannot answer (not a repo, no git) — the caller then
+    falls back to mtime, which is wrong in the merge case but is strictly better
+    than skipping the assertion entirely.
+    """
+    paths = [f"sdk/lib/rust/{c}" for c in _ARCHIVE_SOURCE_CRATES]
+    try:
+        committed = subprocess.run(
+            ["git", "-C", str(REPO), "log", "-1", "--format=%ct", "--", *paths],
+            capture_output=True,
+            text=True,
+            timeout=60,
+        )
+        dirty = subprocess.run(
+            ["git", "-C", str(REPO), "status", "--porcelain", "--", *paths],
+            capture_output=True,
+            text=True,
+            timeout=60,
+        )
+    except (OSError, subprocess.SubprocessError):
+        return None
+    if committed.returncode != 0 or dirty.returncode != 0:
+        return None
+
+    best, what = 0.0, ""
+    text = committed.stdout.strip()
+    if text:
+        try:
+            best, what = float(text), "the last commit touching them"
+        except ValueError:
+            return None
+    # A locally-edited file is the one case where mtime IS the content clock.
+    for line in dirty.stdout.splitlines():
+        rel = line[3:].strip().strip('"')
+        if not rel:
+            continue
+        f = REPO / rel
+        try:
+            if f.is_file() and f.stat().st_mtime > best:
+                best, what = f.stat().st_mtime, rel
+        except OSError:
+            continue
+    return (best, what) if best else None
+
+
+def _stale_against_sources(archive: Path) -> str | None:
+    """What changed after `archive` was built, or None if it is current.
+
+    Naming the cause rather than counting is what makes the message actionable.
     """
     try:
         archive_mtime = archive.stat().st_mtime
     except OSError:
         return None
+
+    changed = _content_changed_at()
+    if changed is not None:
+        ts, what = changed
+        return what if ts > archive_mtime else None
+
+    # git could not answer — fall back to raw mtimes.
     for crate in _ARCHIVE_SOURCE_CRATES:
         src = REPO / "sdk" / "lib" / "rust" / crate
         if not src.is_dir():

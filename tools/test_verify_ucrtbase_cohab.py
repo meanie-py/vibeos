@@ -359,3 +359,68 @@ def test_a_stale_archive_is_a_NOTE_not_a_finding(tmp_path: Path, monkeypatch, ca
     # or this arch would be blamed for absent .obj files instead.
     assert findings == [], f"staleness must not produce findings, got: {findings}"
     assert "older than" in capsys.readouterr().err, "but it must still SAY so"
+
+
+def _git(repo: Path, *args: str, when: str | None = None) -> None:
+    import subprocess
+
+    env = dict(os.environ, GIT_CONFIG_GLOBAL="/dev/null", GIT_CONFIG_SYSTEM="/dev/null")
+    if when:
+        env |= {"GIT_AUTHOR_DATE": when, "GIT_COMMITTER_DATE": when}
+    subprocess.run(["git", "-C", str(repo), *args], check=True, capture_output=True, env=env)
+
+
+import os  # noqa: E402  (used by _git above and the tests below)
+
+
+def test_a_merge_touching_mtime_is_NOT_stale(tmp_path: Path, monkeypatch):
+    """The case that rejected a lane: mtime moved, content did not.
+
+    `git merge` and `git checkout` rewrite mtimes without changing bytes, and the
+    conductor merges every queued lane at the start of every drain. A pure-mtime
+    check therefore calls a perfectly current archive stale on EVERY batch — which
+    is exactly what happened, three arches at once. Git knows the file's content is
+    unchanged since its last commit, so this must come back clean.
+    """
+    _git(tmp_path, "init", "-q", "-b", "main")
+    _git(tmp_path, "config", "user.email", "t@t")
+    _git(tmp_path, "config", "user.name", "t")
+    src = tmp_path / "sdk" / "lib" / "rust" / "cnt-rust" / "src"
+    src.mkdir(parents=True)
+    (src / "lib.rs").write_text("// committed long ago\n")
+    _git(tmp_path, "add", "-A")
+    _git(tmp_path, "commit", "-qm", "seed", when="2001-01-01T00:00:00 +0000")
+
+    archive = tmp_path / "libcrt_shared_cargo.a"
+    archive.write_bytes(b"")
+    os.utime(archive, (1_500_000_000, 1_500_000_000))  # built after that commit
+    os.utime(src / "lib.rs", (2_000_000_000, 2_000_000_000))  # "merged" just now
+
+    monkeypatch.setattr(vuc, "REPO", tmp_path)
+    assert vuc._stale_against_sources(archive) is None
+
+
+def test_a_real_local_edit_IS_stale(tmp_path: Path, monkeypatch):
+    """The other half: a DIRTY file's mtime is the content clock, and must win.
+
+    Without this the git-based check would wave through the case the guard exists
+    for — you edited cabi/math.rs, did not rebuild, and the archive predates it.
+    """
+    _git(tmp_path, "init", "-q", "-b", "main")
+    _git(tmp_path, "config", "user.email", "t@t")
+    _git(tmp_path, "config", "user.name", "t")
+    src = tmp_path / "sdk" / "lib" / "rust" / "cnt-rust" / "src"
+    src.mkdir(parents=True)
+    (src / "lib.rs").write_text("// committed long ago\n")
+    _git(tmp_path, "add", "-A")
+    _git(tmp_path, "commit", "-qm", "seed", when="2001-01-01T00:00:00 +0000")
+
+    archive = tmp_path / "libcrt_shared_cargo.a"
+    archive.write_bytes(b"")
+    os.utime(archive, (1_500_000_000, 1_500_000_000))
+
+    (src / "lib.rs").write_text("// edited, NOT rebuilt\n")  # now dirty
+    os.utime(src / "lib.rs", (2_000_000_000, 2_000_000_000))
+
+    monkeypatch.setattr(vuc, "REPO", tmp_path)
+    assert vuc._stale_against_sources(archive) == "sdk/lib/rust/cnt-rust/src/lib.rs"
