@@ -7065,6 +7065,30 @@ language rules) over loosening what it reports.
   otherwise pass. **Fix:** implement it (arm64: read DAIF bit 7), or make the stub `skip()`
   so it cannot masquerade as a measurement. Its `#pragma message` warning had been firing
   on every arm64 build the whole time.
+- **A helper that spells "I cannot tell you" as `0`, feeding an unsigned decrement, turns ONE
+  intermittent event into three assertion identities — one of which PASSES.** `KmtGetPoolType`
+  (kmt_test_kernel.h) returns `0` when the allocation is page-aligned, because then there is no
+  `POOL_HEADER` in front of it to read. `ExPools.c` does `PoolType = KmtGetPoolType(Memory);
+  ok(PoolType != 0); PoolType--; ok(PoolType & QUOTA_POOL_MASK); ok((PoolType &
+  BASE_POOL_TYPE_MASK) == PagedPool || ...)`. `PoolType` is `USHORT`, so on the sentinel the
+  decrement underflows to `0xFFFF`, whose QUOTA_POOL_MASK bit is set — the quota assertion
+  **passes on garbage** while the two either side of it fail. **Symptom:** a conformance row
+  that looks bistable between two neighbouring assertion SETS whose counts differ by one, here
+  arm64 ExPools alternating `{119,135,178,210}` at pass=14/fail=4 with
+  `{119,135,176,181,210}` at pass=13/fail=5, never any other combination. **Cause:** one
+  upstream fact (the helper returned its sentinel), not three defects. **Fix:** read the
+  printed VALUES before theorising — `PoolType = ffff` versus `PoolType = 2` separates the two
+  modes in one line of serial, and `ffff` names the underflow outright. Two traps this leaves.
+  A mutually-exclusive pair of assertions is never noise, so do not mark both `assert?` and
+  move on: only the first assertion in such a chain carries signal, and marking the downstream
+  ones records consequences as independent debt. And an assertion that PASSES in the bad mode
+  is worse than one that fails, because nothing anywhere reports it — the quota bit was never
+  tested on any run that took the sentinel path. **The shared spelling is not shared
+  causation:** `IoDeviceObject_drv.c:198/206` use the identical `KmtGetPoolType(x) - 1` idiom
+  and sit beside ExPools at the top of the same intermittent list, but they fire independently,
+  and their `KmtGetPoolTag` returns `0x0062005c` / `0x0073006f` — UTF-16 `\b` and `os`. Those
+  Buffers point into the middle of an allocation rather than at its start, which is a different
+  defect wearing the same idiom. Checking that cost one grep and refuted the tidier story.
 - **Half-disabling a debug facility leaves its two halves disagreeing — and the disagreement
   outlives the reason.** A checked build does two separable things to a spinlock: it STAMPS
   `KeGetCurrentThread() | 1` into the lock while held (observable behaviour — `KeTestSpinLock`

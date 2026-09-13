@@ -65,6 +65,7 @@ _PYTEST_SUITES = [
     (".", ".", "tools/test_host_jobs.py"),
     (".", ".", "tools/test_binary_facts.py"),
     (".", ".", "tools/test_binary_scanner_cache.py"),
+    (".", ".", "tools/test_binary_corpus.py"),
     (".", ".", "tools/test_tooling_receipts.py"),
     (".", ".", "tools/test_registry_security_persistence.py"),
     (".", ".", "tools/test_nested_cargo_deps.py"),

@@ -184,17 +184,32 @@ def test_export_set_honours_the_specs_arch_filter():
     assert len(i386) > 1000, f"i386 export set implausibly small ({len(i386)})"
 
 
+# A build dir is only an ORACLE once its build finished. `vibeos-cli build` writes this
+# at the very end (cli/provenance.py STAMP_NAME), so its presence is the difference
+# between "cmake configured a directory" and "ninja produced the objects in it".
+_BUILD_STAMP = ".vibeos-build-stamp.json"
+
+
 def test_every_modelled_target_has_a_real_object_directory():
     """A path typo silently contributes ZERO symbols, which reads as mass shadowing.
 
     The check treats an authority target with no objects as a hard failure rather than as
     'nothing to add', but only a real build proves the *path* is right -- so assert it against
     whichever build dirs this worktree happens to have, and skip if it has none.
+
+    "Has a build dir" is NOT "has a built build dir". `vibeos-cli gate` runs the tooling
+    stage CONCURRENTLY with its three builds, so on the first build of an arch in a fresh
+    worktree this raced: cmake creates `build-i386/` in the first seconds, ninja creates
+    `.../CMakeFiles/msvcrt_shared.dir` about forty later, and a test that only checked for
+    the build dir judged the gap. It failed a green gate on 2026-09-13 that way -- every
+    build, lint, smoke and conformance lane passed and the object dir it called missing was
+    on disk, timestamped inside that same gate's run. Gate the skip on the completion stamp
+    so the oracle is a FINISHED build, not a directory that exists.
     """
     builds = [REPO / f"build-{a}" for a in ("i386", "amd64", "arm64")]
-    builds = [b for b in builds if b.is_dir()]
+    builds = [b for b in builds if (b / _BUILD_STAMP).is_file()]
     if not builds:
-        pytest.skip("no build dir in this worktree")
+        pytest.skip("no finished build dir in this worktree")
     for build in builds:
         for target, obj_dir in vuc.OURS_ON_LINK_LINE.items():
             d = build / obj_dir
