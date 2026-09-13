@@ -1663,6 +1663,24 @@ Field-manual § pointers hold the full writeups. **Update on state change.**
     occurrence in 9: `pass 31 -> 29`, NEW failing `Example_user.c:39` and `:40`. `Example` is
     **31/15 on all three floors** and neither line is marked `assert?` anywhere. Unrelated to
     the ExPools POOL_HEADER mismatch — `Example_user.c` does not touch `KmtGetPoolType`.
+    **LOCALISED, and unlike ExPools this one is a REAL KERNEL DEFECT, not a harness artifact.**
+    `:39`/`:40` check that an `IOCTL_SEND_MYSTRUCT` round-trip came back MODIFIED — the driver
+    writes `{456, "!!!"}` into the second half of the buffer and sets `*OutLength`
+    (`Example_drv.c:181-185`). In the failing round user mode read `MyStruct[1] = {0, ""}`.
+    The driver side was entirely healthy: **both rounds executed exactly 46 assertions**
+    (`Example: 46 tests executed`, 17 failures vs 15), and none of the handler's own
+    diagnostics printed in either — not `ok_eq_ulong(*OutLength, 2 * sizeof)` at `:177`, not
+    the `skip("Cannot write to buffer!")` guard at `:181`. Equal assertion counts are what
+    rules out the competing explanation: had the handler not run, its `ok_*` calls would be
+    missing from the total. So the handler ran, saw correct lengths, and performed the
+    `RtlCopyMemory` write-back — and the data still did not reach the user buffer. That
+    localises it to the **METHOD_BUFFERED output copy-back on IRP completion** (SystemBuffer
+    -> UserBuffer, length from `Irp->IoStatus.Information`), intermittent on arm64, with
+    `DeviceIoControl` returning ERROR_SUCCESS throughout — `:36`/`:37`/`:38` all still pass, so
+    every caller believes it worked. n=1, so no rate; the localisation is what is solid.
+    **Trap for whoever picks this up:** `Example_drv.c:227`'s `IRP!` trace does NOT print for
+    these device-control IRPs in either round, so its absence is not evidence the IOCTL never
+    arrived — the clean round looks identical there and passes.
   - **`NpfsConnect` on arm64 — an UNDOCUMENTED intermittent, found 2026-09-13.** Did not recur
     in the 9-sweep soak, so it is rarer than the other two. One occurrence, so no rate: `pass 679 -> 678, fail 0 -> 1` on
     `20260913-022245-fw6sw4_g-conformance-arm64`. `NpfsConnect` is **679/0 on all three
