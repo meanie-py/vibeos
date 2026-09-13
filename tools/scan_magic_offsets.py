@@ -40,6 +40,9 @@ import re
 import sys
 from pathlib import Path
 
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
+from tools.source_walk import source_files
+
 REPO = Path(__file__).resolve().parent.parent
 RUST_ROOT = REPO / "sdk" / "lib" / "rust"
 
@@ -131,9 +134,9 @@ def main() -> int:
     if args:
         for a in args:
             p = Path(a)
-            paths.extend(sorted(p.rglob("*.rs")) if p.is_dir() else [p])
+            paths.extend(sorted(source_files(p)) if p.is_dir() else [p])
     else:
-        paths = sorted(RUST_ROOT.rglob("*.rs"))
+        paths = sorted(source_files(RUST_ROOT))
 
     total = 0
     files = 0

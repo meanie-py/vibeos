@@ -46,6 +46,9 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 from tools.lint_facts import source_facts
 
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
+from tools.source_walk import source_files
+
 ROOT = Path(__file__).resolve().parent.parent
 
 # The element type of a hand-encoded wide array. `u16` is only the spelling the FIRST
@@ -575,7 +578,7 @@ def main() -> int:
     roots = [Path(p) for p in args.paths] or [ROOT / "sdk" / "lib" / "rust"]
     files = []
     for r in roots:
-        files.extend([r] if r.is_file() else sorted(r.rglob("*.rs")))
+        files.extend([r] if r.is_file() else sorted(source_files(r)))
 
     all_findings, seen, compared = [], 0, 0
     for f in files:

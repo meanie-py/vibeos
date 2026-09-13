@@ -53,6 +53,9 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 from tools.lint_facts import source_facts
 
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
+from tools.source_walk import source_files
+
 REPO = Path(__file__).resolve().parent.parent
 RUST_ROOT = REPO / "sdk" / "lib" / "rust"
 SKIP_FILE_RE = re.compile(r"(bindgen_[a-z0-9_]+\.rs$|/target/|/\.responses/)")
@@ -116,7 +119,7 @@ def empty_body_fns(src: bytes) -> list[tuple[str, int]]:
 def rust_files() -> list[Path]:
     if not RUST_ROOT.is_dir():
         return []
-    return [p for p in sorted(RUST_ROOT.rglob("*.rs")) if not SKIP_FILE_RE.search(p.as_posix())]
+    return [p for p in sorted(source_files(RUST_ROOT)) if not SKIP_FILE_RE.search(p.as_posix())]
 
 
 def scan(paths: list[Path]) -> list[tuple[str, str, int]]:

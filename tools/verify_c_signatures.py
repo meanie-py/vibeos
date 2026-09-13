@@ -65,6 +65,9 @@ from collections import Counter
 from functools import lru_cache
 from pathlib import Path
 
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
+from tools.source_walk import source_files
+
 ROOT = Path(__file__).resolve().parent.parent
 
 # A type is a POINTER if it is spelled as one, or is a Win32 typedef whose name says so.
@@ -642,7 +645,7 @@ def _run(rdir: Path, cdir: Path, label: str, check: bool) -> int:
         # Same indirection, but one side is arch-variable and the other is not.
         return is_ptr_sized(ct) != is_ptr_sized(rt)
 
-    for rf in sorted(rdir.rglob("*.rs")):
+    for rf in sorted(source_files(rdir)):
         cf = cfiles.get(rf.stem)
         if cf is None:
             continue
