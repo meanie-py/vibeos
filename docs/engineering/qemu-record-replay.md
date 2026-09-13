@@ -157,8 +157,26 @@ guest never executes and silently never fired — which looked exactly like
 (`run-until.sh --break ExAllocatePoolWithTag` now reports `=== BREAKPOINT HIT ===`
 at `<ExAllocatePoolWithTag+44>`).
 
-So a way to reach a point of interest DOES exist on a normal boot. Pointing it at
-a replay is the next experiment, and it is now a one-variable one.
+That unblocked the real question, which was then answered in the worst way:
+**attaching gdb to a RUNNING replay aborts QEMU**, with the same
+`Playback shouldn't have to iowait` (`insn total 9616974735/473 left, event
+157129`). The replay had booted to the kernel first — 724 lines, correct
+`[KRNLBASE]` — and connecting was enough to kill it. That is now two independent
+instances of the same rule, and it explains the whole picture:
+
+> **A replay can be started stopped, and run. It can never be stopped again.**
+> Attaching at `-S` before the replay runs is fine, and `continue` from there is
+> fine. Every later stop — `stepi`, attaching mid-run — aborts.
+
+Whether a BREAKPOINT HIT is also such a stop is **not yet known**, and the
+attempt to find out was inconclusive rather than negative: on a replay the
+breakpoint (at the verified-hot `ExAllocatePoolWithTag`, set at `-S`) did not
+fire within 400s while the guest reached 1,378 serial lines; but the `rr=record`
+control, differing by one flag, produced **zero** serial lines in the same 400s,
+so there is nothing to compare against. Breakpoint checking disables TCG block
+chaining, which on top of icount and blkreplay plausibly makes either mode far
+slower than the budget allowed. Re-run both legs with a much longer budget before
+concluding anything; do not read the replay leg on its own.
 
 The abort is:
 
