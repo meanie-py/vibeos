@@ -1,6 +1,6 @@
 // rustconv-assembly: class:CDefView
-//! ORPHAN: every worker is translated and present, but the module is not wired into the crate
-//! yet -- CDefView.cpp is still the compiled implementation. Nothing here is a decoy.
+//! ORPHAN-BY-DESIGN: every worker is translated and present, but the module is not wired into
+//! the crate yet -- CDefView.cpp is still the compiled implementation. Nothing here is a decoy.
 //!
 //! The ORIGINAL blocker is CLOSED (2026-09-13): the three file-scope entry points now exist.
 //! CDefView_CreateInstance was already here; SelectionMoveCompareFunc was bought; and
