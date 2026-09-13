@@ -49,6 +49,9 @@ this checkout's generated include trees; it never reads a sibling's headers.
 Runtime/process controls, live object checks and fixtures with undeclared external
 Cargo inputs continue to run. A changed merge gets a different key. Identical
 inputs can reuse results across worktrees without sharing mutable build output.
+The CLI replaces its own `PYTHONPATH` prefix when nesting commands or switching
+worktrees. Without that, `gate` prepended the same path twice and unnecessarily
+changed every tooling receipt key; integration also inherited the old lane path.
 The live build-invalidation suite distributes its isolated temporary projects
 over up to eight pytest-xdist workers (bounded by `lint_jobs()`). Install the
 declared `.[qemu]` dependencies to provide xdist; a missing plugin fails the check.
