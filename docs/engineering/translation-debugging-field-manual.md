@@ -6824,6 +6824,22 @@ class dangerous rather than merely annoying: the failure is not "no match found"
 are about to conclude a path is not reached because a breakpoint did not fire, first break on
 something you KNOW executes.
 
+**And the wrong artifact usually answers PLAUSIBLY, which is the whole difficulty.** The same
+two-kernel split bites hand symbolication, with no script involved and no fix pending — the
+build tree puts only the UP image in `build-<arch>/ntoskrnl/`, with the booting MP kernel a
+directory deeper in `ntkrnlmp/`, so a glob or a tab-complete resolves against the image the
+machine is not running. An arm64 `BUGCHECK 0x1E` at `ntoskrnl.exe+0x3BBA4` symbolicated to
+`KeSetIdealProcessorThread+0x1c` against the UP binary and `RtlRaiseStatus+0x44` against the
+MP one. Both are real kernel symbols; only the second is true. **When a wrong artifact answers
+with something syntactically valid and semantically plausible, the only remaining discriminator
+is whether it COHERES with the evidence you did not use to get it** — 0x1E is
+KMODE_EXCEPTION_NOT_HANDLED with P1 = `STATUS_FILE_INVALID`, and an ideal-processor setter
+raising a file-status exception fits nothing, while a raise-status helper fits exactly. Had the
+fault been anywhere near scheduling, the wrong answer would have been believed. This is the
+same discriminator as "which story explains the evidence you were not looking at" above,
+arriving from the opposite direction: there it separated two causes, here it separates two
+artifacts.
+
 **The inverse: a missing log line is evidence ONLY if you have seen the passing case emit
 it.** Reading the wrong artifact is one half; the other is reading the ABSENCE of an artifact
 as a signal it was never able to carry. `Example_drv.c:227`'s `IRP!` trace is not emitted for

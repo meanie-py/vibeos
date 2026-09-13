@@ -1681,13 +1681,17 @@ Field-manual § pointers hold the full writeups. **Update on state change.**
     **Two traps for whoever picks this up, both of them absences that mean nothing.** First,
     `Example_drv.c:227`'s `IRP!` trace does NOT print for these device-control IRPs in either
     round, so its absence is not evidence the IOCTL never arrived — the clean round looks
-    identical there and passes. Second, **do not trust a kernel breakpoint on the completion
-    path until `0280df67353` lands**: `find-kbase.py` relocates symbols to the image whose
-    export name matches `VIBEOS_KERNEL` (the **UP** kernel) while every medium has booted
-    **MP** since 2026-09-12, so breakpoints land on an address the guest never executes and
-    `run-until.sh --break` times out silently. Following this lead with gdb before that fix
-    lands will look exactly like "the copy-back path is never reached", which is the wrong
-    conclusion. Verify by breaking on something you know executes first.
+    identical there and passes. Second, **every kernel symbol resolution on this
+    path is against the wrong image unless you name `ntkrnlmp.exe` explicitly** — by hand as
+    much as by tool. Since the 2026-09-12 MP promotion the media boots `ntkrnlmp.exe` +
+    `halmp.dll` (`qemu/freeldr.ini:2`/`:51`), but `build-arm64/ntoskrnl/*.exe` contains ONLY
+    the UP `ntoskrnl.exe`; the MP image is one directory deeper at
+    `build-arm64/ntoskrnl/ntkrnlmp/ntkrnlmp.exe`. A glob or a tab-complete in the obvious
+    directory therefore hands you the wrong kernel, and **it answers instead of erroring**.
+    `0280df67353` fixes `find-kbase.py` only, so gdb breakpoints will time out silently until
+    it lands — looking exactly like "the copy-back path is never reached", the wrong
+    conclusion — but hand symbolication stays exposed afterwards. Break on something you know
+    executes before believing any silence, and pass the MP binary by name.
   - **`NpfsConnect` on arm64 — an UNDOCUMENTED intermittent, found 2026-09-13.** Did not recur
     in the 9-sweep soak, so it is rarer than the other two. One occurrence, so no rate: `pass 679 -> 678, fail 0 -> 1` on
     `20260913-022245-fw6sw4_g-conformance-arm64`. `NpfsConnect` is **679/0 on all three
