@@ -6862,6 +6862,51 @@ That is also why it survives review — a reader asking "did you check?" gets a 
   sweeps THIS soak produced" — the window silently mixed in two other shas and dropped one of
   the real rows, turning a reproduced 33% into a 22% that did not match.
 
+**The two halves compose, and then the wrong conclusion is unfalsifiable.** The clinching
+instance is fleet-wide and lasted a day: `qemu/gdb-helpers/find-kbase.py` relocates symbols to
+"the image whose export Name matches the basename of `VIBEOS_KERNEL`", which names the **UP**
+kernel — and since the MP-default promotion every medium carries both images and boots the
+**MP** one. So the scan succeeded, against a real, valid, correctly-parsed `ntoskrnl` PE that
+was loaded and **not executing**; the artifact consulted was literally not the artifact
+consulted at runtime. Then the second half: every breakpoint was set on an address the guest
+never runs, and `run-until.sh --break <symbol>` simply timed out with no message. **A dead
+breakpoint is an absence that carries no information**, and it reads exactly like "this code
+path is not reached" — which is the conclusion you were using it to test. Note what makes this
+class dangerous rather than merely annoying: the failure is not "no match found", it is
+"matched the wrong one of two valid candidates", so nothing anywhere reports a problem. If you
+are about to conclude a path is not reached because a breakpoint did not fire, first break on
+something you KNOW executes.
+
+**And the wrong artifact usually answers PLAUSIBLY, which is the whole difficulty.** The same
+two-kernel split bites hand symbolication, with no script involved and no fix pending — the
+build tree puts only the UP image in `build-<arch>/ntoskrnl/`, with the booting MP kernel a
+directory deeper in `ntkrnlmp/`, so a glob or a tab-complete resolves against the image the
+machine is not running. An arm64 `BUGCHECK 0x1E` at `ntoskrnl.exe+0x3BBA4` symbolicated to
+`KeSetIdealProcessorThread+0x1c` against the UP binary and `RtlRaiseStatus+0x44` against the
+MP one. Both are real kernel symbols; only the second is true. **When a wrong artifact answers
+with something syntactically valid and semantically plausible, the only remaining discriminator
+is whether it COHERES with the evidence you did not use to get it** — 0x1E is
+KMODE_EXCEPTION_NOT_HANDLED with P1 = `STATUS_FILE_INVALID`, and an ideal-processor setter
+raising a file-status exception fits nothing, while a raise-status helper fits exactly. Had the
+fault been anywhere near scheduling, the wrong answer would have been believed. This is the
+same discriminator as "which story explains the evidence you were not looking at" above,
+arriving from the opposite direction: there it separated two causes, here it separates two
+artifacts.
+
+**The inverse: a missing log line is evidence ONLY if you have seen the passing case emit
+it.** Reading the wrong artifact is one half; the other is reading the ABSENCE of an artifact
+as a signal it was never able to carry. `Example_drv.c:227`'s `IRP!` trace is not emitted for
+device-control IRPs, so a serial log showing nothing between `IRP_MJ_CREATE` and
+`IRP_MJ_CLOSE` looks exactly like three IOCTLs that never reached the driver — and since the
+user-mode `DeviceIoControl` calls all returned `ERROR_SUCCESS`, that reads as the kernel
+returning success without dispatching, which would be spectacular and is false. The CLEAN
+round's serial is identical in that window and passes. **The cheap universal remedy is to diff
+against the passing case before believing any absence**, because absences are precisely what a
+serial log is worst at reporting: nothing distinguishes "did not happen" from "happened and is
+not traced on this path". Three separate near-misses in one night were all this shape, which is
+not luck — comparing against the control is the only technique that works when the evidence is
+an absence.
+
 **It does not exempt the person who wrote it.** Within an hour of this entry being filed, both
 its authors nearly hit it again on the very measurement it was written about: one scraping a
 soak's stdout that had truncated its early rounds (2 of 3 regressions, wrong denominator), the
@@ -7449,6 +7494,14 @@ language rules) over loosening what it reports.
   68/68, arm64 alone unstable — and it was filed as an arm64 kernel lead the whole time. When
   a row says a test is deterministic everywhere except one arch, diff the ARCH GATES in every
   header both sides compile before theorising about that arch's kernel.
+  **The same discriminator splits a bucket that looks like one task.** `ExPools` and `Example`
+  both arrived as "the arm64 conformance flake" and are not the same kind of thing at all:
+  ExPools fails STABLY on one arch with a harness-side struct mismatch, while `Example` is
+  genuinely intermittent with the driver's own diagnostics clean, which is a real kernel
+  data-path defect (see the roadmap's `Example` entry). Anyone taking "fix the arm64
+  conformance flakes" as a single task would have gotten one of the two wrong — so sort a
+  flake bucket by determinism and by whether the failing side's OWN assertions are quiet,
+  before deciding what kind of bug any of them are.
 - **Half-disabling a debug facility leaves its two halves disagreeing — and the disagreement
   outlives the reason.** A checked build does two separable things to a spinlock: it STAMPS
   `KeGetCurrentThread() | 1` into the lock while held (observable behaviour — `KeTestSpinLock`
