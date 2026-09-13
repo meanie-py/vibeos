@@ -60,7 +60,6 @@ import concurrent.futures as cf
 import json
 import os
 import re
-import shutil
 import subprocess
 import sys
 import time
@@ -371,7 +370,14 @@ def _net_once(repo: Path, root: Path) -> dict:
     ]
     t0 = time.monotonic()
     try:
-        proc = subprocess.run(cmd, cwd=str(repo), capture_output=True, text=True, timeout=1200)
+        proc = subprocess.run(
+            cmd,
+            cwd=str(repo),
+            capture_output=True,
+            text=True,
+            timeout=1200,
+            env={**os.environ, "VIBEOS_ARTIFACT_DIR": str(root)},
+        )
     except subprocess.TimeoutExpired:
         return {
             "arch": "net",
@@ -395,19 +401,6 @@ def _net_once(repo: Path, root: Path) -> dict:
         tail[-1] if tail else "",
     )
     ok = proc.returncode == 0
-    if not ok:
-        # Keep the boot's serial log with the failure. `qemu/<arch>_smoke_live.log` is a
-        # LIVE file the next run of that arch truncates, so by the time anyone reads a red
-        # net verdict the evidence is routinely already gone — the same hole conformance
-        # closed for its sweeps. Without it a NET_FLAKE is un-triageable after the fact:
-        # the marker the suite waited for has a matching "TIMED OUT" line on serial that
-        # says which stage of the netstack self-test actually gave up.
-        live = repo / "qemu" / "amd64-uefi-net_smoke_live.log"
-        try:
-            if live.exists():
-                shutil.copy2(live, root / "amd64-uefi-net_serial.log")
-        except OSError:
-            pass
     # §9.84: hostlock announced the queue but never the acquisition → the suite's flat
     # timeouts mean it NEVER BOOTED. Name the real cause instead of "NET_FLAKE" so a red
     # gate doesn't send anyone chasing a netstack bug that is actually a busy host.

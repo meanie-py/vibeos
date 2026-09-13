@@ -66,6 +66,11 @@ import subprocess
 import sys
 from pathlib import Path
 
+if __package__:
+    from .binary_facts import BinaryFacts
+else:
+    from binary_facts import BinaryFacts
+
 # The first instruction of the function jumps to the function's own address.
 _SYM = re.compile(r"^([0-9a-f]+) <([^>]+)>:")
 _JMP = re.compile(r"^\s*[0-9a-f]+:\s+(?:jmp|jmpq|b)\s+(?:0x)?([0-9a-f]+)\b")
@@ -136,13 +141,18 @@ def main() -> int:
     objd = objdump(args.build_dir)
     hits: list[tuple[str, str]] = []
     scanned = 0
+    facts = None
     for pe in sorted(args.build_dir.rglob("*")):
         if pe.suffix not in _SUFFIXES or not pe.is_file():
             continue
         if any(s in str(pe) for s in _SKIP_DIRS):
             continue
         try:
-            hits.extend(scan_pe(objd, pe))
+            if facts is None:
+                facts = BinaryFacts(
+                    repo, namespace="self-recursive", implementation=[Path(__file__)], tools=[objd]
+                )
+            hits.extend(tuple(row) for row in facts.get(pe, lambda pe=pe: scan_pe(objd, pe)))
         except RuntimeError as error:
             print(f"scan_self_recursive: {error}", file=sys.stderr)
             return 2

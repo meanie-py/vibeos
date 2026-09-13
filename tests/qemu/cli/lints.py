@@ -1191,6 +1191,44 @@ def run_committed_drift_guard(run: Run, repo: Path, arch: str | None = None) -> 
     run.add(Stage("committed_drift", exit=cp.returncode, status="fail", detail=summary or "DRIFT"))
 
 
+def _sacred_analysis(run: Run, repo: Path, arch: str, script: Path):
+    """Reuse successful primitive analysis of the same kernel and tool inputs."""
+    from tools.binary_facts import BinaryFacts
+
+    build = repo / f"build-{arch}"
+    cmd = ["bash", str(script), str(build)]
+    triple = {"arm64": "aarch64", "amd64": "x86_64", "i386": "i686"}[arch]
+    names = [f"{triple}-w64-mingw32-objdump", "llvm-objdump"]
+    candidates = names + [str(repo / ".build-tools/llvm-mingw/bin" / n) for n in names]
+    tools = ["bash", "grep", "dirname", *[p for p in candidates if shutil.which(p)]]
+    computed = False
+
+    def extract():
+        nonlocal computed
+        computed = True
+        cp = run.run(cmd, cwd=repo, stage="lint:sacred_primitives")
+        if cp.returncode:
+            raise subprocess.CalledProcessError(cp.returncode, cmd, cp.stdout, cp.stderr)
+        return {"stdout": cp.stdout, "stderr": cp.stderr}
+
+    try:
+        facts = BinaryFacts(
+            repo,
+            namespace="sacred-primitives",
+            implementation=[script, Path(__file__)],
+            tools=tools,
+            options={"arch": arch},
+        )
+        result = facts.get(build / "ntoskrnl/ntoskrnl.exe", extract)
+        if not computed:
+            run.log(result["stdout"], header="sacred_primitives: matching binary analysis reused")
+        return subprocess.CompletedProcess(cmd, 0, result["stdout"], result["stderr"])
+    except subprocess.CalledProcessError as error:
+        return subprocess.CompletedProcess(cmd, error.returncode, error.stdout, error.stderr)
+    except (OSError, RuntimeError) as error:
+        return subprocess.CompletedProcess(cmd, 1, "", f"SCANNER_ERROR: {error}")
+
+
 def run_binary_lints(run: Run, repo: Path, arch: str, *, strict: bool) -> None:
     """Need a built binary (run after `build`).
 
@@ -1228,6 +1266,7 @@ def run_binary_lints(run: Run, repo: Path, arch: str, *, strict: bool) -> None:
         ["bash", str(sp), str(build_dir)] if sp.is_file() else ["MISSING"],
         strict=strict,
         by_exit_code=True,
+        cp=_sacred_analysis(run, repo, arch, sp) if sp.is_file() else None,
     )
     # A function whose first instruction jumps to itself = a silent infinite hang.
     # Caught bootvid's self-recursive Rust memcpy/memset (stable-toolchain Axis B);
