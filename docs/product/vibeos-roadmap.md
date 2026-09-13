@@ -1529,6 +1529,31 @@ Field-manual § pointers hold the full writeups. **Update on state change.**
     just a baseline-sampling artifact: a pool test that is stable on two arches and not on the
     third is an arm64 lead. The baseline holds the lucky side (14/4), so it reads as a
     regression ~29% of the time.
+    **ROOT-CAUSED 2026-09-13, and it is ONE event, not "one flaky assertion".** The two modes
+    are `{119,135,178,210}` at 14/4 and `{119,135,176,181,210}` at 13/5, never any other
+    combination — `:178` and the `{:176,:181}` pair are mutually exclusive, which is not a
+    noise shape. `ExPools.c:175-181` reads `PoolType = KmtGetPoolType(Memory); ok(PoolType !=
+    0); PoolType--; ok(PoolType & QUOTA_POOL_MASK); ok((PoolType & BASE_POOL_TYPE_MASK) ==
+    PagedPool || ...)` with `PoolType` a `USHORT`. `KmtGetPoolType` returns **0 as a sentinel**
+    for "page-aligned, so no POOL_HEADER to read" (kmt_test_kernel.h:136), so on that path
+    `:176` fails, `0--` underflows to `0xFFFF`, `:178` **passes spuriously** because
+    `0xFFFF & QUOTA_POOL_MASK` is nonzero, and `:181` fails on the garbage. Observed in serial,
+    not inferred: the bad mode prints `:176: PoolType is 0` then `:181: PoolType = ffff`, the
+    good mode prints `:178: PoolType = 2` (raw header value 3). Consequences for the floor:
+    `:178` is **not** bistable — it is anti-correlated with `:176` by construction, and its
+    `assert?` mark records a consequence as independent debt; `:176` is the only line carrying
+    signal. The residual kernel question is narrow: `KmtGetPoolType` returned 0 for a 16-byte
+    `ExAllocatePoolWithQuotaTag` block, meaning either the block was page-aligned (the
+    sentinel) or its header's `PoolType` field was zeroed. The printed values cannot separate
+    those — the test prints no pointer on the success path — but both say the arm64 pool
+    intermittently hands back a small allocation whose `POOL_HEADER` does not describe it, and
+    the good mode proves the header is normally readable there. **Rate is worse than the ~29%
+    banked here:** 2 of 4 arm64 sweeps on 2026-09-13 took the bad mode and it took a full
+    3-arch gate RED through all 3 conformance retries (`20260913-021807-fbitjxpy`). **Not the
+    same bug as `IoDeviceObject_drv.c:198/206`**, despite the identical `KmtGetPoolType(x) - 1`
+    idiom and adjacency at the top of the intermittent list: tested, they fire independently,
+    and their `KmtGetPoolTag` returns `0x0062005c` / `0x0073006f` — UTF-16 `\b` and `os`, i.e.
+    those Buffers point into the middle of an allocation rather than at its start.
   - **`ZwAllocateVirtualMemory` 843 → 839 — a real UP-vs-MP DIFFERENCE, not a regression, and
     its baseline is a 1-in-101 sample.** Correlating pass count against `smp` over every banked
     i386 run dir: **smp1 scores 843 in 4/4 runs; smp2 scores 839 in 100 runs and 843 in exactly
