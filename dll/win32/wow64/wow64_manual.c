@@ -2034,6 +2034,11 @@ static NTSTATUS Wow64pConnectPort(ULONG *a, int Secure)
                          "(base=%I64x static=%I64x heap=%I64x) — guest-invisible!\n",
                          Csr64.SharedSectionBase, Csr64.SharedStaticServerData,
                          Csr64.SharedSectionHeap);
+            DbgPrint("[WOW64]   CSR connectinfo: base=%I64x static=%I64x heap=%I64x "
+                     "pid=%I64x ndlls=%lx\n",
+                     Csr64.SharedSectionBase, Csr64.SharedStaticServerData,
+                     Csr64.SharedSectionHeap, Csr64.ServerProcessId,
+                     Csr64.NumberOfServerDllNames);
             Csr32->ObjectDirectory = (ULONG)Csr64.ObjectDirectory;
             Csr32->SharedSectionBase = (ULONG)Csr64.SharedSectionBase;
             Csr32->SharedStaticServerData = (ULONG)Csr64.SharedStaticServerData;
@@ -4055,6 +4060,9 @@ static unsigned char *Wow64pCsrWidenCaptureBuffer(ULONG Api, ULONG Cap32,
                                                   ULONG Info32,
                                                   ULONGLONG *InfoOut,
                                                   ULONG *Off64Out,
+                                                  unsigned char **BackTo,
+                                                  unsigned char **BackFrom,
+                                                  ULONG *BackLen,
                                                   const char **Why)
 {
     const unsigned char *C32;
@@ -4138,6 +4146,12 @@ static unsigned char *Wow64pCsrWidenCaptureBuffer(ULONG Api, ULONG Cap32,
 
     Wow64pCpy(C64 + WOW64_CAPBUF64_HDR + Count * 8, C32 + Data32Off, DataLen);
 
+    /* csrss writes its answer INTO the buffer, so the reply path has to copy
+     * the data area back where the guest will look for it. */
+    *BackTo   = (unsigned char *)(Local + Data32Off);
+    *BackFrom = C64 + WOW64_CAPBUF64_HDR + Count * 8;
+    *BackLen  = DataLen;
+
     /* Every pointer the message hands csrss is a server address too. */
     *InfoOut = (ULONGLONG)(Wow64pCsrScratchLocal + Wow64pCsrPortDelta
                            + WOW64_CAPBUF64_HDR + Count * 8
@@ -4156,6 +4170,9 @@ static NTSTATUS Wow64Manual_NtRequestWaitReplyPort(ULONG *a)
     HANDLE Port = (HANDLE)(LONG_PTR)(LONG)a[0];
     WOW64_PORT_MESSAGE64 *Req64 = NULL, *Rep64 = NULL;
     unsigned char *Cap64 = NULL;
+    unsigned char *CapBackTo = NULL, *CapBackFrom = NULL;
+    ULONG CapBackLen = 0;
+    ULONG Cap32Orig = 0, Info32Orig = 0;
     ULONG DataLength, RepData;
     NTSTATUS St;
 
@@ -4209,6 +4226,7 @@ static NTSTATUS Wow64Manual_NtRequestWaitReplyPort(ULONG *a)
         if (Api == 0 && Data32Len >= 12)
         {
             ULONG Cap32  = Wow64pCsrGet32(B32, 0);
+            Cap32Orig = Cap32;
             ULONG Info32 = Wow64pCsrGet32(B32, WOW64_CSRMSG_BODY32_DATA + 4);
 
             ULONGLONG Info64 = 0;
@@ -4226,8 +4244,11 @@ static NTSTATUS Wow64Manual_NtRequestWaitReplyPort(ULONG *a)
              * and the api answers c000000d. Hand it a host-layout one. */
             if (Cap32)
             {
+                Info32Orig = Info32;
                 Cap64 = Wow64pCsrWidenCaptureBuffer(Api, Cap32, Info32,
-                                                    &Info64, &Off64Unused, &Why);
+                                                    &Info64, &Off64Unused,
+                                                    &CapBackTo, &CapBackFrom,
+                                                    &CapBackLen, &Why);
                 if (!Cap64)
                 {
                     Wow64pIoctlFree(Req64);
@@ -4289,7 +4310,11 @@ static NTSTATUS Wow64Manual_NtRequestWaitReplyPort(ULONG *a)
 
         /* Narrow the prologue the same way, or the guest reads its Status out of
          * the wrong word -- the transport status below is NOT the api's answer. */
-        Wow64pCsrPut32(R32, 0, (ULONG)(ULONG_PTR)Wow64pCsrGet32(R64, 0)); /* CsrCaptureData */
+        /* csrss echoes the message back, so CsrCaptureData in the reply is the
+         * SCRATCH buffer we substituted, not the guest's. Handing that back
+         * makes the guest compute scratch = reply - CsrPortMemoryDelta and
+         * RtlFreeHeap a block its heap never owned. Give it its own pointer. */
+        Wow64pCsrPut32(R32, 0, Cap32Orig ? Cap32Orig : Wow64pCsrGet32(R64, 0));
         Wow64pCsrPut32(R32, WOW64_CSRMSG_BODY32_APINUMBER,
                     Wow64pCsrGet32(R64, WOW64_CSRMSG_BODY64_APINUMBER));
         ApiStatus = Wow64pCsrGet32(R64, WOW64_CSRMSG_BODY64_STATUS);
@@ -4300,6 +4325,23 @@ static NTSTATUS Wow64Manual_NtRequestWaitReplyPort(ULONG *a)
             Wow64pCpy(R32 + WOW64_CSRMSG_BODY32_DATA,
                       R64 + WOW64_CSRMSG_BODY64_DATA,
                       RepData - WOW64_CSRMSG_BODY64_DATA);
+
+        if (Cap32Orig)
+        {
+            /* The Data union is NOT width-safe, so the verbatim copy above put
+             * the 64-bit padding word where the guest reads ConnectionInfo --
+             * it then computed NULL - CsrPortMemoryDelta and faulted reading
+             * there. Narrow the three fields by hand, the way the request did,
+             * and give the guest back its OWN pointers rather than our scratch. */
+            Wow64pCsrPut32(R32, WOW64_CSRMSG_BODY32_DATA + 0,
+                        Wow64pCsrGet32(R64, WOW64_CSRMSG_BODY64_DATA + 0)); /* ServerId */
+            Wow64pCsrPut32(R32, WOW64_CSRMSG_BODY32_DATA + 4, Info32Orig);
+            Wow64pCsrPut32(R32, WOW64_CSRMSG_BODY32_DATA + 8,
+                        Wow64pCsrGet32(R64, WOW64_CSRMSG_BODY64_DATA + 16)); /* InfoSize */
+
+            if (CapBackLen)
+                Wow64pCpy(CapBackTo, CapBackFrom, CapBackLen);
+        }
 
         Wow64pLpcHeader64To32(Rep64, Rep32,
                               WOW64_CSRMSG_BODY32_DATA +
