@@ -1798,6 +1798,12 @@ Field-manual § pointers hold the full writeups. **Update on state change.**
     `C_ASSERT(sizeof(POOL_HEADER) == sizeof(LIST_ENTRY))` now guards the struct; restoring
     `_M_AMD64` fails it at compile time on arm64, so this was verified as a discriminator
     rather than assumed. Six weeks of "arm64 kernel lead" was a one-word arch gate.
+    **A PREDICTION, recorded before it can be confirmed.** The fleet-wide census
+    (`5255a32d74e4`, 196 real gate runs) counts ExPools as the LARGEST single contributor to
+    arm64 conformance redness at 30 distinct batches. That census predates this fix, so the
+    next one must show ExPools dropping out of the top of that list. If it does not, the fix
+    is not what closed it and this entry is wrong -- which is the point of writing the
+    prediction down while it is still falsifiable rather than noting the agreement afterwards.
     **Confirmed against the toolchain, not just read out of the headers.** `_WIN64` IS a
     clang builtin: `.build-tools/llvm-mingw/bin/clang -target <t> -dM -E </dev/null` gives it
     for both `aarch64-w64-mingw32` and `x86_64-w64-mingw32` and not for `i686-w64-mingw32`.

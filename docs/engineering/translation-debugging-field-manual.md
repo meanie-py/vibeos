@@ -7399,6 +7399,60 @@ a marker back to its existing no-summary branch, which keeps the child's exit co
 console words -- the marker says strictly less than that path already knows. So: when you
 replace an absence with a marker, find every consumer that was reading the absence and check
 whether the marker lands them somewhere worse.
+**Validated in production within the hour, on the fix's own author.** A full
+`vibeos-cli gate` was reaped mid-run at **33 GiB MemAvailable with zero `oom` in `dmesg`** --
+the harness's background-task reaper, reading `MemFree`, which is near-zero on any warm
+machine. The run dir it left behind held `lint-*`, `cohab-*`, `smoke-*` and `conf-*`
+subdirectories full of apparently-complete work; before the marker its `summary.json` would
+simply have been missing. It now reads `verdict: INCOMPLETE`, `classification:
+RUN_INTERRUPTED`. Note which way the evidence ran: the reaper's own message named memory
+pressure, and the disconfirming check -- `MemAvailable` and `dmesg`, not the killer's
+account -- is the sibling rule one entry down.
+
+### The reading is true of the HANDLE, not of the thing — a different oracle, not a fresher one
+
+**Lead with the repair, because the symptom actively suggests the wrong one.** Every instance
+below looks like staleness from the inside, so the instinct is *check it again*. Checking it
+again cannot work: the reading is correct, current, and stable, and it is about the handle you
+used rather than about the thing you asked about. The fix is always a DIFFERENT oracle.
+
+    os.kill(pid, 0) on a zombie        pid        vs  process   -> /proc/<pid>/status State: Z
+    $? after a pipeline                last stage vs  the work  -> PIPESTATUS[0]
+    sccache -s on a 148G cache dir     its server vs  that dir  -> /proc/<pid>/environ
+    MemFree                            free ctr   vs  reclaimable -> MemAvailable
+    merge-base vs a moving origin/master  ref     vs  commit    -> land-status --tip
+
+The zombie is the clearest member and the one to reason from. `os.kill(pid, 0)` succeeding on
+a zombie is not a stale answer: the pid genuinely is in the table until the parent reaps it,
+no signal will ever change that, and repeating the call returns the same true thing forever.
+`vibeos-cli kill` reported `STILL ALIVE after SIGTERM+SIGKILL — unkillable (D state?)` for a
+QEMU that had died promptly on the SIGTERM. *(Found and fixed by smp-bringup, `3ee8e7f16df`.)*
+
+**The borderline member is the on-ramp, so concede it rather than defend it.**
+`git merge-base --is-ancestor <tip> origin/master` against a moving ref is BOTH a handle
+standing in for a commit AND genuinely stale, and it is the only member where "check it again
+later" does work — which makes it the one a reader will use to argue the class is just
+staleness. It is also where agents meet the class first, because queue forensics is where they
+land. So state the test outright: **if retrying helps, you are not yet in this class.**
+
+**What this class is NOT, and the two must stay separate.** A tool's own account of ITSELF —
+the low-memory killer naming its own cause while `dmesg` holds zero `oom` and 33 GiB is
+available — has no handle standing in for a thing. The reporter is the suspect, and the repair
+is a different WITNESS, not a different handle. The two sit side by side in AGENTS.md's
+"claim ABOUT a measurement" paragraph as siblings, and this entry carves that paragraph at the
+joint rather than spanning it. Tested against its six recorded instances: the handle rule
+covers five and fails exactly on the self-report one. *(Scope established by smp-bringup
+testing the formulation against the instance list rather than against the cases that suggested
+it — the same discipline that killed an earlier two-property generalisation here, which
+explained two of ten.)*
+
+**Corollary, from the same incident: fixing a SILENT failure by making it LOUD converts a cost
+you were not paying into one you pay immediately.** Both halves lived in the same function, and
+the loud half was introduced while fixing the silent one. `kill` had been reporting
+success-without-killing for hours at no observed cost; the "unkillable" message produced a
+wrong decision within a minute — a second replay started against media the caller believed was
+still held. Loud is still the right direction, but the new message is now load-bearing on the
+first read, so it needs the same scrutiny the silent one never got.
 
 ### A TEXT-SHAPED match is not a PROOF `[§9.119]`
 The same regex measured **146** lowerable CRT forwarders; the sound implementation lowered
