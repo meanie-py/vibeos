@@ -5475,6 +5475,17 @@ the guest set. Every guest test passed — the sets were equal — and only the 
 a DIFFERENT name set failed. Had that test not existed, the function would have shipped
 answering the wrong question in the one case it was written for.
 
+**The same shape outside editing: a REMEDY applied to the wrong state.** A documented fix can
+no-op exactly as an edit does. `rm build-<arch>/dll/ntdll/nt_0600/ntdll_vista.dll && build`
+clears a genuinely stale cargo-linked binary — but applied to a build dir whose provenance
+check RAISES before it ever reaches that binary (missing arch artifacts, so
+`cargo_link_staleness_reasons` throws instead of returning a list), it changes nothing and
+reports nothing. No error, no diff, no signal the remedy was wrong for that state. **A
+broadcast remedy therefore has to name the state it repairs**, or the first person whose
+failure merely resembles it will apply it, see success, and conclude their problem is
+elsewhere. Two states that look alike in a status table: STALE (a real staleness reason, fixed
+by rm + build) and UNVERIFIABLE (the check cannot run at all, needs a full build).
+
 **Fix:** `assert s.count(old) == 1` before every replace, and re-read the file after. The
 realistic failure is not forgetting the guard, it is **applying it unevenly across a batch** and
 keeping no record of which replacements were guarded — so make it unconditional rather than
