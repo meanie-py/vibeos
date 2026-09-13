@@ -3204,3 +3204,52 @@ learn which LPC calls a guest actually makes, so it gets fixed before the probe:
 header, two distinctly-named sentinels (a hand marshaller declining is genuinely different from
 no thunk existing anywhere), and `marshalgen.py` emitting the include instead of its own
 `#define` so the drift cannot recur.
+
+## M19 — CSR/LPC works: a 32-bit binary reaches PASS (2026-09-12)
+
+The scoping above held up, and the job turned out to be one bug repeated at four levels of the
+same structure. Every fix below was proven by measurement on a live boot, not by reading the
+headers and reasoning.
+
+| rung | what was wrong | measured result |
+|---|---|---|
+| `PORT_MESSAGE` header | 24 bytes guest / 40 host, so `DataLength + sizeof(PORT_MESSAGE) > TotalLength` rejected every call before it reached a port | transport `c000000d` → `00000000` ×25 |
+| capture buffer | dereferenced a pointer that is a **server** address by design | host AVs 26 → 1 |
+| reply `Data` union | copied verbatim, so the guest read the 64-bit padding word as `ConnectionInfo` | fault left ntdll32 |
+| `ReadOnlyStaticServerData` | 8-byte array indexed with a 4-byte stride: `[1]` is the high half of `[0]` | `hello32.exe` **0x600D PASS** |
+| `BASE_STATIC_SERVER_DATA` | opens with three `UNICODE_STRING` (8 vs 16), so `WindowsDirectory.Buffer` came out of padding | guest AVs 5 → **0** |
+
+Current amd64 state, stable across three consecutive boots: **0 guest faults, 0 asserts, 0
+above-4GB warnings**; `hello32`/`win32`/`file32`/`async32` all exit `0x600D`, and `gui32` exits
+`0x600E` — `GUI32_WARN_GETPIXEL`, which its own source documents as a soft rung ("the draw
+already proves the win32k path"). `marshal32`/`fault32`/`thread32`/`selfmod32` are created but
+the smoke reaches the desktop marker before they report, so their current status is **unmeasured,
+not passing** — that is the next thing to look at.
+
+### Three traps this rung set, all of the same shape
+
+**The shared LPC view cannot be grown.** Asking for `ViewSize + 1` page so the tail could be
+wow64 scratch fails the connect outright with `c000001f` (`STATUS_INVALID_VIEW_SIZE`) — the port
+section caps it. Carve the scratch from *inside* the granted view and report the reduced
+`ViewSize` to the guest.
+
+**That view's pages are reserved, not committed** (`state=0x2000`). The first write to the
+scratch faulted exactly like the bug it was meant to fix. Commit it explicitly at connect.
+
+**Deriving a layout instead of measuring it costs a boot each time.** `SYSTEM_BASIC_INFORMATION`'s
+`ULONG_PTR` block starts at **32** on amd64, not 28 — the seven `ULONG`s end at 28 and a
+`ULONG_PTR` wants 8-byte alignment. Deriving 28 put `MinimumUserModeAddress = 0x1000000000000` on
+serial. Worse, a host measurement program is only trustworthy if it is validated: the first
+version typedef'd `LONG` as C `long`, which is 8 bytes on LP64 Linux while Windows `LONG` is
+always 32-bit, and it silently inflated `LUID`/`KSYSTEM_TIME`/`TIME_ZONE_INFORMATION`. Checking
+the replica against the real headers' own `C_ASSERT`s (`NLS_USER_INFO` 0x1870,
+`BASE_STATIC_SERVER_DATA` 0x1AC8 on i386) is what caught it.
+
+**A narrowed value is not always a truncated one.** `MaximumUserModeAddress` is the host ceiling
+`0x7FFFFFFEFFFF`; truncating hands the guest `0xFFFEFFFF`, which reads as a *kernel* address. It
+is clamped to the i386 user ceiling instead.
+
+The `BASE_STATIC_SERVER_DATA` shadow is a **snapshot** taken at connect, because there is no hook
+to re-narrow on change. csrss fills it during server-DLL registration, before any client
+connects, so what the guest reads at startup is stable — but `NlsUserInfo.ulCacheUpdateCount` is
+one field csrss may bump later, and a 32-bit client will not see that bump.
