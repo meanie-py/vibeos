@@ -215,7 +215,19 @@ a ladder to watch", and neither was visible from reading.
    genuinely **unknown**, not known-broken, and measuring it on today's tree is
    the first move rather than a design question.
 
-2. **Registry redirection — a silent wrong answer, not a missing feature.**
+2. **Registry redirection — LARGELY DONE 2026-09-13, one function left.** The wow64-amd64
+   lane landed it: `878e0ac0b67` (E24) puts Wow6432Node redirection in the **CM parse**, not in
+   wow64.dll, because registry opens are overwhelmingly RELATIVE — advapi32 caches a handle to
+   `\REGISTRY\MACHINE` and passes RootDirectory + a subpath, so a user-mode rewrite would need
+   a handle-to-path syscall on every open. `911b1e1d82b` (E21) fixed `NtOpenKey` denying every
+   `KEY_WOW64_32KEY` open outright. **Residue, verified on master:** exactly two live
+   `Wow64 not yet supported` sites remain, both in `RegDeleteKeyExW`, so an explicit
+   `KEY_WOW64_32KEY`/`64KEY` on a DELETE is still logged and ignored — a narrow wrong-hive
+   hazard confined to deletion. (The two in `RegLoadMUIStringA` are commented out.) **This entry
+   previously called the whole feature an open silent bug; that was true when written and is
+   not now.** Original scoping kept below, because it is why it mattered:
+
+   *Was:* **a silent wrong answer, not a missing feature.**
    `sdk/lib/rust/advapi32-rust/src/reg/reg.rs:1073-1079` prints
    `ERR!("Wow64 not yet supported!")` and then proceeds into the native hive. No
    `Wow6432Node`; `KEY_WOW64_32KEY` / `KEY_WOW64_64KEY` are logged and ignored. A
@@ -230,10 +242,22 @@ a ladder to watch", and neither was visible from reading.
    "no guests" and shadowing the ramdisk probe that had the right answer, so the opt-in never
    fired there. With that fixed, every arm64 gate runs the ladder — `gate_argv=['--ladder']`
    where it was `[]` — at a **measured 84.7s drain**, consistent with the 94.3s seen on amd64
-   and nowhere near the 420s ceiling. So both "does amd64's WoW64 story hold up" and "does
-   arm64's" are now answered continuously instead of by whoever remembers to pass `--ladder`.
-   **Expect a first-ever arm64 `LADDER_FAIL` to be visibility, not new breakage** — that arch
-   simply was never asked before.
+   and nowhere near the 420s ceiling.
+
+   **Scope, corrected 2026-09-13 06:30 — coverage is CONDITIONAL on staged media, not
+   universal.** The gate now *asks* for the ladder on every arch; the ladder then declines
+   unless that arch's media carries both a WoW64 CPU layer and the guests. A default arm64
+   build stages neither: `qemu/mkramdisk.sh`'s entire FEX block is gated on `VIBEOS_FEX=1`
+   **and** on `build-fex-hello/fexprobe.exe` existing, which needs the FEX vendor build. So a
+   first post-fix arm64 gate shows `ladder:arm64 skip 0.0s — no WoW64 CPU layer on this arch's
+   media`, and amd64 likewise skips in a tree without `build-i386`/`build-fex-hello`.
+
+   What that buys, stated exactly: **a FEX-staged tree gets arm64 gate coverage it never had**
+   (that is the fex lane today), default trees are unchanged at 0.0s with no new red surface,
+   and the standing ~85-94s cost applies only where the media is staged. So "the instrument is
+   in CI" is true conditionally. **Making arm64 WoW64 coverage continuous is a separate
+   question** — whether default arm64 media should stage the FEX CPU layer — with a real cost
+   attached, and it is not answered here.
 
    `gate` now opts each arch in on its own media (`ladder.gate_decision`), and the amd64
    ladder is **GREEN end to end: 9/9 guests PASS**, correct codes throughout. Getting there

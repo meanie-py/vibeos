@@ -159,6 +159,17 @@ acting on it — `land-status`, `summary.json`, the artifact dir. This cuts both
 summaries, which are the same channel: a status line you carry forward without its evidence is
 a claim you can no longer support.
 
+**And a fact you have already TRANSMITTED feels filed rather than live.** Once you have said a
+thing, you stop consulting it and start remembering it — which is the failure this section
+exists to prevent, arriving from the one direction you do not guard. Three times in one night I
+accepted a claim that a sentence of my own, written hours earlier in the same conversation,
+ruled out: that a `VIBEOS_FEX=1` build "would stage nothing" (then recorded arm64 coverage as
+fleet-wide); that `INCONCLUSIVE` leaves every submission queued (then argued for widening it);
+that a manifest read cannot answer on arm64 (then shipped a glob that let it answer wrongly).
+Each time the refutation was in my own prior words and I did not re-read them. **Before
+accepting a claim that touches something you have already explained to someone, go back and
+read what you told them.**
+
 **An alarming inference deserves its cheapest disconfirming check BEFORE you relay it.**
 Relaying converts your uncertainty into someone else's fact, and from there it gets acted on. I
 had "someone forced a double drain on the merge queue" written and addressed, having seen five
