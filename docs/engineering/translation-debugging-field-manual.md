@@ -5573,6 +5573,31 @@ the guest set. Every guest test passed — the sets were equal — and only the 
 a DIFFERENT name set failed. Had that test not existed, the function would have shipped
 answering the wrong question in the one case it was written for.
 
+**The same shape outside editing: a REMEDY applied to the wrong state.** A documented fix can
+no-op exactly as an edit does. `rm build-<arch>/dll/ntdll/nt_0600/ntdll_vista.dll && build`
+clears a genuinely stale cargo-linked binary — but applied to a build dir whose provenance
+check RAISES before it ever reaches that binary (missing arch artifacts, so
+`cargo_link_staleness_reasons` throws instead of returning a list), it changes nothing and
+reports nothing. No error, no diff, no signal the remedy was wrong for that state. **A
+broadcast remedy therefore has to name the state it repairs**, or the first person whose
+failure merely resembles it will apply it, see success, and conclude their problem is
+elsewhere. Two states that look alike in a status table: STALE (a real staleness reason, fixed
+by rm + build) and UNVERIFIABLE (the check cannot run at all, needs a full build).
+
+**Third form, and the costliest: a TRUE report about a different object.** `vibeos-cli land`
+prints OK, `land-status --mine` shows `landed : <lane> @ <sha> as <sha>` — and that row is real
+but describes the PREVIOUS submission, while the tip just sent is still queued. Nothing lied.
+The work was reported landed and was not: `git show origin/master:<file> | grep -c <marker>`
+returned 0 for a registry entry already described to the user as filed. A `land` can also be
+reaped before it submits, in which case a dead process cannot report anything and the OK still
+on screen belongs to an earlier invocation — so no fix inside `land` closes this.
+**The check must be ancestry of the SPECIFIC TIP submitted**
+(`git merge-base --is-ancestor <tip> origin/master`), never "did this lane land anything
+recently" — the second question is what every one of these failure modes answers
+affirmatively, which is why checking status *feels* like verification while confirming nothing.
+It works because it is made from OUTSIDE the process, the only vantage that survives the
+process dying.
+
 **Fix:** `assert s.count(old) == 1` before every replace, and re-read the file after. The
 realistic failure is not forgetting the guard, it is **applying it unevenly across a batch** and
 keeping no record of which replacements were guarded — so make it unconditional rather than
