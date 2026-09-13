@@ -538,9 +538,26 @@ Record it here and keep going; only chase one when it looks load-bearing.
   | 5 | 5,999,935 | **4,096 (0.1%)** | **271** | still at the UEFI banner |
 
   Neither hypothesis survives: 4,096 is nowhere near 2,342,912, and 271 bytes is
-  nowhere near 124,212. **Replay reach is a function of the icount shift**, and
-  strongly so — shift=3 gets through the whole kernel boot to desktop bringup,
-  shift=5 barely leaves firmware. (That also reproduces an observation from the
+  nowhere near 124,212. **Replay reach is a function of the icount shift.**
+
+  And it is not monotonic — a third run settles that, and it is the practical
+  result of this whole investigation:
+
+  | shift | trace size | stalled at | guest serial | where |
+  |---|---|---|---|---|
+  | 1 | 33,571,609 | **4,096** | 271 | UEFI banner |
+  | 3 | 10,666,166 | 2,342,912 (22%) | 124,212 | desktop bringup |
+  | 5 | 5,999,935 | **4,096** | 271 | UEFI banner |
+
+  **Only the default shift replays at all.** 4,096 bytes is the first read
+  buffer: at shift 1 and shift 5 the replay never gets going. That also means the
+  stall at 2,342,912 is a *different* phenomenon from the immediate stall at 1
+  and 5 — one is a replay that ran most of a boot and stopped, the other is a
+  replay that never started.
+
+  The trap this creates is the reason `rr record` now warns on a non-default
+  `--shift`: RECORDING succeeds at every value, so the failure is invisible until
+  someone tries to replay, by which point the expensive part is already spent. (That also reproduces an observation from the
   first night of this work, when a shift=5 replay sat at the UEFI banner at 271
   bytes for eight minutes and was written off as contention.)
 
