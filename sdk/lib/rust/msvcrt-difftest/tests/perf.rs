@@ -67,6 +67,12 @@ extern "C" {
     fn ref__wcsnicmp(a: *const u16, b: *const u16, n: usize) -> i32;
     fn towlower(c: u16) -> u16;
     fn ref_towlower(c: u16) -> u16;
+    /// The two sides' locale state. These are SEPARATE: refstub/msvcrt.h renames the
+    /// reference's `get_locinfo` into the anti-circularity namespace (see wave16.rs),
+    /// so reference and subject each carry their own `lc_handle`. That is exactly why
+    /// they can silently disagree, and why `locale_modes()` below reads BOTH.
+    fn get_locinfo() -> *mut msvcrt_sys::threadlocaleinfostruct;
+    fn msvcrt_ref_get_locinfo() -> *mut msvcrt_sys::threadlocaleinfostruct;
     fn tolower(c: i32) -> i32;
     fn ref_tolower(c: i32) -> i32;
     fn wcslen(s: *const u16) -> usize;
@@ -366,6 +372,37 @@ struct Row {
 /// green run — extra passes happen only after something has already failed.
 const PASSES: usize = 3;
 
+/// `lc_handle[LC_CTYPE]` for (subject, reference) -- which locale MODE each side's
+/// case-mapping family is running in. Zero is the "C" locale: `towlower`/`towupper`
+/// take an ASCII add and are a few instructions. NONZERO is a real NLS locale, and
+/// that side then routes through **one `LCMapStringW` call per character**.
+///
+/// The two sides hold SEPARATE locale state, so they can disagree -- and when they
+/// do, the benchmark is comparing an ASCII add against a Win32 call and the ratio
+/// means nothing. A gate run on 2026-09-13 reported `towlower` 10.8x TOO SLOW in all
+/// three passes at a flat 44 MiB/s across a 65536x size range: the signature of a
+/// fixed per-character Win32 call, not of a slow body. Disassembly of the failing
+/// binary confirmed the subject sitting on the `LCMapStringW` arm while the C
+/// reference jumped straight to its ASCII path. Four theories were chased and killed
+/// (host contention, a recent commit, suite context, an in-process global leak)
+/// before anyone looked at the branch -- because the harness reported a STATE
+/// difference as a BEHAVIOUR difference, and nothing printed the state.
+///
+/// Both sides NLS is fine: they pay the same call and the ratio is still honest.
+/// It is DISAGREEMENT that invalidates the comparison. Note what this deliberately
+/// does not do: pin either side to the "C" locale. That would make the run green
+/// while the state leak sat there, and the leak is the only bug in this still alive.
+fn locale_modes() -> (u32, u32) {
+    // SAFETY: both accessors are the harness's own and never return null -- each
+    // falls back to its side's static "C" locinfo when no thread locale is set.
+    unsafe {
+        (
+            (*get_locinfo()).lc_handle[msvcrt_sys::LC_CTYPE] as u32,
+            (*msvcrt_ref_get_locinfo()).lc_handle[msvcrt_sys::LC_CTYPE] as u32,
+        )
+    }
+}
+
 fn main() {
     // This gate is meaningless outside --release, and worse than meaningless:
     // msvcrt-crt-rust's `opt-level = 3` lives in `[profile.release.package.*]`,
@@ -380,6 +417,27 @@ fn main() {
              regression. Re-run:  cargo test -p msvcrt-difftest --test perf --release\n"
         );
         return;
+    }
+
+    // Precondition, checked BEFORE any measuring: the two sides must be in the SAME
+    // locale mode. See `locale_modes()` for what this cost us when nothing checked it.
+    let (subj_lc, ref_lc) = locale_modes();
+    let mode = |v: u32| if v == 0 { "C locale, ASCII add" } else { "NLS, LCMapStringW per char" };
+    println!("\n  locale: lc_handle[LC_CTYPE]  subject={subj_lc:#x} ({}), reference={ref_lc:#x} ({})",
+             mode(subj_lc), mode(ref_lc));
+    if (subj_lc == 0) != (ref_lc == 0) {
+        println!(
+            "\n  perf: ABORTED -- ORACLE ASYMMETRY, not a slow body.\n  \
+             subject lc_handle[LC_CTYPE]={subj_lc:#x}, reference={ref_lc:#x}: one side runs\n  \
+             one LCMapStringW call PER CHARACTER in the case-mapping family while the\n  \
+             other takes an ASCII add. The two sides are not running comparable code,\n  \
+             so every ratio here is meaningless and calling one TOO SLOW would be a\n  \
+             FALSE statement about a TRUE measurement -- which is what cost a lane its\n  \
+             batch on 2026-09-13.\n\n  \
+             This is a harness-ENVIRONMENT fault: nothing in perf.rs sets a locale.\n  \
+             Find what did before trusting any number in this file.\n"
+        );
+        std::process::exit(1);
     }
 
     let mut survivors: Option<Vec<String>> = None;
