@@ -488,15 +488,16 @@ land; date every addition.** Source docs live in `docs/engineering/archive/`.
 
 ## Known bugs & flakes (live registry)
 
-- **Kernel symbols resolve against the WRONG image since the MP promotion — OPEN, fleet-wide**
-  (2026-09-13). Every medium carries both kernels and boots the MP one
+- **Kernel symbols resolve against the WRONG image since the MP promotion — TOOLING FIXED,
+  HAND RESOLUTION STILL SUSPECT** (2026-09-13). Every medium carries both kernels and boots the MP one
   (`livecd.ini:59` → `/KERNEL=ntkrnlmp.exe /HAL=halmp.dll`), so anything that resolves a
   kernel symbol against `ntoskrnl.exe` is answering for an image the machine is not running.
   Hit independently by two lanes within hours, by different routes and neither looking for it:
   `qemu/gdb-helpers/find-kbase.py` relocates by matching the export Name against
   `VIBEOS_KERNEL`'s basename and matched the UP image, so `run-until.sh --break <sym>` set
-  breakpoints the guest never executes and timed out silently (smp-bringup; fix `0280df67353`,
-  **not on master yet**). And by hand, with no script involved: `build-arm64/ntoskrnl/*.exe`
+  breakpoints the guest never executes and timed out silently (smp-bringup; fixed by
+  `0280df67353`, **verified on origin/master 2026-09-13**). And by hand, with no script
+  involved: `build-arm64/ntoskrnl/*.exe`
   lists only `ntoskrnl.exe` while the MP image is a directory deeper in `ntkrnlmp/`, so a
   glob steers you to the wrong file.
   **The danger is that the wrong answer is PLAUSIBLE, not empty.** The same fault address
@@ -508,9 +509,14 @@ land; date every addition.** Source docs live in `docs/engineering/archive/`.
   Only incoherence caught it — BUGCHECK 0x1E is KMODE_EXCEPTION_NOT_HANDLED with
   P1 = STATUS_FILE_INVALID, and an ideal-processor setter raising a file-status exception fits
   nothing, while `RtlRaiseStatus+0x44` fits exactly. Had the fault been anywhere near
-  scheduling, the wrong symbol would have been believed. So a fix to the gdb helper is
-  necessary and not sufficient: any `llvm-symbolizer`/`nm` work done since 2026-09-12 is
-  suspect, and a backtrace from that window should be re-derived rather than trusted.
+  scheduling, the wrong symbol would have been believed.
+  **The helper fix does not close the hand path, which is why this entry stays open.** No
+  script was involved in the second route, so no script fix reaches it: any
+  `llvm-symbolizer`/`nm`/`objdump` resolution done between the 2026-09-12 promotion and the
+  fix is still suspect, and a backtrace or fault symbol from that window should be re-derived
+  rather than trusted. The durable defence is the directory layout, not the tool — reach for
+  `ntoskrnl/ntkrnlmp/ntkrnlmp.exe`, and confirm against what the boot actually loaded
+  (`ramdisk(0)\reactos\system32\ntkrnlmp.exe` appears in the serial).
 
 - **A 32-bit guest doing real file I/O BUGCHECKs the arm64 kernel — OPEN** (2026-09-13).
   Found on the first writable-volume run of `sqlite32.exe`, the third-party stress guest
