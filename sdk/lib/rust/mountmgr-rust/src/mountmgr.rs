@@ -86,14 +86,14 @@ const IO_NO_INCREMENT: i32 = 0;
 const NotificationEvent: i32 = 0;
 const Executive: i32 = 0;
 
-const ALLOC_TAG: u32 = 1098149453;
+const ALLOC_TAG: u32 = 0x41746E4D; // nolint: const-contradiction ('AtnM' -- mntmgr.h:153; framebuf's unrelated ALLOC_TAG is 'FUBF')
 const PAGED_POOL: u32 = 1;
 
 const GPT_BASIC_DATA_ATTRIBUTE_NO_DRIVE_LETTER: u64 = 0x8000000000000000;
 
 const PARTITION_NTFT: i32 = 0x80;
 const VALID_NTFT: i32 = 0xC0;
-const PARTITION_HUGE: i32 = 0x0F;
+const PARTITION_HUGE: i32 = 0x6; // ntdddisk.h
 const PARTITION_IFS: i32 = 0x07;
 const PARTITION_FAT32: i32 = 0x0B;
 const PARTITION_FAT32_XINT13: i32 = 0x0C;
@@ -120,7 +120,7 @@ const PNPNOTIFY_DEVICE_INTERFACE_INCLUDE_EXISTING_INTERFACES: u32 = 0x00000001;
 // Assumed external globals
 
 const TAGC_MOUNTMGR: u32 = 1098149453; // 'MmcM'
-const LETTER_POSITION: isize = 4;
+const LETTER_POSITION: isize = 0xC; // drivers/storage/mountmgr/mntmgr.h
 const CUNC_LETTER_POSITION: isize = 4;
 const UNICODE_NULL: u16 = 0;
 #[no_mangle]

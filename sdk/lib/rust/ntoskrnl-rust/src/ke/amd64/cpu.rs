@@ -146,7 +146,9 @@ const MSR_IA32_VMX_PROCBASED_CTLS2: u32 = 0x48B;
 const X86_FEATURE_PAE: u32 = 0x00000040;
 const X86_FEATURE_HT: u32 = 0x10000000;
 
-const CONTEXT_ALL: u32 = 0x1003F;
+// 0x10001F: amd64 CONTEXT_ALL has no EXTENDED_REGISTERS (winnt_old.h:1363). 0x1003F was
+// the i386 value -- CONTEXT_i386|0x3F -- sitting in an amd64 file; except.rs has it right.
+const CONTEXT_ALL: u32 = 0x10001F;
 
 extern "C" {
     fn strcmp(s1: *const i8, s2: *const i8) -> i32;

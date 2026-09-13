@@ -10,6 +10,7 @@ job is to REFUSE, and these tests hold it to that.
 from __future__ import annotations
 
 import json
+import struct
 import subprocess
 import time
 from pathlib import Path
@@ -1163,3 +1164,211 @@ def test_host_shape_ignores_per_run_paths_and_ports(tmp_path):
     assert rr._host_shape(a) == rr._host_shape(b)
     c = ["-qmp", "unix:/tmp/ros-aaa/qmp.sock,server,nowait", "-serial", "file:/tmp/o.log"]
     assert rr._host_shape(a) != rr._host_shape(c)
+
+
+# --------------------------------------------------------------------------
+# legal break icounts
+# --------------------------------------------------------------------------
+
+
+def _replay_log(tmp_path, events: bytes, version=rr._SUPPORTED_REPLAY_VERSION) -> Path:
+    """A minimal replay.bin: the 12-byte header, then raw event bytes."""
+    trace = tmp_path / "t"
+    trace.mkdir()
+    (trace / "replay.bin").write_bytes(struct.pack(">IQ", version, 0) + events)
+    return trace
+
+
+def _insn(n: int) -> bytes:
+    return struct.pack(">BI", 0, n)
+
+
+def test_boundaries_accumulate_instruction_chunks(tmp_path):
+    trace = _replay_log(tmp_path, _insn(100) + _insn(50) + _insn(1))
+    assert rr.instruction_boundaries(trace) == [100, 150, 151]
+
+
+def test_boundaries_skip_over_the_other_event_types(tmp_path):
+    """A mis-sized event desynchronises the walk, so every event we skip has to
+    be skipped by exactly the right width. EVENT_CHAR_WRITE is the common one:
+    235,577 of them in a single arm64 boot."""
+    body = (
+        _insn(10)
+        + struct.pack(">BII", 22, 1, 2)  # EVENT_CHAR_WRITE
+        + struct.pack(">BQ", 28, 0)  # EVENT_CLOCK_HOST
+        + bytes([31])  # EVENT_CP_CLOCK_WARP_ACCOUNT, no payload
+        + struct.pack(">BQ", 29, 0)  # EVENT_CLOCK_VIRTUAL_RT
+        + _insn(7)
+    )
+    assert rr.instruction_boundaries(_replay_log(tmp_path, body)) == [10, 17]
+
+
+def test_boundaries_handle_a_variable_length_random_event(tmp_path):
+    body = _insn(3) + struct.pack(">BII", 27, 0, 5) + b"abcde" + _insn(4)
+    assert rr.instruction_boundaries(_replay_log(tmp_path, body)) == [3, 7]
+
+
+def test_boundaries_handle_an_async_bh_event(tmp_path):
+    body = _insn(3) + struct.pack(">BBBQ", 8, 0, 1, 999) + _insn(4)
+    assert rr.instruction_boundaries(_replay_log(tmp_path, body)) == [3, 7]
+
+
+def test_boundaries_refuse_an_unknown_async_kind_rather_than_going_short(tmp_path):
+    """The failure mode this guards is not a crash but a SHORT list: a walk that
+    loses sync still returns plausible numbers, and a caller would then snap a
+    break to an icount that aborts the replay."""
+    body = _insn(3) + struct.pack(">BBB", 8, 4, 1) + _insn(4)
+    with pytest.raises(rr.RecordReplayError, match="no known payload width"):
+        rr.instruction_boundaries(_replay_log(tmp_path, body))
+
+
+def test_boundaries_refuse_an_unknown_replay_version(tmp_path):
+    trace = _replay_log(tmp_path, _insn(5), version=0xE02007)
+    with pytest.raises(rr.RecordReplayError, match="only knows"):
+        rr.instruction_boundaries(trace)
+
+
+def test_a_truncated_trailing_event_ends_the_walk_without_inventing_a_boundary(tmp_path):
+    """A recording killed mid-write leaves a partial event. Everything before it
+    is still true, so the walk keeps those boundaries and stops."""
+    trace = _replay_log(tmp_path, _insn(10) + b"\x00\x00\x01")
+    assert rr.instruction_boundaries(trace) == [10]
+
+
+def test_snap_goes_FORWARD_to_the_next_legal_icount(tmp_path):
+    """Forward, never nearest: a caller asking to stop at N wants to have seen
+    everything up to N, and a backward snap silently stops short of it."""
+    trace = _replay_log(tmp_path, _insn(100) + _insn(100) + _insn(100))
+    assert rr.snap_break_icount(trace, 100) == 100  # already legal
+    assert rr.snap_break_icount(trace, 101) == 200
+    assert rr.snap_break_icount(trace, 199) == 200
+    assert rr.snap_break_icount(trace, 1) == 100
+
+
+def test_snap_refuses_an_icount_past_the_end_of_the_recording(tmp_path):
+    """A break past the end never fires, which looks exactly like a break that
+    was never set — so it fails here instead."""
+    trace = _replay_log(tmp_path, _insn(100))
+    with pytest.raises(rr.RecordReplayError, match="past the end"):
+        rr.snap_break_icount(trace, 101)
+
+
+def test_boundaries_refuse_a_trace_with_no_recording(tmp_path):
+    trace = tmp_path / "empty"
+    trace.mkdir()
+    with pytest.raises(rr.RecordReplayError, match="nothing was recorded"):
+        rr.instruction_boundaries(trace)
+
+
+def test_env_break_reads_the_requested_icount(monkeypatch):
+    monkeypatch.delenv(rr.BREAK_ENV_VAR, raising=False)
+    assert rr.env_break() is None
+    monkeypatch.setenv(rr.BREAK_ENV_VAR, "12345")
+    assert rr.env_break() == 12345
+
+
+def test_env_break_refuses_junk_rather_than_silently_not_breaking(monkeypatch):
+    """A replay that quietly failed to arm its break looks exactly like a break
+    that fired and was missed."""
+    monkeypatch.setenv(rr.BREAK_ENV_VAR, "not-a-number")
+    with pytest.raises(rr.RecordReplayError, match="must be an integer"):
+        rr.env_break()
+    monkeypatch.setenv(rr.BREAK_ENV_VAR, "-1")
+    with pytest.raises(rr.RecordReplayError, match="must not be negative"):
+        rr.env_break()
+
+
+def test_arm_replay_break_snaps_and_arms_through_the_harness_qmp(tmp_path, monkeypatch, capsys):
+    """The vm.py hook: a mid-chunk request must be snapped forward before it ever
+    reaches QEMU, because arming it unsnapped aborts the whole replay."""
+    from tests.qemu.vm import QemuVM
+
+    trace = _replay_log(tmp_path, _insn(100) + _insn(100))
+    monkeypatch.setenv(rr.BREAK_ENV_VAR, "150")
+
+    armed = []
+
+    class FakeQmp:
+        def execute(self, name, **kw):
+            armed.append((name, kw))
+
+    vm = QemuVM.__new__(QemuVM)  # no QEMU, no sockets — only the hook logic under test
+    vm.on_qmp_ready = None
+    vm._arm_replay_break(rr, trace)
+    assert vm.on_qmp_ready is not None
+    vm.on_qmp_ready(FakeQmp())
+    assert armed == [("replay-break", {"icount": 200})]
+    assert "mid-chunk" in capsys.readouterr().err
+
+
+def test_arm_replay_break_is_a_no_op_when_nothing_asked_for_one(tmp_path, monkeypatch):
+    from tests.qemu.vm import QemuVM
+
+    trace = _replay_log(tmp_path, _insn(100))
+    monkeypatch.delenv(rr.BREAK_ENV_VAR, raising=False)
+    vm = QemuVM.__new__(QemuVM)
+    vm.on_qmp_ready = None
+    vm._arm_replay_break(rr, trace)
+    assert vm.on_qmp_ready is None
+
+
+def test_arm_replay_break_refuses_an_icount_past_the_end(tmp_path, monkeypatch):
+    """Better to fail at arming than to boot a whole replay whose break can never
+    fire and looks identical to one that was never set."""
+    from tests.qemu.vm import QemuVM
+
+    trace = _replay_log(tmp_path, _insn(100))
+    monkeypatch.setenv(rr.BREAK_ENV_VAR, "999999")
+    vm = QemuVM.__new__(QemuVM)
+    vm.on_qmp_ready = None
+    with pytest.raises(rr.RecordReplayError, match="past the end"):
+        vm._arm_replay_break(rr, trace)
+
+
+def _shutdown(eid: int = 14) -> bytes:
+    return bytes([eid])
+
+
+def test_a_log_that_reaches_a_shutdown_event_is_provably_complete(tmp_path):
+    trace = _replay_log(tmp_path, _insn(10) + _shutdown())
+    assert rr.trace_is_provably_complete(trace)
+
+
+def test_completeness_ignores_bytes_after_the_shutdown_event(tmp_path):
+    """Replay stops at shutdown and never reads further. Real traces carry a
+    trailing byte past it (clean1 has a 0x27), and QEMU's own replay-dump.py
+    stops at the same place — so requiring EOF would fail a whole trace."""
+    trace = _replay_log(tmp_path, _insn(10) + _shutdown() + b"\x27")
+    assert rr.trace_is_provably_complete(trace)
+
+
+def test_a_log_that_just_stops_is_not_complete(tmp_path):
+    """The truncation case: events all the way to EOF, no shutdown."""
+    trace = _replay_log(tmp_path, _insn(10) + _insn(10))
+    assert not rr.trace_is_provably_complete(trace)
+
+
+def test_a_log_cut_mid_event_is_not_complete(tmp_path):
+    trace = _replay_log(tmp_path, _insn(10) + b"\x00\x00\x01")
+    assert not rr.trace_is_provably_complete(trace)
+
+
+def test_completeness_withholds_judgement_on_an_unknown_version(tmp_path):
+    """An unknown version is a reason not to UPGRADE confidence, not a reason to
+    refuse — so it returns False and the marker check stands on its own."""
+    trace = _replay_log(tmp_path, _insn(10) + _shutdown(), version=0xE02007)
+    assert not rr.trace_is_provably_complete(trace)
+
+
+def test_an_unfinalised_but_provably_complete_trace_is_not_refused(tmp_path):
+    """The point of the prover: the marker only covers traces recorded after it
+    existed, so its absence is missing evidence, not evidence of truncation."""
+    trace = _replay_log(tmp_path, _insn(10) + _shutdown())
+    rr.write_manifest(trace, arch="arm64", argv=[], media={})  # no finalised key
+    assert not any("finalised" in w for w in rr.check_trace(trace))
+
+    other = tmp_path / "other"
+    other.mkdir()
+    stump = _replay_log(other, _insn(10) + _insn(10))
+    rr.write_manifest(stump, arch="arm64", argv=[], media={})
+    assert any("finalised" in w for w in rr.check_trace(stump))

@@ -138,7 +138,7 @@ extern "system" { fn EngGetTickCount() -> ULONGLONG; }
 const USERTAG_PROCESSINFO: u32 = u32::from_le_bytes(*b"Uspi");
 const USERTAG_EVENT: u32 = u32::from_le_bytes(*b"Usev");
 const USERTAG_WINDOWLIST: u32 = u32::from_le_bytes(*b"Uswl");
-const TAG_STRING: u32 = u32::from_le_bytes(*b" RTS");
+const TAG_STRING: u32 = u32::from_be_bytes(*b" RTS"); // nolint: const-contradiction (' RTS' -- win32ss/user/ntuser/tags.h:3; freeldr's TAG_STRING is ' rtS')
 
 // winuser/ketypes constants not in the win32k bindgen glob.
 const EVENT_ALL_ACCESS: u32 = 0x1F0003;

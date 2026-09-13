@@ -23,7 +23,7 @@ extern "system" {
 }
 
 // pool tags (C multichar big-endian -> reversed bytes for from_le_bytes)
-const TAG_STRING: u32 = u32::from_le_bytes(*b"STR ");   // ' RTS'
+const TAG_STRING: u32 = u32::from_le_bytes(*b"STR "); // nolint: const-contradiction (' RTS' -- win32ss/user/ntuser/tags.h:3; freeldr's TAG_STRING is ' rtS')
 const TAG_USTR: u32 = u32::from_le_bytes(*b"USTR");     // 'RTSU'
 const USERTAG_CLASS: u32 = u32::from_le_bytes(*b"Uscl"); // 'lcsU'
 const UNICODE_NULL: u16 = 0;

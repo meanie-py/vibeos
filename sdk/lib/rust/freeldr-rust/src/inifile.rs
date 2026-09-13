@@ -291,7 +291,7 @@ pub unsafe extern "C" fn IniAddSettingValueToSection(SectionId: usize, SettingNa
 #[no_mangle]
 pub unsafe extern "C" fn IniModifySettingValue(SectionId: usize, SettingName: PCSTR, SettingValue: PCSTR) -> u8 {
 
-    const TAG_INI_VALUE: u32 = u32::from_le_bytes(*b"LAVI");
+    const TAG_INI_VALUE: u32 = u32::from_be_bytes(*b"VinI"); // C literal 'VinI' -- boot/freeldr/freeldr/include/inifile.h
 
     let Section = SectionId as *mut _INI_SECTION;
     let mut Entry: PLIST_ENTRY;

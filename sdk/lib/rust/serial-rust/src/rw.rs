@@ -48,7 +48,7 @@ unsafe fn ReadBytes(
     mut WorkItemData: PWORKITEM_DATA,
 ) {
 
-    const DPFLTR_SERIAL_ID: u32 = 0;
+    const DPFLTR_SERIAL_ID: u32 = 39;
     const DPFLTR_INFO_LEVEL: u32 = 3;
     const DPFLTR_TRACE_LEVEL: u32 = 2;
 
@@ -223,7 +223,7 @@ unsafe extern "system" fn SerialReadWorkItem(
     mut DeviceObject: PDEVICE_OBJECT,
     mut pWorkItemData: PVOID,
 ) {
-    const DPFLTR_SERIAL_ID: u32 = 0;
+    const DPFLTR_SERIAL_ID: u32 = 39;
     const DPFLTR_TRACE_LEVEL: u32 = 2;
     const SERIAL_TAG: u32 = 0x6c726553; // 'lreS'
 
@@ -255,8 +255,8 @@ pub unsafe extern "system" fn SerialRead(
     mut Irp: PIRP,
 ) -> NTSTATUS {
 
-    const DPFLTR_SERIAL_ID: u32 = 0;
-    const DPFLTR_TRACE_LEVEL: u32 = 4;
+    const DPFLTR_SERIAL_ID: u32 = 39;
+    const DPFLTR_TRACE_LEVEL: u32 = 2;
     const DPFLTR_INFO_LEVEL: u32 = 3;
     const INFINITE: ULONG = 0xFFFFFFFF;
     const TRUE: i32 = 1;

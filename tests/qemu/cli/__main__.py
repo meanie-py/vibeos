@@ -592,6 +592,14 @@ def build_parser() -> argparse.ArgumentParser:
         "be reached. See docs/engineering/qemu-record-replay.md",
     )
     rrep.add_argument("--root", help=f"trace root (default {rr_mod.DEFAULT_ROOT})")
+    rrep.add_argument(
+        "--break-at",
+        type=int,
+        metavar="ICOUNT",
+        help="stop the replay at this icount via QMP replay-break, snapped forward "
+        "to a legal instruction-chunk boundary (see `rr breaks`); pair with --gdb "
+        "to inspect the paused guest",
+    )
     rrep.set_defaults(fn=rr_mod.rr_cmd, rr_verb="replay")
 
     rvf = rrsub.add_parser(
@@ -623,6 +631,23 @@ def build_parser() -> argparse.ArgumentParser:
     rif.add_argument("trace", help="trace name, path, or `latest`")
     rif.add_argument("--root", help=f"trace root (default {rr_mod.DEFAULT_ROOT})")
     rif.set_defaults(fn=rr_mod.rr_cmd, rr_verb="info")
+
+    rbk = rrsub.add_parser(
+        "breaks",
+        help="icounts a replay of this trace can legally be stopped at (see `--near`)",
+    )
+    rbk.add_argument("trace", help="trace name, path, or `latest`")
+    rbk.add_argument("--root", help=f"trace root (default {rr_mod.DEFAULT_ROOT})")
+    rbk.add_argument(
+        "--near",
+        type=int,
+        help="show the boundaries around this icount and the one it would snap to; "
+        "without it, print a summary of the whole set",
+    )
+    rbk.add_argument(
+        "--count", type=int, default=5, help="how many boundaries either side of --near (default 5)"
+    )
+    rbk.set_defaults(fn=rr_mod.rr_cmd, rr_verb="breaks")
 
     kl = sub.add_parser(
         "kill",

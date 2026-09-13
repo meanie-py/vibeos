@@ -46,7 +46,7 @@ macro_rules! RIPMSG { ($($t:tt)*) => {{}}; }
 
 // ---- Pool tags (tags.h). C 4-char literal is big-endian → from_le_bytes reverses it. ----
 const USERTAG_WINDOWLIST: u32 = u32::from_le_bytes(*b"Uswl"); // 'lwsU'
-const TAG_STRING: u32 = u32::from_le_bytes(*b"STR ");        // ' RTS'
+const TAG_STRING: u32 = u32::from_le_bytes(*b"STR "); // nolint: const-contradiction (' RTS' -- win32ss/user/ntuser/tags.h:3; freeldr's TAG_STRING is ' rtS')
 const TAG_HOOK: u32 = u32::from_le_bytes(*b"Usho");          // 'ohsU'
 
 // ---- HWND pseudo-handle constants (winuser.h macros). ----

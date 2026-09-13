@@ -343,13 +343,13 @@ union BiasedTocLength {
 }
 
 // Pool tags: cdprocs.h multichar constants, used directly as their u32 value.
-const TAG_FCB_NONPAGED: u32 = 0x6e666443; // 'nfdC'  (TAG_FCB_NONPAGED)
+const TAG_FCB_NONPAGED: u32 = 0x6e666443; // nolint: const-contradiction ('nfdC' -- cdfs/cdprocs.h; fastfat's is 'NtaF')
 
 const CdPagedPool: u32 = 1; // PagedPool
 const TAG_FCB_TABLE: u32 = 0x74666443; // 'tfdC'  (TAG_FCB_TABLE)
 
 // cdprocs.h: TAG_IRP_CONTEXT = 'cidC' = 0x63696443 (same multichar scheme as TAG_VPB).
-const TAG_IRP_CONTEXT: u32 = 0x63696443;
+const TAG_IRP_CONTEXT: u32 = 0x63696443; // nolint: const-contradiction ('cidC' -- cdfs/cdprocs.h; fastfat's is 'ItaF')
 // cdstruc.h IRP_CONTEXT_FLAG_FORCE_POST = 0x00000008 (types_i386.rs).
 const IRP_CONTEXT_FLAG_FORCE_POST: u32 = 0x00000008;
 // nodetype.h CDFS_NTC_IRP_CONTEXT (also in glue.rs).
@@ -1202,7 +1202,7 @@ pub unsafe extern "C" fn CdCleanupIrpContext(
 }
 
 const CDFS_NTC_IRP_CONTEXT: u32 = 0x0308; // nodetype.h CDFS_NTC_IRP_CONTEXT
-const IRP_CONTEXT_FLAG_WAIT: u32 = 0x00000004; // FIXED 2026-07-06: cdfs flag mismatch (verified vs cdstruc.h); WAIT=0x02 collided w/ MORE_PROCESSING and != the 0x04 CdAcquireResource checks -> WAIT flag never took -> every cdfs resource acquire ran non-blocking -> CANT_WAIT raise -> 0x1E under DUMMY_PSEH // cdstruc.h IRP_CONTEXT_FLAG_WAIT
+const IRP_CONTEXT_FLAG_WAIT: u32 = 0x00000004; // FIXED 2026-07-06: cdfs flag mismatch (verified vs cdstruc.h); WAIT=0x02 collided w/ MORE_PROCESSING and != the 0x04 CdAcquireResource checks -> WAIT flag never took -> every cdfs resource acquire ran non-blocking -> CANT_WAIT raise -> 0x1E under DUMMY_PSEH // cdstruc.h IRP_CONTEXT_FLAG_WAIT  // nolint: const-contradiction (cdfs's own flag set, cdstruc.h:1215)
 #[no_mangle]
 pub unsafe extern "C" fn CdInitializeStackIrpContext(IrpContext: *mut IRP_CONTEXT, IrpContextLite: *mut IRP_CONTEXT_LITE) {
     // PAGED_CODE();

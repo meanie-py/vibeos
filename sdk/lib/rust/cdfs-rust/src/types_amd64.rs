@@ -346,7 +346,7 @@ pub const CCB_FLAG_ENUM_INITIALIZED: u32 = 2097152;
 pub const CCB_FLAG_ENUM_NOMATCH_CONSTANT_ENTRY: u32 = 4194304;
 pub const IRP_CONTEXT_FLAG_ON_STACK: u32 = 1;
 pub const IRP_CONTEXT_FLAG_MORE_PROCESSING: u32 = 2;
-pub const IRP_CONTEXT_FLAG_WAIT: u32 = 0x00000004; // FIXED 2026-07-06: cdfs flag mismatch (verified vs cdstruc.h); WAIT=0x02 collided w/ MORE_PROCESSING and != the 0x04 CdAcquireResource checks -> WAIT flag never took -> every cdfs resource acquire ran non-blocking -> CANT_WAIT raise -> 0x1E under DUMMY_PSEH
+pub const IRP_CONTEXT_FLAG_WAIT: u32 = 0x00000004; // FIXED 2026-07-06: cdfs flag mismatch (verified vs cdstruc.h); WAIT=0x02 collided w/ MORE_PROCESSING and != the 0x04 CdAcquireResource checks -> WAIT flag never took -> every cdfs resource acquire ran non-blocking -> CANT_WAIT raise -> 0x1E under DUMMY_PSEH  // nolint: const-contradiction (cdfs's own flag set, cdstruc.h:1215)
 pub const IRP_CONTEXT_FLAG_FORCE_POST: u32 = 8;
 pub const IRP_CONTEXT_FLAG_TOP_LEVEL: u32 = 16;
 pub const IRP_CONTEXT_FLAG_TOP_LEVEL_CDFS: u32 = 32;

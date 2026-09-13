@@ -34,7 +34,7 @@ pub unsafe extern "system" fn SerialAddDeviceInternal(
     pFdo: *mut PDEVICE_OBJECT,
 ) -> NTSTATUS {
 
-    const DPFLTR_SERIAL_ID: u32 = 31; // DPFLTR_SERIAL_ID
+    const DPFLTR_SERIAL_ID: u32 = 39; // DPFLTR_SERIAL_ID
     const DPFLTR_TRACE_LEVEL: u32 = 2; // DPFLTR_TRACE_LEVEL
     const DPFLTR_WARNING_LEVEL: u32 = 1; // DPFLTR_WARNING_LEVEL
     const FILE_DEVICE_SERIAL_PORT: u32 = 0x0000001b; // FILE_DEVICE_SERIAL_PORT
@@ -266,7 +266,7 @@ pub unsafe extern "system" fn SerialPnpStartDevice(
     mut ResourceListTranslated: PCM_RESOURCE_LIST,
 ) -> NTSTATUS {
 
-    const DPFLTR_SERIAL_ID: ::core::ffi::c_int = 0x36;
+    const DPFLTR_SERIAL_ID: ::core::ffi::c_int = 39;
     const DPFLTR_WARNING_LEVEL: ULONG = 1;
     const DPFLTR_INFO_LEVEL: ULONG = 3;
     const CmResourceTypePort: ::core::ffi::c_int = 1;

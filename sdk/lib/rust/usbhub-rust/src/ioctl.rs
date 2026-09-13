@@ -46,7 +46,7 @@ const USBD_PORT_ENABLED: u32 = 0x00000001;
 const USBD_PORT_CONNECTED: u32 = 0x00000002;
 const EVENT_INCREMENT: KPRIORITY = 1;
 
-const USBD_MARK_DEVICE_BUSY: ULONG = 0x00000004;
+const USBD_MARK_DEVICE_BUSY: ULONG = 0x2; // sdk/include/ddk/hubbusif.h
 const USBHUB_PDO_FLAG_PORT_RESSETING: ULONG = 0x00080000; // FIXED 2026-07-06: translation invented 0x80; real value is a (1<<N) define in usbhub.h
 const USBHUB_PDO_FLAG_PORT_RESTORE_FAIL: ULONG = 0x00001000; // FIXED 2026-07-06: translation invented 0x100; real value is a (1<<N) define in usbhub.h
 

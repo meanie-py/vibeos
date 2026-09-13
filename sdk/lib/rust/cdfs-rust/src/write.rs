@@ -67,7 +67,7 @@ const STATUS_END_OF_FILE: NTSTATUS = 0xC0000011u32 as i32;    // STATUS_END_OF_F
 const STATUS_INVALID_DEVICE_REQUEST: NTSTATUS = 0xC0000010u32 as i32;
 const STATUS_CANT_WAIT: NTSTATUS = 0xC00000D8u32 as i32; // ntstatus.h STATUS_CANT_WAIT (grind fabricated 0xC000009A=STATUS_INSUFFICIENT_RESOURCES)
 const STATUS_UNEXPECTED_IO_ERROR: NTSTATUS = 0xC00000E9u32 as i32;
-const IRP_CONTEXT_FLAG_WAIT: u32 = 0x00000004; // FIXED 2026-07-06: cdfs flag mismatch (verified vs cdstruc.h); WAIT=0x02 collided w/ MORE_PROCESSING and != the 0x04 CdAcquireResource checks -> WAIT flag never took -> every cdfs resource acquire ran non-blocking -> CANT_WAIT raise -> 0x1E under DUMMY_PSEH
+const IRP_CONTEXT_FLAG_WAIT: u32 = 0x00000004; // FIXED 2026-07-06: cdfs flag mismatch (verified vs cdstruc.h); WAIT=0x02 collided w/ MORE_PROCESSING and != the 0x04 CdAcquireResource checks -> WAIT flag never took -> every cdfs resource acquire ran non-blocking -> CANT_WAIT raise -> 0x1E under DUMMY_PSEH  // nolint: const-contradiction (cdfs's own flag set, cdstruc.h:1215)
 const IRP_CONTEXT_FLAG_ALLOC_IO: u32 = 0x0100;
 const FO_SYNCHRONOUS_IO: u32 = 0x02;
 const FO_FILE_MODIFIED: u32 = 0x1000;

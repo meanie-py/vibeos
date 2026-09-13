@@ -29,7 +29,7 @@ use ntkrnl_sys::base::{
 // the GDITAG_* macros; rustconv didn't pull them in, so define inline (the
 // big-endian 4-char literals translate via from_le_bytes per AGENTS.md).
 const GDITAG_LDEV: u32 = u32::from_le_bytes(*b"Ldev");
-const GDITAG_DEVMODE: u32 = u32::from_le_bytes(*b"Dmde");
+const GDITAG_DEVMODE: u32 = u32::from_be_bytes(*b"vedG"); // C literal 'vedG' -- win32ss/user/ntuser/tags.h:73
 
 // The original translation built every wide-string arg as a BYTE literal cast
 // to `*const u16` (`b"...".as_ptr() as *const u16`) — 1 byte/char reinterpreted

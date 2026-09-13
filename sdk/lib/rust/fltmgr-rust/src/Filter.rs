@@ -502,7 +502,7 @@ pub unsafe extern "C" fn FltpStartingToDrainObject(Object: PVOID) -> NTSTATUS {
     return STATUS_SUCCESS;
 }
 
-const FM_TAG_UNICODE_STRING: ULONG = 0x6D754D46; // 'FMum'
+const FM_TAG_UNICODE_STRING: ULONG = 0x73754D46; // 'suMF' drivers/filters/fltmgr/fltmgr.h
 unsafe fn GetFilterAltitude(
     Filter: PFLT_FILTER,
     AltitudeString: PUNICODE_STRING,

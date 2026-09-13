@@ -448,7 +448,7 @@ pub const TAG_CM: u32 = u32::from_be_bytes(*b"  MC");
 // C: cmlib.h `#define TAG_CMHIVE 'vHMC'` (big-endian multi-char literal).
 pub const TAG_CMHIVE: u32 = u32::from_be_bytes(*b"vHMC");
 pub const TAG_CMSD: u32 = u32::from_le_bytes(*b"dSmC");    // 'CmSd'
-pub const TAG_KCB: u32 = u32::from_le_bytes(*b"bcKM");     // 'MKcb'
+pub const TAG_KCB: u32 = u32::from_be_bytes(*b"bkMC"); // C literal 'bkMC' -- sdk/lib/cmlib/cmlib.h
 
 // CM_KEY_BODY signature
 pub const CM_KEY_BODY_TYPE: u32 = 0x6B793032;              // "ky02"
@@ -467,10 +467,10 @@ pub const KEY_NO_DELETE: u32 = 0x08;
 pub const KEY_COMP_NAME: u32 = 0x20;
 
 // CMP_LOCK_*/_ENLIST_*
-pub const CMP_LOCK_KCB_ARRAY_EXCLUSIVE: u32 = 0x80000000;
-pub const CMP_ENLIST_KCB_LOCKED_SHARED: u32 = 0;
-pub const CMP_ENLIST_KCB_LOCKED_EXCLUSIVE: u32 = 1;
-pub const CMP_SUBKEY_LEVELS_DEPTH_LIMIT: u32 = 512;
+pub const CMP_LOCK_KCB_ARRAY_EXCLUSIVE: u32 = 0x1; // ntoskrnl/include/internal/cm.h
+pub const CMP_ENLIST_KCB_LOCKED_SHARED: u32 = 0x1; // ntoskrnl/include/internal/cm.h
+pub const CMP_ENLIST_KCB_LOCKED_EXCLUSIVE: u32 = 0x2; // ntoskrnl/include/internal/cm.h
+pub const CMP_SUBKEY_LEVELS_DEPTH_LIMIT: u32 = 0x20; // ntoskrnl/include/internal/cm.h (32)
 
 // SERVICE_*
 pub const SERVICE_ERROR_CRITICAL: u32 = 3;

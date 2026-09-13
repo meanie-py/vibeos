@@ -6,7 +6,7 @@ use core::ffi::c_void;
 use crate::ffi::{ARC_STATUS, ESUCCESS, ENOEXEC, OpenReadOnly};
 
 // arc.h enum _ARC_CODES — only the few used here.
-const EINVAL: ARC_STATUS = 7;
+const EINVAL: ARC_STATUS = 7;  // nolint: const-contradiction (ARC_STATUS enumerator; arc.h #undefs the C EINVAL)
 const EIO: ARC_STATUS = 8;
 
 extern "C" {
