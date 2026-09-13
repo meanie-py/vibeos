@@ -10,6 +10,7 @@ job is to REFUSE, and these tests hold it to that.
 from __future__ import annotations
 
 import json
+import subprocess
 from pathlib import Path
 
 import pytest
@@ -552,3 +553,261 @@ def test_a_short_replay_is_not_reported_as_a_pass(tmp_path, monkeypatch):
     # the boot itself is not under test; monkeypatch so the stub cannot leak
     monkeypatch.setattr(rrcmd, "cmd_replay", lambda args, repo: 0)
     assert rrcmd.cmd_verify(_Args(), tmp_path) != 0
+
+
+# --- the REAL per-arch command lines -------------------------------------
+#
+# The fixtures above are hand-written and can drift from what the arch configs
+# actually emit. These drive the transform with the genuine output of
+# ArchConfig.qemu_args, so a config change that rr cannot handle fails here
+# instead of halfway through someone's recording.
+
+
+def _real_arch_args(name: str, work: Path) -> list[str] | None:
+    """The real qemu_args for one arch config, or None if its media are absent.
+
+    Skipping is correct rather than lazy: qemu_args copies firmware images that a
+    fresh worktree does not have until it has built, and a missing OVMF is not
+    an rr defect.
+    """
+    from .. import vm as vm_mod
+
+    cfg = getattr(vm_mod, name)()
+    work.mkdir(parents=True, exist_ok=True)  # qemu_args writes its firmware copies here
+    try:
+        return cfg.qemu_args(work)
+    except (FileNotFoundError, OSError, subprocess.CalledProcessError):
+        return None
+
+
+def _demoted(name: str, args: list[str] | None) -> list[str] | None:
+    """What the vm.py hook hands the transform: x86 demoted from KVM to TCG.
+
+    Not a test convenience — it is the step that makes rr possible on x86 at all,
+    and this test found that it was missing.
+    """
+    if args is None or name.startswith("Arm64"):
+        return args
+    from .. import backend as be
+
+    return be.rewrite_accel(args, "tcg", "amd64" if "Amd64" in name else "i386")
+
+
+@pytest.mark.parametrize("config", ["Amd64UefiConfig", "I386UefiConfig"])
+def test_x86_configs_are_refused_for_ATAPI_rather_than_recorded_dead(config, tmp_path):
+    """x86 boots its ISO from `ide-cd`, and QEMU 9.0.2's blkreplay stalls that path
+    — the guest never leaves the OVMF screen clear. Measured by wrapping one drive
+    at a time on amd64: scratch behind virtio-blk-pci wrapped gives 2050 serial
+    lines in 100s (unwrapped: 1975); cd0 behind ide-cd wrapped gives ONE.
+
+    So the refusal is the correct behaviour and this test pins it. The failure it
+    prevents is the worst kind: leaving cd0 unwrapped would record a trace whose
+    BOOT media replays non-deterministically, and nothing downstream of that could
+    be trusted. When a QEMU that fixes blkreplay-over-ATAPI arrives, this test is
+    the thing that should fail.
+    """
+    args = _demoted(config, _real_arch_args(config, tmp_path / "work"))
+    if args is None:
+        pytest.skip(f"{config} media not present in this worktree")
+    with pytest.raises(rr.RecordReplayError, match="ATAPI"):
+        rr.transform(args, mode="record", trace_dir=tmp_path / "t", stage=False)
+
+
+@pytest.mark.parametrize("config", ["Arm64Config"])
+def test_every_arch_config_transforms_coherently(config, tmp_path):
+    """For each arch rr can actually record: every drive a DEVICE points at must end
+    up as a blkreplay filter, and no guest-visible drive may go unwrapped.
+
+    Attach a device to the raw backend instead of the filter and QEMU starts
+    happily with that drive UNRECORDED — no error anywhere, and a trace that
+    cannot replay.
+    """
+    args = _demoted(config, _real_arch_args(config, tmp_path / "work"))
+    if args is None:
+        pytest.skip(f"{config} media not present in this worktree")
+    out, media = rr.transform(args, mode="record", trace_dir=tmp_path / "t", stage=False)
+
+    drives = [rr.parse_drive(d) for d in _drives(out)]
+    by_id = {d["id"]: d for d in drives if "id" in d}
+    for arg in out:
+        for tok in arg.split(","):
+            if tok.startswith("drive="):
+                ref = tok.split("=", 1)[1]
+                assert ref in by_id, f"-device references drive={ref}, which no -drive defines"
+                assert by_id[ref].get("driver") == "blkreplay", (
+                    f"device is attached to {ref}, which is NOT the blkreplay filter — "
+                    "the recording would capture nothing for that drive"
+                )
+    for d in drives:
+        if d.get("if") == "pflash" or d.get("driver") == "blkreplay":
+            continue
+        assert d.get("id", "").endswith("-img"), f"unwrapped guest drive: {d}"
+    assert media, "no media staged"
+
+
+@pytest.mark.parametrize("config", ["Arm64Config"])
+def test_no_arch_config_smuggles_in_a_host_path_we_cannot_pin(config, tmp_path):
+    """Firmware from a distro package (amd64 boots /usr/share/OVMF/OVMF_CODE_4M.fd)
+    is outside the repo and outside our control. rr keeps it as an overlay, so the
+    trace depends on that file — which is fine, but only because the manifest
+    digests it and `rr info` warns when it changes. This asserts the digest is
+    actually taken for every non-qcow2 source."""
+    args = _demoted(config, _real_arch_args(config, tmp_path / "work"))
+    if args is None:
+        pytest.skip(f"{config} media not present in this worktree")
+    _out, media = rr.transform(args, mode="record", trace_dir=tmp_path / "t", stage=True)
+    for name, info in media.items():
+        if info["copied"]:
+            continue
+        assert info["sha256"], f"{name} is an overlay with no source digest — it can rot silently"
+
+
+def test_the_hook_demotes_x86_to_tcg_itself(tmp_path, monkeypatch):
+    """x86 boots `-accel kvm -cpu host` by default, and KVM has no instruction
+    counter. If the hook did not demote, every `rr record --arch amd64` would die
+    on the transform's refusal and the operator would be left to find the knob.
+    `-cpu host` has to go with it — it is a KVM host-passthrough concept.
+    """
+    from ..vm import Amd64UefiConfig, QemuVM
+
+    trace = tmp_path / "t"
+    trace.mkdir()
+    vm = object.__new__(QemuVM)
+    vm._backend = "native"
+    vm.live_log_path = tmp_path / "serial.log"
+    vm.config = Amd64UefiConfig()
+
+    cmd = [
+        "qemu-system-x86_64",
+        "-accel",
+        "kvm",
+        "-cpu",
+        "host",
+        "-drive",
+        f"id=scratch,if=none,format=qcow2,file={tmp_path}/scratch.qcow2",
+        # virtio, not the real config's ide-cd: this test is about the ACCELERATOR,
+        # and an ide-cd would (correctly) be refused before the accel is visible.
+        "-device",
+        "virtio-blk-pci,drive=scratch",
+    ]
+    (tmp_path / "scratch.qcow2").write_bytes(b"\0" * 64)
+    monkeypatch.setenv(rr.ENV_VAR, f"record:{trace}")
+    out = vm._apply_record_replay(cmd)
+    assert "kvm" not in out
+    assert "tcg" in " ".join(out)
+    assert "host" not in out, "-cpu host survived the demotion; TCG cannot honour it"
+
+
+def test_arm64_keeps_its_cpu_model_through_the_hook(tmp_path, monkeypatch):
+    """The demotion is an x86 rewrite. Applied to arm64 it would strip
+    `-cpu cortex-a72`, leaving the guest on QEMU's default model — the same
+    carve-out _build_windows_cmd already makes."""
+    from ..vm import Arm64Config, QemuVM
+
+    trace = tmp_path / "t"
+    trace.mkdir()
+    vm = object.__new__(QemuVM)
+    vm._backend = "native"
+    vm.live_log_path = tmp_path / "serial.log"
+    vm.config = Arm64Config()
+
+    cmd = _base_cmd(tmp_path)
+    monkeypatch.setenv(rr.ENV_VAR, f"record:{trace}")
+    out = vm._apply_record_replay(cmd)
+    assert "cortex-a72" in out
+
+
+# --- telling a WEDGED replay from a slow one -----------------------------
+
+
+def test_trace_position_finds_the_process_reading_the_trace(tmp_path):
+    """The probe reads /proc for whoever holds replay.bin open. If it cannot find
+    the reader it must return None, not 0 — 0 would read as `consumed nothing`,
+    which is a verdict, and the absence of information is not one."""
+    trace = tmp_path / "t"
+    trace.mkdir()
+    rrfile = trace / "replay.bin"
+    rrfile.write_bytes(b"x" * 4096)
+    assert rr.trace_read_position(trace) is None
+    with rrfile.open("rb") as f:
+        f.read(1)
+        # The KERNEL offset, so it moves in buffered chunks, not per byte read.
+        # That is fine for the only question asked of it — is it moving at all,
+        # over minutes — but it means the value is not a byte-accurate cursor.
+        assert rr.trace_read_position(trace) not in (None, 0)
+
+
+def test_a_frozen_read_position_is_reported_as_WEDGED(tmp_path):
+    """The distinction this exists for: a replay that stops consuming recorded
+    events is not going to finish, and telling the operator to be patient is the
+    wrong answer. Measured on trace rec5 — 167,936 of 10,266,279 bytes, frozen
+    across 200s at 111% CPU."""
+    from .rrcmd import _TraceProgress
+
+    trace = tmp_path / "t"
+    trace.mkdir()
+    (trace / "replay.bin").write_bytes(b"x" * 10_266_279)
+    p = _TraceProgress(trace, period=0.01)
+    p.max_pos = 167_936
+    p.stalled_for = 200.0
+    note = p.report()
+    assert note is not None
+    assert "WEDGED" in note
+    assert "1.6%" in note
+    assert "waiting" in note
+
+
+def test_a_replay_that_keeps_consuming_is_not_called_wedged(tmp_path):
+    from .rrcmd import _TraceProgress
+
+    trace = tmp_path / "t"
+    trace.mkdir()
+    (trace / "replay.bin").write_bytes(b"x" * 1000)
+    p = _TraceProgress(trace, period=0.01)
+    p.max_pos, p.stalled_for = 900, 20.0
+    note = p.report()
+    assert note is not None
+    assert "WEDGED" not in note
+    assert "90.0%" in note
+
+
+def test_no_progress_information_produces_no_claim(tmp_path):
+    """On a platform without /proc, or a run where the sampler never caught the
+    process, the tool must say nothing rather than invent a verdict."""
+    from .rrcmd import _TraceProgress
+
+    trace = tmp_path / "t"
+    trace.mkdir()
+    (trace / "replay.bin").write_bytes(b"x" * 1000)
+    assert _TraceProgress(trace, period=0.01).report() is None
+
+
+def test_a_virtio_backed_cd_would_be_allowed(tmp_path):
+    """The refusal is on the DEVICE MODEL, not on "it is a CD". If the boot ISO is
+    ever attached through virtio-blk, rr can record it — that is the measured
+    difference, and it is the shape of the eventual x86 fix."""
+    cmd = [
+        "qemu-system-x86_64",
+        "-drive",
+        f"id=cd0,if=none,format=raw,file={tmp_path}/iso",
+        "-device",
+        "virtio-blk-pci,drive=cd0",
+    ]
+    (tmp_path / "iso").write_bytes(b"\0" * 64)
+    out, _ = rr.transform(cmd, mode="record", trace_dir=tmp_path / "t", stage=False)
+    assert any("driver=blkreplay" in a for a in out)
+
+
+def test_scsi_cd_is_refused_too(tmp_path):
+    """Same ATAPI command set, same block path. Listing only `ide-cd` would let the
+    identical failure through the moment somebody changed the controller."""
+    cmd = [
+        "qemu-system-x86_64",
+        "-drive",
+        f"id=cd0,if=none,format=raw,file={tmp_path}/iso",
+        "-device",
+        "scsi-cd,drive=cd0",
+    ]
+    (tmp_path / "iso").write_bytes(b"\0" * 64)
+    with pytest.raises(rr.RecordReplayError, match="ATAPI"):
+        rr.transform(cmd, mode="record", trace_dir=tmp_path / "t", stage=False)

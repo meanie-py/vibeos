@@ -23,7 +23,16 @@ every single time you open it, at the same instruction, with the same memory.
 ./vibeos-cli rr info latest                      # will it still replay?
 ./vibeos-cli rr replay latest                    # that exact boot, again
 ./vibeos-cli rr replay latest --gdb              # ... halted at instruction 0
+./vibeos-cli rr verify latest                    # did it re-execute identically?
 ```
+
+`verify` is the one to reach for when you doubt a trace: it replays and diffs the
+replay's serial against the recording's, so you learn that the guest ran *the
+same boot* and **how far it got** — not merely that a VM ran. Both halves
+matter. A trace that quietly diverges is worse than no trace, because you debug
+the divergence thinking it is the bug; and on current evidence a replay often
+stops partway, which `verify` reports rather than letting you assume otherwise.
+Read the first entry of the divergence log before planning around a replay.
 
 Traces live under `~/vibeos-rr/` (`$VIBEOS_RR_ROOT`). They are **not** in `/tmp`:
 a trace costs a full boot to make and is worth more than the boot that made it.
@@ -94,6 +103,22 @@ the config that caused it. So the transform refuses up front:
 | an existing `-icount` | we will not record on top of someone else's counting config |
 | no `-drive` at all | `rrsnapshot=` needs a snapshot-capable image |
 | the `windows-host` backend | media stage into a Windows path; the trace would straddle two path namespaces |
+| a drive behind `ide-cd` / `scsi-cd` | QEMU 9.0.2's `blkreplay` stalls the ATAPI path outright — see below. This is why **x86 cannot be recorded yet** |
+
+x86 is wired end to end — the transform, the media staging and the accelerator
+demotion below are all tested against the real configs — but it **cannot
+actually record today**, because its boot ISO sits behind `ide-cd`. arm64 is the
+only arch proven on real media.
+
+One refusal the transform does NOT make is x86's default accelerator. `amd64`
+and `i386` boot `-accel kvm -cpu host`, which would fail the first row of that
+table on every recording — so the launch hook **demotes them to TCG itself**
+(`backend.rewrite_accel`, which also drops the paired `-cpu host`, a KVM
+host-passthrough concept TCG cannot honour) rather than handing the operator an
+error to decode. arm64 is carved out: it already runs TCG with a real
+`-cpu cortex-a72` that the rewrite would strip. Recording x86 is therefore
+slower than an ordinary x86 boot by more than the icount overhead alone, since
+it gives up hardware virtualization as well.
 
 `--smp 1` **is** accepted, and that matters: on the MP kernel one vCPU is exactly
 the UP:=smp1 collapse case the arm64 bug lives in. Refusing all `-smp` would
@@ -161,34 +186,94 @@ record and replay would be different machines.
 Divergence on replay is a **finding about our own system**, not an obstruction.
 Record it here and keep going; only chase one when it looks load-bearing.
 
-- **Replay determinism HOLDS; replay THROUGHPUT is the open problem, and it is
-  bounded by guest serial output (2026-09-13, trace `rec5`). OPEN.**
+- **`blkreplay` cannot drive an ATAPI CD, which is why x86 cannot be recorded
+  (2026-09-13). MEASURED, root-caused, and now refused up front.**
 
-  The good half first, because it is the load-bearing result: over the 968 lines
-  a replay produced, **every line matched the recording exactly** — no
-  divergence anywhere. Record/replay reproduces our boot.
+  An amd64 recording never leaves the OVMF screen clear — one line of serial,
+  QEMU idle at ~0% CPU (4m42s elapsed, 11s of CPU), no trace growth. Two rounds
+  of one-variable A/B, 100s each, same media:
 
-  The bad half is speed. That recording emitted 3,210 lines in 119 seconds (27
-  lines/sec); the replay managed 968 lines in about twelve minutes (1.3
-  lines/sec), roughly **20x slower**, and was then killed by the watchdog.
+  | config | serial lines |
+  |---|---|
+  | plain TCG | 3327 |
+  | `-icount shift=3` alone (no rr, no blkreplay) | 2124 |
+  | rr + blkreplay, `rrsnapshot` removed | **1** |
+  | full rr | **1** |
 
-  Three measurements pin down where the time goes, and they rule out the obvious
-  explanation:
+  So neither icount nor `rrsnapshot` is implicated. Wrapping one drive at a time
+  then pins the device:
 
-  * the replaying QEMU sits at **97% CPU** with serial frozen — it is executing,
-    not idling, so "QEMU waits out the guest's idle intervals in real time" is
-    wrong;
-  * the wedge capture puts the vCPU at **`DebugService+0`**
-    (`sdk/lib/rtl/arm64/debug_asm.S:13`) — inside the guest's own serial-output
-    primitive, not in the netstack code the last line came from;
-  * the slowdown is per-line and steady, not a cliff at some particular event.
+  | wrapped in blkreplay | serial lines |
+  |---|---|
+  | nothing | 1975 |
+  | scratch only (`virtio-blk-pci`) | 2050 |
+  | **cd0 only (`ide-cd`)** | **1** |
+  | both | 1 |
 
-  So the guest appears to be spinning on the UART accepting a character, and the
-  replay's cost scales with **how much the boot prints**. Our boots print a great
-  deal (`PspCreateThread` traces a line per field, and so on), which makes this
-  hurt more than it needs to. Two levers we actually control, neither tried yet:
-  record a quieter boot, or find whether the pl011 TX-ready flag can come back
-  off the trace faster.
+  `blkreplay` over `virtio-blk` is fine; over `ide-cd` the guest never boots.
+  That explains the whole arch split: arm64 is virtio throughout and records
+  cleanly, while amd64 and i386 boot their ISO from ATAPI.
+
+  `transform()` now **refuses** a drive referenced by an `ide-cd` or `scsi-cd`
+  device rather than recording a dead trace. Leaving that one drive unwrapped
+  would have been worse than refusing: it is the BOOT media, so its
+  non-determinism would poison everything downstream, silently. `scsi-cd` is
+  listed alongside `ide-cd` because it is the same command set on the same block
+  path — naming only one would let the identical failure back in the moment
+  somebody changed the controller.
+
+  **The shape of the fix** is to attach x86 boot media through virtio-blk under
+  rr, which the measurement says would work. That changes the device set the
+  guest sees, so it is a deliberate choice rather than something to do silently,
+  and it is not needed for the bug this tool was built for (#39 is arm64).
+  A test asserts a virtio-backed CD is allowed, so the path stays open.
+
+- **Replay reproduces CONTENT faithfully but does not reliably run to
+  completion: it WEDGES, at a point that differs between runs of the same trace
+  (2026-09-13, trace `rec5`). OPEN — this is the headline limitation.**
+
+  The good half, and it is real: over the 968 lines one replay produced, **every
+  line matched the recording exactly**. Where a replay progresses, it progresses
+  correctly.
+
+  The bad half: a second replay of that same trace stopped at **25 lines**, at
+  `[FLDR] load ramdisk(0)\reactos\system32\config\SYSTEM` — the first large
+  ramdisk read. Two runs, one trace, two different stopping points.
+
+  It is a wedge, not slowness, and one measurement settles that. The replaying
+  QEMU's read position in `replay.bin` sat frozen at **167,936 bytes of
+  10,266,279 (1.6% of the trace)** across 200 seconds of sampling while the
+  process burned **111% CPU**, then died on the watchdog. It is executing
+  furiously and consuming no further recorded events.
+
+  To check this yourself in one command — it is the measurement that separates
+  "be patient" from "this trace will not replay":
+
+  ```bash
+  P=$(./vibeos-cli ps | awk '/<your run dir>/{print $4}')
+  for f in /proc/$P/fd/*; do case "$(readlink $f)" in *replay.bin)
+      grep ^pos /proc/$P/fdinfo/$(basename $f);; esac; done
+  ```
+
+  Sample it twice a minute apart. Frozen position + high CPU = wedged.
+
+  Two earlier readings of this were wrong and are worth recording as such,
+  because both were single samples of a busy process. The vCPU was once caught
+  at `DebugService+0` (`sdk/lib/rtl/arm64/debug_asm.S:13`), which suggested the
+  cost scaled with how much the boot prints; and before that the whole thing was
+  written up as a determinism divergence when `hang-cpustate.txt` plainly said
+  `VM status: running`. A sampled PC is where the vCPU happened to be, not where
+  the time went.
+
+  Untried leads, cheapest first: whether the wedge is specific to the 290MB
+  ramdisk drive (x86 boots a smaller ISO — now that x86 records, that is a
+  one-boot experiment); whether a trace recorded with a warm page cache behaves
+  differently; whether QEMU newer than 9.0.2 fixes it.
+
+  **What it means for the #39 hunt:** a recorded crash is still worth having —
+  the fault happens early, inside the window replays do reach — but a replay
+  cannot be assumed to get anywhere in particular. Record, then verify the trace
+  reaches your fault before building a debugging session on it.
 
   `--shift` is NOT the lever it looked like, and it is worth being precise about
   that because the reasoning said it should be. `shift=5` records fine and faster
@@ -218,12 +303,8 @@ Record it here and keep going; only chase one when it looks load-bearing.
   `sleep=off` and `rrsnapshot`, not our configuration, and the flag stays off —
   with a test pinning it off so nobody re-adds the obvious fix.
 
-  **What it means in practice:** a replay is minutes-to-tens-of-minutes, not
-  seconds. That is still the right trade for a bug you otherwise cannot catch at
-  all, and it bites less than it sounds for the case we built this for — the #39
-  fault happens early in boot, well before the netstack self-test's waits, so a
-  crash trace reaches its fault long before a full boot replay would finish.
-  Worth revisiting on a newer QEMU.
+  Worth revisiting on a newer QEMU — the `vmstate_load_state` assertion in
+  particular reads like a bug rather than a constraint.
 
 - **A replay is slower than its recording, and the harness's silence watchdog
   did not know that (2026-09-13, trace `rec1`) — OUR bug, now fixed.** The
@@ -233,9 +314,9 @@ Record it here and keep going; only chase one when it looks load-bearing.
   to `[EXPLORER] _tWinMain entered` at 240,407 bytes. It looked like a
   determinism failure and was not: the wedge capture shows `VM status: running`
   with the vCPU advancing through an EL0 user PC, i.e. executing normally and
-  merely quiet. A replay has to wait out each recorded I/O completion instead of
-  taking the host's, so it is slower than the record, which is itself slower
-  than plain TCG. `_apply_record_replay` now scales `boot_timeout` and
+  merely quiet. (The later, harder finding is that a replay can ALSO genuinely
+  wedge — see the first entry. Both are real; this one was the harness's fault
+  and is fixed, that one is not.) `_apply_record_replay` now scales `boot_timeout` and
   `hang_silence_seconds` for any rr run, the same way `_build_windows_cmd`
   already scales them for whpx.
 
@@ -253,12 +334,13 @@ Record it here and keep going; only chase one when it looks load-bearing.
 
 ## Costs and limits
 
-- **Recording is cheap; replaying is not.** Measured on arm64 (`smoke --smp 1`,
-  boot to the desktop marker): **~90s under record vs ~40s normally**, 11MB
-  `replay.bin`. A replay of that same boot is minutes to tens of minutes,
-  because it waits out the guest's idle intervals in real time — see the
-  `sleep=off` entry in the divergence log for why we cannot currently fix that.
-  Record freely; spend replays deliberately. Neither is a soak.
+- **Recording is cheap and reliable. Replaying is neither.** Recording is
+  measured on arm64 (`smoke --smp 1`, boot to the desktop marker): **~90s under
+  record vs ~40s normally**, 11MB `replay.bin`, and it has not failed. A replay
+  runs at a small fraction of that pace and, on current evidence, **wedges
+  partway through at a point that varies between runs of the same trace**.
+  Record freely; treat each replay as an experiment whose reach you confirm
+  rather than assume. Neither is a soak.
 - A trace directory is the trace plus the qcow2 overlays, twice (counting
   `pristine/`) — tens of MB for arm64, since the big media are overlays over the
   originals rather than copies.
@@ -276,6 +358,16 @@ Record it here and keep going; only chase one when it looks load-bearing.
 | the `rr` verbs | `tests/qemu/cli/rrcmd.py` |
 | the launch-path hook (`VIBEOS_QEMU_RR=<mode>:<dir>`) | `tests/qemu/vm.py:_apply_record_replay` |
 | guards | `tests/qemu/cli/test_recordreplay.py` |
+
+The guards include three that drive the transform with the **real** output of
+each `ArchConfig.qemu_args` rather than a hand-written fixture, and assert that
+every `-device ...,drive=X` resolves to a blkreplay filter. That is the check
+that found the x86 KVM default above, and it is the one that will catch the next
+arch-config change rr cannot handle — at test time rather than halfway through
+somebody's recording. The x86 media shape is the reason it matters: their boot
+media is an `if=none,id=cd0` ISO with a separate `-device ide-cd,drive=cd0`, so
+the filter must inherit `cd0` and the raw image become `cd0-img`. Get that
+backwards and QEMU starts happily with the CD attached to the unwrapped image.
 
 The hook is opt-in and nothing sets it by default, so every existing boot path
 is byte-for-byte unchanged when rr is not requested.
