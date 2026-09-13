@@ -3119,6 +3119,48 @@ thing that decides, and the tool answered its own question honestly while we ask
 one.** When a count keeps coming out differently, stop recounting and construct the exact thing
 the code looks up.
 
+**c2rust refuses EVERY file in a module, all at one panic site — suspect the include
+closure, and prove it with a headers-only TU.** Symptom: with `--c2rust` default-on, every
+`.c` in a module dies before payment with
+
+    c2rust-transpile-0.22.1/src/c_ast/mod.rs:682:29
+      Could not find CTypeId(<n>) in TypedAstContext
+
+the id differing per file and nothing else differing. Cause: not N separate bugs and not the
+module's own code — ONE construct somewhere in the shared SDK include closure that the
+ast-exporter cannot represent, so every TU that pulls that closure fails identically. msvcrt:
+18 of 18 plain-C TUs, one call site.
+
+Diagnose in seconds, for $0, before anyone touches a flag: build a TU containing ONLY the
+file's `#include` lines and no code, compiled with the REAL flags from
+`build-<arch>/compile_commands.json`, and run c2rust on it. If it panics the same way, the
+closure is the trigger and the module's source is irrelevant. For msvcrt it reproduces with
+five `#include`s and an empty body, fingering `stdio.h`.
+
+Three dead ends already paid for, so nobody re-walks them:
+
+* **It is NOT "c2rust is broken".** Trivial C (`int add(int a,int b){return a+b;}`) transpiles
+  clean through the same binary. Whatever it is, it is specific to what the closure contains.
+* **It is NOT an include-PATH problem.** The warning fingers the distro header
+  (`/usr/share/mingw-w64/include/stdio.h`) and our pinned llvm-mingw ships its own, so forcing
+  the pinned sysroot first looks like a cheap fix. It is not: the pinned `stdio.h` trips the
+  same thing. Both header sets contain it, so no `-isystem` reordering helps.
+* **The warning names where the NODE is, not the construct.** The obvious minimal reproducer
+  built from the cited line (`__builtin_va_list` in an inline parameter) does NOT reproduce.
+  Do not treat the cited line as the culprit.
+
+Leading unproven candidate: **c2rust is linked against a different LLVM than the toolchain
+that compiled the sources** — `ldd $(command -v c2rust-transpile)` showed `libLLVM-14.so.1`
+against our pinned `clang 19.1.7`, and upstream's own changelog looks for `llvm-config-20/21`.
+`0.22.1` is the latest release, so there is no upgrade lever; rebuilding c2rust against the
+matching LLVM is the untested move. The headers-only TU above is the regression test for it.
+
+**And the reason this matters more than it looks:** `--no-c2rust` is not a formality. The
+anchor is what stops the model silently stubbing a hard body or turning a function-like macro
+into a phantom extern, so trading it away to get past this is a real cost on the other side —
+a decision to take deliberately, not to reach for because a module will not translate.
+
+
 
 ---
 
