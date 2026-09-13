@@ -18,7 +18,7 @@ remove_definitions(-D_WIN32_WINNT=0x502)
 # WdfVersionBind before invoking this crate's #[no_mangle] DriverEntry.
 #
 set(CDROM_RUST_WORKSPACE_DIR "${CMAKE_SOURCE_DIR}/sdk/lib/rust")
-set(CDROM_RUST_TARGET_DIR "${CMAKE_CURRENT_BINARY_DIR}/rust-cdrom-target")
+rust_storage_target(CDROM_RUST_TARGET_DIR "${CMAKE_CURRENT_BINARY_DIR}/rust-cdrom-target" cdrom-rust)
 set(CDROM_RUST_LIB "${CMAKE_CURRENT_BINARY_DIR}/libcdrom_rust.a")
 if(ARCH STREQUAL "i386")
     set(CDROM_RUST_TARGET "i686-pc-windows-gnu")

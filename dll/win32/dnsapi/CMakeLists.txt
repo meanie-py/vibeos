@@ -26,7 +26,7 @@ elseif(ARCH STREQUAL "amd64")
 elseif(ARCH STREQUAL "arm64")
     set(DNSAPI_RUST_TARGET "aarch64-pc-windows-gnullvm")
 endif()
-set(DNSAPI_RUST_TARGET_DIR "${CMAKE_CURRENT_BINARY_DIR}/rust-dnsapi-target")
+rust_storage_target(DNSAPI_RUST_TARGET_DIR "${CMAKE_CURRENT_BINARY_DIR}/rust-dnsapi-target" dnsapi-rust)
 set(DNSAPI_RUST_LIB "${CMAKE_CURRENT_BINARY_DIR}/libdnsapi_rust.a")
 rust_crate_sources(DNSAPI_RUST_SRCS "${DNSAPI_RUST_WORKSPACE_DIR}" dnsapi-rust)
 add_custom_command(

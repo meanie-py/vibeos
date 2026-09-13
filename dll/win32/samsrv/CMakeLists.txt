@@ -46,7 +46,7 @@ add_pch(samsrv_c samsrv.h "")
 # DEPENDS on native-widl (the host tool) and samsrv_c (forces the rpc files +
 # compile_commands entry to exist).
 set(SAM_STUB_WORKSPACE_DIR "${CMAKE_SOURCE_DIR}/sdk/lib/rust")
-set(SAM_STUB_TARGET_DIR "${CMAKE_CURRENT_BINARY_DIR}/rust-sam-stub-target")
+rust_storage_target(SAM_STUB_TARGET_DIR "${CMAKE_CURRENT_BINARY_DIR}/rust-sam-stub-target" sam-stub)
 set(SAM_STUB_LIB "${CMAKE_CURRENT_BINARY_DIR}/libsam_stub.a")
 if(ARCH STREQUAL "i386")
     set(SAM_STUB_RUST_TARGET "i686-pc-windows-gnu")
@@ -79,7 +79,7 @@ add_custom_target(rust_sam_stub DEPENDS ${SAM_STUB_LIB})
 # Build libsamsrv_rust.a — the translated samsrv .c bodies (cohab). #[no_mangle]
 # symbols take over from the commented-out C TUs. FFI substrate = samsrv-sys +
 # lsasrv-sys + ntdll-sys (built transitively).
-set(SAMSRV_RUST_TARGET_DIR "${CMAKE_CURRENT_BINARY_DIR}/rust-samsrv-target")
+rust_storage_target(SAMSRV_RUST_TARGET_DIR "${CMAKE_CURRENT_BINARY_DIR}/rust-samsrv-target" samsrv-rust)
 set(SAMSRV_RUST_LIB "${CMAKE_CURRENT_BINARY_DIR}/libsamsrv_rust.a")
 rust_crate_sources(SAMSRV_RUST_SRCS "${SAM_STUB_WORKSPACE_DIR}" samsrv-rust)
 add_custom_command(

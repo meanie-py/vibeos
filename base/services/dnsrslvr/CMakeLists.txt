@@ -22,7 +22,7 @@ elseif(ARCH STREQUAL "amd64")
 elseif(ARCH STREQUAL "arm64")
     set(DNSRSLVR_RUST_TARGET "aarch64-pc-windows-gnullvm")
 endif()
-set(DNSRSLVR_RUST_TARGET_DIR "${CMAKE_CURRENT_BINARY_DIR}/rust-dnsrslvr-target")
+rust_storage_target(DNSRSLVR_RUST_TARGET_DIR "${CMAKE_CURRENT_BINARY_DIR}/rust-dnsrslvr-target" dnsrslvr-rust)
 set(DNSRSLVR_RUST_LIB "${CMAKE_CURRENT_BINARY_DIR}/libdnsrslvr_rust.a")
 rust_crate_sources(DNSRSLVR_RUST_SRCS "${DNSRSLVR_RUST_WORKSPACE_DIR}" dnsrslvr-rust)
 add_custom_command(

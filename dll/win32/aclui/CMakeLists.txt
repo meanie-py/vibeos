@@ -34,7 +34,7 @@ elseif(ARCH STREQUAL "amd64")
 elseif(ARCH STREQUAL "arm64")
     set(ACLUI_RUST_TARGET "aarch64-pc-windows-gnullvm")
 endif()
-set(ACLUI_RUST_TARGET_DIR "${CMAKE_CURRENT_BINARY_DIR}/rust-aclui-target")
+rust_storage_target(ACLUI_RUST_TARGET_DIR "${CMAKE_CURRENT_BINARY_DIR}/rust-aclui-target" aclui-rust)
 set(ACLUI_RUST_LIB "${CMAKE_CURRENT_BINARY_DIR}/libaclui_rust.a")
 rust_crate_sources(ACLUI_RUST_SRCS "${ACLUI_RUST_WORKSPACE_DIR}" aclui-rust)
 add_custom_command(

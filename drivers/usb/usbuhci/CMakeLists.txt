@@ -5,7 +5,7 @@ include_directories(${REACTOS_SOURCE_DIR}/ntoskrnl/include)
 # libusbuhci_rust.a). The .c files are kept on disk per the never-delete rule. guid.c stays
 # compiled as a data-only TU (DEFINE_GUID). Bar: link-clean x3 (NOT boot-loaded in smoke).
 set(USBUHCI_RUST_WORKSPACE_DIR "${CMAKE_SOURCE_DIR}/sdk/lib/rust")
-set(USBUHCI_RUST_TARGET_DIR "${CMAKE_CURRENT_BINARY_DIR}/rust-usbuhci-target")
+rust_storage_target(USBUHCI_RUST_TARGET_DIR "${CMAKE_CURRENT_BINARY_DIR}/rust-usbuhci-target" usbuhci-rust)
 set(USBUHCI_RUST_LIB "${CMAKE_CURRENT_BINARY_DIR}/libusbuhci_rust.a")
 if(ARCH STREQUAL "i386")
     set(USBUHCI_RUST_TARGET "i686-pc-windows-gnu")

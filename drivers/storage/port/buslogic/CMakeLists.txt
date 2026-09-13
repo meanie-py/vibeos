@@ -10,7 +10,7 @@
 # SCSIPORT miniport (imports scsiport) and is NOT on any QEMU boot path (live SCSI/IDE =
 # uniata) -> link-clean x3 is the verification bar. Standard per-arch RUST_TARGET, i386 no-SSE.
 set(BUSLOGIC_RUST_WORKSPACE_DIR "${CMAKE_SOURCE_DIR}/sdk/lib/rust")
-set(BUSLOGIC_RUST_TARGET_DIR "${CMAKE_CURRENT_BINARY_DIR}/rust-buslogic-target")
+rust_storage_target(BUSLOGIC_RUST_TARGET_DIR "${CMAKE_CURRENT_BINARY_DIR}/rust-buslogic-target" buslogic-rust)
 set(BUSLOGIC_RUST_LIB "${CMAKE_CURRENT_BINARY_DIR}/libbuslogic_rust.a")
 if(ARCH STREQUAL "i386")
     set(BUSLOGIC_RUST_TARGET "i686-pc-windows-gnu")

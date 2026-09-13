@@ -21,7 +21,7 @@ add_definitions(
 #   event.c filter.c filterfactory.c image.c irp.c methods.c misc.c pin.c property.c
 #   topology.c unknown.c worker.c kcom.c swenum.c
 set(KS_RUST_WORKSPACE_DIR "${CMAKE_SOURCE_DIR}/sdk/lib/rust")
-set(KS_RUST_TARGET_DIR "${CMAKE_CURRENT_BINARY_DIR}/rust-ks-target")
+rust_storage_target(KS_RUST_TARGET_DIR "${CMAKE_CURRENT_BINARY_DIR}/rust-ks-target" ks-rust)
 set(KS_RUST_LIB "${CMAKE_CURRENT_BINARY_DIR}/libks_rust.a")
 if(ARCH STREQUAL "i386")
     set(KS_RUST_TARGET "i686-pc-windows-gnu")

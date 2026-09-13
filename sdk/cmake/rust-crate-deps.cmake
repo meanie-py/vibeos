@@ -1,3 +1,5 @@
+include(${CMAKE_CURRENT_LIST_DIR}/rust-storage.cmake)
+
 # rust-crate-deps.cmake — the source list a cargo module's ninja edge must depend on.
 #
 # WHY. Every `add_custom_command(OUTPUT lib<x>_rust.a ... DEPENDS ...)` used to list a

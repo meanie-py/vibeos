@@ -16,7 +16,7 @@
 # bindgen substrate (fastfat-rust/src/types_<arch>.rs, 0x502 version profile).
 # Mirrors the fs_rec-rust / partmgr-rust cohab.
 set(FASTFAT_RUST_WORKSPACE_DIR "${CMAKE_SOURCE_DIR}/sdk/lib/rust")
-set(FASTFAT_RUST_TARGET_DIR "${CMAKE_CURRENT_BINARY_DIR}/rust-fastfat-target")
+rust_storage_target(FASTFAT_RUST_TARGET_DIR "${CMAKE_CURRENT_BINARY_DIR}/rust-fastfat-target" fastfat-rust)
 set(FASTFAT_RUST_LIB "${CMAKE_CURRENT_BINARY_DIR}/libfastfat_rust.a")
 if(ARCH STREQUAL "i386")
     set(FASTFAT_RUST_TARGET "i686-pc-windows-gnu")

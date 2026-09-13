@@ -29,7 +29,7 @@ elseif(ARCH STREQUAL "amd64")
 elseif(ARCH STREQUAL "arm64")
     set(NETCFGX_RUST_TARGET "aarch64-pc-windows-gnullvm")
 endif()
-set(NETCFGX_RUST_TARGET_DIR "${CMAKE_CURRENT_BINARY_DIR}/rust-netcfgx-target")
+rust_storage_target(NETCFGX_RUST_TARGET_DIR "${CMAKE_CURRENT_BINARY_DIR}/rust-netcfgx-target" netcfgx-rust)
 set(NETCFGX_RUST_LIB "${CMAKE_CURRENT_BINARY_DIR}/libnetcfgx_rust.a")
 rust_crate_sources(NETCFGX_RUST_SRCS "${NETCFGX_RUST_WORKSPACE_DIR}" netcfgx-rust)
 add_custom_command(

@@ -17,7 +17,7 @@ list(APPEND SOURCE
 # since every version.c symbol was removed).
 #
 set(VERSION_RUST_WORKSPACE_DIR "${CMAKE_SOURCE_DIR}/sdk/lib/rust")
-set(VERSION_RUST_TARGET_DIR "${CMAKE_CURRENT_BINARY_DIR}/rust-version-target")
+rust_storage_target(VERSION_RUST_TARGET_DIR "${CMAKE_CURRENT_BINARY_DIR}/rust-version-target" version-rust)
 set(VERSION_RUST_LIB "${CMAKE_CURRENT_BINARY_DIR}/libversion_rust.a")
 if(ARCH STREQUAL "i386")
     set(VERSION_RUST_TARGET "i686-pc-windows-gnu")

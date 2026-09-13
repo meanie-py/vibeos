@@ -9,7 +9,7 @@ spec2def(fltmgr.sys fltmgr.spec ADD_IMPORTLIB)
 # The 10 .c bodies replaced by Rust (fltmgr-rust). Filesystem Filter Manager.
 # .c kept on disk (never-delete). Bar: link-clean x3.
 set(FLTMGR_RUST_WORKSPACE_DIR "${CMAKE_SOURCE_DIR}/sdk/lib/rust")
-set(FLTMGR_RUST_TARGET_DIR "${CMAKE_CURRENT_BINARY_DIR}/rust-fltmgr-target")
+rust_storage_target(FLTMGR_RUST_TARGET_DIR "${CMAKE_CURRENT_BINARY_DIR}/rust-fltmgr-target" fltmgr-rust)
 set(FLTMGR_RUST_LIB "${CMAKE_CURRENT_BINARY_DIR}/libfltmgr_rust.a")
 if(ARCH STREQUAL "i386")
     set(FLTMGR_RUST_TARGET "i686-pc-windows-gnu")

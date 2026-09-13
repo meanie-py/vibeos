@@ -16,7 +16,7 @@ include_directories(${REACTOS_SOURCE_DIR}/sdk/include/reactos/drivers)
 # out-of-line emission of the cdprocs.h FORCEINLINEs) and filobsup.c (file-object
 # decode/set helpers the Rust calls via extern).
 set(CDFS_RUST_WORKSPACE_DIR "${CMAKE_SOURCE_DIR}/sdk/lib/rust")
-set(CDFS_RUST_TARGET_DIR "${CMAKE_CURRENT_BINARY_DIR}/rust-cdfs-target")
+rust_storage_target(CDFS_RUST_TARGET_DIR "${CMAKE_CURRENT_BINARY_DIR}/rust-cdfs-target" cdfs-rust)
 set(CDFS_RUST_LIB "${CMAKE_CURRENT_BINARY_DIR}/libcdfs_rust.a")
 if(ARCH STREQUAL "i386")
     set(CDFS_RUST_TARGET "i686-pc-windows-gnu")

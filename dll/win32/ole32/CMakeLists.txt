@@ -80,7 +80,7 @@ list(APPEND PCH_SKIP_SOURCE
 # lets the staticlib's panic_handler/eh_personality coexist with the C cohab.
 # Plan: docs/engineering/active-lanes/ole-com-translation-audit.md.
 set(OLE32_RUST_WORKSPACE_DIR "${CMAKE_SOURCE_DIR}/sdk/lib/rust")
-set(OLE32_RUST_TARGET_DIR "${CMAKE_CURRENT_BINARY_DIR}/rust-ole32-target")
+rust_storage_target(OLE32_RUST_TARGET_DIR "${CMAKE_CURRENT_BINARY_DIR}/rust-ole32-target" ole32-rust)
 set(OLE32_RUST_LIB "${CMAKE_CURRENT_BINARY_DIR}/libole32_rust.a")
 if(ARCH STREQUAL "i386")
     set(OLE32_RUST_TARGET "i686-pc-windows-gnu")

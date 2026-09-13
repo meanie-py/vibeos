@@ -17,7 +17,7 @@ elseif(ARCH STREQUAL "amd64")
 elseif(ARCH STREQUAL "arm64")
     set(TCPSVCS_RUST_TARGET "aarch64-pc-windows-gnullvm")
 endif()
-set(TCPSVCS_RUST_TARGET_DIR "${CMAKE_CURRENT_BINARY_DIR}/rust-tcpsvcs-target")
+rust_storage_target(TCPSVCS_RUST_TARGET_DIR "${CMAKE_CURRENT_BINARY_DIR}/rust-tcpsvcs-target" tcpsvcs-rust)
 set(TCPSVCS_RUST_LIB "${CMAKE_CURRENT_BINARY_DIR}/libtcpsvcs_rust.a")
 rust_crate_sources(TCPSVCS_RUST_SRCS "${TCPSVCS_RUST_WORKSPACE_DIR}" tcpsvcs-rust)
 add_custom_command(

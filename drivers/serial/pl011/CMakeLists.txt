@@ -10,7 +10,7 @@
 # so only the aarch64 branch is exercised, but the per-arch set is kept for
 # parity with the other driver cohabs.
 set(PL011_RUST_WORKSPACE_DIR "${CMAKE_SOURCE_DIR}/sdk/lib/rust")
-set(PL011_RUST_TARGET_DIR "${CMAKE_CURRENT_BINARY_DIR}/rust-pl011-target")
+rust_storage_target(PL011_RUST_TARGET_DIR "${CMAKE_CURRENT_BINARY_DIR}/rust-pl011-target" pl011-rust)
 set(PL011_RUST_LIB "${CMAKE_CURRENT_BINARY_DIR}/libpl011_rust.a")
 if(ARCH STREQUAL "i386")
     set(PL011_RUST_TARGET "i686-pc-windows-gnu")

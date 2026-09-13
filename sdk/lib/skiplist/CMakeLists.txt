@@ -6,7 +6,7 @@ add_definitions(-DSKIPLIST_LEVELS=16)
 # rule). libskiplist_rust.a replaces the C object; the skiplist16 target is a stub
 # TU that PUBLIC-links the Rust archive (lsalib-style cohab). Built for all 3 arches.
 set(SKIPLIST_RUST_WORKSPACE_DIR "${CMAKE_SOURCE_DIR}/sdk/lib/rust")
-set(SKIPLIST_RUST_TARGET_DIR "${CMAKE_CURRENT_BINARY_DIR}/rust-skiplist-target")
+rust_storage_target(SKIPLIST_RUST_TARGET_DIR "${CMAKE_CURRENT_BINARY_DIR}/rust-skiplist-target" skiplist-rust)
 set(SKIPLIST_RUST_LIB "${CMAKE_CURRENT_BINARY_DIR}/libskiplist_rust.a")
 if(ARCH STREQUAL "i386")
     set(SKIPLIST_RUST_TARGET "i686-pc-windows-gnu")
