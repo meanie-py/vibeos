@@ -379,6 +379,47 @@ def write_manifest(trace_dir: Path, *, arch: str, argv: list[str], media: dict, 
     return p
 
 
+def trace_read_position(trace_dir: Path) -> int | None:
+    """How far into `replay.bin` the replaying QEMU has read, or None if nobody
+    has it open.
+
+    This is the measurement that separates a replay that is merely SLOW from one
+    that is WEDGED, and nothing else we have distinguishes them: both look like
+    a quiet serial log and a busy CPU. A frozen position means QEMU is executing
+    without consuming any further recorded event — it is not going to finish, and
+    waiting longer is wasted.
+
+    The value is the KERNEL file offset, so it advances in buffered chunks rather
+    than byte by byte. That is fine for the only question asked of it — is it
+    moving at all, over minutes — but do not read it as a byte-accurate cursor.
+
+    Read from /proc, so Linux-only; returns None anywhere it cannot look, and
+    callers treat that as "no information" rather than as a verdict.
+    """
+    rrfile = (Path(trace_dir) / "replay.bin").resolve()
+    proc = Path("/proc")
+    if not proc.is_dir():
+        return None
+    for pid_dir in proc.iterdir():
+        if not pid_dir.name.isdigit():
+            continue
+        fd_dir = pid_dir / "fd"
+        try:
+            fds = list(fd_dir.iterdir())
+        except OSError:
+            continue  # not ours, or exited between listing and opening
+        for fd in fds:
+            try:
+                if fd.resolve() != rrfile:
+                    continue
+                for line in (pid_dir / "fdinfo" / fd.name).read_text().splitlines():
+                    if line.startswith("pos:"):
+                        return int(line.split()[1])
+            except (OSError, ValueError):
+                continue
+    return None
+
+
 def note_run(trace_dir: Path, *, mode: str, serial_log: str) -> Path:
     """Record where the CURRENT run's serial is going.
 

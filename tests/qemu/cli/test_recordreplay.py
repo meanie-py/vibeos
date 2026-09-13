@@ -695,3 +695,68 @@ def test_arm64_keeps_its_cpu_model_through_the_hook(tmp_path, monkeypatch):
     monkeypatch.setenv(rr.ENV_VAR, f"record:{trace}")
     out = vm._apply_record_replay(cmd)
     assert "cortex-a72" in out
+
+
+# --- telling a WEDGED replay from a slow one -----------------------------
+
+
+def test_trace_position_finds_the_process_reading_the_trace(tmp_path):
+    """The probe reads /proc for whoever holds replay.bin open. If it cannot find
+    the reader it must return None, not 0 — 0 would read as `consumed nothing`,
+    which is a verdict, and the absence of information is not one."""
+    trace = tmp_path / "t"
+    trace.mkdir()
+    rrfile = trace / "replay.bin"
+    rrfile.write_bytes(b"x" * 4096)
+    assert rr.trace_read_position(trace) is None
+    with rrfile.open("rb") as f:
+        f.read(1)
+        # The KERNEL offset, so it moves in buffered chunks, not per byte read.
+        # That is fine for the only question asked of it — is it moving at all,
+        # over minutes — but it means the value is not a byte-accurate cursor.
+        assert rr.trace_read_position(trace) not in (None, 0)
+
+
+def test_a_frozen_read_position_is_reported_as_WEDGED(tmp_path):
+    """The distinction this exists for: a replay that stops consuming recorded
+    events is not going to finish, and telling the operator to be patient is the
+    wrong answer. Measured on trace rec5 — 167,936 of 10,266,279 bytes, frozen
+    across 200s at 111% CPU."""
+    from .rrcmd import _TraceProgress
+
+    trace = tmp_path / "t"
+    trace.mkdir()
+    (trace / "replay.bin").write_bytes(b"x" * 10_266_279)
+    p = _TraceProgress(trace, period=0.01)
+    p.max_pos = 167_936
+    p.stalled_for = 200.0
+    note = p.report()
+    assert note is not None
+    assert "WEDGED" in note
+    assert "1.6%" in note
+    assert "waiting" in note
+
+
+def test_a_replay_that_keeps_consuming_is_not_called_wedged(tmp_path):
+    from .rrcmd import _TraceProgress
+
+    trace = tmp_path / "t"
+    trace.mkdir()
+    (trace / "replay.bin").write_bytes(b"x" * 1000)
+    p = _TraceProgress(trace, period=0.01)
+    p.max_pos, p.stalled_for = 900, 20.0
+    note = p.report()
+    assert note is not None
+    assert "WEDGED" not in note
+    assert "90.0%" in note
+
+
+def test_no_progress_information_produces_no_claim(tmp_path):
+    """On a platform without /proc, or a run where the sampler never caught the
+    process, the tool must say nothing rather than invent a verdict."""
+    from .rrcmd import _TraceProgress
+
+    trace = tmp_path / "t"
+    trace.mkdir()
+    (trace / "replay.bin").write_bytes(b"x" * 1000)
+    assert _TraceProgress(trace, period=0.01).report() is None

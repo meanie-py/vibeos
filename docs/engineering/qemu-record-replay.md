@@ -23,7 +23,16 @@ every single time you open it, at the same instruction, with the same memory.
 ./vibeos-cli rr info latest                      # will it still replay?
 ./vibeos-cli rr replay latest                    # that exact boot, again
 ./vibeos-cli rr replay latest --gdb              # ... halted at instruction 0
+./vibeos-cli rr verify latest                    # did it re-execute identically?
 ```
+
+`verify` is the one to reach for when you doubt a trace: it replays and diffs the
+replay's serial against the recording's, so you learn that the guest ran *the
+same boot* and **how far it got** — not merely that a VM ran. Both halves
+matter. A trace that quietly diverges is worse than no trace, because you debug
+the divergence thinking it is the bug; and on current evidence a replay often
+stops partway, which `verify` reports rather than letting you assume otherwise.
+Read the first entry of the divergence log before planning around a replay.
 
 Traces live under `~/vibeos-rr/` (`$VIBEOS_RR_ROOT`). They are **not** in `/tmp`:
 a trace costs a full boot to make and is worth more than the boot that made it.
@@ -171,34 +180,52 @@ record and replay would be different machines.
 Divergence on replay is a **finding about our own system**, not an obstruction.
 Record it here and keep going; only chase one when it looks load-bearing.
 
-- **Replay determinism HOLDS; replay THROUGHPUT is the open problem, and it is
-  bounded by guest serial output (2026-09-13, trace `rec5`). OPEN.**
+- **Replay reproduces CONTENT faithfully but does not reliably run to
+  completion: it WEDGES, at a point that differs between runs of the same trace
+  (2026-09-13, trace `rec5`). OPEN — this is the headline limitation.**
 
-  The good half first, because it is the load-bearing result: over the 968 lines
-  a replay produced, **every line matched the recording exactly** — no
-  divergence anywhere. Record/replay reproduces our boot.
+  The good half, and it is real: over the 968 lines one replay produced, **every
+  line matched the recording exactly**. Where a replay progresses, it progresses
+  correctly.
 
-  The bad half is speed. That recording emitted 3,210 lines in 119 seconds (27
-  lines/sec); the replay managed 968 lines in about twelve minutes (1.3
-  lines/sec), roughly **20x slower**, and was then killed by the watchdog.
+  The bad half: a second replay of that same trace stopped at **25 lines**, at
+  `[FLDR] load ramdisk(0)\reactos\system32\config\SYSTEM` — the first large
+  ramdisk read. Two runs, one trace, two different stopping points.
 
-  Three measurements pin down where the time goes, and they rule out the obvious
-  explanation:
+  It is a wedge, not slowness, and one measurement settles that. The replaying
+  QEMU's read position in `replay.bin` sat frozen at **167,936 bytes of
+  10,266,279 (1.6% of the trace)** across 200 seconds of sampling while the
+  process burned **111% CPU**, then died on the watchdog. It is executing
+  furiously and consuming no further recorded events.
 
-  * the replaying QEMU sits at **97% CPU** with serial frozen — it is executing,
-    not idling, so "QEMU waits out the guest's idle intervals in real time" is
-    wrong;
-  * the wedge capture puts the vCPU at **`DebugService+0`**
-    (`sdk/lib/rtl/arm64/debug_asm.S:13`) — inside the guest's own serial-output
-    primitive, not in the netstack code the last line came from;
-  * the slowdown is per-line and steady, not a cliff at some particular event.
+  To check this yourself in one command — it is the measurement that separates
+  "be patient" from "this trace will not replay":
 
-  So the guest appears to be spinning on the UART accepting a character, and the
-  replay's cost scales with **how much the boot prints**. Our boots print a great
-  deal (`PspCreateThread` traces a line per field, and so on), which makes this
-  hurt more than it needs to. Two levers we actually control, neither tried yet:
-  record a quieter boot, or find whether the pl011 TX-ready flag can come back
-  off the trace faster.
+  ```bash
+  P=$(./vibeos-cli ps | awk '/<your run dir>/{print $4}')
+  for f in /proc/$P/fd/*; do case "$(readlink $f)" in *replay.bin)
+      grep ^pos /proc/$P/fdinfo/$(basename $f);; esac; done
+  ```
+
+  Sample it twice a minute apart. Frozen position + high CPU = wedged.
+
+  Two earlier readings of this were wrong and are worth recording as such,
+  because both were single samples of a busy process. The vCPU was once caught
+  at `DebugService+0` (`sdk/lib/rtl/arm64/debug_asm.S:13`), which suggested the
+  cost scaled with how much the boot prints; and before that the whole thing was
+  written up as a determinism divergence when `hang-cpustate.txt` plainly said
+  `VM status: running`. A sampled PC is where the vCPU happened to be, not where
+  the time went.
+
+  Untried leads, cheapest first: whether the wedge is specific to the 290MB
+  ramdisk drive (x86 boots a smaller ISO — now that x86 records, that is a
+  one-boot experiment); whether a trace recorded with a warm page cache behaves
+  differently; whether QEMU newer than 9.0.2 fixes it.
+
+  **What it means for the #39 hunt:** a recorded crash is still worth having —
+  the fault happens early, inside the window replays do reach — but a replay
+  cannot be assumed to get anywhere in particular. Record, then verify the trace
+  reaches your fault before building a debugging session on it.
 
   `--shift` is NOT the lever it looked like, and it is worth being precise about
   that because the reasoning said it should be. `shift=5` records fine and faster
@@ -228,12 +255,8 @@ Record it here and keep going; only chase one when it looks load-bearing.
   `sleep=off` and `rrsnapshot`, not our configuration, and the flag stays off —
   with a test pinning it off so nobody re-adds the obvious fix.
 
-  **What it means in practice:** a replay is minutes-to-tens-of-minutes, not
-  seconds. That is still the right trade for a bug you otherwise cannot catch at
-  all, and it bites less than it sounds for the case we built this for — the #39
-  fault happens early in boot, well before the netstack self-test's waits, so a
-  crash trace reaches its fault long before a full boot replay would finish.
-  Worth revisiting on a newer QEMU.
+  Worth revisiting on a newer QEMU — the `vmstate_load_state` assertion in
+  particular reads like a bug rather than a constraint.
 
 - **A replay is slower than its recording, and the harness's silence watchdog
   did not know that (2026-09-13, trace `rec1`) — OUR bug, now fixed.** The
@@ -243,9 +266,9 @@ Record it here and keep going; only chase one when it looks load-bearing.
   to `[EXPLORER] _tWinMain entered` at 240,407 bytes. It looked like a
   determinism failure and was not: the wedge capture shows `VM status: running`
   with the vCPU advancing through an EL0 user PC, i.e. executing normally and
-  merely quiet. A replay has to wait out each recorded I/O completion instead of
-  taking the host's, so it is slower than the record, which is itself slower
-  than plain TCG. `_apply_record_replay` now scales `boot_timeout` and
+  merely quiet. (The later, harder finding is that a replay can ALSO genuinely
+  wedge — see the first entry. Both are real; this one was the harness's fault
+  and is fixed, that one is not.) `_apply_record_replay` now scales `boot_timeout` and
   `hang_silence_seconds` for any rr run, the same way `_build_windows_cmd`
   already scales them for whpx.
 
@@ -263,12 +286,13 @@ Record it here and keep going; only chase one when it looks load-bearing.
 
 ## Costs and limits
 
-- **Recording is cheap; replaying is not.** Measured on arm64 (`smoke --smp 1`,
-  boot to the desktop marker): **~90s under record vs ~40s normally**, 11MB
-  `replay.bin`. A replay of that same boot is minutes to tens of minutes,
-  because it waits out the guest's idle intervals in real time — see the
-  `sleep=off` entry in the divergence log for why we cannot currently fix that.
-  Record freely; spend replays deliberately. Neither is a soak.
+- **Recording is cheap and reliable. Replaying is neither.** Recording is
+  measured on arm64 (`smoke --smp 1`, boot to the desktop marker): **~90s under
+  record vs ~40s normally**, 11MB `replay.bin`, and it has not failed. A replay
+  runs at a small fraction of that pace and, on current evidence, **wedges
+  partway through at a point that varies between runs of the same trace**.
+  Record freely; treat each replay as an experiment whose reach you confirm
+  rather than assume. Neither is a soak.
 - A trace directory is the trace plus the qcow2 overlays, twice (counting
   `pristine/`) — tens of MB for arm64, since the big media are overlays over the
   originals rather than copies.
