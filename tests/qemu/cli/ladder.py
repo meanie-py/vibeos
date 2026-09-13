@@ -1,10 +1,10 @@
-"""WoW64 probe-ladder verdict check (`smoke --ladder`).
+"""WoW64 probe-ladder verdict check (`smoke --ladder`, and `gate` automatically).
 
 WHY THIS EXISTS. The ladder guests are spawned by winlogon *after* explorer,
-and the smoke's success condition IS the desktop marker — so the ordinary
-`smoke`/`gate` stops watching before a single guest has run. A ladder guest can
-therefore be RED on one arch indefinitely and every gate stays green. That is
-not hypothetical: it happened twice.
+and the smoke's success condition IS the desktop marker — so a plain boot stops
+watching before a single guest has run. A ladder guest could therefore be RED on
+one arch indefinitely while every gate stayed green. That is not hypothetical:
+it happened twice, and both are why `gate` now opts in on its own.
 
   * 2026-07-25 (roadmap, the `_MmCopyFromCaller` entry) noted in passing that
     "the smoke gate stays GREEN through this: the boot marker fires long before
@@ -17,7 +17,9 @@ not hypothetical: it happened twice.
 
 Per AGENTS.md, a rule with no command behind it is a rule you will break, so
 "remember to run --until on both arches after touching a guest" becomes this
-flag instead.
+flag instead -- and since a flag nobody passes is the same rule again, `gate`
+now passes it itself, for each arch whose media actually carries the guests
+(`gate_decision` below).
 
 SHAPE. This is a bounded EXTRA watch after the normal boot marker, not a change
 to the boot path: with `--ladder` off, nothing here runs and the boot is
@@ -40,6 +42,9 @@ from __future__ import annotations
 
 import re
 import time
+from pathlib import Path
+
+from . import provenance
 
 # guest -> the exit code that means PASS. gui32 reports 0x600e (it is the
 # GDI/draw rung and has its own verdict code); everything else uses 0x600d.
@@ -69,6 +74,59 @@ _VERDICT = re.compile(r"\[WINLOGON\] ([A-Za-z0-9_]+)\.exe exit = 0x([0-9a-fA-F]+
 # too-short window would turn a slow host into a fake ladder failure, which is
 # the exact class of false signal this file exists to remove.
 LADDER_TIMEOUT_SECONDS = 420.0
+
+
+# One guest is enough to decide whether the media carries the ladder at all: the
+# staging is all-or-nothing by construction (wow64-closure.py refuses a partial
+# SysWOW64 set, and the guests are staged in one block beside it), so a media
+# holding hello32 holds all nine. Checking one keeps the ISO scan to a single
+# pass, and a media that somehow carries hello32 without the rest then fails as a
+# real LADDER_FAIL naming the missing guests -- which is the right answer, not a
+# gap in this check.
+SENTINEL = "hello32.exe"
+
+
+def media_has_guests(repo: Path, arch: str) -> bool:
+    """Does the media this arch's boot would OPEN actually carry the guests?
+
+    Asked of the built image rather than of the sibling trees that fed it
+    (`build-i386`, `build-fex-hello`), because staging happens at CONFIGURE time:
+    those trees existing now says nothing about what went onto an ISO built
+    before them, and an amd64 configure re-run is what re-snapshots. The image is
+    the only thing that answers the question actually being asked.
+
+    False for every native-x86 boot without special-casing it -- an i386 livecd
+    has no SysWOW64 to stage into -- so the arch list stays out of here.
+    """
+    try:
+        return not provenance.probes_missing_from_media(repo, arch, [SENTINEL])
+    except OSError:
+        # Never let a staging PROBE decide a gate by failing. An unreadable or
+        # half-written image is the media checks' business and they report it far
+        # better than a boolean here could.
+        return False
+
+
+def gate_decision(repo: Path, arch: str) -> tuple[list[str], bool, str]:
+    """What a gate should do about the ladder for one arch.
+
+    Returns (extra smoke argv, staged?, one-line reason). Kept here rather than
+    in gate.py so the policy is testable without standing up a gate run, and so
+    the reason a gate gives for NOT checking the guests is written next to the
+    check it is declining to run.
+    """
+    staged = media_has_guests(repo, arch)
+    if staged:
+        return (
+            ["--ladder"],
+            True,
+            f"{len(LADDER)} WoW64 guests staged — boot watched past the desktop marker",
+        )
+    return (
+        [],
+        False,
+        f"no {SENTINEL} in this arch's media — WoW64 guests NOT checked by this gate",
+    )
 
 
 def markers() -> list[str]:
