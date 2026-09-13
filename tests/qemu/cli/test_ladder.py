@@ -247,6 +247,26 @@ def test_built_but_unstaged_says_so_and_names_the_fix(tmp_path):
     assert "wow64cpu/CMakeLists.txt" in why and "VIBEOS_FEX" not in why
 
 
+def test_partially_built_names_the_missing_guest_not_a_restage(tmp_path):
+    """Adding a guest puts every existing tree in this state for one build, and
+    the advice that fits the other two states is actively wrong here: staging is
+    all-or-nothing, so restaging a tree that is missing ONE guest changes
+    nothing and hides the real cause. ONE absent doom-i386.exe already kept all
+    nine guests off the livecd once."""
+    repo = _manifest(tmp_path, ["reactos/system32/winlogon.exe=/tmp/vibeos/x"])
+    guests = repo / "build-fex-hello"
+    guests.mkdir()
+    for g in ladder.LADDER:
+        if g != "reg32":
+            (guests / f"{g}.exe").write_bytes(b"MZ")
+    extra, staged, why = ladder.gate_decision(repo, "amd64")
+    assert extra == [] and not staged
+    assert "reg32.exe missing" in why
+    assert "build-hello-compute.sh" in why
+    # Must NOT give the restage advice: the media is not the problem.
+    assert "BUILT but none is staged" not in why
+
+
 def test_never_built_keeps_the_plain_reason(tmp_path):
     """No guests on disk is the ordinary case — most worktrees — and must not be
     dressed up as a staging fault."""

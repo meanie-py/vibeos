@@ -6648,6 +6648,34 @@ configurations could produce the same stored row, and whether either is one you 
 to compare against the other. Same family as the worktree ambiguity in the same corpus, where
 three trees' rounds are separable only by string-matching `run_dir`.
 
+### Reading a stale `origin/master` fails SILENTLY, and arbitration is where it does most damage
+
+**Symptom.** Two lanes report different measurements of the same file. A third party resolves it
+from "master" and concludes the lanes are looking at different trees — when in fact all three
+agree and only the arbiter's ref is old.
+
+**Cause.** `origin/master` is a **local cached** ref. Without a fresh `git fetch` it is whatever
+the last fetch left behind, and `git show origin/master:<path>` will happily print a months-old
+file with no warning. AGENTS.md documents this for `git reset --hard origin/master` because that
+is where it rewound shared master by 81 commits — but the *reading* form has no guard rail at
+all. It fails quietly and confidently. Real case: an arbiter measured
+`wow64_manual.c` at 5,673 lines with 0 `WOW64_USER_CEILING32`, concluded one lane carried
+unlanded work, and was about to have that written into a design doc. A fetch showed master at
+6,552 with 3 occurrences, and `git log -S` named the commit that added it — **landed, by the lane
+being accused of not having landed it.** All three trees agreed the whole time.
+
+**Fix.** `git fetch` immediately before any `git show origin/master:...` / `git log origin/master`
+you intend to *rely* on, and say that you did. Two habits that catch it:
+- **`git log -S <token> -- <path>` names the commit that introduced a symbol.** If the answer is
+  "a commit that is already on master", the "unlanded work" theory is dead in one command.
+- **When two measurements disagree, check the TREES before checking the arithmetic** — but check
+  them with a fetched ref, or you have added a third wrong tree to the comparison rather than
+  resolving the first two.
+
+The general shape: an arbiter's error reaches every party at once and arrives wearing the
+authority of a tiebreak, so it is believed faster and checked less than either original claim.
+Whoever resolves a disagreement owes the freshest read, not merely a third one.
+
 ### A budget sized for a set of ONE is silently wrong the day the set grows to two
 
 **Symptom.** A harness grants a timing allowance for "an optional/slow item", the allowance is

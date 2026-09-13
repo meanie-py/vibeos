@@ -1243,6 +1243,79 @@ unsafe fn TryStartWow64Selfmod() {
     }
 }
 
+/* reg32.exe: WOW64 REGISTRY REDIRECTION, checked from inside a 32-bit process.
+ *
+ * The rest of the ladder cannot see this and neither can a host-side unit test.
+ * Redirection keys off "is the CALLING process 32-bit"
+ * (CmpWow64IsCurrentProcess32Bit), so the only vantage point that can observe
+ * it is a real WoW64 guest — which is exactly why the feature shipped with no
+ * runtime test at all.
+ *
+ * It is also the ladder's first guest whose failures are SILENT. Every other
+ * rung here crashes, hangs, or returns a wrong number. A redirection bug
+ * returns SUCCESS and the wrong key: the app writes its configuration into the
+ * 64-bit view and the next reader gets someone else's answer. Its sharpest
+ * rung is the two-view DELETE (RegDeleteKeyExW with an explicit
+ * KEY_WOW64_32KEY must not touch the native key) — the one failure here that
+ * destroys data rather than merely misplacing it.
+ *
+ * Runs on both hosts and must pass identically: CM does the redirecting, above
+ * the CPU layer, so amd64 and arm64 differ in nothing this guest touches.
+ * Silent no-op unless staged; verdict = [reg32] serial lines + exit 0x600D. */
+#[cfg(any(target_arch = "x86_64", target_arch = "aarch64"))]
+unsafe fn TryStartWow64Reg() {
+    if !Wow64SupportStaged() {
+        return; // CPU layer absent
+    }
+    let mut Path: [u16; MAX_PATH as usize] = [0; MAX_PATH as usize];
+    if GetWindowsDirectoryW(Path.as_mut_ptr(), MAX_PATH - 32) == 0 {
+        return;
+    }
+    wcscat(Path.as_mut_ptr(), wstr!("\\syswow64\\reg32.exe").as_ptr());
+    if GetFileAttributesW(Path.as_ptr()) == 0xFFFF_FFFF {
+        return; // not staged — silent no-op
+    }
+
+    let mut Line: [u16; 10] = wstr_arr!("reg32.exe");
+    let mut Si: STARTUPINFOW = zeroed();
+    let mut Pi: PROCESS_INFORMATION = zeroed();
+    Si.cb = size_of::<STARTUPINFOW>() as DWORD;
+    let ok = CreateProcessW(
+        Path.as_ptr(),
+        Line.as_mut_ptr(),
+        null_mut(),
+        null_mut(),
+        0,
+        0,
+        null_mut(),
+        null(),
+        &mut Si,
+        &mut Pi,
+    );
+    if ok != 0 {
+        DbgPrint(
+            b"[WINLOGON] reg32.exe (i386 registry-view guest) created (PID %lu) - waiting\n\0"
+                .as_ptr() as *const i8,
+            Pi.dwProcessId,
+        );
+        WaitForSingleObject(Pi.hProcess, 90_000);
+        let mut ExitCode: DWORD = 0xDEAD;
+        GetExitCodeProcess(Pi.hProcess, &mut ExitCode);
+        DbgPrint(
+            b"[WINLOGON] reg32.exe exit = 0x%lx (0x600D = PASS)\n\0".as_ptr() as *const i8,
+            ExitCode,
+        );
+        CloseHandle(Pi.hThread);
+        CloseHandle(Pi.hProcess);
+    } else {
+        DbgPrint(
+            b"[WINLOGON] CreateProcessW(reg32.exe) FAILED (error %lu)\n\0".as_ptr()
+                as *const i8,
+            GetLastError(),
+        );
+    }
+}
+
 /* sqlite32.exe — a THIRD-PARTY STRESS guest (tools/stress/sqlite/build.sh).
  *
  * Every other guest here probes one mechanism on purpose, with a body written
@@ -2477,6 +2550,10 @@ pub unsafe extern "system" fn WinMain(
          * contract. Most rungs fail silently wrong, not loudly. */
         TryStartWow64Selfmod();
 
+        /* Registry redirection — the Wow6432Node view, checked from inside a
+         * 32-bit process. The only ladder rung whose failure is silent. */
+        TryStartWow64Reg();
+
         /* Third-party stress: real SQLite on the storage + allocator axis.
          * LAST, after every parity guest: it is slow third-party code under
          * emulation, and running it earlier delays the parity set past the
@@ -2591,6 +2668,8 @@ pub unsafe extern "system" fn WinMain(
         /* E17: the guest generates, rewrites, recycles and hot-patches its
          * own code. */
         TryStartWow64Selfmod();
+        /* Wow6432Node redirection, isolation and the two-view delete. */
+        TryStartWow64Reg();
         /* Third-party stress: real SQLite, last — see the note at the other
          * call site on why it must not precede the parity guests. */
         /* Third-party stress #2: real Lua, setjmp/longjmp-heavy. BEFORE

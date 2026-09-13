@@ -6949,7 +6949,11 @@ def test_ladder_all_pass_is_clean():
     from tests.qemu.cli import ladder as ladder_mod
 
     assert ladder_mod.check(_ladder_log()) is None
-    assert ladder_mod.summary(_ladder_log()).startswith("9/9 guests PASS")
+    # Derived from the table, not hardcoded: this assertion was "9/9" and the
+    # tenth guest broke it while the fixture -- which builds itself FROM the
+    # table -- was already correct. A count literal here tests the literal.
+    n = len(ladder_mod.LADDER)
+    assert ladder_mod.summary(_ladder_log()).startswith(f"{n}/{n} guests PASS")
 
 
 def test_ladder_gui32_pass_code_is_600e_not_600d():
