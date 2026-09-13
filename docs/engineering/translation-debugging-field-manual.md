@@ -7123,6 +7123,44 @@ not the final classification. The printed value, not the assertion name. The exa
 not the directory count. Every instance below is a case where the answer was *sound about the
 artifact consulted* and the artifact was one step off the one that governs.
 
+**A GITIGNORED prebuilt artifact ages against source that keeps moving, and only a FOREIGN tree
+can see it.** The WoW64 ladder guests live in `build-fex-hello/`, which `.gitignore:3` excludes
+as `build-fex-*`, and `vibeos-cli build --arch amd64` does not rebuild them. So the ladder's
+verdict depends on three inputs of which exactly ONE is versioned: git state,
+`build-fex-hello/*.exe`, and the `build-i386` closure. Two lanes at the *same commit* legitimately
+run different guests and get opposite results — which is exactly how a green ladder and a dead
+ladder coexisted for an hour, both honestly reported.
+
+The instance: `marshal32.exe` built 2026-09-06 21:37 hung forever at
+`[marshal32] select: calling WSAStartup`, taking the four guests after it down with it (silently
+— they simply never report). The socket-rung fix `cfd112c933b` landed at 22:12:46 the same
+evening, **35 minutes later**. The binary was six days stale against a fix to the exact rung it
+hung in.
+
+Three things make this the sharpest instance in this section:
+
+- **The stale artifact was mine and so was the fix.** Nothing about it was another lane's
+  mistake; I built a guest, fixed its bug 35 minutes later, and never rebuilt.
+- **Self-checking could not have found it.** Every input I could see was internally consistent:
+  the source had the fix, the build was warm and green, the media staged cleanly, the harness
+  reported honestly. Detection required a *foreign tree* running the same named test and
+  disagreeing. Treat "another lane reports the opposite result from the same commit" as evidence
+  about UNVERSIONED inputs before it is evidence about the commit.
+- **The symptom named the wrong subsystem.** It hung *in* `WSAStartup`, and `ws2_32.dll` was
+  byte-identical across both trees (`1a8194b5a194010e5ec350a6402c99ed`) — so the DLL it died in
+  was never the variable. Hours of winsock debugging were one mtime comparison away.
+
+**Detect it by source-vs-binary mtime, never by absolute age.** A six-day-old binary passes any
+"is it older than N hours" threshold loose enough to not be annoying; what makes it detectably
+wrong is that `Marshal32.c` is NEWER than `marshal32.exe`. And prefer a loud SKIP to a RED: a
+stale guest that reds costs every guest after it its verdict, and accuses innocent code.
+
+**Corollary — cross-tree hash comparison only works once builds are reproducible.** Before
+`5a322b1c9be`, these PEs stamped wall-clock into the header, so identical source produced
+different bytes and comparing hashes between lanes was meaningless. After it, two independent
+trees rebuilt `marshal32.exe` to the same `b5b648d135ba412a7dda9cca3ea7d29f` — which makes the
+hash a usable cross-lane check. Verify reproducibility before you reach for it as evidence.
+
 **Why it needs its own entry rather than folding into the verification rules above: it is the
 failure shape that does not announce itself.** A wrong denominator or a stale inherited fact
 decays loudly — someone recounts, or the number stops agreeing with itself, and it surfaces
