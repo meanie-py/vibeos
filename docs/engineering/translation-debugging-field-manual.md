@@ -5293,6 +5293,19 @@ is useless for anything staged from a sibling tree (`build-fex-hello`, `build-i3
 the build dir every other entry points into), and matching a bare basename re-admits the same
 error, so match the directory too (`*/syswow64/<guest>.exe`).
 
+**When the probe feeds a GATE, a false positive is not a false green — it is a false RED for
+everyone else.** This one shipped into the merge queue before it was fixed, and the damage was
+not the bug it failed to catch. `gate` demanded a ladder from boots that had none, so
+`smoke:amd64` and `smoke:arm64` failed and the whole batch went red: **two batches, four
+innocent lanes, ~45 minutes.** i386 passing throughout is the tell — it has no SysWOW64 to
+stage into, so its probe correctly declined. A false green costs its author the bug they
+missed; a false red costs every lane in the batch, and it does so *silently from their side*,
+because a bounced lane cannot see what blamed it. Only the queue's recursive split made it
+recoverable: it isolated the culprit tip (`REJECTED ... LADDER_NOT_STAGED`) and let the
+innocents through. **So weight an admission check by what consumes it. A probe that only
+decides whether YOU look harder can be sloppy in the optimistic direction; one that decides
+whether OTHER PEOPLE'S work is allowed to land cannot.**
+
 **The generalisation, and it is not "be careful with greps":** `probes_missing_from_media` was
 the RIGHT tool for its own question — *is this string compiled in* (`--require-probe`), where a
 substring hit is exactly the semantics wanted. *Is this file staged at this path* is a
