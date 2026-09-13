@@ -93,6 +93,20 @@ verified **on amd64**, against the native heaven's-gate path; arm64 followed as 
 Both now report 9/9 on `smoke --ladder`. So treat that work as **verified on the host this plan
 cares about** — do not re-derive it as though it were arm64 results of uncertain transfer.
 
+**The arm64 half of that 9/9 is softer than it reads, as of 2026-09-13.** fex relays two guests
+faulting `c0000005` inside FEXCore's code cache on one arm64 boot — `lua32.exe` in
+`LookupCache::FindBlock` (ESR 0x92000006) and `file32.exe`, one of OUR nine ladder guests, in
+`ContextImpl::InvalidateThreadCachedCodeRange` (ESR 0x92000004). They checked the two things
+that would make it an artifact: the processes loaded `libwow64fex.dll` at different bases, each
+read from that process's own load line, and `file32` is a parity guest that normally passes.
+**One boot, two guests — a strong lead, NOT a repro**, and a second sample was running when this
+was relayed; it is recorded here with that caveat attached and must not be quoted without it.
+`external/fex` is vendored unmodified, so if it holds it is upstream behaviour under our
+workload, not a local patch. Consequence for this plan: nothing in it leans on arm64 WoW64
+being solid — amd64's CPU layer is our own `wow64cpu`, no emulator in the picture — but an
+arm64 `--ladder` green is a weaker signal than an amd64 one until this is settled, so do not
+read the two as interchangeable evidence.
+
 *(This section previously said the opposite, on a control-plane summary that lane has since
 retracted and that I recorded under its attribution. The `wow64.c` quote above is checked in
 this tree; the amd64-first provenance is fex's, relayed.)*
