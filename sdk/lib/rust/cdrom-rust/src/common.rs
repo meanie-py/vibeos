@@ -221,7 +221,10 @@ unsafe extern "C" {
 
 // Constants used by this function
 #[allow(dead_code)]
-const IOCTL_MCN_SYNC_FAKE_IOCTL: u32 = 0; // Placeholder — actual value unknown
+const IOCTL_MCN_SYNC_FAKE_IOCTL: u32 = 0x0007C0C8;  // = IOCTL_DISK_UPDATE_DRIVE_SIZE
+// (cdrom.h:181, CTL_CODE(IOCTL_DISK_BASE, 0x32, METHOD_BUFFERED, READ|WRITE)). NOT a
+// placeholder: autorun.rs WRITES this into IoControlCode and cdrom.rs matches on it,
+// so an invented value means the MCN sync IRP is never recognised.
 #[allow(dead_code)]
 const WdfRequestTypeDeviceControl: u32 = 7; // Common KMDF value
 const WdfRequestTypeRead: u32 = 3;

@@ -66,7 +66,10 @@ extern "C" {
 
 const KGDT_R0_CODE: USHORT = 0x08;
 const KGDT_R0_DATA: USHORT = 0x10;
-const KGDT_R3_DATA: USHORT = 0x1B;
+// 0x20 (ndk/i386/ketypes.h:126). 0x1B is KGDT_R3_CODE|RPL_MASK -- the ring-3 CODE
+// selector -- and this constant is loaded into SegDs/SegEs of an AP's initial
+// ProcessorState, where the C uses KGDT_R3_DATA.
+const KGDT_R3_DATA: USHORT = 0x20;
 const KGDT_R0_PCR: USHORT = 0x30;
 const KGDT_TSS: USHORT = 0x28;
 const KGDT_DF_TSS: USHORT = 0x50;

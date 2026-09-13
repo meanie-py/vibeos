@@ -149,7 +149,10 @@ const AUTORUN_VALUE_NAME: [u16; 8] = [
 ];
 
 const SL_OVERRIDE_VERIFY_VOLUME: u32 = 0x02;
-const IOCTL_MCN_SYNC_FAKE_IOCTL: u32 = 0x00000001; // unknown IOCTL code – placeholder
+const IOCTL_MCN_SYNC_FAKE_IOCTL: u32 = 0x0007C0C8;  // = IOCTL_DISK_UPDATE_DRIVE_SIZE
+// (cdrom.h:181, CTL_CODE(IOCTL_DISK_BASE, 0x32, METHOD_BUFFERED, READ|WRITE)). NOT a
+// placeholder: autorun.rs WRITES this into IoControlCode and cdrom.rs matches on it,
+// so an invented value means the MCN sync IRP is never recognised.
 
 const CDROM_HACK_MSFT_VIRTUAL_ODD: u32 = 0x2000;  // was 0x00000001 (LLM-invented); bindgen-correct
 const WdfExecutionLevelInheritFromParent: u32 = 1;
