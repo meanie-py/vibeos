@@ -380,7 +380,9 @@ def _generate_imports_from_resolve(
         names = sorted(merged[module])
         if not names:
             continue
-        if is_hal and module in ("ddk", "hal_ddk"):
+        if target.crate_bindgen_files and module == target.crate_module:
+            uses.append(f"use crate::{module}::*;")
+        elif is_hal and module in ("ddk", "hal_ddk"):
             # Selective imports — never glob — for HAL.
             uses.append(f"use ntkrnl_sys::{module}::{{{', '.join(names)}}};")
         elif module == "ddk":

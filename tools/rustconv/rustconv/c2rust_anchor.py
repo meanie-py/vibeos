@@ -2,15 +2,16 @@
 
 The mechanical LLM pass silently STUBS/drops hard function bodies and turns
 function-like macros (e.g. `RosSymAllocMem`, `DPRINT`) into phantom externs. c2rust
-is a *compiler*, not an LLM — it physically cannot drop, stub, or summarize logic, so
-its transpilation of a function is a behavior-correct-by-construction checklist the
-LLM must preserve. We don't ship c2rust's raw output (it's ugly: libc casts, generated
+transpiles compiler input mechanically, providing a structural checklist the LLM
+must preserve. Its output still needs coverage and semantic checks. We don't ship
+c2rust's raw output (it's ugly: libc casts, generated
 names, `.expect("non-null function pointer")`); we hand it to the model as an anchor and
 let it restyle the surface while preserving every statement/branch/call.
 
-This module produces, for one C file, a `{function_name: rust_body}` map. It is
-strictly best-effort: any failure (no compile_commands.json, c2rust panic, parse miss)
-returns an empty/partial map and translation proceeds anchor-less — never blocks.
+This module produces, for one C file, a `{function_name: rust_body}` map. Library
+callers can request best-effort mode; the CLI uses strict mode and checks every
+selected function before payment. An anchor guides translation; it does not prove
+that a model preserved the anchored behavior.
 
 Validated recipe (2026-06-07): c2rust chokes on a bare compile_commands.json path and
 on the mingw cross `command` (multi-job), but the *direct-source* form works:
@@ -31,10 +32,9 @@ import tempfile
 from pathlib import Path
 
 from .config import REACTOS_ROOT
+from .function_coverage import rust_definition_bodies
 
-# Build dirs that carry a compile_commands.json (i386's cmake has export OFF).
-# Order = preference; the anchor only needs logic/structure, so an arch mismatch
-# vs the translation target is harmless.
+# Library preference when no arch is specified. The CLI always pins its requested arch.
 _DB_BUILD_DIRS = ["build-amd64", "build-arm64", "build-i386"]
 
 # Builds run at a CANONICAL bind-mount path (tools/canon-run.sh, default
@@ -57,10 +57,10 @@ def _decanon(s: str) -> str:
     return s.replace(_CANON_ROOT, str(REACTOS_ROOT))
 
 
-def _find_db_entry(c_file: Path) -> tuple[dict, Path] | None:
+def _find_db_entry(c_file: Path, arch: str | None = None) -> tuple[dict, Path] | None:
     """Return (entry, build_dir) for c_file from the first build db that has it."""
     cf = str(c_file.resolve())
-    for bd in _DB_BUILD_DIRS:
+    for bd in [f"build-{arch}"] if arch is not None else _DB_BUILD_DIRS:
         db_path = REACTOS_ROOT / bd / "compile_commands.json"
         if not db_path.exists():
             continue
@@ -78,65 +78,65 @@ def _find_db_entry(c_file: Path) -> tuple[dict, Path] | None:
 def _extract_clang_flags(entry: dict) -> list[str]:
     """Pull --target, -D, -I, -isystem/-include from the db command; drop the
     multi-job triggers (-o/-c/-M*) that make clang tooling reject the command."""
-    cmd = entry.get("command") or " ".join(entry.get("arguments", []))
-    toks = shlex.split(cmd)
+    toks = entry.get("arguments") or shlex.split(entry.get("command", ""))
     keep: list[str] = []
-    i = 1  # skip argv[0] (the compiler)
+    with_value = {
+        "-D",
+        "-U",
+        "-I",
+        "-isystem",
+        "-include",
+        "-imacros",
+        "-idirafter",
+        "-iquote",
+        "-isysroot",
+        "--sysroot",
+        "--target",
+        "-target",
+        "-x",
+    }
+    semantic = {
+        "-nostdinc",
+        "-nostdinc++",
+        "-fms-extensions",
+        "-fms-compatibility",
+        "-fshort-wchar",
+        "-fshort-enums",
+        "-funsigned-char",
+        "-fsigned-char",
+        "-mms-bitfields",
+        "-mlong-double-64",
+        "-ffreestanding",
+    }
+    i = 1
     while i < len(toks):
-        t = toks[i]
-        if t.startswith("-D") or t.startswith("-I") or t.startswith("--target"):
-            keep.append(_decanon(t))
-        elif t in ("-isystem", "-include", "-imacros") and i + 1 < len(toks):
-            keep.append(t)
-            keep.append(_decanon(toks[i + 1]))
-            i += 1
+        token = toks[i]
+        if token in with_value:
+            if i + 1 >= len(toks):
+                raise C2RustError(f"compile command has no argument after {token}")
+            keep.extend((token, _decanon(toks[i + 1])))
+            i += 2
+            continue
+        if token in semantic or token.startswith(
+            (
+                "-D",
+                "-U",
+                "-I",
+                "--target=",
+                "--sysroot=",
+                "-std=",
+                "-fpack-struct=",
+                "-fms-compatibility-version=",
+            )
+        ):
+            keep.append(_decanon(token))
         i += 1
     return keep
 
 
-# c2rust emits top-level fns rustfmt-style: signature line contains `fn NAME(`,
-# body closes with `}` at column 0. Capture NAME → full text.
-_FN_SIG = re.compile(r"\bfn\s+([A-Za-z_]\w*)\s*[(<]")
-
-
 def _parse_functions(rs_text: str) -> dict[str, str]:
-    lines = rs_text.splitlines()
-    out: dict[str, str] = {}
-    i = 0
-    n = len(lines)
-    while i < n:
-        line = lines[i]
-        m = _FN_SIG.search(line)
-        # Only treat as a fn DEFINITION if the signature region is a real item
-        # (preceded by fn-item keywords on this or a recent attribute line) and
-        # the block eventually opens a brace. c2rust prefixes with pub/unsafe/extern.
-        is_item = bool(m) and (
-            line.lstrip().startswith(("fn ", "pub ", "unsafe ", "extern ", "pub("))
-        )
-        if is_item:
-            assert m is not None  # is_item is True only when m matched
-            name = m.group(1)
-            start = i
-            # walk to the line that opens the body `{`, then to the matching `}`
-            # at column 0 (c2rust formatting guarantees this for top-level items).
-            depth = 0
-            opened = False
-            j = i
-            while j < n:
-                depth += lines[j].count("{") - lines[j].count("}")
-                if "{" in lines[j]:
-                    opened = True
-                if opened and depth <= 0:
-                    break
-                j += 1
-            if opened:
-                body = "\n".join(lines[start : j + 1])
-                # last writer wins is fine; c2rust won't emit duplicate defs
-                out[name] = body
-                i = j + 1
-                continue
-        i += 1
-    return out
+    """Extract actual bodies; foreign declarations cannot borrow the next item's brace."""
+    return rust_definition_bodies(rs_text)
 
 
 class C2RustError(RuntimeError):
@@ -177,13 +177,21 @@ def _c2rust_reason(stderr: str, stdout: str) -> str:
         m = pat.search(blob)
         if m:
             line = m.group(0).strip()
-            return line[:300]
+            if "panicked at" in line:
+                following = blob[m.end() :].strip().splitlines()
+                if following and not following[0].startswith("note:"):
+                    line += " " + following[0].strip()
+            return line[:600]
     tail = [ln for ln in blob.splitlines() if ln.strip()][-1:]
     return tail[0].strip()[:300] if tail else "(no output — c2rust said nothing)"
 
 
 def _transpile_text(
-    c_file: Path, timeout: int = 180, verbose: bool = True, strict: bool = False
+    c_file: Path,
+    timeout: int = 180,
+    verbose: bool = True,
+    strict: bool = False,
+    arch: str | None = None,
 ) -> str | None:
     """Run c2rust on c_file and return the raw transpiled .rs text.
 
@@ -201,7 +209,7 @@ def _transpile_text(
             print(f"  [c2rust] {msg} — skipping", file=sys.stderr)
 
     try:
-        key = (str(c_file.resolve()), c_file.stat().st_mtime)
+        key = (f"{c_file.resolve()}:{arch}", c_file.stat().st_mtime)
     except OSError as e:
         _fail(f"cannot stat {c_file}: {e}")
         return None
@@ -213,14 +221,14 @@ def _transpile_text(
     result: str | None = None
     if shutil.which("c2rust") is None:
         _TRANSPILE_CACHE[key] = None
-        _fail("binary not on PATH (install c2rust, or drop --c2rust to translate pure-LLM)")
+        _fail("binary not on PATH (install c2rust, or pass --no-c2rust to translate pure-LLM)")
         return None
-    found = _find_db_entry(c_file)
+    found = _find_db_entry(c_file, arch)
     if found is None:
         _TRANSPILE_CACHE[key] = None
         _fail(
             f"no compile_commands entry for {c_file.name} "
-            "(build the arch first so the compile DB exists, or drop --c2rust)"
+            "(build the arch first so the compile DB exists, or pass --no-c2rust)"
         )
         return None
     entry, build_dir = found
@@ -244,8 +252,14 @@ def _transpile_text(
             _TRANSPILE_CACHE[key] = None
             _fail(f"timeout on {c_file.name} after {timeout}s")
             return None
-        # c2rust panics on some kernel ASTs (e.g. the `Could not find CDeclId` TU-abort);
-        # we don't care about exit code, only whether it produced output for our file.
+        if strict and proc.returncode != 0:
+            _TRANSPILE_CACHE[key] = None
+            _fail(
+                f"c2rust failed for {c_file.name} (exit {proc.returncode}): "
+                f"{_c2rust_reason(proc.stderr, proc.stdout)}"
+            )
+            return None
+        # Best-effort library callers may inspect partial output; strict callers never do.
         rs = out_dir / "src" / f"{c_file.stem}.rs"
         if not rs.exists():
             alt = out_dir / f"{c_file.stem}.rs"  # some layouts drop it at the top level
@@ -260,8 +274,8 @@ def _transpile_text(
             # looked identical and un-actionable. Failing loud means saying WHY.
             why = _c2rust_reason(proc.stderr, proc.stdout)
             _fail(
-                f"no .rs produced for {c_file.name} — this file cannot be anchored; drop "
-                f"--c2rust to translate it pure-LLM as a deliberate choice.\n"
+                f"no .rs produced for {c_file.name} — this file cannot be anchored; pass "
+                f"--no-c2rust to translate it pure-LLM as a deliberate choice.\n"
                 f"    c2rust said: {why}"
             )
             return None
@@ -272,14 +286,26 @@ def _transpile_text(
 
 
 def build_anchor_map(
-    c_file: Path, timeout: int = 180, verbose: bool = True, strict: bool = False
+    c_file: Path,
+    timeout: int = 180,
+    verbose: bool = True,
+    strict: bool = False,
+    required_names: set[str] | None = None,
+    arch: str | None = None,
 ) -> dict[str, str]:
     """Transpile c_file with c2rust and return {fn_name: rust_body}. strict=True raises
     C2RustError on failure (no dumb fallback); strict=False returns {} best-effort."""
-    text = _transpile_text(c_file, timeout=timeout, verbose=verbose, strict=strict)
+    text = _transpile_text(c_file, timeout=timeout, verbose=verbose, strict=strict, arch=arch)
     if text is None:
         return {}
     fns = _parse_functions(text)
+    if strict and not fns:
+        raise C2RustError(f"{c_file}: c2rust output contains no extracted function definitions")
+    missing = (required_names or set()) - set(fns)
+    if strict and missing:
+        raise C2RustError(
+            f"{c_file}: missing required function anchors: " + ", ".join(sorted(missing))
+        )
     if verbose:
         print(f"  [c2rust] anchors: {len(fns)} fn(s) from {c_file.name}", file=sys.stderr)
     return fns
@@ -297,13 +323,17 @@ _DATA_SIG = re.compile(r"^(?:pub\s+)?(static(?:\s+mut)?|const)\s+[A-Za-z_]\w*\s*
 
 
 def build_preamble(
-    c_file: Path, timeout: int = 180, verbose: bool = True, strict: bool = False
+    c_file: Path,
+    timeout: int = 180,
+    verbose: bool = True,
+    strict: bool = False,
+    arch: str | None = None,
 ) -> str:
     """Return c2rust's file-scope DATA tables (`static [mut]` + aggregate `const`) as exact
     Rust text, to prepend deterministically instead of LLM-translating the preamble (which
     fabricates table values). Excludes header enum-variant scalar consts. strict=True raises
     C2RustError on failure (no dumb fallback); strict=False returns '' best-effort."""
-    text = _transpile_text(c_file, timeout=timeout, verbose=verbose, strict=strict)
+    text = _transpile_text(c_file, timeout=timeout, verbose=verbose, strict=strict, arch=arch)
     if text is None:
         return ""
     lines = text.splitlines()

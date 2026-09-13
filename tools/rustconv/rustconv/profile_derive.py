@@ -2390,6 +2390,58 @@ def _default_ver_defs(module: CMakeModule, db_defines: list[str] | None) -> list
     return defs
 
 
+def derive_source(
+    source: Path,
+    repo_root: Path,
+    *,
+    arch: str,
+    preferred_target: str | None = None,
+    usermode: bool | None = None,
+) -> DerivedProfile:
+    """Audit the CMake source owner, including retained sources after a Rust flip.
+
+    A nearby DLL target need not own the TU (msvcrt_static does), and auditing
+    only the remaining C after a partial flip silently excludes the requested file.
+    """
+    source = source.resolve()
+    for directory in source.parents:
+        cmake = directory / "CMakeLists.txt"
+        if not cmake.is_file():
+            continue
+        owners = []
+        for name in sorted(_target_names(cmake)):
+            for flipped in (False, True):
+                try:
+                    module = parse_cmakelists(
+                        cmake, repo_root, arch=arch, target=name, flipped_sources=flipped
+                    )
+                except ProfileDeriveError:
+                    continue
+                if source in {p.resolve() for p in module.compiled_tus}:
+                    owners.append((name, flipped))
+                    break
+        preferred = [item for item in owners if item[0] == preferred_target]
+        if preferred:
+            owners = preferred
+        if len(owners) > 1:
+            raise ProfileDeriveError(f"{source}: ambiguous CMake owners: {owners}")
+        if owners:
+            name, flipped = owners[0]
+            return derive(
+                directory,
+                repo_root,
+                arch=arch,
+                target=name,
+                usermode=usermode,
+                flipped_sources=flipped,
+            )
+        if directory == repo_root.resolve():
+            break
+    raise ProfileDeriveError(
+        f"{source}: no proven CMake source owner, including retained flipped sources"
+    )
+
+
 def derive(
     module_dir: Path,
     repo_root: Path,

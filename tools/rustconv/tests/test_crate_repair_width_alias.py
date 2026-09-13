@@ -100,6 +100,13 @@ def test_baked_width_is_replaced_not_stacked():
     assert "u64" not in next(e for e in plan.edits if e.rule == RULE_WIDTH_ALIAS).replacement
 
 
+def test_existing_alias_cast_that_still_errors_requires_scope_repair():
+    src = b"unsafe { HeapAlloc(h, 0, (n) as SIZE_T); }\n"
+    plan = _plan(src, [_site(src, b"(n) as SIZE_T", "u32", "usize")])
+    assert not plan.edits
+    assert any(s.reason == "alias_scope_mismatch" for s in plan.skipped)
+
+
 def test_argument_without_a_cast_gets_one():
     src = b"unsafe { HeapAlloc(h, 0, size_of::<T>()); }\n"
     plan = _plan(src, [_site(src, b"size_of::<T>()", "u32", "usize")])
@@ -174,3 +181,23 @@ def test_local_authorities_sees_glob_reachable_names(tmp_path):
     sigs, names = _local_authorities(tmp_path)
     assert sigs["HeapAlloc"] == ["HANDLE", "DWORD", "SIZE_T"]
     assert {"HANDLE", "DWORD", "SIZE_T"} <= names
+
+
+def test_comparison_promotes_descriptor_byte_instead_of_truncating_resource_type():
+    from rustconv.crate_repair import RULE_COMPARISON
+    src = b"fn f() { if descriptor.Type == Type { found(); } }"
+    # Locate the RHS, not the same-spelled field on the LHS.
+    start = src.index(b"== Type") + 3
+    diag = _diag([_span("src/a.rs", start, start + 4, label="expected `u8`, found `i32`", primary=True)])
+    plan = _plan(src, [diag])
+    assert len(plan.edits) == 1
+    assert plan.edits[0].rule == RULE_COMPARISON
+    assert plan.edits[0].original == "descriptor.Type"
+    assert plan.edits[0].replacement == "(descriptor.Type) as i32"
+
+
+def test_unknown_comparison_width_never_uses_assignment_truncation():
+    src = b"fn f() { if a == b { found(); } }"
+    plan = _plan(src, [_site(src, b"b", "u8", "usize")])
+    assert not plan.edits
+    assert any(s.reason == "promotion_not_proven" for s in plan.skipped)
