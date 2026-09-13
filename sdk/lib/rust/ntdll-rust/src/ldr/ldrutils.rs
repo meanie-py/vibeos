@@ -1493,7 +1493,7 @@ pub unsafe extern "system" fn LdrpResolveFullName(
 ) -> i32 {
     const STATUS_NAME_TOO_LONG: i32 = 0xC0000106u32 as i32;
     const UNICODE_STRING_MAX_BYTES: u32 = 0xFFFE;
-    const DPFLTR_LDR_ID: u32 = 51;
+    const DPFLTR_LDR_ID: u32 = 85;
 
     let mut Status: i32 = STATUS_SUCCESS;
     let mut Length: u32;
@@ -1576,7 +1576,7 @@ pub unsafe extern "system" fn LdrpSearchPath(
     const STATUS_SUCCESS: i32 = 0;
     const STATUS_NAME_TOO_LONG: i32 = 0xC0000106u32 as i32;
     const STATUS_NOT_FOUND: i32 = 0xC0000225u32 as i32;
-    const DPFLTR_LDR_ID: u32 = 51;
+    const DPFLTR_LDR_ID: u32 = 85;
 
     let mut TryAgain: u8 = 0;
     let mut ActualSearchPath: *mut u16 = *SearchPath;

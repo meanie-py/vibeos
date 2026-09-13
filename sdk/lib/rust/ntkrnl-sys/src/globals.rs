@@ -81,7 +81,7 @@ pub const KD_PRINT_MAX_BYTES: u32 = 512;
 pub const DPFLTR_MASK: u32 = 0x80000000;
 
 /// KDBG_TAG — pool tag for KD allocations.
-pub const KDBG_TAG: u32 = u32::from_le_bytes(*b"KDBg");
+pub const KDBG_TAG: u32 = u32::from_be_bytes(*b"GBDK"); // C literal 'GBDK' -- sdk/include/psdk/wdbgexts.h
 
 /// KD_OPTION values.
 pub const _KD_OPTION_KD_OPTION_SET_BLOCK_ENABLE: u32 = 0;

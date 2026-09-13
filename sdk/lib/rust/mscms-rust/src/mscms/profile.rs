@@ -67,7 +67,7 @@ const PROFILE_READWRITE: u32 = 0x0002; // Placeholder, correct value unknown
 
 // forward declarations for unknown functions
 
-const PROFILE_READWRITE: u32 = 0; // FIXME: real value of PROFILE_READWRITE
+const PROFILE_READWRITE: u32 = 0x2; // icm.h
 
 const ERROR_CALL_NOT_IMPLEMENTED: u32 = 0x78F;
 

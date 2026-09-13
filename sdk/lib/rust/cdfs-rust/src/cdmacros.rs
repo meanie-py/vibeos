@@ -530,7 +530,7 @@ const CD_PAGED_POOL: u32 = 1; // PagedPool
 // cd.h's CdNonPagedPool nominally maps to NonPagedPoolNx but ReactOS lowers it to
 // NonPagedPool at the 0x502 profile (see glue.rs CdNonPagedPool=_POOL_TYPE_NonPagedPool).
 const CD_NONPAGED_POOL: u32 = 0; // NonPagedPool
-const TAG_CCB: u32 = 0x63636443; // 'ccdC'
+const TAG_CCB: u32 = 0x63636443; // nolint: const-contradiction ('ccdC' -- cdfs/cdprocs.h:85; fastfat's is 'CtaF')
 const TAG_FCB_DATA: u32 = 0x64666443; // 'dfdC'
 const TAG_FCB_INDEX: u32 = 0x69666443; // 'ifdC'
 const TAG_FCB_NONPAGED_LOCAL: u32 = 0x6e666443; // 'nfdC'
@@ -1392,7 +1392,7 @@ pub unsafe extern "C" fn CdRvdVolId(RawVd: *mut i8, VcbState: u32) -> *mut i8 {
 const STATUS_SUCCESS: i32 = 0;
 const STATUS_ACCESS_DENIED: i32 = 0xC0000022u32 as i32;
 const STATUS_DEVICE_BUSY: i32 = 0x80000011u32 as i32;
-const IRP_CONTEXT_FLAG_WAIT: u32 = 0x00000004; // FIXED 2026-07-06: cdfs flag mismatch (verified vs cdstruc.h); WAIT=0x02 collided w/ MORE_PROCESSING and != the 0x04 CdAcquireResource checks -> WAIT flag never took -> every cdfs resource acquire ran non-blocking -> CANT_WAIT raise -> 0x1E under DUMMY_PSEH
+const IRP_CONTEXT_FLAG_WAIT: u32 = 0x00000004; // FIXED 2026-07-06: cdfs flag mismatch (verified vs cdstruc.h); WAIT=0x02 collided w/ MORE_PROCESSING and != the 0x04 CdAcquireResource checks -> WAIT flag never took -> every cdfs resource acquire ran non-blocking -> CANT_WAIT raise -> 0x1E under DUMMY_PSEH  // nolint: const-contradiction (cdfs's own flag set, cdstruc.h:1215)
 const VCB_STATE_LOCKED: u32 = 0x00000010;
 const VPB_LOCKED: u16 = 0x0002;
 const CDFS_RESIDUAL_USER_REFERENCE: u32 = 3; // cddata.h (grind had 1)

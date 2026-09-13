@@ -17,10 +17,10 @@ pub unsafe extern "system" fn SerialCreate(
     DeviceObject: PDEVICE_OBJECT,
     Irp: PIRP,
 ) -> NTSTATUS {
-    const DPFLTR_SERIAL_ID: u32 = 0;
-    const DPFLTR_TRACE_LEVEL: u32 = 5;
+    const DPFLTR_SERIAL_ID: u32 = 39;
+    const DPFLTR_TRACE_LEVEL: u32 = 2;
     const DPFLTR_INFO_LEVEL: u32 = 3;
-    const DPFLTR_WARNING_LEVEL: u32 = 2;
+    const DPFLTR_WARNING_LEVEL: u32 = 1;
     const STATUS_NOT_A_DIRECTORY: NTSTATUS = 0xC0000103u32 as NTSTATUS;
     const FILE_DIRECTORY_FILE: u32 = 0x00000001;
 

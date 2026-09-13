@@ -12,6 +12,7 @@ import signal
 import socket
 import socketserver
 import subprocess
+import sys
 import tempfile
 import threading
 import time
@@ -1186,6 +1187,27 @@ class QemuVM:
 
         self.qmp = QmpClient()
         self.serial = SerialClient()
+        # Called once, with self.qmp, the moment the QMP handshake completes and
+        # before anything reads serial. The one hook that lets a caller talk to
+        # QEMU at a point it cannot otherwise reach: after the monitor is live,
+        # but before the guest has run far enough to matter.
+        #
+        # It exists for record/replay, where `replay-break` must be armed before
+        # the replay runs past the icount you wanted to stop at, and where
+        # opening a SECOND QMP socket alongside this one is not an option:
+        # replay reach is measurably sensitive to how many host-side backends are
+        # attached (file-serial with no QMP reached 1773 guest lines where the
+        # same trace with QMP reached 23 — see the host-shape entry in
+        # docs/engineering/qemu-record-replay.md), so a second monitor would
+        # perturb the very thing under observation.
+        #
+        # Deliberately NOT reset by _reset_clients(): it is caller policy, not
+        # per-connection state, so it survives a restart and fires again on the
+        # next start() — which is what a caller arming a break on every boot of
+        # this VM means.
+        #
+        # None by default, so every existing boot path is byte-for-byte unchanged.
+        self.on_qmp_ready: Callable[[QmpClient], None] | None = None
         self._proc: subprocess.Popen | None = None
         self._boot_output: str = ""
         # Where each vCPU was parked when a boot timed out; filled by
@@ -1338,6 +1360,41 @@ class QemuVM:
             f"# tail -f {self.live_log_path}\n",
         )
 
+    def _arm_replay_break(self, rr, trace_dir) -> None:
+        """Install the on_qmp_ready hook that stops this replay at an icount.
+
+        A replay can only be stopped part-way by QMP `replay-break`, and only at
+        an icount where the recording ends an instruction chunk — anywhere else
+        aborts QEMU outright with `Playback shouldn't have to iowait`. That rule
+        is measured, not assumed: predicted before the run and confirmed to the
+        digit, both that a boundary pauses cleanly and that a mid-chunk target
+        dies with the exact remainder computed from the trace.
+
+        So the requested icount is SNAPPED forward to a legal boundary here,
+        where the trace is in hand, and the snap is announced rather than done
+        quietly — a caller who asked for a specific instruction deserves to know
+        the guest will be a few instructions past it.
+
+        Armed at QMP-ready rather than after boot because the replay is already
+        running by then and may be past the target.
+        """
+        want = rr.env_break()
+        if want is None:
+            return
+        target = rr.snap_break_icount(trace_dir, want)
+        if target != want:
+            print(
+                f"[rr] break icount {want} is mid-chunk and would abort the replay; "
+                f"using the next legal boundary {target} (+{target - want})",
+                file=sys.stderr,
+            )
+
+        def _arm(qmp):
+            qmp.execute("replay-break", icount=target)
+            print(f"[rr] replay-break armed at icount {target}", file=sys.stderr)
+
+        self.on_qmp_ready = _arm
+
     def _apply_record_replay(self, cmd: list[str]) -> list[str]:
         """Rewrite the launch command for QEMU record/replay when asked.
 
@@ -1397,6 +1454,7 @@ class QemuVM:
             # exists after the run.
         else:
             rr.assert_same_shape(trace_dir, new_cmd)
+            self._arm_replay_break(rr, trace_dir)
         # Give the boot watchdogs room. icount + blkreplay is several times
         # slower than plain TCG, and a REPLAY is slower still — it must wait out
         # each recorded I/O completion rather than take the host's. The x86
@@ -1765,6 +1823,15 @@ class QemuVM:
                 lambda: self.qmp.connect(str(self.qmp_path), timeout=self.config.qmp_timeout),
                 "QMP",
             )
+
+        if self.on_qmp_ready is not None:
+            # Deliberately NOT wrapped in try/except. A hook that swallowed its
+            # own failure would leave the caller believing a `replay-break` was
+            # armed when it was not, and the run would then look like "the break
+            # never fired" — indistinguishable from a break landing at an illegal
+            # icount, which is a real and separate failure we spent a night
+            # learning to tell apart. Fail loud instead.
+            self.on_qmp_ready(self.qmp)
 
     def wait_for_boot(self) -> str:
         """Wait for boot to complete. Returns all boot output.

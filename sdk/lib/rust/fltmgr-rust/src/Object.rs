@@ -32,7 +32,7 @@ pub const EX_PUSH_LOCK_SHARE_INC: usize = 0x10;
 
 pub const EX_PUSH_LOCK_PTR_BITS: usize = 0xf;
 
-const FM_TAG_UNICODE_STRING: ULONG = 0x6d556d46;
+const FM_TAG_UNICODE_STRING: ULONG = 0x73754D46; // 'suMF' drivers/filters/fltmgr/fltmgr.h
 #[no_mangle]
 pub unsafe extern "system" fn FltObjectReference(mut Object: PVOID) -> NTSTATUS {
     const STATUS_FLT_DELETING_OBJECT: NTSTATUS = 0xC01C000B_u32 as i32;

@@ -5894,6 +5894,33 @@ other. AMD's SSE2 `sin` computes `(-0.0 * 0.0) * S1` and answers `+0.0` for `sin
 the FMA3 path in the *same file* returns `x` below 2^-27 and answers `-0.0`. Neither is a
 transcription error, and only measurement finds it.
 
+### A differential harness that cannot see its two sides diverge in STATE will report state differences as BEHAVIOUR differences
+**Symptom.** A perf/conformance row fails hard and reproducibly — `towlower` 10.8x TOO SLOW,
+all 3 passes, flat 44 MiB/s across a 65536x size range, calibration twins clean at 1.01x — and
+nobody can reproduce it. Four theories died: host contention (held at 1.05x under 24-way load),
+a recent commit (nothing touched the path in 3 days), suite context (whole-suite and
+`--test perf` both pass), an in-process global leak (separate test binaries are separate
+processes).
+
+**Cause.** Reference and subject each held their OWN locale state, and had diverged.
+`towlower` branches on `lc_handle[LC_CTYPE]`: zero is an ASCII add, nonzero is **one
+`LCMapStringW` call per character**. The subject was on the NLS arm and the reference on the
+ASCII arm, so the harness was timing a Win32 call against an integer add and reporting the
+ratio as a slow body. A flat throughput that does not move across a 65536x size range is the
+tell — that is a fixed per-element cost, not a scaling one.
+
+**Fix.** Read the mode on BOTH sides, print it beside the table, and when they disagree fail
+with *oracle asymmetry — the comparison is invalid*, never with the performance verdict.
+"TOO SLOW" was a FALSE statement about a TRUE measurement, and it cost an innocent lane its
+batch. Do **not** pin either side to a known-good state to make the run green: that hides the
+state leak, which is the live bug. (`msvcrt-difftest/tests/perf.rs`, `locale_modes()`.)
+
+**Generalises past locale.** Any differential pair where one side can switch MODE — a codepage,
+a feature flag, a cached handle, an errno policy — has this hole. If the harness cannot observe
+the state both sides are in, it cannot tell you which kind of difference it just measured, and
+it will confidently report the wrong one. Note this is the same shape as the stale-generated-
+header class: the tool answers honestly, but answers a different question than the one asked.
+
 ### A gate can be RED for reasons that are not in the tree at all
 Symptom: a gate goes RED with **no failing test**. Cause: the verdict depended on host state,
 not on the diff. Fix: check the host before you read the artifact, because the artifact cannot
@@ -6566,6 +6593,29 @@ lanes compute statistics from it silently corrupts their conclusions too, not ju
 configurations could produce the same stored row, and whether either is one you would ever want
 to compare against the other. Same family as the worktree ambiguity in the same corpus, where
 three trees' rounds are separable only by string-matching `run_dir`.
+
+### A budget sized for a set of ONE is silently wrong the day the set grows to two
+
+**Symptom.** A harness grants a timing allowance for "an optional/slow item", the allowance is
+correct for months, and then a second such item is added and the LAST one is cut off mid-run.
+It is reported as a failure of the newly-added item — which did nothing wrong and was merely
+still running.
+
+**Cause.** The allowance was written as a one-shot flag rather than a per-item grant, because
+with a single item the two are indistinguishable. `ladder.py`'s drain extended once by
+`OPTIONAL_EXTRA_SECONDS` the first time any optional guest was seen to launch
+(`extended = False` → `extended = True`), while winlogon watches each optional guest for 300s
+*independently*. With `OPTIONAL = {sqlite32}` that is exactly right. Adding `lua32` made two
+guests share one extension, so the second would have been abandoned and graded "staged but never
+reported" — a RED verdict naming the wrong guest.
+
+**Fix.** Grant the allowance PER ITEM (`extended: set[str]`, one grant each). The general shape:
+when a collection has exactly one member, a per-member rule and a whole-collection rule are the
+same code, so the distinction never gets made and nothing tests it. **Whenever you add the second
+member to a set that had one, re-read every budget, timeout, flag and "did we already do this"
+guard that mentions the set** — the bug is not introduced by the new member, it was already there
+and merely unreachable. A regression test for this class must assert with *two* members present
+(and be checked against the old code: the fixed and broken versions both pass a one-member test).
 
 ### A verdict that blocks other people must carry its evidence
 Sibling of "an oracle needs an oracle": that one asks *did the oracle look?*, this one asks
@@ -7903,6 +7953,17 @@ symbols one way and undefined the other. That pair *is* the diagnostic.
   follow the call sites, not the stub. Symbols nothing references cannot drag the C object in,
   so they need no Rust definition; check with `llvm-nm --undefined-only` across the module's
   objects plus the `.spec` rather than assuming.
+- **And the OBJECT DIRECTORY is the authority on what a TARGET compiles — the cmake source
+  list is not.** `build-<arch>/**/CMakeFiles/<target>.dir/` holds exactly the TUs that were
+  built; a `list(APPEND …)`/`REMOVE_ITEM` parse of the `.cmake` does not, because arch `if()`
+  guards and source vars shared with a sibling target are invisible to it. Parsing
+  `libcntpr.cmake` reported **107** live `.c`; the object dirs said **21/20/28**
+  (amd64/arm64/i386). Worse than the count: pairing those 107 against the crate's 216
+  `#[no_mangle]` exports *by filename* produced **37 apparent double-definitions — all
+  phantoms**, none of them compiled on any arch. Same shape as the `-D<name>=` trap above:
+  filename is not symbol, and source-list membership is not compilation. Confirm both against
+  built artifacts before costing a translation or declaring a cohab collision.
+
 - **`#[export_name]` STACKS with i386 stdcall decoration, it does not replace it.** Give the
   UNDECORATED C name and declare the fn `extern "stdcall"`; rustc prepends the `_` and appends
   the `@<arg bytes>` itself. Writing the decorated name is the intuitive move and produces

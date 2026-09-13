@@ -510,6 +510,13 @@ no KVM, no `-smp N>1`, no NIC, no pre-existing `-icount`, native backend only.
 ~1.4GB and `vibeos-cli prune` does not know the trace root exists. Dry-run by
 default; `--apply` to act; `--name <trace>` to drop a specific known-bad one.
 
+`rr breaks <trace>` prints the icounts a replay of it can legally be stopped at.
+A replay runs the guest in the instruction chunks the recording wrote down, and a
+QMP `replay-break` landing part-way through a chunk aborts the whole replay with
+`Playback shouldn't have to iowait`. Chunk sizes span 1 to 2^28 instructions in a
+single boot, so there is no rounding rule — `--near <icount>` snaps a target to
+the next legal one and says how far into a chunk the unsnapped value sat.
+
 Design, gdb recipe and the divergence log: `docs/engineering/qemu-record-replay.md`.
 
 ### `ps [--json]`
