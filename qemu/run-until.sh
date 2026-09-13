@@ -4,8 +4,18 @@
 #
 # Usage:
 #   qemu/run-until.sh <run-id> --break <symbol> --timeout <secs>
+#                              [--break-if <gdb-condition>]
+#                              [--skip <n>]
 #                              [--then <inspect-command>]...
 #                              [--json]
+#
+# --break-if takes a gdb condition expression, evaluated at the breakpoint:
+#     --break "IopCompleteRequest" --break-if "Irp->IoStatus.Information > 0x40"
+# --skip ignores the first <n> hits:
+#     --break "ExAllocatePoolWithTag" --skip 5000
+# Both exist for HOT sites. An unconditional breakpoint on a path that fires
+# thousands of times per boot stops on the first, uninteresting hit; that made
+# `--break` useless at exactly the sites worth watching.
 #
 # This is the bounded primitive that replaces the fragile "set breakpoint in
 # one GDB session, hope it persists, attach later" pattern. It always issues
@@ -29,6 +39,8 @@ GDB_HELPERS_DIR="$SCRIPT_DIR/gdb-helpers"
 
 RUN_ID="${1:-}"
 BRK=""
+BRK_IF=""
+BRK_SKIP=""
 TIMEOUT=120
 THENS=()
 JSON=0
@@ -36,6 +48,8 @@ shift 2>/dev/null || true
 while [ $# -gt 0 ]; do
     case "$1" in
         --break)   shift; BRK="$1" ;;
+        --break-if) shift; BRK_IF="$1" ;;
+        --skip)    shift; BRK_SKIP="$1" ;;
         --timeout) shift; TIMEOUT="$1" ;;
         --then)    shift; THENS+=("$1") ;;
         --json)    JSON=1 ;;
@@ -44,7 +58,7 @@ while [ $# -gt 0 ]; do
     shift
 done
 
-[ -n "$RUN_ID" ] || die "usage: run-until.sh <run-id> --break <symbol> --timeout <secs> [--then <cmd>]"
+[ -n "$RUN_ID" ] || die "usage: run-until.sh <run-id> --break <symbol> [--break-if <cond>] [--skip <n>] --timeout <secs> [--then <cmd>]"
 [ -n "$BRK" ]    || die "--break required"
 manifest_exists "$RUN_ID" || die "no such run-id: $RUN_ID"
 
@@ -120,10 +134,34 @@ fi
 # commands below always run against a STOPPED target rather than crashing with
 # "Cannot execute while running". The host-side `timeout` (below) is a wider
 # safety net only — it should never be what fires.
-EX_ARGS+=(
-    -ex "break $BRK"
-    -ex "bounded-continue $TIMEOUT"
-)
+# --break-if / --skip exist because an unconditional breakpoint is unusable at a
+# HOT site. The IRP buffered-completion copy-back fires thousands of times per
+# boot, so `--break <symbol>` there stops on the first, uninteresting one and
+# tells you nothing — the instrument did not fit the site even once breakpoints
+# themselves were working. gdb has had the answer all along (`break X if COND`,
+# `ignore N COUNT`); run-until.sh just never exposed it.
+# `break X if COND` parses COND in the CURRENT frame, which at set time is
+# wherever the guest happens to be — so a condition naming the callee's own
+# parameters fails with "No symbol 'NumberOfBytes' in current context", and gdb
+# then leaves NO breakpoint set while the script sails on into
+# "Cannot execute this command while the target is running". `condition N COND`
+# parses in the breakpoint's own scope instead, which is what the caller means.
+EX_ARGS+=(-ex "break $BRK")
+if [ -n "$BRK_IF" ]; then
+    # If the expression does not resolve, gdb prints "No symbol 'X' in current
+    # context" and LEAVES THE BREAKPOINT UNCONDITIONAL — it then fires on the
+    # first hit and the caller believes it was filtered. That is a silent
+    # degradation of exactly the kind that wastes a debugging session, so the
+    # marker below is grepped for after the run and turned into a hard failure.
+    # (Conditions naming a callee's parameters are fragile here: a breakpoint on
+    # a Rust symbol often resolves into an INLINED helper whose scope has no such
+    # name. Register conditions -- `$x1 > 0x4000` -- always parse.)
+    EX_ARGS+=(-ex "condition 1 $BRK_IF" -ex "echo ===COND-SET===\n")
+fi
+# `ignore` needs the breakpoint number; ours is always 1 here because
+# bounded-continue runs against a freshly-`delete`d breakpoint table.
+[ -n "$BRK_SKIP" ] && EX_ARGS+=(-ex "ignore 1 $BRK_SKIP")
+EX_ARGS+=(-ex "bounded-continue $TIMEOUT")
 
 for t in "${THENS[@]:-}"; do
     [ -z "$t" ] && continue
@@ -159,6 +197,14 @@ HARD_TIMEOUT=$(( TIMEOUT + 30 ))
     echo "=== gdb exit rc=$rc ==="
 } | tee "$TMP_OUT" | tee -a "$GDB_LOG"
 
+if [ -n "$BRK_IF" ] && grep -q "No symbol .* in current context" "$TMP_OUT"; then
+    log_error "--break-if '$BRK_IF' did not resolve; gdb left the breakpoint"
+    log_error "UNCONDITIONAL, so any hit below is unfiltered. Refusing to report it."
+    log_error "A breakpoint on a Rust symbol often resolves into an inlined helper"
+    log_error "whose scope lacks the callee's parameter names — use a register"
+    log_error "condition instead (e.g. --break-if '\$x1 > 0x4000')."
+    exit 3
+fi
 if grep -q '=== BREAKPOINT HIT ===' "$TMP_OUT"; then
     rc=0
 else

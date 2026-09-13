@@ -903,7 +903,9 @@ def test_the_gdb_flag_warns_that_stopping_a_replay_aborts_qemu(tmp_path, monkeyp
     # and it must not overstate: `continue` DOES work, so a blanket "gdb is
     # broken" would send people away from the half that is usable.
     assert "continue" in err
-    # and it must claim replay-specificity only where that was actually
-    # established: `interrupt` not landing turned out to reproduce on a
-    # non-replay control, so it is not evidence about replay at all.
-    assert "interrupt" not in err
+    # and it must say the conclusion that was actually reached: a breakpoint HIT
+    # aborts too, so there is no stopping mechanism left and a trace is a capture
+    # rather than a debugging session. Softer wording would leave someone
+    # planning a session that cannot work.
+    assert "BREAKPOINT HIT" in err
+    assert "CAPTURE" in err

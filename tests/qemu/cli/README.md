@@ -480,12 +480,13 @@ and keeps a self-contained trace under `~/vibeos-rr/`; `rr replay latest` re-run
 that exact boot instruction-for-instruction. A 1-in-60 crash you have recorded
 reproduces every time.
 
-**`--gdb` does not currently get you to reverse execution.** On QEMU 9.0.2 you
-can connect, read registers and `continue`, but `stepi` aborts QEMU
-(`Playback shouldn't have to iowait`), and nobody has yet stopped a replay at a
-point of interest to issue `reverse-continue` from. Read the "Replaying with
-gdb" section of `docs/engineering/qemu-record-replay.md` before planning a
-debugging session.
+**A replay cannot be stopped, so `--gdb` cannot debug one.** On QEMU 9.0.2 you
+can attach at `-S` and `continue`, but every later stop — `stepi`, attaching
+mid-run, and a breakpoint HIT — aborts QEMU with
+`Playback shouldn't have to iowait`. A trace is a deterministic **capture**
+(serial, screenshots and triage all work on a replay), not a debugging session.
+See the "Replaying with gdb" section of
+`docs/engineering/qemu-record-replay.md`.
 
 `rr verify <trace>` is the tool's own oracle: it replays and diffs the replay's
 serial against the recording's, so you learn that the guest ran *the same boot* —

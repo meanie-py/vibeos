@@ -124,7 +124,7 @@ it gives up hardware virtualization as well.
 the UP:=smp1 collapse case the arm64 bug lives in. Refusing all `-smp` would
 have refused the only interesting boot.
 
-## Replaying with gdb — partly usable, and reverse execution is out of reach
+## Replaying with gdb — a replay cannot be stopped, so it cannot be debugged
 
 **Read this before planning any debugging session on a replay.** Measured on
 aarch64 QEMU 9.0.2, on a fresh warning-free trace, outside the harness so
@@ -168,15 +168,39 @@ instances of the same rule, and it explains the whole picture:
 > Attaching at `-S` before the replay runs is fine, and `continue` from there is
 > fine. Every later stop — `stepi`, attaching mid-run — aborts.
 
-Whether a BREAKPOINT HIT is also such a stop is **not yet known**, and the
-attempt to find out was inconclusive rather than negative: on a replay the
-breakpoint (at the verified-hot `ExAllocatePoolWithTag`, set at `-S`) did not
-fire within 400s while the guest reached 1,378 serial lines; but the `rr=record`
-control, differing by one flag, produced **zero** serial lines in the same 400s,
-so there is nothing to compare against. Breakpoint checking disables TCG block
-chaining, which on top of icount and blkreplay plausibly makes either mode far
-slower than the budget allowed. Re-run both legs with a much longer budget before
-concluding anything; do not read the replay leg on its own.
+**A breakpoint hit is also such a stop, and it aborts too.** With the breakpoint
+at the verified-hot `ExAllocatePoolWithTag`, set at `-S` and continued into, the
+replay died at the hit:
+
+```
+qemu_rc = -6
+qemu-system-aarch64: Playback shouldn't have to iowait
+  (insn total 9507590363/3422 left, event 64901 is EVENT_INSTRUCTION)
+```
+
+That closes the question with no exception left, and it is the answer that
+decides what this tool is:
+
+> **On QEMU 9.0.2, rr is a camera, not a debugger.** A trace is a deterministic
+> *capture* — re-runnable, with serial, screenshots and the harness's own triage
+> all working. It is not a deterministic *debugging session*: there is no way to
+> stop a replay and look, by any means, because every mechanism for stopping one
+> is the thing that kills it.
+
+Two earlier rounds of this experiment reported "the breakpoint never fired", and
+both were **my arithmetic**, not a property of replay. `qemu/symbols-*.tsv`
+holds LINKED-IMAGE addresses, whose preferred base is `0x400000` — not RVAs. The
+true RVA is `addr - 0x400000` (the `PE_PREFERRED_IMAGE_BASE` constant in
+`find-kbase.py` is exactly this). Breaking at `kbase + 0x42fac4` instead of
+`kbase + 0x2fac4` put the breakpoint 4MB past the function, where nothing ever
+executed. Every "set a breakpoint and nothing happened" result in this document's
+history traces to that one error; the corrected address hit on the first try.
+
+One loose end, recorded rather than explained: the `rr=record` control leg
+produced **zero** serial lines in 1200s with a breakpoint set, where the replay
+leg under the same conditions reached 1,378. Recording without a breakpoint is
+fast and reliable, so something about breakpoint checking under `rr=record` is
+pathological. Not chased — it does not change the conclusion above.
 
 The abort is:
 
