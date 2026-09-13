@@ -38,7 +38,11 @@ add_cd_file(TARGET wow64cpu DESTINATION reactos/system32 FOR all)
 #
 # GUEST EXES: all four rungs — hello32 (0x600D), gui32 (win32k GDI, 0x600e),
 # testgui + doom (E4b: window creation + kernel->user callbacks).
-set(_wow64_guests
+# The NINE machine-verdicted ladder guests. Their staging must not depend on
+# anything else: every entry below reports a real exit code (0x600D, gui32
+# 0x600E), `smoke --ladder` grades them, and the gate now opts in on their
+# presence (tests/qemu/cli/ladder.py).
+set(_wow64_ladder
     ${REACTOS_SOURCE_DIR}/build-fex-hello/hello32.exe
     ${REACTOS_SOURCE_DIR}/build-fex-hello/gui32.exe
     ${REACTOS_SOURCE_DIR}/build-fex-hello/win32.exe
@@ -47,7 +51,14 @@ set(_wow64_guests
     ${REACTOS_SOURCE_DIR}/build-fex-hello/marshal32.exe
     ${REACTOS_SOURCE_DIR}/build-fex-hello/fault32.exe
     ${REACTOS_SOURCE_DIR}/build-fex-hello/thread32.exe
-    ${REACTOS_SOURCE_DIR}/build-fex-hello/selfmod32.exe
+    ${REACTOS_SOURCE_DIR}/build-fex-hello/selfmod32.exe)
+
+# Best-effort robustness extras. Their pass criterion is "still running after
+# 8-10s", which ladder.py explicitly does NOT check, so a missing one must not
+# cost the nine guests their staging -- it did: ONE absent doom-i386.exe kept all
+# nine off the livecd, and doom cannot even be built here (its shareware WAD URL
+# 404s), so the ladder was unreachable rather than merely unstaged.
+set(_wow64_extras
     ${REACTOS_SOURCE_DIR}/build-i386/base/applications/testgui/testgui.exe
     ${REACTOS_SOURCE_DIR}/build-i386/base/applications/games/winmine/winmine.exe
     ${REACTOS_SOURCE_DIR}/build-i386/base/applications/calc/calc.exe
@@ -68,12 +79,22 @@ set(_wow64_guests
     ${REACTOS_SOURCE_DIR}/build-i386/base/applications/msconfig/msconfig.exe
     ${REACTOS_SOURCE_DIR}/build-i386/base/applications/sndrec32/sndrec32.exe
     ${REACTOS_SOURCE_DIR}/build-i386/base/applications/kbswitch/kbswitch.exe
-    ${REACTOS_SOURCE_DIR}/tools/doom/doom-i386.exe)
+    ${REACTOS_SOURCE_DIR}/tools/doom/doom-i386.exe
+    )
+
 set(_wow64_guest_ok TRUE)
-foreach(_f ${_wow64_guests})
+foreach(_f ${_wow64_ladder})
     if(NOT EXISTS ${_f})
         set(_wow64_guest_ok FALSE)
         message(STATUS "WOW64 E4: ${_f} missing — syswow64 NOT staged on livecd (WoW64 probes will no-op)")
+    endif()
+endforeach()
+set(_wow64_extras_present "")
+foreach(_f ${_wow64_extras})
+    if(EXISTS ${_f})
+        list(APPEND _wow64_extras_present ${_f})
+    else()
+        message(STATUS "WOW64 E4: optional ${_f} missing — not staged; the nine ladder guests are unaffected")
     endif()
 endforeach()
 if(_wow64_guest_ok)
@@ -96,28 +117,8 @@ if(_wow64_guest_ok)
                 # the crash-at-first-call this closure exists to prevent. Adding them
                 # is currently a no-op (measured: same 64 modules), which is the point
                 # — it costs nothing and stops depending on luck.
-                ${_wow64_guests}
-                ${REACTOS_SOURCE_DIR}/build-i386/base/applications/testgui/testgui.exe
-                ${REACTOS_SOURCE_DIR}/tools/doom/doom-i386.exe
-                ${REACTOS_SOURCE_DIR}/build-fex-hello/gui32.exe
-                ${REACTOS_SOURCE_DIR}/build-i386/base/applications/calc/calc.exe
-                ${REACTOS_SOURCE_DIR}/build-i386/base/applications/notepad/notepad.exe
-                ${REACTOS_SOURCE_DIR}/build-i386/base/applications/games/solitaire/sol.exe
-                ${REACTOS_SOURCE_DIR}/build-i386/base/applications/charmap/charmap.exe
-                ${REACTOS_SOURCE_DIR}/build-i386/base/applications/mspaint/mspaint.exe
-                ${REACTOS_SOURCE_DIR}/build-i386/base/applications/regedit/regedit.exe
-                ${REACTOS_SOURCE_DIR}/build-i386/base/applications/winver/winver.exe
-                ${REACTOS_SOURCE_DIR}/build-i386/base/applications/taskmgr/taskmgr.exe
-                ${REACTOS_SOURCE_DIR}/build-i386/base/applications/wordpad/wordpad.exe
-                ${REACTOS_SOURCE_DIR}/build-i386/base/applications/clipbrd/clipbrd.exe
-                ${REACTOS_SOURCE_DIR}/build-i386/base/applications/osk/osk.exe
-                ${REACTOS_SOURCE_DIR}/build-i386/base/applications/magnify/magnify.exe
-                ${REACTOS_SOURCE_DIR}/build-i386/base/applications/games/spider/spider.exe
-                ${REACTOS_SOURCE_DIR}/build-i386/base/applications/mscutils/eventvwr/eventvwr.exe
-                ${REACTOS_SOURCE_DIR}/build-i386/base/applications/mscutils/devmgmt/devmgmt.exe
-                ${REACTOS_SOURCE_DIR}/build-i386/base/applications/msconfig/msconfig.exe
-                ${REACTOS_SOURCE_DIR}/build-i386/base/applications/sndrec32/sndrec32.exe
-                ${REACTOS_SOURCE_DIR}/build-i386/base/applications/kbswitch/kbswitch.exe
+                ${_wow64_ladder}
+                ${_wow64_extras_present}
         OUTPUT_VARIABLE _wow64_closure
         ERROR_VARIABLE _wow64_closure_err
         RESULT_VARIABLE _wow64_closure_rc)
@@ -134,53 +135,29 @@ if(_wow64_guest_ok)
         list(GET _kv 1 _path)
         add_cd_file(FILE ${_path} DESTINATION reactos/syswow64 NAME_ON_CD ${_name} FOR livecd)
     endforeach()
-    add_cd_file(FILE ${REACTOS_SOURCE_DIR}/build-fex-hello/hello32.exe DESTINATION reactos/syswow64 FOR livecd)
-    add_cd_file(FILE ${REACTOS_SOURCE_DIR}/build-fex-hello/gui32.exe DESTINATION reactos/syswow64 FOR livecd)
-    add_cd_file(FILE ${REACTOS_SOURCE_DIR}/build-fex-hello/win32.exe DESTINATION reactos/syswow64 FOR livecd)
-    add_cd_file(FILE ${REACTOS_SOURCE_DIR}/build-fex-hello/file32.exe DESTINATION reactos/syswow64 FOR livecd)
-    add_cd_file(FILE ${REACTOS_SOURCE_DIR}/build-fex-hello/async32.exe DESTINATION reactos/syswow64 FOR livecd)
-    add_cd_file(FILE ${REACTOS_SOURCE_DIR}/build-fex-hello/marshal32.exe DESTINATION reactos/syswow64 FOR livecd)
-    add_cd_file(FILE ${REACTOS_SOURCE_DIR}/build-fex-hello/fault32.exe DESTINATION reactos/syswow64 FOR livecd)
-    add_cd_file(FILE ${REACTOS_SOURCE_DIR}/build-fex-hello/thread32.exe DESTINATION reactos/syswow64 FOR livecd)
-    add_cd_file(FILE ${REACTOS_SOURCE_DIR}/build-fex-hello/selfmod32.exe DESTINATION reactos/syswow64 FOR livecd)
-    add_cd_file(FILE ${REACTOS_SOURCE_DIR}/build-i386/base/applications/testgui/testgui.exe DESTINATION reactos/syswow64 FOR livecd)
-    add_cd_file(FILE ${REACTOS_SOURCE_DIR}/build-i386/base/applications/games/winmine/winmine.exe DESTINATION reactos/syswow64 FOR livecd)
-    add_cd_file(FILE ${REACTOS_SOURCE_DIR}/build-i386/base/applications/calc/calc.exe DESTINATION reactos/syswow64 FOR livecd)
-    add_cd_file(FILE ${REACTOS_SOURCE_DIR}/build-i386/base/applications/notepad/notepad.exe DESTINATION reactos/syswow64 FOR livecd)
-    add_cd_file(FILE ${REACTOS_SOURCE_DIR}/build-i386/base/applications/games/solitaire/sol.exe DESTINATION reactos/syswow64 FOR livecd)
-    # E8 robustness ladder: new-surface stock applets — charmap (font-enum
-    # arrays + EnumFontFamilies callback), mspaint (heavy GDI regions/DIB +
-    # comdlg32 common dialogs), regedit (treeview/listview + registry-enum
-    # arrays), winver (shell32 ShellAbout dialog).
-    add_cd_file(FILE ${REACTOS_SOURCE_DIR}/build-i386/base/applications/charmap/charmap.exe DESTINATION reactos/syswow64 FOR livecd)
-    add_cd_file(FILE ${REACTOS_SOURCE_DIR}/build-i386/base/applications/mspaint/mspaint.exe DESTINATION reactos/syswow64 FOR livecd)
-    add_cd_file(FILE ${REACTOS_SOURCE_DIR}/build-i386/base/applications/regedit/regedit.exe DESTINATION reactos/syswow64 FOR livecd)
-    add_cd_file(FILE ${REACTOS_SOURCE_DIR}/build-i386/base/applications/winver/winver.exe DESTINATION reactos/syswow64 FOR livecd)
-    # E9 robustness ladder: taskmgr (listview + NtQuerySystemInformation process
-    # array), wordpad (richedit/riched20 — a new control library), clipbrd
-    # (clipboard format marshalling).
-    add_cd_file(FILE ${REACTOS_SOURCE_DIR}/build-i386/base/applications/taskmgr/taskmgr.exe DESTINATION reactos/syswow64 FOR livecd)
-    add_cd_file(FILE ${REACTOS_SOURCE_DIR}/build-i386/base/applications/wordpad/wordpad.exe DESTINATION reactos/syswow64 FOR livecd)
-    add_cd_file(FILE ${REACTOS_SOURCE_DIR}/build-i386/base/applications/clipbrd/clipbrd.exe DESTINATION reactos/syswow64 FOR livecd)
-    add_cd_file(FILE ${REACTOS_SOURCE_DIR}/build-i386/base/applications/osk/osk.exe DESTINATION reactos/syswow64 FOR livecd)
-    add_cd_file(FILE ${REACTOS_SOURCE_DIR}/build-i386/base/applications/magnify/magnify.exe DESTINATION reactos/syswow64 FOR livecd)
-    # E11 robustness ladder, chosen for surface no earlier guest reached:
-    #   spider    cardlib DIB blitting — the direct disproof rung for E10's
-    #             NtGdiCreateDIBSection marshaller (guest gdi32's 4-byte &bmBits)
-    #   eventvwr  listview + the event-log RPC client (first 32-bit guest to do
-    #             real RPC/LPC to a 64-bit service)
-    #   devmgmt   setupapi device enumeration + treeview
-    #   msconfig  comctl32 PROPERTY SHEETS / tab control (a new control family)
-    #   sndrec32  winmm/mmsystem (a new DLL family in the import closure)
-    #   kbswitch  shell tray notification icon (Shell_NotifyIcon IPC)
-    add_cd_file(FILE ${REACTOS_SOURCE_DIR}/build-i386/base/applications/games/spider/spider.exe DESTINATION reactos/syswow64 FOR livecd)
-    add_cd_file(FILE ${REACTOS_SOURCE_DIR}/build-i386/base/applications/mscutils/eventvwr/eventvwr.exe DESTINATION reactos/syswow64 FOR livecd)
-    add_cd_file(FILE ${REACTOS_SOURCE_DIR}/build-i386/base/applications/mscutils/devmgmt/devmgmt.exe DESTINATION reactos/syswow64 FOR livecd)
-    add_cd_file(FILE ${REACTOS_SOURCE_DIR}/build-i386/base/applications/msconfig/msconfig.exe DESTINATION reactos/syswow64 FOR livecd)
-    add_cd_file(FILE ${REACTOS_SOURCE_DIR}/build-i386/base/applications/sndrec32/sndrec32.exe DESTINATION reactos/syswow64 FOR livecd)
-    add_cd_file(FILE ${REACTOS_SOURCE_DIR}/build-i386/base/applications/kbswitch/kbswitch.exe DESTINATION reactos/syswow64 FOR livecd)
-    add_cd_file(FILE ${REACTOS_SOURCE_DIR}/tools/doom/doom-i386.exe DESTINATION reactos/syswow64 NAME_ON_CD doom.exe FOR livecd)
-    add_cd_file(FILE ${REACTOS_SOURCE_DIR}/tools/doom/doom1.wad DESTINATION reactos/syswow64 FOR livecd)
+    # The nine graded guests: the existence gate above already proved every one
+    # of them, so these are unconditional.
+    foreach(_f ${_wow64_ladder})
+        add_cd_file(FILE ${_f} DESTINATION reactos/syswow64 FOR livecd)
+    endforeach()
+    # The robustness extras, whichever survived the presence filter. Same set and
+    # same rationale as before (E8 charmap/mspaint/regedit/winver, E9
+    # taskmgr/wordpad/clipbrd, E11 spider/eventvwr/devmgmt/msconfig/sndrec32/
+    # kbswitch, plus testgui and the stock four) -- only no longer all-or-nothing
+    # with the guests.
+    foreach(_f ${_wow64_extras_present})
+        if("${_f}" MATCHES "doom-i386\\.exe$")
+            # winlogon launches it by the name it expects, not the build's.
+            add_cd_file(FILE ${_f} DESTINATION reactos/syswow64 NAME_ON_CD doom.exe FOR livecd)
+        else()
+            add_cd_file(FILE ${_f} DESTINATION reactos/syswow64 FOR livecd)
+        endif()
+    endforeach()
+    # The IWAD is data, not a PE, so it is not a closure root -- it rides here
+    # beside doom.exe instead, and only when doom itself made it on.
+    if(EXISTS ${REACTOS_SOURCE_DIR}/tools/doom/doom1.wad)
+        add_cd_file(FILE ${REACTOS_SOURCE_DIR}/tools/doom/doom1.wad DESTINATION reactos/syswow64 FOR livecd)
+    endif()
 endif()
 
 endif()

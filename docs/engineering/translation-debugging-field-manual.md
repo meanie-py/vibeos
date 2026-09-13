@@ -5358,6 +5358,59 @@ moved **987 → 9 with no source change**. A verdict that depends on which sibli
 a gate. Pinned *toolchains* may be shared (content-addressed); generated *headers* are
 per-commit state and must come from THIS worktree or the tool hard-fails.
 
+### A watcher that starts from an empty buffer waits for what already went past
+**Symptom:** a wait that is supposed to end early always runs to its full timeout — and the
+run PASSES, so nothing looks wrong except the clock. The verdict is correct; only the duration
+is absurd.
+
+**Cause:** the watcher scans a buffer it begins accumulating at call time, while the caller has
+already consumed part of the stream. Anything that arrived before the call is invisible to it,
+so it waits forever for a marker that has gone by. Measured: `smoke --ladder` reported
+`9/9 guests PASS` and drained **420.2s of a 420s budget**, because one guest
+(`gui32.exe exit = 0x600e`) reported during the boot's SETTLE read rather than during the
+drain. The grading function saw both halves of the serial and was right; the waiter saw only
+its own half and was stuck.
+
+**Fix:** pass what the caller has already seen (`watch(vm, seen=text)`) and wait only on the
+markers still outstanding — including the case where NOTHING is outstanding, which must read
+zero bytes rather than block. Keep the ceiling a real ceiling: a guest that never reports still
+has to spend the budget, or the fix trades a slow pass for a fast false failure.
+
+**Why it hides:** the two halves are rejoined before anyone grades them, so every correctness
+check passes and no failure is ever produced. Only a DURATION instrument finds it. This one was
+caught by a log line added for an unrelated reason — to answer "is the 420s ceiling too
+generous?" — which then showed the ceiling being hit unconditionally. **If a bounded wait has
+no recorded elapsed time, it has no evidence it is bounded.**
+
+### A NAME inside an image does not prove the FILE is in it
+**Symptom:** a preflight reports a file is staged on the boot media, on a media where it is
+not staged at all — and the check is reading a freshly built, entirely correct artifact, so
+none of the staleness rules above apply.
+
+**Cause:** the check scanned the image for the file's NAME. Names live in images for reasons
+that have nothing to do with staging: the launcher's own diagnostics carry them. `hello32.exe`
+is present as plain ASCII in every amd64 livecd whether or not a single WoW64 guest was
+staged, because winlogon's error path holds
+`"[WINLOGON] CreateProcessW(hello32.exe) FAILED (error %lu)"` in its string table (measured at
+offset `0x9c2ffe4`). So the probe returned PRESENT unconditionally, and the gate demanded a
+ladder from boots that had none — costing the full 420s drain to conclude `LADDER_NOT_STAGED`,
+which is exactly what the probe existed to avoid.
+
+**Fix:** ask the STAGING MANIFEST (`build-<arch>/boot/<media>.cmake.lst`), which is what
+`add_cd_file` wrote, and match the **CD-path** side. Two traps in doing that: the source side
+is useless for anything staged from a sibling tree (`build-fex-hello`, `build-i386` — outside
+the build dir every other entry points into), and matching a bare basename re-admits the same
+error, so match the directory too (`*/syswow64/<guest>.exe`).
+
+**The generalisation, and it is not "be careful with greps":** `probes_missing_from_media` was
+the RIGHT tool for its own question — *is this string compiled in* (`--require-probe`), where a
+substring hit is exactly the semantics wanted. *Is this file staged at this path* is a
+different question that happens to look answerable by the same call. Reaching for the existing
+mechanism is correct; check that its question is your question. This is AGENTS.md's
+re-derive-a-measurement rule landing on a check whose subject is itself a reading: two routes
+disagreed (scan said staged, manifest said zero `syswow64` entries) and the boot broke the tie
+by reporting no guest verdict at all.
+
 ### A build-time flavor knob that keeps the SAME output name defeats every name-based check
 **Symptom:** a run is green and the screenshot is a full desktop, but the binary under test is
 not the flavor you think. **Cause:** a cmake cache var that changes what a binary *is* without
