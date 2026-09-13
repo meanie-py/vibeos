@@ -20,7 +20,7 @@ elseif(ARCH STREQUAL "amd64")
 elseif(ARCH STREQUAL "arm64")
     set(NETID_RUST_TARGET "aarch64-pc-windows-gnullvm")
 endif()
-set(NETID_RUST_TARGET_DIR "${CMAKE_CURRENT_BINARY_DIR}/rust-netid-target")
+rust_storage_target(NETID_RUST_TARGET_DIR "${CMAKE_CURRENT_BINARY_DIR}/rust-netid-target" netid-rust)
 set(NETID_RUST_LIB "${CMAKE_CURRENT_BINARY_DIR}/libnetid_rust.a")
 rust_crate_sources(NETID_RUST_SRCS "${NETID_RUST_WORKSPACE_DIR}" netid-rust)
 add_custom_command(

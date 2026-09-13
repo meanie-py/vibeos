@@ -7,7 +7,7 @@ include_directories(
 # to the SCSI/disk class. .c files kept on disk (never-delete). Bar: link-clean x3 (NOT
 # boot-loaded in smoke -- boots from CD/ramdisk, not USB).
 set(USBSTOR_RUST_WORKSPACE_DIR "${CMAKE_SOURCE_DIR}/sdk/lib/rust")
-set(USBSTOR_RUST_TARGET_DIR "${CMAKE_CURRENT_BINARY_DIR}/rust-usbstor-target")
+rust_storage_target(USBSTOR_RUST_TARGET_DIR "${CMAKE_CURRENT_BINARY_DIR}/rust-usbstor-target" usbstor-rust)
 set(USBSTOR_RUST_LIB "${CMAKE_CURRENT_BINARY_DIR}/libusbstor_rust.a")
 if(ARCH STREQUAL "i386")
     set(USBSTOR_RUST_TARGET "i686-pc-windows-gnu")

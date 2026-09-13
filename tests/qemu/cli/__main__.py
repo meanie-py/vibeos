@@ -57,6 +57,12 @@ def build_parser() -> argparse.ArgumentParser:
     arch_arg(b)
     b.add_argument("--clean", action="store_true", help="cold: nuke all rust targets")
     b.add_argument(
+        "--rust-storage-shards",
+        type=int,
+        choices=range(17),
+        help="persist direct staticlib storage layout: 0 private, 1-16 local Cargo shards",
+    )
+    b.add_argument(
         "--incremental",
         action="store_true",
         help="fast-iterate: rustc incremental (Rust sccache OFF; non-reproducible, not for gate)",
@@ -617,7 +623,29 @@ def build_parser() -> argparse.ArgumentParser:
         default=0,
         help="only prune trees untouched for N hours (default 24 with --retain-gib, otherwise 0)",
     )
+    pr.add_argument(
+        "--include-integration",
+        action="store_true",
+        help="allow idle conductor scratch to participate in retention",
+    )
+    pr.add_argument(
+        "--min-free-gib",
+        type=float,
+        help="also reclaim eligible outputs toward this filesystem headroom",
+    )
     pr.set_defaults(fn=prune_mod.prune)
+
+    from . import retention
+
+    rt = sub.add_parser("retention", help="configure or run hourly idle-output retention")
+    modes = rt.add_mutually_exclusive_group()
+    modes.add_argument("--enable", action="store_true")
+    modes.add_argument("--disable", action="store_true")
+    modes.add_argument("--run", action="store_true")
+    rt.add_argument("--retain-gib", type=float, default=100)
+    rt.add_argument("--min-free-gib", type=float, default=150)
+    rt.add_argument("--idle-hours", type=float, default=24)
+    rt.set_defaults(fn=retention.command)
 
     # repro — determinism/reproducibility measurement (det-plan rung 0/5)
     rp = sub.add_parser(
@@ -654,7 +682,7 @@ def build_parser() -> argparse.ArgumentParser:
 
 def main(argv: list[str] | None = None) -> int:
     args = build_parser().parse_args(argv)
-    if args.cmd not in maintenance.UNLOCKED:
+    if args.cmd not in maintenance.UNLOCKED and args.cmd != "retention":
         try:
             with maintenance.activity(REPO):
                 return _dispatch(args)

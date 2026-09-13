@@ -14,7 +14,7 @@ add_dependencies(lsalib xdk)
 # TU that PUBLIC-links the Rust archive (usbdex-style cohab). lsalib-rust depends
 # on ntkrnl-sys + lsass-sys (the LSA LPC message substrate). Built for all 3 arches.
 set(NTLSALIB_RUST_WORKSPACE_DIR "${CMAKE_SOURCE_DIR}/sdk/lib/rust")
-set(NTLSALIB_RUST_TARGET_DIR "${CMAKE_CURRENT_BINARY_DIR}/rust-lsalib-target")
+rust_storage_target(NTLSALIB_RUST_TARGET_DIR "${CMAKE_CURRENT_BINARY_DIR}/rust-lsalib-target" lsalib-rust)
 set(NTLSALIB_RUST_LIB "${CMAKE_CURRENT_BINARY_DIR}/liblsalib_rust.a")
 if(ARCH STREQUAL "i386")
     set(NTLSALIB_RUST_TARGET "i686-pc-windows-gnu")

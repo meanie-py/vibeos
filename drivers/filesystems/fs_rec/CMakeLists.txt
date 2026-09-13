@@ -13,7 +13,7 @@
 # DEVICE_EXTENSION + per-FS superblocks) come from the gen_driver_types.sh bindgen
 # substrate (fs_rec-rust/src/types.rs). Mirrors the partmgr-rust / swenum-rust cohab.
 set(FS_REC_RUST_WORKSPACE_DIR "${CMAKE_SOURCE_DIR}/sdk/lib/rust")
-set(FS_REC_RUST_TARGET_DIR "${CMAKE_CURRENT_BINARY_DIR}/rust-fs_rec-target")
+rust_storage_target(FS_REC_RUST_TARGET_DIR "${CMAKE_CURRENT_BINARY_DIR}/rust-fs_rec-target" fs_rec-rust)
 set(FS_REC_RUST_LIB "${CMAKE_CURRENT_BINARY_DIR}/libfs_rec_rust.a")
 if(ARCH STREQUAL "i386")
     set(FS_REC_RUST_TARGET "i686-pc-windows-gnu")

@@ -29,7 +29,7 @@ elseif(ARCH STREQUAL "amd64")
 elseif(ARCH STREQUAL "arm64")
     set(DHCPCSVC_RUST_TARGET "aarch64-pc-windows-gnullvm")
 endif()
-set(DHCPCSVC_RUST_TARGET_DIR "${CMAKE_CURRENT_BINARY_DIR}/rust-dhcpcsvc-target")
+rust_storage_target(DHCPCSVC_RUST_TARGET_DIR "${CMAKE_CURRENT_BINARY_DIR}/rust-dhcpcsvc-target" dhcpcsvc-rust)
 set(DHCPCSVC_RUST_LIB "${CMAKE_CURRENT_BINARY_DIR}/libdhcpcsvc_rust.a")
 rust_crate_sources(DHCPCSVC_RUST_SRCS "${DHCPCSVC_RUST_WORKSPACE_DIR}" dhcpcsvc-rust)
 add_custom_command(

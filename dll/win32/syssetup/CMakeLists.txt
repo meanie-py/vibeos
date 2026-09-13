@@ -39,7 +39,7 @@ elseif(ARCH STREQUAL "amd64")
 elseif(ARCH STREQUAL "arm64")
     set(SYSSETUP_RUST_TARGET "aarch64-pc-windows-gnullvm")
 endif()
-set(SYSSETUP_RUST_TARGET_DIR "${CMAKE_CURRENT_BINARY_DIR}/rust-syssetup-target")
+rust_storage_target(SYSSETUP_RUST_TARGET_DIR "${CMAKE_CURRENT_BINARY_DIR}/rust-syssetup-target" syssetup-rust)
 set(SYSSETUP_RUST_LIB "${CMAKE_CURRENT_BINARY_DIR}/libsyssetup_rust.a")
 rust_crate_sources(SYSSETUP_RUST_SRCS "${SYSSETUP_RUST_WORKSPACE_DIR}" syssetup-rust)
 add_custom_command(

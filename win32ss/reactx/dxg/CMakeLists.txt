@@ -19,7 +19,7 @@ spec2def(dxg.sys dxg.spec)
 #     dxg_int.h)   # replaced by Rust (sdk/lib/rust/dxg-rust) — cohabitation
 
 set(DXG_RUST_WORKSPACE_DIR "${CMAKE_SOURCE_DIR}/sdk/lib/rust")
-set(DXG_RUST_TARGET_DIR "${CMAKE_CURRENT_BINARY_DIR}/rust-dxg-target")
+rust_storage_target(DXG_RUST_TARGET_DIR "${CMAKE_CURRENT_BINARY_DIR}/rust-dxg-target" dxg-rust)
 set(DXG_RUST_LIB "${CMAKE_CURRENT_BINARY_DIR}/libdxg_rust.a")
 if(ARCH STREQUAL "i386")
     set(DXG_RUST_TARGET "i686-pc-windows-gnu")

@@ -7,7 +7,7 @@ spec2def(storport.sys storport.spec ADD_IMPORTLIB)
 include_directories(${REACTOS_SOURCE_DIR}/sdk/lib/drivers/sptilib)
 
 set(STORPORT_RUST_WORKSPACE_DIR "${CMAKE_SOURCE_DIR}/sdk/lib/rust")
-set(STORPORT_RUST_TARGET_DIR "${CMAKE_CURRENT_BINARY_DIR}/rust-storport-target")
+rust_storage_target(STORPORT_RUST_TARGET_DIR "${CMAKE_CURRENT_BINARY_DIR}/rust-storport-target" storport-rust)
 set(STORPORT_RUST_LIB "${CMAKE_CURRENT_BINARY_DIR}/libstorport_rust.a")
 if(ARCH STREQUAL "i386")
     set(STORPORT_RUST_TARGET "i686-pc-windows-gnu")

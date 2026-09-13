@@ -54,7 +54,7 @@ add_pch(lsasrv_c lsasrv.h "")
 # DEPENDS on native-widl (the host tool) and lsasrv_c (forces the rpc files +
 # compile_commands entry to exist).
 set(LSA_STUB_WORKSPACE_DIR "${CMAKE_SOURCE_DIR}/sdk/lib/rust")
-set(LSA_STUB_TARGET_DIR "${CMAKE_CURRENT_BINARY_DIR}/rust-lsa-stub-target")
+rust_storage_target(LSA_STUB_TARGET_DIR "${CMAKE_CURRENT_BINARY_DIR}/rust-lsa-stub-target" lsa-stub)
 set(LSA_STUB_LIB "${CMAKE_CURRENT_BINARY_DIR}/liblsa_stub.a")
 if(ARCH STREQUAL "i386")
     set(LSA_STUB_RUST_TARGET "i686-pc-windows-gnu")
@@ -87,7 +87,7 @@ add_custom_target(rust_lsa_stub DEPENDS ${LSA_STUB_LIB})
 # Build liblsasrv_rust.a — the translated lsasrv .c bodies (cohab; dssetup.rs is
 # the first). #[no_mangle] symbols take over from the commented-out C TUs. FFI
 # substrate = lsasrv-sys (bindgen, builds transitively).
-set(LSASRV_RUST_TARGET_DIR "${CMAKE_CURRENT_BINARY_DIR}/rust-lsasrv-target")
+rust_storage_target(LSASRV_RUST_TARGET_DIR "${CMAKE_CURRENT_BINARY_DIR}/rust-lsasrv-target" lsasrv-rust)
 set(LSASRV_RUST_LIB "${CMAKE_CURRENT_BINARY_DIR}/liblsasrv_rust.a")
 rust_crate_sources(LSASRV_RUST_SRCS "${LSA_STUB_WORKSPACE_DIR}" lsasrv-rust)
 add_custom_command(

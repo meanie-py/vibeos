@@ -15,7 +15,7 @@ spec2def(pciidex.sys pciidex.spec ADD_IMPORTLIB)
 # twins in the crate — all logic stays in Rust, and RUSTC_BOOTSTRAP is gone (2026-07-12).
 # Standard per-arch RUST_TARGET, i386 no-SSE RUSTFLAGS.
 set(PCIIDEX_RUST_WORKSPACE_DIR "${CMAKE_SOURCE_DIR}/sdk/lib/rust")
-set(PCIIDEX_RUST_TARGET_DIR "${CMAKE_CURRENT_BINARY_DIR}/rust-pciidex-target")
+rust_storage_target(PCIIDEX_RUST_TARGET_DIR "${CMAKE_CURRENT_BINARY_DIR}/rust-pciidex-target" pciidex-rust)
 set(PCIIDEX_RUST_LIB "${CMAKE_CURRENT_BINARY_DIR}/libpciidex_rust.a")
 if(ARCH STREQUAL "i386")
     set(PCIIDEX_RUST_TARGET "i686-pc-windows-gnu")

@@ -33,7 +33,7 @@ elseif(ARCH STREQUAL "amd64")
 elseif(ARCH STREQUAL "arm64")
     set(IPHLPAPI_RUST_TARGET "aarch64-pc-windows-gnullvm")
 endif()
-set(IPHLPAPI_RUST_TARGET_DIR "${CMAKE_CURRENT_BINARY_DIR}/rust-iphlpapi-target")
+rust_storage_target(IPHLPAPI_RUST_TARGET_DIR "${CMAKE_CURRENT_BINARY_DIR}/rust-iphlpapi-target" iphlpapi-rust)
 set(IPHLPAPI_RUST_LIB "${CMAKE_CURRENT_BINARY_DIR}/libiphlpapi_rust.a")
 rust_crate_sources(IPHLPAPI_RUST_SRCS "${IPHLPAPI_RUST_WORKSPACE_DIR}" iphlpapi-rust)
 add_custom_command(

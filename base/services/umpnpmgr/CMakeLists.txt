@@ -31,7 +31,7 @@ elseif(ARCH STREQUAL "amd64")
 elseif(ARCH STREQUAL "arm64")
     set(UMPNPMGR_RUST_TARGET "aarch64-pc-windows-gnullvm")
 endif()
-set(UMPNPMGR_RUST_TARGET_DIR "${CMAKE_CURRENT_BINARY_DIR}/rust-umpnpmgr-target")
+rust_storage_target(UMPNPMGR_RUST_TARGET_DIR "${CMAKE_CURRENT_BINARY_DIR}/rust-umpnpmgr-target" umpnpmgr-rust)
 set(UMPNPMGR_RUST_LIB "${CMAKE_CURRENT_BINARY_DIR}/libumpnpmgr_rust.a")
 rust_crate_sources(UMPNPMGR_RUST_SRCS "${UMPNPMGR_RUST_WORKSPACE_DIR}" umpnpmgr-rust)
 add_custom_command(

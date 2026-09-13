@@ -750,6 +750,19 @@ def _build_locked(args, repo: Path, run, arch: str, cfg, build_dir: Path, cold: 
     def wrap(cmd: list[str]) -> list[str]:
         return canon.wrap(repo, cmd) if wrapped else cmd
 
+    shards = getattr(args, "rust_storage_shards", None)
+    if shards is not None:
+        cp = run.run(
+            wrap(["cmake", f"-DVIBEOS_RUST_STORAGE_SHARDS={shards}", "."]),
+            cwd=build_dir,
+            stage="storage-config",
+            timeout=600,
+        )
+        if cp.returncode:
+            run.classification = "CMAKE_CONFIGURE_FAIL"
+            run.add(Stage("storage-config", status="fail", exit=cp.returncode))
+            return run.finalize(repo)
+
     # --- payload selection stamp (docs/engineering/payload-harness-design.md) ---
     # Persist the env's VIBEOS_PAYLOAD/VIBEOS_DOOM selection into the build dir
     # BEFORE ninja runs the media steps, so env-less rebuilds (conftest's

@@ -31,7 +31,7 @@ list(APPEND PCH_SKIP_SOURCE
 # no-SSE rule). Inbound Wlx* dispatch ABI from winlogon-sys; outbound Win32/LSA calls
 # resolve at link via the importlibs below.
 set(MSGINA_RUST_WORKSPACE_DIR "${CMAKE_SOURCE_DIR}/sdk/lib/rust")
-set(MSGINA_RUST_TARGET_DIR "${CMAKE_CURRENT_BINARY_DIR}/rust-msgina-target")
+rust_storage_target(MSGINA_RUST_TARGET_DIR "${CMAKE_CURRENT_BINARY_DIR}/rust-msgina-target" msgina-rust)
 set(MSGINA_RUST_LIB "${CMAKE_CURRENT_BINARY_DIR}/libmsgina_rust.a")
 if(ARCH STREQUAL "i386")
     set(MSGINA_RUST_TARGET "i686-pc-windows-gnu")

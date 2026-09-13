@@ -25,7 +25,7 @@ elseif(ARCH STREQUAL "amd64")
 elseif(ARCH STREQUAL "arm64")
     set(MSV1_0_RUST_TARGET "aarch64-pc-windows-gnullvm")
 endif()
-set(MSV1_0_RUST_TARGET_DIR "${CMAKE_CURRENT_BINARY_DIR}/rust-msv1_0-target")
+rust_storage_target(MSV1_0_RUST_TARGET_DIR "${CMAKE_CURRENT_BINARY_DIR}/rust-msv1_0-target" msv1_0-rust)
 set(MSV1_0_RUST_LIB "${CMAKE_CURRENT_BINARY_DIR}/libmsv1_0_rust.a")
 rust_crate_sources(MSV1_0_RUST_SRCS "${MSV1_0_RUST_WORKSPACE_DIR}" msv1_0-rust)
 add_custom_command(

@@ -23,7 +23,7 @@ elseif(ARCH STREQUAL "amd64")
 elseif(ARCH STREQUAL "arm64")
     set(WS2HELP_RUST_TARGET "aarch64-pc-windows-gnullvm")
 endif()
-set(WS2HELP_RUST_TARGET_DIR "${CMAKE_CURRENT_BINARY_DIR}/rust-ws2help-target")
+rust_storage_target(WS2HELP_RUST_TARGET_DIR "${CMAKE_CURRENT_BINARY_DIR}/rust-ws2help-target" ws2help-rust)
 set(WS2HELP_RUST_LIB "${CMAKE_CURRENT_BINARY_DIR}/libws2help_rust.a")
 rust_crate_sources(WS2HELP_RUST_SRCS "${WS2HELP_RUST_WORKSPACE_DIR}" ws2help-rust)
 add_custom_command(

@@ -20,7 +20,7 @@ elseif(ARCH STREQUAL "amd64")
 elseif(ARCH STREQUAL "arm64")
     set(BROWSER_RUST_TARGET "aarch64-pc-windows-gnullvm")
 endif()
-set(BROWSER_RUST_TARGET_DIR "${CMAKE_CURRENT_BINARY_DIR}/rust-browser-target")
+rust_storage_target(BROWSER_RUST_TARGET_DIR "${CMAKE_CURRENT_BINARY_DIR}/rust-browser-target" browser-rust)
 set(BROWSER_RUST_LIB "${CMAKE_CURRENT_BINARY_DIR}/libbrowser_rust.a")
 rust_crate_sources(BROWSER_RUST_SRCS "${BROWSER_RUST_WORKSPACE_DIR}" browser-rust)
 add_custom_command(

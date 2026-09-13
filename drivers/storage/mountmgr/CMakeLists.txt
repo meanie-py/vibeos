@@ -9,7 +9,7 @@
 # exports nothing but DriverEntry (no .spec) — DriverEntry-only cohab, like disk.
 # Boot-start WDM driver. Mirrors disk-rust.
 set(MOUNTMGR_RUST_WORKSPACE_DIR "${CMAKE_SOURCE_DIR}/sdk/lib/rust")
-set(MOUNTMGR_RUST_TARGET_DIR "${CMAKE_CURRENT_BINARY_DIR}/rust-mountmgr-target")
+rust_storage_target(MOUNTMGR_RUST_TARGET_DIR "${CMAKE_CURRENT_BINARY_DIR}/rust-mountmgr-target" mountmgr-rust)
 set(MOUNTMGR_RUST_LIB "${CMAKE_CURRENT_BINARY_DIR}/libmountmgr_rust.a")
 if(ARCH STREQUAL "i386")
     set(MOUNTMGR_RUST_TARGET "i686-pc-windows-gnu")

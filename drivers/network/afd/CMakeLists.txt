@@ -17,7 +17,7 @@ include_directories(
 # and resolve as extern "C". event.c is NOT in this build (dead in upstream: its
 # AfdRegisterEventHandlers is called nowhere) — event.rs is kept but not a module.
 set(AFD_RUST_WORKSPACE_DIR "${CMAKE_SOURCE_DIR}/sdk/lib/rust")
-set(AFD_RUST_TARGET_DIR "${CMAKE_CURRENT_BINARY_DIR}/rust-afd-target")
+rust_storage_target(AFD_RUST_TARGET_DIR "${CMAKE_CURRENT_BINARY_DIR}/rust-afd-target" afd-rust)
 set(AFD_RUST_LIB "${CMAKE_CURRENT_BINARY_DIR}/libafd_rust.a")
 if(ARCH STREQUAL "i386")
     set(AFD_RUST_TARGET "i686-pc-windows-gnu")

@@ -560,7 +560,7 @@ add_dependencies(libcntpr psdk asm)
 # ntoskrnl and hal, so this must be a libcntpr-level link (the
 # rtl-rust route serves librtl only). Mirrors librtl's rust_rtl hook.
 set(RUST_WORKSPACE_DIR "${CMAKE_SOURCE_DIR}/sdk/lib/rust")
-set(RUST_TARGET_DIR "${CMAKE_CURRENT_BINARY_DIR}/cnt-rust-target")
+rust_storage_target(RUST_TARGET_DIR "${CMAKE_CURRENT_BINARY_DIR}/cnt-rust-target" cnt-rust-lib)
 if(ARCH STREQUAL "i386")
     set(RUST_TARGET "i686-pc-windows-gnu")
     # i386 kernel runs no-SSE (CR4.OSFXSR unset in Phase 0). cnt-rust is

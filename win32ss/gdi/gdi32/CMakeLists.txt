@@ -53,7 +53,7 @@ list(APPEND SOURCE
 # #[no_mangle] symbols are the sole providers of the commented-out .c functions, so no
 # --allow-multiple-definition is needed. NtGdi* imports resolve via the win32ksys importlib.
 set(GDI32_RUST_WORKSPACE_DIR "${CMAKE_SOURCE_DIR}/sdk/lib/rust")
-set(GDI32_RUST_TARGET_DIR "${CMAKE_CURRENT_BINARY_DIR}/rust-gdi32-target")
+rust_storage_target(GDI32_RUST_TARGET_DIR "${CMAKE_CURRENT_BINARY_DIR}/rust-gdi32-target" gdi32-rust)
 set(GDI32_RUST_LIB "${CMAKE_CURRENT_BINARY_DIR}/libgdi32_rust.a")
 if(ARCH STREQUAL "i386")
     set(GDI32_RUST_TARGET "i686-pc-windows-gnu")

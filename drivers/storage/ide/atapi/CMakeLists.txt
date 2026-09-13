@@ -10,7 +10,7 @@
 # SCSIPORT miniport (imports scsiport) and is NOT in txtsetup -> link-clean ×3 is
 # the verification bar. Standard per-arch RUST_TARGET, i386 no-SSE RUSTFLAGS.
 set(ATAPI_RUST_WORKSPACE_DIR "${CMAKE_SOURCE_DIR}/sdk/lib/rust")
-set(ATAPI_RUST_TARGET_DIR "${CMAKE_CURRENT_BINARY_DIR}/rust-atapi-target")
+rust_storage_target(ATAPI_RUST_TARGET_DIR "${CMAKE_CURRENT_BINARY_DIR}/rust-atapi-target" atapi-rust)
 set(ATAPI_RUST_LIB "${CMAKE_CURRENT_BINARY_DIR}/libatapi_rust.a")
 if(ARCH STREQUAL "i386")
     set(ATAPI_RUST_TARGET "i686-pc-windows-gnu")

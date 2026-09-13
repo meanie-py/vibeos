@@ -22,7 +22,7 @@ elseif(ARCH STREQUAL "amd64")
 elseif(ARCH STREQUAL "arm64")
     set(WKSSVC_RUST_TARGET "aarch64-pc-windows-gnullvm")
 endif()
-set(WKSSVC_RUST_TARGET_DIR "${CMAKE_CURRENT_BINARY_DIR}/rust-wkssvc-target")
+rust_storage_target(WKSSVC_RUST_TARGET_DIR "${CMAKE_CURRENT_BINARY_DIR}/rust-wkssvc-target" wkssvc-rust)
 set(WKSSVC_RUST_LIB "${CMAKE_CURRENT_BINARY_DIR}/libwkssvc_rust.a")
 rust_crate_sources(WKSSVC_RUST_SRCS "${WKSSVC_RUST_WORKSPACE_DIR}" wkssvc-rust)
 add_custom_command(

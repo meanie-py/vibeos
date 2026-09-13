@@ -19,7 +19,7 @@ elseif(ARCH STREQUAL "amd64")
 elseif(ARCH STREQUAL "arm64")
     set(WLANSVC_RUST_TARGET "aarch64-pc-windows-gnullvm")
 endif()
-set(WLANSVC_RUST_TARGET_DIR "${CMAKE_CURRENT_BINARY_DIR}/rust-wlansvc-target")
+rust_storage_target(WLANSVC_RUST_TARGET_DIR "${CMAKE_CURRENT_BINARY_DIR}/rust-wlansvc-target" wlansvc-rust)
 set(WLANSVC_RUST_LIB "${CMAKE_CURRENT_BINARY_DIR}/libwlansvc_rust.a")
 rust_crate_sources(WLANSVC_RUST_SRCS "${WLANSVC_RUST_WORKSPACE_DIR}" wlansvc-rust)
 add_custom_command(
