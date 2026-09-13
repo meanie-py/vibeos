@@ -61,6 +61,18 @@ This file is edited by many lanes at once, so **placement is the anti-conflict p
 4. **Cite by name, not by number.** In code comments, state the lesson in the comment itself;
    reference this manual only when deliberately deferring detail. ~473 of the old `(§9.N)`
    citations in the tree add nothing the surrounding comment doesn't already say, and they rot.
+5. **Scrutinise the REMEDY as hard as the diagnosis — nobody does, and that is where entries
+   are wrong.** On 2026-09-13 one entry was corrected twice by two different lanes, both times
+   on its fix and neither time on its cause: it offered a fallback check that could be
+   satisfied by the wrong evidence, and it missed a case (queue supersession) for which its
+   check returned the wrong answer outright. The diagnosis was never disputed. The asymmetry
+   looks structural rather than accidental — a diagnosis is read as a claim and gets tested, a
+   remedy is read as relief and gets adopted. **Before publishing a fix, ask what ELSE would
+   satisfy it and what case would make it answer wrongly**; a remedy that can be satisfied by
+   the wrong evidence is worse than none, because it converts a gap into believed coverage.
+   The same applies to a formulation: test it against the entry's own instance list before
+   letting it stand as general. One proposed here explained two of ten and was endorsed and
+   forwarded before anyone checked.
 
 ---
 
