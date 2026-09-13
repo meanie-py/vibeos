@@ -6569,6 +6569,44 @@ case cleared on pass 2 and the run passed, and a deliberately-slowed body (four 
 in `strchr`) failed all three passes at all three sizes. **A gate that has only ever been proven
 to pass is half-tested** — perturb something and watch it fail before you trust it.
 
+### The artifact you consulted is not the one consulted at RUNTIME
+
+**The check:** before believing a verification, ask whether the thing you read is the thing
+that will actually be read when it matters. The compiler, not the header. The per-attempt log,
+not the final classification. The printed value, not the assertion name. The exact cache path,
+not the directory count. Every instance below is a case where the answer was *sound about the
+artifact consulted* and the artifact was one step off the one that governs.
+
+**Why it needs its own entry rather than folding into the verification rules above: it is the
+failure shape that does not announce itself.** A wrong denominator or a stale inherited fact
+decays loudly — someone recounts, or the number stops agreeing with itself, and it surfaces
+within the hour. This one is a CORRECT reading of the RIGHT file that answers a slightly
+different question than the one being asked, and nothing downstream ever contradicts it.
+From the inside, "I verified the two `#ifdef`s" is indistinguishable from "I tested it": both
+feel like checking, both cite a real artifact, and only one of them consulted the authority.
+That is also why it survives review — a reader asking "did you check?" gets a true yes.
+
+**Six instances, five unrelated tools, one night (2026-09-13):**
+- an sccache stats query that answered for a *different server* than the build used;
+- an ISO byte-scan whose hit was **winlogon's own diagnostic string**, not the data sought;
+- `ls | wc -l` answering "how many directories" when the question was "how many replay
+  namespaces";
+- `smoke-console.log` read in place of `full.log`;
+- a gate's **final classification** read in place of its per-attempt salient lines — which hid
+  that three failed attempts had failed for two DIFFERENT reasons, the fact that mattered;
+- two `#ifdef`s read correctly, in the right headers, instead of asking the compiler — which
+  is how an `_M_AMD64`/`_WIN64` arch-gate mismatch stood as "conclusive" until someone ran
+  `clang -dM -E` (see "When the bug is in the TEST, not the kernel").
+
+**The corollary, from the same incident:** when you have strengthened a claim — "the chain I
+read says no" becoming "this can never happen structurally" — go looking for the thing that
+would falsify the STRONGER version, because the evidence for the weaker one does not carry
+over. `_M_AMD64` was reachable from a second definition site (`_mingw_mac.h`) that the first
+chain never mentioned; it is x86_64-gated too, so the claim survived — but it survived having
+been attacked rather than merely restated. A conclusion that feels settled is exactly when
+nobody re-derives it. *(Found jointly with the control-plane lane; the instances are drawn
+from both of our sessions.)*
+
 ### A TEXT-SHAPED match is not a PROOF `[§9.119]`
 The same regex measured **146** lowerable CRT forwarders; the sound implementation lowered
 **11**. Measuring a shape by its syntax measures an **upper bound, not a yield**, and the
