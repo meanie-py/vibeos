@@ -522,11 +522,36 @@ Record it here and keep going; only chase one when it looks load-bearing.
   * the same GUEST point being reached in both, which naturally lands at a
     similar offset because the boots are the same up to there.
 
-  Two traces that share a boot prefix cannot separate those. Doing so needs a
-  trace whose early boot differs materially — a different arch would be ideal
-  and x86 cannot record, so the realistic option is a different arm64 boot
-  configuration. Until then the honest claim is "same neighbourhood in both",
-  not "fixed byte limit".
+  Two traces that share a boot prefix cannot cleanly separate those — equal guest
+  progress implies equal trace bytes while the content is the same, so both
+  hypotheses predict the same observation.
+
+  **There is a modest signal, in WHICH measure agrees better.** Both replays stop
+  in the same boot phase, desktop bringup:
+
+  | trace | trace bytes | guest serial | last guest line |
+  |---|---|---|---|
+  | smoke, 10.7MB | 2,342,912 | 124,212 | `[WIN32K] shell ready` |
+  | kmtest, 494MB | 2,215,936 | 122,199 | `[EXPLORER] taskbar: creating tray window` |
+
+  The trace offsets differ by **5.6%**; the guest serial counts differ by
+  **1.6%**. A hard trace-byte limit would predict the offsets to be the tighter
+  pair. They are not — guest progress is the better-preserved invariant, which
+  leans toward "the replay stops at a point in the GUEST" rather than "at a
+  point in the FILE". That is a lean, not a proof; two samples, and the boots
+  share their media.
+
+  Decisive separation still needs a trace whose early boot differs materially.
+  A different arch would be ideal and x86 cannot record; within arm64 the
+  candidate is a UP-kernel boot, which executes genuinely different kernel code,
+  but `rr record` has no route to select it today (every media defaults to MP
+  since the promotion, and the UP entry is not reachable through the rr path).
+  Wiring that would be the next concrete step on this question.
+
+  Where it points meanwhile: desktop bringup — explorer, win32k, user32 — is a
+  far more specific neighbourhood than "somewhere in the boot", and it is
+  consistent with the serial-output finding above, since that phase is the
+  noisiest part of the boot.
 
   So the open question is narrower again: not "which event", but why replay
   stops advancing in a region where every record is trivial. Serial output is
