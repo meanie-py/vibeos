@@ -3081,6 +3081,45 @@ caught either. The rejected body is kept under `.responses/<run>/__rejected__/` 
 copy; assemble around it with `--fn <comma-separated accepted set>` for $0 and hand-write the
 one function.
 
+**Turning a NEW seal on makes every already-banked body unreachable, and the miss is a
+re-BUY.** Symptom: a file you paid for last month reports its functions as "to buy" again,
+with no refusal and no warning — the bank is right there on disk. Cause: `_cache_suffix`
+(`__main__.py:669-687`) appends one independent token per seal that is ENABLED
+(`__factseal_v1__callseal_v1__wideseal_v1`) and never consults whether that seal found
+anything. A bank filled before `--seal-wide` existed is named `__factseal_v1__callseal_v1`,
+a DIFFERENT directory, so it is not found — and the docstring states the consequence outright:
+"a `--seal-wide` run misses the cache and PAYS, while every `__factseal_v1__callseal_v1` body
+already banked stays addressable under its own name." Under its own name — which you only ask
+for by passing `--no-seal-wide`. Fix: when the bank directory's name lacks a token the current
+defaults emit, pass the `--no-seal-*` matching how it was bought, or migrate the bank
+deliberately. Never `--no-resume`: that is an explicit PAID regeneration.
+
+This bit when the seal flags became default-ON: 24 of msvcrt's 26 banks stopped at
+`__callseal_v1`, leaving 2 reachable. **Settle it by constructing the path, never by counting**
+— three counts were offered that night and only the third answered the question asked:
+
+    ls | wc -l                  -> 83   how many DIRECTORIES
+    test -f manifest.json       -> 26   how many are REPLAY BANKS at all
+    does the EXACT path exist?  ->  2   how many are REACHABLE under today's flags
+
+`.responses/` holds two kinds of directory and only one is a replay namespace: a **bank** has a
+`manifest.json`; a `<ts>-<file>` dir is one paid run's streaming artifact — canonical output,
+but never consulted for a cache hit. Counting directories overstated exposure 3x; counting
+banks still overstated it by ignoring the suffix.
+
+**Do not generalise another lane's clean replay to yours.** shell32's bank stays reachable
+whatever the defaults do, because `wide_seal_enabled` is force-disabled for `cpp_com_mode or
+free_functions` (`__main__.py:2373-2381`) — its C++ literals are already lowered by
+`cpp_com.rewrite_wide_literals`, so its namespace structurally cannot grow the wideseal token.
+That is evidence about the COM path, not about the flip. Plain-C lanes get no such exemption.
+
+The generalisation, which recurred three times in one night across different tools (an sccache
+server query, an ISO-string probe, this): **a proxy that is easy to measure stood in for the
+thing that decides, and the tool answered its own question honestly while we asked a different
+one.** When a count keeps coming out differently, stop recounting and construct the exact thing
+the code looks up.
+
+
 ---
 
 ## Dropped, degraded & silently-rewritten translation output
