@@ -15,7 +15,7 @@ import subprocess
 import time
 from pathlib import Path
 
-from . import archcfg, cachecfg, canon, hostdisk, hostjobs, hostlock, lints, provenance
+from . import archcfg, cachecfg, canon, diskspace, hostdisk, hostjobs, hostlock, lints, provenance
 from .artifacts import Run, Stage
 
 _UNDEF = re.compile(r"undefined (?:symbol|reference)[^\w]*[`']?([@\w]+)", re.I)
@@ -337,11 +337,19 @@ def build(args, repo: Path) -> int:
 
     # Directory serialization is a correctness lock. CPU admission belongs to the
     # compiler/linker processes, after Cargo and Ninja have resolved their own waits.
+    #
+    # Disk is claimed HERE rather than at process start, so a build that never runs is
+    # never billed. That began as protection against the cpuheavy pool -- three arches
+    # launched, two permits, and the third refused for space the broker would never let
+    # it use -- and the per-job broker above has retired that particular shape. What is
+    # left is the narrower guarantee that the claim tracks the build, not the process.
+    # Safe here only because reserve() never BLOCKS: it admits or raises at once.
     try:
         with hostlock.build_lock(build_dir, arch) as admission:
             hostjobs.ensure(repo)
             run.extra["admission"] = admission
-            return _build_locked(args, repo, run, arch, cfg, build_dir, cold)
+            with diskspace.reserve(repo, "build"):
+                return _build_locked(args, repo, run, arch, cfg, build_dir, cold)
     except hostlock.buildpolicy.PolicyError as exc:
         run.classification = "BUILD_POLICY_REFUSED"
         run.add(Stage("admission", status="fail", detail=str(exc)))

@@ -466,6 +466,109 @@ impl<T> CSimpleArray<T> {
 }
 
 // -------------------------------------------------------------------------------------------
+// CSimpleMap
+// -------------------------------------------------------------------------------------------
+
+/// `CSimpleMap<K, V>` — ATL's association list (`atlsimpcoll.h`), a LINEAR array of pairs.
+///
+/// Not a hash map: `FindKey` scans, so every lookup is O(n) and insertion order is preserved.
+/// Callers that sort through it (CDefView's `SelectionMoveCompareFunc` runs one `Lookup` per
+/// comparison) inherit that cost, which is ATL's behaviour and not something to "fix" here.
+///
+/// Measured surface: `new()`, `Add(k, v)`, `Lookup(k)`, `FindKey(k)`, `GetSize()`.
+///
+/// `Lookup` returns `V::default()` for an absent key — ATL returns a value-initialized
+/// `TVal()`, which for the integer instantiations the tree uses is 0. That is
+/// indistinguishable from a stored zero BY DESIGN in ATL; check `FindKey` first when the
+/// difference matters.
+pub struct CSimpleMap<K, V> {
+    m_Pairs: CSimpleArray<CSimpleMapPair<K, V>>,
+}
+
+/// One key/value cell. ATL keeps these in a `CSimpleArray<Pair>`; so do we, so that growth,
+/// allocator, and failure behaviour are the array's and stay in one place.
+pub struct CSimpleMapPair<K, V> {
+    pub key: K,
+    pub val: V,
+}
+
+impl<K, V> CSimpleMap<K, V> {
+    pub const fn new() -> Self {
+        Self { m_Pairs: CSimpleArray::new() }
+    }
+
+    pub fn GetSize(&self) -> i32 {
+        self.m_Pairs.GetSize()
+    }
+
+    /// ATL's `Add`: append. Returns FALSE when the array's allocation failed.
+    pub unsafe fn Add(&mut self, key: K, val: V) -> BOOL {
+        self.m_Pairs.Add(CSimpleMapPair { key, val })
+    }
+
+    pub fn RemoveAll(&mut self) {
+        self.m_Pairs.RemoveAll();
+    }
+}
+
+impl<K: PartialEq, V> CSimpleMap<K, V> {
+    /// Index of the first pair with this key, or -1. ATL's `CSimpleMapEqualHelper` compares
+    /// with `operator==`, which for the tree's integer keys is ordinary equality.
+    pub unsafe fn FindKey(&self, key: &K) -> i32 {
+        let count = self.m_Pairs.GetSize();
+        for index in 0..count {
+            let pair = self.m_Pairs.GetAt(index);
+            if !pair.is_null() && (*pair).key == *key {
+                return index;
+            }
+        }
+        -1
+    }
+
+    /// Pointer to the stored value for this key, or null when absent. This is the form that
+    /// keeps the "missing" case distinguishable; `Lookup` is the ATL-faithful one.
+    pub unsafe fn FindValue(&self, key: &K) -> *mut V {
+        let index = self.FindKey(key);
+        if index < 0 {
+            return core::ptr::null_mut();
+        }
+        let pair = self.m_Pairs.GetAt(index);
+        if pair.is_null() {
+            return core::ptr::null_mut();
+        }
+        core::ptr::addr_of_mut!((*pair).val)
+    }
+}
+
+impl<K: PartialEq, V: Copy + Default> CSimpleMap<K, V> {
+    /// ATL's `Lookup`: the stored value, or a value-initialized one when the key is absent.
+    pub unsafe fn Lookup(&self, key: K) -> V {
+        let val = self.FindValue(&key);
+        if val.is_null() {
+            return V::default();
+        }
+        *val
+    }
+
+    /// ATL's `SetAt`: overwrite in place when present, append otherwise.
+    pub unsafe fn SetAt(&mut self, key: K, val: V) -> BOOL {
+        let existing = self.FindValue(&key);
+        if existing.is_null() {
+            return self.Add(key, val);
+        }
+        *existing = val;
+        1
+    }
+}
+
+impl<K, V> Default for CSimpleMap<K, V> {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+
+// -------------------------------------------------------------------------------------------
 // CAtlList
 // -------------------------------------------------------------------------------------------
 
