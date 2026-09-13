@@ -56,7 +56,22 @@ targets. On i386 it is live, so **the amd64/arm64 ABI-identical proof does not
 transfer at all**: it held precisely because the only flipping field was inert
 there. Get that one wrong and the symptom is a silently wrong struct return, not a
 build error. `cpu: pentium` also needs carrying across as `-C target-cpu=pentium`.
-A scoped ABI task with one real unknown, then — still worth doing, still unowned. If it holds, the nightly surface shrinks
+A scoped ABI task with one real unknown, then — still worth doing, still unowned.
+
+**MEASURED 2026-09-13 against the builtin spec** (`rustc --print target-spec-json --target
+i686-pc-windows-gnu`), which shrinks the task and retires the risk flagged just above:
+`abi-return-struct-as-int` is **`true` on BOTH**, so the field I called the unresolved ABI
+danger agrees, and `data-layout` is byte-identical. `frame-pointer: always`,
+`function-sections: false`, `allows-weak-linkage: false`, `eh-frame-header: false` already
+match, so none needs a restoring `-C` flag, and `panic-strategy: abort` is carried by the
+workspace `Cargo.toml` profile. What actually differs: `rustc-abi` (custom `x86-softfloat` vs
+builtin **`x86-sse2`**), `cpu` (`pentium` vs `pentium4`), `dynamic-linking`, `requires-uwtable`.
+
+**And the direction of travel is the REVERSE of this item's premise.** The question was whether
+user-mode i386 can leave softfloat for the builtin triple. Measured answer: anything disabling
+SSE2 on i386 *needs* a softfloat ABI, because rustc is phasing out exactly the combination 55
+crates in this tree already use — see "i386 crates build on a deprecated SSE/ABI combination"
+in the roadmap registry. On the custom json, the kernel cells are the ones already correct. If it holds, the nightly surface shrinks
 to the i386 kernel today and reaches zero the day that kernel retires, *without*
 waiting for SysWOW64 to stop needing an i386 ntdll. If it does not hold, we learn
 why, and the "last nightly cell" item gets an honest blocker instead of an
