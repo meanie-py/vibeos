@@ -59,6 +59,9 @@ REPO = Path(__file__).resolve().parent.parent
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
+# After the sys.path.insert above -- tools/ is not a package on the default path.
+from source_walk import source_files  # noqa: E402
+
 
 def _spec_exports(spec: Path, arch: str) -> set[str]:
     """Export NAMES ucrtbase.spec declares for one arch, `-arch=` filters honoured.
@@ -213,6 +216,116 @@ def check_structure(ws: Path | None = None) -> list[str]:
     return findings
 
 
+#: The crates whose Rust actually ends up in `libcrt_shared_cargo.a`, closed over
+#: path dependencies (crt-shared-cargo -> crt-shared-rust/panic-common/cnt-rust,
+#: and crt-shared-rust -> msvcrt-sys). Deliberately NOT "every crate in
+#: sdk/lib/rust": a staleness warning that fires whenever any unrelated lane
+#: edits any .rs is noise, and noise is what gets a check ignored.
+_ARCHIVE_SOURCE_CRATES = (
+    "crt-shared-cargo",
+    "crt-shared-rust",
+    "panic-common",
+    "cnt-rust",
+    "msvcrt-sys",
+)
+
+
+def _content_changed_at() -> tuple[float, str] | None:
+    """`(timestamp, what)` of the last CONTENT change to the archive's sources.
+
+    mtime alone cannot answer this. `git merge` and `git checkout` rewrite a
+    file's mtime WITHOUT changing a byte of it, and the conductor merges every
+    queued lane at the start of a drain — so in the integration tree every source
+    file looks "just modified" on every batch while cargo, correctly, relinks
+    nothing. Comparing the archive to mtimes there is comparing it to the clock.
+
+    Git knows the difference. For a tracked, unmodified file the content is
+    whatever the last commit touching it says, so the COMMIT time is the real
+    change time. Only a file that is dirty in the worktree has content mtime
+    cannot account for, and for those mtime is exactly right.
+
+    Returns None when git cannot answer (not a repo, no git) — the caller then
+    falls back to mtime, which is wrong in the merge case but is strictly better
+    than skipping the assertion entirely.
+    """
+    paths = [f"sdk/lib/rust/{c}" for c in _ARCHIVE_SOURCE_CRATES]
+    try:
+        committed = subprocess.run(
+            ["git", "-C", str(REPO), "log", "-1", "--format=%ct", "--", *paths],
+            capture_output=True,
+            text=True,
+            timeout=60,
+        )
+        dirty = subprocess.run(
+            ["git", "-C", str(REPO), "status", "--porcelain", "--", *paths],
+            capture_output=True,
+            text=True,
+            timeout=60,
+        )
+    except (OSError, subprocess.SubprocessError):
+        return None
+    if committed.returncode != 0 or dirty.returncode != 0:
+        return None
+
+    best, what = 0.0, ""
+    text = committed.stdout.strip()
+    if text:
+        try:
+            best, what = float(text), "the last commit touching them"
+        except ValueError:
+            return None
+    # A locally-edited file is the one case where mtime IS the content clock.
+    for line in dirty.stdout.splitlines():
+        rel = line[3:].strip().strip('"')
+        if not rel:
+            continue
+        f = REPO / rel
+        try:
+            if f.is_file() and f.stat().st_mtime > best:
+                best, what = f.stat().st_mtime, rel
+        except OSError:
+            continue
+    return (best, what) if best else None
+
+
+def _stale_against_sources(archive: Path) -> str | None:
+    """What changed after `archive` was built, or None if it is current.
+
+    Naming the cause rather than counting is what makes the message actionable.
+    """
+    try:
+        archive_mtime = archive.stat().st_mtime
+    except OSError:
+        return None
+
+    changed = _content_changed_at()
+    if changed is not None:
+        ts, what = changed
+        return what if ts > archive_mtime else None
+
+    # git could not answer — fall back to raw mtimes.
+    for crate in _ARCHIVE_SOURCE_CRATES:
+        src = REPO / "sdk" / "lib" / "rust" / crate
+        if not src.is_dir():
+            continue
+        # `source_files` and not `rglob`: no `target/` lives under a crate's `src/`
+        # TODAY, but that is a fact about the current tree, not an invariant, and
+        # `rglob` has already descended before any filter could exclude one.
+        # tools/scan_unpruned_walk.py gates exactly this and caught the rglob here.
+        candidates = [
+            *source_files(src / "src", "*.rs"),
+            src / "Cargo.toml",
+            src / "build.rs",
+        ]
+        for f in candidates:
+            try:
+                if f.is_file() and f.stat().st_mtime > archive_mtime:
+                    return str(f.relative_to(REPO))
+            except OSError:
+                continue
+    return None
+
+
 def _nm_defined(path: Path | list[Path]) -> set[str] | None:
     """Globally-defined symbol names in an archive or object, or None if nm cannot read it."""
     paths = [path] if isinstance(path, Path) else path
@@ -267,6 +380,32 @@ def check_archive() -> list[str]:
             archive = build / "dll" / "win32" / "ucrtbase" / "libcrt_shared_cargo.a"
         if not archive.is_file():
             continue  # ucrtbase cohab not wired into this build dir yet
+
+        stale = _stale_against_sources(archive)
+        if stale:
+            # CANNOT RENDER A VERDICT -- and that is NOT the lane's fault, so it
+            # must not be a finding. mtime is the only staleness signal available
+            # here and it is not sound: `git merge` rewrites a source file's mtime
+            # WITHOUT changing its content, while cargo legitimately declines to
+            # relink an archive whose inputs are unchanged. The conductor merges
+            # every queued lane at batch start, so in the integration tree those
+            # two facts combine on every drain and the archive reads "older than
+            # its sources" while being perfectly current.
+            #
+            # Emitted as a finding, this rejected a lane for a merge it did not
+            # make -- and had it landed it would have done so to every lane, since
+            # this check runs in the SOURCE-lint phase where build state is
+            # whatever the last batch left behind. Printed instead: still loud for
+            # the human who runs this directly (which is what caught two genuinely
+            # stale archives when the guard was written), never a verdict.
+            print(
+                f"note: build-{arch}: {archive.name} is older than {stale}; skipping the "
+                f"subset assertion for this arch rather than grading a possibly-stale "
+                f"archive. If you are debugging this locally: rm "
+                f"{archive.relative_to(REPO)} && ./vibeos-cli build --arch {arch}",
+                file=sys.stderr,
+            )
+            continue
 
         objs: list[Path] = []
         missing: list[str] = []

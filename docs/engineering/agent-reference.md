@@ -266,10 +266,11 @@ Full toolkit reference + design: `docs/engineering/kernel-debugging-infra.md` an
 
 `./vibeos-cli rr record --arch arm64` boots once under QEMU's instruction-counted
 record mode and keeps a self-contained trace under `~/vibeos-rr/`;
-`./vibeos-cli rr replay latest --gdb` then re-runs that *exact* boot,
-instruction-for-instruction, halted at instruction 0 with the stub open — so
-`reverse-continue` and reverse watchpoints work. A 1-in-60 crash you have
-recorded reproduces 100% of the time.
+`./vibeos-cli rr replay latest` then re-runs that *exact* boot,
+instruction-for-instruction. A 1-in-60 crash you have recorded reproduces every
+time. **Reverse execution is NOT reachable today** — under gdb you can connect
+and `continue`, but `stepi` aborts QEMU 9.0.2 and `interrupt` will not stop a
+running replay; see the doc before planning a debugging session.
 
 It is single-vCPU, TCG-only, no-NIC, native-backend-only, and it *refuses*
 rather than producing a trace that silently diverges. `--smp 1` is accepted and

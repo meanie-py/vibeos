@@ -67,15 +67,17 @@ import sys
 from pathlib import Path
 
 if __package__:
+    from .binary_corpus import governed_binaries
     from .binary_facts import BinaryFacts
 else:
+    from binary_corpus import governed_binaries
     from binary_facts import BinaryFacts
 
 # The first instruction of the function jumps to the function's own address.
 _SYM = re.compile(r"^([0-9a-f]+) <([^>]+)>:")
 _JMP = re.compile(r"^\s*[0-9a-f]+:\s+(?:jmp|jmpq|b)\s+(?:0x)?([0-9a-f]+)\b")
 
-_SUFFIXES = {".sys", ".dll", ".exe"}
+_SUFFIXES = (".sys", ".dll", ".exe", ".drv")
 # Directories of build INTERMEDIATES / staged copies — the same module appears
 # there under a hashed name, so scanning them double-reports every finding.
 _SKIP_DIRS = ("CMakeFiles", "host-tools", "/boot/stripped/", "/boot/staging/")
@@ -142,10 +144,12 @@ def main() -> int:
     hits: list[tuple[str, str]] = []
     scanned = 0
     facts = None
-    for pe in sorted(args.build_dir.rglob("*")):
-        if pe.suffix not in _SUFFIXES or not pe.is_file():
-            continue
-        if any(s in str(pe) for s in _SKIP_DIRS):
+    # The corpus is DECLARED, not discovered (tools/binary_corpus.py). arm64 has
+    # no livecd DAG, so a plain walk of build-arm64/ grades whatever an older
+    # ninja left behind instead of what the tree builds and the media ships.
+    corpus = governed_binaries(args.build_dir, repo, suffixes=_SUFFIXES, staging_dirs=_SKIP_DIRS)
+    for pe in corpus.paths:
+        if not pe.is_file():
             continue
         try:
             if facts is None:
@@ -159,7 +163,10 @@ def main() -> int:
         scanned += 1
 
     if not scanned:
-        print(f"scan_self_recursive: no PE inputs in {args.build_dir}", file=sys.stderr)
+        print(
+            f"scan_self_recursive: no PE inputs in {args.build_dir} (corpus basis: {corpus.basis})",
+            file=sys.stderr,
+        )
         return 2
 
     baseline = load_baseline(repo)

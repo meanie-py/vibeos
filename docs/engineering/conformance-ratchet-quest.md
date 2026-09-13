@@ -1866,3 +1866,15 @@ one intermittent defect in arm64 pool allocation, and the `assert?` marks silenc
 rather than explaining it. Hit rate observed here is 2/3, which is frequent enough to soak
 cheaply: `vibeos-cli conformance --arch arm64 --repeat 20` and read which of the three fire
 together. Nothing else in the tree is watching this now that the ratchet is quiet about it.
+
+**DISCHARGED 2026-09-13 — and the soak was not needed, because reading which fire together was
+the whole answer.** Four arm64 sweeps were enough: the three lines are not three symptoms but
+one, and `:178` is anti-correlated with `:176` by construction rather than intermittent. The
+guess above ("one intermittent defect in arm64 pool allocation") was right; the framing that
+there were three neighbouring flaky assertions was not. Full root cause, with the serial values
+that prove the `USHORT` underflow, in the roadmap's `ExPools` registry entry and in the field
+manual under "When the bug is in the TEST, not the kernel". **What it leaves owed is narrower
+and is a FLOOR question, not a kernel one:** `:178` and `:181` carry `assert?` marks that record
+consequences of `:176` as independent debt, and `:178` in particular passes *spuriously* in the
+bad mode, so the quota bit is untested on every run that takes it. Un-marking them makes arm64
+gates redder, so it is a deliberate call rather than a cleanup.

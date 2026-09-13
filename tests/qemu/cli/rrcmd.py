@@ -31,6 +31,7 @@ import os
 import shutil
 import subprocess
 import sys
+import threading
 import time
 from pathlib import Path
 
@@ -271,11 +272,72 @@ def cmd_verify(args, repo: Path) -> int:
     return 1
 
 
+class _TraceProgress:
+    """Samples how far the replaying QEMU has read into replay.bin.
+
+    Exists so a replay that stops can SAY WHY. Without it the operator gets a
+    bare HANG_TIMEOUT and no way to tell "be patient" from "this trace will not
+    replay" — and the two call for opposite responses. A frozen read position
+    with the CPU pinned means QEMU is executing and consuming no further recorded
+    events; more waiting buys nothing.
+    """
+
+    def __init__(self, trace: Path, period: float = 20.0) -> None:
+        self.trace = trace
+        self.period = period
+        self.total = (trace / "replay.bin").stat().st_size
+        self.max_pos = 0
+        self.stalled_for = 0.0
+        self._stop = threading.Event()
+        self._thread: threading.Thread | None = None
+
+    def _run(self) -> None:
+        last = -1
+        while not self._stop.wait(self.period):
+            pos = rr.trace_read_position(self.trace)
+            if pos is None:
+                continue
+            self.max_pos = max(self.max_pos, pos)
+            self.stalled_for = self.stalled_for + self.period if pos == last else 0.0
+            last = pos
+
+    def __enter__(self) -> _TraceProgress:
+        self._thread = threading.Thread(target=self._run, daemon=True)
+        self._thread.start()
+        return self
+
+    def __exit__(self, *exc) -> None:
+        self._stop.set()
+        if self._thread:
+            self._thread.join(timeout=2)
+
+    def report(self) -> str | None:
+        if not self.total or not self.max_pos:
+            return None
+        pct = 100.0 * self.max_pos / self.total
+        if self.stalled_for >= 60.0:
+            return (
+                f"replay WEDGED: read {self.max_pos:,} of {self.total:,} trace bytes "
+                f"({pct:.1f}%) and stopped consuming events for {self.stalled_for:.0f}s "
+                "while QEMU kept running. This trace will not get further; waiting "
+                "longer does not help. See docs/engineering/qemu-record-replay.md."
+            )
+        return f"replay consumed {self.max_pos:,} of {self.total:,} trace bytes ({pct:.1f}%)"
+
+
 def cmd_replay(args, repo: Path) -> int:
     trace = _resolve_trace(args)
     m = rr.load_manifest(trace)
-    for w in rr.check_trace(trace):
-        print(f"[rr] WARNING: {w}", file=sys.stderr)
+    problems = rr.check_trace(trace)
+    fatal = [w for w in problems if rr.FATAL_MARKER in w]
+    for w in problems:
+        print(f"[rr] {'REFUSING' if w in fatal else 'WARNING'}: {w}", file=sys.stderr)
+    if fatal:
+        # Do not burn a replay that cannot work. Not hypothetical: a replay whose
+        # media source had been rebuilt ran long enough to open the gdbstub before
+        # dropping the connection, having printed this exact warning first.
+        print("[rr] not replaying — re-record with `./vibeos-cli rr record`.", file=sys.stderr)
+        return 2
 
     rr.prepare_replay(trace)
 
@@ -292,6 +354,16 @@ def cmd_replay(args, repo: Path) -> int:
         # -S as well: a replay you cannot stop before instruction 0 is a replay
         # you cannot reverse-continue from, which is the point of having it.
         env["VIBEOS_QEMU_GDB"] = "wait"
+        print(
+            "[rr] NOTE: on QEMU 9.0.2 the gdbstub is only PARTLY usable against a\n"
+            "     replay. Connecting, reading registers and `continue` all work;\n"
+            "     `stepi` aborts QEMU (`Playback shouldn't have to iowait`), and\n"
+            "     `interrupt` does not stop a running replay — so there is no way to\n"
+            "     reach a point of interest, and reverse-continue/reverse-stepi are\n"
+            "     unreachable rather than known-broken. Breakpoints are untried.\n"
+            "     See docs/engineering/qemu-record-replay.md.",
+            file=sys.stderr,
+        )
 
     cmd = m.get("boot_cmd") or _boot_cmd(
         repo, m["arch"], m.get("payload", "kmtest"), 1, False, 6000
@@ -307,8 +379,12 @@ def cmd_replay(args, repo: Path) -> int:
         cmd.append("--allow-stale")
     print(f"[rr] replaying {trace.name} (recorded {m.get('created')})")
     print(f"[rr] boot: {' '.join(cmd)}")
-    rc = subprocess.run(cmd, cwd=str(repo), env=env).returncode
+    with _TraceProgress(trace) as progress:
+        rc = subprocess.run(cmd, cwd=str(repo), env=env).returncode
     print(f"[rr] replay rc={rc}")
+    note = progress.report()
+    if note:
+        print(f"[rr] {note}")
     return rc
 
 

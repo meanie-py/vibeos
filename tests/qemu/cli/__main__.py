@@ -190,8 +190,10 @@ def build_parser() -> argparse.ArgumentParser:
         type=int,
         default=0,
         help="boot with N virtual CPUs (-smp N via VIBEOS_QEMU_SMP). Opt-in "
-        "SMP bring-up knob (docs/engineering/smp-bringup-quest.md); default "
-        "stays UP. Requires SMP-capable media (ntkrnlmp kernel) for N>1",
+        "SMP bring-up knob (docs/engineering/smp-bringup-quest.md); the default "
+        "is ONE vcpu. That is the cpu COUNT, not the kernel: the MP kernel boots "
+        "by default on every arch and --up-kernel is the opt-out, so the default "
+        "run is the MP kernel on one vcpu. N>1 needs SMP-capable media (ntkrnlmp)",
     )
     s.add_argument(
         "--no-net",
@@ -584,7 +586,10 @@ def build_parser() -> argparse.ArgumentParser:
     rrep.add_argument(
         "--gdb",
         action="store_true",
-        help="open the gdbstub halted at instruction 0 (reverse-continue works here)",
+        help="open the gdbstub halted at instruction 0. CAVEAT on QEMU 9.0.2: "
+        "connect/read-registers/continue work, but `stepi` aborts QEMU and "
+        "`interrupt` does not stop a running replay, so reverse execution cannot "
+        "be reached. See docs/engineering/qemu-record-replay.md",
     )
     rrep.add_argument("--root", help=f"trace root (default {rr_mod.DEFAULT_ROOT})")
     rrep.set_defaults(fn=rr_mod.rr_cmd, rr_verb="replay")

@@ -488,9 +488,50 @@ land; date every addition.** Source docs live in `docs/engineering/archive/`.
 
 ## Known bugs & flakes (live registry)
 
+- **A 32-bit guest doing real file I/O BUGCHECKs the arm64 kernel — OPEN** (2026-09-13).
+  Found on the first writable-volume run of `sqlite32.exe`, the third-party stress guest
+  (`tools/stress/sqlite/build.sh`). Real SQLite creating and writing a database on arm64:
+
+        *** BUGCHECK: 0x0000001E (0xffffffffc0000098, 0xfffff800421cbba4, ...)
+        P1 = 0xC0000098 STATUS_FILE_INVALID
+        P2 = ntkrnlmp.exe+0x3BBA4 = RtlRaiseStatus+0x44
+
+  KMODE_EXCEPTION_NOT_HANDLED: a kernel path raised `STATUS_FILE_INVALID` with nothing to
+  catch it. `NtCreateFile` had already returned SUCCESS on
+  `\??\X:\reactos\syswow64\sqlite32.db`, so the file was created and the fault is in what
+  follows, not in the open.
+  **Symbolicate against `ntkrnlmp.exe`, not `ntoskrnl.exe`** — the MP kernel is the default
+  boot on all three arches since 2026-09-12, and the UP image resolves the same RVA to
+  `KeSetIdealProcessorThread`, which is nonsense that fits nothing. The deeper stack frames
+  do NOT symbolicate reliably from the export table (they land past the last symbol and come
+  back as `HalAdjustResourceList +0x24d4d8`), so the caller is UNIDENTIFIED — a GDB break on
+  `RtlRaiseStatus` with the guest running is the next step, not more log reading.
+  **amd64 does not show it, and that is not evidence of an arch difference**: the amd64
+  livecd volume is read-only, so the guest takes its in-memory fallback there and never
+  exercises the file path at all. An earlier build of the same guest, writing to a different
+  path, got as far as `NtLockFile => c0000054` (FILE_LOCK_CONFLICT) and
+  `NtUnlockFile => c000007e` (RANGE_NOT_FOUND) on ranges SQLite picks not to overlap — the
+  wow64 marshaller for both looks correct (`ByteOffset`/`Length` are layout-identical
+  `LARGE_INTEGER*`), so FsRtl byte-range locking is a second, separate lead.
+  **The BUGCHECK is one sample of an UNSTABLE path, not a reproducible failure.** Four
+  consecutive arm64 runs of the same guest produced four different outcomes: the lock
+  conflict above, an execute-at-NULL before `main()`, this BUGCHECK, and a hang at guest
+  thread startup. Do not tune a fix to any single one of them. The last runs were also made
+  while the fleet saturated the host (a conducting 3-arch gate plus conformance on two
+  arches, all TCG), which is exactly the condition under which a slow TCG boot starves, so
+  determinism has NOT been established either way -- re-run this on a quiet host before
+  drawing conclusions. What IS solid: on-disk SQLite on arm64 does not survive, and one of
+  the ways it fails takes the kernel down.
+
 - **Stock 32-bit GUI apps cascade into an execute-at-NULL fault under WoW64 — OPEN**
   (2026-09-13). Found while attributing a guest-fault count in a `smoke --arch amd64 --ladder`
-  run, so it is NOT on the probe-guest ladder and does not fail it. `notepad.exe`,
+  run, so it is NOT on the probe-guest ladder and does not fail it.
+  **CORRECTION (same night): do not read this as amd64-only.** `sqlite32.exe` took the same
+  signature once on arm64 -- `eip=00000000` with `rw=8` (instruction fetch), crashing before
+  its first print -- and did NOT reproduce on an immediate re-run, where it printed normally
+  and got all the way into file I/O. So the arch split is unestablished and the arm64
+  instance is a single non-reproducing sample; the reason arm64 does not show the *stock-app*
+  cascade is simply that it never launches notepad/mspaint/wordpad. `notepad.exe`,
   `mspaint.exe` and `wordpad.exe` (each logged as `STOCK i386 app`) take **58 faults apiece**;
   every other image in the same boot takes 0 or 1, and `fault32.exe`'s single fault at
   `eip=00401012` is the deliberate one its own test raises. So this is specific to the stock
@@ -897,12 +938,16 @@ Field-manual § pointers hold the full writeups. **Update on state change.**
   kernel fault it recovered from -- the last-32 tail window can neither show nor exclude that.
   **Update 2026-09-13 — the hunt has a tool now.** `./vibeos-cli rr` records one boot under
   QEMU's instruction-counted record mode and replays it instruction-for-instruction, with gdb
-  and reverse execution. That changes what "1 in 60" costs: a crash you have RECORDED
-  reproduces every time, at the same instruction, so `reverse-continue` from the zeroed frame
-  answers "who set PC to 0" directly instead of requiring another soak. Verified on arm64
-  `--smp 1` (the MP kernel on one CPU — precisely this bug's configuration): boot to desktop in
-  82s under record vs ~40s normally, 10MB trace. No soak required to use it; record until one
-  boot crashes and keep that trace. `docs/engineering/qemu-record-replay.md`.
+  instruction-for-instruction. Recording is verified on arm64 `--smp 1` (the MP kernel on one
+  CPU — precisely this bug's configuration): boot to desktop in ~90s vs ~40s normally, 10MB
+  trace, and a replay whose guest serial matched the recording line for line as far as it ran.
+  **But the two things that would close #39 with it do not work yet**: under gdb a replay can be
+  run but not STOPPED where you want it (`stepi` aborts QEMU 9.0.2 with `Playback shouldn't
+  have to iowait`; `interrupt` does not land), so `reverse-continue` from the zeroed frame
+  cannot be reached; and replays wedge partway at a point that varies between runs. So this is not yet a route to "who set PC to 0" — it is a
+  deterministic capture of a crashing boot, which is still more than a soak ever gave us.
+  Both limitations, their measurements, and what to re-test on a QEMU upgrade are in
+  `docs/engineering/qemu-record-replay.md`.
 - **FIXED (2026-09-06): system cursors load, and the residual NULLs are correct behaviour
   wearing an alarming message.** `SYSTEMCUR(ARROW) == NULL, should not happen!!` was firing **78x** per boot (6 system  classes x 13 GUI processes) and kept firing to within 300 lines of `shell ready` —
   `gasyscur[ROCR_ARROW].handle` was NULL for the *entire* boot, so every server-side class
@@ -1541,6 +1586,31 @@ Field-manual § pointers hold the full writeups. **Update on state change.**
     just a baseline-sampling artifact: a pool test that is stable on two arches and not on the
     third is an arm64 lead. The baseline holds the lucky side (14/4), so it reads as a
     regression ~29% of the time.
+    **ROOT-CAUSED 2026-09-13, and it is ONE event, not "one flaky assertion".** The two modes
+    are `{119,135,178,210}` at 14/4 and `{119,135,176,181,210}` at 13/5, never any other
+    combination — `:178` and the `{:176,:181}` pair are mutually exclusive, which is not a
+    noise shape. `ExPools.c:175-181` reads `PoolType = KmtGetPoolType(Memory); ok(PoolType !=
+    0); PoolType--; ok(PoolType & QUOTA_POOL_MASK); ok((PoolType & BASE_POOL_TYPE_MASK) ==
+    PagedPool || ...)` with `PoolType` a `USHORT`. `KmtGetPoolType` returns **0 as a sentinel**
+    for "page-aligned, so no POOL_HEADER to read" (kmt_test_kernel.h:136), so on that path
+    `:176` fails, `0--` underflows to `0xFFFF`, `:178` **passes spuriously** because
+    `0xFFFF & QUOTA_POOL_MASK` is nonzero, and `:181` fails on the garbage. Observed in serial,
+    not inferred: the bad mode prints `:176: PoolType is 0` then `:181: PoolType = ffff`, the
+    good mode prints `:178: PoolType = 2` (raw header value 3). Consequences for the floor:
+    `:178` is **not** bistable — it is anti-correlated with `:176` by construction, and its
+    `assert?` mark records a consequence as independent debt; `:176` is the only line carrying
+    signal. The residual kernel question is narrow: `KmtGetPoolType` returned 0 for a 16-byte
+    `ExAllocatePoolWithQuotaTag` block, meaning either the block was page-aligned (the
+    sentinel) or its header's `PoolType` field was zeroed. The printed values cannot separate
+    those — the test prints no pointer on the success path — but both say the arm64 pool
+    intermittently hands back a small allocation whose `POOL_HEADER` does not describe it, and
+    the good mode proves the header is normally readable there. **Rate is worse than the ~29%
+    banked here:** 2 of 4 arm64 sweeps on 2026-09-13 took the bad mode and it took a full
+    3-arch gate RED through all 3 conformance retries (`20260913-021807-fbitjxpy`). **Not the
+    same bug as `IoDeviceObject_drv.c:198/206`**, despite the identical `KmtGetPoolType(x) - 1`
+    idiom and adjacency at the top of the intermittent list: tested, they fire independently,
+    and their `KmtGetPoolTag` returns `0x0062005c` / `0x0073006f` — UTF-16 `\b` and `os`, i.e.
+    those Buffers point into the middle of an allocation rather than at its start.
   - **`ZwAllocateVirtualMemory` 843 → 839 — a real UP-vs-MP DIFFERENCE, not a regression, and
     its baseline is a 1-in-101 sample.** Correlating pass count against `smp` over every banked
     i386 run dir: **smp1 scores 843 in 4/4 runs; smp2 scores 839 in 100 runs and 843 in exactly

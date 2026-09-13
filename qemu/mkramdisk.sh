@@ -763,6 +763,18 @@ if [ "${VIBEOS_FEX:-0}" = "1" ]; then
             mmd -i "$RAMDISK_IMG" ::/reactos/syswow64 2>/dev/null || true
             mcopy -o -i "$RAMDISK_IMG" "$SELFMOD32" ::/reactos/syswow64/selfmod32.exe
         fi
+        # sqlite32.exe — a THIRD-PARTY stress guest (tools/stress/sqlite). The
+        # other guests each probe one mechanism on purpose; this one is a large
+        # C program that never heard of us, leaning on allocator churn, Win32
+        # file I/O with locking and truncation, and long compute between
+        # syscalls. Built on demand by tools/stress/sqlite/build.sh, so it is
+        # absent unless someone asked for it -- like doom, staged only if built.
+        SQLITE32="${VIBEOS_SQLITE32_EXE:-$PROJECT_DIR/tools/stress/sqlite/sqlite32.exe}"
+        if [ -f "$SQLITE32" ]; then
+            echo "[*] VIBEOS_FEX=1 — staging syswow64/sqlite32.exe (stress guest)"
+            mmd -i "$RAMDISK_IMG" ::/reactos/syswow64 2>/dev/null || true
+            mcopy -o -i "$RAMDISK_IMG" "$SQLITE32" ::/reactos/syswow64/sqlite32.exe
+        fi
         # WOW64 Phase C: the real i386 guest exe, launched through CreateProcessW
         # by winlogon's TryStartWow64Hello (silent no-op unless staged here).
         HELLO32="${VIBEOS_HELLO32_EXE:-$PROJECT_DIR/build-fex-hello/hello32.exe}"

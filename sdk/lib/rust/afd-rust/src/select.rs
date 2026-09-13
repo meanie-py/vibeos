@@ -114,9 +114,13 @@ pub unsafe extern "C" fn SignalSocket(
         AFD_DbgPrint!(
             MAX_TRACE,
             b"Handle(%x): Got %x,%x\n\0".as_ptr() as PCHAR,
-            (*PollReq).Handles[i as usize].Handle,
-            (*PollReq).Handles[i as usize].Events,
-            (*PollReq).Handles[i as usize].Status,
+            // AFD_HANDLES(), not `Handles[i]`: AFD_POLL_INFO ends in a flexible
+            // `AFD_HANDLE Handles[1]` that the caller over-allocates to HandleCount, and
+            // bindgen's `[T; 1]` makes every index >= 1 a panic. The helper already
+            // existed in this file and several sites were simply left behind.
+            (*AFD_HANDLES(PollReq).add(i as usize)).Handle,
+            (*AFD_HANDLES(PollReq).add(i as usize)).Events,
+            (*AFD_HANDLES(PollReq).add(i as usize)).Status,
         );
         i += 1;
     }
@@ -259,11 +263,12 @@ pub unsafe extern "system" fn AfdSelect(
         FCB = (*FileObject).FsContext as PAFD_FCB;
 
         AFD_DbgPrint!(MID_TRACE, b"AFD: Select Events: \0".as_ptr() as PCHAR);
-        PrintEvents((*PollReq).Handles[i].Events);
+        PrintEvents((*AFD_HANDLES(PollReq).add(i)).Events);
         AFD_DbgPrint!(MID_TRACE, b"\n\0".as_ptr() as PCHAR);
 
-        (*PollReq).Handles[i].Status = ((*PollReq).Handles[i].Events & (*FCB).PollState) as NTSTATUS;
-        if (*PollReq).Handles[i].Status != 0 {
+        (*AFD_HANDLES(PollReq).add(i)).Status =
+            ((*AFD_HANDLES(PollReq).add(i)).Events & (*FCB).PollState) as NTSTATUS;
+        if (*AFD_HANDLES(PollReq).add(i)).Status != 0 {
             AFD_DbgPrint!(
                 MID_TRACE,
                 b"Signalling %p with %x\n\0".as_ptr() as PCHAR,
@@ -482,10 +487,10 @@ unsafe fn UpdatePollWithFCB(Poll: PAFD_ACTIVE_POLL, _FileObject: PFILE_OBJECT) -
         let FileObject = (*(AFD_HANDLES(PollReq).offset(i as isize))).Handle as PFILE_OBJECT;
         FCB = (*FileObject).FsContext as PAFD_FCB;
 
-        (*PollReq).Handles[i as usize].Status =
-            ((*PollReq).Handles[i as usize].Events & (*FCB).PollState) as NTSTATUS;
+        (*AFD_HANDLES(PollReq).add(i as usize)).Status =
+            ((*AFD_HANDLES(PollReq).add(i as usize)).Events & (*FCB).PollState) as NTSTATUS;
 
-        if (*PollReq).Handles[i as usize].Status != 0 {
+        if (*AFD_HANDLES(PollReq).add(i as usize)).Status != 0 {
             AFD_DbgPrint!(
                 MID_TRACE,
                 b"Signalling %p with %x\n\0".as_ptr() as PCHAR,
