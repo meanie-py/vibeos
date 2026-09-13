@@ -20,6 +20,10 @@ the third completed all 15 networking tests. Their manifests were
 `/tmp/vibeos-qemu-locks/1660217-1660987.json`; the failed probes were stopped by
 their exact QEMU IDs after inspecting the copies. Raw pytest retains its explicit
 clean-build behavior; CLI networking no longer starts a second writer.
+Pytest boots write serial into their own work or artifact directory. Conformance
+and networking pass a durable run directory before launching pytest; they never
+parse the legacy per-architecture log. Serial draining fails immediately when
+QEMU has exited instead of spending the remaining conformance timeout on a dead VM.
 
 The UD2 and self-recursion scanners cache per-binary analysis facts under this
 checkout's `.cache/binary-facts`. Keys include binary contents and pathname,

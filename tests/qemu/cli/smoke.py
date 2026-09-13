@@ -482,7 +482,14 @@ def _net_stage(run: Run, repo: Path, arch: str) -> None:
         "--skip-clean-build",
     ]
     try:
-        proc = subprocess.run(cmd, cwd=str(repo), capture_output=True, text=True, timeout=1200)
+        proc = subprocess.run(
+            cmd,
+            cwd=str(repo),
+            capture_output=True,
+            text=True,
+            timeout=1200,
+            env={**os.environ, "VIBEOS_ARTIFACT_DIR": str(run.dir / "net")},
+        )
     except subprocess.TimeoutExpired:
         run.add(
             Stage(

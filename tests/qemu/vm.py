@@ -1127,7 +1127,11 @@ class QemuVM:
         )
         self.work_dir = work_dir
         self.work_dir.mkdir(parents=True, exist_ok=True)
-        self.live_log_path = serial_log or LIVE_LOG_DIR / f"{config.arch}_smoke_live.log"
+        # A fixed per-arch path lets concurrent pytest boots overwrite each
+        # other's evidence. CLI subprocesses supply their own durable run root.
+        serial_root = Path(os.environ.get("VIBEOS_ARTIFACT_DIR") or work_dir)
+        serial_root.mkdir(parents=True, exist_ok=True)
+        self.live_log_path = serial_log or serial_root / f"{config.arch}_serial.log"
 
         # A SECOND, durable home for hang diagnostics. Under the pytest `vm`
         # fixture work_dir is a tmp_path_factory dir, and pytest keeps only the
@@ -1602,12 +1606,18 @@ class QemuVM:
         # Coordinate selection through the successful QMP handshake. Merely
         # surviving the early-exit poll does not prove hostfwd/GDB binds worked.
         # All builders enter, protecting the scoped Windows port-picker too.
-        with launch_lock():
-            try:
-                self._start_with_ports()
-            except BaseException:
-                self.stop()
-                raise
+        try:
+            with launch_lock():
+                try:
+                    self._start_with_ports()
+                except BaseException:
+                    # Stop before releasing the port handshake on launch failure.
+                    self.stop()
+                    raise
+        except BaseException:
+            # A lock timeout also releases the boot/slot leases acquired above.
+            self.stop()
+            raise
 
     def _start_with_ports(self) -> None:
         cmd = self._launch_qemu()
@@ -1738,7 +1748,10 @@ class QemuVM:
 
     def serial_output(self, timeout: float = 1.0) -> str:
         """Read available serial output since last read."""
-        return self.serial.read_available(timeout=timeout)
+        output = self.serial.read_available(timeout=timeout)
+        if not output and self._proc is not None and self._proc.poll() is not None:
+            raise ConnectionError(f"QEMU exited with code {self._proc.returncode}")
+        return output
 
     def screendump(self, path: str | Path) -> Path:
         """Save a screenshot via QMP screendump.
