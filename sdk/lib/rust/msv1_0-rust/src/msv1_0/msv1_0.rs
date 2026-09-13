@@ -437,8 +437,8 @@ unsafe extern "C" fn BuildTokenGroups(
 
         }
 
-        (*TokenGroupsBuf).Groups[GroupCount as usize].Sid = Sid;
-        (*TokenGroupsBuf).Groups[GroupCount as usize].Attributes =
+        (*(&raw mut (*TokenGroupsBuf).Groups[0]).add(GroupCount as usize)).Sid = Sid;
+        (*(&raw mut (*TokenGroupsBuf).Groups[0]).add(GroupCount as usize)).Attributes =
             SE_GROUP_ENABLED | SE_GROUP_ENABLED_BY_DEFAULT | SE_GROUP_MANDATORY;
         GroupCount += 1;
 
@@ -456,8 +456,8 @@ unsafe extern "C" fn BuildTokenGroups(
             SECURITY_NULL_RID,
             &mut Sid,
         );
-        (*TokenGroupsBuf).Groups[GroupCount as usize].Sid = Sid;
-        (*TokenGroupsBuf).Groups[GroupCount as usize].Attributes =
+        (*(&raw mut (*TokenGroupsBuf).Groups[0]).add(GroupCount as usize)).Sid = Sid;
+        (*(&raw mut (*TokenGroupsBuf).Groups[0]).add(GroupCount as usize)).Attributes =
             SE_GROUP_ENABLED | SE_GROUP_ENABLED_BY_DEFAULT | SE_GROUP_MANDATORY;
         GroupCount += 1;
     } else {
@@ -466,8 +466,8 @@ unsafe extern "C" fn BuildTokenGroups(
 
         }
 
-        (*TokenGroupsBuf).Groups[GroupCount as usize].Sid = Sid;
-        (*TokenGroupsBuf).Groups[GroupCount as usize].Attributes =
+        (*(&raw mut (*TokenGroupsBuf).Groups[0]).add(GroupCount as usize)).Sid = Sid;
+        (*(&raw mut (*TokenGroupsBuf).Groups[0]).add(GroupCount as usize)).Attributes =
             SE_GROUP_ENABLED | SE_GROUP_ENABLED_BY_DEFAULT | SE_GROUP_MANDATORY;
         GroupCount += 1;
     }
@@ -486,8 +486,8 @@ unsafe extern "C" fn BuildTokenGroups(
         SECURITY_NULL_RID,
         &mut Sid,
     );
-    (*TokenGroupsBuf).Groups[GroupCount as usize].Sid = Sid;
-    (*TokenGroupsBuf).Groups[GroupCount as usize].Attributes =
+    (*(&raw mut (*TokenGroupsBuf).Groups[0]).add(GroupCount as usize)).Sid = Sid;
+    (*(&raw mut (*TokenGroupsBuf).Groups[0]).add(GroupCount as usize)).Attributes =
         SE_GROUP_ENABLED | SE_GROUP_ENABLED_BY_DEFAULT | SE_GROUP_MANDATORY;
     GroupCount += 1;
 

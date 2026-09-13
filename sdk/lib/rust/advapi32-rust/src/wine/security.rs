@@ -595,8 +595,8 @@ pub unsafe extern "system" fn CreateRestrictedToken(
             (*DisableSids).GroupCount = DisableSidCount;
             Index = 0;
             while Index < DisableSidCount {
-                (*DisableSids).Groups[Index as usize].Sid = (*SidsToDisable.add(Index as usize)).Sid;
-                (*DisableSids).Groups[Index as usize].Attributes =
+                (*(&raw mut (*DisableSids).Groups[0]).add(Index as usize)).Sid = (*SidsToDisable.add(Index as usize)).Sid;
+                (*(&raw mut (*DisableSids).Groups[0]).add(Index as usize)).Attributes =
                     (*SidsToDisable.add(Index as usize)).Attributes;
                 Index += 1;
             }
@@ -616,9 +616,9 @@ pub unsafe extern "system" fn CreateRestrictedToken(
             (*DeletePrivileges).PrivilegeCount = DeletePrivilegeCount;
             Index = 0;
             while Index < DeletePrivilegeCount {
-                (*DeletePrivileges).Privileges[Index as usize].Luid =
+                (*(&raw mut (*DeletePrivileges).Privileges[0]).add(Index as usize)).Luid =
                     (*PrivilegesToDelete.add(Index as usize)).Luid;
-                (*DeletePrivileges).Privileges[Index as usize].Attributes =
+                (*(&raw mut (*DeletePrivileges).Privileges[0]).add(Index as usize)).Attributes =
                     (*PrivilegesToDelete.add(Index as usize)).Attributes;
                 Index += 1;
             }
@@ -638,9 +638,9 @@ pub unsafe extern "system" fn CreateRestrictedToken(
             (*RestrictedSids).GroupCount = RestrictedSidCount;
             Index = 0;
             while Index < RestrictedSidCount {
-                (*RestrictedSids).Groups[Index as usize].Sid =
+                (*(&raw mut (*RestrictedSids).Groups[0]).add(Index as usize)).Sid =
                     (*SidsToRestrict.add(Index as usize)).Sid;
-                (*RestrictedSids).Groups[Index as usize].Attributes =
+                (*(&raw mut (*RestrictedSids).Groups[0]).add(Index as usize)).Attributes =
                     (*SidsToRestrict.add(Index as usize)).Attributes;
                 Index += 1;
             }
@@ -2658,7 +2658,13 @@ unsafe fn DumpSidNumeric(psid: PSID, pwptr: *mut *mut WCHAR, plen: *mut ULONG) -
 
     i = 0;
     while i < (*pisid).SubAuthorityCount as DWORD {
-        sprintfW(buf.as_mut_ptr(), subauthfmt.as_mut_ptr(), (*pisid).SubAuthority[i as usize]);
+        // SID.SubAuthority is `[size_is(SubAuthorityCount)] SubAuthority[ANYSIZE_ARRAY]`,
+        // and this loop is bounded by SubAuthorityCount -- so bindgen's `[DWORD; 1]`
+        // panicked on any SID with more than one sub-authority (nearly all of them).
+        // NOT the same as WellKnownSids[].Sid.SubAuthority below: that is MAX_SID's
+        // genuine `[DWORD; 15]`, whose bounds check is real protection.
+        sprintfW(buf.as_mut_ptr(), subauthfmt.as_mut_ptr(),
+                 (&raw const (*pisid).SubAuthority[0]).add(i as usize).read());
         DumpString(buf.as_ptr(), -1, pwptr, plen);
         i += 1;
     }

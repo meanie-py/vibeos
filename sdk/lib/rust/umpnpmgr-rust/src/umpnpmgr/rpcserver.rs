@@ -506,11 +506,11 @@ unsafe extern "C" fn NextResourceDescriptor(
     if (*pDescriptor).PartialResourceList.Count > 0 {
         ulLastIndex = (*pDescriptor).PartialResourceList.Count - 1;
 
-        if (*pDescriptor).PartialResourceList.PartialDescriptors[ulLastIndex as usize].Type
+        if (*(&raw mut (*pDescriptor).PartialResourceList.PartialDescriptors[0]).add(ulLastIndex as usize)).Type
             == (CmResourceTypeDeviceSpecific) as u8
         {
             pNext = pNext.add(
-                (*pDescriptor).PartialResourceList.PartialDescriptors[ulLastIndex as usize]
+                (*(&raw mut (*pDescriptor).PartialResourceList.PartialDescriptors[0]).add(ulLastIndex as usize))
                     .u
                     .DeviceSpecificData
                     .DataSize as usize,
