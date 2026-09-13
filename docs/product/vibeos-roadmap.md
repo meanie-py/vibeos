@@ -488,6 +488,30 @@ land; date every addition.** Source docs live in `docs/engineering/archive/`.
 
 ## Known bugs & flakes (live registry)
 
+- **Kernel symbols resolve against the WRONG image since the MP promotion — OPEN, fleet-wide**
+  (2026-09-13). Every medium carries both kernels and boots the MP one
+  (`livecd.ini:59` → `/KERNEL=ntkrnlmp.exe /HAL=halmp.dll`), so anything that resolves a
+  kernel symbol against `ntoskrnl.exe` is answering for an image the machine is not running.
+  Hit independently by two lanes within hours, by different routes and neither looking for it:
+  `qemu/gdb-helpers/find-kbase.py` relocates by matching the export Name against
+  `VIBEOS_KERNEL`'s basename and matched the UP image, so `run-until.sh --break <sym>` set
+  breakpoints the guest never executes and timed out silently (smp-bringup; fix `0280df67353`,
+  **not on master yet**). And by hand, with no script involved: `build-arm64/ntoskrnl/*.exe`
+  lists only `ntoskrnl.exe` while the MP image is a directory deeper in `ntkrnlmp/`, so a
+  glob steers you to the wrong file.
+  **The danger is that the wrong answer is PLAUSIBLE, not empty.** The same fault address
+  resolved two ways:
+
+        ntoskrnl.exe  -> KeSetIdealProcessorThread +0x1c     (wrong image, real symbol)
+        ntkrnlmp.exe  -> RtlRaiseStatus +0x44                 (booted image)
+
+  Only incoherence caught it — BUGCHECK 0x1E is KMODE_EXCEPTION_NOT_HANDLED with
+  P1 = STATUS_FILE_INVALID, and an ideal-processor setter raising a file-status exception fits
+  nothing, while `RtlRaiseStatus+0x44` fits exactly. Had the fault been anywhere near
+  scheduling, the wrong symbol would have been believed. So a fix to the gdb helper is
+  necessary and not sufficient: any `llvm-symbolizer`/`nm` work done since 2026-09-12 is
+  suspect, and a backtrace from that window should be re-derived rather than trusted.
+
 - **A 32-bit guest doing real file I/O BUGCHECKs the arm64 kernel — OPEN** (2026-09-13).
   Found on the first writable-volume run of `sqlite32.exe`, the third-party stress guest
   (`tools/stress/sqlite/build.sh`). Real SQLite creating and writing a database on arm64:
