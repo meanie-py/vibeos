@@ -2182,8 +2182,11 @@ pub unsafe extern "C" fn LsapLogonUser(
     if !LocalGroups.is_null() {
         i = 0;
         while i < (*LocalGroups).GroupCount {
-            if !(*LocalGroups).Groups[i as usize].Sid.is_null() {
-                RtlFreeHeap(RtlGetProcessHeap(), 0, (*LocalGroups).Groups[i as usize].Sid as PVOID);
+            // TOKEN_GROUPS.Groups / PRIVILEGE_SET.Privilege are FLEXIBLE arrays
+            // (`Groups[ANYSIZE_ARRAY]`, `[size_is(GroupCount)]`), so bindgen's
+            // `[T; 1]` panics for every index >= 1.
+            if !(*(&raw mut (*LocalGroups).Groups[0]).add(i as usize)).Sid.is_null() {
+                RtlFreeHeap(RtlGetProcessHeap(), 0, (*(&raw mut (*LocalGroups).Groups[0]).add(i as usize)).Sid as PVOID);
             }
             i += 1;
         }
@@ -2203,8 +2206,8 @@ pub unsafe extern "C" fn LsapLogonUser(
                 if !(*TokenInfo0).Groups.is_null() {
                     i = 0;
                     while i < (*(*TokenInfo0).Groups).GroupCount {
-                        if !(*(*TokenInfo0).Groups).Groups[i as usize].Sid.is_null() {
-                            LsapFreeHeap((*(*TokenInfo0).Groups).Groups[i as usize].Sid as PVOID);
+                        if !(*(&raw mut (*(*TokenInfo0).Groups).Groups[0]).add(i as usize)).Sid.is_null() {
+                            LsapFreeHeap((*(&raw mut (*(*TokenInfo0).Groups).Groups[0]).add(i as usize)).Sid as PVOID);
                         }
                         i += 1;
                     }
@@ -2221,8 +2224,8 @@ pub unsafe extern "C" fn LsapLogonUser(
                 if !(*TokenInfo1).Groups.is_null() {
                     i = 0;
                     while i < (*(*TokenInfo1).Groups).GroupCount {
-                        if !(*(*TokenInfo1).Groups).Groups[i as usize].Sid.is_null() {
-                            LsapFreeHeap((*(*TokenInfo1).Groups).Groups[i as usize].Sid as PVOID);
+                        if !(*(&raw mut (*(*TokenInfo1).Groups).Groups[0]).add(i as usize)).Sid.is_null() {
+                            LsapFreeHeap((*(&raw mut (*(*TokenInfo1).Groups).Groups[0]).add(i as usize)).Sid as PVOID);
                         }
                         i += 1;
                     }

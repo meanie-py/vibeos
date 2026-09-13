@@ -1614,8 +1614,8 @@ pub unsafe extern "system" fn LsarAddPrivilegesToAccount(
                 j = 0;
                 while j < (*CurrentPrivileges).PrivilegeCount {
                     if RtlEqualLuid_inline(
-                        core::ptr::addr_of_mut!((*Privileges).Privilege[i as usize].Luid) as *mut _LUID,
-                        &mut (*CurrentPrivileges).Privilege[i as usize].Luid,
+                        core::ptr::addr_of_mut!((*(&raw mut (*Privileges).Privilege[0]).add(i as usize)).Luid) as *mut _LUID,
+                        &mut (*(&raw mut (*CurrentPrivileges).Privilege[0]).add(i as usize)).Luid,
                     ) {
                         bFound = 1;
                         break;
@@ -1654,11 +1654,11 @@ pub unsafe extern "system" fn LsarAddPrivilegesToAccount(
                 j = 0;
                 while j < (*CurrentPrivileges).PrivilegeCount {
                     if RtlEqualLuid_inline(
-                        core::ptr::addr_of_mut!((*Privileges).Privilege[i as usize].Luid) as *mut _LUID,
-                        &mut (*CurrentPrivileges).Privilege[i as usize].Luid,
+                        core::ptr::addr_of_mut!((*(&raw mut (*Privileges).Privilege[0]).add(i as usize)).Luid) as *mut _LUID,
+                        &mut (*(&raw mut (*CurrentPrivileges).Privilege[0]).add(i as usize)).Luid,
                     ) {
                         (*NewPrivileges).Privilege[j as usize].Attributes =
-                            (*Privileges).Privilege[i as usize].Attributes;
+                            (*(&raw mut (*Privileges).Privilege[0]).add(i as usize)).Attributes;
 
                         bFound = 1;
                         break;
@@ -1669,7 +1669,7 @@ pub unsafe extern "system" fn LsarAddPrivilegesToAccount(
                 if bFound == 0 {
                     RtlCopyLuidAndAttributesArray(
                         1,
-                        &mut (*Privileges).Privilege[i as usize] as *mut _
+                        &mut (*(&raw mut (*Privileges).Privilege[0]).add(i as usize)) as *mut _
                             as PLUID_AND_ATTRIBUTES,
                         &mut (*NewPrivileges).Privilege[PrivilegeCount as usize]
                             as PLUID_AND_ATTRIBUTES,
@@ -2818,7 +2818,7 @@ pub unsafe extern "system" fn LsarEnumerateAccountRights(
                 PrivilegeString = core::ptr::null_mut();
                 Status = LsarLookupPrivilegeName(
                     PolicyHandle,
-                    core::ptr::addr_of_mut!((*PrivilegeSet).Privilege[i as usize].Luid) as PLUID,
+                    core::ptr::addr_of_mut!((*(&raw mut (*PrivilegeSet).Privilege[0]).add(i as usize)).Luid) as PLUID,
                     &mut PrivilegeString,
                 );
                 if !NT_SUCCESS(Status) {

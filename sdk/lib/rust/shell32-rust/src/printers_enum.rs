@@ -767,7 +767,12 @@ pub unsafe fn _ILCreatePrinterItem_body(pi: *mut PRINTER_INFO_4W) -> LPITEMIDLIS
         let server_offset = core::ptr::read_unaligned(core::ptr::addr_of!((*p).offsServer));
         wcscpy(name.add(server_offset as usize), (*pi).pServerName);
     } else {
-        (*p).szName[(*p).offsServer as usize] = 0x0000u16;
+        // szName is flexible (`WCHAR szName[1]`, "followed by display name and
+        // comment string"), so bindgen's `[T; 1]` panics for any non-zero offset.
+        // The correct walk is already four lines above this one.
+        let name = core::ptr::addr_of_mut!((*p).szName).cast::<WCHAR>();
+        let server_offset = core::ptr::read_unaligned(core::ptr::addr_of!((*p).offsServer));
+        name.add(server_offset as usize).write(0x0000u16);
     }
 
     *((pidl as *mut u8).add((size + 2) as usize) as *mut u16) = 0 as u16;

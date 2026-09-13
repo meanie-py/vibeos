@@ -574,8 +574,13 @@ pub unsafe fn CControlPanelEnum_RegisterCPanelApp_body(this: *mut CControlPanelE
     if !applet.is_null() {
         let mut i: u32 = 0;
         while i < (*applet).count {
-            if (*applet).info[i as usize].idIcon > 0 {
-                iconIdx = -((*applet).info[i as usize].idIcon as i32);
+            // cpanel.h: `struct applet_info info[1];  /* array of count information */`
+            // -- a flexible array whose real length is `count`, which is this loop's
+            // bound. Any .cpl exporting more than one applet (main.cpl: mouse +
+            // keyboard) panicked on the second.
+            let info = (&raw const (*applet).info).cast::<applet_info>().add(i as usize);
+            if (*info).idIcon > 0 {
+                iconIdx = -((*info).idIcon as i32);
             } else {
                 iconIdx = 0;
             }
@@ -584,8 +589,8 @@ pub unsafe fn CControlPanelEnum_RegisterCPanelApp_body(this: *mut CControlPanelE
             // pointers -- C's array-to-pointer decay, made explicit.
             let pidl = crate::control_panel_folder_tu::_ILCreateCPanelApplet(
                 wpath,
-                (*applet).info[i as usize].name.as_ptr(),
-                (*applet).info[i as usize].info.as_ptr(),
+                (*info).name.as_ptr(),
+                (*info).info.as_ptr(),
                 iconIdx,
             );
 

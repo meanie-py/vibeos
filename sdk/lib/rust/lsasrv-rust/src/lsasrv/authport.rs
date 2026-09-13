@@ -103,7 +103,9 @@ unsafe fn LsapIsTrustedClient(ProcessHandle: HANDLE) -> BOOL {
         }
 
         for i in 0..(*privileges).PrivilegeCount {
-            let priv_luid = &(*privileges).Privileges[i as usize].Luid;
+            // TOKEN_PRIVILEGES.Privileges is `LUID_AND_ATTRIBUTES Privileges[ANYSIZE_ARRAY]`;
+            // the loop is bounded by PrivilegeCount, so bindgen's `[T; 1]` panics at i == 1.
+            let priv_luid = &(*(&raw mut (*privileges).Privileges[0]).add(i as usize)).Luid;
             if priv_luid.LowPart == tcb_privilege.LowPart && priv_luid.HighPart == tcb_privilege.HighPart {
                 break 'done 1;
             }
