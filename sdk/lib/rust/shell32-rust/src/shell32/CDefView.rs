@@ -19,6 +19,16 @@
 //!    Any port has to reproduce that contract (a GWLP_USERDATA lookup does, without executable
 //!    memory); it is shared infrastructure, since CMenuFocusManager, CMenuToolbars,
 //!    CChangeNotifyServer and CDirectoryWatcher are all ATL windows too.
+//!
+//!    The tree has already met this problem once and its answer is in utils.cpp, above
+//!    `CStubWindow32_CreateStub_RustBridge`: an ATL CWindowImpl's "per-instance thunk and
+//!    registered window class must have exactly ONE owner", so CStubWindow32 got a BRIDGE
+//!    rather than a second Rust implementation that would register the same class name and
+//!    split FindStubWindow. Note the constraint is SINGLE OWNERSHIP, not the thunk mechanism.
+//!    CStubWindow32 is bridged because two C++ TUs (utils.cpp, CDrivesFolder.cpp) still use
+//!    it. CDefView is NOT in that position: `SHELLDLL_DefView` is registered in exactly one
+//!    place -- CDefView.cpp:528 -- and no other C++ TU constructs the class. So a Rust
+//!    implementation here splits nothing, and the bridge precedent does not force a bridge.
 //! 2. The BEGIN_MSG_MAP table was not translated AT ALL. All 25 handlers are here as
 //!    `CDefView_On*_body` with ATL's exact `(uMsg, wParam, lParam, &mut bHandled)` shape, but
 //!    no ProcessWindowMessage exists to reach them, so today not one is reachable.
