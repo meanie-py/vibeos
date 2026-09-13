@@ -57,7 +57,7 @@ extern "system" {
     fn RtlInitUnicodeString(DestinationString: *mut _UNICODE_STRING, SourceString: *const u16);
     fn ZwOpenKey( KeyHandle: *mut HANDLE, DesiredAccess: u32, ObjectAttributes: *mut _OBJECT_ATTRIBUTES, ) -> NTSTATUS;
     fn ZwClose(Handle: HANDLE) -> NTSTATUS;
-    fn ExAllocatePoolWithTag(PoolType: POOL_TYPE, NumberOfBytes: u32, Tag: u32) -> *mut c_void;
+    fn ExAllocatePoolWithTag(PoolType: POOL_TYPE, NumberOfBytes: SIZE_T, Tag: u32) -> *mut c_void;
     fn ExFreePool(PoolHandle: *mut c_void);
     fn ExFreePoolWithTag(PoolHandle: *mut c_void, Tag: u32);
     fn IoAllocateDriverObjectExtension(DriverObject: *mut DRIVER_OBJECT, ClientIdentificationAddress: *mut c_void, ExtensionSize: u32, Extension: *mut *mut c_void) -> NTSTATUS;
@@ -334,7 +334,7 @@ pub unsafe extern "system" fn ScsiPortGetDeviceBase(
     let mapped_address = MmMapIoSpace(translated_address, NumberOfBytes as _, 0u32);
     let device_base = ExAllocatePoolWithTag(
         NonPagedPool,
-        (core::mem::size_of::<MAPPED_ADDRESS>()) as u32,
+        (core::mem::size_of::<MAPPED_ADDRESS>()) as SIZE_T,
         0 /* TAG_SCSIPORT */,
     ) as *mut MAPPED_ADDRESS;
     if device_base.is_null() {
@@ -600,7 +600,7 @@ unsafe fn SpiAllocateCommonBuffer(
     ) as u32;
 
     if (*DeviceExtension).AdapterObject.is_null() {
-        CommonBuffer = ExAllocatePoolWithTag(0 /* NonPagedPool */, CommonBufferLength, 0x50726F53 /* TAG_SCSIPORT */);
+        CommonBuffer = ExAllocatePoolWithTag(0 /* NonPagedPool */, CommonBufferLength as SIZE_T, 0x50726F53 /* TAG_SCSIPORT */);
     } else {
         CommonBuffer = HalAllocateCommonBuffer(
             (*DeviceExtension).AdapterObject,
@@ -737,7 +737,7 @@ pub unsafe extern "system" fn ScsiPortInitialize(
 
         (*driverExtension).RegistryPath.Buffer = ExAllocatePoolWithTag(
             PagedPool,
-            ((*RegistryPath).MaximumLength) as u32,
+            ((*RegistryPath).MaximumLength) as SIZE_T,
             TAG_SCSIPORT /* TAG_SCSIPORT */,
         ) as *mut u16;
         (*driverExtension).RegistryPath.MaximumLength = (*RegistryPath).MaximumLength;
@@ -767,8 +767,8 @@ pub unsafe extern "system" fn ScsiPortInitialize(
         if (*HwInitializationData).NumberOfAccessRanges != 0 {
             ConfigInfo.AccessRanges = ExAllocatePoolWithTag(
                 PagedPool,
-                (*HwInitializationData).NumberOfAccessRanges as u32
-                    * core::mem::size_of::<ACCESS_RANGE>() as u32,
+                ((*HwInitializationData).NumberOfAccessRanges as SIZE_T)
+                    * core::mem::size_of::<ACCESS_RANGE>() as SIZE_T,
                 TAG_SCSIPORT,
             ) as *mut ACCESS_RANGE;
             if ConfigInfo.AccessRanges.is_null() {
@@ -880,7 +880,7 @@ pub unsafe extern "system" fn ScsiPortInitialize(
                 PortConfigSize = ALIGN_UP(PortConfigSize, 8 /* INT64 */);
                 (*DeviceExtension).PortConfig = ExAllocatePoolWithTag(
                     NonPagedPool,
-                    PortConfigSize,
+                    PortConfigSize as SIZE_T,
                     TAG_SCSIPORT,
                 ) as *mut PORT_CONFIGURATION_INFORMATION;
                 if (*DeviceExtension).PortConfig.is_null() {
@@ -1158,7 +1158,7 @@ pub unsafe extern "system" fn ScsiPortInitialize(
 
                     SrbData = ExAllocatePoolWithTag(
                         NonPagedPool,
-                        Count * core::mem::size_of::<SCSI_REQUEST_BLOCK_INFO>() as u32,
+                        (Count as SIZE_T) * core::mem::size_of::<SCSI_REQUEST_BLOCK_INFO>() as SIZE_T,
                         TAG_SCSIPORT,
                     ) as *mut SCSI_REQUEST_BLOCK_INFO;
                     if SrbData.is_null() {
@@ -1650,7 +1650,7 @@ unsafe fn SpiConfigToResource(
 
     FullSize = core::mem::size_of::<CM_RESOURCE_LIST>() as u32 + (ListLength.wrapping_sub(1)) * (core::mem::size_of::<CM_PARTIAL_RESOURCE_DESCRIPTOR>() as u32);
 
-    ResourceList = ExAllocatePoolWithTag(PagedPool, FullSize, TAG_SCSIPORT) as *mut CM_RESOURCE_LIST;
+    ResourceList = ExAllocatePoolWithTag(PagedPool, FullSize as SIZE_T, TAG_SCSIPORT) as *mut CM_RESOURCE_LIST;
 
     if ResourceList.is_null() {
         return core::ptr::null_mut();
@@ -1934,7 +1934,8 @@ pub unsafe extern "system" fn SpiAdapterControl(
     if (*srb_info).NumberOfMapRegisters > MAX_SG_LIST {
         (*srb_info).ScatterGather = ExAllocatePoolWithTag(
             NonPagedPool,
-            (*srb_info).NumberOfMapRegisters.wrapping_mul(core::mem::size_of::<SCSI_SG_ADDRESS>() as u32),
+            ((*srb_info).NumberOfMapRegisters as SIZE_T)
+                .wrapping_mul(core::mem::size_of::<SCSI_SG_ADDRESS>() as SIZE_T),
             0, // TAG_SCSIPORT
         ) as *mut SCSI_SG_ADDRESS;
 
@@ -2682,7 +2683,7 @@ unsafe fn SpiParseDeviceInfo(
             // Allocate it
             (*InternalConfigInfo).Parameter = ExAllocatePoolWithTag(
                 NonPagedPool,
-                (*KeyValueInformation).DataLength,
+                (*KeyValueInformation).DataLength as SIZE_T,
                 TAG_SCSIPORT,
             );
 

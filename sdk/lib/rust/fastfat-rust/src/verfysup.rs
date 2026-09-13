@@ -52,7 +52,11 @@ extern "system" {
     fn FatIsFat32(Vcb: *mut VCB) -> u8;
     fn NT_ASSERT(condition: i32);
     fn KeInitializeEvent(Event: *mut KEVENT, Type: u32, State: u8);
-    fn CcPinRead( FileObject: *mut FILE_OBJECT, FileOffset: *const LARGE_INTEGER, Length: u32, Wait: u8, Bcb: *mut *mut c_void, Buffer: *mut *mut c_void, ) -> u8;
+    // Param 4 is `Flags: ULONG` (PIN_WAIT/PIN_EXCLUSIVE/PIN_NO_READ/PIN_IF_BCB), NOT
+    // the NT4-era `BOOLEAN Wait`. Declared as u8 the callee read 32 bits where the
+    // caller set 8, so the three flags above PIN_WAIT came from whatever was in the
+    // register -- benign only because PIN_WAIT is 1 and TRUE is 1.
+    fn CcPinRead( FileObject: *mut FILE_OBJECT, FileOffset: *const LARGE_INTEGER, Length: u32, Flags: u32, Bcb: *mut *mut c_void, Buffer: *mut *mut c_void, ) -> u8;
     fn IoBuildAsynchronousFsdRequest( MajorFunction: u32, DeviceObject: *mut DEVICE_OBJECT, Buffer: *mut c_void, Length: u32, StartingOffset: *const LARGE_INTEGER, IoStatusBlock: *mut _IO_STATUS_BLOCK, ) -> *mut IRP;
     fn IoCallDriver(DeviceObject: *mut DEVICE_OBJECT, Irp: *mut IRP) -> NTSTATUS;
     fn KeWaitForSingleObject( Object: *mut c_void, WaitReason: u32, WaitMode: u32, Alertable: u8, Timeout: *const LARGE_INTEGER, ) -> NTSTATUS;

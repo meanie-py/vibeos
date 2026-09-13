@@ -31,9 +31,11 @@ unsafe fn NtCurrentProcess() -> HANDLE {
 
 extern "system" {
     fn RtlFillMemory(Destination: PVOID, Length: SIZE_T, Fill: UCHAR);
+    // Params 0/1 are POINTERS (PWSTR/PULONG). Declared ULONG they were truncated to
+    // 32 bits on amd64/arm64 -- latent only because the call site passes NULL.
     fn LdrLoadDll(
-        SearchPath: ULONG,
-        LoadFlags: ULONG,
+        SearchPath: PWSTR,
+        DllCharacteristics: PULONG,
         DllName: *mut _UNICODE_STRING,
         DllHandle: *mut HANDLE,
     ) -> NTSTATUS;
@@ -200,8 +202,8 @@ pub unsafe extern "system" fn BaseSrvDelayLoadKernel32() -> NTSTATUS {
         if (*(BaseSrvKernel32Imports[i as usize].FunctionPointer as *mut PVOID)).is_null() {
             if BaseSrvKernel32DllHandle.is_null() {
                 Status = LdrLoadDll(
-                    0,
-                    0,
+                    core::ptr::null_mut(),
+                    core::ptr::null_mut(),
                     core::ptr::addr_of_mut!(BaseSrvKernel32DllPath),
                     core::ptr::addr_of_mut!(BaseSrvKernel32DllHandle),
                 );
