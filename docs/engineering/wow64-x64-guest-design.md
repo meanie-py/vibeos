@@ -81,11 +81,19 @@ guest must be kept inside the low 4GB, so the marshaller forces
 `ZeroBits = WOW64_ZEROBITS_BELOW_2G` on `NtAllocateVirtualMemory` and `NtMapViewOfSection`,
 clamps to `WOW64_USER_CEILING32`, and checks that csrss's shared section, `StaticServerData` and
 heap pointers actually landed below 4GB — one of which asserted and dereferenced NULL when they
-did not. Measured in `wow64_manual.c`: **4 enforcement statements** (2 forced-`ZeroBits`, 2
-ceiling clamps) against **~25 references** across code and the comments explaining them. A
-64-bit guest has the host's own address space and none of this applies. (Credit to the research
-lane for spotting this class; they put it at 36 sites, I count ~25 references / 4 enforcement
-statements — same substantive point, and I am quoting the number I can defend from the file.)
+did not. Measured in `wow64_manual.c`: **14 distinct guarded confinement sites** — 11 `if` tests on a
+confinement condition (`ZeroBits == 0`, `Max > WOW64_USER_CEILING32`, `>> 32` guest-addressability
+checks, the `> 0xFFFFFFFFULL` client-info test) plus 3 assignments forcing a ceiling. A 64-bit
+guest has the host's own address space and none of it applies.
+
+The number took three tries across two lanes, and the history is worth one line because the
+failure mode is generic: the research lane (who spotted the class — it is theirs) first reported
+36 from `grep -c "4GB\|ZeroBits"`, of which 22 hits are comments and `DbgPrint` strings; I then
+reported ~25 textual references, which was the same mistake with a wider pattern, and 4
+"enforcement statements", which was too NARROW because it counted only the forced assignments and
+missed the 11 guarded tests. **All three numbers were produced by grepping for a token instead of
+deciding what a "site" is.** 14 is what you get once the method is stated first, and it is
+verified here against the file.
 
 What remains on the marshaller side is genuinely smaller and uniform:
 
