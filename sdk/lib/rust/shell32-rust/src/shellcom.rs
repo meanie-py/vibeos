@@ -802,3 +802,69 @@ pub struct IBindCtxVtbl {
     pub Release: unsafe extern "system" fn(*mut IBindCtx) -> ULONG,
 }
 pub type LPBC = *mut IBindCtx;
+
+// ---------------------------------------------------------------------------------------------
+// Interfaces the bindgen island renders OPAQUE (no lpVtbl), needed by utils.cpp's translation
+// ---------------------------------------------------------------------------------------------
+//
+// Slot ORDER is the entire ABI contract here and nothing checks it: call sites resolve by NAME,
+// so a slot in the wrong position calls the wrong method with the wrong arguments and compiles
+// perfectly. Each layout below is the IDL's own order from sdk/include/psdk/shobjidl.idl,
+// transcribed method by method, with the three inherited IUnknown slots first.
+//
+// Following this module's existing convention, a slot nothing calls is a `usize` placeholder:
+// it must occupy its position, but giving it a signature no caller uses would be inventing an
+// ABI detail rather than recording one.
+
+use crate::recycle_bin::WIN32_FIND_DATAW;
+
+/// `interface IFileSystemBindData : IUnknown` — SetFindData, GetFindData (in that order).
+#[repr(C)]
+pub struct IFileSystemBindData {
+    pub lpVtbl: *const IFileSystemBindDataVtbl,
+}
+
+#[repr(C)]
+pub struct IFileSystemBindDataVtbl {
+    pub QueryInterface: usize,
+    pub AddRef: usize,
+    pub Release: unsafe extern "system" fn(*mut IFileSystemBindData) -> ULONG,
+    pub SetFindData: usize,
+    pub GetFindData:
+        unsafe extern "system" fn(*mut IFileSystemBindData, *mut WIN32_FIND_DATAW) -> HRESULT,
+}
+
+/// `interface IInitializeCommand : IUnknown` — one method, Initialize.
+#[repr(C)]
+pub struct IInitializeCommand {
+    pub lpVtbl: *const IInitializeCommandVtbl,
+}
+
+#[repr(C)]
+pub struct IInitializeCommandVtbl {
+    pub QueryInterface: usize,
+    pub AddRef: usize,
+    pub Release: unsafe extern "system" fn(*mut IInitializeCommand) -> ULONG,
+    /// `HRESULT Initialize([in, string] LPCWSTR pszCommandName, [in, optional] IPropertyBag *ppb)`
+    pub Initialize: unsafe extern "system" fn(
+        *mut IInitializeCommand,
+        LPCWSTR,
+        *mut c_void,
+    ) -> HRESULT,
+}
+
+/// `interface IObjectWithSelection : IUnknown` — SetSelection, GetSelection (in that order).
+#[repr(C)]
+pub struct IObjectWithSelection {
+    pub lpVtbl: *const IObjectWithSelectionVtbl,
+}
+
+#[repr(C)]
+pub struct IObjectWithSelectionVtbl {
+    pub QueryInterface: usize,
+    pub AddRef: usize,
+    pub Release: unsafe extern "system" fn(*mut IObjectWithSelection) -> ULONG,
+    pub SetSelection:
+        unsafe extern "system" fn(*mut IObjectWithSelection, *mut IShellItemArray) -> HRESULT,
+    pub GetSelection: usize,
+}

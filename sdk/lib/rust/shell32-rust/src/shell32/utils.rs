@@ -43,11 +43,21 @@
 //! already existed and are exercised by their own modules, so importing carries no ordering
 //! risk at all. Authoring them would have been six chances to get a slot wrong.
 //!
-//! THREE still need authoring, and they are the careful ones: IFileSystemBindData,
-//! IInitializeCommand, IObjectWithSelection. Do it against the IDL, one method at a time. A
-//! vtable is ORDER DEPENDENT -- a slot in the wrong position calls the wrong method with the
-//! wrong arguments and COMPILES PERFECTLY doing it, because call sites resolve by name. The
-//! compiler cannot catch this class, so nothing but careful reading will.
+//! The remaining THREE are now authored in shellcom.rs from shobjidl.idl --
+//! IFileSystemBindData, IInitializeCommand, IObjectWithSelection. They turned out to be one or
+//! two methods each after the inherited IUnknown triple, with the order explicit in the IDL,
+//! so the ambiguity that made this look risky was not actually present. Reading the IDL before
+//! estimating would have said so; "six vtables to write" was a guess that survived two
+//! deferrals unexamined.
+//!
+//! Slot ORDER remains the whole ABI contract and nothing checks it -- call sites resolve by
+//! NAME, so a misplaced slot calls the wrong method with the wrong arguments and compiles
+//! perfectly. Anyone extending those vtables transcribes from the IDL, in order, and does not
+//! infer from call sites.
+//!
+//! 85 errors remain: IUnknown/IBindCtx identity across com_sys vs shellcom, SHELLSTATE's
+//! bitfield accessors (island renders them as methods, the C reads them as fields), and the
+//! residual pointer casts. Settle casts on three-target agreement of EXPECTED.
 //!
 //! The integer/pointer cast pass is DONE (162 -> 108): 54 edits, every one applied only where
 //! all three targets named the same EXPECTED type at the same rustc byte span.
@@ -72,6 +82,9 @@ use crate::control_panel_folder::{IDefaultExtractIconInit, IDefaultExtractIconIn
 use crate::shell32::shlfileop::{IProgressDialog, IProgressDialogVtbl};
 use crate::shellcom::{IContextMenu, IContextMenuVtbl, IStream, IStreamVtbl};
 use crate::net_folder::{IShellBrowser, IShellBrowserVtbl};
+use crate::shellcom::{IFileSystemBindData, IFileSystemBindDataVtbl,
+                      IInitializeCommand, IInitializeCommandVtbl,
+                      IObjectWithSelection, IObjectWithSelectionVtbl};
 use crate::shell32::utils_support::LOWORD;
 use crate::net_folder::CppComPtrGuard;
 use crate::fs_drop_target::{IShellLinkW as IShellLink, IID_IShellLinkW as IID_IShellLink};
