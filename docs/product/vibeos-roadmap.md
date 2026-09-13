@@ -1678,6 +1678,23 @@ Field-manual § pointers hold the full writeups. **Update on state change.**
     -> UserBuffer, length from `Irp->IoStatus.Information`), intermittent on arm64, with
     `DeviceIoControl` returning ERROR_SUCCESS throughout — `:36`/`:37`/`:38` all still pass, so
     every caller believes it worked. n=1, so no rate; the localisation is what is solid.
+    **Narrowed further by source inspection (no new run needed).** The copy-back is
+    `iomgr-rust/src/irp.rs:555-577`: under `IRP_BUFFERED_IO | IRP_INPUT_OPERATION` and a
+    non-error status it does `safe_copy_raw(UserBuffer, SystemBuffer, IoStatus.Information)`
+    and, **on failure, sets `STATUS_ACCESS_VIOLATION`**. `Example_user.c:38` asserts the
+    `DeviceIoControl` returned `ERROR_SUCCESS` and it PASSES in the failing round — so the copy
+    did not fault, and the fault-handling branch is not involved. That leaves exactly two
+    shapes, both of which are silent and both of which match zeros in the user buffer:
+    (a) `IoStatus.Information` was **0** at completion, so a zero-byte copy "succeeded" and the
+    user buffer was never touched — note the driver sets `*OutLength = 2 * sizeof` at
+    `Example_drv.c:184`, so this would mean that value failed to reach `Information`; or
+    (b) the copy wrote to a **valid but wrong address** — the buffered copy-back runs in a
+    special-kernel APC, and in the wrong process context the same user VA can be mapped and
+    writable, so the write silently lands in another address space rather than faulting.
+    **One datum separates them**: `IoStatus.Information` and the current process at the moment
+    of the copy. Neither a record/replay capture (replay is wedged, so a trace is a capture and
+    not a session) nor the serial log can supply it; a breakpoint at `irp.rs:568` on a live
+    soak can, at the observed ~1-in-9 rate — once `0280df67353` lands, per the trap below.
     **Two traps for whoever picks this up, both of them absences that mean nothing.** First,
     `Example_drv.c:227`'s `IRP!` trace does NOT print for these device-control IRPs in either
     round, so its absence is not evidence the IOCTL never arrived — the clean round looks
