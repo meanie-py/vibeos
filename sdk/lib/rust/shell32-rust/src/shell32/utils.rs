@@ -55,8 +55,18 @@
 //! perfectly. Anyone extending those vtables transcribes from the IDL, in order, and does not
 //! infer from call sites.
 //!
-//! 63 errors remain, and they are a LONG TAIL rather than roots: many distinct one- and
-//! two-instance classes, no single fix worth ten. The mechanical seam is worked out. `shellcom::IBindCtxVtbl` is now its full THIRTEEN slots in objidl.idl
+//! 59 errors remain, from 211. Everything unambiguous has been done; what is left needs a
+//! DECISION rather than a repair, which is why it stops here:
+//!
+//!   * Type IDENTITY -- com_sys::IUnknown vs shellcom::IUnknown, com_sys::IBindCtx vs
+//!     shellcom::IBindCtx, LARGE_INTEGER vs _LARGE_INTEGER. These are ABI-identical, so a
+//!     `.cast()` compiles at every site; the question is which module owns the canonical
+//!     spelling, and casting everywhere would bury that question rather than answer it.
+//!   * 12 "arguments to this function are incorrect" -- each one wants its C read against the
+//!     callee, individually. No shared root.
+//!   * A handful of one-offs: non-primitive casts of Option<fn>, control_panel_folder's
+//!     SetNormalIcon, and the SHELLSTATE bitfield accessors (island renders them as methods,
+//!     the C reads them as fields). `shellcom::IBindCtxVtbl` is now its full THIRTEEN slots in objidl.idl
 //! order, and IStream's Seek/CopyTo/Stat placeholders are typed -- this TU was their first
 //! caller, which is how the placeholder convention surfaces when a new consumer arrives.
 //!
@@ -912,7 +922,7 @@ pub unsafe extern "system" fn SHSetFolderPathA(
     pszPath: LPCSTR,
 ) -> HRESULT {
     let strPathW = CStringW::from_ansi(pszPath);
-    SHSetFolderPathW(csidl, hToken, dwFlags, strPathW)
+    SHSetFolderPathW(csidl, hToken, dwFlags, strPathW.as_ptr())
 }
 
 #[no_mangle]
@@ -937,7 +947,7 @@ pub unsafe extern "system" fn ExtractIconResInfoA(
     }
 
     let strFileNameW = CStringW::from_ansi(lpFileName);
-    ExtractIconResInfoW(hHandle, strFileNameW, wIndex, lpSize, lpIcon)
+    ExtractIconResInfoW(hHandle, strFileNameW.as_ptr(), wIndex, lpSize, lpIcon)
 }
 
 #[no_mangle]
@@ -2304,7 +2314,7 @@ pub unsafe extern "C" fn SHELL_MapContextMenuVerbToCmdId(
     let mut buf: [CHAR; ((MAX_PATH) as usize)] = [0; ((MAX_PATH) as usize)];
     let pICIX = pICI as LPCMINVOKECOMMANDINFOEX;
 
-    if IsUnicode(*pICIX) != 0 && !IS_INTRESOURCE((*pICIX).lpVerbW) {
+    if IsUnicode(pICIX) && !IS_INTRESOURCE((*pICIX).lpVerbW) {
         if SHUnicodeToAnsi((*pICIX).lpVerbW, buf.as_mut_ptr(), ((buf.len()) as i32)) != 0 {
             pVerbA = buf.as_ptr();
         }
@@ -2416,7 +2426,7 @@ pub unsafe extern "C" fn DCIA_AddEntry(hDCIA: HDCIA, rClsId: REFCLSID) -> i32 {
         if pClsId.is_null() {
             break;
         }
-        if IsEqualGUID(pClsId, rClsId) != 0 {
+        if IsEqualGUID(pClsId, rClsId) {
             return i as i32;
         }
         i += 1;
