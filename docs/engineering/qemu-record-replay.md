@@ -502,6 +502,87 @@ Record it here and keep going; only chase one when it looks load-bearing.
   the true stall is the last event inside that buffer rather than the byte
   itself. QEMU stopped asking for more.
 
+  **A second trace stalls in the same neighbourhood.** `rr replay` on a kmtest
+  trace 46x larger reported, via the detector added for exactly this:
+
+  ```
+  [rr] replay consumed 2,215,936 of 494,129,068 trace bytes (0.4%)
+  ```
+
+  2,215,936 against the smoke trace's 2,342,912 — both ~2.2-2.3MB, both
+  4096-aligned (541 and 572 buffers), on traces of 10.7MB and 494MB. So the
+  stall is NOT proportional to trace length.
+
+  **What that does not yet establish, and the distinction matters:** both traces
+  are arm64 boots of the same media, so their early event streams are
+  near-identical and only diverge once the kmtest sweep starts. Stalling at a
+  similar offset is therefore equally consistent with
+
+  * a structural limit around ~2.2MB (a buffer, a window, a counter), or
+  * the same GUEST point being reached in both, which naturally lands at a
+    similar offset because the boots are the same up to there.
+
+  Two traces that share a boot prefix cannot cleanly separate those — equal guest
+  progress implies equal trace bytes while the content is the same, so both
+  hypotheses predict the same observation.
+
+  **SETTLED by varying the icount shift, and the answer rules out BOTH.** The
+  clean discriminator is to record the same guest boot with a different encoding
+  density: `--shift 5` produced a 5,999,935-byte trace where `--shift 3` produced
+  10,666,166 for the same boot — 44% denser — so a fixed FILE offset and a fixed
+  GUEST point predict different stall locations.
+
+  | shift | trace size | stalled at | guest serial | where |
+  |---|---|---|---|---|
+  | 3 | 10,666,166 | 2,342,912 (22%) | 124,212 | desktop bringup |
+  | 5 | 5,999,935 | **4,096 (0.1%)** | **271** | still at the UEFI banner |
+
+  Neither hypothesis survives: 4,096 is nowhere near 2,342,912, and 271 bytes is
+  nowhere near 124,212. **Replay reach is a function of the icount shift**, and
+  strongly so — shift=3 gets through the whole kernel boot to desktop bringup,
+  shift=5 barely leaves firmware. (That also reproduces an observation from the
+  first night of this work, when a shift=5 replay sat at the UEFI banner at 271
+  bytes for eight minutes and was written off as contention.)
+
+  This points at the clock/timing machinery rather than at a byte limit or a
+  particular guest code path, which fits the event census: `EVENT_CP_CLOCK_WARP_
+  ACCOUNT` is the second most common record in the trace at 1,178,159. A larger
+  shift means coarser virtual time per instruction, so clock-warp accounting
+  changes character — and it is the one thing known to differ between these two
+  runs.
+
+  Within a single shift it stays reproducible: two different traces at shift=3
+  both stalled in desktop bringup, and the detector reports the position, so a
+  future fix has a cheap before/after.
+
+  **There is a modest signal, in WHICH measure agrees better** (among the
+  shift=3 traces only). Both replays stop
+  in the same boot phase, desktop bringup:
+
+  | trace | trace bytes | guest serial | last guest line |
+  |---|---|---|---|
+  | smoke, 10.7MB | 2,342,912 | 124,212 | `[WIN32K] shell ready` |
+  | kmtest, 494MB | 2,215,936 | 122,199 | `[EXPLORER] taskbar: creating tray window` |
+
+  The trace offsets differ by **5.6%**; the guest serial counts differ by
+  **1.6%**. A hard trace-byte limit would predict the offsets to be the tighter
+  pair. They are not — guest progress is the better-preserved invariant, which
+  leans toward "the replay stops at a point in the GUEST" rather than "at a
+  point in the FILE". That is a lean, not a proof; two samples, and the boots
+  share their media.
+
+  Decisive separation still needs a trace whose early boot differs materially.
+  A different arch would be ideal and x86 cannot record; within arm64 the
+  candidate is a UP-kernel boot, which executes genuinely different kernel code,
+  but `rr record` has no route to select it today (every media defaults to MP
+  since the promotion, and the UP entry is not reachable through the rr path).
+  Wiring that would be the next concrete step on this question.
+
+  Where it points meanwhile: desktop bringup — explorer, win32k, user32 — is a
+  far more specific neighbourhood than "somewhere in the boot", and it is
+  consistent with the serial-output finding above, since that phase is the
+  noisiest part of the boot.
+
   So the open question is narrower again: not "which event", but why replay
   stops advancing in a region where every record is trivial. Serial output is
   also where the earliest (and then retracted) sighting pointed — a vCPU caught

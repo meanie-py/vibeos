@@ -574,9 +574,12 @@ def check_trace(trace_dir: Path) -> list[str]:
             )
     if not m.get("finalised"):
         warnings.append(
-            f"{FATAL_MARKER} recorded before `rr record` waited for the trace to stop "
-            "growing, so it is probably TRUNCATED — replaying one aborts with "
-            '"Missing character write event in the replay log". Re-record.'
+            f"{FATAL_MARKER} carries no `finalised` marker, so there is no evidence "
+            "the recording was allowed to finish. Traces made before `rr record` waited "
+            "for the trace to stop growing are TRUNCATED, and replaying one aborts with "
+            '"Missing character write event in the replay log". A trace merely OLDER than '
+            "the marker may be perfectly good — but nothing here can tell the two apart, "
+            "which is what the marker is for. Re-record."
         )
     rr = Path(trace_dir) / "replay.bin"
     if not rr.is_file() or rr.stat().st_size == 0:
