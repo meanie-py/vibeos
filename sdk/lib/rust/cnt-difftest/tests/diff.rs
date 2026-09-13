@@ -3231,6 +3231,13 @@ extern "C" {
     fn ref_tanhf(x: f32) -> f32;
     fn ref_tanf(x: f32) -> f32;
     fn ref_atan2f(y: f32, x: f32) -> f32;
+    // The last of crtmath's plain-C float/misc surface. (The seven f32
+    // transcendental wrappers have no independent oracle — see build.rs.)
+    fn ref_copysign(d: f64, s: f64) -> f64;
+    fn ref_copysignf(x: f32, y: f32) -> f32;
+    fn ref_frexp(x: f64, e: *mut i32) -> f64;
+    fn ref_ldiv(num: i32, denom: i32) -> RDivT;
+    fn ref_fpclass(d: f64) -> i32;
 }
 
 /// Mirror of the C `div_t` for the struct-return ABI (SysV: {i32,i32}
@@ -3330,6 +3337,100 @@ fn diff_math_class_f64() {
             assert_eq!(cabi::_dsign(x), ref_dsign(x), "_dsign {b:#018x}");
             assert_eq!(cabi::_dclass(x), ref_dclass(x), "_dclass {b:#018x}");
             assert_eq!(cabi::_dtest(&x), ref_dtest(&x), "_dtest {b:#018x}");
+            // float/fpclass.c. Note this sweep drives SIGNALLING NaNs
+            // through it too (f64_edge_bits carries both quiet-bit
+            // states): Windows reports every NaN as _FPCLASS_QNAN and
+            // never _FPCLASS_SNAN, so an "improved" port that
+            // distinguished them would fail right here.
+            assert_eq!(cabi::_fpclass(x), ref_fpclass(x), "_fpclass {b:#018x}");
+        }
+    }
+}
+
+/// `_copysign` / `_copysignf` / `frexp` / `ldiv` — the self-contained tail
+/// of crtmath's plain-C surface. Every one is bit or integer logic with a
+/// standalone C body, which is exactly what a difftest can settle.
+fn diff_math_lastmile() {
+    let mut rng = Rng(0x1ea5_7a11_d00d_f00d);
+    let mut bits = f64_edge_bits();
+    for _ in 0..20000 {
+        bits.push(rng.next());
+    }
+
+    for (i, &b) in bits.iter().enumerate() {
+        let x = f64::from_bits(b);
+        // Pair each value with another from the corpus so the sign SOURCE
+        // sweeps independently of the sign DESTINATION — a body that
+        // returned |d| or copied the wrong operand's bit passes a
+        // same-value sweep.
+        let y = f64::from_bits(bits[(i * 7 + 1) % bits.len()]);
+        unsafe {
+            assert!(
+                same_f64(cabi::_copysign(x, y), ref_copysign(x, y)),
+                "_copysign {b:#018x} {:#018x}",
+                y.to_bits()
+            );
+
+            // frexp writes through an out-param, and for +-inf/NaN the C
+            // RETURNS BEFORE ASSIGNING IT (math/frexp.c:24-26). Both sides
+            // start from the same poison so that "left untouched" is part
+            // of what is compared, not a hole in it.
+            let (mut es, mut er) = (0x5AFE_5AFEi32, 0x5AFE_5AFEi32);
+            let rs = cabi::frexp(x, &mut es);
+            let rr = ref_frexp(x, &mut er);
+            assert!(same_f64(rs, rr), "frexp mantissa {b:#018x}");
+            assert_eq!(es, er, "frexp exponent {b:#018x}");
+        }
+    }
+
+    let mut fbits = f32_edge_bits();
+    for _ in 0..20000 {
+        fbits.push(rng.next() as u32);
+    }
+    for (i, &b) in fbits.iter().enumerate() {
+        let x = f32::from_bits(b);
+        let y = f32::from_bits(fbits[(i * 7 + 1) % fbits.len()]);
+        unsafe {
+            assert!(
+                same_f32(cabi::_copysignf(x, y), ref_copysignf(x, y)),
+                "_copysignf {b:#010x} {:#010x}",
+                y.to_bits()
+            );
+        }
+    }
+
+    // ldiv: the truncation fixup only fires for num<0 && denom>0 && rem>0,
+    // so the corpus has to reach negative numerators with positive
+    // denominators on purpose. i32::MIN is in there for the negation
+    // overflow the C leaves undefined.
+    let edges: [i32; 9] = [i32::MIN, i32::MIN + 1, -7, -1, 0, 1, 7, i32::MAX - 1, i32::MAX];
+    let mut pairs: Vec<(i32, i32)> = Vec::new();
+    // Every edge against every edge — all four sign quadrants, which is
+    // what decides whether the fixup fires.
+    for &n in &edges {
+        for &d in &edges {
+            pairs.push((n, d));
+        }
+    }
+    // Then random pairs, plus each random numerator against a small
+    // positive denominator: num<0 && denom>0 is the ONLY case the fixup
+    // touches, and uniformly random pairs hit it only a quarter of the time.
+    for _ in 0..20000 {
+        let n = rng.next() as i32;
+        pairs.push((n, rng.next() as i32));
+        pairs.push((n, (rng.next() as i32).abs().max(1)));
+    }
+    for (n, d) in pairs {
+        // Division by zero faults identically on both sides, and MIN/-1
+        // traps in hardware rather than wrapping. Neither is a divergence
+        // this harness can observe, so neither is graded.
+        if d == 0 || (n == i32::MIN && d == -1) {
+            continue;
+        }
+        unsafe {
+            let a = cabi::ldiv(n, d);
+            let e = ref_ldiv(n, d);
+            assert_eq!((a.quot, a.rem), (e.quot, e.rem), "ldiv {n} {d}");
         }
     }
 }
@@ -3367,6 +3468,15 @@ fn diff_math_div() {
         (i32::MIN + 1, 7), // avoid INT_MIN / -1 overflow
         (i32::MAX, -7),
         (1, i32::MAX),
+        // num > 0 && denom == i32::MIN takes the `denom = -denom` branch,
+        // where the negation overflows. C wraps; Rust's unary `-` panics in
+        // debug. The corpus above dodged INT_MIN/-1 but had never put
+        // INT_MIN in the DENOMINATOR, so the panic shipped unseen.
+        (7, i32::MIN),
+        (1, i32::MIN),
+        (i32::MAX, i32::MIN),
+        (i32::MIN, i32::MIN),
+        (0, i32::MIN),
     ];
     for _ in 0..5000 {
         let num = rng.next() as i32;
@@ -4630,6 +4740,7 @@ fn main() {
         diff_math_abs,
         diff_math_class_f64,
         diff_math_class_f32,
+        diff_math_lastmile,
         diff_math_div,
         diff_math_chgsignf,
         diff_math_scalbn,
