@@ -26,7 +26,7 @@ extern "system" {
     static mut KeGdiFlushUserBatch: PGDI_BATCHFLUSH_ROUTINE;
     static mut KeUserApcDispatcher: PVOID;
     static mut KeUserCallbackDispatcher: PVOID;
-    fn Ke386SanitizeSeg(Seg: USHORT, Mode: KPROCESSOR_MODE) -> USHORT;
+    fn Ke386SanitizeSeg(Cs: ULONG, Mode: KPROCESSOR_MODE) -> ULONG;
     fn Ke386SanitizeFlags(Flags: ULONG, Mode: KPROCESSOR_MODE) -> ULONG;
     fn KiUserTrap(TrapFrame: PKTRAP_FRAME) -> BOOLEAN;
     fn KiDispatchException( ExceptionRecord: PEXCEPTION_RECORD, ExceptionFrame: PKEXCEPTION_FRAME, TrapFrame: PKTRAP_FRAME, PreviousMode: KPROCESSOR_MODE, FirstChance: BOOLEAN, );
@@ -43,9 +43,11 @@ extern "C" {
 
 const EFLAGS_V86_MASK: ULONG = 0x00020000;
 const EFLAGS_IOPL: ULONG = 0x00003000;
-const KGDT_R3_CODE: USHORT = 0x18;
-const KGDT_R3_DATA: USHORT = 0x20;
-const KGDT_R3_TEB: USHORT = 0x38;
+// ULONG, not USHORT: these feed Ke386SanitizeSeg, whose real prototype takes a
+// ULONG selector and returns one (ke/i386/exp.rs had it right).
+const KGDT_R3_CODE: ULONG = 0x18;
+const KGDT_R3_DATA: ULONG = 0x20;
+const KGDT_R3_TEB: ULONG = 0x38;
 const CONTEXT_FULL: ULONG = 0x00010007;
 const CONTEXT_DEBUG_REGISTERS: ULONG = 0x00010010;
 const CONTEXT_ALIGNED_SIZE: usize = (core::mem::size_of::<_CONTEXT>() + 15) & !15;
@@ -108,11 +110,11 @@ pub unsafe extern "system" fn KiInitializeUserApc(
         (*TrapFrame).Eip = KeUserApcDispatcher as ULONG;
         (*TrapFrame).HardwareEsp = Stack as ULONG;
 
-        (*TrapFrame).SegCs = Ke386SanitizeSeg(KGDT_R3_CODE, 1i8) as ULONG;
-        (*TrapFrame).HardwareSegSs = Ke386SanitizeSeg(KGDT_R3_DATA, 1i8) as ULONG;
-        (*TrapFrame).SegDs = Ke386SanitizeSeg(KGDT_R3_DATA, 1i8) as ULONG;
-        (*TrapFrame).SegEs = Ke386SanitizeSeg(KGDT_R3_DATA, 1i8) as ULONG;
-        (*TrapFrame).SegFs = Ke386SanitizeSeg(KGDT_R3_TEB, 1i8) as ULONG;
+        (*TrapFrame).SegCs = Ke386SanitizeSeg(KGDT_R3_CODE, 1i8);
+        (*TrapFrame).HardwareSegSs = Ke386SanitizeSeg(KGDT_R3_DATA, 1i8);
+        (*TrapFrame).SegDs = Ke386SanitizeSeg(KGDT_R3_DATA, 1i8);
+        (*TrapFrame).SegEs = Ke386SanitizeSeg(KGDT_R3_DATA, 1i8);
+        (*TrapFrame).SegFs = Ke386SanitizeSeg(KGDT_R3_TEB, 1i8);
         (*TrapFrame).SegGs = 0;
         (*TrapFrame).ErrCode = 0;
 

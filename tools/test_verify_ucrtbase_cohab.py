@@ -158,7 +158,7 @@ def test_the_authority_set_is_the_whole_link_line_except_ucrt():
 
 
 def test_export_set_honours_the_specs_arch_filter():
-    """An export exists only on the arches its spec line names, and (b) depends on that.
+    r"""An export exists only on the arches its spec line names, and (b) depends on that.
 
     This one shipped and bounced a correct lane. The parse skipped `-arch=` with
     `(?:-\S+\s+)*`, so the export set was arch-blind, and the 11 float bodies ucrtbase
@@ -184,17 +184,32 @@ def test_export_set_honours_the_specs_arch_filter():
     assert len(i386) > 1000, f"i386 export set implausibly small ({len(i386)})"
 
 
+# A build dir is only an ORACLE once its build finished. `vibeos-cli build` writes this
+# at the very end (cli/provenance.py STAMP_NAME), so its presence is the difference
+# between "cmake configured a directory" and "ninja produced the objects in it".
+_BUILD_STAMP = ".vibeos-build-stamp.json"
+
+
 def test_every_modelled_target_has_a_real_object_directory():
     """A path typo silently contributes ZERO symbols, which reads as mass shadowing.
 
     The check treats an authority target with no objects as a hard failure rather than as
     'nothing to add', but only a real build proves the *path* is right -- so assert it against
     whichever build dirs this worktree happens to have, and skip if it has none.
+
+    "Has a build dir" is NOT "has a built build dir". `vibeos-cli gate` runs the tooling
+    stage CONCURRENTLY with its three builds, so on the first build of an arch in a fresh
+    worktree this raced: cmake creates `build-i386/` in the first seconds, ninja creates
+    `.../CMakeFiles/msvcrt_shared.dir` about forty later, and a test that only checked for
+    the build dir judged the gap. It failed a green gate on 2026-09-13 that way -- every
+    build, lint, smoke and conformance lane passed and the object dir it called missing was
+    on disk, timestamped inside that same gate's run. Gate the skip on the completion stamp
+    so the oracle is a FINISHED build, not a directory that exists.
     """
     builds = [REPO / f"build-{a}" for a in ("i386", "amd64", "arm64")]
-    builds = [b for b in builds if b.is_dir()]
+    builds = [b for b in builds if (b / _BUILD_STAMP).is_file()]
     if not builds:
-        pytest.skip("no build dir in this worktree")
+        pytest.skip("no finished build dir in this worktree")
     for build in builds:
         for target, obj_dir in vuc.OURS_ON_LINK_LINE.items():
             d = build / obj_dir
@@ -255,3 +270,107 @@ def test_panic_common_needs_no_extern_crate(tmp_path: Path):
 def test_the_real_crate_references_everything_it_depends_on(tmp_path: Path):
     """The shipping crate. Red here means a cohab is wired up but not actually linked."""
     assert vuc.check_extern_crates() == []
+
+
+# ---------------------------------------------------------------------------
+# A stale archive is not a weaker verdict — it is a verdict about another tree
+# ---------------------------------------------------------------------------
+#
+# `vibeos-cli build` is warm by default and will leave a cargo target untouched
+# (its own `warm-build` warning says exactly that), so an archive can sit on
+# disk older than the Rust that produced it. This check is usually run right
+# after a fix, which makes a stale read report the symbol you just removed --
+# indistinguishable from the fix not working. That happened twice before this
+# guard existed, and on two of three arches the archive was silently stale.
+
+
+def test_stale_archive_is_detected(tmp_path: Path, monkeypatch):
+    crate = tmp_path / "sdk" / "lib" / "rust" / "cnt-rust" / "src"
+    crate.mkdir(parents=True)
+    archive = tmp_path / "libcrt_shared_cargo.a"
+    archive.write_bytes(b"")
+    src = crate / "lib.rs"
+    src.write_text("// newer than the archive\n")
+    import os
+
+    os.utime(archive, (1_000_000, 1_000_000))
+    os.utime(src, (2_000_000, 2_000_000))
+
+    monkeypatch.setattr(vuc, "REPO", tmp_path)
+    assert vuc._stale_against_sources(archive) == "sdk/lib/rust/cnt-rust/src/lib.rs"
+
+
+def test_fresh_archive_is_not_flagged(tmp_path: Path, monkeypatch):
+    crate = tmp_path / "sdk" / "lib" / "rust" / "cnt-rust" / "src"
+    crate.mkdir(parents=True)
+    archive = tmp_path / "libcrt_shared_cargo.a"
+    archive.write_bytes(b"")
+    src = crate / "lib.rs"
+    src.write_text("// older than the archive\n")
+    import os
+
+    os.utime(src, (1_000_000, 1_000_000))
+    os.utime(archive, (2_000_000, 2_000_000))
+
+    monkeypatch.setattr(vuc, "REPO", tmp_path)
+    assert vuc._stale_against_sources(archive) is None
+
+
+def test_unrelated_crate_does_not_trigger_staleness(tmp_path: Path, monkeypatch):
+    """The watch list is the archive's own dependency closure, deliberately.
+
+    A staleness warning that fires whenever any lane touches any .rs anywhere in
+    sdk/lib/rust would be noise, and noise is what gets a check ignored.
+    """
+    other = tmp_path / "sdk" / "lib" / "rust" / "shell32-rust" / "src"
+    other.mkdir(parents=True)
+    archive = tmp_path / "libcrt_shared_cargo.a"
+    archive.write_bytes(b"")
+    src = other / "lib.rs"
+    src.write_text("// a different lane's crate\n")
+    import os
+
+    os.utime(archive, (1_000_000, 1_000_000))
+    os.utime(src, (2_000_000, 2_000_000))
+
+    monkeypatch.setattr(vuc, "REPO", tmp_path)
+    assert "shell32-rust" not in vuc._ARCHIVE_SOURCE_CRATES
+    assert vuc._stale_against_sources(archive) is None
+
+
+def test_a_stale_archive_is_a_NOTE_not_a_finding(tmp_path: Path, monkeypatch, capsys):
+    """Staleness must never reject a lane — it is not the lane's fault.
+
+    mtime is the only staleness signal available here and it is NOT sound: `git
+    merge` rewrites a source file's mtime without changing its content, while
+    cargo correctly declines to relink an archive whose inputs are unchanged. The
+    conductor merges every queued lane at the start of a drain, so in the
+    integration tree those two facts coincide on EVERY batch.
+
+    Emitted as a finding (which is how this first shipped) it rejected a lane for
+    a merge that lane did not make, with `libcrt_shared_cargo.a is OLDER than
+    cabi/math.rs` on all three arches — and had it landed it would have done that
+    to every lane, because this check runs in the SOURCE-lint phase where build
+    state is whatever the previous batch happened to leave behind.
+    """
+    import os
+
+    build = tmp_path / "build-amd64" / "dll" / "win32" / "ucrtbase"
+    build.mkdir(parents=True)
+    archive = build / "libcrt_shared_cargo.a"
+    archive.write_bytes(b"")
+
+    src = tmp_path / "sdk" / "lib" / "rust" / "cnt-rust" / "src"
+    src.mkdir(parents=True)
+    (src / "lib.rs").write_text("// merged: newer mtime, identical content\n")
+
+    os.utime(archive, (1_000_000, 1_000_000))
+    os.utime(src / "lib.rs", (2_000_000, 2_000_000))
+
+    monkeypatch.setattr(vuc, "REPO", tmp_path)
+    findings = vuc.check_archive()
+
+    # The staleness branch must short-circuit BEFORE the missing-objects branch,
+    # or this arch would be blamed for absent .obj files instead.
+    assert findings == [], f"staleness must not produce findings, got: {findings}"
+    assert "older than" in capsys.readouterr().err, "but it must still SAY so"

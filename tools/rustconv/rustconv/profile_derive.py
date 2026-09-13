@@ -95,6 +95,16 @@ class Finding:
     severity: str
     code: str
     detail: str
+    #: The repo-relative .c this finding is ABOUT, when it is about one file
+    #: rather than the module as a whole. `None` means module-wide.
+    #:
+    #: This exists so a caller can tell "you must not pay to translate THIS
+    #: file" apart from "you must not pay to translate SOME file in this
+    #: module". `derive_source` is module-scoped, so without it a per-file
+    #: ERROR blocks every OTHER file in the module too — which is how msvcrt's
+    #: two permanently-dead TUs (handler4.c, concurrency.c) came to block
+    #: translating anything in msvcrt at all, with no waiver available.
+    subject: str | None = None
 
     def __str__(self) -> str:
         mark = {"error": "✗", "warn": "!", "info": "·"}.get(self.severity, "?")
@@ -459,6 +469,30 @@ class DerivedProfile:
     @property
     def errors(self) -> list[Finding]:
         return [f for f in self.findings if f.severity == "error"]
+
+    def blocking_errors(self, c_file: str | None = None) -> list[Finding]:
+        """The errors that must stop a paid run for `c_file` (repo-relative).
+
+        Module-wide errors (``subject is None``) always block. A finding ABOUT a
+        specific file blocks only that file: `DEAD_TU: concurrency.c is 98% dead`
+        is advice not to buy concurrency.c, and has nothing to say about
+        console.c. Blocking on it anyway made msvcrt untranslatable end to end,
+        because its two dead TUs are permanent and there is no waiver flag.
+
+        `c_file=None` keeps the old whole-module meaning, which is what a bare
+        `profile_derive` report wants.
+        """
+        if c_file is None:
+            return self.errors
+        return [f for f in self.errors if f.subject is None or f.subject == c_file]
+
+    def deferred_errors(self, c_file: str) -> list[Finding]:
+        """Errors `blocking_errors(c_file)` declines to block on.
+
+        Returned so the caller can PRINT them. They are still true, and a
+        finding that stops blocking must not also stop being visible.
+        """
+        return [f for f in self.errors if f.subject is not None and f.subject != c_file]
 
 
 # ---------------------------------------------------------------------------
@@ -1297,6 +1331,7 @@ def _audit_dead_bodies(module, repo_root: Path, findings: list) -> None:
                     "`#if`, so this TU compiles to (almost) nothing — verify with "
                     "`nm` on its .obj. It is in the source list, so it LOOKS live and "
                     "the DEAD_SOURCE check cannot see it. DO NOT PAY TO TRANSLATE IT.",
+                    subject=_rel(tu, repo_root),
                 )
             )
     if not total_lines or not culprits:

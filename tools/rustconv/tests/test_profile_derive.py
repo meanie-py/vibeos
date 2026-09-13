@@ -22,6 +22,8 @@ from pathlib import Path
 import pytest
 
 from rustconv.profile_derive import (
+    DerivedProfile,
+    Finding,
     ProfileDeriveError,
     build_include_env,
     derive,
@@ -1243,3 +1245,63 @@ class TestBlocklistFuncsEvidence:
         assert "    BLOCKLIST_FUNCS=1" in profile
         assert "BLOCKLIST_FUNCS=0" not in profile
         assert "# BLOCKLIST_FUNCS, MEASURED:" in profile
+
+
+# ---------------------------------------------------------------------------
+# A per-file ERROR must not block the whole module
+# ---------------------------------------------------------------------------
+#
+# `derive_source` is MODULE-scoped, so every finding it produces reaches the
+# caller no matter which .c is being translated. A DEAD_TU finding says "do not
+# pay to translate THIS TU" about one specific file — but the translate gate
+# blocked on `derived.errors` wholesale, so msvcrt's two permanently-dead TUs
+# (handler4.c at 97%, concurrency.c at 98%) made EVERY other file in msvcrt
+# unpayable, with no waiver flag anywhere. Both findings are correct; blocking
+# the wrong files on them was not.
+
+
+def _result_with(findings):
+    """A minimal stand-in carrying just the finding-partition API under test."""
+
+    class _R:
+        def __init__(self, fs):
+            self.findings = list(fs)
+
+        errors = DerivedProfile.errors
+        blocking_errors = DerivedProfile.blocking_errors
+        deferred_errors = DerivedProfile.deferred_errors
+
+    return _R(findings)
+
+
+def test_per_file_error_blocks_only_its_own_file():
+    dead = Finding("error", "DEAD_TU", "concurrency.c is 98% dead", subject="msvcrt/concurrency.c")
+    res = _result_with([dead])
+
+    # Translating the dead TU itself: still blocked. This is the half that must
+    # never regress — it is the finding doing its actual job.
+    assert res.blocking_errors("msvcrt/concurrency.c") == [dead]
+    assert res.deferred_errors("msvcrt/concurrency.c") == []
+
+    # Translating a different TU in the same module: not blocked...
+    assert res.blocking_errors("msvcrt/console.c") == []
+    # ...but still REPORTED. A finding that stops blocking must not also stop
+    # being visible, or the module quietly loses the warning entirely.
+    assert res.deferred_errors("msvcrt/console.c") == [dead]
+
+
+def test_module_wide_error_blocks_every_file():
+    """`subject is None` is the module-wide case and keeps blocking everything."""
+    wide = Finding("error", "SWITCH_CONST_IN_BASE_HEADER", "_PC_24 is not in the island")
+    res = _result_with([wide])
+    for target in ("msvcrt/console.c", "msvcrt/concurrency.c", "msvcrt/math.c"):
+        assert res.blocking_errors(target) == [wide]
+        assert res.deferred_errors(target) == []
+
+
+def test_no_file_argument_keeps_whole_module_meaning():
+    """A bare report (no file selected) still sees every error."""
+    dead = Finding("error", "DEAD_TU", "x", subject="m/a.c")
+    wide = Finding("error", "OTHER", "y")
+    res = _result_with([dead, wide])
+    assert res.blocking_errors() == [dead, wide]

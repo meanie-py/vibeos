@@ -190,8 +190,10 @@ def build_parser() -> argparse.ArgumentParser:
         type=int,
         default=0,
         help="boot with N virtual CPUs (-smp N via VIBEOS_QEMU_SMP). Opt-in "
-        "SMP bring-up knob (docs/engineering/smp-bringup-quest.md); default "
-        "stays UP. Requires SMP-capable media (ntkrnlmp kernel) for N>1",
+        "SMP bring-up knob (docs/engineering/smp-bringup-quest.md); the default "
+        "is ONE vcpu. That is the cpu COUNT, not the kernel: the MP kernel boots "
+        "by default on every arch and --up-kernel is the opt-out, so the default "
+        "run is the MP kernel on one vcpu. N>1 needs SMP-capable media (ntkrnlmp)",
     )
     s.add_argument(
         "--no-net",
