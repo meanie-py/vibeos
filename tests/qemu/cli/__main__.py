@@ -603,6 +603,18 @@ def build_parser() -> argparse.ArgumentParser:
     rvf.add_argument("--root", help=f"trace root (default {rr_mod.DEFAULT_ROOT})")
     rvf.set_defaults(fn=rr_mod.rr_cmd, rr_verb="verify")
 
+    rpr = rrsub.add_parser(
+        "prune",
+        help="delete old traces (DRY-RUN unless --apply); a kmtest capture is ~1.4GB",
+    )
+    rpr.add_argument("--keep", type=int, default=3, help="keep the N newest traces (default 3)")
+    rpr.add_argument(
+        "--name", action="append", help="delete these traces by name instead of by age"
+    )
+    rpr.add_argument("--apply", action="store_true", help="actually delete (default: dry-run)")
+    rpr.add_argument("--root", help=f"trace root (default {rr_mod.DEFAULT_ROOT})")
+    rpr.set_defaults(fn=rr_mod.rr_cmd, rr_verb="prune")
+
     rls = rrsub.add_parser("list", help="list recorded traces")
     rls.add_argument("--root", help=f"trace root (default {rr_mod.DEFAULT_ROOT})")
     rls.set_defaults(fn=rr_mod.rr_cmd, rr_verb="list")
