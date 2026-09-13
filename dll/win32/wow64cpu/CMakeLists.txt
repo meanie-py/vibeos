@@ -51,7 +51,8 @@ set(_wow64_ladder
     ${REACTOS_SOURCE_DIR}/build-fex-hello/marshal32.exe
     ${REACTOS_SOURCE_DIR}/build-fex-hello/fault32.exe
     ${REACTOS_SOURCE_DIR}/build-fex-hello/thread32.exe
-    ${REACTOS_SOURCE_DIR}/build-fex-hello/selfmod32.exe)
+    ${REACTOS_SOURCE_DIR}/build-fex-hello/selfmod32.exe
+    ${REACTOS_SOURCE_DIR}/build-fex-hello/reg32.exe)
 
 # Best-effort robustness extras. Their pass criterion is "still running after
 # 8-10s", which ladder.py explicitly does NOT check, so a missing one must not
