@@ -27,6 +27,18 @@ include_directories(
 # i386 lld forwarder fix only (win32dll user DLL — no native-pefixup). entry
 # (_DllMain@12) / image base / GUI subsystem are baked into the build.rs.
 # spec2def(… ADD_IMPORTLIB) above STAYS (kernel32_vista imports libntdll_vista).
+# BODY_CRATES is NOT optional here even though the cargo build finds these itself:
+# it is what puts the crates' .rs into this custom command's DEPENDS, and without
+# it ninja has no edge from their sources to this DLL. Editing one then rebuilding
+# says "no work to do" while the binary keeps the old body, and the staleness check
+# correctly reports BUILD_INCOMPLETE with a remedy (`run build`) that cannot clear
+# it -- only `rm`ing the DLL does, which is a recipe nobody should have to know.
+#
+# The set is not guessed: cargo's own dep-info for this artifact
+# (target/ntdll_vista-cargo-*/*/release/ntdll_vista.d) records 16 .rs from
+# ntdll-rust and 3 from smss-csrss-rust, which is the same pair dll/ntdll's own
+# add_cargo_module declares. Re-derive it from the .d if this ever looks stale.
 add_cargo_module(ntdll_vista ntdll_vista-cargo ntdll_vista.dll
     KIND win32dll
+    BODY_CRATES ntdll-rust smss-csrss-rust
     EXTRA_DEPENDS rtl_vista)

@@ -686,7 +686,12 @@ def cargo_link_staleness_reasons(repo: Path, arch: str) -> list[str]:
                 f"(cargo link not re-run). ninja's graph can MISS this edge, in which "
                 f"case `build` reports the same failure forever and `ninja <target>` "
                 f"says 'no work to do'. If a rebuild does not clear it: "
-                f"`rm {rel}` and build again, which forces the link." + note
+                f"`rm {rel}` and build again. That works PRECISELY BECAUSE the "
+                f"edge is missing — deleting the output is the only way to make "
+                f"ninja rebuild something it has no reason to rebuild — so if you "
+                f"need it, the cargo module is probably missing a BODY_CRATES "
+                f"declaration. Once that is declared, the rm is a ONE-TIME cleanup "
+                f"for an already-stale tree, not a standing remedy." + note
             )
     return reasons
 
