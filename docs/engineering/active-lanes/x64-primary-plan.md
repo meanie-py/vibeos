@@ -114,6 +114,15 @@ a ladder to watch", and neither was visible from reading.
   onto the livecd, so a rebuild changing nothing still moved the media, and media
   identity is what `smoke` staleness and the gate stamp key on. Fixed
   (`5a322b1c9be`); `vibeos-cli repro report` now reads `TimeDateStamp 0`.
+- **The staging probe I wrote to prevent wasted drains caused one.** `media_has_guests`
+  byte-scanned the image for `hello32.exe`, which is in EVERY amd64 livecd regardless of
+  staging — winlogon's own error path carries the name in plain ASCII. It returned
+  staged=True on a boot with zero guests, which then sat through the full 420s ladder
+  drain to conclude `LADDER_NOT_STAGED`. Fixed (`907988eeb5f`) to read the
+  `boot/<media>.cmake.lst` manifest's CD-path side. Filed in the field manual under
+  "A NAME inside an image does not prove the FILE is in it". **The measured consequence
+  matters for sequencing: an unstaged boot given `--ladder` costs the whole ceiling**,
+  which is why the media check has to be right before this reaches a shared gate.
 
 ---
 
