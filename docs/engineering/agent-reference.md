@@ -262,6 +262,20 @@ On the amd64 KiUnwaitThread BUGCHECK flake, this returns the stop code, exceptio
 
 Full toolkit reference + design: `docs/engineering/kernel-debugging-infra.md` and `qemu/README.md`. (`qemu/ps` shows every live QEMU across all worktrees + slot usage; QEMUs are capped via `VIBEOS_QEMU_MAX_CONCURRENT`/`VIBEOS_QEMU_MAX_LIFETIME`; **same-arch i386/amd64 boots run in parallel on the default `windows-host` TCG backend** — the per-arch sub-cap is bypassed there (`vm.py:1295-1299`) and only serializes the accelerator-sharing backends (native+KVM, windows-host+WHPX); see the North Star note + `qemu/README.md` → Resource management); run `qemu/build-index.sh <arch>` after each kernel build for offline sym lookup.)
 
+### Record/replay — when the bug is too rare to catch live
+
+`./vibeos-cli rr record --arch arm64` boots once under QEMU's instruction-counted
+record mode and keeps a self-contained trace under `~/vibeos-rr/`;
+`./vibeos-cli rr replay latest --gdb` then re-runs that *exact* boot,
+instruction-for-instruction, halted at instruction 0 with the stub open — so
+`reverse-continue` and reverse watchpoints work. A 1-in-60 crash you have
+recorded reproduces 100% of the time.
+
+It is single-vCPU, TCG-only, no-NIC, native-backend-only, and it *refuses*
+rather than producing a trace that silently diverges. `--smp 1` is accepted and
+is the interesting case (the MP kernel on one CPU). Full rules, gdb recipe and
+the divergence log: `docs/engineering/qemu-record-replay.md`.
+
 ## Test Suite
 
 ### Rust Host Tests (no QEMU needed)

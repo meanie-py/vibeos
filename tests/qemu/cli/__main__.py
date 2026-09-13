@@ -23,6 +23,7 @@ from . import killvm as kill_mod
 from . import land as land_mod
 from . import prune as prune_mod
 from . import repro as repro_mod
+from . import rrcmd as rr_mod
 from . import smoke as smoke_mod
 from .archcfg import ACCEPTED_ARCHES
 
@@ -533,6 +534,78 @@ def build_parser() -> argparse.ArgumentParser:
         "limited the previous soak to 9 rounds",
     )
     cf.set_defaults(fn=conformance_mod.conformance)
+
+    rrp = sub.add_parser(
+        "rr",
+        help="QEMU record/replay: capture one boot, then re-run it deterministically",
+        description="Record a boot (kmtest sweep by default) into a self-contained "
+        "trace, then replay that exact boot as often as you like — with gdb, and "
+        "with reverse-execution available. Built for heisenbugs: a 1-in-60 crash "
+        "you have recorded is a crash you can open, not one you have to catch again.",
+    )
+    rrsub = rrp.add_subparsers(dest="rr_verb", required=True)
+
+    rrec = rrsub.add_parser("record", help="boot once under -icount rr=record and keep the trace")
+    rrec.add_argument("--arch", required=True, choices=ACCEPTED_ARCHES)
+    rrec.add_argument(
+        "--payload",
+        default="kmtest",
+        choices=("kmtest", "none"),
+        help="kmtest: record the conformance sweep (default — the most guest work "
+        "per trace). none: record a plain smoke boot",
+    )
+    rrec.add_argument(
+        "--smp",
+        type=int,
+        default=1,
+        help="vCPUs (default 1). Record/replay is single-vCPU only; on the MP "
+        "kernel --smp 1 IS the UP:=smp1 collapse case",
+    )
+    rrec.add_argument("--name", help="trace directory name (default <ts>-<arch>-<payload>)")
+    rrec.add_argument(
+        "--build", action="store_true", help="build the media first (default: use what is there)"
+    )
+    rrec.add_argument("--timeout", type=int, default=6000, help="serial-drain budget (seconds)")
+    rrec.add_argument(
+        "--shift",
+        type=int,
+        default=rr_mod.rr.DEFAULT_ICOUNT_SHIFT,
+        help="icount shift: the virtual clock costs 2**N ns per instruction, so "
+        "this fixes the guest's apparent CPU at 2**-N GHz. Firmware and "
+        "bootloader watchdogs are denominated in that same virtual time, so too "
+        "LARGE a value makes a healthy guest time out. Lower = faster virtual "
+        f"CPU, bigger trace (default {rr_mod.rr.DEFAULT_ICOUNT_SHIFT})",
+    )
+    rrec.add_argument("--root", help=f"trace root (default {rr_mod.DEFAULT_ROOT})")
+    rrec.set_defaults(fn=rr_mod.rr_cmd, rr_verb="record")
+
+    rrep = rrsub.add_parser("replay", help="re-run a recorded boot, instruction-for-instruction")
+    rrep.add_argument("trace", help="trace name, path, or `latest`")
+    rrep.add_argument(
+        "--gdb",
+        action="store_true",
+        help="open the gdbstub halted at instruction 0 (reverse-continue works here)",
+    )
+    rrep.add_argument("--root", help=f"trace root (default {rr_mod.DEFAULT_ROOT})")
+    rrep.set_defaults(fn=rr_mod.rr_cmd, rr_verb="replay")
+
+    rvf = rrsub.add_parser(
+        "verify",
+        help="replay a trace and PROVE the guest re-executed identically (serial diff)",
+    )
+    rvf.add_argument("trace", help="trace name, path, or `latest`")
+    rvf.add_argument("--gdb", action="store_true", help=argparse.SUPPRESS)
+    rvf.add_argument("--root", help=f"trace root (default {rr_mod.DEFAULT_ROOT})")
+    rvf.set_defaults(fn=rr_mod.rr_cmd, rr_verb="verify")
+
+    rls = rrsub.add_parser("list", help="list recorded traces")
+    rls.add_argument("--root", help=f"trace root (default {rr_mod.DEFAULT_ROOT})")
+    rls.set_defaults(fn=rr_mod.rr_cmd, rr_verb="list")
+
+    rif = rrsub.add_parser("info", help="describe a trace and flag anything that would diverge")
+    rif.add_argument("trace", help="trace name, path, or `latest`")
+    rif.add_argument("--root", help=f"trace root (default {rr_mod.DEFAULT_ROOT})")
+    rif.set_defaults(fn=rr_mod.rr_cmd, rr_verb="info")
 
     kl = sub.add_parser(
         "kill",
