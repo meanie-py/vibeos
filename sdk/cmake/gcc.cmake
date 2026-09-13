@@ -637,7 +637,12 @@ function(add_cargo_module _target _crate _output)
     #
     # i386 stays on the custom json + nightly build-std: it needs
     # `rustc-abi: x86-softfloat`, which has no builtin triple. That cell is
-    # retired by the wow64 lane (i386 kernel goes away), not fixed here.
+    # retired by the wow64 lane (i386 kernel goes away), not fixed here. NOTE that
+    # is necessary, not sufficient: this branch has no KIND test, so user-mode
+    # cells take the kernel json too (ntdll is KIND win32dll), and SysWOW64 stages
+    # i386 user-mode PEs for as long as we run x86 apps. Splitting this by KIND is
+    # what would actually shrink the nightly surface -- untested, see
+    # docs/engineering/active-lanes/x64-primary-plan.md item 4.
     if(ARCH STREQUAL "i386")
         set(_stem "i686-kernel")
         set(_rust_target "${_ws}/${_crate}/${_stem}.json")
@@ -799,7 +804,7 @@ function(add_cargo_module _target _crate _output)
     # root (bump it THERE, not here). `-Z build-std` + the custom `x86-softfloat`
     # kernel json need nightly; amd64/arm64 are on pinned STABLE via
     # rust-toolchain.toml (no RUSTUP_TOOLCHAIN override → the toolchain file wins).
-    # See docs/engineering/active-lanes/stable-toolchain-plan.md.
+    # See docs/engineering/stable-toolchain-plan.md.
     set(_toolchain_env "")
     if(ARCH STREQUAL "i386")
         file(STRINGS "${CMAKE_SOURCE_DIR}/.rust-nightly" _rust_nightly LIMIT_COUNT 1)
