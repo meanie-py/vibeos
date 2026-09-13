@@ -3173,11 +3173,21 @@ free_functions` (`__main__.py:2373-2381`) — its C++ literals are already lower
 `cpp_com.rewrite_wide_literals`, so its namespace structurally cannot grow the wideseal token.
 That is evidence about the COM path, not about the flip. Plain-C lanes get no such exemption.
 
-The generalisation, which recurred three times in one night across different tools (an sccache
-server query, an ISO-string probe, this): **a proxy that is easy to measure stood in for the
-thing that decides, and the tool answered its own question honestly while we asked a different
-one.** When a count keeps coming out differently, stop recounting and construct the exact thing
-the code looks up.
+The generalisation, which recurred SEVEN times in one night across unrelated tools (an sccache
+server query, an ISO-string probe, this, and four more below): **a proxy that is easy to
+measure stood in for the thing that decides, and the tool answered its own question honestly
+while we asked a different one.** When a count keeps coming out differently, stop recounting
+and construct the exact thing the code looks up.
+
+Three distinct shapes, so you can recognise the next one:
+* **A COUNT.** `ls | wc -l` vs `test -f manifest.json` vs "does the exact path exist" — above.
+* **A CITATION.** Below: the quote said the opposite of what it was cited for.
+* **A SAMPLING WINDOW.** "The last 9 arm64 sweeps" silently mixed runs from three different
+  shas and produced 22% where the real figure for *that* soak was 33% — near enough to look
+  like a measurement, and it was one keystroke from being relayed as "your number does not
+  reproduce". The thing that decides is "the 9 runs THIS soak produced, identified by sha";
+  "the last 9 by arch" merely correlates with it. A window is the easiest of the three to miss
+  because the arithmetic over it is impeccable.
 
 **The nastiest variant of it is a CITATION.** Same night, a different lane argued that a
 "flake" classification could not also reject a lane, and cited `queue.py:901` as its support.
@@ -5449,6 +5459,28 @@ caught by a log line added for an unrelated reason — to answer "is the 420s ce
 generous?" — which then showed the ceiling being hit unconditionally. **If a bounded wait has
 no recorded elapsed time, it has no evidence it is bounded.**
 
+### An edit that matched nothing reports success
+**Symptom:** a fix is "applied", the tests pass, and the behaviour is unchanged — or changed
+only in the one place no test looks.
+
+**Cause:** a scripted string replacement whose target no longer exists verbatim. `str.replace`
+returns the string unmodified when nothing matches and raises nothing; the script prints its
+success line and exits 0. The usual reason the target drifted is a formatter: `ruff format` had
+collapsed a two-line expression onto one line between the edit that wrote it and the edit that
+tried to rewrite it.
+
+**Concrete:** a batch of replacements generalising a probe over a `names` argument. One
+silently no-op'd, leaving `_staged_per_ramdisk` ignoring its parameter and always testing for
+the guest set. Every guest test passed — the sets were equal — and only the one test exercising
+a DIFFERENT name set failed. Had that test not existed, the function would have shipped
+answering the wrong question in the one case it was written for.
+
+**Fix:** `assert s.count(old) == 1` before every replace, and re-read the file after. The
+realistic failure is not forgetting the guard, it is **applying it unevenly across a batch** and
+keeping no record of which replacements were guarded — so make it unconditional rather than
+remembered. Same family as judging a build by rc instead of artifact existence: the command's
+report is not the artifact, and here the artifact is the resulting file.
+
 ### A NAME inside an image does not prove the FILE is in it
 **Symptom:** a preflight reports a file is staged on the boot media, on a media where it is
 not staged at all — and the check is reading a freshly built, entirely correct artifact, so
@@ -5463,8 +5495,15 @@ offset `0x9c2ffe4`). So the probe returned PRESENT unconditionally, and the gate
 ladder from boots that had none — costing the full 420s drain to conclude `LADDER_NOT_STAGED`,
 which is exactly what the probe existed to avoid.
 
-**Fix:** ask the STAGING MANIFEST (`build-<arch>/boot/<media>.cmake.lst`), which is what
-`add_cd_file` wrote, and match the **CD-path** side. Two traps in doing that: the source side
+**Fix:** ask the STAGING MANIFEST (`build-<arch>/boot/<media>*.lst`), which is what
+`add_cd_file` wrote, and match the **CD-path** side. **Read every `<stem>*.lst`, not just
+`<stem>.cmake.lst`** — `add_cd_file(TARGET ...)` lands there as an UNEXPANDED generator
+expression (`reactos/system32/$<TARGET_FILE_NAME:wow64cpu>`) and only `add_cd_file(FILE ...)`
+is literal; the expanded twin `<stem>.<CONFIG>.lst` carries the real names. Measured on one
+amd64 livecd: **674 genex lines against 356 literal**, so two thirds of the base manifest
+answers nothing. A probe reading only the base file is correct for `FILE` entries and silently
+wrong for `TARGET` ones — the same error as reading a record that does not describe the
+artifact, one level down. Two traps in doing that: the source side
 is useless for anything staged from a sibling tree (`build-fex-hello`, `build-i386` — outside
 the build dir every other entry points into), and matching a bare basename re-admits the same
 error, so match the directory too (`*/syswow64/<guest>.exe`).
