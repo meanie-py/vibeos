@@ -10,8 +10,6 @@ from __future__ import annotations
 
 from pathlib import Path
 
-import pytest
-
 from tests.qemu.cli import ladder
 
 
@@ -82,55 +80,75 @@ def test_non_parity_guests_are_reported_but_not_required():
     assert "fexprobe" in ladder.summary(text)
 
 
-# --- gate policy ------------------------------------------------------------
+# --- gate policy ---------------------------------------------------------
 
 
-@pytest.fixture
-def staged(monkeypatch):
-    def _set(missing: list[str]):
-        monkeypatch.setattr(
-            ladder.provenance, "probes_missing_from_media", lambda *_a, **_k: missing
-        )
-
-    return _set
+def _manifest(tmp_path: Path, lines: list[str], arch: str = "amd64") -> Path:
+    """A repo whose build-<arch>/boot/livecd.cmake.lst holds these entries."""
+    lst = tmp_path / f"build-{arch}" / "boot" / "livecd.cmake.lst"
+    lst.parent.mkdir(parents=True, exist_ok=True)
+    lst.write_text("\n".join(lines) + "\n")
+    return tmp_path
 
 
-def test_gate_asks_for_the_ladder_when_the_media_carries_guests(staged):
-    staged([])
-    extra, is_staged, why = ladder.gate_decision(Path("/repo"), "amd64")
+# A real manifest line: "<cd path>=<source path>".
+_SRC = "/tmp/vibeos/build-fex-hello/hello32.exe"
+
+
+def test_gate_asks_for_the_ladder_when_a_guest_is_staged(tmp_path):
+    repo = _manifest(tmp_path, [f"reactos/syswow64/hello32.exe={_SRC}"])
+    extra, staged, why = ladder.gate_decision(repo, "amd64")
     assert extra == ["--ladder"]
-    assert is_staged
+    assert staged
     assert str(len(ladder.LADDER)) in why
 
 
-def test_gate_declines_and_says_so_when_it_does_not(staged):
-    staged([f"{ladder.SENTINEL!r} appears 0 times in livecd.iso"])
-    extra, is_staged, why = ladder.gate_decision(Path("/repo"), "i386")
+def test_a_media_that_merely_MENTIONS_a_guest_does_not_count(tmp_path):
+    """The regression that motivated reading the manifest instead of scanning the
+    image. `hello32.exe` appears in EVERY amd64 livecd — winlogon's own
+    diagnostic carries it in plain ASCII ("CreateProcessW(hello32.exe) FAILED")
+    — so a byte-scan says PRESENT on a boot with zero staged guests. Measured on
+    build-amd64 at 0x9c2ffe4, and it passed a boot that then reported not a
+    single guest verdict."""
+    repo = _manifest(
+        tmp_path,
+        [
+            "reactos/system32/winlogon.exe=/tmp/vibeos/build-amd64/base/system/"
+            "winlogon/winlogon.exe",
+            "reactos/system32/wow64cpu.dll=/tmp/vibeos/build-amd64/dll/win32/wow64cpu/wow64cpu.dll",
+        ],
+    )
+    extra, staged, why = ladder.gate_decision(repo, "amd64")
     assert extra == []
-    assert not is_staged
-    # The skip has to be legible: a gate that quietly stops checking is the bug.
-    assert ladder.SENTINEL in why and "NOT checked" in why
+    assert not staged
+    assert "NOT checked" in why
 
 
-def test_the_probe_reads_the_media_not_the_trees_that_fed_it(monkeypatch):
-    """Staging happens at CONFIGURE time, so build-i386 existing now says nothing
-    about what went onto an ISO built before it. Assert the question asked is
-    about the boot media, with the arch that will open it."""
-    asked: list[tuple] = []
-
-    def _spy(repo, arch, literals):
-        asked.append((repo, arch, tuple(literals)))
-        return []
-
-    monkeypatch.setattr(ladder.provenance, "probes_missing_from_media", _spy)
-    ladder.gate_decision(Path("/repo"), "amd64")
-    assert asked == [(Path("/repo"), "amd64", (ladder.SENTINEL,))]
+def test_a_guest_outside_syswow64_is_not_a_staged_guest(tmp_path):
+    """Only the path winlogon actually launches from counts."""
+    repo = _manifest(tmp_path, [f"reactos/system32/hello32.exe={_SRC}"])
+    assert ladder.gate_decision(repo, "amd64")[1] is False
 
 
-def test_an_unreadable_media_declines_rather_than_deciding_the_gate(monkeypatch):
-    def _boom(*_a, **_k):
-        raise OSError("half-written image")
+def test_a_partial_stage_opts_IN_so_the_gap_cannot_pass_quietly(tmp_path):
+    """One guest staged is enough: the boot then reports the other eight as
+    missing and check() turns that into a LADDER_FAIL naming them."""
+    repo = _manifest(tmp_path, [f"reactos/syswow64/gui32.exe={_SRC}"])
+    assert ladder.gate_decision(repo, "amd64")[1] is True
 
-    monkeypatch.setattr(ladder.provenance, "probes_missing_from_media", _boom)
-    extra, is_staged, _ = ladder.gate_decision(Path("/repo"), "amd64")
-    assert extra == [] and not is_staged
+
+def test_no_manifest_declines_rather_than_deciding_the_gate(tmp_path):
+    """A tree that was never configured has no evidence either way."""
+    extra, staged, _ = ladder.gate_decision(tmp_path, "amd64")
+    assert extra == [] and not staged
+
+
+def test_native_x86_needs_no_special_case(tmp_path):
+    """An i386 livecd has no SysWOW64 to stage into, so the same read declines
+    without the policy ever naming an arch."""
+    repo = _manifest(
+        tmp_path,
+        ["reactos/system32/ntoskrnl.exe=/tmp/vibeos/build-i386/ntoskrnl/ntoskrnl.exe"],
+        arch="i386",
+    )
+    assert ladder.gate_decision(repo, "i386")[1] is False

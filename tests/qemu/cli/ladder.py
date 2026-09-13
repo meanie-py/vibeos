@@ -44,8 +44,6 @@ import re
 import time
 from pathlib import Path
 
-from . import provenance
-
 # guest -> the exit code that means PASS. gui32 reports 0x600e (it is the
 # GDI/draw rung and has its own verdict code); everything else uses 0x600d.
 # These 9 are the arches' SHARED ladder — the parity claim is that the same
@@ -76,35 +74,56 @@ _VERDICT = re.compile(r"\[WINLOGON\] ([A-Za-z0-9_]+)\.exe exit = 0x([0-9a-fA-F]+
 LADDER_TIMEOUT_SECONDS = 420.0
 
 
-# One guest is enough to decide whether the media carries the ladder at all: the
-# staging is all-or-nothing by construction (wow64-closure.py refuses a partial
-# SysWOW64 set, and the guests are staged in one block beside it), so a media
-# holding hello32 holds all nine. Checking one keeps the ISO scan to a single
-# pass, and a media that somehow carries hello32 without the rest then fails as a
-# real LADDER_FAIL naming the missing guests -- which is the right answer, not a
-# gap in this check.
-SENTINEL = "hello32.exe"
+# Where add_cd_file stages the guests (dll/win32/wow64cpu/CMakeLists.txt on
+# amd64, qemu/mkramdisk.sh on arm64). Matched on the CD path, not the source
+# path: the guests come from sibling trees (build-fex-hello, build-i386) that sit
+# outside the build dir every other manifest entry points into.
+STAGED_DIR = "syswow64"
 
 
 def media_has_guests(repo: Path, arch: str) -> bool:
     """Does the media this arch's boot would OPEN actually carry the guests?
 
-    Asked of the built image rather than of the sibling trees that fed it
-    (`build-i386`, `build-fex-hello`), because staging happens at CONFIGURE time:
-    those trees existing now says nothing about what went onto an ISO built
-    before them, and an amd64 configure re-run is what re-snapshots. The image is
-    the only thing that answers the question actually being asked.
+    Read from the generated `boot/<media>.cmake.lst` staging manifest, which is
+    what `add_cd_file` wrote and therefore what the image contains.
+
+    NOT a byte-scan of the image, and this is the whole point. A scan for
+    "hello32.exe" returns a hit on EVERY amd64 image, staged or not, because
+    winlogon's own diagnostic carries the name in its string table
+    ("[WINLOGON] CreateProcessW(hello32.exe) FAILED (error %lu)") in plain ASCII.
+    That false positive was measured, not imagined: it passed a boot with zero
+    staged guests as ready for the ladder, which would have burned the full
+    420s drain and then reported LADDER_NOT_STAGED -- the exact outcome this
+    check exists to prevent. provenance.probes_missing_from_media is right for
+    what it was built for (is this string COMPILED IN); "is this file staged at
+    this path" is a different question and needs the manifest.
 
     False for every native-x86 boot without special-casing it -- an i386 livecd
     has no SysWOW64 to stage into -- so the arch list stays out of here.
     """
+    from . import archcfg
+
     try:
-        return not provenance.probes_missing_from_media(repo, arch, [SENTINEL])
-    except OSError:
-        # Never let a staging PROBE decide a gate by failing. An unreadable or
-        # half-written image is the media checks' business and they report it far
-        # better than a boolean here could.
+        base = archcfg.base_arch(arch)
+        stem = Path(archcfg.arch_build(arch).boot_media_rel).stem
+        text = (repo / f"build-{base}" / "boot" / f"{stem}.cmake.lst").read_text(errors="ignore")
+    except (OSError, KeyError, AttributeError):
+        # No manifest (never configured) or an arch with no CD media. Absence of
+        # evidence, so decline rather than demand -- the media checks report a
+        # missing build far better than a boolean here could.
         return False
+
+    guests = {f"{g}.exe" for g in LADDER}
+    for line in text.splitlines():
+        cd_path = line.split("=", 1)[0].strip().replace("\\", "/").lower()
+        parts = cd_path.split("/")
+        if len(parts) >= 2 and parts[-2] == STAGED_DIR and parts[-1] in guests:
+            # Any staged guest opts in: winlogon can then run something, and a
+            # PARTIAL set surfaces through check() as a LADDER_FAIL naming the
+            # guests that never reported -- which is the right answer, since a
+            # partial stage is itself a defect and must not pass quietly.
+            return True
+    return False
 
 
 def gate_decision(repo: Path, arch: str) -> tuple[list[str], bool, str]:
@@ -125,7 +144,8 @@ def gate_decision(repo: Path, arch: str) -> tuple[list[str], bool, str]:
     return (
         [],
         False,
-        f"no {SENTINEL} in this arch's media — WoW64 guests NOT checked by this gate",
+        f"no staged {STAGED_DIR}/ guest in this arch's media manifest — "
+        f"WoW64 guests NOT checked by this gate",
     )
 
 
