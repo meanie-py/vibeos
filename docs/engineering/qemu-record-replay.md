@@ -357,11 +357,25 @@ Record it here and keep going; only chase one when it looks load-bearing.
   path — naming only one would let the identical failure back in the moment
   somebody changed the controller.
 
-  **The shape of the fix** is to attach x86 boot media through virtio-blk under
-  rr, which the measurement says would work. That changes the device set the
-  guest sees, so it is a deliberate choice rather than something to do silently,
-  and it is not needed for the bug this tool was built for (#39 is arm64).
-  A test asserts a virtio-backed CD is allowed, so the path stays open.
+  **The obvious fix — attach x86 boot media through virtio-blk instead — DOES
+  NOT WORK, and was tested (2026-09-13).** blkreplay is fine over virtio-blk, so
+  swapping `-device ide-cd,drive=cd0` for `-device virtio-blk-pci,drive=cd0`
+  looked like it would make x86 recordable. It does not, and rr is not the
+  reason: measured WITHOUT rr, on plain TCG, one variable changed —
+
+  | boot media attached via | serial lines | reached the kernel |
+  |---|---|---|
+  | `ide-cd` (control) | 7214 | yes |
+  | `virtio-blk-pci` | 11 | **no** — stops at `[freeldr] Switching stack...` |
+
+  Firmware and freeldr start up fine from virtio; the boot then dies where
+  freeldr loads the kernel, so vibeos's x86 boot path cannot take its LiveCD
+  over virtio-blk regardless of what rr wants. Making x86 recordable therefore
+  needs blkreplay to handle ATAPI — a QEMU-side fix, or a newer QEMU — not a
+  device-set workaround on our side.
+
+  A test still asserts a virtio-backed CD is *allowed* by the transform, so the
+  path stays open for whenever the guest can boot that way.
 
 - **Does the arm64 wedge track the ramdisk drive? UNRESOLVED — and the
   experiment that would answer it needs `rr record`, not a hand-rolled one
