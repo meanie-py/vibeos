@@ -415,9 +415,11 @@ Record it here and keep going; only chase one when it looks load-bearing.
   variants was measuring different amounts of wall clock and has been discarded
   rather than reported.
 
-- **RETRACTED 2026-09-13: replays do not wedge. Every trace that "wedged" was
-  TRUNCATED by the record-finalisation bug, and the varying stop points were
-  wall-clock budgets, not the replay.**
+- **Replays WEDGE: they stop consuming the trace partway, at a near-deterministic
+  point, while burning CPU. Cause unknown. OPEN.** This entry was retracted and
+  then un-retracted the same day; both the retraction and the correction are kept
+  below, because the reasoning error in the middle is more instructive than
+  either verdict.
 
   This entry stood as the headline limitation for most of a night and was wrong.
   What settled it: replay the same trace twice, sequentially and ALONE — every
@@ -440,28 +442,53 @@ Record it here and keep going; only chase one when it looks load-bearing.
   (common prefix 1773, zero divergence). The 29-line difference is how far each
   got in 900 seconds, nothing more.
 
+  **CORRECTION, same day: the retraction above is WRONG in its main claim.
+  Replays DO wedge, on correctly finalised traces too.** The two runs above were
+  both ended by my 900s budget, and I read "no abort" as "still progressing"
+  without checking whether they were still CONSUMING the trace. They were not.
+
+  A third run with NO timeout reached 1773 lines in 120 seconds and then sat
+  frozen there for over ten minutes at 96% CPU, with its read position in
+  `replay.bin` stuck at **2,342,912 of 10,666,166 bytes (22%)** across 45s of
+  sampling. That is the wedge, on a trace carrying `finalised: true`.
+
+  What the retraction DID establish, and what stands:
+
+  * **Truncated traces are a separate, distinct failure.** They do not wedge,
+    they ABORT — `Missing character write event in the replay log`,
+    deterministically, at 56 lines. Now prevented at record time, refused at
+    replay time.
+  * **The wedge point is far more reproducible than "varies between runs".**
+    Three runs of one trace stopped at 1802, 1773 and 1773 guest lines of 2772.
+    The 25-vs-968 spread behind that phrase was measured across *different*
+    traces under *different* box load, which is not a comparison at all.
+  * **Replay speed is strongly load-dependent**: 1773 lines took 900s on a busy
+    box and 120s on a quiet one — which is what made a fixed wedge point look
+    like a moving one.
+
+  So the honest statement is narrower than either previous version: a replay
+  reproduces content exactly, reaches a near-deterministic point — about two
+  thirds through this boot — then stops consuming the trace while burning CPU.
+  Cause unknown. The `rr replay` WEDGED detector reports exactly this, and also
+  catches the truncated-trace abort.
+
+  **Method note, because it is why the bad retraction happened:** "did not
+  abort" is not "made progress". The distinguishing measurement is whether the
+  rrfile read position moves — tooling I already had and did not apply to the
+  runs I drew the retraction from. A killed replay and a wedged replay look
+  identical if you only check the exit.
+
   A third run, through `rr verify`, gives the same shape from the artifacts:
   `record=3149 replay=2070 common_prefix=2070` — the replay's transcript is an
   exact prefix of the recording's, zero divergence, and it stopped only because
   its process was killed (that run was reaped; the verdict above is computed from
   the transcripts on disk, not from the wrapper's output, which the reaper took).
 
-  So: a correctly finalised trace replays deterministically, reproduces content
-  exactly as far as it runs, and does not abort. It is simply slow — see the
-  throughput entry below. The `rr replay` WEDGED detector keeps its value, but
-  what it actually diagnoses is a **truncated trace**, which `rr record` no
-  longer produces.
 
-  **Still unproven: whether a replay ever terminates naturally.** Every run so
-  far — three of them — was ended by an external budget or by the harness reaper,
-  never by the guest reaching the end of the trace. So "replays do not wedge" is
-  established; "replays complete" is not. The way to settle it is one replay with
-  a budget comfortably past the extrapolated finish (~1600s for a 90s smoke
-  recording) on a quiet box, watching for a natural exit rather than a kill.
-
-  The measurement that had seemed decisive — read position frozen at 1.6% across
-  200s at 111% CPU — was taken on `rec5`, also recorded before the fix. A QEMU
-  that has run out of replay log spins exactly like that.
+  The earlier measurement — read position frozen at 1.6% across 200s at 111% CPU
+  — was taken on `rec5`, recorded before the finalisation fix, so it conflated
+  the two failures. It now reads as the truncated-trace case; the 22%-frozen
+  measurement above is the wedge proper, on a finalised trace.
 
   (The original observations — 968 lines one run, 25 the next — were two
   different pre-fix traces under different box load, which is precisely the

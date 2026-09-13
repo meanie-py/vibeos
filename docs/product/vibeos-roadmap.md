@@ -1000,9 +1000,11 @@ Field-manual § pointers hold the full writeups. **Update on state change.**
   **But the two things that would close #39 with it do not work yet**: under gdb a replay can be
   run but never STOPPED — stepping, attaching mid-run and even a breakpoint HIT all abort
   QEMU 9.0.2 with `Playback shouldn't have to iowait` — so `reverse-continue` from the zeroed
-  frame is unreachable, not merely unattempted. (Replays were also believed to WEDGE partway;
-  that is RETRACTED — those traces had been truncated by a record-finalisation bug, and a
-  correctly finalised trace replays deterministically without aborting, just slowly.)
+  frame is unreachable, not merely unattempted; and replays WEDGE — they stop consuming the
+  trace about two thirds through, at a near-deterministic point, while burning CPU (verified on
+  a correctly finalised trace: read position frozen at 22% for ten minutes). A separate,
+  now-fixed record-finalisation bug produced TRUNCATED traces that abort rather than wedge;
+  the two were conflated for a while.
   So this is not yet a route to "who set PC to 0" — it is a deterministic capture of a
   crashing boot, which is still more than a soak ever gave us.
   Both limitations, their measurements, and what to re-test on a QEMU upgrade are in
