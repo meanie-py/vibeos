@@ -6857,6 +6857,37 @@ case cleared on pass 2 and the run passed, and a deliberately-slowed body (four 
 in `strchr`) failed all three passes at all three sizes. **A gate that has only ever been proven
 to pass is half-tested** — perturb something and watch it fail before you trust it.
 
+### A verdict over an UNDECLARED corpus
+
+**The check:** when a check reports a clean verdict, ask where it got its subject list. If the
+list came from *what happened to be present* rather than from a declaration, the verdict is
+about that accident and not about the thing you meant to test — and it will read as coverage
+either way.
+
+**This is the sharp edge of "a gate that has only ever been proven to pass is half-tested"
+above.** There the gate was never shown to fail. Here it was genuinely proven to pass, and the
+corpus it passed over was quietly missing the item in question. **A PASS whose scope is
+smaller than reported is worse than a missing signal: an absence at least looks like an
+absence, and a green looks like coverage.**
+
+**Two instances, reached from opposite symptoms in one night (2026-09-13):**
+- `scan_ud2`'s arm64 sweep graded whatever happened to sit in `build-arm64/`, because arm64
+  has no livecd DAG to enumerate from. Chasing that found `winspool.drv` — shipped on EVERY
+  arch and never scanned on any of them, because the suffix list was `.sys/.dll/.exe`. An
+  undeclared corpus does not merely risk a wrong answer; it was silently omitting a shipped
+  binary.
+- the WoW64 ladder graded whatever a glob happened to match. `{stem}*.lst` on arm64 (`stem`
+  = `boot`) matched `bootcd*.lst`, manifests for a different medium, so the probe answered
+  "no guests" for media that carried nine of them — and runs reported `9/9 guests PASS` with
+  an optional guest present, silent, and invisible to the grader.
+
+**The remedy is the same from both ends: make the corpus DECLARED.** One lane read its corpus
+out of `mkramdisk.sh`; the other tightened the glob so the manifest is the declaration. Where
+to look next follows directly — anywhere a check builds its subject list by globbing, scanning
+a build directory, or otherwise asking the filesystem what exists instead of asking a manifest
+what is supposed to. *(Connective framing and the `scan_ud2` instance from conformance-ratchet;
+ladder instance from the wow64 lane.)*
+
 ### The artifact you consulted is not the one consulted at RUNTIME
 
 **The check:** before believing a verification, ask whether the thing you read is the thing
