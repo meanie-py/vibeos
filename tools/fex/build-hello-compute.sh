@@ -13,21 +13,33 @@ HARNESS_SRC="$REPO_ROOT/tools/fex/hello-compute"
 HARNESS_BUILD="${2:-$REPO_ROOT/build-fex-hello}"
 LLVM_MINGW="$REPO_ROOT/.build-tools/llvm-mingw/bin"
 
-[ -f "$FEX_BUILD/FEXCore/Source/libFEXCore.a" ] || {
-    echo "FATAL: FEX not built at $FEX_BUILD — run tools/fex/build-fex.sh first" >&2
-    exit 1; }
-
 export PATH="$LLVM_MINGW:$PATH"
 
 mkdir -p "$HARNESS_BUILD"
-cmake -S "$HARNESS_SRC" -B "$HARNESS_BUILD" -G Ninja \
-    -DCMAKE_TOOLCHAIN_FILE="$FEX_SRC/Data/CMake/toolchain_mingw.cmake" \
-    -DMINGW_TRIPLE=aarch64-w64-mingw32 \
-    -DCMAKE_BUILD_TYPE=Release \
-    -DFEX_SRC="$FEX_SRC" \
-    -DFEX_BUILD="$FEX_BUILD"
 
-ninja -C "$HARNESS_BUILD" fexprobe wow64probe
+# fexprobe/wow64probe are the ARM64 half: native arm64 PEs linking the vendored
+# FEXCore archives, so they genuinely need the FEX vendor build. The nine i386
+# guests below do NOT -- they are plain i386 PEs from llvm-mingw, and on amd64 the
+# CPU layer is our own wow64cpu.dll (heaven's gate, no emulation), so FEX is not
+# in that picture at all. This used to be one `exit 1` at the top of the file,
+# which meant an amd64-only workflow could not produce a single ladder guest
+# without first building an arm64 emulator it never loads. Skipping loudly, in
+# the same shape as the per-guest skips below, is what lets `smoke --ladder` and
+# the gate's ladder stage work on an amd64-only tree.
+if [ -f "$FEX_BUILD/FEXCore/Source/libFEXCore.a" ]; then
+    cmake -S "$HARNESS_SRC" -B "$HARNESS_BUILD" -G Ninja \
+        -DCMAKE_TOOLCHAIN_FILE="$FEX_SRC/Data/CMake/toolchain_mingw.cmake" \
+        -DMINGW_TRIPLE=aarch64-w64-mingw32 \
+        -DCMAKE_BUILD_TYPE=Release \
+        -DFEX_SRC="$FEX_SRC" \
+        -DFEX_BUILD="$FEX_BUILD"
+
+    ninja -C "$HARNESS_BUILD" fexprobe wow64probe
+else
+    echo "[!] fexprobe/wow64probe skipped: FEX not built at $FEX_BUILD"
+    echo "    (run tools/fex/build-fex.sh if you need the arm64 probes)"
+    echo "    The nine i386 WoW64 guests do not need FEX and are built below."
+fi
 
 # hello32.exe — the i386 WoW64 Phase C guest (no CRT, no imports). Built with
 # a direct clang call because the harness CMake is aarch64-target; this is the
@@ -38,6 +50,7 @@ ninja -C "$HARNESS_BUILD" fexprobe wow64probe
 # because they skip console init. See wow64-plan.md Phase C M2.
 "$LLVM_MINGW/i686-w64-mingw32-clang" -O1 -nostdlib -Wl,-e,_start \
     -Wl,--subsystem,windows:5.1 -Wl,--major-os-version,5 -Wl,--minor-os-version,1 \
+        -Wl,--no-insert-timestamp \
     -o "$HARNESS_BUILD/hello32.exe" "$HARNESS_SRC/Hello32.c"
 
 # gui32.exe — the wow64win guest (M4): no CRT, but REAL kernel32+gdi32 imports
@@ -48,6 +61,7 @@ I386_BUILD="${VIBEOS_I386_BUILD:-$REPO_ROOT/build-i386}"
 if [ -f "$I386_BUILD/win32ss/gdi/gdi32/CMakeFiles/libgdi32.dir/libgdi32.a" ]; then
     "$LLVM_MINGW/i686-w64-mingw32-clang" -O1 -nostdlib -Wl,-e,_start \
         -Wl,--subsystem,windows:5.1 -Wl,--major-os-version,5 -Wl,--minor-os-version,1 \
+        -Wl,--no-insert-timestamp \
         -o "$HARNESS_BUILD/gui32.exe" "$HARNESS_SRC/Gui32.c" \
         "$I386_BUILD/win32ss/gdi/gdi32/CMakeFiles/libgdi32.dir/libgdi32.a" \
         "$I386_BUILD/dll/win32/kernel32/CMakeFiles/libkernel32.dir/libkernel32.a"
@@ -60,6 +74,7 @@ fi
 if [ -f "$I386_BUILD/win32ss/user/user32/CMakeFiles/libuser32.dir/libuser32.a" ]; then
     "$LLVM_MINGW/i686-w64-mingw32-clang" -O1 -nostdlib -Wl,-e,_start \
         -Wl,--subsystem,windows:5.1 -Wl,--major-os-version,5 -Wl,--minor-os-version,1 \
+        -Wl,--no-insert-timestamp \
         -o "$HARNESS_BUILD/win32.exe" "$HARNESS_SRC/Win32App.c" \
         "$I386_BUILD/win32ss/user/user32/CMakeFiles/libuser32.dir/libuser32.a" \
         "$I386_BUILD/win32ss/gdi/gdi32/CMakeFiles/libgdi32.dir/libgdi32.a" \
@@ -74,6 +89,7 @@ fi
 if [ -f "$I386_BUILD/dll/win32/kernel32/CMakeFiles/libkernel32.dir/libkernel32.a" ]; then
     "$LLVM_MINGW/i686-w64-mingw32-clang" -O1 -nostdlib -Wl,-e,_start \
         -Wl,--subsystem,windows:5.1 -Wl,--major-os-version,5 -Wl,--minor-os-version,1 \
+        -Wl,--no-insert-timestamp \
         -o "$HARNESS_BUILD/file32.exe" "$HARNESS_SRC/File32.c" \
         "$I386_BUILD/dll/win32/kernel32/CMakeFiles/libkernel32.dir/libkernel32.a"
 else
@@ -87,6 +103,7 @@ fi
 if [ -f "$I386_BUILD/dll/win32/kernel32/CMakeFiles/libkernel32.dir/libkernel32.a" ]; then
     "$LLVM_MINGW/i686-w64-mingw32-clang" -O1 -nostdlib -Wl,-e,_start \
         -Wl,--subsystem,windows:5.1 -Wl,--major-os-version,5 -Wl,--minor-os-version,1 \
+        -Wl,--no-insert-timestamp \
         -o "$HARNESS_BUILD/async32.exe" "$HARNESS_SRC/Async32.c" \
         "$I386_BUILD/dll/win32/kernel32/CMakeFiles/libkernel32.dir/libkernel32.a"
 else
@@ -100,6 +117,7 @@ fi
 if [ -f "$I386_BUILD/dll/win32/kernel32/CMakeFiles/libkernel32.dir/libkernel32.a" ]; then
     "$LLVM_MINGW/i686-w64-mingw32-clang" -O1 -nostdlib -Wl,-e,_start \
         -Wl,--subsystem,windows:5.1 -Wl,--major-os-version,5 -Wl,--minor-os-version,1 \
+        -Wl,--no-insert-timestamp \
         -o "$HARNESS_BUILD/fault32.exe" "$HARNESS_SRC/Fault32.c" \
         "$I386_BUILD/dll/win32/kernel32/CMakeFiles/libkernel32.dir/libkernel32.a"
 else
@@ -114,6 +132,7 @@ fi
 if [ -f "$I386_BUILD/dll/win32/kernel32/CMakeFiles/libkernel32.dir/libkernel32.a" ]; then
     "$LLVM_MINGW/i686-w64-mingw32-clang" -O1 -nostdlib -Wl,-e,_start \
         -Wl,--subsystem,windows:5.1 -Wl,--major-os-version,5 -Wl,--minor-os-version,1 \
+        -Wl,--no-insert-timestamp \
         -o "$HARNESS_BUILD/thread32.exe" "$HARNESS_SRC/Thread32.c" \
         "$I386_BUILD/dll/win32/kernel32/CMakeFiles/libkernel32.dir/libkernel32.a"
 else
@@ -128,6 +147,7 @@ fi
 if [ -f "$I386_BUILD/dll/win32/kernel32/CMakeFiles/libkernel32.dir/libkernel32.a" ]; then
     "$LLVM_MINGW/i686-w64-mingw32-clang" -O1 -nostdlib -Wl,-e,_start \
         -Wl,--subsystem,windows:5.1 -Wl,--major-os-version,5 -Wl,--minor-os-version,1 \
+        -Wl,--no-insert-timestamp \
         -o "$HARNESS_BUILD/selfmod32.exe" "$HARNESS_SRC/Selfmod32.c" \
         "$I386_BUILD/dll/win32/kernel32/CMakeFiles/libkernel32.dir/libkernel32.a"
 else
@@ -146,6 +166,7 @@ if [ -f "$I386_BUILD/win32ss/user/user32/CMakeFiles/libuser32.dir/libuser32.a" ]
    [ -f "$I386_BUILD/dll/win32/ws2_32/CMakeFiles/libws2_32.dir/libws2_32.a" ]; then
     "$LLVM_MINGW/i686-w64-mingw32-clang" -O1 -nostdlib -Wl,-e,_start \
         -Wl,--subsystem,windows:5.1 -Wl,--major-os-version,5 -Wl,--minor-os-version,1 \
+        -Wl,--no-insert-timestamp \
         -o "$HARNESS_BUILD/marshal32.exe" "$HARNESS_SRC/Marshal32.c" \
         "$I386_BUILD/win32ss/user/user32/CMakeFiles/libuser32.dir/libuser32.a" \
         "$I386_BUILD/dll/win32/kernel32/CMakeFiles/libkernel32.dir/libkernel32.a" \
