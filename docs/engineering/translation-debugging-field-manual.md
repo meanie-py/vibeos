@@ -5894,6 +5894,33 @@ other. AMD's SSE2 `sin` computes `(-0.0 * 0.0) * S1` and answers `+0.0` for `sin
 the FMA3 path in the *same file* returns `x` below 2^-27 and answers `-0.0`. Neither is a
 transcription error, and only measurement finds it.
 
+### A differential harness that cannot see its two sides diverge in STATE will report state differences as BEHAVIOUR differences
+**Symptom.** A perf/conformance row fails hard and reproducibly — `towlower` 10.8x TOO SLOW,
+all 3 passes, flat 44 MiB/s across a 65536x size range, calibration twins clean at 1.01x — and
+nobody can reproduce it. Four theories died: host contention (held at 1.05x under 24-way load),
+a recent commit (nothing touched the path in 3 days), suite context (whole-suite and
+`--test perf` both pass), an in-process global leak (separate test binaries are separate
+processes).
+
+**Cause.** Reference and subject each held their OWN locale state, and had diverged.
+`towlower` branches on `lc_handle[LC_CTYPE]`: zero is an ASCII add, nonzero is **one
+`LCMapStringW` call per character**. The subject was on the NLS arm and the reference on the
+ASCII arm, so the harness was timing a Win32 call against an integer add and reporting the
+ratio as a slow body. A flat throughput that does not move across a 65536x size range is the
+tell — that is a fixed per-element cost, not a scaling one.
+
+**Fix.** Read the mode on BOTH sides, print it beside the table, and when they disagree fail
+with *oracle asymmetry — the comparison is invalid*, never with the performance verdict.
+"TOO SLOW" was a FALSE statement about a TRUE measurement, and it cost an innocent lane its
+batch. Do **not** pin either side to a known-good state to make the run green: that hides the
+state leak, which is the live bug. (`msvcrt-difftest/tests/perf.rs`, `locale_modes()`.)
+
+**Generalises past locale.** Any differential pair where one side can switch MODE — a codepage,
+a feature flag, a cached handle, an errno policy — has this hole. If the harness cannot observe
+the state both sides are in, it cannot tell you which kind of difference it just measured, and
+it will confidently report the wrong one. Note this is the same shape as the stale-generated-
+header class: the tool answers honestly, but answers a different question than the one asked.
+
 ### A gate can be RED for reasons that are not in the tree at all
 Symptom: a gate goes RED with **no failing test**. Cause: the verdict depended on host state,
 not on the diff. Fix: check the host before you read the artifact, because the artifact cannot
