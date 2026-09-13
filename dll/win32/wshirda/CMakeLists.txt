@@ -14,7 +14,7 @@ elseif(ARCH STREQUAL "amd64")
 elseif(ARCH STREQUAL "arm64")
     set(WSHIRDA_RUST_TARGET "aarch64-pc-windows-gnullvm")
 endif()
-set(WSHIRDA_RUST_TARGET_DIR "${CMAKE_CURRENT_BINARY_DIR}/rust-wshirda-target")
+rust_storage_target(WSHIRDA_RUST_TARGET_DIR "${CMAKE_CURRENT_BINARY_DIR}/rust-wshirda-target" wshirda-rust)
 set(WSHIRDA_RUST_LIB "${CMAKE_CURRENT_BINARY_DIR}/libwshirda_rust.a")
 rust_crate_sources(WSHIRDA_RUST_SRCS "${WSHIRDA_RUST_WORKSPACE_DIR}" wshirda-rust)
 add_custom_command(

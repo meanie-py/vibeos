@@ -8,7 +8,7 @@ include_directories(
 # The 5 .c bodies replaced by Rust (ksecdd-rust). Kernel Security Support Provider.
 # .c kept on disk (never-delete). Bar: link-clean x3.
 set(KSECDD_RUST_WORKSPACE_DIR "${CMAKE_SOURCE_DIR}/sdk/lib/rust")
-set(KSECDD_RUST_TARGET_DIR "${CMAKE_CURRENT_BINARY_DIR}/rust-ksecdd-target")
+rust_storage_target(KSECDD_RUST_TARGET_DIR "${CMAKE_CURRENT_BINARY_DIR}/rust-ksecdd-target" ksecdd-rust)
 set(KSECDD_RUST_LIB "${CMAKE_CURRENT_BINARY_DIR}/libksecdd_rust.a")
 if(ARCH STREQUAL "i386")
     set(KSECDD_RUST_TARGET "i686-pc-windows-gnu")

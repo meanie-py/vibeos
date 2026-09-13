@@ -18,7 +18,7 @@ elseif(ARCH STREQUAL "amd64")
 elseif(ARCH STREQUAL "arm64")
     set(WLANAPI_RUST_TARGET "aarch64-pc-windows-gnullvm")
 endif()
-set(WLANAPI_RUST_TARGET_DIR "${CMAKE_CURRENT_BINARY_DIR}/rust-wlanapi-target")
+rust_storage_target(WLANAPI_RUST_TARGET_DIR "${CMAKE_CURRENT_BINARY_DIR}/rust-wlanapi-target" wlanapi-rust)
 set(WLANAPI_RUST_LIB "${CMAKE_CURRENT_BINARY_DIR}/libwlanapi_rust.a")
 rust_crate_sources(WLANAPI_RUST_SRCS "${WLANAPI_RUST_WORKSPACE_DIR}" wlanapi-rust)
 add_custom_command(

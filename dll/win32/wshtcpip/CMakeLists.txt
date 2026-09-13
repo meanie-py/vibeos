@@ -20,7 +20,7 @@ elseif(ARCH STREQUAL "amd64")
 elseif(ARCH STREQUAL "arm64")
     set(WSHTCPIP_RUST_TARGET "aarch64-pc-windows-gnullvm")
 endif()
-set(WSHTCPIP_RUST_TARGET_DIR "${CMAKE_CURRENT_BINARY_DIR}/rust-wshtcpip-target")
+rust_storage_target(WSHTCPIP_RUST_TARGET_DIR "${CMAKE_CURRENT_BINARY_DIR}/rust-wshtcpip-target" wshtcpip-rust)
 set(WSHTCPIP_RUST_LIB "${CMAKE_CURRENT_BINARY_DIR}/libwshtcpip_rust.a")
 rust_crate_sources(WSHTCPIP_RUST_SRCS "${WSHTCPIP_RUST_WORKSPACE_DIR}" wshtcpip-rust)
 add_custom_command(

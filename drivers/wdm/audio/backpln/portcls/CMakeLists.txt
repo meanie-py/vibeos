@@ -51,7 +51,7 @@ list(APPEND PCH_SKIP_SOURCE
     guid.cpp)
 
 set(PORTCLS_RUST_WORKSPACE_DIR "${CMAKE_SOURCE_DIR}/sdk/lib/rust")
-set(PORTCLS_RUST_TARGET_DIR "${CMAKE_CURRENT_BINARY_DIR}/rust-portcls-target")
+rust_storage_target(PORTCLS_RUST_TARGET_DIR "${CMAKE_CURRENT_BINARY_DIR}/rust-portcls-target" portcls-rust)
 set(PORTCLS_RUST_LIB "${CMAKE_CURRENT_BINARY_DIR}/libportcls_rust.a")
 if(ARCH STREQUAL "i386")
     set(PORTCLS_RUST_TARGET "i686-pc-windows-gnu")

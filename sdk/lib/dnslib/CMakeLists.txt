@@ -23,7 +23,7 @@ list(APPEND SOURCE
     dnslib_rust_stub.c)
 
 set(DNSLIB_RUST_WORKSPACE_DIR "${CMAKE_SOURCE_DIR}/sdk/lib/rust")
-set(DNSLIB_RUST_TARGET_DIR "${CMAKE_CURRENT_BINARY_DIR}/rust-dnslib-target")
+rust_storage_target(DNSLIB_RUST_TARGET_DIR "${CMAKE_CURRENT_BINARY_DIR}/rust-dnslib-target" dnslib-rust)
 set(DNSLIB_RUST_LIB "${CMAKE_CURRENT_BINARY_DIR}/libdnslib_rust.a")
 if(ARCH STREQUAL "i386")
     set(DNSLIB_RUST_TARGET "i686-pc-windows-gnu")

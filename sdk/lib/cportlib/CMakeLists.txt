@@ -10,7 +10,7 @@
 # libcport_rust.a to their own build.rs static_libs (they reference
 # libcportlib.a by path, which rust_cohab_stub.c keeps present).
 set(CPORT_RUST_WORKSPACE_DIR "${CMAKE_SOURCE_DIR}/sdk/lib/rust")
-set(CPORT_RUST_TARGET_DIR "${CMAKE_CURRENT_BINARY_DIR}/rust-cport-target")
+rust_storage_target(CPORT_RUST_TARGET_DIR "${CMAKE_CURRENT_BINARY_DIR}/rust-cport-target" cport-rust)
 set(CPORT_RUST_LIB "${CMAKE_CURRENT_BINARY_DIR}/libcport_rust.a")
 if(ARCH STREQUAL "i386")
     set(CPORT_RUST_TARGET "i686-pc-windows-gnu")

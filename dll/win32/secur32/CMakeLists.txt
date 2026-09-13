@@ -26,7 +26,7 @@ list(APPEND SOURCE
 # (--allow-multiple-definition) lets the Rust staticlib's panic_handler/
 # eh_personality coexist with whatever the C cohab pulls in.
 set(SECUR32_RUST_WORKSPACE_DIR "${CMAKE_SOURCE_DIR}/sdk/lib/rust")
-set(SECUR32_RUST_TARGET_DIR "${CMAKE_CURRENT_BINARY_DIR}/rust-secur32-target")
+rust_storage_target(SECUR32_RUST_TARGET_DIR "${CMAKE_CURRENT_BINARY_DIR}/rust-secur32-target" secur32-rust)
 set(SECUR32_RUST_LIB "${CMAKE_CURRENT_BINARY_DIR}/libsecur32_rust.a")
 if(ARCH STREQUAL "i386")
     set(SECUR32_RUST_TARGET "i686-pc-windows-gnu")

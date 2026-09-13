@@ -13,7 +13,7 @@ elseif(ARCH STREQUAL "amd64")
 elseif(ARCH STREQUAL "arm64")
     set(RASMAN_RUST_TARGET "aarch64-pc-windows-gnullvm")
 endif()
-set(RASMAN_RUST_TARGET_DIR "${CMAKE_CURRENT_BINARY_DIR}/rust-rasman-target")
+rust_storage_target(RASMAN_RUST_TARGET_DIR "${CMAKE_CURRENT_BINARY_DIR}/rust-rasman-target" rasman-rust)
 set(RASMAN_RUST_LIB "${CMAKE_CURRENT_BINARY_DIR}/librasman_rust.a")
 rust_crate_sources(RASMAN_RUST_SRCS "${RASMAN_RUST_WORKSPACE_DIR}" rasman-rust)
 add_custom_command(

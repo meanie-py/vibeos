@@ -20,7 +20,7 @@ elseif(ARCH STREQUAL "amd64")
 elseif(ARCH STREQUAL "arm64")
     set(TELNETD_RUST_TARGET "aarch64-pc-windows-gnullvm")
 endif()
-set(TELNETD_RUST_TARGET_DIR "${CMAKE_CURRENT_BINARY_DIR}/rust-telnetd-target")
+rust_storage_target(TELNETD_RUST_TARGET_DIR "${CMAKE_CURRENT_BINARY_DIR}/rust-telnetd-target" telnetd-rust)
 set(TELNETD_RUST_LIB "${CMAKE_CURRENT_BINARY_DIR}/libtelnetd_rust.a")
 rust_crate_sources(TELNETD_RUST_SRCS "${TELNETD_RUST_WORKSPACE_DIR}" telnetd-rust)
 add_custom_command(

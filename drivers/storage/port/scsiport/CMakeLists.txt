@@ -21,7 +21,7 @@ endif()
 # (c_variadic) so the cargo build runs under RUSTC_BOOTSTRAP=1. Standard per-arch
 # RUST_TARGET, i386 no-SSE RUSTFLAGS.
 set(SCSIPORT_RUST_WORKSPACE_DIR "${CMAKE_SOURCE_DIR}/sdk/lib/rust")
-set(SCSIPORT_RUST_TARGET_DIR "${CMAKE_CURRENT_BINARY_DIR}/rust-scsiport-target")
+rust_storage_target(SCSIPORT_RUST_TARGET_DIR "${CMAKE_CURRENT_BINARY_DIR}/rust-scsiport-target" scsiport-rust)
 set(SCSIPORT_RUST_LIB "${CMAKE_CURRENT_BINARY_DIR}/libscsiport_rust.a")
 if(ARCH STREQUAL "i386")
     set(SCSIPORT_RUST_TARGET "i686-pc-windows-gnu")

@@ -488,6 +488,24 @@ land; date every addition.** Source docs live in `docs/engineering/archive/`.
 
 ## Known bugs & flakes (live registry)
 
+- **Stock 32-bit GUI apps cascade into an execute-at-NULL fault under WoW64 — OPEN**
+  (2026-09-13). Found while attributing a guest-fault count in a `smoke --arch amd64 --ladder`
+  run, so it is NOT on the probe-guest ladder and does not fail it. `notepad.exe`,
+  `mspaint.exe` and `wordpad.exe` (each logged as `STOCK i386 app`) take **58 faults apiece**;
+  every other image in the same boot takes 0 or 1, and `fault32.exe`'s single fault at
+  `eip=00401012` is the deliberate one its own test raises. So this is specific to the stock
+  GUI apps, not general WoW64 breakage — the CSR/LPC ladder is green in the same boot and
+  `[WOW64CB] WINDOWPROC` callbacks dispatch into the guest and return correctly.
+  The shape: one fault executing from a STACK address (`eip=001ff49b`, `addr=2c850157`),
+  then 57 at `eip=00000000` with `rw=8` (instruction fetch, not a data deref) and every GPR
+  zeroed, each dispatched to 32-bit SEH at a deeper `esp` (`001fec98`, `001fe878`, ...) — a
+  re-faulting cascade that consumes stack rather than a single bad call. An indirect call
+  through a NULL or unrelocated function pointer is the obvious candidate (an unfilled import
+  thunk or callback-table slot), but WHICH pointer is unmeasured: nothing here identifies the
+  call site, and the cascade destroys the registers that would name it. Next step is a
+  tripwire or a GDB break on the first fault, not more log reading — by the second fault the
+  evidence is gone.
+
 - **Nothing caps `/tmp/vibeos-cli` retention — OPEN tooling gap** (2026-09-06). A long soak
   writes one artifact dir per round with a ~7MB `serial.log` in it, forever; `pytest`'s
   `tmp_path_factory` keeps its last 3 runs but the CLI keeps everything. Found while the host
@@ -562,7 +580,11 @@ land; date every addition.** Source docs live in `docs/engineering/archive/`.
   the bridge modules deliberately mirror C names. Closest model: `scan_invented_constants`.
 
 - **Every 32-bit guest is refused by CSR — the shared section can't map into a WoW64 process**
-  (2026-09-11, wow64-amd64 lane, OPEN). A trace probe on a passing `smoke:amd64` boot
+  (2026-09-11, wow64-amd64 lane, **CLOSED 2026-09-13**). Closed by `c277b0000d4` (M19 — CSR/LPC
+  works and a 32-bit binary reaches PASS) and `a154628337b` (`BasepCreateThread` marshalled;
+  **all nine WoW64 probe guests PASS on amd64**). The diagnosis below is kept because it is the
+  reasoning that found the bug, and because the "fixing the downstream marshallers first would
+  change nothing" sequencing argument is the reusable part. Read it as history, not as state. A trace probe on a passing `smoke:amd64` boot
   (`/tmp/vibeos-cli/20260911-234915-smoke-amd64/serial.log`) shows the real CSR/LPC blocker, and
   it is **not** a marshalling bug. Per 32-bit guest process, in order:
   `NtSecureConnectPort '\Windows\ApiPort' => c0000041` (PORT_CONNECTION_REFUSED, handle NULL),

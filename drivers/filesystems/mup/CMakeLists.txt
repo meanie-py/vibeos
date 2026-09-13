@@ -12,7 +12,7 @@
 # MIC/UNC/PFX/MQC) are defined in-crate (mup-rust/src/types.rs); kernel/Io/FsRtl/Rtl types
 # resolve to the single ntkrnl-sys ddk identity. Mirrors the fs_rec-rust / partmgr-rust cohab.
 set(MUP_RUST_WORKSPACE_DIR "${CMAKE_SOURCE_DIR}/sdk/lib/rust")
-set(MUP_RUST_TARGET_DIR "${CMAKE_CURRENT_BINARY_DIR}/rust-mup-target")
+rust_storage_target(MUP_RUST_TARGET_DIR "${CMAKE_CURRENT_BINARY_DIR}/rust-mup-target" mup-rust)
 set(MUP_RUST_LIB "${CMAKE_CURRENT_BINARY_DIR}/libmup_rust.a")
 if(ARCH STREQUAL "i386")
     set(MUP_RUST_TARGET "i686-pc-windows-gnu")

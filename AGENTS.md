@@ -102,6 +102,20 @@ itself and none was checked by the one who made it — and one of them cost a pa
 discover. Cheapness relative to the error is the point; that is what makes this a rule rather
 than an apology.
 
+**When a claim is ABOUT a measurement, re-derive it by a route the suspect tool does not
+mediate.** A tool's own account of itself is not evidence about that tool. `sccache -s` reported
+a 10 GiB cap for a 148G directory — it was querying a *different server*, and `/proc/<pid>/environ`
+had the right cap all along; a peer amplified that into nearly deleting a live healthy cache.
+Background tasks died saying "system is running low on memory" with 41G available, no OOM daemon
+installed and zero `oom` in `dmesg` — the killer was naming its own cause. Three separate
+"exit 0 having done nothing" reports were `$?` reading a pipeline's last stage or a trailing
+`echo`, never the work (`(exit 7) | tail -1` → `$?`=0, `PIPESTATUS[0]`=7). Each time the
+disconfirming evidence was in hand or one command away. This is not "be skeptical" — it fires on
+one recognisable shape, a claim whose subject is itself a reading, and the move is always the
+same: `/proc/<pid>/environ` not `sccache -s`; `dmesg` not the killer's message; `PIPESTATUS` not
+`$?`. This is why "judge build success by artifact existence" (below) holds so well: it never
+consults rc at all.
+
 **Deferral is temporary, never silent.** Deferred work stays tracked and owed. Don't drop a
 thing permanently by calling it "out of scope."
 
@@ -144,6 +158,16 @@ the receiving end: verify a handed-down claim against the tool that would have p
 acting on it — `land-status`, `summary.json`, the artifact dir. This cuts both ways for your own
 summaries, which are the same channel: a status line you carry forward without its evidence is
 a claim you can no longer support.
+
+**An alarming inference deserves its cheapest disconfirming check BEFORE you relay it.**
+Relaying converts your uncertainty into someone else's fact, and from there it gets acted on. I
+had "someone forced a double drain on the merge queue" written and addressed, having seen five
+concurrent `land --drain --foreground` processes; their elapsed times were 64m/61m/43m/36m/6m,
+matching the five queue ages exactly — one blocked waiter per queued lane, which is the design.
+One `ps` killed it. Note also what that host-status could NOT tell me: one of the two lanes
+holding build permits was the user's own, deliberately taking over a tarpitted lane. A position
+is a measurement, not a property — timestamp it or don't send it, and say which parts you
+observed and which you inferred.
 
 **Written deliverables.** Match the length of docs you write to what the task needs: cover the
 substance, don't pad with filler sections, redundant summaries, or boilerplate.
@@ -277,8 +301,11 @@ wasted >$100 here.
 New code must compile on stable. **Do not add `#![feature(...)]`, and do not add
 `RUSTC_BOOTSTRAP=1` to a CMakeLists** — that env var silently unlocks nightly and is how nightly
 crept back in the same day it was removed. Both are hard-gated by `scan_nightly_surface`
-(`vibeos-cli check`). The one sanctioned nightly user is the **i386 kernel** `*-cargo` cell
-(`-Z build-std` for a no-SSE `core`); it retires with the wow64 lane. If you think you need a
+(`vibeos-cli check`). The one sanctioned nightly user is the i386 `*-cargo` cell (`-Z build-std`
+for a no-SSE `core`) — and `add_cargo_module` gates on ARCH alone, so that is **every** i386
+cargo module: `KIND win32dll` ones like ntdll build user-mode code against the *kernel*
+softfloat json too. Retiring the i386 kernel does not retire the cell on its own, because
+SysWOW64 stages i386 user-mode PEs and they outlive it. If you think you need a
 nightly feature, you almost certainly don't — see the reference doc for the `c_variadic` and
 `linkage` workarounds.
 
@@ -331,7 +358,10 @@ guide: `tests/qemu/cli/README.md`.
 
 **Judge build success by artifact existence** (`ls livecd.iso`), not reported exit code:
 `run_in_background` and some sandboxed Bash run in a copy-on-write overlay that reports `rc=0`
-with no artifacts. Only **foreground Bash with `dangerouslyDisableSandbox: true`** persists.
+with no artifacts. The commoner source is not the overlay but *mis-capturing the status* — `$?`
+after a pipe is `tail`'s, and after `cmd & echo ...` it is `echo`'s. Three false greens in one
+session came from that, one of them reported as a CLI bug that did not exist. Only
+**foreground Bash with `dangerouslyDisableSandbox: true`** persists.
 Shell **cwd persists between calls and drifts** — launch repo tools with an explicit
 `cd <repo-root> &&` or absolute paths (a build once "succeeded" having never run, because
 `./vibeos-cli` didn't exist in the drifted cwd).

@@ -11,7 +11,7 @@
 # is a clean smoke boot ×3. Driver-private structs come from the gen_driver_types.sh
 # bindgen substrate (partmgr-rust/src/types.rs). Mirrors the pci-rust / processr cohab.
 set(PARTMGR_RUST_WORKSPACE_DIR "${CMAKE_SOURCE_DIR}/sdk/lib/rust")
-set(PARTMGR_RUST_TARGET_DIR "${CMAKE_CURRENT_BINARY_DIR}/rust-partmgr-target")
+rust_storage_target(PARTMGR_RUST_TARGET_DIR "${CMAKE_CURRENT_BINARY_DIR}/rust-partmgr-target" partmgr-rust)
 set(PARTMGR_RUST_LIB "${CMAKE_CURRENT_BINARY_DIR}/libpartmgr_rust.a")
 if(ARCH STREQUAL "i386")
     set(PARTMGR_RUST_TARGET "i686-pc-windows-gnu")

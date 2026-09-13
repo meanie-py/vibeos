@@ -5249,6 +5249,59 @@ moved **987 → 9 with no source change**. A verdict that depends on which sibli
 a gate. Pinned *toolchains* may be shared (content-addressed); generated *headers* are
 per-commit state and must come from THIS worktree or the tool hard-fails.
 
+### A watcher that starts from an empty buffer waits for what already went past
+**Symptom:** a wait that is supposed to end early always runs to its full timeout — and the
+run PASSES, so nothing looks wrong except the clock. The verdict is correct; only the duration
+is absurd.
+
+**Cause:** the watcher scans a buffer it begins accumulating at call time, while the caller has
+already consumed part of the stream. Anything that arrived before the call is invisible to it,
+so it waits forever for a marker that has gone by. Measured: `smoke --ladder` reported
+`9/9 guests PASS` and drained **420.2s of a 420s budget**, because one guest
+(`gui32.exe exit = 0x600e`) reported during the boot's SETTLE read rather than during the
+drain. The grading function saw both halves of the serial and was right; the waiter saw only
+its own half and was stuck.
+
+**Fix:** pass what the caller has already seen (`watch(vm, seen=text)`) and wait only on the
+markers still outstanding — including the case where NOTHING is outstanding, which must read
+zero bytes rather than block. Keep the ceiling a real ceiling: a guest that never reports still
+has to spend the budget, or the fix trades a slow pass for a fast false failure.
+
+**Why it hides:** the two halves are rejoined before anyone grades them, so every correctness
+check passes and no failure is ever produced. Only a DURATION instrument finds it. This one was
+caught by a log line added for an unrelated reason — to answer "is the 420s ceiling too
+generous?" — which then showed the ceiling being hit unconditionally. **If a bounded wait has
+no recorded elapsed time, it has no evidence it is bounded.**
+
+### A NAME inside an image does not prove the FILE is in it
+**Symptom:** a preflight reports a file is staged on the boot media, on a media where it is
+not staged at all — and the check is reading a freshly built, entirely correct artifact, so
+none of the staleness rules above apply.
+
+**Cause:** the check scanned the image for the file's NAME. Names live in images for reasons
+that have nothing to do with staging: the launcher's own diagnostics carry them. `hello32.exe`
+is present as plain ASCII in every amd64 livecd whether or not a single WoW64 guest was
+staged, because winlogon's error path holds
+`"[WINLOGON] CreateProcessW(hello32.exe) FAILED (error %lu)"` in its string table (measured at
+offset `0x9c2ffe4`). So the probe returned PRESENT unconditionally, and the gate demanded a
+ladder from boots that had none — costing the full 420s drain to conclude `LADDER_NOT_STAGED`,
+which is exactly what the probe existed to avoid.
+
+**Fix:** ask the STAGING MANIFEST (`build-<arch>/boot/<media>.cmake.lst`), which is what
+`add_cd_file` wrote, and match the **CD-path** side. Two traps in doing that: the source side
+is useless for anything staged from a sibling tree (`build-fex-hello`, `build-i386` — outside
+the build dir every other entry points into), and matching a bare basename re-admits the same
+error, so match the directory too (`*/syswow64/<guest>.exe`).
+
+**The generalisation, and it is not "be careful with greps":** `probes_missing_from_media` was
+the RIGHT tool for its own question — *is this string compiled in* (`--require-probe`), where a
+substring hit is exactly the semantics wanted. *Is this file staged at this path* is a
+different question that happens to look answerable by the same call. Reaching for the existing
+mechanism is correct; check that its question is your question. This is AGENTS.md's
+re-derive-a-measurement rule landing on a check whose subject is itself a reading: two routes
+disagreed (scan said staged, manifest said zero `syswow64` entries) and the boot broke the tie
+by reporting no guest verdict at all.
+
 ### A build-time flavor knob that keeps the SAME output name defeats every name-based check
 **Symptom:** a run is green and the screenshot is a full desktop, but the binary under test is
 not the flavor you think. **Cause:** a cmake cache var that changes what a binary *is* without
@@ -8556,13 +8609,45 @@ still run concurrently within the pool. The isolated live-flock regression is
 retain their prior admission code until restarted/updated; do not rewrite another
 worktree or kill a running build to propagate this fix.
 
-### Contention wears three costumes, not one
+### Contention wears four costumes, not one
 1. **`HANG_TIMEOUT` at `[freeldr] Switching stack...`** with zero kernel serial (the CGU lottery,
    above).
 2. **A transient BUGCHECK** — e.g. `0x1E (0xc0000006 IN_PAGE_ERROR)` under memory/IO/KVM
    pressure. The identical binary boots green ×5 on a quiet host.
 3. **A late-boot hang that REACHES `shell ready`** — explorer never reaches
    `_tWinMain entered` within the timeout, because a normally-1m48s i386 boot drifts past 6 min.
+4. **`DISK_ADMISSION_FAIL`, on a host that passes every disk metric you would think to check.**
+   The blocker is RESERVATION headroom, not fullness: a 3-arch gate reserves `3 x build + 4
+   (check-tooling) + a 20 GiB min_free floor`, so at the historical `build = 32` it needed 120
+   GiB and went red with **109 GiB free and `df` at 89%** — while `hostdisk.py`'s refuse
+   threshold (5 G) measures fullness and stays green. Symptom is a queue that cannot self-heal:
+   every conduct dies on its own THIRD arch, so a conductor bisects for a culprit lane that does
+   not exist. Check `/tmp/vibeos-qemu-locks/host/disk/policy.json` against `df` and do the
+   arithmetic before suspecting any diff. `prune` will not rescue you — it reported 0 M against
+   365.9 G held across eleven worktrees, all touched <12h or running live QEMUs. The knob is
+   `REQUESTS["build"]` in `tests/qemu/cli/diskspace.py`, and **it is the only durable one:
+   `policy.json` lives under `/tmp` and REGENERATES from `REQUESTS` at every boot**, so a
+   hand-edit of the json looks like it worked, survives a whole session, and silently evaporates
+   — one such edit to 15 took its fix with it. Settled: MEASURED 2026-09-11 with the fleet
+   stopped, sampling every 20s through a cold build, i386 and amd64 both peak at **7.44 GiB**
+   (arm64 dirs 2.8-3.0 G), and the estimate is now 12 — ~60% headroom over the observed peak,
+   because a reservation bounds additional WRITES and a cache-miss-heavy build also writes the
+   shared ccache/sccache on the same filesystem, a component that cold build could not measure
+   (it grew them by exactly 0, every object cached). 3x12+20 = 56 GiB, against 116 before.
+   The 20 GiB `min_free` floor is a different knob and is what stands between the fleet and an
+   ENOSPC afternoon — when the build number stops being enough, do not reach for THAT one.
+   **The 3-vs-2 asymmetry is NOT the defect**, though it reads like one and was filed here as
+   owed: `reserve()` takes disk while holding no CPU permit, so three builds hold reservations
+   while the broker admits two. Inverting it would mean sitting on a scarce CPU permit while
+   blocked on disk admission. Accuracy is what makes the asymmetry harmless — if the numbers
+   drift, re-measure, don't re-order.
+   Two notes on how to measure, both earned by getting it wrong. `du` on a SETTLED dir cannot
+   show a link-phase peak, and sampling live builds coarsely is weak evidence — a seconds-long
+   link hides between 45s samples; the number above comes from sampling a COLD build, which is
+   what it takes. And there is a hole worth knowing on its own: **`du /tmp/vibeos` from the host
+   reads `4.0K` and exits 0.** Builds bind-mount the worktree at that canonical path inside a
+   private namespace (`canon-run.sh`, `unshare --map-root-user --mount`), so any host-side
+   sizing of the canonical path silently measures an empty directory rather than failing.
 
 ### `NET_FLAKE` that is not a flake `[§9.84]`
 A gate showing `✓ build ×3 ✓ lint ×3 ✓ smoke: all three` and a red net suite, where **all 15

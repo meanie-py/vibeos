@@ -13,7 +13,7 @@
 # (npfs-rust/src/types.rs); kernel/Io/Ke/Ex/Se/FsRtl/Rtl types resolve to the single
 # ntkrnl-sys ddk identity. Mirrors the mup-rust / fs_rec-rust / msfs-rust cohab.
 set(NPFS_RUST_WORKSPACE_DIR "${CMAKE_SOURCE_DIR}/sdk/lib/rust")
-set(NPFS_RUST_TARGET_DIR "${CMAKE_CURRENT_BINARY_DIR}/rust-npfs-target")
+rust_storage_target(NPFS_RUST_TARGET_DIR "${CMAKE_CURRENT_BINARY_DIR}/rust-npfs-target" npfs-rust)
 set(NPFS_RUST_LIB "${CMAKE_CURRENT_BINARY_DIR}/libnpfs_rust.a")
 if(ARCH STREQUAL "i386")
     set(NPFS_RUST_TARGET "i686-pc-windows-gnu")

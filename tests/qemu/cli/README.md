@@ -350,7 +350,8 @@ their children reserve independently. Host-wide policy lives at
 `<HOSTLOCK_DIR>/disk/policy.json`; see the fleet migration plan for its schema.
 Admission refusals are infrastructure failures, not code regressions. These are
 cooperative estimates, not filesystem quotas: legacy lanes and other writers
-remain unaccounted for. Automatic retention is not enabled.
+remain unaccounted for. `retention --enable` can install bounded hourly cleanup
+after a quiet-fleet compatibility check; `disk-status` reports timer activity.
 
 ### `host-status [--json]`
 
@@ -530,6 +531,17 @@ Updated artifact-consuming CLI commands hold shared leases on that lock.
 **Do not enable the owner until every lane is updated and older/raw jobs are
 drained**; they do not honor the lock. No owner is enabled automatically.
 See [storage/retention rollout](../../../docs/engineering/rust-output-retention-plan.md).
+
+### `retention [--enable | --disable | --run]`
+
+Install or run hourly generated-output retention from one pinned checkout.
+Defaults: 100 GiB fleet-output budget, 150 GiB filesystem headroom, 24 idle hours.
+`--enable` accepts `--retain-gib`, `--min-free-gib`, and `--idle-hours` and requires
+an idle fleet with compatible maintenance admission in every registered worktree.
+It includes idle integration scratch. Active and recent outputs remain protected,
+so budgets may remain unmet. `--disable` stops scheduling and sets the global
+maintenance kill switch. Plain `retention` prints its configured policy.
+See [measurement and rollout](../../../docs/engineering/disk-optimization.md).
 
 ### `repro {report <pe>… | compare <a> <b> | diff-dirs <buildA> <buildB>}`
 The reproducible-builds gauge (determinism lane, rung 0 —

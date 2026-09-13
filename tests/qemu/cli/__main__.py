@@ -58,6 +58,12 @@ def build_parser() -> argparse.ArgumentParser:
     arch_arg(b)
     b.add_argument("--clean", action="store_true", help="cold: nuke all rust targets")
     b.add_argument(
+        "--rust-storage-shards",
+        type=int,
+        choices=range(17),
+        help="persist direct staticlib storage layout: 0 private, 1-16 local Cargo shards",
+    )
+    b.add_argument(
         "--incremental",
         action="store_true",
         help="fast-iterate: rustc incremental (Rust sccache OFF; non-reproducible, not for gate)",
@@ -690,7 +696,29 @@ def build_parser() -> argparse.ArgumentParser:
         default=0,
         help="only prune trees untouched for N hours (default 24 with --retain-gib, otherwise 0)",
     )
+    pr.add_argument(
+        "--include-integration",
+        action="store_true",
+        help="allow idle conductor scratch to participate in retention",
+    )
+    pr.add_argument(
+        "--min-free-gib",
+        type=float,
+        help="also reclaim eligible outputs toward this filesystem headroom",
+    )
     pr.set_defaults(fn=prune_mod.prune)
+
+    from . import retention
+
+    rt = sub.add_parser("retention", help="configure or run hourly idle-output retention")
+    modes = rt.add_mutually_exclusive_group()
+    modes.add_argument("--enable", action="store_true")
+    modes.add_argument("--disable", action="store_true")
+    modes.add_argument("--run", action="store_true")
+    rt.add_argument("--retain-gib", type=float, default=100)
+    rt.add_argument("--min-free-gib", type=float, default=150)
+    rt.add_argument("--idle-hours", type=float, default=24)
+    rt.set_defaults(fn=retention.command)
 
     # repro — determinism/reproducibility measurement (det-plan rung 0/5)
     rp = sub.add_parser(
@@ -727,7 +755,7 @@ def build_parser() -> argparse.ArgumentParser:
 
 def main(argv: list[str] | None = None) -> int:
     args = build_parser().parse_args(argv)
-    if args.cmd not in maintenance.UNLOCKED:
+    if args.cmd not in maintenance.UNLOCKED and args.cmd != "retention":
         try:
             with maintenance.activity(REPO):
                 return _dispatch(args)
@@ -740,17 +768,68 @@ def main(argv: list[str] | None = None) -> int:
 
 
 def _dispatch(args) -> int:
-    if args.cmd in diskspace.REQUESTS:
-        try:
+    # The except must stay OUTSIDE the `in REQUESTS` test: a DEFERRED kind takes its own
+    # reservation deep inside the command (build, once the CPU broker admits it), and that
+    # AdmissionError has to reach the same stdout line and exit 2 as one raised here, or the
+    # conductor would classify an infrastructure refusal as a source regression.
+    try:
+        if args.cmd in diskspace.DEFERRED:
+            # Fail fast if the host is hopeless, then let the command claim its real
+            # budget once the CPU broker admits it.
+            diskspace.refuse_if_hopeless(REPO, args.cmd)
+        elif args.cmd in diskspace.REQUESTS:
             with diskspace.reserve(REPO, args.cmd):
                 return args.fn(args, REPO)
-        except diskspace.AdmissionError as exc:
-            # stdout is the durable fallback when even summary.json cannot be
-            # created. The conductor classifies this as infrastructure, not code.
-            print(f"{diskspace.FAILURE}: {exc}", flush=True)
-            return 2
-    return args.fn(args, REPO)
+        return args.fn(args, REPO)
+    except diskspace.AdmissionError as exc:
+        # stdout is the durable fallback when even summary.json cannot be
+        # created. The conductor classifies this as infrastructure, not code.
+        print(f"{diskspace.FAILURE}: {exc}", flush=True)
+        return 2
+
+
+def _cli_exit_code(argv: list[str] | None = None) -> int:
+    """main(), but argparse's own usage exits come back as a value like any other."""
+    try:
+        return main(argv)
+    except SystemExit as exc:  # argparse usage errors exit(2) from inside parse_args
+        code = exc.code
+        if code is None:
+            return 0
+        return code if isinstance(code, int) else 1
+
+
+def cli_main(argv: list[str] | None = None) -> int:
+    """Entry point that puts the exit code in the OUTPUT, not just the status.
+
+    A pipeline reports the exit status of its LAST stage, so `vibeos-cli ... | tail`
+    yields 0 no matter how the CLI exited -- agents have three times in one night
+    reported a finding manufactured by reading a green pipeline off a red command.
+    A rule against piping has not stopped it (it is in the always-loaded push channel,
+    and one report quoted the rule while breaking it), so the number is emitted into
+    the stream the reader is actually looking at. It survives `| tail`, `| tail -1`
+    and a redirect alike, and unlike a not-a-tty warning it has no false positives:
+    it is not a warning, it is the missing datum.
+
+    Nothing parses our stdout tail today -- the last-line consumers in gate.py and
+    land.py read `bash build.sh`, pytest and `git push`, never a vibeos-cli child.
+    But this line is now RESERVED: it is always last, so a consumer that shells out
+    to vibeos-cli and wants the salient diagnostic must reverse-SEARCH for it the way
+    gate.py:392 finds its pytest summary, never take `.splitlines()[-1]`. Blind-tailing
+    a vibeos-cli child gets `exit=N` and looks like the CLI stopped reporting failures.
+    (land.py:287 and gate.py:258 do blind-tail, and are safe only because of what they
+    happen to read -- copy gate.py:392's idiom instead, not theirs.)
+
+    `main()` stays free of this on purpose: unit tests call it directly, and a plain
+    return value is easier to assert than captured stdout. Don't tidy the two together.
+    """
+    rc = 1
+    try:
+        rc = _cli_exit_code(argv)
+    finally:
+        print(f"vibeos-cli: exit={rc}", flush=True)
+    return rc
 
 
 if __name__ == "__main__":
-    sys.exit(main())
+    sys.exit(cli_main())

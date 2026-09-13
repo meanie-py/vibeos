@@ -32,7 +32,7 @@ list(APPEND SOURCE
     stdafx.h)
 
 set(UNIATA_RUST_WORKSPACE_DIR "${CMAKE_SOURCE_DIR}/sdk/lib/rust")
-set(UNIATA_RUST_TARGET_DIR "${CMAKE_CURRENT_BINARY_DIR}/rust-uniata-target")
+rust_storage_target(UNIATA_RUST_TARGET_DIR "${CMAKE_CURRENT_BINARY_DIR}/rust-uniata-target" uniata-rust)
 set(UNIATA_RUST_LIB "${CMAKE_CURRENT_BINARY_DIR}/libuniata_rust.a")
 if(ARCH STREQUAL "i386")
     set(UNIATA_RUST_TARGET "i686-pc-windows-gnu")

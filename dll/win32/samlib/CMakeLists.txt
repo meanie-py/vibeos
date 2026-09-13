@@ -26,7 +26,7 @@ elseif(ARCH STREQUAL "amd64")
 elseif(ARCH STREQUAL "arm64")
     set(SAMLIB_RUST_TARGET "aarch64-pc-windows-gnullvm")
 endif()
-set(SAMLIB_RUST_TARGET_DIR "${CMAKE_CURRENT_BINARY_DIR}/rust-samlib-target")
+rust_storage_target(SAMLIB_RUST_TARGET_DIR "${CMAKE_CURRENT_BINARY_DIR}/rust-samlib-target" samlib-rust)
 set(SAMLIB_RUST_LIB "${CMAKE_CURRENT_BINARY_DIR}/libsamlib_rust.a")
 rust_crate_sources(SAMLIB_RUST_SRCS "${SAMLIB_RUST_WORKSPACE_DIR}" samlib-rust)
 add_custom_command(
