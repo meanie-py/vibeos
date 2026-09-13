@@ -40,7 +40,7 @@ extern "system" {
     fn DeviceErrorHandlerForHitachiGD2000( DeviceExtension: PCDROM_DEVICE_EXTENSION, Srb: *mut SCSI_REQUEST_BLOCK, Status: *mut NTSTATUS, Retry: *mut u8, ) -> NTSTATUS;
     fn DeviceSendSrbSynchronously( Device: *mut core::ffi::c_void, Srb: *mut SCSI_REQUEST_BLOCK, DataBuffer: *mut core::ffi::c_void, DataBufferLength: u32, Write: u8, SrbStatus: *mut u8, ) -> NTSTATUS;
     fn RtlZeroMemory(Destination: *mut core::ffi::c_void, Length: usize);
-    fn ExAllocatePoolWithTag(PoolType: u32, NumberOfBytes: u32, Tag: u32) -> *mut core::ffi::c_void;
+    fn ExAllocatePoolWithTag(PoolType: u32, NumberOfBytes: SIZE_T, Tag: u32) -> *mut core::ffi::c_void;
     fn ExFreePool(P: *mut core::ffi::c_void);
 }
 unsafe extern "C" {
@@ -806,7 +806,7 @@ pub unsafe extern "C" fn DeviceCreateWellKnownName(
 
     savedName = ExAllocatePoolWithTag(
         PagedPool,
-        unicodeLinkName.MaximumLength as u32,
+        unicodeLinkName.MaximumLength as SIZE_T,
         CDROM_TAG_STRINGS,
     ) as *mut u16;
 
@@ -1314,7 +1314,7 @@ pub unsafe extern "C" fn DeviceCacheDeviceInquiryData(
     // 1. Retrieve inquiry data length
     tmpInquiry = ExAllocatePoolWithTag(
         NonPagedPoolNx,
-        requestedInquiryTransferBytes,
+        requestedInquiryTransferBytes as SIZE_T,
         CDROM_TAG_INQUIRY,
     ) as *mut INQUIRYDATA;
     if tmpInquiry.is_null() {
@@ -1380,7 +1380,7 @@ pub unsafe extern "C" fn DeviceCacheDeviceInquiryData(
         );
         tmpInquiry = ExAllocatePoolWithTag(
             NonPagedPoolNx,
-            requestedInquiryTransferBytes,
+            requestedInquiryTransferBytes as SIZE_T,
             CDROM_TAG_INQUIRY,
         ) as *mut INQUIRYDATA;
         if tmpInquiry.is_null() {
@@ -1419,7 +1419,7 @@ pub unsafe extern "C" fn DeviceCacheDeviceInquiryData(
                 );
                 tmpInquiry = ExAllocatePoolWithTag(
                     NonPagedPoolNx,
-                    requestedInquiryTransferBytes,
+                    requestedInquiryTransferBytes as SIZE_T,
                     CDROM_TAG_INQUIRY,
                 ) as *mut INQUIRYDATA;
                 if tmpInquiry.is_null() {
@@ -1553,7 +1553,7 @@ pub unsafe extern "C" fn DeviceSetRawReadInfo(
 
         srb.TimeOutValue = (*DeviceExtension).TimeOutValue;
 
-        buffer = ExAllocatePoolWithTag(NonPagedPoolNx, buffer_length, CDROM_TAG_MODE_DATA) as *mut u8;
+        buffer = ExAllocatePoolWithTag(NonPagedPoolNx, buffer_length as SIZE_T, CDROM_TAG_MODE_DATA) as *mut u8;
 
         if buffer.is_null() {
             TracePrint!(
@@ -1710,7 +1710,7 @@ pub unsafe extern "C" fn DeviceInitializeDvd(Device: WDFDEVICE) -> NTSTATUS {
     }
 
     bufferLen = DVD_RPC_KEY_LENGTH;
-    copyProtectKey = ExAllocatePoolWithTag(PagedPool, bufferLen, DVD_TAG_RPC2_CHECK) as *mut DVD_COPY_PROTECT_KEY;
+    copyProtectKey = ExAllocatePoolWithTag(PagedPool, bufferLen as SIZE_T, DVD_TAG_RPC2_CHECK) as *mut DVD_COPY_PROTECT_KEY;
 
     if copyProtectKey.is_null() {
         return STATUS_INSUFFICIENT_RESOURCES;
@@ -4528,7 +4528,7 @@ pub unsafe extern "system" fn DeviceInitAllocateBuffers(
     if (*DeviceExtension).PrivateFdoData.is_null() {
         (*DeviceExtension).PrivateFdoData = ExAllocatePoolWithTag(
             0, // NonPagedPoolNx: ReactOS #defines it to NonPagedPool (no NX pool here)
-            core::mem::size_of::<CDROM_PRIVATE_FDO_DATA>() as u32,
+            core::mem::size_of::<CDROM_PRIVATE_FDO_DATA>() as SIZE_T,
             0x74767250, /* CDROM_TAG_PRIVATE_DATA */
         ) as *mut CDROM_PRIVATE_FDO_DATA;
     }
@@ -4548,7 +4548,7 @@ pub unsafe extern "system" fn DeviceInitAllocateBuffers(
     // Allocate request sense buffer.
     senseData = ExAllocatePoolWithTag(
         0x204, /* NonPagedPoolNxCacheAligned = NonPagedPoolNx (512) + CacheAligned (4) */
-        0x12,  /* SENSE_BUFFER_SIZE */
+        0x12 as SIZE_T,  /* SENSE_BUFFER_SIZE */
         0x53656E73, /* CDROM_TAG_SENSE_INFO */
     ) as *mut core::ffi::c_void;
 
@@ -4749,7 +4749,7 @@ pub unsafe extern "system" fn DeviceScanSpecialDevices(DeviceExtension: PCDROM_D
         // Allocate mode parameters
         let mode_parameters = ExAllocatePoolWithTag(
             NonPagedPoolNx,
-            core::mem::size_of::<MODE_PARM_READ_WRITE_DATA>() as u32,
+            core::mem::size_of::<MODE_PARM_READ_WRITE_DATA>() as SIZE_T,
             CDROM_TAG_MODE_DATA,
         ) as *mut MODE_PARM_READ_WRITE_DATA;
 
@@ -5172,7 +5172,7 @@ pub unsafe extern "system" fn DeviceGetMmcSupportInfo(
 
         let config_buffer = ExAllocatePoolWithTag(
             NonPagedPoolNx,
-            feature_size as u32,
+            feature_size as SIZE_T,
             CDROM_TAG_GET_CONFIG,
         ) as *mut GET_CONFIGURATION_HEADER;
 

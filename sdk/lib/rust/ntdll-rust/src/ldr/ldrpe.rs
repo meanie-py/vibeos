@@ -39,7 +39,7 @@ extern "system" {
     fn LdrpMapDll( DllPath: PWSTR, DllName2: PWSTR, DllName: PWSTR, DllCharacteristics: PULONG, Static: BOOLEAN, RedirectedDll: BOOLEAN, DataTableEntry: *mut PLDR_DATA_TABLE_ENTRY, ) -> NTSTATUS;
     fn LdrpGetProcedureAddress( BaseAddress: PVOID, Name: PANSI_STRING, Ordinal: ULONG, ProcedureAddress: *mut PVOID, Execute: BOOLEAN, ) -> NTSTATUS;
     fn LdrpLoadDll( Redirected: BOOLEAN, DllPath: PWSTR, DllCharacteristics: PULONG, DllName: *mut _UNICODE_STRING, BaseAddress: *mut PVOID, CallInit: BOOLEAN, ) -> NTSTATUS;
-    fn NtFlushInstructionCache( ProcessHandle: HANDLE, BaseAddress: PVOID, NumberOfBytesToFlush: ULONG, ) -> NTSTATUS;
+    fn NtFlushInstructionCache( ProcessHandle: HANDLE, BaseAddress: PVOID, NumberOfBytesToFlush: SIZE_T, ) -> NTSTATUS;
     // Application Verifier notifications — defined in Rust (ldr/verifier.rs).
     fn AVrfPageHeapDllNotification(LdrEntry: PLDR_DATA_TABLE_ENTRY);
     fn AVrfDllLoadNotification(LdrEntry: PLDR_DATA_TABLE_ENTRY);
@@ -300,7 +300,7 @@ pub unsafe extern "system" fn LdrpSnapIAT(
         &mut OldProtect,
     );
 
-    NtFlushInstructionCache(NtCurrentProcess(), Iat, IatSize);
+    NtFlushInstructionCache(NtCurrentProcess(), Iat, IatSize as SIZE_T);
 
     Status
 }

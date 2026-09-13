@@ -94,6 +94,13 @@ _PYTEST_SUITES = [
     (".", ".", "tools/test_rust_module_tree.py"),
     (".", ".", "tools/test_scan_self_recursive.py"),
     (".", ".", "tools/test_scan_dropped_asserts.py"),
+    # The substrate half of scan_extern_decl_drift has no other oracle: its
+    # findings are about declarations of symbols NOTHING in the tree defines, so
+    # neither rustc nor the linker nor a same-crate definition can adjudicate one.
+    # Its two scoping rules are also the kind that fail SILENTLY -- judging a crate
+    # by an island it does not link invents findings, and resolving pointer width
+    # arch-agnostically inside a `#[cfg(target_arch)]`d module invents three more.
+    (".", ".", "tools/test_scan_extern_decl_drift.py"),
     # Same shape as the two above: the matcher is pure functions over a string, and its
     # positive control is the real demangler bug — a sequencing error that shipped because
     # no value-based check can see it.
