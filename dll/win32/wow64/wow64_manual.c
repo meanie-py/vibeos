@@ -4772,7 +4772,19 @@ static NTSTATUS Wow64pIoctlAfdRecvFrom(WOW64_IOCTL_FN Fn, ULONG *a, const char *
     return Wow64pFinishIosb(St, File, &Iosb64, a[4], Who);
 }
 
-/* IOCTL_AFD_SEND_DATAGRAM — AFD_SEND_INFO_UDP, 56 -> 104. The one AFD payload
+/* BEFORE blaming any marshaller below for an IOCTL that "succeeded" with an
+ * out-buffer that looks untouched: there is an arm64 kernel defect that presents
+ * IDENTICALLY from the guest side. METHOD_BUFFERED's output copy-back on IRP
+ * completion (SystemBuffer -> UserBuffer, length from Irp->IoStatus.Information)
+ * intermittently does not land, and DeviceIoControl still returns ERROR_SUCCESS
+ * — the kmtest that caught it passes its `== ERROR_SUCCESS` check and fails only
+ * the value checks that follow. A width or thunking bug here and that defect are
+ * indistinguishable without checking, and only one of them is ours. It never
+ * appears in an error path, so nothing will point at it for you.
+ * Localised by the conformance-ratchet lane (n=1, no rate); see its `Example`
+ * entry. Check it first, then come back here.
+ *
+ * IOCTL_AFD_SEND_DATAGRAM — AFD_SEND_INFO_UDP, 56 -> 104. The one AFD payload
  * with nested structs, and the nesting is shallower than the declaration looks.
  * AfdPacketSocketWriteData reads only BufferArray, BufferCount and
  * TdiConnection.RemoteAddress; msafd's WSPSendTo fills only those plus AfdFlags
