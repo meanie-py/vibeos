@@ -1041,3 +1041,22 @@ def test_prune_never_touches_a_directory_that_is_not_a_trace(tmp_path):
     rrcmd.cmd_prune(_PruneArgs(root, keep=0, apply=True), tmp_path)
     assert (root / "someone-elses-data").is_dir()
     assert not (root / "atrace").exists()
+
+
+def test_a_recording_is_never_a_gate_boot(tmp_path):
+    """Two traces are comparable only while what gets recorded is pinned.
+
+    The wrong inference here is a short one with two true premises: arm64 gates
+    run the WoW64 ladder, rr records arm64 boots, therefore traces now contain
+    nine WoW64 guests. False — a recording is a `conformance` or `smoke` boot,
+    never a `gate` boot. This test is what makes adding a gate-only behaviour to
+    recordings a deliberate act rather than something that arrives by
+    inheritance.
+    """
+    from .rrcmd import _boot_cmd
+
+    for payload in ("kmtest", "none"):
+        cmd = _boot_cmd(tmp_path, "arm64", payload, 1, False, 600)
+        assert "gate" not in cmd
+        assert "--ladder" not in cmd
+        assert cmd[1] in ("conformance", "smoke")

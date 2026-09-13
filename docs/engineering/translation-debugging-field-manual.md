@@ -5585,6 +5585,31 @@ the guest set. Every guest test passed — the sets were equal — and only the 
 a DIFFERENT name set failed. Had that test not existed, the function would have shipped
 answering the wrong question in the one case it was written for.
 
+**The same shape outside editing: a REMEDY applied to the wrong state.** A documented fix can
+no-op exactly as an edit does. `rm build-<arch>/dll/ntdll/nt_0600/ntdll_vista.dll && build`
+clears a genuinely stale cargo-linked binary — but applied to a build dir whose provenance
+check RAISES before it ever reaches that binary (missing arch artifacts, so
+`cargo_link_staleness_reasons` throws instead of returning a list), it changes nothing and
+reports nothing. No error, no diff, no signal the remedy was wrong for that state. **A
+broadcast remedy therefore has to name the state it repairs**, or the first person whose
+failure merely resembles it will apply it, see success, and conclude their problem is
+elsewhere. Two states that look alike in a status table: STALE (a real staleness reason, fixed
+by rm + build) and UNVERIFIABLE (the check cannot run at all, needs a full build).
+
+**Third form, and the costliest: a TRUE report about a different object.** `vibeos-cli land`
+prints OK, `land-status --mine` shows `landed : <lane> @ <sha> as <sha>` — and that row is real
+but describes the PREVIOUS submission, while the tip just sent is still queued. Nothing lied.
+The work was reported landed and was not: `git show origin/master:<file> | grep -c <marker>`
+returned 0 for a registry entry already described to the user as filed. A `land` can also be
+reaped before it submits, in which case a dead process cannot report anything and the OK still
+on screen belongs to an earlier invocation — so no fix inside `land` closes this.
+**The check must be ancestry of the SPECIFIC TIP submitted**
+(`git merge-base --is-ancestor <tip> origin/master`), never "did this lane land anything
+recently" — the second question is what every one of these failure modes answers
+affirmatively, which is why checking status *feels* like verification while confirming nothing.
+It works because it is made from OUTSIDE the process, the only vantage that survives the
+process dying.
+
 **Fix:** `assert s.count(old) == 1` before every replace, and re-read the file after. The
 realistic failure is not forgetting the guard, it is **applying it unevenly across a batch** and
 keeping no record of which replacements were guarded — so make it unconditional rather than
@@ -6933,6 +6958,37 @@ Verified in both directions, which is the part worth copying: under synthetic lo
 case cleared on pass 2 and the run passed, and a deliberately-slowed body (four redundant scans
 in `strchr`) failed all three passes at all three sizes. **A gate that has only ever been proven
 to pass is half-tested** — perturb something and watch it fail before you trust it.
+
+### A verdict over an UNDECLARED corpus
+
+**The check:** when a check reports a clean verdict, ask where it got its subject list. If the
+list came from *what happened to be present* rather than from a declaration, the verdict is
+about that accident and not about the thing you meant to test — and it will read as coverage
+either way.
+
+**This is the sharp edge of "a gate that has only ever been proven to pass is half-tested"
+above.** There the gate was never shown to fail. Here it was genuinely proven to pass, and the
+corpus it passed over was quietly missing the item in question. **A PASS whose scope is
+smaller than reported is worse than a missing signal: an absence at least looks like an
+absence, and a green looks like coverage.**
+
+**Two instances, reached from opposite symptoms in one night (2026-09-13):**
+- `scan_ud2`'s arm64 sweep graded whatever happened to sit in `build-arm64/`, because arm64
+  has no livecd DAG to enumerate from. Chasing that found `winspool.drv` — shipped on EVERY
+  arch and never scanned on any of them, because the suffix list was `.sys/.dll/.exe`. An
+  undeclared corpus does not merely risk a wrong answer; it was silently omitting a shipped
+  binary.
+- the WoW64 ladder graded whatever a glob happened to match. `{stem}*.lst` on arm64 (`stem`
+  = `boot`) matched `bootcd*.lst`, manifests for a different medium, so the probe answered
+  "no guests" for media that carried nine of them — and runs reported `9/9 guests PASS` with
+  an optional guest present, silent, and invisible to the grader.
+
+**The remedy is the same from both ends: make the corpus DECLARED.** One lane read its corpus
+out of `mkramdisk.sh`; the other tightened the glob so the manifest is the declaration. Where
+to look next follows directly — anywhere a check builds its subject list by globbing, scanning
+a build directory, or otherwise asking the filesystem what exists instead of asking a manifest
+what is supposed to. *(Connective framing and the `scan_ud2` instance from conformance-ratchet;
+ladder instance from the wow64 lane.)*
 
 ### The artifact you consulted is not the one consulted at RUNTIME
 
