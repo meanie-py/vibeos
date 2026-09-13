@@ -651,6 +651,97 @@ Record it here and keep going; only chase one when it looks load-bearing.
   progress implies equal trace bytes while the content is the same, so both
   hypotheses predict the same observation.
 
+  **ANSWERED: the two traces do NOT share a boot prefix that far, and the
+  same-guest-point hypothesis loses.** Comparing the two RECORDS line by line,
+  they diverge at guest line **1,120** — 900+ lines before either replay stalls:
+
+  | | clean1 | kmt3 |
+  |---|---|---|
+  | records diverge from each other | line 1,120 | line 1,120 |
+  | replay stalls at | line 2,070 | line 2,045 |
+  | last line replayed | `user32 ... hIconSmWindows` | `[SERVICES] Initialized, starting auto-start services` |
+  | where that line sits in the OTHER record | 1,974 | 1,956 |
+
+  Read the last row: each replay ran PAST the guest point where the other one
+  stopped. They stall at different guest work, in different order, having
+  diverged 900 lines earlier — and still land within ~1% of each other on every
+  measure (2,070 vs 2,045 lines, 122,374 vs 120,380 serial bytes, trace offset
+  2,145,086 vs 2,163,558). That is the signature of a structural limit, not of a
+  guest instruction sequence replay cannot execute.
+
+  Note the trace offsets are ~2.15MB in both, on traces of 10.7MB and 494MB —
+  0.86% apart on files 46x different in size.
+
+  **Which quantity is actually invariant — and icount is the odd one out.**
+  Ranked by how close the two runs are:
+
+  | measure | clean1 | kmt3 | spread |
+  |---|---|---|---|
+  | trace offset | 2,145,086 | 2,163,558 | 0.86% |
+  | guest lines | 2,070 | 2,045 | 1.2% |
+  | serial bytes | 122,374 | 120,380 | 1.6% |
+  | **icount** | **10,513,077,852** | **11,267,275,810** | **7.2%** |
+
+  icount is ~8x looser than the other three. Two samples cannot separate 0.86%
+  from 1.6%, so trace bytes / lines / serial bytes remain indistinguishable — but
+  the icount spread is different enough to argue AGAINST a virtual-time or
+  instruction-budget limit, and in favour of something counted in log bytes or
+  output volume. That matters because "clock machinery" was the standing guess
+  (`EVENT_CP_CLOCK_WARP_ACCOUNT` being the second most common record), and this
+  is the first evidence pointing away from it.
+
+  **Also disconfirmed: it is not block I/O.** The appealing story was that a new
+  process image load parks a `blkreplay` completion that never gets released —
+  it fits "burning CPU while consuming nothing", and both replays stop right as
+  user-mode processes begin spawning. It is wrong. All 2,277 `EVENT_ASYNC`
+  records in clean1 sit **before trace offset 162,166**, the first 1.5% of the
+  log, and there are none at all after it. This is a ramdisk boot: after the
+  initial load the guest does no further block I/O, so there is no parked
+  completion to deadlock on. (Checked before writing it down, which is the only
+  reason it is here as a disconfirmation rather than as a finding.)
+
+  **What the wedge does correlate with.** Binning both traces by event type at
+  200KB granularity puts the stall at the onset of the densest exception and
+  interrupt stretch in each — and the structure is the same in both despite the
+  guest divergence:
+
+  ```
+  offset           INTR   EXCEPT     WARP    CHARW     INSN
+  1800000            15      655      318    13871    14830      clean1
+  2000000           582     4550     5039    10300    19310   <- wedge
+  2200000           583     9410     8573     6703    24105      (exception peak)
+
+  1800000            87     2055     1821    12643    16433      kmt3
+  2000000           705     6768     5895     9008    20970   <- wedge
+  2200000           542     9385     6796     7467    23107      (exception peak)
+  ```
+
+  Exceptions rise 3-7x and interrupts 8-40x in the wedge bin, and both replays
+  stop just before the peak. Mechanistically that is the guest's first sustained
+  user-mode multitasking: demand-paging faults plus timer preemption. In clean1
+  `EVENT_INTERRUPT` and `EVENT_CP_CLOCK_VIRTUAL` are equal to the record (902
+  each), i.e. one virtual-clock checkpoint per timer interrupt — which is where
+  a clock/interrupt replay bug would live, and `EVENT_CP_CLOCK_WARP_ACCOUNT` is
+  the second most common record in the whole log.
+
+  This is a correlation with a plausible mechanism on two samples, not a cause.
+  It is, however, a much narrower place to look than "somewhere in the trace".
+
+  **The replay gets FURTHER than the earlier framing suggests.** "22% of the
+  trace" is a byte fraction of a file dominated by idle-time clock records, and
+  it undersells the result badly. By guest progress, clean1's replay reproduces
+  **2,070 of 2,070 lines identical to the record, zero divergence — 65.7% of the
+  recorded boot — and it reaches `[WIN32K] shell ready`**, the win32k half of the
+  desktop marker. Quote guest lines, not trace bytes, when describing how far a
+  replay got.
+
+  Caveat on the byte figures: the frozen read position (2,342,912 = 572 x 4096)
+  is a page-aligned READ-AHEAD boundary and runs ahead of execution. The
+  execution point, recovered by mapping emitted serial bytes back to their
+  `EVENT_CHAR_WRITE` index, is 2,145,086 — ~198KB behind it. Use the read
+  position to decide whether a replay is moving; use the char-write mapping when
+  you want to know where it actually is.
+
   **SETTLED by varying the icount shift, and the answer rules out BOTH.** The
   clean discriminator is to record the same guest boot with a different encoding
   density: `--shift 5` produced a 5,999,935-byte trace where `--shift 3` produced
