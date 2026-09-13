@@ -123,6 +123,17 @@ a ladder to watch", and neither was visible from reading.
   "A NAME inside an image does not prove the FILE is in it". **The measured consequence
   matters for sequencing: an unstaged boot given `--ladder` costs the whole ceiling**,
   which is why the media check has to be right before this reaches a shared gate.
+- **One un-buildable DOOM binary was gating all nine graded guests.** The staging guard
+  required every entry of one list — the nine machine-verdicted guests AND ~20 stock applets
+  AND `doom-i386.exe` — though `ladder.py` says the applets are not graded. DOOM cannot be
+  built here at all: its shareware WAD URL 404s. So the ladder was unreachable, not merely
+  unstaged. Split into required vs best-effort (`d7c995a8e17`).
+- **The drain burned its whole 420s ceiling on a PASSING run.** `watch()` began from an empty
+  buffer, so a guest reporting during the boot's settle read was waited for until timeout.
+  Correct verdict, seven minutes of waste, invisible to every correctness check because the
+  two halves of the serial are rejoined before grading. Found only because a duration log line
+  existed. Filed in the field manual as "A watcher that starts from an empty buffer waits for
+  what already went past".
 
 ---
 
@@ -144,7 +155,13 @@ a ladder to watch", and neither was visible from reading.
    well" false in a way a probe ladder cannot show, because the ladder does not
    look at the hive. Task #66.
 
-3. **The instrument is not in CI.** The nine probe guests are spawned by winlogon
+3. **The instrument is not in CI — DONE 2026-09-13, and it works.**
+   `gate` now opts each arch in on its own media (`ladder.gate_decision`), and the amd64
+   ladder is **GREEN end to end: 9/9 guests PASS**, correct codes throughout. Getting there
+   took three fixes beyond the wiring, all listed under "Found by running it" above. What
+   remains is one confirmation run of `gate --arches amd64` showing the `ladder:amd64` stage,
+   deferred only because running a gate during one's own landing is what the pre-land
+   checklist forbids. Original scoping, kept because it is why this mattered: The nine probe guests are spawned by winlogon
    *after* explorer, and the smoke's success condition IS the desktop marker — so
    `smoke`/`gate` stop watching before the ladder starts. `tests/qemu/cli/ladder.py`
    exists and is good (per-guest expected exit codes, `LADDER_NOT_STAGED` vs
