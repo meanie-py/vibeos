@@ -1184,7 +1184,10 @@ pub unsafe extern "C" fn BuildUSBAudioFilterTopology(
                         let MixerUnitDescriptor = InputTerminalDescriptor as PUSB_AUDIO_CONTROL_MIXER_UNIT_DESCRIPTOR;
                         Index = 0;
                         while Index < (*MixerUnitDescriptor).bNrInPins as ULONG {
-                            Value = (*MixerUnitDescriptor).baSourceID[Index as usize];
+                            // baSourceID is flexible (`UCHAR baSourceID[1]`, real length
+                            // bNrInPins). A mixer has >= 2 input pins by definition, so
+                            // bindgen's `[UCHAR; 1]` panicked on essentially every device.
+                            Value = (&raw const (*MixerUnitDescriptor).baSourceID).cast::<UCHAR>().add(Index as usize).read();
                             let PreviousNodeContext = FindNodeContextWithId(
                                 NodeContext,
                                 ControlDescriptorCount,
@@ -1212,7 +1215,7 @@ pub unsafe extern "C" fn BuildUSBAudioFilterTopology(
                         let SelectorUnitDescriptor = InputTerminalDescriptor as PUSB_AUDIO_CONTROL_SELECTOR_UNIT_DESCRIPTOR;
                         Index = 0;
                         while Index < (*SelectorUnitDescriptor).bNrInPins as ULONG {
-                            Value = (*SelectorUnitDescriptor).baSourceID[Index as usize];
+                            Value = (&raw const (*SelectorUnitDescriptor).baSourceID).cast::<UCHAR>().add(Index as usize).read();
                             let PreviousNodeContext = FindNodeContextWithId(
                                 NodeContext,
                                 ControlDescriptorCount,
@@ -1736,9 +1739,15 @@ pub unsafe extern "C" fn UsbAudioGetDataRanges(
                     (*DataRangeAudio).MaximumSampleFrequency = 0;
                     Index = 0;
                     while Index < NumFrequency {
-                        let freq = ((*StreamingFormatDescriptor).tSamFreq[Index.wrapping_mul(3) as usize] as ULONG)
-                            | (((*StreamingFormatDescriptor).tSamFreq[Index.wrapping_mul(3).wrapping_add(1) as usize] as ULONG) << 8)
-                            | (((*StreamingFormatDescriptor).tSamFreq[Index.wrapping_mul(3).wrapping_add(2) as usize] as ULONG) << 16);
+                        // tSamFreq is flexible (`UCHAR tSamFreq[1]`), holding bSamFreqType
+                        // 3-byte little-endian frequencies. Even ONE frequency needs indices
+                        // 0,1,2 -- so bindgen's `[UCHAR; 1]` panicked on the FIRST iteration
+                        // for any discrete-frequency device.
+                        let tsf = (&raw const (*StreamingFormatDescriptor).tSamFreq).cast::<UCHAR>();
+                        let base = Index.wrapping_mul(3) as usize;
+                        let freq = (tsf.add(base).read() as ULONG)
+                            | ((tsf.add(base + 1).read() as ULONG) << 8)
+                            | ((tsf.add(base + 2).read() as ULONG) << 16);
                         if freq < (*DataRangeAudio).MinimumSampleFrequency {
                             (*DataRangeAudio).MinimumSampleFrequency = freq;
                         }
