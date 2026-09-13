@@ -502,6 +502,32 @@ Record it here and keep going; only chase one when it looks load-bearing.
   the true stall is the last event inside that buffer rather than the byte
   itself. QEMU stopped asking for more.
 
+  **A second trace stalls in the same neighbourhood.** `rr replay` on a kmtest
+  trace 46x larger reported, via the detector added for exactly this:
+
+  ```
+  [rr] replay consumed 2,215,936 of 494,129,068 trace bytes (0.4%)
+  ```
+
+  2,215,936 against the smoke trace's 2,342,912 — both ~2.2-2.3MB, both
+  4096-aligned (541 and 572 buffers), on traces of 10.7MB and 494MB. So the
+  stall is NOT proportional to trace length.
+
+  **What that does not yet establish, and the distinction matters:** both traces
+  are arm64 boots of the same media, so their early event streams are
+  near-identical and only diverge once the kmtest sweep starts. Stalling at a
+  similar offset is therefore equally consistent with
+
+  * a structural limit around ~2.2MB (a buffer, a window, a counter), or
+  * the same GUEST point being reached in both, which naturally lands at a
+    similar offset because the boots are the same up to there.
+
+  Two traces that share a boot prefix cannot separate those. Doing so needs a
+  trace whose early boot differs materially — a different arch would be ideal
+  and x86 cannot record, so the realistic option is a different arm64 boot
+  configuration. Until then the honest claim is "same neighbourhood in both",
+  not "fixed byte limit".
+
   So the open question is narrower again: not "which event", but why replay
   stops advancing in a region where every record is trivial. Serial output is
   also where the earliest (and then retracted) sighting pointed — a vCPU caught
