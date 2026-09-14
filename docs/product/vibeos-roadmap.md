@@ -578,6 +578,55 @@ land; date every addition.** Source docs live in `docs/engineering/archive/`.
   means a red `file32` on arm64 should be read as a suspected code-cache fault before anything
   file-related.
 
+  **DISCRIMINATED 2026-09-13: it is NOT translated-code volume. The hypothesis below is
+  FALSIFIED, and the prediction was committed before the run.** A size-matched control was
+  built — the same Lua 5.4 objects linked in, 505,344 bytes against the real guest's 508,928
+  (0.7% apart), but with `main()` returning the PASS code immediately so that not one Lua opcode
+  ever executes. Staged via `VIBEOS_LUA32_EXE` and verified by hash that the control, not the
+  real guest, reached the media. Result: **the control faults identically**, at the same PC, in
+  the same function, while all nine parity guests PASS in the same boot:
+
+        control  PC=0x0048FB88  base=0x480000  RVA 0xFB88  -> FEXCore::LookupCache::FindBlock
+        control  PC=0x00490740  base=0x480000  RVA 0x10740 -> FEXCore::LookupCache::AddBlockMapping
+
+  So a guest that runs essentially no guest code fails the same way as one that runs six rungs of
+  interpreter, GC and coroutine switching. Code volume, `setjmp`/`longjmp`, the block cache being
+  *invalidated* — none of it is the trigger. The naive image/address-range reading is what
+  survives.
+
+  **The mechanism this points at, and it is on OUR side of the contract.**
+  `FEXCore/Source/Interface/Core/LookupCache.cpp:27` sizes one large allocation as
+  `VirtualMemSize / PAGE_SIZE * 8 + CODE_SIZE + MAX_L1_SIZE` and indexes it by GUEST ADDRESS:
+  the header comment is `PageMemoryMap[VirtualMemoryRegion >> 12]`. Its own comment notes "at
+  64GB of virtual memory this will allocate 128MB of virtual memory space" — i.e. it is a large
+  SPARSE reservation, and `CTX->SyscallHandler->MarkOvercommitRange(PagePointer, TotalCacheSize)`
+  says out loud that FEX expects Linux-style overcommit: reserve big, touch lazily, fault pages in
+  on demand. Both faulting functions are the read side and the write side of exactly that
+  structure, and the fault is ESR `0x92000006` — a translation fault, i.e. touching a page that
+  is not backed.
+  **INFERENCE, not yet observed:** if our MM does not demand-commit that sparse range the way
+  FEX assumes, then a guest whose code spans more pages indexes further into the map and reaches
+  an unbacked page, while a tiny guest never does. That fits every datum — the size correlation,
+  the two fault sites, the nondeterminism, and `file32` (8K) faulting once and passing later.
+  It is testable directly: dump the region's `MEM_COMMIT`/`MEM_RESERVE` state around
+  `PagePointer` at the moment of the fault.
+
+  **A second, independent lead in the same area.** `WOW64/Module.cpp:527` computes
+  `IsWine = !!GetProcAddress(NtDll, "wine_get_version")` and `CPUFeatures.cpp:84` then sets
+  `HostFeatures.SupportsCPUIndexInTPIDRRO = !IsWine`. **We are not Wine, so FEX takes the
+  real-Windows path and assumes our kernel publishes a CPU index in `TPIDRRO_EL0`.** If we never
+  populate that register, FEX reads garbage where it expects a small CPU index — and a garbage
+  index into a per-CPU L1 structure lands exactly in `LookupCache`. Unverified: confirm whether
+  our arm64 kernel writes `TPIDRRO_EL0`, and whether the L1 path actually uses that feature bit.
+  Cheap to check and it would explain the nondeterminism better than overcommit alone.
+
+  **Both leads say the same thing about provenance**: the fault executes inside vendored FEXCore,
+  but the suspicious inputs are ours — our memory manager's handling of a large sparse
+  reservation, and a CPU register our kernel may not set. "Unmodified locates the faulting code,
+  not the cause."
+
+  **Superseded hypothesis, kept because the prediction was on the record before the test.**
+
   **Size correlation, and it reframes the hypothesis.** lua32 was added expecting its
   `setjmp`/`longjmp` rungs to stress the block cache -- but it faults BEFORE printing
   `[lua32] start`, so it never reached `main` and no rung ran. What the two failing guests
