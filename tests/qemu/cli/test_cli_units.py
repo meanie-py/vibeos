@@ -3335,6 +3335,40 @@ def test_canon_ensure_toolchain_fresh_worktree(tmp_path, monkeypatch):
     assert (repo / ".build-tools" / "llvm-mingw").resolve() == tc.resolve()
 
 
+def test_canon_ensure_toolchain_heals_archiver_materialised_dir(tmp_path, monkeypatch):
+    """A restore can leave a real EMPTY dir where the symlink was; heal it.
+
+    Rebuilding this box on 2026-09-14 from a 7-Zip extraction of the WSL image
+    produced exactly that in all 8 worktrees — the archiver materialised each
+    symlink as an empty directory. `readlink()` then raised EINVAL, so the one
+    function whose job is provisioning the toolchain died on the state it most
+    needed to repair, and every build would have failed pointing at an empty dir.
+    """
+    parent = tmp_path
+    repo = parent / "vibeos"
+    link = repo / ".build-tools" / "llvm-mingw"
+    link.mkdir(parents=True)  # the archiver's artifact: a real, empty directory
+    tc = parent / "llvm-mingw-20250114"
+    tc.mkdir()
+    monkeypatch.setenv("VIBEOS_ROOT", str(parent))
+    assert canon_mod.ensure_toolchain(repo) is True
+    assert link.is_symlink()
+    assert link.resolve() == tc.resolve()
+
+
+def test_canon_ensure_toolchain_keeps_a_populated_real_directory(tmp_path, monkeypatch):
+    """Only an EMPTY dir is the archiver artifact. A populated one is somebody's
+    real machine-local toolchain — report it usable, never replace it."""
+    repo = tmp_path / "vibeos"
+    link = repo / ".build-tools" / "llvm-mingw"
+    (link / "bin").mkdir(parents=True)
+    (link / "bin" / "clang").write_text("#!/bin/sh\n")
+    monkeypatch.setenv("VIBEOS_ROOT", str(tmp_path))
+    assert canon_mod.ensure_toolchain(repo) is True
+    assert not link.is_symlink()
+    assert (link / "bin" / "clang").exists()
+
+
 def test_canon_ensure_toolchain_missing(tmp_path, monkeypatch):
     repo = tmp_path / "vibeos"
     repo.mkdir()
