@@ -4,10 +4,18 @@ version = "0.1.0"
 description = "C-to-Rust translation pipeline for ReactOS ntoskrnl"
 requires-python = ">=3.10"
 dependencies = [
-    "tree-sitter>=0.24",
-    "tree-sitter-c>=0.24",
-    "tree-sitter-cpp>=0.23",
-    "tree-sitter-rust>=0.24",
+    # PARSER VERSIONS ARE PINNED, not floored. These decide what every scanner and
+    # `profile_derive` audit SEES, so two lanes on different versions can disagree
+    # about the same file and both report honestly. On 2026-09-13 an audit ran under
+    # a stray --user tree-sitter 0.26.0 while the venv held 0.25.2, and the "clean"
+    # result had to be re-derived under the interpreter the gate actually uses. A
+    # floor alone does not prevent that: a venv rebuilt on a later day resolves to
+    # whatever is newest and diverges from the rest of the fleet silently. Same
+    # reasoning as rust-toolchain.toml — pin what works, bump deliberately.
+    "tree-sitter==0.25.2",
+    "tree-sitter-c==0.24.2",
+    "tree-sitter-cpp==0.23.4",
+    "tree-sitter-rust==0.24.1",
     "anthropic>=0.97",
     "openai>=2.0",
     "python-dotenv>=1.0",
