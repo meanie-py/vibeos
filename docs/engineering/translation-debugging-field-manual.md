@@ -5109,6 +5109,65 @@ nothing. It has false-greened arm64 six times in a row (fastfat → ramdisk → 
 user32 → advapi32). Rule: **`vibeos-cli smoke` hard-fails on stale media — never bypass it, and
 judge a build by artifact existence, not a reported exit code.**
 
+### A file that EXISTS is not a file that is INTACT — and a checker that cannot report is not a checker that found nothing
+
+**Symptom.** A restore, backup, sync or archiver "succeeds". Every existence check passes.
+Then things fail at *use*, far from the damage, with errors that name the wrong subsystem:
+`Exec format error` rather than `not found`; a build that fails as if the source were wrong; a
+tree reported clean that is missing 500 files.
+
+**Cause.** Existence and integrity are different properties, and most of our checks only test
+the first. One WSL rebuild (2026-09-13/14) produced all three degrees at once:
+
+| damage | size on disk | defeats | caught by |
+|---|---|---|---|
+| hollow clang — 200 zero-byte binaries, no symlinks survived | 0 | `test -x`, `which`, `ls` | running it (`Exec format error`) |
+| a corrupt git index — present, wrong size, written during the failure | wrong | `ls`, `git log` | `git status` (which then *errored*) |
+| a field manual of 768,346 NUL bytes | **correct** | `ls` AND a size check | `git diff` → "Binary files differ" |
+
+The third is the one that matters for the rule: **a size check is not enough**, because a
+corruption that preserves length defeats it. Hash or content comparison is the only check that
+survives all three.
+
+**Fix — verify against a known-good HASH or the content itself, never against existence.** In a
+git tree you already have the oracle: compare each file to its blob. This cleared 551 restored
+files in seconds with 0 mismatches:
+
+```bash
+git ls-files --deleted                     # tracked files missing from the working tree
+git status --porcelain | grep '^ D'        # same, with the modified files visible alongside
+# integrity, not existence — disk size vs the blob git says should be there:
+for f in $(git ls-files); do
+  [ -f "$f" ] || continue
+  [ "$(stat -c %s "$f")" = "$(git cat-file -s "$(git rev-parse HEAD:"$f")")" ] || echo "MISMATCH $f"
+done
+```
+
+For a *zero-byte* finding, compare against git before calling it damage: `external/fex` has 8
+zero-byte files and all 8 are zero in git too (`WORKSPACE`, `.buckconfig`, honggfuzz corpus), and
+git records 0 symlinks there, so 0 on disk is correct. **The question is never "is this file
+empty", it is "is this file what git says it should be".**
+
+**This does NOT contradict "judge a build by artifact existence"** (this section's own rule, and
+AGENTS.md's). That rule answers *did the step actually run*, against a lying exit code — and it
+still holds, because it never consults `rc`. This entry answers a different question: *is the
+artifact it produced intact*. Existence beats exit-code for the first and is worthless for the
+second. Ask both.
+
+**Corollary, and it is where the real damage came from: distinguish "reported healthy" from
+"failed to report".** The sweep that was supposed to find this ran `git status` over every
+worktree, merged stderr into stdout, and never checked the exit code — so a worktree whose index
+was corrupt *errored*, and the summariser rendered that error as "clean". The tool that would
+have shown 551 missing files was itself the damaged thing, and the check could not tell "nothing
+wrong" from "couldn't look". It reported that tree clean twice. **Whenever the checker itself can
+be a casualty, capture its exit code separately from its output, and treat a non-zero rc as
+UNKNOWN rather than as a pass.** Same shape as the hollow binary one level up: a checker that
+cannot run still returns something that reads like an answer.
+
+**Related, for preserving work across a restore:** `git diff` without `--binary` records only
+"Binary files differ" and none of the bytes, so a preserve-patch generated without it silently
+cannot restore anything binary-ish. Pass `--binary` when the patch is the only copy.
+
 ### A correct staleness oracle and a build graph that cannot act on it
 
 **Symptom:** `build` fails `BUILD_INCOMPLETE` naming a stale binary — e.g.
