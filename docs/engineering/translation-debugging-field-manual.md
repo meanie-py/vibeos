@@ -1288,9 +1288,29 @@ Three kinds of divergence hide in that, and they are not equally serious:
   rather than live (the tree's five call sites all pass `GetRValue`-style bytes), but it is the
   same class as msgina's `StringCchPrintfW` dropping its bound.
 
+- **Not a gap at all — the island HAS it, under a name nobody guessed.** A C `enum` member is
+  emitted by bindgen, but only fully qualified by its anonymous enum's generated tag:
+  shobjidl.h's `FVM_ICON` exists in shell32's island solely as
+  `__WIDL_shobjidl_generated_name_00000025_FVM_ICON`. Grep for the bare name and you find
+  nothing, conclude bindgen dropped it, and hand-declare `pub const FVM_ICON: DWORD = 1;`.
+  **Nine** shell32-rust modules did exactly that for the `FVM_*` family — control_panel_folder,
+  def_view_util, desktop_folder, drives_folder, folders/{CCPLItemMenu, CControlPanelEnum,
+  CDesktopFolderEnum, CDrivesFolderEnum} and shell32/CDefView — and CDefView re-declares the
+  whole `SVGIO_*` set too. Every value was checked against the island and every one is correct
+  (FVM ICON=1 SMALLICON=2 LIST=3 DETAILS=4 THUMBNAIL=5 TILE=6 THUMBSTRIP=7 CONTENT=8 AUTO=-1;
+  SVGIO BACKGROUND=0 SELECTION=1 ALLVIEW=2 TYPE_MASK=0xf), so this one is drift-in-waiting
+  rather than a live bug; the point is that it is the ONLY one of these four kinds where the
+  right fix is an alias rather than a shared crate, and where a hand-typed value can silently
+  disagree with a header the generator already read. `profile_derive` names it
+  `SWITCH_CONST_ENUM_PREFIXED` and prescribes the alias; take that finding literally and do not
+  re-declare the value. Detection without the tool: for any constant you are about to declare by
+  hand, grep the island for `_<NAME>$` before concluding it is absent.
+
 **Fix.** Port it once into a shared crate, transcribed from the header rather than from the
 copies it replaces, with known-answer tests. `strsafe-rust` (inlines) and `win32macros-rust`
-(macros + folded constants) are the two precedents.
+(macros + folded constants) are the two precedents. For the enum-member case above the fix is
+smaller and different: one `pub use crate::island::__WIDL_..._FVM_ICON as FVM_ICON;` in the
+prelude, and delete the copies.
 
 **The boundary is narrower than "core primitives", and the compiler is what finds it.** A shared
 crate cannot depend on any consumer's bindgen island, so it must express everything in primitives
