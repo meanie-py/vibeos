@@ -1632,6 +1632,72 @@ def test_gate_routes_a_marker_into_its_no_verdict_path_not_an_ordinary_red(tmp_p
     assert _read_summary(tmp_path)["classification"] == "BUGCHECK"
 
 
+def test_ledger_append_is_reachable_without_a_Run(tmp_path, monkeypatch):
+    """The gap that cost a 201-run census: `conformance` builds its summary by hand
+    rather than through `Run`, so for the project's whole history it wrote ZERO rows
+    to the durable ledger — 19,711 rows across build/smoke/check/gate/farm/land and
+    not one conformance verdict. Its own records went to `~/vibeos-flake-farm/`,
+    which is outside the tree the backups cover, and did not survive the rebuild.
+
+    So the ledger writer must be callable by a command that does not use `Run`.
+    """
+    from . import artifacts
+
+    monkeypatch.setenv("VIBEOS_ROOT", str(tmp_path))
+    repo = tmp_path / "lane"
+    repo.mkdir()
+    artifacts.ledger_append(
+        repo,
+        cmd="conformance",
+        arch="arm64",
+        verdict="FAIL",
+        classification="A:bugcheck 0x0000001E",
+        duration_ms=1234,
+        extra={"launched": 0, "ok": 0, "bad": 0, "regressions": []},
+    )
+    rows = [
+        json.loads(ln)
+        for ln in (tmp_path / "vibeos-ledger.jsonl").read_text().splitlines()
+        if ln.strip()
+    ]
+    assert len(rows) == 1
+    row = rows[0]
+    assert row["cmd"] == "conformance" and row["arch"] == "arm64"
+    # The census needs the MODE, not just pass/fail: a lost boot and a flaky
+    # assertion are two populations and pooling them corrupts the rate.
+    assert row["classification"] == "A:bugcheck 0x0000001E"
+    assert row["launched"] == 0 and row["regressions"] == []
+
+
+def test_ledger_append_never_raises_and_never_blocks_a_run(tmp_path, monkeypatch):
+    """Telemetry must never break a build. Point it at a root that does not exist
+    and at a repo that is not a git checkout — both must be silent no-ops."""
+    from . import artifacts
+
+    monkeypatch.setenv("VIBEOS_ROOT", str(tmp_path / "nope"))
+    artifacts.ledger_append(tmp_path, cmd="conformance", arch="arm64", verdict="OK")
+    assert not (tmp_path / "nope").exists()
+    artifacts.ledger_append(None, cmd="conformance", arch="arm64", verdict="OK")
+
+
+def test_Run_finalize_still_writes_its_ledger_row(tmp_path, monkeypatch):
+    """The control for the refactor: extracting the writer to module level must not
+    stop `Run` from using it, or the fix for one command would silence six."""
+    monkeypatch.setenv("VIBEOS_ROOT", str(tmp_path))
+    repo = tmp_path / "lane"
+    repo.mkdir()
+    run = Run("smoke", "amd64", ts=1700000000)
+    run.add(Stage("boot", status="ok"))
+    run.finalize(repo)
+    rows = [
+        json.loads(ln)
+        for ln in (tmp_path / "vibeos-ledger.jsonl").read_text().splitlines()
+        if ln.strip()
+    ]
+    assert [r["cmd"] for r in rows] == ["smoke"]
+    assert rows[0]["verdict"] == "OK"
+
+
 # --- command timing and shipping Cargo target coverage ------------------
 
 

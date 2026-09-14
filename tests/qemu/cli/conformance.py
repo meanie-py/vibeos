@@ -32,6 +32,8 @@ import sys
 import time
 from pathlib import Path
 
+from . import artifacts
+
 SUITE = "kmtest"
 # base arch -> pytest arch (x86 boot the UEFI configs; arm64 is itself).
 _PYTEST_ARCH = {"i386": "i386-uefi", "amd64": "amd64-uefi"}
@@ -871,6 +873,43 @@ def _conformance_once(args, repo: Path) -> int:
         }
     )
     _append_round(rec)
+
+    # ...and to the SHARED ledger under vibeos_root, which is what every other
+    # command writes and what `vibeos-cli health` reads. `_append_round` above is
+    # not a substitute: it writes `~/vibeos-flake-farm/`, OUTSIDE the tree the
+    # backups cover. On 2026-09-14 the box was rebuilt, the shared ledger came
+    # back with 19,711 rows, and the flake farm did not come back at all -- taking
+    # a 201-run arm64 census with it, along with every summary.json it had been
+    # reconstructed from. The census had to scrape /tmp in the first place because
+    # conformance verdicts were absent from the durable ledger: build 6152,
+    # smoke 4741, check 3543, gate 1265, farm 1194, land 1087, conformance ZERO.
+    #
+    # The fields below are exactly what a census needs, so the next one is a query
+    # over a durable file rather than an archaeology dig across volatile run dirs:
+    # `shape` separates a lost boot from a flaky assertion (they are two
+    # populations and pooling them corrupts the rate), and `regressions` names the
+    # tests. Keep this a SUMMARY -- the bulky per-run evidence (census_lines,
+    # serial excerpts) stays in the flake farm; this is the part that must survive.
+    artifacts.ledger_append(
+        repo,
+        cmd="conformance",
+        arch=base,
+        verdict="OK" if shape == "clean" else "FAIL",
+        classification=shape,
+        duration_ms=int(elapsed * 1000),
+        extra={
+            "suite": SUITE,
+            "smp": smp,
+            "mp_kernel": summary["mp_kernel"],
+            "launched": len(results),
+            "ok": ok,
+            "bad": bad,
+            "bugcheck": bugcheck,
+            "have_baseline": have_baseline,
+            "regressions": regressions,
+            "new_passes": new_passes,
+        },
+    )
 
     # --- 7. report + exit code -----------------------------------------------
     verdict = "done" if done_line else "DID NOT FINISH"

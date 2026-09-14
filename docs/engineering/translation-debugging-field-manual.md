@@ -7440,12 +7440,27 @@ used rather than about the thing you asked about. The fix is always a DIFFERENT 
     sccache -s on a 148G cache dir     its server vs  that dir  -> /proc/<pid>/environ
     MemFree                            free ctr   vs  reclaimable -> MemAvailable
     merge-base vs a moving origin/master  ref     vs  commit    -> land-status --tip
+    df / inside WSL                    VHDX ceiling vs the host volume under it
+                                                              -> VIBEOS_DISK_BACKING_MOUNTS
 
 The zombie is the clearest member and the one to reason from. `os.kill(pid, 0)` succeeding on
 a zombie is not a stale answer: the pid genuinely is in the table until the parent reaps it,
 no signal will ever change that, and repeating the call returns the same true thing forever.
 `vibeos-cli kill` reported `STILL ALIVE after SIGTERM+SIGKILL — unkillable (D state?)` for a
 QEMU that had died promptly on the SIGTERM. *(Found and fixed by smp-bringup, `3ee8e7f16df`.)*
+
+**The most expensive member, and the one that shows the class is not a curiosity.** `df /`
+inside WSL reports the ext4 VHDX's own ceiling. The volume that can actually run out is the
+Windows one underneath it, which the guest cannot see at all. Seven lanes built concurrently
+after a build-time cut from ~45min to under 5; the VHDX grew to 990 GB against a 1 TiB ceiling
+on a host `C:` with 620 GiB free, and the HOST ran out while `df /` in the guest still reported
+room. The disk stopped attaching (HCS 0x80070570) and never mounted again -- WSL had to be
+rebuilt on a new 2 TB NVMe and everything restored from backup. Disk admission had been asking
+an honest question of the wrong subject the whole time. Fixed by
+`VIBEOS_DISK_BACKING_MOUNTS=/mnt/g`, which enters the backing mount into admission as a real
+filesystem so a build is refused on HOST headroom the same way it is on guest headroom. Note
+this one could not be caught by retrying either: `df /` would have returned the same reassuring
+number every time, right up to the failure.
 
 **The borderline member is the on-ramp, so concede it rather than defend it.**
 `git merge-base --is-ancestor <tip> origin/master` against a moving ref is BOTH a handle
@@ -7481,6 +7496,45 @@ success-without-killing for hours at no observed cost; the "unkillable" message 
 wrong decision within a minute — a second replay started against media the caller believed was
 still held. Loud is still the right direction, but the new message is now load-bearing on the
 first read, so it needs the same scrutiny the silent one never got.
+
+### A per-item tally over run artifacts manufactures N findings from ONE event
+
+**Symptom.** A tally shows N items each failing across many unrelated batches, spanning lanes
+and commits. It reads as N independent, corroborated findings — and the batch spread looks like
+exactly the evidence that rules out "one lane broke it".
+
+**Cause.** One RUN-level failure that reports per-ITEM. A conformance lost boot
+(`BUGCHECK 0x1E`, `ok` and `bad` both 0) lists the ENTIRE baseline as *"in baseline (OK) but
+never launched"*, so 8 lost boots added +8 batches to every test in the baseline at once. That
+manufactured nine "flaky tests" — `CmSecurity`, `ExCallback`, `ExDoubleList`, `ExUuid`,
+`IoFilesystem`, `ZwMapViewOfSection`, `HalSystemInfo`, `FsRtlTunnel`, `RtlCaptureContextKM` —
+**none of which had ever been observed regressing in an ordinary sweep, not once.** The genuine
+set was three: `ExPools`, `NpfsConnect`, and marginally `KeEvent`/`IoInterrupt`.
+
+**Fix.** Before believing any per-item tally drawn from run-level artifacts, check for a SHARED
+CONSTANT across unrelated items. Nine tests all showing precisely 8 was the tell, sitting in
+plain sight in the table. Partition by failure MODE first and give each mode its own
+denominator — pooling them also corrupts the rate (27% pooled, 23.3% over mode-1 runs only).
+
+**Two things that make this worth its own entry rather than a footnote to the census.**
+
+*Each ghost arrives carrying its own count*, which is what makes one event read as N
+corroborations instead of one. A finding that shows up with a number attached defeats the
+instinct to ask "how do we know?", because the number looks like the answer.
+
+*Batch spread proves less than it appears to.* It rules out "one lane broke it" and nothing
+more. `ExPools` had 30 batches of perfect spread and was a HARNESS bug — a `_M_AMD64`/`_WIN64`
+arch gate making the test read half a `POOL_HEADER` — reproducible on every single boot, on one
+arch. Spread does not distinguish "flaky" from "the test is wrong on this arch", and that
+distinction is the entire six-week ExPools misfile.
+
+**Related, and it kills the obvious next move:** *"regressed in SOME runs of a batch" is not
+"nondeterministic cause".* Before the fix ExPools misread the header on every boot; what varied
+was which of `ProcessBilled`'s bits happened to be set. **A deterministic fault with a variable
+observable is indistinguishable from a flake in a pass/fail tally**, so an ALL-runs vs
+SOME-runs split cannot establish determinism no matter how clean the corpus is. And determinism
+was mostly undecidable here anyway: 151 of 170 batches held a single run, so there was nothing
+to compare within them.
 
 ### A TEXT-SHAPED match is not a PROOF `[§9.119]`
 The same regex measured **146** lowerable CRT forwarders; the sound implementation lowered

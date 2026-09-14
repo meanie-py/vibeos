@@ -271,6 +271,65 @@ class Stage:
     salient: list = field(default_factory=list)  # key lines for the summary
 
 
+def ledger_append(
+    repo: Path | None,
+    *,
+    cmd: str,
+    arch: str,
+    verdict: str,
+    classification: str = "",
+    duration_ms: int = 0,
+    extra: dict | None = None,
+) -> None:
+    """T3 (fleet-isolation program): durable outcome ledger. /tmp run dirs die on
+    reboot, and gate verdicts are point samples — the ledger under VIBEOS_ROOT
+    survives both, so `vibeos-cli health` can show trailing per-arch PASS RATES
+    (a 100%→20% arch regression becomes visible data within a day even when
+    individual gates roll green). One JSON line per run; O_APPEND keeps
+    concurrent lanes' writes whole. Never fails the run.
+
+    Module-level, not a `Run` method, because a command does not have to use
+    `Run` to have an outcome worth keeping. `conformance` builds its summary by
+    hand, so for the project's whole history it wrote ZERO rows here — 19,711
+    ledger rows across build/smoke/check/gate/farm/land and not one conformance
+    verdict. Its round records went to `~/vibeos-flake-farm/` instead, which is
+    outside the tree the backups cover: when the box was rebuilt on 2026-09-14
+    the shared ledger came back and the flake farm did not, taking a 201-run
+    arm64 census with it. The command whose verdicts we most wanted counted over
+    time was the only one absent from the record that survives.
+    """
+    try:
+        if repo is None:
+            return
+        from . import cachecfg  # local import: avoid a cycle at module load
+
+        root = cachecfg.vibeos_root(repo)
+        if not root.is_dir():
+            return
+        head = subprocess.run(
+            ["git", "rev-parse", "--short", "HEAD"],
+            cwd=repo,
+            capture_output=True,
+            text=True,
+            timeout=15,
+        ).stdout.strip()
+        row = {
+            "ts": int(time.time()),
+            "cmd": cmd,
+            "arch": arch,
+            "verdict": verdict,
+            "classification": classification,
+            "duration_ms": duration_ms,
+            "head": head,
+            "worktree": Path(repo).name,
+            **(extra or {}),
+        }
+        with open(root / "vibeos-ledger.jsonl", "a") as f:
+            f.write(json.dumps(row) + "\n")
+    except Exception:
+        pass  # the ledger is telemetry; it must never break a build/smoke
+
+
 class Run:
     """One command execution: owns the artifact dir, the full log, and the
     structured summary."""
@@ -393,42 +452,17 @@ class Run:
         return 0 if self.verdict in ("OK", "WARN") else 1
 
     def _ledger_append(self, repo: Path | None, summary: dict, dur: float) -> None:
-        """T3 (fleet-isolation program): durable outcome ledger. /tmp run dirs
-        die on reboot, and gate verdicts are point samples — the ledger under
-        VIBEOS_ROOT survives both, so `vibeos-cli health` can show trailing
-        per-arch PASS RATES (a 100%→20% arch regression becomes visible data
-        within a day even when individual gates roll green). One JSON line per
-        finalized run; O_APPEND keeps concurrent lanes' writes whole. Never
-        fails the run."""
-        try:
-            if repo is None:
-                return
-            from . import cachecfg  # local import: avoid a cycle at module load
-
-            root = cachecfg.vibeos_root(repo)
-            if not root.is_dir():
-                return
-            head = subprocess.run(
-                ["git", "rev-parse", "--short", "HEAD"],
-                cwd=repo,
-                capture_output=True,
-                text=True,
-                timeout=15,
-            ).stdout.strip()
-            row = {
-                "ts": int(time.time()),
-                "cmd": self.command,
-                "arch": self.arch,
-                "verdict": self.verdict,
-                "classification": self.classification,
-                "duration_ms": int(dur * 1000),
-                "head": head,
-                "worktree": Path(repo).name,
-            }
-            with open(root / "vibeos-ledger.jsonl", "a") as f:
-                f.write(json.dumps(row) + "\n")
-        except Exception:
-            pass  # the ledger is telemetry; it must never break a build/smoke
+        """Delegates to the module-level `ledger_append`. See its docstring for why
+        that is not a method: a command does not have to use `Run` to have an
+        outcome worth keeping, and `conformance` does not."""
+        ledger_append(
+            repo,
+            cmd=self.command,
+            arch=self.arch,
+            verdict=self.verdict,
+            classification=self.classification,
+            duration_ms=int(dur * 1000),
+        )
 
     def _glyph(self, st: Stage) -> str:
         return {"ok": "✓", "warn": "⚠", "fail": "✗", "skip": "·"}.get(st.status, "?")
