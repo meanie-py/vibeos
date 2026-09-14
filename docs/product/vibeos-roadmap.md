@@ -620,6 +620,30 @@ land; date every addition.** Source docs live in `docs/engineering/archive/`.
   our arm64 kernel writes `TPIDRRO_EL0`, and whether the L1 path actually uses that feature bit.
   Cheap to check and it would explain the nondeterminism better than overcommit alone.
 
+  **CORROBORATED by recovered July work, which reached the mechanism FIRST and explains the
+  size correlation.** `docs/engineering/active-lanes/m14-startup-flake/` holds three patches
+  recovered from a stale subagent worktree (`fex-arm-m4`, last touched 2026-07-17) before it was
+  removed. Their analysis, arrived at independently and two months earlier: FEX's block compiler
+  reads guest code at a call target **inside a signal-deferring section** (`CompileBlock` →
+  `GuardSignalDeferringSection`); if that target page is **not yet resident**, the compile yields
+  an empty block whose entrypoint is 0 and `ExitFunctionLink` branches straight to it. Measured
+  then: **~3 of 6 guests died under a 6-VM soak**, victims varying (gui32/file32/hello32/doom)
+  "because it hits whichever guest is mid-actctx when starved" — every WoW64 process's
+  `LdrInitializeThunk` runs `RtlCreateActivationContext`, which calls `__alloca` /
+  `get_manifest_in_module` on ntdll32 pages *other* than the caller's, so the demand-fault loses
+  the race under host contention.
+
+  **That is what makes the control experiment's result make sense.** The never-executed 505K
+  control failing identically says the trigger is PAGES MAPPED AND RESIDENT, not code executed —
+  a bigger image spans more pages, so more of them can be non-resident when `CompileBlock` reads
+  them, and the control has the same page count as the real guest. It also states the
+  Linux-vs-Windows assumption from the other direction: *"Upstream FEX assumes CompileBlock never
+  fails for a mapped RIP (true on Linux, where the frontend read faults the page in); the
+  Windows/WOW64 compile path can observe the transient."* Note the July fault signature is host
+  `PC=0` via a null block, while 2026-09 sees faults *inside* `LookupCache` — related family,
+  possibly the same root at different stages; **do not assume they are identical without
+  evidence.** All of it predates the disk failure and none has been re-verified on this box.
+
   **Both leads say the same thing about provenance**: the fault executes inside vendored FEXCore,
   but the suspicious inputs are ours — our memory manager's handling of a large sparse
   reservation, and a CPU register our kernel may not set. "Unmodified locates the faulting code,
