@@ -8074,3 +8074,65 @@ def test_kill_still_succeeds_when_a_SWEEP_matches_nothing(tmp_path, monkeypatch)
         stale = True
 
     assert killvm.cmd_kill(_A(), tmp_path) == 0
+
+
+def test_kill_reports_a_zombie_as_exited_not_as_unkillable(tmp_path, monkeypatch):
+    """os.kill(pid, 0) SUCCEEDS on a zombie — the pid is still in the table — so
+    the liveness check read a QEMU that had already died on the SIGTERM as alive
+    and escalated to a "STILL ALIVE after SIGTERM+SIGKILL — unkillable (D state?)"
+    report. That is a worse lie than the silent success the escalation was added
+    to fix: it sends the reader hunting a process that does not exist."""
+    from tests.qemu.cli import killvm
+
+    proc = tmp_path / "4242"
+    proc.mkdir()
+    (proc / "status").write_text("Name:\tqemu\nState:\tZ (zombie)\nPid:\t4242\n")
+    monkeypatch.setattr(killvm, "Path", lambda p="": tmp_path if str(p) == "/proc" else Path(p))
+    assert killvm._pid_is_zombie(4242)
+
+    (proc / "status").write_text("Name:\tqemu\nState:\tR (running)\nPid:\t4242\n")
+    assert not killvm._pid_is_zombie(4242)
+
+
+def test_zombie_check_is_false_where_proc_is_absent(tmp_path, monkeypatch):
+    """No /proc: fall back to the pid check, which is what it did before."""
+    from tests.qemu.cli import killvm
+
+    monkeypatch.setattr(killvm, "Path", lambda p="": tmp_path / "nope")
+    assert not killvm._pid_is_zombie(1)
+
+
+def test_qmp_client_keeps_events_instead_of_discarding_them():
+    """_recv_json must skip events to find a reply, and used to drop them on the
+    way past. That threw away STOP, which is the only notification QEMU sends when
+    a replay-break fires — leaving a paused replay indistinguishable from a wedged
+    one, since both show a frozen serial log and a busy CPU."""
+    from tests.qemu.qmp_client import QmpClient
+
+    c = QmpClient()
+    feed = [
+        {"event": "RESUME"},
+        {"return": {}},
+        {"event": "STOP", "timestamp": {"seconds": 7}},
+        {"return": {"icount": 42}},
+    ]
+    c._recv_one_json = lambda: feed.pop(0)  # type: ignore[method-assign]
+
+    assert c._recv_json() == {"return": {}}
+    assert c._recv_json() == {"return": {"icount": 42}}
+    assert [e["event"] for e in c.events] == ["RESUME", "STOP"]
+    assert c.saw_event("STOP") == {"event": "STOP", "timestamp": {"seconds": 7}}
+    assert c.saw_event("SHUTDOWN") is None
+
+
+def test_qmp_event_retention_is_bounded():
+    """A long boot emits plenty; this is a diagnostic tail, not a log."""
+    from tests.qemu.qmp_client import QmpClient
+
+    c = QmpClient()
+    feed = [{"event": f"E{i}"} for i in range(300)] + [{"return": {}}]
+    c._recv_one_json = lambda: feed.pop(0)  # type: ignore[method-assign]
+    c._recv_json()
+    assert len(c.events) == 256
+    assert c.saw_event("E299") is not None
+    assert c.saw_event("E0") is None  # fell off the tail
