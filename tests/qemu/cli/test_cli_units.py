@@ -4280,7 +4280,14 @@ def test_hostlock_status_reports_both_pools(tmp_path, monkeypatch):
     assert "legacy/native(cpuheavy)" in body and "boot(windows-host)" in body
 
 
-def test_ninja_jobs_caps_and_reserves(monkeypatch):
+def test_ninja_jobs_caps_and_reserves(monkeypatch, tmp_path):
+    # Point HOSTLOCK_DIR at an empty dir so `_ninja_jobs` sees NO host build policy.
+    # Without this the test reads the real one and asserts against whatever capacity
+    # the box happens to be running -- it passed only while no policy was installed,
+    # then failed the moment the three-build trial went active (`-j 6`, not `-j 24`).
+    # The VIBEOS_BUILD_CORE_RESERVE path below is the no-policy fallback, so that is
+    # the state it has to be exercised in.
+    monkeypatch.setattr(hl_mod, "HOSTLOCK_DIR", tmp_path)
     monkeypatch.setattr(build_mod.os, "cpu_count", lambda: 32)
     monkeypatch.setenv("VIBEOS_BUILD_CORE_RESERVE", "8")
     assert build_mod._ninja_jobs() == ["-j", "24"]
