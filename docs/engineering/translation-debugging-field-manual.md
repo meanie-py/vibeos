@@ -3582,6 +3582,30 @@ call carries an implicit receiver that `--cpp-com` spells as an explicit leading
 Rust site has exactly one MORE argument than the C one. The tell for both is the documented one:
 two different functions failing identically on one callee means the checker is at fault.
 
+**And the macro set that Cause 2 depends on can MISS a macro, which puts a callee in the
+envelope that no Rust can satisfy.** `macro_authority` derives the no-token set by scanning a
+real `-dM` dump for `#define NAME(` — but a macro may be spelled as an object-like ALIAS, and
+then there is no paren to find. mingw's stdarg.h does exactly this to three of the four va_
+macros while leaving the fourth in the function-like form, so `va_copy` was excluded and
+`va_arg` was sealed as a runtime callee of arity 2:
+
+    #define va_arg __crt_va_arg              <- object-like: invisible to the scan
+    #define va_copy(d,s) __va_copy((d),(s))  <- function-like: caught
+    #define __crt_va_arg(v,l) __builtin_va_arg(v,l)
+
+`va_arg(ap, type)` is two arguments in C and one in *every* legal Rust rendering, because the
+type rides in a turbofish — whose commas the arity check blanks on purpose. So the envelope was
+unsatisfiable in principle, not merely unsatisfied: the model returns the same correct body at
+every temperature and the checker rejects it at every temperature, and `--retry-rejects` re-buys
+a verdict that cannot change. msvcrt's `_sopen` and `_open` were rejected together in one run on
+`__RUSTCONV_CALL_0001__=va_arg wants 2, got 1` — the documented tell, read correctly by the lane
+that hit it. Fix: aliases resolve transitively, so `#define A B` makes A function-like whenever B
+is. On one TU that moved the set 1519 → 1549, and the 30 recovered names include
+`GetExceptionCode`, `exception_code` and `__except` — sealed as runtime callees in every
+SEH-using TU until then. **The general shape: a denylist derived by pattern is only as good as
+the spellings the pattern anticipates, and the failure is silent in the direction that costs
+money.**
+
 **The receiver case is the one to internalise, because it failed in BOTH directions at once.**
 On `CDrivesFolderEnum` it rejected `AppendItemsFromEnumerator`, which had written the correct
 `CALL_0000(this, pidl)`, twice — burning two paid calls and voiding the whole TU's assembly. And
