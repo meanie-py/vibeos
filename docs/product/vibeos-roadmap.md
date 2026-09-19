@@ -488,6 +488,28 @@ land; date every addition.** Source docs live in `docs/engineering/archive/`.
 
 ## Known bugs & flakes (live registry)
 
+- **`test_nested_cargo_deps` can fail inside `land`'s preflight under host saturation —
+  NOT REPRODUCED, OPEN** (2026-09-19). `tools/test_nested_cargo_deps.py::
+  test_nested_inputs_rebuild_consumers_only[["staticlib"]]` failed in a lane's `land`
+  preflight while the host sat at 18/18 job slots; it had passed that lane's own
+  `check-tooling` ten minutes earlier and passes in isolation. **The stakes are the reason
+  this is registered rather than shrugged at: a red `check-tooling` in the conductor bounces
+  the WHOLE batch (3 builds + 4 boots), so a load-sensitive test here rejects innocent
+  lanes.**
+  Read the assertion correctly before chasing it — `build(15)` asserts the *program prints*
+  15 (`shared::value()` 10 + asset 2 + schema 3), so the reported "got 6" means the edit to
+  `shared/src/lib.rs` never propagated and the old `value()==1` was still linked, i.e. one
+  layer of a five-layer chain (ninja depfile → outer cargo → `build.rs` rerun →
+  nested cargo → shared rlib) decided "fresh". It is not an invocation count.
+  Not reproduced in **18 runs** (6-way parallel against 3 concurrent lane builds; 3 more with
+  the `check-tooling` ambient env — `CARGO_BUILD_JOBS=1`, low `VIBEOS_HOST_JOB_SLOTS`, an
+  inner wrapper set — which the test does not scrub).
+  **Disconfirmed:** filesystem mtime granularity, the obvious candidate for this assertion
+  shape. Both `/tmp` and the repo are ext4 with nanosecond stamps, measured ~0.7ms resolution
+  and 6/6 distinct — so cargo is not losing an edit to a coarse-clock tie.
+  Still open: which layer went stale, and why saturation matters. Next step is a repro under
+  genuine 18/18 rather than more blind repeats.
+
 - **Kernel symbols resolve against the WRONG image since the MP promotion — TOOLING FIXED,
   HAND RESOLUTION STILL SUSPECT** (2026-09-13). Every medium carries both kernels and boots the MP one
   (`livecd.ini:59` → `/KERNEL=ntkrnlmp.exe /HAL=halmp.dll`), so anything that resolves a
