@@ -337,6 +337,37 @@ a ladder to watch", and neither was visible from reading.
         NtWriteVirtualMemory     => 8000000d   STATUS_PARTIAL_COPY
         CreateProcessW           => FALSE, GetLastError 0x12b (ERROR_PARTIAL_COPY)
 
+   **AND THAT IS NOW FIXED TOO — the path reaches the refusal this entry predicted
+   at the top, three bugs later.** The failing write was the one kernel32 calls
+   "Write the PEB Pointer", into `RemotePeb->ProcessParameters`. `RemotePeb` comes
+   from `TEB->NtTib.ArbitraryUserPointer`, which `ps/process.c:866` fills in as
+   `CurrentThread->Tcb.Teb->NtTib.ArbitraryUserPointer = Process->Peb`. Two
+   compounding mismatches for a 32-bit caller: `KTHREAD.Teb` is the SIXTY-FOUR-bit
+   TEB, and the value is the child's 64-bit PEB when a 32-bit parent needs its
+   PEB32. The guest was reading a TEB32 slot nothing had ever written.
+   `Wow64pPublishRemotePeb32` in `wow64_manual.c` now bridges it — the same shape,
+   and the same fix, as the win32k last-error channel already in `wow64.c`, which
+   exists because the kernel writes TEB64 and the guest reads TEB32. Today's state:
+
+        NtCreateProcessEx        => 00000000
+        NtWriteVirtualMemory x4  => 00000000      (all four now succeed)
+        NtCreateThread           => c0000002      REFUSED, cross-process (task #64)
+        CreateProcessW           => FALSE, GetLastError 1 (ERROR_INVALID_FUNCTION)
+
+   **So the original traced prediction was right about the DESTINATION and wrong
+   about it being NEXT** — three defects stood in front of it: a dropped
+   `_SEH2_EXCEPT` (bugcheck), a wrong `STATUS_PARTIAL_COPY` constant hiding in the
+   dead error path, and this missing TEB32 channel. Each was invisible until the
+   one before it was fixed. That is the general shape worth keeping: **a stack of
+   bugs is discovered strictly in order, and "the next blocker" is only ever
+   knowable one at a time.**
+
+   The remaining blocker is now a real feature, not a defect:
+   `Wow64ProcessPendingCrossProcessItems` is empty, so a thread created into
+   another process has no per-thread entry to initialise it, and the thunk refuses
+   deliberately rather than create a thread nobody will start. That is task #64 and
+   it is the honest next piece of work on this gap.
+
    So the third write of the process-parameters block into the child's address space
    partially fails — the target is in range but not fully mapped in the child. That is
    TWO STEPS BEFORE the `NtCreateThread` cross-process refusal this entry originally

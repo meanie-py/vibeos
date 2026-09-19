@@ -796,6 +796,52 @@ static NTSTATUS Wow64Manual_NtCreateProcess(ULONG *a)
     return St;
 }
 
+/* TEB32 is TEB64 + WowTebOffset — MmCreateTeb allocates both as one region and
+ * records the delta in that slot. Spelled locally, as the other TEB offsets in
+ * this tree are. */
+#define WOW64_TEB_WOWTEBOFFSET   0x180c
+#define WOW64_TEB32_ARBUSERPTR   0x14   /* NT_TIB32.ArbitraryUserPointer */
+
+/*
+ * ---- the CreateProcess remote-PEB channel --------------------------------
+ *
+ * The SAME SHAPE as the win32k last-error channel in wow64.c, and the same
+ * fix. ps/process.c:866 does
+ *
+ *     CurrentThread->Tcb.Teb->NtTib.ArbitraryUserPointer = Process->Peb;
+ *
+ * stashing the NEW process's PEB in the CALLER's TEB, and kernel32's
+ * BasePushProcessParameters reads it straight back out to learn where in the
+ * child to write the ProcessParameters pointer. Two things go wrong for a
+ * 32-bit caller, and they compound: `KTHREAD.Teb` is the SIXTY-FOUR-bit TEB,
+ * which the guest never reads, and the value stored is the child's 64-bit PEB
+ * when a 32-bit parent needs its PEB32.
+ *
+ * So the guest read a TEB32 slot nothing had written. Measured before this
+ * existed: the third NtWriteVirtualMemory of CreateProcess — the one the
+ * source calls "Write the PEB Pointer" — landed on that stale value and came
+ * back STATUS_PARTIAL_COPY, so CreateProcessW failed with ERROR_PARTIAL_COPY
+ * and no 32-bit guest could start a process at all.
+ *
+ * ProcessWow64Information is the child's PEB32 by construction: procsup.rs
+ * sets `EPROCESS.Wow64Process = Peb32` and that query is what hands it back.
+ */
+static void Wow64pPublishRemotePeb32(HANDLE Process)
+{
+    PBYTE Teb = (PBYTE)NtCurrentTeb();
+    LONG  WowTebOffset = *(LONG *)(Teb + WOW64_TEB_WOWTEBOFFSET);
+    PVOID Peb32 = NULL;
+
+    if (!WowTebOffset)
+        return;  /* no 32-bit side — nothing to publish to */
+    if (NtQueryInformationProcess(Process, ProcessWow64Information,
+                                  &Peb32, sizeof(Peb32), NULL) < 0)
+        return;  /* not a WoW64 child; leave the slot alone */
+
+    *(ULONG *)(Teb + WowTebOffset + WOW64_TEB32_ARBUSERPTR) =
+        (ULONG)(ULONG_PTR)Peb32;
+}
+
 static NTSTATUS Wow64Manual_NtCreateProcessEx(ULONG *a)
 {
     WOW64_OBJECT_ATTRIBUTES64_M Oa64;
@@ -809,7 +855,10 @@ static NTSTATUS Wow64Manual_NtCreateProcessEx(ULONG *a)
                                     (HANDLE)(LONG_PTR)(LONG)a[7],
                                     (BOOLEAN)a[8]);
     if (St >= 0)
+    {
         Wow64pPutHandle(a[0], Process);
+        Wow64pPublishRemotePeb32(Process);
+    }
     return St;
 }
 
