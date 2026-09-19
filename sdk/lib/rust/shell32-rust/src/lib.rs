@@ -187,10 +187,16 @@ pub mod def_view_dual;
 #[path = "shell32/CDefViewBckgrndMenu.rs"]
 pub mod def_view_bckgrnd_menu;
 
-// CDefView — the shell's default folder view (IShellView3 + 7 more interfaces). The support
-// module IS wired: it is finished, and its constants are worth compiling (and worth having
-// their C_ASSERTs checked) whether or not the view itself builds yet. CDefView.rs itself is
-// still ORPHAN and its own header records exactly what is left to wire it.
+// CDefView — the shell's default folder view (IShellView3 + 7 more interfaces), the largest
+// single class in shell32. The support module IS wired (it is finished, and its constants are
+// worth compiling and worth having their C_ASSERTs checked). The view itself is ORPHAN-BY-
+// DESIGN and that is a GUARD, not a to-do: wiring it while CDefView.cpp is still the compiled
+// implementation is a PARTIAL COHAB FLIP. Its `#[no_mangle]` symbols collide with the live
+// C++ ones, the linker picks one without a duplicate-symbol error, and live entry points
+// reroute into Rust that has never executed. Measured 2026-09-19: the guest booted, passed
+// smoke on all three arches, then froze after `[EXPLORER] startup: shell window ready`, which
+// stopped ProcessStartupItems and the kmtest sweep (launched=0). Un-wire, flip and gate as
+// ONE change. Field manual, "Cohab link plumbing".
 #[path = "shell32/cdefview_support.rs"]
 pub mod def_view_support;
 // #[path = "shell32/CDefView.rs"]

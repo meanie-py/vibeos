@@ -750,6 +750,12 @@ def build_parser() -> argparse.ArgumentParser:
     )
     pr.set_defaults(fn=prune_mod.prune)
 
+    from . import windows_cleanup
+
+    wc = sub.add_parser("windows-cleanup", help="clean abandoned Windows QEMU staging")
+    wc.add_argument("--dry-run", action="store_true", help="list eligible paths without deleting")
+    wc.set_defaults(fn=windows_cleanup.command)
+
     from . import retention
 
     rt = sub.add_parser("retention", help="configure or run hourly idle-output retention")

@@ -909,6 +909,26 @@ float math inside a body (x87), float pointers, float struct fields. Two fixes:
   real.
 
 ### Cohab link plumbing
+- **WIRING a translated TU is already a PARTIAL COHAB FLIP, and an uncontrolled one.** The
+  two-step everyone reaches for — "wire the module in now so it compiles and is lint-covered,
+  flip the `.cpp` out later" — is not safe when the C++ is still live. shell32's `utils.rs`
+  defines 58 `#[no_mangle]` names that `dll/win32/shell32`'s live C++ objects ALSO define as
+  unmangled externs, including 16 `*_RustBridge` wrappers other Rust modules call. Wiring it
+  produced **no duplicate-symbol error** — the linker resolves archive members against object
+  files in a defined order and simply picks one — so 58 live entry points silently rerouted
+  into Rust that had never executed. The guest booted, passed smoke on all three arches, then
+  froze inside explorer's taskbar `OnCreate` (two of the captured names,
+  `SHGetShellStyleHInstance` and `SHGetUserDisplayName`, sit in that path), which stopped
+  `ProcessStartupItems` and therefore the kmtest sweep: `launched=0`, nothing runnable, HLT=1.
+  **`scan_duplicate_symbols` does not catch this** — it looks Rust-vs-Rust, and the dangerous
+  direction is Rust shadowing C++ across the cohab boundary. Get the capture set before you
+  wire anything, with `llvm-nm --defined-only` over both sides:
+  `for o in build-<arch>/<module>/CMakeFiles/*.dir/*.obj; do llvm-nm --defined-only $o; done |
+  awk '$2=="T"{print $3}' | grep -v '^__Z' | sed 's/^_//; s/@[0-9]*$//' | sort -u` intersected
+  with the module's `#[no_mangle]` names. A non-empty intersection means wiring and flipping
+  are ONE change, not two. `ORPHAN-BY-DESIGN` is the marker for a module in that state, and it
+  is a GUARD, not a to-do item — the banner that says "the module is not wired yet, the .cpp is
+  still the compiled implementation" is recording why it must stay that way until the flip.
 - **A new rlib's `#[no_mangle]` symbols are absent from the staticlib** unless reached: add the
   path dep + `extern crate` + a `#[used]` force-reference block. A Cargo dependency alone is
   not a reachability path.
@@ -1288,9 +1308,29 @@ Three kinds of divergence hide in that, and they are not equally serious:
   rather than live (the tree's five call sites all pass `GetRValue`-style bytes), but it is the
   same class as msgina's `StringCchPrintfW` dropping its bound.
 
+- **Not a gap at all — the island HAS it, under a name nobody guessed.** A C `enum` member is
+  emitted by bindgen, but only fully qualified by its anonymous enum's generated tag:
+  shobjidl.h's `FVM_ICON` exists in shell32's island solely as
+  `__WIDL_shobjidl_generated_name_00000025_FVM_ICON`. Grep for the bare name and you find
+  nothing, conclude bindgen dropped it, and hand-declare `pub const FVM_ICON: DWORD = 1;`.
+  **Nine** shell32-rust modules did exactly that for the `FVM_*` family — control_panel_folder,
+  def_view_util, desktop_folder, drives_folder, folders/{CCPLItemMenu, CControlPanelEnum,
+  CDesktopFolderEnum, CDrivesFolderEnum} and shell32/CDefView — and CDefView re-declares the
+  whole `SVGIO_*` set too. Every value was checked against the island and every one is correct
+  (FVM ICON=1 SMALLICON=2 LIST=3 DETAILS=4 THUMBNAIL=5 TILE=6 THUMBSTRIP=7 CONTENT=8 AUTO=-1;
+  SVGIO BACKGROUND=0 SELECTION=1 ALLVIEW=2 TYPE_MASK=0xf), so this one is drift-in-waiting
+  rather than a live bug; the point is that it is the ONLY one of these four kinds where the
+  right fix is an alias rather than a shared crate, and where a hand-typed value can silently
+  disagree with a header the generator already read. `profile_derive` names it
+  `SWITCH_CONST_ENUM_PREFIXED` and prescribes the alias; take that finding literally and do not
+  re-declare the value. Detection without the tool: for any constant you are about to declare by
+  hand, grep the island for `_<NAME>$` before concluding it is absent.
+
 **Fix.** Port it once into a shared crate, transcribed from the header rather than from the
 copies it replaces, with known-answer tests. `strsafe-rust` (inlines) and `win32macros-rust`
-(macros + folded constants) are the two precedents.
+(macros + folded constants) are the two precedents. For the enum-member case above the fix is
+smaller and different: one `pub use crate::island::__WIDL_..._FVM_ICON as FVM_ICON;` in the
+prelude, and delete the copies.
 
 **The boundary is narrower than "core primitives", and the compiler is what finds it.** A shared
 crate cannot depend on any consumer's bindgen island, so it must express everything in primitives
@@ -1522,6 +1562,21 @@ wave16.rs whose neighbouring subnormal branch was already `wrapping_*`.
   translation output carries neither the array form nor the comment, so it reports a confident
   `0 findings` over 0 comparisons. Grep `b"L` and `\bL'` in fresh output; the correct fix is
   the crate's `w!()` macro.
+- **The ISLAND can be the one that narrows it, and then no amount of prompt or seal work
+  helps.** Every entry above blames the model. shell32's `utils.cpp` found the other source:
+  shobjidl.idl `cpp_quote`s `#define STR_FILE_SYS_BIND_DATA L"File System Bind Data"`, and the
+  bindgen island carries that exact name as `pub const STR_FILE_SYS_BIND_DATA: &[u8; 22] =
+  b"File System Bind Data\0"` — the NARROW bytes, under the right name, in the substrate the
+  translation is supposed to be able to trust. The C casts the macro to `LPWSTR` for
+  `IBindCtx::GetObjectParam`, so the array read back as UTF-16 is `"iF"`, `"el"`, `" S"`… and
+  the bind-context lookup silently never matches. The model did nothing wrong; sealing cannot
+  see it (the token IS present and IS the island's); `scan_wide_literals` cannot see it (there
+  is no `[u16; N]` and no intent comment). The tell is an island const of type `&[u8; N]` whose
+  header spelling is `L"..."`, and the fix is a wide spelling in the module's `*_support.rs`
+  with a comment saying the island's is wrong — not a cast. That island has **111** `&[u8; N]`
+  consts; the `STR_*` bind-context keys are all `L"..."` in shobjidl.idl, so this one is a
+  proven instance of a class, not a one-off. Worth a scanner: for each `&[u8; N]` const in an
+  island, grep the header for the same name with an `L` prefix.
 - **A `b"..."` behind a wide pointer is TWO different bugs, and only one of them is a bug.**
   `b"A\0S\0U\0S\0\0\0" as PCWSTR` is the content-correct one: hand-encoded UTF-16 whose only
   defect is ALIGNMENT 1. **That is a style problem, not a latent fault, and the older framing
@@ -4327,6 +4382,73 @@ gone. Grep-wise it is invisible; the C's own trailing comment is the only oracle
 Match the C's alignment argument. Say in the comment what validate-first does NOT restore — the
 C's second SEH also covers the window between probe and copy, and a range check proves where a
 buffer is, never that it stays mapped.
+
+**The MIRROR CASE, which the scanner structurally cannot see: the probe survived and the
+HANDLER did not.** `MiDoPoolCopy` / `MiDoMappedCopy` (`ARM3/virtual.rs`, four probe sites) still
+call `ProbeForWrite` — so "did it dereference a user pointer where its C validated one"
+answers *yes, it validated*, and neither function appears in the baseline. But the C wraps
+that probe in `_SEH2_TRY { … } _SEH2_EXCEPT(EXCEPTION_EXECUTE_HANDLER) { Status =
+_SEH2_GetExceptionCode(); }` (`virtual.c:876`), and only the body survived translation.
+`ProbeForWrite` raises via `ExRaiseAccessViolation()`, nothing catches it, and a syscall
+whose contract is to RETURN `STATUS_ACCESS_VIOLATION` instead takes **BUGCHECK 0x1E**. A
+present probe is therefore not evidence the validation works — it is evidence only that the
+probe is present.
+
+**The tell, and it needs no C beside it: an error path that nothing can reach any more.**
+The shape here is a flag raised around the probe and tested long after:
+
+```rust
+_FailedInProbe = 1;
+ProbeForWrite(TargetAddress, BufferSize, size_of::<i8>() as ULONG);
+_FailedInProbe = 0;
+...
+if Status < 0 {                      // nothing between the assignment above and here
+    if _FailedInProbe != 0 { ... }   // can now produce this state
+```
+
+In the C, the `_SEH2_EXCEPT` arm is what set `Status` and what left `_FailedInProbe` at 1;
+deleting it leaves both the flag and its consumer standing, mutually unreachable. So the
+generalizable question is not "is the probe missing" but **"is there a recovery branch whose
+precondition nothing can establish"** — an unreachable error path is the fingerprint of a
+deleted handler, it is visible in the Rust alone, and it is a different query from the one
+`scan_dropped_probes` runs. Found 2026-09-19 by `spawn32.exe`, a WoW64 guest calling
+`CreateProcess`, which reaches it only after `NtCreateProcessEx` has already succeeded — but
+the bug is not WoW64's: any caller writing into another process with a bad target address and
+`PreviousMode != KernelMode` lands on it.
+
+**Measured bound on that tell — it is a lucky fingerprint, not a detector.** Run across
+`sdk/lib/rust` it finds `virtual.rs` and NOTHING else, because the fingerprint exists only
+where the C happened to route its failure through a **flag**. A dropped handler that guarded
+a plain `return` (the commoner shape) leaves no trace in the Rust at all — `NtReplyPort` in
+`lpc-rust/src/reply.rs` is exactly that, and the tell cannot see it. Two practical notes if
+you run it anyway: reject any `{` or `}` between the set and the reset, or an `X = 1` in an
+`if` arm against `X = 0` in the `else` arm reads as set-then-reset (that alone was 7 of 8
+hits, e.g. fastfat `RecursiveClose`); and a file-scoped search will pair a set in one
+function with a test in another.
+**A stack of bugs is discovered strictly IN ORDER, so the next blocker is knowable only one
+at a time.** Chasing guest `CreateProcess` to its real answer took four passes, and the
+prediction made at the start — `NtCreateThread` refuses cross-process — turned out to be
+right about the DESTINATION and wrong about it being next. Three defects stood in front of
+it, each strictly invisible until the one before it was fixed: the dropped `_SEH2_EXCEPT`
+(bugcheck), then a wrong `STATUS_PARTIAL_COPY` literal sitting in the error path the handler
+had made unreachable, then a TEB32/TEB64 channel mismatch. So the failure mode is not
+"reading one layer and predicting the stack" in the sense of reading the wrong layer — the
+layer was read correctly. **Any prediction that skips intermediate layers is really a
+prediction about how many bugs are in them, which nobody can make.** Two corollaries worth
+having: an unreachable error path is not merely unhandled, it is an oracle-free zone where a
+second bug can sit indefinitely with nothing able to disagree with it — so **restoring an
+error path should be expected to expose a defect, and the work is not done when the crash
+stops** (here it was true twice); and a plausible invented constant is not a random number,
+it is one off from something real and in scope (`0xC000009B` next to
+`0xC000009A`/`STATUS_INSUFFICIENT_RESOURCES`, used a few lines earlier in the same function),
+which is why no range check would ever flag it.
+
+**The query that does generalise** asks the question directly instead of via a fingerprint:
+pair every C file containing `_SEH2_EXCEPT` with its translated `.rs` and flag the ones whose
+Rust can still raise (`ProbeForRead`/`ProbeForWrite`/`ExRaiseStatus`/`ExRaiseAccessViolation`)
+with no catch idiom. That is a different question again from `scan_dropped_probes` — the
+probe SURVIVED here, so a missing-probe scan is blind to it — and it is what found the LPC
+syscall surface. See the roadmap's bug registry.
 
 **Finding the rest.** `tools/scan_dropped_probes.py`, gated by `vibeos-cli check` against
 `tools/lint-baseline/scan_dropped_probes.txt`. Same self-oracle as `scan_dropped_prints` and the
@@ -9593,6 +9715,40 @@ introduced at any heap exit — it is an external stray write.**
   each PC — a `wfi` is idle, a `b .` is a park, and an unfetchable page is the loop. If a FROZEN
   verdict ever comes with an odd sample out in `KiTrapReturn`, that is the loop caught mid-eret,
   not a dead clock; read the trap handler's retry decision for that abort, not the timers.
+- **Halted vs moving is the first fork, and on x86 the flag is `HLT=1` in the `EFL` line.**
+  The arm64 tell is a `wfi`; the x86 one is the `HLT=1` field of the `info registers` dump, and
+  it decides which half of the search space to throw away. **Halted means nothing was runnable,
+  so hunt a wake/signal that never arrives — a completion, a DPC, an event set on a path that
+  bailed early. Moving means something IS running, so hunt what it spins on.** Applying it to a
+  2026-09-19 i386 conformance wedge (kmtest-sweep never launched, `FROZEN`, `EIP=80211b45`,
+  `HLT=1`) retired the standing theory on the spot: the run's serial was 77% one win32k
+  message-queue error, and a message loop starving the launcher had been the working hypothesis
+  — but a starving loop moves the PC. On a halted CPU that volume is the TAIL of whatever ran
+  before the freeze, not a cause.
+- **On a halted machine every timeout in the log is a symptom, so the last line is the LEAST
+  informative place to look. Find the first MISSING line instead.** This entry said the
+  opposite for an hour, and got it wrong the same way twice over. Having retired the
+  message-queue spam with the halt argument, the next candidate taken up was the last non-spam
+  activity — a netstack TDI listen timing out and tearing down its backlog — and it was wrong
+  for two independent reasons, both cheap to check and neither checked. It sat at line ~7900 of
+  8055, *thousands of lines after* the machine stopped; and `TDI op timed out` appears in the
+  PASSING control too, at line 1530, EARLIER than in the failing run. On an idle box, bounded
+  waits expiring is what idleness looks like. The thing that actually localised it was diffing
+  the two logs' line sequences for where they DIVERGE: `[WIN32K] shell ready` at line 1266 in
+  both, `[EXPLORER] taskbar: OnCreate begin` at 1891/1888 in both, and then the control alone
+  continues `child controls created` → `ProcessStartupItems` → `runCmd OK (PID 612): …
+  kmtest-sweep.exe`. The guest hung inside the taskbar's OnCreate, so explorer never processed
+  the StartUp folder that launches the sweep. Zero tests, nothing runnable, `HLT=1` — the whole
+  chain, from one absent line.
+- **Get a KNOWN-GOOD CONTROL on the same host before believing any number in a hang log.**
+  This is what makes the above affordable, and both halves of that same investigation needed it:
+  "77% of serial is one error" and "72 threads parked >20s" each read as damning, and a green
+  batch from twenty minutes earlier on the same box reported the same error at 19% and **68**
+  threads parked. The parked-thread census was background; the spam was pre-existing and only
+  its volume differed. Neither could be judged from the failing log alone, because a hang log
+  has no baseline inside it — every alarming number in one is alarming until something ordinary
+  is measured beside it. The merge queue makes these controls nearly free: a batch that landed
+  green on the same host within the hour is a control you did not have to run.
 - **A foreign binary that is stuck is usually one of three shapes** `[§9.29]`: sample the guest
   PC a dozen times via QMP `info registers` — all samples at one PC means a spin; parked in a
   wait with no file I/O (break on `NtReadFile`/`NtDelayExecution`); or spinning at a fixed

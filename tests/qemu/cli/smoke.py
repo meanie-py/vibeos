@@ -263,7 +263,11 @@ def _smp_check(text: str, arch: str) -> dict | None:
 
 
 def _one_boot(run: Run, repo: Path, arch: str, **kwargs) -> dict:
-    result = _boot_vm(run, repo, arch, **kwargs)
+    started = time.monotonic()
+    timings: dict[str, float] = {}
+    result = _boot_vm(run, repo, arch, timings=timings, **kwargs)
+    timings["total_seconds"] = round(time.monotonic() - started, 3)
+    result["timings"] = timings
     serial = run.dir / f"boot{kwargs['idx']}" / "serial.log"
     if serial.is_file():
         result["serial_log"] = str(serial)
@@ -280,6 +284,7 @@ def _boot_vm(
     idx: int,
     total: int,
     want_ladder: bool = False,
+    timings: dict[str, float] | None = None,
 ) -> dict:
     """A single independent boot. Returns {ok, outcome, classification, ...}.
     `arch` is the base arch (i386/amd64/arm64); the boot config is the vm_arch
@@ -302,8 +307,12 @@ def _boot_vm(
     label = f"boot {idx + 1}/{total}" if total > 1 else "boot"
     if backend != "native":
         run.log(f"backend={backend} (qemu.windows={cli_cfg.get('qemu.windows', {})})", header=label)
+    timings = timings if timings is not None else {}
+    started = time.monotonic()
     try:
         vm.start()
+        timings["start_seconds"] = round(time.monotonic() - started, 3)
+        timings.update(vm.launch_timings)
     except Exception as e:  # surface any launch failure
         run.log(f"{label}: start failed: {e}", header=label)
         return {
@@ -313,7 +322,9 @@ def _boot_vm(
             "salient": [str(e).splitlines()[0][:140]],
         }
     try:
+        watching = time.monotonic()
         outcome, text, diag = _watch(vm, marker, fail_on, config.boot_timeout)
+        timings["watch_seconds"] = round(time.monotonic() - watching, 3)
         run.log(text[-8000:], header=f"{label} serial tail")
         # On success, let the desktop settle (taskbar/tray render ~15s after the
         # marker) so the canonical screenshot shows the real shell, KEEPING the
@@ -330,9 +341,11 @@ def _boot_vm(
                 and any("shell ready" in m for m in config.required_milestones)
                 and "shell ready" not in text
             )
+            settling = time.monotonic()
             settle_txt, shell_seen = _settle_watch(
                 vm, config.desktop_settle_seconds, "shell ready" if need_shell else None
             )
+            timings["settle_seconds"] = round(time.monotonic() - settling, 3)
             if settle_txt:
                 text += settle_txt
                 run.log(settle_txt[-4000:], header=f"{label} settle serial")
@@ -469,7 +482,9 @@ def _boot_vm(
             tri["screenshot"] = shot
         return {"ok": False, "outcome": outcome, **tri}
     finally:
+        stopping = time.monotonic()
         vm.stop()
+        timings["stop_seconds"] = round(time.monotonic() - stopping, 3)
 
 
 def _net_stage(run: Run, repo: Path, arch: str) -> None:
@@ -731,6 +746,7 @@ def smoke(args, repo: Path) -> int:
             Stage(
                 f"run{i + 1}" if total > 1 else "boot",
                 status=status,
+                seconds=r["timings"]["total_seconds"],
                 detail=detail,
                 salient=r.get("salient", []),
             )

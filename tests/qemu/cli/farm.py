@@ -176,6 +176,7 @@ def _farm_arch(
             "screenshot": r.get("screenshot"),
             "run_dir": str(run.dir),
             "duration_s": round(dur, 1),
+            "timings": r.get("timings", {}),
         }
         rec.update(_extract_evidence(run.dir, rec["salient"]))
         if not rec["ok"]:

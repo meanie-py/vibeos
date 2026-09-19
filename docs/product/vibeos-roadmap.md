@@ -488,6 +488,241 @@ land; date every addition.** Source docs live in `docs/engineering/archive/`.
 
 ## Known bugs & flakes (live registry)
 
+- **A deterministic failure was classified `CONFORMANCE_FLAKE`, and the wrong LABEL cost
+  more than the retries. UNOWNED** (2026-09-19). Verbatim from `land-status`:
+
+        REJECTED: shell32-com @ 3607b8d766e0 (CONFORMANCE_FLAKE)
+                  conformance:i386: CONFORMANCE_FLAKE, 3 attempts
+
+  It was not a flake. It reproduced **9/9** — three arches x three rounds — and again on the
+  lane's own machine first try; root cause was 58 `#[no_mangle]` names capturing live C++
+  symbols (entry above). It blocked the merge queue for **75 minutes**.
+  **The retry count is the symptom, not the defect.** `--retries 2` was behaving correctly;
+  it was obeying a classifier that had already decided the failure was nondeterministic. So
+  raising or lowering the retry number fixes nothing. **A failure whose signature is IDENTICAL
+  across attempts is by definition not a flake, and the harness holds both attempts already** —
+  retry once, diff the signature, and bail as deterministic when it matches. That costs 2x
+  instead of 3x *and* produces a truthful verdict. Compare something stabler than elapsed
+  time; `launched: 0 / sweep_rc: 1` is the shape that works here.
+  **The label is the expensive part**, and this is the reason to fix it: `CONFORMANCE_FLAKE`
+  is precisely the verdict that invites a blind resubmit. The lane's own read of "flake, 3
+  attempts" would reasonably have been "unlucky, try again" — another three rounds of blocked
+  fleet before suspecting its own tree. It only went the other way because someone hand-
+  delivered the artifacts. A classification is what a lane reads to decide whether to
+  investigate or requeue, so a wrong one buys a second outage.
+
+- **WIRING a translated TU is already a partial cohab flip, and the linker is silent about
+  it. UNOWNED (gap), lane-owned (instance)** (2026-09-19). `shell32/utils.rs` defines **58**
+  `#[no_mangle]` names that the LIVE C++ shell32 objects also define as unmangled externs —
+  including 16 `*_RustBridge` wrappers other Rust modules call, plus
+  `SHGetShellStyleHInstance` / `SHGetUserDisplayName`, both on the taskbar `OnCreate` path
+  that froze. **No duplicate-symbol error was produced**: lld resolves archive members
+  against object files in a defined order and simply picks one, so 58 live entry points
+  silently rerouted into Rust that had never executed. Bisect confirmed the mechanism rather
+  than a bad body — un-wiring `utils` alone cleared the taskbar hang and exposed a SECOND
+  independent blocker in the other wired module, which is what symbol capture predicts and a
+  single bad function does not.
+  **`scan_duplicate_symbols` cannot catch this and says so in its own docstring**: it
+  ratchets Rust `#[no_mangle]` names defined in more than one *kernel-linked crate* —
+  Rust-vs-Rust. The dangerous direction is **Rust shadowing C++ across the cohab boundary**,
+  where the linker is silent by design. The check is cheap and belongs in `check`:
+  `llvm-nm --defined-only` over the module's C++ objects, keep `$2=="T"`, drop `^__Z`, strip
+  a leading `_` and any `@N`, intersect with the crate's `#[no_mangle]` set. **A non-empty
+  intersection means wiring and flipping are ONE change** and must be gated as one.
+  **Confirmed by bisect, and the instance is closed**: tip froze in `OnCreate` (launched=0);
+  `utils` un-wired moved the freeze to after `shell window ready` (still launched=0); BOTH
+  un-wired ran full startup to `kmtest-sweep.exe`, **launched=91 ok=88, ratchet holds** —
+  identical to a same-host control. One blocker per wired module. Every compile repair and
+  real bug the work found is innocent and stays (the `NM_*` catch-all that had made
+  CDefView's whole `OnNotify` dead, a cdecl/stdcall mismatch, the substrate consolidation).
+  Note *why* it happened: the deleted banner read "ORPHAN-BY-DESIGN: the module is not wired
+  into the crate **yet**", **a guard that reads like a to-do item** to anyone holding "wired"
+  as the goal. Reworded to open "DO NOT WIRE THIS MODULE. That is the invariant this file is
+  held to, not a status line", and to name the old phrasing so the next reader sees their own
+  reading anticipated rather than a bare prohibition.
+
+  **FOLLOW-UP, unowned and the real fix: an orphan module is NOT COMPILED, so the guard buys
+  correctness and pays in rot.** That is precisely how CDefView reached 799 errors before
+  anyone looked. The banners now carry a manual re-verify recipe (wire temporarily, `cargo
+  check` all three targets for both `shell32-rust` and `menuband-rust` — which `#[path]`
+  -includes `types.rs`/`shellcom.rs` — then un-wire before building or landing, with a
+  last-verified date), and that is a weak manual ratchet by construction. The mechanism that
+  would actually close it is a **check-only cfg/feature that COMPILES orphans without LINKING
+  them**, so `vibeos-cli check` covers them continuously and the staticlib never sees their
+  symbols. Deliberately not invented inside the change repairing the incident.
+
+- **`vibeos-cli conformance` exits 0 on media that launched ZERO tests. UNOWNED**
+  (2026-09-19). Verified in an artifact: `launched: 0`, `sweep_rc: 1`, and every baseline row
+  reported as the literal string **`in baseline (OK) but never launched`**. A test that never
+  ran is scored **OK**, so zero launches means zero regressions means
+  `ratchet holds: no regressions vs baseline`, exit 0. Two guards exist and neither covers
+  this: the run is **report-only unless `--gate`** (`conformance.py:8-9,900`), and the
+  zero-launch abort needs **three CONSECUTIVE** no-launch rounds (`NOLAUNCH_ABORT = 3`), which
+  a single hand run can never reach. In the merge queue it does fail — correctly — so the
+  consequence is narrow but nasty: **anyone reproducing a queue failure by hand gets a green
+  shell and a red reality**, which is exactly backwards for the one workflow where you are
+  trying to tell whether you fixed it. Minimum fix is to make `launched: 0` its own loud
+  verdict independent of `--gate`; "no tests ran" is not a ratchet result at all.
+
+- **The hang-capture symbolicator resolves against the WRONG IMAGE — a TOOL path, not just
+  the hand path. UNOWNED** (2026-09-19). The kernel-symbol entry below says the helper fix
+  "does not close the hand path". It does not close this tool path either. An i386
+  conformance hang wrote, into `summary.json` itself:
+
+        CPU#0 0x80211b45 -> 0014bb45    XHF_NOEXECUTE+310085    -
+
+  An offset of 310,085 bytes past a symbol is not a resolution, and `XHF_NOEXECUTE` is not a
+  kernel symbol — yet it is presented in the same field, same format, as a real answer. This
+  is the entry below's own warning ("the wrong answer is PLAUSIBLE, not empty") arriving
+  through a tool rather than a person, which is worse: a human reading `summary.json` has no
+  cue to distrust it. Found by the lane that owned the hang, after being warned off the hand
+  version of the same trap. **Anything that symbolicates a guest PC must resolve against
+  `ntkrnlmp.exe`** — the booted image — and the conformance hang capture evidently does not.
+
+- **`smoke` structurally cannot catch a hang that happens after its marker. OPEN, by design**
+  (2026-09-19). A batch whose i386 guest froze inside the taskbar's `OnCreate` passed
+  `smoke` on **all three arches** in that same batch. Not a flake and not a harness fault:
+  `[WIN32K] shell ready` is at line **1266 in both** the failing tree and a green control,
+  and the hang is at line **1891**. Smoke's contract is "reached a graphical desktop", and the
+  guest genuinely did. AGENTS.md already warns that the screenshot is captured *at* the marker
+  before the taskbar renders; this is the same gap with teeth — **everything explorer does
+  after the marker is unguarded by the north-star test**, including `ProcessStartupItems`,
+  which is what launches the conformance sweep. The failure surfaced only in `conformance`,
+  ~400s later, as `launched: 0`. Worth deciding whether a post-marker liveness check belongs
+  in smoke, or whether conformance's `launched` count is the intended guard and simply needs
+  to be a louder verdict than "0 tests ran, in baseline (OK)".
+
+- **Dropped `_SEH2_EXCEPT` is NOT confined to MM — `NtReplyPort` bugchecks on a bad
+  user pointer. UNOWNED, VERIFIED** (2026-09-19). Found by generalising the research
+  lane's `MiDoPoolCopy` discovery (below) into a tree sweep. `ntoskrnl/lpc/*.c` is
+  commented out in `ntos.cmake:211-217`, `lpc-rust` is linked into `kernel-rust`, so the
+  Rust IS the shipping LPC. Side-by-side at the same site:
+
+        C   reply.c:205   if (PreviousMode != KernelMode) {
+                            _SEH2_TRY { ProbeForRead(...); Captured = *(volatile ...)ReplyMessage; }
+                            _SEH2_EXCEPT(EXCEPTION_EXECUTE_HANDLER)
+                              { _SEH2_YIELD(return _SEH2_GetExceptionCode()); } }
+        Rust reply.rs:249 if previous_mode != 0i8 {
+                            ProbeForRead(...);
+                            captured_reply_message = *(ReplyMessage as *const PORT_MESSAGE); }
+
+  `NtReplyPort` (`reply.rs:236`) is `#[no_mangle] extern "system"` — a syscall entry point.
+  The C returns the exception code to the caller; the Rust lets `ProbeForRead` raise into
+  nothing. **Any unprivileged user process passing a bad `ReplyMessage` crashes the
+  kernel.** Far wider reach than the MM case, which needs a cross-process write. (The
+  `volatile` on the capture read was also dropped — separate and minor, but same site.)
+  **Verified: `reply.rs` only.** Five more LPC files show the same shape and are NOT
+  individually confirmed: `send.rs`, `connect.rs`, `complete.rs`, `create.rs`, `port.rs`.
+  Nothing in the whole `lpc-rust` crate matches any catch idiom (`probe::`,
+  `Result<_, NTSTATUS>`, `catch_unwind`, `_SEH2`).
+  Fix is the same validate-first `probe.rs` idiom `dummy-pseh-verdict.md` prescribes.
+
+  **On the sweep, because the method matters more than this one bug.** The research lane
+  proposed the tell "an unreachable error path is the fingerprint of a deleted handler"
+  (`_FailedInProbe` set, reset, then tested) and hoped it would find the rest of the class.
+  Implemented, it finds **only `virtual.rs`** — and the reason is worth keeping: that
+  fingerprint exists only where the C happened to use a *flag*. A dropped handler that
+  guarded a plain `return` leaves no trace at all, which is exactly the LPC shape. A naive
+  version of the flag sweep also produced 8 false positives, because `X = 1` in an `if`
+  arm and `X = 0` in the `else` arm looks identical to set-then-reset unless you reject any
+  brace between them (fastfat `RecursiveClose` is the clean example).
+  What DOES generalise: **pair each C file containing `_SEH2_EXCEPT` with its translated
+  `.rs`, and flag the ones whose Rust can raise (`ProbeForRead`/`ProbeForWrite`/
+  `ExRaiseStatus`/`ExRaiseAccessViolation`) with no catch idiom.** 19 hits, of which the
+  same-subsystem ones are the real leads; basename matching mis-pairs the rest
+  (`fastfat/create.c` to `lpc-rust/create.rs`), so read the pairs before believing them.
+  Still to triage from that list: `mm/section.rs`, `cc-rust/copy.rs`, `win32k-rust`
+  {`class`,`hook`,`desktop`}`.rs`. **This wants to become a real scanner** — it is a
+  source-only check that needs no boot, and it is currently a shell one-liner in a commit
+  message, which is the definition of a rule that will be forgotten.
+
+- **`NtWriteVirtualMemory`/`NtReadVirtualMemory` BUGCHECK instead of returning
+  STATUS_ACCESS_VIOLATION — a dropped `_SEH2_EXCEPT` in the Rust MM translation**
+  (found 2026-09-19 by `research`, via the new `spawn32` WoW64 guest). `virtual.c:876`
+  wraps both probes in `_SEH2_TRY { … } _SEH2_EXCEPT(EXCEPTION_EXECUTE_HANDLER) { Status =
+  _SEH2_GetExceptionCode(); }`. The Rust port kept the body and **dropped the handler**, at
+  four probe sites across `MiDoMappedCopy` and `MiDoPoolCopy`
+  (`ntoskrnl-rust/src/ARM3/virtual.rs`, around lines 842/869 and 961/986). `ProbeForWrite`
+  raises via `ExRaiseAccessViolation()`, nothing catches it, and the machine takes
+  **BUGCHECK 0x1E (`c0000005`)** — KMODE_EXCEPTION_NOT_HANDLED — where the contract is to
+  return a status.
+  **Reproduced on amd64**, deterministic: `ProbeForWrite` (`ex-rust/src/exintrin.rs:267`)
+  called from `MiDoPoolCopy` (`virtual.rs:987`). Repro is
+  `VIBEOS_WOW64_SPAWN=1 tools/fex/build-hello-compute.sh` then an amd64 `smoke --ladder` —
+  the guest is opt-in precisely because it kills the boot.
+  **NOT a WoW64 bug**, despite how it was found: any caller writing into another process
+  with a bad target address and `PreviousMode != KernelMode` reaches the same sites. A
+  32-bit guest's `CreateProcess` was simply the first thing in the tree to do it, and it
+  gets there only AFTER `NtCreateProcessEx` has already succeeded.
+  **The tell, for finding the rest of this class:** a recovery branch that nothing can
+  reach any more. Here `_FailedInProbe` is set to 1, the probe runs, it is set back to 0,
+  and a later `if Status < 0 && _FailedInProbe != 0` tests a state no line between them can
+  now produce. **An unreachable error path is the fingerprint of a deleted handler**, and it
+  is visible in the Rust alone without diffing the C.
+  **PROBE HALF FIXED 2026-09-19 by `research`; the LOCK half is still open and is now what
+  this entry tracks.** All four probe sites moved to validate-first
+  `ntkrnl_sys::probe::probe_user_buffer` (`Result<NTSTATUS>`), which also makes the
+  `if _FailedInProbe != 0` branch reachable again — setting `Status` is exactly what the
+  deleted handler did, so the C's discriminator between "probe failed" (return the code)
+  and "copy faulted" (`STATUS_PARTIAL_COPY`) works once more.
+  **The copy needed fixing too, and the tree PROVED it rather than my predicting it.** With
+  only the probes converted, the same BUGCHECK 0x1E came back one frame along, now inside
+  `memcpy` — because the C's TRY also wrapped `RtlCopyMemory`, and a range check proves
+  where a buffer IS, never that it stays mapped. All three copies now go through
+  `ntkrnl_sys::probe::safe_copy_raw` (`KmProtectedCopyMemory`, genuinely fault-protected on
+  x86_64/aarch64/x86). Leaving `_FailedInProbe` at 0 on that path is what selects the C's
+  copy-faulted arm over its probe-failed one.
+  **Verified end to end on amd64:** zero bugchecks, and the third `NtWriteVirtualMemory`
+  into a child process now returns **`8000000d` (STATUS_PARTIAL_COPY)** — exactly the C's
+  `MiGetExceptionInfo`/`HaveBadAddress` arm, the branch that had been unreachable. A
+  syscall that killed the machine now returns a status.
+  **And restoring that path immediately exposed a SECOND bug in the same three lines:**
+  they returned `0xC000009B`, which is `STATUS_DFS_EXIT_PATH_FOUND`, not
+  `STATUS_PARTIAL_COPY` (`0x8000000D`) — the numeric neighbour of
+  `STATUS_INSUFFICIENT_RESOURCES` (`0xC000009A`) used a few lines above. It was invisible
+  while the path was dead code, and while it was live it made a caller report
+  `ERROR_PATH_NOT_FOUND` for a memory fault. `ntkrnl-sys::base` now has a named
+  `STATUS_PARTIAL_COPY`; the guest reports `ERROR_PARTIAL_COPY` (299). `vibeos-cli check`
+  passes both before and after, so `scan_invented_constants` does not catch a wrong bare
+  hex in an `as NTSTATUS` cast.
+  **ONE THING STILL OPEN, left visible rather than made to look handled:**
+  `MiDoMappedCopy` calls `MmProbeAndLockPages` inside the same C `_SEH2_TRY`, and it
+  **raises by design** on pages it cannot lock. Validate-first cannot reach that, and
+  `dummy-pseh-verdict.md` lists it under "software exceptions raised by design" as THE open
+  gap, needing a `try_` Result variant at the callee that does not exist (no such symbol in
+  `ntkrnl-sys`). That path can still BUGCHECK, and the code says so at the call site.
+  **Remaining work is the `try_`-variant mechanism, not this function. Unowned.**
+
+- **`test_nested_cargo_deps` is load-sensitive and bounces `land` preflights —
+  REPRODUCED, OPEN** (2026-09-19). **Three independent observations, three DIFFERENT steps
+  of the same test, two different parametrisations** — so this is one invalidation bug that
+  hits whichever step lands unluckily, not a bug in a particular crate-type or input kind:
+
+        research  ["staticlib"]          build(15) got 6    <- shared/src/lib.rs edit
+        msvcrt    ["staticlib","rlib"]   build(33) got 15   <- body/asset.txt edit
+        control   ["staticlib"]          build(60) got 150  <- shared/Cargo.toml feature edit
+
+  Read the assertion correctly: `build(N)` asserts the *program prints* N, so a low number is
+  the PREVIOUS value still linked. It is not a count of cargo invocations.
+  **Load-sensitive, now measured:** 1 failure in 16 test instances with the fleet saturated
+  (a conductor gating + 2 lane builds); **0 in 36** once load dropped; 0 in 18 earlier at
+  moderate load. `land` runs `check-tooling` at preflight, so at ~1-in-8 under load this
+  rejects innocent lanes — and it does it worst exactly when the queue is deepest.
+  **Not a code difference:** the reporting lane's branch had `test_nested_cargo_deps.py`,
+  `cargo_deps.rs` and `retarget_cargo_depfile.py` byte-identical to master. Master is **not**
+  deterministically red — it passes here 54/56 instances — so do not chase a phantom hard
+  failure.
+  **Disconfirmed:** mtime granularity, the obvious candidate. Both `/tmp` and the repo are
+  ext4 with nanosecond stamps (~0.7ms measured, 6/6 distinct writes).
+  **Best current hypothesis, untested:** that a manifest-only edit can also fail points at
+  `outer/build.rs` not re-running at all — which would starve every input kind uniformly,
+  since the nested cargo only runs from inside it. Emitting ANY `rerun-if-changed` disables
+  cargo's default whole-package watching, so an incomplete watch list from
+  `cargo_deps::watch` would do exactly this. Next step: catch a failure and read the
+  leftover `invocations` file under `/tmp/pytest-of-*/` — it counts `build.rs` executions and
+  settles which layer went stale in one look.
+
+
 - **Kernel symbols resolve against the WRONG image since the MP promotion — TOOLING FIXED,
   HAND RESOLUTION STILL SUSPECT** (2026-09-13). Every medium carries both kernels and boots the MP one
   (`livecd.ini:59` → `/KERNEL=ntkrnlmp.exe /HAL=halmp.dll`), so anything that resolves a

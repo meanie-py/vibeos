@@ -1,7 +1,7 @@
 """QEMU launch backends: `native` (Linux/Unix-socket/KVM) vs `windows-host`.
 
 The `windows-host` backend runs the *Windows* QEMU.exe via WSL interop to escape WSL2
-nested-virt contention (docs/engineering/windows-host-qemu-spike.md). This module holds the
+nested-virt contention (docs/engineering/windows-host-qemu-whpx-spike.md). This module holds the
 pure, testable helpers for that backend — WSL↔Windows path translation, media staging, QEMU
 arg rewriting (accel + staged paths), and uid-scoped process kill. The QemuVM wiring lives in
 vm.py and only branches on the backend name; native behavior is left byte-for-byte unchanged.
@@ -9,6 +9,8 @@ vm.py and only branches on the backend name; native behavior is left byte-for-by
 
 from __future__ import annotations
 
+import fcntl
+import hashlib
 import os
 import re
 import shutil
@@ -18,6 +20,8 @@ from pathlib import Path
 
 # A token like `file=/home/.../livecd.iso` inside a -drive arg value.
 _FILE_TOKEN = re.compile(r"(file=)(/[^,]+)")
+_COPY_BUFFER_SIZE = 16 * 1024
+_MEDIA_CACHE_LIMIT = 2 * 1024**3
 
 
 def win_path(linux_path: str | Path) -> str:
@@ -39,14 +43,18 @@ def stage_file(src: Path, staging: Path) -> str:
     dst = staging / src.name
     if src.resolve() != dst.resolve():
         # DrvFS/9p sendfile failed with ENOMEM under concurrent gate load even
-        # with ample reclaimable RAM (order-4 kernel allocation). Small writes
-        # avoid that bulk path. Publish only a complete, unchanged input.
+        # with ample reclaimable RAM (order-4 kernel allocation). Even buffered
+        # 256 KiB writes reproduced it. Keep writes small; cache read-only media
+        # to avoid paying for this transfer on every boot.
         before = src.stat()
         fd, temporary = tempfile.mkstemp(prefix=f".{src.name}-", dir=staging)
         temp = Path(temporary)
         try:
-            with os.fdopen(fd, "wb", buffering=16 * 1024) as output, src.open("rb") as source:
-                shutil.copyfileobj(source, output, length=16 * 1024)
+            with (
+                os.fdopen(fd, "wb", buffering=_COPY_BUFFER_SIZE) as output,
+                src.open("rb") as source,
+            ):
+                shutil.copyfileobj(source, output, length=_COPY_BUFFER_SIZE)
             after = src.stat()
 
             def identity(s):
@@ -59,6 +67,88 @@ def stage_file(src: Path, staging: Path) -> str:
         finally:
             temp.unlink(missing_ok=True)
     return win_path(dst)
+
+
+def stage_readonly_file(src: Path, staging: Path) -> str:
+    """Share immutable media by content, never writable firmware vars or scratch.
+
+    Hash the actual input on every launch, including equal-size/mtime rebuilds.
+    Populate atomically with the safe small-write copier. A cache lock prevents
+    races between filling, pinning a run's inode, and pruning old entries.
+    Old cache files may be unlinked, but are never rewritten in place.
+    """
+    before = src.stat()
+    digest = hashlib.sha256()
+    with src.open("rb") as source:
+        for block in iter(lambda: source.read(1024 * 1024), b""):
+            digest.update(block)
+    after = src.stat()
+
+    def identity(st):
+        return st.st_dev, st.st_ino, st.st_size, st.st_mtime_ns, st.st_ctime_ns
+
+    if identity(before) != identity(after):
+        raise RuntimeError(f"QEMU staging input changed while hashing: {src}")
+    cache = staging.parent / "media-cache-v1"
+    key = digest.hexdigest()
+    entry = cache / f"{key}-{src.name}"
+    # flock belongs on the Linux filesystem; DrvFS does not provide the same
+    # lock semantics. Never unlink lock files (a waiter may hold their inode).
+    locks = Path(os.environ.get("VIBEOS_HOSTLOCK_DIR", "/tmp/vibeos-qemu-locks/host")) / "media"
+    locks.mkdir(parents=True, exist_ok=True)
+    with (locks / "cache.lock").open("a") as lock:
+        fcntl.flock(lock.fileno(), fcntl.LOCK_EX)
+        cache.mkdir(parents=True, exist_ok=True)
+        if not entry.exists():
+            # stage_file owns a private temp and verifies the source remained
+            # unchanged during copying. Use a private directory to retain the
+            # source basename without exposing an incomplete cache entry.
+            with tempfile.TemporaryDirectory(prefix=".fill-", dir=cache) as temporary:
+                private = Path(temporary)
+                stage_file(src, private)
+                if identity(src.stat()) != identity(before):
+                    raise RuntimeError(f"QEMU staging input changed before publication: {src}")
+                os.replace(private / src.name, entry)
+        if entry.stat().st_size != before.st_size:
+            raise RuntimeError(f"QEMU read-only media cache is damaged: {entry}")
+        if identity(src.stat()) != identity(before):
+            raise RuntimeError(f"QEMU staging input changed before pinning: {src}")
+        staging.mkdir(parents=True, exist_ok=True)
+        pinned = staging / src.name
+        if pinned.exists():
+            if not pinned.samefile(entry):
+                raise RuntimeError(f"Conflicting read-only staging basename: {pinned}")
+        else:
+            os.link(entry, pinned)
+        # A per-run hard link pins the inode even if retention prunes the cache
+        # name before QEMU opens it. Only explicitly read-only drives use this.
+        # LRU bookkeeping changes metadata only; QEMU opens this media read-only.
+        entry.touch()
+        _prune_media_cache(cache, keep=entry)
+    return win_path(pinned)
+
+
+def _prune_media_cache(cache: Path, *, keep: Path) -> None:
+    """Bound cached media to 2 GiB plus entries pinned by run directories."""
+    entries = []
+    for path in cache.iterdir():
+        if re.fullmatch(r"[0-9a-f]{64}-.+", path.name):
+            try:
+                st = path.stat()
+                entries.append((st.st_mtime_ns, st.st_size, st.st_nlink, path))
+            except FileNotFoundError:
+                continue  # another launch pruned it
+    total = sum(size for _, size, _, _ in entries)
+    for _, size, links, path in sorted(entries):
+        if total <= _MEDIA_CACHE_LIMIT:
+            break
+        if path == keep or links > 1:
+            continue
+        try:
+            path.unlink()
+        except (FileNotFoundError, PermissionError):
+            continue
+        total -= size
 
 
 def windows_qemu_bin(native_bin: str, qemu_dir: str, accel: str) -> str:
@@ -198,7 +288,11 @@ def stage_media_paths(args: list[str], staging: Path) -> list[str]:
             out.append(a)
             continue
         src = Path(m.group(2))
-        win = stage_file(src, staging) if src.is_file() else win_path(src)
+        if src.is_file():
+            readonly = "readonly=on" in a.split(",")
+            win = stage_readonly_file(src, staging) if readonly else stage_file(src, staging)
+        else:
+            win = win_path(src)
         out.append(a[: m.start(2)] + win + a[m.end(2) :])
     return out
 
