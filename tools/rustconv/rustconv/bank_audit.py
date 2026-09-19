@@ -57,6 +57,7 @@ shipped when it is not.
 
 from __future__ import annotations
 
+import hashlib
 import json
 import re
 from dataclasses import dataclass, field
@@ -437,6 +438,82 @@ def audit(
     return reports
 
 
+#: A `RunArchive` dir — one `translate`/`submit` invocation, streamed as it was bought.
+_RE_RUN_ARCHIVE = re.compile(r"^\d{8}-\d{6}-")
+
+
+@dataclass(frozen=True)
+class Redundancy:
+    """One banked function present in several dirs, and whether the copies AGREE."""
+
+    name: str
+    dirs: list[str]
+    integrated: bool
+    identical: bool
+
+
+def _body_hash(path: Path) -> str | None:
+    try:
+        return hashlib.sha256(path.read_bytes()).hexdigest()
+    except OSError:
+        return None
+
+
+def redundancies(reports: list[DirReport]) -> tuple[list[Redundancy], list[str]]:
+    """Functions banked in MORE THAN ONE dir, and run archives that duplicate the cache.
+
+    **Two dirs holding a function is normally ONE purchase, not two.** Every `translate`
+    writes each body twice: to a timestamped `RunArchive` (`20260919-022222-file.c`) as
+    it streams, and to the namespaced `ResponseCache`
+    (`msvcrt__file__factseal_v1__callseal_v1__wideseal_v1`) that makes a replay free. The
+    first draft of this function called that "bought more than once" and was wrong about
+    all 235 of msvcrt's — they are byte-identical pairs from a single run. So the copies
+    are HASHED, and only genuinely DIVERGENT ones are reported as separate purchases.
+    A divergent pair is the real re-buy signal, and its usual cause is a re-run under a
+    different seal-flag namespace.
+
+    Returns (duplicates, run-archive dirs that are safe to archive). The second list is
+    deliberately never a `ResponseCache` dir: **that directory is the live replay cache,
+    and deleting it makes the next run re-buy the file.** Only a timestamped RunArchive
+    whose every function is byte-identical to a cached copy — and integrated — qualifies.
+
+    REPORTS ONLY. `.responses/` is paid artifact; removing even a provably redundant
+    copy is a human's call, not a tool's.
+    """
+    where: dict[str, dict[str, Path]] = {}
+    resolved: dict[str, bool] = {}
+    for rep in reports:
+        for res in rep.resolutions:
+            where.setdefault(res.fn.name, {})[rep.name] = res.fn.path
+            resolved[res.fn.name] = resolved.get(res.fn.name, False) or res.integrated
+
+    dupes: list[Redundancy] = []
+    agree: dict[tuple[str, str], bool] = {}
+    for name, by_dir in sorted(where.items()):
+        if len(by_dir) < 2:
+            continue
+        hashes = {d: _body_hash(path) for d, path in by_dir.items()}
+        identical = len(set(hashes.values())) == 1 and None not in hashes.values()
+        dupes.append(Redundancy(name, sorted(by_dir), resolved[name], identical))
+        for d in by_dir:
+            agree[(d, name)] = identical
+
+    cache_dirs = {r.name for r in reports if not _RE_RUN_ARCHIVE.match(r.name)}
+    safe_archives = [
+        rep.name
+        for rep in reports
+        if _RE_RUN_ARCHIVE.match(rep.name)
+        and rep.resolutions
+        and all(
+            res.integrated
+            and agree.get((rep.name, res.fn.name), False)
+            and any(d in cache_dirs for d in where[res.fn.name])
+            for res in rep.resolutions
+        )
+    ]
+    return dupes, safe_archives
+
+
 def format_report(reports: list[DirReport], verbose: bool = False) -> str:
     """Human-readable summary. Absences first — they are the reason to run this."""
     lines = []
@@ -463,6 +540,44 @@ def format_report(reports: list[DirReport], verbose: bool = False) -> str:
                 for res in rep.aliased:
                     lines.append(f"  {rep.name}: {res.fn.name} -> {res.found_as} ({res.via})")
             lines.append("")
+
+    dupes, safe_archives = redundancies(reports)
+    rebought = [d for d in dupes if not d.identical]
+    mirrored = [d for d in dupes if d.identical]
+    if rebought:
+        unshipped = [d for d in rebought if not d.integrated]
+        lines.append(
+            f"BOUGHT MORE THAN ONCE — {len(rebought)} function(s) whose copies DIFFER"
+            f"{f', {len(unshipped)} still unintegrated' if unshipped else ''}:"
+        )
+        shown = rebought if verbose else rebought[:12]
+        for dup in shown:
+            flag = "" if dup.integrated else "  [UNINTEGRATED]"
+            lines.append(f"  {dup.name}  x{len(dup.dirs)}  {', '.join(dup.dirs)}{flag}")
+        if not verbose and len(rebought) > 12:
+            lines.append(f"  ... and {len(rebought) - 12} more (--verbose for all)")
+        lines.append(
+            "  Usual cause: a re-run under a different SEAL-FLAG namespace re-buys the "
+            "whole file.\n  Pass --seal-facts --seal-calls --seal-wide from the START."
+        )
+        lines.append("")
+    if mirrored:
+        # Not a finding. Said out loud because the first version of this report called
+        # it one, and 235 byte-identical pairs from a SINGLE run read as 235 re-buys.
+        lines.append(
+            f"({len(mirrored)} function(s) appear in several dirs with IDENTICAL bytes "
+            "— one purchase written to both its run archive and the replay cache.)"
+        )
+        lines.append("")
+    if safe_archives:
+        lines.append(
+            f"RUN ARCHIVE FULLY MIRRORED BY THE CACHE — {len(safe_archives)} dir(s); every "
+            "function in them is integrated AND byte-identical to a copy in a replay-cache "
+            "dir, so archiving loses nothing. NEVER remove the namespaced cache dir itself: "
+            "that is what makes a replay free. Deleting paid artifact is a HUMAN's call:"
+        )
+        lines.extend(f"  {name}" for name in safe_archives)
+        lines.append("")
 
     lines.append(
         f"{len(reports)} response dir(s), {total_fns} banked function(s), "
