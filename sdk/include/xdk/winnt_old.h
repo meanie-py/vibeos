@@ -88,10 +88,21 @@
 #else
 #define __WINE_DEALLOC(...)
 #endif
+/* The #ifndef guard exists so the c2rust ANCHOR can neutralise this with -D, exactly as
+   dll/win32/msvcrt/include/corecrt.h does for its own copy. c2rust 0.22.1's Clang AST
+   exporter cannot map __attribute__((malloc)): it drops the TYPE of the decl it sits on
+   ("Missing type ... TagFunctionDecl" -> "Exported Clang AST was invalid" -> a
+   "Could not find CTypeId(N) in TypedAstContext" panic), and one such decl anywhere in
+   the include closure kills the whole transpile. Guarding only corecrt.h was not enough:
+   wine/winternl.h's RtlAllocateHeap picks up THIS definition, which re-defined the macro
+   straight over the -D. The attribute is an optimiser hint, not ABI, so dropping it for
+   the anchor changes nothing we translate; the real build never sees the -D. */
+#ifndef __WINE_MALLOC
 #if defined(__GNUC__) && (__GNUC__ > 2) && !defined(malloc)
 #define __WINE_MALLOC __attribute__((malloc))
 #else
 #define __WINE_MALLOC
+#endif
 #endif
 /*#endif*/
 

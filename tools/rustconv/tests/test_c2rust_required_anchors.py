@@ -63,3 +63,58 @@ def test_nested_sal_does_not_erase_cdfs_functions():
 def test_compiler_panic_reason_keeps_payload_not_just_source_location():
     message = "thread 'main' panicked at convert_type.rs:518:25:\nunsupported calling convention\nnote: trace"
     assert 'unsupported calling convention' in anchor._c2rust_reason(message, '')
+
+
+# --- calling-convention guard ------------------------------------------------
+# c2rust 0.22.1 panics in convert_type.rs whenever a pointer is formed to a function
+# type carrying a calling-convention attribute. We erase __thiscall to get past it,
+# but ONLY on 64-bit targets, where the compiler ignores the keyword anyway. Erasing
+# it on i386 would silently change the ABI the anchor teaches.
+
+
+@pytest.mark.parametrize(
+    "flags",
+    [
+        ["--target=i686-w64-mingw32"],
+        ["--target=i386-w64-mingw32"],
+        ["--target", "i686-pc-windows-gnu"],
+        ["-DFOO", "--target=i586-w64-mingw32", "-I/x"],
+    ],
+)
+def test_targets_i386_true(flags):
+    assert anchor._targets_i386(flags)
+
+
+@pytest.mark.parametrize(
+    "flags",
+    [
+        ["--target=x86_64-w64-mingw32"],
+        ["--target=aarch64-w64-mingw32"],
+        ["--target", "x86_64-pc-windows-gnu"],
+        [],
+        ["-DTARGET=i686-w64-mingw32"],  # a -D that merely MENTIONS i686 is not a target
+    ],
+)
+def test_targets_i386_false(flags):
+    assert not anchor._targets_i386(flags)
+
+
+def test_db_entry_order_puts_the_pinned_arch_first(tmp_path, monkeypatch):
+    """The fallback exists because a c2rust failure can belong to the ARCH, not the
+    file — but the arch the caller asked for must still be tried first."""
+    src = tmp_path / "x.c"
+    src.write_text("int x;\n")
+    for bd in ("build-amd64", "build-arm64", "build-i386"):
+        d = tmp_path / bd
+        d.mkdir()
+        (d / "compile_commands.json").write_text(
+            json.dumps([{"file": str(src), "command": "clang -c x.c", "directory": str(d)}])
+        )
+    monkeypatch.setattr(anchor, "REACTOS_ROOT", tmp_path)
+    names = [bd.name for _, bd in anchor._find_db_entries(src, "i386")]
+    assert names == ["build-i386", "build-amd64", "build-arm64"]
+    assert [bd.name for _, bd in anchor._find_db_entries(src, None)] == [
+        "build-amd64",
+        "build-arm64",
+        "build-i386",
+    ]

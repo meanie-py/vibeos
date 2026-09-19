@@ -3321,7 +3321,8 @@ not reading it** — when a quote is doing load-bearing work in an argument, re-
 says as if it argued the other way.
 
 **c2rust refuses EVERY file in a module, all at one panic site. SOLVED 2026-09-13: it is
-three function ATTRIBUTES in the module's own headers — not the include closure, not LLVM.**
+three function ATTRIBUTES in the module's own headers — not the include closure, not LLVM.
+FULLY CLOSED 2026-09-19 (msvcrt 35/35, 0 FAIL) once two further classes underneath it were fixed: see the `__label__` and calling-convention sections below.**
 Symptom: with `--c2rust` default-on, every `.c` in a module dies before payment with
 
     c2rust-transpile-0.22.1/src/c_ast/mod.rs:682:29
@@ -3363,18 +3364,54 @@ Traps, each of which cost a probe:
   constants already present and correct in `msvcrt-sys`. A blocking gate that cannot be
   satisfied sends someone transcribing constants that exist. Strip every trailing `_<role>`.
 
-**Still genuinely blocked: the `__label__` class**, and the grep the docs told you to use for
-it was wrong. Under `_USE_DUMMY_PSEH=1` the PSEH macros open a block with a GCC local-label
-declaration (`__label__ __pseh_try_end;`) that c2rust does not support — one
-`Missing child … TagDeclStmt` per label. But that is **not** only `_SEH2_TRY`: wine's
-`__TRY`/`__EXCEPT`/`__EXCEPT_CTX` expand the same way, and msvcrt's `except.c` and `cpp.c` —
-the only 2 of 37 that still refuse — contain **zero** `_SEH2_TRY` between them. Deciding
-"can this file be anchored" by grepping `_SEH2_TRY` gives a wrong answer in both directions.
+**The `__label__` class, SOLVED 2026-09-19 — and the grep the docs told you to use for it was
+wrong.** Under `_USE_DUMMY_PSEH=1` the PSEH macros open a block with a GCC local-label
+declaration (`__label__ __seh2_scope_end__;`) that c2rust cannot export — one
+`Missing child … TagDeclStmt` per label. That is **not** only `_SEH2_TRY`: wine's
+`__TRY`/`__EXCEPT`/`__EXCEPT_CTX` expand the same way, and msvcrt's `except.c` and `cpp.c`
+contain **zero** `_SEH2_TRY` between them. Deciding "can this file be anchored" by grepping
+`_SEH2_TRY` gives a wrong answer in both directions. Fix: the dummy-PSEH block in
+`sdk/lib/pseh/include/pseh/pseh2.h` is now `#ifndef _SEH2_TRY`-guarded and the anchor passes
+label-free replacements (`-D_SEH2_TRY={`, `-D_SEH2_EXCEPT(...)=} if (…) {`, …). That branch
+is INERT — the except arm is `if (_SEH2_Volatile0 || (0 && filter))`, never entered — so the
+label's only job is the `_SEH2_LEAVE` goto target, and the override deliberately leaves
+`_SEH2_LEAVE` pointing at a label that no longer exists: a TU that really uses it fails with
+`use of undeclared label` instead of being anchored against control flow it does not have.
+
+**The third class: a pointer to a function whose type carries a CALLING CONVENTION.** Panic
+site is different — `convert_type.rs:518`, `ctype parameter must be a function instead of
+Attributed(...)` — and it fires whenever the address of a `__stdcall`/`__thiscall` function
+is taken (`SetConsoleCtrlHandler(handler, TRUE)`; `cxx.h`'s `DEFINE_CXX_DATA` doing
+`(char *)dtor - base` on a `__thiscall` dtor). It is **arch-dependent**: on i386 `WINAPI` IS
+such an attribute, on amd64/arm64 it is nothing. Two fixes, in this order:
+1. `_transpile_text` now tries the OTHER arches' compile dbs after the pinned one fails, and
+   prints which db actually produced the anchor and why the requested one could not. Not a
+   silent degrade — an anchor from another arch is still compiler-exact, but its pointer
+   widths and conventions are that arch's, so the caller is told.
+2. On a non-i386 target only, the anchor also erases `__thiscall`. The 64-bit compiler
+   ignores that keyword outright, so erasing it there is a no-op rather than a semantic edit;
+   on i386 it is real ABI and is never touched.
+Measured on msvcrt: raw per-arch 31/35 on i386 and 34/35 on amd64; **35/35 tool-level**
+(`0 FAIL`; the 11 remaining `.c` are in no build db at all — crt startup variants, `except_arm*.c`).
+
+More traps, each of which cost a probe:
+
+* **A guard you added to a header can be defeated by a GENERATED copy of that header.**
+  Guarding `__WINE_MALLOC` in `sdk/include/xdk/winnt_old.h` changed nothing until a rebuild,
+  because the closure actually reads `build-<arch>/sdk/include/psdk/winnt.h`, assembled from
+  the xdk sources by `add_xdk_header`. `clang -E -dD` plus the `# "file"` line markers names
+  the file that really defined the macro; the source tree does not.
+* **Fixing one class only reveals the next.** except.c/cpp.c went attribute → `__label__` →
+  calling convention, three different panic sites, each hidden behind the one before. "Still
+  blocked" is not evidence that the last fix did nothing.
+* **A bisect that reuses its output directory reports OK forever.** `c2rust transpile
+  --output-dir D` left stale results in `D`, so every probe "passed" and the bisect
+  converged on the last line of the file. `rm -rf D` between iterations, and sanity-check
+  that the full input still reproduces.
 
 Rebuilding c2rust against a matching LLVM (`ldd $(command -v c2rust-transpile)` shows
-`libLLVM-14.so.1` against our pinned clang 19.1.7) is **no longer needed for the attribute
-class** and should not be closed wholesale on that basis — it remains the untested lever for
-the `__label__` class ONLY.
+`libLLVM-14.so.1` against our pinned clang 19.1.7) is **not needed for any of the three
+classes** and is now an untested lever with no known customer.
 
 anchor is what stops the model silently stubbing a hard body or turning a function-like macro
 into a phantom extern, so trading it away to get past this is a real cost on the other side —
@@ -5974,6 +6011,24 @@ a feature flag, a cached handle, an errno policy — has this hole. If the harne
 the state both sides are in, it cannot tell you which kind of difference it just measured, and
 it will confidently report the wrong one. Note this is the same shape as the stale-generated-
 header class: the tool answers honestly, but answers a different question than the one asked.
+
+### A crate parked out of `workspace.members` still lints — cargo metadata is not what the scanners read
+**Symptom.** A translated-but-uncompilable crate is deliberately kept OUT of
+`sdk/lib/rust/Cargo.toml`'s `members` so its thousands of errors cannot take the workspace
+`cargo check` down for every other lane — and the lane's landing then bounces on lint findings
+from that crate anyway.
+
+**Cause.** The source scanners walk DIRECTORIES, not cargo metadata. Parking changes what
+`cargo` builds and nothing about what `vibeos-cli check` reads. On 2026-08-04 the parked
+`msv1_0-rust` and `aclui-rust` emitted ~14 new findings on every build — catch-all match arms,
+wide literals, `.unwrap()` — for crates nothing compiled.
+
+**Fix.** Committing the parked crate is still right: the paid output IS the artifact and
+regenerating it costs real money (AGENTS.md, "never delete a translated `.rs`"). So budget for
+clearing its lint findings in the SAME session, or do not commit it yet. **Fix them rather than
+baseline them** — on that batch every finding was a real defect. The lint baseline is for things
+that are correct-as-translated (a deliberately dropped `DPRINT`, a per-module `BCHAR = WCHAR`),
+not for a crate whose bodies simply have not been reviewed yet.
 
 ### A gate can be RED for reasons that are not in the tree at all
 Symptom: a gate goes RED with **no failing test**. Cause: the verdict depended on host state,
