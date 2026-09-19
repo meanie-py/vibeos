@@ -304,7 +304,7 @@ a ladder to watch", and neither was visible from reading.
    `ntoskrnl/mm/ARM3/virtual.c:876` wraps both probes in
    `_SEH2_TRY { … } _SEH2_EXCEPT(EXCEPTION_EXECUTE_HANDLER) { Status =
    _SEH2_GetExceptionCode(); }`. The Rust translation kept the body and
-   **dropped the handler**, at three sites across `MiDoMappedCopy` and
+   **dropped the handler**, at four probe sites across `MiDoMappedCopy` and
    `MiDoPoolCopy`. So `ProbeForWrite` raises via `ExRaiseAccessViolation()`,
    nothing catches it, and KMODE_EXCEPTION_NOT_HANDLED follows. The tell is
    visible in the Rust alone, without the C beside it: `_FailedInProbe` is set
@@ -316,11 +316,34 @@ a ladder to watch", and neither was visible from reading.
    **This is NOT a WoW64 bug and the entry is filed here only because spawn32
    is what found it.** Any caller of `NtWriteVirtualMemory` into another
    process with a bad target address and `PreviousMode != KernelMode` reaches
-   the same three sites; a 32-bit guest was merely the first thing in the tree
+   the same sites; a 32-bit guest was merely the first thing in the tree
    to do it. The sanctioned fix is the validate-first `probe.rs`
    (`Result<T, NTSTATUS>`) idiom that `dummy-pseh-verdict.md` already prescribes
    and that SE and OB have migrated to — an unfinished migration, not a new
    mechanism. Registered in the roadmap's bug registry; owned there, not here.
+
+   **FIXED 2026-09-19, and the measurement moved on.** All four probe sites and all three
+   copies in `MiDoMappedCopy`/`MiDoPoolCopy` now use `ntkrnl_sys::probe`
+   (`probe_user_buffer` + `safe_copy_raw`). Converting only the probes was not enough and
+   the tree said so rather than my reasoning it out: the same 0x1E came back inside
+   `memcpy`, because the C's TRY covered `RtlCopyMemory` too. With both fixed the boot is
+   clean and spawn32 reports a verdict instead of killing the machine.
+
+   **The real next blocker, now visible for the first time:**
+
+        NtCreateProcessEx        => 00000000   (child created, PEB32 built)
+        NtWriteVirtualMemory     => 00000000
+        NtWriteVirtualMemory     => 00000000
+        NtWriteVirtualMemory     => c000009b   STATUS_PARTIAL_COPY
+        CreateProcessW           => FALSE, GetLastError 3 (ERROR_PATH_NOT_FOUND)
+
+   So the third write of the process-parameters block into the child's address space
+   partially fails — the target is in range but not fully mapped in the child. That is
+   TWO STEPS BEFORE the `NtCreateThread` cross-process refusal this entry originally
+   predicted, which remains unexercised. Note also that kernel32 maps a partial-copy
+   failure to `ERROR_PATH_NOT_FOUND`, which is actively misleading and would have sent the
+   next reader hunting a path bug. Next: why the child's parameter block is not mapped
+   where the parent is writing it.
 
    **Consequence for this lane, and a correction to the design above:** a
    diagnostic guest that BUGCHECKS cannot be carried by "report, never red".

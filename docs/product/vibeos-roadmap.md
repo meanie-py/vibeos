@@ -493,7 +493,7 @@ land; date every addition.** Source docs live in `docs/engineering/archive/`.
   (found 2026-09-19 by `research`, via the new `spawn32` WoW64 guest). `virtual.c:876`
   wraps both probes in `_SEH2_TRY { … } _SEH2_EXCEPT(EXCEPTION_EXECUTE_HANDLER) { Status =
   _SEH2_GetExceptionCode(); }`. The Rust port kept the body and **dropped the handler**, at
-  three sites across `MiDoMappedCopy` and `MiDoPoolCopy`
+  four probe sites across `MiDoMappedCopy` and `MiDoPoolCopy`
   (`ntoskrnl-rust/src/ARM3/virtual.rs`, around lines 842/869 and 961/986). `ProbeForWrite`
   raises via `ExRaiseAccessViolation()`, nothing catches it, and the machine takes
   **BUGCHECK 0x1E (`c0000005`)** — KMODE_EXCEPTION_NOT_HANDLED — where the contract is to
@@ -511,9 +511,30 @@ land; date every addition.** Source docs live in `docs/engineering/archive/`.
   and a later `if Status < 0 && _FailedInProbe != 0` tests a state no line between them can
   now produce. **An unreachable error path is the fingerprint of a deleted handler**, and it
   is visible in the Rust alone without diffing the C.
-  Fix is the validate-first `probe.rs` (`Result<T, NTSTATUS>`) idiom that
-  `dummy-pseh-verdict.md` already prescribes and SE/OB already use — an unfinished
-  migration, not new mechanism. **Unowned.**
+  **PROBE HALF FIXED 2026-09-19 by `research`; the LOCK half is still open and is now what
+  this entry tracks.** All four probe sites moved to validate-first
+  `ntkrnl_sys::probe::probe_user_buffer` (`Result<NTSTATUS>`), which also makes the
+  `if _FailedInProbe != 0` branch reachable again — setting `Status` is exactly what the
+  deleted handler did, so the C's discriminator between "probe failed" (return the code)
+  and "copy faulted" (`STATUS_PARTIAL_COPY`) works once more.
+  **The copy needed fixing too, and the tree PROVED it rather than my predicting it.** With
+  only the probes converted, the same BUGCHECK 0x1E came back one frame along, now inside
+  `memcpy` — because the C's TRY also wrapped `RtlCopyMemory`, and a range check proves
+  where a buffer IS, never that it stays mapped. All three copies now go through
+  `ntkrnl_sys::probe::safe_copy_raw` (`KmProtectedCopyMemory`, genuinely fault-protected on
+  x86_64/aarch64/x86). Leaving `_FailedInProbe` at 0 on that path is what selects the C's
+  copy-faulted arm over its probe-failed one.
+  **Verified end to end on amd64:** zero bugchecks, and the third `NtWriteVirtualMemory`
+  into a child process now returns **`c000009b` (STATUS_PARTIAL_COPY)** — which is exactly
+  the C's `MiGetExceptionInfo`/`HaveBadAddress` arm, the branch that had been unreachable.
+  A syscall that killed the machine now returns a status.
+  **ONE THING STILL OPEN, left visible rather than made to look handled:**
+  `MiDoMappedCopy` calls `MmProbeAndLockPages` inside the same C `_SEH2_TRY`, and it
+  **raises by design** on pages it cannot lock. Validate-first cannot reach that, and
+  `dummy-pseh-verdict.md` lists it under "software exceptions raised by design" as THE open
+  gap, needing a `try_` Result variant at the callee that does not exist (no such symbol in
+  `ntkrnl-sys`). That path can still BUGCHECK, and the code says so at the call site.
+  **Remaining work is the `try_`-variant mechanism, not this function. Unowned.**
 
 - **Kernel symbols resolve against the WRONG image since the MP promotion — TOOLING FIXED,
   HAND RESOLUTION STILL SUSPECT** (2026-09-13). Every medium carries both kernels and boots the MP one

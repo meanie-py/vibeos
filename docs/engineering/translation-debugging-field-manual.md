@@ -4247,7 +4247,7 @@ C's second SEH also covers the window between probe and copy, and a range check 
 buffer is, never that it stays mapped.
 
 **The MIRROR CASE, which the scanner structurally cannot see: the probe survived and the
-HANDLER did not.** `MiDoPoolCopy` / `MiDoMappedCopy` (`ARM3/virtual.rs`, three sites) still
+HANDLER did not.** `MiDoPoolCopy` / `MiDoMappedCopy` (`ARM3/virtual.rs`, four probe sites) still
 call `ProbeForWrite` — so "did it dereference a user pointer where its C validated one"
 answers *yes, it validated*, and neither function appears in the baseline. But the C wraps
 that probe in `_SEH2_TRY { … } _SEH2_EXCEPT(EXCEPTION_EXECUTE_HANDLER) { Status =
