@@ -90,16 +90,30 @@ rescue it. `./vibeos-cli host-status`, submit, then leave the host alone. Backgr
 and editing while it runs fails `receipt-validation` with "Tooling inputs changed during
 checks" — which reads exactly like an intermittent flake and is not one.
 
-**And that applies from ANOTHER WORKTREE, which the code does not look like it should.**
-`source_identity()` hashes `git ls-files` in the GATING repo, so the natural reading is that
-work in a sibling checkout cannot reach the conductor's integration worktree. It reaches it
-anyway. Measured 2026-09-19: tip `51e72900c8c9` was REJECTED TOOLING_FAIL — all 56 checks
-green, only `receipt-validation` failing — while its author ran `check-tooling` and `git
-merge` in a sibling worktree, and the byte-identical tip landed as `f5d93d6c2174` on
-resubmission with nothing changed but the author sitting still. Same commit, both verdicts.
-So the rule is not "don't edit your own gating tree", it is **don't touch the repo at all
-while your lane is in the queue** — and a `receipt-validation` failure with every substantive
-check green is that, not a defect in your change.
+**`receipt-validation` failing with every substantive check GREEN is infrastructure, not a
+defect in your change** — rerun it. What actually invalidates it is narrower than it looks,
+and an earlier version of this entry got it wrong in a way worth keeping as the example.
+
+That version claimed activity in a SIBLING worktree could fail the conductor's receipts,
+on the strength of tip `51e72900c8c9`: REJECTED TOOLING_FAIL with all 56 checks green while
+its author ran `check-tooling` and `git merge` in a sibling checkout, then the
+byte-identical tip landing as `f5d93d6c2174` on resubmission. Same commit, both verdicts —
+and the author wrote "Measured" beside it. **It was not measured, it was a correlation with
+an uncontrolled confound:** the resubmission also re-gated against a different master with
+different co-queued lanes, so "the author sat still" was never the isolated variable. The
+direct measurement, done afterwards, refutes it — `source_identity` and `runtime_identity`
+of a live integration worktree, sampled before and after mutating a sibling checkout, come
+back byte-identical. `_file()` is a pure content sha256 with no mtime, and `source_identity`
+walks only the gating repo's own `git ls-files`. Sibling activity cannot reach it. Note the
+tell that should have stopped the sentence: the author's own text said the code "does not
+look like it should" behave that way, which is a reason to go measure, not a flourish to
+put in front of a claim.
+
+**The one genuine cross-worktree surface is `runtime_identity`,** which hashes the SHARED
+toolchain — `.venv/bin/ruff`, `pyright`, and the rustup-selected rustc/cargo plus sysroot
+`.so` files. So a `rustup component add`, a venv upgrade or a `pip install` mid-gate really
+does reach the conductor and will invalidate its receipts; a merge, an edit or a
+`check-tooling` in another worktree will not. Save toolchain changes for a quiet queue.
 
 **A green local gate is WARM unless you pass `--clean`, so it is not evidence the tree builds
 cold.** A warm gate once reported OK on a tree whose i386 build failed cold, minted a push
