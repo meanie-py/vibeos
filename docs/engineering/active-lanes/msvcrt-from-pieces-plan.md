@@ -366,8 +366,17 @@ That forced a crate split, and it is structurally unavoidable: a crate with `sta
 - **`crt`/`libcntpr` static libs** — extend the existing `libcntpr.cmake` `REMOVE_ITEM` flips to `CRT_*_SOURCE` (the literal §1346/§1348 "built twice from the same vars" case — scope the `REMOVE_ITEM` correctly). Low risk (same sources + same cnt-rust symbols already boot-proven), but few boot modules statically link `crt`, so smoke barely exercises it — hence deferred, done for completeness/C-burndown.
 - **cmake `msvcrtex` floor** — extend the Rust startup floor to the ~700 traditional-cmake modules (explorer, shell32, …). Blocked on the personality-selection redesign (§2c): needs 3 feature-variant archives with per-module selection, *or* migrating those modules to the cargo link path (the direction the rest of the fleet took). A real design task; sequence when the body is done.
 
-### Phase F — ucrtbase parallel surface  *[follow-on, separate effort]*
-Apply the same pure-algorithm flips to the `ucrt` OBJECT lib (`sdk/lib/ucrt/`, independent 64.5K-LOC tree). The Rust symbols already exist; it's cohab wiring against a different C set. Nothing on our boot path needs ucrtbase yet — no smoke urgency; do it after msvcrt is green and stable.
+### Phase F — ucrtbase parallel surface  *[SUPERSEDED — do not do this]*
+This said: apply the same pure-algorithm flips to the `ucrt` OBJECT lib. **That decision was
+reversed.** `sdk/lib/ucrt` is a REGISTERED VENDORED TREE (`vendor.yaml`, 78,329 LOC of
+Microsoft UCRT) and is therefore not a translation target at all; its entry is the one that
+motivated the registry, and it argues the point directly — counting ucrt as translation debt
+makes ucrtbase read as permanently ~8% reachable, while excluding it makes the goal sayable.
+What was actually done instead landed 2026-09-05: ucrtbase links Rust through
+`crt-shared-rust` / `crt-shared-cargo` — deliberately NOT msvcrt's archive, because those
+collide with `ucrtbase.spec` on 891 names of which only 35 are ours, so the obvious wiring
+would have silently shadowed 856 genuine Microsoft bodies under
+`--allow-multiple-definition`. `tools/verify_ucrtbase_cohab.py` gates exactly that.
 
 ---
 
@@ -1589,9 +1598,19 @@ than as work.
   symbol has no `ref_<name>` oracle, so it cannot be proved and therefore cannot be
   flipped. Low value in practice: the one member is `memmove`, which AGENTS.md forbids
   hand-writing in Rust anyway.
-* **Phase F — ucrtbase.** Genuinely untouched: 479 `.c`/`.cpp` under `sdk/lib/ucrt`, no
-  Rust crate, and `tools/verify_ucrtbase_cohab.py` gating msvcrt's CRT out of it. This is
-  the real remaining frontier of the lane.
+* ~~**Phase F — ucrtbase**~~ — **NOT OWED, and this line was wrong when I wrote it
+  (2026-09-19).** I counted 479 `.c`/`.cpp` under `sdk/lib/ucrt`, saw no Rust crate, and
+  called it the lane's frontier without opening `vendor.yaml` — where that tree has been a
+  registered vendored entry all along. It is Microsoft's UCRT, not ours, and deliberately
+  not a translation target. Measured instead of counted: ucrtbase's own non-vendored C is
+  **132 lines** (`dll/win32/ucrtbase/printf.c` 49 + `stubs.c` 83; `ucrtbase_stubs.c` is
+  generated and the 2,676-line `.spec` is a definition file), and everything else of ours
+  in it — cpp, cpp_rtti, except, except_{i386,x86_64,arm64}, seh_i386, undname — is already
+  Rust in `sdk/lib/rust/crt-shared-rust/`. The only genuinely owed ucrt item is in
+  `vendor.yaml`'s own review note: **the SDK version is unidentified and cannot be
+  determined from this tree** (no version macro, stamp or manifest anywhere; `_M_ARM64EC`
+  puts an evidence-backed floor at 10.0.22000). That needs a real SDK drop to diff against,
+  which is an input we do not have rather than work we have not done.
 
 **The method, because it is cheaper than the mistake.** An "Owed" line is an assertion;
 the crate is the thing it describes. `rustconv bank-audit` answers "did we pay for
