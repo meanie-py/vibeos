@@ -585,35 +585,53 @@ def test_the_ramdisk_never_answers_for_an_iso_arch(tmp_path):
         assert "UNKNOWN, not" in ladder.gate_decision(tmp_path, arch)[2]
 
 
-def test_a_failing_diagnostic_guest_does_not_red_the_gate(tmp_path):
-    """The whole reason DIAGNOSTIC exists. spawn32 measures a gap the lane doc
-    ranks #1 and we already have a task for; grading it would red every lane in
-    the fleet for a hole nobody introduced, and the fleet's answer to a check
-    that reds for a known reason is to disable the check."""
-    text = _all_pass() + _serial(spawn32=0xBAE1)
+# DIAGNOSTIC is EMPTY today — spawn32, the guest it was built for, was promoted
+# into LADDER the day it passed. These tests therefore drive the mechanism with
+# a synthetic guest rather than a real one. That is deliberate: the machinery is
+# what the next guest aimed at a known-open gap will need, and deleting its
+# coverage because the table happens to be empty would leave it to rot
+# unexercised until exactly the moment someone depends on it.
+_DIAG = "probe32"
+
+
+@pytest.fixture
+def one_diagnostic(monkeypatch):
+    """Register a synthetic diagnostic guest for the duration of one test."""
+    monkeypatch.setitem(ladder.DIAGNOSTIC, _DIAG, 0x600D)
+    return _DIAG
+
+
+def test_a_failing_diagnostic_guest_does_not_red_the_gate(one_diagnostic):
+    """The whole reason DIAGNOSTIC exists. A diagnostic guest measures a gap we
+    already have a task for; grading it would red every lane in the fleet for a
+    hole nobody introduced, and the fleet's answer to a check that reds for a
+    known reason is to disable the check."""
+    text = _all_pass() + _serial(**{one_diagnostic: 0xBAE1})
     assert ladder.check(text) is None
 
 
-def test_a_failing_diagnostic_guest_still_reports_its_code(tmp_path):
+def test_a_failing_diagnostic_guest_still_reports_its_code(one_diagnostic):
     """Not grading it must not mean not SAYING it — an unreported measurement is
     not a measurement. The exact code is what triages the rung."""
-    assert "spawn32=0xbae1" in ladder.summary(_all_pass() + _serial(spawn32=0xBAE1))
+    out = ladder.summary(_all_pass() + _serial(**{one_diagnostic: 0xBAE1}))
+    assert f"{one_diagnostic}=0xbae1" in out
 
 
-def test_a_diagnostic_guest_that_starts_passing_is_loud(tmp_path):
+def test_a_diagnostic_guest_that_starts_passing_is_loud(one_diagnostic):
     """The day the gap closes is the day this line matters, and a bare 0x600d
     among the other hex codes is a result nobody reads. It must say so in words
     and name the next move, because a diagnostic guest that passes should be
-    promoted into LADDER where a REGRESSION can red it again."""
-    out = ladder.summary(_all_pass() + _serial(spawn32=0x600D))
-    assert "spawn32 PASSES" in out and "promote it to LADDER" in out
+    promoted into LADDER where a REGRESSION can red it again. This is not
+    hypothetical: it is how spawn32 left this table."""
+    out = ladder.summary(_all_pass() + _serial(**{one_diagnostic: 0x600D}))
+    assert f"{one_diagnostic} PASSES" in out and "promote it to LADDER" in out
 
 
-def test_a_diagnostic_guest_is_not_counted_in_the_parity_score(tmp_path):
+def test_a_diagnostic_guest_is_not_counted_in_the_parity_score(one_diagnostic):
     """It is not a parity guest, so it must move neither the numerator nor the
     denominator — and it must not fall through to the '+N non-parity' tail
     either, which is for guests nobody has classified."""
-    out = ladder.summary(_all_pass() + _serial(spawn32=0xBAE1))
+    out = ladder.summary(_all_pass() + _serial(**{one_diagnostic: 0xBAE1}))
     n = len(ladder.LADDER)
     assert out.startswith(f"{n}/{n} guests PASS")
     assert "non-parity" not in out
@@ -627,22 +645,58 @@ def test_an_absent_diagnostic_guest_says_nothing_at_all(tmp_path):
     assert ladder.check(_all_pass()) is None
 
 
-def test_an_absent_diagnostic_guest_costs_the_parity_set_nothing(tmp_path):
-    """spawn32 is OPT-IN, so absent is its normal state — the doom-i386 rule
-    (one missing .exe keeps all the others off the media) must NOT apply to it.
-    This is the corrected design: it was briefly in the unconditional set, and
-    the measurement that spawn32 BUGCHECKS the kernel is what ruled that out —
-    an unconditionally-staged guest that can kill the machine reds every lane."""
-    repo = _built_tree(tmp_path)  # every parity guest built, spawn32 absent
-    assert not (repo / "build-fex-hello" / "spawn32.exe").exists()
+def test_an_absent_diagnostic_guest_costs_the_parity_set_nothing(tmp_path, one_diagnostic):
+    """A diagnostic guest is built on demand, so absent is its normal state —
+    the doom-i386 rule (one missing .exe keeps all the others off the media)
+    must NOT apply to it. spawn32 was the original case and is no longer one:
+    it is a parity guest now, so this drives a synthetic diagnostic instead.
+    The asymmetry is the point — a guest absent from `staged_guests()` may go
+    missing for free, and a LADDER member may not."""
+    repo = _built_tree(tmp_path)  # every parity guest built, incl. spawn32
+    assert one_diagnostic not in ladder.staged_guests()
+    assert not (repo / "build-fex-hello" / f"{one_diagnostic}.exe").exists()
     assert ladder.stale_guests(repo) == []
     extra, staged, _ = ladder.gate_decision(repo, "amd64")
     assert extra == ["--ladder"] and staged
 
 
+def test_a_promoted_guest_is_graded_and_shares_the_all_or_nothing_set(tmp_path):
+    """The other half of the promotion, and the reason it is not free. spawn32
+    is now a LADDER member, so `check` grades it and `staged_guests` demands it
+    — and that set is all-or-nothing in CMake, so a tree that fails to build it
+    loses the whole ladder rather than just one verdict.
+
+    Note what is NOT asserted here: `gate_decision` cannot see a missing
+    build-fex-hello/spawn32.exe, because it asks the MEDIA what was staged
+    rather than the build tree. The enforcement lives in CMake's
+    `_wow64_guest_ok`. What ladder.py owns is grading and staleness, so that is
+    what this pins."""
+    assert "spawn32" in ladder.LADDER
+    assert "spawn32" in ladder.staged_guests()
+    # Graded now: a bad code reds, where as a DIAGNOSTIC it was reported only.
+    assert ladder.check(_all_pass()) is None
+    bad = _all_pass().replace(
+        "[WINLOGON] spawn32.exe exit = 0x600d",
+        "[WINLOGON] spawn32.exe exit = 0xbae5",
+    )
+    assert ladder.check(bad) is not None
+    # And a stale binary now skips the ENTIRE ladder, not just its own rung.
+    repo = _built_tree(tmp_path)
+    exe = repo / "build-fex-hello" / "spawn32.exe"
+    os.utime(exe, (_T0 - 500, _T0 - 500))
+    src = repo / ladder.GUEST_SOURCE["spawn32"]
+    src.parent.mkdir(parents=True, exist_ok=True)
+    src.write_text("int start(void){return 0;}\n")
+    os.utime(src, (_T0, _T0))
+    _extra, staged, why = ladder.gate_decision(repo, "amd64")
+    assert not staged and "spawn32" in why
+
+
 def test_a_built_diagnostic_guest_is_still_staleness_checked(tmp_path):
-    """Opt-in must not mean unchecked: it lives in build-fex-hello/ and rots
-    exactly like a parity guest, which is the marshal32 failure mode."""
+    """It lives in build-fex-hello/ and rots like any other guest, which is the
+    marshal32 failure mode. Written when spawn32 was opt-in, on the principle
+    that opt-in must not mean unchecked; it now guards a parity guest, and the
+    assertion is the same either way."""
     repo = _built_tree(tmp_path)
     exe = repo / "build-fex-hello" / "spawn32.exe"
     exe.write_bytes(b"MZ")
