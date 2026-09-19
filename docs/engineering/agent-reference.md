@@ -58,6 +58,43 @@ resolves it. A red batch **splits recursively**, so innocent lanes still land an
 is rejected with its gate classification plus its artifact dir. Full design:
 `tests/qemu/cli/README.md` → `land`, and the header of `tests/qemu/cli/queue.py`.
 
+### Which local gate to run BEFORE submitting — and never DURING
+
+`land` gates for you, so these are about not wasting a 25-minute queue wait on something you
+could have caught in seconds. Every line below is a batch that actually bounced.
+
+- **`./vibeos-cli check --arch i386`** when the lane adds translated `.rs`. An UNBUILT crate is
+  covered only by `verify_c_signatures`, which has caught real signature bugs in crates no
+  compiler had ever read (wldap32's `ldap_value_freeA/W` lost a `*`; netcfgx's `MoveItem` had
+  `INT_PTR` for `INT`). A signature fix usually needs the BODY's casts fixed with it.
+- **`./vibeos-cli check-tooling`** when the lane touches `tools/*.py`. `ruff check` plus a `-k`
+  pytest subset is NOT this gate: `ruff format --check` is a separate check inside it, and one
+  unformatted dict literal bounced a batch as TOOLING_FAIL after the full queue wait.
+- **`./vibeos-cli difftest`** when the lane wires a new `.rs` into `msvcrt-crt-rust` /
+  `cnt-rust` / `rtl-rust`. The host harness links the subject crate beside the reference C, so a
+  new `#[no_mangle]` can collide with a test's own fake stub or the reference TU's data globals
+  — file.c's flip bounced DIFFTEST_FAIL on ten duplicate symbols. `check` cannot see that,
+  because nothing links there.
+
+**BEFORE, never DURING.** Running any of these — or a build — while your own lane sits in the
+queue starves its smoke: one net test timed out at ~186s against ~44s passing and bounced the
+batch NET_FLAKE, and the gate's three retries all fire inside the same window, so they cannot
+rescue it. `./vibeos-cli host-status`, submit, then leave the host alone. Backgrounding `land`
+and editing while it runs fails `receipt-validation` with "Tooling inputs changed during
+checks" — which reads exactly like an intermittent flake and is not one.
+
+**A green local gate is WARM unless you pass `--clean`, so it is not evidence the tree builds
+cold.** A warm gate once reported OK on a tree whose i386 build failed cold, minted a push
+stamp, and the queue rejected the lane. When a lane touches a shared `-sys` crate, gate with
+`--clean` or skip the local gate entirely and let the conductor's fresh worktree be the oracle.
+
+**Read the summary at the TOP of a run, not the tail**, and never `| tail` a `vibeos-cli`
+command whose failure you need to understand — that hides the `FAIL — N/M checks failed` line
+and swallows the exit code. Environmental noise in one check does not license skipping the rest.
+
+**A build races anything that writes `.rs`.** A translation running concurrently makes sources
+newer than the cargo-linked binaries, and the staleness check then reports BUILD_INCOMPLETE.
+
 ## Discarding work safely — the stash, and why index numbers lie
 
 AGENTS.md forbids `git checkout`/`restore` for discarding. Stash instead. The trap is that the
