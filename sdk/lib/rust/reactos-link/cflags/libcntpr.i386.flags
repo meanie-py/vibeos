@@ -45,6 +45,7 @@
 -I{REPO}/sdk/lib/crt/libm_sse2
 -I{REPO}/sdk/include/wine
 -I{REPO}/sdk/lib/crt/include/internal/mingw-w64
+-std=gnu99
 -ffile-prefix-map={REPO}=
 -ffile-prefix-map=../=
 -pipe
@@ -79,5 +80,4 @@
 -fno-optimize-sibling-calls
 -fno-omit-frame-pointer
 -mstackrealign
--std=gnu99
 -c

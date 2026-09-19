@@ -42,6 +42,7 @@
 -I{REPO}/sdk/lib/3rdparty/freetype/include
 -I{REPO}/sdk/include/reactos/subsys
 -I{REPO}/sdk/include/reactos/drivers
+-std=gnu23
 -ffile-prefix-map={REPO}=
 -ffile-prefix-map=../=
 -pipe
@@ -72,5 +73,4 @@
 -Wno-format
 -Wno-maybe-uninitialized
 -O1
--std=gnu2x
 -c

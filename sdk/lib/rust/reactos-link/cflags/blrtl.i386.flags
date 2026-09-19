@@ -38,6 +38,7 @@
 -I{REPO}/sdk/include/dxsdk
 -I{REPO}/sdk/lib/pseh/include
 -I{REPO}/sdk/lib/rtl
+-std=gnu99
 -ffile-prefix-map={REPO}=
 -ffile-prefix-map=../=
 -pipe
@@ -73,5 +74,4 @@
 -fno-omit-frame-pointer
 -mstackrealign
 -Wunused-result
--std=gnu99
 -c
