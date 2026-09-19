@@ -55,16 +55,27 @@ selection. Subsequent `w32tm /stripchart` samples were within 4.2–7.1 ms of th
 server. The operation log is
 `C:/Users/Lambda/AppData/Local/VibeOS/host-clock/windows-time-20260919-uac.json`.
 
-**Remaining:** the service stopped again immediately after synchronization,
-despite Automatic startup. A second UAC operation was proposed to apply
-[Microsoft's workgroup startup fix](https://learn.microsoft.com/en-us/troubleshoot/windows-client/active-directory/w32time-not-start-on-workgroup),
-backing up and removing the service triggers. Windows reported that prompt was
-cancelled; no trigger changes were made. Last observed state: Automatic/Stopped.
-The one-time synchronization succeeded; continuous service operation is not fixed.
+The service initially stopped again despite Automatic startup. At 10:57, an
+approved UAC retry applied
+[Microsoft's workgroup startup fix](https://learn.microsoft.com/en-us/troubleshoot/windows-client/active-directory/w32time-not-start-on-workgroup):
+confirmed this machine is not domain joined, backed up and removed the service
+triggers, set Automatic startup, started the service, and synchronized again.
+The existing delayed-start setting remains enabled. Independent `sc` queries
+after the observation below confirmed Running, Automatic (Delayed), and no
+registered service triggers. Startup after reboot has not been tested.
 
-The post-sync WSL stability check passed another 65-second observation:
-`/tmp/vibeos-cli/20260919-104800-tzpxrsms-host-clock-host/summary.json` and
-`samples.json`. This does not establish that Windows NTP will remain active.
+Windows-side evidence under `C:/Users/Lambda/AppData/Local/VibeOS/host-clock/`:
+
+- `windows-time-9520e7452560.json`: successful elevated repair and synchronization
+  at 10:57:06 against the unchanged `time.windows.com,0x9` source.
+- `trigger-info-9520e7452560.reg`: original service-trigger backup.
+
+Independent `w32tm /stripchart` samples at 10:57:46 and 10:57:51 measured Windows
+22.6–22.8 ms ahead of the server; the intervening request timed out.
+The post-repair WSL probe passed 65 seconds with a largest measured step of
+**0.00528 ms**, while Linux timesyncd remained inactive/disabled and Hyper-V
+implicit synchronization remained enabled. Evidence:
+`/tmp/vibeos-cli/20260919-105746-cr7e0ymi-host-clock-host/{summary,samples}.json`.
 
 The repair is persistent across normal systemd starts. If intentionally returning
 to a Linux-controlled clock, first arrange that Hyper-V no longer forces host
