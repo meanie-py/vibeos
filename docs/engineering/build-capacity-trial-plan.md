@@ -121,3 +121,47 @@ Two cautions before anyone acts on the table above:
 
 This is a capacity change, so it belongs at a drained fleet boundary under the
 "Coordinated rollout" steps above. **Not implemented; no policy was changed.**
+
+
+## Where the policy lives (2026-09-19)
+
+It used to live under `HOSTLOCK_DIR` (`/tmp/vibeos-qemu-locks/host`). A reboot deletes
+`/tmp`, so the cap silently stopped existing: `host-policy` reported `"active": null`,
+`_ninja_jobs()` fell through to its uncapped branch, and `_max_builds()` returned its
+own default of 4 — **4 builds x ~26 ninja jobs on 24 cores**, which is *more* permissive
+than the pre-trial default, not less. Nothing announced this. It was found 13 minutes
+into an uptime, while deciding whether it was safe to restart the fleet.
+
+The lock tree is the wrong home for it. Everything else there is `flock` state whose
+meaning dies with the process holding it, so losing it on reboot is *correct*; capacity
+is durable config and a different lifetime entirely. They are now separate:
+
+| | |
+|---|---|
+| `hostlock.HOSTLOCK_DIR` | ephemeral — flock files, queues, the land lock |
+| `hostlock.POLICY_DIR` | durable — `build-policy.json`, the pause flag |
+
+`POLICY_DIR` resolves to the **main worktree** (`buildpolicy.main_worktree()`, which reads
+a linked worktree's `.git` file — no subprocess). It must be one file: eight lanes with
+eight capacities is not a cap. Override with `VIBEOS_BUILD_POLICY_DIR`.
+
+`build-policy.json` is gitignored; `build-policy.example.json` is tracked. Any
+`vibeos-cli` run seeds the former from the latter if it is missing (`buildpolicy.heal()`),
+so a fresh clone builds capped with no command to remember. **The example is deliberately
+conservative — one build, four Ninja jobs.** Self-heal is a floor, not a restore: a box
+that lost its policy unattended should come back slow. `host-policy --apply` is how you
+opt into the trial, and that now persists across reboots.
+
+### Transition shim — delete when no worktree is stale
+
+A lane on older tooling reads `HOSTLOCK_DIR` and nothing else, so no longer writing there
+would leave every un-merged lane uncapped — this change causing the exact crash it
+prevents. `buildpolicy.mirror()` therefore keeps copying the active policy to the old path.
+Old clients only ever *read* it, so a second writer cannot confuse them.
+
+Because of the mirror, an un-merged worktree is no longer a mixed-fleet hazard, so it is
+reported as `stale_worktrees` (advisory) rather than refusing the cutover. `blockers`
+now means only live work that a capacity change would race. Refusing to install capacity
+because a *paused* lane had not merged would pin the host to the conservative seed and
+buy nothing. Remove `mirror()` and the shim once `host-policy` reports no stale
+worktrees.

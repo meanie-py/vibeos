@@ -79,3 +79,12 @@ agent-swarm/channel/node_modules/
 # WS5 cmake-off orchestrator output (tools/cargo_orchestrate.py)
 cmake-off-out/
 qemu/snapshots/
+
+# Host-wide build capacity. Seeded from the tracked build-policy.example.json on first
+# `vibeos-cli` run, then owned by `vibeos-cli host-policy --apply`. Machine-specific, and
+# it lives in the MAIN worktree because it is ONE number for every lane on this host.
+/build-policy.json
+# Its flock sidecar + atomic-replace temporaries (POLICY_DIR == the main worktree).
+/build-policy.lock
+/build-policy.paused
+/build-policy.*.tmp

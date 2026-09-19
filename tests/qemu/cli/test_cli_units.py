@@ -2800,6 +2800,19 @@ def test_backend_rewrite_accel_would_break_arm64():
 from . import hostlock as hl_mod  # noqa: E402
 
 
+@pytest.fixture(autouse=True)
+def _isolate_host_policy(tmp_path_factory, monkeypatch):
+    """No unit test may read THIS BOX's real build policy.
+
+    POLICY_DIR is durable and host-global by design, so unlike the old /tmp lock tree
+    it is always present -- which means a test that patches only HOSTLOCK_DIR silently
+    asserts against whatever capacity the machine happens to be running. That is how
+    test_ninja_jobs_caps_and_reserves broke when the trial went active. Autouse so the
+    whole class is closed, not just the 49 sites that exist today.
+    """
+    monkeypatch.setattr(hl_mod, "POLICY_DIR", tmp_path_factory.mktemp("host-policy"))
+
+
 def test_hostlock_cpu_lease_serializes(tmp_path, monkeypatch):
     monkeypatch.setattr(hl_mod, "HOSTLOCK_DIR", tmp_path)
     monkeypatch.setenv("VIBEOS_HOST_BROKER", "1")
