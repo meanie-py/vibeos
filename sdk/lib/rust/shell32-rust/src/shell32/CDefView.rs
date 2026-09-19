@@ -5499,6 +5499,28 @@ pub unsafe fn SelectExtOnRename_body() -> BOOL {
     }
 }
 
+// commctrl.h's NM_* codes, as the INT that this switch reads `NMHDR::code` as -- the same
+// signedness the crate already gives the LVN_*/HDN_* codes it is matched against.
+//
+// FOUR of them (NM_SETFOCUS, NM_KILLFOCUS, NM_RCLICK, NM_RELEASEDCAPTURE) existed NOWHERE in
+// the crate's dependency closure, which does not fail to compile: an undefined name in a
+// `match` pattern is a catch-all BINDING. NM_SETFOCUS is the first arm, so it swallowed every
+// notification this view receives and made all seventeen arms after it dead code. That is the
+// §9.112 class and `verify_match_consts` flags it HIGH. The other four exist as UINT for
+// dialogs/view.rs and COpenWithDialog.rs; these locals shadow the glob for THIS file only, so
+// those call sites keep their own spelling.
+//
+// `#define NM_FIRST (0U-0U)` means each of these is an unsigned wraparound -- NM_SETFOCUS is
+// 0xFFFFFFF9 -- so the composing expression is kept and cast, not hand-evaluated to -7.
+const NM_CLICK: INT = crate::island::NM_FIRST.wrapping_sub(2) as INT;
+const NM_DBLCLK: INT = crate::island::NM_FIRST.wrapping_sub(3) as INT;
+const NM_RETURN: INT = crate::island::NM_FIRST.wrapping_sub(4) as INT;
+const NM_RCLICK: INT = crate::island::NM_FIRST.wrapping_sub(5) as INT;
+const NM_SETFOCUS: INT = crate::island::NM_FIRST.wrapping_sub(7) as INT;
+const NM_KILLFOCUS: INT = crate::island::NM_FIRST.wrapping_sub(8) as INT;
+const NM_CUSTOMDRAW: INT = crate::island::NM_FIRST.wrapping_sub(12) as INT;
+const NM_RELEASEDCAPTURE: INT = crate::island::NM_FIRST.wrapping_sub(16) as INT;
+
 pub unsafe fn CDefView_OnNotify_body(this: *mut CDefView, uMsg: UINT, wParam: WPARAM, lParam: LPARAM, bHandled: &mut BOOL) -> LRESULT {
     let _ctl_id: UINT = wParam as UINT;
     let lpnmh: *mut NMHDR = lParam as *mut NMHDR;
