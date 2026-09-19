@@ -2027,7 +2027,24 @@ def analyze_class(
         unsupported.append(
             "mixed ShellObjectCreator/ShellObjectCreatorInit activation needs an explicit mapping"
         )
-    internal_shell_object_creator = bool(activation_hits)
+    # ATL's own creator is the SECOND internal-activation shape, and it is the one a
+    # class with no CLSID at all uses: `CFileSysBindData::_CreatorClass::CreateInstance(
+    # NULL, IID_PPV_ARG(IFileSystemBindData, &p))`. Its signature is ATL's
+    # `CComCreator<...>::CreateInstance(void *pv, REFIID riid, LPVOID *ppv)`, which is
+    # exactly the `(outer, riid, ppv)` factory the internal path already emits — so this
+    # is a DETECTION gap, not an emission one, and widening it needs no new codegen.
+    #
+    # It stays behind `--internal` rather than being inferred, for the same reason
+    # `--plain` is asserted: "this class is activated only from inside the DLL" is a claim
+    # about the whole tree, and a file that merely looks self-contained is not proof.
+    # Before flipping such a TU, check it is a link LEAF (`llvm-nm --defined-only` on its
+    # object, intersected with every other object's undefined set) — for a class with no
+    # CLSID that intersection IS the activation surface.
+    creator_class_re = re.compile(
+        rf"\b{re.escape(class_name)}\s*::\s*_CreatorClass\s*::\s*CreateInstance\s*\("
+    )
+    creator_class_hits = list(creator_class_re.finditer(masked_source))
+    internal_shell_object_creator = bool(activation_hits) or bool(creator_class_hits)
     internal_initializer_params = None
     if activation_hits and activation_hits[0].group("init"):
         activation_arg_lists = []
@@ -6554,8 +6571,10 @@ def render_class_scaffold(
     internal = allow_internal and cls.internal_shell_object_creator and not cls.object_map_clsid
     internal_init = internal and cls.internal_initializer_params is not None
     activation_comment = (
-        "// Internal activation: shellutils.h ShellObjectCreator<T> uses this "
-        "non-aggregating factory."
+        "// Internal activation: this class has no CLSID; the DLL constructs it directly "
+        "through\n// shellutils.h ShellObjectCreator<T> or ATL's own "
+        "_CreatorClass::CreateInstance, both of\n// which take (outer, riid, ppv) — the "
+        "signature of this factory."
         if internal
         else f"// Activation: {cls.object_map_clsid or '<not found>'} currently maps to "
         f"{cls.name} in shell32.cpp.\n"
