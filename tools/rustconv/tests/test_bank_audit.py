@@ -22,6 +22,7 @@ from rustconv.bank_audit import (
     banked_fns,
     declared_names,
     format_report,
+    macro_arg_names,
     resolve,
     tchar_variants,
     truncated_fns,
@@ -242,3 +243,55 @@ def test_audit_reports_a_genuine_absence(tmp_path):
     (report,) = audit(responses, tree, allow={})
     assert report.status == "PARTIAL"
     assert [r.fn.name for r in report.absent] == ["Dropped"]
+
+
+# --- the two rules added after the bank read 60 unintegrated and 0 of them were real ---
+
+
+def test_va_list_twin_puts_the_v_after_leading_underscores():
+    """C stdio's convention: fprintf's va_list twin is vfprintf, _fwprintf_p_l's is
+    _vfwprintf_p_l. Putting the `v` at the front instead matches nothing."""
+    tree = {"vfprintf", "_vfwprintf_p_l", "_sopen_dispatch"}
+    assert varargs_twins("fprintf", tree) == ["vfprintf"]
+    assert varargs_twins("_fwprintf_p_l", tree) == ["_vfwprintf_p_l"]
+    # `_dispatch` is msvcrt's shim convention for the non-printf variadics.
+    assert varargs_twins("_sopen", tree) == ["_sopen_dispatch"]
+    # And a name with no twin present still resolves to nothing.
+    assert varargs_twins("fputs", tree) == []
+
+
+def test_macro_arg_index_finds_generated_symbols(tmp_path):
+    """msvcrt ships 24 ctype predicates as `isc!(_isalnum_l, isalnum, ...)` in lib.rs.
+    There is no `fn _isalnum_l` anywhere, and every one read as unintegrated paid work."""
+    f = tmp_path / "lib.rs"
+    f.write_text(
+        "isc!(_isalnum_l, isalnum, (sys::_ALPHA | sys::_DIGIT) as i32);\n"
+        "isc!(\n    _isprint_l,\n    isprint,\n    sys::_BLANK as i32,\n);\n"
+    )
+    names = macro_arg_names(f)
+    assert {"_isalnum_l", "isalnum", "_isprint_l", "isprint"} <= names
+
+
+def test_macro_arg_index_refuses_anything_but_a_bare_identifier(tmp_path):
+    """The dangerous direction is a false name in the TREE index — it reports paid work
+    as shipped when it is not. So only a whole-argument identifier counts."""
+    f = tmp_path / "lib.rs"
+    f.write_text(
+        'println!("calling _isalnum_l now");\n'  # inside a string literal
+        "other!(foo(_bar), sys::_BAZ, 1 + qux, a as i32);\n"  # expressions, paths, casts
+        "// isc!(_commented_out, x);\n"  # inside a comment
+    )
+    names = macro_arg_names(f)
+    for bad in ("_isalnum_l", "_bar", "_BAZ", "qux", "_commented_out", "a"):
+        assert bad not in names, bad
+
+
+def test_macro_generated_is_a_last_resort_and_says_so(tmp_path):
+    banked = tmp_path / "m.rs"
+    banked.write_text("pub unsafe fn _isalnum_l() {}\n")
+    fn = BankedFn("_isalnum_l", banked)
+    # Not in the fn index...
+    assert not resolve(fn, set(), {}, set()).integrated
+    # ...but resolvable through the macro-argument index, and labelled as such.
+    r = resolve(fn, set(), {}, {"_isalnum_l"})
+    assert r.integrated and r.via == "macro_generated"

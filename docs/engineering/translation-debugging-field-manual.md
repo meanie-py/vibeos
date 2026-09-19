@@ -3442,6 +3442,28 @@ which handles any number of TRY blocks and turns a real `_SEH2_LEAVE` into c2rus
 holdout is `cond.tab.c`, generated bison output). Before this the number was 0 — the
 `__label__` is in `_SEH2_TRY` itself, so it blocked every one of them.
 
+**A doc's "Owed" list is not evidence that the work is owed — the crate is.** msvcrt's
+lane plan still read "Owed: a Rust port of file.c, 163 exports" weeks after file.c had been
+ported, wired and bug-fixed three times on top. Reading it and believing it cost **$2.06**
+re-buying all 232 bodies. Nothing downstream caught it: `profile_derive` audits the C, and
+`estimate` reads the resume cache, which is keyed by SEAL-FLAG NAMESPACE — an earlier
+translation bought under different flags reports "0 banked, N to buy" and is
+indistinguishable from virgin work. The old `--reassemble` guard did fire, but at ASSEMBLY,
+which is why the tree ended up unchanged and the money gone. `rustconv translate` now
+refuses before the first API call when the majority of a TU's functions are already
+`#[no_mangle]` in the output crate (`_already_translated`, waived by `--reassemble`).
+Matched by SYMBOL, not filename: the obvious `<stem>.rs` lookup misses msvcrt's `wcs.c`,
+which ships as `wcs_rest.rs`. The one-command check before trusting any "owed" line is
+`grep -rl 'no_mangle' <output crate>/src | xargs grep -l <a function from the C>`.
+
+**Tree-wide, after all four classes: 55 of 60 in a random sample of the i386 compile db,
+and all five holdouts are things we would never translate** — `dll/3rdparty/libpng` and
+`dll/3rdparty/libxslt` (vendored, see `vendor.yaml`) and two generated files under
+`build-i386/` (a flex `.yy.c` and a MIDL `_c.c`). So the anchor rate on code that is
+actually a translation target is 55/55 in that sample. Worth knowing before anyone reaches
+for `--no-c2rust`: a refusal is now much more likely to be a real, nameable construct than
+the old "c2rust just does not like this module".
+
 **The third class: a pointer to a function whose type carries a CALLING CONVENTION.** Panic
 site is different — `convert_type.rs:518`, `ctype parameter must be a function instead of
 Attributed(...)` — and it fires whenever the address of a `__stdcall`/`__thiscall` function

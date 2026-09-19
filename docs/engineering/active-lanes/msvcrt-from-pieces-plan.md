@@ -1548,15 +1548,53 @@ takes "an fd" must say which kind.
 `ref_set_startup_handles` has no equivalent test — `msvcrt_init_io` runs once per process,
 so exercising it needs a subprocess. Stated rather than glossed.
 
-**Owed:**
+**Owed — RE-VERIFIED AGAINST THE TREE 2026-09-19.** Five of the seven entries here were
+already done and had simply never been struck; one of them (file.c) was read, believed and
+re-bought for $2.06 before anyone looked at the crate. So each line below now carries the
+artifact that settles it, and a line without one should be treated as unverified rather
+than as work.
 
-* **A Rust port of file.c** — the substrate's whole point. 163 exports.
-* **errno.c as reference TU #7.** It would delete `fileimpl.c`'s transcription of
-  `msvcrt_set_errno` outright and grade 18 more exports; its imports are already nearly all
-  satisfied. Deferred only because it also owns `_errno`/`_invalid_parameter`, which
-  `refimpl.c` supplies as *environment* with a test-visible call counter — swapping those
-  is a change to every existing test's plumbing, not a change to file.c.
-* **A drift gate for the three generated headers.** Wants an **input-hash** check rather
-  than `--check` in `vibeos-cli check`: re-deriving needs `build-amd64` and the
-  cross-toolchain, which a source-lint pass cannot assume, so a naive wiring fires
-  spuriously.
+* ~~**A Rust port of file.c**~~ — **DONE.**
+  `sdk/lib/rust/msvcrt-crt-rust/src/msvcrt/file.rs` ships 174 `#[no_mangle]` bodies, is
+  wired by `pub mod file;`, and has three fixes landed on top of the original output
+  (`a8737b8d696`, `93b00588516`, `42fa9eee07e`). `rustconv translate` now refuses to
+  re-buy it before spending anything.
+* ~~**errno.c as reference TU #7**~~ — **DONE.** `msvcrt-difftest/build.rs:2124` wires it
+  by that name, and the reference TUs now run to #10 (`undname.c` #8, `misc.c` #9,
+  `math.c` #10).
+* ~~**A drift gate for the three generated headers**~~ — **DONE, and in the shape this
+  line asked for.** `check_generated` (`tests/qemu/cli/difftest.py:183`) re-derives every
+  generated refstub artifact and refuses a stale one, running BEFORE the harnesses so the
+  failure is "your oracle is stale" rather than forty divergences. It lives in `difftest`
+  and not in `vibeos-cli check` for exactly the reason this line predicted: re-derivation
+  needs the pinned cross-compiler and `build-amd64`, which `check` cannot assume.
+* ~~**The ~26 `...` shells**~~ — **DONE.** Five shims are compiled
+  (`rust_varargs_shim.c`, `rust_scanf_shim.c`, `rust_file_varargs_shim.c`,
+  `rust_process_varargs_shim.c`, `rust_console_varargs_shim.c`) and **171 of 171**
+  trampolines in them reach a Rust engine. The variadic surface is fully flipped; what
+  stays C is only `va_start` itself, which stable Rust cannot express.
+* ~~**A non-C-locale mode for the harness (wave 11)**~~ — **DONE, plus wave 12.**
+  `msvcrt-difftest/tests/classify.rs` plants a real `lc_handle` and grades the fold and
+  collation families in BOTH locale modes (the `[NLS]` rows).
+
+**Still genuinely owed, verified still true on 2026-09-19:**
+
+* **Replace `--whole-archive` with per-symbol `-u` pulling.** Still live at
+  `dll/win32/msvcrt/CMakeLists.txt:287`. It force-includes the crate's bundled
+  `compiler_builtins` (`__chkstk`, `__divdi3`, libm shims) into msvcrt.dll, so Rust's
+  `__chkstk` can win over ReactOS's. Benign so far; plain link order alone does NOT
+  substitute (§1b).
+* **Let the refstub expose a namespaced symbol** — `NAMESPACED_SYMBOLS` is still just
+  `["memmove"]` (`msvcrt-difftest/build.rs:53`), and the consequence stands: a namespaced
+  symbol has no `ref_<name>` oracle, so it cannot be proved and therefore cannot be
+  flipped. Low value in practice: the one member is `memmove`, which AGENTS.md forbids
+  hand-writing in Rust anyway.
+* **Phase F — ucrtbase.** Genuinely untouched: 479 `.c`/`.cpp` under `sdk/lib/ucrt`, no
+  Rust crate, and `tools/verify_ucrtbase_cohab.py` gating msvcrt's CRT out of it. This is
+  the real remaining frontier of the lane.
+
+**The method, because it is cheaper than the mistake.** An "Owed" line is an assertion;
+the crate is the thing it describes. `rustconv bank-audit` answers "did we pay for
+something that never shipped" in one command, and for a specific TU
+`grep -rl no_mangle <output crate>/src | xargs grep -l <a function from the C>` settles it
+in one more.
