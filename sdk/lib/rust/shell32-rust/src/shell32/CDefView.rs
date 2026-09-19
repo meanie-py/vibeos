@@ -3,35 +3,33 @@
 //! largest single class in shell32 and the first module to sit on BOTH sides of the substrate
 //! boundary. Every worker is translated, present, and compiles clean on i686/amd64/arm64.
 //!
-//! ORPHAN-BY-DESIGN: wiring this while CDefView.cpp is still the compiled implementation is a
-//! PARTIAL COHAB FLIP that silently captures live C++ symbols and freezes explorer -- see WHY
-//! below. `CDefView.cpp` owns the shipping implementation; this module owns nothing yet.
+//! COHAB-FLIPPED 2026-09-19: `CDefView.cpp` is commented out of
+//! `dll/win32/shell32/CMakeLists.txt` and this module is the shipping implementation.
 //!
-//! DO NOT WIRE THIS MODULE. That is not a status line, it is the invariant this file is held
-//! to, and the previous banner got it wrong by saying the module "is not wired into the crate
-//! YET" -- which reads as a task to anyone holding "wired" as the goal. It is a GUARD.
-//!
-//! WHY. `CDefView.cpp` is still the compiled implementation. Adding `pub mod def_view;` while
-//! that is true is a PARTIAL COHAB FLIP, not a compile-coverage win: this module's
+//! Wiring and the flip had to be ONE change, and the earlier banner here was a GUARD saying so.
+//! Wiring alone, with the `.cpp` still compiled, is a PARTIAL cohab flip: this module's
 //! `#[no_mangle]` symbols collide with the live C++ ones, the linker resolves archive members
-//! against object files without raising a duplicate-symbol error, and live entry points
-//! reroute into Rust that has never executed. Measured 2026-09-19 -- wired, the guest booted,
-//! passed smoke on ALL THREE arches, and then froze in explorer after
+//! against object files without raising a duplicate-symbol error, and live entry points reroute
+//! into Rust that has never executed. Measured -- wired-only, the guest booted, passed smoke on
+//! ALL THREE arches, and then froze in explorer after
 //! `[EXPLORER] startup: shell window ready`, so `ProcessStartupItems` never ran and the kmtest
-//! sweep launched 0 of 91 tests. Smoke cannot see it: the freeze is after smoke's marker.
-//! Un-wiring this module alone cleared that freeze and left the one utils.rs causes, which is
-//! the discriminator for symbol capture rather than a single bad body.
+//! sweep launched 0 of 91 tests. Smoke cannot see that: the freeze is after smoke's marker, so
+//! `vibeos-cli conformance` (launch count) is the oracle for this class of change, not smoke.
 //!
-//! Wiring and the cohab flip are therefore ONE change, gated together. Before attempting it,
-//! prove the capture set is empty -- the `llvm-nm` recipe is in the field manual under
+//! What made the flip safe is that the TU is a LEAF. `llvm-nm --undefined-only` over every
+//! other object linked into shell32.dll -- shell32.dir plus dialogs/, folders/, shelldesktop,
+//! shellmenu and recyclebin -- references NOTHING defined in `CDefView.cpp.obj`: the
+//! intersection is 0 symbols. The TU's only outward surface is the spec export
+//! `SHCreateShellFolderView` (ordinal 256), which this module publishes;
+//! `CDefView_CreateInstance` was C++-mangled with no caller outside the TU. So removing the
+//! `.cpp` leaves no unresolved reference and no name for Rust to shadow. Recipe: field manual,
 //! "Cohab link plumbing".
 //!
 //!
-//! RE-VERIFYING the zero-error claim (it will rot otherwise -- that is how this file reached
-//! 799 errors once): wire it temporarily, `cargo check --target {i686-pc-windows-gnu,
-//! x86_64-pc-windows-gnu,aarch64-pc-windows-gnullvm}` for BOTH shell32-rust and menuband-rust
-//! (which #[path]-includes types.rs/shellcom.rs), then UN-WIRE before building, gating or
-//! landing. Verified clean on all six combinations 2026-09-19.
+//! This module is now WIRED, so `cargo check` and the lint gate cover it on every arch and it
+//! can no longer rot the way it once did when it was orphan (it reached 799 errors that way).
+//! That is half the point of flipping rather than leaving a finished translation parked.
+//!
 //! Three things in here are decisions rather than repairs, and each one is the reason a later
 //! ATL/COM class will or will not need the same work:
 //!
@@ -2985,6 +2983,13 @@ unsafe impl AtlWindow for CDefView {
     ) -> BOOL {
         CDefView_ProcessWindowMessage_body(this, hWnd, uMsg, wParam, lParam, lResult, dwMsgMapID)
     }
+    /// CDefView.cpp:535 `virtual WNDPROC GetWindowProc() override { return WindowProc; }`.
+    /// This is an OVERRIDE and dropping it is a use-after-free, not a style difference — see
+    /// the trait method's own comment and `CDefView_WindowProc` below.
+    #[inline]
+    unsafe fn atl_window_proc() -> WNDPROC {
+        Some(CDefView_WindowProc)
+    }
 }
 
 /// CDefView.cpp:433 `BEGIN_MSG_MAP(CDefView)` — all 25 entries, in source order.
@@ -4147,9 +4152,11 @@ pub unsafe fn CDefView_FillList_body(this: *mut CDefView, IsRefreshCommand: BOOL
         &mut pEnumIDList,
     );
     if hRes != S_OK {
-        if !pEnumIDList.is_null() {
-            ((*(*pEnumIDList).lpVtbl).Release)(pEnumIDList);
-        }
+        // NO explicit Release here. CDefView.cpp:1545 declares `CComPtr<IEnumIDList>
+        // pEnumIDList` and releases NOWHERE -- the destructor does it once, on every return
+        // path. `_pEnumIDList_cpp_com_guard` IS that destructor. Releasing here as well drops
+        // the refcount twice; the guard then reads `lpVtbl` out of a freed block and calls
+        // through it. See the header of this file and the field manual.
         if hRes == S_FALSE {
             return NOERROR;
         }
@@ -4158,9 +4165,7 @@ pub unsafe fn CDefView_FillList_body(this: *mut CDefView, IsRefreshCommand: BOOL
 
     hdpa = DPA_Create(16);
     if hdpa.is_null() {
-        if !pEnumIDList.is_null() {
-            ((*(*pEnumIDList).lpVtbl).Release)(pEnumIDList);
-        }
+        // Guard-owned; see above.
         return E_OUTOFMEMORY;
     }
 
@@ -4235,10 +4240,7 @@ pub unsafe fn CDefView_FillList_body(this: *mut CDefView, IsRefreshCommand: BOOL
         0,
     );
 
-    if !pEnumIDList.is_null() {
-        ((*(*pEnumIDList).lpVtbl).Release)(pEnumIDList);
-    }
-
+    // Guard-owned; see above.
     return S_OK;
 }
 
@@ -4383,12 +4385,19 @@ pub unsafe fn CDefView_OnCreate_body(this: *mut CDefView, uMsg: UINT, wParam: WP
     let mut ppf2: *mut IPersistFolder2 = core::ptr::null_mut();
     let _ppf2_cpp_com_guard = CppComPtrGuard::new(core::ptr::addr_of_mut!(ppf2));
 
-    if ((*((*pSFParent).lpVtbl)).QueryInterface)(
-        pSFParent,
+    // CDefView.cpp:1776 `if (SUCCEEDED(QueryInterface(IID_PPV_ARG(IDropTarget, &pdt))))` --
+    // a BARE member call, so the receiver is `this`, the VIEW. It asks the view for its own
+    // IDropTarget and registers THAT as the window's drop target. Routing it to
+    // `m_pSFParent` instead asks the FOLDER, which is a different object with a different
+    // drop target, and registers the wrong one (or none). An unqualified call in a C++
+    // member function is `this->`; the nearest COM pointer in scope is not a substitute.
+    if CDefView_QueryInterface(
+        this,
         ((core::ptr::addr_of!(IID_IDropTarget)) as _), core::ptr::addr_of_mut!(pdt).cast(),
     ) >= 0
     {
         if RegisterDragDrop((*this).m_hWnd.cast(), pdt.cast()) < 0 {
+            ERR!("Error Registering DragDrop\n");
         }
     }
 
@@ -4444,14 +4453,29 @@ pub unsafe fn CDefView_OnCreate_body(this: *mut CDefView, uMsg: UINT, wParam: WP
         ntreg.pidl = pidlTarget;
     }
 
-    (*this).m_hNotify = SHChangeNotifyRegister(
-        (*this).m_hWnd,
-        (SHCNRF_InterruptLevel | SHCNRF_ShellLevel | SHCNRF_NewDelivery) as c_int,
-        fEvents,
-        SHV_CHANGE_NOTIFY,
-        1,
-        core::ptr::addr_of!(ntreg).cast_mut(),
-    );
+    // CDefView.cpp:1820 `#ifdef _M_ARM64` — carried, not resolved away. SHChangeNotifyRegister
+    // sends a cross-thread SendMessageW to the shell window (Shell_TrayWnd, on the main
+    // explorer thread); on arm64 that deadlocks the desktop thread before the taskbar paints.
+    // The C++ skips registration there so the desktop comes up, and change notifications are
+    // silently dropped until win32k's cross-thread message dispatch is fixed. Dropping the
+    // `#ifdef` and calling unconditionally reproduced exactly that hang: the arm64 guest
+    // stopped after `[EXPLORER] startup: runCmd FAILED (2)` with a frozen serial log and the
+    // kmtest sweep never started, while amd64 and i386 were green.
+    #[cfg(target_arch = "aarch64")]
+    {
+        (*this).m_hNotify = 0;
+    }
+    #[cfg(not(target_arch = "aarch64"))]
+    {
+        (*this).m_hNotify = SHChangeNotifyRegister(
+            (*this).m_hWnd,
+            (SHCNRF_InterruptLevel | SHCNRF_ShellLevel | SHCNRF_NewDelivery) as c_int,
+            fEvents,
+            SHV_CHANGE_NOTIFY,
+            1,
+            core::ptr::addr_of!(ntreg).cast_mut(),
+        );
+    }
 
     (*this).m_hAccel = LoadAcceleratorsW(
         shell32_hInstance,
@@ -6914,7 +6938,13 @@ pub unsafe fn CDefView_CreateViewWindow3_body(this: *mut CDefView, psb: *mut ISh
     if !prcView.is_null() {
     }
 
-    if psb.is_null() || (*this).m_hWnd.is_null() {
+    // CDefView.cpp:3862 `if (psb == NULL || m_hWnd) return E_UNEXPECTED;` -- the second
+    // disjunct is C truthiness on a HWND, so it means "this view ALREADY has a window",
+    // i.e. the already-created guard. Negating it instead (`m_hWnd.is_null()`) inverts the
+    // guard into "no window yet", which is exactly the normal FIRST call, so every caller
+    // got E_UNEXPECTED. That shipped as explorer's desktop failing at
+    // CDesktopBrowser.cpp:253 with 0x8000FFFF and the kmtest sweep launching 0 of 91.
+    if psb.is_null() || !(*this).m_hWnd.is_null() {
         return E_UNEXPECTED;
     }
 

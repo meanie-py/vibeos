@@ -175,8 +175,26 @@ list(APPEND SOURCE
     # shlexec.cpp — replaced by Rust (shell32-rust/src/shell32/shlexec.rs); cohab via libshell32_rust.a
     # shlfileop.cpp — replaced by Rust (shell32-rust/src/shell32/shlfileop.rs); cohab via libshell32_rust.a
     # shlfolder.cpp — replaced by Rust (shell32-rust/src/shell32/shlfolder.rs); cohab via libshell32_rust.a
-    CFileSysBindData.cpp
-    CDefView.cpp
+    # CFileSysBindData.cpp — replaced by Rust (shell32-rust/src/shell32/CFileSysBindData.rs
+    # for the COM class, shell32/filesysbinddata_free.rs for the three file-scope bind-context
+    # helpers); cohab via libshell32_rust.a. Whole-TU flip. The class has NO CLSID — ATL's own
+    # `_CreatorClass::CreateInstance` builds it — which is the activation shape rustconv's
+    # cpp-com preflight refused until it was mapped.
+    # Capture set measured as EMPTY: the only symbol anything else takes from this TU is
+    # `IFileSystemBindData_Constructor`, and its caller is libshell32_rust.a (wine/pidl.rs),
+    # not a C++ object — so the llvm-nm sweep has to include the staticlib's undefined set or
+    # it reports a false 0. Rust publishes that name `#[no_mangle]`.
+    # CDefView.cpp — replaced by Rust (shell32-rust/src/shell32/CDefView.rs); cohab via
+    # libshell32_rust.a. Whole-TU flip. This one was held ORPHAN-BY-DESIGN for a while because
+    # WIRING it while the .cpp was still compiled is a partial cohab flip: the Rust
+    # `#[no_mangle]` names shadow the live C++ ones with no duplicate-symbol error, and live
+    # entry points reroute into Rust that never ran (measured 2026-09-19 — booted, passed smoke
+    # on all three arches, then froze after `[EXPLORER] startup: shell window ready`).
+    # The flip is safe because the TU is a LEAF: `llvm-nm --undefined-only` over every other
+    # object linked into shell32.dll (shell32.dir + dialogs + folders + shelldesktop +
+    # shellmenu + recyclebin) references NOTHING defined in CDefView.cpp.obj — 0 symbols. Its
+    # only outward surface is the spec export SHCreateShellFolderView (ordinal 256), which Rust
+    # publishes; CDefView_CreateInstance was C++-mangled and had no caller outside this TU.
     # CDefViewUtil.cpp — replaced by Rust (shell32-rust/src/def_view_util.rs); cohab via
     # libshell32_rust.a. Whole-TU flip: CShellFolderViewCBWrapper is referenced by nothing
     # outside this TU, so the class moved wholesale. The two view-mode helpers are still

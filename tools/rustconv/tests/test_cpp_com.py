@@ -474,9 +474,45 @@ def test_internal_scaffold_has_private_rust_factory_and_no_export_adapter():
         "IEnumIDList",
     )
     rust = render_class_scaffold(cls, [interface], allow_internal=True)
-    assert "Internal activation: shellutils.h ShellObjectCreator<T>" in rust
+    # The comment names BOTH internal-activation shapes, because they share this one
+    # factory: shellutils.h's ShellObjectCreator<T> and ATL's own _CreatorClass, whose
+    # CreateInstance has the same (outer, riid, ppv) signature.
+    assert "Internal activation: this class has no CLSID" in rust
+    assert "ShellObjectCreator<T>" in rust
+    assert "_CreatorClass::CreateInstance" in rust
     assert "pub unsafe fn CEnumIDListBase_CreateInstance(" in rust
     assert '#[no_mangle] pub unsafe extern "system" fn CEnumIDListBase_CreateInstance' not in rust
+
+
+def test_atl_creator_class_is_the_other_internal_activation_shape():
+    """`X::_CreatorClass::CreateInstance(NULL, IID_PPV_ARG(...))` is ATL's own creator.
+
+    A class with NO CLSID uses it, so before this was mapped the preflight refused the
+    whole shape -- and it blocked four of shell32's remaining leaf TUs at once
+    (CFileSysBindData, CFolder, CExtractIcon, CRecycleBinFolderViewCB), every one of them
+    on the same line. It is a DETECTION gap and not an emission one: ATL's
+    `CComCreator<...>::CreateInstance(void *pv, REFIID riid, LPVOID *ppv)` is exactly the
+    `(outer, riid, ppv)` factory the internal path already emitted.
+    """
+    source = SHELL32 / "CFileSysBindData.cpp"
+    cls = analyze_class(source, "CFileSysBindData", object_map_source=SHELL32 / "shell32.cpp")
+    assert cls.internal_shell_object_creator
+    assert cls.object_map_clsid is None
+    # No ShellObjectCreator<T> anywhere in that file -- the ATL creator is the only signal.
+    assert "ShellObjectCreator" not in source.read_text(encoding="utf-8", errors="replace")
+    # Scoped to the activation gate alone: this class's `WIN32_FIND_DATAW findFile` state
+    # needs the island to be proven, which `--target shell32` supplies on the real path and
+    # this unit test deliberately does not. So assert on WHICH problem is reported rather
+    # than on a clean pass -- otherwise the test passes or fails for unrelated reasons.
+    with pytest.raises(CppComError) as without_internal:
+        cls.require_supported()
+    assert "no OBJECT_ENTRY activation" in str(without_internal.value)
+
+    try:
+        cls.require_supported(allow_internal=True)
+    except CppComError as with_internal:
+        assert "no OBJECT_ENTRY activation" not in str(with_internal)
+        assert "aggregation policy is unsupported" not in str(with_internal)
 
 
 @needs_generated_psdk_amd64

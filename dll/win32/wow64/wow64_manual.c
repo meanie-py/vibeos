@@ -1935,6 +1935,7 @@ static VOID Wow64pCsrPut32(unsigned char *P, ULONG Off, ULONG V);
 #define WOW64_CSR_SERVER_DLL_MAX 4   /* subsystems/csr/csrsrv/api.h:34 */
 #define WOW64_BASESRV_SERVERDLL_INDEX 1 /* reactos/subsys/win/basemsg.h:15 */
 /* CSR_MAKE_API_NUMBER(BASESRV_SERVERDLL_INDEX, BasepCreateThread) */
+#define WOW64_CSRAPI_BASEP_CREATEPROCESS 0x00010000
 #define WOW64_CSRAPI_BASEP_CREATETHREAD 0x00010001
 
 /* BASE_STATIC_SERVER_DATA is the struct entry[BASESRV_SERVERDLL_INDEX] points
@@ -4268,6 +4269,23 @@ static NTSTATUS Wow64pLpcBadArg(const char *Who, const char *Why)
 #define WOW64_CSRMSG_BODY64_RESERVED   16
 #define WOW64_CSRMSG_BODY64_DATA       24
 
+/* sizeof(BASE_CREATE_PROCESS) per arch, measured with offsetof/sizeof against
+ * the real basemsg.h and cross-checked against the size_check_*.rs asserts the
+ * tree already carries (140 i386 / 232 amd64). */
+#define WOW64_BCP32_SIZE               140
+#define WOW64_BCP64_SIZE               232
+
+/* Narrow one field of the BASE_CREATE_PROCESS reply back to the guest. */
+#define WOW64_BCP_NARROW(o32, o64)                                             \
+            Wow64pCsrPut32(R32, WOW64_CSRMSG_BODY32_DATA + (o32),              \
+                        Wow64pCsrGet32(R64, WOW64_CSRMSG_BODY64_DATA + (o64)))
+
+static void Wow64pZeroBytes(unsigned char *d, unsigned n)
+{
+    while (n--)
+        *d++ = 0;
+}
+
 static ULONG Wow64pCsrGet32(const unsigned char *P, ULONG Off)
 {
     ULONG V; Wow64pCpy((unsigned char *)&V, P + Off, 4); return V;
@@ -4438,6 +4456,7 @@ static NTSTATUS Wow64Manual_NtRequestWaitReplyPort(ULONG *a)
     ULONG CapBackLen = 0;
     ULONG Cap32Orig = 0, Info32Orig = 0;
     int IsCreateThread = 0;
+    int IsCreateProcess = 0;
     ULONG DataLength, RepData;
     NTSTATUS St;
 
@@ -4531,6 +4550,90 @@ static NTSTATUS Wow64Manual_NtRequestWaitReplyPort(ULONG *a)
                             (ULONGLONG)Info32);
             }
         }
+        else if (Api == WOW64_CSRAPI_BASEP_CREATEPROCESS &&
+                 Data32Len >= WOW64_BCP32_SIZE)
+        {
+            /* BASE_CREATE_PROCESS -- the message CreateProcess sends basesrv
+             * once the child and its initial thread exist. It opens with
+             * HANDLE, HANDLE, CLIENT_ID, i.e. FOUR pointer-width fields in a
+             * row, so the verbatim copy handed basesrv a ProcessHandle and a
+             * ClientId assembled from the wrong words and it answered
+             * c0000008; the guest reported CreateProcessW err 0x6
+             * (ERROR_INVALID_HANDLE). Identical failure to BASEP_CREATETHREAD
+             * below, one struct larger.
+             *
+             * Offsets MEASURED, not derived -- offsetof() dumps from the real
+             * basemsg.h structs built with the llvm-mingw i686 and x86_64
+             * targets. The control on that measurement is sizeof: 140/96 on
+             * i386 and 232/160 on amd64, which is exactly what the tree
+             * already asserts in ntdll-sys/src/size_check_{i386,amd64}.rs, so
+             * a bad transcription would have shown up as a size mismatch
+             * rather than as quietly wrong offsets.
+             *
+             *   field                  i386    amd64
+             *   ProcessHandle          0x00    0x00
+             *   ThreadHandle           0x04    0x08
+             *   ClientId.UniqueProcess 0x08    0x10
+             *   ClientId.UniqueThread  0x0c    0x18
+             *   CreationFlags          0x10    0x20
+             *   VdmBinaryType          0x14    0x24
+             *   VdmTask                0x18    0x28
+             *   hVDM                   0x1c    0x30
+             *   Sxs                    0x20    0x38
+             *   PebAddressNative       0x80    0xd8
+             *   PebAddressWow64        0x84    0xe0
+             *   ProcessorArchitecture  0x88    0xe4
+             *   sizeof                 0x8c    0xe8
+             *
+             * ProcessHandle is NOT purely a handle: kernel32 packs up to two
+             * flag bits into its low bits (AddToHandle/RemoveFromHandle) and
+             * BaseSrvCreateProcess reads them back out as `Handle & 3` before
+             * masking. Zero-extension preserves them, which is the only
+             * reason the naive widening is right here.
+             *
+             * Sxs is the one field NOT marshalled. BaseSrvCreateProcess never
+             * reads it -- the SxS work belongs to a different API
+             * (BaseSrvSxsCreateActivationContext) -- so widening thirty fields
+             * including four UNICODE_STRINGs whose Buffers are guest pointers
+             * would buy nothing today. It is ZEROED rather than left as
+             * whatever the verbatim copy put there, and the guest is told when
+             * it mattered, so the day the server starts reading it this
+             * announces itself instead of going quiet. */
+            IsCreateProcess = 1;
+
+            /* Zero first: every byte the server might read is then either a
+             * field written below or a deliberate zero, never leftover. */
+            Wow64pZeroBytes(B64 + WOW64_CSRMSG_BODY64_DATA, WOW64_BCP64_SIZE);
+
+#define WOW64_BCP_WIDEN(o32, o64)                                              \
+            Wow64pCsrPut64(B64, WOW64_CSRMSG_BODY64_DATA + (o64),              \
+                        (ULONGLONG)Wow64pCsrGet32(B32,                         \
+                                    WOW64_CSRMSG_BODY32_DATA + (o32)))
+#define WOW64_BCP_COPY32(o32, o64)                                             \
+            Wow64pCsrPut32(B64, WOW64_CSRMSG_BODY64_DATA + (o64),              \
+                        Wow64pCsrGet32(B32, WOW64_CSRMSG_BODY32_DATA + (o32)))
+
+            WOW64_BCP_WIDEN (0x00, 0x00);   /* ProcessHandle (+ flag bits)   */
+            WOW64_BCP_WIDEN (0x04, 0x08);   /* ThreadHandle                  */
+            WOW64_BCP_WIDEN (0x08, 0x10);   /* ClientId.UniqueProcess        */
+            WOW64_BCP_WIDEN (0x0c, 0x18);   /* ClientId.UniqueThread         */
+            WOW64_BCP_COPY32(0x10, 0x20);   /* CreationFlags        (ULONG)  */
+            WOW64_BCP_COPY32(0x14, 0x24);   /* VdmBinaryType        (ULONG)  */
+            WOW64_BCP_COPY32(0x18, 0x28);   /* VdmTask              (ULONG)  */
+            WOW64_BCP_WIDEN (0x1c, 0x30);   /* hVDM                          */
+            WOW64_BCP_WIDEN (0x80, 0xd8);   /* PebAddressNative              */
+            WOW64_BCP_COPY32(0x84, 0xe0);   /* PebAddressWow64      (ULONG)  */
+            WOW64_BCP_COPY32(0x88, 0xe4);   /* ProcessorArchitecture(USHORT) */
+
+            if (Wow64pCsrGet32(B32, WOW64_CSRMSG_BODY32_DATA + 0x20) != 0)
+                DbgPrint("[WOW64] LPC BasepCreateProcess: Sxs.Flags=%08lx is "
+                         "NOT marshalled (basesrv ignores Sxs today) -- if this "
+                         "starts mattering, widen BASE_SXS_CREATEPROCESS_MSG\n",
+                         Wow64pCsrGet32(B32, WOW64_CSRMSG_BODY32_DATA + 0x20));
+
+            Req64->u1.s1.DataLength = (SHORT)(WOW64_CSRMSG_BODY64_DATA +
+                                              WOW64_BCP64_SIZE);
+        }
         else if (Api == WOW64_CSRAPI_BASEP_CREATETHREAD && Data32Len >= 12)
         {
             /* BASE_CREATE_THREAD { HANDLE ThreadHandle; CLIENT_ID ClientId; } --
@@ -4617,6 +4720,25 @@ static NTSTATUS Wow64Manual_NtRequestWaitReplyPort(ULONG *a)
             Wow64pCpy(R32 + WOW64_CSRMSG_BODY32_DATA,
                       R64 + WOW64_CSRMSG_BODY64_DATA,
                       RepData - WOW64_CSRMSG_BODY64_DATA);
+
+        if (IsCreateProcess)
+        {
+            /* basesrv passes &ClientId to CsrCreateProcess by reference, and
+             * the verbatim reply copy above laid 64-bit words into a struct the
+             * guest reads with 32-bit offsets. kernel32 happens to fill
+             * PROCESS_INFORMATION from its OWN local ClientId rather than from
+             * the reply, so nothing reads this today -- narrow it anyway, so
+             * the guest is not left holding a struct that is wrong in a way
+             * only the next reader discovers. */
+            WOW64_BCP_NARROW(0x00, 0x00);   /* ProcessHandle                 */
+            WOW64_BCP_NARROW(0x04, 0x08);   /* ThreadHandle                  */
+            WOW64_BCP_NARROW(0x08, 0x10);   /* ClientId.UniqueProcess        */
+            WOW64_BCP_NARROW(0x0c, 0x18);   /* ClientId.UniqueThread         */
+            WOW64_BCP_NARROW(0x10, 0x20);   /* CreationFlags                 */
+            WOW64_BCP_NARROW(0x14, 0x24);   /* VdmBinaryType                 */
+            WOW64_BCP_NARROW(0x18, 0x28);   /* VdmTask                       */
+            WOW64_BCP_NARROW(0x1c, 0x30);   /* hVDM                          */
+        }
 
         if (IsCreateThread)
         {

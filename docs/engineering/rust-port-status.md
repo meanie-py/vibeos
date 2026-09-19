@@ -2154,11 +2154,21 @@ flight is marked; in-flight lanes live in [`active-lanes/`](active-lanes/).*
   literal: `IDataObject` got QueryInterface/AddRef/Release/QueryGetData typed, and
   `IFolderViewVtbl`, which stopped dead at `GetFolder`, got the remaining eleven from
   shobjidl.idl:866.
-  **shell32's two remaining ORPHANs compile clean but MUST STAY ORPHAN (2026-09-19).**
-  `shell32/CDefView.rs` (11.9K lines) and `shell32/utils.rs` (95 free functions) are at zero
-  rustc errors on i686/amd64/arm64. They are NOT wired, and `ORPHAN-BY-DESIGN` on them is a
-  GUARD rather than a to-do — an earlier revision of this entry claimed they were wired, which
-  was the mistake, not the reporting of it.
+  **`CDefView.cpp` is COHAB-FLIPPED (2026-09-19); `utils.rs` remains ORPHAN-BY-DESIGN.**
+  `shell32/CDefView.rs` (11.9K lines) is wired and owns the shipping implementation. What
+  unblocked it was a measurement: the TU is a link LEAF — `llvm-nm --undefined-only` over every
+  object in shell32.dll (shell32.dir, dialogs/, folders/, shelldesktop, shellmenu, recyclebin)
+  references NOTHING defined in `CDefView.cpp.obj`, so the post-flip capture set is empty. Its
+  only outward surface is the spec export `SHCreateShellFolderView` (ordinal 256).
+  An empty capture set was necessary and NOT sufficient: the flip then needed three real
+  translation bugs fixed before the desktop worked — an inverted `m_hWnd` truthiness guard, a
+  bare `QueryInterface` given `m_pSFParent` as receiver instead of `this`, and a dropped ATL
+  `GetWindowProc` override in `crate::atlwin` (whose window path had never executed in a
+  shipping build, CDefView being its only user). Details in the field manual under "Semantic
+  rewrites that flip meaning". Verified `launched=91 ok=91` on amd64 (3/3) and i386.
+  `shell32/utils.rs` (95 free functions) is at zero rustc errors on i686/amd64/arm64 and stays
+  NOT wired; `ORPHAN-BY-DESIGN` on it is a GUARD rather than a to-do — an earlier revision of
+  this entry claimed both were wired, which was the mistake, not the reporting of it.
   **Wiring a translated TU whose `.cpp` is still live is a PARTIAL COHAB FLIP.** utils.rs
   defines 58 `#[no_mangle]` names the live C++ objects also define as unmangled externs (16 of
   them the `*_RustBridge` wrappers other Rust modules call, plus `SHGetShellStyleHInstance` and
@@ -2170,8 +2180,8 @@ flight is marked; in-flight lanes live in [`active-lanes/`](active-lanes/).*
   independent freeze from CDefView after `shell window ready` — one blocker per wired module,
   which is what symbol capture predicts and a single bad body does not. Both un-wired:
   `launched=91 ok=88`, ratchet holds.
-  So wiring and the cohab flip are ONE change, gated together, and the flip additionally needs
-  utils.cpp's 16 bridges rehomed first (the `rust_*_stub.cpp` files are the pattern; the
+  So wiring and the cohab flip are ONE change, gated together. For utils.cpp the flip
+  additionally needs its 16 bridges rehomed first (the `rust_*_stub.cpp` files are the pattern; the
   CStubWindow32 pair must stay C++ because that ATL class needs exactly one owner and
   CDrivesFolder.cpp still uses it). Prove the capture set is empty with the `llvm-nm` recipe in
   the field manual under "Cohab link plumbing" — `scan_duplicate_symbols` does NOT cover this
