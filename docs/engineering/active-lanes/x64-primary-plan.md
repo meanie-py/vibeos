@@ -259,7 +259,7 @@ a ladder to watch", and neither was visible from reading.
 
 ## Real gaps, ranked by what a user hits
 
-1. **Guest processes — INSTRUMENTED 2026-09-19, `spawn32.exe`.** `CreateProcess`
+1. **Guest processes — CLOSED 2026-09-19 for `CreateProcess`; `CreateRemoteThread` still owed.** `CreateProcess`
    from a 32-bit guest, and cross-process `CreateRemoteThread`. Every installer
    and every app that shells out hits this. `wow64-plan.md` calls it "the largest
    remaining hole" and names the CSR-LPC-32 layer as its prerequisite — which
@@ -474,14 +474,55 @@ WHERE the guest's kernel32 should write, and that is exactly why this defect was
 invisible until now — it was hidden behind two failures that stopped the child before
 its loader ever ran.
 
-The shape of the fix is the inverse of what `wow64.dll` already does at startup: widen
-the 32-bit `RTL_USER_PROCESS_PARAMETERS` the guest wrote into a 64-bit one allocated in
-the child, and point PEB64 at it. Everything downstream then rejoins the ordinary native
-path, including wow64.dll rebuilding the 32-bit copy for itself. The cost is the
-embedded `UNICODE_STRING`s and the environment block, cross-process — so it is the
-first piece of this chain that is genuinely a structure conversion rather than a few
-fields, and the `offsetof`-with-a-`size_check`-control method above is how to get its
-layouts.
+**FIXED, and `spawn32` reports `0x600D` — five rungs, five defects, gap closed.**
+`Wow64pPublishPeb64Params` widens the block the guest wrote and points PEB64 at it,
+before the thread exists, because once it is running the loader has already
+dereferenced that pointer. A failure there fails the creation rather than starting a
+child that cannot survive its own first instruction.
+
+It copies no string bytes at all, which is the part worth keeping. Every `Buffer` the
+guest built already lives in the CHILD's address space below 2GB, and a 64-bit pointer
+addresses those characters perfectly well — so the 64-bit strings point at the very
+same memory and only the fixed header is rebuilt. The environment block is shared the
+same way. The output is marked NORMALIZED with absolute pointers, which is what makes
+the denormalized input free: a denormalized `Buffer` is an offset from the block base,
+so resolving it is one addition done here instead of by every reader. Which fields that
+applies to was read out of `rtl-ppb`'s `RtlDeNormalizeProcessParams` rather than
+guessed — the eight `UNICODE_STRING`s, and deliberately not `Environment`, which is a
+separate allocation. The live boot takes the denormalized path.
+
+        [WOW64] PEB64->ProcessParameters published at 0000000000160000
+                (widened from PEB32 block 00050000, strings denormalized)
+        [spawn32] rung1 CreateProcessW OK          [spawn32] rung4 child exited OK
+        [spawn32] rung2 child is a 32-bit guest OK [spawn32] rung5 child exit code intact OK
+        [spawn32] rung3 ResumeThread OK            [spawn32] verdict 0x0000600d
+
+**The `offsetof`-with-a-control method paid for itself here rather than in theory.**
+Transcribing `RTL_USER_PROCESS_PARAMETERS` from `wine/winternl.h` gave `sizeof`
+676/1040 against the 656/1008 that `ntdll-sys/src/size_check_{i386,amd64}.rs` asserts:
+that header carries five trailing fields (`EnvironmentSize`, `EnvironmentVersion`,
+`PackageDependencyData`, `ProcessGroupId`, `LoaderThreads`) which are not in the struct
+this tree builds against. **Nothing above `RuntimeData` moved**, so every field offset a
+derivation would have produced was correct and the BLOCK SIZE was wrong — the one error
+a field-by-field review does not catch, caught by a line of output that had to match a
+number already in the tree.
+
+**`spawn32` PROMOTED from `DIAGNOSTIC` to `LADDER` the same day**, which is what its own
+contract says to do when a diagnostic guest starts passing: it measured an open gap, the
+gap is closed, and leaving it ungraded would mean a regression in the thing it proved
+could pass unnoticed. Three consequences, all landed: it is built unconditionally
+(both reasons for the opt-in are spent — the bugcheck was the dropped `_SEH2_EXCEPT`,
+and "red by design" ended when it went green), it joined the all-or-nothing
+`_wow64_ladder` CMake set, and **its launch order INVERTED** — it used to run dead last
+because it could kill the machine, and a graded guest must now run BEFORE `sqlite32`,
+which carries the registered BUGCHECK, or an sqlite32 crash silently costs spawn32 its
+verdict. That is the same rule that already cost lua32 a verdict once. Ladder now reports
+**11/11 guests PASS** on amd64.
+
+The `DIAGNOSTIC` table is empty again, and its tests were re-pointed at a synthetic
+guest rather than deleted — the machinery is what the next guest aimed at a known-open
+gap will need, and coverage deleted because a table happens to be empty rots
+unexercised until the moment someone depends on it.
 
    *(Superseded, kept as a dated waypoint: while the `STATUS_PARTIAL_COPY` write was
    still failing I wrote here that the next question was "why the child's parameter

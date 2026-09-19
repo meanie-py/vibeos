@@ -250,14 +250,20 @@ cannot reach. Nearly every marshalling bug from E6 onward was found by one.
 
 ## What is deliberately not built
 
-- **Guest processes.** Still the largest remaining hole — it is what installers
-  and any app that shells out will hit — but no longer unmeasured. The CSR-LPC-32
-  prerequisite landed, and `spawn32.exe` (DIAGNOSTIC, opt-in under
-  `VIBEOS_WOW64_SPAWN=1`) walked the path on amd64 2026-09-19 through three
-  defects to the refusal that actually blocks it: `Wow64Manual_NtCreateThread`
-  rejects every `ProcessHandle != -1`, because a cross-process thread has no
-  per-thread entry in the target and `Wow64ProcessPendingCrossProcessItems` is
-  empty. That is task #64. Full chain in `x64-primary-plan.md` gap #1.
+- ~~**Guest processes**~~ — **`CreateProcess` WORKS** (2026-09-19). What was
+  "the largest remaining hole" took five stacked defects, each invisible until
+  the one before it was fixed: a dropped `_SEH2_EXCEPT` (bugcheck), an invented
+  `STATUS_PARTIAL_COPY` constant, a missing TEB32 `RemotePeb` channel, an
+  unmarshalled `BASE_CREATE_PROCESS` CSR message, and PEB64 process parameters
+  that only a 64-bit parent would have filled. `spawn32.exe` reports `0x600D`
+  across all five rungs and is now a graded LADDER guest (11/11 on amd64).
+  Full chain in `x64-primary-plan.md` gap #1.
+
+  **Still owed: cross-process `CreateRemoteThread` into a RUNNING process.**
+  That is the half of task #64 that genuinely needs the channel — the target's
+  wow64.dll must run a per-thread entry for a thread it did not create, and
+  `Wow64ProcessPendingCrossProcessItems` is still empty. The initial-thread case
+  needed no channel at all, which is why `CreateProcess` closed without one.
 - ~~**Registry redirection**~~ — **BUILT** (phase E24, task #66). Listed here as a
   silent correctness bug until then: a 32-bit guest read and wrote the *native*
   hive. Now redirected in `CmpParseKey` (`config-rust/src/cmwow64.rs`), with
@@ -3287,7 +3293,13 @@ frame, coroutine resume/yield switches between independent stacks, and rung 4 ra
 frame whose value stack has MOVED since it was entered. Nothing else in the ladder reaches any
 of that.
 
-**Ordering rule: the guest that can BUGCHECK goes LAST.** `sqlite32` is the registered arm64
+**Ordering rule: the guest that can BUGCHECK goes LAST — and it is the GRADED
+guests the rule protects.** spawn32 is the worked example in both directions: it
+ran dead last while it could kill the machine, and moved ahead of the stress
+guests the day it was promoted into the graded set, because a crash in sqlite32
+costs every guest sequenced after it its verdict.
+
+ `sqlite32` is the registered arm64
 on-disk instability (roadmap: 0x1E / `RtlRaiseStatus+68`), and a guest that takes the machine
 down costs every guest launched after it its verdict — silently, because the harness sees a
 clean 9/9 parity pass and simply no line about the others. That is not hypothetical: it is what

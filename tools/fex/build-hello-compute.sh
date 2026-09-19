@@ -173,24 +173,22 @@ fi
 # spawn32.exe — the process-creation guest: can a 32-bit guest start another
 # 32-bit process at all. Links kernel32 only.
 #
-# OPT-IN. The original reason was that it BUGCHECKed the machine (0x1E /
-# c0000005 after NtCreateProcessEx succeeded), which the "diagnostic guests
-# never red a gate" promise cannot carry -- that promise covers a bad exit
-# code and is worth nothing against a dead boot. **That bugcheck is FIXED**
-# (a dropped _SEH2_EXCEPT at four probe sites in ARM3/virtual.rs) and the
-# guest now boots clean and reports a verdict. It stays opt-in on the weaker
-# but still-good reason: it is a DIAGNOSTIC measuring an open gap, so it is
-# red by design until the gap closes, and there is no value in carrying that
-# on every tree's media. Promote it into ladder.LADDER when it reaches 0x600D.
-if [ "${VIBEOS_WOW64_SPAWN:-0}" = "1" ] && \
-   [ -f "$I386_BUILD/dll/win32/kernel32/CMakeFiles/libkernel32.dir/libkernel32.a" ]; then
+# Built UNCONDITIONALLY since 2026-09-19, when it first reported 0x600D and was
+# promoted into ladder.LADDER. It was opt-in twice over and both reasons are
+# spent: first it BUGCHECKed the machine (0x1E, a dropped _SEH2_EXCEPT at four
+# probe sites in ARM3/virtual.rs), then it was merely red-by-design as a
+# DIAGNOSTIC measuring an open gap. The gap is closed, so it is a parity guest
+# now and has to be present on every tree or it guards nothing -- and
+# _wow64_ladder is all-or-nothing, so an absent spawn32 costs the WHOLE ladder
+# its staging rather than just itself.
+if [ -f "$I386_BUILD/dll/win32/kernel32/CMakeFiles/libkernel32.dir/libkernel32.a" ]; then
     "$LLVM_MINGW/i686-w64-mingw32-clang" -O1 -nostdlib -Wl,-e,_start \
         -Wl,--subsystem,windows:5.1 -Wl,--major-os-version,5 -Wl,--minor-os-version,1 \
         -Wl,--no-insert-timestamp \
         -o "$HARNESS_BUILD/spawn32.exe" "$HARNESS_SRC/Spawn32.c" \
         "$I386_BUILD/dll/win32/kernel32/CMakeFiles/libkernel32.dir/libkernel32.a"
 else
-    echo "[i] spawn32.exe not built (opt-in: VIBEOS_WOW64_SPAWN=1) -- DIAGNOSTIC, red by design until the guest-process gap closes"
+    echo "[!] spawn32.exe skipped: build-i386 kernel32 importlib missing ($I386_BUILD) -- the ladder will NOT stage"
 fi
 
 # marshal32.exe — the M18 marshaller-verification guest: NtQueryInformationThread
