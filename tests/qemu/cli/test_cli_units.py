@@ -8285,3 +8285,113 @@ def test_serial_eof_retains_partial_output():
     with pytest.raises(ConnectionError):
         client.read_until("shell ready", timeout=0.1)
     assert client.partial_output == "firmware reached the loader"
+
+
+# --- land: the SOURCE-lint preflight ---------------------------------------
+#
+# Added 2026-09-19 after one lane ate two LINT_FAIL rejections for a one-line
+# `scan_unpruned_walk` fix. `_lint_preflight` is named "lint" but only ever ran
+# check-tooling; the conductor also runs `check --strict --scope source-early|
+# source-deferred`, and plain `./vibeos-cli check` does NOT run those in strict mode, so
+# a lane can be green locally and rejected after the full queue wait. These are pure
+# source checks — no build, no boot — so they belong before the cost, not after it.
+
+
+def _src_lint_run(tmp_path: Path):
+    """A real `Run` with its artifact dir redirected — the preflight takes a Run, and a
+    stand-in class would only prove the stand-in's interface."""
+    run = Run("land", "host")
+    run.dir = tmp_path
+    run.stages = []
+    return run
+
+
+class _SrcLintArgs:
+    skip_lint = False
+
+
+def _stub_src_lint_once(land_mod_, monkeypatch, results: dict):
+    import tests.qemu.cli.gate as gate_mod
+
+    monkeypatch.setattr(gate_mod, "_lint_once", lambda repo, part, root: results[part])
+
+
+def _src_lint_result(ok: bool, classification: str = "", salient: str = "", exit_code: int = 0):
+    return {
+        "arch": "source-deferred",
+        "ok": ok,
+        "seconds": 1.0,
+        "salient": salient,
+        "exit": exit_code,
+        "classification": classification,
+    }
+
+
+def test_source_lint_preflight_passes_when_both_partitions_are_clean(tmp_path, monkeypatch):
+    run = _src_lint_run(tmp_path)
+    _stub_src_lint_once(
+        land_mod,
+        monkeypatch,
+        {"source-early": _src_lint_result(True), "source-deferred": _src_lint_result(True)},
+    )
+    land_mod._source_lint_preflight(tmp_path, run, _SrcLintArgs())
+    assert [s.status for s in run.stages] == ["ok", "ok"]
+
+
+def test_source_lint_preflight_blocks_on_real_new_findings(tmp_path, monkeypatch):
+    """The case that cost two rejections: a genuine NEW finding must stop the submission."""
+    run = _src_lint_run(tmp_path)
+    _stub_src_lint_once(
+        land_mod,
+        monkeypatch,
+        {
+            "source-early": _src_lint_result(True),
+            "source-deferred": _src_lint_result(
+                False,
+                classification="LINT_FAIL",
+                salient="✗ scan_unpruned_walk(2 new)",
+                exit_code=1,
+            ),
+        },
+    )
+    with pytest.raises(land_mod.LandAbort) as ei:
+        land_mod._source_lint_preflight(tmp_path, run, _SrcLintArgs())
+    msg = str(ei.value)
+    assert "scan_unpruned_walk" in msg
+    # It must name the reproduction, because a green plain `check` is the trap here.
+    assert "--strict --scope source-deferred" in msg
+
+
+def test_source_lint_preflight_fails_OPEN_on_a_scanner_error(tmp_path, monkeypatch):
+    """NEVER MORE STRICT THAN THE GATE. source-deferred holds verify_signatures and
+    gen_ctype_tables, which hard-fail without this worktree's build-<arch> — a fresh
+    lane legitimately has none, and the conductor's tree does. A partition that could
+    not RUN here must warn, not block, or this preflight wedges landing."""
+    run = _src_lint_run(tmp_path)
+    _stub_src_lint_once(
+        land_mod,
+        monkeypatch,
+        {
+            "source-early": _src_lint_result(True),
+            "source-deferred": _src_lint_result(
+                False, classification="SCANNER_ERROR", salient="no build-amd64", exit_code=1
+            ),
+        },
+    )
+    land_mod._source_lint_preflight(tmp_path, run, _SrcLintArgs())  # must NOT raise
+    assert [s.status for s in run.stages] == ["ok", "warn"]
+
+
+def test_source_lint_preflight_honours_skip_lint(tmp_path, monkeypatch):
+    run = _src_lint_run(tmp_path)
+
+    def _boom(*a, **kw):
+        raise AssertionError("must not run under --skip-lint")
+
+    import tests.qemu.cli.gate as gate_mod
+
+    monkeypatch.setattr(gate_mod, "_lint_once", _boom)
+    args = _SrcLintArgs()
+    args.skip_lint = True
+    land_mod._source_lint_preflight(tmp_path, run, args)
+    assert run.stages == []

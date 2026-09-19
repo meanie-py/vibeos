@@ -220,6 +220,65 @@ def _lint_preflight(repo: Path, run: Run, args) -> None:
     )
 
 
+def _source_lint_preflight(repo: Path, run: Run, args) -> None:
+    """Run the conductor's OWN source-lint partitions here, before the batched gate.
+
+    `_lint_preflight` above is named "lint" but only ever ran `check-tooling`. The gate
+    runs that AND `check --strict --scope source-early|source-deferred`, and those two
+    are the other cheap half — pure source, no build, no boot. On 2026-09-19 they
+    rejected the same lane twice (`scan_unpruned_walk`, a one-line fix each time) after
+    the full queue wait, while `./vibeos-cli check` stayed green the whole time, because
+    plain `check` does not run those partitions in STRICT mode. A gate downstream of the
+    cost is not a gate.
+
+    Uses gate's `_lint_once` rather than re-deriving the command, so this cannot drift
+    from what the conductor actually runs.
+
+    NEVER MORE STRICT THAN THE GATE, which is the property that makes moving it sound:
+    a partition that could not RUN here must not block. `source-deferred` contains
+    `verify_signatures` and `gen_ctype_tables`, which hard-fail without this worktree's
+    `build-<arch>` — a fresh lane legitimately has none. `_lint_once` already separates
+    those: a crash, or a nonzero exit with no parseable finding lines, classifies as
+    SCANNER_ERROR, and only a real NEW-findings verdict blocks. Everything else warns,
+    matching the fail-open rule the check-tooling half already follows.
+    """
+    if getattr(args, "skip_lint", False):
+        return
+    from .gate import _lint_once
+
+    for part in ("source-early", "source-deferred"):
+        try:
+            result = _lint_once(repo, part, run.dir / f"preflight-lint-{part}")
+        except (OSError, subprocess.SubprocessError) as exc:
+            run.add(Stage(f"lint:{part}", status="warn", detail=f"could not run: {exc}"))
+            continue
+        if result["ok"]:
+            run.add(Stage(f"lint:{part}", status="ok", detail=f"clean ({result['seconds']:.0f}s)"))
+            continue
+        if result["classification"] == "SCANNER_ERROR":
+            # Infrastructure, not a finding — the conductor has a built tree and we may
+            # not. Say so and let the gate be the oracle.
+            run.add(
+                Stage(
+                    f"lint:{part}",
+                    status="warn",
+                    detail=f"could not complete here ({result['salient'] or 'scanner error'})",
+                )
+            )
+            continue
+        raise LandAbort(
+            f"check --strict --scope {part} FAILED — fix it before queueing, or the "
+            "conductor bounces the whole batch (3 builds + 4 boots of fleet load) for a "
+            "source lint:\n    "
+            + (result["salient"] or f"exit {result['exit']}")
+            + f"\n  artifact: {run.dir / f'preflight-lint-{part}'}"
+            + f"\n  reproduce: ./vibeos-cli check --strict --scope {part}"
+            + "\n  (plain `./vibeos-cli check` does NOT run this partition in strict mode,"
+            " so a green `check` is not evidence here.)"
+            + "\n  override (report every use): ./vibeos-cli land --skip-lint"
+        )
+
+
 def _merge_master(repo: Path, run: Run) -> str:
     """Merge origin/master into HEAD (no-op when already contained). Returns the new HEAD.
     A conflicting merge is aborted and reported — resolving it is the lane's call, not
@@ -412,6 +471,7 @@ def _land_queued(args, repo: Path) -> int:
             # Only on a REAL submission: if this tip is already queued we are adding no new
             # risk to the batch, and a --dry-run has already returned above.
             _lint_preflight(repo, run, args)
+            _source_lint_preflight(repo, run, args)
             sub = queue.submit(repo, tip=head, lane=lane)
             depth = len(queue.pending(repo))
             run.add(
@@ -631,6 +691,7 @@ def _land_direct(args, repo: Path) -> int:
         # but a lint failure still burns a whole gate, and there is no reason to hold a
         # fleet-wide lock for the ~40s this takes.
         _lint_preflight(repo, run, args)
+        _source_lint_preflight(repo, run, args)
 
         _report_queue(run)
         timeout = float(getattr(args, "queue_timeout", 0) or hostlock.LAND_LOCK_TIMEOUT)
