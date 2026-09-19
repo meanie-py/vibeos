@@ -12,7 +12,7 @@ import sys
 from pathlib import Path
 
 from . import build as build_mod
-from . import cargoswap, debugcmd, diskspace, hostlock, maintenance, tooling
+from . import cargoswap, checkpoint, debugcmd, diskspace, host_clock, hostlock, maintenance, tooling
 from . import conformance as conformance_mod
 from . import difftest as difftest_mod
 from . import farm as farm_mod
@@ -45,6 +45,8 @@ def build_parser() -> argparse.ArgumentParser:
         prog="vibeos-cli", description="VibeOS build/check/smoke/debug control plane"
     )
     sub = p.add_subparsers(dest="cmd", required=True)
+    checkpoint.add_parser(sub)
+    host_clock.add_parser(sub)
 
     def arch_arg(sp, required=True):
         sp.add_argument(

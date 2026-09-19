@@ -501,6 +501,32 @@ mid-boot (serial stuck at 0, PC parked in OVMF). Only `run-until`/`inspect` conn
 (they intend to halt, then `detach` resumes). The detached QEMU persists across CLI
 invocations (a separate Windows process); address it by run-id, kill by uid tag.
 
+### `checkpoint {capture|run|inspect|verify}` — durable saved execution
+
+Capture before a hot window, then rerun that window without booting again:
+
+```sh
+./vibeos-cli checkpoint capture --arch arm64 --smp 1 --name before-window \
+  --until '[SMSS] _main entered'
+./vibeos-cli checkpoint run before-window --repeat 100 --until 'shell ready'
+./vibeos-cli checkpoint verify before-window --pause-seconds 5
+```
+
+Bundles live in `~/vibeos-checkpoints`, outside Windows temporary cleanup, with
+pinned media and private writable attempt images. CPU topology is preserved.
+`run --gdb` restores stopped for one debugger session. Failed windows preserve
+logs, CPU state and a failure checkpoint when QEMU remains available. This is
+checkpoint retry, not deterministic replay. Capture requires TCG and isolates
+outside networking. See [the checkpoint guide](../../../docs/engineering/qemu-checkpoint-debugging.md)
+for supported configurations, verification and debugger limitations.
+
+### `host-clock [--seconds 65] [--fix-wsl]` — clock-step evidence
+
+Samples wall time against monotonic time and saves the raw readings. A step over
+50 ms fails. `--fix-wsl` disables competing Linux NTP only after proving Hyper-V
+implicit synchronization is active; it never changes a native host's time setup.
+This measures clock stability, not UTC accuracy. See [host clock notes](../../../docs/engineering/host-clock.md).
+
 ### `rr {record|replay|verify|list|info}` — deterministic re-execution of one boot
 
 `rr record --arch arm64` boots once under QEMU's instruction-counted record mode
