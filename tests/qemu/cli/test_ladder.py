@@ -544,3 +544,42 @@ def test_a_sibling_medium_manifest_must_not_answer_for_this_one(tmp_path):
     (boot / "bootcdregtest.Debug.lst").write_text("reactos/system32/hal.dll=/tmp/vibeos/y\n")
     # No boot.*.lst exists, so the manifest probe must DECLINE (None), not answer.
     assert ladder._staged_per_manifest(tmp_path, "arm64", "syswow64", {"hello32.exe"}) is None
+
+
+def test_an_unbuilt_tree_says_unknown_not_unsupported(tmp_path):
+    """A freshly-provisioned box has no build dir at all, so neither probe can
+    answer. That must NOT come back as "32-bit guests cannot run here": on amd64
+    that is a false architectural claim, and it is the reassuring direction to be
+    wrong in, so nobody downstream would question it. `_read_media` and both
+    probes keep a None for exactly this, and `bool()` used to discard it."""
+    assert ladder.supports_wow64(tmp_path, "amd64") is None
+    _, staged, why = ladder.gate_decision(tmp_path, "amd64")
+    assert not staged
+    assert "UNKNOWN, not" in why
+    assert "cannot run here" not in why
+    assert "./vibeos-cli build --arch amd64" in why
+
+
+def test_a_real_native_x86_negative_still_reads_as_unsupported(tmp_path):
+    """The positive control: i386's livecd HAS a manifest and no SysWOW64 to
+    stage into, so the probe answers honestly and the verdict is final rather
+    than fixable. Turning the no-media case into None must not soften this one."""
+    repo = _manifest(tmp_path, [], arch="i386", cpu_layer=False)
+    assert ladder.supports_wow64(repo, "i386") is False
+    _, staged, why = ladder.gate_decision(repo, "i386")
+    assert not staged
+    assert "cannot run here" in why
+
+
+def test_the_ramdisk_never_answers_for_an_iso_arch(tmp_path):
+    """The image path carries no arch, so a present qemu/ramdisk.img used to
+    answer for amd64 — arm64's media speaking for x86's. Hidden whenever a
+    build-amd64/ manifest existed (that probe runs first), it surfaced on a
+    restored box whose only media was a two-week-old ramdisk: amd64 was told its
+    media had no WoW64 CPU layer, on arm64's evidence."""
+    (tmp_path / "qemu").mkdir()
+    (tmp_path / ladder.RAMDISK_REL).write_bytes(b"\0" * 512)
+    for arch in ("i386", "amd64"):
+        assert ladder._staged_per_ramdisk(tmp_path, arch, "system32", ladder.CPU_LAYERS) is None
+        assert ladder.supports_wow64(tmp_path, arch) is None
+        assert "UNKNOWN, not" in ladder.gate_decision(tmp_path, arch)[2]

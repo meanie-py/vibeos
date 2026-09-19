@@ -270,7 +270,27 @@ def _staged_per_ramdisk(repo: Path, arch: str, subdir: str, names: set[str]) -> 
 
     Reads stdout, never the exit code: `mdir` exits 0 on "File not found", which
     is the same $?-is-not-the-answer trap AGENTS.md names twice.
+
+    Declines for an arch that does not USE a ramdisk, and that is not a
+    formality. The image lives at a fixed repo path with no arch in its name, so
+    this probe used to read arm64's ramdisk and answer on behalf of amd64. It
+    was invisible while a tree had a build-amd64/ manifest -- that probe runs
+    first and answers -- and surfaced on a freshly-restored box where the only
+    media present was a two-week-old qemu/ramdisk.img: amd64 was told "no WoW64
+    CPU layer on this arch's media", sourced entirely from arm64's media.
+    Derived from archcfg rather than an arch list: x86 media is an ISO assembled
+    under build-<arch>/, arm64's is mcopy-filled and lives outside it, and that
+    IS the mechanism split this function's None contract is about.
     """
+    from . import archcfg
+
+    try:
+        media = Path(archcfg.arch_build(arch).boot_media_rel)
+    except (KeyError, AttributeError):
+        return None
+    if media.parts and media.parts[0].startswith("build-"):
+        return None  # assembled ISO -- the manifest is this arch's mechanism
+
     img = repo / RAMDISK_REL
     if not img.is_file():
         return None
@@ -308,10 +328,20 @@ def _read_media(repo: Path, arch: str, subdir: str, names: set[str]) -> set[str]
     return None
 
 
-def supports_wow64(repo: Path, arch: str) -> bool:
+def supports_wow64(repo: Path, arch: str) -> bool | None:
     """Is a WoW64 CPU layer on this media? False on a native-x86 livecd, which is
-    why 'no guests staged' is the final answer there rather than a fixable state."""
-    return bool(_read_media(repo, arch, "system32", CPU_LAYERS))
+    why 'no guests staged' is the final answer there rather than a fixable state.
+
+    None when the media cannot answer -- no build dir, no manifest, no ramdisk.
+    Tri-state on purpose: `bool()` here would have thrown away the distinction
+    that `_read_media` and both probes exist to preserve, and turned "I have not
+    looked at any media" into the positive architectural claim "32-bit guests
+    cannot run here". That is the reassuring direction to be wrong in, so nothing
+    downstream would ever have questioned it -- an unbuilt amd64 tree would be
+    told the ladder does not apply to amd64.
+    """
+    answer = _read_media(repo, arch, "system32", CPU_LAYERS)
+    return None if answer is None else bool(answer)
 
 
 def media_has_guests(repo: Path, arch: str) -> bool:
@@ -393,7 +423,16 @@ def gate_decision(repo: Path, arch: str) -> tuple[list[str], bool, str]:
     # A native-x86 boot has no CPU layer, so it has no SysWOW64 to stage into and
     # "not staged" is the final answer, not a fixable state. Checked by asking the
     # media for the layer winlogon itself gates on, so no arch list appears here.
-    if not supports_wow64(repo, arch):
+    cpu_layer = supports_wow64(repo, arch)
+    if cpu_layer is None:
+        return (
+            [],
+            False,
+            f"no media to read for {arch} — neither a build-{arch}/ manifest nor a "
+            f"ramdisk this arch uses, so whether it can host 32-bit guests is UNKNOWN, "
+            f"not no; build the arch first: ./vibeos-cli build --arch {arch}",
+        )
+    if not cpu_layer:
         return (
             [],
             False,
