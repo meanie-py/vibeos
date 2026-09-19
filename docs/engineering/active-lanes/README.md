@@ -17,6 +17,7 @@ registry), never left to rot in an archived doc.
 | `msvcrt-homebrew` | [msvcrt-from-pieces-plan.md](msvcrt-from-pieces-plan.md) |
 | `shell32-com` | [shell32-com-plan.md](shell32-com-plan.md) *(translation driven by Codex, not rustconv)* |
 | `warnings-burndown` | [warnings-burndown-plan.md](warnings-burndown-plan.md) *(follow-on from the closed `rust-warnings` lane)* |
+| `qemu-perf` | [qemu-perf-plan.md](qemu-perf-plan.md) *(QEMU execution layer: windows-host backend, TCG-vs-WHPX, boot concurrency)* |
 | `research` | [x64-primary-plan.md](x64-primary-plan.md) *(survey: promoting amd64 to the primary x86 arch)* |
 
 *Recently landed & closed:*
