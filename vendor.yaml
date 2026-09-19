@@ -203,15 +203,6 @@ trees:
     name: Microsoft UCRT
     upstream: Windows SDK "Source/ucrt" drop (exact SDK version UNKNOWN — see note)
     license: Microsoft (see the Windows SDK licence terms)
-    license_extra:
-      MIT: >
-        5 files are ReactOS ADDITIONS to the Microsoft drop, stamped `SPDX MIT` and
-        `Copyright (c) 2024 Timo Kreuzer`: math/matherr.cpp,
-        inc/corecrt_internal_state_isolation.h, and
-        locale/{MultiByteToWideChar,WideCharToMultiByte,GetStringTypeW}.c. So `modified:
-        yes` understates this tree — these are NEW FILES, not adaptation sites. Same
-        scope question as wdf: by their own headers they are ours, sitting inside a tree
-        excluded from the translation denominator.
     modified: yes
     headers:
       - sdk/include/ucrt
@@ -230,6 +221,17 @@ trees:
       makes ucrtbase read as permanently ~8% reachable; excluding it makes the goal
       sayable — everything in ucrtbase that is ours is Rust. See task #55.
     review: >
+      MIT FILES REMOVED 2026-09-19. Five ReactOS ADDITIONS carrying `SPDX MIT` and
+      `Copyright (c) 2024 Timo Kreuzer` used to sit in this Microsoft drop
+      (math/matherr.cpp, inc/corecrt_internal_state_isolation.h,
+      locale/{MultiByteToWideChar,WideCharToMultiByte,GetStringTypeW}.c). They are now
+      sdk/lib/ucrt_reactos/, outside the vendored boundary, so this tree is Microsoft's
+      alone. ONE TIE REMAINS AND CANNOT BE MOVED: corecrt_internal.h:2119 — a Microsoft
+      file — does `#include <corecrt_internal_state_isolation.h>`, so the drop reaches
+      into our header, which is now supplied via an include path. That #include is itself
+      one of the adaptation sites below, and for any future upstream-alignment work it is
+      the shape that has to become a patch rather than an in-place edit.
+
       No version probe: there is no version macro, no stamp, and no manifest anywhere
       in sdk/lib/ucrt or sdk/include/ucrt, so nobody can say which SDK this came from.
       Re-searched 2026-09-13 and the absence is total: no `10.0.NNNNN` string, no build
@@ -414,15 +416,14 @@ trees:
     name: Mbed TLS
     upstream: https://github.com/Mbed-TLS/mbedtls
     license: Apache-2.0
-    license_extra:
-      LGPL-2.1-or-later: >
-        _reactos_strsafe_wrapper.c — a ReactOS-authored adapter
-        (Copyright 2015 Ismael Ferreras Morezuelas) carrying the LGPL grant in prose,
-        inside an Apache-2.0 tree. Found BY HAND, not by `--licences`: it has no SPDX
-        tag and no `LICENSE:` header line, which is exactly that scan's blind spot.
-        The lesson is in tools/vendored.py's `license_drift` docstring — a green
-        `--licences` means no tree DECLARES an unrecorded licence, not that no tree
-        HAS one.
+    review: >
+      MIXED UNTIL 2026-09-19, now clean: _reactos_strsafe_wrapper.c was a ReactOS-authored
+      LGPL-2.1-or-later adapter (StringCchVPrintfEx -> _vsnprintf_s, Copyright 2015 Ismael
+      Ferreras Morezuelas) sitting inside this Apache-2.0 drop. Moved out to
+      sdk/lib/mbedtls_reactos/strsafe_wrapper.c, so the tree is now a pure upstream copy
+      and a re-vendor is a copy rather than a merge. It was found BY HAND, not by
+      `--licences`: it declares its licence in prose with no SPDX tag, which is that
+      scan's blind spot. A re-vendor must not reintroduce it.
     modified: unknown
     headers:
       - sdk/include/reactos/libs/mbedtls
