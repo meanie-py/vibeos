@@ -41,7 +41,45 @@ from pathlib import Path
 CANONICAL_BUILD_ROOT = "/tmp/vibeos"
 
 _DEFINE_FN_LIKE = re.compile(r"^[ \t]*#[ \t]*define\s+([A-Za-z_]\w*)\(", re.M)
+# `#define NAME OTHER` where the whole body is one bare identifier -- an ALIAS. It is
+# object-like, so `_DEFINE_FN_LIKE` cannot see it, but invoking it invokes whatever it
+# names, so an alias to a function-like macro IS function-like at every call site.
+_DEFINE_ALIAS = re.compile(
+    r"^[ \t]*#[ \t]*define\s+([A-Za-z_]\w*)[ \t]+([A-Za-z_]\w*)[ \t]*$", re.M
+)
 _ARCHES = ("i386", "amd64", "arm64")
+
+
+def _function_like(text: str) -> set[str]:
+    """Function-like macro names in a `-dM` dump, following object-like ALIASES.
+
+    mingw's `stdarg.h` spells three of the four va_ macros as bare aliases:
+
+        #define va_arg __crt_va_arg          <- object-like, invisible to the regex
+        #define va_copy(d,s) __va_copy(...)  <- function-like, caught
+        #define __crt_va_arg(v,l) __builtin_va_arg(v,l)
+
+    so `va_copy` was excluded from the seal and `va_arg`/`va_start`/`va_end` were not.
+    The seal then tokenized `va_arg(ap, int)` as a runtime callee of arity 2 -- and no
+    legal Rust rendering has two arguments, because the TYPE is a turbofish, whose
+    commas the arity check blanks. The envelope was therefore UNSATISFIABLE: the model
+    returns the same correct body every time and the checker rejects it every time, so
+    a retry re-bills a verdict that can never change. msvcrt's `_sopen` and `_open`
+    were rejected together in one run on `__RUSTCONV_CALL_0001__=va_arg wants 2, got 1`.
+    """
+    names = set(_DEFINE_FN_LIKE.findall(text))
+    aliases = dict(_DEFINE_ALIAS.findall(text))
+    for name in aliases:
+        seen = {name}
+        target = aliases[name]
+        # Bounded walk: an alias may name another alias, and a pathological header
+        # could make the chain cyclic. `seen` terminates both.
+        while target in aliases and target not in seen:
+            seen.add(target)
+            target = aliases[target]
+        if target in names:
+            names.add(name)
+    return names
 
 
 class MacroAuthorityError(RuntimeError):
@@ -264,7 +302,7 @@ def function_like_macros(repo_root: Path, source: Path) -> frozenset[str]:
                 continue
         else:
             dump = _preprocess_defines(argv)
-        names |= set(_DEFINE_FN_LIKE.findall(dump))
+        names |= _function_like(dump)
         found.append(arch)
     # `-dM` dumps only macros STILL DEFINED when preprocessing ends, so one that the TU
     # `#undef`s again is invisible to it — and a function-like macro missing from this set
@@ -273,7 +311,7 @@ def function_like_macros(repo_root: Path, source: Path) -> frozenset[str]:
     # `#undef DUMPEV`. It cost four rejected paid attempts. Scanning the TU's own text is
     # cheap and catches the define/undef pair the preprocessor dump erases.
     try:
-        names |= set(_DEFINE_FN_LIKE.findall(source.read_text(errors="replace")))
+        names |= _function_like(source.read_text(errors="replace"))
     except OSError:
         pass
     if not found:
