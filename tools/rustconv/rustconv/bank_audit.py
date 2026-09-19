@@ -62,6 +62,8 @@ import re
 from dataclasses import dataclass, field
 from pathlib import Path
 
+from tools.source_walk import source_files
+
 from rustconv.lex_mask import mask_code
 
 try:
@@ -313,7 +315,7 @@ def macro_arg_names(path: Path) -> set[str]:
 def tree_macro_arg_names(rust_root: Path) -> set[str]:
     """Index every bare macro-invocation argument under a crate root."""
     names: set[str] = set()
-    for path in rust_root.rglob("*.rs"):
+    for path in source_files(rust_root, "*.rs"):
         names |= macro_arg_names(path)
     return names
 

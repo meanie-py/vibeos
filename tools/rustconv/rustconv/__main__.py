@@ -14,6 +14,8 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 from dataclasses import replace
 from pathlib import Path
 
+from tools.source_walk import source_files
+
 from . import (
     callout_annotate,
     candidate_oracle,
@@ -2056,7 +2058,10 @@ def _already_translated(
         r"(?:\s*#\[[^\]]*\])*"
         r"\s*(?:pub\s+)?(?:unsafe\s+)?(?:extern\s+\"[^\"]*\"\s+)?fn\s+(?P<name>\w+)"
     )
-    for rs in src.rglob("*.rs"):
+    # source_files, not rglob: a crate's `target/` holds generated copies of its own
+    # modules, and counting one of those as the shipping definition would answer this
+    # question from a build artifact.
+    for rs in source_files(src, "*.rs"):
         try:
             text = rs.read_text(errors="replace")
         except OSError:
