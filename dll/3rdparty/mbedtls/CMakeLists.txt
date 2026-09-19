@@ -4,8 +4,12 @@ include_directories(${REACTOS_SOURCE_DIR}/sdk/include/reactos/libs
 
 spec2def(mbedtls.dll mbedtls.spec ADD_IMPORTLIB)
 
+# The ReactOS-authored adapter lives OUTSIDE this vendored tree: mbedtls is an
+# Apache-2.0 upstream drop and that file is LGPL-2.1-or-later ReactOS code, so keeping
+# it here made the tree mixed-licence and made an upstream re-vendor a merge instead of
+# a copy. See vendor.yaml's mbedtls entry.
 list(APPEND SOURCE
-    _reactos_strsafe_wrapper.c
+    ${REACTOS_SOURCE_DIR}/sdk/lib/mbedtls_reactos/strsafe_wrapper.c
     aes.c
     aesni.c
     arc4.c
