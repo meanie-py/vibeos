@@ -2983,6 +2983,13 @@ unsafe impl AtlWindow for CDefView {
     ) -> BOOL {
         CDefView_ProcessWindowMessage_body(this, hWnd, uMsg, wParam, lParam, lResult, dwMsgMapID)
     }
+    /// CDefView.cpp:535 `virtual WNDPROC GetWindowProc() override { return WindowProc; }`.
+    /// This is an OVERRIDE and dropping it is a use-after-free, not a style difference — see
+    /// the trait method's own comment and `CDefView_WindowProc` below.
+    #[inline]
+    unsafe fn atl_window_proc() -> WNDPROC {
+        Some(CDefView_WindowProc)
+    }
 }
 
 /// CDefView.cpp:433 `BEGIN_MSG_MAP(CDefView)` — all 25 entries, in source order.
@@ -4381,12 +4388,19 @@ pub unsafe fn CDefView_OnCreate_body(this: *mut CDefView, uMsg: UINT, wParam: WP
     let mut ppf2: *mut IPersistFolder2 = core::ptr::null_mut();
     let _ppf2_cpp_com_guard = CppComPtrGuard::new(core::ptr::addr_of_mut!(ppf2));
 
-    if ((*((*pSFParent).lpVtbl)).QueryInterface)(
-        pSFParent,
+    // CDefView.cpp:1776 `if (SUCCEEDED(QueryInterface(IID_PPV_ARG(IDropTarget, &pdt))))` --
+    // a BARE member call, so the receiver is `this`, the VIEW. It asks the view for its own
+    // IDropTarget and registers THAT as the window's drop target. Routing it to
+    // `m_pSFParent` instead asks the FOLDER, which is a different object with a different
+    // drop target, and registers the wrong one (or none). An unqualified call in a C++
+    // member function is `this->`; the nearest COM pointer in scope is not a substitute.
+    if CDefView_QueryInterface(
+        this,
         ((core::ptr::addr_of!(IID_IDropTarget)) as _), core::ptr::addr_of_mut!(pdt).cast(),
     ) >= 0
     {
         if RegisterDragDrop((*this).m_hWnd.cast(), pdt.cast()) < 0 {
+            ERR!("Error Registering DragDrop\n");
         }
     }
 
@@ -6912,7 +6926,13 @@ pub unsafe fn CDefView_CreateViewWindow3_body(this: *mut CDefView, psb: *mut ISh
     if !prcView.is_null() {
     }
 
-    if psb.is_null() || (*this).m_hWnd.is_null() {
+    // CDefView.cpp:3862 `if (psb == NULL || m_hWnd) return E_UNEXPECTED;` -- the second
+    // disjunct is C truthiness on a HWND, so it means "this view ALREADY has a window",
+    // i.e. the already-created guard. Negating it instead (`m_hWnd.is_null()`) inverts the
+    // guard into "no window yet", which is exactly the normal FIRST call, so every caller
+    // got E_UNEXPECTED. That shipped as explorer's desktop failing at
+    // CDesktopBrowser.cpp:253 with 0x8000FFFF and the kmtest sweep launching 0 of 91.
+    if psb.is_null() || !(*this).m_hWnd.is_null() {
         return E_UNEXPECTED;
     }
 

@@ -929,6 +929,15 @@ float math inside a body (x87), float pointers, float struct fields. Two fixes:
   are ONE change, not two. `ORPHAN-BY-DESIGN` is the marker for a module in that state, and it
   is a GUARD, not a to-do item — the banner that says "the module is not wired yet, the .cpp is
   still the compiled implementation" is recording why it must stay that way until the flip.
+- **An empty capture set is NECESSARY, not SUFFICIENT, and smoke is not the oracle for a
+  flip.** CDefView.cpp turned out to be a link LEAF — `llvm-nm --undefined-only` over every
+  object in shell32.dll (shell32.dir, dialogs/, folders/, shelldesktop, shellmenu, recyclebin)
+  referenced NOTHING it defined, so the flip could not shadow anything. It still shipped a
+  guest whose desktop died, and **smoke passed on all three arches in every one of those
+  runs**, because the marker `shell ready` is reached before the desktop populates. The oracle
+  that sees it is `vibeos-cli conformance`: `launched=0` against a 91-test baseline. Run the
+  BASELINE first on an un-flipped tree — this worktree had never built the kmtest payload, so
+  the first red run proved nothing until a control run on `HEAD~1` showed `launched=91`.
 - **A new rlib's `#[no_mangle]` symbols are absent from the staticlib** unless reached: add the
   path dep + `extern crate` + a `#[used]` force-reference block. A Cargo dependency alone is
   not a reachability path.
@@ -4774,7 +4783,56 @@ killer — hal `pic_pic.rs` extern-declared `KiI8259MaskTable` (an array) as a p
 array-vs-pointer class again. **Budget for a stack when un-shelving a path, and do not read bug
 N+1 as evidence that the fix for bug N was wrong.**
 
+shell32's CDefView cohab flip is the same shape at smaller scale, and worth reading for the
+ORDER the bugs surfaced in, because each one hid the next: an inverted `m_hWnd` guard made
+`CreateViewWindow3` return `E_UNEXPECTED` to every caller; fixing that reached a jump to a
+stable heap address; that turned out to be a bare `QueryInterface` given the wrong receiver.
+A fourth (a dropped ATL virtual) was found by reading and fixed on the way past without ever
+being the live symptom. `crate::atlwin` had never executed in a shipping build before this
+flip — CDefView was its only user — so "the substrate compiles and is reviewed" bought
+nothing, exactly as this entry predicts.
+
+**A bug that VANISHES when you add tracing has told you its class.** Those same runs passed
+whenever enough `ERR!` breadcrumbs were compiled in and failed reproducibly without them,
+always faulting at the identical address. That is not a flake and not a Heisenbug to be
+shrugged at: it is what a use-after-free or a wrong-object lifetime looks like from outside,
+because the extra calls move the heap and the register allocation without changing the defect.
+Read it as a positive signal about WHERE to look — object lifetime, not arithmetic — and keep
+the instrumentation sparse enough to still reproduce. Two or three probes bracketing one
+suspect call kept it failing; eighty made it green.
+
 ### Semantic rewrites that flip meaning
+- **An UNQUALIFIED member call is `this->`, and the nearest COM pointer in scope is not a
+  substitute.** CDefView's `OnCreate` opens with
+  `if (SUCCEEDED(QueryInterface(IID_PPV_ARG(IDropTarget, &pdt)))) RegisterDragDrop(m_hWnd, pdt);`
+  — a bare call, so the receiver is the VIEW, asking itself for its own drop target. The
+  translation routed it to `m_pSFParent->QueryInterface(...)`, the FOLDER: a different object,
+  a different drop target, registered on the view's window. It compiles, it has the right
+  shape, every argument is right, and the only wrong token is the receiver — which does not
+  appear in the C at all, because C++ omits it. **This is the one call shape where the correct
+  answer is invisible in the source text**, so it is worth grepping a translated C++ TU for
+  `[^>.]QueryInterface(` (and any other bare member call) and checking each receiver by hand.
+  What it cost: explorer's desktop died with STATUS_ILLEGAL_INSTRUCTION at a stable heap
+  address after the desktop finished populating, which took the kmtest sweep from 91 launched
+  to 0 — and smoke passed on all three arches every time, because the freeze is after
+  `shell ready`.
+- **C truthiness on a HANDLE is not a null test — check which way it points.**
+  `if (psb == NULL || m_hWnd) return E_UNEXPECTED;` guards "this view ALREADY has a window".
+  Rendered as `if psb.is_null() || (*this).m_hWnd.is_null()`, it becomes "this view has NO
+  window yet", which is precisely the normal FIRST call, so every caller got `E_UNEXPECTED`
+  and the desktop failed at `CDesktopBrowser.cpp:253` with `0x8000FFFF`. Both spellings are
+  one token long and both read naturally; the discriminator is the missing `!` in the C. Any
+  bare `if (handle)` in a guard deserves a second look, because the negated form is what
+  a reader expects and therefore what a translator writes.
+- **A hand-written substrate that hardcodes a base implementation silently DROPS the
+  derived override.** `atlwin`'s `AtlStartWindowProc` installed `AtlWindowProc::<T>` on the
+  window; ATL installs `pThis->GetWindowProc()`, the VIRTUAL. CDefView overrides it precisely
+  to hold a reference across the dispatch ("Must hold a reference during message handling" —
+  a handler can release the view's last reference, and the base would keep touching freed
+  memory). The translated override was present, correct, and unreachable. **When you replace
+  an inheritance mechanism with a trait, every virtual the original called through needs a
+  hook, not just the ones your first class happened to use** — the missing one costs nothing
+  to add and is invisible once dropped.
 - **`delete this` gets a deallocator the model INVENTED, because the allocator is invisible to
   it.** shellrecyclebin has five textually identical `delete this;` — one per hand-rolled COM
   class `Release()` — and the C++ COM path lowered them five different ways, none correct:

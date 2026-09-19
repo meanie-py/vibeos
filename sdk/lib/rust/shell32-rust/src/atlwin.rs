@@ -124,6 +124,25 @@ pub unsafe trait AtlWindow: Sized {
     /// `CWindowImplBaseT::OnFinalMessage` — runs after the last message, with `m_hWnd` already
     /// cleared. ATL's default is empty.
     unsafe fn atl_on_final_message(_this: *mut Self, _hWnd: HWND) {}
+
+    /// `CWindowImplBaseT::GetWindowProc` — the procedure [`AtlStartWindowProc`] installs on the
+    /// window once `this` is known. **ATL calls the VIRTUAL**, so a derived class that overrides
+    /// `GetWindowProc` gets ITS procedure installed and the base one is never reached directly.
+    ///
+    /// This hook exists because hardcoding `AtlWindowProc::<T>` here drops that override
+    /// silently, and the override is not decoration: `CDefView::GetWindowProc` returns a
+    /// procedure whose only job is to `AddRef` around the dispatch, because a handler can
+    /// release the view's last reference and ATL's base would then keep touching freed memory.
+    /// Skipping it shipped a use-after-free — explorer's desktop died with
+    /// STATUS_ILLEGAL_INSTRUCTION at a stable heap address (the freed block's free-list link,
+    /// reached through a dangling vtable), taking the kmtest sweep from 91 launched to 0. It
+    /// reproduced byte-identically across boots and VANISHED under any added tracing, which is
+    /// what a use-after-free looks like from the outside.
+    ///
+    /// The default is the base procedure, which is right for a class that does not override.
+    unsafe fn atl_window_proc() -> WNDPROC {
+        Some(AtlWindowProc::<Self>)
+    }
 }
 
 /// `CWindowImplBaseT::DefWindowProc` — forward to the superclass procedure.
@@ -167,10 +186,15 @@ pub unsafe extern "system" fn AtlStartWindowProc<T: AtlWindow>(
     }
 
     SetWindowLongPtr(hWnd, GWLP_USERDATA as INT, this as LONG_PTR);
-    SetWindowLongPtr(hWnd, GWLP_WNDPROC as INT, AtlWindowProc::<T> as LONG_PTR);
+    // ATL installs `pThis->GetWindowProc()` (the virtual), not its own base procedure, and
+    // then FORWARDS this message through the same pointer it installed. Both halves matter:
+    // installing the base proc skips a derived override for every later message, and calling
+    // the base proc here skips it for WM_NCCREATE specifically.
+    let wndproc = T::atl_window_proc().unwrap_or(AtlWindowProc::<T>);
+    SetWindowLongPtr(hWnd, GWLP_WNDPROC as INT, wndproc as LONG_PTR);
     *T::atl_hwnd(this) = hWnd;
 
-    AtlWindowProc::<T>(hWnd, uMsg, wParam, lParam)
+    wndproc(hWnd, uMsg, wParam, lParam)
 }
 
 /// `CWindowImplBaseT::WindowProc`, line for line, with `this` read from `GWLP_USERDATA`
