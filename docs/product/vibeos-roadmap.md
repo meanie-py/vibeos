@@ -506,10 +506,27 @@ land; date every addition.** Source docs live in `docs/engineering/archive/`.
   `llvm-nm --defined-only` over the module's C++ objects, keep `$2=="T"`, drop `^__Z`, strip
   a leading `_` and any `@N`, intersect with the crate's `#[no_mangle]` set. **A non-empty
   intersection means wiring and flipping are ONE change** and must be gated as one.
-  The lane is restoring ORPHAN-BY-DESIGN on both modules and keeping every real bug the work
-  found. Note *why* it happened: the deleted banner read "ORPHAN-BY-DESIGN: the module is not
-  wired into the crate yet", **a guard that reads like a to-do item** to anyone holding
-  "wired" as the goal.
+  **Confirmed by bisect, and the instance is closed**: tip froze in `OnCreate` (launched=0);
+  `utils` un-wired moved the freeze to after `shell window ready` (still launched=0); BOTH
+  un-wired ran full startup to `kmtest-sweep.exe`, **launched=91 ok=88, ratchet holds** —
+  identical to a same-host control. One blocker per wired module. Every compile repair and
+  real bug the work found is innocent and stays (the `NM_*` catch-all that had made
+  CDefView's whole `OnNotify` dead, a cdecl/stdcall mismatch, the substrate consolidation).
+  Note *why* it happened: the deleted banner read "ORPHAN-BY-DESIGN: the module is not wired
+  into the crate **yet**", **a guard that reads like a to-do item** to anyone holding "wired"
+  as the goal. Reworded to open "DO NOT WIRE THIS MODULE. That is the invariant this file is
+  held to, not a status line", and to name the old phrasing so the next reader sees their own
+  reading anticipated rather than a bare prohibition.
+
+  **FOLLOW-UP, unowned and the real fix: an orphan module is NOT COMPILED, so the guard buys
+  correctness and pays in rot.** That is precisely how CDefView reached 799 errors before
+  anyone looked. The banners now carry a manual re-verify recipe (wire temporarily, `cargo
+  check` all three targets for both `shell32-rust` and `menuband-rust` — which `#[path]`
+  -includes `types.rs`/`shellcom.rs` — then un-wire before building or landing, with a
+  last-verified date), and that is a weak manual ratchet by construction. The mechanism that
+  would actually close it is a **check-only cfg/feature that COMPILES orphans without LINKING
+  them**, so `vibeos-cli check` covers them continuously and the staticlib never sees their
+  symbols. Deliberately not invented inside the change repairing the incident.
 
 - **`vibeos-cli conformance` exits 0 on media that launched ZERO tests. UNOWNED**
   (2026-09-19). Verified in an artifact: `launched: 0`, `sweep_rc: 1`, and every baseline row
