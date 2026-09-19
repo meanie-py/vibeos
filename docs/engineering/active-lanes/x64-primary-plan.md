@@ -13,8 +13,10 @@ direction. What retires is the i386 kernel, HAL and boot path; what stays is the
 i386 user-mode PE set, for as long as we run x86 apps at all. No date attaches to
 it and nothing here proposes ripping it out in one go; see **Sequencing**.
 
-Opened 2026-09-13 by the `research` lane, as a survey. The depth work below is
-mostly owned by `wow64-amd64`; see **Ownership** before starting anything.
+Opened 2026-09-13 by the `research` lane, as a survey. The depth work below was
+mostly owned by `wow64-amd64` when this was written; the split has since been
+resolved and most of it is now `research`'s — see **Ownership**, which is the
+one place that answers it.
 
 ---
 
@@ -257,12 +259,94 @@ a ladder to watch", and neither was visible from reading.
 
 ## Real gaps, ranked by what a user hits
 
-1. **Guest processes.** `CreateProcess` from a 32-bit guest, and cross-process
-   `CreateRemoteThread`. Every installer and every app that shells out hits this.
-   `wow64-plan.md` calls it "the largest remaining hole" and names the CSR-LPC-32
-   layer as its prerequisite — which just landed. Its status is therefore
-   genuinely **unknown**, not known-broken, and measuring it on today's tree is
-   the first move rather than a design question.
+1. **Guest processes — INSTRUMENTED 2026-09-19, `spawn32.exe`.** `CreateProcess`
+   from a 32-bit guest, and cross-process `CreateRemoteThread`. Every installer
+   and every app that shells out hits this. `wow64-plan.md` calls it "the largest
+   remaining hole" and names the CSR-LPC-32 layer as its prerequisite — which
+   landed. Its status was therefore genuinely **unknown**, not known-broken, so
+   measuring it on today's tree was the first move rather than a design question.
+
+   **The measurement now exists.** `tools/fex/hello-compute/Spawn32.c` is an
+   eleventh guest that self-spawns (same .exe plus one argument, so no second
+   binary can go unstaged) and reports five rungs: `CreateProcessW`
+   (CREATE_SUSPENDED), `IsWow64Process` on the child, `ResumeThread` across the
+   process boundary, the child reaching its exit, and the exit code surviving.
+
+   **It is DIAGNOSTIC, not a parity guest**, and that distinction is new
+   machinery (`ladder.DIAGNOSTIC`). A guest that measures a gap we already know
+   is open must not red every lane's gate — the fleet's answer to a check that
+   reds for a known reason is to disable the check. So `ladder.check` never fails
+   on it and `ladder.summary` prints its code; when it comes back `0x600D` the
+   summary says so **in words** and tells the reader to promote it into `LADDER`,
+   where a regression can red it again. The grading split is not a staging split:
+   `staged_guests()` still includes it, because CMake's ladder list is
+   all-or-nothing and an unbuilt diagnostic guest would cost every parity guest
+   its coverage.
+
+   **MEASURED 2026-09-19 on amd64, and the prediction below was WRONG — the
+   real answer is worse and more interesting.** A 32-bit guest calling
+   `CreateProcessW` does not get a clean refusal. `NtCreateProcessEx`
+   **SUCCEEDS**, `MmCreatePeb` builds the child's WoW64 i386 PEB32, two
+   `NtWriteVirtualMemory` calls put the process parameters into it — and then
+   the kernel takes **BUGCHECK 0x1E (`c0000005`)**. All ten parity guests PASS
+   on the same boot; the machine dies only when spawn32 runs.
+
+   Symbolicated against `ntkrnlmp.exe` — **not** `ntoskrnl.exe`, which is the
+   trap the roadmap registry already documents, and which cost me one wrong
+   answer before I caught it (`ntoskrnl.exe` resolved the faulting PC to
+   `NtShutdownSystem`, a plausible-looking symbol from an image the machine is
+   not running):
+
+        faulting PC   ProbeForWrite         ex-rust/src/exintrin.rs:267
+        caller        MiDoPoolCopy          ntoskrnl-rust/src/ARM3/virtual.rs:987
+
+   **Root cause, confirmed against the C rather than inferred.**
+   `ntoskrnl/mm/ARM3/virtual.c:876` wraps both probes in
+   `_SEH2_TRY { … } _SEH2_EXCEPT(EXCEPTION_EXECUTE_HANDLER) { Status =
+   _SEH2_GetExceptionCode(); }`. The Rust translation kept the body and
+   **dropped the handler**, at three sites across `MiDoMappedCopy` and
+   `MiDoPoolCopy`. So `ProbeForWrite` raises via `ExRaiseAccessViolation()`,
+   nothing catches it, and KMODE_EXCEPTION_NOT_HANDLED follows. The tell is
+   visible in the Rust alone, without the C beside it: `_FailedInProbe` is set
+   to 1, the probe is called, it is set back to 0, and a later `if Status < 0 {
+   if _FailedInProbe != 0 { … } }` recovery branch tests a combination nothing
+   between those lines can now produce. **A recovery path that has become
+   unreachable is the fingerprint of a deleted handler.**
+
+   **This is NOT a WoW64 bug and the entry is filed here only because spawn32
+   is what found it.** Any caller of `NtWriteVirtualMemory` into another
+   process with a bad target address and `PreviousMode != KernelMode` reaches
+   the same three sites; a 32-bit guest was merely the first thing in the tree
+   to do it. The sanctioned fix is the validate-first `probe.rs`
+   (`Result<T, NTSTATUS>`) idiom that `dummy-pseh-verdict.md` already prescribes
+   and that SE and OB have migrated to — an unfinished migration, not a new
+   mechanism. Registered in the roadmap's bug registry; owned there, not here.
+
+   **Consequence for this lane, and a correction to the design above:** a
+   diagnostic guest that BUGCHECKS cannot be carried by "report, never red".
+   That promise covers a bad exit code and is worth exactly nothing against a
+   dead machine, which reds the boot for every lane in the fleet. So spawn32 is
+   **opt-in** — built only under `VIBEOS_WOW64_SPAWN=1`, staged `if(EXISTS)`
+   rather than in the unconditional `_wow64_ladder`, and run by winlogon **dead
+   last**, after even the stress guests, so that when it does take the machine
+   down every other verdict has already been reported. That last rule is
+   sqlite32's, and spawn32 is a harder case than sqlite32, not a softer one.
+
+   **The original traced prediction, kept because being wrong is the point.**
+   `CreateProcess` builds a child in two steps — `NtCreateProcessEx`, then
+   `NtCreateThread` for the initial thread, passing the CHILD's `ProcessHandle`
+   (`kernel32-rust/src/proc_create.rs`, the "Create the Kernel Thread Object"
+   call). `wow64_manual.c`'s `NtCreateThread` thunk refuses any `ProcessHandle`
+   that is not `-1`, deliberately: a cross-process thread has no per-thread entry
+   in the target and nobody would initialize it. So rung 1 is predicted to fail
+   and `CreateProcess` to report what its own source calls "a process is not
+   allowed to exist without a main thread". **It was traced from source, NOT
+   observed** — written down so the first boot could confirm or correct it, and
+   the boot corrected it. The error was assuming that a refusal I had read in
+   the thunk would be the FIRST thing the path hit; the kernel died two
+   syscalls earlier than the code I was reading. Reading one layer and
+   predicting the whole stack is the mistake, and it is an easy one to make
+   when the layer you read says something definite.
 
 2. **Registry redirection — LARGELY DONE 2026-09-13, one function left.** The wow64-amd64
    lane landed it: `878e0ac0b67` (E24) puts Wow6432Node redirection in the **CM parse**, not in
@@ -436,7 +520,14 @@ doing.
 
 ## Ownership
 
-Items 2 and 3 are `wow64-amd64` territory and that lane is moving fast (five
-commits in two days). `research` takes item 1, which is gate/verdict
-instrumentation and its natural shape. Item 4 should be offered to whoever owns
-`stable-toolchain-plan.md` rather than grabbed. Coordinate before starting 2 or 3.
+**RESOLVED 2026-09-19 — this paragraph used to hand items 2 and 3 to
+`wow64-amd64` and it is out of date.** The split was settled the other way:
+`research` takes item 1 (done), item 3 registry redirection (done — `reg32.exe`,
+the tenth guest, closes the runtime hole that `878e0ac0b67` structurally could
+not test from outside) and item 2 guest `CreateProcess` (in progress —
+`spawn32.exe`). Item 4 should still be offered to whoever owns
+`stable-toolchain-plan.md` rather than grabbed.
+
+Left standing rather than deleted, because the reason matters: the coordination
+cost of "coordinate before starting" was real, and it was paid twice over the
+same two items before anyone wrote the answer down.

@@ -8,6 +8,7 @@ the bug -- one is a regression, the other is a lane that was never staged.
 
 from __future__ import annotations
 
+import os
 import shutil
 import subprocess
 import time
@@ -238,7 +239,7 @@ def test_built_but_unstaged_says_so_and_names_the_fix(tmp_path):
     repo = _manifest(tmp_path, ["reactos/system32/winlogon.exe=/tmp/vibeos/x"])
     guests = repo / "build-fex-hello"
     guests.mkdir()
-    for g in ladder.LADDER:
+    for g in ladder.staged_guests():
         (guests / f"{g}.exe").write_bytes(b"MZ")
     extra, staged, why = ladder.gate_decision(repo, "amd64")
     assert extra == [] and not staged
@@ -256,7 +257,7 @@ def test_partially_built_names_the_missing_guest_not_a_restage(tmp_path):
     repo = _manifest(tmp_path, ["reactos/system32/winlogon.exe=/tmp/vibeos/x"])
     guests = repo / "build-fex-hello"
     guests.mkdir()
-    for g in ladder.LADDER:
+    for g in ladder.staged_guests():
         if g != "reg32":
             (guests / f"{g}.exe").write_bytes(b"MZ")
     extra, staged, why = ladder.gate_decision(repo, "amd64")
@@ -265,6 +266,167 @@ def test_partially_built_names_the_missing_guest_not_a_restage(tmp_path):
     assert "build-hello-compute.sh" in why
     # Must NOT give the restage advice: the media is not the problem.
     assert "BUILT but none is staged" not in why
+
+
+# A fixed clock for the staleness fixtures. Every mtime below is an offset from
+# it, so the ordering under test is explicit rather than a race with the clock.
+_T0 = time.time()
+
+
+def _built_tree(tmp_path, *, sources=True):
+    """A repo with a staged manifest, every guest binary, and their sources."""
+    repo = _manifest(tmp_path, [f"reactos/syswow64/{g}.exe=/tmp/x" for g in ladder.staged_guests()])
+    guests = repo / "build-fex-hello"
+    guests.mkdir()
+    (repo / "tools" / "fex").mkdir(parents=True)
+    (repo / ladder.GUEST_BUILDER).write_text("#!/bin/sh\n")
+    if sources:
+        for rel in ladder.GUEST_SOURCE.values():
+            src = repo / rel
+            src.parent.mkdir(parents=True, exist_ok=True)
+            src.write_text("int start(void){return 0;}\n")
+    for g in ladder.staged_guests():
+        (guests / f"{g}.exe").write_bytes(b"MZ")
+    # Every binary newer than every source -- the fresh state. Times are set
+    # EXPLICITLY and far apart rather than with utime(None): the real gap is
+    # days, and a test that relies on "now is later than a moment ago" turns
+    # filesystem mtime granularity into a flake.
+    for rel in ladder.GUEST_SOURCE.values():
+        os.utime(repo / rel, (_T0 - 1000, _T0 - 1000))
+    os.utime(repo / ladder.GUEST_BUILDER, (_T0 - 1000, _T0 - 1000))
+    for g in ladder.staged_guests():
+        os.utime(guests / f"{g}.exe", (_T0 - 500, _T0 - 500))
+    return repo
+
+
+def test_fresh_guests_are_not_called_stale(tmp_path):
+    """The positive control's other half: a correctly built tree must still run
+    the ladder. A staleness check that fires on everything disables the gate."""
+    repo = _built_tree(tmp_path)
+    assert ladder.stale_guests(repo) == []
+    extra, staged, why = ladder.gate_decision(repo, "amd64")
+    assert extra == ["--ladder"] and staged
+    assert "older than their sources" not in why
+
+
+def test_a_guest_older_than_its_source_skips_loudly(tmp_path):
+    """THE incident: marshal32.exe built 35 minutes before a fix to its own
+    socket rung, hanging there for a week and costing the four guests that run
+    after it their verdicts -- while the lane that built it saw nothing wrong,
+    because every input it could see was internally consistent. It must SKIP,
+    not fail: a stale binary is our bookkeeping, not an OS regression, and a RED
+    here blames the innocent guests downstream of it."""
+    repo = _built_tree(tmp_path)
+    src = repo / ladder.GUEST_SOURCE["marshal32"]
+    os.utime(src, (_T0, _T0))  # source edited after the binary was built
+    src_rel = ladder.GUEST_SOURCE["marshal32"]
+    assert ladder.stale_guests(repo) == [f"marshal32 ({src_rel} is newer)"]
+    extra, staged, why = ladder.gate_decision(repo, "amd64")
+    assert extra == [] and not staged
+    assert "marshal32" in why and ladder.GUEST_BUILDER in why
+
+
+def test_absolute_age_would_not_have_caught_it(tmp_path):
+    """Guards the design choice rather than the code path. The stale binary was
+    SIX DAYS old and any age threshold loose enough not to nag would have passed
+    it; what makes it wrong is only that its source is newer. So an ancient
+    binary whose source is older still must read as FRESH."""
+    repo = _built_tree(tmp_path)
+    ancient = _T0 - 60 * 60 * 24 * 90
+    for rel in ladder.GUEST_SOURCE.values():
+        os.utime(repo / rel, (ancient - 100, ancient - 100))
+    os.utime(repo / ladder.GUEST_BUILDER, (ancient - 100, ancient - 100))
+    for g in ladder.staged_guests():
+        os.utime(repo / "build-fex-hello" / f"{g}.exe", (ancient, ancient))
+    assert ladder.stale_guests(repo) == []
+
+
+def test_a_newer_build_script_invalidates_every_guest(tmp_path):
+    """The script carries the link lines. When --no-insert-timestamp was added
+    to all nine guests, nothing about any .c changed -- but every binary was out
+    of date with respect to how it is now built."""
+    repo = _built_tree(tmp_path)
+    os.utime(repo / ladder.GUEST_BUILDER, (_T0, _T0))
+    stale = ladder.stale_guests(repo)
+    assert len(stale) == len(ladder.staged_guests())
+    assert all(ladder.GUEST_BUILDER in entry for entry in stale)
+
+
+def test_an_unmapped_guest_reads_as_stale_not_fresh(tmp_path):
+    """A guest added to LADDER without a GUEST_SOURCE entry is a HOLE in this
+    check. Silence there would report freshness it never verified, which is the
+    same failure shape the check exists to catch."""
+    repo = _built_tree(tmp_path)
+    (repo / "build-fex-hello" / "newguest32.exe").write_bytes(b"MZ")
+    ladder.LADDER["newguest32"] = 0x600D
+    try:
+        assert "newguest32 (no source mapping)" in ladder.stale_guests(repo)
+    finally:
+        del ladder.LADDER["newguest32"]
+
+
+def test_an_unbuilt_guest_is_not_stale(tmp_path):
+    """Missing is not stale -- that is the partially-built branch's job, and it
+    has a different remedy. Two diagnoses for one state is how a reader ends up
+    running the wrong command."""
+    repo = _built_tree(tmp_path)
+    (repo / "build-fex-hello" / "reg32.exe").unlink()
+    assert ladder.stale_guests(repo) == []
+
+
+def _with_optional(repo, guest="lua32", fetched="tools/stress/lua/src/lua.c"):
+    """Add an OPTIONAL guest: our two sources, its .exe, and a fetched
+    third-party file whose mtime is NEWER than everything (as a re-fetch
+    leaves it)."""
+    exe_rel, srcs = ladder.OPTIONAL_SOURCE[guest]
+    for rel in [*srcs, exe_rel, fetched]:
+        f = repo / rel
+        f.parent.mkdir(parents=True, exist_ok=True)
+        f.write_text("x")
+    for rel in srcs:
+        os.utime(repo / rel, (_T0 - 1000, _T0 - 1000))
+    os.utime(repo / exe_rel, (_T0 - 500, _T0 - 500))
+    os.utime(repo / fetched, (_T0, _T0))  # curl ran just now
+    return repo
+
+
+def test_fetched_upstream_source_does_not_make_a_guest_stale(tmp_path):
+    """THE trap. tools/stress/lua/src/ and tools/stress/sqlite/amalg/ are
+    gitignored and re-fetched on demand, so their mtime records WHEN CURL RAN,
+    not when anything changed. A build on a machine that had to re-fetch leaves
+    upstream newer than a binary that is perfectly current. Keying on it would
+    red a healthy guest on a schedule set by the network."""
+    repo = _with_optional(_built_tree(tmp_path))
+    assert ladder.stale_guests(repo) == []
+    extra, staged, _ = ladder.gate_decision(repo, "amd64")
+    assert extra == ["--ladder"] and staged
+
+
+def test_our_own_optional_source_does_make_it_stale(tmp_path):
+    """The positive control for the trap above: the check must still FIRE on
+    the two files we own, or excluding upstream would have excluded everything.
+    lua32 is the newest binary in the tree today and the stalest in a
+    fortnight, for exactly the reason marshal32 was."""
+    repo = _with_optional(_built_tree(tmp_path))
+    os.utime(repo / "tools/stress/lua/Lua32.c", (_T0, _T0))
+    assert ladder.stale_guests(repo) == ["lua32 (tools/stress/lua/Lua32.c is newer)"]
+
+
+def test_an_optional_guests_build_script_also_invalidates_it(tmp_path):
+    repo = _with_optional(_built_tree(tmp_path))
+    os.utime(repo / "tools/stress/lua/build.sh", (_T0, _T0))
+    assert ladder.stale_guests(repo) == ["lua32 (tools/stress/lua/build.sh is newer)"]
+
+
+def test_an_absent_optional_guest_is_not_stale(tmp_path):
+    """OPTIONAL guests are built by a script that fetches from the network, so
+    they are absent in most trees. Absent means nobody built it --
+    media_optional_staged handles that by not grading it. The LADDER rule that
+    an unmapped guest reads as stale is right there and wrong here."""
+    repo = _built_tree(tmp_path)
+    for exe_rel, _ in ladder.OPTIONAL_SOURCE.values():
+        assert not (repo / exe_rel).exists()
+    assert ladder.stale_guests(repo) == []
 
 
 def test_never_built_keeps_the_plain_reason(tmp_path):
@@ -339,7 +501,7 @@ def test_the_restage_remedy_matches_the_arm64_mechanism(tmp_path):
     repo = _ramdisk(tmp_path, [], cpu_layer=True)
     guests = repo / "build-fex-hello"
     guests.mkdir(exist_ok=True)
-    for g in ladder.LADDER:
+    for g in ladder.staged_guests():
         (guests / f"{g}.exe").write_bytes(b"MZ")
     _, staged, why = ladder.gate_decision(repo, "arm64")
     assert not staged
@@ -382,3 +544,151 @@ def test_a_sibling_medium_manifest_must_not_answer_for_this_one(tmp_path):
     (boot / "bootcdregtest.Debug.lst").write_text("reactos/system32/hal.dll=/tmp/vibeos/y\n")
     # No boot.*.lst exists, so the manifest probe must DECLINE (None), not answer.
     assert ladder._staged_per_manifest(tmp_path, "arm64", "syswow64", {"hello32.exe"}) is None
+
+
+def test_an_unbuilt_tree_says_unknown_not_unsupported(tmp_path):
+    """A freshly-provisioned box has no build dir at all, so neither probe can
+    answer. That must NOT come back as "32-bit guests cannot run here": on amd64
+    that is a false architectural claim, and it is the reassuring direction to be
+    wrong in, so nobody downstream would question it. `_read_media` and both
+    probes keep a None for exactly this, and `bool()` used to discard it."""
+    assert ladder.supports_wow64(tmp_path, "amd64") is None
+    _, staged, why = ladder.gate_decision(tmp_path, "amd64")
+    assert not staged
+    assert "UNKNOWN, not" in why
+    assert "cannot run here" not in why
+    assert "./vibeos-cli build --arch amd64" in why
+
+
+def test_a_real_native_x86_negative_still_reads_as_unsupported(tmp_path):
+    """The positive control: i386's livecd HAS a manifest and no SysWOW64 to
+    stage into, so the probe answers honestly and the verdict is final rather
+    than fixable. Turning the no-media case into None must not soften this one."""
+    repo = _manifest(tmp_path, [], arch="i386", cpu_layer=False)
+    assert ladder.supports_wow64(repo, "i386") is False
+    _, staged, why = ladder.gate_decision(repo, "i386")
+    assert not staged
+    assert "cannot run here" in why
+
+
+def test_the_ramdisk_never_answers_for_an_iso_arch(tmp_path):
+    """The image path carries no arch, so a present qemu/ramdisk.img used to
+    answer for amd64 — arm64's media speaking for x86's. Hidden whenever a
+    build-amd64/ manifest existed (that probe runs first), it surfaced on a
+    restored box whose only media was a two-week-old ramdisk: amd64 was told its
+    media had no WoW64 CPU layer, on arm64's evidence."""
+    (tmp_path / "qemu").mkdir()
+    (tmp_path / ladder.RAMDISK_REL).write_bytes(b"\0" * 512)
+    for arch in ("i386", "amd64"):
+        assert ladder._staged_per_ramdisk(tmp_path, arch, "system32", ladder.CPU_LAYERS) is None
+        assert ladder.supports_wow64(tmp_path, arch) is None
+        assert "UNKNOWN, not" in ladder.gate_decision(tmp_path, arch)[2]
+
+
+def test_a_failing_diagnostic_guest_does_not_red_the_gate(tmp_path):
+    """The whole reason DIAGNOSTIC exists. spawn32 measures a gap the lane doc
+    ranks #1 and we already have a task for; grading it would red every lane in
+    the fleet for a hole nobody introduced, and the fleet's answer to a check
+    that reds for a known reason is to disable the check."""
+    text = _all_pass() + _serial(spawn32=0xBAE1)
+    assert ladder.check(text) is None
+
+
+def test_a_failing_diagnostic_guest_still_reports_its_code(tmp_path):
+    """Not grading it must not mean not SAYING it — an unreported measurement is
+    not a measurement. The exact code is what triages the rung."""
+    assert "spawn32=0xbae1" in ladder.summary(_all_pass() + _serial(spawn32=0xBAE1))
+
+
+def test_a_diagnostic_guest_that_starts_passing_is_loud(tmp_path):
+    """The day the gap closes is the day this line matters, and a bare 0x600d
+    among the other hex codes is a result nobody reads. It must say so in words
+    and name the next move, because a diagnostic guest that passes should be
+    promoted into LADDER where a REGRESSION can red it again."""
+    out = ladder.summary(_all_pass() + _serial(spawn32=0x600D))
+    assert "spawn32 PASSES" in out and "promote it to LADDER" in out
+
+
+def test_a_diagnostic_guest_is_not_counted_in_the_parity_score(tmp_path):
+    """It is not a parity guest, so it must move neither the numerator nor the
+    denominator — and it must not fall through to the '+N non-parity' tail
+    either, which is for guests nobody has classified."""
+    out = ladder.summary(_all_pass() + _serial(spawn32=0xBAE1))
+    n = len(ladder.LADDER)
+    assert out.startswith(f"{n}/{n} guests PASS")
+    assert "non-parity" not in out
+
+
+def test_an_absent_diagnostic_guest_says_nothing_at_all(tmp_path):
+    """Silence when it did not run: a gate on media that never staged it must
+    read exactly as it did before the guest existed."""
+    out = ladder.summary(_all_pass())
+    assert "diagnostic" not in out
+    assert ladder.check(_all_pass()) is None
+
+
+def test_an_absent_diagnostic_guest_costs_the_parity_set_nothing(tmp_path):
+    """spawn32 is OPT-IN, so absent is its normal state — the doom-i386 rule
+    (one missing .exe keeps all the others off the media) must NOT apply to it.
+    This is the corrected design: it was briefly in the unconditional set, and
+    the measurement that spawn32 BUGCHECKS the kernel is what ruled that out —
+    an unconditionally-staged guest that can kill the machine reds every lane."""
+    repo = _built_tree(tmp_path)  # every parity guest built, spawn32 absent
+    assert not (repo / "build-fex-hello" / "spawn32.exe").exists()
+    assert ladder.stale_guests(repo) == []
+    extra, staged, _ = ladder.gate_decision(repo, "amd64")
+    assert extra == ["--ladder"] and staged
+
+
+def test_a_built_diagnostic_guest_is_still_staleness_checked(tmp_path):
+    """Opt-in must not mean unchecked: it lives in build-fex-hello/ and rots
+    exactly like a parity guest, which is the marshal32 failure mode."""
+    repo = _built_tree(tmp_path)
+    exe = repo / "build-fex-hello" / "spawn32.exe"
+    exe.write_bytes(b"MZ")
+    os.utime(exe, (_T0 - 500, _T0 - 500))
+    src = repo / ladder.GUEST_SOURCE["spawn32"]
+    src.parent.mkdir(parents=True, exist_ok=True)
+    src.write_text("int start(void){return 0;}\n")
+    os.utime(src, (_T0, _T0))
+    assert ladder.stale_guests(repo) == ["spawn32 (tools/fex/hello-compute/Spawn32.c is newer)"]
+
+
+def test_the_restage_remedy_is_chosen_by_arch_not_by_a_stray_ramdisk(tmp_path):
+    """Same root cause as the arch-blind probe, second symptom. The remedy used
+    to key on `qemu/ramdisk.img` EXISTING, so an amd64 tree that happened to
+    have a ramdisk on disk — a restored backup, an arm64 build in the same
+    worktree — was told to restage with `VIBEOS_FEX=1 build --arch arm64`. The
+    reader follows that and rebuilds the wrong arch, and the guests are still
+    not staged on the one they asked about."""
+    repo = _manifest(tmp_path, ["reactos/system32/winlogon.exe=/tmp/vibeos/x"])
+    (repo / "qemu").mkdir(exist_ok=True)
+    (repo / ladder.RAMDISK_REL).write_bytes(b"\0" * 512)
+    guests = repo / "build-fex-hello"
+    guests.mkdir()
+    for g in ladder.staged_guests():
+        (guests / f"{g}.exe").write_bytes(b"MZ")
+    _, staged, why = ladder.gate_decision(repo, "amd64")
+    assert not staged
+    assert "BUILT but none is staged" in why
+    assert "--arch amd64" in why
+    assert "VIBEOS_FEX" not in why and "--arch arm64" not in why
+
+
+def test_uses_ramdisk_answers_from_the_arch_alone(tmp_path):
+    """No repo argument on purpose — the mechanism is a property of the arch's
+    media, and taking a path would re-open the door to answering from the disk."""
+    assert ladder.uses_ramdisk("arm64") is True
+    assert ladder.uses_ramdisk("amd64") is False
+    assert ladder.uses_ramdisk("i386") is False
+
+
+def test_the_staged_line_counts_what_is_actually_staged(tmp_path):
+    """It read `len(LADDER)` and so said "10 guests staged" while 11 sat on the
+    media. Harmless-looking, but it is the number a reader checks the serial
+    against, and a count that silently omits the diagnostic guest teaches them
+    to ignore its line."""
+    repo = _built_tree(tmp_path)
+    extra, staged, why = ladder.gate_decision(repo, "amd64")
+    assert extra == ["--ladder"] and staged
+    assert f"{len(ladder.LADDER)} parity + {len(ladder.DIAGNOSTIC)} diagnostic" in why

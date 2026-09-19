@@ -1316,6 +1316,74 @@ unsafe fn TryStartWow64Reg() {
     }
 }
 
+/* spawn32.exe — the i386 PROCESS-CREATION guest: can a 32-bit guest start
+ * another 32-bit process at all (CreateProcessW, IsWow64Process on the child,
+ * ResumeThread across the process boundary, wait, exit code).
+ *
+ * DIAGNOSTIC, not a parity guest. It measures a gap the x64-primary plan ranks
+ * #1 and which is expected to be OPEN, so ladder.py reports its verdict from
+ * the DIAGNOSTIC table and never fails a gate on it. Launched here all the
+ * same, and BEFORE the optional stress guests: it is fast and bounded, while
+ * they are slow third-party code that can push later guests past the drain.
+ *
+ * The 60s wait is deliberately double the guest's own 30s child timeout, so a
+ * guest that hit its internal cap still gets to report a verdict rather than
+ * being cut off by winlogon and read as a hang. */
+#[cfg(any(target_arch = "x86_64", target_arch = "aarch64"))]
+unsafe fn TryStartWow64Spawn() {
+    if !Wow64SupportStaged() {
+        return; // CPU layer absent
+    }
+    let mut Path: [u16; MAX_PATH as usize] = [0; MAX_PATH as usize];
+    if GetWindowsDirectoryW(Path.as_mut_ptr(), MAX_PATH - 32) == 0 {
+        return;
+    }
+    wcscat(Path.as_mut_ptr(), wstr!("\\syswow64\\spawn32.exe").as_ptr());
+    if GetFileAttributesW(Path.as_ptr()) == 0xFFFF_FFFF {
+        return; // not staged — silent no-op
+    }
+
+    let mut Line: [u16; 12] = wstr_arr!("spawn32.exe");
+    let mut Si: STARTUPINFOW = zeroed();
+    let mut Pi: PROCESS_INFORMATION = zeroed();
+    Si.cb = size_of::<STARTUPINFOW>() as DWORD;
+    let ok = CreateProcessW(
+        Path.as_ptr(),
+        Line.as_mut_ptr(),
+        null_mut(),
+        null_mut(),
+        0,
+        0,
+        null_mut(),
+        null(),
+        &mut Si,
+        &mut Pi,
+    );
+    if ok != 0 {
+        DbgPrint(
+            b"[WINLOGON] spawn32.exe (i386 process-creation guest) created (PID %lu) - waiting\n\0"
+                .as_ptr() as *const i8,
+            Pi.dwProcessId,
+        );
+        WaitForSingleObject(Pi.hProcess, 60_000);
+        let mut ExitCode: DWORD = 0xDEAD;
+        GetExitCodeProcess(Pi.hProcess, &mut ExitCode);
+        DbgPrint(
+            b"[WINLOGON] spawn32.exe exit = 0x%lx (DIAGNOSTIC, 0x600D = gap closed)\n\0".as_ptr()
+                as *const i8,
+            ExitCode,
+        );
+        CloseHandle(Pi.hThread);
+        CloseHandle(Pi.hProcess);
+    } else {
+        DbgPrint(
+            b"[WINLOGON] CreateProcessW(spawn32.exe) FAILED (error %lu)\n\0".as_ptr()
+                as *const i8,
+            GetLastError(),
+        );
+    }
+}
+
 /* sqlite32.exe — a THIRD-PARTY STRESS guest (tools/stress/sqlite/build.sh).
  *
  * Every other guest here probes one mechanism on purpose, with a body written
@@ -2573,6 +2641,16 @@ pub unsafe extern "system" fn WinMain(
 
         TryStartWow64Sqlite();
 
+        /* DEAD LAST, after even the stress guests, and for a harder reason
+         * than theirs. sqlite32 goes late because it is slow and has a
+         * registered on-disk BUGCHECK; spawn32 goes later still because it
+         * bugchecks the kernel RELIABLY today (0x1E, measured 2026-09-19 on
+         * amd64, after NtCreateProcessEx has already succeeded). Anything
+         * sequenced after it would never report at all. Normally absent
+         * entirely -- it is built only under VIBEOS_WOW64_SPAWN=1 -- so on
+         * every ordinary boot this is a silent no-op. */
+        TryStartWow64Spawn();
+
         /* The testgui pair never exits, so it would sit on top of DOOM's window.
          * When the WoW64 doom is staged, DOOM is the demo — skip them. */
         if !Wow64DoomStaged() {
@@ -2677,6 +2755,16 @@ pub unsafe extern "system" fn WinMain(
          * can BUGCHECK must go last. */
         TryStartWow64Lua();
         TryStartWow64Sqlite();
+
+        /* DEAD LAST, after even the stress guests, and for a harder reason
+         * than theirs. sqlite32 goes late because it is slow and has a
+         * registered on-disk BUGCHECK; spawn32 goes later still because it
+         * bugchecks the kernel RELIABLY today (0x1E, measured 2026-09-19 on
+         * amd64, after NtCreateProcessEx has already succeeded). Anything
+         * sequenced after it would never report at all. Normally absent
+         * entirely -- it is built only under VIBEOS_WOW64_SPAWN=1 -- so on
+         * every ordinary boot this is a silent no-op. */
+        TryStartWow64Spawn();
         /* E4c robustness: a stock i386 OS applet nobody wrote for this test —
          * menus, timers, dialog resources. Launched BEFORE doom so doom's
          * window (created last) stays the demo on top. */
