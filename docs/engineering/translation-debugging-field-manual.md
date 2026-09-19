@@ -4102,6 +4102,53 @@ The two fixes compose, and the order matters: expanding is what lets `--seal-fac
 at all. Sealed, `msvcrt_set_errno`'s 60 constants go to the model as `__RUSTCONV_FACT_00NN__` and
 cannot be invented — which is the whole defence, given `EDEADLK` is 36 in msvcrt and 35 in glibc.
 
+### "Unintegrated paid work" is a claim about NAMES, and a rewrite breaks every one
+
+**Symptom.** `rustconv bank-audit` reports a big pile of unintegrated paid work — shell32 read
+130 functions across ~6 modules — and the number is used to plan an integration sprint. Every
+one of the 130 was already shipping or correctly absent; zero were owed.
+
+**Cause.** The audit matches a banked LABEL (the C++ construct that was sent for translation)
+against function names in the tree, and four things break that correspondence without losing any
+work:
+
+- **The `_body` member lowering.** rustconv lowers a C++ member into a free `Class_Method_body`
+  plus a separate vtable thunk, so the label never appears verbatim. `_body` was already in
+  `_TWIN_SUFFIXES` but only the *variadic* path consulted it. 25 of the 130.
+- **A SUPERSEDING REWRITE.** `CExeDropHandler` and `CFolderOptions` ship as hand-written COM
+  objects whose vtable entries are snake_case (`persist_file_load`, `assign_site`); the banked
+  per-method bodies were the *input* to that rewrite. No name rule can ever see this — it needs a
+  written exception. 44 of the 130.
+- **A C++ base class flattened per-derived-class.** `CEnumIDListBase`'s list methods live once
+  per enum (`CDrivesFolderEnum_AddToEnumList_body`, …). A generic `CEnumIDListBase_*` must NOT
+  exist: eight C++ classes still derive from the live base, so defining those names in Rust
+  captures it.
+- **A body that is deliberately not a definition.** A `*_RustBridge` that ships as an `extern`
+  declaration is integrated; one that was removed on purpose (`CStubWindow32`) is correctly
+  absent. `_has_body` refuses both, and it is right to.
+
+**Fix.** `member_body` as an exact-name rule (never containment: `CDefView_Refresh` vs
+`CDefView_RefreshGhostedState_body`), and `[groups]` in `bank_audit_allow.toml` so one written
+reason can cover a class retired in one rewrite. The content-addressed memo cache
+(`translation-memory-exact-v1/<sha>.rs`, 551 entries) is keyed by hash, so it resolves through
+the names its body declares — and reports as `allowlist`, not `declared_in_body`, because a
+reviewed exception laundered into a mechanical verdict is one nobody re-reads. 130 → 0.
+
+**The money lesson is the general one: suspect the audit before acting on its number.** Here the
+direction was unusually expensive — not re-buying a body, but a planned sprint to "integrate"
+work that was already shipping, which at best wastes the time and at worst re-defines a symbol
+the live C++ still owns. Grep the tree for one flagged symbol before believing a pile of them.
+And do not delete a memo cache to "get the bank down": it is what makes a replay cost $0.
+
+**A resolution rule feeds the deletion list, so widening one narrows the other.** `integrated`
+is the input to `redundancies`' safe-to-archive list, and an ALLOWLISTED resolution means
+correctly *absent* — superseded, or a body that must never ship — not shipping. Left as plain
+`integrated`, the new rules offered shell32's `CEnumIDListBase` run archive for archiving: seven
+bodies that must never be defined in Rust, listed under a sentence claiming every function in
+them is integrated. `res.via != "allowlist"` is the whole fix. The general point is that these
+two axes are not independent — anything that makes the audit resolve MORE names makes the
+deletion list LONGER, so check the second whenever you touch the first.
+
 ### The export audit that was supposed to catch the shrunken plan was itself blind
 
 **Symptom.** A module translates, `cargo check`s clean on all three arches, passes `check`, and
