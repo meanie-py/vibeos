@@ -42,6 +42,14 @@ NTSTATUS WINAPI NtOpenThreadTokenEx(HANDLE ThreadHandle, ACCESS_MASK Access,
                                     PHANDLE TokenHandle);
 NTSTATUS WINAPI NtQuerySystemInformation(ULONG InfoClass, PVOID Info, ULONG Len,
                                          PULONG RetLen);
+/* #64 (initial-thread half): RtlCreateUserThread takes a FOREIGN ProcessHandle
+ * and does the stack allocation + host CONTEXT build in that process, which is
+ * the whole reason the cross-process initial thread needs no new machinery. */
+LONG WINAPI RtlCreateUserThread(HANDLE ProcessHandle, PVOID SecurityDescriptor,
+                                BOOLEAN CreateSuspended, ULONG StackZeroBits,
+                                SIZE_T StackReserve, SIZE_T StackCommit,
+                                PVOID StartAddress, PVOID Parameter,
+                                PHANDLE ThreadHandle, PVOID ClientId);
 NTSTATUS WINAPI NtOpenKey(PHANDLE KeyHandle, ACCESS_MASK DesiredAccess,
                           PVOID ObjectAttributes);
 NTSTATUS WINAPI NtOpenDirectoryObject(PHANDLE Handle, ACCESS_MASK Access,
@@ -6126,6 +6134,123 @@ NTSTATUS WINAPI NtTerminateThread(HANDLE ThreadHandle, NTSTATUS ExitStatus);
 VOID WINAPI RtlExitUserThread(NTSTATUS Status);
 
 /*
+ * Wow64pCreateForeignInitialThread — the half of task #64 that needs no channel.
+ *
+ * `NtCreateThread` with a ProcessHandle that is not -1 arrives here, and the two
+ * callers that get there are not alike:
+ *
+ *   CreateRemoteThread into a RUNNING process genuinely needs the cross-process
+ *   channel. The target's wow64.dll has to be told to run its per-thread entry
+ *   for a thread it did not create, and Wow64ProcessPendingCrossProcessItems --
+ *   the drain that would do it -- is empty. In-process creation gets around
+ *   this by handing RtlCreateUserThread a WOW64_THREAD_SEED on the local heap
+ *   and Wow64pGuestThreadStart as the start routine; neither address means
+ *   anything in another process, which is why that path cannot simply be
+ *   pointed at a foreign handle.
+ *
+ *   The INITIAL thread of a brand-new child needs none of it, because the child
+ *   establishes its own guest side from data the kernel already wrote. The
+ *   child's Wow64LdrpInitialize reads PEB32->ImageBaseAddress and takes the
+ *   entry point out of the image's own NT headers (wow64.c); it never looks at
+ *   a CONTEXT the parent supplied. And it is reached from LdrpInitializeProcess
+ *   on the strength of ProcessWow64Information on ITSELF (ntdll-rust
+ *   ldrinit.rs), so it does not matter who created the thread or how. The
+ *   existence proof is that winlogon spawns all ten ladder guests this way
+ *   today; the only difference for a 32-bit parent is that its NtCreateThread
+ *   passes through this thunk, where a native parent's does not.
+ *
+ * So the guest's CONTEXT32/INITIAL_TEB32 are deliberately IGNORED on this path.
+ * They describe a 32-bit start (kernel32!BaseProcessStartThunk with the entry in
+ * Eax and PEB32 in Ebx) that the child will recompute for itself. The guest
+ * stack its kernel32 already allocated cross-process in BaseCreateStack is left
+ * where it is -- unused, in the child's own address space, freed when the child
+ * dies. Reproducing that allocation here would not make it any more used.
+ *
+ * Two conditions, and both are load-bearing rather than defensive:
+ *
+ *   The target must be a WoW64 process. A 32-bit parent spawning a SIXTY-FOUR-bit
+ *   child is a real case and a different one -- nothing would hand that child's
+ *   initial thread a guest context because it does not want one -- and it stays
+ *   refused rather than silently taking this path.
+ *
+ *   The target must not have started. PEB->Ldr is NULL until the child's own
+ *   LdrpInitializeProcess fills it, so a NULL there is the kernel's word for
+ *   "this process has not run any user code yet", which is exactly the
+ *   precondition the paragraph above relies on. A running target falls through
+ *   to the refusal, which is the CreateRemoteThread case and still owed.
+ */
+static NTSTATUS Wow64pCreateForeignInitialThread(HANDLE Process,
+                                                 BOOLEAN CreateSuspended,
+                                                 ULONG *Handle32,
+                                                 ULONG *ClientId32)
+{
+    WOW64_PROCESS_BASIC_INFORMATION64 Pbi = {0};
+    ULONG_PTR TargetPeb32 = 0;
+    ULONGLONG Ldr = (ULONGLONG)-1;
+    SIZE_T Read = 0;
+    HANDLE Thread = NULL;
+    WOW64_CLIENT_ID Cid = { NULL, NULL };
+    NTSTATUS St;
+
+    St = NtQueryInformationProcess(Process, ProcessWow64Information,
+                                   &TargetPeb32, sizeof(TargetPeb32), NULL);
+    if (St < 0 || !TargetPeb32)
+    {
+        DbgPrint("[WOW64] NtCreateThread: REFUSED - cross-process into a "
+                 "non-WoW64 target (ProcessHandle=%p st=%08lx) (task #64).\n",
+                 Process, St);
+        return (NTSTATUS)0xC0000002; /* STATUS_NOT_IMPLEMENTED */
+    }
+
+    St = NtQueryInformationProcess(Process, ProcessBasicInformation,
+                                   &Pbi, sizeof(Pbi), NULL);
+    if (St >= 0 && Pbi.PebBaseAddress)
+    {
+        /* PEB64.Ldr is at +0x18 on every 64-bit host we build for. */
+        St = NtReadVirtualMemory(Process,
+                                 (PVOID)(ULONG_PTR)(Pbi.PebBaseAddress + 0x18),
+                                 &Ldr, sizeof(Ldr), &Read);
+        if (St < 0 || Read != sizeof(Ldr))
+            Ldr = (ULONGLONG)-1; /* unreadable: treat as "already running" */
+    }
+
+    if (Ldr != 0)
+    {
+        DbgPrint("[WOW64] NtCreateThread: REFUSED - cross-process into a "
+                 "RUNNING process (ProcessHandle=%p Ldr=%p) has no per-thread "
+                 "entry in the target (task #64).\n", Process, (PVOID)(ULONG_PTR)Ldr);
+        return (NTSTATUS)0xC0000002; /* STATUS_NOT_IMPLEMENTED */
+    }
+
+    /* StartAddress is never reached: the child's LdrpInitializeProcess diverts
+     * into Wow64LdrpInitialize, which ends in BTCpuSimulate and does not
+     * return. RtlExitUserThread is named anyway so that if that assumption is
+     * ever wrong the thread exits instead of running whatever is at the
+     * address -- the failure that costs a bugcheck is the one worth aiming. */
+    St = RtlCreateUserThread(Process, NULL, CreateSuspended, 0, 0, 0,
+                             (PVOID)RtlExitUserThread, NULL, &Thread, &Cid);
+    if (St < 0)
+    {
+        DbgPrint("[WOW64] NtCreateThread: cross-process initial thread failed "
+                 "%08lx\n", St);
+        return St;
+    }
+
+    if (Handle32)
+        *Handle32 = (ULONG)(ULONG_PTR)Thread;
+    if (ClientId32)
+    {
+        ClientId32[0] = (ULONG)(ULONG_PTR)Cid.UniqueProcess;
+        ClientId32[1] = (ULONG)(ULONG_PTR)Cid.UniqueThread;
+    }
+    DbgPrint("[WOW64] NtCreateThread: cross-process INITIAL thread pid=%lx "
+             "tid=%lx suspended=%u (task #64 initial-thread half)\n",
+             (ULONG)(ULONG_PTR)Cid.UniqueProcess,
+             (ULONG)(ULONG_PTR)Cid.UniqueThread, CreateSuspended);
+    return St;
+}
+
+/*
  * NtTerminateThread — pass-through, except that a thread terminating ITSELF is
  * the last moment wow64.dll holds control on it: the kernel call never returns,
  * and heap memory is not reclaimed by thread exit. Without this, every guest
@@ -6193,18 +6318,12 @@ static NTSTATUS Wow64Manual_NtCreateThread(ULONG *a)
     WOW64_CLIENT_ID Cid = { NULL, NULL };
     NTSTATUS St;
 
-    /* Cross-process creation (CreateRemoteThread into a different process)
-     * would need the TARGET's wow64.dll to run the per-thread entry, and there
-     * is no cross-process channel yet (Wow64ProcessPendingCrossProcessItems is
-     * still empty). Refuse rather than create a thread nobody will initialize —
-     * that is the exact shape of the bug this replaced. */
+    /* Cross-process creation splits in two, and only one half needs the channel
+     * that does not exist. See Wow64pCreateForeignInitialThread. */
     if ((HANDLE)(LONG_PTR)(LONG)a[3] != (HANDLE)(LONG_PTR)-1)
-    {
-        DbgPrint("[WOW64] NtCreateThread: REFUSED - cross-process creation "
-                 "(ProcessHandle=%08lx) has no per-thread entry in the target "
-                 "(task #64).\n", a[3]);
-        return (NTSTATUS)0xC0000002; /* STATUS_NOT_IMPLEMENTED */
-    }
+        return Wow64pCreateForeignInitialThread((HANDLE)(LONG_PTR)(LONG)a[3],
+                                                (BOOLEAN)(a[7] & 0xFF),
+                                                Handle32, ClientId32);
 
     if (!Ctx32 || !ITeb32)
         return (NTSTATUS)0xC000000D; /* STATUS_INVALID_PARAMETER */

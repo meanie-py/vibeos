@@ -13,8 +13,9 @@ hardware faults into their own SEH, and generate and execute code at runtime.
   mspaint, regedit, winver, taskmgr, wordpad, clipbrd, eventvwr, magnify, osk,
   spider — plus x86 DOOM, rendering and playable.
 
-What remains is depth, not capability: guest *processes*, registry redirection,
-and the marshalgen audit backlog. See **What is deliberately not built**.
+What remains is depth, not capability: guest *processes* and the marshalgen audit
+backlog. Registry redirection was the third item here until E24 landed it. See
+**What is deliberately not built**.
 
 Owner: `wow64-amd64` lane.
 Predecessor: `fex-bringup-plan.md` (rungs 0–3; this doc was its rung 4+).
@@ -212,7 +213,10 @@ scratch. The guest also opens `\KnownDlls32` rather than `\KnownDlls`, because
 the latter holds **host-arch** sections — a guest mapping an arm64 kernel32 gets
 `ILLEGAL_DLL_RELOCATION`, which is a spectacular way to learn this.
 
-**Registry redirection does not exist** (see below).
+**Registry redirection lives in CM, not here** — see phase E24. It is the one part
+of the redirection story that is deliberately not in wow64.dll, because registry
+opens are overwhelmingly relative and a user-mode rewrite would need a
+handle-to-path syscall per open.
 
 **The kernel's share is small on purpose** — `ARM3/procsup.rs` (PEB32/TEB32),
 `ke/amd64/except.rs` and `ke/amd64/thrdini.rs` (compat-mode entry/exit), plus
@@ -246,13 +250,19 @@ cannot reach. Nearly every marshalling bug from E6 onward was found by one.
 
 ## What is deliberately not built
 
-- **Guest processes.** A 32-bit guest can create threads but not processes;
-  `CreateProcess` from a guest and cross-process `CreateRemoteThread` both need
-  the CSR-LPC-32 layer. This is the largest remaining hole — it is what
-  installers and any app that shells out will hit.
-- **Registry redirection** (`Wow6432Node`, `KEY_WOW64_32KEY/64KEY`) — task #66.
-  Not merely missing: a 32-bit guest currently reads and writes the *native*
-  hive, so it is a silent correctness bug, not a stubbed feature.
+- **Guest processes.** Still the largest remaining hole — it is what installers
+  and any app that shells out will hit — but no longer unmeasured. The CSR-LPC-32
+  prerequisite landed, and `spawn32.exe` (DIAGNOSTIC, opt-in under
+  `VIBEOS_WOW64_SPAWN=1`) walked the path on amd64 2026-09-19 through three
+  defects to the refusal that actually blocks it: `Wow64Manual_NtCreateThread`
+  rejects every `ProcessHandle != -1`, because a cross-process thread has no
+  per-thread entry in the target and `Wow64ProcessPendingCrossProcessItems` is
+  empty. That is task #64. Full chain in `x64-primary-plan.md` gap #1.
+- ~~**Registry redirection**~~ — **BUILT** (phase E24, task #66). Listed here as a
+  silent correctness bug until then: a 32-bit guest read and wrote the *native*
+  hive. Now redirected in `CmpParseKey` (`config-rust/src/cmwow64.rs`), with
+  `reg32.exe` as the runtime guard. Two documented deviations from Windows remain,
+  both recorded under E24 and both reversible.
 - **The 209 remaining audit-baseline entries** — services whose payloads provably
   diverge but that still flat-thunk. Each is a latent version of bugs already
   paid for. E19 closed the pointer-width **out-cell** slice (which was corrupting
