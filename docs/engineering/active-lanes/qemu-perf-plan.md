@@ -4,6 +4,22 @@
 **Scope:** the QEMU execution layer only — backend, accelerator, media attach, boot
 concurrency. Not the guest. A guest bug found here gets handed to the lane that owns it.
 
+## Execution update
+
+See [measured results](../qemu-perf-results.md) for this lane's implementation and
+validation. The original handoff below is retained as the starting hypothesis.
+Corrections established during execution:
+
+- `smoke --repeat N` runs sequentially; farm runs one worker per architecture.
+- WHPX was resolved **after** admission, so its intended per-arch cap was bypassed.
+  The lane resolves it first and normalizes net/UEFI variants to the same cap.
+- TCG was faster in the desktop trials. WHPX remains opt-in; the media cache and
+  Windows cleanup are default behavior for every Windows harness launch.
+- Windows Event 1000 and minidumps confirm the all-setup-errors incident was a
+  QEMU process crash. Later WHPX runs reached 13/15: listeners announced, but
+  the two inbound data tests timed out. That differs from the older spike's
+  missing-listener diagnosis.
+
 ## The situation you are inheriting
 
 **KVM inside WSL2 is not worth using.** Nested virt under WSL2 contends badly enough that

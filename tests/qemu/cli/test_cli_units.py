@@ -1851,7 +1851,7 @@ def test_arch_slot_serializes_same_arch(tmp_path, monkeypatch):
     assert first._arch_slot_fd is not None  # holds the single i386 slot
 
     # A second i386 boot can't get the cap-1 slot → queues → times out.
-    second = _bare_vm("i386")
+    second = _bare_vm("i386-uefi-net")
     with pytest.raises(TimeoutError):
         second._acquire_arch_slot()
     assert second._arch_slot_fd is None
@@ -1959,18 +1959,20 @@ class _FakeProc:
         self.stderr = _Reader(stderr)
 
 
-def _launch_vm(backend: str = "windows-host"):
+def _launch_vm(backend: str, tmp_path: Path):
     """A bare QemuVM carrying only what _launch_qemu touches."""
     v = vm.QemuVM.__new__(vm.QemuVM)
     v._backend = backend
+    v.live_log_path = tmp_path / "serial.log"
+    v.config = vm_mod.get_arch_config("amd64-uefi")
     v._proc = None
     v._early_stderr = ""
     v._gdb = False
     return v
 
 
-def test_launch_qemu_retries_hostfwd_bind_race(monkeypatch):
-    v = _launch_vm("windows-host")
+def test_launch_qemu_retries_hostfwd_bind_race(monkeypatch, tmp_path):
+    v = _launch_vm("windows-host", tmp_path)
     monkeypatch.setattr(
         v,
         "_build_windows_cmd",
@@ -1998,8 +2000,8 @@ def test_launch_qemu_retries_hostfwd_bind_race(monkeypatch):
     assert len(launched) == 3
 
 
-def test_launch_qemu_healthy_first_try_no_retry(monkeypatch):
-    v = _launch_vm("windows-host")
+def test_launch_qemu_healthy_first_try_no_retry(monkeypatch, tmp_path):
+    v = _launch_vm("windows-host", tmp_path)
     monkeypatch.setattr(
         v, "_build_windows_cmd", lambda: ["qemu", "-netdev", "user,hostfwd=tcp:0.0.0.0:9-:9"]
     )
@@ -2015,9 +2017,9 @@ def test_launch_qemu_healthy_first_try_no_retry(monkeypatch):
     assert len(launched) == 1
 
 
-def test_launch_qemu_non_hostfwd_skips_poll(monkeypatch):
+def test_launch_qemu_non_hostfwd_skips_poll(monkeypatch, tmp_path):
     # native (or any non-hostfwd) config: launch once, never poll for the bind race.
-    v = _launch_vm("native")
+    v = _launch_vm("native", tmp_path)
     monkeypatch.setattr(v, "_build_native_cmd", lambda: ["qemu", "-M", "pc"])
     proc = _FakeProc()
     monkeypatch.setattr(vm.subprocess, "Popen", lambda cmd, **kw: proc)
@@ -2029,10 +2031,10 @@ def test_launch_qemu_non_hostfwd_skips_poll(monkeypatch):
     assert cmd == ["qemu", "-M", "pc"]
 
 
-def test_launch_qemu_non_bind_early_exit_is_not_retried(monkeypatch):
+def test_launch_qemu_non_bind_early_exit_is_not_retried(monkeypatch, tmp_path):
     # QEMU dies early for some OTHER reason → not the flake: keep the proc (the normal
     # start path surfaces it), stash stderr, do NOT retry.
-    v = _launch_vm("windows-host")
+    v = _launch_vm("windows-host", tmp_path)
     monkeypatch.setattr(v, "_build_windows_cmd", lambda: ["qemu", "hostfwd=tcp:0.0.0.0:1-:1"])
     proc = _FakeProc()
     monkeypatch.setattr(vm.subprocess, "Popen", lambda cmd, **kw: proc)
@@ -2043,9 +2045,9 @@ def test_launch_qemu_non_bind_early_exit_is_not_retried(monkeypatch):
     assert v._early_stderr == "bad -drive: No such file"
 
 
-def test_launch_qemu_raises_after_exhausting_retries(monkeypatch):
+def test_launch_qemu_raises_after_exhausting_retries(monkeypatch, tmp_path):
     monkeypatch.setattr(vm, "HOSTFWD_LAUNCH_RETRIES", 2)
-    v = _launch_vm("windows-host")
+    v = _launch_vm("windows-host", tmp_path)
     monkeypatch.setattr(v, "_build_windows_cmd", lambda: ["qemu", "hostfwd=tcp:0.0.0.0:1-:1"])
     monkeypatch.setattr(vm.subprocess, "Popen", lambda cmd, **kw: _FakeProc())
     monkeypatch.setattr(v, "_early_exit_stderr", lambda p, budget=2.0: vm.HOSTFWD_BIND_ERROR)
@@ -2054,10 +2056,10 @@ def test_launch_qemu_raises_after_exhausting_retries(monkeypatch):
         v._launch_qemu()
 
 
-def test_launch_qemu_retries_gdb_bind_race(monkeypatch):
+def test_launch_qemu_retries_gdb_bind_race(monkeypatch, tmp_path):
     # A windows-host gdbstub binds a Windows-stack port with the same pick-then-bind
     # TOCTOU as a hostfwd → must be retried with a fresh port (no hostfwd present).
-    v = _launch_vm("windows-host")
+    v = _launch_vm("windows-host", tmp_path)
     v._gdb = True
     monkeypatch.setattr(v, "_build_windows_cmd", lambda: ["qemu", "-gdb", "tcp:0.0.0.0:1234"])
     procs = [_FakeProc(), _FakeProc()]
@@ -2351,8 +2353,10 @@ def test_gdbengine_run_until_builds_break_and_then(monkeypatch):
     assert out == "BREAKPOINT HIT"
 
 
-def test_early_exit_stderr_reports_exit_vs_healthy():
+def test_early_exit_stderr_reports_exit_vs_healthy(tmp_path):
     v = vm.QemuVM.__new__(vm.QemuVM)
+    v._stderr_path = tmp_path / "stderr.log"
+    (tmp_path / "stderr.log").write_text("Could not set up host forwarding rule 'tcp:0.0.0.0:1234'")
 
     class Exited:
         stderr = _Reader(b"Could not set up host forwarding rule 'tcp:0.0.0.0:1234'")
@@ -8190,3 +8194,94 @@ def test_qmp_event_retention_is_bounded():
     assert len(c.events) == 256
     assert c.saw_event("E299") is not None
     assert c.saw_event("E0") is None  # fell off the tail
+
+
+@pytest.mark.parametrize("arch", ["amd64-uefi-net", "i386-uefi-net", "amd64-test"])
+def test_per_arch_cap_includes_variants(arch, monkeypatch):
+    monkeypatch.setenv("VIBEOS_QEMU_PER_ARCH_CAP", "2")
+    monkeypatch.delenv("VIBEOS_QEMU_CAP_AMD64", raising=False)
+    monkeypatch.delenv("VIBEOS_QEMU_CAP_I386", raising=False)
+    assert vm_mod.per_arch_cap(arch) == 2
+
+
+@pytest.mark.parametrize(
+    "arch,available,expected",
+    [
+        ("amd64-uefi", True, "whpx"),
+        ("amd64-uefi", False, "tcg"),
+        ("arm64", True, "tcg"),
+    ],
+)
+def test_start_resolves_accel_before_admission(arch, available, expected, monkeypatch):
+    v = _bare_vm(arch)
+    v._backend = "windows-host"
+    v._win = {"accel": "whpx"}
+    v._win_accel = "tcg"
+    monkeypatch.setattr(be_mod, "whpx_available", lambda: available)
+    observations = []
+    monkeypatch.setattr(v, "_acquire_slot", lambda: observations.append(v._win_accel))
+    monkeypatch.setattr(v, "_acquire_cpu_lease", lambda: observations.append(v._boot_is_tcg()))
+    monkeypatch.setattr(vm_mod, "launch_lock", contextlib.nullcontext)
+    monkeypatch.setattr(v, "_start_with_ports", lambda: None)
+    v.start()
+    assert observations == [expected, expected == "tcg"]
+
+
+def test_boot_eof_preserves_serial_and_reports_process_exit(monkeypatch, tmp_path):
+    from types import SimpleNamespace
+
+    v = _bare_vm("amd64")
+    v.config = vm_mod.get_arch_config("amd64-uefi")
+
+    def eof(*args, **kwargs):
+        raise ConnectionError("Serial socket closed")
+
+    monkeypatch.setattr(
+        v,
+        "serial",
+        SimpleNamespace(read_until=eof, partial_output="firmware breadcrumb"),
+        raising=False,
+    )
+    monkeypatch.setattr(
+        v,
+        "_proc",
+        SimpleNamespace(poll=lambda: 1, wait=lambda **_: 1, returncode=1),
+        raising=False,
+    )
+    v._stderr_path = tmp_path / "stderr.log"
+    (tmp_path / "stderr.log").write_text("WHPX fatal error")
+    v._early_stderr = ""
+    with pytest.raises(RuntimeError, match="QEMU exited with code 1") as error:
+        v.wait_for_boot()
+    assert "WHPX fatal error" in str(error.value)
+    assert v._boot_output == "firmware breadcrumb"
+
+
+def test_qemu_stderr_cannot_fill_a_pipe_and_stall(tmp_path, monkeypatch):
+    import sys
+
+    v = _launch_vm("native", tmp_path)
+    monkeypatch.setattr(
+        v,
+        "_build_native_cmd",
+        lambda: [sys.executable, "-c", "import sys; sys.stderr.write('x' * 131072)"],
+    )
+    v._launch_qemu()
+    assert v._proc is not None
+    try:
+        assert v._proc.wait(timeout=5) == 0
+        assert (tmp_path / "amd64-uefi_qemu.stderr.log").stat().st_size == 131072
+        assert v._read_qemu_stderr() == "x" * 65536
+    finally:
+        if v._proc.poll() is None:
+            v._proc.kill()
+            v._proc.wait()
+
+
+def test_serial_eof_retains_partial_output():
+    client = serial_client.SerialClient()
+    client._buf = "firmware reached the loader"
+    client._sock_dead = True
+    with pytest.raises(ConnectionError):
+        client.read_until("shell ready", timeout=0.1)
+    assert client.partial_output == "firmware reached the loader"
