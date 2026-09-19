@@ -4288,6 +4288,24 @@ you run it anyway: reject any `{` or `}` between the set and the reset, or an `X
 `if` arm against `X = 0` in the `else` arm reads as set-then-reset (that alone was 7 of 8
 hits, e.g. fastfat `RecursiveClose`); and a file-scoped search will pair a set in one
 function with a test in another.
+**A stack of bugs is discovered strictly IN ORDER, so the next blocker is knowable only one
+at a time.** Chasing guest `CreateProcess` to its real answer took four passes, and the
+prediction made at the start — `NtCreateThread` refuses cross-process — turned out to be
+right about the DESTINATION and wrong about it being next. Three defects stood in front of
+it, each strictly invisible until the one before it was fixed: the dropped `_SEH2_EXCEPT`
+(bugcheck), then a wrong `STATUS_PARTIAL_COPY` literal sitting in the error path the handler
+had made unreachable, then a TEB32/TEB64 channel mismatch. So the failure mode is not
+"reading one layer and predicting the stack" in the sense of reading the wrong layer — the
+layer was read correctly. **Any prediction that skips intermediate layers is really a
+prediction about how many bugs are in them, which nobody can make.** Two corollaries worth
+having: an unreachable error path is not merely unhandled, it is an oracle-free zone where a
+second bug can sit indefinitely with nothing able to disagree with it — so **restoring an
+error path should be expected to expose a defect, and the work is not done when the crash
+stops** (here it was true twice); and a plausible invented constant is not a random number,
+it is one off from something real and in scope (`0xC000009B` next to
+`0xC000009A`/`STATUS_INSUFFICIENT_RESOURCES`, used a few lines earlier in the same function),
+which is why no range check would ever flag it.
+
 **The query that does generalise** asks the question directly instead of via a fingerprint:
 pair every C file containing `_SEH2_EXCEPT` with its translated `.rs` and flag the ones whose
 Rust can still raise (`ProbeForRead`/`ProbeForWrite`/`ExRaiseStatus`/`ExRaiseAccessViolation`)
