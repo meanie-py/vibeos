@@ -3544,3 +3544,39 @@ def test_header_discovery_never_returns_partial_corpus(tmp_path, monkeypatch):
     with pytest.raises(FileNotFoundError):
         _header_files(tmp_path / "missing")
     assert len(attempts) == 3
+
+
+def test_elaborated_struct_state_field_is_the_same_type_as_the_bare_spelling():
+    """`struct IconLocation defaultIcon` == `IconLocation defaultIcon`.
+
+    C's elaborated-type-specifier carries no extra semantics and C++ accepts both
+    spellings. Only the bare one was parsed, so CExtractIcon -- which declares all four of
+    its state fields the C way -- failed preflight with "state field type is not proven C
+    scalar/pointer state: struct IconLocation defaultIcon". That message reads as a claim
+    about the TYPE, when the truth was that the declaration had not been parsed: the POD
+    discovery never learned `IconLocation`, so the field check could not admit it either.
+    Both parsers normalise the keyword away now, which is why this asserts on both.
+    """
+    source = SHELL32 / "CExtractIcon.cpp"
+    cls = analyze_class(source, "CExtractIcon", object_map_source=SHELL32 / "shell32.cpp")
+
+    # Discovery found the struct behind the elaborated spelling...
+    assert "IconLocation" in {pod.name for pod in cls.pod_state_types}
+    # ...and the field parser accepts the four members that use it.
+    icon_fields = {
+        field.name: field.c_type
+        for field in cls.plain_state_fields()
+        if field.c_type.endswith("IconLocation")
+    }
+    assert set(icon_fields) == {"defaultIcon", "normalIcon", "openIcon", "shortcutIcon"}
+    # The keyword is normalised away rather than carried into the Rust type name.
+    assert set(icon_fields.values()) == {"IconLocation"}
+
+
+def test_a_member_merely_starting_with_struct_is_not_mangled():
+    """The normaliser requires whitespace after the keyword, so `structFoo` is untouched."""
+    from rustconv.cpp_com import _parse_plain_state_field
+
+    field = _parse_plain_state_field("UINT structFlags", island_scalar_types={"UINT"})
+    assert field.name == "structFlags"
+    assert field.c_type == "UINT"
