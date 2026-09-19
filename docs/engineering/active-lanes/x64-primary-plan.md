@@ -413,11 +413,75 @@ a ladder to watch", and neither was visible from reading.
    creation: **task #64's remaining half is `CreateRemoteThread`, and this is a
    separate, better-understood piece of work in front of it.**
 
-   Its cost is the embedded `BASE_SXS_CREATEPROCESS_MSG` — two `SIZE_T`s, three
-   pointers and four `UNICODE_STRING`s, whose `Buffer`s are guest pointers into the
-   capture buffer. Follow the `BASEP_CREATETHREAD` entry's discipline and **MEASURE**
-   both layouts with an `offsetof` dump rather than deriving them; that comment
-   records measured offsets for a three-field struct, and this one has thirty.
+   **DONE 2026-09-19, and it cost far less than this paragraph first estimated.** The
+   estimate assumed the embedded `BASE_SXS_CREATEPROCESS_MSG` had to be widened — two
+   `SIZE_T`s, three pointers, four `UNICODE_STRING`s whose `Buffer`s are guest pointers.
+   It does not: `BaseSrvCreateProcess` (`smss-csrss-rust/src/basesrv/proc.rs:97`) never
+   reads `Sxs` at all, because the SxS work belongs to a different API
+   (`BaseSrvSxsCreateActivationContext`). Reading the server before budgeting the client
+   turned thirty fields into eleven. `Sxs` is zeroed rather than left as whatever the
+   verbatim copy put there, and a non-zero guest `Sxs.Flags` now prints, so the day the
+   server starts reading it that announces itself instead of going quiet.
+
+   Offsets were **measured, not derived**, per the note this paragraph used to carry, and
+   the measurement had a control worth reusing: the structs were transcribed into a
+   standalone `offsetof` dumper built with the llvm-mingw i686 and x86_64 targets, and
+   its `sizeof` line has to reproduce 140/96 and 232/160 — the numbers
+   `ntdll-sys/src/size_check_{i386,amd64}.rs` already asserts. A bad transcription fails
+   as a size mismatch instead of as quietly wrong offsets. (The hand-derivation done
+   first agreed, but agreement found afterwards is not what made it trustworthy.)
+
+   One field needs naming because it does not look like what it is: `ProcessHandle`
+   carries up to two FLAG bits in its low bits (kernel32's `AddToHandle`/
+   `RemoveFromHandle`), which the server reads back as `Handle & 3` before masking.
+   Zero-extension preserves them, which is the only reason the naive widening is correct.
+
+   **Measured after the fix — rungs 1 through 4 PASS, all ten parity guests still PASS:**
+
+        [spawn32] rung1 CreateProcessW OK
+        [spawn32] child pid 0x000002e4
+        [spawn32] rung2 child is a 32-bit guest OK
+        [spawn32] rung3 ResumeThread OK
+        [spawn32] rung4 child exited OK
+        [spawn32] rung5 wrong child exit code 0x00000080      verdict 0xBAE5
+
+   So cross-process `ResumeThread` works (rung 3 was written to catch a partial fix, and
+   it did not fire), and the child really is a 32-bit guest by the SYSTEM's reckoning.
+
+**The FIFTH defect, and it is the structurally interesting one: a 32-bit parent can
+only fill the child's PEB32, but the child's SIXTY-FOUR-bit loader runs first.** The
+child dies before printing a single loader line:
+
+        [KI-EXC] spawn32.exe code=0xc0000005 rip=000007ffb7004c4f
+        [EXIT-THR] image=spawn32.exe exit_status=0x80
+
+`ntdll.dll` is based at `0x7FFB7000000`, so that PC symbolicates to
+`LdrpInitializeProcess`, `ldrinit.rs:1827` — the first line of the function that
+dereferences anything:
+
+        ImagePath = (*(*Peb).ProcessParameters).ImagePathName.Buffer;
+
+`PEB64->ProcessParameters` is NULL. The asymmetry is the whole bug. When a NATIVE
+parent spawns an i386 child, its 64-bit kernel32 writes 64-bit process parameters into
+PEB64, the child's loader finds them, and `wow64.dll` then DERIVES the 32-bit copy —
+that is the `[FEX-WOW64C] PEB32->ProcessParameters built at ...` line every working
+guest prints. A 32-bit parent cannot do the first step: it builds a 32-bit
+`RTL_USER_PROCESS_PARAMETERS` and, since `Wow64pPublishRemotePeb32`, correctly writes
+it into the child's PEB32. Nothing fills PEB64, and PEB64 is what runs first.
+
+Note what this says about the earlier fix: `Wow64pPublishRemotePeb32` was right about
+WHERE the guest's kernel32 should write, and that is exactly why this defect was
+invisible until now — it was hidden behind two failures that stopped the child before
+its loader ever ran.
+
+The shape of the fix is the inverse of what `wow64.dll` already does at startup: widen
+the 32-bit `RTL_USER_PROCESS_PARAMETERS` the guest wrote into a 64-bit one allocated in
+the child, and point PEB64 at it. Everything downstream then rejoins the ordinary native
+path, including wow64.dll rebuilding the 32-bit copy for itself. The cost is the
+embedded `UNICODE_STRING`s and the environment block, cross-process — so it is the
+first piece of this chain that is genuinely a structure conversion rather than a few
+fields, and the `offsetof`-with-a-`size_check`-control method above is how to get its
+layouts.
 
    *(Superseded, kept as a dated waypoint: while the `STATUS_PARTIAL_COPY` write was
    still failing I wrote here that the next question was "why the child's parameter
