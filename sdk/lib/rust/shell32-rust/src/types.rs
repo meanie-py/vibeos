@@ -231,12 +231,9 @@ pub struct LUID {
     pub HighPart: LONG,
 }
 
-/// LARGE_INTEGER (only the quad is needed here).
-#[repr(C)]
-#[derive(Copy, Clone)]
-pub struct LARGE_INTEGER {
-    pub QuadPart: i64,
-}
+// LARGE_INTEGER: the island owns it (same rule as POINT/SIZE/RECT above). The local copy
+// kept only the quad arm.
+pub use crate::island::LARGE_INTEGER;
 
 /// TOKEN_STATISTICS (setypes.h) — faithful layout so `size_of` matches what
 /// GetTokenInformation expects. Only AuthenticationId (offset 8) is read here.

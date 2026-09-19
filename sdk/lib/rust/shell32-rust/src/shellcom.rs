@@ -828,53 +828,20 @@ use crate::types::LARGE_INTEGER;
 // would collide by glob with the copies in those modules and make the NAME ambiguous in every
 // consumer that globs both -- six E0659s the first time I tried it.
 
-/// `BIND_OPTS` (objidl.h).
-#[repr(C)]
-struct BIND_OPTS {
-    pub cbStruct: DWORD,
-    pub grfFlags: DWORD,
-    pub grfMode: DWORD,
-    pub dwTickCountDeadline: DWORD,
-}
+// BIND_OPTS / STATSTG come from com-sys through `crate::types`, and WIN32_FIND_DATAW from
+// the island. They used to be private copies here, which typed the vtable slots below but
+// made every one of those slots UNCALLABLE from another module ("type ... is private"). A
+// plain (non-`pub`) import fixes both halves: the type in the signature is public, and the
+// name is not re-exported, so no consumer that globs both this module and its own copy gets
+// the E0659 the comment above warns about.
+use crate::island::WIN32_FIND_DATAW;
 
-/// `ULARGE_INTEGER` (winnt.h) — the QuadPart view; the anonymous Low/High struct is a union
-/// arm nothing in these signatures reads.
-#[repr(C)]
-#[derive(Clone, Copy)]
-struct ULARGE_INTEGER {
-    pub QuadPart: ULONGLONG,
-}
+// ULARGE_INTEGER: the island owns it, same rule as VARIANT/SAFEARRAY above. The local copy
+// here kept only the QuadPart arm, so a body that reached for `.u.HighPart` -- which is what
+// utils.cpp's stream copy does -- had nowhere to put it.
+use crate::island::ULARGE_INTEGER;
 
-/// `WIN32_FIND_DATAW` (minwinbase.h).
-#[repr(C)]
-struct WIN32_FIND_DATAW {
-    pub dwFileAttributes: DWORD,
-    pub ftCreationTime: FILETIME,
-    pub ftLastAccessTime: FILETIME,
-    pub ftLastWriteTime: FILETIME,
-    pub nFileSizeHigh: DWORD,
-    pub nFileSizeLow: DWORD,
-    pub dwReserved0: DWORD,
-    pub dwReserved1: DWORD,
-    pub cFileName: [WCHAR; 260],
-    pub cAlternateFileName: [WCHAR; 14],
-}
 
-/// `STATSTG` (objidl.h).
-#[repr(C)]
-struct STATSTG {
-    pub pwcsName: LPOLESTR,
-    pub r#type: DWORD,
-    pub cbSize: ULARGE_INTEGER,
-    pub mtime: FILETIME,
-    pub ctime: FILETIME,
-    pub atime: FILETIME,
-    pub grfMode: DWORD,
-    pub grfLocksSupported: DWORD,
-    pub clsid: CLSID,
-    pub grfStateBits: DWORD,
-    pub reserved: DWORD,
-}
 
 /// `interface IFileSystemBindData : IUnknown` — SetFindData, GetFindData (in that order).
 #[repr(C)]

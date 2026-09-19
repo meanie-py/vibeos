@@ -127,6 +127,7 @@ pub mod cidldataobj_free;
 /// It needs no ATL window substrate: the file's one `CWindowImpl` mention is a COMMENT
 /// explaining why `CStubWindow32` is BRIDGED rather than reimplemented (its thunk and
 /// registered class must have exactly one owner, and two C++ TUs still use it).
-/// Hand-written substrate for utils.cpp: SDK constants outside the island's closure.
+/// Hand-written substrate for utils.cpp: SDK constants outside the island's closure, plus the
+/// shellutils.h `static inline`s (SHELL_ErrorBoxHelper) that have no symbol to import.
 pub mod utils_support;
-// pub mod utils;   // ORPHAN-BY-DESIGN -- see the banner in shell32/utils.rs
+pub mod utils;
