@@ -16,4 +16,5 @@ target_include_directories(wdfdriverentry
     PUBLIC ${REACTOS_SOURCE_DIR}/sdk/include/wdf/kmdf/1.17
     PRIVATE ${REACTOS_SOURCE_DIR}/sdk/lib/drivers/wdf/shared/inc/private/common
     ${REACTOS_SOURCE_DIR}/sdk/lib/drivers/wdf/kmdf/inc/private
+    ${REACTOS_SOURCE_DIR}/sdk/lib/drivers/wdf_reactos/include
 )

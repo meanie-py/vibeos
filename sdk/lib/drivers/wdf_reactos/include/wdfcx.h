@@ -8,7 +8,9 @@
 #ifndef _WDFCX_H_
 #define _WDFCX_H_
 
-#include "kmdf/inc/private/wdfldr.h"
+/* wdfldr.h used to live at kmdf/inc/private/ inside the vendored WDF drop; both it
+   and this file are ReactOS-authored and now sit here together. */
+#include "wdfldr.h"
 
 typedef BOOLEAN
 (NTAPI *PFN_WDFCX_DEVICE_FILE_CREATE) (
