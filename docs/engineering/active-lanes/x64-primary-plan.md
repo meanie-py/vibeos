@@ -334,16 +334,29 @@ a ladder to watch", and neither was visible from reading.
         NtCreateProcessEx        => 00000000   (child created, PEB32 built)
         NtWriteVirtualMemory     => 00000000
         NtWriteVirtualMemory     => 00000000
-        NtWriteVirtualMemory     => c000009b   STATUS_PARTIAL_COPY
-        CreateProcessW           => FALSE, GetLastError 3 (ERROR_PATH_NOT_FOUND)
+        NtWriteVirtualMemory     => 8000000d   STATUS_PARTIAL_COPY
+        CreateProcessW           => FALSE, GetLastError 0x12b (ERROR_PARTIAL_COPY)
 
    So the third write of the process-parameters block into the child's address space
    partially fails — the target is in range but not fully mapped in the child. That is
    TWO STEPS BEFORE the `NtCreateThread` cross-process refusal this entry originally
-   predicted, which remains unexercised. Note also that kernel32 maps a partial-copy
-   failure to `ERROR_PATH_NOT_FOUND`, which is actively misleading and would have sent the
-   next reader hunting a path bug. Next: why the child's parameter block is not mapped
-   where the parent is writing it.
+   predicted, which remains unexercised. Next: why the child's parameter block is not
+   mapped where the parent is writing it.
+
+   **A SECOND translation bug, found only because the first fix made the status
+   visible — and it corrects something I wrote here an hour ago.** The first clean run
+   reported `c000009b` and `ERROR_PATH_NOT_FOUND`, and I wrote that kernel32 maps
+   partial-copy misleadingly to a path error. **That was wrong.** `STATUS_PARTIAL_COPY`
+   is `0x8000000D`; `0xC000009B` is `STATUS_DFS_EXIT_PATH_FOUND`, so the Win32 mapping
+   was doing its job correctly on a status that was itself a lie. All three
+   "Return partial copy" sites in `virtual.rs` carried the wrong constant. Note where
+   the wrong value sits: `STATUS_INSUFFICIENT_RESOURCES` is `0xC000009A`, used a few
+   lines earlier in the same function — the bad constant is its numeric neighbour, which
+   is what a plausible-looking invention looks like. Fixed by adding a named
+   `STATUS_PARTIAL_COPY` to `ntkrnl-sys::base` and using it; verified the guest now
+   reports `ERROR_PARTIAL_COPY` (299). **The general lesson: a wrong status code hides
+   behind a correct-looking error message, and the first thing a restored error path
+   buys you is the ability to see the next lie.**
 
    **Consequence for this lane, and a correction to the design above:** a
    diagnostic guest that BUGCHECKS cannot be carried by "report, never red".

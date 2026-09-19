@@ -525,9 +525,18 @@ land; date every addition.** Source docs live in `docs/engineering/archive/`.
   x86_64/aarch64/x86). Leaving `_FailedInProbe` at 0 on that path is what selects the C's
   copy-faulted arm over its probe-failed one.
   **Verified end to end on amd64:** zero bugchecks, and the third `NtWriteVirtualMemory`
-  into a child process now returns **`c000009b` (STATUS_PARTIAL_COPY)** — which is exactly
-  the C's `MiGetExceptionInfo`/`HaveBadAddress` arm, the branch that had been unreachable.
-  A syscall that killed the machine now returns a status.
+  into a child process now returns **`8000000d` (STATUS_PARTIAL_COPY)** — exactly the C's
+  `MiGetExceptionInfo`/`HaveBadAddress` arm, the branch that had been unreachable. A
+  syscall that killed the machine now returns a status.
+  **And restoring that path immediately exposed a SECOND bug in the same three lines:**
+  they returned `0xC000009B`, which is `STATUS_DFS_EXIT_PATH_FOUND`, not
+  `STATUS_PARTIAL_COPY` (`0x8000000D`) — the numeric neighbour of
+  `STATUS_INSUFFICIENT_RESOURCES` (`0xC000009A`) used a few lines above. It was invisible
+  while the path was dead code, and while it was live it made a caller report
+  `ERROR_PATH_NOT_FOUND` for a memory fault. `ntkrnl-sys::base` now has a named
+  `STATUS_PARTIAL_COPY`; the guest reports `ERROR_PARTIAL_COPY` (299). `vibeos-cli check`
+  passes both before and after, so `scan_invented_constants` does not catch a wrong bare
+  hex in an `as NTSTATUS` cast.
   **ONE THING STILL OPEN, left visible rather than made to look handled:**
   `MiDoMappedCopy` calls `MmProbeAndLockPages` inside the same C `_SEH2_TRY`, and it
   **raises by design** on pages it cannot lock. Validate-first cannot reach that, and

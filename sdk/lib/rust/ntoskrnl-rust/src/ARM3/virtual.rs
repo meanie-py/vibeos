@@ -930,7 +930,7 @@ pub unsafe extern "system" fn MiDoMappedCopy(
                 *ReturnSize = BufferSize - RemainingSize;
             } else {
                 *ReturnSize = 0;
-                Status = 0xC000009Bu32 as NTSTATUS;
+                Status = STATUS_PARTIAL_COPY;
             }
             break;
         }
@@ -1047,7 +1047,7 @@ pub unsafe extern "system" fn MiDoPoolCopy(
                 *ReturnSize = BufferSize - RemainingSize;
             } else {
                 *ReturnSize = 0;
-                Status = 0xC000009Bu32 as NTSTATUS;
+                Status = STATUS_PARTIAL_COPY;
             }
             break;
         }
@@ -1097,7 +1097,7 @@ pub unsafe extern "system" fn MiDoPoolCopy(
                 *ReturnSize = BufferSize - RemainingSize;
             } else {
                 *ReturnSize = 0;
-                Status = 0xC000009Bu32 as NTSTATUS;
+                Status = STATUS_PARTIAL_COPY;
             }
             break;
         }
