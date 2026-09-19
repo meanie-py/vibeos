@@ -1099,12 +1099,14 @@ extern "system" {
     fn SHGetSetSettings(state: *mut SHELLSTATE, mask: DWORD, set: BOOL);
 }
 
-#[inline] unsafe fn V_VT(value: *const VARIANT) -> VARTYPE { (*value).vt }
-#[inline] pub unsafe fn V_I4(value: *const VARIANT) -> LONG { (*value).val.lVal }
-#[inline] unsafe fn V_UI4(value: *const VARIANT) -> ULONG { (*value).val.lVal as ULONG }
-#[inline] unsafe fn V_ERROR(value: *const VARIANT) -> HRESULT { (*value).val.lVal }
-#[inline] unsafe fn V_BOOL(value: *const VARIANT) -> VARIANT_BOOL { (*value).val.iVal }
-#[inline] unsafe fn V_BSTR(value: *const VARIANT) -> BSTR { *core::ptr::addr_of!((*value).val).cast::<BSTR>() }
+// oaidl.h's V_* macros. VARIANT is the island's `tagVARIANT`, so every member sits under
+// the anonymous-union nest `n1.n2` / `n1.n2.n3` -- not a flat `vt`/`val` pair.
+#[inline] unsafe fn V_VT(value: *const VARIANT) -> VARTYPE { (*value).n1.n2.vt }
+#[inline] pub unsafe fn V_I4(value: *const VARIANT) -> LONG { (*value).n1.n2.n3.lVal }
+#[inline] unsafe fn V_UI4(value: *const VARIANT) -> ULONG { (*value).n1.n2.n3.ulVal }
+#[inline] unsafe fn V_ERROR(value: *const VARIANT) -> HRESULT { (*value).n1.n2.n3.scode }
+#[inline] unsafe fn V_BOOL(value: *const VARIANT) -> VARIANT_BOOL { (*value).n1.n2.n3.boolVal }
+#[inline] unsafe fn V_BSTR(value: *const VARIANT) -> BSTR { (*value).n1.n2.n3.bstrVal }
 
 unsafe fn VariantToIdlist(value: *const VARIANT, idlist: *mut LPITEMIDLIST) -> HRESULT {
     if V_VT(value) == VT_I4 {
@@ -1520,8 +1522,8 @@ pub unsafe fn CShellDispatch_GetSystemInformation_body(this: *mut CShellDispatch
     if lstrcmpiW(name, CPP_COM_WSTR_FF4270D7D5C0.as_ptr()) == 0 {
         let mut si: SYSTEM_INFO = core::mem::zeroed();
         GetSystemInfo(&mut si as *mut SYSTEM_INFO);
-        (*ret).vt = VT_I4;
-        (*ret).val.lVal = si.wProcessorArchitecture as LONG;
+        (*ret).n1.n2.vt = VT_I4;
+        (*ret).n1.n2.n3.lVal = si.wProcessorArchitecture as LONG;
         return S_OK;
     }
 
@@ -1535,8 +1537,8 @@ pub unsafe fn CShellDispatch_GetSystemInformation_body(this: *mut CShellDispatch
     }
 
     if os != 0 {
-        (*ret).vt = VT_BOOL;
-        (*ret).val.iVal = if IsOS(os) != 0 {
+        (*ret).n1.n2.vt = VT_BOOL;
+        (*ret).n1.n2.n3.iVal = if IsOS(os) != 0 {
             VARIANT_TRUE
         } else {
             VARIANT_FALSE
@@ -1630,15 +1632,15 @@ pub unsafe fn SHELL32_ControlService_body(name: BSTR, control: DWORD, persistent
 pub unsafe fn CShellDispatch_ServiceStart_body(this: *mut CShellDispatch, service: BSTR, persistent: VARIANT, ret: *mut VARIANT) -> HRESULT {
     let mut persistent_mut = persistent;
     let hr = SHELL32_ControlService_body(service, 0, &mut persistent_mut);
-    (*ret).vt = VT_BOOL;
-    (*ret).val.iVal = if hr == S_OK { VARIANT_TRUE } else { VARIANT_FALSE };
+    (*ret).n1.n2.vt = VT_BOOL;
+    (*ret).n1.n2.n3.iVal = if hr == S_OK { VARIANT_TRUE } else { VARIANT_FALSE };
     if hr == S_OK { S_OK } else { S_FALSE }
 }
 
 pub unsafe fn CShellDispatch_ServiceStop_body(this: *mut CShellDispatch, service: BSTR, mut persistent: VARIANT, ret: *mut VARIANT) -> HRESULT {
     let hr = SHELL32_ControlService_body(service, SERVICE_CONTROL_STOP, &mut persistent);
-    (*ret).vt = VT_BOOL;
-    (*ret).val.iVal = if hr == S_OK { VARIANT_TRUE } else { VARIANT_FALSE };
+    (*ret).n1.n2.vt = VT_BOOL;
+    (*ret).n1.n2.n3.iVal = if hr == S_OK { VARIANT_TRUE } else { VARIANT_FALSE };
     if hr == S_OK { S_OK } else { S_FALSE }
 }
 
@@ -1648,8 +1650,8 @@ pub unsafe fn CShellDispatch_IsServiceRunning_body(this: *mut CShellDispatch, na
     let mut service: SC_HANDLE;
     let mut dummy: DWORD = 0;
 
-    (*running).vt = VT_BOOL;
-    (*running).val.iVal = VARIANT_FALSE;
+    (*running).n1.n2.vt = VT_BOOL;
+    (*running).n1.n2.n3.iVal = VARIANT_FALSE;
 
     scm = OpenSCManagerW(core::ptr::null_mut(), core::ptr::null(), SC_MANAGER_CONNECT);
     if scm.is_null() {
@@ -1676,7 +1678,7 @@ pub unsafe fn CShellDispatch_IsServiceRunning_body(this: *mut CShellDispatch, na
     }
 
     if status.dwCurrentState == SERVICE_RUNNING {
-        (*running).val.iVal = VARIANT_TRUE;
+        (*running).n1.n2.n3.iVal = VARIANT_TRUE;
     }
 
     CloseServiceHandle(service);
@@ -1691,8 +1693,8 @@ pub unsafe fn CShellDispatch_CanStartStopService_body(this: *mut CShellDispatch,
     if hr >= 0 {
         CloseServiceHandle(hSvc);
     }
-    (*ret).vt = VT_BOOL;
-    (*ret).val.iVal = if hr == S_OK { VARIANT_TRUE } else { VARIANT_FALSE };
+    (*ret).n1.n2.vt = VT_BOOL;
+    (*ret).n1.n2.n3.iVal = if hr == S_OK { VARIANT_TRUE } else { VARIANT_FALSE };
     S_OK
 }
 

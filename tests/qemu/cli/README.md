@@ -117,9 +117,14 @@ all included), then auto-triage on failure.
 - **Hard-fails on stale or missing media** — it will *not* silently boot the
   wrong binary. If you're bisecting and *want* the current media regardless, pass
   `--allow-stale` (you'll get a loud WARN). Otherwise: `build` first.
-- `--repeat N` runs N independent boots to characterize a flake; a partial pass
+- `--repeat N` runs N independent boots sequentially to characterize a flake; a partial pass
   (`0 < pass < N`) is reported `FLAKY` and counts as **FAIL** — a flake is a real
   signal, not green.
+- Each `boots[]` entry in `summary.json` includes `timings`: total wall time,
+  start, marker watch, desktop settle, and stop. Start also exposes accelerator
+  resolution, admission wait, launch-lock wait, and preparation (media plus process
+  launch). These components overlap: preparation and waits are part of start;
+  total includes all phases. Compare identical smoke options and successful boots.
 - **`--ladder` — the WoW64 probe guests, which a plain smoke CANNOT see.** They
   are spawned by winlogon *after* explorer, i.e. after the desktop marker this
   boot already matched, so the ordinary `smoke`/`gate` stops watching before the
@@ -171,6 +176,29 @@ all included), then auto-triage on failure.
   [--sizes build-<arch>]`. This is how the 27s freeldr silent gap and the
   5s menu-countdown tax were found (docs/engineering/
   performance-investigation.md).
+
+### Windows media cache and cleanup
+
+Windows launches automatically reuse content-addressed, read-only media across
+worktrees. Every launch hashes its source; a per-run hard link pins the cached
+image. Writable firmware variables and scratch disks remain private. Cold fills
+use small buffered writes to avoid DrvFS allocation failures. The cache retains
+up to 2 GiB plus media pinned by active runs; no opt-in is needed.
+
+`./vibeos-cli windows-cleanup --dry-run` reports abandoned staging paths;
+`./vibeos-cli windows-cleanup` removes them. Smoke, gate, farm, and debug launches
+also sweep automatically, at most once every five minutes. Cleanup recognizes
+only tool-owned paths older than one hour, protects live Linux owners and media
+referenced by Windows QEMU command lines, and refuses deletion if Windows process
+inspection fails. It shares the launch lock so it cannot race a new launch.
+Completed runs still remove their own staging immediately. The sweep recovers
+leftovers after interrupted runs and retires old unpinned cache entries.
+
+Each boot directory contains `<arch>_launch.json` (actual backend, accelerator,
+argv, admission and preparation timings) and `<arch>_qemu.stderr.log`. Stderr is
+a file, so an undrained pipe cannot stall QEMU or hide a host crash. TCG remains
+the default accelerator; WHPX is opt-in pending a green network suite and a
+measured workload improvement.
 
 ### `farm [--arches L] [--boots N | --minutes M] [--tripwire CFG]` / `farm-report [--since TS] [--sha S]`
 **The flake farm** — soak independent boots (parallel worker per arch; the

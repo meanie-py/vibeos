@@ -641,7 +641,7 @@ land; date every addition.** Source docs live in `docs/engineering/archive/`.
   (found 2026-09-19 by `research`, via the new `spawn32` WoW64 guest). `virtual.c:876`
   wraps both probes in `_SEH2_TRY { … } _SEH2_EXCEPT(EXCEPTION_EXECUTE_HANDLER) { Status =
   _SEH2_GetExceptionCode(); }`. The Rust port kept the body and **dropped the handler**, at
-  three sites across `MiDoMappedCopy` and `MiDoPoolCopy`
+  four probe sites across `MiDoMappedCopy` and `MiDoPoolCopy`
   (`ntoskrnl-rust/src/ARM3/virtual.rs`, around lines 842/869 and 961/986). `ProbeForWrite`
   raises via `ExRaiseAccessViolation()`, nothing catches it, and the machine takes
   **BUGCHECK 0x1E (`c0000005`)** — KMODE_EXCEPTION_NOT_HANDLED — where the contract is to
@@ -659,9 +659,39 @@ land; date every addition.** Source docs live in `docs/engineering/archive/`.
   and a later `if Status < 0 && _FailedInProbe != 0` tests a state no line between them can
   now produce. **An unreachable error path is the fingerprint of a deleted handler**, and it
   is visible in the Rust alone without diffing the C.
-  Fix is the validate-first `probe.rs` (`Result<T, NTSTATUS>`) idiom that
-  `dummy-pseh-verdict.md` already prescribes and SE/OB already use — an unfinished
-  migration, not new mechanism. **Unowned.**
+  **PROBE HALF FIXED 2026-09-19 by `research`; the LOCK half is still open and is now what
+  this entry tracks.** All four probe sites moved to validate-first
+  `ntkrnl_sys::probe::probe_user_buffer` (`Result<NTSTATUS>`), which also makes the
+  `if _FailedInProbe != 0` branch reachable again — setting `Status` is exactly what the
+  deleted handler did, so the C's discriminator between "probe failed" (return the code)
+  and "copy faulted" (`STATUS_PARTIAL_COPY`) works once more.
+  **The copy needed fixing too, and the tree PROVED it rather than my predicting it.** With
+  only the probes converted, the same BUGCHECK 0x1E came back one frame along, now inside
+  `memcpy` — because the C's TRY also wrapped `RtlCopyMemory`, and a range check proves
+  where a buffer IS, never that it stays mapped. All three copies now go through
+  `ntkrnl_sys::probe::safe_copy_raw` (`KmProtectedCopyMemory`, genuinely fault-protected on
+  x86_64/aarch64/x86). Leaving `_FailedInProbe` at 0 on that path is what selects the C's
+  copy-faulted arm over its probe-failed one.
+  **Verified end to end on amd64:** zero bugchecks, and the third `NtWriteVirtualMemory`
+  into a child process now returns **`8000000d` (STATUS_PARTIAL_COPY)** — exactly the C's
+  `MiGetExceptionInfo`/`HaveBadAddress` arm, the branch that had been unreachable. A
+  syscall that killed the machine now returns a status.
+  **And restoring that path immediately exposed a SECOND bug in the same three lines:**
+  they returned `0xC000009B`, which is `STATUS_DFS_EXIT_PATH_FOUND`, not
+  `STATUS_PARTIAL_COPY` (`0x8000000D`) — the numeric neighbour of
+  `STATUS_INSUFFICIENT_RESOURCES` (`0xC000009A`) used a few lines above. It was invisible
+  while the path was dead code, and while it was live it made a caller report
+  `ERROR_PATH_NOT_FOUND` for a memory fault. `ntkrnl-sys::base` now has a named
+  `STATUS_PARTIAL_COPY`; the guest reports `ERROR_PARTIAL_COPY` (299). `vibeos-cli check`
+  passes both before and after, so `scan_invented_constants` does not catch a wrong bare
+  hex in an `as NTSTATUS` cast.
+  **ONE THING STILL OPEN, left visible rather than made to look handled:**
+  `MiDoMappedCopy` calls `MmProbeAndLockPages` inside the same C `_SEH2_TRY`, and it
+  **raises by design** on pages it cannot lock. Validate-first cannot reach that, and
+  `dummy-pseh-verdict.md` lists it under "software exceptions raised by design" as THE open
+  gap, needing a `try_` Result variant at the callee that does not exist (no such symbol in
+  `ntkrnl-sys`). That path can still BUGCHECK, and the code says so at the call site.
+  **Remaining work is the `try_`-variant mechanism, not this function. Unowned.**
 
 - **`test_nested_cargo_deps` is load-sensitive and bounces `land` preflights —
   REPRODUCED, OPEN** (2026-09-19). **Three independent observations, three DIFFERENT steps
@@ -2018,32 +2048,111 @@ Field-manual § pointers hold the full writeups. **Update on state change.**
     noise. The lane-level 33% is higher than any single test's rate precisely because the
     causes are independent and compose — which is the real finding, and it survives the
     correction that prompted it.
-  - **WIDER, n=196 (2026-09-13): the arm64 cause set is at least TEN tests, not three, and
-    there are TWO distinct failure MODES.** The 9-sweep measurement above is one lane's flake
-    farm on one media; this counts every `conformance-arm64` `summary.json` the fleet's real
-    gate left on disk — 196 kmtest runs, **144 clean (73%)**, so a per-run red rate of **27%**
-    that corroborates the banked 33% rather than replacing it.
-    *Method note, because these runs span different lanes and commits and so an individual
-    regression COULD be real:* the discriminator is batch spread — a test that regresses in
-    many unrelated batches is not one lane's defect. Counting distinct batches:
-    `ExPools` 30 · `NpfsConnect` 16 · `IoInterrupt` 11 · `KeEvent` 11 · `Example` 8 ·
-    `KeDpc` 8 · `IoDeviceObject` 8 · `CmSecurity` 7 · `ExCallback` 7 · `ExDoubleList` 7.
-    `ExPools` at 30 batches is consistent with its documented ~29%. **`KeDpc` and `CmSecurity`
-    had ZERO mentions anywhere in this document before this entry**, and `IoInterrupt`/
-    `KeEvent`/`NpfsConnect` were not on the flake list at all.
+  - **CENSUS of the fleet's real gate artifacts, n=201 (2026-09-13). SELF-CORRECTED: the
+    "ten distinct tests" first written here was WRONG — inflated by exactly the two-mode
+    conflation the same census identified.** Counts every `conformance-arm64`
+    `summary.json` on disk, rather than one lane's flake farm.
 
-    The pass-count deltas split cleanly into two populations, which is the part that matters
-    for the retry budget: **−1 (38 runs)** and **−2 (1)** are the single-flaky-subtest class
-    the entries above describe; **−132 (8 runs)** and **−280 (1)** are something else entirely
-    — whole tests reported `in baseline (OK) but never launched`, with `ok/bad` both 0 and a
-    `BUGCHECK 0x0000001E` on the run (5 runs carry a bugcheck). That second mode is a lost
-    boot, not a flaky assertion, and averaging the two together is what makes a single
-    "flake rate" misleading. **Consequence for the `CONFORMANCE_FLAKE` gating question below:
-    three attempts discriminates the −1 class well (independent 27% ⇒ ~2% of lanes rejected
-    spuriously, which matches the observed trickle), but it does NOT discriminate mode 2,
-    where a bad boot can repeat.** Found while reading why this lane's `5cab349d3050` was
-    rejected `CONFORMANCE_FLAKE` on 3 attempts; the content reached master via a later
-    submission, and nothing in that commit touches the kernel.
+    **Two modes, and they must not share a denominator.** 8 of the 201 runs are a LOST BOOT:
+    `BUGCHECK 0x1E`, `ok`/`bad` both 0, and every baseline test reported `in baseline (OK) but
+    never launched`. The other 193 are ordinary sweeps. **Mode-1 red rate: 45 of 193 = 23.3%**
+    (the 27% first written here pooled both modes; use 23.3%).
+
+    **Why the cause list was wrong.** A mode-2 run names the WHOLE baseline as regressed, so it
+    adds a constant +8 batches to *every* test's count. Splitting by mode:
+
+    | test | mode-1 batches | mode-2 batches |
+    |---|---|---|
+    | `ExPools` | 25 | 8 |
+    | `NpfsConnect` | 9 | 8 |
+    | `KeEvent` | 4 | 8 |
+    | `IoInterrupt` | 4 | 8 |
+    | `KeDpc` · `Example` · `IoDeviceObject` | 1 each | 8 |
+    | `CmSecurity` · `ExCallback` · `ExDoubleList` · `ExUuid` · `IoFilesystem` · `ZwMapViewOfSection` · `HalSystemInfo` · `FsRtlTunnel` · `RtlCaptureContextKM` | **0** | 8 |
+
+    So the genuine mode-1 set is **`ExPools`, `NpfsConnect`, and marginally `KeEvent` /
+    `IoInterrupt`** — not ten. Everything in the bottom row is mode-2 collateral: those tests
+    have never once been observed regressing in an ordinary sweep, and filing them as flakes
+    would file nine tests nobody has seen fail. **`CmSecurity` in particular has ZERO mode-1
+    occurrences** and should not be registered as a flake.
+
+    **The caveat that must travel with any of these (from the conformance lane's own scar):
+    batch spread proves NOT-ONE-LANE'S-DEFECT. It does not prove flaky.** `ExPools` had 30
+    batches of perfect spread and was a deterministic HARNESS bug — the `POOL_HEADER` arch-gate
+    — reproducible on every run. "Fleet-wide, cause unknown, determinism unknown" is the honest
+    filing; deterministic failure is evidence AGAINST a kernel bug.
+
+    **Determinism is mostly UNDECIDABLE from this data, and saying so beats leaving it open by
+    omission:** 151 of 170 batches contain only ONE mode-1 run, so there is nothing to compare.
+    Where a batch has 2-3: `ExPools` regressed in ALL runs of 10 batches and SOME of 15;
+    `NpfsConnect` ALL of 6, SOME of 3; `KeEvent` and `IoInterrupt` ALL of 4, SOME of 0. The
+    `ExPools` split spans the `POOL_HEADER` fix, so it is not clean evidence either way.
+
+    **Consequence for the retry budget.** Three attempts discriminates mode 1 — a `-1` subtest
+    is an independent trial, so independent 23.3% ⇒ ~1% spurious rejections, matching the
+    observed trickle. It does NOT discriminate mode 2: the test never RAN, so re-booting a
+    media that dies the same way is not an independent trial. Mode 2 wants a coverage check —
+    *did the sweep launch what the baseline says exists* — computable from ONE run with no rate
+    at all. **No single averaged rate should appear in the design.**
+
+    **THE CORPUS THIS WAS COMPUTED FROM NO LONGER EXISTS, and these figures cannot be
+    re-derived — this entry is the record.** The 2026-09-14 disk loss took `/tmp/vibeos-cli`
+    with it: zero conformance `summary.json` survive, and `~/vibeos-flake-farm/` is gone.
+    Verified 2026-09-14.
+
+    **The durability lesson is about WHERE, not whether — and the obvious diagnosis is wrong.**
+    It is tempting to say conformance kept no record: `vibeos-ledger.jsonl` holds **19,711 rows
+    with ZERO conformance rows** (build 6152, smoke 4741, check 3543, gate 1265, farm 1194,
+    land 1087, difftest 692), because `_ledger_append` was a `Run` method and `conformance.py`
+    does not use `Run`. But conformance was recording all along, via `_append_round`
+    (`conformance.py:299`) into `~/vibeos-flake-farm/conformance.jsonl`.
+
+    **Two ledgers; the difference was which DIRECTORY the restore covered.** `vibeos-ledger.jsonl`
+    lives beside the worktrees under `Projects/os-playground/` and came back whole.
+    `~/vibeos-flake-farm/` is under `$HOME` and did not come back at all. Not a flush, fsync or
+    format problem — conformance was writing diligently, to the location that evaporates.
+    **Anything else written under `$HOME` rather than into the project tree is in exactly that
+    position right now**, and that is the transferable half of this.
+
+    Fixed in `b10ce2351ee`: `ledger_append` extracted to module level so a command with no `Run`
+    can record an outcome at all, and conformance now appends a durable row carrying `shape` —
+    the mode classification — alongside launched/ok/bad/bugcheck/regressions. `shape` is the
+    load-bearing field: it separates a lost boot from a flaky assertion AT WRITE TIME, so the
+    next census never has to reconstruct the two-mode partition this one had to discover.
+
+    **Consequence: the `ExPools` prediction below is currently UNGRADEABLE** — it stands as
+    stated, but the baseline it would be graded against is gone and rebuilding one needs gates.
+    Saying so plainly beats leaving it looking falsifiable.
+
+    **Falsifiable once a corpus exists again:** if the `POOL_HEADER` fix is what closed
+    `ExPools`, the next census must show it dropping off the top of the mode-1 column. If it
+    does not, that fix is not what closed it. Note what such a census still could NOT settle:
+    **"regressed in SOME runs of a batch" is not "nondeterministic cause".** Before its fix
+    `ExPools` misread the header on EVERY boot; what varied was which of `ProcessBilled`'s bits
+    happened to be set. A deterministic fault with a variable observable looks exactly like a
+    flake in a pass/fail tally.
+
+  - **`CmSecurity` and `KeDpc` on arm64 — NOT flakes. Mode-2 collateral, filed so nobody
+    registers them as intermittents.** Both were nominated for this registry off the first
+    (wrong) version of the census above, which pooled the two failure modes; both had zero
+    prior mentions anywhere in this document, and that absence was correct.
+
+    Split by mode over the same n=201: **`CmSecurity` has ZERO mode-1 occurrences** — all 7 of
+    its batches are lost boots — and **`KeDpc` has exactly 1**. Neither has been observed
+    failing in an ordinary sweep in any quantity that means anything. The apparent batch counts
+    came from the arithmetic, not from the tests: a mode-2 run (`BUGCHECK 0x1E`, `ok`/`bad`
+    both 0) reports the ENTIRE baseline as `in baseline (OK) but never launched`, so it adds a
+    constant +8 batches to *every* test in the baseline at once. Seven more names arrived the
+    same way — `ExCallback`, `ExDoubleList`, `ExUuid`, `IoFilesystem`, `ZwMapViewOfSection`,
+    `HalSystemInfo`, `RtlCaptureContextKM`, `FsRtlTunnel` — all at 0 mode-1.
+
+    **The generalisable trap: a failure that reports per-ITEM but fails per-RUN will manufacture
+    N findings out of one event, and they look like N independent corroborated findings because
+    each carries its own count.** The tell is a constant: every one of these tests showed
+    *exactly* 8 mode-2 batches, because there were exactly 8 lost boots. Any per-item tally
+    drawn from run-level artifacts should be checked for a shared constant before it is
+    believed. Registering these would have filed nine tests nobody has ever seen fail, and each
+    would then have cost someone an investigation.
 
   - **`Example` on arm64 — a THIRD undocumented intermittent, found 2026-09-13.** One
     occurrence in 9: `pass 31 -> 29`, NEW failing `Example_user.c:39` and `:40`. `Example` is

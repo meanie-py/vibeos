@@ -188,6 +188,17 @@ extern int _SEH2_VolatileExceptionCode;
 } // extern "C"
 #endif
 
+/* The #ifndef guard below exists so the c2rust ANCHOR can replace these four macros
+   with label-free equivalents via -D. c2rust 0.22.1 cannot export a GCC local-label
+   declaration: the `__label__` becomes a TagDeclStmt whose only child is missing, the
+   AST is rejected ("Missing child N of node ... TagDeclStmt"), and the transpile dies.
+   Since this branch is the INERT one -- the except block is `if (_SEH2_Volatile0 || ...)`,
+   i.e. never entered -- the only thing the label provides is the _SEH2_LEAVE goto target,
+   so an override that drops both the label and _SEH2_LEAVE is behaviour-identical for
+   every TU that does not use _SEH2_LEAVE, and a TU that DOES use it fails loudly with an
+   undeclared identifier rather than anchoring wrongly. The real build never sees the -D. */
+#ifndef _SEH2_TRY
+
 #define _SEH2_TRY                                   \
 _Pragma("GCC diagnostic push")                      \
 _Pragma("GCC diagnostic ignored \"-Wunused-label\"")\
@@ -212,6 +223,8 @@ _Pragma("GCC diagnostic ignored \"-Wunused-label\"")\
     __seh2_scope_end__:;                            \
     }                                               \
 _Pragma("GCC diagnostic pop")
+
+#endif /* _SEH2_TRY */
 
 #define _SEH2_GetExceptionInformation() ((struct _EXCEPTION_POINTERS*)0)
 #define _SEH2_GetExceptionCode() _SEH2_VolatileExceptionCode

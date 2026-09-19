@@ -127,6 +127,16 @@ pub mod cidldataobj_free;
 /// It needs no ATL window substrate: the file's one `CWindowImpl` mention is a COMMENT
 /// explaining why `CStubWindow32` is BRIDGED rather than reimplemented (its thunk and
 /// registered class must have exactly one owner, and two C++ TUs still use it).
-/// Hand-written substrate for utils.cpp: SDK constants outside the island's closure.
+/// Hand-written substrate for utils.cpp: SDK constants outside the island's closure, plus the
+/// shellutils.h `static inline`s (SHELL_ErrorBoxHelper) that have no symbol to import.
 pub mod utils_support;
-// pub mod utils;   // ORPHAN-BY-DESIGN -- see the banner in shell32/utils.rs
+// pub mod utils;
+// ORPHAN-BY-DESIGN, and this is a GUARD rather than a to-do. utils.rs defines 58 `#[no_mangle]`
+// names that the LIVE C++ shell32 objects also define as unmangled externs -- 16 of them the
+// `*_RustBridge` wrappers other Rust modules call, plus SHGetShellStyleHInstance and
+// SHGetUserDisplayName, which explorer's taskbar OnCreate goes through. Wiring it raises NO
+// duplicate-symbol error (the linker resolves archive members against object files and just
+// picks one), so those entry points silently reroute into Rust that has never run: measured
+// 2026-09-19, the guest froze inside taskbar OnCreate and the kmtest sweep never launched.
+// Wiring and the cohab flip of utils.cpp are ONE change, and the flip needs those 16 bridges
+// rehomed first. Field manual, "Cohab link plumbing".

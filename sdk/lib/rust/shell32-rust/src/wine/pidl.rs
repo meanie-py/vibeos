@@ -1073,11 +1073,11 @@ unsafe fn shell_get_safearray_dataptr(p_sa: *mut SAFEARRAY, pcb: *mut SIZE_T) ->
 
 /// SHELL_VariantToBuffer (shell32_main.h:299).
 unsafe fn shell_variant_to_buffer(p_var: *mut VARIANT, p_data: *mut c_void, cb: SIZE_T) -> HRESULT {
-    if (*p_var).vt != (VT_ARRAY | VT_UI1) {
+    if (*p_var).n1.n2.vt != (VT_ARRAY | VT_UI1) {
         return E_INVALIDARG;
     }
     let mut cb_arr: SIZE_T = 0;
-    let p_arr_data = shell_get_safearray_dataptr((*p_var).val.parray, &mut cb_arr);
+    let p_arr_data = shell_get_safearray_dataptr((*p_var).n1.n2.n3.parray, &mut cb_arr);
     if p_arr_data.is_null() || cb_arr < cb {
         return E_FAIL;
     }
@@ -1098,7 +1098,7 @@ unsafe fn get_shellfolder2_item_details_ex_to_buffer(
     cb: UINT,
 ) -> HRESULT {
     let mut var: VARIANT = zeroed();
-    var.vt = VT_EMPTY;
+    var.n1.n2.vt = VT_EMPTY;
     let mut hr = ((*(*psf2).lpVtbl).GetDetailsEx)(psf2, pidl, pscid, &mut var);
     if SUCCEEDED(hr) {
         hr = shell_variant_to_buffer(&mut var, buf, cb as SIZE_T);

@@ -3017,10 +3017,10 @@ pub struct SFVM_CUSTOMVIEWINFO_DATA {
 use crate::shfldr::CRegKeyHandleArray;
 
 // ── VARIANT accessors (oleauto.h V_* macros) ──
-#[inline] pub unsafe fn V_VT(pv: *mut VARIANT) -> *mut VARTYPE { core::ptr::addr_of_mut!((*pv).vt) }
-#[inline] pub unsafe fn V_UI4(pv: *mut VARIANT) -> *mut ULONG { core::ptr::addr_of_mut!((*pv).val) as *mut ULONG }
-#[inline] pub unsafe fn V_DATE(pv: *mut VARIANT) -> *mut DATE { core::ptr::addr_of_mut!((*pv).val) as *mut DATE }
-#[inline] pub unsafe fn V_ARRAY(pv: *mut VARIANT) -> *mut SAFEARRAY { (*pv).val.parray }
+#[inline] pub unsafe fn V_VT(pv: *mut VARIANT) -> *mut VARTYPE { core::ptr::addr_of_mut!((*pv).n1.n2.vt) }
+#[inline] pub unsafe fn V_UI4(pv: *mut VARIANT) -> *mut ULONG { core::ptr::addr_of_mut!((*pv).n1.n2.n3) as *mut ULONG }
+#[inline] pub unsafe fn V_DATE(pv: *mut VARIANT) -> *mut DATE { core::ptr::addr_of_mut!((*pv).n1.n2.n3) as *mut DATE }
+#[inline] pub unsafe fn V_ARRAY(pv: *mut VARIANT) -> *mut SAFEARRAY { (*pv).n1.n2.n3.parray }
 
 // ── compare / SCID plumbing (shellutils.h / shfldr.h) ──
 pub const S_LESSTHAN: HRESULT = 0xffff;

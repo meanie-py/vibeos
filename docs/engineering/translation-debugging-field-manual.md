@@ -909,6 +909,26 @@ float math inside a body (x87), float pointers, float struct fields. Two fixes:
   real.
 
 ### Cohab link plumbing
+- **WIRING a translated TU is already a PARTIAL COHAB FLIP, and an uncontrolled one.** The
+  two-step everyone reaches for — "wire the module in now so it compiles and is lint-covered,
+  flip the `.cpp` out later" — is not safe when the C++ is still live. shell32's `utils.rs`
+  defines 58 `#[no_mangle]` names that `dll/win32/shell32`'s live C++ objects ALSO define as
+  unmangled externs, including 16 `*_RustBridge` wrappers other Rust modules call. Wiring it
+  produced **no duplicate-symbol error** — the linker resolves archive members against object
+  files in a defined order and simply picks one — so 58 live entry points silently rerouted
+  into Rust that had never executed. The guest booted, passed smoke on all three arches, then
+  froze inside explorer's taskbar `OnCreate` (two of the captured names,
+  `SHGetShellStyleHInstance` and `SHGetUserDisplayName`, sit in that path), which stopped
+  `ProcessStartupItems` and therefore the kmtest sweep: `launched=0`, nothing runnable, HLT=1.
+  **`scan_duplicate_symbols` does not catch this** — it looks Rust-vs-Rust, and the dangerous
+  direction is Rust shadowing C++ across the cohab boundary. Get the capture set before you
+  wire anything, with `llvm-nm --defined-only` over both sides:
+  `for o in build-<arch>/<module>/CMakeFiles/*.dir/*.obj; do llvm-nm --defined-only $o; done |
+  awk '$2=="T"{print $3}' | grep -v '^__Z' | sed 's/^_//; s/@[0-9]*$//' | sort -u` intersected
+  with the module's `#[no_mangle]` names. A non-empty intersection means wiring and flipping
+  are ONE change, not two. `ORPHAN-BY-DESIGN` is the marker for a module in that state, and it
+  is a GUARD, not a to-do item — the banner that says "the module is not wired yet, the .cpp is
+  still the compiled implementation" is recording why it must stay that way until the flip.
 - **A new rlib's `#[no_mangle]` symbols are absent from the staticlib** unless reached: add the
   path dep + `extern crate` + a `#[used]` force-reference block. A Cargo dependency alone is
   not a reachability path.
@@ -1288,9 +1308,29 @@ Three kinds of divergence hide in that, and they are not equally serious:
   rather than live (the tree's five call sites all pass `GetRValue`-style bytes), but it is the
   same class as msgina's `StringCchPrintfW` dropping its bound.
 
+- **Not a gap at all — the island HAS it, under a name nobody guessed.** A C `enum` member is
+  emitted by bindgen, but only fully qualified by its anonymous enum's generated tag:
+  shobjidl.h's `FVM_ICON` exists in shell32's island solely as
+  `__WIDL_shobjidl_generated_name_00000025_FVM_ICON`. Grep for the bare name and you find
+  nothing, conclude bindgen dropped it, and hand-declare `pub const FVM_ICON: DWORD = 1;`.
+  **Nine** shell32-rust modules did exactly that for the `FVM_*` family — control_panel_folder,
+  def_view_util, desktop_folder, drives_folder, folders/{CCPLItemMenu, CControlPanelEnum,
+  CDesktopFolderEnum, CDrivesFolderEnum} and shell32/CDefView — and CDefView re-declares the
+  whole `SVGIO_*` set too. Every value was checked against the island and every one is correct
+  (FVM ICON=1 SMALLICON=2 LIST=3 DETAILS=4 THUMBNAIL=5 TILE=6 THUMBSTRIP=7 CONTENT=8 AUTO=-1;
+  SVGIO BACKGROUND=0 SELECTION=1 ALLVIEW=2 TYPE_MASK=0xf), so this one is drift-in-waiting
+  rather than a live bug; the point is that it is the ONLY one of these four kinds where the
+  right fix is an alias rather than a shared crate, and where a hand-typed value can silently
+  disagree with a header the generator already read. `profile_derive` names it
+  `SWITCH_CONST_ENUM_PREFIXED` and prescribes the alias; take that finding literally and do not
+  re-declare the value. Detection without the tool: for any constant you are about to declare by
+  hand, grep the island for `_<NAME>$` before concluding it is absent.
+
 **Fix.** Port it once into a shared crate, transcribed from the header rather than from the
 copies it replaces, with known-answer tests. `strsafe-rust` (inlines) and `win32macros-rust`
-(macros + folded constants) are the two precedents.
+(macros + folded constants) are the two precedents. For the enum-member case above the fix is
+smaller and different: one `pub use crate::island::__WIDL_..._FVM_ICON as FVM_ICON;` in the
+prelude, and delete the copies.
 
 **The boundary is narrower than "core primitives", and the compiler is what finds it.** A shared
 crate cannot depend on any consumer's bindgen island, so it must express everything in primitives
@@ -1522,6 +1562,21 @@ wave16.rs whose neighbouring subnormal branch was already `wrapping_*`.
   translation output carries neither the array form nor the comment, so it reports a confident
   `0 findings` over 0 comparisons. Grep `b"L` and `\bL'` in fresh output; the correct fix is
   the crate's `w!()` macro.
+- **The ISLAND can be the one that narrows it, and then no amount of prompt or seal work
+  helps.** Every entry above blames the model. shell32's `utils.cpp` found the other source:
+  shobjidl.idl `cpp_quote`s `#define STR_FILE_SYS_BIND_DATA L"File System Bind Data"`, and the
+  bindgen island carries that exact name as `pub const STR_FILE_SYS_BIND_DATA: &[u8; 22] =
+  b"File System Bind Data\0"` — the NARROW bytes, under the right name, in the substrate the
+  translation is supposed to be able to trust. The C casts the macro to `LPWSTR` for
+  `IBindCtx::GetObjectParam`, so the array read back as UTF-16 is `"iF"`, `"el"`, `" S"`… and
+  the bind-context lookup silently never matches. The model did nothing wrong; sealing cannot
+  see it (the token IS present and IS the island's); `scan_wide_literals` cannot see it (there
+  is no `[u16; N]` and no intent comment). The tell is an island const of type `&[u8; N]` whose
+  header spelling is `L"..."`, and the fix is a wide spelling in the module's `*_support.rs`
+  with a comment saying the island's is wrong — not a cast. That island has **111** `&[u8; N]`
+  consts; the `STR_*` bind-context keys are all `L"..."` in shobjidl.idl, so this one is a
+  proven instance of a class, not a one-off. Worth a scanner: for each `&[u8; N]` const in an
+  island, grep the header for the same name with an `L` prefix.
 - **A `b"..."` behind a wide pointer is TWO different bugs, and only one of them is a bug.**
   `b"A\0S\0U\0S\0\0\0" as PCWSTR` is the content-correct one: hand-encoded UTF-16 whose only
   defect is ALIGNMENT 1. **That is a style problem, not a latent fault, and the older framing
@@ -3321,7 +3376,8 @@ not reading it** — when a quote is doing load-bearing work in an argument, re-
 says as if it argued the other way.
 
 **c2rust refuses EVERY file in a module, all at one panic site. SOLVED 2026-09-13: it is
-three function ATTRIBUTES in the module's own headers — not the include closure, not LLVM.**
+three function ATTRIBUTES in the module's own headers — not the include closure, not LLVM.
+FULLY CLOSED 2026-09-19 (msvcrt 35/35, 0 FAIL) once two further classes underneath it were fixed: see the `__label__` and calling-convention sections below.**
 Symptom: with `--c2rust` default-on, every `.c` in a module dies before payment with
 
     c2rust-transpile-0.22.1/src/c_ast/mod.rs:682:29
@@ -3363,18 +3419,77 @@ Traps, each of which cost a probe:
   constants already present and correct in `msvcrt-sys`. A blocking gate that cannot be
   satisfied sends someone transcribing constants that exist. Strip every trailing `_<role>`.
 
-**Still genuinely blocked: the `__label__` class**, and the grep the docs told you to use for
-it was wrong. Under `_USE_DUMMY_PSEH=1` the PSEH macros open a block with a GCC local-label
-declaration (`__label__ __pseh_try_end;`) that c2rust does not support — one
-`Missing child … TagDeclStmt` per label. But that is **not** only `_SEH2_TRY`: wine's
-`__TRY`/`__EXCEPT`/`__EXCEPT_CTX` expand the same way, and msvcrt's `except.c` and `cpp.c` —
-the only 2 of 37 that still refuse — contain **zero** `_SEH2_TRY` between them. Deciding
-"can this file be anchored" by grepping `_SEH2_TRY` gives a wrong answer in both directions.
+**The `__label__` class, SOLVED 2026-09-19 — and the grep the docs told you to use for it was
+wrong.** Under `_USE_DUMMY_PSEH=1` the PSEH macros open a block with a GCC local-label
+declaration (`__label__ __seh2_scope_end__;`) that c2rust cannot export — one
+`Missing child … TagDeclStmt` per label. That is **not** only `_SEH2_TRY`: wine's
+`__TRY`/`__EXCEPT`/`__EXCEPT_CTX` expand the same way, and msvcrt's `except.c` and `cpp.c`
+contain **zero** `_SEH2_TRY` between them. Deciding "can this file be anchored" by grepping
+`_SEH2_TRY` gives a wrong answer in both directions. Fix: the dummy-PSEH block in
+`sdk/lib/pseh/include/pseh/pseh2.h` is now `#ifndef _SEH2_TRY`-guarded and the anchor passes
+label-free replacements (`-D_SEH2_TRY={`, `-D_SEH2_EXCEPT(...)=} if (…) {`, …). That branch
+is INERT — the except arm is `if (_SEH2_Volatile0 || (0 && filter))`, never entered — so the
+label's only job is the `_SEH2_LEAVE` goto target, and the override deliberately leaves
+`_SEH2_LEAVE` pointing at a label that no longer exists: a TU that really uses it fails with
+`use of undeclared label` instead of being anchored against control flow it does not have.
+Two overrides are tried in order, and each is faithful exactly where it compiles: the first
+keeps the `__seh2_scope_end__:` labels and drops only the `__label__` DECLARATIONS, so they
+become function-scoped and `_SEH2_LEAVE` still has a target — legal for ONE `_SEH2_TRY`
+chain per function, a duplicate-label error for two; the second drops the labels as well,
+which handles any number of TRY blocks and turns a real `_SEH2_LEAVE` into c2rust's
+"Goto target label not found". A file is refused only when NEITHER is legal. Measured
+2026-09-19 over every SEH-using TU in the i386 compile db: **53 of 54 anchor** (the one
+holdout is `cond.tab.c`, generated bison output). Before this the number was 0 — the
+`__label__` is in `_SEH2_TRY` itself, so it blocked every one of them.
+
+**The third class: a pointer to a function whose type carries a CALLING CONVENTION.** Panic
+site is different — `convert_type.rs:518`, `ctype parameter must be a function instead of
+Attributed(...)` — and it fires whenever the address of a `__stdcall`/`__thiscall` function
+is taken (`SetConsoleCtrlHandler(handler, TRUE)`; `cxx.h`'s `DEFINE_CXX_DATA` doing
+`(char *)dtor - base` on a `__thiscall` dtor). It is **arch-dependent**: on i386 `WINAPI` IS
+such an attribute, on amd64/arm64 it is nothing. Two fixes, in this order:
+1. `_transpile_text` now tries the OTHER arches' compile dbs after the pinned one fails, and
+   prints which db actually produced the anchor and why the requested one could not. Not a
+   silent degrade — an anchor from another arch is still compiler-exact, but its pointer
+   widths and conventions are that arch's, so the caller is told.
+2. On a non-i386 target only, the anchor also erases `__thiscall`. The 64-bit compiler
+   ignores that keyword outright, so erasing it there is a no-op rather than a semantic edit;
+   on i386 it is real ABI and is never touched.
+Measured on msvcrt: raw per-arch 31/35 on i386 and 34/35 on amd64; **35/35 tool-level**
+(`0 FAIL`; the 11 remaining `.c` are in no build db at all — crt startup variants, `except_arm*.c`).
+
+More traps, each of which cost a probe:
+
+* **A guard you added to a header can be defeated by a GENERATED copy of that header.**
+  Guarding `__WINE_MALLOC` in `sdk/include/xdk/winnt_old.h` changed nothing until a rebuild,
+  because the closure actually reads `build-<arch>/sdk/include/psdk/winnt.h`, assembled from
+  the xdk sources by `add_xdk_header`. `clang -E -dD` plus the `# "file"` line markers names
+  the file that really defined the macro; the source tree does not.
+* **Fixing one class only reveals the next.** except.c/cpp.c went attribute → `__label__` →
+  calling convention, three different panic sites, each hidden behind the one before. "Still
+  blocked" is not evidence that the last fix did nothing.
+* **A bisect that reuses its output directory reports OK forever.** `c2rust transpile
+  --output-dir D` left stale results in `D`, so every probe "passed" and the bisect
+  converged on the last line of the file. `rm -rf D` between iterations, and sanity-check
+  that the full input still reproduces.
+
+**A fourth class, and the only benign one: `Unimplemented builtin _Interlocked…`.** Unlike
+the three above it does NOT kill the TU — c2rust exits 0, writes the `.rs`, and silently
+omits just the functions that used the builtin, which the strict anchor then reports as
+`missing required function anchors: <names>`. msvcrt's `file.c` loses exactly
+`tmpnam_helper` and `wtmpnam_helper` to it out of 234. **Take the `--skip-fn` and hand-write
+those bodies** — do not try to macro the builtin away. The obvious neutraliser
+`-D_InterlockedCompareExchange(d,e,c)=__sync_val_compare_and_swap(d,c,e)` (correct semantics,
+note the swapped last two arguments) makes `vcruntime/intrin.h:42`'s prototype redeclare a
+clang builtin — a hard error — and c2rust STILL exits 0 and writes output, so the damage is
+invisible unless you read stderr. Doing it on the un-underscored `InterlockedCompareExchange`
+instead cannot work either: `sdk/include/xdk/winnt_old.h:8` redefines it function-like, last
+and unguarded, and `#ifndef`-guarding THAT would leave the earlier object-like definition
+from winnt.h:2257 standing in the real build. Not worth it for two bodies.
 
 Rebuilding c2rust against a matching LLVM (`ldd $(command -v c2rust-transpile)` shows
-`libLLVM-14.so.1` against our pinned clang 19.1.7) is **no longer needed for the attribute
-class** and should not be closed wholesale on that basis — it remains the untested lever for
-the `__label__` class ONLY.
+`libLLVM-14.so.1` against our pinned clang 19.1.7) is **not needed for any of these
+classes** and is now an untested lever with no known customer.
 
 anchor is what stops the model silently stubbing a hard body or turning a function-like macro
 into a phantom extern, so trading it away to get past this is a real cost on the other side —
@@ -4247,7 +4362,7 @@ C's second SEH also covers the window between probe and copy, and a range check 
 buffer is, never that it stays mapped.
 
 **The MIRROR CASE, which the scanner structurally cannot see: the probe survived and the
-HANDLER did not.** `MiDoPoolCopy` / `MiDoMappedCopy` (`ARM3/virtual.rs`, three sites) still
+HANDLER did not.** `MiDoPoolCopy` / `MiDoMappedCopy` (`ARM3/virtual.rs`, four probe sites) still
 call `ProbeForWrite` — so "did it dereference a user pointer where its C validated one"
 answers *yes, it validated*, and neither function appears in the baseline. But the C wraps
 that probe in `_SEH2_TRY { … } _SEH2_EXCEPT(EXCEPTION_EXECUTE_HANDLER) { Status =
@@ -6041,6 +6156,24 @@ a feature flag, a cached handle, an errno policy — has this hole. If the harne
 the state both sides are in, it cannot tell you which kind of difference it just measured, and
 it will confidently report the wrong one. Note this is the same shape as the stale-generated-
 header class: the tool answers honestly, but answers a different question than the one asked.
+
+### A crate parked out of `workspace.members` still lints — cargo metadata is not what the scanners read
+**Symptom.** A translated-but-uncompilable crate is deliberately kept OUT of
+`sdk/lib/rust/Cargo.toml`'s `members` so its thousands of errors cannot take the workspace
+`cargo check` down for every other lane — and the lane's landing then bounces on lint findings
+from that crate anyway.
+
+**Cause.** The source scanners walk DIRECTORIES, not cargo metadata. Parking changes what
+`cargo` builds and nothing about what `vibeos-cli check` reads. On 2026-08-04 the parked
+`msv1_0-rust` and `aclui-rust` emitted ~14 new findings on every build — catch-all match arms,
+wide literals, `.unwrap()` — for crates nothing compiled.
+
+**Fix.** Committing the parked crate is still right: the paid output IS the artifact and
+regenerating it costs real money (AGENTS.md, "never delete a translated `.rs`"). So budget for
+clearing its lint findings in the SAME session, or do not commit it yet. **Fix them rather than
+baseline them** — on that batch every finding was a real defect. The lint baseline is for things
+that are correct-as-translated (a deliberately dropped `DPRINT`, a per-module `BCHAR = WCHAR`),
+not for a crate whose bodies simply have not been reviewed yet.
 
 ### A gate can be RED for reasons that are not in the tree at all
 Symptom: a gate goes RED with **no failing test**. Cause: the verdict depended on host state,
