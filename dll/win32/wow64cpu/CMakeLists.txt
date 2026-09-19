@@ -52,7 +52,14 @@ set(_wow64_ladder
     ${REACTOS_SOURCE_DIR}/build-fex-hello/fault32.exe
     ${REACTOS_SOURCE_DIR}/build-fex-hello/thread32.exe
     ${REACTOS_SOURCE_DIR}/build-fex-hello/selfmod32.exe
-    ${REACTOS_SOURCE_DIR}/build-fex-hello/reg32.exe)
+    ${REACTOS_SOURCE_DIR}/build-fex-hello/reg32.exe
+    # spawn32: PROMOTED out of the diagnostic extras 2026-09-19, the day it
+    # first reported 0x600D. It measured guest CreateProcess while that gap was
+    # open; now that the gap is closed it is a parity guest like the rest, and
+    # belongs in the unconditional set so a REGRESSION can red it. Its old
+    # reason for being opt-in -- it could BUGCHECK the machine -- died with the
+    # dropped _SEH2_EXCEPT that caused it.
+    ${REACTOS_SOURCE_DIR}/build-fex-hello/spawn32.exe)
 
 # Best-effort robustness extras. Their pass criterion is "still running after
 # 8-10s", which ladder.py explicitly does NOT check, so a missing one must not
@@ -92,14 +99,6 @@ set(_wow64_extras
     # tools/stress/lua/build.sh). Same deal as sqlite32 -- built on demand,
     # machine-verdicted (0x600D), graded from ladder.py's OPTIONAL table.
     ${REACTOS_SOURCE_DIR}/tools/stress/lua/lua32.exe
-    # spawn32: the DIAGNOSTIC process-creation guest, built only under
-    # VIBEOS_WOW64_SPAWN=1. Here rather than in _wow64_ladder because it must
-    # not be staged unless asked for: measured 2026-09-19, a 32-bit guest
-    # calling CreateProcessW BUGCHECKs the kernel (0x1E) after
-    # NtCreateProcessEx succeeds, so staging it unconditionally would red every
-    # lane's amd64 boot. ladder.py grades it from its DIAGNOSTIC table, and
-    # winlogon runs it LAST so a bugcheck cannot cost another guest its verdict.
-    ${REACTOS_SOURCE_DIR}/build-fex-hello/spawn32.exe
     )
 
 set(_wow64_guest_ok TRUE)

@@ -63,6 +63,11 @@ LADDER: dict[str, int] = {
     "fault32": 0x600D,
     "selfmod32": 0x600D,
     "reg32": 0x600D,
+    # Promoted from DIAGNOSTIC 2026-09-19, the day it first reported 0x600D.
+    # It was built to MEASURE guest CreateProcess while that gap was open; a
+    # diagnostic guest that starts passing has finished its job, and leaving it
+    # ungraded would mean a regression in the thing it proved could go unnoticed.
+    "spawn32": 0x600D,
 }
 
 # Optional guests: reported when seen, never required. This table is the PARITY
@@ -92,26 +97,27 @@ OPTIONAL: dict[str, int] = {
 # budget, and one guest that hangs has cost four later ones their verdicts
 # before now (marshal32, six days stale, ate 420s). spawn32 caps its own wait
 # at 30s for that reason.
-DIAGNOSTIC: dict[str, int] = {
-    "spawn32": 0x600D,
-}
+# Empty today, and that is a good state rather than an unused mechanism: the
+# machinery below is what let spawn32 measure an open gap for a day without
+# reddening any lane's gate, and it is the right home for the next guest
+# written against a hole we already have a task for.
+DIAGNOSTIC: dict[str, int] = {}
 
-# Diagnostic guests are OPT-IN, and spawn32 is why the rule is written this
-# strongly. Measured 2026-09-19 on amd64: a 32-bit guest calling CreateProcessW
-# does not fail cleanly -- `NtCreateProcessEx` SUCCEEDS, the child's PEB32 is
-# built, the process parameters are written into it, and then the kernel takes
-# a BUGCHECK 0x1E (c0000005). A guest that can bugcheck cannot be made
-# ungraded: "report, never red" works for a bad exit code and does nothing at
-# all for a dead machine, which reds the boot for every lane in the fleet.
+# A diagnostic guest that can BUGCHECK must be kept off the media entirely, not
+# merely left ungraded, and spawn32 is where that was learned. For one day it
+# was both: a 32-bit CreateProcessW took the kernel down with a 0x1E
+# (c0000005) AFTER NtCreateProcessEx had already succeeded, and "report, never
+# red" buys nothing against a dead machine -- it reds the boot for every lane
+# in the fleet. The answer was to not stage it at all unless asked (built under
+# VIBEOS_WOW64_SPAWN=1, staged `if(EXISTS)`, run last of all guests so its
+# crash could not cost anyone else a verdict).
 #
-# So the not-graded promise is kept by NOT STAGING it unless someone asks:
-# build-hello-compute.sh builds spawn32 only under VIBEOS_WOW64_SPAWN=1, the
-# CMake list stages it only `if(EXISTS)`, and winlogon runs it LAST of all
-# guests so that even when it does bring the machine down, every other verdict
-# has already been reported. That last point is the sqlite32 rule -- a guest
-# that can take the boot down must be last or its crash silently costs every
-# guest after it -- and spawn32 is a harder case than sqlite32, not a softer
-# one.
+# All of that is history now: the bugcheck was a dropped _SEH2_EXCEPT, the gap
+# it measured is closed, and spawn32 is an ordinary parity guest built and
+# staged with the rest. Kept written down because the next diagnostic guest
+# aimed at a crashing gap needs the same three precautions -- and because the
+# ordering rule INVERTS on promotion: a graded guest must run BEFORE sqlite32,
+# never after it.
 
 
 def staged_guests() -> list[str]:

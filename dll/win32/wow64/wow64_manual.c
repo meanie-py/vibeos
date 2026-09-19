@@ -6255,6 +6255,170 @@ VOID Wow64FreeThreadCpuArea(VOID);
 NTSTATUS WINAPI NtTerminateThread(HANDLE ThreadHandle, NTSTATUS ExitStatus);
 VOID WINAPI RtlExitUserThread(NTSTATUS Status);
 
+/* ---- PEB64 process parameters for a child a 32-BIT parent created --------
+ *
+ * The mirror image of wow64.c's M3b down-conversion, and needed for the
+ * opposite reason. When a NATIVE parent spawns an i386 child, its 64-bit
+ * kernel32 writes 64-bit RTL_USER_PROCESS_PARAMETERS into PEB64, the child's
+ * LdrpInitializeProcess reads them, and wow64.dll then DERIVES the 32-bit copy
+ * for the guest. A 32-bit parent cannot do that first step: it can only build
+ * a 32-bit block, and since Wow64pPublishRemotePeb32 it correctly writes that
+ * into the child's PEB32. Nothing fills PEB64 -- and PEB64 is what runs first,
+ * so the child died in LdrpInitializeProcess on its very first dereference,
+ * `(*(*Peb).ProcessParameters).ImagePathName.Buffer`, before printing a line.
+ *
+ * So we widen the block the guest already wrote and point PEB64 at it. Note
+ * what this does NOT do: no string bytes are copied. Every Buffer the guest
+ * built already lives in the CHILD's address space, below 2GB, which a 64-bit
+ * pointer addresses perfectly well -- so the 64-bit strings point at the very
+ * same characters and only the fixed header is rebuilt. The environment block
+ * is shared the same way.
+ *
+ * The output is marked NORMALIZED and carries absolute pointers, which is why
+ * the denormalized case costs nothing extra: a denormalized Buffer is an
+ * offset from the block base, so resolving it is one addition done here
+ * instead of by the reader. Which fields that applies to is not a guess --
+ * rtl-ppb's RtlDeNormalizeProcessParams adjusts exactly the eight
+ * UNICODE_STRINGs below and deliberately leaves Environment alone, because the
+ * environment is a separate allocation rather than part of the block.
+ *
+ * Layout MEASURED with the same offsetof-plus-control method as
+ * BASE_CREATE_PROCESS, and the control EARNED ITS KEEP here: transcribing the
+ * struct from wine/winternl.h gave sizeof 676/1040 against the 656/1008 that
+ * ntdll-sys/src/size_check_{i386,amd64}.rs asserts. The five trailing fields
+ * that header carries (EnvironmentSize, EnvironmentVersion,
+ * PackageDependencyData, ProcessGroupId, LoaderThreads) are not in the struct
+ * this tree builds against. Nothing above RuntimeData moved, so a derivation
+ * would have produced correct field offsets and the WRONG BLOCK SIZE.
+ *
+ *   field                  i386    amd64          field        i386   amd64
+ *   MaximumLength          0x00    0x00           Environment  0x48   0x80
+ *   Length                 0x04    0x04           dwX..Show    0x4c   0x88
+ *   Flags                  0x08    0x08           WindowTitle  0x70   0xb0
+ *   DebugFlags             0x0c    0x0c           DesktopInfo  0x78   0xc0
+ *   ConsoleHandle          0x10    0x10           ShellInfo    0x80   0xd0
+ *   ConsoleFlags           0x14    0x18           RuntimeData  0x88   0xe0
+ *   StandardInput          0x18    0x20           sizeof       0x290  0x3f0
+ *   StandardOutput         0x1c    0x28
+ *   StandardError          0x20    0x30
+ *   CurDir.DosPath         0x24    0x38
+ *   CurDir.Handle          0x2c    0x48
+ *   DllPath                0x30    0x50
+ *   ImagePathName          0x38    0x60
+ *   CommandLine            0x40    0x70
+ */
+#define WOW64_UPP32_SIZE        0x290
+#define WOW64_UPP64_SIZE        0x3f0
+#define WOW64_UPP32_HDR         0x90   /* everything up to DLCurrentDirectory */
+#define WOW64_PEB32_PARAMS_OFF  0x10
+#define WOW64_PEB64_PARAMS_OFF  0x20
+#define WOW64_PPF_NORMALIZED    0x00000001
+
+static NTSTATUS Wow64pPublishPeb64Params(HANDLE Process, ULONG_PTR Peb32,
+                                         ULONGLONG Peb64)
+{
+    unsigned char Hdr32[WOW64_UPP32_HDR];
+    unsigned char Blk64[WOW64_UPP64_SIZE];
+    ULONG Upp32 = 0;
+    ULONG_PTR StrBase;
+    PVOID Remote = NULL;
+    SIZE_T Size = WOW64_UPP64_SIZE, Done = 0;
+    ULONGLONG Remote64;
+    NTSTATUS St;
+    unsigned i;
+
+    /* Where the guest put its own block. */
+    St = NtReadVirtualMemory(Process,
+                             (PVOID)(Peb32 + WOW64_PEB32_PARAMS_OFF),
+                             &Upp32, sizeof(Upp32), &Done);
+    if (St < 0 || Done != sizeof(Upp32) || !Upp32)
+    {
+        DbgPrint("[WOW64] PEB64 params: child PEB32->ProcessParameters is "
+                 "empty (st=%08lx) -- nothing to widen\n", St);
+        return (NTSTATUS)0xC000000D; /* STATUS_INVALID_PARAMETER */
+    }
+
+    St = NtReadVirtualMemory(Process, (PVOID)(ULONG_PTR)Upp32,
+                             Hdr32, sizeof(Hdr32), &Done);
+    if (St < 0 || Done != sizeof(Hdr32))
+        return St < 0 ? St : (NTSTATUS)0xC0000018; /* CONFLICTING_ADDRESSES */
+
+    /* A denormalized Buffer is an offset from the block base; a normalized one
+     * is already absolute. Resolve to absolute either way, once. */
+    StrBase = (*(ULONG *)(Hdr32 + 0x08) & WOW64_PPF_NORMALIZED)
+                  ? 0 : (ULONG_PTR)Upp32;
+
+    for (i = 0; i < sizeof(Blk64); i++)
+        Blk64[i] = 0;
+
+#define UPP_U32(o32, o64)  (*(ULONG *)(Blk64 + (o64)) = *(ULONG *)(Hdr32 + (o32)))
+#define UPP_PTR(o32, o64)  (*(ULONGLONG *)(Blk64 + (o64)) =                    \
+                            (ULONGLONG)*(ULONG *)(Hdr32 + (o32)))
+/* UNICODE_STRING32{Length,Max,Buffer} -> UNICODE_STRING64{Length,Max,pad,Buffer}.
+ * A zero Buffer stays zero rather than becoming StrBase, which would hand the
+ * reader the block header as if it were a string. */
+#define UPP_STR(o32, o64)                                                      \
+    do {                                                                       \
+        ULONG _b = *(ULONG *)(Hdr32 + (o32) + 4);                              \
+        *(USHORT *)(Blk64 + (o64) + 0) = *(USHORT *)(Hdr32 + (o32) + 0);       \
+        *(USHORT *)(Blk64 + (o64) + 2) = *(USHORT *)(Hdr32 + (o32) + 2);       \
+        *(ULONGLONG *)(Blk64 + (o64) + 8) =                                    \
+            _b ? (ULONGLONG)((ULONG_PTR)_b + StrBase) : 0ULL;                  \
+    } while (0)
+
+    /* The block describes itself as fully used: the strings it points at live
+     * outside it, so there is no arena tail to account for. */
+    *(ULONG *)(Blk64 + 0x00) = WOW64_UPP64_SIZE;   /* MaximumLength */
+    *(ULONG *)(Blk64 + 0x04) = WOW64_UPP64_SIZE;   /* Length        */
+    *(ULONG *)(Blk64 + 0x08) =
+        *(ULONG *)(Hdr32 + 0x08) | WOW64_PPF_NORMALIZED;
+    UPP_U32(0x0c, 0x0c);                            /* DebugFlags    */
+    UPP_PTR(0x10, 0x10);                            /* ConsoleHandle */
+    UPP_U32(0x14, 0x18);                            /* ConsoleFlags  */
+    UPP_PTR(0x18, 0x20);                            /* StandardInput */
+    UPP_PTR(0x1c, 0x28);                            /* StandardOutput*/
+    UPP_PTR(0x20, 0x30);                            /* StandardError */
+    UPP_STR(0x24, 0x38);                            /* CurDir.DosPath*/
+    UPP_PTR(0x2c, 0x48);                            /* CurDir.Handle */
+    UPP_STR(0x30, 0x50);                            /* DllPath       */
+    UPP_STR(0x38, 0x60);                            /* ImagePathName */
+    UPP_STR(0x40, 0x70);                            /* CommandLine   */
+    UPP_PTR(0x48, 0x80);                            /* Environment   */
+    for (i = 0; i < 9; i++)                         /* dwX..wShowWindow */
+        UPP_U32(0x4c + i * 4, 0x88 + i * 4);
+    UPP_STR(0x70, 0xb0);                            /* WindowTitle   */
+    UPP_STR(0x78, 0xc0);                            /* DesktopInfo   */
+    UPP_STR(0x80, 0xd0);                            /* ShellInfo     */
+    UPP_STR(0x88, 0xe0);                            /* RuntimeData   */
+#undef UPP_U32
+#undef UPP_PTR
+#undef UPP_STR
+
+    St = NtAllocateVirtualMemory(Process, &Remote, 0, &Size,
+                                 MEM_COMMIT | MEM_RESERVE, PAGE_READWRITE);
+    if (St < 0)
+    {
+        DbgPrint("[WOW64] PEB64 params: allocate in child failed %08lx\n", St);
+        return St;
+    }
+
+    St = NtWriteVirtualMemory(Process, Remote, Blk64, sizeof(Blk64), &Done);
+    if (St < 0 || Done != sizeof(Blk64))
+        return St < 0 ? St : (NTSTATUS)0x8000000D; /* STATUS_PARTIAL_COPY */
+
+    Remote64 = (ULONGLONG)(ULONG_PTR)Remote;
+    St = NtWriteVirtualMemory(Process,
+                              (PVOID)(ULONG_PTR)(Peb64 + WOW64_PEB64_PARAMS_OFF),
+                              &Remote64, sizeof(Remote64), &Done);
+    if (St < 0 || Done != sizeof(Remote64))
+        return St < 0 ? St : (NTSTATUS)0x8000000D;
+
+    DbgPrint("[WOW64] PEB64->ProcessParameters published at %p (widened from "
+             "PEB32 block %08lx, strings %s)\n", Remote, Upp32,
+             StrBase ? "denormalized" : "normalized");
+    return 0;
+}
+
 /*
  * Wow64pCreateForeignInitialThread — the half of task #64 that needs no channel.
  *
@@ -6342,6 +6506,22 @@ static NTSTATUS Wow64pCreateForeignInitialThread(HANDLE Process,
                  "RUNNING process (ProcessHandle=%p Ldr=%p) has no per-thread "
                  "entry in the target (task #64).\n", Process, (PVOID)(ULONG_PTR)Ldr);
         return (NTSTATUS)0xC0000002; /* STATUS_NOT_IMPLEMENTED */
+    }
+
+    /* The child's 64-bit loader runs before its wow64.dll and reads PEB64's
+     * process parameters, which only a 64-bit parent would have filled. Widen
+     * the block the guest wrote into PEB32 and point PEB64 at it, BEFORE the
+     * thread exists -- once it is running the loader has already dereferenced
+     * that pointer. A failure here is fatal to the child, so it fails the
+     * creation rather than starting a process that cannot survive its own
+     * first dereference. */
+    St = Wow64pPublishPeb64Params(Process, (ULONG_PTR)TargetPeb32,
+                                  Pbi.PebBaseAddress);
+    if (St < 0)
+    {
+        DbgPrint("[WOW64] NtCreateThread: PEB64 params not published %08lx -- "
+                 "refusing rather than starting a child that cannot load\n", St);
+        return St;
     }
 
     /* StartAddress is never reached: the child's LdrpInitializeProcess diverts

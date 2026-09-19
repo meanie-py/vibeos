@@ -1369,7 +1369,7 @@ unsafe fn TryStartWow64Spawn() {
         let mut ExitCode: DWORD = 0xDEAD;
         GetExitCodeProcess(Pi.hProcess, &mut ExitCode);
         DbgPrint(
-            b"[WINLOGON] spawn32.exe exit = 0x%lx (DIAGNOSTIC, 0x600D = gap closed)\n\0".as_ptr()
+            b"[WINLOGON] spawn32.exe exit = 0x%lx (0x600D = PASS)\n\0".as_ptr()
                 as *const i8,
             ExitCode,
         );
@@ -2622,6 +2622,16 @@ pub unsafe extern "system" fn WinMain(
          * 32-bit process. The only ladder rung whose failure is silent. */
         TryStartWow64Reg();
 
+        /* Guest process creation. MOVED AHEAD of the stress guests 2026-09-19,
+         * when it started passing and joined the graded parity set: it used to
+         * run dead last because it bugchecked the kernel reliably, and anything
+         * after it would never report. That reason is gone, and the ordering
+         * rule now cuts the other way -- sqlite32 carries the registered
+         * BUGCHECK, so a GRADED guest must run BEFORE it or an sqlite32 crash
+         * silently costs spawn32 its verdict, which is exactly what the rule
+         * above describes happening to lua32. */
+        TryStartWow64Spawn();
+
         /* Third-party stress: real SQLite on the storage + allocator axis.
          * LAST, after every parity guest: it is slow third-party code under
          * emulation, and running it earlier delays the parity set past the
@@ -2641,15 +2651,6 @@ pub unsafe extern "system" fn WinMain(
 
         TryStartWow64Sqlite();
 
-        /* DEAD LAST, after even the stress guests, and for a harder reason
-         * than theirs. sqlite32 goes late because it is slow and has a
-         * registered on-disk BUGCHECK; spawn32 goes later still because it
-         * bugchecks the kernel RELIABLY today (0x1E, measured 2026-09-19 on
-         * amd64, after NtCreateProcessEx has already succeeded). Anything
-         * sequenced after it would never report at all. Normally absent
-         * entirely -- it is built only under VIBEOS_WOW64_SPAWN=1 -- so on
-         * every ordinary boot this is a silent no-op. */
-        TryStartWow64Spawn();
 
         /* The testgui pair never exits, so it would sit on top of DOOM's window.
          * When the WoW64 doom is staged, DOOM is the demo — skip them. */
@@ -2748,6 +2749,16 @@ pub unsafe extern "system" fn WinMain(
         TryStartWow64Selfmod();
         /* Wow6432Node redirection, isolation and the two-view delete. */
         TryStartWow64Reg();
+
+        /* Guest process creation. MOVED AHEAD of the stress guests 2026-09-19,
+         * when it started passing and joined the graded parity set: it used to
+         * run dead last because it bugchecked the kernel reliably, and anything
+         * after it would never report. That reason is gone, and the ordering
+         * rule now cuts the other way -- sqlite32 carries the registered
+         * BUGCHECK, so a GRADED guest must run BEFORE it or an sqlite32 crash
+         * silently costs spawn32 its verdict, which is exactly what the rule
+         * above describes happening to lua32. */
+        TryStartWow64Spawn();
         /* Third-party stress: real SQLite, last — see the note at the other
          * call site on why it must not precede the parity guests. */
         /* Third-party stress #2: real Lua, setjmp/longjmp-heavy. BEFORE
@@ -2756,15 +2767,6 @@ pub unsafe extern "system" fn WinMain(
         TryStartWow64Lua();
         TryStartWow64Sqlite();
 
-        /* DEAD LAST, after even the stress guests, and for a harder reason
-         * than theirs. sqlite32 goes late because it is slow and has a
-         * registered on-disk BUGCHECK; spawn32 goes later still because it
-         * bugchecks the kernel RELIABLY today (0x1E, measured 2026-09-19 on
-         * amd64, after NtCreateProcessEx has already succeeded). Anything
-         * sequenced after it would never report at all. Normally absent
-         * entirely -- it is built only under VIBEOS_WOW64_SPAWN=1 -- so on
-         * every ordinary boot this is a silent no-op. */
-        TryStartWow64Spawn();
         /* E4c robustness: a stock i386 OS applet nobody wrote for this test —
          * menus, timers, dialog resources. Launched BEFORE doom so doom's
          * window (created last) stays the demo on top. */
