@@ -374,6 +374,61 @@ def test_an_unbuilt_guest_is_not_stale(tmp_path):
     assert ladder.stale_guests(repo) == []
 
 
+def _with_optional(repo, guest="lua32", fetched="tools/stress/lua/src/lua.c"):
+    """Add an OPTIONAL guest: our two sources, its .exe, and a fetched
+    third-party file whose mtime is NEWER than everything (as a re-fetch
+    leaves it)."""
+    exe_rel, srcs = ladder.OPTIONAL_SOURCE[guest]
+    for rel in [*srcs, exe_rel, fetched]:
+        f = repo / rel
+        f.parent.mkdir(parents=True, exist_ok=True)
+        f.write_text("x")
+    for rel in srcs:
+        os.utime(repo / rel, (_T0 - 1000, _T0 - 1000))
+    os.utime(repo / exe_rel, (_T0 - 500, _T0 - 500))
+    os.utime(repo / fetched, (_T0, _T0))  # curl ran just now
+    return repo
+
+
+def test_fetched_upstream_source_does_not_make_a_guest_stale(tmp_path):
+    """THE trap. tools/stress/lua/src/ and tools/stress/sqlite/amalg/ are
+    gitignored and re-fetched on demand, so their mtime records WHEN CURL RAN,
+    not when anything changed. A build on a machine that had to re-fetch leaves
+    upstream newer than a binary that is perfectly current. Keying on it would
+    red a healthy guest on a schedule set by the network."""
+    repo = _with_optional(_built_tree(tmp_path))
+    assert ladder.stale_guests(repo) == []
+    extra, staged, _ = ladder.gate_decision(repo, "amd64")
+    assert extra == ["--ladder"] and staged
+
+
+def test_our_own_optional_source_does_make_it_stale(tmp_path):
+    """The positive control for the trap above: the check must still FIRE on
+    the two files we own, or excluding upstream would have excluded everything.
+    lua32 is the newest binary in the tree today and the stalest in a
+    fortnight, for exactly the reason marshal32 was."""
+    repo = _with_optional(_built_tree(tmp_path))
+    os.utime(repo / "tools/stress/lua/Lua32.c", (_T0, _T0))
+    assert ladder.stale_guests(repo) == ["lua32 (tools/stress/lua/Lua32.c is newer)"]
+
+
+def test_an_optional_guests_build_script_also_invalidates_it(tmp_path):
+    repo = _with_optional(_built_tree(tmp_path))
+    os.utime(repo / "tools/stress/lua/build.sh", (_T0, _T0))
+    assert ladder.stale_guests(repo) == ["lua32 (tools/stress/lua/build.sh is newer)"]
+
+
+def test_an_absent_optional_guest_is_not_stale(tmp_path):
+    """OPTIONAL guests are built by a script that fetches from the network, so
+    they are absent in most trees. Absent means nobody built it --
+    media_optional_staged handles that by not grading it. The LADDER rule that
+    an unmapped guest reads as stale is right there and wrong here."""
+    repo = _built_tree(tmp_path)
+    for exe_rel, _ in ladder.OPTIONAL_SOURCE.values():
+        assert not (repo / exe_rel).exists()
+    assert ladder.stale_guests(repo) == []
+
+
 def test_never_built_keeps_the_plain_reason(tmp_path):
     """No guests on disk is the ordinary case — most worktrees — and must not be
     dressed up as a staging fault."""

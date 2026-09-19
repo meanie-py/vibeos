@@ -134,6 +134,30 @@ GUEST_SOURCE: dict[str, str] = {
 # importlib) invalidates every guest just as a source edit invalidates one.
 GUEST_BUILDER = "tools/fex/build-hello-compute.sh"
 
+# The OPTIONAL guests live somewhere else entirely: their own dir under
+# tools/stress/, their own build.sh, and their .exe beside the source rather
+# than in build-fex-hello/. Value is (exe, [OUR sources]).
+#
+# Only OUR two files per guest are listed, and that is the whole subtlety.
+# Each dir also holds fetched third-party code -- tools/stress/lua/src/ (Lua
+# 5.4.7) and tools/stress/sqlite/amalg/ (the amalgamation) -- both gitignored,
+# both re-fetched on demand by build.sh. Their mtime records WHEN CURL RAN, not
+# when anything changed, so a build on a machine that had to re-fetch leaves
+# upstream source newer than a binary that is perfectly current. Including them
+# would red a healthy guest on a schedule set by the network. The question this
+# check asks is "did OUR source move after we built", and upstream cannot
+# answer it.
+OPTIONAL_SOURCE: dict[str, tuple[str, list[str]]] = {
+    "lua32": (
+        "tools/stress/lua/lua32.exe",
+        ["tools/stress/lua/Lua32.c", "tools/stress/lua/build.sh"],
+    ),
+    "sqlite32": (
+        "tools/stress/sqlite/sqlite32.exe",
+        ["tools/stress/sqlite/Sqlite32.c", "tools/stress/sqlite/build.sh"],
+    ),
+}
+
 
 def stale_guests(repo: Path) -> list[str]:
     """Guests whose .exe is OLDER than the source it was built from.
@@ -159,8 +183,6 @@ def stale_guests(repo: Path) -> list[str]:
     a gap in this check, and it must not read as freshness.
     """
     out: list[str] = []
-    builder = repo / GUEST_BUILDER
-    builder_mtime = builder.stat().st_mtime if builder.is_file() else 0.0
     for guest in LADDER:
         exe = repo / "build-fex-hello" / f"{guest}.exe"
         if not exe.is_file():
@@ -169,15 +191,33 @@ def stale_guests(repo: Path) -> list[str]:
         if rel is None:
             out.append(f"{guest} (no source mapping)")
             continue
+        out.extend(_newer_than(repo, guest, exe, [rel, GUEST_BUILDER]))
+
+    # OPTIONAL guests are built on demand by a script that FETCHES, so they are
+    # absent in most trees. Absent means "nobody built it", which
+    # media_optional_staged already handles by not grading it -- so unlike a
+    # LADDER guest, an absent one is not a hole in this check and must not read
+    # as stale. Only a binary that EXISTS is compared.
+    for guest, (exe_rel, srcs) in OPTIONAL_SOURCE.items():
+        exe = repo / exe_rel
+        if not exe.is_file():
+            continue
+        out.extend(_newer_than(repo, guest, exe, srcs))
+    return out
+
+
+def _newer_than(repo: Path, guest: str, exe: Path, sources: list[str]) -> list[str]:
+    """Which of `sources` postdates `exe`. A source that does not exist is
+    reported, not skipped: the map naming a file the tree does not have is a
+    broken mapping, and silence about it would read as freshness."""
+    built = exe.stat().st_mtime
+    out: list[str] = []
+    for rel in sources:
         src = repo / rel
         if not src.is_file():
             out.append(f"{guest} (source {rel} missing)")
-            continue
-        built = exe.stat().st_mtime
-        if src.stat().st_mtime > built:
+        elif src.stat().st_mtime > built:
             out.append(f"{guest} ({rel} is newer)")
-        elif builder_mtime > built:
-            out.append(f"{guest} ({GUEST_BUILDER} is newer)")
     return out
 
 
