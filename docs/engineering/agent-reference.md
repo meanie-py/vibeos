@@ -70,6 +70,13 @@ could have caught in seconds. Every line below is a batch that actually bounced.
 - **`./vibeos-cli check-tooling`** when the lane touches `tools/*.py`. `ruff check` plus a `-k`
   pytest subset is NOT this gate: `ruff format --check` is a separate check inside it, and one
   unformatted dict literal bounced a batch as TOOLING_FAIL after the full queue wait.
+- **`./vibeos-cli check --strict --scope source-deferred`** when the lane adds a file walk,
+  or any Python the source scanners read. The gate runs that partition in STRICT mode and
+  plain `check` does not, so `check` goes green on exactly what the conductor rejects as
+  LINT_FAIL. It takes ten seconds and reproduces the verdict. (`scan_unpruned_walk` bounced a
+  batch for a bare `rglob("*.rs")` over a crate — not a style point: a crate's `target/` holds
+  generated copies of its own modules, so an unpruned walk answers questions from build
+  artifacts. Use `tools/source_walk.py source_files()`.)
 - **`./vibeos-cli difftest`** when the lane wires a new `.rs` into `msvcrt-crt-rust` /
   `cnt-rust` / `rtl-rust`. The host harness links the subject crate beside the reference C, so a
   new `#[no_mangle]` can collide with a test's own fake stub or the reference TU's data globals
@@ -82,6 +89,17 @@ batch NET_FLAKE, and the gate's three retries all fire inside the same window, s
 rescue it. `./vibeos-cli host-status`, submit, then leave the host alone. Backgrounding `land`
 and editing while it runs fails `receipt-validation` with "Tooling inputs changed during
 checks" — which reads exactly like an intermittent flake and is not one.
+
+**And that applies from ANOTHER WORKTREE, which the code does not look like it should.**
+`source_identity()` hashes `git ls-files` in the GATING repo, so the natural reading is that
+work in a sibling checkout cannot reach the conductor's integration worktree. It reaches it
+anyway. Measured 2026-09-19: tip `51e72900c8c9` was REJECTED TOOLING_FAIL — all 56 checks
+green, only `receipt-validation` failing — while its author ran `check-tooling` and `git
+merge` in a sibling worktree, and the byte-identical tip landed as `f5d93d6c2174` on
+resubmission with nothing changed but the author sitting still. Same commit, both verdicts.
+So the rule is not "don't edit your own gating tree", it is **don't touch the repo at all
+while your lane is in the queue** — and a `receipt-validation` failure with every substantive
+check green is that, not a defect in your change.
 
 **A green local gate is WARM unless you pass `--clean`, so it is not evidence the tree builds
 cold.** A warm gate once reported OK on a tree whose i386 build failed cold, minted a push
