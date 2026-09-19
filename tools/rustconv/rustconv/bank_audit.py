@@ -525,6 +525,31 @@ class Redundancy:
     dirs: list[str]
     integrated: bool
     identical: bool
+    #: Any copy is a `.partial` — a rejected or truncated body. Then the divergence is a
+    #: RETRY, and a retry after a wrong deterministic audit is legitimate (the second
+    #: purchase is the one you keep). Divergent copies that are ALL completed `.rs` are
+    #: the class that was bought again with nothing rejected in between.
+    retry: bool
+    module: str
+
+
+def bank_module(dir_name: str) -> str:
+    """The MODULE a response dir belongs to — `20260919-022222-file.c` and
+    `msvcrt__file__factseal_v1__callseal_v1` are both `file`.
+
+    Getting this wrong is the single most productive bug in this area, and it was found
+    twice in one afternoon from opposite directions. Splitting `<group>__<module>__<flags>`
+    and taking `parts[0]` buckets by GROUP, collapsing 37 distinct shell32 modules into
+    one — and every cross-module pair that invents is two different modules' completed
+    bodies, which lands in the "bought again" class by construction. Keeping the `.cpp`
+    on the timestamped side is the mirror-image error: `utils.cpp` and `utils` then read
+    as different modules and real duplicate pairs are discarded as collisions.
+    """
+    m = re.match(r"^\d{8}-\d{6}-(.+?)(?:\.\w+)?$", dir_name)
+    if m:
+        return m.group(1)
+    parts = dir_name.split("__")
+    return parts[1] if len(parts) > 1 else dir_name
 
 
 def _body_hash(path: Path) -> str | None:
@@ -577,9 +602,28 @@ def redundancies(reports: list[DirReport]) -> tuple[list[Redundancy], list[str]]
             continue
         hashes = {d: _body_hash(path) for d, path in by_dir.items()}
         identical = len(set(hashes.values())) == 1 and None not in hashes.values()
-        dupes.append(Redundancy(name, sorted(by_dir), resolved[name], identical))
         for d in by_dir:
             agree[(d, name)] = identical
+        # Group by MODULE before calling anything a duplicate: shell32 has an
+        # `IsRegItem` in CDrivesFolder, CDesktopFolder and CControlPanelFolder, and
+        # those are three different functions that share a name, not one bought thrice.
+        mods: dict[str, list[str]] = {}
+        for d in by_dir:
+            mods.setdefault(bank_module(d), []).append(d)
+        for mod, dirs in sorted(mods.items()):
+            if len(dirs) < 2:
+                continue
+            same = len({hashes[d] for d in dirs}) == 1 and all(hashes[d] for d in dirs)
+            dupes.append(
+                Redundancy(
+                    name,
+                    sorted(dirs),
+                    resolved[name],
+                    same,
+                    any(by_dir[d].suffix == ".partial" for d in dirs),
+                    mod,
+                )
+            )
 
     cache_dirs = {r.name for r in reports if not _RE_RUN_ARCHIVE.match(r.name)}
     safe_archives = [
@@ -626,28 +670,44 @@ def format_report(reports: list[DirReport], verbose: bool = False) -> str:
             lines.append("")
 
     dupes, safe_archives = redundancies(reports)
-    rebought = [d for d in dupes if not d.identical]
+    divergent = [d for d in dupes if not d.identical]
+    rebought = [d for d in divergent if not d.retry]
+    retried = [d for d in divergent if d.retry]
     mirrored = [d for d in dupes if d.identical]
     if rebought:
-        unshipped = [d for d in rebought if not d.integrated]
+        by_mod: dict[str, int] = {}
+        for d in rebought:
+            by_mod[d.module] = by_mod.get(d.module, 0) + 1
         lines.append(
-            f"BOUGHT MORE THAN ONCE — {len(rebought)} function(s) whose copies DIFFER"
-            f"{f', {len(unshipped)} still unintegrated' if unshipped else ''}:"
+            f"BOUGHT AGAIN — {len(rebought)} function(s) with two COMPLETED bodies in one "
+            "module and nothing rejected in between:"
         )
         shown = rebought if verbose else rebought[:12]
         for dup in shown:
             flag = "" if dup.integrated else "  [UNINTEGRATED]"
-            lines.append(f"  {dup.name}  x{len(dup.dirs)}  {', '.join(dup.dirs)}{flag}")
+            lines.append(f"  {dup.module}/{dup.name}  x{len(dup.dirs)}{flag}")
         if not verbose and len(rebought) > 12:
             lines.append(f"  ... and {len(rebought) - 12} more (--verbose for all)")
         lines.append(
+            "  by module: "
+            + ", ".join(f"{m}={n}" for m, n in sorted(by_mod.items(), key=lambda kv: -kv[1])[:8])
+        )
+        lines.append(
             "  Usual cause: a re-run under a different SEAL-FLAG namespace re-buys the "
-            "whole file.\n  Pass --seal-facts --seal-calls --seal-wide from the START."
+            "whole file.\n  Pass --seal-facts --seal-calls --seal-wide from the START.\n"
+            "  NOTE: paid more than once is not yet paid NEEDLESSLY — the outcome ledger "
+            "says which."
+        )
+        lines.append("")
+    if retried:
+        # Separated because conflating the two overstated shell32's re-buys by 4x.
+        lines.append(
+            f"({len(retried)} further divergent function(s) have a `.partial` among their "
+            "copies — a RETRY after a reject, where the second purchase is the one you "
+            "keep. Legitimate; not counted above.)"
         )
         lines.append("")
     if mirrored:
-        # Not a finding. Said out loud because the first version of this report called
-        # it one, and 235 byte-identical pairs from a SINGLE run read as 235 re-buys.
         lines.append(
             f"({len(mirrored)} function(s) appear in several dirs with IDENTICAL bytes "
             "— one purchase written to both its run archive and the replay cache.)"
