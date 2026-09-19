@@ -488,6 +488,29 @@ land; date every addition.** Source docs live in `docs/engineering/archive/`.
 
 ## Known bugs & flakes (live registry)
 
+- **A deterministic failure was classified `CONFORMANCE_FLAKE`, and the wrong LABEL cost
+  more than the retries. UNOWNED** (2026-09-19). Verbatim from `land-status`:
+
+        REJECTED: shell32-com @ 3607b8d766e0 (CONFORMANCE_FLAKE)
+                  conformance:i386: CONFORMANCE_FLAKE, 3 attempts
+
+  It was not a flake. It reproduced **9/9** — three arches x three rounds — and again on the
+  lane's own machine first try; root cause was 58 `#[no_mangle]` names capturing live C++
+  symbols (entry above). It blocked the merge queue for **75 minutes**.
+  **The retry count is the symptom, not the defect.** `--retries 2` was behaving correctly;
+  it was obeying a classifier that had already decided the failure was nondeterministic. So
+  raising or lowering the retry number fixes nothing. **A failure whose signature is IDENTICAL
+  across attempts is by definition not a flake, and the harness holds both attempts already** —
+  retry once, diff the signature, and bail as deterministic when it matches. That costs 2x
+  instead of 3x *and* produces a truthful verdict. Compare something stabler than elapsed
+  time; `launched: 0 / sweep_rc: 1` is the shape that works here.
+  **The label is the expensive part**, and this is the reason to fix it: `CONFORMANCE_FLAKE`
+  is precisely the verdict that invites a blind resubmit. The lane's own read of "flake, 3
+  attempts" would reasonably have been "unlucky, try again" — another three rounds of blocked
+  fleet before suspecting its own tree. It only went the other way because someone hand-
+  delivered the artifacts. A classification is what a lane reads to decide whether to
+  investigate or requeue, so a wrong one buys a second outage.
+
 - **WIRING a translated TU is already a partial cohab flip, and the linker is silent about
   it. UNOWNED (gap), lane-owned (instance)** (2026-09-19). `shell32/utils.rs` defines **58**
   `#[no_mangle]` names that the LIVE C++ shell32 objects also define as unmangled externs —
