@@ -3377,6 +3377,15 @@ is INERT — the except arm is `if (_SEH2_Volatile0 || (0 && filter))`, never en
 label's only job is the `_SEH2_LEAVE` goto target, and the override deliberately leaves
 `_SEH2_LEAVE` pointing at a label that no longer exists: a TU that really uses it fails with
 `use of undeclared label` instead of being anchored against control flow it does not have.
+Two overrides are tried in order, and each is faithful exactly where it compiles: the first
+keeps the `__seh2_scope_end__:` labels and drops only the `__label__` DECLARATIONS, so they
+become function-scoped and `_SEH2_LEAVE` still has a target — legal for ONE `_SEH2_TRY`
+chain per function, a duplicate-label error for two; the second drops the labels as well,
+which handles any number of TRY blocks and turns a real `_SEH2_LEAVE` into c2rust's
+"Goto target label not found". A file is refused only when NEITHER is legal. Measured
+2026-09-19 over every SEH-using TU in the i386 compile db: **53 of 54 anchor** (the one
+holdout is `cond.tab.c`, generated bison output). Before this the number was 0 — the
+`__label__` is in `_SEH2_TRY` itself, so it blocked every one of them.
 
 **The third class: a pointer to a function whose type carries a CALLING CONVENTION.** Panic
 site is different — `convert_type.rs:518`, `ctype parameter must be a function instead of
@@ -3409,8 +3418,22 @@ More traps, each of which cost a probe:
   converged on the last line of the file. `rm -rf D` between iterations, and sanity-check
   that the full input still reproduces.
 
+**A fourth class, and the only benign one: `Unimplemented builtin _Interlocked…`.** Unlike
+the three above it does NOT kill the TU — c2rust exits 0, writes the `.rs`, and silently
+omits just the functions that used the builtin, which the strict anchor then reports as
+`missing required function anchors: <names>`. msvcrt's `file.c` loses exactly
+`tmpnam_helper` and `wtmpnam_helper` to it out of 234. **Take the `--skip-fn` and hand-write
+those bodies** — do not try to macro the builtin away. The obvious neutraliser
+`-D_InterlockedCompareExchange(d,e,c)=__sync_val_compare_and_swap(d,c,e)` (correct semantics,
+note the swapped last two arguments) makes `vcruntime/intrin.h:42`'s prototype redeclare a
+clang builtin — a hard error — and c2rust STILL exits 0 and writes output, so the damage is
+invisible unless you read stderr. Doing it on the un-underscored `InterlockedCompareExchange`
+instead cannot work either: `sdk/include/xdk/winnt_old.h:8` redefines it function-like, last
+and unguarded, and `#ifndef`-guarding THAT would leave the earlier object-like definition
+from winnt.h:2257 standing in the real build. Not worth it for two bodies.
+
 Rebuilding c2rust against a matching LLVM (`ldd $(command -v c2rust-transpile)` shows
-`libLLVM-14.so.1` against our pinned clang 19.1.7) is **not needed for any of the three
+`libLLVM-14.so.1` against our pinned clang 19.1.7) is **not needed for any of these
 classes** and is now an untested lever with no known customer.
 
 anchor is what stops the model silently stubbing a hard body or turning a function-like macro

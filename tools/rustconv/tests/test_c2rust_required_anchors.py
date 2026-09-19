@@ -42,19 +42,35 @@ def test_complete_map_is_accepted(monkeypatch):
 
 
 def test_anchor_flags_preserve_preprocessor_order_and_quoted_paths():
-    entry = {"arguments": ["clang", "-D", "WIN32", "-UWIN32", "-I", "/source with spaces",
-                            "-idirafter", "/late headers", "--target=x86_64-w64-mingw32",
-                            "-fshort-wchar", "-o", "out.obj", "-c", "file.c"]}
+    entry = {
+        "arguments": [
+            "clang",
+            "-D",
+            "WIN32",
+            "-UWIN32",
+            "-I",
+            "/source with spaces",
+            "-idirafter",
+            "/late headers",
+            "--target=x86_64-w64-mingw32",
+            "-fshort-wchar",
+            "-o",
+            "out.obj",
+            "-c",
+            "file.c",
+        ]
+    }
     assert anchor._extract_clang_flags(entry) == entry["arguments"][1:-4]
 
 
 def test_nested_sal_does_not_erase_cdfs_functions():
     from rustconv.scanner import scan_file, _strip_sal
     from rustconv.function_coverage import require_c_plan
-    source = Path(__file__).resolve().parents[3] / 'drivers/filesystems/cdfs/filobsup.c'
+
+    source = Path(__file__).resolve().parents[3] / "drivers/filesystems/cdfs/filobsup.c"
     scan = scan_file(source)
     names = {f.name for f in scan.functions}
-    assert {'CdSetFileObject', 'CdDecodeFileObject', 'CdFastDecodeFileObject'} <= names
+    assert {"CdSetFileObject", "CdDecodeFileObject", "CdFastDecodeFileObject"} <= names
     require_c_plan(source.read_text(), names)
     diagnostic = 'void f() { log("IN _When_(x, (y))"); }'
     assert _strip_sal(diagnostic) == diagnostic
@@ -62,7 +78,7 @@ def test_nested_sal_does_not_erase_cdfs_functions():
 
 def test_compiler_panic_reason_keeps_payload_not_just_source_location():
     message = "thread 'main' panicked at convert_type.rs:518:25:\nunsupported calling convention\nnote: trace"
-    assert 'unsupported calling convention' in anchor._c2rust_reason(message, '')
+    assert "unsupported calling convention" in anchor._c2rust_reason(message, "")
 
 
 # --- calling-convention guard ------------------------------------------------
@@ -118,3 +134,18 @@ def test_db_entry_order_puts_the_pinned_arch_first(tmp_path, monkeypatch):
         "build-arm64",
         "build-i386",
     ]
+
+
+def test_pseh_variants_are_tried_labelled_first():
+    """Order matters: the labelled override is the only one that keeps _SEH2_LEAVE's
+    goto target, and it only COMPILES when it is also correct (a second try block in
+    the same function is a duplicate label), so trying it first can never anchor a
+    file against control flow the C does not have."""
+    labelled, labelfree = anchor._PSEH_VARIANTS
+    assert any("__seh2_scope_end__:;" in d for d in labelled)
+    assert not any("__seh2_scope_end__" in d for d in labelfree)
+    for variant in anchor._PSEH_VARIANTS:
+        names = {d.split("=", 1)[0] for d in variant}
+        assert names == {"-D_SEH2_TRY", "-D_SEH2_FINALLY", "-D_SEH2_EXCEPT(...)", "-D_SEH2_END"}
+        # _SEH2_LEAVE is deliberately NOT overridden — it must fail loudly, never quietly.
+        assert not any(d.startswith("-D_SEH2_LEAVE") for d in variant)

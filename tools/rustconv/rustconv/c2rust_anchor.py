@@ -146,10 +146,37 @@ _ATTR_NEUTRALIZERS = (
     # for the anchor. A TU that really uses _SEH2_LEAVE gets "use of undeclared label"
     # and fails LOUDLY rather than being anchored against control flow it does not have.
     # The guard that lets these win is the `#ifndef _SEH2_TRY` in pseh2.h.
-    "-D_SEH2_TRY={",
-    "-D_SEH2_FINALLY=} if (1) {",
-    "-D_SEH2_EXCEPT(...)=} if (_SEH2_Volatile0 || (0 && (__VA_ARGS__))) {",
-    "-D_SEH2_END=}",
+)
+
+#: PSEH overrides, tried in order. Both are behaviour-identical to the inert dummy
+#: branch; they differ only in which C they FAIL to compile, and each one's failure is
+#: loud.
+#:
+#: 1. `labelled` keeps the `__seh2_scope_end__:` labels and drops only the `__label__`
+#:    DECLARATIONS, so the labels become function-scoped. `_SEH2_LEAVE`'s goto still has
+#:    a target. It compiles exactly when the function has ONE _SEH2_TRY chain; a second
+#:    one in the same function is a duplicate-label error.
+#: 2. `labelfree` drops the labels too. It handles any number of TRY blocks, and a
+#:    `_SEH2_LEAVE` anywhere in the TU is `goto` to a label that does not exist —
+#:    c2rust says "Goto target label not found" rather than anchoring against control
+#:    flow the C does not have.
+#:
+#: Trying (1) first and falling back to (2) means a file is only rejected when NEITHER
+#: is legal, which so far means "several TRY blocks in one function AND a LEAVE".
+#: Measured 2026-09-19 over the 54 SEH-using TUs in the i386 compile db: 50 anchor.
+_PSEH_VARIANTS = (
+    (
+        "-D_SEH2_TRY={",
+        "-D_SEH2_FINALLY=__seh2_scope_end__:; } if (1) {",
+        "-D_SEH2_EXCEPT(...)=__seh2_scope_end__:; } if (_SEH2_Volatile0 || (0 && (__VA_ARGS__))) {",
+        "-D_SEH2_END=__seh2_scope_end__:; }",
+    ),
+    (
+        "-D_SEH2_TRY={",
+        "-D_SEH2_FINALLY=} if (1) {",
+        "-D_SEH2_EXCEPT(...)=} if (_SEH2_Volatile0 || (0 && (__VA_ARGS__))) {",
+        "-D_SEH2_END=}",
+    ),
 )
 
 
@@ -361,9 +388,7 @@ def _transpile_one(
 ) -> str | None:
     """One c2rust run against one build db. Appends a `<db>: <reason>` line to
     `attempts` on failure and returns None; returns the raw .rs text on success."""
-    result: str | None = None
     flags = _extract_clang_flags(entry)
-    out_dir = Path(tempfile.mkdtemp(prefix="c2rust_anchor_"))
     # __thiscall is the third and last c2rust blocker in the msvcrt closure: forming a
     # pointer to a function whose type carries a CALLING-CONVENTION attribute panics
     # convert_type.rs ("ctype parameter must be a function instead of Attributed(...)"),
@@ -373,6 +398,27 @@ def _transpile_one(
     # real, so we never touch it: that file anchors from a 64-bit db instead (the caller
     # is told), or not at all.
     extra = [] if _targets_i386(flags) else ["-D__thiscall="]
+    for variant in _PSEH_VARIANTS:
+        result = _transpile_attempt(
+            c_file, build_dir, flags, [*extra, *variant], timeout, attempts, strict
+        )
+        if result is not None:
+            return result
+    return None
+
+
+def _transpile_attempt(
+    c_file: Path,
+    build_dir: Path,
+    flags: list[str],
+    extra: list[str],
+    timeout: int,
+    attempts: list[str],
+    strict: bool,
+) -> str | None:
+    """One c2rust invocation. Appends a `<db>: <reason>` line to `attempts` on failure."""
+    result: str | None = None
+    out_dir = Path(tempfile.mkdtemp(prefix="c2rust_anchor_"))
     try:
         cmd = [
             "c2rust",
