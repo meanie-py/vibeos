@@ -30,6 +30,21 @@ hours spent debugging the wrong thing.
 | **ripgrep** | `command -v rg` — **not `rg --version`** | 16 rustconv tests die on `PermissionError: 'rg'`; worse, `substrate_closure`/`cpp_core` treat a bad rg exit as "no matches", so a *broken* one yields a silently EMPTY substrate |
 | **c2rust 0.22.1** | `c2rust --version` | every `--c2rust` translate hard-fails (by design — it refuses to degrade). `cargo install c2rust --locked`, needs llvm-18-dev + libclang-18-dev, ~2 min |
 
+**The cargo registry cache must match the committed lock** — `cargo fetch --locked` in every
+directory holding a tracked `Cargo.lock` (`sdk/lib/rust`, `tools/host-jobs`). Not a package,
+and the worst failure of the fourteen because it disables a guard instead of breaking a
+build. The rebuilt box's cache had been filled from a *different* resolve than the lock:
+lock pinned `aho-corasick 1.1.4`, cache held 1.0.1 and 1.1.5. So `cargo metadata --offline`
+exited 101, and `queue.settle_cargo_locks` — the preflight that exists because a lock-rewrite
+once wedged three lanes for an hour each in an unbreakable re-gate loop — **skipped itself on
+every conductor batch since the rebuild**. It logs when it skips, which is the only reason
+this was noticeable at all; the batches still gated green, so nothing failed and the
+protection was simply absent. Probe it the way the preflight does:
+
+    for d in $(git ls-files -- '*Cargo.lock' | xargs -n1 dirname | sort -u); do
+        (cd "$d" && cargo metadata --offline --format-version 1 >/dev/null) || echo "STALE: $d"
+    done
+
 Also non-obvious, not a package: `VIBEOS_DISK_BACKING_MOUNTS=/mnt/g` must be exported, or
 disk admission cannot see the volume the guest actually consumes.
 
