@@ -1177,6 +1177,53 @@ def find_lib(build: Path, want: str):
 def deliberate_control(root: Path):
     return root.rglob("*.rs")  # unpruned-walk: intentional
 """
+
+# scan_com_double_release. Seeded from CDefView 2026-09-19: `CComPtr<IEnumIDList>`
+# lowered to a raw pointer plus a CppComPtrGuard, with the explicit Release() calls
+# ALSO kept, so every FillList released twice and the guard then called through a
+# dangling vtable. arm64 died on it at once; amd64 and i386 ran the same code and
+# passed the 91-test conformance sweep three times. The GOOD case pins the three
+# spellings that are correct and must not be reported: release-then-null,
+# release-then-reassign (a hand-over-hand walk), and a release with no guard at all.
+_COMREL_BAD = """
+pub unsafe fn FillList_body(this: *mut T) -> HRESULT {
+    let mut pEnum: *mut IEnumIDList = core::ptr::null_mut();
+    let _pEnum_cpp_com_guard = CppComPtrGuard::new(core::ptr::addr_of_mut!(pEnum));
+    if !pEnum.is_null() {
+        ((*(*pEnum).lpVtbl).Release)(pEnum);
+    }
+    return S_OK;
+}
+"""
+
+_COMREL_GOOD = """
+pub unsafe fn Exec_body(this: *mut T) -> HRESULT {
+    let mut pStream: *mut IStream = core::ptr::null_mut();
+    let _pStream_cpp_com_guard = CppComPtrGuard::new(core::ptr::addr_of_mut!(pStream));
+    if !pStream.is_null() {
+        ((*(*pStream).lpVtbl).Release)(pStream);
+        pStream = core::ptr::null_mut();
+    }
+    return S_OK;
+}
+
+pub unsafe fn IsSubMenuParent_body(hwnd: HWND) -> BOOL {
+    let _popup_cpp_com_guard = CppComPtrGuard::new(core::ptr::addr_of_mut!(popup));
+    while !popup.is_null() {
+        ((*(*popup).lpVtbl).Release)(popup);
+        popup = next;
+    }
+    FALSE
+}
+
+pub unsafe fn SaveViewState_body(this: *mut T) -> HRESULT {
+    let mut pPB: *mut IPropertyBag = core::ptr::null_mut();
+    ((*(*pPB).lpVtbl).Release)(pPB);
+    return S_OK;
+}
+"""
+
+
 CONTROLS: list[Control] = [
     Control(
         name="scan_dropped_asserts",
@@ -1376,6 +1423,13 @@ CONTROLS: list[Control] = [
         argv=["--lint"],
         bad={"src/a.rs": _DECL_DRIFT_BAD_A, "src/b.rs": _DECL_DRIFT_BAD_B},
         good={"src/a.rs": _DECL_DRIFT_GOOD_A, "src/b.rs": _DECL_DRIFT_GOOD_B},
+    ),
+    Control(
+        name="scan_com_double_release",
+        script="tools/scan_com_double_release.py",
+        argv=["--lint"],
+        bad={"src/bad.rs": _COMREL_BAD},
+        good={"src/good.rs": _COMREL_GOOD},
     ),
     Control(
         name="scan_ob_refcount",

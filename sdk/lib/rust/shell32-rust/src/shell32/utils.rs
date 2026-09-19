@@ -579,9 +579,6 @@ pub unsafe extern "C" fn BindCtx_ContainsObject(pBindCtx: *mut IBindCtx, pszName
     } else {
         TRUE
     };
-    if !punk.is_null() {
-        ((*(*punk).lpVtbl).Release)(punk);
-    }
     result
 }
 #[no_mangle]
@@ -635,21 +632,12 @@ pub unsafe extern "C" fn SHIsFileSysBindCtx(
             core::ptr::addr_of_mut!(punk),
         ) < 0
     {
-        if !punk.is_null() {
-            ((*(*punk).lpVtbl).Release)(punk);
-        }
         return S_FALSE;
     }
 
     if ((*(*punk).lpVtbl).QueryInterface)(punk, core::ptr::addr_of!(IID_IFileSystemBindData), core::ptr::addr_of_mut!(pBindData).cast())
         < 0
     {
-        if !pBindData.is_null() {
-            ((*(*pBindData).lpVtbl).Release)(pBindData);
-        }
-        if !punk.is_null() {
-            ((*(*punk).lpVtbl).Release)(punk);
-        }
         return S_FALSE;
     }
 
@@ -657,8 +645,6 @@ pub unsafe extern "C" fn SHIsFileSysBindCtx(
         ((*(*pBindData).lpVtbl).GetFindData)(pBindData, ((pFindData) as _));
     }
 
-    ((*(*pBindData).lpVtbl).Release)(pBindData);
-    ((*(*punk).lpVtbl).Release)(punk);
     return S_OK;
 }
 #[no_mangle]
@@ -705,9 +691,6 @@ pub unsafe extern "C" fn SHBindToObjectEx(
             hr = E_FAIL;
         }
 
-        if !psfDesktop.is_null() {
-            ((*(*psfDesktop).lpVtbl).Release)(psfDesktop);
-        }
 
         hr
     }
@@ -781,9 +764,6 @@ pub unsafe extern "C" fn SHELL_DisplayNameOf(
         let mut pidlChild: PCUITEMID_CHILD = core::ptr::null_mut();
         hr = SHBindToParent(pidl, core::ptr::addr_of!(IID_IShellFolder).cast(), core::ptr::addr_of_mut!(psfRoot).cast(), core::ptr::addr_of_mut!(pidlChild));
         if hr < 0 {
-            if !psfRoot.is_null() {
-                let _ = ((*(*psfRoot).lpVtbl).Release)(psfRoot);
-            }
             return hr;
         }
         psf = psfRoot;
@@ -796,9 +776,6 @@ pub unsafe extern "C" fn SHELL_DisplayNameOf(
     } else {
         hr
     };
-    if !psfRoot.is_null() {
-        let _ = ((*(*psfRoot).lpVtbl).Release)(psfRoot);
-    }
     result
 }
 
@@ -965,9 +942,6 @@ pub unsafe extern "C" fn BindCtx_GetUIWindow(pBindCtx: *mut IBindCtx) -> HWND {
     let _punk_cpp_com_guard = CppComPtrGuard::new(core::ptr::addr_of_mut!(punk));
     if !pBindCtx.is_null() && (((*(*pBindCtx).lpVtbl).GetObjectParam)(pBindCtx, CPP_COM_WSTR_64A3D5F8DF2B.as_ptr() as LPOLESTR, core::ptr::addr_of_mut!(punk)) >= 0) {
         IUnknown_GetWindow(punk.cast(), core::ptr::addr_of_mut!(hWnd));
-    }
-    if !punk.is_null() {
-        ((*(*punk).lpVtbl).Release)(punk);
     }
     hWnd
 }
@@ -2246,9 +2220,6 @@ pub unsafe extern "C" fn IUnknown_InitializeCommand(
     } {
         hr = ((*(*pIC).lpVtbl).Initialize)(pIC, pszCommandName, ((pPB) as _));
     }
-    if !pIC.is_null() {
-        ((*(*pIC).lpVtbl).Release)(pIC);
-    }
     hr
 }
 #[no_mangle]
@@ -2322,9 +2293,6 @@ pub unsafe extern "C" fn InvokeIExecuteCommand(
     }
 
     let result = ((*(*pEC).lpVtbl).Execute)(pEC);
-    if !pOWS.is_null() {
-        ((*(*pOWS).lpVtbl).Release)(pOWS);
-    }
     result
 }
 #[no_mangle]
@@ -2349,10 +2317,6 @@ pub unsafe extern "C" fn InvokeIExecuteCommandWithDataObject(
         hr
     };
 
-    if !pSIA.is_null() {
-        // shlwapi has no `IUnknown_Release`; the C++ is a plain `pSIA->Release()`.
-        ((*(*pSIA).lpVtbl).Release)(pSIA);
-    }
 
     result
 }
@@ -2511,16 +2475,10 @@ pub unsafe extern "C" fn SHELL_CreateShell32DefaultExtractIcon(
         &mut initIcon as *mut *mut IDefaultExtractIconInit as *mut *mut c_void,
     );
     if ((hr) < 0) {
-        if !initIcon.is_null() {
-            ((*(*initIcon).lpVtbl).Release)(initIcon);
-        }
         return hr;
     }
     ((*(*initIcon).lpVtbl).SetNormalIcon)(initIcon, swShell32Name.as_ptr(), IconIndex);
     let result = ((*(*initIcon).lpVtbl).QueryInterface)(initIcon, ((riid) as _), ppvOut);
-    if !initIcon.is_null() {
-        ((*(*initIcon).lpVtbl).Release)(initIcon);
-    }
     result
 }
 #[no_mangle]
