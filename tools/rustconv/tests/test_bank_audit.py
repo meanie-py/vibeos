@@ -21,6 +21,7 @@ from rustconv.bank_audit import (
     DirReport,
     Resolution,
     audit,
+    bank_module,
     banked_fns,
     declared_names,
     format_report,
@@ -458,3 +459,60 @@ def test_an_archive_of_UNINTEGRATED_work_is_not_safe(tmp_path):
         ]
     )
     assert safe == []
+
+
+def test_bank_module_normalizes_both_layouts():
+    """Both spellings of one module must agree, or duplicate detection splits or merges
+    the wrong things. `parts[0]` buckets by GROUP and collapsed 37 shell32 modules into
+    one; keeping the `.cpp` makes `utils.cpp` and `utils` look like different modules."""
+    assert bank_module("20260919-022222-file.c") == "file"
+    assert bank_module("20260913-012131-utils.cpp") == "utils"
+    assert bank_module("msvcrt__file__factseal_v1__callseal_v1") == "file"
+    assert bank_module("shell32__CDefView__factseal_v1__callseal_v1") == "CDefView"
+    assert bank_module("plain-name") == "plain-name"
+
+
+def test_a_retry_is_not_a_rebuy(tmp_path):
+    """A `.partial` among the copies means the divergence is a retry after a reject —
+    legitimate, and the second purchase is the one you keep. Conflating the two
+    overstated shell32's re-buys roughly fourfold."""
+    a = _body(tmp_path, "20260718-111034-CFSFolder.cpp/18_alpha.partial", "fn alpha() { /*cut*/")
+    b = _body(tmp_path, "20260718-111247-CFSFolder.cpp/18_alpha.rs", "fn alpha() {}")
+    dupes, _ = redundancies(
+        [
+            _rep("20260718-111034-CFSFolder.cpp", {"alpha": a}),
+            _rep("20260718-111247-CFSFolder.cpp", {"alpha": b}),
+        ]
+    )
+    assert [(d.identical, d.retry) for d in dupes] == [(False, True)]
+
+
+def test_same_name_in_two_modules_is_two_functions_not_one_rebuy(tmp_path):
+    """shell32 has an `IsRegItem` in three folder classes. They share a name and nothing
+    else."""
+    a = _body(tmp_path, "20260716-234707-CDrivesFolder.cpp/01_IsRegItem.rs", "fn a() {}")
+    b = _body(tmp_path, "20260718-113355-CDesktopFolder.cpp/01_IsRegItem.rs", "fn b() {}")
+    dupes, _ = redundancies(
+        [
+            _rep("20260716-234707-CDrivesFolder.cpp", {"IsRegItem": a}),
+            _rep("20260718-113355-CDesktopFolder.cpp", {"IsRegItem": b}),
+        ]
+    )
+    assert dupes == []
+
+
+def test_a_collision_does_not_hide_a_rebuy_inside_one_module(tmp_path):
+    """The 60-vs-65 case. `IsRegItem` collides across modules AND CDrivesFolder bought
+    its own twice. Discarding the whole name because it collides loses the real re-buy —
+    which is what my first ad-hoc pass did, undercounting by exactly these five."""
+    a1 = _body(tmp_path, "20260716-234707-CDrivesFolder.cpp/01_IsRegItem.rs", "fn v1() {}")
+    a2 = _body(tmp_path, "20260803-231933-CDrivesFolder.cpp/01_IsRegItem.rs", "fn v2() {}")
+    b = _body(tmp_path, "20260718-113355-CDesktopFolder.cpp/01_IsRegItem.rs", "fn other() {}")
+    dupes, _ = redundancies(
+        [
+            _rep("20260716-234707-CDrivesFolder.cpp", {"IsRegItem": a1}),
+            _rep("20260803-231933-CDrivesFolder.cpp", {"IsRegItem": a2}),
+            _rep("20260718-113355-CDesktopFolder.cpp", {"IsRegItem": b}),
+        ]
+    )
+    assert [(d.module, d.identical, d.retry) for d in dupes] == [("CDrivesFolder", False, False)]
