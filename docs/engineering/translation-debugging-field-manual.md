@@ -9560,6 +9560,26 @@ introduced at any heap exit — it is an external stray write.**
   each PC — a `wfi` is idle, a `b .` is a park, and an unfetchable page is the loop. If a FROZEN
   verdict ever comes with an odd sample out in `KiTrapReturn`, that is the loop caught mid-eret,
   not a dead clock; read the trap handler's retry decision for that abort, not the timers.
+- **Halted vs moving is the first fork, and on x86 the flag is `HLT=1` in the `EFL` line.**
+  The arm64 tell is a `wfi`; the x86 one is the `HLT=1` field of the `info registers` dump, and
+  it decides which half of the search space to throw away. **Halted means nothing was runnable,
+  so hunt a wake/signal that never arrives — a completion, a DPC, an event set on a path that
+  bailed early. Moving means something IS running, so hunt what it spins on.** Applying it to a
+  2026-09-19 i386 conformance wedge (kmtest-sweep never launched, `FROZEN`, `EIP=80211b45`,
+  `HLT=1`) retired the standing theory on the spot: the run's serial was 77% one win32k
+  message-queue error, and a message loop starving the launcher had been the working hypothesis
+  — but a starving loop moves the PC. On a halted CPU that volume is the TAIL of whatever ran
+  before the freeze, not a cause, and the real lead was the last non-spam line (a netstack TDI
+  listen that timed out and tore down its backlog).
+- **Get a KNOWN-GOOD CONTROL on the same host before believing any number in a hang log.**
+  This is what makes the above affordable, and both halves of that same investigation needed it:
+  "77% of serial is one error" and "72 threads parked >20s" each read as damning, and a green
+  batch from twenty minutes earlier on the same box reported the same error at 19% and **68**
+  threads parked. The parked-thread census was background; the spam was pre-existing and only
+  its volume differed. Neither could be judged from the failing log alone, because a hang log
+  has no baseline inside it — every alarming number in one is alarming until something ordinary
+  is measured beside it. The merge queue makes these controls nearly free: a batch that landed
+  green on the same host within the hour is a control you did not have to run.
 - **A foreign binary that is stuck is usually one of three shapes** `[§9.29]`: sample the guest
   PC a dozen times via QMP `info registers` — all samples at one PC means a spin; parked in a
   wait with no file I/O (break on `NtReadFile`/`NtDelayExecution`); or spinning at a fixed
