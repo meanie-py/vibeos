@@ -15,6 +15,7 @@ add_library(wdfldr MODULE
 target_include_directories(wdfldr
     PRIVATE ${REACTOS_SOURCE_DIR}/sdk/lib/drivers/wdf/shared/inc/private/common
     ${REACTOS_SOURCE_DIR}/sdk/lib/drivers/wdf/kmdf/inc/private
+    ${REACTOS_SOURCE_DIR}/sdk/lib/drivers/wdf_reactos/include
 )
 
 set_module_type(wdfldr kernelmodedriver ENTRYPOINT 0)

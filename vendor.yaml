@@ -62,16 +62,6 @@ trees:
     name: Windows Driver Frameworks (KMDF/UMDF)
     upstream: https://github.com/microsoft/Windows-Driver-Frameworks
     license: MIT  # upstream relicensed the WDF sources to MIT in 2017
-    license_extra:
-      GPL-2.0-or-later: >
-        11 files are ReactOS-authored and carry `LICENSE: GPL-2.0-or-later` in their own
-        headers — the KMDF LOADER, not Microsoft's WDF: wdfldr/{class,library,wdfldr,
-        registry,common}.c + wdfloader.h, wdfdriverentry/wdfdriverentry.c, and the headers
-        wdfldr_.h, usbspec.h, wdfcx.h, kmdf/inc/private/wdfldr.h. They sit inside a tree
-        marked NOT A TRANSLATION TARGET, so this is a scope question as well as a licence
-        one: by their own headers they are ours. Recorded rather than moved because
-        re-drawing the tree boundary is a bigger change than this entry, and an
-        unrecorded GPL file inside an MIT-labelled tree is the more urgent error.
     modified: "lightly"  # 9 of 488 files mention ReactOS; see reason
     headers:
       - sdk/include/wdf
@@ -82,6 +72,25 @@ trees:
         - '__WDF_MINOR_VERSION=(\d+)'
         - '__WDF_BUILD_NUMBER=(\d+)'
       join: "."
+    review: >
+      GPL FILES REMOVED 2026-09-19, tree now Microsoft's alone. It used to carry 3,851
+      lines of ReactOS-authored GPL-2.0-or-later code inside this MIT drop — not
+      adapters but REIMPLEMENTATIONS of two Microsoft components the source drop does
+      not contain: WdfLdr.sys (the KMDF loader) and WdfDriverEntry.lib. They are now
+      sdk/lib/drivers/{wdfldr,wdfdriverentry}, built from sdk/lib/drivers/CMakeLists.txt.
+      Three ReactOS headers went to sdk/lib/drivers/wdf_reactos/include/: usbspec.h and
+      wdfcx.h, which Perevertkin wrote in 2020 as "Missing headers" so THIS drop would
+      compile, and wdfldr.h, the loader's exported interface. wdfldr_.h was deleted — 38
+      lines, referenced nowhere, and its own comment said "likely to be removed when the
+      proper wdfldr.sys is ready", which it has been since 2019.
+
+      THE COUPLING IS NOT GONE AND IS NOT AN ACCIDENT: wdf01000 still puts
+      sdk/lib/drivers/wdfldr on its include path and does `add_importlibs(wdf01000
+      wdfldr ...)`. That is how KMDF works — the framework binds to a loader — so an
+      upstream WDF drop would still need our loader supplied beside it rather than
+      inside it. What changed is that the dependency is now across a tree boundary
+      instead of hidden as files in someone else's directory.
+
     reason: >
       290K lines / 488 files, the second-largest foreign tree in the repo after FEX and
       bigger than FreeType — and the single biggest classification call this registry has
