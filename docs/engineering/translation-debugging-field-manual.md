@@ -4165,6 +4165,25 @@ output. Every one of the 63 predates `facce583b65` (2026-09-12), which added
 to buy it again automatically." The class is closed by a guard that already exists; the number
 is history, not a live leak.
 
+**The general rule behind that second trap: A LEDGER THAT OMITS FAILURES REPORTS THAT NOTHING
+EVER FAILED.** `meta.json` is the specific case, and the error it produces is not a wrong
+number — it is a clean one. Classifying retries from it put the entire reject class at exactly
+zero, which reads as "no call was ever rejected here" rather than as "this file cannot answer
+that question." The same shape has now cost this lane three times: a conformance run that
+launched 0 of 91 tests scored every baseline row OK and exited 0 with zero regressions, and a
+failure that reproduced 9/9 across three arches was classified `CONFORMANCE_FLAKE`. Absence
+rendered as a clean result, each time by a tool that was working correctly and reporting on a
+population it could not see. **Before trusting a zero, ask whether the source could represent
+a non-zero** — and prefer the artifact that records failures by existing (a `.partial`, a
+`__rejected__/` entry, a missing launch line) over the summary that records successes.
+
+**And when a count cannot settle an argument, change the unit.** Three agents spent several
+rounds refining the re-buy COUNT — 327, then 483, then 275/140, then 60 — arguing normalization
+the whole way. The ledger made it a bill, and the question dissolved at once: $0.48 against
+$14.50, under a guard that already refuses it. A count has no threshold, so it can be argued
+indefinitely; a price has one. If a number is being re-derived for the third time, suspect its
+UNITS rather than its precision.
+
 ### The export audit that was supposed to catch the shrunken plan was itself blind
 
 **Symptom.** A module translates, `cargo check`s clean on all three arches, passes `check`, and
