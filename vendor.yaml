@@ -62,6 +62,16 @@ trees:
     name: Windows Driver Frameworks (KMDF/UMDF)
     upstream: https://github.com/microsoft/Windows-Driver-Frameworks
     license: MIT  # upstream relicensed the WDF sources to MIT in 2017
+    license_extra:
+      GPL-2.0-or-later: >
+        11 files are ReactOS-authored and carry `LICENSE: GPL-2.0-or-later` in their own
+        headers — the KMDF LOADER, not Microsoft's WDF: wdfldr/{class,library,wdfldr,
+        registry,common}.c + wdfloader.h, wdfdriverentry/wdfdriverentry.c, and the headers
+        wdfldr_.h, usbspec.h, wdfcx.h, kmdf/inc/private/wdfldr.h. They sit inside a tree
+        marked NOT A TRANSLATION TARGET, so this is a scope question as well as a licence
+        one: by their own headers they are ours. Recorded rather than moved because
+        re-drawing the tree boundary is a bigger change than this entry, and an
+        unrecorded GPL file inside an MIT-labelled tree is the more urgent error.
     modified: "lightly"  # 9 of 488 files mention ReactOS; see reason
     headers:
       - sdk/include/wdf
@@ -193,6 +203,15 @@ trees:
     name: Microsoft UCRT
     upstream: Windows SDK "Source/ucrt" drop (exact SDK version UNKNOWN — see note)
     license: Microsoft (see the Windows SDK licence terms)
+    license_extra:
+      MIT: >
+        5 files are ReactOS ADDITIONS to the Microsoft drop, stamped `SPDX MIT` and
+        `Copyright (c) 2024 Timo Kreuzer`: math/matherr.cpp,
+        inc/corecrt_internal_state_isolation.h, and
+        locale/{MultiByteToWideChar,WideCharToMultiByte,GetStringTypeW}.c. So `modified:
+        yes` understates this tree — these are NEW FILES, not adaptation sites. Same
+        scope question as wdf: by their own headers they are ours, sitting inside a tree
+        excluded from the translation denominator.
     modified: yes
     headers:
       - sdk/include/ucrt
@@ -246,6 +265,20 @@ trees:
     name: FEX-Emu
     upstream: https://github.com/FEX-Emu/FEX
     license: MIT
+    license_extra:
+      LGPL-2.1-or-later: >
+        Wine-derived headers FEX carries for its Windows build:
+        Source/Windows/include/{winternl.h,winnt.h} and
+        Source/Windows/include/wine/{unixlib.h,debug.h}.
+      GPL-2.0-only: >
+        External/xxhash/tests/{sanity_test.c,sanity_test_vectors_generator.c} — upstream
+        xxhash dual-licences its library BSD and its tests GPL. Not built by us; recorded
+        because the files are in the tree.
+      Apache-2.0: >
+        External/code-format-helper/code-format-helper.py and
+        External/unordered_dense/test/third-party/FuzzedDataProvider.h (LLVM). FEX is a
+        vendored tree that itself vendors: its External/ is a second registry we do not
+        maintain, so those licences surface here rather than upstream.
     license_file: external/fex/LICENSE
     modified: "no"  # asserted by external/README-fex-vendor.md
     version:
@@ -381,6 +414,15 @@ trees:
     name: Mbed TLS
     upstream: https://github.com/Mbed-TLS/mbedtls
     license: Apache-2.0
+    license_extra:
+      LGPL-2.1-or-later: >
+        _reactos_strsafe_wrapper.c — a ReactOS-authored adapter
+        (Copyright 2015 Ismael Ferreras Morezuelas) carrying the LGPL grant in prose,
+        inside an Apache-2.0 tree. Found BY HAND, not by `--licences`: it has no SPDX
+        tag and no `LICENSE:` header line, which is exactly that scan's blind spot.
+        The lesson is in tools/vendored.py's `license_drift` docstring — a green
+        `--licences` means no tree DECLARES an unrecorded licence, not that no tree
+        HAS one.
     modified: unknown
     headers:
       - sdk/include/reactos/libs/mbedtls
