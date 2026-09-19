@@ -1550,7 +1550,12 @@ so exercising it needs a subprocess. Stated rather than glossed.
 
 **Owed:**
 
-* **A Rust port of file.c** — the substrate's whole point. 163 exports.
+* ~~**A Rust port of file.c**~~ — **DONE, and was already done when this line was
+  written.** `sdk/lib/rust/msvcrt-crt-rust/src/msvcrt/file.rs` ships 174 `#[no_mangle]`
+  bodies, is wired by `pub mod file;`, and has had three bug fixes landed on top of the
+  original output (`a8737b8d696`, `93b00588516`, `42fa9eee07e`). This stale line cost
+  $2.06 on 2026-09-19 — someone read it, believed it, and re-bought all 232 bodies.
+  `rustconv translate` now refuses that before spending anything.
 * **errno.c as reference TU #7.** It would delete `fileimpl.c`'s transcription of
   `msvcrt_set_errno` outright and grade 18 more exports; its imports are already nearly all
   satisfied. Deferred only because it also owns `_errno`/`_invalid_parameter`, which

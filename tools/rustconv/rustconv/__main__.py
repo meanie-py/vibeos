@@ -2022,6 +2022,58 @@ def unmatched_skip_fn(requested: Iterable[str], matched: Iterable[str]) -> list[
     return sorted(set(requested) - set(matched))
 
 
+def _already_translated(
+    c_file: Path, output_crate: Path, c_names: set[str]
+) -> tuple[list[Path], int, int] | None:
+    """Are this TU's exported functions ALREADY served from Rust in the output crate?
+
+    This guard exists because a lane doc said "Owed: a Rust port of file.c" long after
+    file.c had been ported, wired and bug-fixed on top — and $2.06 of DeepSeek was spent
+    re-buying all 232 bodies before anyone looked at the crate. A stale "owed" line is
+    not evidence; the crate is. Nothing else catches it: `estimate` reads the resume
+    cache, which is keyed by seal-flag namespace, so an earlier translation bought under
+    different flags reports "0 banked" and looks like virgin work.
+
+    Matched by SYMBOL, not by filename. The obvious `<stem>.rs` check looks right and
+    silently misses the renames that integration actually does — msvcrt's wcs.c ships as
+    `wcs_rest.rs`, and a TU split across two modules matches neither. Symbols are what
+    the link resolves and what a second translation would collide with.
+
+    `#[no_mangle]`/`#[export_name]` is the operative property: those are the definitions
+    that win the link and displace the C. A module full of ordinary `fn`s is internal
+    scaffolding and does not block.
+
+    Same intent as `--reassemble`, which has always refused to OVERWRITE a committed
+    .rs — but that refusal fires at assembly, after every function has been bought. This
+    one fires before the first API call, and `--reassemble` waives both.
+    """
+    src = output_crate / "src"
+    if not src.is_dir() or not c_names:
+        return None
+    served: dict[str, Path] = {}
+    exported = re.compile(
+        r"#\[\s*(?:no_mangle|export_name\s*=\s*\"(?P<alias>[^\"]+)\")\s*\]"
+        r"(?:\s*#\[[^\]]*\])*"
+        r"\s*(?:pub\s+)?(?:unsafe\s+)?(?:extern\s+\"[^\"]*\"\s+)?fn\s+(?P<name>\w+)"
+    )
+    for rs in src.rglob("*.rs"):
+        try:
+            text = rs.read_text(errors="replace")
+        except OSError:
+            continue
+        for m in exported.finditer(text):
+            served.setdefault(m.group("alias") or m.group("name"), rs)
+    hits = sorted(n for n in c_names if n in served)
+    if not hits:
+        return None
+    # A handful of shared helpers overlapping is normal; a majority means the TU is
+    # already ported. Below the threshold we say nothing and let the run proceed.
+    if len(hits) * 2 < len(c_names):
+        return None
+    where = sorted({served[n] for n in hits})
+    return where, len(hits), len(c_names)
+
+
 def cmd_translate(args):
     """Function-by-function translation pipeline."""
 
@@ -2415,6 +2467,27 @@ def cmd_translate(args):
                     file=sys.stderr,
                 )
             print(f"  [substrate] {derived.module.name}: profile audit passed", file=sys.stderr)
+        if c_file.suffix.lower() == ".c" and not getattr(args, "reassemble", False):
+            shipping = _already_translated(
+                c_file,
+                rustconv_target.output_crate,
+                {f.name for f in scan.functions},
+            )
+            if shipping is not None:
+                where, hits, total = shipping
+                listed = "\n      ".join(str(w.relative_to(REACTOS_ROOT)) for w in where[:6])
+                raise ValueError(
+                    f"{c_file.name} is ALREADY TRANSLATED and shipping: {hits} of its "
+                    f"{total} functions are already defined as #[no_mangle] in "
+                    f"{rustconv_target.output_crate.name}:\n      {listed}\n"
+                    "    Re-translating re-pays for work that exists, and the shipping "
+                    "module has had fixes landed on top of the original output that a "
+                    "fresh translation does not contain.\n"
+                    "    AGENTS.md: never re-translate a file that already has output "
+                    "without explicit approval. --reassemble already means exactly that "
+                    "and already gates the WRITE; this is the same gate moved ahead of "
+                    "the MONEY."
+                )
         if cpp_com_mode:
             scan = _extend_cpp_class_scan(
                 scan,
@@ -5220,7 +5293,8 @@ def main():
         "--reassemble",
         action="store_true",
         help="Allow overwriting a COMMITTED, unmodified .rs. Off by default: a re-translation "
-        "sees only the C, so it reverts every repair made after integration.",
+        "sees only the C, so it reverts every repair made after integration. Also waives the "
+        "pre-payment refusal when the output crate already ships a #[no_mangle] port of this TU.",
     )
     p.add_argument("--dry-run", action="store_true", help="Show translation plan without API calls")
     p.add_argument(
