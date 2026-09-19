@@ -48,10 +48,23 @@ Evidence under `/tmp/vibeos-cli/`:
 - `20260919-030553-0xupg_q1-host-clock-host/{summary,samples,settling}.json`
   (command, before/after service state and independent post-change measurement).
 
-**Remaining:** enable Windows Time and synchronize its existing NTP source.
-The current Windows token is not an administrator; `Start-Service W32Time`
-failed opening the service. A Windows UAC approval was requested. Do not report
-UTC synchronization complete merely because WSL no longer jumps.
+At 10:44, an approved Windows UAC operation set Windows Time to Automatic and
+successfully synchronized its existing `time.windows.com,0x9` source. Windows
+Time-Service events 37 and 35 independently confirm valid NTP data and source
+selection. Subsequent `w32tm /stripchart` samples were within 4.2–7.1 ms of that
+server. The operation log is
+`C:/Users/Lambda/AppData/Local/VibeOS/host-clock/windows-time-20260919-uac.json`.
+
+**Remaining:** the service stopped again immediately after synchronization,
+despite Automatic startup. A second UAC operation was proposed to apply
+[Microsoft's workgroup startup fix](https://learn.microsoft.com/en-us/troubleshoot/windows-client/active-directory/w32time-not-start-on-workgroup),
+backing up and removing the service triggers. Windows reported that prompt was
+cancelled; no trigger changes were made. Last observed state: Automatic/Stopped.
+The one-time synchronization succeeded; continuous service operation is not fixed.
+
+The post-sync WSL stability check passed another 65-second observation:
+`/tmp/vibeos-cli/20260919-104800-tzpxrsms-host-clock-host/summary.json` and
+`samples.json`. This does not establish that Windows NTP will remain active.
 
 The repair is persistent across normal systemd starts. If intentionally returning
 to a Linux-controlled clock, first arrange that Hyper-V no longer forces host
