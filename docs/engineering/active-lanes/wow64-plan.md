@@ -259,11 +259,15 @@ cannot reach. Nearly every marshalling bug from E6 onward was found by one.
   across all five rungs and is now a graded LADDER guest (11/11 on amd64).
   Full chain in `x64-primary-plan.md` gap #1.
 
-  **Still owed: cross-process `CreateRemoteThread` into a RUNNING process.**
-  That is the half of task #64 that genuinely needs the channel — the target's
-  wow64.dll must run a per-thread entry for a thread it did not create, and
-  `Wow64ProcessPendingCrossProcessItems` is still empty. The initial-thread case
-  needed no channel at all, which is why `CreateProcess` closed without one.
+  **`CreateRemoteThread` closed the same night**, and it needed no channel
+  either: the new thread's start routine is the TARGET's own
+  `Wow64pGuestThreadStart`, so the per-thread setup runs in the target, on the
+  new thread, by the target's own code — which is what Win10's work list exists
+  to arrange. `Wow64ProcessPendingCrossProcessItems` is therefore legitimately
+  empty rather than pending. The one thing that could NOT be assumed is the
+  start address: `wow64.dll` loads at DIFFERENT bases in the two processes
+  (measured on the live boot), so the creator walks the target's loader list and
+  translates through the delta. spawn32 rungs 6-7 guard it.
 - ~~**Registry redirection**~~ — **BUILT** (phase E24, task #66). Listed here as a
   silent correctness bug until then: a 32-bit guest read and wrote the *native*
   hive. Now redirected in `CmpParseKey` (`config-rust/src/cmwow64.rs`), with

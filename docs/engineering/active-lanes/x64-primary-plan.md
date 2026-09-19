@@ -259,7 +259,7 @@ a ladder to watch", and neither was visible from reading.
 
 ## Real gaps, ranked by what a user hits
 
-1. **Guest processes — CLOSED 2026-09-19 for `CreateProcess`; `CreateRemoteThread` still owed.** `CreateProcess`
+1. **Guest processes — GAP CLOSED 2026-09-19, both halves.** `CreateProcess`
    from a 32-bit guest, and cross-process `CreateRemoteThread`. Every installer
    and every app that shells out hits this. `wow64-plan.md` calls it "the largest
    remaining hole" and names the CSR-LPC-32 layer as its prerequisite — which
@@ -523,6 +523,55 @@ The `DIAGNOSTIC` table is empty again, and its tests were re-pointed at a synthe
 guest rather than deleted — the machinery is what the next guest aimed at a known-open
 gap will need, and coverage deleted because a table happens to be empty rots
 unexercised until the moment someone depends on it.
+
+**`CreateRemoteThread` — the other half of task #64 — CLOSED the same night, and it
+did not need the channel either.** The refusal covered both callers on the harder
+one's reason, and splitting them showed the hard one was smaller than advertised. Two
+things make the in-process path unusable through a foreign handle, and only one is
+interesting:
+
+- The SEED is a pointer into the creator's heap. Allocate it in the target instead;
+  `WOW64_THREAD_SEED` gained a `Remote` flag so the consumer frees it with
+  `NtFreeVirtualMemory` rather than corrupting the heap with `RtlFreeHeap`.
+- The START ROUTINE is a code address in the creator's copy of `wow64.dll`.
+
+**That second one is where assuming would have cost a night.** "It is a system DLL,
+it is always at the same base" is the comfortable reading, and it is FALSE here —
+measured, on the live boot: `wow64.dll delta NONZERO - relocated`. The two processes
+load it at different addresses, so the naive version starts a thread at whatever
+happens to live at that address in the target. `Wow64CreateForeignGuestThread` walks
+the TARGET's loader list for its own `wow64.dll` and translates
+`Wow64pGuestThreadStart` through the measured delta; equal bases would make the delta
+zero and cost only the walk. Loader-walk offsets measured with the usual control
+(`PEB_LDR_DATA` 72, `LDR_DATA_TABLE_ENTRY` 152 on amd64).
+
+**And that is why `Wow64ProcessPendingCrossProcessItems` is still empty and does not
+need to be filled.** Win10 keeps that work list so the TARGET can do per-thread setup
+on its own schedule; here the new thread's start routine IS the target's
+`Wow64pGuestThreadStart`, so the setup happens in the target, on the new thread, by
+the target's own code. The property the list exists to provide is obtained by
+construction. It would start to matter only if the target had to act at a moment it
+chooses — guest-memory invalidation after a foreign `WriteProcessMemory` being the
+obvious candidate, which a JIT CPU layer would need and the native one does not.
+
+**`spawn32` grew rungs 6 and 7** — `CreateRemoteThread` into the running child, and
+the injected thread running to completion. Two independent observers of the same
+event: the thread's own exit code, and the child noticing a named event it set.
+Rung 7 caught a race in the TEST rather than the feature on its first run — the child
+called `ExitProcess` the moment it was signalled, overwriting the injected thread's
+`0x0DEF` with the process code, so rung 7 read the child's verdict back to itself. A
+thread's exit code only exists while its process does; a third event now holds the
+child open until the parent has collected rung 7.
+
+        [FEX-WOW64C] foreign guest thread tid=2ec eip=7c4e112c esp=0050fffc
+                     start=00000000001A1C90 (wow64.dll delta NONZERO - relocated)
+        [spawn32] rung6 CreateRemoteThread OK, tid 0x000002ec
+        [spawn32] remote thread: running INSIDE the child
+        [spawn32] child: saw the injected thread's signal
+        [spawn32] rung7 remote thread ran to completion OK
+        [spawn32] verdict 0x0000600d          ladder: 11/11 guests PASS
+
+**Seven rungs, seven defects-or-designs, one gap.** Nothing is owed on guest processes.
 
    *(Superseded, kept as a dated waypoint: while the `STATUS_PARTIAL_COPY` write was
    still failing I wrote here that the next question was "why the child's parameter

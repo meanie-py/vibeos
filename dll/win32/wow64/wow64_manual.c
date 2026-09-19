@@ -6419,20 +6419,30 @@ static NTSTATUS Wow64pPublishPeb64Params(HANDLE Process, ULONG_PTR Peb32,
     return 0;
 }
 
+LONG Wow64CreateForeignGuestThread(HANDLE Process, ULONGLONG Peb64,
+                                   ULONG Eip, ULONG Esp, ULONG Eax, ULONG Ebx,
+                                   ULONG StackBase, ULONG StackLimit,
+                                   BOOLEAN CreateSuspended,
+                                   HANDLE *ThreadHandle, WOW64_CLIENT_ID *ClientId);
+
 /*
- * Wow64pCreateForeignInitialThread — the half of task #64 that needs no channel.
+ * Wow64pCreateForeignThread — both halves of task #64.
  *
  * `NtCreateThread` with a ProcessHandle that is not -1 arrives here, and the two
- * callers that get there are not alike:
+ * callers that get there are not alike. The split is what made the gap
+ * tractable: they were refused together on the harder one's reason.
  *
- *   CreateRemoteThread into a RUNNING process genuinely needs the cross-process
- *   channel. The target's wow64.dll has to be told to run its per-thread entry
- *   for a thread it did not create, and Wow64ProcessPendingCrossProcessItems --
- *   the drain that would do it -- is empty. In-process creation gets around
- *   this by handing RtlCreateUserThread a WOW64_THREAD_SEED on the local heap
- *   and Wow64pGuestThreadStart as the start routine; neither address means
- *   anything in another process, which is why that path cannot simply be
- *   pointed at a foreign handle.
+ *   CreateRemoteThread into a RUNNING process needs the target's wow64.dll to
+ *   establish the guest side of a thread it did not create. In-process
+ *   creation does that by handing RtlCreateUserThread a WOW64_THREAD_SEED on
+ *   the local heap and Wow64pGuestThreadStart as the start routine; neither
+ *   address means anything in another process, which is why that path cannot
+ *   simply be pointed at a foreign handle. Wow64CreateForeignGuestThread
+ *   (wow64.c) fixes both ends -- seed allocated in the target, start routine
+ *   translated through the target's own wow64.dll base -- and in doing so it
+ *   gets the target's code running the setup, on the new thread, which is the
+ *   property Win10's Wow64ProcessPendingCrossProcessItems work list exists to
+ *   provide. That is why the drain is still empty and does not need to be.
  *
  *   The INITIAL thread of a brand-new child needs none of it, because the child
  *   establishes its own guest side from data the kernel already wrote. The
@@ -6465,10 +6475,10 @@ static NTSTATUS Wow64pPublishPeb64Params(HANDLE Process, ULONG_PTR Peb32,
  *   precondition the paragraph above relies on. A running target falls through
  *   to the refusal, which is the CreateRemoteThread case and still owed.
  */
-static NTSTATUS Wow64pCreateForeignInitialThread(HANDLE Process,
-                                                 BOOLEAN CreateSuspended,
-                                                 ULONG *Handle32,
-                                                 ULONG *ClientId32)
+static NTSTATUS Wow64pCreateForeignThread(HANDLE Process,
+                                          BOOLEAN CreateSuspended,
+                                          PBYTE Ctx32, PBYTE ITeb32,
+                                          ULONG *Handle32, ULONG *ClientId32)
 {
     WOW64_PROCESS_BASIC_INFORMATION64 Pbi = {0};
     ULONG_PTR TargetPeb32 = 0;
@@ -6502,10 +6512,34 @@ static NTSTATUS Wow64pCreateForeignInitialThread(HANDLE Process,
 
     if (Ldr != 0)
     {
-        DbgPrint("[WOW64] NtCreateThread: REFUSED - cross-process into a "
-                 "RUNNING process (ProcessHandle=%p Ldr=%p) has no per-thread "
-                 "entry in the target (task #64).\n", Process, (PVOID)(ULONG_PTR)Ldr);
-        return (NTSTATUS)0xC0000002; /* STATUS_NOT_IMPLEMENTED */
+        /* A RUNNING target: this is CreateRemoteThread, and unlike the initial
+         * thread it really does need the target's wow64.dll to establish the
+         * guest side. It gets it by BEING the start routine -- see
+         * Wow64CreateForeignGuestThread. The guest's CONTEXT32 describes a
+         * 32-bit thread start exactly as it does in-process, and the guest
+         * stack in ITeb32 was allocated cross-process by the caller's
+         * BaseCreateStack, so both already refer to the target. */
+        if (!Ctx32 || !ITeb32)
+            return (NTSTATUS)0xC000000D; /* STATUS_INVALID_PARAMETER */
+        St = Wow64CreateForeignGuestThread(
+                 Process, Pbi.PebBaseAddress,
+                 *(ULONG *)(Ctx32 + WOW64_CTX32_EIP),
+                 *(ULONG *)(Ctx32 + WOW64_CTX32_ESP),
+                 *(ULONG *)(Ctx32 + WOW64_CTX32_EAX),
+                 *(ULONG *)(Ctx32 + WOW64_CTX32_EBX),
+                 *(ULONG *)(ITeb32 + WOW64_ITEB32_STACKBASE),
+                 *(ULONG *)(ITeb32 + WOW64_ITEB32_STACKLIMIT),
+                 CreateSuspended, &Thread, &Cid);
+        if (St < 0)
+            return St;
+        if (Handle32)
+            *Handle32 = (ULONG)(ULONG_PTR)Thread;
+        if (ClientId32)
+        {
+            ClientId32[0] = (ULONG)(ULONG_PTR)Cid.UniqueProcess;
+            ClientId32[1] = (ULONG)(ULONG_PTR)Cid.UniqueThread;
+        }
+        return St;
     }
 
     /* The child's 64-bit loader runs before its wow64.dll and reads PEB64's
@@ -6620,12 +6654,13 @@ static NTSTATUS Wow64Manual_NtCreateThread(ULONG *a)
     WOW64_CLIENT_ID Cid = { NULL, NULL };
     NTSTATUS St;
 
-    /* Cross-process creation splits in two, and only one half needs the channel
-     * that does not exist. See Wow64pCreateForeignInitialThread. */
+    /* Cross-process creation splits in two -- a brand-new child's initial
+     * thread and CreateRemoteThread into a running one -- and they need
+     * different things. See Wow64pCreateForeignThread. */
     if ((HANDLE)(LONG_PTR)(LONG)a[3] != (HANDLE)(LONG_PTR)-1)
-        return Wow64pCreateForeignInitialThread((HANDLE)(LONG_PTR)(LONG)a[3],
-                                                (BOOLEAN)(a[7] & 0xFF),
-                                                Handle32, ClientId32);
+        return Wow64pCreateForeignThread((HANDLE)(LONG_PTR)(LONG)a[3],
+                                        (BOOLEAN)(a[7] & 0xFF),
+                                        Ctx32, ITeb32, Handle32, ClientId32);
 
     if (!Ctx32 || !ITeb32)
         return (NTSTATUS)0xC000000D; /* STATUS_INVALID_PARAMETER */
