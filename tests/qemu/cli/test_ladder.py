@@ -239,7 +239,7 @@ def test_built_but_unstaged_says_so_and_names_the_fix(tmp_path):
     repo = _manifest(tmp_path, ["reactos/system32/winlogon.exe=/tmp/vibeos/x"])
     guests = repo / "build-fex-hello"
     guests.mkdir()
-    for g in ladder.LADDER:
+    for g in ladder.staged_guests():
         (guests / f"{g}.exe").write_bytes(b"MZ")
     extra, staged, why = ladder.gate_decision(repo, "amd64")
     assert extra == [] and not staged
@@ -257,7 +257,7 @@ def test_partially_built_names_the_missing_guest_not_a_restage(tmp_path):
     repo = _manifest(tmp_path, ["reactos/system32/winlogon.exe=/tmp/vibeos/x"])
     guests = repo / "build-fex-hello"
     guests.mkdir()
-    for g in ladder.LADDER:
+    for g in ladder.staged_guests():
         if g != "reg32":
             (guests / f"{g}.exe").write_bytes(b"MZ")
     extra, staged, why = ladder.gate_decision(repo, "amd64")
@@ -275,7 +275,7 @@ _T0 = time.time()
 
 def _built_tree(tmp_path, *, sources=True):
     """A repo with a staged manifest, every guest binary, and their sources."""
-    repo = _manifest(tmp_path, [f"reactos/syswow64/{g}.exe=/tmp/x" for g in ladder.LADDER])
+    repo = _manifest(tmp_path, [f"reactos/syswow64/{g}.exe=/tmp/x" for g in ladder.staged_guests()])
     guests = repo / "build-fex-hello"
     guests.mkdir()
     (repo / "tools" / "fex").mkdir(parents=True)
@@ -285,7 +285,7 @@ def _built_tree(tmp_path, *, sources=True):
             src = repo / rel
             src.parent.mkdir(parents=True, exist_ok=True)
             src.write_text("int start(void){return 0;}\n")
-    for g in ladder.LADDER:
+    for g in ladder.staged_guests():
         (guests / f"{g}.exe").write_bytes(b"MZ")
     # Every binary newer than every source -- the fresh state. Times are set
     # EXPLICITLY and far apart rather than with utime(None): the real gap is
@@ -294,7 +294,7 @@ def _built_tree(tmp_path, *, sources=True):
     for rel in ladder.GUEST_SOURCE.values():
         os.utime(repo / rel, (_T0 - 1000, _T0 - 1000))
     os.utime(repo / ladder.GUEST_BUILDER, (_T0 - 1000, _T0 - 1000))
-    for g in ladder.LADDER:
+    for g in ladder.staged_guests():
         os.utime(guests / f"{g}.exe", (_T0 - 500, _T0 - 500))
     return repo
 
@@ -336,7 +336,7 @@ def test_absolute_age_would_not_have_caught_it(tmp_path):
     for rel in ladder.GUEST_SOURCE.values():
         os.utime(repo / rel, (ancient - 100, ancient - 100))
     os.utime(repo / ladder.GUEST_BUILDER, (ancient - 100, ancient - 100))
-    for g in ladder.LADDER:
+    for g in ladder.staged_guests():
         os.utime(repo / "build-fex-hello" / f"{g}.exe", (ancient, ancient))
     assert ladder.stale_guests(repo) == []
 
@@ -348,7 +348,7 @@ def test_a_newer_build_script_invalidates_every_guest(tmp_path):
     repo = _built_tree(tmp_path)
     os.utime(repo / ladder.GUEST_BUILDER, (_T0, _T0))
     stale = ladder.stale_guests(repo)
-    assert len(stale) == len(ladder.LADDER)
+    assert len(stale) == len(ladder.staged_guests())
     assert all(ladder.GUEST_BUILDER in entry for entry in stale)
 
 
@@ -501,7 +501,7 @@ def test_the_restage_remedy_matches_the_arm64_mechanism(tmp_path):
     repo = _ramdisk(tmp_path, [], cpu_layer=True)
     guests = repo / "build-fex-hello"
     guests.mkdir(exist_ok=True)
-    for g in ladder.LADDER:
+    for g in ladder.staged_guests():
         (guests / f"{g}.exe").write_bytes(b"MZ")
     _, staged, why = ladder.gate_decision(repo, "arm64")
     assert not staged
@@ -583,3 +583,112 @@ def test_the_ramdisk_never_answers_for_an_iso_arch(tmp_path):
         assert ladder._staged_per_ramdisk(tmp_path, arch, "system32", ladder.CPU_LAYERS) is None
         assert ladder.supports_wow64(tmp_path, arch) is None
         assert "UNKNOWN, not" in ladder.gate_decision(tmp_path, arch)[2]
+
+
+def test_a_failing_diagnostic_guest_does_not_red_the_gate(tmp_path):
+    """The whole reason DIAGNOSTIC exists. spawn32 measures a gap the lane doc
+    ranks #1 and we already have a task for; grading it would red every lane in
+    the fleet for a hole nobody introduced, and the fleet's answer to a check
+    that reds for a known reason is to disable the check."""
+    text = _all_pass() + _serial(spawn32=0xBAE1)
+    assert ladder.check(text) is None
+
+
+def test_a_failing_diagnostic_guest_still_reports_its_code(tmp_path):
+    """Not grading it must not mean not SAYING it — an unreported measurement is
+    not a measurement. The exact code is what triages the rung."""
+    assert "spawn32=0xbae1" in ladder.summary(_all_pass() + _serial(spawn32=0xBAE1))
+
+
+def test_a_diagnostic_guest_that_starts_passing_is_loud(tmp_path):
+    """The day the gap closes is the day this line matters, and a bare 0x600d
+    among the other hex codes is a result nobody reads. It must say so in words
+    and name the next move, because a diagnostic guest that passes should be
+    promoted into LADDER where a REGRESSION can red it again."""
+    out = ladder.summary(_all_pass() + _serial(spawn32=0x600D))
+    assert "spawn32 PASSES" in out and "promote it to LADDER" in out
+
+
+def test_a_diagnostic_guest_is_not_counted_in_the_parity_score(tmp_path):
+    """It is not a parity guest, so it must move neither the numerator nor the
+    denominator — and it must not fall through to the '+N non-parity' tail
+    either, which is for guests nobody has classified."""
+    out = ladder.summary(_all_pass() + _serial(spawn32=0xBAE1))
+    n = len(ladder.LADDER)
+    assert out.startswith(f"{n}/{n} guests PASS")
+    assert "non-parity" not in out
+
+
+def test_an_absent_diagnostic_guest_says_nothing_at_all(tmp_path):
+    """Silence when it did not run: a gate on media that never staged it must
+    read exactly as it did before the guest existed."""
+    out = ladder.summary(_all_pass())
+    assert "diagnostic" not in out
+    assert ladder.check(_all_pass()) is None
+
+
+def test_an_absent_diagnostic_guest_costs_the_parity_set_nothing(tmp_path):
+    """spawn32 is OPT-IN, so absent is its normal state — the doom-i386 rule
+    (one missing .exe keeps all the others off the media) must NOT apply to it.
+    This is the corrected design: it was briefly in the unconditional set, and
+    the measurement that spawn32 BUGCHECKS the kernel is what ruled that out —
+    an unconditionally-staged guest that can kill the machine reds every lane."""
+    repo = _built_tree(tmp_path)  # every parity guest built, spawn32 absent
+    assert not (repo / "build-fex-hello" / "spawn32.exe").exists()
+    assert ladder.stale_guests(repo) == []
+    extra, staged, _ = ladder.gate_decision(repo, "amd64")
+    assert extra == ["--ladder"] and staged
+
+
+def test_a_built_diagnostic_guest_is_still_staleness_checked(tmp_path):
+    """Opt-in must not mean unchecked: it lives in build-fex-hello/ and rots
+    exactly like a parity guest, which is the marshal32 failure mode."""
+    repo = _built_tree(tmp_path)
+    exe = repo / "build-fex-hello" / "spawn32.exe"
+    exe.write_bytes(b"MZ")
+    os.utime(exe, (_T0 - 500, _T0 - 500))
+    src = repo / ladder.GUEST_SOURCE["spawn32"]
+    src.parent.mkdir(parents=True, exist_ok=True)
+    src.write_text("int start(void){return 0;}\n")
+    os.utime(src, (_T0, _T0))
+    assert ladder.stale_guests(repo) == ["spawn32 (tools/fex/hello-compute/Spawn32.c is newer)"]
+
+
+def test_the_restage_remedy_is_chosen_by_arch_not_by_a_stray_ramdisk(tmp_path):
+    """Same root cause as the arch-blind probe, second symptom. The remedy used
+    to key on `qemu/ramdisk.img` EXISTING, so an amd64 tree that happened to
+    have a ramdisk on disk — a restored backup, an arm64 build in the same
+    worktree — was told to restage with `VIBEOS_FEX=1 build --arch arm64`. The
+    reader follows that and rebuilds the wrong arch, and the guests are still
+    not staged on the one they asked about."""
+    repo = _manifest(tmp_path, ["reactos/system32/winlogon.exe=/tmp/vibeos/x"])
+    (repo / "qemu").mkdir(exist_ok=True)
+    (repo / ladder.RAMDISK_REL).write_bytes(b"\0" * 512)
+    guests = repo / "build-fex-hello"
+    guests.mkdir()
+    for g in ladder.staged_guests():
+        (guests / f"{g}.exe").write_bytes(b"MZ")
+    _, staged, why = ladder.gate_decision(repo, "amd64")
+    assert not staged
+    assert "BUILT but none is staged" in why
+    assert "--arch amd64" in why
+    assert "VIBEOS_FEX" not in why and "--arch arm64" not in why
+
+
+def test_uses_ramdisk_answers_from_the_arch_alone(tmp_path):
+    """No repo argument on purpose — the mechanism is a property of the arch's
+    media, and taking a path would re-open the door to answering from the disk."""
+    assert ladder.uses_ramdisk("arm64") is True
+    assert ladder.uses_ramdisk("amd64") is False
+    assert ladder.uses_ramdisk("i386") is False
+
+
+def test_the_staged_line_counts_what_is_actually_staged(tmp_path):
+    """It read `len(LADDER)` and so said "10 guests staged" while 11 sat on the
+    media. Harmless-looking, but it is the number a reader checks the serial
+    against, and a count that silently omits the diagnostic guest teaches them
+    to ignore its line."""
+    repo = _built_tree(tmp_path)
+    extra, staged, why = ladder.gate_decision(repo, "amd64")
+    assert extra == ["--ladder"] and staged
+    assert f"{len(ladder.LADDER)} parity + {len(ladder.DIAGNOSTIC)} diagnostic" in why

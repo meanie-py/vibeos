@@ -76,6 +76,55 @@ OPTIONAL: dict[str, int] = {
     "lua32": 0x600D,
 }
 
+# DIAGNOSTIC guests measure a gap we KNOW is open. They report a verdict and
+# never fail a gate -- grading one would redden every lane in the fleet for a
+# hole we already have a task for, which is how a known gap turns into a
+# disabled check. They are graded by a HUMAN reading the summary line.
+#
+# The value is the PASS code, not the failure code we currently expect. Writing
+# today's failure in here would enshrine it: the guest would then go quiet on
+# the day the failure mode CHANGES, which is exactly the day worth hearing
+# about. Instead `summary` prints whatever code came back, and shouts if it is
+# PASS -- because a diagnostic guest that starts passing means the gap closed
+# and the guest should be promoted into LADDER, where a regression can red it.
+#
+# A diagnostic guest must be cheap to abandon: it shares the ladder's drain
+# budget, and one guest that hangs has cost four later ones their verdicts
+# before now (marshal32, six days stale, ate 420s). spawn32 caps its own wait
+# at 30s for that reason.
+DIAGNOSTIC: dict[str, int] = {
+    "spawn32": 0x600D,
+}
+
+# Diagnostic guests are OPT-IN, and spawn32 is why the rule is written this
+# strongly. Measured 2026-09-19 on amd64: a 32-bit guest calling CreateProcessW
+# does not fail cleanly -- `NtCreateProcessEx` SUCCEEDS, the child's PEB32 is
+# built, the process parameters are written into it, and then the kernel takes
+# a BUGCHECK 0x1E (c0000005). A guest that can bugcheck cannot be made
+# ungraded: "report, never red" works for a bad exit code and does nothing at
+# all for a dead machine, which reds the boot for every lane in the fleet.
+#
+# So the not-graded promise is kept by NOT STAGING it unless someone asks:
+# build-hello-compute.sh builds spawn32 only under VIBEOS_WOW64_SPAWN=1, the
+# CMake list stages it only `if(EXISTS)`, and winlogon runs it LAST of all
+# guests so that even when it does bring the machine down, every other verdict
+# has already been reported. That last point is the sqlite32 rule -- a guest
+# that can take the boot down must be last or its crash silently costs every
+# guest after it -- and spawn32 is a harder case than sqlite32, not a softer
+# one.
+
+
+def staged_guests() -> list[str]:
+    """The guests CMake stages UNCONDITIONALLY (`_wow64_ladder`).
+
+    Only LADDER. That set is all-or-nothing (`_wow64_guest_ok`), so a missing
+    member costs every other guest its staging -- which is why absence is a
+    hole here and merely a skip for the opt-in guests. DIAGNOSTIC is
+    deliberately not included: it is staged `if(EXISTS)` like the stress
+    guests, so an absent spawn32 must cost the parity set nothing."""
+    return list(LADDER)
+
+
 # [WINLOGON] selfmod32.exe exit = 0x600d (0x600D = PASS)
 _VERDICT = re.compile(r"\[WINLOGON\] ([A-Za-z0-9_]+)\.exe exit = 0x([0-9a-fA-F]+)")
 
@@ -128,6 +177,7 @@ GUEST_SOURCE: dict[str, str] = {
     "fault32": "tools/fex/hello-compute/Fault32.c",
     "selfmod32": "tools/fex/hello-compute/Selfmod32.c",
     "reg32": "tools/fex/hello-compute/Reg32.c",
+    "spawn32": "tools/fex/hello-compute/Spawn32.c",
 }
 
 # The script carries the link lines, so a change to it (a new flag, a different
@@ -183,7 +233,21 @@ def stale_guests(repo: Path) -> list[str]:
     a gap in this check, and it must not read as freshness.
     """
     out: list[str] = []
-    for guest in LADDER:
+    for guest in staged_guests():
+        exe = repo / "build-fex-hello" / f"{guest}.exe"
+        if not exe.is_file():
+            continue
+        rel = GUEST_SOURCE.get(guest)
+        if rel is None:
+            out.append(f"{guest} (no source mapping)")
+            continue
+        out.extend(_newer_than(repo, guest, exe, [rel, GUEST_BUILDER]))
+
+    # DIAGNOSTIC guests are opt-in (VIBEOS_WOW64_SPAWN=1), so absent is the
+    # normal state and must not read as a hole -- but a built one is compared
+    # exactly like a parity guest, because it lives in build-fex-hello/ and
+    # goes stale the same way.
+    for guest in DIAGNOSTIC:
         exe = repo / "build-fex-hello" / f"{guest}.exe"
         if not exe.is_file():
             continue
@@ -222,7 +286,9 @@ def _newer_than(repo: Path, guest: str, exe: Path, sources: list[str]) -> list[s
 
 
 def _guest_names() -> set[str]:
-    return {f"{g}.exe".lower() for g in LADDER}
+    # DIAGNOSTIC included: it is not unconditionally staged, but when it IS
+    # on the media the probe must see it.
+    return {f"{g}.exe".lower() for g in [*LADDER, *DIAGNOSTIC]}
 
 
 def _staged_per_manifest(repo: Path, arch: str, subdir: str, names: set[str]) -> set[str] | None:
@@ -265,6 +331,26 @@ def _staged_per_manifest(repo: Path, arch: str, subdir: str, names: set[str]) ->
     return found
 
 
+def uses_ramdisk(arch: str) -> bool:
+    """Does this arch stage into the FAT ramdisk rather than an assembled ISO?
+
+    Asked of the ARCH, never of the disk. `RAMDISK_REL` is a fixed path with no
+    arch in it, so "does qemu/ramdisk.img exist" is not the same question and
+    answering with it makes arm64's media speak for amd64. That substitution
+    has now produced two separate bugs from one root -- a probe that read
+    arm64's ramdisk on amd64's behalf, and a restage remedy that told an amd64
+    tree to run `VIBEOS_FEX=1 build --arch arm64` -- so the derivation lives
+    here once instead of at each site that needs it.
+    """
+    from . import archcfg
+
+    try:
+        media = Path(archcfg.arch_build(arch).boot_media_rel)
+    except (KeyError, AttributeError):
+        return False
+    return not (media.parts and media.parts[0].startswith("build-"))
+
+
 def _staged_per_ramdisk(repo: Path, arch: str, subdir: str, names: set[str]) -> set[str] | None:
     """arm64 media, filled by mcopy. None = cannot tell (no image, no mtools).
 
@@ -282,13 +368,7 @@ def _staged_per_ramdisk(repo: Path, arch: str, subdir: str, names: set[str]) -> 
     under build-<arch>/, arm64's is mcopy-filled and lives outside it, and that
     IS the mechanism split this function's None contract is about.
     """
-    from . import archcfg
-
-    try:
-        media = Path(archcfg.arch_build(arch).boot_media_rel)
-    except (KeyError, AttributeError):
-        return None
-    if media.parts and media.parts[0].startswith("build-"):
+    if not uses_ramdisk(arch):
         return None  # assembled ISO -- the manifest is this arch's mechanism
 
     img = repo / RAMDISK_REL
@@ -418,7 +498,8 @@ def gate_decision(repo: Path, arch: str) -> tuple[list[str], bool, str]:
         return (
             ["--ladder"],
             True,
-            f"{len(LADDER)} WoW64 guests staged — boot watched past the desktop marker",
+            f"{len(LADDER)} parity + {len(DIAGNOSTIC)} diagnostic WoW64 guests staged — "
+            f"boot watched past the desktop marker",
         )
     # A native-x86 boot has no CPU layer, so it has no SysWOW64 to stage into and
     # "not staged" is the final answer, not a fixable state. Checked by asking the
@@ -444,31 +525,31 @@ def gate_decision(repo: Path, arch: str) -> tuple[list[str], bool, str]:
     # assembled, so guests built afterwards sit on disk while the media has none --
     # silently. That cost 45 minutes tonight. The remedy differs by mechanism, so
     # name the one that matches this media rather than the x86 one everywhere.
-    built = sorted(g for g in LADDER if (repo / "build-fex-hello" / f"{g}.exe").is_file())
+    built = sorted(g for g in staged_guests() if (repo / "build-fex-hello" / f"{g}.exe").is_file())
     # Partially built is its own state, and restaging cannot fix it. The CMake
     # ladder list is all-or-nothing (`_wow64_guest_ok`), so ONE missing guest
     # keeps every other one off the media -- the same failure doom caused once
     # by being absent. A tree that predates a newly added guest lands here, and
     # telling it to restage would send it round a build that changes nothing.
-    if built and len(built) < len(LADDER):
-        absent = ", ".join(f"{g}.exe" for g in LADDER if g not in built)
+    if built and len(built) < len(staged_guests()):
+        absent = ", ".join(f"{g}.exe" for g in staged_guests() if g not in built)
         return (
             [],
             False,
-            f"{len(built)}/{len(LADDER)} ladder guests built — {absent} missing, and "
+            f"{len(built)}/{len(staged_guests())} ladder guests built — {absent} missing, and "
             f"staging is all-or-nothing, so NOTHING is staged; build the guests with: "
             f"tools/fex/build-hello-compute.sh",
         )
     if built:
         fix = (
             "VIBEOS_FEX=1 ./vibeos-cli build --arch arm64"
-            if (repo / RAMDISK_REL).is_file()
-            else "touch dll/win32/wow64cpu/CMakeLists.txt && ./vibeos-cli build --arch <a>"
+            if uses_ramdisk(arch)
+            else f"touch dll/win32/wow64cpu/CMakeLists.txt && ./vibeos-cli build --arch {arch}"
         )
         return (
             [],
             False,
-            f"{len(built)}/{len(LADDER)} guests are BUILT but none is staged on this "
+            f"{len(built)}/{len(staged_guests())} guests are BUILT but none is staged on this "
             f"arch's media — staging is snapshotted when the media is assembled; "
             f"restage with: {fix}",
         )
@@ -593,6 +674,26 @@ def summary(text: str) -> str:
     """One-line roll-up for the stage detail."""
     seen = verdicts(text)
     ok = sum(1 for g, want in LADDER.items() if seen.get(g) == want)
-    extra = [g for g in seen if g not in LADDER]
+    extra = [g for g in seen if g not in LADDER and g not in DIAGNOSTIC]
     tail = f" (+{len(extra)} non-parity: {', '.join(sorted(extra))})" if extra else ""
-    return f"{ok}/{len(LADDER)} guests PASS{tail}"
+    return f"{ok}/{len(LADDER)} guests PASS{tail}{_diagnostic_tail(seen)}"
+
+
+def _diagnostic_tail(seen: dict[str, int]) -> str:
+    """The diagnostic guests' codes, appended to the roll-up. Never a verdict.
+
+    A guest that came back PASS is called out in words rather than left as a
+    hex code among others: it means the gap it measures has closed, and the
+    next move is to promote it into LADDER so a regression can red it again. A
+    silent 0x600d here would be a result nobody reads."""
+    bits: list[str] = []
+    for g, want in sorted(DIAGNOSTIC.items()):
+        if g not in seen:
+            continue
+        got = seen[g]
+        bits.append(
+            f"{g} PASSES (0x{got:04x}) — gap closed, promote it to LADDER"
+            if got == want
+            else f"{g}=0x{got:04x}"
+        )
+    return f"; diagnostic: {', '.join(bits)}" if bits else ""
