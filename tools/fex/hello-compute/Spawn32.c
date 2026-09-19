@@ -36,6 +36,8 @@
  *   3  ResumeThread releases it                      (cross-process suspend count is real)
  *   4  the child reaches its own exit                (it ran, rather than dying on entry)
  *   5  its exit code arrives intact                  (the parent can actually collect a result)
+ *   6  CreateRemoteThread into the RUNNING child      (the other half of task #64)
+ *   7  that injected thread runs to completion        (it was initialised, not just created)
  *
  * Rung 3 is worth its own code because it is a SECOND cross-process operation
  * on a different syscall (NtResumeThread, not NtCreateThread): if rung 1 is
@@ -56,8 +58,26 @@
 #define S32_FAIL_RESUME    0xBAE3 /* ResumeThread failed -- cross-process suspend broken */
 #define S32_FAIL_WAIT      0xBAE4 /* child never terminated */
 #define S32_FAIL_EXITCODE  0xBAE5 /* child ran but its exit code did not survive */
-#define S32_CHILD_MAGIC    0x0C41 /* what the child half exits with */
+#define S32_FAIL_READY     0xBAE6 /* child never reached its own code */
+#define S32_FAIL_REMOTE    0xBAE7 /* CreateRemoteThread failed */
+#define S32_FAIL_REMOTE_RUN 0xBAE8 /* remote thread created but never ran its body */
+#define S32_CHILD_MAGIC    0x0C41 /* child saw the remote thread's signal */
+#define S32_CHILD_NOSIGNAL 0x0C42 /* child ran but nothing ever signalled it */
+#define S32_REMOTE_MAGIC   0x0DEF /* what the injected thread returns */
 #define S32_PASS           0x600D
+
+/* Named so the two halves can find each other without inheriting handles --
+ * the point is to test the SYSTEM's cross-process machinery, not handle
+ * inheritance. READY is set by the child once it is fully loaded and running
+ * its own code; GO is set by the thread the parent injects INTO the child. */
+#define S32_EVENT_READY  L"VibeOSSpawn32ChildReady"
+#define S32_EVENT_GO     L"VibeOSSpawn32RemoteRan"
+/* Why a THIRD event. A thread's exit code only exists while its process does:
+ * the child used to exit the moment the injected thread signalled it, and
+ * ExitProcess overwrote that thread's 0x0DEF with the process code before the
+ * parent could read it -- rung 7 reported the CHILD's verdict back to itself.
+ * So the child holds still until the parent has collected rung 7. */
+#define S32_EVENT_DONE   L"VibeOSSpawn32ParentDone"
 
 /* How long to give a child that should exit immediately. Long enough that a
  * loaded host is not the reason, short enough that a hung child cannot eat the
@@ -164,9 +184,66 @@ static BOOL BuildChildCmdline(WCHAR *buf, DWORD cch)
     return TRUE;
 }
 
+/* The body the PARENT injects into the CHILD with CreateRemoteThread.
+ *
+ * Its address is taken in the parent and executed in the child, which is only
+ * sound because the child is this very same .exe mapped at the same base -- the
+ * self-spawn that rung 2 already relies on. Everything it calls goes through
+ * spawn32's own IAT, which the child's loader resolved at the same addresses
+ * for the same reason. A test that injected into a DIFFERENT image could not
+ * do this and would have to write code into the target.
+ *
+ * It signals a NAMED event rather than touching memory, so the proof that it
+ * ran is something the child observes for itself rather than something the
+ * parent infers. */
+static DWORD WINAPI RemoteBody(LPVOID Unused)
+{
+    HANDLE Go;
+    (void)Unused;
+    Say("[spawn32] remote thread: running INSIDE the child\n");
+    Go = CreateEventW(NULL, TRUE, FALSE, S32_EVENT_GO);
+    if (Go) {
+        SetEvent(Go);
+        CloseHandle(Go);
+    }
+    return S32_REMOTE_MAGIC;
+}
+
 static DWORD RunChild(void)
 {
+    HANDLE Ready, Go, Done;
+    DWORD waited;
+
     Say("[spawn32] child: running\n");
+
+    /* Announce that the child's own code is executing. Until this fires the
+     * parent must not inject: a target whose loader has not finished is the
+     * INITIAL-thread case, a different path entirely, and racing the two would
+     * make this guest test whichever one won. */
+    Ready = CreateEventW(NULL, TRUE, FALSE, S32_EVENT_READY);
+    Go = CreateEventW(NULL, TRUE, FALSE, S32_EVENT_GO);
+    if (!Ready || !Go) {
+        Say("[spawn32] child: could not create its events\n");
+        return S32_CHILD_NOSIGNAL;
+    }
+    SetEvent(Ready);
+
+    waited = WaitForSingleObject(Go, CHILD_WAIT_MS);
+    if (waited != WAIT_OBJECT_0) {
+        SayHex("[spawn32] child: nothing signalled it, wait", waited);
+        return S32_CHILD_NOSIGNAL;
+    }
+    Say("[spawn32] child: saw the injected thread's signal\n");
+
+    /* Hold the process open until the parent has read the injected thread's
+     * exit code -- see S32_EVENT_DONE. A timeout here is not a failure of the
+     * thing under test, so it still exits CHILD_MAGIC and lets the parent's
+     * own rungs decide. */
+    Done = CreateEventW(NULL, TRUE, FALSE, S32_EVENT_DONE);
+    if (Done) {
+        WaitForSingleObject(Done, CHILD_WAIT_MS);
+        CloseHandle(Done);
+    }
     return S32_CHILD_MAGIC;
 }
 
@@ -175,7 +252,8 @@ static DWORD RunParent(void)
     WCHAR cmdline[560];
     STARTUPINFOW si;
     PROCESS_INFORMATION pi;
-    DWORD code = 0, waited;
+    DWORD code = 0, waited, remoteTid = 0, remoteCode = 0;
+    HANDLE hReady = NULL, hRemote = NULL, hDone = NULL;
     BOOL isWow = FALSE;
     int i;
 
@@ -221,6 +299,54 @@ static DWORD RunParent(void)
         return S32_FAIL_RESUME;
     }
     Say("[spawn32] rung3 ResumeThread OK\n");
+
+    /* rung 6: CreateRemoteThread into a RUNNING 32-bit process. Sequenced here
+     * rather than at the end because the child is waiting on it -- and gated on
+     * the child's READY event, because injecting into a target whose loader has
+     * not finished is the initial-thread path instead, and a race between the
+     * two would silently test the wrong one. */
+    hReady = CreateEventW(NULL, TRUE, FALSE, S32_EVENT_READY);
+    if (!hReady || WaitForSingleObject(hReady, CHILD_WAIT_MS) != WAIT_OBJECT_0) {
+        Say("[spawn32] rung6 child never signalled READY\n");
+        TerminateProcess(pi.hProcess, 1);
+        CloseHandle(pi.hThread);
+        CloseHandle(pi.hProcess);
+        return S32_FAIL_READY;
+    }
+
+    hRemote = CreateRemoteThread(pi.hProcess, NULL, 0, RemoteBody, NULL, 0, &remoteTid);
+    if (!hRemote) {
+        SayHex("[spawn32] rung6 CreateRemoteThread FAILED, GetLastError", GetLastError());
+        TerminateProcess(pi.hProcess, 1);
+        CloseHandle(pi.hThread);
+        CloseHandle(pi.hProcess);
+        return S32_FAIL_REMOTE;
+    }
+    SayHex("[spawn32] rung6 CreateRemoteThread OK, tid", remoteTid);
+
+    /* rung 7: it RAN, not merely got created. The exit code proves the body
+     * executed to its return; the child's own verdict proves the signal
+     * arrived. Two independent observers of the same event, which is what
+     * separates "a thread object exists" from "a thread ran guest code". */
+    if (WaitForSingleObject(hRemote, CHILD_WAIT_MS) != WAIT_OBJECT_0 ||
+        !GetExitCodeThread(hRemote, &remoteCode) ||
+        remoteCode != S32_REMOTE_MAGIC) {
+        SayHex("[spawn32] rung7 remote thread did not complete, code", remoteCode);
+        TerminateProcess(pi.hProcess, 1);
+        CloseHandle(hRemote);
+        CloseHandle(pi.hThread);
+        CloseHandle(pi.hProcess);
+        return S32_FAIL_REMOTE_RUN;
+    }
+    Say("[spawn32] rung7 remote thread ran to completion OK\n");
+    CloseHandle(hRemote);
+
+    /* Release the child now that rung 7 has its answer. */
+    hDone = CreateEventW(NULL, TRUE, FALSE, S32_EVENT_DONE);
+    if (hDone) {
+        SetEvent(hDone);
+        CloseHandle(hDone);
+    }
 
     waited = WaitForSingleObject(pi.hProcess, CHILD_WAIT_MS);
     if (waited != WAIT_OBJECT_0) {

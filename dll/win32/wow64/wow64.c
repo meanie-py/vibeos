@@ -86,6 +86,17 @@ LONG WINAPI RtlSetEnvironmentVariable(PWSTR *Environment,
                                       WOW64_UNICODE_STRING *Value);
 PVOID WINAPI RtlAddVectoredExceptionHandler(ULONG First,
                                             PVECTORED_EXCEPTION_HANDLER Handler);
+LONG WINAPI NtFreeVirtualMemory(HANDLE Process, PVOID *BaseAddress,
+                                PSIZE_T RegionSize, ULONG FreeType);
+LONG WINAPI NtReadVirtualMemory(HANDLE Process, PVOID BaseAddress,
+                                PVOID Buffer, SIZE_T Size, PSIZE_T Done);
+LONG WINAPI NtWriteVirtualMemory(HANDLE Process, PVOID BaseAddress,
+                                 PVOID Buffer, SIZE_T Size, PSIZE_T Done);
+/* Our own load address, captured in DllMain. Needed to translate a code
+ * address in THIS wow64.dll into the same address in ANOTHER process's copy
+ * (Wow64CreateForeignGuestThread). */
+static PVOID Wow64pSelfBase;
+
 LONG WINAPI NtAllocateVirtualMemory(HANDLE Process, PVOID *BaseAddress,
                                     ULONG_PTR ZeroBits, SIZE_T *RegionSize,
                                     ULONG AllocationType, ULONG Protect);
@@ -1494,6 +1505,12 @@ typedef struct _WOW64_THREAD_SEED {
     ULONG Ebx;        /* guest thread parameter */
     ULONG StackBase;
     ULONG StackLimit;
+    /* How to release this block. An in-process seed is heap memory; a seed
+     * planted by ANOTHER process (CreateRemoteThread) is its own VirtualAlloc,
+     * because a foreign process cannot reach into this one's heap. Freeing the
+     * second with RtlFreeHeap would corrupt the heap, so the seed says which
+     * it is rather than the consumer guessing. */
+    ULONG Remote;
 } WOW64_THREAD_SEED;
 
 /*
@@ -1534,7 +1551,16 @@ static ULONG WINAPI Wow64pGuestThreadStart(PVOID Parameter)
     WOW64_CONTEXT RunCtx, StartCtx;
     ULONG ApcEsp;
 
-    RtlFreeHeap(Wow64pProcessHeap(), 0, Parameter);
+    if (Seed.Remote)
+    {
+        PVOID Base = Parameter;
+        SIZE_T Zero = 0;
+        NtFreeVirtualMemory(WOW64_CURRENT_PROCESS, &Base, &Zero, MEM_RELEASE);
+    }
+    else
+    {
+        RtlFreeHeap(Wow64pProcessHeap(), 0, Parameter);
+    }
 
     /* What the thread runs once the 32-bit loader has initialized it: the
      * entry kernel32 asked for, on the stack kernel32 allocated for it. */
@@ -1605,6 +1631,178 @@ LONG Wow64CreateGuestThread(ULONG Eip, ULONG Esp, ULONG Eax, ULONG Ebx,
                  Status);
         RtlFreeHeap(Wow64pProcessHeap(), 0, Seed);
     }
+    return Status;
+}
+
+/* ---- cross-process guest thread creation (task #64, second half) --------
+ *
+ * CreateRemoteThread from a 32-bit guest into ANOTHER running 32-bit process.
+ * The in-process path above cannot simply be pointed at a foreign handle, and
+ * the two reasons are worth separating because only one of them is hard:
+ *
+ *   The SEED is a pointer into this process's heap. Meaningless over there.
+ *     Fixed by allocating the seed in the TARGET instead, which is why
+ *     WOW64_THREAD_SEED carries a Remote flag telling the consumer how to free
+ *     it -- RtlFreeHeap on a foreign VirtualAlloc would corrupt the heap.
+ *
+ *   The START ROUTINE is a code address in THIS copy of wow64.dll. The target
+ *     has its own copy, and assuming the two share a base is exactly the kind
+ *     of "it is a system DLL, it is always at the same address" reasoning that
+ *     holds right up until ASLR or a relocation makes it false -- silently, by
+ *     starting a thread at whatever lives at that address over there. So it is
+ *     not assumed: walk the TARGET's loader list, find its wow64.dll, and
+ *     translate Wow64pGuestThreadStart through the measured delta. Equal bases
+ *     make the delta zero and cost nothing but the walk.
+ *
+ * What this deliberately does NOT build is Win10's cross-process work list
+ * (Wow64ProcessPendingCrossProcessItems, still empty here). That mechanism
+ * exists so the TARGET can do the per-thread setup on its own schedule. We do
+ * not need it: the new thread's start routine IS the target's own
+ * Wow64pGuestThreadStart, so the setup happens in the target, on the new
+ * thread, by the target's own code -- which is the property the work list
+ * exists to provide.
+ *
+ * Loader-walk offsets MEASURED against the bindgen structs this tree builds
+ * against, with sizeof as the control (PEB_LDR_DATA 72, LDR_DATA_TABLE_ENTRY
+ * 152 on amd64, per ntdll-sys/src/size_check_amd64.rs).
+ */
+#define WOW64_SELF_DLL_NAME      L"wow64.dll"
+#define LDR64_PEB_LDR_OFF        0x18 /* PEB64.Ldr                          */
+#define LDR64_INLOADORDER_OFF    0x10 /* PEB_LDR_DATA.InLoadOrderModuleList */
+#define LDR64_ENTRY_DLLBASE      0x30 /* LDR_DATA_TABLE_ENTRY.DllBase       */
+#define LDR64_ENTRY_BASENAME     0x58 /* .BaseDllName.Length                */
+#define LDR64_ENTRY_BASENAMEBUF  0x60 /* .BaseDllName.Buffer                */
+/* A corrupt list must not spin forever; no process has this many modules. */
+#define LDR64_MAX_MODULES        512
+
+static WCHAR Wow64pLowerW(WCHAR c)
+{
+    return (c >= L'A' && c <= L'Z') ? (WCHAR)(c - L'A' + L'a') : c;
+}
+
+/* DllBase of `Name` in another process, or 0 if it is not loaded there. */
+static ULONGLONG Wow64pRemoteModuleBase(HANDLE Process, ULONGLONG Peb64,
+                                        const WCHAR *Name)
+{
+    ULONGLONG Ldr = 0, Head, Cur = 0;
+    SIZE_T Done = 0;
+    unsigned Guard, NameLen = 0;
+
+    while (Name[NameLen])
+        NameLen++;
+
+    if (NtReadVirtualMemory(Process, (PVOID)(ULONG_PTR)(Peb64 + LDR64_PEB_LDR_OFF),
+                            &Ldr, sizeof(Ldr), &Done) < 0 || !Ldr)
+        return 0;
+
+    Head = Ldr + LDR64_INLOADORDER_OFF;
+    if (NtReadVirtualMemory(Process, (PVOID)(ULONG_PTR)Head, &Cur,
+                            sizeof(Cur), &Done) < 0)
+        return 0;
+
+    for (Guard = 0; Cur && Cur != Head && Guard < LDR64_MAX_MODULES; Guard++)
+    {
+        /* InLoadOrderLinks sits at offset 0, so the link IS the entry. */
+        ULONGLONG DllBase = 0, NameBuf = 0;
+        USHORT ByteLen = 0;
+        WCHAR Buf[64];
+        unsigned Chars, i;
+        int Match;
+
+        if (NtReadVirtualMemory(Process, (PVOID)(ULONG_PTR)(Cur + LDR64_ENTRY_DLLBASE),
+                                &DllBase, sizeof(DllBase), &Done) >= 0 &&
+            NtReadVirtualMemory(Process, (PVOID)(ULONG_PTR)(Cur + LDR64_ENTRY_BASENAME),
+                                &ByteLen, sizeof(ByteLen), &Done) >= 0 &&
+            NtReadVirtualMemory(Process, (PVOID)(ULONG_PTR)(Cur + LDR64_ENTRY_BASENAMEBUF),
+                                &NameBuf, sizeof(NameBuf), &Done) >= 0 &&
+            NameBuf && ByteLen && (ByteLen / sizeof(WCHAR)) == NameLen &&
+            NameLen < (sizeof(Buf) / sizeof(Buf[0])) &&
+            NtReadVirtualMemory(Process, (PVOID)(ULONG_PTR)NameBuf, Buf,
+                                ByteLen, &Done) >= 0)
+        {
+            Chars = ByteLen / sizeof(WCHAR);
+            Match = 1;
+            for (i = 0; i < Chars; i++)
+                if (Wow64pLowerW(Buf[i]) != Wow64pLowerW(Name[i]))
+                {
+                    Match = 0;
+                    break;
+                }
+            if (Match)
+                return DllBase;
+        }
+
+        if (NtReadVirtualMemory(Process, (PVOID)(ULONG_PTR)Cur, &Cur,
+                                sizeof(Cur), &Done) < 0)
+            break;
+    }
+    return 0;
+}
+
+LONG Wow64CreateForeignGuestThread(HANDLE Process, ULONGLONG Peb64,
+                                   ULONG Eip, ULONG Esp, ULONG Eax, ULONG Ebx,
+                                   ULONG StackBase, ULONG StackLimit,
+                                   BOOLEAN CreateSuspended,
+                                   HANDLE *ThreadHandle, WOW64_CLIENT_ID *ClientId)
+{
+    WOW64_THREAD_SEED Seed;
+    ULONGLONG TheirBase;
+    LONGLONG Delta;
+    PVOID Remote = NULL, RemoteStart;
+    SIZE_T Size = sizeof(Seed), Done = 0, Zero = 0;
+    LONG Status;
+
+    if (!Wow64pSelfBase)
+        return (LONG)0xC0000001L; /* STATUS_UNSUCCESSFUL */
+
+    TheirBase = Wow64pRemoteModuleBase(Process, Peb64, WOW64_SELF_DLL_NAME);
+    if (!TheirBase)
+    {
+        /* Not a WoW64 process, or one whose wow64.dll has not loaded yet --
+         * either way there is nothing over there to run the guest side, and
+         * refusing beats starting a thread that cannot be initialised. */
+        DbgPrint("[FEX-WOW64C] foreign thread: target has no wow64.dll loaded\n");
+        return (LONG)0xC0000002L; /* STATUS_NOT_IMPLEMENTED */
+    }
+    Delta = (LONGLONG)TheirBase - (LONGLONG)(ULONG_PTR)Wow64pSelfBase;
+    RemoteStart = (PVOID)(ULONG_PTR)
+        ((LONGLONG)(ULONG_PTR)Wow64pGuestThreadStart + Delta);
+
+    Seed.Eip = Eip;
+    Seed.Esp = Esp;
+    Seed.Eax = Eax;
+    Seed.Ebx = Ebx;
+    Seed.StackBase = StackBase;
+    Seed.StackLimit = StackLimit;
+    Seed.Remote = 1;
+
+    Status = NtAllocateVirtualMemory(Process, &Remote, 0, &Size,
+                                     MEM_COMMIT | MEM_RESERVE, PAGE_READWRITE);
+    if (Status < 0)
+    {
+        DbgPrint("[FEX-WOW64C] foreign thread: seed allocate %08lx\n", Status);
+        return Status;
+    }
+    Status = NtWriteVirtualMemory(Process, Remote, &Seed, sizeof(Seed), &Done);
+    if (Status < 0 || Done != sizeof(Seed))
+    {
+        NtFreeVirtualMemory(Process, &Remote, &Zero, MEM_RELEASE);
+        return Status < 0 ? Status : (LONG)0x8000000DL;
+    }
+
+    Status = RtlCreateUserThread(Process, NULL, CreateSuspended, 0, 0, 0,
+                                 RemoteStart, Remote, ThreadHandle, ClientId);
+    if (Status < 0)
+    {
+        NtFreeVirtualMemory(Process, &Remote, &Zero, MEM_RELEASE);
+        DbgPrint("[FEX-WOW64C] foreign thread: RtlCreateUserThread %08lx\n", Status);
+        return Status;
+    }
+
+    DbgPrint("[FEX-WOW64C] foreign guest thread tid=%lx eip=%08lx esp=%08lx "
+             "seed=%p start=%p (wow64.dll delta %s)\n",
+             (ULONG)(ULONG_PTR)ClientId->UniqueThread, Eip, Esp, Remote,
+             RemoteStart, Delta ? "NONZERO - relocated" : "0");
     return Status;
 }
 
@@ -1955,10 +2153,23 @@ Wow64LdrpInitialize(PVOID Context)
 }
 
 /*
- * Wow64ProcessPendingCrossProcessItems — drains the cross-process work list
- * (writes into this process's guest memory by other processes, e.g.
- * CreateRemoteThread / WriteProcessMemory notifications). No cross-process
- * machinery exists yet; nothing to drain.
+ * Wow64ProcessPendingCrossProcessItems — in Win10, drains a work list of
+ * things other processes want done to THIS process's guest state.
+ *
+ * Still a no-op here, and deliberately so rather than pending. Cross-process
+ * thread creation works (task #64, Wow64CreateForeignGuestThread) and it
+ * needs no list: the creator points the new thread at the TARGET's own
+ * Wow64pGuestThreadStart, so the per-thread guest setup already happens in
+ * the target, on the new thread, by the target's own code. That is the
+ * property the work list exists to provide, obtained by construction instead
+ * of by deferral -- so there is genuinely nothing queued to drain, and an
+ * empty body is the honest implementation rather than a stub.
+ *
+ * It would start to matter if we ever needed the target to act at a moment it
+ * chooses rather than at thread entry -- guest memory invalidation after a
+ * foreign WriteProcessMemory is the obvious candidate, since a JIT CPU layer
+ * would have to drop cached blocks. The native CPU layer has nothing to
+ * invalidate, which is why that has not come up.
  */
 VOID
 WINAPI
@@ -1972,10 +2183,9 @@ DllMain(HINSTANCE hDll, DWORD dwReason, LPVOID lpReserved)
 {
     UNREFERENCED_PARAMETER(lpReserved);
 
-    UNREFERENCED_PARAMETER(hDll);
-
     if (dwReason == DLL_PROCESS_ATTACH)
     {
+        Wow64pSelfBase = (PVOID)hDll;
         /* No DisableThreadLibraryCalls: that's kernel32, and this DLL is
          * deliberately ntdll-only. Thread attach/detach no-op through DllMain. */
         DbgPrint("[WOW64] wow64.dll loaded\n");
