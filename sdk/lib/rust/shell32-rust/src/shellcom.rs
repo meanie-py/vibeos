@@ -786,7 +786,10 @@ pub struct IBindCtxVtbl {
     pub RegisterObjectBound: usize,
     pub RevokeObjectBound: usize,
     pub ReleaseBoundObjects: usize,
-    pub SetBindOptions: usize,
+    // Typed rather than left a placeholder: IFileSystemBindData_Constructor calls it.
+    // Same BIND_OPTS as GetBindOptions below, so the two stay one layout.
+    pub SetBindOptions:
+        unsafe extern "system" fn(*mut IBindCtx, *mut BIND_OPTS) -> HRESULT,
     pub GetBindOptions:
         unsafe extern "system" fn(*mut IBindCtx, *mut BIND_OPTS) -> HRESULT,
     pub GetRunningObjectTable: usize,

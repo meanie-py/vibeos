@@ -9,7 +9,6 @@
       "dll/win32/shell32/CExtractIcon.cpp",
       "dll/win32/shell32/folders/CRecycleBinFolderViewCB.cpp",
       "dll/win32/shell32/folders/CRegFolder.cpp",
-      "dll/win32/shell32/CFileSysBindData.cpp",
       "dll/win32/shell32/CFolder.cpp",
       "dll/win32/shell32/CFolderItems.cpp",
       "dll/win32/shell32/CFolderItemVerbs.cpp"
