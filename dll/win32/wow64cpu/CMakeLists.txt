@@ -92,6 +92,14 @@ set(_wow64_extras
     # tools/stress/lua/build.sh). Same deal as sqlite32 -- built on demand,
     # machine-verdicted (0x600D), graded from ladder.py's OPTIONAL table.
     ${REACTOS_SOURCE_DIR}/tools/stress/lua/lua32.exe
+    # spawn32: the DIAGNOSTIC process-creation guest, built only under
+    # VIBEOS_WOW64_SPAWN=1. Here rather than in _wow64_ladder because it must
+    # not be staged unless asked for: measured 2026-09-19, a 32-bit guest
+    # calling CreateProcessW BUGCHECKs the kernel (0x1E) after
+    # NtCreateProcessEx succeeds, so staging it unconditionally would red every
+    # lane's amd64 boot. ladder.py grades it from its DIAGNOSTIC table, and
+    # winlogon runs it LAST so a bugcheck cannot cost another guest its verdict.
+    ${REACTOS_SOURCE_DIR}/build-fex-hello/spawn32.exe
     )
 
 set(_wow64_guest_ok TRUE)

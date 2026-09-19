@@ -4301,6 +4301,39 @@ Match the C's alignment argument. Say in the comment what validate-first does NO
 C's second SEH also covers the window between probe and copy, and a range check proves where a
 buffer is, never that it stays mapped.
 
+**The MIRROR CASE, which the scanner structurally cannot see: the probe survived and the
+HANDLER did not.** `MiDoPoolCopy` / `MiDoMappedCopy` (`ARM3/virtual.rs`, three sites) still
+call `ProbeForWrite` — so "did it dereference a user pointer where its C validated one"
+answers *yes, it validated*, and neither function appears in the baseline. But the C wraps
+that probe in `_SEH2_TRY { … } _SEH2_EXCEPT(EXCEPTION_EXECUTE_HANDLER) { Status =
+_SEH2_GetExceptionCode(); }` (`virtual.c:876`), and only the body survived translation.
+`ProbeForWrite` raises via `ExRaiseAccessViolation()`, nothing catches it, and a syscall
+whose contract is to RETURN `STATUS_ACCESS_VIOLATION` instead takes **BUGCHECK 0x1E**. A
+present probe is therefore not evidence the validation works — it is evidence only that the
+probe is present.
+
+**The tell, and it needs no C beside it: an error path that nothing can reach any more.**
+The shape here is a flag raised around the probe and tested long after:
+
+```rust
+_FailedInProbe = 1;
+ProbeForWrite(TargetAddress, BufferSize, size_of::<i8>() as ULONG);
+_FailedInProbe = 0;
+...
+if Status < 0 {                      // nothing between the assignment above and here
+    if _FailedInProbe != 0 { ... }   // can now produce this state
+```
+
+In the C, the `_SEH2_EXCEPT` arm is what set `Status` and what left `_FailedInProbe` at 1;
+deleting it leaves both the flag and its consumer standing, mutually unreachable. So the
+generalizable question is not "is the probe missing" but **"is there a recovery branch whose
+precondition nothing can establish"** — an unreachable error path is the fingerprint of a
+deleted handler, it is visible in the Rust alone, and it is a different query from the one
+`scan_dropped_probes` runs. Found 2026-09-19 by `spawn32.exe`, a WoW64 guest calling
+`CreateProcess`, which reaches it only after `NtCreateProcessEx` has already succeeded — but
+the bug is not WoW64's: any caller writing into another process with a bad target address and
+`PreviousMode != KernelMode` lands on it.
+
 **Finding the rest.** `tools/scan_dropped_probes.py`, gated by `vibeos-cli check` against
 `tools/lint-baseline/scan_dropped_probes.txt`. Same self-oracle as `scan_dropped_prints` and the
 same brace-depth/tree-sitter parser (shared via `c_function_bodies` / `rust_function_items`),
