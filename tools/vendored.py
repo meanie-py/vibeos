@@ -116,6 +116,18 @@ class Tree:
         self.upstream: str = raw.get("upstream", "unknown")
         self.license: str = raw.get("license", "unknown")
         self.license_file: str | None = raw.get("license_file")
+        #: A file whose HEADER carries the licence grant, for a drop that shipped no
+        #: standalone licence file. 15 of the 27 trees are in that shape — ACPICA's full
+        #: BSD text and mbedtls's full Apache-2.0 notice live in every source header and
+        #: nowhere else — so without this the registry can record a licence NAME it
+        #: cannot point at, and a generated notices file would have nothing to quote.
+        self.license_ref: str | None = raw.get("license_ref")
+        #: Licences present in the tree BESIDES `license`, as {spdx or name: why}. A
+        #: single `license:` field on a mixed tree is not a rounding error: wdf is
+        #: recorded MIT and carries 11 ReactOS-authored GPL-2.0-or-later files, and FEX
+        #: is recorded MIT and carries LGPL-2.1-or-later and GPL-2.0-only. A notices
+        #: file built from the headline licence alone would be wrong about all three.
+        self.license_extra: dict = dict(raw.get("license_extra") or {})
         self.modified: str = str(raw.get("modified", "unknown"))
         self.headers: list[str] = list(raw.get("headers", []))
         self.version: dict | None = raw.get("version")
@@ -306,6 +318,66 @@ def _is_nested_checkout(d: str) -> bool:
     return os.path.exists(os.path.join(d, ".git"))
 
 
+#: An SPDX tag, or a ReactOS file header's `LICENSE:` line. Both are machine-readable
+#: statements by the FILE about itself, which is the only licence evidence that does not
+#: require reading prose.
+_SPDX = re.compile(r"SPDX-License-Identifier:\s*([^\s*/]+)")
+_ROS_LICENSE_HDR = re.compile(r"^\s*[*#/]*\s*LICENSE:\s*([^(\n]+)", re.M)
+
+
+def license_drift(reg: Registry) -> list[tuple[str, str, dict]]:
+    """Licences a tree's own files declare that its registry entry does not account for.
+
+    The registry's other halves are ratchets — a new vendored dir fails `--check` until
+    it is classified. Licences had no such ratchet, and a single `license:` field turns
+    out to be wrong on trees nobody suspected: `sdk/lib/drivers/wdf` is recorded MIT and
+    carries 11 ReactOS-authored `LICENSE: GPL-2.0-or-later` headers; `external/fex` is
+    recorded MIT and carries LGPL-2.1-or-later and GPL-2.0-only; `sdk/lib/ucrt` is
+    recorded as Microsoft's terms and carries 5 files stamped `SPDX MIT`. Generating a
+    notices file from the headline licence alone would misstate all three.
+
+    Only SELF-DECLARED licences count — an SPDX tag or a ReactOS `LICENSE:` header. A
+    prose grep would fire on every BSD notice in every ACPICA file and drown the signal,
+    which is the same reason `_FOREIGN_HOLDER` sticks to corporate holders.
+
+    A hit is a QUESTION, as everywhere else here: the answer may be "record it in
+    `license_extra`" or "those files are ours and the tree boundary is wrong".
+
+    KNOWN BLIND SPOT, stated because a green run reads like an all-clear and is not one:
+    this sees only SELF-DECLARED licences. A file that states its licence in PROSE with
+    no SPDX tag is invisible to it — `dll/3rdparty/mbedtls/_reactos_strsafe_wrapper.c` is
+    a ReactOS-authored LGPL-2.1-or-later file inside an Apache-2.0 tree and was found by
+    hand, after this scan had already passed. So: green means no tree DECLARES an
+    unrecorded licence, not that no tree HAS one.
+    """
+    out = []
+    for t in reg.trees:
+        d = reg.repo / t.path
+        if not d.is_dir():
+            continue
+        found: dict[str, int] = {}
+        for p in d.rglob("*"):
+            if not p.is_file() or p.suffix.lower() not in _SRC_SUFFIXES:
+                continue
+            try:
+                head = p.read_text(errors="replace")[:3000]
+            except OSError:
+                continue
+            for pat in (_SPDX, _ROS_LICENSE_HDR):
+                m = pat.search(head)
+                if m:
+                    found[m.group(1).strip()] = found.get(m.group(1).strip(), 0) + 1
+        # Accounted for = it IS the headline licence, or it is recorded in license_extra.
+        unaccounted = {
+            lic: n
+            for lic, n in found.items()
+            if lic.lower() not in t.license.lower() and lic not in t.license_extra
+        }
+        if unaccounted:
+            out.append((t.path, t.license, unaccounted))
+    return out
+
+
 def suspects(reg: Registry, min_files: int = 5) -> list[tuple[str, int]]:
     """Directories full of foreign-copyright source that the registry does NOT cover.
 
@@ -363,6 +435,8 @@ def check(reg: Registry) -> list[str]:
             problems.append(f"{t.name}: registered path does not exist: {t.path}")
         if t.license_file and not (reg.repo / t.license_file).is_file():
             problems.append(f"{t.name}: license_file does not exist: {t.license_file}")
+        if t.license_ref and not (reg.repo / t.license_ref).is_file():
+            problems.append(f"{t.name}: license_ref does not exist: {t.license_ref}")
         for h in t.headers:
             if not (reg.repo / h).is_dir():
                 problems.append(f"{t.name}: header dir does not exist: {h}")
@@ -411,6 +485,19 @@ def check(reg: Registry) -> list[str]:
             f"    Decide, and record it in vendor.yaml: a `trees:` entry if it is\n"
             f"    vendored and upstream-tracked, an `ours:` entry if it is a translation\n"
             f"    target. Do not answer this by copyright grep — see tools/vendored.py."
+        )
+
+    # The THIRD ratchet. Same argument as the two above, one level down: it is not enough
+    # that a tree is classified, its recorded LICENCE has to survive contact with what the
+    # files say about themselves. Three trees failed this the day it was written.
+    for path, recorded, unaccounted in license_drift(reg):
+        listed = ", ".join(f"{lic} x{n}" for lic, n in sorted(unaccounted.items()))
+        problems.append(
+            f"UNDECLARED LICENCE in {path}: recorded `{recorded}`, but its own files\n"
+            f"    declare: {listed}\n"
+            f"    Record them in `license_extra:` with a reason, or move those files out\n"
+            f"    of the tree if they are ours. A notices file built from the headline\n"
+            f"    licence alone would be wrong about this tree."
         )
     return problems
 
@@ -479,6 +566,11 @@ def main(argv: list[str] | None = None) -> int:
         action="store_true",
         help="unregistered dirs full of foreign-copyright source (a question, not a verdict)",
     )
+    ap.add_argument(
+        "--licences",
+        action="store_true",
+        help="licences a tree's own files declare that its registry entry does not record",
+    )
     ap.add_argument("--repo", type=Path, default=REPO)
     args = ap.parse_args(argv)
 
@@ -494,6 +586,21 @@ def main(argv: list[str] | None = None) -> int:
         for p in write_stamps(reg):
             print(f"  wrote {p}")
         return 0
+    if args.licences:
+        drift = license_drift(reg)
+        if not drift:
+            print("every declared licence in every vendored tree is accounted for")
+            return 0
+        print(f"{len(drift)} tree(s) declare a licence their registry entry does not record:\n")
+        for path, recorded, un in drift:
+            listed = ", ".join(f"{lic} x{n}" for lic, n in sorted(un.items()))
+            print(f"  {path}\n      recorded: {recorded}\n      in-tree:  {listed}")
+        print(
+            "\nRecord each in `license_extra:` with a reason, or move the files out if they\n"
+            "are ours. `--check` fails until then."
+        )
+        return 1
+
     if args.suspects:
         found = suspects(reg)
         if not found:
