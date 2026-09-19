@@ -76,7 +76,13 @@ _RE_SEQ_PREFIX = re.compile(r"^\d+_")
 # A banked body that is a C-variadic: `...)` in the signature, or a va_start in the body.
 _RE_VARIADIC = re.compile(r"\.\.\.\s*\)|\bva_start\b")
 # How the tree decorates a variadic's fixed-arity twin. See `varargs_twins`.
-_TWIN_SUFFIXES = ("_v", "_body", "_impl")
+# `_dispatch` is msvcrt's: `_sopen`'s trampoline in rust_file_varargs_shim.c tail-calls
+# the Rust `_sopen_dispatch`.
+_TWIN_SUFFIXES = ("_v", "_body", "_impl", "_dispatch")
+# A macro INVOCATION and its argument region: `isc!(_isalnum_l, isalnum, ...)`.
+_RE_MACRO_CALL = re.compile(r"\b[A-Za-z_]\w*!\s*\(")
+# A macro argument that is nothing but an identifier — the only shape we will trust.
+_RE_BARE_IDENT = re.compile(r"^[A-Za-z_]\w*$")
 
 # Manifest keys that are pipeline bookkeeping, never a translated function.
 _NON_FN_KEYS = frozenset({"preamble"})
@@ -248,12 +254,68 @@ def varargs_twins(name: str, tree: set[str]) -> list[str]:
     names are exactly where a sloppy rule reports missing work as shipped.
     """
     exact = [f"{name}{suffix}" for suffix in _TWIN_SUFFIXES if f"{name}{suffix}" in tree]
+    # The C stdio convention: the va_list twin of `fprintf` is `vfprintf`, of
+    # `_fwprintf_p_l` is `_vfwprintf_p_l`. The `v` goes after any leading underscores,
+    # never at the front. This is an EXACT name, so it is as tight as the suffix rules —
+    # the looseness the docstring warns about is containment, not a second spelling.
+    lead = len(name) - len(name.lstrip("_"))
+    v_twin = f"{name[:lead]}v{name[lead:]}"
+    if v_twin in tree and v_twin not in exact:
+        exact.append(v_twin)
     prefixed = sorted(
         n
         for n in tree
         if n not in exact and any(n.endswith(f"_{name}{suffix}") for suffix in _TWIN_SUFFIXES)
     )
     return exact + prefixed
+
+
+def macro_arg_names(path: Path) -> set[str]:
+    """Identifiers passed as bare arguments to a macro invocation in one file.
+
+    A whole family of shipped symbols has no `fn NAME` anywhere, because a macro writes
+    the items: msvcrt's ctype predicates are 24 lines of
+    `isc!(_isalnum_l, isalnum, (sys::_ALPHA | sys::_DIGIT) as i32);` in lib.rs, and every
+    one of them was reported as unintegrated paid work while shipping and graded MATCH.
+
+    Kept in a SEPARATE index from `tree_fn_names`, and consulted only after every other
+    rule, because the dangerous direction here is a false name in the TREE index — that
+    reports paid work as shipped when it is not. Hence "bare identifier argument" and
+    nothing looser: an expression argument, a path, a literal and anything inside nested
+    parens are all ignored, so a name merely MENTIONED near a macro cannot match.
+    """
+    try:
+        text = path.read_text(encoding="utf-8", errors="replace")
+    except OSError:
+        return set()
+    masked = mask_code(text)
+    found: set[str] = set()
+    for m in _RE_MACRO_CALL.finditer(masked):
+        depth, i = 1, m.end()
+        arg_start, args = i, []
+        while i < len(masked) and depth:
+            c = masked[i]
+            if c in "([{":
+                depth += 1
+            elif c in ")]}":
+                depth -= 1
+                if not depth:
+                    args.append(masked[arg_start:i])
+                    break
+            elif c == "," and depth == 1:
+                args.append(masked[arg_start:i])
+                arg_start = i + 1
+            i += 1
+        found |= {a.strip() for a in args if _RE_BARE_IDENT.match(a.strip())}
+    return found
+
+
+def tree_macro_arg_names(rust_root: Path) -> set[str]:
+    """Index every bare macro-invocation argument under a crate root."""
+    names: set[str] = set()
+    for path in rust_root.rglob("*.rs"):
+        names |= macro_arg_names(path)
+    return names
 
 
 def tchar_variants(name: str) -> list[str]:
@@ -276,7 +338,12 @@ def load_allowlist(path: Path = ALLOW_PATH) -> dict[str, str]:
     return {k: str(v) for k, v in allowed.items()} if isinstance(allowed, dict) else {}
 
 
-def resolve(fn: BankedFn, tree: set[str], allow: dict[str, str]) -> Resolution:
+def resolve(
+    fn: BankedFn,
+    tree: set[str],
+    allow: dict[str, str],
+    macro_args: set[str] | None = None,
+) -> Resolution:
     """Match one banked function against the tree, cheapest rule first."""
     if fn.name in tree:
         return Resolution(fn, fn.name, "direct")
@@ -299,6 +366,10 @@ def resolve(fn: BankedFn, tree: set[str], allow: dict[str, str]) -> Resolution:
         if cand in tree:
             return Resolution(fn, cand, "tchar_macro")
 
+    # Last of the mechanical rules, because it reads a looser index than the others.
+    if macro_args and fn.name in macro_args:
+        return Resolution(fn, fn.name, "macro_generated")
+
     if fn.name in allow:
         return Resolution(fn, fn.name, "allowlist")
 
@@ -314,6 +385,7 @@ def audit(
     if allow is None:
         allow = load_allowlist()
     tree = tree_fn_names(rust_root)
+    macro_args = tree_macro_arg_names(rust_root)
 
     reports = []
     for resp_dir in sorted(p for p in responses_root.iterdir() if p.is_dir()):
@@ -324,7 +396,7 @@ def audit(
         fns = complete + [fn for fn in truncated_fns(resp_dir) if fn.name not in done]
         if not fns:
             continue
-        resolutions = [resolve(fn, tree, allow) for fn in fns]
+        resolutions = [resolve(fn, tree, allow, macro_args) for fn in fns]
         reports.append(DirReport(resp_dir.name, len(fns), resolutions))
     return reports
 

@@ -15,3 +15,23 @@ what oleaut32-rust/src/usrmarshal.rs ships. The two differ in signature as well 
 (the ReactOS arm takes Start and returns `Start + size`), so this is a genuine twin, not
 a rename. No function by the banked name has ever existed in a ReactOS build.
 """
+
+_wopen = """
+msvcrt's file.c: a C-variadic entry point (`int WINAPIV _wopen(const wchar_t*, int, ...)`)
+that stable Rust cannot define at all. It ships as a va_start trampoline in
+dll/win32/msvcrt/rust_file_varargs_shim.c, and reaches Rust in TWO hops — `_wopen` calls
+`_wsopen` (also in the shim, deliberately same-TU) which calls the Rust
+`_wsopen_dispatch`. The `varargs_twin` rule derives ONE hop, and widening it to chase a
+second would be the containment-style looseness its docstring exists to forbid. file.rs
+declares `_wopen` in an `extern` block, which `_has_body` correctly refuses to count.
+Nothing is missing: the banked fixed-arity body has nowhere legal to go.
+"""
+
+_open = """
+Exactly `_wopen`'s case, narrow-char: `_open` -> `_sopen` (both in
+rust_file_varargs_shim.c) -> the Rust `_sopen_dispatch`. Banked only as a `.partial`,
+from a run whose envelope check was itself wrong (it sealed `va_arg` as a runtime callee
+with argc=2 because mingw's stdarg.h spells it as an object-like alias; fixed in
+4c611bdf611). Re-buying it would be re-buying a body that cannot ship: the variadic half
+is C by language limit, permanently.
+"""
