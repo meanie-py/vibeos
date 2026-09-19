@@ -909,6 +909,26 @@ float math inside a body (x87), float pointers, float struct fields. Two fixes:
   real.
 
 ### Cohab link plumbing
+- **WIRING a translated TU is already a PARTIAL COHAB FLIP, and an uncontrolled one.** The
+  two-step everyone reaches for — "wire the module in now so it compiles and is lint-covered,
+  flip the `.cpp` out later" — is not safe when the C++ is still live. shell32's `utils.rs`
+  defines 58 `#[no_mangle]` names that `dll/win32/shell32`'s live C++ objects ALSO define as
+  unmangled externs, including 16 `*_RustBridge` wrappers other Rust modules call. Wiring it
+  produced **no duplicate-symbol error** — the linker resolves archive members against object
+  files in a defined order and simply picks one — so 58 live entry points silently rerouted
+  into Rust that had never executed. The guest booted, passed smoke on all three arches, then
+  froze inside explorer's taskbar `OnCreate` (two of the captured names,
+  `SHGetShellStyleHInstance` and `SHGetUserDisplayName`, sit in that path), which stopped
+  `ProcessStartupItems` and therefore the kmtest sweep: `launched=0`, nothing runnable, HLT=1.
+  **`scan_duplicate_symbols` does not catch this** — it looks Rust-vs-Rust, and the dangerous
+  direction is Rust shadowing C++ across the cohab boundary. Get the capture set before you
+  wire anything, with `llvm-nm --defined-only` over both sides:
+  `for o in build-<arch>/<module>/CMakeFiles/*.dir/*.obj; do llvm-nm --defined-only $o; done |
+  awk '$2=="T"{print $3}' | grep -v '^__Z' | sed 's/^_//; s/@[0-9]*$//' | sort -u` intersected
+  with the module's `#[no_mangle]` names. A non-empty intersection means wiring and flipping
+  are ONE change, not two. `ORPHAN-BY-DESIGN` is the marker for a module in that state, and it
+  is a GUARD, not a to-do item — the banner that says "the module is not wired yet, the .cpp is
+  still the compiled implementation" is recording why it must stay that way until the flip.
 - **A new rlib's `#[no_mangle]` symbols are absent from the staticlib** unless reached: add the
   path dep + `extern crate` + a `#[used]` force-reference block. A Cargo dependency alone is
   not a reachability path.
@@ -1288,9 +1308,29 @@ Three kinds of divergence hide in that, and they are not equally serious:
   rather than live (the tree's five call sites all pass `GetRValue`-style bytes), but it is the
   same class as msgina's `StringCchPrintfW` dropping its bound.
 
+- **Not a gap at all — the island HAS it, under a name nobody guessed.** A C `enum` member is
+  emitted by bindgen, but only fully qualified by its anonymous enum's generated tag:
+  shobjidl.h's `FVM_ICON` exists in shell32's island solely as
+  `__WIDL_shobjidl_generated_name_00000025_FVM_ICON`. Grep for the bare name and you find
+  nothing, conclude bindgen dropped it, and hand-declare `pub const FVM_ICON: DWORD = 1;`.
+  **Nine** shell32-rust modules did exactly that for the `FVM_*` family — control_panel_folder,
+  def_view_util, desktop_folder, drives_folder, folders/{CCPLItemMenu, CControlPanelEnum,
+  CDesktopFolderEnum, CDrivesFolderEnum} and shell32/CDefView — and CDefView re-declares the
+  whole `SVGIO_*` set too. Every value was checked against the island and every one is correct
+  (FVM ICON=1 SMALLICON=2 LIST=3 DETAILS=4 THUMBNAIL=5 TILE=6 THUMBSTRIP=7 CONTENT=8 AUTO=-1;
+  SVGIO BACKGROUND=0 SELECTION=1 ALLVIEW=2 TYPE_MASK=0xf), so this one is drift-in-waiting
+  rather than a live bug; the point is that it is the ONLY one of these four kinds where the
+  right fix is an alias rather than a shared crate, and where a hand-typed value can silently
+  disagree with a header the generator already read. `profile_derive` names it
+  `SWITCH_CONST_ENUM_PREFIXED` and prescribes the alias; take that finding literally and do not
+  re-declare the value. Detection without the tool: for any constant you are about to declare by
+  hand, grep the island for `_<NAME>$` before concluding it is absent.
+
 **Fix.** Port it once into a shared crate, transcribed from the header rather than from the
 copies it replaces, with known-answer tests. `strsafe-rust` (inlines) and `win32macros-rust`
-(macros + folded constants) are the two precedents.
+(macros + folded constants) are the two precedents. For the enum-member case above the fix is
+smaller and different: one `pub use crate::island::__WIDL_..._FVM_ICON as FVM_ICON;` in the
+prelude, and delete the copies.
 
 **The boundary is narrower than "core primitives", and the compiler is what finds it.** A shared
 crate cannot depend on any consumer's bindgen island, so it must express everything in primitives
@@ -1522,6 +1562,21 @@ wave16.rs whose neighbouring subnormal branch was already `wrapping_*`.
   translation output carries neither the array form nor the comment, so it reports a confident
   `0 findings` over 0 comparisons. Grep `b"L` and `\bL'` in fresh output; the correct fix is
   the crate's `w!()` macro.
+- **The ISLAND can be the one that narrows it, and then no amount of prompt or seal work
+  helps.** Every entry above blames the model. shell32's `utils.cpp` found the other source:
+  shobjidl.idl `cpp_quote`s `#define STR_FILE_SYS_BIND_DATA L"File System Bind Data"`, and the
+  bindgen island carries that exact name as `pub const STR_FILE_SYS_BIND_DATA: &[u8; 22] =
+  b"File System Bind Data\0"` — the NARROW bytes, under the right name, in the substrate the
+  translation is supposed to be able to trust. The C casts the macro to `LPWSTR` for
+  `IBindCtx::GetObjectParam`, so the array read back as UTF-16 is `"iF"`, `"el"`, `" S"`… and
+  the bind-context lookup silently never matches. The model did nothing wrong; sealing cannot
+  see it (the token IS present and IS the island's); `scan_wide_literals` cannot see it (there
+  is no `[u16; N]` and no intent comment). The tell is an island const of type `&[u8; N]` whose
+  header spelling is `L"..."`, and the fix is a wide spelling in the module's `*_support.rs`
+  with a comment saying the island's is wrong — not a cast. That island has **111** `&[u8; N]`
+  consts; the `STR_*` bind-context keys are all `L"..."` in shobjidl.idl, so this one is a
+  proven instance of a class, not a one-off. Worth a scanner: for each `&[u8; N]` const in an
+  island, grep the header for the same name with an `L` prefix.
 - **A `b"..."` behind a wide pointer is TWO different bugs, and only one of them is a bug.**
   `b"A\0S\0U\0S\0\0\0" as PCWSTR` is the content-correct one: hand-encoded UTF-16 whose only
   defect is ALIGNMENT 1. **That is a style problem, not a latent fault, and the older framing
