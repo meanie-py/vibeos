@@ -14,8 +14,6 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 from dataclasses import replace
 from pathlib import Path
 
-from tools.source_walk import source_files
-
 from . import (
     callout_annotate,
     candidate_oracle,
@@ -45,6 +43,7 @@ from . import (
 from .argument_facts import require_argument_facts
 from .assembler import AssemblyClobberError, assemble_file, generate_lib_rs, generate_mod_rs
 from .bank_audit import audit as bank_audit
+from .bank_audit import exported_symbols
 from .bank_audit import format_report as format_bank_report
 from .batch_runner import TranslationResult, submit_batch, submit_single
 from .c2rust_anchor import C2RustError, build_anchor_map, build_preamble
@@ -2052,22 +2051,7 @@ def _already_translated(
     src = output_crate / "src"
     if not src.is_dir() or not c_names:
         return None
-    served: dict[str, Path] = {}
-    exported = re.compile(
-        r"#\[\s*(?:no_mangle|export_name\s*=\s*\"(?P<alias>[^\"]+)\")\s*\]"
-        r"(?:\s*#\[[^\]]*\])*"
-        r"\s*(?:pub\s+)?(?:unsafe\s+)?(?:extern\s+\"[^\"]*\"\s+)?fn\s+(?P<name>\w+)"
-    )
-    # source_files, not rglob: a crate's `target/` holds generated copies of its own
-    # modules, and counting one of those as the shipping definition would answer this
-    # question from a build artifact.
-    for rs in source_files(src, "*.rs"):
-        try:
-            text = rs.read_text(errors="replace")
-        except OSError:
-            continue
-        for m in exported.finditer(text):
-            served.setdefault(m.group("alias") or m.group("name"), rs)
+    served = exported_symbols(src)
     hits = sorted(n for n in c_names if n in served)
     if not hits:
         return None

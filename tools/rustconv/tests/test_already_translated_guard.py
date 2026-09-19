@@ -47,11 +47,23 @@ def test_matches_by_symbol_so_a_renamed_module_cannot_hide(tmp_path):
 
 
 def test_export_name_alias_counts(tmp_path):
+    """Regression: the index scans MASKED source so a commented-out item cannot match,
+    and masking blanks string CONTENTS — which is exactly where export_name keeps the
+    symbol. Read masked, this resolved to a name of four spaces and matched nothing."""
     crate = _crate(
         tmp_path,
         m='#[export_name = "alpha"]\npub unsafe extern "C" fn rust_alpha() {}\n',
     )
     assert main._already_translated(Path("m.c"), crate, {"alpha"}) is not None
+
+
+def test_a_commented_out_export_is_not_a_port(tmp_path):
+    """The other half of the same trade-off: scanning masked text is what buys this."""
+    crate = _crate(
+        tmp_path,
+        m='// #[no_mangle] pub unsafe extern "C" fn alpha() {}\n',
+    )
+    assert main._already_translated(Path("m.c"), crate, {"alpha"}) is None
 
 
 def test_a_few_shared_helpers_do_not_block(tmp_path):

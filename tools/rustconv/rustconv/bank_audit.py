@@ -312,6 +312,40 @@ def macro_arg_names(path: Path) -> set[str]:
     return found
 
 
+#: A `#[no_mangle]` / `#[export_name = "..."]` function item — the definitions that win
+#: the link and displace the C. Ordinary `fn`s are internal scaffolding.
+_RE_EXPORTED_FN = re.compile(
+    r"#\[\s*(?:no_mangle|export_name\s*=\s*\"(?P<alias>[^\"]+)\")\s*\]"
+    r"(?:\s*#\[[^\]]*\])*"
+    r"\s*(?:pub\s+)?(?:unsafe\s+)?(?:extern\s+\"[^\"]*\"\s+)?fn\s+(?P<name>\w+)"
+)
+
+
+def exported_symbols(crate_root: Path) -> dict[str, Path]:
+    """{exported symbol: the .rs that defines it} for one crate.
+
+    Lives here rather than beside its caller because it is the same question the audit
+    asks — "what does this crate actually ship?" — and because one module importing
+    `tools.source_walk` is enough. `rustconv translate` uses it to refuse, before
+    spending anything, to re-buy a TU the crate already serves.
+    """
+    out: dict[str, Path] = {}
+    for rs in source_files(crate_root, "*.rs"):
+        try:
+            text = rs.read_text(encoding="utf-8", errors="replace")
+        except OSError:
+            continue
+        masked = mask_code(text)
+        for m in _RE_EXPORTED_FN.finditer(masked):
+            # Scan the MASKED text so a commented-out item cannot match, but read the
+            # alias back out of the ORIGINAL: masking blanks string CONTENTS, which is
+            # exactly where `#[export_name = "alpha"]` keeps the symbol. mask_code is
+            # length-preserving, so the span is the same in both.
+            alias = text[m.start("alias") : m.end("alias")] if m.group("alias") else None
+            out.setdefault(alias or m.group("name"), rs)
+    return out
+
+
 def tree_macro_arg_names(rust_root: Path) -> set[str]:
     """Index every bare macro-invocation argument under a crate root."""
     names: set[str] = set()
