@@ -488,6 +488,50 @@ land; date every addition.** Source docs live in `docs/engineering/archive/`.
 
 ## Known bugs & flakes (live registry)
 
+- **Dropped `_SEH2_EXCEPT` is NOT confined to MM — `NtReplyPort` bugchecks on a bad
+  user pointer. UNOWNED, VERIFIED** (2026-09-19). Found by generalising the research
+  lane's `MiDoPoolCopy` discovery (below) into a tree sweep. `ntoskrnl/lpc/*.c` is
+  commented out in `ntos.cmake:211-217`, `lpc-rust` is linked into `kernel-rust`, so the
+  Rust IS the shipping LPC. Side-by-side at the same site:
+
+        C   reply.c:205   if (PreviousMode != KernelMode) {
+                            _SEH2_TRY { ProbeForRead(...); Captured = *(volatile ...)ReplyMessage; }
+                            _SEH2_EXCEPT(EXCEPTION_EXECUTE_HANDLER)
+                              { _SEH2_YIELD(return _SEH2_GetExceptionCode()); } }
+        Rust reply.rs:249 if previous_mode != 0i8 {
+                            ProbeForRead(...);
+                            captured_reply_message = *(ReplyMessage as *const PORT_MESSAGE); }
+
+  `NtReplyPort` (`reply.rs:236`) is `#[no_mangle] extern "system"` — a syscall entry point.
+  The C returns the exception code to the caller; the Rust lets `ProbeForRead` raise into
+  nothing. **Any unprivileged user process passing a bad `ReplyMessage` crashes the
+  kernel.** Far wider reach than the MM case, which needs a cross-process write. (The
+  `volatile` on the capture read was also dropped — separate and minor, but same site.)
+  **Verified: `reply.rs` only.** Five more LPC files show the same shape and are NOT
+  individually confirmed: `send.rs`, `connect.rs`, `complete.rs`, `create.rs`, `port.rs`.
+  Nothing in the whole `lpc-rust` crate matches any catch idiom (`probe::`,
+  `Result<_, NTSTATUS>`, `catch_unwind`, `_SEH2`).
+  Fix is the same validate-first `probe.rs` idiom `dummy-pseh-verdict.md` prescribes.
+
+  **On the sweep, because the method matters more than this one bug.** The research lane
+  proposed the tell "an unreachable error path is the fingerprint of a deleted handler"
+  (`_FailedInProbe` set, reset, then tested) and hoped it would find the rest of the class.
+  Implemented, it finds **only `virtual.rs`** — and the reason is worth keeping: that
+  fingerprint exists only where the C happened to use a *flag*. A dropped handler that
+  guarded a plain `return` leaves no trace at all, which is exactly the LPC shape. A naive
+  version of the flag sweep also produced 8 false positives, because `X = 1` in an `if`
+  arm and `X = 0` in the `else` arm looks identical to set-then-reset unless you reject any
+  brace between them (fastfat `RecursiveClose` is the clean example).
+  What DOES generalise: **pair each C file containing `_SEH2_EXCEPT` with its translated
+  `.rs`, and flag the ones whose Rust can raise (`ProbeForRead`/`ProbeForWrite`/
+  `ExRaiseStatus`/`ExRaiseAccessViolation`) with no catch idiom.** 19 hits, of which the
+  same-subsystem ones are the real leads; basename matching mis-pairs the rest
+  (`fastfat/create.c` to `lpc-rust/create.rs`), so read the pairs before believing them.
+  Still to triage from that list: `mm/section.rs`, `cc-rust/copy.rs`, `win32k-rust`
+  {`class`,`hook`,`desktop`}`.rs`. **This wants to become a real scanner** — it is a
+  source-only check that needs no boot, and it is currently a shell one-liner in a commit
+  message, which is the definition of a rule that will be forgotten.
+
 - **`test_nested_cargo_deps` can fail inside `land`'s preflight under host saturation —
   NOT REPRODUCED, OPEN** (2026-09-19). `tools/test_nested_cargo_deps.py::
   test_nested_inputs_rebuild_consumers_only[["staticlib"]]` failed in a lane's `land`
