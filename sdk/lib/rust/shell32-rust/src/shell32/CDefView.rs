@@ -4152,9 +4152,11 @@ pub unsafe fn CDefView_FillList_body(this: *mut CDefView, IsRefreshCommand: BOOL
         &mut pEnumIDList,
     );
     if hRes != S_OK {
-        if !pEnumIDList.is_null() {
-            ((*(*pEnumIDList).lpVtbl).Release)(pEnumIDList);
-        }
+        // NO explicit Release here. CDefView.cpp:1545 declares `CComPtr<IEnumIDList>
+        // pEnumIDList` and releases NOWHERE -- the destructor does it once, on every return
+        // path. `_pEnumIDList_cpp_com_guard` IS that destructor. Releasing here as well drops
+        // the refcount twice; the guard then reads `lpVtbl` out of a freed block and calls
+        // through it. See the header of this file and the field manual.
         if hRes == S_FALSE {
             return NOERROR;
         }
@@ -4163,9 +4165,7 @@ pub unsafe fn CDefView_FillList_body(this: *mut CDefView, IsRefreshCommand: BOOL
 
     hdpa = DPA_Create(16);
     if hdpa.is_null() {
-        if !pEnumIDList.is_null() {
-            ((*(*pEnumIDList).lpVtbl).Release)(pEnumIDList);
-        }
+        // Guard-owned; see above.
         return E_OUTOFMEMORY;
     }
 
@@ -4240,10 +4240,7 @@ pub unsafe fn CDefView_FillList_body(this: *mut CDefView, IsRefreshCommand: BOOL
         0,
     );
 
-    if !pEnumIDList.is_null() {
-        ((*(*pEnumIDList).lpVtbl).Release)(pEnumIDList);
-    }
-
+    // Guard-owned; see above.
     return S_OK;
 }
 

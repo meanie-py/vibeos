@@ -4815,6 +4815,24 @@ the instrumentation sparse enough to still reproduce. Two or three probes bracke
 suspect call kept it failing; eighty made it green.
 
 ### Semantic rewrites that flip meaning
+- **A `CComPtr` local lowered to a RAW pointer plus an RAII guard must not ALSO keep the
+  explicit `Release()` calls — that is a double release.** `CDefView::FillList` declares
+  `CComPtr<IEnumIDList> pEnumIDList` and releases it NOWHERE: the destructor does it once, on
+  every return path. The translation emitted `_pEnumIDList_cpp_com_guard` (which is that
+  destructor, and nulls the slot) AND an `if (!p.is_null()) p->Release()` on each of the three
+  exits. So every `FillList` dropped the refcount twice, the guard then read `lpVtbl` out of a
+  freed block and called through it. On arm64 that was fatal immediately —
+  `[UEXC] Code=0xC0000005 PC=0x1600000004000000`, explorer killed, desktop never up. On amd64
+  and i386 **the same code passed conformance 91/91 three times in a row**, because the freed
+  block still held a plausible pointer; the bug was there and silent.
+  The discriminator is mechanical and worth grepping for: an explicit `Release` on a
+  guard-owned local that does NOT null the pointer immediately after. In the same file, five
+  other guarded locals (`pcdb2`, `pda`, `piaso`, `pStream`, `ptb`) release explicitly and DO
+  null, so their guards see null and do nothing — correct, and they must not be "fixed". Two
+  more (`pPB`, `pStream` in `SaveViewState`) are raw `IShellFolder*`-style locals in the C++
+  with a real explicit `Release`, and have no guard at all. **Match the guard and the release
+  by ENCLOSING FUNCTION, not by variable name** — a file-wide grep conflates same-named locals
+  across functions and will tell you to delete correct code.
 - **An UNQUALIFIED member call is `this->`, and the nearest COM pointer in scope is not a
   substitute.** CDefView's `OnCreate` opens with
   `if (SUCCEEDED(QueryInterface(IID_PPV_ARG(IDropTarget, &pdt)))) RegisterDragDrop(m_hWnd, pdt);`
