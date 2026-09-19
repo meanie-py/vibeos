@@ -299,6 +299,46 @@ trees:
       tools/fex/build-fex.sh and deliberately outside the ReactOS cmake graph.
       Full manifest, prune list and re-vendor recipe: external/README-fex-vendor.md.
 
+  # ── SGI's GLU under glu32.dll ───────────────────────────────────────────
+  - path: dll/opengl/glu32/src
+    name: SGI GLU (OpenGL Utility Library)
+    upstream: SGI OpenGL Sample Implementation — the `glu` component, as redistributed
+      with Mesa. No release stamp in the drop; see review.
+    license: SGI-B-2.0
+    license_ref: dll/opengl/glu32/include/GL/glu.h
+    license_extra:
+      LGPL-2.0-or-later: >
+        include/GL/glu_mangle.h is not SGI's — it is Mesa 3.0, Copyright (C) 1995-1998
+        Brian Paul, under the GNU Library General Public License v2 or later. One file,
+        a symbol-mangling header, but a copyleft licence sitting inside a permissive
+        drop is exactly the shape this registry exists to make visible.
+    modified: unknown
+    headers:
+      - dll/opengl/glu32/include
+    reason: >
+      47,386 lines of SGI's GLU across libnurbs (NURBS tessellation), libtess (polygon
+      tessellation) and libutil, carried by upstream ReactOS and never registered. Found
+      2026-09-19 by widening the foreign-copyright scan past its eight corporate holders
+      — `--suspects` could not see it because Silicon Graphics was not in the list.
+
+      Zero ReactOS-authored files in the tree, which makes it the cleanest vendored entry
+      in this registry: no adapters, no missing-header reconstructions, no scope leak.
+      Only the BUILD WRAPPER is ours and it deliberately sits outside this path —
+      dll/opengl/glu32/{CMakeLists.txt,glu32.spec,glu32.rc,precomp.h}. A path-based entry
+      must not claim those, so the tree is `src` plus the `include` headers and stops
+      there.
+
+      Every one of the 190 sources declares SGI FREE SOFTWARE LICENSE B (Version 2.0,
+      Sept. 18, 2008). The 73 files that reference http://oss.sgi.com/projects/FreeB/
+      are NOT a second licence — that URL is part of License B's own required notice,
+      and reading it as FreeB 1.1 is the obvious wrong answer here.
+    review: >
+      NO VERSION PROBE, deliberately. The drop carries no release stamp: what it does
+      carry is the API level, `GLU_VERSION_1_3` in include/GL/glu.h, so this is the GLU
+      1.3 interface. That is an API version, not a version of this source drop, and
+      recording it in the `version:` field would make the table state something the tree
+      does not say — the same mistake vendor.yaml's header warns about for ucrt.
+
   # ── sdk/lib/3rdparty ────────────────────────────────────────────────────
   - path: sdk/lib/3rdparty/freetype
     name: FreeType

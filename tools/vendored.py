@@ -293,8 +293,22 @@ def is_vendored(rel: str, repo: Path = REPO) -> bool:
 #: Copyright holders that mark a file as almost certainly not ReactOS-authored. Kept to
 #: unambiguous corporate holders: an individual's name proves nothing (half of ReactOS is
 #: individually copyrighted) and would drown the signal.
+#:
+#: THE LIST IS THE LIMIT OF THE SCAN, which is easy to forget when it comes back clean.
+#: It read "every one is decided" for months while 47,386 lines of SGI's GLU sat
+#: unregistered in dll/opengl/glu32 — Silicon Graphics simply was not in it. Silicon
+#: Graphics, Hewlett-Packard and Digital Equipment were added 2026-09-19 after GLU was
+#: registered, and cost nothing: they flag no further unclassified directory.
+#:
+#: Wine/CodeWeavers is deliberately ABSENT and should stay absent unless someone is
+#: ready to classify the result: a wider sweep found ~989 unclassified Wine-lineage
+#: files across ~50 directories (mshtml, msi, jscript, wined3d, urlmon, ole32 …). Those
+#: are almost all `ours:` by scope — this project TRANSLATES Wine-derived code — so
+#: adding the holder would fail `--check` fleet-wide until fifty `ours:` entries were
+#: written. That is a decision, not a scan tweak.
 _FOREIGN_HOLDER = re.compile(
-    r"Copyright\s+\(c\)\s+(Microsoft|Intel|Apple|Oracle|IBM|Sun Microsystems|Nvidia|Adobe)",
+    r"Copyright\s+\(c\)\s+(Microsoft|Intel|Apple|Oracle|IBM|Sun Microsystems|Nvidia|Adobe"
+    r"|Silicon Graphics|Hewlett-Packard|Digital Equipment)",
     re.I,
 )
 _SUSPECT_SUFFIXES = (".c", ".cpp", ".cxx", ".cc", ".h", ".hpp", ".hxx")
