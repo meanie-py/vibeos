@@ -450,7 +450,12 @@ pub struct IShellFolder2Vtbl {
     pub SetNameOf: usize,
     pub GetDefaultSearchGUID: usize,
     pub EnumSearches: usize,
-    pub GetDefaultColumn: usize,
+    pub GetDefaultColumn: unsafe extern "system" fn(
+        *mut IShellFolder2,
+        DWORD,
+        *mut ULONG,
+        *mut ULONG,
+    ) -> HRESULT,
     pub GetDefaultColumnState:
         unsafe extern "system" fn(*mut IShellFolder2, UINT, *mut SHCOLSTATEF) -> HRESULT,
     pub GetDetailsEx: unsafe extern "system" fn(
@@ -467,6 +472,28 @@ pub struct IShellFolder2Vtbl {
     ) -> HRESULT,
     pub MapColumnToSCID:
         unsafe extern "system" fn(*mut IShellFolder2, UINT, *mut SHCOLUMNID) -> HRESULT,
+}
+
+/// `IShellDetails` (shlobj.h:650, a DECLARE_INTERFACE_ rather than an IDL interface, so
+/// it never reaches the island as a `lpVtbl` struct -- the island renders it as a bindgen
+/// C++ class with `Option<fn>` slots, which cannot be CALLED). Two methods after IUnknown.
+#[repr(C)]
+pub struct IShellDetails {
+    pub lpVtbl: *mut IShellDetailsVtbl,
+}
+#[repr(C)]
+pub struct IShellDetailsVtbl {
+    pub QueryInterface:
+        unsafe extern "system" fn(*mut IShellDetails, REFIID, *mut *mut c_void) -> HRESULT,
+    pub AddRef: usize,
+    pub Release: unsafe extern "system" fn(*mut IShellDetails) -> ULONG,
+    pub GetDetailsOf: unsafe extern "system" fn(
+        *mut IShellDetails,
+        PCUITEMID_CHILD,
+        UINT,
+        *mut SHELLDETAILS,
+    ) -> HRESULT,
+    pub ColumnClick: unsafe extern "system" fn(*mut IShellDetails, UINT) -> HRESULT,
 }
 
 #[repr(C)]
