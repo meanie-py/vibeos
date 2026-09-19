@@ -1,8 +1,37 @@
 // rustconv-assembly: class:CDefView
 //! `CDefView.cpp` -- the shell's default folder view (IShellView3 + 7 more interfaces), the
 //! largest single class in shell32 and the first module to sit on BOTH sides of the substrate
-//! boundary. WIRED (2026-09-19); the cohab flip of the .cpp is the remaining step.
+//! boundary. Every worker is translated, present, and compiles clean on i686/amd64/arm64.
 //!
+//! ORPHAN-BY-DESIGN: wiring this while CDefView.cpp is still the compiled implementation is a
+//! PARTIAL COHAB FLIP that silently captures live C++ symbols and freezes explorer -- see WHY
+//! below. `CDefView.cpp` owns the shipping implementation; this module owns nothing yet.
+//!
+//! DO NOT WIRE THIS MODULE. That is not a status line, it is the invariant this file is held
+//! to, and the previous banner got it wrong by saying the module "is not wired into the crate
+//! YET" -- which reads as a task to anyone holding "wired" as the goal. It is a GUARD.
+//!
+//! WHY. `CDefView.cpp` is still the compiled implementation. Adding `pub mod def_view;` while
+//! that is true is a PARTIAL COHAB FLIP, not a compile-coverage win: this module's
+//! `#[no_mangle]` symbols collide with the live C++ ones, the linker resolves archive members
+//! against object files without raising a duplicate-symbol error, and live entry points
+//! reroute into Rust that has never executed. Measured 2026-09-19 -- wired, the guest booted,
+//! passed smoke on ALL THREE arches, and then froze in explorer after
+//! `[EXPLORER] startup: shell window ready`, so `ProcessStartupItems` never ran and the kmtest
+//! sweep launched 0 of 91 tests. Smoke cannot see it: the freeze is after smoke's marker.
+//! Un-wiring this module alone cleared that freeze and left the one utils.rs causes, which is
+//! the discriminator for symbol capture rather than a single bad body.
+//!
+//! Wiring and the cohab flip are therefore ONE change, gated together. Before attempting it,
+//! prove the capture set is empty -- the `llvm-nm` recipe is in the field manual under
+//! "Cohab link plumbing".
+//!
+//!
+//! RE-VERIFYING the zero-error claim (it will rot otherwise -- that is how this file reached
+//! 799 errors once): wire it temporarily, `cargo check --target {i686-pc-windows-gnu,
+//! x86_64-pc-windows-gnu,aarch64-pc-windows-gnullvm}` for BOTH shell32-rust and menuband-rust
+//! (which #[path]-includes types.rs/shellcom.rs), then UN-WIRE before building, gating or
+//! landing. Verified clean on all six combinations 2026-09-19.
 //! Three things in here are decisions rather than repairs, and each one is the reason a later
 //! ATL/COM class will or will not need the same work:
 //!
@@ -25,14 +54,14 @@
 //!    (WM_DRAWITEM and WM_MEASUREITEM) share one handler that inspects the message and declines.
 //!
 //! 3. **The substrate boundary**, which prelude.rs states as "the island owns DATA LAYOUTS;
-//!    `shellcom` owns VTABLE ABI". Getting this module green was almost entirely a matter of
-//!    making that true rather than of fixing bodies: VARIANT, SAFEARRAY, POINT, SIZE, RECT, MSG
-//!    and POINTL were hand-written copies in types.rs/shellcom.rs, and a second nominal copy of
-//!    a layout is a type no cast can bridge -- `as *mut _` across two structs splits one error
-//!    into two rather than joining them. Where the two sides meet legitimately (a `shellcom`
-//!    interface pointer handed to an island function that takes the com-sys one) the bridge is
-//!    a raw-pointer `.cast()`, which is a pointer-to-pointer cast between opaque COM objects
-//!    and nothing more.
+//!    `shellcom` owns VTABLE ABI". Getting this module to compile was almost entirely a matter
+//!    of making that true rather than of fixing bodies: VARIANT, SAFEARRAY, POINT, SIZE, RECT,
+//!    MSG and POINTL were hand-written copies in types.rs/shellcom.rs, and a second nominal copy
+//!    of a layout is a type no cast can bridge -- `as *mut _` across two structs splits one
+//!    error into two rather than joining them. Where the two sides meet legitimately (a
+//!    `shellcom` interface pointer handed to an island function that takes the com-sys one) the
+//!    bridge is a raw-pointer `.cast()`, which is a pointer-to-pointer cast between opaque COM
+//!    objects and nothing more.
 //!
 //! Real bugs fixed in here, recorded because each is a CLASS the next TU will hit:
 //! `Draw`'s C++ function-pointer parameter sat in three places as raw C text; the static
@@ -43,8 +72,9 @@
 //! `GetWindowProc()` returned `(*this).WindowProc` although `WindowProc` is a STATIC member
 //! function with no `this` to read it out of; three CComPtr null TESTS came back as calls to
 //! the ASSIGNMENT helper, one of which would have stored the address of the field INTO the
-//! field; and a C `break` out of a `switch` case became a `continue` with no loop to leave
-//! (it is a labelled block now).
+//! field; a C `break` out of a `switch` case became a `continue` with no loop to leave (it is a
+//! labelled block now); and the OnNotify switch matched on EIGHT undefined `NM_*` names, the
+//! first of which swallowed every notification and made all seventeen arms behind it dead.
 
 // `m_ListView` is a `CListView`, which Derefs to `ATL_CWindow` for `m_hWnd` and for every
 // CWindow method -- so each of the ~50 `(*this).m_ListView.<x>` sites in this file autorefs

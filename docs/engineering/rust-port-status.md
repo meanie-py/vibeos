@@ -2154,15 +2154,28 @@ flight is marked; in-flight lanes live in [`active-lanes/`](active-lanes/).*
   literal: `IDataObject` got QueryInterface/AddRef/Release/QueryGetData typed, and
   `IFolderViewVtbl`, which stopped dead at `GetFolder`, got the remaining eleven from
   shobjidl.idl:866.
-  **The two shell32 ORPHANs are gone (2026-09-19): `shell32/CDefView.rs` (11.9K lines) and
-  `shell32/utils.rs` (95 free functions) both compile as part of shell32-rust on all three
-  targets and are wired in `lib.rs` / `shell32/mod.rs`.** Both `.cpp` are still the LIVE
-  implementation — the cohab flip is the next step and is separately gated: utils.cpp hosts 16
-  `*_RustBridge` EXTERN_C wrappers that Rust modules currently call (including the two
-  CStubWindow32 ones utils.rs deliberately does NOT implement, because an ATL CWindowImpl's
-  thunk and registered class must have exactly one owner and CDrivesFolder.cpp still uses the
-  class), so removing the TU needs those bridges rehomed first. `shell32-tail-inventory` still
-  counts 28 `.cpp` + 4 `.c` live.
+  **shell32's two remaining ORPHANs compile clean but MUST STAY ORPHAN (2026-09-19).**
+  `shell32/CDefView.rs` (11.9K lines) and `shell32/utils.rs` (95 free functions) are at zero
+  rustc errors on i686/amd64/arm64. They are NOT wired, and `ORPHAN-BY-DESIGN` on them is a
+  GUARD rather than a to-do — an earlier revision of this entry claimed they were wired, which
+  was the mistake, not the reporting of it.
+  **Wiring a translated TU whose `.cpp` is still live is a PARTIAL COHAB FLIP.** utils.rs
+  defines 58 `#[no_mangle]` names the live C++ objects also define as unmangled externs (16 of
+  them the `*_RustBridge` wrappers other Rust modules call, plus `SHGetShellStyleHInstance` and
+  `SHGetUserDisplayName`); the linker resolves archive members against object files without a
+  duplicate-symbol error and silently reroutes those entry points into Rust that has never
+  executed. Measured: wired, the guest booted and passed smoke on all three arches, then froze
+  inside explorer's taskbar `OnCreate`, so `ProcessStartupItems` never ran and the kmtest sweep
+  launched **0 of 91** tests. Un-wiring utils alone cleared that and exposed a second,
+  independent freeze from CDefView after `shell window ready` — one blocker per wired module,
+  which is what symbol capture predicts and a single bad body does not. Both un-wired:
+  `launched=91 ok=88`, ratchet holds.
+  So wiring and the cohab flip are ONE change, gated together, and the flip additionally needs
+  utils.cpp's 16 bridges rehomed first (the `rust_*_stub.cpp` files are the pattern; the
+  CStubWindow32 pair must stay C++ because that ATL class needs exactly one owner and
+  CDrivesFolder.cpp still uses it). Prove the capture set is empty with the `llvm-nm` recipe in
+  the field manual under "Cohab link plumbing" — `scan_duplicate_symbols` does NOT cover this
+  direction. `shell32-tail-inventory` still counts 28 `.cpp` + 4 `.c` live.
   That work also **narrowed the "island owns data layouts, so every crossing takes a
   `.cast()`" rule above**: the reason a cast was needed at all was that `types.rs`/`shellcom.rs`
   kept layout-identical COPIES. VARIANT, SAFEARRAY, POINT, SIZE, RECT, MSG, POINTL,

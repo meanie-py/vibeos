@@ -188,13 +188,19 @@ pub mod def_view_dual;
 pub mod def_view_bckgrnd_menu;
 
 // CDefView — the shell's default folder view (IShellView3 + 7 more interfaces), the largest
-// single class in shell32. Both the support module and the view itself are wired; the view's
-// own header records the three decisions it carries (the atlwin CWindowImpl mechanism, the
-// three-state message map, and the island-owns-layouts substrate boundary).
+// single class in shell32. The support module IS wired (it is finished, and its constants are
+// worth compiling and worth having their C_ASSERTs checked). The view itself is ORPHAN-BY-
+// DESIGN and that is a GUARD, not a to-do: wiring it while CDefView.cpp is still the compiled
+// implementation is a PARTIAL COHAB FLIP. Its `#[no_mangle]` symbols collide with the live
+// C++ ones, the linker picks one without a duplicate-symbol error, and live entry points
+// reroute into Rust that has never executed. Measured 2026-09-19: the guest booted, passed
+// smoke on all three arches, then froze after `[EXPLORER] startup: shell window ready`, which
+// stopped ProcessStartupItems and the kmtest sweep (launched=0). Un-wire, flip and gate as
+// ONE change. Field manual, "Cohab link plumbing".
 #[path = "shell32/cdefview_support.rs"]
 pub mod def_view_support;
-#[path = "shell32/CDefView.rs"]
-pub mod def_view;
+// #[path = "shell32/CDefView.rs"]
+// pub mod def_view;
 
 // CDefaultContextMenu — the shell's default item context menu. Two rustconv runs, because
 // `--cpp-com --class` translates the class only and the TU also carries 22 free functions

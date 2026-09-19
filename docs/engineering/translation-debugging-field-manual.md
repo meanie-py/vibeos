@@ -909,6 +909,26 @@ float math inside a body (x87), float pointers, float struct fields. Two fixes:
   real.
 
 ### Cohab link plumbing
+- **WIRING a translated TU is already a PARTIAL COHAB FLIP, and an uncontrolled one.** The
+  two-step everyone reaches for — "wire the module in now so it compiles and is lint-covered,
+  flip the `.cpp` out later" — is not safe when the C++ is still live. shell32's `utils.rs`
+  defines 58 `#[no_mangle]` names that `dll/win32/shell32`'s live C++ objects ALSO define as
+  unmangled externs, including 16 `*_RustBridge` wrappers other Rust modules call. Wiring it
+  produced **no duplicate-symbol error** — the linker resolves archive members against object
+  files in a defined order and simply picks one — so 58 live entry points silently rerouted
+  into Rust that had never executed. The guest booted, passed smoke on all three arches, then
+  froze inside explorer's taskbar `OnCreate` (two of the captured names,
+  `SHGetShellStyleHInstance` and `SHGetUserDisplayName`, sit in that path), which stopped
+  `ProcessStartupItems` and therefore the kmtest sweep: `launched=0`, nothing runnable, HLT=1.
+  **`scan_duplicate_symbols` does not catch this** — it looks Rust-vs-Rust, and the dangerous
+  direction is Rust shadowing C++ across the cohab boundary. Get the capture set before you
+  wire anything, with `llvm-nm --defined-only` over both sides:
+  `for o in build-<arch>/<module>/CMakeFiles/*.dir/*.obj; do llvm-nm --defined-only $o; done |
+  awk '$2=="T"{print $3}' | grep -v '^__Z' | sed 's/^_//; s/@[0-9]*$//' | sort -u` intersected
+  with the module's `#[no_mangle]` names. A non-empty intersection means wiring and flipping
+  are ONE change, not two. `ORPHAN-BY-DESIGN` is the marker for a module in that state, and it
+  is a GUARD, not a to-do item — the banner that says "the module is not wired yet, the .cpp is
+  still the compiled implementation" is recording why it must stay that way until the flip.
 - **A new rlib's `#[no_mangle]` symbols are absent from the staticlib** unless reached: add the
   path dep + `extern crate` + a `#[used]` force-reference block. A Cargo dependency alone is
   not a reachability path.

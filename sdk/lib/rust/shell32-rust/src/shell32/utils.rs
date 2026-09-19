@@ -1,47 +1,72 @@
 // rustconv-assembly: free-functions
-//! `dll/win32/shell32/utils.cpp` — all 95 free functions, WIRED (2026-09-19); the cohab flip
-//! of the .cpp is the remaining step.
+//! `dll/win32/shell32/utils.cpp` -- all 95 free functions, translated, present, and compiling
+//! clean on i686/amd64/arm64.
+//!
+//! ORPHAN-BY-DESIGN: wiring this while utils.cpp is still the compiled implementation is a
+//! PARTIAL COHAB FLIP -- it captures 58 live C++ symbols and freezes explorer's taskbar, see
+//! WHY below. `utils.cpp` owns the shipping implementation; this module owns nothing yet.
+//!
+//! DO NOT WIRE THIS MODULE. That is the invariant this file is held to, not a status line.
+//! The phrasing that caused the incident below was "the module is not wired YET", which reads
+//! as a task; it is a GUARD.
+//!
+//! WHY, measured rather than argued (2026-09-19). This module defines 58 `#[no_mangle]` names
+//! that the LIVE C++ shell32 objects also define as unmangled externs -- among them the 16
+//! `*_RustBridge` wrappers other Rust modules call, plus `SHGetShellStyleHInstance` and
+//! `SHGetUserDisplayName`, which explorer's taskbar `OnCreate` goes through. Adding
+//! `pub mod utils;` raises NO duplicate-symbol error: the linker resolves archive members
+//! against object files in a defined order and simply picks one. So those 58 live entry points
+//! silently reroute into Rust that has never executed. Wired, the guest booted, passed smoke on
+//! all three arches, and then froze between `[EXPLORER] taskbar: OnCreate begin` and
+//! `child controls created`; `ProcessStartupItems` never ran, so the kmtest sweep launched 0 of
+//! 91 tests, nothing was runnable and the CPU sat halted. Smoke cannot see it -- `shell ready`
+//! is reached identically in both trees, and the freeze is after that marker.
+//!
+//! Wiring and the cohab flip of utils.cpp are ONE change. The flip additionally needs those 16
+//! `*_RustBridge` wrappers rehomed (the `rust_*_stub.cpp` files are the established pattern),
+//! and the CStubWindow32 pair must stay in C++ regardless, because an ATL CWindowImpl's thunk
+//! and registered class must have exactly one owner and CDrivesFolder.cpp still uses the class.
+//! Prove the capture set is empty first -- `llvm-nm` recipe in the field manual under
+//! "Cohab link plumbing".
 //!
 //! Bought 2026-09-13 for $1.17 (97 workers; 91 replayed from bank at $0 on the retry pass),
-//! zero AUDIT REJECTs. Six workers failed on TRANSPORT the first time — "peer closed
-//! connection without sending complete message body" — which is NOT an audit rejection and
+//! zero AUDIT REJECTs. Six workers failed on TRANSPORT the first time -- "peer closed
+//! connection without sending complete message body" -- which is NOT an audit rejection and
 //! must not be treated as one: nothing was banked for them, so they were clean cache misses
 //! and the retry cost $0.09.
 //!
-//! Unlike CDefView this TU needs no ATL window substrate: its one `CWindowImpl` mention is a
-//! COMMENT, and `CComPtr` is already complete in atl.rs.
 //!
+//! RE-VERIFYING the zero-error claim (it will rot otherwise -- that is how this file reached
+//! 799 errors once): wire it temporarily, `cargo check --target {i686-pc-windows-gnu,
+//! x86_64-pc-windows-gnu,aarch64-pc-windows-gnullvm}` for BOTH shell32-rust and menuband-rust
+//! (which #[path]-includes types.rs/shellcom.rs), then UN-WIRE before building, gating or
+//! landing. Verified clean on all six combinations 2026-09-19.
 //! Things worth carrying to the next TU:
 //!
 //! - **Vtable slot ORDER is the whole ABI contract and nothing checks it.** Call sites resolve
 //!   by NAME, so a misplaced slot calls the wrong method with the wrong arguments and compiles
-//!   perfectly. Anyone extending the vtables this TU needed transcribes from the IDL, in order,
-//!   and does not infer from call sites. objidl.idl's `IBindCtx` is the live trap: it declares
-//!   RemoteSetBindOptions and RemoteGetBindOptions as `[call_as(...)]` RPC proxy SUBSTITUTES,
-//!   not extra slots. Counting them gives 15 and shifts everything after SetBindOptions by two.
+//!   perfectly. objidl.idl's `IBindCtx` is the live trap: it declares RemoteSetBindOptions and
+//!   RemoteGetBindOptions as `[call_as(...)]` RPC proxy SUBSTITUTES, not extra slots. Counting
+//!   them gives 15 and shifts everything after SetBindOptions by two.
 //!
 //! - **Check before authoring.** The estimate was "six vtables to write"; six of the nine
-//!   opaque interfaces already had a full vtable elsewhere in the crate (IExecuteCommand,
-//!   IDefaultExtractIconInit, IProgressDialog, IContextMenu + IStream, IShellBrowser) and are
-//!   exercised by their own modules. The estimate survived two deferrals unexamined. Likewise
-//!   "blocked on substrate: BIND_OPTS / STATSTG / LARGE_INTEGER / ULARGE_INTEGER are in neither
-//!   shellcom nor the island" was WRONG and the fix was an import — all four already existed.
-//!   Search the CRATE, not the two places you expect.
+//!   opaque interfaces already had a full vtable elsewhere in the crate and are exercised by
+//!   their own modules. Likewise "blocked on substrate: BIND_OPTS / STATSTG / LARGE_INTEGER /
+//!   ULARGE_INTEGER are in neither shellcom nor the island" was WRONG and the fix was an import
+//!   -- all four already existed. Search the CRATE, not the two places you expect.
 //!
 //! - **Three-target agreement is on `expected` ALONE.** `found` is what the expression
-//!   currently IS, which legitimately differs by target — a usize-typed local is u64 on 64-bit
-//!   and u32 on 32-bit — without the repair differing at all, because the cast target is
-//!   `expected`. Comparing the whole (expected, found) pair wrongly quarantined 5 sites whose
-//!   fix was identical everywhere. Where `expected` ITSELF differed by target, the cast is the
-//!   callee's declared TYPE NAME (`as SIZE_T`, `as UINT_PTR`), which is width-correct on all
-//!   three by construction.
+//!   currently IS, which legitimately differs by target without the repair differing at all.
+//!   Comparing the whole (expected, found) pair wrongly quarantined 5 sites whose fix was
+//!   identical everywhere. Where `expected` ITSELF differed by target, the cast is the callee's
+//!   declared TYPE NAME (`as SIZE_T`, `as UINT_PTR`), width-correct on all three by construction.
 //!
 //! Real bugs found here, each a class rather than a one-off:
 //!
 //! - `STR_FILE_SYS_BIND_DATA` is `L"File System Bind Data"` in shobjidl.idl, and the island
-//!   carries that name as `&[u8; 22]` — the NARROW bytes. The C casts the macro to `LPWSTR`
+//!   carries that name as `&[u8; 22]` -- the NARROW bytes. The C casts the macro to `LPWSTR`
 //!   for `IBindCtx::GetObjectParam`, so the island's array read back as UTF-16 is `"iF"`,
-//!   `"el"`, `" S"`… and the bind-context lookup would never match. The wide spelling is in
+//!   `"el"`, `" S"`... and the bind-context lookup would never match. The wide spelling is in
 //!   utils_support.rs. The island has 111 such `&[u8; N]` consts; this one is proven wrong.
 //! - `CDummyOleWindow` came out of the run as a LAYOUT with no object behind it, because
 //!   `new CDummyOleWindow()` has no Rust spelling in a no_std crate. It is implemented here
@@ -49,11 +74,8 @@
 //!   refcount from 1, `delete this` as HeapFree.
 //! - `SHELL_ErrorBoxHelper` is a shellutils.h `static inline`, so there is no symbol to import
 //!   and `SHELL_ErrorBox_RustBridge` had nothing to call. Ported into utils_support.rs.
-//! - `CStubWindow32_{Create,Destroy}Stub_RustBridge` were REMOVED, not repaired. They are the
-//!   C++ side of a bridge that exists so Rust never needs CStubWindow32; an ATL CWindowImpl's
-//!   thunk and registered class must have exactly ONE owner, and two C++ TUs still use it.
-//!   Translating the bridge builds the second implementation it was built to prevent.
-//! - A `Vec<u16>` in SHSetUnreadMailCountW, in a no_std crate with no allocator — and wrong
+//! - `CStubWindow32_{Create,Destroy}Stub_RustBridge` were REMOVED, not repaired -- see above.
+//! - A `Vec<u16>` in SHSetUnreadMailCountW, in a no_std crate with no allocator -- and wrong
 //!   even where Vec exists, since `with_capacity` leaves len at 0 and every write went through
 //!   `as_mut_ptr()` past the initialized region. Now `CStringW` + `Append`.
 //! - `FARPROC` is `Option<unsafe extern "system" fn() -> INT_PTR>`, so a null test on one is
