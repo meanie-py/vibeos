@@ -18,6 +18,8 @@ import pytest
 
 from rustconv.bank_audit import (
     BankedFn,
+    DirReport,
+    Resolution,
     audit,
     banked_fns,
     declared_names,
@@ -25,6 +27,7 @@ from rustconv.bank_audit import (
     load_allowlist,
     macro_arg_names,
     member_body,
+    redundancies,
     resolve,
     tchar_variants,
     truncated_fns,
@@ -240,6 +243,25 @@ def test_memo_body_with_one_unaccounted_name_is_still_reported(tmp_path):
     assert not resolve(BankedFn("c3d4", path), set(), {"Allowed": "superseded"}).integrated
 
 
+def test_allowlisted_dir_is_not_safe_to_archive(tmp_path):
+    """ "Correctly absent" is not "shipping", and only the second is safe to archive.
+
+    `member_body` and the group allowlist widen what resolves as integrated, which feeds
+    `redundancies`' safe-to-archive list directly. A dir whose every body is an allowlisted
+    exception is the record of a decision — shell32's `CEnumIDListBase` run archive holds
+    seven bodies that must NEVER be defined in Rust — so it must not be offered.
+    """
+    responses = tmp_path / "responses"
+    tree = tmp_path / "tree"
+    _write(tmp_path, "tree/lib.rs", "pub unsafe fn Shipping() {}\n")
+    for d in ("20260718-205701-file.cpp", "mod__file__factseal_v1"):
+        _write(tmp_path, f"responses/{d}/01_Superseded.rs", "unsafe fn Superseded() {}\n")
+    reports = audit(responses, tree, allow={"Superseded": "superseded by a rewrite"})
+    dupes, safe = redundancies(reports)
+    assert [d.name for d in dupes] == ["Superseded"]
+    assert safe == []
+
+
 # --------------------------------------------------------------------------- truncated
 
 
@@ -353,3 +375,86 @@ def test_macro_generated_is_a_last_resort_and_says_so(tmp_path):
     # ...but resolvable through the macro-argument index, and labelled as such.
     r = resolve(fn, set(), {}, {"_isalnum_l"})
     assert r.integrated and r.via == "macro_generated"
+
+
+# --- redundancy: one purchase written twice is NOT two purchases ------------
+#
+# The first draft of `redundancies` called every cross-dir duplicate "bought more than
+# once" and was wrong about all 235 of msvcrt's: `translate` writes each body to BOTH a
+# timestamped RunArchive and the namespaced ResponseCache, so a single run leaves two
+# byte-identical copies. Hashing the bodies is what separates that from a real re-buy.
+
+
+def _rep(name: str, fns: dict[str, Path], integrated: bool = True) -> DirReport:
+    res = [
+        Resolution(BankedFn(fn, path), fn if integrated else None, "direct")
+        for fn, path in fns.items()
+    ]
+    return DirReport(name, len(res), res)
+
+
+def _body(tmp_path: Path, rel: str, text: str) -> Path:
+    p = tmp_path / rel
+    p.parent.mkdir(parents=True, exist_ok=True)
+    p.write_text(text, encoding="utf-8")
+    return p
+
+
+def test_identical_copies_are_one_purchase_not_two(tmp_path):
+    a = _body(tmp_path, "20260919-022222-file.c/01_alpha.rs", "fn alpha() {}")
+    b = _body(tmp_path, "msvcrt__file__factseal_v1/alpha.rs", "fn alpha() {}")
+    dupes, _ = redundancies(
+        [
+            _rep("20260919-022222-file.c", {"alpha": a}),
+            _rep("msvcrt__file__factseal_v1", {"alpha": b}),
+        ]
+    )
+    assert [d.identical for d in dupes] == [True]
+
+
+def test_divergent_copies_are_a_real_rebuy(tmp_path):
+    a = _body(tmp_path, "20260801-010101-file.c/01_alpha.rs", "fn alpha() { /* v1 */ }")
+    b = _body(tmp_path, "20260919-022222-file.c/01_alpha.rs", "fn alpha() { /* v2 */ }")
+    dupes, _ = redundancies(
+        [_rep("20260801-010101-file.c", {"alpha": a}), _rep("20260919-022222-file.c", {"alpha": b})]
+    )
+    assert [d.identical for d in dupes] == [False]
+
+
+def test_the_replay_CACHE_dir_is_never_offered_for_removal(tmp_path):
+    """Deleting the namespaced dir makes the next run re-buy the file. It is the cache,
+    not a spare copy, and no amount of mirroring makes it disposable."""
+    a = _body(tmp_path, "20260919-022222-file.c/01_alpha.rs", "fn alpha() {}")
+    b = _body(tmp_path, "msvcrt__file__factseal_v1/alpha.rs", "fn alpha() {}")
+    _, safe = redundancies(
+        [
+            _rep("20260919-022222-file.c", {"alpha": a}),
+            _rep("msvcrt__file__factseal_v1", {"alpha": b}),
+        ]
+    )
+    assert safe == ["20260919-022222-file.c"]
+
+
+def test_an_archive_with_one_unmirrored_member_is_not_safe(tmp_path):
+    a = _body(tmp_path, "20260919-022222-file.c/01_alpha.rs", "fn alpha() {}")
+    only = _body(tmp_path, "20260919-022222-file.c/02_beta.rs", "fn beta() {}")
+    b = _body(tmp_path, "msvcrt__file__factseal_v1/alpha.rs", "fn alpha() {}")
+    _, safe = redundancies(
+        [
+            _rep("20260919-022222-file.c", {"alpha": a, "beta": only}),
+            _rep("msvcrt__file__factseal_v1", {"alpha": b}),
+        ]
+    )
+    assert safe == []
+
+
+def test_an_archive_of_UNINTEGRATED_work_is_not_safe(tmp_path):
+    a = _body(tmp_path, "20260919-022222-file.c/01_alpha.rs", "fn alpha() {}")
+    b = _body(tmp_path, "msvcrt__file__factseal_v1/alpha.rs", "fn alpha() {}")
+    _, safe = redundancies(
+        [
+            _rep("20260919-022222-file.c", {"alpha": a}, integrated=False),
+            _rep("msvcrt__file__factseal_v1", {"alpha": b}, integrated=False),
+        ]
+    )
+    assert safe == []

@@ -4140,6 +4140,15 @@ work that was already shipping, which at best wastes the time and at worst re-de
 the live C++ still owns. Grep the tree for one flagged symbol before believing a pile of them.
 And do not delete a memo cache to "get the bank down": it is what makes a replay cost $0.
 
+**A resolution rule feeds the deletion list, so widening one narrows the other.** `integrated`
+is the input to `redundancies`' safe-to-archive list, and an ALLOWLISTED resolution means
+correctly *absent* — superseded, or a body that must never ship — not shipping. Left as plain
+`integrated`, the new rules offered shell32's `CEnumIDListBase` run archive for archiving: seven
+bodies that must never be defined in Rust, listed under a sentence claiming every function in
+them is integrated. `res.via != "allowlist"` is the whole fix. The general point is that these
+two axes are not independent — anything that makes the audit resolve MORE names makes the
+deletion list LONGER, so check the second whenever you touch the first.
+
 ### The export audit that was supposed to catch the shrunken plan was itself blind
 
 **Symptom.** A module translates, `cargo check`s clean on all three arches, passes `check`, and
