@@ -294,34 +294,16 @@ pub struct FILETIME {
 }
 
 // ── VARIANT / SAFEARRAY / SHCOLUMNID (oaidl.idl / shobjidl.idl) ──────────────────────────
-/// SAFEARRAY (oaidl.idl). Only cDims/pvData are read here.
-#[repr(C)]
-pub struct SAFEARRAY {
-    pub cDims: USHORT,
-    pub fFeatures: USHORT,
-    pub cbElements: ULONG,
-    pub cLocks: ULONG,
-    pub pvData: PVOID,
-    // SAFEARRAYBOUND rgsabound[] follows (flexible)
-}
-/// VARIANT value union — only vt (offset 0) and parray (offset 8) are touched; the
-/// `_brecord`/`_dec` members force the union to 8 bytes on i386 / 16 on amd64-arm64 so
-/// sizeof(VARIANT) is 16/24 (matches the SDK, for VariantClear).
-#[repr(C)]
-pub union VARIANT_value {
-    pub iVal: i16,
-    pub lVal: i32,
-    pub parray: *mut SAFEARRAY,
-    pub _brecord: [usize; 2],
-}
-#[repr(C)]
-pub struct VARIANT {
-    pub vt: VARTYPE,
-    pub wReserved1: WORD,
-    pub wReserved2: WORD,
-    pub wReserved3: WORD,
-    pub val: VARIANT_value,
-}
+// SAFEARRAY: same rule as VARIANT below -- the island owns it. The local copy stopped at
+// `pvData` and left the flexible `rgsabound[]` implicit, so it was not even the same size.
+pub use crate::island::SAFEARRAY;
+// VARIANT: the ISLAND owns this layout. It was a flattened hand-written copy here, which
+// made `crate::island::VARIANT` (bindgen's `tagVARIANT`, an anonymous-union nest reached as
+// `n1.n2.vt` / `n1.n2.n3.<member>`) a DISTINCT nominal type -- so shlfolder.rs and
+// shellutils.rs, which take the island's, could not share one `V_VT!` with CDefView, which
+// took this one. The flat copy also carried only four union members, so `VT_INT_PTR`'s
+// pointer-width `pintVal` slot did not exist at all.
+pub use crate::island::VARIANT;
 
 // ── COM vtables (STDMETHODCALLTYPE == __stdcall on i386 → extern "system") ───────────────
 // Only the slots actually invoked carry real signatures; the rest are pointer-sized
