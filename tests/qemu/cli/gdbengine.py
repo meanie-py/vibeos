@@ -249,6 +249,19 @@ def start(
     win_cfg: dict,
     gdb_wait: bool = False,
 ) -> DebugRun:
+    from ..portlease import launch_lock
+
+    with launch_lock():
+        return _start_locked(arch, backend=backend, win_cfg=win_cfg, gdb_wait=gdb_wait)
+
+
+def _start_locked(
+    arch: str,
+    *,
+    backend: str,
+    win_cfg: dict,
+    gdb_wait: bool = False,
+) -> DebugRun:
     """Launch a detached debug QEMU with a gdbstub; write + return the run manifest.
     windows-host only for now (the whole point — native breakpoints don't fire under
     KVM; the native port reuses this shell once its accel is forced to tcg)."""
@@ -268,6 +281,9 @@ def start(
     work_dir.mkdir(parents=True, exist_ok=True)
 
     staging_root = Path(win_cfg.get("staging_dir", "/mnt/c/temp/vibeos-qemu"))
+    from ..windows_staging import auto_cleanup_locked
+
+    auto_cleanup_locked(staging_root)
     staging = staging_root / f"dbg-{run_id}"
     shutil.rmtree(staging, ignore_errors=True)
     staging.mkdir(parents=True, exist_ok=True)
