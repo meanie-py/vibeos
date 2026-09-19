@@ -4850,6 +4850,15 @@ suspect call kept it failing; eighty made it green.
   for bare calls to the three names that exist on every interface — `QueryInterface`, `AddRef`,
   `Release` — and check those receivers by hand; the rest of the bare calls have only one
   candidate and land correctly.**
+  That sweep has been RUN over shell32 and recyclebin, so it does not need repeating: 18 bare
+  self-call sites in the C++ (`QueryInterface` x3, `AddRef` x13, `Release` x2), every one of
+  which the translation rooted at `this` except `CDefView.cpp:1776`. The refcount-critical ones
+  — `CShellDispatch::get_Application`/`get_Parent`, `CFileDefExt`'s two
+  `AddRef`/`SHCreateThread`/`Release` pairs, and the four `PropSheetPageLifetimeCallback`
+  `AddRef`s in CShellLink/drvdefext/filedefext — are all faithful. The companion check from the
+  other side (class-style `X_AddRef(p)` / `X_Release(p)` whose receiver is not `this`) found 18
+  more, all correct: each names an object the C++ names explicitly too. The class is real and
+  will recur on the next C++ COM module, but in this tree it had exactly one instance.
   What it cost: explorer's desktop died with STATUS_ILLEGAL_INSTRUCTION at a stable heap
   address after the desktop finished populating, which took the kmtest sweep from 91 launched
   to 0 — and smoke passed on all three arches every time, because the freeze is after
