@@ -1542,6 +1542,21 @@ wave16.rs whose neighbouring subnormal branch was already `wrapping_*`.
   translation output carries neither the array form nor the comment, so it reports a confident
   `0 findings` over 0 comparisons. Grep `b"L` and `\bL'` in fresh output; the correct fix is
   the crate's `w!()` macro.
+- **The ISLAND can be the one that narrows it, and then no amount of prompt or seal work
+  helps.** Every entry above blames the model. shell32's `utils.cpp` found the other source:
+  shobjidl.idl `cpp_quote`s `#define STR_FILE_SYS_BIND_DATA L"File System Bind Data"`, and the
+  bindgen island carries that exact name as `pub const STR_FILE_SYS_BIND_DATA: &[u8; 22] =
+  b"File System Bind Data\0"` — the NARROW bytes, under the right name, in the substrate the
+  translation is supposed to be able to trust. The C casts the macro to `LPWSTR` for
+  `IBindCtx::GetObjectParam`, so the array read back as UTF-16 is `"iF"`, `"el"`, `" S"`… and
+  the bind-context lookup silently never matches. The model did nothing wrong; sealing cannot
+  see it (the token IS present and IS the island's); `scan_wide_literals` cannot see it (there
+  is no `[u16; N]` and no intent comment). The tell is an island const of type `&[u8; N]` whose
+  header spelling is `L"..."`, and the fix is a wide spelling in the module's `*_support.rs`
+  with a comment saying the island's is wrong — not a cast. That island has **111** `&[u8; N]`
+  consts; the `STR_*` bind-context keys are all `L"..."` in shobjidl.idl, so this one is a
+  proven instance of a class, not a one-off. Worth a scanner: for each `&[u8; N]` const in an
+  island, grep the header for the same name with an `L` prefix.
 - **A `b"..."` behind a wide pointer is TWO different bugs, and only one of them is a bug.**
   `b"A\0S\0U\0S\0\0\0" as PCWSTR` is the content-correct one: hand-encoded UTF-16 whose only
   defect is ALIGNMENT 1. **That is a style problem, not a latent fault, and the older framing
