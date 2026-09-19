@@ -4810,8 +4810,15 @@ suspect call kept it failing; eighty made it green.
   a different drop target, registered on the view's window. It compiles, it has the right
   shape, every argument is right, and the only wrong token is the receiver — which does not
   appear in the C at all, because C++ omits it. **This is the one call shape where the correct
-  answer is invisible in the source text**, so it is worth grepping a translated C++ TU for
-  `[^>.]QueryInterface(` (and any other bare member call) and checking each receiver by hand.
+  answer is invisible in the source text.** The exposure is narrower than "every bare member
+  call", which is what makes it checkable: sweeping CDefView's other unqualified self-calls
+  (`Refresh`, `GetItemObject`, `SelectItem`) found every one correctly rooted at `this`, and
+  the sole shell32 sibling of this shape (`CIDLDataObj.cpp:270`) was translated correctly too.
+  What singles out `QueryInterface` is that it is a method of the class AND a method of every
+  COM pointer in scope, so the name alone cannot pick a receiver. **Grep a translated C++ TU
+  for bare calls to the three names that exist on every interface — `QueryInterface`, `AddRef`,
+  `Release` — and check those receivers by hand; the rest of the bare calls have only one
+  candidate and land correctly.**
   What it cost: explorer's desktop died with STATUS_ILLEGAL_INSTRUCTION at a stable heap
   address after the desktop finished populating, which took the kmtest sweep from 91 launched
   to 0 — and smoke passed on all three arches every time, because the freeze is after
