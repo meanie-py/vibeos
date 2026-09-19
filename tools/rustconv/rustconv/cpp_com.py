@@ -1313,6 +1313,13 @@ def _parse_plain_state_field(
     semantics and must remain a loud preflight failure.
     """
     text = " ".join(declaration.split())
+    # `struct IconLocation defaultIcon` is C's elaborated-type-specifier: the keyword names
+    # no extra semantics, it is the same type as `IconLocation defaultIcon`, and C++ accepts
+    # both. Only the bare spelling was recognised, so a class declaring its members the C way
+    # failed with "state field type is not proven C scalar/pointer state" -- which reads as a
+    # claim about the TYPE when the truth was that nobody had parsed the declaration.
+    # CExtractIcon declares all four of its state fields this way.
+    text = _ELABORATED_TYPE_RE.sub("", text)
     # A C++11 zero-valued default member initializer is exactly the scaffold's
     # zero-init (HeapAlloc(HEAP_ZERO_MEMORY) + zeroed ctor write); strip it.
     # Any non-zero default stays inside the declaration and fails loud below.
@@ -1550,6 +1557,11 @@ def _plain_member_class_definition(text: str, name: str) -> tuple[str, bool] | N
     return "; ".join(fields) + ";", False
 
 
+# `struct|union|enum|class NAME` -> `NAME`. `\s+` after the keyword is required, so a member
+# actually called `structFoo` is untouched.
+_ELABORATED_TYPE_RE = re.compile(r"\b(?:struct|union|enum|class)\s+")
+
+
 def _discover_pod_state_types(
     source: Path, header: Path, declarations: list[str]
 ) -> tuple[list[PodStateType], list[EnumStateType]]:
@@ -1572,6 +1584,7 @@ def _discover_pod_state_types(
         if container is not None and container.group("template") in _RAII_CONTAINER_LOWERINGS:
             candidates.append(container.group("element"))
             continue
+        declaration = _ELABORATED_TYPE_RE.sub("", declaration)
         match = re.fullmatch(r"\s*(?P<type>[A-Za-z_]\w*)\s*(?:\*+\s*)?[A-Za-z_]\w*\s*", declaration)
         if match:
             c_type = match.group("type")

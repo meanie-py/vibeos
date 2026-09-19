@@ -6,7 +6,6 @@
     ],
     "dynamic": [
       "dll/win32/shell32/CEnumIDListBase.cpp",
-      "dll/win32/shell32/CExtractIcon.cpp",
       "dll/win32/shell32/folders/CRecycleBinFolderViewCB.cpp",
       "dll/win32/shell32/folders/CRegFolder.cpp",
       "dll/win32/shell32/CFolder.cpp",

@@ -257,6 +257,40 @@ Two related traps, both real bugs we ate (field manual §9.65):
 
 Full reference: `docs/engineering/build-system.md` §"Cargo target model".
 
+## Searching the tree — `grep` is ugrep, and it SKIPS 175 sources in silence
+
+`grep` in this environment is a shell function wrapping **ugrep**. On a file that is not
+valid UTF-8 it finds nothing and says nothing — no "Binary file matches", no warning, exit 1,
+which is indistinguishable from a genuine no-match.
+
+**175 of the 16,466 tracked C/C++ sources (1.1%) are ISO-8859, not UTF-8** — usually one
+accented byte in an upstream copyright line. `dll/win32/shell32/CExtractIcon.cpp` is one
+(`0xe9` at offset 234), along with `shellrecyclebin/guid.c` and `recyclebin_v5.h`.
+
+```bash
+grep -c DuplicateString dll/win32/shell32/CExtractIcon.cpp      # nothing, rc=1  ← LIE
+grep -ac DuplicateString dll/win32/shell32/CExtractIcon.cpp     # 5  ← the truth
+```
+
+**Pass `-a` whenever you grep source, and treat an empty result on a file you have not
+`-a`-checked as unproven.** (`--encoding=LATIN1` works too; `-a` is shorter and is the same
+flag the serial logs need, since those carry NULs.) To enumerate the blind spot itself, read
+the bytes in Python — `Path(f).read_bytes().decode('utf-8')` and catch `UnicodeDecodeError`.
+
+This is the field manual's "a claim ABOUT a measurement needs a route the suspect tool does
+not mediate", in its cheapest form. It cost a near-miss: an empty grep was about to be
+reported as "`DuplicateString` exists nowhere in shell32 — rustconv invented it", when the
+function is at `CExtractIcon.cpp:72` and rustconv had parsed it correctly. Two sweeps in that
+same session were re-derived in Python afterwards; both conclusions survived (0 extra hits
+for `#ifdef _M_ARM64` and for bare self-`QueryInterface`/`AddRef`/`Release`), and one tree-wide
+count moved: `_CreatorClass::CreateInstance` is 5, not 4, the fifth in
+`dll/win32/browseui/shellbars/CBandSite.cpp`.
+
+**The repo's own scanners are NOT affected** — they read with
+`read_text(encoding="utf-8", errors="replace")`, so the gate sees these files. This is an
+interactive-search hazard only, which is exactly why it is written down here rather than
+fixed in a tool.
+
 ## Key Technical Patterns
 
 ### SEH / DUMMY_PSEH (status 2026-07-10 — the ruling doc is `docs/engineering/dummy-pseh-verdict.md`)

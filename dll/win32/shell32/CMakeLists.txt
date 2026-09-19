@@ -74,7 +74,15 @@ list(APPEND SOURCE
     # CDropTargetHelper.cpp — COM class plus SHSimulateDropOnClsid ordinal closure
     # are Rust-owned (shell32-rust/src/drop_target_helper.rs).
     CEnumIDListBase.cpp
-    CExtractIcon.cpp
+    # CExtractIcon.cpp — replaced by Rust (shell32-rust/src/shell32/CExtractIcon.rs for the
+    # COM class, shell32/extracticon_free.rs for DuplicateString + the two SHCreate*ExtractIcon
+    # entry points); cohab via libshell32_rust.a. Whole-TU flip. Activation is shellutils.h's
+    # ShellObjectCreator<CExtractIcon> (CExtractIcon.cpp:339), i.e. internal, no CLSID.
+    # Capture set: the only symbol the rest of the DLL takes from this TU is
+    # SHCreateDefaultExtractIcon, which Rust publishes; SHCreateFileExtractIconW is a spec
+    # export and Rust publishes that too.
+    # NOTE this file is ISO-8859, not UTF-8, so a bare `grep` finds NOTHING in it — see
+    # agent-reference.md §"Searching the tree".
     # folders.cpp — replaced by Rust (shell32-rust/src/folders.rs); cohab via libshell32_rust.a
     # iconcache.cpp — replaced by Rust (shell32-rust/src/shell32/iconcache.rs); cohab via libshell32_rust.a
     # propsheet.cpp — replaced by Rust (shell32-rust/src/propsheet.rs); reaches

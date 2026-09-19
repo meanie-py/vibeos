@@ -135,6 +135,9 @@ pub mod utils_support;
 /// wholesale — the same split as `CIDLDataObj` / `cidldataobj_free` above.
 pub mod CFileSysBindData;
 pub mod filesysbinddata_free;
+/// `CExtractIcon.cpp`, cohab-flipped. Same two-module split as CFileSysBindData above.
+pub mod CExtractIcon;
+pub mod extracticon_free;
 // pub mod utils;
 // ORPHAN-BY-DESIGN, and this is a GUARD rather than a to-do. utils.rs defines 58 `#[no_mangle]`
 // names that the LIVE C++ shell32 objects also define as unmangled externs -- 16 of them the
