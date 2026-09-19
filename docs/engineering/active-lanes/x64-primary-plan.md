@@ -362,17 +362,68 @@ a ladder to watch", and neither was visible from reading.
    bugs is discovered strictly in order, and "the next blocker" is only ever
    knowable one at a time.**
 
-   The remaining blocker is now a real feature, not a defect:
-   `Wow64ProcessPendingCrossProcessItems` is empty, so a thread created into
-   another process has no per-thread entry to initialise it, and the thunk refuses
-   deliberately rather than create a thread nobody will start. That is task #64 and
-   it is the honest next piece of work on this gap.
+   **Task #64 turned out to be TWO tasks, and the cheap half is DONE (2026-09-19).**
+   The thunk refused every `ProcessHandle != -1` on one reason — the target's
+   wow64.dll must run a per-thread entry and `Wow64ProcessPendingCrossProcessItems`
+   is empty — but that reason only covers `CreateRemoteThread` into a **running**
+   process. The **initial** thread of a brand-new child needs no channel at all,
+   and the tree says so in two places: the child's `Wow64LdrpInitialize` takes the
+   guest entry from `PEB32->ImageBaseAddress` and the image's own NT headers,
+   never from a CONTEXT the parent passed (`wow64.c`), and it is reached from
+   `LdrpInitializeProcess` on the strength of `ProcessWow64Information` on ITSELF
+   (`ntdll-rust/src/ldr/ldrinit.rs:2379`), so it does not care who created the
+   thread. The standing existence proof is that winlogon spawns all ten ladder
+   guests exactly this way; the only difference for a 32-bit parent is that its
+   `NtCreateThread` passes through the thunk and a native parent's does not.
 
-   So the third write of the process-parameters block into the child's address space
-   partially fails — the target is in range but not fully mapped in the child. That is
-   TWO STEPS BEFORE the `NtCreateThread` cross-process refusal this entry originally
-   predicted, which remains unexercised. Next: why the child's parameter block is not
-   mapped where the parent is writing it.
+   `Wow64pCreateForeignInitialThread` (`wow64_manual.c`) now takes that half:
+   `RtlCreateUserThread` against the foreign handle, which does the stack
+   allocation and host CONTEXT build in the target. The guest's
+   CONTEXT32/INITIAL_TEB32 are deliberately ignored — they describe a 32-bit start
+   the child recomputes for itself. Two conditions gate it, both load-bearing
+   rather than defensive: the target must be a WoW64 process (a 32-bit parent
+   spawning a **64-bit** child is a different, still-refused case), and the
+   target's `PEB->Ldr` must be NULL, which is the kernel's word for "has not run
+   user code yet" and exactly the precondition the argument above rests on. A
+   running target falls through to the old refusal, which is the
+   `CreateRemoteThread` half and still owed.
+
+   **Measured the same day, and it moved:**
+
+        [WOW64] NtCreateThread: cross-process INITIAL thread pid=2ec tid=2f0 suspended=1
+        [WOW64] NtCreateThread(0x37) [manual] => 00000000
+
+   All ten parity guests PASS on the same boot, no bugcheck.
+
+   **The FOURTH defect in the stack, and the harness named it itself:**
+
+        [WOW64] LPC: api 00010000 has NO payload marshaller — body copied verbatim,
+                     fields past CsrCaptureData may be wrong
+        [WOW64] LPC request: Api=00010000 DataLen=156
+        [WOW64] LPC reply: api Status=c0000008          STATUS_INVALID_HANDLE
+        [spawn32] rung1 CreateProcessW FAILED, GetLastError 0x6   ERROR_INVALID_HANDLE
+
+   `0x00010000` is `BasepCreateProcess`, and `BASE_CREATE_PROCESS`
+   (`subsys/win/basemsg.h:84`) opens with `HANDLE ProcessHandle; HANDLE
+   ThreadHandle; CLIENT_ID ClientId;` — four pointer-width fields before anything
+   else, so the verbatim body copy hands basesrv handles assembled from the wrong
+   words. It is the identical failure `WOW64_CSRAPI_BASEP_CREATETHREAD` was written
+   for, one struct larger, and the "no payload marshaller" warning existing at all
+   is why it cost one boot instead of a hunt. Note this is a marshaller, not thread
+   creation: **task #64's remaining half is `CreateRemoteThread`, and this is a
+   separate, better-understood piece of work in front of it.**
+
+   Its cost is the embedded `BASE_SXS_CREATEPROCESS_MSG` — two `SIZE_T`s, three
+   pointers and four `UNICODE_STRING`s, whose `Buffer`s are guest pointers into the
+   capture buffer. Follow the `BASEP_CREATETHREAD` entry's discipline and **MEASURE**
+   both layouts with an `offsetof` dump rather than deriving them; that comment
+   records measured offsets for a three-field struct, and this one has thirty.
+
+   *(Superseded, kept as a dated waypoint: while the `STATUS_PARTIAL_COPY` write was
+   still failing I wrote here that the next question was "why the child's parameter
+   block is not mapped where the parent is writing it." It was not a mapping fault at
+   all — it was the missing TEB32 `RemotePeb` channel described above, and the block was
+   always mapped. Do not follow that lead; it is closed.)*
 
    **A SECOND translation bug, found only because the first fix made the status
    visible — and it corrects something I wrote here an hour ago.** The first clean run
@@ -415,17 +466,24 @@ a ladder to watch", and neither was visible from reading.
    predicting the whole stack is the mistake, and it is an easy one to make
    when the layer you read says something definite.
 
-2. **Registry redirection — LARGELY DONE 2026-09-13, one function left.** The wow64-amd64
+2. **Registry redirection — DONE.** The wow64-amd64
    lane landed it: `878e0ac0b67` (E24) puts Wow6432Node redirection in the **CM parse**, not in
    wow64.dll, because registry opens are overwhelmingly RELATIVE — advapi32 caches a handle to
    `\REGISTRY\MACHINE` and passes RootDirectory + a subpath, so a user-mode rewrite would need
    a handle-to-path syscall on every open. `911b1e1d82b` (E21) fixed `NtOpenKey` denying every
-   `KEY_WOW64_32KEY` open outright. **Residue, verified on master:** exactly two live
-   `Wow64 not yet supported` sites remain, both in `RegDeleteKeyExW`, so an explicit
-   `KEY_WOW64_32KEY`/`64KEY` on a DELETE is still logged and ignored — a narrow wrong-hive
-   hazard confined to deletion. (The two in `RegLoadMUIStringA` are commented out.) **This entry
-   previously called the whole feature an open silent bug; that was true when written and is
-   not now.** Original scoping kept below, because it is why it mattered:
+   `KEY_WOW64_32KEY` open outright. This lane closed the runtime hole with `reg32.exe`, the
+   tenth ladder guest, which `878e0ac0b67` structurally could not test from outside.
+
+   **The last residue is closed too, re-verified on this tree 2026-09-19.** This entry used to
+   say "one function left": two live `Wow64 not yet supported` sites in `RegDeleteKeyExW`,
+   dropping an explicit `KEY_WOW64_32KEY`/`64KEY` on a DELETE and so deleting from the native
+   hive when the caller had asked for the other view. `reg.rs:1073-1081` now passes the view
+   selectors straight into `NtOpenKey`, which is all that was needed once E21 stopped refusing
+   them and CM started honouring them. The only `Wow64 not yet supported` text left in
+   advapi32 is the comment recording that fix, plus two commented-out `RegLoadMUIString`
+   lines. **This entry has now called the feature an open silent bug and then a nearly-closed
+   one; both were true when written and neither is now.** Original scoping kept below, because
+   it is why it mattered:
 
    *Was:* **a silent wrong answer, not a missing feature.**
    `sdk/lib/rust/advapi32-rust/src/reg/reg.rs:1073-1079` prints
