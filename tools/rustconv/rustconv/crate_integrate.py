@@ -730,12 +730,52 @@ def island_names(crate_src: Path) -> set[str]:
     return names
 
 
+_PATH_MOD_RE = re.compile(
+    r"#\[path\s*=\s*\"(?P<file>[^\"]+)\"\s*\]\s*(?:pub(?:\([^)]*\))?\s+)?mod\s+(?P<name>\w+)\s*;"
+)
+
+
+def _path_attr_modules(crate_src: Path) -> dict[Path, str]:
+    """{resolved file -> `crate::NAME`} for every `#[path = "..."] pub mod NAME;`.
+
+    A module's Rust path is what a `mod` declaration BINDS it to, which for a
+    `#[path]`-mapped file has nothing to do with where the file sits. shell32 maps
+    `dialogs/drvdefext.rs` to `crate::drv_def_ext` and `shell32/CDefView.rs` to
+    `crate::def_view`, both so a rustconv re-run can keep assembling at the C tree's path
+    while the crate keeps its own naming. Deriving the module from the FILE PATH emits
+    `use crate::dialogs::drvdefext::ShellObjectCreator;` — a module that does not exist.
+    It is a compile error rather than a silent wrong call, but it is one the generator
+    should not be producing, and every `#[path]` module in the crate is exposed to it.
+
+    Only the declaring file's own prefix is applied (lib.rs -> `crate`), which covers every
+    `#[path]` in this tree; a `#[path]` inside a nested `mod.rs` keeps the path-derived
+    answer rather than being guessed at.
+    """
+    mapped: dict[Path, str] = {}
+    root = Path(crate_src)
+    for decl in (root / "lib.rs", root / "main.rs"):
+        try:
+            text = decl.read_text()
+        except OSError:
+            continue
+        for match in _PATH_MOD_RE.finditer(text):
+            target = (root / match.group("file")).resolve()
+            mapped[target] = f"crate::{match.group('name')}"
+    return mapped
+
+
 def _module_path(rs: Path, crate_src: Path) -> str | None:
-    """`crate::a::b` for a file under the crate's `src/`; None if it lies outside."""
+    """`crate::a::b` for a file under the crate's `src/`; None if it lies outside.
+
+    A `#[path]`-mapped file takes the name its `mod` declaration binds, not its location.
+    """
     try:
         rel = rs.resolve().relative_to(crate_src.resolve())
     except ValueError:
         return None
+    mapped = _path_attr_modules(crate_src).get(rs.resolve())
+    if mapped is not None:
+        return mapped
     parts = rel.with_suffix("").parts
     if parts and parts[-1] == "mod":
         parts = parts[:-1]

@@ -929,6 +929,17 @@ float math inside a body (x87), float pointers, float struct fields. Two fixes:
   are ONE change, not two. `ORPHAN-BY-DESIGN` is the marker for a module in that state, and it
   is a GUARD, not a to-do item — the banner that says "the module is not wired yet, the .cpp is
   still the compiled implementation" is recording why it must stay that way until the flip.
+- **The capture-set sweep must include the RUST STATICLIB's undefined set, not just the C++
+  objects.** The recipe above intersects a TU's defined symbols with what every *object file*
+  leaves undefined, and in a cohab build that is only half the link. `CFileSysBindData.cpp`
+  measured 0 against the C++ objects and the true answer is 1: `IFileSystemBindData_Constructor`
+  is called from `libshell32_rust.a` (`wine/pidl.rs`), which is exactly the population the
+  object-file sweep skips. A false 0 here is the dangerous direction — it says "leaf, safe to
+  flip" about a TU something still depends on. Add the archive to the undefined side:
+  `llvm-nm --undefined-only build-<arch>/<module>/lib<module>_rust.a`. (It does not change the
+  CDefView verdict — that flip linked and passed conformance on all three arches, which a
+  dropped symbol could not have done — but the method as first written would not have caught
+  it.)
 - **An empty capture set is NECESSARY, not SUFFICIENT, and smoke is not the oracle for a
   flip.** CDefView.cpp turned out to be a link LEAF — `llvm-nm --undefined-only` over every
   object in shell32.dll (shell32.dir, dialogs/, folders/, shelldesktop, shellmenu, recyclebin)
