@@ -488,6 +488,42 @@ land; date every addition.** Source docs live in `docs/engineering/archive/`.
 
 ## Known bugs & flakes (live registry)
 
+- **WIRING a translated TU is already a partial cohab flip, and the linker is silent about
+  it. UNOWNED (gap), lane-owned (instance)** (2026-09-19). `shell32/utils.rs` defines **58**
+  `#[no_mangle]` names that the LIVE C++ shell32 objects also define as unmangled externs —
+  including 16 `*_RustBridge` wrappers other Rust modules call, plus
+  `SHGetShellStyleHInstance` / `SHGetUserDisplayName`, both on the taskbar `OnCreate` path
+  that froze. **No duplicate-symbol error was produced**: lld resolves archive members
+  against object files in a defined order and simply picks one, so 58 live entry points
+  silently rerouted into Rust that had never executed. Bisect confirmed the mechanism rather
+  than a bad body — un-wiring `utils` alone cleared the taskbar hang and exposed a SECOND
+  independent blocker in the other wired module, which is what symbol capture predicts and a
+  single bad function does not.
+  **`scan_duplicate_symbols` cannot catch this and says so in its own docstring**: it
+  ratchets Rust `#[no_mangle]` names defined in more than one *kernel-linked crate* —
+  Rust-vs-Rust. The dangerous direction is **Rust shadowing C++ across the cohab boundary**,
+  where the linker is silent by design. The check is cheap and belongs in `check`:
+  `llvm-nm --defined-only` over the module's C++ objects, keep `$2=="T"`, drop `^__Z`, strip
+  a leading `_` and any `@N`, intersect with the crate's `#[no_mangle]` set. **A non-empty
+  intersection means wiring and flipping are ONE change** and must be gated as one.
+  The lane is restoring ORPHAN-BY-DESIGN on both modules and keeping every real bug the work
+  found. Note *why* it happened: the deleted banner read "ORPHAN-BY-DESIGN: the module is not
+  wired into the crate yet", **a guard that reads like a to-do item** to anyone holding
+  "wired" as the goal.
+
+- **`vibeos-cli conformance` exits 0 on media that launched ZERO tests. UNOWNED**
+  (2026-09-19). Verified in an artifact: `launched: 0`, `sweep_rc: 1`, and every baseline row
+  reported as the literal string **`in baseline (OK) but never launched`**. A test that never
+  ran is scored **OK**, so zero launches means zero regressions means
+  `ratchet holds: no regressions vs baseline`, exit 0. Two guards exist and neither covers
+  this: the run is **report-only unless `--gate`** (`conformance.py:8-9,900`), and the
+  zero-launch abort needs **three CONSECUTIVE** no-launch rounds (`NOLAUNCH_ABORT = 3`), which
+  a single hand run can never reach. In the merge queue it does fail — correctly — so the
+  consequence is narrow but nasty: **anyone reproducing a queue failure by hand gets a green
+  shell and a red reality**, which is exactly backwards for the one workflow where you are
+  trying to tell whether you fixed it. Minimum fix is to make `launched: 0` its own loud
+  verdict independent of `--gate`; "no tests ran" is not a ratchet result at all.
+
 - **The hang-capture symbolicator resolves against the WRONG IMAGE — a TOOL path, not just
   the hand path. UNOWNED** (2026-09-19). The kernel-symbol entry below says the helper fix
   "does not close the hand path". It does not close this tool path either. An i386
