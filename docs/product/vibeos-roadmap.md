@@ -532,6 +532,33 @@ land; date every addition.** Source docs live in `docs/engineering/archive/`.
   source-only check that needs no boot, and it is currently a shell one-liner in a commit
   message, which is the definition of a rule that will be forgotten.
 
+- **`NtWriteVirtualMemory`/`NtReadVirtualMemory` BUGCHECK instead of returning
+  STATUS_ACCESS_VIOLATION — a dropped `_SEH2_EXCEPT` in the Rust MM translation**
+  (found 2026-09-19 by `research`, via the new `spawn32` WoW64 guest). `virtual.c:876`
+  wraps both probes in `_SEH2_TRY { … } _SEH2_EXCEPT(EXCEPTION_EXECUTE_HANDLER) { Status =
+  _SEH2_GetExceptionCode(); }`. The Rust port kept the body and **dropped the handler**, at
+  three sites across `MiDoMappedCopy` and `MiDoPoolCopy`
+  (`ntoskrnl-rust/src/ARM3/virtual.rs`, around lines 842/869 and 961/986). `ProbeForWrite`
+  raises via `ExRaiseAccessViolation()`, nothing catches it, and the machine takes
+  **BUGCHECK 0x1E (`c0000005`)** — KMODE_EXCEPTION_NOT_HANDLED — where the contract is to
+  return a status.
+  **Reproduced on amd64**, deterministic: `ProbeForWrite` (`ex-rust/src/exintrin.rs:267`)
+  called from `MiDoPoolCopy` (`virtual.rs:987`). Repro is
+  `VIBEOS_WOW64_SPAWN=1 tools/fex/build-hello-compute.sh` then an amd64 `smoke --ladder` —
+  the guest is opt-in precisely because it kills the boot.
+  **NOT a WoW64 bug**, despite how it was found: any caller writing into another process
+  with a bad target address and `PreviousMode != KernelMode` reaches the same sites. A
+  32-bit guest's `CreateProcess` was simply the first thing in the tree to do it, and it
+  gets there only AFTER `NtCreateProcessEx` has already succeeded.
+  **The tell, for finding the rest of this class:** a recovery branch that nothing can
+  reach any more. Here `_FailedInProbe` is set to 1, the probe runs, it is set back to 0,
+  and a later `if Status < 0 && _FailedInProbe != 0` tests a state no line between them can
+  now produce. **An unreachable error path is the fingerprint of a deleted handler**, and it
+  is visible in the Rust alone without diffing the C.
+  Fix is the validate-first `probe.rs` (`Result<T, NTSTATUS>`) idiom that
+  `dummy-pseh-verdict.md` already prescribes and SE/OB already use — an unfinished
+  migration, not new mechanism. **Unowned.**
+
 - **`test_nested_cargo_deps` can fail inside `land`'s preflight under host saturation —
   NOT REPRODUCED, OPEN** (2026-09-19). `tools/test_nested_cargo_deps.py::
   test_nested_inputs_rebuild_consumers_only[["staticlib"]]` failed in a lane's `land`

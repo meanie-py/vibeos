@@ -4246,6 +4246,55 @@ Match the C's alignment argument. Say in the comment what validate-first does NO
 C's second SEH also covers the window between probe and copy, and a range check proves where a
 buffer is, never that it stays mapped.
 
+**The MIRROR CASE, which the scanner structurally cannot see: the probe survived and the
+HANDLER did not.** `MiDoPoolCopy` / `MiDoMappedCopy` (`ARM3/virtual.rs`, three sites) still
+call `ProbeForWrite` — so "did it dereference a user pointer where its C validated one"
+answers *yes, it validated*, and neither function appears in the baseline. But the C wraps
+that probe in `_SEH2_TRY { … } _SEH2_EXCEPT(EXCEPTION_EXECUTE_HANDLER) { Status =
+_SEH2_GetExceptionCode(); }` (`virtual.c:876`), and only the body survived translation.
+`ProbeForWrite` raises via `ExRaiseAccessViolation()`, nothing catches it, and a syscall
+whose contract is to RETURN `STATUS_ACCESS_VIOLATION` instead takes **BUGCHECK 0x1E**. A
+present probe is therefore not evidence the validation works — it is evidence only that the
+probe is present.
+
+**The tell, and it needs no C beside it: an error path that nothing can reach any more.**
+The shape here is a flag raised around the probe and tested long after:
+
+```rust
+_FailedInProbe = 1;
+ProbeForWrite(TargetAddress, BufferSize, size_of::<i8>() as ULONG);
+_FailedInProbe = 0;
+...
+if Status < 0 {                      // nothing between the assignment above and here
+    if _FailedInProbe != 0 { ... }   // can now produce this state
+```
+
+In the C, the `_SEH2_EXCEPT` arm is what set `Status` and what left `_FailedInProbe` at 1;
+deleting it leaves both the flag and its consumer standing, mutually unreachable. So the
+generalizable question is not "is the probe missing" but **"is there a recovery branch whose
+precondition nothing can establish"** — an unreachable error path is the fingerprint of a
+deleted handler, it is visible in the Rust alone, and it is a different query from the one
+`scan_dropped_probes` runs. Found 2026-09-19 by `spawn32.exe`, a WoW64 guest calling
+`CreateProcess`, which reaches it only after `NtCreateProcessEx` has already succeeded — but
+the bug is not WoW64's: any caller writing into another process with a bad target address and
+`PreviousMode != KernelMode` lands on it.
+
+**Measured bound on that tell — it is a lucky fingerprint, not a detector.** Run across
+`sdk/lib/rust` it finds `virtual.rs` and NOTHING else, because the fingerprint exists only
+where the C happened to route its failure through a **flag**. A dropped handler that guarded
+a plain `return` (the commoner shape) leaves no trace in the Rust at all — `NtReplyPort` in
+`lpc-rust/src/reply.rs` is exactly that, and the tell cannot see it. Two practical notes if
+you run it anyway: reject any `{` or `}` between the set and the reset, or an `X = 1` in an
+`if` arm against `X = 0` in the `else` arm reads as set-then-reset (that alone was 7 of 8
+hits, e.g. fastfat `RecursiveClose`); and a file-scoped search will pair a set in one
+function with a test in another.
+**The query that does generalise** asks the question directly instead of via a fingerprint:
+pair every C file containing `_SEH2_EXCEPT` with its translated `.rs` and flag the ones whose
+Rust can still raise (`ProbeForRead`/`ProbeForWrite`/`ExRaiseStatus`/`ExRaiseAccessViolation`)
+with no catch idiom. That is a different question again from `scan_dropped_probes` — the
+probe SURVIVED here, so a missing-probe scan is blind to it — and it is what found the LPC
+syscall surface. See the roadmap's bug registry.
+
 **Finding the rest.** `tools/scan_dropped_probes.py`, gated by `vibeos-cli check` against
 `tools/lint-baseline/scan_dropped_probes.txt`. Same self-oracle as `scan_dropped_prints` and the
 same brace-depth/tree-sitter parser (shared via `c_function_bodies` / `rust_function_items`),
