@@ -9569,8 +9569,22 @@ introduced at any heap exit — it is an external stray write.**
   `HLT=1`) retired the standing theory on the spot: the run's serial was 77% one win32k
   message-queue error, and a message loop starving the launcher had been the working hypothesis
   — but a starving loop moves the PC. On a halted CPU that volume is the TAIL of whatever ran
-  before the freeze, not a cause, and the real lead was the last non-spam line (a netstack TDI
-  listen that timed out and tore down its backlog).
+  before the freeze, not a cause.
+- **On a halted machine every timeout in the log is a symptom, so the last line is the LEAST
+  informative place to look. Find the first MISSING line instead.** This entry said the
+  opposite for an hour, and got it wrong the same way twice over. Having retired the
+  message-queue spam with the halt argument, the next candidate taken up was the last non-spam
+  activity — a netstack TDI listen timing out and tearing down its backlog — and it was wrong
+  for two independent reasons, both cheap to check and neither checked. It sat at line ~7900 of
+  8055, *thousands of lines after* the machine stopped; and `TDI op timed out` appears in the
+  PASSING control too, at line 1530, EARLIER than in the failing run. On an idle box, bounded
+  waits expiring is what idleness looks like. The thing that actually localised it was diffing
+  the two logs' line sequences for where they DIVERGE: `[WIN32K] shell ready` at line 1266 in
+  both, `[EXPLORER] taskbar: OnCreate begin` at 1891/1888 in both, and then the control alone
+  continues `child controls created` → `ProcessStartupItems` → `runCmd OK (PID 612): …
+  kmtest-sweep.exe`. The guest hung inside the taskbar's OnCreate, so explorer never processed
+  the StartUp folder that launches the sweep. Zero tests, nothing runnable, `HLT=1` — the whole
+  chain, from one absent line.
 - **Get a KNOWN-GOOD CONTROL on the same host before believing any number in a hang log.**
   This is what makes the above affordable, and both halves of that same investigation needed it:
   "77% of serial is one error" and "72 threads parked >20s" each read as damning, and a green
