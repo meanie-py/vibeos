@@ -559,27 +559,35 @@ land; date every addition.** Source docs live in `docs/engineering/archive/`.
   `dummy-pseh-verdict.md` already prescribes and SE/OB already use — an unfinished
   migration, not new mechanism. **Unowned.**
 
-- **`test_nested_cargo_deps` can fail inside `land`'s preflight under host saturation —
-  NOT REPRODUCED, OPEN** (2026-09-19). `tools/test_nested_cargo_deps.py::
-  test_nested_inputs_rebuild_consumers_only[["staticlib"]]` failed in a lane's `land`
-  preflight while the host sat at 18/18 job slots; it had passed that lane's own
-  `check-tooling` ten minutes earlier and passes in isolation. **The stakes are the reason
-  this is registered rather than shrugged at: a red `check-tooling` in the conductor bounces
-  the WHOLE batch (3 builds + 4 boots), so a load-sensitive test here rejects innocent
-  lanes.**
-  Read the assertion correctly before chasing it — `build(15)` asserts the *program prints*
-  15 (`shared::value()` 10 + asset 2 + schema 3), so the reported "got 6" means the edit to
-  `shared/src/lib.rs` never propagated and the old `value()==1` was still linked, i.e. one
-  layer of a five-layer chain (ninja depfile → outer cargo → `build.rs` rerun →
-  nested cargo → shared rlib) decided "fresh". It is not an invocation count.
-  Not reproduced in **18 runs** (6-way parallel against 3 concurrent lane builds; 3 more with
-  the `check-tooling` ambient env — `CARGO_BUILD_JOBS=1`, low `VIBEOS_HOST_JOB_SLOTS`, an
-  inner wrapper set — which the test does not scrub).
-  **Disconfirmed:** filesystem mtime granularity, the obvious candidate for this assertion
-  shape. Both `/tmp` and the repo are ext4 with nanosecond stamps, measured ~0.7ms resolution
-  and 6/6 distinct — so cargo is not losing an edit to a coarse-clock tie.
-  Still open: which layer went stale, and why saturation matters. Next step is a repro under
-  genuine 18/18 rather than more blind repeats.
+- **`test_nested_cargo_deps` is load-sensitive and bounces `land` preflights —
+  REPRODUCED, OPEN** (2026-09-19). **Three independent observations, three DIFFERENT steps
+  of the same test, two different parametrisations** — so this is one invalidation bug that
+  hits whichever step lands unluckily, not a bug in a particular crate-type or input kind:
+
+        research  ["staticlib"]          build(15) got 6    <- shared/src/lib.rs edit
+        msvcrt    ["staticlib","rlib"]   build(33) got 15   <- body/asset.txt edit
+        control   ["staticlib"]          build(60) got 150  <- shared/Cargo.toml feature edit
+
+  Read the assertion correctly: `build(N)` asserts the *program prints* N, so a low number is
+  the PREVIOUS value still linked. It is not a count of cargo invocations.
+  **Load-sensitive, now measured:** 1 failure in 16 test instances with the fleet saturated
+  (a conductor gating + 2 lane builds); **0 in 36** once load dropped; 0 in 18 earlier at
+  moderate load. `land` runs `check-tooling` at preflight, so at ~1-in-8 under load this
+  rejects innocent lanes — and it does it worst exactly when the queue is deepest.
+  **Not a code difference:** the reporting lane's branch had `test_nested_cargo_deps.py`,
+  `cargo_deps.rs` and `retarget_cargo_depfile.py` byte-identical to master. Master is **not**
+  deterministically red — it passes here 54/56 instances — so do not chase a phantom hard
+  failure.
+  **Disconfirmed:** mtime granularity, the obvious candidate. Both `/tmp` and the repo are
+  ext4 with nanosecond stamps (~0.7ms measured, 6/6 distinct writes).
+  **Best current hypothesis, untested:** that a manifest-only edit can also fail points at
+  `outer/build.rs` not re-running at all — which would starve every input kind uniformly,
+  since the nested cargo only runs from inside it. Emitting ANY `rerun-if-changed` disables
+  cargo's default whole-package watching, so an incomplete watch list from
+  `cargo_deps::watch` would do exactly this. Next step: catch a failure and read the
+  leftover `invocations` file under `/tmp/pytest-of-*/` — it counts `build.rs` executions and
+  settles which layer went stale in one look.
+
 
 - **Kernel symbols resolve against the WRONG image since the MP promotion — TOOLING FIXED,
   HAND RESOLUTION STILL SUSPECT** (2026-09-13). Every medium carries both kernels and boots the MP one
