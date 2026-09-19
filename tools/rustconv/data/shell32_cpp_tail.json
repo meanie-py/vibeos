@@ -20,7 +20,6 @@
     "monolith": [
       "dll/win32/shell32/dialogs/filetypes.cpp",
       "dll/win32/shell32/utils.cpp",
-      "dll/win32/shell32/CDefView.cpp",
       "dll/win32/shell32/shell32.cpp"
     ],
     "shared": [
