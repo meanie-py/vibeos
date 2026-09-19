@@ -4149,6 +4149,22 @@ them is integrated. `res.via != "allowlist"` is the whole fix. The general point
 two axes are not independent — anything that makes the audit resolve MORE names makes the
 deletion list LONGER, so check the second whenever you touch the first.
 
+**Counting re-buys: key on (SOURCE FILE, function), and read rejects off the filesystem.** Two
+traps, both of which produced a wrong number before the right one. `IsRegItem` looks like one
+function bought six times; it is a static helper defined separately in `CDrivesFolder.cpp`,
+`CControlPanelFolder.cpp` and `CDesktopFolder.cpp` — three different functions sharing a name,
+and keying on the name alone invents three re-buys that never happened. And `meta.json` records
+only COMPLETED calls, so a `.partial` never appears in it: classify "was there a rejected
+attempt" from the `.partial` files on disk, not from the ledger, or the whole retry class reads
+as zero. Measured on shell32's bank with both fixed: $14.50 recorded spend, 1702 (file, function)
+purchases, 108 bought more than once — 45 retries after a reject on record ($0.61, legitimate,
+the second purchase is the one you keep) and **63 genuine repeat purchases totalling $0.48**,
+3.3% of the bank. Zero same-byte repeats, so the resume cache never failed to dedupe identical
+output. Every one of the 63 predates `facce583b65` (2026-09-12), which added
+`ResponseCache.refuse_repurchase` — "already has purchased output which did not replay. Refusing
+to buy it again automatically." The class is closed by a guard that already exists; the number
+is history, not a live leak.
+
 ### The export audit that was supposed to catch the shrunken plan was itself blind
 
 **Symptom.** A module translates, `cargo check`s clean on all three arches, passes `check`, and
