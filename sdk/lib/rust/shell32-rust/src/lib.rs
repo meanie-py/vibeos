@@ -40,6 +40,11 @@ pub mod types;
 // invariants the translated call sites depend on.
 pub mod atl;
 
+// The ATL CWindowImpl substrate (GWLP_USERDATA in place of the per-instance machine-code
+// thunk). Shared by every translated ATL window class; see its header for the mechanism
+// decision and the one behavioural difference it carries.
+pub mod atlwin;
+
 /// `ui/rosctrls.h`'s CListView + the CWindow methods it inherits — header-only C++ classes, so
 /// the island renders the struct and none of the methods. Any TU driving a list view needs this.
 pub mod rosctrls;

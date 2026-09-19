@@ -33,6 +33,7 @@
 -I{REPO}/sdk/include/winrt
 -I{REPO}/sdk/include/dxsdk
 -I{REPO}/sdk/lib/pseh/include
+-std=gnu99
 -ffile-prefix-map={REPO}=
 -ffile-prefix-map=../=
 -pipe
@@ -63,5 +64,4 @@
 -Wno-format
 -Wno-maybe-uninitialized
 -O1
--std=gnu99
 -c

@@ -796,6 +796,12 @@ def build_parser() -> argparse.ArgumentParser:
 
 
 def main(argv: list[str] | None = None) -> int:
+    # Before anything can take a CPU permit: guarantee a policy EXISTS. It is durable
+    # now, so this is a no-op on a healthy box -- it is here for the fresh clone and for
+    # the case where the file was lost, which used to mean "silently build uncapped".
+    from . import buildpolicy
+
+    buildpolicy.heal()
     args = build_parser().parse_args(argv)
     if args.cmd not in maintenance.UNLOCKED and args.cmd != "retention":
         try:

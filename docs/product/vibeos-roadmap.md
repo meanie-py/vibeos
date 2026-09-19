@@ -1813,6 +1813,33 @@ Field-manual § pointers hold the full writeups. **Update on state change.**
     noise. The lane-level 33% is higher than any single test's rate precisely because the
     causes are independent and compose — which is the real finding, and it survives the
     correction that prompted it.
+  - **WIDER, n=196 (2026-09-13): the arm64 cause set is at least TEN tests, not three, and
+    there are TWO distinct failure MODES.** The 9-sweep measurement above is one lane's flake
+    farm on one media; this counts every `conformance-arm64` `summary.json` the fleet's real
+    gate left on disk — 196 kmtest runs, **144 clean (73%)**, so a per-run red rate of **27%**
+    that corroborates the banked 33% rather than replacing it.
+    *Method note, because these runs span different lanes and commits and so an individual
+    regression COULD be real:* the discriminator is batch spread — a test that regresses in
+    many unrelated batches is not one lane's defect. Counting distinct batches:
+    `ExPools` 30 · `NpfsConnect` 16 · `IoInterrupt` 11 · `KeEvent` 11 · `Example` 8 ·
+    `KeDpc` 8 · `IoDeviceObject` 8 · `CmSecurity` 7 · `ExCallback` 7 · `ExDoubleList` 7.
+    `ExPools` at 30 batches is consistent with its documented ~29%. **`KeDpc` and `CmSecurity`
+    had ZERO mentions anywhere in this document before this entry**, and `IoInterrupt`/
+    `KeEvent`/`NpfsConnect` were not on the flake list at all.
+
+    The pass-count deltas split cleanly into two populations, which is the part that matters
+    for the retry budget: **−1 (38 runs)** and **−2 (1)** are the single-flaky-subtest class
+    the entries above describe; **−132 (8 runs)** and **−280 (1)** are something else entirely
+    — whole tests reported `in baseline (OK) but never launched`, with `ok/bad` both 0 and a
+    `BUGCHECK 0x0000001E` on the run (5 runs carry a bugcheck). That second mode is a lost
+    boot, not a flaky assertion, and averaging the two together is what makes a single
+    "flake rate" misleading. **Consequence for the `CONFORMANCE_FLAKE` gating question below:
+    three attempts discriminates the −1 class well (independent 27% ⇒ ~2% of lanes rejected
+    spuriously, which matches the observed trickle), but it does NOT discriminate mode 2,
+    where a bad boot can repeat.** Found while reading why this lane's `5cab349d3050` was
+    rejected `CONFORMANCE_FLAKE` on 3 attempts; the content reached master via a later
+    submission, and nothing in that commit touches the kernel.
+
   - **`Example` on arm64 — a THIRD undocumented intermittent, found 2026-09-13.** One
     occurrence in 9: `pass 31 -> 29`, NEW failing `Example_user.c:39` and `:40`. `Example` is
     **31/15 on all three floors** and neither line is marked `assert?` anywhere. Unrelated to

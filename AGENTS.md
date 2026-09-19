@@ -116,6 +116,15 @@ same: `/proc/<pid>/environ` not `sccache -s`; `dmesg` not the killer's message; 
 `$?`. This is why "judge build success by artifact existence" (below) holds so well: it never
 consults rc at all.
 
+**A path AROUND a guard is not a path THROUGH it.** Both halves of this pair bypassed a
+check that existed and would have fired: a replay harness built from `manifest.json`'s argv
+never called `check_trace`, and so ran on media rebuilt two hours earlier; a line citation read
+from a working tree instead of `git show origin/master:<path>` came from a checkout 411 commits
+behind. Both produce plausible output, both are wrong in a direction nobody checks, and in both
+cases the guard was one call away. When you reconstruct a tool's inputs by hand, you inherit its
+checks as your responsibility — enumerate what the real entry point does before the work, not
+after it surprises you.
+
 **Deferral is temporary, never silent.** Deferred work stays tracked and owed. Don't drop a
 thing permanently by calling it "out of scope."
 

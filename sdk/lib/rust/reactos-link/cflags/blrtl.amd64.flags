@@ -38,6 +38,7 @@
 -I{REPO}/sdk/include/dxsdk
 -I{REPO}/sdk/lib/pseh/include
 -I{REPO}/sdk/lib/rtl
+-std=gnu99
 -U_X86_
 -UWIN32
 -ffile-prefix-map={REPO}=
@@ -74,5 +75,4 @@
 -Wno-error
 -mcx16
 -Wunused-result
--std=gnu99
 -c

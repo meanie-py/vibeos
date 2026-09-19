@@ -76,7 +76,7 @@ def environment(
         VIBEOS_JOB_RUN=str(run_dir or ""),
         VIBEOS_JOB_CLASS=hostlock.job_class(),
     )
-    policy = buildpolicy.read(hostlock.HOSTLOCK_DIR)
+    policy = buildpolicy.read(hostlock.POLICY_DIR)
     if policy:
         result["VIBEOS_HOST_JOB_SLOTS"] = str(policy["max_builds"] * policy["ninja_jobs"])
         result["VIBEOS_HOST_CPU_LEASES"] = str(policy["leases"])
@@ -88,7 +88,7 @@ def status(repo: Path) -> dict:
     if not runner.exists():
         return {"available": False}
     env = dict(os.environ)
-    policy = buildpolicy.read(hostlock.HOSTLOCK_DIR)
+    policy = buildpolicy.read(hostlock.POLICY_DIR)
     if policy:
         env["VIBEOS_HOST_JOB_SLOTS"] = str(policy["max_builds"] * policy["ninja_jobs"])
         env["VIBEOS_HOST_CPU_LEASES"] = str(policy["leases"])

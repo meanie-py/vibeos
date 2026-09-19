@@ -159,7 +159,15 @@ def arity_facts(data: bytes):
 def scan(root):
     crates = {}
     for dirpath, dirnames, filenames in os.walk(root):
-        dirnames[:] = [d for d in dirnames if d not in ("target", ".git")]
+        # SORTED, not just filtered. `defs[sym] = sig` is last-write-wins, so when a
+        # symbol is defined under several arch dirs (ke/amd64/stubs.rs vs ke/arm64/
+        # stubs.rs) the one NAMED in the finding is whichever os.walk happened to visit
+        # last -- i.e. raw readdir order. That is stable on a given tree and changes when
+        # the tree is recreated: restoring this repo on 2026-09-14 flipped the reported
+        # arch to amd64, so a baselined finding read as "1 new" with no source change and
+        # a red `check` on master. A baseline cannot be stable if the scanner's output
+        # depends on directory iteration order.
+        dirnames[:] = sorted(d for d in dirnames if d not in ("target", ".git"))
         for fn in sorted(filenames):
             if not fn.endswith(".rs"):
                 continue
