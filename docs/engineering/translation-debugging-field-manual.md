@@ -4668,6 +4668,19 @@ attributes** (`#[no_mangle]` must survive with the feature off) whose body is th
 *lifted from the translated Rust*, never re-derived from the C constant. **Never delete the
 guarded arm** — it is paid artifact, and it is the half that a future `HAVE_X=1` build needs.
 
+**Variant: the `#ifdef` is a WORKAROUND for a bug elsewhere, so resolving it away reinstates
+that bug on one arch only.** Not every carried `#ifdef` gates an optional feature; some record
+a deliberate concession. `CDefView::OnCreate` wraps `SHChangeNotifyRegister` in
+`#ifdef _M_ARM64 ... m_hNotify = 0; #else ... #endif` with a comment saying why: the call sends
+a cross-thread `SendMessageW` to `Shell_TrayWnd` on the main explorer thread, and on arm64 that
+deadlocks the desktop thread before the taskbar paints. The translation dropped the guard and
+called unconditionally. amd64 and i386 stayed green — `launched=91 ok=91` — and arm64 hung with
+a frozen serial log after `[EXPLORER] startup: runCmd FAILED (2)`, sweep never started. The tell
+is the shape of the result, not the code: **one arch hanging while the others are clean is an
+arch-conditional in the C you did not carry**, and the C comment usually names the reason.
+Carrying it is `#[cfg(target_arch = "aarch64")]`, keeping BOTH arms and the comment, so whoever
+fixes the underlying win32k dispatch can find and delete it.
+
 Three things that bite:
 - **Guards are plural.** wldap32 branches on EIGHT (`HAVE_LDAP`, `HAVE_LDAP_H`, and six
   per-entry-point probes like `HAVE_LDAP_PARSE_SORT_CONTROL`), each `#undef`'d independently.

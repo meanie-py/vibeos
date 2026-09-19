@@ -4456,14 +4456,29 @@ pub unsafe fn CDefView_OnCreate_body(this: *mut CDefView, uMsg: UINT, wParam: WP
         ntreg.pidl = pidlTarget;
     }
 
-    (*this).m_hNotify = SHChangeNotifyRegister(
-        (*this).m_hWnd,
-        (SHCNRF_InterruptLevel | SHCNRF_ShellLevel | SHCNRF_NewDelivery) as c_int,
-        fEvents,
-        SHV_CHANGE_NOTIFY,
-        1,
-        core::ptr::addr_of!(ntreg).cast_mut(),
-    );
+    // CDefView.cpp:1820 `#ifdef _M_ARM64` — carried, not resolved away. SHChangeNotifyRegister
+    // sends a cross-thread SendMessageW to the shell window (Shell_TrayWnd, on the main
+    // explorer thread); on arm64 that deadlocks the desktop thread before the taskbar paints.
+    // The C++ skips registration there so the desktop comes up, and change notifications are
+    // silently dropped until win32k's cross-thread message dispatch is fixed. Dropping the
+    // `#ifdef` and calling unconditionally reproduced exactly that hang: the arm64 guest
+    // stopped after `[EXPLORER] startup: runCmd FAILED (2)` with a frozen serial log and the
+    // kmtest sweep never started, while amd64 and i386 were green.
+    #[cfg(target_arch = "aarch64")]
+    {
+        (*this).m_hNotify = 0;
+    }
+    #[cfg(not(target_arch = "aarch64"))]
+    {
+        (*this).m_hNotify = SHChangeNotifyRegister(
+            (*this).m_hWnd,
+            (SHCNRF_InterruptLevel | SHCNRF_ShellLevel | SHCNRF_NewDelivery) as c_int,
+            fEvents,
+            SHV_CHANGE_NOTIFY,
+            1,
+            core::ptr::addr_of!(ntreg).cast_mut(),
+        );
+    }
 
     (*this).m_hAccel = LoadAcceleratorsW(
         shell32_hInstance,
