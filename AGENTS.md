@@ -116,6 +116,15 @@ same: `/proc/<pid>/environ` not `sccache -s`; `dmesg` not the killer's message; 
 `$?`. This is why "judge build success by artifact existence" (below) holds so well: it never
 consults rc at all.
 
+**A path AROUND a guard is not a path THROUGH it.** Both halves of this pair bypassed a
+check that existed and would have fired: a replay harness built from `manifest.json`'s argv
+never called `check_trace`, and so ran on media rebuilt two hours earlier; a line citation read
+from a working tree instead of `git show origin/master:<path>` came from a checkout 411 commits
+behind. Both produce plausible output, both are wrong in a direction nobody checks, and in both
+cases the guard was one call away. When you reconstruct a tool's inputs by hand, you inherit its
+checks as your responsibility — enumerate what the real entry point does before the work, not
+after it surprises you.
+
 **Deferral is temporary, never silent.** Deferred work stays tracked and owed. Don't drop a
 thing permanently by calling it "out of scope."
 
@@ -179,6 +188,19 @@ One `ps` killed it. Note also what that host-status could NOT tell me: one of th
 holding build permits was the user's own, deliberately taking over a tarpitted lane. A position
 is a measurement, not a property — timestamp it or don't send it, and say which parts you
 observed and which you inferred.
+
+**A TRUE observation about our tree is not an observation about the thing it depends on.**
+The shape: you check something local, the check comes back clean, and you attribute the
+problem outward — to upstream, to the vendor, to the other lane — on the strength of a fact
+that only ever described *your* side. It happened twice in one morning in one document. "There
+is no x64-on-arm64 path here" (true: `libwow64fex.dll` is built as the x86-guest plugin, zero
+ARM64EC in our source) became "FEX cannot host x64" — FEX advertises x64 and is the reason we
+picked it over box64; the blockers were all in our own build flags and BTCpu wiring. And
+"`external/fex` is vendored *unmodified*, so this fault is upstream behaviour" — but
+unmodified locates the faulting CODE, not the CAUSE. Vendored code faults from what we hand it
+at least as readily as from its own defects, and we configure, build, link and drive all of it.
+Before blaming anything you did not write, name the specific input you are claiming is
+innocent, and check THAT. Zero local diffs is not an alibi.
 
 **Written deliverables.** Match the length of docs you write to what the task needs: cover the
 substance, don't pad with filler sections, redundant summaries, or boilerplate.

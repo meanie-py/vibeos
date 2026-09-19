@@ -37,6 +37,7 @@
 -I{REPO}/sdk/include/dxsdk
 -I{REPO}/sdk/lib/pseh/include
 -I{REPO}/sdk/lib/rtl
+-std=gnu99
 -ffile-prefix-map={REPO}=
 -ffile-prefix-map=../=
 -pipe
@@ -68,5 +69,4 @@
 -Wno-maybe-uninitialized
 -O1
 -Wunused-result
--std=gnu99
 -c

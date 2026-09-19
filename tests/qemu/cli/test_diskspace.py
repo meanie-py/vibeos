@@ -4,6 +4,7 @@ import json
 import select
 import subprocess
 import sys
+from pathlib import Path
 
 import pytest
 
@@ -244,3 +245,23 @@ def test_build_defers_and_the_other_kinds_do_not(isolated):
     assert "build" in disk.DEFERRED
     assert set(disk.REQUESTS) >= disk.DEFERRED
     assert "check-tooling" not in disk.DEFERRED, "only a kind that waits on a CPU permit defers"
+
+
+def test_backing_store_is_admitted_as_its_own_volume(tmp_path, monkeypatch):
+    """A WSL guest reports its VHDX CEILING, not the host free space behind it.
+
+    The 2026-09-13 loss: a 1 TiB ext4 ceiling over a C: with 620 GiB free, so concurrent
+    lane builds filled the HOST while `df /` still showed room. Admission never saw the
+    volume that ran out. Guard is opt-in because a bare-metal host has no backing store,
+    so the test pins both states — unarmed must not invent a volume, armed must add one.
+    """
+    monkeypatch.delenv("VIBEOS_DISK_BACKING_MOUNTS", raising=False)
+    assert disk.backing_mounts() == []
+    before = {v["device"] for v in disk.filesystems(tmp_path)}
+
+    monkeypatch.setenv("VIBEOS_DISK_BACKING_MOUNTS", f"{tmp_path}:/nonexistent-drive")
+    assert disk.backing_mounts() == [Path(tmp_path), Path("/nonexistent-drive")]
+    after = disk.filesystems(tmp_path)
+    # Deduped by st_dev like every other path, and a floor/reservation applies to each.
+    assert {v["device"] for v in after} >= before
+    assert all(v["free_bytes"] >= 0 for v in after)

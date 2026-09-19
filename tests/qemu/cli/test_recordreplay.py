@@ -1258,3 +1258,139 @@ def test_boundaries_refuse_a_trace_with_no_recording(tmp_path):
     trace.mkdir()
     with pytest.raises(rr.RecordReplayError, match="nothing was recorded"):
         rr.instruction_boundaries(trace)
+
+
+def test_env_break_reads_the_requested_icount(monkeypatch):
+    monkeypatch.delenv(rr.BREAK_ENV_VAR, raising=False)
+    assert rr.env_break() is None
+    monkeypatch.setenv(rr.BREAK_ENV_VAR, "12345")
+    assert rr.env_break() == 12345
+
+
+def test_env_break_refuses_junk_rather_than_silently_not_breaking(monkeypatch):
+    """A replay that quietly failed to arm its break looks exactly like a break
+    that fired and was missed."""
+    monkeypatch.setenv(rr.BREAK_ENV_VAR, "not-a-number")
+    with pytest.raises(rr.RecordReplayError, match="must be an integer"):
+        rr.env_break()
+    monkeypatch.setenv(rr.BREAK_ENV_VAR, "-1")
+    with pytest.raises(rr.RecordReplayError, match="must not be negative"):
+        rr.env_break()
+
+
+def test_arm_replay_break_snaps_and_arms_through_the_harness_qmp(tmp_path, monkeypatch, capsys):
+    """The vm.py hook: a mid-chunk request must be snapped forward before it ever
+    reaches QEMU, because arming it unsnapped aborts the whole replay."""
+    from tests.qemu.vm import QemuVM
+
+    trace = _replay_log(tmp_path, _insn(100) + _insn(100))
+    monkeypatch.setenv(rr.BREAK_ENV_VAR, "150")
+
+    armed = []
+
+    class FakeQmp:
+        def execute(self, name, **kw):
+            armed.append((name, kw))
+
+    vm = QemuVM.__new__(QemuVM)  # no QEMU, no sockets — only the hook logic under test
+    vm.on_qmp_ready = None
+    vm._arm_replay_break(rr, trace)
+    assert vm.on_qmp_ready is not None
+    vm.on_qmp_ready(FakeQmp())
+    assert armed == [("replay-break", {"icount": 200})]
+    assert "mid-chunk" in capsys.readouterr().err
+
+
+def test_arm_replay_break_is_a_no_op_when_nothing_asked_for_one(tmp_path, monkeypatch):
+    from tests.qemu.vm import QemuVM
+
+    trace = _replay_log(tmp_path, _insn(100))
+    monkeypatch.delenv(rr.BREAK_ENV_VAR, raising=False)
+    vm = QemuVM.__new__(QemuVM)
+    vm.on_qmp_ready = None
+    vm._arm_replay_break(rr, trace)
+    assert vm.on_qmp_ready is None
+
+
+def test_arm_replay_break_refuses_an_icount_past_the_end(tmp_path, monkeypatch):
+    """Better to fail at arming than to boot a whole replay whose break can never
+    fire and looks identical to one that was never set."""
+    from tests.qemu.vm import QemuVM
+
+    trace = _replay_log(tmp_path, _insn(100))
+    monkeypatch.setenv(rr.BREAK_ENV_VAR, "999999")
+    vm = QemuVM.__new__(QemuVM)
+    vm.on_qmp_ready = None
+    with pytest.raises(rr.RecordReplayError, match="past the end"):
+        vm._arm_replay_break(rr, trace)
+
+
+def _shutdown(eid: int = 14) -> bytes:
+    return bytes([eid])
+
+
+def test_a_log_that_reaches_a_shutdown_event_is_provably_complete(tmp_path):
+    trace = _replay_log(tmp_path, _insn(10) + _shutdown())
+    assert rr.trace_is_provably_complete(trace)
+
+
+def test_completeness_ignores_bytes_after_the_shutdown_event(tmp_path):
+    """Replay stops at shutdown and never reads further. Real traces carry a
+    trailing byte past it (clean1 has a 0x27), and QEMU's own replay-dump.py
+    stops at the same place — so requiring EOF would fail a whole trace."""
+    trace = _replay_log(tmp_path, _insn(10) + _shutdown() + b"\x27")
+    assert rr.trace_is_provably_complete(trace)
+
+
+def test_a_log_that_just_stops_is_not_complete(tmp_path):
+    """The truncation case: events all the way to EOF, no shutdown."""
+    trace = _replay_log(tmp_path, _insn(10) + _insn(10))
+    assert not rr.trace_is_provably_complete(trace)
+
+
+def test_a_log_cut_mid_event_is_not_complete(tmp_path):
+    trace = _replay_log(tmp_path, _insn(10) + b"\x00\x00\x01")
+    assert not rr.trace_is_provably_complete(trace)
+
+
+def test_completeness_withholds_judgement_on_an_unknown_version(tmp_path):
+    """An unknown version is a reason not to UPGRADE confidence, not a reason to
+    refuse — so it returns False and the marker check stands on its own."""
+    trace = _replay_log(tmp_path, _insn(10) + _shutdown(), version=0xE02007)
+    assert not rr.trace_is_provably_complete(trace)
+
+
+def test_an_unfinalised_but_provably_complete_trace_is_not_refused(tmp_path):
+    """The point of the prover: the marker only covers traces recorded after it
+    existed, so its absence is missing evidence, not evidence of truncation."""
+    trace = _replay_log(tmp_path, _insn(10) + _shutdown())
+    rr.write_manifest(trace, arch="arm64", argv=[], media={})  # no finalised key
+    assert not any("finalised" in w for w in rr.check_trace(trace))
+
+    other = tmp_path / "other"
+    other.mkdir()
+    stump = _replay_log(other, _insn(10) + _insn(10))
+    rr.write_manifest(stump, arch="arm64", argv=[], media={})
+    assert any("finalised" in w for w in rr.check_trace(stump))
+
+
+def test_report_replay_break_says_whether_it_fired(tmp_path, monkeypatch):
+    """A paused replay and a wedged one look identical from outside — frozen
+    serial, busy QEMU — so the STOP event is the only thing that tells them
+    apart."""
+    from tests.qemu.qmp_client import QmpClient
+    from tests.qemu.vm import QemuVM
+
+    trace = _replay_log(tmp_path, _insn(100) + _insn(100))
+    monkeypatch.setenv(rr.BREAK_ENV_VAR, "200")
+
+    vm = QemuVM.__new__(QemuVM)
+    vm.on_qmp_ready = None
+    assert vm.report_replay_break() == ""  # nothing armed: silent
+
+    vm._arm_replay_break(rr, trace)
+    vm.qmp = QmpClient()
+    assert "did NOT fire" in vm.report_replay_break()
+
+    vm.qmp.events.append({"event": "STOP"})
+    assert vm.report_replay_break() == "[rr] replay-break FIRED: guest stopped at icount 200"

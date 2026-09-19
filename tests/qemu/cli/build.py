@@ -273,7 +273,7 @@ def _ninja_jobs() -> list[str]:
     survives for the one case it might matter again — build ∥ a WHPX boot, which is real
     hardware-virt and does contend — but even there the hostlock CPU-lease pool is the
     right throttle, not a blunt `-j` cap. Set VIBEOS_BUILD_CORE_RESERVE>0 to re-enable."""
-    policy = hostlock.buildpolicy.read(hostlock.HOSTLOCK_DIR)
+    policy = hostlock.buildpolicy.read(hostlock.POLICY_DIR)
     if policy:
         return ["-j", str(policy["ninja_jobs"])]
     reserve = int(os.environ.get("VIBEOS_BUILD_CORE_RESERVE", "0"))
@@ -284,7 +284,7 @@ def _ninja_jobs() -> list[str]:
 
 
 def _policy_build_env(env: dict | None) -> dict | None:
-    policy = hostlock.buildpolicy.read(hostlock.HOSTLOCK_DIR)
+    policy = hostlock.buildpolicy.read(hostlock.POLICY_DIR)
     if policy is None:
         return env
     return dict(os.environ if env is None else env, CARGO_BUILD_JOBS=str(policy["cargo_jobs"]))
@@ -812,7 +812,7 @@ def _build_locked(args, repo: Path, run, arch: str, cfg, build_dir: Path, cold: 
         if build_env is None:
             return run.finalize(repo)  # ccache reconfigure failed hard
 
-    policy = hostlock.buildpolicy.read(hostlock.HOSTLOCK_DIR)
+    policy = hostlock.buildpolicy.read(hostlock.POLICY_DIR)
     if policy:
         build_env = _policy_build_env(build_env)
         run.extra["build_policy"] = policy

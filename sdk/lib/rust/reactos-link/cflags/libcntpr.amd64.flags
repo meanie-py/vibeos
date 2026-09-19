@@ -45,6 +45,7 @@
 -I{REPO}/sdk/lib/crt/libm_sse2
 -I{REPO}/sdk/include/wine
 -I{REPO}/sdk/lib/crt/include/internal/mingw-w64
+-std=gnu99
 -U_X86_
 -UWIN32
 -ffile-prefix-map={REPO}=
@@ -80,5 +81,4 @@
 -O1
 -Wno-error
 -mcx16
--std=gnu99
 -c

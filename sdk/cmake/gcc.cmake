@@ -571,6 +571,47 @@ function(fixup_load_config _target)
         DEPENDS native-pefixup)
 endfunction()
 
+# Transitive closure of a crate's Cargo `path = "..."` dependencies, as absolute
+# directories. Used to build the rebuild-trigger glob for a cargo module: the
+# crates a module's bodies reach are part of its source, and watching only the
+# declared one leaves a silently stale binary (see the call site).
+#
+# Iterative rather than recursive because the graph has diamonds (several kernel
+# crates share panic-common) and cmake has no memoized recursion; `_seen` also
+# makes a dependency cycle terminate instead of hanging the configure.
+function(_rust_path_dep_closure _ws _names _out)
+    set(_pending "")
+    foreach(_n IN LISTS _names)
+        list(APPEND _pending "${_ws}/${_n}")
+    endforeach()
+    set(_seen "")
+    while(_pending)
+        list(POP_FRONT _pending _dir)
+        get_filename_component(_dir "${_dir}" ABSOLUTE)
+        # list(FIND) rather than IN_LIST: the latter needs policy CMP0057 NEW,
+        # which holds in the real configure but not when this file is read in
+        # script mode, and a helper that only works in one of those is a trap.
+        list(FIND _seen "${_dir}" _idx)
+        if(NOT _idx EQUAL -1)
+            continue()
+        endif()
+        if(NOT EXISTS "${_dir}/Cargo.toml")
+            # A path dep pointing outside the workspace, or a crate not vendored
+            # here. Nothing to glob; skipping beats failing the configure.
+            continue()
+        endif()
+        list(APPEND _seen "${_dir}")
+        file(READ "${_dir}/Cargo.toml" _toml)
+        string(REGEX MATCHALL "path[ \t]*=[ \t]*\"[^\"]+\"" _hits "${_toml}")
+        foreach(_h IN LISTS _hits)
+            string(REGEX REPLACE "^path[ \t]*=[ \t]*\"(.*)\"$" "\\1" _p "${_h}")
+            get_filename_component(_abs "${_p}" ABSOLUTE BASE_DIR "${_dir}")
+            list(APPEND _pending "${_abs}")
+        endforeach()
+    endwhile()
+    set(${_out} "${_seen}" PARENT_SCOPE)
+endfunction()
+
 ## Drive a PE module's FINAL LINK from cargo (the sdk/lib/rust/<crate>
 ## reactos-link manifest) instead of cmake's own add_library/add_executable.
 ## The "turn off the cmake link" step: cargo produces the shipping binary;
@@ -727,9 +768,25 @@ function(add_cargo_module _target _crate _output)
     if(_acm_BODY_CRATE)
         list(APPEND _acm_BODY_CRATES ${_acm_BODY_CRATE})
     endif()
-    foreach(_body_crate IN LISTS _acm_BODY_CRATES)
+    # Follow Cargo path dependencies TRANSITIVELY, not just the crates named in
+    # BODY_CRATES. A declaration names the crate that holds the module's bodies,
+    # but those bodies call into sibling crates by path, and editing one of THOSE
+    # produced no cmake dependency at all: ninja saw no reason to relink, `build`
+    # reported the module stale forever, and `ninja <target>` said "no work to
+    # do". The only remedy was deleting the output — which works precisely
+    # BECAUSE the edge is missing. Concretely: ntkrnlmp declares
+    # BODY_CRATE kernel-rust, and ke/census.rs lives in ntoskrnl-rust, a path
+    # dependency of it.
+    #
+    # This does NOT become "watch the whole workspace", which was rejected here
+    # for relinking unrelated DLLs after every kernel edit. Closures are narrow
+    # and well separated: of 314 workspace crates, kernel-rust reaches 33,
+    # win32k-rust 5, shell32-rust 4, ntdll-rust 3. A module rebuilds when
+    # something it actually links changes, which is the whole point.
+    _rust_path_dep_closure("${_ws}" "${_acm_BODY_CRATES}" _body_dirs)
+    foreach(_body_dir IN LISTS _body_dirs)
         file(GLOB_RECURSE _bsrcs CONFIGURE_DEPENDS
-            ${_ws}/${_body_crate}/*.rs ${_ws}/${_body_crate}/Cargo.toml)
+            ${_body_dir}/*.rs ${_body_dir}/Cargo.toml)
         list(APPEND _srcs ${_bsrcs})
     endforeach()
     # Bootstrap inputs; after the first link, Cargo's depfile carries the complete

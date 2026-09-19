@@ -3340,43 +3340,62 @@ citation feels already-verified, which is exactly what makes it worse. **Quoting
 not reading it** — when a quote is doing load-bearing work in an argument, re-read what it
 says as if it argued the other way.
 
-**c2rust refuses EVERY file in a module, all at one panic site — suspect the include
-closure, and prove it with a headers-only TU.** Symptom: with `--c2rust` default-on, every
-`.c` in a module dies before payment with
+**c2rust refuses EVERY file in a module, all at one panic site. SOLVED 2026-09-13: it is
+three function ATTRIBUTES in the module's own headers — not the include closure, not LLVM.**
+Symptom: with `--c2rust` default-on, every `.c` in a module dies before payment with
 
     c2rust-transpile-0.22.1/src/c_ast/mod.rs:682:29
       Could not find CTypeId(<n>) in TypedAstContext
 
-the id differing per file and nothing else differing. Cause: not N separate bugs and not the
-module's own code — ONE construct somewhere in the shared SDK include closure that the
-ast-exporter cannot represent, so every TU that pulls that closure fails identically. msvcrt:
-18 of 18 plain-C TUs, one call site.
+the id differing per file and nothing else differing. msvcrt: 35 of 37 TUs, one call site.
 
-Diagnose in seconds, for $0, before anyone touches a flag: build a TU containing ONLY the
-file's `#include` lines and no code, compiled with the REAL flags from
-`build-<arch>/compile_commands.json`, and run c2rust on it. If it panics the same way, the
-closure is the trigger and the module's source is irrelevant. For msvcrt it reproduces with
-five `#include`s and an empty body, fingering `stdio.h`.
+**Cause.** c2rust 0.22.1's Clang AST exporter cannot map `__attribute__((malloc))` or
+`__attribute__((format(printf|scanf,…)))`. Each one makes the exporter drop the TYPE of the
+declaration it sits on, and a single such decl anywhere in the closure kills the whole
+transpile. In msvcrt they arrive via its PRIVATE headers as `__WINE_MALLOC`,
+`__WINE_CRT_PRINTF_ATTR` and `__WINE_CRT_SCANF_ATTR`, so every TU inherited them — which is
+exactly why a headers-only TU reproduced it and why it read as "the closure".
 
-Three dead ends already paid for, so nobody re-walks them:
+**Fix.** Neutralise them with `-D` for the ANCHOR only: `rustconv` does this automatically
+now (`c2rust_anchor._ATTR_NEUTRALIZERS`), passed ahead of the db flags so a real `-D` of the
+same name still wins. Safe because none of the three carries semantics we translate — they
+are optimiser and `-Wformat` hints, not ABI and not body — and the real build never sees the
+`-D`. Requires the macros to be `#ifndef`-guarded so the command line can override them.
+Measured: 32 invalid-AST sites → 26 → **0**, one attribute at a time; module-wide 2/37 → 35/37.
 
-* **It is NOT "c2rust is broken".** Trivial C (`int add(int a,int b){return a+b;}`) transpiles
-  clean through the same binary. Whatever it is, it is specific to what the closure contains.
-* **It is NOT an include-PATH problem.** The warning fingers the distro header
-  (`/usr/share/mingw-w64/include/stdio.h`) and our pinned llvm-mingw ships its own, so forcing
-  the pinned sysroot first looks like a cheap fix. It is not: the pinned `stdio.h` trips the
-  same thing. Both header sets contain it, so no `-isystem` reordering helps.
-* **The warning names where the NODE is, not the construct.** The obvious minimal reproducer
-  built from the cited line (`__builtin_va_list` in an inline parameter) does NOT reproduce.
-  Do not treat the cited line as the culprit.
+**Diagnose this class from the `-->` line, never from the panic.** The panic names neither
+file nor construct. Each `Exported Clang AST was invalid` carries a `--> <header>:<line>`
+under it — that is the actionable location. Then run the pinned clang with `-E` and read what
+the macro ACTUALLY expanded to before theorising.
 
-Leading unproven candidate: **c2rust is linked against a different LLVM than the toolchain
-that compiled the sources** — `ldd $(command -v c2rust-transpile)` showed `libLLVM-14.so.1`
-against our pinned `clang 19.1.7`, and upstream's own changelog looks for `llvm-config-20/21`.
-`0.22.1` is the latest release, so there is no upgrade lever; rebuilding c2rust against the
-matching LLVM is the untested move. The headers-only TU above is the regression test for it.
+Traps, each of which cost a probe:
 
-**And the reason this matters more than it looks:** `--no-c2rust` is not a formality. The
+* **Two copies of the same macro names, one guarded and one not.** `__WINE_MALLOC` and
+  friends exist in BOTH `sdk/include/xdk/winnt_old.h` (guarded `!defined(malloc)`, so a
+  `-Dmalloc=malloc` neutralises it) and `dll/win32/msvcrt/include/corecrt.h` (unguarded until
+  this fix). Killing the SDK copy changes the count by one and looks like a failed theory.
+* **`__WINE_DEALLOC` and `__WINE_ALLOC_SIZE` look like the obvious culprits and are already
+  empty.** Their guard is `__GNUC__ > 10`, and clang reports `__GNUC__` 4, so it never fires.
+  The preprocessed output says so in one line; the source reads the opposite way.
+* **A partial fix here is indistinguishable from no fix.** `profile_derive.resolve_sys_crate`
+  special-cased the `_static` suffix, so `--target msvcrt_shared` still resolved to
+  `ntdll-sys` and re-emitted six BLOCKING `SWITCH_CONST_IN_BASE_HEADER` findings for
+  constants already present and correct in `msvcrt-sys`. A blocking gate that cannot be
+  satisfied sends someone transcribing constants that exist. Strip every trailing `_<role>`.
+
+**Still genuinely blocked: the `__label__` class**, and the grep the docs told you to use for
+it was wrong. Under `_USE_DUMMY_PSEH=1` the PSEH macros open a block with a GCC local-label
+declaration (`__label__ __pseh_try_end;`) that c2rust does not support — one
+`Missing child … TagDeclStmt` per label. But that is **not** only `_SEH2_TRY`: wine's
+`__TRY`/`__EXCEPT`/`__EXCEPT_CTX` expand the same way, and msvcrt's `except.c` and `cpp.c` —
+the only 2 of 37 that still refuse — contain **zero** `_SEH2_TRY` between them. Deciding
+"can this file be anchored" by grepping `_SEH2_TRY` gives a wrong answer in both directions.
+
+Rebuilding c2rust against a matching LLVM (`ldd $(command -v c2rust-transpile)` shows
+`libLLVM-14.so.1` against our pinned clang 19.1.7) is **no longer needed for the attribute
+class** and should not be closed wholesale on that basis — it remains the untested lever for
+the `__label__` class ONLY.
+
 anchor is what stops the model silently stubbing a hard body or turning a function-like macro
 into a phantom extern, so trading it away to get past this is a real cost on the other side —
 a decision to take deliberately, not to reach for because a module will not translate.
@@ -5949,6 +5968,33 @@ other. AMD's SSE2 `sin` computes `(-0.0 * 0.0) * S1` and answers `+0.0` for `sin
 the FMA3 path in the *same file* returns `x` below 2^-27 and answers `-0.0`. Neither is a
 transcription error, and only measurement finds it.
 
+### A differential harness that cannot see its two sides diverge in STATE will report state differences as BEHAVIOUR differences
+**Symptom.** A perf/conformance row fails hard and reproducibly — `towlower` 10.8x TOO SLOW,
+all 3 passes, flat 44 MiB/s across a 65536x size range, calibration twins clean at 1.01x — and
+nobody can reproduce it. Four theories died: host contention (held at 1.05x under 24-way load),
+a recent commit (nothing touched the path in 3 days), suite context (whole-suite and
+`--test perf` both pass), an in-process global leak (separate test binaries are separate
+processes).
+
+**Cause.** Reference and subject each held their OWN locale state, and had diverged.
+`towlower` branches on `lc_handle[LC_CTYPE]`: zero is an ASCII add, nonzero is **one
+`LCMapStringW` call per character**. The subject was on the NLS arm and the reference on the
+ASCII arm, so the harness was timing a Win32 call against an integer add and reporting the
+ratio as a slow body. A flat throughput that does not move across a 65536x size range is the
+tell — that is a fixed per-element cost, not a scaling one.
+
+**Fix.** Read the mode on BOTH sides, print it beside the table, and when they disagree fail
+with *oracle asymmetry — the comparison is invalid*, never with the performance verdict.
+"TOO SLOW" was a FALSE statement about a TRUE measurement, and it cost an innocent lane its
+batch. Do **not** pin either side to a known-good state to make the run green: that hides the
+state leak, which is the live bug. (`msvcrt-difftest/tests/perf.rs`, `locale_modes()`.)
+
+**Generalises past locale.** Any differential pair where one side can switch MODE — a codepage,
+a feature flag, a cached handle, an errno policy — has this hole. If the harness cannot observe
+the state both sides are in, it cannot tell you which kind of difference it just measured, and
+it will confidently report the wrong one. Note this is the same shape as the stale-generated-
+header class: the tool answers honestly, but answers a different question than the one asked.
+
 ### A gate can be RED for reasons that are not in the tree at all
 Symptom: a gate goes RED with **no failing test**. Cause: the verdict depended on host state,
 not on the diff. Fix: check the host before you read the artifact, because the artifact cannot
@@ -6621,6 +6667,57 @@ lanes compute statistics from it silently corrupts their conclusions too, not ju
 configurations could produce the same stored row, and whether either is one you would ever want
 to compare against the other. Same family as the worktree ambiguity in the same corpus, where
 three trees' rounds are separable only by string-matching `run_dir`.
+
+### Reading a stale `origin/master` fails SILENTLY, and arbitration is where it does most damage
+
+**Symptom.** Two lanes report different measurements of the same file. A third party resolves it
+from "master" and concludes the lanes are looking at different trees — when in fact all three
+agree and only the arbiter's ref is old.
+
+**Cause.** `origin/master` is a **local cached** ref. Without a fresh `git fetch` it is whatever
+the last fetch left behind, and `git show origin/master:<path>` will happily print a months-old
+file with no warning. AGENTS.md documents this for `git reset --hard origin/master` because that
+is where it rewound shared master by 81 commits — but the *reading* form has no guard rail at
+all. It fails quietly and confidently. Real case: an arbiter measured
+`wow64_manual.c` at 5,673 lines with 0 `WOW64_USER_CEILING32`, concluded one lane carried
+unlanded work, and was about to have that written into a design doc. A fetch showed master at
+6,552 with 3 occurrences, and `git log -S` named the commit that added it — **landed, by the lane
+being accused of not having landed it.** All three trees agreed the whole time.
+
+**Fix.** `git fetch` immediately before any `git show origin/master:...` / `git log origin/master`
+you intend to *rely* on, and say that you did. Two habits that catch it:
+- **`git log -S <token> -- <path>` names the commit that introduced a symbol.** If the answer is
+  "a commit that is already on master", the "unlanded work" theory is dead in one command.
+- **When two measurements disagree, check the TREES before checking the arithmetic** — but check
+  them with a fetched ref, or you have added a third wrong tree to the comparison rather than
+  resolving the first two.
+
+The general shape: an arbiter's error reaches every party at once and arrives wearing the
+authority of a tiebreak, so it is believed faster and checked less than either original claim.
+Whoever resolves a disagreement owes the freshest read, not merely a third one.
+
+### A budget sized for a set of ONE is silently wrong the day the set grows to two
+
+**Symptom.** A harness grants a timing allowance for "an optional/slow item", the allowance is
+correct for months, and then a second such item is added and the LAST one is cut off mid-run.
+It is reported as a failure of the newly-added item — which did nothing wrong and was merely
+still running.
+
+**Cause.** The allowance was written as a one-shot flag rather than a per-item grant, because
+with a single item the two are indistinguishable. `ladder.py`'s drain extended once by
+`OPTIONAL_EXTRA_SECONDS` the first time any optional guest was seen to launch
+(`extended = False` → `extended = True`), while winlogon watches each optional guest for 300s
+*independently*. With `OPTIONAL = {sqlite32}` that is exactly right. Adding `lua32` made two
+guests share one extension, so the second would have been abandoned and graded "staged but never
+reported" — a RED verdict naming the wrong guest.
+
+**Fix.** Grant the allowance PER ITEM (`extended: set[str]`, one grant each). The general shape:
+when a collection has exactly one member, a per-member rule and a whole-collection rule are the
+same code, so the distinction never gets made and nothing tests it. **Whenever you add the second
+member to a set that had one, re-read every budget, timeout, flag and "did we already do this"
+guard that mentions the set** — the bug is not introduced by the new member, it was already there
+and merely unreachable. A regression test for this class must assert with *two* members present
+(and be checked against the old code: the fixed and broken versions both pass a one-member test).
 
 ### A verdict that blocks other people must carry its evidence
 Sibling of "an oracle needs an oracle": that one asks *did the oracle look?*, this one asks
@@ -7958,6 +8055,17 @@ symbols one way and undefined the other. That pair *is* the diagnostic.
   follow the call sites, not the stub. Symbols nothing references cannot drag the C object in,
   so they need no Rust definition; check with `llvm-nm --undefined-only` across the module's
   objects plus the `.spec` rather than assuming.
+- **And the OBJECT DIRECTORY is the authority on what a TARGET compiles — the cmake source
+  list is not.** `build-<arch>/**/CMakeFiles/<target>.dir/` holds exactly the TUs that were
+  built; a `list(APPEND …)`/`REMOVE_ITEM` parse of the `.cmake` does not, because arch `if()`
+  guards and source vars shared with a sibling target are invisible to it. Parsing
+  `libcntpr.cmake` reported **107** live `.c`; the object dirs said **21/20/28**
+  (amd64/arm64/i386). Worse than the count: pairing those 107 against the crate's 216
+  `#[no_mangle]` exports *by filename* produced **37 apparent double-definitions — all
+  phantoms**, none of them compiled on any arch. Same shape as the `-D<name>=` trap above:
+  filename is not symbol, and source-list membership is not compilation. Confirm both against
+  built artifacts before costing a translation or declaring a cohab collision.
+
 - **`#[export_name]` STACKS with i386 stdcall decoration, it does not replace it.** Give the
   UNDECORATED C name and declare the fn `extern "stdcall"`; rustc prepends the `_` and appends
   the `@<arg bytes>` itself. Writing the decorated name is the intuitive move and produces

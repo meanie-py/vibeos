@@ -26,10 +26,20 @@ from pathlib import Path
 
 from . import buildpolicy
 
-HOST_POLICY_VERSION = 1
+# Bumped to 2 when the build policy moved out of HOSTLOCK_DIR. `buildpolicy.blockers()`
+# reads this literal out of every registered worktree, so a lane still on 1 is NAMED as
+# policy-unaware instead of quietly reading the old /tmp path, finding nothing after a
+# reboot, and building uncapped while everyone assumes the cap is on.
+HOST_POLICY_VERSION = 2
 
 # Shared with the qemu slot locks (vm.py LOCK_DIR) so `reap.sh`/`ps` live in one tree.
+# EPHEMERAL BY DESIGN: everything here is flock state, whose meaning dies with the
+# process holding it, so /tmp losing it on reboot is correct.
 HOSTLOCK_DIR = Path(os.environ.get("VIBEOS_HOSTLOCK_DIR", "/tmp/vibeos-qemu-locks/host"))
+# DURABLE config, which is a different lifetime entirely -- the capacity of this host is
+# not runtime state and must outlive a reboot. Kept separate rather than moving the whole
+# lock tree: stale lock FILES are harmless, but a stale *pause* or capacity would not be.
+POLICY_DIR = buildpolicy.durable_dir()
 # Pool size = max concurrent TCG boots (a build grabs ALL of them → exclusive). 4 suits a
 # ~32-core box (≈4×4 vCPU boots leaves headroom); raise/lower via the env.
 DEFAULT_CPU_LEASES = max(1, int(os.environ.get("VIBEOS_HOST_CPU_LEASES", "4")))
@@ -77,9 +87,7 @@ def enabled() -> bool:
     """The broker is on by default; `VIBEOS_HOST_BROKER=0` disables it (uncontended single
     agent / CI, where the locks are a no-op anyway, or to debug without arbitration)."""
     on = os.environ.get("VIBEOS_HOST_BROKER", "1").lower() not in ("0", "false", "no", "")
-    if not on and (
-        buildpolicy.read(HOSTLOCK_DIR) or (HOSTLOCK_DIR / "build-policy.paused").exists()
-    ):
+    if not on and (buildpolicy.read(POLICY_DIR) or (POLICY_DIR / "build-policy.paused").exists()):
         raise buildpolicy.PolicyError("active host build policy requires the CPU broker")
     return on
 
@@ -298,7 +306,7 @@ def _acquire_one(
     try:
         while True:
             if pool == "cpuheavy":
-                buildpolicy.require_admission(HOSTLOCK_DIR)
+                buildpolicy.require_admission(POLICY_DIR)
             if _may_attempt(pool or "", ticket[1] if ticket else None, 1, len(files)):
                 for p in files:
                     fd = os.open(str(p), os.O_RDWR | os.O_CREAT, 0o644)
@@ -380,7 +388,7 @@ def acquire_cpu_lease(
 ) -> int | None:
     """Acquire one CPU-heavy lease permit (default pool size 1). Returns the held fd or
     None on timeout. `kind` is a short tag for host-status (e.g. 'build:i386', 'boot:arm64')."""
-    buildpolicy.require_admission(HOSTLOCK_DIR)
+    buildpolicy.require_admission(POLICY_DIR)
     return _acquire_one(
         _cpu_lease_files(leases), timeout, _self_meta(kind, **extra), pool="cpuheavy"
     )
@@ -398,7 +406,7 @@ def build_permits(leases: int = DEFAULT_CPU_LEASES) -> int:
     defaults (K=4, max 2 builds) that's 2 — so two builds coexist, a third queues, and
     while TWO builds run the pool is exhausted (native-TCG boots excluded, preserving
     the starvation protection the old writer-takes-all grant existed for)."""
-    policy = buildpolicy.read(HOSTLOCK_DIR)
+    policy = buildpolicy.read(POLICY_DIR)
     if policy:
         return policy["leases"] // policy["max_builds"]
     return max(1, -(-leases // _max_builds()))
@@ -432,7 +440,7 @@ def acquire_cpu_share(
     ticket = _ticket_take("cpuheavy", n)
     try:
         while True:
-            buildpolicy.require_admission(HOSTLOCK_DIR)
+            buildpolicy.require_admission(POLICY_DIR)
             if _may_attempt("cpuheavy", ticket[1] if ticket else None, n, leases):
                 held: list[int] = []
                 for p in _cpu_lease_files(leases):
@@ -485,7 +493,7 @@ def acquire_cpu_exclusive(
     for p in _cpu_lease_files(leases):
         while True:
             try:
-                buildpolicy.require_admission(HOSTLOCK_DIR)
+                buildpolicy.require_admission(POLICY_DIR)
             except RuntimeError:
                 release_all(held)
                 raise
@@ -593,8 +601,8 @@ def build_lock(build_dir: str | Path, arch: str, **kw: object) -> Iterator[dict]
     The directory lock remains mandatory even when CPU throttling is disabled.
     """
     start = time.monotonic()
-    with buildpolicy.session(HOSTLOCK_DIR), build_dir_lock(build_dir, arch=arch, **kw) as directory:
-        buildpolicy.require_admission(HOSTLOCK_DIR)
+    with buildpolicy.session(POLICY_DIR), build_dir_lock(build_dir, arch=arch, **kw) as directory:
+        buildpolicy.require_admission(POLICY_DIR)
         yield {
             "enabled": True,
             "scheduler": "host-jobs",
@@ -779,7 +787,7 @@ def status() -> dict:
             out["builddir"].append(entry)
         elif p.name == "land":
             out["land"].append(entry)
-    policy = buildpolicy.read(HOSTLOCK_DIR)
+    policy = buildpolicy.read(POLICY_DIR)
     out["build_policy"] = policy
     out["cpu_leases_total"] = policy["leases"] if policy else DEFAULT_CPU_LEASES
     out["cpu_leases_held"] = sum(1 for e in out["cpuheavy"] if e["held"])

@@ -34,6 +34,7 @@
 -I{REPO}/sdk/include/winrt
 -I{REPO}/sdk/include/dxsdk
 -I{REPO}/sdk/lib/pseh/include
+-std=gnu99
 -ffile-prefix-map={REPO}=
 -ffile-prefix-map=../=
 -pipe
@@ -68,5 +69,4 @@
 -fno-optimize-sibling-calls
 -fno-omit-frame-pointer
 -mstackrealign
--std=gnu99
 -c

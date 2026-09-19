@@ -2800,6 +2800,19 @@ def test_backend_rewrite_accel_would_break_arm64():
 from . import hostlock as hl_mod  # noqa: E402
 
 
+@pytest.fixture(autouse=True)
+def _isolate_host_policy(tmp_path_factory, monkeypatch):
+    """No unit test may read THIS BOX's real build policy.
+
+    POLICY_DIR is durable and host-global by design, so unlike the old /tmp lock tree
+    it is always present -- which means a test that patches only HOSTLOCK_DIR silently
+    asserts against whatever capacity the machine happens to be running. That is how
+    test_ninja_jobs_caps_and_reserves broke when the trial went active. Autouse so the
+    whole class is closed, not just the 49 sites that exist today.
+    """
+    monkeypatch.setattr(hl_mod, "POLICY_DIR", tmp_path_factory.mktemp("host-policy"))
+
+
 def test_hostlock_cpu_lease_serializes(tmp_path, monkeypatch):
     monkeypatch.setattr(hl_mod, "HOSTLOCK_DIR", tmp_path)
     monkeypatch.setenv("VIBEOS_HOST_BROKER", "1")
@@ -3333,6 +3346,40 @@ def test_canon_ensure_toolchain_fresh_worktree(tmp_path, monkeypatch):
     monkeypatch.setenv("VIBEOS_ROOT", str(parent))
     assert canon_mod.ensure_toolchain(repo) is True
     assert (repo / ".build-tools" / "llvm-mingw").resolve() == tc.resolve()
+
+
+def test_canon_ensure_toolchain_heals_archiver_materialised_dir(tmp_path, monkeypatch):
+    """A restore can leave a real EMPTY dir where the symlink was; heal it.
+
+    Rebuilding this box on 2026-09-14 from a 7-Zip extraction of the WSL image
+    produced exactly that in all 8 worktrees — the archiver materialised each
+    symlink as an empty directory. `readlink()` then raised EINVAL, so the one
+    function whose job is provisioning the toolchain died on the state it most
+    needed to repair, and every build would have failed pointing at an empty dir.
+    """
+    parent = tmp_path
+    repo = parent / "vibeos"
+    link = repo / ".build-tools" / "llvm-mingw"
+    link.mkdir(parents=True)  # the archiver's artifact: a real, empty directory
+    tc = parent / "llvm-mingw-20250114"
+    tc.mkdir()
+    monkeypatch.setenv("VIBEOS_ROOT", str(parent))
+    assert canon_mod.ensure_toolchain(repo) is True
+    assert link.is_symlink()
+    assert link.resolve() == tc.resolve()
+
+
+def test_canon_ensure_toolchain_keeps_a_populated_real_directory(tmp_path, monkeypatch):
+    """Only an EMPTY dir is the archiver artifact. A populated one is somebody's
+    real machine-local toolchain — report it usable, never replace it."""
+    repo = tmp_path / "vibeos"
+    link = repo / ".build-tools" / "llvm-mingw"
+    (link / "bin").mkdir(parents=True)
+    (link / "bin" / "clang").write_text("#!/bin/sh\n")
+    monkeypatch.setenv("VIBEOS_ROOT", str(tmp_path))
+    assert canon_mod.ensure_toolchain(repo) is True
+    assert not link.is_symlink()
+    assert (link / "bin" / "clang").exists()
 
 
 def test_canon_ensure_toolchain_missing(tmp_path, monkeypatch):
@@ -4246,7 +4293,14 @@ def test_hostlock_status_reports_both_pools(tmp_path, monkeypatch):
     assert "legacy/native(cpuheavy)" in body and "boot(windows-host)" in body
 
 
-def test_ninja_jobs_caps_and_reserves(monkeypatch):
+def test_ninja_jobs_caps_and_reserves(monkeypatch, tmp_path):
+    # Point HOSTLOCK_DIR at an empty dir so `_ninja_jobs` sees NO host build policy.
+    # Without this the test reads the real one and asserts against whatever capacity
+    # the box happens to be running -- it passed only while no policy was installed,
+    # then failed the moment the three-build trial went active (`-j 6`, not `-j 24`).
+    # The VIBEOS_BUILD_CORE_RESERVE path below is the no-policy fallback, so that is
+    # the state it has to be exercised in.
+    monkeypatch.setattr(hl_mod, "HOSTLOCK_DIR", tmp_path)
     monkeypatch.setattr(build_mod.os, "cpu_count", lambda: 32)
     monkeypatch.setenv("VIBEOS_BUILD_CORE_RESERVE", "8")
     assert build_mod._ninja_jobs() == ["-j", "24"]
@@ -6949,7 +7003,11 @@ def test_ladder_all_pass_is_clean():
     from tests.qemu.cli import ladder as ladder_mod
 
     assert ladder_mod.check(_ladder_log()) is None
-    assert ladder_mod.summary(_ladder_log()).startswith("9/9 guests PASS")
+    # Derived from the table, not hardcoded: this assertion was "9/9" and the
+    # tenth guest broke it while the fixture -- which builds itself FROM the
+    # table -- was already correct. A count literal here tests the literal.
+    n = len(ladder_mod.LADDER)
+    assert ladder_mod.summary(_ladder_log()).startswith(f"{n}/{n} guests PASS")
 
 
 def test_ladder_gui32_pass_code_is_600e_not_600d():
@@ -8070,3 +8128,65 @@ def test_kill_still_succeeds_when_a_SWEEP_matches_nothing(tmp_path, monkeypatch)
         stale = True
 
     assert killvm.cmd_kill(_A(), tmp_path) == 0
+
+
+def test_kill_reports_a_zombie_as_exited_not_as_unkillable(tmp_path, monkeypatch):
+    """os.kill(pid, 0) SUCCEEDS on a zombie — the pid is still in the table — so
+    the liveness check read a QEMU that had already died on the SIGTERM as alive
+    and escalated to a "STILL ALIVE after SIGTERM+SIGKILL — unkillable (D state?)"
+    report. That is a worse lie than the silent success the escalation was added
+    to fix: it sends the reader hunting a process that does not exist."""
+    from tests.qemu.cli import killvm
+
+    proc = tmp_path / "4242"
+    proc.mkdir()
+    (proc / "status").write_text("Name:\tqemu\nState:\tZ (zombie)\nPid:\t4242\n")
+    monkeypatch.setattr(killvm, "Path", lambda p="": tmp_path if str(p) == "/proc" else Path(p))
+    assert killvm._pid_is_zombie(4242)
+
+    (proc / "status").write_text("Name:\tqemu\nState:\tR (running)\nPid:\t4242\n")
+    assert not killvm._pid_is_zombie(4242)
+
+
+def test_zombie_check_is_false_where_proc_is_absent(tmp_path, monkeypatch):
+    """No /proc: fall back to the pid check, which is what it did before."""
+    from tests.qemu.cli import killvm
+
+    monkeypatch.setattr(killvm, "Path", lambda p="": tmp_path / "nope")
+    assert not killvm._pid_is_zombie(1)
+
+
+def test_qmp_client_keeps_events_instead_of_discarding_them():
+    """_recv_json must skip events to find a reply, and used to drop them on the
+    way past. That threw away STOP, which is the only notification QEMU sends when
+    a replay-break fires — leaving a paused replay indistinguishable from a wedged
+    one, since both show a frozen serial log and a busy CPU."""
+    from tests.qemu.qmp_client import QmpClient
+
+    c = QmpClient()
+    feed = [
+        {"event": "RESUME"},
+        {"return": {}},
+        {"event": "STOP", "timestamp": {"seconds": 7}},
+        {"return": {"icount": 42}},
+    ]
+    c._recv_one_json = lambda: feed.pop(0)  # type: ignore[method-assign]
+
+    assert c._recv_json() == {"return": {}}
+    assert c._recv_json() == {"return": {"icount": 42}}
+    assert [e["event"] for e in c.events] == ["RESUME", "STOP"]
+    assert c.saw_event("STOP") == {"event": "STOP", "timestamp": {"seconds": 7}}
+    assert c.saw_event("SHUTDOWN") is None
+
+
+def test_qmp_event_retention_is_bounded():
+    """A long boot emits plenty; this is a diagnostic tail, not a log."""
+    from tests.qemu.qmp_client import QmpClient
+
+    c = QmpClient()
+    feed = [{"event": f"E{i}"} for i in range(300)] + [{"return": {}}]
+    c._recv_one_json = lambda: feed.pop(0)  # type: ignore[method-assign]
+    c._recv_json()
+    assert len(c.events) == 256
+    assert c.saw_event("E299") is not None
+    assert c.saw_event("E0") is None  # fell off the tail

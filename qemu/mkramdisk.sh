@@ -565,6 +565,33 @@ if [ -n "$PAYLOAD_MANIFEST" ]; then
     done
 fi
 
+# --- FEX CPU layer (DEFAULT ON) --------------------------------------------
+# libwow64fex.dll is staged on EVERY arm64 image, not behind VIBEOS_FEX=1.
+#
+# Owner decision 2026-09-13: "if even the fex lane is forgetting to stage and
+# smoke fex then the build env-var is just a way for us to embarrass ourselves."
+# The gate was hiding the lane from itself.
+#
+# This half is free: 4.5M of ramdisk and ZERO boot time, because nothing maps
+# the CPU layer until a 32-bit process starts. It is deliberately separated from
+# staging the GUESTS, which is NOT free -- guests add ~85s of ladder drain to
+# every arm64 gate for every lane, and until the FEX code-cache fault (roadmap:
+# LookupCache::FindBlock / InvalidateThreadCachedCodeRange) has a measured flake
+# rate, that cost comes with a known-faulting emulator attached. Guests stay
+# behind VIBEOS_FEX=1 below until that number exists.
+#
+# Existence-gated, and the skip is LOUD: a missing CPU layer now means every
+# arm64 image silently loses 32-bit support, which is exactly the failure the
+# env-var used to cause on purpose.
+WOW64FEX_DEFAULT="${VIBEOS_WOW64FEX_DLL:-$PROJECT_DIR/build-fex-arm64/Bin/libwow64fex.dll}"
+if [ -f "$WOW64FEX_DEFAULT" ]; then
+    echo "[*] staging libwow64fex.dll into system32 (FEX CPU layer, default-on)"
+    mcopy -o -i "$RAMDISK_IMG" "$WOW64FEX_DEFAULT" ::/reactos/system32/libwow64fex.dll
+else
+    echo "[!] FEX CPU layer MISSING ($WOW64FEX_DEFAULT) — this image has NO 32-bit"
+    echo "    support at all. Build it with: tools/fex/build-fex.sh"
+fi
+
 # --- FEX hello-compute probe (opt-in, VIBEOS_FEX=1) ------------------------
 # Rung-2 bring-up (docs/engineering/fex-bringup-plan.md): stage the native-arm64
 # FEXCore harness fexprobe.exe + its UCRT runtime. OFF by default (winlogon's
@@ -577,13 +604,8 @@ if [ "${VIBEOS_FEX:-0}" = "1" ]; then
         echo "[*] VIBEOS_FEX=1 — staging fexprobe.exe + ucrtbase.dll into system32"
         mcopy -o -i "$RAMDISK_IMG" "$FEXPROBE" ::/reactos/system32/fexprobe.exe
         mcopy -o -i "$RAMDISK_IMG" "$UCRTBASE" ::/reactos/system32/ucrtbase.dll
-        # WOW64 Phase A (docs/engineering/wow64-plan.md): stage the FEX CPU
-        # layer so fexprobe's load-test (and later wow64probe) can resolve it.
-        WOW64FEX="${VIBEOS_WOW64FEX_DLL:-$PROJECT_DIR/build-fex-arm64/Bin/libwow64fex.dll}"
-        if [ -f "$WOW64FEX" ]; then
-            echo "[*] VIBEOS_FEX=1 — staging libwow64fex.dll into system32"
-            mcopy -o -i "$RAMDISK_IMG" "$WOW64FEX" ::/reactos/system32/libwow64fex.dll
-        fi
+        # WOW64 Phase A: the FEX CPU layer is staged unconditionally now (see the
+        # default-on block above), so there is nothing to do here.
         # WOW64 Phase B (docs/engineering/wow64-plan.md): wow64probe.exe drives
         # the BTCpu contract; it maps the i386 ntdll staged into syswow64
         # (Phase C's SysWOW64 set starts here).
@@ -774,6 +796,19 @@ if [ "${VIBEOS_FEX:-0}" = "1" ]; then
             echo "[*] VIBEOS_FEX=1 — staging syswow64/sqlite32.exe (stress guest)"
             mmd -i "$RAMDISK_IMG" ::/reactos/syswow64 2>/dev/null || true
             mcopy -o -i "$RAMDISK_IMG" "$SQLITE32" ::/reactos/syswow64/sqlite32.exe
+        fi
+        # lua32.exe — the second THIRD-PARTY stress guest (tools/stress/lua).
+        # Where sqlite32 stresses the DATA path, this one stresses the CONTROL
+        # path: Lua implements both error propagation and coroutine switching
+        # with setjmp/longjmp, so every rung drives a non-local jump across
+        # frames FEX has already translated -- machinery that SEH-based fault32
+        # does not reach. Built on demand by tools/stress/lua/build.sh, so it is
+        # absent unless someone asked for it -- like doom, staged only if built.
+        LUA32="${VIBEOS_LUA32_EXE:-$PROJECT_DIR/tools/stress/lua/lua32.exe}"
+        if [ -f "$LUA32" ]; then
+            echo "[*] VIBEOS_FEX=1 — staging syswow64/lua32.exe (stress guest)"
+            mmd -i "$RAMDISK_IMG" ::/reactos/syswow64 2>/dev/null || true
+            mcopy -o -i "$RAMDISK_IMG" "$LUA32" ::/reactos/syswow64/lua32.exe
         fi
         # WOW64 Phase C: the real i386 guest exe, launched through CreateProcessW
         # by winlogon's TryStartWow64Hello (silent no-op unless staged here).
