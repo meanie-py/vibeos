@@ -488,6 +488,34 @@ land; date every addition.** Source docs live in `docs/engineering/archive/`.
 
 ## Known bugs & flakes (live registry)
 
+- **The hang-capture symbolicator resolves against the WRONG IMAGE — a TOOL path, not just
+  the hand path. UNOWNED** (2026-09-19). The kernel-symbol entry below says the helper fix
+  "does not close the hand path". It does not close this tool path either. An i386
+  conformance hang wrote, into `summary.json` itself:
+
+        CPU#0 0x80211b45 -> 0014bb45    XHF_NOEXECUTE+310085    -
+
+  An offset of 310,085 bytes past a symbol is not a resolution, and `XHF_NOEXECUTE` is not a
+  kernel symbol — yet it is presented in the same field, same format, as a real answer. This
+  is the entry below's own warning ("the wrong answer is PLAUSIBLE, not empty") arriving
+  through a tool rather than a person, which is worse: a human reading `summary.json` has no
+  cue to distrust it. Found by the lane that owned the hang, after being warned off the hand
+  version of the same trap. **Anything that symbolicates a guest PC must resolve against
+  `ntkrnlmp.exe`** — the booted image — and the conformance hang capture evidently does not.
+
+- **`smoke` structurally cannot catch a hang that happens after its marker. OPEN, by design**
+  (2026-09-19). A batch whose i386 guest froze inside the taskbar's `OnCreate` passed
+  `smoke` on **all three arches** in that same batch. Not a flake and not a harness fault:
+  `[WIN32K] shell ready` is at line **1266 in both** the failing tree and a green control,
+  and the hang is at line **1891**. Smoke's contract is "reached a graphical desktop", and the
+  guest genuinely did. AGENTS.md already warns that the screenshot is captured *at* the marker
+  before the taskbar renders; this is the same gap with teeth — **everything explorer does
+  after the marker is unguarded by the north-star test**, including `ProcessStartupItems`,
+  which is what launches the conformance sweep. The failure surfaced only in `conformance`,
+  ~400s later, as `launched: 0`. Worth deciding whether a post-marker liveness check belongs
+  in smoke, or whether conformance's `launched` count is the intended guard and simply needs
+  to be a louder verdict than "0 tests ran, in baseline (OK)".
+
 - **Dropped `_SEH2_EXCEPT` is NOT confined to MM — `NtReplyPort` bugchecks on a bad
   user pointer. UNOWNED, VERIFIED** (2026-09-19). Found by generalising the research
   lane's `MiDoPoolCopy` discovery (below) into a tree sweep. `ntoskrnl/lpc/*.c` is
