@@ -354,6 +354,24 @@ def tree_macro_arg_names(rust_root: Path) -> set[str]:
     return names
 
 
+def member_body(name: str, tree: set[str]) -> str | None:
+    """`CDefView_Refresh` → `CDefView_Refresh_body`, the C++ member lowering.
+
+    rustconv lowers a C++ member function into a free `Class_Method_body` plus a separate
+    `extern "system"` vtable thunk, so the banked LABEL (the C++ construct that was sent)
+    never appears verbatim. `_body` is already in `_TWIN_SUFFIXES`, but only the variadic
+    path consults it, so a non-variadic member resolved as unintegrated — 25 of shell32's
+    130 "unintegrated" entries were this one spelling, and every `.partial` in that lane
+    was a retried call whose successful body is shipping under the suffix.
+
+    EXACT name plus the suffix, like the twin rules and for the same reason: a containment
+    test here would match `CDefView_Refresh` to `CDefView_RefreshGhostedState_body`, which
+    is a different function that happens to share a prefix.
+    """
+    cand = f"{name}_body"
+    return cand if cand in tree else None
+
+
 def tchar_variants(name: str) -> list[str]:
     """`_tmain` → `wmain`, `main`. The TCHAR macro pair, both build flavours."""
     if not name.startswith("_t") or len(name) <= 2:
@@ -363,15 +381,56 @@ def tchar_variants(name: str) -> list[str]:
 
 
 def load_allowlist(path: Path = ALLOW_PATH) -> dict[str, str]:
-    """Reviewed exceptions: {function name: written reason}."""
+    """Reviewed exceptions: {function name: written reason}.
+
+    Two spellings, both requiring a reason. `[allow]` gives one function its own, which is
+    right when the reason is specific to it. `[groups]` gives one reason to a named list,
+    which is right when a whole CLASS was superseded at once — shell32 retired
+    `CFolderOptions`'s eleven banked members in a single rewrite, and eleven copies of one
+    paragraph is a file nobody re-reads. A group with no `functions`, or a function in no
+    group, is dropped rather than allowed silently: the invariant is that every allowed
+    name carries a written reason, not that the file parses.
+    """
     if not path.exists():
         return {}
     try:
         data = tomllib.loads(path.read_text(encoding="utf-8"))
     except (OSError, tomllib.TOMLDecodeError):
         return {}
+    out: dict[str, str] = {}
+    groups = data.get("groups", {})
+    if isinstance(groups, dict):
+        for group in groups.values():
+            if not isinstance(group, dict):
+                continue
+            reason = group.get("reason")
+            names = group.get("functions")
+            if not isinstance(reason, str) or not isinstance(names, list):
+                continue
+            for name in names:
+                if isinstance(name, str):
+                    out[name] = reason
     allowed = data.get("allow", {})
-    return {k: str(v) for k, v in allowed.items()} if isinstance(allowed, dict) else {}
+    if isinstance(allowed, dict):
+        out.update({k: str(v) for k, v in allowed.items()})
+    return out
+
+
+def _body_name_ok(name: str, tree: set[str], allow: dict[str, str]) -> bool:
+    """Is one name declared inside a banked body accounted for?
+
+    In the tree directly, under the `_body` member lowering, or allowlisted. The
+    allowlist is keyed by the C++ LABEL, so a body name is checked with `_body` stripped
+    as well — `CFolderOptions_ctor_body` is the shipping-side spelling of the allowlisted
+    `CFolderOptions_ctor`, and requiring the allowlist to carry both spellings would be a
+    second place to forget one.
+    """
+    return (
+        name in tree
+        or member_body(name, tree) is not None
+        or name in allow
+        or (name.endswith("_body") and name[: -len("_body")] in allow)
+    )
 
 
 def resolve(
@@ -385,12 +444,16 @@ def resolve(
         return Resolution(fn, fn.name, "direct")
 
     # The key may be a macro or a stale label; the body holds what actually shipped.
-    # Require EVERY function in the body to be in the tree: a body whose 5 definitions
-    # became 1 is partially-lost paid work, and accepting the first hit would call it
-    # integrated. Report the count rather than a representative name — picking one from
-    # a multi-function body names an arbitrary symbol and reads as if that were the match.
+    # Each declared name goes through the SAME rules, not a raw set test. A
+    # content-addressed memo entry (`translation-memory-exact-v1/<sha>.rs`) is keyed by a
+    # hash, so its body is the only thing that can identify it — and its body holds
+    # `Class_Method_body` names and superseded members, which only resolve via the rules
+    # below. Requiring EVERY name to resolve is what keeps this tight: a body whose 5
+    # definitions became 1 is partially-lost paid work, and accepting the first hit would
+    # call it integrated. Report the count rather than a representative name — picking one
+    # from a multi-function body names an arbitrary symbol and reads as if it were the match.
     body = declared_names(fn.path)
-    if body and not body - tree:
+    if body and all(n in tree or member_body(n, tree) for n in body):
         return Resolution(fn, f"{len(body)} body fn(s)", "declared_in_body")
 
     if is_variadic_body(fn.path):
@@ -402,12 +465,24 @@ def resolve(
         if cand in tree:
             return Resolution(fn, cand, "tchar_macro")
 
+    body_twin = member_body(fn.name, tree)
+    if body_twin:
+        return Resolution(fn, body_twin, "member_body")
+
     # Last of the mechanical rules, because it reads a looser index than the others.
     if macro_args and fn.name in macro_args:
         return Resolution(fn, fn.name, "macro_generated")
 
     if fn.name in allow:
         return Resolution(fn, fn.name, "allowlist")
+
+    # A content-addressed memo entry (`translation-memory-exact-v1/<sha>.rs`) is keyed by a
+    # hash, so its BODY is the only thing that can identify it. Checked last, and reported
+    # as `allowlist` rather than `declared_in_body`, because a reviewed exception must stay
+    # visible as one — laundering it into a mechanical verdict is how an allowlist stops
+    # being re-read.
+    if body and all(_body_name_ok(n, tree, allow) for n in body):
+        return Resolution(fn, f"{len(body)} body fn(s)", "allowlist")
 
     return Resolution(fn, None, "unresolved")
 

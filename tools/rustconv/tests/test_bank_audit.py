@@ -22,7 +22,9 @@ from rustconv.bank_audit import (
     banked_fns,
     declared_names,
     format_report,
+    load_allowlist,
     macro_arg_names,
+    member_body,
     resolve,
     tchar_variants,
     truncated_fns,
@@ -180,6 +182,62 @@ def test_allowlist_resolves_only_with_an_entry(tmp_path):
     path = _write(tmp_path, "Foo.rs", "unsafe fn Foo() {}\n")
     assert not resolve(BankedFn("Foo", path), set(), {}).integrated
     assert resolve(BankedFn("Foo", path), set(), {"Foo": "reviewed"}).via == "allowlist"
+
+
+def test_member_body_is_exact_not_containment(tmp_path):
+    """`Class_Method` ships as `Class_Method_body` — but only that exact spelling.
+
+    The near miss is real: `CDefView_Refresh` and `CDefView_RefreshGhostedState_body` are
+    both in shell32, and a prefix test would report the first as shipped by the second.
+    """
+    tree = {"CDefView_Refresh_body", "CDefView_RefreshGhostedState_body"}
+    assert member_body("CDefView_Refresh", tree) == "CDefView_Refresh_body"
+    assert member_body("CDefView_RefreshGhosted", tree) is None
+    assert member_body("CDefView_Refresh", set()) is None
+
+    # The shape that actually needs this rule: a `.partial` has no complete body, so
+    # `declared_in_body` cannot answer and the label is all there is to match on.
+    path = _write(tmp_path, "01_CDefView_Refresh.partial", "unsafe fn CDefView_Refresh(")
+    res = resolve(BankedFn("CDefView_Refresh", path, truncated=True), tree, {})
+    assert (res.via, res.found_as) == ("member_body", "CDefView_Refresh_body")
+
+
+def test_allowlist_groups_carry_a_reason_and_bare_ones_are_dropped(tmp_path):
+    """A group is a shared reason, never a way to allow a name without one."""
+    path = tmp_path / "allow.toml"
+    path.write_text(
+        '[groups.ok]\nreason = "superseded by a rewrite"\nfunctions = ["A", "B"]\n'
+        '[groups.no_reason]\nfunctions = ["C"]\n'
+        '[groups.no_functions]\nreason = "orphan"\n'
+        '[allow]\nD = "its own reason"\n',
+        encoding="utf-8",
+    )
+    allow = load_allowlist(path)
+    assert allow == {
+        "A": "superseded by a rewrite",
+        "B": "superseded by a rewrite",
+        "D": "its own reason",
+    }
+
+
+def test_hash_keyed_memo_resolves_via_its_body_and_stays_labelled_allowlist(tmp_path):
+    """The memo cache is keyed by content hash, so only its body can identify it.
+
+    And the verdict must read `allowlist`, not `declared_in_body`: a reviewed exception
+    that reports as a mechanical match is one nobody re-reads.
+    """
+    body = "unsafe fn CFolderOptions_ctor_body() {}\n"
+    path = _write(tmp_path, "translation-memory-exact-v1/a1b2.rs", body)
+    assert not resolve(BankedFn("a1b2", path), set(), {}).integrated
+    res = resolve(BankedFn("a1b2", path), set(), {"CFolderOptions_ctor": "superseded"})
+    assert res.via == "allowlist"
+
+
+def test_memo_body_with_one_unaccounted_name_is_still_reported(tmp_path):
+    """Every name must be accounted for — the optimistic direction is the dangerous one."""
+    body = "unsafe fn Allowed_body() {}\nunsafe fn Missing_body() {}\n"
+    path = _write(tmp_path, "translation-memory-exact-v1/c3d4.rs", body)
+    assert not resolve(BankedFn("c3d4", path), set(), {"Allowed": "superseded"}).integrated
 
 
 # --------------------------------------------------------------------------- truncated
