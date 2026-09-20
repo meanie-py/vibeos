@@ -134,6 +134,15 @@ class Tree:
         #: Free text marking a classification the author was NOT confident about.
         #: Surfaced by --emit so an open question cannot go quiet inside a data file.
         self.review: str | None = raw.get("review")
+        #: WE WANT THIS GONE. Distinct from `review`, which is uncertainty about what a
+        #: tree IS: this is a settled judgement that the tree should not be here, plus
+        #: the exit. A registry that only records what we carry cannot express intent,
+        #: so an entry everyone quietly dislikes looks identical to one nobody minds —
+        #: and the dislike is exactly the thing that gets lost between sessions. It is
+        #: deliberately NOT a check failure: shipping something unwelcome is a decision,
+        #: not a defect, and a gate that went red would only teach people to delete the
+        #: field.
+        self.unwelcome: str | None = raw.get("unwelcome")
 
     @property
     def prefixes(self) -> list[str]:
@@ -569,6 +578,14 @@ def emit(reg: Registry) -> int:
         total += loc
         print(f"  {path.ljust(w)}  {version[:22]:<22} {lic[:22]:<22} {loc:>9,}")
     print(f"  {' ' * w}  {'':<22} {'TOTAL':<22} {total:>9,}")
+
+    unwanted = [t for t in reg.trees if t.unwelcome]
+    if unwanted:
+        print(f"\n{len(unwanted)} tree(s) flagged UNWELCOME — carried, but we want them gone:")
+        for t in unwanted:
+            print(f"  {t.name} ({t.path})")
+            for line in t.unwelcome.strip().splitlines():
+                print(f"      {line.strip()}")
 
     if reg.ours:
         orows = [
