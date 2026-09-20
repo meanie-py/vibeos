@@ -302,11 +302,48 @@ pub unsafe extern "system" fn NtAcceptConnectPort(
     (*message).Request.MessageId = captured_reply_message.MessageId;
     (*message).Request.__bindgen_anon_2.ClientViewSize = 0;
 
-    core::ptr::copy_nonoverlapping(
-        (reply_message as usize + core::mem::size_of::<PORT_MESSAGE>()) as *const u8,
-        (connect_message as usize + core::mem::size_of::<_LPCP_CONNECTION_MESSAGE>()) as *mut u8,
+    // C wraps ONLY this RtlCopyMemory in `_SEH2_TRY` (complete.c:219-228);
+    // its handler is `Status = _SEH2_GetExceptionCode();
+    // _SEH2_YIELD(goto Cleanup);` -- unlike the probe failures above (which
+    // are plain early returns, matching the C's OWN `_SEH2_YIELD(return
+    // STATUS_INVALID_PARAMETER)`/`return status` shape before this point),
+    // a fault HERE must still run the shared `Cleanup:` tail, because
+    // client_thread/client_port/client_process (and, once set later,
+    // client_section_to_map) are already live and owned by this function.
+    // The source range was already probed for read at complete.rs:169-176
+    // (before connection_info_length was possibly clamped down at :291-293,
+    // so the probed range only ever shrinks), and the C has no ProbeForRead
+    // of its own inside this TRY -- just the copy -- so this uses
+    // safe_copy_raw: a bare fault-tolerant copy, no re-probe.
+    if let Err(s) = ntkrnl_sys::probe::safe_copy_raw(
+        (connect_message as usize + core::mem::size_of::<_LPCP_CONNECTION_MESSAGE>()) as *mut core::ffi::c_void,
+        (reply_message as usize + core::mem::size_of::<PORT_MESSAGE>()) as *const core::ffi::c_void,
         connection_info_length as usize,
-    );
+    ) {
+        status = s;
+        // Cleanup: (complete.c's `Cleanup:` label). client_section_to_map is
+        // still NULL here -- it isn't set until complete.rs:375-376, after
+        // this site -- so that branch is a no-op, but it is kept for parity
+        // with every other exit path in this function that reaches the same
+        // label (see e.g. complete.rs:342-359's status<0 block, the closest
+        // earlier example of this exact tail).
+        if !client_section_to_map.is_null() {
+            ObDereferenceObject(client_section_to_map);
+        }
+        if !client_thread.is_null() {
+            KeAcquireGuardedMutex(&raw mut LpcpLock);
+            (*client_thread).__bindgen_anon_5.LpcReplyMessage = message as PVOID;
+            LpcpPrepareToWakeClient(client_thread);
+            KeReleaseGuardedMutex(&raw mut LpcpLock);
+            LpcpCompleteWait(core::ptr::addr_of_mut!((*client_thread).__bindgen_anon_4.LpcReplySemaphore) as PVOID);
+            ObDereferenceObject(client_thread as PVOID);
+        }
+        if !client_port.is_null() {
+            ObDereferenceObject(client_port as PVOID);
+        }
+        ObDereferenceObject(client_process as PVOID);
+        return status;
+    }
 
     if accept_connection == 0 {
         // Connection refused - go to cleanup
@@ -445,11 +482,77 @@ pub unsafe extern "system" fn NtAcceptConnectPort(
         return status;
     }
 
+    // C wraps ClientView->ViewBase/ViewSize + *PortHandle in ONE
+    // `_SEH2_TRY` (complete.c:345-366). Unlike site 1 above, this handler
+    // does explicit cleanup BEFORE falling into the shared `Cleanup:` tail:
+    //     ObCloseHandle(Handle, PreviousMode);
+    //     ObDereferenceObject(ServerPort);
+    //     Status = _SEH2_GetExceptionCode();
+    //     _SEH2_YIELD(goto Cleanup);
+    // Handle was just inserted via ObInsertObject (complete.rs:420-427),
+    // and ServerPort holds an EXTRA reference taken right before that
+    // insert (complete.rs:419) specifically to keep the object alive until
+    // it's fully wired up. A fault here must close that just-created
+    // handle AND drop that extra reference, or both leak -- a bare
+    // status-propagate (the shape every earlier error path in this
+    // function uses) is wrong here precisely because those earlier paths
+    // run before the handle/extra-ref exist.
+    //
+    // All three destinations were already probed for WRITE up front
+    // (server_view/client_view at complete.rs:216-222; port_handle at
+    // complete.rs:139-148), so -- same reasoning as site 1 -- this uses
+    // safe_copy_raw (no re-probe), attempting the writes in the C's exact
+    // order and stopping at the first fault so only one handler ever runs.
+    let mut seh_status: Option<NTSTATUS> = None;
     if !client_view.is_null() {
-        (*client_view).ViewBase = (*connect_message).ClientView.ViewRemoteBase;
-        (*client_view).ViewSize = (*connect_message).ClientView.ViewSize;
+        if let Err(s) = ntkrnl_sys::probe::safe_copy_raw(
+            core::ptr::addr_of_mut!((*client_view).ViewBase) as *mut core::ffi::c_void,
+            core::ptr::addr_of!((*connect_message).ClientView.ViewRemoteBase) as *const core::ffi::c_void,
+            core::mem::size_of::<PVOID>(),
+        ) {
+            seh_status = Some(s);
+        } else if let Err(s) = ntkrnl_sys::probe::safe_copy_raw(
+            core::ptr::addr_of_mut!((*client_view).ViewSize) as *mut core::ffi::c_void,
+            core::ptr::addr_of!((*connect_message).ClientView.ViewSize) as *const core::ffi::c_void,
+            core::mem::size_of::<SIZE_T>(),
+        ) {
+            seh_status = Some(s);
+        }
     }
-    *port_handle = handle;
+    if seh_status.is_none() {
+        if let Err(s) = ntkrnl_sys::probe::safe_copy_raw(
+            port_handle as *mut core::ffi::c_void,
+            core::ptr::addr_of!(handle) as *const core::ffi::c_void,
+            core::mem::size_of::<HANDLE>(),
+        ) {
+            seh_status = Some(s);
+        }
+    }
+    if let Some(s) = seh_status {
+        ObCloseHandle(handle, previous_mode);
+        ObDereferenceObject(server_port as PVOID);
+        status = s;
+        // Cleanup: tail, same as site 1 -- client_thread/client_port/
+        // client_process are still live, and client_section_to_map may or
+        // may not be set depending on whether the section-mapping branch
+        // above ran; either way the null checks handle it.
+        if !client_section_to_map.is_null() {
+            ObDereferenceObject(client_section_to_map);
+        }
+        if !client_thread.is_null() {
+            KeAcquireGuardedMutex(&raw mut LpcpLock);
+            (*client_thread).__bindgen_anon_5.LpcReplyMessage = message as PVOID;
+            LpcpPrepareToWakeClient(client_thread);
+            KeReleaseGuardedMutex(&raw mut LpcpLock);
+            LpcpCompleteWait(core::ptr::addr_of_mut!((*client_thread).__bindgen_anon_4.LpcReplySemaphore) as PVOID);
+            ObDereferenceObject(client_thread as PVOID);
+        }
+        if !client_port.is_null() {
+            ObDereferenceObject(client_port as PVOID);
+        }
+        ObDereferenceObject(client_process as PVOID);
+        return status;
+    }
 
     if port_context.is_null() {
         (*server_port).PortContext = handle;
