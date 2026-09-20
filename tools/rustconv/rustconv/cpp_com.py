@@ -114,6 +114,21 @@ _RAII_CONTAINER_LOWERINGS: dict[str, tuple[str, str]] = {
         "the position, exactly like ATL), `FindIndex(i32) -> POSITION`, "
         "`GetAt(POSITION) -> *mut T`. A `POSITION` is null at the end of the list.",
     ),
+    # Not a container and not a template — ATL's owning BSTR wrapper (atlbase.h), which is
+    # one `m_str: BSTR` member plus a destructor that calls SysFreeString. It rides this
+    # table because what it needs is exactly what a container needs: keep the field's TYPE
+    # so `Drop` can reproduce the member destructor the translation would otherwise lose.
+    # The bindgen island already renders it as `ATL_CComBSTR { m_str: BSTR }`, so the Rust
+    # type in atl.rs has the C++ layout for free.
+    "CComBSTR": (
+        "CComBSTR::new()",
+        "ONE public field, `m_str: BSTR`, and a `Drop` that calls `SysFreeString`. "
+        "C++ `m_name.m_str = p` is an ADOPT of an already-allocated BSTR — lower it as "
+        "the same single store `(*this).m_name.m_str = p;`, never as a copy, or the "
+        "ownership transfer changes and the string is leaked or freed twice. C++ reads "
+        "that pass the object where a `BSTR` is expected (ATL's `operator BSTR`) are "
+        "`(*this).m_name.m_str`.",
+    ),
 }
 
 
@@ -1371,6 +1386,18 @@ def _parse_plain_state_field(
             name=cstring.group(1),
             owned_cstring=True,
         )
+    # `CComBSTR m_name` — ATL's owning BSTR. Matched on its own rather than through the
+    # `Tmpl<Elem>` branch below because it takes no type parameter; it still keeps its TYPE
+    # so atl.rs's `Drop` reproduces `~CComBSTR`'s SysFreeString. Lowering it to a bare
+    # `BSTR` instead would compile and silently leak every string the object ever held.
+    ccombstr = re.fullmatch(r"CComBSTR\s+([A-Za-z_]\w*)", text)
+    if ccombstr is not None:
+        return PlainStateField(
+            declaration=text,
+            c_type="CComBSTR",
+            name=ccombstr.group(1),
+            raii_container="CComBSTR",
+        )
     container = re.fullmatch(
         r"(?P<template>[A-Za-z_]\w*)\s*<\s*(?P<element>[A-Za-z_]\w*)\s*>\s+(?P<name>[A-Za-z_]\w*)",
         text,
@@ -1925,6 +1952,7 @@ def analyze_class(
     class_name: str,
     *,
     object_map_source: Path | None = None,
+    activation_source: Path | None = None,
     method_names: list[str] | None = None,
     island_files: Sequence[Path] = (),
 ) -> CppComClass:
@@ -2067,7 +2095,39 @@ def analyze_class(
         rf"\b{re.escape(class_name)}\s*::\s*_CreatorClass\s*::\s*CreateInstance\s*\("
     )
     creator_class_hits = list(creator_class_re.finditer(masked_source))
-    internal_shell_object_creator = bool(activation_hits) or bool(creator_class_hits)
+    # ATL's raw `new CComObject<T>()` — the THIRD internal-activation shape, and the most
+    # literal one: no factory at all, the caller allocates and then drives `Init`/`AddRef`
+    # itself. `CFolderItem::Verbs` does exactly that with CFolderItemVerbs.
+    #
+    # It is still "this class has no CLSID and is constructed inside the DLL", which is the
+    # only question this flag answers, so it joins the other two rather than needing its own
+    # concept. What differs is the CALLER's shape, not the class's: a `ShellObjectCreatorInit`
+    # caller is one expression while this one is a statement sequence, and that difference
+    # lives at the call site, not here.
+    com_object_new_re = re.compile(rf"\bnew\s+CComObject\s*<\s*{re.escape(class_name)}\s*>\s*\(")
+    # A class is often constructed by a DIFFERENT TU than the one that defines it —
+    # `CFolderItem::Verbs` (CFolderItems.cpp) does the `new CComObject<CFolderItemVerbs>()`
+    # for a class defined in CFolderItemVerbs.cpp. Scanning only the class's own file then
+    # reports "internal COM-object construction is not mapped" for a class whose activation
+    # is perfectly ordinary and simply lives next door.
+    #
+    # NAMED, not searched: the caller is supplied with `--activation-source` rather than
+    # inferred by sweeping the directory, for the same reason `object_map_source` is named.
+    # It contributes to DETECTION only — the initializer-argument extraction below stays on
+    # the class's own file, so a foreign file can never silently redefine the ctor shape.
+    activation_scan = masked_source
+    if activation_source is not None and activation_source.is_file():
+        activation_scan += "\n" + _masked_cpp(
+            activation_source.read_text(encoding="utf-8", errors="replace")
+        )
+    com_object_new_hits = list(com_object_new_re.finditer(activation_scan))
+    internal_shell_object_creator = (
+        bool(activation_hits)
+        or bool(creator_class_hits)
+        or bool(com_object_new_hits)
+        or bool(activation_re.search(activation_scan))
+        or bool(creator_class_re.search(activation_scan))
+    )
     internal_initializer_params = None
     if activation_hits and activation_hits[0].group("init"):
         activation_arg_lists = []
@@ -3991,8 +4051,12 @@ def normalize_worker_semantics(source: str, rust: str) -> str:
     # backreference forces the macro name and the first argument to be the same interface, so
     # a coincidental `IID_X!(Y, …)` is left alone. Rewriting to the sanctioned spelling (not
     # straight to the expansion) keeps ONE implementation of the two-argument expansion below.
+    # The second argument routinely CONTAINS parens — `&mut (*this).m_contextmenu` — so it
+    # cannot be `[^(),]+`; that spelling silently skipped every out-param that was a member
+    # access. One level of nesting is enough for an address-of expression and keeps the
+    # pattern from running past the closing paren.
     rust = re.sub(
-        r"\bIID_([A-Za-z_]\w*)\s*!\s*\(\s*\1\s*,\s*([^(),]+?)\s*\)",
+        r"\bIID_([A-Za-z_]\w*)\s*!\s*\(\s*\1\s*,\s*((?:[^(),]|\([^()]*\))+?)\s*\)",
         r"IID_PPV_ARG(\1, \2)",
         rust,
     )

@@ -3751,6 +3751,19 @@ resolve a shape, and each one recurs on every C++ COM module.
   another. Bind them as locals at the top of the body rather than substituting the
   identifiers — substitution also rewrites the name inside the `"IDispatchImpl: plibid is
   CLSID_NULL!"` string literal.
+* **The `IDispatchImpl` one RECURS, and should be mechanized.** It has now been hand-repaired
+  on six classes (CFolder, CFolderItem, CFolderItems, CFolderItemVerb, CFolderItemVerbs, and
+  CShellDispatch before them) with an identical four-line binding each time — which is the
+  detection event for a missing mechanism, not a thing to remember. The bounded fix: the ONLY
+  ATL method that reads those template parameters is `EnsureTILoaded`, so the assembler can
+  emit the binding when it assembles a `*_EnsureTILoaded_body` for a class with an
+  `IDispatchImpl` base. Three of the four values are already derivable there — `piid` from the
+  template argument the recognizer already parses, `wMajor`/`wMinor` from ATL's defaults — and
+  only `plibid` needs new input, a per-target module libid (`LIBID_Shell32` for shell32)
+  alongside `com_object_map` in the Target config. Until that exists, expect to write the
+  binding by hand on every dual-interface class, and bind rather than SUBSTITUTE: replacing
+  the identifiers textually also rewrites the name inside ATL's own debug string
+  `"IDispatchImpl: plibid is CLSID_NULL!"`.
 * `no method named as_ptr/Attach found for raw pointer` — **ATL operators on storage the
   scaffold flattened.** `operator T*()` is the pointer VALUE (`p.as_ptr()` → `p`),
   `operator&()` is the ADDRESS OF THE SLOT (`p.as_mut_ptr()` → `&raw mut p`), `Attach(v)` is
