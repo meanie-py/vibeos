@@ -625,12 +625,31 @@ pub unsafe extern "system" fn NtSecureConnectPort(
         // helper), but the TRY here still guards the copy itself against a fault
         // (e.g. the page going invalid between the probe and this copy).
         //
-        // The C handler is a plain RETURN, not `goto Failure`, and — this is
-        // the tell that the asymmetry is deliberate, not a bug to "fix" — it
-        // does NOT `ObDereferenceObject(Port)`, unlike every other cleanup path
-        // in this function. `Port` still holds exactly the one reference from
-        // `ObReferenceObjectByName` above (the second reference is only taken
-        // later, after the port-zone lock). Replicate exactly: no Port deref.
+        // The C handler is a plain RETURN, not `goto Failure`, and it does NOT
+        // `ObDereferenceObject(Port)` — unlike the `Failure:` path. That is
+        // OWNERSHIP TRANSFER, not a leak, and adding the deref would be an
+        // OVER-RELEASE:
+        //
+        //     /* Setup the client port -- From now on, dereferencing the
+        //      * client port will automatically dereference the connection
+        //      * port too. */
+        //     ClientPort->ConnectionPort = Port;        // connect.c:363
+        //
+        // The reference `ObReferenceObjectByName` took is handed to ClientPort
+        // there, so `ObDereferenceObject(ClientPort)` below releases it
+        // transitively. Four other error paths in this function (connect.c:386,
+        // 397, 416, 443, 474) skip the Port deref for the same reason — the
+        // asymmetry is systematic, which is the tell. The `ObReferenceObject(Port)`
+        // at connect.c:579 is a SECOND, independent reference, released by the
+        // deref at connect.c:756.
+        //
+        // This was nearly "improved" into a use-after-free: an added
+        // `ObDereferenceObject(port)` here drops a reference this path does not
+        // own, freeing the connection port out from under the client port on
+        // every faulting connect. An earlier revision of this comment reached
+        // the right conclusion by the wrong route — it claimed Port "still
+        // holds" its reference, which reads as a leak somebody should fix.
+        // Replicate exactly: no Port deref, because it is not ours to release.
         if let Err(st) = ntkrnl_sys::probe::safe_copy_raw(
             (connect_message as usize + core::mem::size_of::<_LPCP_CONNECTION_MESSAGE>()) as *mut core::ffi::c_void,
             connection_information as *const core::ffi::c_void,
