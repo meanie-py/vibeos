@@ -2163,6 +2163,26 @@ flight is marked; in-flight lanes live in [`active-lanes/`](active-lanes/).*
   and CDrivesFolder.cpp still construct. Two mangled helpers took EXTERN_C in utils.h instead.
   Conformance: launched=91 ok=91 on all three arches, and the `[EXPLORER] taskbar: OnCreate
   begin` -> `child controls created` gap it used to freeze in is traversed.
+  **The whole `recyclebin` STATIC LIBRARY is Rust (2026-09-20)** — the first whole-library
+  swap rather than a per-TU cohab. Its six sources (`recyclebin.c`, `guid.c`,
+  `recyclebin_generic{,_enumerator}.cpp`, `recyclebin_v5{,_enumerator}.cpp`, 2,083 lines)
+  WERE the entire library, so the `recyclebin` target goes away and shell32 links
+  `${RECYCLEBIN_RUST_LIB}` instead; `add_subdirectory(shellrecyclebin)` is commented out and
+  that CMakeLists is now a tombstone recording the per-file mapping.
+  Cost: **$0** — the translations had been bought earlier and were sitting in
+  `recyclebin-rust` unlinked, which is the thing worth checking for before buying anything:
+  the crate compiled and was in `workspace.members`, but nothing referenced it, so it had
+  never been linked and its exports had never been proven against a real link.
+  Capture set at the swap, measured against the LIVE consumers (shell32's objects plus
+  libshell32_rust.a): **7 symbols, all published** — `CloseRecycleBinHandle`,
+  `DeleteFileToRecycleBinW`, `EmptyRecycleBinW`, `EnumerateRecycleBinW`,
+  `GetDefaultRecycleBin`, `GetRecycleBinPathFromDriveNumber`, `RemoveFromRecycleBinDatabase`.
+  The rest of the 138 symbols the C++ library defined are C++-mangled class methods and ATL
+  guard variables that never left it — which is why the raw "138 defined vs 75 published"
+  gap is NOT the number that matters.
+  Verified: builds and links on all three arches; conformance kmtest amd64
+  launched=91 ok=91 bad=0, ratchet holds.
+
   **CFolderItemVerb / CFolderItemVerbs are still C++ — OWED, not done, and one hand-written
   bridge stands in for them.** `CFolder.cpp` and `CFolderItems.cpp` are Rust (CFolder 24 fns,
   CFolderItem 25, CFolderItems 13); `CFolderItemVerbs.cpp` is untranslated original C++,
