@@ -1509,7 +1509,13 @@ pub unsafe extern "system" fn WSPSelect(
                 }
                 j += 1;
             }
-            if j > HandleCount {
+            // `>` where the readfds and writefds branches above both use `>=`. When the
+            // handle is not found, j == HandleCount, this guard passes, and the writes
+            // below index PollInfo.Handles[HandleCount] -- one past the valid range.
+            // Found by tools/scan_sibling_drift.py comparing the three branches; NOT by
+            // the upstream oracle, because upstream STILL has it (dllmain.c:1279 today,
+            // against >= at 1212 and 1247).
+            if j >= HandleCount {
                 ERR!("Error while counting exceptfds %ld > %ld\n", j, HandleCount);
                 if !lpErrno.is_null() {
                     *lpErrno = (WSAEFAULT as i32);
