@@ -181,6 +181,17 @@ def index_build(build_dir: Path, no_strip: bool = False) -> dict:
             continue
         if "CMakeFiles" in p.parts or "stripped" in p.parts:
             continue
+        # A module's BUILD DIRECTORY carries the module's full name, suffix and
+        # all -- dll/win32/hhctrl.ocx/ is a directory, and the real 670K
+        # hhctrl.ocx lives inside it. rglob yields the directory before its
+        # children, so without this test setdefault() pins the name to the
+        # FOLDER and the binary never gets a look-in. add_cd_file then stages a
+        # directory onto the livecd, the guest loader cannot map it, and the
+        # importing module is left half-bound -- the exact crash-at-first-call
+        # this closure exists to prevent, arriving through the tool meant to
+        # stop it. 10 such directories exist in a build-i386 tree.
+        if not p.is_file():
+            continue
         index.setdefault(p.name.lower(), p)
 
     # Overlay the stripped copies over the fat ones.
@@ -188,6 +199,54 @@ def index_build(build_dir: Path, no_strip: bool = False) -> dict:
         if name in index:
             index[name] = p
     return index
+
+
+# A module name as it appears in a string literal. Matched against the build
+# index, which is the authority on what is a real module.
+_PE_NAME_TOKEN = re.compile(r"[A-Za-z0-9_.\-]+\.(?:dll|ocx|drv|acm|cpl)", re.I)
+_ASCII_RUN = re.compile(rb"[\x20-\x7e]{2,120}")
+_WIDE_RUN = re.compile(rb"(?:[\x20-\x7e]\x00){2,120}")
+
+
+def string_referenced(pe: Path, index: dict) -> set:
+    """Module names appearing as LITERALS in `pe`, restricted to built modules.
+
+    The import walk sees static edges and declared_modules() sees the dynamic
+    edges an INF declares. Neither sees a plain `LoadLibraryW(L"riched20.dll")`
+    in an application's own code, and four such modules -- riched20 (wordpad,
+    charmap, eventvwr), gdiplus and mapi32 (mspaint), aclui (regedit) -- were
+    built, were reached at runtime, and were never staged. A LoadLibrary that
+    returns NULL does not announce itself the way a missing import does, so
+    this class is quieter than the one the closure was built for.
+
+    Scanned for ROOTS ONLY, deliberately. Running it over the whole closure
+    admits 69 further modules (measured): shell32 alone names every control
+    panel applet, ieframe and opengl32 it can ever launch, and a string mention
+    inside a library is far weaker evidence than one inside a binary we chose
+    to stage and run. Roots are exactly the guests we elected to boot.
+
+    Both encodings are scanned because these literals are usually UTF-16. A
+    literal can abut its neighbour in the string pool with no separator
+    (regedit's reads as "Aaclui.dll"), so every suffix is tried and the index
+    settles it -- a false hit would have to BE a real module name.
+    """
+    data = pe.read_bytes()
+    found = set()
+
+    def harvest(text: str) -> None:
+        for m in _PE_NAME_TOKEN.finditer(text):
+            tok = m.group().lower()
+            while tok:
+                if tok in index:
+                    found.add(tok)
+                    break
+                tok = tok[1:]
+
+    for m in _ASCII_RUN.finditer(data):
+        harvest(m.group().decode("ascii"))
+    for m in _WIDE_RUN.finditer(data):
+        harvest(m.group()[::2].decode("ascii"))
+    return found
 
 
 def imports_of(objdump: str, pe: Path) -> list:
@@ -274,6 +333,13 @@ def main() -> int:
             sys.exit(f"wow64-closure: root not found: {p}")
         stack.append(p)
         follow_dynamic(p.name.lower())
+        # The root's own runtime loads. admit() pushes each onto the stack, so
+        # the newcomer's STATIC imports are then walked like any other module --
+        # staging riched20 without its own closure would just move the
+        # half-bound crash one module along.
+        for name in sorted(string_referenced(p, index)):
+            admit(name, f"{p.name} via string literal")
+            follow_dynamic(name)
 
     while stack:
         cur = stack.pop()

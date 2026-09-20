@@ -40,6 +40,7 @@ parity guests passed, not that the stock applets did.
 
 from __future__ import annotations
 
+import os
 import re
 import subprocess
 import time
@@ -152,6 +153,42 @@ LADDER_TIMEOUT_SECONDS = 420.0
 # never reported" -- a false RED, and the most expensive kind, because the guest
 # it accuses did nothing wrong.
 OPTIONAL_EXTRA_SECONDS = 360.0
+
+# Env override: keep draining for at least this many seconds even after every
+# graded guest has reported.
+#
+# The drain stops the moment the graded set is complete, which is right for a
+# gate and WRONG for an investigation: the STOCK applets (winmine, notepad,
+# mspaint, wordpad, ...) run AFTER the parity set and are not graded at all, so
+# nothing in the normal path ever waits for them. A `--ladder` run therefore
+# ends at ~87s with the applet phase entirely unobserved -- which is why the
+# 58-fault execute-at-NULL cascade those three take could be recorded in the
+# bug registry and then not reproduced by the very flag meant to watch the
+# ladder. This makes that phase reachable without hand-rolling a QEMU boot.
+#
+# It only ever EXTENDS the drain, never shortens it, so it cannot turn a slow
+# host into a fake failure. Unset means the old behaviour exactly.
+DRAIN_FLOOR_ENV = "VIBEOS_LADDER_DRAIN_FLOOR"
+
+
+def drain_floor() -> float:
+    """Seconds from DRAIN_FLOOR_ENV; 0.0 when unset.
+
+    An unparseable or negative value is a HARD ERROR rather than a silent 0:
+    the whole point of setting it is to observe a phase that is invisible
+    without it, so quietly ignoring a typo would hand back a run that looks
+    like it watched and did not.
+    """
+    raw = os.environ.get(DRAIN_FLOOR_ENV)
+    if raw is None or raw == "":
+        return 0.0
+    try:
+        val = float(raw)
+    except ValueError:
+        raise ValueError(f"{DRAIN_FLOOR_ENV}={raw!r} is not a number of seconds") from None
+    if val < 0:
+        raise ValueError(f"{DRAIN_FLOOR_ENV}={raw!r} must not be negative")
+    return val
 
 
 # Where add_cd_file stages the guests (dll/win32/wow64cpu/CMakeLists.txt on
@@ -597,11 +634,13 @@ def watch(vm, seconds: float = LADDER_TIMEOUT_SECONDS, seen: str = "") -> str:
     Returns only the NEWLY drained text; the caller appends it to the boot serial,
     so a BUGCHECK during the ladder still lands in full.log.
     """
+    floor = drain_floor()
     need = [m for m in markers() if m not in seen]
-    if not need and not _optional_in_flight(seen):
+    if not need and not _optional_in_flight(seen) and not floor:
         return ""  # every guest already reported before we were called
     buf = ""
-    deadline = time.monotonic() + seconds
+    start = time.monotonic()
+    deadline = start + max(seconds, floor)
     # A launched optional guest gets its own extension on top of the parity
     # budget: it is third-party code doing real work under emulation, so it is
     # slow by nature, and charging it to the parity budget is what turned a
@@ -610,7 +649,7 @@ def watch(vm, seconds: float = LADDER_TIMEOUT_SECONDS, seen: str = "") -> str:
     while time.monotonic() < deadline:
         buf += vm.serial.read_available(timeout=0.5) or ""
         pending = _optional_in_flight(buf)
-        if all(m in buf for m in need) and not pending:
+        if all(m in buf for m in need) and not pending and time.monotonic() - start >= floor:
             break
         for g in pending:
             if g not in extended:
