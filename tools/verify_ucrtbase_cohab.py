@@ -75,6 +75,30 @@ def _spec_exports(spec: Path, arch: str) -> set[str]:
     return set(parse_spec(spec, arch))
 
 
+TAKEOVER = REPO / "tools" / "ucrt-takeover.yaml"
+
+
+def declared_takeovers() -> dict[str, str]:
+    """Genuine UCRT exports we have DELIBERATELY replaced -> the family that did it.
+
+    Displacing a ucrt body is the exact shape of the accident this file exists to
+    prevent; the only thing separating the two is that somebody declared it and
+    named an oracle. `tools/ucrt-takeover.yaml` is that declaration, and it is read
+    both ways -- an undeclared displacement fails, and so does a declaration the
+    archive no longer backs, because a stale entry is how a list stops being read.
+    """
+    if not TAKEOVER.is_file():
+        return {}
+    import yaml
+
+    doc = yaml.safe_load(TAKEOVER.read_text(encoding="utf-8")) or {}
+    out: dict[str, str] = {}
+    for fam, body in (doc.get("families") or {}).items():
+        for sym in body.get("exports") or []:
+            out[sym] = fam
+    return out
+
+
 WS = REPO / "sdk" / "lib" / "rust"
 
 # The crate ucrtbase links, and the crate it must never be able to reach.
@@ -528,10 +552,28 @@ def check_archive() -> list[str]:
                 or not re.fullmatch(r"[A-Za-z_?@$][\w?@$]*", sym)
             )
 
+        # A DECLARED takeover is not shadowing -- it is the quest. Compared on the
+        # stripped name so one declaration covers all three arches' decoration.
+        declared = declared_takeovers()
+        declared_norm = {k.lstrip("_"): v for k, v in declared.items()}
+        rust_norm = {strip(s).lstrip("_") for s in rust_syms}
+        gone = sorted(k for k in declared_norm if k not in rust_norm)
+        if gone:
+            findings.append(
+                f"build-{arch}: tools/ucrt-takeover.yaml declares {len(gone)} export(s) that "
+                f"libcrt_shared_cargo.a does not define: {', '.join(gone[:12])}. Either the "
+                f"body was removed and the declaration is stale, or the family's cargo "
+                f"feature is not enabled in crt-shared-cargo -- in which case the takeover "
+                f"silently did not happen and the Microsoft body is still live"
+            )
+
         extra = sorted(
             s
             for s in rust_syms
-            if strip(s) not in c_norm and strip(s) in exported and not is_rust_internal(s)
+            if strip(s) not in c_norm
+            and strip(s) in exported
+            and not is_rust_internal(s)
+            and strip(s).lstrip("_") not in declared_norm
         )
         if extra:
             more = f", +{len(extra) - 12} more" if len(extra) > 12 else ""
@@ -542,8 +584,11 @@ def check_archive() -> list[str]:
                 f"({', '.join(OURS_ON_LINK_LINE)}) defines, so each one "
                 f"silently replaces the genuine Microsoft UCRT body callers expect "
                 f"(--allow-multiple-definition raises nothing): {shown}. fix: move the body "
-                f"back to msvcrt-crt-rust, or -- if ucrtbase really does owe it to us -- add "
-                f"the C to SHARED_SOURCE so both sides agree on the surface"
+                f"back to msvcrt-crt-rust; or, if this is a DELIBERATE takeover of the "
+                f"Microsoft body, implement it in ucrt-rust and declare it in "
+                f"tools/ucrt-takeover.yaml with the oracle that grades it; or -- if "
+                f"ucrtbase really does owe it to us -- add the C to SHARED_SOURCE so both "
+                f"sides agree on the surface"
             )
     return findings
 
