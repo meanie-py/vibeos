@@ -56,7 +56,8 @@ END
 STRINGTABLE
 BEGIN
     IDS_SOL_NAME "Solitaire"
-    IDS_SOL_ABOUT "Solitaire de J Brown; Tradus de Petru Dimitriu\nCardLib versiunea 1.0"
+    IDS_SOL_ABOUT "Solitaire
+Tradus de Petru Dimitriu"
     IDS_SOL_QUIT "Abandonați jocul curent?"
     IDS_SOL_WIN "Felicitări, ați câștigat!"
     IDS_SOL_DEAL "Joc nou?"

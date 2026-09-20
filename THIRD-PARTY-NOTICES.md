@@ -2,7 +2,7 @@
 
 This product includes third-party software. **This file is GENERATED** from `vendor.yaml` by `tools/vendored.py --notices` — edit the registry, not this file. Each entry reproduces the licence grant as it appears in the tree.
 
-24 third-party components:
+23 third-party components:
 
 - [ACPICA](#acpica) — 0x20260408 — BSD-3-Clause OR GPL-2.0
 - [adns](#adns) — 1.0 — GPL-2.0-or-later
@@ -23,7 +23,6 @@ This product includes third-party software. **This file is GENERATED** from `ven
 - [Microsoft compiler-tests (EH/SEH)](#microsoft-compiler-tests-ehseh) — unknown — MIT
 - [Microsoft UCRT](#microsoft-ucrt) — unknown — Microsoft (see the Windows SDK licence terms)
 - [SGI GLU (OpenGL Utility Library)](#sgi-glu-opengl-utility-library) — glu-9.0.1 (Mesa git tag, not a release tarball) — SGI-B-2.0
-- [Solitaire (CardLib sample application)](#solitaire-cardlib-sample-application) — unknown — Freeware (relayed Public Domain claim) — see review
 - [STLport](#stlport) — 5.2.1 — STLport licence (permissive)
 - [win-iconv](#win-iconv) — unknown — Unlicense OR MIT
 - [Windows Driver Frameworks (KMDF/UMDF)](#windows-driver-frameworks-kmdfumdf) — 1.17.7600 — MIT
@@ -2937,37 +2936,6 @@ Except as contained in this notice, the name of Silicon Graphics, Inc.
 shall not be used in advertising or otherwise to promote the sale, use or
 other dealings in this Software without prior written authorization from
 Silicon Graphics, Inc.
-```
-
-## Solitaire (CardLib sample application)
-
-- Upstream: unknown
-- Version: unknown
-- In this tree: `base/applications/games/solitaire`
-- Licence: Freeware (relayed Public Domain claim) — see review
-- Also contains: See COPYING in top level directory — GPL-2.0-or-later (ReactOS's top-level COPYING). solundo.cpp IS NOT J BROWN'S. It says "LICENSE: See COPYING in top level directory / PROGRAMMER: Tibor Lajos Füzi" — ReactOS's own GPL code, a 171-line undo module added long after 2001. It is the only file in this directory that states a licence at all, which is why the freeware nature of the other four was invisible until someone grepped for the author's name.
-Practical consequence for the planned reimplementation: solundo.cpp is CLEAN and does not need rewriting. The affected files are solitaire.cpp, solgame.cpp, solcreate.cpp and solitaire.h.
-- Grant reproduced from: `base/applications/games/solitaire/ReadMe.txt`
-
-```
-Solitaire for ReactOS
-
-/*****************************************
-A complete working example of the CardLib
-card-game library.
-
-Freeware
-Copyright J Brown 2001
-
-Updates at https://www.catch22.net/
-
-******************************************/
-
-The author has given permission to use these sources
-under Public Domain. Do what thou will but please give
-credit where credit is due.
-
--sedwards
 ```
 
 ## STLport
