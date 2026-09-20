@@ -40,13 +40,22 @@ WINE_DEFAULT_DEBUG_CHANNEL(schannel);
 
 #if defined(SONAME_LIBMBEDTLS) && !defined(HAVE_SECURITY_SECURITY_H) && !defined(SONAME_LIBGNUTLS)
 
+/* mbedTLS 3.x hides most struct fields behind MBEDTLS_PRIVATE() and this switch,
+ * which upstream provides for exactly this case, turns that off. It is here for
+ * THREE fields and no others: mbedtls_ssl_ciphersuite_t's `cipher`, `mac` and
+ * `key_exchange`. schannel has to map each of those onto a CALG_* identifier for
+ * SecPkgContext_ConnectionInfo, and 3.6 exposes no accessor for any of them --
+ * mbedtls_ssl_ciphersuite_get_{name,id,cipher_key_bitlen} is the whole public
+ * surface. Every OTHER field this file used to read has been moved onto a real
+ * accessor; see the sites below. Revisit if upstream ever grows the getters. */
+#define MBEDTLS_ALLOW_PRIVATE_ACCESS
+
 #include <mbedtls/ssl.h>
 #include <mbedtls/net_sockets.h>
 
 #include <mbedtls/entropy.h>
 #include <mbedtls/ctr_drbg.h>
-#include <mbedtls/md_internal.h>
-#include <mbedtls/ssl_internal.h>
+#include <mbedtls/ssl_ciphersuites.h>
 
 #define ROS_SCHAN_IS_BLOCKING(read_len)          ((read_len & 0xFFF00000) == 0xCCC00000)
 #define ROS_SCHAN_IS_BLOCKING_MARSHALL(read_len) ((read_len & 0x000FFFFF) |  0xCCC00000)
@@ -75,6 +84,16 @@ typedef struct
     mbedtls_entropy_context  entropy;
     mbedtls_ctr_drbg_context ctr_drbg;
     struct schan_transport  *transport;
+    /* OUR copy of the endpoint. We are the ones who set it on the config, and 3.x
+     * makes mbedtls_ssl_config::endpoint private, so reading it back was both a
+     * detour and a dependency on non-public layout. */
+    int                      endpoint;
+    /* Always NULL, and saying so here is the point. The server arm of
+     * schannel_get_kx_key_size wants the configured CA chain, but nothing in this
+     * file ever calls mbedtls_ssl_conf_ca_chain, so there has never been one. Holding
+     * it as our own field makes that visible instead of leaving it as a read of a
+     * private mbedTLS member that happens to be zero. */
+    const mbedtls_x509_crt  *ca_chain;
 } MBEDTLS_SESSION, *PMBEDTLS_SESSION;
 
 /* custom `net_recv` callback adapter, mbedTLS uses it in mbedtls_ssl_read for
@@ -164,16 +183,12 @@ DWORD schan_imp_enabled_protocols(void)
     /* NOTE: No support for SSL 2.0 */
     TRACE("MBEDTLS schan_imp_enabled_protocols()\n");
 
+    /* SSL 3.0, TLS 1.0 and TLS 1.1 were DELETED in mbedTLS 3.0 -- not disabled, not
+     * deprecated, removed -- so this set shrinks from 0xfc0 to 0xc00. That is a
+     * deliberate narrowing of what schannel advertises, and it is the one
+     * behavioural change in the 2.16 -> 3.6 port. TLS 1.3 is available in 3.6 and
+     * NOT enabled here; see mbedtls_config.h. */
     return 0
-#ifdef MBEDTLS_SSL_PROTO_SSL3
-        | SP_PROT_SSL3_CLIENT | SP_PROT_SSL3_SERVER
-#endif
-#ifdef MBEDTLS_SSL_PROTO_TLS1
-        | SP_PROT_TLS1_0_CLIENT | SP_PROT_TLS1_0_SERVER
-#endif
-#ifdef MBEDTLS_SSL_PROTO_TLS1_1
-        | SP_PROT_TLS1_1_CLIENT | SP_PROT_TLS1_1_SERVER
-#endif
 #ifdef MBEDTLS_SSL_PROTO_TLS1_2
         | SP_PROT_TLS1_2_CLIENT | SP_PROT_TLS1_2_SERVER
 #endif
@@ -216,8 +231,9 @@ BOOL schan_imp_create_session(schan_imp_session *session, schan_credentials *cre
     mbedtls_ssl_set_bio(&s->ssl, s, schan_push_adapter, schan_pull_adapter, NULL);
 
     TRACE("MBEDTLS set endpoint to %s\n", (cred->credential_use & SECPKG_CRED_INBOUND) ? "server" : "client");
-    mbedtls_ssl_conf_endpoint(&s->conf,   (cred->credential_use & SECPKG_CRED_INBOUND) ? MBEDTLS_SSL_IS_SERVER :
-                                                                                         MBEDTLS_SSL_IS_CLIENT);
+    s->endpoint = (cred->credential_use & SECPKG_CRED_INBOUND) ? MBEDTLS_SSL_IS_SERVER
+                                                               : MBEDTLS_SSL_IS_CLIENT;
+    mbedtls_ssl_conf_endpoint(&s->conf, s->endpoint);
 
     TRACE("MBEDTLS set authmode\n");
     mbedtls_ssl_conf_authmode(&s->conf, MBEDTLS_SSL_VERIFY_NONE);
@@ -308,9 +324,10 @@ SECURITY_STATUS schan_imp_handshake(schan_imp_session session)
 static unsigned int schannel_get_cipher_key_size(int ciphersuite_id)
 {
     const mbedtls_ssl_ciphersuite_t *ssl_cipher_suite = mbedtls_ssl_ciphersuite_from_id(ciphersuite_id);
-    const mbedtls_cipher_info_t          *cipher_info = mbedtls_cipher_info_from_type(ssl_cipher_suite->cipher);
 
-    unsigned int key_bitlen = cipher_info->key_bitlen;
+    /* 3.x asks the ciphersuite directly; the cipher -> cipher_info -> key_bitlen
+     * chain this used to walk is all private now, and this is its replacement. */
+    unsigned int key_bitlen = (unsigned int)mbedtls_ssl_ciphersuite_get_cipher_key_bitlen(ssl_cipher_suite);
 
     TRACE("MBEDTLS schannel_get_cipher_key_size: Unknown cipher %#x, returning %u\n", ciphersuite_id, key_bitlen);
 
@@ -322,19 +339,26 @@ static unsigned int schannel_get_mac_key_size(int ciphersuite_id)
     const mbedtls_ssl_ciphersuite_t *ssl_cipher_suite = mbedtls_ssl_ciphersuite_from_id(ciphersuite_id);
     const mbedtls_md_info_t                  *md_info = mbedtls_md_info_from_type(ssl_cipher_suite->mac);
 
-    int md_size = md_info->size * CHAR_BIT; /* return the size in bits, as the secur32:schannel winetest shows */
+    int md_size = mbedtls_md_get_size(md_info) * CHAR_BIT; /* return the size in bits, as the secur32:schannel winetest shows */
 
     TRACE("MBEDTLS schannel_get_mac_key_size: returning %i\n", md_size);
 
     return md_size;
 }
 
-static unsigned int schannel_get_kx_key_size(const mbedtls_ssl_context *ssl, const mbedtls_ssl_config *conf, int ciphersuite_id)
+static unsigned int schannel_get_kx_key_size(const MBEDTLS_SESSION *s, int ciphersuite_id)
 {
     const mbedtls_ssl_ciphersuite_t *ssl_ciphersuite = mbedtls_ssl_ciphersuite_from_id(ciphersuite_id);
 
     /* if we are the server take ca_chain, if we are the client take the proper x509 peer certificate */
-    const mbedtls_x509_crt *server_cert = (conf->endpoint == MBEDTLS_SSL_IS_SERVER) ? conf->ca_chain : mbedtls_ssl_get_peer_cert(ssl);
+    /* The endpoint comes from our own session now -- we are the ones who set it, so
+     * there is no reason to read it back out of a private mbedTLS field. The server
+     * arm is dead either way: nothing in this file ever calls
+     * mbedtls_ssl_conf_ca_chain, so ca_chain is always NULL, and our mbedTLS is built
+     * without MBEDTLS_SSL_SRV_C. Kept rather than deleted so the port changes nothing
+     * it does not have to. */
+    const mbedtls_x509_crt *server_cert = (s->endpoint == MBEDTLS_SSL_IS_SERVER) ? s->ca_chain
+                                                                                 : mbedtls_ssl_get_peer_cert(&s->ssl);
 
     if (ssl_ciphersuite->key_exchange != MBEDTLS_KEY_EXCHANGE_NONE)
         return mbedtls_pk_get_len(&(server_cert->pk));
@@ -344,33 +368,25 @@ static unsigned int schannel_get_kx_key_size(const mbedtls_ssl_context *ssl, con
     return 0;
 }
 
-static DWORD schannel_get_protocol(const mbedtls_ssl_context *ssl, const mbedtls_ssl_config *conf)
+static DWORD schannel_get_protocol(const MBEDTLS_SESSION *s)
 {
     /* FIXME: currently schannel only implements client connections, but
      * there's no reason it couldn't be used for servers as well. The
      * context doesn't tell us which it is, so decide based on ssl endpoint value. */
 
-    switch (ssl->minor_ver)
+    /* 3.x replaced ssl->minor_ver with a protocol-version enum and a public getter,
+     * and deleted every version below TLS 1.2. SSL3 / TLS1.0 / TLS1.1 arms are gone
+     * with them -- there is no longer a value they could match. */
+    switch (mbedtls_ssl_get_version_number(&s->ssl))
     {
-        case MBEDTLS_SSL_MINOR_VERSION_0:
-            return (conf->endpoint == MBEDTLS_SSL_IS_CLIENT) ? SP_PROT_SSL3_CLIENT :
-                                                               SP_PROT_SSL3_SERVER;
-
-        case MBEDTLS_SSL_MINOR_VERSION_1:
-            return (conf->endpoint == MBEDTLS_SSL_IS_CLIENT) ? SP_PROT_TLS1_0_CLIENT :
-                                                               SP_PROT_TLS1_0_SERVER;
-
-        case MBEDTLS_SSL_MINOR_VERSION_2:
-            return (conf->endpoint == MBEDTLS_SSL_IS_CLIENT) ? SP_PROT_TLS1_1_CLIENT :
-                                                               SP_PROT_TLS1_1_SERVER;
-
-        case MBEDTLS_SSL_MINOR_VERSION_3:
-            return (conf->endpoint == MBEDTLS_SSL_IS_CLIENT) ? SP_PROT_TLS1_2_CLIENT :
-                                                               SP_PROT_TLS1_2_SERVER;
+        case MBEDTLS_SSL_VERSION_TLS1_2:
+            return (s->endpoint == MBEDTLS_SSL_IS_CLIENT) ? SP_PROT_TLS1_2_CLIENT :
+                                                            SP_PROT_TLS1_2_SERVER;
 
         default:
         {
-            FIXME("MBEDTLS schannel_get_protocol: unknown protocol %d\n", ssl->minor_ver);
+            FIXME("MBEDTLS schannel_get_protocol: unknown protocol %#x\n",
+                  mbedtls_ssl_get_version_number(&s->ssl));
             return 0;
         }
     }
@@ -485,8 +501,7 @@ static ALG_ID schannel_get_mac_algid(int ciphersuite_id)
     switch (cipher_suite->mac)
     {
         case MBEDTLS_MD_NONE:      return 0;
-        case MBEDTLS_MD_MD2:       return CALG_MD2;
-        case MBEDTLS_MD_MD4:       return CALG_MD4;
+        /* MBEDTLS_MD_MD2 and _MD4 were removed in 3.0 along with md2.c/md4.c. */
         case MBEDTLS_MD_MD5:       return CALG_MD5;
         case MBEDTLS_MD_SHA1:      return CALG_SHA1;
         case MBEDTLS_MD_SHA224:    return CALG_SHA;
@@ -542,7 +557,18 @@ unsigned int schan_imp_get_session_cipher_block_size(schan_imp_session session)
 {
     MBEDTLS_SESSION *s = (MBEDTLS_SESSION *)session;
 
-    unsigned int cipher_block_size = mbedtls_cipher_get_block_size(&s->ssl.transform->cipher_ctx_enc);
+    /* Asked of the negotiated ciphersuite rather than of ssl.transform, which is an
+     * opaque type outside mbedtls/ssl_internal.h -- a header 3.x stops installing.
+     * Exactly equivalent: mbedtls_cipher_get_block_size(ctx) is defined as
+     * `ctx->cipher_info->block_size` (cipher.h), and the transform's cipher_ctx_enc
+     * carries the cipher_info of this very ciphersuite. Same shape as the key-size and
+     * mac-size helpers above, which already go through the ciphersuite. */
+    const mbedtls_ssl_ciphersuite_t *ciphersuite = mbedtls_ssl_ciphersuite_from_id(
+        mbedtls_ssl_get_ciphersuite_id(mbedtls_ssl_get_ciphersuite(&s->ssl)));
+    const mbedtls_cipher_info_t *cipher_info = mbedtls_cipher_info_from_type(ciphersuite->cipher);
+
+    unsigned int cipher_block_size =
+        cipher_info ? (unsigned int)mbedtls_cipher_info_get_block_size(cipher_info) : 0;
 
     TRACE("MBEDTLS schan_imp_get_session_cipher_block_size %p returning %u.\n", session, cipher_block_size);
 
@@ -553,7 +579,12 @@ unsigned int schan_imp_get_max_message_size(schan_imp_session session)
 {
     MBEDTLS_SESSION *s = (MBEDTLS_SESSION *)session;
 
-    unsigned int max_frag_len = mbedtls_ssl_get_max_frag_len(&s->ssl);
+    /* mbedtls_ssl_get_max_frag_len was REMOVED in 3.x. Upstream's migration guide
+     * points at this, and it is the better answer anyway: schannel is reporting the
+     * largest application message that will fit, and this one subtracts the record
+     * overhead the old call ignored. Expect a slightly smaller number than 2.16's
+     * flat MBEDTLS_SSL_MAX_CONTENT_LEN. */
+    unsigned int max_frag_len = (unsigned int)mbedtls_ssl_get_max_out_record_payload(&s->ssl);
 
     TRACE("MBEDTLS schan_imp_get_max_message_size %p returning %u.\n", session, max_frag_len);
 
@@ -569,13 +600,13 @@ SECURITY_STATUS schan_imp_get_connection_info(schan_imp_session session,
 
     TRACE("MBEDTLS schan_imp_get_connection_info %p %p.\n", session, info);
 
-    info->dwProtocol       = schannel_get_protocol(&s->ssl, &s->conf);
+    info->dwProtocol       = schannel_get_protocol(s);
     info->aiCipher         = schannel_get_cipher_algid(ciphersuite_id);
     info->dwCipherStrength = schannel_get_cipher_key_size(ciphersuite_id);
     info->aiHash           = schannel_get_mac_algid(ciphersuite_id);
     info->dwHashStrength   = schannel_get_mac_key_size(ciphersuite_id);
     info->aiExch           = schannel_get_kx_algid(ciphersuite_id);
-    info->dwExchStrength   = schannel_get_kx_key_size(&s->ssl, &s->conf, ciphersuite_id);
+    info->dwExchStrength   = schannel_get_kx_key_size(s, ciphersuite_id);
 
     return SEC_E_OK;
 }
