@@ -2402,8 +2402,8 @@ the banner has to be read.
 
 | category | modules | what it means |
 |---|---|---|
-| **Genuinely blocked (1)** | `shell32-rust/src/shell32/utils.rs` — 4,948 lines, 81 `#[no_mangle]` | Compiles clean on all three arches. Blocked on the cohab flip: 58 live C++ symbols would be captured, and 16 `*_RustBridge` wrappers plus the `CStubWindow32` pair need rehoming first. See the shell32 entry above for the measured freeze. |
-| **Superseded / gap artifacts (8)** | `recyclebin-rust`: `recyclebin_generic{,_enumerator}.rs`, `recyclebin_v5{,_enumerator}.rs` · `classpnp-rust`: `class_gap3.rs`, `class_gap4.rs` · `explorer-rust`: `appbar.rs` · `ntoskrnl-rust`: `global_barrier.rs` | Dead weight, superseded by class-atomic modules, rustconv file-split gaps whose exports are all defined live elsewhere, or retired code. **Deletion candidates — owner's call, since they are paid artifacts; the bodies replay from `.responses/` for $0.** |
+| **Genuinely blocked (0)** | ~~`shell32-rust/src/shell32/utils.rs`~~ — **COHAB-FLIPPED 2026-09-20** (`fb07f381d99a`), `launched=91 ok=91` on all three arches | It was the only one of the seventeen that was unfinished work, and it is done. Kept in the table because the *reason* it was stuck is the reusable part: 58 live C++ symbols would have been captured, and 16 `*_RustBridge` wrappers plus the `CStubWindow32` pair had to be rehomed first. See the shell32 entry above. |
+| **Superseded / gap artifacts (8)** | `recyclebin-rust`: `recyclebin_generic{,_enumerator}.rs`, `recyclebin_v5{,_enumerator}.rs` · `classpnp-rust`: `class_gap3.rs`, `class_gap4.rs` · `explorer-rust`: `appbar.rs` · `ntoskrnl-rust`: `global_barrier.rs` (**generated**, see below) | Dead weight, superseded by class-atomic modules, rustconv file-split gaps whose exports are all defined live elsewhere, or retired code. **Deletion candidates — owner's call, since they are paid artifacts; the bodies replay from `.responses/` for $0.** |
 | **Translations of upstream-dead source (8)** | `afd-rust` `event.rs` · `bootvid-rust` `vga.rs`, `bootdata.rs` (legacy INT10h) · `dhcpcsvc-rust` `dhcp/tree.rs` · `freeldr-rust` `directui.rs` (`#if 0` upstream) · `win32k-rust` `bitblt_new.rs` (`USE_DIBLIB FALSE`), `drvdbg.rs` (in no CMake list) · `rtlk-rust` `path.rs` | Correctly orphan and kept deliberately under the never-delete rule. Nothing owed. |
 
 **An orphan ROTS, in every category, because nothing compiles it.** `recyclebin-rust` carried a
@@ -2415,9 +2415,36 @@ vigilance: `recyclebin-rust` is now at 0 on i686/amd64/arm64 and has joined the 
 can regress** — that asymmetry is what makes joining-on-green safe and is the general rule for
 a parked crate.
 
-Two questions are parked for the owner, neither of them a lane's to settle: whether the eight
-superseded/gap files should be deleted, and whether anything else parked out of a build should
-join it on green.
+**`global_barrier.rs` is not a translation** — `tools/gen_global_barrier.py` generates it. The
+never-delete-paid-artifact rule does not attach to it the way it does to the other seven, and
+it is trivially regenerable; it is `nm`-verified dead-stripped and its root cause is fixed in
+the toolchain on LLVM ≥ 21. Worth stating because "orphan `.rs` in a crate" looks identical on
+disk whether it cost money or not, and the deletion rule turns on which.
+
+**AN ORPHAN ALSO ROTS BECAUSE THINGS DELIBERATELY DO NOT LOOK AT IT.** Four source checks —
+`scan_extern_arity`, `scan_cc_mismatch`, `scan_silent_failures` and `verify_lost_exports` —
+skip a file on sight of the `ORPHAN-BY-DESIGN:` token. That is correct while the file is
+orphan and wrong the instant it is wired, so **the banner must come off in the SAME commit
+that wires the module**, or four scanners go quiet on live code (4,949 lines of it, in the
+`utils.rs` case). `scan_doc_sections` catches the stale banner, but only once the file is
+reachable. So the rot has two independent sources: nothing compiles it, and several things
+refuse to read it.
+
+**The crate-level version of this question is closed, and smaller than it looked.** A
+reachability closure over both workspaces (315 packages) found **zero phantom members**,
+exactly **one** genuinely parked crate — `recyclebin-rust`, already rejoined — and **zero**
+member-but-unlinked crates. An earlier pass reported 13, then 6, then 1: each cut came from
+modelling a build mechanism the tool had missed, first difftest's directory-suffix discovery
+and then `reactos-link`'s `build.rs` linker-flag path, which links a crate with no Cargo
+dependency edge and no CMake string. The general lesson is worth more than the number: **a
+build mechanism the tool does not model reads as absence of a build**, so "unreached" is a
+claim about the tool's coverage at least as much as about the crate. `slist-loom` is the one
+remaining unlinked member and is deliberate — a Loom concurrency model run as
+`cargo test -p slist-loom`.
+
+One question is parked for the owner, and it is now the only one: whether the eight
+superseded/gap files should be deleted. The join-on-green survey that used to sit beside it is
+answered — the surface was one crate, and it is closed.
 
 ## Scale
 

@@ -53,6 +53,12 @@ ignore = [
 [tool.pyright]
 include = ["tests/qemu/cli"]
 exclude = ["**/node_modules", "**/__pycache__"]
+# `tools/` is not a package and is not on sys.path at import time -- land.py reaches
+# `docs_only` through a sys.path.insert, because the pre-push HOOK has to import the same
+# predicate from a bare clone where nothing is installed. Telling pyright where to look
+# beats silencing the import at the call site: a `# type: ignore` there would also hide a
+# genuine typo in the module name.
+extraPaths = ["tools"]
 pythonVersion = "3.10"
 typeCheckingMode = "basic"
 reportMissingImports = true

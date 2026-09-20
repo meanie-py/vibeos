@@ -67,6 +67,7 @@ from __future__ import annotations
 import json
 import os
 import subprocess
+import sys
 import time
 from pathlib import Path
 
@@ -166,8 +167,9 @@ def _docs_only_vs_master(repo: Path) -> bool:
 
     Skipping here is safe in the direction that matters. The CONDUCTOR still runs every
     check on the merged batch, so this cannot put unlinted code on master -- it only
-    declines to lint a lane that has none. Same predicate as the hook (`docs/**`, `*.md`),
-    deliberately: two spellings of "docs-only" that can disagree is worse than neither.
+    declines to lint a lane that has none. The predicate is `tools/docs_only.py`, shared
+    with the pre-push hook: two spellings of "docs-only" that can disagree is worse than
+    neither, so there is exactly one.
 
     Uses the three-dot merge base, so a lane that is merely BEHIND master is still judged
     on what IT changed rather than on what landed while it worked. Fails CLOSED -- any git
@@ -177,10 +179,12 @@ def _docs_only_vs_master(repo: Path) -> bool:
         diff = _git(repo, "diff", "--name-only", "origin/master...HEAD")
     except Exception:
         return False
-    paths = [line for line in diff.splitlines() if line.strip()]
-    if not paths:
-        return False
-    return all(p.startswith("docs/") or p.endswith(".md") for p in paths)
+    sys.path.insert(0, str(repo / "tools"))
+    try:
+        from docs_only import docs_only
+    finally:
+        sys.path.pop(0)
+    return docs_only(diff.splitlines())
 
 
 def _lint_preflight(repo: Path, run: Run, args) -> None:
