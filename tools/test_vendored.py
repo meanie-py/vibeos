@@ -994,13 +994,15 @@ def test_a_registered_tree_may_keep_its_licence_text_elsewhere(tmp_path):
     assert dangling == {}
 
 
-def test_the_real_tree_still_reports_the_two_findings_that_need_a_decision(tmp_path):
-    """A live check that the ratchet has not been tuned into silence. uniata (NT4
-    DDK skeleton + FreeBSD, disclaimer only) and kbdtool's COPYING.BSD (a text
-    ReactOS has never shipped) are open questions, not tool defects -- if one of
-    them is ever resolved, delete it from here rather than from the scan."""
+def test_the_real_tree_still_reports_the_finding_that_needs_a_decision(tmp_path):
+    """A live check that the ratchet has not been tuned into silence. kbdtool's
+    COPYING.BSD -- a text ReactOS has never shipped, with no in-tree precedent for
+    its wording -- is an open question, not a tool defect. uniata was the other
+    one and it was RESOLVED by deleting the ungranted C, which is why no
+    directory finding survives: if that list ever grows again, it is a real
+    finding, not a regression in here."""
     no_grant, dangling = vendored.grant_gaps(vendored.load(REPO))
-    assert "drivers/storage/ide/uniata" in [d for d, _n, _e in no_grant]
+    assert no_grant == []
     assert "copying.bsd" in dangling
 
 
@@ -1017,10 +1019,7 @@ def test_the_real_tree_passes_its_own_grant_gate():
     """...and the two findings it does carry are accepted BY NAME, with the
     argument written down beside them."""
     assert not [p for p in vendored.check(vendored.load(REPO)) if "licence-grant" in p]
-    assert set(vendored._GRANTS_ACCEPTED) == {
-        "dir:drivers/storage/ide/uniata",
-        "ptr:copying.bsd",
-    }
+    assert set(vendored._GRANTS_ACCEPTED) == {"ptr:copying.bsd"}
 
 
 def test_an_accepted_finding_that_got_fixed_fails_too(monkeypatch):

@@ -1076,11 +1076,9 @@ drivers/storage/ide/pciide/CMakeLists.txt	1	# pciide.c is translated to Rust (sd
 drivers/storage/ide/pciidex/CMakeLists.txt	1	# C bodies replaced by Rust (fdo.c miniport.c pciidex.c pdo.c power.c) — kept on disk.
 drivers/storage/ide/pciidex/CMakeLists.txt	1	# pciidex.sys — Rust cohabitation flip (fdo/miniport/pciidex/pdo/power.c -> Rust)
 drivers/storage/ide/pciidex/CMakeLists.txt	1	# so they are 3-line trampolines in rust_varargs_shim.c that call the fixed-arity `*_v`
-drivers/storage/ide/uniata/CMakeLists.txt	1	# atacmd_map.cpp bm_devs.cpp id_ata.cpp id_badblock.cpp id_dma.cpp
-drivers/storage/ide/uniata/CMakeLists.txt	1	# id_init.cpp id_probe.cpp id_queue.cpp id_sata.cpp
-drivers/storage/ide/uniata/CMakeLists.txt	1	# references. rust_varargs_shim.c holds the ONE thing stable Rust cannot do: DEFINE the
-drivers/storage/ide/uniata/CMakeLists.txt	1	# substrate (uniata-rust/src/types_*.rs). ros_glue/ros_glue.cpp stays as the C TU
-drivers/storage/ide/uniata/CMakeLists.txt	1	# uniata.sys — Rust cohabitation flip (9 .cpp -> Rust; ros_glue.cpp stays C)
+drivers/storage/ide/uniata/CMakeLists.txt	1	# and id_ata.cpp's own header says the skeleton came from the NT4 DDK's
+drivers/storage/ide/uniata/CMakeLists.txt	1	# ros_glue/ros_glue.cpp went with them. It existed solely as the data home for
+drivers/storage/ide/uniata/CMakeLists.txt	1	# rust_varargs_shim.c stays: it is ours, and it holds the ONE thing stable Rust
 drivers/storage/mountmgr/CMakeLists.txt	1	# database.c device.c mountmgr.c notify.c point.c symlink.c uniqueid.c # all replaced by Rust (mountmgr-rust); kept on disk
 drivers/storage/partmgr/CMakeLists.txt	1	# DriverEntry + FDO PnP/power/layout IOCTLs, utils.c ForwardIrpAndForget +
 drivers/storage/partmgr/CMakeLists.txt	1	# The partition manager (partition.c PartitionCreateDevice + PDO PnP/IOCTL, partmgr.c

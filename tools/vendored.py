@@ -1007,16 +1007,6 @@ def grant_gaps(reg: Registry, min_files: int = 3) -> tuple[list[tuple[str, int, 
 #: not a change to the scanner -- which is exactly why they are written down
 #: here instead of being tuned out of `grant_gaps`.
 _GRANTS_ACCEPTED = {
-    "dir:drivers/storage/ide/uniata": (
-        "36,368 lines whose header says the skeleton came from the NT4 DDK's "
-        "ATAPI.SYS and parts from FreeBSD's ATA driver, carrying the BSD warranty "
-        "DISCLAIMER without the 'Redistribution and use ... are permitted' clause "
-        "that would be the actual grant. Same shape as the atapi C deleted on "
-        "2026-09-20, and likewise already cohab-flipped in full: all 9 .cpp are "
-        "commented out of CMakeLists and uniata.sys links from uniata-rust. So the "
-        "C is inert source on disk and deleting it costs nothing but the owner's "
-        "call, which is pending."
-    ),
     "ptr:copying.bsd": (
         "sdk/tools/kbdtool, 5 files: `LICENSE: BSD - See COPYING.BSD in the top "
         "level directory`. ReactOS has never shipped a COPYING.BSD -- it is absent "
