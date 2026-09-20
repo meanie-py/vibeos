@@ -16,7 +16,7 @@ This product includes third-party software. **This file is GENERATED** from `ven
 - [libmpg123](#libmpg123) — 45 — LGPL-2.1
 - [libpng](#libpng) — 1.6.39 — libpng-2.0
 - [libsamplerate](#libsamplerate) — unknown — BSD-2-Clause
-- [libtiff](#libtiff) — 4.1.0 — libtiff (BSD-like)
+- [libtiff](#libtiff) — 4.7.0 — libtiff (BSD-like)
 - [libtirpc](#libtirpc) — 0.1.11 — BSD-3-Clause
 - [libxml2](#libxml2) — 2.12.8 — MIT
 - [libxslt](#libxslt) — 1.1.42 — MIT
@@ -2022,7 +2022,7 @@ SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 ## libtiff
 
 - Upstream: http://www.libtiff.org/
-- Version: 4.1.0
+- Version: 4.7.0
 - In this tree: `dll/3rdparty/libtiff`, `sdk/include/reactos/libs/libtiff`
 - Licence: libtiff (BSD-like)
 - Grant reproduced from: `dll/3rdparty/libtiff/tif_open.c (header comment)`

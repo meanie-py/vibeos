@@ -724,7 +724,7 @@ trees:
     upstream: http://www.libtiff.org/
     license: libtiff (BSD-like)
     license_ref: dll/3rdparty/libtiff/tif_open.c
-    modified: no  # de-patched 2026-09-19; byte-identical to 4.1.0
+    modified: no  # byte-identical to pristine 4.7.0 (only our 6 config headers differ)
     headers:
       - sdk/include/reactos/libs/libtiff
     version:
@@ -741,14 +741,49 @@ trees:
       the existing include_directories). libtiff.dll builds and links unchanged. The
       largest block of "modification" in this registry was leftovers, not a port.
 
-      THE SECURITY FACT REMAINS AND IS THE ITEM TO ACT ON: this is stock 4.1.0
-      (Nov 2019) with NO backported fixes, so it is exactly as vulnerable as unpatched
+      THE SECURITY FACT (now RESOLVED, kept for the record): this was stock 4.1.0
+      (Nov 2019) with NO backported fixes, so it was exactly as vulnerable as unpatched
       4.1.0 — which predates fixes for known OOB-read/write and directory-parsing CVEs.
-      De-patching makes the version bump trivial; it does not perform it.
+      De-patching made the version bump trivial but did not perform it; the bump below
+      did, on 2026-09-20.
 
       (This paragraph was written once before and SILENTLY LOST: the editing helper
       did nothing when an entry had no `review:` block, and reported success. It is
       here now because the helper was made to fail loudly instead.)
+
+      BUMPED 4.1.0 -> 4.7.0 on 2026-09-20, which is what that security item asked for.
+      tiff-4.7.0.tar.gz from download.osgeo.org, sha256
+      67160e3457365ab96c5b3286a0903aa6e78bdc44c4bc737d2e486bcecb6ba976 — NOTE osgeo
+      publishes only a GPG .sig for this file, no .sha256, so that hash is computed here and
+      NOT yet checked against an independent source. Verify it before treating this drop as
+      provenance-clean.
+
+      The bump was cheap precisely because the 2026-09-19 de-patching had already made the
+      tree pristine: no local edit had to be re-applied. Every .c, .cxx and non-config
+      header is now byte-identical to pristine 4.7.0; the only files that differ are the six
+      ReactOS config headers (tif_config*.h, tiffconf*.h), which stand in for what libtiff's
+      own CMake generates and are build glue rather than upstream source.
+
+      What had to change. tiffconf.h was rewritten against 4.7's tiffconf.h.cmake.in,
+      preserving our exact codec selection: 4.5 moved the fixed-width types to <stdint.h>,
+      so without the new stddef/stdint/inttypes includes every uint16_t in tiff.h is an
+      unknown type. One new source file, tif_hash_set.c, is required by tif_dirread.c and is
+      added to the CMake source list. Upstream also added tif_lerc.c, which stays out along
+      with the other optional codecs we do not build (jpeg, jbig, ojpeg, lzma, webp, zstd,
+      libdeflate).
+
+      Verified: libtiff.dll builds and links, and so does its only consumer
+      (dll/win32/windowscodecs/libtiff.c, 29 API symbols, all long-stable core calls). The
+      spec2def exports all resolved, which is the check a removed export would have failed.
+      The new DoS guard TIFF_MAX_DIR_COUNT defaults to 1048576 via tiffiop.h and is
+      therefore ACTIVE even though our config does not set it; STRIP_SIZE_DEFAULT likewise
+      defaults to 8192. CHUNKY_STRIP_READ_SUPPORT and DEFER_STRILE_LOAD stay off, as they
+      were under 4.1.0.
+
+      NOT verified: there is no TIFF decode test in this tree and libtiff is not on the boot
+      path, so the smoke suite does not exercise a single line of this. The evidence is
+      compile-and-link plus byte-identity with upstream, not runtime behaviour. Anyone
+      adding a WIC image test should point it here first.
 
     reason: TIFF codec; upstream-tracked.
 

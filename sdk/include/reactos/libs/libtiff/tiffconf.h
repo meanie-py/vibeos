@@ -2,83 +2,65 @@
   Configuration defines for installed libtiff.
   This file maintained for backward compatibility. Do not use definitions
   from this file in your programs.
+
+  ReactOS: this is the hand-maintained stand-in for the file libtiff's own build
+  generates from libtiff/tiffconf.h.cmake.in. Keep it in step with that template on
+  every version bump -- the feature switches below are OUR selection and must match
+  the source list in dll/3rdparty/libtiff/CMakeLists.txt, and the fixed-width types
+  come from <stdint.h> since 4.5 rather than being spelled out per compiler.
 */
 
 #ifndef _TIFFCONF_
 #define _TIFFCONF_
 
+#include <stddef.h>
+#include <stdint.h>
+#include <inttypes.h>
+
 /* The size of a `int', as computed by sizeof. */
 #define SIZEOF_INT 4
 
 /* Signed 8-bit type */
-#define TIFF_INT8_T signed char
+#define TIFF_INT8_T int8_t
 
 /* Unsigned 8-bit type */
-#define TIFF_UINT8_T unsigned char
+#define TIFF_UINT8_T uint8_t
 
 /* Signed 16-bit type */
-#define TIFF_INT16_T signed short
+#define TIFF_INT16_T int16_t
 
 /* Unsigned 16-bit type */
-#define TIFF_UINT16_T unsigned short
-
-/* Signed 32-bit type formatter */
-#define TIFF_INT32_FORMAT "%d"
+#define TIFF_UINT16_T uint16_t
 
 /* Signed 32-bit type */
-#define TIFF_INT32_T signed int
-
-/* Unsigned 32-bit type formatter */
-#define TIFF_UINT32_FORMAT "%u"
+#define TIFF_INT32_T int32_t
 
 /* Unsigned 32-bit type */
-#define TIFF_UINT32_T unsigned int
-
-/* Signed 64-bit type formatter */
-#define TIFF_INT64_FORMAT "%I64d"
+#define TIFF_UINT32_T uint32_t
 
 /* Signed 64-bit type */
-#ifdef __GNUC__
-#define TIFF_INT64_T signed long long
-#else
-#define TIFF_INT64_T signed __int64
-#endif
-
-/* Unsigned 64-bit type formatter */
-#define TIFF_UINT64_FORMAT "%I64u"
+#define TIFF_INT64_T int64_t
 
 /* Unsigned 64-bit type */
-#ifdef __GNUC__
-#define TIFF_UINT64_T unsigned long long
-#else
-#define TIFF_UINT64_T unsigned __int64
-#endif
-
-#if _WIN64
-/*
-  Windows 64-bit build
-*/
+#define TIFF_UINT64_T uint64_t
 
 /* Signed size type */
-#  define TIFF_SSIZE_T TIFF_INT64_T
-
+#if defined(_WIN64)
+#define TIFF_SSIZE_T int64_t
 #else
-/*
-  Windows 32-bit build
-*/
-
-/* Signed size type */
-#  define TIFF_SSIZE_T signed int
-
+#define TIFF_SSIZE_T int32_t
 #endif
 
 /* Compatibility stuff. */
 
-/* Define as 0 or 1 according to the floating point format suported by the
+/* Define as 0 or 1 according to the floating point format supported by the
    machine */
 #define HAVE_IEEEFP 1
 
-/* Set the native cpu bit order (FILLORDER_LSB2MSB or FILLORDER_MSB2LSB) */
+/* The concept of HOST_FILLORDER is broken. Since libtiff 4.5.1
+ * this macro is hardcoded to FILLORDER_LSB2MSB on all architectures, to reflect
+ * past long behavior of doing so on x86. It only influences passing the 'H'
+ * mode to TIFFOpen(), and must NOT be used to decide CPU endianness. */
 #define HOST_FILLORDER FILLORDER_LSB2MSB
 
 /* Native cpu byte order: 1 if big-endian (Motorola) or 0 if little-endian
@@ -93,6 +75,9 @@
 
 /* Support JBIG compression (requires JBIG-KIT library) */
 /* #undef JBIG_SUPPORT */
+
+/* Support LERC compression (requires liblerc) */
+/* #undef LERC_SUPPORT */
 
 /* Support LogLuv high dynamic range encoding */
 #define LOGLUV_SUPPORT 1
@@ -111,7 +96,7 @@
 #define PACKBITS_SUPPORT 1
 
 /* Support Pixar log-format algorithm (requires Zlib) */
- #define PIXARLOG_SUPPORT 1
+#define PIXARLOG_SUPPORT 1
 
 /* Support ThunderScan 4-bit RLE algorithm */
 #define THUNDER_SUPPORT 1
@@ -119,8 +104,11 @@
 /* Support Deflate compression */
 #define ZIP_SUPPORT 1
 
+/* Support libdeflate enhanced compression (requires libdeflate) */
+/* #undef LIBDEFLATE_SUPPORT */
+
 /* Support strip chopping (whether or not to convert single-strip uncompressed
-   images to mutiple strips of ~8Kb to reduce memory usage) */
+   images to multiple strips of ~8Kb to reduce memory usage) */
 #define STRIPCHOP_DEFAULT TIFF_STRIPCHOP
 
 /* Enable SubIFD tag (330) support */
@@ -151,10 +139,3 @@
 #define IPTC_SUPPORT
 
 #endif /* _TIFFCONF_ */
-/*
- * Local Variables:
- * mode: c
- * c-basic-offset: 8
- * fill-column: 78
- * End:
- */
