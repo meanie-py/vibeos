@@ -1,3 +1,8 @@
+# -DHAVE_HARDCLOCK suppresses every hardclock definition in upstream's timing.c
+# (each is guarded on `!defined(HAVE_HARDCLOCK)`); we supply the symbol from
+# sdk/lib/mbedtls_reactos/timing_hardclock.c so timing.c stays pristine.
+add_definitions(-DHAVE_HARDCLOCK)
+
 
 include_directories(${REACTOS_SOURCE_DIR}/sdk/include/reactos/libs
                     ${REACTOS_SOURCE_DIR}/sdk/include/reactos/zlib)
@@ -10,6 +15,7 @@ spec2def(mbedtls.dll mbedtls.spec ADD_IMPORTLIB)
 # a copy. See vendor.yaml's mbedtls entry.
 list(APPEND SOURCE
     ${REACTOS_SOURCE_DIR}/sdk/lib/mbedtls_reactos/strsafe_wrapper.c
+    ${REACTOS_SOURCE_DIR}/sdk/lib/mbedtls_reactos/timing_hardclock.c
     aes.c
     aesni.c
     arc4.c

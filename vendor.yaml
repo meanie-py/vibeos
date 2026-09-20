@@ -403,6 +403,7 @@ trees:
     license: MIT
     license_file: sdk/lib/3rdparty/libxml2/COPYING
     modified: yes  # 3 substantive files vs pristine 2.12.8
+    patch: vendor-patches/libxml2.patch
     version:
       file: sdk/lib/3rdparty/libxml2/include/libxml/xmlversion.h
       pattern: '#define LIBXML_DOTTED_VERSION "([^"]+)"'
@@ -474,6 +475,7 @@ trees:
     license: Unlicense OR MIT
     license_ref: sdk/lib/3rdparty/libwin-iconv/win_iconv.c
     modified: yes  # reimplemented _errno import resolution
+    patch: vendor-patches/libwin-iconv.patch
     review: >
       DIFFED AGAINST UPSTREAM 2026-09-19 at the commit our ChangeLog matches
       (win-iconv 1046215, 2014-02-05). THE FIRST DIFF WAS A LIE: every file appeared to
@@ -595,6 +597,7 @@ trees:
     license: IJG
     license_file: dll/3rdparty/libjpeg/README
     modified: no  # sources byte-identical to pristine IJG 9d
+    patch: vendor-patches/libjpeg.patch
     headers:
       - sdk/include/reactos/libs/libjpeg
     version:
