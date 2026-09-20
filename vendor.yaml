@@ -758,14 +758,19 @@ trees:
 
   - path: sdk/lib/3rdparty/zlib
     name: zlib
-    staleness: >
-      AUDITED 2026-09-20: ours 1.2.13 (2022-10), current 1.3.2. 1.2.13 does carry the
-      CVE-2022-37434 fix, so this is aging rather than known-vulnerable, and zlib bumps are
-      historically painless.
     upstream: https://zlib.net/
     license: Zlib
     license_file: sdk/lib/3rdparty/zlib/LICENSE
-    modified: yes  # 3 files under contrib/minizip only; zlib proper is pristine
+    license_extra:
+      Info-ZIP: >-
+        contrib/minizip IS NOT UNDER THE ZLIB LICENCE. Its files carry "Copyright (c)
+        1990-2000 Info-ZIP" alongside Gilles Vollant's minizip copyright, and since 1.3.x
+        upstream ships the grant explicitly as contrib/minizip/LICENSE.Info-Zip (Info-ZIP
+        licence, 2009-Jan-02 version), now vendored. The code was always licensed this way
+        — 1.2.13's unzip.c says so in its header — but upstream had never stated it as a
+        licence file and this registry recorded only Zlib. The obligation is live: minizip
+        is built into rapps and zipfldr.
+    modified: yes  # 10 lines across 3 files under contrib/minizip; zlib proper is pristine
     patch: vendor-patches/zlib.patch
     headers:
       - sdk/include/reactos/libs/zlib
@@ -773,34 +778,59 @@ trees:
       file: sdk/include/reactos/libs/zlib/zlib.h
       pattern: '#define ZLIB_VERSION "([^"]+)"'
     review: >
-      DIFFED AGAINST PRISTINE UPSTREAM 2026-09-20 (zlib-1.2.13.tar.gz from madler/zlib,
-      sha256 b3a24de97a8fdbc835b9833169501030b8977031bcb54b3b3ac13740f846ab30). This entry
-      previously said `modified: yes` with NO patch and NO review — a bare unexplained
-      claim, the last one of its kind in the registry. Now measured.
+      BUMPED 1.2.13 -> 1.3.2 ON 2026-09-20, and the delta SHRANK: 14 patched lines down to
+      10, and the CMakeLists lost both of its warning suppressions. Nothing was traded away
+      to get that — upstream fixed all three independently. Builds clean on i386, amd64 and
+      arm64.
 
-      ZLIB PROPER IS PRISTINE. adler32, crc32, deflate, inflate, inftrees, trees, zutil, the
-      gz* family, compress, uncompr, infback and both public headers are byte-identical to
-      1.2.13. Nothing we carry touches bounds checking, allocation, or the inflate/deflate
-      state machines. The whole delta is three files under contrib/minizip, the ZIP-archive
-      helper that ships alongside zlib — so the scary-sounding `modified` was never about
-      the compressor.
+      PROVENANCE IS CRYPTOGRAPHIC. zlib-1.3.2.tar.gz, sha256
+      bb329a0a2cd0274d05519d61c667c062e06990d72e125ee2dfa8de64f0119d16, ships a detached
+      .asc that verifies as a Good signature from "Mark Adler
+      <madler@alumni.caltech.edu>", DSA key 5ED46A6721D365587791E2AA783FCD8E58BCAFBA —
+      zlib's own author. Second tree in this registry with a verified signature, after
+      libsamplerate. As there, no independent trust path to the key: corroboration, not a
+      root of trust.
 
-      What it is: minizip has a stdio FILE* backend and a win32-HANDLE backend, and ReactOS
-      uses only the latter, so the stdio half and the zipOpen2/unzOpen2 entry points that
-      depend on it are compiled out behind __REACTOS__. unzip.c additionally stops NOUNCRYPT
-      being force-defined, which ENABLES minizip's traditional-PKWARE decryption rather than
-      disabling it — read that direction carefully. These cannot become a build flag:
-      __REACTOS__ already is one, and what will not move into the build is WHICH REGIONS it
-      guards, since upstream has no such conditionals to switch on.
+      ZLIB PROPER IS PRISTINE, before and after. adler32, crc32, deflate, inflate,
+      inftrees, trees, zutil, the gz* family, compress, uncompr, infback and both public
+      headers are byte-identical to 1.3.2. Nothing we carry touches bounds checking,
+      allocation, or the inflate/deflate state machines. The whole delta is ten lines in
+      three files under contrib/minizip, the ZIP-archive helper — the scary-sounding
+      `modified` was never about the compressor.
 
-      DE-PATCHED in the same pass, five files down to three. iowin32.c was restored to
-      pristine: its only delta was four `mode_fopen` declarations commented out to silence
-      -Wunused-variable, which is a warning rather than a portability need, so it moved into
-      the build as target_compile_options(minizip PRIVATE -Wno-unused-variable) — scoped to
-      minizip so it cannot hide an unused variable in zlib proper. zip.c's cosmetic hunk
-      (braces around a `for` body) is reverted too. Both were noise that would have had to
-      be re-applied at every bump. Verified: patch -p1 applies clean to a fresh 1.2.13
-      extraction and the result is byte-identical to our tree for all three files.
+      WHAT THE TEN LINES DO, and the REASON IS SHARPER THAN THE OLD NOTE SAID. minizip has
+      a stdio FILE* backend (ioapi.c) and a win32-HANDLE backend (iowin32.c); we compile
+      out the stdio half and the zipOpen2/unzOpen2 entry points that depend on it. The old
+      review said this was because "ReactOS uses only the win32 one", which reads as
+      preference. It is not: ioapi.c's fopen64_file_func calls FOPEN_FUNC, which resolves
+      to fopen64, and fopen64/ftello64/fseeko64 do not exist in our CRT. Removing the guard
+      during this bump produced "call to undeclared function 'fopen64'". Measured, not
+      inherited.
+
+      WHAT UPSTREAM RETIRED FOR US:
+
+      1. THE NOUNCRYPT HUNK IS GONE. 1.2.13's unzip.c force-defined NOUNCRYPT, which
+      DISABLES traditional-PKWARE decryption, and our patch wrapped that in __REACTOS__ to
+      get decryption back. 1.3.x dropped the force-define, so decryption is on by default
+      for everyone. Behaviour is unchanged — NOUNCRYPT is still undefined in our build, so
+      crypt.h is still included — but the hunk has nothing left to do.
+
+      2. -Wno-deprecated-non-prototype is gone from the CMakeLists. It existed for 1.2.13's
+      K&R-style definitions; 1.3.0 converted the library to prototypes.
+
+      3. -Wno-unused-variable on minizip is gone. It existed for four `mode_fopen` locals
+      in iowin32.c that only the stdio backend used; 1.3.x no longer leaves them unused.
+      Note that flag was itself only added on 2026-09-19, to de-patch iowin32.c — so this
+      tree went comment-out-the-source, then build-flag, then nothing, in two days.
+
+      THREE NEW UPSTREAM FILES were vendored for minizip to build: ints.h (fixed-width
+      integer typedefs from <limits.h>), skipset.h (a skiplist set, used by zip.c for
+      duplicate-name detection) and LICENSE.Info-Zip, which is a licence fact rather than a
+      build input — see license_extra.
+
+      HISTORY: before 2026-09-20 this entry said `modified: yes` with no patch and no
+      review, the last bare unexplained claim in the registry. It was then measured and
+      de-patched from five files to three, and bumped the same day.
     reason: Ubiquitous compression library; upstream-tracked.
 
   - path: sdk/lib/3rdparty/libxml2
@@ -916,72 +946,95 @@ trees:
 
   - path: sdk/lib/3rdparty/libmpg123
     name: libmpg123
-    staleness: >
-      AUDITED 2026-09-20: ours 1.26.2 (2020), current 1.33.7. The probe previously reported
-      `45`, the API number, which is why this drop read as versioned when it was not. BUMP
-      CHECKLIST — one item, do not lose it: src/compat/compat.c in this tree is NOT 1.26.2,
-      it is 1.24.0-1.25.13 vintage (see the review). Do not carry it forward across the
-      bump; take upstream's, which also brings the wpathconv.h split our older copy inlines
-      and defines the unintr_fwrite that compat.h already declares. Fixing that file
-      standalone was considered and rejected: the bump redoes the same work, and the current
-      inconsistency is inert because nothing calls unintr_fwrite.
     upstream: https://www.mpg123.de/
     license: LGPL-2.1
-    license_file: COPYING.LIB  # the repo's own LGPL-2.1 text; see review
-    modified: yes  # MIXED VINTAGE — compat.c is older than the rest; see review
+    license_file: sdk/lib/3rdparty/libmpg123/COPYING
+    modified: yes  # 5 lines across 2 files; see review
     patch: vendor-patches/libmpg123.patch
     headers:
-      - sdk/include/reactos/libs/libmpg123
+      - sdk/lib/3rdparty/libmpg123/include
     version:
-      # PACKAGE_VERSION is the RELEASE. The probe used to read MPG123_API_VERSION
-      # from mpg123.h, which is 45 for a whole span of releases and cannot tell
-      # 1.26.2 from 1.33.7 — the same defect libjpeg's probe had (JPEG_LIB_VERSION
-      # 90). An API number is not a version for CVE-matching purposes.
-      file: sdk/include/reactos/libs/libmpg123/config.h
-      pattern: '#define PACKAGE_VERSION "([^"]+)"'
+      # UPSTREAM'S OWN version.h, which 1.33.7 added and which the tree now vendors.
+      # This is strictly better than the two things this probe has pointed at before:
+      # MPG123_API_VERSION in mpg123.h (45 across a whole span of releases, so it could
+      # not tell 1.26.2 from 1.33.7 — the same defect libjpeg's JPEG_LIB_VERSION 90 had),
+      # and PACKAGE_VERSION in our hand-maintained config.h, which reads back a value WE
+      # write. version.h is upstream's and cannot be laundered by us.
+      file: sdk/lib/3rdparty/libmpg123/version.h
+      patterns:
+        - '#define MPG123_MAJOR (\d+)'
+        - '#define MPG123_MINOR (\d+)'
+        - '#define MPG123_PATCH (\d+)'
+      join: '.'
     review: >
-      DIFFED AGAINST PRISTINE UPSTREAM 2026-09-20 (mpg123-1.26.2.tar.bz2, sha256
-      00f7bf7ea64fcec2c9d07751d6ad8849343ee09c282ea3b0d5dd486e886e2ff3).
+      BUMPED 1.26.2 -> 1.33.7 ON 2026-09-20, five years and a stack of decoder fixes. The
+      delta went from four patched files (2,477 meaningful lines) to TWO FILES AND FIVE
+      LINES, and the mixed-vintage compat.c problem this entry used to carry is discharged.
+      Builds clean on i386, amd64 and arm64.
 
-      THIS IS A MIXED-VINTAGE DROP. Everything is 1.26.2 EXCEPT compat/compat.c, which is a
-      verbatim OLDER upstream file. Normalized against each release: 469 lines from 1.23.8,
-      ZERO from 1.24.0 / 1.25.10 / 1.25.13, and 219 from every 1.26.x. Its banner reads
-      "copyright 2007-2016" where 1.26.2 reads "2007-2020". So the 219-line compat.c hunk in
-      the patch is NOT a ReactOS edit — it is upstream's own 1.25->1.26 change, missing
-      because the file was never refreshed. Anyone re-vendoring must not "revert" it
-      thinking they are removing a local patch.
+      SECURITY IS THE REASON. Our one consumer, winemp3.acm, feeds attacker-supplied MP3
+      bytes straight into this decoder. Fixed upstream between 1.26.2 and 1.33.7, in
+      libmpg123 specifically: use of uninitialized values in layer III dequantization
+      (III_dequantize_sample); a double free when deleting a handle after a failed
+      mpg123_decoder(); a double free in the mpg123_set_index() 32-bit wrapper called with
+      index size 0; realloc calls hardened against size_t multiplication overflow; and
+      ID3v2 UTF16 texts not being terminated when they overwrite previous frames.
 
-      The consequence is a latent inconsistency, currently harmless: compat.h IS 1.26.2 and
-      declares `size_t unintr_fwrite(...)`, intsym.h mangles it to INT123_unintr_fwrite, and
-      the stale compat.c never defines it. Nothing calls it — verified by grepping both
-      halves — so it is a dead declaration, not a link error. Re-syncing compat.c to 1.26.2
-      fixes both at once, and also needs upstream's wpathconv.h, whose content our older
-      compat.c carries INLINE rather than #included. FLAGGED, NOT DONE: this pass records
-      state rather than changing a shipping library.
+      THE TREE WAS RESTRUCTURED, and that is what shrank the patch. Its root now mirrors
+      upstream's src/ exactly — libmpg123/, common/, compat/, include/, version.h — so the
+      sources' own relative includes ("../common/debug.h", "../version.h") resolve with no
+      edits. The old layout hoisted every header flat into
+      sdk/include/reactos/libs/libmpg123/, which is precisely what forced include-line
+      patching; that directory is deleted and winemp3.acm now points at the tree's own
+      include/. DO NOT FLATTEN IT AGAIN. The file-set rule is written at the top of the
+      patch so a re-vendor is a copy.
 
-      Everything else is small. parse.c is 6 lines, a pure __REACTOS__ guard that only moves
-      `#include "getbits.h"`. mpg123.h is 16: the expected @PACKAGE_VERSION@/@API_VERSION@
-      substitution from mpg123.h.in (1.26.2 / 45, which is where the old bogus "45" version
-      probe came from) plus a __REACTOS__-guarded `typedef long ssize_t`. compat.h is 6: the
-      same ssize_t guard and two dead msdn.microsoft.com URLs updated. optimize.h is 4:
-      __declspec(align) vs __attribute__((aligned)). A further 37 files differ only by
-      trailing-whitespace stripping and are excluded from the patch, so pristine+patch does
-      NOT reproduce the tree byte-for-byte; the header says so.
+      THE CHECKLIST ITEM IS DISCHARGED. compat.c was NOT 1.26.2 — it was 1.24.0-1.25.13
+      vintage, 215 lines adrift, and this entry carried a standing warning not to carry it
+      across a bump. It was not carried. The tree takes 1.33.7's compat.c verbatim, which
+      also brings the wpathconv.h split our older copy inlined and defines the
+      unintr_fwrite that compat.h had been declaring with nothing behind it.
 
-      SECURITY: the decoder is untouched. layer1/2/3.c, id3.c, huffman.h, newhuffman.h,
-      frame.c, format.c, readers.c and parse.c's body are byte-identical or whitespace-only
-      against pristine. No bounds check, allocation, buffer size or Huffman/ID3 logic
-      differs. The only functional-content difference in the compiled set is compat.c's
-      EINTR retry plumbing, which is I/O rather than parsing. config.h selects the generic-C
-      OPT_I386 path with REAL_IS_FLOAT (no asm, no MMX/SSE/AltiVec), all three layers,
-      ID3v2, ICY, gapless, new Huffman tables, and — unlike libsamplerate — carries NO
-      kernel-mode shim; this is usermode only.
+      WHAT IS LEFT, FIVE LINES:
 
-      MEASUREMENT NOTE: match files by their FULL upstream path, not basename. mpg123 ships
-      both src/equalizer.c (the frontend's) and src/libmpg123/equalizer.c; a basename match
-      picks the wrong one and reports 56 phantom changed lines. Against the correct file
-      ours is identical.
+      include/mpg123.h extends upstream's own "little hack to help MSVC not having
+      ssize_t" to cover us, because our CRT does not declare ssize_t either — not in
+      <sys/types.h>, not in <corecrt.h>. Worth sending upstream: the real condition is
+      "Windows CRT", not "MSVC". libmpg123/optimize.h gives ALIGNED() an MSVC spelling,
+      since config.h defines CCALIGN unconditionally and upstream expands it to
+      __attribute__((aligned(a))). Kept rather than dropped because ReactOS supports MSVC
+      builds and we cannot test one here.
 
+      RETIRED BY UPSTREAM, not given up: parse.c's __REACTOS__ reordering of `#include
+      "getbits.h"` (1.33.7 needs none) and compat.h's ssize_t guard (1.33.7's compat.h does
+      not mention ssize_t at all). Also gone: the 37 files that differed only by
+      trailing-whitespace stripping, so unlike the old patch this one DOES reproduce the
+      tree byte-for-byte from pristine.
+
+      TWO LATENT 64-BIT BUGS DIED WITH THE OLD config.h, both from a 32-bit autoconf output
+      being applied to all three arches. SIZEOF_SIZE_T and SIZEOF_SSIZE_T were hardcoded to
+      4, and compat.h used them to pick the printf conversion for size_t — so on amd64 and
+      arm64 it chose %lu for an 8-byte value (diagnostic paths only). And `#define ssize_t
+      long` gave 4 bytes where 8 were needed. 1.33.7 uses neither macro, and ptrdiff_t is
+      correct on all three targets. The new config.h is regenerated from 1.33.7's
+      config.h.in with our 51 previous choices carried across and the 26 new switches left
+      undefined; KEEP IT IN STEP WITH THAT TEMPLATE on every bump.
+
+      THE API IS COMPATIBLE. winemp3.acm uses twelve entry points (mpg123_init/exit/new/
+      delete/open_feed/close/feed/read/feedseek/getformat/param + mpg123_handle); all
+      twelve survive with compatible signatures. mpg123_read's buffer parameter widened
+      from `unsigned char*` to `void*`, source-compatible for callers. lfs_wrap.c is now
+      BUILT and must stay built — it supplies mpg123_feedseek and the INT123_wrap_*
+      helpers libmpg123.c calls; lfs_alias.c, which 1.26.2 shipped and we never built, no
+      longer exists upstream.
+
+      LICENCE: upstream's COPYING and AUTHORS are now vendored, so the LGPL-2.1 grant is
+      reproducible from the tree instead of pointing at the repo's own COPYING.LIB.
+
+      MEASUREMENT NOTE, still true and still a trap: match files by their FULL upstream
+      path, not basename. mpg123 ships both src/equalizer.c (the frontend's) and
+      src/libmpg123/equalizer.c; a basename match picks the wrong one and reports 56
+      phantom changed lines.
     reason: MPEG audio decoder; upstream-tracked.
 
   - path: sdk/lib/3rdparty/libsamplerate
