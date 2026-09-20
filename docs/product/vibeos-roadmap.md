@@ -1249,8 +1249,9 @@ land; date every addition.** Source docs live in `docs/engineering/archive/`.
   reserve plus guard page rather than the fully-committed block the initial stack now gets,
   BEFORE the kernel can trust those bounds. Sequence it in that order.
 
-- **~1 amd64 boot in 3 loses EVERY 32-bit guest at one address, during 64-bit loader init.
-  OPEN, and it is the confounder behind several of this lane's verdicts**
+- **An amd64 boot can lose EVERY 32-bit guest at one address, during 64-bit loader init.
+  OPEN, and it is the confounder behind several of this lane's verdicts. RATE UNKNOWN —
+  the "1 in 3" below is from n=3 and did not hold up**
   (2026-09-20). Symptom: `PASS=0 EXITED=16`, every ladder guest AND every stock applet
   exiting `0x80`, including ones that never otherwise fail (winmine) and the non-GUI parity
   guests (sqlite32). MEASURED 13 / 12 / 0 PASS across three boots of *identical* media
@@ -1300,11 +1301,25 @@ land; date every addition.** Source docs live in `docs/engineering/archive/`.
   that starts at ONE committed page and must grow by guard-page fault the entire way. If
   growth is unreliable, a WoW64 process is the most exposed thing in the system.
 
-  **Why it matters beyond itself:** a bug that wipes the entire applet population one boot
-  in three, in exactly the units this lane measures, will confirm whatever you were hoping
-  to see. It already did once — see the corrected postmortem above. Until it is fixed, no
+  **The rate is not 1 in 3 and I should not have quoted one.** That figure came from a
+  single 3-boot run (13 / 12 / 0). A 5-boot run on current media saw **none**: PASS
+  13 / 14 / 11 / 14 / 14, EXITED 1 / 0 / 3 / 0 / 0, every boot reaching the desktop
+  (`/tmp/vibeos-cli/20260920-154737-z5kel22e-smoke-amd64`). Pooled that is 1 in 8, and the
+  two runs are not even the same media — `7261000a5110` (the TEB32 GDI-batch fix on the
+  user-callback path) landed in between and is a live candidate for having reduced it.
+  Nothing here is yet enough to claim a fix; it IS enough to say the number was soft, and
+  it is the third estimate of mine today that needed softening once n grew.
+
+  **Why it matters beyond itself:** a bug that wipes the entire applet population, in
+  exactly the units this lane measures, will confirm whatever you were hoping to see. It
+  already did once — see the corrected postmortem above. Until it is understood, no
   single-boot amd64 applet comparison means anything; use `--repeat` and report the
   distribution, not a boot.
+
+  **Usable baseline as of 2026-09-20**, for whoever grades the stack-growth fix: 5 boots,
+  PASS 13 / 14 / 11 / 14 / 14, and `pre-fault of stack page` failures 4 / 4 / 6 / 4 / 4 —
+  present in EVERY boot, which makes that count the sharper before/after signal than the
+  PASS count, since it does not depend on which applet happened to be unlucky.
 
 - **`taskmgr.exe` EXITED = 0xc0000005 on one boot — OPEN, likely a flake or a distinct
   bug** (2026-09-20). Seen on the stack-fix boot while charmap (the applet that fix

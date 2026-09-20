@@ -30,40 +30,37 @@ const HYDRA_PROCESS: PEPROCESS = 1 as PEPROCESS;
 #[cfg(feature = "MI_TRACE_PFNS")]
 static mut UserPdeFault: BOOLEAN = 0;
 
-unsafe fn MiCheckForUserStackOverflow(
-    Address: PVOID,
-    TrapInformation: PVOID,
-) -> NTSTATUS {
-    let CurrentThread = PsGetCurrentThread();
-    let Teb: PTEB = (*(CurrentThread as *mut _ETHREAD)).Tcb.Teb as PTEB;
-    let mut StackBase: PVOID;
-    let mut DeallocationStack: PVOID;
-    let mut NextStackAddress: PVOID;
-    let mut GuaranteedSize: SIZE_T;
+/// Outcome of trying to grow ONE stack descriptor.
+///
+/// `new_limit` is the `NtTib.StackLimit` the caller must publish, in whichever
+/// TEB owns the descriptor that matched — that is the whole reason this is
+/// split out rather than writing the TEB inline.
+struct MiStackGrowth {
+    status: NTSTATUS,
+    new_limit: Option<ULONG_PTR>,
+}
 
-    if false /* elided _ETHREAD bitfield */ {
-        return STATUS_GUARD_PAGE_VIOLATION;
+/// Faithful `MiCheckForUserStackOverflow` body for a single [dealloc, base)
+/// stack, returning `None` when `Address` is not in this stack at all so the
+/// caller can try another descriptor.
+unsafe fn MiGrowOneUserStack(
+    Address: ULONG_PTR,
+    StackBase: ULONG_PTR,
+    DeallocationStack: ULONG_PTR,
+) -> Option<MiStackGrowth> {
+    if StackBase == 0 || DeallocationStack == 0 || DeallocationStack >= StackBase {
+        return None;
+    }
+    if Address >= StackBase || Address < DeallocationStack {
+        return None;
     }
 
-    if KeIsAttachedProcess() != 0 {
-        return STATUS_GUARD_PAGE_VIOLATION;
-    }
+    // GuaranteedStackBytes is asserted zero upstream; one page is the guarantee.
+    let mut GuaranteedSize: SIZE_T = PAGE_SIZE as SIZE_T;
+    let mut NextStackAddress: PVOID = (PAGE_ALIGN(Address) - GuaranteedSize) as PVOID;
 
-    StackBase = (*Teb).NtTib.StackBase;
-    DeallocationStack = (*Teb).DeallocationStack;
-    GuaranteedSize = ((*Teb).GuaranteedStackBytes) as usize;
-
-    ASSERT!(GuaranteedSize == 0);
-    GuaranteedSize = PAGE_SIZE as SIZE_T;
-
-    if (Address >= StackBase) || (Address < DeallocationStack) {
-        return STATUS_GUARD_PAGE_VIOLATION;
-    }
-
-    NextStackAddress = (PAGE_ALIGN(Address as ULONG_PTR) - GuaranteedSize) as PVOID;
-
-    if ((NextStackAddress as ULONG_PTR) - PAGE_SIZE as ULONG_PTR) <= (DeallocationStack as ULONG_PTR) {
-        NextStackAddress = (PAGE_ALIGN(DeallocationStack as ULONG_PTR) + GuaranteedSize) as PVOID;
+    if ((NextStackAddress as ULONG_PTR) - PAGE_SIZE as ULONG_PTR) <= DeallocationStack {
+        NextStackAddress = (PAGE_ALIGN(DeallocationStack) + GuaranteedSize) as PVOID;
 
         let Status = ZwAllocateVirtualMemory(
             NtCurrentProcess(),
@@ -73,16 +70,18 @@ unsafe fn MiCheckForUserStackOverflow(
             MEM_COMMIT,
             PAGE_READWRITE,
         );
-        if Status >= 0 {
-            (*Teb).NtTib.StackLimit = NextStackAddress;
-        }
-
-        return STATUS_STACK_OVERFLOW;
+        return Some(MiStackGrowth {
+            status: STATUS_STACK_OVERFLOW,
+            new_limit: if Status >= 0 {
+                Some(NextStackAddress as ULONG_PTR)
+            } else {
+                None
+            },
+        });
     }
 
     // ASSERT: NtGlobalFlag FLG_DISABLE_STACK_EXTENSION not set
-
-    (*Teb).NtTib.StackLimit = ((NextStackAddress as ULONG_PTR) + GuaranteedSize) as PVOID;
+    let PublishedLimit = (NextStackAddress as ULONG_PTR) + GuaranteedSize;
 
     let Status = ZwAllocateVirtualMemory(
         NtCurrentProcess(),
@@ -93,11 +92,82 @@ unsafe fn MiCheckForUserStackOverflow(
         PAGE_READWRITE | 0x100,
     );
     if (Status >= 0) || (Status == STATUS_ALREADY_COMMITTED) {
-        return STATUS_PAGE_FAULT_GUARD_PAGE;
+        return Some(MiStackGrowth {
+            status: STATUS_PAGE_FAULT_GUARD_PAGE,
+            new_limit: Some(PublishedLimit),
+        });
     }
 
     ASSERT!(false);
-    STATUS_STACK_OVERFLOW
+    Some(MiStackGrowth {
+        status: STATUS_STACK_OVERFLOW,
+        new_limit: Some(PublishedLimit),
+    })
+}
+
+unsafe fn MiCheckForUserStackOverflow(
+    Address: PVOID,
+    TrapInformation: PVOID,
+) -> NTSTATUS {
+    let _ = TrapInformation;
+    let CurrentThread = PsGetCurrentThread();
+    let Teb: PTEB = (*(CurrentThread as *mut _ETHREAD)).Tcb.Teb as PTEB;
+
+    if false /* elided _ETHREAD bitfield */ {
+        return STATUS_GUARD_PAGE_VIOLATION;
+    }
+
+    if KeIsAttachedProcess() != 0 {
+        return STATUS_GUARD_PAGE_VIOLATION;
+    }
+    if Teb.is_null() {
+        return STATUS_GUARD_PAGE_VIOLATION;
+    }
+
+    // Kept from the original body: the guaranteed-bytes path is unimplemented,
+    // and this assert is what says so out loud. MiGrowOneUserStack hardcodes one
+    // page as the guarantee, which is only correct while this holds.
+    ASSERT!((*Teb).GuaranteedStackBytes == 0);
+
+    let Addr = Address as ULONG_PTR;
+
+    // The NATIVE stack first, and unconditionally. A WoW64 thread owns TWO
+    // stacks and the 64-bit one is the busier of them -- it carries the whole
+    // loader, every thunk and every unwind -- so anything that makes this test
+    // conditional breaks host growth for every guest process. Redirecting it
+    // wholesale to TEB32 did exactly that: 0 PASS / 16 EXITED, dying in
+    // RtlpUnwindInternal, which is the 64-bit unwinder failing to get a frame.
+    if let Some(g) = MiGrowOneUserStack(
+        Addr,
+        (*Teb).NtTib.StackBase as ULONG_PTR,
+        (*Teb).DeallocationStack as ULONG_PTR,
+    ) {
+        if let Some(limit) = g.new_limit {
+            (*Teb).NtTib.StackLimit = limit as PVOID;
+        }
+        return g.status;
+    }
+
+    // Not the native stack. On a WoW64 thread the fault may still be the GUEST
+    // stack, which only TEB32 describes -- TEB64's bounds never cover it, so
+    // the test above rejects every guest stack-growth fault and the guest dies
+    // on its first page of growth. Measured: eventvwr's worker needed the page
+    // at 0x1fae000 with TEB64 covering [0x1fb0000, 0x20b0000).
+    #[cfg(not(target_arch = "x86"))]
+    if let Some(teb32) = ntkrnl_sys::wow64::teb32_of_current(Teb) {
+        if let Some(g) = MiGrowOneUserStack(
+            Addr,
+            (*teb32).NtTib.StackBase as ULONG_PTR,
+            (*teb32).DeallocationStack as ULONG_PTR,
+        ) {
+            if let Some(limit) = g.new_limit {
+                (*teb32).NtTib.StackLimit = limit as u32;
+            }
+            return g.status;
+        }
+    }
+
+    STATUS_GUARD_PAGE_VIOLATION
 }
 
 #[inline]

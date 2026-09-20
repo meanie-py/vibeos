@@ -61,3 +61,20 @@ pub unsafe fn teb32_of_current(teb: *const _TEB) -> Option<*mut _TEB32> {
     }
     Some(teb32_of(teb))
 }
+
+/// Offset of `DeallocationStack` inside TEB32 — the BOTTOM of a guest thread's
+/// 32-bit stack reservation.
+///
+/// `NtTib.StackLimit` is only the committed floor and moves as the stack grows,
+/// so it cannot tell the kernel how far a guest stack is *allowed* to grow;
+/// this is the field that can, and nothing populated it until now. The guest
+/// hands the value over in its `INITIAL_TEB`'s `AllocatedStackBase` slot, which
+/// wow64's `NtCreateThread` thunk parses and had simply been discarding.
+#[cfg(not(target_arch = "x86"))]
+pub const TEB32_DEALLOCATION_STACK: usize = 0xE0C;
+
+#[cfg(not(target_arch = "x86"))]
+const _: () = assert!(
+    core::mem::offset_of!(_TEB32, DeallocationStack) == TEB32_DEALLOCATION_STACK,
+    "TEB32.DeallocationStack moved; wow64.dll writes this displacement by hand"
+);
