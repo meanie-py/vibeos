@@ -16,7 +16,7 @@ import subprocess
 import threading
 import time
 from pathlib import Path
-from typing import ClassVar
+from typing import Any, ClassVar, cast
 
 import pytest
 
@@ -8515,3 +8515,107 @@ def test_docs_only_predicate_ignores_what_master_did_meanwhile(tiny_repo: Path):
     _git(tiny_repo, "update-ref", "refs/remotes/origin/master", "HEAD")
     _git(tiny_repo, "checkout", "-q", lane)
     assert land_mod._docs_only_vs_master(tiny_repo) is True
+
+
+# --- launch retry (host-side socket flake, 2026-09-20) ----------------------
+
+
+class _FlakyVM:
+    """Stands in for QemuVM: fails its first `fail_times` starts, then works."""
+
+    def __init__(self, fail_times: int):
+        self._left = fail_times
+        self.launch_timings: dict[str, float] = {}
+        self.starts = 0
+        self.stops = 0
+
+    def start(self):
+        self.starts += 1
+        if self._left > 0:
+            self._left -= 1
+            raise TimeoutError("QEMU did not connect to serial socket within 15.0s")
+
+    def stop(self):
+        self.stops += 1
+
+
+def _retry_probe(monkeypatch, failures: int, attempts: int = 3):
+    """Drive _launch_with_retry against a VM that fails `failures` times."""
+    from tests.qemu.cli import smoke as smoke_mod
+
+    monkeypatch.setattr(smoke_mod, "_LAUNCH_ATTEMPTS", attempts)
+    monkeypatch.setattr(smoke_mod, "_LAUNCH_RETRY_SECONDS", 0)
+    budget = {"n": failures}
+    built: list[_FlakyVM] = []
+    logs: list[str] = []
+
+    def make_vm():
+        fail = 1 if budget["n"] > 0 else 0
+        budget["n"] -= 1
+        v = _FlakyVM(fail)
+        built.append(v)
+        return v
+
+    timings: dict[str, float] = {}
+    # _FlakyVM is a stand-in, not a QemuVM -- the helper only ever touches
+    # start/stop/launch_timings, which is exactly what makes it testable here.
+    vm, n, exc = smoke_mod._launch_with_retry(
+        cast("Any", make_vm), timings, logs.append, "boot 1/5"
+    )
+    return built, logs, timings, vm, n, exc
+
+
+def test_launch_retry_recovers_from_a_host_side_flake(monkeypatch):
+    # The incident: one boot of five died on "QEMU did not connect to serial
+    # socket within 15.0s" before a single guest instruction ran, and landed as
+    # a red flake beside real verdicts.
+    built, logs, timings, _vm, n, exc = _retry_probe(monkeypatch, failures=1)
+    assert len(built) == 2
+    assert exc is None, "a single host-side flake should not fail the boot"
+    assert n == 2
+    assert timings["launch_attempts"] == 2, "a recovered launch must still be recorded"
+    assert any("host-side flake" in m for m in logs)
+
+
+def test_launch_retry_builds_a_FRESH_vm_each_attempt(monkeypatch):
+    # Load-bearing: the port and serial socket path are chosen in
+    # QemuVM.__init__, so retrying start() on the SAME instance would retry onto
+    # the same bad port and could never recover.
+    built, _logs, _timings, _vm, n, exc = _retry_probe(monkeypatch, failures=2)
+    assert exc is None and n == 3
+    assert len(built) == 3, "each attempt must construct a new VM"
+    assert all(v.starts == 1 for v in built), "no instance may be start()ed twice"
+    assert built[0].stops == 1 and built[1].stops == 1, "failed VMs must be torn down"
+
+
+def test_launch_retry_gives_up_and_reports_the_real_failure(monkeypatch):
+    # The retry must not make a broken launch quieter or slower-to-diagnose.
+    built, _logs, timings, _vm, n, exc = _retry_probe(monkeypatch, failures=99)
+    assert isinstance(exc, TimeoutError)
+    assert n == 3 and len(built) == 3
+    assert "launch_attempts" not in timings, "never claim success on a failed launch"
+
+
+def test_launch_retry_is_a_no_op_on_a_healthy_launch(monkeypatch):
+    built, logs, timings, _vm, n, exc = _retry_probe(monkeypatch, failures=0)
+    assert exc is None and n == 1 and len(built) == 1
+    assert logs == [], "a clean launch must stay silent"
+    assert "launch_attempts" not in timings
+
+
+def test_launch_attempts_stays_small_enough_not_to_slow_a_broken_launch():
+    from tests.qemu.cli import smoke as smoke_mod
+
+    assert 2 <= smoke_mod._LAUNCH_ATTEMPTS <= 3
+    assert smoke_mod._LAUNCH_RETRY_SECONDS <= 5
+
+
+def test_launch_failure_still_reports_LAUNCH_FAIL_with_the_attempt_count():
+    import inspect
+
+    from tests.qemu.cli import smoke as smoke_mod
+
+    src = inspect.getsource(smoke_mod._boot_vm)
+    assert '"classification": "LAUNCH_FAIL"' in src
+    assert '"launch_attempts": attempts' in src
+    assert "launch attempts, all failed" in src
