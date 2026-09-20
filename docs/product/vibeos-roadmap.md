@@ -489,7 +489,26 @@ land; date every addition.** Source docs live in `docs/engineering/archive/`.
 ## Known bugs & flakes (live registry)
 
 - **win32k: 32 dropped `_SEH2_EXCEPT` handlers across 11 files, in `NtUser*` syscall
-  paths. UNOWNED, SURVEYED 2026-09-20.** Same class as the LPC bug closed today and
+  paths — FIXED 2026-09-20** (`d89e8bd99ee`, `c5877c15d97`, `b6c0dde1ca3`).
+  All 32 restored with `SafeProbeForRead`/`SafeProbeForWrite` + `safe_copy_raw`
+  rather than the `MmUserProbeAddress`-dependent helpers (a plain `extern static`
+  for that DATA export is unsatisfiable from a separate driver, and arm64 LINK_FAILs
+  on it). The scanner that found them now reports **0 files, 0 handlers**:
+
+        python3 tools/scan_dropped_seh_pairs.py --deleted win32k-rust:win32ss/user/ntuser
+
+  Two caveats kept deliberately. `UserGetClassName` is NOT a literal restoration:
+  it writes into the caller's buffer from inside opaque RTL calls, and real SEH
+  catches a fault raised inside a *callee* while `safe_copy_raw` only protects a
+  copy we perform — there is no protected-CALL primitive, so it queries into a
+  kernel temp and copies out. And the restored `NtUserEnumDisplaySettings` body is
+  **unvalidated**: the boot never calls it (`grep -ci EnumDisplaySettings serial.log`
+  → 0), so green means "nothing regressed", not "this works".
+  Still open, registered here rather than silently dropped: the `lpDevMode`
+  zero-length probe in `NtUserEnumDisplaySettings`, and 14 lower-confidence
+  scanner pairs the tool prints as "confirm by hand".
+
+  Original survey kept below, because the two findings in it generalise: Same class as the LPC bug closed today and
   larger. Reproduce with:
 
         python3 tools/scan_dropped_seh_pairs.py --deleted win32k-rust:win32ss/user/ntuser
@@ -524,11 +543,13 @@ land; date every addition.** Source docs live in `docs/engineering/archive/`.
   file in the tree from this very survey until the collision was noticed. Match
   QUALIFIED paths only.
 
-  Not fixed: 32 sites across the kernel's user-facing surface is not unsupervised
-  overnight work. The LPC pass is the worked template — `LpcpMoveMessageChecked` /
-  `LpcpVerifyMessageDataInfoChecked` show the checked-variant-alongside-original
-  shape, and the handler taxonomy (returns / goto-cleanup / falls-through /
-  swallows) is in the field manual.
+  *Was, when surveyed:* "32 sites across the kernel's user-facing surface is not
+  unsupervised overnight work." It was done overnight after all, by four
+  concurrent agents writing one file each with the owner's explicit go-ahead,
+  batched and gated centrally. The LPC pass was the worked template —
+  `LpcpMoveMessageChecked` / `LpcpVerifyMessageDataInfoChecked` show the
+  checked-variant-alongside-original shape, and the handler taxonomy (returns /
+  goto-cleanup / falls-through / swallows) is in the field manual.
 - **Mbed TLS is five years past end-of-life, and three other vendored trees are stale.
   UNOWNED** (2026-09-20). `tools/vendored.py --emit` prints the full BEHIND UPSTREAM
   section; read that, not this line, because it is generated from `vendor.yaml` and this
@@ -1010,6 +1031,119 @@ land; date every addition.** Source docs live in `docs/engineering/archive/`.
   call site, and the cascade destroys the registers that would name it. Next step is a
   tripwire or a GDB break on the first fault, not more log reading — by the second fault the
   evidence is gone.
+
+  **THE FIRST FAULT IS NOW MEASURED (2026-09-20), and it is a fourth fault this entry never
+  saw — the head of the chain, not the stack one.** No GDB was needed; the fault path already
+  prints the GPRs. What the entry above describes as "one fault executing from a STACK
+  address, then 57 at NULL" is faults 2..58. Fault 1 is:
+
+        guest fault c0000005 eip=77a64e84 (esp=001ff4a8)
+        AV rw=0 addr=00000040 | eax=7ffee000 edx=00000040 ...
+
+  `77A20000` is **user32** (unrelocated ImageBase), so this is
+  `user32!ValidateHandleNoErr+0x124`, which disassembles to
+
+        mov %fs:0x18,%eax        ; the 32-bit TEB      -> 7ffee000
+        mov 0x6e4(%eax),%edx     ; TEB+0x6E4           -> 00000040
+        test %edx,%edx / je      ; non-NULL, so it proceeds
+        mov (%edx),%esi          ; <-- faults
+
+  TEB32+0x6CC is `Win32ClientInfo`, so +0x6E4 is **`CLIENTINFO.pDeskInfo`** (offset 0x18 in
+  the i386 layout). user32 null-checks it and it is NOT null — it holds a non-pointer. So
+  this was never "an unfilled import thunk or callback-table slot": it is a **bad
+  `pDeskInfo` in the guest's TEB32**, which makes `DesktopPtrToUser()` dereference garbage.
+  The value DIFFERS per process — notepad `00000040`, mspaint `00490090`, winver `00100000`
+  — i.e. a wrong value, not an unset one.
+
+  The cascade after it is now explained too, and it is not 57 independent bugs. The constant
+  `edx=7e0032d0` in every NULL fault is `ntdll32!RtlpExceptionProtector` (ntdll32 loads at
+  its ImageBase 7E000000), and the instruction stream just above it is
+  `RtlpExecuteHandler2`'s `mov 0x18(%ebp),%ecx; call *%ecx`. So the 56 `eip=00000000`
+  `rw=8` faults are **`RtlpExecuteHandler2` calling a NULL SEH handler**, each nesting one
+  frame deeper — a broken handler chain, which is why `esp` descends.
+
+  **The value is written AFTER a correct publish, and is non-deterministic.** Instrumenting
+  `Wow64PublishClientInfo` shows notepad's own thread (`pti=fffffa8000fe6cb0`, confirmed to
+  be the faulting thread because the fault's `edi=00fe6cb0` is that pti truncated) publishes
+  exactly twice before the fault: `pDeskInfo=00000000` at thread init, then
+  `pDeskInfo=00720dd0 delta=ddbb0000` at desktop assignment — correct. The third publish,
+  back to 0, is at thread EXIT and is after the fault. ~2500 serial lines later user32 reads
+  `0000000f` from that slot; the previous boot of the SAME app read `00000040`. So the
+  projection is right and something scribbles the slot afterwards.
+
+  Eliminated, so nobody re-derives them: the TEB32 offset is right (`Win32ClientInfo` is at
+  0x6CC — now a `const _: () = assert!` in `win32k-rust/src/wow64.rs`, since a wrong one
+  would NOT fail to build and NOT fault, it would silently publish a correct CLIENTINFO32 at
+  the wrong address); the targeting is right (`[MM] MmCreateTeb: WoW64 TEB32 at 7ffee000`
+  matches both the publish and the guest's `fs:[0x18]`); user32 never writes `pDeskInfo`;
+  the guest's GDI batch cannot overrun into it (`GDIBATCHBUFSIZE` is `0x136*4` and
+  `Buffer[0x136]` — consistent); and `NtGdiFlushUserBatch` is not the writer (commented out
+  of `win32u.spec`, zero occurrences in the boot). One red herring, recorded because it was
+  convincing: the last `NtGdiFlush` before the fault logs `arg0=0000000f`, matching the bad
+  value exactly — but `NtGdiFlush` takes NO arguments, those "args" are stale registers, and
+  the earlier boot has the identical `arg0=0000000f` while faulting on `00000040`. Coincidence.
+
+  **Population corrected.** It is notepad, mspaint and **winver** at 58 each, plus
+  **regedit at 32** (regedit faults at a different site, `user32+0x45030`). wordpad, named
+  in the original entry, was NOT observed faulting — but its watch window was cut off by the
+  drain ceiling, so treat it as unobserved rather than clean.
+
+  **Why this went unmeasured for a week, which is the reusable part.** `--ladder` *cannot*
+  see it. `ladder.watch()` stops draining the moment every GRADED guest has reported, and the
+  stock applets run AFTER the parity set and are not graded at all — so the flag whose whole
+  job is to watch the ladder ended at 86.8s with the applet phase never observed. Fixed with
+  `VIBEOS_LADDER_DRAIN_FLOOR=<seconds>` (`tests/qemu/cli/ladder.py`), which only ever extends
+  the drain. Set it above `LADDER_TIMEOUT_SECONDS` (420) or it does nothing.
+
+- **`NtGdiFlushUserBatch` reads and writes the 64-bit TEB for a 32-bit guest — LATENT, OPEN**
+  (2026-09-20). `win32k-rust/src/gdibatch.rs:625` does
+  `let pTeb = NtCurrentTeb() as *mut ntkrnl_sys::ddk::_TEB` — the **64-bit** TEB — then reads
+  `GdiBatchCount`, `GdiTebBatch.HDC` and `GdiTebBatch.Buffer` from it and walks the batch
+  records. A WoW64 guest's gdi32 batches into **TEB32** (`GdiTebBatch` at 0x1D4, 32-bit
+  layout), which is a different structure at a different address, so for a guest this reads
+  one TEB and the writer used the other. Benign today only because the entry point is
+  unreachable: `NtGdiFlushUserBatch` is commented out in `win32ss/win32u/win32u.spec:158` and
+  appears zero times in a full ladder boot. It becomes live the moment anything enables it,
+  and then `pHdr` walks garbage records by a garbage `sz`. Found while eliminating it as the
+  suspect for the `pDeskInfo` corruption above — it is NOT that bug. The i386 kernel reaches
+  the same routine from `ntoskrnl/ke/i386/traphdlr.c:1854`
+  (`if (NtCurrentTeb()->GdiBatchCount) KeGdiFlushUserBatch();`), which is worth checking on
+  the amd64 user-call path before this is enabled.
+
+- **`NtGdiGetCharABCWidthsW` BUGCHECKs 0x1E when called from a 32-bit guest — OPEN**
+  (2026-09-20). Found by the drain floor above: with the applet phase actually observed, a
+  `--ladder` boot does not merely storm with first-chance faults, it **dies**.
+
+        [WOW64>] NtGdiGetCharABCWidthsW(0x109f) enter arg0=4d010381 arg1=00000013 arg2=00000001
+        *** BUGCHECK: 0x0000001E (0xffffffffc0000005, 0xfffff88004ea0204, ...)
+        ***   P2 = win32k.sys+0x79204
+
+  The syscall logs `enter` and never returns. `win32k.sys+0x79204` symbolicates to
+  **`NtGdiGetCharABCWidthsW+0x1a4`**, which is the store in an inlined exclusive-unlock
+  sequence:
+
+        cmpw $0x0,0xc(%r12)
+        movl $0x0,0x8(%r12)      ; <-- faults (write)
+        lock xadd $-1,0x10(%r12)
+
+  **The page is readable but not writable, and that is deduced rather than assumed.** The
+  `cmpw` one instruction earlier reads `0xc(%r12)` — the same 16 bytes, the same page — and
+  the reported faulting PC is the `movl`, not the `cmpw`, so the read completed and nothing
+  between them touches `r12`. An unmapped `r12` would have faulted one instruction sooner.
+  So this is a WRITE to a read-only mapping, which is the shape of a GDI object reached
+  through a user-side view instead of the kernel one: `W32Wow64ZeroBits` maps WoW64 views
+  below 2GB and the desktop view is `PAGE_READONLY`. That makes a delta/truncation mix-up
+  the first thing to check — the same theme as the `pDeskInfo` entry above — but nothing
+  here has yet shown which pointer, so it is a LEAD, not a diagnosis.
+  (Note the BUGCHECK's P3/P4 cannot settle read-vs-write here: P3 is a kernel address, not
+  the 0/1/8 an AV's ExceptionInformation[0] would carry.) Preceded by a long, healthy run of guest GDI text calls
+  (`NtGdiGetOutlineTextMetricsInternalW`, `NtGdiGetGlyphIndicesW`) that all return correctly,
+  so this is one syscall's unlock path, not general GDI breakage. Reproduce with
+  `VIBEOS_LADDER_DRAIN_FLOOR=700 ./vibeos-cli smoke --arch amd64 --ladder`; it lands in the
+  last applet launched (wordpad, PID 852 in that run), which is consistent with wordpad being
+  the text-metrics-heaviest guest. **Not yet root-caused**, and the arch split is untested —
+  do not record it as amd64-only, which is the mistake this registry has already made three
+  times on WoW64 findings.
 
 - **Nothing caps `/tmp/vibeos-cli` retention — OPEN tooling gap** (2026-09-06). A long soak
   writes one artifact dir per round with a ~7MB `serial.log` in it, forever; `pytest`'s

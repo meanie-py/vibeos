@@ -84,9 +84,20 @@ const WOW64_TEB32_OFFSET: usize = 0x2000;
 /// it cannot drift.
 #[cfg(not(target_arch = "x86"))]
 #[inline]
-fn teb32_clientinfo_offset() -> usize {
+const fn teb32_clientinfo_offset() -> usize {
     core::mem::offset_of!(ntkrnl_sys::ddk::_TEB32, Win32ClientInfo)
 }
+
+/// The i386 TEB puts `Win32ClientInfo` at 0x6CC, and the 32-bit user32 reaches
+/// its fields by that ABSOLUTE displacement -- `ValidateHandleNoErr` compiles
+/// `pci->pDeskInfo` to a flat `mov 0x6e4(%eax)` off `fs:[0x18]`, with no
+/// indirection this projection could redirect. So a bindgen `_TEB32` that put
+/// the array anywhere else would not fail to build and would not fault here:
+/// it would silently publish a correct CLIENTINFO32 at the wrong address, and
+/// the guest would read whichever neighbouring field happened to line up.
+/// Assert the number the guest has already hardcoded.
+#[cfg(not(target_arch = "x86"))]
+const _: () = assert!(teb32_clientinfo_offset() == 0x6CC);
 
 /// `true` when the current process is a WoW64 (32-bit guest) process.
 #[cfg(not(target_arch = "x86"))]
