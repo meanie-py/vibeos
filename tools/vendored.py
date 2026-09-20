@@ -353,7 +353,12 @@ def _is_nested_checkout(d: str) -> bool:
 #: An SPDX tag, or a ReactOS file header's `LICENSE:` line. Both are machine-readable
 #: statements by the FILE about itself, which is the only licence evidence that does not
 #: require reading prose.
-_SPDX = re.compile(r"SPDX-License-Identifier:\s*([^\s*/]+)")
+#: The WHOLE expression, not the first token. `([^\s*/]+)` was the first cut and it
+#: truncated `Apache-2.0 OR GPL-2.0-or-later` to `Apache-2.0` — which then matched
+#: mbedtls's recorded licence and passed, hiding the GPL half of a dual licence in all
+#: 79 of its files. A compound expression is exactly the case this check exists for, so
+#: it reads to end of line and strips the comment tail.
+_SPDX = re.compile(r"SPDX-License-Identifier:[ \t]*([^\n]+)")
 _ROS_LICENSE_HDR = re.compile(r"^\s*[*#/]*\s*LICENSE:\s*([^(\n]+)", re.M)
 
 
@@ -398,7 +403,9 @@ def license_drift(reg: Registry) -> list[tuple[str, str, dict]]:
             for pat in (_SPDX, _ROS_LICENSE_HDR):
                 m = pat.search(head)
                 if m:
-                    found[m.group(1).strip()] = found.get(m.group(1).strip(), 0) + 1
+                    lic = m.group(1).strip().rstrip("*/").strip().rstrip(".").strip()
+                    if lic:
+                        found[lic] = found.get(lic, 0) + 1
         # Accounted for = it IS the headline licence, or it is recorded in license_extra.
         unaccounted = {
             lic: n
