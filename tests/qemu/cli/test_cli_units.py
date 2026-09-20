@@ -3239,16 +3239,53 @@ def test_hostlock_announce_pair_on_queued_acquire(tmp_path, monkeypatch, capsys)
     monkeypatch.setenv("VIBEOS_HOST_BROKER", "1")
     holder = hl_mod.acquire_cpu_lease("boot:a", leases=1, timeout=0.0)
     assert holder is not None
-    # timed-out queue → WAIT only
-    assert hl_mod.acquire_cpu_lease("boot:b", leases=1, timeout=0.8) is None
+    # timed-out queue → WAIT only. The budget is seconds, not milliseconds, because
+    # WAIT is printed AFTER the first failed attempt and AFTER the deadline check:
+    # a process descheduled past its own deadline before that print returns None
+    # having announced nothing, and the assert below fires on a lane that did
+    # nothing wrong. This test runs during a merge-queue drain -- three builds and
+    # four boots deep -- so "surely 0.8s is enough" is exactly the assumption the
+    # host is busiest disproving.
+    assert hl_mod.acquire_cpu_lease("boot:b", leases=1, timeout=3.0) is None
     out = capsys.readouterr().out
     assert hl_mod.WAIT_ANNOUNCE in out and hl_mod.ACQUIRED_ANNOUNCE not in out
     assert hl_mod.looks_starved(out)
-    # queued-then-granted → WAIT + ACQUIRED (holder released mid-wait by a thread)
-    threading.Timer(0.8, hl_mod.release, args=(holder,)).start()
-    fd = hl_mod.acquire_cpu_lease("boot:c", leases=1, timeout=10.0)
+
+    # queued-then-granted → WAIT + ACQUIRED.
+    #
+    # Release the holder only once the waiter has ACTUALLY announced, instead of
+    # racing it on a timer. The old form was `Timer(0.8, release, holder)` followed
+    # by the acquire, which assumed the acquire would observe the lease as held
+    # within 0.8s. Under drain load it did not: the timer fired first, the very
+    # first attempt succeeded, and the captured output was a lone admission-shadow
+    # line with no WAIT at all -- TOOLING_FAIL, and an innocent lane bounced out of
+    # the merge queue for a full gate cycle (3 builds + 4 boots).
+    #
+    # Note WAIT is not printed until an attempt has already FAILED, so waiting for
+    # the ticket to appear in queue-cpuheavy would not be enough either; the only
+    # sound signal is the announcement itself. redirect_stdout is process-wide
+    # rather than per-thread, which is fine here only because the main thread does
+    # not print inside this window.
+    buf = io.StringIO()
+    got: dict[str, int | None] = {}
+
+    def _queued_acquire() -> None:
+        with contextlib.redirect_stdout(buf):
+            got["fd"] = hl_mod.acquire_cpu_lease("boot:c", leases=1, timeout=30.0)
+
+    t = threading.Thread(target=_queued_acquire, daemon=True)
+    t.start()
+    deadline = time.monotonic() + 20.0
+    while hl_mod.WAIT_ANNOUNCE not in buf.getvalue():
+        assert time.monotonic() < deadline, f"waiter never announced: {buf.getvalue()!r}"
+        time.sleep(0.01)
+    hl_mod.release(holder)
+    t.join(30.0)
+    assert not t.is_alive(), "queued acquire never returned after the holder released"
+    fd = got["fd"]
     assert fd is not None
-    out = capsys.readouterr().out
+    out = buf.getvalue()
+    capsys.readouterr()
     assert hl_mod.WAIT_ANNOUNCE in out and hl_mod.ACQUIRED_ANNOUNCE in out
     assert not hl_mod.looks_starved(out)
     hl_mod.release(fd)
