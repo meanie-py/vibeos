@@ -262,6 +262,14 @@ pub mod drives_folder_enum;
 // — CRecyclerDropTarget and CRecycleBinFolderViewCB — stay C++; see
 // dll/win32/shell32/rust_recyclebin_bridges_stub.cpp for why neither could come across.
 pub mod def_view_util;
+// folders/CRegFolder.cpp, cohab-flipped. Three modules for one TU: the two COM classes and
+// the file-scope helpers are separate rustconv runs, each overwriting its own file.
+#[path = "folders/CRegFolder.rs"]
+pub mod reg_folder;
+#[path = "folders/CRegFolderEnum.rs"]
+pub mod reg_folder_enum;
+#[path = "folders/regfolder_free.rs"]
+pub mod reg_folder_free;
 #[path = "folders/CRecycleBin.rs"]
 pub mod recycle_bin_tu;
 #[path = "folders/CRecycleBinEnum.rs"]
