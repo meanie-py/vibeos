@@ -398,7 +398,31 @@ trees:
       records for its 1997 Shimizu patch, and the reason `modified` is worth getting
       right rather than leaving at `unknown`.
 
+      RE-AUDITED 2026-09-20 and this entry is now AT ITS ACHIEVABLE MAXIMUM — the remaining
+      gap is not work anyone skipped. There is no patch file because there is no upstream
+      artifact to diff against: Microsoft ships ucrt source only inside the Windows SDK, so
+      without a real SDK drop no diff and therefore no patch is possible. A dead end like
+      FDLIBM's unreachable NetBSD revisions and dxtn's vanished distribution, not an
+      oversight.
+
+      CORRECTING THE COUNT ABOVE: the "23 clang/GCC adaptation sites across 8 files" figure
+      covered only sdk/lib/ucrt. Including sdk/include/ucrt — which is half of this
+      registered tree — it is 33 SITES ACROSS 12 FILES: the eight already named plus
+      corecrt.h (7 sites), corecrt_stdio_config.h, malloc.h and stddef.h (1 each). Same
+      shape as the STLport finding from the same pass: a split tree where only the source
+      half got measured.
+
+      Independently re-verified rather than inherited: `#pragma GCC target(...)` really is
+      in strnlen-sse2.cpp and strnlen-avx2.cpp (MSVC has no such pragma); strnlen.cpp really
+      does turn common_strnlen_simd from a DEFINITION into a bare DECLARATION under
+      `(__GNUC__ || __clang__) && !_UCRT_BUILD_SSE2 && !_UCRT_BUILD_AVX2`, which is
+      behavioural rather than cosmetic; and _M_ARM64EC really does appear in exactly 7
+      files, holding the 10.0.22000 dating floor. `grep -rli reactos` over both halves
+      matches only CMakeLists.txt, math.cmake and locale.cmake — no source file — which is
+      exactly why the marker-absence lesson above is worth keeping.
+
   # ── x86 emulation for wow64 / arm64ec ───────────────────────────────────
+
   - path: external/fex
     name: FEX-Emu
     upstream: https://github.com/FEX-Emu/FEX
@@ -1300,6 +1324,14 @@ trees:
       reimplementation and does not ship the two .c files, so 1,086 of our 1,137 lines
       have nothing to compare against. `modified` stays unknown, now for a stated
       reason rather than for want of looking.
+
+      RE-CHECKED 2026-09-20: still unresolvable, with one more avenue eliminated. Beyond the
+      dead people.freedesktop.org/~mareko distribution point already recorded, the plausible
+      GitHub mirrors (mesa3d/libtxc_dxtn, freedreno/libtxc_dxtn and similar) return nothing
+      and sources.debian.org has no libtxc-dxtn source package. So `modified: unknown`
+      stands and there is no patch for the same reason there is no diff. This entry is at
+      its achievable maximum too — the gap is the world's, not ours.
+
     reason: S3TC/DXTn texture (de)compression for the GL stack.
 
   # ── headers with no source in this tree ─────────────────────────────────
