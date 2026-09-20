@@ -87,7 +87,7 @@ pub unsafe fn RecycleBinGeneric_new() -> *mut RecycleBinGeneric {
         core::mem::size_of::<RecycleBinGeneric>(),
     ) as *mut RecycleBinGeneric;
     if this.is_null() { return core::ptr::null_mut(); }
-    (*this).IRecycleBin_iface.lpVtbl = core::ptr::addr_of!(RECYCLEBINGENERIC_IRECYCLEBIN_VTBL);
+    (*this).IRecycleBin_iface.lpVtbl = core::ptr::addr_of!(RECYCLEBINGENERIC_IRECYCLEBIN_VTBL) as *mut _;
     RecycleBinGeneric_ctor_body(this);
     this
 }
@@ -156,16 +156,14 @@ pub unsafe fn RecycleBinGeneric_QueryInterface_body(this: *mut RecycleBinGeneric
 }
 
 pub unsafe fn RecycleBinGeneric_AddRef_body(this: *mut RecycleBinGeneric) -> ULONG {
-    let ref_count = ntdll_sys::nt::InterlockedIncrement(
-        &raw mut (*this).m_ref,
-    );
+    let ref_count = InterlockedIncrement(core::ptr::addr_of_mut!((*this).m_ref));
     ref_count as u32
 }
 
 pub unsafe fn RecycleBinGeneric_dtor_body(this: *mut RecycleBinGeneric) -> () {}
 
 pub unsafe fn RecycleBinGeneric_Release_body(this: *mut RecycleBinGeneric) -> ULONG {
-    let refCount = InterlockedDecrement(&mut (*this).m_ref);
+    let refCount = InterlockedDecrement(core::ptr::addr_of_mut!((*this).m_ref)) as ULONG;
     if refCount == 0 {
         RecycleBinGeneric_delete(this);
     }
@@ -180,19 +178,19 @@ pub unsafe fn RecycleBinGeneric_DeleteFile_body(this: *mut RecycleBinGeneric, sz
         let len = GetFullPathNameW(szFileName, dwBufferLength, szFullName, core::ptr::null_mut());
         if len == 0 {
             if !szFullName.is_null() {
-                CoTaskMemFree(szFullName);
+                CoTaskMemFree(szFullName.cast());
             }
             return HRESULT_FROM_WIN32(GetLastError());
         } else if len < dwBufferLength {
             break;
         }
         if !szFullName.is_null() {
-            CoTaskMemFree(szFullName);
+            CoTaskMemFree(szFullName.cast());
         }
         dwBufferLength = len;
-        szFullName = CoTaskMemAlloc((dwBufferLength as usize) * core::mem::size_of::<u16>()) as LPWSTR;
+        szFullName = CoTaskMemAlloc(((dwBufferLength as usize) * core::mem::size_of::<u16>()) as SIZE_T) as LPWSTR;
         if szFullName.is_null() {
-            return HRESULT_FROM_WIN32(ERROR_NOT_ENOUGH_MEMORY as LONG);
+            return HRESULT_FROM_WIN32(ERROR_NOT_ENOUGH_MEMORY);
         }
     }
 
@@ -200,8 +198,11 @@ pub unsafe fn RecycleBinGeneric_DeleteFile_body(this: *mut RecycleBinGeneric, sz
     let mut szVolume: [u16; MAX_PATH as usize] = [0u16; MAX_PATH as usize];
     swprintf(
         szVolume.as_mut_ptr(),
+        szVolume.len(),
         CPP_COM_WSTR_88674D0269BC.as_ptr(),
-        *szFullName.offset(0 as isize),
+        // C default argument promotion: a WCHAR through `...` arrives as int, which is
+        // what `%c` reads. Rust does not promote, so it is spelled.
+        *szFullName.offset(0 as isize) as c_uint,
     );
 
     // Skip namespace (if any): "\\.\" or "\\?\"
@@ -211,7 +212,7 @@ pub unsafe fn RecycleBinGeneric_DeleteFile_body(this: *mut RecycleBinGeneric, sz
             || *szVolume.get_unchecked(2 as usize) == '?' as u16)
         && *szVolume.get_unchecked(3 as usize) == '\\' as u16
     {
-        MoveMemory(
+        MoveMemory!(
             szVolume.as_mut_ptr().cast(),
             (&szVolume[4 as usize] as *const u16).cast(),
             (core::mem::size_of_val(&szVolume) / core::mem::size_of::<u16>() - 4 as usize)
@@ -222,13 +223,16 @@ pub unsafe fn RecycleBinGeneric_DeleteFile_body(this: *mut RecycleBinGeneric, sz
     let mut prb: *mut IRecycleBin = core::ptr::null_mut();
     let mut hr = GetDefaultRecycleBin(szVolume.as_ptr(), &mut prb as *mut *mut IRecycleBin);
     if hr < (0 as i32) {
-        CoTaskMemFree(szFullName);
+        CoTaskMemFree(szFullName.cast());
         return hr;
     }
 
-    hr = ((*(*prb).lpVtbl).DeleteFile)(prb, szFullName);
-    CoTaskMemFree(szFullName);
-    ((*(*prb).lpVtbl).Release)(prb);
+    // The island renders every vtable slot as `Option<fn>` and names this one `DeleteFileW`
+    // (recyclebin.h:99 `#define DeleteFileToRecycleBin ...W`, the TCHAR family). The crate's
+    // `commacros` helpers already carry both facts, including the `unwrap_unchecked`.
+    hr = IRecycleBin_DeleteFile(prb, szFullName);
+    CoTaskMemFree(szFullName.cast());
+    IRecycleBin_Release(prb);
     hr
 }
 
@@ -245,11 +249,14 @@ pub unsafe fn RecycleBinGeneric_EmptyRecycleBin_body(this: *mut RecycleBinGeneri
             continue;
         }
 
-        let mut szVolumeName: [u16; MAX_PATH] = [0u16; MAX_PATH];
+        let mut szVolumeName: [u16; MAX_PATH as usize] = [0u16; MAX_PATH as usize];
         swprintf(
             szVolumeName.as_mut_ptr(),
+            szVolumeName.len(),
             CPP_COM_WSTR_88674D0269BC.as_ptr(),
-            0x0041u16 + i as u16,
+            // recyclebin_generic.cpp:151 `swprintf(szVolumeName, L"%c:\\", L'A' + i)` -- the
+            // sum is an int in C (both operands promote), and `%c` reads an int.
+            (0x0041u16 + i as u16) as c_uint,
         );
         if GetDriveTypeW(szVolumeName.as_ptr()) != DRIVE_FIXED {
             i += 1;
@@ -262,8 +269,8 @@ pub unsafe fn RecycleBinGeneric_EmptyRecycleBin_body(this: *mut RecycleBinGeneri
             return hr;
         }
 
-        let _ = ((*(*prb).lpVtbl).EmptyRecycleBin)(prb);
-        ((*(*prb).lpVtbl).Release)(prb);
+        let _ = IRecycleBin_EmptyRecycleBin(prb);
+        IRecycleBin_Release(prb);
 
         i += 1;
     }

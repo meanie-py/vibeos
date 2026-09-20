@@ -1856,6 +1856,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "recyclebin-rust"
+version = "0.1.0"
+dependencies = [
+ "com-sys",
+ "ntdll-sys",
+ "panic-common",
+ "win32macros-rust",
+]
+
+[[package]]
 name = "regex-automata"
 version = "0.4.14"
 source = "registry+https://github.com/rust-lang/crates.io-index"
