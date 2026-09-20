@@ -89,9 +89,13 @@ typedef struct
     WORD CmdId;
 } CMVERBMAP;
 
-HRESULT
+/* EXTERN_C: the definitions are Rust now (shell32-rust/src/shell32/utils.rs), which emits
+ * the plain unmangled symbols. Without this the remaining C++ caller (shell32.cpp) would
+ * reference C++-mangled names that nothing defines. Same treatment CDefViewUtil's helpers and
+ * CDefViewBckgrndMenu_CreateInstance got when their TUs flipped. */
+EXTERN_C HRESULT
 SHELL_MapContextMenuVerbToCmdId(LPCMINVOKECOMMANDINFO pICI, const CMVERBMAP *pMap);
-HRESULT
+EXTERN_C HRESULT
 SHELL_GetCommandStringImpl(SIZE_T CmdId, UINT uFlags, LPSTR Buf, UINT cchBuf, const CMVERBMAP *pMap);
 
 // SHExtractIconsW is a forward, use this function instead inside shell32

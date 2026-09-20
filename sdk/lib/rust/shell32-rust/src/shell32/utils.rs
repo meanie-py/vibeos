@@ -1,33 +1,35 @@
 // rustconv-assembly: free-functions
 //! `dll/win32/shell32/utils.cpp` -- all 95 free functions, translated, present, and compiling
 //! clean on i686/amd64/arm64.
+//! COHAB-FLIPPED 2026-09-19: `utils.cpp` is out of `dll/win32/shell32/CMakeLists.txt` and this
+//! module is the shipping implementation of its 95 free functions.
 //!
-//! ORPHAN-BY-DESIGN: wiring this while utils.cpp is still the compiled implementation is a
-//! PARTIAL COHAB FLIP -- it captures 58 live C++ symbols and freezes explorer's taskbar, see
-//! WHY below. `utils.cpp` owns the shipping implementation; this module owns nothing yet.
+//! Wiring and the flip had to be ONE change, and the ORPHAN-BY-DESIGN guard that used to stand
+//! here was recording why. Wired alone, with the `.cpp` still compiled, this module's
+//! `#[no_mangle]` names shadowed the live C++ ones with no duplicate-symbol error -- the linker
+//! resolves archive members against object files and simply picks one -- so live entry points
+//! rerouted into Rust that had never run. Measured: the guest booted, passed smoke on all three
+//! arches, then froze between `[EXPLORER] taskbar: OnCreate begin` and `child controls
+//! created`, so `ProcessStartupItems` never ran and the kmtest sweep launched 0 of 91. Smoke
+//! cannot see that; `vibeos-cli conformance` can, and it is the oracle for this class of change.
 //!
-//! DO NOT WIRE THIS MODULE. That is the invariant this file is held to, not a status line.
-//! The phrasing that caused the incident below was "the module is not wired YET", which reads
-//! as a task; it is a GUARD.
+//! What the flip actually needed was SMALLER than the guard predicted. Measured against the
+//! LIVE CMake source list plus libshell32_rust.a, 36 symbols leave this TU and this module
+//! publishes 32 of them. The guard said all 16 `*_RustBridge` wrappers needed rehoming; 14 are
+//! published right here. Only the `CStubWindow32` create/destroy pair moved, to
+//! `dll/win32/shell32/rust_stubwindow32_stub.cpp`, because only that pair reaches a C++ ATL
+//! class that propsheet.cpp and folders/CDrivesFolder.cpp still construct -- and an ATL
+//! `CWindowImpl`'s thunk and registered class must have exactly one owner. The last two,
+//! `SHELL_GetCommandStringImpl` and `SHELL_MapContextMenuVerbToCmdId`, had their utils.h
+//! declarations made EXTERN_C so shell32.cpp names the unmangled symbols emitted here.
 //!
-//! WHY, measured rather than argued (2026-09-19). This module defines 58 `#[no_mangle]` names
-//! that the LIVE C++ shell32 objects also define as unmangled externs -- among them the 16
-//! `*_RustBridge` wrappers other Rust modules call, plus `SHGetShellStyleHInstance` and
-//! `SHGetUserDisplayName`, which explorer's taskbar `OnCreate` goes through. Adding
-//! `pub mod utils;` raises NO duplicate-symbol error: the linker resolves archive members
-//! against object files in a defined order and simply picks one. So those 58 live entry points
-//! silently reroute into Rust that has never executed. Wired, the guest booted, passed smoke on
-//! all three arches, and then froze between `[EXPLORER] taskbar: OnCreate begin` and
-//! `child controls created`; `ProcessStartupItems` never ran, so the kmtest sweep launched 0 of
-//! 91 tests, nothing was runnable and the CPU sat halted. Smoke cannot see it -- `shell ready`
-//! is reached identically in both trees, and the freeze is after that marker.
+//! One measurement trap worth keeping: an intra-DLL undefined-symbol sweep does NOT see .spec
+//! exports, because those are consumed by other modules entirely. `SHOpenEffectiveToken`
+//! (SHELL32.235) is one, and it was `verify_lost_exports` that said so -- after the banner came
+//! off. Which is the other half of the lesson: `scan_extern_arity`, `scan_cc_mismatch`,
+//! `scan_silent_failures` and `verify_lost_exports` all SKIP a file carrying an
+//! `ORPHAN-BY-DESIGN` banner, so a stale one silently switches four checks off.
 //!
-//! Wiring and the cohab flip of utils.cpp are ONE change. The flip additionally needs those 16
-//! `*_RustBridge` wrappers rehomed (the `rust_*_stub.cpp` files are the established pattern),
-//! and the CStubWindow32 pair must stay in C++ regardless, because an ATL CWindowImpl's thunk
-//! and registered class must have exactly one owner and CDrivesFolder.cpp still uses the class.
-//! Prove the capture set is empty first -- `llvm-nm` recipe in the field manual under
-//! "Cohab link plumbing".
 //!
 //! Bought 2026-09-13 for $1.17 (97 workers; 91 replayed from bank at $0 on the retry pass),
 //! zero AUDIT REJECTs. Six workers failed on TRANSPORT the first time -- "peer closed

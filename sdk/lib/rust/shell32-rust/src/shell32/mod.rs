@@ -138,13 +138,14 @@ pub mod filesysbinddata_free;
 /// `CExtractIcon.cpp`, cohab-flipped. Same two-module split as CFileSysBindData above.
 pub mod CExtractIcon;
 pub mod extracticon_free;
-// pub mod utils;
-// ORPHAN-BY-DESIGN, and this is a GUARD rather than a to-do. utils.rs defines 58 `#[no_mangle]`
-// names that the LIVE C++ shell32 objects also define as unmangled externs -- 16 of them the
-// `*_RustBridge` wrappers other Rust modules call, plus SHGetShellStyleHInstance and
-// SHGetUserDisplayName, which explorer's taskbar OnCreate goes through. Wiring it raises NO
-// duplicate-symbol error (the linker resolves archive members against object files and just
-// picks one), so those entry points silently reroute into Rust that has never run: measured
-// 2026-09-19, the guest froze inside taskbar OnCreate and the kmtest sweep never launched.
-// Wiring and the cohab flip of utils.cpp are ONE change, and the flip needs those 16 bridges
-// rehomed first. Field manual, "Cohab link plumbing".
+/// `utils.cpp`'s free functions, COHAB-FLIPPED 2026-09-19 -- wiring and the flip as ONE change,
+/// which is what the ORPHAN-BY-DESIGN guard that used to sit here was protecting. Wired alone,
+/// this module's `#[no_mangle]` names shadowed the live C++ ones with no duplicate-symbol error
+/// and explorer froze inside taskbar `OnCreate`, launching 0 of 91 kmtest tests.
+///
+/// The guard also said the flip needed all 16 `*_RustBridge` wrappers rehomed. It did not:
+/// utils.rs publishes 14 of them itself, so only the CStubWindow32 pair moved (to
+/// dll/win32/shell32/rust_stubwindow32_stub.cpp), because only that pair reaches a C++ ATL
+/// class that propsheet.cpp and CDrivesFolder.cpp still construct. See the CMakeLists entry for
+/// the measured capture set.
+pub mod utils;
