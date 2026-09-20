@@ -539,6 +539,8 @@ def check(reg: Registry) -> list[str]:
     # The THIRD ratchet. Same argument as the two above, one level down: it is not enough
     # that a tree is classified, its recorded LICENCE has to survive contact with what the
     # files say about themselves. Three trees failed this the day it was written.
+    problems.extend(structural_problems(reg.repo / "vendor.yaml"))
+
     for path, recorded, unaccounted in license_drift(reg):
         listed = ", ".join(f"{lic} x{n}" for lic, n in sorted(unaccounted.items()))
         problems.append(
@@ -549,6 +551,45 @@ def check(reg: Registry) -> list[str]:
             f"    licence alone would be wrong about this tree."
         )
     return problems
+
+
+#: Every field name an entry may carry. A key can only begin a line; if one appears
+#: mid-line it was absorbed into the previous value.
+_FIELD_NAMES = (
+    "path|paths|name|upstream|license|license_file|license_ref|license_extra|"
+    "modified|headers|version|reason|review|unwelcome|origin|tier"
+)
+_JOINED_FIELD = re.compile(rf"\S[ \t]{{2,}}((?:{_FIELD_NAMES}):)")
+
+
+def structural_problems(path: Path) -> list[str]:
+    """Fields silently swallowed into the previous value by a bad hand-edit.
+
+    This exists because I broke vendor.yaml this way THREE TIMES in one session while
+    editing it programmatically. The failure mode is nasty precisely because it is not
+    a syntax error: `    license: MIT    modified: yes` still PARSES — `modified` just
+    quietly stops being a field and becomes part of the licence string, and a block
+    scalar will happily swallow a whole `reason:` the same way. The registry then
+    reports clean while carrying less than it appears to.
+
+    Two of the three were caught only by re-measuring afterwards and one by the loader
+    complaining about a missing required field, which is luck rather than a check. So
+    it is a check now.
+    """
+    try:
+        text = path.read_text(encoding="utf-8")
+    except OSError as e:
+        return [f"cannot read {path}: {e}"]
+    out = []
+    for n, line in enumerate(text.splitlines(), 1):
+        m = _JOINED_FIELD.search(line)
+        if m:
+            out.append(
+                f"vendor.yaml:{n}: `{m.group(1).strip()}` is not at the start of a line "
+                f"— it was absorbed into the value above it, and has stopped being a "
+                f"field. Line: {line.strip()[:90]}"
+            )
+    return out
 
 
 def write_stamps(reg: Registry) -> list[str]:
