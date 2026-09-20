@@ -23,7 +23,7 @@ This product includes third-party software. **This file is GENERATED** from `ven
 - [Mbed TLS](#mbed-tls) — 2.16.11 — Apache-2.0 OR GPL-2.0-or-later
 - [Microsoft compiler-tests (EH/SEH)](#microsoft-compiler-tests-ehseh) — unknown — MIT
 - [Microsoft UCRT](#microsoft-ucrt) — unknown — Microsoft (see the Windows SDK licence terms)
-- [SGI GLU (OpenGL Utility Library)](#sgi-glu-opengl-utility-library) — unknown — SGI-B-2.0
+- [SGI GLU (OpenGL Utility Library)](#sgi-glu-opengl-utility-library) — glu-9.0.1 (Mesa git tag, not a release tarball) — SGI-B-2.0
 - [STLport](#stlport) — 5.2.1 — STLport licence (permissive)
 - [win-iconv](#win-iconv) — unknown — Unlicense OR MIT
 - [Windows Driver Frameworks (KMDF/UMDF)](#windows-driver-frameworks-kmdfumdf) — 1.17.7600 — MIT
@@ -2638,11 +2638,12 @@ This is the largest unresolved provenance question in the tree (~78K lines) and 
 ## SGI GLU (OpenGL Utility Library)
 
 - Upstream: SGI OpenGL Sample Implementation — the `glu` component, as redistributed with Mesa. No release stamp in the drop; see review.
-- Version: unknown
+- Version: glu-9.0.1 (Mesa git tag, not a release tarball)
 - In this tree: `dll/opengl/glu32/src`, `dll/opengl/glu32/include`
 - Licence: SGI-B-2.0
 - Also contains: LGPL-2.0-or-later — include/GL/glu_mangle.h is not SGI's — it is Mesa 3.0, Copyright (C) 1995-1998 Brian Paul, under the GNU Library General Public License v2 or later. One file, a symbol-mangling header, but a copyleft licence sitting inside a permissive drop is exactly the shape this registry exists to make visible.
 
+- Also contains: SGI-B-1.1 — The 73 .cc implementation files under src/libnurbs/{interface,internals,nurbtess} carry SGI Free Software License B **Version 1.1**, a distinct earlier licence, not the Version 2.0 the other 117 files carry. Inherited from Mesa, 0% ours.
 - Grant reproduced from: `dll/opengl/glu32/include/GL/glu.h (header comment)`
 
 ```
