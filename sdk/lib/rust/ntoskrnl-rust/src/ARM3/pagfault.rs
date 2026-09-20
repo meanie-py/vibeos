@@ -95,6 +95,7 @@ unsafe fn MiGrowOneUserStack(
     if ((NextStackAddress as ULONG_PTR) - PAGE_SIZE as ULONG_PTR) <= DeallocationStack {
         NextStackAddress = (PAGE_ALIGN(DeallocationStack) + GuaranteedSize) as PVOID;
 
+        crate::dbg_print!(b"[MM] Close to our death...\n\0");
         let Status = ZwAllocateVirtualMemory(
             NtCurrentProcess(),
             &mut NextStackAddress,
@@ -103,6 +104,9 @@ unsafe fn MiGrowOneUserStack(
             MEM_COMMIT,
             PAGE_READWRITE,
         );
+        if Status < 0 {
+            crate::dbg_print!(b"[MM] Failed to allocate memory: %lx\n\0", Status as u32);
+        }
         return Some(MiStackGrowth {
             status: STATUS_STACK_OVERFLOW,
             new_limit: if Status >= 0 {
@@ -131,6 +135,7 @@ unsafe fn MiGrowOneUserStack(
         });
     }
 
+    crate::dbg_print!(b"[MM] Guard page failure: %lx\n\0", Status as u32);
     ASSERT!(false);
     Some(MiStackGrowth {
         status: STATUS_STACK_OVERFLOW,
@@ -222,6 +227,17 @@ unsafe fn MiCheckForUserStackOverflow(
         }
     }
 
+    // The C prints this whenever the fault is not in the stack at all. Here it
+    // belongs at the END rather than at the first bounds test, because a WoW64
+    // thread has TWO descriptors and missing the native one is the NORMAL way
+    // a guest stack fault reaches TEB32 -- printing there would fire on every
+    // healthy guest stack growth.
+    crate::dbg_print!(
+        b"[MM] Faulting address outside of stack bounds. Address=%p, StackBase=%p, DeallocationStack=%p\n\0",
+        Addr,
+        (*Teb).NtTib.StackBase as usize,
+        (*Teb).DeallocationStack as usize,
+    );
     STATUS_GUARD_PAGE_VIOLATION
 }
 

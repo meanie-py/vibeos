@@ -494,7 +494,7 @@ sdk/lib/rust/ntoskrnl-rust/src/ARM3/mminit.rs: MiBuildPfnDatabaseFromLoaderBlock
 sdk/lib/rust/ntoskrnl-rust/src/ARM3/mminit.rs: MiDbgDumpMemoryDescriptors [ALL]
 sdk/lib/rust/ntoskrnl-rust/src/ARM3/mminit.rs: MmArmInitSystem [ALL]
 sdk/lib/rust/ntoskrnl-rust/src/ARM3/mminit.rs: MmDumpArmPfnDatabase [ALL]
-sdk/lib/rust/ntoskrnl-rust/src/ARM3/pagfault.rs: MiCheckForUserStackOverflow [ALL]
+sdk/lib/rust/ntoskrnl-rust/src/ARM3/pagfault.rs: MiCheckForUserStackOverflow [PARTIAL]
 sdk/lib/rust/ntoskrnl-rust/src/ARM3/pagfault.rs: MiCheckPdeForSessionSpace [ALL]
 sdk/lib/rust/ntoskrnl-rust/src/ARM3/pagfault.rs: MiResolveProtoPteFault [ALL]
 sdk/lib/rust/ntoskrnl-rust/src/ARM3/pagfault.rs: MiResolveTransitionFault [ALL]
