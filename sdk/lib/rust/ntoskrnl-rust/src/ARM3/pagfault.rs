@@ -35,9 +35,17 @@ static mut UserPdeFault: BOOLEAN = 0;
 /// The only reason this exists is the stack-runaway report below: a thread that
 /// eats its whole stack is identified by WHERE it was when it did, and the trap
 /// frame is the only thing at this depth that knows.
+/// The sentinel several Mm paths pass INSTEAD of a trap frame, to tell the
+/// fault handler they are running unlocked (mdlsup.rs, virtual.rs). It is not
+/// a pointer and must never be dereferenced -- reading `.Rip` off it yields a
+/// plausible-looking address, which is worse than none: it cost this probe its
+/// first set of results, where 2 of 4 reported "PCs" were garbage and one was
+/// page-aligned across three samples.
+const MI_TRAP_INFO_UNLOCKED: usize = 0xBADBADA3BADBADA3;
+
 #[inline]
 unsafe fn MiFaultingPc(TrapInformation: PVOID) -> ULONG_PTR {
-    if TrapInformation.is_null() {
+    if TrapInformation.is_null() || TrapInformation as usize == MI_TRAP_INFO_UNLOCKED {
         return 0;
     }
     let tf = TrapInformation as PKTRAP_FRAME;
