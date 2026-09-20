@@ -122,6 +122,13 @@ class Tree:
         #: nowhere else — so without this the registry can record a licence NAME it
         #: cannot point at, and a generated notices file would have nothing to quote.
         self.license_ref: str | None = raw.get("license_ref")
+        #: Our delta from pristine upstream, as a patch file under vendor-patches/.
+        #: Present ONLY where the edit cannot be expressed as a build flag — the
+        #: preferred fix is always to make the source pristine and move the change into
+        #: the build (libtiff needed no flag at all, libxslt one -D, mbedtls a -D plus
+        #: a file of our own). A `patch:` here is an admission that was not possible,
+        #: and it says why in its own header.
+        self.patch: str | None = raw.get("patch")
         #: Licences present in the tree BESIDES `license`, as {spdx or name: why}. A
         #: single `license:` field on a mixed tree is not a rounding error: wdf is
         #: recorded MIT and carries 11 ReactOS-authored GPL-2.0-or-later files, and FEX
@@ -485,6 +492,12 @@ def check(reg: Registry) -> list[str]:
             problems.append(f"{t.name}: license_file does not exist: {t.license_file}")
         if t.license_ref and not (reg.repo / t.license_ref).is_file():
             problems.append(f"{t.name}: license_ref does not exist: {t.license_ref}")
+        if t.patch:
+            pf = reg.repo / t.patch
+            if not pf.is_file():
+                problems.append(f"{t.name}: patch does not exist: {t.patch}")
+            elif not pf.read_text(errors="replace").strip():
+                problems.append(f"{t.name}: patch is empty: {t.patch}")
         for h in t.headers:
             if not (reg.repo / h).is_dir():
                 problems.append(f"{t.name}: header dir does not exist: {h}")
