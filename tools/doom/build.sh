@@ -33,14 +33,29 @@ fi
 sed -i 's/#include <Windows.h>/#include <windows.h>/' "$SRCDIR/doomgeneric_win.c"
 
 # --- fetch shareware IWAD (once) ------------------------------------------
+# The slitaz mirror this used to fetch from is GONE (verified 2026-09-20: a
+# plain 404, not a transient failure), which is why doom could not be built
+# here at all and the ladder entry said so.
 if [ ! -f "$WAD" ]; then
     echo "[doom] fetching shareware doom1.wad..."
-    curl -fsSL -o "$WAD" https://distro.ibiblio.org/slitaz/sources/packages/d/doom1.wad
+    curl -fsSL -o "$WAD" https://github.com/Akbar30Bill/DOOM_wads/raw/master/doom1.wad
 fi
-# md5 of the canonical shareware IWAD (v1.9). Warn (don't fail) on mismatch.
+# md5 of the canonical shareware IWAD (v1.9), 4196020 bytes.
+#
+# This used to WARN and continue. It now FAILS, because the source above is a
+# third-party mirror rather than a distro package tree: an unverified binary
+# from a mirror is exactly the case where "carry on with whatever arrived" is
+# wrong, and a bad IWAD would surface as some baffling in-game fault far from
+# here. The hash is what makes the mirror safe to use at all -- it is the
+# canonical shareware WAD or the build stops.
 EXPECT=f0cefca49926d00903cf57551d901abe
 GOT="$(md5sum "$WAD" | cut -d' ' -f1)"
-[ "$GOT" = "$EXPECT" ] || echo "[doom] WARN: doom1.wad md5 $GOT != expected $EXPECT (continuing)"
+if [ "$GOT" != "$EXPECT" ]; then
+    echo "[doom] FATAL: doom1.wad md5 $GOT != expected $EXPECT" >&2
+    echo "[doom]   $WAD is not the canonical shareware IWAD -- refusing to build." >&2
+    echo "[doom]   Delete it to re-fetch, or point the URL above at a good copy." >&2
+    exit 1
+fi
 
 # doomgeneric source set with the Win32/GDI backend (doomgeneric_win.c) instead
 # of the X11 one (doomgeneric_xlib.c).
