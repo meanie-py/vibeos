@@ -723,10 +723,12 @@ dll/win32/shell32/CMakeLists.txt	1	# CDefViewUtil.cpp — replaced by Rust (shel
 dll/win32/shell32/CMakeLists.txt	1	# CDefaultContextMenu.cpp
 dll/win32/shell32/CMakeLists.txt	1	# CDefaultContextMenu.cpp — replaced by Rust; cohab via libshell32_rust.a. Whole-TU flip,
 dll/win32/shell32/CMakeLists.txt	1	# CDropTargetHelper.cpp — COM class plus SHSimulateDropOnClsid ordinal closure
+dll/win32/shell32/CMakeLists.txt	1	# CEnumIDListBase.cpp — replaced by Rust (shell32-rust/src/shell32/CEnumIDListBase.rs);
 dll/win32/shell32/CMakeLists.txt	1	# CExtractIcon.cpp — replaced by Rust (shell32-rust/src/shell32/CExtractIcon.rs for the
 dll/win32/shell32/CMakeLists.txt	1	# CFileSysBindData.cpp — replaced by Rust (shell32-rust/src/shell32/CFileSysBindData.rs
 dll/win32/shell32/CMakeLists.txt	1	# CFolder.cpp — replaced by Rust (shell32-rust/src/shell32/CFolder.rs); cohab via
 dll/win32/shell32/CMakeLists.txt	1	# CFolderItemVerbs.cpp stays C++ below: `new CComObject<T>` activation and CComBSTR state
+dll/win32/shell32/CMakeLists.txt	1	# CFolderItemVerbs.cpp — replaced by Rust (shell32-rust/src/shell32/CFolderItemVerb.rs and
 dll/win32/shell32/CMakeLists.txt	1	# CFolderItems.cpp — replaced by Rust; its TWO classes are one file each,
 dll/win32/shell32/CMakeLists.txt	1	# CIDLDataObj.cpp — replaced by Rust: shell32/CIDLDataObj.rs (the IDataObject/
 dll/win32/shell32/CMakeLists.txt	1	# CNewMenu.cpp — replaced by Rust (shell32-rust/src/new_menu.rs); cohab via libshell32_rust.a
@@ -744,6 +746,7 @@ dll/win32/shell32/CMakeLists.txt	1	# Plain C: belongs in PCH_SKIP_SOURCE (precom
 dll/win32/shell32/CMakeLists.txt	1	# SH_FormatByteSize forwarder MOVED to dialogs/filedefext.cpp — the TU that owns the
 dll/win32/shell32/CMakeLists.txt	1	# ShellObjectCreator<CExtractIcon> (CExtractIcon.cpp:339), i.e. internal, no CLSID.
 dll/win32/shell32/CMakeLists.txt	1	# `#[no_mangle]` on the Rust side. Their other C++ callers (shlexec.cpp,
+dll/win32/shell32/CMakeLists.txt	1	# `--activation-source dll/win32/shell32/CFolderItems.cpp`), and CFolderItem::Verbs calls
 dll/win32/shell32/CMakeLists.txt	1	# appbar.c — replaced by Rust (shell32-rust/src/appbar.rs); cohab via libshell32_rust.a
 dll/win32/shell32/CMakeLists.txt	1	# brfolder.cpp — replaced by Rust (shell32-rust/src/shell32/brfolder.rs); cohab via libshell32_rust.a
 dll/win32/shell32/CMakeLists.txt	1	# called from the C++ CDefView.cpp, whose forward declarations became EXTERN_C so they
@@ -778,9 +781,11 @@ dll/win32/shell32/CMakeLists.txt	1	# iconcache.cpp — replaced by Rust (shell32
 dll/win32/shell32/CMakeLists.txt	1	# local declaration in folders/CDrivesFolder.cpp is `extern "C"` now, and the
 dll/win32/shell32/CMakeLists.txt	1	# matches what CRegFolder.cpp links against. `_InsertMenuItemW` likewise, via
 dll/win32/shell32/CMakeLists.txt	1	# no vtable is emitted — shell32.cpp.obj's only undefined CShellLink symbol is
+dll/win32/shell32/CMakeLists.txt	1	# of CFolder.cpp/CFolderItems.cpp's C++ closure.
 dll/win32/shell32/CMakeLists.txt	1	# propsheet.cpp — replaced by Rust (shell32-rust/src/propsheet.rs); reaches
 dll/win32/shell32/CMakeLists.txt	1	# rust_changenotify_broker_stub.cpp below.
 dll/win32/shell32/CMakeLists.txt	1	# rust_folder_options_stub.cpp below.
+dll/win32/shell32/CMakeLists.txt	1	# rust_folderitemverbs_bridge.cpp is DELETED with this flip: it existed only because the
 dll/win32/shell32/CMakeLists.txt	1	# rust_recyclebin_bridges_stub.cpp (below), which also documents the layout bug that the
 dll/win32/shell32/CMakeLists.txt	1	# rust_strsafe_shim.c — linkage, not language: strsafe.h's StringCchPrintfW is a `static
 dll/win32/shell32/CMakeLists.txt	1	# rust_stubwindow32_stub.cpp below, and SHELL_GetCommandStringImpl /
@@ -811,6 +816,7 @@ dll/win32/shell32/CMakeLists.txt	1	# wine/shellstring.c — replaced by Rust (sh
 dll/win32/shell32/CMakeLists.txt	1	# wine/shlmenu.c — replaced by Rust (shell32-rust/src/wine/shlmenu.rs); cohab via libshell32_rust.a
 dll/win32/shell32/CMakeLists.txt	1	# wine/shpolicy.c — replaced by Rust (shell32-rust/src/wine/shpolicy.rs); cohab via libshell32_rust.a
 dll/win32/shell32/CMakeLists.txt	1	# — including the SH_FormatByteSize forwarder that moved here when drvdefext.cpp flipped, which
+dll/win32/shell32/shelldesktop/CMakeLists.txt	1	# CDirectoryList.cpp — TRANSLATED (shell32-rust/src/shelldesktop/CDirectoryList.rs) but
 dll/win32/shell32/shellmenu/CMakeLists.txt	1	# CMenuBand.cpp — replaced by Rust (sdk/lib/rust/menuband-rust). Unlike the shell32-
 dll/win32/shell32/shellmenu/CMakeLists.txt	1	# CMenuDeskBar.cpp — replaced by menuband-rust/src/menu_desk_bar.rs
 dll/win32/shell32/shellmenu/CMakeLists.txt	1	# CMenuSite.cpp — replaced by menuband-rust/src/menu_site.rs
@@ -1577,7 +1583,6 @@ ntoskrnl/ntos.cmake	2	#list(APPEND SOURCE ${REACTOS_SOURCE_DIR}/ntoskrnl/kdbg/i3
 ntoskrnl/ntos.cmake	1	#list(APPEND SOURCE ${REACTOS_SOURCE_DIR}/ntoskrnl/se/debug.c) # replaced by Rust
 sdk/cmake/baseaddress_dwarf.cmake	1	# cohab grows kernel32 past its old 0x440000 slot — proc.c took it to 0x47f000,
 sdk/cmake/gcc.cmake	1	# declares them; dbghelp_apitest's pdb.c assigns the failure hook), and those
-sdk/lib/3rdparty/zlib/CMakeLists.txt	1	# iowin32.c keeps four `mode_fopen` locals that only the stdio backend uses, so
 sdk/lib/cmlib/CMakeLists.txt	1	# Add a placeholder TU (mirrors the HAL lib_hal_*_empty.c pattern); the real
 sdk/lib/conutils/CMakeLists.txt	1	# Rust archive (lsalib-style cohab). instream.c was already not built. 3 arches.
 sdk/lib/conutils/CMakeLists.txt	1	# here (were in outstream.c, no longer built).

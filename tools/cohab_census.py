@@ -122,15 +122,44 @@ def main() -> int:
         return 1
 
     findings = []
+    removed = 0
     for key in sorted(set(was) | set(now)):
         f, t = key
         before, after = was.get(key, 0), now.get(key, 0)
         if before == after:
             continue
-        tag = "CENSUS-REMOVED" if after < before else "CENSUS-ADDED"
+        if after < before:
+            tag, removed = "CENSUS-REMOVED", removed + 1
+        else:
+            tag = "CENSUS-ADDED"
         findings.append(f"[{tag}] {f}: {before} -> {after}: {t}")
     for line in findings:
         print(line)
+
+    if findings:
+        # The two directions are NOT equally alarming, and saying so is the difference
+        # between a gate people read and a gate people rubber-stamp.
+        print()
+        if removed:
+            print(
+                f"  {removed} REMOVED: a comment-out disappeared. That is the dangerous "
+                "direction --\n"
+                "  it can mean a flipped .c went back into the build beside its Rust twin, "
+                "which\n"
+                "  is the 2026-09-19 partial flip that froze the guest while smoke passed on "
+                "all\n"
+                "  three arches. Read each one before accepting it."
+            )
+        if len(findings) - removed:
+            print(
+                f"  {len(findings) - removed} ADDED: a new comment-out. Routine -- it is what "
+                "flipping a\n  module to Rust looks like."
+            )
+        print()
+        print("  If every line above is a change you MEANT to make (including one that")
+        print("  arrived by merging another lane's flip), re-record the snapshot:")
+        print("      python3 tools/cohab_census.py --write")
+        print("  and commit tools/cohab-census.txt with that change.")
     return 1 if findings else 0
 
 
