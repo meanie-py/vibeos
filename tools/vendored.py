@@ -277,6 +277,19 @@ class Registry:
                     return True
         return False
 
+    def tree_for(self, rel: str) -> Tree | None:
+        """The registered tree owning this path, if any. Same boundary rule as
+        `is_vendored`; the longest matching prefix wins so a nested entry beats
+        the container it sits in."""
+        rel = rel.replace("\\", "/")
+        best: Tree | None = None
+        best_len = -1
+        for t in self.trees:
+            for pfx in t.prefixes:
+                if (rel == pfx or rel.startswith(pfx + "/")) and len(pfx) > best_len:
+                    best, best_len = t, len(pfx)
+        return best
+
     def is_declared_ours(self, rel: str) -> bool:
         """Is this path inside a tree explicitly classified as OURS to translate?
 
@@ -420,15 +433,76 @@ _KNOWN_LICENCE_ID = re.compile(
 #: directory", "DDK - see license.txt in the root dir". The pointer is only a
 #: licence if the file it names is actually in the distribution.
 _LICENCE_POINTER = re.compile(
-    r"\bsee\s+([A-Za-z0-9._-]*(?:COPYING|LICEN[CS]E|LGPL|GPL)[A-Za-z0-9._-]*"
+    # "see the file X" / "see file X" is as much a pointer as "see X", and the
+    # strict form missed schilytools' whole CDDL notice ("See the file
+    # CDDL.Schily.txt in this distribution for details") across 10 files.
+    r"\bsee\s+(?:the\s+)?(?:file\s+)?([A-Za-z0-9._-]*(?:COPYING|LICEN[CS]E|LGPL|GPL)[A-Za-z0-9._-]*"
     # ...or a plain text file named outright, which is how libjpeg and the
     # DJGPP-derived CRT bodies point at theirs.
     r"|[A-Za-z0-9._-]+\.txt)",
     re.I,
 )
 
+#: Texts the tree SHIPS under a name other than the one its referrers use.
+#: ReactOS's own headers have said "See LGPL.txt in the top level directory"
+#: since before the file was renamed; the LGPL text is right there as
+#: COPYING.LIB, so those 40 references are misspelled, not unfulfilled. An
+#: alias is only honoured when its TARGET resolves, so this can excuse a
+#: pointer but never invent a grant.
+_POINTER_ALIASES = {
+    "lgpl.txt": "copying.lib",
+    "gpl.txt": "copying",
+    # zlib's own contrib/minizip/skipset.h says "See MiniZip_info.txt for the
+    # license"; the file beside it has always been MiniZip64_info.txt. Upstream
+    # typo, vendored verbatim -- correcting it in place would mean a patch
+    # against zlib for one character.
+    "minizip_info.txt": "minizip64_info.txt",
+}
+
 #: The `LICENSE:` line of a ReactOS-style file header.
 _LICENSE_DECL = re.compile(r"LICEN[CS]E:\s*([^\n*]{0,90})", re.I)
+
+#: A file whose NAME is a licence text: COPYING, COPYING.LIB, LICENSE.txt,
+#: License, LICENCE.md. Not `license.c`, and not a header that merely mentions one.
+_LICENCE_BASENAME = re.compile(r"^(copying|licen[cs]e)([0-9]|[._-][a-z0-9._-]+)?$", re.I)
+
+#: Directories whose licence file governs a whole COLLECTION rather than one
+#: component. `modules/rosapps/COPYING` is the GPL, sitting three levels above
+#: Ken Kato's Virtual Floppy Drive the same way the repo-root COPYING sits above
+#: everything -- it says what the collection is licensed as, not what any
+#: particular author granted. Letting it cover a subtree made 33 files of
+#: third-party code with no grant of their own vanish from this report.
+#: `sdk/include/{psdk,vcruntime}` are here for the same reason from the other
+#: direction: each ships ChakraCore's MIT text because four Microsoft SAL
+#: headers point at it ("See LICENSE file in the project root"), and that text
+#: covers those four files -- not the hundreds of unrelated headers beside them,
+#: and emphatically not sdk/include/ndk one level over.
+_COLLECTION_ROOTS = {
+    "",
+    "modules/rosapps",
+    "modules/rostests",
+    "sdk/include/psdk",
+    "sdk/include/vcruntime",
+}
+
+#: Does a POINTER name a licence text? The pointer regex deliberately accepts
+#: any bare `*.txt`, because libjpeg and the NT4 DDK point at theirs that way --
+#: fine for asking "does the named file ship", fatal for asking "is this dir
+#: granted". uniata's id_ata.cpp says "see todo.txt", todo.txt is right there,
+#: and that one line excused 36,368 lines whose only licence content is a
+#: warranty disclaimer. Coverage requires a name that could BE a licence.
+_LICENCE_TEXT_NAME = re.compile(
+    r"copying|licen[cs]e|gpl|cddl|artistic|apache|mozilla|mpl|bsd\b|zlib|\bmit\b", re.I
+)
+
+#: The `COPYRIGHT:` line of a ReactOS-style file header.
+_COPYRIGHT_DECL = re.compile(r"COPYRIGHT:\s*([^\n*]{0,90})", re.I)
+
+
+def _copyright_decl(head: str) -> str:
+    m = _COPYRIGHT_DECL.search(head)
+    return m.group(1) if m else ""
+
 
 #: Any copyright line at all, whoever holds it. Broader than _FOREIGN_HOLDER on
 #: purpose: the question here is not "is this foreign" but "does anyone claim
@@ -803,6 +877,9 @@ def grant_gaps(reg: Registry, min_files: int = 3) -> tuple[list[tuple[str, int, 
         # would hide a genuinely absent grant.
         loose = "." not in name
         d = from_dir
+        alias = _POINTER_ALIASES.get(name)
+        if alias and _resolves(alias, from_dir):
+            return True
         while True:
             here = by_dir.get(d, ())
             if name in here or (loose and any(f.startswith(name + ".") for f in here)):
@@ -810,6 +887,17 @@ def grant_gaps(reg: Registry, min_files: int = 3) -> tuple[list[tuple[str, int, 
             if not d:
                 return False
             d = d.rsplit("/", 1)[0] if "/" in d else ""
+
+    def _component_licence(from_dir: str) -> str:
+        """The nearest NON-ROOT ancestor directory shipping a licence text."""
+        d = from_dir
+        while d:
+            if d not in _COLLECTION_ROOTS and any(
+                _LICENCE_BASENAME.match(f) for f in by_dir.get(d, ())
+            ):
+                return d
+            d = d.rsplit("/", 1)[0] if "/" in d else ""
+        return ""
 
     per_dir: dict[str, dict] = {}
     dangling: dict[str, dict] = {}
@@ -834,7 +922,11 @@ def grant_gaps(reg: Registry, min_files: int = 3) -> tuple[list[tuple[str, int, 
             # sits — including inside a registered tree, since registration records
             # what the licence IS and this is about whether it SHIPS.
             for m in _LICENCE_POINTER.finditer(head):
-                name = m.group(1)
+                # "see the file COPYING. If not, write to ..." -- the FSF's own
+                # boilerplate ends the sentence, and the greedy name class ate
+                # the full stop, turning a resolvable COPYING into a dangling
+                # `copying.` across 40 files. No licence file ends in a dot.
+                name = m.group(1).rstrip(".")
                 # A pointer has to look like a FILE. Bare prose ("see license
                 # terms") captured the word `license` 80 times before this, all
                 # of them noise; a real reference either carries an extension or
@@ -842,9 +934,20 @@ def grant_gaps(reg: Registry, min_files: int = 3) -> tuple[list[tuple[str, int, 
                 if "." not in name and not name.isupper():
                     continue
                 name = name.lower()
-                if not _resolves(name, rel_dir):
-                    d = dangling.setdefault(name, {"count": 0, "example": rel})
-                    d["count"] += 1
+                if _resolves(name, rel_dir):
+                    continue
+                # A vendored tree's licence text often does not sit beside the
+                # copy of its headers we install elsewhere: libpng's png.h says
+                # "see LICENSE" from sdk/include/reactos/libs/libpng, while the
+                # text ships with the sources in dll/3rdparty/libpng/docs. The
+                # registry already records that path, and the question this
+                # check asks -- can a recipient read the terms -- is answered
+                # yes by a `license_file` that exists.
+                owner = reg.tree_for(rel)
+                if owner and owner.license_file and (reg.repo / owner.license_file).is_file():
+                    continue
+                d = dangling.setdefault(name, {"count": 0, "example": rel})
+                d["count"] += 1
 
             if reg.is_classified(rel):
                 continue
@@ -855,14 +958,37 @@ def grant_gaps(reg: Registry, min_files: int = 3) -> tuple[list[tuple[str, int, 
                 st["covered"] = True
                 continue
             decl = _LICENSE_DECL.search(head)
-            if decl:
-                value = decl.group(1)
-                if _KNOWN_LICENCE_ID.search(value):
+            if decl and _KNOWN_LICENCE_ID.search(decl.group(1)):
+                st["covered"] = True
+                continue
+            # The pointer may sit on EITHER header line. ReactOS's own files
+            # conventionally put it on COPYRIGHT: ("COPYRIGHT: See COPYING in
+            # the top level directory") and say nothing under LICENSE: at all,
+            # which is how hdaudbus read as ungranted while its grant was the
+            # GPL sitting at the repo root exactly where it pointed.
+            # ...and it may not sit on a header line at all: schilytools spells
+            # its CDDL notice as free prose ("See the file CDDL.Schily.txt in
+            # this distribution for details"), with no ReactOS-style header to
+            # hang it on. A pointer that RESOLVES is a grant wherever it sits;
+            # the whole point of the check is whether a recipient can read the
+            # terms, not which line told them where.
+            for m in _LICENCE_POINTER.finditer(head):
+                nm = m.group(1).rstrip(".")
+                if not _LICENCE_TEXT_NAME.search(nm):
+                    continue
+                if ("." in nm or nm.isupper()) and _resolves(nm, rel_dir):
                     st["covered"] = True
-                else:
-                    ptr = _LICENCE_POINTER.search(value)
-                    if ptr and _resolves(ptr.group(1), rel_dir):
-                        st["covered"] = True
+                    break
+            if st["covered"]:
+                continue
+            # A licence text placed at a NON-ROOT ancestor covers the subtree
+            # under it: someone put it there for this component, which is what
+            # ncftp's LICENSE.txt (the Clarified Artistic License, one level up
+            # from libncftp) is. The repo root is excluded on purpose -- letting
+            # the project's own COPYING cover any directory would excuse every
+            # piece of foreign code in the tree, which is the whole finding.
+            if _component_licence(rel_dir):
+                st["covered"] = True
 
     no_grant = sorted(
         (

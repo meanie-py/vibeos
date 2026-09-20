@@ -844,3 +844,161 @@ def test_reactos_own_gpl_headers_do_not_fire():
     assert (REPO / "COPYING").exists()
     reg = vendored.load(REPO)
     assert not any("COPYING" in v for v, _e, _n, _d in vendored.declared_licences(reg))
+
+
+# ── the grant ratchet: what counts as a grant, and what only looks like one ──
+
+
+def _grant_repo(tmp: Path) -> Path:
+    # One registered tree, because an empty `trees:` is itself a registry error.
+    _write(
+        tmp,
+        """
+        containers: []
+        trees:
+          - path: libs/x
+            name: X
+            license: MIT
+            license_ref: upstream README
+            reason: test
+    """,
+    )
+    (tmp / "libs" / "x").mkdir(parents=True)
+    (tmp / "COPYING").write_text("GNU GENERAL PUBLIC LICENSE Version 2\n")
+    (tmp / "COPYING.LIB").write_text("GNU LESSER GENERAL PUBLIC LICENSE\n")
+    return tmp
+
+
+def _claim(d: Path, name: str, note: str) -> None:
+    """Three files claiming a copyright -- `min_files` is 3."""
+    d.mkdir(parents=True, exist_ok=True)
+    for i in range(3):
+        (d / f"{name}{i}.c").write_text(f"/*\n * Copyright (c) 2003 Someone\n * {note}\n */\n")
+
+
+def test_a_pointer_to_a_todo_list_is_not_a_grant(tmp_path):
+    """The laundering hole, caught before it shipped. The pointer regex accepts any
+    bare `*.txt` so that libjpeg's and the NT4 DDK's references parse; uniata's
+    id_ata.cpp says "see todo.txt", todo.txt is right there, and treating that as
+    coverage excused 36,368 lines whose only licence content is a disclaimer."""
+    repo = _grant_repo(tmp_path)
+    d = repo / "drivers" / "uniata"
+    _claim(d, "id_ata", "Notes: see todo.txt for what is left")
+    (d / "todo.txt").write_text("- make it faster\n")
+    no_grant, _ = vendored.grant_gaps(vendored.load(repo))
+    assert [x[0] for x in no_grant] == ["drivers/uniata"]
+
+
+def test_a_prose_pointer_to_a_real_licence_is_a_grant(tmp_path):
+    """schilytools spells its CDDL notice as prose -- "See the file CDDL.Schily.txt
+    in this distribution for details" -- with no ReactOS-style header to hang it on."""
+    repo = _grant_repo(tmp_path)
+    (repo / "schilytools").mkdir()
+    (repo / "schilytools" / "CDDL.Schily.txt").write_text("COMMON DEVELOPMENT AND DISTRIBUTION\n")
+    _claim(
+        repo / "schilytools" / "libschily",
+        "cvmod",
+        "See the file CDDL.Schily.txt in this distribution for details.",
+    )
+    no_grant, dangling = vendored.grant_gaps(vendored.load(repo))
+    assert no_grant == []
+    assert dangling == {}
+
+
+def test_a_sentence_ending_full_stop_is_not_part_of_the_filename(tmp_path):
+    """The FSF's own boilerplate ends the sentence: "see the file COPYING.  If not,
+    write to ...". Greedy name matching ate the stop and reported `copying.` as a
+    dangling pointer across 40 files."""
+    repo = _grant_repo(tmp_path)
+    _claim(repo / "app", "gdb2", "along with this program; see the file COPYING.  If not,")
+    no_grant, dangling = vendored.grant_gaps(vendored.load(repo))
+    assert dangling == {}
+    assert no_grant == []
+
+
+def test_the_pointer_the_tree_ships_under_another_name_resolves(tmp_path):
+    """ReactOS's files have said "See LGPL.txt in the top level directory" since
+    before the file was called COPYING.LIB. The text is there; the name is not."""
+    repo = _grant_repo(tmp_path)
+    _claim(repo / "dll" / "psapi", "psapi", "LICENSE: See LGPL.txt in the top level directory")
+    _, dangling = vendored.grant_gaps(vendored.load(repo))
+    assert dangling == {}
+
+
+def test_an_alias_cannot_invent_a_grant(tmp_path):
+    """...but only because COPYING.LIB is actually there. Remove it and the
+    reference is dangling again -- an alias renames a text, it does not supply one."""
+    repo = _grant_repo(tmp_path)
+    (repo / "COPYING.LIB").unlink()
+    _claim(repo / "dll" / "psapi", "psapi", "LICENSE: See LGPL.txt in the top level directory")
+    _, dangling = vendored.grant_gaps(vendored.load(repo))
+    assert "lgpl.txt" in dangling
+
+
+def test_the_pointer_may_sit_on_the_copyright_line(tmp_path):
+    """ReactOS's house header puts it there and leaves LICENSE: off entirely, which
+    is how hdaudbus read as ungranted while its grant was the GPL at the repo root,
+    exactly where it pointed."""
+    repo = _grant_repo(tmp_path)
+    _claim(
+        repo / "drivers" / "hdaudbus", "hda", "COPYRIGHT: See COPYING in the top level directory"
+    )
+    no_grant, _ = vendored.grant_gaps(vendored.load(repo))
+    assert no_grant == []
+
+
+def test_a_component_licence_covers_its_subtree_but_a_collection_one_does_not(tmp_path):
+    """ncftp ships the Clarified Artistic License one level above libncftp: someone
+    put it there for that component. `modules/rosapps/COPYING` is the opposite --
+    the collection's GPL, sitting three levels above Ken Kato's Virtual Floppy
+    Drive the way the repo-root COPYING sits above everything. Letting it count
+    made 33 files of third-party code with no grant of their own vanish."""
+    repo = _grant_repo(tmp_path)
+    (repo / "modules" / "rosapps").mkdir(parents=True)
+    (repo / "modules" / "rosapps" / "COPYING").write_text("GNU GENERAL PUBLIC LICENSE\n")
+    _claim(repo / "modules" / "rosapps" / "drivers" / "vfd", "vfd", "Virtual Floppy Drive")
+
+    ncftp = repo / "modules" / "rosapps" / "applications" / "ncftp"
+    ncftp.mkdir(parents=True)
+    (ncftp / "LICENSE.txt").write_text("The Clarified Artistic License\n")
+    _claim(ncftp / "libncftp", "cmds", "NCEMRSoft. All rights reserved.")
+
+    no_grant, _ = vendored.grant_gaps(vendored.load(repo))
+    assert [x[0] for x in no_grant] == ["modules/rosapps/drivers/vfd"]
+
+
+def test_a_registered_tree_may_keep_its_licence_text_elsewhere(tmp_path):
+    """libpng's png.h says "see LICENSE" from the copy of its headers we install
+    under sdk/include; the text ships with the sources in dll/3rdparty. A recipient
+    can read the terms, which is the only thing this check asks."""
+    repo = _write(
+        tmp_path,
+        """
+        containers: []
+        trees:
+          - path: dll/3rdparty/libpng
+            name: libpng
+            license: libpng-2.0
+            license_file: dll/3rdparty/libpng/LICENSE
+            headers:
+              - sdk/include/libs/libpng
+            reason: test
+    """,
+    )
+    (repo / "dll" / "3rdparty" / "libpng").mkdir(parents=True)
+    (repo / "dll" / "3rdparty" / "libpng" / "LICENSE").write_text("PNG Reference Library\n")
+    inc = repo / "sdk" / "include" / "libs" / "libpng"
+    inc.mkdir(parents=True)
+    (inc / "png.h").write_text("/* Copyright (c) 2024 PNG authors, see LICENSE */\n")
+    _, dangling = vendored.grant_gaps(vendored.load(repo))
+    assert dangling == {}
+
+
+def test_the_real_tree_still_reports_the_two_findings_that_need_a_decision(tmp_path):
+    """A live check that the ratchet has not been tuned into silence. uniata (NT4
+    DDK skeleton + FreeBSD, disclaimer only) and kbdtool's COPYING.BSD (a text
+    ReactOS has never shipped) are open questions, not tool defects -- if one of
+    them is ever resolved, delete it from here rather than from the scan."""
+    no_grant, dangling = vendored.grant_gaps(vendored.load(REPO))
+    assert "drivers/storage/ide/uniata" in [d for d, _n, _e in no_grant]
+    assert "copying.bsd" in dangling
