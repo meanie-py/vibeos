@@ -290,6 +290,15 @@ pub unsafe extern "C" fn DIB_8BPP_BitBltSrcCopy(BltInfo: PBLTINFO) -> u8 {
                                 .offset((*BltInfo).SourcePoint.x as isize);
                         }
 
+                        // When OneDone, SourceLine was re-pointed at the DEST surface above,
+                        // so the row stride to walk it by is the DEST's. Reading the source
+                        // surface's lDelta here walks the wrong pitch (upstream ae0e4ee305).
+                        let SrcDelta = if OneDone != 0 {
+                            (*(*BltInfo).DestSurface).lDelta
+                        } else {
+                            (*(*BltInfo).SourceSurface).lDelta
+                        };
+
                         DestLine = ((*(*BltInfo).DestSurface).pvScan0 as PBYTE)
                             .offset(((*BltInfo).DestRect.top * (*(*BltInfo).DestSurface).lDelta) as isize)
                             .offset((*BltInfo).DestRect.left as isize);
@@ -303,8 +312,14 @@ pub unsafe extern "C" fn DIB_8BPP_BitBltSrcCopy(BltInfo: PBLTINFO) -> u8 {
 
                             j = (*BltInfo).DestRect.top;
                             while j < (*BltInfo).DestRect.bottom {
-                                *store.offset(Index as isize) = XLATEOBJ_iXlate((*BltInfo).XlateSourceToDest, *SourceBits as u32) as u8;
-                                SourceBits = SourceBits.offset(-((*(*BltInfo).SourceSurface).lDelta as isize));
+                                // Already dest-format on the OneDone pass; translating twice
+                                // double-maps the palette (upstream ae0e4ee305).
+                                *store.offset(Index as isize) = if OneDone != 0 {
+                                    *SourceBits
+                                } else {
+                                    XLATEOBJ_iXlate((*BltInfo).XlateSourceToDest, *SourceBits as u32) as u8
+                                };
+                                SourceBits = SourceBits.offset(-(SrcDelta as isize));
                                 Index += 1;
                                 j += 1;
                             }
@@ -314,7 +329,7 @@ pub unsafe extern "C" fn DIB_8BPP_BitBltSrcCopy(BltInfo: PBLTINFO) -> u8 {
                             j = (*BltInfo).DestRect.top;
                             while j < (*BltInfo).DestRect.bottom {
                                 *DestBits = *store.offset(Index as isize);
-                                DestBits = DestBits.offset((*(*BltInfo).SourceSurface).lDelta as isize);
+                                DestBits = DestBits.offset((*(*BltInfo).DestSurface).lDelta as isize);
                                 Index += 1;
                                 j += 1;
                             }

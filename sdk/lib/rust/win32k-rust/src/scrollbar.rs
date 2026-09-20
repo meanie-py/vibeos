@@ -11,6 +11,14 @@ unsafe fn ASSERT_REFS_CO(_Window: PWND) {}
 #[inline(always)]
 fn NT_SUCCESS(Status: NTSTATUS) -> bool { Status >= 0 }
 
+// SafeProbeForRead/Write — NTAPI (stdcall on i386 → extern "system"), per nm
+// `_SafeProbeForRead@12`. These RETURN status rather than raising, which is what
+// DUMMY_PSEH requires: validate first, then act. See dummy-pseh-verdict.md.
+extern "system" {
+    fn SafeProbeForRead(Address: PVOID, Length: SIZE_T, Alignment: ULONG) -> NTSTATUS;
+    fn SafeProbeForWrite(Address: PVOID, Length: SIZE_T, Alignment: ULONG) -> NTSTATUS;
+}
+
 // max(a,b) macro — C `max`/`abs` from minmax.h / stdlib.h.
 #[inline(always)]
 fn max<T: PartialOrd>(a: T, b: T) -> T { if a > b { a } else { b } }
@@ -1470,12 +1478,35 @@ pub unsafe extern "system" fn NtUserSBGetParms(
     UserEnterShared();
 
     'exit: {
+        // lpsi and pSBData come straight from user mode and were captured with no
+        // validation at all: the pre-fix upstream C at least wrapped these copies in
+        // _SEH2_TRY, and the translation dropped even that, so an ordinary bad pointer
+        // faulted unguarded in kernel mode. Probe first (upstream e7e1465812).
+        // lpsi is read AND written below, so ProbeForWrite covers both.
+        if !NT_SUCCESS(SafeProbeForWrite(
+            lpsi as PVOID,
+            core::mem::size_of::<SCROLLINFO>() as SIZE_T,
+            1,
+        )) {
+            break 'exit;
+        }
+
         RtlCopyMemory(
             core::ptr::addr_of_mut!(psi) as *mut _,
             lpsi as *const _,
             core::mem::size_of::<SCROLLINFO>() as _,
         );
         if !pSBData.is_null() {
+            // Upstream made this copy unconditional and probes pSBData always, which
+            // turns a legitimately-NULL optional argument into a failure. Keep our
+            // NULL check and probe only when there is something to probe.
+            if !NT_SUCCESS(SafeProbeForRead(
+                pSBData as PVOID,
+                core::mem::size_of::<SBDATA>() as SIZE_T,
+                1,
+            )) {
+                break 'exit;
+            }
             RtlCopyMemory(
                 core::ptr::addr_of_mut!(SBDataSafe) as *mut _,
                 pSBData as *const _,
