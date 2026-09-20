@@ -30,6 +30,31 @@ const HYDRA_PROCESS: PEPROCESS = 1 as PEPROCESS;
 #[cfg(feature = "MI_TRACE_PFNS")]
 static mut UserPdeFault: BOOLEAN = 0;
 
+/// Faulting PC out of a trap frame, or 0 when there is none.
+///
+/// The only reason this exists is the stack-runaway report below: a thread that
+/// eats its whole stack is identified by WHERE it was when it did, and the trap
+/// frame is the only thing at this depth that knows.
+#[inline]
+unsafe fn MiFaultingPc(TrapInformation: PVOID) -> ULONG_PTR {
+    if TrapInformation.is_null() {
+        return 0;
+    }
+    let tf = TrapInformation as PKTRAP_FRAME;
+    #[cfg(target_arch = "x86_64")]
+    {
+        (*tf).Rip as ULONG_PTR
+    }
+    #[cfg(target_arch = "aarch64")]
+    {
+        (*tf).Pc as ULONG_PTR
+    }
+    #[cfg(target_arch = "x86")]
+    {
+        (*tf).Eip as ULONG_PTR
+    }
+}
+
 /// Outcome of trying to grow ONE stack descriptor.
 ///
 /// `new_limit` is the `NtTib.StackLimit` the caller must publish, in whichever
@@ -109,7 +134,6 @@ unsafe fn MiCheckForUserStackOverflow(
     Address: PVOID,
     TrapInformation: PVOID,
 ) -> NTSTATUS {
-    let _ = TrapInformation;
     let CurrentThread = PsGetCurrentThread();
     let Teb: PTEB = (*(CurrentThread as *mut _ETHREAD)).Tcb.Teb as PTEB;
 
@@ -144,6 +168,29 @@ unsafe fn MiCheckForUserStackOverflow(
     ) {
         if let Some(limit) = g.new_limit {
             (*Teb).NtTib.StackLimit = limit as PVOID;
+
+            // A thread that has eaten HALF its stack reservation is a runaway
+            // until proven otherwise, and by the time it faults at the bottom
+            // the evidence is gone -- the PC there is whoever drew the short
+            // straw, not the cause. Report the midpoint crossing instead, with
+            // the faulting PC, which names the code doing the consuming.
+            //
+            // Stateless one-shot: growth is monotonic and page-at-a-time, so
+            // the midpoint is crossed exactly once per thread.
+            let base = (*Teb).NtTib.StackBase as ULONG_PTR;
+            let dealloc = (*Teb).DeallocationStack as ULONG_PTR;
+            if base > dealloc {
+                let midpoint = dealloc + (base - dealloc) / 2;
+                if limit <= midpoint && limit + PAGE_SIZE as ULONG_PTR > midpoint {
+                    crate::dbg_print!(
+                        b"[MM] stack runaway: thread ate half its stack (base=%p limit=%p dealloc=%p pc=%p)\n\0",
+                        base,
+                        limit,
+                        dealloc,
+                        MiFaultingPc(TrapInformation),
+                    );
+                }
+            }
         }
         return g.status;
     }
