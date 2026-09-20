@@ -78,12 +78,18 @@ const UNIATA_VER_SUB_MN: ULONG = 0;
 const WinVer_NT: ULONG = 0x0400;
 const WinVer_2k: ULONG = 0x0500;
 
-// uniata's OS-version globals live in ros_glue.cpp as `extern "C"` ULONGs.
-extern "C" {
-    static mut MajorVersion: ULONG;
-    static mut MinorVersion: ULONG;
-    static mut BuildNumber: ULONG;
-}
+// uniata's OS-version globals. These lived in ros_glue.cpp, the last C++ TU in
+// the driver, purely as the data home for three mutable ULONGs; DriverEntry
+// overwrites all three from the running NT version anyway, so the C file was
+// carrying nothing but their storage. Defining them here retired that TU and
+// with it the whole ungranted UniATA C tree (2026-09-20) -- see the PROVENANCE
+// note in lib.rs. The initialisers are ros_glue.cpp's verbatim: 5.2.0.
+#[no_mangle]
+pub static mut MajorVersion: ULONG = 0x05;
+#[no_mangle]
+pub static mut MinorVersion: ULONG = 0x02;
+#[no_mangle]
+pub static mut BuildNumber: ULONG = 0x0;
 
 // CRT helpers used by the registry/console paths (driver_ddk + ntkrnl-sys provides
 // swprintf/wcslen; _strnicmp & strncpy come from the C runtime libs).
