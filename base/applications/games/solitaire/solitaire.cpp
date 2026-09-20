@@ -31,7 +31,7 @@ DWORD dwPrevMode;
 long lScore;
 UINT_PTR PlayTimer = 0;
 
-CardWindow SolWnd;
+CARDWINDOW *SolWnd;
 
 typedef struct _CardBack
 {
@@ -86,7 +86,7 @@ VOID LoadSettings(VOID)
                     NULL,
                     (LPBYTE)&dwBack,
                     &dwSize);
-    SolWnd.SetBackCardIdx(dwBack);
+    CardWindow_SetBackCardIdx(SolWnd, dwBack);
 
     RegCloseKey(hKey);
 }
@@ -115,7 +115,7 @@ VOID SaveSettings(VOID)
                   (CONST BYTE *)&dwOptions,
                   sizeof(DWORD));
 
-    dwBack = SolWnd.GetBackCardIdx();
+    dwBack = CardWindow_GetBackCardIdx(SolWnd);
     RegSetValueEx(hKey,
                   _T("Back"),
                   0,
@@ -236,7 +236,14 @@ int WINAPI _tWinMain(HINSTANCE hInst, HINSTANCE hPrev, LPTSTR szCmdLine, int iCm
 
     srand((unsigned)GetTickCount());//timeGetTime());
 
-//    InitCardLib();
+    /* Load the card artwork out of cards.dll. Nothing below here can draw
+       without it, so a failure is fatal rather than a blank table. */
+    if (!CardLib_Init())
+    {
+        MessageBox(NULL, _T("Failed to load the card images from cards.dll."),
+                   szAppName, MB_OK | MB_ICONERROR);
+        return 1;
+    }
 
     LoadSettings();
 
@@ -422,7 +429,7 @@ VOID ShowGameOptionsDlg(HWND hwnd)
                 ShowWindow(hwndStatus, SW_SHOW);
                 GetWindowRect(hwndStatus, &rcStatus);
                 nStatusHeight = rcStatus.bottom - rcStatus.top;
-                MoveWindow(SolWnd, 0, 0, nWidth, nHeight-nStatusHeight, TRUE);
+                MoveWindow(CardWindow_GetHwnd(SolWnd), 0, 0, nWidth, nHeight-nStatusHeight, TRUE);
                 MoveWindow(hwndStatus, 0, nHeight-nStatusHeight, nWidth, nHeight, TRUE);
 
                 // Force the window to process WM_GETMINMAXINFO again
@@ -432,7 +439,7 @@ VOID ShowGameOptionsDlg(HWND hwnd)
             else
             {
                 ShowWindow(hwndStatus, SW_HIDE);
-                MoveWindow(SolWnd, 0, 0, nWidth, nHeight, TRUE);
+                MoveWindow(CardWindow_GetHwnd(SolWnd), 0, 0, nWidth, nHeight, TRUE);
             }
         }
     }
@@ -490,11 +497,11 @@ CardImageWndProc(HWND hwnd,
                    2,
                    CARDBACK_OPTIONS_WIDTH,
                    CARDBACK_OPTIONS_HEIGHT,
-                   __hdcCardBitmaps,
-                   pCardBack->hdcNum * __cardwidth,
+                   CardLib_CardBitmapsDC(),
+                   pCardBack->hdcNum * CardLib_CardWidth(),
                    0,
-                   __cardwidth,
-                   __cardheight,
+                   CardLib_CardWidth(),
+                   CardLib_CardHeight(),
                    SRCCOPY);
 
         SelectObject(hdc, hOldPen);
@@ -605,8 +612,8 @@ VOID ShowDeckOptionsDlg(HWND hwnd)
                               hwnd,
                               CardBackDlgProc)))
     {
-        SolWnd.SetBackCardIdx(CARDBACK_RES_START + (cardBack - 1));
-        SolWnd.Redraw();
+        CardWindow_SetBackCardIdx(SolWnd, CARDBACK_RES_START + (cardBack - 1));
+        CardWindow_Redraw(SolWnd);
     }
 }
 
@@ -632,7 +639,7 @@ LRESULT CALLBACK WndProc (HWND hwnd, UINT iMsg, WPARAM wParam, LPARAM lParam)
             SendMessage(hwndStatus, SB_SETPARTS, 2, (LPARAM)parts);
             SendMessage(hwndStatus, SB_SETTEXT, 0 | SBT_NOBORDERS, (LPARAM)"");
 
-            SolWnd.Create(hwnd, 0, WS_CHILD | WS_VISIBLE, 0, 0, 100, 100);
+            SolWnd = CardWindow_Create(hwnd, 0, WS_CHILD | WS_VISIBLE, 0, 0, 100, 100);
 
             CreateSol();
 
@@ -685,12 +692,12 @@ LRESULT CALLBACK WndProc (HWND hwnd, UINT iMsg, WPARAM wParam, LPARAM lParam)
 
             if (dwOptions & OPTION_SHOW_STATUS)
             {
-                MoveWindow(SolWnd, 0, 0, nWidth, nHeight - nStatusHeight, TRUE);
+                MoveWindow(CardWindow_GetHwnd(SolWnd), 0, 0, nWidth, nHeight - nStatusHeight, TRUE);
                 MoveWindow(hwndStatus, 0, nHeight - nStatusHeight, nWidth, nStatusHeight, TRUE);
             }
             else
             {
-                MoveWindow(SolWnd, 0, 0, nWidth, nHeight, TRUE);
+                MoveWindow(CardWindow_GetHwnd(SolWnd), 0, 0, nWidth, nHeight, TRUE);
             }
             //parts[0] = nWidth - 256;
             //SendMessage(hwndStatus, SB_SETPARTS, 2, (LPARAM)parts);
@@ -701,14 +708,14 @@ LRESULT CALLBACK WndProc (HWND hwnd, UINT iMsg, WPARAM wParam, LPARAM lParam)
             MINMAXINFO *mmi;
 
             mmi = (MINMAXINFO *)lParam;
-            mmi->ptMinTrackSize.x = X_BORDER + NUM_ROW_STACKS * (__cardwidth + X_ROWSTACK_BORDER) + X_BORDER;
+            mmi->ptMinTrackSize.x = X_BORDER + NUM_ROW_STACKS * (CardLib_CardWidth() + X_ROWSTACK_BORDER) + X_BORDER;
             mmi->ptMinTrackSize.y = GetSystemMetrics(SM_CYCAPTION) +
                                     GetSystemMetrics(SM_CYMENU) +
                                     Y_BORDER +
-                                    __cardheight +
+                                    CardLib_CardHeight() +
                                     Y_ROWSTACK_BORDER +
                                     6 * yRowStackCardOffset +
-                                    __cardheight +
+                                    CardLib_CardHeight() +
                                     Y_BORDER +
                                     (dwOptions & OPTION_SHOW_STATUS ? nStatusHeight : 0);
             return 0;
