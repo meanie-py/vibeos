@@ -7095,6 +7095,33 @@ compiler. That asymmetry is why the assertion count (2,120) and the never-compil
 how many you have is a measurable debt. The same argument covers any feature flag CI never
 builds. A `cfg` you never compile is a `cfg` you cannot claim works.
 
+### A flake that wipes the WHOLE population confirms whatever you hoped to see
+
+> **Symptom.** An A/B on boot counts. The change gives 0 PASS / 16 EXITED on both its boots
+> against a 12-13 PASS baseline; it is called a severe regression and reverted. Three repeat
+> boots of the *unmodified* media then give 13 / 12 / **0**.
+
+> **Cause.** The baseline is bimodal, not noisy. Something unrelated erases the entire
+> measured population on about one boot in three — here the WoW64 CPU layer failing to
+> initialise, which kills every guest at once. Two draws from a 1-in-3 urn is p≈1/9: the
+> experiment never had the power to separate "my change broke it" from "I drew the bad mode
+> twice." A quieter flake that moves one unit would have been obvious as noise; one that moves
+> ALL of them looks exactly like a catastrophic regression, which is the mode most likely to
+> be believed without a repeat.
+
+> **Fix.** Before an A/B on a population count, boot the baseline media ≥3× and write the
+> DISTRIBUTION down, not a number. If the baseline is bimodal, no two-boot comparison decides
+> anything; fix the confounder or gate on the non-wipeout boots explicitly. And separate the
+> two claims when reverting — "the measurement condemned it" and "the code is wrong on
+> inspection" are different, and only the second survived here.
+
+The generalisation, and why it is worth its own entry next to the rule below: the usual advice
+is to distrust a *small* difference. This is the opposite shape — the more total the effect,
+the more it resembles the failure you were already worried about, and the less likely anyone is
+to ask for a repeat. **Totality is not significance.** Cheapest guard: whatever tool reports
+the count should also report how many units EXISTED, so a run where the population itself
+vanished cannot be read as a run where the population failed.
+
 ### The governing rule: a harness only falsifies what it varies
 > **A harness proves parity only across the axes it actually VARIES. Every axis it holds
 > CONSTANT is a silent assumption baked into every MATCH it prints.** `[§9.60]`
@@ -8012,6 +8039,20 @@ A reader who arrives at the wrong one of these two is pointed at a remedy that c
 
 Both would have shipped a confident wrong conclusion, and the same one-line move — get a
 control that emits it, diff — kills both.
+
+**A third, specific to a cohab tree: after a flip, the C file's `DPRINT`s are INERT, so
+their absence means nothing at all.** Hunting why every 32-bit guest died in one boot, the
+obvious move was `grep LdrpInitializeProcess` — `dll/ntdll/ldr/ldrinit.c` prints ENTER, heap
+created, opening KnownDlls, walking imports, a dozen more, which would have bracketed the
+death precisely. Zero hits, in the healthy boot too. That file is commented out of
+`dll/ntdll/CMakeLists.txt` and `ntdll-rust/src/ldr/ldrinit.rs` is what runs; the Rust keeps
+its own, differently-worded prints. Reading the C's silence as "the loader never got that
+far" would have been a fabricated timeline. **Grep `sdk/lib/rust/` for the symbol before you
+believe a `.c` file's trace, or its absence** — the same rule as "debug the Rust, not the C",
+arriving through the log rather than through the source. The control-diff move still works
+and is what caught it: the *Rust* print (`[LDR] WoW64 process: init routines done`) appears
+30 times in a healthy boot and 0 times in a bad one, which is a real finding, and it took
+knowing which print was live to get it.
 
 **The two directions are asymmetric and need different vigilance, which is why the pair is
 worth more than either instance.** The second is a false RED that would have been a

@@ -668,11 +668,13 @@ pub unsafe extern "system" fn MmCreateTeb(
 
     KeAttachProcess(core::ptr::addr_of_mut!((*(Process as *mut _EPROCESS)).Pcb));
 
-    // WoW64 threads get a combined low region: TEB64 at +0, TEB32 at +0x2000
-    // (sizeof(TEB) = 0x17d8 → TEB64 spans 2 pages), whole thing below 2GB so
-    // 32-bit guest pointers can reach both. WOW64_TEB32_OFFSET below must stay
-    // in sync with wow64.dll's view of the layout.
-    const WOW64_TEB32_OFFSET: usize = 0x2000;
+    // WoW64 threads get a combined low region: TEB64 at +0, TEB32 at
+    // WOW64_TEB32_OFFSET (sizeof(TEB) = 0x17d8 → TEB64 spans 2 pages), whole
+    // thing below 2GB so 32-bit guest pointers can reach both. This function
+    // is the allocator; the layout constant lives in ntkrnl-sys so the readers
+    // cannot drift from it.
+    #[cfg(any(target_arch = "aarch64", target_arch = "x86_64"))]
+    use ntkrnl_sys::wow64::WOW64_TEB32_OFFSET;
     #[cfg(any(target_arch = "aarch64", target_arch = "x86_64"))]
     let IsWow64 = !(*(Process as *mut _EPROCESS)).Wow64Process.is_null();
     #[cfg(not(any(target_arch = "aarch64", target_arch = "x86_64")))]
@@ -729,7 +731,8 @@ pub unsafe extern "system" fn MmCreateTeb(
     #[cfg(any(target_arch = "aarch64", target_arch = "x86_64"))]
     if IsWow64 {
         use ntkrnl_sys::ddk::_TEB32;
-        let Teb32 = (Teb as *mut u8).add(WOW64_TEB32_OFFSET) as *mut _TEB32; // nolint: magic-offset (WoW64 combined-region layout, TEB32 at TEB64+0x2000 by design)
+        let Teb32 = ntkrnl_sys::wow64::teb32_of(Teb) as *mut _TEB32;
+        debug_assert_eq!(Teb32 as usize, Teb as usize + WOW64_TEB32_OFFSET);
         RtlZeroMemory(Teb32 as PVOID, core::mem::size_of::<_TEB32>());
 
         (*Teb32).NtTib.ExceptionList = 0xFFFF_FFFF; // EXCEPTION_CHAIN_END, 32-bit

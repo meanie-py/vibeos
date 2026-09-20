@@ -1249,8 +1249,8 @@ land; date every addition.** Source docs live in `docs/engineering/archive/`.
   reserve plus guard page rather than the fully-committed block the initial stack now gets,
   BEFORE the kernel can trust those bounds. Sequence it in that order.
 
-- **~1 amd64 boot in 3 loses EVERY 32-bit guest at one address — the WoW64 CPU layer never
-  initialises. OPEN, and it is the confounder behind several of this lane's verdicts**
+- **~1 amd64 boot in 3 loses EVERY 32-bit guest at one address, during 64-bit loader init.
+  OPEN, and it is the confounder behind several of this lane's verdicts**
   (2026-09-20). Symptom: `PASS=0 EXITED=16`, every ladder guest AND every stock applet
   exiting `0x80`, including ones that never otherwise fail (winmine) and the non-GUI parity
   guests (sqlite32). MEASURED 13 / 12 / 0 PASS across three boots of *identical* media
@@ -1263,6 +1263,13 @@ land; date every addition.** Source docs live in `docs/engineering/archive/`.
   - **Not one `[FEX-WOW64C]` line is printed all boot.** `BTCpuProcessInit`,
     `Wow64LdrpInitialize`, `entering guest` — the entire CPU-layer bring-up is absent, so
     no guest ever begins executing i386 code.
+  - But the CPU layer is not where it breaks. `ldrinit.rs` prints `[LDR] WoW64 process:
+    init routines done, loading wow64.dll` immediately before it loads wow64.dll, and a
+    wipeout boot prints that **0 times against 30 in a healthy one**. So every guest dies
+    during ordinary 64-bit loader init — the import walk and the dependencies' DllMain —
+    *before* WoW64 enters the picture at all. The missing `[FEX-WOW64C]` output is the
+    consequence, not the cause. (Checked the Rust: `dll/ntdll/ldr/ldrinit.c` is
+    cohab-flipped and inert, so its `DPRINT1`s never fire and their absence means nothing.)
   - Every victim faults at the **same address in the same instruction**:
     `rip=addr=000007ffb7030093`, which is ntdll.dll (64-bit, based 0x7ffb7000000) at
     `RtlpUnwindInternal+0x13` — `movq %r9, 0x70(%rsp)`, the first store into the 0xA88-byte
@@ -1273,9 +1280,25 @@ land; date every addition.** Source docs live in `docs/engineering/archive/`.
   - The kernel then prints `user dispatch FAILED: pre-fault of stack page ... = 0xc0000005`
     and the process is terminated `0x80`, which is why the original cause never surfaces.
 
-  Distinct from the guard-page entry above: those are **guest** faults (`80000001`, 3 per
-  boot, rotating victim, late, after real GUI work); this is a **host** 64-bit fault, at
-  process startup, identical across every guest, with `guardpage=0` for the whole boot.
+  Distinct from the guard-page entry above in WHERE it lands: those are **guest** faults
+  (`80000001`, 3 per boot, rotating victim, late, after real GUI work); this is a **host**
+  64-bit fault at process startup, identical across every guest, with `guardpage=0` all boot.
+
+  **But symbolicating both sides says they are one bug, not two.** The healthy-boot applet
+  deaths land at `rip=7e018191`, which is i386 `ntdll.dll` (based 0x7e000000) at
+  `RtlpAllocateMemory@8+0x11` — `pushl $0x0`, a stack store. The wipeout deaths land at
+  64-bit `RtlpUnwindInternal+0x13` — `movq %r9,0x70(%rsp)`, also a stack store, the first
+  into a frame `sub rsp,0xA88` just opened. Same shape on both sides of the 32/64 boundary:
+  a store just past the stack limit that the kernel declines to grow, `0xc0000005`, then
+  `user dispatch FAILED: pre-fault of stack page`. Both therefore point at
+  `MiCheckForUserStackOverflow` — which is the function the reverted change was aimed at,
+  and is a second reason to re-derive that verdict rather than leave it standing.
+
+  Note also how much stack growth a WoW64 process needs before it can do anything: the guest
+  image (winmine.exe) declares `SizeOfStackReserve=0x100000` with `SizeOfStackCommit=0x1000`,
+  so the 64-bit loader runs its whole import walk and every dependency's DllMain on a stack
+  that starts at ONE committed page and must grow by guard-page fault the entire way. If
+  growth is unreliable, a WoW64 process is the most exposed thing in the system.
 
   **Why it matters beyond itself:** a bug that wipes the entire applet population one boot
   in three, in exactly the units this lane measures, will confirm whatever you were hoping
