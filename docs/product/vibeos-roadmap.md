@@ -1148,7 +1148,24 @@ land; date every addition.** Source docs live in `docs/engineering/archive/`.
   land preflight; the annotation is the convention the other three already use, so this is
   consistency, not a new exception.
 
-- **A guest fault is AMPLIFIED into process death by a NULL SEH handler — OPEN**
+- **A guest fault is AMPLIFIED into process death by a NULL SEH handler — FIXED
+  2026-09-20** (`617e235048a`). charmap went 55 guest faults -> 1; whole-boot guest faults
+  115 -> 5 (two of which are fault32/thread32's deliberate ones).
+  `RtlDispatchException` validated the registration RECORD's stack bounds and alignment but
+  never the handler — there was an explicit `RtlIsValidHandler`/SafeSEH TODO at that exact
+  line — so a null handler was CALLED, faulted at address 0, re-entered the dispatcher,
+  which re-walked the same chain and called it again one frame deeper.
+  `rtl-except/src/i386/except.rs` now rejects a handler in the low 64K or inside
+  `[StackLow, StackHigh]` (a handler pointing into the thread's own stack is never code —
+  that was the cascade's first frame, executing at `001ff49b`). Full SafeSEH still needs
+  the image's handler table and remains the TODO.
+
+  **The exit code is what shows it is a fix rather than a suppression:** charmap went from
+  `EXITED = 0x80` — csrss terminating after the cascade reached second chance, which
+  laundered the real cause — to `EXITED = 0xc0000005`, the actual AV propagating cleanly.
+  Measured chains, healthy vs broken, are in the commit. Lands in the i386 ntdll, so it
+  protects native i386 too.
+  *(Superseded text below.)*
   (2026-09-20). Separate from the entry above and now the more important of the two: it
   turns ANY single guest fault into ~55 and a dead process.
   `ntdll32!RtlpExecuteHandler2`'s `mov 0x18(%ebp),%ecx; call *%ecx` runs with `ecx == 0`,
@@ -1165,7 +1182,12 @@ land; date every addition.** Source docs live in `docs/engineering/archive/`.
   masked by the CLIENTINFO cascade, visible now that it is fixed. First fault is
   `eip=0040335a` — charmap's own image at base 0x400000, NOT user32 — reading `001efd84`
   while `esp=001fea38`, i.e. ~0xCB4 BELOW the stack pointer: a stack-guard shape rather
-  than a bad pointer. It then dies through the amplifier above.
+  than a bad pointer. **Now the LAST failing applet** (8 PASS / 1 EXITED) and, since the
+  amplifier fix, it reports its real cause: `EXITED = 0xc0000005` instead of `0x80`, and
+  takes 1 fault instead of 55. Its SEH chain is genuinely corrupt at that point —
+  `fs:[0]` points 0x44 bytes below its own `esp` at an all-zero record — so "why is
+  charmap's registration chain abandoned" is the question, and the stack-guard read
+  suggests looking at stack depth first.
 
 - **`NtGdiFlushUserBatch` reads and writes the 64-bit TEB for a 32-bit guest — FIXED
   2026-09-20**, as part of the GDI-batch root cause above; it was not latent after all, it
