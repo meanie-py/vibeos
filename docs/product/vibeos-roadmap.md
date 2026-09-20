@@ -510,9 +510,30 @@ land; date every addition.** Source docs live in `docs/engineering/archive/`.
   (`grep -rl '^ExPools OK pass=13' /tmp/vibeos-cli/*/kmtest-results.txt`) to see whether it
   predates the change. Do both before either resubmitting *or* believing a lane is at
   fault.
-  Real fix is to make the assertion tolerate promotion (it already accepts two pool types;
-  the third, promoted case under pressure is what it misses) or to run kmtest with a
-  memory floor — not to raise the retry count, which is the symptom.
+  RESOLVED 2026-09-20 — and it was never pool promotion. The test reads the pool header
+  through its own `POOL_HEADER` in `kmtests/include/kmt_test_kernel.h`, which gated the
+  64-bit layout on `_M_AMD64` while ntoskrnl's own copy (`mm/ARM3/miarm.h`) gates on
+  `_WIN64`. **On ARM64 the kernel wrote the 64-bit header and the test read the 32-bit
+  one** — wrong field widths, wrong offsets, wrong union member — so
+  `KmtGetPoolTag`/`KmtGetPoolType` returned garbage that moved with heap layout (`PoolType`
+  was 2 on a quiet box and 0x54 under load; neither is a valid POOL_TYPE). Fixed by gating
+  on `_WIN64` to match the kernel. ExPools went **14/4 -> 17/1** on arm64, now identical to
+  the amd64 baseline, and IoDeviceObject 180/9 -> 184/5 and ExCallback 12/1 -> 13/0 came
+  with it — those three are exactly the kmtests that call the pool helpers. Baseline
+  hand-edited for those three rows only; a `--write-baseline` reseed was tried first and
+  REVERTED because it deletes this file's provenance comments and banks unrelated bistable
+  rows from one sweep, which the baseline's own header warns about.
+
+- **Two more load-sensitive tests that impersonate lane failures. UNOWNED** (2026-09-20).
+  Same class as the entry above, logged so the next person does not re-diagnose them.
+  `tests/qemu/cli/test_cli_units.py::test_hostlock_announce_pair_on_queued_acquire` drives a
+  real `threading.Timer(0.8, ...)` release mid-wait and asserts WAIT+ACQUIRED both print; run
+  inside a gate that is itself saturating the host, the announce never happens and it fails.
+  Seen in 3 gate runs (2026-09-19 11:22, 2026-09-20 01:23 and 12:32), i.e. it predates any
+  one lane. `tests/qemu/cli/test_recordreplay.py::test_trace_position_finds_the_process_reading_the_trace`
+  is the other: ~4 minutes of process scanning, fine standalone, times out under parallel
+  load. **Both pass standalone**, which is the cheap discriminator — run the single test
+  before believing a lane broke it.
 
 - **win32k: 32 dropped `_SEH2_EXCEPT` handlers across 11 files, in `NtUser*` syscall
   paths — FIXED 2026-09-20** (`d89e8bd99ee`, `c5877c15d97`, `b6c0dde1ca3`).
