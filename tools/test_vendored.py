@@ -395,3 +395,39 @@ def test_suspects_ignores_a_registered_tree_in_a_temp_repo(tmp_path):
     found = dict(vendored.suspects(reg, min_files=1))
     assert "ours" in found
     assert "vend" not in found
+
+
+# ── the structural check: a field swallowed by the value above it ───────────
+
+
+def test_structural_check_catches_a_field_joined_onto_the_previous_value(tmp_path):
+    """The failure this exists for is NOT a syntax error, which is what makes it
+    dangerous: `license: MIT    modified: yes` parses fine and `modified` silently
+    stops being a field. Broke vendor.yaml three times in one session this way."""
+    f = tmp_path / "vendor.yaml"
+    f.write_text("trees:\n  - path: a    modified: yes\n    name: A\n")
+    problems = vendored.structural_problems(f)
+    assert len(problems) == 1 and "modified:" in problems[0]
+
+
+def test_structural_check_catches_a_field_swallowed_by_a_block_scalar(tmp_path):
+    """The other shape: a `>` block eats the next key because the inserted prose had
+    no trailing newline."""
+    f = tmp_path / "vendor.yaml"
+    f.write_text("    review: >\n      some prose here.    reason: X\n")
+    assert len(vendored.structural_problems(f)) == 1
+
+
+def test_structural_check_does_not_fire_on_ordinary_prose(tmp_path):
+    """It must be able to pass: prose inside a block scalar routinely contains colons,
+    and a check that flags those would be deleted within a week."""
+    f = tmp_path / "vendor.yaml"
+    f.write_text(
+        "trees:\n  - path: a\n    modified: yes\n    reason: fine\n"
+        "    review: >\n      prose mentioning a colon: like this, and review of things\n"
+    )
+    assert vendored.structural_problems(f) == []
+
+
+def test_the_committed_registry_has_no_swallowed_fields():
+    assert vendored.structural_problems(REPO / "vendor.yaml") == []

@@ -402,10 +402,27 @@ trees:
     upstream: https://gitlab.gnome.org/GNOME/libxml2
     license: MIT
     license_file: sdk/lib/3rdparty/libxml2/COPYING
-    modified: unknown
+    modified: yes  # 3 substantive files vs pristine 2.12.8
     version:
       file: sdk/lib/3rdparty/libxml2/include/libxml/xmlversion.h
       pattern: '#define LIBXML_DOTTED_VERSION "([^"]+)"'
+    review: >
+      DIFFED AGAINST PRISTINE UPSTREAM 2026-09-19: libxml2-2.12.8.tar.xz from
+      download.gnome.org, sha256 verified against GNOME's published sum. 27 files exist
+      in both trees; 27 differ, but 21 of those differ ONLY by a stripped trailing blank
+      line — a tree-wide whitespace pass, not editing. THREE are substantive:
+
+        libxml.h          swaps `#include "config.h"` for "win32config.h" and hoists
+                          XML_HIDDEN above it. Build-config shim.
+        win32config.h     adds <io.h> and <direct.h>. Portability.
+        xmlschemas.c      BEHAVIOURAL. Wraps the content-model determinism check in
+                          `#if 0  /* disabled in Wine */`, so schemas upstream rejects
+                          as non-deterministic now validate silently.
+
+      That last one is the one that matters for a re-vendor, and note its provenance:
+      the comment says WINE, not ReactOS. It arrived already-patched in the bulk import
+      rather than being edited here — which is exactly why "no __REACTOS__ marker" is
+      not evidence of a clean drop.
     reason: XML parser; upstream-tracked.
 
   - path: sdk/lib/3rdparty/adns
@@ -456,9 +473,24 @@ trees:
     upstream: https://github.com/win-iconv/win-iconv
     license: Unlicense OR MIT
     license_ref: sdk/lib/3rdparty/libwin-iconv/win_iconv.c
-    modified: unknown
+    modified: yes  # reimplemented _errno import resolution
     review: >
-      RECORDED `Unlicense OR MIT`, BUT THE FILE SAYS PUBLIC DOMAIN: win_iconv.c's header
+      DIFFED AGAINST UPSTREAM 2026-09-19 at the commit our ChangeLog matches
+      (win-iconv 1046215, 2014-02-05). THE FIRST DIFF WAS A LIE: every file appeared to
+      differ by thousands of lines, because our copy is CRLF and upstream is LF — 4,146
+      "changed" lines in a 2,071-line file is the tell. Normalising line endings leaves
+      22 real lines in win_iconv.c and 4 in readme.txt; win_iconv_test.c, iconv.h and
+      ChangeLog are identical.
+
+      The 22 lines are a genuine reimplementation, not a shim: upstream finds the
+      importing module and calls GetProcAddress for `_errno`
+      (find_imported_module_by_funcname -> HMODULE); ours resolves the address straight
+      out of the Import Address Table (find_imported_function -> FARPROC). Same goal,
+      different mechanism, and it is ours to re-apply. The readme changes are
+      proofreading ("drop or replace" -> "drops or replaces") that upstream lacked at
+      that commit.
+
+      So the tree is: upstream 2014-02-05, CRLF-converted, with one function rewritten.      RECORDED `Unlicense OR MIT`, BUT THE FILE SAYS PUBLIC DOMAIN: win_iconv.c's header
       is three lines and reads "This file is placed in the public domain." No Unlicense
       text and no MIT text appears anywhere in the tree. A public-domain dedication and
       the Unlicense are not the same instrument and are not equally effective in every
@@ -522,7 +554,18 @@ trees:
     license: Apache-2.0 OR GPL-2.0-or-later
     license_ref: dll/3rdparty/mbedtls/aes.c
     review: >
-      LICENCE CORRECTED 2026-09-19: recorded as `Apache-2.0` for as long as this entry
+      DIFFED AGAINST PRISTINE UPSTREAM 2026-09-19: v2.16.11 tarball from GitHub,
+      version confirmed from the tarball's own version.h. 79 .c files compared,
+      EXACTLY ONE differs — timing.c — and the change is a portability widening:
+      upstream gates its QueryPerformanceCounter hardclock on `_MSC_VER`, ours adds an
+      equivalent branch for any `_WIN32`, covering MinGW. Same API, same logic, broader
+      guard.
+
+      Checked rather than waved past, because this is a TLS library: hardclock feeds
+      entropy_poll.c and havege.c. It does not change entropy policy or quality — it
+      makes an already-used Windows counter available where the narrower guard would
+      have fallen through. Nothing in crypto, RNG, certificate validation or protocol
+      handling differs anywhere in the drop.      LICENCE CORRECTED 2026-09-19: recorded as `Apache-2.0` for as long as this entry
       has existed, but all 79 files say `SPDX-License-Identifier: Apache-2.0 OR
       GPL-2.0-or-later`. Dual, so the GPL half is an OPTION rather than an obligation —
       but stating only one arm of a dual grant misrepresents it. It survived the licence
@@ -536,7 +579,7 @@ trees:
       and a re-vendor is a copy rather than a merge. It was found BY HAND, not by
       `--licences`: it declares its licence in prose with no SPDX tag, which is that
       scan's blind spot. A re-vendor must not reintroduce it.
-    modified: unknown
+    modified: yes  # 1 of 79 .c files vs pristine 2.16.11
     headers:
       - sdk/include/reactos/libs/mbedtls
     version:
@@ -551,12 +594,26 @@ trees:
     upstream: https://ijg.org/
     license: IJG
     license_file: dll/3rdparty/libjpeg/README
-    modified: unknown
+    modified: no  # sources byte-identical to pristine IJG 9d
     headers:
       - sdk/include/reactos/libs/libjpeg
     version:
       file: sdk/include/reactos/libs/libjpeg/jpeglib.h
       pattern: '#define JPEG_LIB_VERSION\s+(\d+)'
+    review: >
+      DIFFED AGAINST PRISTINE UPSTREAM 2026-09-19: jpegsrc.v9d.tar.gz from ijg.org.
+      All 73 shared files byte-identical — including the historically fragile ones,
+      jdhuff.c, jmemmgr.c, jquant2.c. Nothing in bounds checking, allocation or
+      marker/Huffman parsing differs.
+
+      TWO THINGS THE REGISTRY HAD WRONG OR MISSING. The version was recorded as `90`,
+      which is the JPEG_LIB_VERSION macro and spans several IJG releases; the actual
+      release is 9d (12-Jan-2020), stated in jversion.h, README and change.log. And
+      this tree is SPLIT — the headers live in sdk/include/reactos/libs/libjpeg, where
+      jmorecfg.h carries a documented DLL-export patch (JPEG_IMPEXP/JPEG_API) with
+      rosdiff.patch sitting beside it, and jconfig.h is upstream's own jconfig.vc
+      template trimmed of the cjpeg/djpeg tool flags. Those are build glue, so the
+      SOURCE verdict is `no`, but a re-vendor must handle both directories.
     reason: JPEG codec; upstream-tracked.
 
   - path: dll/3rdparty/libpng
@@ -564,12 +621,19 @@ trees:
     upstream: http://www.libpng.org/pub/png/libpng.html
     license: libpng-2.0
     license_file: dll/3rdparty/libpng/docs/LICENSE
-    modified: unknown
+    modified: no  # byte-identical to pristine 1.6.39, verified twice
     headers:
       - sdk/include/reactos/libs/libpng
     version:
       file: sdk/include/reactos/libs/libpng/png.h
       pattern: '#define PNG_LIBPNG_VER_STRING "([^"]+)"'
+    review: >
+      DIFFED AGAINST PRISTINE UPSTREAM 2026-09-19 and it is a CLEAN DROP: all 19
+      sources byte-identical to libpng 1.6.39, cross-checked against both the GitHub
+      tag archive and the SourceForge release tarball, then re-verified independently.
+      docs/ is upstream's flat files relocated into a subdirectory — a layout choice,
+      not content drift. libpng.spec is our Wine-format export table, ours by
+      definition. Nothing touches bounds checks, allocation or chunk parsing.
     reason: PNG codec; upstream-tracked.
 
   - path: dll/3rdparty/libtiff
@@ -577,7 +641,7 @@ trees:
     upstream: http://www.libtiff.org/
     license: libtiff (BSD-like)
     license_ref: dll/3rdparty/libtiff/tif_open.c
-    modified: unknown
+    modified: mechanically  # PCH include swap only; see review
     headers:
       - sdk/include/reactos/libs/libtiff
     version:
@@ -590,12 +654,28 @@ trees:
     upstream: https://gitlab.gnome.org/GNOME/libxslt
     license: MIT
     license_file: dll/3rdparty/libxslt/Copyright
-    modified: unknown
+    modified: yes  # 1 behavioural line vs pristine 1.1.42
     headers:
       - sdk/include/reactos/libs/libxslt
     version:
       file: sdk/include/reactos/libs/libxslt/xsltconfig.h
       pattern: '#define LIBXSLT_DOTTED_VERSION "([^"]+)"'
+    review: >
+      DIFFED AGAINST PRISTINE UPSTREAM 2026-09-19: libxslt-1.1.42.tar.xz from
+      download.gnome.org, version confirmed from NEWS. 21 of 27 shared files are
+      byte-identical, 5 differ only by a stripped trailing blank line, and ONE line is
+      real:
+
+        win32config.h:48   upstream `#define HAVE__STAT`  ->  ours `#define HAVE_STAT`
+
+      Behavioural, narrowly. Upstream's HAVE__STAT drives security.c's macro chain to
+      remap stat() to _stat() for a stock MSVC CRT; defining HAVE_STAT directly skips
+      that remap, so security.c calls a real stat(). Correct for this tree, which
+      supplies its own CRT — but it changes which libc function is actually called, so
+      it is a divergence a re-vendor must re-apply rather than discard.
+
+      trio.h and triodef.h were checked specifically and are upstream's own vendored
+      copies, unmodified.
     reason: XSLT processor; upstream-tracked.
 
   - path: dll/3rdparty/libtirpc
@@ -618,7 +698,20 @@ trees:
     upstream: unknown
     license: MIT
     license_ref: dll/3rdparty/dxtn/txc_compress_dxtn.c
-    modified: unknown
+    modified: unknown  # upstream distribution is gone; see review
+    review: >
+      VERSION IDENTIFIED 2026-09-19, MODIFICATION STILL OPEN. The registry said
+      `version: unknown, upstream: unknown`; the files say otherwise — txc_dxtn.h and
+      txc_compress_dxtn.c both carry "libtxc_dxtn / Version: 1.0 / Copyright (C) 2004
+      Roland Scheidegger". So this is libtxc_dxtn 1.0, the S3TC/DXTn codec.
+
+      It cannot be fully diffed: libtxc_dxtn's distribution point
+      (people.freedesktop.org/~mareko) is a 404 and the project has no surviving
+      canonical home. The nearest artifact is divVerent/s2tc, which carries a verbatim
+      copy of txc_dxtn.h — ours is byte-identical to it — but s2tc is a clean-room
+      reimplementation and does not ship the two .c files, so 1,086 of our 1,137 lines
+      have nothing to compare against. `modified` stays unknown, now for a stated
+      reason rather than for want of looking.
     reason: S3TC/DXTn texture (de)compression for the GL stack.
 
   # ── headers with no source in this tree ─────────────────────────────────
