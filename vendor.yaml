@@ -2011,3 +2011,52 @@ ours:
       from, and these are individual headers living inside our own. Nothing here is a
       translation target in the first place — the project translates C bodies, and this
       directory has none.
+
+  # ── the NDK, ReactOS's own native API headers ───────────────────────────
+  - path: sdk/include/ndk
+    name: NDK (ReactOS native API headers)
+    origin: ReactOS-authored (Alex Ionescu, alex.ionescu@reactos.com)
+    reason: >
+      45 headers carrying `Copyright (c) Alex Ionescu.  All rights reserved.` and no
+      grant of any kind, which is why `--grants` reported the directory twice (the
+      root and the i386 subdir). The header block is the DDK's `/*++ ... --*/` house
+      style, which has no LICENSE: line to put one on.
+
+      Not a foreign tree: the NDK was written FOR ReactOS by one of its founders,
+      using a reactos.com address, and has shipped as part of ReactOS since 2004 —
+      so the project's own COPYING is its grant, the same as for any other
+      contribution. "All rights reserved" beside a personal copyright is the 1990s
+      boilerplate the DDK template carried, not a withholding.
+
+      Registered as ours rather than given a licence file, because adding a grant to
+      45 upstream files on a contributor's behalf is not ours to write, and it would
+      conflict with every ReactOS sync forever. Nothing here is a translation target
+      anyway: headers, no C bodies.
+
+  # ── Ken Kato's Virtual Floppy Drive, shipped inside rosapps ─────────────
+  - paths:
+      - modules/rosapps/lib/vfdlib
+      - modules/rosapps/drivers/vfd
+      - modules/rosapps/include/vfd
+    name: Virtual Floppy Drive (VFD)
+    origin: Ken Kato, Virtual Floppy Drive 2.1 — GPL-2.0 (see reason)
+    tier: "rosapps (not shipped on the boot path)"
+    reason: >
+      33 files carrying `Copyright (C) 2003-2008 Ken Kato` and no grant of any kind.
+      One decision, three directories, because ReactOS split one upstream program
+      into a driver, a control library and its shared headers.
+
+      The grant is GPL-2: the upstream project (Virtual Floppy Drive, SourceForge
+      `projects/vfd`) is published under GNU GPL v2.0, and ReactOS carries it inside
+      `modules/rosapps`, whose own COPYING is the GPL-2 text. So the terms are
+      readable in this distribution twice over — what is missing is any file saying
+      which licence applies, which is why `--grants` reported all three directories.
+
+      Recorded here rather than by editing 33 upstream headers, which would conflict
+      with every ReactOS sync. NOT laundered through the rosapps COPYING: a
+      collection licence three levels up is explicitly rejected as coverage
+      (`_COLLECTION_ROOTS`), precisely so these three directories could not go quiet
+      on their own. What is NOT verified: the SourceForge project page states the
+      licence and the program name but does not name Ken Kato, so the chain is
+      name-and-licence, not authorship. Cheap to firm up if it ever matters —
+      the upstream release tarball carries a COPYING and a readme.
