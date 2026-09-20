@@ -543,18 +543,23 @@ pub unsafe extern "system" fn RtlVirtualUnwind(
                         Context,
                         ContextPointers,
                         Reg,
-                        ((*Context).Rsp as *mut DWORD64).add(Offset as usize),
+                        ((*Context).Rsp + Offset as DWORD64) as *mut DWORD64,
                     );
                     i += 3;
                 }
 
                 UWOP_EPILOG => {
-                    i += 1;
+                    // 2 slots, matching UNWIND_OP_EXTRA_SLOT_TABLE above (1 extra + 1).
+                    // Advancing by 1 desynced this loop from UnwindOpSlots(), which the
+                    // scan/skip paths use, so the next opcode was read from the wrong
+                    // offset. The file disagreed with itself.
+                    i += 2;
                 }
 
                 UWOP_SPARE_CODE => {
                     /* ASSERT(FALSE) elided — NDEBUG */
-                    i += 2;
+                    // 3 slots, likewise matching the table (2 extra + 1).
+                    i += 3;
                 }
 
                 UWOP_SAVE_XMM128 => {
@@ -577,7 +582,7 @@ pub unsafe extern "system" fn RtlVirtualUnwind(
                         Context,
                         ContextPointers,
                         Reg,
-                        ((*Context).Rsp as *mut M128A).add(Offset as usize),
+                        ((*Context).Rsp + Offset as DWORD64) as *mut M128A,
                     );
                     i += 3;
                 }

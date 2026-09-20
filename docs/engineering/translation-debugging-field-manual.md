@@ -1064,6 +1064,18 @@ is not merely a lost message, it is also **an optimiser hint that erases the evi
 expect this class when you turn one on, and read the trap as a pre-existing latent fold rather
 than as damage the change did.
 
+**DELETING code is the same trigger, from the other direction.** Reverting upstream's
+`TIF_MOVESIZETRACKING` hack out of `ENTRY_ReferenceEntryByHandle` (win32k `gdiobj.rs`) put one
+`ud2` in `win32k.sys` at `EBRUSHOBJ_bRealizeBrush` that the previous build did not have. Nothing
+about that function changed; the removal simply made `ENTRY_ReferenceEntryByHandle` small enough
+to inline, which made `GDIOBJ_ShareLockObj` transparent at its call site, and
+`engbrush.rs`'s `psurfPattern = GDIOBJ_ShareLockObj(...)` is dereferenced with no NULL check --
+*which is what the C does*, since `engbrush.c` carries only `ASSERT(psurfPattern)` and ASSERT is
+nothing in retail. So: **any edit that changes a function's INLINING COST can uncloak this row,
+including one that only removes lines.** Read the instruction before the trap
+(`call GDIOBJ_vDereferenceObject`, an ordinary function with no panic symbol = middle row), fix
+with `#[inline(never)]` on the NULL-returning callee, and do not add the null check.
+
 **Fix by restoring the C's codegen shape — `#[inline(never)]` on the callee — not by adding the
 null check.** Adding it is a behaviour change on the path the C would fault on, i.e. a
 divergence in a differential port; out-of-line, the caller gets an opaque pointer, emits the

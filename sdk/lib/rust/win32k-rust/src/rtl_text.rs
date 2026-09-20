@@ -244,7 +244,10 @@ unsafe fn TEXT_PathEllipsify(
         lastFwdSlash
     };
     if lastSlash.is_null() {
-        lastSlash = str;
+        // No path separator: point at the END of the string, not the start, or
+        // len_trailing becomes the whole string and the ellipsis eats it
+        // (Wine 11.3 5909e90 / CORE-20581, upstream 64f1cf3b6d).
+        lastSlash = str.offset(*len_str as isize);
     }
     len_trailing = *len_str as i32 - (lastSlash.offset_from(str) as i32);
 

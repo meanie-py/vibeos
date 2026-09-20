@@ -145,7 +145,7 @@ pub unsafe extern "C" fn DIB_XXBPP_StretchBlt(
                     sx = (*SourceRect).left + (DesX - (*DestRect).left) * SrcWidth / DstWidth;
                 }
                 if sx < 0 || sy < 0 ||
-                    (*MaskSurf).sizlBitmap.cx < sx || MaskCy < sy ||
+                    (*MaskSurf).sizlBitmap.cx <= sx || MaskCy <= sy ||
                     fnMask_GetPixel.unwrap()(MaskSurf, sx, sy) != 0
                 {
                     CanDraw = 0;
