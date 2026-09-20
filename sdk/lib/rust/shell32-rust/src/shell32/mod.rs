@@ -157,6 +157,18 @@ pub mod extracticon_free;
 /// IEnumIDList derives from. 7 of its 9 functions were already banked from an earlier run and
 /// replayed at $0; the other two lowered deterministically, so the whole TU cost nothing.
 pub mod CEnumIDListBase;
+/// `CFolderItemVerbs.cpp`, cohab-flipped — both its classes. These were the two the
+/// deterministic layer could not take last night, and closing them took three recognizer
+/// additions, all free: `CComBSTR` state (kept as a TYPE so atl.rs's Drop reproduces
+/// ~CComBSTR's SysFreeString, rather than flattened to a BSTR that leaks), `new CComObject<T>`
+/// as a third internal-activation shape, and `--activation-source` for a class whose
+/// construction lives in ANOTHER TU (CFolderItem::Verbs, over in CFolderItems.cpp).
+/// `rust_folderitemverbs_bridge.cpp` existed only to stand in for these and is deleted.
+/// Hand-written substrate for the pair below; its header explains the IContextMenu
+/// naming collision it exists to resolve.
+pub mod folderitemverbs_support;
+pub mod CFolderItemVerb;
+pub mod CFolderItemVerbs;
 pub mod CFolder;
 pub mod CFolderItem;
 pub mod CFolderItems;

@@ -295,8 +295,16 @@ list(APPEND SOURCE
     # are both unmapped. The Rust CFolderItem::Verbs still constructs it, through the four
     # EXTERN_C symbols in rust_folderitemverbs_bridge.cpp — which is deleted the moment those
     # two classes translate.
-    rust_folderitemverbs_bridge.cpp
-    CFolderItemVerbs.cpp)
+    # CFolderItemVerbs.cpp — replaced by Rust (shell32-rust/src/shell32/CFolderItemVerb.rs and
+    # CFolderItemVerbs.rs); cohab via libshell32_rust.a. Both classes, and with them the last
+    # of CFolder.cpp/CFolderItems.cpp's C++ closure.
+    #   rust_folderitemverbs_bridge.cpp is DELETED with this flip: it existed only because the
+    # deterministic layer could not map `new CComObject<T>` activation or `CComBSTR` state, so
+    # the Rust CFolderItem::Verbs had to build a C++ object. All three gaps are closed now
+    # (the third being that this class is constructed by a DIFFERENT TU, which needs
+    # `--activation-source dll/win32/shell32/CFolderItems.cpp`), and CFolderItem::Verbs calls
+    # the generated CFolderItemVerbs_CreateInstance directly.
+    )
 
 list(APPEND PCH_SKIP_SOURCE
     # appbar.c — replaced by Rust (shell32-rust/src/appbar.rs); cohab via libshell32_rust.a
