@@ -1850,7 +1850,9 @@ pub unsafe extern "C" fn IntGdiFillRgn(
         &mut (*(*pdc).dclevel.pSurface).SurfObj,
         &mut xcoClip as *mut XCLIPOBJ as *mut CLIPOBJ,
         pbo,
-        &mut (*(*pdc).pdcattr).ptlBrushOrigin,
+        // ptlFillOrigin, not the raw brush origin -- same fix, same commit; the
+        // field already exists here and is used correctly in dcobjs/dcutil/coord.
+        &mut (*pdc).ptlFillOrigin,
         mix,
     );
 
@@ -2142,10 +2144,13 @@ pub unsafe extern "system" fn NtGdiGetPixel(hdc: HDC, x: INT, y: INT) -> COLORRE
         ptlSrc.x += (*pdc).ptlDCOrig.x;
         ptlSrc.y += (*pdc).ptlDCOrig.y;
 
-        rcDest.left = x;
-        rcDest.top = y;
-        rcDest.right = x + 1;
-        rcDest.bottom = y + 1;
+        // ptlSrc is the LPtoDP-mapped, DC-origin-translated point computed just
+        // above; sampling raw x/y reads the wrong pixel on any DC whose origin is
+        // not (0,0). Upstream-Commit: 7f459b49f0a
+        rcDest.left = ptlSrc.x;
+        rcDest.top = ptlSrc.y;
+        rcDest.right = ptlSrc.x + 1;
+        rcDest.bottom = ptlSrc.y + 1;
 
         /* Prepare DC for blit */
         DC_vPrepareDCsForBlit(pdc, (core::ptr::addr_of_mut!(rcDest) as _), core::ptr::null_mut(), core::ptr::null_mut());
@@ -2246,10 +2251,13 @@ pub unsafe extern "system" fn NtGdiGetPixel(hdc: HDC, x: INT, y: INT) -> COLORRE
         ptlSrc.x += (*pdc).ptlDCOrig.x;
         ptlSrc.y += (*pdc).ptlDCOrig.y;
 
-        rcDest.left = x;
-        rcDest.top = y;
-        rcDest.right = x + 1;
-        rcDest.bottom = y + 1;
+        // ptlSrc is the LPtoDP-mapped, DC-origin-translated point computed just
+        // above; sampling raw x/y reads the wrong pixel on any DC whose origin is
+        // not (0,0). Upstream-Commit: 7f459b49f0a
+        rcDest.left = ptlSrc.x;
+        rcDest.top = ptlSrc.y;
+        rcDest.right = ptlSrc.x + 1;
+        rcDest.bottom = ptlSrc.y + 1;
 
         /* Prepare DC for blit */
         DC_vPrepareDCsForBlit(pdc, core::ptr::addr_of_mut!(rcDest) as _ , core::ptr::null_mut(), core::ptr::null_mut());
