@@ -63,9 +63,9 @@ SRC_IN_COMMENT = re.compile(
 SKIP_DIRS = {".git", "build", "output", "target", "__pycache__"}
 
 
-def cmake_files() -> list[Path]:
+def cmake_files(root: Path = REPO) -> list[Path]:
     out = []
-    for p in REPO.rglob("*"):
+    for p in root.rglob("*"):
         if p.name != "CMakeLists.txt" and p.suffix != ".cmake":
             continue
         if any(part in SKIP_DIRS or part.startswith("build-") for part in p.parts):
@@ -75,10 +75,10 @@ def cmake_files() -> list[Path]:
     return sorted(out)
 
 
-def census() -> Counter:
+def census(root: Path = REPO) -> Counter:
     c: Counter = Counter()
-    for p in cmake_files():
-        rel = p.relative_to(REPO).as_posix()
+    for p in cmake_files(root):
+        rel = p.relative_to(root).as_posix()
         try:
             text = p.read_text(encoding="utf-8", errors="replace")
         except OSError:
@@ -108,17 +108,31 @@ def load(path: Path) -> Counter:
 def main() -> int:
     ap = argparse.ArgumentParser(description=__doc__)
     ap.add_argument("--write", action="store_true", help="write the snapshot and exit")
+    # --root/--census exist so the TEST can build its own fixture tree instead of
+    # editing a tracked file in whatever worktree it happens to run from. A test
+    # that mutates shared state to prove a point is not hermetic: this one passed
+    # here and failed in the merge queue's integration worktree, which cost a
+    # landing to diagnose.
+    ap.add_argument("--root", type=Path, default=REPO, help="tree to scan")
+    ap.add_argument("--census", type=Path, default=None, help="snapshot file")
     args = ap.parse_args()
 
-    now = census()
+    root: Path = args.root.resolve()
+    census_path: Path = (
+        args.census
+        if args.census is not None
+        else (CENSUS if root == REPO else root / "cohab-census.txt")
+    )
+
+    now = census(root)
     if args.write:
-        CENSUS.write_text(render(now), encoding="utf-8")
-        print(f"cohab_census: wrote {len(now)} entries to {CENSUS.relative_to(REPO)}")
+        census_path.write_text(render(now), encoding="utf-8")
+        print(f"cohab_census: wrote {len(now)} entries to {census_path}")
         return 0
 
-    was = load(CENSUS)
-    if not CENSUS.is_file():
-        print("[CENSUS-MISSING] tools/cohab-census.txt absent -- run --write to seed it")
+    was = load(census_path)
+    if not census_path.is_file():
+        print(f"[CENSUS-MISSING] {census_path} absent -- run --write to seed it")
         return 1
 
     findings = []
