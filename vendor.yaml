@@ -111,18 +111,8 @@ trees:
     name: Windows Driver Frameworks (KMDF/UMDF)
     upstream: https://github.com/microsoft/Windows-Driver-Frameworks
     license: MIT  # upstream relicensed the WDF sources to MIT in 2017
-    license_note: >
-      The MIT grant is upstream's and is NOT reproducible from this tree: the drop
-      arrived without the repository's LICENSE.md, and the WDF sources carry no
-      per-file licence header (unlike ACPICA or mbedtls, whose grant is in every
-      file). So the licence is correct by provenance — microsoft/Windows-Driver-
-      Frameworks has been MIT since the 2017 open-sourcing — but nothing here states
-      it, which is a defect in OUR drop rather than an ambiguity about the terms.
-
-      Fix when convenient by copying upstream's LICENSE.md into sdk/lib/drivers/wdf
-      and pointing `license_file` at it; until then this note is what generated
-      notices reproduce, so the gap is visible rather than silent.
-    modified: "lightly"  # 9 of 488 files mention ReactOS; see reason
+    license_file: sdk/lib/drivers/wdf/LICENSE
+    modified: "lightly"  # ~35 marker files + mechanical portability; see review
     headers:
       - sdk/include/wdf
     version:
@@ -154,6 +144,56 @@ trees:
       upstream WDF drop would still need our loader supplied beside it rather than
       inside it. What changed is that the dependency is now across a tree boundary
       instead of hidden as files in someone else's directory.
+
+      DIFFED AGAINST PRISTINE UPSTREAM 2026-09-20, and both open questions on this entry are
+      now answered.
+
+      THE LICENCE GAP IS CLOSED. Upstream ships a LICENSE at the repo root — plain MIT,
+      "Copyright (c) 2015 Microsoft", sha256
+      cf248820bf1178370bb4f1670a59f8748d46bc96d0f64080cd631511c6046409 — which our drop
+      simply failed to bring along. It is now vendored at sdk/lib/drivers/wdf/LICENSE and
+      `license_file` points at it, so the MIT grant is reproducible from the tree and the
+      old `license_note` ("correct by provenance, unstated by us") is retired.
+
+      WHICH UPSTREAM: tag win-10.0.10586.0 (Windows 10 1511), archive sha256
+      6289cf8b5284ab27a801f7a04d9bb35c893159e82c04055df079e3ab3dcb3304. Chosen by
+      measurement, not assumption: sampled files bottom out there (powerstatemachine.cpp 57
+      changed lines at neighbouring tags versus 2 at 10586.0; fxpkgpnp.cpp 465 versus
+      478/517), and src/publicinc/wdf/kmdf/1.17 first appears at that tag. NOTE our
+      CMakeLists bakes __WDF_BUILD_NUMBER=7600, the Windows 7 RTM build, next to KMDF 1.17
+      which is a Windows 10-era version — internally inconsistent, and NOT evidence of
+      provenance. No Win7-era tag exists upstream at all.
+
+      THE "9 of 488 files mention ReactOS" FIGURE WAS WRONG — it is ~35. Case-insensitive
+      `grep -ri reactos` matches 35 files, case-sensitive 34 (lowercase `// reactos start`
+      blocks were being missed). Separately, ROSWDFNOTIMPLEMENTED marks stubbed functions in
+      5 files, and that is a DIFFERENT mechanism — poxinterface.cpp has its entire Power-
+      Framework interop commented out behind it while containing no literal "reactos" text
+      at all, so a grep-only survey misses it completely.
+
+      Scale: 517 files compared across both halves, 83 byte-identical, 222 identical after
+      normalization, 295 differing. That number is misleading alone — most of it is
+      mechanical portability: #include case-normalization for a case-sensitive filesystem,
+      NTAPI/WDFAPI calling-convention annotations added for clang/GCC, WPP .tmh includes
+      commented out in 84 files, backslash include paths fixed, and a few casts. Not
+      vendored: src/publicinc/wdf/kmdf/1.15 and both UMDF public header sets. Vendored but
+      NEVER BUILT: umdf/ (10 files) and shared/*/um/ (91 files) — about 101 files of dead
+      weight, since CMakeLists builds wdf01000 from SOURCE_SHARED + SOURCE_KM only.
+
+      *** ONE UNMARKED FUNCTIONAL REMOVAL, and it is the finding worth acting on. ***
+      shared/irphandlers/pnp/km/powerstatemachinekm.cpp comments out the DMA-enabler
+      PowerUp() and PowerDown() loops in BOTH the device power-up and power-down transitions
+      — verified: the file contains zero "reactos" text and zero ROSWDFNOTIMPLEMENTED, so
+      nothing in the tree records that DMA channel power transitions are silently skipped
+      for any driver using DMA enablers. Plausibly deliberate (DMA not wired up yet) but
+      undocumented, unlike the poxinterface.cpp and fxpkgpnp.cpp stubs which at least call a
+      named not-implemented macro. Recorded here rather than changed; a fix is a driver-
+      behaviour decision, not an audit one.
+
+      No patch file: at 295 differing files dominated by mechanical annotation churn, a
+      patch would be tens of thousands of lines that obscure rather than reveal. The
+      upstream tag and sha256 above make the diff reproducible in one command, which is the
+      useful artifact here.
 
     reason: >
       290K lines / 488 files, the second-largest foreign tree in the repo after FEX and
@@ -459,12 +499,20 @@ trees:
     license: SGI-B-2.0
     license_ref: dll/opengl/glu32/include/GL/glu.h
     license_extra:
+      SGI-B-1.1: >-
+        The 73 .cc implementation files under src/libnurbs/{interface,internals,nurbtess}
+        carry SGI Free Software License B **Version 1.1**, a distinct earlier licence, not
+        the Version 2.0 the other 117 files carry. Inherited from Mesa, 0% ours.
       LGPL-2.0-or-later: >
         include/GL/glu_mangle.h is not SGI's — it is Mesa 3.0, Copyright (C) 1995-1998
         Brian Paul, under the GNU Library General Public License v2 or later. One file,
         a symbol-mangling header, but a copyleft licence sitting inside a permissive
         drop is exactly the shape this registry exists to make visible.
-    modified: yes  # ReactOS markers in 1 source file(s): trimregion.h
+    modified: yes  # 5 files after the systemic include-commenting; see review
+    version:
+      # LITERAL: recovered 2026-09-20 by file-set fingerprint + minimal content
+      # diff, not by an in-tree stamp (there is none). Evidence in the review.
+      literal: glu-9.0.1 (Mesa git tag, not a release tarball)
     headers:
       - dll/opengl/glu32/include
     reason: >
@@ -490,6 +538,56 @@ trees:
       1.3 interface. That is an API version, not a version of this source drop, and
       recording it in the `version:` field would make the table state something the tree
       does not say — the same mistake vendor.yaml's header warns about for ucrt.
+
+      DIFFED AGAINST PRISTINE UPSTREAM 2026-09-20, AND THE VERSION IS RECOVERED. This is
+      Mesa's standalone glu at GIT TAG glu-9.0.1 — not the SGI Sample Implementation, and
+      not a release tarball. The file set is the giveaway: we carry src/libtess/README and
+      src/libtess/alg-outline, which exist only in the git tree and are excluded from make
+      dist, and we do NOT carry src/meson.build, which 9.0.2 added. Content confirms it:
+      after normalizing the systemic transform below, differing files number 13 against
+      9.0.0, FIVE against 9.0.1, 7 against 9.0.2, 8 against 9.0.3 and 18 against master.
+      9.0.1 is the unambiguous minimum. `version:` is a literal because there is no in-tree
+      stamp — only GLU_VERSION_1_3, an API level, which is what the old "no version probe"
+      note was reacting to.
+
+      THE 122-FILE "DIFF" IS A DISTRIBUTION FORM, NOT MODIFICATION. Every `#include "x.h"`
+      across libnurbs/libtess/libutil/gluos.h is commented out, because the CMake build
+      force-includes everything through precomp.h (add_pch(glu32 precomp.h ...)). Same shape
+      as ACPICA's licence-header phantom: count it naively and 127 of 194 files look
+      modified. Allow that one substitution and only FIVE differ.
+
+      The five: trimregion.h adds a `~TrimRegion(){}` under `#if defined(__REACTOS__) &&
+      defined(__clang__)` with a /* FIXME: Inspect */ comment — the one file the old note
+      already named, now located precisely. gluos.h adds `#define WIN32_NO_STATUS` and
+      `#include <string.h>` (a build shim, not reducible to a -D because the include is a
+      real source addition). subdivider.cc and quilt.cc differ only by two statements
+      reflowed onto one line — pure formatting. And mipmap.c gives gluScaleImage an explicit
+      GLAPI prefix that the other six exported functions in the same file do not have, in
+      ours OR upstream: a single-symbol, asymmetric, unexplained dllexport edit. Worth a
+      maintainer's second look; not changed here.
+
+      *** LICENCE FINDING: THE RECORDED LICENCE IS INCOMPLETE FOR 73 OF 194 FILES. *** The
+      73 .cc implementation files under src/libnurbs/{interface,internals,nurbtess} carry
+      "SGI Free Software License B, Version 1.1" — a distinct, earlier licence — while the
+      other 117 carry Version 2.0. Verified by direct count in the tree (73 vs 117) and
+      confirmed present in pristine glu-9.0.1, so this split is inherited from Mesa and is
+      0% ours. Now recorded in `license_extra`. Note the earlier review dismissed the
+      oss.sgi.com/FreeB URL as "part of License B's own required notice, not a second
+      licence" — correct for the 117 v2.0 files, wrong for these 73, which carry a different
+      licence's header rather than merely citing the URL.
+
+      AND THAT EXPOSED A BLIND SPOT IN OUR OWN RATCHET: `vendored.py --licences` reported
+      "every declared licence accounted for" while this was sitting in the tree.
+      license_drift() looks for SPDX-style identifiers, and these files state their licence
+      in free-form prose ("SGI Free Software License B, Version 1.1") with no SPDX tag, so
+      it sees nothing. Recorded rather than fixed: teaching the scanner free-text licence
+      names is a real change to a gate, not an audit finding.
+
+      Three files carry NO licence header — src/include/gluos.h, src/libtess/README and
+      src/libtess/alg-outline — and all three are byte-for-byte that way upstream too, so
+      unlike adns's getopt.c this is not something we stripped and not ours to delete. No
+      upstream directory was skipped: libnurbs, libtess and libutil are all fully vendored,
+      and the file lists match exactly in both directions.
 
   # ── sdk/lib/3rdparty ────────────────────────────────────────────────────
   - path: sdk/lib/3rdparty/freetype
