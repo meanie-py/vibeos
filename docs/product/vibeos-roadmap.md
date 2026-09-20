@@ -1083,10 +1083,22 @@ land; date every addition.** Source docs live in `docs/engineering/archive/`.
   value exactly — but `NtGdiFlush` takes NO arguments, those "args" are stale registers, and
   the earlier boot has the identical `arg0=0000000f` while faulting on `00000040`. Coincidence.
 
-  **Population corrected.** It is notepad, mspaint and **winver** at 58 each, plus
-  **regedit at 32** (regedit faults at a different site, `user32+0x45030`). wordpad, named
-  in the original entry, was NOT observed faulting — but its watch window was cut off by the
-  drain ceiling, so treat it as unobserved rather than clean.
+  **It is NOT a fixed set of apps — the population changes every boot, so this is a RACE.**
+  Two full-drain boots of the same media, minutes apart:
+
+  | boot | 58 faults | other |
+  |---|---|---|
+  | A | notepad, mspaint, winver | regedit 32 |
+  | B | notepad, calc, taskmgr | charmap 55 |
+
+  Only notepad is in both. So the original entry's "specific to the stock GUI apps, not
+  general WoW64 breakage" is half right — it IS confined to the applet phase, but WHICH
+  applets is not a property of the applets, and neither the comdlg32 nor the drag-and-drop
+  split that the app list suggests survives contact with boot B. Any theory keyed to what a
+  particular app does is looking at the wrong thing; the count being ~58 whatever the app
+  is, and the value in `pDeskInfo` differing per boot, both point the same way. wordpad,
+  named in the original entry, faulted in neither and was cut off by the ceiling in A, so it
+  is unobserved rather than clean.
 
   **Why this went unmeasured for a week, which is the reusable part.** `--ladder` *cannot*
   see it. `ladder.watch()` stops draining the moment every GRADED guest has reported, and the
@@ -1126,17 +1138,33 @@ land; date every addition.** Source docs live in `docs/engineering/archive/`.
         movl $0x0,0x8(%r12)      ; <-- faults (write)
         lock xadd $-1,0x10(%r12)
 
-  **The page is readable but not writable, and that is deduced rather than assumed.** The
-  `cmpw` one instruction earlier reads `0xc(%r12)` — the same 16 bytes, the same page — and
-  the reported faulting PC is the `movl`, not the `cmpw`, so the read completed and nothing
-  between them touches `r12`. An unmapped `r12` would have faulted one instruction sooner.
-  So this is a WRITE to a read-only mapping, which is the shape of a GDI object reached
-  through a user-side view instead of the kernel one: `W32Wow64ZeroBits` maps WoW64 views
-  below 2GB and the desktop view is `PAGE_READONLY`. That makes a delta/truncation mix-up
-  the first thing to check — the same theme as the `pDeskInfo` entry above — but nothing
-  here has yet shown which pointer, so it is a LEAD, not a diagnosis.
-  (Note the BUGCHECK's P3/P4 cannot settle read-vs-write here: P3 is a kernel address, not
-  the 0/1/8 an AV's ExceptionInformation[0] would carry.) Preceded by a long, healthy run of guest GDI text calls
+  **REPRODUCED 2/2, and the second sample names the pointer.** The other boot died in the
+  same function at `win32k.sys+0x79254` = `NtGdiGetCharABCWidthsW+0x1f4`:
+
+        test %r15,%r15 / je      ; FontGDI null-checked, and it passes
+        mov  0x50(%r15),%rax     ; rax = FontGDI->SharedFace   -- loads fine
+        mov  (%rax),%r12         ; <-- faults: SharedFace->Face
+
+  which is the source line `face = (*(*FontGDI).SharedFace).Face;`. So **`SharedFace` is
+  invalid** — `FontGDI` itself is null-checked and survives, and nothing checks `SharedFace`
+  (upstream does not either). That also explains the FIRST sample rather than competing with
+  it: at `+0x1a4` the faulting store is an inlined exclusive unlock through `r12`, and `r12`
+  is exactly what this instruction loads. One boot faults loading the bad `Face`, the other
+  gets a garbage `Face` and dies later unlocking through it. Same root.
+
+  *(Supersedes a lead recorded here earlier the same day. From sample 1 alone I argued the
+  page must be readable-but-not-writable — the `cmpw` at `0xc(%r12)` completes and the
+  `movl` at `0x8(%r12)` faults — and reasoned toward a user-side-view/delta mix-up. The
+  read/write asymmetry is still a correct reading of sample 1, but a garbage `Face` explains
+  both samples and needs no read-only mapping, so the delta theory is dropped. Note the
+  BUGCHECK's P3/P4 cannot settle read-vs-write directly: P3 is a kernel address, not the
+  0/1/8 an AV's ExceptionInformation[0] would carry.)*
+
+  **Do not record this as WoW64-specific either.** It was observed twice from 32-bit guests
+  and not natively — but no native app in these boots calls `GetCharABCWidths` at all, so
+  that is an absence of a trigger, not evidence of an arch split. `RealizeFontInit()`
+  returning a TEXTOBJ whose FONTGDI has no realized `SharedFace` is the thing to check
+  first, and it is not obviously a 32-bit question. Preceded by a long, healthy run of guest GDI text calls
   (`NtGdiGetOutlineTextMetricsInternalW`, `NtGdiGetGlyphIndicesW`) that all return correctly,
   so this is one syscall's unlock path, not general GDI breakage. Reproduce with
   `VIBEOS_LADDER_DRAIN_FLOOR=700 ./vibeos-cli smoke --arch amd64 --ladder`; it lands in the
