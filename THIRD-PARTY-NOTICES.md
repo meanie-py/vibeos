@@ -4,7 +4,7 @@ This product includes third-party software. **This file is GENERATED** from `ven
 
 24 third-party components:
 
-- [ACPICA](#acpica) — 0x20221020 — BSD-3-Clause OR GPL-2.0
+- [ACPICA](#acpica) — 0x20260408 — BSD-3-Clause OR GPL-2.0
 - [adns](#adns) — 1.0 — GPL-2.0-or-later
 - [AMD LibM for Windows](#amd-libm-for-windows) — git commit 6121d02 — MIT
 - [cardlib](#cardlib) — unknown — Public Domain (relayed author permission) — see review
@@ -33,7 +33,7 @@ This product includes third-party software. **This file is GENERATED** from `ven
 ## ACPICA
 
 - Upstream: https://github.com/acpica/acpica
-- Version: 0x20221020
+- Version: 0x20260408
 - In this tree: `drivers/bus/acpi/acpica`
 - Licence: BSD-3-Clause OR GPL-2.0
 - Modified by us: yes, see `vendor-patches/acpica.patch`
@@ -45,7 +45,7 @@ Name: acpi.h - Master public include file used to interface to ACPICA
 
 
 
-Copyright (C) 2000 - 2022, Intel Corp.
+Copyright (C) 2000 - 2026, Intel Corp.
 All rights reserved.
 
 Redistribution and use in source and binary forms, with or without

@@ -5,7 +5,7 @@
  *****************************************************************************/
 
 /*
- * Copyright (C) 2000 - 2022, Intel Corp.
+ * Copyright (C) 2000 - 2026, Intel Corp.
  * All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without
@@ -528,7 +528,7 @@ AcpiSetupGpeForWake (
          * permanently enabled and clear its ACPI_GPE_AUTO_ENABLED flag.
          */
         (void) AcpiEvRemoveGpeReference (GpeEventInfo);
-        GpeEventInfo->Flags &= ~~ACPI_GPE_AUTO_ENABLED;
+        GpeEventInfo->Flags &= ~ACPI_GPE_AUTO_ENABLED;
     }
 
     /*

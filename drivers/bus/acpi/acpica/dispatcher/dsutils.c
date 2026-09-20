@@ -5,7 +5,7 @@
  ******************************************************************************/
 
 /*
- * Copyright (C) 2000 - 2022, Intel Corp.
+ * Copyright (C) 2000 - 2026, Intel Corp.
  * All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without
@@ -759,6 +759,8 @@ AcpiDsCreateOperands (
     ACPI_PARSE_OBJECT       *Arguments[ACPI_OBJ_NUM_OPERANDS];
     UINT32                  ArgCount = 0;
     UINT32                  Index = WalkState->NumOperands;
+    UINT32                  PrevNumOperands = WalkState->NumOperands;
+    UINT32                  NewNumOperands;
     UINT32                  i;
 
 
@@ -791,6 +793,7 @@ AcpiDsCreateOperands (
 
     /* Create the interpreter arguments, in reverse order */
 
+    NewNumOperands = Index;
     Index--;
     for (i = 0; i < ArgCount; i++)
     {
@@ -818,7 +821,11 @@ Cleanup:
      * pop everything off of the operand stack and delete those
      * objects
      */
-    AcpiDsObjStackPopAndDelete (ArgCount, WalkState);
+    WalkState->NumOperands = (UINT8) (i);
+    AcpiDsObjStackPopAndDelete (NewNumOperands, WalkState);
+
+    /* Restore operand count */
+    WalkState->NumOperands = (UINT8) (PrevNumOperands);
 
     ACPI_EXCEPTION ((AE_INFO, Status, "While creating Arg %u", Index));
     return_ACPI_STATUS (Status);

@@ -45,11 +45,6 @@ trees:
   # ── ACPI ────────────────────────────────────────────────────────────────
   - path: drivers/bus/acpi/acpica
     name: ACPICA
-    staleness: >
-      AUDITED 2026-09-20: ours 20221020, current 20260408. Parses ACPI tables supplied by
-      firmware. Unusually cheap to bump for its size — only 7 files carry real changes, all
-      host-port shims — but re-vendor from the LINUXIZED form or you will re-create a
-      phantom 219-file diff; see the review.
     upstream: https://github.com/acpica/acpica
     license: BSD-3-Clause OR GPL-2.0  # Intel dual-licence
     license_ref: drivers/bus/acpi/acpica/include/acpi.h
@@ -59,6 +54,36 @@ trees:
       file: drivers/bus/acpi/acpica/include/acpixf.h
       pattern: '#define ACPI_CA_VERSION\s+(0x[0-9A-Fa-f]+)'
     review: >
+      BUMPED 20221020 -> 20260408 ON 2026-09-20, three and a half years, and the patch
+      now ROUND-TRIPS BYTE-FOR-BYTE for the first time — the previous one was
+      deliberately incomplete. All three arches build AND BOOT TO THE DESKTOP MARKER,
+      which for a tree on the boot path is the gate that matters.
+
+      SEVEN SHIMS BECAME SIX. hardware/hwgpe.c carried the only unguarded non-header
+      code edit in the tree — a `(UINT64)` cast on RegisterBit inside ACPI_CLEAR_BIT
+      that could not change the low 8 bits of the UINT8 EnableMask. The previous review
+      called it "worth dropping or marking next time someone is in there"; this was that
+      time. Dropped, and all three arches compile the file with no warning at all, so
+      the truncation it was silencing does not exist under our flags.
+
+      THE LICENCE-FORM PROBLEM IS NOW SOLVED RATHER THAN WARNED ABOUT. Our files carry
+      the pre-SPDX Linux-format header, upstream's tarball ships the long form, and that
+      difference alone accounts for 35,271 of the 35,271-line naive diff. Instead of
+      leaving a "re-vendor from the linuxized form" instruction that nobody can execute,
+      the patch header states the substitution exactly: in each file there is exactly
+      one leading comment block containing both "Intel Corp" and a NO WARRANTY
+      disclaimer — verified 226 of 226, same block index in both forms — and it is
+      replaced by a single canonical 36-line block, identical in all 226 files after
+      year-normalisation, with start year always 2000 and end year taken from upstream's
+      own line. Pristine + that substitution + the patch reproduces the tree exactly.
+
+      AND THE PROBLEM IS GOING AWAY BY ITSELF. Upstream converted to a one-line
+      `SPDX-License-Identifier: BSD-3-Clause OR GPL-2.0-only` on master AFTER the
+      20260408 release. The next bump past a release carrying that conversion sheds the
+      substitution entirely — and gains a machine-readable tag that
+      `vendored.py --licences` reads directly. Taking the long form now instead would
+      have cost +1.49 MB of boilerplate that upstream has already deleted.
+
       DIFFED AGAINST PRISTINE UPSTREAM 2026-09-20 (open-acpica/acpica tag R10_20_22 — the
       acpica/acpica org redirects there, and tags are date-encoded MM_DD_YY so 20221020 is
       R10_20_22; sha256 1aa17eb1779cd171110074ce271a65c06046eacbba7be7ce5ee71df1b31c3b86).
