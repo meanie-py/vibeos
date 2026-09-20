@@ -1091,7 +1091,29 @@ land; date every addition.** Source docs live in `docs/engineering/archive/`.
   value exactly — but `NtGdiFlush` takes NO arguments, those "args" are stale registers, and
   the earlier boot has the identical `arg0=0000000f` while faulting on `00000040`. Coincidence.
 
-  **It is NOT a fixed set of apps — the population changes every boot, so this is a RACE.**
+  **MEASURED 2026-09-20: the corruption window is INSIDE one message dispatch, not across
+  the pump.** A probe in win32k compared `pci->pDeskInfo` (win32k's own CLIENTINFO, in TEB64)
+  against the published `ci32->pDeskInfo` (TEB32) on every `NtUserGetMessage` /
+  `NtUserPeekMessage`, and reported **zero** mismatches on a boot where notepad took its
+  usual 58 faults and then DIED (`EXITED = 0x80`). The probe is proven live, not merely
+  compiled: it also logs one unconditional sample, which came back
+
+        [WOW64CI-ALIVE] first WoW64 sample: want=007e0dd0 got=007e0dd0
+                        TEB32 cnt=00000000 off=00000000 | TEB64 cnt=00000000
+
+  So the two copies agree at every pump boundary. The faults happen between those boundaries
+  — inside a single dispatch, on the paint path — which is exactly where a `GetMessage`-entry
+  probe cannot see. **The sampling point was the flaw, not the hypothesis.** Next experiment,
+  specified so it is not re-derived: sample on a PAINT-path syscall (`NtUserBeginPaint`,
+  `NtUserGetDC`, a hot `NtGdi*`) rather than the pump, and compare against the AUTHORITATIVE
+  kernel value `(*pti).pDeskInfo - ulClientDelta` rather than against `pci->pDeskInfo` —
+  comparing the projection to its own source cannot detect the case where BOTH are wrong.
+
+  That first sample also shows `TEB32 GdiBatchCount = 0` at that instant, which is one early
+  sample from a different guest and does **not** settle the GDI-batch question below; it is
+  recorded only so the number is not re-measured.
+
+  **Population corrected.** It is notepad, mspaint and **winver** at 58 each, plus
   Two full-drain boots of the same media, minutes apart:
 
   | boot | 58 faults | other |
