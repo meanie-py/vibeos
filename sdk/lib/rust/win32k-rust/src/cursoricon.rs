@@ -706,22 +706,51 @@ pub unsafe extern "system" fn NtUserGetIconInfo(
                 &mut BufLen,
             );
             /* Get the module name from the atom table */
+            // ---- dropped _SEH2_TRY/_SEH2_EXCEPT recovered here ----
+            // C (cursoricon.c:497-522, NtUserGetIconInfo): handler is
+            // `Status = _SEH2_GetExceptionCode();` with no return/goto -- it
+            // falls through to the `if (!NT_SUCCESS(Status))` check that
+            // already exists right below this block. So a probe failure here
+            // just sets `Status` and skips the body; the untouched check
+            // after this block is the same fall-through cleanup as the C.
+            //
+            // The dropped probe itself -- `ProbeForWrite(lpModule->Buffer,
+            // lpModule->MaximumLength, 1)` -- was missing entirely (not just
+            // its handler); restored via SafeProbeForWrite (alignment 1,
+            // matching the C's literal argument), the same helper this
+            // function already uses for the IconInfo/pbpp probe above and the
+            // lpResName probes below.
             {
                 BufLen += core::mem::size_of::<WCHAR>() as ULONG;
                 if BufLen > (*lpModule).MaximumLength as ULONG {
                     (*lpModule).Length = 0;
                     (*lpModule).MaximumLength = BufLen as USHORT;
                 } else {
-                    BufLen = (*lpModule).MaximumLength as ULONG;
-                    RtlQueryAtomInAtomTable(
-                        gAtomTable as _,
-                        (*CurIcon).atomModName,
-                        core::ptr::null_mut(),
-                        core::ptr::null_mut(),
-                        (*lpModule).Buffer as _,
-                        &mut BufLen,
+                    Status = SafeProbeForWrite(
+                        (*lpModule).Buffer as *mut c_void,
+                        (*lpModule).MaximumLength as SIZE_T,
+                        1,
                     );
-                    (*lpModule).Length = BufLen as USHORT;
+                    if NT_SUCCESS(Status) {
+                        BufLen = (*lpModule).MaximumLength as ULONG;
+                        // RtlQueryAtomInAtomTable writes directly into
+                        // lpModule->Buffer (already probed above) rather than
+                        // through a fault-protected copy helper -- same
+                        // range/touch-only gap noted for ConnectionInformation
+                        // in lpc-rust/connect.rs: the C's _SEH2_TRY also
+                        // guarded this call itself against a TOCTOU fault,
+                        // which a probe alone cannot close for an opaque
+                        // callee. Noted rather than silently dropped.
+                        RtlQueryAtomInAtomTable(
+                            gAtomTable as _,
+                            (*CurIcon).atomModName,
+                            core::ptr::null_mut(),
+                            core::ptr::null_mut(),
+                            (*lpModule).Buffer as _,
+                            &mut BufLen,
+                        );
+                        (*lpModule).Length = BufLen as USHORT;
+                    }
                 }
             }
 
@@ -834,7 +863,7 @@ pub unsafe extern "system" fn NtUserGetIconSize(
 pub unsafe extern "system" fn NtUserGetCursorInfo(pci: PCURSORINFO) -> BOOL {
     let mut SafeCi: CURSORINFO = core::mem::zeroed();
     let CurInfo: PSYSTEM_CURSORINFO;
-    let Status: NTSTATUS = STATUS_SUCCESS;
+    let mut Status: NTSTATUS = STATUS_SUCCESS;
     let CurIcon: PCURICON_OBJECT;
     let mut Ret: BOOL = 0;
 
@@ -857,15 +886,31 @@ pub unsafe extern "system" fn NtUserGetCursorInfo(pci: PCURSORINFO) -> BOOL {
 
     SafeCi.ptScreenPos = (*gpsi_per_user()).ptCursor;
 
-    if (*pci).cbSize == core::mem::size_of::<CURSORINFO>() as u32 {
-        RtlCopyMemory(
-            pci as *mut core::ffi::c_void,
-            core::ptr::addr_of!(SafeCi) as *const core::ffi::c_void,
-            core::mem::size_of::<CURSORINFO>() as usize,
-        );
-        Ret = 1;
-    } else {
-        EngSetLastError(ERROR_INVALID_PARAMETER);
+    // ---- dropped _SEH2_TRY/_SEH2_EXCEPT recovered here ----
+    // C (cursoricon.c:658-681, NtUserGetCursorInfo): handler is
+    // `Status = _SEH2_GetExceptionCode();`, no return/goto -- falls through
+    // to the `if (!NT_SUCCESS(Status))` check that already exists right
+    // below. The probe itself, `ProbeForWrite(pci, sizeof(CURSORINFO), 1)`,
+    // was dropped along with the handler (not just the handler) -- the raw
+    // `(*pci).cbSize` read and the RtlCopyMemory write below were left
+    // completely unprotected. Restored via SafeProbeForWrite, alignment 1
+    // matching the C's literal argument.
+    Status = SafeProbeForWrite(
+        pci as *mut core::ffi::c_void,
+        core::mem::size_of::<CURSORINFO>() as SIZE_T,
+        1,
+    );
+    if NT_SUCCESS(Status) {
+        if (*pci).cbSize == core::mem::size_of::<CURSORINFO>() as u32 {
+            RtlCopyMemory(
+                pci as *mut core::ffi::c_void,
+                core::ptr::addr_of!(SafeCi) as *const core::ffi::c_void,
+                core::mem::size_of::<CURSORINFO>() as usize,
+            );
+            Ret = 1;
+        } else {
+            EngSetLastError(ERROR_INVALID_PARAMETER);
+        }
     }
 
     if !NT_SUCCESS(Status) {
