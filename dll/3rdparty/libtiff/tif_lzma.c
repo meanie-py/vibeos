@@ -21,8 +21,7 @@
  * OF THIS SOFTWARE.
  */
 
-#include <precomp.h>
-
+#include "tiffiop.h"
 #ifdef LZMA_SUPPORT
 /*
  * TIFF Library.

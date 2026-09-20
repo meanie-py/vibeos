@@ -27,7 +27,7 @@
  *
  * Strip-organized Image Support Routines.
  */
-#include <precomp.h>
+#include "tiffiop.h"
 
 /*
  * Compute which strip a (row,sample) value is in.

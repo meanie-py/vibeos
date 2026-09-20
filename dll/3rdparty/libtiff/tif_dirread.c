@@ -34,7 +34,7 @@
  *   TIFFReadDirectory, so as to eliminate current possibly repetitive lookup.
  */
 
-#include <precomp.h>
+#include "tiffiop.h"
 #include <float.h>
 #include <stdlib.h>
 

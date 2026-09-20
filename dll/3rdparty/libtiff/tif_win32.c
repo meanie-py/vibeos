@@ -51,13 +51,9 @@
 
 */
   
-#include <precomp.h>
+#include "tiffiop.h"
 
-#include <stdlib.h>
-#include <windef.h>
-#include <winbase.h>
-#include <winuser.h>
-#include <winnls.h>
+#include <windows.h>
 
 static tmsize_t
 _tiffReadProc(thandle_t fd, void* buf, tmsize_t size)
