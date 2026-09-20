@@ -929,6 +929,26 @@ float math inside a body (x87), float pointers, float struct fields. Two fixes:
   are ONE change, not two. `ORPHAN-BY-DESIGN` is the marker for a module in that state, and it
   is a GUARD, not a to-do item — the banner that says "the module is not wired yet, the .cpp is
   still the compiled implementation" is recording why it must stay that way until the flip.
+- **The capture-set sweep must include the RUST STATICLIB's undefined set, not just the C++
+  objects.** The recipe above intersects a TU's defined symbols with what every *object file*
+  leaves undefined, and in a cohab build that is only half the link. `CFileSysBindData.cpp`
+  measured 0 against the C++ objects and the true answer is 1: `IFileSystemBindData_Constructor`
+  is called from `libshell32_rust.a` (`wine/pidl.rs`), which is exactly the population the
+  object-file sweep skips. A false 0 here is the dangerous direction — it says "leaf, safe to
+  flip" about a TU something still depends on. Add the archive to the undefined side:
+  `llvm-nm --undefined-only build-<arch>/<module>/lib<module>_rust.a`. (It does not change the
+  CDefView verdict — that flip linked and passed conformance on all three arches, which a
+  dropped symbol could not have done — but the method as first written would not have caught
+  it.)
+- **An empty capture set is NECESSARY, not SUFFICIENT, and smoke is not the oracle for a
+  flip.** CDefView.cpp turned out to be a link LEAF — `llvm-nm --undefined-only` over every
+  object in shell32.dll (shell32.dir, dialogs/, folders/, shelldesktop, shellmenu, recyclebin)
+  referenced NOTHING it defined, so the flip could not shadow anything. It still shipped a
+  guest whose desktop died, and **smoke passed on all three arches in every one of those
+  runs**, because the marker `shell ready` is reached before the desktop populates. The oracle
+  that sees it is `vibeos-cli conformance`: `launched=0` against a 91-test baseline. Run the
+  BASELINE first on an un-flipped tree — this worktree had never built the kmtest payload, so
+  the first red run proved nothing until a control run on `HEAD~1` showed `launched=91`.
 - **A new rlib's `#[no_mangle]` symbols are absent from the staticlib** unless reached: add the
   path dep + `extern crate` + a `#[used]` force-reference block. A Cargo dependency alone is
   not a reachability path.
@@ -4659,6 +4679,19 @@ attributes** (`#[no_mangle]` must survive with the feature off) whose body is th
 *lifted from the translated Rust*, never re-derived from the C constant. **Never delete the
 guarded arm** — it is paid artifact, and it is the half that a future `HAVE_X=1` build needs.
 
+**Variant: the `#ifdef` is a WORKAROUND for a bug elsewhere, so resolving it away reinstates
+that bug on one arch only.** Not every carried `#ifdef` gates an optional feature; some record
+a deliberate concession. `CDefView::OnCreate` wraps `SHChangeNotifyRegister` in
+`#ifdef _M_ARM64 ... m_hNotify = 0; #else ... #endif` with a comment saying why: the call sends
+a cross-thread `SendMessageW` to `Shell_TrayWnd` on the main explorer thread, and on arm64 that
+deadlocks the desktop thread before the taskbar paints. The translation dropped the guard and
+called unconditionally. amd64 and i386 stayed green — `launched=91 ok=91` — and arm64 hung with
+a frozen serial log after `[EXPLORER] startup: runCmd FAILED (2)`, sweep never started. The tell
+is the shape of the result, not the code: **one arch hanging while the others are clean is an
+arch-conditional in the C you did not carry**, and the C comment usually names the reason.
+Carrying it is `#[cfg(target_arch = "aarch64")]`, keeping BOTH arms and the comment, so whoever
+fixes the underlying win32k dispatch can find and delete it.
+
 Three things that bite:
 - **Guards are plural.** wldap32 branches on EIGHT (`HAVE_LDAP`, `HAVE_LDAP_H`, and six
   per-entry-point probes like `HAVE_LDAP_PARSE_SORT_CONTROL`), each `#undef`'d independently.
@@ -4774,7 +4807,90 @@ killer — hal `pic_pic.rs` extern-declared `KiI8259MaskTable` (an array) as a p
 array-vs-pointer class again. **Budget for a stack when un-shelving a path, and do not read bug
 N+1 as evidence that the fix for bug N was wrong.**
 
+shell32's CDefView cohab flip is the same shape at smaller scale, and worth reading for the
+ORDER the bugs surfaced in, because each one hid the next: an inverted `m_hWnd` guard made
+`CreateViewWindow3` return `E_UNEXPECTED` to every caller; fixing that reached a jump to a
+stable heap address; that turned out to be a bare `QueryInterface` given the wrong receiver.
+A fourth (a dropped ATL virtual) was found by reading and fixed on the way past without ever
+being the live symptom. `crate::atlwin` had never executed in a shipping build before this
+flip — CDefView was its only user — so "the substrate compiles and is reviewed" bought
+nothing, exactly as this entry predicts.
+
+**A bug that VANISHES when you add tracing has told you its class.** Those same runs passed
+whenever enough `ERR!` breadcrumbs were compiled in and failed reproducibly without them,
+always faulting at the identical address. That is not a flake and not a Heisenbug to be
+shrugged at: it is what a use-after-free or a wrong-object lifetime looks like from outside,
+because the extra calls move the heap and the register allocation without changing the defect.
+Read it as a positive signal about WHERE to look — object lifetime, not arithmetic — and keep
+the instrumentation sparse enough to still reproduce. Two or three probes bracketing one
+suspect call kept it failing; eighty made it green.
+
 ### Semantic rewrites that flip meaning
+- **A `CComPtr` local lowered to a RAW pointer plus an RAII guard must not ALSO keep the
+  explicit `Release()` calls — that is a double release.** `CDefView::FillList` declares
+  `CComPtr<IEnumIDList> pEnumIDList` and releases it NOWHERE: the destructor does it once, on
+  every return path. The translation emitted `_pEnumIDList_cpp_com_guard` (which is that
+  destructor, and nulls the slot) AND an `if (!p.is_null()) p->Release()` on each of the three
+  exits. So every `FillList` dropped the refcount twice, the guard then read `lpVtbl` out of a
+  freed block and called through it. On arm64 that was fatal immediately —
+  `[UEXC] Code=0xC0000005 PC=0x1600000004000000`, explorer killed, desktop never up. On amd64
+  and i386 **the same code passed conformance 91/91 three times in a row**, because the freed
+  block still held a plausible pointer; the bug was there and silent.
+  The discriminator is mechanical and worth grepping for: an explicit `Release` on a
+  guard-owned local that does NOT null the pointer immediately after. In the same file, five
+  other guarded locals (`pcdb2`, `pda`, `piaso`, `pStream`, `ptb`) release explicitly and DO
+  null, so their guards see null and do nothing — correct, and they must not be "fixed". Two
+  more (`pPB`, `pStream` in `SaveViewState`) are raw `IShellFolder*`-style locals in the C++
+  with a real explicit `Release`, and have no guard at all. **Match the guard and the release
+  by ENCLOSING FUNCTION, not by variable name** — a file-wide grep conflates same-named locals
+  across functions and will tell you to delete correct code.
+- **An UNQUALIFIED member call is `this->`, and the nearest COM pointer in scope is not a
+  substitute.** CDefView's `OnCreate` opens with
+  `if (SUCCEEDED(QueryInterface(IID_PPV_ARG(IDropTarget, &pdt)))) RegisterDragDrop(m_hWnd, pdt);`
+  — a bare call, so the receiver is the VIEW, asking itself for its own drop target. The
+  translation routed it to `m_pSFParent->QueryInterface(...)`, the FOLDER: a different object,
+  a different drop target, registered on the view's window. It compiles, it has the right
+  shape, every argument is right, and the only wrong token is the receiver — which does not
+  appear in the C at all, because C++ omits it. **This is the one call shape where the correct
+  answer is invisible in the source text.** The exposure is narrower than "every bare member
+  call", which is what makes it checkable: sweeping CDefView's other unqualified self-calls
+  (`Refresh`, `GetItemObject`, `SelectItem`) found every one correctly rooted at `this`, and
+  the sole shell32 sibling of this shape (`CIDLDataObj.cpp:270`) was translated correctly too.
+  What singles out `QueryInterface` is that it is a method of the class AND a method of every
+  COM pointer in scope, so the name alone cannot pick a receiver. **Grep a translated C++ TU
+  for bare calls to the three names that exist on every interface — `QueryInterface`, `AddRef`,
+  `Release` — and check those receivers by hand; the rest of the bare calls have only one
+  candidate and land correctly.**
+  That sweep has been RUN over shell32 and recyclebin, so it does not need repeating: 18 bare
+  self-call sites in the C++ (`QueryInterface` x3, `AddRef` x13, `Release` x2), every one of
+  which the translation rooted at `this` except `CDefView.cpp:1776`. The refcount-critical ones
+  — `CShellDispatch::get_Application`/`get_Parent`, `CFileDefExt`'s two
+  `AddRef`/`SHCreateThread`/`Release` pairs, and the four `PropSheetPageLifetimeCallback`
+  `AddRef`s in CShellLink/drvdefext/filedefext — are all faithful. The companion check from the
+  other side (class-style `X_AddRef(p)` / `X_Release(p)` whose receiver is not `this`) found 18
+  more, all correct: each names an object the C++ names explicitly too. The class is real and
+  will recur on the next C++ COM module, but in this tree it had exactly one instance.
+  What it cost: explorer's desktop died with STATUS_ILLEGAL_INSTRUCTION at a stable heap
+  address after the desktop finished populating, which took the kmtest sweep from 91 launched
+  to 0 — and smoke passed on all three arches every time, because the freeze is after
+  `shell ready`.
+- **C truthiness on a HANDLE is not a null test — check which way it points.**
+  `if (psb == NULL || m_hWnd) return E_UNEXPECTED;` guards "this view ALREADY has a window".
+  Rendered as `if psb.is_null() || (*this).m_hWnd.is_null()`, it becomes "this view has NO
+  window yet", which is precisely the normal FIRST call, so every caller got `E_UNEXPECTED`
+  and the desktop failed at `CDesktopBrowser.cpp:253` with `0x8000FFFF`. Both spellings are
+  one token long and both read naturally; the discriminator is the missing `!` in the C. Any
+  bare `if (handle)` in a guard deserves a second look, because the negated form is what
+  a reader expects and therefore what a translator writes.
+- **A hand-written substrate that hardcodes a base implementation silently DROPS the
+  derived override.** `atlwin`'s `AtlStartWindowProc` installed `AtlWindowProc::<T>` on the
+  window; ATL installs `pThis->GetWindowProc()`, the VIRTUAL. CDefView overrides it precisely
+  to hold a reference across the dispatch ("Must hold a reference during message handling" —
+  a handler can release the view's last reference, and the base would keep touching freed
+  memory). The translated override was present, correct, and unreachable. **When you replace
+  an inheritance mechanism with a trait, every virtual the original called through needs a
+  hook, not just the ones your first class happened to use** — the missing one costs nothing
+  to add and is invisible once dropped.
 - **`delete this` gets a deallocator the model INVENTED, because the allocator is invisible to
   it.** shellrecyclebin has five textually identical `delete this;` — one per hand-rolled COM
   class `Release()` — and the C++ COM path lowered them five different ways, none correct:

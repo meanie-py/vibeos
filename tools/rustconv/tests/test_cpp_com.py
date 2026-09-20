@@ -474,9 +474,45 @@ def test_internal_scaffold_has_private_rust_factory_and_no_export_adapter():
         "IEnumIDList",
     )
     rust = render_class_scaffold(cls, [interface], allow_internal=True)
-    assert "Internal activation: shellutils.h ShellObjectCreator<T>" in rust
+    # The comment names BOTH internal-activation shapes, because they share this one
+    # factory: shellutils.h's ShellObjectCreator<T> and ATL's own _CreatorClass, whose
+    # CreateInstance has the same (outer, riid, ppv) signature.
+    assert "Internal activation: this class has no CLSID" in rust
+    assert "ShellObjectCreator<T>" in rust
+    assert "_CreatorClass::CreateInstance" in rust
     assert "pub unsafe fn CEnumIDListBase_CreateInstance(" in rust
     assert '#[no_mangle] pub unsafe extern "system" fn CEnumIDListBase_CreateInstance' not in rust
+
+
+def test_atl_creator_class_is_the_other_internal_activation_shape():
+    """`X::_CreatorClass::CreateInstance(NULL, IID_PPV_ARG(...))` is ATL's own creator.
+
+    A class with NO CLSID uses it, so before this was mapped the preflight refused the
+    whole shape -- and it blocked four of shell32's remaining leaf TUs at once
+    (CFileSysBindData, CFolder, CExtractIcon, CRecycleBinFolderViewCB), every one of them
+    on the same line. It is a DETECTION gap and not an emission one: ATL's
+    `CComCreator<...>::CreateInstance(void *pv, REFIID riid, LPVOID *ppv)` is exactly the
+    `(outer, riid, ppv)` factory the internal path already emitted.
+    """
+    source = SHELL32 / "CFileSysBindData.cpp"
+    cls = analyze_class(source, "CFileSysBindData", object_map_source=SHELL32 / "shell32.cpp")
+    assert cls.internal_shell_object_creator
+    assert cls.object_map_clsid is None
+    # No ShellObjectCreator<T> anywhere in that file -- the ATL creator is the only signal.
+    assert "ShellObjectCreator" not in source.read_text(encoding="utf-8", errors="replace")
+    # Scoped to the activation gate alone: this class's `WIN32_FIND_DATAW findFile` state
+    # needs the island to be proven, which `--target shell32` supplies on the real path and
+    # this unit test deliberately does not. So assert on WHICH problem is reported rather
+    # than on a clean pass -- otherwise the test passes or fails for unrelated reasons.
+    with pytest.raises(CppComError) as without_internal:
+        cls.require_supported()
+    assert "no OBJECT_ENTRY activation" in str(without_internal.value)
+
+    try:
+        cls.require_supported(allow_internal=True)
+    except CppComError as with_internal:
+        assert "no OBJECT_ENTRY activation" not in str(with_internal)
+        assert "aggregation policy is unsupported" not in str(with_internal)
 
 
 @needs_generated_psdk_amd64
@@ -3508,3 +3544,39 @@ def test_header_discovery_never_returns_partial_corpus(tmp_path, monkeypatch):
     with pytest.raises(FileNotFoundError):
         _header_files(tmp_path / "missing")
     assert len(attempts) == 3
+
+
+def test_elaborated_struct_state_field_is_the_same_type_as_the_bare_spelling():
+    """`struct IconLocation defaultIcon` == `IconLocation defaultIcon`.
+
+    C's elaborated-type-specifier carries no extra semantics and C++ accepts both
+    spellings. Only the bare one was parsed, so CExtractIcon -- which declares all four of
+    its state fields the C way -- failed preflight with "state field type is not proven C
+    scalar/pointer state: struct IconLocation defaultIcon". That message reads as a claim
+    about the TYPE, when the truth was that the declaration had not been parsed: the POD
+    discovery never learned `IconLocation`, so the field check could not admit it either.
+    Both parsers normalise the keyword away now, which is why this asserts on both.
+    """
+    source = SHELL32 / "CExtractIcon.cpp"
+    cls = analyze_class(source, "CExtractIcon", object_map_source=SHELL32 / "shell32.cpp")
+
+    # Discovery found the struct behind the elaborated spelling...
+    assert "IconLocation" in {pod.name for pod in cls.pod_state_types}
+    # ...and the field parser accepts the four members that use it.
+    icon_fields = {
+        field.name: field.c_type
+        for field in cls.plain_state_fields()
+        if field.c_type.endswith("IconLocation")
+    }
+    assert set(icon_fields) == {"defaultIcon", "normalIcon", "openIcon", "shortcutIcon"}
+    # The keyword is normalised away rather than carried into the Rust type name.
+    assert set(icon_fields.values()) == {"IconLocation"}
+
+
+def test_a_member_merely_starting_with_struct_is_not_mangled():
+    """The normaliser requires whitespace after the keyword, so `structFoo` is untouched."""
+    from rustconv.cpp_com import _parse_plain_state_field
+
+    field = _parse_plain_state_field("UINT structFlags", island_scalar_types={"UINT"})
+    assert field.name == "structFlags"
+    assert field.c_type == "UINT"

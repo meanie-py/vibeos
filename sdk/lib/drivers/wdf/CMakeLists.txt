@@ -1,6 +1,8 @@
 
-add_subdirectory(wdfldr)
-add_subdirectory(wdfdriverentry)
+# wdfldr/ and wdfdriverentry/ used to live HERE, inside the vendored drop. They are
+# ReactOS-authored GPL-2.0-or-later reimplementations of two Microsoft components the
+# WDF source drop does not contain (WdfLdr.sys and WdfDriverEntry.lib), so they are now
+# sdk/lib/drivers/{wdfldr,wdfdriverentry} and this tree is Microsoft's alone.
 
 remove_definitions(-D_WIN32_WINNT=0x502)
 
@@ -203,7 +205,8 @@ target_compile_definitions(wdf01000
 target_include_directories(wdf01000
     PUBLIC ${REACTOS_SOURCE_DIR}/sdk/include/wdf/kmdf/1.17
     PRIVATE
-        ${REACTOS_SOURCE_DIR}/sdk/lib/drivers/wdf/wdfldr
+        ${REACTOS_SOURCE_DIR}/sdk/lib/drivers/wdfldr
+        ${REACTOS_SOURCE_DIR}/sdk/lib/drivers/wdf_reactos/include
         shared/inc/primitives/common
         shared/inc/primitives/km
         shared/inc/private/common

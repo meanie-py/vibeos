@@ -944,6 +944,23 @@ def source_lint_specs(repo: Path) -> list[tuple]:
             "stdout",
         )
     )
+    # COM double-release: a C++ `CComPtr` local lowered to a raw pointer plus a
+    # `CppComPtrGuard` whose explicit `Release()` calls were ALSO kept. The guard
+    # IS the destructor, so the second release frees a live object and the guard
+    # then calls through a dangling vtable. CDefView's FillList shipped this on
+    # three exit paths: arm64 died at once, while amd64 and i386 ran the same code
+    # and passed the 91-test conformance sweep three times running. A defect two of
+    # three arches certify as green needs a scanner, not a reviewer. The 2026-09-19
+    # sweep found 3 in CDefView (fixed) and 15 in the still-orphan utils.rs (fixed
+    # before the utils flip could ship them); baseline is empty.
+    scdr = repo / "tools" / "scan_com_double_release.py"
+    specs.append(
+        (
+            "scan_com_double_release",
+            [py, str(scdr), "--lint"] if scdr.is_file() else ["MISSING"],
+            "stdout",
+        )
+    )
     # An `extern` DECL that contradicts the `#[no_mangle]` DEF of the same symbol.
     # rustc checks a call against the decl and never against the def — they meet
     # only in the linker, which compares nothing but the name — so this class is

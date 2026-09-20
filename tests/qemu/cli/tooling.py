@@ -112,6 +112,13 @@ _PYTEST_SUITES = [
     # (§9.120). Also fails on any gate lint that is in neither the control table
     # nor the documented-exemption list, so coverage gaps stay loud.
     (".", ".", "tools/test_scanner_controls.py"),
+    # Unit tests for scan_com_double_release's matcher. The CONTROL in
+    # test_scanner_controls proves the scanner is not blind; these pin the four
+    # CORRECT spellings it must stay quiet about (release-then-null,
+    # release-then-reassign, release with no guard, and a guard whose release
+    # lives in a DIFFERENT function), since each was a false positive an earlier
+    # cut of the matcher produced against real shipping code.
+    (".", ".", "tools/test_scan_com_double_release.py"),
     # A WRITE-capable tool needs the same treatment as a read-only one, and more:
     # migrate_debug_assert rewrote 454 sites, and its failure modes (a dropped
     # message, a mangled path-qualified invocation, a silently skipped form) all

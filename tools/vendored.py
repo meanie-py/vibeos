@@ -152,10 +152,20 @@ class OurTree:
     def __init__(self, raw: dict, index: int):
         if not isinstance(raw, dict):
             raise RegistryError(f"ours[{index}] is not a mapping")
-        for field in ("path", "name", "reason"):
+        for field in ("name", "reason"):
             if not raw.get(field):
                 raise RegistryError(f"ours[{index}] is missing required field `{field}`")
-        self.path: str = raw["path"]
+        #: `path` for one directory, `paths` for ONE DECISION spanning many. The second
+        #: exists because Wine is a single judgement — "this project translates
+        #: Wine-derived code" — that happens to cover 24 shipped modules. Writing it out
+        #: 24 times would make one settled argument look like 24 independent findings,
+        #: and the payload of an `ours:` entry is the argument. It is NOT a licence to
+        #: group unrelated directories: every path under one entry must be covered by
+        #: that entry's single reason.
+        self.paths: list[str] = [raw["path"]] if raw.get("path") else list(raw.get("paths") or [])
+        if not self.paths:
+            raise RegistryError(f"ours[{index}] needs `path` or `paths`")
+        self.path: str = self.paths[0]
         self.name: str = raw["name"]
         self.reason: str = raw["reason"]
         self.origin: str = raw.get("origin", "unknown")
@@ -164,7 +174,7 @@ class OurTree:
 
     @property
     def prefixes(self) -> list[str]:
-        return [self.path]
+        return list(self.paths)
 
 
 class Registry:
@@ -232,7 +242,11 @@ class Registry:
 
     def loc(self, tree: Tree | OurTree, suffixes: tuple[str, ...] = _SRC_SUFFIXES) -> int:
         """Source lines carried by a tree, for the --emit table only."""
-        root = self.repo / tree.path
+        return sum(self.loc_path(p, suffixes) for p in tree.prefixes[:1])
+
+    def loc_path(self, rel: str, suffixes: tuple[str, ...] = _SRC_SUFFIXES) -> int:
+        """Source lines under one repo-relative directory."""
+        root = self.repo / rel
         if not root.is_dir():
             return 0
         total = 0
@@ -293,8 +307,26 @@ def is_vendored(rel: str, repo: Path = REPO) -> bool:
 #: Copyright holders that mark a file as almost certainly not ReactOS-authored. Kept to
 #: unambiguous corporate holders: an individual's name proves nothing (half of ReactOS is
 #: individually copyrighted) and would drown the signal.
+#:
+#: THE LIST IS THE LIMIT OF THE SCAN, which is easy to forget when it comes back clean.
+#: It read "every one is decided" for months while 47,386 lines of SGI's GLU sat
+#: unregistered in dll/opengl/glu32 — Silicon Graphics simply was not in it. Silicon
+#: Graphics, Hewlett-Packard and Digital Equipment were added 2026-09-19 after GLU was
+#: registered, and cost nothing: they flag no further unclassified directory.
+#:
+#: Wine/CodeWeavers is deliberately ABSENT and should stay absent unless someone is
+#: ready to classify the result: a wider sweep found ~989 unclassified Wine-lineage
+#: files across ~50 directories (mshtml, msi, jscript, wined3d, urlmon, ole32 …). Those
+#: are almost all `ours:` by scope — this project TRANSLATES Wine-derived code — so
+#: adding the holder would fail `--check` fleet-wide until fifty `ours:` entries were
+#: written. That is a decision, not a scan tweak.
 _FOREIGN_HOLDER = re.compile(
-    r"Copyright\s+\(c\)\s+(Microsoft|Intel|Apple|Oracle|IBM|Sun Microsystems|Nvidia|Adobe)",
+    r"Copyright\s+\(c\)\s+(Microsoft|Intel|Apple|Oracle|IBM|Sun Microsystems|Nvidia|Adobe"
+    r"|Silicon Graphics|Hewlett-Packard|Digital Equipment)"
+    # Wine does not spell it with a `(c)`: its files say
+    # `Copyright 2005 Jacek Caban for CodeWeavers`, so the form above cannot see it.
+    r"|Copyright[^\n]{0,60}?\bfor (CodeWeavers)"
+    r"|Copyright[^\n]{0,60}?\b(The Wine Project)",
     re.I,
 )
 _SUSPECT_SUFFIXES = (".c", ".cpp", ".cxx", ".cc", ".h", ".hpp", ".hxx")
@@ -321,7 +353,12 @@ def _is_nested_checkout(d: str) -> bool:
 #: An SPDX tag, or a ReactOS file header's `LICENSE:` line. Both are machine-readable
 #: statements by the FILE about itself, which is the only licence evidence that does not
 #: require reading prose.
-_SPDX = re.compile(r"SPDX-License-Identifier:\s*([^\s*/]+)")
+#: The WHOLE expression, not the first token. `([^\s*/]+)` was the first cut and it
+#: truncated `Apache-2.0 OR GPL-2.0-or-later` to `Apache-2.0` — which then matched
+#: mbedtls's recorded licence and passed, hiding the GPL half of a dual licence in all
+#: 79 of its files. A compound expression is exactly the case this check exists for, so
+#: it reads to end of line and strips the comment tail.
+_SPDX = re.compile(r"SPDX-License-Identifier:[ \t]*([^\n]+)")
 _ROS_LICENSE_HDR = re.compile(r"^\s*[*#/]*\s*LICENSE:\s*([^(\n]+)", re.M)
 
 
@@ -366,7 +403,9 @@ def license_drift(reg: Registry) -> list[tuple[str, str, dict]]:
             for pat in (_SPDX, _ROS_LICENSE_HDR):
                 m = pat.search(head)
                 if m:
-                    found[m.group(1).strip()] = found.get(m.group(1).strip(), 0) + 1
+                    lic = m.group(1).strip().rstrip("*/").strip().rstrip(".").strip()
+                    if lic:
+                        found[lic] = found.get(lic, 0) + 1
         # Accounted for = it IS the headline licence, or it is recorded in license_extra.
         unaccounted = {
             lic: n
@@ -470,8 +509,9 @@ def check(reg: Registry) -> list[str]:
                 )
 
     for o in reg.ours:
-        if not (reg.repo / o.path).is_dir():
-            problems.append(f"{o.name}: `ours:` path does not exist: {o.path}")
+        for op in o.paths:
+            if not (reg.repo / op).is_dir():
+                problems.append(f"{o.name}: `ours:` path does not exist: {op}")
 
     # The second ratchet, and the reason `ours:` exists. The container ratchet above only
     # watches three directories; foreign code imported anywhere else (WDF under sdk/lib,
@@ -531,7 +571,15 @@ def emit(reg: Registry) -> int:
     print(f"  {' ' * w}  {'':<22} {'TOTAL':<22} {total:>9,}")
 
     if reg.ours:
-        orows = [(o.path, o.tier or "-", reg.loc(o, _BODY_SUFFIXES), reg.loc(o)) for o in reg.ours]
+        orows = [
+            (
+                o.path if len(o.paths) == 1 else f"{o.path} (+{len(o.paths) - 1} more)",
+                o.tier or "-",
+                sum(reg.loc_path(p, _BODY_SUFFIXES) for p in o.paths),
+                sum(reg.loc_path(p) for p in o.paths),
+            )
+            for o in reg.ours
+        ]
         ow = max(len(r[0]) for r in orows)
         print(f"\n{len(orows)} foreign-copyright trees classified as OURS to translate")
         print("  (the complement of the table above; `bodies` is what enters the denominator)\n")

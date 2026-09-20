@@ -1,7 +1,7 @@
 //! Wine's debug channels (`sdk/include/wine/debug.h`), centralised for the crate.
 //!
 //! `ERR` and `FIXME` are ON by default: libwine's `default_flags` is
-//! `(1 << __WINE_DBCL_ERR) | (1 << __WINE_DBCL_FIXME)` (`sdk/lib/3rdparty/libwine/debug.c`),
+//! `(1 << __WINE_DBCL_ERR) | (1 << __WINE_DBCL_FIXME)` (`sdk/lib/libwine/debug.c`),
 //! and `WINE_DEFAULT_DEBUG_CHANNEL` initialises a channel to `~0` so it takes those
 //! defaults. Only `DEBUGCHANNEL` in the environment turns one off. Translating all four
 //! macros to silence therefore dropped every ERR and FIXME in the crate while the call

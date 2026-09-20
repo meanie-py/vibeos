@@ -130,6 +130,14 @@ pub mod cidldataobj_free;
 /// Hand-written substrate for utils.cpp: SDK constants outside the island's closure, plus the
 /// shellutils.h `static inline`s (SHELL_ErrorBoxHelper) that have no symbol to import.
 pub mod utils_support;
+/// `CFileSysBindData.cpp`, cohab-flipped. Two modules for one TU because the class half and
+/// the free-function half are separate rustconv runs and each overwrites its own file
+/// wholesale — the same split as `CIDLDataObj` / `cidldataobj_free` above.
+pub mod CFileSysBindData;
+pub mod filesysbinddata_free;
+/// `CExtractIcon.cpp`, cohab-flipped. Same two-module split as CFileSysBindData above.
+pub mod CExtractIcon;
+pub mod extracticon_free;
 // pub mod utils;
 // ORPHAN-BY-DESIGN, and this is a GUARD rather than a to-do. utils.rs defines 58 `#[no_mangle]`
 // names that the LIVE C++ shell32 objects also define as unmangled externs -- 16 of them the

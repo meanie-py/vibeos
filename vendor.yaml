@@ -47,6 +47,7 @@ trees:
     name: ACPICA
     upstream: https://github.com/acpica/acpica
     license: BSD-3-Clause OR GPL-2.0  # Intel dual-licence
+    license_ref: drivers/bus/acpi/acpica/include/acpi.h
     modified: unknown
     version:
       file: drivers/bus/acpi/acpica/include/acpixf.h
@@ -62,16 +63,6 @@ trees:
     name: Windows Driver Frameworks (KMDF/UMDF)
     upstream: https://github.com/microsoft/Windows-Driver-Frameworks
     license: MIT  # upstream relicensed the WDF sources to MIT in 2017
-    license_extra:
-      GPL-2.0-or-later: >
-        11 files are ReactOS-authored and carry `LICENSE: GPL-2.0-or-later` in their own
-        headers — the KMDF LOADER, not Microsoft's WDF: wdfldr/{class,library,wdfldr,
-        registry,common}.c + wdfloader.h, wdfdriverentry/wdfdriverentry.c, and the headers
-        wdfldr_.h, usbspec.h, wdfcx.h, kmdf/inc/private/wdfldr.h. They sit inside a tree
-        marked NOT A TRANSLATION TARGET, so this is a scope question as well as a licence
-        one: by their own headers they are ours. Recorded rather than moved because
-        re-drawing the tree boundary is a bigger change than this entry, and an
-        unrecorded GPL file inside an MIT-labelled tree is the more urgent error.
     modified: "lightly"  # 9 of 488 files mention ReactOS; see reason
     headers:
       - sdk/include/wdf
@@ -82,6 +73,29 @@ trees:
         - '__WDF_MINOR_VERSION=(\d+)'
         - '__WDF_BUILD_NUMBER=(\d+)'
       join: "."
+    review: >
+      LICENCE TEXT IS NOT IN THE TREE. 474 of 488 files carry a Microsoft copyright
+      line and not one carries a grant. The `MIT` in this entry comes from upstream's
+      2017 relicensing of the WDF sources — a fact about the world, not a quotation from
+      this tree. Nothing here can be cited for it.
+      GPL FILES REMOVED 2026-09-19, tree now Microsoft's alone. It used to carry 3,851
+      lines of ReactOS-authored GPL-2.0-or-later code inside this MIT drop — not
+      adapters but REIMPLEMENTATIONS of two Microsoft components the source drop does
+      not contain: WdfLdr.sys (the KMDF loader) and WdfDriverEntry.lib. They are now
+      sdk/lib/drivers/{wdfldr,wdfdriverentry}, built from sdk/lib/drivers/CMakeLists.txt.
+      Three ReactOS headers went to sdk/lib/drivers/wdf_reactos/include/: usbspec.h and
+      wdfcx.h, which Perevertkin wrote in 2020 as "Missing headers" so THIS drop would
+      compile, and wdfldr.h, the loader's exported interface. wdfldr_.h was deleted — 38
+      lines, referenced nowhere, and its own comment said "likely to be removed when the
+      proper wdfldr.sys is ready", which it has been since 2019.
+
+      THE COUPLING IS NOT GONE AND IS NOT AN ACCIDENT: wdf01000 still puts
+      sdk/lib/drivers/wdfldr on its include path and does `add_importlibs(wdf01000
+      wdfldr ...)`. That is how KMDF works — the framework binds to a loader — so an
+      upstream WDF drop would still need our loader supplied beside it rather than
+      inside it. What changed is that the dependency is now across a tree boundary
+      instead of hidden as files in someone else's directory.
+
     reason: >
       290K lines / 488 files, the second-largest foreign tree in the repo after FEX and
       bigger than FreeType — and the single biggest classification call this registry has
@@ -125,6 +139,7 @@ trees:
     name: AMD LibM for Windows
     upstream: https://github.com/amd/win-libm
     license: MIT
+    license_ref: sdk/lib/crt/math/libm_sse2/L2_by_pi_bits.c
     modified: unknown
     version:
       literal: git commit 6121d02
@@ -163,6 +178,7 @@ trees:
     name: FDLIBM (Sun Microsystems freely-distributable libm)
     upstream: https://www.netlib.org/fdlibm/
     license: "FDLIBM (Sun 1993 permissive; use/copy/modify/distribute, notice preserved)"
+    license_ref: sdk/lib/crt/math/ieee754/j0_y0.c
     modified: yes
     version:
       file: sdk/lib/crt/math/ieee754/j0_y0.c
@@ -203,15 +219,6 @@ trees:
     name: Microsoft UCRT
     upstream: Windows SDK "Source/ucrt" drop (exact SDK version UNKNOWN — see note)
     license: Microsoft (see the Windows SDK licence terms)
-    license_extra:
-      MIT: >
-        5 files are ReactOS ADDITIONS to the Microsoft drop, stamped `SPDX MIT` and
-        `Copyright (c) 2024 Timo Kreuzer`: math/matherr.cpp,
-        inc/corecrt_internal_state_isolation.h, and
-        locale/{MultiByteToWideChar,WideCharToMultiByte,GetStringTypeW}.c. So `modified:
-        yes` understates this tree — these are NEW FILES, not adaptation sites. Same
-        scope question as wdf: by their own headers they are ours, sitting inside a tree
-        excluded from the translation denominator.
     modified: yes
     headers:
       - sdk/include/ucrt
@@ -230,6 +237,17 @@ trees:
       makes ucrtbase read as permanently ~8% reachable; excluding it makes the goal
       sayable — everything in ucrtbase that is ours is Rust. See task #55.
     review: >
+      MIT FILES REMOVED 2026-09-19. Five ReactOS ADDITIONS carrying `SPDX MIT` and
+      `Copyright (c) 2024 Timo Kreuzer` used to sit in this Microsoft drop
+      (math/matherr.cpp, inc/corecrt_internal_state_isolation.h,
+      locale/{MultiByteToWideChar,WideCharToMultiByte,GetStringTypeW}.c). They are now
+      sdk/lib/ucrt_reactos/, outside the vendored boundary, so this tree is Microsoft's
+      alone. ONE TIE REMAINS AND CANNOT BE MOVED: corecrt_internal.h:2119 — a Microsoft
+      file — does `#include <corecrt_internal_state_isolation.h>`, so the drop reaches
+      into our header, which is now supplied via an include path. That #include is itself
+      one of the adaptation sites below, and for any future upstream-alignment work it is
+      the shape that has to become a patch rather than an in-place edit.
+
       No version probe: there is no version macro, no stamp, and no manifest anywhere
       in sdk/lib/ucrt or sdk/include/ucrt, so nobody can say which SDK this came from.
       Re-searched 2026-09-13 and the absence is total: no `10.0.NNNNN` string, no build
@@ -274,9 +292,10 @@ trees:
         External/xxhash/tests/{sanity_test.c,sanity_test_vectors_generator.c} — upstream
         xxhash dual-licences its library BSD and its tests GPL. Not built by us; recorded
         because the files are in the tree.
-      Apache-2.0: >
+      Apache-2.0 WITH LLVM-exception: >
         External/code-format-helper/code-format-helper.py and
-        External/unordered_dense/test/third-party/FuzzedDataProvider.h (LLVM). FEX is a
+        External/unordered_dense/test/third-party/FuzzedDataProvider.h, which is LLVM's
+        and carries the LLVM-exception — a WITH clause the first pass dropped. FEX is a
         vendored tree that itself vendors: its External/ is a second registry we do not
         maintain, so those licences surface here rather than upstream.
     license_file: external/fex/LICENSE
@@ -287,6 +306,46 @@ trees:
       A pruned byte-identical snapshot of an upstream tag, built out-of-band by
       tools/fex/build-fex.sh and deliberately outside the ReactOS cmake graph.
       Full manifest, prune list and re-vendor recipe: external/README-fex-vendor.md.
+
+  # ── SGI's GLU under glu32.dll ───────────────────────────────────────────
+  - path: dll/opengl/glu32/src
+    name: SGI GLU (OpenGL Utility Library)
+    upstream: SGI OpenGL Sample Implementation — the `glu` component, as redistributed
+      with Mesa. No release stamp in the drop; see review.
+    license: SGI-B-2.0
+    license_ref: dll/opengl/glu32/include/GL/glu.h
+    license_extra:
+      LGPL-2.0-or-later: >
+        include/GL/glu_mangle.h is not SGI's — it is Mesa 3.0, Copyright (C) 1995-1998
+        Brian Paul, under the GNU Library General Public License v2 or later. One file,
+        a symbol-mangling header, but a copyleft licence sitting inside a permissive
+        drop is exactly the shape this registry exists to make visible.
+    modified: unknown
+    headers:
+      - dll/opengl/glu32/include
+    reason: >
+      47,386 lines of SGI's GLU across libnurbs (NURBS tessellation), libtess (polygon
+      tessellation) and libutil, carried by upstream ReactOS and never registered. Found
+      2026-09-19 by widening the foreign-copyright scan past its eight corporate holders
+      — `--suspects` could not see it because Silicon Graphics was not in the list.
+
+      Zero ReactOS-authored files in the tree, which makes it the cleanest vendored entry
+      in this registry: no adapters, no missing-header reconstructions, no scope leak.
+      Only the BUILD WRAPPER is ours and it deliberately sits outside this path —
+      dll/opengl/glu32/{CMakeLists.txt,glu32.spec,glu32.rc,precomp.h}. A path-based entry
+      must not claim those, so the tree is `src` plus the `include` headers and stops
+      there.
+
+      Every one of the 190 sources declares SGI FREE SOFTWARE LICENSE B (Version 2.0,
+      Sept. 18, 2008). The 73 files that reference http://oss.sgi.com/projects/FreeB/
+      are NOT a second licence — that URL is part of License B's own required notice,
+      and reading it as FreeB 1.1 is the obvious wrong answer here.
+    review: >
+      NO VERSION PROBE, deliberately. The drop carries no release stamp: what it does
+      carry is the API level, `GLU_VERSION_1_3` in include/GL/glu.h, so this is the GLU
+      1.3 interface. That is an API version, not a version of this source drop, and
+      recording it in the `version:` field would make the table state something the tree
+      does not say — the same mistake vendor.yaml's header warns about for ucrt.
 
   # ── sdk/lib/3rdparty ────────────────────────────────────────────────────
   - path: sdk/lib/3rdparty/freetype
@@ -301,6 +360,13 @@ trees:
         - '#define FREETYPE_MINOR\s+(\d+)'
         - '#define FREETYPE_PATCH\s+(\d+)'
       join: "."
+    review: >
+      LICENCE TEXT IS NOT IN THE TREE. README:16 says "see the file `docs/LICENSE.TXT'
+      for the available licenses", and there is no docs/ directory here — the licence
+      file was left behind when this was vendored. FTL-vs-GPL is a CHOICE that file
+      governs, so the missing document is the one that would say which arm applies. No
+      license_file/license_ref for that reason: a pointer to something that does not
+      state the grant is worse than no pointer.
     reason: >
       Font rasteriser, ~208K lines and the single largest vendored tree. win32k
       consumes it through a stable C API; upstream tracking beats ownership.
@@ -350,6 +416,11 @@ trees:
     version:
       file: sdk/include/reactos/libs/libmpg123/mpg123.h
       pattern: '#define MPG123_API_VERSION\s+(\d+)'
+    review: >
+      LICENCE TEXT IS NOT IN THE TREE, and the sources say so themselves: every file
+      header reads "free software under the terms of the LGPL... see COPYING and AUTHORS
+      files in distribution", and neither COPYING nor AUTHORS was vendored. Same defect
+      as freetype — the drop kept the code and left behind the document it points at.
     reason: MPEG audio decoder; upstream-tracked.
 
   - path: sdk/lib/3rdparty/libsamplerate
@@ -364,13 +435,23 @@ trees:
     name: win-iconv
     upstream: https://github.com/win-iconv/win-iconv
     license: Unlicense OR MIT
+    license_ref: sdk/lib/3rdparty/libwin-iconv/win_iconv.c
     modified: unknown
+    review: >
+      RECORDED `Unlicense OR MIT`, BUT THE FILE SAYS PUBLIC DOMAIN: win_iconv.c's header
+      is three lines and reads "This file is placed in the public domain." No Unlicense
+      text and no MIT text appears anywhere in the tree. A public-domain dedication and
+      the Unlicense are not the same instrument and are not equally effective in every
+      jurisdiction, so the recorded value is someone's interpretation, not a quotation.
+      Left as recorded rather than silently rewritten — this wants a human answer before
+      launch.
     reason: iconv shim over the Win32 codepage APIs; upstream-tracked.
 
   - path: sdk/lib/3rdparty/stlport
     name: STLport
     upstream: http://www.stlport.org/
     license: STLport licence (permissive)
+    license_file: sdk/lib/3rdparty/stlport/README
     modified: unknown
     reason: >
       C++ standard library used by the C++ substrate. Upstream is long dead, but it
@@ -380,49 +461,45 @@ trees:
   - path: sdk/lib/3rdparty/cardlib
     name: cardlib
     upstream: unknown
-    license: unknown
+    license: Public Domain (relayed author permission) — see review
+    license_file: sdk/lib/3rdparty/cardlib/ReadMe.txt
     modified: unknown
     reason: Card-rendering library for the bundled card games, carried in the 3rdparty tree.
     review: >
+      NOT `unknown` AFTER ALL, but not clean either. ReadMe.txt is the whole licence:
+      "The author has given permission to use these sources under Public Domain. Do
+      what thou will but please give credit where credit is due. -sedwards". Two things
+      about that are worth keeping in view rather than smoothing over: the grant is
+      RELAYED — sedwards, a ReactOS contributor, reporting what J Brown said, not a
+      statement by the copyright holder — and the source headers say "Freeware /
+      Copyright J Brown 2001", which is not the same thing as public domain and does
+      not, on its own, grant anything. So the tree contains a second-hand dedication
+      that its own files do not corroborate. Recorded, pointed at, and left for a human
+      to judge before launch; this is the weakest provenance of any entry here.
       Provenance not established — no COPYING, and ReadMe.txt does not name an
       upstream. If this turns out to be ReactOS-authored it belongs OUT of this
       registry and IN the translation denominator.
 
-  - path: sdk/lib/3rdparty/libwine
-    name: libwine
-    upstream: https://gitlab.winehq.org/wine/wine
-    license: LGPL-2.1
-    modified: unknown
-    reason: Wine's port/support library, carried in the 3rdparty tree by upstream ReactOS.
-    review: >
-      CLASSIFICATION IS A JUDGEMENT CALL, flagged rather than made quietly: the
-      roadmap's Phase 0 Tier 3 treats the Wine-derived bucket (~154 DLLs) as a
-      translation TARGET, and this is Wine-derived. It sits here only because
-      upstream files it under 3rdparty. 1.1K lines, so the stakes are small either
-      way — but the answer should be deliberate.
-
-  - path: sdk/lib/3rdparty/strmbase
-    name: strmbase
-    upstream: https://gitlab.winehq.org/wine/wine
-    license: LGPL-2.1
-    modified: unknown
-    reason: Wine's DirectShow base classes, carried in the 3rdparty tree by upstream ReactOS.
-    review: Same open question as libwine — Wine-derived, and the Wine bucket is a target.
-
-  # ── dll/3rdparty ────────────────────────────────────────────────────────
   - path: dll/3rdparty/mbedtls
     name: Mbed TLS
     upstream: https://github.com/Mbed-TLS/mbedtls
-    license: Apache-2.0
-    license_extra:
-      LGPL-2.1-or-later: >
-        _reactos_strsafe_wrapper.c — a ReactOS-authored adapter
-        (Copyright 2015 Ismael Ferreras Morezuelas) carrying the LGPL grant in prose,
-        inside an Apache-2.0 tree. Found BY HAND, not by `--licences`: it has no SPDX
-        tag and no `LICENSE:` header line, which is exactly that scan's blind spot.
-        The lesson is in tools/vendored.py's `license_drift` docstring — a green
-        `--licences` means no tree DECLARES an unrecorded licence, not that no tree
-        HAS one.
+    license: Apache-2.0 OR GPL-2.0-or-later
+    license_ref: dll/3rdparty/mbedtls/aes.c
+    review: >
+      LICENCE CORRECTED 2026-09-19: recorded as `Apache-2.0` for as long as this entry
+      has existed, but all 79 files say `SPDX-License-Identifier: Apache-2.0 OR
+      GPL-2.0-or-later`. Dual, so the GPL half is an OPTION rather than an obligation —
+      but stating only one arm of a dual grant misrepresents it. It survived the licence
+      ratchet's first day because `_SPDX` captured `([^\s*/]+)`, which truncates a
+      compound expression at the first space; fixed, and that fix is what surfaced this.
+
+      MIXED UNTIL 2026-09-19, now clean: _reactos_strsafe_wrapper.c was a ReactOS-authored
+      LGPL-2.1-or-later adapter (StringCchVPrintfEx -> _vsnprintf_s, Copyright 2015 Ismael
+      Ferreras Morezuelas) sitting inside this Apache-2.0 drop. Moved out to
+      sdk/lib/mbedtls_reactos/strsafe_wrapper.c, so the tree is now a pure upstream copy
+      and a re-vendor is a copy rather than a merge. It was found BY HAND, not by
+      `--licences`: it declares its licence in prose with no SPDX tag, which is that
+      scan's blind spot. A re-vendor must not reintroduce it.
     modified: unknown
     headers:
       - sdk/include/reactos/libs/mbedtls
@@ -437,6 +514,7 @@ trees:
     name: libjpeg
     upstream: https://ijg.org/
     license: IJG
+    license_file: dll/3rdparty/libjpeg/README
     modified: unknown
     headers:
       - sdk/include/reactos/libs/libjpeg
@@ -449,6 +527,7 @@ trees:
     name: libpng
     upstream: http://www.libpng.org/pub/png/libpng.html
     license: libpng-2.0
+    license_file: dll/3rdparty/libpng/docs/LICENSE
     modified: unknown
     headers:
       - sdk/include/reactos/libs/libpng
@@ -461,6 +540,7 @@ trees:
     name: libtiff
     upstream: http://www.libtiff.org/
     license: libtiff (BSD-like)
+    license_ref: dll/3rdparty/libtiff/tif_open.c
     modified: unknown
     headers:
       - sdk/include/reactos/libs/libtiff
@@ -473,6 +553,7 @@ trees:
     name: libxslt
     upstream: https://gitlab.gnome.org/GNOME/libxslt
     license: MIT
+    license_file: dll/3rdparty/libxslt/Copyright
     modified: unknown
     headers:
       - sdk/include/reactos/libs/libxslt
@@ -500,6 +581,7 @@ trees:
     name: dxtn (S3TC)
     upstream: unknown
     license: MIT
+    license_ref: dll/3rdparty/dxtn/txc_compress_dxtn.c
     modified: unknown
     reason: S3TC/DXTn texture (de)compression for the GL stack.
 
@@ -520,6 +602,11 @@ trees:
         - '#define XML_MINOR_VERSION\s+(\d+)'
         - '#define XML_MICRO_VERSION\s+(\d+)'
       join: "."
+    review: >
+      LICENCE TEXT IS NOT IN THE TREE. This entry is two headers (expat.h,
+      expat_external.h) and neither carries a grant; expat's MIT text lives in its
+      COPYING, which was not vendored because the SOURCES were not either — only the
+      public headers are here.
     reason: >
       Headers only — there is NO expat source anywhere in this tree. Surfaced by
       building this registry; it was one of the six entries in the old hardcoded
@@ -528,10 +615,21 @@ trees:
   - path: sdk/include/reactos/libs/fullfat
     name: FullFAT (headers only)
     upstream: https://github.com/jameswalmsley/FullFAT
-    license: unknown  # James Walmsley, 2009
+    license: GPL-3.0-or-later  # James Walmsley, 2009
+    license_ref: sdk/include/reactos/libs/fullfat/fat.h
     modified: unknown
     headers:
       - sdk/include/reactos/libs/fullfat
+    review: >
+      LICENCE WAS RECORDED `unknown` AND IS NOT: every header carries the full GPL
+      grant in prose — "This program is free software: you can redistribute it and/or
+      modify it under the terms of the GNU General Public License ... either version 3
+      of the License, or (at your option) any later version", Copyright (C) 2009 James
+      Walmsley. So this is GPL-3.0-or-later, stated in the tree, and `unknown` simply
+      meant nobody had opened the file. Headers only, so it carries no body debt — but
+      GPL-3 in a kernel-adjacent codebase is worth being certain about rather than
+      leaving blank, and the `unknown` is exactly the kind of blank that reads as
+      "checked, indeterminate" when it means "not checked".
     reason: >
       Headers only — no FullFAT source in this tree. 19 headers, none of them
       excluded from the convention-alias scan before this registry existed.
@@ -554,6 +652,100 @@ trees:
 # to be classified before it can land.
 # ─────────────────────────────────────────────────────────────────────────────
 ours:
+  - paths:
+      - sdk/lib/libwine
+      - sdk/lib/strmbase
+    name: Wine-derived support libraries
+    origin: Wine (LGPL-2.1-or-later)
+    tier: "Tier 2-3 (userland DLL queue)"
+    reason: >
+      MISFILED AS VENDORED UNTIL 2026-09-19. Both were `trees:` entries, and both
+      carried a review note admitting the contradiction — Wine-derived code in a
+      registry half that means "not ours to translate", while the roadmap treats the
+      Wine bucket as a target. The owner settled it: Wine is ours and on the
+      translation path, so they belong here with the other 24 Wine modules.
+
+      They also had to MOVE. sdk/lib/3rdparty is a registered CONTAINER where every
+      child must be a vendored tree, so `ours:` code cannot live there — `--check`
+      refuses it, which is how the mbedtls adapter was caught earlier the same day.
+      They are now sdk/lib/{libwine,strmbase}, built from sdk/lib/CMakeLists.txt.
+
+      1,134 + 7,046 lines. Small, but they are linked by quartz, qcap, qedit, amstream
+      and (as a static archive by absolute build path) by userinit and winlogon, so the
+      move touched four CMakeLists beyond the two being moved.
+
+
+  # ── Wine-derived code: OURS, and on the translation path ────────────────
+  - paths:
+      - dll/win32/comctl32
+      - dll/win32/crypt32
+      - dll/win32/hhctrl.ocx
+      - dll/win32/hlink
+      - dll/win32/hnetcfg
+      - dll/win32/ieframe
+      - dll/win32/inetcomm
+      - dll/win32/jscript
+      - dll/win32/mshtml
+      - dll/win32/msi
+      - dll/win32/msvcrt
+      - dll/win32/msxml3
+      - dll/win32/ole32
+      - dll/win32/oleacc
+      - dll/win32/rpcrt4
+      - dll/win32/setupapi
+      - dll/win32/urlmon
+      - dll/win32/vbscript
+      - dll/win32/wbemprox
+      - dll/win32/windowscodecs
+      - dll/win32/winhttp
+      - dll/win32/wininet
+      - dll/directx/wine/d3dcompiler_43
+      - dll/directx/wine/wined3d
+    name: Wine-derived shipped modules
+    origin: Wine (LGPL-2.1-or-later), mostly `Copyright <year> <person> for CodeWeavers`
+    tier: "Tier 2-3 (userland DLL queue)"
+    reason: >
+      ONE DECISION, 24 paths, owner-confirmed 2026-09-19: Wine-derived code is OURS and
+      is on the translation path. These are forked Wine modules this project ships,
+      maintains and translates — not a vendored drop tracked against upstream. The
+      proof is in the tree: dll/win32/msvcrt is on this list and is already ~fully
+      translated, graded against the genuine C by msvcrt-difftest.
+
+      They are listed here rather than left silent because `--suspects` learned to see
+      Wine on 2026-09-19 (it matches `Copyright ... for CodeWeavers`, since Wine does
+      not use the `(c)` form the other holders do) and would otherwise re-ask about 24
+      directories forever. Being in `ours:` is a claim about SCOPE, not authorship: the
+      code is foreign, the responsibility is ours, and the lines stay in the
+      translation denominator.
+
+  - paths:
+      - modules/rostests/winetests/comctl32
+      - modules/rostests/winetests/kernel32
+      - modules/rostests/winetests/mshtml
+      - modules/rostests/winetests/msi
+      - modules/rostests/winetests/shell32
+      - modules/rostests/winetests/ucrtbase
+      - modules/rostests/winetests/urlmon
+      - modules/rostests/winetests/windowscodecs
+    name: Wine conformance tests
+    origin: Wine's own test suite (LGPL-2.1-or-later)
+    reason: >
+      A DIFFERENT argument from the shipped modules above, which is why it is a separate
+      entry. These are Wine's conformance tests: they are the ORACLE we grade against,
+      not code we are porting. Translating them would be translating the ruler. They are
+      `ours:` in the only sense that matters to this registry — a deliberate decision,
+      not an unclassified import — and they should NOT be read as translation debt.
+
+  - paths:
+      - sdk/include/wine
+    name: Wine headers
+    origin: Wine (LGPL-2.1-or-later)
+    reason: >
+      The Wine compatibility headers the modules above compile against. Headers, not
+      bodies, so they carry no translation debt either way (the `ours:` table measures
+      bodies) — but they are foreign-copyright and unclassified code sits in neither
+      list, so the ratchet is owed an answer. This is it.
+
   # ── Microsoft DDK storage class drivers ─────────────────────────────────
   # All three share one argument, written out here and cross-referenced below.
   - path: drivers/storage/class/classpnp

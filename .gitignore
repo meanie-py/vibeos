@@ -22,6 +22,16 @@ sdk/tools/winesync/winesync.cfg
 __pycache__/
 *.pyc
 .pytest_cache/
+
+# uv's lockfile. NOT committed, deliberately. tools/rustconv/pyproject.toml is the
+# authoritative pin (it hard-pins the tree-sitter parsers, and its own comment records
+# why: an audit once ran under a stray tree-sitter 0.26.0 while the venv held 0.25.2, so
+# the "clean" result had to be re-derived). Nothing in this repo invokes uv, and a second
+# lockfile that nobody maintains is the same drift hazard wearing a different hat — a
+# months-old `uv sync` would resolve the FLOORED deps to whatever was current when it was
+# written and look perfectly clean doing it. Regenerate locally with `uv lock` if you want
+# one; it is not shared state.
+uv.lock
 *.egg-info/
 sdk/lib/rust/rust-kernel-target/
 sdk/lib/rust/target/
