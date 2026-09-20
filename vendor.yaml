@@ -1407,10 +1407,6 @@ trees:
 
   - path: dll/3rdparty/libjpeg
     name: libjpeg
-    staleness: >
-      AUDITED 2026-09-20: ours 9d (2020-01), current 9f. Note the IJG 9.x line is a
-      different lineage from libjpeg-turbo, which is what most distributions actually ship
-      and where most CVE traffic is; match advisories against IJG releases, not turbo ones.
     upstream: https://ijg.org/
     license: IJG
     license_file: dll/3rdparty/libjpeg/README
@@ -1425,6 +1421,28 @@ trees:
       file: sdk/include/reactos/libs/libjpeg/jversion.h
       pattern: '#define JVERSION\s+"([^ "]+)'
     review: >
+      BUMPED 9d -> 9f ON 2026-09-20, and it was the cheapest bump in this registry: the
+      one patched hunk applied to 9f with no fuzz and no rejects, every source file is
+      byte-identical to pristine 9f, and libjpeg.dll plus windowscodecs build unchanged
+      on i386, amd64 and arm64. Tarball jpegsrc.v9f.tar.gz, sha256
+      04705c110cb2469caa79fb71fba3d7bf834914706e9641a4589485c1f832565b. That is what a
+      tree kept at "pristine apart from one header" is worth.
+
+      jconfig.h is ours and needed no change: upstream's jconfig.txt is byte-identical
+      between 9d and 9f, and the macros ours omits (BMP_SUPPORTED, GIF_SUPPORTED,
+      TARGA_SUPPORTED, TWO_FILE_COMMANDLINE and the rest) are cjpeg/djpeg application
+      switches the library never reads.
+
+      DELETED IN THE SAME PASS: sdk/include/reactos/libs/libjpeg/rosdiff.patch, an
+      in-tree copy of the same hunk with repo-root-relative paths. It predates
+      vendor-patches/ and was the precedent this directory followed; keeping both means
+      two records of one fact, and it was already stale at 9d's line offsets. Nothing
+      referenced it.
+
+      LINEAGE WARNING, unchanged: the IJG 9.x line is NOT libjpeg-turbo, which is what
+      most distributions ship and where most CVE traffic is reported. Match advisories
+      against IJG releases, not turbo ones.
+
       PARTIALLY DE-PATCHED 2026-09-19. jpeglib.h and jdct.h differed by trailing
       whitespace only and are restored; the header directory is 10 of 11 identical.
 
