@@ -2374,8 +2374,8 @@ came back RESCUABLE. The bank is cleaner than the survey feared.
 |---|---|---|
 | `classpnp/class_gap3.rs`, `class_gap4.rs` | SUPERSEDED — **trashed** | all 11 exports live in `class_part_d.rs` |
 | `ntoskrnl/global_barrier.rs` | not a translation — **trashed** | `gen_global_barrier.py` output; technique `nm`-verified dead, root cause toolchain-fixed on LLVM ≥ 21 |
-| `explorer/appbar.rs` | SUPERSEDED, **HELD** | ~16 of 29 exports have an `ab_*` counterpart in `traywnd.rs`; `ComputeHiddenRect`, `MonitorEnumProc`, `RecomputeAllWorkareas` do NOT |
-| `rtlk-rust/path.rs` | SUPERSEDED, **HELD** | all 31 exports live in `rtl-strings/src/cabi/mod.rs`; overturns its "upstream-dead" prior |
+| `explorer/appbar.rs` | SUPERSEDED — **trashed** | ~16 of 29 exports have an `ab_*` counterpart in `traywnd.rs`; the other 13 do not, so trashed on cost not certainty (see below) |
+| `rtlk-rust/path.rs` | SUPERSEDED — **trashed** | all 31 exports live in `rtl-strings/src/cabi/mod.rs`; overturns its "upstream-dead" prior |
 | `afd/event.rs`, `bootvid/vga.rs`, `bootvid/bootdata.rs`, `dhcpcsvc/tree.rs`, `freeldr/directui.rs`, `win32k/bitblt_new.rs`, `win32k/drvdbg.rs` | DEAD-UPSTREAM — keep | confirmed against the C, not the banner |
 | 6 candidate crates | **5 SHIP**, `slist-loom` is scaffolding | see `tools/survey_unlinked_crates.py` |
 
@@ -2400,6 +2400,17 @@ came back RESCUABLE. The bank is cleaner than the survey feared.
    any oracle. Corrected in place. **An orphan with a wrong banner is worse than
    one with none**, because it is sorted confidently and wrongly — which is the
    argument for making a banner mandatory when a module is unwired.
+
+**The last two were trashed on a COST argument, not a certainty one, and the
+argument was checked.** Neither was SUPERSEDED-certain — `appbar.rs` had 13 of
+29 exports with no named counterpart, and `rtlk/path.rs` overturned a prior
+classification rather than confirming it. What makes being wrong survivable is
+that both C originals are still on disk (`base/shell/explorer/appbar.cpp`, 612
+lines; `sdk/lib/rtl/path.c`, 3,052), so rustconv can retranslate either for
+roughly a dollar. **Retranslatable output is cheap to be wrong about; output
+whose C is gone is not** — which is exactly why `dhcpcsvc/tree.rs` stays,
+despite also shipping nothing: its types exist nowhere, so there is no redo.
+Verify the source still exists before reusing this reasoning.
 
 Trashed files are moved to `tools/rustconv/.responses/trash/`, which is
 GITIGNORED and therefore a local convenience only. **Git history is the
