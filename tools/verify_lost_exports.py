@@ -76,8 +76,15 @@ _CMAKE_LIVE_C = re.compile(r"^(?![ \t]*#)[^#\n]*?(?:\$\{\w+\}/)?([\w./-]+\.c(?:p
 # note), a second attribute, and an indented item. Each miss reads as a LOST export — the
 # opposite of the truth — so this is the same tolerance `fn_coverage._RS_FN` already carries.
 # `[\s\S]*?` spans the gap but the `#[no_mangle]` must still be the nearest attribute block.
+# A FOURTH shape, found 2026-09-19 when shell32/utils.rs was cohab-flipped: the attribute and
+# the fn on ONE line -- `#[no_mangle] pub unsafe extern "system" fn SHOpenEffectiveToken(..)`.
+# The old spelling required the attribute line to END before the fn, so it reported
+# SHOpenEffectiveToken (SHELL32.235) as a LOST export while utils.rs was defining it. A sweep
+# of sdk/lib/rust found 209 such definitions across 46 files invisible to this regex; each one
+# is a false LOST export waiting for its .c to be commented out. Hence the newline after the
+# attribute is now OPTIONAL.
 _RUST_FN = re.compile(
-    r"#\[no_mangle\][^\n]*\n(?:[ \t]*(?://[^\n]*|#\[[^\n]*\])?\n)*"
+    r"#\[no_mangle\](?:[ \t]*(?://[^\n]*)?\n(?:[ \t]*(?://[^\n]*|#\[[^\n]*\])?\n)*)?"
     r"[ \t]*(?:pub(?:\([^)]*\))?[ \t]+)?(?:unsafe[ \t]+)?"
     r"(?:extern[ \t]+(?:\"\w+\"|\$\w+)[ \t]+)?fn[ \t]+(\w+)"
 )

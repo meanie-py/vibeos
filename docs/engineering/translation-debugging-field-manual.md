@@ -5203,6 +5203,24 @@ three by hand. All three came out of one file (`brfolder.cpp`, 2026-07-31).
   first argument, which is exactly what makes it look deliberate. Loud (`E0308`/`E0061`), but
   read the C before "fixing" the call: the answer is to write the missing overload under a new
   name, not to bend the arguments until they typecheck.
+  **"Loud" is the lucky case, and CRegFolder.cpp is the counter-evidence: five instances in
+  ONE TU, of which only two failed to compile.** C++ resolves an overload by ARGUMENT TYPE, and
+  nothing in the Rust output preserves that, so the three silent ones each shipped a different
+  wrong callee: `CreateRegItem(type, clsidstr)` called ITSELF instead of the `REFCLSID` sibling
+  (unconditional infinite recursion, caught only because `scan_self_recursive` exists);
+  `ParseDisplayName` passes a `CLSID` and so binds the `REFCLSID` overload, but got the
+  `LPCWSTR` one; and `GetDetailsOf` passes `IDS_SYSTEMFOLDER` to `SHSetStrRet`, which binds
+  shfldr.h's `(LPSTRRET, DWORD resId)` overload rather than the `LPCWSTR` one — a string built
+  from a resource id reinterpreted as a pointer. The two loud ones were a free-vs-member pair
+  (`GetRegItemOrder(REFCLSID)` vs `CRegFolder::GetRegItemOrder(LPCITEMIDLIST)`) and a
+  `&item.clsid` that took the address of a pointer FIELD rather than its value.
+  Two consequences worth carrying. **`int order = -1` and its friends do not survive either** —
+  a C++ call that relies on a DEFAULT ARGUMENT arrives in Rust with the parameter simply
+  missing, so `f(a, b)` against `f(a, b, int c = -1)` has to be written `f_body(a, b, -1)`; the
+  self-recursion above was that and the overload together. And **the check is mechanical**: for
+  every surviving call to an overloaded name, read the C's ARGUMENT TYPES at that call site, not
+  the name and not the arity. Grepping the C for a duplicated signature tells you which names
+  need it.
   Again in `filedefext.cpp` (2026-08-04): `GetFileStats(HANDLE, ...)` and
   `GetFileStats(PCWSTR, ...)`, the path form opening the handle and delegating. Only the HANDLE
   form was translated, so the surviving call site — the `else` branch of `ProcessDirStatsItem`,
@@ -5379,6 +5397,46 @@ runs other agents' builds and QEMUs).
 ---
 
 ## SEH, PSEH & exception handling
+
+### Restoring a dropped probe, do not TIGHTEN it — `ProbeForWriteHandle` and friends check no alignment at all
+
+**Symptom:** a syscall that worked starts returning `STATUS_DATATYPE_MISALIGNMENT`, or an
+OUT parameter comes back zeroed on a failure path where it used to keep its value. Both
+appear *after* a validate-first conversion that was supposed to be a pure safety fix.
+
+**Cause:** the replacement probe is stricter than the C it replaced. Two ways in.
+
+  * **Alignment invented from the type.** `probe_read_user::<T>` / `probe_write_user::<T>`
+    derive alignment from `align_of::<T>()`. The C almost never asks for that.
+    `ProbeForRead(msg, sizeof(*msg), sizeof(ULONG))` wants **4** where
+    `align_of::<PORT_MESSAGE>()` is **8**; and the TYPED macros —
+    `ProbeForWriteHandle`, `ProbeForWritePointer`, `ProbeForWriteUlong`,
+    `ProbeForReadLargeInteger`, `ProbeForReadUnicodeString` — expand to
+    `ProbeFor{Read,Write}GenericType`, which is a **range check only, with no alignment
+    check whatsoever** (`sdk/include/reactos/probe.h`). Read the macro before picking a
+    number; `probe.h:20` says outright "Alignment of the pointers is not verified".
+  * **A read probe standing in for a write probe.** Only a write touch proves the page is
+    writable — that is why the C macro stores `*(volatile T*)p = *(volatile T*)p` rather
+    than just comparing. Substituting a read probe passes a read-only user page and moves
+    the fault to the later store.
+
+  And one semantic trap next door: **`probe_write_handle` writes NULL.** That is
+  `ProbeAndZeroHandle`'s contract. `ProbeForWriteHandle` PRESERVES the value, and zeroing
+  a caller's OUT variable on every failure path is observable.
+
+**Fix:** `ntkrnl_sys::probe::probe_read_generic` / `probe_write_generic` take alignment as
+an **explicit parameter** for exactly this reason, and `probe_write_generic` does the
+read-modify-write-back the C macro does. Copy the C's literal argument per site and do not
+assume it is uniform within a file — `reply.c:796` asks for `sizeof(PVOID)` where its
+neighbours at `:211` and `:394` ask for `sizeof(ULONG)`.
+
+**Why this is worth a section.** Tightening a probe *looks* like hardening, so it survives
+review. It is a behaviour change that converts working calls into failures, and it is the
+same defect in both directions: the original LPC translation shipped it by passing
+`align_of::<UNICODE_STRING>()` where `ProbeForReadUnicodeString` is range-only, and the
+conversion that FIXED that bug then reintroduced it at five more sites. Both times the
+answer was one line of `probe.h`.
+
 
 ### DUMMY_PSEH turns a protected capture into an unprotected `memcpy` `[§9.59]`
 A whole class, not three bugs: in C, a kernel API captures a caller buffer inside `_SEH2_TRY`;

@@ -244,56 +244,142 @@ pub unsafe extern "system" fn NtSecureConnectPort(
     let token_user_info: PTOKEN_USER;
 
     if previous_mode != KernelMode {
-        ProbeForWriteHandle(port_handle);
-        ProbeForRead(
-            security_qos as PVOID,
-            core::mem::size_of::<SECURITY_QUALITY_OF_SERVICE>(),
-            core::mem::size_of::<ULONG>() as ULONG,
-        );
-        captured_qos = *(security_qos as *const SECURITY_QUALITY_OF_SERVICE);
+        // VALIDATE-FIRST. connect.c wraps this ENTIRE multi-stage capture in a
+        // SINGLE `_SEH2_TRY` (connect.c:116-190) returning
+        // `_SEH2_GetExceptionCode()` -- all seven probes, all four captures, the
+        // two STATUS_INVALID_PARAMETER early exits and the SepCaptureSid call.
+        // The translation kept every probe and capture and dropped the handler,
+        // so under DUMMY_PSEH a bad pointer to NtSecureConnectPort bugchecked
+        // the box from user mode.
+        //
+        // Every alignment below is the C's literal argument, never
+        // `align_of::<T>()`: the typed macros (ProbeForWriteHandle,
+        // ProbeForWriteUlong) check NO alignment, and the explicit ProbeFor*
+        // calls ask for sizeof(ULONG) = 4 where align_of would say 8. A probe
+        // that is stricter than upstream rejects addresses that work, which is
+        // a defect and not a hardening.
+        if let Err(st) = ntkrnl_sys::probe::probe_write_generic::<HANDLE>(
+            port_handle as *mut HANDLE,
+            1, // ProbeForWriteHandle: range-only, and preserves *p
+            previous_mode,
+        ) {
+            return st;
+        }
+        // C reads this as `*(volatile SECURITY_QUALITY_OF_SERVICE*)`; the
+        // volatile was dropped. One fault-protected fetch restores the
+        // single-read the volatile guaranteed.
+        captured_qos = match ntkrnl_sys::probe::probe_read_generic::<SECURITY_QUALITY_OF_SERVICE>(
+            security_qos as *const SECURITY_QUALITY_OF_SERVICE,
+            core::mem::size_of::<ULONG>(),
+            previous_mode,
+        ) {
+            Ok(v) => v,
+            Err(st) => return st,
+        };
 
         if !client_view.is_null() {
-            ProbeForWrite(
-                client_view as PVOID,
-                core::mem::size_of::<PORT_VIEW>(),
-                core::mem::size_of::<ULONG>() as ULONG,
-            );
-            captured_client_view = *(client_view as *const PORT_VIEW);
+            // Probed for WRITE in the C -- a read probe is not a substitute,
+            // because only a write touch proves the page is writable, which the
+            // later write-back of this view depends on.
+            if let Err(st) = ntkrnl_sys::probe::probe_write_generic::<PORT_VIEW>(
+                client_view as *mut PORT_VIEW,
+                core::mem::size_of::<ULONG>(),
+                previous_mode,
+            ) {
+                return st;
+            }
+            captured_client_view = match ntkrnl_sys::probe::probe_read_generic::<PORT_VIEW>(
+                client_view as *const PORT_VIEW,
+                core::mem::size_of::<ULONG>(),
+                previous_mode,
+            ) {
+                Ok(v) => v,
+                Err(st) => return st,
+            };
 
+            // Ordinary early return, exactly as in the C: this exit is INSIDE
+            // the C's TRY via _SEH2_YIELD, so it is a normal result, not a
+            // fault path.
             if captured_client_view.Length != core::mem::size_of::<PORT_VIEW>() as ULONG {
                 return STATUS_INVALID_PARAMETER;
             }
         }
 
         if !server_view.is_null() {
-            ProbeForWrite(
-                server_view as PVOID,
-                core::mem::size_of::<REMOTE_PORT_VIEW>(),
-                core::mem::size_of::<ULONG>() as ULONG,
-            );
+            if let Err(st) = ntkrnl_sys::probe::probe_write_generic::<REMOTE_PORT_VIEW>(
+                server_view as *mut REMOTE_PORT_VIEW,
+                core::mem::size_of::<ULONG>(),
+                previous_mode,
+            ) {
+                return st;
+            }
+            // Captured rather than dereferenced raw: the C reads it through a
+            // `volatile` pointer, and the raw deref here was a second,
+            // unprotected read of user memory.
+            let captured_server_view =
+                match ntkrnl_sys::probe::probe_read_generic::<REMOTE_PORT_VIEW>(
+                    server_view as *const REMOTE_PORT_VIEW,
+                    core::mem::size_of::<ULONG>(),
+                    previous_mode,
+                ) {
+                    Ok(v) => v,
+                    Err(st) => return st,
+                };
 
-            if (*(server_view as *const REMOTE_PORT_VIEW)).Length
-                != core::mem::size_of::<REMOTE_PORT_VIEW>() as ULONG
-            {
+            if captured_server_view.Length != core::mem::size_of::<REMOTE_PORT_VIEW>() as ULONG {
                 return STATUS_INVALID_PARAMETER;
             }
         }
 
         if !max_message_length.is_null() {
-            ProbeForWriteUlong(max_message_length);
+            if let Err(st) = ntkrnl_sys::probe::probe_write_generic::<ULONG>(
+                max_message_length,
+                1, // ProbeForWriteUlong: range-only
+                previous_mode,
+            ) {
+                return st;
+            }
         }
 
         if !connection_information_length.is_null() {
-            ProbeForWriteUlong(connection_information_length);
-            connection_info_length = *(connection_information_length as *const ULONG);
+            if let Err(st) = ntkrnl_sys::probe::probe_write_generic::<ULONG>(
+                connection_information_length,
+                1,
+                previous_mode,
+            ) {
+                return st;
+            }
+            // DOUBLE-FETCH. This length is used twice more -- as the probe
+            // length just below, and as the copy length when the connection
+            // info is moved (connect.rs, the ConnectMessage copy). The C reads
+            // it through a `volatile` pointer so the compiler may not reload
+            // it; the plain deref here could be re-read after validation, which
+            // is a TOCTOU independent of the missing handler. Read it ONCE,
+            // into a local, and use only that.
+            connection_info_length = match ntkrnl_sys::probe::probe_read_generic::<ULONG>(
+                connection_information_length as *const ULONG,
+                1,
+                previous_mode,
+            ) {
+                Ok(v) => v,
+                Err(st) => return st,
+            };
         }
 
         if !connection_information.is_null() {
-            ProbeForWrite(
-                connection_information,
-                connection_info_length as SIZE_T,
-                core::mem::size_of::<ULONG>() as ULONG,
-            );
+            // Range check only. The C's ProbeForWrite touches the buffer to
+            // prove it is writable, and there is no typed helper for a
+            // variable-length span; the writes into it are all fault-protected
+            // copies in the second conversion pass, which is where that gap
+            // closes. Noted rather than silently dropped.
+            if let Err(st) = ntkrnl_sys::probe::probe_user_buffer(
+                connection_information as *const core::ffi::c_void,
+                connection_info_length as usize,
+                core::mem::size_of::<ULONG>(),
+                previous_mode,
+            ) {
+                return st;
+            }
         }
 
         captured_server_sid = server_sid;
@@ -533,11 +619,50 @@ pub unsafe extern "system" fn NtSecureConnectPort(
     (*message).Request.u2.s2.Type = LPC_CONNECTION_REQUEST;
 
     if !connection_information.is_null() {
-        core::ptr::copy_nonoverlapping(
-            connection_information as *const u8,
-            (connect_message as usize + core::mem::size_of::<_LPCP_CONNECTION_MESSAGE>()) as *mut u8,
+        // C: connect.c:516-540. `ConnectionInformation` was already range/align
+        // probed above (ProbeForWrite(ConnectionInformation, ..., sizeof(ULONG))
+        // at connect.c:167, so this copy is `safe_copy_raw`, not a re-probing
+        // helper), but the TRY here still guards the copy itself against a fault
+        // (e.g. the page going invalid between the probe and this copy).
+        //
+        // The C handler is a plain RETURN, not `goto Failure`, and it does NOT
+        // `ObDereferenceObject(Port)` — unlike the `Failure:` path. That is
+        // OWNERSHIP TRANSFER, not a leak, and adding the deref would be an
+        // OVER-RELEASE:
+        //
+        //     /* Setup the client port -- From now on, dereferencing the
+        //      * client port will automatically dereference the connection
+        //      * port too. */
+        //     ClientPort->ConnectionPort = Port;        // connect.c:363
+        //
+        // The reference `ObReferenceObjectByName` took is handed to ClientPort
+        // there, so `ObDereferenceObject(ClientPort)` below releases it
+        // transitively. Four other error paths in this function (connect.c:386,
+        // 397, 416, 443, 474) skip the Port deref for the same reason — the
+        // asymmetry is systematic, which is the tell. The `ObReferenceObject(Port)`
+        // at connect.c:579 is a SECOND, independent reference, released by the
+        // deref at connect.c:756.
+        //
+        // This was nearly "improved" into a use-after-free: an added
+        // `ObDereferenceObject(port)` here drops a reference this path does not
+        // own, freeing the connection port out from under the client port on
+        // every faulting connect. An earlier revision of this comment reached
+        // the right conclusion by the wrong route — it claimed Port "still
+        // holds" its reference, which reads as a leak somebody should fix.
+        // Replicate exactly: no Port deref, because it is not ours to release.
+        if let Err(st) = ntkrnl_sys::probe::safe_copy_raw(
+            (connect_message as usize + core::mem::size_of::<_LPCP_CONNECTION_MESSAGE>()) as *mut core::ffi::c_void,
+            connection_information as *const core::ffi::c_void,
             connection_info_length as usize,
-        );
+        ) {
+            LpcpFreeToPortZone(message, 0);
+            if !section_to_map.is_null() {
+                ObDereferenceObject(section_to_map);
+            }
+            ObDereferenceObject(client_port as PVOID);
+            // NOTE: no ObDereferenceObject(port) here -- see comment above.
+            return st;
+        }
     }
 
     status = STATUS_SUCCESS;
@@ -629,15 +754,57 @@ pub unsafe extern "system" fn NtSecureConnectPort(
         }
 
         if !connection_information.is_null() {
-            if !connection_information_length.is_null() {
-                *connection_information_length = connection_info_length;
-            }
+            // C: connect.c:642-659. ONE _SEH2_TRY covers both the scalar
+            // store into *ConnectionInformationLength and the bulk copy back
+            // into ConnectionInformation -- both are writes INTO user memory,
+            // so both go through `safe_copy_to_user` (alignment = the C's
+            // literal probe argument for each destination: ConnectionInformationLength
+            // was ProbeForWriteUlong'd, i.e. range-only/1, at connect.c:161;
+            // ConnectionInformation was ProbeForWrite'd with sizeof(ULONG) at
+            // connect.c:167). A fault in EITHER one aborts the whole TRY in the
+            // C (an exception mid-block skips whatever follows it), so the
+            // second write must not run once the first has failed.
+            //
+            // Handler is `Status = GetExceptionCode(); goto Failure;` --
+            // Failure (connect.c:763) frees Message, dereferences SectionToMap
+            // / ClientPort / Port (ALL three, unlike Site 1's asymmetric
+            // handler), and returns Status. There is no Failure label in the
+            // Rust, so that cleanup is inlined here; it is byte-for-byte the
+            // same cleanup as the `status < 0` block above this one.
+            let write_result: Result<(), NTSTATUS> = (|| {
+                if !connection_information_length.is_null() {
+                    ntkrnl_sys::probe::safe_copy_to_user(
+                        connection_information_length as *mut core::ffi::c_void,
+                        core::ptr::addr_of!(connection_info_length) as *const core::ffi::c_void,
+                        core::mem::size_of::<ULONG>(),
+                        1, // ProbeForWriteUlong: range-only
+                        previous_mode,
+                    )?;
+                }
 
-            core::ptr::copy_nonoverlapping(
-                (connect_message as usize + core::mem::size_of::<_LPCP_CONNECTION_MESSAGE>()) as *const u8,
-                connection_information as *mut u8,
-                connection_info_length as usize,
-            );
+                ntkrnl_sys::probe::safe_copy_to_user(
+                    connection_information as *mut core::ffi::c_void,
+                    (connect_message as usize + core::mem::size_of::<_LPCP_CONNECTION_MESSAGE>()) as *const core::ffi::c_void,
+                    connection_info_length as usize,
+                    core::mem::size_of::<ULONG>(),
+                    previous_mode,
+                )
+            })();
+
+            if let Err(st) = write_result {
+                status = st;
+                // Inlined `goto Failure` (connect.c:763): free the message,
+                // dereference SectionToMap / ClientPort / Port, return.
+                if !message.is_null() {
+                    LpcpFreeToPortZone(message, 0);
+                }
+                if !section_to_map.is_null() {
+                    ObDereferenceObject(section_to_map);
+                }
+                ObDereferenceObject(client_port as PVOID);
+                ObDereferenceObject(port as PVOID);
+                return status;
+            }
         }
 
         if !(*client_port).ConnectedPort.is_null() {
@@ -652,26 +819,70 @@ pub unsafe extern "system" fn NtSecureConnectPort(
                 &mut handle,
             );
             if status >= 0 {
-                *port_handle = handle;
+                // C: connect.c:682-715. ONE _SEH2_TRY covers all four
+                // writes-into-user-memory; a fault on any one aborts the rest
+                // (SEH unwinds out of the block on first exception), which is
+                // why this is a short-circuiting `?` chain rather than four
+                // independent copies.
+                //
+                // The handler is:
+                //     ObCloseHandle(Handle, PreviousMode);
+                //     Status = _SEH2_GetExceptionCode();
+                // and then NOTHING -- no return, no goto. It FALLS THROUGH to
+                // the ordinary tail of the function (closing this `if`, the
+                // `LpcpFreeToPortZone(Message, 0)` a few lines down, the final
+                // `ObDereferenceObject(Port)`, `return Status`). Do NOT turn
+                // this into a `return Err(..)` -- that would skip the message
+                // free and the Port dereference that the C still performs on
+                // this path, leaking both.
+                let write_result: Result<(), NTSTATUS> = (|| {
+                    ntkrnl_sys::probe::safe_copy_to_user(
+                        port_handle as *mut core::ffi::c_void,
+                        core::ptr::addr_of!(handle) as *const core::ffi::c_void,
+                        core::mem::size_of::<HANDLE>(),
+                        1, // ProbeForWriteHandle: range-only
+                        previous_mode,
+                    )?;
 
-                if !max_message_length.is_null() {
-                    *max_message_length = port_message_length;
-                }
+                    if !max_message_length.is_null() {
+                        ntkrnl_sys::probe::safe_copy_to_user(
+                            max_message_length as *mut core::ffi::c_void,
+                            core::ptr::addr_of!(port_message_length) as *const core::ffi::c_void,
+                            core::mem::size_of::<ULONG>(),
+                            1, // ProbeForWriteUlong: range-only
+                            previous_mode,
+                        )?;
+                    }
 
-                if !client_view.is_null() {
-                    core::ptr::copy_nonoverlapping(
-                        core::ptr::addr_of!((*connect_message).ClientView) as *const u8,
-                        client_view as *mut u8,
-                        core::mem::size_of::<PORT_VIEW>(),
-                    );
-                }
+                    if !client_view.is_null() {
+                        ntkrnl_sys::probe::safe_copy_to_user(
+                            client_view as *mut core::ffi::c_void,
+                            core::ptr::addr_of!((*connect_message).ClientView) as *const core::ffi::c_void,
+                            core::mem::size_of::<PORT_VIEW>(),
+                            core::mem::size_of::<ULONG>(),
+                            previous_mode,
+                        )?;
+                    }
 
-                if !server_view.is_null() {
-                    core::ptr::copy_nonoverlapping(
-                        core::ptr::addr_of!((*connect_message).ServerView) as *const u8,
-                        server_view as *mut u8,
-                        core::mem::size_of::<REMOTE_PORT_VIEW>(),
-                    );
+                    if !server_view.is_null() {
+                        ntkrnl_sys::probe::safe_copy_to_user(
+                            server_view as *mut core::ffi::c_void,
+                            core::ptr::addr_of!((*connect_message).ServerView) as *const core::ffi::c_void,
+                            core::mem::size_of::<REMOTE_PORT_VIEW>(),
+                            core::mem::size_of::<ULONG>(),
+                            previous_mode,
+                        )?;
+                    }
+
+                    Ok(())
+                })();
+
+                if let Err(st) = write_result {
+                    ObCloseHandle(handle, previous_mode);
+                    status = st;
+                    // FALLS THROUGH -- no return/goto here, matching the C.
+                    // Execution continues to `LpcpFreeToPortZone` below and
+                    // the function's normal tail.
                 }
             }
         } else {

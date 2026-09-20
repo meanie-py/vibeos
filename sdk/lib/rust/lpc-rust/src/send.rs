@@ -5,6 +5,7 @@ use ntkrnl_sys::ob::*;
 
 use ntkrnl_sys::ddk::{
     HANDLE, KPROCESSOR_MODE,
+    PCLIENT_ID,
     PETHREAD, PKSEMAPHORE,
     PLPCP_DATA_INFO, PLPCP_MESSAGE, PLPCP_PORT_OBJECT,
     _LPCP_MESSAGE, _LPCP_DATA_INFO,
@@ -16,6 +17,14 @@ use ntkrnl_sys::ddk::{
     ObReferenceObjectSafe,
 };
 use ntkrnl_sys::{opaque_ptr, opaque_ptr_const};
+
+// The fault-protected wrapper around LpcpMoveMessage (routes the payload copy
+// through safe_copy_raw and returns NTSTATUS instead of raising). Defined in
+// reply.rs, `#[no_mangle] pub`, so it is reachable by module path within this
+// crate. Use it at exactly the _SEH2_TRY-wrapped LpcpMoveMessage sites below;
+// the bare `LpcpMoveMessage` extern declared further down stays in use for
+// the sites the C left unprotected.
+use crate::reply::LpcpMoveMessageChecked;
 
 extern "system" {
     fn KeGetPreviousMode() -> KPROCESSOR_MODE;
@@ -396,13 +405,54 @@ pub unsafe extern "system" fn NtRequestPort(
     let Message: PLPCP_MESSAGE;
 
     if PreviousMode != 0i8 {
-        ProbeForRead(LpcRequest as PVOID, core::mem::size_of::<PORT_MESSAGE>(), core::mem::size_of::<ULONG>() as ULONG);
-        CapturedLpcRequest = core::ptr::read_volatile(LpcRequest);
+        // VALIDATE-FIRST. The C wraps the probe AND the capture in one
+        // `_SEH2_TRY` returning `_SEH2_GetExceptionCode()` (send.c:456-466); the
+        // translation kept both and dropped the handler, so under DUMMY_PSEH a
+        // bad LpcRequest to this syscall bugchecked the box. A range check says
+        // where a buffer IS, not that it stays mapped, so the capture is
+        // fault-protected too.
+        //
+        // NOT `probe_read_user`, deliberately: that derives alignment from
+        // `align_of::<PORT_MESSAGE>()`, which is 8 on 64-bit, where the C asks
+        // for `sizeof(ULONG)` = 4. Tightening a probe is not a safe default --
+        // it rejects addresses upstream accepts, which is a bug the translation
+        // already introduced once elsewhere in this crate. Spell the C's
+        // alignment out.
+        if let Err(st) = ntkrnl_sys::probe::probe_user_buffer(
+            LpcRequest as *const core::ffi::c_void,
+            core::mem::size_of::<PORT_MESSAGE>(),
+            core::mem::size_of::<ULONG>(),
+            PreviousMode,
+        ) {
+            return st;
+        }
+        // Staged through MaybeUninit rather than written straight into
+        // CapturedLpcRequest: a raw-pointer write does not initialise the
+        // binding as far as the borrow checker is concerned (rustc rejected the
+        // direct version), and only a COMPLETE copy initialises a PORT_MESSAGE
+        // -- a fault may have copied a prefix, which must never be read as a
+        // value. Zeroing first would also work and would cost a memset on the
+        // hottest syscall in the system.
+        let mut Staging = core::mem::MaybeUninit::<PORT_MESSAGE>::uninit();
+        if let Err(st) = ntkrnl_sys::probe::safe_copy_raw(
+            Staging.as_mut_ptr() as *mut core::ffi::c_void,
+            LpcRequest as *const core::ffi::c_void,
+            core::mem::size_of::<PORT_MESSAGE>(),
+        ) {
+            return st;
+        }
+        CapturedLpcRequest = Staging.assume_init();
     } else {
         CapturedLpcRequest = *LpcRequest;
     }
 
-    MessageType = (*LpcRequest).u2.s2.Type as ULONG | LPC_DATAGRAM;
+    // From the CAPTURED copy, as the C does (send.c:481). This used to read
+    // `(*LpcRequest).u2.s2.Type` -- a SECOND dereference of the raw user
+    // pointer, and two bugs rather than one: a hostile caller can change Type
+    // between the capture and this read (the capture exists precisely to stop
+    // that), and it faults on the SUCCESS path, outside the `PreviousMode`
+    // guard, so it was reachable by kernel callers too.
+    MessageType = CapturedLpcRequest.u2.s2.Type as ULONG | LPC_DATAGRAM;
 
     if CapturedLpcRequest.u2.s2.DataInfoOffset != 0 {
         return STATUS_INVALID_PARAMETER;
@@ -440,13 +490,29 @@ pub unsafe extern "system" fn NtRequestPort(
         return STATUS_NO_MEMORY;
     }
 
-    LpcpMoveMessage(
+    // FAULT-PROTECTED (send.c:522-538, one _SEH2_TRY over just this copy).
+    // The C's handler is:
+    //     LpcpFreeToPortZone(Message, 0);
+    //     ObDereferenceObject(Port);
+    //     _SEH2_YIELD(return _SEH2_GetExceptionCode());
+    // -- a plain `return`, so the shape here matches: on failure we free and
+    // dereference and return immediately, same as every other early-out in
+    // this function. The free flag is bare `0`, NOT LPCP_LOCK_HELD |
+    // LPCP_LOCK_RELEASE -- LpcpLock has not been acquired yet at this point
+    // in NtRequestPort, so that combination would release a lock we don't
+    // hold.
+    Status = LpcpMoveMessageChecked(
         core::ptr::addr_of_mut!((*Message).Request),
         core::ptr::addr_of_mut!(CapturedLpcRequest),
         LpcRequest.offset(1) as PVOID,
         MessageType,
-        core::ptr::addr_of_mut!((*Thread).Cid) as PVOID,
+        core::ptr::addr_of_mut!((*Thread).Cid) as PCLIENT_ID,
     );
+    if Status < 0 {
+        LpcpFreeToPortZone(Message, 0);
+        ObDereferenceObject(Port as PVOID);
+        return Status;
+    }
 
     KeAcquireGuardedMutex(core::ptr::addr_of_mut!(LpcpLock));
 
@@ -534,6 +600,84 @@ pub unsafe extern "system" fn NtRequestPort(
     return Status;
 }
 
+/// `LpcpVerifyMessageDataInfo` with every user read FAULT-PROTECTED.
+///
+/// The plain version below walks `Message + DataInfoOffset`, which is BEYOND
+/// the `sizeof(PORT_MESSAGE)` its callers probe. In the C that is safe only
+/// because the user-mode call sits inside `_SEH2_TRY` (send.c:721-743); the
+/// KernelMode call at send.c:748 is deliberately unprotected. So this exists
+/// alongside the original rather than replacing it, exactly as
+/// `LpcpMoveMessageChecked` does — protecting the kernel-mode path would
+/// convert a loud crash into a silent wrong answer.
+///
+/// THE CHECK ORDER IS LOAD-BEARING and is copied from the C. The header
+/// bounds tests run BEFORE anything past the header is touched, so a malformed
+/// message still returns `STATUS_INVALID_PARAMETER` rather than
+/// `STATUS_ACCESS_VIOLATION`. Probing the whole `TotalLength` extent up front
+/// would be simpler and WRONG: it changes the answer upstream gives for
+/// hostile input, which is a divergence dressed as hardening.
+#[no_mangle]
+pub unsafe extern "system" fn LpcpVerifyMessageDataInfoChecked(
+    Message: PPORT_MESSAGE,
+    NumberOfDataEntries: *mut ULONG,
+    PreviousMode: KPROCESSOR_MODE,
+) -> NTSTATUS {
+    let NumberOfDataEntries = opaque_ptr(NumberOfDataEntries);
+
+    // One protected capture of the header. The C re-reads DataInfoOffset from
+    // user memory here deliberately (send.c:846) as a re-validation rather
+    // than trusting the earlier capture, so this re-reads too — just safely.
+    let hdr = match ntkrnl_sys::probe::probe_read_generic::<PORT_MESSAGE>(
+        Message as *const PORT_MESSAGE,
+        core::mem::size_of::<ULONG>(),
+        PreviousMode,
+    ) {
+        Ok(v) => v,
+        Err(st) => return st,
+    };
+
+    if hdr.u2.s2.DataInfoOffset == 0 {
+        *NumberOfDataEntries = 0;
+        return STATUS_SUCCESS;
+    }
+
+    let total = hdr.u1.s1.TotalLength as ULONG;
+    let off = hdr.u2.s2.DataInfoOffset as ULONG;
+    let hdr_size = core::mem::size_of::<PORT_MESSAGE>() as ULONG;
+    let di_size = core::mem::size_of::<ntkrnl_sys::ddk::_LPCP_DATA_INFO>() as ULONG;
+
+    if (total < hdr_size + di_size) || (off < hdr_size) || (off > total - di_size) {
+        return STATUS_INVALID_PARAMETER;
+    }
+
+    // Only now is anything past the header touched, and it is bounded by the
+    // tests above: off is >= sizeof(PORT_MESSAGE) and <= total - sizeof(DATA_INFO).
+    let data_info = (Message as *mut u8).add(off as usize) as PLPCP_DATA_INFO;
+    let di = match ntkrnl_sys::probe::probe_read_generic::<ntkrnl_sys::ddk::_LPCP_DATA_INFO>(
+        data_info as *const ntkrnl_sys::ddk::_LPCP_DATA_INFO,
+        core::mem::size_of::<ULONG>(),
+        PreviousMode,
+    ) {
+        Ok(v) => v,
+        Err(st) => return st,
+    };
+
+    let end_of_entries = (core::ptr::addr_of!((*data_info).Entries) as *mut UCHAR).add(
+        di.NumberOfEntries as usize
+            * core::mem::size_of::<ntkrnl_sys::ddk::_LPCP_DATA_INFO__bindgen_ty_1>(),
+    );
+    if (end_of_entries > (Message as *mut UCHAR).add(total as usize))
+        || (end_of_entries < (Message as *mut UCHAR))
+    {
+        return STATUS_INVALID_PARAMETER;
+    }
+
+    *NumberOfDataEntries = di.NumberOfEntries;
+    STATUS_SUCCESS
+}
+
+/// UNPROTECTED by design — the KernelMode path. See
+/// `LpcpVerifyMessageDataInfoChecked` above; keep the two in step.
 #[no_mangle]
 pub unsafe extern "system" fn LpcpVerifyMessageDataInfo(
     Message: PPORT_MESSAGE,
@@ -598,12 +742,63 @@ pub unsafe extern "system" fn NtRequestWaitReplyPort(
     }
 
     if PreviousMode != 0i8 {
-        ProbeForRead(LpcRequest as PVOID, core::mem::size_of::<PORT_MESSAGE>(), core::mem::size_of::<ULONG>() as ULONG);
-        CapturedLpcRequest = core::ptr::read_volatile(LpcRequest);
+        // VALIDATE-FIRST. One `_SEH2_TRY` in the C (send.c:721-743) covers the
+        // read probe, the capture, the write probe and the
+        // LpcpVerifyMessageDataInfo call, with `_SEH2_YIELD(return
+        // _SEH2_GetExceptionCode())` as its handler. The translation kept all
+        // four and dropped the handler, so under DUMMY_PSEH a bad LpcRequest or
+        // LpcReply to this syscall -- the one every CSR/LPC call in the system
+        // goes through -- bugchecked the box.
+        //
+        // Alignment is spelled out rather than taken from `align_of`: the C asks
+        // for `sizeof(ULONG)` = 4, and `align_of::<PORT_MESSAGE>()` is 8 on
+        // 64-bit. A tighter probe rejects addresses upstream accepts, which is a
+        // defect, not a hardening.
+        if let Err(st) = ntkrnl_sys::probe::probe_user_buffer(
+            LpcRequest as *const core::ffi::c_void,
+            core::mem::size_of::<PORT_MESSAGE>(),
+            core::mem::size_of::<ULONG>(),
+            PreviousMode,
+        ) {
+            return st;
+        }
+        // Staged through MaybeUninit rather than written straight into
+        // CapturedLpcRequest: a raw-pointer write does not initialise the
+        // binding as far as the borrow checker is concerned (rustc rejected the
+        // direct version), and only a COMPLETE copy initialises a PORT_MESSAGE
+        // -- a fault may have copied a prefix, which must never be read as a
+        // value. Zeroing first would also work and would cost a memset on the
+        // hottest syscall in the system.
+        let mut Staging = core::mem::MaybeUninit::<PORT_MESSAGE>::uninit();
+        if let Err(st) = ntkrnl_sys::probe::safe_copy_raw(
+            Staging.as_mut_ptr() as *mut core::ffi::c_void,
+            LpcRequest as *const core::ffi::c_void,
+            core::mem::size_of::<PORT_MESSAGE>(),
+        ) {
+            return st;
+        }
+        CapturedLpcRequest = Staging.assume_init();
+        if let Err(st) = ntkrnl_sys::probe::probe_user_buffer(
+            LpcReply as *const core::ffi::c_void,
+            core::mem::size_of::<PORT_MESSAGE>(),
+            core::mem::size_of::<ULONG>(),
+            PreviousMode,
+        ) {
+            return st;
+        }
 
-        ProbeForWrite(LpcReply as PVOID, core::mem::size_of::<PORT_MESSAGE>(), core::mem::size_of::<ULONG>() as ULONG);
-
-        Status = LpcpVerifyMessageDataInfo(LpcRequest, core::ptr::addr_of_mut!(NumberOfDataEntries));
+        // NOW PROTECTED. This walks `Message + DataInfoOffset`, beyond the
+        // sizeof(PORT_MESSAGE) probed above, and in the C is safe only because
+        // it sits inside this TRY (send.c:731). The Checked variant does the
+        // same work with every user read fault-protected, in the C's check
+        // ORDER so a malformed message still answers STATUS_INVALID_PARAMETER
+        // rather than STATUS_ACCESS_VIOLATION. The KernelMode call below keeps
+        // the unprotected version, because the C leaves that one bare too.
+        Status = LpcpVerifyMessageDataInfoChecked(
+            LpcRequest,
+            core::ptr::addr_of_mut!(NumberOfDataEntries),
+            PreviousMode,
+        );
         if Status < 0 {
             return Status;
         }
@@ -663,22 +858,69 @@ pub unsafe extern "system" fn NtRequestWaitReplyPort(
         Semaphore = core::ptr::null_mut();
         return STATUS_NOT_IMPLEMENTED;
     } else {
-        if (*LpcRequest).u2.s2.DataInfoOffset != 0 {
+        // FAULT-PROTECTED as ONE unit (send.c:843-876, one _SEH2_TRY over the
+        // DataInfoOffset re-read, the NumberOfEntries read, AND the move).
+        // The C's handler is:
+        //     DPRINT1(...);
+        //     LpcpFreeToPortZone(Message, 0);
+        //     ObDereferenceObject(Port);
+        //     _SEH2_YIELD(return _SEH2_GetExceptionCode());
+        // -- same shape as NtRequestPort's site: a plain early return, free
+        // flag bare `0` because LpcpLock is not held yet here either.
+        //
+        // Both raw-pointer reads below sit inside the C's TRY too (the
+        // re-read of LpcRequest->u2.s2.DataInfoOffset, distinct from the
+        // already-captured CapturedLpcRequest, and DataInfo->NumberOfEntries,
+        // which LpcpGetDataInfoFromMessage points PAST the probed
+        // sizeof(PORT_MESSAGE) header) -- so a bare deref of either would
+        // reopen the same bugcheck the move itself was protected against.
+        // Alignment is spelled out as sizeof(ULONG) = 4 for both, matching
+        // the C's plain-ULONG-sized field reads, not align_of::<PORT_MESSAGE>().
+        let DataInfoOffset = match ntkrnl_sys::probe::probe_read_generic::<PORT_MESSAGE>(
+            LpcRequest as *const PORT_MESSAGE,
+            core::mem::size_of::<ULONG>(),
+            PreviousMode,
+        ) {
+            Ok(msg) => msg.u2.s2.DataInfoOffset,
+            Err(st) => {
+                LpcpFreeToPortZone(Message, 0);
+                ObDereferenceObject(Port as PVOID);
+                return st;
+            }
+        };
+        if DataInfoOffset != 0 {
             DataInfo = LpcpGetDataInfoFromMessage(LpcRequest);
-            if (*DataInfo).NumberOfEntries != NumberOfDataEntries {
+            let NumberOfEntries = match ntkrnl_sys::probe::probe_read_generic::<ULONG>(
+                core::ptr::addr_of!((*DataInfo).NumberOfEntries),
+                core::mem::size_of::<ULONG>(),
+                PreviousMode,
+            ) {
+                Ok(n) => n,
+                Err(st) => {
+                    LpcpFreeToPortZone(Message, 0);
+                    ObDereferenceObject(Port as PVOID);
+                    return st;
+                }
+            };
+            if NumberOfEntries != NumberOfDataEntries {
                 LpcpFreeToPortZone(Message, 0);
                 ObDereferenceObject(Port as PVOID);
                 return STATUS_INVALID_PARAMETER;
             }
         }
 
-        LpcpMoveMessage(
+        Status = LpcpMoveMessageChecked(
             core::ptr::addr_of_mut!((*Message).Request),
             core::ptr::addr_of_mut!(CapturedLpcRequest),
             LpcRequest.offset(1) as PVOID,
             MessageType,
-            core::ptr::addr_of_mut!((*Thread).Cid) as PVOID,
+            core::ptr::addr_of_mut!((*Thread).Cid) as PCLIENT_ID,
         );
+        if Status < 0 {
+            LpcpFreeToPortZone(Message, 0);
+            ObDereferenceObject(Port as PVOID);
+            return Status;
+        }
 
         KeAcquireGuardedMutex(core::ptr::addr_of_mut!(LpcpLock));
 
@@ -768,7 +1010,26 @@ pub unsafe extern "system" fn NtRequestWaitReplyPort(
 
     if Status == STATUS_SUCCESS {
         if !Message.is_null() {
-            LpcpMoveMessage(
+            // FAULT-PROTECTED (send.c:1000-1013), and its handler's shape is
+            // DELIBERATELY DIFFERENT from the other two sites in this file.
+            // The C:
+            //     _SEH2_TRY { LpcpMoveMessage(LpcReply, ...); }
+            //     _SEH2_EXCEPT(EXCEPTION_EXECUTE_HANDLER)
+            //     {
+            //         DPRINT1("Got exception!\n");
+            //         Status = _SEH2_GetExceptionCode();
+            //     }
+            //     _SEH2_END;
+            // -- NO _SEH2_YIELD(return ...) in the handler. It only sets
+            // Status and FALLS THROUGH into the message-disposal code right
+            // below (LpcpSaveDataInfoMessage / LpcpFreeToPortZone). This copy
+            // writes INTO user memory (LpcReply) from a port-zone message
+            // that must still be disposed of either way -- an early `return`
+            // here, unlike at the other two sites, would LEAK the port-zone
+            // message. So: capture the checked call's status into `Status`
+            // and keep going into the same disposal logic the success path
+            // uses; do NOT turn this into a `return Err(...)`.
+            Status = LpcpMoveMessageChecked(
                 LpcReply,
                 core::ptr::addr_of_mut!((*Message).Request),
                 core::ptr::addr_of_mut!((*Message).Request).offset(1) as PVOID,

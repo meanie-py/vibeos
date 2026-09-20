@@ -8222,6 +8222,7 @@ def test_start_resolves_accel_before_admission(arch, available, expected, monkey
     monkeypatch.setattr(v, "_acquire_slot", lambda: observations.append(v._win_accel))
     monkeypatch.setattr(v, "_acquire_cpu_lease", lambda: observations.append(v._boot_is_tcg()))
     monkeypatch.setattr(vm_mod, "launch_lock", contextlib.nullcontext)
+    monkeypatch.setattr(v, "_prepare_launch", lambda: None)
     monkeypatch.setattr(v, "_start_with_ports", lambda: None)
     v.start()
     assert observations == [expected, expected == "tcg"]
@@ -8395,3 +8396,79 @@ def test_source_lint_preflight_honours_skip_lint(tmp_path, monkeypatch):
     args.skip_lint = True
     land_mod._source_lint_preflight(tmp_path, run, args)
     assert run.stages == []
+
+
+def _with_origin_master(repo: Path, *paths: str) -> None:
+    """Give `repo` an origin/master and a commit on top touching exactly `paths`.
+
+    The shared predicate is installed into the BASE, because `_docs_only_vs_master` loads
+    it from `<repo>/tools/docs_only.py` by path. In the base, not the delta: a predicate
+    committed alongside the change would itself be a non-inert path.
+    """
+    tools = repo / "tools"
+    tools.mkdir(parents=True, exist_ok=True)
+    real = Path(__file__).resolve().parents[3] / "tools" / "docs_only.py"
+    (tools / "docs_only.py").write_text(real.read_text())
+    _git(repo, "add", "-A")
+    _git(repo, "commit", "-qm", "install the shared docs-only predicate")
+    _git(repo, "update-ref", "refs/remotes/origin/master", "HEAD")
+    for rel in paths:
+        target = repo / rel
+        target.parent.mkdir(parents=True, exist_ok=True)
+        target.write_text("content\n")
+    _git(repo, "add", "-A")
+    _git(repo, "commit", "-qm", "lane work")
+
+
+def test_lint_preflight_SKIPS_a_docs_only_delta(tiny_repo: Path, tmp_path, monkeypatch):
+    """A Markdown-only change cannot fail a Python linter, so it must not pay for one.
+
+    This is not a style preference: the commit that recorded the orphan inventory was
+    refused by `test_verify_ucrtbase_cohab.py` over a stale `build-i386`, for a delta of
+    one `.md` file. The pre-push hook has had this exemption since it was written; the
+    preflight did not. Safe because the CONDUCTOR still lints the merged batch — this
+    declines to lint a lane that has no source, it does not let source through unlinted.
+    """
+    monkeypatch.setattr("tests.qemu.cli.artifacts.ARTIFACT_ROOT", tmp_path / "art")
+    _with_origin_master(tiny_repo, "docs/engineering/note.md", "README.md")
+    _fake_cli(tiny_repo, rc=1, out="✗ everything")  # red, and must still not block
+    run = Run("land", "t")
+    land_mod._lint_preflight(tiny_repo, run, _Args())  # must not raise
+    assert any(s.name == "lint" and s.status == "skip" for s in run.stages)
+
+
+def test_lint_preflight_does_NOT_skip_when_one_source_file_rides_along(
+    tiny_repo: Path, tmp_path, monkeypatch
+):
+    """The dangerous direction. A delta that is *mostly* docs is not docs-only, and one
+    `.py` beside forty `.md` must still be linted — otherwise the exemption becomes a way
+    to smuggle source past the cheap check."""
+    monkeypatch.setattr("tests.qemu.cli.artifacts.ARTIFACT_ROOT", tmp_path / "art")
+    _with_origin_master(tiny_repo, "docs/a.md", "docs/b.md", "tools/thing.py")
+    _fake_cli(tiny_repo, rc=1, out="  ✗ ruff:tools/thing.py\n\nFAIL — 1/15 checks failed:")
+    with pytest.raises(land_mod.LandAbort):
+        land_mod._lint_preflight(tiny_repo, Run("land", "t"), _Args())
+
+
+def test_docs_only_predicate_fails_CLOSED_without_origin_master(tiny_repo: Path):
+    """No origin/master (a fresh clone, a renamed remote) must mean "lint normally", never
+    "skip". A predicate that cannot answer has to say False."""
+    assert land_mod._docs_only_vs_master(tiny_repo) is False
+
+
+def test_docs_only_predicate_ignores_what_master_did_meanwhile(tiny_repo: Path):
+    """Three-dot, so a lane merely BEHIND master is judged on what IT changed. Two-dot
+    would drag every landed source file into this lane's delta and never skip."""
+    _with_origin_master(tiny_repo, "docs/mine.md")
+    # the module-level `_git` helper returns None; capture the sha ourselves
+    lane = subprocess.run(
+        ["git", "rev-parse", "HEAD"], cwd=tiny_repo, capture_output=True, text=True, check=True
+    ).stdout.strip()
+    _git(tiny_repo, "checkout", "-q", "refs/remotes/origin/master")
+    (tiny_repo / "tools" / "other.py").parent.mkdir(parents=True, exist_ok=True)
+    (tiny_repo / "tools" / "other.py").write_text("x = 1\n")
+    _git(tiny_repo, "add", "-A")
+    _git(tiny_repo, "commit", "-qm", "someone else's source landed")
+    _git(tiny_repo, "update-ref", "refs/remotes/origin/master", "HEAD")
+    _git(tiny_repo, "checkout", "-q", lane)
+    assert land_mod._docs_only_vs_master(tiny_repo) is True

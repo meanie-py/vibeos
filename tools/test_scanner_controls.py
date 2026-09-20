@@ -1036,6 +1036,62 @@ _VENDOR_GOOD_YAML = (
 """
 )
 
+# scan_dropped_seh_pairs. The LPC shape: the C is cohab-flipped OUT of the build
+# (commented in the CMake source list) and a separate .rs took over under
+# #[no_mangle], so the two files are never in the same place and the inline
+# scanner above is structurally blind to it. BAD keeps the probe and loses the
+# handler; GOOD routes the same probe through the validate-first substrate. The
+# GOOD half also pins the filter that matters most: it is the presence of a
+# CATCH idiom that clears a pair, not the absence of a probe.
+_SEHPAIR_CMAKE = """
+list(APPEND SOURCE
+    #${REACTOS_SOURCE_DIR}/ntoskrnl/lpc/reply.c
+)
+"""
+_SEHPAIR_C = """
+NTSTATUS NtReplyPort(HANDLE PortHandle, PPORT_MESSAGE ReplyMessage)
+{
+    if (PreviousMode != KernelMode)
+    {
+        _SEH2_TRY
+        {
+            ProbeForRead(ReplyMessage, sizeof(*ReplyMessage), sizeof(ULONG));
+            Captured = *(volatile PORT_MESSAGE*)ReplyMessage;
+        }
+        _SEH2_EXCEPT(EXCEPTION_EXECUTE_HANDLER)
+        {
+            _SEH2_YIELD(return _SEH2_GetExceptionCode());
+        }
+        _SEH2_END;
+    }
+    return STATUS_SUCCESS;
+}
+"""
+_SEHPAIR_BAD_RS = """
+#[no_mangle]
+pub unsafe extern "system" fn NtReplyPort(ReplyMessage: PPORT_MESSAGE) -> NTSTATUS {
+    if previous_mode != 0i8 {
+        ProbeForRead(ReplyMessage as PVOID, core::mem::size_of::<PORT_MESSAGE>(), 4);
+        let captured = *(ReplyMessage as *const PORT_MESSAGE);
+    }
+    STATUS_SUCCESS
+}
+"""
+_SEHPAIR_GOOD_RS = """
+#[no_mangle]
+pub unsafe extern "system" fn NtReplyPort(ReplyMessage: PPORT_MESSAGE) -> NTSTATUS {
+    if previous_mode != 0i8 {
+        let captured = match ntkrnl_sys::probe::probe_read_generic::<PORT_MESSAGE>(
+            ReplyMessage as *const PORT_MESSAGE, 4, previous_mode,
+        ) {
+            Ok(v) => v,
+            Err(st) => return st,
+        };
+    }
+    STATUS_SUCCESS
+}
+"""
+
 # scan_dropped_probes. The NtSetValueKey shape (#79): the C probes Data inside one
 # _SEH2_TRY and copies it inside a second, both regions dropped, leaving a bare
 # `Status = STATUS_SUCCESS` where the bounds check belongs. The GOOD half proves the
@@ -1269,6 +1325,21 @@ CONTROLS: list[Control] = [
         bad={"cmsysini.rs": _DROPPEDPRINT_BAD},
         good={"cmsysini.rs": _DROPPEDPRINT_GOOD},
         pass_files=True,
+    ),
+    Control(
+        name="scan_dropped_seh_pairs",
+        script="tools/scan_dropped_seh_pairs.py",
+        argv=["--lint"],
+        bad={
+            "ntos.cmake": _SEHPAIR_CMAKE,
+            "ntoskrnl/lpc/reply.c": _SEHPAIR_C,
+            "sdk/lib/rust/lpc-rust/src/reply.rs": _SEHPAIR_BAD_RS,
+        },
+        good={
+            "ntos.cmake": _SEHPAIR_CMAKE,
+            "ntoskrnl/lpc/reply.c": _SEHPAIR_C,
+            "sdk/lib/rust/lpc-rust/src/reply.rs": _SEHPAIR_GOOD_RS,
+        },
     ),
     Control(
         name="scan_dropped_probes",

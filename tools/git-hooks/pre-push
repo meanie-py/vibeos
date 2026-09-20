@@ -13,7 +13,8 @@
 # Allowed without a matching stamp:
 #   * pushes not touching master (lane branches)
 #   * deletions
-#   * docs-only deltas vs the stamped tree (docs/**, *.md)
+#   * inert-content-only deltas vs the stamped tree (.md/.txt/images — tools/docs_only.py;
+#     ONE .py or .rs in the delta means the whole push gates, comment-only or not)
 #   * VIBEOS_SKIP_GATE_CHECK=1 git push …   (escape hatch — use for emergencies
 #     and say so in your report; the point is that skipping is a CHOICE, loud
 #     and attributable, never a default)
@@ -109,6 +110,23 @@ if not valid_trees:
     fail("no fresh green full-gate stamp found — run ./vibeos-cli gate")
 
 
+# The inert-suffix predicate is SHARED with land.py's lint preflight (tools/docs_only.py),
+# so the two exemptions cannot drift apart. It replaced "under docs/ OR ends in .md": that
+# judged the DIRECTORY, and this tree has seven files under docs/ that are not documents,
+# three of them .rs. Nothing reads them today, which is a fact about this afternoon and not
+# about the rule.
+#
+# FAIL CLOSED if the import fails. A guard that cannot evaluate its own exemption must
+# demand the stamp, never grant the pass -- this hook is the last thing between an ungated
+# tree and master.
+try:
+    sys.path.insert(0, git("rev-parse", "--show-toplevel") + "/tools")
+    from docs_only import is_inert
+except Exception:  # noqa: BLE001 -- any failure here means "no exemption", by design
+    def is_inert(_path):
+        return False
+
+
 def nondocs_delta(base_tree, tree):
     """Non-docs paths that differ between base_tree and tree ([] = docs-only).
     None when base_tree can't be resolved."""
@@ -117,7 +135,7 @@ def nondocs_delta(base_tree, tree):
     diff = git("diff", "--name-only", base_tree, tree)
     if not diff:
         return []
-    return [p for p in diff.splitlines() if not (p.startswith("docs/") or p.endswith(".md"))]
+    return [p for p in diff.splitlines() if not is_inert(p)]
 
 
 for sha, remote_sha in updates:

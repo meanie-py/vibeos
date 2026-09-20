@@ -375,12 +375,24 @@ pub mod ntddraw_mocomp;
 // drvdbg.rs and bitblt_new.rs are the last 2 of 39 gdi/eng leaves; both
 // translated to Rust (Phase 2a 2026-05-28) but parked here, not enabled.
 //
-// **drvdbg.rs** — DbgDrv* pfn-dispatch wrappers (78 fns). drvdbg.c was an
-// orphan: not in any cmake SOURCE list, AND its `DbgLookupDHPDEV` helper is
-// only forward-declared, never defined anywhere in the tree. Translating it
-// gives a Rust skeleton with the same "incomplete by design" shape — enabling
-// would require both (a) defining DbgLookupDHPDEV and (b) wiring drvdbg into
-// the driver dispatch path. Match the C status: parked.
+// **drvdbg.rs** — DbgDrv* pfn-dispatch wrappers (78 fns, 45 exported).
+// drvdbg.c is in no cmake SOURCE list.
+//
+// CORRECTION 2026-09-20, from an orphan audit: this used to say enabling
+// needs "(a) defining DbgLookupDHPDEV and (b) wiring drvdbg into the driver
+// dispatch path". **(a) is false.** `DbgLookupDHPDEV` IS defined, with real
+// logic, at pdevobj.rs:182 — crate-private rather than `#[no_mangle]`, and
+// drvdbg.rs already calls it at nine sites. The C is where it is only
+// forward-declared (drvdbg.c:14, defined nowhere in win32ss), so the Rust
+// body has NO C original and was synthesised in translation; it walks
+// gppdevList under ghsemPDEV, which is plausible and unverified against any
+// oracle. Worth knowing before anyone trusts it.
+//
+// The real reason to stay parked is (b), and it is stronger than "not wired":
+// NOTHING in the tree, C or Rust, ever installs `apfnDbgDrvFunctions` as a
+// driver's DDI table, so there is no dispatch path to wire INTO. These 45
+// exports are unreachable rather than missing — legacy checked-build DDI
+// validation scaffolding that upstream never wired either. Match it: parked.
 //
 // **bitblt_new.rs** — alternate EngBitBlt/EngCopyBits implementation for the
 // USE_DIBLIB=TRUE build path (bitblt_new.c only enters SOURCE when USE_DIBLIB

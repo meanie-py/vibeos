@@ -210,10 +210,29 @@ def test_every_modelled_target_has_a_real_object_directory():
     builds = [b for b in builds if (b / _BUILD_STAMP).is_file()]
     if not builds:
         pytest.skip("no finished build dir in this worktree")
-    for build in builds:
-        for target, obj_dir in vuc.OURS_ON_LINK_LINE.items():
-            d = build / obj_dir
-            assert d.is_dir(), f"{build.name}: {target} object dir does not exist at {d}"
+    # Report EVERY missing pair, not the first. A bare `assert` inside the nested loop
+    # fails on one (arch, target) at a time, so a model change that predates all three
+    # build dirs is discovered three times: research rebuilt i386, hit amd64, rebuilt
+    # that, hit arm64 -- three warm rebuilds and three queue round trips for one cause.
+    # `wine` entering OURS_ON_LINK_LINE in c474d932eb7 did exactly that.
+    missing = [
+        (build.name, target, build / obj_dir)
+        for build in builds
+        for target, obj_dir in vuc.OURS_ON_LINK_LINE.items()
+        if not (build / obj_dir).is_dir()
+    ]
+    if missing:
+        arches = sorted({name.removeprefix("build-") for name, _, _ in missing})
+        raise AssertionError(
+            "modelled target(s) have no object directory:\n  "
+            + "\n  ".join(f"{name}: {target} -> {path}" for name, target, path in missing)
+            + "\n\nA COMPLETION STAMP PROVES A BUILD FINISHED, NOT THAT IT BUILT "
+            "EVERYTHING: a build dir predating a new entry in OURS_ON_LINK_LINE is stamped "
+            "and still lacks it. If this names a target that was recently added to the "
+            "model, the tree is stale rather than the model wrong.\n"
+            + "fix: "
+            + " && ".join(f"./vibeos-cli build --arch {a}" for a in arches)
+        )
 
 
 # ── the REACHABILITY check ──────────────────────────────────────────────────────────────
