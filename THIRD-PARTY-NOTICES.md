@@ -4,7 +4,7 @@ This product includes third-party software. **This file is GENERATED** from `ven
 
 24 third-party components:
 
-- [ACPICA](#acpica) — 0x20221020 — BSD-3-Clause OR GPL-2.0
+- [ACPICA](#acpica) — 0x20260408 — BSD-3-Clause OR GPL-2.0
 - [adns](#adns) — 1.0 — GPL-2.0-or-later
 - [AMD LibM for Windows](#amd-libm-for-windows) — git commit 6121d02 — MIT
 - [cardlib](#cardlib) — unknown — Public Domain (relayed author permission) — see review
@@ -12,13 +12,13 @@ This product includes third-party software. **This file is GENERATED** from `ven
 - [FDLIBM (Sun Microsystems freely-distributable libm)](#fdlibm-sun-microsystems-freely-distributable-libm) — 1.8 — FDLIBM (Sun 1993 permissive; use/copy/modify/distribute, notice preserved)
 - [FEX-Emu](#fex-emu) — FEX-2607 (1cc4b93e7a71c883ec021b71359f136394dc1f3c, snapshot 2026-07-08) — MIT
 - [FreeType](#freetype) — 2.10.0 — GPL-2.0-only
-- [libjpeg](#libjpeg) — 9d — IJG
+- [libjpeg](#libjpeg) — 9f — IJG
 - [libmpg123](#libmpg123) — 1.33.7 — LGPL-2.1
 - [libpng](#libpng) — 1.6.58 — libpng-2.0
 - [libsamplerate](#libsamplerate) — 0.2.2 — BSD-2-Clause
 - [libtiff](#libtiff) — 4.7.0 — libtiff (BSD-like)
 - [libtirpc](#libtirpc) — 0.2.1 — BSD-3-Clause
-- [libxml2](#libxml2) — 2.12.8 — MIT
+- [libxml2](#libxml2) — 2.13.9 — MIT
 - [libxslt](#libxslt) — 1.1.42 — MIT
 - [Mbed TLS](#mbed-tls) — 2.16.11 — Apache-2.0 OR GPL-2.0-or-later
 - [Microsoft compiler-tests (EH/SEH)](#microsoft-compiler-tests-ehseh) — unknown — MIT
@@ -33,7 +33,7 @@ This product includes third-party software. **This file is GENERATED** from `ven
 ## ACPICA
 
 - Upstream: https://github.com/acpica/acpica
-- Version: 0x20221020
+- Version: 0x20260408
 - In this tree: `drivers/bus/acpi/acpica`
 - Licence: BSD-3-Clause OR GPL-2.0
 - Modified by us: yes, see `vendor-patches/acpica.patch`
@@ -45,7 +45,7 @@ Name: acpi.h - Master public include file used to interface to ACPICA
 
 
 
-Copyright (C) 2000 - 2022, Intel Corp.
+Copyright (C) 2000 - 2026, Intel Corp.
 All rights reserved.
 
 Redistribution and use in source and binary forms, with or without
@@ -87,6 +87,8 @@ POSSIBILITY OF SUCH DAMAGES.
 - Version: 1.0
 - In this tree: `sdk/lib/3rdparty/adns`
 - Licence: GPL-2.0-or-later
+- Also contains: LGPL-2.0-or-later — src/adns.h and adns_win32/adns_win32.h, and DELIBERATELY so — this is upstream's own carve-out, not drift. Both headers say the public header alone ("but only the public header file adns.h and not any other part of adns") may also be taken under the GNU Library GPL v2-or-later, so that a program can include it without the whole work becoming GPL. The library itself stays GPL-2.0-or-later. Found by the prose half of `--licences` on 2026-09-20; neither file carries an SPDX tag.
+
 - Modified by us: yes, see `vendor-patches/adns.patch`
 - Grant reproduced from: `sdk/lib/3rdparty/adns/COPYING`
 
@@ -556,6 +558,8 @@ Modified by Naohiko Shimizu/Tokai University, Japan 1997/08/26,
 - Licence: MIT
 - Also contains: Apache-2.0 WITH LLVM-exception — External/code-format-helper/code-format-helper.py and External/unordered_dense/test/third-party/FuzzedDataProvider.h, which is LLVM's and carries the LLVM-exception — a WITH clause the first pass dropped. FEX is a vendored tree that itself vendors: its External/ is a second registry we do not maintain, so those licences surface here rather than upstream.
 
+- Also contains: BSL-1.0 — External/range-v3 — 586 files under the Boost Software License 1.0, the largest single unrecorded licence this registry has found. It is ericniebler's range-v3, which FEX vendors as a dependency, so this is a vendored tree inside a vendored tree; its own grant is at External/range-v3/LICENSE.txt. 0% ours, and permissive, but 586 files stating a licence the entry did not name is exactly the gap the prose half of `--licences` was added to close (2026-09-20).
+
 - Also contains: GPL-2.0-only — External/xxhash/tests/{sanity_test.c,sanity_test_vectors_generator.c} — upstream xxhash dual-licences its library BSD and its tests GPL. Not built by us; recorded because the files are in the tree.
 
 - Also contains: LGPL-2.1-or-later — Wine-derived headers FEX carries for its Windows build: Source/Windows/include/{winternl.h,winnt.h} and Source/Windows/include/wine/{unixlib.h,debug.h}.
@@ -949,7 +953,7 @@ the said software).
 ## libjpeg
 
 - Upstream: https://ijg.org/
-- Version: 9d
+- Version: 9f
 - In this tree: `dll/3rdparty/libjpeg`, `sdk/include/reactos/libs/libjpeg`
 - Licence: IJG
 - Modified by us: yes, see `vendor-patches/libjpeg.patch`
@@ -959,7 +963,7 @@ the said software).
 The Independent JPEG Group's JPEG software
 ==========================================
 
-README for release 9d of 12-Jan-2020
+README for release 9f of 14-Jan-2024
 ====================================
 
 This distribution contains the ninth public release of the Independent JPEG
@@ -996,6 +1000,7 @@ User documentation:
                     rdjpgcom, and wrjpgcom.
   *.1               Unix-style man pages for programs (same info as usage.txt).
   wizard.txt        Advanced usage instructions for JPEG wizards only.
+  cdaltui.txt       Description of alternate user interface for cjpeg/djpeg.
   change.log        Version-to-version change highlights.
 Programmer and internal documentation:
   libjpeg.txt       How to use the JPEG library in your own programs.
@@ -1073,7 +1078,7 @@ with respect to this software, its quality, accuracy, merchantability, or
 fitness for a particular purpose.  This software is provided "AS IS", and you,
 its user, assume the entire risk as to its quality and accuracy.
 
-This software is copyright (C) 1991-2020, Thomas G. Lane, Guido Vollbeding.
+This software is copyright (C) 1991-2024, Thomas G. Lane, Guido Vollbeding.
 All Rights Reserved except as specified below.
 
 Permission is hereby granted to use, copy, modify, and distribute this
@@ -1123,7 +1128,7 @@ The best short technical introduction to the JPEG compression algorithm is
 (Adjacent articles in that issue discuss MPEG motion picture compression,
 applications of JPEG, and related topics.)  If you don't have the CACM issue
 handy, a PDF file containing a revised version of Wallace's article is
-available at http://www.ijg.org/files/Wallace.JPEG.pdf.  The file (actually
+available at https://www.ijg.org/files/Wallace.JPEG.pdf.  The file (actually
 a preprint for an article that appeared in IEEE Trans. Consumer Electronics)
 omits the sample images that appeared in CACM, but it includes corrections
 and some added material.  Note: the Wallace article is copyright ACM and IEEE,
@@ -1167,17 +1172,16 @@ document is Revision 3.  And a contributed document ISO/IEC JTC1/SC29/WG1 N
 5799 with title "Evolution of JPEG", June/July 2011, Berlin, Germany.
 IJG JPEG 9 introduces a reversible color transform for improved lossless
 compression which is described in a contributed document ISO/IEC JTC1/SC29/
-WG1 N 6080 with title "JPEG 9 Lossless Coding", June/July 2012, Paris,
-France.
+WG1 N 6080 with title "JPEG 9 Lossless Coding", June/July 2012, Paris, France.
 
 The JPEG standard does not specify all details of an interchangeable file
 format.  For the omitted details we follow the "JFIF" conventions, version 2.
 JFIF version 1 has been adopted as Recommendation ITU-T T.871 (05/2011) :
 Information technology - Digital compression and coding of continuous-tone
 still images: JPEG File Interchange Format (JFIF).  It is available as a
-free download in PDF file format from http://www.itu.int/rec/T-REC-T.871.
+free download in PDF file format from https://www.itu.int/rec/T-REC-T.871.
 A PDF file of the older JFIF document is available at
-http://www.w3.org/Graphics/JPEG/jfif3.pdf.
+https://www.w3.org/Graphics/JPEG/jfif3.pdf.
 
 The TIFF 6.0 file format specification can be obtained by FTP from
 ftp://ftp.sgi.com/graphics/tiff/TIFF6.ps.gz.  The JPEG incorporation scheme
@@ -1185,7 +1189,7 @@ found in the TIFF 6.0 spec of 3-June-92 has a number of serious problems.
 IJG does not recommend use of the TIFF 6.0 design (TIFF Compression tag 6).
 Instead, we recommend the JPEG design proposed by TIFF Technical Note #2
 (Compression tag 7).  Copies of this Note can be obtained from
-http://www.ijg.org/files/.  It is expected that the next revision
+https://www.ijg.org/files/.  It is expected that the next revision
 of the TIFF spec will replace the 6.0 JPEG design with the Note's design.
 Although IJG's own code does not support TIFF/JPEG, the free libtiff library
 uses our library to implement TIFF/JPEG per the Note.
@@ -1196,9 +1200,11 @@ ARCHIVE LOCATIONS
 
 The "official" archive site for this software is www.ijg.org.
 The most recent released version can always be found there in
-directory "files".  This particular version will be archived as
-http://www.ijg.org/files/jpegsrc.v9d.tar.gz, and in Windows-compatible
-"zip" archive format as http://www.ijg.org/files/jpegsr9d.zip.
+directory "files".  This particular version will be archived
+in Windows-compatible "zip" archive format as
+https://www.ijg.org/files/jpegsr9f.zip, and
+in Unix-compatible "tar.gz" archive format as
+https://www.ijg.org/files/jpegsrc.v9f.tar.gz.
 
 The JPEG FAQ (Frequently Asked Questions) article is a source of some
 general information about JPEG.
@@ -1244,11 +1250,12 @@ communication about JPEG configuration in Sigma Photo Pro software.
 
 Thank to Andrew Finkenstadt for hosting the ijg.org site.
 
-Thank to Thomas G. Lane for the original design and development of
-this singular software package.
+Thank to Thomas G. Lane for the original design and development
+of this singular software package.
 
-Thank to Lars Goehler, Andreas Heinecke, Sebastian Fuss, Yvonne Roebert,
-Andrej Werner, and Ulf-Dietrich Braumann for support and public relations.
+Thank to Lars Goehler, Andreas Heinecke, Sebastian Fuss,
+Yvonne Roebert, Andrej Werner, Ulf-Dietrich Braumann,
+and Nina Ssymank for support and public relations.
 
 
 FILE FORMAT WARS
@@ -1326,7 +1333,7 @@ to overcome the limitations of the original JPEG specification,
 and is the first true source reference JPEG codec.
 More features are being prepared for coming releases...
 
-Please send bug reports, offers of help, etc. to jpeg-info@jpegclub.org.
+Please send bug reports, offers of help, etc. to jpeg-info@ijg.org.
 ```
 
 ## libmpg123
@@ -2336,6 +2343,8 @@ TIFF Library.
 - Version: 0.2.1
 - In this tree: `dll/3rdparty/libtirpc`
 - Licence: BSD-3-Clause
+- Also contains: LGPL-2.1-or-later — THE WINDOWS PORT HALF OF THIS TREE IS COPYLEFT, and the entry said BSD-3-Clause flat until 2026-09-20. Sixteen files carry "Copyright (c) 2012 The Regents of the University of Michigan" and the LGPL-2.1-or-later notice: src/{auth_none,auth_sspi, auth_unix,authsspi_prot,clnt_generic,clnt_vc,rpc_prot,wintirpc,xdr_rec}.c and tirpc/{wintirpc.h,rpc/{auth,auth_gss,auth_sspi,clnt,rpc_msg,types}.h}. They are the ms-nfs41-client Windows/SSPI port this tree's review already describes as having no surviving upstream artifact — so now we know what licence that port is under. This is the most consequential finding the prose scan has made: a weak-copyleft obligation inside a tree recorded as permissive, in files that ARE built. The Sun/upstream libtirpc half remains BSD-3-Clause.
+
 - Modified by us: yes, see `vendor-patches/libtirpc.patch`
 - Grant reproduced from: `dll/3rdparty/libtirpc/COPYING`
 
@@ -2703,16 +2712,16 @@ Specification RFC2695:  Authentication Mechanisms for ONC RPC
 ## libxml2
 
 - Upstream: https://gitlab.gnome.org/GNOME/libxml2
-- Version: 2.12.8
+- Version: 2.13.9
 - In this tree: `sdk/lib/3rdparty/libxml2`
 - Licence: MIT
 - Modified by us: yes, see `vendor-patches/libxml2.patch`
-- Grant reproduced from: `sdk/lib/3rdparty/libxml2/COPYING`
+- Grant reproduced from: `sdk/lib/3rdparty/libxml2/Copyright`
 
 ```
-Except where otherwise noted in the source code (e.g. the files hash.c,
-list.c and the trio files, which are covered by a similar licence but
-with different Copyright notices) all the files are:
+Except where otherwise noted in the source code (e.g. the files dict.c and
+list.c, which are covered by a similar licence but with different Copyright
+notices) all the files are:
 
  Copyright (C) 1998-2012 Daniel Veillard.  All Rights Reserved.
 

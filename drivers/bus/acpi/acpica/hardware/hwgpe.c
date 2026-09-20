@@ -5,7 +5,7 @@
  *****************************************************************************/
 
 /*
- * Copyright (C) 2000 - 2022, Intel Corp.
+ * Copyright (C) 2000 - 2026, Intel Corp.
  * All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without
@@ -155,7 +155,7 @@ AcpiHwLowSetGpe (
 
     case ACPI_GPE_DISABLE:
 
-        ACPI_CLEAR_BIT (EnableMask, (UINT64)RegisterBit);
+        ACPI_CLEAR_BIT (EnableMask, RegisterBit);
         break;
 
     default:

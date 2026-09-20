@@ -5,7 +5,7 @@
  *****************************************************************************/
 
 /*
- * Copyright (C) 2000 - 2022, Intel Corp.
+ * Copyright (C) 2000 - 2026, Intel Corp.
  * All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without
@@ -172,6 +172,10 @@ AcpiExTracePoint (
     UINT8                   *Aml,
     char                    *Pathname);
 
+void
+AcpiExTraceArgs(
+    ACPI_OPERAND_OBJECT     **Params,
+    UINT32                  Count);
 
 /*
  * exfield - ACPI AML (p-code) execution - field manipulation
