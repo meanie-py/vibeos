@@ -45,8 +45,7 @@ WINE_DEFAULT_DEBUG_CHANNEL(schannel);
 
 #include <mbedtls/entropy.h>
 #include <mbedtls/ctr_drbg.h>
-#include <mbedtls/md_internal.h>
-#include <mbedtls/ssl_internal.h>
+#include <mbedtls/ssl_ciphersuites.h>
 
 #define ROS_SCHAN_IS_BLOCKING(read_len)          ((read_len & 0xFFF00000) == 0xCCC00000)
 #define ROS_SCHAN_IS_BLOCKING_MARSHALL(read_len) ((read_len & 0x000FFFFF) |  0xCCC00000)
@@ -322,7 +321,7 @@ static unsigned int schannel_get_mac_key_size(int ciphersuite_id)
     const mbedtls_ssl_ciphersuite_t *ssl_cipher_suite = mbedtls_ssl_ciphersuite_from_id(ciphersuite_id);
     const mbedtls_md_info_t                  *md_info = mbedtls_md_info_from_type(ssl_cipher_suite->mac);
 
-    int md_size = md_info->size * CHAR_BIT; /* return the size in bits, as the secur32:schannel winetest shows */
+    int md_size = mbedtls_md_get_size(md_info) * CHAR_BIT; /* return the size in bits, as the secur32:schannel winetest shows */
 
     TRACE("MBEDTLS schannel_get_mac_key_size: returning %i\n", md_size);
 
@@ -542,7 +541,17 @@ unsigned int schan_imp_get_session_cipher_block_size(schan_imp_session session)
 {
     MBEDTLS_SESSION *s = (MBEDTLS_SESSION *)session;
 
-    unsigned int cipher_block_size = mbedtls_cipher_get_block_size(&s->ssl.transform->cipher_ctx_enc);
+    /* Asked of the negotiated ciphersuite rather than of ssl.transform, which is an
+     * opaque type outside mbedtls/ssl_internal.h -- a header 3.x stops installing.
+     * Exactly equivalent: mbedtls_cipher_get_block_size(ctx) is defined as
+     * `ctx->cipher_info->block_size` (cipher.h), and the transform's cipher_ctx_enc
+     * carries the cipher_info of this very ciphersuite. Same shape as the key-size and
+     * mac-size helpers above, which already go through the ciphersuite. */
+    const mbedtls_ssl_ciphersuite_t *ciphersuite = mbedtls_ssl_ciphersuite_from_id(
+        mbedtls_ssl_get_ciphersuite_id(mbedtls_ssl_get_ciphersuite(&s->ssl)));
+    const mbedtls_cipher_info_t *cipher_info = mbedtls_cipher_info_from_type(ciphersuite->cipher);
+
+    unsigned int cipher_block_size = cipher_info ? cipher_info->block_size : 0;
 
     TRACE("MBEDTLS schan_imp_get_session_cipher_block_size %p returning %u.\n", session, cipher_block_size);
 

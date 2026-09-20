@@ -29,6 +29,7 @@
 @ cdecl mbedtls_ssl_setup(ptr ptr)
 @ cdecl mbedtls_cipher_info_from_type(long)
 @ cdecl mbedtls_md_info_from_type(long)
+@ cdecl mbedtls_md_get_size(ptr)
 @ cdecl mbedtls_pk_get_bitlen(ptr)
 @ cdecl mbedtls_ctr_drbg_seed(ptr ptr ptr str long)
 @ cdecl mbedtls_md_init(ptr)

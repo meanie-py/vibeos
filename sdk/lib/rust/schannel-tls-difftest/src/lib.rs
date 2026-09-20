@@ -81,26 +81,53 @@ fn a_full_tls_handshake_completes() {
     );
 }
 
+/// `CALG_*` from wincrypt.h, for the values this connection is pinned to.
+const CALG_AES_256: u32 = 0x6610;
+const CALG_SHA_384: u32 = 0x800d;
+const CALG_ECDH_EPHEM: u32 = 0xae06;
+
 #[test]
 fn the_negotiated_connection_is_reported_to_schannel() {
     let r = run();
     assert_eq!(r.conn_info_status, SEC_E_OK);
-    assert!(
-        r.conn_protocol == SP_PROT_TLS1_2_CLIENT || r.conn_protocol == SP_PROT_TLS1_2_SERVER,
-        "expected a TLS 1.2 SP_PROT_* bit, got {:#x}",
-        r.conn_protocol
+
+    // PINNED, not merely non-zero. Every one of these is computed by a different
+    // helper in schannel_mbedtls.c -- key size from the ciphersuite's cipher, MAC size
+    // from its md, exchange size from the peer certificate's public key -- and those
+    // helpers are precisely what the mbedTLS 3.x port has to rewrite, because the
+    // fields they read go behind MBEDTLS_PRIVATE. "Non-zero" would sail through a
+    // rewrite that returned the wrong number.
+    //
+    // If this fires after a deliberate change, do not just update the numbers: work
+    // out which helper moved and why. A mbedTLS default ciphersuite change is a fine
+    // reason; an arithmetic slip in a rewritten accessor looks identical here.
+    let got = (
+        r.conn_protocol,
+        r.conn_cipher,
+        r.conn_cipher_strength,
+        r.conn_hash,
+        r.conn_hash_strength,
+        r.conn_exch,
+        r.conn_exch_strength,
+        r.block_size,
+        r.max_message_size,
     );
-    for (name, v) in [
-        ("aiCipher", r.conn_cipher),
-        ("dwCipherStrength", r.conn_cipher_strength),
-        ("aiHash", r.conn_hash),
-        ("aiExch", r.conn_exch),
-        ("dwExchStrength", r.conn_exch_strength),
-    ] {
-        assert_ne!(v, 0, "SecPkgContext_ConnectionInfo.{name} came back zero");
-    }
-    assert_ne!(r.block_size, 0, "cipher block size came back zero");
-    assert_ne!(r.max_message_size, 0, "max message size came back zero");
+    let want = (
+        SP_PROT_TLS1_2_CLIENT,
+        CALG_AES_256,
+        256,
+        CALG_SHA_384,
+        384,
+        CALG_ECDH_EPHEM,
+        256,
+        16,     // AES block size
+        16384,  // default max fragment length
+    );
+    assert_eq!(
+        got, want,
+        "negotiated connection parameters moved\n           (protocol, cipher, cipher_strength, hash, hash_strength, exch, exch_strength, \
+         block_size, max_message_size)\n           baseline is mbedTLS 2.16.11 negotiating ECDHE + AES-256-GCM + SHA-384"
+    );
 }
 
 #[test]
@@ -141,4 +168,10 @@ fn the_advertised_protocol_set_is_recorded() {
         r.enabled_protocols
     );
     eprintln!("schan_imp_enabled_protocols() = {:#x}", r.enabled_protocols);
+    eprintln!(
+        "negotiated: proto={:#x} cipher={:#x}/{} hash={:#x}/{} exch={:#x}/{} block={} maxmsg={}",
+        r.conn_protocol, r.conn_cipher, r.conn_cipher_strength, r.conn_hash,
+        r.conn_hash_strength, r.conn_exch, r.conn_exch_strength, r.block_size,
+        r.max_message_size
+    );
 }
