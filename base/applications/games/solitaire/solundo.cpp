@@ -52,8 +52,8 @@ void ClearUndo(void)
 
 void Undo(void)
 {
-    CardRegion *source = NULL;
-    CardRegion *destination = NULL;
+    CARDREGION *source = NULL;
+    CARDREGION *destination = NULL;
 
     if ((source_id < 1)                                  ||
         (source_id > (ROW_ID + NUM_ROW_STACKS - 1))      ||
@@ -93,21 +93,22 @@ void Undo(void)
     if (destination == pPile && source == pDeck)
     {
         // Put back the cards on the deck in reversed order.
-        CardStack tmp = activepile.Pop(number_of_cards);
-        tmp.Reverse();
-        source->Push(tmp);
+        CARDSTACK tmp;
+        CardStack_PopN(&activepile, number_of_cards, &tmp);
+        CardStack_Reverse(&tmp);
+        CardRegion_PushStack(source, &tmp);
         // Restore the pile to be the top cards in the active pile.
-        destination->Clear();
+        CardRegion_Clear(destination);
         if (prev_visible_pile_cards <= 1)
         {
-            destination->SetOffsets(0,0);
-            destination->SetCardStack(activepile);
+            CardRegion_SetOffsets(destination, 0,0);
+            CardRegion_SetCardStack(destination, &activepile);
         }
         else
         {
-            tmp = activepile.Top(prev_visible_pile_cards);
-            destination->SetOffsets(CS_DEFXOFF, 1);
-            destination->Push(tmp);
+            CardStack_TopN(&activepile, prev_visible_pile_cards, &tmp);
+            CardRegion_SetOffsets(destination, CS_DEFXOFF, 1);
+            CardRegion_PushStack(destination, &tmp);
         }
         VisiblePileCards = prev_visible_pile_cards;
     }
@@ -116,19 +117,20 @@ void Undo(void)
     else if (source == pPile && destination == pDeck)
     {
         // Put back all the cards from the deck to the active pile in reversed order.
-        destination->Reverse();
-        activepile.Push(destination->GetCardStack());
-        destination->Clear();
+        CardRegion_Reverse(destination);
+        CardStack_PushStack(&activepile, CardRegion_GetCardStack(destination));
+        CardRegion_Clear(destination);
         if (prev_visible_pile_cards <= 1)
         {
-            source->SetOffsets(0,0);
-            source->SetCardStack(activepile);
+            CardRegion_SetOffsets(source, 0,0);
+            CardRegion_SetCardStack(source, &activepile);
         }
         else
         {
-            CardStack tmp = activepile.Top(prev_visible_pile_cards);
-            source->SetOffsets(CS_DEFXOFF, 1);
-            source->Push(tmp);
+            CARDSTACK tmp;
+            CardStack_TopN(&activepile, prev_visible_pile_cards, &tmp);
+            CardRegion_SetOffsets(source, CS_DEFXOFF, 1);
+            CardRegion_PushStack(source, &tmp);
         }
         VisiblePileCards = prev_visible_pile_cards;
     }
@@ -136,18 +138,19 @@ void Undo(void)
     // If the player moved one card from the pile.
     else if (source == pPile)
     {
-        CardStack tmp = destination->Pop(1);
-        activepile.Push(tmp);
+        CARDSTACK tmp;
+        CardRegion_PopN(destination, 1, &tmp);
+        CardStack_PushStack(&activepile, &tmp);
         if (prev_visible_pile_cards <= 1)
         {
-            source->Push(tmp);
+            CardRegion_PushStack(source, &tmp);
         }
         else
         {
-            source->Clear();
-            tmp = activepile.Top(prev_visible_pile_cards);
-            source->Push(tmp);
-            source->SetOffsets(CS_DEFXOFF, 1);
+            CardRegion_Clear(source);
+            CardStack_TopN(&activepile, prev_visible_pile_cards, &tmp);
+            CardRegion_PushStack(source, &tmp);
+            CardRegion_SetOffsets(source, CS_DEFXOFF, 1);
         }
         VisiblePileCards = prev_visible_pile_cards;
     }
@@ -155,7 +158,7 @@ void Undo(void)
     // If the player moved cards between row stacks / suit stacks.
     else
     {
-        destination->MoveCard(source, number_of_cards, false);
+        CardRegion_MoveCard(destination, source, number_of_cards, false);
     }
 
     lScore = prev_score;
@@ -166,6 +169,6 @@ void Undo(void)
 
     UpdateStatusBar();
 
-    SolWnd.Redraw();
+    CardWindow_Redraw(SolWnd);
     ClearUndo();
 }

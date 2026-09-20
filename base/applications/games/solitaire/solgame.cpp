@@ -9,7 +9,7 @@
 extern TCHAR MsgWin[128];
 extern TCHAR MsgDeal[128];
 
-CardStack activepile;
+CARDSTACK activepile;
 int VisiblePileCards;
 int LastId;
 bool fGameStarted = false;
@@ -47,40 +47,40 @@ void NewGame(void)
     dwWasteCount = 0;
     LastId = 0;
 
-    SolWnd.EmptyStacks();
+    CardWindow_EmptyStacks(SolWnd);
 
     //create a new card-stack
-    CardStack deck;
-    deck.NewDeck();
-    deck.Shuffle();
-    activepile.Clear();
+    CARDSTACK deck;
+    CardStack_NewDeck(&deck);
+    CardStack_Shuffle(&deck);
+    CardStack_Clear(&activepile);
     VisiblePileCards = 0;
 
     //deal to each row stack..
     for(i = 0; i < NUM_ROW_STACKS; i++)
     {
-        CardStack temp;
-        temp.Clear();
+        CARDSTACK temp;
+        CardStack_Clear(&temp);
 
-        pRowStack[i]->SetFaceDirection(CS_FACE_DOWNUP, i);
+        CardRegion_SetFaceDirection(pRowStack[i], CS_FACE_DOWNUP, i);
 
         for(j = 0; j <= i; j++)
         {
-            temp.Push(deck.Pop());
+            CardStack_PushCard(&temp, CardStack_PopCard(&deck));
         }
 
-        pRowStack[i]->SetCardStack(temp);
+        CardRegion_SetCardStack(pRowStack[i], &temp);
     }
 
     //put the other cards onto the deck
-    pDeck->SetCardStack(deck);
-    pDeck->Update();
+    CardRegion_SetCardStack(pDeck, &deck);
+    CardRegion_Update(pDeck);
 
     // For the 1-card-mode, all cards need to be completely overlapped
     if(!(dwOptions & OPTION_THREE_CARDS))
-        pPile->SetOffsets(0, 0);
+        CardRegion_SetOffsets(pPile, 0, 0);
 
-    SolWnd.Redraw();
+    CardWindow_Redraw(SolWnd);
 
     fGameStarted = false;
 
@@ -101,7 +101,7 @@ void NewGame(void)
 //
 //    Can only drag face-up cards
 //
-bool CARDLIBPROC RowStackDragProc(CardRegion &stackobj, int iNumDragCards)
+BOOL CARDLIBPROC RowStackDragProc(CARDREGION *stackobj, int iNumDragCards)
 {
     TRACE("ENTER RowStackDragProc()\n");
     int numfacedown;
@@ -109,9 +109,9 @@ bool CARDLIBPROC RowStackDragProc(CardRegion &stackobj, int iNumDragCards)
 
     SetPlayTimer();
 
-    stackobj.GetFaceDirection(&numfacedown);
+    CardRegion_GetFaceDirection(stackobj, &numfacedown);
 
-    numcards = stackobj.NumCards();
+    numcards = CardRegion_NumCards(stackobj);
 
     TRACE("EXIT RowStackDragProc()\n");
     if(iNumDragCards <= numcards-numfacedown)
@@ -125,17 +125,17 @@ bool CARDLIBPROC RowStackDragProc(CardRegion &stackobj, int iNumDragCards)
 //    Row a row-stack, we can only drop cards
 //    that are lower / different colour
 //
-bool CARDLIBPROC RowStackDropProc(CardRegion &stackobj, CardStack &dragcards)
+BOOL CARDLIBPROC RowStackDropProc(CARDREGION *stackobj, CARDSTACK *dragcards)
 {
     TRACE("ENTER RowStackDropProc()\n");
-    Card dragcard = dragcards[dragcards.NumCards() - 1];
+    CARD dragcard = CardStack_Get(dragcards, CardStack_NumCards(dragcards) - 1);
 
     SetPlayTimer();
 
     //if we are empty, can only drop a stack with a King at bottom
-    if(stackobj.NumCards() == 0)
+    if(CardRegion_NumCards(stackobj) == 0)
     {
-        if(dragcard.LoVal() != 13)
+        if(Card_LoVal(dragcard) != 13)
         {
             TRACE("EXIT RowStackDropProc(false)\n");
             return false;
@@ -143,18 +143,18 @@ bool CARDLIBPROC RowStackDropProc(CardRegion &stackobj, CardStack &dragcards)
     }
     else
     {
-        const CardStack &mystack = stackobj.GetCardStack();
+        const CARDSTACK *mystack = CardRegion_GetCardStack(stackobj);
 
         //can only drop if card is 1 less
-        if(mystack[0].LoVal() != dragcard.LoVal() + 1)
+        if(Card_LoVal(CardStack_Get(mystack, 0)) != Card_LoVal(dragcard) + 1)
         {
             TRACE("EXIT RowStackDropProc(false)\n");
             return false;
         }
 
         //can only drop if card is different colour
-        if( (mystack[0].IsBlack() && !dragcard.IsRed()) ||
-           (!mystack[0].IsBlack() &&  dragcard.IsRed()) )
+        if( (Card_IsBlack(CardStack_Get(mystack, 0)) && !Card_IsRed(dragcard)) ||
+           (!Card_IsBlack(CardStack_Get(mystack, 0)) &&  Card_IsRed(dragcard)) )
         {
             TRACE("EXIT RowStackDropProc(false)\n");
             return false;
@@ -163,7 +163,7 @@ bool CARDLIBPROC RowStackDropProc(CardRegion &stackobj, CardStack &dragcards)
 
     fGameStarted = true;
 
-    SetUndo(LastId, stackobj.Id(), dragcards.NumCards(), lScore, VisiblePileCards);
+    SetUndo(LastId, CardRegion_Id(stackobj), CardStack_NumCards(dragcards), lScore, VisiblePileCards);
 
     if (LastId == PILE_ID)
     {
@@ -194,24 +194,24 @@ bool CARDLIBPROC RowStackDropProc(CardRegion &stackobj, CardStack &dragcards)
 //    Can only drop a card onto a suit-stack if the
 //  card is 1 higher, and is the same suit
 //
-bool CanDrop(CardRegion &stackobj, Card card)
+bool CanDrop(CARDREGION *stackobj, CARD card)
 {
     TRACE("ENTER CanDrop()\n");
     int topval;
 
-    const CardStack &cardstack = stackobj.GetCardStack();
+    const CARDSTACK *cardstack = CardRegion_GetCardStack(stackobj);
 
     SetPlayTimer();
 
-    if(cardstack.NumCards() > 0)
+    if(CardStack_NumCards(cardstack) > 0)
     {
-        if(card.Suit() != cardstack[0].Suit())
+        if(Card_Suit(card) != Card_Suit(CardStack_Get(cardstack, 0)))
         {
             TRACE("EXIT CanDrop()\n");
             return false;
         }
 
-        topval = cardstack[0].LoVal();
+        topval = Card_LoVal(CardStack_Get(cardstack, 0));
     }
     else
     {
@@ -219,7 +219,7 @@ bool CanDrop(CardRegion &stackobj, Card card)
     }
 
     //make sure 1 higher
-    if(card.LoVal() != (topval + 1))
+    if(Card_LoVal(card) != (topval + 1))
     {
         TRACE("EXIT CanDrop()\n");
         return false;
@@ -232,25 +232,25 @@ bool CanDrop(CardRegion &stackobj, Card card)
 //
 //    Can only drop a card onto suit stack if it is same suit, and 1 higher
 //
-bool CARDLIBPROC SuitStackDropProc(CardRegion &stackobj, CardStack &dragcards)
+BOOL CARDLIBPROC SuitStackDropProc(CARDREGION *stackobj, CARDSTACK *dragcards)
 {
     TRACE("ENTER SuitStackDropProc()\n");
 
     SetPlayTimer();
 
     //only drop 1 card at a time
-    if (!bAutoroute && dragcards.NumCards() != 1)
+    if (!bAutoroute && CardStack_NumCards(dragcards) != 1)
     {
         TRACE("EXIT SuitStackDropProc()\n");
         return false;
     }
 
-    bool b = CanDrop(stackobj, dragcards[0]);
+    bool b = CanDrop(stackobj, CardStack_Get(dragcards, 0));
     TRACE("EXIT SuitStackDropProc()\n");
 
     if (b)
     {
-        SetUndo(LastId, stackobj.Id(), 1, lScore, VisiblePileCards);
+        SetUndo(LastId, CardRegion_Id(stackobj), 1, lScore, VisiblePileCards);
 
         if ((LastId == PILE_ID) || (LastId >= ROW_ID))
         {
@@ -273,13 +273,13 @@ bool CARDLIBPROC SuitStackDropProc(CardRegion &stackobj, CardStack &dragcards)
 //
 //    Single-click on one of the suit-stacks
 //
-void CARDLIBPROC SuitStackClickProc(CardRegion &stackobj, int iNumClicked)
+void CARDLIBPROC SuitStackClickProc(CARDREGION *stackobj, int iNumClicked)
 {
     TRACE("ENTER SuitStackClickProc()\n");
 
     fGameStarted = true;
 
-    LastId = stackobj.Id();
+    LastId = CardRegion_Id(stackobj);
 
     TRACE("EXIT SuitStackClickProc()\n");
 }
@@ -288,19 +288,19 @@ void CARDLIBPROC SuitStackClickProc(CardRegion &stackobj, int iNumClicked)
 //    Single-click on one of the row-stacks
 //    Turn the top-card over if they are all face-down
 //
-void CARDLIBPROC RowStackClickProc(CardRegion &stackobj, int iNumClicked)
+void CARDLIBPROC RowStackClickProc(CARDREGION *stackobj, int iNumClicked)
 {
     TRACE("ENTER RowStackClickProc()\n");
     int numfacedown;
 
-    stackobj.GetFaceDirection(&numfacedown);
+    CardRegion_GetFaceDirection(stackobj, &numfacedown);
 
     //if all face-down, then make top card face-up
-    if(stackobj.NumCards() == numfacedown)
+    if(CardRegion_NumCards(stackobj) == numfacedown)
     {
         if(numfacedown > 0) numfacedown--;
-        stackobj.SetFaceDirection(CS_FACE_DOWNUP, numfacedown);
-        stackobj.Redraw();
+        CardRegion_SetFaceDirection(stackobj, CS_FACE_DOWNUP, numfacedown);
+        CardRegion_Redraw(stackobj);
 
         if (GetScoreMode() == SCORE_STD)
         {
@@ -310,7 +310,7 @@ void CARDLIBPROC RowStackClickProc(CardRegion &stackobj, int iNumClicked)
         ClearUndo();
     }
 
-    LastId = stackobj.Id();
+    LastId = CardRegion_Id(stackobj);
 
     fGameStarted = true;
 
@@ -320,13 +320,13 @@ void CARDLIBPROC RowStackClickProc(CardRegion &stackobj, int iNumClicked)
 //
 //    Find the suit-stack that can accept the specified card
 //
-CardRegion *FindSuitStackFromCard(Card card)
+CARDREGION *FindSuitStackFromCard(CARD card)
 {
     TRACE("ENTER FindSuitStackFromCard()\n");
 
     for(int i = 0; i < 4; i++)
     {
-        if(CanDrop(*pSuitStack[i], card))
+        if(CanDrop(pSuitStack[i], card))
         {
             TRACE("EXIT FindSuitStackFromCard()\n");
             return pSuitStack[i];
@@ -343,7 +343,7 @@ CardRegion *FindSuitStackFromCard(Card card)
 //  check all four stacks (not just this one) to see if
 //  the game has finished.
 //
-void CARDLIBPROC SuitStackAddProc(CardRegion &stackobj, const CardStack &added)
+void CARDLIBPROC SuitStackAddProc(CARDREGION *stackobj, const CARDSTACK *added)
 {
     TRACE("ENTER SuitStackAddProc()\n");
     bool fGameOver = true;
@@ -352,7 +352,7 @@ void CARDLIBPROC SuitStackAddProc(CardRegion &stackobj, const CardStack &added)
 
     for(int i = 0; i < 4; i++)
     {
-        if(pSuitStack[i]->NumCards() != 13)
+        if(CardRegion_NumCards(pSuitStack[i]) != 13)
         {
             fGameOver = false;
 
@@ -373,20 +373,20 @@ void CARDLIBPROC SuitStackAddProc(CardRegion &stackobj, const CardStack &added)
         UpdateStatusBar();
         ClearUndo();
 
-        MessageBox(SolWnd, MsgWin, szAppName, MB_OK | MB_ICONINFORMATION);
+        MessageBox(CardWindow_GetHwnd(SolWnd), MsgWin, szAppName, MB_OK | MB_ICONINFORMATION);
 
         for(int i = 0; i < 4; i++)
         {
-            pSuitStack[i]->Flash(11, 100);
+            CardRegion_Flash(pSuitStack[i], 11, 100);
         }
 
-        if( IDYES == MessageBox(SolWnd, MsgDeal, szAppName, MB_YESNO | MB_ICONQUESTION) )
+        if( IDYES == MessageBox(CardWindow_GetHwnd(SolWnd), MsgDeal, szAppName, MB_YESNO | MB_ICONQUESTION) )
         {
             NewGame();
         }
         else
         {
-            SolWnd.EmptyStacks();
+            CardWindow_EmptyStacks(SolWnd);
 
             fGameStarted = false;
         }
@@ -400,7 +400,7 @@ void CARDLIBPROC SuitStackAddProc(CardRegion &stackobj, const CardStack &added)
 //    The aim is to find a suit-stack to move the
 //  double-clicked card to.
 //
-void CARDLIBPROC RowStackDblClickProc(CardRegion &stackobj, int iNumClicked)
+void CARDLIBPROC RowStackDblClickProc(CARDREGION *stackobj, int iNumClicked)
 {
     TRACE("ENTER RowStackDblClickProc()\n");
 
@@ -414,8 +414,8 @@ void CARDLIBPROC RowStackDblClickProc(CardRegion &stackobj, int iNumClicked)
     }
 
     //find a suit-stack to move the card to...
-    const CardStack &cardstack = stackobj.GetCardStack();
-    CardRegion *pDest = FindSuitStackFromCard(cardstack[0]);
+    const CARDSTACK *cardstack = CardRegion_GetCardStack(stackobj);
+    CARDREGION *pDest = FindSuitStackFromCard(CardStack_Get(cardstack, 0));
 
     if(pDest != 0)
     {
@@ -426,7 +426,7 @@ void CARDLIBPROC RowStackDblClickProc(CardRegion &stackobj, int iNumClicked)
         //use the SimulateDrag function, because we get the
         //AddProc callbacks called for us on the destination stacks...
         bAutoroute = true;
-        stackobj.SimulateDrag(pDest, 1, true);
+        CardRegion_SimulateDrag(stackobj, pDest, 1, true);
         bAutoroute = false;
     }
     TRACE("EXIT RowStackDblClickProc()\n");
@@ -435,13 +435,13 @@ void CARDLIBPROC RowStackDblClickProc(CardRegion &stackobj, int iNumClicked)
 //
 //    Face-up pile single-click
 //
-void CARDLIBPROC PileClickProc(CardRegion &stackobj, int iNumClicked)
+void CARDLIBPROC PileClickProc(CARDREGION *stackobj, int iNumClicked)
 {
     TRACE("ENTER SuitStackClickProc()\n");
 
     fGameStarted = true;
 
-    LastId = stackobj.Id();
+    LastId = CardRegion_Id(stackobj);
 
     TRACE("EXIT SuitStackClickProc()\n");
 }
@@ -449,7 +449,7 @@ void CARDLIBPROC PileClickProc(CardRegion &stackobj, int iNumClicked)
 //
 //    Face-up pile double-click
 //
-void CARDLIBPROC PileDblClickProc(CardRegion &stackobj, int iNumClicked)
+void CARDLIBPROC PileDblClickProc(CARDREGION *stackobj, int iNumClicked)
 {
     TRACE("ENTER PileDblClickProc()\n");
 
@@ -468,25 +468,27 @@ void FixIfOneCardLeft(void)
     // stack to contain ALL the face-up cards. The effect
     // will be, the next time a card is dragged, all the
     // previous card-triplets will be available underneath.
-    if ((dwOptions & OPTION_THREE_CARDS) && pPile->NumCards() == 1)
+    if ((dwOptions & OPTION_THREE_CARDS) && CardRegion_NumCards(pPile) == 1)
     {
-        pPile->SetOffsets(0, 0);
-        pPile->SetCardStack(activepile);
+        CardRegion_SetOffsets(pPile, 0, 0);
+        CardRegion_SetCardStack(pPile, &activepile);
     }
 }
 
 //
 //    What happens when a card is removed from face-up pile?
 //
-void CARDLIBPROC PileRemoveProc(CardRegion &stackobj, int iItems)
+void CARDLIBPROC PileRemoveProc(CARDREGION *stackobj, int iItems)
 {
+    CARDSTACK discarded;
+
     TRACE("ENTER PileRemoveProc()\n");
 
     SetPlayTimer();
 
     //modify our "virtual" pile by removing the same card
     //that was removed from the physical card stack
-    activepile.Pop(iItems);
+    CardStack_PopN(&activepile, iItems, &discarded);
     if ((dwOptions & OPTION_THREE_CARDS) && (VisiblePileCards > 1))
     {
         --VisiblePileCards;
@@ -501,41 +503,41 @@ void CARDLIBPROC PileRemoveProc(CardRegion &stackobj, int iItems)
 //    Double-click on the deck
 //    Move 3 cards to the face-up pile
 //
-void CARDLIBPROC DeckClickProc(CardRegion &stackobj, int iNumClicked)
+void CARDLIBPROC DeckClickProc(CARDREGION *stackobj, int iNumClicked)
 {
     TRACE("ENTER DeckClickProc()\n");
 
     SetPlayTimer();
 
-    CardStack cardstack = stackobj.GetCardStack();
-    CardStack pile      = pPile->GetCardStack();
+    CARDSTACK cardstack = *CardRegion_GetCardStack(stackobj);
+    CARDSTACK pile      = *CardRegion_GetCardStack(pPile);
 
     fGameStarted = true;
     SetPlayTimer();
 
     //reset the face-up pile to represent 3 cards
     if(dwOptions & OPTION_THREE_CARDS)
-        pPile->SetOffsets(CS_DEFXOFF, 1);
+        CardRegion_SetOffsets(pPile, CS_DEFXOFF, 1);
 
-    if(cardstack.NumCards() == 0)
+    if(CardStack_NumCards(&cardstack) == 0)
     {
         if (GetScoreMode() == SCORE_VEGAS)
         {
             if (dwWasteCount < dwWasteTreshold)
             {
-                pile.Clear();
+                CardStack_Clear(&pile);
 
-                activepile.Reverse();
-                cardstack.Push(activepile);
-                activepile.Clear();
-                SetUndo(PILE_ID, DECK_ID, cardstack.NumCards(), lScore, VisiblePileCards);
+                CardStack_Reverse(&activepile);
+                CardStack_PushStack(&cardstack, &activepile);
+                CardStack_Clear(&activepile);
+                SetUndo(PILE_ID, DECK_ID, CardStack_NumCards(&cardstack), lScore, VisiblePileCards);
                 VisiblePileCards = 0;
             }
         }
         else if (GetScoreMode() == SCORE_STD)
         {
-            SetUndo(PILE_ID, DECK_ID, activepile.NumCards(), lScore, VisiblePileCards);
-            if ((dwWasteCount >= dwWasteTreshold) && (activepile.NumCards() != 0))
+            SetUndo(PILE_ID, DECK_ID, CardStack_NumCards(&activepile), lScore, VisiblePileCards);
+            if ((dwWasteCount >= dwWasteTreshold) && (CardStack_NumCards(&activepile) != 0))
             {
                 if (dwOptions & OPTION_THREE_CARDS)
                     lScore = lScore >= 20 ? lScore - 20 : 0;
@@ -543,23 +545,23 @@ void CARDLIBPROC DeckClickProc(CardRegion &stackobj, int iNumClicked)
                     lScore = lScore >= 100 ? lScore - 100 : 0;
             }
 
-            pile.Clear();
+            CardStack_Clear(&pile);
 
-            activepile.Reverse();
-            cardstack.Push(activepile);
-            activepile.Clear();
+            CardStack_Reverse(&activepile);
+            CardStack_PushStack(&cardstack, &activepile);
+            CardStack_Clear(&activepile);
             VisiblePileCards = 0;
 
             UpdateStatusBar();
         }
         else
         {
-            pile.Clear();
+            CardStack_Clear(&pile);
 
-            activepile.Reverse();
-            cardstack.Push(activepile);
-            activepile.Clear();
-            SetUndo(PILE_ID, DECK_ID, cardstack.NumCards(), lScore, VisiblePileCards);
+            CardStack_Reverse(&activepile);
+            CardStack_PushStack(&cardstack, &activepile);
+            CardStack_Clear(&activepile);
+            SetUndo(PILE_ID, DECK_ID, CardStack_NumCards(&cardstack), lScore, VisiblePileCards);
             VisiblePileCards = 0;
         }
 
@@ -567,33 +569,31 @@ void CARDLIBPROC DeckClickProc(CardRegion &stackobj, int iNumClicked)
     }
     else
     {
-        int numcards = min((dwOptions & OPTION_THREE_CARDS) ? 3 : 1, cardstack.NumCards());
+        int numcards = min((dwOptions & OPTION_THREE_CARDS) ? 3 : 1, CardStack_NumCards(&cardstack));
 
         SetUndo(DECK_ID, PILE_ID, numcards, lScore, VisiblePileCards);
 
         //make a "visible" copy of these cards
-        CardStack temp;
-        temp = cardstack.Pop(numcards);
-        temp.Reverse();
+        CARDSTACK temp;
+        CardStack_PopN(&cardstack, numcards, &temp);
+        CardStack_Reverse(&temp);
 
         if(dwOptions & OPTION_THREE_CARDS)
-            pile.Clear();
+            CardStack_Clear(&pile);
 
-        pile.Push(temp);
+        CardStack_PushStack(&pile, &temp);
 
         //remove the top 3 from deck
-        activepile.Push(temp);
+        CardStack_PushStack(&activepile, &temp);
 
         VisiblePileCards = numcards;
     }
 
-    activepile.Print();
-
-    pDeck->SetCardStack(cardstack);
-    pPile->SetCardStack(pile);
+    CardRegion_SetCardStack(pDeck, &cardstack);
+    CardRegion_SetCardStack(pPile, &pile);
 
     FixIfOneCardLeft();
 
-    SolWnd.Redraw();
+    CardWindow_Redraw(SolWnd);
     TRACE("EXIT DeckClickProc()\n");
 }
