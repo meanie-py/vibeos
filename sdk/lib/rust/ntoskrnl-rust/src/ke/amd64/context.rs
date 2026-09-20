@@ -6,6 +6,7 @@ use ntkrnl_sys::ddk::{
 };
 
 const MODE_MASK: u16 = 1;
+const KERNEL_MODE: KPROCESSOR_MODE = 0;
 const KGDT64_R0_CODE: u16 = 0x10;
 const KGDT64_R0_DATA: u16 = 0x18;
 const KGDT64_R3_CMCODE: u16 = 0x20;
@@ -99,7 +100,7 @@ pub unsafe extern "system" fn KeContextToTrapFrame(
         (*TrapFrame).Rsp = (*Context).Rsp;
         (*TrapFrame).EFlags = (*Context).EFlags;
 
-        if ((*Context).SegCs & MODE_MASK) as i8 == 0 {
+        if PreviousMode == KERNEL_MODE {
             (*TrapFrame).SegCs = KGDT64_R0_CODE;
             (*TrapFrame).SegSs = KGDT64_R0_DATA;
 
@@ -118,7 +119,7 @@ pub unsafe extern "system" fn KeContextToTrapFrame(
     }
 
     if ContextFlags & CONTEXT_SEGMENTS != 0 {
-        if ((*Context).SegCs & MODE_MASK) as i8 == 0 {
+        if PreviousMode == KERNEL_MODE {
             (*TrapFrame).SegDs = KGDT64_R3_DATA | RPL_MASK;
             (*TrapFrame).SegEs = KGDT64_R3_DATA | RPL_MASK;
             (*TrapFrame).SegFs = KGDT64_R3_CMTEB | RPL_MASK;
@@ -139,7 +140,7 @@ pub unsafe extern "system" fn KeContextToTrapFrame(
         (*TrapFrame).Dr6 = (*Context).Dr6;
         (*TrapFrame).Dr7 = (*Context).Dr7;
 
-        if ((*Context).SegCs & MODE_MASK) as i8 != 0 {
+        if PreviousMode != KERNEL_MODE {
             if (*TrapFrame).Dr0 > MmHighestUserAddress as u64 {
                 (*TrapFrame).Dr0 = 0;
             }
