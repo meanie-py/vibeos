@@ -14,7 +14,7 @@ This product includes third-party software. **This file is GENERATED** from `ven
 - [FreeType](#freetype) — 2.10.0 — GPL-2.0-only
 - [libjpeg](#libjpeg) — 9d — IJG
 - [libmpg123](#libmpg123) — 1.26.2 — LGPL-2.1
-- [libpng](#libpng) — 1.6.39 — libpng-2.0
+- [libpng](#libpng) — 1.6.58 — libpng-2.0
 - [libsamplerate](#libsamplerate) — unknown — BSD-2-Clause
 - [libtiff](#libtiff) — 4.7.0 — libtiff (BSD-like)
 - [libtirpc](#libtirpc) — 0.1.11 — BSD-3-Clause
@@ -1841,7 +1841,7 @@ That's all there is to it!
 ## libpng
 
 - Upstream: http://www.libpng.org/pub/png/libpng.html
-- Version: 1.6.39
+- Version: 1.6.58
 - In this tree: `dll/3rdparty/libpng`, `sdk/include/reactos/libs/libpng`
 - Licence: libpng-2.0
 - Grant reproduced from: `dll/3rdparty/libpng/docs/LICENSE`
@@ -1853,8 +1853,8 @@ COPYRIGHT NOTICE, DISCLAIMER, and LICENSE
 PNG Reference Library License version 2
 ---------------------------------------
 
- * Copyright (c) 1995-2022 The PNG Reference Library Authors.
- * Copyright (c) 2018-2022 Cosmin Truta.
+ * Copyright (c) 1995-2026 The PNG Reference Library Authors.
+ * Copyright (c) 2018-2026 Cosmin Truta.
  * Copyright (c) 2000-2002, 2004, 2006-2018 Glenn Randers-Pehrson.
  * Copyright (c) 1996-1997 Andreas Dilger.
  * Copyright (c) 1995-1996 Guy Eric Schalnat, Group 42, Inc.
