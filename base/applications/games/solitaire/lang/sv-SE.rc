@@ -47,7 +47,7 @@ END
 STRINGTABLE
 BEGIN
     IDS_SOL_NAME "Solitaire"
-    IDS_SOL_ABOUT "Solitaire"
+    IDS_SOL_ABOUT "Solitaire\nÖversätt av Ronny K Svensson"
     IDS_SOL_QUIT "Avsluta nuvarande spel?"
     IDS_SOL_WIN "Grattis, du vann!"
     IDS_SOL_DEAL "Ge igen?"

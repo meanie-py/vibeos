@@ -63,20 +63,12 @@ enum KWAIT_REASON {
 
 /// TEB32 of the current thread when this is a WoW64 process, else None.
 ///
-/// The 32-bit TEB sits at TEB64 + 0x2000 in the combined WoW64 TEB region;
-/// the allocator that lays the region out is `ntoskrnl-rust`'s
-/// `ARM3/procsup.rs` (`WOW64_TEB32_OFFSET`) and win32k's projection
-/// (`win32k-rust/src/wow64.rs`) uses the same constant.
+/// Thin alias for `ntkrnl_sys::wow64::teb32_of_current`, which owns the layout.
 #[inline]
 pub(crate) unsafe fn wow64_teb32(
     teb: *const ntkrnl_sys::ddk::_TEB,
 ) -> Option<*const ntkrnl_sys::ddk::_TEB32> {
-    const WOW64_TEB32_OFFSET: usize = 0x2000;
-    let p = ntkrnl_sys::ps::PsGetCurrentProcess();
-    if p.is_null() || (*(p as *const ntkrnl_sys::ddk::_EPROCESS)).Wow64Process.is_null() {
-        return None;
-    }
-    Some((teb as *const u8).add(WOW64_TEB32_OFFSET) as *const ntkrnl_sys::ddk::_TEB32) // nolint: magic-offset (WoW64 combined-region layout, TEB32 at TEB64+0x2000 by design — same annotation as ARM3/procsup.rs:732, which allocates the region)
+    ntkrnl_sys::wow64::teb32_of_current(teb).map(|p| p as *const ntkrnl_sys::ddk::_TEB32)
 }
 
 #[no_mangle]

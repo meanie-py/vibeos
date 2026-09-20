@@ -297,11 +297,32 @@ unsafe fn KiDispatchExceptionToUser(
                 // FaultCode=2 (write, not present), Mode=UserMode(1)
                 let status = MmAccessFault(2, page as PVOID, 1i8, core::ptr::null_mut());
                 if status < 0 {
-                    // Fail-loud: see the probe-failure print above.
+                    // Fail-loud: see the probe-failure print above. The bounds
+                    // are part of the evidence, not decoration: this same line
+                    // is printed both when the thread has genuinely run out of
+                    // stack and when MiCheckForUserStackOverflow was handed
+                    // bounds it could not honour, and without StackLimit /
+                    // DeallocationStack next to the faulting page the two are
+                    // indistinguishable -- which is how a whole boot's worth of
+                    // guests died at one address with no way to tell why.
+                    let teb = (*PsGetCurrentThread()).Teb as PTEB;
+                    let (sb, sl, ds) = if teb.is_null() {
+                        (0usize, 0usize, 0usize)
+                    } else {
+                        (
+                            (*teb).NtTib.StackBase as usize,
+                            (*teb).NtTib.StackLimit as usize,
+                            (*teb).DeallocationStack as usize,
+                        )
+                    };
                     crate::dbg_print!(
-                        b"[KI-EXC] user dispatch FAILED: pre-fault of stack page %p = 0x%lx\n\0",
+                        b"[KI-EXC] user dispatch FAILED: pre-fault of stack page %p = 0x%lx (rsp=%p base=%p limit=%p dealloc=%p)\n\0",
                         page,
                         status as u32,
+                        (*Context).Rsp as usize,
+                        sb,
+                        sl,
+                        ds,
                     );
                     break 'seh 0u8;
                 }

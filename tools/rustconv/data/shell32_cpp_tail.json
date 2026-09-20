@@ -3,9 +3,6 @@
     "dynamic": [
       "dll/win32/shell32/folders/CRecycleBinFolderViewCB.cpp"
     ],
-    "hybrid": [
-      "dll/win32/shell32/shellmenu/CMergedFolder.cpp"
-    ],
     "monolith": [
       "dll/win32/shell32/dialogs/filetypes.cpp",
       "dll/win32/shell32/shell32.cpp"
@@ -16,9 +13,7 @@
       "dll/win32/shell32/shelldesktop/CDirectoryWatcher.cpp",
       "dll/win32/shell32/shelldesktop/CDirectoryList.cpp",
       "dll/win32/shell32/shelldesktop/dde.cpp",
-      "dll/win32/shell32/shellmenu/CMenuFocusManager.cpp",
-      "dll/win32/shell32/shellmenu/CMenuToolbars.cpp",
-      "dll/win32/shell32/shellmenu/CStartMenu.cpp"
+      "dll/win32/shell32/shellmenu/CMenuToolbars.cpp"
     ]
   },
   "removed": {
@@ -35,6 +30,9 @@
       "dll/win32/shell32/CShellLink.cpp",
       "dll/win32/shell32/droptargets/CFSDropTarget.cpp",
       "dll/win32/shell32/droptargets/CRecyclerDropTarget.cpp",
+      "dll/win32/shell32/shellmenu/CMenuFocusManager.cpp",
+      "dll/win32/shell32/shellmenu/CMergedFolder.cpp",
+      "dll/win32/shell32/shellmenu/CStartMenu.cpp",
       "dll/win32/shell32/shellrecyclebin/guid.c",
       "dll/win32/shell32/shellrecyclebin/recyclebin.c",
       "dll/win32/shell32/shellrecyclebin/recyclebin_generic.cpp",
