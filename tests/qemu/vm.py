@@ -454,6 +454,14 @@ class ArchConfig:
         """Build full QEMU command line. Subclasses override via callbacks."""
         raise NotImplementedError
 
+    def prepare_args(self, work_dir: Path) -> list[str]:
+        """Prepare media without selecting any released TCP ports."""
+        return self.qemu_args(work_dir)
+
+    def network_args(self) -> list[str]:
+        """Select hostfwd ports only inside the launch handshake lock."""
+        return []
+
 
 @dataclass
 class Arm64Config(ArchConfig):
@@ -809,7 +817,7 @@ def _start_echo_server(label: str = "gf") -> socketserver.ThreadingTCPServer:
     return srv
 
 
-# When set (by the windows-host backend, around the config's qemu_args() call),
+# When set (by the windows-host backend, around the config's network_args() call),
 # _free_tcp_port() delegates to this so hostfwd ports are picked on the Windows
 # TCP stack — where QEMU.exe actually binds them. None on the native backend.
 _windows_port_picker: Callable[[], int] | None = None
@@ -923,11 +931,16 @@ class Amd64UefiNetConfig(Amd64UefiConfig):
     GUESTFWD_ADDR: str = "10.0.2.100"
 
     def qemu_args(self, work_dir: Path) -> list[str]:
+        return [*self.prepare_args(work_dir), *self.network_args()]
+
+    def prepare_args(self, work_dir: Path) -> list[str]:
+        return super().qemu_args(work_dir)
+
+    def network_args(self) -> list[str]:
         self.echo_hostfwd_port = _free_tcp_port()
         self.tdi_srv_hostfwd_port = _free_tcp_port()
         self.payload_hostfwd_port = _free_tcp_port()
         return [
-            *super().qemu_args(work_dir),
             # Modern-only virtio (PCI\VEN_1AF4&DEV_1041, virtio 1.x): the
             # netstack backend (virtio-drivers) speaks the modern interface,
             # and forcing it here keeps the device contract unambiguous —
@@ -966,11 +979,16 @@ class I386UefiNetConfig(I386UefiConfig):
     GUESTFWD_ADDR: str = "10.0.2.100"
 
     def qemu_args(self, work_dir: Path) -> list[str]:
+        return [*self.prepare_args(work_dir), *self.network_args()]
+
+    def prepare_args(self, work_dir: Path) -> list[str]:
+        return super().qemu_args(work_dir)
+
+    def network_args(self) -> list[str]:
         self.echo_hostfwd_port = _free_tcp_port()
         self.tdi_srv_hostfwd_port = _free_tcp_port()
         self.payload_hostfwd_port = _free_tcp_port()
         return [
-            *super().qemu_args(work_dir),
             "-device",
             "virtio-net-pci,disable-legacy=on,netdev=net0,id=vnet0",
             "-netdev",
@@ -1057,11 +1075,16 @@ class Arm64NetConfig(Arm64Config):
     desktop_settle_seconds: float = 30.0
 
     def qemu_args(self, work_dir: Path) -> list[str]:
+        return [*self.prepare_args(work_dir), *self.network_args()]
+
+    def prepare_args(self, work_dir: Path) -> list[str]:
+        return super().qemu_args(work_dir)
+
+    def network_args(self) -> list[str]:
         self.echo_hostfwd_port = _free_tcp_port()
         self.tdi_srv_hostfwd_port = _free_tcp_port()
         self.payload_hostfwd_port = _free_tcp_port()
         return [
-            *super().qemu_args(work_dir),
             # Modern-only virtio (PCI\VEN_1AF4&DEV_1041), same contract as the
             # amd64 net config; attaches to the virt GPEX PCIe root bus.
             "-device",
@@ -1504,13 +1527,48 @@ class QemuVM:
         print(f"[QemuVM] record/replay: {mode} -> {trace_dir}")
         return new_cmd
 
-    def _build_native_cmd(self) -> list[str]:
-        """Native backend: local qemu, Unix-socket QMP/serial, KVM/TCG. Unchanged."""
+    def _prepare_staging(self) -> Path:
+        """Register a PID-owned directory under the cleanup lock, then release it.
+
+        Cleanup protects live Linux owners even before QEMU exists. Keep the
+        shared lock for inspection/deletion and directory creation, never copies.
+        """
+        from .windows_staging import auto_cleanup_locked
+
+        root = Path(self._win.get("staging_dir", "/mnt/c/temp/vibeos-qemu"))
+        waiting = time.monotonic()
+        with launch_lock():
+            self.launch_timings["cleanup_lock_seconds"] = time.monotonic() - waiting
+            started = time.monotonic()
+            auto_cleanup_locked(root)
+            staging = root / f"{os.getpid()}-{self.work_dir.parent.name}-{self.work_dir.name}"
+            self._win_staging = staging
+            shutil.rmtree(staging, ignore_errors=True)
+            staging.mkdir(parents=True, exist_ok=True)
+            self.launch_timings["cleanup_seconds"] = time.monotonic() - started
+        return staging
+
+    def _prepare_launch(self) -> None:
+        """Prepare private disks and pin immutable media before port selection."""
+        from . import backend as be
+
+        windows = self._backend == "windows-host"
+        staging = self._prepare_staging() if windows else self.work_dir
+        if windows:
+            self.scratch_path = staging / "scratch.qcow2"
+            self.debugcon_path = staging / "debugcon.bin"
         subprocess.run(
             ["qemu-img", "create", "-f", "qcow2", str(self.scratch_path), "64M"],
             check=True,
             capture_output=True,
         )
+        arch = self.config.prepare_args(self.work_dir)
+        disks = [*self._scratch_device_args(), *self._usb_disk_args()]
+        self._prepared_arch_args = be.stage_media_paths(arch, staging) if windows else arch
+        self._prepared_disk_args = be.stage_media_paths(disks, staging) if windows else disks
+
+    def _build_native_cmd(self) -> list[str]:
+        """Attach prepared media and select ports under the handshake lock."""
         self.serial.listen(str(self.serial_path))
         self._set_live_tee()
         return [
@@ -1521,8 +1579,7 @@ class QemuVM:
             f"socket,id=ser0,path={self.serial_path},server=off,reconnect=1",
             "-serial",
             "chardev:ser0",
-            *self._scratch_device_args(),
-            *self._usb_disk_args(),
+            *self._prepared_disk_args,
             *self._tripwire_args(),
             *self._smp_args(),
             *self._extra_qemu_args(),
@@ -1534,7 +1591,8 @@ class QemuVM:
                 if not self.config.arch.startswith("arm64")
                 else []
             ),
-            *self.config.qemu_args(self.work_dir),
+            *self._prepared_arch_args,
+            *self.config.network_args(),
         ]
 
     def _build_windows_cmd(self) -> list[str]:
@@ -1555,31 +1613,6 @@ class QemuVM:
             # both. See docs/engineering/windows-host-qemu-whpx-spike.md.
             self.config.hang_silence_seconds = max(self.config.hang_silence_seconds, 420.0)
             self.config.boot_timeout = max(self.config.boot_timeout, 900.0)
-        # Per-run staging SUBDIR under the (shared) Windows staging root. Concurrent same-arch
-        # windows-host smokes across worktrees must not stomp each other's media — the per-arch
-        # KVM slot does NOT serialize windows-host (it runs off-host and early-returns the slot),
-        # so without a per-run dir two amd64 runs collide on livecd.iso/debugcon.bin (false
-        # LAUNCH_FAIL / false net failures). Mirrors the native per-run /tmp/vibeos-cli/<ts>/boot.
-        staging_root = Path(self._win.get("staging_dir", "/mnt/c/temp/vibeos-qemu"))
-        from .windows_staging import auto_cleanup_locked
-
-        auto_cleanup_locked(staging_root)
-        run_tag = f"{os.getpid()}-{self.work_dir.parent.name}-{self.work_dir.name}"
-        staging = staging_root / run_tag
-        self._win_staging = staging
-        shutil.rmtree(staging, ignore_errors=True)
-        staging.mkdir(parents=True, exist_ok=True)
-
-        # Scratch (created WSL-side under /mnt, read by Windows QEMU via its Windows path).
-        self.scratch_path = staging / "scratch.qcow2"
-        subprocess.run(
-            ["qemu-img", "create", "-f", "qcow2", str(self.scratch_path), "64M"],
-            check=True,
-            capture_output=True,
-        )
-        # debugcon written by Windows QEMU to a staged path; read back via /mnt.
-        self.debugcon_path = staging / "debugcon.bin"
-
         # We listen (WSL); the Windows QEMU connects to host_addr:<port>. CRITICAL: bind
         # 0.0.0.0, NOT 127.0.0.1 — WSL2's localhost relay only forwards Windows->WSL for
         # services bound to the wildcard; a 127.0.0.1-bound WSL listener is invisible to
@@ -1595,15 +1628,15 @@ class QemuVM:
 
         # Pick hostfwd ports on the WINDOWS stack (where QEMU.exe binds them), not
         # WSL's — see _free_tcp_port / be.windows_free_tcp_port. The hook is read by
-        # _free_tcp_port inside the net configs' qemu_args(); scoped tightly so the
+        # _free_tcp_port inside the net configs' network_args(); scoped tightly so the
         # native path and non-net configs are untouched.
         global _windows_port_picker
         _windows_port_picker = be.windows_free_tcp_port
         try:
-            raw_arch_args = self.config.qemu_args(self.work_dir)
+            network_args = self.config.network_args()
         finally:
             _windows_port_picker = None
-        staged_arch_args = be.stage_media_paths(raw_arch_args, staging)
+        staged_arch_args = [*self._prepared_arch_args, *network_args]
         # arm64 already boots TCG with a real -cpu MODEL (cortex-a72) and
         # -accel tcg,thread=multi — exactly what we want on the Windows host.
         # rewrite_accel is an x86 concept (swap KVM->whpx/tcg and drop the
@@ -1645,8 +1678,7 @@ class QemuVM:
             f"socket,id=ser0,host={host},port={ser_port},server=off",
             "-serial",
             "chardev:ser0",
-            *be.stage_media_paths(self._scratch_device_args(), staging),
-            *be.stage_media_paths(self._usb_disk_args(), staging),
+            *self._prepared_disk_args,
             *self._tripwire_args(),
             *self._smp_args(),
             *self._extra_qemu_args(),
@@ -1733,7 +1765,7 @@ class QemuVM:
         """Tear down a hostfwd-raced launch attempt: reap the dead qemu, stop the echo
         server, and replace the serial/qmp clients with fresh instances — SerialClient
         can't be reused after close() (its drainer won't restart once _closed is set).
-        The next _build_windows_cmd re-binds new listeners + re-stages media."""
+        The next _build_windows_cmd re-binds listeners and reuses untouched media."""
         try:
             proc.wait(timeout=5)
         except subprocess.TimeoutExpired:
@@ -1785,6 +1817,16 @@ class QemuVM:
         self._acquire_cpu_lease()
         self.launch_timings["admission_seconds"] = round(time.monotonic() - admitted, 3)
 
+        # Media preparation can overlap other launches. PID-owned staging and
+        # the media cache's own lock protect it from cleanup and concurrent fills.
+        try:
+            preparing = time.monotonic()
+            self._prepare_launch()
+            self.launch_timings["media_prepare_seconds"] = round(time.monotonic() - preparing, 3)
+        except BaseException:
+            self.stop()
+            raise
+
         # Coordinate selection through the successful QMP handshake. Merely
         # surviving the early-exit poll does not prove hostfwd/GDB binds worked.
         # All builders enter, protecting the scoped Windows port-picker too.
@@ -1809,7 +1851,22 @@ class QemuVM:
         proc = self._proc
         if proc is None:
             raise RuntimeError("QEMU launch returned without a process")
-        self.launch_timings["prepare_seconds"] = round(time.monotonic() - preparing, 3)
+        self.launch_timings["launch_seconds"] = round(time.monotonic() - preparing, 3)
+        self.launch_timings["prepare_seconds"] = round(
+            self.launch_timings.get("media_prepare_seconds", 0)
+            + self.launch_timings["launch_seconds"],
+            3,
+        )
+        self._record_launch(cmd)
+        connecting = time.monotonic()
+        try:
+            self._connect_launch(cmd, proc)
+        finally:
+            self.launch_timings["handshake_seconds"] = round(time.monotonic() - connecting, 3)
+            self.launch_timings["launch_lock_held_seconds"] = round(time.monotonic() - preparing, 3)
+            self._record_launch(cmd)
+
+    def _record_launch(self, cmd: list[str]) -> None:
         (self.live_log_path.parent / f"{self.config.arch}_launch.json").write_text(
             json.dumps(
                 {
@@ -1826,6 +1883,7 @@ class QemuVM:
             + "\n"
         )
 
+    def _connect_launch(self, cmd: list[str], proc: subprocess.Popen) -> None:
         # Drop a scoped lock so the reaper can safely kill THIS qemu iff our
         # launcher (this pytest process) dies. reap_orphan_qemus() is auto-
         # wired in conftest.py at session start. qemu/reap.sh covers both

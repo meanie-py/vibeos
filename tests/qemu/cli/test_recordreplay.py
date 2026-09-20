@@ -772,7 +772,7 @@ def test_arm64_keeps_its_cpu_model_through_the_hook(tmp_path, monkeypatch):
 # --- telling a WEDGED replay from a slow one -----------------------------
 
 
-def test_trace_position_finds_the_process_reading_the_trace(tmp_path):
+def test_trace_position_finds_the_process_reading_the_trace(tmp_path, monkeypatch):
     """The probe reads /proc for whoever holds replay.bin open. If it cannot find
     the reader it must return None, not 0 — 0 would read as `consumed nothing`,
     which is a verdict, and the absence of information is not one."""
@@ -780,6 +780,13 @@ def test_trace_position_finds_the_process_reading_the_trace(tmp_path):
     trace.mkdir()
     rrfile = trace / "replay.bin"
     rrfile.write_bytes(b"x" * 4096)
+    resolve = Path.resolve
+
+    def no_fd_resolution(path, *args, **kwargs):
+        assert not str(path).startswith("/proc/"), "must not traverse unrelated fd targets"
+        return resolve(path, *args, **kwargs)
+
+    monkeypatch.setattr(Path, "resolve", no_fd_resolution)
     assert rr.trace_read_position(trace) is None
     with rrfile.open("rb") as f:
         f.read(1)

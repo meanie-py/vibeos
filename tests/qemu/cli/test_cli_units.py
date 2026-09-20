@@ -8222,6 +8222,7 @@ def test_start_resolves_accel_before_admission(arch, available, expected, monkey
     monkeypatch.setattr(v, "_acquire_slot", lambda: observations.append(v._win_accel))
     monkeypatch.setattr(v, "_acquire_cpu_lease", lambda: observations.append(v._boot_is_tcg()))
     monkeypatch.setattr(vm_mod, "launch_lock", contextlib.nullcontext)
+    monkeypatch.setattr(v, "_prepare_launch", lambda: None)
     monkeypatch.setattr(v, "_start_with_ports", lambda: None)
     v.start()
     assert observations == [expected, expected == "tcg"]
