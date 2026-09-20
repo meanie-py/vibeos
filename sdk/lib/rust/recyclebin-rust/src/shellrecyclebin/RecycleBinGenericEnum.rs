@@ -80,7 +80,7 @@ pub unsafe fn RecycleBinGenericEnum_new() -> *mut RecycleBinGenericEnum {
         core::mem::size_of::<RecycleBinGenericEnum>(),
     ) as *mut RecycleBinGenericEnum;
     if this.is_null() { return core::ptr::null_mut(); }
-    (*this).IRecycleBinEnumList_iface.lpVtbl = core::ptr::addr_of!(RECYCLEBINGENERICENUM_IRECYCLEBINENUMLIST_VTBL);
+    (*this).IRecycleBinEnumList_iface.lpVtbl = core::ptr::addr_of!(RECYCLEBINGENERICENUM_IRECYCLEBINENUMLIST_VTBL) as *mut _;
     RecycleBinGenericEnum_ctor_body(this);
     this
 }
@@ -135,7 +135,7 @@ pub unsafe fn RecycleBinGenericEnum_AddRef_body(this: *mut RecycleBinGenericEnum
 
 pub unsafe fn RecycleBinGenericEnum_dtor_body(this: *mut RecycleBinGenericEnum) -> () {
     if !((*this).m_current as *mut ()).is_null() {
-        (*(*(*this).m_current).lpVtbl).Release((*this).m_current);
+        IRecycleBinEnumList_Release((*this).m_current);
     }
 }
 
@@ -161,7 +161,7 @@ pub unsafe fn RecycleBinGenericEnum_Next_body(this: *mut RecycleBinGenericEnum, 
     loop {
         if (*this).m_current.is_null() && (*this).m_dwLogicalDrives != 0 {
             let mut i: u32 = 0;
-            while i < (0x005Au16 - 0x0041u16 + 1) {
+            while i < (0x005Au32 - 0x0041u32 + 1) {
                 if ((*this).m_dwLogicalDrives & (1 << i)) != 0 {
                     let mut szVolumeName: [u16; 4] = [0; 4];
                     szVolumeName[0] = (0x0041u16 + i as u16);
@@ -252,11 +252,16 @@ pub unsafe fn RecycleBinGenericEnum_Next_body(this: *mut RecycleBinGenericEnum, 
         }
     }
 
-    let _ = UNREACHABLE;
+    // recyclebin_generic_enumerator.cpp:176 `UNREACHABLE;` needs NO Rust statement. The C is
+    // `while (TRUE)` (:93) with `return` on every path, and this is `loop {}` with no `break`,
+    // so rustc already knows the fall-out is unreachable and types the function accordingly.
+    // `unreachable_unchecked()` would be the literal lowering of `__builtin_unreachable()`, but
+    // it is real UB for zero gain here, and `scan_assert_to_ub` rightly flagged it. Deleting the
+    // statement is self-checking: if that loop could ever exit, this stops compiling.
 }
 
 pub unsafe fn RecycleBinGenericEnum_Skip_body(this: *mut RecycleBinGenericEnum, celt: DWORD) -> HRESULT {
-    (*this).m_skip += celt as usize;
+    (*this).m_skip += celt as SIZE_T;
     S_OK
 }
 
@@ -264,7 +269,7 @@ pub unsafe fn RecycleBinGenericEnum_Reset_body(this: *mut RecycleBinGenericEnum)
     let current = (*this).m_current;
     if !current.is_null() {
         // Release the current enumerator through its vtable
-        (*(*current).lpVtbl).Release(current);
+        IRecycleBinEnumList_Release(current);
         (*this).m_current = ::core::ptr::null_mut();
     }
     (*this).m_skip = 0;

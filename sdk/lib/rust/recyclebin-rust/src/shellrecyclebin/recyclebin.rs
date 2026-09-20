@@ -1,5 +1,27 @@
 // rustconv-assembly: whole-tu
 use crate::prelude::*;
+
+// COBJMACROS for IUnknown and the winuser.h LOWORD macro. The crate's `commacros` cover the
+// four recycle-bin interfaces but not IUnknown, and `win32macros` is not a dependency here.
+#[inline]
+unsafe fn IUnknown_QueryInterface(This: *mut IUnknown, riid: *const IID, ppv: *mut *mut core::ffi::c_void) -> HRESULT {
+    // The island types IUnknownVtbl's riid against its own GUID rendering; same 16 bytes.
+    ((*(*This).lpVtbl).QueryInterface.unwrap_unchecked())(This, riid.cast(), ppv)
+}
+#[inline]
+unsafe fn IUnknown_Release(This: *mut IUnknown) -> ULONG {
+    ((*(*This).lpVtbl).Release.unwrap_unchecked())(This)
+}
+/// `LOWORD(l)` (winuser.h) -- the low 16 bits, as a WORD.
+#[inline]
+fn LOWORD(l: DWORD) -> WORD {
+    (l & 0xFFFF) as WORD
+}
+// Both constructors exist TWICE in this crate: in the superseded whole-TU modules
+// (recyclebin_generic.rs / recyclebin_v5.rs, both ORPHAN-BY-DESIGN and unwired) and in the
+// live class-atomic free halves. Import the LIVE ones.
+use crate::shellrecyclebin::recyclebin_generic_free::RecycleBinGeneric_Constructor;
+use crate::shellrecyclebin::recyclebin_v5_free::RecycleBin5_Constructor;
 use core::ffi::c_void;
 
 // ---- file-scope preamble (translated) ----
@@ -173,7 +195,7 @@ pub unsafe extern "system" fn EmptyRecycleBinA(pszRoot: LPCSTR) -> i32 {
 #[no_mangle]
 pub unsafe extern "system" fn EmptyRecycleBinW(pszRoot: LPCWSTR) -> i32 {
     let mut hr: HRESULT;
-    let prb: *mut IRecycleBin;
+    let mut prb: *mut IRecycleBin = core::ptr::null_mut();
 
     'main_block: {
         hr = GetDefaultRecycleBin(pszRoot, core::ptr::addr_of_mut!(prb));
@@ -276,9 +298,9 @@ pub unsafe extern "system" fn EnumerateRecycleBinW(
             } else if !(hr >= 0) {
                 break 'cleanup;
             }
-            if pFnCallback(Context, prbf as HDELFILE) == 0u8 {
+            if pFnCallback.unwrap_unchecked()(Context, prbf as HDELFILE) == 0 {
                 error = GetLastError();
-                hr = HRESULT_FROM_WIN32((error) as LONG);
+                hr = HRESULT_FROM_WIN32(error);
                 break 'cleanup;
             }
         }
@@ -306,10 +328,12 @@ unsafe extern "system" fn GetRecycleBinFileHandleCallback(Context: PVOID, hDelet
     let pRBF = IRecycleBinFileFromHDELFILE(hDeletedFile);
     if IRecycleBinFile_IsEqualIdentity(pRBF, (*pCtx).pFI) == S_OK {
         (*pCtx).hDelFile = hDeletedFile;
-        return FALSE;
+        return FALSE as BOOL;
     }
     CloseRecycleBinHandle(hDeletedFile);
-    return TRUE;
+    // `BOOL` is i32 while `TRUE`/`FALSE` are u32 consts -- an i386-only mismatch, since the
+    // other two arches infer it away. Cast to the declared return type.
+    return TRUE as BOOL;
 }
 
 #[cfg(not(target_arch = "x86"))]
@@ -334,7 +358,7 @@ pub unsafe extern "C" fn GetRecycleBinFileHandle(
     };
     EnumerateRecycleBinW(
         pszRoot,
-        GetRecycleBinFileHandleCallback,
+        Some(GetRecycleBinFileHandleCallback),
         &mut context as *mut _ as PVOID,
     );
     context.hDelFile
@@ -371,22 +395,22 @@ pub unsafe extern "C" fn GetDefaultRecycleBin(
     pprb: *mut *mut IRecycleBin,
 ) -> HRESULT {
     let mut pUnk: *mut IUnknown = core::ptr::null_mut();
-    let hr: HRESULT;
+    let mut hr: HRESULT;
 
     if pprb.is_null() {
         return E_POINTER;
     }
 
     if pszVolume.is_null() {
-        hr = RecycleBinGeneric_Constructor(&mut pUnk);
+        hr = RecycleBinGeneric_Constructor(core::ptr::addr_of_mut!(pUnk).cast());
     } else {
         if wcslen(pszVolume) != 3
             || *pszVolume.offset(1 as isize) != ':' as u16
             || *pszVolume.offset(2 as isize) != '\\' as u16
         {
-            return HRESULT_FROM_WIN32((ERROR_INVALID_NAME) as LONG);
+            return HRESULT_FROM_WIN32(ERROR_INVALID_NAME);
         }
-        hr = RecycleBin5_Constructor(pszVolume, &mut pUnk);
+        hr = RecycleBin5_Constructor(pszVolume, core::ptr::addr_of_mut!(pUnk).cast());
     }
 
     if !(hr >= 0) {
@@ -769,7 +793,7 @@ pub unsafe extern "C" fn GetRecycleBinPathFromDriveNumber(Drive: u32, Path: *mut
 //     }
 //     if (!SUCCEEDED(hr))
 //         return hr;
-//     hr = IUnknown_QueryInterface(pUnk, &IID_IRecycleBin, (void **)pprb);
+//     let mut hr = IUnknown_QueryInterface(pUnk, &IID_IRecycleBin, (void **)pprb);
 //     IUnknown_Release(pUnk);
 //     return hr;
 // }
