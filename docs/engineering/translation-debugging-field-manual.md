@@ -3719,6 +3719,62 @@ own callers (they are `_body`-suffixed there, so they do not clash).
 wholesale. Anything hand-written that both halves need (header-inline ports, constants the
 island lacks, externs) belongs in a THIRD, hand-owned file that no run writes.
 
+### Wiring a `--cpp-com` class: five deterministic-layer gaps, all fixed FREE and RETROACTIVELY
+
+**Symptom.** The class translates clean — every worker accepted, no audit findings — and then
+the first build after wiring is a wall of errors. CFolder/CFolderItem/CFolderItems opened at
+46. None of it is a translation defect; all five are the deterministic layer failing to
+resolve a shape, and each one recurs on every C++ COM module.
+
+**The five, with the tell for each.**
+
+* `cannot find function ShellObjectCreatorInit` — **SIBLING-class activation.** Activation
+  detection is keyed to the class being translated, but bodies routinely construct a different
+  one (`CFolder::Items` builds a `CFolderItems`). The scaffold already emits
+  `<Class>_CreateInstance` with exactly the signature the template expands to, so this is a
+  NAMING gap, not missing codegen: rewrite `ShellObjectCreator[Init]::<T>(` to
+  `T_CreateInstance(`. Blanket, not sibling-only — for the class itself it lands on that same
+  generated creator, so there is no "me or sibling" test to get wrong.
+* `the name DISPPARAMS is defined multiple times` — **the support closure emits a type twice.**
+  It is assembled from independent passes (local PODs, SDK layouts, the referenced-interface
+  walk) that cannot see each other's output. A repeated `pub struct` is E0428 at the
+  definition, not a shadow. Dedupe at the closure's own boundary, keeping the FIRST — but only
+  when the blocks are byte-identical, because two different layouts under one name is a real
+  conflict that must stay loud.
+* `expected function, found macro V_VT` — **oaidl.h's VARIANT accessors are all macros.** Not
+  one `V_*` in that header is a function, which is what makes `V_X(` → `V_X!(` safe as a
+  family rule. A missing macro then fails as "cannot find macro", which names the real gap.
+* `cannot find value plibid / piid / wMajor / wMinor` — **ATL `IDispatchImpl` TEMPLATE
+  PARAMETERS**, not members (atlcom.h:1508:
+  `<class T, const IID* piid, const GUID* plibid = &CAtlModule::m_libid, WORD wMajor = 1,
+  WORD wMinor = 0>`). The model renders them bare on one class and as `(*this).piid` on
+  another. Bind them as locals at the top of the body rather than substituting the
+  identifiers — substitution also rewrites the name inside the `"IDispatchImpl: plibid is
+  CLSID_NULL!"` string literal.
+* `no method named as_ptr/Attach found for raw pointer` — **ATL operators on storage the
+  scaffold flattened.** `operator T*()` is the pointer VALUE (`p.as_ptr()` → `p`),
+  `operator&()` is the ADDRESS OF THE SLOT (`p.as_mut_ptr()` → `&raw mut p`), `Attach(v)` is
+  adopt-without-AddRef (`p.Attach(v)` → `p = v`). Getting the first two the wrong way round is
+  silent at the call site: an out-parameter handed the value leaves the slot null and leaks
+  whatever the callee allocated.
+
+**Why it is worth fixing the layer rather than the file.** Every one of these regenerates the
+affected bodies from the resume bank at **$0** — the fix is retroactive across every class
+already bought, and permanent for the next module. Measured on this batch: 46 → 33 → 16, all
+free, with the count then RISING to 63 as the parse errors stopped masking the rest of the
+file (see "a rising count mid-grind is progress" in `shell32/mod.rs`).
+
+**Two traps while repairing banked bodies by hand.**
+
+* **Do not delete a statically-dead branch.** `if wMajor == 0xffff && wMinor == 0xffff` is
+  dead once the template parameters are bound, and deleting it fails the replay with
+  `CACHE REJECTED: dropped or changed numeric C literal(s): 65535 (x2)`. The fact seal counts
+  literals against the C and does not care that the branch cannot execute — which is correct,
+  and caught the author of this entry.
+* **Read the whole `impl` block before adding a method.** `CComPtr::as_ptr` already existed
+  ~40 lines below where the grep stopped; adding it again is E0592, and the real gap was only
+  the `as_mut_ptr` spelling of `GetAddressOf`.
+
 ### A vtable SLOT the interface parser could not read renumbers every slot after it
 
 **Symptom.** A hand-rolled COM interface comes out of `--cpp-com` with one fewer method than
@@ -4844,6 +4900,22 @@ suspect call kept it failing; eighty made it green.
   with a real explicit `Release`, and have no guard at all. **Match the guard and the release
   by ENCLOSING FUNCTION, not by variable name** — a file-wide grep conflates same-named locals
   across functions and will tell you to delete correct code.
+  **Root cause, found later: our own PROMPT was asking for the double release.**
+  `templates/system_prompt_shell32_com.md` said a `CComPtr<T>` must not become a raw pointer
+  "without preserving both operations and their original timing" — i.e. *write the Release on
+  every path* — while `cpp_com.py`'s audit requires a bare declaration with NO Release so it
+  can install the guard. The model obeyed the prompt and the audit rejected it for obeying.
+  Symptom: `AUDIT REJECT: CComPtr local <Name>: expected one null raw-pointer declaration in
+  worker, found 0` — which fires on the RENAME (the model also snake_cases `spTypeLib` →
+  `sp_type_lib`), not on the release. So the loud reject is the LUCKY case: a body that keeps
+  the C++ spelling *and* writes a manual Release passes the audit, gets a guard installed
+  beside it, and ships the silent double-free above. Fix: the prompt now states the scaffold
+  owns a `CComPtr` local — declare `let mut <ExactCppName>: *mut T = core::ptr::null_mut();`,
+  keep the C++ spelling, emit no AddRef/Release — while a raw `IFoo*` local that the C++
+  itself releases keeps its Release and gets no guard. Two of 25 functions in one
+  `CFolderItem` run hit it; **several functions failing the same deterministic check at once
+  is the documented tell to read the prompt before re-buying the bodies.** Prompt prose is
+  outside the resume-cache key, so fixing it re-bills nothing.
 - **An UNQUALIFIED member call is `this->`, and the nearest COM pointer in scope is not a
   substitute.** CDefView's `OnCreate` opens with
   `if (SUCCEEDED(QueryInterface(IID_PPV_ARG(IDropTarget, &pdt)))) RegisterDragDrop(m_hWnd, pdt);`

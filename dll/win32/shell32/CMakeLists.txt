@@ -279,8 +279,16 @@ list(APPEND SOURCE
     # CCopyAsPathMenu.cpp — replaced by Rust (shell32-rust/src/copy_as_path_menu.rs); cohab via libshell32_rust.a
     # CShellDispatch.cpp — replaced by Rust (shell32-rust/src/shell_dispatch.rs);
     # CShellDispatch_Constructor remains exported by the Rust module for CFolder/CDefViewDual.
-    CFolder.cpp
-    CFolderItems.cpp
+    # CFolder.cpp — replaced by Rust (shell32-rust/src/shell32/CFolder.rs); cohab via
+    # libshell32_rust.a. The Shell.Application `Folder2` object.
+    # CFolderItems.cpp — replaced by Rust; its TWO classes are one file each,
+    # shell32/CFolderItem.rs and shell32/CFolderItems.rs, because rustconv names its output
+    # after the .cpp and a second class would overwrite the first.
+    #   CFolderItemVerbs.cpp stays C++ below: `new CComObject<T>` activation and CComBSTR state
+    # are both unmapped. The Rust CFolderItem::Verbs still constructs it, through the four
+    # EXTERN_C symbols in rust_folderitemverbs_bridge.cpp — which is deleted the moment those
+    # two classes translate.
+    rust_folderitemverbs_bridge.cpp
     CFolderItemVerbs.cpp)
 
 list(APPEND PCH_SKIP_SOURCE
