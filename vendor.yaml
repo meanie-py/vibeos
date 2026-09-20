@@ -759,28 +759,6 @@ trees:
   # ── headers with no source in this tree ─────────────────────────────────
   # Registered because the convention-alias scanner walks them and they are foreign
   # code, even though the implementation is not vendored here.
-  - path: sdk/include/reactos/libs/fullfat
-    name: FullFAT (headers only)
-    upstream: https://github.com/jameswalmsley/FullFAT
-    license: GPL-3.0-or-later  # James Walmsley, 2009
-    license_ref: sdk/include/reactos/libs/fullfat/fat.h
-    modified: yes  # ReactOS markers in 1 source file(s): ff_memory.h
-    headers:
-      - sdk/include/reactos/libs/fullfat
-    review: >
-      LICENCE WAS RECORDED `unknown` AND IS NOT: every header carries the full GPL
-      grant in prose — "This program is free software: you can redistribute it and/or
-      modify it under the terms of the GNU General Public License ... either version 3
-      of the License, or (at your option) any later version", Copyright (C) 2009 James
-      Walmsley. So this is GPL-3.0-or-later, stated in the tree, and `unknown` simply
-      meant nobody had opened the file. Headers only, so it carries no body debt — but
-      GPL-3 in a kernel-adjacent codebase is worth being certain about rather than
-      leaving blank, and the `unknown` is exactly the kind of blank that reads as
-      "checked, indeterminate" when it means "not checked".
-    reason: >
-      Headers only — no FullFAT source in this tree. 19 headers, none of them
-      excluded from the convention-alias scan before this registry existed.
-
 # ─────────────────────────────────────────────────────────────────────────────
 # THE OTHER HALF: foreign-COPYRIGHT code that IS ours to translate.
 #
