@@ -1957,8 +1957,18 @@ def analyze_class(
         # method bodies. The template arguments are compile-time ABI facts, so
         # flatten that exact known template rather than treating it as opaque
         # inherited state. Other ATL templates remain loud failures.
+        # The inner type is NOT required to be `I`-prefixed. shldisp.idl's automation
+        # interfaces are `Folder`, `Folder2`, `FolderItem`, `FolderItems`, `FolderItemVerb`,
+        # `FolderItemVerbs` -- no `I` anywhere -- and WIDL generates the same flattened vtable
+        # for them as for `IShellDispatch4` in that same header. Demanding the prefix rejected
+        # five real interfaces and reported "custom/inherited base class ... needs deterministic
+        # inherited layout mapping", which reads as a MISSING FEATURE rather than a bad guess,
+        # and held CFolder/CFolderItems/CFolderItemVerbs behind a gap that did not exist.
+        # Nothing is loosened: the `&IID_\1` BACKREFERENCE still requires the IID to be named
+        # after the interface, and the `in interfaces` test below still requires it to be one
+        # this class actually declares in its COM map. A name shape was never the evidence.
         dispatch = re.fullmatch(
-            r"IDispatchImpl\s*<\s*(I[A-Za-z0-9_]+)\s*,\s*&IID_\1(?:\s*,.*)?\s*>",
+            r"IDispatchImpl\s*<\s*([A-Za-z_]\w*)\s*,\s*&IID_\1(?:\s*,.*)?\s*>",
             base,
         )
         if dispatch is not None and dispatch.group(1) in interfaces:
