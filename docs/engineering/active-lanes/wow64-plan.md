@@ -2561,7 +2561,25 @@ notifications drove code paths nothing had reached before.
    on `PTE=…4C3` (Normal) — an ordinary unaligned atomic, which is exactly the
    case FEX's own handler exists to absorb.
 
-2. **FILED (task #76) — `MiDoPoolCopy` reports success without writing.** It
+2. **FIXED (task #76, 2026-09-19) — `MiDoPoolCopy` reported success without
+   writing.** Closed by the validate-first probe conversion in `ARM3/virtual.rs`,
+   which was made for a different bug entirely (the dropped `_SEH2_EXCEPT` that
+   BUGCHECKed guest `CreateProcess`) and gave this one the observability its
+   entry below says it needed. The kernel now answers `STATUS_PARTIAL_COPY` with
+   0 written where it used to answer `STATUS_SUCCESS` with 6 — the truth instead
+   of the lie.
+
+   *And the fix made `selfmod32` go RED, because rung 7 had encoded the bug.* It
+   read `st < 0` as failure, which was right only while the kernel was wrong. The
+   rung now accepts a refusal, but verifies WHY — `VirtualQuery` must report the
+   page unwritable (measured: `0x20`, `PAGE_EXECUTE_READ`, exactly the SMC
+   write-protection FEX installs) — and checks the out-cell canary on both paths,
+   since a refused write may not clobber the guest's 4-byte count cell either.
+   amd64 has no SMC trap, so the write succeeds there and the original assertion
+   still runs. **11/11 on both arches.** Field manual: "A test that ENCODES a bug
+   goes red the day the bug is fixed".
+
+   *Original filing, kept because it is why the entry existed:* It
    translated the C's `_SEH2_TRY/_SEH2_EXCEPT` as straight-line code, so
    `Status` is initialised to `STATUS_SUCCESS` and never assigned anywhere in
    the function; both `if Status >= 0 { copy }` guards always pass and the tail
