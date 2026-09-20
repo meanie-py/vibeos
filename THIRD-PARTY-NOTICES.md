@@ -18,7 +18,7 @@ This product includes third-party software. **This file is GENERATED** from `ven
 - [libsamplerate](#libsamplerate) — 0.2.2 — BSD-2-Clause
 - [libtiff](#libtiff) — 4.7.0 — libtiff (BSD-like)
 - [libtirpc](#libtirpc) — 0.2.1 — BSD-3-Clause
-- [libxml2](#libxml2) — 2.12.8 — MIT
+- [libxml2](#libxml2) — 2.13.9 — MIT
 - [libxslt](#libxslt) — 1.1.42 — MIT
 - [Mbed TLS](#mbed-tls) — 2.16.11 — Apache-2.0 OR GPL-2.0-or-later
 - [Microsoft compiler-tests (EH/SEH)](#microsoft-compiler-tests-ehseh) — unknown — MIT
@@ -2709,16 +2709,16 @@ Specification RFC2695:  Authentication Mechanisms for ONC RPC
 ## libxml2
 
 - Upstream: https://gitlab.gnome.org/GNOME/libxml2
-- Version: 2.12.8
+- Version: 2.13.9
 - In this tree: `sdk/lib/3rdparty/libxml2`
 - Licence: MIT
 - Modified by us: yes, see `vendor-patches/libxml2.patch`
-- Grant reproduced from: `sdk/lib/3rdparty/libxml2/COPYING`
+- Grant reproduced from: `sdk/lib/3rdparty/libxml2/Copyright`
 
 ```
-Except where otherwise noted in the source code (e.g. the files hash.c,
-list.c and the trio files, which are covered by a similar licence but
-with different Copyright notices) all the files are:
+Except where otherwise noted in the source code (e.g. the files dict.c and
+list.c, which are covered by a similar licence but with different Copyright
+notices) all the files are:
 
  Copyright (C) 1998-2012 Daniel Veillard.  All Rights Reserved.
 

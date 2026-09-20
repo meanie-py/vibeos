@@ -1,6 +1,7 @@
 
 spec2def(libxslt.dll libxslt.spec ADD_IMPORTLIB)
 
+
 include_directories(${REACTOS_SOURCE_DIR}/sdk/include/reactos/libs/libxslt
                     ${REACTOS_SOURCE_DIR}/sdk/lib/3rdparty/libwin-iconv)
 
@@ -43,7 +44,7 @@ list(APPEND SOURCE
 add_library(libxslt MODULE ${SOURCE})
 set_module_type(libxslt win32dll)
 target_link_libraries(libxslt libxml2 iconv-static zlib)
-add_importlibs(libxslt msvcrt ws2_32 kernel32)
+add_importlibs(libxslt msvcrt ws2_32 bcrypt kernel32)
 
 if(MSVC)
     add_importlibs(libxslt ntdll)

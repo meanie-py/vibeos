@@ -843,28 +843,69 @@ trees:
   - path: sdk/lib/3rdparty/libxml2
     name: libxml2
     staleness: >
-      AUDITED 2026-09-20: ours 2.12.8, current 2.15.x. Bumping is now a routine rebase of
-      one 2-line hunk — see the review above for why that hunk has to stay.
+      AUDITED 2026-09-20, BUMPED 2.12.8 -> 2.13.9 the same day. Current upstream is
+      2.15.4 and we are deliberately one minor line behind it, for one identified
+      reason: 2.14.0 made threads.c call InitOnceExecuteOnce, our kernel32.spec gates
+      that export behind `-version=0x600+`, and spec2def defaults to 0x502 with nothing
+      in the tree overriding it. Going further needs
+      `spec2def(kernel32.dll kernel32.spec ADD_IMPORTLIB VERSION 600)` — a project
+      policy decision about which Windows version our import libraries advertise, not a
+      missing feature, since our kernel32 does export the function. Everything else
+      about 2.15.4 was already made to build during this bump (see review), so that one
+      line is the whole remaining cost.
     upstream: https://gitlab.gnome.org/GNOME/libxml2
     license: MIT
-    license_file: sdk/lib/3rdparty/libxml2/COPYING
-    modified: yes  # 3 substantive files vs pristine 2.12.8
+    license_file: sdk/lib/3rdparty/libxml2/Copyright
+    modified: yes  # ONE file, two lines; see review
     patch: vendor-patches/libxml2.patch
     version:
+      # READS BACK OUR OWN SUBSTITUTION, and there is no better source in the vendored
+      # set: xmlversion.h is generated from xmlversion.h.in, and 2.13.9 ships no plain
+      # VERSION file (2.15 added one). Treat it as a label we maintain, not evidence.
       file: sdk/lib/3rdparty/libxml2/include/libxml/xmlversion.h
       pattern: '#define LIBXML_DOTTED_VERSION "([^"]+)"'
     review: >
-      DIFFED AGAINST PRISTINE UPSTREAM 2026-09-19: libxml2-2.12.8.tar.xz from
-      download.gnome.org, sha256 verified against GNOME's published sum. 27 files exist
-      in both trees; 27 differ, but 21 of those differ ONLY by a stripped trailing blank
-      line — a tree-wide whitespace pass, not editing. THREE are substantive:
+      BUMPED 2.12.8 -> 2.13.9 ON 2026-09-20, and the delta went from three files to ONE
+      FILE AND TWO LINES. Builds clean on i386, amd64 and arm64, as do both consumers
+      (libxslt and msxml3). Patch round-trips byte-for-byte from
+      libxml2-2.13.9.tar.xz, sha256
+      a2c9ae7b770da34860050c309f903221c67830c86e4a7e760692b803df95143a.
 
-        libxml.h          swaps `#include "config.h"` for "win32config.h" and hoists
-                          XML_HIDDEN above it. Build-config shim.
-        win32config.h     adds <io.h> and <direct.h>. Portability.
-        xmlschemas.c      BEHAVIOURAL. Wraps the content-model determinism check in
-                          `#if 0  /* disabled in Wine */`, so schemas upstream rejects
-                          as non-deterministic now validate silently.
+      THE TWO BUILD SHIMS ARE RETIRED, not carried. libxml.h and include/win32config.h
+      were patched for years so libxml.h included "win32config.h" in place of the
+      "config.h" the build system was supposed to produce, and so win32config.h pulled
+      in <io.h> and <direct.h>. Both are now PRISTINE. In their place is a config.h of
+      ours at the tree root doing what upstream's OWN CMakeLists does on Windows —
+      `configure_file(include/win32config.h config.h COPYONLY)` — plus those two
+      includes. The old entry justified the shim by saying `config.h` was "a dangerously
+      generic name to put on this tree's include path"; that was true and also beside
+      the point, because libxml.h's include is QUOTED and resolves against its own
+      directory before any -I path. The file never had to go on an include path at all.
+
+      WHY 2.13.9 AND NOT 2.15.4, measured rather than assumed. 2.15.4 was taken all the
+      way to a clean compile of libxml2, libxslt and msxml3 before being backed out, and
+      it fails at ONE symbol: 2.14.0 changed threads.c to call InitOnceExecuteOnce for
+      its one-time parser init. kernel32.spec marks that export `-version=0x600+`;
+      spec2def's default is 0x502 (guOsVersion, sdk/tools/spec2def/spec2def.c) and no
+      CMakeLists in the tree passes `spec2def(... VERSION ...)`, so the export is in no
+      import library. Raising a MODULE's _WIN32_WINNT does not help — the import library
+      is one global artifact built from the spec, not a per-consumer one. The fix is one
+      line in dll/win32/kernel32/CMakeLists.txt and it is a policy change, so it is
+      recorded in `staleness:` for a human rather than taken here.
+
+      Everything else 2.15.4 needs is already done and would survive the jump: SAX.c and
+      xmlunicode.c are gone upstream and drop out of the source list, win32config.h is
+      deleted upstream (our root config.h stops depending on it), the codegen/*.inc
+      tables have to be vendored, ICU/MODULES/HTTP must be off, and XML_SYSCONFDIR has
+      to be defined because catalog.c pastes it into a string unconditionally.
+
+      BCryptGenRandom, AND AN SDK GAP IT EXPOSED. 2.13 seeds its hash RNG with
+      BCryptGenRandom on Windows. Our bcrypt.dll exports it, but sdk/include/psdk/
+      bcrypt.h was missing BCRYPT_SUCCESS — the Windows SDK's own success test for the
+      NTSTATUS every BCrypt function returns. So the header declared the functions and
+      offered no way to check one, and documented usage did not compile. Added to that
+      header rather than worked around in the vendored tree; libxslt and msxml3 gained
+      `bcrypt` in add_importlibs.
 
       That last one is the one that matters for a re-vendor, and note its provenance:
       the comment says WINE, not ReactOS. It arrived already-patched in the bulk import

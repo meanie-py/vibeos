@@ -11,3 +11,4 @@ __htmlParseContent(void *ctx);
 #endif /* LIBXML_HTML_ENABLED */
 
 #endif /* XML_HTML_H_PRIVATE__ */
+
