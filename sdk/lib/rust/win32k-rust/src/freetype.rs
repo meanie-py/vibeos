@@ -8850,6 +8850,39 @@ unsafe fn ntgdi_get_char_abc_widths_w_impl(
     }
 
     FontGDI = ObjToGDI!(TextObj, FONT);
+
+    /* An unrealized font has no SharedFace, and dereferencing it here BUGCHECKs
+     * the machine (0x1E, c0000005). Measured twice from 32-bit guests in the
+     * applet phase of a full-drain ladder boot, at the two instructions this
+     * pair compiles to: once loading `SharedFace->Face`, once later unlocking
+     * through the garbage `Face` it had loaded. TextObj is null-checked just
+     * above and survives, so FontGDI is fine — it is specifically SharedFace.
+     *
+     * Upstream does not check here either, but it is not consistent about it:
+     * IntGetOutlineTextMetrics in this same file guards `(*FontGDI).SharedFace`
+     * before use. We take the guarded reading. Killing the box is never the
+     * better failure, and a syscall reachable from an unprivileged 32-bit guest
+     * must not be able to do it — so this returns the same clean
+     * ERROR_INVALID_HANDLE the TextObj-missing path above already returns.
+     *
+     * Loud on purpose: WHY an unrealized font reaches this syscall is a
+     * separate open question (roadmap registry), and a silent guard would
+     * retire the only evidence of it. */
+    if (*FontGDI).SharedFace.is_null() || (*(*FontGDI).SharedFace).Face.is_null() {
+        DbgPrint(
+            b"NtGdiGetCharABCWidthsW: unrealized font (SharedFace=%p) - refusing rather than faulting\n\0"
+                .as_ptr() as *const i8,
+            (*FontGDI).SharedFace,
+        );
+        w32r_TEXTOBJ_UnlockText(TextObj);
+        ExFreePoolWithTag(SafeBuff as PVOID, GDITAG_TEXT);
+        if !Safepwch.is_null() {
+            ExFreePoolWithTag(Safepwch as PVOID, GDITAG_TEXT);
+        }
+        EngSetLastError(ERROR_INVALID_HANDLE);
+        return 0;
+    }
+
     face = (*(*FontGDI).SharedFace).Face;
 
     if (*face).charmap.is_null() {

@@ -6870,6 +6870,19 @@ does not even contain the text: `"[IO] IopInitializeBootDrivers"` was **0** occu
 the fix and **2** after. Two consequences worth generalizing:
 - **Grep for `_s: &[u8]) {}` / empty-bodied trace shims before concluding "the probe never
   fired."** Absence of a trace is only evidence if the trace exists on that arch.
+- **The same trap catches diagnostics you add yourself, via `#[cfg]` DUPLICATE bodies.**
+  `message.rs` defines `NtUserGetMessage` and `NtUserPeekMessage` TWICE each, under
+  `cfg(target_arch = "x86")` and `cfg(not(...))`. A scripted insert that anchored on the
+  function body and replaced the first match landed the probe in the **i386** copy, so it was
+  never compiled into the amd64 build being debugged — and the run came back "probe never
+  fired, 61 guest faults", which reads exactly like a refuted hypothesis instead of an
+  uninstrumented binary. **After adding a probe, prove it is IN the artifact before believing
+  a negative result**: check the `#[cfg]` directly above the body you patched, or grep the
+  built image for the format string. A duplicated definition makes "first match" the wrong
+  anchor, and every arch-forked file in this tree has them.
+- **A negative from an unexercised call site is the same failure with a different cause.**
+  Hooking only `NtUserPeekMessage` would have missed an app whose pump uses `GetMessage`;
+  hook every entry point the workload could take, or confirm from serial that yours is hit.
 - **An arch-gated tolerate-and-continue path needs LOUDER reporting than the arch that
   bugchecks, not quieter.** Where x86 stops dead, the tolerant arch keeps running with the
   damage — and if its report is a no-op, that hatch can never signal anything, so it becomes

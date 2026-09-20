@@ -1102,14 +1102,44 @@ land; date every addition.** Source docs live in `docs/engineering/archive/`.
   would NOT fail to build and NOT fault, it would silently publish a correct CLIENTINFO32 at
   the wrong address); the targeting is right (`[MM] MmCreateTeb: WoW64 TEB32 at 7ffee000`
   matches both the publish and the guest's `fs:[0x18]`); user32 never writes `pDeskInfo`;
-  the guest's GDI batch cannot overrun into it (`GDIBATCHBUFSIZE` is `0x136*4` and
-  `Buffer[0x136]` — consistent); and `NtGdiFlushUserBatch` is not the writer (commented out
-  of `win32u.spec`, zero occurrences in the boot). One red herring, recorded because it was
+  and each append the guest's gdi32 makes is bounded (`GDIBATCHBUFSIZE` is `0x136*4` against
+  `Buffer[0x136]` — consistent, so a single append cannot run past the buffer).
+
+  **RETRACTED, same day: I listed `NtGdiFlushUserBatch` as eliminated and it is not.** The
+  reasoning was "commented out of `win32u.spec`, zero occurrences in the boot" — but
+  `win32k-rust/src/main.rs:890` registers it as the kernel's `BatchFlushRoutine` callout, so
+  it is reached through `KeGdiFlushUserBatch` from the trap path and never prints. I read
+  the absence of a log line from a function that does not log. The spec entry only governs
+  the user-mode syscall export. It is now the leading suspect, below.
+
+  One red herring, recorded because it was
   convincing: the last `NtGdiFlush` before the fault logs `arg0=0000000f`, matching the bad
   value exactly — but `NtGdiFlush` takes NO arguments, those "args" are stale registers, and
   the earlier boot has the identical `arg0=0000000f` while faulting on `00000040`. Coincidence.
 
-  **It is NOT a fixed set of apps — the population changes every boot, so this is a RACE.**
+  **MEASURED 2026-09-20: the corruption window is INSIDE one message dispatch, not across
+  the pump.** A probe in win32k compared `pci->pDeskInfo` (win32k's own CLIENTINFO, in TEB64)
+  against the published `ci32->pDeskInfo` (TEB32) on every `NtUserGetMessage` /
+  `NtUserPeekMessage`, and reported **zero** mismatches on a boot where notepad took its
+  usual 58 faults and then DIED (`EXITED = 0x80`). The probe is proven live, not merely
+  compiled: it also logs one unconditional sample, which came back
+
+        [WOW64CI-ALIVE] first WoW64 sample: want=007e0dd0 got=007e0dd0
+                        TEB32 cnt=00000000 off=00000000 | TEB64 cnt=00000000
+
+  So the two copies agree at every pump boundary. The faults happen between those boundaries
+  — inside a single dispatch, on the paint path — which is exactly where a `GetMessage`-entry
+  probe cannot see. **The sampling point was the flaw, not the hypothesis.** Next experiment,
+  specified so it is not re-derived: sample on a PAINT-path syscall (`NtUserBeginPaint`,
+  `NtUserGetDC`, a hot `NtGdi*`) rather than the pump, and compare against the AUTHORITATIVE
+  kernel value `(*pti).pDeskInfo - ulClientDelta` rather than against `pci->pDeskInfo` —
+  comparing the projection to its own source cannot detect the case where BOTH are wrong.
+
+  That first sample also shows `TEB32 GdiBatchCount = 0` at that instant, which is one early
+  sample from a different guest and does **not** settle the GDI-batch question below; it is
+  recorded only so the number is not re-measured.
+
+  **Population corrected.** It is notepad, mspaint and **winver** at 58 each, plus
   Two full-drain boots of the same media, minutes apart:
 
   | boot | 58 faults | other |
@@ -1139,14 +1169,29 @@ land; date every addition.** Source docs live in `docs/engineering/archive/`.
   `GdiBatchCount`, `GdiTebBatch.HDC` and `GdiTebBatch.Buffer` from it and walks the batch
   records. A WoW64 guest's gdi32 batches into **TEB32** (`GdiTebBatch` at 0x1D4, 32-bit
   layout), which is a different structure at a different address, so for a guest this reads
-  one TEB and the writer used the other. Benign today only because the entry point is
-  unreachable: `NtGdiFlushUserBatch` is commented out in `win32ss/win32u/win32u.spec:158` and
-  appears zero times in a full ladder boot. It becomes live the moment anything enables it,
-  and then `pHdr` walks garbage records by a garbage `sz`. Found while eliminating it as the
-  suspect for the `pDeskInfo` corruption above — it is NOT that bug. The i386 kernel reaches
-  the same routine from `ntoskrnl/ke/i386/traphdlr.c:1854`
-  (`if (NtCurrentTeb()->GdiBatchCount) KeGdiFlushUserBatch();`), which is worth checking on
-  the amd64 user-call path before this is enabled.
+  one TEB and the writer used the other.
+
+  **It is REACHABLE, and it is the leading suspect for the `pDeskInfo` corruption above.**
+  Being commented out of `win32ss/win32u/win32u.spec:158` only removes the user-mode syscall
+  export; `win32k-rust/src/main.rs:890` registers the same function as the `BatchFlushRoutine`
+  callout, and every arch's trap path calls it through `KeGdiFlushUserBatch` — amd64 at
+  `ntoskrnl-rust/src/ke/amd64/traphandler.rs:210`, i386 at `ke/i386/traphdlr.c:1854`, arm64 at
+  `ke/arm64/trap.c:200`. None of that logs.
+
+  The two halves that make this a WoW64 bug are both checked in the tree: the guest's gdi32
+  does `pTeb->GdiBatchCount++` on ITS TEB (`win32ss/gdi/gdi32/include/gdi32p.h:517`), i.e.
+  TEB32, and the kernel tests `TEB64->GdiBatchCount` before flushing. So **a 32-bit guest's
+  GDI batch can never be flushed**, and "the GDI TEB batch was never flushed" is the exact
+  title of field manual **§9.41**, whose four recorded symptoms include *CLIENTINFO
+  corruption* and *a user32 `ValidateHandle` AV* — which is the entry above, precisely. The
+  adjacency that made §9.41 corrupt CLIENTINFO exists on TEB32 too: `GdiTebBatch.Buffer` runs
+  0x1D4..0x6B4 and `Win32ClientInfo` starts at 0x6CC.
+
+  **Not proven, and the missing step is named:** each append gdi32 makes is bounded by
+  `Offset + cjSize <= GDIBATCHBUFSIZE`, so an unflushed batch should stop batching rather
+  than overflow. Either some path skips that check, or the corruption arrives another way.
+  §9.41 was a wrong OFFSET (0x74 vs 0x1740) and is gated by `scan_magic_offsets`; this would
+  be the same class through a wrong TEB, which that scanner cannot see.
 
 - **`NtGdiGetCharABCWidthsW` BUGCHECKs 0x1E when called from a 32-bit guest — OPEN**
   (2026-09-20). Found by the drain floor above: with the applet phase actually observed, a
@@ -1185,6 +1230,19 @@ land; date every addition.** Source docs live in `docs/engineering/archive/`.
   both samples and needs no read-only mapping, so the delta theory is dropped. Note the
   BUGCHECK's P3/P4 cannot settle read-vs-write directly: P3 is a kernel address, not the
   0/1/8 an AV's ExceptionInformation[0] would carry.)*
+
+  **The class is 24 more derefs, and the file is already inconsistent about it.** Surveyed
+  by walking `freetype.rs` for `(*(*FontGDI).SharedFace)` / `(*SharedFace)` uses with no
+  `SharedFace.is_null()` within the preceding 25 lines:
+
+        guarded = 2   unguarded = 24
+
+  One of the two guarded sites (`IntGetOutlineTextMetrics`, ~line 1013) predates this work,
+  which is the point: somebody already knew `SharedFace` can be NULL and guarded exactly one
+  place. The other 24 are the same latent BUGCHECK, reachable from guest GDI calls
+  (`NtGdiGetGlyphIndicesW`, `NtGdiGetTextMetricsW`, the ExtTextOut paths, ...). Only the
+  measured one is fixed — each needs its own unlock/free cleanup path, so this is a real
+  batch of work rather than a sed. Worth a scanner before hand-editing 24 sites.
 
   **Do not record this as WoW64-specific either.** It was observed twice from 32-bit guests
   and not natively — but no native app in these boots calls `GetCharABCWidths` at all, so
