@@ -2774,11 +2774,30 @@ for WC_NO_BEST_FIT_CHARS */
 - Version: 1.17.7600
 - In this tree: `sdk/lib/drivers/wdf`, `sdk/include/wdf`
 - Licence: MIT
-- Grant reproduced from: **the tree carries no licence grant**
+- Grant reproduced from: `sdk/lib/drivers/wdf/LICENSE`
 
 ```
-The MIT grant is upstream's and is NOT reproducible from this tree: the drop arrived without the repository's LICENSE.md, and the WDF sources carry no per-file licence header (unlike ACPICA or mbedtls, whose grant is in every file). So the licence is correct by provenance — microsoft/Windows-Driver- Frameworks has been MIT since the 2017 open-sourcing — but nothing here states it, which is a defect in OUR drop rather than an ambiguity about the terms.
-Fix when convenient by copying upstream's LICENSE.md into sdk/lib/drivers/wdf and pointing `license_file` at it; until then this note is what generated notices reproduce, so the gap is visible rather than silent.
+The MIT License (MIT)
+
+Copyright (c) 2015 Microsoft
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.
 ```
 
 ## zlib

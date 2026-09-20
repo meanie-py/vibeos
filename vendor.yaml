@@ -111,18 +111,8 @@ trees:
     name: Windows Driver Frameworks (KMDF/UMDF)
     upstream: https://github.com/microsoft/Windows-Driver-Frameworks
     license: MIT  # upstream relicensed the WDF sources to MIT in 2017
-    license_note: >
-      The MIT grant is upstream's and is NOT reproducible from this tree: the drop
-      arrived without the repository's LICENSE.md, and the WDF sources carry no
-      per-file licence header (unlike ACPICA or mbedtls, whose grant is in every
-      file). So the licence is correct by provenance — microsoft/Windows-Driver-
-      Frameworks has been MIT since the 2017 open-sourcing — but nothing here states
-      it, which is a defect in OUR drop rather than an ambiguity about the terms.
-
-      Fix when convenient by copying upstream's LICENSE.md into sdk/lib/drivers/wdf
-      and pointing `license_file` at it; until then this note is what generated
-      notices reproduce, so the gap is visible rather than silent.
-    modified: "lightly"  # 9 of 488 files mention ReactOS; see reason
+    license_file: sdk/lib/drivers/wdf/LICENSE
+    modified: "lightly"  # ~35 marker files + mechanical portability; see review
     headers:
       - sdk/include/wdf
     version:
@@ -154,6 +144,56 @@ trees:
       upstream WDF drop would still need our loader supplied beside it rather than
       inside it. What changed is that the dependency is now across a tree boundary
       instead of hidden as files in someone else's directory.
+
+      DIFFED AGAINST PRISTINE UPSTREAM 2026-09-20, and both open questions on this entry are
+      now answered.
+
+      THE LICENCE GAP IS CLOSED. Upstream ships a LICENSE at the repo root — plain MIT,
+      "Copyright (c) 2015 Microsoft", sha256
+      cf248820bf1178370bb4f1670a59f8748d46bc96d0f64080cd631511c6046409 — which our drop
+      simply failed to bring along. It is now vendored at sdk/lib/drivers/wdf/LICENSE and
+      `license_file` points at it, so the MIT grant is reproducible from the tree and the
+      old `license_note` ("correct by provenance, unstated by us") is retired.
+
+      WHICH UPSTREAM: tag win-10.0.10586.0 (Windows 10 1511), archive sha256
+      6289cf8b5284ab27a801f7a04d9bb35c893159e82c04055df079e3ab3dcb3304. Chosen by
+      measurement, not assumption: sampled files bottom out there (powerstatemachine.cpp 57
+      changed lines at neighbouring tags versus 2 at 10586.0; fxpkgpnp.cpp 465 versus
+      478/517), and src/publicinc/wdf/kmdf/1.17 first appears at that tag. NOTE our
+      CMakeLists bakes __WDF_BUILD_NUMBER=7600, the Windows 7 RTM build, next to KMDF 1.17
+      which is a Windows 10-era version — internally inconsistent, and NOT evidence of
+      provenance. No Win7-era tag exists upstream at all.
+
+      THE "9 of 488 files mention ReactOS" FIGURE WAS WRONG — it is ~35. Case-insensitive
+      `grep -ri reactos` matches 35 files, case-sensitive 34 (lowercase `// reactos start`
+      blocks were being missed). Separately, ROSWDFNOTIMPLEMENTED marks stubbed functions in
+      5 files, and that is a DIFFERENT mechanism — poxinterface.cpp has its entire Power-
+      Framework interop commented out behind it while containing no literal "reactos" text
+      at all, so a grep-only survey misses it completely.
+
+      Scale: 517 files compared across both halves, 83 byte-identical, 222 identical after
+      normalization, 295 differing. That number is misleading alone — most of it is
+      mechanical portability: #include case-normalization for a case-sensitive filesystem,
+      NTAPI/WDFAPI calling-convention annotations added for clang/GCC, WPP .tmh includes
+      commented out in 84 files, backslash include paths fixed, and a few casts. Not
+      vendored: src/publicinc/wdf/kmdf/1.15 and both UMDF public header sets. Vendored but
+      NEVER BUILT: umdf/ (10 files) and shared/*/um/ (91 files) — about 101 files of dead
+      weight, since CMakeLists builds wdf01000 from SOURCE_SHARED + SOURCE_KM only.
+
+      *** ONE UNMARKED FUNCTIONAL REMOVAL, and it is the finding worth acting on. ***
+      shared/irphandlers/pnp/km/powerstatemachinekm.cpp comments out the DMA-enabler
+      PowerUp() and PowerDown() loops in BOTH the device power-up and power-down transitions
+      — verified: the file contains zero "reactos" text and zero ROSWDFNOTIMPLEMENTED, so
+      nothing in the tree records that DMA channel power transitions are silently skipped
+      for any driver using DMA enablers. Plausibly deliberate (DMA not wired up yet) but
+      undocumented, unlike the poxinterface.cpp and fxpkgpnp.cpp stubs which at least call a
+      named not-implemented macro. Recorded here rather than changed; a fix is a driver-
+      behaviour decision, not an audit one.
+
+      No patch file: at 295 differing files dominated by mechanical annotation churn, a
+      patch would be tens of thousands of lines that obscure rather than reveal. The
+      upstream tag and sha256 above make the diff reproducible in one command, which is the
+      useful artifact here.
 
     reason: >
       290K lines / 488 files, the second-largest foreign tree in the repo after FEX and
