@@ -17,9 +17,7 @@ CENSUS = REPO / "tools" / "cohab-census.txt"
 
 
 def _run() -> subprocess.CompletedProcess:
-    return subprocess.run(
-        [sys.executable, str(TOOL)], capture_output=True, text=True, cwd=REPO
-    )
+    return subprocess.run([sys.executable, str(TOOL)], capture_output=True, text=True, cwd=REPO)
 
 
 def test_snapshot_is_committed_and_current():
@@ -44,9 +42,7 @@ def test_uncommenting_a_source_line_is_a_finding(tmp_path):
     needle = "#${REACTOS_SOURCE_DIR}/ntoskrnl/lpc/reply.c"
     assert needle in original, "fixture drifted: reply.c no longer flipped in ntos.cmake"
     try:
-        target.write_text(
-            original.replace(needle, needle[1:], 1), encoding="utf-8"
-        )
+        target.write_text(original.replace(needle, needle[1:], 1), encoding="utf-8")
         cp = _run()
     finally:
         target.write_text(original, encoding="utf-8")

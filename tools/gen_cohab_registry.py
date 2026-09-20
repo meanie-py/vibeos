@@ -195,9 +195,7 @@ def scan() -> dict:
             # A path-shaped word at the START OF A PROSE SENTENCE ("smss_rust_stub.c was an
             # empty TU...") matches the same regex but is not a source-list entry at all —
             # require the punctuation gate so a paragraph never gets read as a CMake list.
-            if m and m.group("rest") and not re.match(
-                r"^[(\-—]|^->|^→", m.group("rest")
-            ):
+            if m and m.group("rest") and not re.match(r"^[(\-—]|^->|^→", m.group("rest")):
                 m = None
             if m:
                 raw_path = m.group("path")
@@ -225,9 +223,7 @@ def scan() -> dict:
                     if guess:
                         crate, rs_ref = guess, None
                         evidence_kind = "dir-name-guess"
-                        evidence_text = (
-                            f"derived '{guess}' from parent dir '{rel.parent.name}'"
-                        )
+                        evidence_text = f"derived '{guess}' from parent dir '{rel.parent.name}'"
                     else:
                         # No Rust signal ANYWHERE near this disabled line — this is an
                         # ordinary disabled/unbuilt C file (arch exclusion, missing
@@ -235,9 +231,7 @@ def scan() -> dict:
                         # it is what keeps this registry from being "every commented-out
                         # source in the tree" (libtiff codecs, sndrec32 helpers, etc.) —
                         # exactly the noise this tool exists to filter OUT.
-                        warnings.append(
-                            f"skip (no rust signal): {key} @ {rel_cmake}:{lineno}"
-                        )
+                        warnings.append(f"skip (no rust signal): {key} @ {rel_cmake}:{lineno}")
                         continue
 
                 entry = entries.setdefault(
@@ -254,9 +248,7 @@ def scan() -> dict:
                     },
                 )
                 entry["disabled_at"].append(f"{rel_cmake}:{lineno}")
-                entry["evidence"].append(
-                    {"kind": evidence_kind, "detail": evidence_text}
-                )
+                entry["evidence"].append({"kind": evidence_kind, "detail": evidence_text})
                 if crate and not entry["rust_crate"]:
                     entry["rust_crate"] = crate
                     crate_exists = (RUST_ROOT / crate).is_dir()
