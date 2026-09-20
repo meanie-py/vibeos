@@ -485,6 +485,22 @@ trees:
     license_file: sdk/lib/3rdparty/cardlib/ReadMe.txt
     modified: unknown
     reason: Card-rendering library for the bundled card games, carried in the 3rdparty tree.
+    unwelcome: >
+      ACCEPTED FOR NOW, SLATED FOR REWRITE (owner, 2026-09-19). The grant is the
+      weakest in this registry and the files contradict it: headers say "Freeware /
+      Copyright J Brown 2001", which permits distribution and grants nothing else,
+      while the public-domain dedication exists only second-hand in ReadMe.txt, signed
+      by a ReactOS contributor relaying what the author said around 2001.
+
+      The author is traceable — J Brown is strobejb, still active on GitHub — but
+      cardlib was only ever published on his site (catch22.net/tuts/cards/cardlib), not
+      in a repository with a licence file, so there is no upstream to re-vendor from
+      and no clean text to point at. Asking him is a real option and has not been done.
+
+      EXIT: reimplement. 5,159 lines of C++ whose entire job is drawing playing cards,
+      with exactly two consumers — Solitaire and Spider. Nothing else in the OS links
+      it, so the blast radius of replacing it is two games. Kept meanwhile because
+      Solitaire is the classic Windows feel and we would rather ship it than not.
     review: >
       NOT `unknown` AFTER ALL, but not clean either. ReadMe.txt is the whole licence:
       "The author has given permission to use these sources under Public Domain. Do
@@ -608,30 +624,6 @@ trees:
   # ── headers with no source in this tree ─────────────────────────────────
   # Registered because the convention-alias scanner walks them and they are foreign
   # code, even though the implementation is not vendored here.
-  - path: sdk/include/reactos/libs/expat
-    name: Expat (headers only)
-    upstream: https://libexpat.github.io/
-    license: MIT
-    modified: unknown
-    headers:
-      - sdk/include/reactos/libs/expat
-    version:
-      file: sdk/include/reactos/libs/expat/expat.h
-      patterns:
-        - '#define XML_MAJOR_VERSION\s+(\d+)'
-        - '#define XML_MINOR_VERSION\s+(\d+)'
-        - '#define XML_MICRO_VERSION\s+(\d+)'
-      join: "."
-    review: >
-      LICENCE TEXT IS NOT IN THE TREE. This entry is two headers (expat.h,
-      expat_external.h) and neither carries a grant; expat's MIT text lives in its
-      COPYING, which was not vendored because the SOURCES were not either — only the
-      public headers are here.
-    reason: >
-      Headers only — there is NO expat source anywhere in this tree. Surfaced by
-      building this registry; it was one of the six entries in the old hardcoded
-      tuple, which gave no hint that the library behind it is absent.
-
   - path: sdk/include/reactos/libs/fullfat
     name: FullFAT (headers only)
     upstream: https://github.com/jameswalmsley/FullFAT
