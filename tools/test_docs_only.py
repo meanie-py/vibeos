@@ -104,3 +104,78 @@ def test_the_inert_list_stays_small_and_deliberate():
     skips a gate, so growing this list should be a decision someone makes on purpose."""
     assert {".md", ".txt", ".rst", ".png", ".jpg", ".jpeg", ".gif"} >= INERT_SUFFIXES
     assert all(s.startswith(".") and s.islower() for s in INERT_SUFFIXES)
+
+
+# ── the QUEUE's use of it: skipping a whole gate, not just a lint ────────────────────────
+
+
+def _repo_with_master(tmp_path):
+    """A worktree with an origin/master to diff against, shaped like the integration tree."""
+    r = tmp_path / "wt"
+    r.mkdir()
+    for a in (["init", "-q"], ["config", "user.email", "t@t"], ["config", "user.name", "t"]):
+        subprocess.run(["git", *a], cwd=r, check=True, capture_output=True)
+    (r / "seed.txt").write_text("x\n")
+    # The predicate is imported from <wt>/tools, mirroring the real integration worktree.
+    # It goes in the BASE commit: if it landed in the delta instead it would show up as a
+    # non-inert path and every case here would "pass" for the wrong reason.
+    (r / "tools").mkdir()
+    (r / "tools" / "docs_only.py").write_text((REPO / "tools" / "docs_only.py").read_text())
+    subprocess.run(["git", "add", "-A"], cwd=r, check=True, capture_output=True)
+    subprocess.run(["git", "commit", "-qm", "base"], cwd=r, check=True, capture_output=True)
+    subprocess.run(
+        ["git", "update-ref", "refs/remotes/origin/master", "HEAD"],
+        cwd=r,
+        check=True,
+        capture_output=True,
+    )
+    return r
+
+
+def _commit(repo, *paths):
+    for rel in paths:
+        f = repo / rel
+        f.parent.mkdir(parents=True, exist_ok=True)
+        f.write_text("content\n")
+    subprocess.run(["git", "add", "-A"], cwd=repo, check=True, capture_output=True)
+    subprocess.run(["git", "commit", "-qm", "batch"], cwd=repo, check=True, capture_output=True)
+
+
+def test_queue_skips_the_gate_for_an_all_documentation_batch(tmp_path):
+    from tests.qemu.cli.queue import inert_only_batch
+
+    wt = _repo_with_master(tmp_path)
+    _commit(wt, "docs/a.md", "NOTES.txt")
+    assert inert_only_batch(wt) == [], "a docs batch must not spend 3 builds and 4 boots"
+
+
+def test_queue_gates_when_ONE_lane_in_the_batch_carries_code(tmp_path):
+    """The unsafe direction, and the reason this is measured on the MERGED tree: three docs
+    lanes plus one code lane is a code batch, and no single lane's own delta would say so."""
+    from tests.qemu.cli.queue import inert_only_batch
+
+    wt = _repo_with_master(tmp_path)
+    _commit(wt, "docs/a.md", "docs/b.md", "docs/c.md", "sdk/lib/rust/x-rust/src/lib.rs")
+    assert inert_only_batch(wt) == ["sdk/lib/rust/x-rust/src/lib.rs"]
+
+
+def test_queue_gates_a_settled_lockfile_no_lane_declared(tmp_path):
+    """`settle_cargo_locks` commits a rewritten `Cargo.lock` INTO the batch tip, so it appears
+    in no lane's delta. Measuring against the merged tree is what catches it."""
+    from tests.qemu.cli.queue import inert_only_batch
+
+    wt = _repo_with_master(tmp_path)
+    _commit(wt, "docs/a.md")
+    _commit(wt, "Cargo.lock")
+    assert inert_only_batch(wt) == ["Cargo.lock"]
+
+
+def test_queue_gates_when_it_cannot_tell(tmp_path):
+    """Fail closed, twice over: an empty delta and a missing predicate must both gate."""
+    from tests.qemu.cli.queue import inert_only_batch
+
+    wt = _repo_with_master(tmp_path)
+    assert inert_only_batch(wt), "an empty delta is not a docs-only batch"
+    _commit(wt, "docs/a.md")
+    (wt / "tools" / "docs_only.py").unlink()
+    assert inert_only_batch(wt), "no predicate must mean no exemption"

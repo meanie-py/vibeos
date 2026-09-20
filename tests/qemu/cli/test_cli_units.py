@@ -8399,7 +8399,18 @@ def test_source_lint_preflight_honours_skip_lint(tmp_path, monkeypatch):
 
 
 def _with_origin_master(repo: Path, *paths: str) -> None:
-    """Give `repo` an origin/master and a commit on top touching exactly `paths`."""
+    """Give `repo` an origin/master and a commit on top touching exactly `paths`.
+
+    The shared predicate is installed into the BASE, because `_docs_only_vs_master` loads
+    it from `<repo>/tools/docs_only.py` by path. In the base, not the delta: a predicate
+    committed alongside the change would itself be a non-inert path.
+    """
+    tools = repo / "tools"
+    tools.mkdir(parents=True, exist_ok=True)
+    real = Path(__file__).resolve().parents[3] / "tools" / "docs_only.py"
+    (tools / "docs_only.py").write_text(real.read_text())
+    _git(repo, "add", "-A")
+    _git(repo, "commit", "-qm", "install the shared docs-only predicate")
     _git(repo, "update-ref", "refs/remotes/origin/master", "HEAD")
     for rel in paths:
         target = repo / rel

@@ -67,7 +67,6 @@ from __future__ import annotations
 import json
 import os
 import subprocess
-import sys
 import time
 from pathlib import Path
 
@@ -179,12 +178,22 @@ def _docs_only_vs_master(repo: Path) -> bool:
         diff = _git(repo, "diff", "--name-only", "origin/master...HEAD")
     except Exception:
         return False
-    sys.path.insert(0, str(repo / "tools"))
+    # By PATH, not by name: a `sys.path` insert leaves `docs_only` in `sys.modules`, and a
+    # process that later conducts a drain would then judge the INTEGRATION tree with this
+    # lane's copy of the rule. Same reason queue.py loads it this way.
+    import importlib.util
+
     try:
-        from docs_only import docs_only
-    finally:
-        sys.path.pop(0)
-    return docs_only(diff.splitlines())
+        spec = importlib.util.spec_from_file_location(
+            "_land_docs_only", repo / "tools" / "docs_only.py"
+        )
+        if spec is None or spec.loader is None:
+            return False
+        module = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(module)
+    except Exception:
+        return False
+    return module.docs_only(diff.splitlines())
 
 
 def _lint_preflight(repo: Path, run: Run, args) -> None:
