@@ -23,10 +23,10 @@ presence gets the direction wrong for 5 files — see note below the table).
 | **modify/delete — upstream deleted, we modified** | 5 | Keep ours (we're the living side); noted as a CRT-modernization trend to watch | 0 (policy is clear), 1 flagged FYI |
 | **rename/delete (false positives)** | 6 | All 6 are spurious `explorer-old`-vs-new-upstream-file pairings (git similarity heuristic) — take upstream's new file as a plain ADD | 0 |
 | **file location (real move)** | 1 | `sdk/lib/3rdparty/libwine/dll_canunload.c` → land at `sdk/lib/libwine/dll_canunload.c` (our renamed tree) | 0 |
-| **add/add** | 1 | `sdk/include/vcruntime/mingw32/intrin_arm64.h` — independently invented by both sides | **1 — ASK-OWNER** |
+| **add/add** | 1 | `sdk/include/vcruntime/mingw32/intrin_arm64.h` — independently invented by both sides | **DECIDED**: take upstream, re-add 7 used intrinsics |
 | **content — build files** (`CMakeLists.txt`/`*.cmake`) | 72 | 8 already have full recipes in `upstream-sync-build-conflicts.md` (skip); 64 NOT examined here | 64 not reached |
 | **content — vendored (`vendor.yaml` trees/containers)** | 44 | General policy + 3 flagged clusters | 3 flagged |
-| **content — live C/headers/other** | 47 | **Full recipes below**, 45 substantive (2 trivial: `.gitignore`, `README.md`) | 3 — ASK-OWNER |
+| **content — live C/headers/other** | 47 | **Full recipes below**, 45 substantive (2 trivial: `.gitignore`, `README.md`) | 0 — all 3 DECIDED 2026-09-20 |
 | **Total** | **294** | | |
 
 Sum check: 125+5+6+1+1+72+44+47 = 301 CONFLICT-lines-worth, but 6 of the "rename/delete" paths
@@ -163,7 +163,32 @@ upstream is moving these three away (likely superseded by their UCRT work, given
 these are heading toward EOL upstream — not an argument to delete them now (we still ship them),
 just useful context for whoever prioritizes the CRT translation backlog next.
 
-### `sdk/include/vcruntime/mingw32/intrin_arm64.h` — **ASK-OWNER**
+### `sdk/include/vcruntime/mingw32/intrin_arm64.h` — **DECIDED 2026-09-20**
+
+> **Owner's ruling: keep whichever is more complete and covers all arches; port it to work
+> with ARM64 as needed.** That is upstream's. The symbol diff (done after this section was
+> written, see below) says the swap is safe on signatures and the only real work is
+> re-adding what ours declares and theirs does not.
+>
+> **Resolution:** take upstream's 845-line version as the base, then re-add the seven
+> ours-only intrinsics that are actually used, and drop `__readx18` (0 users).
+>
+> ```
+> ours 51 symbols | theirs 114 | overlap 43, ALL signature-compatible
+> (differences are parameter NAMES, `__INTRIN_INLINE`, and
+>  `unsigned long long` vs `unsigned __int64` — same width on ARM64)
+>
+> ours-only, by tree-wide users:
+>   _disable 75 | __debugbreak 73 | _enable 57 | _mm_mfence 6
+>   _mm_lfence 5 | _mm_sfence 4 | __sync_synchronize 3 | __readx18 0
+> ```
+>
+> **One thing to watch when doing it:** ours are *declarations*, upstream's are
+> `__INTRIN_INLINE` *definitions*, so the bodies start coming from the header. The seven
+> also appear in `vcruntime/msc/intrin.h`, `intrin_arm.h` and `emmintrin.h` — but those are
+> the MSVC and other-arch paths, and whether they reach MinGW ARM64 was NOT verified. Check
+> that before assuming the re-add is unnecessary.
+
 
 Genuine independent invention, not a text conflict from a shared ancestor (the file didn't exist
 at FP on either side — confirmed both `git log` histories start from scratch after the fork).
@@ -250,6 +275,18 @@ CDefaultContextMenu, shlfolder, CFSFolder, CDesktopFolder, CRecycleBin, CShellLi
 |---|---|---|
 | `dll/win32/shell32/brfolder.cpp` | **FLIPPED** (registry: `shell32-rust`) | Take upstream (`c3d6516f20c` EXTERN_C fix, `a790beb26ba` SHBindToObject fix) as oracle/triage against the Rust `brfolder` port. |
 | `dll/win32/shell32/utils.cpp` | **FLIPPED** (registry: `shell32-rust`) | Take upstream (`a5f51269c88` FolderItems3, 3 SDK-implementation commits) — **this is the richest upstream delta in the shell32 cluster** (a real new feature, move/copy directory tree support); flag as a priority triage lead, not routine. |
+> **`shell32.cpp` — DECIDED 2026-09-20. Owner's ruling: keep the C DEAD and fix the Rust
+> semantically.** The shell32 lane is within days of 100% Rust, so the merge must never
+> revive a C body here. For every hunk upstream touches, the resolution is "ours" — the C
+> stays retired — and the upstream change becomes a **semantic-port item** for an agent to
+> apply to the *Rust*, not to the C. That inverts the usual per-hunk judgement for this one
+> file and removes it from the landmine list entirely: there is no case where a hunk
+> resolves toward live C.
+>
+> The follow-up that carries the value is a semantic-port pass over shell32-rust against
+> upstream's post-fork shell32 changes, looking for bugs and gaps introduced by translating
+> directly rather than porting behaviour. Owned by the shell32 lane, not this one.
+
 | `dll/win32/shell32/shell32.cpp` | **LIVE — still compiled** (`CMakeLists.txt:97`, uncommented; comment nearby: "shell32.cpp names the unmangled symbols Rust emits" — it's a hybrid glue TU, not fully flipped) | **Real 3-way merge required.** Both sides touched this heavily. Read the hunks: our side is mostly COM-class retirement (functions moving OUT to Rust, so lines disappearing), upstream's is feature adds (`LockServer` impl, `AddCommasW` locale fix, swprintf conformance). A hunk that upstream edits inside a function WE already deleted (moved to Rust) should resolve to "stay deleted, note as a triage lead"; a hunk in code that's still live in both should do an ordinary merge. **ASK-OWNER if any single hunk can't be cleanly classified this way** — this file is actively morphing shape from both directions at once and is the highest-risk file in the whole "other" bucket for exactly the landmine this task warns about (accidentally re-enabling a function upstream "fixed" that we've already moved to Rust, if the C survives as an uncommented duplicate symbol). |
 | `dll/win32/shell32/precomp.h` | Header, no flip question | Content merge: upstream added several NT6+ declarations (`095860df576` bundle, `c891aefdcff`, `a83411cfefe`, `c61d98f9392` — declaration removal). Low functional risk since it's declarations only, but do check whether any declaration upstream REMOVES (`c61d98f9392` "Delete SHMultiFileProperties declaration") is still referenced by our own Rust FFI bridge headers before dropping it. |
 | `dll/win32/shell32/shfldr.h` | Header, no flip question | Content merge, low risk: upstream (`c891aefdcff`, swprintf conformance) vs. our extensive shell32 Rust-flip commits that touched this header's declarations as classes moved out. Same caution as `precomp.h` — verify no FFI bridge references a declaration either side removes. |
@@ -275,6 +312,11 @@ Version comparison (measured directly from the header constants, not from commit
 | libpng | 1.6.58 | 1.6.54 | **Ours is newer — keep ours.** |
 | libtiff | 4.7.0 | 4.7.1 | **Upstream is newer by one patch** (`bb63bb36ed5` "fix x64 regression") |
 | libjpeg | (bumped 9d→9f per our commit `1b03ad0d747`) | synced via `dcd45a59d15` | Not independently version-checked here — same recipe applies |
+
+> **DECIDED 2026-09-20. Owner's ruling: the research lane owns vendoring, versions and
+> bumps, including libjpeg/libpng/libtiff, and is adding the `sdk/include/reactos/libs/*`
+> mirrors to `vendor.yaml`. This lane flags a vendored tree ONLY when the API CONTRACT
+> changes** — a version skew on its own is not our call and not a blocker.
 
 **Recommendation: do NOT hand-resolve these as ordinary text merges.** All three are vendored
 trees with an established re-vendor process (see `vendor.yaml`'s per-tree `patch`/`version`
