@@ -50,8 +50,8 @@ use core::marker::PhantomData;
 
 use crate::island::{
     CoTaskMemAlloc, CoTaskMemFree, CoTaskMemRealloc, LocalAlloc, LocalFree, LocalReAlloc,
-    MultiByteToWideChar, RegCloseKey, RegOpenKeyExW, BOOL, CP_THREAD_ACP, HKEY, HLOCAL, INT,
-    LONG, LPCSTR, LPCWSTR, POSITION, REGSAM, SIZE_T, UINT, WCHAR,
+    MultiByteToWideChar, RegCloseKey, RegOpenKeyExW, BOOL, BSTR, CP_THREAD_ACP, HKEY, HLOCAL,
+    INT, LONG, LPCSTR, LPCWSTR, POSITION, REGSAM, SIZE_T, UINT, WCHAR,
 };
 use crate::shellcom::IUnknown;
 
@@ -338,6 +338,12 @@ impl<T> CComPtr<T> {
     /// check in C++ and is not reproduced as a panic in a shipping DLL.
     pub fn GetAddressOf(&mut self) -> *mut *mut T {
         core::ptr::addr_of_mut!(self.p)
+    }
+
+    /// `GetAddressOf` under the spelling the translation also emits, for the same reason
+    /// `Get` sits beside `as_ptr` above: one ATL operator, two renderings.
+    pub fn as_mut_ptr(&mut self) -> *mut *mut T {
+        self.GetAddressOf()
     }
 }
 
@@ -1108,6 +1114,55 @@ impl Drop for CStringW {
             if !self.m_pszData.is_null() {
                 <CLocalAllocator as CAllocator>::Free(self.m_pszData as *mut c_void);
             }
+        }
+    }
+}
+
+// -------------------------------------------------------------------------------------------
+// CComBSTR
+// -------------------------------------------------------------------------------------------
+
+extern "system" {
+    /// oleaut32 `SysFreeString`. Documented to ignore a NULL argument, which is why
+    /// `CComBSTR::drop` below does not pre-check — ATL's own `~CComBSTR` does not either.
+    fn SysFreeString(bstrString: BSTR);
+}
+
+/// ATL's owning BSTR wrapper (atlbase.h).
+///
+/// ONE member, exactly as the bindgen island already renders it
+/// (`ATL_CComBSTR { m_str: BSTR }`), so a class embedding this by value gets the C++ layout
+/// for free and needs no shim.
+///
+/// `m_str` is PUBLIC on purpose: the C++ reaches straight into it. `CFolderItemVerb::Init`
+/// is `m_name.m_str = name;` — a raw ADOPT of a BSTR the caller already allocated, not a
+/// copy — so it has to lower to that same single store or the ownership transfer changes
+/// and the string is either leaked or freed twice.
+#[repr(C)]
+pub struct CComBSTR {
+    pub m_str: BSTR,
+}
+
+impl CComBSTR {
+    /// `CComBSTR()` — the default constructor leaves the string null.
+    pub const fn new() -> Self {
+        Self { m_str: core::ptr::null_mut() }
+    }
+}
+
+impl Default for CComBSTR {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+impl Drop for CComBSTR {
+    /// `~CComBSTR()` — `SysFreeString(m_str)`. This IS the member destructor a translation
+    /// would otherwise silently drop, which is the whole reason the type exists rather than
+    /// the field being lowered to a bare `BSTR`.
+    fn drop(&mut self) {
+        unsafe {
+            SysFreeString(self.m_str);
         }
     }
 }

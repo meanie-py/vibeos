@@ -90,7 +90,7 @@ pub use crate::shellutils::{
 // would re-open exactly the nominal split the module header warns about.
 pub use crate::win32::{CopyMemory, HIWORD, LOWORD, ZeroMemory};
 // Crate-root `#[macro_export]` macros — text substitution, so no types to split on.
-pub use crate::{FIELD_OFFSET, ImageList_AddIcon, MAKELONG, MAKEROP4, TRACE_ON, UNREFERENCED_PARAMETER, V_BSTR, V_VT, _countof};
+pub use crate::{FIELD_OFFSET, ImageList_AddIcon, MAKELONG, MAKEROP4, TRACE_ON, UNREFERENCED_PARAMETER, V_BSTR, V_UI4, V_VT, _countof};
 
 // shell32-internal helpers that already have a Rust home. These are shell32's own EXPORTS —
 // the island correctly omits them, because `BLOCKLIST_FUNCS_FROM_CRATE` drops every function
@@ -113,6 +113,74 @@ extern "C" {
         lParam: crate::island::LPARAM,
         pwszTitle: crate::island::LPCWSTR,
     ) -> crate::island::HPROPSHEETPAGE;
+}
+
+/// guiddef.h `REFGUID` — C++ spells it `const GUID &`. A reference IS a pointer at the ABI,
+/// so the alias is the pointer; the island renders `REFIID` the same way.
+pub type REFGUID = *const crate::island::GUID;
+
+// dll/win32/shell32/rust_folderitemverbs_bridge.cpp — the still-C++ CFolderItemVerbs.
+//
+// Declared with an OPAQUE `*mut c_void` object pointer on purpose: the `FolderItemVerbs`
+// interface type is rendered FILE-LOCALLY inside `shell32/CFolderItem.rs` (the island does not
+// carry the shldisp automation interfaces), so nothing outside that file can name it, and a
+// prelude declaration that tried to would not compile. The call sites cast, which is also the
+// honest spelling — what crosses this boundary is a pointer whose type only the two ends agree
+// on.
+//
+// The bridge exists because `CFolderItemVerbs` is activated by `new CComObject<T>`, a shape the
+// deterministic COM layer does not map, so it could neither translate the class nor generate
+// these declarations. ALL FOUR DIE when that class translates; see rust-port-status.md, where
+// the debt is recorded as OWED rather than done.
+extern "C" {
+    /// `new CComObject<CFolderItemVerbs>()`, returned already upcast to the COM interface —
+    /// see the bridge's header for why the adjustment matters.
+    pub fn CFolderItemVerbs_new() -> *mut core::ffi::c_void;
+    /// `delete verbs;`
+    pub fn CFolderItemVerbs_delete(pVerbs: *mut core::ffi::c_void);
+    /// `verbs->Init(idlist)`
+    pub fn CFolderItemVerbs_Init_body(
+        pVerbs: *mut core::ffi::c_void,
+        idlist: crate::island::LPITEMIDLIST,
+    ) -> crate::island::HRESULT;
+    /// `verbs->AddRef()`
+    pub fn CFolderItemVerbs_AddRef_body(pVerbs: *mut core::ffi::c_void) -> crate::island::ULONG;
+}
+
+extern "C" {
+    /// shell32's type-library GUID. This is what ATL's
+    /// `IDispatchImpl<T, piid, plibid = &CAtlModule::m_libid, ...>` resolves `plibid` to for
+    /// every dual interface in this module, so `EnsureTILoaded` passes it to LoadRegTypeLib.
+    /// Declared here rather than per-file because three classes now need it (CFolder,
+    /// CFolderItem, CFolderItems) and `shell_dispatch.rs` had its own private copy.
+    pub static LIBID_Shell32: crate::island::GUID;
+}
+
+/// oaidl.h `DISP_E_BADINDEX` — `GetTypeInfo`/`Item` reject an out-of-range index with it.
+/// Not in the island: the DISP_E_* family lives in winerror.h behind `_OLEAUTO_H_`-style
+/// guards the island's include closure does not reach.
+pub const DISP_E_BADINDEX: crate::island::HRESULT = 0x8002_000Bu32 as crate::island::HRESULT;
+
+// oleaut32. The island renders the oaidl/oleauto TYPES but not these entry points, so the
+// automation objects (CFolder / CFolderItem / CFolderItems) had no declaration to call.
+extern "system" {
+    /// `BSTR SysAllocString(const OLECHAR *)` — allocates a BSTR copy; NULL on failure.
+    pub fn SysAllocString(psz: *const crate::island::OLECHAR) -> crate::island::BSTR;
+    /// `HRESULT VariantCopyInd(VARIANT *pvarDest, const VARIANT *pvarSrc)` — copies, and
+    /// DEREFERENCES a by-reference source (`VT_BYREF`), which plain `VariantCopy` does not.
+    pub fn VariantCopyInd(
+        pvarDest: *mut crate::island::VARIANT,
+        pvarSrc: *const crate::island::VARIANT,
+    ) -> crate::island::HRESULT;
+    /// `HRESULT LoadRegTypeLib(REFGUID, WORD, WORD, LCID, ITypeLib **)` — the registered
+    /// type library, which is how ATL's `IDispatchImpl::EnsureTILoaded` gets its ITypeInfo.
+    pub fn LoadRegTypeLib(
+        rguid: REFGUID,
+        wVerMajor: crate::island::WORD,
+        wVerMinor: crate::island::WORD,
+        lcid: crate::island::LCID,
+        pptlib: *mut *mut crate::island::ITypeLib,
+    ) -> crate::island::HRESULT;
 }
 
 /// `DLGPROC`, spelled `extern "system"` on EVERY arch.
@@ -1084,6 +1152,15 @@ macro_rules! V_VT {
 macro_rules! V_BSTR {
     ($v:expr) => {
         (*($v)).n1.n2.n3.bstrVal
+    };
+}
+
+/// oaidl.h `V_UI4(pvar)` — the `VT_UI4` arm, `ulVal`. CFolderItems::Item reads it to take
+/// the integer index out of the caller's VARIANT.
+#[macro_export]
+macro_rules! V_UI4 {
+    ($v:expr) => {
+        (*($v)).n1.n2.n3.ulVal
     };
 }
 

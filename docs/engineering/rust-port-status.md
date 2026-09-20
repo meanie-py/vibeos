@@ -2163,6 +2163,21 @@ flight is marked; in-flight lanes live in [`active-lanes/`](active-lanes/).*
   and CDrivesFolder.cpp still construct. Two mangled helpers took EXTERN_C in utils.h instead.
   Conformance: launched=91 ok=91 on all three arches, and the `[EXPLORER] taskbar: OnCreate
   begin` -> `child controls created` gap it used to freeze in is traversed.
+  **CFolderItemVerb / CFolderItemVerbs are still C++ — OWED, not done, and one hand-written
+  bridge stands in for them.** `CFolder.cpp` and `CFolderItems.cpp` are Rust (CFolder 24 fns,
+  CFolderItem 25, CFolderItems 13); `CFolderItemVerbs.cpp` is untranslated original C++,
+  blocked on TWO named rustconv gaps, both deterministic and free to close: (1) its activation
+  is `new CComObject<T>`, and the only internal shapes the layer maps are `ShellObjectCreator`,
+  `ShellObjectCreatorInit` and `_CreatorClass::CreateInstance`; (2) `CFolderItemVerb` carries
+  `CComBSTR m_name`, and `CComBSTR` has ZERO mentions anywhere in rustconv — it is unmodelled,
+  unlike `CComPtr`. Because `CFolder`'s `CFolderItem::Verbs` is Rust and still has to build
+  that C++ object, `rust_folderitemverbs_bridge.cpp` publishes the four symbols rustconv kept
+  symbolic: `CFolderItemVerbs_new` / `_delete` / `_Init_body` / `_AddRef_body`. **That file is
+  scheduled to die**: the names are exactly the ones the Rust already calls, so when the two
+  classes translate, Rust defines them, the bridge is deleted, and `CFolderItem.rs` does not
+  change. It is ABI-sensitive in one specific way worth knowing before touching it — every
+  entry point traffics in `FolderItemVerbs*`, not `CFolderItemVerbs*`, because the C++ it
+  replaces ended in an implicit upcast that adjusts the pointer by a non-zero offset.
   **A stale ORPHAN banner is not cosmetic**: `scan_extern_arity`, `scan_cc_mismatch`,
   `scan_silent_failures` and `verify_lost_exports` all SKIP a file on sight of
   `ORPHAN-BY-DESIGN:`, so it must come off in the same commit that wires the module or four

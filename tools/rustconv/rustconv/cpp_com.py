@@ -3259,6 +3259,22 @@ def normalize_worker_semantics(source: str, rust: str) -> str:
                 raise CppComError(f"CComPtr local {name}: multiple copy AddRef calls")
             rust = add_ref.sub(f"((*(*{name}).lpVtbl).AddRef)({name})", rust, count=1)
         rust = re.sub(rf"\b{re.escape(name)}\.0\b", name, rust)
+        # The slot is a RAW POINTER now, so ATL's operators have no methods to resolve to.
+        # Each lowers to the thing the operator meant, and the distinction matters:
+        #   `operator T*()`  -> the pointer VALUE            (`p.as_ptr()`      -> `p`)
+        #   `operator&()`    -> the ADDRESS OF THE SLOT      (`p.as_mut_ptr()`  -> `&raw mut p`)
+        #   `Attach(v)`      -> adopt without AddRef         (`p.Attach(v)`     -> `p = v`)
+        # Getting the first two the wrong way round is silent at the call site and wrong at
+        # runtime: an out-parameter handed the value leaves the slot null and leaks whatever
+        # the callee allocated. `Release`/`Detach` are deliberately NOT rewritten — the guard
+        # owns the release, and a `Detach` needs a temporary that this cannot express.
+        rust = re.sub(rf"\b{re.escape(name)}\.as_ptr\(\)", name, rust)
+        rust = re.sub(
+            rf"\b{re.escape(name)}\.as_mut_ptr\(\)",
+            f"core::ptr::addr_of_mut!({name})",
+            rust,
+        )
+        rust = re.sub(rf"\b{re.escape(name)}\.Attach\(", f"{name} = (", rust)
         declaration = re.compile(
             rf"(?P<indent>^[ \t]*)let\s+mut\s+{re.escape(name)}\s*:\s*"
             rf"\*mut\s+{re.escape(interface)}\s*=\s*(?:core::ptr::null_mut\(\)|"
@@ -3599,10 +3615,21 @@ def normalize_worker_semantics(source: str, rust: str) -> str:
             r"\1core::ptr::null_mut();",
             rust,
         )
+    # `m_X(-1)` in a C++ initializer list means ALL-ONES, and what that is spelled as in Rust
+    # depends on a signedness this function cannot see: `source` is `dep.body_text`, the
+    # function body, while the field's declaration lives in the class HEADER.
+    #
+    # This used to rewrite to `UINT::MAX`, which is right only when the field is unsigned and
+    # is a hard type error when it is not — `CFolderItems::CFolderItems() : m_Count(-1)` over
+    # `long m_Count` came out as `(*this).m_Count = UINT::MAX;` and could never compile.
+    # The cast keeps ONE spelling correct for both: `-1 as u32` is all-ones, `-1 as i32` is
+    # -1, and `as _` takes the field's own type from the assignment. It also keeps the `-1`
+    # in the text, which `UINT::MAX` did not — the fact-seal audit counts the C's literals
+    # and a rewrite that deletes one is a rewrite that can fail the replay.
     for field in re.findall(r"\b(m_[A-Za-z_]\w*)\s*\(\s*-1\s*\)", source):
         rust = re.sub(
-            rf"(\(\*this\)\.{re.escape(field)}\s*=\s*)-1\s*;",
-            r"\1UINT::MAX;",
+            rf"(\(\*this\)\.{re.escape(field)}\s*=\s*)(?:-1|UINT::MAX)\s*;",
+            r"\g<1>-1 as _;",
             rust,
         )
     for field in re.findall(r"\bDestroyIcon\s*\(\s*(m_[A-Za-z_]\w*)\s*\)", source):
@@ -3919,6 +3946,51 @@ def normalize_worker_semantics(source: str, rust: str) -> str:
         r"cpp_com_SHSetStrRetW(\1, core::ptr::addr_of!((*\2).\3).cast::<WCHAR>())",
         rust,
     )
+    # `ShellObjectCreator<T>` / `ShellObjectCreatorInit<T>` for a SIBLING class.
+    #
+    # The activation detection above is keyed to the class BEING translated, because its job
+    # is to decide how THIS class is constructed. But a body routinely constructs a different
+    # one — CFolder::Items builds a CFolderItems, CFolder::ParseName builds a CFolderItem —
+    # and C++ instantiates the template per type, so the model renders the turbofish it was
+    # given and nothing resolved it. The scaffold already emits `<Class>_CreateInstance` for
+    # every class it generates, with exactly the `(init args…, riid, ppv)` signature the
+    # template expands to, so the sibling's creator is already there to be called and this is
+    # a NAMING gap, not missing codegen.
+    #
+    # Blanket, not sibling-only: for the class being translated the rewrite lands on that
+    # same generated `<Class>_CreateInstance`, so one rule covers both and there is no
+    # "is it me or a sibling" test to get wrong.
+    rust = re.sub(
+        r"\bShellObjectCreator(?:Init)?\s*::?\s*<\s*([A-Za-z_]\w*)\s*>\s*\(",
+        r"\1_CreateInstance(",
+        rust,
+    )
+    # oaidl.h's VARIANT accessors are MACROS, every one of them — `V_VT`, `V_BSTR`, `V_UI4`
+    # and the rest are `#define`s reaching into the union (`(*(v)).n1.n2.n3.ulVal`), not
+    # functions. A model that has seen them as `V_VT(pvar)` in the C writes the same call
+    # shape in Rust, which is `expected function, found macro` at every site.
+    #
+    # Safe as a blanket family rule precisely because there is no exception: no `V_<NAME>`
+    # in that header is a function, so rewriting the call spelling cannot turn a correct
+    # call into a wrong one. If the crate has no macro of that name the result is a
+    # different and MORE accurate error — "cannot find macro" names the real gap, where
+    # "expected function, found macro" pointed at the call.
+    rust = re.sub(r"\bV_([A-Z][A-Z0-9_]*)\s*\(", r"V_\1!(", rust)
+    # An INVENTED macro spelling of `IID_PPV_ARG`, named after the interface:
+    # `IID_FolderItems!(FolderItems, ppid)` where the C says `IID_PPV_ARG(FolderItems, ppid)`.
+    # The model emits the sanctioned spelling nearly everywhere (CFolderItems' own Item() came
+    # back correctly expanded in the same run), so this is a rendering slip rather than a
+    # misunderstanding, and it does NOT compile — E0423/E0425 at the call, never silent.
+    #
+    # Safe to normalize rather than reject because the shape carries its own check: the
+    # backreference forces the macro name and the first argument to be the same interface, so
+    # a coincidental `IID_X!(Y, …)` is left alone. Rewriting to the sanctioned spelling (not
+    # straight to the expansion) keeps ONE implementation of the two-argument expansion below.
+    rust = re.sub(
+        r"\bIID_([A-Za-z_]\w*)\s*!\s*\(\s*\1\s*,\s*([^(),]+?)\s*\)",
+        r"IID_PPV_ARG(\1, \2)",
+        rust,
+    )
     # Last, so the alias/receiver rules above have already recovered the real
     # destination from any IID_PPV_ARG they understand.
     return _expand_residual_iid_ppv_arg(rust)
@@ -4203,6 +4275,24 @@ _CPP_SUPPORT_GUIDS = {
     "IID_IShellFolder2",
 }
 _CPP_SUPPORT_GUID_ALIASES = {"SID_SFolderView": "IID_IFolderView"}
+
+# GUIDs whose C name is a guiddef.h MACRO, not a data symbol: `#define CLSID_NULL GUID_NULL`,
+# so nothing exports `CLSID_NULL` and the extern must be bound to what uuid actually provides
+# (`GUID_NULL`, sdk/lib/uuid/cguid_i.c). Two already-landed modules carry this by hand
+# (`shell_dispatch.rs`, `cfs_folder.rs`); emitting it here means the next module does not have
+# to discover it as a LINK error after everything already compiles.
+#
+# Bound with `#[link_name]` rather than through `_CPP_SUPPORT_GUID_ALIASES` above, which
+# rewrites the IDENTIFIER: `CLSID_NULL` also occurs inside the ATL debug string
+# "IDispatchImpl: plibid is CLSID_NULL!", and a blind rewrite would edit the message text.
+_CPP_SUPPORT_GUID_LINK_NAMES = {"CLSID_NULL": "GUID_NULL"}
+
+
+def _guid_extern_decl(name: str) -> str:
+    """One `static NAME: GUID;`, with a `#[link_name]` when the C name is a macro alias."""
+    link_name = _CPP_SUPPORT_GUID_LINK_NAMES.get(name)
+    prefix = f'    #[link_name = "{link_name}"]\n' if link_name else ""
+    return f"{prefix}    static {name}: GUID;"
 
 
 def _render_cmverbmap(source: str) -> str:
@@ -4931,9 +5021,7 @@ def render_cpp_support(
     )
     if selected_guids:
         chunks.append(
-            'extern "C" {\n'
-            + "\n".join(f"    static {name}: GUID;" for name in selected_guids)
-            + "\n}"
+            'extern "C" {\n' + "\n".join(_guid_extern_decl(name) for name in selected_guids) + "\n}"
         )
 
     if "CopyMemory" in used_words or "ZeroMemory" in used_words:
@@ -4984,7 +5072,48 @@ def render_cpp_support(
         chunks.append(_CPP_COMPTR_GUARD_SUPPORT)
     if "shell32_hInstance" in used_words:
         chunks.append('extern "C" {\n    static mut shell32_hInstance: HINSTANCE;\n}')
-    return "\n\n".join(chunks)
+    return _drop_duplicate_type_definitions("\n\n".join(chunks))
+
+
+_DUPLICATE_TYPE_RE = re.compile(
+    r"^(?:#\[repr\([^\]]*\)\]\n)?pub (?:struct|union|enum) (?P<name>[A-Za-z_]\w*)\b",
+)
+
+
+def _drop_duplicate_type_definitions(rendered: str) -> str:
+    """Emit each top-level type ONCE, keeping the first rendering.
+
+    This closure is assembled from several independent passes — local PODs, the SDK layouts,
+    and the referenced-interface walk — and none of them can see what the others already
+    emitted. When two passes both reach a type they both render it, and a repeated
+    `pub struct` is E0428 at the definition, not a shadow: `DISPPARAMS` came out twice in
+    every one of CFolder / CFolderItem / CFolderItems, from the POD pass and again behind the
+    `IShellDispatch` interface walk.
+
+    Keeping the FIRST is what makes this safe to do blindly. The passes are ordered
+    most-specific first, so a later pass can only ever be re-deriving the same SDK layout; if
+    two renderings ever genuinely DISAGREED, dropping the later one would hide that, so the
+    duplicate is only dropped when the blocks are byte-identical and left alone otherwise —
+    two different layouts under one name is a real conflict and must stay loud.
+    """
+    blocks = rendered.split("\n\n")
+    first_by_name: dict[str, str] = {}
+    kept: list[str] = []
+    for block in blocks:
+        match = _DUPLICATE_TYPE_RE.match(block)
+        if match is None:
+            kept.append(block)
+            continue
+        name = match.group("name")
+        previous = first_by_name.get(name)
+        if previous is None:
+            first_by_name[name] = block
+            kept.append(block)
+        elif previous != block:
+            # Same name, different layout — a real conflict. Keep both so it fails loudly
+            # at the definition rather than silently picking one.
+            kept.append(block)
+    return "\n\n".join(kept)
 
 
 _CPP_COMPTR_GUARD_SUPPORT = r"""pub struct CppComPtrGuard<T> { slot: *mut *mut T }
@@ -5790,6 +5919,13 @@ def lower_trivial_worker(c_body: str, expected_signature: str) -> str | None:
     )
     if out_assignment:
         pointer, value, result = out_assignment.groups()
+        # C's `NULL` is `((void*)0)` and assigns to a pointer of ANY pointee type; Rust's
+        # `NULL` is a concrete `*mut c_void` and assigns to nothing else. Emitting it
+        # verbatim made every `*ppOut = NULL; return E_NOTIMPL;` stub a type error —
+        # `expected *mut Folder, found *mut c_void` on CFolder::get_ParentFolder.
+        # `null_mut()` infers the out-parameter's own pointee instead.
+        if value in {"NULL", "nullptr"}:
+            value = "core::ptr::null_mut()"
         return f"{expected_signature} {{ *{pointer} = {value}; {result} }}"
     return None
 

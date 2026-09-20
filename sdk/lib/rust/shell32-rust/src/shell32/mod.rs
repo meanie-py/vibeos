@@ -138,6 +138,27 @@ pub mod filesysbinddata_free;
 /// `CExtractIcon.cpp`, cohab-flipped. Same two-module split as CFileSysBindData above.
 pub mod CExtractIcon;
 pub mod extracticon_free;
+/// `CFolder.cpp` and `CFolderItems.cpp`, cohab-flipped — the Shell.Application automation
+/// objects. THREE classes, one module each, because rustconv names its output after the .cpp
+/// and translating a TU's second class would otherwise overwrite the first wholesale.
+///
+/// These were unblocked by a one-character fix, not by new machinery: the `IDispatchImpl<T,
+/// &IID_T>` recognizer required the interface argument to be named I-something, and shldisp.idl
+/// calls these `Folder2` / `FolderItem` / `FolderItems`. The `&IID_\1` backreference and the
+/// `in interfaces` membership test were always the real guards, so widening the name pattern
+/// lost nothing and admitted 62 functions.
+///
+/// `CFolderItemVerbs.cpp` is deliberately still C++ — `new CComObject<T>` activation and
+/// `CComBSTR` state are both unmapped. The Rust `CFolderItem::Verbs` still has to construct
+/// one, so `dll/win32/shell32/rust_folderitemverbs_bridge.cpp` publishes the four symbols
+/// rustconv kept symbolic rather than inventing. That file is deleted when those two classes
+/// translate; see rust-port-status.md, where the debt is recorded as OWED.
+pub mod CFolder;
+pub mod CFolderItem;
+pub mod CFolderItems;
+/// `CFolder.cpp`'s free half: one `extern "C"` factory, hand-written because the
+/// `--free-functions` PREAMBLE step fails on this TU. Its own header says why.
+pub mod cfolder_free;
 /// `utils.cpp`'s free functions, COHAB-FLIPPED 2026-09-19 -- wiring and the flip as ONE change,
 /// which is what the ORPHAN-BY-DESIGN guard that used to sit here was protecting. Wired alone,
 /// this module's `#[no_mangle]` names shadowed the live C++ ones with no duplicate-symbol error
