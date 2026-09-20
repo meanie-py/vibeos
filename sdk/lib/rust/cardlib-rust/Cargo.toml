@@ -1,0 +1,28 @@
+# cardlib-rust — the playing-card rendering library (sdk/lib/cardlib/cardlib.h).
+#
+# A clean-room reimplementation of the interface of J Brown's "CardLib", written
+# without reading its sources; see sdk/lib/cardlib/README.md.
+#
+# no_std and allocation-free on purpose: every collection in here is a fixed
+# array sized by a constant in the public header, so the library works the same
+# in a control panel and in a boot-time shell.
+[package]
+name = "cardlib-rust"
+version = "0.1.0"
+edition = "2021"
+autobins = false
+
+[lib]
+name = "cardlib_rust"
+path = "src/lib.rs"
+crate-type = ["staticlib", "rlib"]
+
+[dependencies]
+panic-common = { path = "../panic-common", features = ["user"], optional = true }
+
+[features]
+# ON for the ReactOS build (shared panic reporter via ntdll's DbgPrint).
+# OFF for the native-Windows validation harness, which supplies nothing and
+# just wants the minimal abort body.
+default = ["shared-panic"]
+shared-panic = ["dep:panic-common"]

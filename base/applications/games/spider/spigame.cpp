@@ -15,20 +15,22 @@
 #define NUM_STD_CARDS      52
 #define NUM_SPIDER_CARDS   104
 
-CardStack deck;
-CardRegion *from;
-CardRegion *pDeck;
-CardRegion *pStack[NUM_STACKS];
+CARDSTACK deck;
+CARDREGION *from;
+CARDREGION *pDeck;
+CARDREGION *pStack[NUM_STACKS];
 bool fGameStarted = false;
 int  yRowStackCardOffset;
 int cardsFinished;
 extern TCHAR MsgDeal[];
 extern TCHAR MsgWin[];
 
-CardStack CreatePlayDeck()
+CARDSTACK CreatePlayDeck()
 {
-    CardStack newStack;
+    CARDSTACK newStack;
     int i, colors = 1, num = 0;
+
+    CardStack_Clear(&newStack);
 
     switch (dwDifficulty)
     {
@@ -45,8 +47,8 @@ CardStack CreatePlayDeck()
     for (i = 0; i < NUM_SPIDER_CARDS; i++)
     {
         num += NUM_CARD_COLORS / colors;
-        Card newCard(num % NUM_STD_CARDS);
-        newStack.Push(newCard);
+        CARD newCard = Card_FromIndex(num % NUM_STD_CARDS);
+        CardStack_PushCard(&newStack, newCard);
     }
     return newStack;
 }
@@ -56,15 +58,15 @@ void NewGame(void)
     int i, j;
     /* First four stack with five, all other with 4 */
     int covCards = 5;
-    CardStack fakeDeck, temp;
+    CARDSTACK fakeDeck, temp;
 
-    SpiderWnd.EmptyStacks();
+    CardWindow_EmptyStacks(SpiderWnd);
 
     /* Create a new card-deck, fake deck */
     deck = CreatePlayDeck();
-    deck.Shuffle();
-    fakeDeck.NewDeck();
-    fakeDeck.Shuffle();
+    CardStack_Shuffle(&deck);
+    CardStack_NewDeck(&fakeDeck);
+    CardStack_Shuffle(&fakeDeck);
 
     /* Reset progress value */
     cardsFinished = 0;
@@ -72,35 +74,36 @@ void NewGame(void)
     /* Deal to each stack */
     for (i = 0; i < NUM_STACKS; i++)
     {
-        temp.Clear();
+        CardStack_Clear(&temp);
         if (i == NUM_SMALLER_STACKS)
         {
             covCards--;
         }
         for (j = 0; j <= covCards; j++)
         {
-            temp.Push(deck.Pop(1));
+            CardStack_PushCard(&temp, CardStack_PopCard(&deck));
         }
-        pStack[i]->SetFaceDirection(CS_FACE_DOWNUP, covCards);
-        pStack[i]->SetCardStack(temp);
+        CardRegion_SetFaceDirection(pStack[i], CS_FACE_DOWNUP, covCards);
+        CardRegion_SetCardStack(pStack[i], &temp);
     }
     /* Deal five fake cards to the deck */
-    pDeck->SetCardStack(fakeDeck.Pop(5));
+    CardStack_PopN(&fakeDeck, 5, &temp);
+    CardRegion_SetCardStack(pDeck, &temp);
 
-    SpiderWnd.Redraw();
+    CardWindow_Redraw(SpiderWnd);
     fGameStarted = false;
 }
 
-bool stackLookingGood(const CardStack &mystack, int numChecks)
+bool stackLookingGood(const CARDSTACK *mystack, int numChecks)
 {
     int i;
     for (i = 0; i < numChecks; i++)
     {
-        if (mystack[i].LoVal() != mystack[i + 1].LoVal() - 1)
+        if (Card_LoVal(CardStack_Get(mystack, i)) != Card_LoVal(CardStack_Get(mystack, i + 1)) - 1)
         {
             return false;
         }
-        if (mystack[i].Suit() != mystack[i + 1].Suit())
+        if (Card_Suit(CardStack_Get(mystack, i)) != Card_Suit(CardStack_Get(mystack, i + 1)))
         {
             return false;
         }
@@ -108,82 +111,83 @@ bool stackLookingGood(const CardStack &mystack, int numChecks)
     return true;
 }
 
-/* Card to be turned from a stack */
-void TurnStackCard(CardRegion &stackobj)
+/* CARD to be turned from a stack */
+void TurnStackCard(CARDREGION *stackobj)
 {
     int numfacedown;
 
-    stackobj.GetFaceDirection(&numfacedown);
-    if (stackobj.NumCards() <= numfacedown)
+    CardRegion_GetFaceDirection(stackobj, &numfacedown);
+    if (CardRegion_NumCards(stackobj) <= numfacedown)
     {
         if (numfacedown > 0) numfacedown--;
-        stackobj.SetFaceDirection(CS_FACE_DOWNUP, numfacedown);
-        stackobj.Redraw();
+        CardRegion_SetFaceDirection(stackobj, CS_FACE_DOWNUP, numfacedown);
+        CardRegion_Redraw(stackobj);
     }
 }
 
 /* Click on the deck */
-void CARDLIBPROC DeckClickProc(CardRegion &stackobj, int NumDragCards)
+void CARDLIBPROC DeckClickProc(CARDREGION *stackobj, int NumDragCards)
 {
-    CardStack temp, fakeDeck = pDeck->GetCardStack();
+    CARDSTACK temp, fakeDeck = *CardRegion_GetCardStack(pDeck);
     fGameStarted = true;
 
-    if (fakeDeck.NumCards() != 0 && deck.NumCards() != 0)
+    if (CardStack_NumCards(&fakeDeck) != 0 && CardStack_NumCards(&deck) != 0)
     {
         int i, facedown, faceup;
         /* Add one card to every stack */
         for (i = 0; i < NUM_STACKS; i++)
         {
-            temp = pStack[i]->GetCardStack();
-            temp.Push(deck.Pop());
+            temp = *CardRegion_GetCardStack(pStack[i]);
+            CardStack_PushCard(&temp, CardStack_PopCard(&deck));
 
             /* Check if we accidentally finished a row */
-            pStack[i]->GetFaceDirection(&facedown);
-            faceup = temp.NumCards() - facedown;
+            CardRegion_GetFaceDirection(pStack[i], &facedown);
+            faceup = CardStack_NumCards(&temp) - facedown;
             if (faceup >= NUM_ONECOLOR_CARDS)
             {
                 /* Check stack finished, remove cards if so */
-                if (stackLookingGood(temp, NUM_ONECOLOR_CARDS - 1))
+                if (stackLookingGood(&temp, NUM_ONECOLOR_CARDS - 1))
                 {
                     int j;
                     for (j = 0; j < NUM_ONECOLOR_CARDS; j++)
                     {
-                        temp.RemoveCard(0);
+                        CardStack_RemoveCard(&temp, 0);
                     }
                     cardsFinished += NUM_ONECOLOR_CARDS;
-                    pStack[i]->SetCardStack(temp);
+                    CardRegion_SetCardStack(pStack[i], &temp);
                     /* Turn now topmost card */
-                    TurnStackCard(*pStack[i]);
+                    TurnStackCard(pStack[i]);
                 }
             }
-            pStack[i]->SetCardStack(temp);
+            CardRegion_SetCardStack(pStack[i], &temp);
         }
         /* Remove one card from the fake ones */
-        pDeck->SetCardStack(fakeDeck.Pop(fakeDeck.NumCards() - 1));
+        CardStack_PopN(&fakeDeck, CardStack_NumCards(&fakeDeck) - 1, &temp);
+        CardRegion_SetCardStack(pDeck, &temp);
     }
-    pDeck->Update();
-    SpiderWnd.Redraw();
+    CardRegion_Update(pDeck);
+    CardWindow_Redraw(SpiderWnd);
 }
 
 /* Cards dragged from a stack */
-bool CARDLIBPROC StackDragProc(CardRegion &stackobj, int numDragCards)
+BOOL CARDLIBPROC StackDragProc(CARDREGION *stackobj, int numDragCards)
 {
     int numfacedown, numcards;
 
-    stackobj.GetFaceDirection(&numfacedown);
-    numcards = stackobj.NumCards();
+    CardRegion_GetFaceDirection(stackobj, &numfacedown);
+    numcards = CardRegion_NumCards(stackobj);
 
     /* Only cards facing up */
     if (numDragCards <= numcards - numfacedown)
     {
-        const CardStack &mystack = stackobj.GetCardStack();
+        const CARDSTACK *mystack = CardRegion_GetCardStack(stackobj);
         /* Don't allow to drag unsuited cards */
         if (!stackLookingGood(mystack, numDragCards - 1))
         {
             return false;
         }
         /* Remember where the cards come from */
-        from = &stackobj;
+        from = stackobj;
         return true;
     }
     else
@@ -195,10 +199,10 @@ bool CARDLIBPROC StackDragProc(CardRegion &stackobj, int numDragCards)
 /* Game finished successfully */
 void GameFinished()
 {
-    SpiderWnd.EmptyStacks();
+    CardWindow_EmptyStacks(SpiderWnd);
 
-    MessageBox(SpiderWnd, MsgWin, szAppName, MB_OK | MB_ICONINFORMATION);
-    if( IDYES == MessageBox(SpiderWnd, MsgDeal, szAppName, MB_YESNO | MB_ICONQUESTION) )
+    MessageBox(CardWindow_GetHwnd(SpiderWnd), MsgWin, szAppName, MB_OK | MB_ICONINFORMATION);
+    if( IDYES == MessageBox(CardWindow_GetHwnd(SpiderWnd), MsgDeal, szAppName, MB_YESNO | MB_ICONQUESTION) )
     {
         NewGame();
     }
@@ -208,8 +212,8 @@ void GameFinished()
     }
 }
 
-/* Card added, check for win situation */
-void CARDLIBPROC StackAddProc(CardRegion &stackobj, const CardStack &added)
+/* CARD added, check for win situation */
+void CARDLIBPROC StackAddProc(CARDREGION *stackobj, const CARDSTACK *added)
 {
     if (cardsFinished == NUM_SPIDER_CARDS)
     {
@@ -218,51 +222,52 @@ void CARDLIBPROC StackAddProc(CardRegion &stackobj, const CardStack &added)
 }
 
 /* Cards dropped to a stack */
-bool CARDLIBPROC StackDropProc(CardRegion &stackobj, CardStack &dragcards)
+BOOL CARDLIBPROC StackDropProc(CARDREGION *stackobj, CARDSTACK *dragcards)
 {
-    Card dragcard = dragcards[dragcards.NumCards() - 1];
+    CARD dragcard = CardStack_Get(dragcards, CardStack_NumCards(dragcards) - 1);
     int faceup, facedown;
 
     /* Only drop our cards on other stacks */
-    if (stackobj.Id() == from->Id())
+    if (CardRegion_Id(stackobj) == CardRegion_Id(from))
     {
         return false;
     }
 
     /* If stack is empty, everything can be dropped */
-    if (stackobj.NumCards() != 0)
+    if (CardRegion_NumCards(stackobj) != 0)
     {
-        const CardStack &mystack = stackobj.GetCardStack();
+        const CARDSTACK *mystack = CardRegion_GetCardStack(stackobj);
 
         /* Can only drop if card is 1 less */
-        if (mystack[0].LoVal() != dragcard.LoVal() + 1)
+        if (Card_LoVal(CardStack_Get(mystack, 0)) != Card_LoVal(dragcard) + 1)
         {
             return false;
         }
 
         /* Check if stack complete */
-        stackobj.GetFaceDirection(&facedown);
-        faceup = stackobj.NumCards() - facedown;
+        CardRegion_GetFaceDirection(stackobj, &facedown);
+        faceup = CardRegion_NumCards(stackobj) - facedown;
 
-        if (faceup + dragcards.NumCards() >= NUM_ONECOLOR_CARDS)
+        if (faceup + CardStack_NumCards(dragcards) >= NUM_ONECOLOR_CARDS)
         {
-            int i, max = NUM_ONECOLOR_CARDS - dragcards.NumCards() - 1;
+            int i, max = NUM_ONECOLOR_CARDS - CardStack_NumCards(dragcards) - 1;
 
             /* Dragged cards have been checked to be in order, check stack cards */
-            if (mystack[0].Suit() == dragcard.Suit() &&
+            if (Card_Suit(CardStack_Get(mystack, 0)) == Card_Suit(dragcard) &&
                 stackLookingGood(mystack, max))
             {
-                CardStack s = stackobj.GetCardStack();
-                CardStack f;
+                CARDSTACK s = *CardRegion_GetCardStack(stackobj);
 
                 /* Remove from card stack */
                 for (i = 0; i < max + 1; i++)
                 {
-                    s.RemoveCard(0);
+                    CardStack_RemoveCard(&s, 0);
                 }
-                /* Remove dragged cards */
-                dragcards = f;
-                stackobj.SetCardStack(s);
+                /* Remove dragged cards: the drop is accepted but lands
+                   nothing, because the run it completed has just been taken
+                   off the board above. */
+                CardStack_Clear(dragcards);
+                CardRegion_SetCardStack(stackobj, &s);
                 cardsFinished += NUM_ONECOLOR_CARDS;
                 /* Flip top card of the dest stack */
                 TurnStackCard(stackobj);
@@ -270,7 +275,7 @@ bool CARDLIBPROC StackDropProc(CardRegion &stackobj, CardStack &dragcards)
         }
     }
     /* Flip the top card of the source stack */
-    TurnStackCard(*from);
+    TurnStackCard(from);
     fGameStarted = true;
     return true;
 }
@@ -281,28 +286,28 @@ void CreateSpider()
     int i, pos;
 
     /* Compute the value for yRowStackCardOffset based on the height of the card, so the card number and suite isn't hidden on larger cards except Ace */
-    yRowStackCardOffset = (int)(__cardheight / 6.4);
+    yRowStackCardOffset = (int)(CardLib_CardHeight() / 6.4);
 
-    pDeck = SpiderWnd.CreateRegion(0, true, 0, 0, -15, 0);
-    pDeck->SetFaceDirection(CS_FACE_DOWN, 0);
-    pDeck->SetEmptyImage(CS_EI_CIRC);
-    pDeck->SetPlacement(CS_XJUST_RIGHT, CS_YJUST_BOTTOM, - X_BORDER, - Y_BORDER);
-    pDeck->SetDragRule(CS_DRAG_NONE, 0);
-    pDeck->SetDropRule(CS_DROP_NONE, 0);
-    pDeck->SetClickReleaseProc(DeckClickProc);
+    pDeck = CardWindow_CreateRegion(SpiderWnd, 0, true, 0, 0, -15, 0);
+    CardRegion_SetFaceDirection(pDeck, CS_FACE_DOWN, 0);
+    CardRegion_SetEmptyImage(pDeck, CS_EI_CIRC);
+    CardRegion_SetPlacement(pDeck, CS_XJUST_RIGHT, CS_YJUST_BOTTOM, - X_BORDER, - Y_BORDER);
+    CardRegion_SetDragRule(pDeck, CS_DRAG_NONE, 0);
+    CardRegion_SetDropRule(pDeck, CS_DROP_NONE, 0);
+    CardRegion_SetClickReleaseProc(pDeck, DeckClickProc);
 
     /* Create the row stacks */
     for (i = 0; i < NUM_STACKS; i++)
     {
-        pStack[i] = SpiderWnd.CreateRegion(NUM_STACKS+i, true, 0, Y_BORDER, 0, yRowStackCardOffset);
-        pStack[i]->SetFaceDirection(CS_FACE_DOWN, 0);
+        pStack[i] = CardWindow_CreateRegion(SpiderWnd, NUM_STACKS+i, true, 0, Y_BORDER, 0, yRowStackCardOffset);
+        CardRegion_SetFaceDirection(pStack[i], CS_FACE_DOWN, 0);
         pos = i - NUM_STACKS/2;
-        pStack[i]->SetPlacement(CS_XJUST_CENTER, 0,
-            pos * (__cardwidth + X_BORDER) + 6 * (X_BORDER + 1) + 3, 0);
-        pStack[i]->SetEmptyImage(CS_EI_SUNK);
-        pStack[i]->SetDragRule(CS_DRAG_CALLBACK, StackDragProc);
-        pStack[i]->SetDropRule(CS_DROP_CALLBACK, StackDropProc);
-        pStack[i]->SetAddCardProc(StackAddProc);
+        CardRegion_SetPlacement(pStack[i], CS_XJUST_CENTER, 0,
+            pos * (CardLib_CardWidth() + X_BORDER) + 6 * (X_BORDER + 1) + 3, 0);
+        CardRegion_SetEmptyImage(pStack[i], CS_EI_SUNK);
+        CardRegion_SetDragRule(pStack[i], CS_DRAG_CALLBACK, StackDragProc);
+        CardRegion_SetDropRule(pStack[i], CS_DROP_CALLBACK, StackDropProc);
+        CardRegion_SetAddCardProc(pStack[i], StackAddProc);
     }
 }
 

@@ -50,8 +50,8 @@ use core::marker::PhantomData;
 
 use crate::island::{
     CoTaskMemAlloc, CoTaskMemFree, CoTaskMemRealloc, LocalAlloc, LocalFree, LocalReAlloc,
-    MultiByteToWideChar, RegCloseKey, RegOpenKeyExW, BOOL, CP_THREAD_ACP, HKEY, HLOCAL, INT,
-    LONG, LPCSTR, LPCWSTR, POSITION, REGSAM, SIZE_T, UINT, WCHAR,
+    MultiByteToWideChar, RegCloseKey, RegOpenKeyExW, BOOL, BSTR, CP_THREAD_ACP, HKEY, HLOCAL,
+    HRESULT, INT, LONG, LPCSTR, LPCWSTR, POSITION, REGSAM, SIZE_T, UINT, VARIANT, WCHAR,
 };
 use crate::shellcom::IUnknown;
 
@@ -338,6 +338,12 @@ impl<T> CComPtr<T> {
     /// check in C++ and is not reproduced as a panic in a shipping DLL.
     pub fn GetAddressOf(&mut self) -> *mut *mut T {
         core::ptr::addr_of_mut!(self.p)
+    }
+
+    /// `GetAddressOf` under the spelling the translation also emits, for the same reason
+    /// `Get` sits beside `as_ptr` above: one ATL operator, two renderings.
+    pub fn as_mut_ptr(&mut self) -> *mut *mut T {
+        self.GetAddressOf()
     }
 }
 
@@ -1108,6 +1114,96 @@ impl Drop for CStringW {
             if !self.m_pszData.is_null() {
                 <CLocalAllocator as CAllocator>::Free(self.m_pszData as *mut c_void);
             }
+        }
+    }
+}
+
+// -------------------------------------------------------------------------------------------
+// CComVariant
+// -------------------------------------------------------------------------------------------
+
+extern "system" {
+    /// oleaut32 `VariantClear` — releases whatever the variant owns and sets it VT_EMPTY.
+    fn VariantClear(pvarg: *mut VARIANT) -> HRESULT;
+}
+
+/// ATL's owning VARIANT (atlcomcli.h). ATL DERIVES it from `VARIANT` and adds a destructor,
+/// so it IS a VARIANT at the ABI — hence `repr(transparent)`, which is what makes the
+/// `&mut var as *mut CComVariant as *mut VARIANT` casts the translation emits sound.
+///
+/// The default ctor leaves it `VT_EMPTY`, and VT_EMPTY is 0, so an all-zero variant is the
+/// correct starting state — `core::mem::zeroed()` in a translated body is right, not lazy.
+#[repr(transparent)]
+pub struct CComVariant(pub VARIANT);
+
+impl CComVariant {
+    /// `CComVariant()` — VT_EMPTY.
+    pub unsafe fn new() -> Self {
+        Self(core::mem::zeroed())
+    }
+
+    /// The `VARIANT*` every oleaut32 entry point wants.
+    pub fn as_mut_ptr(&mut self) -> *mut VARIANT {
+        core::ptr::addr_of_mut!(self.0)
+    }
+}
+
+impl Drop for CComVariant {
+    /// `~CComVariant()` — `VariantClear`. Dropping this is what releases a BSTR or an
+    /// interface the variant is holding; lowering the local to a bare `VARIANT` instead
+    /// compiles and leaks whatever it owned.
+    fn drop(&mut self) {
+        unsafe {
+            VariantClear(core::ptr::addr_of_mut!(self.0));
+        }
+    }
+}
+
+// -------------------------------------------------------------------------------------------
+// CComBSTR
+// -------------------------------------------------------------------------------------------
+
+extern "system" {
+    /// oleaut32 `SysFreeString`. Documented to ignore a NULL argument, which is why
+    /// `CComBSTR::drop` below does not pre-check — ATL's own `~CComBSTR` does not either.
+    fn SysFreeString(bstrString: BSTR);
+}
+
+/// ATL's owning BSTR wrapper (atlbase.h).
+///
+/// ONE member, exactly as the bindgen island already renders it
+/// (`ATL_CComBSTR { m_str: BSTR }`), so a class embedding this by value gets the C++ layout
+/// for free and needs no shim.
+///
+/// `m_str` is PUBLIC on purpose: the C++ reaches straight into it. `CFolderItemVerb::Init`
+/// is `m_name.m_str = name;` — a raw ADOPT of a BSTR the caller already allocated, not a
+/// copy — so it has to lower to that same single store or the ownership transfer changes
+/// and the string is either leaked or freed twice.
+#[repr(C)]
+pub struct CComBSTR {
+    pub m_str: BSTR,
+}
+
+impl CComBSTR {
+    /// `CComBSTR()` — the default constructor leaves the string null.
+    pub const fn new() -> Self {
+        Self { m_str: core::ptr::null_mut() }
+    }
+}
+
+impl Default for CComBSTR {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+impl Drop for CComBSTR {
+    /// `~CComBSTR()` — `SysFreeString(m_str)`. This IS the member destructor a translation
+    /// would otherwise silently drop, which is the whole reason the type exists rather than
+    /// the field being lowered to a bare `BSTR`.
+    fn drop(&mut self) {
+        unsafe {
+            SysFreeString(self.m_str);
         }
     }
 }

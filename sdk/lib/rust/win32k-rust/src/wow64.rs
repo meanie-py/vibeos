@@ -84,9 +84,20 @@ const WOW64_TEB32_OFFSET: usize = 0x2000;
 /// it cannot drift.
 #[cfg(not(target_arch = "x86"))]
 #[inline]
-fn teb32_clientinfo_offset() -> usize {
+const fn teb32_clientinfo_offset() -> usize {
     core::mem::offset_of!(ntkrnl_sys::ddk::_TEB32, Win32ClientInfo)
 }
+
+/// The i386 TEB puts `Win32ClientInfo` at 0x6CC, and the 32-bit user32 reaches
+/// its fields by that ABSOLUTE displacement -- `ValidateHandleNoErr` compiles
+/// `pci->pDeskInfo` to a flat `mov 0x6e4(%eax)` off `fs:[0x18]`, with no
+/// indirection this projection could redirect. So a bindgen `_TEB32` that put
+/// the array anywhere else would not fail to build and would not fault here:
+/// it would silently publish a correct CLIENTINFO32 at the wrong address, and
+/// the guest would read whichever neighbouring field happened to line up.
+/// Assert the number the guest has already hardcoded.
+#[cfg(not(target_arch = "x86"))]
+const _: () = assert!(teb32_clientinfo_offset() == 0x6CC);
 
 /// `true` when the current process is a WoW64 (32-bit guest) process.
 #[cfg(not(target_arch = "x86"))]
@@ -170,7 +181,64 @@ pub(crate) unsafe fn Wow64PublishClientInfo(pti: PTHREADINFO) {
     (*ci32).ppi = (*pci).ppi as usize as u32;
 }
 
+/// Reset a WoW64 guest's GDI TEB batch, which nothing else ever resets.
+///
+/// gdi32 owns the batch and the kernel owns clearing it: when the buffer is
+/// full gdi32 calls `NtGdiFlush()` and then writes at `Buffer + Offset`
+/// WITHOUT re-checking (`win32ss/gdi/gdi32/include/gdi32p.h:498-515`),
+/// because on a native process the kernel has zeroed `Offset` by then. For a
+/// guest it never did: gdi32 increments `TEB32->GdiBatchCount` while the trap
+/// path tested TEB64's, so the flush was never invoked at all and both fields
+/// grew without bound. MEASURED on notepad: count ran past `GDI_BatchLimit`
+/// (20) to 0x2d, and `Offset` climbed monotonically to 0x628 — long past the
+/// 0x4D8 end of `Buffer`, and through 0x508, which is `CLIENTINFO.pDeskInfo`
+/// exactly. user32's `ValidateHandleNoErr` then read a batch record byte as a
+/// pointer and took an AV, whose SEH dispatch re-faulted 56 times.
+///
+/// Field manual §9.41, second occurrence: same bug and the same four
+/// symptoms, reached through the wrong TEB instead of the wrong offset.
+#[cfg(not(target_arch = "x86"))]
+pub(crate) unsafe fn Wow64ResetGuestGdiBatch() {
+    use ntkrnl_sys::ddk::_TEB32;
+    let teb64 = NtCurrentTeb() as *mut u8;
+    if teb64.is_null() {
+        return;
+    }
+    let teb32 = teb64.add(WOW64_TEB32_OFFSET) as *mut _TEB32;
+    let dropped = (*teb32).GdiBatchCount;
+
+    (*teb32).GdiTebBatch.Offset = 0;
+    (*teb32).GdiBatchCount = 0;
+    (*teb32).GdiTebBatch.HDC = 0;
+
+    /* Loud once: these batched drawing commands are DISCARDED rather than
+     * executed, which is what happens today too (the flush never ran), but
+     * silence would let the owed work be forgotten. Executing them needs the
+     * 32-bit record layouts — see the roadmap entry. */
+    static mut TOLD: bool = false;
+    if !TOLD && dropped != 0 {
+        TOLD = true;
+        ntkrnl_sys::driver_ddk::DbgPrint(
+            b"[GDIBATCH] WoW64 guest batch reset (%lu cmds DISCARDED, not executed) - see roadmap\n\0"
+                .as_ptr() as *const core::ffi::c_char,
+            dropped,
+        );
+    }
+}
+
 /// i386 host has no WoW64 layer.
 #[cfg(target_arch = "x86")]
 #[inline]
 pub(crate) unsafe fn Wow64PublishClientInfo(_pti: PTHREADINFO) {}
+
+#[cfg(target_arch = "x86")]
+#[inline]
+pub(crate) unsafe fn Wow64ResetGuestGdiBatch() {}
+
+/// A 32-bit host has no WoW64 layer, so nothing is ever a guest here and the
+/// GDI batch path keeps its original behaviour unchanged.
+#[cfg(target_arch = "x86")]
+#[inline]
+pub(crate) unsafe fn IsWow64Process() -> bool {
+    false
+}

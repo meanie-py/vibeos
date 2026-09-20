@@ -952,6 +952,19 @@ def _normalize_unseal_cpp_worker(dep, rust: str, fact_seals, call_seals) -> str:
     return normalize_worker_semantics(dep.body_text, rust)
 
 
+def _resolve_activation_source(args) -> Path | None:
+    """`--activation-source`, resolved against the repo root like every other source path.
+
+    A class is often constructed by a different TU than the one defining it, and scanning
+    only its own file reports the activation as unmapped when it is merely next door.
+    """
+    raw = getattr(args, "activation_source", None)
+    if raw is None:
+        return None
+    path = Path(raw)
+    return path if path.is_absolute() else REACTOS_ROOT / path
+
+
 def cmd_candidate_check(args):
     """Batch-compile candidate workers against real target substrate."""
     manifest = Path(args.manifest)
@@ -1128,6 +1141,7 @@ def cmd_cpp_com(args):
         source,
         args.class_name,
         object_map_source=object_map,
+        activation_source=_resolve_activation_source(args),
         method_names=[f.name for f in class_methods],
         island_files=[SHELL32_ISLAND_FILES[a] for a in ("i386", "amd64", "arm64")],
     )
@@ -2163,6 +2177,7 @@ def cmd_translate(args):
             target_path,
             args.class_name,
             object_map_source=rustconv_target.com_object_map,
+            activation_source=_resolve_activation_source(args),
             island_files=list(rustconv_target.com_island_files.values()),
         )
         scan = _extend_cpp_class_scan(
@@ -5185,6 +5200,15 @@ def main():
         "--internal",
         action="store_true",
         help="shell32 cpp-com: allow exact internal ShellObjectCreator<T> activation",
+    )
+    p.add_argument(
+        "--activation-source",
+        help=(
+            "Another .cpp that CONSTRUCTS this class, when the construction is not in the "
+            "class's own TU (e.g. CFolderItems.cpp does `new CComObject<CFolderItemVerbs>()` "
+            "for a class defined in CFolderItemVerbs.cpp). Scanned for internal-activation "
+            "shapes only; it never supplies initializer arguments."
+        ),
     )
     p.add_argument(
         "--plain",

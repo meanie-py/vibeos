@@ -1,15 +1,7 @@
 {
   "active": {
-    "c_tail": [
-      "dll/win32/shell32/shellrecyclebin/recyclebin.c",
-      "dll/win32/shell32/shellrecyclebin/guid.c"
-    ],
     "dynamic": [
-      "dll/win32/shell32/CEnumIDListBase.cpp",
-      "dll/win32/shell32/folders/CRecycleBinFolderViewCB.cpp",
-      "dll/win32/shell32/CFolder.cpp",
-      "dll/win32/shell32/CFolderItems.cpp",
-      "dll/win32/shell32/CFolderItemVerbs.cpp"
+      "dll/win32/shell32/folders/CRecycleBinFolderViewCB.cpp"
     ],
     "hybrid": [
       "dll/win32/shell32/shellmenu/CMergedFolder.cpp"
@@ -26,11 +18,7 @@
       "dll/win32/shell32/shelldesktop/dde.cpp",
       "dll/win32/shell32/shellmenu/CMenuFocusManager.cpp",
       "dll/win32/shell32/shellmenu/CMenuToolbars.cpp",
-      "dll/win32/shell32/shellmenu/CStartMenu.cpp",
-      "dll/win32/shell32/shellrecyclebin/recyclebin_generic.cpp",
-      "dll/win32/shell32/shellrecyclebin/recyclebin_generic_enumerator.cpp",
-      "dll/win32/shell32/shellrecyclebin/recyclebin_v5.cpp",
-      "dll/win32/shell32/shellrecyclebin/recyclebin_v5_enumerator.cpp"
+      "dll/win32/shell32/shellmenu/CStartMenu.cpp"
     ]
   },
   "removed": {
@@ -38,11 +26,21 @@
       "dll/win32/shell32/CDefViewBckgrndMenu.cpp",
       "dll/win32/shell32/CDefViewDual.cpp",
       "dll/win32/shell32/CDefaultContextMenu.cpp",
+      "dll/win32/shell32/CEnumIDListBase.cpp",
+      "dll/win32/shell32/CFolder.cpp",
+      "dll/win32/shell32/CFolderItemVerbs.cpp",
+      "dll/win32/shell32/CFolderItems.cpp",
       "dll/win32/shell32/CIDLDataObj.cpp",
       "dll/win32/shell32/COpenWithMenu.cpp",
       "dll/win32/shell32/CShellLink.cpp",
       "dll/win32/shell32/droptargets/CFSDropTarget.cpp",
-      "dll/win32/shell32/droptargets/CRecyclerDropTarget.cpp"
+      "dll/win32/shell32/droptargets/CRecyclerDropTarget.cpp",
+      "dll/win32/shell32/shellrecyclebin/guid.c",
+      "dll/win32/shell32/shellrecyclebin/recyclebin.c",
+      "dll/win32/shell32/shellrecyclebin/recyclebin_generic.cpp",
+      "dll/win32/shell32/shellrecyclebin/recyclebin_generic_enumerator.cpp",
+      "dll/win32/shell32/shellrecyclebin/recyclebin_v5.cpp",
+      "dll/win32/shell32/shellrecyclebin/recyclebin_v5_enumerator.cpp"
     ],
     "free_function_tu": [
       "dll/win32/shell32/brfolder.cpp",

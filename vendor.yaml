@@ -1350,44 +1350,6 @@ trees:
       is still a foreign STL implementation rather than ReactOS code; translating an
       STL to Rust is not a goal of this project.
 
-  - path: sdk/lib/3rdparty/cardlib
-    name: cardlib
-    upstream: unknown
-    license: Public Domain (relayed author permission) — see review
-    license_file: sdk/lib/3rdparty/cardlib/ReadMe.txt
-    modified: yes  # ReactOS markers in 1 source file(s): cardbitmaps.cpp
-    reason: Card-rendering library for the bundled card games, carried in the 3rdparty tree.
-    unwelcome: >
-      ACCEPTED FOR NOW, SLATED FOR REWRITE (owner, 2026-09-19). The grant is the
-      weakest in this registry and the files contradict it: headers say "Freeware /
-      Copyright J Brown 2001", which permits distribution and grants nothing else,
-      while the public-domain dedication exists only second-hand in ReadMe.txt, signed
-      by a ReactOS contributor relaying what the author said around 2001.
-
-      The author is traceable — J Brown is strobejb, still active on GitHub — but
-      cardlib was only ever published on his site (catch22.net/tuts/cards/cardlib), not
-      in a repository with a licence file, so there is no upstream to re-vendor from
-      and no clean text to point at. Asking him is a real option and has not been done.
-
-      EXIT: reimplement. 5,159 lines of C++ whose entire job is drawing playing cards,
-      with exactly two consumers — Solitaire and Spider. Nothing else in the OS links
-      it, so the blast radius of replacing it is two games. Kept meanwhile because
-      Solitaire is the classic Windows feel and we would rather ship it than not.
-    review: >
-      NOT `unknown` AFTER ALL, but not clean either. ReadMe.txt is the whole licence:
-      "The author has given permission to use these sources under Public Domain. Do
-      what thou will but please give credit where credit is due. -sedwards". Two things
-      about that are worth keeping in view rather than smoothing over: the grant is
-      RELAYED — sedwards, a ReactOS contributor, reporting what J Brown said, not a
-      statement by the copyright holder — and the source headers say "Freeware /
-      Copyright J Brown 2001", which is not the same thing as public domain and does
-      not, on its own, grant anything. So the tree contains a second-hand dedication
-      that its own files do not corroborate. Recorded, pointed at, and left for a human
-      to judge before launch; this is the weakest provenance of any entry here.
-      Provenance not established — no COPYING, and ReadMe.txt does not name an
-      upstream. If this turns out to be ReactOS-authored it belongs OUT of this
-      registry and IN the translation denominator.
-
   - path: dll/3rdparty/mbedtls
     name: Mbed TLS
     upstream: https://github.com/Mbed-TLS/mbedtls

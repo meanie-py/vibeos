@@ -1830,6 +1830,7 @@ Wow64LdrpInitialize(PVOID Context)
     PBYTE ImageBase;
     PIMAGE_NT_HEADERS32 Nt32;
     ULONG EntryRva;
+    ULONG GuestStackSize;
     PVOID Ntdll32, InitBlock, Fex, Bop;
     PBYTE ExitStub, GuestStack, ApcStack;
     PVOID KiUserApcDispatcher32, LdrInitThunk32;
@@ -1966,7 +1967,38 @@ Wow64LdrpInitialize(PVOID Context)
      * Allocate every raw guest page first; pages created afterward are not
      * visible until the full memory-notification contract is wired. */
     ExitStub = Wow64pAllocBelow2G(0x1000, PAGE_EXECUTE_READWRITE, "exit stub");
-    GuestStack = Wow64pAllocBelow2G(0x10000, PAGE_READWRITE, "guest run stack");
+
+    /*
+     * The guest's stack must be the size its IMAGE asked for, not a fixed 64K.
+     *
+     * This was `0x10000` hardcoded, while every stock applet declares
+     * SizeOfStackReserve = 0x100000. A guest with frames deeper than 64K then
+     * walks off the bottom of its own stack, and the compiler's stack-probe
+     * helper is what finds it first: charmap died at `__alloca+0x12`
+     * (`test %ecx,(%ecx)`, the page probe) reading 001efd84 with the stack
+     * mapped 001f0000..00200000 -- one page BELOW the allocation.
+     *
+     * It also explains the corrupt SEH chain seen from the same guest.
+     * Wow64pThreadInit publishes these same bounds as TEB32
+     * NtTib.StackBase/StackLimit, and i386 RtlDispatchException validates
+     * fs:[0] registration records against them -- so once esp leaves the
+     * region, the chain is out of bounds and reads as garbage. One root
+     * cause, two symptoms.
+     *
+     * NOTE this COMMITS the whole reserve (Wow64pAllocBelow2G is
+     * MEM_RESERVE|MEM_COMMIT), where Windows reserves it and commits one page
+     * plus a PAGE_GUARD that grows on demand. Committing outright is a
+     * deliberate simplification: it costs ~1MB per guest and needs no
+     * guard-page growth path, and it cannot fault where the real thing would
+     * have grown. Growing on demand is the refinement, not the fix.
+     */
+    GuestStackSize = Nt32->OptionalHeader.SizeOfStackReserve;
+    if (GuestStackSize < 0x10000)
+        GuestStackSize = 0x10000;          /* never smaller than the old fixed size */
+    if (GuestStackSize > 0x1000000)
+        GuestStackSize = 0x1000000;        /* sanity cap: 16MB */
+    GuestStackSize = (GuestStackSize + 0xFFFF) & ~0xFFFFu;
+    GuestStack = Wow64pAllocBelow2G(GuestStackSize, PAGE_READWRITE, "guest run stack");
     ApcStack = Wow64pAllocBelow2G(0x40000, PAGE_READWRITE, "guest loader stack");
     if (!ExitStub || !GuestStack || !ApcStack)
         NtTerminateProcess(WOW64_CURRENT_PROCESS, 0xBAD);
@@ -2116,7 +2148,7 @@ Wow64LdrpInitialize(PVOID Context)
         *P++ = 0xC3;                                             /* ret      */
     }
 
-    GuestEsp = (ULONG)(ULONG_PTR)GuestStack + 0x10000 - 64;
+    GuestEsp = (ULONG)(ULONG_PTR)GuestStack + GuestStackSize - 64;
     GuestEsp -= 4;
     *(ULONG *)(ULONG_PTR)GuestEsp = (ULONG)(ULONG_PTR)ExitStub; /* ret addr */
 
@@ -2143,7 +2175,7 @@ Wow64LdrpInitialize(PVOID Context)
         /* The guest image entry runs on GuestStack — those are the bounds
          * i386 RtlDispatchException validates fs:[0] SEH records against. */
         Wow64pThreadInit(&StartCtx,
-                         (ULONG)(ULONG_PTR)GuestStack + 0x10000,
+                         (ULONG)(ULONG_PTR)GuestStack + GuestStackSize,
                          (ULONG)(ULONG_PTR)GuestStack,
                          "initial thread");
     }

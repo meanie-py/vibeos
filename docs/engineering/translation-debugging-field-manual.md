@@ -1064,6 +1064,18 @@ is not merely a lost message, it is also **an optimiser hint that erases the evi
 expect this class when you turn one on, and read the trap as a pre-existing latent fold rather
 than as damage the change did.
 
+**DELETING code is the same trigger, from the other direction.** Reverting upstream's
+`TIF_MOVESIZETRACKING` hack out of `ENTRY_ReferenceEntryByHandle` (win32k `gdiobj.rs`) put one
+`ud2` in `win32k.sys` at `EBRUSHOBJ_bRealizeBrush` that the previous build did not have. Nothing
+about that function changed; the removal simply made `ENTRY_ReferenceEntryByHandle` small enough
+to inline, which made `GDIOBJ_ShareLockObj` transparent at its call site, and
+`engbrush.rs`'s `psurfPattern = GDIOBJ_ShareLockObj(...)` is dereferenced with no NULL check --
+*which is what the C does*, since `engbrush.c` carries only `ASSERT(psurfPattern)` and ASSERT is
+nothing in retail. So: **any edit that changes a function's INLINING COST can uncloak this row,
+including one that only removes lines.** Read the instruction before the trap
+(`call GDIOBJ_vDereferenceObject`, an ordinary function with no panic symbol = middle row), fix
+with `#[inline(never)]` on the NULL-returning callee, and do not add the null check.
+
 **Fix by restoring the C's codegen shape — `#[inline(never)]` on the callee — not by adding the
 null check.** Adding it is a behaviour change on the path the C would fault on, i.e. a
 divergence in a differential port; out-of-line, the caller gets an opaque pointer, emits the
@@ -3719,6 +3731,75 @@ own callers (they are `_body`-suffixed there, so they do not clash).
 wholesale. Anything hand-written that both halves need (header-inline ports, constants the
 island lacks, externs) belongs in a THIRD, hand-owned file that no run writes.
 
+### Wiring a `--cpp-com` class: five deterministic-layer gaps, all fixed FREE and RETROACTIVELY
+
+**Symptom.** The class translates clean — every worker accepted, no audit findings — and then
+the first build after wiring is a wall of errors. CFolder/CFolderItem/CFolderItems opened at
+46. None of it is a translation defect; all five are the deterministic layer failing to
+resolve a shape, and each one recurs on every C++ COM module.
+
+**The five, with the tell for each.**
+
+* `cannot find function ShellObjectCreatorInit` — **SIBLING-class activation.** Activation
+  detection is keyed to the class being translated, but bodies routinely construct a different
+  one (`CFolder::Items` builds a `CFolderItems`). The scaffold already emits
+  `<Class>_CreateInstance` with exactly the signature the template expands to, so this is a
+  NAMING gap, not missing codegen: rewrite `ShellObjectCreator[Init]::<T>(` to
+  `T_CreateInstance(`. Blanket, not sibling-only — for the class itself it lands on that same
+  generated creator, so there is no "me or sibling" test to get wrong.
+* `the name DISPPARAMS is defined multiple times` — **the support closure emits a type twice.**
+  It is assembled from independent passes (local PODs, SDK layouts, the referenced-interface
+  walk) that cannot see each other's output. A repeated `pub struct` is E0428 at the
+  definition, not a shadow. Dedupe at the closure's own boundary, keeping the FIRST — but only
+  when the blocks are byte-identical, because two different layouts under one name is a real
+  conflict that must stay loud.
+* `expected function, found macro V_VT` — **oaidl.h's VARIANT accessors are all macros.** Not
+  one `V_*` in that header is a function, which is what makes `V_X(` → `V_X!(` safe as a
+  family rule. A missing macro then fails as "cannot find macro", which names the real gap.
+* `cannot find value plibid / piid / wMajor / wMinor` — **ATL `IDispatchImpl` TEMPLATE
+  PARAMETERS**, not members (atlcom.h:1508:
+  `<class T, const IID* piid, const GUID* plibid = &CAtlModule::m_libid, WORD wMajor = 1,
+  WORD wMinor = 0>`). The model renders them bare on one class and as `(*this).piid` on
+  another. Bind them as locals at the top of the body rather than substituting the
+  identifiers — substitution also rewrites the name inside the `"IDispatchImpl: plibid is
+  CLSID_NULL!"` string literal.
+* **The `IDispatchImpl` one RECURS, and should be mechanized.** It has now been hand-repaired
+  on six classes (CFolder, CFolderItem, CFolderItems, CFolderItemVerb, CFolderItemVerbs, and
+  CShellDispatch before them) with an identical four-line binding each time — which is the
+  detection event for a missing mechanism, not a thing to remember. The bounded fix: the ONLY
+  ATL method that reads those template parameters is `EnsureTILoaded`, so the assembler can
+  emit the binding when it assembles a `*_EnsureTILoaded_body` for a class with an
+  `IDispatchImpl` base. Three of the four values are already derivable there — `piid` from the
+  template argument the recognizer already parses, `wMajor`/`wMinor` from ATL's defaults — and
+  only `plibid` needs new input, a per-target module libid (`LIBID_Shell32` for shell32)
+  alongside `com_object_map` in the Target config. Until that exists, expect to write the
+  binding by hand on every dual-interface class, and bind rather than SUBSTITUTE: replacing
+  the identifiers textually also rewrites the name inside ATL's own debug string
+  `"IDispatchImpl: plibid is CLSID_NULL!"`.
+* `no method named as_ptr/Attach found for raw pointer` — **ATL operators on storage the
+  scaffold flattened.** `operator T*()` is the pointer VALUE (`p.as_ptr()` → `p`),
+  `operator&()` is the ADDRESS OF THE SLOT (`p.as_mut_ptr()` → `&raw mut p`), `Attach(v)` is
+  adopt-without-AddRef (`p.Attach(v)` → `p = v`). Getting the first two the wrong way round is
+  silent at the call site: an out-parameter handed the value leaves the slot null and leaks
+  whatever the callee allocated.
+
+**Why it is worth fixing the layer rather than the file.** Every one of these regenerates the
+affected bodies from the resume bank at **$0** — the fix is retroactive across every class
+already bought, and permanent for the next module. Measured on this batch: 46 → 33 → 16, all
+free, with the count then RISING to 63 as the parse errors stopped masking the rest of the
+file (see "a rising count mid-grind is progress" in `shell32/mod.rs`).
+
+**Two traps while repairing banked bodies by hand.**
+
+* **Do not delete a statically-dead branch.** `if wMajor == 0xffff && wMinor == 0xffff` is
+  dead once the template parameters are bound, and deleting it fails the replay with
+  `CACHE REJECTED: dropped or changed numeric C literal(s): 65535 (x2)`. The fact seal counts
+  literals against the C and does not care that the branch cannot execute — which is correct,
+  and caught the author of this entry.
+* **Read the whole `impl` block before adding a method.** `CComPtr::as_ptr` already existed
+  ~40 lines below where the grep stopped; adding it again is E0592, and the real gap was only
+  the `as_mut_ptr` spelling of `GetAddressOf`.
+
 ### A vtable SLOT the interface parser could not read renumbers every slot after it
 
 **Symptom.** A hand-rolled COM interface comes out of `--cpp-com` with one fewer method than
@@ -4844,6 +4925,22 @@ suspect call kept it failing; eighty made it green.
   with a real explicit `Release`, and have no guard at all. **Match the guard and the release
   by ENCLOSING FUNCTION, not by variable name** — a file-wide grep conflates same-named locals
   across functions and will tell you to delete correct code.
+  **Root cause, found later: our own PROMPT was asking for the double release.**
+  `templates/system_prompt_shell32_com.md` said a `CComPtr<T>` must not become a raw pointer
+  "without preserving both operations and their original timing" — i.e. *write the Release on
+  every path* — while `cpp_com.py`'s audit requires a bare declaration with NO Release so it
+  can install the guard. The model obeyed the prompt and the audit rejected it for obeying.
+  Symptom: `AUDIT REJECT: CComPtr local <Name>: expected one null raw-pointer declaration in
+  worker, found 0` — which fires on the RENAME (the model also snake_cases `spTypeLib` →
+  `sp_type_lib`), not on the release. So the loud reject is the LUCKY case: a body that keeps
+  the C++ spelling *and* writes a manual Release passes the audit, gets a guard installed
+  beside it, and ships the silent double-free above. Fix: the prompt now states the scaffold
+  owns a `CComPtr` local — declare `let mut <ExactCppName>: *mut T = core::ptr::null_mut();`,
+  keep the C++ spelling, emit no AddRef/Release — while a raw `IFoo*` local that the C++
+  itself releases keeps its Release and gets no guard. Two of 25 functions in one
+  `CFolderItem` run hit it; **several functions failing the same deterministic check at once
+  is the documented tell to read the prompt before re-buying the bodies.** Prompt prose is
+  outside the resume-cache key, so fixing it re-bills nothing.
 - **An UNQUALIFIED member call is `this->`, and the nearest COM pointer in scope is not a
   substitute.** CDefView's `OnCreate` opens with
   `if (SUCCEEDED(QueryInterface(IID_PPV_ARG(IDropTarget, &pdt)))) RegisterDragDrop(m_hWnd, pdt);`
@@ -6798,6 +6895,31 @@ does not even contain the text: `"[IO] IopInitializeBootDrivers"` was **0** occu
 the fix and **2** after. Two consequences worth generalizing:
 - **Grep for `_s: &[u8]) {}` / empty-bodied trace shims before concluding "the probe never
   fired."** Absence of a trace is only evidence if the trace exists on that arch.
+- **The same trap catches diagnostics you add yourself, via `#[cfg]` DUPLICATE bodies.**
+  `message.rs` defines `NtUserGetMessage` and `NtUserPeekMessage` TWICE each, under
+  `cfg(target_arch = "x86")` and `cfg(not(...))`. A scripted insert that anchored on the
+  function body and replaced the first match landed the probe in the **i386** copy, so it was
+  never compiled into the amd64 build being debugged — and the run came back "probe never
+  fired, 61 guest faults", which reads exactly like a refuted hypothesis instead of an
+  uninstrumented binary. **After adding a probe, prove it is IN the artifact before believing
+  a negative result**: check the `#[cfg]` directly above the body you patched, or grep the
+  built image for the format string. A duplicated definition makes "first match" the wrong
+  anchor, and every arch-forked file in this tree has them.
+- **A negative from an unexercised call site is the same failure with a different cause.**
+  Hooking only `NtUserPeekMessage` would have missed an app whose pump uses `GetMessage`;
+  hook every entry point the workload could take, or confirm from serial that yours is hit.
+- **A one-shot latch SHARED across the cases you are comparing reports only whichever
+  happens first — systematically the uninteresting one.** Asking "is this GDI batch flush
+  ever taken for a WoW64 guest?" with a single `static mut REPORTED` printed
+  `flush taken: count=1 wow64=0` and then went silent forever: native processes start first
+  and always win the latch, so the run said nothing at all about guests. One latch PER arm
+  of the comparison (`SEEN_NATIVE` / `SEEN_WOW64`). Same family as the two above — the probe
+  is quiet for a reason that has nothing to do with the hypothesis — and the tell is that
+  the thing you are comparing against is also the thing that fires first.
+- **Sample on the right SIDE of the transition.** A probe at syscall ENTRY cannot see
+  corruption that happens on the return-to-user path (the trap handler's batch flush runs
+  after the service returns). Two probes reported "no divergence" across a window where the
+  value demonstrably changed, purely because entry was the wrong side of it.
 - **An arch-gated tolerate-and-continue path needs LOUDER reporting than the arch that
   bugchecks, not quieter.** Where x86 stops dead, the tolerant arch keeps running with the
   damage — and if its report is a no-op, that hatch can never signal anything, so it becomes
@@ -9844,6 +9966,17 @@ win32k is the largest single flip surface and its failures are stereotyped:
   start-menu labels, CLIENTINFO corruption, a user32 `ValidateHandle` AV). Detector:
   `scan_magic_offsets` shape `TYPED_PTR_HEX_ARITH`. **Use a typed read**
   (`(*(teb as *const _TEB)).GdiBatchCount`), never pointer arithmetic on a hex literal.
+  **It recurred in 2026-09 for WoW64 guests, through the wrong TEB instead of the wrong
+  offset — so the detector above could not see it.** A guest's gdi32 bumps
+  `TEB32->GdiBatchCount`; every arch's trap path tested TEB64's; the flush therefore never
+  ran for a guest and nothing reset `Offset`. gdi32 calls `NtGdiFlush()` when it believes
+  the buffer is full and then writes at `Buffer + Offset` **without re-checking**
+  (`gdi32p.h:498-515`), so `Offset` climbed past the 0x4D8 buffer end and hit 0x508 from
+  the buffer base — `CLIENTINFO.pDeskInfo` exactly. Identical downstream symptoms to the
+  original, which is the tell. **Generalise: "which TEB" is as much a layout question as
+  "which offset", and a WoW64 guest writes the one the kernel does not read by default.**
+  Any kernel path that reads a TEB field a 32-bit guest also writes needs the same
+  treatment; `wow64_teb32()` (amd64) and `KiWow64GdiBatchCount()` (arm64) are the shape.
 - **`DesktopHeapReAlloc` passed the PDESKTOP as the HEAP pointer** `[§9.40]` (and never freed the old
   block) → amd64 0x1E on the first start-menu open. **When a Rust file reimplements C header
   inlines, diff EVERY helper, not just the one that crashed.**

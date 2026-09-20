@@ -106,6 +106,7 @@ members = [
     # the PS/2 mouse property page. Was parked RED at 176/177/177 for want of a portable spelling
     # for width-varying parameters; crate-repair's `width_alias_cast` rule now supplies it.
     "syssetup-rust",
+    "cardlib-rust",
     "desk-rust",
     # strsafe.h's `static __inline` bounded string ops, ported ONCE. No object file in the tree
     # defines them, so every flipped module used to port the header again — four divergent

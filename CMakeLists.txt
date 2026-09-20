@@ -436,6 +436,47 @@ Enable this if the module uses typeid or dynamic_cast. You will probably need to
         VERBATIM)
     add_custom_target(rust_menuband DEPENDS ${MENUBAND_RUST_LIB})
 
+    # --- recyclebin-rust cohab staticlib (librecyclebin_rust.a) -------------------------
+    # The whole `shellrecyclebin` object library in Rust (sdk/lib/rust/recyclebin-rust):
+    # recyclebin.c, recyclebin_generic{,_enumerator}.cpp, recyclebin_v5{,_enumerator}.cpp
+    # and guid.c. Unusual among shell32's flips in being a WHOLE LIBRARY TARGET swap rather
+    # than a per-TU cohab — those six files were the entire `recyclebin` static library, so
+    # there is no half left behind to keep compiling and shell32 links this instead.
+    # Measured capture set at the swap: 7 symbols (CloseRecycleBinHandle,
+    # DeleteFileToRecycleBinW, EmptyRecycleBinW, EnumerateRecycleBinW, GetDefaultRecycleBin,
+    # GetRecycleBinPathFromDriveNumber, RemoveFromRecycleBinDatabase), all published. The
+    # rest of what the C++ library defined is C++-mangled class methods and ATL guard
+    # variables that never left it.
+    # Defined here rather than in shellrecyclebin/ for the same ordering reason as menuband
+    # above, and mirroring the same custom-command shape.
+    set(RECYCLEBIN_RUST_WORKSPACE_DIR "${CMAKE_SOURCE_DIR}/sdk/lib/rust")
+    set(RECYCLEBIN_RUST_TARGET_DIR "${CMAKE_BINARY_DIR}/sdk/rust-recyclebin-target")
+    set(RECYCLEBIN_RUST_LIB "${CMAKE_BINARY_DIR}/sdk/librecyclebin_rust.a" CACHE INTERNAL "recyclebin-rust staticlib")
+    if(ARCH STREQUAL "i386")
+        set(RECYCLEBIN_RUST_TARGET "i686-pc-windows-gnu")
+    elseif(ARCH STREQUAL "amd64")
+        set(RECYCLEBIN_RUST_TARGET "x86_64-pc-windows-gnu")
+    elseif(ARCH STREQUAL "arm64")
+        set(RECYCLEBIN_RUST_TARGET "aarch64-pc-windows-gnullvm")
+    endif()
+    rust_crate_sources(RECYCLEBIN_RUST_SRCS "${RECYCLEBIN_RUST_WORKSPACE_DIR}" recyclebin-rust)
+    add_custom_command(
+        OUTPUT ${RECYCLEBIN_RUST_LIB}
+        COMMAND ${CMAKE_COMMAND} -E env
+            CARGO_TARGET_DIR=${RECYCLEBIN_RUST_TARGET_DIR}
+            cargo build --release --target ${RECYCLEBIN_RUST_TARGET}
+                -p recyclebin-rust
+                --manifest-path ${RECYCLEBIN_RUST_WORKSPACE_DIR}/Cargo.toml
+        COMMAND ${CMAKE_COMMAND} -E copy
+            ${RECYCLEBIN_RUST_TARGET_DIR}/${RECYCLEBIN_RUST_TARGET}/release/librecyclebin_rust.a
+            ${RECYCLEBIN_RUST_LIB}
+        DEPENDS ${RECYCLEBIN_RUST_SRCS}
+                ${RECYCLEBIN_RUST_WORKSPACE_DIR}/recyclebin-rust/Cargo.toml
+        WORKING_DIRECTORY ${RECYCLEBIN_RUST_WORKSPACE_DIR}
+        COMMENT "Building recyclebin-rust (${RECYCLEBIN_RUST_TARGET})"
+        VERBATIM)
+    add_custom_target(rust_recyclebin DEPENDS ${RECYCLEBIN_RUST_LIB})
+
     #begin with boot so reactos_cab target is defined before all other modules
     add_subdirectory(boot)
     add_subdirectory(base)

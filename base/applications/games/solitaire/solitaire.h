@@ -3,7 +3,7 @@
 
 #include <cardlib.h>
 
-extern CardWindow SolWnd;
+extern CARDWINDOW *SolWnd;
 extern TCHAR szAppName[];
 extern bool fGameStarted;
 
@@ -56,32 +56,32 @@ void NewGame(void);
 extern int yRowStackCardOffset;
 extern int VisiblePileCards;
 
-extern CardRegion *pDeck;
-extern CardRegion *pPile;
-extern CardRegion *pSuitStack[];
-extern CardRegion *pRowStack[];
-extern CardStack   activepile;
+extern CARDREGION *pDeck;
+extern CARDREGION *pPile;
+extern CARDREGION *pSuitStack[];
+extern CARDREGION *pRowStack[];
+extern CARDSTACK   activepile;
 
 extern void UpdateStatusBar(void);
 extern void SetPlayTimer(void);
 extern int GetScoreMode(void);
 extern void SetUndoMenuState(bool enable);
 
-bool CARDLIBPROC RowStackDragProc(CardRegion &stackobj, int iNumCards);
-bool CARDLIBPROC RowStackDropProc(CardRegion &stackobj,  CardStack &dragcards);
+BOOL CARDLIBPROC RowStackDragProc(CARDREGION *stackobj, int iNumCards);
+BOOL CARDLIBPROC RowStackDropProc(CARDREGION *stackobj,  CARDSTACK *dragcards);
 
-bool CARDLIBPROC SuitStackDropProc(CardRegion &stackobj, CardStack &dragcards);
-void CARDLIBPROC SuitStackAddProc(CardRegion &stackobj, const CardStack &added);
-void CARDLIBPROC SuitStackClickProc(CardRegion &stackobj, int iNumClicked);
+BOOL CARDLIBPROC SuitStackDropProc(CARDREGION *stackobj, CARDSTACK *dragcards);
+void CARDLIBPROC SuitStackAddProc(CARDREGION *stackobj, const CARDSTACK *added);
+void CARDLIBPROC SuitStackClickProc(CARDREGION *stackobj, int iNumClicked);
 
-void CARDLIBPROC RowStackClickProc(CardRegion &stackobj, int iNumClicked);
-void CARDLIBPROC RowStackDblClickProc(CardRegion &stackobj, int iNumClicked);
+void CARDLIBPROC RowStackClickProc(CARDREGION *stackobj, int iNumClicked);
+void CARDLIBPROC RowStackDblClickProc(CARDREGION *stackobj, int iNumClicked);
 
-void CARDLIBPROC DeckClickProc(CardRegion &stackobj, int iNumClicked);
-void CARDLIBPROC PileDblClickProc(CardRegion &stackobj, int iNumClicked);
-void CARDLIBPROC PileClickProc(CardRegion &stackobj, int iNumClicked);
+void CARDLIBPROC DeckClickProc(CARDREGION *stackobj, int iNumClicked);
+void CARDLIBPROC PileDblClickProc(CARDREGION *stackobj, int iNumClicked);
+void CARDLIBPROC PileClickProc(CARDREGION *stackobj, int iNumClicked);
 
-void CARDLIBPROC PileRemoveProc(CardRegion &stackobj, int iRemoved);
+void CARDLIBPROC PileRemoveProc(CARDREGION *stackobj, int iRemoved);
 
 void SetUndo(int set_source_id, int set_destination_id, int set_number_of_cards, int set_prev_score, int set_prev_visible_pile_cards);
 void ClearUndo(void);

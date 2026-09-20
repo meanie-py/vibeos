@@ -2163,6 +2163,60 @@ flight is marked; in-flight lanes live in [`active-lanes/`](active-lanes/).*
   and CDrivesFolder.cpp still construct. Two mangled helpers took EXTERN_C in utils.h instead.
   Conformance: launched=91 ok=91 on all three arches, and the `[EXPLORER] taskbar: OnCreate
   begin` -> `child controls created` gap it used to freeze in is traversed.
+  **The whole `recyclebin` STATIC LIBRARY is Rust (2026-09-20)** — the first whole-library
+  swap rather than a per-TU cohab. Its six sources (`recyclebin.c`, `guid.c`,
+  `recyclebin_generic{,_enumerator}.cpp`, `recyclebin_v5{,_enumerator}.cpp`, 2,083 lines)
+  WERE the entire library, so the `recyclebin` target goes away and shell32 links
+  `${RECYCLEBIN_RUST_LIB}` instead; `add_subdirectory(shellrecyclebin)` is commented out and
+  that CMakeLists is now a tombstone recording the per-file mapping.
+  Cost: **$0** — the translations had been bought earlier and were sitting in
+  `recyclebin-rust` unlinked, which is the thing worth checking for before buying anything:
+  the crate compiled and was in `workspace.members`, but nothing referenced it, so it had
+  never been linked and its exports had never been proven against a real link.
+  Capture set at the swap, measured against the LIVE consumers (shell32's objects plus
+  libshell32_rust.a): **7 symbols, all published** — `CloseRecycleBinHandle`,
+  `DeleteFileToRecycleBinW`, `EmptyRecycleBinW`, `EnumerateRecycleBinW`,
+  `GetDefaultRecycleBin`, `GetRecycleBinPathFromDriveNumber`, `RemoveFromRecycleBinDatabase`.
+  The rest of the 138 symbols the C++ library defined are C++-mangled class methods and ATL
+  guard variables that never left it — which is why the raw "138 defined vs 75 published"
+  gap is NOT the number that matters.
+  Verified: builds and links on all three arches; conformance kmtest amd64
+  launched=91 ok=91 bad=0, ratchet holds.
+
+  **CDirectoryList + CDirectoryWatcher are a CIRCULAR pair — translated, cannot flip.**
+  `shelldesktop/CDirectoryList.cpp` (both its plain classes, CDirectoryList and
+  CDirectoryItem) IS translated and wired at
+  `shell32-rust/src/shelldesktop/CDirectoryList.rs` + `CDirectoryItem.rs`, compiling on all
+  three arches. It stays in CMake anyway, and the cycle is why:
+  `CDirectoryWatcher` holds `CDirectoryList m_dir_list` BY VALUE (CDirectoryWatcher.h:35) and
+  calls its methods through CDirectoryList.h's inline constructor, so flipping CDirectoryList
+  alone leaves four C++-MANGLED undefined symbols — and a bridge cannot stand in for a
+  by-value member, which needs the real class layout. Flipping the consumer first does not
+  work either: `CDirectoryWatcher` fails preflight on exactly that member
+  (`state field type is not proven C scalar/pointer state: CDirectoryList m_dir_list`).
+  **Breaking it needs the deterministic layer to model a translated SIBLING CLASS as
+  by-value state.** Wiring the Rust without flipping is safe here and is NOT a partial cohab
+  flip: the Rust publishes unmangled `#[no_mangle]` names while the live C++ defines mangled
+  ones, so there is nothing for the linker to silently choose between.
+  Note for whoever flips it: `CSimpleArray<CDirectoryItem>` in C++ frees each element through
+  `~CDirectoryItem` (`free(m_pszPath)`); confirm the Rust side frees it too before trusting
+  the flip, because the module is dead code today and no test would notice a leak.
+
+  **CFolderItemVerb / CFolderItemVerbs are still C++ — OWED, not done, and one hand-written
+  bridge stands in for them.** `CFolder.cpp` and `CFolderItems.cpp` are Rust (CFolder 24 fns,
+  CFolderItem 25, CFolderItems 13); `CFolderItemVerbs.cpp` is untranslated original C++,
+  blocked on TWO named rustconv gaps, both deterministic and free to close: (1) its activation
+  is `new CComObject<T>`, and the only internal shapes the layer maps are `ShellObjectCreator`,
+  `ShellObjectCreatorInit` and `_CreatorClass::CreateInstance`; (2) `CFolderItemVerb` carries
+  `CComBSTR m_name`, and `CComBSTR` has ZERO mentions anywhere in rustconv — it is unmodelled,
+  unlike `CComPtr`. Because `CFolder`'s `CFolderItem::Verbs` is Rust and still has to build
+  that C++ object, `rust_folderitemverbs_bridge.cpp` publishes the four symbols rustconv kept
+  symbolic: `CFolderItemVerbs_new` / `_delete` / `_Init_body` / `_AddRef_body`. **That file is
+  scheduled to die**: the names are exactly the ones the Rust already calls, so when the two
+  classes translate, Rust defines them, the bridge is deleted, and `CFolderItem.rs` does not
+  change. It is ABI-sensitive in one specific way worth knowing before touching it — every
+  entry point traffics in `FolderItemVerbs*`, not `CFolderItemVerbs*`, because the C++ it
+  replaces ended in an implicit upcast that adjusts the pointer by a non-zero offset.
   **A stale ORPHAN banner is not cosmetic**: `scan_extern_arity`, `scan_cc_mismatch`,
   `scan_silent_failures` and `verify_lost_exports` all SKIP a file on sight of
   `ORPHAN-BY-DESIGN:`, so it must come off in the same commit that wires the module or four

@@ -1592,8 +1592,12 @@ unsafe extern "C" fn QSI_SystemPoolTagInformation(Buffer: PVOID, Size: ULONG, Re
 }
 
 // Class 23
-unsafe extern "C" fn QSI_SystemInterruptInformation(Buffer: PVOID, Size: ULONG, _ReqSize: *mut ULONG) -> NTSTATUS {
-    if Size < (KeNumberProcessors as ULONG) * core::mem::size_of::<_SYSTEM_INTERRUPT_INFORMATION>() as ULONG {
+unsafe extern "C" fn QSI_SystemInterruptInformation(Buffer: PVOID, Size: ULONG, ReqSize: *mut ULONG) -> NTSTATUS {
+    // A caller that sizes its buffer from the first call's ReqSize got zero back and
+    // could never succeed (upstream feb0f56da7).
+    *ReqSize = (KeNumberProcessors as ULONG)
+        * core::mem::size_of::<_SYSTEM_INTERRUPT_INFORMATION>() as ULONG;
+    if Size < *ReqSize {
         return STATUS_INFO_LENGTH_MISMATCH;
     }
     let ti = KeQueryTimeIncrement();
@@ -1601,7 +1605,7 @@ unsafe extern "C" fn QSI_SystemInterruptInformation(Buffer: PVOID, Size: ULONG, 
     for i in 0..KeNumberProcessors as usize {
         let Prcb = KiProcessorBlock[i];
         (*sii).ContextSwitches = KeGetContextSwitches(Prcb);
-        (*sii).DpcCount = (*Prcb).DpcData[0].DpcCount as ULONG;
+        (*sii).DpcCount = (*Prcb).DpcData[0 /* DPC_NORMAL */].DpcCount as ULONG;
         (*sii).DpcRate = (*Prcb).DpcRequestRate;
         (*sii).TimeIncrement = ti;
         (*sii).DpcBypassCount = 0;
@@ -1692,8 +1696,10 @@ unsafe extern "C" fn SSI_SystemUnloadGdiDriverInformation(Buffer: PVOID, Size: U
 
 // Class 28 Q
 unsafe extern "C" fn QSI_SystemTimeAdjustmentInformation(Buffer: PVOID, Size: ULONG, ReqSize: *mut ULONG) -> NTSTATUS {
-    if (core::mem::size_of::<_SYSTEM_QUERY_TIME_ADJUST_INFORMATION>() as ULONG) > Size {
-        *ReqSize = core::mem::size_of::<_SYSTEM_QUERY_TIME_ADJUST_INFORMATION>() as ULONG;
+    // ReqSize must be reported on SUCCESS too, and this class takes an exact size
+    // (fixed struct, no trailing array) -- upstream c6410fb0c2.
+    *ReqSize = core::mem::size_of::<_SYSTEM_QUERY_TIME_ADJUST_INFORMATION>() as ULONG;
+    if Size != *ReqSize {
         return STATUS_INFO_LENGTH_MISMATCH;
     }
     let TimeInfo = Buffer as PSYSTEM_QUERY_TIME_ADJUST_INFORMATION;

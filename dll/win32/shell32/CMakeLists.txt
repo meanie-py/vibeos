@@ -2,7 +2,11 @@ PROJECT(SHELL)
 
 add_subdirectory(shelldesktop)
 add_subdirectory(shellmenu)
-add_subdirectory(shellrecyclebin)
+# shellrecyclebin/ — the WHOLE object library is Rust now (sdk/lib/rust/recyclebin-rust,
+# linked as ${RECYCLEBIN_RUST_LIB} below). Its six sources were the entire `recyclebin`
+# static library, so the target goes away rather than being emptied; the .c/.cpp stay on
+# disk, inert, like every other cohab flip.
+# add_subdirectory(shellrecyclebin)
 
 spec2def(shell32.dll shell32.spec ADD_IMPORTLIB)
 
@@ -73,7 +77,10 @@ list(APPEND SOURCE
     # dialogs/view.cpp — replaced by Rust (shell32-rust/src/dialogs/view.rs); cohab via libshell32_rust.a
     # CDropTargetHelper.cpp — COM class plus SHSimulateDropOnClsid ordinal closure
     # are Rust-owned (shell32-rust/src/drop_target_helper.rs).
-    CEnumIDListBase.cpp
+    # CEnumIDListBase.cpp — replaced by Rust (shell32-rust/src/shell32/CEnumIDListBase.rs);
+    # cohab via libshell32_rust.a. The shared PIDL-enumerator base every shell folder's
+    # IEnumIDList derives from. Cost $0: 7 of its 9 functions were already banked from an
+    # earlier run and the other two lowered deterministically.
     # CExtractIcon.cpp — replaced by Rust (shell32-rust/src/shell32/CExtractIcon.rs for the
     # COM class, shell32/extracticon_free.rs for DuplicateString + the two SHCreate*ExtractIcon
     # entry points); cohab via libshell32_rust.a. Whole-TU flip. Activation is shellutils.h's
@@ -279,9 +286,25 @@ list(APPEND SOURCE
     # CCopyAsPathMenu.cpp — replaced by Rust (shell32-rust/src/copy_as_path_menu.rs); cohab via libshell32_rust.a
     # CShellDispatch.cpp — replaced by Rust (shell32-rust/src/shell_dispatch.rs);
     # CShellDispatch_Constructor remains exported by the Rust module for CFolder/CDefViewDual.
-    CFolder.cpp
-    CFolderItems.cpp
-    CFolderItemVerbs.cpp)
+    # CFolder.cpp — replaced by Rust (shell32-rust/src/shell32/CFolder.rs); cohab via
+    # libshell32_rust.a. The Shell.Application `Folder2` object.
+    # CFolderItems.cpp — replaced by Rust; its TWO classes are one file each,
+    # shell32/CFolderItem.rs and shell32/CFolderItems.rs, because rustconv names its output
+    # after the .cpp and a second class would overwrite the first.
+    #   CFolderItemVerbs.cpp stays C++ below: `new CComObject<T>` activation and CComBSTR state
+    # are both unmapped. The Rust CFolderItem::Verbs still constructs it, through the four
+    # EXTERN_C symbols in rust_folderitemverbs_bridge.cpp — which is deleted the moment those
+    # two classes translate.
+    # CFolderItemVerbs.cpp — replaced by Rust (shell32-rust/src/shell32/CFolderItemVerb.rs and
+    # CFolderItemVerbs.rs); cohab via libshell32_rust.a. Both classes, and with them the last
+    # of CFolder.cpp/CFolderItems.cpp's C++ closure.
+    #   rust_folderitemverbs_bridge.cpp is DELETED with this flip: it existed only because the
+    # deterministic layer could not map `new CComObject<T>` activation or `CComBSTR` state, so
+    # the Rust CFolderItem::Verbs had to build a C++ object. All three gaps are closed now
+    # (the third being that this class is constructed by a DIFFERENT TU, which needs
+    # `--activation-source dll/win32/shell32/CFolderItems.cpp`), and CFolderItem::Verbs calls
+    # the generated CFolderItemVerbs_CreateInstance directly.
+    )
 
 list(APPEND PCH_SKIP_SOURCE
     # appbar.c — replaced by Rust (shell32-rust/src/appbar.rs); cohab via libshell32_rust.a
@@ -371,8 +394,8 @@ add_typelib(shell32_shldisp.idl)
 set_source_files_properties(shell32.rc PROPERTIES OBJECT_DEPENDS ${CMAKE_CURRENT_BINARY_DIR}/shell32_shldisp.tlb)
 
 set_module_type(shell32 win32dll UNICODE)
-target_link_libraries(shell32 shellmenu shelldesktop wine uuid recyclebin cpprt atl_classes oldnames ${SHELL32_RUST_LIB} ${MENUBAND_RUST_LIB})
-add_dependencies(shell32 rust_menuband)
+target_link_libraries(shell32 shellmenu shelldesktop wine uuid cpprt atl_classes oldnames ${SHELL32_RUST_LIB} ${MENUBAND_RUST_LIB} ${RECYCLEBIN_RUST_LIB})
+add_dependencies(shell32 rust_menuband rust_recyclebin)
 add_delay_importlibs(shell32 powrprof shdocvw devmgr winspool.drv winmm mpr uxtheme ole32 oleaut32 userenv browseui version fmifs netapi32 secur32)
 add_importlibs(shell32 advapi32 gdi32 user32 comctl32 comdlg32 shlwapi msvcrt kernel32 ntdll)
 add_dependencies(shell32 stdole2 rust_shell32) # shell32_shldisp.tlb needs stdole2.tlb; rust_shell32 = cohab staticlib

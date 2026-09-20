@@ -385,7 +385,7 @@ pub unsafe extern "system" fn UserSendMouseInput(pmi: *mut MOUSEINPUT, bInjected
             SET_KEY_DOWN((*(&raw mut gafAsyncKeyState)).as_mut_ptr(), VK_XBUTTON1, 0);
             (*pCurInfo).ButtonsDown &= !(MK_XBUTTON1 as UINT);
             Msg.wParam &= !(MK_XBUTTON1 as WPARAM);
-            Msg.wParam |= MAKEWPARAM(0, XBUTTON2 as WORD) as WPARAM;
+            Msg.wParam |= MAKEWPARAM(0, XBUTTON1 as WORD) as WPARAM;
             co_MsqInsertMouseMessage(&mut Msg, bInjected as DWORD, (*pmi).dwExtraInfo, 1);
         }
         if (*pmi).mouseData & XBUTTON2 != 0 {

@@ -9,6 +9,7 @@ from rustconv.call_seal import seal_calls, unseal_calls
 from rustconv.callgraph import FunctionDep, extract_call_graph
 from rustconv.config import REACTOS_ROOT, SHELL32_ISLAND_FILES, TARGETS, detect_target
 from rustconv.cpp_com import (
+    _drop_duplicate_type_definitions,
     _WINDOWS_SCALAR_TYPEDEFS,
     CppComError,
     InterfaceMethod,
@@ -3600,6 +3601,128 @@ def test_IDispatchImpl_inner_interface_need_not_be_I_prefixed():
         assert cls.local_base_classes == ["IDispatchImpl"], name
         # Flattened exactly as CShellDispatch's is: the template's one data member.
         assert "CComPtr<ITypeInfo> m_pTypeInfo" in cls.state_fields, name
+
+
+def test_CComBSTR_state_keeps_its_type_so_the_destructor_survives():
+    """`CComBSTR m_name` must NOT flatten to a bare `BSTR`.
+
+    ATL's `~CComBSTR` calls `SysFreeString`. Lowering the field to a raw pointer compiles and
+    silently leaks every string the object ever held — the exact class of loss the RAII
+    container path exists to prevent, so it rides that path even though it is neither a
+    container nor a template.
+    """
+    field = _parse_plain_state_field("CComBSTR m_name")
+    assert field.raii_container == "CComBSTR"
+    assert field.rust_type == "CComBSTR"
+    assert field.owns_resource is True
+    assert field.init_expression == "CComBSTR::new()"
+
+
+def test_new_CComObject_is_a_third_internal_activation_shape():
+    """`new CComObject<T>()` — no factory at all; the caller allocates, then drives
+    Init/AddRef itself. CFolderItemVerbs.cpp does that for CFolderItemVerb. It is still
+    "no CLSID, constructed inside the DLL", which is the only question the flag answers."""
+    cls = analyze_class(
+        SHELL32 / "CFolderItemVerbs.cpp",
+        "CFolderItemVerb",
+        object_map_source=SHELL32 / "shell32.cpp",
+    )
+    assert cls.internal_shell_object_creator is True
+    cls.require_supported(allow_internal=True)
+
+
+def test_activation_in_another_TU_is_named_not_searched():
+    """CFolderItemVerbs is constructed by `CFolderItem::Verbs` in CFolderItems.cpp, a
+    DIFFERENT file. Scanning only its own TU reports the activation as unmapped for a class
+    whose activation is perfectly ordinary and simply lives next door — so the caller is
+    supplied explicitly, the way `object_map_source` is, rather than found by sweeping."""
+    args = dict(object_map_source=SHELL32 / "shell32.cpp")
+    alone = analyze_class(SHELL32 / "CFolderItemVerbs.cpp", "CFolderItemVerbs", **args)
+    assert alone.internal_shell_object_creator is False
+    with pytest.raises(CppComError):
+        alone.require_supported(allow_internal=True)
+
+    named = analyze_class(
+        SHELL32 / "CFolderItemVerbs.cpp",
+        "CFolderItemVerbs",
+        activation_source=SHELL32 / "CFolderItems.cpp",
+        **args,
+    )
+    assert named.internal_shell_object_creator is True
+    named.require_supported(allow_internal=True)
+
+
+def test_sibling_class_activation_resolves_to_its_generated_creator():
+    """`ShellObjectCreatorInit<T>` for a class OTHER than the one being translated.
+
+    Activation detection is keyed to the class being translated, because its job is to decide
+    how THAT class is constructed. But bodies routinely build a different one — CFolder::Items
+    builds a CFolderItems — and C++ instantiates the template per type, so the model renders
+    the turbofish and nothing resolved it (`cannot find function ShellObjectCreatorInit`).
+    The scaffold already emits `<Class>_CreateInstance` with exactly the signature the
+    template expands to, so this is a NAMING gap, not missing codegen.
+    """
+    source = "{ return ShellObjectCreatorInit<CFolderItems>(m_idlist, this, riid, ppv); }"
+    rust = (
+        "ShellObjectCreatorInit::<CFolderItems>(a, b, c, d);\n"
+        "ShellObjectCreator::<CFolderItem>(e);\n"
+    )
+    out = normalize_worker_semantics(source, rust)
+    assert "CFolderItems_CreateInstance(a, b, c, d);" in out
+    assert "CFolderItem_CreateInstance(e);" in out
+    assert "ShellObjectCreator" not in out
+
+
+def test_an_invented_IID_macro_spelling_normalizes_to_IID_PPV_ARG():
+    """`IID_PPV_ARG(FolderItems, ppid)` came back as `IID_FolderItems!(FolderItems, ppid)`.
+
+    Safe to normalize rather than reject because the shape carries its own check: the macro
+    name and the first argument must be the SAME interface. Rewriting to the sanctioned
+    spelling (not straight to the expansion) keeps one implementation of the two-argument
+    expansion, which then runs in the same pass.
+    """
+    out = normalize_worker_semantics("{}", "f(IID_FolderItems!(FolderItems, ppid));")
+    assert "core::ptr::addr_of!(IID_FolderItems)" in out
+    assert "(ppid).cast()" in out
+    assert "IID_FolderItems!" not in out
+
+
+def test_a_mismatched_invented_IID_macro_is_left_alone():
+    """The backreference is the whole safety argument, so a name that does NOT match its
+    first argument must not be rewritten into a different interface's IID."""
+    rust = "f(IID_FolderItems!(SomethingElse, ppid));"
+    assert normalize_worker_semantics("{}", rust) == rust
+
+
+def test_variant_accessors_are_macros_not_functions():
+    """Every `V_*` in oaidl.h is a `#define` reaching into the VARIANT union, never a
+    function, so a model that writes `V_VT(pvar)` produces `expected function, found macro`
+    at every site. There is no exception in that header, which is what makes the family rule
+    safe."""
+    out = normalize_worker_semantics("{}", "if V_VT(pvar) == VT_UI4 { x = V_UI4(pvar); }")
+    assert "V_VT!(pvar)" in out
+    assert "V_UI4!(pvar)" in out
+
+
+def test_support_closure_emits_each_type_once():
+    """The closure is assembled from independent passes that cannot see each other's output;
+    `DISPPARAMS` came out twice in all three of CFolder/CFolderItem/CFolderItems — from the
+    POD pass and again behind the IShellDispatch interface walk. A repeated `pub struct` is
+    E0428 at the definition, not a shadow."""
+    block = "#[repr(C)]\npub struct DISPPARAMS {\n    pub cArgs: UINT,\n}"
+    out = _drop_duplicate_type_definitions("\n\n".join([block, "pub const X: u32 = 1;", block]))
+    assert out.count("pub struct DISPPARAMS") == 1
+    assert "pub const X: u32 = 1;" in out
+
+
+def test_two_different_layouts_under_one_name_stay_loud():
+    """Dropping the later rendering is only safe while the two AGREE. Two different layouts
+    sharing a name is a real conflict and must keep failing at the definition rather than
+    being silently resolved to whichever pass ran first."""
+    a = "#[repr(C)]\npub struct T {\n    pub a: UINT,\n}"
+    b = "#[repr(C)]\npub struct T {\n    pub b: ULONG,\n}"
+    out = _drop_duplicate_type_definitions("\n\n".join([a, b]))
+    assert out.count("pub struct T") == 2
 
 
 def test_a_genuine_stateful_cpp_base_is_still_a_loud_failure():
