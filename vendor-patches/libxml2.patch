@@ -3,14 +3,49 @@
 # Upstream: https://download.gnome.org/sources/libxml2/2.12/libxml2-2.12.8.tar.xz
 # Apply from sdk/lib/3rdparty/libxml2/ with: patch -p1 < vendor-patches/libxml2.patch
 #
-# WHY THIS IS A PATCH AND NOT A BUILD FLAG:
-#   xmlschemas.c wraps the content-model determinism check in `#if 0`, which no -D can
-#   express — you cannot define away a branch upstream does not gate. Note the comment
-#   says "disabled in Wine": it arrived already-patched in the bulk import, not from
-#   here. libxml.h and win32config.h COULD be de-patched by supplying the config.h
-#   that pristine libxml.h already asks for, but that gains little while xmlschemas.c
-#   still needs a patch, and `config.h` is a dangerously generic name to put on this
-#   tree's include path (sdk/include/wine ships one too).
+# Three files, two reasons. Nothing here blocks a version bump: the xmlschemas.c hunk
+# is a 2-line #if 0 around a stable decade-old branch, and the other two are build shims.
+#
+# WHY xmlschemas.c IS PATCHED AND NOT A BUILD FLAG:
+#   It disables libxml2's XSD 1.0 Unique Particle Attribution (UPA) check. You cannot
+#   -D away a branch upstream does not gate, and there is no parser option for it: the
+#   error goes through xmlSchemaPCustomErr, which increments pctxt->nberrors, so
+#   xmlSchemaParse() returns NULL no matter what error handler you install.
+#
+#   THIS IS NOT A WORKAROUND FOR A BUG IN OUR CODE. Measured 2026-09-20 with a host
+#   probe (msxml3's real dll/win32/msxml3/xdr.c linked against pristine upstream
+#   2.12.8, datatypes namespace wired up exactly as schema.c does via link_datatypes()
+#   plus an external entity loader):
+#
+#     - 5 of the 6 XDR schemas in the msxml3 winetest compile clean on PRISTINE libxml2.
+#     - szDatatypeXDR does not: "The content model is not determinist" x2, from the
+#       Value and Properties complex types.
+#     - Applying ONLY this hunk to that same pristine tree makes all 6 compile. So the
+#       hunk is both necessary and sufficient; A/B on one binary.
+#
+#   The cause is a genuine expressiveness gap, not a lowering bug. XDR's open content
+#   model ("model='open'") permits extra DECLARED elements as trailing content, which
+#   xdr.c lowers to a trailing <xsd:any namespace="##any" processContents="strict"/>.
+#   That wildcard necessarily overlaps its own sibling element particles whenever one
+#   of them is optional or repeating, which is exactly UPA. XSD 1.0 cannot express it;
+#   XSD 1.1 invented <xs:openContent> for this case and libxml2 implements neither.
+#
+#   Tightening the wildcard to ##other WOULD satisfy UPA and IS WRONG — verified against
+#   the winetest's own documented expectations (modules/rostests/winetests/msxml3/
+#   schema.c, test_openseq). With the hunk applied, validating szOpenSeqXDR gives:
+#       <test><x/><x/><y/><z/><z/></test>        VALID    (declared, in order)
+#       <test><x/><x/><y/><z/><z/><w/></test>    VALID    <-- w is DECLARED and in the
+#                                                             SAME namespace; ##other
+#                                                             would reject it
+#       <test><w/><x/><x/><y/><z/><z/></test>    invalid  (extra only allowed at end)
+#       <test><x/><x/><y/><z/><z/><v/></test>    invalid  (v undeclared; strict works)
+#   4/4 match what the test asserts. So ##any + processContents="strict" is the correct
+#   lowering and the ambiguity is inherent. Don't "fix" xdr.c; it is not broken.
+#
+# WHY libxml.h / win32config.h ARE PATCHED:
+#   Build shims. They could be retired by supplying the config.h that pristine libxml.h
+#   already asks for, but `config.h` is a dangerously generic name to put on this tree's
+#   include path (sdk/include/wine ships one too).
 #
 --- a/libxml.h
 +++ b/libxml.h
@@ -85,21 +120,3 @@
      } else {
      }
      ctxt->state = NULL;
-@@ -20128,7 +20130,7 @@
- 		WXS_BASIC_CAST ause, ause->node,
- 		"ref", ref->name, ref->targetNamespace,
- 		XML_SCHEMA_TYPE_ATTRIBUTE, NULL);
--            return(ctxt->err);;
-+            return(ctxt->err);
-         }
-     }
-     return(0);
-@@ -28821,7 +28823,7 @@
-         xmlCtxtUseOptions(pctxt, options);
- #endif
- 
--    inputStream = xmlNewIOInputStream(pctxt, input, enc);;
-+    inputStream = xmlNewIOInputStream(pctxt, input, enc);
-     if (inputStream == NULL) {
-         ret = -1;
- 	goto done;
