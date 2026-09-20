@@ -27,7 +27,7 @@ This product includes third-party software. **This file is GENERATED** from `ven
 - [STLport](#stlport) — 5.2.1 — STLport licence (permissive)
 - [win-iconv](#win-iconv) — unknown — Unlicense OR MIT
 - [Windows Driver Frameworks (KMDF/UMDF)](#windows-driver-frameworks-kmdfumdf) — 1.17.7600 — MIT
-- [zlib](#zlib) — 1.2.13 — Zlib
+- [zlib](#zlib) — 1.3.2 — Zlib
 
 
 ## ACPICA
@@ -2805,16 +2805,17 @@ SOFTWARE.
 ## zlib
 
 - Upstream: https://zlib.net/
-- Version: 1.2.13
+- Version: 1.3.2
 - In this tree: `sdk/lib/3rdparty/zlib`, `sdk/include/reactos/libs/zlib`
 - Licence: Zlib
+- Also contains: Info-ZIP — contrib/minizip IS NOT UNDER THE ZLIB LICENCE. Its files carry "Copyright (c) 1990-2000 Info-ZIP" alongside Gilles Vollant's minizip copyright, and since 1.3.x upstream ships the grant explicitly as contrib/minizip/LICENSE.Info-Zip (Info-ZIP licence, 2009-Jan-02 version), now vendored. The code was always licensed this way — 1.2.13's unzip.c says so in its header — but upstream had never stated it as a licence file and this registry recorded only Zlib. The obligation is live: minizip is built into rapps and zipfldr.
 - Modified by us: yes, see `vendor-patches/zlib.patch`
 - Grant reproduced from: `sdk/lib/3rdparty/zlib/LICENSE`
 
 ```
 Copyright notice:
 
- (C) 1995-2022 Jean-loup Gailly and Mark Adler
+ (C) 1995-2026 Jean-loup Gailly and Mark Adler
 
   This software is provided 'as-is', without any express or implied
   warranty.  In no event will the authors be held liable for any damages

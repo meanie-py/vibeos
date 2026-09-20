@@ -758,14 +758,19 @@ trees:
 
   - path: sdk/lib/3rdparty/zlib
     name: zlib
-    staleness: >
-      AUDITED 2026-09-20: ours 1.2.13 (2022-10), current 1.3.2. 1.2.13 does carry the
-      CVE-2022-37434 fix, so this is aging rather than known-vulnerable, and zlib bumps are
-      historically painless.
     upstream: https://zlib.net/
     license: Zlib
     license_file: sdk/lib/3rdparty/zlib/LICENSE
-    modified: yes  # 3 files under contrib/minizip only; zlib proper is pristine
+    license_extra:
+      Info-ZIP: >-
+        contrib/minizip IS NOT UNDER THE ZLIB LICENCE. Its files carry "Copyright (c)
+        1990-2000 Info-ZIP" alongside Gilles Vollant's minizip copyright, and since 1.3.x
+        upstream ships the grant explicitly as contrib/minizip/LICENSE.Info-Zip (Info-ZIP
+        licence, 2009-Jan-02 version), now vendored. The code was always licensed this way
+        — 1.2.13's unzip.c says so in its header — but upstream had never stated it as a
+        licence file and this registry recorded only Zlib. The obligation is live: minizip
+        is built into rapps and zipfldr.
+    modified: yes  # 10 lines across 3 files under contrib/minizip; zlib proper is pristine
     patch: vendor-patches/zlib.patch
     headers:
       - sdk/include/reactos/libs/zlib
@@ -773,34 +778,59 @@ trees:
       file: sdk/include/reactos/libs/zlib/zlib.h
       pattern: '#define ZLIB_VERSION "([^"]+)"'
     review: >
-      DIFFED AGAINST PRISTINE UPSTREAM 2026-09-20 (zlib-1.2.13.tar.gz from madler/zlib,
-      sha256 b3a24de97a8fdbc835b9833169501030b8977031bcb54b3b3ac13740f846ab30). This entry
-      previously said `modified: yes` with NO patch and NO review — a bare unexplained
-      claim, the last one of its kind in the registry. Now measured.
+      BUMPED 1.2.13 -> 1.3.2 ON 2026-09-20, and the delta SHRANK: 14 patched lines down to
+      10, and the CMakeLists lost both of its warning suppressions. Nothing was traded away
+      to get that — upstream fixed all three independently. Builds clean on i386, amd64 and
+      arm64.
 
-      ZLIB PROPER IS PRISTINE. adler32, crc32, deflate, inflate, inftrees, trees, zutil, the
-      gz* family, compress, uncompr, infback and both public headers are byte-identical to
-      1.2.13. Nothing we carry touches bounds checking, allocation, or the inflate/deflate
-      state machines. The whole delta is three files under contrib/minizip, the ZIP-archive
-      helper that ships alongside zlib — so the scary-sounding `modified` was never about
-      the compressor.
+      PROVENANCE IS CRYPTOGRAPHIC. zlib-1.3.2.tar.gz, sha256
+      bb329a0a2cd0274d05519d61c667c062e06990d72e125ee2dfa8de64f0119d16, ships a detached
+      .asc that verifies as a Good signature from "Mark Adler
+      <madler@alumni.caltech.edu>", DSA key 5ED46A6721D365587791E2AA783FCD8E58BCAFBA —
+      zlib's own author. Second tree in this registry with a verified signature, after
+      libsamplerate. As there, no independent trust path to the key: corroboration, not a
+      root of trust.
 
-      What it is: minizip has a stdio FILE* backend and a win32-HANDLE backend, and ReactOS
-      uses only the latter, so the stdio half and the zipOpen2/unzOpen2 entry points that
-      depend on it are compiled out behind __REACTOS__. unzip.c additionally stops NOUNCRYPT
-      being force-defined, which ENABLES minizip's traditional-PKWARE decryption rather than
-      disabling it — read that direction carefully. These cannot become a build flag:
-      __REACTOS__ already is one, and what will not move into the build is WHICH REGIONS it
-      guards, since upstream has no such conditionals to switch on.
+      ZLIB PROPER IS PRISTINE, before and after. adler32, crc32, deflate, inflate,
+      inftrees, trees, zutil, the gz* family, compress, uncompr, infback and both public
+      headers are byte-identical to 1.3.2. Nothing we carry touches bounds checking,
+      allocation, or the inflate/deflate state machines. The whole delta is ten lines in
+      three files under contrib/minizip, the ZIP-archive helper — the scary-sounding
+      `modified` was never about the compressor.
 
-      DE-PATCHED in the same pass, five files down to three. iowin32.c was restored to
-      pristine: its only delta was four `mode_fopen` declarations commented out to silence
-      -Wunused-variable, which is a warning rather than a portability need, so it moved into
-      the build as target_compile_options(minizip PRIVATE -Wno-unused-variable) — scoped to
-      minizip so it cannot hide an unused variable in zlib proper. zip.c's cosmetic hunk
-      (braces around a `for` body) is reverted too. Both were noise that would have had to
-      be re-applied at every bump. Verified: patch -p1 applies clean to a fresh 1.2.13
-      extraction and the result is byte-identical to our tree for all three files.
+      WHAT THE TEN LINES DO, and the REASON IS SHARPER THAN THE OLD NOTE SAID. minizip has
+      a stdio FILE* backend (ioapi.c) and a win32-HANDLE backend (iowin32.c); we compile
+      out the stdio half and the zipOpen2/unzOpen2 entry points that depend on it. The old
+      review said this was because "ReactOS uses only the win32 one", which reads as
+      preference. It is not: ioapi.c's fopen64_file_func calls FOPEN_FUNC, which resolves
+      to fopen64, and fopen64/ftello64/fseeko64 do not exist in our CRT. Removing the guard
+      during this bump produced "call to undeclared function 'fopen64'". Measured, not
+      inherited.
+
+      WHAT UPSTREAM RETIRED FOR US:
+
+      1. THE NOUNCRYPT HUNK IS GONE. 1.2.13's unzip.c force-defined NOUNCRYPT, which
+      DISABLES traditional-PKWARE decryption, and our patch wrapped that in __REACTOS__ to
+      get decryption back. 1.3.x dropped the force-define, so decryption is on by default
+      for everyone. Behaviour is unchanged — NOUNCRYPT is still undefined in our build, so
+      crypt.h is still included — but the hunk has nothing left to do.
+
+      2. -Wno-deprecated-non-prototype is gone from the CMakeLists. It existed for 1.2.13's
+      K&R-style definitions; 1.3.0 converted the library to prototypes.
+
+      3. -Wno-unused-variable on minizip is gone. It existed for four `mode_fopen` locals
+      in iowin32.c that only the stdio backend used; 1.3.x no longer leaves them unused.
+      Note that flag was itself only added on 2026-09-19, to de-patch iowin32.c — so this
+      tree went comment-out-the-source, then build-flag, then nothing, in two days.
+
+      THREE NEW UPSTREAM FILES were vendored for minizip to build: ints.h (fixed-width
+      integer typedefs from <limits.h>), skipset.h (a skiplist set, used by zip.c for
+      duplicate-name detection) and LICENSE.Info-Zip, which is a licence fact rather than a
+      build input — see license_extra.
+
+      HISTORY: before 2026-09-20 this entry said `modified: yes` with no patch and no
+      review, the last bare unexplained claim in the registry. It was then measured and
+      de-patched from five files to three, and bumped the same day.
     reason: Ubiquitous compression library; upstream-tracked.
 
   - path: sdk/lib/3rdparty/libxml2
