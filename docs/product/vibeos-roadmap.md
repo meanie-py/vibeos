@@ -1203,6 +1203,45 @@ land; date every addition.** Source docs live in `docs/engineering/archive/`.
   it cannot fault where the real thing would have grown. On-demand growth is the
   refinement, not the fix.
 
+- **A WoW64 guest's thread stacks CANNOT GROW — the guard-page fault reaches the guest and
+  kills it. ROOT-CAUSED, NOT FIXED** (2026-09-20). This is the "a random applet dies each
+  boot" behaviour, and it was never several app bugs.
+
+  Every applet death is `EXITED = 0x80`, and the fault before it is **`80000001` =
+  STATUS_GUARD_PAGE_VIOLATION**, not an access violation:
+
+        guest fault 80000001 eip=7e017b4c -> 32-bit SEH dispatch (esp=01d8ec38)
+
+  A guard-page hit is how a thread stack GROWS: the kernel should commit the next page,
+  move the guard down and resume, so the guest never sees it. Instead it is dispatched into
+  guest SEH, nothing handles it, it reaches second chance, and csrss terminates the process.
+  MEASURED: exactly **3 guard-page faults per ladder boot**, 1-2 dead applets, and a
+  DIFFERENT victim each boot (eventvwr / taskmgr / wordpad) — whichever thread happened to
+  need more stack. That rotation is why it looked like unrelated app bugs; the uniform 0x80
+  was the tell that they all die the same way.
+
+  Same class as the GDI batch bugs above, a THIRD time:
+  `MiCheckForUserStackOverflow` (`ntoskrnl-rust/src/ARM3/pagfault.rs`) reads `Tcb.Teb` — the
+  **64-bit** TEB — and tests the faulting address against its
+  `NtTib.StackBase`/`DeallocationStack`, i.e. the HOST stack. A guest address is never in
+  that range, so the test rejects it and returns `STATUS_GUARD_PAGE_VIOLATION`.
+
+  **A direct fix was tried and REVERTED; why it failed IS the remaining blocker.** Pointing
+  the bounds test at TEB32 gave **0 PASS / 16 EXITED** — every applet, including winmine
+  which had never failed — against a 12-13 PASS baseline. Cause: **nothing ever populates
+  TEB32's `DeallocationStack`.** `Wow64pThreadInit` (`dll/win32/wow64/wow64.c`) writes only
+  `NtTib.StackBase` (+0x04) and `NtTib.StackLimit` (+0x08); `grep -c DeallocationStack` over
+  wow64.c and wow64_manual.c is **0**. The test degenerated to `Address < 0`, the lower
+  bound vanished, and `(NextStackAddress - PAGE_SIZE) <= DeallocationStack(0)` never
+  tripped — so the handler committed a fresh guard page below ANY guest guard-page fault,
+  walking down the address space with no floor. Stashed as `research: BROKEN
+  MiCheckForUserStackOverflow TEB32 attempt 2026-09-20`.
+
+  **So this needs a complete TEB32 stack descriptor, not a kernel one-liner.**
+  `Wow64pThreadInit` must publish `DeallocationStack`, and the guest stack wants a real
+  reserve plus guard page rather than the fully-committed block the initial stack now gets,
+  BEFORE the kernel can trust those bounds. Sequence it in that order.
+
 - **`taskmgr.exe` EXITED = 0xc0000005 on one boot — OPEN, likely a flake or a distinct
   bug** (2026-09-20). Seen on the stack-fix boot while charmap (the applet that fix
   targeted) passed; the PREVIOUS boot was the exact reverse — taskmgr PASS, charmap dead.
