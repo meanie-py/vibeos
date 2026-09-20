@@ -15,9 +15,9 @@ This product includes third-party software. **This file is GENERATED** from `ven
 - [libjpeg](#libjpeg) — 9d — IJG
 - [libmpg123](#libmpg123) — 1.26.2 — LGPL-2.1
 - [libpng](#libpng) — 1.6.58 — libpng-2.0
-- [libsamplerate](#libsamplerate) — unknown — BSD-2-Clause
+- [libsamplerate](#libsamplerate) — 0.1.9 — BSD-2-Clause
 - [libtiff](#libtiff) — 4.7.0 — libtiff (BSD-like)
-- [libtirpc](#libtirpc) — 0.1.11 — BSD-3-Clause
+- [libtirpc](#libtirpc) — 0.2.1 — BSD-3-Clause
 - [libxml2](#libxml2) — 2.12.8 — MIT
 - [libxslt](#libxslt) — 1.1.42 — MIT
 - [Mbed TLS](#mbed-tls) — 2.16.11 — Apache-2.0 OR GPL-2.0-or-later
@@ -36,6 +36,7 @@ This product includes third-party software. **This file is GENERATED** from `ven
 - Version: 0x20221020
 - In this tree: `drivers/bus/acpi/acpica`
 - Licence: BSD-3-Clause OR GPL-2.0
+- Modified by us: yes, see `vendor-patches/acpica.patch`
 - Grant reproduced from: `drivers/bus/acpi/acpica/include/acpi.h (header comment)`
 
 ```
@@ -86,6 +87,7 @@ POSSIBILITY OF SUCH DAMAGES.
 - Version: 1.0
 - In this tree: `sdk/lib/3rdparty/adns`
 - Licence: GPL-2.0-or-later
+- Modified by us: yes, see `vendor-patches/adns.patch`
 - Grant reproduced from: `sdk/lib/3rdparty/adns/COPYING`
 
 ```
@@ -1986,9 +1988,10 @@ be appreciated.
 ## libsamplerate
 
 - Upstream: https://libsndfile.github.io/libsamplerate/
-- Version: unknown
+- Version: 0.1.9
 - In this tree: `sdk/lib/3rdparty/libsamplerate`
 - Licence: BSD-2-Clause
+- Modified by us: yes, see `vendor-patches/libsamplerate.patch`
 - Grant reproduced from: `sdk/lib/3rdparty/libsamplerate/COPYING`
 
 ```
@@ -2058,9 +2061,10 @@ TIFF Library.
 ## libtirpc
 
 - Upstream: https://sourceforge.net/projects/libtirpc/
-- Version: 0.1.11
+- Version: 0.2.1
 - In this tree: `dll/3rdparty/libtirpc`
 - Licence: BSD-3-Clause
+- Modified by us: yes, see `vendor-patches/libtirpc.patch`
 - Grant reproduced from: `dll/3rdparty/libtirpc/COPYING`
 
 ```
