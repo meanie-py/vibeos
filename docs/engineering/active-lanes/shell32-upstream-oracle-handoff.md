@@ -185,5 +185,25 @@ generator owes a fix (emit *unpaired* rather than guessed).
 | `upstream-sync-build-conflicts.md` | the CMakeLists recipe + CSimpleShellItemArray gap |
 | `upstream-sync-merge-recipes.md` | the owner's "keep the C dead" ruling for `shell32.cpp` |
 
-**The 26 subject-level triaged commits are the biggest unexamined block.** Given trap 1's
-measured error rate, treat them as *unread*, not as cleared.
+**UPDATE 2026-09-20, later: that block is now READ.** See
+`shell32-oracle-triage-wave2.md` — all 31 previously subject-only commits opened in full, plus
+6 translation/cosmetic ones explicitly logged as skipped.
+
+**The warning above was justified: 6 of the commits characterised as "feature bundle, nothing
+to regress" carry real bugs our Rust inherited.** Verdicts: 6 CONFIRMED, 1 INCONCLUSIVE, 6
+REFUTED, 10 N/A-feature, 8 N/A-build/spec, 6 skipped.
+
+The six, as *things to check* rather than patches — that lane is rewriting these files, so a
+line-level diff would rot before it was read:
+
+| upstream | what to check |
+|---|---|
+| `a83411cfefe` | `SHRunControlPanel` (`wine/shellord.rs:1986`) has no NULL check before `wcscat`. Reachable from `IShellDispatch::ControlPanelItem` COM automation → crash. |
+| `16bb138e325` | `CDefaultContextMenu`: the literal `"open"` verb always returns `E_FAIL` (`DoOpenOrExplore` is a stub) and `MapVerbToCmdId` never searches registry verbs. |
+| `763ce84cf55` | `CExeDropHandler` leaks `sPathTarget` on every drop, and `SHAlloc`'s result is used by `copy_nonoverlapping` unchecked. |
+| `a5f51269c88` | `CFolderItemVerbs::Item` returns `S_OK` with an uninitialised out-param past bounds; `CEnumIDListBase::AppendItemsFromEnumerator` drops OOM and leaks the pidl silently. |
+| `b60f66cbbfa` | `CPrinterFolder::GetUIObjectOf` lacks the `IQueryAssociations` branch `ShellExecute` needs. |
+| `d6cc284435e` | `LinkWindow_RegisterClass` returns `TRUE` while registering nothing. |
+
+`93f96e592b2` (CQueryAssociations) is INCONCLUSIVE — a near-total rewrite, too large to bisect
+in that pass and left for whoever knows the file.
