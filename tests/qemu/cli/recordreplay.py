@@ -454,7 +454,10 @@ def trace_read_position(trace_dir: Path) -> int | None:
             continue  # not ours, or exited between listing and opening
         for fd in fds:
             try:
-                if fd.resolve() != rrfile:
+                # /proc already exposes the kernel's absolute target. Resolving
+                # every target walks unrelated mounts (including Windows media)
+                # and can stall this progress probe on their filesystem I/O.
+                if fd.readlink() != rrfile:
                     continue
                 for line in (pid_dir / "fdinfo" / fd.name).read_text().splitlines():
                     if line.startswith("pos:"):

@@ -43,6 +43,12 @@ if(CMAKE_CROSSCOMPILING)
     target_compile_definitions(zlib_solo PRIVATE Z_SOLO)
     target_include_directories(zlib_solo PRIVATE ${REACTOS_SOURCE_DIR}/sdk/include/reactos/libs/zlib)
     add_library(minizip ${MINIZIP_SOURCE})
+    # iowin32.c keeps four `mode_fopen` locals that only the stdio backend uses, so
+    # they are unused in a win32-handle build. We used to comment them out in the
+    # source; the flag keeps contrib/minizip byte-identical to upstream instead, which
+    # is what makes a zlib bump a straight copy. Scoped to this target so it cannot
+    # hide an unused variable in zlib proper.
+    target_compile_options(minizip PRIVATE -Wno-unused-variable)
     add_dependencies(minizip psdk)
     target_include_directories(minizip PRIVATE ${REACTOS_SOURCE_DIR}/sdk/include/reactos/libs/zlib)
 else()

@@ -2154,7 +2154,25 @@ flight is marked; in-flight lanes live in [`active-lanes/`](active-lanes/).*
   literal: `IDataObject` got QueryInterface/AddRef/Release/QueryGetData typed, and
   `IFolderViewVtbl`, which stopped dead at `GetFolder`, got the remaining eleven from
   shobjidl.idl:866.
-  **`CDefView.cpp` is COHAB-FLIPPED (2026-09-19); `utils.rs` remains ORPHAN-BY-DESIGN.**
+  **shell32 has NO orphan modules left (2026-09-20).** `utils.cpp` was cohab-flipped, which
+  was the last one. What the flip actually needed was far smaller than the guard on that module
+  predicted: measured against the LIVE CMake source list plus libshell32_rust.a, 36 symbols
+  leave the TU and utils.rs publishes 32. The guard said all 16 `*_RustBridge` wrappers needed
+  rehoming; 14 were already published by utils.rs itself, and only the CStubWindow32 pair moved
+  (to `rust_stubwindow32_stub.cpp`) because only that pair reaches a C++ ATL class propsheet.cpp
+  and CDrivesFolder.cpp still construct. Two mangled helpers took EXTERN_C in utils.h instead.
+  Conformance: launched=91 ok=91 on all three arches, and the `[EXPLORER] taskbar: OnCreate
+  begin` -> `child controls created` gap it used to freeze in is traversed.
+  **A stale ORPHAN banner is not cosmetic**: `scan_extern_arity`, `scan_cc_mismatch`,
+  `scan_silent_failures` and `verify_lost_exports` all SKIP a file on sight of
+  `ORPHAN-BY-DESIGN:`, so it must come off in the same commit that wires the module or four
+  checks go quiet on it.
+  The paragraph below is kept for the CDefView half of the story and for the measurement
+  recipe, which grew a third clause: an intra-DLL undefined-symbol sweep does not see `.spec`
+  exports, because those are consumed by other modules entirely.
+
+  **`CDefView.cpp` is COHAB-FLIPPED (2026-09-19); `utils.rs` was the last orphan and is now
+  flipped too.**
   `shell32/CDefView.rs` (11.9K lines) is wired and owns the shipping implementation. What
   unblocked it was a measurement: the TU is a link LEAF — `llvm-nm --undefined-only` over every
   object in shell32.dll (shell32.dir, dialogs/, folders/, shelldesktop, shellmenu, recyclebin)
@@ -2428,6 +2446,62 @@ and `git show <commit>^:<path>` prints the content back.
   basesrv-population race, the win32k `DialogBoxParamW` race, and the amd64 start-menu
   render residue. (The old `triage.py` flake catalog was largely retired as its entries
   were root-caused — see the field manual.)
+
+## Paid Rust that does not ship — the ORPHAN-BY-DESIGN inventory
+
+Surveyed fleet-wide 2026-09-19 by the shell32 lane. **17 modules across 9 crates hold
+translated Rust that no build compiles.** Recorded here because an inventory that lives only
+in a chat log is the thing this file exists to prevent; nothing below is a task list.
+
+**Sixteen of the seventeen are dead on purpose.** Only `shell32/utils.rs` is unfinished work.
+The distinction is not visible from "is it wired?" — it is written in each file's banner, and
+the banner has to be read.
+
+| category | modules | what it means |
+|---|---|---|
+| **Genuinely blocked (0)** | ~~`shell32-rust/src/shell32/utils.rs`~~ — **COHAB-FLIPPED 2026-09-20** (`fb07f381d99a`), `launched=91 ok=91` on all three arches | It was the only one of the seventeen that was unfinished work, and it is done. Kept in the table because the *reason* it was stuck is the reusable part: 58 live C++ symbols would have been captured, and 16 `*_RustBridge` wrappers plus the `CStubWindow32` pair had to be rehomed first. See the shell32 entry above. |
+| **Superseded / gap artifacts (8)** | `recyclebin-rust`: `recyclebin_generic{,_enumerator}.rs`, `recyclebin_v5{,_enumerator}.rs` · `classpnp-rust`: `class_gap3.rs`, `class_gap4.rs` · `explorer-rust`: `appbar.rs` · `ntoskrnl-rust`: `global_barrier.rs` (**generated**, see below) | Dead weight, superseded by class-atomic modules, rustconv file-split gaps whose exports are all defined live elsewhere, or retired code. **Deletion candidates — owner's call, since they are paid artifacts; the bodies replay from `.responses/` for $0.** |
+| **Translations of upstream-dead source (8)** | `afd-rust` `event.rs` · `bootvid-rust` `vga.rs`, `bootdata.rs` (legacy INT10h) · `dhcpcsvc-rust` `dhcp/tree.rs` · `freeldr-rust` `directui.rs` (`#if 0` upstream) · `win32k-rust` `bitblt_new.rs` (`USE_DIBLIB FALSE`), `drvdbg.rs` (in no CMake list) · `rtlk-rust` `path.rs` | Correctly orphan and kept deliberately under the never-delete rule. Nothing owed. |
+
+**An orphan ROTS, in every category, because nothing compiles it.** `recyclebin-rust` carried a
+`Cargo.toml` note reading "PARKED at 25 errors/arch (from 256)"; when the lane picked it up it
+was at **204**. Drift with no diagnostic, because a crate outside `workspace.members` is never
+built. CDefView reached **799** the same way before it was flipped. The fix is membership, not
+vigilance: `recyclebin-rust` is now at 0 on i686/amd64/arm64 and has joined the workspace
+(`1fc79782b4f4`), which puts it in every lane's `cargo check`. **Nothing links it, so no boot
+can regress** — that asymmetry is what makes joining-on-green safe and is the general rule for
+a parked crate.
+
+**`global_barrier.rs` is not a translation** — `tools/gen_global_barrier.py` generates it. The
+never-delete-paid-artifact rule does not attach to it the way it does to the other seven, and
+it is trivially regenerable; it is `nm`-verified dead-stripped and its root cause is fixed in
+the toolchain on LLVM ≥ 21. Worth stating because "orphan `.rs` in a crate" looks identical on
+disk whether it cost money or not, and the deletion rule turns on which.
+
+**AN ORPHAN ALSO ROTS BECAUSE THINGS DELIBERATELY DO NOT LOOK AT IT.** Four source checks —
+`scan_extern_arity`, `scan_cc_mismatch`, `scan_silent_failures` and `verify_lost_exports` —
+skip a file on sight of the `ORPHAN-BY-DESIGN:` token. That is correct while the file is
+orphan and wrong the instant it is wired, so **the banner must come off in the SAME commit
+that wires the module**, or four scanners go quiet on live code (4,949 lines of it, in the
+`utils.rs` case). `scan_doc_sections` catches the stale banner, but only once the file is
+reachable. So the rot has two independent sources: nothing compiles it, and several things
+refuse to read it.
+
+**The crate-level version of this question is closed, and smaller than it looked.** A
+reachability closure over both workspaces (315 packages) found **zero phantom members**,
+exactly **one** genuinely parked crate — `recyclebin-rust`, already rejoined — and **zero**
+member-but-unlinked crates. An earlier pass reported 13, then 6, then 1: each cut came from
+modelling a build mechanism the tool had missed, first difftest's directory-suffix discovery
+and then `reactos-link`'s `build.rs` linker-flag path, which links a crate with no Cargo
+dependency edge and no CMake string. The general lesson is worth more than the number: **a
+build mechanism the tool does not model reads as absence of a build**, so "unreached" is a
+claim about the tool's coverage at least as much as about the crate. `slist-loom` is the one
+remaining unlinked member and is deliberate — a Loom concurrency model run as
+`cargo test -p slist-loom`.
+
+One question is parked for the owner, and it is now the only one: whether the eight
+superseded/gap files should be deleted. The join-on-green survey that used to sit beside it is
+answered — the surface was one crate, and it is closed.
 
 ## Scale
 

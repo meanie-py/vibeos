@@ -7,7 +7,6 @@
     "dynamic": [
       "dll/win32/shell32/CEnumIDListBase.cpp",
       "dll/win32/shell32/folders/CRecycleBinFolderViewCB.cpp",
-      "dll/win32/shell32/folders/CRegFolder.cpp",
       "dll/win32/shell32/CFolder.cpp",
       "dll/win32/shell32/CFolderItems.cpp",
       "dll/win32/shell32/CFolderItemVerbs.cpp"
@@ -17,7 +16,6 @@
     ],
     "monolith": [
       "dll/win32/shell32/dialogs/filetypes.cpp",
-      "dll/win32/shell32/utils.cpp",
       "dll/win32/shell32/shell32.cpp"
     ],
     "shared": [
@@ -47,10 +45,10 @@
       "dll/win32/shell32/droptargets/CRecyclerDropTarget.cpp"
     ],
     "free_function_tu": [
-      "dll/win32/shell32/dialogs/dialogs.cpp",
       "dll/win32/shell32/brfolder.cpp",
       "dll/win32/shell32/changenotify.cpp",
       "dll/win32/shell32/debughlp.cpp",
+      "dll/win32/shell32/dialogs/dialogs.cpp",
       "dll/win32/shell32/dialogs/drive.cpp",
       "dll/win32/shell32/dialogs/folder_options.cpp",
       "dll/win32/shell32/dialogs/general.cpp",
@@ -65,7 +63,8 @@
       "dll/win32/shell32/shlfileop.cpp",
       "dll/win32/shell32/shlfolder.cpp",
       "dll/win32/shell32/stubs.cpp",
-      "dll/win32/shell32/systray.cpp"
+      "dll/win32/shell32/systray.cpp",
+      "dll/win32/shell32/utils.cpp"
     ],
     "hybrid": [
       "dll/win32/shell32/CActiveDesktop.cpp",
@@ -92,8 +91,9 @@
   },
   "sanctioned": {
     "atl_window_class": [
+      "dll/win32/shell32/rust_changenotify_broker_stub.cpp",
       "dll/win32/shell32/rust_folder_options_stub.cpp",
-      "dll/win32/shell32/rust_changenotify_broker_stub.cpp"
+      "dll/win32/shell32/rust_stubwindow32_stub.cpp"
     ],
     "cpp_only_companion_bridge": [
       "dll/win32/shell32/rust_recyclebin_bridges_stub.cpp"

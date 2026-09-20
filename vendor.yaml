@@ -48,7 +48,7 @@ trees:
     upstream: https://github.com/acpica/acpica
     license: BSD-3-Clause OR GPL-2.0  # Intel dual-licence
     license_ref: drivers/bus/acpi/acpica/include/acpi.h
-    modified: unknown
+    modified: yes  # ReactOS markers in 6 source file(s): acpi.h, acenv.h, acgcc.h
     version:
       file: drivers/bus/acpi/acpica/include/acpixf.h
       pattern: '#define ACPI_CA_VERSION\s+(0x[0-9A-Fa-f]+)'
@@ -63,6 +63,17 @@ trees:
     name: Windows Driver Frameworks (KMDF/UMDF)
     upstream: https://github.com/microsoft/Windows-Driver-Frameworks
     license: MIT  # upstream relicensed the WDF sources to MIT in 2017
+    license_note: >
+      The MIT grant is upstream's and is NOT reproducible from this tree: the drop
+      arrived without the repository's LICENSE.md, and the WDF sources carry no
+      per-file licence header (unlike ACPICA or mbedtls, whose grant is in every
+      file). So the licence is correct by provenance — microsoft/Windows-Driver-
+      Frameworks has been MIT since the 2017 open-sourcing — but nothing here states
+      it, which is a defect in OUR drop rather than an ambiguity about the terms.
+
+      Fix when convenient by copying upstream's LICENSE.md into sdk/lib/drivers/wdf
+      and pointing `license_file` at it; until then this note is what generated
+      notices reproduce, so the gap is visible rather than silent.
     modified: "lightly"  # 9 of 488 files mention ReactOS; see reason
     headers:
       - sdk/include/wdf
@@ -140,7 +151,7 @@ trees:
     upstream: https://github.com/amd/win-libm
     license: MIT
     license_ref: sdk/lib/crt/math/libm_sse2/L2_by_pi_bits.c
-    modified: unknown
+    modified: yes  # ReactOS markers in 1 source file(s): _handle_error.c
     version:
       literal: git commit 6121d02
     reason: >
@@ -219,6 +230,21 @@ trees:
     name: Microsoft UCRT
     upstream: Windows SDK "Source/ucrt" drop (exact SDK version UNKNOWN — see note)
     license: Microsoft (see the Windows SDK licence terms)
+    license_note: >
+      THIS TREE CARRIES NO LICENCE GRANT. Its source headers bear only
+      "Copyright (c) Microsoft Corporation. All rights reserved." with no permission
+      statement of any kind, and there is no LICENSE, COPYING or README in either
+      sdk/lib/ucrt or sdk/include/ucrt. The recorded licence is therefore a POINTER
+      to the Windows SDK licence terms under which Microsoft distributes the ucrt
+      sources, not something reproducible from this repository — and those terms are
+      an SDK EULA, not an open-source licence.
+
+      This is the largest unresolved provenance question in the tree (~78K lines) and
+      the reason the entry says the SDK version is unknown: without the version we
+      cannot even name which EULA applies. It is recorded here rather than rounded
+      off so that generated notices state the gap instead of hiding it. Resolving it
+      means establishing the SDK version and its terms, or replacing the tree — see
+      the ucrtbase work item in the roadmap.
     modified: yes
     headers:
       - sdk/include/ucrt
@@ -320,7 +346,7 @@ trees:
         Brian Paul, under the GNU Library General Public License v2 or later. One file,
         a symbol-mangling header, but a copyleft licence sitting inside a permissive
         drop is exactly the shape this registry exists to make visible.
-    modified: unknown
+    modified: yes  # ReactOS markers in 1 source file(s): trimregion.h
     headers:
       - dll/opengl/glu32/include
     reason: >
@@ -350,9 +376,24 @@ trees:
   # ── sdk/lib/3rdparty ────────────────────────────────────────────────────
   - path: sdk/lib/3rdparty/freetype
     name: FreeType
+    staleness: >
+      AUDITED 2026-09-20: ours 2.10.0 (2019-03), current upstream 2.14.3 — about five years
+      and a dozen-plus CVEs behind. NOT, however, exposed to the headline one:
+      CVE-2020-15999 (the sbix embedded-PNG heap overflow, fixed in 2.10.4, exploited in the
+      wild as a Chrome 0-day) lives in Load_SBit_Png, and we do not build it.
+      FT_CONFIG_OPTION_USE_PNG is left commented out in include/freetype/config/ftoption.h
+      and our CMakeLists never defines it, so src/sfnt/pngshim.c compiles to `typedef int
+      _pngshim_dummy;` and the ttsbit.c call sites are inside #ifdef
+      FT_CONFIG_OPTION_USE_PNG. Checked in the tree, not inferred from the version.
+      Uncompressed colour bitmaps ARE still supported, so do not read this as 'sbix is off'.
+      The remaining CVEs are in the sfnt/cff/type1 parsers we DO build, so a bump is still
+      wanted — just not an emergency. Unlike libtiff this is on the boot path (desktop font
+      rendering), which makes a bump riskier and, usefully, actually covered by the smoke
+      suite.
     upstream: https://freetype.org/
-    license: FTL OR GPL-2.0
-    modified: unknown
+    license: GPL-2.0-only  # ELECTED from FreeType's FTL-or-GPL dual grant
+    license_file: COPYING  # the repo's own GPL-2.0 text; see review
+    modified: yes  # ReactOS markers in 16 source file(s): ftoption.h, ftbitmap.h, afcjk.c
     version:
       file: sdk/lib/3rdparty/freetype/include/freetype/freetype.h
       patterns:
@@ -361,6 +402,18 @@ trees:
         - '#define FREETYPE_PATCH\s+(\d+)'
       join: "."
     review: >
+      ARM ELECTED 2026-09-19: GPL-2.0, owner's decision. FreeType 2.10.0 is offered
+      under FTL *or* GPL-2.0 and the licensee chooses; this project is itself GPL-2.0
+      (repo-root COPYING), so electing the GPL arm makes FreeType's terms the same as
+      the tree it ships in, and no separate FTL attribution obligation applies.
+
+      `license_file` points at the repo-root COPYING rather than a file inside the
+      tree, and that is deliberate: it is the GPL-2.0 text verbatim, and the reason
+      this entry had no pointer is that FreeType's own licence document was never
+      vendored — README:16 says "see the file `docs/LICENSE.TXT'" and there is no
+      docs/ directory here. So the tree still lacks upstream's dual-grant statement.
+      What it now has is an unambiguous record of which arm WE take and the text of
+      that arm. If FreeType is ever re-vendored, bring docs/ with it.
       LICENCE TEXT IS NOT IN THE TREE. README:16 says "see the file `docs/LICENSE.TXT'
       for the available licenses", and there is no docs/ directory here — the licence
       file was left behind when this was vendored. FTL-vs-GPL is a CHOICE that file
@@ -373,26 +426,105 @@ trees:
 
   - path: sdk/lib/3rdparty/zlib
     name: zlib
+    staleness: >
+      AUDITED 2026-09-20: ours 1.2.13 (2022-10), current 1.3.2. 1.2.13 does carry the
+      CVE-2022-37434 fix, so this is aging rather than known-vulnerable, and zlib bumps are
+      historically painless.
     upstream: https://zlib.net/
     license: Zlib
     license_file: sdk/lib/3rdparty/zlib/LICENSE
-    modified: unknown
+    modified: yes  # 3 files under contrib/minizip only; zlib proper is pristine
+    patch: vendor-patches/zlib.patch
     headers:
       - sdk/include/reactos/libs/zlib
     version:
       file: sdk/include/reactos/libs/zlib/zlib.h
       pattern: '#define ZLIB_VERSION "([^"]+)"'
+    review: >
+      DIFFED AGAINST PRISTINE UPSTREAM 2026-09-20 (zlib-1.2.13.tar.gz from madler/zlib,
+      sha256 b3a24de97a8fdbc835b9833169501030b8977031bcb54b3b3ac13740f846ab30). This entry
+      previously said `modified: yes` with NO patch and NO review — a bare unexplained
+      claim, the last one of its kind in the registry. Now measured.
+
+      ZLIB PROPER IS PRISTINE. adler32, crc32, deflate, inflate, inftrees, trees, zutil, the
+      gz* family, compress, uncompr, infback and both public headers are byte-identical to
+      1.2.13. Nothing we carry touches bounds checking, allocation, or the inflate/deflate
+      state machines. The whole delta is three files under contrib/minizip, the ZIP-archive
+      helper that ships alongside zlib — so the scary-sounding `modified` was never about
+      the compressor.
+
+      What it is: minizip has a stdio FILE* backend and a win32-HANDLE backend, and ReactOS
+      uses only the latter, so the stdio half and the zipOpen2/unzOpen2 entry points that
+      depend on it are compiled out behind __REACTOS__. unzip.c additionally stops NOUNCRYPT
+      being force-defined, which ENABLES minizip's traditional-PKWARE decryption rather than
+      disabling it — read that direction carefully. These cannot become a build flag:
+      __REACTOS__ already is one, and what will not move into the build is WHICH REGIONS it
+      guards, since upstream has no such conditionals to switch on.
+
+      DE-PATCHED in the same pass, five files down to three. iowin32.c was restored to
+      pristine: its only delta was four `mode_fopen` declarations commented out to silence
+      -Wunused-variable, which is a warning rather than a portability need, so it moved into
+      the build as target_compile_options(minizip PRIVATE -Wno-unused-variable) — scoped to
+      minizip so it cannot hide an unused variable in zlib proper. zip.c's cosmetic hunk
+      (braces around a `for` body) is reverted too. Both were noise that would have had to
+      be re-applied at every bump. Verified: patch -p1 applies clean to a fresh 1.2.13
+      extraction and the result is byte-identical to our tree for all three files.
     reason: Ubiquitous compression library; upstream-tracked.
 
   - path: sdk/lib/3rdparty/libxml2
     name: libxml2
+    staleness: >
+      AUDITED 2026-09-20: ours 2.12.8, current 2.15.x. Bumping is now a routine rebase of
+      one 2-line hunk — see the review above for why that hunk has to stay.
     upstream: https://gitlab.gnome.org/GNOME/libxml2
     license: MIT
     license_file: sdk/lib/3rdparty/libxml2/COPYING
-    modified: unknown
+    modified: yes  # 3 substantive files vs pristine 2.12.8
+    patch: vendor-patches/libxml2.patch
     version:
       file: sdk/lib/3rdparty/libxml2/include/libxml/xmlversion.h
       pattern: '#define LIBXML_DOTTED_VERSION "([^"]+)"'
+    review: >
+      DIFFED AGAINST PRISTINE UPSTREAM 2026-09-19: libxml2-2.12.8.tar.xz from
+      download.gnome.org, sha256 verified against GNOME's published sum. 27 files exist
+      in both trees; 27 differ, but 21 of those differ ONLY by a stripped trailing blank
+      line — a tree-wide whitespace pass, not editing. THREE are substantive:
+
+        libxml.h          swaps `#include "config.h"` for "win32config.h" and hoists
+                          XML_HIDDEN above it. Build-config shim.
+        win32config.h     adds <io.h> and <direct.h>. Portability.
+        xmlschemas.c      BEHAVIOURAL. Wraps the content-model determinism check in
+                          `#if 0  /* disabled in Wine */`, so schemas upstream rejects
+                          as non-deterministic now validate silently.
+
+      That last one is the one that matters for a re-vendor, and note its provenance:
+      the comment says WINE, not ReactOS. It arrived already-patched in the bulk import
+      rather than being edited here — which is exactly why "no __REACTOS__ marker" is
+      not evidence of a clean drop.
+
+      RESOLVED 2026-09-20 — the xmlschemas.c patch is JUSTIFIED AND MINIMAL; it does not
+      block CVE tracking. Two stray-double-semicolon cleanups were reverted to pristine, so
+      xmlschemas.c now differs from upstream 2.12.8 by exactly the 2-line `#if 0`. `patch
+      -p1 --dry-run` applies clean to a fresh 2.12.8 extraction and the result is byte-
+      identical to our tree for all three files, so a version bump is a normal rebase of one
+      tiny hunk.
+
+      The hunk disables the XSD 1.0 Unique Particle Attribution check. Measured with a host
+      probe (real dll/win32/msxml3/xdr.c linked against PRISTINE upstream 2.12.8, datatypes
+      namespace wired as schema.c does): 5 of the 6 XDR schemas in the msxml3 winetest
+      compile clean unpatched; szDatatypeXDR emits 'The content model is not determinist'
+      twice; applying only this hunk to that same tree makes all 6 compile. Necessary and
+      sufficient, A/B on one binary.
+
+      It is NOT covering for a bug in xdr.c. XDR's open content model permits extra DECLARED
+      elements as trailing content, lowered to an xsd:any with namespace='##any' and
+      processContents='strict', which unavoidably overlaps its sibling particles when one is
+      optional or repeating — inherent UPA. XSD 1.1 added xs:openContent for exactly this;
+      libxml2 implements neither. Narrowing to ##other would satisfy UPA and be WRONG: the
+      winetest requires <test><x/><x/><y/><z/><z/><w/></test> to VALIDATE (w is declared,
+      same namespace) while rejecting an undeclared <v/>. All 4 test_openseq documents
+      validate exactly as asserted with the hunk in place. Full evidence in the patch
+      header. Do not 'fix' xdr.c and do not translate it expecting to remove this patch.
     reason: XML parser; upstream-tracked.
 
   - path: sdk/lib/3rdparty/adns
@@ -400,7 +532,7 @@ trees:
     upstream: https://www.chiark.greenend.org.uk/~ian/adns/
     license: GPL-2.0-or-later
     license_file: sdk/lib/3rdparty/adns/COPYING
-    modified: unknown
+    modified: yes  # ReactOS markers in 2 source file(s): adns.h, setup.c
     version:
       file: sdk/lib/3rdparty/adns/client/client.h
       pattern: '#define ADNS_VERSION_STRING "([^"]+)"'
@@ -408,15 +540,29 @@ trees:
 
   - path: sdk/lib/3rdparty/libmpg123
     name: libmpg123
+    staleness: >
+      AUDITED 2026-09-20: ours 1.26.2 (2020), current 1.33.7. The probe previously reported
+      `45`, the API number, which is why this drop read as versioned when it was not.
     upstream: https://www.mpg123.de/
     license: LGPL-2.1
-    modified: unknown
+    license_file: COPYING.LIB  # the repo's own LGPL-2.1 text; see review
+    modified: yes  # ReactOS markers in 1 source file(s): parse.c
     headers:
       - sdk/include/reactos/libs/libmpg123
     version:
-      file: sdk/include/reactos/libs/libmpg123/mpg123.h
-      pattern: '#define MPG123_API_VERSION\s+(\d+)'
+      # PACKAGE_VERSION is the RELEASE. The probe used to read MPG123_API_VERSION
+      # from mpg123.h, which is 45 for a whole span of releases and cannot tell
+      # 1.26.2 from 1.33.7 — the same defect libjpeg's probe had (JPEG_LIB_VERSION
+      # 90). An API number is not a version for CVE-matching purposes.
+      file: sdk/include/reactos/libs/libmpg123/config.h
+      pattern: '#define PACKAGE_VERSION "([^"]+)"'
     review: >
+      POINTER ADDED 2026-09-19 and it is NOT upstream's file. mpg123's own COPYING was
+      never vendored — its headers say "see COPYING and AUTHORS files in distribution"
+      and neither is here — so this points at the repo-root COPYING.LIB, which is the
+      LGPL-2.1 text verbatim and is the licence the sources name. That gives the grant
+      an authoritative text in-tree; it does NOT recover mpg123's own AUTHORS file,
+      which the same sentence asks for. Bring both if this is re-vendored.
       LICENCE TEXT IS NOT IN THE TREE, and the sources say so themselves: every file
       header reads "free software under the terms of the LGPL... see COPYING and AUTHORS
       files in distribution", and neither COPYING nor AUTHORS was vendored. Same defect
@@ -428,7 +574,7 @@ trees:
     upstream: https://libsndfile.github.io/libsamplerate/
     license: BSD-2-Clause
     license_file: sdk/lib/3rdparty/libsamplerate/COPYING
-    modified: unknown
+    modified: yes  # ReactOS markers in 1 source file(s): config.h
     reason: Sample-rate conversion; upstream-tracked.
 
   - path: sdk/lib/3rdparty/libwin-iconv
@@ -436,9 +582,40 @@ trees:
     upstream: https://github.com/win-iconv/win-iconv
     license: Unlicense OR MIT
     license_ref: sdk/lib/3rdparty/libwin-iconv/win_iconv.c
-    modified: unknown
+    modified: no  # patch was DEAD CODE; reverted to pristine 2026-09-20
     review: >
-      RECORDED `Unlicense OR MIT`, BUT THE FILE SAYS PUBLIC DOMAIN: win_iconv.c's header
+      THE PATCH WAS DEAD CODE AND IS GONE (2026-09-20). The 22-line rewrite of
+      _errno resolution — reading the Import Address Table instead of upstream's
+      module-handle + GetProcAddress — sits entirely inside
+      `#if defined(USE_LIBICONV_DLL)`, and that symbol is defined only inside an
+      `#if 0` block at win_iconv.c:29. Nothing in the build defines it either.
+      Confirmed at the symbol level before touching anything: win_iconv.c.obj exports
+      iconv/iconv_close/iconv_open and contains neither find_imported_function nor
+      MyImageDirectoryEntryToData.
+
+      So the fork carried a reimplementation that never compiled, and it was the thing
+      making this tree unable to track upstream. Every file is now byte-identical to
+      upstream commit 1046215 except CMakeLists.txt, which is ours. That includes
+      converting CRLF to upstream's LF on the five files that differed only that way —
+      no content change, and it is what makes "byte-identical" literally true rather
+      than true-modulo-line-endings.
+
+      DIFFED AGAINST UPSTREAM 2026-09-19 at the commit our ChangeLog matches
+      (win-iconv 1046215, 2014-02-05). THE FIRST DIFF WAS A LIE: every file appeared to
+      differ by thousands of lines, because our copy is CRLF and upstream is LF — 4,146
+      "changed" lines in a 2,071-line file is the tell. Normalising line endings leaves
+      22 real lines in win_iconv.c and 4 in readme.txt; win_iconv_test.c, iconv.h and
+      ChangeLog are identical.
+
+      The 22 lines are a genuine reimplementation, not a shim: upstream finds the
+      importing module and calls GetProcAddress for `_errno`
+      (find_imported_module_by_funcname -> HMODULE); ours resolves the address straight
+      out of the Import Address Table (find_imported_function -> FARPROC). Same goal,
+      different mechanism, and it is ours to re-apply. The readme changes are
+      proofreading ("drop or replace" -> "drops or replaces") that upstream lacked at
+      that commit.
+
+      So the tree is: upstream 2014-02-05, CRLF-converted, with one function rewritten.      RECORDED `Unlicense OR MIT`, BUT THE FILE SAYS PUBLIC DOMAIN: win_iconv.c's header
       is three lines and reads "This file is placed in the public domain." No Unlicense
       text and no MIT text appears anywhere in the tree. A public-domain dedication and
       the Unlicense are not the same instrument and are not equally effective in every
@@ -452,7 +629,7 @@ trees:
     upstream: http://www.stlport.org/
     license: STLport licence (permissive)
     license_file: sdk/lib/3rdparty/stlport/README
-    modified: unknown
+    modified: yes  # ReactOS markers in 1 source file(s): stdio_streambuf.cpp
     reason: >
       C++ standard library used by the C++ substrate. Upstream is long dead, but it
       is still a foreign STL implementation rather than ReactOS code; translating an
@@ -463,8 +640,24 @@ trees:
     upstream: unknown
     license: Public Domain (relayed author permission) — see review
     license_file: sdk/lib/3rdparty/cardlib/ReadMe.txt
-    modified: unknown
+    modified: yes  # ReactOS markers in 1 source file(s): cardbitmaps.cpp
     reason: Card-rendering library for the bundled card games, carried in the 3rdparty tree.
+    unwelcome: >
+      ACCEPTED FOR NOW, SLATED FOR REWRITE (owner, 2026-09-19). The grant is the
+      weakest in this registry and the files contradict it: headers say "Freeware /
+      Copyright J Brown 2001", which permits distribution and grants nothing else,
+      while the public-domain dedication exists only second-hand in ReadMe.txt, signed
+      by a ReactOS contributor relaying what the author said around 2001.
+
+      The author is traceable — J Brown is strobejb, still active on GitHub — but
+      cardlib was only ever published on his site (catch22.net/tuts/cards/cardlib), not
+      in a repository with a licence file, so there is no upstream to re-vendor from
+      and no clean text to point at. Asking him is a real option and has not been done.
+
+      EXIT: reimplement. 5,159 lines of C++ whose entire job is drawing playing cards,
+      with exactly two consumers — Solitaire and Spider. Nothing else in the OS links
+      it, so the blast radius of replacing it is two games. Kept meanwhile because
+      Solitaire is the classic Windows feel and we would rather ship it than not.
     review: >
       NOT `unknown` AFTER ALL, but not clean either. ReadMe.txt is the whole licence:
       "The author has given permission to use these sources under Public Domain. Do
@@ -482,11 +675,35 @@ trees:
 
   - path: dll/3rdparty/mbedtls
     name: Mbed TLS
+    staleness: >
+      AUDITED 2026-09-20: ours 2.16.11, current 3.6.7 (LTS) and 4.2.0. THE WORST TREE IN
+      THIS REGISTRY. The 2.16 LTS branch reached END OF LIFE at the end of 2021, so this has
+      received no upstream security fixes for about five years — in a TLS library. 2.x ->
+      3.x is a breaking API change, so this is a port rather than a drop-in bump, which is
+      presumably why it was never done. SIZED, so the next person does not have to: two
+      consumers, dll/win32/bcrypt and dll/win32/schannel (bcrypt_main.c, schannel_mbedtls.c
+      and its lazyload header), using 77 distinct mbedtls_* symbols between them. Bounded,
+      but not small — expect the usual 3.x migration work: the *_ret hash suffixes are gone,
+      struct fields moved behind MBEDTLS_PRIVATE, and several ssl_conf entry points changed
+      shape. Note schannel lazy-loads, so a missed rename can fail at RUNTIME rather than at
+      link time; that is the trap to plan around, and there is no TLS test in this tree to
+      catch it.
     upstream: https://github.com/Mbed-TLS/mbedtls
     license: Apache-2.0 OR GPL-2.0-or-later
     license_ref: dll/3rdparty/mbedtls/aes.c
     review: >
-      LICENCE CORRECTED 2026-09-19: recorded as `Apache-2.0` for as long as this entry
+      DIFFED AGAINST PRISTINE UPSTREAM 2026-09-19: v2.16.11 tarball from GitHub,
+      version confirmed from the tarball's own version.h. 79 .c files compared,
+      EXACTLY ONE differs — timing.c — and the change is a portability widening:
+      upstream gates its QueryPerformanceCounter hardclock on `_MSC_VER`, ours adds an
+      equivalent branch for any `_WIN32`, covering MinGW. Same API, same logic, broader
+      guard.
+
+      Checked rather than waved past, because this is a TLS library: hardclock feeds
+      entropy_poll.c and havege.c. It does not change entropy policy or quality — it
+      makes an already-used Windows counter available where the narrower guard would
+      have fallen through. Nothing in crypto, RNG, certificate validation or protocol
+      handling differs anywhere in the drop.      LICENCE CORRECTED 2026-09-19: recorded as `Apache-2.0` for as long as this entry
       has existed, but all 79 files say `SPDX-License-Identifier: Apache-2.0 OR
       GPL-2.0-or-later`. Dual, so the GPL half is an OPTION rather than an obligation —
       but stating only one arm of a dual grant misrepresents it. It survived the licence
@@ -500,7 +717,7 @@ trees:
       and a re-vendor is a copy rather than a merge. It was found BY HAND, not by
       `--licences`: it declares its licence in prose with no SPDX tag, which is that
       scan's blind spot. A re-vendor must not reintroduce it.
-    modified: unknown
+    modified: yes  # 1 of 79 .c files vs pristine 2.16.11
     headers:
       - sdk/include/reactos/libs/mbedtls
     version:
@@ -512,28 +729,83 @@ trees:
 
   - path: dll/3rdparty/libjpeg
     name: libjpeg
+    staleness: >
+      AUDITED 2026-09-20: ours 9d (2020-01), current 9f. Note the IJG 9.x line is a
+      different lineage from libjpeg-turbo, which is what most distributions actually ship
+      and where most CVE traffic is; match advisories against IJG releases, not turbo ones.
     upstream: https://ijg.org/
     license: IJG
     license_file: dll/3rdparty/libjpeg/README
-    modified: unknown
+    modified: no  # sources byte-identical to pristine IJG 9d
+    patch: vendor-patches/libjpeg.patch
     headers:
       - sdk/include/reactos/libs/libjpeg
     version:
-      file: sdk/include/reactos/libs/libjpeg/jpeglib.h
-      pattern: '#define JPEG_LIB_VERSION\s+(\d+)'
+      # jversion.h carries the real IJG release ("9d  12-Jan-2020"). The old
+      # extractor read JPEG_LIB_VERSION from jpeglib.h, which is 90 for every
+      # 9.x release and so cannot tell 9a from 9d — useless for CVE matching.
+      file: sdk/include/reactos/libs/libjpeg/jversion.h
+      pattern: '#define JVERSION\s+"([^ "]+)'
+    review: >
+      PARTIALLY DE-PATCHED 2026-09-19. jpeglib.h and jdct.h differed by trailing
+      whitespace only and are restored; the header directory is 10 of 11 identical.
+
+      jmorecfg.h CANNOT be de-patched with a -D, and the attempt was refused rather
+      than forced. Upstream defines the macros UNGUARDED — `#define GLOBAL(type) type`
+      at jmorecfg.h:246, `#define EXTERN(type) extern type` at :248 — so a command-line
+      -D is overridden the moment the header is processed. Our patch rewrites the macro
+      BODIES to inject JPEG_API/JPEG_IMPEXP, tokens absent from vanilla 9d, and adds the
+      `#ifndef EXTERN` guard that would be required to make a -D stick at all. Forcing
+      it would either silently not apply or need the file edited anyway, and getting it
+      wrong breaks every DLL export. This one belongs in the patch series.
+
+      DIFFED AGAINST PRISTINE UPSTREAM 2026-09-19: jpegsrc.v9d.tar.gz from ijg.org.
+      All 73 shared files byte-identical — including the historically fragile ones,
+      jdhuff.c, jmemmgr.c, jquant2.c. Nothing in bounds checking, allocation or
+      marker/Huffman parsing differs.
+
+      TWO THINGS THE REGISTRY HAD WRONG OR MISSING. The version was recorded as `90`,
+      which is the JPEG_LIB_VERSION macro and spans several IJG releases; the actual
+      release is 9d (12-Jan-2020), stated in jversion.h, README and change.log. And
+      this tree is SPLIT — the headers live in sdk/include/reactos/libs/libjpeg, where
+      jmorecfg.h carries a documented DLL-export patch (JPEG_IMPEXP/JPEG_API) with
+      rosdiff.patch sitting beside it, and jconfig.h is upstream's own jconfig.vc
+      template trimmed of the cjpeg/djpeg tool flags. Those are build glue, so the
+      SOURCE verdict is `no`, but a re-vendor must handle both directories.
     reason: JPEG codec; upstream-tracked.
 
   - path: dll/3rdparty/libpng
     name: libpng
+    staleness: >
+      AUDITED 2026-09-20: was 1.6.39 (2022-11), nineteen patch releases behind on an image
+      parser reachable from untrusted input. BUMPED to 1.6.58 the same day.
+      libpng-1.6.58.tar.xz from sourceforge, sha256
+      28eb403f51f0f7405249132cecfe82ea5c0ef97f1b32c5a65828814ae0d34775 (computed here;
+      cross-check it before treating this drop as provenance-clean). Cheap for the same
+      reason libtiff was — the tree was already a verified clean drop, so there was nothing
+      of ours to re-apply, and 1.6.x is ABI-stable so no consumer changed. All 15 sources,
+      the four private headers, png.h and pngconf.h are byte-identical to pristine 1.6.58;
+      pnglibconf.h is upstream's own scripts/pnglibconf.h.prebuilt, which is what the 1.6.39
+      one already was. docs/LICENSE refreshed from upstream LICENSE. SIMD stays out (the
+      arm/intel/mips/powerpc/loongarch dirs were never vendored and -DPNG_ARM_NEON_OPT=0
+      remains). Unlike libtiff this one IS covered: user32 links libpng, so the smoke suite
+      exercises it on every boot.
     upstream: http://www.libpng.org/pub/png/libpng.html
     license: libpng-2.0
     license_file: dll/3rdparty/libpng/docs/LICENSE
-    modified: unknown
+    modified: no  # byte-identical to pristine 1.6.39, verified twice
     headers:
       - sdk/include/reactos/libs/libpng
     version:
       file: sdk/include/reactos/libs/libpng/png.h
       pattern: '#define PNG_LIBPNG_VER_STRING "([^"]+)"'
+    review: >
+      DIFFED AGAINST PRISTINE UPSTREAM 2026-09-19 and it is a CLEAN DROP: all 19
+      sources byte-identical to libpng 1.6.39, cross-checked against both the GitHub
+      tag archive and the SourceForge release tarball, then re-verified independently.
+      docs/ is upstream's flat files relocated into a subdirectory — a layout choice,
+      not content drift. libpng.spec is our Wine-format export table, ours by
+      definition. Nothing touches bounds checks, allocation or chunk parsing.
     reason: PNG codec; upstream-tracked.
 
   - path: dll/3rdparty/libtiff
@@ -541,12 +813,67 @@ trees:
     upstream: http://www.libtiff.org/
     license: libtiff (BSD-like)
     license_ref: dll/3rdparty/libtiff/tif_open.c
-    modified: unknown
+    modified: no  # byte-identical to pristine 4.7.0 (only our 6 config headers differ)
     headers:
       - sdk/include/reactos/libs/libtiff
     version:
       file: sdk/include/reactos/libs/libtiff/tiffvers.h
       pattern: 'LIBTIFF, Version ([0-9.]+)'
+    review: >
+      DE-PATCHED 2026-09-19 — all 43 shared .c files are byte-identical to pristine
+      4.1.0 and NOTHING replaced the edit, because the build was already doing it.
+      `add_pch(libtiff precomp.h SOURCE)` calls CMake's target_precompile_headers,
+      which force-includes precomp.h on clang, so the 35 hand-edited
+      `#include <precomp.h>` lines were the manual half of a convention the build had
+      automated. Reverted to upstream's own `#include "tiffiop.h"`: correct with PCH on
+      (force-include plus a guarded redundant include) and with PCH off (resolves via
+      the existing include_directories). libtiff.dll builds and links unchanged. The
+      largest block of "modification" in this registry was leftovers, not a port.
+
+      THE SECURITY FACT (now RESOLVED, kept for the record): this was stock 4.1.0
+      (Nov 2019) with NO backported fixes, so it was exactly as vulnerable as unpatched
+      4.1.0 — which predates fixes for known OOB-read/write and directory-parsing CVEs.
+      De-patching made the version bump trivial but did not perform it; the bump below
+      did, on 2026-09-20.
+
+      (This paragraph was written once before and SILENTLY LOST: the editing helper
+      did nothing when an entry had no `review:` block, and reported success. It is
+      here now because the helper was made to fail loudly instead.)
+
+      BUMPED 4.1.0 -> 4.7.0 on 2026-09-20, which is what that security item asked for.
+      tiff-4.7.0.tar.gz from download.osgeo.org, sha256
+      67160e3457365ab96c5b3286a0903aa6e78bdc44c4bc737d2e486bcecb6ba976 — NOTE osgeo
+      publishes only a GPG .sig for this file, no .sha256, so that hash is computed here and
+      NOT yet checked against an independent source. Verify it before treating this drop as
+      provenance-clean.
+
+      The bump was cheap precisely because the 2026-09-19 de-patching had already made the
+      tree pristine: no local edit had to be re-applied. Every .c, .cxx and non-config
+      header is now byte-identical to pristine 4.7.0; the only files that differ are the six
+      ReactOS config headers (tif_config*.h, tiffconf*.h), which stand in for what libtiff's
+      own CMake generates and are build glue rather than upstream source.
+
+      What had to change. tiffconf.h was rewritten against 4.7's tiffconf.h.cmake.in,
+      preserving our exact codec selection: 4.5 moved the fixed-width types to <stdint.h>,
+      so without the new stddef/stdint/inttypes includes every uint16_t in tiff.h is an
+      unknown type. One new source file, tif_hash_set.c, is required by tif_dirread.c and is
+      added to the CMake source list. Upstream also added tif_lerc.c, which stays out along
+      with the other optional codecs we do not build (jpeg, jbig, ojpeg, lzma, webp, zstd,
+      libdeflate).
+
+      Verified: libtiff.dll builds and links, and so does its only consumer
+      (dll/win32/windowscodecs/libtiff.c, 29 API symbols, all long-stable core calls). The
+      spec2def exports all resolved, which is the check a removed export would have failed.
+      The new DoS guard TIFF_MAX_DIR_COUNT defaults to 1048576 via tiffiop.h and is
+      therefore ACTIVE even though our config does not set it; STRIP_SIZE_DEFAULT likewise
+      defaults to 8192. CHUNKY_STRIP_READ_SUPPORT and DEFER_STRILE_LOAD stay off, as they
+      were under 4.1.0.
+
+      NOT verified: there is no TIFF decode test in this tree and libtiff is not on the boot
+      path, so the smoke suite does not exercise a single line of this. The evidence is
+      compile-and-link plus byte-identity with upstream, not runtime behaviour. Anyone
+      adding a WIC image test should point it here first.
+
     reason: TIFF codec; upstream-tracked.
 
   - path: dll/3rdparty/libxslt
@@ -554,20 +881,46 @@ trees:
     upstream: https://gitlab.gnome.org/GNOME/libxslt
     license: MIT
     license_file: dll/3rdparty/libxslt/Copyright
-    modified: unknown
+    modified: no  # de-patched 2026-09-19; one -D replaces the edit
     headers:
       - sdk/include/reactos/libs/libxslt
     version:
       file: sdk/include/reactos/libs/libxslt/xsltconfig.h
       pattern: '#define LIBXSLT_DOTTED_VERSION "([^"]+)"'
+    review: >
+      DE-PATCHED 2026-09-19 — all 28 shared files byte-identical to pristine 1.1.42.
+      The one behavioural line moved into the build: CMakeLists.txt passes
+      `-DHAVE_STAT` and win32config.h is upstream's again. security.c's outer gate is
+      `#ifndef HAVE_STAT`, so defining it before any header is read makes the whole
+      block inert and the stat()->_stat() remap never happens — exactly what the
+      in-source edit achieved. Upstream's HAVE__STAT is defined again and unreachable.
+
+      DIFFED AGAINST PRISTINE UPSTREAM 2026-09-19: libxslt-1.1.42.tar.xz from
+      download.gnome.org, version confirmed from NEWS. 21 of 27 shared files are
+      byte-identical, 5 differ only by a stripped trailing blank line, and ONE line is
+      real:
+
+        win32config.h:48   upstream `#define HAVE__STAT`  ->  ours `#define HAVE_STAT`
+
+      Behavioural, narrowly. Upstream's HAVE__STAT drives security.c's macro chain to
+      remap stat() to _stat() for a stock MSVC CRT; defining HAVE_STAT directly skips
+      that remap, so security.c calls a real stat(). Correct for this tree, which
+      supplies its own CRT — but it changes which libc function is actually called, so
+      it is a divergence a re-vendor must re-apply rather than discard.
+
+      trio.h and triodef.h were checked specifically and are upstream's own vendored
+      copies, unmodified.
     reason: XSLT processor; upstream-tracked.
 
   - path: dll/3rdparty/libtirpc
     name: libtirpc
+    staleness: >
+      AUDITED 2026-09-20: ours 0.1.11, current 1.3.8 — this is the largest version gap in
+      the registry by a wide margin.
     upstream: https://sourceforge.net/projects/libtirpc/
     license: BSD-3-Clause
     license_file: dll/3rdparty/libtirpc/COPYING
-    modified: unknown
+    modified: yes  # ReactOS markers in 23 source file(s): asprintf.c, auth_sspi.c, auth_time.c
     version:
       file: dll/3rdparty/libtirpc/VERSION
       patterns:
@@ -582,58 +935,25 @@ trees:
     upstream: unknown
     license: MIT
     license_ref: dll/3rdparty/dxtn/txc_compress_dxtn.c
-    modified: unknown
+    modified: unknown  # upstream distribution is gone; see review
+    review: >
+      VERSION IDENTIFIED 2026-09-19, MODIFICATION STILL OPEN. The registry said
+      `version: unknown, upstream: unknown`; the files say otherwise — txc_dxtn.h and
+      txc_compress_dxtn.c both carry "libtxc_dxtn / Version: 1.0 / Copyright (C) 2004
+      Roland Scheidegger". So this is libtxc_dxtn 1.0, the S3TC/DXTn codec.
+
+      It cannot be fully diffed: libtxc_dxtn's distribution point
+      (people.freedesktop.org/~mareko) is a 404 and the project has no surviving
+      canonical home. The nearest artifact is divVerent/s2tc, which carries a verbatim
+      copy of txc_dxtn.h — ours is byte-identical to it — but s2tc is a clean-room
+      reimplementation and does not ship the two .c files, so 1,086 of our 1,137 lines
+      have nothing to compare against. `modified` stays unknown, now for a stated
+      reason rather than for want of looking.
     reason: S3TC/DXTn texture (de)compression for the GL stack.
 
   # ── headers with no source in this tree ─────────────────────────────────
   # Registered because the convention-alias scanner walks them and they are foreign
   # code, even though the implementation is not vendored here.
-  - path: sdk/include/reactos/libs/expat
-    name: Expat (headers only)
-    upstream: https://libexpat.github.io/
-    license: MIT
-    modified: unknown
-    headers:
-      - sdk/include/reactos/libs/expat
-    version:
-      file: sdk/include/reactos/libs/expat/expat.h
-      patterns:
-        - '#define XML_MAJOR_VERSION\s+(\d+)'
-        - '#define XML_MINOR_VERSION\s+(\d+)'
-        - '#define XML_MICRO_VERSION\s+(\d+)'
-      join: "."
-    review: >
-      LICENCE TEXT IS NOT IN THE TREE. This entry is two headers (expat.h,
-      expat_external.h) and neither carries a grant; expat's MIT text lives in its
-      COPYING, which was not vendored because the SOURCES were not either — only the
-      public headers are here.
-    reason: >
-      Headers only — there is NO expat source anywhere in this tree. Surfaced by
-      building this registry; it was one of the six entries in the old hardcoded
-      tuple, which gave no hint that the library behind it is absent.
-
-  - path: sdk/include/reactos/libs/fullfat
-    name: FullFAT (headers only)
-    upstream: https://github.com/jameswalmsley/FullFAT
-    license: GPL-3.0-or-later  # James Walmsley, 2009
-    license_ref: sdk/include/reactos/libs/fullfat/fat.h
-    modified: unknown
-    headers:
-      - sdk/include/reactos/libs/fullfat
-    review: >
-      LICENCE WAS RECORDED `unknown` AND IS NOT: every header carries the full GPL
-      grant in prose — "This program is free software: you can redistribute it and/or
-      modify it under the terms of the GNU General Public License ... either version 3
-      of the License, or (at your option) any later version", Copyright (C) 2009 James
-      Walmsley. So this is GPL-3.0-or-later, stated in the tree, and `unknown` simply
-      meant nobody had opened the file. Headers only, so it carries no body debt — but
-      GPL-3 in a kernel-adjacent codebase is worth being certain about rather than
-      leaving blank, and the `unknown` is exactly the kind of blank that reads as
-      "checked, indeterminate" when it means "not checked".
-    reason: >
-      Headers only — no FullFAT source in this tree. 19 headers, none of them
-      excluded from the convention-alias scan before this registry existed.
-
 # ─────────────────────────────────────────────────────────────────────────────
 # THE OTHER HALF: foreign-COPYRIGHT code that IS ours to translate.
 #

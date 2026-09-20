@@ -88,7 +88,23 @@ list(APPEND SOURCE
     # propsheet.cpp — replaced by Rust (shell32-rust/src/propsheet.rs); reaches
     #   CStubWindow32 via CStubWindow32_*_RustBridge in utils.cpp
     shell32.cpp
-    utils.cpp
+    # utils.cpp — replaced by Rust (shell32-rust/src/shell32/utils.rs, all 95 free functions);
+    # cohab via libshell32_rust.a. Whole-TU flip, gated together with the wiring because doing
+    # either alone is a PARTIAL cohab flip: utils.rs publishes names the live C++ objects also
+    # defined, the linker picks one without a duplicate-symbol error, and live entry points
+    # reroute into Rust that never ran. Measured 2026-09-19 when it was wired alone: the guest
+    # booted, passed smoke on all three arches, then froze between
+    # `[EXPLORER] taskbar: OnCreate begin` and `child controls created`, launching 0 of 91
+    # kmtest tests. Smoke cannot see that; `vibeos-cli conformance` can.
+    # Capture set at flip time, measured against the LIVE CMake source list plus
+    # libshell32_rust.a: 36 symbols leave this TU, and utils.rs publishes 32 of them. The other
+    # four are the CStubWindow32 create/destroy bridges, rehomed to
+    # rust_stubwindow32_stub.cpp below, and SHELL_GetCommandStringImpl /
+    # SHELL_MapContextMenuVerbToCmdId, whose utils.h declarations became EXTERN_C so
+    # shell32.cpp names the unmangled symbols Rust emits.
+    # NOTE the earlier plan said all 16 `*_RustBridge` wrappers needed rehoming. They did not:
+    # utils.rs publishes 14 of them itself. Only the pair that reaches a C++ ATL class does.
+    rust_stubwindow32_stub.cpp
     # CShellItem.cpp — CShellItem, CShellItemArray, SHCreateShellItem, and
     # SHCreateShellItemArrayFromDataObject are Rust-owned.
     # CShellLink.cpp — removed. The COM class was already Rust-owned
@@ -163,7 +179,15 @@ list(APPEND SOURCE
     # IRecycleBinEnumList and IRecycleBinFile as opaque, so there was no slot to translate into.
     folders/CRecycleBinFolderViewCB.cpp
     rust_recyclebin_bridges_stub.cpp
-    folders/CRegFolder.cpp
+    # folders/CRegFolder.cpp — replaced by Rust; cohab via libshell32_rust.a. Whole-TU flip
+    # across THREE modules, because one C++ TU holds two COM classes plus file-scope helpers
+    # and each rustconv run owns its own output file: folders/CRegFolder.rs (CRegFolder, 40
+    # fns), folders/CRegFolderEnum.rs (CRegFolderEnum, 26), folders/regfolder_free.rs (the
+    # file-scope functions).
+    # Capture set: the only symbol the rest of the DLL takes from this TU is
+    # CRegFolder_CreateInstance — still called from the live C++ folders/CDesktopFolder.cpp:287
+    # — and the cpp-com scaffold publishes it `#[no_mangle]`. Measured against the C++ objects
+    # AND libshell32_rust.a; the archive has to be in that sweep or it reports a false 0.
     # droptargets/CexeDropHandler.cpp — replaced by Rust
     # (shell32-rust/src/exe_drop_handler.rs).
     # droptargets/CFSDropTarget.cpp — replaced by Rust

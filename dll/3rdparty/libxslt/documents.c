@@ -433,3 +433,4 @@ xsltFindDocument (xsltTransformContextPtr ctxt, xmlDocPtr doc) {
 	return(ctxt->document);
     return(NULL);
 }
+
