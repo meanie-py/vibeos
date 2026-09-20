@@ -187,8 +187,20 @@ trees:
       nothing in the tree records that DMA channel power transitions are silently skipped
       for any driver using DMA enablers. Plausibly deliberate (DMA not wired up yet) but
       undocumented, unlike the poxinterface.cpp and fxpkgpnp.cpp stubs which at least call a
-      named not-implemented macro. Recorded here rather than changed; a fix is a driver-
-      behaviour decision, not an audit one.
+      named not-implemented macro. RESTORED 2026-09-20, byte-exact from upstream
+      win-10.0.10586.0 rather than by hand-uncommenting. Checked first that nothing blocked
+      it: FxDmaEnabler::PowerUp/PowerDown are fully implemented and compiled
+      (kmdf/src/dma/base/fxdmaenabler.cpp:934/993, invoking the driver's EvtDmaEnablerFill /
+      EvtDmaEnablerEnable / EvtDmaEnablerSelfManagedIoStart callbacks); m_DmaEnablerList is
+      created, Add-ed to and torn down in fxpkgpnpkm.cpp; LockForEnum/GetNextEntry are
+      implemented in fxtransactionedlist.cpp. So there was no technical reason for the stub
+      and no recorded one either — git blame lands on the fork-boundary commit, the same
+      dead end as ucrt. Gate is green after the restore: build + smoke + conformance on all
+      three arches. READ THAT AS WEAK EVIDENCE: nothing in the smoke path registers a DMA
+      enabler, so the restored loops almost certainly never execute. It proves no
+      regression, not that DMA power transitions work. Done anyway because it removes an
+      undocumented divergence that real-hardware work would otherwise have to rediscover,
+      and it moves this tree closer to drop-in.
 
       No patch file: at 295 differing files dominated by mechanical annotation churn, a
       patch would be tens of thousands of lines that obscure rather than reveal. The
@@ -644,8 +656,13 @@ trees:
       reads `if (!dummy)`. As written the SUCCESS path skips the whole width-computation
       block and falls back to a constant width. It is dead today: every caller sits behind
       #ifdef FT_OPTION_AUTOFIT2, which is referenced in five places and DEFINED IN NONE —
-      verified by grep across the tree and the CMakeLists. Real defect, zero runtime effect,
-      one-line fix. Left alone because this pass records state rather than patching logic.
+      verified by grep across the tree and the CMakeLists. Real defect, zero runtime effect.
+      FIXED 2026-09-20: flipped to `if (!dummy)`, matching the siblings. Safe and complete
+      because `free(dummy)` was already at Exit, so the failure path now frees NULL and
+      takes the constant-width fallback exactly as afcjk.c does. Note it was inverted in
+      BOTH directions — on malloc SUCCESS it skipped the work, and on FAILURE it fell
+      through to `&dummy->root.scaler` with dummy NULL. Still unreachable, so this is
+      insurance for whoever enables FT_OPTION_AUTOFIT2, not a live fix.
 
       Two deliberate features, not mechanical: ftbitmap.{h,c} add
       FT_Bitmap_Convert_ReactOS_Hack(), an extended FT_Bitmap_Convert emitting 0xFF/0x00
@@ -837,7 +854,13 @@ trees:
     name: libmpg123
     staleness: >
       AUDITED 2026-09-20: ours 1.26.2 (2020), current 1.33.7. The probe previously reported
-      `45`, the API number, which is why this drop read as versioned when it was not.
+      `45`, the API number, which is why this drop read as versioned when it was not. BUMP
+      CHECKLIST — one item, do not lose it: src/compat/compat.c in this tree is NOT 1.26.2,
+      it is 1.24.0-1.25.13 vintage (see the review). Do not carry it forward across the
+      bump; take upstream's, which also brings the wpathconv.h split our older copy inlines
+      and defines the unintr_fwrite that compat.h already declares. Fixing that file
+      standalone was considered and rejected: the bump redoes the same work, and the current
+      inconsistency is inert because nothing calls unintr_fwrite.
     upstream: https://www.mpg123.de/
     license: LGPL-2.1
     license_file: COPYING.LIB  # the repo's own LGPL-2.1 text; see review
