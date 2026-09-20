@@ -785,6 +785,33 @@ if [ "${VIBEOS_FEX:-0}" = "1" ]; then
             mmd -i "$RAMDISK_IMG" ::/reactos/syswow64 2>/dev/null || true
             mcopy -o -i "$RAMDISK_IMG" "$SELFMOD32" ::/reactos/syswow64/selfmod32.exe
         fi
+        # reg32.exe and spawn32.exe — the last two PARITY guests, MISSING here
+        # until 2026-09-19 while the x86 livecd staged them, so reg32 had NO
+        # arm64 coverage from the day it landed and spawn32 would have had none.
+        #
+        # KEEP THIS LIST IN STEP WITH ladder.LADDER. The livecd cannot drift like
+        # this because CMake's _wow64_ladder is all-or-nothing; here every mcopy
+        # stands alone, so a guest is added to the parity set by editing two
+        # files and forgetting one of them is silent.
+        #
+        # What the drift cost, measured: ladder.media_has_guests asks whether ANY
+        # guest is aboard (deliberately -- a partial stage must opt IN so the gap
+        # cannot pass quietly), so the gate ran the ladder and then waited out its
+        # entire 420s drain for two verdicts that could never arrive. It failed as
+        # a TIMEOUT rather than naming the two files. With them staged the same
+        # boot drains in 87.1s.
+        REG32="${VIBEOS_REG32_EXE:-$PROJECT_DIR/build-fex-hello/reg32.exe}"
+        if [ -f "$REG32" ]; then
+            echo "[*] VIBEOS_FEX=1 — staging syswow64/reg32.exe (registry-view guest)"
+            mmd -i "$RAMDISK_IMG" ::/reactos/syswow64 2>/dev/null || true
+            mcopy -o -i "$RAMDISK_IMG" "$REG32" ::/reactos/syswow64/reg32.exe
+        fi
+        SPAWN32="${VIBEOS_SPAWN32_EXE:-$PROJECT_DIR/build-fex-hello/spawn32.exe}"
+        if [ -f "$SPAWN32" ]; then
+            echo "[*] VIBEOS_FEX=1 — staging syswow64/spawn32.exe (process-creation guest)"
+            mmd -i "$RAMDISK_IMG" ::/reactos/syswow64 2>/dev/null || true
+            mcopy -o -i "$RAMDISK_IMG" "$SPAWN32" ::/reactos/syswow64/spawn32.exe
+        fi
         # sqlite32.exe — a THIRD-PARTY stress guest (tools/stress/sqlite). The
         # other guests each probe one mechanism on purpose; this one is a large
         # C program that never heard of us, leaning on allocator churn, Win32

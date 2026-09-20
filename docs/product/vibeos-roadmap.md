@@ -488,6 +488,53 @@ land; date every addition.** Source docs live in `docs/engineering/archive/`.
 
 ## Known bugs & flakes (live registry)
 
+- **`selfmod32` rung 7 fails on arm64: a guest writing its OWN RWX page gets
+  `STATUS_PARTIAL_COPY`. UNOWNED** (2026-09-19). amd64 passes the identical rung.
+
+        [selfmod32] rung7 NtWriteVirtualMemory = 0x8000000d   (STATUS_PARTIAL_COPY)
+        [selfmod32] rung7 bytes written        = 0x00000000
+        [WINLOGON]  selfmod32.exe exit = 0xbad8               (SM_FAIL_COUNT)
+
+  Rungs 1-6 PASS on the same boot, so guest codegen, `FlushInstructionCache`,
+  `NtProtectVirtualMemory`, address recycling, `NtReadFile`-into-code and
+  `WriteProcessMemory` hot-patch all work on arm64. Only the direct
+  `NtWriteVirtualMemory` rung fails. `ReturnSize == 0` with `PARTIAL_COPY` is the
+  signature of `MiDoPoolCopy`'s `_FailedInProbe == 0` arm
+  (`ntoskrnl-rust/src/ARM3/virtual.rs:1050`), i.e. the probe or the fault-protected
+  copy returned `Err`, not a short copy.
+
+  **This is NEWLY VISIBLE, not new.** Rung 7 shipped with E17 and arm64 had never
+  run it: `qemu/mkramdisk.sh` staged 9 of the 11 parity guests — reg32 and spawn32
+  were never added when they joined the set — so reg32 has had no arm64 coverage
+  since the day it landed. Staging them is what exposed this.
+
+  **A second, smaller finding worth its own line.** With the ramdisk partial, the
+  gate still opted IN (`media_has_guests` asks whether ANY guest is aboard, which
+  is deliberate: a partial stage must not let a gap pass quietly) and then waited
+  out the FULL 420s drain for two verdicts that could never arrive, failing as a
+  TIMEOUT rather than naming the two absent files. The intent — `check()` turning
+  a missing guest into a `LADDER_FAIL` that names it — is right and is pinned by
+  `test_a_partial_stage_opts_IN_so_the_gap_cannot_pass_quietly`; it just does not
+  survive contact with the drain, because the ceiling is reached first. Making the
+  partial case fail FAST AND NAMED belongs to whoever owns the drain. (An attempt
+  to fix it by making the probe strict is the wrong shape and was reverted: it
+  turns a loud gap into a silent skip, which is what that test exists to prevent.)
+  With both guests staged the same boot drains in 87.1s.
+
+  **Attribution is NOT established and should not be assumed.** The nearest
+  suspect is the validate-first probe conversion at those sites, but the C it
+  replaced range-checked against the same `MmUserProbeAddress` via `ProbeForRead`,
+  so the semantics carried over and amd64 — same Rust — passes. A likelier line is
+  something arm64/FEX-specific about the guest RWX mapping as the kernel sees it.
+  Whoever picks this up: `--tripwire` and a GDB break on `MiDoPoolCopy` will say in
+  one boot whether the probe or the copy returns `Err`, which splits the two
+  hypotheses immediately.
+
+  **Fleet impact, stated plainly:** with the staging fixed, an arm64 gate in a tree
+  that has `build-fex-arm64` now RUNS this guest and goes red on it. Trees without
+  a FEX build are unaffected (the ladder declines). That red is a real bug rather
+  than a harness artefact, so it is left visible.
+
 - **A deterministic failure was classified `CONFORMANCE_FLAKE`, and the wrong LABEL cost
   more than the retries. UNOWNED** (2026-09-19). Verbatim from `land-status`:
 
