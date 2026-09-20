@@ -312,7 +312,30 @@ pub unsafe extern "system" fn LpcpCreatePort(
     );
 
     if Status >= 0 {
-        *PortHandle = Handle;
+        // C wraps only this store in `_SEH2_TRY` (create.c:242-251); the
+        // handler is JUST `Status = _SEH2_GetExceptionCode();` -- NO
+        // `_SEH2_YIELD(return ...)`, no `goto`. It deliberately FALLS
+        // THROUGH to `return Status;` at create.c:258, the same statement
+        // the success path reaches. There is no handle to close and no
+        // cleanup to run: PortHandle was already probed for WRITE up front
+        // (create.rs:118-131, via probe_write_generic -- the
+        // ProbeForWriteHandle equivalent), so this is a bare
+        // fault-tolerant store with no re-probe, matching the C, which has
+        // no additional ProbeForWrite inside this TRY either.
+        //
+        // DO NOT turn this into an early return or a goto-style jump. It
+        // only LOOKS equivalent to "propagate the fault status and return"
+        // because `Status` is the very next statement either way -- but the
+        // C's shape is a genuine fall-through, and a later edit that adds
+        // anything else after this `if` block would silently skip it if
+        // this were rewritten as an early return.
+        if let Err(s) = ntkrnl_sys::probe::safe_copy_raw(
+            PortHandle as *mut core::ffi::c_void,
+            core::ptr::addr_of!(Handle) as *const core::ffi::c_void,
+            core::mem::size_of::<HANDLE>(),
+        ) {
+            Status = s;
+        }
     }
 
     Status

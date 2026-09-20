@@ -619,11 +619,31 @@ pub unsafe extern "system" fn NtSecureConnectPort(
     (*message).Request.u2.s2.Type = LPC_CONNECTION_REQUEST;
 
     if !connection_information.is_null() {
-        core::ptr::copy_nonoverlapping(
-            connection_information as *const u8,
-            (connect_message as usize + core::mem::size_of::<_LPCP_CONNECTION_MESSAGE>()) as *mut u8,
+        // C: connect.c:516-540. `ConnectionInformation` was already range/align
+        // probed above (ProbeForWrite(ConnectionInformation, ..., sizeof(ULONG))
+        // at connect.c:167, so this copy is `safe_copy_raw`, not a re-probing
+        // helper), but the TRY here still guards the copy itself against a fault
+        // (e.g. the page going invalid between the probe and this copy).
+        //
+        // The C handler is a plain RETURN, not `goto Failure`, and — this is
+        // the tell that the asymmetry is deliberate, not a bug to "fix" — it
+        // does NOT `ObDereferenceObject(Port)`, unlike every other cleanup path
+        // in this function. `Port` still holds exactly the one reference from
+        // `ObReferenceObjectByName` above (the second reference is only taken
+        // later, after the port-zone lock). Replicate exactly: no Port deref.
+        if let Err(st) = ntkrnl_sys::probe::safe_copy_raw(
+            (connect_message as usize + core::mem::size_of::<_LPCP_CONNECTION_MESSAGE>()) as *mut core::ffi::c_void,
+            connection_information as *const core::ffi::c_void,
             connection_info_length as usize,
-        );
+        ) {
+            LpcpFreeToPortZone(message, 0);
+            if !section_to_map.is_null() {
+                ObDereferenceObject(section_to_map);
+            }
+            ObDereferenceObject(client_port as PVOID);
+            // NOTE: no ObDereferenceObject(port) here -- see comment above.
+            return st;
+        }
     }
 
     status = STATUS_SUCCESS;
@@ -715,15 +735,57 @@ pub unsafe extern "system" fn NtSecureConnectPort(
         }
 
         if !connection_information.is_null() {
-            if !connection_information_length.is_null() {
-                *connection_information_length = connection_info_length;
-            }
+            // C: connect.c:642-659. ONE _SEH2_TRY covers both the scalar
+            // store into *ConnectionInformationLength and the bulk copy back
+            // into ConnectionInformation -- both are writes INTO user memory,
+            // so both go through `safe_copy_to_user` (alignment = the C's
+            // literal probe argument for each destination: ConnectionInformationLength
+            // was ProbeForWriteUlong'd, i.e. range-only/1, at connect.c:161;
+            // ConnectionInformation was ProbeForWrite'd with sizeof(ULONG) at
+            // connect.c:167). A fault in EITHER one aborts the whole TRY in the
+            // C (an exception mid-block skips whatever follows it), so the
+            // second write must not run once the first has failed.
+            //
+            // Handler is `Status = GetExceptionCode(); goto Failure;` --
+            // Failure (connect.c:763) frees Message, dereferences SectionToMap
+            // / ClientPort / Port (ALL three, unlike Site 1's asymmetric
+            // handler), and returns Status. There is no Failure label in the
+            // Rust, so that cleanup is inlined here; it is byte-for-byte the
+            // same cleanup as the `status < 0` block above this one.
+            let write_result: Result<(), NTSTATUS> = (|| {
+                if !connection_information_length.is_null() {
+                    ntkrnl_sys::probe::safe_copy_to_user(
+                        connection_information_length as *mut core::ffi::c_void,
+                        core::ptr::addr_of!(connection_info_length) as *const core::ffi::c_void,
+                        core::mem::size_of::<ULONG>(),
+                        1, // ProbeForWriteUlong: range-only
+                        previous_mode,
+                    )?;
+                }
 
-            core::ptr::copy_nonoverlapping(
-                (connect_message as usize + core::mem::size_of::<_LPCP_CONNECTION_MESSAGE>()) as *const u8,
-                connection_information as *mut u8,
-                connection_info_length as usize,
-            );
+                ntkrnl_sys::probe::safe_copy_to_user(
+                    connection_information as *mut core::ffi::c_void,
+                    (connect_message as usize + core::mem::size_of::<_LPCP_CONNECTION_MESSAGE>()) as *const core::ffi::c_void,
+                    connection_info_length as usize,
+                    core::mem::size_of::<ULONG>(),
+                    previous_mode,
+                )
+            })();
+
+            if let Err(st) = write_result {
+                status = st;
+                // Inlined `goto Failure` (connect.c:763): free the message,
+                // dereference SectionToMap / ClientPort / Port, return.
+                if !message.is_null() {
+                    LpcpFreeToPortZone(message, 0);
+                }
+                if !section_to_map.is_null() {
+                    ObDereferenceObject(section_to_map);
+                }
+                ObDereferenceObject(client_port as PVOID);
+                ObDereferenceObject(port as PVOID);
+                return status;
+            }
         }
 
         if !(*client_port).ConnectedPort.is_null() {
@@ -738,26 +800,70 @@ pub unsafe extern "system" fn NtSecureConnectPort(
                 &mut handle,
             );
             if status >= 0 {
-                *port_handle = handle;
+                // C: connect.c:682-715. ONE _SEH2_TRY covers all four
+                // writes-into-user-memory; a fault on any one aborts the rest
+                // (SEH unwinds out of the block on first exception), which is
+                // why this is a short-circuiting `?` chain rather than four
+                // independent copies.
+                //
+                // The handler is:
+                //     ObCloseHandle(Handle, PreviousMode);
+                //     Status = _SEH2_GetExceptionCode();
+                // and then NOTHING -- no return, no goto. It FALLS THROUGH to
+                // the ordinary tail of the function (closing this `if`, the
+                // `LpcpFreeToPortZone(Message, 0)` a few lines down, the final
+                // `ObDereferenceObject(Port)`, `return Status`). Do NOT turn
+                // this into a `return Err(..)` -- that would skip the message
+                // free and the Port dereference that the C still performs on
+                // this path, leaking both.
+                let write_result: Result<(), NTSTATUS> = (|| {
+                    ntkrnl_sys::probe::safe_copy_to_user(
+                        port_handle as *mut core::ffi::c_void,
+                        core::ptr::addr_of!(handle) as *const core::ffi::c_void,
+                        core::mem::size_of::<HANDLE>(),
+                        1, // ProbeForWriteHandle: range-only
+                        previous_mode,
+                    )?;
 
-                if !max_message_length.is_null() {
-                    *max_message_length = port_message_length;
-                }
+                    if !max_message_length.is_null() {
+                        ntkrnl_sys::probe::safe_copy_to_user(
+                            max_message_length as *mut core::ffi::c_void,
+                            core::ptr::addr_of!(port_message_length) as *const core::ffi::c_void,
+                            core::mem::size_of::<ULONG>(),
+                            1, // ProbeForWriteUlong: range-only
+                            previous_mode,
+                        )?;
+                    }
 
-                if !client_view.is_null() {
-                    core::ptr::copy_nonoverlapping(
-                        core::ptr::addr_of!((*connect_message).ClientView) as *const u8,
-                        client_view as *mut u8,
-                        core::mem::size_of::<PORT_VIEW>(),
-                    );
-                }
+                    if !client_view.is_null() {
+                        ntkrnl_sys::probe::safe_copy_to_user(
+                            client_view as *mut core::ffi::c_void,
+                            core::ptr::addr_of!((*connect_message).ClientView) as *const core::ffi::c_void,
+                            core::mem::size_of::<PORT_VIEW>(),
+                            core::mem::size_of::<ULONG>(),
+                            previous_mode,
+                        )?;
+                    }
 
-                if !server_view.is_null() {
-                    core::ptr::copy_nonoverlapping(
-                        core::ptr::addr_of!((*connect_message).ServerView) as *const u8,
-                        server_view as *mut u8,
-                        core::mem::size_of::<REMOTE_PORT_VIEW>(),
-                    );
+                    if !server_view.is_null() {
+                        ntkrnl_sys::probe::safe_copy_to_user(
+                            server_view as *mut core::ffi::c_void,
+                            core::ptr::addr_of!((*connect_message).ServerView) as *const core::ffi::c_void,
+                            core::mem::size_of::<REMOTE_PORT_VIEW>(),
+                            core::mem::size_of::<ULONG>(),
+                            previous_mode,
+                        )?;
+                    }
+
+                    Ok(())
+                })();
+
+                if let Err(st) = write_result {
+                    ObCloseHandle(handle, previous_mode);
+                    status = st;
+                    // FALLS THROUGH -- no return/goto here, matching the C.
+                    // Execution continues to `LpcpFreeToPortZone` below and
+                    // the function's normal tail.
                 }
             }
         } else {
