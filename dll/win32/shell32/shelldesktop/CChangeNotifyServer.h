@@ -90,7 +90,12 @@ typedef struct HANDBAG
 #define REGENTRY_MAGIC 0xB0B32D1E
 #define HANDBAG_MAGIC 0xFACEB00C
 
-HRESULT CChangeNotifyServer_CreateInstance(REFIID riid, void **ppv);
+/* `extern "C"` since the definition moved to Rust
+ * (shell32-rust/src/shelldesktop/CChangeNotifyServer_free.rs). Without it this header
+ * declares a C++-MANGLED name, so CDesktopBrowser.cpp's call looks for a symbol nothing
+ * defines any more -- it only linked before because both halves were C++ and mangled
+ * alike. */
+extern "C" HRESULT CChangeNotifyServer_CreateInstance(REFIID riid, void **ppv);
 
 #define WORKER_STYLE (WS_POPUP | WS_CLIPSIBLINGS | WS_CLIPCHILDREN)
 #define WORKER_EXSTYLE WS_EX_TOOLWINDOW

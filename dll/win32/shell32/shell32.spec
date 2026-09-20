@@ -469,3 +469,10 @@
 757 stdcall -noname -version=0x600+ DisplayNameOfW(ptr ptr long ptr long)
 866 stdcall -noname -version=0x600+ SHExtCoCreateInstance(wstr ptr ptr ptr ptr)
 887 stub -noname -version=0x601+ SHExtCoCreateInstanceCheckCategory
+# CChangeNotifyServer.cpp is Rust (shell32-rust/src/shelldesktop/), so its activation
+# helper now lives only in libshell32_rust.a. CDesktopBrowser.cpp is in the SHARED
+# shelldesktop object library and is compiled into rshell.dll too, which does not link
+# that archive -- it had its own C++ copy until the flip. Exporting it by name lets
+# rshell resolve the call through shell32's import lib, exactly as it already does for
+# ShellDDEInit (ordinal 188). `cdecl` because the C++ declared no WINAPI.
+@ cdecl CChangeNotifyServer_CreateInstance(ptr ptr)
