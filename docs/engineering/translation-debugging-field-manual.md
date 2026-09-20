@@ -6341,6 +6341,36 @@ MSVC *intrinsic*).
 A whole family of bugs where the *verification* is wrong, so the code looks correct. These cost
 more than ordinary bugs because their output is trusted.
 
+### A test that ENCODES a bug goes red the day the bug is fixed, and reads as a regression
+
+**Symptom:** a guest/harness rung that passed for months starts failing, on one arch
+only, with a status that looks like a defect — here `selfmod32` rung 7 returning
+`STATUS_PARTIAL_COPY` with zero bytes written, where the other arch passes the
+identical rung.
+
+**Cause:** the rung was written while the code under it was broken, so it asserted
+the BROKEN behaviour. `MiDoPoolCopy` had dropped its `_SEH2_EXCEPT` in translation
+and therefore could not observe its own copy faulting; it returned
+`STATUS_SUCCESS` with a byte count for a write that never touched memory (task
+#76). Rung 7 encoded that as `st < 0` means failure. When the validate-first probe
+conversion made the faults observable, the kernel started telling the truth —
+refusing a write to a page FEX had write-protected for SMC detection — and the
+test that had been built around the lie went red.
+
+**Fix:** treat the refusal as a legitimate outcome, but do NOT accept it blindly,
+which is just the opposite error. Verify the reason: `VirtualQuery` must show the
+page is genuinely unwritable (`PAGE_EXECUTE_READ`, 0x20) before a refusal counts as
+correct. Keep the rung's real assertion — the out-cell canary — running on BOTH
+paths, since a refused write must not scribble 8 bytes into a 4-byte count cell
+either.
+
+**The tell, and it was in the same boot the whole time:** rung 6 passes and rung 6
+is `WriteProcessMemory`, which wraps its write in `NtProtectVirtualMemory`. Rung 7
+calls the syscall raw precisely to avoid that wrapper. When two adjacent rungs
+differ only by "does it ask permission first", and the one that does NOT is the one
+failing, the refusal is the system working. **Before filing a newly-red test as a
+regression, ask what changed in the thing it measures — a fix is a change too.**
+
 ### The oracle is the C, and the C is WRONG — a faithful port that ships a real defect
 
 **Symptom.** A translated body is bit-exact against its C, the difftest is green, and the
@@ -10048,6 +10078,25 @@ touching the loader** — the El Torito entry folds in `uefildr`.
 **Before declaring any smoke red, check whether the host was busy** (`./vibeos-cli ps`,
 `./vibeos-cli host-status`). A lone red while another arch is mid-gate is a prime contention
 suspect; re-run host-quiet to decide.
+
+**And check it with a CONTROL, not with the load average.** Measured 2026-09-19 on a
+24-thread 7950X3D: the arm64 WoW64 ladder drained in **87.1s** and again in **87.5s**
+host-quiet, and **timed out at 420s twice** while the conductor gated a three-arch
+batch — same tree, same commit, no code change between them. Load average alone did
+NOT justify that: ~24 on 24 logical cores is 1.0/core, which sounds fine and is not,
+because TCG is CPU-bound and single-threaded per VM, SMT siblings share a physical
+core, and a parallel clang/sccache storm evicts the cache a 3D V-Cache part depends
+on. **The number that decides it is `vibeos-cli ps` showing someone else's
+`queue-batch` boots, not `/proc/loadavg`.**
+
+The diagnostic that separates "slow" from "broken" costs one command: count the work,
+not the wall clock. A guest that is merely starved does the SAME work more slowly —
+`thread32` started exactly **5** threads in both the 87s pass and the 420s timeout,
+and the timeout simply stopped partway through an identical line sequence. A guest
+that is actually broken does DIFFERENT work: more iterations, a new error, a
+different stopping point. Two greps settle which, and skipping them cost this lane
+two wrong diagnoses in a row — first "contention" asserted with no control, then a
+"master regressed it" theory that the thread count refuted immediately.
 
 ### New builds pass an older CPU-lease waiter
 
