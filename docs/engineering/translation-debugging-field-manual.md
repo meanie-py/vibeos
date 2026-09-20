@@ -5203,6 +5203,24 @@ three by hand. All three came out of one file (`brfolder.cpp`, 2026-07-31).
   first argument, which is exactly what makes it look deliberate. Loud (`E0308`/`E0061`), but
   read the C before "fixing" the call: the answer is to write the missing overload under a new
   name, not to bend the arguments until they typecheck.
+  **"Loud" is the lucky case, and CRegFolder.cpp is the counter-evidence: five instances in
+  ONE TU, of which only two failed to compile.** C++ resolves an overload by ARGUMENT TYPE, and
+  nothing in the Rust output preserves that, so the three silent ones each shipped a different
+  wrong callee: `CreateRegItem(type, clsidstr)` called ITSELF instead of the `REFCLSID` sibling
+  (unconditional infinite recursion, caught only because `scan_self_recursive` exists);
+  `ParseDisplayName` passes a `CLSID` and so binds the `REFCLSID` overload, but got the
+  `LPCWSTR` one; and `GetDetailsOf` passes `IDS_SYSTEMFOLDER` to `SHSetStrRet`, which binds
+  shfldr.h's `(LPSTRRET, DWORD resId)` overload rather than the `LPCWSTR` one — a string built
+  from a resource id reinterpreted as a pointer. The two loud ones were a free-vs-member pair
+  (`GetRegItemOrder(REFCLSID)` vs `CRegFolder::GetRegItemOrder(LPCITEMIDLIST)`) and a
+  `&item.clsid` that took the address of a pointer FIELD rather than its value.
+  Two consequences worth carrying. **`int order = -1` and its friends do not survive either** —
+  a C++ call that relies on a DEFAULT ARGUMENT arrives in Rust with the parameter simply
+  missing, so `f(a, b)` against `f(a, b, int c = -1)` has to be written `f_body(a, b, -1)`; the
+  self-recursion above was that and the overload together. And **the check is mechanical**: for
+  every surviving call to an overloaded name, read the C's ARGUMENT TYPES at that call site, not
+  the name and not the arity. Grepping the C for a duplicated signature tells you which names
+  need it.
   Again in `filedefext.cpp` (2026-08-04): `GetFileStats(HANDLE, ...)` and
   `GetFileStats(PCWSTR, ...)`, the path form opening the handle and delegating. Only the HANDLE
   form was translated, so the surviving call site — the `else` branch of `ProcessDirStatsItem`,
