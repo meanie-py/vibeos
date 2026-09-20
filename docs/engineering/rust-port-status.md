@@ -2378,6 +2378,52 @@ flight is marked; in-flight lanes live in [`active-lanes/`](active-lanes/).*
   - **`sdk/include/psdk` → ours**, and not a target either way: 5 of its ~700 headers are
     verbatim SDK headers, and the directory contains no C bodies at all.
 
+## Orphan audit, 2026-09-20 — 18 items sorted, ZERO rescuable
+
+The `research` lane's half of the fleet orphan sweep, re-derived from evidence
+rather than inherited. Complements the `ORPHAN-BY-DESIGN` inventory; where the
+two disagree this one carries the re-derivation.
+
+**The headline is that nothing was abandoned-but-valuable.** Of 18 items — 4
+orphan modules, 6 candidate orphan crates, 8 inherited "upstream-dead" — not one
+came back RESCUABLE. The bank is cleaner than the survey feared.
+
+| item | verdict | basis |
+|---|---|---|
+| `classpnp/class_gap3.rs`, `class_gap4.rs` | SUPERSEDED — **trashed** | all 11 exports live in `class_part_d.rs` |
+| `ntoskrnl/global_barrier.rs` | not a translation — **trashed** | `gen_global_barrier.py` output; technique `nm`-verified dead, root cause toolchain-fixed on LLVM ≥ 21 |
+| `explorer/appbar.rs` | SUPERSEDED, **HELD** | ~16 of 29 exports have an `ab_*` counterpart in `traywnd.rs`; `ComputeHiddenRect`, `MonitorEnumProc`, `RecomputeAllWorkareas` do NOT |
+| `rtlk-rust/path.rs` | SUPERSEDED, **HELD** | all 31 exports live in `rtl-strings/src/cabi/mod.rs`; overturns its "upstream-dead" prior |
+| `afd/event.rs`, `bootvid/vga.rs`, `bootvid/bootdata.rs`, `dhcpcsvc/tree.rs`, `freeldr/directui.rs`, `win32k/bitblt_new.rs`, `win32k/drvdbg.rs` | DEAD-UPSTREAM — keep | confirmed against the C, not the banner |
+| 6 candidate crates | **5 SHIP**, `slist-loom` is scaffolding | see `tools/survey_unlinked_crates.py` |
+
+**Three findings worth more than the sort itself.**
+
+1. **`bootvid/vga.rs` and `bitblt_new.rs` must NEVER be wired.** They export the
+   same symbols as the live `bootvid.rs` / `bitblt.rs`+`copybits.rs`. These are
+   mutually-exclusive platform backends (INT10h BIOS vs GOP framebuffer;
+   `USE_DIBLIB` on vs off) implementing one spec surface. Wiring one is a
+   duplicate-symbol LINK FAILURE, not a feature — unwired is the only legal
+   state, and "orphan" undersells it.
+2. **`dhcpcsvc/dhcp/tree.rs` is genuinely unrecoverable**, and it is the only
+   one. It references `struct tree`, `struct dns_host_entry` and
+   `do_host_lookup`, none of which exist anywhere in the tree — an unfinished
+   ISC import that cannot compile even standalone. Reviving it is a new
+   translation, not a rescue.
+3. **A banner was factually WRONG, and banners are this audit's whole evidence
+   base.** `win32k-rust/lib.rs` claimed enabling `drvdbg` requires "defining
+   `DbgLookupDHPDEV`"; it is defined at `pdevobj.rs:182` and `drvdbg.rs` calls
+   it nine times. The C only forward-declares it (`drvdbg.c:14`) and defines it
+   nowhere, so that Rust body has **no C original** and is unverified against
+   any oracle. Corrected in place. **An orphan with a wrong banner is worse than
+   one with none**, because it is sorted confidently and wrongly — which is the
+   argument for making a banner mandatory when a module is unwired.
+
+Trashed files are moved to `tools/rustconv/.responses/trash/`, which is
+GITIGNORED and therefore a local convenience only. **Git history is the
+preservation mechanism**: `git log --diff-filter=D -- <path>` finds the removal
+and `git show <commit>^:<path>` prints the content back.
+
 ## Open items / flagged regressions
 
 - ✅ **arm64 kernel stack-size bump — FIXED/re-landed** (`7e9d4644e53`, 12KB→48KB;
