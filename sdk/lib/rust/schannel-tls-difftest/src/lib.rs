@@ -156,15 +156,20 @@ fn application_data_round_trips_through_send_and_recv() {
 
 #[test]
 fn the_advertised_protocol_set_is_recorded() {
-    // Not an assertion about which protocols are right — a tripwire on the set
-    // CHANGING. mbedTLS 3.x deletes SSL3/TLS1.0/TLS1.1 outright, so this value must
-    // move during that port, deliberately and visibly, rather than by accident.
+    // A tripwire on the set CHANGING, not a claim about which protocols are right.
+    // It has already fired once and been updated once: on mbedTLS 2.16 this was 0xfc0
+    // (SSL3 + TLS1.0 + TLS1.1 + TLS1.2, client and server), and 3.x DELETED the first
+    // three outright, so the port narrowed it to 0xc00. That was the single
+    // behavioural change in a five-year version jump -- every other value this
+    // harness pins came through identical -- and pinning it is what made it visible
+    // rather than something noticed later by a client that stopped connecting.
+    //
+    // It moves again if TLS 1.3 is ever switched on in mbedtls_config.h.
     let r = run();
-    assert_ne!(r.enabled_protocols, 0, "schan_imp_enabled_protocols advertised nothing");
-    assert_ne!(
-        r.enabled_protocols & (SP_PROT_TLS1_2_CLIENT | SP_PROT_TLS1_2_SERVER),
-        0,
-        "TLS 1.2 is not advertised: {:#x}",
+    assert_eq!(
+        r.enabled_protocols,
+        SP_PROT_TLS1_2_CLIENT | SP_PROT_TLS1_2_SERVER,
+        "schan_imp_enabled_protocols advertised {:#x}, expected TLS 1.2 only",
         r.enabled_protocols
     );
     eprintln!("schan_imp_enabled_protocols() = {:#x}", r.enabled_protocols);

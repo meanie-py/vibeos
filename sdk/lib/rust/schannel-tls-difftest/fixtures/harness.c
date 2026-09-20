@@ -81,6 +81,29 @@ BOOL WINAPI CertFreeCertificateContext(PCCERT_CONTEXT ctx)
 
 DWORD WINAPI GetLastError(void) { return 0; }
 
+/* Our mbedTLS config sets MBEDTLS_NO_PLATFORM_ENTROPY + MBEDTLS_ENTROPY_HARDWARE_ALT
+ * and expects sdk/lib/mbedtls_reactos/entropy_hardware_poll.c to supply this over
+ * RtlGenRandom. That file is Win32-only, so the host gets the same shape over
+ * /dev/urandom. This is a stand-in for the platform, like the Heap* calls above --
+ * not a stand-in for anything under test. */
+int mbedtls_hardware_poll(void *data, unsigned char *output, size_t len, size_t *olen)
+{
+    FILE *f;
+    size_t got;
+
+    (void)data;
+    *olen = 0;
+
+    f = fopen("/dev/urandom", "rb");
+    if (!f) return -1;
+    got = fread(output, 1, len, f);
+    fclose(f);
+    if (got != len) return -1;
+
+    *olen = got;
+    return 0;
+}
+
 /* ---------- transport ---------- */
 
 /* schan_transport's first member is a `struct schan_context *`, an incomplete type in
@@ -163,8 +186,11 @@ static void *server_thread(void *p)
                                      (const unsigned char *)"schanharness", 12)) != 0) goto out;
     if ((ret = mbedtls_x509_crt_parse_der(&crt, schan_harness_crt_der,
                                           schan_harness_crt_der_len)) != 0) goto out;
+    /* 3.x added the RNG parameters -- a private key parse may need randomness for
+     * blinding. This is the harness's own peer setup, not the code under test. */
     if ((ret = mbedtls_pk_parse_key(&key, schan_harness_key_der,
-                                    schan_harness_key_der_len, NULL, 0)) != 0) goto out;
+                                    schan_harness_key_der_len, NULL, 0,
+                                    mbedtls_ctr_drbg_random, &drbg)) != 0) goto out;
     if ((ret = mbedtls_ssl_config_defaults(&conf, MBEDTLS_SSL_IS_SERVER,
                                            MBEDTLS_SSL_TRANSPORT_STREAM,
                                            MBEDTLS_SSL_PRESET_DEFAULT)) != 0) goto out;

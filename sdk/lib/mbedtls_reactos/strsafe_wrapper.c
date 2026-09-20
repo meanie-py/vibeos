@@ -22,6 +22,17 @@
 #include <windef.h>
 #include <strsafe.h>
 
+/* mbedTLS 3.x calls `vsnprintf_s`; 2.16 called `_vsnprintf_s`. msvcrt exports only
+ * the underscored spelling, so this file now supplies BOTH names over one body:
+ * the underscored one because that is what it always provided, and the plain one
+ * because platform.c asks for it since 3.0. */
+int vsnprintf_s(char *buffer, size_t sizeOfBuffer, size_t count, const char *format, va_list argptr);
+
+int vsnprintf_s(char *buffer, size_t sizeOfBuffer, size_t count, const char *format, va_list argptr)
+{
+    return _vsnprintf_s(buffer, sizeOfBuffer, count, format, argptr);
+}
+
 int _vsnprintf_s(char *buffer, size_t sizeOfBuffer, size_t count, const char *format, va_list argptr)
 {
     size_t cchRemaining;

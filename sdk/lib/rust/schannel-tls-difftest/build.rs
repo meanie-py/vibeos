@@ -91,10 +91,12 @@ fn main() {
         mb.file(f);
         println!("cargo:rerun-if-changed={}", f.display());
     }
-    // THE ONE DEVIATION FROM THE SHIPPED CONFIGURATION. Our config.h switches
-    // MBEDTLS_SSL_SRV_C off ("we don't need anything server-related") and drops
-    // ssl_srv.c from the source list, so the mbedtls.dll we ship CANNOT act as a TLS
-    // server. A loopback test needs a peer, so the harness compiles the server arm in.
+    // THE ONE DEVIATION FROM THE SHIPPED CONFIGURATION. mbedtls_config.h switches
+    // MBEDTLS_SSL_SRV_C off ("we don't need anything server-related"), so the
+    // mbedtls.dll we ship CANNOT act as a TLS server. A loopback test needs a peer, so
+    // the harness switches it back on. Since the 3.6.7 bump the CMakeLists lists every
+    // upstream source unconditionally, so this is now a define and nothing more --
+    // before, it also had to add ssl_srv.c to the file list by hand.
     //
     // IT HAS TO BE ON FOR THE WHOLE HARNESS, not just ssl_srv.c: MBEDTLS_SSL_SRV_C
     // guards FIELDS inside mbedtls_ssl_config and mbedtls_ssl_context, so a
@@ -111,7 +113,7 @@ fn main() {
     // SECPKG_CRED_INBOUND to MBEDTLS_SSL_IS_SERVER, so schannel's server path calls
     // into a library with no server support compiled in. That is a finding about the
     // tree, not about this harness.
-    mb.file(mbedtls_dir.join("ssl_srv.c")).define("MBEDTLS_SSL_SRV_C", None);
+    mb.define("MBEDTLS_SSL_SRV_C", None);
     mb.compile("mbedtls_host");
 
     // Compiled from OUT_DIR, not in place. `#include "precomp.h"` is QUOTED, so it
