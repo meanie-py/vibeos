@@ -163,7 +163,15 @@ list(APPEND SOURCE
     # IRecycleBinEnumList and IRecycleBinFile as opaque, so there was no slot to translate into.
     folders/CRecycleBinFolderViewCB.cpp
     rust_recyclebin_bridges_stub.cpp
-    folders/CRegFolder.cpp
+    # folders/CRegFolder.cpp — replaced by Rust; cohab via libshell32_rust.a. Whole-TU flip
+    # across THREE modules, because one C++ TU holds two COM classes plus file-scope helpers
+    # and each rustconv run owns its own output file: folders/CRegFolder.rs (CRegFolder, 40
+    # fns), folders/CRegFolderEnum.rs (CRegFolderEnum, 26), folders/regfolder_free.rs (the
+    # file-scope functions).
+    # Capture set: the only symbol the rest of the DLL takes from this TU is
+    # CRegFolder_CreateInstance — still called from the live C++ folders/CDesktopFolder.cpp:287
+    # — and the cpp-com scaffold publishes it `#[no_mangle]`. Measured against the C++ objects
+    # AND libshell32_rust.a; the archive has to be in that sweep or it reports a false 0.
     # droptargets/CexeDropHandler.cpp — replaced by Rust
     # (shell32-rust/src/exe_drop_handler.rs).
     # droptargets/CFSDropTarget.cpp — replaced by Rust
