@@ -33,6 +33,9 @@ import sys
 from dataclasses import dataclass
 from pathlib import Path
 
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+from source_walk import source_files
+
 # ---------------------------------------------------------------------------
 # Function extraction (regex + brace counting -- good enough for our own Rust,
 # which is rustfmt'd and has no raw strings containing unbalanced braces in
@@ -446,7 +449,10 @@ def gen_adjacent_loop_pairs(funcs: list[Fn]) -> list[tuple[Fn, Fn, str]]:
 def scan(root: Path, min_lines: int) -> list[Finding]:
     findings: list[Finding] = []
     rust_dir = root / "sdk" / "lib" / "rust"
-    for path in sorted(rust_dir.rglob("*.rs")):
+    # source_files() prunes mutable output BEFORE scandir. Rolling our own walk is
+    # what scan_unpruned_walk exists to catch, and it is the same defect that made
+    # cohab_census die on a vanishing build dir earlier today.
+    for path in sorted(source_files(rust_dir, "*.rs")):
         if "/target/" in str(path):
             continue
         if GENERATED_NAME_RE.match(path.name):
