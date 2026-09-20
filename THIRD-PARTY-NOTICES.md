@@ -2,12 +2,14 @@
 
 This product includes third-party software. **This file is GENERATED** from `vendor.yaml` by `tools/vendored.py --notices` — edit the registry, not this file. Each entry reproduces the licence grant as it appears in the tree.
 
-23 vendored C/C++ components:
+26 vendored C/C++ components:
 
+- [AC'97 audio sample driver](#ac97-audio-sample-driver) — unknown — MIT
 - [ACPICA](#acpica) — 0x20260408 — BSD-3-Clause OR GPL-2.0
 - [adns](#adns) — 1.0 — GPL-2.0-or-later
 - [AMD LibM for Windows](#amd-libm-for-windows) — git commit 6121d02 — MIT
 - [dxtn (S3TC)](#dxtn-s3tc) — unknown — MIT
+- [EDK2 / TianoCore headers](#edk2--tianocore-headers) — unknown — BSD-2-Clause
 - [FDLIBM (Sun Microsystems freely-distributable libm)](#fdlibm-sun-microsystems-freely-distributable-libm) — 1.8 — FDLIBM (Sun 1993 permissive; use/copy/modify/distribute, notice preserved)
 - [FEX-Emu](#fex-emu) — FEX-2607 (1cc4b93e7a71c883ec021b71359f136394dc1f3c, snapshot 2026-07-08) — MIT
 - [FreeType](#freetype) — 2.10.0 — GPL-2.0-only
@@ -24,10 +26,43 @@ This product includes third-party software. **This file is GENERATED** from `ven
 - [Microsoft UCRT](#microsoft-ucrt) — unknown — Microsoft (see the Windows SDK licence terms)
 - [SGI GLU (OpenGL Utility Library)](#sgi-glu-opengl-utility-library) — glu-9.0.1 (Mesa git tag, not a release tarball) — SGI-B-2.0
 - [STLport](#stlport) — 5.2.1 — STLport licence (permissive)
+- [VirtIO driver library](#virtio-driver-library) — unknown — BSD-3-Clause
 - [win-iconv](#win-iconv) — unknown — Unlicense OR MIT
 - [Windows Driver Frameworks (KMDF/UMDF)](#windows-driver-frameworks-kmdfumdf) — 1.17.7600 — MIT
 - [zlib](#zlib) — 1.3.2 — Zlib
 
+
+## AC'97 audio sample driver
+
+- Upstream: Microsoft Windows-driver-samples
+- Version: unknown
+- In this tree: `drivers/wdm/audio/drivers/ac97`
+- Licence: MIT
+- Grant reproduced from: `drivers/wdm/audio/drivers/ac97/license.txt`
+
+```
+MIT License
+
+    Copyright (c) Microsoft Corporation.
+
+    Permission is hereby granted, free of charge, to any person obtaining a copy
+    of this software and associated documentation files (the "Software"), to deal
+    in the Software without restriction, including without limitation the rights
+    to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+    copies of the Software, and to permit persons to whom the Software is
+    furnished to do so, subject to the following conditions:
+
+    The above copyright notice and this permission notice shall be included in all
+    copies or substantial portions of the Software.
+
+    THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+    IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+    FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+    AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+    LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+    OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+    SOFTWARE
+```
 
 ## ACPICA
 
@@ -507,6 +542,32 @@ FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT.  IN NO EVENT SHALL
 BRIAN PAUL BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN
 AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN
 CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
+```
+
+## EDK2 / TianoCore headers
+
+- Upstream: TianoCore EDK II
+- Version: unknown
+- In this tree: `sdk/include/reactos/edk2`
+- Licence: BSD-2-Clause
+- Grant reproduced from: `sdk/include/reactos/edk2/UefiSpec.h (header comment)`
+
+```
+@file
+Include file that supports UEFI.
+
+This include file must contain things defined in the UEFI 2.3 specification.
+If a code construct is defined in the UEFI 2.3 specification it must be included
+by this include file.
+
+Copyright (c) 2006 - 2012, Intel Corporation. All rights reserved.<BR>
+This program and the accompanying materials are licensed and made available under
+the terms and conditions of the BSD License that accompanies this distribution.
+The full text of the license may be found at
+http://opensource.org/licenses/bsd-license.php.
+
+THE PROGRAM IS DISTRIBUTED UNDER THE BSD LICENSE ON AN "AS IS" BASIS,
+WITHOUT WARRANTIES OR REPRESENTATIONS OF ANY KIND, EITHER EXPRESS OR IMPLIED.
 ```
 
 ## FDLIBM (Sun Microsystems freely-distributable libm)
@@ -3516,6 +3577,47 @@ This software is being distributed under the following terms:
  *
 
 **********************************************************************
+```
+
+## VirtIO driver library
+
+- Upstream: virtio-win
+- Version: unknown
+- In this tree: `sdk/lib/drivers/virtio`
+- Licence: BSD-3-Clause
+- Grant reproduced from: `sdk/lib/drivers/virtio/LICENSE`
+
+```
+Copyright 2009-2017 Red Hat, Inc. and/or its affiliates.
+Copyright 2016 Google, Inc.
+Copyright 2007 IBM Corporation
+
+Redistribution and use in source and binary forms, with or without
+modification, are permitted provided that the following conditions
+are met:
+
+Redistributions of source code must retain the above copyright
+notice, this list of conditions and the following disclaimer.
+
+Redistributions in binary form must reproduce the above copyright
+notice, this list of conditions and the following disclaimer in the
+documentation and/or other materials provided with the distribution.
+
+Neither the name of the copyright holder nor the names of its
+contributors may be used to endorse or promote products derived from
+this software without specific prior written permission.
+
+THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS
+"AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT
+LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR
+A PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT
+HOLDER OR CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL,
+SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT
+LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE,
+DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY
+THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
+(INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
+OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 ```
 
 ## win-iconv

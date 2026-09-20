@@ -377,7 +377,15 @@ def is_vendored(rel: str, repo: Path = REPO) -> bool:
 #: adding the holder would fail `--check` fleet-wide until fifty `ours:` entries were
 #: written. That is a decision, not a scan tweak.
 _FOREIGN_HOLDER = re.compile(
-    r"Copyright\s+\(c\)\s+(Microsoft|Intel|Apple|Oracle|IBM|Sun Microsystems|Nvidia|Adobe"
+    # THE YEARS GO IN THE MIDDLE. This used to be `Copyright \(c\) (Microsoft|...)`,
+    # which matches "Copyright (c) Microsoft Corporation" and misses
+    # "Copyright (c) 1998-2000 Microsoft Corporation" — the far commoner form, and
+    # the reason `--suspects` reported "every one is decided" while 24 files of
+    # Microsoft/Intel DDK sample code sat unregistered in drivers/wdm/audio/ac97
+    # (found 2026-09-20, during the audit that followed the Solitaire miss).
+    r"Copyright\s*(?:\(c\)|\xa9|&copy;)?\s*"
+    r"(?:[0-9]{4}\s*(?:[-,/]\s*[0-9]{4})?[\s,]*)*"
+    r"(Microsoft|Intel|Apple|Oracle|IBM|Sun Microsystems|Nvidia|Adobe"
     r"|Silicon Graphics|Hewlett-Packard|Digital Equipment)"
     # Wine does not spell it with a `(c)`: its files say
     # `Copyright 2005 Jacek Caban for CodeWeavers`, so the form above cannot see it.
@@ -385,6 +393,48 @@ _FOREIGN_HOLDER = re.compile(
     r"|Copyright[^\n]{0,60}?\b(The Wine Project)",
     re.I,
 )
+#: The operative clause of a real licence — the bit that actually grants
+#: something. A file that has one needs no further evidence.
+_INLINE_GRANT = re.compile(
+    r"Redistribution and use"
+    r"|Permission is hereby granted"
+    r"|Permission to use, copy"
+    r"|is free software"
+    r"|you (can|may) redistribute"
+    r"|Licensed under the"
+    r"|SPDX-License-Identifier"
+    r"|(placed|released|dedicated).{0,20}public domain"
+    r"|GNU (General|Lesser|Library) Public License",
+    re.I,
+)
+
+#: A `LICENSE:` header naming a licence we recognise. ReactOS's own files carry
+#: these instead of an inline grant, which is fine — the name is checkable.
+_KNOWN_LICENCE_ID = re.compile(
+    r"\b(GPL|LGPL|MIT|BSD|0BSD|Zlib|Apache|ISC|CC0|CC-BY|HPND|Unlicense|X11"
+    r"|libpng|IJG|FDLIBM|SGI-B|MPL|Boost|PSF|Public\s+Domain|SPDX)\b",
+    re.I,
+)
+
+#: A licence declared by POINTING at a file: "See COPYING in the top level
+#: directory", "DDK - see license.txt in the root dir". The pointer is only a
+#: licence if the file it names is actually in the distribution.
+_LICENCE_POINTER = re.compile(
+    r"\bsee\s+([A-Za-z0-9._-]*(?:COPYING|LICEN[CS]E|LGPL|GPL)[A-Za-z0-9._-]*"
+    # ...or a plain text file named outright, which is how libjpeg and the
+    # DJGPP-derived CRT bodies point at theirs.
+    r"|[A-Za-z0-9._-]+\.txt)",
+    re.I,
+)
+
+#: The `LICENSE:` line of a ReactOS-style file header.
+_LICENSE_DECL = re.compile(r"LICEN[CS]E:\s*([^\n*]{0,90})", re.I)
+
+#: Any copyright line at all, whoever holds it. Broader than _FOREIGN_HOLDER on
+#: purpose: the question here is not "is this foreign" but "does anyone claim
+#: this, and if so did they say what we may do with it".
+_ANY_COPYRIGHT = re.compile(r"copyright\s+(\(c\)|\xa9|[0-9]{4})", re.I)
+
 _SUSPECT_SUFFIXES = (".c", ".cpp", ".cxx", ".cc", ".h", ".hpp", ".hxx")
 # `.claude` holds the harness's own subagent worktrees (`.claude/worktrees/<name>`):
 # a whole second checkout of the repo, so scanning it reports ANOTHER tree's
@@ -611,6 +661,134 @@ def suspects(reg: Registry, min_files: int = 5) -> list[tuple[str, int]]:
             if _FOREIGN_HOLDER.search(head):
                 hits[rel_dir] = hits.get(rel_dir, 0) + 1
     return sorted(((d, n) for d, n in hits.items() if n >= min_files), key=lambda x: -x[1])
+
+
+def grant_gaps(reg: Registry, min_files: int = 3) -> tuple[list[tuple[str, int, str]], dict]:
+    """Code that claims a copyright but never says what you may do with it.
+
+    THE FOURTH RATCHET, and it exists because the other three could not see the
+    two worst things in this tree. `suspects()` keys on `Copyright (c) <KnownCorp>`
+    in a `.c`/`.h`, so it is blind to exactly the shape that bit us:
+
+      * Solitaire (2026-09-20) — J Brown freeware, 1,291 lines. The sources carried
+        NO copyright line at all; the grant lived in a stray ReadMe.txt, and 26
+        lang/*.rc declared `LICENSE: Freeware...` with no copyright to match. Found
+        by grepping master for the author's name AFTER the library it belonged to
+        had already been replaced.
+      * uniata — 36,368 lines, one individual's copyright, and the BSD warranty
+        disclaimer pasted in WITHOUT the "Redistribution and use ... are permitted"
+        clause that is the actual licence. A disclaimer is not a grant.
+
+    Two findings, deliberately separate because the fixes differ:
+
+    NO GRANT — a directory the registry does not classify, whose files claim a
+    copyright, where nothing in the directory carries an inline grant, names a
+    licence we recognise, or points at a licence file that exists. The fix is to
+    establish the licence, not to guess it.
+
+    DANGLING POINTER — a file that declares its licence by reference to a text
+    that is not in the distribution ("see license.txt in the root dir", when there
+    is no such file). Whatever the grant is, a recipient cannot read it, which is
+    the one thing nearly every licence requires of a redistributor.
+
+    Returns (no_grant, dangling) so callers can report them apart.
+    """
+    root = str(reg.repo)
+
+    # Which licence-ish basenames exist in WHICH directory. Resolution is then
+    # against the referring file's own directory and its ancestors up to the repo
+    # root, which is what "in the top level directory" and "in the root dir"
+    # actually mean. Matching a basename ANYWHERE was the first version and it was
+    # wrong: atapi's "see license.txt in the root dir" was satisfied by an
+    # unrelated base/shell/cmd/license.txt, hiding the very finding that motivated
+    # this scan.
+    by_dir: dict[str, set[str]] = {}
+    for dirpath, dirnames, filenames in os.walk(root):
+        dirnames[:] = [d for d in dirnames if d not in _SUSPECT_SKIP]
+        dirnames[:] = [d for d in dirnames if not _is_nested_checkout(os.path.join(dirpath, d))]
+        rd = os.path.relpath(dirpath, root).replace(os.sep, "/")
+        by_dir[("" if rd == "." else rd)] = {f.lower() for f in filenames}
+
+    def _resolves(name: str, from_dir: str) -> bool:
+        """Is `name` reachable from `from_dir` by walking up to the repo root?"""
+        name = name.lower()
+        # A reference WITHOUT an extension may be satisfied by any extension --
+        # "see LICENSE" where the file is LICENSE.TXT is a naming quibble. One
+        # WITH an extension must match exactly: COPYING.DJ is the DJGPP licence
+        # and COPYING is the GPL, so letting the first resolve to the second
+        # would hide a genuinely absent grant.
+        loose = "." not in name
+        d = from_dir
+        while True:
+            here = by_dir.get(d, ())
+            if name in here or (loose and any(f.startswith(name + ".") for f in here)):
+                return True
+            if not d:
+                return False
+            d = d.rsplit("/", 1)[0] if "/" in d else ""
+
+    per_dir: dict[str, dict] = {}
+    dangling: dict[str, dict] = {}
+
+    for dirpath, dirnames, filenames in os.walk(root):
+        rel_dir = os.path.relpath(dirpath, root).replace(os.sep, "/")
+        if rel_dir == ".":
+            rel_dir = ""
+            dirnames[:] = [d for d in dirnames if d not in _SUSPECT_SKIP]
+        dirnames[:] = [d for d in dirnames if not _is_nested_checkout(os.path.join(dirpath, d))]
+        for fn_ in filenames:
+            if os.path.splitext(fn_)[1].lower() not in _SUSPECT_SUFFIXES:
+                continue
+            rel = f"{rel_dir}/{fn_}" if rel_dir else fn_
+            try:
+                with open(os.path.join(dirpath, fn_), errors="replace") as fh:
+                    head = fh.read(4000)
+            except OSError:
+                continue
+
+            # A pointer to a licence text that is not here is a finding wherever it
+            # sits — including inside a registered tree, since registration records
+            # what the licence IS and this is about whether it SHIPS.
+            for m in _LICENCE_POINTER.finditer(head):
+                name = m.group(1)
+                # A pointer has to look like a FILE. Bare prose ("see license
+                # terms") captured the word `license` 80 times before this, all
+                # of them noise; a real reference either carries an extension or
+                # uses the ALL-CAPS COPYING/LICENSE convention.
+                if "." not in name and not name.isupper():
+                    continue
+                name = name.lower()
+                if not _resolves(name, rel_dir):
+                    d = dangling.setdefault(name, {"count": 0, "example": rel})
+                    d["count"] += 1
+
+            if reg.is_classified(rel):
+                continue
+            st = per_dir.setdefault(rel_dir, {"claimed": 0, "covered": False, "example": rel})
+            if _ANY_COPYRIGHT.search(head):
+                st["claimed"] += 1
+            if _INLINE_GRANT.search(head):
+                st["covered"] = True
+                continue
+            decl = _LICENSE_DECL.search(head)
+            if decl:
+                value = decl.group(1)
+                if _KNOWN_LICENCE_ID.search(value):
+                    st["covered"] = True
+                else:
+                    ptr = _LICENCE_POINTER.search(value)
+                    if ptr and _resolves(ptr.group(1), rel_dir):
+                        st["covered"] = True
+
+    no_grant = sorted(
+        (
+            (d, st["claimed"], st["example"])
+            for d, st in per_dir.items()
+            if st["claimed"] >= min_files and not st["covered"]
+        ),
+        key=lambda x: -x[1],
+    )
+    return no_grant, dangling
 
 
 #: The generated notices document, at the repo root where a distributor looks for it.
@@ -1193,6 +1371,12 @@ def main(argv: list[str] | None = None) -> int:
         help="regenerate the Rust-crate snapshot from cargo metadata (needs cargo)",
     )
     ap.add_argument(
+        "--grants",
+        action="store_true",
+        help="code that claims a copyright but never says what you may do with it, "
+        "plus licence pointers naming a text that is not in the distribution",
+    )
+    ap.add_argument(
         "--suspects",
         action="store_true",
         help="unregistered dirs full of foreign-copyright source (a question, not a verdict)",
@@ -1260,6 +1444,28 @@ def main(argv: list[str] | None = None) -> int:
         print(
             "\nRecord each in `license_extra:` with a reason, or move the files out if they\n"
             "are ours. `--check` fails until then."
+        )
+        return 1
+
+    if args.grants:
+        no_grant, dangling = grant_gaps(reg)
+        if not no_grant and not dangling:
+            print("no grant gaps — every claimed body says what you may do with it")
+            return 0
+        if dangling:
+            print(f"{len(dangling)} DANGLING licence pointer(s) — the text is not shipped:\n")
+            for name, info in sorted(dangling.items(), key=lambda x: -x[1]["count"]):
+                print(f"  {info['count']:>4} refs -> {name:24} e.g. {info['example']}")
+            print()
+        if no_grant:
+            print(f"{len(no_grant)} dir(s) claiming copyright with NO grant anywhere:\n")
+            w = max(len(d) for d, _, _ in no_grant)
+            for d, n, ex in no_grant:
+                print(f"  {d.ljust(w)}  {n:>4} files  e.g. {ex}")
+        print(
+            "\nA disclaimer is not a grant and a pointer is not a licence. Each of these\n"
+            "is either owed a licence text in the tree, a corrected reference, or a\n"
+            "vendor.yaml entry recording what the terms actually are."
         )
         return 1
 
