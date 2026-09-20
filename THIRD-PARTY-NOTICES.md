@@ -2643,6 +2643,7 @@ This is the largest unresolved provenance question in the tree (~78K lines) and 
 - Also contains: LGPL-2.0-or-later — include/GL/glu_mangle.h is not SGI's — it is Mesa 3.0, Copyright (C) 1995-1998 Brian Paul, under the GNU Library General Public License v2 or later. One file, a symbol-mangling header, but a copyleft licence sitting inside a permissive drop is exactly the shape this registry exists to make visible.
 
 - Also contains: SGI-B-1.1 — The 73 .cc implementation files under src/libnurbs/{interface,internals,nurbtess} carry SGI Free Software License B **Version 1.1**, a distinct earlier licence, not the Version 2.0 the other 117 files carry. Inherited from Mesa, 0% ours.
+- Modified by us: yes, see `vendor-patches/glu32.patch`
 - Grant reproduced from: `dll/opengl/glu32/include/GL/glu.h (header comment)`
 
 ```

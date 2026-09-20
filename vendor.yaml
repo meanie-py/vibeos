@@ -521,6 +521,7 @@ trees:
         a symbol-mangling header, but a copyleft licence sitting inside a permissive
         drop is exactly the shape this registry exists to make visible.
     modified: yes  # 5 files after the systemic include-commenting; see review
+    patch: vendor-patches/glu32.patch
     version:
       # LITERAL: recovered 2026-09-20 by file-set fingerprint + minimal content
       # diff, not by an in-tree stamp (there is none). Evidence in the review.
@@ -563,8 +564,7 @@ trees:
       note was reacting to.
 
       THE 122-FILE "DIFF" IS A DISTRIBUTION FORM, NOT MODIFICATION. Every `#include "x.h"`
-      across libnurbs/libtess/libutil/gluos.h is commented out, because the CMake build
-      force-includes everything through precomp.h (add_pch(glu32 precomp.h ...)). Same shape
+      across libnurbs/libtess/libutil/gluos.h is commented out. Same shape
       as ACPICA's licence-header phantom: count it naively and 127 of 194 files look
       modified. Allow that one substitution and only FIVE differ.
 
@@ -600,6 +600,27 @@ trees:
       unlike adns's getopt.c this is not something we stripped and not ours to delete. No
       upstream directory was skipped: libnurbs, libtess and libutil are all fully vendored,
       and the file lists match exactly in both directions.
+
+      PATCH-IFIED 2026-09-20. `vendor-patches/glu32.patch` now carries all 127 differing
+      files — 729 changed lines — and reproduces this tree BYTE-FOR-BYTE from a pristine
+      glu-9.0.1 extraction, verified by applying it to a fresh copy and diffing recursively:
+      zero differences, zero fuzz, zero rejects. dll/opengl/glu32/include/ is not in the
+      patch because it is byte-identical to upstream; note that `path:` here covers only
+      src/, while `headers:` records include/ separately.
+
+      CORRECTION, AND IT CHANGES THE ADVICE FOR A RE-VENDOR: this entry used to say the
+      122-file include-commenting was safe because the build force-includes everything
+      through precomp.h via `add_pch(glu32 precomp.h ...)`. IT DOES NOT. add_pch is
+      `if(PCH) target_precompile_headers(...) else() <nothing> endif()` and PCH is OFF by
+      default (PCH:BOOL=OFF in every build dir here), so precomp.h is force-included
+      nowhere; and even with PCH on it would not reach the C files, since glu32's
+      CMakeLists puts all of ${SOURCE} into PCH_SKIP_SOURCE. What is actually observable is
+      that glu32.dll builds and links with PCH off, so those headers arrive transitively
+      through the includes left alive. The transform therefore buys NOTHING in the default
+      configuration: on a bump, drop it and take upstream's includes verbatim rather than
+      reapplying it. (Same false mechanism was recorded on libtiff and libsamplerate; both
+      corrected in the same pass, and on libsamplerate it was not merely cosmetic — the
+      0.2.2 bump broke on exactly this assumption.)
 
   # ── sdk/lib/3rdparty ────────────────────────────────────────────────────
   - path: sdk/lib/3rdparty/freetype
