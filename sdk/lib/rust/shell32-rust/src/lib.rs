@@ -289,6 +289,7 @@ pub mod cpl_item_menu;
 
 
 // Wave 5, the shell32/ directory — free-function TUs from the root of dll/win32/shell32.
+pub mod shelldesktop;
 pub mod shell32;
 // `stubs` is wired; the other six are parked on the C++ substrate, and shell32/mod.rs records
 // each one's remaining error count so the next lane can pick the cheapest. Do NOT delete the

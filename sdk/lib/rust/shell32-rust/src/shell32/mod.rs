@@ -153,6 +153,10 @@ pub mod extracticon_free;
 /// one, so `dll/win32/shell32/rust_folderitemverbs_bridge.cpp` publishes the four symbols
 /// rustconv kept symbolic rather than inventing. That file is deleted when those two classes
 /// translate; see rust-port-status.md, where the debt is recorded as OWED.
+/// `CEnumIDListBase.cpp`, cohab-flipped — the shared PIDL enumerator base every shell folder's
+/// IEnumIDList derives from. 7 of its 9 functions were already banked from an earlier run and
+/// replayed at $0; the other two lowered deterministically, so the whole TU cost nothing.
+pub mod CEnumIDListBase;
 pub mod CFolder;
 pub mod CFolderItem;
 pub mod CFolderItems;

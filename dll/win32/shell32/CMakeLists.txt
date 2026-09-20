@@ -77,7 +77,10 @@ list(APPEND SOURCE
     # dialogs/view.cpp — replaced by Rust (shell32-rust/src/dialogs/view.rs); cohab via libshell32_rust.a
     # CDropTargetHelper.cpp — COM class plus SHSimulateDropOnClsid ordinal closure
     # are Rust-owned (shell32-rust/src/drop_target_helper.rs).
-    CEnumIDListBase.cpp
+    # CEnumIDListBase.cpp — replaced by Rust (shell32-rust/src/shell32/CEnumIDListBase.rs);
+    # cohab via libshell32_rust.a. The shared PIDL-enumerator base every shell folder's
+    # IEnumIDList derives from. Cost $0: 7 of its 9 functions were already banked from an
+    # earlier run and the other two lowered deterministically.
     # CExtractIcon.cpp — replaced by Rust (shell32-rust/src/shell32/CExtractIcon.rs for the
     # COM class, shell32/extracticon_free.rs for DuplicateString + the two SHCreate*ExtractIcon
     # entry points); cohab via libshell32_rust.a. Whole-TU flip. Activation is shellutils.h's

@@ -3976,6 +3976,11 @@ def normalize_worker_semantics(source: str, rust: str) -> str:
     # different and MORE accurate error — "cannot find macro" names the real gap, where
     # "expected function, found macro" pointed at the call.
     rust = re.sub(r"\bV_([A-Z][A-Z0-9_]*)\s*\(", r"V_\1!(", rust)
+    # `assert` is a MACRO on both sides -- assert.h's in C, `core::assert!` in Rust -- so a
+    # model that copies the C call shape writes `assert(x)` and gets
+    # `expected function, found macro`. Same argument as the V_* family above: there is no
+    # function spelled `assert` for this to collide with.
+    rust = re.sub(r"\bassert\s*\(", "assert!(", rust)
     # An INVENTED macro spelling of `IID_PPV_ARG`, named after the interface:
     # `IID_FolderItems!(FolderItems, ppid)` where the C says `IID_PPV_ARG(FolderItems, ppid)`.
     # The model emits the sanctioned spelling nearly everywhere (CFolderItems' own Item() came

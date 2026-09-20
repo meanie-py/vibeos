@@ -2183,6 +2183,25 @@ flight is marked; in-flight lanes live in [`active-lanes/`](active-lanes/).*
   Verified: builds and links on all three arches; conformance kmtest amd64
   launched=91 ok=91 bad=0, ratchet holds.
 
+  **CDirectoryList + CDirectoryWatcher are a CIRCULAR pair — translated, cannot flip.**
+  `shelldesktop/CDirectoryList.cpp` (both its plain classes, CDirectoryList and
+  CDirectoryItem) IS translated and wired at
+  `shell32-rust/src/shelldesktop/CDirectoryList.rs` + `CDirectoryItem.rs`, compiling on all
+  three arches. It stays in CMake anyway, and the cycle is why:
+  `CDirectoryWatcher` holds `CDirectoryList m_dir_list` BY VALUE (CDirectoryWatcher.h:35) and
+  calls its methods through CDirectoryList.h's inline constructor, so flipping CDirectoryList
+  alone leaves four C++-MANGLED undefined symbols — and a bridge cannot stand in for a
+  by-value member, which needs the real class layout. Flipping the consumer first does not
+  work either: `CDirectoryWatcher` fails preflight on exactly that member
+  (`state field type is not proven C scalar/pointer state: CDirectoryList m_dir_list`).
+  **Breaking it needs the deterministic layer to model a translated SIBLING CLASS as
+  by-value state.** Wiring the Rust without flipping is safe here and is NOT a partial cohab
+  flip: the Rust publishes unmangled `#[no_mangle]` names while the live C++ defines mangled
+  ones, so there is nothing for the linker to silently choose between.
+  Note for whoever flips it: `CSimpleArray<CDirectoryItem>` in C++ frees each element through
+  `~CDirectoryItem` (`free(m_pszPath)`); confirm the Rust side frees it too before trusting
+  the flip, because the module is dead code today and no test would notice a leak.
+
   **CFolderItemVerb / CFolderItemVerbs are still C++ — OWED, not done, and one hand-written
   bridge stands in for them.** `CFolder.cpp` and `CFolderItems.cpp` are Rust (CFolder 24 fns,
   CFolderItem 25, CFolderItems 13); `CFolderItemVerbs.cpp` is untranslated original C++,
