@@ -461,10 +461,21 @@ trees:
   - path: sdk/lib/3rdparty/cardlib
     name: cardlib
     upstream: unknown
-    license: unknown
+    license: Public Domain (relayed author permission) — see review
+    license_file: sdk/lib/3rdparty/cardlib/ReadMe.txt
     modified: unknown
     reason: Card-rendering library for the bundled card games, carried in the 3rdparty tree.
     review: >
+      NOT `unknown` AFTER ALL, but not clean either. ReadMe.txt is the whole licence:
+      "The author has given permission to use these sources under Public Domain. Do
+      what thou will but please give credit where credit is due. -sedwards". Two things
+      about that are worth keeping in view rather than smoothing over: the grant is
+      RELAYED — sedwards, a ReactOS contributor, reporting what J Brown said, not a
+      statement by the copyright holder — and the source headers say "Freeware /
+      Copyright J Brown 2001", which is not the same thing as public domain and does
+      not, on its own, grant anything. So the tree contains a second-hand dedication
+      that its own files do not corroborate. Recorded, pointed at, and left for a human
+      to judge before launch; this is the weakest provenance of any entry here.
       Provenance not established — no COPYING, and ReadMe.txt does not name an
       upstream. If this turns out to be ReactOS-authored it belongs OUT of this
       registry and IN the translation denominator.
