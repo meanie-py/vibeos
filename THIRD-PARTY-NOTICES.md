@@ -87,6 +87,8 @@ POSSIBILITY OF SUCH DAMAGES.
 - Version: 1.0
 - In this tree: `sdk/lib/3rdparty/adns`
 - Licence: GPL-2.0-or-later
+- Also contains: LGPL-2.0-or-later — src/adns.h and adns_win32/adns_win32.h, and DELIBERATELY so — this is upstream's own carve-out, not drift. Both headers say the public header alone ("but only the public header file adns.h and not any other part of adns") may also be taken under the GNU Library GPL v2-or-later, so that a program can include it without the whole work becoming GPL. The library itself stays GPL-2.0-or-later. Found by the prose half of `--licences` on 2026-09-20; neither file carries an SPDX tag.
+
 - Modified by us: yes, see `vendor-patches/adns.patch`
 - Grant reproduced from: `sdk/lib/3rdparty/adns/COPYING`
 
@@ -555,6 +557,8 @@ Modified by Naohiko Shimizu/Tokai University, Japan 1997/08/26,
 - In this tree: `external/fex`
 - Licence: MIT
 - Also contains: Apache-2.0 WITH LLVM-exception — External/code-format-helper/code-format-helper.py and External/unordered_dense/test/third-party/FuzzedDataProvider.h, which is LLVM's and carries the LLVM-exception — a WITH clause the first pass dropped. FEX is a vendored tree that itself vendors: its External/ is a second registry we do not maintain, so those licences surface here rather than upstream.
+
+- Also contains: BSL-1.0 — External/range-v3 — 586 files under the Boost Software License 1.0, the largest single unrecorded licence this registry has found. It is ericniebler's range-v3, which FEX vendors as a dependency, so this is a vendored tree inside a vendored tree; its own grant is at External/range-v3/LICENSE.txt. 0% ours, and permissive, but 586 files stating a licence the entry did not name is exactly the gap the prose half of `--licences` was added to close (2026-09-20).
 
 - Also contains: GPL-2.0-only — External/xxhash/tests/{sanity_test.c,sanity_test_vectors_generator.c} — upstream xxhash dual-licences its library BSD and its tests GPL. Not built by us; recorded because the files are in the tree.
 
@@ -2336,6 +2340,8 @@ TIFF Library.
 - Version: 0.2.1
 - In this tree: `dll/3rdparty/libtirpc`
 - Licence: BSD-3-Clause
+- Also contains: LGPL-2.1-or-later — THE WINDOWS PORT HALF OF THIS TREE IS COPYLEFT, and the entry said BSD-3-Clause flat until 2026-09-20. Sixteen files carry "Copyright (c) 2012 The Regents of the University of Michigan" and the LGPL-2.1-or-later notice: src/{auth_none,auth_sspi, auth_unix,authsspi_prot,clnt_generic,clnt_vc,rpc_prot,wintirpc,xdr_rec}.c and tirpc/{wintirpc.h,rpc/{auth,auth_gss,auth_sspi,clnt,rpc_msg,types}.h}. They are the ms-nfs41-client Windows/SSPI port this tree's review already describes as having no surviving upstream artifact — so now we know what licence that port is under. This is the most consequential finding the prose scan has made: a weak-copyleft obligation inside a tree recorded as permissive, in files that ARE built. The Sun/upstream libtirpc half remains BSD-3-Clause.
+
 - Modified by us: yes, see `vendor-patches/libtirpc.patch`
 - Grant reproduced from: `dll/3rdparty/libtirpc/COPYING`
 

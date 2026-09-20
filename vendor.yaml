@@ -523,6 +523,13 @@ trees:
     upstream: https://github.com/FEX-Emu/FEX
     license: MIT
     license_extra:
+      BSL-1.0: >
+        External/range-v3 — 586 files under the Boost Software License 1.0, the largest
+        single unrecorded licence this registry has found. It is ericniebler's range-v3,
+        which FEX vendors as a dependency, so this is a vendored tree inside a vendored
+        tree; its own grant is at External/range-v3/LICENSE.txt. 0% ours, and permissive,
+        but 586 files stating a licence the entry did not name is exactly the gap the
+        prose half of `--licences` was added to close (2026-09-20).
       LGPL-2.1-or-later: >
         Wine-derived headers FEX carries for its Windows build:
         Source/Windows/include/{winternl.h,winnt.h} and
@@ -899,6 +906,14 @@ trees:
     upstream: https://www.chiark.greenend.org.uk/~ian/adns/
     license: GPL-2.0-or-later
     license_file: sdk/lib/3rdparty/adns/COPYING
+    license_extra:
+      LGPL-2.0-or-later: >
+        src/adns.h and adns_win32/adns_win32.h, and DELIBERATELY so — this is upstream's
+        own carve-out, not drift. Both headers say the public header alone ("but only the
+        public header file adns.h and not any other part of adns") may also be taken under
+        the GNU Library GPL v2-or-later, so that a program can include it without the
+        whole work becoming GPL. The library itself stays GPL-2.0-or-later. Found by the
+        prose half of `--licences` on 2026-09-20; neither file carries an SPDX tag.
     modified: yes  # a third-party Windows port, not our work; see review
     patch: vendor-patches/adns.patch
     version:
@@ -1551,6 +1566,18 @@ trees:
     upstream: https://sourceforge.net/projects/libtirpc/
     license: BSD-3-Clause
     license_file: dll/3rdparty/libtirpc/COPYING
+    license_extra:
+      LGPL-2.1-or-later: >
+        THE WINDOWS PORT HALF OF THIS TREE IS COPYLEFT, and the entry said BSD-3-Clause
+        flat until 2026-09-20. Sixteen files carry "Copyright (c) 2012 The Regents of the
+        University of Michigan" and the LGPL-2.1-or-later notice: src/{auth_none,auth_sspi,
+        auth_unix,authsspi_prot,clnt_generic,clnt_vc,rpc_prot,wintirpc,xdr_rec}.c and
+        tirpc/{wintirpc.h,rpc/{auth,auth_gss,auth_sspi,clnt,rpc_msg,types}.h}. They are the
+        ms-nfs41-client Windows/SSPI port this tree's review already describes as having
+        no surviving upstream artifact — so now we know what licence that port is under.
+        This is the most consequential finding the prose scan has made: a weak-copyleft
+        obligation inside a tree recorded as permissive, in files that ARE built. The
+        Sun/upstream libtirpc half remains BSD-3-Clause.
     modified: yes  # a Windows/SSPI port over 0.2.1; see review
     patch: vendor-patches/libtirpc.patch
     version:
