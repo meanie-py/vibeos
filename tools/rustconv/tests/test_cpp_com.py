@@ -3580,3 +3580,36 @@ def test_a_member_merely_starting_with_struct_is_not_mangled():
     field = _parse_plain_state_field("UINT structFlags", island_scalar_types={"UINT"})
     assert field.name == "structFlags"
     assert field.c_type == "UINT"
+
+
+def test_IDispatchImpl_inner_interface_need_not_be_I_prefixed():
+    """shldisp.idl's automation interfaces have no `I`: Folder2, FolderItem, FolderItems.
+
+    The template match used to require `IDispatchImpl<I...>`, so those five real WIDL
+    interfaces were reported as "custom/inherited base class ... needs deterministic inherited
+    layout mapping" -- which reads as a MISSING FEATURE rather than a bad guess, and held
+    CFolder/CFolderItem/CFolderItems behind a gap that did not exist. WIDL generates the same
+    flattened vtable for `Folder2` as for `IShellDispatch4`, in the same header.
+    """
+    for source, name in (
+        (SHELL32 / "CFolder.cpp", "CFolder"),
+        (SHELL32 / "CFolderItems.cpp", "CFolderItems"),
+        (SHELL32 / "CFolderItems.cpp", "CFolderItem"),
+    ):
+        cls = analyze_class(source, name, object_map_source=SHELL32 / "shell32.cpp")
+        assert cls.local_base_classes == ["IDispatchImpl"], name
+        # Flattened exactly as CShellDispatch's is: the template's one data member.
+        assert "CComPtr<ITypeInfo> m_pTypeInfo" in cls.state_fields, name
+
+
+def test_a_genuine_stateful_cpp_base_is_still_a_loud_failure():
+    """Widening the inner name must not start admitting non-interface bases."""
+    import re
+
+    pat = re.compile(r"IDispatchImpl\s*<\s*([A-Za-z_]\w*)\s*,\s*&IID_\1(?:\s*,.*)?\s*>")
+    assert pat.fullmatch("IDispatchImpl<Folder2, &IID_Folder2>")
+    assert pat.fullmatch("IDispatchImpl<IShellDispatch4, &IID_IShellDispatch4>")
+    # IID naming a DIFFERENT interface is not the known shape.
+    assert not pat.fullmatch("IDispatchImpl<Folder2, &IID_Folder3>")
+    # A stateful C++ base is not this template at all.
+    assert not pat.fullmatch("CSomeStatefulBase<Folder2>")
