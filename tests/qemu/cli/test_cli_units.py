@@ -4457,6 +4457,49 @@ def test_sticky_kmtests_is_one_directional_unlike_instr_flags(monkeypatch, tmp_p
     assert cmds == [], "already ON should be a no-op, not a redundant reconfigure"
 
 
+def test_rostests_is_reconciled_off_unlike_kmtests(monkeypatch, tmp_path):
+    # --rostests is the OPPOSITE discipline from --kmtests and the pair is the
+    # point: ENABLE_ROSTESTS adds ~128 executables no default build wants, so a
+    # plain build must deterministically turn it back OFF. Sticky would mean one
+    # opt-in quietly bloats every later i386 build in the worktree.
+    on = "ENABLE_ROSTESTS:BOOL=ON\n"
+    cmds, run, repo, bd = _canonize_probe(monkeypatch, tmp_path, cache=on, canonical=True)
+    build_mod._maybe_canonize(run, repo, bd, "i386", {"ENABLE_ROSTESTS": False})
+    assert cmds == [["cmake", "-DENABLE_ROSTESTS=OFF", "."]], cmds
+
+
+def test_rostests_turns_on_when_asked(monkeypatch, tmp_path):
+    off = "ENABLE_ROSTESTS:BOOL=OFF\n"
+    cmds, run, repo, bd = _canonize_probe(monkeypatch, tmp_path, cache=off, canonical=True)
+    build_mod._maybe_canonize(run, repo, bd, "i386", {"ENABLE_ROSTESTS": True})
+    assert cmds == [["cmake", "-DENABLE_ROSTESTS=ON", "."]], cmds
+
+
+def test_rostests_already_on_and_asked_is_a_no_op(monkeypatch, tmp_path):
+    on = "ENABLE_ROSTESTS:BOOL=ON\n"
+    cmds, run, repo, bd = _canonize_probe(monkeypatch, tmp_path, cache=on, canonical=True)
+    build_mod._maybe_canonize(run, repo, bd, "i386", {"ENABLE_ROSTESTS": True})
+    assert cmds == [], "already ON and requested should not reconfigure"
+
+
+def test_rostests_flag_is_wired_from_the_real_parser_to_the_cmake_option():
+    # Guard the WIRING, not just the mechanism. build.py reads the arg through
+    # getattr(args, "rostests", False), which silently yields False for a name
+    # that does not exist -- so a rename on either side disables the flag with
+    # no error anywhere. Parse with the REAL parser and assert both directions.
+    from tests.qemu.cli.__main__ import build_parser
+
+    args = build_parser().parse_args(["build", "--arch", "i386", "--rostests"])
+    assert bool(getattr(args, "rostests", False)) is True
+    plain = build_parser().parse_args(["build", "--arch", "i386"])
+    assert bool(getattr(plain, "rostests", False)) is False
+
+    src = (Path(__file__).parent / "build.py").read_text()
+    assert '"ENABLE_ROSTESTS": bool(getattr(args, "rostests", False))' in src, (
+        "build.py no longer maps the parsed --rostests arg onto ENABLE_ROSTESTS"
+    )
+
+
 # --- conformance verb (quest M4) -------------------------------------------
 def _conf_repo_root() -> Path:
     # tests/qemu/cli/test_cli_units.py -> repo root is parents[3]

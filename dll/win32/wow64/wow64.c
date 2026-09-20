@@ -1466,6 +1466,7 @@ static VOID Wow64pInitStartContext(WOW64_CONTEXT *Ctx, ULONG Eip, ULONG Esp)
  */
 static VOID Wow64pThreadInit(const WOW64_CONTEXT *Start,
                              ULONG StackBase, ULONG StackLimit,
+                             ULONG DeallocationStack,
                              const char *What)
 {
     PBYTE Teb32 = Wow64pCurrentTeb32();
@@ -1489,10 +1490,21 @@ static VOID Wow64pThreadInit(const WOW64_CONTEXT *Start,
     *(ULONG *)(Teb32 + 0x04) = StackBase;  /* NtTib.StackBase (high) */
     *(ULONG *)(Teb32 + 0x08) = StackLimit; /* NtTib.StackLimit (low) */
 
+    /* And the BOTTOM of the reservation, which is a different fact from
+     * StackLimit: StackLimit is only the COMMITTED floor and walks down as the
+     * stack grows, so it cannot say how far this stack is allowed to grow.
+     * MiCheckForUserStackOverflow needs that bound to extend a guest stack at
+     * all -- with it zero the kernel has no 32-bit descriptor to match a guest
+     * fault against, rejects every guest stack-growth fault, and the guest dies
+     * on its first page of growth (measured: eventvwr's worker needed the page
+     * at 0x1fae000 while TEB64 covered [0x1fb0000, 0x20b0000)). Displacement
+     * asserted against the bindgen _TEB32 in ntkrnl-sys::wow64. */
+    *(ULONG *)(Teb32 + 0xE0C) = DeallocationStack; /* TEB32.DeallocationStack */
+
     Wow64pBTCpuThreadInit();
 
-    DbgPrint("[FEX-WOW64C] %s: entering guest eip=%08lx esp=%08lx stack=%08lx..%08lx\n",
-             What, Ctx->Eip, Ctx->Esp, StackLimit, StackBase);
+    DbgPrint("[FEX-WOW64C] %s: entering guest eip=%08lx esp=%08lx stack=%08lx..%08lx dealloc=%08lx\n",
+             What, Ctx->Eip, Ctx->Esp, StackLimit, StackBase, DeallocationStack);
     Wow64pBTCpuSimulate();
 }
 
@@ -1505,6 +1517,7 @@ typedef struct _WOW64_THREAD_SEED {
     ULONG Ebx;        /* guest thread parameter */
     ULONG StackBase;
     ULONG StackLimit;
+    ULONG DeallocationStack; /* INITIAL_TEB32.AllocatedStackBase */
     /* How to release this block. An in-process seed is heap memory; a seed
      * planted by ANOTHER process (CreateRemoteThread) is its own VirtualAlloc,
      * because a foreign process cannot reach into this one's heap. Freeing the
@@ -1579,7 +1592,8 @@ static ULONG WINAPI Wow64pGuestThreadStart(PVOID Parameter)
     Wow64pInitStartContext(&StartCtx,
                            (ULONG)(ULONG_PTR)Wow64pKiUserApcDispatcher32, ApcEsp);
 
-    Wow64pThreadInit(&StartCtx, Seed.StackBase, Seed.StackLimit, "guest thread");
+    Wow64pThreadInit(&StartCtx, Seed.StackBase, Seed.StackLimit,
+                     Seed.DeallocationStack, "guest thread");
 
     /* Only reached if the entry failed outright — kill this thread, not the
      * process: the rest of the guest is still healthy. */
@@ -1597,6 +1611,7 @@ static ULONG WINAPI Wow64pGuestThreadStart(PVOID Parameter)
  */
 LONG Wow64CreateGuestThread(ULONG Eip, ULONG Esp, ULONG Eax, ULONG Ebx,
                             ULONG StackBase, ULONG StackLimit,
+                            ULONG DeallocationStack,
                             BOOLEAN CreateSuspended,
                             HANDLE *ThreadHandle, WOW64_CLIENT_ID *ClientId)
 {
@@ -1621,6 +1636,7 @@ LONG Wow64CreateGuestThread(ULONG Eip, ULONG Esp, ULONG Eax, ULONG Ebx,
     Seed->Ebx = Ebx;
     Seed->StackBase = StackBase;
     Seed->StackLimit = StackLimit;
+    Seed->DeallocationStack = DeallocationStack;
 
     Status = RtlCreateUserThread(WOW64_CURRENT_PROCESS, NULL, CreateSuspended,
                                  0, 0, 0, (PVOID)Wow64pGuestThreadStart, Seed,
@@ -1742,6 +1758,7 @@ static ULONGLONG Wow64pRemoteModuleBase(HANDLE Process, ULONGLONG Peb64,
 LONG Wow64CreateForeignGuestThread(HANDLE Process, ULONGLONG Peb64,
                                    ULONG Eip, ULONG Esp, ULONG Eax, ULONG Ebx,
                                    ULONG StackBase, ULONG StackLimit,
+                                   ULONG DeallocationStack,
                                    BOOLEAN CreateSuspended,
                                    HANDLE *ThreadHandle, WOW64_CLIENT_ID *ClientId)
 {
@@ -1774,6 +1791,7 @@ LONG Wow64CreateForeignGuestThread(HANDLE Process, ULONGLONG Peb64,
     Seed.Ebx = Ebx;
     Seed.StackBase = StackBase;
     Seed.StackLimit = StackLimit;
+    Seed.DeallocationStack = DeallocationStack;
     Seed.Remote = 1;
 
     Status = NtAllocateVirtualMemory(Process, &Remote, 0, &Size,
@@ -2176,6 +2194,7 @@ Wow64LdrpInitialize(PVOID Context)
          * i386 RtlDispatchException validates fs:[0] SEH records against. */
         Wow64pThreadInit(&StartCtx,
                          (ULONG)(ULONG_PTR)GuestStack + GuestStackSize,
+                         (ULONG)(ULONG_PTR)GuestStack,
                          (ULONG)(ULONG_PTR)GuestStack,
                          "initial thread");
     }

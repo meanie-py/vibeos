@@ -1,9 +1,14 @@
 
 option(ENABLE_ROSAPPS "Enable building the ReactOS extra applications" OFF)
 option(ENABLE_ROSTESTS "Enable building the ReactOS test suite" OFF)
-# Conformance-ratchet lane: kmtests build clean on llvm-mingw; the wider
-# rostests corpus (apitests/winetests) is still a build-fix grind. This lets
-# conformance builds ship kmtests without dragging the unfixed remainder in.
+# Conformance-ratchet lane: kmtests build clean on llvm-mingw, and this lets
+# conformance builds ship them without dragging the rest of the corpus in.
+# The winetests are NOT the grind this comment used to claim: measured
+# 2026-09-20, 126 of 128 suites compile on i386, the exceptions being
+# user32_winetest (llvm-rc cannot parse resource.rc's ACCELERATORS block) and
+# ucrtbase_winetest (its CMakeLists asks for -lgcc, a GCC-ism llvm-mingw has
+# no library for). Build them with `vibeos-cli build --arch i386 --rostests`,
+# which is reconciled OFF again by the next plain build.
 option(ENABLE_ROSTESTS_KMTESTS "Enable building only kmtests from the ReactOS test suite" OFF)
 option(ENABLE_WALLPAPERS "Integrate wallpapers into the built ISOs" OFF)
 

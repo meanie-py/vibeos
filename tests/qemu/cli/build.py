@@ -743,6 +743,17 @@ def _build_locked(args, repo: Path, run, arch: str, cfg, build_dir: Path, cold: 
             # build so a plain build reverts to the APIC HAL. i386 only — amd64
             # hal is always APIC.
             "VIBEOS_PIC_HAL": bool(getattr(args, "hal_pic", False)),
+            # The full winetest corpus (`--rostests`). RECONCILED, not sticky,
+            # which is the opposite call from ENABLE_ROSTESTS_KMTESTS below and
+            # for a reason: kmtests are cheap to keep and something (conformance)
+            # always wants them, whereas ENABLE_ROSTESTS adds ~128 executables
+            # that no default build has any use for. Sticky would mean one
+            # opt-in silently bloats every later i386 build in the worktree --
+            # the exact surprise this flag exists to avoid. Toggling is cheap
+            # after the first build: turning it OFF only drops the targets from
+            # build.ninja, so the objects survive and turning it back ON is an
+            # up-to-date ninja pass.
+            "ENABLE_ROSTESTS": bool(getattr(args, "rostests", False)),
         },
         # Sticky, never reconciled OFF: the kmtest corpus is what `conformance`
         # sweeps, and both cmake options gating it default OFF, so a build dir

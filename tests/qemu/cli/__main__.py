@@ -112,6 +112,15 @@ def build_parser() -> argparse.ArgumentParser:
         "worktree ahead of time",
     )
     b.add_argument(
+        "--rostests",
+        action="store_true",
+        help="configure the build dir with -DENABLE_ROSTESTS=ON so the full "
+        "winetest corpus (~128 suites) is built. RECONCILED, not sticky: a "
+        "later plain build turns it back OFF, so an opt-in never bloats the "
+        "default build. 126/128 suites compile as of 2026-09-20 (user32 and "
+        "ucrtbase are the two known build breaks)",
+    )
+    b.add_argument(
         "--hal-pic",
         action="store_true",
         help="i386 legacy PIC HAL escape hatch "

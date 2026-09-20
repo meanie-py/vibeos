@@ -74,11 +74,10 @@ pub(crate) struct ClientInfo32 {
 #[cfg(not(target_arch = "x86"))]
 const _: () = assert!(core::mem::size_of::<ClientInfo32>() == 62 * 4);
 
-/// TEB32 sits at TEB64 + 0x2000 in the WoW64 combined TEB region. Must stay in
-/// sync with `ntoskrnl-rust/src/ARM3/procsup.rs` (`WOW64_TEB32_OFFSET`) — that
-/// is the allocator that lays the region out.
+/// TEB32 sits at `WOW64_TEB32_OFFSET` from TEB64 in the combined region;
+/// `ntkrnl-sys` owns the constant and `MmCreateTeb` is the allocator.
 #[cfg(not(target_arch = "x86"))]
-const WOW64_TEB32_OFFSET: usize = 0x2000;
+use ntkrnl_sys::wow64::WOW64_TEB32_OFFSET;
 
 /// Offset of `Win32ClientInfo` within TEB32. Taken from the bindgen `_TEB32`, so
 /// it cannot drift.

@@ -6238,6 +6238,11 @@ static NTSTATUS Wow64Manual_NtWaitForMultipleObjects(ULONG *a)
  * PreviousStackLimit, StackBase, StackLimit, AllocatedStackBase. */
 #define WOW64_ITEB32_STACKBASE  0x08
 #define WOW64_ITEB32_STACKLIMIT 0x0C
+/* AllocatedStackBase -- the BOTTOM of the guest's stack reservation, which the
+ * guest's BaseCreateStack already filled in and this thunk used to discard.
+ * It becomes TEB32.DeallocationStack, without which the kernel cannot grow a
+ * guest stack at all (see Wow64pThreadInit). */
+#define WOW64_ITEB32_ALLOCBASE  0x10
 
 /* wow64.c — #64: creates a NATIVE thread that runs 32-bit guest code, and
  * establishes the per-thread WoW64 state on it (CPU area, TEB32 NtTib stack
@@ -6249,6 +6254,7 @@ typedef struct _WOW64_CLIENT_ID {
 
 LONG Wow64CreateGuestThread(ULONG Eip, ULONG Esp, ULONG Eax, ULONG Ebx,
                             ULONG StackBase, ULONG StackLimit,
+                            ULONG DeallocationStack,
                             BOOLEAN CreateSuspended,
                             HANDLE *ThreadHandle, WOW64_CLIENT_ID *ClientId);
 VOID Wow64FreeThreadCpuArea(VOID);
@@ -6422,6 +6428,7 @@ static NTSTATUS Wow64pPublishPeb64Params(HANDLE Process, ULONG_PTR Peb32,
 LONG Wow64CreateForeignGuestThread(HANDLE Process, ULONGLONG Peb64,
                                    ULONG Eip, ULONG Esp, ULONG Eax, ULONG Ebx,
                                    ULONG StackBase, ULONG StackLimit,
+                                   ULONG DeallocationStack,
                                    BOOLEAN CreateSuspended,
                                    HANDLE *ThreadHandle, WOW64_CLIENT_ID *ClientId);
 
@@ -6529,6 +6536,7 @@ static NTSTATUS Wow64pCreateForeignThread(HANDLE Process,
                  *(ULONG *)(Ctx32 + WOW64_CTX32_EBX),
                  *(ULONG *)(ITeb32 + WOW64_ITEB32_STACKBASE),
                  *(ULONG *)(ITeb32 + WOW64_ITEB32_STACKLIMIT),
+                 *(ULONG *)(ITeb32 + WOW64_ITEB32_ALLOCBASE),
                  CreateSuspended, &Thread, &Cid);
         if (St < 0)
             return St;
@@ -6671,6 +6679,7 @@ static NTSTATUS Wow64Manual_NtCreateThread(ULONG *a)
                                 *(ULONG *)(Ctx32 + WOW64_CTX32_EBX),
                                 *(ULONG *)(ITeb32 + WOW64_ITEB32_STACKBASE),
                                 *(ULONG *)(ITeb32 + WOW64_ITEB32_STACKLIMIT),
+                                *(ULONG *)(ITeb32 + WOW64_ITEB32_ALLOCBASE),
                                 (BOOLEAN)(a[7] & 0xFF),
                                 &Thread, &Cid);
     if (St < 0)
