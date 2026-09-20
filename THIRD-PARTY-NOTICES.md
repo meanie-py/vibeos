@@ -24,7 +24,7 @@ This product includes third-party software. **This file is GENERATED** from `ven
 - [Microsoft compiler-tests (EH/SEH)](#microsoft-compiler-tests-ehseh) — unknown — MIT
 - [Microsoft UCRT](#microsoft-ucrt) — unknown — Microsoft (see the Windows SDK licence terms)
 - [SGI GLU (OpenGL Utility Library)](#sgi-glu-opengl-utility-library) — unknown — SGI-B-2.0
-- [STLport](#stlport) — unknown — STLport licence (permissive)
+- [STLport](#stlport) — 5.2.1 — STLport licence (permissive)
 - [win-iconv](#win-iconv) — unknown — Unlicense OR MIT
 - [Windows Driver Frameworks (KMDF/UMDF)](#windows-driver-frameworks-kmdfumdf) — 1.17.7600 — MIT
 - [zlib](#zlib) — 1.2.13 — Zlib
@@ -2675,9 +2675,10 @@ Silicon Graphics, Inc.
 ## STLport
 
 - Upstream: http://www.stlport.org/
-- Version: unknown
-- In this tree: `sdk/lib/3rdparty/stlport`
+- Version: 5.2.1
+- In this tree: `sdk/lib/3rdparty/stlport`, `sdk/include/c++/stlport`
 - Licence: STLport licence (permissive)
+- Modified by us: yes, see `vendor-patches/stlport.patch`
 - Grant reproduced from: `sdk/lib/3rdparty/stlport/README`
 
 ```

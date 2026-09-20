@@ -106,3 +106,9 @@ external/fex/** -text
 # guarantee, with no signal. The append-at-EOF collision is now fixed at the source instead:
 # entries go in the topical section their symptom belongs to, so two lanes rarely touch the
 # same region, and `tools/scan_doc_sections.py --lint` fails a newly minted number.
+
+# Vendor patches are BYTE-EXACT artifacts, not source. `* text=auto` above was
+# silently stripping CR from the diff bodies of patches taken against CRLF trees,
+# which made the committed patch fail to apply even though the working copy was
+# verified — caught on stlport.patch, where 99 CR lines vanished on commit.
+vendor-patches/*.patch -text
