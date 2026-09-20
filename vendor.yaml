@@ -47,6 +47,7 @@ trees:
     name: ACPICA
     upstream: https://github.com/acpica/acpica
     license: BSD-3-Clause OR GPL-2.0  # Intel dual-licence
+    license_ref: drivers/bus/acpi/acpica/include/acpi.h
     modified: unknown
     version:
       file: drivers/bus/acpi/acpica/include/acpixf.h
@@ -73,6 +74,10 @@ trees:
         - '__WDF_BUILD_NUMBER=(\d+)'
       join: "."
     review: >
+      LICENCE TEXT IS NOT IN THE TREE. 474 of 488 files carry a Microsoft copyright
+      line and not one carries a grant. The `MIT` in this entry comes from upstream's
+      2017 relicensing of the WDF sources — a fact about the world, not a quotation from
+      this tree. Nothing here can be cited for it.
       GPL FILES REMOVED 2026-09-19, tree now Microsoft's alone. It used to carry 3,851
       lines of ReactOS-authored GPL-2.0-or-later code inside this MIT drop — not
       adapters but REIMPLEMENTATIONS of two Microsoft components the source drop does
@@ -134,6 +139,7 @@ trees:
     name: AMD LibM for Windows
     upstream: https://github.com/amd/win-libm
     license: MIT
+    license_ref: sdk/lib/crt/math/libm_sse2/L2_by_pi_bits.c
     modified: unknown
     version:
       literal: git commit 6121d02
@@ -172,6 +178,7 @@ trees:
     name: FDLIBM (Sun Microsystems freely-distributable libm)
     upstream: https://www.netlib.org/fdlibm/
     license: "FDLIBM (Sun 1993 permissive; use/copy/modify/distribute, notice preserved)"
+    license_ref: sdk/lib/crt/math/ieee754/j0_y0.c
     modified: yes
     version:
       file: sdk/lib/crt/math/ieee754/j0_y0.c
@@ -285,9 +292,10 @@ trees:
         External/xxhash/tests/{sanity_test.c,sanity_test_vectors_generator.c} — upstream
         xxhash dual-licences its library BSD and its tests GPL. Not built by us; recorded
         because the files are in the tree.
-      Apache-2.0: >
+      Apache-2.0 WITH LLVM-exception: >
         External/code-format-helper/code-format-helper.py and
-        External/unordered_dense/test/third-party/FuzzedDataProvider.h (LLVM). FEX is a
+        External/unordered_dense/test/third-party/FuzzedDataProvider.h, which is LLVM's
+        and carries the LLVM-exception — a WITH clause the first pass dropped. FEX is a
         vendored tree that itself vendors: its External/ is a second registry we do not
         maintain, so those licences surface here rather than upstream.
     license_file: external/fex/LICENSE
@@ -352,6 +360,13 @@ trees:
         - '#define FREETYPE_MINOR\s+(\d+)'
         - '#define FREETYPE_PATCH\s+(\d+)'
       join: "."
+    review: >
+      LICENCE TEXT IS NOT IN THE TREE. README:16 says "see the file `docs/LICENSE.TXT'
+      for the available licenses", and there is no docs/ directory here — the licence
+      file was left behind when this was vendored. FTL-vs-GPL is a CHOICE that file
+      governs, so the missing document is the one that would say which arm applies. No
+      license_file/license_ref for that reason: a pointer to something that does not
+      state the grant is worse than no pointer.
     reason: >
       Font rasteriser, ~208K lines and the single largest vendored tree. win32k
       consumes it through a stable C API; upstream tracking beats ownership.
@@ -401,6 +416,11 @@ trees:
     version:
       file: sdk/include/reactos/libs/libmpg123/mpg123.h
       pattern: '#define MPG123_API_VERSION\s+(\d+)'
+    review: >
+      LICENCE TEXT IS NOT IN THE TREE, and the sources say so themselves: every file
+      header reads "free software under the terms of the LGPL... see COPYING and AUTHORS
+      files in distribution", and neither COPYING nor AUTHORS was vendored. Same defect
+      as freetype — the drop kept the code and left behind the document it points at.
     reason: MPEG audio decoder; upstream-tracked.
 
   - path: sdk/lib/3rdparty/libsamplerate
@@ -415,13 +435,23 @@ trees:
     name: win-iconv
     upstream: https://github.com/win-iconv/win-iconv
     license: Unlicense OR MIT
+    license_ref: sdk/lib/3rdparty/libwin-iconv/win_iconv.c
     modified: unknown
+    review: >
+      RECORDED `Unlicense OR MIT`, BUT THE FILE SAYS PUBLIC DOMAIN: win_iconv.c's header
+      is three lines and reads "This file is placed in the public domain." No Unlicense
+      text and no MIT text appears anywhere in the tree. A public-domain dedication and
+      the Unlicense are not the same instrument and are not equally effective in every
+      jurisdiction, so the recorded value is someone's interpretation, not a quotation.
+      Left as recorded rather than silently rewritten — this wants a human answer before
+      launch.
     reason: iconv shim over the Win32 codepage APIs; upstream-tracked.
 
   - path: sdk/lib/3rdparty/stlport
     name: STLport
     upstream: http://www.stlport.org/
     license: STLport licence (permissive)
+    license_file: sdk/lib/3rdparty/stlport/README
     modified: unknown
     reason: >
       C++ standard library used by the C++ substrate. Upstream is long dead, but it
@@ -442,8 +472,16 @@ trees:
   - path: dll/3rdparty/mbedtls
     name: Mbed TLS
     upstream: https://github.com/Mbed-TLS/mbedtls
-    license: Apache-2.0
+    license: Apache-2.0 OR GPL-2.0-or-later
+    license_ref: dll/3rdparty/mbedtls/aes.c
     review: >
+      LICENCE CORRECTED 2026-09-19: recorded as `Apache-2.0` for as long as this entry
+      has existed, but all 79 files say `SPDX-License-Identifier: Apache-2.0 OR
+      GPL-2.0-or-later`. Dual, so the GPL half is an OPTION rather than an obligation —
+      but stating only one arm of a dual grant misrepresents it. It survived the licence
+      ratchet's first day because `_SPDX` captured `([^\s*/]+)`, which truncates a
+      compound expression at the first space; fixed, and that fix is what surfaced this.
+
       MIXED UNTIL 2026-09-19, now clean: _reactos_strsafe_wrapper.c was a ReactOS-authored
       LGPL-2.1-or-later adapter (StringCchVPrintfEx -> _vsnprintf_s, Copyright 2015 Ismael
       Ferreras Morezuelas) sitting inside this Apache-2.0 drop. Moved out to
@@ -465,6 +503,7 @@ trees:
     name: libjpeg
     upstream: https://ijg.org/
     license: IJG
+    license_file: dll/3rdparty/libjpeg/README
     modified: unknown
     headers:
       - sdk/include/reactos/libs/libjpeg
@@ -477,6 +516,7 @@ trees:
     name: libpng
     upstream: http://www.libpng.org/pub/png/libpng.html
     license: libpng-2.0
+    license_file: dll/3rdparty/libpng/docs/LICENSE
     modified: unknown
     headers:
       - sdk/include/reactos/libs/libpng
@@ -489,6 +529,7 @@ trees:
     name: libtiff
     upstream: http://www.libtiff.org/
     license: libtiff (BSD-like)
+    license_ref: dll/3rdparty/libtiff/tif_open.c
     modified: unknown
     headers:
       - sdk/include/reactos/libs/libtiff
@@ -501,6 +542,7 @@ trees:
     name: libxslt
     upstream: https://gitlab.gnome.org/GNOME/libxslt
     license: MIT
+    license_file: dll/3rdparty/libxslt/Copyright
     modified: unknown
     headers:
       - sdk/include/reactos/libs/libxslt
@@ -528,6 +570,7 @@ trees:
     name: dxtn (S3TC)
     upstream: unknown
     license: MIT
+    license_ref: dll/3rdparty/dxtn/txc_compress_dxtn.c
     modified: unknown
     reason: S3TC/DXTn texture (de)compression for the GL stack.
 
@@ -548,6 +591,11 @@ trees:
         - '#define XML_MINOR_VERSION\s+(\d+)'
         - '#define XML_MICRO_VERSION\s+(\d+)'
       join: "."
+    review: >
+      LICENCE TEXT IS NOT IN THE TREE. This entry is two headers (expat.h,
+      expat_external.h) and neither carries a grant; expat's MIT text lives in its
+      COPYING, which was not vendored because the SOURCES were not either — only the
+      public headers are here.
     reason: >
       Headers only — there is NO expat source anywhere in this tree. Surfaced by
       building this registry; it was one of the six entries in the old hardcoded
@@ -556,10 +604,21 @@ trees:
   - path: sdk/include/reactos/libs/fullfat
     name: FullFAT (headers only)
     upstream: https://github.com/jameswalmsley/FullFAT
-    license: unknown  # James Walmsley, 2009
+    license: GPL-3.0-or-later  # James Walmsley, 2009
+    license_ref: sdk/include/reactos/libs/fullfat/fat.h
     modified: unknown
     headers:
       - sdk/include/reactos/libs/fullfat
+    review: >
+      LICENCE WAS RECORDED `unknown` AND IS NOT: every header carries the full GPL
+      grant in prose — "This program is free software: you can redistribute it and/or
+      modify it under the terms of the GNU General Public License ... either version 3
+      of the License, or (at your option) any later version", Copyright (C) 2009 James
+      Walmsley. So this is GPL-3.0-or-later, stated in the tree, and `unknown` simply
+      meant nobody had opened the file. Headers only, so it carries no body debt — but
+      GPL-3 in a kernel-adjacent codebase is worth being certain about rather than
+      leaving blank, and the `unknown` is exactly the kind of blank that reads as
+      "checked, indeterminate" when it means "not checked".
     reason: >
       Headers only — no FullFAT source in this tree. 19 headers, none of them
       excluded from the convention-alias scan before this registry existed.
