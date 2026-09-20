@@ -476,7 +476,12 @@ unsafe fn ExpFindEntryForThread(
 unsafe fn ExpBoostOwnerThread(Thread: PKTHREAD, OwnerThread: PKTHREAD) {
     if (OwnerThread as ULONG_PTR) & 0x3 == 0 {
         if ((*OwnerThread).Priority as i32) < ((*Thread).Priority as i32) && ((*OwnerThread).Priority as i32) < 14 {
-            KiAcquireThreadLock(Thread);
+            // The WAITER's lock does not protect the OWNER's dispatcher state, and
+            // everything below mutates OwnerThread -- PriorityDecrement, Quantum,
+            // KiSetPriorityThread. Live on every contended ERESOURCE acquisition
+            // where the owner runs at lower priority than a waiter.
+            // Upstream-Commit: e6d2efe90708
+            KiAcquireThreadLock(OwnerThread);
 
             (*OwnerThread).PriorityDecrement += (14 - (*OwnerThread).Priority as i32) as i8;
             // Quantum and QuantumReset are at different __bindgen_anon_N per arch
@@ -488,7 +493,7 @@ unsafe fn ExpBoostOwnerThread(Thread: PKTHREAD, OwnerThread: PKTHREAD) {
             { (*OwnerThread).__bindgen_anon_9.__bindgen_anon_1.Quantum = qr as i8; }
             KiSetPriorityThread(OwnerThread, 14);
 
-            KiReleaseThreadLock(Thread);
+            KiReleaseThreadLock(OwnerThread);
         }
     }
 }
