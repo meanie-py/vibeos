@@ -474,9 +474,24 @@ trees:
     upstream: https://github.com/win-iconv/win-iconv
     license: Unlicense OR MIT
     license_ref: sdk/lib/3rdparty/libwin-iconv/win_iconv.c
-    modified: yes  # reimplemented _errno import resolution
-    patch: vendor-patches/libwin-iconv.patch
+    modified: no  # patch was DEAD CODE; reverted to pristine 2026-09-20
     review: >
+      THE PATCH WAS DEAD CODE AND IS GONE (2026-09-20). The 22-line rewrite of
+      _errno resolution — reading the Import Address Table instead of upstream's
+      module-handle + GetProcAddress — sits entirely inside
+      `#if defined(USE_LIBICONV_DLL)`, and that symbol is defined only inside an
+      `#if 0` block at win_iconv.c:29. Nothing in the build defines it either.
+      Confirmed at the symbol level before touching anything: win_iconv.c.obj exports
+      iconv/iconv_close/iconv_open and contains neither find_imported_function nor
+      MyImageDirectoryEntryToData.
+
+      So the fork carried a reimplementation that never compiled, and it was the thing
+      making this tree unable to track upstream. Every file is now byte-identical to
+      upstream commit 1046215 except CMakeLists.txt, which is ours. That includes
+      converting CRLF to upstream's LF on the five files that differed only that way —
+      no content change, and it is what makes "byte-identical" literally true rather
+      than true-modulo-line-endings.
+
       DIFFED AGAINST UPSTREAM 2026-09-19 at the commit our ChangeLog matches
       (win-iconv 1046215, 2014-02-05). THE FIRST DIFF WAS A LIE: every file appeared to
       differ by thousands of lines, because our copy is CRLF and upstream is LF — 4,146
