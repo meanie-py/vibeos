@@ -48,7 +48,7 @@ trees:
     upstream: https://github.com/acpica/acpica
     license: BSD-3-Clause OR GPL-2.0  # Intel dual-licence
     license_ref: drivers/bus/acpi/acpica/include/acpi.h
-    modified: unknown
+    modified: yes  # ReactOS markers in 6 source file(s): acpi.h, acenv.h, acgcc.h
     version:
       file: drivers/bus/acpi/acpica/include/acpixf.h
       pattern: '#define ACPI_CA_VERSION\s+(0x[0-9A-Fa-f]+)'
@@ -140,7 +140,7 @@ trees:
     upstream: https://github.com/amd/win-libm
     license: MIT
     license_ref: sdk/lib/crt/math/libm_sse2/L2_by_pi_bits.c
-    modified: unknown
+    modified: yes  # ReactOS markers in 1 source file(s): _handle_error.c
     version:
       literal: git commit 6121d02
     reason: >
@@ -320,7 +320,7 @@ trees:
         Brian Paul, under the GNU Library General Public License v2 or later. One file,
         a symbol-mangling header, but a copyleft licence sitting inside a permissive
         drop is exactly the shape this registry exists to make visible.
-    modified: unknown
+    modified: yes  # ReactOS markers in 1 source file(s): trimregion.h
     headers:
       - dll/opengl/glu32/include
     reason: >
@@ -353,7 +353,7 @@ trees:
     upstream: https://freetype.org/
     license: GPL-2.0-only  # ELECTED from FreeType's FTL-or-GPL dual grant
     license_file: COPYING  # the repo's own GPL-2.0 text; see review
-    modified: unknown
+    modified: yes  # ReactOS markers in 16 source file(s): ftoption.h, ftbitmap.h, afcjk.c
     version:
       file: sdk/lib/3rdparty/freetype/include/freetype/freetype.h
       patterns:
@@ -389,7 +389,7 @@ trees:
     upstream: https://zlib.net/
     license: Zlib
     license_file: sdk/lib/3rdparty/zlib/LICENSE
-    modified: unknown
+    modified: yes  # ReactOS markers in 3 source file(s): ioapi.c, unzip.c, zip.c
     headers:
       - sdk/include/reactos/libs/zlib
     version:
@@ -413,7 +413,7 @@ trees:
     upstream: https://www.chiark.greenend.org.uk/~ian/adns/
     license: GPL-2.0-or-later
     license_file: sdk/lib/3rdparty/adns/COPYING
-    modified: unknown
+    modified: yes  # ReactOS markers in 2 source file(s): adns.h, setup.c
     version:
       file: sdk/lib/3rdparty/adns/client/client.h
       pattern: '#define ADNS_VERSION_STRING "([^"]+)"'
@@ -424,7 +424,7 @@ trees:
     upstream: https://www.mpg123.de/
     license: LGPL-2.1
     license_file: COPYING.LIB  # the repo's own LGPL-2.1 text; see review
-    modified: unknown
+    modified: yes  # ReactOS markers in 1 source file(s): parse.c
     headers:
       - sdk/include/reactos/libs/libmpg123
     version:
@@ -448,7 +448,7 @@ trees:
     upstream: https://libsndfile.github.io/libsamplerate/
     license: BSD-2-Clause
     license_file: sdk/lib/3rdparty/libsamplerate/COPYING
-    modified: unknown
+    modified: yes  # ReactOS markers in 1 source file(s): config.h
     reason: Sample-rate conversion; upstream-tracked.
 
   - path: sdk/lib/3rdparty/libwin-iconv
@@ -472,7 +472,7 @@ trees:
     upstream: http://www.stlport.org/
     license: STLport licence (permissive)
     license_file: sdk/lib/3rdparty/stlport/README
-    modified: unknown
+    modified: yes  # ReactOS markers in 1 source file(s): stdio_streambuf.cpp
     reason: >
       C++ standard library used by the C++ substrate. Upstream is long dead, but it
       is still a foreign STL implementation rather than ReactOS code; translating an
@@ -483,7 +483,7 @@ trees:
     upstream: unknown
     license: Public Domain (relayed author permission) — see review
     license_file: sdk/lib/3rdparty/cardlib/ReadMe.txt
-    modified: unknown
+    modified: yes  # ReactOS markers in 1 source file(s): cardbitmaps.cpp
     reason: Card-rendering library for the bundled card games, carried in the 3rdparty tree.
     unwelcome: >
       ACCEPTED FOR NOW, SLATED FOR REWRITE (owner, 2026-09-19). The grant is the
@@ -603,7 +603,7 @@ trees:
     upstream: https://sourceforge.net/projects/libtirpc/
     license: BSD-3-Clause
     license_file: dll/3rdparty/libtirpc/COPYING
-    modified: unknown
+    modified: yes  # ReactOS markers in 23 source file(s): asprintf.c, auth_sspi.c, auth_time.c
     version:
       file: dll/3rdparty/libtirpc/VERSION
       patterns:
@@ -629,7 +629,7 @@ trees:
     upstream: https://github.com/jameswalmsley/FullFAT
     license: GPL-3.0-or-later  # James Walmsley, 2009
     license_ref: sdk/include/reactos/libs/fullfat/fat.h
-    modified: unknown
+    modified: yes  # ReactOS markers in 1 source file(s): ff_memory.h
     headers:
       - sdk/include/reactos/libs/fullfat
     review: >
