@@ -6,6 +6,14 @@
 We forked ReactOS at `5213cf717cf` (2026-02-11). They have moved 1,263 commits since. This
 lane makes their work reachable without treating it as a patch queue we owe.
 
+> **STATUS 2026-09-20, later the same day.** Phases 0 and 1 are DONE and landed
+> (`1e222cecc52`). Every number below was re-derived and several were wrong; the table is
+> corrected in place and the originals are named where the error is instructive. The first
+> oracle bug is fixed (`4d7ef310adf`, `KeContextToTrapFrame`). Phase 2 is RETIRED — see
+> "Phases". Reports produced: `upstream-sync-absent-files.md`,
+> `upstream-sync-cohab-registry.md`, `upstream-sync-bug-leads.md`,
+> `upstream-sync-build-conflicts.md`.
+
 **The framing that matters, and the one thing not to lose:** upstream is not a source of
 patches for us to apply. It is an **oracle that tells us where the bugs are.** When they fix
 `ntoskrnl/ex/sysinfo.c`, that is evidence our `sysinfo.rs` — translated from the *pre-fix* C —
@@ -19,33 +27,53 @@ is a lead.
 
 ```
 fork point            5213cf717cf   2026-02-11  [BOOT][ENVIRON] Remove Environ (#8667)
-upstream since fork   1,263 commits            through 2026-09-19
-ours since fork       5,308 commits            we are moving ~4x their rate
+upstream since fork   1,266 commits            through 2026-09-20
+ours since fork       5,389 commits            we are moving ~4x their rate
 ```
 
-Upstream touched **3,958 files / 6,209 edits**, which split three ways:
+**The conflict set has a half-life: 244 -> 281 in one day (~37/day).** Re-measure before
+quoting, and prefer compressing the phases over spreading them across a week — spread out,
+you pay the resolution cost twice.
 
-| | files | edits | what it means for us |
-|---|---|---|---|
-| Still C/C++ here | 2,480 | 4,035 | directly mergeable |
-| We have translated | 668 | 1,149 | merge the dead C, then review the Rust |
-| Not in our tree at all | 810 | 1,025 | new upstream work, or files we deleted on purpose |
+Upstream touched **4,519 files**, which split three ways:
+
+| | files | what it means for us |
+|---|---|---|
+| Still C/C++ here | ~3,370 | directly mergeable |
+| We have translated (HIGH confidence) | **195** | merge the dead C, then review the Rust |
+| Not in our tree at all | **956** | see `upstream-sync-absent-files.md` for the 4 buckets |
 
 **Dry-run full merge** (`git merge-tree --write-tree --name-only HEAD upstream/master`,
-read-only, touches nothing):
+read-only, touches nothing). 281 conflicts, and the shape is NOT what this plan first
+assumed — partition by **disk existence first**:
 
 ```
-244 real conflicts
-   85  on files we have translated
-   79  in BUILD FILES              <- the landmine, see below
-    5  in modules/rostests         <- essentially clean
+281 conflicts
+  126  modify/delete        <- settled by POLICY from the absent-file buckets, not by
+                               reading diffs. The single largest block, and it is not
+                               merge work at all.
+   70  build files          <- the careful set; 8 carry comment-outs (see LANDMINE)
+   38  3rdparty/vendored    <- mostly take-theirs per vendor.yaml
+   21  live C               <- ours is living code; real per-hunk judgement
+   19  headers/IDL/spec
+    2  flipped dead C       <- theirs is the fresher oracle
+    5  rostests + other
 ```
+
+**Genuine hand-written work is ~110 files, 8 of them dangerous.** That is a session, not a
+week. Note what this does to the reframe below: merging the dead C touches only **2** of the
+281 conflicts. The reframe is still right, but its value is entirely in the edits that merge
+CLEANLY into flipped files — it is not what makes the conflict set affordable. What makes it
+affordable is that 126 conflicts are policy and 38 are vendored.
 
 Two caveats on these numbers, both of which bit me while producing them:
 
-- **The 668/787 "translated" count is an UPPER BOUND.** I matched `<stem>.c` to any
-  `<stem>.rs`, so `shlwapi/utils.cpp` matches *any* `utils.rs` in the tree. Phase 0 exists to
-  replace this with the real cohab registry. Do not quote 668 as fact.
+- **The 668 is RESOLVED and was wrong: the real figure is 195.** The stem match collapsed
+  `shlwapi/utils.cpp` onto any `utils.rs`. `tools/cohab-registry.json` now holds 1,091 flipped
+  TUs (832 HIGH / 255 MEDIUM / 4 LOW confidence), and 195 upstream-changed files hit a
+  HIGH-confidence entry. Regenerate with `tools/gen_cohab_registry.py`. Do not quote 668.
+  The same error class recurs easily — a later conflict partition called 15 files "flipped"
+  when 10 of them were not on disk at all. Check existence before classifying.
 - `git merge-tree` prints conflicted paths, a blank line, **then informational chatter**. Parse
   up to the blank line. Reading past it reports 795 conflicts instead of 244 — I published
   795 before catching it.
@@ -82,9 +110,24 @@ stale dead text and theirs is the fresher oracle.
 
 ## THE LANDMINE — read this before merging anything
 
-**79 of the 244 conflicts are in build files**, exactly where our cohab comment-outs live:
-`dll/ntdll/CMakeLists.txt`, `dll/win32/CMakeLists.txt`, `base/shell/explorer/CMakeLists.txt`,
-`boot/freeldr/freeldr/*.cmake` and more. Upstream touched **405 build files** in total.
+**Measured properly, the landmine is smaller than this plan first said — and it is in a
+different place.** Of the 70 conflicting build files, only **8** contain a commented-out
+source, i.e. only 8 can re-enable dead C by a bad resolution:
+
+```
+boot/freeldr/freeldr/CMakeLists.txt   dll/win32/kernel32/CMakeLists.txt
+boot/freeldr/freeldr/rosload.cmake    dll/win32/shell32/CMakeLists.txt
+dll/3rdparty/libtiff/CMakeLists.txt   dll/win32/syssetup/CMakeLists.txt
+dll/cpl/sysdm/CMakeLists.txt          ntoskrnl/ntos.cmake
+```
+
+Recipes for all 8: `upstream-sync-build-conflicts.md` (one is ASK-OWNER — `rosload.cmake`).
+
+**But the exposure is 80 files, not 8, and that is the real argument for the gate.** Upstream
+touched **400** build files; **197** of ours carry a comment-out; the intersection is **80**.
+A conflict is not required — a CLEAN three-way auto-merge can drop or revive a comment line
+with no marker and no resolution, so nobody reviews it. Review scales to 8. Only a census
+scales to 80.
 
 A merge that resolves one of those wrongly **re-enables a commented-out `.c`**. That is a
 partial cohab flip — the exact failure that froze the guest on 2026-09-19, where 58 live C++
@@ -95,11 +138,14 @@ while the guest was dead**, because the freeze is after the `[WIN32K] shell read
 Arriving via a merge it would be worse: git is the author, nobody reviewed it as a flip, and
 there is no diagnostic.
 
-**So phase 1 is a census gate, not a merge.** Snapshot every commented-out source line across
-every CMake file; after any upstream merge, assert that set is unchanged except where a human
-said otherwise. Model it on the scanners in `tools/` (`scan_orphan_modules`,
-`scan_dropped_seh_pairs`) and wire it into `vibeos-cli check`. **Do not run the big merge
-before this exists.**
+**DONE — `tools/cohab_census.py`, wired into `vibeos-cli check`** (`1e222cecc52`). 2,067
+entries in `tools/cohab-census.txt`. It is a **differ, not a classifier**: the pattern
+deliberately also matches prose naming a source file, because stable prose is stable in the
+snapshot, so a false positive costs one baseline line while a false negative costs a frozen
+guest. Line numbers are not part of the key — a merge shifts every line. After a DELIBERATE
+flip, re-run `--write` in the same commit, so the snapshot always records a decision someone
+made on purpose. `tools/test_cohab_census.py` asserts it FIRES on the 2026-09-19 shape,
+because a gate nobody has watched trip is not a gate.
 
 Related, from the shell32 lane the same night: a stale `ORPHAN-BY-DESIGN:` banner switches
 **four** checks off — `scan_extern_arity`, `scan_cc_mismatch`, `scan_silent_failures` and
@@ -141,12 +187,18 @@ merge rather than a trickle.
 
 | # | what | why in this order |
 |---|---|---|
-| **0** | Build the real cohab registry: which `.c`/`.cpp` are commented out in CMake **and** have a `#[no_mangle]` Rust owner | Replaces the stem-match guess. Every later number depends on it, and the guess is an upper bound. |
-| **1** | The comment-out census gate, wired into `vibeos-cli check` | Nothing else is safe without it |
-| **2** | Merge `modules/rostests` alone — **5 conflicts** | Proves the pipeline on the piece the owner explicitly wants (kmtest and friends are still C/C++ here and we want them), at near-zero risk |
-| **3** | Full merge, 244 conflicts, agent-resolved per the rule above; set all watermarks | One-time. Expect the build-file conflicts to dominate the care budget. |
-| **4** | Burn down the review queue: refreshed C diff vs our Rust | Now a diff, not a port |
-| **5** | `vibeos-cli upstream-sync` — fetch, merge, report the new queue | Only meaningful once the watermark is at parity; the owner will run it ~weekly |
+| **0** | Real cohab registry — **DONE** | `tools/cohab-registry.json`, 1,091 TUs, regenerate with `tools/gen_cohab_registry.py`. Killed the 668. |
+| **1** | Comment-out census gate — **DONE** | `tools/cohab_census.py` in `vibeos-cli check`. Nothing else was safe without it. |
+| **~~2~~** | ~~Merge `modules/rostests` alone~~ — **RETIRED** | Measured, and it is not the low-risk pipeline proof it looked like. It contributes **1** content conflict, so it proves almost nothing, while upstream's **+172,839 / −45,575 lines** across 461 files there make it a large merge in its own right. And our side is not incidental: 20 commits over 41 files, including the kmtest `-fasync-exceptions` fix and the i386 native-SEH validation — kmtest is our conformance oracle, so a `checkout upstream -- modules/rostests` would silently discard the harness fixes that make the sweep trustworthy. Doing it separately also pays the ~37/day conflict drift twice. Folded into 3. |
+| **3** | Full merge, ~281 conflicts, resolved by the partition above; set all watermarks | One-time. Apply the 126 modify/delete by POLICY first — that is 45% of the list and it is bucket lookup, not judgement. Then 38 vendored, then the ~110 that need a human. |
+| **4** | Burn down the review queue: refreshed C diff vs our Rust | Now a diff, not a port. **Started ahead of the merge** — the B1 set (63 files we DELETED) cannot wait for it, see below. |
+| **5** | `vibeos-cli upstream-sync` — fetch, merge, report the new queue | The owner's ruling: this stays an ONGOING AGENT LANE, not deterministic automation. Don't overinvest in tooling for it. |
+
+**Phase 4 does not depend on phase 3, and the most valuable part of it cannot.** The 63 B1
+files are C we *deleted*, not flipped. A merge refreshes dead C we don't compile; it can
+never reach code we removed. Those fixes arrive only by someone reading the upstream diff
+against our Rust. That is where the first confirmed bug came from
+(`4d7ef310adf`), and it is the highest-value output of this lane — above the merge itself.
 
 ---
 
@@ -174,10 +226,23 @@ merge rather than a trickle.
 - The 810 not-in-our-tree files are `modify/delete` conflicts and **each needs a reason, not a
   default**. Keep them out of any automated pass.
 
-## Open questions for the owner — do not decide these alone
+## Open questions — ANSWERED by the owner, 2026-09-20
 
-1. **The 810 absent files** — which were deleted on purpose and must stay deleted?
-2. **How much of `base/applications`, `rosapps`, `base/setup` do we even want?** They are large,
-   upstream-active, and barely touched here.
-3. **Whether the weekly sync is allowed to land unattended** once phases 0–4 are done, or always
-   produces a queue for review.
+1. **The absent files (956, not 810)** — "we did delete some code, we should eyeball them and
+   see if they move." Done: 606 new upstream / 63 deleted-because-translated (**the eyeball
+   list**) / 247 deliberate prunes / 40 renames. Full bucketing in
+   `upstream-sync-absent-files.md`. One trap found: two `libwine` files look like deletes but
+   are a MOVE (`c474d932eb7` → `sdk/lib/libwine/`), so a blanket "stay deleted" would orphan
+   upstream's future changes to them.
+2. **How much do we want?** — "prefer to KEEP THINGS INCLUDED unless it was deleted; if the
+   code was already translated to Rust then figure out what the change was and port to Rust."
+   So bucket A is a near-automatic accept, and B1 routes to Rust review rather than to a merge.
+3. **Unattended weekly sync?** — "unattended doesn't mean blindly merging, we will always need
+   an AI agent to do the work in the sync, so it would be an ongoing lane. we shouldn't
+   overinvest in deterministic tooling." Phase 5 is therefore a lane, not a cron job, and the
+   deterministic surface stays deliberately thin — the census gate is the one piece that has
+   to be mechanical, because it guards a failure smoke cannot see.
+
+**Still needing the owner:** `boot/freeldr/freeldr/rosload.cmake` is marked ASK-OWNER in
+`upstream-sync-build-conflicts.md` (upstream adds `ntoskrnl/ke/config.c` to `ROSLOAD_SOURCE`,
+and `ntldr/advopts.c` is new code extracted from two already-flipped files).
