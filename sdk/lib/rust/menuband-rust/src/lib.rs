@@ -38,11 +38,37 @@ pub mod types;
 pub mod island;
 #[path = "../../shell32-rust/src/shellcom.rs"]
 pub mod shellcom;
+// The ONE import surface for translated modules here — island glob plus the few hand-written
+// names that have no island equivalent. See its header for why nothing scalar or PIDL-shaped
+// crosses over from `shellcom`.
+pub mod prelude;
 
 pub mod menu_band;
 pub mod menu_desk_bar;
 pub mod menu_site;
+/// `CMenuFocusManager.cpp`, the whole TU — a PLAIN class (`--plain`): no COM map, no vtable,
+/// no activation, reached only by direct call from this library.
+/// Hand-written substrate for the module below: the class-static TlsIndex and the two
+/// HOOKPROCs, neither of which a worker body may own. Its header says why.
+pub mod menu_focus_manager_support;
+pub mod menu_focus_manager;
+pub mod merged_folder_support;
 pub mod merged_folder;
+/// `CMergedFolder.cpp`'s SECOND class. CMergedFolder itself has been Rust for a while, but
+/// CEnumMergedFolder stayed C++ behind six `_RustBridge` shims because its activation is
+/// `new CComObject<T>` — mapped now. Wired ahead of the flip so it is compiled and visible.
+/// Hand-written adapter for the module below: the DSA callback trampoline, which needs an
+/// ABI a worker body may not declare. Its header says why.
+pub mod enum_merged_folder_support;
+pub mod enum_merged_folder;
+/// `CStartMenu.cpp`'s five free functions (`--free-functions`). Its ONE class,
+/// CShellMenuCallback, has its methods defined inline in the .cpp and is a separate run —
+/// so the .cpp stays in CMake until that lands too.
+/// `CStartMenu.cpp`'s ONE class — its methods are defined inline in the .cpp, which is why a
+/// `^Class::method` survey of that TU finds nothing and reports it as free-functions-only.
+/// Activated by ATL's static `CComObject<T>::CreateInstance(&p)`, at refcount 0.
+pub mod shell_menu_callback;
+pub mod start_menu;
 
 #[panic_handler]
 fn panic(info: &core::panic::PanicInfo) -> ! {

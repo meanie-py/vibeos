@@ -810,6 +810,18 @@ def index_crate_exports(crate_src: Path) -> dict[str, set[str]]:
     return owners
 
 
+def _without_comments(code: str) -> str:
+    """`code` with Rust line and block comments blanked out.
+
+    Only for scans that ask "which names does this file USE" — a name in prose is not a use.
+    Newlines are preserved so any line-based reasoning downstream still lines up. Doc comments
+    (`///`, `//!`) go too: they are the most prose-dense part of a generated file and the most
+    likely to name a type the module does not actually reference.
+    """
+    code = re.sub(r"/\*.*?\*/", lambda m: "\n" * m.group(0).count("\n"), code, flags=re.S)
+    return re.sub(r"//[^\n]*", "", code)
+
+
 def resolve_in_crate_imports(code: str, crate: Path) -> tuple[str, list[str]]:
     """Emit `use crate::…::<name>;` for each name `code` references but does not define.
 
@@ -846,7 +858,13 @@ def resolve_in_crate_imports(code: str, crate: Path) -> tuple[str, list[str]]:
     local = defined_names(code)
     already = set(re.findall(r"^\s*use\s+[A-Za-z0-9_:]+::([A-Za-z_][A-Za-z0-9_]*)\s*;", code, re.M))
     provided = provided_names(crate) | island_names(crate_src)
-    words = set(re.findall(r"\b[A-Za-z_][A-Za-z0-9_]*\b", code))
+    # COMMENTS ARE NOT CODE. Scanning the raw text meant a name that appears only in prose
+    # got a `use` line generated for it — `enum_merged_folder.rs` mentions
+    # "shellutils.h ShellObjectCreator<T>" in a comment explaining its activation, and the
+    # assembled file came out with `use crate::drv_def_ext::ShellObjectCreator;`, a module
+    # that does not exist in that crate. The failure is loud (unresolved import) but it is
+    # generated, so it cannot be fixed in the file — only here.
+    words = set(re.findall(r"\b[A-Za-z_][A-Za-z0-9_]*\b", _without_comments(code)))
 
     notes: list[str] = []
     imports: list[str] = []

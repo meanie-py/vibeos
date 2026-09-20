@@ -1976,6 +1976,28 @@ flight is marked; in-flight lanes live in [`active-lanes/`](active-lanes/).*
   history + the reusable integration playbook live in
   `docs/engineering/active-lanes/shell32-com-plan.md`. `CMenuBand` + `CMergedFolder` are
   shared-infrastructure (the `menuband-rust` staticlib linked by both shell32 and rshell).
+
+  **The `shellmenu/` cluster is DONE except `CMenuToolbars.cpp` (2026-09-20).**
+  `CMenuFocusManager.cpp`, `CStartMenu.cpp` and `CMergedFolder.cpp` all left CMake together;
+  `CMenuToolbars.cpp` is the only shellmenu source the build still compiles, blocked on gap (2)
+  below (`CWindowImplBaseT<CToolbar<DWORD_PTR>>`, plus a derived and a base class that both
+  define a non-trivial constructor, which flattening cannot sequence). Two things in that flip
+  generalise beyond shellmenu:
+
+  * **A `*_RustBridge` shim does not disappear when its class is translated — it MOVES.** Each
+    flipped .cpp had been publishing shims that already-Rust modules call, so the symbols were
+    re-published from Rust under identical names and ABI (`menu_focus_manager_support.rs`,
+    `enum_merged_folder_support.rs`, `merged_folder_support.rs`). Only one needed thought:
+    `CEnumMergedFolder_CreateInstance_RustBridge` was `new CComObject<T>()`, which starts at
+    refcount **0** and is AddRef'd to 1 by the assign helper, whereas the generated
+    `_CreateInstance` follows the COM activation contract and returns **1**. Forwarding naively
+    leaks the enumerator for the life of the process.
+  * **The module-lock symbol belongs to the output CRATE, not to `--target`.** `menuband-rust`
+    links into shell32.dll AND rshell.dll, so it must call `MenuBandRustModuleLock` (both DLLs
+    define it) and not shell32's private `Shell32RustObjectLock`. A `--target shell32` run
+    emitted the latter, which linked shell32 perfectly and broke rshell — and only at the flip
+    that first made an rshell-reachable object pull the module out of the archive, several TUs
+    later. Now derived per-crate by `reactos.targets.module_lock_for_crate()`.
   The final five (`CFileDefExt`, `CShellDispatch`, `CMenuSite`, `CMenuDeskBar`, and the inline
   `CStartMenuDummy`) landed on 2026-07-18. The activatable object map now has zero C++ entries.
   `CCopyAsPathMenu` was the first out-of-sample cheap-model

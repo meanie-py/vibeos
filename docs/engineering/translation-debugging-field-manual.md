@@ -4811,6 +4811,35 @@ base 0. Note what a nonexistent feature does here: `#[cfg(feature = "…")]` for
 feature is not an error, it is simply never satisfied — so an invented feature name is a
 silent, permanent `#[cfg(false)]`.
 
+**Variant: the model RESOLVED the conditional, and picked the dead arm — and the seals cannot
+object, by construction.** The two variants above are about a condition that survived into the
+Rust wrongly. This one is about a condition that did not survive at all. CStartMenu's
+`GetMergedFolder` is written `#if MERGE_FOLDERS <second SHGetSpecialFolderLocation> #else <bare
+else on the first> #endif`, and `shellmenu.h:69` says `#define MERGE_FOLDERS 1`. The
+translation rendered the `#else`. The result compiles, links and boots: every success path
+returns the USER start menu unmerged, COMMON is never added, and the entire merge tail of the
+function — `CMergedFolder_CreateInstance`, both `AddNameSpace` calls — is unreachable code that
+no longer runs.
+
+**Why the call seal did not catch the dropped `SHGetSpecialFolderLocation` occurrence**, which
+is the part worth internalising: `dead_regions.preprocessor_conditional_spans` collapses a whole
+`#if`/`#else`/`#endif` into ONE dead span, deliberately and lexically, because deciding an arm
+needs macro state. Tokens in a dead span are *optional* rather than demanded — so the live arm's
+extra call was optional too, and omitting it was accepted. The mechanism that exists to make a
+dropped call loud is switched off precisely where the arms differ.
+
+**Tell.** `warning: unreachable statement` from rustc, pointing at the first line after the
+conditional. It arrives a build and a link after the money is spent, and it is the ONLY thing
+that objected. Treat an unreachable-statement warning in generated output as a wrong-arm
+suspicion until you have read the C.
+
+**Fix.** `rustconv translate` now emits a `PREPROCESSOR ARMS (verify the body took the live
+one)` audit finding for every body spanning a conditional, naming the live arm when it can tell.
+`dead_regions.sibling_header_int_macros()` pins `#define NAME <int>` from headers beside the TU
+— `pinned_int_macros` only ever read the module's `-D` list, which is why a macro one directory
+away read as undecidable. Report-only for now: a finding a reviewer settles by reading two lines
+beats a rejection that bills a retry to re-learn the same thing.
+
 The second was subtler and worth internalising: `msvcrt_init_exception` guarded the *same*
 `#ifdef RTTI_USE_RVA` with `#[cfg(target_pointer_width = "64")]`, which selects exactly the
 right arches — today. It is still wrong, because the C branches on `__i386__` and the two

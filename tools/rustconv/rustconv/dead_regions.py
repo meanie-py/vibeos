@@ -38,6 +38,7 @@ Relaxing the audit alone leaves the cache intact.
 from __future__ import annotations
 
 import re
+from pathlib import Path
 
 # `#if` family openers. `#else`/`#elif` do not open a region -- the whole conditional,
 # every arm of it, is treated as one dead span, because deciding WHICH arm is live needs
@@ -303,3 +304,101 @@ def dead_region_spans(text: str, masked: str | None = None) -> list[tuple[int, i
 def in_dead_region(spans: list[tuple[int, int]], start: int, end: int) -> bool:
     """True when [start, end) lies wholly inside one of `spans`."""
     return any(a <= start and end <= b for a, b in spans)
+
+
+# `#define NAME <int>` — the pinned-macro shape that lives in a HEADER rather than on the
+# compile command. Same decidability as a `-DNAME=<int>`, different hiding place.
+_HEADER_DEFINE_RE = re.compile(
+    r"^[ \t]*#[ \t]*define[ \t]+([A-Za-z_]\w*)[ \t]+"
+    r"\(?\s*(0[xX][0-9a-fA-F]+|\d+)\s*\)?[uUlL]*[ \t]*$",
+    re.MULTILINE,
+)
+
+
+def sibling_header_int_macros(source: Path | str) -> dict[str, int]:
+    """`#define NAME <int>` from the headers sitting beside `source`.
+
+    `pinned_int_macros` reads the module's `-D` list, which is the right place for
+    `_MSVCR_VER` and misses the equally-decidable case of a constant defined in the
+    module's own header. shellmenu.h's `#define MERGE_FOLDERS 1` is the one that cost us:
+    `GetMergedFolder` is written as `#if MERGE_FOLDERS ... #else ... #endif`, and with the
+    macro unreadable the whole conditional was treated as one dead span -- which made the
+    live arm's tokens OPTIONAL and let a body that translated the `#else` pass the seal.
+
+    Deliberately shallow: the headers in the same directory, no include graph, no
+    transitive closure. A macro this cannot see simply stays undecided, which is the
+    status quo -- so a wrong answer here is the only real failure mode, and a
+    directory-local `#define NAME <literal>` is about as unambiguous as C gets. A name
+    defined twice with different values is dropped rather than guessed at.
+    """
+    path = Path(source)
+    folder = path.parent
+    if not folder.is_dir():
+        return {}
+    found: dict[str, int] = {}
+    conflicting: set[str] = set()
+    for header in sorted(folder.glob("*.h")):
+        try:
+            text = header.read_text(encoding="utf-8", errors="replace")
+        except OSError:
+            continue
+        for match in _HEADER_DEFINE_RE.finditer(text):
+            name, literal = match.group(1), match.group(2)
+            value = int(literal, 16) if literal[:2].lower() == "0x" else int(literal)
+            if name in found and found[name] != value:
+                conflicting.add(name)
+            found[name] = value
+    for name in conflicting:
+        found.pop(name, None)
+    return found
+
+
+def conditional_arm_notes(text: str, pinned: dict[str, int] | None = None) -> list[str]:
+    """Notes about preprocessor conditionals in a C function body, for the audit.
+
+    A translated body is one arm of each conditional it spans, and NOTHING downstream
+    checks it picked the right one: the seals treat the whole conditional as dead (so the
+    live arm's tokens are merely optional), and the result compiles either way. The one
+    time this bit us the wrong arm was chosen with the macro in plain sight, and the only
+    thing that noticed was a rustc `unreachable statement` warning at link time, several
+    steps after the money was spent.
+
+    Report-only by design, and the strings say which arm is live when this module can tell
+    -- a finding a reviewer can settle by reading two lines beats a rejection that bills a
+    retry to re-learn the same thing.
+    """
+
+    def arm_truth(line: str) -> bool | None:
+        """`cond_truth`, plus the bare `#if NAME` form.
+
+        `eval_int_guard` only settles a `NAME <op> <int>` comparison, so `#if MERGE_FOLDERS`
+        comes back undecided even with the macro in `pinned`. Handled HERE rather than in
+        `cond_truth` on purpose: that one feeds `never_compiled_lines`, which decides what
+        we refuse to translate at all, and widening it is a change to run behaviour rather
+        than to a report.
+        """
+        settled = cond_truth(line, pinned)
+        if settled is not None or not pinned:
+            return settled
+        m = _COND_OPEN_RE.match(line)
+        if m is None or m.group(1) != "if":
+            return None
+        bare = m.group(2).split("//")[0].split("/*")[0].strip().strip("()").strip()
+        return pinned[bare] != 0 if bare in pinned else None
+
+    notes: list[str] = []
+    dead = never_compiled_lines(text, pinned)
+    for line in text.splitlines():
+        m = _COND_OPEN_RE.match(line)
+        if m is None:
+            continue
+        truth = arm_truth(line)
+        directive = line.strip()
+        if truth is None:
+            notes.append(f"{directive} (undecidable here — check the body took the built arm)")
+        else:
+            arm = "the #if arm is LIVE" if truth else "the #else arm is LIVE"
+            notes.append(f"{directive} — {arm}")
+    if notes and dead:
+        notes.append(f"{len(dead)} line(s) of this body are never compiled")
+    return notes
