@@ -663,6 +663,90 @@ def suspects(reg: Registry, min_files: int = 5) -> list[tuple[str, int]]:
     return sorted(((d, n) for d, n in hits.items() if n >= min_files), key=lambda x: -x[1])
 
 
+#: A ReactOS `LICENSE:` header value that names a FLOSS licence. Deliberately loose:
+#: the job is not to classify precisely, it is to notice when a file declares terms
+#: that are NOT one of these — "DDK", "Proprietary", "See the EULA".
+_FLOSS_DECLARATION = re.compile(
+    r"GPL|General Public|Lesser|MIT|BSD|Apache|Zlib|zlib|ISC|Public\s*Domain|CC0|CC-BY"
+    r"|MPL|Mozilla|Unlicense|WTFPL|X11|Boost|SGI|Info-ZIP|IJG|FDLIBM|STLport"
+    # "see COPYING" resolves to the repo-root GPL, which is ReactOS's own licence and
+    # is actually there. A pointer to any OTHER file is NOT on this list, and that is
+    # deliberate: atapi's header reads "DDK - see license.txt in the root dir", so an
+    # allowance for `LICENSE.TXT` silently excused the one file this scan exists to
+    # find. A pointer is not a licence — the same rule `--grants` is built on.
+    r"|see COPYING|Dual-licensed",
+    re.I,
+)
+
+
+def declared_licences(reg: Registry) -> list[tuple[str, str, int, str]]:
+    """Files whose own `LICENSE:` header names terms that are not FLOSS.
+
+    THE FIFTH RATCHET, and the one that would have caught `drivers/storage/ide/atapi`
+    on day one. That driver ships, is bound by nothing, and carries the Windows NT DDK
+    END-USER LICENSE AGREEMENT — indemnify-Microsoft, no-reverse-engineering, "contact
+    Microsoft for the applicable royalties due". Not FLOSS, in a tree we publish.
+
+    EVERY OTHER SCAN HERE IS STRUCTURALLY BLIND TO IT, which is the point of adding a
+    fifth. `suspects()` and `grant_gaps()` both key on a COPYRIGHT line, and atapi.c
+    and atapi.h contain none at all — zero, so no widening of `_FOREIGN_HOLDER` can
+    ever reach them. `grant_gaps()` would be satisfied anyway, because the directory
+    DOES ship a licence file; the file is just a EULA. And `license_drift()` only walks
+    trees already in the registry, which atapi is not.
+
+    What atapi does have is the one machine-readable thing in the file: ReactOS's own
+    header convention, `LICENSE: DDK - see license.txt in the root dir`. The parser for
+    that already existed (`_ROS_LICENSE_HDR`) and had only ever been pointed at
+    registered trees. This points it at everything.
+
+    Scoped tree-wide on purpose: a file that declares non-FLOSS terms matters most
+    exactly where the registry is NOT looking. A hit is settled either by deleting the
+    code, by correcting a wrong header, or by registering the tree in vendor.yaml with
+    the terms recorded — the registry entry is what turns it from a finding into a
+    decision someone made.
+    """
+    registered = tuple(t.path for t in reg.trees) + tuple(o.path for o in reg.ours)
+    out: list[tuple[str, str, int, str]] = []
+    seen: dict[str, tuple[str, int, str]] = {}
+    root = str(reg.repo)
+    for dirpath, dirnames, filenames in os.walk(root):
+        dirnames[:] = [
+            d
+            for d in dirnames
+            if not d.startswith(".")
+            and not d.startswith("build-")
+            and not _is_nested_checkout(os.path.join(dirpath, d))
+        ]
+        rel_dir = os.path.relpath(dirpath, root).replace(os.sep, "/")
+        if rel_dir.startswith(registered):
+            continue  # its terms are recorded and reviewed in vendor.yaml
+        for fn in filenames:
+            if not fn.endswith(_SRC_SUFFIXES):
+                continue
+            path = os.path.join(dirpath, fn)
+            try:
+                with open(path, encoding="utf-8", errors="replace") as fh:
+                    head = fh.read(2000)
+            except OSError:
+                continue
+            m = _ROS_LICENSE_HDR.search(head)
+            if not m:
+                continue
+            value = m.group(1).strip().rstrip("*/").strip()
+            if _FLOSS_DECLARATION.search(value):
+                continue
+            key = value.lower()
+            rel = os.path.relpath(path, root).replace(os.sep, "/")
+            if key in seen:
+                v, n, ex = seen[key]
+                seen[key] = (v, n + 1, ex)
+            else:
+                seen[key] = (value, 1, rel)
+    for value, n, example in seen.values():
+        out.append((value, example, n, os.path.dirname(example)))
+    return sorted(out, key=lambda r: -r[2])
+
+
 def grant_gaps(reg: Registry, min_files: int = 3) -> tuple[list[tuple[str, int, str]], dict]:
     """Code that claims a copyright but never says what you may do with it.
 
@@ -1056,6 +1140,18 @@ def check(reg: Registry) -> list[str]:
     # synthetic fixture trees by the scanner controls; demanding a generated legal
     # document from each of those would be a false alarm about the fixture. That the
     # committed repo ships one is asserted directly in test_vendored.py.
+    # THE FIFTH RATCHET. A file that names its own terms and names something that is
+    # not FLOSS is the one thing none of the other four can see: they all key on a
+    # copyright line or on a tree already in the registry, and atapi has neither.
+    for value, example, n, _dir in declared_licences(reg):
+        problems.append(
+            f"NON-FLOSS LICENCE DECLARED by {n} file(s): `{value}`\n"
+            f"    e.g. {example}\n"
+            f"    A ReactOS `LICENSE:` header naming terms that are not a FLOSS licence.\n"
+            f"    Settle it: delete the code, correct the header if it is wrong, or add a\n"
+            f"    vendor.yaml entry recording what the terms actually are and why we ship it."
+        )
+
     # The FOURTH ratchet, and the newest. vendor.yaml sees C; nothing saw the crates
     # cargo pulls in, which is how smoltcp — the TCP/IP stack — shipped unrecorded.
     # Checked against Cargo.lock rather than against live `cargo metadata`, so this
@@ -1366,6 +1462,11 @@ def main(argv: list[str] | None = None) -> int:
     ap.add_argument("--emit", action="store_true", help="print the registry table")
     ap.add_argument("--write-stamps", action="store_true", help="regenerate VENDORED markers")
     ap.add_argument(
+        "--declared",
+        action="store_true",
+        help="files whose own LICENSE: header names terms that are not FLOSS",
+    )
+    ap.add_argument(
         "--write-crates",
         action="store_true",
         help="regenerate the Rust-crate snapshot from cargo metadata (needs cargo)",
@@ -1466,6 +1567,20 @@ def main(argv: list[str] | None = None) -> int:
             "\nA disclaimer is not a grant and a pointer is not a licence. Each of these\n"
             "is either owed a licence text in the tree, a corrected reference, or a\n"
             "vendor.yaml entry recording what the terms actually are."
+        )
+        return 1
+
+    if args.declared:
+        rows = declared_licences(reg)
+        if not rows:
+            print("no file declares a non-FLOSS licence outside the registry")
+            return 0
+        print(f"{len(rows)} non-FLOSS licence declaration(s):\n")
+        for value, example, n, _d in rows:
+            print(f"  {n:4} file(s)  `{value}`\n           e.g. {example}")
+        print(
+            "\nA ReactOS `LICENSE:` header is the code naming its own terms. Delete it,"
+            "\ncorrect it, or record it in vendor.yaml. `--check` fails until then."
         )
         return 1
 
