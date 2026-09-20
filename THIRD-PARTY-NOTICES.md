@@ -2,7 +2,7 @@
 
 This product includes third-party software. **This file is GENERATED** from `vendor.yaml` by `tools/vendored.py --notices` — edit the registry, not this file. Each entry reproduces the licence grant as it appears in the tree.
 
-23 third-party components:
+23 vendored C/C++ components:
 
 - [ACPICA](#acpica) — 0x20260408 — BSD-3-Clause OR GPL-2.0
 - [adns](#adns) — 1.0 — GPL-2.0-or-later
@@ -3602,3 +3602,28 @@ Copyright notice:
   Jean-loup Gailly        Mark Adler
   jloup@gzip.org          madler@alumni.caltech.edu
 ```
+
+## Rust crates
+
+This product also links 18 third-party Rust crates, out of 58 that enter the build. Generated from `cargo metadata` into `tools/rust-crates.yaml`; see that file for the ones used only to build or test, and for why the shipped/host split errs toward listing more.
+
+| crate | version | licence |
+| --- | --- | --- |
+| bitflags | 1.3.2 | MIT/Apache-2.0 |
+| bitflags | 2.13.0 | MIT OR Apache-2.0 |
+| byteorder | 1.5.0 | Unlicense OR MIT |
+| cfg-if | 1.0.4 | MIT OR Apache-2.0 |
+| defmt | 0.3.100 | MIT OR Apache-2.0 |
+| defmt | 1.1.0 | MIT OR Apache-2.0 |
+| hash32 | 0.3.1 | MIT OR Apache-2.0 |
+| heapless | 0.9.3 | MIT OR Apache-2.0 |
+| libz-rs-sys | 0.6.3 | Zlib |
+| log | 0.4.32 | MIT OR Apache-2.0 |
+| managed | 0.8.0 | 0BSD |
+| safe-mmio | 0.3.0 | MIT OR Apache-2.0 |
+| smoltcp | 0.13.1 | 0BSD |
+| stable_deref_trait | 1.2.1 | MIT OR Apache-2.0 |
+| thiserror | 2.0.18 | MIT OR Apache-2.0 |
+| virtio-drivers | 0.13.0 | MIT |
+| zerocopy | 0.8.52 | BSD-2-Clause OR Apache-2.0 OR MIT |
+| zlib-rs | 0.6.3 | Zlib |

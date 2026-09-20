@@ -3,17 +3,16 @@
 # Two halves. `trees:` is what we do NOT translate. `ours:` is foreign-COPYRIGHT code we
 # DO — the verdicts that used to have nowhere to live. See the header above `ours:`.
 #
-# KNOWN GAP: THIS FILE DOES NOT SEE RUST CRATES. C/C++ only, and that is a scoping
-# accident rather than a decision. The question above — "is this ours to translate?" —
-# is meaningless for a crates.io dependency, because crates are the translation
-# DESTINATION; but this registry's OTHER job, provenance and licensing for what we
-# ship, applies to them in full. 58 external crates are in sdk/lib/rust/Cargo.lock and
-# none is recorded here or in THIRD-PARTY-NOTICES.md, including smoltcp (0BSD), which
-# IS the TCP/IP stack. `--suspects` cannot find them either: it walks directories for
-# foreign copyright headers, and crates live in ~/.cargo/registry, outside the repo.
-# All 58 are permissive, so this is a recording gap, not a licence problem. The plan —
-# a GENERATED `crates:` half fed from `cargo metadata` — is in
-# docs/product/vibeos-roadmap.md under "Known bugs & flakes". Found 2026-09-20.
+# THE RUST HALF LIVES IN tools/rust-crates.yaml. This file models vendored C/C++
+# only. Its question — "is this ours to translate?" — is meaningless for a crates.io
+# dependency, because crates are the translation DESTINATION; but the registry's other
+# job, provenance and licensing for what we ship, applies to them in full, and until
+# 2026-09-20 nothing tracked them at all. smoltcp, which IS the TCP/IP stack, shipped
+# unrecorded. That half is GENERATED from `cargo metadata` (`--write-crates`), gated
+# for freshness against sdk/lib/rust/Cargo.lock by `check`, and feeds the same
+# THIRD-PARTY-NOTICES.md. Note `--suspects` still cannot see crates and never will:
+# it walks directories for foreign copyright headers, and crates live in
+# ~/.cargo/registry, outside the repo. Discovery there is the lockfile's job.
 #
 # WHY THIS EXISTS
 # ---------------

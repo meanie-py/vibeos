@@ -704,3 +704,75 @@ def test_the_three_trees_the_prose_pass_actually_found_stay_recorded():
     assert "BSL-1.0" in by_path["external/fex"].license_extra
     assert "LGPL-2.0-or-later" in by_path["sdk/lib/3rdparty/adns"].license_extra
     assert "LGPL-2.1-or-later" in by_path["dll/3rdparty/libtirpc"].license_extra
+
+
+# ── the Rust-crate half (added 2026-09-20) ─────────────────────────────────
+
+
+def test_every_external_crate_in_the_lockfile_is_recorded():
+    """The gap that motivated this: smoltcp — the TCP/IP stack — shipped for months
+    with no entry anywhere, because the registry modelled vendored C and nothing
+    modelled what cargo pulls in."""
+    lock = set(vendored.cargo_lock_crates(REPO))
+    snap = {(n, v) for n, v, _lic, _ships in vendored.crates_rows(REPO)}
+    assert lock == snap, (
+        f"in Cargo.lock but not recorded: {sorted(lock - snap)}\n"
+        f"recorded but gone from Cargo.lock: {sorted(snap - lock)}\n"
+        "regenerate with: tools/vendored.py --write-crates"
+    )
+
+
+def test_the_crates_the_os_actually_links_are_marked_shipping():
+    """A tripwire on the split collapsing. These four are load-bearing and obvious --
+    smoltcp is the network stack, virtio-drivers and safe-mmio are how it reaches the
+    hardware, zlib-rs is compression. If a refactor of the reachability walk quietly
+    marked them host-only, the notices file would stop listing them and nothing else
+    would notice."""
+    ships = {n for n, _v, _l, s in vendored.crates_rows(REPO) if s}
+    for name in ("smoltcp", "virtio-drivers", "safe-mmio", "zlib-rs"):
+        assert name in ships, f"{name} is no longer marked as shipping"
+
+
+def test_proc_macro_crates_are_never_marked_shipping():
+    """A proc-macro runs inside the compiler and cannot be in the product. This is the
+    one half of the split that is provable rather than best-effort, so it is the half
+    worth asserting."""
+    rows = {n: s for n, _v, _l, s in vendored.crates_rows(REPO)}
+    for name in ("zerocopy-derive", "thiserror-impl", "defmt-macros", "enumn"):
+        assert name in rows, f"{name} vanished from the snapshot"
+        assert not rows[name], f"{name} is a proc-macro and must not be marked shipping"
+
+
+def test_a_lockfile_crate_missing_from_the_snapshot_fails_the_check(tmp_path):
+    """The ratchet has to be able to fail, or it is decoration."""
+    _write(
+        tmp_path,
+        """
+        containers: []
+        trees:
+          - path: libs/thing
+            name: Thing
+            license: MIT
+            license_note: test
+            reason: test
+    """,
+    )
+    (tmp_path / "libs" / "thing").mkdir(parents=True)
+    (tmp_path / "sdk" / "lib" / "rust").mkdir(parents=True)
+    (tmp_path / "sdk" / "lib" / "rust" / "Cargo.lock").write_text(
+        '[[package]]\nname = "brand-new-crate"\nversion = "1.0.0"\n'
+        'source = "registry+https://github.com/rust-lang/crates.io-index"\n'
+    )
+    (tmp_path / "tools").mkdir()
+    (tmp_path / "tools" / "rust-crates.yaml").write_text("crates:\n")
+    problems = vendored.check(vendored.load(tmp_path))
+    assert any("brand-new-crate 1.0.0" in p for p in problems), problems
+
+
+def test_the_notices_file_lists_the_shipped_crates():
+    doc = vendored.notices(vendored.load(REPO))
+    assert "## Rust crates" in doc
+    for name in ("smoltcp", "virtio-drivers", "zlib-rs"):
+        assert f"| {name} |" in doc, f"{name} is missing from the notices table"
+    # ...and does NOT list the host-only ones, or the document overstates what ships.
+    assert "| zerocopy-derive |" not in doc
