@@ -15,7 +15,7 @@ This product includes third-party software. **This file is GENERATED** from `ven
 - [libjpeg](#libjpeg) — 9d — IJG
 - [libmpg123](#libmpg123) — 1.26.2 — LGPL-2.1
 - [libpng](#libpng) — 1.6.58 — libpng-2.0
-- [libsamplerate](#libsamplerate) — 0.1.9 — BSD-2-Clause
+- [libsamplerate](#libsamplerate) — 0.2.2 — BSD-2-Clause
 - [libtiff](#libtiff) — 4.7.0 — libtiff (BSD-like)
 - [libtirpc](#libtirpc) — 0.2.1 — BSD-3-Clause
 - [libxml2](#libxml2) — 2.12.8 — MIT
@@ -1991,10 +1991,9 @@ be appreciated.
 ## libsamplerate
 
 - Upstream: https://libsndfile.github.io/libsamplerate/
-- Version: 0.1.9
+- Version: 0.2.2
 - In this tree: `sdk/lib/3rdparty/libsamplerate`
 - Licence: BSD-2-Clause
-- Modified by us: yes, see `vendor-patches/libsamplerate.patch`
 - Grant reproduced from: `sdk/lib/3rdparty/libsamplerate/COPYING`
 
 ```
