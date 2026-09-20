@@ -113,6 +113,7 @@ trees:
     license: MIT  # upstream relicensed the WDF sources to MIT in 2017
     license_file: sdk/lib/drivers/wdf/LICENSE
     modified: "lightly"  # ~35 marker files + mechanical portability; see review
+    patch: vendor-patches/wdf.patch
     headers:
       - sdk/include/wdf
     version:
@@ -171,14 +172,56 @@ trees:
       Framework interop commented out behind it while containing no literal "reactos" text
       at all, so a grep-only survey misses it completely.
 
-      Scale: 517 files compared across both halves, 83 byte-identical, 222 identical after
-      normalization, 295 differing. That number is misleading alone — most of it is
-      mechanical portability: #include case-normalization for a case-sensitive filesystem,
-      NTAPI/WDFAPI calling-convention annotations added for clang/GCC, WPP .tmh includes
-      commented out in 84 files, backslash include paths fixed, and a few casts. Not
-      vendored: src/publicinc/wdf/kmdf/1.15 and both UMDF public header sets. Vendored but
-      NEVER BUILT: umdf/ (10 files) and shared/*/um/ (91 files) — about 101 files of dead
-      weight, since CMakeLists builds wdf01000 from SOURCE_SHARED + SOURCE_KM only.
+      SCALE, REMEASURED 2026-09-20 during patch-ification, and the file-set question is
+      now settled: we vendor src/framework/ ENTIRELY — all 475 files, none skipped, none
+      added, mapping 1:1 with no case-only or ambiguous names. src/publicinc/ is not
+      vendored AT ALL (156 files), which corrects the earlier note that only kmdf/1.15
+      and the UMDF header sets were left out.
+
+      Of those 475: 80 byte-identical, 395 differing, 34,224 changed lines. THAT NUMBER
+      IS 85% NOISE. Our copy has zero trailing whitespace in 477 files — the repo's
+      .editorconfig sets trim_trailing_whitespace for [*] — while upstream has it
+      everywhere. Strip it from upstream first and the delta becomes 263 files and 5,411
+      lines, with 132 files that differed by NOTHING ELSE collapsing to identical. Diff
+      this tree with `-w` or you will read churn as a port.
+
+      The 5,411 real lines: 1,252 #include path/case (backslashes, and case for a
+      case-sensitive filesystem), 1,197 comments, 1,049 NTAPI/WDFAPI/__declspec
+      annotations for clang and GCC, 401 blank lines, 178 WPP .tmh includes commented
+      out, 142 preprocessor, 122 `__super::` rewritten to the explicit base, 62 marked
+      reactos blocks, 19 ROSWDFNOTIMPLEMENTED, and 989 everything-else concentrated in
+      four files: poxinterface.cpp (228), fxpkgpnp.cpp (166), fxpkgpnpkm.cpp (92),
+      fxpkgfdokm.cpp (62).
+
+      Vendored but NEVER BUILT: umdf/ (10 files) and shared/*/um/ (91) — about 101 files
+      of dead weight, since CMakeLists builds wdf01000 from SOURCE_SHARED + SOURCE_KM
+      only. They are in the patch because they are in the tree, but nothing compiles
+      them, so their delta has never been exercised.
+
+      PATCH-IFIED 2026-09-20. `vendor-patches/wdf.patch` (420 KB, 263 files) reproduces
+      this tree byte-for-byte from a pristine win-10.0.10586.0 src/framework AFTER the
+      one-line trailing-whitespace normalization, which the patch header spells out.
+      Verified by doing exactly that on a fresh extraction: 0 differences, 0 fuzz, 0
+      rejects.
+
+      NO UNMARKED FUNCTIONAL REMOVALS REMAIN, and that is checked rather than assumed.
+      The delta was scanned for files that net out to removed or commented-out
+      executable code while carrying no `reactos` and no ROSWDFNOTIMPLEMENTED anywhere.
+      Six matched; all six are benign, and two are outright FIXES: fxpkgio.cpp casts
+      DispatchContext through ULONG_PTR before UCHAR in two ASSERTs (casting a pointer
+      straight to UCHAR is ill-formed on 64-bit clang), and fxtelemetry.cpp repairs a
+      comment ending in a bare backslash, which is a line continuation that would have
+      swallowed the next line. The rest are declare-at-top merged into declare-at-use and
+      an RtlZeroMemory rewritten as `*p = {}`. The one real unmarked removal this tree
+      DID carry — powerstatemachinekm.cpp skipping the DMA-enabler PowerUp()/PowerDown()
+      loops — was restored earlier the same day, so it is deliberately absent here.
+
+      THE TARBALL HASH IS NOT A PROVENANCE ANCHOR, and the entry below should not be read
+      as one. Refetching tag win-10.0.10586.0 on 2026-09-20 produced sha256
+      d252fc80175bb249a278ea284a887ec201220f709bf04b110f1afc3fdb6a4b31, not the
+      6289cf8b5284ab27a801f7a04d9bb35c893159e82c04055df079e3ab3dcb3304 recorded earlier:
+      GitHub's auto-generated archives are not byte-stable. The tag is the identifier and
+      the round-trip is the check.
 
       *** ONE UNMARKED FUNCTIONAL REMOVAL, and it is the finding worth acting on. ***
       shared/irphandlers/pnp/km/powerstatemachinekm.cpp comments out the DMA-enabler

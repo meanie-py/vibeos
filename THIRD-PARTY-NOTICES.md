@@ -2775,6 +2775,7 @@ for WC_NO_BEST_FIT_CHARS */
 - Version: 1.17.7600
 - In this tree: `sdk/lib/drivers/wdf`, `sdk/include/wdf`
 - Licence: MIT
+- Modified by us: yes, see `vendor-patches/wdf.patch`
 - Grant reproduced from: `sdk/lib/drivers/wdf/LICENSE`
 
 ```
