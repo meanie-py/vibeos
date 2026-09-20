@@ -86,6 +86,7 @@ _PYTEST_SUITES = [
     (".", ".", "tools/test_scan_flex_array_panic.py"),
     (".", ".", "tools/test_kernel_probe.py"),
     (".", ".", "tools/test_scan_orphan_modules.py"),
+    (".", ".", "tools/test_cohab_census.py"),
     (".", ".", "tools/test_build_invalidation.py"),
     (".", ".", "tools/test_bindgen_generation.py"),
     (".", ".", "tools/test_gate_source_partitions.py"),
