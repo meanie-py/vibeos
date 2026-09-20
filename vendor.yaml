@@ -424,6 +424,30 @@ trees:
       the comment says WINE, not ReactOS. It arrived already-patched in the bulk import
       rather than being edited here — which is exactly why "no __REACTOS__ marker" is
       not evidence of a clean drop.
+
+      RESOLVED 2026-09-20 — the xmlschemas.c patch is JUSTIFIED AND MINIMAL; it does not
+      block CVE tracking. Two stray-double-semicolon cleanups were reverted to pristine, so
+      xmlschemas.c now differs from upstream 2.12.8 by exactly the 2-line `#if 0`. `patch
+      -p1 --dry-run` applies clean to a fresh 2.12.8 extraction and the result is byte-
+      identical to our tree for all three files, so a version bump is a normal rebase of one
+      tiny hunk.
+
+      The hunk disables the XSD 1.0 Unique Particle Attribution check. Measured with a host
+      probe (real dll/win32/msxml3/xdr.c linked against PRISTINE upstream 2.12.8, datatypes
+      namespace wired as schema.c does): 5 of the 6 XDR schemas in the msxml3 winetest
+      compile clean unpatched; szDatatypeXDR emits 'The content model is not determinist'
+      twice; applying only this hunk to that same tree makes all 6 compile. Necessary and
+      sufficient, A/B on one binary.
+
+      It is NOT covering for a bug in xdr.c. XDR's open content model permits extra DECLARED
+      elements as trailing content, lowered to an xsd:any with namespace='##any' and
+      processContents='strict', which unavoidably overlaps its sibling particles when one is
+      optional or repeating — inherent UPA. XSD 1.1 added xs:openContent for exactly this;
+      libxml2 implements neither. Narrowing to ##other would satisfy UPA and be WRONG: the
+      winetest requires <test><x/><x/><y/><z/><z/><w/></test> to VALIDATE (w is declared,
+      same namespace) while rejecting an undeclared <v/>. All 4 test_openseq documents
+      validate exactly as asserted with the hunk in place. Full evidence in the patch
+      header. Do not 'fix' xdr.c and do not translate it expecting to remove this patch.
     reason: XML parser; upstream-tracked.
 
   - path: sdk/lib/3rdparty/adns
