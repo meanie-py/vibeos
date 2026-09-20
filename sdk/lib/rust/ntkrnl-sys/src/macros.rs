@@ -250,4 +250,5 @@ extern "C" {
     // Security privileges
     pub static mut SeTcbPrivilege: ddk::LUID;
     pub static mut SeCreatePermanentPrivilege: ddk::LUID;
+    pub static mut SeSecurityPrivilege: ddk::LUID;
 }
