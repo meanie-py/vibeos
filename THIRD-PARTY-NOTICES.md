@@ -2779,6 +2779,7 @@ Fix when convenient by copying upstream's LICENSE.md into sdk/lib/drivers/wdf an
 - Version: 1.2.13
 - In this tree: `sdk/lib/3rdparty/zlib`, `sdk/include/reactos/libs/zlib`
 - Licence: Zlib
+- Modified by us: yes, see `vendor-patches/zlib.patch`
 - Grant reproduced from: `sdk/lib/3rdparty/zlib/LICENSE`
 
 ```

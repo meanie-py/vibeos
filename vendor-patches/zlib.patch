@@ -1,0 +1,125 @@
+# zlib 1.2.13 — our delta from pristine upstream.
+#
+# Upstream: https://github.com/madler/zlib/releases/download/v1.2.13/zlib-1.2.13.tar.gz
+#           sha256 b3a24de97a8fdbc835b9833169501030b8977031bcb54b3b3ac13740f846ab30
+# Apply from sdk/lib/3rdparty/zlib/ with: patch -p1 < vendor-patches/zlib.patch
+#
+# SCOPE: zlib PROPER IS PRISTINE. Every file that makes up the compression library —
+# adler32, crc32, deflate, inflate, inftrees, trees, zutil, gz*, compress, uncompr,
+# infback and both public headers — is byte-identical to upstream 1.2.13. Nothing in
+# this patch touches bounds checking, allocation, or the inflate/deflate state
+# machines. The entire delta is three files under contrib/minizip, the ZIP-archive
+# helper that ships alongside zlib.
+#
+# WHAT IT DOES: minizip has two file backends, a stdio FILE* one (ioapi.c's
+# fill_fopen64_filefunc and friends) and a win32-HANDLE one (iowin32.c). ReactOS uses
+# only the win32 one, so the stdio half and the zipOpen2/unzOpen2 entry points that
+# depend on it are compiled out behind __REACTOS__. unzip.c additionally stops
+# NOUNCRYPT from being force-defined, which ENABLES minizip's traditional-PKWARE
+# decryption support rather than disabling it — note that direction, it is easy to
+# read backwards.
+#
+# WHY NOT A BUILD FLAG: __REACTOS__ already IS a build flag; what cannot move into the
+# build is the choice of WHICH REGIONS it guards, because upstream has no such
+# conditionals to switch on. Deleting the stdio backend outright would be a larger
+# delta, not a smaller one.
+#
+# DE-PATCHED 2026-09-20 (was five files, now three):
+#   iowin32.c   restored to pristine. It had four `const char* mode_fopen = NULL;`
+#               declarations commented out to silence -Wunused-variable. That is a
+#               warning, not a portability need, so it moved into the build as
+#               `target_compile_options(minizip PRIVATE -Wno-unused-variable)`,
+#               scoped to minizip so it cannot hide an unused variable in zlib proper.
+#   zip.c       the cosmetic hunk (braces added around a `for` body) is reverted; only
+#               the two __REACTOS__ hunks remain.
+# Both were pure noise that would have had to be re-applied at every bump.
+#
+--- a/contrib/minizip/ioapi.c
++++ b/contrib/minizip/ioapi.c
+@@ -66,6 +66,7 @@
+     }
+ }
+ 
++#ifndef __REACTOS__
+ void fill_zlib_filefunc64_32_def_from_filefunc32(zlib_filefunc64_32_def* p_filefunc64_32,const zlib_filefunc_def* p_filefunc32)
+ {
+     p_filefunc64_32->zfile_func64.zopen64_file = NULL;
+@@ -255,3 +256,5 @@
+     pzlib_filefunc_def->zerror_file = ferror_file_func;
+     pzlib_filefunc_def->opaque = NULL;
+ }
++
++#endif
+--- a/contrib/minizip/unzip.c
++++ b/contrib/minizip/unzip.c
+@@ -68,9 +68,11 @@
+ #include <stdlib.h>
+ #include <string.h>
+ 
++#ifndef __REACTOS__
+ #ifndef NOUNCRYPT
+         #define NOUNCRYPT
+ #endif
++#endif
+ 
+ #include "zlib.h"
+ #include "unzip.h"
+@@ -605,9 +607,11 @@
+ 
+     us.z_filefunc.zseek32_file = NULL;
+     us.z_filefunc.ztell32_file = NULL;
++#ifndef __REACTOS__
+     if (pzlib_filefunc64_32_def==NULL)
+         fill_fopen64_filefunc(&us.z_filefunc.zfile_func64);
+     else
++#endif
+         us.z_filefunc = *pzlib_filefunc64_32_def;
+     us.is64bitOpenFunction = is64bitOpenFunction;
+ 
+@@ -761,7 +765,7 @@
+     return (unzFile)s;
+ }
+ 
+-
++#ifndef __REACTOS__
+ extern unzFile ZEXPORT unzOpen2 (const char *path,
+                                         zlib_filefunc_def* pzlib_filefunc32_def)
+ {
+@@ -774,6 +778,7 @@
+     else
+         return unzOpenInternal(path, NULL, 0);
+ }
++#endif
+ 
+ extern unzFile ZEXPORT unzOpen2_64 (const void *path,
+                                      zlib_filefunc64_def* pzlib_filefunc_def)
+--- a/contrib/minizip/zip.c
++++ b/contrib/minizip/zip.c
+@@ -854,9 +854,11 @@
+ 
+     ziinit.z_filefunc.zseek32_file = NULL;
+     ziinit.z_filefunc.ztell32_file = NULL;
++#ifndef __REACTOS__
+     if (pzlib_filefunc64_32_def==NULL)
+         fill_fopen64_filefunc(&ziinit.z_filefunc.zfile_func64);
+     else
++#endif
+         ziinit.z_filefunc = *pzlib_filefunc64_32_def;
+ 
+     ziinit.filestream = ZOPEN64(ziinit.z_filefunc,
+@@ -917,6 +919,7 @@
+     }
+ }
+ 
++#ifndef __REACTOS__
+ extern zipFile ZEXPORT zipOpen2 (const char *pathname, int append, zipcharpc* globalcomment, zlib_filefunc_def* pzlib_filefunc32_def)
+ {
+     if (pzlib_filefunc32_def != NULL)
+@@ -928,6 +931,7 @@
+     else
+         return zipOpen3(pathname, append, globalcomment, NULL);
+ }
++#endif
+ 
+ extern zipFile ZEXPORT zipOpen2_64 (const void *pathname, int append, zipcharpc* globalcomment, zlib_filefunc64_def* pzlib_filefunc_def)
+ {

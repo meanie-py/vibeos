@@ -100,7 +100,7 @@ static voidpf win32_build_iowin(HANDLE hFile)
 
 voidpf ZCALLBACK win32_open64_file_func (voidpf opaque,const void* filename,int mode)
 {
-    //const char* mode_fopen = NULL;
+    const char* mode_fopen = NULL;
     DWORD dwDesiredAccess,dwCreationDisposition,dwShareMode,dwFlagsAndAttributes ;
     HANDLE hFile = NULL;
 
@@ -129,7 +129,7 @@ voidpf ZCALLBACK win32_open64_file_func (voidpf opaque,const void* filename,int 
 
 voidpf ZCALLBACK win32_open64_file_funcA (voidpf opaque,const void* filename,int mode)
 {
-    //const char* mode_fopen = NULL;
+    const char* mode_fopen = NULL;
     DWORD dwDesiredAccess,dwCreationDisposition,dwShareMode,dwFlagsAndAttributes ;
     HANDLE hFile = NULL;
 
@@ -153,7 +153,7 @@ voidpf ZCALLBACK win32_open64_file_funcA (voidpf opaque,const void* filename,int
 
 voidpf ZCALLBACK win32_open64_file_funcW (voidpf opaque,const void* filename,int mode)
 {
-    //const char* mode_fopen = NULL;
+    const char* mode_fopen = NULL;
     DWORD dwDesiredAccess,dwCreationDisposition,dwShareMode,dwFlagsAndAttributes ;
     HANDLE hFile = NULL;
 
@@ -173,7 +173,7 @@ voidpf ZCALLBACK win32_open64_file_funcW (voidpf opaque,const void* filename,int
 
 voidpf ZCALLBACK win32_open_file_func (voidpf opaque,const char* filename,int mode)
 {
-    //const char* mode_fopen = NULL;
+    const char* mode_fopen = NULL;
     DWORD dwDesiredAccess,dwCreationDisposition,dwShareMode,dwFlagsAndAttributes ;
     HANDLE hFile = NULL;
 

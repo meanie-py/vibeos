@@ -433,12 +433,42 @@ trees:
     upstream: https://zlib.net/
     license: Zlib
     license_file: sdk/lib/3rdparty/zlib/LICENSE
-    modified: yes  # ReactOS markers in 3 source file(s): ioapi.c, unzip.c, zip.c
+    modified: yes  # 3 files under contrib/minizip only; zlib proper is pristine
+    patch: vendor-patches/zlib.patch
     headers:
       - sdk/include/reactos/libs/zlib
     version:
       file: sdk/include/reactos/libs/zlib/zlib.h
       pattern: '#define ZLIB_VERSION "([^"]+)"'
+    review: >
+      DIFFED AGAINST PRISTINE UPSTREAM 2026-09-20 (zlib-1.2.13.tar.gz from madler/zlib,
+      sha256 b3a24de97a8fdbc835b9833169501030b8977031bcb54b3b3ac13740f846ab30). This entry
+      previously said `modified: yes` with NO patch and NO review — a bare unexplained
+      claim, the last one of its kind in the registry. Now measured.
+
+      ZLIB PROPER IS PRISTINE. adler32, crc32, deflate, inflate, inftrees, trees, zutil, the
+      gz* family, compress, uncompr, infback and both public headers are byte-identical to
+      1.2.13. Nothing we carry touches bounds checking, allocation, or the inflate/deflate
+      state machines. The whole delta is three files under contrib/minizip, the ZIP-archive
+      helper that ships alongside zlib — so the scary-sounding `modified` was never about
+      the compressor.
+
+      What it is: minizip has a stdio FILE* backend and a win32-HANDLE backend, and ReactOS
+      uses only the latter, so the stdio half and the zipOpen2/unzOpen2 entry points that
+      depend on it are compiled out behind __REACTOS__. unzip.c additionally stops NOUNCRYPT
+      being force-defined, which ENABLES minizip's traditional-PKWARE decryption rather than
+      disabling it — read that direction carefully. These cannot become a build flag:
+      __REACTOS__ already is one, and what will not move into the build is WHICH REGIONS it
+      guards, since upstream has no such conditionals to switch on.
+
+      DE-PATCHED in the same pass, five files down to three. iowin32.c was restored to
+      pristine: its only delta was four `mode_fopen` declarations commented out to silence
+      -Wunused-variable, which is a warning rather than a portability need, so it moved into
+      the build as target_compile_options(minizip PRIVATE -Wno-unused-variable) — scoped to
+      minizip so it cannot hide an unused variable in zlib proper. zip.c's cosmetic hunk
+      (braces around a `for` body) is reverted too. Both were noise that would have had to
+      be re-applied at every bump. Verified: patch -p1 applies clean to a fresh 1.2.13
+      extraction and the result is byte-identical to our tree for all three files.
     reason: Ubiquitous compression library; upstream-tracked.
 
   - path: sdk/lib/3rdparty/libxml2
