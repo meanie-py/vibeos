@@ -16,14 +16,14 @@ add_library(userinit_res OBJECT userinit.rc)
 target_compile_definitions(userinit_res PRIVATE UNICODE _UNICODE)
 target_include_directories(userinit_res PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
 
-# The CRT statics + libwine.a the cargo link reuses live in sdk/lib + 3rdparty,
+# The CRT statics + libwine.a the cargo link reuses live in sdk/lib,
 # which configure after base/, so DEPENDS on their .a FILE paths for
 # parallel-build ordering. The 7 import libs are generated in-cargo from .spec.
 # The .rc is now compiled IN-cargo (resource_from_rc replays the userinit_res
 # windres command), so the .res is no longer reused — but the userinit_res
 # OBJECT lib stays (EXTRA_DEPENDS below) to populate compile_commands.json.
 set(USERINIT_REUSED
-    ${CMAKE_BINARY_DIR}/sdk/lib/3rdparty/libwine/libwine.a
+    ${CMAKE_BINARY_DIR}/sdk/lib/libwine/libwine.a
     ${CMAKE_BINARY_DIR}/sdk/lib/crt/libmsvcrtex.a
     ${CMAKE_BINARY_DIR}/sdk/lib/crt/CMakeFiles/oldnames.dir/oldnames.a)
 

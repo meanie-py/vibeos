@@ -439,28 +439,6 @@ trees:
       upstream. If this turns out to be ReactOS-authored it belongs OUT of this
       registry and IN the translation denominator.
 
-  - path: sdk/lib/3rdparty/libwine
-    name: libwine
-    upstream: https://gitlab.winehq.org/wine/wine
-    license: LGPL-2.1
-    modified: unknown
-    reason: Wine's port/support library, carried in the 3rdparty tree by upstream ReactOS.
-    review: >
-      CLASSIFICATION IS A JUDGEMENT CALL, flagged rather than made quietly: the
-      roadmap's Phase 0 Tier 3 treats the Wine-derived bucket (~154 DLLs) as a
-      translation TARGET, and this is Wine-derived. It sits here only because
-      upstream files it under 3rdparty. 1.1K lines, so the stakes are small either
-      way — but the answer should be deliberate.
-
-  - path: sdk/lib/3rdparty/strmbase
-    name: strmbase
-    upstream: https://gitlab.winehq.org/wine/wine
-    license: LGPL-2.1
-    modified: unknown
-    reason: Wine's DirectShow base classes, carried in the 3rdparty tree by upstream ReactOS.
-    review: Same open question as libwine — Wine-derived, and the Wine bucket is a target.
-
-  # ── dll/3rdparty ────────────────────────────────────────────────────────
   - path: dll/3rdparty/mbedtls
     name: Mbed TLS
     upstream: https://github.com/Mbed-TLS/mbedtls
@@ -604,6 +582,28 @@ trees:
 # to be classified before it can land.
 # ─────────────────────────────────────────────────────────────────────────────
 ours:
+  - paths:
+      - sdk/lib/libwine
+      - sdk/lib/strmbase
+    name: Wine-derived support libraries
+    origin: Wine (LGPL-2.1-or-later)
+    tier: "Tier 2-3 (userland DLL queue)"
+    reason: >
+      MISFILED AS VENDORED UNTIL 2026-09-19. Both were `trees:` entries, and both
+      carried a review note admitting the contradiction — Wine-derived code in a
+      registry half that means "not ours to translate", while the roadmap treats the
+      Wine bucket as a target. The owner settled it: Wine is ours and on the
+      translation path, so they belong here with the other 24 Wine modules.
+
+      They also had to MOVE. sdk/lib/3rdparty is a registered CONTAINER where every
+      child must be a vendored tree, so `ours:` code cannot live there — `--check`
+      refuses it, which is how the mbedtls adapter was caught earlier the same day.
+      They are now sdk/lib/{libwine,strmbase}, built from sdk/lib/CMakeLists.txt.
+
+      1,134 + 7,046 lines. Small, but they are linked by quartz, qcap, qedit, amstream
+      and (as a static archive by absolute build path) by userinit and winlogon, so the
+      move touched four CMakeLists beyond the two being moved.
+
 
   # ── Wine-derived code: OURS, and on the translation path ────────────────
   - paths:
