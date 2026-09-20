@@ -1226,9 +1226,16 @@ land; date every addition.** Source docs live in `docs/engineering/archive/`.
   `NtTib.StackBase`/`DeallocationStack`, i.e. the HOST stack. A guest address is never in
   that range, so the test rejects it and returns `STATUS_GUARD_PAGE_VIOLATION`.
 
-  **A direct fix was tried and REVERTED; why it failed IS the remaining blocker.** Pointing
-  the bounds test at TEB32 gave **0 PASS / 16 EXITED** — every applet, including winmine
-  which had never failed — against a 12-13 PASS baseline. Cause: **nothing ever populates
+  **A direct fix was tried and REVERTED — but the measurement that condemned it was
+  CONFOUNDED, and the revert should not be read as a verdict.** Pointing the bounds test at
+  TEB32 gave **0 PASS / 16 EXITED** on both of its two boots, which I compared against a
+  12-13 PASS baseline and called a severe regression. Three repeat boots on the *unmodified*
+  media then produced 13 / 12 / **0 PASS 16 EXITED** — the total wipeout occurs on stock
+  master roughly one boot in three, for an unrelated reason (see the CPU-layer entry below).
+  Two wipeouts out of two is barely distinguishable from a 1-in-3 base rate; the change was
+  reverted on evidence that could not support the conclusion. Re-measure before judging it.
+  The reasoning below still stands on its own as a static defect, independently of that run.
+  Cause: **nothing ever populates
   TEB32's `DeallocationStack`.** `Wow64pThreadInit` (`dll/win32/wow64/wow64.c`) writes only
   `NtTib.StackBase` (+0x04) and `NtTib.StackLimit` (+0x08); `grep -c DeallocationStack` over
   wow64.c and wow64_manual.c is **0**. The test degenerated to `Address < 0`, the lower
@@ -1241,6 +1248,40 @@ land; date every addition.** Source docs live in `docs/engineering/archive/`.
   `Wow64pThreadInit` must publish `DeallocationStack`, and the guest stack wants a real
   reserve plus guard page rather than the fully-committed block the initial stack now gets,
   BEFORE the kernel can trust those bounds. Sequence it in that order.
+
+- **~1 amd64 boot in 3 loses EVERY 32-bit guest at one address — the WoW64 CPU layer never
+  initialises. OPEN, and it is the confounder behind several of this lane's verdicts**
+  (2026-09-20). Symptom: `PASS=0 EXITED=16`, every ladder guest AND every stock applet
+  exiting `0x80`, including ones that never otherwise fail (winmine) and the non-GUI parity
+  guests (sqlite32). MEASURED 13 / 12 / 0 PASS across three boots of *identical* media
+  (`/tmp/vibeos-cli/20260920-144018-b4b1xg22-smoke-amd64`).
+
+  It is not sixteen application failures, it is one boot-level failure. The tells:
+
+  - A wipeout boot's serial log is **~14k lines against ~180-250k for a healthy one** — the
+    applets die instantly, they do not run and then crash.
+  - **Not one `[FEX-WOW64C]` line is printed all boot.** `BTCpuProcessInit`,
+    `Wow64LdrpInitialize`, `entering guest` — the entire CPU-layer bring-up is absent, so
+    no guest ever begins executing i386 code.
+  - Every victim faults at the **same address in the same instruction**:
+    `rip=addr=000007ffb7030093`, which is ntdll.dll (64-bit, based 0x7ffb7000000) at
+    `RtlpUnwindInternal+0x13` — `movq %r9, 0x70(%rsp)`, the first store into the 0xA88-byte
+    frame that the immediately preceding `subq $0xa88, %rsp` just allocated. So the 64-bit
+    loader is already unwinding an earlier exception, and runs out of stack doing it.
+  - `pci.pDeskInfo=0000000000000000` on every one, against real per-process values in a
+    healthy boot.
+  - The kernel then prints `user dispatch FAILED: pre-fault of stack page ... = 0xc0000005`
+    and the process is terminated `0x80`, which is why the original cause never surfaces.
+
+  Distinct from the guard-page entry above: those are **guest** faults (`80000001`, 3 per
+  boot, rotating victim, late, after real GUI work); this is a **host** 64-bit fault, at
+  process startup, identical across every guest, with `guardpage=0` for the whole boot.
+
+  **Why it matters beyond itself:** a bug that wipes the entire applet population one boot
+  in three, in exactly the units this lane measures, will confirm whatever you were hoping
+  to see. It already did once — see the corrected postmortem above. Until it is fixed, no
+  single-boot amd64 applet comparison means anything; use `--repeat` and report the
+  distribution, not a boot.
 
 - **`taskmgr.exe` EXITED = 0xc0000005 on one boot — OPEN, likely a flake or a distinct
   bug** (2026-09-20). Seen on the stack-fix boot while charmap (the applet that fix
