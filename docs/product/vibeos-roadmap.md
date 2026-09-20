@@ -1178,7 +1178,43 @@ land; date every addition.** Source docs live in `docs/engineering/archive/`.
   The `EXITED = 0x80` verdict on a stock applet is this: csrss terminating the process
   after an exception reached second chance.
 
-- **`charmap.exe` faults in its OWN code under WoW64 — OPEN** (2026-09-20). Previously
+- **The initial WoW64 guest stack was a hardcoded 64K instead of the image's
+  SizeOfStackReserve — FIXED 2026-09-20.** `dll/win32/wow64/wow64.c` allocated
+  `Wow64pAllocBelow2G(0x10000, ...)` for the guest run stack while every stock applet
+  declares `SizeOfStackReserve = 0x100000`. Any guest with frames deeper than 64K walked
+  off the bottom of its own stack, and the compiler's stack-probe helper found it first:
+  charmap died at `__alloca+0x12` — `test %ecx,(%ecx)`, the page probe — reading `001efd84`
+  with the stack mapped `001f0000..00200000`, one page BELOW the allocation.
+
+  **It also explains the "corrupt SEH chain" filed separately: same bug, other end.**
+  `Wow64pThreadInit` publishes those bounds as TEB32 `NtTib.StackBase/StackLimit`, and i386
+  `RtlDispatchException` validates `fs:[0]` registration records against them — so once
+  `esp` left the region the chain was out of bounds and read as zeros. The all-zero record
+  0x44 below `esp` was a symptom, not a second defect.
+
+  Now reads `SizeOfStackReserve` from the guest's own `IMAGE_NT_HEADERS32` (floor 64K, cap
+  16MB, rounded to 64K). Verified: `stack=001f0000..002f0000` (1MB) and **charmap goes
+  55 faults -> 1 -> 0 and PASSES**. Whole boot: 13 PASS / 1 EXITED, 4 guest faults (two
+  deliberate), 0 bugchecks.
+
+  **Known simplification:** `Wow64pAllocBelow2G` is `MEM_RESERVE|MEM_COMMIT`, so this
+  commits the whole reserve where Windows reserves it and commits one page plus a
+  `PAGE_GUARD` that grows on demand. ~1MB per guest, no guard-page growth path needed, and
+  it cannot fault where the real thing would have grown. On-demand growth is the
+  refinement, not the fix.
+
+- **`taskmgr.exe` EXITED = 0xc0000005 on one boot — OPEN, likely a flake or a distinct
+  bug** (2026-09-20). Seen on the stack-fix boot while charmap (the applet that fix
+  targeted) passed; the PREVIOUS boot was the exact reverse — taskmgr PASS, charmap dead.
+  The applet population has been race-dependent throughout this investigation, so this is
+  **not** filed as a regression from the stack change, but it is also not yet shown to be
+  unrelated. Needs a repeat boot before anyone theorises.
+
+- **`charmap.exe` faults in its OWN code under WoW64 — FIXED 2026-09-20** by the guest
+  stack sizing above; it was never charmap's bug. Original text kept because the
+  misattribution is instructive: the fault WAS in charmap's own image, which made it look
+  app-specific, but the faulting function was the compiler-inserted `__alloca` probe and
+  the real defect was the stack it was probing. (2026-09-20). Previously
   masked by the CLIENTINFO cascade, visible now that it is fixed. First fault is
   `eip=0040335a` — charmap's own image at base 0x400000, NOT user32 — reading `001efd84`
   while `esp=001fea38`, i.e. ~0xCB4 BELOW the stack pointer: a stack-guard shape rather
