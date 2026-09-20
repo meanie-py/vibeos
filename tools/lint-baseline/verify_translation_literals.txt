@@ -1,15 +1,61 @@
+EXTRA: sdk/lib/rust/msvcrt-crt-rust/src/msvcrt/file.rs: 'file.c: file_crit.crit' appears 1x here and 0x in file.c
+EXTRA: sdk/lib/rust/msvcrt-crt-rust/src/msvcrt/file.rs: 'file_crit.crit' appears 1x here and 0x in file.c
+EXTRA: sdk/lib/rust/msvcrt-crt-rust/src/msvcrt/locale.rs: 'C' appears 7x here and 6x in locale.c
+EXTRA: sdk/lib/rust/msvcrt-crt-rust/src/msvcrt/locale.rs: 'stdcall' appears 1x here and 0x in locale.c
+EXTRA: sdk/lib/rust/ntmarta-rust/src/ntmarta/ntmarta.rs: 'CURRENT_USER' appears 3x here and 2x in ntmarta.c
+EXTRA: sdk/lib/rust/sysdm-rust/src/sysdm/advanced.rs: 'http://jira.reactos.org/' appears 1x here and 0x in advanced.c
+EXTRA: sdk/lib/rust/sysdm-rust/src/sysdm/smbios.rs: 'ABIT' appears 3x here and 2x in smbios.c
+EXTRA: sdk/lib/rust/sysdm-rust/src/sysdm/smbios.rs: 'http://www.abit.com.tw/' appears 1x here and 0x in smbios.c
+EXTRA: sdk/lib/rust/sysdm-rust/src/sysdm/virtmem.rs: '' appears 3x here and 2x in virtmem.c
+EXTRA: sdk/lib/rust/syssetup-rust/src/syssetup/install.rs: 'Failed to load LiveCD! You can shutdown your computer, or press ENTER to reboot.' appears 2x here and 1x in install.c
+EXTRA: sdk/lib/rust/syssetup-rust/src/syssetup/install.rs: 'ReactOS LiveCD' appears 2x here and 1x in install.c
+EXTRA: sdk/lib/rust/syssetup-rust/src/syssetup/wizard.rs: 'END_SECTION' appears 3x here and 1x in wizard.c
+EXTRA: sdk/lib/rust/syssetup-rust/src/syssetup/wizard.rs: 'InstallWizard' appears 4x here and 2x in wizard.c
+EXTRA: sdk/lib/rust/syssetup-rust/src/syssetup/wizard.rs: 'Installation Sources' appears 5x here and 3x in wizard.c
+EXTRA: sdk/lib/rust/userenv-rust/src/userenv/profile.rs: 'SeRestorePrivilege' appears 1x here and 0x in profile.c
+EXTRA: sdk/lib/rust/wkssvc-rust/src/wkssvc/wkssvc.rs: 'MICROSOFT_AUTHENTICATION_PACKAGE_V1_0' appears 1x here and 0x in wkssvc.c
+EXTRA: sdk/lib/rust/wldap32-rust/src/wldap32/init.rs: 'cldap://' appears 2x here and 0x in init.c
+EXTRA: sdk/lib/rust/wldap32-rust/src/wldap32/init.rs: 'ldap://' appears 4x here and 0x in init.c
+EXTRA: sdk/lib/rust/wldap32-rust/src/wldap32/init.rs: 'ldapi://' appears 1x here and 0x in init.c
+EXTRA: sdk/lib/rust/wldap32-rust/src/wldap32/init.rs: 'ldaps://' appears 2x here and 0x in init.c
+EXTRA: sdk/lib/rust/wldap32-rust/src/wldap32/init.rs: 'localhost' appears 1x here and 0x in init.c
+EXTRA: sdk/lib/rust/wshirda-rust/src/wshirda/wshirda.rs: 'WSHEnumProtocols unimplemented\\n' appears 1x here and 0x in wshirda.c
+EXTRA: sdk/lib/rust/wshirda-rust/src/wshirda/wshirda.rs: 'WSHGetProviderGuid unimplemented\\n' appears 1x here and 0x in wshirda.c
+EXTRA: sdk/lib/rust/wshirda-rust/src/wshirda/wshirda.rs: 'WSHGetSockaddrType unimplemented\\n' appears 1x here and 0x in wshirda.c
+EXTRA: sdk/lib/rust/wshirda-rust/src/wshirda/wshirda.rs: 'WSHGetSocketInformation unimplemented\\n' appears 1x here and 0x in wshirda.c
+EXTRA: sdk/lib/rust/wshirda-rust/src/wshirda/wshirda.rs: 'WSHGetWSAProtocolInfo unimplemented\\n' appears 1x here and 0x in wshirda.c
+EXTRA: sdk/lib/rust/wshirda-rust/src/wshirda/wshirda.rs: 'WSHGetWildcardSockaddr unimplemented\\n' appears 1x here and 0x in wshirda.c
+EXTRA: sdk/lib/rust/wshirda-rust/src/wshirda/wshirda.rs: 'WSHGetWinsockMapping unimplemented\\n' appears 1x here and 0x in wshirda.c
+EXTRA: sdk/lib/rust/wshirda-rust/src/wshirda/wshirda.rs: 'WSHIoctl unimplemented\\n' appears 1x here and 0x in wshirda.c
+EXTRA: sdk/lib/rust/wshirda-rust/src/wshirda/wshirda.rs: 'WSHNotify unimplemented\\n' appears 1x here and 0x in wshirda.c
+EXTRA: sdk/lib/rust/wshirda-rust/src/wshirda/wshirda.rs: 'WSHOpenSocket unimplemented\\n' appears 1x here and 0x in wshirda.c
+EXTRA: sdk/lib/rust/wshirda-rust/src/wshirda/wshirda.rs: 'WSHSetSocketInformation unimplemented\\n' appears 1x here and 0x in wshirda.c
+EXTRA: sdk/lib/rust/wshtcpip-rust/src/wshtcpip/wshtcpip.rs: '(%s:%d) DbgPrint() failed!\\n' appears 2x here and 0x in wshtcpip.c
+EXTRA: sdk/lib/rust/wshtcpip-rust/src/wshtcpip/wshtcpip.rs: '(%s:%d) Get: Unknown level/option name: %d %d\\n' appears 1x here and 0x in wshtcpip.c
+EXTRA: sdk/lib/rust/wshtcpip-rust/src/wshtcpip/wshtcpip.rs: '(%s:%d) Unknown level/option name: %d %d\\n' appears 1x here and 0x in wshtcpip.c
+EXTRA: sdk/lib/rust/wshtcpip-rust/src/wshtcpip/wshtcpip.rs: 'WARNING:  %s at %s:%d is unimplemented!()\\n' appears 7x here and 0x in wshtcpip.c
+EXTRA: sdk/lib/rust/wshtcpip-rust/src/wshtcpip/wshtcpip.rs: 'WSHAddressToString' appears 1x here and 0x in wshtcpip.c
+EXTRA: sdk/lib/rust/wshtcpip-rust/src/wshtcpip/wshtcpip.rs: 'WSHEnumProtocols' appears 1x here and 0x in wshtcpip.c
+EXTRA: sdk/lib/rust/wshtcpip-rust/src/wshtcpip/wshtcpip.rs: 'WSHGetProviderGuid' appears 1x here and 0x in wshtcpip.c
+EXTRA: sdk/lib/rust/wshtcpip-rust/src/wshtcpip/wshtcpip.rs: 'WSHGetSocketInformation' appears 1x here and 0x in wshtcpip.c
+EXTRA: sdk/lib/rust/wshtcpip-rust/src/wshtcpip/wshtcpip.rs: 'WSHGetWSAProtocolInfo' appears 1x here and 0x in wshtcpip.c
+EXTRA: sdk/lib/rust/wshtcpip-rust/src/wshtcpip/wshtcpip.rs: 'WSHJoinLeaf' appears 1x here and 0x in wshtcpip.c
+EXTRA: sdk/lib/rust/wshtcpip-rust/src/wshtcpip/wshtcpip.rs: 'WSHStringToAddress' appears 1x here and 0x in wshtcpip.c
+EXTRA: sdk/lib/rust/wshtcpip-rust/src/wshtcpip/wshtcpip.rs: '\\\\Device\\\\RawIp' appears 1x here and 0x in wshtcpip.c
+EXTRA: sdk/lib/rust/wshtcpip-rust/src/wshtcpip/wshtcpip.rs: '\\\\Device\\\\Tcp' appears 1x here and 0x in wshtcpip.c
+EXTRA: sdk/lib/rust/wshtcpip-rust/src/wshtcpip/wshtcpip.rs: '\\\\Device\\\\Udp' appears 1x here and 0x in wshtcpip.c
+EXTRA: sdk/lib/rust/wshtcpip-rust/src/wshtcpip/wshtcpip.rs: 'dll/win32/wshtcpip/wshtcpip.c' appears 11x here and 0x in wshtcpip.c
+MISSING: sdk/lib/rust/desk-rust/src/desk/monslctl.rs: 'MONITORSELWNDCLASS' appears 1x in monslctl.c and 0x here
+MISSING: sdk/lib/rust/desk-rust/src/desk/preview.rs: 'PreviewWndClass' appears 1x in preview.c and 0x here
+MISSING: sdk/lib/rust/desk-rust/src/desk/screensaver.rs: 'SSDemoParent' appears 1x in screensaver.c and 0x here
 MISSING: sdk/lib/rust/msvcrt-crt-rust/src/msvcrt/dir.rs: '@:\\\\' appears 1x in dir.c and 0x here
 MISSING: sdk/lib/rust/msvcrt-crt-rust/src/msvcrt/dir.rs: 'A:' appears 1x in dir.c and 0x here
 MISSING: sdk/lib/rust/msvcrt-crt-rust/src/msvcrt/dir.rs: 'A:\\\\' appears 1x in dir.c and 0x here
 MISSING: sdk/lib/rust/msvcrt-crt-rust/src/msvcrt/exit.rs: ': MSVCRT_onexit_cs' appears 1x in exit.c and 0x here
 MISSING: sdk/lib/rust/msvcrt-crt-rust/src/msvcrt/file.rs: ': MSVCRT_file_cs' appears 1x in file.c and 0x here
 MISSING: sdk/lib/rust/msvcrt-crt-rust/src/msvcrt/file.rs: ': file_crit.crit' appears 2x in file.c and 0x here
-EXTRA: sdk/lib/rust/msvcrt-crt-rust/src/msvcrt/file.rs: 'file.c: file_crit.crit' appears 1x here and 0x in file.c
-EXTRA: sdk/lib/rust/msvcrt-crt-rust/src/msvcrt/file.rs: 'file_crit.crit' appears 1x here and 0x in file.c
 MISSING: sdk/lib/rust/msvcrt-crt-rust/src/msvcrt/locale.rs: '' appears 1x in locale.c and 0x here
 MISSING: sdk/lib/rust/msvcrt-crt-rust/src/msvcrt/locale.rs: '.' appears 1x in locale.c and 0x here
-EXTRA: sdk/lib/rust/msvcrt-crt-rust/src/msvcrt/locale.rs: 'C' appears 7x here and 6x in locale.c
-EXTRA: sdk/lib/rust/msvcrt-crt-rust/src/msvcrt/locale.rs: 'stdcall' appears 1x here and 0x in locale.c
 MISSING: sdk/lib/rust/msvcrt-crt-rust/src/msvcrt/math.rs: ', %ax\\n\\t' appears 2x in math.c and 0x here
 MISSING: sdk/lib/rust/msvcrt-crt-rust/src/msvcrt/math.rs: '.cfi_adjust_cfa_offset -4\\n\\t' appears 1x in math.c and 0x here
 MISSING: sdk/lib/rust/msvcrt-crt-rust/src/msvcrt/math.rs: '.cfi_adjust_cfa_offset 4\\n\\t' appears 1x in math.c and 0x here
@@ -31,64 +77,16 @@ MISSING: sdk/lib/rust/msvcrt-crt-rust/src/msvcrt/math.rs: 'subl $4, %esp\\n\\t' 
 MISSING: sdk/lib/rust/msvcrt-crt-rust/src/msvcrt/math.rs: 'testw $' appears 1x in math.c and 0x here
 MISSING: sdk/lib/rust/msvcrt-crt-rust/src/msvcrt/time.rs: 'PDT' appears 1x in time.c and 0x here
 MISSING: sdk/lib/rust/msvcrt-crt-rust/src/msvcrt/time.rs: 'PST' appears 1x in time.c and 0x here
-EXTRA: sdk/lib/rust/msvcrt-crt-rust/src/msvcrt/undname.rs: '\\" %s' appears 1x here and 0x in undname.c
-MISSING: sdk/lib/rust/desk-rust/src/desk/monslctl.rs: 'MONITORSELWNDCLASS' appears 1x in monslctl.c and 0x here
-MISSING: sdk/lib/rust/desk-rust/src/desk/preview.rs: 'PreviewWndClass' appears 1x in preview.c and 0x here
-MISSING: sdk/lib/rust/desk-rust/src/desk/screensaver.rs: 'SSDemoParent' appears 1x in screensaver.c and 0x here
 MISSING: sdk/lib/rust/mswsock-rust/src/mswsock/nsplookup.rs: 'mswsock.dll-original' appears 1x in nsplookup.c and 0x here
-EXTRA: sdk/lib/rust/ntmarta-rust/src/ntmarta/ntmarta.rs: 'CURRENT_USER' appears 3x here and 2x in ntmarta.c
 MISSING: sdk/lib/rust/snmpapi-rust/src/snmpapi/main.rs: '<null oid>' appears 2x in main.c and 1x here
-EXTRA: sdk/lib/rust/sysdm-rust/src/sysdm/advanced.rs: 'http://jira.reactos.org/' appears 1x here and 0x in advanced.c
 MISSING: sdk/lib/rust/sysdm-rust/src/sysdm/environment.rs: '' appears 3x in environment.c and 1x here
 MISSING: sdk/lib/rust/sysdm-rust/src/sysdm/general.rs: ' ' appears 1x in general.c and 0x here
-EXTRA: sdk/lib/rust/sysdm-rust/src/sysdm/smbios.rs: 'ABIT' appears 3x here and 2x in smbios.c
-EXTRA: sdk/lib/rust/sysdm-rust/src/sysdm/smbios.rs: 'http://www.abit.com.tw/' appears 1x here and 0x in smbios.c
 MISSING: sdk/lib/rust/sysdm-rust/src/sysdm/virtmem.rs: 'Unknown architecture' appears 1x in virtmem.c and 0x here
-EXTRA: sdk/lib/rust/sysdm-rust/src/sysdm/virtmem.rs: '' appears 3x here and 2x in virtmem.c
-EXTRA: sdk/lib/rust/syssetup-rust/src/syssetup/install.rs: 'Failed to load LiveCD! You can shutdown your computer, or press ENTER to reboot.' appears 2x here and 1x in install.c
-EXTRA: sdk/lib/rust/syssetup-rust/src/syssetup/install.rs: 'ReactOS LiveCD' appears 2x here and 1x in install.c
 MISSING: sdk/lib/rust/syssetup-rust/src/syssetup/wizard.rs: '' appears 14x in wizard.c and 9x here
 MISSING: sdk/lib/rust/syssetup-rust/src/syssetup/wizard.rs: '0000' appears 1x in wizard.c and 0x here
 MISSING: sdk/lib/rust/syssetup-rust/src/syssetup/wizard.rs: 'You must enter a password !' appears 1x in wizard.c and 0x here
-EXTRA: sdk/lib/rust/syssetup-rust/src/syssetup/wizard.rs: 'END_SECTION' appears 3x here and 1x in wizard.c
-EXTRA: sdk/lib/rust/syssetup-rust/src/syssetup/wizard.rs: 'InstallWizard' appears 4x here and 2x in wizard.c
-EXTRA: sdk/lib/rust/syssetup-rust/src/syssetup/wizard.rs: 'Installation Sources' appears 5x here and 3x in wizard.c
 MISSING: sdk/lib/rust/userenv-rust/src/userenv/desktop.rs: '%HOMEDRIVE%%HOMEPATH%' appears 2x in desktop.c and 0x here
-EXTRA: sdk/lib/rust/userenv-rust/src/userenv/profile.rs: 'SeRestorePrivilege' appears 1x here and 0x in profile.c
 MISSING: sdk/lib/rust/wkssvc-rust/src/wkssvc/rpcserver.rs: '' appears 1x in rpcserver.c and 0x here
-EXTRA: sdk/lib/rust/wkssvc-rust/src/wkssvc/wkssvc.rs: 'MICROSOFT_AUTHENTICATION_PACKAGE_V1_0' appears 1x here and 0x in wkssvc.c
 MISSING: sdk/lib/rust/wldap32-rust/src/wldap32/error.rs: '' appears 1x in error.c and 0x here
 MISSING: sdk/lib/rust/wldap32-rust/src/wldap32/init.rs: ' ' appears 1x in init.c and 0x here
 MISSING: sdk/lib/rust/wldap32-rust/src/wldap32/init.rs: ':%d' appears 1x in init.c and 0x here
-EXTRA: sdk/lib/rust/wldap32-rust/src/wldap32/init.rs: 'cldap://' appears 2x here and 0x in init.c
-EXTRA: sdk/lib/rust/wldap32-rust/src/wldap32/init.rs: 'ldap://' appears 4x here and 0x in init.c
-EXTRA: sdk/lib/rust/wldap32-rust/src/wldap32/init.rs: 'ldapi://' appears 1x here and 0x in init.c
-EXTRA: sdk/lib/rust/wldap32-rust/src/wldap32/init.rs: 'ldaps://' appears 2x here and 0x in init.c
-EXTRA: sdk/lib/rust/wldap32-rust/src/wldap32/init.rs: 'localhost' appears 1x here and 0x in init.c
-EXTRA: sdk/lib/rust/wshirda-rust/src/wshirda/wshirda.rs: 'WSHEnumProtocols unimplemented\\n' appears 1x here and 0x in wshirda.c
-EXTRA: sdk/lib/rust/wshirda-rust/src/wshirda/wshirda.rs: 'WSHGetProviderGuid unimplemented\\n' appears 1x here and 0x in wshirda.c
-EXTRA: sdk/lib/rust/wshirda-rust/src/wshirda/wshirda.rs: 'WSHGetSockaddrType unimplemented\\n' appears 1x here and 0x in wshirda.c
-EXTRA: sdk/lib/rust/wshirda-rust/src/wshirda/wshirda.rs: 'WSHGetSocketInformation unimplemented\\n' appears 1x here and 0x in wshirda.c
-EXTRA: sdk/lib/rust/wshirda-rust/src/wshirda/wshirda.rs: 'WSHGetWSAProtocolInfo unimplemented\\n' appears 1x here and 0x in wshirda.c
-EXTRA: sdk/lib/rust/wshirda-rust/src/wshirda/wshirda.rs: 'WSHGetWildcardSockaddr unimplemented\\n' appears 1x here and 0x in wshirda.c
-EXTRA: sdk/lib/rust/wshirda-rust/src/wshirda/wshirda.rs: 'WSHGetWinsockMapping unimplemented\\n' appears 1x here and 0x in wshirda.c
-EXTRA: sdk/lib/rust/wshirda-rust/src/wshirda/wshirda.rs: 'WSHIoctl unimplemented\\n' appears 1x here and 0x in wshirda.c
-EXTRA: sdk/lib/rust/wshirda-rust/src/wshirda/wshirda.rs: 'WSHNotify unimplemented\\n' appears 1x here and 0x in wshirda.c
-EXTRA: sdk/lib/rust/wshirda-rust/src/wshirda/wshirda.rs: 'WSHOpenSocket unimplemented\\n' appears 1x here and 0x in wshirda.c
-EXTRA: sdk/lib/rust/wshirda-rust/src/wshirda/wshirda.rs: 'WSHSetSocketInformation unimplemented\\n' appears 1x here and 0x in wshirda.c
-EXTRA: sdk/lib/rust/wshtcpip-rust/src/wshtcpip/wshtcpip.rs: '(%s:%d) DbgPrint() failed!\\n' appears 2x here and 0x in wshtcpip.c
-EXTRA: sdk/lib/rust/wshtcpip-rust/src/wshtcpip/wshtcpip.rs: '(%s:%d) Get: Unknown level/option name: %d %d\\n' appears 1x here and 0x in wshtcpip.c
-EXTRA: sdk/lib/rust/wshtcpip-rust/src/wshtcpip/wshtcpip.rs: '(%s:%d) Unknown level/option name: %d %d\\n' appears 1x here and 0x in wshtcpip.c
-EXTRA: sdk/lib/rust/wshtcpip-rust/src/wshtcpip/wshtcpip.rs: 'FALSE' appears 1x here and 0x in wshtcpip.c
-EXTRA: sdk/lib/rust/wshtcpip-rust/src/wshtcpip/wshtcpip.rs: 'WARNING:  %s at %s:%d is unimplemented!()\\n' appears 7x here and 0x in wshtcpip.c
-EXTRA: sdk/lib/rust/wshtcpip-rust/src/wshtcpip/wshtcpip.rs: 'WSHAddressToString' appears 1x here and 0x in wshtcpip.c
-EXTRA: sdk/lib/rust/wshtcpip-rust/src/wshtcpip/wshtcpip.rs: 'WSHEnumProtocols' appears 1x here and 0x in wshtcpip.c
-EXTRA: sdk/lib/rust/wshtcpip-rust/src/wshtcpip/wshtcpip.rs: 'WSHGetProviderGuid' appears 1x here and 0x in wshtcpip.c
-EXTRA: sdk/lib/rust/wshtcpip-rust/src/wshtcpip/wshtcpip.rs: 'WSHGetSocketInformation' appears 1x here and 0x in wshtcpip.c
-EXTRA: sdk/lib/rust/wshtcpip-rust/src/wshtcpip/wshtcpip.rs: 'WSHGetWSAProtocolInfo' appears 1x here and 0x in wshtcpip.c
-EXTRA: sdk/lib/rust/wshtcpip-rust/src/wshtcpip/wshtcpip.rs: 'WSHJoinLeaf' appears 1x here and 0x in wshtcpip.c
-EXTRA: sdk/lib/rust/wshtcpip-rust/src/wshtcpip/wshtcpip.rs: 'WSHStringToAddress' appears 1x here and 0x in wshtcpip.c
-EXTRA: sdk/lib/rust/wshtcpip-rust/src/wshtcpip/wshtcpip.rs: '\\\\Device\\\\RawIp' appears 1x here and 0x in wshtcpip.c
-EXTRA: sdk/lib/rust/wshtcpip-rust/src/wshtcpip/wshtcpip.rs: '\\\\Device\\\\Tcp' appears 1x here and 0x in wshtcpip.c
-EXTRA: sdk/lib/rust/wshtcpip-rust/src/wshtcpip/wshtcpip.rs: '\\\\Device\\\\Udp' appears 1x here and 0x in wshtcpip.c
-EXTRA: sdk/lib/rust/wshtcpip-rust/src/wshtcpip/wshtcpip.rs: 'dll/win32/wshtcpip/wshtcpip.c' appears 12x here and 0x in wshtcpip.c
